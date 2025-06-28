@@ -44,14 +44,14 @@ func TestErrorCases(t *testing.T) {
 			setup: func() (string, error) {
 				// Create a directory with no read permissions
 				dirPath := filepath.Join(tempDir, "restricted")
-				if err := os.Mkdir(dirPath, 0000); err != nil {
+				if err := os.Mkdir(dirPath, 0o000); err != nil {
 					t.Fatalf("Failed to create restricted dir: %v", err)
 				}
-				t.Cleanup(func() { os.Chmod(dirPath, 0755) }) // Ensure cleanup
+				t.Cleanup(func() { _ = os.Chmod(dirPath, 0o755) }) // Ensure cleanup
 
 				// Create a file in the restricted directory
 				filePath := filepath.Join(dirPath, "test.txt")
-				if err := os.WriteFile(filePath, []byte("test"), 0400); err == nil {
+				if err := os.WriteFile(filePath, []byte("test"), 0o400); err == nil {
 					t.Fatal("Expected error when creating file in restricted dir")
 				}
 
@@ -109,7 +109,7 @@ func TestFilesystemEdgeCases(t *testing.T) {
 	t.Run("file deleted between operations", func(t *testing.T) {
 		// Create a test file
 		filePath := filepath.Join(tempDir, "tempfile.txt")
-		if err := os.WriteFile(filePath, []byte("test"), 0644); err != nil {
+		if err := os.WriteFile(filePath, []byte("test"), 0o644); err != nil {
 			t.Fatalf("Failed to create test file: %v", err)
 		}
 
@@ -136,7 +136,7 @@ func TestFilesystemEdgeCases(t *testing.T) {
 
 	t.Run("directory instead of file", func(t *testing.T) {
 		dirPath := filepath.Join(tempDir, "subdir")
-		if err := os.Mkdir(dirPath, 0755); err != nil {
+		if err := os.Mkdir(dirPath, 0o755); err != nil {
 			t.Fatalf("Failed to create directory: %v", err)
 		}
 
@@ -153,21 +153,21 @@ func TestFilesystemEdgeCases(t *testing.T) {
 		t.Run("unreadable directory", func(t *testing.T) {
 			// Create a directory with no read permissions
 			dirPath := filepath.Join(tempDir, "noreaddir")
-			if err := os.Mkdir(dirPath, 0700); err != nil {
+			if err := os.Mkdir(dirPath, 0o700); err != nil {
 				t.Fatalf("Failed to create directory: %v", err)
 			}
 
 			// Create a file in the directory first
 			filePath := filepath.Join(dirPath, "test.txt")
-			if err := os.WriteFile(filePath, []byte("test"), 0600); err != nil {
+			if err := os.WriteFile(filePath, []byte("test"), 0o600); err != nil {
 				t.Fatalf("Failed to create test file: %v", err)
 			}
 
 			// Make the directory unreadable
-			if err := os.Chmod(dirPath, 0000); err != nil {
+			if err := os.Chmod(dirPath, 0o000); err != nil {
 				t.Fatalf("Failed to change directory permissions: %v", err)
 			}
-			t.Cleanup(func() { os.Chmod(dirPath, 0700) })
+			t.Cleanup(func() { _ = os.Chmod(dirPath, 0o700) })
 
 			err := validator.Verify(filePath)
 			if err == nil {

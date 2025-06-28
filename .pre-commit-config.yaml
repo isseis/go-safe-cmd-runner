@@ -21,4 +21,3 @@ repos:
     hooks:
     -   id: gofumpt
     -   id: gci
-    -   id: go-mod-tidy

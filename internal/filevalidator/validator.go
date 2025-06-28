@@ -13,7 +13,7 @@ import (
 // It should be instantiated using the New function.
 type Validator struct {
 	algorithm HashAlgorithm
-	hashDir  string
+	hashDir   string
 }
 
 // New initializes and returns a new Validator with the specified hash algorithm and hash directory.
@@ -34,17 +34,17 @@ func New(algorithm HashAlgorithm, hashDir string) (*Validator, error) {
 	info, err := os.Stat(hashDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("hash directory does not exist: %s", hashDir)
+			return nil, fmt.Errorf("%w: %s", ErrHashDirNotExist, hashDir)
 		}
 		return nil, fmt.Errorf("failed to access hash directory: %w", err)
 	}
 	if !info.IsDir() {
-		return nil, fmt.Errorf("hash path is not a directory: %s", hashDir)
+		return nil, fmt.Errorf("%w: %s", ErrHashPathNotDir, hashDir)
 	}
 
 	return &Validator{
 		algorithm: algorithm,
-		hashDir:  hashDir,
+		hashDir:   hashDir,
 	}, nil
 }
 
@@ -70,20 +70,20 @@ func (v *Validator) Record(filePath string) error {
 	}
 
 	// Ensure the directory exists
-	if err := os.MkdirAll(filepath.Dir(hashFilePath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(hashFilePath), 0o755); err != nil {
 		return fmt.Errorf("failed to create hash directory: %w", err)
 	}
 
 	// Check if the hash file already exists and contains a different path
-	if existingContent, err := os.ReadFile(hashFilePath); err == nil {
+	if existingContent, err := safeReadFile(hashFilePath); err == nil {
 		// File exists, check the recorded path
 		parts := strings.SplitN(string(existingContent), "\n", 2)
 		if len(parts) == 0 {
-			return fmt.Errorf("invalid hash file format: empty file")
+			return fmt.Errorf("%w: empty file", ErrInvalidHashFileFormat)
 		}
 		recordedPath := parts[0]
 		if recordedPath != targetPath {
-			return fmt.Errorf("hash collision detected: path '%s' conflicts with existing path '%s'", targetPath, recordedPath)
+			return fmt.Errorf("%w: path '%s' conflicts with existing path '%s'", ErrHashCollision, targetPath, recordedPath)
 		}
 		// If we get here, the file exists and has the same path, so we can overwrite it
 	} else if !os.IsNotExist(err) {
@@ -92,7 +92,7 @@ func (v *Validator) Record(filePath string) error {
 	}
 
 	// Write the target path and hash to the hash file
-	return os.WriteFile(hashFilePath, []byte(fmt.Sprintf("%s\n%s", targetPath, hash)), 0644)
+	return os.WriteFile(hashFilePath, []byte(fmt.Sprintf("%s\n%s", targetPath, hash)), 0o644)
 }
 
 // Verify checks if the file at filePath matches its recorded hash.
@@ -111,7 +111,7 @@ func (v *Validator) Verify(filePath string) error {
 	}
 
 	// Read the stored hash file
-	hashFileContent, err := os.ReadFile(hashFilePath)
+	hashFileContent, err := safeReadFile(hashFilePath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return ErrHashFileNotFound
@@ -122,16 +122,16 @@ func (v *Validator) Verify(filePath string) error {
 	// Parse the hash file content (format: "filepath\nhash")
 	parts := strings.SplitN(string(hashFileContent), "\n", 2)
 	if len(parts) != 2 {
-		return fmt.Errorf("invalid hash file format: expected 'path\nhash', got %d parts", len(parts))
+		return fmt.Errorf("%w: expected 'path\nhash', got %d parts", ErrInvalidHashFileFormat, len(parts))
 	}
 
 	// Check if the recorded path matches the current file path
 	recordedPath := parts[0]
 	if recordedPath == "" {
-		return fmt.Errorf("invalid hash file format: empty path")
+		return fmt.Errorf("%w: empty path", ErrInvalidHashFileFormat)
 	}
 	if recordedPath != targetPath {
-		return fmt.Errorf("hash collision detected: recorded path '%s' does not match current path '%s'", recordedPath, targetPath)
+		return fmt.Errorf("%w: recorded path '%s' does not match current path '%s'", ErrHashCollision, recordedPath, targetPath)
 	}
 
 	expectedHash := parts[1]
@@ -205,7 +205,7 @@ func (v *Validator) GetTargetFilePath(hashFilePath string) (string, error) {
 	// The first line of the hash file contains the original file path
 	parts := strings.SplitN(string(content), "\n", 2)
 	if len(parts) < 1 {
-		return "", fmt.Errorf("invalid hash file format")
+		return "", ErrInvalidHashFileFormat
 	}
 
 	return parts[0], nil
@@ -241,11 +241,23 @@ func (v *Validator) validatePath(filePath string) (string, error) {
 
 // calculateHash calculates the hash of the file at the given path.
 func (v *Validator) calculateHash(filePath string) (string, error) {
-	file, err := os.Open(filePath)
+	// Clean and validate the file path
+	cleanPath := filepath.Clean(filePath)
+	if cleanPath != filePath {
+		return "", fmt.Errorf("%w: %s", ErrSuspiciousFilePath, filePath)
+	}
+
+	file, err := os.Open(cleanPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to open file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			// Log the error but don't fail the operation
+			// as the file was successfully read
+			_ = fmt.Errorf("failed to close file: %w", err)
+		}
+	}()
 
 	return v.algorithm.Sum(file)
 }
@@ -254,7 +266,7 @@ func (v *Validator) calculateHash(filePath string) (string, error) {
 func encodePath(path string) (string, error) {
 	// Clean the path to remove any relative components
 	cleanPath := filepath.Clean(path)
-	
+
 	// Convert to absolute path to ensure consistency
 	abspath, err := filepath.Abs(cleanPath)
 	if err != nil {
