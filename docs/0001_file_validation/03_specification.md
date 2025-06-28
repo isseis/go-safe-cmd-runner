@@ -112,8 +112,11 @@ func New(algorithm HashAlgorithm, hashDir string) (*Validator, error) {
 ```go
 // Record は、指定されたfilePathのファイルのハッシュ値を計算し、
 // ハッシュファイル保存先ディレクトリに保存する。
-// ハッシュファイル名は、対象ファイルの絶対パスをURL-safe Base64でエンコードしたものに
-// ハッシュアルゴリズムの拡張子（例: ".sha256"）を付与する。
+// ハッシュファイル名は、以下の手順で生成される:
+// 1. 対象ファイルの絶対パスをURL-safe Base64でエンコードする
+// 2. エンコードされた文字列のSHA-256ハッシュを計算する
+// 3. ハッシュ値をURL-safe Base64でエンコードする
+// 4. 先頭12文字をファイル名として使用し、ハッシュアルゴリズムの拡張子（例: ".sha256"）を付与する
 //
 // 以下のエラーを返す可能性がある:
 // - ErrInvalidFilePath: パスが無効な場合
@@ -148,8 +151,11 @@ func (v *Validator) Verify(filePath string) error {
 
 ```go
 // GetHashFilePath は、指定されたfilePathに対応するハッシュファイルのパスを返す。
-// パスはURL-safe Base64でエンコードされ、ハッシュアルゴリズムの拡張子が付与される。
-// パスの検証も内部的に行われる。
+// ハッシュファイル名は以下の手順で生成される:
+// 1. 対象ファイルの絶対パスをURL-safe Base64でエンコードする
+// 2. エンコードされた文字列のSHA-256ハッシュを計算する
+// 3. ハッシュ値をURL-safe Base64でエンコードする
+// 4. 先頭12文字をファイル名として使用し、ハッシュアルゴリズムの拡張子（例: ".sha256"）を付与する
 //
 // 以下のエラーを返す可能性がある:
 // - ErrInvalidFilePath: パスが無効な場合
@@ -164,13 +170,13 @@ func (v *Validator) GetHashFilePath(filePath string) (string, error) {
 ### 3.4.5. `Validator.GetTargetFilePath` メソッド
 
 ```go
-// GetTargetFilePath は、指定されたhashFilePathから元のファイルパスをデコードして返す。
-// hashFilePathは、URL-safe Base64でエンコードされたファイルパスとハッシュアルゴリズムの
-// 拡張子（例: ".sha256"）で構成されている必要がある。
-// パスがv.hashDir内にない場合や、デコードに失敗した場合はエラーを返す。
+// GetTargetFilePath は、指定されたhashFilePathから元のファイルパスを取得する。
+// hashFilePathは、対象ファイルの絶対パスから生成されたハッシュファイルのパスでなければならない。
+// このメソッドはハッシュファイルを読み込み、そこに記録されている元のファイルパスを返す。
+// パスがv.hashDir内にない場合や、ファイルの読み込みに失敗した場合はエラーを返す。
 //
 // 以下のエラーを返す可能性がある:
-// - ErrInvalidFilePath: パスが無効、v.hashDir内にない、またはデコードに失敗した場合
+// - ErrInvalidFilePath: パスが無効、v.hashDir内にない、またはファイル形式が不正な場合
 // - ファイルI/Oに関する各種エラー
 func (v *Validator) GetTargetFilePath(hashFilePath string) (string, error) {
     // 実装の詳細
