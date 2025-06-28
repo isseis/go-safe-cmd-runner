@@ -11,19 +11,14 @@ repos:
         args: [--branch, main]
 
 -   repo: https://github.com/golangci/golangci-lint
-    rev: v1.56.2
+    rev: v2.1.6
     hooks:
     -   id: golangci-lint
         args: [--config=.golangci.toml]
 
-# -   repo: https://github.com/mvdan/gofumpt
-#     rev: v0.8.0
-#     hooks:
-#     -   id: gofumpt
-#         args: [-extra]
-
-# -   repo: https://github.com/golangci/gofmt
-#     rev: v1.6.0
-#     hooks:
-#     -   id: gofmt
-#         args: [--warn-unformatted]
+-   repo: https://github.com/shutter-network/pre-commit-go-hooks
+    rev: 53239641ec106cda9a7acf9150c98be8d5ffa1ec
+    hooks:
+    -   id: gofumpt
+    -   id: gci
+    -   id: go-mod-tidy
