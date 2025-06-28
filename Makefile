@@ -8,7 +8,7 @@ BINARY_NAME=go-safe-cmd-runner
 BINARY_PATH=build/$(BINARY_NAME)
 
 # Find all Go source files to use as dependencies for the build
-GO_SOURCES := $(shell find . -type f -name '*.go')
+GO_SOURCES := $(shell find . -type f -name '*.go' -not -name '*_test.go')
 
 .PHONY: all build run clean test
 
