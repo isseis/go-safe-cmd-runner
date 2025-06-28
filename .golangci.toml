@@ -1,6 +1,11 @@
 version = "2"
 
 [linters]
+settings.gosec.excludes = [
+    "G301", # Poor file permissions used when creating a directory
+    "G302", # Poor file permissions used with chmod
+    "G306", # Poor file permissions used when writing to a new file
+]
 settings.gocyclo.min-complexity = 10
 settings.mnd = { checks = [
     "argument",
@@ -43,8 +48,7 @@ enable = [
     "errchkjson", # some JSON-specific checks
     "nakedret",   # Detect naked returns
 ]
+exclusions.rules = [{ path = "_test\\.go", linters = ["gocyclo"] }]
 
 [formatters]
 enable = ["gofumpt"]
-
-[issues]

@@ -1,6 +1,7 @@
 package filevalidator
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,12 +9,42 @@ import (
 	"testing"
 )
 
+// Test error definitions
+var (
+	// ErrTestHashCalculation is returned when there's an error calculating a hash in tests.
+	ErrTestHashCalculation = fmt.Errorf("test error: failed to calculate hash")
+
+	// ErrTestHashFileWrite is returned when there's an error writing a hash file in tests.
+	ErrTestHashFileWrite = fmt.Errorf("test error: failed to write hash file")
+
+	// ErrTestHashFileRead is returned when there's an error reading a hash file in tests.
+	ErrTestHashFileRead = fmt.Errorf("test error: failed to read hash file")
+
+	// ErrTestHashCollision is returned when a hash collision is detected in tests.
+	ErrTestHashCollision = fmt.Errorf("test error: hash collision detected")
+)
+
+// testSafeReadFile is a helper function for tests to safely read files.
+// It enforces that the file is within the test directory.
+func testSafeReadFile(testDir, filePath string) ([]byte, error) {
+	// Clean and validate the file path
+	cleanPath := filepath.Clean(filePath)
+
+	// Ensure the path is within the test directory
+	relPath, err := filepath.Rel(testDir, cleanPath)
+	if err != nil || relPath == ".." || len(relPath) >= 2 && relPath[:2] == ".."+string(filepath.Separator) {
+		return nil, os.ErrNotExist
+	}
+
+	return os.ReadFile(cleanPath)
+}
+
 func TestValidator_RecordAndVerify(t *testing.T) {
 	tempDir := t.TempDir()
 
 	// Create a test file
 	testFilePath := filepath.Join(tempDir, "test.txt")
-	if err := os.WriteFile(testFilePath, []byte("test content"), 0644); err != nil {
+	if err := os.WriteFile(testFilePath, []byte("test content"), 0o644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
@@ -50,14 +81,14 @@ func TestValidator_RecordAndVerify(t *testing.T) {
 	// Test Verify with modified file
 	t.Run("Verify modified", func(t *testing.T) {
 		// Modify the file
-		if err := os.WriteFile(testFilePath, []byte("modified content"), 0644); err != nil {
+		if err := os.WriteFile(testFilePath, []byte("modified content"), 0o644); err != nil {
 			t.Fatalf("Failed to modify test file: %v", err)
 		}
 
 		err := validator.Verify(testFilePath)
 		if err == nil {
 			t.Error("Expected error with modified file, got nil")
-		} else if err != ErrMismatch {
+		} else if !errors.Is(err, ErrMismatch) {
 			t.Errorf("Expected ErrMismatch, got %v", err)
 		}
 	})
@@ -98,7 +129,7 @@ func TestValidator_GetHashFilePath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := validator.GetHashFilePath(tt.filePath)
-			if (err != nil) != (tt.expectedErr != nil) || (err != nil && err != tt.expectedErr) {
+			if (err != nil) != (tt.expectedErr != nil) || (err != nil && !errors.Is(err, tt.expectedErr)) {
 				t.Errorf("GetHashFilePath() error = %v, want %v", err, tt.expectedErr)
 			}
 		})
@@ -114,7 +145,7 @@ func TestValidator_GetTargetFilePath(t *testing.T) {
 
 	// Create a test file and its hash file
 	testFilePath := filepath.Join(tempDir, "test.txt")
-	if err := os.WriteFile(testFilePath, []byte("test content"), 0644); err != nil {
+	if err := os.WriteFile(testFilePath, []byte("test content"), 0o644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
@@ -190,7 +221,7 @@ func TestValidator_Record_Symlink(t *testing.T) {
 
 	// Create a test file
 	testFilePath := filepath.Join(tempDir, "test.txt")
-	if err := os.WriteFile(testFilePath, []byte("test content"), 0644); err != nil {
+	if err := os.WriteFile(testFilePath, []byte("test content"), 0o644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
@@ -208,7 +239,7 @@ func TestValidator_Record_Symlink(t *testing.T) {
 
 	// Test Record with symlink
 	err = validator.Record(symlinkPath)
-	if err != ErrIsSymlink {
+	if !errors.Is(err, ErrIsSymlink) {
 		t.Errorf("Expected ErrIsSymlink, got %v", err)
 	}
 }
@@ -218,7 +249,7 @@ func TestValidator_Verify_Symlink(t *testing.T) {
 
 	// Create a test file
 	testFilePath := filepath.Join(tempDir, "test.txt")
-	if err := os.WriteFile(testFilePath, []byte("test content"), 0644); err != nil {
+	if err := os.WriteFile(testFilePath, []byte("test content"), 0o644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
@@ -240,7 +271,7 @@ func TestValidator_Verify_Symlink(t *testing.T) {
 
 	// Test Verify with symlink
 	err = validator.Verify(symlinkPath)
-	if err != ErrIsSymlink {
+	if !errors.Is(err, ErrIsSymlink) {
 		t.Errorf("Expected ErrIsSymlink, got %v", err)
 	}
 }
@@ -253,7 +284,7 @@ type testValidator struct {
 }
 
 // GetHashFilePath overrides the original method to always return the same hash file path for testing.
-func (v *testValidator) GetHashFilePath(filePath string) (string, error) {
+func (v *testValidator) GetHashFilePath(_ string) (string, error) {
 	// Always return the same hash file path for testing purposes
 	path := filepath.Join(v.hashDir, "test.hash")
 	return path, nil
@@ -264,42 +295,42 @@ func (v *testValidator) Record(filePath string) error {
 	// Use our custom GetHashFilePath
 	hashFilePath, err := v.GetHashFilePath(filePath)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get hash file path: %w", err)
 	}
 
-	targetPath, err := v.Validator.validatePath(filePath)
+	targetPath, err := filepath.Abs(filePath)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
 	// Calculate hash of the file
-	hash, err := v.Validator.calculateHash(targetPath)
+	hash, err := v.calculateHash(targetPath)
 	if err != nil {
-		return fmt.Errorf("failed to calculate hash: %w", err)
+		return fmt.Errorf("%w: %v", ErrTestHashCalculation, err)
 	}
 
 	// Create the hash directory if it doesn't exist
-	if err := os.MkdirAll(filepath.Dir(hashFilePath), 0755); err != nil {
-		return fmt.Errorf("failed to create hash directory: %w", err)
+	if err := os.MkdirAll(filepath.Dir(hashFilePath), 0o755); err != nil {
+		return fmt.Errorf("%w: %v", ErrTestHashFileWrite, err)
 	}
 
 	// Check if the hash file already exists and contains a different path
-	if existingContent, err := os.ReadFile(hashFilePath); err == nil {
+	if existingContent, err := testSafeReadFile(v.hashDir, hashFilePath); err == nil {
 		// File exists, check the recorded path
 		parts := strings.SplitN(string(existingContent), "\n", 2)
 		if len(parts) >= 1 && parts[0] != targetPath {
-			return fmt.Errorf("hash collision detected: path '%s' conflicts with existing path '%s'", targetPath, parts[0])
+			return fmt.Errorf("%w: path '%s' conflicts with existing path '%s'", ErrTestHashCollision, targetPath, parts[0])
 		}
 		// If we get here, the file exists and has the same path, so we can overwrite it
 	} else if !os.IsNotExist(err) {
 		// Return error if it's not a "not exist" error
-		return fmt.Errorf("failed to check existing hash file: %w", err)
+		return fmt.Errorf("%w: %v", ErrTestHashFileRead, err)
 	}
 
 	// Write the target path and hash to the hash file
 	content := fmt.Sprintf("%s\n%s", targetPath, hash)
-	if err := os.WriteFile(hashFilePath, []byte(content), 0644); err != nil {
-		return fmt.Errorf("failed to write hash file: %w", err)
+	if err := os.WriteFile(hashFilePath, []byte(content), 0o644); err != nil {
+		return fmt.Errorf("%w: %v", ErrTestHashFileWrite, err)
 	}
 
 	return nil
@@ -310,27 +341,27 @@ func (v *testValidator) Verify(filePath string) error {
 	// Use our custom GetHashFilePath
 	hashFilePath, err := v.GetHashFilePath(filePath)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get hash file path: %w", err)
 	}
 
-	targetPath, err := v.Validator.validatePath(filePath)
+	targetPath, err := filepath.Abs(filePath)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
-	// Read the hash file
-	hashFileContent, err := os.ReadFile(hashFilePath)
+	// Read the stored hash file using test-safe function
+	hashFileContent, err := testSafeReadFile(v.hashDir, hashFilePath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return ErrHashFileNotFound
 		}
-		return fmt.Errorf("failed to read hash file: %w", err)
+		return fmt.Errorf("%w: %v", ErrTestHashFileRead, err)
 	}
 
 	// Parse the hash file content (format: "filepath\nhash")
 	parts := strings.SplitN(string(hashFileContent), "\n", 2)
 	if len(parts) != 2 {
-		return fmt.Errorf("invalid hash file format: expected 'path\nhash', got %d parts", len(parts))
+		return fmt.Errorf("%w: expected 'path\nhash', got %d parts", ErrInvalidHashFileFormat, len(parts))
 	}
 
 	// Check if the recorded path matches the current file path
@@ -338,17 +369,17 @@ func (v *testValidator) Verify(filePath string) error {
 	hash := parts[1]
 
 	if recordedPath == "" {
-		return fmt.Errorf("invalid hash file format: empty path")
+		return fmt.Errorf("%w: empty path", ErrInvalidHashFileFormat)
 	}
 
 	if recordedPath != targetPath {
-		return fmt.Errorf("hash collision detected: recorded path '%s' does not match current path '%s'", recordedPath, targetPath)
+		return fmt.Errorf("%w: recorded path '%s' does not match current path '%s'", ErrTestHashCollision, recordedPath, targetPath)
 	}
 
 	// Calculate the current hash of the file
-	currentHash, err := v.Validator.calculateHash(targetPath)
+	currentHash, err := v.calculateHash(targetPath)
 	if err != nil {
-		return fmt.Errorf("failed to calculate current hash: %w", err)
+		return fmt.Errorf("%w: %v", ErrTestHashCalculation, err)
 	}
 
 	// Compare the hashes
@@ -364,7 +395,7 @@ func TestValidator_HashCollision(t *testing.T) {
 	hashDir := filepath.Join(tempDir, "hashes")
 
 	// Create the hash directory
-	if err := os.MkdirAll(hashDir, 0755); err != nil {
+	if err := os.MkdirAll(hashDir, 0o755); err != nil {
 		t.Fatalf("Failed to create hash directory: %v", err)
 	}
 
@@ -373,11 +404,11 @@ func TestValidator_HashCollision(t *testing.T) {
 	file2Path := filepath.Join(tempDir, "file2.txt")
 
 	// Create the files with different content but same hash (due to our test algorithm)
-	if err := os.WriteFile(file1Path, []byte("test content 1"), 0644); err != nil {
+	if err := os.WriteFile(file1Path, []byte("test content 1"), 0o644); err != nil {
 		t.Fatalf("Failed to create test file 1: %v", err)
 	}
 
-	if err := os.WriteFile(file2Path, []byte("test content 2"), 0644); err != nil {
+	if err := os.WriteFile(file2Path, []byte("test content 2"), 0o644); err != nil {
 		t.Fatalf("Failed to create test file 2: %v", err)
 	}
 
@@ -403,7 +434,7 @@ func TestValidator_HashCollision(t *testing.T) {
 		}
 		// Verify the hash file was created with the correct content
 		hashFilePath := filepath.Join(hashDir, "test.hash")
-		_, err := os.ReadFile(hashFilePath)
+		_, err := testSafeReadFile(hashDir, hashFilePath)
 		if err != nil {
 			t.Fatalf("Failed to read hash file: %v", err)
 		}
@@ -433,7 +464,7 @@ func TestValidator_HashCollision(t *testing.T) {
 	t.Run("Verify with hash collision", func(t *testing.T) {
 		// Create a new test file that will have the same hash as file1
 		file3Path := filepath.Join(tempDir, "file3.txt")
-		if err := os.WriteFile(file3Path, []byte("different content"), 0644); err != nil {
+		if err := os.WriteFile(file3Path, []byte("different content"), 0o644); err != nil {
 			t.Fatalf("Failed to create test file 3: %v", err)
 		}
 
@@ -448,15 +479,15 @@ func TestValidator_HashCollision(t *testing.T) {
 			t.Fatalf("Hash file does not exist: %s", hashFilePath)
 		}
 
-		// Read the original hash file content
-		originalContent, err := os.ReadFile(hashFilePath)
+		// Read the original hash file content using test-safe function
+		originalContent, err := testSafeReadFile(hashDir, hashFilePath)
 		if err != nil {
 			t.Fatalf("Failed to read hash file: %v", err)
 		}
 
 		// Restore the original content after the test
 		defer func() {
-			if err := os.WriteFile(hashFilePath, originalContent, 0644); err != nil {
+			if err := os.WriteFile(hashFilePath, originalContent, 0o644); err != nil {
 				t.Logf("Warning: failed to restore original hash file: %v", err)
 			}
 		}()
@@ -469,7 +500,7 @@ func TestValidator_HashCollision(t *testing.T) {
 
 		// Write a hash file with file3's path but file1's hash
 		modifiedContent := file3Path + "\n" + parts[1]
-		if err := os.WriteFile(hashFilePath, []byte(modifiedContent), 0644); err != nil {
+		if err := os.WriteFile(hashFilePath, []byte(modifiedContent), 0o644); err != nil {
 			t.Fatalf("Failed to modify hash file: %v", err)
 		}
 

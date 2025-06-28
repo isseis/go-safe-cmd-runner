@@ -4,15 +4,19 @@ GOBUILD=$(GOCMD) build
 GOCLEAN=$(GOCMD) clean
 GOTEST=$(GOCMD) test
 GOGET=$(GOCMD) get
+GOLINT=golangci-lint run
 BINARY_NAME=go-safe-cmd-runner
 BINARY_PATH=build/$(BINARY_NAME)
 
 # Find all Go source files to use as dependencies for the build
 GO_SOURCES := $(shell find . -type f -name '*.go' -not -name '*_test.go')
 
-.PHONY: all build run clean test
+.PHONY: all lint build run clean test
 
 all: build
+
+lint:
+	$(GOLINT)
 
 # The phony 'build' target now depends on the actual binary file.
 build: $(BINARY_PATH)

@@ -27,7 +27,7 @@ func (m *MockHashAlgorithm) Sum(r io.Reader) (string, error) {
 	if len(hash) > 64 {
 		hash = hash[:64]
 	} else {
-		hash = hash + strings.Repeat("0", 64-len(hash))
+		hash += strings.Repeat("0", 64-len(hash))
 	}
 	return hash, nil
 }
