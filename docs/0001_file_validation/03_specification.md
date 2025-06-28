@@ -9,6 +9,17 @@
 -   パッケージ名: `filevalidator`
 -   配置場所: `internal/filevalidator`
 
+### 3.2.1. ディレクトリ構成
+
+```
+internal/
+└── filevalidator/
+    ├── validator.go         // Validator構造体と主要メソッド
+    ├── hash.go              // HashAlgorithmインターフェースとSHA256実装
+    ├── errors.go            // カスタムエラーの定義
+    └── validator_test.go    // 単体テスト
+```
+
 ## 3.3. データ構造とインターフェース
 
 ### 3.3.1. `Validator` 構造体
@@ -87,9 +98,11 @@ func (s *SHA256) Sum(r io.Reader) (string, error) {
 ### 3.4.1. `New` 関数
 
 ```go
-// New は、指定されたハッシュアルゴリズムで初期化された新しいValidatorを返す。
+// New は、指定されたハッシュアルゴリズムとハッシュファイルの保存先ディレクトリで
+// 初期化された新しいValidatorを返す。
+// hashDirは存在するディレクトリでなければならない。
 // algorithmがnilの場合はエラーを返す。
-func New(algorithm HashAlgorithm) (*Validator, error) {
+func New(algorithm HashAlgorithm, hashDir string) (*Validator, error) {
     // 実装の詳細
 }
 ```
@@ -98,11 +111,14 @@ func New(algorithm HashAlgorithm) (*Validator, error) {
 
 ```go
 // Record は、指定されたfilePathのファイルのハッシュ値を計算し、
-// `[filePath].[algorithm_name]` という名前のファイルに保存する。
+// ハッシュファイル保存先ディレクトリに保存する。
+// ハッシュファイル名は、対象ファイルの絶対パスをURL-safe Base64でエンコードしたものに
+// ハッシュアルゴリズムの拡張子（例: ".sha256"）を付与する。
 //
 // 以下のエラーを返す可能性がある:
 // - ErrInvalidFilePath: パスが無効な場合
 // - ErrIsSymlink: パスがシンボリックリンクの場合
+// - ErrNilAlgorithm: アルゴリズムが設定されていない場合
 // - ファイルI/Oに関する各種エラー
 func (v *Validator) Record(filePath string) error {
     // 実装の詳細
@@ -110,6 +126,56 @@ func (v *Validator) Record(filePath string) error {
 ```
 
 ### 3.4.3. `Validator.Verify` メソッド
+
+```go
+// Verify は、指定されたfilePathのファイルが、記録されたハッシュ値と
+// 一致するかどうかを検証する。
+// 一致しない場合は ErrMismatch を、ハッシュファイルが見つからない場合は
+// ErrHashFileNotFound を返す。
+//
+// 以下のエラーを返す可能性がある:
+// - ErrMismatch: ハッシュ値が一致しない場合
+// - ErrHashFileNotFound: ハッシュファイルが見つからない場合
+// - ErrInvalidFilePath: パスが無効な場合
+// - ErrIsSymlink: パスがシンボリックリンクの場合
+// - ファイルI/Oに関する各種エラー
+func (v *Validator) Verify(filePath string) error {
+    // 実装の詳細
+}
+```
+
+### 3.4.4. `Validator.GetHashFilePath` メソッド
+
+```go
+// GetHashFilePath は、指定されたfilePathに対応するハッシュファイルのパスを返す。
+// パスはURL-safe Base64でエンコードされ、ハッシュアルゴリズムの拡張子が付与される。
+// パスの検証も内部的に行われる。
+//
+// 以下のエラーを返す可能性がある:
+// - ErrInvalidFilePath: パスが無効な場合
+// - ErrIsSymlink: パスがシンボリックリンクの場合
+// - ErrNilAlgorithm: アルゴリズムが設定されていない場合
+// - ファイルI/Oに関する各種エラー
+func (v *Validator) GetHashFilePath(filePath string) (string, error) {
+    // 実装の詳細
+}
+```
+
+### 3.4.5. `Validator.GetTargetFilePath` メソッド
+
+```go
+// GetTargetFilePath は、指定されたhashFilePathから元のファイルパスをデコードして返す。
+// hashFilePathは、URL-safe Base64でエンコードされたファイルパスとハッシュアルゴリズムの
+// 拡張子（例: ".sha256"）で構成されている必要がある。
+// パスがv.hashDir内にない場合や、デコードに失敗した場合はエラーを返す。
+//
+// 以下のエラーを返す可能性がある:
+// - ErrInvalidFilePath: パスが無効、v.hashDir内にない、またはデコードに失敗した場合
+// - ファイルI/Oに関する各種エラー
+func (v *Validator) GetTargetFilePath(hashFilePath string) (string, error) {
+    // 実装の詳細
+}
+```
 
 ```go
 // Verify は、指定されたfilePathのファイルが、記録されたハッシュ値と
@@ -153,10 +219,32 @@ var (
 )
 ```
 
-## 3.6. 内部ヘルパー関数
+## 3.6. セキュリティ設計
+
+- **パス・トラバーサル対策**: 
+  - `path/filepath.Clean` を使用してパスを正規化
+  - `filepath.Abs` で絶対パスに変換し、意図しないディレクトリへのアクセスを防止
+  - ハッシュファイルの保存先ディレクトリ外へのアクセスを検出して拒否
+
+- **シンボリックリンク対策**:
+  - `os.Lstat` を使用して、操作対象がシンボリックリンクでないことを確認
+  - シンボリックリンクの場合は `ErrIsSymlink` を返す
+
+- **ファイル名エンコーディング**:
+  - ファイルパスはURL-safe Base64でエンコード
+  - パディング文字 (`=`) は除去
+  - エンコードには `encoding/base64` パッケージの `URLEncoding` を使用
+
+- **エラーハンドリング**:
+  - ファイルが存在しない、権限がない等のI/Oエラーは、詳細な情報を含むカスタムエラーとしてラップ
+  - エラーメッセージに機密情報が含まれないよう注意
+  - エラー型を適切に定義し、呼び出し元がエラーの種類に応じた処理を行えるようにする
+
+## 3.7. 内部ヘルパー関数
 
 `validator.go` 内に、非公開のヘルパー関数を定義する。
 
--   `getHashFilePath(filePath string) string`: 検証対象のファイルパスから、対応するハッシュファイルのパスを生成する。
+-   `encodePath(filePath string) (string, error)`: ファイルパスをURL-safe Base64でエンコードする。
+-   `decodePath(encoded string) (string, error)`: URL-safe Base64でエンコードされた文字列をデコードする。
 -   `validatePath(filePath string) (string, error)`: パスの正規化、絶対パスへの変換、シンボリックリンクのチェックなど、パスに関する一連の検証を行う。
 -   `calculateHash(filePath string) (string, error)`: 指定されたファイルのハッシュ値を計算する。
