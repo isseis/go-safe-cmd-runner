@@ -1,8 +1,7 @@
 version = "2"
 
 [linters]
-settings.cyclop.max-complexity = 10
-settings.cyclop.package-average = 0.5
+settings.gocyclo.min-complexity = 10
 settings.mnd = { checks = [
     "argument",
     "case",
