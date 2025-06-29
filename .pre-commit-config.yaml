@@ -1,4 +1,14 @@
 repos:
+-   repo: local
+    hooks:
+    -   id: go-test
+        name: go test
+        entry: go test -v ./...
+        language: system
+        types: [go]
+        pass_filenames: false
+        verbose: true
+
 -   repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
