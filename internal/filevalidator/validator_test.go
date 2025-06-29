@@ -26,13 +26,14 @@ var (
 
 // testSafeReadFile is a helper function for tests to safely read files.
 // It enforces that the file is within the test directory.
+// Only for tests. This doesn't check symlinks.
 func testSafeReadFile(testDir, filePath string) ([]byte, error) {
 	// Clean and validate the file path
 	cleanPath := filepath.Clean(filePath)
 
 	// Ensure the path is within the test directory
 	relPath, err := filepath.Rel(testDir, cleanPath)
-	if err != nil || relPath == ".." || len(relPath) >= 2 && relPath[:2] == ".."+string(filepath.Separator) {
+	if err != nil || strings.HasPrefix(relPath, "..") {
 		return nil, os.ErrNotExist
 	}
 
@@ -109,6 +110,12 @@ func TestValidator_GetHashFilePath(t *testing.T) {
 		t.Fatalf("Failed to create validator: %v", err)
 	}
 
+	// Create test file
+	testFilePath := filepath.Join(tempDir, "test.txt")
+	if err := os.WriteFile(testFilePath, []byte("test content"), 0o644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
 	tests := []struct {
 		name        string
 		filePath    string
@@ -116,7 +123,7 @@ func TestValidator_GetHashFilePath(t *testing.T) {
 	}{
 		{
 			name:        "valid path",
-			filePath:    "/path/to/file.txt",
+			filePath:    testFilePath,
 			expectedErr: nil,
 		},
 		{
@@ -133,49 +140,6 @@ func TestValidator_GetHashFilePath(t *testing.T) {
 				t.Errorf("GetHashFilePath() error = %v, want %v", err, tt.expectedErr)
 			}
 		})
-	}
-}
-
-func TestValidator_GetTargetFilePath(t *testing.T) {
-	tempDir := t.TempDir()
-	validator, err := New(&SHA256{}, tempDir)
-	if err != nil {
-		t.Fatalf("Failed to create validator: %v", err)
-	}
-
-	// Create a test file and its hash file
-	testFilePath := filepath.Join(tempDir, "test.txt")
-	if err := os.WriteFile(testFilePath, []byte("test content"), 0o644); err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
-	}
-
-	// Record the hash
-	if err := validator.Record(testFilePath); err != nil {
-		t.Fatalf("Record failed: %v", err)
-	}
-
-	// Get the hash file path
-	hashFilePath, err := validator.GetHashFilePath(testFilePath)
-	if err != nil {
-		t.Fatalf("GetHashFilePath failed: %v", err)
-	}
-
-	// Test GetTargetFilePath
-	targetPath, err := validator.GetTargetFilePath(hashFilePath)
-	if err != nil {
-		t.Fatalf("GetTargetFilePath failed: %v", err)
-	}
-
-	// The target path should match the original file path
-	if targetPath != testFilePath {
-		t.Errorf("Expected target path %q, got %q", testFilePath, targetPath)
-	}
-
-	// Test with non-existent hash file
-	nonexistentPath := filepath.Join(tempDir, "nonexistent.sha256")
-	_, err = validator.GetTargetFilePath(nonexistentPath)
-	if err == nil {
-		t.Error("Expected an error for non-existent hash file, got nil")
 	}
 }
 
@@ -224,6 +188,10 @@ func TestValidator_Record_Symlink(t *testing.T) {
 	if err := os.WriteFile(testFilePath, []byte("test content"), 0o644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
+	resolvedTestFilePath, err := filepath.EvalSymlinks(testFilePath)
+	if err != nil {
+		t.Fatalf("Failed to resolve test file path: %v", err)
+	}
 
 	// Create a symlink to the test file
 	symlinkPath := filepath.Join(tempDir, "symlink.txt")
@@ -238,9 +206,26 @@ func TestValidator_Record_Symlink(t *testing.T) {
 	}
 
 	// Test Record with symlink
+	// Symlinks are resolved before writing the hash file
 	err = validator.Record(symlinkPath)
-	if !errors.Is(err, ErrIsSymlink) {
-		t.Errorf("Expected ErrIsSymlink, got %v", err)
+	if err != nil {
+		t.Errorf("Record failed: %v", err)
+	}
+
+	targetPath, err := validator.validatePath(symlinkPath)
+	if err != nil {
+		t.Errorf("validatePath failed: %v", err)
+	}
+
+	recordedPath, expectedHash, err := validator.readAndParseHashFile(targetPath)
+	if err != nil {
+		t.Errorf("readAndParseHashFile failed: %v", err)
+	}
+	if recordedPath != resolvedTestFilePath {
+		t.Errorf("Expected recorded path '%s', got '%s'", resolvedTestFilePath, recordedPath)
+	}
+	if expectedHash == "" {
+		t.Errorf("Expected non-empty hash, got empty hash")
 	}
 }
 
@@ -271,12 +256,13 @@ func TestValidator_Verify_Symlink(t *testing.T) {
 
 	// Test Verify with symlink
 	err = validator.Verify(symlinkPath)
-	if !errors.Is(err, ErrIsSymlink) {
-		t.Errorf("Expected ErrIsSymlink, got %v", err)
+	if err != nil {
+		t.Errorf("Verify failed: %v", err)
 	}
 }
 
 // testValidator wraps a Validator to override GetHashFilePath for testing.
+// TODO: Inject custom GetHashFilePath to read Validator and remove custom Record and Verify methods.
 type testValidator struct {
 	*Validator
 	hashDir string

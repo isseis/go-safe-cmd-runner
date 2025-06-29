@@ -29,7 +29,7 @@ func TestErrorCases(t *testing.T) {
 				return filepath.Join(tempDir, "nonexistent.txt"), nil
 			},
 			wantErr:     os.ErrNotExist,
-			errContains: "file does not exist",
+			errContains: "no such file or directory",
 		},
 		{
 			name: "empty file path",
@@ -144,8 +144,8 @@ func TestFilesystemEdgeCases(t *testing.T) {
 		if err == nil {
 			t.Fatal("Expected error for directory, got nil")
 		}
-		if !strings.Contains(err.Error(), "is a directory") {
-			t.Errorf("Expected 'is a directory' error, got: %v", err)
+		if !strings.Contains(err.Error(), "not a regular file") {
+			t.Errorf("Expected 'not a regular file' error, got: %v", err)
 		}
 	})
 
@@ -238,7 +238,7 @@ func TestErrorMessages(t *testing.T) {
 		{
 			name:        "non-existent file",
 			filePath:    filepath.Join(tempDir, "nonexistent.txt"),
-			errContains: "file does not exist",
+			errContains: "no such file or directory",
 			skipVerify:  true, // Skip verify as it's the same as Record for non-existent files
 		},
 	}
