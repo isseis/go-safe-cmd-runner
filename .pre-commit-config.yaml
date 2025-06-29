@@ -7,7 +7,6 @@ repos:
         language: system
         types: [go]
         pass_filenames: false
-        always_run: true
         verbose: true
 
 -   repo: https://github.com/pre-commit/pre-commit-hooks
