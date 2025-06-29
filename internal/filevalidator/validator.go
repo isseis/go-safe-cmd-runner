@@ -112,19 +112,10 @@ func (v *Validator) Verify(filePath string) error {
 		return fmt.Errorf("failed to calculate file hash: %w", err)
 	}
 
-	recordedPath, expectedHash, err := v.readAndParseHashFile(targetPath)
+	_, expectedHash, err := v.readAndParseHashFile(targetPath)
 	if err != nil {
 		return err
 	}
-
-	// Check if the recorded path matches the current file path
-	if recordedPath == "" {
-		return fmt.Errorf("%w: empty path", ErrInvalidHashFileFormat)
-	}
-	if recordedPath != targetPath {
-		return fmt.Errorf("%w: recorded path '%s' does not match current path '%s'", ErrHashCollision, recordedPath, targetPath)
-	}
-
 	// Compare the hashes
 	if expectedHash != actualHash {
 		return ErrMismatch
@@ -230,7 +221,7 @@ func (v *Validator) calculateHash(filePath string) (string, error) {
 		if err := file.Close(); err != nil {
 			// Log the error but don't fail the operation
 			// as the file was successfully read
-			_ = fmt.Errorf("failed to close file: %w", err)
+			fmt.Printf("failed to close file: %v\n", err)
 		}
 	}()
 
