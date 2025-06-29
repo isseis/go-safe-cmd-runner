@@ -206,6 +206,7 @@ func TestValidator_Record_Symlink(t *testing.T) {
 	}
 
 	// Test Record with symlink
+	// Symlinks are resolved before writing the hash file
 	err = validator.Record(symlinkPath)
 	if err != nil {
 		t.Errorf("Record failed: %v", err)

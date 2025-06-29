@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -36,7 +37,7 @@ func safeReadFile(filePath string) ([]byte, error) {
 		if closeErr := file.Close(); closeErr != nil && err == nil {
 			// Log the error but don't fail the operation
 			// as the file was successfully read
-			fmt.Printf("error closing file: %v\n", closeErr)
+			log.Printf("error closing file: %v\n", closeErr)
 		}
 	}()
 

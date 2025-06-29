@@ -144,8 +144,8 @@ func TestFilesystemEdgeCases(t *testing.T) {
 		if err == nil {
 			t.Fatal("Expected error for directory, got nil")
 		}
-		if !strings.Contains(err.Error(), "is a directory") {
-			t.Errorf("Expected 'is a directory' error, got: %v", err)
+		if !strings.Contains(err.Error(), "not a regular file") {
+			t.Errorf("Expected 'not a regular file' error, got: %v", err)
 		}
 	})
 

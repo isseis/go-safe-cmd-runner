@@ -1,6 +1,7 @@
 package filevalidator
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
@@ -192,27 +193,23 @@ func (v *Validator) validatePath(filePath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// check if resolvedPath is a regular file
+	fileInfo, err := os.Lstat(resolvedPath)
+	if err != nil {
+		return "", err
+	}
+	if !fileInfo.Mode().IsRegular() {
+		return "", fmt.Errorf("%w: not a regular file: %s", ErrInvalidFilePath, resolvedPath)
+	}
 	return resolvedPath, nil
 }
 
 // calculateHash calculates the hash of the file at the given path.
 // filePath must be validated by validatePath before calling this function.
-// TODO: Define dedicated type for validated file path.
 func (v *Validator) calculateHash(filePath string) (string, error) {
-	// #nosec G304 - filePath is properly cleaned and validated by caller
-	file, err := os.Open(filePath)
-	if os.IsNotExist(err) {
+	content, err := safeReadFile(filePath)
+	if err != nil {
 		return "", err
-	} else if err != nil {
-		return "", fmt.Errorf("failed to open file: %w", err)
 	}
-	defer func() {
-		if err := file.Close(); err != nil {
-			// Log the error but don't fail the operation
-			// as the file was successfully read
-			fmt.Printf("failed to close file: %v\n", err)
-		}
-	}()
-
-	return v.algorithm.Sum(file)
+	return v.algorithm.Sum(bytes.NewReader(content))
 }
