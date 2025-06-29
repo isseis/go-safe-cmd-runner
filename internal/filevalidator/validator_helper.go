@@ -13,21 +13,9 @@ import (
 // safeReadFile reads a file safely after validating the path and checking file properties
 // It uses O_NOFOLLOW to prevent symlink attacks and performs all checks atomically
 func safeReadFile(filePath string) ([]byte, error) {
-	// Clean the path to prevent directory traversal and get absolute path
-	cleanPath := filepath.Clean(filePath)
-	if cleanPath == "." || cleanPath == ".." || cleanPath == "/" {
-		return nil, fmt.Errorf("%w: invalid path: %s", ErrInvalidFilePath, filePath)
-	}
-
-	// Get the absolute path
-	absPath, err := filepath.Abs(cleanPath)
+	absPath, err := filepath.Abs(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidFilePath, err)
-	}
-
-	// Verify the path is still absolute after cleaning and not a root directory
-	if !filepath.IsAbs(absPath) || absPath == "/" {
-		return nil, fmt.Errorf("%w: invalid absolute path: %s", ErrInvalidFilePath, absPath)
 	}
 
 	// Open the file with O_NOFOLLOW to prevent symlink following

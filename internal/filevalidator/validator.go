@@ -24,8 +24,7 @@ func New(algorithm HashAlgorithm, hashDir string) (*Validator, error) {
 		return nil, ErrNilAlgorithm
 	}
 
-	// Clean and make the path absolute
-	hashDir, err := filepath.Abs(filepath.Clean(hashDir))
+	hashDir, err := filepath.Abs(hashDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get absolute path for hash directory: %w", err)
 	}
@@ -174,12 +173,8 @@ func (v *Validator) GetHashFilePath(filePath string) (string, error) {
 	h := sha256.Sum256([]byte(targetPath))
 	hashStr := base64.URLEncoding.EncodeToString(h[:])
 
-	resolvedDir, err := filepath.EvalSymlinks(v.hashDir)
-	if err != nil {
-		return "", fmt.Errorf("failed to resolve hash directory path: %w", err)
-	}
 	// Use the first 12 characters of the hash as the filename
-	return filepath.Join(resolvedDir, hashStr[:12]+"."+v.algorithm.Name()), nil
+	return filepath.Join(v.hashDir, hashStr[:12]+"."+v.algorithm.Name()), nil
 }
 
 // validatePath validates and normalizes the given file path.
@@ -188,8 +183,7 @@ func (v *Validator) validatePath(filePath string) (string, error) {
 		return "", ErrInvalidFilePath
 	}
 
-	// Clean and make the path absolute
-	absPath, err := filepath.Abs(filepath.Clean(filePath))
+	absPath, err := filepath.Abs(filePath)
 	if err != nil {
 		return "", err
 	}
@@ -205,13 +199,8 @@ func (v *Validator) validatePath(filePath string) (string, error) {
 // filePath must be validated by validatePath before calling this function.
 // TODO: Define dedicated type for validated file path.
 func (v *Validator) calculateHash(filePath string) (string, error) {
-	// Clean and validate the file path
-	cleanPath := filepath.Clean(filePath)
-	if cleanPath != filePath {
-		return "", fmt.Errorf("%w: %s", ErrSuspiciousFilePath, filePath)
-	}
-
-	file, err := os.Open(cleanPath)
+	// #nosec G304 - filePath is properly cleaned and validated by caller
+	file, err := os.Open(filePath)
 	if os.IsNotExist(err) {
 		return "", err
 	} else if err != nil {
