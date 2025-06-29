@@ -14,7 +14,7 @@ func safeReadFile(filePath string) ([]byte, error) {
 	cleanPath := filepath.Clean(filePath)
 
 	// Get the absolute path to ensure we can properly check for directory traversal
-	abspath, err := filepath.Abs(cleanPath)
+	absPath, err := filepath.Abs(cleanPath)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidFilePath, err)
 	}
@@ -24,29 +24,33 @@ func safeReadFile(filePath string) ([]byte, error) {
 		return nil, fmt.Errorf("%w: path is not absolute: %s", ErrInvalidFilePath, cleanPath)
 	}
 
+	// Verify the file exists and is accessible
+	fileInfo, err := os.Stat(absPath)
+	if os.IsNotExist(err) {
+		return nil, err
+	} else if err != nil {
+		return nil, fmt.Errorf("failed to access file: %w", err)
+	}
+
 	// Verify the resolved path matches the cleaned path to prevent symlink attacks
-	resolvedPath, err := filepath.EvalSymlinks(abspath)
+	resolvedPath, err := filepath.EvalSymlinks(absPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve file path: %w", err)
 	}
-	if resolvedPath != abspath {
-		return nil, fmt.Errorf("%w: resolved path does not match: %s", ErrInvalidFilePath, resolvedPath)
-	}
-
-	// Verify the file exists and is accessible
-	fileInfo, err := os.Stat(abspath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to access file: %w", err)
+	if resolvedPath != absPath {
+		return nil, ErrIsSymlink
 	}
 
 	// Ensure it's a regular file (not a directory, symlink, etc.)
 	if !fileInfo.Mode().IsRegular() {
-		return nil, fmt.Errorf("%w: not a regular file: %s", ErrInvalidFilePath, abspath)
+		return nil, fmt.Errorf("%w: not a regular file: %s", ErrInvalidFilePath, absPath)
 	}
 
 	// Open the file with read-only flag
-	file, err := os.Open(abspath)
-	if err != nil {
+	file, err := os.Open(absPath)
+	if os.IsNotExist(err) {
+		return nil, err
+	} else if err != nil {
 		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
 

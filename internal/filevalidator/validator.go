@@ -104,42 +104,25 @@ func (v *Validator) Verify(filePath string) error {
 		return err
 	}
 
-	// Get the path to the hash file
-	hashFilePath, err := v.GetHashFilePath(targetPath)
+	// Calculate the current hash
+	actualHash, err := v.calculateHash(targetPath)
+	if os.IsNotExist(err) {
+		return err
+	} else if err != nil {
+		return fmt.Errorf("failed to calculate file hash: %w", err)
+	}
+
+	recordedPath, expectedHash, err := v.readAndParseHashFile(targetPath)
 	if err != nil {
 		return err
 	}
 
-	// Read the stored hash file
-	hashFileContent, err := safeReadFile(hashFilePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return ErrHashFileNotFound
-		}
-		return fmt.Errorf("failed to read hash file: %w", err)
-	}
-
-	// Parse the hash file content (format: "filepath\nhash")
-	parts := strings.SplitN(string(hashFileContent), "\n", 2)
-	if len(parts) != 2 {
-		return fmt.Errorf("%w: expected 'path\nhash', got %d parts", ErrInvalidHashFileFormat, len(parts))
-	}
-
 	// Check if the recorded path matches the current file path
-	recordedPath := parts[0]
 	if recordedPath == "" {
 		return fmt.Errorf("%w: empty path", ErrInvalidHashFileFormat)
 	}
 	if recordedPath != targetPath {
 		return fmt.Errorf("%w: recorded path '%s' does not match current path '%s'", ErrHashCollision, recordedPath, targetPath)
-	}
-
-	expectedHash := parts[1]
-
-	// Calculate the current hash
-	actualHash, err := v.calculateHash(targetPath)
-	if err != nil {
-		return fmt.Errorf("failed to calculate file hash: %w", err)
 	}
 
 	// Compare the hashes
@@ -150,65 +133,62 @@ func (v *Validator) Verify(filePath string) error {
 	return nil
 }
 
+func (v *Validator) readAndParseHashFile(targetPath string) (string, string, error) {
+	// Get the path to the hash file
+	hashFilePath, err := v.GetHashFilePath(targetPath)
+	if err != nil {
+		return "", "", err
+	}
+
+	// Read the stored hash file
+	hashFileContent, err := safeReadFile(hashFilePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", "", ErrHashFileNotFound
+		}
+		return "", "", fmt.Errorf("failed to read hash file: %w", err)
+	}
+
+	// Parse the hash file content (format: "filepath\nhash")
+	parts := strings.SplitN(string(hashFileContent), "\n", 2)
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("%w: expected 'path\nhash', got %d parts", ErrInvalidHashFileFormat, len(parts))
+	}
+
+	// Check if the recorded path matches the current file path
+	recordedPath := parts[0]
+	if recordedPath == "" {
+		return "", "", fmt.Errorf("%w: empty path", ErrInvalidHashFileFormat)
+	}
+	if recordedPath != targetPath {
+		return "", "", fmt.Errorf("%w: recorded path '%s' does not match current path '%s'", ErrHashCollision, recordedPath, targetPath)
+	}
+
+	expectedHash := parts[1]
+	return recordedPath, expectedHash, nil
+}
+
 // GetHashFilePath returns the path where the hash for the given file would be stored.
 func (v *Validator) GetHashFilePath(filePath string) (string, error) {
 	if v.algorithm == nil {
 		return "", ErrNilAlgorithm
 	}
 
-	if filePath == "" {
-		return "", ErrInvalidFilePath
-	}
-
-	encodedPath, err := encodePath(filePath)
+	targetPath, err := v.validatePath(filePath)
 	if err != nil {
 		return "", err
 	}
 
 	// Create a hash of the encoded path to handle long paths and special characters
-	h := sha256.Sum256([]byte(encodedPath))
+	h := sha256.Sum256([]byte(targetPath))
 	hashStr := base64.URLEncoding.EncodeToString(h[:])
 
+	resolvedDir, err := filepath.EvalSymlinks(v.hashDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve hash directory path: %w", err)
+	}
 	// Use the first 12 characters of the hash as the filename
-	return filepath.Join(v.hashDir, hashStr[:12]+"."+v.algorithm.Name()), nil
-}
-
-// GetTargetFilePath decodes the original file path from a hash file path.
-func (v *Validator) GetTargetFilePath(hashFilePath string) (string, error) {
-	if v.algorithm == nil {
-		return "", ErrNilAlgorithm
-	}
-
-	// Ensure the hash file is within the hash directory
-	hashFilePath, err := filepath.Abs(filepath.Clean(hashFilePath))
-	if err != nil {
-		return "", fmt.Errorf("invalid hash file path: %w", err)
-	}
-
-	relPath, err := filepath.Rel(v.hashDir, hashFilePath)
-	if err != nil || strings.HasPrefix(relPath, "..") {
-		return "", fmt.Errorf("hash file is not within the hash directory: %w", ErrInvalidFilePath)
-	}
-
-	// Extract the hash from the filename
-	ext := "." + v.algorithm.Name()
-	if !strings.HasSuffix(relPath, ext) {
-		return "", fmt.Errorf("invalid hash file extension: %w", ErrInvalidFilePath)
-	}
-
-	// Read the hash file content
-	content, err := os.ReadFile(hashFilePath)
-	if err != nil {
-		return "", fmt.Errorf("failed to read hash file: %w", err)
-	}
-
-	// The first line of the hash file contains the original file path
-	parts := strings.SplitN(string(content), "\n", 2)
-	if len(parts) < 1 {
-		return "", ErrInvalidHashFileFormat
-	}
-
-	return parts[0], nil
+	return filepath.Join(resolvedDir, hashStr[:12]+"."+v.algorithm.Name()), nil
 }
 
 // validatePath validates and normalizes the given file path.
@@ -218,28 +198,21 @@ func (v *Validator) validatePath(filePath string) (string, error) {
 	}
 
 	// Clean and make the path absolute
-	abspath, err := filepath.Abs(filepath.Clean(filePath))
+	absPath, err := filepath.Abs(filepath.Clean(filePath))
 	if err != nil {
-		return "", fmt.Errorf("%w: %v", ErrInvalidFilePath, err)
+		return "", err
 	}
 
-	// Check if the path is a symlink
-	info, err := os.Lstat(abspath)
+	resolvedPath, err := filepath.EvalSymlinks(absPath)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return "", fmt.Errorf("%w: %s", os.ErrNotExist, abspath)
-		}
-		return "", fmt.Errorf("failed to access file: %w", err)
+		return "", err
 	}
-
-	if info.Mode()&os.ModeSymlink != 0 {
-		return "", ErrIsSymlink
-	}
-
-	return abspath, nil
+	return resolvedPath, nil
 }
 
 // calculateHash calculates the hash of the file at the given path.
+// filePath must be validated by validatePath before calling this function.
+// TODO: Define dedicated type for validated file path.
 func (v *Validator) calculateHash(filePath string) (string, error) {
 	// Clean and validate the file path
 	cleanPath := filepath.Clean(filePath)
@@ -248,7 +221,9 @@ func (v *Validator) calculateHash(filePath string) (string, error) {
 	}
 
 	file, err := os.Open(cleanPath)
-	if err != nil {
+	if os.IsNotExist(err) {
+		return "", err
+	} else if err != nil {
 		return "", fmt.Errorf("failed to open file: %w", err)
 	}
 	defer func() {
@@ -260,20 +235,4 @@ func (v *Validator) calculateHash(filePath string) (string, error) {
 	}()
 
 	return v.algorithm.Sum(file)
-}
-
-// encodePath encodes a file path to a URL-safe base64 string.
-func encodePath(path string) (string, error) {
-	// Clean the path to remove any relative components
-	cleanPath := filepath.Clean(path)
-
-	// Convert to absolute path to ensure consistency
-	abspath, err := filepath.Abs(cleanPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to get absolute path: %w", err)
-	}
-
-	// Encode the path using URL-safe base64 without padding
-	encoded := base64.URLEncoding.EncodeToString([]byte(abspath))
-	return strings.TrimRight(encoded, "="), nil
 }

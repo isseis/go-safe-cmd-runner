@@ -29,7 +29,7 @@ func TestErrorCases(t *testing.T) {
 				return filepath.Join(tempDir, "nonexistent.txt"), nil
 			},
 			wantErr:     os.ErrNotExist,
-			errContains: "file does not exist",
+			errContains: "no such file or directory",
 		},
 		{
 			name: "empty file path",
@@ -238,7 +238,7 @@ func TestErrorMessages(t *testing.T) {
 		{
 			name:        "non-existent file",
 			filePath:    filepath.Join(tempDir, "nonexistent.txt"),
-			errContains: "file does not exist",
+			errContains: "no such file or directory",
 			skipVerify:  true, // Skip verify as it's the same as Record for non-existent files
 		},
 	}
