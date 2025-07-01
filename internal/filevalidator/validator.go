@@ -10,17 +10,56 @@ import (
 	"strings"
 )
 
+// HashFilePathGetter is an interface for getting the path where the hash for a file would be stored.
+// This is used to test file validation logic for handling hash collisions.
+type HashFilePathGetter interface {
+	// GetHashFilePath returns the path where the hash for the given file would be stored.
+	GetHashFilePath(hashAlgorithm HashAlgorithm, hashDir string, filePath string) (string, error)
+}
+
+// ProductionHashFilePathGetter is a concrete implementation of HashFilePathGetter.
+type ProductionHashFilePathGetter struct{}
+
+// GetHashFilePath returns the path where the hash for the given file would be stored.
+// This implementation uses a simple hash function to generate a hash file path.
+func (p *ProductionHashFilePathGetter) GetHashFilePath(hashAlgorithm HashAlgorithm, hashDir string, filePath string) (string, error) {
+	if hashAlgorithm == nil {
+		return "", ErrNilAlgorithm
+	}
+
+	targetPath, err := validatePath(filePath)
+	if err != nil {
+		return "", err
+	}
+
+	h := sha256.Sum256([]byte(targetPath))
+	hashStr := base64.URLEncoding.EncodeToString(h[:])
+
+	return filepath.Join(hashDir, hashStr[:12]+"."+hashAlgorithm.Name()), nil
+}
+
+// GetHashFilePath returns the path where the hash for the given file would be stored.
+func (v *Validator) GetHashFilePath(filePath string) (string, error) {
+	return v.hashFilePathGetter.GetHashFilePath(v.algorithm, v.hashDir, filePath)
+}
+
 // Validator provides functionality to record and verify file hashes.
 // It should be instantiated using the New function.
 type Validator struct {
-	algorithm HashAlgorithm
-	hashDir   string
+	algorithm          HashAlgorithm
+	hashDir            string
+	hashFilePathGetter HashFilePathGetter
 }
 
 // New initializes and returns a new Validator with the specified hash algorithm and hash directory.
 // Returns an error if the algorithm is nil or if the hash directory cannot be accessed.
-// The testing.T parameter is optional and used only for testing.
 func New(algorithm HashAlgorithm, hashDir string) (*Validator, error) {
+	return newValidator(algorithm, hashDir, &ProductionHashFilePathGetter{})
+}
+
+// newValidator initializes and returns a new Validator with the specified hash algorithm and hash directory.
+// Returns an error if the algorithm is nil or if the hash directory cannot be accessed.
+func newValidator(algorithm HashAlgorithm, hashDir string, hashFilePathGetter HashFilePathGetter) (*Validator, error) {
 	if algorithm == nil {
 		return nil, ErrNilAlgorithm
 	}
@@ -43,8 +82,9 @@ func New(algorithm HashAlgorithm, hashDir string) (*Validator, error) {
 	}
 
 	return &Validator{
-		algorithm: algorithm,
-		hashDir:   hashDir,
+		algorithm:          algorithm,
+		hashDir:            hashDir,
+		hashFilePathGetter: hashFilePathGetter,
 	}, nil
 }
 
@@ -52,7 +92,7 @@ func New(algorithm HashAlgorithm, hashDir string) (*Validator, error) {
 // The hash file is named using a URL-safe Base64 encoding of the file path.
 func (v *Validator) Record(filePath string) error {
 	// Validate the file path
-	targetPath, err := v.validatePath(filePath)
+	targetPath, err := validatePath(filePath)
 	if err != nil {
 		return err
 	}
@@ -75,7 +115,7 @@ func (v *Validator) Record(filePath string) error {
 	}
 
 	// Check if the hash file already exists and contains a different path
-	if existingContent, err := safeReadFile(hashFilePath); err == nil {
+	if existingContent, err := SafeReadFile(hashFilePath); err == nil {
 		// File exists, check the recorded path
 		parts := strings.SplitN(string(existingContent), "\n", 2)
 		if len(parts) == 0 {
@@ -92,14 +132,24 @@ func (v *Validator) Record(filePath string) error {
 	}
 
 	// Write the target path and hash to the hash file
-	return os.WriteFile(hashFilePath, []byte(fmt.Sprintf("%s\n%s", targetPath, hash)), 0o644)
+	return SafeWriteFile(hashFilePath, fmt.Appendf(nil, "%s\n%s", targetPath, hash), 0o644)
+}
+
+// GetHashAlgorithm returns the hash algorithm used by the validator.
+func (v *Validator) GetHashAlgorithm() HashAlgorithm {
+	return v.algorithm
+}
+
+// GetHashDir returns the directory for storing the hash files.
+func (v *Validator) GetHashDir() string {
+	return v.hashDir
 }
 
 // Verify checks if the file at filePath matches its recorded hash.
 // Returns ErrMismatch if the hashes don't match, or ErrHashFileNotFound if no hash is recorded.
 func (v *Validator) Verify(filePath string) error {
 	// Validate the file path
-	targetPath, err := v.validatePath(filePath)
+	targetPath, err := validatePath(filePath)
 	if err != nil {
 		return err
 	}
@@ -132,7 +182,7 @@ func (v *Validator) readAndParseHashFile(targetPath string) (string, string, err
 	}
 
 	// Read the stored hash file
-	hashFileContent, err := safeReadFile(hashFilePath)
+	hashFileContent, err := SafeReadFile(hashFilePath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", "", ErrHashFileNotFound
@@ -159,27 +209,8 @@ func (v *Validator) readAndParseHashFile(targetPath string) (string, string, err
 	return recordedPath, expectedHash, nil
 }
 
-// GetHashFilePath returns the path where the hash for the given file would be stored.
-func (v *Validator) GetHashFilePath(filePath string) (string, error) {
-	if v.algorithm == nil {
-		return "", ErrNilAlgorithm
-	}
-
-	targetPath, err := v.validatePath(filePath)
-	if err != nil {
-		return "", err
-	}
-
-	// Create a hash of the encoded path to handle long paths and special characters
-	h := sha256.Sum256([]byte(targetPath))
-	hashStr := base64.URLEncoding.EncodeToString(h[:])
-
-	// Use the first 12 characters of the hash as the filename
-	return filepath.Join(v.hashDir, hashStr[:12]+"."+v.algorithm.Name()), nil
-}
-
 // validatePath validates and normalizes the given file path.
-func (v *Validator) validatePath(filePath string) (string, error) {
+func validatePath(filePath string) (string, error) {
 	if filePath == "" {
 		return "", ErrInvalidFilePath
 	}
@@ -207,7 +238,7 @@ func (v *Validator) validatePath(filePath string) (string, error) {
 // calculateHash calculates the hash of the file at the given path.
 // filePath must be validated by validatePath before calling this function.
 func (v *Validator) calculateHash(filePath string) (string, error) {
-	content, err := safeReadFile(filePath)
+	content, err := SafeReadFile(filePath)
 	if err != nil {
 		return "", err
 	}

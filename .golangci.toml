@@ -48,7 +48,7 @@ enable = [
     "errchkjson", # some JSON-specific checks
     "nakedret",   # Detect naked returns
 ]
-exclusions.rules = [{ path = "_test\\.go", linters = ["gocyclo"] }]
+exclusions.rules = [{ path = "_test\\.go", linters = ["gocyclo", "gosec"] }]
 
 [formatters]
 enable = ["gofumpt"]

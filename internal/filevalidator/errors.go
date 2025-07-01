@@ -36,4 +36,10 @@ var (
 
 	// ErrSuspiciousFilePath indicates a potentially malicious file path was detected.
 	ErrSuspiciousFilePath = errors.New("suspicious file path detected")
+
+	// ErrFileTooLarge indicates that the file is too large.
+	ErrFileTooLarge = errors.New("file too large")
+
+	// ErrFileExists indicates that the file already exists.
+	ErrFileExists = errors.New("file exists")
 )

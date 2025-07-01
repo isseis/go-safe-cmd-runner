@@ -11,7 +11,7 @@ import (
 
 // TestErrorCases tests various error conditions and their messages
 func TestErrorCases(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := safeTempDir(t)
 	validator, err := New(&SHA256{}, tempDir)
 	if err != nil {
 		t.Fatalf("Failed to create validator: %v", err)
@@ -100,7 +100,7 @@ func TestErrorCases(t *testing.T) {
 
 // TestFilesystemEdgeCases tests various edge cases related to filesystem operations
 func TestFilesystemEdgeCases(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := safeTempDir(t)
 	validator, err := New(&SHA256{}, tempDir)
 	if err != nil {
 		t.Fatalf("Failed to create validator: %v", err)
@@ -216,7 +216,7 @@ func TestFilesystemEdgeCases(t *testing.T) {
 
 // TestErrorMessages verifies that error messages are clear and helpful
 func TestErrorMessages(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := safeTempDir(t)
 	validator, err := New(&SHA256{}, tempDir)
 	if err != nil {
 		t.Fatalf("Failed to create validator: %v", err)
