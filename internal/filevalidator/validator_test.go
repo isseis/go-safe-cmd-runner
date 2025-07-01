@@ -41,12 +41,18 @@ func testSafeReadFile(testDir, filePath string) ([]byte, error) {
 }
 
 func TestValidator_RecordAndVerify(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := safeTempDir(t)
 
 	// Create a test file
 	testFilePath := filepath.Join(tempDir, "test.txt")
 	if err := os.WriteFile(testFilePath, []byte("test content"), 0o644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Resolve any symlinks in the test file path
+	testFilePath, err := filepath.EvalSymlinks(testFilePath)
+	if err != nil {
+		t.Fatalf("Failed to resolve symlinks in test file path: %v", err)
 	}
 
 	// Create a validator
@@ -104,7 +110,7 @@ func TestValidator_RecordAndVerify(t *testing.T) {
 }
 
 func TestValidator_GetHashFilePath(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := safeTempDir(t)
 	validator, err := New(&SHA256{}, tempDir)
 	if err != nil {
 		t.Fatalf("Failed to create validator: %v", err)
@@ -153,13 +159,13 @@ func TestNew(t *testing.T) {
 		{
 			name:    "valid",
 			algo:    &SHA256{},
-			hashDir: t.TempDir(),
+			hashDir: safeTempDir(t),
 			wantErr: false,
 		},
 		{
 			name:    "nil algorithm",
 			algo:    nil,
-			hashDir: t.TempDir(),
+			hashDir: safeTempDir(t),
 			wantErr: true,
 		},
 		{
@@ -181,23 +187,32 @@ func TestNew(t *testing.T) {
 }
 
 func TestValidator_Record_Symlink(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := safeTempDir(t)
 
 	// Create a test file
 	testFilePath := filepath.Join(tempDir, "test.txt")
 	if err := os.WriteFile(testFilePath, []byte("test content"), 0o644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
+
+	// Get the real path (resolving symlinks)
 	resolvedTestFilePath, err := filepath.EvalSymlinks(testFilePath)
 	if err != nil {
-		t.Fatalf("Failed to resolve test file path: %v", err)
+		t.Fatalf("Failed to resolve symlinks in test file path: %v", err)
 	}
 
 	// Create a symlink to the test file
 	symlinkPath := filepath.Join(tempDir, "symlink.txt")
-	if err := os.Symlink(testFilePath, symlinkPath); err != nil {
+	if err := os.Symlink(resolvedTestFilePath, symlinkPath); err != nil {
 		t.Fatalf("Failed to create symlink: %v", err)
 	}
+
+	// Resolve the symlink to get the expected path
+	resolvedSymlinkPath, err := filepath.EvalSymlinks(symlinkPath)
+	if err != nil {
+		t.Fatalf("Failed to resolve symlink: %v", err)
+	}
+	expectedPath := resolvedSymlinkPath
 
 	// Create a validator
 	validator, err := New(&SHA256{}, tempDir)
@@ -212,7 +227,7 @@ func TestValidator_Record_Symlink(t *testing.T) {
 		t.Errorf("Record failed: %v", err)
 	}
 
-	targetPath, err := validator.validatePath(symlinkPath)
+	targetPath, err := validatePath(symlinkPath)
 	if err != nil {
 		t.Errorf("validatePath failed: %v", err)
 	}
@@ -221,8 +236,8 @@ func TestValidator_Record_Symlink(t *testing.T) {
 	if err != nil {
 		t.Errorf("readAndParseHashFile failed: %v", err)
 	}
-	if recordedPath != resolvedTestFilePath {
-		t.Errorf("Expected recorded path '%s', got '%s'", resolvedTestFilePath, recordedPath)
+	if recordedPath != expectedPath {
+		t.Errorf("Expected recorded path '%s', got '%s'", expectedPath, recordedPath)
 	}
 	if expectedHash == "" {
 		t.Errorf("Expected non-empty hash, got empty hash")
@@ -230,12 +245,18 @@ func TestValidator_Record_Symlink(t *testing.T) {
 }
 
 func TestValidator_Verify_Symlink(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := safeTempDir(t)
 
 	// Create a test file
 	testFilePath := filepath.Join(tempDir, "test.txt")
 	if err := os.WriteFile(testFilePath, []byte("test content"), 0o644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Resolve any symlinks in the test file path
+	testFilePath, err := filepath.EvalSymlinks(testFilePath)
+	if err != nil {
+		t.Fatalf("Failed to resolve symlinks in test file path: %v", err)
 	}
 
 	// Create a validator and record the original file
@@ -261,121 +282,15 @@ func TestValidator_Verify_Symlink(t *testing.T) {
 	}
 }
 
-// testValidator wraps a Validator to override GetHashFilePath for testing.
-type testValidator struct {
-	*Validator
-	hashDir string
-}
+type CollidingHashFilePathGetter struct{}
 
-// GetHashFilePath overrides the original method to always return the same hash file path for testing.
-func (v *testValidator) GetHashFilePath(_ string) (string, error) {
-	// Always return the same hash file path for testing purposes
-	path := filepath.Join(v.hashDir, "test.hash")
-	return path, nil
-}
-
-// Record overrides the Validator's Record method to use our custom GetHashFilePath
-func (v *testValidator) Record(filePath string) error {
-	// Use our custom GetHashFilePath
-	hashFilePath, err := v.GetHashFilePath(filePath)
-	if err != nil {
-		return fmt.Errorf("failed to get hash file path: %w", err)
-	}
-
-	targetPath, err := filepath.Abs(filePath)
-	if err != nil {
-		return fmt.Errorf("failed to get absolute path: %w", err)
-	}
-
-	// Calculate hash of the file
-	hash, err := v.calculateHash(targetPath)
-	if err != nil {
-		return fmt.Errorf("%w: %v", ErrTestHashCalculation, err)
-	}
-
-	// Create the hash directory if it doesn't exist
-	if err := os.MkdirAll(filepath.Dir(hashFilePath), 0o755); err != nil {
-		return fmt.Errorf("%w: %v", ErrTestHashFileWrite, err)
-	}
-
-	// Check if the hash file already exists and contains a different path
-	if existingContent, err := testSafeReadFile(v.hashDir, hashFilePath); err == nil {
-		// File exists, check the recorded path
-		parts := strings.SplitN(string(existingContent), "\n", 2)
-		if len(parts) >= 1 && parts[0] != targetPath {
-			return fmt.Errorf("%w: path '%s' conflicts with existing path '%s'", ErrTestHashCollision, targetPath, parts[0])
-		}
-		// If we get here, the file exists and has the same path, so we can overwrite it
-	} else if !os.IsNotExist(err) {
-		// Return error if it's not a "not exist" error
-		return fmt.Errorf("%w: %v", ErrTestHashFileRead, err)
-	}
-
-	// Write the target path and hash to the hash file
-	content := fmt.Sprintf("%s\n%s", targetPath, hash)
-	if err := os.WriteFile(hashFilePath, []byte(content), 0o644); err != nil {
-		return fmt.Errorf("%w: %v", ErrTestHashFileWrite, err)
-	}
-
-	return nil
-}
-
-// Verify overrides the Validator's Verify method to use our custom GetHashFilePath
-func (v *testValidator) Verify(filePath string) error {
-	// Use our custom GetHashFilePath
-	hashFilePath, err := v.GetHashFilePath(filePath)
-	if err != nil {
-		return fmt.Errorf("failed to get hash file path: %w", err)
-	}
-
-	targetPath, err := filepath.Abs(filePath)
-	if err != nil {
-		return fmt.Errorf("failed to get absolute path: %w", err)
-	}
-
-	// Read the stored hash file using test-safe function
-	hashFileContent, err := testSafeReadFile(v.hashDir, hashFilePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return ErrHashFileNotFound
-		}
-		return fmt.Errorf("%w: %v", ErrTestHashFileRead, err)
-	}
-
-	// Parse the hash file content (format: "filepath\nhash")
-	parts := strings.SplitN(string(hashFileContent), "\n", 2)
-	if len(parts) != 2 {
-		return fmt.Errorf("%w: expected 'path\nhash', got %d parts", ErrInvalidHashFileFormat, len(parts))
-	}
-
-	// Check if the recorded path matches the current file path
-	recordedPath := parts[0]
-	hash := parts[1]
-
-	if recordedPath == "" {
-		return fmt.Errorf("%w: empty path", ErrInvalidHashFileFormat)
-	}
-
-	if recordedPath != targetPath {
-		return fmt.Errorf("%w: recorded path '%s' does not match current path '%s'", ErrTestHashCollision, recordedPath, targetPath)
-	}
-
-	// Calculate the current hash of the file
-	currentHash, err := v.calculateHash(targetPath)
-	if err != nil {
-		return fmt.Errorf("%w: %v", ErrTestHashCalculation, err)
-	}
-
-	// Compare the hashes
-	if currentHash != hash {
-		return ErrMismatch
-	}
-
-	return nil
+// GetHashFilePath always returns the same path, so it simulates a hash collision.
+func (t *CollidingHashFilePathGetter) GetHashFilePath(_ HashAlgorithm, hashDir string, _ string) (string, error) {
+	return filepath.Join(hashDir, "test.hash"), nil
 }
 
 func TestValidator_HashCollision(t *testing.T) {
-	tempDir := t.TempDir()
+	tempDir := safeTempDir(t)
 	hashDir := filepath.Join(tempDir, "hashes")
 
 	// Create the hash directory
@@ -399,15 +314,9 @@ func TestValidator_HashCollision(t *testing.T) {
 	// Create a validator with a colliding hash algorithm
 	// This algorithm will return the same hash for any input
 	fixedHash := "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
-	baseValidator, err := New(NewCollidingHashAlgorithm(fixedHash), hashDir)
+	validator, err := newValidator(NewCollidingHashAlgorithm(fixedHash), hashDir, &CollidingHashFilePathGetter{})
 	if err != nil {
 		t.Fatalf("Failed to create validator: %v", err)
-	}
-
-	// Wrap the validator with our test implementation
-	validator := &testValidator{
-		Validator: baseValidator,
-		hashDir:   hashDir,
 	}
 
 	// Record the first file - should succeed
