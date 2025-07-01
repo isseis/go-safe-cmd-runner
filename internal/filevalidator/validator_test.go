@@ -262,7 +262,6 @@ func TestValidator_Verify_Symlink(t *testing.T) {
 }
 
 // testValidator wraps a Validator to override GetHashFilePath for testing.
-// TODO: Inject custom GetHashFilePath to read Validator and remove custom Record and Verify methods.
 type testValidator struct {
 	*Validator
 	hashDir string
@@ -410,7 +409,6 @@ func TestValidator_HashCollision(t *testing.T) {
 	validator := &testValidator{
 		Validator: baseValidator,
 		hashDir:   hashDir,
-		t:         t,
 	}
 
 	// Record the first file - should succeed
