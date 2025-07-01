@@ -12,9 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: stable
           cache: true
 
       - name: Checkout code
@@ -33,18 +33,18 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: '1.22'
-
-      - name: Checkout code
+      - name: Setup Go
         uses: actions/checkout@v4
 
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v3
+      - name: Checkout code
+        uses: actions/setup-go@v5
         with:
-          version: latest
+          go-version: stable
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.1
           args: --timeout=5m
 
   build:
@@ -52,9 +52,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: stable
 
       - name: Checkout code
         uses: actions/checkout@v4
