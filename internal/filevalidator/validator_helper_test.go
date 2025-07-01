@@ -57,6 +57,7 @@ func TestSafeWriteFile(t *testing.T) {
 				return filePath, []byte("new content"), 0o600
 			},
 			wantErr: true,
+			errType: ErrFileExists,
 			cleanup: func(_ *testing.T, _ string) {
 				// No cleanup needed as t.TempDir() is automatically cleaned up
 			},
@@ -234,7 +235,7 @@ func TestSafeReadFile(t *testing.T) {
 				return filePath
 			},
 			wantErr: true,
-			errType: nil, // We'll check the error message contains the size limit
+			errType: ErrFileTooLarge,
 		},
 	}
 

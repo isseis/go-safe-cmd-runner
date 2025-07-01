@@ -31,7 +31,7 @@ func SafeWriteFile(filePath string, content []byte, perm os.FileMode) (err error
 	// First try to open the file with O_NOFOLLOW to prevent following symlinks
 	// G304: This is a safe usage of filepath as we're using O_NOFOLLOW and will verify the path components
 	// nolint:gosec // The path is validated after opening to prevent TOCTOU
-	file, err := os.OpenFile(abspath, os.O_WRONLY|os.O_CREATE|os.O_EXCL|os.O_TRUNC|syscall.O_NOFOLLOW, perm)
+	file, err := os.OpenFile(abspath, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, perm)
 	if err != nil {
 		switch {
 		case os.IsExist(err):
