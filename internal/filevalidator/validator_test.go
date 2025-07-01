@@ -265,7 +265,6 @@ func TestValidator_Verify_Symlink(t *testing.T) {
 type testValidator struct {
 	*Validator
 	hashDir string
-	t       *testing.T // Add testing.T for logging
 }
 
 // GetHashFilePath overrides the original method to always return the same hash file path for testing.
