@@ -6,7 +6,6 @@
 package filevalidator
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -64,7 +63,7 @@ func safeWriteFileWithFS(filePath string, content []byte, perm os.FileMode, fs F
 		switch {
 		case os.IsExist(err):
 			return ErrFileExists
-		case isSymlinkError(err):
+		case isNoFollowError(err):
 			return ErrIsSymlink
 		default:
 			return fmt.Errorf("failed to open file: %w", err)
@@ -180,7 +179,7 @@ func openFileSafely(filePath string) (*os.File, error) {
 		if os.IsNotExist(err) {
 			return nil, err
 		}
-		if isSymlinkError(err) {
+		if isNoFollowError(err) {
 			return nil, ErrIsSymlink
 		}
 		return nil, fmt.Errorf("failed to open file: %w", err)
@@ -226,26 +225,16 @@ func validateFile(file File, filePath string) (os.FileInfo, error) {
 	return fileInfo, nil
 }
 
-// isSymlinkError checks if the error indicates we tried to open a symlink
-func isSymlinkError(err error) bool {
+// isNoFollowError checks if the error indicates we tried to open a symlink
+func isNoFollowError(err error) bool {
 	e, ok := err.(*os.PathError)
 	if !ok {
 		return false
 	}
-	// Different OSes return different error numbers for O_NOFOLLOW on a symlink
-	return isELOOP(e.Err) || isEISL(e.Err)
-}
-
-// isELOOP checks if the error is "too many levels of symbolic links"
-func isELOOP(err error) bool {
-	return errors.Is(err, syscall.ELOOP) ||
-		errors.Is(err, syscall.EMLINK) ||
-		errors.Is(err, syscall.ENAMETOOLONG)
-}
-
-// isEISL checks if the error is "invalid argument" (some systems return this for O_NOFOLLOW on symlinks)
-func isEISL(err error) bool {
-	return errors.Is(err, syscall.EINVAL) ||
-		errors.Is(err, syscall.EISDIR) ||
-		errors.Is(err, syscall.ENOTDIR)
+	switch e.Err {
+	case syscall.ELOOP, syscall.EMLINK, syscall.EFTYPE:
+		return true
+	default:
+		return false
+	}
 }

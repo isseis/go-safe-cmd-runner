@@ -4,7 +4,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"syscall"
 	"testing"
 )
@@ -28,7 +27,6 @@ func TestSafeWriteFile(t *testing.T) {
 		setup   func(t *testing.T) (string, []byte, os.FileMode)
 		wantErr bool
 		errType error
-		cleanup func(t *testing.T, path string)
 	}{
 		{
 			name: "write to new file",
@@ -39,9 +37,6 @@ func TestSafeWriteFile(t *testing.T) {
 				return filePath, content, 0o644
 			},
 			wantErr: false,
-			cleanup: func(_ *testing.T, _ string) {
-				// No cleanup needed as t.TempDir() is automatically cleaned up
-			},
 		},
 		{
 			name: "write to existing file should fail",
@@ -58,9 +53,6 @@ func TestSafeWriteFile(t *testing.T) {
 			},
 			wantErr: true,
 			errType: ErrFileExists,
-			cleanup: func(_ *testing.T, _ string) {
-				// No cleanup needed as t.TempDir() is automatically cleaned up
-			},
 		},
 		{
 			name: "write to directory should fail",
@@ -107,9 +99,6 @@ func TestSafeWriteFile(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			path, content, perm := tt.setup(t)
-			if tt.cleanup != nil {
-				defer tt.cleanup(t, path)
-			}
 
 			err := SafeWriteFile(path, content, perm)
 			if (err != nil) != tt.wantErr {
@@ -128,7 +117,7 @@ func TestSafeWriteFile(t *testing.T) {
 
 			if !tt.wantErr {
 				// Verify file was created with correct content and permissions
-				info, err := os.Stat(path)
+				info, err := os.Lstat(path)
 				if err != nil {
 					t.Fatalf("Failed to stat file: %v", err)
 				}
@@ -266,28 +255,30 @@ func TestSafeReadFile(t *testing.T) {
 	}
 }
 
-func TestIsSymlinkError(t *testing.T) {
+func TestIsNoFollowError(t *testing.T) {
 	tests := []struct {
 		name string
 		err  error
 		want bool
 	}{
+		// POSIX system returns ELOOP when opening a symlink with O_NOFOLLOW
 		{
 			name: "ELOOP error",
 			err:  &os.PathError{Err: syscall.ELOOP},
 			want: true,
 		},
-		/*
-			Temporary disable until we find a way to handle platform specific behavior differences.
-
-			// EISL is not available on all platforms, so we'll test with a custom error
-			// that simulates the behavior we expect from isSymlinkError
-			{
-				name: "EISL error",
-				err:  &os.PathError{Err: syscall.EINVAL},
-				want: false, // On platforms without EISL, this should be false
-			},
-		*/
+		// FreeBSD returns EMLINK when opening a symlink with O_NOFOLLOW
+		{
+			name: "EMLINK error",
+			err:  &os.PathError{Err: syscall.EMLINK},
+			want: true,
+		},
+		// NetBSD returns EFTYPE when opening a symlink with O_NOFOLLOW
+		{
+			name: "EFTYPE error",
+			err:  &os.PathError{Err: syscall.EFTYPE},
+			want: true,
+		},
 		{
 			name: "other error",
 			err:  os.ErrNotExist,
@@ -302,8 +293,8 @@ func TestIsSymlinkError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := isSymlinkError(tt.err); got != tt.want {
-				t.Errorf("isSymlinkError() = %v, want %v", got, tt.want)
+			if got := isNoFollowError(tt.err); got != tt.want {
+				t.Errorf("isNoFollowError() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -365,50 +356,37 @@ func (fs failingWriteFS) OpenFile(name string, flag int, perm os.FileMode) (File
 }
 
 func TestSafeWriteFile_FileCloseError(t *testing.T) {
-	// Skip this test on Windows as the file locking behavior is different
-	if runtime.GOOS == "windows" {
-		t.Skip("Skipping test on Windows due to different file locking behavior")
-	}
-
 	t.Run("close error only", func(t *testing.T) {
-		// Create a temporary directory for the test
 		tempDir := safeTempDir(t)
 		filePath := filepath.Join(tempDir, "testfile.txt")
 
 		// Create a test file system that will return failing files
 		fs := failingCloseFS{FileSystem: defaultFS}
-
-		// Call safeWriteFileWithFS with our test file system
 		err := safeWriteFileWithFS(filePath, []byte("test"), 0o644, fs)
 		if err == nil {
 			t.Fatal("Expected error when closing file fails, got nil")
 		}
 
 		// The error should be related to file closing
-		expectedErr := "failed to close file: simulated close error"
-		if err.Error() != expectedErr {
-			t.Errorf("Expected error %q, got: %v", expectedErr, err)
+		if !errors.Is(err, errSimulatedClose) {
+			t.Errorf("Expected error %q, got: %v", errSimulatedClose, err)
 		}
 	})
 
 	t.Run("write error takes precedence over close error", func(t *testing.T) {
-		// Create a temporary directory for the test
 		tempDir := safeTempDir(t)
 		filePath := filepath.Join(tempDir, "testfile.txt")
 
 		// Create a test file system that will return files that fail on both write and close
 		fs := failingWriteFS{FileSystem: defaultFS}
-
-		// Call safeWriteFileWithFS with our test file system
 		err := safeWriteFileWithFS(filePath, []byte("test"), 0o644, fs)
 		if err == nil {
 			t.Fatal("Expected error when writing to file, got nil")
 		}
 
 		// The error should be the write error, not the close error
-		expectedErr := "failed to write file: simulated write error"
-		if err.Error() != expectedErr {
-			t.Errorf("Expected error %q, got: %v", expectedErr, err)
+		if !errors.Is(err, errSimulatedWrite) {
+			t.Errorf("Expected error %q, got: %v", errSimulatedWrite, err)
 		}
 	})
 }
