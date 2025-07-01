@@ -15,6 +15,29 @@ import (
 	"syscall"
 )
 
+// FileSystem is an interface that abstracts file system operations
+type FileSystem interface {
+	OpenFile(name string, flag int, perm os.FileMode) (File, error)
+}
+
+// File is an interface that abstracts file operations
+type File interface {
+	Write(b []byte) (n int, err error)
+	Close() error
+	Stat() (os.FileInfo, error)
+}
+
+// osFS implements FileSystem using the local disk
+// nolint:gosec // The path is validated after opening to prevent TOCTOU
+var defaultFS FileSystem = osFS{}
+
+type osFS struct{}
+
+// nolint:gosec // The path is validated after opening to prevent TOCTOU
+func (osFS) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
+	return os.OpenFile(name, flag, perm)
+}
+
 // SafeWriteFile writes a file safely after validating the path and checking file properties.
 // It checks all path components for symlinks and uses O_NOFOLLOW to prevent symlink attacks.
 // The function is designed to be secure against TOCTOU (Time-of-Check Time-of-Use) race conditions
@@ -23,7 +46,12 @@ import (
 // Note: The filepath parameter is intentionally not restricted to a safe directory as the
 // function is designed to work with any valid file path while maintaining security.
 func SafeWriteFile(filePath string, content []byte, perm os.FileMode) (err error) {
-	abspath, err := filepath.Abs(filePath)
+	return safeWriteFileWithFS(filePath, content, perm, defaultFS)
+}
+
+// safeWriteFileWithFS is the internal implementation that accepts a FileSystem for testing
+func safeWriteFileWithFS(filePath string, content []byte, perm os.FileMode, fs FileSystem) (err error) {
+	absPath, err := filepath.Abs(filePath)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidFilePath, err)
 	}
@@ -31,7 +59,7 @@ func SafeWriteFile(filePath string, content []byte, perm os.FileMode) (err error
 	// First try to open the file with O_NOFOLLOW to prevent following symlinks
 	// G304: This is a safe usage of filepath as we're using O_NOFOLLOW and will verify the path components
 	// nolint:gosec // The path is validated after opening to prevent TOCTOU
-	file, err := os.OpenFile(abspath, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, perm)
+	file, err := fs.OpenFile(absPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, perm)
 	if err != nil {
 		switch {
 		case os.IsExist(err):
@@ -51,17 +79,17 @@ func SafeWriteFile(filePath string, content []byte, perm os.FileMode) (err error
 	}()
 
 	// Now verify the directory components using the file descriptor to prevent TOCTOU
-	if err := verifyPathComponents(abspath); err != nil {
+	if err := verifyPathComponents(absPath); err != nil {
 		return err
 	}
 
 	// Validate the file is a regular file (not a device, pipe, etc.)
-	if _, err := validateFile(file, abspath); err != nil {
+	if _, err := validateFile(file, absPath); err != nil {
 		return err
 	}
 
 	// Write the content
-	if _, err := file.Write(content); err != nil {
+	if _, err = file.Write(content); err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
 
@@ -185,7 +213,7 @@ func readFileContent(file *os.File, filePath string) ([]byte, error) {
 
 // validateFile checks if the file is a regular file and returns its FileInfo
 // To prevent TOCTOU attacks, we use the file descriptor to get the file info
-func validateFile(file *os.File, filePath string) (os.FileInfo, error) {
+func validateFile(file File, filePath string) (os.FileInfo, error) {
 	fileInfo, err := file.Stat()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get file info: %w", err)

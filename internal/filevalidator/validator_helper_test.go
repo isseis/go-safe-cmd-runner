@@ -309,30 +309,106 @@ func TestIsSymlinkError(t *testing.T) {
 	}
 }
 
+// failingFile is a file that fails on Close
+type failingFile struct {
+	File
+}
+
+var errSimulatedClose = errors.New("simulated close error")
+
+func (f *failingFile) Close() error {
+	// Always return an error when closing
+	return errSimulatedClose
+}
+
+// failingCloseFS is a FileSystem that returns files that fail on Close
+type failingCloseFS struct {
+	FileSystem
+}
+
+func (fs failingCloseFS) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
+	f, err := fs.FileSystem.OpenFile(name, flag, perm)
+	if err != nil {
+		return nil, err
+	}
+	return &failingFile{File: f}, nil
+}
+
+// failingWriteCloseFS is a file that fails on Write and Close
+type failingWriteCloseFS struct {
+	File
+}
+
+var errSimulatedWrite = errors.New("simulated write error")
+
+func (f *failingWriteCloseFS) Write(_ []byte) (n int, err error) {
+	return 0, errSimulatedWrite
+}
+
+func (f *failingWriteCloseFS) Close() error {
+	// Call the original Close to ensure cleanup
+	_ = f.File.Close()
+	return errSimulatedClose
+}
+
+// failingWriteFS is a FileSystem that returns files that fail on Write and Close
+type failingWriteFS struct {
+	FileSystem
+}
+
+func (fs failingWriteFS) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
+	f, err := fs.FileSystem.OpenFile(name, flag, perm)
+	if err != nil {
+		return nil, err
+	}
+	return &failingWriteCloseFS{File: f}, nil
+}
+
 func TestSafeWriteFile_FileCloseError(t *testing.T) {
 	// Skip this test on Windows as the file locking behavior is different
 	if runtime.GOOS == "windows" {
 		t.Skip("Skipping test on Windows due to different file locking behavior")
 	}
 
-	tempDir := safeTempDir(t)
-	filePath := filepath.Join(tempDir, "testfile.txt")
+	t.Run("close error only", func(t *testing.T) {
+		// Create a temporary directory for the test
+		tempDir := safeTempDir(t)
+		filePath := filepath.Join(tempDir, "testfile.txt")
 
-	// Create a file first
-	f, err := os.Create(filePath)
-	if err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
-	}
-	//nolint:errcheck // In test, we don't need to check the error from Close()
-	f.Close()
+		// Create a test file system that will return failing files
+		fs := failingCloseFS{FileSystem: defaultFS}
 
-	// Make the file read-only to cause a close error
-	if err := os.Chmod(filePath, 0o400); err != nil {
-		t.Fatalf("Failed to set file permissions: %v", err)
-	}
+		// Call safeWriteFileWithFS with our test file system
+		err := safeWriteFileWithFS(filePath, []byte("test"), 0o644, fs)
+		if err == nil {
+			t.Fatal("Expected error when closing file fails, got nil")
+		}
 
-	err = SafeWriteFile(filePath, []byte("test"), 0o644)
-	if err == nil {
-		t.Error("Expected error when closing file fails, got nil")
-	}
+		// The error should be related to file closing
+		expectedErr := "failed to close file: simulated close error"
+		if err.Error() != expectedErr {
+			t.Errorf("Expected error %q, got: %v", expectedErr, err)
+		}
+	})
+
+	t.Run("write error takes precedence over close error", func(t *testing.T) {
+		// Create a temporary directory for the test
+		tempDir := safeTempDir(t)
+		filePath := filepath.Join(tempDir, "testfile.txt")
+
+		// Create a test file system that will return files that fail on both write and close
+		fs := failingWriteFS{FileSystem: defaultFS}
+
+		// Call safeWriteFileWithFS with our test file system
+		err := safeWriteFileWithFS(filePath, []byte("test"), 0o644, fs)
+		if err == nil {
+			t.Fatal("Expected error when writing to file, got nil")
+		}
+
+		// The error should be the write error, not the close error
+		expectedErr := "failed to write file: simulated write error"
+		if err.Error() != expectedErr {
+			t.Errorf("Expected error %q, got: %v", expectedErr, err)
+		}
+	})
 }
