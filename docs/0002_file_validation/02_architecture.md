@@ -170,11 +170,6 @@ internal/
     ↓
 9. ハッシュ値比較（一致/不一致）
 ```
-    ├── hash_test.go                // ハッシュ関連のテスト
-    ├── validator_helper_test.go    // セキュリティ機能のテスト
-    ├── validator_error_test.go     // エラーハンドリングのテスト
-    └── nofollow_error_*_test.go    // プラットフォーム別エラー処理テスト
-```
 
 ## 3. 使用技術
 
