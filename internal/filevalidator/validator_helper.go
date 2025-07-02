@@ -27,13 +27,12 @@ type File interface {
 }
 
 // osFS implements FileSystem using the local disk
-// nolint:gosec // The path is validated after opening to prevent TOCTOU
 var defaultFS FileSystem = osFS{}
 
 type osFS struct{}
 
-// nolint:gosec // The path is validated after opening to prevent TOCTOU
 func (osFS) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
+	// #nosec G304 - The path is validated after opening to prevent TOCTOU attacks
 	return os.OpenFile(name, flag, perm)
 }
 
@@ -56,8 +55,6 @@ func safeWriteFileWithFS(filePath string, content []byte, perm os.FileMode, fs F
 	}
 
 	// First try to open the file with O_NOFOLLOW to prevent following symlinks
-	// G304: This is a safe usage of filepath as we're using O_NOFOLLOW and will verify the path components
-	// nolint:gosec // The path is validated after opening to prevent TOCTOU
 	file, err := fs.OpenFile(absPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, perm)
 	if err != nil {
 		switch {
@@ -89,7 +86,7 @@ func safeWriteFileWithFS(filePath string, content []byte, perm os.FileMode, fs F
 
 	// Write the content
 	if _, err = file.Write(content); err != nil {
-		return fmt.Errorf("failed to write file: %w", err)
+		return fmt.Errorf("failed to write to %s: %w", absPath, err)
 	}
 
 	return nil
