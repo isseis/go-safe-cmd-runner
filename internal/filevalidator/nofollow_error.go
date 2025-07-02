@@ -3,20 +3,16 @@
 package filevalidator
 
 import (
+	"errors"
 	"os"
 	"syscall"
 )
 
 // isNoFollowError checks if the error indicates we tried to open a symlink
 func isNoFollowError(err error) bool {
-	e, ok := err.(*os.PathError)
-	if !ok {
+	var e *os.PathError
+	if !errors.As(err, &e) {
 		return false
 	}
-	switch e.Err {
-	case syscall.ELOOP, syscall.EMLINK:
-		return true
-	default:
-		return false
-	}
+	return errors.Is(e.Err, syscall.ELOOP) || errors.Is(e.Err, syscall.EMLINK)
 }
