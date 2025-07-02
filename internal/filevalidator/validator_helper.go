@@ -224,17 +224,3 @@ func validateFile(file File, filePath string) (os.FileInfo, error) {
 
 	return fileInfo, nil
 }
-
-// isNoFollowError checks if the error indicates we tried to open a symlink
-func isNoFollowError(err error) bool {
-	e, ok := err.(*os.PathError)
-	if !ok {
-		return false
-	}
-	switch e.Err {
-	case syscall.ELOOP, syscall.EMLINK, syscall.EFTYPE:
-		return true
-	default:
-		return false
-	}
-}
