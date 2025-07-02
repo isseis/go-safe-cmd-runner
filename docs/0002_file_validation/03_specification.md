@@ -14,7 +14,7 @@
 ```
 internal/
 └── filevalidator/
-    ├── validator.go                // Validator構造体と主要メソッド
+    ├── validator.go                // Validator構造体と主要メソッド（Record, Verify等）
     ├── hash.go                     // HashAlgorithmインターフェースとSHA256実装
     ├── errors.go                   // カスタムエラーの定義
     ├── validator_helper.go         // SafeReadFile, SafeWriteFile等のセキュリティ機能
@@ -101,6 +101,56 @@ type HashFilePathGetter interface {
 `validator.go` に定義されている。
 
 ```go
+// ProductionHashFilePathGetter は、本番環境用のハッシュファイルパス生成実装。
+type ProductionHashFilePathGetter struct{}
+
+// GetHashFilePath は、ファイルパスのSHA-256ハッシュから一意なハッシュファイルパスを生成する。
+func (p *ProductionHashFilePathGetter) GetHashFilePath(hashAlgorithm HashAlgorithm, hashDir string, filePath string) (string, error) {
+	if hashAlgorithm == nil {
+		return "", ErrNilAlgorithm
+	}
+
+	targetPath, err := validatePath(filePath)
+	if err != nil {
+		return "", err
+	}
+
+	h := sha256.Sum256([]byte(targetPath))
+	hashStr := base64.URLEncoding.EncodeToString(h[:])
+
+	return filepath.Join(hashDir, hashStr[:12]+"."+hashAlgorithm.Name()), nil
+}
+```
+
+### 3.6. ファイルシステムインターフェース
+
+`validator_helper.go` に定義されている。
+
+```go
+// FileSystem は、ファイルシステム操作を抽象化するインターフェース。
+type FileSystem interface {
+	OpenFile(name string, flag int, perm os.FileMode) (File, error)
+}
+
+// File は、ファイル操作を抽象化するインターフェース。
+type File interface {
+	Write(b []byte) (n int, err error)
+	Close() error
+	Stat() (os.FileInfo, error)
+}
+
+// osFS は、実際のOSファイルシステムを使用する実装。
+type osFS struct{}
+
+func (osFS) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
+	// #nosec G304 - パスは開いた後で検証することでTOCTOU攻撃を防ぐ
+	return os.OpenFile(name, flag, perm)
+}
+```
+
+`validator.go` に定義されている。
+
+```go
 // ProductionHashFilePathGetter は、HashFilePathGetterの本番環境用実装。
 type ProductionHashFilePathGetter struct{}
 
@@ -148,6 +198,26 @@ func newValidator(algorithm HashAlgorithm, hashDir string, hashFilePathGetter Ha
 	if err != nil {
 		return nil, fmt.Errorf("failed to get absolute path for hash directory: %w", err)
 	}
+
+	// ハッシュディレクトリの存在とディレクトリかどうかを確認
+	info, err := os.Stat(hashDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("%w: %s", ErrHashDirNotExist, hashDir)
+		}
+		return nil, fmt.Errorf("failed to access hash directory: %w", err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("%w: %s", ErrHashPathNotDir, hashDir)
+	}
+
+	return &Validator{
+		algorithm:          algorithm,
+		hashDir:            hashDir,
+		hashFilePathGetter: hashFilePathGetter,
+	}, nil
+}
+```
 
 	// ハッシュディレクトリの存在確認
 	info, err := os.Stat(hashDir)
@@ -316,31 +386,184 @@ func (v *Validator) GetHashDir() string {
 `validator_helper.go` に定義されている。
 
 ```go
-// MaxFileSize は、safeReadFileの最大許可ファイルサイズ（128 MB）
+// MaxFileSize は、SafeReadFileの最大許可ファイルサイズ（128 MB）
 const MaxFileSize = 128 * 1024 * 1024
 
-// SafeReadFile は、ファイルを安全に読み込む。
-// パスの検証とファイルプロパティのチェックを行い、
+// SafeReadFile は、パスの検証とファイルプロパティのチェック後にファイルを安全に読み込む。
 // MaxFileSizeの制限を設けてメモリ枯渇攻撃を防ぐ。
 // O_NOFOLLOWを使用してシンボリンク攻撃を防ぎ、
 // すべてのチェックを原子的に実行する。
 func SafeReadFile(filePath string) ([]byte, error) {
-	file, err := openFileSafely(filePath)
+	absPath, err := filepath.Abs(filePath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", ErrInvalidFilePath, err)
 	}
 
+	// O_NOFOLLOWでファイルを開く
+	file, err := os.OpenFile(absPath, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		switch {
+		case isNoFollowError(err):
+			return nil, ErrIsSymlink
+		default:
+			return nil, err
+		}
+	}
 	defer func() {
 		if closeErr := file.Close(); closeErr != nil {
 			log.Printf("error closing file: %v\n", closeErr)
 		}
 	}()
 
+	// TOCTOU攻撃防止のためディレクトリコンポーネント検証
+	if err := verifyPathComponents(absPath); err != nil {
+		return nil, err
+	}
+
+	// ファイルが通常ファイルであることを確認
+	if _, err := validateFile(file, absPath); err != nil {
+		return nil, err
+	}
+
 	return readFileContent(file, filePath)
+}
+
+// readFileContent は、開いたファイルの内容を読み込み、検証する。
+func readFileContent(file *os.File, filePath string) ([]byte, error) {
+	fileInfo, err := validateFile(file, filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	if fileInfo.Size() > MaxFileSize {
+		return nil, ErrFileTooLarge
+	}
+
+	content, err := io.ReadAll(io.LimitReader(file, MaxFileSize+1))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file: %w", err)
+	}
+
+	if int64(len(content)) > MaxFileSize {
+		return nil, ErrFileTooLarge
+	}
+
+	return content, nil
+}
+```
+### 5.3. `verifyPathComponents` 関数
+
+`validator_helper.go` に定義されている。
+
+```go
+// verifyPathComponents は、パスの各コンポーネントがシンボリックリンクでないことをチェックする。
+// この関数はファイルを開いた後に呼び出されて、TOCTOU攻撃を防ぐ。
+func verifyPathComponents(absPath string) error {
+	// ファイルのディレクトリを取得
+	dir := filepath.Dir(absPath)
+	if dir == "." {
+		// カレントディレクトリの場合は作業ディレクトリを取得
+		var err error
+		dir, err = os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to get current directory: %w", err)
+		}
+	}
+
+	// ディレクトリの絶対パスを取得
+	dir, err := filepath.Abs(dir)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path: %w", err)
+	}
+
+	// 各ディレクトリコンポーネントをチェック
+	current := dir
+	for {
+		// 親ディレクトリを取得
+		parent := filepath.Dir(current)
+		if parent == current {
+			break // ルートディレクトリに到達
+		}
+
+		// os.Lstatでシンボリックリンクチェック（追跡しない）
+		fi, err := os.Lstat(current)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil // ディレクトリが存在しない場合は安全として継続
+			}
+			return fmt.Errorf("failed to stat %s: %w", current, err)
+		}
+
+		// シンボリックリンクかチェック
+		if fi.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("%w: %s", ErrIsSymlink, current)
+		}
+
+		current = parent
+	}
+
+	return nil
 }
 ```
 
+### 5.4. `validateFile` 関数
+
+`validator_helper.go` に定義されている。
+
+```go
+// validateFile は、ファイルが通常ファイルかどうかをチェックし、FileInfoを返す。
+// TOCTOU攻撃を防ぐため、ファイルディスクリプタを使用してファイル情報を取得する。
+func validateFile(file File, filePath string) (os.FileInfo, error) {
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get file info: %w", err)
+	}
+
+	if !fileInfo.Mode().IsRegular() {
+		return nil, fmt.Errorf("%w: not a regular file: %s", ErrInvalidFilePath, filePath)
+	}
+
+	return fileInfo, nil
+}
+```
+
+### 5.5. `validatePath` 関数
+
+`validator.go` に定義されている。
+
+```go
+// validatePath は、指定されたファイルパスを検証・正規化する。
+func validatePath(filePath string) (string, error) {
+	if filePath == "" {
+		return "", ErrInvalidFilePath
+	}
+
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		return "", err
+	}
+
+	resolvedPath, err := filepath.EvalSymlinks(absPath)
+	if err != nil {
+		return "", err
+	}
+
+	// 解決されたパスが通常ファイルかどうかチェック
+	fileInfo, err := os.Lstat(resolvedPath)
+	if err != nil {
+		return "", err
+	}
+	if !fileInfo.Mode().IsRegular() {
+		return "", fmt.Errorf("%w: not a regular file: %s", ErrInvalidFilePath, resolvedPath)
+	}
+	return resolvedPath, nil
+}
+```
+```
+
 ### 5.2. `SafeWriteFile` 関数
+
+`validator_helper.go` に定義されている。
 
 ```go
 // SafeWriteFile は、パスの検証とファイルプロパティのチェックを行った後、
@@ -360,7 +583,7 @@ func safeWriteFileWithFS(filePath string, content []byte, perm os.FileMode, fs F
 		return fmt.Errorf("%w: %v", ErrInvalidFilePath, err)
 	}
 
-	// O_NOFOLLOWを使用してシンボリックリンクの追跡を防ぐ
+	// O_NOFOLLOW|O_CREATE|O_EXCLを使用してセキュアにファイルを開く
 	file, err := fs.OpenFile(absPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, perm)
 	if err != nil {
 		switch {
@@ -375,6 +598,29 @@ func safeWriteFileWithFS(filePath string, content []byte, perm os.FileMode, fs F
 
 	// エラー時にファイルが確実に閉じられるようにする
 	defer func() {
+		if closeErr := file.Close(); closeErr != nil && err == nil {
+			err = fmt.Errorf("failed to close file: %w", closeErr)
+		}
+	}()
+
+	// TOCTOU攻撃防止のためディレクトリコンポーネント検証
+	if err := verifyPathComponents(absPath); err != nil {
+		return err
+	}
+
+	// ファイルが通常ファイルであることを確認
+	if _, err := validateFile(file, absPath); err != nil {
+		return err
+	}
+
+	// 内容を書き込み
+	if _, err = file.Write(content); err != nil {
+		return fmt.Errorf("failed to write to %s: %w", absPath, err)
+	}
+
+	return nil
+}
+```
 		if closeErr := file.Close(); closeErr != nil && err == nil {
 			err = fmt.Errorf("failed to close file: %w", closeErr)
 		}
@@ -399,14 +645,41 @@ func safeWriteFileWithFS(filePath string, content []byte, perm os.FileMode, fs F
 }
 ```
 
-### 5.3. プラットフォーム固有のエラー処理
+### 5.6. プラットフォーム固有のエラー処理
 
 `nofollow_error.go` および `nofollow_error_netbsd.go` に定義されている。
 
 ```go
 //go:build !netbsd
+// +build !netbsd
 
-// isNoFollowError は、シンボリックリンクを開こうとしたエラーかどうかをチェックする
+// isNoFollowError は、O_NOFOLLOWでシンボリックリンクを開こうとした際のエラーかどうかをチェックする。
+// Unix系システム（NetBSD以外）では ELOOP と EMLINK エラーを確認する。
+func isNoFollowError(err error) bool {
+	if pathErr, ok := err.(*os.PathError); ok {
+		if errno, ok := pathErr.Err.(syscall.Errno); ok {
+			return errno == syscall.ELOOP || errno == syscall.EMLINK
+		}
+	}
+	return false
+}
+```
+
+```go
+//go:build netbsd
+// +build netbsd
+
+// NetBSD固有のO_NOFOLLOWエラー処理
+// NetBSDではO_NOFOLLOWでシンボリックリンクを開こうとするとEFTYPEエラーが返される。
+func isNoFollowError(err error) bool {
+	if pathErr, ok := err.(*os.PathError); ok {
+		if errno, ok := pathErr.Err.(syscall.Errno); ok {
+			return errno == syscall.EFTYPE
+		}
+	}
+	return false
+}
+```
 func isNoFollowError(err error) bool {
 	var e *os.PathError
 	if !errors.As(err, &e) {
@@ -431,7 +704,7 @@ func isNoFollowError(err error) bool {
 
 ## 6. エラー仕様
 
-`errors.go` に定義されている。
+`errors.go` に定義されている13種類のカスタムエラー型。
 
 ```go
 var (
@@ -468,48 +741,19 @@ var (
 	// ErrSuspiciousFilePath は、潜在的に悪意のあるファイルパスが検出されたことを示す。
 	ErrSuspiciousFilePath = errors.New("suspicious file path detected")
 
-	// ErrFileTooLarge は、ファイルが大きすぎることを示す。
+	// ErrFileTooLarge は、ファイルが大きすぎることを示す（MaxFileSize = 128MB超過）。
 	ErrFileTooLarge = errors.New("file too large")
 
-	// ErrFileExists は、ファイルが既に存在することを示す。
+	// ErrFileExists は、ファイルが既に存在することを示す（SafeWriteFileでO_EXCL使用時）。
 	ErrFileExists = errors.New("file exists")
 )
 ```
 
 ## 7. 内部ヘルパー関数
 
-### 7.1. パス検証
+### 7.1. ハッシュ計算
 
-```go
-// validatePath は、指定されたファイルパスを検証・正規化する。
-func validatePath(filePath string) (string, error) {
-	if filePath == "" {
-		return "", ErrInvalidFilePath
-	}
-
-	absPath, err := filepath.Abs(filePath)
-	if err != nil {
-		return "", err
-	}
-
-	resolvedPath, err := filepath.EvalSymlinks(absPath)
-	if err != nil {
-		return "", err
-	}
-
-	// resolvedPathが通常ファイルかチェック
-	fileInfo, err := os.Lstat(resolvedPath)
-	if err != nil {
-		return "", err
-	}
-	if !fileInfo.Mode().IsRegular() {
-		return "", fmt.Errorf("%w: not a regular file: %s", ErrInvalidFilePath, resolvedPath)
-	}
-	return resolvedPath, nil
-}
-```
-
-### 7.2. ハッシュ計算
+`validator.go` に定義されている。
 
 ```go
 // calculateHash は、指定されたパスのファイルのハッシュ値を計算する。
@@ -523,7 +767,9 @@ func (v *Validator) calculateHash(filePath string) (string, error) {
 }
 ```
 
-### 7.3. ハッシュファイルの読み込みと解析
+### 7.2. ハッシュファイルの読み込みと解析
+
+`validator.go` に定義されている。
 
 ```go
 // readAndParseHashFile は、ハッシュファイルを読み込み、解析する。
@@ -563,6 +809,168 @@ func (v *Validator) readAndParseHashFile(targetPath string) (string, string, err
 }
 ```
 
+## 8. 使用例
+
+### 8.1. 基本的な使用例
+
+```go
+package main
+
+import (
+	"fmt"
+	"log"
+	"path/filepath"
+
+	"your-project/internal/filevalidator"
+)
+
+func main() {
+	// SHA256アルゴリズムでValidatorを初期化
+	validator, err := filevalidator.New(&filevalidator.SHA256{}, "/path/to/hash/dir")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// ファイルのハッシュを記録
+	targetFile := "/path/to/target/file"
+	if err := validator.Record(targetFile); err != nil {
+		log.Fatal(err)
+	}
+
+	// ファイルの検証
+	if err := validator.Verify(targetFile); err != nil {
+		switch err {
+		case filevalidator.ErrMismatch:
+			fmt.Println("ファイルが変更されています")
+		case filevalidator.ErrHashFileNotFound:
+			fmt.Println("ハッシュファイルが見つかりません")
+		default:
+			log.Fatal(err)
+		}
+	} else {
+		fmt.Println("ファイルは変更されていません")
+	}
+}
+```
+
+### 8.2. エラーハンドリングの例
+
+```go
+package main
+
+import (
+	"errors"
+	"fmt"
+	"log"
+
+	"your-project/internal/filevalidator"
+)
+
+func handleFileValidation(validator *filevalidator.Validator, filePath string) {
+	err := validator.Verify(filePath)
+	switch {
+	case err == nil:
+		fmt.Println("ファイルは安全です")
+	case errors.Is(err, filevalidator.ErrMismatch):
+		fmt.Println("警告: ファイルが改ざんされています")
+	case errors.Is(err, filevalidator.ErrHashFileNotFound):
+		fmt.Println("情報: ハッシュが記録されていません。新規記録を検討してください")
+	case errors.Is(err, filevalidator.ErrIsSymlink):
+		fmt.Println("エラー: シンボリックリンクは許可されていません")
+	case errors.Is(err, filevalidator.ErrFileTooLarge):
+		fmt.Println("エラー: ファイルサイズが制限を超えています（128MB超過）")
+	default:
+		log.Printf("予期しないエラー: %v", err)
+	}
+}
+```
+
+### 8.3. セキュアファイル操作の例
+
+```go
+package main
+
+import (
+	"fmt"
+	"log"
+
+	"your-project/internal/filevalidator"
+)
+
+func secureFileOperations() {
+	// セキュアな読み込み
+	data, err := filevalidator.SafeReadFile("/path/to/file")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("読み込んだデータサイズ: %d bytes\n", len(data))
+
+	// セキュアな書き込み
+	content := []byte("Hello, secure world!")
+	err = filevalidator.SafeWriteFile("/path/to/new/file", content, 0644)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("ファイルを安全に書き込みました")
+}
+```
+
+## 9. 制約事項
+
+### 9.1. ファイルサイズ制限
+- `SafeReadFile` は最大128MB（`MaxFileSize`）のファイルサイズ制限がある
+- この制限を超えるファイルは `ErrFileTooLarge` エラーを返す
+
+### 9.2. プラットフォーム制約
+- Unix系システムでの動作を前提としている
+- NetBSDでは特別なエラーコード（EFTYPE）処理が必要
+- WindowsでのO_NOFOLLOWサポートは限定的
+
+### 9.3. パス制約
+- シンボリックリンクは許可されない（安全上の理由）
+- 通常ファイルのみが対象（デバイスファイル、パイプ、ソケット等は除外）
+- 空のファイルパスは無効
+
+### 9.4. ハッシュファイル制約
+- ハッシュファイル名の衝突が発生した場合、異なるパスのファイルは記録できない
+- ハッシュディレクトリは事前に存在している必要がある
+- ハッシュファイルの形式は固定（パス + 改行 + ハッシュ値）
+
+## 10. パフォーマンス特性
+
+### 10.1. 計算量
+- ファイルハッシュ計算: O(n) （nはファイルサイズ）
+- パス検証: O(d) （dはディレクトリ階層の深さ）
+- ハッシュファイル操作: O(1)
+
+### 10.2. メモリ使用量
+- ファイル読み込み時：最大128MB + バッファ領域
+- ハッシュ計算時：ストリーミング処理により一定量のメモリ使用
+- パス検証時：パス文字列分のメモリのみ
+
+### 10.3. I/O回数
+- Record操作: 対象ファイル読み込み1回 + ハッシュファイル書き込み1回 + 各種Stat操作
+- Verify操作: 対象ファイル読み込み1回 + ハッシュファイル読み込み1回 + 各種Stat操作
+
+## 11. セキュリティ保証
+
+### 11.1. 攻撃対策
+- **TOCTOU攻撃**: ファイルオープン後のディスクリプタベース検証
+- **シンボリックリンク攻撃**: O_NOFOLLOW + ディレクトリ階層チェック
+- **パストラバーサル攻撃**: 絶対パス変換 + シンボリックリンク解決
+- **DoS攻撃**: ファイルサイズ制限 + LimitReader使用
+- **ハッシュ衝突攻撃**: パス情報併記による衝突検出
+
+### 11.2. 保証しないセキュリティ
+- ハッシュファイル自体の改ざん検出
+- 権限昇格攻撃の防止
+- ハッシュファイル自体の暗号化
+- ネットワーク攻撃の防止
+
+現在の実装は、ファイル完全性検証に特化した堅牢なセキュリティ機能を提供している。
+}
+```
+
 ## 8. テスト仕様
 
 ### 8.1. テスト用モック
@@ -579,6 +987,4 @@ func (v *Validator) readAndParseHashFile(targetPath string) (string, string, err
 - セキュリティ機能のテスト
 - プラットフォーム固有の機能テスト
 - ハッシュ衝突シナリオのテスト
-- ファイルシステム例外ケースのテスト
-
-この実装は、セキュリティを重視した堅牢な設計となっており、様々な攻撃ベクトルに対する防御機能を備えている。
+現在の実装は、ファイル完全性検証に特化した堅牢なセキュリティ機能を提供している。
