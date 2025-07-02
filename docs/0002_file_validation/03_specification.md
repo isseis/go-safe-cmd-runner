@@ -219,26 +219,6 @@ func newValidator(algorithm HashAlgorithm, hashDir string, hashFilePathGetter Ha
 }
 ```
 
-	// ハッシュディレクトリの存在確認
-	info, err := os.Stat(hashDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("%w: %s", ErrHashDirNotExist, hashDir)
-		}
-		return nil, fmt.Errorf("failed to access hash directory: %w", err)
-	}
-	if !info.IsDir() {
-		return nil, fmt.Errorf("%w: %s", ErrHashPathNotDir, hashDir)
-	}
-
-	return &Validator{
-		algorithm:          algorithm,
-		hashDir:            hashDir,
-		hashFilePathGetter: hashFilePathGetter,
-	}, nil
-}
-```
-
 ### 4.2. `Validator.Record` メソッド
 
 ```go
@@ -559,7 +539,6 @@ func validatePath(filePath string) (string, error) {
 	return resolvedPath, nil
 }
 ```
-```
 
 ### 5.2. `SafeWriteFile` 関数
 
@@ -621,29 +600,6 @@ func safeWriteFileWithFS(filePath string, content []byte, perm os.FileMode, fs F
 	return nil
 }
 ```
-		if closeErr := file.Close(); closeErr != nil && err == nil {
-			err = fmt.Errorf("failed to close file: %w", closeErr)
-		}
-	}()
-
-	// TOCTOU攻撃を防ぐため、ファイルディスクリプタを使用してディレクトリコンポーネントを検証
-	if err := verifyPathComponents(absPath); err != nil {
-		return err
-	}
-
-	// ファイルが通常ファイル（デバイス、パイプ等でない）であることを検証
-	if _, err := validateFile(file, absPath); err != nil {
-		return err
-	}
-
-	// コンテンツの書き込み
-	if _, err = file.Write(content); err != nil {
-		return fmt.Errorf("failed to write to %s: %w", absPath, err)
-	}
-
-	return nil
-}
-```
 
 ### 5.6. プラットフォーム固有のエラー処理
 
@@ -655,31 +611,6 @@ func safeWriteFileWithFS(filePath string, content []byte, perm os.FileMode, fs F
 
 // isNoFollowError は、O_NOFOLLOWでシンボリックリンクを開こうとした際のエラーかどうかをチェックする。
 // Unix系システム（NetBSD以外）では ELOOP と EMLINK エラーを確認する。
-func isNoFollowError(err error) bool {
-	if pathErr, ok := err.(*os.PathError); ok {
-		if errno, ok := pathErr.Err.(syscall.Errno); ok {
-			return errno == syscall.ELOOP || errno == syscall.EMLINK
-		}
-	}
-	return false
-}
-```
-
-```go
-//go:build netbsd
-// +build netbsd
-
-// NetBSD固有のO_NOFOLLOWエラー処理
-// NetBSDではO_NOFOLLOWでシンボリックリンクを開こうとするとEFTYPEエラーが返される。
-func isNoFollowError(err error) bool {
-	if pathErr, ok := err.(*os.PathError); ok {
-		if errno, ok := pathErr.Err.(syscall.Errno); ok {
-			return errno == syscall.EFTYPE
-		}
-	}
-	return false
-}
-```
 func isNoFollowError(err error) bool {
 	var e *os.PathError
 	if !errors.As(err, &e) {
@@ -968,19 +899,17 @@ func secureFileOperations() {
 - ネットワーク攻撃の防止
 
 現在の実装は、ファイル完全性検証に特化した堅牢なセキュリティ機能を提供している。
-}
-```
 
-## 8. テスト仕様
+## 12. テスト仕様
 
-### 8.1. テスト用モック
+### 12.1. テスト用モック
 
 - `MockHashAlgorithm`: 固定のハッシュ値を返すテスト用実装
 - `CollidingHashAlgorithm`: 常に同じハッシュ値を返す衝突テスト用実装
 - `CollidingHashFilePathGetter`: 常に同じパスを返すパス衝突テスト用実装
-- 各種ファイルシステムモック（failingFile, failingCloseFS等）
+- 各種ファイルシステムモック（`failingFile`, `failingCloseFS`等）
 
-### 8.2. テストカバレッジ
+### 12.2. テストカバレッジ
 
 - 正常系のテスト
 - エラーケースの網羅的テスト
