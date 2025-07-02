@@ -149,39 +149,39 @@ const MaxFileSize = 128 * 1024 * 1024
 // It enforces a maximum file size of MaxFileSize to prevent memory exhaustion attacks.
 // It uses O_NOFOLLOW to prevent symlink attacks and performs all checks atomically.
 func SafeReadFile(filePath string) ([]byte, error) {
-	file, err := openFileSafely(filePath)
+	absPath, err := filepath.Abs(filePath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", ErrInvalidFilePath, err)
 	}
 
+	// First try to open the file with O_NOFOLLOW to prevent following symlinks
+	// #nosec G304 - absPath is properly cleaned and validated above, and we use O_NOFOLLOW
+	file, err := os.OpenFile(absPath, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		switch {
+		case isNoFollowError(err):
+			return nil, ErrIsSymlink
+		default:
+			return nil, err
+		}
+	}
 	defer func() {
 		if closeErr := file.Close(); closeErr != nil {
 			log.Printf("error closing file: %v\n", closeErr)
 		}
 	}()
 
+	// Now verify the directory components using the file descriptor to prevent TOCTOU
+	if err := verifyPathComponents(absPath); err != nil {
+		return nil, err
+	}
+
+	// Validate the file is a regular file (not a device, pipe, etc.)
+	if _, err := validateFile(file, absPath); err != nil {
+		return nil, err
+	}
+
 	return readFileContent(file, filePath)
-}
-
-// openFileSafely opens a file with O_NOFOLLOW and performs initial validations
-func openFileSafely(filePath string) (*os.File, error) {
-	absPath, err := filepath.Abs(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalidFilePath, err)
-	}
-
-	// #nosec G304 - absPath is properly cleaned and validated above
-	file, err := os.OpenFile(absPath, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, err
-		}
-		if isNoFollowError(err) {
-			return nil, ErrIsSymlink
-		}
-		return nil, fmt.Errorf("failed to open file: %w", err)
-	}
-	return file, nil
 }
 
 // readFileContent reads and validates the content of an already opened file
