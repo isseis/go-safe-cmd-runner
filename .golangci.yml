@@ -1,4 +1,4 @@
-version: 2
+version: "2"
 
 run:
   timeout: 10m
@@ -35,12 +35,6 @@ linters:
   settings:
     gocyclo:
       min-complexity: 20
-
-    gosec:
-      excludes:
-        #- "G301" # Poor file permissions used when creating a directory
-        #- "G302" # Poor file permissions used with chmod
-        #- "G306" # Poor file permissions used when writing to a new file
 
     depguard:
       rules:

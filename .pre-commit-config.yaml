@@ -23,6 +23,7 @@ repos:
 -   repo: https://github.com/golangci/golangci-lint
     rev: v2.1.6
     hooks:
+    -   id: golangci-lint-config-verify
     -   id: golangci-lint
         args: [--config=.golangci.yml]
 
