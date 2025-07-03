@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"unsafe"
 )
@@ -29,23 +30,77 @@ type openHow struct {
 	resolve uint64
 }
 
-// isOpenat2Available checks if openat2 system call is available
-var openat2Available bool
+// FileSystemConfig holds configuration for the file system operations
+type FileSystemConfig struct {
+	// DisableOpenat2 explicitly disables openat2 usage even if available
+	DisableOpenat2 bool
+}
 
-func init() {
-	// Test if openat2 is available by trying to use it
-	how := openHow{
-		flags:   uint64(os.O_RDONLY),
-		mode:    0,
-		resolve: 0,
+// osFS implements FileSystem using the local disk
+type osFS struct {
+	openat2Available bool
+	config           FileSystemConfig
+}
+
+// NewFileSystem creates a new FileSystem with the given configuration
+func NewFileSystem(config FileSystemConfig) FileSystem {
+	fs := &osFS{
+		config: config,
 	}
-	fd, err := openat2(AtFdcwd, "/dev/null", &how)
-	if err == nil {
-		if closeErr := syscall.Close(fd); closeErr != nil {
-			log.Printf("error closing file descriptor: %v\n", closeErr)
+
+	if !config.DisableOpenat2 {
+		fs.openat2Available = isOpenat2Available()
+	}
+
+	return fs
+}
+
+// DefaultFileSystem is the default filesystem implementation
+var defaultFS = NewFileSystem(FileSystemConfig{})
+
+const testFilePerm = 0o600 // Read/write for owner only
+
+// isOpenat2Available checks if openat2 system call is available and working
+func isOpenat2Available() bool {
+	// Check if we're on Linux
+	if runtime.GOOS != "linux" {
+		return false
+	}
+
+	// Check if we're on Linux
+	if runtime.GOOS != "linux" {
+		return false
+	}
+
+	// Create a temporary directory for testing
+	testDir, err := os.MkdirTemp("", "openat2test")
+	if err != nil {
+		return false
+	}
+	defer func() {
+		if err := os.RemoveAll(testDir); err != nil {
+			log.Printf("failed to remove test directory: %v", err)
 		}
-		openat2Available = true
+	}()
+
+	testFile := filepath.Join(testDir, "testfile")
+	how := openHow{
+		flags:   uint64(os.O_CREATE | os.O_RDWR | os.O_EXCL),
+		mode:    testFilePerm, // #nosec G302 - file permissions are appropriate for test file
+		resolve: ResolveNoSymlinks,
 	}
+
+	// Test openat2 with actual file operations
+	fd, err := openat2(AtFdcwd, testFile, &how)
+	if err != nil {
+		return false
+	}
+
+	// Clean up the test file
+	_ = syscall.Close(fd)
+	_ = os.Remove(testFile)
+
+	return true
 }
 
 // openat2 wraps the openat2 system call
@@ -87,18 +142,18 @@ type File interface {
 	Stat() (os.FileInfo, error)
 }
 
-// osFS implements FileSystem using the local disk
-var defaultFS FileSystem = osFS{}
+// IsOpenat2Available returns true if openat2 is available and enabled
+func (fs *osFS) IsOpenat2Available() bool {
+	return fs.openat2Available
+}
 
-type osFS struct{}
-
-func (osFS) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
+func (fs *osFS) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
 	// #nosec G304 - The path is validated using openat2 or path verification to prevent TOCTOU attacks
 	return os.OpenFile(name, flag, perm)
 }
 
-func (osFS) SafeOpenFile(name string, flag int, perm os.FileMode) (File, error) {
-	return safeOpenFile(name, flag, perm)
+func (fs *osFS) SafeOpenFile(name string, flag int, perm os.FileMode) (File, error) {
+	return fs.safeOpenFileInternal(name, flag, perm)
 }
 
 // SafeWriteFile writes a file safely after validating the path and checking file properties.
@@ -268,15 +323,14 @@ func validateFile(file File, filePath string) (os.FileInfo, error) {
 	return fileInfo, nil
 }
 
-// safeOpenFile opens a file using openat2 with RESOLVE_NO_SYMLINKS if available,
-// otherwise falls back to the traditional approach with path verification
-func safeOpenFile(filePath string, flag int, perm os.FileMode) (*os.File, error) {
+// safeOpenFileInternal is the internal implementation of safeOpenFile
+func (fs *osFS) safeOpenFileInternal(filePath string, flag int, perm os.FileMode) (*os.File, error) {
 	absPath, err := filepath.Abs(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidFilePath, err)
 	}
 
-	if openat2Available {
+	if fs.openat2Available {
 		// Use openat2 with RESOLVE_NO_SYMLINKS for atomic operation
 		how := openHow{
 			// #nosec G115 - flag conversion is intentional and safe within valid flag range
