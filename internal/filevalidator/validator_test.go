@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
 
 // Test error definitions
@@ -38,6 +40,19 @@ func testSafeReadFile(testDir, filePath string) ([]byte, error) {
 	}
 
 	return os.ReadFile(cleanPath)
+}
+
+// safeTempDir creates a temporary directory and resolves any symlinks in its path
+// to ensure consistent behavior across different environments.
+func safeTempDir(t *testing.T) string {
+	t.Helper()
+	tempDir := t.TempDir()
+	// Resolve any symlinks in the path
+	realPath, err := filepath.EvalSymlinks(tempDir)
+	if err != nil {
+		t.Fatalf("Failed to resolve symlinks in temp dir: %v", err)
+	}
+	return realPath
 }
 
 func TestValidator_RecordAndVerify(t *testing.T) {
@@ -135,7 +150,7 @@ func TestValidator_GetHashFilePath(t *testing.T) {
 		{
 			name:        "empty path",
 			filePath:    "",
-			expectedErr: ErrInvalidFilePath,
+			expectedErr: safefileio.ErrInvalidFilePath,
 		},
 	}
 

@@ -8,19 +8,21 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
 
 // HashFilePathGetter is an interface for getting the path where the hash for a file would be stored.
 // This is used to test file validation logic for handling hash collisions.
 type HashFilePathGetter interface {
-	// GetHashFilePath returns the path where the hash for the given file would be stored.
+	// GetHashFilePath returns the path where the given file's hash would be stored.
 	GetHashFilePath(hashAlgorithm HashAlgorithm, hashDir string, filePath string) (string, error)
 }
 
 // ProductionHashFilePathGetter is a concrete implementation of HashFilePathGetter.
 type ProductionHashFilePathGetter struct{}
 
-// GetHashFilePath returns the path where the hash for the given file would be stored.
+// GetHashFilePath returns the path where the given file's hash would be stored.
 // This implementation uses a simple hash function to generate a hash file path.
 func (p *ProductionHashFilePathGetter) GetHashFilePath(hashAlgorithm HashAlgorithm, hashDir string, filePath string) (string, error) {
 	if hashAlgorithm == nil {
@@ -110,14 +112,14 @@ func (v *Validator) Record(filePath string) error {
 	}
 
 	// Ensure the directory exists
-	if err := os.MkdirAll(filepath.Dir(hashFilePath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(hashFilePath), 0o750); err != nil {
 		return fmt.Errorf("failed to create hash directory: %w", err)
 	}
 
 	// Check if the hash file already exists and contains a different path
-	if existingContent, err := SafeReadFile(hashFilePath); err == nil {
+	if existingContent, err := safefileio.SafeReadFile(hashFilePath); err == nil {
 		// File exists, check the recorded path
-		parts := strings.SplitN(string(existingContent), "\n", 2)
+		parts := strings.SplitN(string(existingContent), "\n", 2) //nolint:mnd
 		if len(parts) == 0 {
 			return fmt.Errorf("%w: empty file", ErrInvalidHashFileFormat)
 		}
@@ -132,7 +134,7 @@ func (v *Validator) Record(filePath string) error {
 	}
 
 	// Write the target path and hash to the hash file
-	return SafeWriteFile(hashFilePath, fmt.Appendf(nil, "%s\n%s", targetPath, hash), 0o644)
+	return safefileio.SafeWriteFile(hashFilePath, fmt.Appendf(nil, "%s\n%s", targetPath, hash), 0o640)
 }
 
 // GetHashAlgorithm returns the hash algorithm used by the validator.
@@ -182,7 +184,7 @@ func (v *Validator) readAndParseHashFile(targetPath string) (string, string, err
 	}
 
 	// Read the stored hash file
-	hashFileContent, err := SafeReadFile(hashFilePath)
+	hashFileContent, err := safefileio.SafeReadFile(hashFilePath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", "", ErrHashFileNotFound
@@ -191,8 +193,9 @@ func (v *Validator) readAndParseHashFile(targetPath string) (string, string, err
 	}
 
 	// Parse the hash file content (format: "filepath\nhash")
-	parts := strings.SplitN(string(hashFileContent), "\n", 2)
-	if len(parts) != 2 {
+	numLines := 2
+	parts := strings.SplitN(string(hashFileContent), "\n", numLines)
+	if len(parts) != numLines {
 		return "", "", fmt.Errorf("%w: expected 'path\nhash', got %d parts", ErrInvalidHashFileFormat, len(parts))
 	}
 
@@ -212,7 +215,7 @@ func (v *Validator) readAndParseHashFile(targetPath string) (string, string, err
 // validatePath validates and normalizes the given file path.
 func validatePath(filePath string) (string, error) {
 	if filePath == "" {
-		return "", ErrInvalidFilePath
+		return "", safefileio.ErrInvalidFilePath
 	}
 
 	absPath, err := filepath.Abs(filePath)
@@ -230,7 +233,7 @@ func validatePath(filePath string) (string, error) {
 		return "", err
 	}
 	if !fileInfo.Mode().IsRegular() {
-		return "", fmt.Errorf("%w: not a regular file: %s", ErrInvalidFilePath, resolvedPath)
+		return "", fmt.Errorf("%w: not a regular file: %s", safefileio.ErrInvalidFilePath, resolvedPath)
 	}
 	return resolvedPath, nil
 }
@@ -238,7 +241,7 @@ func validatePath(filePath string) (string, error) {
 // calculateHash calculates the hash of the file at the given path.
 // filePath must be validated by validatePath before calling this function.
 func (v *Validator) calculateHash(filePath string) (string, error) {
-	content, err := SafeReadFile(filePath)
+	content, err := safefileio.SafeReadFile(filePath)
 	if err != nil {
 		return "", err
 	}

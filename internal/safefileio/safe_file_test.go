@@ -1,4 +1,4 @@
-package filevalidator
+package safefileio
 
 import (
 	"errors"
@@ -101,13 +101,13 @@ func TestSafeWriteFile(t *testing.T) {
 
 			err := SafeWriteFile(path, content, perm)
 			if (err != nil) != tt.wantErr {
-				t.Fatalf("safeWriteFile() error = %v, wantErr %v", err, tt.wantErr)
+				t.Fatalf("SafeWriteFile() error = %v, wantErr %v", err, tt.wantErr)
 			}
 
 			if tt.wantErr {
 				if tt.errType != nil {
 					if !errors.Is(err, tt.errType) {
-						t.Errorf("safeWriteFile() error = %v, want error type %v", err, tt.errType)
+						t.Errorf("SafeWriteFile() error = %v, want error type %v", err, tt.errType)
 					}
 				} else if err == nil {
 					t.Error("expected error but got none")
@@ -233,13 +233,13 @@ func TestSafeReadFile(t *testing.T) {
 
 			got, err := SafeReadFile(path)
 			if (err != nil) != tt.wantErr {
-				t.Fatalf("safeReadFile() error = %v, wantErr %v", err, tt.wantErr)
+				t.Fatalf("SafeReadFile() error = %v, wantErr %v", err, tt.wantErr)
 			}
 
 			if tt.wantErr {
 				if tt.errType != nil {
 					if !errors.Is(err, tt.errType) {
-						t.Errorf("safeReadFile() error = %v, want error type %v", err, tt.errType)
+						t.Errorf("SafeReadFile() error = %v, want error type %v", err, tt.errType)
 					}
 				} else if err == nil {
 					t.Error("expected error but got none")
@@ -248,7 +248,7 @@ func TestSafeReadFile(t *testing.T) {
 			}
 
 			if string(got) != string(tt.want) {
-				t.Errorf("safeReadFile() = %v, want %v", got, tt.want)
+				t.Errorf("SafeReadFile() = %v, want %v", got, tt.want)
 			}
 		})
 	}

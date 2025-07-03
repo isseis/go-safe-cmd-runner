@@ -10,12 +10,6 @@ var (
 	// ErrHashFileNotFound indicates that the hash file for verification was not found.
 	ErrHashFileNotFound = errors.New("hash file not found")
 
-	// ErrInvalidFilePath indicates that the specified file path is invalid.
-	ErrInvalidFilePath = errors.New("invalid file path")
-
-	// ErrIsSymlink indicates that the specified path is a symbolic link, which is not allowed.
-	ErrIsSymlink = errors.New("path is a symbolic link")
-
 	// ErrNilAlgorithm indicates that the algorithm is nil during Validator initialization.
 	ErrNilAlgorithm = errors.New("algorithm cannot be nil")
 
@@ -36,10 +30,4 @@ var (
 
 	// ErrSuspiciousFilePath indicates a potentially malicious file path was detected.
 	ErrSuspiciousFilePath = errors.New("suspicious file path detected")
-
-	// ErrFileTooLarge indicates that the file is too large.
-	ErrFileTooLarge = errors.New("file too large")
-
-	// ErrFileExists indicates that the file already exists.
-	ErrFileExists = errors.New("file exists")
 )
