@@ -271,16 +271,12 @@ type failingCloseFS struct {
 	FileSystem
 }
 
-func (fs failingCloseFS) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
-	f, err := fs.FileSystem.OpenFile(name, flag, perm)
+func (fs failingCloseFS) SafeOpenFile(name string, flag int, perm os.FileMode) (File, error) {
+	f, err := fs.FileSystem.SafeOpenFile(name, flag, perm)
 	if err != nil {
 		return nil, err
 	}
 	return &failingFile{File: f}, nil
-}
-
-func (fs failingCloseFS) SafeOpenFile(name string, flag int, perm os.FileMode) (File, error) {
-	return fs.OpenFile(name, flag, perm)
 }
 
 // failingWriteCloseFS is a file that fails on Write and Close
@@ -305,16 +301,12 @@ type failingWriteFS struct {
 	FileSystem
 }
 
-func (fs failingWriteFS) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
-	f, err := fs.FileSystem.OpenFile(name, flag, perm)
+func (fs failingWriteFS) SafeOpenFile(name string, flag int, perm os.FileMode) (File, error) {
+	f, err := fs.FileSystem.SafeOpenFile(name, flag, perm)
 	if err != nil {
 		return nil, err
 	}
 	return &failingWriteCloseFS{File: f}, nil
-}
-
-func (fs failingWriteFS) SafeOpenFile(name string, flag int, perm os.FileMode) (File, error) {
-	return fs.OpenFile(name, flag, perm)
 }
 
 func TestSafeWriteFile_FileCloseError(t *testing.T) {

@@ -128,9 +128,9 @@ func openat2(dirfd int, pathname string, how *openHow) (int, error) {
 	return int(fd), nil
 }
 
-// FileSystem is an interface that abstracts file system operations
+// FileSystem is an interface that abstracts secure file system operations
 type FileSystem interface {
-	OpenFile(name string, flag int, perm os.FileMode) (File, error)
+	// SafeOpenFile opens a file with security checks to prevent symlink attacks and TOCTOU race conditions
 	SafeOpenFile(name string, flag int, perm os.FileMode) (File, error)
 }
 
@@ -145,11 +145,6 @@ type File interface {
 // IsOpenat2Available returns true if openat2 is available and enabled
 func (fs *osFS) IsOpenat2Available() bool {
 	return fs.openat2Available
-}
-
-func (fs *osFS) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
-	// #nosec G304 - The path is validated using openat2 or path verification to prevent TOCTOU attacks
-	return os.OpenFile(name, flag, perm)
 }
 
 func (fs *osFS) SafeOpenFile(name string, flag int, perm os.FileMode) (File, error) {
