@@ -271,8 +271,8 @@ type failingCloseFS struct {
 	FileSystem
 }
 
-func (fs failingCloseFS) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
-	f, err := fs.FileSystem.OpenFile(name, flag, perm)
+func (fs failingCloseFS) SafeOpenFile(name string, flag int, perm os.FileMode) (File, error) {
+	f, err := fs.FileSystem.SafeOpenFile(name, flag, perm)
 	if err != nil {
 		return nil, err
 	}
@@ -301,8 +301,8 @@ type failingWriteFS struct {
 	FileSystem
 }
 
-func (fs failingWriteFS) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
-	f, err := fs.FileSystem.OpenFile(name, flag, perm)
+func (fs failingWriteFS) SafeOpenFile(name string, flag int, perm os.FileMode) (File, error) {
+	f, err := fs.FileSystem.SafeOpenFile(name, flag, perm)
 	if err != nil {
 		return nil, err
 	}
