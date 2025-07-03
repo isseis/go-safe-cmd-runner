@@ -67,11 +67,6 @@ func isOpenat2Available() bool {
 		return false
 	}
 
-	// Check if we're on Linux
-	if runtime.GOOS != "linux" {
-		return false
-	}
-
 	// Create a temporary directory for testing
 	testDir, err := os.MkdirTemp("", "openat2test")
 	if err != nil {
@@ -92,15 +87,11 @@ func isOpenat2Available() bool {
 
 	// Test openat2 with actual file operations
 	fd, err := openat2(AtFdcwd, testFile, &how)
-	if err != nil {
-		return false
-	}
-
 	// Clean up the test file
 	_ = syscall.Close(fd)
 	_ = os.Remove(testFile)
 
-	return true
+	return err == nil
 }
 
 // openat2 wraps the openat2 system call
@@ -201,24 +192,12 @@ func ensureParentDirsNoSymlinks(absPath string) error {
 	// Get the directory of the file
 	dir := filepath.Dir(absPath)
 
-	// Split the path into components
-	components := []string{}
-	current := dir
-	for {
-		parent := filepath.Dir(current)
-		if parent == current {
-			// Reached root directory
-			break
-		}
-		components = append([]string{filepath.Base(current)}, components...)
-		current = parent
-	}
+	components := splitPathComponents(dir)
 
 	// Start from the root and traverse step by step
-	currentPath := filepath.VolumeName(dir)
-	if currentPath == "" {
-		currentPath = "/"
-	}
+	// Note: filepath.VolumeName(dir) + string(os.PathSeparator) ensures correct root path on both Unix and Windows.
+	// For example, on Windows: VolumeName("C:\\Users") + "\\" = "C:\\"
+	currentPath := filepath.VolumeName(dir) + string(os.PathSeparator)
 
 	for _, component := range components {
 		currentPath = filepath.Join(currentPath, component)
@@ -246,6 +225,33 @@ func ensureParentDirsNoSymlinks(absPath string) error {
 	}
 
 	return nil
+}
+
+// splitPathComponents splits the given directory path into its components from root to target directory
+// and returns them as a slice of strings in order.
+// Example: "/home/user/docs" becomes ["home", "user", "docs"].
+func splitPathComponents(dir string) []string {
+	// Note: For efficiency, we append each new element to the end of the slice during traversal (O(1)
+	// per append), and then reverse the slice once at the end. This avoids the O(n^2) behavior of
+	// prepending to the front of the slice in a loop.
+	components := []string{}
+	current := dir
+	for {
+		parent := filepath.Dir(current)
+		if parent == current {
+			// Reached root directory
+			break
+		}
+
+		components = append(components, filepath.Base(current))
+		current = parent
+	}
+
+	// Reverse the slice to get the correct order (root to target)
+	for i, j := 0, len(components)-1; i < j; i, j = i+1, j-1 {
+		components[i], components[j] = components[j], components[i]
+	}
+	return components
 }
 
 // MaxFileSize is the maximum allowed file size for SafeReadFile (128 MB)
@@ -371,6 +377,11 @@ func (fs *osFS) safeOpenFileInternal(filePath string, flag int, perm os.FileMode
 		default:
 			return nil, fmt.Errorf("failed to open file: %w", err)
 		}
+	}
+
+	// Detect symlink attack after ensureParentDirNoSymlinks call above.
+	if err := ensureParentDirsNoSymlinks(absPath); err != nil {
+		return nil, err
 	}
 
 	return file, nil
