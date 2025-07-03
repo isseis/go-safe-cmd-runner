@@ -279,6 +279,10 @@ func (fs failingCloseFS) OpenFile(name string, flag int, perm os.FileMode) (File
 	return &failingFile{File: f}, nil
 }
 
+func (fs failingCloseFS) SafeOpenFile(name string, flag int, perm os.FileMode) (File, error) {
+	return fs.OpenFile(name, flag, perm)
+}
+
 // failingWriteCloseFS is a file that fails on Write and Close
 type failingWriteCloseFS struct {
 	File
@@ -307,6 +311,10 @@ func (fs failingWriteFS) OpenFile(name string, flag int, perm os.FileMode) (File
 		return nil, err
 	}
 	return &failingWriteCloseFS{File: f}, nil
+}
+
+func (fs failingWriteFS) SafeOpenFile(name string, flag int, perm os.FileMode) (File, error) {
+	return fs.OpenFile(name, flag, perm)
 }
 
 func TestSafeWriteFile_FileCloseError(t *testing.T) {
