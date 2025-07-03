@@ -422,3 +422,43 @@ func TestValidator_HashCollision(t *testing.T) {
 		}
 	})
 }
+
+func TestValidator_Record_EmptyHashFile(t *testing.T) {
+	tempDir := safeTempDir(t)
+
+	// Create a test file
+	testFilePath := filepath.Join(tempDir, "test.txt")
+	if err := os.WriteFile(testFilePath, []byte("test content"), 0o644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Create a validator
+	validator, err := New(&SHA256{}, tempDir)
+	if err != nil {
+		t.Fatalf("Failed to create validator: %v", err)
+	}
+
+	// Get the hash file path
+	hashFilePath, err := validator.GetHashFilePath(testFilePath)
+	if err != nil {
+		t.Fatalf("GetHashFilePath failed: %v", err)
+	}
+
+	// Create the hash directory
+	if err := os.MkdirAll(filepath.Dir(hashFilePath), 0o750); err != nil {
+		t.Fatalf("Failed to create hash directory: %v", err)
+	}
+
+	// Create an empty hash file
+	if err := os.WriteFile(hashFilePath, []byte(""), 0o640); err != nil {
+		t.Fatalf("Failed to create empty hash file: %v", err)
+	}
+
+	// Test Record with empty hash file - this should return ErrInvalidHashFileFormat
+	err = validator.Record(testFilePath)
+	if err == nil {
+		t.Error("Expected error with empty hash file, got nil")
+	} else if !errors.Is(err, ErrInvalidHashFileFormat) {
+		t.Errorf("Expected ErrInvalidHashFileFormat, got %v", err)
+	}
+}

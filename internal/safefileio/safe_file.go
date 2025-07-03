@@ -173,12 +173,7 @@ func SafeReadFile(filePath string) ([]byte, error) {
 		return nil, err
 	}
 
-	// Validate the file is a regular file (not a device, pipe, etc.)
-	if _, err := validateFile(file, absPath); err != nil {
-		return nil, err
-	}
-
-	return readFileContent(file, filePath)
+	return readFileContent(file, absPath)
 }
 
 // readFileContent reads and validates the content of an already opened file

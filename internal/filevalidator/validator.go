@@ -119,9 +119,10 @@ func (v *Validator) Record(filePath string) error {
 	// Check if the hash file already exists and contains a different path
 	if existingContent, err := safefileio.SafeReadFile(hashFilePath); err == nil {
 		// File exists, check the recorded path
-		parts := strings.SplitN(string(existingContent), "\n", 2) //nolint:mnd
-		if len(parts) == 0 {
-			return fmt.Errorf("%w: empty file", ErrInvalidHashFileFormat)
+		numLines := 2
+		parts := strings.SplitN(string(existingContent), "\n", numLines)
+		if len(parts) < numLines {
+			return fmt.Errorf("%w: failed to parse hash file", ErrInvalidHashFileFormat)
 		}
 		recordedPath := parts[0]
 		if recordedPath != targetPath {
