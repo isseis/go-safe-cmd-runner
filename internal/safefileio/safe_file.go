@@ -1,9 +1,6 @@
-// Copyright 2023 Your Name. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
-// Package filevalidator provides functionality for file validation and verification.
-package filevalidator
+// Package safefileio provides secure file I/O operations with protection against
+// common security vulnerabilities like symlink attacks and TOCTOU race conditions.
+package safefileio
 
 import (
 	"fmt"
@@ -142,7 +139,7 @@ func verifyPathComponents(absPath string) error {
 	return nil
 }
 
-// MaxFileSize is the maximum allowed file size for safeReadFile (128 MB)
+// MaxFileSize is the maximum allowed file size for SafeReadFile (128 MB)
 const MaxFileSize = 128 * 1024 * 1024
 
 // SafeReadFile reads a file safely after validating the path and checking file properties.
@@ -176,12 +173,7 @@ func SafeReadFile(filePath string) ([]byte, error) {
 		return nil, err
 	}
 
-	// Validate the file is a regular file (not a device, pipe, etc.)
-	if _, err := validateFile(file, absPath); err != nil {
-		return nil, err
-	}
-
-	return readFileContent(file, filePath)
+	return readFileContent(file, absPath)
 }
 
 // readFileContent reads and validates the content of an already opened file

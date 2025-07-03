@@ -1,6 +1,6 @@
-//go:build netbsd
+//go:build !netbsd
 
-package filevalidator
+package safefileio
 
 import (
 	"os"
@@ -14,10 +14,16 @@ func TestIsNoFollowError(t *testing.T) {
 		err  error
 		want bool
 	}{
-		// NetBSD returns EFTYPE when opening a symlink with O_NOFOLLOW
+		// POSIX system returns ELOOP when opening a symlink with O_NOFOLLOW
 		{
-			name: "EFTYPE error",
-			err:  &os.PathError{Err: syscall.EFTYPE},
+			name: "ELOOP error",
+			err:  &os.PathError{Err: syscall.ELOOP},
+			want: true,
+		},
+		// FreeBSD returns EMLINK when opening a symlink with O_NOFOLLOW
+		{
+			name: "EMLINK error",
+			err:  &os.PathError{Err: syscall.EMLINK},
 			want: true,
 		},
 		{

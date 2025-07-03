@@ -1,6 +1,6 @@
-//go:build netbsd
+//go:build !netbsd
 
-package filevalidator
+package safefileio
 
 import (
 	"errors"
@@ -14,5 +14,5 @@ func isNoFollowError(err error) bool {
 	if !errors.As(err, &e) {
 		return false
 	}
-	return errors.Is(e.Err, syscall.EFTYPE)
+	return errors.Is(e.Err, syscall.ELOOP) || errors.Is(e.Err, syscall.EMLINK)
 }

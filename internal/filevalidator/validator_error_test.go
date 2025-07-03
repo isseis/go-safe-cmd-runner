@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
 
 // TestErrorCases tests various error conditions and their messages
@@ -36,7 +38,7 @@ func TestErrorCases(t *testing.T) {
 			setup: func() (string, error) {
 				return "", nil
 			},
-			wantErr:     ErrInvalidFilePath,
+			wantErr:     safefileio.ErrInvalidFilePath,
 			errContains: "invalid file path",
 		},
 		{
@@ -232,7 +234,7 @@ func TestErrorMessages(t *testing.T) {
 		{
 			name:        "empty path",
 			filePath:    "",
-			expectedErr: ErrInvalidFilePath,
+			expectedErr: safefileio.ErrInvalidFilePath,
 			errContains: "invalid file path",
 		},
 		{
