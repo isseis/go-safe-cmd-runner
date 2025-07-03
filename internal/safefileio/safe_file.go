@@ -88,7 +88,9 @@ func isOpenat2Available() bool {
 	// Test openat2 with actual file operations
 	fd, err := openat2(AtFdcwd, testFile, &how)
 	// Clean up the test file
-	_ = syscall.Close(fd)
+	if fd >= 0 {
+		_ = syscall.Close(fd)
+	}
 	_ = os.Remove(testFile)
 
 	return err == nil
