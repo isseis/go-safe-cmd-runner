@@ -37,7 +37,7 @@ func (p *ProductionHashFilePathGetter) GetHashFilePath(hashAlgorithm HashAlgorit
 	h := sha256.Sum256([]byte(targetPath))
 	hashStr := base64.URLEncoding.EncodeToString(h[:])
 
-	return filepath.Join(hashDir, hashStr[:12]+"."+hashAlgorithm.Name()), nil
+	return filepath.Join(hashDir, hashStr[:12]+".json"), nil
 }
 
 // GetHashFilePath returns the path where the hash for the given file would be stored.

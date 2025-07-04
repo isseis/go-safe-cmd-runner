@@ -303,7 +303,7 @@ type CollidingHashFilePathGetter struct{}
 
 // GetHashFilePath always returns the same path, so it simulates a hash collision.
 func (t *CollidingHashFilePathGetter) GetHashFilePath(_ HashAlgorithm, hashDir string, _ string) (string, error) {
-	return filepath.Join(hashDir, "test.hash"), nil
+	return filepath.Join(hashDir, "test.json"), nil
 }
 
 func TestValidator_HashCollision(t *testing.T) {
@@ -342,7 +342,7 @@ func TestValidator_HashCollision(t *testing.T) {
 			t.Fatalf("Failed to record first file: %v", err)
 		}
 		// Verify the hash file was created with the correct content
-		hashFilePath := filepath.Join(hashDir, "test.hash")
+		hashFilePath := filepath.Join(hashDir, "test.json")
 		_, err := testSafeReadFile(hashDir, hashFilePath)
 		if err != nil {
 			t.Fatalf("Failed to read hash file: %v", err)
