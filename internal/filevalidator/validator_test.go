@@ -589,3 +589,50 @@ func TestValidator_LegacyFormatError(t *testing.T) {
 		t.Errorf("Expected ErrInvalidJSONFormat, got %v", err)
 	}
 }
+
+func TestValidator_InvalidTimestamp(t *testing.T) {
+	tempDir := safeTempDir(t)
+
+	// Create a test file
+	testFilePath := filepath.Join(tempDir, "test.txt")
+	if err := os.WriteFile(testFilePath, []byte("test content"), 0o644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	validator, err := New(&SHA256{}, tempDir)
+	if err != nil {
+		t.Fatalf("Failed to create validator: %v", err)
+	}
+
+	hashFilePath, err := validator.GetHashFilePath(testFilePath)
+	if err != nil {
+		t.Fatalf("GetHashFilePath failed: %v", err)
+	}
+
+	t.Run("Zero timestamp", func(t *testing.T) {
+		format := HashFileFormat{
+			Version:   "1.0",
+			Format:    "file-hash",
+			Timestamp: time.Time{}, // zero value
+			File: FileInfo{
+				Path: testFilePath,
+				Hash: HashInfo{
+					Algorithm: "sha256",
+					Value:     "dummyhash",
+				},
+			},
+		}
+		jsonData, err := json.MarshalIndent(format, "", "  ")
+		if err != nil {
+			t.Fatalf("Failed to marshal JSON: %v", err)
+		}
+		jsonData = append(jsonData, '\n')
+		if err := os.WriteFile(hashFilePath, jsonData, 0o644); err != nil {
+			t.Fatalf("Failed to write hash file: %v", err)
+		}
+		err = validator.Verify(testFilePath)
+		if err == nil || !strings.Contains(err.Error(), "invalid timestamp") {
+			t.Errorf("Expected invalid timestamp error, got: %v", err)
+		}
+	})
+}

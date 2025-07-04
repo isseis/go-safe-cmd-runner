@@ -104,5 +104,10 @@ func (v *Validator) validateJSONHashFileFormat(format HashFileFormat, targetPath
 		return fmt.Errorf("%w: empty hash value", ErrInvalidJSONFormat)
 	}
 
+	// Timestamp validation
+	if format.Timestamp.IsZero() {
+		return fmt.Errorf("%w: zero timestamp", ErrInvalidTimestamp)
+	}
+
 	return nil
 }
