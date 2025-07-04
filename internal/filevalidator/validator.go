@@ -193,7 +193,7 @@ func (v *Validator) readAndParseHashFile(targetPath string) (string, string, err
 		return "", "", fmt.Errorf("failed to read hash file: %w", err)
 	}
 
-	// JSON形式の検証と解析
+	// Validate and parse JSON format
 	format, err := validateHashFileFormat(hashFileContent)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to validate hash file format: %w", err)
@@ -264,15 +264,15 @@ func (v *Validator) parseJSONHashFile(format HashFileFormat, targetPath string) 
 
 // writeHashFileJSON writes a hash file in JSON format
 func (v *Validator) writeHashFileJSON(filePath string, format HashFileFormat) error {
-	// JSON形式でマーシャル（インデント付き）
+	// Marshal to JSON format with indentation
 	jsonData, err := json.MarshalIndent(format, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal JSON: %w", err)
 	}
 
-	// 改行を追加
+	// Add newline
 	jsonData = append(jsonData, '\n')
 
-	// ファイル書き込み
+	// Write to file
 	return safefileio.SafeWriteFile(filePath, jsonData, 0o640)
 }

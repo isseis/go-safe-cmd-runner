@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// HashFileFormat はハッシュファイルのJSON形式を定義する
+// HashFileFormat defines the JSON format for hash files
 type HashFileFormat struct {
 	Version   string    `json:"version"`
 	Format    string    `json:"format"`
@@ -14,19 +14,19 @@ type HashFileFormat struct {
 	File      FileInfo  `json:"file"`
 }
 
-// FileInfo はファイル情報を定義する
+// FileInfo defines file information
 type FileInfo struct {
 	Path string   `json:"path"`
 	Hash HashInfo `json:"hash"`
 }
 
-// HashInfo はハッシュ情報を定義する
+// HashInfo defines hash information
 type HashInfo struct {
 	Algorithm string `json:"algorithm"`
 	Value     string `json:"value"`
 }
 
-// createHashFileFormat はハッシュファイル形式を作成する
+// createHashFileFormat creates a hash file format structure
 func createHashFileFormat(path, hash, algorithm string) HashFileFormat {
 	return HashFileFormat{
 		Version:   "1.0",
@@ -42,9 +42,9 @@ func createHashFileFormat(path, hash, algorithm string) HashFileFormat {
 	}
 }
 
-// isJSONFormat はコンテンツがJSON形式かどうかを判定する
+// isJSONFormat determines if content is in JSON format
 func isJSONFormat(content []byte) bool {
-	// 空白文字をスキップして先頭文字を確認
+	// Skip whitespace and check the first character
 	for _, b := range content {
 		switch b {
 		case ' ', '\t', '\n', '\r':
@@ -58,7 +58,7 @@ func isJSONFormat(content []byte) bool {
 	return false
 }
 
-// validateHashFileFormat はハッシュファイルの形式を検証し、解析する
+// validateHashFileFormat validates and parses hash file format
 func validateHashFileFormat(content []byte) (HashFileFormat, error) {
 	if !isJSONFormat(content) {
 		return HashFileFormat{}, ErrInvalidJSONFormat
@@ -72,34 +72,34 @@ func validateHashFileFormat(content []byte) (HashFileFormat, error) {
 	return format, nil
 }
 
-// validateJSONHashFileFormat はJSON形式のハッシュファイルの内容を検証する
+// validateJSONHashFileFormat validates the content of JSON format hash files
 func (v *Validator) validateJSONHashFileFormat(format HashFileFormat, targetPath string) error {
-	// バージョン検証
+	// Version validation
 	if format.Version != "1.0" {
 		return fmt.Errorf("%w: version %s", ErrUnsupportedVersion, format.Version)
 	}
 
-	// フォーマット検証
+	// Format validation
 	if format.Format != "file-hash" {
 		return fmt.Errorf("%w: format %s", ErrInvalidJSONFormat, format.Format)
 	}
 
-	// ファイルパス検証
+	// File path validation
 	if format.File.Path == "" {
 		return fmt.Errorf("%w: empty file path", ErrInvalidJSONFormat)
 	}
 
-	// パス一致確認
+	// Path match confirmation
 	if format.File.Path != targetPath {
 		return fmt.Errorf("%w: path mismatch", ErrHashCollision)
 	}
 
-	// ハッシュアルゴリズム検証
+	// Hash algorithm validation
 	if format.File.Hash.Algorithm != v.algorithm.Name() {
 		return fmt.Errorf("%w: algorithm mismatch", ErrInvalidJSONFormat)
 	}
 
-	// ハッシュ値検証
+	// Hash value validation
 	if format.File.Hash.Value == "" {
 		return fmt.Errorf("%w: empty hash value", ErrInvalidJSONFormat)
 	}
