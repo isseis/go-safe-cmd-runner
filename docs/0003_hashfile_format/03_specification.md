@@ -113,7 +113,7 @@ func validateHashFileFormat(content []byte) (HashFileFormat, error)
 
 **処理フロー:**
 1. 内容の先頭空白文字をスキップ
-2. 先頭文字が '{' でない場合はErrLegacyFormatNotSupportedを返す
+2. 先頭文字が '{' でない場合はErrInvalidJSONFormatを返す
 3. JSON形式として解析を試行
 4. JSON解析に成功した場合はバリデーション実行
 5. 解析またはバリデーションに失敗した場合はエラーを返す
@@ -198,12 +198,12 @@ func (v *Validator) validateHashFileFormat(format HashFileFormat, targetPath str
 
 #### 3.3.1. レガシー形式の検出
 レガシー形式のファイルが存在する場合、以下のエラーを返す：
-- `ErrInvalidHashFileFormat`: ファイル形式がサポートされていない
+- `ErrInvalidJSONFormat`: ファイル形式がJSON形式でない
 
 #### 3.3.2. エラーメッセージ
 ```go
 if !isJSONFormat(content) {
-    return "", "", ErrLegacyFormatNotSupported
+    return "", "", ErrInvalidJSONFormat
 }
 ```
 
@@ -352,7 +352,6 @@ var (
     ErrJSONParseError = errors.New("failed to parse JSON hash file")
 
     // 既存エラーの継続使用
-    ErrInvalidHashFileFormat = errors.New("invalid hash file format")
     ErrHashCollision = errors.New("hash collision detected")
     ErrHashFileNotFound = errors.New("hash file not found")
 )
@@ -375,7 +374,7 @@ func parseJSONHashFile(content []byte) (HashFileFormat, error) {
 ```go
 func validateHashFileFormat(content []byte) (HashFileFormat, error) {
     if !isJSONFormat(content) {
-        return HashFileFormat{}, ErrInvalidHashFileFormat
+        return HashFileFormat{}, ErrInvalidJSONFormat
     }
 
     // JSON解析処理...
@@ -421,7 +420,7 @@ func TestDetectHashFileFormat_Legacy(t *testing.T) {
 
     _, err := validateHashFileFormat([]byte(legacyContent))
     assert.Error(t, err)
-    assert.True(t, errors.Is(err, ErrInvalidHashFileFormat))
+    assert.True(t, errors.Is(err, ErrInvalidJSONFormat))
 }
 ```
 
@@ -514,7 +513,7 @@ func TestValidator_LegacyFormatError(t *testing.T) {
     // レガシー形式でのVerify（エラーになるはず）
     err = validator.Verify(testFile)
     assert.Error(t, err)
-    assert.True(t, errors.Is(err, ErrLegacyFormatNotSupported))
+    assert.True(t, errors.Is(err, ErrInvalidJSONFormat))
 }
 ```
 

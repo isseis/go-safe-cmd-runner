@@ -119,7 +119,7 @@ abc123def456...
 
 ### 4.4. 可用性要件
 - JSON形式の読み込みエラーは適切なエラーメッセージを提供
-- レガシー形式の読み込みに対しては ErrInvalidHashFileFormat エラーを使用
+- レガシー形式の読み込みに対しては ErrInvalidJSONFormat エラーを使用
 
 ## 5. 制約事項 (Constraints)
 

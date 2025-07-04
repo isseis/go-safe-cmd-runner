@@ -142,6 +142,7 @@ var (
 2. **スキーマエラー**: 必須フィールドが不足している場合はErrInvalidJSONFormat
 3. **バージョンエラー**: サポートされていないバージョンの場合はErrUnsupportedVersion
 4. **データエラー**: パスの不一致などはErrHashCollision
+5. **レガシー形式エラー**: レガシー形式の場合はErrInvalidJSONFormat
 
 ## 4. データフロー設計
 
@@ -177,10 +178,10 @@ graph TD
 graph TD
     A[内容確認] --> B[先頭文字が'{'？]
     B -->|Yes| C[JSON解析試行]
-    B -->|No| D[JSON解析エラー]
+    B -->|No| D[ErrInvalidJSONFormat]
     C --> E{解析成功？}
     E -->|Yes| F[JSON形式と判定]
-    E -->|No| G[JSON解析エラー]
+    E -->|No| G[ErrInvalidJSONFormat]
 ```
 
 ## 5. セキュリティ設計
