@@ -1,12 +1,14 @@
 package filevalidator
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
@@ -301,7 +303,7 @@ type CollidingHashFilePathGetter struct{}
 
 // GetHashFilePath always returns the same path, so it simulates a hash collision.
 func (t *CollidingHashFilePathGetter) GetHashFilePath(_ HashAlgorithm, hashDir string, _ string) (string, error) {
-	return filepath.Join(hashDir, "test.hash"), nil
+	return filepath.Join(hashDir, "test.json"), nil
 }
 
 func TestValidator_HashCollision(t *testing.T) {
@@ -340,7 +342,7 @@ func TestValidator_HashCollision(t *testing.T) {
 			t.Fatalf("Failed to record first file: %v", err)
 		}
 		// Verify the hash file was created with the correct content
-		hashFilePath := filepath.Join(hashDir, "test.hash")
+		hashFilePath := filepath.Join(hashDir, "test.json")
 		_, err := testSafeReadFile(hashDir, hashFilePath)
 		if err != nil {
 			t.Fatalf("Failed to read hash file: %v", err)
@@ -399,15 +401,28 @@ func TestValidator_HashCollision(t *testing.T) {
 			}
 		}()
 
-		// Modify the hash file to contain file3's path but file1's hash
-		parts := strings.SplitN(string(originalContent), "\n", 2)
-		if len(parts) < 2 {
-			t.Fatalf("Invalid hash file format: %s", originalContent)
+		// Create a modified JSON format hash file with file3's path but file1's hash
+		modifiedHashFileFormat := HashFileFormat{
+			Version:   "1.0",
+			Format:    "file-hash",
+			Timestamp: time.Now().UTC(),
+			File: FileInfo{
+				Path: file3Path,
+				Hash: HashInfo{
+					Algorithm: "sha256",
+					Value:     fixedHash,
+				},
+			},
 		}
 
-		// Write a hash file with file3's path but file1's hash
-		modifiedContent := file3Path + "\n" + parts[1]
-		if err := os.WriteFile(hashFilePath, []byte(modifiedContent), 0o644); err != nil {
+		// Write the modified JSON format hash file
+		jsonData, err := json.MarshalIndent(modifiedHashFileFormat, "", "  ")
+		if err != nil {
+			t.Fatalf("Failed to marshal JSON: %v", err)
+		}
+		jsonData = append(jsonData, '\n')
+
+		if err := os.WriteFile(hashFilePath, jsonData, 0o644); err != nil {
 			t.Fatalf("Failed to modify hash file: %v", err)
 		}
 
@@ -454,11 +469,170 @@ func TestValidator_Record_EmptyHashFile(t *testing.T) {
 		t.Fatalf("Failed to create empty hash file: %v", err)
 	}
 
-	// Test Record with empty hash file - this should return ErrInvalidHashFileFormat
+	// Test Record with empty hash file - this should return ErrInvalidJSONFormat
 	err = validator.Record(testFilePath)
 	if err == nil {
 		t.Error("Expected error with empty hash file, got nil")
-	} else if !errors.Is(err, ErrInvalidHashFileFormat) {
-		t.Errorf("Expected ErrInvalidHashFileFormat, got %v", err)
+	} else if !errors.Is(err, ErrInvalidJSONFormat) {
+		t.Errorf("Expected ErrInvalidJSONFormat, got %v", err)
 	}
+}
+
+// TestValidator_JSONFormat tests that hash files are created in JSON format
+func TestValidator_JSONFormat(t *testing.T) {
+	tempDir := safeTempDir(t)
+
+	// Create a test file
+	testFilePath := filepath.Join(tempDir, "test.txt")
+	if err := os.WriteFile(testFilePath, []byte("test content"), 0o644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Create a validator
+	validator, err := New(&SHA256{}, tempDir)
+	if err != nil {
+		t.Fatalf("Failed to create validator: %v", err)
+	}
+
+	// Record the file
+	if err := validator.Record(testFilePath); err != nil {
+		t.Fatalf("Record failed: %v", err)
+	}
+
+	// Get the hash file path
+	hashFilePath, err := validator.GetHashFilePath(testFilePath)
+	if err != nil {
+		t.Fatalf("GetHashFilePath failed: %v", err)
+	}
+
+	// Read the hash file content
+	content, err := os.ReadFile(hashFilePath)
+	if err != nil {
+		t.Fatalf("Failed to read hash file: %v", err)
+	}
+
+	// Verify it's JSON format
+	if !isJSONFormat(content) {
+		t.Error("Hash file is not in JSON format")
+	}
+
+	// Parse and validate the JSON content
+	var format HashFileFormat
+	if err := json.Unmarshal(content, &format); err != nil {
+		t.Fatalf("Failed to parse JSON: %v", err)
+	}
+
+	// Verify the JSON structure
+	if format.Version != "1.0" {
+		t.Errorf("Expected version 1.0, got %s", format.Version)
+	}
+	if format.Format != "file-hash" {
+		t.Errorf("Expected format 'file-hash', got %s", format.Format)
+	}
+	if format.File.Path == "" {
+		t.Error("File path is empty")
+	}
+	if format.File.Hash.Algorithm != "sha256" {
+		t.Errorf("Expected algorithm sha256, got %s", format.File.Hash.Algorithm)
+	}
+	if format.File.Hash.Value == "" {
+		t.Error("Hash value is empty")
+	}
+}
+
+// TestValidator_LegacyFormatError tests that legacy format files are rejected
+func TestValidator_LegacyFormatError(t *testing.T) {
+	tempDir := safeTempDir(t)
+
+	// Create a test file
+	testFilePath := filepath.Join(tempDir, "test.txt")
+	if err := os.WriteFile(testFilePath, []byte("test content"), 0o644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Create a validator
+	validator, err := New(&SHA256{}, tempDir)
+	if err != nil {
+		t.Fatalf("Failed to create validator: %v", err)
+	}
+
+	// Get the hash file path
+	hashFilePath, err := validator.GetHashFilePath(testFilePath)
+	if err != nil {
+		t.Fatalf("GetHashFilePath failed: %v", err)
+	}
+
+	// Create the hash directory
+	if err := os.MkdirAll(filepath.Dir(hashFilePath), 0o750); err != nil {
+		t.Fatalf("Failed to create hash directory: %v", err)
+	}
+
+	// Create a legacy format hash file
+	legacyContent := testFilePath + "\nabc123def456..."
+	if err := os.WriteFile(hashFilePath, []byte(legacyContent), 0o644); err != nil {
+		t.Fatalf("Failed to create legacy hash file: %v", err)
+	}
+
+	// Test Verify with legacy format (should fail)
+	err = validator.Verify(testFilePath)
+	if err == nil {
+		t.Error("Expected error with legacy format, got nil")
+	} else if !errors.Is(err, ErrInvalidJSONFormat) {
+		t.Errorf("Expected ErrInvalidJSONFormat, got %v", err)
+	}
+
+	// Test Record with existing legacy format (should fail)
+	err = validator.Record(testFilePath)
+	if err == nil {
+		t.Error("Expected error with existing legacy format, got nil")
+	} else if !errors.Is(err, ErrInvalidJSONFormat) {
+		t.Errorf("Expected ErrInvalidJSONFormat, got %v", err)
+	}
+}
+
+func TestValidator_InvalidTimestamp(t *testing.T) {
+	tempDir := safeTempDir(t)
+
+	// Create a test file
+	testFilePath := filepath.Join(tempDir, "test.txt")
+	if err := os.WriteFile(testFilePath, []byte("test content"), 0o644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	validator, err := New(&SHA256{}, tempDir)
+	if err != nil {
+		t.Fatalf("Failed to create validator: %v", err)
+	}
+
+	hashFilePath, err := validator.GetHashFilePath(testFilePath)
+	if err != nil {
+		t.Fatalf("GetHashFilePath failed: %v", err)
+	}
+
+	t.Run("Zero timestamp", func(t *testing.T) {
+		format := HashFileFormat{
+			Version:   "1.0",
+			Format:    "file-hash",
+			Timestamp: time.Time{}, // zero value
+			File: FileInfo{
+				Path: testFilePath,
+				Hash: HashInfo{
+					Algorithm: "sha256",
+					Value:     "dummyhash",
+				},
+			},
+		}
+		jsonData, err := json.MarshalIndent(format, "", "  ")
+		if err != nil {
+			t.Fatalf("Failed to marshal JSON: %v", err)
+		}
+		jsonData = append(jsonData, '\n')
+		if err := os.WriteFile(hashFilePath, jsonData, 0o644); err != nil {
+			t.Fatalf("Failed to write hash file: %v", err)
+		}
+		err = validator.Verify(testFilePath)
+		if err == nil || !strings.Contains(err.Error(), "invalid timestamp") {
+			t.Errorf("Expected invalid timestamp error, got: %v", err)
+		}
+	})
 }

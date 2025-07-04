@@ -10,7 +10,6 @@ import (
 // It allows for efficient streaming processing by accepting an io.Reader.
 type HashAlgorithm interface {
 	// Name returns the name of the algorithm (e.g., "sha256").
-	// This name is used as the file extension for hash files.
 	Name() string
 
 	// Sum calculates the hash value of the data read from r and returns it as a hexadecimal string.

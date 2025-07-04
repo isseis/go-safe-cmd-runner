@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
@@ -37,7 +37,7 @@ func (p *ProductionHashFilePathGetter) GetHashFilePath(hashAlgorithm HashAlgorit
 	h := sha256.Sum256([]byte(targetPath))
 	hashStr := base64.URLEncoding.EncodeToString(h[:])
 
-	return filepath.Join(hashDir, hashStr[:12]+"."+hashAlgorithm.Name()), nil
+	return filepath.Join(hashDir, hashStr[:12]+".json"), nil
 }
 
 // GetHashFilePath returns the path where the hash for the given file would be stored.
@@ -118,24 +118,24 @@ func (v *Validator) Record(filePath string) error {
 
 	// Check if the hash file already exists and contains a different path
 	if existingContent, err := safefileio.SafeReadFile(hashFilePath); err == nil {
-		// File exists, check the recorded path
-		numLines := 2
-		parts := strings.SplitN(string(existingContent), "\n", numLines)
-		if len(parts) < numLines {
-			return fmt.Errorf("%w: failed to parse hash file", ErrInvalidHashFileFormat)
+		// File exists, check if it's JSON format
+		if !isJSONFormat(existingContent) {
+			return ErrInvalidJSONFormat
 		}
-		recordedPath := parts[0]
-		if recordedPath != targetPath {
-			return fmt.Errorf("%w: path '%s' conflicts with existing path '%s'", ErrHashCollision, targetPath, recordedPath)
+
+		// Validate and parse JSON format
+		if err := v.checkJSONHashCollision(existingContent, targetPath); err != nil {
+			return err
 		}
-		// If we get here, the file exists and has the same path, so we can overwrite it
 	} else if !os.IsNotExist(err) {
 		// Return error if it's not a "not exist" error
 		return fmt.Errorf("failed to check existing hash file: %w", err)
 	}
 
-	// Write the target path and hash to the hash file
-	return safefileio.SafeWriteFile(hashFilePath, fmt.Appendf(nil, "%s\n%s", targetPath, hash), 0o640)
+	// Create JSON format hash file
+	format := createHashFileFormat(targetPath, hash, v.algorithm.Name())
+
+	return v.writeHashFileJSON(hashFilePath, format)
 }
 
 // GetHashAlgorithm returns the hash algorithm used by the validator.
@@ -193,24 +193,13 @@ func (v *Validator) readAndParseHashFile(targetPath string) (string, string, err
 		return "", "", fmt.Errorf("failed to read hash file: %w", err)
 	}
 
-	// Parse the hash file content (format: "filepath\nhash")
-	numLines := 2
-	parts := strings.SplitN(string(hashFileContent), "\n", numLines)
-	if len(parts) != numLines {
-		return "", "", fmt.Errorf("%w: expected 'path\nhash', got %d parts", ErrInvalidHashFileFormat, len(parts))
+	// Validate and parse JSON format
+	format, err := validateHashFileFormat(hashFileContent)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to validate hash file format: %w", err)
 	}
 
-	// Check if the recorded path matches the current file path
-	recordedPath := parts[0]
-	if recordedPath == "" {
-		return "", "", fmt.Errorf("%w: empty path", ErrInvalidHashFileFormat)
-	}
-	if recordedPath != targetPath {
-		return "", "", fmt.Errorf("%w: recorded path '%s' does not match current path '%s'", ErrHashCollision, recordedPath, targetPath)
-	}
-
-	expectedHash := parts[1]
-	return recordedPath, expectedHash, nil
+	return v.parseJSONHashFile(format, targetPath)
 }
 
 // validatePath validates and normalizes the given file path.
@@ -247,4 +236,43 @@ func (v *Validator) calculateHash(filePath string) (string, error) {
 		return "", err
 	}
 	return v.algorithm.Sum(bytes.NewReader(content))
+}
+
+// checkJSONHashCollision checks for hash collisions in JSON format files
+func (v *Validator) checkJSONHashCollision(existingContent []byte, targetPath string) error {
+	format, err := validateHashFileFormat(existingContent)
+	if err != nil {
+		return fmt.Errorf("failed to validate existing hash file: %w", err)
+	}
+
+	if format.File.Path != targetPath {
+		return fmt.Errorf("%w: path '%s' conflicts with existing path '%s'", ErrHashCollision, targetPath, format.File.Path)
+	}
+
+	return nil
+}
+
+// parseJSONHashFile parses a JSON hash file format and returns the path and hash
+func (v *Validator) parseJSONHashFile(format HashFileFormat, targetPath string) (string, string, error) {
+	// Validate the format against the target path
+	if err := v.validateJSONHashFileFormat(format, targetPath); err != nil {
+		return "", "", err
+	}
+
+	return format.File.Path, format.File.Hash.Value, nil
+}
+
+// writeHashFileJSON writes a hash file in JSON format
+func (v *Validator) writeHashFileJSON(filePath string, format HashFileFormat) error {
+	// Marshal to JSON format with indentation
+	jsonData, err := json.MarshalIndent(format, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal JSON: %w", err)
+	}
+
+	// Add newline
+	jsonData = append(jsonData, '\n')
+
+	// Write to file
+	return safefileio.SafeWriteFile(filePath, jsonData, 0o640)
 }
