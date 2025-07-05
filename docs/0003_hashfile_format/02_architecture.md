@@ -176,7 +176,7 @@ graph TD
 
 ```mermaid
 graph TD
-    A[内容確認] --> B[先頭文字が'{'？]
+    A[内容確認] --> B["先頭文字が'{'？"]
     B -->|Yes| C[JSON解析試行]
     B -->|No| D[ErrInvalidJSONFormat]
     C --> E{解析成功？}
