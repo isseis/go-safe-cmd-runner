@@ -42,30 +42,13 @@ func createHashFileFormat(path, hash, algorithm string) HashFileFormat {
 	}
 }
 
-// isJSONFormat determines if content is in JSON format
-func isJSONFormat(content []byte) bool {
-	// Skip whitespace and check the first character
-	for _, b := range content {
-		switch b {
-		case ' ', '\t', '\n', '\r':
-			continue
-		case '{':
-			return true
-		default:
-			return false
-		}
-	}
-	return false
-}
-
 // validateHashFileFormat validates and parses hash file format
 func validateHashFileFormat(content []byte) (HashFileFormat, error) {
-	if !isJSONFormat(content) {
-		return HashFileFormat{}, ErrInvalidJSONFormat
-	}
-
 	var format HashFileFormat
 	if err := json.Unmarshal(content, &format); err != nil {
+		if jsonErr, ok := err.(*json.SyntaxError); ok {
+			return HashFileFormat{}, fmt.Errorf("%w: invalid JSON syntax at offset %d", ErrInvalidJSONFormat, jsonErr.Offset)
+		}
 		return HashFileFormat{}, fmt.Errorf("%w: %v", ErrJSONParseError, err)
 	}
 

@@ -118,15 +118,22 @@ func (v *Validator) Record(filePath string) error {
 
 	// Check if the hash file already exists and contains a different path
 	if existingContent, err := safefileio.SafeReadFile(hashFilePath); err == nil {
-		// File exists, check if it's JSON format
-		if !isJSONFormat(existingContent) {
-			return ErrInvalidJSONFormat
+		// Try to parse the existing content as JSON
+		var existingFormat HashFileFormat
+		if err := json.Unmarshal(existingContent, &existingFormat); err != nil {
+			if jsonErr, ok := err.(*json.SyntaxError); ok {
+				return fmt.Errorf("%w: invalid JSON syntax at offset %d", ErrInvalidJSONFormat, jsonErr.Offset)
+			}
+			return fmt.Errorf("%w: %v", ErrJSONParseError, err)
 		}
 
-		// Validate and parse JSON format
-		if err := v.checkJSONHashCollision(existingContent, targetPath); err != nil {
-			return err
+		// If the paths don't match, it's a hash collision
+		if existingFormat.File.Path != targetPath {
+			return fmt.Errorf("%w: hash collision detected between %s and %s",
+				ErrHashCollision, existingFormat.File.Path, targetPath)
 		}
+
+		// If we get here, the file already exists with the same path, so we can overwrite it
 	} else if !os.IsNotExist(err) {
 		// Return error if it's not a "not exist" error
 		return fmt.Errorf("failed to check existing hash file: %w", err)

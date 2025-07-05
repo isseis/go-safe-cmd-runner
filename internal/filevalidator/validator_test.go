@@ -511,11 +511,6 @@ func TestValidator_JSONFormat(t *testing.T) {
 		t.Fatalf("Failed to read hash file: %v", err)
 	}
 
-	// Verify it's JSON format
-	if !isJSONFormat(content) {
-		t.Error("Hash file is not in JSON format")
-	}
-
 	// Parse and validate the JSON content
 	var format HashFileFormat
 	if err := json.Unmarshal(content, &format); err != nil {
