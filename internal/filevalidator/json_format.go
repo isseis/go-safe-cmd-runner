@@ -1,7 +1,6 @@
 package filevalidator
 
 import (
-	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -42,21 +41,8 @@ func createHashFileFormat(path, hash, algorithm string) HashFileFormat {
 	}
 }
 
-// validateHashFileFormat validates and parses hash file format
-func validateHashFileFormat(content []byte) (HashFileFormat, error) {
-	var format HashFileFormat
-	if err := json.Unmarshal(content, &format); err != nil {
-		if jsonErr, ok := err.(*json.SyntaxError); ok {
-			return HashFileFormat{}, fmt.Errorf("%w: invalid JSON syntax at offset %d", ErrInvalidJSONFormat, jsonErr.Offset)
-		}
-		return HashFileFormat{}, fmt.Errorf("%w: %v", ErrJSONParseError, err)
-	}
-
-	return format, nil
-}
-
-// validateJSONHashFileFormat validates the content of JSON format hash files
-func (v *Validator) validateJSONHashFileFormat(format HashFileFormat, targetPath string) error {
+// validateHashFile validates the content of JSON format hash files
+func validateHashFile(format HashFileFormat, algoName string, targetPath string) error {
 	// Version validation
 	if format.Version != "1.0" {
 		return fmt.Errorf("%w: version %s", ErrUnsupportedVersion, format.Version)
@@ -78,7 +64,7 @@ func (v *Validator) validateJSONHashFileFormat(format HashFileFormat, targetPath
 	}
 
 	// Hash algorithm validation
-	if format.File.Hash.Algorithm != v.algorithm.Name() {
+	if format.File.Hash.Algorithm != algoName {
 		return fmt.Errorf("%w: algorithm mismatch", ErrInvalidJSONFormat)
 	}
 

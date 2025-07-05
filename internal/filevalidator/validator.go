@@ -184,6 +184,8 @@ func (v *Validator) Verify(filePath string) error {
 	return nil
 }
 
+// readAndParseHashFile reads and parses a hash file, returning the file path and hash value.
+// It returns an error if the file cannot be read, the JSON is invalid, or the hash file format is incorrect.
 func (v *Validator) readAndParseHashFile(targetPath string) (string, string, error) {
 	// Get the path to the hash file
 	hashFilePath, err := v.GetHashFilePath(targetPath)
@@ -200,13 +202,8 @@ func (v *Validator) readAndParseHashFile(targetPath string) (string, string, err
 		return "", "", fmt.Errorf("failed to read hash file: %w", err)
 	}
 
-	// Validate and parse JSON format
-	format, err := validateHashFileFormat(hashFileContent)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to validate hash file format: %w", err)
-	}
-
-	return v.parseJSONHashFile(format, targetPath)
+	// Parse and validate the hash file content
+	return v.parseAndValidateHashFile(hashFileContent, targetPath)
 }
 
 // validatePath validates and normalizes the given file path.
@@ -245,10 +242,19 @@ func (v *Validator) calculateHash(filePath string) (string, error) {
 	return v.algorithm.Sum(bytes.NewReader(content))
 }
 
-// parseJSONHashFile parses a JSON hash file format and returns the path and hash
-func (v *Validator) parseJSONHashFile(format HashFileFormat, targetPath string) (string, string, error) {
-	// Validate the format against the target path
-	if err := v.validateJSONHashFileFormat(format, targetPath); err != nil {
+// parseAndValidateHashFile parses and validates a JSON hash file content and returns the path and hash
+func (v *Validator) parseAndValidateHashFile(content []byte, targetPath string) (string, string, error) {
+	// Parse JSON format
+	var format HashFileFormat
+	if err := json.Unmarshal(content, &format); err != nil {
+		if jsonErr, ok := err.(*json.SyntaxError); ok {
+			return "", "", fmt.Errorf("%w: invalid JSON syntax at offset %d", ErrInvalidJSONFormat, jsonErr.Offset)
+		}
+		return "", "", fmt.Errorf("%w: %v", ErrJSONParseError, err)
+	}
+
+	// Validate the hash file against the target path
+	if err := validateHashFile(format, v.algorithm.Name(), targetPath); err != nil {
 		return "", "", err
 	}
 
