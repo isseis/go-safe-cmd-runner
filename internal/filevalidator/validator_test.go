@@ -3,7 +3,6 @@ package filevalidator
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,21 +10,6 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
-)
-
-// Test error definitions
-var (
-	// ErrTestHashCalculation is returned when there's an error calculating a hash in tests.
-	ErrTestHashCalculation = fmt.Errorf("test error: failed to calculate hash")
-
-	// ErrTestHashFileWrite is returned when there's an error writing a hash file in tests.
-	ErrTestHashFileWrite = fmt.Errorf("test error: failed to write hash file")
-
-	// ErrTestHashFileRead is returned when there's an error reading a hash file in tests.
-	ErrTestHashFileRead = fmt.Errorf("test error: failed to read hash file")
-
-	// ErrTestHashCollision is returned when a hash collision is detected in tests.
-	ErrTestHashCollision = fmt.Errorf("test error: hash collision detected")
 )
 
 // testSafeReadFile is a helper function for tests to safely read files.

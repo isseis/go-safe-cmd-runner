@@ -245,20 +245,6 @@ func (v *Validator) calculateHash(filePath string) (string, error) {
 	return v.algorithm.Sum(bytes.NewReader(content))
 }
 
-// checkJSONHashCollision checks for hash collisions in JSON format files
-func (v *Validator) checkJSONHashCollision(existingContent []byte, targetPath string) error {
-	format, err := validateHashFileFormat(existingContent)
-	if err != nil {
-		return fmt.Errorf("failed to validate existing hash file: %w", err)
-	}
-
-	if format.File.Path != targetPath {
-		return fmt.Errorf("%w: path '%s' conflicts with existing path '%s'", ErrHashCollision, targetPath, format.File.Path)
-	}
-
-	return nil
-}
-
 // parseJSONHashFile parses a JSON hash file format and returns the path and hash
 func (v *Validator) parseJSONHashFile(format HashFileFormat, targetPath string) (string, string, error) {
 	// Validate the format against the target path
