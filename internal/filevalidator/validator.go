@@ -118,13 +118,10 @@ func (v *Validator) Record(filePath string) error {
 
 	// Check if the hash file already exists and contains a different path
 	if existingContent, err := safefileio.SafeReadFile(hashFilePath); err == nil {
-		// Try to parse the existing content as JSON
-		var existingFormat HashFileFormat
-		if err := json.Unmarshal(existingContent, &existingFormat); err != nil {
-			if jsonErr, ok := err.(*json.SyntaxError); ok {
-				return fmt.Errorf("%w: invalid JSON syntax at offset %d", ErrInvalidJSONFormat, jsonErr.Offset)
-			}
-			return fmt.Errorf("%w: %v", ErrJSONParseError, err)
+		// Parse the existing content as JSON
+		existingFormat, err := unmarshalHashFile(existingContent)
+		if err != nil {
+			return err
 		}
 
 		// If the paths don't match, it's a hash collision
@@ -245,12 +242,9 @@ func (v *Validator) calculateHash(filePath string) (string, error) {
 // parseAndValidateHashFile parses and validates a JSON hash file content and returns the path and hash
 func (v *Validator) parseAndValidateHashFile(content []byte, targetPath string) (string, string, error) {
 	// Parse JSON format
-	var format HashFileFormat
-	if err := json.Unmarshal(content, &format); err != nil {
-		if jsonErr, ok := err.(*json.SyntaxError); ok {
-			return "", "", fmt.Errorf("%w: invalid JSON syntax at offset %d", ErrInvalidJSONFormat, jsonErr.Offset)
-		}
-		return "", "", fmt.Errorf("%w: %v", ErrJSONParseError, err)
+	format, err := unmarshalHashFile(content)
+	if err != nil {
+		return "", "", err
 	}
 
 	// Validate the hash file against the target path

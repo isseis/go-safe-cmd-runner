@@ -1,6 +1,7 @@
 package filevalidator
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -39,6 +40,18 @@ func createHashFileFormat(path, hash, algorithm string) HashFileFormat {
 			},
 		},
 	}
+}
+
+// unmarshalHashFile unmarshals the JSON content into a HashFileFormat and handles any parsing errors.
+func unmarshalHashFile(content []byte) (HashFileFormat, error) {
+	var format HashFileFormat
+	if err := json.Unmarshal(content, &format); err != nil {
+		if jsonErr, ok := err.(*json.SyntaxError); ok {
+			return HashFileFormat{}, fmt.Errorf("%w: invalid JSON syntax at offset %d", ErrInvalidJSONFormat, jsonErr.Offset)
+		}
+		return HashFileFormat{}, fmt.Errorf("%w: %v", ErrJSONParseError, err)
+	}
+	return format, nil
 }
 
 // validateHashFile validates the content of JSON format hash files
