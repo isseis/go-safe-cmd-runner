@@ -386,7 +386,7 @@ func TestValidator_HashCollision(t *testing.T) {
 		}()
 
 		// Create a modified JSON format hash file with file3's path but file1's hash
-		modifiedHashFileFormat := HashFileFormat{
+		modifiedHashManifest := HashManifest{
 			Version:   "1.0",
 			Format:    "file-hash",
 			Timestamp: time.Now().UTC(),
@@ -400,7 +400,7 @@ func TestValidator_HashCollision(t *testing.T) {
 		}
 
 		// Write the modified JSON format hash file
-		jsonData, err := json.MarshalIndent(modifiedHashFileFormat, "", "  ")
+		jsonData, err := json.MarshalIndent(modifiedHashManifest, "", "  ")
 		if err != nil {
 			t.Fatalf("Failed to marshal JSON: %v", err)
 		}
@@ -496,7 +496,7 @@ func TestValidator_JSONFormat(t *testing.T) {
 	}
 
 	// Parse and validate the JSON content
-	var format HashFileFormat
+	var format HashManifest
 	if err := json.Unmarshal(content, &format); err != nil {
 		t.Fatalf("Failed to parse JSON: %v", err)
 	}
@@ -589,7 +589,7 @@ func TestValidator_InvalidTimestamp(t *testing.T) {
 	}
 
 	t.Run("Zero timestamp", func(t *testing.T) {
-		format := HashFileFormat{
+		format := HashManifest{
 			Version:   "1.0",
 			Format:    "file-hash",
 			Timestamp: time.Time{}, // zero value

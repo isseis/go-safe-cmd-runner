@@ -6,8 +6,8 @@ import (
 	"time"
 )
 
-// HashFileFormat defines the JSON format for hash files
-type HashFileFormat struct {
+// HashManifest defines the JSON format for hash files
+type HashManifest struct {
 	Version   string    `json:"version"`
 	Format    string    `json:"format"`
 	Timestamp time.Time `json:"timestamp"`
@@ -26,9 +26,9 @@ type HashInfo struct {
 	Value     string `json:"value"`
 }
 
-// createHashFileFormat creates a hash file format structure
-func createHashFileFormat(path, hash, algorithm string) HashFileFormat {
-	return HashFileFormat{
+// createHashManifest creates a hash manifest structure
+func createHashManifest(path, hash, algorithm string) HashManifest {
+	return HashManifest{
 		Version:   "1.0",
 		Format:    "file-hash",
 		Timestamp: time.Now().UTC(),
@@ -42,20 +42,20 @@ func createHashFileFormat(path, hash, algorithm string) HashFileFormat {
 	}
 }
 
-// unmarshalHashFile unmarshals the JSON content into a HashFileFormat and handles any parsing errors.
-func unmarshalHashFile(content []byte) (HashFileFormat, error) {
-	var format HashFileFormat
+// unmarshalHashManifest unmarshals the JSON content into a HashManifest and handles any parsing errors.
+func unmarshalHashManifest(content []byte) (HashManifest, error) {
+	var format HashManifest
 	if err := json.Unmarshal(content, &format); err != nil {
 		if jsonErr, ok := err.(*json.SyntaxError); ok {
-			return HashFileFormat{}, fmt.Errorf("%w: invalid JSON syntax at offset %d", ErrInvalidJSONFormat, jsonErr.Offset)
+			return HashManifest{}, fmt.Errorf("%w: invalid JSON syntax at offset %d", ErrInvalidJSONFormat, jsonErr.Offset)
 		}
-		return HashFileFormat{}, fmt.Errorf("%w: %v", ErrJSONParseError, err)
+		return HashManifest{}, fmt.Errorf("%w: %v", ErrJSONParseError, err)
 	}
 	return format, nil
 }
 
-// validateHashFile validates the content of JSON format hash files
-func validateHashFile(format HashFileFormat, algoName string, targetPath string) error {
+// validateHashManifest validates the content of JSON format hash files
+func validateHashManifest(format HashManifest, algoName string, targetPath string) error {
 	// Version validation
 	if format.Version != "1.0" {
 		return fmt.Errorf("%w: version %s", ErrUnsupportedVersion, format.Version)
