@@ -31,8 +31,8 @@ var (
 	// ErrSuspiciousFilePath indicates a potentially malicious file path was detected.
 	ErrSuspiciousFilePath = errors.New("suspicious file path detected")
 
-	// ErrInvalidJSONFormat indicates that the hash file is not in valid JSON format.
-	ErrInvalidJSONFormat = errors.New("invalid JSON format in hash file")
+	// ErrInvalidManifestFormat indicates that the hash file is not in valid manifest format.
+	ErrInvalidManifestFormat = errors.New("invalid manifest format in hash file")
 
 	// ErrUnsupportedVersion indicates that the hash file version is not supported.
 	ErrUnsupportedVersion = errors.New("unsupported hash file version")

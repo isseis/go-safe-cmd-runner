@@ -3,7 +3,6 @@ package filevalidator
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,21 +10,6 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
-)
-
-// Test error definitions
-var (
-	// ErrTestHashCalculation is returned when there's an error calculating a hash in tests.
-	ErrTestHashCalculation = fmt.Errorf("test error: failed to calculate hash")
-
-	// ErrTestHashFileWrite is returned when there's an error writing a hash file in tests.
-	ErrTestHashFileWrite = fmt.Errorf("test error: failed to write hash file")
-
-	// ErrTestHashFileRead is returned when there's an error reading a hash file in tests.
-	ErrTestHashFileRead = fmt.Errorf("test error: failed to read hash file")
-
-	// ErrTestHashCollision is returned when a hash collision is detected in tests.
-	ErrTestHashCollision = fmt.Errorf("test error: hash collision detected")
 )
 
 // testSafeReadFile is a helper function for tests to safely read files.
@@ -401,10 +385,10 @@ func TestValidator_HashCollision(t *testing.T) {
 			}
 		}()
 
-		// Create a modified JSON format hash file with file3's path but file1's hash
-		modifiedHashFileFormat := HashFileFormat{
-			Version:   "1.0",
-			Format:    "file-hash",
+		// Create a modified hash manifest with file3's path but file1's hash
+		modifiedHashManifest := HashManifest{
+			Version:   HashManifestVersion,
+			Format:    HashManifestFormat,
 			Timestamp: time.Now().UTC(),
 			File: FileInfo{
 				Path: file3Path,
@@ -415,10 +399,10 @@ func TestValidator_HashCollision(t *testing.T) {
 			},
 		}
 
-		// Write the modified JSON format hash file
-		jsonData, err := json.MarshalIndent(modifiedHashFileFormat, "", "  ")
+		// Write the modified hash manifest
+		jsonData, err := json.MarshalIndent(modifiedHashManifest, "", "  ")
 		if err != nil {
-			t.Fatalf("Failed to marshal JSON: %v", err)
+			t.Fatalf("Failed to marshal manifest: %v", err)
 		}
 		jsonData = append(jsonData, '\n')
 
@@ -469,17 +453,17 @@ func TestValidator_Record_EmptyHashFile(t *testing.T) {
 		t.Fatalf("Failed to create empty hash file: %v", err)
 	}
 
-	// Test Record with empty hash file - this should return ErrInvalidJSONFormat
+	// Test Record with empty hash file - this should return ErrInvalidManifestFormat
 	err = validator.Record(testFilePath)
 	if err == nil {
 		t.Error("Expected error with empty hash file, got nil")
-	} else if !errors.Is(err, ErrInvalidJSONFormat) {
-		t.Errorf("Expected ErrInvalidJSONFormat, got %v", err)
+	} else if !errors.Is(err, ErrInvalidManifestFormat) {
+		t.Errorf("Expected ErrInvalidManifestFormat, got %v", err)
 	}
 }
 
-// TestValidator_JSONFormat tests that hash files are created in JSON format
-func TestValidator_JSONFormat(t *testing.T) {
+// TestValidator_ManifestFormat tests that hash files are created in manifest format
+func TestValidator_ManifestFormat(t *testing.T) {
 	tempDir := safeTempDir(t)
 
 	// Create a test file
@@ -511,31 +495,26 @@ func TestValidator_JSONFormat(t *testing.T) {
 		t.Fatalf("Failed to read hash file: %v", err)
 	}
 
-	// Verify it's JSON format
-	if !isJSONFormat(content) {
-		t.Error("Hash file is not in JSON format")
+	// Parse and validate the manifest content
+	var manifest HashManifest
+	if err := json.Unmarshal(content, &manifest); err != nil {
+		t.Fatalf("Failed to parse manifest: %v", err)
 	}
 
-	// Parse and validate the JSON content
-	var format HashFileFormat
-	if err := json.Unmarshal(content, &format); err != nil {
-		t.Fatalf("Failed to parse JSON: %v", err)
+	// Verify the manifest structure
+	if manifest.Version != HashManifestVersion {
+		t.Errorf("Expected version %s, got %s", HashManifestVersion, manifest.Version)
 	}
-
-	// Verify the JSON structure
-	if format.Version != "1.0" {
-		t.Errorf("Expected version 1.0, got %s", format.Version)
+	if manifest.Format != HashManifestFormat {
+		t.Errorf("Expected format %s, got %s", HashManifestFormat, manifest.Format)
 	}
-	if format.Format != "file-hash" {
-		t.Errorf("Expected format 'file-hash', got %s", format.Format)
-	}
-	if format.File.Path == "" {
+	if manifest.File.Path == "" {
 		t.Error("File path is empty")
 	}
-	if format.File.Hash.Algorithm != "sha256" {
-		t.Errorf("Expected algorithm sha256, got %s", format.File.Hash.Algorithm)
+	if manifest.File.Hash.Algorithm != "sha256" {
+		t.Errorf("Expected algorithm sha256, got %s", manifest.File.Hash.Algorithm)
 	}
-	if format.File.Hash.Value == "" {
+	if manifest.File.Hash.Value == "" {
 		t.Error("Hash value is empty")
 	}
 }
@@ -577,16 +556,16 @@ func TestValidator_LegacyFormatError(t *testing.T) {
 	err = validator.Verify(testFilePath)
 	if err == nil {
 		t.Error("Expected error with legacy format, got nil")
-	} else if !errors.Is(err, ErrInvalidJSONFormat) {
-		t.Errorf("Expected ErrInvalidJSONFormat, got %v", err)
+	} else if !errors.Is(err, ErrInvalidManifestFormat) {
+		t.Errorf("Expected ErrInvalidManifestFormat, got %v", err)
 	}
 
 	// Test Record with existing legacy format (should fail)
 	err = validator.Record(testFilePath)
 	if err == nil {
 		t.Error("Expected error with existing legacy format, got nil")
-	} else if !errors.Is(err, ErrInvalidJSONFormat) {
-		t.Errorf("Expected ErrInvalidJSONFormat, got %v", err)
+	} else if !errors.Is(err, ErrInvalidManifestFormat) {
+		t.Errorf("Expected ErrInvalidManifestFormat, got %v", err)
 	}
 }
 
@@ -610,9 +589,9 @@ func TestValidator_InvalidTimestamp(t *testing.T) {
 	}
 
 	t.Run("Zero timestamp", func(t *testing.T) {
-		format := HashFileFormat{
-			Version:   "1.0",
-			Format:    "file-hash",
+		manifest := HashManifest{
+			Version:   HashManifestVersion,
+			Format:    HashManifestFormat,
 			Timestamp: time.Time{}, // zero value
 			File: FileInfo{
 				Path: testFilePath,
@@ -622,9 +601,9 @@ func TestValidator_InvalidTimestamp(t *testing.T) {
 				},
 			},
 		}
-		jsonData, err := json.MarshalIndent(format, "", "  ")
+		jsonData, err := json.MarshalIndent(manifest, "", "  ")
 		if err != nil {
-			t.Fatalf("Failed to marshal JSON: %v", err)
+			t.Fatalf("Failed to marshal manifest: %v", err)
 		}
 		jsonData = append(jsonData, '\n')
 		if err := os.WriteFile(hashFilePath, jsonData, 0o644); err != nil {
