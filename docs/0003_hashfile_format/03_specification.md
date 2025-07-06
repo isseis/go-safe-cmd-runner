@@ -53,11 +53,11 @@ const (
 
 **version フィールド:**
 - 形式: セマンティックバージョニング（major.minor）
-- 現在サポート: `HashManifestVersion` 定数のみ
+- 現在サポート: `1.0` 定数のみ
 - 不一致時エラー: `ErrUnsupportedVersion`
 
 **format フィールド:**
-- 固定値: `HashManifestFormat` 定数のみ
+- 固定値: `file-hash` 定数のみ
 - 大文字小文字の区別: あり
 - 不一致時エラー: `ErrInvalidManifestFormat`
 
