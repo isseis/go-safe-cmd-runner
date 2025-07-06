@@ -387,8 +387,8 @@ func TestValidator_HashCollision(t *testing.T) {
 
 		// Create a modified JSON format hash file with file3's path but file1's hash
 		modifiedHashManifest := HashManifest{
-			Version:   "1.0",
-			Format:    "file-hash",
+			Version:   HashManifestVersion,
+			Format:    HashManifestFormat,
 			Timestamp: time.Now().UTC(),
 			File: FileInfo{
 				Path: file3Path,
@@ -502,11 +502,11 @@ func TestValidator_JSONFormat(t *testing.T) {
 	}
 
 	// Verify the JSON structure
-	if format.Version != "1.0" {
-		t.Errorf("Expected version 1.0, got %s", format.Version)
+	if format.Version != HashManifestVersion {
+		t.Errorf("Expected version %s, got %s", HashManifestVersion, format.Version)
 	}
-	if format.Format != "file-hash" {
-		t.Errorf("Expected format 'file-hash', got %s", format.Format)
+	if format.Format != HashManifestFormat {
+		t.Errorf("Expected format %s, got %s", HashManifestFormat, format.Format)
 	}
 	if format.File.Path == "" {
 		t.Error("File path is empty")
@@ -590,8 +590,8 @@ func TestValidator_InvalidTimestamp(t *testing.T) {
 
 	t.Run("Zero timestamp", func(t *testing.T) {
 		format := HashManifest{
-			Version:   "1.0",
-			Format:    "file-hash",
+			Version:   HashManifestVersion,
+			Format:    HashManifestFormat,
 			Timestamp: time.Time{}, // zero value
 			File: FileInfo{
 				Path: testFilePath,

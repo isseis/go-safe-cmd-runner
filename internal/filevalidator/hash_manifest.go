@@ -6,6 +6,11 @@ import (
 	"time"
 )
 
+const (
+	HashManifestVersion = "1.0"
+	HashManifestFormat  = "file-hash"
+)
+
 // HashManifest defines the JSON format for hash files
 type HashManifest struct {
 	Version   string    `json:"version"`
@@ -29,8 +34,8 @@ type HashInfo struct {
 // createHashManifest creates a hash manifest structure
 func createHashManifest(path, hash, algorithm string) HashManifest {
 	return HashManifest{
-		Version:   "1.0",
-		Format:    "file-hash",
+		Version:   HashManifestVersion,
+		Format:    HashManifestFormat,
 		Timestamp: time.Now().UTC(),
 		File: FileInfo{
 			Path: path,
@@ -57,12 +62,12 @@ func unmarshalHashManifest(content []byte) (HashManifest, error) {
 // validateHashManifest validates the content of JSON format hash files
 func validateHashManifest(format HashManifest, algoName string, targetPath string) error {
 	// Version validation
-	if format.Version != "1.0" {
+	if format.Version != HashManifestVersion {
 		return fmt.Errorf("%w: version %s", ErrUnsupportedVersion, format.Version)
 	}
 
 	// Format validation
-	if format.Format != "file-hash" {
+	if format.Format != HashManifestFormat {
 		return fmt.Errorf("%w: format %s", ErrInvalidJSONFormat, format.Format)
 	}
 
