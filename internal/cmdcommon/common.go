@@ -50,14 +50,14 @@ func ParseFlags() (*Config, error) {
 	if dir == "" {
 		cwd, err := os.Getwd()
 		if err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrGetCurrentDir, err)
+			return nil, fmt.Errorf("%w: %w", ErrGetCurrentDir, err)
 		}
 		dir = cwd
 	}
 
 	// Ensure the directory exists
 	if err := os.MkdirAll(dir, HashDirPermissions); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrCreateHashDir, err)
+		return nil, fmt.Errorf("%w: %w", ErrCreateHashDir, err)
 	}
 
 	return &Config{

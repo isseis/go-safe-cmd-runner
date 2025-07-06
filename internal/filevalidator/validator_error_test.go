@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
@@ -186,32 +187,31 @@ func TestFilesystemEdgeCases(t *testing.T) {
 		// Skipping by default, uncomment if running in a suitable environment
 		t.Run("read-only filesystem", func(t *testing.T) {
 			t.Skip("Skipping read-only filesystem test as it requires root privileges")
-			/*
-				// This test requires root privileges to create a read-only mount
-				roDir := filepath.Join(tempDir, "ro")
-				if err := os.Mkdir(roDir, 0755); err != nil {
-					t.Fatalf("Failed to create directory: %v", err)
-				}
 
-				// Try to make directory read-only (this will only work as root)
-				if err := syscall.Mount("tmpfs", roDir, "tmpfs", syscall.MS_RDONLY, ""); err != nil {
-					t.Skipf("Skipping read-only filesystem test: %v", err)
-				}
-				defer syscall.Unmount(roDir, 0)
+			// This test requires root privileges to create a read-only mount
+			roDir := filepath.Join(tempDir, "ro")
+			if err := os.Mkdir(roDir, 0o755); err != nil {
+				t.Fatalf("Failed to create directory: %v", err)
+			}
 
-				filePath := filepath.Join(roDir, "test.txt")
-				if err := os.WriteFile(filePath, []byte("test"), 0644); err != nil {
-					t.Fatalf("Failed to create test file: %v", err)
-				}
+			// Try to make directory read-only (this will only work as root)
+			if err := syscall.Mount("tmpfs", roDir, "tmpfs", syscall.MS_RDONLY, ""); err != nil {
+				t.Skipf("Skipping read-only filesystem test: %v", err)
+			}
+			defer syscall.Unmount(roDir, 0)
 
-				err := validator.Record(filePath)
-				if err == nil {
-					t.Fatal("Expected error for read-only filesystem, got nil")
-				}
-				if !os.IsPermission(err) && !strings.Contains(err.Error(), "read-only") {
-					t.Errorf("Expected read-only or permission error, got: %v", err)
-				}
-			*/
+			filePath := filepath.Join(roDir, "test.txt")
+			if err := os.WriteFile(filePath, []byte("test"), 0o644); err != nil {
+				t.Fatalf("Failed to create test file: %v", err)
+			}
+
+			_, err := validator.Record(filePath)
+			if err == nil {
+				t.Fatal("Expected error for read-only filesystem, got nil")
+			}
+			if !os.IsPermission(err) && !strings.Contains(err.Error(), "read-only") {
+				t.Errorf("Expected read-only or permission error, got: %v", err)
+			}
 		})
 	}
 }
@@ -240,6 +240,7 @@ func TestErrorMessages(t *testing.T) {
 		{
 			name:        "non-existent file",
 			filePath:    filepath.Join(tempDir, "nonexistent.txt"),
+			expectedErr: os.ErrNotExist,
 			errContains: "no such file or directory",
 			skipVerify:  true, // Skip verify as it's the same as Record for non-existent files
 		},
