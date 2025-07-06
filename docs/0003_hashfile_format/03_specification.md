@@ -200,13 +200,6 @@ func (v *Validator) writeHashManifest(filePath string, manifest HashManifest) er
 3. 安全なファイル書き込み機能を使用して保存（パーミッション: 0o640）
 - `ErrInvalidJSONFormat`: ファイル形式がJSON形式でない
 
-#### 3.3.2. エラーメッセージ
-```go
-if !isJSONFormat(content) {
-    return "", "", ErrInvalidJSONFormat
-}
-```
-
 ### 3.4. JSON書き込み機能
 
 #### 3.4.1. writeHashFileJSON 関数
