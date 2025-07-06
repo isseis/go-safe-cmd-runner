@@ -51,50 +51,50 @@ func createHashManifest(path, hash, algorithm string) HashManifest {
 
 // unmarshalHashManifest unmarshals the JSON content into a HashManifest and handles any parsing errors.
 func unmarshalHashManifest(content []byte) (HashManifest, error) {
-	var format HashManifest
-	if err := json.Unmarshal(content, &format); err != nil {
+	var manifest HashManifest
+	if err := json.Unmarshal(content, &manifest); err != nil {
 		if jsonErr, ok := err.(*json.SyntaxError); ok {
-			return HashManifest{}, fmt.Errorf("%w: invalid JSON syntax at offset %d", ErrInvalidJSONFormat, jsonErr.Offset)
+			return HashManifest{}, fmt.Errorf("%w: invalid JSON syntax at offset %d", ErrInvalidManifestFormat, jsonErr.Offset)
 		}
 		return HashManifest{}, fmt.Errorf("%w: %v", ErrJSONParseError, err)
 	}
-	return format, nil
+	return manifest, nil
 }
 
-// validateHashManifest validates the content of JSON format hash files
-func validateHashManifest(format HashManifest, algoName string, targetPath string) error {
+// validateHashManifest validates the content of manifest file
+func validateHashManifest(manifest HashManifest, algoName string, targetPath string) error {
 	// Version validation
-	if format.Version != HashManifestVersion {
-		return fmt.Errorf("%w: version %s", ErrUnsupportedVersion, format.Version)
+	if manifest.Version != HashManifestVersion {
+		return fmt.Errorf("%w: version %s", ErrUnsupportedVersion, manifest.Version)
 	}
 
 	// Format validation
-	if format.Format != HashManifestFormat {
-		return fmt.Errorf("%w: format %s", ErrInvalidJSONFormat, format.Format)
+	if manifest.Format != HashManifestFormat {
+		return fmt.Errorf("%w: format %s", ErrInvalidManifestFormat, manifest.Format)
 	}
 
 	// File path validation
-	if format.File.Path == "" {
-		return fmt.Errorf("%w: empty file path", ErrInvalidJSONFormat)
+	if manifest.File.Path == "" {
+		return fmt.Errorf("%w: empty file path", ErrInvalidManifestFormat)
 	}
 
 	// Path match confirmation
-	if format.File.Path != targetPath {
+	if manifest.File.Path != targetPath {
 		return fmt.Errorf("%w: path mismatch", ErrHashCollision)
 	}
 
 	// Hash algorithm validation
-	if format.File.Hash.Algorithm != algoName {
-		return fmt.Errorf("%w: algorithm mismatch", ErrInvalidJSONFormat)
+	if manifest.File.Hash.Algorithm != algoName {
+		return fmt.Errorf("%w: algorithm mismatch", ErrInvalidManifestFormat)
 	}
 
 	// Hash value validation
-	if format.File.Hash.Value == "" {
-		return fmt.Errorf("%w: empty hash value", ErrInvalidJSONFormat)
+	if manifest.File.Hash.Value == "" {
+		return fmt.Errorf("%w: empty hash value", ErrInvalidManifestFormat)
 	}
 
 	// Timestamp validation
-	if format.Timestamp.IsZero() {
+	if manifest.Timestamp.IsZero() {
 		return fmt.Errorf("%w: zero timestamp", ErrInvalidTimestamp)
 	}
 

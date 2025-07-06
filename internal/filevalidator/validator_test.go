@@ -385,7 +385,7 @@ func TestValidator_HashCollision(t *testing.T) {
 			}
 		}()
 
-		// Create a modified JSON format hash file with file3's path but file1's hash
+		// Create a modified hash manifest with file3's path but file1's hash
 		modifiedHashManifest := HashManifest{
 			Version:   HashManifestVersion,
 			Format:    HashManifestFormat,
@@ -399,10 +399,10 @@ func TestValidator_HashCollision(t *testing.T) {
 			},
 		}
 
-		// Write the modified JSON format hash file
+		// Write the modified hash manifest
 		jsonData, err := json.MarshalIndent(modifiedHashManifest, "", "  ")
 		if err != nil {
-			t.Fatalf("Failed to marshal JSON: %v", err)
+			t.Fatalf("Failed to marshal manifest: %v", err)
 		}
 		jsonData = append(jsonData, '\n')
 
@@ -453,17 +453,17 @@ func TestValidator_Record_EmptyHashFile(t *testing.T) {
 		t.Fatalf("Failed to create empty hash file: %v", err)
 	}
 
-	// Test Record with empty hash file - this should return ErrInvalidJSONFormat
+	// Test Record with empty hash file - this should return ErrInvalidManifestFormat
 	err = validator.Record(testFilePath)
 	if err == nil {
 		t.Error("Expected error with empty hash file, got nil")
-	} else if !errors.Is(err, ErrInvalidJSONFormat) {
-		t.Errorf("Expected ErrInvalidJSONFormat, got %v", err)
+	} else if !errors.Is(err, ErrInvalidManifestFormat) {
+		t.Errorf("Expected ErrInvalidManifestFormat, got %v", err)
 	}
 }
 
-// TestValidator_JSONFormat tests that hash files are created in JSON format
-func TestValidator_JSONFormat(t *testing.T) {
+// TestValidator_ManifestFormat tests that hash files are created in manifest format
+func TestValidator_ManifestFormat(t *testing.T) {
 	tempDir := safeTempDir(t)
 
 	// Create a test file
@@ -495,26 +495,26 @@ func TestValidator_JSONFormat(t *testing.T) {
 		t.Fatalf("Failed to read hash file: %v", err)
 	}
 
-	// Parse and validate the JSON content
-	var format HashManifest
-	if err := json.Unmarshal(content, &format); err != nil {
-		t.Fatalf("Failed to parse JSON: %v", err)
+	// Parse and validate the manifest content
+	var manifest HashManifest
+	if err := json.Unmarshal(content, &manifest); err != nil {
+		t.Fatalf("Failed to parse manifest: %v", err)
 	}
 
-	// Verify the JSON structure
-	if format.Version != HashManifestVersion {
-		t.Errorf("Expected version %s, got %s", HashManifestVersion, format.Version)
+	// Verify the manifest structure
+	if manifest.Version != HashManifestVersion {
+		t.Errorf("Expected version %s, got %s", HashManifestVersion, manifest.Version)
 	}
-	if format.Format != HashManifestFormat {
-		t.Errorf("Expected format %s, got %s", HashManifestFormat, format.Format)
+	if manifest.Format != HashManifestFormat {
+		t.Errorf("Expected format %s, got %s", HashManifestFormat, manifest.Format)
 	}
-	if format.File.Path == "" {
+	if manifest.File.Path == "" {
 		t.Error("File path is empty")
 	}
-	if format.File.Hash.Algorithm != "sha256" {
-		t.Errorf("Expected algorithm sha256, got %s", format.File.Hash.Algorithm)
+	if manifest.File.Hash.Algorithm != "sha256" {
+		t.Errorf("Expected algorithm sha256, got %s", manifest.File.Hash.Algorithm)
 	}
-	if format.File.Hash.Value == "" {
+	if manifest.File.Hash.Value == "" {
 		t.Error("Hash value is empty")
 	}
 }
@@ -556,16 +556,16 @@ func TestValidator_LegacyFormatError(t *testing.T) {
 	err = validator.Verify(testFilePath)
 	if err == nil {
 		t.Error("Expected error with legacy format, got nil")
-	} else if !errors.Is(err, ErrInvalidJSONFormat) {
-		t.Errorf("Expected ErrInvalidJSONFormat, got %v", err)
+	} else if !errors.Is(err, ErrInvalidManifestFormat) {
+		t.Errorf("Expected ErrInvalidManifestFormat, got %v", err)
 	}
 
 	// Test Record with existing legacy format (should fail)
 	err = validator.Record(testFilePath)
 	if err == nil {
 		t.Error("Expected error with existing legacy format, got nil")
-	} else if !errors.Is(err, ErrInvalidJSONFormat) {
-		t.Errorf("Expected ErrInvalidJSONFormat, got %v", err)
+	} else if !errors.Is(err, ErrInvalidManifestFormat) {
+		t.Errorf("Expected ErrInvalidManifestFormat, got %v", err)
 	}
 }
 
@@ -589,7 +589,7 @@ func TestValidator_InvalidTimestamp(t *testing.T) {
 	}
 
 	t.Run("Zero timestamp", func(t *testing.T) {
-		format := HashManifest{
+		manifest := HashManifest{
 			Version:   HashManifestVersion,
 			Format:    HashManifestFormat,
 			Timestamp: time.Time{}, // zero value
@@ -601,9 +601,9 @@ func TestValidator_InvalidTimestamp(t *testing.T) {
 				},
 			},
 		}
-		jsonData, err := json.MarshalIndent(format, "", "  ")
+		jsonData, err := json.MarshalIndent(manifest, "", "  ")
 		if err != nil {
-			t.Fatalf("Failed to marshal JSON: %v", err)
+			t.Fatalf("Failed to marshal manifest: %v", err)
 		}
 		jsonData = append(jsonData, '\n')
 		if err := os.WriteFile(hashFilePath, jsonData, 0o644); err != nil {

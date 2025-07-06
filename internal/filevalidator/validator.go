@@ -118,16 +118,16 @@ func (v *Validator) Record(filePath string) error {
 
 	// Check if the hash file already exists and contains a different path
 	if existingContent, err := safefileio.SafeReadFile(hashFilePath); err == nil {
-		// Parse the existing content as JSON
-		existingFormat, err := unmarshalHashManifest(existingContent)
+		// Parse the existing content as manifest
+		existingManifest, err := unmarshalHashManifest(existingContent)
 		if err != nil {
 			return err
 		}
 
 		// If the paths don't match, it's a hash collision
-		if existingFormat.File.Path != targetPath {
+		if existingManifest.File.Path != targetPath {
 			return fmt.Errorf("%w: hash collision detected between %s and %s",
-				ErrHashCollision, existingFormat.File.Path, targetPath)
+				ErrHashCollision, existingManifest.File.Path, targetPath)
 		}
 
 		// If we get here, the file already exists with the same path, so we can overwrite it
@@ -136,10 +136,10 @@ func (v *Validator) Record(filePath string) error {
 		return fmt.Errorf("failed to check existing hash file: %w", err)
 	}
 
-	// Create JSON format hash file
-	format := createHashManifest(targetPath, hash, v.algorithm.Name())
+	// Create manifest hash file
+	manifest := createHashManifest(targetPath, hash, v.algorithm.Name())
 
-	return v.writeHashManifestJSON(hashFilePath, format)
+	return v.writeHashManifest(hashFilePath, manifest)
 }
 
 // GetHashAlgorithm returns the hash algorithm used by the validator.
@@ -241,24 +241,24 @@ func (v *Validator) calculateHash(filePath string) (string, error) {
 
 // parseAndValidateHashFile parses and validates a JSON hash file content and returns the path and hash
 func (v *Validator) parseAndValidateHashFile(content []byte, targetPath string) (string, string, error) {
-	// Parse JSON format
-	format, err := unmarshalHashManifest(content)
+	// Parse manifest format
+	manifest, err := unmarshalHashManifest(content)
 	if err != nil {
 		return "", "", err
 	}
 
 	// Validate the hash file against the target path
-	if err := validateHashManifest(format, v.algorithm.Name(), targetPath); err != nil {
+	if err := validateHashManifest(manifest, v.algorithm.Name(), targetPath); err != nil {
 		return "", "", err
 	}
 
-	return format.File.Path, format.File.Hash.Value, nil
+	return manifest.File.Path, manifest.File.Hash.Value, nil
 }
 
-// writeHashFileJSON writes a hash file in JSON format
-func (v *Validator) writeHashManifestJSON(filePath string, format HashManifest) error {
-	// Marshal to JSON format with indentation
-	jsonData, err := json.MarshalIndent(format, "", "  ")
+// writeHashManifest writes a hash manifest in JSON format
+func (v *Validator) writeHashManifest(filePath string, manifest HashManifest) error {
+	// Marshal to JSON manifest with indentation
+	jsonData, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal JSON: %w", err)
 	}
