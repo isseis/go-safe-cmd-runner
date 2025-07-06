@@ -64,7 +64,7 @@ func TestValidator_RecordAndVerify(t *testing.T) {
 
 	// Test Record
 	t.Run("Record", func(t *testing.T) {
-		if err := validator.Record(testFilePath); err != nil {
+		if _, err := validator.Record(testFilePath); err != nil {
 			t.Fatalf("Record failed: %v", err)
 		}
 
@@ -81,7 +81,7 @@ func TestValidator_RecordAndVerify(t *testing.T) {
 
 	// Test Verify with unmodified file
 	t.Run("Verify unmodified", func(t *testing.T) {
-		if err := validator.Verify(testFilePath); err != nil {
+		if err = validator.Verify(testFilePath); err != nil {
 			t.Errorf("Verify failed with unmodified file: %v", err)
 		}
 	})
@@ -223,7 +223,7 @@ func TestValidator_Record_Symlink(t *testing.T) {
 
 	// Test Record with symlink
 	// Symlinks are resolved before writing the hash file
-	err = validator.Record(symlinkPath)
+	_, err = validator.Record(symlinkPath)
 	if err != nil {
 		t.Errorf("Record failed: %v", err)
 	}
@@ -266,7 +266,7 @@ func TestValidator_Verify_Symlink(t *testing.T) {
 		t.Fatalf("Failed to create validator: %v", err)
 	}
 
-	if err := validator.Record(testFilePath); err != nil {
+	if _, err := validator.Record(testFilePath); err != nil {
 		t.Fatalf("Record failed: %v", err)
 	}
 
@@ -322,7 +322,7 @@ func TestValidator_HashCollision(t *testing.T) {
 
 	// Record the first file - should succeed
 	t.Run("Record first file", func(t *testing.T) {
-		if err := validator.Record(file1Path); err != nil {
+		if _, err := validator.Record(file1Path); err != nil {
 			t.Fatalf("Failed to record first file: %v", err)
 		}
 		// Verify the hash file was created with the correct content
@@ -343,13 +343,12 @@ func TestValidator_HashCollision(t *testing.T) {
 
 	// Record the second file - should fail with hash collision
 	t.Run("Record second file with collision", func(t *testing.T) {
-		err := validator.Record(file2Path)
+		_, err := validator.Record(file2Path)
 		if err == nil {
 			t.Fatal("Expected error when recording second file with same hash, got nil")
 		}
-		expectedErr := "hash collision detected"
-		if !strings.Contains(err.Error(), expectedErr) {
-			t.Errorf("Expected error to contain '%s', got: %v", expectedErr, err)
+		if !errors.Is(err, ErrHashCollision) {
+			t.Errorf("Expected ErrHashCollision, got %v", err)
 		}
 	})
 
@@ -415,9 +414,8 @@ func TestValidator_HashCollision(t *testing.T) {
 		if err == nil {
 			t.Fatal("Expected error when verifying with hash collision, got nil")
 		}
-		expectedErr := "hash collision detected"
-		if !strings.Contains(err.Error(), expectedErr) {
-			t.Errorf("Expected error to contain '%s', got: %v", expectedErr, err)
+		if !errors.Is(err, ErrHashCollision) {
+			t.Errorf("Expected ErrHashCollision, got %v", err)
 		}
 	})
 }
@@ -454,7 +452,7 @@ func TestValidator_Record_EmptyHashFile(t *testing.T) {
 	}
 
 	// Test Record with empty hash file - this should return ErrInvalidManifestFormat
-	err = validator.Record(testFilePath)
+	_, err = validator.Record(testFilePath)
 	if err == nil {
 		t.Error("Expected error with empty hash file, got nil")
 	} else if !errors.Is(err, ErrInvalidManifestFormat) {
@@ -479,7 +477,8 @@ func TestValidator_ManifestFormat(t *testing.T) {
 	}
 
 	// Record the file
-	if err := validator.Record(testFilePath); err != nil {
+	_, err = validator.Record(testFilePath)
+	if err != nil {
 		t.Fatalf("Record failed: %v", err)
 	}
 
@@ -561,7 +560,7 @@ func TestValidator_LegacyFormatError(t *testing.T) {
 	}
 
 	// Test Record with existing legacy format (should fail)
-	err = validator.Record(testFilePath)
+	_, err = validator.Record(testFilePath)
 	if err == nil {
 		t.Error("Expected error with existing legacy format, got nil")
 	} else if !errors.Is(err, ErrInvalidManifestFormat) {
@@ -610,8 +609,8 @@ func TestValidator_InvalidTimestamp(t *testing.T) {
 			t.Fatalf("Failed to write hash file: %v", err)
 		}
 		err = validator.Verify(testFilePath)
-		if err == nil || !strings.Contains(err.Error(), "invalid timestamp") {
-			t.Errorf("Expected invalid timestamp error, got: %v", err)
+		if !errors.Is(err, ErrInvalidTimestamp) {
+			t.Errorf("Expected ErrInvalidTimestamp, got %v", err)
 		}
 	})
 }
