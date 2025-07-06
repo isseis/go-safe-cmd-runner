@@ -7,8 +7,10 @@ import (
 )
 
 const (
+	// HashManifestVersion is the current version of the hash manifest format
 	HashManifestVersion = "1.0"
-	HashManifestFormat  = "file-hash"
+	// HashManifestFormat is the current format of the hash manifest
+	HashManifestFormat = "file-hash"
 )
 
 // HashManifest defines the JSON format for hash files
