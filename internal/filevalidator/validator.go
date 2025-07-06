@@ -260,7 +260,7 @@ func (v *Validator) writeHashManifest(filePath string, manifest HashManifest) er
 	// Marshal to JSON manifest with indentation
 	jsonData, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal JSON: %w", err)
+		return fmt.Errorf("failed to marshal manifest: %w", err)
 	}
 
 	// Add newline
