@@ -53,10 +53,14 @@ func createHashManifest(path, hash, algorithm string) HashManifest {
 func unmarshalHashManifest(content []byte) (HashManifest, error) {
 	var manifest HashManifest
 	if err := json.Unmarshal(content, &manifest); err != nil {
-		if jsonErr, ok := err.(*json.SyntaxError); ok {
-			return HashManifest{}, fmt.Errorf("%w: invalid JSON syntax at offset %d", ErrInvalidManifestFormat, jsonErr.Offset)
+		switch e := err.(type) {
+		case *json.SyntaxError:
+			return HashManifest{}, fmt.Errorf("%w: invalid JSON syntax at offset %d", ErrInvalidManifestFormat, e.Offset)
+		case *json.UnmarshalTypeError:
+			return HashManifest{}, fmt.Errorf("%w: invalid type for field %s", ErrInvalidManifestFormat, e.Field)
+		default:
+			return HashManifest{}, fmt.Errorf("%w: %v", ErrJSONParseError, err)
 		}
-		return HashManifest{}, fmt.Errorf("%w: %v", ErrJSONParseError, err)
 	}
 	return manifest, nil
 }
