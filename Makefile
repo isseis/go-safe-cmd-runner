@@ -6,7 +6,7 @@ GOTEST=$(GOCMD) test
 GOGET=$(GOCMD) get
 GOLINT=golangci-lint run
 BINARY_NAME=go-safe-cmd-runner
-BINARY_PATH=build/$(BINARY_NAME)
+BINARY_PATH=build/record build/verify
 
 # Find all Go source files to use as dependencies for the build
 GO_SOURCES := $(shell find . -type f -name '*.go' -not -name '*_test.go')
@@ -25,7 +25,8 @@ build: $(BINARY_PATH)
 # It will only run if the binary doesn't exist or if a .go file has changed.
 $(BINARY_PATH): $(GO_SOURCES)
 	@mkdir -p $(@D)
-	$(GOBUILD) -o $@ -v cmd/main.go
+	$(GOBUILD) -o build/record -v cmd/record/main.go
+	$(GOBUILD) -o build/verify -v cmd/verify/main.go
 
 run: $(BINARY_PATH)
 	./$(BINARY_PATH)

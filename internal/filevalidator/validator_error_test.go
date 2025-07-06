@@ -72,7 +72,7 @@ func TestErrorCases(t *testing.T) {
 			}
 
 			// Test Record
-			err = validator.Record(filePath)
+			_, err = validator.Record(filePath)
 			if tt.wantErr != nil {
 				if err == nil {
 					t.Fatalf("Expected error, got nil")
@@ -116,7 +116,7 @@ func TestFilesystemEdgeCases(t *testing.T) {
 		}
 
 		// Record the file
-		if err := validator.Record(filePath); err != nil {
+		if _, err := validator.Record(filePath); err != nil {
 			t.Fatalf("Failed to record file: %v", err)
 		}
 
@@ -142,7 +142,7 @@ func TestFilesystemEdgeCases(t *testing.T) {
 			t.Fatalf("Failed to create directory: %v", err)
 		}
 
-		err := validator.Record(dirPath)
+		_, err := validator.Record(dirPath)
 		if err == nil {
 			t.Fatal("Expected error for directory, got nil")
 		}
@@ -248,7 +248,7 @@ func TestErrorMessages(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Test Record
-			err := validator.Record(tt.filePath)
+			_, err := validator.Record(tt.filePath)
 			if err == nil {
 				t.Fatal("Expected error, got nil")
 			}

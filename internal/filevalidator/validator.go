@@ -92,28 +92,28 @@ func newValidator(algorithm HashAlgorithm, hashDir string, hashFilePathGetter Ha
 
 // Record calculates the hash of the file at filePath and saves it to the hash directory.
 // The hash file is named using a URL-safe Base64 encoding of the file path.
-func (v *Validator) Record(filePath string) error {
+func (v *Validator) Record(filePath string) (string, error) {
 	// Validate the file path
 	targetPath, err := validatePath(filePath)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	// Calculate the hash of the file
 	hash, err := v.calculateHash(targetPath)
 	if err != nil {
-		return fmt.Errorf("failed to calculate hash: %w", err)
+		return "", fmt.Errorf("failed to calculate hash: %w", err)
 	}
 
 	// Get the path for the hash file
 	hashFilePath, err := v.GetHashFilePath(targetPath)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	// Ensure the directory exists
 	if err := os.MkdirAll(filepath.Dir(hashFilePath), 0o750); err != nil {
-		return fmt.Errorf("failed to create hash directory: %w", err)
+		return "", fmt.Errorf("failed to create hash directory: %w", err)
 	}
 
 	// Check if the hash file already exists and contains a different path
@@ -121,25 +121,30 @@ func (v *Validator) Record(filePath string) error {
 		// Parse the existing content as manifest
 		existingManifest, err := unmarshalHashManifest(existingContent)
 		if err != nil {
-			return err
+			return "", err
 		}
 
 		// If the paths don't match, it's a hash collision
 		if existingManifest.File.Path != targetPath {
-			return fmt.Errorf("%w: hash collision detected between %s and %s",
+			return "", fmt.Errorf("%w: hash collision detected between %s and %s",
 				ErrHashCollision, existingManifest.File.Path, targetPath)
 		}
 
 		// If we get here, the file already exists with the same path, so we can overwrite it
 	} else if !os.IsNotExist(err) {
 		// Return error if it's not a "not exist" error
-		return fmt.Errorf("failed to check existing hash file: %w", err)
+		return "", fmt.Errorf("failed to check existing hash file: %w", err)
 	}
 
 	// Create manifest hash file
 	manifest := createHashManifest(targetPath, hash, v.algorithm.Name())
 
-	return v.writeHashManifest(hashFilePath, manifest)
+	err = v.writeHashManifest(hashFilePath, manifest)
+	if err != nil {
+		return "", fmt.Errorf("failed to write hash manifest: %w", err)
+	}
+
+	return hashFilePath, nil
 }
 
 // GetHashAlgorithm returns the hash algorithm used by the validator.
