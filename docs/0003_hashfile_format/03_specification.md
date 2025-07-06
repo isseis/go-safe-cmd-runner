@@ -1,4 +1,4 @@
-# 詳細仕様書：ハッシュファイル形式のJSON化
+# 詳細仕様書：ハッシュマニフェスト形式
 
 ## 1. 概要
 
@@ -8,10 +8,10 @@
 
 ### 2.1. JSON形式の構造体定義
 
-#### 2.1.1. HashFileFormat 構造体
+#### 2.1.1. HashManifest 構造体
 ```go
-// HashFileFormat は、ハッシュファイルのJSON形式を定義する
-type HashFileFormat struct {
+// HashManifest は、ハッシュファイルのJSON形式を定義する
+type HashManifest struct {
     Version   string    `json:"version"`
     Format    string    `json:"format"`
     Timestamp time.Time `json:"timestamp"`
@@ -29,47 +29,55 @@ type HashInfo struct {
     Algorithm string `json:"algorithm"`
     Value     string `json:"value"`
 }
+
+const (
+    // HashManifestVersion はハッシュマニフェストの現在のバージョン
+    HashManifestVersion = "1.0"
+    // HashManifestFormat はハッシュマニフェストのフォーマット識別子
+    HashManifestFormat = "file-hash"
+)
 ```
 
 #### 2.1.2. フィールド詳細仕様
 
 | フィールド | 型 | 必須 | 説明 | 例 |
-|-----------|---|------|------|-----|
-| version | string | ✓ | ファイル形式バージョン | "1.0" |
-| format | string | ✓ | ファイル形式識別子 | "file-hash" |
-| timestamp | time.Time | ✓ | ハッシュ記録日時（UTC） | "2025-07-04T10:30:00Z" |
-| file.path | string | ✓ | 対象ファイルの絶対パス | "/home/user/file.txt" |
-| file.hash.algorithm | string | ✓ | ハッシュアルゴリズム名 | "SHA256" |
-| file.hash.value | string | ✓ | ハッシュ値（16進数） | "abc123def456..." |
+|-----------|----|------|------|-----|
+| version | string | ✓ | ファイル形式バージョン。`HashManifestVersion` 定数で定義 | "1.0" |
+| format | string | ✓ | ファイル形式識別子。`HashManifestFormat` 定数で定義 | "file-hash" |
+| timestamp | time.Time | ✓ | ハッシュ記録日時（UTC）。ゼロ値はエラーとなる | "2025-07-04T10:30:00Z" |
+| file.path | string | ✓ | 対象ファイルの絶対パス。空文字列はエラー | "/home/user/file.txt" |
+| file.hash.algorithm | string | ✓ | ハッシュアルゴリズム名（小文字） | "sha256" |
+| file.hash.value | string | ✓ | ハッシュ値（16進数、小文字）。空文字列はエラー | "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" |
 
 #### 2.1.3. バリデーション仕様
 
 **version フィールド:**
 - 形式: セマンティックバージョニング（major.minor）
-- 現在サポート: "1.0"
-- 将来対応: "1.1", "2.0" など
+- 現在サポート: `HashManifestVersion` 定数のみ
+- 不一致時エラー: `ErrUnsupportedVersion`
 
 **format フィールド:**
-- 固定値: "file-hash"
+- 固定値: `HashManifestFormat` 定数のみ
 - 大文字小文字の区別: あり
+- 不一致時エラー: `ErrInvalidManifestFormat`
 
 **timestamp フィールド:**
 - 形式: RFC3339（ISO 8601）
 - タイムゾーン: UTC必須
-- 精度: 秒単位
+- ゼロ値はエラー: `ErrInvalidTimestamp`
 
 **file.path フィールド:**
 - 形式: 絶対パス
-- 文字エンコーディング: UTF-8
-- 制限: 最大長4096文字
+- 空文字列はエラー: `ErrInvalidManifestFormat`
+- 検証対象のファイルパスと完全一致しない場合は `ErrHashCollision`
 
 **file.hash.algorithm フィールド:**
-- 許可値: "SHA256"（現在）
-- 将来対応: "SHA512", "MD5" など
+- 検証時に使用されるアルゴリズムと一致する必要あり
+- 不一致時エラー: `ErrInvalidManifestFormat`
 
 **file.hash.value フィールド:**
 - 形式: 16進数文字列（小文字）
-- 長さ: アルゴリズムに依存（SHA256: 64文字）
+- 空文字列はエラー: `ErrInvalidManifestFormat`
 
 ### 2.2. JSON出力例
 
@@ -99,105 +107,97 @@ type HashInfo struct {
 
 ### 3.1. JSON形式検証機能
 
-#### 3.1.1. validateHashFileFormat 関数
+#### 3.1.1. unmarshalHashManifest 関数
 ```go
-func validateHashFileFormat(content []byte) (HashFileFormat, error)
+func unmarshalHashManifest(content []byte) (HashManifest, error)
 ```
 
 **パラメータ:**
 - `content`: ハッシュファイルの内容
 
 **戻り値:**
-- `HashFileFormat`: 解析されたハッシュファイル形式
+- `HashManifest`: 解析されたハッシュマニフェスト
 - `error`: 解析エラー
 
 **処理フロー:**
-1. 内容の先頭空白文字をスキップ
-2. 先頭文字が '{' でない場合はErrInvalidJSONFormatを返す
-3. JSON形式として解析を試行
-4. JSON解析に成功した場合はバリデーション実行
-5. 解析またはバリデーションに失敗した場合はエラーを返す
+1. JSON形式として解析を試行
+2. 構文エラーの場合、エラー位置を特定して `ErrInvalidManifestFormat` を返す
+3. 型が不正な場合、フィールド名を特定して `ErrInvalidManifestFormat` を返す
+4. その他のエラーの場合は `ErrJSONParseError` を返す
 
-#### 3.1.2. isJSONFormat 関数
+#### 3.1.2. validateHashManifest 関数
 ```go
-func isJSONFormat(content []byte) bool
+func validateHashManifest(manifest HashManifest, algoName string, targetPath string) error
 ```
 
-**判定ロジック:**
-```go
-func isJSONFormat(content []byte) bool {
-    // 空白文字をスキップして先頭文字を確認
-    for _, b := range content {
-        switch b {
-        case ' ', '\t', '\n', '\r':
-            continue
-        case '{':
-            return true
-        default:
-            return false
-        }
-    }
-    return false
-}
-```
+**パラメータ:**
+- `manifest`: 検証するハッシュマニフェスト
+- `algoName`: 期待するハッシュアルゴリズム名
+- `targetPath`: 期待するファイルパス
+
+**戻り値:**
+- `error`: バリデーションエラー
+
+**バリデーション内容:**
+1. バージョンが `HashManifestVersion` と一致するか
+2. フォーマットが `HashManifestFormat` と一致するか
+3. ファイルパスが空でないか
+4. ファイルパスが `targetPath` と一致するか
+5. ハッシュアルゴリズムが `algoName` と一致するか
+6. ハッシュ値が空でないか
+7. タイムスタンプがゼロ値でないか
 
 ### 3.2. JSON読み込み機能
 
-#### 3.2.1. parseJSONHashFile 関数
+#### 3.2.1. parseAndValidateHashFile 関数
 ```go
-func (v *Validator) parseJSONHashFile(format HashFileFormat, targetPath string) (string, string, error)
+func (v *Validator) parseAndValidateHashFile(content []byte, targetPath string) (string, string, error)
 ```
 
 **処理手順:**
-1. バージョン検証
-2. フォーマット識別子検証
-3. タイムスタンプ検証
-4. ファイルパス検証
-5. ハッシュアルゴリズム検証
-6. ハッシュ値検証
-7. パス一致確認
+1. `unmarshalHashManifest` でJSONをパース
+2. `validateHashManifest` でマニフェストを検証
+3. ファイルパスとハッシュ値を返却
 
-**バリデーション詳細:**
+#### 3.2.2. readAndParseHashFile 関数
 ```go
-func (v *Validator) validateHashFileFormat(format HashFileFormat, targetPath string) error {
-    // バージョン検証
-    if format.Version != "1.0" {
-        return fmt.Errorf("%w: version %s", ErrUnsupportedVersion, format.Version)
-    }
-
-    // フォーマット検証
-    if format.Format != "file-hash" {
-        return fmt.Errorf("%w: format %s", ErrInvalidJSONFormat, format.Format)
-    }
-
-    // ファイルパス検証
-    if format.File.Path == "" {
-        return fmt.Errorf("%w: empty file path", ErrInvalidJSONFormat)
-    }
-
-    // パス一致確認
-    if format.File.Path != targetPath {
-        return fmt.Errorf("%w: path mismatch", ErrHashCollision)
-    }
-
-    // ハッシュアルゴリズム検証
-    if format.File.Hash.Algorithm != v.algorithm.Name() {
-        return fmt.Errorf("%w: algorithm mismatch", ErrInvalidJSONFormat)
-    }
-
-    // ハッシュ値検証
-    if format.File.Hash.Value == "" {
-        return fmt.Errorf("%w: empty hash value", ErrInvalidJSONFormat)
-    }
-
-    return nil
-}
+func (v *Validator) readAndParseHashFile(targetPath string) (string, string, error)
 ```
 
-### 3.3. レガシー形式処理
+**処理手順:**
+1. ハッシュファイルのパスを取得
+2. ハッシュファイルを安全に読み込み
+3. `parseAndValidateHashFile` で検証とパースを実行
 
-#### 3.3.1. レガシー形式の検出
-レガシー形式のファイルが存在する場合、以下のエラーを返す：
+### 3.3. ハッシュマニフェスト作成機能
+
+#### 3.3.1. createHashManifest 関数
+```go
+func createHashManifest(path, hash, algorithm string) HashManifest
+```
+
+**パラメータ:**
+- `path`: ファイルの絶対パス
+- `hash`: ハッシュ値（16進数、小文字）
+- `algorithm`: ハッシュアルゴリズム名（小文字）
+
+**戻り値:**
+- `HashManifest`: 作成されたハッシュマニフェスト
+
+**処理内容:**
+1. 現在時刻をUTCで取得
+2. 指定されたパラメータで `HashManifest` 構造体を初期化
+3. バージョンとフォーマットは定数値を使用
+
+#### 3.3.2. writeHashManifest 関数
+```go
+func (v *Validator) writeHashManifest(filePath string, manifest HashManifest) error
+```
+
+**処理手順:**
+1. マニフェストをJSONにシリアライズ（2スペースインデント）
+2. 末尾に改行を追加
+3. 安全なファイル書き込み機能を使用して保存（パーミッション: 0o640）
 - `ErrInvalidJSONFormat`: ファイル形式がJSON形式でない
 
 #### 3.3.2. エラーメッセージ
