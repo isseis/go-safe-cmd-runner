@@ -347,9 +347,8 @@ func TestValidator_HashCollision(t *testing.T) {
 		if err == nil {
 			t.Fatal("Expected error when recording second file with same hash, got nil")
 		}
-		expectedErr := "hash collision detected"
-		if !strings.Contains(err.Error(), expectedErr) {
-			t.Errorf("Expected error to contain '%s', got: %v", expectedErr, err)
+		if !errors.Is(err, ErrHashCollision) {
+			t.Errorf("Expected ErrHashCollision, got %v", err)
 		}
 	})
 
@@ -415,9 +414,8 @@ func TestValidator_HashCollision(t *testing.T) {
 		if err == nil {
 			t.Fatal("Expected error when verifying with hash collision, got nil")
 		}
-		expectedErr := "hash collision detected"
-		if !strings.Contains(err.Error(), expectedErr) {
-			t.Errorf("Expected error to contain '%s', got: %v", expectedErr, err)
+		if !errors.Is(err, ErrHashCollision) {
+			t.Errorf("Expected ErrHashCollision, got %v", err)
 		}
 	})
 }
@@ -611,8 +609,8 @@ func TestValidator_InvalidTimestamp(t *testing.T) {
 			t.Fatalf("Failed to write hash file: %v", err)
 		}
 		err = validator.Verify(testFilePath)
-		if err == nil || !strings.Contains(err.Error(), "invalid timestamp") {
-			t.Errorf("Expected invalid timestamp error, got: %v", err)
+		if !errors.Is(err, ErrInvalidTimestamp) {
+			t.Errorf("Expected ErrInvalidTimestamp, got %v", err)
 		}
 	})
 }
