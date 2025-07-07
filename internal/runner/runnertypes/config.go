@@ -14,7 +14,6 @@ type GlobalConfig struct {
 	Timeout  int    `toml:"timeout"`   // Global timeout in seconds
 	WorkDir  string `toml:"workdir"`   // Working directory
 	LogLevel string `toml:"log_level"` // Log level (debug, info, warn, error)
-	EnvFile  string `toml:"env_file"`  // Path to environment file
 }
 
 // CommandGroup represents a group of related commands

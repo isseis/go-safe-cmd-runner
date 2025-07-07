@@ -55,6 +55,7 @@ linters:
             - "!$test"
             - "!**/internal/**"
           allow:
+            - github.com/joho/godotenv
             - github.com/isseis/go-safe-cmd-runner/internal/cmdcommon
             - github.com/isseis/go-safe-cmd-runner/internal/runner
             - $gostd

@@ -16,6 +16,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/joho/godotenv"
 )
 
 // Error definitions
@@ -59,7 +60,12 @@ func run() error {
 
 	// Override config from command line
 	if *envFile != "" {
-		cfg.Global.EnvFile = *envFile
+		if err := godotenv.Load(*envFile); err != nil {
+			return fmt.Errorf("failed to load env file: %w", err)
+		}
+	} else {
+		// Try to load default '.env' file if unspecified. Ignore errors.
+		_ = godotenv.Load()
 	}
 	if *logLevel != "" {
 		cfg.Global.LogLevel = *logLevel
