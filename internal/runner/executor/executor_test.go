@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -127,6 +128,134 @@ func TestExecute_Success(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestExecute_Failure(t *testing.T) {
+	tests := []struct {
+		name    string
+		cmd     runnertypes.Command
+		env     map[string]string
+		timeout time.Duration
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "non-existent command",
+			cmd: runnertypes.Command{
+				Cmd:  "nonexistentcommand12345",
+				Args: []string{},
+			},
+			env:     map[string]string{},
+			wantErr: true,
+			errMsg:  "failed to find command",
+		},
+		{
+			name: "command with non-zero exit status",
+			cmd: runnertypes.Command{
+				Cmd:  "sh",
+				Args: []string{"-c", "exit 1"},
+			},
+			env:     map[string]string{},
+			wantErr: true,
+			errMsg:  "command execution failed",
+		},
+		{
+			name: "command writing to stderr",
+			cmd: runnertypes.Command{
+				Cmd:  "sh",
+				Args: []string{"-c", "echo 'error message' >&2; exit 0"},
+			},
+			env:     map[string]string{},
+			wantErr: false, // This should succeed but capture stderr
+		},
+		{
+			name: "command that takes time (for timeout test)",
+			cmd: runnertypes.Command{
+				Cmd:  "sleep",
+				Args: []string{"2"},
+			},
+			env:     map[string]string{},
+			timeout: 100 * time.Millisecond,
+			wantErr: true,
+			errMsg:  "signal: killed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fileSystem := &mockFileSystem{
+				existingPaths: make(map[string]bool),
+			}
+
+			// Set up directory existence for working directory tests
+			if tt.cmd.Dir != "" {
+				fileSystem.existingPaths[tt.cmd.Dir] = true
+			}
+
+			outputWriter := &mockOutputWriter{}
+
+			e := &executor.DefaultExecutor{
+				FS:  fileSystem,
+				Out: outputWriter,
+				Env: &mockEnvManager{},
+			}
+
+			ctx := context.Background()
+			if tt.timeout > 0 {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, tt.timeout)
+				defer cancel()
+			}
+
+			result, err := e.Execute(ctx, tt.cmd, tt.env)
+
+			if tt.wantErr {
+				assert.Error(t, err, "Expected error but got none")
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg, "Error message should contain expected text")
+				}
+			} else {
+				assert.NoError(t, err, "Unexpected error")
+				assert.NotNil(t, result, "Result should not be nil")
+
+				// For the stderr test case, check that stderr was captured
+				if tt.name == "command writing to stderr" {
+					assert.NotEmpty(t, outputWriter.outputs, "Should have captured output")
+				}
+			}
+		})
+	}
+}
+
+func TestExecute_ContextCancellation(t *testing.T) {
+	fileSystem := &mockFileSystem{
+		existingPaths: make(map[string]bool),
+	}
+
+	e := &executor.DefaultExecutor{
+		FS:  fileSystem,
+		Out: &mockOutputWriter{},
+		Env: &mockEnvManager{},
+	}
+
+	// Create a context that we'll cancel
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Start a long-running command
+	cmd := runnertypes.Command{
+		Cmd:  "sleep",
+		Args: []string{"10"},
+	}
+
+	// Cancel the context immediately
+	cancel()
+
+	result, err := e.Execute(ctx, cmd, map[string]string{})
+
+	// Should get an error due to context cancellation
+	assert.Error(t, err, "Expected error due to context cancellation")
+	assert.Contains(t, err.Error(), "context canceled", "Error should indicate context cancellation")
+	assert.NotNil(t, result, "Result should still be returned even on failure")
 }
 
 func TestValidate(t *testing.T) {

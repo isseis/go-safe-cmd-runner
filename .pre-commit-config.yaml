@@ -9,6 +9,14 @@ repos:
         pass_filenames: false
         verbose: true
 
+    -   id: go-tidy
+        name: go tidy
+        entry: go mod tidy
+        language: golang
+        types: [go]
+        pass_filenames: false
+        verbose: true
+
 -   repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
