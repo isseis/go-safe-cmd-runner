@@ -83,9 +83,9 @@ func run() error {
 
 func runGroups(ctx context.Context, cfg *runnertypes.Config, exec executor.CommandExecutor, dryRun bool) error {
 	// TODO: Implement group execution with dependencies
-	// For now, just run all commands in all groups
-	for groupName, group := range cfg.Groups {
-		log.Printf("Running group: %s", groupName)
+	// For now, just run all commands in all groups in the order they appear in the config
+	for _, group := range cfg.Groups {
+		log.Printf("Running group: %s", group.Name)
 		for _, cmd := range group.Commands {
 			if dryRun {
 				log.Printf("[DRY RUN] Would run: %s %v", cmd.Cmd, cmd.Args)

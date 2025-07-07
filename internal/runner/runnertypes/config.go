@@ -4,9 +4,9 @@ package runnertypes
 
 // Config represents the root configuration structure
 type Config struct {
-	Version string                  `toml:"version"`
-	Global  GlobalConfig            `toml:"global"`
-	Groups  map[string]CommandGroup `toml:"groups"`
+	Version string         `toml:"version"`
+	Global  GlobalConfig   `toml:"global"`
+	Groups  []CommandGroup `toml:"groups"`
 }
 
 // GlobalConfig contains global configuration options
@@ -16,8 +16,9 @@ type GlobalConfig struct {
 	LogLevel string `toml:"log_level"` // Log level (debug, info, warn, error)
 }
 
-// CommandGroup represents a group of related commands
+// CommandGroup represents a group of related commands with a name
 type CommandGroup struct {
+	Name        string    `toml:"name"`
 	Description string    `toml:"description"`
 	Priority    int       `toml:"priority"`
 	DependsOn   []string  `toml:"depends_on"`
