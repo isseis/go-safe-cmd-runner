@@ -22,6 +22,11 @@ var (
 	ErrInvalidConfigPath = errors.New("invalid config file path")
 )
 
+const (
+	// defaultTimeout is the default timeout for commands in second (3600 = 1 hour)
+	defaultTimeout = 3600
+)
+
 // NewLoader creates a new config loader
 func NewLoader() *Loader {
 	return &Loader{}
@@ -29,6 +34,7 @@ func NewLoader() *Loader {
 
 // LoadConfig loads and validates the configuration from the given path
 func (l *Loader) LoadConfig(path string) (*runnertypes.Config, error) {
+	// TODO: Validate config file with checksum
 	// Sanitize the path to prevent directory traversal
 	if !filepath.IsLocal(path) && !filepath.IsAbs(path) {
 		return nil, fmt.Errorf("%w: %s", ErrInvalidConfigPath, path)
@@ -48,10 +54,10 @@ func (l *Loader) LoadConfig(path string) (*runnertypes.Config, error) {
 
 	// Set default values if not specified
 	if cfg.Global.WorkDir == "" {
-		cfg.Global.WorkDir = "/tmp"
+		cfg.Global.WorkDir = os.TempDir()
 	}
 	if cfg.Global.Timeout == 0 {
-		cfg.Global.Timeout = 3600 // 1 hour default timeout
+		cfg.Global.Timeout = defaultTimeout
 	}
 	if cfg.Global.LogLevel == "" {
 		cfg.Global.LogLevel = "info"
