@@ -82,8 +82,8 @@ func (e *DefaultExecutor) Execute(ctx context.Context, cmd runnertypes.Command, 
 
 	if e.Out != nil {
 		// If we have an output writer, use it
-		execCmd.Stdout = &outputWrapper{writer: e.Out, stream: "stdout"}
-		execCmd.Stderr = &outputWrapper{writer: e.Out, stream: "stderr"}
+		execCmd.Stdout = &outputWrapper{writer: e.Out, stream: StdoutStream}
+		execCmd.Stderr = &outputWrapper{writer: e.Out, stream: StderrStream}
 
 		// Run the command
 		cmdErr = execCmd.Run()
@@ -167,7 +167,7 @@ func (w *consoleOutputWriter) Write(stream string, data []byte) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	if stream == "stderr" {
+	if stream == StderrStream {
 		_, err := os.Stderr.Write(data)
 		return err
 	}

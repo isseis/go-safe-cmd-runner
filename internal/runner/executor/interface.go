@@ -6,6 +6,14 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
+// Stream names for command output
+const (
+	// StdoutStream is the name of the standard output stream
+	StdoutStream = "stdout"
+	// StderrStream is the name of the standard error stream
+	StderrStream = "stderr"
+)
+
 // CommandExecutor defines the interface for executing commands
 type CommandExecutor interface {
 	// Execute executes a command with the given environment variables
