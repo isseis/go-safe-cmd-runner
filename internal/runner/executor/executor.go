@@ -123,7 +123,7 @@ func (e *DefaultExecutor) Validate(cmd runnertypes.Command) error {
 			return fmt.Errorf("failed to check directory %s: %w", cmd.Dir, err)
 		}
 		if !exists {
-			return fmt.Errorf("%s: %w", cmd.Dir, ErrDirNotExists)
+			return fmt.Errorf("working directory %q does not exist: %w", cmd.Dir, ErrDirNotExists)
 		}
 	}
 

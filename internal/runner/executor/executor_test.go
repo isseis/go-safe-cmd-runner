@@ -2,7 +2,6 @@ package executor_test
 
 import (
 	"context"
-	"log"
 	"os"
 	"testing"
 
@@ -187,23 +186,4 @@ func TestValidate(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestMain(m *testing.M) {
-	// Setup: Create a temporary directory for tests
-	tempDir, err := os.MkdirTemp("", "executor-test-*")
-	if err != nil {
-		log.Fatalf("Failed to create temp dir: %v", err)
-	}
-
-	// Run tests
-	code := m.Run()
-
-	// Cleanup
-	err = os.RemoveAll(tempDir)
-	if err != nil {
-		log.Printf("Failed to remove temp dir: %v", err)
-	}
-
-	os.Exit(code)
 }
