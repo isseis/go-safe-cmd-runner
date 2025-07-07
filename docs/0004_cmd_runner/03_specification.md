@@ -16,9 +16,9 @@
   privileged = false       # 特権実行のデフォルト値
 ```
 
-### 1.2.1 ロック設定
+### 1.2 ロック設定
 
-#### 1.2.1.1 基本設定
+#### 1.2.1 基本設定
 
 ```toml
 [execution]
@@ -31,7 +31,7 @@
   force_unlock = false  # 既存のロックを強制的に解除して実行
 ```
 
-#### 1.2.1.2 ロックファイルの自動生成ルール
+#### 1.2.2 ロックファイルの自動生成ルール
 
 1. **ロックファイルの場所**:
    - `lock_file` が指定されている場合: 指定されたパスを使用
@@ -47,7 +47,7 @@
    - ロックファイルのパーミッションは `0600` に設定
    - 所有者のみが読み書き可能
 
-### 1.2.2 検証ルール定義
+### 1.3 検証ルール定義
 
 ```toml
 [verification]
@@ -59,9 +59,9 @@
     ]
 ```
 
-### 1.1. ファイル形式
+### 1.4 ファイル形式
 
-#### 1.1.1. コマンド定義ファイル (config.toml)
+#### 1.4.1 コマンド定義ファイル (config.toml)
 ```toml
 version = "1.0.0"
 
@@ -83,7 +83,8 @@ global = {
   [[groups.backup.commands]]
   name = "backup-db"
   description = "データベースのバックアップ"
-  cmd = "mysqldump -u ${DB_USER} -p${DB_PASSWORD} ${DB_NAME}"
+  # ユーザー名、パスワードは環境変数 DB_USER, DB_PASSWORD 経由で渡す
+  cmd = "mysqldump ${DB_NAME}"
   args = []
   # 環境変数のマッピング
   # 形式: "TARGET_VAR=SOURCE_VAR" または "TARGET_VAR=value"
@@ -98,7 +99,6 @@ global = {
   user = "mysql"
   privileged = false
   timeout = 300
-  env = ["DB_USER", "DB_PASSWORD", "DB_NAME"]  # 必要な環境変数名を指定
 
   [[groups.backup.commands]]
   name = "compress-backup"
@@ -116,7 +116,7 @@ global = {
   secure_env = true  # セキュアな環境変数処理を有効化
 ```
 
-#### 1.1.2. 認証情報ファイル (.env)
+#### 1.4.2. 認証情報ファイル (.env)
 ```
 # 認証情報ファイルの例
 # ファイルパーミッションは600に設定する必要があります
@@ -133,9 +133,9 @@ API_KEY=your_api_key_here
 # 空行は無視されます
 ```
 
-### 1.2. セキュリティ要件
+### 1.5. セキュリティ要件
 
-#### 1.2.1. 認証情報ファイルの取り扱い
+#### 1.5.1. 認証情報ファイルの取り扱い
 - ファイルパーミッションは600（所有者のみ読み書き可能）に制限
 - ファイルの所有者は実行ユーザーと一致すること
 - ファイルのシンボリックリンクは追跡しない
@@ -144,7 +144,7 @@ API_KEY=your_api_key_here
 - 不要になった認証情報は即座にメモリからクリア
 - コアダンプが生成されないように設定
 
-#### 1.2.2. 環境変数の取り扱い
+#### 1.5.2. 環境変数の取り扱い
 - 認証情報は環境変数経由でのみ渡す
 - 環境変数名は英数字とアンダースコアのみ許可
 - 環境変数名のホワイトリストを設定
@@ -152,7 +152,7 @@ API_KEY=your_api_key_here
 - コマンドライン引数として認証情報を渡さない
 - 子プロセスに不要な環境変数を引き継がない
 
-#### 1.3.1 実行制御の使用例
+#### 1.6 実行制御の使用例
 
 ```toml
 [groups.backup]
@@ -165,7 +165,7 @@ name = "backup-db"
 cmd = "/usr/local/bin/backup"
 ```
 
-### 1.3.2 コマンドグループでのテンプレート使用例
+### 1.7 コマンドグループでのテンプレート使用例
 
 ```toml
 [groups.foo_processing]
@@ -298,7 +298,7 @@ $ cmd-runner --trace-template config.toml
    TARGET_VAR=SOURCE_VAR
    ```
    - `SOURCE_VAR` 環境変数の値を `TARGET_VAR` として設定
-   - `SOURCE_VAR` が存在しない場合は空文字列が設定される
+   - `SOURCE_VAR` が存在しない場合はエラー
 
 2. **デフォルト値付きマッピング**
    ```
