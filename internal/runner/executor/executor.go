@@ -4,6 +4,7 @@
 package executor
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -81,12 +82,19 @@ func (e *DefaultExecutor) Execute(ctx context.Context, cmd runnertypes.Command, 
 	var cmdErr error
 
 	if e.Out != nil {
-		// If we have an output writer, use it
-		execCmd.Stdout = &outputWrapper{writer: e.Out, stream: StdoutStream}
-		execCmd.Stderr = &outputWrapper{writer: e.Out, stream: StderrStream}
+		// Create buffered wrappers that both capture output and write to OutputWriter
+		stdoutWrapper := &outputWrapper{writer: e.Out, stream: StdoutStream}
+		stderrWrapper := &outputWrapper{writer: e.Out, stream: StderrStream}
+
+		execCmd.Stdout = stdoutWrapper
+		execCmd.Stderr = stderrWrapper
 
 		// Run the command
 		cmdErr = execCmd.Run()
+
+		// Get the captured output
+		stdout = stdoutWrapper.GetBuffer()
+		stderr = stderrWrapper.GetBuffer()
 	} else {
 		// Otherwise, capture output in memory
 		stdout, cmdErr = execCmd.Output()
@@ -180,18 +188,36 @@ func (w *consoleOutputWriter) Close() error {
 	return nil
 }
 
-// outputWrapper is an io.Writer that writes to an OutputWriter
-// with a specific stream name
+// outputWrapper is an io.Writer that both captures output in a buffer
+// and writes to an OutputWriter with a specific stream name
 type outputWrapper struct {
 	writer OutputWriter
 	stream string
+	buffer bytes.Buffer
+	mu     sync.Mutex
 }
 
 func (w *outputWrapper) Write(p []byte) (n int, err error) {
-	if err := w.writer.Write(w.stream, p); err != nil {
-		return 0, err
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	// Write to buffer for capturing
+	w.buffer.Write(p)
+
+	// Also write to the OutputWriter
+	if w.writer != nil {
+		if err := w.writer.Write(w.stream, p); err != nil {
+			return 0, err
+		}
 	}
+
 	return len(p), nil
+}
+
+func (w *outputWrapper) GetBuffer() []byte {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buffer.Bytes()
 }
 
 // envManager implements EnvironmentManager

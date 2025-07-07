@@ -77,10 +77,13 @@ func TestNewDefaultExecutor(t *testing.T) {
 
 func TestExecute_Success(t *testing.T) {
 	tests := []struct {
-		name    string
-		cmd     runnertypes.Command
-		env     map[string]string
-		wantErr bool
+		name             string
+		cmd              runnertypes.Command
+		env              map[string]string
+		wantErr          bool
+		expectedStdout   string
+		expectedStderr   string
+		expectedExitCode int
 	}{
 		{
 			name: "simple command",
@@ -88,8 +91,11 @@ func TestExecute_Success(t *testing.T) {
 				Cmd:  "echo",
 				Args: []string{"hello"},
 			},
-			env:     map[string]string{"TEST": "value"},
-			wantErr: false,
+			env:              map[string]string{"TEST": "value"},
+			wantErr:          false,
+			expectedStdout:   "hello\n",
+			expectedStderr:   "",
+			expectedExitCode: 0,
 		},
 		{
 			name: "command with working directory",
@@ -98,8 +104,23 @@ func TestExecute_Success(t *testing.T) {
 				Dir:  ".",
 				Args: []string{},
 			},
-			env:     nil,
-			wantErr: false,
+			env:              nil,
+			wantErr:          false,
+			expectedStdout:   "", // pwd output varies, so we'll just check it's not empty
+			expectedStderr:   "",
+			expectedExitCode: 0,
+		},
+		{
+			name: "command with multiple arguments",
+			cmd: runnertypes.Command{
+				Cmd:  "echo",
+				Args: []string{"-n", "test"},
+			},
+			env:              map[string]string{},
+			wantErr:          false,
+			expectedStdout:   "test",
+			expectedStderr:   "",
+			expectedExitCode: 0,
 		},
 	}
 
@@ -114,17 +135,30 @@ func TestExecute_Success(t *testing.T) {
 				fileSystem.existingPaths[tt.cmd.Dir] = true
 			}
 
+			outputWriter := &mockOutputWriter{}
+
 			e := &executor.DefaultExecutor{
 				FS:  fileSystem,
-				Out: &mockOutputWriter{},
+				Out: outputWriter,
 				Env: &mockEnvManager{},
 			}
 
-			_, err := e.Execute(context.Background(), tt.cmd, tt.env)
+			result, err := e.Execute(context.Background(), tt.cmd, tt.env)
 			if tt.wantErr {
 				assert.Error(t, err, "Expected error but got none")
 			} else {
 				assert.NoError(t, err, "Unexpected error")
+				assert.NotNil(t, result, "Result should not be nil")
+				assert.Equal(t, tt.expectedExitCode, result.ExitCode, "Exit code should match expected value")
+
+				// For pwd command, just check that stdout is not empty
+				if tt.cmd.Cmd == "pwd" {
+					assert.NotEmpty(t, result.Stdout, "pwd should return current directory path")
+				} else {
+					assert.Equal(t, tt.expectedStdout, result.Stdout, "Stdout should match expected value")
+				}
+
+				assert.Equal(t, tt.expectedStderr, result.Stderr, "Stderr should match expected value")
 			}
 		})
 	}
