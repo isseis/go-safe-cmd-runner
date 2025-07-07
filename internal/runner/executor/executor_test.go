@@ -11,22 +11,30 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-type mockFileSystem struct{}
+type mockFileSystem struct {
+	// A map to configure which paths exist.
+	existingPaths map[string]bool
+	// An error to return from methods, for testing error paths.
+	err error
+}
 
 func (m *mockFileSystem) CreateTempDir(prefix string) (string, error) {
+	if m.err != nil {
+		return "", m.err
+	}
 	return os.MkdirTemp("", prefix)
 }
 
-func (m *mockFileSystem) RemoveAll(path string) error {
-	return os.RemoveAll(path)
+func (m *mockFileSystem) RemoveAll(_ string) error {
+	return m.err
 }
 
 func (m *mockFileSystem) FileExists(path string) (bool, error) {
-	_, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		return false, nil
+	if m.err != nil {
+		return false, m.err
 	}
-	return err == nil, err
+	exists := m.existingPaths[path]
+	return exists, nil
 }
 
 type mockOutputWriter struct {
@@ -97,8 +105,17 @@ func TestExecute_Success(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			fileSystem := &mockFileSystem{
+				existingPaths: make(map[string]bool),
+			}
+
+			// Set up directory existence for working directory tests
+			if tt.cmd.Dir != "" {
+				fileSystem.existingPaths[tt.cmd.Dir] = true
+			}
+
 			e := &executor.DefaultExecutor{
-				FS:  &mockFileSystem{},
+				FS:  fileSystem,
 				Out: &mockOutputWriter{},
 				Env: &mockEnvManager{},
 			}
@@ -146,8 +163,18 @@ func TestValidate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			fileSystem := &mockFileSystem{
+				existingPaths: make(map[string]bool),
+			}
+
+			// Set up directory existence based on test case
+			if tt.cmd.Dir != "" {
+				// For non-empty Dir, configure whether it exists
+				fileSystem.existingPaths[tt.cmd.Dir] = !tt.wantErr
+			}
+
 			e := &executor.DefaultExecutor{
-				FS:  &mockFileSystem{},
+				FS:  fileSystem,
 				Out: &mockOutputWriter{},
 				Env: &mockEnvManager{},
 			}
