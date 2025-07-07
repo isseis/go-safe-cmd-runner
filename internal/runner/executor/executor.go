@@ -97,9 +97,13 @@ func (e *DefaultExecutor) Execute(ctx context.Context, cmd runnertypes.Command, 
 
 	// Prepare the result
 	result := &Result{
-		ExitCode: execCmd.ProcessState.ExitCode(),
-		Stdout:   string(stdout),
-		Stderr:   string(stderr),
+		Stdout: string(stdout),
+		Stderr: string(stderr),
+	}
+	if execCmd.ProcessState != nil {
+		result.ExitCode = execCmd.ProcessState.ExitCode()
+	} else {
+		result.ExitCode = -1 // Or another non-zero value to indicate failure
 	}
 
 	if cmdErr != nil {
@@ -113,7 +117,7 @@ func (e *DefaultExecutor) Execute(ctx context.Context, cmd runnertypes.Command, 
 func (e *DefaultExecutor) Validate(cmd runnertypes.Command) error {
 	// Check if command is empty
 	if cmd.Cmd == "" {
-		return fmt.Errorf("%w", ErrEmptyCommand)
+		return ErrEmptyCommand
 	}
 
 	// Check if working directory exists and is accessible
