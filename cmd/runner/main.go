@@ -62,8 +62,10 @@ func run() error {
 			return fmt.Errorf("failed to load env file: %w", err)
 		}
 	} else {
-		// Try to load default '.env' file if unspecified. Ignore errors.
-		_ = godotenv.Load()
+		// Try to load default '.env' file if unspecified. Log a warning on error.
+		if err := godotenv.Load(); err != nil {
+			log.Printf("Warning: failed to load .env file: %v", err)
+		}
 	}
 	if *logLevel != "" {
 		cfg.Global.LogLevel = *logLevel
