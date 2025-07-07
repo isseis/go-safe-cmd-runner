@@ -9,7 +9,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"os"
 	"os/signal"
 	"syscall"
 
@@ -34,8 +33,7 @@ var (
 func main() {
 	// Wrap main logic in a separate function to properly handle errors and defer
 	if err := run(); err != nil {
-		log.Printf("Error: %v", err)
-		os.Exit(1)
+		log.Fatalf("Error: %v", err)
 	}
 }
 
