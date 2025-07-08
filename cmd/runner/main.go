@@ -9,13 +9,14 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
-	"github.com/joho/godotenv"
 )
 
 // Error definitions
@@ -56,22 +57,30 @@ func run() error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// Override config from command line
+	// Initialize Runner
+	runner := runner.NewRunner(cfg)
+
+	// Load environment variables
+	envFileToLoad := ""
 	if *envFile != "" {
-		if err := godotenv.Load(*envFile); err != nil {
-			return fmt.Errorf("failed to load env file: %w", err)
-		}
+		envFileToLoad = *envFile
 	} else {
-		// Try to load default '.env' file if unspecified. Log a warning on error.
-		if err := godotenv.Load(); err != nil {
-			log.Printf("Warning: failed to load .env file: %v", err)
+		// Try to load default '.env' file if exists
+		if _, err := os.Stat(".env"); err == nil {
+			envFileToLoad = ".env"
 		}
 	}
+
+	// Load environment variables from file and system environment
+	if err := runner.LoadEnvironment(envFileToLoad, true); err != nil {
+		return fmt.Errorf("failed to load environment: %w", err)
+	}
+
 	if *logLevel != "" {
 		cfg.Global.LogLevel = *logLevel
 	}
 
-	// Initialize components
+	// Initialize executor
 	exec := executor.NewDefaultExecutor()
 
 	// Run the command groups
