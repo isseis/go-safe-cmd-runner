@@ -10,12 +10,15 @@ import (
 	"path/filepath"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/template"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/pelletier/go-toml/v2"
 )
 
 // Loader handles loading and validating configurations
-type Loader struct{}
+type Loader struct {
+	templateEngine *template.Engine
+}
 
 // Error definitions for the config package
 var (
@@ -34,7 +37,14 @@ const (
 
 // NewLoader creates a new config loader
 func NewLoader() *Loader {
-	return &Loader{}
+	return &Loader{
+		templateEngine: template.NewEngine(),
+	}
+}
+
+// GetTemplateEngine returns the template engine instance
+func (l *Loader) GetTemplateEngine() *template.Engine {
+	return l.templateEngine
 }
 
 // LoadConfig loads and validates the configuration from the given path
@@ -75,4 +85,45 @@ func (l *Loader) LoadConfig(path string) (*runnertypes.Config, error) {
 	cfg.Global.WorkDir = workDir
 
 	return &cfg, nil
+}
+
+// LoadConfigWithTemplates loads configuration and applies templates
+func (l *Loader) LoadConfigWithTemplates(path string) (*runnertypes.Config, error) {
+	// Load the basic configuration
+	cfg, err := l.LoadConfig(path)
+	if err != nil {
+		return nil, err
+	}
+
+	// Register templates from configuration
+	for name, tmplConfig := range cfg.Templates {
+		tmpl := &template.Template{
+			Name:        name,
+			Description: tmplConfig.Description,
+			Verify:      tmplConfig.Verify,
+			TempDir:     tmplConfig.TempDir,
+			Cleanup:     tmplConfig.Cleanup,
+			WorkDir:     tmplConfig.WorkDir,
+			Env:         tmplConfig.Env,
+			Privileged:  tmplConfig.Privileged,
+			Variables:   tmplConfig.Variables,
+		}
+
+		if err := l.templateEngine.RegisterTemplate(name, tmpl); err != nil {
+			return nil, fmt.Errorf("failed to register template %s: %w", name, err)
+		}
+	}
+
+	// Apply templates to command groups
+	for i, group := range cfg.Groups {
+		if group.Template != "" {
+			appliedGroup, err := l.templateEngine.ApplyTemplate(&group, group.Template)
+			if err != nil {
+				return nil, fmt.Errorf("failed to apply template %s to group %s: %w", group.Template, group.Name, err)
+			}
+			cfg.Groups[i] = *appliedGroup
+		}
+	}
+
+	return cfg, nil
 }
