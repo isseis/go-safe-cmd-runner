@@ -321,8 +321,7 @@ func TestRunner_createCommandContext(t *testing.T) {
 
 		deadline, ok := cmdCtx.Deadline()
 		assert.True(t, ok)
-		assert.True(t, time.Until(deadline) <= 10*time.Second)
-		assert.True(t, time.Until(deadline) > 9*time.Second)
+		assert.WithinDuration(t, time.Now().Add(10*time.Second), deadline, 100*time.Millisecond)
 	})
 
 	t.Run("use command-specific timeout", func(t *testing.T) {
@@ -334,8 +333,7 @@ func TestRunner_createCommandContext(t *testing.T) {
 
 		deadline, ok := cmdCtx.Deadline()
 		assert.True(t, ok)
-		assert.True(t, time.Until(deadline) <= 5*time.Second)
-		assert.True(t, time.Until(deadline) > 4*time.Second)
+		assert.WithinDuration(t, time.Now().Add(5*time.Second), deadline, 100*time.Millisecond)
 	})
 }
 
