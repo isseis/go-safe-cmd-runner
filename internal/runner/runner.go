@@ -41,18 +41,17 @@ type Runner struct {
 }
 
 // NewRunner creates a new command runner with the given configuration
-func NewRunner(config *runnertypes.Config) *Runner {
+func NewRunner(config *runnertypes.Config) (*Runner, error) {
 	validator, err := security.NewValidator(nil) // Use default security config
 	if err != nil {
-		// This should never happen with default config, but we handle it gracefully
-		panic(fmt.Sprintf("failed to create default security validator: %v", err))
+		return nil, fmt.Errorf("failed to create default security validator: %w", err)
 	}
 	return &Runner{
 		executor:  executor.NewDefaultExecutor(),
 		config:    config,
 		envVars:   make(map[string]string),
 		validator: validator,
-	}
+	}, nil
 }
 
 // NewRunnerWithSecurity creates a new command runner with custom security configuration
