@@ -44,6 +44,10 @@ linters:
           allow:
             - github.com/isseis/go-safe-cmd-runner/internal/safefileio
             - github.com/isseis/go-safe-cmd-runner/internal/filevalidator
+            - github.com/isseis/go-safe-cmd-runner/internal/runner
+            - github.com/pelletier/go-toml/v2
+            - github.com/stretchr/testify/assert
+            - github.com/stretchr/testify/require
             - $gostd
 
         main:
@@ -52,7 +56,9 @@ linters:
             - "!$test"
             - "!**/internal/**"
           allow:
+            - github.com/joho/godotenv
             - github.com/isseis/go-safe-cmd-runner/internal/cmdcommon
+            - github.com/isseis/go-safe-cmd-runner/internal/runner
             - $gostd
 
     mnd:
