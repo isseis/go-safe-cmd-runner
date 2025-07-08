@@ -120,6 +120,47 @@ func TestValidator_ValidateFilePermissions(t *testing.T) {
 		assert.True(t, errors.Is(err, ErrInvalidFilePermissions))
 	})
 
+	t.Run("file with dangerous group/other permissions", func(t *testing.T) {
+		// Test the security vulnerability case: 0o077 should be rejected even though 0o077 < 0o644
+		tmpDir := t.TempDir()
+		tmpFile := filepath.Join(tmpDir, "test.conf")
+
+		// Create file with permissions that are numerically less than 0o644 but contain dangerous bits
+		err := os.WriteFile(tmpFile, []byte("test content"), 0o077) // ---rwxrwx (dangerous!)
+		require.NoError(t, err)
+
+		err = validator.ValidateFilePermissions(tmpFile)
+		assert.Error(t, err, "0o077 permissions should be rejected even though 077 < 644")
+		assert.True(t, errors.Is(err, ErrInvalidFilePermissions))
+		assert.Contains(t, err.Error(), "disallowed bits")
+	})
+
+	t.Run("file with only subset of allowed permissions", func(t *testing.T) {
+		// Test that files with permissions that are a subset of allowed permissions pass
+		tmpDir := t.TempDir()
+		tmpFile := filepath.Join(tmpDir, "test.conf")
+
+		// 0o600 is a subset of 0o644 (owner read/write only)
+		err := os.WriteFile(tmpFile, []byte("test content"), 0o600)
+		require.NoError(t, err)
+
+		err = validator.ValidateFilePermissions(tmpFile)
+		assert.NoError(t, err, "0o600 should be allowed as it's a subset of 0o644")
+	})
+
+	t.Run("file with exact allowed permissions", func(t *testing.T) {
+		// Test that files with exact allowed permissions pass
+		tmpDir := t.TempDir()
+		tmpFile := filepath.Join(tmpDir, "test.conf")
+
+		// 0o644 should be exactly allowed
+		err := os.WriteFile(tmpFile, []byte("test content"), 0o644)
+		require.NoError(t, err)
+
+		err = validator.ValidateFilePermissions(tmpFile)
+		assert.NoError(t, err, "0o644 should be allowed")
+	})
+
 	t.Run("directory instead of file", func(t *testing.T) {
 		tmpDir := t.TempDir()
 

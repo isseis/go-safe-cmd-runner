@@ -167,16 +167,29 @@ func (v *Validator) ValidateFilePermissions(filePath string) error {
 		return err
 	}
 
-	// Check permissions
+	// Check permissions using bitwise operations to ensure file permissions are a subset of allowed permissions
 	perm := fileInfo.Mode().Perm()
 	slog.Debug("Checking file permissions", "path", cleanPath, "current_permissions", fmt.Sprintf("%04o", perm), "max_allowed", fmt.Sprintf("%04o", v.config.RequiredFilePermissions))
 
-	if perm > v.config.RequiredFilePermissions {
-		err := fmt.Errorf("%w: file %s has permissions %o, maximum allowed is %o",
-			ErrInvalidFilePermissions, cleanPath, perm, v.config.RequiredFilePermissions)
+	// SECURITY: Use bitwise AND with complement to check for disallowed permission bits.
+	// This prevents security vulnerabilities where files with dangerous permissions like 0o077 (---rwxrwx)
+	// would be incorrectly allowed under a simple numeric comparison (0o077 < 0o644).
+	// The bitwise operation ensures that only files with permissions that are a true subset
+	// of the allowed permissions are accepted.
+	//
+	// Example: If RequiredFilePermissions = 0o644 (rw-r--r--):
+	// - 0o600 (rw-------): disallowedBits = 0o600 &^ 0o644 = 0o000 ✓ (allowed)
+	// - 0o644 (rw-r--r--): disallowedBits = 0o644 &^ 0o644 = 0o000 ✓ (allowed)
+	// - 0o777 (rwxrwxrwx): disallowedBits = 0o777 &^ 0o644 = 0o133 ✗ (rejected)
+	// - 0o077 (---rwxrwx): disallowedBits = 0o077 &^ 0o644 = 0o033 ✗ (rejected, security fix!)
+	disallowedBits := perm &^ v.config.RequiredFilePermissions
+	if disallowedBits != 0 {
+		err := fmt.Errorf("%w: file %s has permissions %o with disallowed bits %o, maximum allowed is %o",
+			ErrInvalidFilePermissions, cleanPath, perm, disallowedBits, v.config.RequiredFilePermissions)
 		slog.Warn("Insecure file permissions detected",
 			"path", cleanPath,
 			"current_permissions", fmt.Sprintf("%04o", perm),
+			"disallowed_bits", fmt.Sprintf("%04o", disallowedBits),
 			"max_allowed", fmt.Sprintf("%04o", v.config.RequiredFilePermissions))
 		return err
 	}
