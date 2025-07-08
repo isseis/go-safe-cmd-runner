@@ -12,7 +12,46 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
+
+// setupTestEnv sets up a clean test environment and returns a cleanup function.
+// The cleanup function restores the original environment when called.
+func setupTestEnv(t *testing.T, envVars map[string]string) func() {
+	t.Helper()
+	originalEnv := os.Environ()
+
+	// Clear the environment
+	os.Clearenv()
+
+	// Set up the test environment variables
+	for key, value := range envVars {
+		err := os.Setenv(key, value)
+		require.NoError(t, err, "failed to set environment variable %s", key)
+	}
+
+	// Return a cleanup function that restores the original environment
+	return func() {
+		os.Clearenv()
+		for _, env := range originalEnv {
+			if eq := strings.Index(env, "="); eq >= 0 {
+				os.Setenv(env[:eq], env[eq+1:])
+			}
+		}
+	}
+}
+
+// setupSafeTestEnv sets up a minimal safe environment for tests and returns a cleanup function.
+// This is useful for security-related tests where we want to ensure a clean, minimal environment.
+func setupSafeTestEnv(t *testing.T) func() {
+	t.Helper()
+	safeEnv := map[string]string{
+		"PATH": "/usr/bin:/bin",
+		"HOME": "/home/test",
+		"USER": "test",
+	}
+	return setupTestEnv(t, safeEnv)
+}
 
 var ErrExecutionFailed = errors.New("execution failed")
 
@@ -48,22 +87,8 @@ func TestNewRunner(t *testing.T) {
 }
 
 func TestRunner_ExecuteGroup(t *testing.T) {
-	// Clean environment for tests
-	originalEnv := os.Environ()
-	defer func() {
-		os.Clearenv()
-		for _, env := range originalEnv {
-			if eq := strings.Index(env, "="); eq >= 0 {
-				os.Setenv(env[:eq], env[eq+1:])
-			}
-		}
-	}()
-
-	// Set only safe environment variables for tests
-	os.Clearenv()
-	os.Setenv("PATH", "/usr/bin:/bin")
-	os.Setenv("HOME", "/home/test")
-	os.Setenv("USER", "test")
+	cleanup := setupSafeTestEnv(t)
+	defer cleanup()
 
 	tests := []struct {
 		name        string
@@ -170,22 +195,8 @@ func TestRunner_ExecuteGroup(t *testing.T) {
 }
 
 func TestRunner_ExecuteAll(t *testing.T) {
-	// Clean environment for tests
-	originalEnv := os.Environ()
-	defer func() {
-		os.Clearenv()
-		for _, env := range originalEnv {
-			if eq := strings.Index(env, "="); eq >= 0 {
-				os.Setenv(env[:eq], env[eq+1:])
-			}
-		}
-	}()
-
-	// Set only safe environment variables for tests
-	os.Clearenv()
-	os.Setenv("PATH", "/usr/bin:/bin")
-	os.Setenv("HOME", "/home/test")
-	os.Setenv("USER", "test")
+	cleanup := setupSafeTestEnv(t)
+	defer cleanup()
 
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
@@ -227,22 +238,8 @@ func TestRunner_ExecuteAll(t *testing.T) {
 }
 
 func TestRunner_ExecuteCommand(t *testing.T) {
-	// Clean environment for tests
-	originalEnv := os.Environ()
-	defer func() {
-		os.Clearenv()
-		for _, env := range originalEnv {
-			if eq := strings.Index(env, "="); eq >= 0 {
-				os.Setenv(env[:eq], env[eq+1:])
-			}
-		}
-	}()
-
-	// Set only safe environment variables for tests
-	os.Clearenv()
-	os.Setenv("PATH", "/usr/bin:/bin")
-	os.Setenv("HOME", "/home/test")
-	os.Setenv("USER", "test")
+	cleanup := setupSafeTestEnv(t)
+	defer cleanup()
 
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
@@ -391,32 +388,25 @@ func TestRunner_createCommandContext(t *testing.T) {
 }
 
 func TestRunner_resolveEnvironmentVars(t *testing.T) {
+	// Setup a custom test environment with specific variables
+	testEnv := map[string]string{
+		"SAFE_VAR": "safe_value",
+		"PATH":     "/usr/bin:/bin",
+	}
+	cleanup := setupTestEnv(t, testEnv)
+	defer cleanup()
+
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
 			WorkDir: "/tmp",
 		},
 	}
+
 	runner := NewRunner(config)
 	runner.envVars = map[string]string{
 		"LOADED_VAR": "from_env_file",
 		"PATH":       "/custom/path", // This should override system PATH
 	}
-
-	// Use a custom test environment to avoid system environment variable validation issues
-	originalEnv := os.Environ()
-	defer func() {
-		os.Clearenv()
-		for _, env := range originalEnv {
-			if eq := strings.Index(env, "="); eq >= 0 {
-				os.Setenv(env[:eq], env[eq+1:])
-			}
-		}
-	}()
-
-	// Clear environment and set only safe test variables
-	os.Clearenv()
-	os.Setenv("SAFE_VAR", "safe_value")
-	os.Setenv("PATH", "/usr/bin:/bin")
 
 	cmd := runnertypes.Command{
 		Env: []string{
@@ -480,22 +470,8 @@ func TestRunner_resolveVariableReferences_ComplexCircular(t *testing.T) {
 }
 
 func TestRunner_SecurityIntegration(t *testing.T) {
-	// Clean environment for tests
-	originalEnv := os.Environ()
-	defer func() {
-		os.Clearenv()
-		for _, env := range originalEnv {
-			if eq := strings.Index(env, "="); eq >= 0 {
-				os.Setenv(env[:eq], env[eq+1:])
-			}
-		}
-	}()
-
-	// Set only safe environment variables for tests
-	os.Clearenv()
-	os.Setenv("PATH", "/usr/bin:/bin")
-	os.Setenv("HOME", "/home/test")
-	os.Setenv("USER", "test")
+	cleanup := setupSafeTestEnv(t)
+	defer cleanup()
 
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
