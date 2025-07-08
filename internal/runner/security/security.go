@@ -6,6 +6,7 @@ package security
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -138,33 +139,49 @@ func NewValidator(config *Config) (*Validator, error) {
 // ValidateFilePermissions validates that a file has appropriate permissions
 func (v *Validator) ValidateFilePermissions(filePath string) error {
 	if filePath == "" {
+		slog.Error("Empty file path provided for permission validation")
 		return fmt.Errorf("%w: empty file path", ErrInvalidPath)
 	}
 
 	// Clean and validate the path
 	cleanPath := filepath.Clean(filePath)
+	slog.Debug("Validating file permissions", "path", cleanPath)
+
 	if len(cleanPath) > v.config.MaxPathLength {
-		return fmt.Errorf("%w: path too long (%d > %d)", ErrInvalidPath, len(cleanPath), v.config.MaxPathLength)
+		err := fmt.Errorf("%w: path too long (%d > %d)", ErrInvalidPath, len(cleanPath), v.config.MaxPathLength)
+		slog.Error("Path validation failed", "path", cleanPath, "error", err, "max_length", v.config.MaxPathLength)
+		return err
 	}
 
 	// Get file info
 	fileInfo, err := os.Stat(cleanPath)
 	if err != nil {
+		slog.Error("Failed to get file info", "path", cleanPath, "error", err)
 		return fmt.Errorf("failed to stat file %s: %w", cleanPath, err)
 	}
 
 	// Check if it's a regular file
 	if !fileInfo.Mode().IsRegular() {
-		return fmt.Errorf("%w: %s is not a regular file", ErrInvalidFilePermissions, cleanPath)
+		err := fmt.Errorf("%w: %s is not a regular file", ErrInvalidFilePermissions, cleanPath)
+		slog.Warn("Invalid file type", "path", cleanPath, "mode", fileInfo.Mode().String())
+		return err
 	}
 
 	// Check permissions
 	perm := fileInfo.Mode().Perm()
+	slog.Debug("Checking file permissions", "path", cleanPath, "current_permissions", fmt.Sprintf("%04o", perm), "max_allowed", fmt.Sprintf("%04o", v.config.RequiredFilePermissions))
+
 	if perm > v.config.RequiredFilePermissions {
-		return fmt.Errorf("%w: file %s has permissions %o, maximum allowed is %o",
+		err := fmt.Errorf("%w: file %s has permissions %o, maximum allowed is %o",
 			ErrInvalidFilePermissions, cleanPath, perm, v.config.RequiredFilePermissions)
+		slog.Warn("Insecure file permissions detected",
+			"path", cleanPath,
+			"current_permissions", fmt.Sprintf("%04o", perm),
+			"max_allowed", fmt.Sprintf("%04o", v.config.RequiredFilePermissions))
+		return err
 	}
 
+	slog.Debug("File permissions validated successfully", "path", cleanPath, "permissions", fmt.Sprintf("%04o", perm))
 	return nil
 }
 
