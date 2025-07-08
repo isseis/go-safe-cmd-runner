@@ -13,6 +13,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/joho/godotenv"
 )
 
@@ -33,17 +34,29 @@ const (
 
 // Runner manages the execution of command groups
 type Runner struct {
-	executor executor.CommandExecutor
-	config   *runnertypes.Config
-	envVars  map[string]string
+	executor  executor.CommandExecutor
+	config    *runnertypes.Config
+	envVars   map[string]string
+	validator *security.Validator
 }
 
 // NewRunner creates a new command runner with the given configuration
 func NewRunner(config *runnertypes.Config) *Runner {
 	return &Runner{
-		executor: executor.NewDefaultExecutor(),
-		config:   config,
-		envVars:  make(map[string]string),
+		executor:  executor.NewDefaultExecutor(),
+		config:    config,
+		envVars:   make(map[string]string),
+		validator: security.NewValidator(nil), // Use default security config
+	}
+}
+
+// NewRunnerWithSecurity creates a new command runner with custom security configuration
+func NewRunnerWithSecurity(config *runnertypes.Config, securityConfig *security.Config) *Runner {
+	return &Runner{
+		executor:  executor.NewDefaultExecutor(),
+		config:    config,
+		envVars:   make(map[string]string),
+		validator: security.NewValidator(securityConfig),
 	}
 }
 
@@ -52,6 +65,13 @@ func NewRunner(config *runnertypes.Config) *Runner {
 // If loadSystemEnv is true, system environment variables will be loaded first,
 // then overridden by the .env file if specified.
 func (r *Runner) LoadEnvironment(envFile string, loadSystemEnv bool) error {
+	// Validate file permissions if a file is specified
+	if envFile != "" {
+		if err := r.validator.ValidateFilePermissions(envFile); err != nil {
+			return fmt.Errorf("security validation failed for environment file: %w", err)
+		}
+	}
+
 	envMap := make(map[string]string)
 
 	// Load system environment variables if requested
@@ -73,6 +93,11 @@ func (r *Runner) LoadEnvironment(envFile string, loadSystemEnv bool) error {
 		for k, v := range fileEnv {
 			envMap[k] = v
 		}
+	}
+
+	// Validate all environment variables for safety
+	if err := r.validator.ValidateAllEnvironmentVars(envMap); err != nil {
+		return fmt.Errorf("environment variable security validation failed: %w", err)
 	}
 
 	r.envVars = envMap
@@ -141,10 +166,20 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 
 // executeCommand executes a single command with environment variable resolution
 func (r *Runner) executeCommand(ctx context.Context, cmd runnertypes.Command) (*executor.Result, error) {
+	// Validate command against whitelist
+	if err := r.validator.ValidateCommand(cmd.Cmd); err != nil {
+		return nil, fmt.Errorf("command security validation failed: %w", err)
+	}
+
 	// Resolve environment variables for the command
 	envVars, err := r.resolveEnvironmentVars(cmd)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve environment variables: %w", err)
+	}
+
+	// Validate resolved environment variables
+	if err := r.validator.ValidateAllEnvironmentVars(envVars); err != nil {
+		return nil, fmt.Errorf("resolved environment variables security validation failed: %w", err)
 	}
 
 	// Set working directory from global config if not specified
@@ -324,4 +359,9 @@ func (r *Runner) ListCommands() {
 // GetConfig returns the current configuration
 func (r *Runner) GetConfig() *runnertypes.Config {
 	return r.config
+}
+
+// GetSanitizedEnvironmentVars returns environment variables with sensitive values redacted
+func (r *Runner) GetSanitizedEnvironmentVars() map[string]string {
+	return r.validator.SanitizeEnvironmentVariables(r.envVars)
 }
