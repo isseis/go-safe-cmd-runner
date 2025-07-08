@@ -222,12 +222,12 @@ func (r *Runner) ExecuteCommand(ctx context.Context, commandName string) error {
 			if cmd.Name == commandName {
 				fmt.Printf("Executing command: %s from group: %s\n", cmd.Name, group.Name)
 
-				// Create command context with timeout
-				cmdCtx, cancel := r.createCommandContext(ctx, cmd)
-				defer cancel()
-
-				// Execute the command
-				result, err := r.executeCommand(cmdCtx, cmd)
+				// Execute command with proper context cleanup
+				result, err := func() (*executor.Result, error) {
+					cmdCtx, cancel := r.createCommandContext(ctx, cmd)
+					defer cancel()
+					return r.executeCommand(cmdCtx, cmd)
+				}()
 				if err != nil {
 					return fmt.Errorf("command %s failed: %w", cmd.Name, err)
 				}
