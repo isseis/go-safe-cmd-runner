@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
@@ -73,8 +74,9 @@ func (m *Manager) CreateTempDir(commandName string, autoCleanup bool) (*Resource
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Generate a unique ID for the resource
-	resourceID := fmt.Sprintf("tempdir_%s_%d", commandName, time.Now().UnixNano())
+	// Generate a unique ID for the resource using UUID
+	uuidStr := uuid.New().String()
+	resourceID := fmt.Sprintf("tempdir_%s_%s", commandName, uuidStr)
 
 	// Check if resource already exists
 	if _, exists := m.resources[resourceID]; exists {
