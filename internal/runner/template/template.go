@@ -210,21 +210,38 @@ func (e *Engine) applyWorkingDirectory(cmd *runnertypes.Command, tmpl *Template,
 	return nil
 }
 
+// parseEnvVar parses an environment variable string into key and value
+func parseEnvVar(env string) (string, string) {
+	if idx := strings.Index(env, "="); idx != -1 {
+		return env[:idx], env[idx+1:]
+	}
+	return env, "" // Handle case where there's no value (just key)
+}
+
 // mergeEnvironmentVariables merges environment variables from template
+// Command's environment variables take precedence over template's variables
 func (e *Engine) mergeEnvironmentVariables(cmd *runnertypes.Command, tmpl *Template) {
-	if len(tmpl.Env) > 0 {
-		envMap := make(map[string]bool)
-		// Add existing environment variables
-		for _, env := range cmd.Env {
-			envMap[env] = true
+	if len(tmpl.Env) == 0 {
+		return
+	}
+
+	// Create a map of existing command environment variables (key -> index)
+	cmdEnvMap := make(map[string]int)
+	for i, env := range cmd.Env {
+		key, _ := parseEnvVar(env)
+		cmdEnvMap[key] = i
+	}
+
+	// Add template environment variables, but only if the key doesn't already exist
+	for _, templateEnv := range tmpl.Env {
+		templateKey, _ := parseEnvVar(templateEnv)
+
+		// If the key doesn't exist in command's env, add the template env var
+		if _, exists := cmdEnvMap[templateKey]; !exists {
+			cmd.Env = append(cmd.Env, templateEnv)
+			cmdEnvMap[templateKey] = len(cmd.Env) - 1
 		}
-		// Add template environment variables if not already present
-		for _, env := range tmpl.Env {
-			if !envMap[env] {
-				cmd.Env = append(cmd.Env, env)
-				envMap[env] = true
-			}
-		}
+		// If key already exists, command's value takes precedence (do nothing)
 	}
 }
 

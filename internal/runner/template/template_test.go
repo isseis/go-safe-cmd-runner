@@ -560,6 +560,119 @@ func TestDetectCircularDependencies(t *testing.T) {
 	}
 }
 
+func TestParseEnvVar(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantKey string
+		wantVal string
+	}{
+		{
+			name:    "key=value",
+			input:   "PATH=/usr/bin",
+			wantKey: "PATH",
+			wantVal: "/usr/bin",
+		},
+		{
+			name:    "key with empty value",
+			input:   "EMPTY=",
+			wantKey: "EMPTY",
+			wantVal: "",
+		},
+		{
+			name:    "key only",
+			input:   "KEYONLY",
+			wantKey: "KEYONLY",
+			wantVal: "",
+		},
+		{
+			name:    "value with equals",
+			input:   "CONFIG=key=value",
+			wantKey: "CONFIG",
+			wantVal: "key=value",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotKey, gotVal := parseEnvVar(tt.input)
+			if gotKey != tt.wantKey {
+				t.Errorf("parseEnvVar() key = %v, want %v", gotKey, tt.wantKey)
+			}
+			if gotVal != tt.wantVal {
+				t.Errorf("parseEnvVar() value = %v, want %v", gotVal, tt.wantVal)
+			}
+		})
+	}
+}
+
+func TestMergeEnvironmentVariables(t *testing.T) {
+	engine := NewEngine()
+
+	tests := []struct {
+		name        string
+		cmdEnv      []string
+		tmplEnv     []string
+		expectedEnv []string
+	}{
+		{
+			name:        "no overlap",
+			cmdEnv:      []string{"PATH=/usr/bin", "USER=john"},
+			tmplEnv:     []string{"HOME=/home/john", "SHELL=/bin/bash"},
+			expectedEnv: []string{"PATH=/usr/bin", "USER=john", "HOME=/home/john", "SHELL=/bin/bash"},
+		},
+		{
+			name:        "command takes precedence",
+			cmdEnv:      []string{"PATH=/custom/bin", "USER=john"},
+			tmplEnv:     []string{"PATH=/usr/bin", "HOME=/home/john"},
+			expectedEnv: []string{"PATH=/custom/bin", "USER=john", "HOME=/home/john"},
+		},
+		{
+			name:        "empty command env",
+			cmdEnv:      []string{},
+			tmplEnv:     []string{"PATH=/usr/bin", "HOME=/home/john"},
+			expectedEnv: []string{"PATH=/usr/bin", "HOME=/home/john"},
+		},
+		{
+			name:        "empty template env",
+			cmdEnv:      []string{"PATH=/usr/bin", "USER=john"},
+			tmplEnv:     []string{},
+			expectedEnv: []string{"PATH=/usr/bin", "USER=john"},
+		},
+		{
+			name:        "complex overlap",
+			cmdEnv:      []string{"PATH=/custom/bin", "DEBUG=true"},
+			tmplEnv:     []string{"PATH=/usr/bin", "HOME=/home/user", "DEBUG=false", "LANG=en_US"},
+			expectedEnv: []string{"PATH=/custom/bin", "DEBUG=true", "HOME=/home/user", "LANG=en_US"},
+		},
+		{
+			name:        "same key different values",
+			cmdEnv:      []string{"CONFIG=production"},
+			tmplEnv:     []string{"CONFIG=development"},
+			expectedEnv: []string{"CONFIG=production"}, // Command takes precedence
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := &runnertypes.Command{
+				Env: make([]string, len(tt.cmdEnv)),
+			}
+			copy(cmd.Env, tt.cmdEnv)
+
+			tmpl := &Template{
+				Env: tt.tmplEnv,
+			}
+
+			engine.mergeEnvironmentVariables(cmd, tmpl)
+
+			if !reflect.DeepEqual(cmd.Env, tt.expectedEnv) {
+				t.Errorf("mergeEnvironmentVariables() = %v, want %v", cmd.Env, tt.expectedEnv)
+			}
+		})
+	}
+}
+
 func TestGenerateTempDir(t *testing.T) {
 	engine := NewEngine()
 
