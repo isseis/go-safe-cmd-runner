@@ -6,7 +6,6 @@ package template
 import (
 	"errors"
 	"fmt"
-	"path/filepath"
 	"sort"
 	"strings"
 	"text/template"
@@ -454,12 +453,4 @@ func (e *Engine) extractVariableReferences(input string) []string {
 	}
 
 	return references
-}
-
-// GenerateTempDir generates a temporary directory path for a command
-func (e *Engine) GenerateTempDir(commandName string) (string, error) {
-	// Use a safe temporary directory name based on the command name
-	safeName := strings.ReplaceAll(commandName, "/", "_")
-	safeName = strings.ReplaceAll(safeName, " ", "_")
-	return filepath.Join("/tmp", "cmd-runner", safeName), nil
 }
