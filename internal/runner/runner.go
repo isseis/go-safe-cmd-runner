@@ -47,15 +47,32 @@ func NewRunner(config *runnertypes.Config) *Runner {
 	}
 }
 
-// LoadEnvironment loads environment variables from .env file if specified
-func (r *Runner) LoadEnvironment(envFile string) error {
-	if envFile == "" {
-		return nil
+// LoadEnvironment loads environment variables from the specified .env file and system environment.
+// If envFile is empty, only system environment variables will be loaded.
+// If loadSystemEnv is true, system environment variables will be loaded first,
+// then overridden by the .env file if specified.
+func (r *Runner) LoadEnvironment(envFile string, loadSystemEnv bool) error {
+	envMap := make(map[string]string)
+
+	// Load system environment variables if requested
+	if loadSystemEnv {
+		for _, env := range os.Environ() {
+			if i := strings.Index(env, "="); i >= 0 {
+				envMap[env[:i]] = env[i+1:]
+			}
+		}
 	}
 
-	envMap, err := godotenv.Read(envFile)
-	if err != nil {
-		return fmt.Errorf("failed to load environment file %s: %w", envFile, err)
+	// Load .env file if specified
+	if envFile != "" {
+		fileEnv, err := godotenv.Read(envFile)
+		if err != nil {
+			return fmt.Errorf("failed to load environment file %s: %w", envFile, err)
+		}
+		// Override with values from .env file
+		for k, v := range fileEnv {
+			envMap[k] = v
+		}
 	}
 
 	r.envVars = envMap
