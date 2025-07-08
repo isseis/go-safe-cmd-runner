@@ -50,7 +50,7 @@ func run() error {
 
 	// Initialize config loader
 	cfgLoader := config.NewLoader()
-	cfg, err := cfgLoader.LoadConfigWithTemplates(*configPath)
+	cfg, err := cfgLoader.LoadConfig(*configPath)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}

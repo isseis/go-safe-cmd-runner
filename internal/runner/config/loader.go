@@ -47,7 +47,7 @@ func (l *Loader) GetTemplateEngine() *template.Engine {
 	return l.templateEngine
 }
 
-// LoadConfig loads and validates the configuration from the given path
+// LoadConfig loads, validates, and applies templates to the configuration from the given path.
 func (l *Loader) LoadConfig(path string) (*runnertypes.Config, error) {
 	// TODO: Validate config file with checksum
 	// Read the config file safely
@@ -84,17 +84,16 @@ func (l *Loader) LoadConfig(path string) (*runnertypes.Config, error) {
 	}
 	cfg.Global.WorkDir = workDir
 
-	return &cfg, nil
-}
-
-// LoadConfigWithTemplates loads configuration and applies templates
-func (l *Loader) LoadConfigWithTemplates(path string) (*runnertypes.Config, error) {
-	// Load the basic configuration
-	cfg, err := l.LoadConfig(path)
-	if err != nil {
+	// Always apply templates
+	if err := l.applyTemplates(&cfg); err != nil {
 		return nil, err
 	}
 
+	return &cfg, nil
+}
+
+// applyTemplates registers templates from configuration and applies them to command groups
+func (l *Loader) applyTemplates(cfg *runnertypes.Config) error {
 	// Register templates from configuration
 	for name, tmplConfig := range cfg.Templates {
 		tmpl := &template.Template{
@@ -110,7 +109,7 @@ func (l *Loader) LoadConfigWithTemplates(path string) (*runnertypes.Config, erro
 		}
 
 		if err := l.templateEngine.RegisterTemplate(name, tmpl); err != nil {
-			return nil, fmt.Errorf("failed to register template %s: %w", name, err)
+			return fmt.Errorf("failed to register template %s: %w", name, err)
 		}
 	}
 
@@ -119,11 +118,11 @@ func (l *Loader) LoadConfigWithTemplates(path string) (*runnertypes.Config, erro
 		if group.Template != "" {
 			appliedGroup, err := l.templateEngine.ApplyTemplate(&group, group.Template)
 			if err != nil {
-				return nil, fmt.Errorf("failed to apply template %s to group %s: %w", group.Template, group.Name, err)
+				return fmt.Errorf("failed to apply template %s to group %s: %w", group.Template, group.Name, err)
 			}
 			cfg.Groups[i] = *appliedGroup
 		}
 	}
 
-	return cfg, nil
+	return nil
 }
