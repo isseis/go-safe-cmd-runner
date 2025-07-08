@@ -13,8 +13,10 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/template"
 	"github.com/joho/godotenv"
 )
 
@@ -35,38 +37,98 @@ const (
 
 // Runner manages the execution of command groups
 type Runner struct {
-	executor  executor.CommandExecutor
-	config    *runnertypes.Config
-	envVars   map[string]string
-	validator *security.Validator
+	executor        executor.CommandExecutor
+	config          *runnertypes.Config
+	envVars         map[string]string
+	validator       *security.Validator
+	templateEngine  *template.Engine
+	resourceManager *resource.Manager
 }
 
-// NewRunner creates a new command runner with the given configuration
-func NewRunner(config *runnertypes.Config) (*Runner, error) {
-	validator, err := security.NewValidator(nil) // Use default security config
-	if err != nil {
-		return nil, fmt.Errorf("failed to create default security validator: %w", err)
+// Option is a function type for configuring Runner instances
+type Option func(*runnerOptions)
+
+// runnerOptions holds all configuration options for creating a Runner
+type runnerOptions struct {
+	securityConfig  *security.Config
+	templateEngine  *template.Engine
+	resourceManager *resource.Manager
+	executor        executor.CommandExecutor
+}
+
+// WithSecurity sets a custom security configuration
+func WithSecurity(securityConfig *security.Config) Option {
+	return func(opts *runnerOptions) {
+		opts.securityConfig = securityConfig
 	}
+}
+
+// WithTemplateEngine sets a custom template engine
+func WithTemplateEngine(engine *template.Engine) Option {
+	return func(opts *runnerOptions) {
+		opts.templateEngine = engine
+	}
+}
+
+// WithResourceManager sets a custom resource manager
+func WithResourceManager(manager *resource.Manager) Option {
+	return func(opts *runnerOptions) {
+		opts.resourceManager = manager
+	}
+}
+
+// WithExecutor sets a custom command executor
+func WithExecutor(exec executor.CommandExecutor) Option {
+	return func(opts *runnerOptions) {
+		opts.executor = exec
+	}
+}
+
+// NewRunner creates a new command runner with the given configuration and optional customizations
+func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
+	// Apply default options
+	opts := &runnerOptions{}
+	for _, option := range options {
+		option(opts)
+	}
+
+	// Create validator with provided or default security config
+	validator, err := security.NewValidator(opts.securityConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create security validator: %w", err)
+	}
+
+	// Use provided components or create defaults
+	if opts.executor == nil {
+		opts.executor = executor.NewDefaultExecutor()
+	}
+	if opts.templateEngine == nil {
+		opts.templateEngine = template.NewEngine()
+	}
+	if opts.resourceManager == nil {
+		opts.resourceManager = resource.NewManager(config.Global.WorkDir)
+	}
+
 	return &Runner{
-		executor:  executor.NewDefaultExecutor(),
-		config:    config,
-		envVars:   make(map[string]string),
-		validator: validator,
+		executor:        opts.executor,
+		config:          config,
+		envVars:         make(map[string]string),
+		validator:       validator,
+		templateEngine:  opts.templateEngine,
+		resourceManager: opts.resourceManager,
 	}, nil
 }
 
 // NewRunnerWithSecurity creates a new command runner with custom security configuration
+// Deprecated: Use NewRunner with WithSecurity option instead
 func NewRunnerWithSecurity(config *runnertypes.Config, securityConfig *security.Config) (*Runner, error) {
-	validator, err := security.NewValidator(securityConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create security validator: %w", err)
-	}
-	return &Runner{
-		executor:  executor.NewDefaultExecutor(),
-		config:    config,
-		envVars:   make(map[string]string),
-		validator: validator,
-	}, nil
+	return NewRunner(config, WithSecurity(securityConfig))
+}
+
+// NewRunnerWithComponents creates a new command runner with pre-configured components
+// Deprecated: Use NewRunner with WithTemplateEngine and WithResourceManager options instead
+func NewRunnerWithComponents(config *runnertypes.Config, templateEngine *template.Engine, resourceManager *resource.Manager) (*Runner, error) {
+	return NewRunner(config, WithTemplateEngine(templateEngine), WithResourceManager(resourceManager))
 }
 
 // LoadEnvironment loads environment variables from the specified .env file and system environment.
@@ -139,19 +201,59 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 		fmt.Printf("Description: %s\n", group.Description)
 	}
 
+	// Apply template to the group if specified
+	processedGroup := group
+	if group.Template != "" {
+		appliedGroup, err := r.templateEngine.ApplyTemplate(&group, group.Template)
+		if err != nil {
+			return fmt.Errorf("failed to apply template %s to group %s: %w", group.Template, group.Name, err)
+		}
+		processedGroup = *appliedGroup
+	}
+
+	// Track resources for cleanup
+	groupResources := make([]string, 0)
+	defer func() {
+		// Clean up resources created for this group
+		for _, resourceID := range groupResources {
+			if err := r.resourceManager.CleanupResource(resourceID); err != nil {
+				slog.Warn("Failed to cleanup resource", "resource_id", resourceID, "error", err)
+			}
+		}
+	}()
+
 	// Execute commands in the group sequentially
-	for i, cmd := range group.Commands {
-		fmt.Printf("  [%d/%d] Executing command: %s\n", i+1, len(group.Commands), cmd.Name)
+	for i, cmd := range processedGroup.Commands {
+		fmt.Printf("  [%d/%d] Executing command: %s\n", i+1, len(processedGroup.Commands), cmd.Name)
+
+		// Apply resource management to the command if needed
+		processedCmd := cmd
+		// Check if template specified temp_dir
+		if group.Template != "" {
+			tmpl, err := r.templateEngine.GetTemplate(group.Template)
+			if err == nil && tmpl.TempDir {
+				tempResource, err := r.resourceManager.CreateTempDir(cmd.Name, tmpl.Cleanup)
+				if err != nil {
+					return fmt.Errorf("failed to create temp directory for command %s: %w", cmd.Name, err)
+				}
+				groupResources = append(groupResources, tempResource.ID)
+
+				// Set working directory to temp directory if not already set
+				if processedCmd.Dir == "" || processedCmd.Dir == "{{.temp_dir}}" {
+					processedCmd.Dir = tempResource.Path
+				}
+			}
+		}
 
 		// Create command context with timeout
-		cmdCtx, cancel := r.createCommandContext(ctx, cmd)
+		cmdCtx, cancel := r.createCommandContext(ctx, processedCmd)
 		defer cancel()
 
 		// Execute the command
-		result, err := r.executeCommand(cmdCtx, cmd)
+		result, err := r.executeCommand(cmdCtx, processedCmd)
 		if err != nil {
 			fmt.Printf("    Command failed: %v\n", err)
-			return fmt.Errorf("command %s failed: %w", cmd.Name, err)
+			return fmt.Errorf("command %s failed: %w", processedCmd.Name, err)
 		}
 
 		// Display result
@@ -165,11 +267,11 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 
 		// Check if command succeeded
 		if result.ExitCode != 0 {
-			return fmt.Errorf("%w: command %s failed with exit code %d", ErrCommandFailed, cmd.Name, result.ExitCode)
+			return fmt.Errorf("%w: command %s failed with exit code %d", ErrCommandFailed, processedCmd.Name, result.ExitCode)
 		}
 	}
 
-	fmt.Printf("Group %s completed successfully\n", group.Name)
+	fmt.Printf("Group %s completed successfully\n", processedGroup.Name)
 	return nil
 }
 
@@ -374,4 +476,24 @@ func (r *Runner) GetConfig() *runnertypes.Config {
 // GetSanitizedEnvironmentVars returns environment variables with sensitive values redacted
 func (r *Runner) GetSanitizedEnvironmentVars() map[string]string {
 	return r.validator.SanitizeEnvironmentVariables(r.envVars)
+}
+
+// GetTemplateEngine returns the template engine instance
+func (r *Runner) GetTemplateEngine() *template.Engine {
+	return r.templateEngine
+}
+
+// GetResourceManager returns the resource manager instance
+func (r *Runner) GetResourceManager() *resource.Manager {
+	return r.resourceManager
+}
+
+// CleanupAllResources cleans up all managed resources
+func (r *Runner) CleanupAllResources() error {
+	return r.resourceManager.CleanupAll()
+}
+
+// CleanupAutoCleanupResources cleans up resources marked for auto cleanup
+func (r *Runner) CleanupAutoCleanupResources() error {
+	return r.resourceManager.CleanupAutoCleanup()
 }

@@ -9,8 +9,10 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/template"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -80,12 +82,74 @@ func TestNewRunner(t *testing.T) {
 		},
 	}
 
-	runner, err := NewRunner(config)
-	require.NoError(t, err, "NewRunner should not return an error with valid config")
-	assert.NotNil(t, runner)
-	assert.Equal(t, config, runner.config)
-	assert.NotNil(t, runner.executor)
-	assert.NotNil(t, runner.envVars)
+	t.Run("default configuration", func(t *testing.T) {
+		runner, err := NewRunner(config)
+		require.NoError(t, err, "NewRunner should not return an error with valid config")
+		assert.NotNil(t, runner)
+		assert.Equal(t, config, runner.config)
+		assert.NotNil(t, runner.executor)
+		assert.NotNil(t, runner.envVars)
+		assert.NotNil(t, runner.validator)
+		assert.NotNil(t, runner.templateEngine)
+		assert.NotNil(t, runner.resourceManager)
+	})
+
+	t.Run("with custom security config", func(t *testing.T) {
+		securityConfig := &security.Config{
+			AllowedCommands:         []string{"^echo$", "^cat$"},
+			RequiredFilePermissions: 0o644,
+			SensitiveEnvVars:        []string{".*PASSWORD.*", ".*TOKEN.*"},
+			MaxPathLength:           4096,
+		}
+
+		runner, err := NewRunner(config, WithSecurity(securityConfig))
+		assert.NoError(t, err)
+		assert.NotNil(t, runner)
+		assert.Equal(t, config, runner.config)
+		assert.NotNil(t, runner.validator)
+	})
+
+	t.Run("with custom template engine", func(t *testing.T) {
+		customEngine := template.NewEngine()
+		runner, err := NewRunner(config, WithTemplateEngine(customEngine))
+		assert.NoError(t, err)
+		assert.NotNil(t, runner)
+		assert.Equal(t, customEngine, runner.templateEngine)
+	})
+
+	t.Run("with multiple options", func(t *testing.T) {
+		securityConfig := &security.Config{
+			AllowedCommands:         []string{"^echo$"},
+			RequiredFilePermissions: 0o644,
+			SensitiveEnvVars:        []string{".*PASSWORD.*"},
+			MaxPathLength:           4096,
+		}
+		customEngine := template.NewEngine()
+		customResourceManager := resource.NewManager("/custom/path")
+
+		runner, err := NewRunner(config,
+			WithSecurity(securityConfig),
+			WithTemplateEngine(customEngine),
+			WithResourceManager(customResourceManager))
+		assert.NoError(t, err)
+		assert.NotNil(t, runner)
+		assert.Equal(t, customEngine, runner.templateEngine)
+		assert.Equal(t, customResourceManager, runner.resourceManager)
+	})
+
+	t.Run("with invalid security config", func(t *testing.T) {
+		invalidSecurityConfig := &security.Config{
+			AllowedCommands:         []string{"[invalid regex"}, // Invalid regex
+			RequiredFilePermissions: 0o644,
+			SensitiveEnvVars:        []string{".*PASSWORD.*"},
+			MaxPathLength:           4096,
+		}
+
+		runner, err := NewRunner(config, WithSecurity(invalidSecurityConfig))
+		assert.Error(t, err)
+		assert.Nil(t, runner)
+		assert.True(t, errors.Is(err, security.ErrInvalidRegexPattern))
+	})
 }
 
 func TestNewRunnerWithSecurity(t *testing.T) {
@@ -112,6 +176,8 @@ func TestNewRunnerWithSecurity(t *testing.T) {
 		assert.NotNil(t, runner.executor)
 		assert.NotNil(t, runner.envVars)
 		assert.NotNil(t, runner.validator)
+		assert.NotNil(t, runner.templateEngine)
+		assert.NotNil(t, runner.resourceManager)
 	})
 
 	t.Run("with invalid security config", func(t *testing.T) {

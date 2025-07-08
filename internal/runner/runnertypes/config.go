@@ -4,9 +4,10 @@ package runnertypes
 
 // Config represents the root configuration structure
 type Config struct {
-	Version string         `toml:"version"`
-	Global  GlobalConfig   `toml:"global"`
-	Groups  []CommandGroup `toml:"groups"`
+	Version   string                    `toml:"version"`
+	Global    GlobalConfig              `toml:"global"`
+	Templates map[string]TemplateConfig `toml:"templates"`
+	Groups    []CommandGroup            `toml:"groups"`
 }
 
 // GlobalConfig contains global configuration options
@@ -16,12 +17,25 @@ type GlobalConfig struct {
 	LogLevel string `toml:"log_level"` // Log level (debug, info, warn, error)
 }
 
+// TemplateConfig represents a template configuration
+type TemplateConfig struct {
+	Description string            `toml:"description"`
+	Verify      []string          `toml:"verify"`     // Verification rule names
+	TempDir     bool              `toml:"temp_dir"`   // Auto-generate temporary directory
+	Cleanup     bool              `toml:"cleanup"`    // Auto cleanup
+	WorkDir     string            `toml:"workdir"`    // Working directory (supports "auto")
+	Env         []string          `toml:"env"`        // Default environment variables
+	Privileged  bool              `toml:"privileged"` // Default privileged execution
+	Variables   map[string]string `toml:"variables"`  // Template variables
+}
+
 // CommandGroup represents a group of related commands with a name
 type CommandGroup struct {
 	Name        string    `toml:"name"`
 	Description string    `toml:"description"`
 	Priority    int       `toml:"priority"`
 	DependsOn   []string  `toml:"depends_on"`
+	Template    string    `toml:"template"` // Template to apply to this group
 	Commands    []Command `toml:"commands"`
 }
 

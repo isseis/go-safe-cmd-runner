@@ -15,8 +15,6 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
 // Error definitions
@@ -57,8 +55,8 @@ func run() error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// Initialize Runner
-	runner, err := runner.NewRunner(cfg)
+	// Initialize Runner with template engine from config loader
+	runner, err := runner.NewRunnerWithComponents(cfg, cfgLoader.GetTemplateEngine(), nil)
 	if err != nil {
 		return fmt.Errorf("failed to initialize runner: %w", err)
 	}
@@ -83,34 +81,22 @@ func run() error {
 		cfg.Global.LogLevel = *logLevel
 	}
 
-	// Initialize executor
-	exec := executor.NewDefaultExecutor()
-
 	// Run the command groups
-	if err := runGroups(ctx, cfg, exec, *dryRun); err != nil {
-		return fmt.Errorf("error running commands: %w", err)
+	if *dryRun {
+		fmt.Println("[DRY RUN] Would execute the following groups:")
+		runner.ListCommands()
+		return nil
 	}
-	return nil
-}
 
-func runGroups(ctx context.Context, cfg *runnertypes.Config, exec executor.CommandExecutor, dryRun bool) error {
-	// TODO: Implement group execution with dependencies
-	// For now, just run all commands in all groups in the order they appear in the config
-	for _, group := range cfg.Groups {
-		log.Printf("Running group: %s", group.Name)
-		for _, cmd := range group.Commands {
-			if dryRun {
-				log.Printf("[DRY RUN] Would run: %s %v", cmd.Cmd, cmd.Args)
-				continue
-			}
-
-			// TODO: Implement proper environment variable handling
-			env := make(map[string]string)
-			_, err := exec.Execute(ctx, cmd, env)
-			if err != nil {
-				return fmt.Errorf("command %q failed: %w", cmd.Name, err)
-			}
+	// Ensure cleanup of resources on exit
+	defer func() {
+		if err := runner.CleanupAutoCleanupResources(); err != nil {
+			log.Printf("Warning: Failed to cleanup resources: %v", err)
 		}
+	}()
+
+	if err := runner.ExecuteAll(ctx); err != nil {
+		return fmt.Errorf("error running commands: %w", err)
 	}
 	return nil
 }

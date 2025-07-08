@@ -3,6 +3,7 @@ module github.com/isseis/go-safe-cmd-runner
 go 1.23.10
 
 require (
+	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
 	github.com/pelletier/go-toml/v2 v2.0.8
 	github.com/stretchr/testify v1.8.3
