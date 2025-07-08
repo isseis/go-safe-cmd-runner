@@ -10,6 +10,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -509,28 +510,41 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 
 		_, err = runner.executeCommand(ctx, disallowedCmd)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "command security validation failed")
+		assert.True(t, errors.Is(err, security.ErrCommandNotAllowed), "expected error to wrap security.ErrCommandNotAllowed")
 	})
 
-	t.Run("environment variable validation", func(t *testing.T) {
+	t.Run("command execution with environment variables", func(t *testing.T) {
 		runner := NewRunner(config)
+		mockExecutor := new(MockExecutor)
+		runner.executor = mockExecutor
 
-		// Test safe environment variables
-		safeEnv := map[string]string{
-			"PATH": "/usr/bin:/bin",
-			"HOME": "/home/user",
+		// Test with safe environment variables
+		safeCmd := runnertypes.Command{
+			Name: "test-env",
+			Cmd:  "echo",
+			Args: []string{"$TEST_VAR"},
+			Dir:  "/tmp",
+			Env:  []string{"TEST_VAR=safe-value", "PATH=/usr/bin:/bin"},
 		}
 
-		err := runner.validator.ValidateAllEnvironmentVars(safeEnv)
+		mockExecutor.On("Execute", mock.Anything, safeCmd, mock.Anything).
+			Return(&executor.Result{ExitCode: 0}, nil)
+
+		_, err := runner.executeCommand(context.Background(), safeCmd)
 		assert.NoError(t, err)
 
-		// Test unsafe environment variables
-		unsafeEnv := map[string]string{
-			"DANGEROUS": "value; rm -rf /",
+		// Test with unsafe environment variable value
+		unsafeCmd := runnertypes.Command{
+			Name: "test-unsafe-env",
+			Cmd:  "echo",
+			Args: []string{"$DANGEROUS"},
+			Dir:  "/tmp",
+			Env:  []string{"DANGEROUS=value; rm -rf /"},
 		}
 
-		err = runner.validator.ValidateAllEnvironmentVars(unsafeEnv)
+		_, err = runner.executeCommand(context.Background(), unsafeCmd)
 		assert.Error(t, err)
+		assert.True(t, errors.Is(err, security.ErrUnsafeEnvironmentVar), "expected error to wrap security.ErrUnsafeEnvironmentVar")
 	})
 
 	t.Run("environment variable sanitization", func(t *testing.T) {
@@ -577,7 +591,7 @@ func TestRunner_LoadEnvironmentWithSecurity(t *testing.T) {
 		// Should fail with excessive permissions
 		err = runner.LoadEnvironment(badEnvFile, false)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "security validation failed")
+		assert.True(t, errors.Is(err, security.ErrInvalidFilePermissions), "expected error to wrap security.ErrInvalidFilePermissions")
 	})
 
 	t.Run("load environment with unsafe values", func(t *testing.T) {
@@ -599,6 +613,6 @@ func TestRunner_LoadEnvironmentWithSecurity(t *testing.T) {
 		// Should fail due to unsafe environment variable value
 		err = runner.LoadEnvironment(envFile, false)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "environment variable security validation failed")
+		assert.True(t, errors.Is(err, security.ErrUnsafeEnvironmentVar), "expected error to wrap security.ErrUnsafeEnvironmentVar")
 	})
 }
