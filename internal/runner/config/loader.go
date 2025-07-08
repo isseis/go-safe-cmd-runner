@@ -21,6 +21,10 @@ type Loader struct{}
 var (
 	// ErrInvalidConfigPath is returned when the config file path is invalid
 	ErrInvalidConfigPath = errors.New("invalid config file path")
+	// ErrWorkdirNotAbsolute is returned when the workdir is not an absolute path
+	ErrWorkdirNotAbsolute = errors.New("workdir must be an absolute path")
+	// ErrWorkdirHasRelativeComponents is returned when the workdir contains relative path components
+	ErrWorkdirHasRelativeComponents = errors.New("workdir contains relative path components ('.' or '..')")
 )
 
 const (
@@ -59,14 +63,16 @@ func (l *Loader) LoadConfig(path string) (*runnertypes.Config, error) {
 		cfg.Global.LogLevel = "info"
 	}
 
-	// Convert relative paths to absolute
-	if !filepath.IsAbs(cfg.Global.WorkDir) {
-		absPath, err := filepath.Abs(cfg.Global.WorkDir)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get absolute path for workdir: %w", err)
-		}
-		cfg.Global.WorkDir = absPath
+	// Validate work directory path
+	workDir := cfg.Global.WorkDir
+	if !filepath.IsAbs(workDir) {
+		return nil, fmt.Errorf("%w: %s", ErrWorkdirNotAbsolute, workDir)
 	}
+	// Check if the path contains any relative components
+	if workDir != filepath.Clean(workDir) || workDir != filepath.ToSlash(filepath.Clean(workDir)) {
+		return nil, fmt.Errorf("%w: %s", ErrWorkdirHasRelativeComponents, workDir)
+	}
+	cfg.Global.WorkDir = workDir
 
 	return &cfg, nil
 }

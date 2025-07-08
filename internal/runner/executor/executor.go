@@ -46,20 +46,10 @@ func (e *DefaultExecutor) Execute(ctx context.Context, cmd runnertypes.Command, 
 		return nil, fmt.Errorf("command validation failed: %w", err)
 	}
 
-	// Validate command path to prevent command injection
-	if !filepath.IsLocal(cmd.Cmd) && !filepath.IsAbs(cmd.Cmd) {
-		return nil, fmt.Errorf("%w: %s", ErrInvalidPath, cmd.Cmd)
-	}
-
-	// Create the command with explicit path resolution
+	// Resolve the command path
 	path, lookErr := exec.LookPath(cmd.Cmd)
 	if lookErr != nil {
 		return nil, fmt.Errorf("failed to find command %q: %w", cmd.Cmd, lookErr)
-	}
-
-	// Validate the resolved path is within allowed directories
-	if !filepath.IsLocal(path) && !filepath.IsAbs(path) {
-		return nil, fmt.Errorf("%w: resolved path %q is not allowed", ErrInvalidPath, path)
 	}
 
 	// Create the command with the resolved path
@@ -128,6 +118,14 @@ func (e *DefaultExecutor) Validate(cmd runnertypes.Command) error {
 		return ErrEmptyCommand
 	}
 
+	// Validate command path to prevent command injection and ensure proper format
+	if !filepath.IsLocal(cmd.Cmd) && !filepath.IsAbs(cmd.Cmd) {
+		return fmt.Errorf("%w: command path must be local or absolute: %s", ErrInvalidPath, cmd.Cmd)
+	}
+	if filepath.Clean(cmd.Cmd) != cmd.Cmd {
+		return fmt.Errorf("%w: command path contains relative path components ('.' or '..'): %s", ErrInvalidPath, cmd.Cmd)
+	}
+
 	// Check if working directory exists and is accessible
 	if cmd.Dir != "" {
 		exists, err := e.FS.FileExists(cmd.Dir)
@@ -138,8 +136,6 @@ func (e *DefaultExecutor) Validate(cmd runnertypes.Command) error {
 			return fmt.Errorf("working directory %q does not exist: %w", cmd.Dir, ErrDirNotExists)
 		}
 	}
-
-	// TODO: Add more validation rules
 
 	return nil
 }
