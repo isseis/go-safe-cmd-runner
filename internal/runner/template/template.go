@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"text/template"
 
@@ -333,6 +334,7 @@ func (e *Engine) ListTemplates() []string {
 	for name := range e.templates {
 		names = append(names, name)
 	}
+	sort.Strings(names) // Ensure deterministic order
 	return names
 }
 
