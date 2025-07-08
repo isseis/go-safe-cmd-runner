@@ -222,6 +222,7 @@ func (e *Engine) mergeEnvironmentVariables(cmd *runnertypes.Command, tmpl *Templ
 		for _, env := range tmpl.Env {
 			if !envMap[env] {
 				cmd.Env = append(cmd.Env, env)
+				envMap[env] = true
 			}
 		}
 	}
