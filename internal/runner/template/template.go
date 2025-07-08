@@ -114,8 +114,12 @@ func (e *Engine) ApplyTemplate(group *runnertypes.CommandGroup, templateName str
 		return nil, fmt.Errorf("failed to get template %s: %w", templateName, err)
 	}
 
-	// Create a copy of the group to avoid modifying the original
+	// Create a deep copy of the group to avoid modifying the original
 	result := *group
+	if group.Commands != nil {
+		result.Commands = make([]runnertypes.Command, len(group.Commands))
+		copy(result.Commands, group.Commands)
+	}
 
 	// Apply template properties to the group
 	if err := e.applyTemplateToGroup(&result, tmpl); err != nil {
