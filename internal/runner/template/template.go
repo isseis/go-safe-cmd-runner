@@ -305,7 +305,12 @@ func (e *Engine) ValidateTemplate(name string) error {
 		return err
 	}
 
-	// Validate template variables
+	// Check for circular dependencies in template variables
+	if err := e.detectCircularDependencies(tmpl.Variables); err != nil {
+		return err
+	}
+
+	// Validate template variables for syntax errors
 	for key, value := range tmpl.Variables {
 		// Create a temporary variable map for validation
 		tempVars := make(map[string]string)
@@ -329,6 +334,102 @@ func (e *Engine) ListTemplates() []string {
 		names = append(names, name)
 	}
 	return names
+}
+
+// detectCircularDependencies detects circular dependencies in template variables
+func (e *Engine) detectCircularDependencies(variables map[string]string) error {
+	// Use DFS to detect cycles in the variable dependency graph
+	visiting := make(map[string]bool) // Currently being visited (gray nodes)
+	visited := make(map[string]bool)  // Completely processed (black nodes)
+
+	for varName := range variables {
+		if !visited[varName] {
+			if err := e.dfsVisit(varName, variables, visiting, visited); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// dfsVisit performs depth-first search to detect cycles
+func (e *Engine) dfsVisit(varName string, variables map[string]string, visiting, visited map[string]bool) error {
+	// Mark as currently being visited
+	visiting[varName] = true
+
+	// Get variable value
+	varValue, exists := variables[varName]
+	if !exists {
+		// Variable doesn't exist, mark as visited and return
+		visited[varName] = true
+		delete(visiting, varName)
+		return nil
+	}
+
+	// Find all variable references in the value
+	dependencies := e.extractVariableReferences(varValue)
+
+	// Visit each dependency
+	for _, depName := range dependencies {
+		if visiting[depName] {
+			// Found a back edge - circular dependency detected
+			return fmt.Errorf("%w: variable '%s' has circular dependency with '%s'", ErrCircularDependency, varName, depName)
+		}
+		if !visited[depName] {
+			if err := e.dfsVisit(depName, variables, visiting, visited); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Mark as completely processed
+	visited[varName] = true
+	delete(visiting, varName)
+	return nil
+}
+
+// Constants for template parsing
+const (
+	templatePrefix = "{{." // Prefix for template variable references
+	templateSuffix = "}}"  // Suffix for template variable references
+)
+
+// extractVariableReferences extracts variable names referenced in a template string
+func (e *Engine) extractVariableReferences(input string) []string {
+	var references []string
+	start := 0
+
+	// Find all {{.variableName}} patterns
+	for {
+		openIndex := strings.Index(input[start:], templatePrefix)
+		if openIndex == -1 {
+			break
+		}
+		openIndex += start
+
+		closeIndex := strings.Index(input[openIndex:], templateSuffix)
+		if closeIndex == -1 {
+			break
+		}
+		closeIndex += openIndex
+
+		// Extract variable name (remove {{. and }})
+		varRef := input[openIndex+len(templatePrefix) : closeIndex]
+		// Remove any trailing spaces or pipes (for template functions)
+		if pipeIndex := strings.Index(varRef, "|"); pipeIndex != -1 {
+			varRef = varRef[:pipeIndex]
+		}
+		varRef = strings.TrimSpace(varRef)
+
+		if varRef != "" {
+			references = append(references, varRef)
+		}
+
+		start = closeIndex + len(templateSuffix)
+	}
+
+	return references
 }
 
 // GenerateTempDir generates a temporary directory path for a command

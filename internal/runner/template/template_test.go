@@ -320,10 +320,42 @@ func TestValidateTemplate(t *testing.T) {
 	}
 	engine.RegisterTemplate("invalid", invalidTmpl)
 
+	// Register a template with circular dependencies
+	circularTmpl := &Template{
+		Name: "circular",
+		Variables: map[string]string{
+			"var1": "{{.var2}}",
+			"var2": "{{.var1}}",
+		},
+	}
+	engine.RegisterTemplate("circular", circularTmpl)
+
+	// Register a template with complex circular dependencies
+	complexCircularTmpl := &Template{
+		Name: "complex-circular",
+		Variables: map[string]string{
+			"a": "{{.b}}",
+			"b": "{{.c}}",
+			"c": "{{.a}}",
+			"d": "independent",
+		},
+	}
+	engine.RegisterTemplate("complex-circular", complexCircularTmpl)
+
+	// Register a template with self-reference
+	selfRefTmpl := &Template{
+		Name: "self-ref",
+		Variables: map[string]string{
+			"self": "{{.self}}",
+		},
+	}
+	engine.RegisterTemplate("self-ref", selfRefTmpl)
+
 	tests := []struct {
 		name     string
 		tmplName string
 		wantErr  bool
+		errorMsg string
 	}{
 		{
 			name:     "valid template",
@@ -334,6 +366,24 @@ func TestValidateTemplate(t *testing.T) {
 			name:     "invalid template",
 			tmplName: "invalid",
 			wantErr:  true,
+		},
+		{
+			name:     "circular dependency",
+			tmplName: "circular",
+			wantErr:  true,
+			errorMsg: "circular dependency",
+		},
+		{
+			name:     "complex circular dependency",
+			tmplName: "complex-circular",
+			wantErr:  true,
+			errorMsg: "circular dependency",
+		},
+		{
+			name:     "self reference",
+			tmplName: "self-ref",
+			wantErr:  true,
+			errorMsg: "circular dependency",
 		},
 		{
 			name:     "non-existent template",
@@ -347,6 +397,10 @@ func TestValidateTemplate(t *testing.T) {
 			err := engine.ValidateTemplate(tt.tmplName)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ValidateTemplate() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if tt.wantErr && tt.errorMsg != "" && !strings.Contains(err.Error(), tt.errorMsg) {
+				t.Errorf("ValidateTemplate() error = %v, should contain %v", err, tt.errorMsg)
 			}
 		})
 	}
@@ -381,6 +435,128 @@ func TestListTemplates(t *testing.T) {
 
 	if !templateMap["template1"] || !templateMap["template2"] {
 		t.Errorf("ListTemplates() missing expected templates, got %v", templates)
+	}
+}
+
+func TestExtractVariableReferences(t *testing.T) {
+	engine := NewEngine()
+
+	tests := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{
+			name:  "no variables",
+			input: "simple string",
+			want:  nil,
+		},
+		{
+			name:  "single variable",
+			input: "{{.var1}}",
+			want:  []string{"var1"},
+		},
+		{
+			name:  "multiple variables",
+			input: "{{.var1}} and {{.var2}}",
+			want:  []string{"var1", "var2"},
+		},
+		{
+			name:  "variable with pipe function",
+			input: "{{.var1 | upper}}",
+			want:  []string{"var1"},
+		},
+		{
+			name:  "mixed content",
+			input: "prefix {{.var1}} middle {{.var2}} suffix",
+			want:  []string{"var1", "var2"},
+		},
+		{
+			name:  "nested template (should extract outer only)",
+			input: "{{.outer}}",
+			want:  []string{"outer"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := engine.extractVariableReferences(tt.input)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("extractVariableReferences() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDetectCircularDependencies(t *testing.T) {
+	engine := NewEngine()
+
+	tests := []struct {
+		name      string
+		variables map[string]string
+		wantErr   bool
+	}{
+		{
+			name: "no dependencies",
+			variables: map[string]string{
+				"var1": "value1",
+				"var2": "value2",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid chain dependency",
+			variables: map[string]string{
+				"var1": "{{.var2}}",
+				"var2": "{{.var3}}",
+				"var3": "value3",
+			},
+			wantErr: false,
+		},
+		{
+			name: "simple circular dependency",
+			variables: map[string]string{
+				"var1": "{{.var2}}",
+				"var2": "{{.var1}}",
+			},
+			wantErr: true,
+		},
+		{
+			name: "self reference",
+			variables: map[string]string{
+				"var1": "{{.var1}}",
+			},
+			wantErr: true,
+		},
+		{
+			name: "complex circular dependency",
+			variables: map[string]string{
+				"a": "{{.b}}",
+				"b": "{{.c}}",
+				"c": "{{.a}}",
+				"d": "independent",
+			},
+			wantErr: true,
+		},
+		{
+			name: "partial circular with independent vars",
+			variables: map[string]string{
+				"good1": "value1",
+				"good2": "{{.good1}}",
+				"bad1":  "{{.bad2}}",
+				"bad2":  "{{.bad1}}",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := engine.detectCircularDependencies(tt.variables)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("detectCircularDependencies() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
 	}
 }
 
