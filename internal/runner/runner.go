@@ -42,22 +42,31 @@ type Runner struct {
 
 // NewRunner creates a new command runner with the given configuration
 func NewRunner(config *runnertypes.Config) *Runner {
+	validator, err := security.NewValidator(nil) // Use default security config
+	if err != nil {
+		// This should never happen with default config, but we handle it gracefully
+		panic(fmt.Sprintf("failed to create default security validator: %v", err))
+	}
 	return &Runner{
 		executor:  executor.NewDefaultExecutor(),
 		config:    config,
 		envVars:   make(map[string]string),
-		validator: security.NewValidator(nil), // Use default security config
+		validator: validator,
 	}
 }
 
 // NewRunnerWithSecurity creates a new command runner with custom security configuration
-func NewRunnerWithSecurity(config *runnertypes.Config, securityConfig *security.Config) *Runner {
+func NewRunnerWithSecurity(config *runnertypes.Config, securityConfig *security.Config) (*Runner, error) {
+	validator, err := security.NewValidator(securityConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create security validator: %w", err)
+	}
 	return &Runner{
 		executor:  executor.NewDefaultExecutor(),
 		config:    config,
 		envVars:   make(map[string]string),
-		validator: security.NewValidator(securityConfig),
-	}
+		validator: validator,
+	}, nil
 }
 
 // LoadEnvironment loads environment variables from the specified .env file and system environment.

@@ -23,24 +23,64 @@ func TestDefaultConfig(t *testing.T) {
 func TestNewValidator(t *testing.T) {
 	t.Run("with config", func(t *testing.T) {
 		config := &Config{
-			AllowedCommands: []string{"^echo$"},
+			AllowedCommands:         []string{"^echo$"},
+			RequiredFilePermissions: 0o644,
+			SensitiveEnvVars:        []string{".*PASSWORD.*"},
+			MaxPathLength:           4096,
 		}
-		validator := NewValidator(config)
+		validator, err := NewValidator(config)
 
+		assert.NoError(t, err)
 		assert.NotNil(t, validator)
 		assert.Equal(t, config, validator.config)
+		assert.Len(t, validator.allowedCommandRegexps, 1)
+		assert.Len(t, validator.sensitiveEnvRegexps, 1)
+		assert.Len(t, validator.dangerousEnvRegexps, 8) // Built-in dangerous patterns
 	})
 
 	t.Run("with nil config", func(t *testing.T) {
-		validator := NewValidator(nil)
+		validator, err := NewValidator(nil)
 
+		assert.NoError(t, err)
 		assert.NotNil(t, validator)
 		assert.NotNil(t, validator.config)
+		assert.NotEmpty(t, validator.allowedCommandRegexps)
+		assert.NotEmpty(t, validator.sensitiveEnvRegexps)
+		assert.NotEmpty(t, validator.dangerousEnvRegexps)
+	})
+
+	t.Run("with invalid command pattern", func(t *testing.T) {
+		config := &Config{
+			AllowedCommands:         []string{"[invalid regex"}, // Invalid regex
+			RequiredFilePermissions: 0o644,
+			SensitiveEnvVars:        []string{".*PASSWORD.*"},
+			MaxPathLength:           4096,
+		}
+		validator, err := NewValidator(config)
+
+		assert.Error(t, err)
+		assert.Nil(t, validator)
+		assert.True(t, errors.Is(err, ErrInvalidRegexPattern))
+	})
+
+	t.Run("with invalid sensitive env pattern", func(t *testing.T) {
+		config := &Config{
+			AllowedCommands:         []string{"^echo$"},
+			RequiredFilePermissions: 0o644,
+			SensitiveEnvVars:        []string{"[invalid regex"}, // Invalid regex
+			MaxPathLength:           4096,
+		}
+		validator, err := NewValidator(config)
+
+		assert.Error(t, err)
+		assert.Nil(t, validator)
+		assert.True(t, errors.Is(err, ErrInvalidRegexPattern))
 	})
 }
 
 func TestValidator_ValidateFilePermissions(t *testing.T) {
-	validator := NewValidator(nil)
+	validator, err := NewValidator(nil)
+	require.NoError(t, err)
 
 	t.Run("empty path", func(t *testing.T) {
 		err := validator.ValidateFilePermissions("")
@@ -90,12 +130,16 @@ func TestValidator_ValidateFilePermissions(t *testing.T) {
 
 	t.Run("path too long", func(t *testing.T) {
 		config := &Config{
-			MaxPathLength: 10,
+			AllowedCommands:         []string{"^echo$"},
+			RequiredFilePermissions: 0o644,
+			SensitiveEnvVars:        []string{".*PASSWORD.*"},
+			MaxPathLength:           10,
 		}
-		validator := NewValidator(config)
+		validator, err := NewValidator(config)
+		require.NoError(t, err)
 
 		longPath := "/very/long/path/that/exceeds/limit"
-		err := validator.ValidateFilePermissions(longPath)
+		err = validator.ValidateFilePermissions(longPath)
 
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, ErrInvalidPath))
@@ -103,7 +147,8 @@ func TestValidator_ValidateFilePermissions(t *testing.T) {
 }
 
 func TestValidator_SanitizeEnvironmentVariables(t *testing.T) {
-	validator := NewValidator(nil)
+	validator, err := NewValidator(nil)
+	require.NoError(t, err)
 
 	t.Run("nil input", func(t *testing.T) {
 		result := validator.SanitizeEnvironmentVariables(nil)
@@ -144,7 +189,8 @@ func TestValidator_SanitizeEnvironmentVariables(t *testing.T) {
 }
 
 func TestValidator_ValidateCommand(t *testing.T) {
-	validator := NewValidator(nil)
+	validator, err := NewValidator(nil)
+	require.NoError(t, err)
 
 	t.Run("empty command", func(t *testing.T) {
 		err := validator.ValidateCommand("")
@@ -186,7 +232,8 @@ func TestValidator_ValidateCommand(t *testing.T) {
 }
 
 func TestValidator_ValidateEnvironmentValue(t *testing.T) {
-	validator := NewValidator(nil)
+	validator, err := NewValidator(nil)
+	require.NoError(t, err)
 
 	t.Run("safe values", func(t *testing.T) {
 		safeValues := map[string]string{
@@ -223,7 +270,8 @@ func TestValidator_ValidateEnvironmentValue(t *testing.T) {
 }
 
 func TestValidator_ValidateAllEnvironmentVars(t *testing.T) {
-	validator := NewValidator(nil)
+	validator, err := NewValidator(nil)
+	require.NoError(t, err)
 
 	t.Run("all safe", func(t *testing.T) {
 		envVars := map[string]string{
@@ -260,7 +308,8 @@ func TestValidator_ValidateAllEnvironmentVars(t *testing.T) {
 }
 
 func TestValidator_isSensitiveEnvVar(t *testing.T) {
-	validator := NewValidator(nil)
+	validator, err := NewValidator(nil)
+	require.NoError(t, err)
 
 	t.Run("sensitive patterns", func(t *testing.T) {
 		sensitiveVars := []string{

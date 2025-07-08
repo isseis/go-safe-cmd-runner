@@ -87,6 +87,53 @@ func TestNewRunner(t *testing.T) {
 	assert.NotNil(t, runner.envVars)
 }
 
+func TestNewRunnerWithSecurity(t *testing.T) {
+	config := &runnertypes.Config{
+		Global: runnertypes.GlobalConfig{
+			Timeout:  3600,
+			WorkDir:  "/tmp",
+			LogLevel: "info",
+		},
+	}
+
+	t.Run("with valid security config", func(t *testing.T) {
+		securityConfig := &security.Config{
+			AllowedCommands:         []string{"^echo$", "^cat$"},
+			RequiredFilePermissions: 0o644,
+			SensitiveEnvVars:        []string{".*PASSWORD.*", ".*TOKEN.*"},
+			MaxPathLength:           4096,
+		}
+
+		runner, err := NewRunnerWithSecurity(config, securityConfig)
+		assert.NoError(t, err)
+		assert.NotNil(t, runner)
+		assert.Equal(t, config, runner.config)
+		assert.NotNil(t, runner.executor)
+		assert.NotNil(t, runner.envVars)
+		assert.NotNil(t, runner.validator)
+	})
+
+	t.Run("with invalid security config", func(t *testing.T) {
+		invalidSecurityConfig := &security.Config{
+			AllowedCommands:         []string{"[invalid regex"}, // Invalid regex
+			RequiredFilePermissions: 0o644,
+			SensitiveEnvVars:        []string{".*PASSWORD.*"},
+			MaxPathLength:           4096,
+		}
+
+		runner, err := NewRunnerWithSecurity(config, invalidSecurityConfig)
+		assert.Error(t, err)
+		assert.Nil(t, runner)
+		assert.True(t, errors.Is(err, security.ErrInvalidRegexPattern))
+	})
+
+	t.Run("with nil security config", func(t *testing.T) {
+		runner, err := NewRunnerWithSecurity(config, nil)
+		assert.NoError(t, err)
+		assert.NotNil(t, runner)
+	})
+}
+
 func TestRunner_ExecuteGroup(t *testing.T) {
 	cleanup := setupSafeTestEnv(t)
 	defer cleanup()

@@ -18,6 +18,7 @@ var (
 	ErrUnsafeEnvironmentVar   = errors.New("unsafe environment variable")
 	ErrCommandNotAllowed      = errors.New("command not allowed")
 	ErrInvalidPath            = errors.New("invalid path")
+	ErrInvalidRegexPattern    = errors.New("invalid regex pattern")
 )
 
 // Constants for security configuration
@@ -73,18 +74,65 @@ func DefaultConfig() *Config {
 
 // Validator provides security validation functionality
 type Validator struct {
-	config *Config
+	config                *Config
+	allowedCommandRegexps []*regexp.Regexp
+	sensitiveEnvRegexps   []*regexp.Regexp
+	dangerousEnvRegexps   []*regexp.Regexp
 }
 
 // NewValidator creates a new security validator with the given configuration.
 // If config is nil, DefaultConfig() will be used.
-func NewValidator(config *Config) *Validator {
+// Returns an error if any regex patterns in the config are invalid.
+func NewValidator(config *Config) (*Validator, error) {
 	if config == nil {
 		config = DefaultConfig()
 	}
-	return &Validator{
+
+	v := &Validator{
 		config: config,
 	}
+
+	// Compile allowed command patterns
+	v.allowedCommandRegexps = make([]*regexp.Regexp, len(config.AllowedCommands))
+	for i, pattern := range config.AllowedCommands {
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid allowed command pattern %q: %w", ErrInvalidRegexPattern, pattern, err)
+		}
+		v.allowedCommandRegexps[i] = re
+	}
+
+	// Compile sensitive environment variable patterns
+	v.sensitiveEnvRegexps = make([]*regexp.Regexp, len(config.SensitiveEnvVars))
+	for i, pattern := range config.SensitiveEnvVars {
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid sensitive env var pattern %q: %w", ErrInvalidRegexPattern, pattern, err)
+		}
+		v.sensitiveEnvRegexps[i] = re
+	}
+
+	// Compile dangerous environment value patterns
+	dangerousPatterns := []string{
+		`;`,    // Command separator
+		`\|`,   // Pipe
+		`&&`,   // AND operator
+		`\|\|`, // OR operator
+		`\$\(`, // Command substitution
+		"`",    // Command substitution (backticks)
+		`>`,    // Redirect
+		`<`,    // Redirect
+	}
+	v.dangerousEnvRegexps = make([]*regexp.Regexp, len(dangerousPatterns))
+	for i, pattern := range dangerousPatterns {
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid dangerous env pattern %q: %w", ErrInvalidRegexPattern, pattern, err)
+		}
+		v.dangerousEnvRegexps[i] = re
+	}
+
+	return v, nil
 }
 
 // ValidateFilePermissions validates that a file has appropriate permissions
@@ -146,14 +194,9 @@ func (v *Validator) ValidateCommand(command string) error {
 		return fmt.Errorf("%w: empty command", ErrCommandNotAllowed)
 	}
 
-	// Check against allowed command patterns
-	for _, pattern := range v.config.AllowedCommands {
-		matched, err := regexp.MatchString(pattern, command)
-		if err != nil {
-			// Log the error but continue checking other patterns
-			continue
-		}
-		if matched {
+	// Check against compiled allowed command patterns
+	for _, re := range v.allowedCommandRegexps {
+		if re.MatchString(command) {
 			return nil
 		}
 	}
@@ -165,12 +208,9 @@ func (v *Validator) ValidateCommand(command string) error {
 func (v *Validator) isSensitiveEnvVar(name string) bool {
 	upperName := strings.ToUpper(name)
 
-	for _, pattern := range v.config.SensitiveEnvVars {
-		matched, err := regexp.MatchString(pattern, upperName)
-		if err != nil {
-			continue
-		}
-		if matched {
+	// Check against compiled sensitive environment variable patterns
+	for _, re := range v.sensitiveEnvRegexps {
+		if re.MatchString(upperName) {
 			return true
 		}
 	}
@@ -180,26 +220,11 @@ func (v *Validator) isSensitiveEnvVar(name string) bool {
 
 // ValidateEnvironmentValue validates that an environment variable value is safe
 func (v *Validator) ValidateEnvironmentValue(key, value string) error {
-	// Check for potential command injection patterns
-	dangerousPatterns := []string{
-		`;`,    // Command separator
-		`\|`,   // Pipe
-		`&&`,   // AND operator
-		`\|\|`, // OR operator
-		`\$\(`, // Command substitution
-		"`",    // Command substitution (backticks)
-		`>`,    // Redirect
-		`<`,    // Redirect
-	}
-
-	for _, pattern := range dangerousPatterns {
-		matched, err := regexp.MatchString(pattern, value)
-		if err != nil {
-			continue
-		}
-		if matched {
+	// Check for potential command injection patterns using compiled regexes
+	for _, re := range v.dangerousEnvRegexps {
+		if re.MatchString(value) {
 			return fmt.Errorf("%w: environment variable %s contains potentially dangerous pattern: %s",
-				ErrUnsafeEnvironmentVar, key, pattern)
+				ErrUnsafeEnvironmentVar, key, re.String())
 		}
 	}
 
