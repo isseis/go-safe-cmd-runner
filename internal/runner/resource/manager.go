@@ -83,9 +83,9 @@ func (m *Manager) CreateTempDir(commandName string, autoCleanup bool) (*Resource
 		return nil, fmt.Errorf("%w: %s", ErrResourceAlreadyExists, resourceID)
 	}
 
-	// Create the temporary directory path
+	// Create the temporary directory path using the resource ID for uniqueness
 	safeName := sanitizeName(commandName)
-	tempDirPath := filepath.Join(m.baseDir, "cmd-runner", safeName, fmt.Sprintf("%d", time.Now().UnixNano()))
+	tempDirPath := filepath.Join(m.baseDir, "cmd-runner", safeName, resourceID)
 
 	// Create the directory
 	if err := os.MkdirAll(tempDirPath, defaultDirPerm); err != nil {
