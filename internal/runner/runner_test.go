@@ -239,6 +239,7 @@ func TestRunner_resolveVariableReferences(t *testing.T) {
 		"USER":     "testuser",
 		"PATH":     "/usr/bin:/bin",
 		"GREETING": "Hello",
+		"CIRCULAR": "${CIRCULAR}", // Circular reference to itself
 	}
 
 	tests := []struct {
@@ -280,6 +281,11 @@ func TestRunner_resolveVariableReferences(t *testing.T) {
 			name:        "unclosed variable",
 			input:       "${UNCLOSED",
 			expectedErr: ErrUnclosedVariableRef,
+		},
+		{
+			name:        "circular reference",
+			input:       "${CIRCULAR}",
+			expectedErr: ErrCircularReference,
 		},
 	}
 
@@ -358,4 +364,46 @@ func TestRunner_resolveEnvironmentVars(t *testing.T) {
 	// Check that command vars are present
 	assert.Equal(t, "command_value", envVars["CMD_VAR"])
 	assert.Equal(t, "from_env_file", envVars["REFERENCE_VAR"])
+}
+
+func TestRunner_resolveVariableReferences_ComplexCircular(t *testing.T) {
+	runner := &Runner{}
+
+	// Test complex circular dependencies: VAR1 -> VAR2 -> VAR1
+	envVars := map[string]string{
+		"VAR1": "${VAR2}",
+		"VAR2": "${VAR1}",
+		"VAR3": "prefix-${VAR1}-suffix",
+	}
+
+	tests := []struct {
+		name        string
+		input       string
+		expectedErr error
+	}{
+		{
+			name:        "direct circular VAR1",
+			input:       "${VAR1}",
+			expectedErr: ErrCircularReference,
+		},
+		{
+			name:        "direct circular VAR2",
+			input:       "${VAR2}",
+			expectedErr: ErrCircularReference,
+		},
+		{
+			name:        "indirect circular through VAR3",
+			input:       "${VAR3}",
+			expectedErr: ErrCircularReference,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := runner.resolveVariableReferences(tt.input, envVars)
+
+			assert.Error(t, err)
+			assert.True(t, errors.Is(err, tt.expectedErr), "expected error %v, got %v", tt.expectedErr, err)
+		})
+	}
 }

@@ -22,11 +22,13 @@ var (
 	ErrUnclosedVariableRef = errors.New("unclosed variable reference")
 	ErrUndefinedVariable   = errors.New("undefined variable")
 	ErrCommandNotFound     = errors.New("command not found")
+	ErrCircularReference   = errors.New("circular variable reference detected")
 )
 
 // Constants
 const (
-	envSeparatorParts = 2
+	envSeparatorParts  = 2
+	maxResolutionDepth = 100 // Maximum number of variable resolution iterations
 )
 
 // Runner manages the execution of command groups
@@ -176,10 +178,26 @@ func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command) (map[string]str
 
 // resolveVariableReferences resolves ${VAR} references in a string
 func (r *Runner) resolveVariableReferences(value string, envVars map[string]string) (string, error) {
+	return r.resolveVariableReferencesWithDepth(value, envVars, make(map[string]bool), 0)
+}
+
+// resolveVariableReferencesWithDepth resolves ${VAR} references with circular dependency detection
+func (r *Runner) resolveVariableReferencesWithDepth(value string, envVars map[string]string, resolving map[string]bool, depth int) (string, error) {
+	// Prevent infinite recursion by limiting the depth
+	if depth > maxResolutionDepth {
+		return "", fmt.Errorf("%w: maximum resolution depth exceeded (%d)", ErrCircularReference, maxResolutionDepth)
+	}
+
 	result := value
+	iterations := 0
 
 	// Simple variable resolution - replace ${VAR} with value
 	for strings.Contains(result, "${") {
+		iterations++
+		if iterations > maxResolutionDepth {
+			return "", fmt.Errorf("%w: too many resolution iterations", ErrCircularReference)
+		}
+
 		start := strings.Index(result, "${")
 		if start == -1 {
 			break
@@ -192,12 +210,30 @@ func (r *Runner) resolveVariableReferences(value string, envVars map[string]stri
 		end += start
 
 		varName := result[start+2 : end]
+
+		// Check for circular reference
+		if resolving[varName] {
+			return "", fmt.Errorf("%w: variable %s references itself", ErrCircularReference, varName)
+		}
+
 		varValue, exists := envVars[varName]
 		if !exists {
 			return "", fmt.Errorf("%w: %s", ErrUndefinedVariable, varName)
 		}
 
-		result = result[:start] + varValue + result[end+1:]
+		// Mark this variable as being resolved to detect cycles
+		resolving[varName] = true
+
+		// Recursively resolve the variable value
+		resolvedValue, err := r.resolveVariableReferencesWithDepth(varValue, envVars, resolving, depth+1)
+		if err != nil {
+			return "", err
+		}
+
+		// Unmark the variable after resolution
+		delete(resolving, varName)
+
+		result = result[:start] + resolvedValue + result[end+1:]
 	}
 
 	return result, nil
