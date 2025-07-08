@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -35,13 +36,8 @@ func NewLoader() *Loader {
 // LoadConfig loads and validates the configuration from the given path
 func (l *Loader) LoadConfig(path string) (*runnertypes.Config, error) {
 	// TODO: Validate config file with checksum
-	// Sanitize the path to prevent directory traversal
-	if !filepath.IsLocal(path) && !filepath.IsAbs(path) {
-		return nil, fmt.Errorf("%w: %s", ErrInvalidConfigPath, path)
-	}
-
-	// Read the config file
-	data, err := os.ReadFile(filepath.Clean(path))
+	// Read the config file safely
+	data, err := safefileio.SafeReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
