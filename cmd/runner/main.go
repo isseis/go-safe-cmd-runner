@@ -58,7 +58,10 @@ func run() error {
 	}
 
 	// Initialize Runner
-	runner := runner.NewRunner(cfg)
+	runner, err := runner.NewRunner(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to initialize runner: %w", err)
+	}
 
 	// Load environment variables
 	envFileToLoad := ""

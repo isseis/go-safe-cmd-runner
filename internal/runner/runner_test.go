@@ -3,14 +3,56 @@ package runner
 import (
 	"context"
 	"errors"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
+
+// setupTestEnv sets up a clean test environment and returns a cleanup function.
+// The cleanup function restores the original environment when called.
+func setupTestEnv(t *testing.T, envVars map[string]string) func() {
+	t.Helper()
+	originalEnv := os.Environ()
+
+	// Clear the environment
+	os.Clearenv()
+
+	// Set up the test environment variables
+	for key, value := range envVars {
+		err := os.Setenv(key, value)
+		require.NoError(t, err, "failed to set environment variable %s", key)
+	}
+
+	// Return a cleanup function that restores the original environment
+	return func() {
+		os.Clearenv()
+		for _, env := range originalEnv {
+			if eq := strings.Index(env, "="); eq >= 0 {
+				os.Setenv(env[:eq], env[eq+1:])
+			}
+		}
+	}
+}
+
+// setupSafeTestEnv sets up a minimal safe environment for tests and returns a cleanup function.
+// This is useful for security-related tests where we want to ensure a clean, minimal environment.
+func setupSafeTestEnv(t *testing.T) func() {
+	t.Helper()
+	safeEnv := map[string]string{
+		"PATH": "/usr/bin:/bin",
+		"HOME": "/home/test",
+		"USER": "test",
+	}
+	return setupTestEnv(t, safeEnv)
+}
 
 var ErrExecutionFailed = errors.New("execution failed")
 
@@ -38,14 +80,65 @@ func TestNewRunner(t *testing.T) {
 		},
 	}
 
-	runner := NewRunner(config)
+	runner, err := NewRunner(config)
+	require.NoError(t, err, "NewRunner should not return an error with valid config")
 	assert.NotNil(t, runner)
 	assert.Equal(t, config, runner.config)
 	assert.NotNil(t, runner.executor)
 	assert.NotNil(t, runner.envVars)
 }
 
+func TestNewRunnerWithSecurity(t *testing.T) {
+	config := &runnertypes.Config{
+		Global: runnertypes.GlobalConfig{
+			Timeout:  3600,
+			WorkDir:  "/tmp",
+			LogLevel: "info",
+		},
+	}
+
+	t.Run("with valid security config", func(t *testing.T) {
+		securityConfig := &security.Config{
+			AllowedCommands:         []string{"^echo$", "^cat$"},
+			RequiredFilePermissions: 0o644,
+			SensitiveEnvVars:        []string{".*PASSWORD.*", ".*TOKEN.*"},
+			MaxPathLength:           4096,
+		}
+
+		runner, err := NewRunnerWithSecurity(config, securityConfig)
+		assert.NoError(t, err)
+		assert.NotNil(t, runner)
+		assert.Equal(t, config, runner.config)
+		assert.NotNil(t, runner.executor)
+		assert.NotNil(t, runner.envVars)
+		assert.NotNil(t, runner.validator)
+	})
+
+	t.Run("with invalid security config", func(t *testing.T) {
+		invalidSecurityConfig := &security.Config{
+			AllowedCommands:         []string{"[invalid regex"}, // Invalid regex
+			RequiredFilePermissions: 0o644,
+			SensitiveEnvVars:        []string{".*PASSWORD.*"},
+			MaxPathLength:           4096,
+		}
+
+		runner, err := NewRunnerWithSecurity(config, invalidSecurityConfig)
+		assert.Error(t, err)
+		assert.Nil(t, runner)
+		assert.True(t, errors.Is(err, security.ErrInvalidRegexPattern))
+	})
+
+	t.Run("with nil security config", func(t *testing.T) {
+		runner, err := NewRunnerWithSecurity(config, nil)
+		assert.NoError(t, err)
+		assert.NotNil(t, runner)
+	})
+}
+
 func TestRunner_ExecuteGroup(t *testing.T) {
+	cleanup := setupSafeTestEnv(t)
+	defer cleanup()
+
 	tests := []struct {
 		name        string
 		group       runnertypes.CommandGroup
@@ -122,7 +215,8 @@ func TestRunner_ExecuteGroup(t *testing.T) {
 			}
 
 			mockExecutor := new(MockExecutor)
-			runner := NewRunner(config)
+			runner, err := NewRunner(config)
+			require.NoError(t, err, "NewRunner should not return an error with valid config")
 			runner.executor = mockExecutor
 
 			// Setup mock expectations
@@ -136,7 +230,7 @@ func TestRunner_ExecuteGroup(t *testing.T) {
 			}
 
 			ctx := context.Background()
-			err := runner.ExecuteGroup(ctx, tt.group)
+			err = runner.ExecuteGroup(ctx, tt.group)
 
 			if tt.expectedErr != nil {
 				assert.Error(t, err)
@@ -151,6 +245,9 @@ func TestRunner_ExecuteGroup(t *testing.T) {
 }
 
 func TestRunner_ExecuteAll(t *testing.T) {
+	cleanup := setupSafeTestEnv(t)
+	defer cleanup()
+
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
 			Timeout:  3600,
@@ -176,7 +273,8 @@ func TestRunner_ExecuteAll(t *testing.T) {
 	}
 
 	mockExecutor := new(MockExecutor)
-	runner := NewRunner(config)
+	runner, err := NewRunner(config)
+	require.NoError(t, err)
 	runner.executor = mockExecutor
 
 	// Setup mock expectations - should be called in priority order
@@ -184,13 +282,16 @@ func TestRunner_ExecuteAll(t *testing.T) {
 	mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "cmd-2", Cmd: "echo", Args: []string{"second"}, Dir: "/tmp"}, mock.Anything).Return(&executor.Result{ExitCode: 0, Stdout: "second\n"}, nil)
 
 	ctx := context.Background()
-	err := runner.ExecuteAll(ctx)
+	err = runner.ExecuteAll(ctx)
 
 	assert.NoError(t, err)
 	mockExecutor.AssertExpectations(t)
 }
 
 func TestRunner_ExecuteCommand(t *testing.T) {
+	cleanup := setupSafeTestEnv(t)
+	defer cleanup()
+
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
 			Timeout:  3600,
@@ -208,7 +309,8 @@ func TestRunner_ExecuteCommand(t *testing.T) {
 	}
 
 	mockExecutor := new(MockExecutor)
-	runner := NewRunner(config)
+	runner, err := NewRunner(config)
+	require.NoError(t, err)
 	runner.executor = mockExecutor
 
 	t.Run("existing command", func(t *testing.T) {
@@ -310,7 +412,8 @@ func TestRunner_createCommandContext(t *testing.T) {
 			Timeout: 10,
 		},
 	}
-	runner := NewRunner(config)
+	runner, err := NewRunner(config)
+	require.NoError(t, err)
 
 	t.Run("use global timeout", func(t *testing.T) {
 		cmd := runnertypes.Command{Name: "test-cmd"}
@@ -338,11 +441,25 @@ func TestRunner_createCommandContext(t *testing.T) {
 }
 
 func TestRunner_resolveEnvironmentVars(t *testing.T) {
-	runner := &Runner{
-		envVars: map[string]string{
-			"LOADED_VAR": "from_env_file",
-			"PATH":       "/custom/path", // This should override system PATH
+	// Setup a custom test environment with specific variables
+	testEnv := map[string]string{
+		"SAFE_VAR": "safe_value",
+		"PATH":     "/usr/bin:/bin",
+	}
+	cleanup := setupTestEnv(t, testEnv)
+	defer cleanup()
+
+	config := &runnertypes.Config{
+		Global: runnertypes.GlobalConfig{
+			WorkDir: "/tmp",
 		},
+	}
+
+	runner, err := NewRunner(config)
+	require.NoError(t, err)
+	runner.envVars = map[string]string{
+		"LOADED_VAR": "from_env_file",
+		"PATH":       "/custom/path", // This should override system PATH
 	}
 
 	cmd := runnertypes.Command{
@@ -404,4 +521,156 @@ func TestRunner_resolveVariableReferences_ComplexCircular(t *testing.T) {
 			assert.True(t, errors.Is(err, tt.expectedErr), "expected error %v, got %v", tt.expectedErr, err)
 		})
 	}
+}
+
+func TestRunner_SecurityIntegration(t *testing.T) {
+	cleanup := setupSafeTestEnv(t)
+	defer cleanup()
+
+	config := &runnertypes.Config{
+		Global: runnertypes.GlobalConfig{
+			Timeout:  3600,
+			WorkDir:  "/tmp",
+			LogLevel: "info",
+		},
+	}
+
+	t.Run("command whitelist validation", func(t *testing.T) {
+		runner, err := NewRunner(config)
+		require.NoError(t, err)
+
+		// Test allowed command
+		allowedCmd := runnertypes.Command{
+			Name: "test-echo",
+			Cmd:  "echo",
+			Args: []string{"hello"},
+			Dir:  "/tmp",
+		}
+
+		mockExecutor := new(MockExecutor)
+		runner.executor = mockExecutor
+		mockExecutor.On("Execute", mock.Anything, allowedCmd, mock.Anything).Return(&executor.Result{ExitCode: 0}, nil)
+
+		ctx := context.Background()
+		_, err = runner.executeCommand(ctx, allowedCmd)
+		assert.NoError(t, err)
+
+		// Test disallowed command
+		disallowedCmd := runnertypes.Command{
+			Name: "test-rm",
+			Cmd:  "rm",
+			Args: []string{"-rf", "/"},
+		}
+
+		_, err = runner.executeCommand(ctx, disallowedCmd)
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, security.ErrCommandNotAllowed), "expected error to wrap security.ErrCommandNotAllowed")
+	})
+
+	t.Run("command execution with environment variables", func(t *testing.T) {
+		runner, err := NewRunner(config)
+		require.NoError(t, err)
+		mockExecutor := new(MockExecutor)
+		runner.executor = mockExecutor
+
+		// Test with safe environment variables
+		safeCmd := runnertypes.Command{
+			Name: "test-env",
+			Cmd:  "echo",
+			Args: []string{"$TEST_VAR"},
+			Dir:  "/tmp",
+			Env:  []string{"TEST_VAR=safe-value", "PATH=/usr/bin:/bin"},
+		}
+
+		mockExecutor.On("Execute", mock.Anything, safeCmd, mock.Anything).
+			Return(&executor.Result{ExitCode: 0}, nil)
+
+		_, err = runner.executeCommand(context.Background(), safeCmd)
+		assert.NoError(t, err)
+
+		// Test with unsafe environment variable value
+		unsafeCmd := runnertypes.Command{
+			Name: "test-unsafe-env",
+			Cmd:  "echo",
+			Args: []string{"$DANGEROUS"},
+			Dir:  "/tmp",
+			Env:  []string{"DANGEROUS=value; rm -rf /"},
+		}
+
+		_, err = runner.executeCommand(context.Background(), unsafeCmd)
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, security.ErrUnsafeEnvironmentVar), "expected error to wrap security.ErrUnsafeEnvironmentVar")
+	})
+
+	t.Run("environment variable sanitization", func(t *testing.T) {
+		runner, err := NewRunner(config)
+		require.NoError(t, err)
+		runner.envVars = map[string]string{
+			"PATH":        "/usr/bin:/bin",
+			"API_KEY":     "secret123",
+			"DB_PASSWORD": "password456",
+		}
+
+		sanitized := runner.GetSanitizedEnvironmentVars()
+
+		assert.Equal(t, "/usr/bin:/bin", sanitized["PATH"])
+		assert.Equal(t, "[REDACTED]", sanitized["API_KEY"])
+		assert.Equal(t, "[REDACTED]", sanitized["DB_PASSWORD"])
+	})
+}
+
+func TestRunner_LoadEnvironmentWithSecurity(t *testing.T) {
+	t.Run("load environment with file permission validation", func(t *testing.T) {
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				WorkDir: "/tmp",
+			},
+		}
+		runner, err := NewRunner(config)
+		require.NoError(t, err)
+
+		// Create a temporary .env file with correct permissions
+		tmpDir := t.TempDir()
+		envFile := tmpDir + "/.env"
+
+		err = os.WriteFile(envFile, []byte("TEST_VAR=test_value\n"), 0o644)
+		assert.NoError(t, err)
+
+		// Should succeed with correct permissions
+		err = runner.LoadEnvironment(envFile, false)
+		assert.NoError(t, err)
+
+		// Create a file with excessive permissions
+		badEnvFile := tmpDir + "/.env_bad"
+		err = os.WriteFile(badEnvFile, []byte("TEST_VAR=test_value\n"), 0o777)
+		assert.NoError(t, err)
+
+		// Should fail with excessive permissions
+		err = runner.LoadEnvironment(badEnvFile, false)
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, security.ErrInvalidFilePermissions), "expected error to wrap security.ErrInvalidFilePermissions")
+	})
+
+	t.Run("load environment with unsafe values", func(t *testing.T) {
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				WorkDir: "/tmp",
+			},
+		}
+		runner, err := NewRunner(config)
+		require.NoError(t, err)
+
+		// Create a temporary .env file with unsafe values
+		tmpDir := t.TempDir()
+		envFile := tmpDir + "/.env"
+
+		unsafeContent := "DANGEROUS=value; rm -rf /\n"
+		err = os.WriteFile(envFile, []byte(unsafeContent), 0o644)
+		assert.NoError(t, err)
+
+		// Should fail due to unsafe environment variable value
+		err = runner.LoadEnvironment(envFile, false)
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, security.ErrUnsafeEnvironmentVar), "expected error to wrap security.ErrUnsafeEnvironmentVar")
+	})
 }
