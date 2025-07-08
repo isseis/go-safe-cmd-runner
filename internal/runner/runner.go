@@ -45,60 +45,90 @@ type Runner struct {
 	resourceManager *resource.Manager
 }
 
-// NewRunner creates a new command runner with the given configuration
-func NewRunner(config *runnertypes.Config) (*Runner, error) {
-	validator, err := security.NewValidator(nil) // Use default security config
-	if err != nil {
-		return nil, fmt.Errorf("failed to create default security validator: %w", err)
+// Option is a function type for configuring Runner instances
+type Option func(*runnerOptions)
+
+// runnerOptions holds all configuration options for creating a Runner
+type runnerOptions struct {
+	securityConfig  *security.Config
+	templateEngine  *template.Engine
+	resourceManager *resource.Manager
+	executor        executor.CommandExecutor
+}
+
+// WithSecurity sets a custom security configuration
+func WithSecurity(securityConfig *security.Config) Option {
+	return func(opts *runnerOptions) {
+		opts.securityConfig = securityConfig
 	}
+}
+
+// WithTemplateEngine sets a custom template engine
+func WithTemplateEngine(engine *template.Engine) Option {
+	return func(opts *runnerOptions) {
+		opts.templateEngine = engine
+	}
+}
+
+// WithResourceManager sets a custom resource manager
+func WithResourceManager(manager *resource.Manager) Option {
+	return func(opts *runnerOptions) {
+		opts.resourceManager = manager
+	}
+}
+
+// WithExecutor sets a custom command executor
+func WithExecutor(exec executor.CommandExecutor) Option {
+	return func(opts *runnerOptions) {
+		opts.executor = exec
+	}
+}
+
+// NewRunner creates a new command runner with the given configuration and optional customizations
+func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
+	// Apply default options
+	opts := &runnerOptions{}
+	for _, option := range options {
+		option(opts)
+	}
+
+	// Create validator with provided or default security config
+	validator, err := security.NewValidator(opts.securityConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create security validator: %w", err)
+	}
+
+	// Use provided components or create defaults
+	if opts.executor == nil {
+		opts.executor = executor.NewDefaultExecutor()
+	}
+	if opts.templateEngine == nil {
+		opts.templateEngine = template.NewEngine()
+	}
+	if opts.resourceManager == nil {
+		opts.resourceManager = resource.NewManager(config.Global.WorkDir)
+	}
+
 	return &Runner{
-		executor:        executor.NewDefaultExecutor(),
+		executor:        opts.executor,
 		config:          config,
 		envVars:         make(map[string]string),
 		validator:       validator,
-		templateEngine:  template.NewEngine(),
-		resourceManager: resource.NewManager(config.Global.WorkDir),
+		templateEngine:  opts.templateEngine,
+		resourceManager: opts.resourceManager,
 	}, nil
 }
 
 // NewRunnerWithSecurity creates a new command runner with custom security configuration
+// Deprecated: Use NewRunner with WithSecurity option instead
 func NewRunnerWithSecurity(config *runnertypes.Config, securityConfig *security.Config) (*Runner, error) {
-	validator, err := security.NewValidator(securityConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create security validator: %w", err)
-	}
-	return &Runner{
-		executor:        executor.NewDefaultExecutor(),
-		config:          config,
-		envVars:         make(map[string]string),
-		validator:       validator,
-		templateEngine:  template.NewEngine(),
-		resourceManager: resource.NewManager(config.Global.WorkDir),
-	}, nil
+	return NewRunner(config, WithSecurity(securityConfig))
 }
 
 // NewRunnerWithComponents creates a new command runner with pre-configured components
+// Deprecated: Use NewRunner with WithTemplateEngine and WithResourceManager options instead
 func NewRunnerWithComponents(config *runnertypes.Config, templateEngine *template.Engine, resourceManager *resource.Manager) (*Runner, error) {
-	validator, err := security.NewValidator(nil) // Use default security config
-	if err != nil {
-		return nil, fmt.Errorf("failed to create default security validator: %w", err)
-	}
-
-	if templateEngine == nil {
-		templateEngine = template.NewEngine()
-	}
-	if resourceManager == nil {
-		resourceManager = resource.NewManager(config.Global.WorkDir)
-	}
-
-	return &Runner{
-		executor:        executor.NewDefaultExecutor(),
-		config:          config,
-		envVars:         make(map[string]string),
-		validator:       validator,
-		templateEngine:  templateEngine,
-		resourceManager: resourceManager,
-	}, nil
+	return NewRunner(config, WithTemplateEngine(templateEngine), WithResourceManager(resourceManager))
 }
 
 // LoadEnvironment loads environment variables from the specified .env file and system environment.
