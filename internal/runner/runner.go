@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"sort"
 	"strings"
@@ -176,6 +177,7 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 func (r *Runner) executeCommand(ctx context.Context, cmd runnertypes.Command) (*executor.Result, error) {
 	// Validate command against whitelist
 	if err := r.validator.ValidateCommand(cmd.Cmd); err != nil {
+		slog.Warn("Command validation failed", "command", cmd.Cmd, "error", err)
 		return nil, fmt.Errorf("command security validation failed: %w", err)
 	}
 
