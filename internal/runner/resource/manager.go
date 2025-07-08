@@ -132,63 +132,15 @@ func (m *Manager) ListResources() []*Resource {
 	return resources
 }
 
-// CleanupResource cleans up a specific resource
-func (m *Manager) CleanupResource(id string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	resource, exists := m.resources[id]
-	if !exists {
-		return fmt.Errorf("%w: %s", ErrResourceNotFound, id)
-	}
-
-	// Clean up the resource based on its type
-	var err error
-	switch resource.Type {
-	case TypeTempDir:
-		err = os.RemoveAll(resource.Path)
-	case TypeFile:
-		err = os.Remove(resource.Path)
-	default:
-		err = fmt.Errorf("%w: %d", ErrUnknownResourceType, resource.Type)
-	}
-
-	if err != nil {
-		return fmt.Errorf("%w: failed to cleanup resource %s: %v", ErrCleanupFailed, id, err)
-	}
-
-	// Remove from managed resources
-	delete(m.resources, id)
-	return nil
-}
-
-// CleanupAll cleans up all managed resources
-func (m *Manager) CleanupAll() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	var errs []error
-	for id := range m.resources {
-		if err := m.cleanupResourceUnsafe(id); err != nil {
-			errs = append(errs, err)
-		}
-	}
-
-	if len(errs) > 0 {
-		return fmt.Errorf("%w: %d resources failed to cleanup", ErrCleanupFailed, len(errs))
-	}
-
-	return nil
-}
-
-// CleanupAutoCleanup cleans up all resources marked for auto cleanup
-func (m *Manager) CleanupAutoCleanup() error {
+// cleanupResources is a helper function that cleans up resources based on a filter function
+// The filter function should return true for resources that should be cleaned up
+func (m *Manager) cleanupResources(filter func(id string, r *Resource) bool, errorMsg string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	var errs []error
 	for id, resource := range m.resources {
-		if resource.AutoCleanup {
+		if filter == nil || filter(id, resource) {
 			if err := m.cleanupResourceUnsafe(id); err != nil {
 				errs = append(errs, err)
 			}
@@ -196,10 +148,36 @@ func (m *Manager) CleanupAutoCleanup() error {
 	}
 
 	if len(errs) > 0 {
-		return fmt.Errorf("%w: %d auto-cleanup resources failed", ErrCleanupFailed, len(errs))
+		return fmt.Errorf("%w: %s: %d resources failed to cleanup", ErrCleanupFailed, errorMsg, len(errs))
 	}
 
 	return nil
+}
+
+// CleanupResource cleans up a specific resource
+func (m *Manager) CleanupResource(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if err := m.cleanupResourceUnsafe(id); err != nil {
+		if errors.Is(err, ErrResourceNotFound) {
+			return err
+		}
+		return fmt.Errorf("%w: %v", ErrCleanupFailed, err)
+	}
+	return nil
+}
+
+// CleanupAll cleans up all managed resources
+func (m *Manager) CleanupAll() error {
+	return m.cleanupResources(nil, "")
+}
+
+// CleanupAutoCleanup cleans up all resources marked for auto cleanup
+func (m *Manager) CleanupAutoCleanup() error {
+	return m.cleanupResources(func(_ string, r *Resource) bool {
+		return r.AutoCleanup
+	}, "auto-cleanup")
 }
 
 // cleanupResourceUnsafe cleans up a resource without locking (internal use)
@@ -229,23 +207,9 @@ func (m *Manager) cleanupResourceUnsafe(id string) error {
 
 // CleanupByCommand cleans up all resources associated with a specific command
 func (m *Manager) CleanupByCommand(commandName string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	var errs []error
-	for id, resource := range m.resources {
-		if resource.Command == commandName {
-			if err := m.cleanupResourceUnsafe(id); err != nil {
-				errs = append(errs, err)
-			}
-		}
-	}
-
-	if len(errs) > 0 {
-		return fmt.Errorf("%w: %d resources for command %s failed to cleanup", ErrCleanupFailed, len(errs), commandName)
-	}
-
-	return nil
+	return m.cleanupResources(func(_ string, r *Resource) bool {
+		return r.Command == commandName
+	}, fmt.Sprintf("command %s", commandName))
 }
 
 // GetResourcesForCommand returns all resources associated with a command
@@ -265,25 +229,10 @@ func (m *Manager) GetResourcesForCommand(commandName string) []*Resource {
 
 // CleanupOldResources cleans up resources older than the specified duration
 func (m *Manager) CleanupOldResources(maxAge time.Duration) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	cutoff := time.Now().Add(-maxAge)
-	var errs []error
-
-	for id, resource := range m.resources {
-		if resource.Created.Before(cutoff) {
-			if err := m.cleanupResourceUnsafe(id); err != nil {
-				errs = append(errs, err)
-			}
-		}
-	}
-
-	if len(errs) > 0 {
-		return fmt.Errorf("%w: %d old resources failed to cleanup", ErrCleanupFailed, len(errs))
-	}
-
-	return nil
+	return m.cleanupResources(func(_ string, r *Resource) bool {
+		return r.Created.Before(cutoff)
+	}, "old resources")
 }
 
 // sanitizeName sanitizes a name for use in file paths
