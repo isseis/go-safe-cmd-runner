@@ -57,6 +57,7 @@ This is a Go-based secure command runner with the following core components:
 - Mock implementations for external dependencies
 - File system abstraction for testing
 - Output capture and verification
+- **Error Testing**: Use `errors.Is()` to validate error types, not string matching on error messages
 
 ## Package Structure
 
