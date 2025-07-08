@@ -76,7 +76,6 @@ type Validator struct {
 	config *Config
 }
 
-// NewValidator creates a new security validator with the given configuration
 // NewValidator creates a new security validator with the given configuration.
 // If config is nil, DefaultConfig() will be used.
 func NewValidator(config *Config) *Validator {
