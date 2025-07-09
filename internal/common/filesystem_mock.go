@@ -129,8 +129,10 @@ func (m *MockFileSystem) RemoveAll(path string) error {
 	delete(m.files, path)
 
 	// Remove all subdirectories and files
+	sep := string(filepath.Separator)
+	prefix := path + sep
 	for filePath := range m.files {
-		if strings.HasPrefix(filePath, path+"/") {
+		if strings.HasPrefix(filePath, prefix) {
 			delete(m.files, filePath)
 			delete(m.dirs, filePath)
 		}
