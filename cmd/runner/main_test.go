@@ -7,20 +7,33 @@ import (
 	"testing"
 )
 
-func TestVerifyConfigOption(t *testing.T) {
-	// Save original command line arguments
+// setupTestFlags initializes the command-line flags for testing and returns a cleanup function
+func setupTestFlags(errorHandling flag.ErrorHandling) func() {
+	// Save original command line arguments and flag.CommandLine
 	oldArgs := os.Args
-	defer func() { os.Args = oldArgs }()
+	oldCommandLine := flag.CommandLine
 
-	// Reset flag package for testing
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	// Create new flag set with the specified error handling
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], errorHandling)
 
-	// Re-initialize flags
+	// Initialize all flags
 	configPath = flag.String("config", "", "path to config file")
 	envFile = flag.String("env-file", "", "path to environment file")
 	logLevel = flag.String("log-level", "", "log level (debug, info, warn, error)")
 	dryRun = flag.Bool("dry-run", false, "print commands without executing them")
 	verifyConfig = flag.Bool("verify-config", false, "verify configuration file integrity (not implemented)")
+
+	// Return cleanup function to restore original state
+	return func() {
+		os.Args = oldArgs
+		flag.CommandLine = oldCommandLine
+	}
+}
+
+func TestVerifyConfigOption(t *testing.T) {
+	// Setup test flags with ExitOnError handling
+	cleanup := setupTestFlags(flag.ExitOnError)
+	defer cleanup()
 
 	// Test args with --verify-config
 	os.Args = []string{"runner", "--verify-config"}
@@ -42,19 +55,9 @@ func TestVerifyConfigOption(t *testing.T) {
 }
 
 func TestVerifyConfigOptionHelp(t *testing.T) {
-	// Save original command line arguments
-	oldArgs := os.Args
-	defer func() { os.Args = oldArgs }()
-
-	// Reset flag package for testing
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
-
-	// Re-initialize flags
-	configPath = flag.String("config", "", "path to config file")
-	envFile = flag.String("env-file", "", "path to environment file")
-	logLevel = flag.String("log-level", "", "log level (debug, info, warn, error)")
-	dryRun = flag.Bool("dry-run", false, "print commands without executing them")
-	verifyConfig = flag.Bool("verify-config", false, "verify configuration file integrity (not implemented)")
+	// Setup test flags with ContinueOnError handling
+	cleanup := setupTestFlags(flag.ContinueOnError)
+	defer cleanup()
 
 	// Test that the help text contains the expected description
 	found := false
