@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
 
 // Error definitions
@@ -76,6 +78,7 @@ func DefaultConfig() *Config {
 // Validator provides security validation functionality
 type Validator struct {
 	config                *Config
+	fs                    common.FileSystem
 	allowedCommandRegexps []*regexp.Regexp
 	sensitiveEnvRegexps   []*regexp.Regexp
 	dangerousEnvRegexps   []*regexp.Regexp
@@ -85,12 +88,20 @@ type Validator struct {
 // If config is nil, DefaultConfig() will be used.
 // Returns an error if any regex patterns in the config are invalid.
 func NewValidator(config *Config) (*Validator, error) {
+	return NewValidatorWithFS(config, common.NewDefaultFileSystem())
+}
+
+// NewValidatorWithFS creates a new security validator with the given configuration and FileSystem.
+// If config is nil, DefaultConfig() will be used.
+// Returns an error if any regex patterns in the config are invalid.
+func NewValidatorWithFS(config *Config, fs common.FileSystem) (*Validator, error) {
 	if config == nil {
 		config = DefaultConfig()
 	}
 
 	v := &Validator{
 		config: config,
+		fs:     fs,
 	}
 
 	// Compile allowed command patterns
@@ -154,7 +165,7 @@ func (v *Validator) ValidateFilePermissions(filePath string) error {
 	}
 
 	// Get file info
-	fileInfo, err := os.Stat(cleanPath)
+	fileInfo, err := v.fs.Stat(cleanPath)
 	if err != nil {
 		slog.Error("Failed to get file info", "path", cleanPath, "error", err)
 		return fmt.Errorf("failed to stat file %s: %w", cleanPath, err)

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
@@ -56,16 +57,23 @@ type Manager struct {
 	resources map[string]*Resource
 	mu        sync.RWMutex
 	baseDir   string
+	fs        common.FileSystem
 }
 
 // NewManager creates a new resource manager
 func NewManager(baseDir string) *Manager {
+	return NewManagerWithFS(baseDir, common.NewDefaultFileSystem())
+}
+
+// NewManagerWithFS creates a new resource manager with a custom FileSystem
+func NewManagerWithFS(baseDir string, fs common.FileSystem) *Manager {
 	if baseDir == "" {
 		baseDir = os.TempDir()
 	}
 	return &Manager{
 		resources: make(map[string]*Resource),
 		baseDir:   baseDir,
+		fs:        fs,
 	}
 }
 
@@ -88,7 +96,7 @@ func (m *Manager) CreateTempDir(commandName string, autoCleanup bool) (*Resource
 	tempDirPath := filepath.Join(m.baseDir, "cmd-runner", safeName, resourceID)
 
 	// Create the directory
-	if err := os.MkdirAll(tempDirPath, defaultDirPerm); err != nil {
+	if err := m.fs.MkdirAll(tempDirPath, defaultDirPerm); err != nil {
 		return nil, fmt.Errorf("failed to create temporary directory: %w", err)
 	}
 
@@ -190,9 +198,9 @@ func (m *Manager) cleanupResourceUnsafe(id string) error {
 	var err error
 	switch resource.Type {
 	case TypeTempDir:
-		err = os.RemoveAll(resource.Path)
+		err = m.fs.RemoveAll(resource.Path)
 	case TypeFile:
-		err = os.Remove(resource.Path)
+		err = m.fs.Remove(resource.Path)
 	default:
 		err = fmt.Errorf("%w: %d", ErrUnknownResourceType, resource.Type)
 	}

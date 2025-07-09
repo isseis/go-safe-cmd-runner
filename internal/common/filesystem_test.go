@@ -1,0 +1,237 @@
+//nolint:revive // common is an appropriate name for shared utilities package
+package common
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestDefaultFileSystem_CreateTempDir(t *testing.T) {
+	fs := NewDefaultFileSystem()
+
+	// Test creating a temporary directory
+	dir, err := fs.CreateTempDir("test-")
+	if err != nil {
+		t.Fatalf("CreateTempDir failed: %v", err)
+	}
+	defer os.RemoveAll(dir)
+
+	// Verify the directory exists
+	exists, err := fs.FileExists(dir)
+	if err != nil {
+		t.Fatalf("FileExists failed: %v", err)
+	}
+	if !exists {
+		t.Error("Created directory does not exist")
+	}
+
+	// Verify it's a directory
+	isDir, err := fs.IsDir(dir)
+	if err != nil {
+		t.Fatalf("IsDir failed: %v", err)
+	}
+	if !isDir {
+		t.Error("Created path is not a directory")
+	}
+}
+
+func TestDefaultFileSystem_MkdirAll(t *testing.T) {
+	fs := NewDefaultFileSystem()
+
+	// Create a temporary base directory
+	baseDir, err := fs.CreateTempDir("test-mkdir-")
+	if err != nil {
+		t.Fatalf("CreateTempDir failed: %v", err)
+	}
+	defer fs.RemoveAll(baseDir)
+
+	// Test creating nested directories
+	nestedPath := filepath.Join(baseDir, "a", "b", "c")
+	err = fs.MkdirAll(nestedPath, 0o755)
+	if err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+
+	// Verify the nested directory exists
+	exists, err := fs.FileExists(nestedPath)
+	if err != nil {
+		t.Fatalf("FileExists failed: %v", err)
+	}
+	if !exists {
+		t.Error("Nested directory does not exist")
+	}
+}
+
+func TestDefaultFileSystem_FileExists(t *testing.T) {
+	fs := NewDefaultFileSystem()
+
+	// Test with non-existent file
+	exists, err := fs.FileExists("/non/existent/path")
+	if err != nil {
+		t.Fatalf("FileExists failed for non-existent path: %v", err)
+	}
+	if exists {
+		t.Error("Non-existent file reported as existing")
+	}
+
+	// Test with existing file
+	tempDir, err := fs.CreateTempDir("test-exists-")
+	if err != nil {
+		t.Fatalf("CreateTempDir failed: %v", err)
+	}
+	defer fs.RemoveAll(tempDir)
+
+	exists, err = fs.FileExists(tempDir)
+	if err != nil {
+		t.Fatalf("FileExists failed for existing path: %v", err)
+	}
+	if !exists {
+		t.Error("Existing file reported as non-existent")
+	}
+}
+
+func TestDefaultFileSystem_Remove(t *testing.T) {
+	fs := NewDefaultFileSystem()
+
+	// Create a temporary directory
+	tempDir, err := fs.CreateTempDir("test-remove-")
+	if err != nil {
+		t.Fatalf("CreateTempDir failed: %v", err)
+	}
+
+	// Create a file in the directory
+	filePath := filepath.Join(tempDir, "test.txt")
+	file, err := os.Create(filePath)
+	if err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+	file.Close()
+
+	// Remove the file
+	err = fs.Remove(filePath)
+	if err != nil {
+		t.Fatalf("Remove failed: %v", err)
+	}
+
+	// Verify the file no longer exists
+	exists, err := fs.FileExists(filePath)
+	if err != nil {
+		t.Fatalf("FileExists failed: %v", err)
+	}
+	if exists {
+		t.Error("File still exists after removal")
+	}
+
+	// Clean up
+	fs.RemoveAll(tempDir)
+}
+
+func TestDefaultFileSystem_RemoveAll(t *testing.T) {
+	fs := NewDefaultFileSystem()
+
+	// Create a temporary directory with nested structure
+	tempDir, err := fs.CreateTempDir("test-removeall-")
+	if err != nil {
+		t.Fatalf("CreateTempDir failed: %v", err)
+	}
+
+	nestedDir := filepath.Join(tempDir, "nested")
+	err = fs.MkdirAll(nestedDir, 0o755)
+	if err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+
+	// Create a file in the nested directory
+	filePath := filepath.Join(nestedDir, "test.txt")
+	file, err := os.Create(filePath)
+	if err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+	file.Close()
+
+	// Remove all
+	err = fs.RemoveAll(tempDir)
+	if err != nil {
+		t.Fatalf("RemoveAll failed: %v", err)
+	}
+
+	// Verify the directory no longer exists
+	exists, err := fs.FileExists(tempDir)
+	if err != nil {
+		t.Fatalf("FileExists failed: %v", err)
+	}
+	if exists {
+		t.Error("Directory still exists after RemoveAll")
+	}
+}
+
+func TestDefaultFileSystem_Stat(t *testing.T) {
+	fs := NewDefaultFileSystem()
+
+	// Create a temporary directory
+	tempDir, err := fs.CreateTempDir("test-stat-")
+	if err != nil {
+		t.Fatalf("CreateTempDir failed: %v", err)
+	}
+	defer fs.RemoveAll(tempDir)
+
+	// Test Stat on the directory
+	info, err := fs.Stat(tempDir)
+	if err != nil {
+		t.Fatalf("Stat failed: %v", err)
+	}
+
+	if !info.IsDir() {
+		t.Error("Stat reported directory as not a directory")
+	}
+
+	// Test Stat on non-existent path
+	_, err = fs.Stat("/non/existent/path")
+	if err == nil {
+		t.Error("Stat should fail for non-existent path")
+	}
+}
+
+func TestDefaultFileSystem_IsDir(t *testing.T) {
+	fs := NewDefaultFileSystem()
+
+	// Create a temporary directory
+	tempDir, err := fs.CreateTempDir("test-isdir-")
+	if err != nil {
+		t.Fatalf("CreateTempDir failed: %v", err)
+	}
+	defer fs.RemoveAll(tempDir)
+
+	// Test with directory
+	isDir, err := fs.IsDir(tempDir)
+	if err != nil {
+		t.Fatalf("IsDir failed: %v", err)
+	}
+	if !isDir {
+		t.Error("Directory reported as not a directory")
+	}
+
+	// Create a file
+	filePath := filepath.Join(tempDir, "test.txt")
+	file, err := os.Create(filePath)
+	if err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+	file.Close()
+
+	// Test with file
+	isDir, err = fs.IsDir(filePath)
+	if err != nil {
+		t.Fatalf("IsDir failed for file: %v", err)
+	}
+	if isDir {
+		t.Error("File reported as directory")
+	}
+
+	// Test with non-existent path
+	_, err = fs.IsDir("/non/existent/path")
+	if err == nil {
+		t.Error("IsDir should fail for non-existent path")
+	}
+}

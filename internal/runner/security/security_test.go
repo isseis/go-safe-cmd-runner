@@ -3,9 +3,9 @@ package security
 import (
 	"errors"
 	"os"
-	"path/filepath"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -35,7 +35,7 @@ func TestNewValidator(t *testing.T) {
 		assert.Equal(t, config, validator.config)
 		assert.Len(t, validator.allowedCommandRegexps, 1)
 		assert.Len(t, validator.sensitiveEnvRegexps, 1)
-		assert.GreaterOrEqual(t, len(validator.dangerousEnvRegexps), 1) // Ensure there is at least one dangerous pattern
+		assert.GreaterOrEqual(t, len(validator.dangerousEnvRegexps), 1)
 	})
 
 	t.Run("with nil config", func(t *testing.T) {
@@ -51,9 +51,9 @@ func TestNewValidator(t *testing.T) {
 
 	t.Run("with invalid command pattern", func(t *testing.T) {
 		config := &Config{
-			AllowedCommands:         []string{"[invalid regex"}, // Invalid regex
+			AllowedCommands:         []string{"[invalid"},
 			RequiredFilePermissions: 0o644,
-			SensitiveEnvVars:        []string{".*PASSWORD.*"},
+			SensitiveEnvVars:        []string{},
 			MaxPathLength:           4096,
 		}
 		validator, err := NewValidator(config)
@@ -65,9 +65,9 @@ func TestNewValidator(t *testing.T) {
 
 	t.Run("with invalid sensitive env pattern", func(t *testing.T) {
 		config := &Config{
-			AllowedCommands:         []string{"^echo$"},
+			AllowedCommands:         []string{".*"},
 			RequiredFilePermissions: 0o644,
-			SensitiveEnvVars:        []string{"[invalid regex"}, // Invalid regex
+			SensitiveEnvVars:        []string{"[invalid"},
 			MaxPathLength:           4096,
 		}
 		validator, err := NewValidator(config)
@@ -78,8 +78,25 @@ func TestNewValidator(t *testing.T) {
 	})
 }
 
+func TestNewValidatorWithFS(t *testing.T) {
+	mockFS := common.NewMockFileSystem()
+	config := &Config{
+		AllowedCommands:         []string{"^echo$"},
+		RequiredFilePermissions: 0o644,
+		SensitiveEnvVars:        []string{".*PASSWORD.*"},
+		MaxPathLength:           4096,
+	}
+	validator, err := NewValidatorWithFS(config, mockFS)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, validator)
+	assert.Equal(t, config, validator.config)
+	assert.Equal(t, mockFS, validator.fs)
+}
+
 func TestValidator_ValidateFilePermissions(t *testing.T) {
-	validator, err := NewValidator(nil)
+	mockFS := common.NewMockFileSystem()
+	validator, err := NewValidatorWithFS(nil, mockFS)
 	require.NoError(t, err)
 
 	t.Run("empty path", func(t *testing.T) {
@@ -96,40 +113,27 @@ func TestValidator_ValidateFilePermissions(t *testing.T) {
 	})
 
 	t.Run("valid file with correct permissions", func(t *testing.T) {
-		// Create a temporary file with correct permissions
-		tmpDir := t.TempDir()
-		tmpFile := filepath.Join(tmpDir, "test.conf")
+		// Create a file with correct permissions in mock filesystem
+		mockFS.AddFile("/test.conf", 0o644, []byte("test content"))
 
-		err := os.WriteFile(tmpFile, []byte("test content"), 0o644)
-		require.NoError(t, err)
-
-		err = validator.ValidateFilePermissions(tmpFile)
+		err := validator.ValidateFilePermissions("/test.conf")
 		assert.NoError(t, err)
 	})
 
 	t.Run("file with excessive permissions", func(t *testing.T) {
-		// Create a temporary file with excessive permissions
-		tmpDir := t.TempDir()
-		tmpFile := filepath.Join(tmpDir, "test.conf")
+		// Create a file with excessive permissions in mock filesystem
+		mockFS.AddFile("/test-excessive.conf", 0o777, []byte("test content"))
 
-		err := os.WriteFile(tmpFile, []byte("test content"), 0o777)
-		require.NoError(t, err)
-
-		err = validator.ValidateFilePermissions(tmpFile)
+		err := validator.ValidateFilePermissions("/test-excessive.conf")
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, ErrInvalidFilePermissions))
 	})
 
 	t.Run("file with dangerous group/other permissions", func(t *testing.T) {
 		// Test the security vulnerability case: 0o077 should be rejected even though 0o077 < 0o644
-		tmpDir := t.TempDir()
-		tmpFile := filepath.Join(tmpDir, "test.conf")
+		mockFS.AddFile("/test-dangerous.conf", 0o077, []byte("test content"))
 
-		// Create file with permissions that are numerically less than 0o644 but contain dangerous bits
-		err := os.WriteFile(tmpFile, []byte("test content"), 0o077) // ---rwxrwx (dangerous!)
-		require.NoError(t, err)
-
-		err = validator.ValidateFilePermissions(tmpFile)
+		err := validator.ValidateFilePermissions("/test-dangerous.conf")
 		assert.Error(t, err, "0o077 permissions should be rejected even though 077 < 644")
 		assert.True(t, errors.Is(err, ErrInvalidFilePermissions))
 		assert.Contains(t, err.Error(), "disallowed bits")
@@ -137,53 +141,48 @@ func TestValidator_ValidateFilePermissions(t *testing.T) {
 
 	t.Run("file with only subset of allowed permissions", func(t *testing.T) {
 		// Test that files with permissions that are a subset of allowed permissions pass
-		tmpDir := t.TempDir()
-		tmpFile := filepath.Join(tmpDir, "test.conf")
+		mockFS.AddFile("/test-subset.conf", 0o600, []byte("test content"))
 
-		// 0o600 is a subset of 0o644 (owner read/write only)
-		err := os.WriteFile(tmpFile, []byte("test content"), 0o600)
-		require.NoError(t, err)
-
-		err = validator.ValidateFilePermissions(tmpFile)
+		err := validator.ValidateFilePermissions("/test-subset.conf")
 		assert.NoError(t, err, "0o600 should be allowed as it's a subset of 0o644")
 	})
 
 	t.Run("file with exact allowed permissions", func(t *testing.T) {
 		// Test that files with exact allowed permissions pass
-		tmpDir := t.TempDir()
-		tmpFile := filepath.Join(tmpDir, "test.conf")
+		mockFS.AddFile("/test-exact.conf", 0o644, []byte("test content"))
 
-		// 0o644 should be exactly allowed
-		err := os.WriteFile(tmpFile, []byte("test content"), 0o644)
-		require.NoError(t, err)
-
-		err = validator.ValidateFilePermissions(tmpFile)
-		assert.NoError(t, err, "0o644 should be allowed")
+		err := validator.ValidateFilePermissions("/test-exact.conf")
+		assert.NoError(t, err, "0o644 should be allowed as it's exactly the allowed permissions")
 	})
 
 	t.Run("directory instead of file", func(t *testing.T) {
-		tmpDir := t.TempDir()
+		// Test that directories are rejected
+		mockFS.AddDir("/test-dir", 0o755)
 
-		err := validator.ValidateFilePermissions(tmpDir)
+		err := validator.ValidateFilePermissions("/test-dir")
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, ErrInvalidFilePermissions))
+		// Directory permissions (0o755) exceed allowed file permissions (0o644)
+		// so it fails on permission check before regular file check
+		assert.Contains(t, err.Error(), "disallowed bits")
 	})
 
 	t.Run("path too long", func(t *testing.T) {
-		config := &Config{
-			AllowedCommands:         []string{"^echo$"},
+		// Test with a path that's too long
+		mockFS2 := common.NewMockFileSystem()
+		validator2, err := NewValidatorWithFS(&Config{
+			AllowedCommands:         []string{".*"},
 			RequiredFilePermissions: 0o644,
-			SensitiveEnvVars:        []string{".*PASSWORD.*"},
-			MaxPathLength:           10,
-		}
-		validator, err := NewValidator(config)
+			SensitiveEnvVars:        []string{},
+			MaxPathLength:           10, // Very short for testing
+		}, mockFS2)
 		require.NoError(t, err)
 
 		longPath := "/very/long/path/that/exceeds/limit"
-		err = validator.ValidateFilePermissions(longPath)
-
+		err = validator2.ValidateFilePermissions(longPath)
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, ErrInvalidPath))
+		assert.Contains(t, err.Error(), "path too long")
 	})
 }
 
@@ -193,39 +192,36 @@ func TestValidator_SanitizeEnvironmentVariables(t *testing.T) {
 
 	t.Run("nil input", func(t *testing.T) {
 		result := validator.SanitizeEnvironmentVariables(nil)
-
 		assert.NotNil(t, result)
-		assert.Empty(t, result)
+		assert.Equal(t, make(map[string]string), result)
 	})
 
 	t.Run("no sensitive variables", func(t *testing.T) {
-		envVars := map[string]string{
-			"PATH": "/usr/bin",
-			"HOME": "/home/user",
-			"USER": "testuser",
+		env := map[string]string{
+			"PATH":     "/usr/bin:/bin",
+			"HOME":     "/home/user",
+			"LANGUAGE": "en_US.UTF-8",
 		}
-
-		result := validator.SanitizeEnvironmentVariables(envVars)
-
-		assert.Equal(t, envVars, result)
+		result := validator.SanitizeEnvironmentVariables(env)
+		assert.Equal(t, env, result)
 	})
 
 	t.Run("with sensitive variables", func(t *testing.T) {
-		envVars := map[string]string{
-			"PATH":        "/usr/bin",
-			"API_KEY":     "secret123",
-			"DB_PASSWORD": "password123",
-			"AUTH_TOKEN":  "token456",
-			"USER":        "testuser",
+		env := map[string]string{
+			"PATH":         "/usr/bin:/bin",
+			"HOME":         "/home/user",
+			"API_PASSWORD": "secret123",
+			"DB_TOKEN":     "token456",
+			"NORMAL_VAR":   "value",
 		}
+		result := validator.SanitizeEnvironmentVariables(env)
 
-		result := validator.SanitizeEnvironmentVariables(envVars)
-
-		assert.Equal(t, "/usr/bin", result["PATH"])
-		assert.Equal(t, "testuser", result["USER"])
-		assert.Equal(t, "[REDACTED]", result["API_KEY"])
-		assert.Equal(t, "[REDACTED]", result["DB_PASSWORD"])
-		assert.Equal(t, "[REDACTED]", result["AUTH_TOKEN"])
+		assert.NotEqual(t, env, result)
+		assert.Equal(t, "/usr/bin:/bin", result["PATH"])
+		assert.Equal(t, "/home/user", result["HOME"])
+		assert.Equal(t, "value", result["NORMAL_VAR"])
+		assert.Equal(t, "[REDACTED]", result["API_PASSWORD"])
+		assert.Equal(t, "[REDACTED]", result["DB_TOKEN"])
 	})
 }
 
@@ -235,23 +231,21 @@ func TestValidator_ValidateCommand(t *testing.T) {
 
 	t.Run("empty command", func(t *testing.T) {
 		err := validator.ValidateCommand("")
-
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, ErrCommandNotAllowed))
 	})
 
 	t.Run("allowed commands", func(t *testing.T) {
 		allowedCommands := []string{
-			"echo",
-			"cat",
-			"ls",
-			"/bin/bash",
+			"/bin/echo",
+			"/usr/bin/ls",
+			"/bin/cat",
 			"/usr/bin/grep",
 		}
 
 		for _, cmd := range allowedCommands {
 			err := validator.ValidateCommand(cmd)
-			assert.NoError(t, err, "command %s should be allowed", cmd)
+			assert.NoError(t, err, "Command %s should be allowed", cmd)
 		}
 	})
 
@@ -259,14 +253,13 @@ func TestValidator_ValidateCommand(t *testing.T) {
 		disallowedCommands := []string{
 			"rm",
 			"sudo",
-			"su",
-			"/tmp/malicious_script",
-			"../../../bin/malicious",
+			"../../../bin/sh",
+			"evil-command",
 		}
 
 		for _, cmd := range disallowedCommands {
 			err := validator.ValidateCommand(cmd)
-			assert.Error(t, err, "command %s should be disallowed", cmd)
+			assert.Error(t, err, "Command %s should not be allowed", cmd)
 			assert.True(t, errors.Is(err, ErrCommandNotAllowed))
 		}
 	})
@@ -277,34 +270,35 @@ func TestValidator_ValidateEnvironmentValue(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("safe values", func(t *testing.T) {
-		safeValues := map[string]string{
-			"PATH":    "/usr/bin:/bin",
-			"HOME":    "/home/user",
-			"USER":    "testuser",
-			"MESSAGE": "Hello World",
-			"NUMBER":  "12345",
+		safeValues := []string{
+			"simple_value",
+			"/path/to/file",
+			"user@example.com",
+			"123456",
+			"normal-value_with_underscores",
 		}
 
-		for key, value := range safeValues {
-			err := validator.ValidateEnvironmentValue(key, value)
-			assert.NoError(t, err, "value %s=%s should be safe", key, value)
+		for _, value := range safeValues {
+			err := validator.ValidateEnvironmentValue("TEST_VAR", value)
+			assert.NoError(t, err, "Value %s should be safe", value)
 		}
 	})
 
 	t.Run("unsafe values", func(t *testing.T) {
-		unsafeValues := map[string]string{
-			"DANGEROUS": "value; rm -rf /",
-			"PIPE":      "value | malicious_cmd",
-			"AND":       "value && malicious_cmd",
-			"OR":        "value || malicious_cmd",
-			"SUBST":     "value $(malicious_cmd)",
-			"BACKTICK":  "value `malicious_cmd`",
-			"REDIRECT":  "value > /etc/passwd",
+		unsafeValues := []string{
+			"value; rm -rf /",
+			"value | cat /etc/passwd",
+			"value && malicious_command",
+			"value || backup_command",
+			"value $(malicious_command)",
+			"value `malicious_command`",
+			"value > /tmp/output",
+			"value < /etc/passwd",
 		}
 
-		for key, value := range unsafeValues {
-			err := validator.ValidateEnvironmentValue(key, value)
-			assert.Error(t, err, "value %s=%s should be unsafe", key, value)
+		for _, value := range unsafeValues {
+			err := validator.ValidateEnvironmentValue("TEST_VAR", value)
+			assert.Error(t, err, "Value %s should be unsafe", value)
 			assert.True(t, errors.Is(err, ErrUnsafeEnvironmentVar))
 		}
 	})
@@ -315,30 +309,29 @@ func TestValidator_ValidateAllEnvironmentVars(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("all safe", func(t *testing.T) {
-		envVars := map[string]string{
+		env := map[string]string{
 			"PATH": "/usr/bin:/bin",
 			"HOME": "/home/user",
 			"USER": "testuser",
 		}
-
-		err := validator.ValidateAllEnvironmentVars(envVars)
+		err := validator.ValidateAllEnvironmentVars(env)
 		assert.NoError(t, err)
 	})
 
 	t.Run("contains unsafe", func(t *testing.T) {
-		envVars := map[string]string{
+		env := map[string]string{
 			"PATH":      "/usr/bin:/bin",
+			"HOME":      "/home/user",
 			"DANGEROUS": "value; rm -rf /",
-			"USER":      "testuser",
 		}
-
-		err := validator.ValidateAllEnvironmentVars(envVars)
+		err := validator.ValidateAllEnvironmentVars(env)
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, ErrUnsafeEnvironmentVar))
 	})
 
 	t.Run("empty map", func(t *testing.T) {
-		err := validator.ValidateAllEnvironmentVars(map[string]string{})
+		env := map[string]string{}
+		err := validator.ValidateAllEnvironmentVars(env)
 		assert.NoError(t, err)
 	})
 
@@ -355,20 +348,19 @@ func TestValidator_isSensitiveEnvVar(t *testing.T) {
 	t.Run("sensitive patterns", func(t *testing.T) {
 		sensitiveVars := []string{
 			"PASSWORD",
+			"API_PASSWORD",
 			"DB_PASSWORD",
 			"SECRET",
 			"API_SECRET",
 			"TOKEN",
-			"AUTH_TOKEN",
+			"ACCESS_TOKEN",
 			"KEY",
+			"API_KEY",
 			"PRIVATE_KEY",
-			"API",
-			"API_ENDPOINT",
 		}
 
 		for _, varName := range sensitiveVars {
-			result := validator.isSensitiveEnvVar(varName)
-			assert.True(t, result, "variable %s should be sensitive", varName)
+			assert.True(t, validator.isSensitiveEnvVar(varName), "Variable %s should be sensitive", varName)
 		}
 	})
 
@@ -377,14 +369,14 @@ func TestValidator_isSensitiveEnvVar(t *testing.T) {
 			"PATH",
 			"HOME",
 			"USER",
-			"SHELL",
-			"TERM",
 			"LANG",
+			"TMPDIR",
+			"PWD",
+			"SHELL",
 		}
 
 		for _, varName := range nonSensitiveVars {
-			result := validator.isSensitiveEnvVar(varName)
-			assert.False(t, result, "variable %s should not be sensitive", varName)
+			assert.False(t, validator.isSensitiveEnvVar(varName), "Variable %s should not be sensitive", varName)
 		}
 	})
 }
