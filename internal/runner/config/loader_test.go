@@ -121,6 +121,10 @@ version = "1.0"
 		t.Fatalf("failed to close temp file: %v", err)
 	}
 
+	// Save original logger and set up test logger
+	originalLogger := slog.Default()
+	defer slog.SetDefault(originalLogger)
+
 	// Capture slog output
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{
