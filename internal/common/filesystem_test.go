@@ -1,3 +1,4 @@
+//nolint:revive // common is an appropriate name for shared utilities package
 package common
 
 import (
@@ -47,7 +48,7 @@ func TestDefaultFileSystem_MkdirAll(t *testing.T) {
 
 	// Test creating nested directories
 	nestedPath := filepath.Join(baseDir, "a", "b", "c")
-	err = fs.MkdirAll(nestedPath, 0755)
+	err = fs.MkdirAll(nestedPath, 0o755)
 	if err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
@@ -136,7 +137,7 @@ func TestDefaultFileSystem_RemoveAll(t *testing.T) {
 	}
 
 	nestedDir := filepath.Join(tempDir, "nested")
-	err = fs.MkdirAll(nestedDir, 0755)
+	err = fs.MkdirAll(nestedDir, 0o755)
 	if err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}

@@ -32,7 +32,7 @@ func TestNewManager(t *testing.T) {
 func TestNewManagerWithFS(t *testing.T) {
 	mockFS := common.NewMockFileSystem()
 	manager := NewManagerWithFS("/tmp", mockFS)
-	
+
 	if manager == nil {
 		t.Fatal("NewManagerWithFS() returned nil")
 	}
