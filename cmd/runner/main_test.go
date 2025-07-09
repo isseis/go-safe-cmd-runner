@@ -8,6 +8,10 @@ import (
 )
 
 func TestVerifyConfigOption(t *testing.T) {
+	// Save original command line arguments
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+
 	// Reset flag package for testing
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 
@@ -19,8 +23,7 @@ func TestVerifyConfigOption(t *testing.T) {
 	verifyConfig = flag.Bool("verify-config", false, "verify configuration file integrity (not implemented)")
 
 	// Test args with --verify-config
-	args := []string{"runner", "--verify-config"}
-	os.Args = args
+	os.Args = []string{"runner", "--verify-config"}
 
 	// Test run() function
 	err := run()
@@ -39,6 +42,10 @@ func TestVerifyConfigOption(t *testing.T) {
 }
 
 func TestVerifyConfigOptionHelp(t *testing.T) {
+	// Save original command line arguments
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+
 	// Reset flag package for testing
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
 
