@@ -47,7 +47,6 @@ type Command struct {
 	Args        []string `toml:"args"`
 	Env         []string `toml:"env"`
 	Dir         string   `toml:"dir"`
-	User        string   `toml:"user"`
 	Privileged  bool     `toml:"privileged"`
 	Timeout     int      `toml:"timeout"` // Command-specific timeout (overrides global)
 }
