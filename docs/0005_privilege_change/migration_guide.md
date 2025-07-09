@@ -119,7 +119,7 @@ grep -n "user.*=" config.toml
 ### ステップ4: 設定の検証
 ```bash
 # ドライランで設定ファイルの検証
-./cmd/runner/main -config config.toml -dry-run
+./build/runner -config config.toml -dry-run
 
 # エラーがないことを確認
 echo $?  # 0であることを確認
@@ -130,7 +130,7 @@ echo $?  # 0であることを確認
 ### 設定ファイルの妥当性確認
 ```bash
 # 設定ファイルの構文チェック
-./cmd/runner/main -config config.toml -dry-run
+./build/runner -config config.toml -dry-run
 
 # 成功例:
 # [DRY RUN] Would execute the following groups:
