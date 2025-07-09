@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"path/filepath"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -57,6 +58,12 @@ func (l *Loader) GetTemplateEngine() *template.Engine {
 
 // LoadConfig loads, validates, and applies templates to the configuration from the given path.
 func (l *Loader) LoadConfig(path string) (*runnertypes.Config, error) {
+	// Warning: Configuration file integrity verification is not implemented
+	slog.Warn("Configuration file integrity verification is not implemented",
+		"phase", "1",
+		"security_risk", "Configuration files may be tampered without detection",
+		"recommendation", "Enable verification in production environments")
+
 	// TODO: Validate config file with checksum
 	// Read the config file safely
 	data, err := safefileio.SafeReadFile(path)

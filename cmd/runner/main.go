@@ -19,14 +19,16 @@ import (
 
 // Error definitions
 var (
-	ErrConfigPathRequired = errors.New("config file path is required")
+	ErrConfigPathRequired               = errors.New("config file path is required")
+	ErrConfigVerificationNotImplemented = errors.New("configuration verification not implemented")
 )
 
 var (
-	configPath = flag.String("config", "", "path to config file")
-	envFile    = flag.String("env-file", "", "path to environment file")
-	logLevel   = flag.String("log-level", "", "log level (debug, info, warn, error)")
-	dryRun     = flag.Bool("dry-run", false, "print commands without executing them")
+	configPath   = flag.String("config", "", "path to config file")
+	envFile      = flag.String("env-file", "", "path to environment file")
+	logLevel     = flag.String("log-level", "", "log level (debug, info, warn, error)")
+	dryRun       = flag.Bool("dry-run", false, "print commands without executing them")
+	verifyConfig = flag.Bool("verify-config", false, "verify configuration file integrity (not implemented)")
 )
 
 func main() {
@@ -39,13 +41,24 @@ func main() {
 func run() error {
 	flag.Parse()
 
+	// Handle verify-config option
+	if *verifyConfig {
+		fmt.Fprintln(os.Stderr, "ERROR: Configuration verification is not yet implemented")
+		fmt.Fprintln(os.Stderr, "Current implementation phase: 1 (warning only)")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "WARNING: This feature is not yet implemented. Configuration files are currently")
+		fmt.Fprintln(os.Stderr, "not protected against tampering. Use appropriate file permissions and monitoring")
+		fmt.Fprintln(os.Stderr, "tools to mitigate this security risk.")
+		return ErrConfigVerificationNotImplemented
+	}
+
 	// Set up context with cancellation
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	// Load configuration
 	if *configPath == "" {
-		return fmt.Errorf("%w", ErrConfigPathRequired)
+		return ErrConfigPathRequired
 	}
 
 	// Initialize config loader
