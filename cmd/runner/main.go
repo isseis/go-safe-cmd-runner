@@ -15,6 +15,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
+	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 )
 
 // Error definitions
@@ -66,6 +67,17 @@ func run() error {
 	cfg, err := cfgLoader.LoadConfig(*configPath)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Initialize verification manager
+	verificationManager, err := verification.NewManager(&cfg.Verification)
+	if err != nil {
+		return fmt.Errorf("failed to initialize verification: %w", err)
+	}
+
+	// Verify configuration file integrity
+	if err := verificationManager.VerifyConfigFile(*configPath); err != nil {
+		return fmt.Errorf("config verification failed: %w", err)
 	}
 
 	// Initialize Runner with template engine from config loader

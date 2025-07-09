@@ -22,6 +22,14 @@ version = "1.0"
   # Log level: debug, info, warn, error (default: info)
   log_level = "info"
 
+# File verification configuration
+[verification]
+  # Enable or disable file verification (default: false)
+  enabled = false
+
+  # Directory containing hash files (default: "/etc/go-safe-cmd-runner/hashes")
+  hash_directory = "/etc/go-safe-cmd-runner/hashes"
+
 # Template definitions for reusable command configurations
 # Templates allow you to define common settings and variables that can be
 # applied to multiple command groups

@@ -2,12 +2,15 @@
 // It includes types for configuration, commands, and other domain-specific structures.
 package runnertypes
 
+import "github.com/isseis/go-safe-cmd-runner/internal/verification"
+
 // Config represents the root configuration structure
 type Config struct {
-	Version   string                    `toml:"version"`
-	Global    GlobalConfig              `toml:"global"`
-	Templates map[string]TemplateConfig `toml:"templates"`
-	Groups    []CommandGroup            `toml:"groups"`
+	Version      string                    `toml:"version"`
+	Global       GlobalConfig              `toml:"global"`
+	Verification verification.Config       `toml:"verification"`
+	Templates    map[string]TemplateConfig `toml:"templates"`
+	Groups       []CommandGroup            `toml:"groups"`
 }
 
 // GlobalConfig contains global configuration options
