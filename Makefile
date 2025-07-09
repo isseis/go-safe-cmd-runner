@@ -33,9 +33,13 @@ $(BINARY_VERIFY): $(GO_SOURCES)
 	@mkdir -p $(@D)
 	$(GOBUILD) -o build/verify -v cmd/verify/main.go
 
+$(BINARY_RUNNER): $(GO_SOURCES)
+	@mkdir -p $(@D)
+	$(GOBUILD) -o build/runner -v cmd/runner/main.go
+
 clean:
 	$(GOCLEAN)
-	rm -f $(BINARY_RECORD) $(BINARY_VERIFY)
+	rm -f $(BINARY_RECORD) $(BINARY_VERIFY) $(BINARY_RUNNER)
 
 test: $(BINARY_RUNNER)
 	$(GOTEST) -v ./...
