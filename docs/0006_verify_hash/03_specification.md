@@ -59,31 +59,15 @@ type Config struct {
     // 検証機能の有効/無効
     Enabled bool `toml:"enabled" json:"enabled"`
 
-    // 実装フェーズ (1: 警告のみ, 2: 設定ファイル検証, 3: 全ファイル検証)
-    Phase int `toml:"phase" json:"phase"`
-
     // ハッシュファイル格納ディレクトリ
     HashDirectory string `toml:"hash_directory" json:"hash_directory"`
-
-    // ハッシュマニフェストファイル名
-    ManifestFile string `toml:"manifest_file" json:"manifest_file"`
-
-    // 検証失敗時の動作 ("exit", "warn", "ignore")
-    OnFailure string `toml:"on_failure" json:"on_failure"`
-
-    // タイムアウト設定（秒）
-    Timeout int `toml:"timeout" json:"timeout"`
 }
 
 // デフォルト設定
 func DefaultConfig() *Config {
     return &Config{
-        Enabled:       true,
-        Phase:         1, // Phase 1: 警告のみ
-        HashDirectory: "/usr/local/etc/go-safe-cmd-runner/hashes",
-        ManifestFile:  "manifest.json",
-        OnFailure:     "exit",
-        Timeout:       30,
+        Enabled:       false,
+        HashDirectory: "/etc/go-safe-cmd-runner/hashes",
     }
 }
 ```
@@ -91,87 +75,56 @@ func DefaultConfig() *Config {
 #### 2.2.2 マニフェスト構造体
 
 ```go
-// internal/verification/manifest.go
-type Manifest struct {
-    Version   string    `json:"version"`
-    CreatedAt time.Time `json:"created_at"`
-    CreatedBy string    `json:"created_by"`
-    Algorithm string    `json:"algorithm"`
-    Files     []FileHash `json:"files"`
-}
-
-type FileHash struct {
-    Path          string    `json:"path"`
-    CanonicalPath string    `json:"canonical_path"`
-    Hash          string    `json:"hash"`
-    Size          int64     `json:"size"`
-    ModifiedAt    time.Time `json:"modified_at"`
-    Permissions   string    `json:"permissions"`
-    Owner         string    `json:"owner"`
-    Group         string    `json:"group"`
-}
+// filevalidator パッケージの既存構造体を使用
+// 独自マニフェストは実装しない
 ```
 
 ## 3. インターフェース仕様
 
-### 3.1 VerificationManager インターフェース
+### 3.1 Manager インターフェース
 
 ```go
 // internal/verification/manager.go
-type Manager interface {
-    // 設定ファイルの検証
-    VerifyConfigFile(configPath string) error
-
-    // ハッシュディレクトリの検証
-    ValidateHashDirectory() error
-
-    // マニフェストの読み込み
-    LoadManifest() (*Manifest, error)
-
-    // 単一ファイルの検証
-    VerifyFile(filePath string, expectedHash FileHash) error
-
-    // 検証機能の有効性チェック
-    IsEnabled() bool
-
-    // フェーズの取得
-    GetPhase() int
-}
-
-type VerificationManager struct {
+type Manager struct {
     config    *Config
     fs        common.FileSystem
     validator *filevalidator.Validator
     security  *security.Validator
 }
+
+// 主要メソッド
+func NewManager(config *Config) (*Manager, error)
+func NewManagerWithFS(config *Config, fs common.FileSystem) (*Manager, error)
+func (vm *Manager) VerifyConfigFile(configPath string) error
+func (vm *Manager) ValidateHashDirectory() error
+func (vm *Manager) IsEnabled() bool
+func (vm *Manager) GetConfig() *Config
 ```
 
 ### 3.2 メソッド詳細仕様
 
-#### 3.2.1 NewVerificationManager
+#### 3.2.1 NewManager
 
 ```go
-func NewVerificationManager(config *Config, fs common.FileSystem) (*VerificationManager, error)
+func NewManager(config *Config) (*Manager, error)
 ```
 
 **パラメータ:**
 - `config`: 検証設定
-- `fs`: ファイルシステムインターフェース
 
 **戻り値:**
-- `*VerificationManager`: マネージャーインスタンス
+- `*Manager`: マネージャーインスタンス
 - `error`: エラー（設定無効時等）
 
 **処理内容:**
 1. 設定の妥当性検証
-2. filevalidator.Validator の初期化
-3. security.Validator の初期化
-4. Phase 1 の場合は警告ログ出力
+2. filevalidator.Validator の初期化（有効時のみ）
+3. security.Validator の初期化（有効時のみ）
 
 #### 3.2.2 VerifyConfigFile
 
 ```go
-func (vm *VerificationManager) VerifyConfigFile(configPath string) error
+func (vm *Manager) VerifyConfigFile(configPath string) error
 ```
 
 **パラメータ:**
@@ -182,56 +135,43 @@ func (vm *VerificationManager) VerifyConfigFile(configPath string) error
 
 **処理フロー:**
 ```
-1. Phase チェック
-   ├─ Phase 1: 警告ログ出力して正常終了
-   └─ Phase 2+: 以下の処理を実行
+1. 有効性チェック
+   ├─ 無効時: 何もしない（正常終了）
+   └─ 有効時: 以下の処理を実行
 
 2. ハッシュディレクトリ検証
    ├─ ディレクトリ存在チェック
    ├─ 権限チェック（root所有、755権限）
-   └─ エラー時: ErrHashDirectoryPermission
+   └─ エラー時: ErrHashDirectoryInvalid
 
-3. マニフェスト読み込み
-   ├─ manifest.json 存在チェック
-   ├─ JSON パース
-   └─ エラー時: ErrManifestNotFound
-
-4. 設定ファイル正規化
-   ├─ filepath.Clean() で正規化
-   └─ 絶対パス変換
-
-5. ハッシュ検証
+3. ハッシュ検証
    ├─ filevalidator.Verify() 呼び出し
    ├─ ハッシュ値比較
-   └─ エラー時: ErrConfigHashMismatch
-
-6. 権限検証
-   ├─ security.ValidateFilePermissions() 呼び出し
-   └─ エラー時: security パッケージエラー
+   └─ エラー時: filevalidator パッケージエラー
 ```
 
 #### 3.2.3 ValidateHashDirectory
 
 ```go
-func (vm *VerificationManager) ValidateHashDirectory() error
+func (vm *Manager) ValidateHashDirectory() error
 ```
 
 **検証項目:**
-1. ディレクトリ存在確認
-2. 所有者が root であることを確認
-3. 権限が 755 (rwxr-xr-x) であることを確認
-4. 他ユーザーによる書き込み権限がないことを確認
+1. 検証機能の有効性確認
+2. ディレクトリ存在確認
+3. 所有者が root であることを確認
+4. 権限が 755 (rwxr-xr-x) であることを確認
+5. 他ユーザーによる書き込み権限がないことを確認
 
 **実装例:**
 ```go
-func (vm *VerificationManager) ValidateHashDirectory() error {
-    info, err := vm.fs.Stat(vm.config.HashDirectory)
-    if err != nil {
-        return fmt.Errorf("%w: %s", ErrHashDirectoryNotFound, vm.config.HashDirectory)
+func (vm *Manager) ValidateHashDirectory() error {
+    if !vm.IsEnabled() {
+        return fmt.Errorf("%w", ErrVerificationDisabled)
     }
 
-    if !info.IsDir() {
-        return fmt.Errorf("%w: not a directory", ErrHashDirectoryPermission)
+    if vm.security == nil {
+        return fmt.Errorf("%w", ErrSecurityValidatorNotInitialized)
     }
 
     // 権限チェック（securityパッケージ活用）
@@ -250,26 +190,31 @@ package verification
 import "errors"
 
 var (
-    // ハッシュディレクトリ関連
-    ErrHashDirectoryNotFound   = errors.New("hash directory not found")
-    ErrHashDirectoryPermission = errors.New("hash directory has invalid permissions")
-
-    // マニフェスト関連
-    ErrManifestNotFound      = errors.New("hash manifest not found")
-    ErrManifestPermission    = errors.New("hash manifest has invalid permissions")
-    ErrManifestFormat        = errors.New("invalid manifest format")
-    ErrManifestVersion       = errors.New("unsupported manifest version")
-
-    // ファイル検証関連
-    ErrConfigHashMismatch    = errors.New("config file hash mismatch")
-    ErrConfigFileNotFound    = errors.New("config file not found")
-    ErrConfigFilePermission  = errors.New("config file has invalid permissions")
-
     // 設定関連
-    ErrVerificationDisabled  = errors.New("verification is disabled")
-    ErrInvalidPhase         = errors.New("invalid verification phase")
-    ErrInvalidConfiguration = errors.New("invalid verification configuration")
+    ErrVerificationDisabled = errors.New("verification is disabled")
+    ErrHashDirectoryEmpty = errors.New("hash directory cannot be empty")
+    ErrHashDirectoryInvalid = errors.New("hash directory is invalid")
+    ErrConfigNil = errors.New("config cannot be nil")
+
+    // マネージャー関連
+    ErrSecurityValidatorNotInitialized = errors.New("security validator not initialized")
 )
+
+// 構造化エラー
+type Error struct {
+    Op       string // operation that failed
+    Path     string // file path (if applicable)
+    Expected string // expected value (if applicable)
+    Actual   string // actual value (if applicable)
+    Err      error  // underlying error
+}
+
+func (e *Error) Error() string {
+    if e.Path != "" {
+        return fmt.Sprintf("verification error in %s for %s: %v", e.Op, e.Path, e.Err)
+    }
+    return fmt.Sprintf("verification error in %s: %v", e.Op, e.Err)
+}
 ```
 
 ### 4.2 エラーメッセージ設計
@@ -337,22 +282,10 @@ slog.Warn("Configuration file integrity verification is not enabled",
 # 検証機能設定
 [verification]
 # 検証機能の有効/無効 (true/false)
-enabled = true
-
-# 実装フェーズ (1: 警告のみ, 2: 設定ファイル検証, 3: 全ファイル検証)
-phase = 2
+enabled = false
 
 # ハッシュファイル格納ディレクトリ
-hash_directory = "/usr/local/etc/go-safe-cmd-runner/hashes"
-
-# マニフェストファイル名
-manifest_file = "manifest.json"
-
-# 検証失敗時の動作 ("exit", "warn", "ignore")
-on_failure = "exit"
-
-# タイムアウト設定（秒）
-timeout = 30
+hash_directory = "/etc/go-safe-cmd-runner/hashes"
 
 # 既存の設定
 [global]

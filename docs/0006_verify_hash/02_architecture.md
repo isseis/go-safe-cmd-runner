@@ -7,7 +7,7 @@
 ### 1.1 設計原則
 
 - **セキュリティファースト**: 改竄検出は起動時の最初期段階で実行
-- **段階的実装**: Phase 1（警告）、Phase 2（設定ファイル検証）、Phase 3（実行ファイル検証）
+- **シンプルな制御**: 設定による機能の有効/無効制御
 - **既存コンポーネント活用**: filevalidator、security パッケージの再利用
 - **最小権限原則**: ハッシュファイルは root のみ書き込み可能
 
@@ -29,10 +29,9 @@
 ┌─────────────────────────────────────────┐
 │        Config Hash Verification        │
 ├─────────────────────────────────────────┤
-│  VerificationManager                    │
-│  ├─ LoadHashManifest()                  │
+│  Manager                                │
 │  ├─ VerifyConfigFile()                  │
-│  └─ ValidateHashFilePermissions()       │
+│  └─ ValidateHashDirectory()             │
 └─────────────────────────────────────────┘
                     │
                     ▼
@@ -51,63 +50,43 @@
 ### 2.2 データフロー
 
 ```
-[起動] → [ハッシュマニフェスト読み込み] → [設定ファイル検証] → [設定ファイル読み込み] → [コマンド実行]
-   │              │                      │                   │
-   │              │                      │                   └─ 成功時: 通常動作
-   │              │                      │
-   │              │                      └─ 失敗時: エラー終了
-   │              │
-   │              └─ 失敗時: エラー終了
-   │
-   └─ Phase 1: 警告表示のみ
+[起動] → [検証設定チェック] → [設定ファイル検証] → [設定ファイル読み込み] → [コマンド実行]
+   │           │                     │                   │
+   │           │                     │                   └─ 成功時: 通常動作
+   │           │                     │
+   │           │                     └─ 失敗時: エラー終了
+   │           │
+   │           └─ 無効時: 検証スキップ
 ```
 
 ## 3. 詳細設計
 
 ### 3.1 新規コンポーネント設計
 
-#### 3.1.1 VerificationManager
+#### 3.1.1 Manager
 
 ```go
 // Package verification provides config file integrity verification
 package verification
 
-type VerificationManager struct {
-    hashDir      string                    // ハッシュファイル格納ディレクトリ
-    validator    *filevalidator.Validator  // ファイル検証用
-    security     *security.Validator       // セキュリティ検証用
-    fs           common.FileSystem         // ファイルシステム抽象化
+type Manager struct {
+    config    *Config                    // 設定
+    fs        common.FileSystem          // ファイルシステム抽象化
+    validator *filevalidator.Validator   // ファイル検証用
+    security  *security.Validator        // セキュリティ検証用
 }
 
 type Config struct {
-    HashDirectory string // ハッシュファイル格納ディレクトリ
-    Enabled       bool   // 検証機能の有効/無効
+    Enabled       bool   `toml:"enabled"`        // 検証機能の有効/無効
+    HashDirectory string `toml:"hash_directory"` // ハッシュファイル格納ディレクトリ
 }
 
 // メソッド
-func NewVerificationManager(config *Config, fs common.FileSystem) (*VerificationManager, error)
-func (vm *VerificationManager) VerifyConfigFile(configPath string) error
-func (vm *VerificationManager) ValidateHashDirectory() error
-```
-
-#### 3.1.2 Phase管理
-
-```go
-// Phase定義
-type Phase int
-
-const (
-    PhaseWarningOnly Phase = iota  // Phase 1: 警告のみ
-    PhaseConfigVerify              // Phase 2: 設定ファイル検証
-    PhaseFullVerify                // Phase 3: 全ファイル検証（将来）
-)
-
-// 設定による Phase 制御
-type VerificationConfig struct {
-    Phase         Phase  `toml:"phase"`
-    HashDirectory string `toml:"hash_directory"`
-    Enabled       bool   `toml:"enabled"`
-}
+func NewManager(config *Config) (*Manager, error)
+func NewManagerWithFS(config *Config, fs common.FileSystem) (*Manager, error)
+func (vm *Manager) VerifyConfigFile(configPath string) error
+func (vm *Manager) ValidateHashDirectory() error
+func (vm *Manager) IsEnabled() bool
 ```
 
 ### 3.2 既存コンポーネントとの統合
@@ -116,35 +95,27 @@ type VerificationConfig struct {
 
 ```go
 func main() {
-    // 1. 検証マネージャーの初期化
-    verificationManager, err := verification.NewVerificationManager(...)
+    // 1. 設定ファイル読み込み
+    cfgLoader := config.NewLoader()
+    cfg, err := cfgLoader.LoadConfig(*configPath)
     if err != nil {
-        log.Fatal("Failed to initialize verification manager:", err)
+        return fmt.Errorf("failed to load config: %w", err)
     }
 
-    // 2. 設定ファイル検証（Phase 2以降）
-    if err := verificationManager.VerifyConfigFile(configPath); err != nil {
-        log.Fatal("Config file verification failed:", err)
+    // 2. 検証マネージャーの初期化
+    verificationManager, err := verification.NewManager(&cfg.Verification)
+    if err != nil {
+        return fmt.Errorf("failed to initialize verification: %w", err)
     }
 
-    // 3. 既存の設定読み込み処理
-    loader := config.NewLoader()
-    cfg, err := loader.LoadConfig(configPath)
+    // 3. 設定ファイル検証
+    if err := verificationManager.VerifyConfigFile(*configPath); err != nil {
+        return fmt.Errorf("config verification failed: %w", err)
+    }
+
+    // 4. 既存のRunner処理
+    runner, err := runner.NewRunnerWithComponents(cfg, cfgLoader.GetTemplateEngine(), nil)
     // ...
-}
-```
-
-#### 3.2.2 config/loader.go の変更点
-
-```go
-// Phase 1: 警告メッセージの追加
-func (l *Loader) LoadConfig(path string) (*runnertypes.Config, error) {
-    // 警告ログの出力
-    slog.Warn("Configuration file integrity verification is not implemented yet",
-        "phase", "1",
-        "security_risk", "Configuration files may be tampered without detection")
-
-    // 既存の処理...
 }
 ```
 
@@ -153,13 +124,13 @@ func (l *Loader) LoadConfig(path string) (*runnertypes.Config, error) {
 ```
 internal/
 ├── verification/           # 新規パッケージ
-│   ├── manager.go         # VerificationManager実装
+│   ├── manager.go         # Manager実装
 │   ├── manager_test.go    # テスト
 │   ├── config.go          # 設定構造体
 │   └── errors.go          # エラー定義
 ├── runner/
 │   └── config/
-│       └── loader.go      # 警告メッセージ追加
+│       └── loader.go      # 既存（変更なし）
 └── filevalidator/         # 既存（活用）
     └── validator.go
 ```
@@ -169,8 +140,7 @@ internal/
 ```toml
 # sample/config.toml
 [verification]
-enabled = true
-phase = 2  # 1: 警告のみ, 2: 設定ファイル検証, 3: 全ファイル検証
+enabled = false  # 検証機能の有効/無効
 hash_directory = "/etc/go-safe-cmd-runner/hashes"
 
 [global]
@@ -183,37 +153,36 @@ hash_directory = "/etc/go-safe-cmd-runner/hashes"
 
 ```
 /etc/go-safe-cmd-runner/hashes/
-├── manifest.json         # ハッシュマニフェストファイル
+├── config.toml.hash      # 設定ファイルハッシュ
 │   └── 権限: 644 (root:root)
-└── config_hashes/        # 設定ファイルハッシュ格納
-    └── 権限: 755 (root:root)
+└── metadata.json         # ハッシュメタデータ
+    └── 権限: 644 (root:root)
 ```
 
 ### 4.2 検証順序
 
-1. **ハッシュディレクトリ権限検証**
+1. **設定による有効性確認**
+   - 検証機能が有効であることを確認
+   - 無効時は検証をスキップ
+
+2. **ハッシュディレクトリ権限検証**
    - ディレクトリ所有者が root であることを確認
    - 書き込み権限が root のみであることを確認
 
-2. **ハッシュマニフェスト検証**
-   - マニフェストファイルの存在確認
-   - マニフェストファイルの権限確認
-
 3. **設定ファイル検証**
-   - 設定ファイルのハッシュ値計算
-   - マニフェストとの比較
+   - filevalidator.Validator を使用してハッシュ値検証
+   - ハッシュ不一致時はエラー終了
 
 ### 4.3 エラーハンドリング
 
 ```go
 // verification/errors.go
 var (
-    ErrHashDirectoryNotFound = errors.New("hash directory not found")
-    ErrHashDirectoryPermission = errors.New("hash directory has invalid permissions")
-    ErrManifestNotFound = errors.New("hash manifest not found")
-    ErrManifestPermission = errors.New("hash manifest has invalid permissions")
-    ErrConfigHashMismatch = errors.New("config file hash mismatch")
     ErrVerificationDisabled = errors.New("verification is disabled")
+    ErrHashDirectoryEmpty = errors.New("hash directory cannot be empty")
+    ErrHashDirectoryInvalid = errors.New("hash directory is invalid")
+    ErrConfigNil = errors.New("config cannot be nil")
+    ErrSecurityValidatorNotInitialized = errors.New("security validator not initialized")
 )
 ```
 
@@ -222,12 +191,12 @@ var (
 ### 5.1 起動時間への影響
 
 - **ハッシュ計算**: SHA-256計算は高速（設定ファイルサイズは通常小さい）
-- **ファイルI/O**: 最小限（マニフェスト読み込み + 設定ファイル読み込み）
+- **ファイルI/O**: 最小限（ハッシュファイル読み込み + 設定ファイル読み込み）
 - **予想起動時間増加**: < 50ms
 
 ### 5.2 メモリ使用量
 
-- **ハッシュマニフェスト**: < 1KB（通常）
+- **ハッシュファイル**: < 1KB（通常）
 - **一時的なハッシュ計算**: < 32bytes per file
 - **総メモリ増加**: < 10KB
 
@@ -238,51 +207,48 @@ var (
 ```
 verification/
 ├── manager_test.go
-│   ├─ TestVerificationManager_Success
-│   ├─ TestVerificationManager_HashMismatch
-│   ├─ TestVerificationManager_MissingManifest
-│   ├─ TestVerificationManager_InvalidPermissions
-│   └─ TestVerificationManager_DisabledMode
-├── integration_test.go
-│   ├─ TestEndToEnd_VerificationSuccess
-│   ├─ TestEndToEnd_VerificationFailure
-│   └─ TestEndToEnd_WarningMode
-└── testdata/
-    ├─ valid_manifest.json
-    ├─ invalid_manifest.json
-    └─ test_configs/
+│   ├─ TestNewManager
+│   ├─ TestManager_IsEnabled
+│   ├─ TestManager_VerifyConfigFile
+│   ├─ TestManager_ValidateHashDirectory
+│   └─ TestManager_DisabledMode
+├── config_test.go
+│   ├─ TestDefaultConfig
+│   ├─ TestConfig_Validate
+│   └─ TestConfig_IsEnabled
+└── errors_test.go
+    ├─ TestError_Error
+    ├─ TestError_Unwrap
+    └─ TestError_Is
 ```
 
 ### 6.2 モックファイルシステム
 
 ```go
 // テストでのMockFileSystem使用
-func TestVerificationManager_WithMockFS(t *testing.T) {
+func TestManager_WithMockFS(t *testing.T) {
     mockFS := common.NewMockFileSystem()
-    mockFS.AddFile("/etc/go-safe-cmd-runner/hashes/manifest.json", 0644, validManifestData)
+    mockFS.AddFile("/etc/go-safe-cmd-runner/hashes/config.toml.hash", 0644, validHashData)
 
-    vm := NewVerificationManagerWithFS(config, mockFS)
+    vm := NewManagerWithFS(config, mockFS)
     err := vm.VerifyConfigFile("/path/to/config.toml")
     assert.NoError(t, err)
 }
 ```
 
-## 7. 段階的実装戦略
+## 7. 実装状況
 
-### Phase 1: 警告モード（優先度: 高）
-- config/loader.go に警告ログ追加
-- README.md にセキュリティ制限事項記載
-- --verify-config オプションのヘルプ追加
+### 設定ファイル検証機能（実装完了）
+- ✅ verification パッケージ実装
+- ✅ main.go への統合
+- ✅ テストケース作成
+- ✅ エラーハンドリング
+- ✅ 設定による有効/無効制御
 
-### Phase 2: 設定ファイル検証（優先度: 高）
-- verification パッケージ実装
-- main.go への統合
-- テストケース作成
-
-### Phase 3: 実行ファイル検証（優先度: 低、将来実装）
-- verification パッケージ拡張
-- 実行ファイルハッシュ管理
-- 動的検証機能
+### 将来の拡張（未実装）
+- ⏳ 実行ファイル検証
+- ⏳ 動的ライブラリ検証
+- ⏳ 参照ファイル検証
 
 ## 8. 運用考慮事項
 
@@ -296,27 +262,30 @@ sudo chmod 755 /etc/go-safe-cmd-runner/hashes
 
 # 設定ファイルハッシュの記録
 sudo ./build/record /path/to/config.toml
+
+# 設定ファイルで検証機能を有効化
+# [verification]
+# enabled = true
+# hash_directory = "/etc/go-safe-cmd-runner/hashes"
 ```
 
 ### 8.2 監視とロギング
 
 ```go
 // 構造化ログの例
-slog.Info("Config verification completed",
+slog.Info("Configuration file verification successful",
     "config_path", configPath,
-    "verification_time_ms", elapsedTime,
     "hash_algorithm", "SHA-256")
 
-slog.Error("Config verification failed",
+slog.Error("Configuration file verification failed",
     "config_path", configPath,
-    "error", err,
-    "hash_expected", expectedHash,
-    "hash_actual", actualHash)
+    "error", err.Error(),
+    "hash_directory", hashDirectory)
 ```
 
 ## 9. 将来拡張
 
-### 9.1 Phase 3 拡張ポイント
+### 9.1 拡張ポイント
 
 - 実行ファイルバイナリの検証
 - 動的ライブラリの検証
@@ -325,7 +294,7 @@ slog.Error("Config verification failed",
 ### 9.2 設定拡張
 
 ```toml
-[verification.advanced]  # Phase 3 で追加予定
+[verification.advanced]  # 将来追加予定
 verify_binaries = true
 verify_libraries = true
 verify_referenced_files = true
