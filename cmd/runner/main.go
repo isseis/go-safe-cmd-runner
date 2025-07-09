@@ -43,13 +43,13 @@ func run() error {
 
 	// Handle verify-config option
 	if *verifyConfig {
-		fmt.Println("ERROR: Configuration verification is not yet implemented")
-		fmt.Println("Current implementation phase: 1 (warning only)")
-		fmt.Println("")
-		fmt.Println("WARNING: This feature is not yet implemented. Configuration files are currently")
-		fmt.Println("not protected against tampering. Use appropriate file permissions and monitoring")
-		fmt.Println("tools to mitigate this security risk.")
-		return fmt.Errorf("%w", ErrConfigVerificationNotImplemented)
+		fmt.Fprintln(os.Stderr, "ERROR: Configuration verification is not yet implemented")
+		fmt.Fprintln(os.Stderr, "Current implementation phase: 1 (warning only)")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "WARNING: This feature is not yet implemented. Configuration files are currently")
+		fmt.Fprintln(os.Stderr, "not protected against tampering. Use appropriate file permissions and monitoring")
+		fmt.Fprintln(os.Stderr, "tools to mitigate this security risk.")
+		return ErrConfigVerificationNotImplemented
 	}
 
 	// Set up context with cancellation
@@ -58,7 +58,7 @@ func run() error {
 
 	// Load configuration
 	if *configPath == "" {
-		return fmt.Errorf("%w", ErrConfigPathRequired)
+		return ErrConfigPathRequired
 	}
 
 	// Initialize config loader
