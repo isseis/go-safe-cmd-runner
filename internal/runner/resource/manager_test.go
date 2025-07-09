@@ -1,11 +1,11 @@
 package resource
 
 import (
-	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
@@ -29,9 +29,21 @@ func TestNewManager(t *testing.T) {
 	}
 }
 
+func TestNewManagerWithFS(t *testing.T) {
+	mockFS := common.NewMockFileSystem()
+	manager := NewManagerWithFS("/tmp", mockFS)
+	
+	if manager == nil {
+		t.Fatal("NewManagerWithFS() returned nil")
+	}
+	if manager.fs != mockFS {
+		t.Error("Manager filesystem should be set to provided filesystem")
+	}
+}
+
 func TestCreateTempDir(t *testing.T) {
-	tempDir := t.TempDir()
-	manager := NewManager(tempDir)
+	mockFS := common.NewMockFileSystem()
+	manager := NewManagerWithFS("/tmp", mockFS)
 
 	resource, err := manager.CreateTempDir("test-command", true)
 	if err != nil {
@@ -54,20 +66,24 @@ func TestCreateTempDir(t *testing.T) {
 		t.Error("Resource AutoCleanup should be true")
 	}
 
-	// Check that directory was actually created
-	if _, err := os.Stat(resource.Path); os.IsNotExist(err) {
+	// Check that directory was actually created in mock filesystem
+	exists, err := mockFS.FileExists(resource.Path)
+	if err != nil {
+		t.Fatalf("FileExists failed: %v", err)
+	}
+	if !exists {
 		t.Errorf("Temporary directory was not created: %s", resource.Path)
 	}
 
 	// Check that path is under the base directory
-	if !strings.HasPrefix(resource.Path, tempDir) {
-		t.Errorf("Resource path %s is not under base directory %s", resource.Path, tempDir)
+	if !strings.HasPrefix(resource.Path, "/tmp") {
+		t.Errorf("Resource path %s is not under base directory %s", resource.Path, "/tmp")
 	}
 }
 
 func TestGetResource(t *testing.T) {
-	tempDir := t.TempDir()
-	manager := NewManager(tempDir)
+	mockFS := common.NewMockFileSystem()
+	manager := NewManagerWithFS("/tmp", mockFS)
 
 	// Create a resource
 	resource, err := manager.CreateTempDir("test-command", true)
@@ -78,7 +94,7 @@ func TestGetResource(t *testing.T) {
 	// Retrieve the resource
 	retrieved, err := manager.GetResource(resource.ID)
 	if err != nil {
-		t.Errorf("GetResource() failed: %v", err)
+		t.Fatalf("GetResource() failed: %v", err)
 	}
 
 	if retrieved.ID != resource.ID {
@@ -93,13 +109,13 @@ func TestGetResource(t *testing.T) {
 }
 
 func TestListResources(t *testing.T) {
-	tempDir := t.TempDir()
-	manager := NewManager(tempDir)
+	mockFS := common.NewMockFileSystem()
+	manager := NewManagerWithFS("/tmp", mockFS)
 
 	// Initially should be empty
 	resources := manager.ListResources()
 	if len(resources) != 0 {
-		t.Errorf("ListResources() initial length = %d, want 0", len(resources))
+		t.Errorf("ListResources() length = %d, want 0", len(resources))
 	}
 
 	// Create some resources
@@ -120,8 +136,8 @@ func TestListResources(t *testing.T) {
 }
 
 func TestCleanupResource(t *testing.T) {
-	tempDir := t.TempDir()
-	manager := NewManager(tempDir)
+	mockFS := common.NewMockFileSystem()
+	manager := NewManagerWithFS("/tmp", mockFS)
 
 	// Create a resource
 	resource, err := manager.CreateTempDir("test-command", true)
@@ -130,7 +146,11 @@ func TestCleanupResource(t *testing.T) {
 	}
 
 	// Verify directory exists
-	if _, err := os.Stat(resource.Path); os.IsNotExist(err) {
+	exists, err := mockFS.FileExists(resource.Path)
+	if err != nil {
+		t.Fatalf("FileExists failed: %v", err)
+	}
+	if !exists {
 		t.Fatalf("Temporary directory was not created: %s", resource.Path)
 	}
 
@@ -141,14 +161,18 @@ func TestCleanupResource(t *testing.T) {
 	}
 
 	// Verify directory was removed
-	if _, err := os.Stat(resource.Path); !os.IsNotExist(err) {
-		t.Errorf("Temporary directory was not removed: %s", resource.Path)
+	exists, err = mockFS.FileExists(resource.Path)
+	if err != nil {
+		t.Fatalf("FileExists failed: %v", err)
+	}
+	if exists {
+		t.Errorf("Resource directory should have been removed: %s", resource.Path)
 	}
 
 	// Verify resource was removed from manager
 	_, err = manager.GetResource(resource.ID)
 	if err == nil {
-		t.Error("Resource should be removed from manager after cleanup")
+		t.Error("Resource should have been removed from manager")
 	}
 
 	// Try to cleanup non-existent resource
@@ -159,8 +183,8 @@ func TestCleanupResource(t *testing.T) {
 }
 
 func TestCleanupAll(t *testing.T) {
-	tempDir := t.TempDir()
-	manager := NewManager(tempDir)
+	mockFS := common.NewMockFileSystem()
+	manager := NewManagerWithFS("/tmp", mockFS)
 
 	// Create multiple resources
 	resource1, err := manager.CreateTempDir("test-command-1", true)
@@ -173,12 +197,21 @@ func TestCleanupAll(t *testing.T) {
 		t.Fatalf("CreateTempDir() failed: %v", err)
 	}
 
-	// Verify both directories exist
-	if _, err := os.Stat(resource1.Path); os.IsNotExist(err) {
-		t.Fatalf("Temporary directory 1 was not created: %s", resource1.Path)
+	// Verify directories exist
+	exists, err := mockFS.FileExists(resource1.Path)
+	if err != nil {
+		t.Fatalf("FileExists failed: %v", err)
 	}
-	if _, err := os.Stat(resource2.Path); os.IsNotExist(err) {
-		t.Fatalf("Temporary directory 2 was not created: %s", resource2.Path)
+	if !exists {
+		t.Errorf("Resource1 directory should exist: %s", resource1.Path)
+	}
+
+	exists, err = mockFS.FileExists(resource2.Path)
+	if err != nil {
+		t.Fatalf("FileExists failed: %v", err)
+	}
+	if !exists {
+		t.Errorf("Resource2 directory should exist: %s", resource2.Path)
 	}
 
 	// Clean up all resources
@@ -187,12 +220,21 @@ func TestCleanupAll(t *testing.T) {
 		t.Errorf("CleanupAll() failed: %v", err)
 	}
 
-	// Verify both directories were removed
-	if _, err := os.Stat(resource1.Path); !os.IsNotExist(err) {
-		t.Errorf("Temporary directory 1 was not removed: %s", resource1.Path)
+	// Verify directories were removed
+	exists, err = mockFS.FileExists(resource1.Path)
+	if err != nil {
+		t.Fatalf("FileExists failed: %v", err)
 	}
-	if _, err := os.Stat(resource2.Path); !os.IsNotExist(err) {
-		t.Errorf("Temporary directory 2 was not removed: %s", resource2.Path)
+	if exists {
+		t.Errorf("Resource1 directory should have been removed: %s", resource1.Path)
+	}
+
+	exists, err = mockFS.FileExists(resource2.Path)
+	if err != nil {
+		t.Fatalf("FileExists failed: %v", err)
+	}
+	if exists {
+		t.Errorf("Resource2 directory should have been removed: %s", resource2.Path)
 	}
 
 	// Verify all resources were removed from manager
@@ -203,8 +245,8 @@ func TestCleanupAll(t *testing.T) {
 }
 
 func TestCleanupAutoCleanup(t *testing.T) {
-	tempDir := t.TempDir()
-	manager := NewManager(tempDir)
+	mockFS := common.NewMockFileSystem()
+	manager := NewManagerWithFS("/tmp", mockFS)
 
 	// Create resources with different auto-cleanup settings
 	resource1, err := manager.CreateTempDir("test-command-1", true) // auto-cleanup
@@ -217,23 +259,31 @@ func TestCleanupAutoCleanup(t *testing.T) {
 		t.Fatalf("CreateTempDir() failed: %v", err)
 	}
 
-	// Clean up auto-cleanup resources only
+	// Clean up auto-cleanup resources
 	err = manager.CleanupAutoCleanup()
 	if err != nil {
 		t.Errorf("CleanupAutoCleanup() failed: %v", err)
 	}
 
 	// Verify auto-cleanup resource was removed
-	if _, err := os.Stat(resource1.Path); !os.IsNotExist(err) {
-		t.Errorf("Auto-cleanup directory was not removed: %s", resource1.Path)
+	exists, err := mockFS.FileExists(resource1.Path)
+	if err != nil {
+		t.Fatalf("FileExists failed: %v", err)
+	}
+	if exists {
+		t.Errorf("Auto-cleanup resource should have been removed: %s", resource1.Path)
 	}
 
 	// Verify non-auto-cleanup resource still exists
-	if _, err := os.Stat(resource2.Path); os.IsNotExist(err) {
-		t.Errorf("Non-auto-cleanup directory was incorrectly removed: %s", resource2.Path)
+	exists, err = mockFS.FileExists(resource2.Path)
+	if err != nil {
+		t.Fatalf("FileExists failed: %v", err)
+	}
+	if !exists {
+		t.Errorf("Non-auto-cleanup resource should still exist: %s", resource2.Path)
 	}
 
-	// Verify only the non-auto-cleanup resource remains
+	// Verify only non-auto-cleanup resource remains
 	resources := manager.ListResources()
 	if len(resources) != 1 {
 		t.Errorf("Expected 1 resource after CleanupAutoCleanup(), got %d", len(resources))
@@ -244,8 +294,8 @@ func TestCleanupAutoCleanup(t *testing.T) {
 }
 
 func TestCleanupByCommand(t *testing.T) {
-	tempDir := t.TempDir()
-	manager := NewManager(tempDir)
+	mockFS := common.NewMockFileSystem()
+	manager := NewManagerWithFS("/tmp", mockFS)
 
 	// Create resources for different commands
 	resource1, err := manager.CreateTempDir("command-a", true)
@@ -258,34 +308,47 @@ func TestCleanupByCommand(t *testing.T) {
 		t.Fatalf("CreateTempDir() failed: %v", err)
 	}
 
-	resource3, err := manager.CreateTempDir("command-a", true)
+	resource3, err := manager.CreateTempDir("command-a", false)
 	if err != nil {
 		t.Fatalf("CreateTempDir() failed: %v", err)
 	}
 
-	// Clean up resources for command-a only
+	// Clean up resources for command-a
 	err = manager.CleanupByCommand("command-a")
 	if err != nil {
 		t.Errorf("CleanupByCommand() failed: %v", err)
 	}
 
 	// Verify command-a resources were removed
-	if _, err := os.Stat(resource1.Path); !os.IsNotExist(err) {
-		t.Errorf("Command-a resource 1 was not removed: %s", resource1.Path)
+	exists, err := mockFS.FileExists(resource1.Path)
+	if err != nil {
+		t.Fatalf("FileExists failed: %v", err)
 	}
-	if _, err := os.Stat(resource3.Path); !os.IsNotExist(err) {
-		t.Errorf("Command-a resource 3 was not removed: %s", resource3.Path)
+	if exists {
+		t.Errorf("Command-a resource1 should have been removed: %s", resource1.Path)
+	}
+
+	exists, err = mockFS.FileExists(resource3.Path)
+	if err != nil {
+		t.Fatalf("FileExists failed: %v", err)
+	}
+	if exists {
+		t.Errorf("Command-a resource3 should have been removed: %s", resource3.Path)
 	}
 
 	// Verify command-b resource still exists
-	if _, err := os.Stat(resource2.Path); os.IsNotExist(err) {
-		t.Errorf("Command-b resource was incorrectly removed: %s", resource2.Path)
+	exists, err = mockFS.FileExists(resource2.Path)
+	if err != nil {
+		t.Fatalf("FileExists failed: %v", err)
+	}
+	if !exists {
+		t.Errorf("Command-b resource should still exist: %s", resource2.Path)
 	}
 }
 
 func TestGetResourcesForCommand(t *testing.T) {
-	tempDir := t.TempDir()
-	manager := NewManager(tempDir)
+	mockFS := common.NewMockFileSystem()
+	manager := NewManagerWithFS("/tmp", mockFS)
 
 	// Create resources for different commands
 	_, err := manager.CreateTempDir("command-a", true)
@@ -298,7 +361,7 @@ func TestGetResourcesForCommand(t *testing.T) {
 		t.Fatalf("CreateTempDir() failed: %v", err)
 	}
 
-	_, err = manager.CreateTempDir("command-a", true)
+	_, err = manager.CreateTempDir("command-a", false)
 	if err != nil {
 		t.Fatalf("CreateTempDir() failed: %v", err)
 	}
@@ -323,8 +386,8 @@ func TestGetResourcesForCommand(t *testing.T) {
 }
 
 func TestCleanupOldResources(t *testing.T) {
-	tempDir := t.TempDir()
-	manager := NewManager(tempDir)
+	mockFS := common.NewMockFileSystem()
+	manager := NewManagerWithFS("/tmp", mockFS)
 
 	// Create a resource
 	resource, err := manager.CreateTempDir("test-command", true)
@@ -332,8 +395,9 @@ func TestCleanupOldResources(t *testing.T) {
 		t.Fatalf("CreateTempDir() failed: %v", err)
 	}
 
-	// Manually set creation time to past
+	// Simulate old resource by modifying creation time
 	resource.Created = time.Now().Add(-2 * time.Hour)
+	manager.resources[resource.ID] = resource
 
 	// Clean up resources older than 1 hour
 	err = manager.CleanupOldResources(1 * time.Hour)
@@ -342,48 +406,40 @@ func TestCleanupOldResources(t *testing.T) {
 	}
 
 	// Verify old resource was removed
-	if _, err := os.Stat(resource.Path); !os.IsNotExist(err) {
-		t.Errorf("Old resource was not removed: %s", resource.Path)
+	exists, err := mockFS.FileExists(resource.Path)
+	if err != nil {
+		t.Fatalf("FileExists failed: %v", err)
+	}
+	if exists {
+		t.Errorf("Old resource should have been removed: %s", resource.Path)
+	}
+
+	// Verify resource was removed from manager
+	resources := manager.ListResources()
+	if len(resources) != 0 {
+		t.Errorf("Resources should be empty after CleanupOldResources(), got %d", len(resources))
 	}
 }
 
 func TestSanitizeName(t *testing.T) {
 	tests := []struct {
-		name  string
-		input string
-		want  string
+		name string
+		want string
 	}{
-		{
-			name:  "simple name",
-			input: "test",
-			want:  "test",
-		},
-		{
-			name:  "name with spaces",
-			input: "test command",
-			want:  "test_command",
-		},
-		{
-			name:  "name with special characters",
-			input: "test/command!@#",
-			want:  "test_command___",
-		},
-		{
-			name:  "empty name",
-			input: "",
-			want:  "unnamed",
-		},
-		{
-			name:  "name with hyphens and underscores",
-			input: "test-command_name",
-			want:  "test-command_name",
-		},
+		{"simple", "simple"},
+		{"with-hyphens", "with-hyphens"},
+		{"with_underscores", "with_underscores"},
+		{"with spaces", "with_spaces"},
+		{"with/slashes", "with_slashes"},
+		{"with@symbols", "with_symbols"},
+		{"", "unnamed"},
+		{"123", "123"},
+		{"Mixed-CASE_123", "Mixed-CASE_123"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := sanitizeName(tt.input)
-			if got != tt.want {
+			if got := sanitizeName(tt.name); got != tt.want {
 				t.Errorf("sanitizeName() = %v, want %v", got, tt.want)
 			}
 		})
@@ -391,8 +447,8 @@ func TestSanitizeName(t *testing.T) {
 }
 
 func TestApplyResourceToCommand(t *testing.T) {
-	tempDir := t.TempDir()
-	manager := NewManager(tempDir)
+	mockFS := common.NewMockFileSystem()
+	manager := NewManagerWithFS("/tmp", mockFS)
 
 	cmd := &runnertypes.Command{
 		Name: "test-command",
@@ -401,44 +457,93 @@ func TestApplyResourceToCommand(t *testing.T) {
 		Dir:  "",
 	}
 
-	// Test with temp dir enabled
+	// Test with temp directory disabled
+	err := manager.ApplyResourceToCommand(cmd, false)
+	if err != nil {
+		t.Errorf("ApplyResourceToCommand() failed: %v", err)
+	}
+	if cmd.Dir != "" {
+		t.Error("Command directory should not be modified when temp directory is disabled")
+	}
+
+	// Test with temp directory enabled
+	err = manager.ApplyResourceToCommand(cmd, true)
+	if err != nil {
+		t.Errorf("ApplyResourceToCommand() failed: %v", err)
+	}
+	if cmd.Dir == "" {
+		t.Error("Command directory should be set when temp directory is enabled")
+	}
+
+	// Verify temp directory was created
+	exists, err := mockFS.FileExists(cmd.Dir)
+	if err != nil {
+		t.Fatalf("FileExists failed: %v", err)
+	}
+	if !exists {
+		t.Errorf("Temp directory should exist: %s", cmd.Dir)
+	}
+
+	// Verify TEMP_DIR environment variable was added
+	found := false
+	for _, env := range cmd.Env {
+		if strings.HasPrefix(env, "TEMP_DIR=") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("TEMP_DIR environment variable should be added")
+	}
+}
+
+func TestApplyResourceToCommandWithExistingDir(t *testing.T) {
+	mockFS := common.NewMockFileSystem()
+	manager := NewManagerWithFS("/tmp", mockFS)
+
+	cmd := &runnertypes.Command{
+		Name: "test-command",
+		Cmd:  "echo",
+		Args: []string{"hello"},
+		Dir:  "/existing/dir",
+	}
+
+	// Test with temp directory enabled but existing directory
 	err := manager.ApplyResourceToCommand(cmd, true)
 	if err != nil {
 		t.Errorf("ApplyResourceToCommand() failed: %v", err)
 	}
-
-	// Verify command directory was set
-	if cmd.Dir == "" {
-		t.Error("Command directory should be set when temp dir is enabled")
+	if cmd.Dir != "/existing/dir" {
+		t.Error("Command directory should not be modified when already set")
 	}
+}
 
-	// Verify TEMP_DIR environment variable was added
-	hasTempDir := false
-	for _, env := range cmd.Env {
-		if len(env) > 9 && env[:9] == "TEMP_DIR=" {
-			hasTempDir = true
-			break
-		}
-	}
-	if !hasTempDir {
-		t.Error("TEMP_DIR environment variable should be added")
-	}
+func TestApplyResourceToCommandWithTemplatePlaceholder(t *testing.T) {
+	mockFS := common.NewMockFileSystem()
+	manager := NewManagerWithFS("/tmp", mockFS)
 
-	// Test with temp dir disabled
-	cmd2 := &runnertypes.Command{
-		Name: "test-command-2",
+	cmd := &runnertypes.Command{
+		Name: "test-command",
 		Cmd:  "echo",
 		Args: []string{"hello"},
-		Dir:  "",
+		Dir:  "{{.temp_dir}}",
 	}
 
-	err = manager.ApplyResourceToCommand(cmd2, false)
+	// Test with temp directory enabled and template placeholder
+	err := manager.ApplyResourceToCommand(cmd, true)
 	if err != nil {
-		t.Errorf("ApplyResourceToCommand() with disabled temp dir failed: %v", err)
+		t.Errorf("ApplyResourceToCommand() failed: %v", err)
+	}
+	if cmd.Dir == "{{.temp_dir}}" {
+		t.Error("Template placeholder should be replaced with actual directory")
 	}
 
-	// Verify no changes were made
-	if cmd2.Dir != "" {
-		t.Error("Command directory should not be changed when temp dir is disabled")
+	// Verify temp directory was created
+	exists, err := mockFS.FileExists(cmd.Dir)
+	if err != nil {
+		t.Fatalf("FileExists failed: %v", err)
+	}
+	if !exists {
+		t.Errorf("Temp directory should exist: %s", cmd.Dir)
 	}
 }

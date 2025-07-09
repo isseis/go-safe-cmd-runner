@@ -7,9 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"path/filepath"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/template"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
@@ -19,6 +19,7 @@ import (
 // Loader handles loading and validating configurations
 type Loader struct {
 	templateEngine *template.Engine
+	fs             common.FileSystem
 }
 
 // Error definitions for the config package
@@ -38,8 +39,14 @@ const (
 
 // NewLoader creates a new config loader
 func NewLoader() *Loader {
+	return NewLoaderWithFS(common.NewDefaultFileSystem())
+}
+
+// NewLoaderWithFS creates a new config loader with a custom FileSystem
+func NewLoaderWithFS(fs common.FileSystem) *Loader {
 	return &Loader{
 		templateEngine: template.NewEngine(),
+		fs:             fs,
 	}
 }
 
@@ -65,7 +72,7 @@ func (l *Loader) LoadConfig(path string) (*runnertypes.Config, error) {
 
 	// Set default values if not specified
 	if cfg.Global.WorkDir == "" {
-		cfg.Global.WorkDir = os.TempDir()
+		cfg.Global.WorkDir = "/tmp"
 	}
 	if cfg.Global.Timeout == 0 {
 		cfg.Global.Timeout = defaultTimeout
