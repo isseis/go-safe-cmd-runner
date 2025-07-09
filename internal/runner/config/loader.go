@@ -72,7 +72,7 @@ func (l *Loader) LoadConfig(path string) (*runnertypes.Config, error) {
 
 	// Set default values if not specified
 	if cfg.Global.WorkDir == "" {
-		cfg.Global.WorkDir = "/tmp"
+		cfg.Global.WorkDir = l.fs.TempDir()
 	}
 	if cfg.Global.Timeout == 0 {
 		cfg.Global.Timeout = defaultTimeout

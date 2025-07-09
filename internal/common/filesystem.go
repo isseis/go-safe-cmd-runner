@@ -15,6 +15,9 @@ type FileSystem interface {
 	// CreateTempDir creates a temporary directory with the given prefix
 	CreateTempDir(prefix string) (string, error)
 
+	// TempDir returns the default directory for temporary files
+	TempDir() string
+
 	// MkdirAll creates a directory path recursively
 	MkdirAll(path string, perm os.FileMode) error
 
@@ -45,6 +48,11 @@ func NewDefaultFileSystem() *DefaultFileSystem {
 // CreateTempDir creates a temporary directory with the given prefix
 func (fs *DefaultFileSystem) CreateTempDir(prefix string) (string, error) {
 	return os.MkdirTemp("", prefix)
+}
+
+// TempDir returns the default directory for temporary files
+func (fs *DefaultFileSystem) TempDir() string {
+	return os.TempDir()
 }
 
 // MkdirAll creates a directory path recursively

@@ -76,6 +76,11 @@ func (m *MockFileSystem) CreateTempDir(prefix string) (string, error) {
 	return tempDir, nil
 }
 
+// TempDir returns the default directory for temporary files
+func (m *MockFileSystem) TempDir() string {
+	return "/tmp"
+}
+
 // MkdirAll creates directories and all parent directories in the mock filesystem
 func (m *MockFileSystem) MkdirAll(path string, perm os.FileMode) error {
 	// Normalize path
