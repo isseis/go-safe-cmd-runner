@@ -6,6 +6,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 
@@ -89,6 +90,9 @@ func (l *Loader) LoadConfig(path string) (*runnertypes.Config, error) {
 		return nil, err
 	}
 
+	// Check for deprecated fields and log warnings
+	l.validateUnimplementedFields(&cfg)
+
 	return &cfg, nil
 }
 
@@ -125,4 +129,34 @@ func (l *Loader) applyTemplates(cfg *runnertypes.Config) error {
 	}
 
 	return nil
+}
+
+// validateUnimplementedFields checks for unimplemented fields and logs warnings
+func (l *Loader) validateUnimplementedFields(cfg *runnertypes.Config) {
+	var warnings []string
+
+	for _, group := range cfg.Groups {
+		for _, cmd := range group.Commands {
+			if cmd.Privileged {
+				warnings = append(warnings, fmt.Sprintf(
+					"command '%s': privileged field is not yet implemented",
+					cmd.Name))
+			}
+		}
+	}
+
+	// Check templates for privileged field usage
+	for templateName, tmpl := range cfg.Templates {
+		if tmpl.Privileged {
+			warnings = append(warnings, fmt.Sprintf(
+				"template '%s': privileged field is not yet implemented",
+				templateName))
+		}
+	}
+
+	if len(warnings) > 0 {
+		for _, warning := range warnings {
+			log.Printf("Warning: %s", warning)
+		}
+	}
 }
