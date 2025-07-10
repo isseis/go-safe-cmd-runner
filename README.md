@@ -1,3 +1,5 @@
+NOTE: This project is for evaluating vibe coding, and not for production use.
+
 # go-safe-cmd-runner
 
 ## セキュリティ制限事項
