@@ -24,7 +24,7 @@ func setupTestFlags() func() {
 	logLevel = flag.String("log-level", "", "log level (debug, info, warn, error)")
 	dryRun = flag.Bool("dry-run", false, "print commands without executing them")
 	disableVerification = flag.Bool("disable-verification", false, "disable configuration file verification")
-	hashDirectory = flag.String("hash-directory", "/usr/local/etc/go-safe-cmd-runner/hashes", "directory containing hash files")
+	hashDirectory = flag.String("hash-directory", DefaultHashDirectory, "directory containing hash files")
 
 	// Return cleanup function to restore original state
 	return func() {
@@ -75,7 +75,7 @@ func TestGetVerificationConfig(t *testing.T) {
 
 		config := getVerificationConfig()
 		assert.True(t, config.Enabled, "verification should be enabled by default")
-		assert.Equal(t, "/usr/local/etc/go-safe-cmd-runner/hashes", config.HashDirectory)
+		assert.Equal(t, DefaultHashDirectory, config.HashDirectory)
 	})
 
 	t.Run("disabled via command line", func(t *testing.T) {
@@ -91,7 +91,7 @@ func TestGetVerificationConfig(t *testing.T) {
 
 		config := getVerificationConfig()
 		assert.False(t, config.Enabled, "verification should be disabled via command line")
-		assert.Equal(t, "/usr/local/etc/go-safe-cmd-runner/hashes", config.HashDirectory)
+		assert.Equal(t, DefaultHashDirectory, config.HashDirectory)
 	})
 
 	t.Run("disabled via environment variable", func(t *testing.T) {

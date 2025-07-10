@@ -77,8 +77,8 @@ linters:
         - assign
 
       ignored-numbers:
-        - '0o640' # Default file permissions for files
-        - '0o750' # Default file permissions for directories
+        - '0o644' # Default file permissions for files
+        - '0o755' # Default file permissions for directories
 
   exclusions:
     rules:

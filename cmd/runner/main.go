@@ -19,6 +19,12 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 )
 
+// Build-time variables (set via ldflags)
+var (
+	// DefaultHashDirectory is set at build time via ldflags
+	DefaultHashDirectory = "/etc/go-safe-cmd-runner/hashes" // fallback default
+)
+
 // Error definitions
 var (
 	ErrConfigPathRequired = errors.New("config file path is required")
@@ -30,7 +36,7 @@ var (
 	logLevel            = flag.String("log-level", "", "log level (debug, info, warn, error)")
 	dryRun              = flag.Bool("dry-run", false, "print commands without executing them")
 	disableVerification = flag.Bool("disable-verification", false, "disable configuration file verification")
-	hashDirectory       = flag.String("hash-directory", "/usr/local/etc/go-safe-cmd-runner/hashes", "directory containing hash files")
+	hashDirectory       = flag.String("hash-directory", DefaultHashDirectory, "directory containing hash files")
 )
 
 // getVerificationConfig determines the verification settings based on command line args and environment variables

@@ -7,10 +7,16 @@ GOGET=$(GOCMD) get
 GOLINT=golangci-lint run
 SUDOCMD=sudo
 
+# Configuration paths
+DEFAULT_HASH_DIRECTORY=/usr/local/etc/go-safe-cmd-runner/hashes
+
 BINARY_NAME=go-safe-cmd-runner
 BINARY_RECORD=build/record
 BINARY_VERIFY=build/verify
 BINARY_RUNNER=build/runner
+
+# Build flags to embed configuration values
+BUILD_FLAGS=-ldflags "-X main.DefaultHashDirectory=$(DEFAULT_HASH_DIRECTORY)"
 
 # Find all Go source files to use as dependencies for the build
 GO_SOURCES := $(shell find . -type f -name '*.go' -not -name '*_test.go')
@@ -29,22 +35,22 @@ build: $(BINARY_RECORD) $(BINARY_VERIFY) $(BINARY_RUNNER)
 # It will only run if the binary doesn't exist or if a .go file has changed.
 $(BINARY_RECORD): $(GO_SOURCES)
 	@mkdir -p $(@D)
-	$(GOBUILD) -o build/record -v cmd/record/main.go
+	$(GOBUILD) $(BUILD_FLAGS) -o build/record -v cmd/record/main.go
 
 $(BINARY_VERIFY): $(GO_SOURCES)
 	@mkdir -p $(@D)
-	$(GOBUILD) -o build/verify -v cmd/verify/main.go
+	$(GOBUILD) $(BUILD_FLAGS) -o build/verify -v cmd/verify/main.go
 
 $(BINARY_RUNNER): $(GO_SOURCES)
 	@mkdir -p $(@D)
-	$(GOBUILD) -o build/runner -v cmd/runner/main.go
+	$(GOBUILD) $(BUILD_FLAGS) -o build/runner -v cmd/runner/main.go
 
 clean:
 	$(GOCLEAN)
 	rm -f $(BINARY_RECORD) $(BINARY_VERIFY) $(BINARY_RUNNER)
 
-hash: $(BUNARY_RECORD) ./sample/config.toml
-	$(SUDOCMD) $(BINARY_RECORD) -file ./sample/config.toml -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+hash: $(BINARY_RECORD) ./sample/config.toml
+	$(SUDOCMD) $(BINARY_RECORD) -file ./sample/config.toml -hash-dir $(DEFAULT_HASH_DIRECTORY)
 
 test: $(BINARY_RUNNER)
 	$(GOTEST) -v ./...
