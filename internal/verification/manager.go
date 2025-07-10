@@ -116,11 +116,11 @@ func (m *Manager) VerifyConfigFile(configPath string) error {
 // ValidateHashDirectory validates the hash directory security
 func (m *Manager) ValidateHashDirectory() error {
 	if !m.IsEnabled() {
-		return fmt.Errorf("%w", ErrVerificationDisabled)
+		return ErrVerificationDisabled
 	}
 
 	if m.security == nil {
-		return fmt.Errorf("%w", ErrSecurityValidatorNotInitialized)
+		return ErrSecurityValidatorNotInitialized
 	}
 
 	// Validate directory permissions using security validator
