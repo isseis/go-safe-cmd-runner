@@ -35,8 +35,6 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("%w", ErrHashDirectoryEmpty)
 		}
 
-		// Clean and validate the path
-		c.HashDirectory = filepath.Clean(c.HashDirectory)
 		if !filepath.IsAbs(c.HashDirectory) {
 			return fmt.Errorf("%w: hash directory must be absolute path", ErrHashDirectoryInvalid)
 		}

@@ -12,19 +12,13 @@ import (
 func TestNewManager(t *testing.T) {
 	testCases := []struct {
 		name        string
-		config      *Config
+		config      Config
 		expectError bool
 		expectedErr error
 	}{
 		{
-			name:        "nil config",
-			config:      nil,
-			expectError: true,
-			expectedErr: ErrConfigNil,
-		},
-		{
 			name: "valid disabled config",
-			config: &Config{
+			config: Config{
 				Enabled:       false,
 				HashDirectory: "/usr/local/etc/go-safe-cmd-runner/hashes",
 			},
@@ -32,7 +26,7 @@ func TestNewManager(t *testing.T) {
 		},
 		{
 			name: "invalid enabled config",
-			config: &Config{
+			config: Config{
 				Enabled:       true,
 				HashDirectory: "", // empty directory
 			},
@@ -63,7 +57,7 @@ func TestNewManager(t *testing.T) {
 func TestNewManagerWithFS(t *testing.T) {
 	mockFS := common.NewMockFileSystem()
 
-	config := &Config{
+	config := Config{
 		Enabled:       false,
 		HashDirectory: "/usr/local/etc/go-safe-cmd-runner/hashes",
 	}
@@ -78,19 +72,19 @@ func TestNewManagerWithFS(t *testing.T) {
 func TestManager_IsEnabled(t *testing.T) {
 	testCases := []struct {
 		name     string
-		config   *Config
+		config   Config
 		expected bool
 	}{
 		{
 			name: "enabled config",
-			config: &Config{
+			config: Config{
 				Enabled: true,
 			},
 			expected: true,
 		},
 		{
 			name: "disabled config",
-			config: &Config{
+			config: Config{
 				Enabled: false,
 			},
 			expected: false,
@@ -106,7 +100,7 @@ func TestManager_IsEnabled(t *testing.T) {
 }
 
 func TestManager_GetConfig(t *testing.T) {
-	config := &Config{
+	config := Config{
 		Enabled:       true,
 		HashDirectory: "/test/path",
 	}
@@ -116,7 +110,7 @@ func TestManager_GetConfig(t *testing.T) {
 }
 
 func TestManager_VerifyConfigFile_Disabled(t *testing.T) {
-	config := &Config{
+	config := Config{
 		Enabled: false,
 	}
 
@@ -126,7 +120,7 @@ func TestManager_VerifyConfigFile_Disabled(t *testing.T) {
 }
 
 func TestManager_ValidateHashDirectory_Disabled(t *testing.T) {
-	config := &Config{
+	config := Config{
 		Enabled: false,
 	}
 
@@ -137,7 +131,7 @@ func TestManager_ValidateHashDirectory_Disabled(t *testing.T) {
 }
 
 func TestManager_ValidateHashDirectory_NoSecurityValidator(t *testing.T) {
-	config := &Config{
+	config := Config{
 		Enabled:       true,
 		HashDirectory: "/usr/local/etc/go-safe-cmd-runner/hashes",
 	}
@@ -160,7 +154,7 @@ func TestManager_VerifyConfigFile_Integration(t *testing.T) {
 
 // Test error wrapping in VerifyConfigFile
 func TestManager_VerifyConfigFile_ErrorWrapping(t *testing.T) {
-	config := &Config{
+	config := Config{
 		Enabled:       true,
 		HashDirectory: "/usr/local/etc/go-safe-cmd-runner/hashes",
 	}

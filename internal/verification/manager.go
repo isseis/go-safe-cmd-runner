@@ -3,6 +3,7 @@ package verification
 import (
 	"fmt"
 	"log/slog"
+	"path/filepath"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
@@ -11,36 +12,40 @@ import (
 
 // Manager provides file verification capabilities
 type Manager struct {
-	config    *Config
+	config    Config
 	fs        common.FileSystem
 	validator *filevalidator.Validator
 	security  *security.Validator
 }
 
 // NewManager creates a new verification manager with the default file system
-func NewManager(config *Config) (*Manager, error) {
+func NewManager(config Config) (*Manager, error) {
 	return NewManagerWithFS(config, common.NewDefaultFileSystem())
 }
 
 // NewManagerWithFS creates a new verification manager with a custom file system
-func NewManagerWithFS(config *Config, fs common.FileSystem) (*Manager, error) {
-	if config == nil {
-		return nil, fmt.Errorf("%w", ErrConfigNil)
+func NewManagerWithFS(config Config, fs common.FileSystem) (*Manager, error) {
+	// Make a copy of the config to avoid modifying the original
+	configCopy := config
+
+	// Clean the hash directory path before validation
+	if configCopy.IsEnabled() && configCopy.HashDirectory != "" {
+		configCopy.HashDirectory = filepath.Clean(configCopy.HashDirectory)
 	}
 
-	if err := config.Validate(); err != nil {
+	if err := configCopy.Validate(); err != nil {
 		return nil, fmt.Errorf("config validation failed: %w", err)
 	}
 
 	manager := &Manager{
-		config: config,
+		config: configCopy,
 		fs:     fs,
 	}
 
 	// Initialize components only if verification is enabled
-	if config.IsEnabled() {
+	if configCopy.IsEnabled() {
 		// Initialize file validator with SHA256 algorithm
-		validator, err := filevalidator.New(&filevalidator.SHA256{}, config.HashDirectory)
+		validator, err := filevalidator.New(&filevalidator.SHA256{}, configCopy.HashDirectory)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize file validator: %w", err)
 		}
@@ -63,7 +68,7 @@ func (m *Manager) IsEnabled() bool {
 }
 
 // GetConfig returns the current configuration
-func (m *Manager) GetConfig() *Config {
+func (m *Manager) GetConfig() Config {
 	return m.config
 }
 

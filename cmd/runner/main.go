@@ -40,7 +40,7 @@ var (
 )
 
 // getVerificationConfig determines the verification settings based on command line args and environment variables
-func getVerificationConfig() *verification.Config {
+func getVerificationConfig() verification.Config {
 	// Start with default: verification enabled
 	enabled := true
 	hashDir := *hashDirectory
@@ -62,7 +62,7 @@ func getVerificationConfig() *verification.Config {
 		enabled = false
 	}
 
-	return &verification.Config{
+	return verification.Config{
 		Enabled:       enabled,
 		HashDirectory: hashDir,
 	}
