@@ -51,8 +51,9 @@ func NewManagerWithFS(config Config, fs common.FileSystem) (*Manager, error) {
 		}
 		manager.validator = validator
 
-		// Initialize security validator
-		securityValidator, err := security.NewValidatorWithFS(nil, fs)
+		// Initialize security validator with default configuration
+		securityConfig := security.DefaultConfig()
+		securityValidator, err := security.NewValidatorWithFS(securityConfig, fs)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize security validator: %w", err)
 		}

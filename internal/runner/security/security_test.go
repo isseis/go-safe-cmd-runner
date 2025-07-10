@@ -98,7 +98,7 @@ func TestNewValidatorWithFS(t *testing.T) {
 
 func TestValidator_ValidateFilePermissions(t *testing.T) {
 	mockFS := common.NewMockFileSystem()
-	validator, err := NewValidatorWithFS(nil, mockFS)
+	validator, err := NewValidatorWithFS(DefaultConfig(), mockFS)
 	require.NoError(t, err)
 
 	t.Run("empty path", func(t *testing.T) {
