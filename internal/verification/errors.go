@@ -20,11 +20,9 @@ var (
 
 // Error represents a verification error with context
 type Error struct {
-	Op       string // operation that failed
-	Path     string // file path (if applicable)
-	Expected string // expected value (if applicable)
-	Actual   string // actual value (if applicable)
-	Err      error  // underlying error
+	Op   string // operation that failed
+	Path string // file path (if applicable)
+	Err  error  // underlying error
 }
 
 // Error returns the error message

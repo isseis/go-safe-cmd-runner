@@ -41,11 +41,9 @@ func TestError_Error(t *testing.T) {
 		{
 			name: "error with all fields",
 			err: &Error{
-				Op:       "CompareHash",
-				Path:     "/etc/config.toml",
-				Expected: "abc123",
-				Actual:   "def456",
-				Err:      ErrValuesDontMatch,
+				Op:   "CompareHash",
+				Path: "/etc/config.toml",
+				Err:  ErrValuesDontMatch,
 			},
 			expected: "verification error in CompareHash for /etc/config.toml: values don't match",
 		},
