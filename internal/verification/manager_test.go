@@ -26,7 +26,7 @@ func TestNewManager(t *testing.T) {
 			name: "valid disabled config",
 			config: &Config{
 				Enabled:       false,
-				HashDirectory: "/etc/go-safe-cmd-runner/hashes",
+				HashDirectory: "/usr/local/etc/go-safe-cmd-runner/hashes",
 			},
 			expectError: false,
 		},
@@ -65,7 +65,7 @@ func TestNewManagerWithFS(t *testing.T) {
 
 	config := &Config{
 		Enabled:       false,
-		HashDirectory: "/etc/go-safe-cmd-runner/hashes",
+		HashDirectory: "/usr/local/etc/go-safe-cmd-runner/hashes",
 	}
 
 	manager, err := NewManagerWithFS(config, mockFS)
@@ -139,7 +139,7 @@ func TestManager_ValidateHashDirectory_Disabled(t *testing.T) {
 func TestManager_ValidateHashDirectory_NoSecurityValidator(t *testing.T) {
 	config := &Config{
 		Enabled:       true,
-		HashDirectory: "/etc/go-safe-cmd-runner/hashes",
+		HashDirectory: "/usr/local/etc/go-safe-cmd-runner/hashes",
 	}
 
 	manager := &Manager{
@@ -162,7 +162,7 @@ func TestManager_VerifyConfigFile_Integration(t *testing.T) {
 func TestManager_VerifyConfigFile_ErrorWrapping(t *testing.T) {
 	config := &Config{
 		Enabled:       true,
-		HashDirectory: "/etc/go-safe-cmd-runner/hashes",
+		HashDirectory: "/usr/local/etc/go-safe-cmd-runner/hashes",
 	}
 
 	// Create manager with mocked components that will fail

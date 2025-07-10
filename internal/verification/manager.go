@@ -118,7 +118,7 @@ func (m *Manager) ValidateHashDirectory() error {
 	}
 
 	// Validate directory permissions using security validator
-	if err := m.security.ValidateFilePermissions(m.config.HashDirectory); err != nil {
+	if err := m.security.ValidateDirectoryPermissions(m.config.HashDirectory); err != nil {
 		return fmt.Errorf("hash directory validation failed: %w", err)
 	}
 

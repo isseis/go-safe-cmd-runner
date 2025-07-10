@@ -5,6 +5,8 @@ GOCLEAN=$(GOCMD) clean
 GOTEST=$(GOCMD) test
 GOGET=$(GOCMD) get
 GOLINT=golangci-lint run
+SUDOCMD=sudo
+
 BINARY_NAME=go-safe-cmd-runner
 BINARY_RECORD=build/record
 BINARY_VERIFY=build/verify
@@ -13,7 +15,7 @@ BINARY_RUNNER=build/runner
 # Find all Go source files to use as dependencies for the build
 GO_SOURCES := $(shell find . -type f -name '*.go' -not -name '*_test.go')
 
-.PHONY: all lint build run clean test
+.PHONY: all lint build run clean test hash
 
 all: build
 
@@ -41,6 +43,9 @@ clean:
 	$(GOCLEAN)
 	rm -f $(BINARY_RECORD) $(BINARY_VERIFY) $(BINARY_RUNNER)
 
+hash: $(BUNARY_RECORD) ./sample/config.toml
+	$(SUDOCMD) $(BINARY_RECORD) -file ./sample/config.toml -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+
 test: $(BINARY_RUNNER)
 	$(GOTEST) -v ./...
-	$(ENVCMD) -i $(BINARY_RUNNER) -dry-run -config ./sample/config.toml
+	$(ENVCMD) -i $(BINARY_RUNNER) -dry-run -config ./sample/config.toml --disable-verification

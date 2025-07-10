@@ -19,8 +19,8 @@ type Config struct {
 // DefaultConfig returns a default configuration
 func DefaultConfig() *Config {
 	return &Config{
-		Enabled:       false,
-		HashDirectory: "/etc/go-safe-cmd-runner/hashes",
+		Enabled:       true,
+		HashDirectory: "/usr/local/etc/go-safe-cmd-runner/hashes",
 	}
 }
 

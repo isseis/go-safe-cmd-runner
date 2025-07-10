@@ -10,9 +10,9 @@ import (
 func TestDefaultConfig(t *testing.T) {
 	config := DefaultConfig()
 
-	assert.False(t, config.Enabled)
-	assert.Equal(t, "/etc/go-safe-cmd-runner/hashes", config.HashDirectory)
-	assert.False(t, config.IsEnabled())
+	assert.True(t, config.Enabled)
+	assert.Equal(t, "/usr/local/etc/go-safe-cmd-runner/hashes", config.HashDirectory)
+	assert.True(t, config.IsEnabled())
 }
 
 func TestConfig_Validate(t *testing.T) {
@@ -40,7 +40,7 @@ func TestConfig_Validate(t *testing.T) {
 			name: "valid enabled config",
 			config: &Config{
 				Enabled:       true,
-				HashDirectory: "/etc/go-safe-cmd-runner/hashes",
+				HashDirectory: "/usr/local/etc/go-safe-cmd-runner/hashes",
 			},
 			expectError: false,
 		},

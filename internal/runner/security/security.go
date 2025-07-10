@@ -28,6 +28,8 @@ var (
 const (
 	// DefaultFilePermissions defines the default maximum allowed permissions for config files (rw-r--r--)
 	DefaultFilePermissions = 0o644
+	// DefaultDirectoryPermissions defines the default maximum allowed permissions for directories (rwxr-xr-x)
+	DefaultDirectoryPermissions = 0o755
 	// DefaultMaxPathLength defines the default maximum allowed path length
 	DefaultMaxPathLength = 4096
 )
@@ -38,6 +40,8 @@ type Config struct {
 	AllowedCommands []string
 	// RequiredFilePermissions defines the maximum allowed permissions for config files
 	RequiredFilePermissions os.FileMode
+	// RequiredDirectoryPermissions defines the maximum allowed permissions for directories
+	RequiredDirectoryPermissions os.FileMode
 	// SensitiveEnvVars is a list of environment variable patterns that should be sanitized
 	SensitiveEnvVars []string
 	// MaxPathLength is the maximum allowed path length
@@ -63,7 +67,8 @@ func DefaultConfig() *Config {
 			"^true$",
 			"^false$",
 		},
-		RequiredFilePermissions: DefaultFilePermissions,
+		RequiredFilePermissions:      DefaultFilePermissions,
+		RequiredDirectoryPermissions: DefaultDirectoryPermissions,
 		SensitiveEnvVars: []string{
 			".*PASSWORD.*",
 			".*SECRET.*",
@@ -147,28 +152,63 @@ func NewValidatorWithFS(config *Config, fs common.FileSystem) (*Validator, error
 	return v, nil
 }
 
-// ValidateFilePermissions validates that a file has appropriate permissions
-func (v *Validator) ValidateFilePermissions(filePath string) error {
-	if filePath == "" {
-		slog.Error("Empty file path provided for permission validation")
-		return fmt.Errorf("%w: empty file path", ErrInvalidPath)
+// validatePathAndGetInfo validates and cleans a path, then returns its file info
+func (v *Validator) validatePathAndGetInfo(path, pathType string) (string, os.FileInfo, error) {
+	if path == "" {
+		slog.Error("Empty " + pathType + " path provided for permission validation")
+		return "", nil, fmt.Errorf("%w: empty path", ErrInvalidPath)
 	}
 
 	// Clean and validate the path
-	cleanPath := filepath.Clean(filePath)
-	slog.Debug("Validating file permissions", "path", cleanPath)
+	cleanPath := filepath.Clean(path)
+	slog.Debug("Validating "+pathType+" permissions", "path", cleanPath)
 
 	if len(cleanPath) > v.config.MaxPathLength {
 		err := fmt.Errorf("%w: path too long (%d > %d)", ErrInvalidPath, len(cleanPath), v.config.MaxPathLength)
 		slog.Error("Path validation failed", "path", cleanPath, "error", err, "max_length", v.config.MaxPathLength)
-		return err
+		return "", nil, err
 	}
 
 	// Get file info
 	fileInfo, err := v.fs.Stat(cleanPath)
 	if err != nil {
-		slog.Error("Failed to get file info", "path", cleanPath, "error", err)
-		return fmt.Errorf("failed to stat file %s: %w", cleanPath, err)
+		slog.Error("Failed to get "+pathType+" info", "path", cleanPath, "error", err)
+		return "", nil, fmt.Errorf("failed to stat %s: %w", cleanPath, err)
+	}
+
+	return cleanPath, fileInfo, nil
+}
+
+// validatePermissions validates permissions using bitwise operations
+func (v *Validator) validatePermissions(cleanPath string, perm os.FileMode, requiredPerms os.FileMode, pathType string) error {
+	slog.Debug("Checking "+pathType+" permissions", "path", cleanPath, "current_permissions", fmt.Sprintf("%04o", perm), "max_allowed", fmt.Sprintf("%04o", requiredPerms))
+
+	// SECURITY: Use bitwise AND with complement to check for disallowed permission bits.
+	// This prevents security vulnerabilities where files/directories with dangerous permissions
+	// would be incorrectly allowed under a simple numeric comparison.
+	// The bitwise operation ensures that only resources with permissions that are a true subset
+	// of the allowed permissions are accepted.
+	disallowedBits := perm &^ requiredPerms
+	if disallowedBits != 0 {
+		err := fmt.Errorf("%w: %s %s has permissions %o with disallowed bits %o, maximum allowed is %o",
+			ErrInvalidFilePermissions, pathType, cleanPath, perm, disallowedBits, requiredPerms)
+		slog.Warn("Insecure "+pathType+" permissions detected",
+			"path", cleanPath,
+			"current_permissions", fmt.Sprintf("%04o", perm),
+			"disallowed_bits", fmt.Sprintf("%04o", disallowedBits),
+			"max_allowed", fmt.Sprintf("%04o", requiredPerms))
+		return err
+	}
+
+	slog.Debug(pathType+" permissions validated successfully", "path", cleanPath, "permissions", fmt.Sprintf("%04o", perm))
+	return nil
+}
+
+// ValidateFilePermissions validates that a file has appropriate permissions
+func (v *Validator) ValidateFilePermissions(filePath string) error {
+	cleanPath, fileInfo, err := v.validatePathAndGetInfo(filePath, "file")
+	if err != nil {
+		return err
 	}
 
 	// Check if it's a regular file
@@ -178,35 +218,24 @@ func (v *Validator) ValidateFilePermissions(filePath string) error {
 		return err
 	}
 
-	// Check permissions using bitwise operations to ensure file permissions are a subset of allowed permissions
-	perm := fileInfo.Mode().Perm()
-	slog.Debug("Checking file permissions", "path", cleanPath, "current_permissions", fmt.Sprintf("%04o", perm), "max_allowed", fmt.Sprintf("%04o", v.config.RequiredFilePermissions))
+	return v.validatePermissions(cleanPath, fileInfo.Mode().Perm(), v.config.RequiredFilePermissions, "file")
+}
 
-	// SECURITY: Use bitwise AND with complement to check for disallowed permission bits.
-	// This prevents security vulnerabilities where files with dangerous permissions like 0o077 (---rwxrwx)
-	// would be incorrectly allowed under a simple numeric comparison (0o077 < 0o644).
-	// The bitwise operation ensures that only files with permissions that are a true subset
-	// of the allowed permissions are accepted.
-	//
-	// Example: If RequiredFilePermissions = 0o644 (rw-r--r--):
-	// - 0o600 (rw-------): disallowedBits = 0o600 &^ 0o644 = 0o000 ✓ (allowed)
-	// - 0o644 (rw-r--r--): disallowedBits = 0o644 &^ 0o644 = 0o000 ✓ (allowed)
-	// - 0o777 (rwxrwxrwx): disallowedBits = 0o777 &^ 0o644 = 0o133 ✗ (rejected)
-	// - 0o077 (---rwxrwx): disallowedBits = 0o077 &^ 0o644 = 0o033 ✗ (rejected, security fix!)
-	disallowedBits := perm &^ v.config.RequiredFilePermissions
-	if disallowedBits != 0 {
-		err := fmt.Errorf("%w: file %s has permissions %o with disallowed bits %o, maximum allowed is %o",
-			ErrInvalidFilePermissions, cleanPath, perm, disallowedBits, v.config.RequiredFilePermissions)
-		slog.Warn("Insecure file permissions detected",
-			"path", cleanPath,
-			"current_permissions", fmt.Sprintf("%04o", perm),
-			"disallowed_bits", fmt.Sprintf("%04o", disallowedBits),
-			"max_allowed", fmt.Sprintf("%04o", v.config.RequiredFilePermissions))
+// ValidateDirectoryPermissions validates that a directory has appropriate permissions
+func (v *Validator) ValidateDirectoryPermissions(dirPath string) error {
+	cleanPath, dirInfo, err := v.validatePathAndGetInfo(dirPath, "directory")
+	if err != nil {
 		return err
 	}
 
-	slog.Debug("File permissions validated successfully", "path", cleanPath, "permissions", fmt.Sprintf("%04o", perm))
-	return nil
+	// Check if it's a directory
+	if !dirInfo.Mode().IsDir() {
+		err := fmt.Errorf("%w: %s is not a directory", ErrInvalidFilePermissions, cleanPath)
+		slog.Warn("Invalid directory type", "path", cleanPath, "mode", dirInfo.Mode().String())
+		return err
+	}
+
+	return v.validatePermissions(cleanPath, dirInfo.Mode().Perm(), v.config.RequiredDirectoryPermissions, "directory")
 }
 
 // SanitizeEnvironmentVariables removes or sanitizes sensitive environment variables

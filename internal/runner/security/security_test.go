@@ -16,6 +16,7 @@ func TestDefaultConfig(t *testing.T) {
 	assert.NotNil(t, config)
 	assert.NotEmpty(t, config.AllowedCommands)
 	assert.Equal(t, os.FileMode(0o644), config.RequiredFilePermissions)
+	assert.Equal(t, os.FileMode(0o755), config.RequiredDirectoryPermissions)
 	assert.NotEmpty(t, config.SensitiveEnvVars)
 	assert.Equal(t, 4096, config.MaxPathLength)
 }
@@ -23,10 +24,11 @@ func TestDefaultConfig(t *testing.T) {
 func TestNewValidator(t *testing.T) {
 	t.Run("with config", func(t *testing.T) {
 		config := &Config{
-			AllowedCommands:         []string{"^echo$"},
-			RequiredFilePermissions: 0o644,
-			SensitiveEnvVars:        []string{".*PASSWORD.*"},
-			MaxPathLength:           4096,
+			AllowedCommands:              []string{"^echo$"},
+			RequiredFilePermissions:      0o644,
+			RequiredDirectoryPermissions: 0o755,
+			SensitiveEnvVars:             []string{".*PASSWORD.*"},
+			MaxPathLength:                4096,
 		}
 		validator, err := NewValidator(config)
 
@@ -162,9 +164,8 @@ func TestValidator_ValidateFilePermissions(t *testing.T) {
 		err := validator.ValidateFilePermissions("/test-dir")
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, ErrInvalidFilePermissions))
-		// Directory permissions (0o755) exceed allowed file permissions (0o644)
-		// so it fails on permission check before regular file check
-		assert.Contains(t, err.Error(), "disallowed bits")
+		// Should fail because it's not a regular file
+		assert.Contains(t, err.Error(), "is not a regular file")
 	})
 
 	t.Run("path too long", func(t *testing.T) {
@@ -180,6 +181,88 @@ func TestValidator_ValidateFilePermissions(t *testing.T) {
 
 		longPath := "/very/long/path/that/exceeds/limit"
 		err = validator2.ValidateFilePermissions(longPath)
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, ErrInvalidPath))
+		assert.Contains(t, err.Error(), "path too long")
+	})
+}
+
+func TestValidator_ValidateDirectoryPermissions(t *testing.T) {
+	mockFS := common.NewMockFileSystem()
+	validator, err := NewValidatorWithFS(DefaultConfig(), mockFS)
+	require.NoError(t, err)
+
+	t.Run("empty path", func(t *testing.T) {
+		err := validator.ValidateDirectoryPermissions("")
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, ErrInvalidPath))
+		assert.Contains(t, err.Error(), "empty path")
+	})
+
+	t.Run("non-existent directory", func(t *testing.T) {
+		err := validator.ValidateDirectoryPermissions("/non/existent/dir")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to stat")
+	})
+
+	t.Run("valid directory with correct permissions", func(t *testing.T) {
+		// Create a directory with correct permissions in mock filesystem
+		mockFS.AddDir("/test-dir", 0o755)
+
+		err := validator.ValidateDirectoryPermissions("/test-dir")
+		assert.NoError(t, err)
+	})
+
+	t.Run("directory with excessive permissions", func(t *testing.T) {
+		// Create a directory with excessive permissions in mock filesystem
+		mockFS.AddDir("/test-excessive-dir", 0o777)
+
+		err := validator.ValidateDirectoryPermissions("/test-excessive-dir")
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, ErrInvalidFilePermissions))
+		assert.Contains(t, err.Error(), "disallowed bits")
+	})
+
+	t.Run("directory with only subset of allowed permissions", func(t *testing.T) {
+		// Test that directories with permissions that are a subset of allowed permissions pass
+		mockFS.AddDir("/test-subset-dir", 0o700)
+
+		err := validator.ValidateDirectoryPermissions("/test-subset-dir")
+		assert.NoError(t, err, "0o700 should be allowed as it's a subset of 0o755")
+	})
+
+	t.Run("directory with exact allowed permissions", func(t *testing.T) {
+		// Test that directories with exact allowed permissions pass
+		mockFS.AddDir("/test-exact-dir", 0o755)
+
+		err := validator.ValidateDirectoryPermissions("/test-exact-dir")
+		assert.NoError(t, err, "0o755 should be allowed as it's exactly the allowed permissions")
+	})
+
+	t.Run("file instead of directory", func(t *testing.T) {
+		// Test that files are rejected
+		mockFS.AddFile("/test-file.txt", 0o644, []byte("test content"))
+
+		err := validator.ValidateDirectoryPermissions("/test-file.txt")
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, ErrInvalidFilePermissions))
+		assert.Contains(t, err.Error(), "is not a directory")
+	})
+
+	t.Run("path too long", func(t *testing.T) {
+		// Test with a path that's too long
+		mockFS2 := common.NewMockFileSystem()
+		validator2, err := NewValidatorWithFS(&Config{
+			AllowedCommands:              []string{".*"},
+			RequiredFilePermissions:      0o644,
+			RequiredDirectoryPermissions: 0o755,
+			SensitiveEnvVars:             []string{},
+			MaxPathLength:                10, // Very short for testing
+		}, mockFS2)
+		require.NoError(t, err)
+
+		longPath := "/very/long/path/that/exceeds/limit"
+		err = validator2.ValidateDirectoryPermissions(longPath)
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, ErrInvalidPath))
 		assert.Contains(t, err.Error(), "path too long")
