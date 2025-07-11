@@ -207,18 +207,21 @@ type Manager struct {
 ```go
 // cmd/runner/main.go
 func main() {
-    // 1. 設定ファイル読み込み
-    cfg, err := cfgLoader.LoadConfig(*configPath)
+    // 1. コマンドライン引数と環境変数から検証設定を取得
+    verificationConfig := getVerificationConfig()
 
-    // 2. 検証マネージャー初期化
-    verificationManager, err := verification.NewManager(&cfg.Verification)
+    // 2. 検証マネージャー初期化（設定ファイル読み込み前）
+    verificationManager, err := verification.NewManager(verificationConfig)
 
-    // 3. 設定ファイル検証
+    // 3. 設定ファイル検証（設定ファイル読み込み前）
     if err := verificationManager.VerifyConfigFile(*configPath); err != nil {
         return fmt.Errorf("config verification failed: %w", err)
     }
 
-    // 4. 既存処理継続
+    // 4. 設定ファイル読み込み
+    cfg, err := cfgLoader.LoadConfig(*configPath)
+
+    // 5. 既存処理継続
     // ...
 }
 ```
@@ -236,13 +239,14 @@ type Error struct {
 }
 ```
 
-**✅ Task 2.6 - 設定ファイル拡張**
+**✅ Task 2.6 - 設定制御の変更**
 
 ```toml
-# config.toml 拡張
-[verification]
-enabled = false  # シンプルなon/off制御
-hash_directory = "/etc/go-safe-cmd-runner/hashes"
+# sample/config.toml（verificationセクションは存在しない）
+[global]
+timeout = 3600
+
+# 検証機能の制御はコマンドライン引数と環境変数のみで行う
 ```
 
 **✅ Task 2.7 - ユニットテスト**

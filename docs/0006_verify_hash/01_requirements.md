@@ -34,6 +34,7 @@
 - 設定ファイルのハッシュ値が存在しない場合には、go-safe-cmd-runnerを終了する
 - 設定ファイルが root ユーザー以外で書き換え可能である場合は、go-safe-cmd-runnerを終了する
     - ファイルそのものが書き換え不可であっても、途中ディレクトリやシンボリックリンクなどが書き換え可能である場合もエラーとする。
+- 設定ファイルの検証設定を攻撃者が無効化できないよう、検証機能の制御はコマンドライン引数と環境変数のみで行う
 
 ### 3.2 保守性
 - 冗長性の除去によるコードの簡素化
@@ -44,8 +45,14 @@
 ### 4.1 技術的制約
 - 設定ファイルのハッシュ値を計算・保存するには build/record コマンドを利用する
 - 設定ファイルのハッシュ値の検証には filevalidator パッケージを使用する
-- ハッシュファイルの保存場所は /etc/go-safe-cmd-runner/hashes/ 等の root のみ書き込み可能なディレクトリとする
-    - ディレクトリはバイナリのビルド時に指定できるよう Makefile に記述する
+- ハッシュファイルの保存場所は /usr/local/etc/go-safe-cmd-runner/hashes/ 等の root のみ書き込み可能なディレクトリとする
+    - ディレクトリはバイナリのビルド時に Makefile の DEFAULT_HASH_DIRECTORY マクロで指定し、ldflags で埋め込む
+- 検証機能はデフォルトで有効（セキュリティファースト）
+- コマンドライン引数 `--disable-verification` で無効化可能
+- ハッシュディレクトリパスは `--hash-directory` フラグまたは `GO_SAFE_CMD_RUNNER_HASH_DIRECTORY` 環境変数で指定可能
+- 環境変数 `GO_SAFE_CMD_RUNNER_DISABLE_VERIFICATION=true` で検証機能の無効化が可能
+- コマンドライン引数が環境変数より優先される
+- 設定ファイルにはverificationセクションを含めない（セキュリティ上の理由）
 - ハッシュアルゴリズムは SHA-256 を使用する（filevalidatorパッケージの既定値）
 - 設定ファイルパスの正規化には filepath.Clean() を使用する
 

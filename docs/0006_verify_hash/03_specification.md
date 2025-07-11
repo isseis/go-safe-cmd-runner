@@ -57,17 +57,17 @@
 // internal/verification/config.go
 type Config struct {
     // 検証機能の有効/無効
-    Enabled bool `toml:"enabled" json:"enabled"`
+    Enabled bool `json:"enabled"`
 
     // ハッシュファイル格納ディレクトリ
-    HashDirectory string `toml:"hash_directory" json:"hash_directory"`
+    HashDirectory string `json:"hash_directory"`
 }
 
-// デフォルト設定
-func DefaultConfig() *Config {
-    return &Config{
-        Enabled:       false,
-        HashDirectory: "/etc/go-safe-cmd-runner/hashes",
+// デフォルト設定（値型を返す）
+func DefaultConfig() Config {
+    return Config{
+        Enabled:       true,  // デフォルトで有効
+        HashDirectory: "/usr/local/etc/go-safe-cmd-runner/hashes",
     }
 }
 ```
@@ -86,19 +86,19 @@ func DefaultConfig() *Config {
 ```go
 // internal/verification/manager.go
 type Manager struct {
-    config    *Config
+    config    Config                     // 値型に変更
     fs        common.FileSystem
     validator *filevalidator.Validator
     security  *security.Validator
 }
 
 // 主要メソッド
-func NewManager(config *Config) (*Manager, error)
-func NewManagerWithFS(config *Config, fs common.FileSystem) (*Manager, error)
+func NewManager(config Config) (*Manager, error)                   // 値渡し
+func NewManagerWithFS(config Config, fs common.FileSystem) (*Manager, error) // 値渡し
 func (vm *Manager) VerifyConfigFile(configPath string) error
 func (vm *Manager) ValidateHashDirectory() error
 func (vm *Manager) IsEnabled() bool
-func (vm *Manager) GetConfig() *Config
+func (vm *Manager) GetConfig() Config                             // 値返し
 ```
 
 ### 3.2 メソッド詳細仕様
@@ -106,20 +106,20 @@ func (vm *Manager) GetConfig() *Config
 #### 3.2.1 NewManager
 
 ```go
-func NewManager(config *Config) (*Manager, error)
+func NewManager(config Config) (*Manager, error)
 ```
 
 **パラメータ:**
-- `config`: 検証設定
+- `config`: 検証設定（値渡し）
 
 **戻り値:**
 - `*Manager`: マネージャーインスタンス
 - `error`: エラー（設定無効時等）
 
 **処理内容:**
-1. 設定の妥当性検証
+1. 設定のコピーと妥当性検証
 2. filevalidator.Validator の初期化（有効時のみ）
-3. security.Validator の初期化（有効時のみ）
+3. security.Validator の初期化（有効時のみ、デフォルト設定使用）
 
 #### 3.2.2 VerifyConfigFile
 
@@ -175,7 +175,7 @@ func (vm *Manager) ValidateHashDirectory() error {
     }
 
     // 権限チェック（securityパッケージ活用）
-    return vm.security.ValidateFilePermissions(vm.config.HashDirectory)
+    return vm.security.ValidateDirectoryPermissions(vm.config.HashDirectory)
 }
 ```
 
@@ -276,36 +276,55 @@ slog.Warn("Configuration file integrity verification is not enabled",
 
 ## 6. 設定ファイル統合仕様
 
-### 6.1 config.toml 拡張
+### 6.1 設定制御の変更
+
+**セキュリティ強化のため、設定ファイルからverificationセクションを削除。**
+
+検証機能の制御は設定ファイルではなく、コマンドライン引数と環境変数のみで行う：
 
 ```toml
-# 検証機能設定
-[verification]
-# 検証機能の有効/無効 (true/false)
-enabled = false
-
-# ハッシュファイル格納ディレクトリ
-hash_directory = "/etc/go-safe-cmd-runner/hashes"
-
-# 既存の設定
+# sample/config.toml（verificationセクションは存在しない）
 [global]
 timeout = 3600
 workdir = "/tmp"
 log_level = "info"
+
+[groups.example]
+# 既存のグループ設定...
 ```
 
-### 6.2 runnertypes.Config 拡張
+**コマンドライン引数による制御：**
+```bash
+# デフォルト（検証有効）
+./runner --config config.toml
 
-```go
-// internal/runner/runnertypes/types.go
-type Config struct {
-    Version      string                 `toml:"version"`
-    Global       GlobalConfig           `toml:"global"`
-    Verification verification.Config    `toml:"verification"`  // 新規追加
-    Templates    map[string]Template    `toml:"templates"`
-    Groups       []Group                `toml:"groups"`
-}
+# 検証無効化
+./runner --disable-verification --config config.toml
+
+# カスタムハッシュディレクトリ
+./runner --hash-directory /custom/path --config config.toml
 ```
+
+**環境変数による制御：**
+```bash
+# 検証無効化
+GO_SAFE_CMD_RUNNER_DISABLE_VERIFICATION=true ./runner --config config.toml
+
+# カスタムハッシュディレクトリ
+GO_SAFE_CMD_RUNNER_HASH_DIRECTORY=/custom/path ./runner --config config.toml
+```
+
+### 6.2 ビルド時設定
+
+```makefile
+# Makefile
+DEFAULT_HASH_DIRECTORY=/usr/local/etc/go-safe-cmd-runner/hashes
+BUILD_FLAGS=-ldflags "-X main.DefaultHashDirectory=$(DEFAULT_HASH_DIRECTORY)"
+```
+
+### 6.3 runnertypes.Config は変更なし
+
+設定ファイルからverificationセクションを削除したため、runnertypes.Configの変更は不要です。
 
 ## 7. テスト仕様
 
@@ -389,13 +408,12 @@ func TestEndToEnd_VerificationSuccess(t *testing.T) {
     require.NoError(t, err)
 
     // 4. 検証実行
-    config := &Config{
+    config := Config{  // 値型に変更
         Enabled:       true,
-        Phase:         2,
         HashDirectory: hashDir,
     }
 
-    vm, err := NewVerificationManager(config, common.NewDefaultFileSystem())
+    vm, err := NewManager(config)  // 値渡しに変更
     require.NoError(t, err)
 
     err = vm.VerifyConfigFile(configPath)
@@ -474,7 +492,6 @@ sudo chmod 755 /usr/local/etc/go-safe-cmd-runner/hashes
 # 3. 設定ファイルハッシュ記録
 sudo /usr/local/bin/go-safe-cmd-runner record /usr/local/etc/go-safe-cmd-runner/config.toml
 
-# 4. 設定ファイル更新（Phase 2 有効化）
-sudo vim /usr/local/etc/go-safe-cmd-runner/config.toml
-# [verification] セクション追加
+# 4. 検証機能確認（デフォルトで有効）
+# 無効化する場合は --disable-verification フラグまたは環境変数を使用
 ```

@@ -70,23 +70,24 @@
 package verification
 
 type Manager struct {
-    config    *Config                    // 設定
+    config    Config                     // 設定（値型）
     fs        common.FileSystem          // ファイルシステム抽象化
     validator *filevalidator.Validator   // ファイル検証用
     security  *security.Validator        // セキュリティ検証用
 }
 
 type Config struct {
-    Enabled       bool   `toml:"enabled"`        // 検証機能の有効/無効
-    HashDirectory string `toml:"hash_directory"` // ハッシュファイル格納ディレクトリ
+    Enabled       bool   `json:"enabled"`        // 検証機能の有効/無効
+    HashDirectory string `json:"hash_directory"` // ハッシュファイル格納ディレクトリ
 }
 
 // メソッド
-func NewManager(config *Config) (*Manager, error)
-func NewManagerWithFS(config *Config, fs common.FileSystem) (*Manager, error)
+func NewManager(config Config) (*Manager, error)
+func NewManagerWithFS(config Config, fs common.FileSystem) (*Manager, error)
 func (vm *Manager) VerifyConfigFile(configPath string) error
 func (vm *Manager) ValidateHashDirectory() error
 func (vm *Manager) IsEnabled() bool
+func (vm *Manager) GetConfig() Config
 ```
 
 ### 3.2 既存コンポーネントとの統合
@@ -95,27 +96,58 @@ func (vm *Manager) IsEnabled() bool
 
 ```go
 func main() {
-    // 1. 設定ファイル読み込み
+    // 1. コマンドライン引数と環境変数から検証設定を取得
+    verificationConfig := getVerificationConfig()
+
+    // 2. 検証マネージャーの初期化
+    verificationManager, err := verification.NewManager(verificationConfig)
+    if err != nil {
+        return fmt.Errorf("failed to initialize verification: %w", err)
+    }
+
+    // 3. 設定ファイル検証（設定ファイル読み込み前）
+    if err := verificationManager.VerifyConfigFile(*configPath); err != nil {
+        return fmt.Errorf("config verification failed: %w", err)
+    }
+
+    // 4. 設定ファイル読み込み
     cfgLoader := config.NewLoader()
     cfg, err := cfgLoader.LoadConfig(*configPath)
     if err != nil {
         return fmt.Errorf("failed to load config: %w", err)
     }
 
-    // 2. 検証マネージャーの初期化
-    verificationManager, err := verification.NewManager(&cfg.Verification)
-    if err != nil {
-        return fmt.Errorf("failed to initialize verification: %w", err)
-    }
-
-    // 3. 設定ファイル検証
-    if err := verificationManager.VerifyConfigFile(*configPath); err != nil {
-        return fmt.Errorf("config verification failed: %w", err)
-    }
-
-    // 4. 既存のRunner処理
+    // 5. 既存のRunner処理
     runner, err := runner.NewRunnerWithComponents(cfg, cfgLoader.GetTemplateEngine(), nil)
     // ...
+}
+
+// 検証設定取得関数
+func getVerificationConfig() verification.Config {
+    // デフォルト: 検証有効
+    enabled := true
+    hashDir := *hashDirectory
+
+    // 環境変数チェック
+    if envDisable := os.Getenv("GO_SAFE_CMD_RUNNER_DISABLE_VERIFICATION"); envDisable != "" {
+        if parsedDisable, err := strconv.ParseBool(envDisable); err == nil && parsedDisable {
+            enabled = false
+        }
+    }
+
+    if envHashDir := os.Getenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY"); envHashDir != "" {
+        hashDir = envHashDir
+    }
+
+    // コマンドライン引数が環境変数より優先
+    if *disableVerification {
+        enabled = false
+    }
+
+    return verification.Config{
+        Enabled:       enabled,
+        HashDirectory: hashDir,
+    }
 }
 ```
 
@@ -135,15 +167,45 @@ internal/
     └── validator.go
 ```
 
-### 3.4 設定ファイル拡張
+### 3.4 設定制御
 
+設定ファイルからverificationセクションを削除し、セキュリティを向上させました。
+検証機能の制御はコマンドライン引数と環境変数のみで行います。
+
+**コマンドライン引数:**
+```bash
+# 検証を無効化
+./runner --disable-verification --config config.toml
+
+# カスタムハッシュディレクトリ
+./runner --hash-directory /custom/hash/dir --config config.toml
+```
+
+**環境変数:**
+```bash
+# 検証を無効化
+GO_SAFE_CMD_RUNNER_DISABLE_VERIFICATION=true ./runner --config config.toml
+
+# カスタムハッシュディレクトリ
+GO_SAFE_CMD_RUNNER_HASH_DIRECTORY=/custom/hash/dir ./runner --config config.toml
+```
+
+**ビルド時設定:**
+```makefile
+# Makefile
+DEFAULT_HASH_DIRECTORY=/usr/local/etc/go-safe-cmd-runner/hashes
+BUILD_FLAGS=-ldflags "-X main.DefaultHashDirectory=$(DEFAULT_HASH_DIRECTORY)"
+```
+
+**設定ファイル例:**
 ```toml
-# sample/config.toml
-[verification]
-enabled = false  # 検証機能の有効/無効
-hash_directory = "/etc/go-safe-cmd-runner/hashes"
-
+# sample/config.toml（verificationセクションは存在しない）
 [global]
+timeout = 3600
+workdir = "/tmp"
+log_level = "info"
+
+[groups.example]
 # 既存の設定...
 ```
 
@@ -152,21 +214,22 @@ hash_directory = "/etc/go-safe-cmd-runner/hashes"
 ### 4.1 ハッシュファイル保護
 
 ```
-/etc/go-safe-cmd-runner/hashes/
+/usr/local/etc/go-safe-cmd-runner/hashes/
 ├── config.toml.hash      # 設定ファイルハッシュ
 │   └── 権限: 644 (root:root)
-└── metadata.json         # ハッシュメタデータ
+└── manifest.json         # ハッシュメタデータ（filevalidator形式）
     └── 権限: 644 (root:root)
 ```
 
 ### 4.2 検証順序
 
-1. **設定による有効性確認**
-   - 検証機能が有効であることを確認
-   - 無効時は検証をスキップ
+1. **コマンドライン・環境変数による設定取得**
+   - デフォルト: 検証有効
+   - 環境変数による無効化確認
+   - コマンドライン引数による最終制御
 
 2. **ハッシュディレクトリ権限検証**
-   - ディレクトリ所有者が root であることを確認
+   - ディレクトリの適切な権限確認（security.Validator使用）
    - 書き込み権限が root のみであることを確認
 
 3. **設定ファイル検証**
@@ -256,17 +319,22 @@ func TestManager_WithMockFS(t *testing.T) {
 
 ```bash
 # ハッシュディレクトリの作成
-sudo mkdir -p /etc/go-safe-cmd-runner/hashes
-sudo chown root:root /etc/go-safe-cmd-runner/hashes
-sudo chmod 755 /etc/go-safe-cmd-runner/hashes
+sudo mkdir -p /usr/local/etc/go-safe-cmd-runner/hashes
+sudo chown root:root /usr/local/etc/go-safe-cmd-runner/hashes
+sudo chmod 755 /usr/local/etc/go-safe-cmd-runner/hashes
 
 # 設定ファイルハッシュの記録
-sudo ./build/record /path/to/config.toml
+sudo ./build/record -file /path/to/config.toml -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
 
-# 設定ファイルで検証機能を有効化
-# [verification]
-# enabled = true
-# hash_directory = "/etc/go-safe-cmd-runner/hashes"
+# 検証機能はデフォルトで有効（設定ファイルにはverificationセクションは存在しない）
+# 無効化する場合は --disable-verification フラグまたは環境変数を使用
+
+# カスタムハッシュディレクトリを使う場合
+sudo mkdir -p /custom/hash/directory
+sudo chown root:root /custom/hash/directory
+sudo chmod 755 /custom/hash/directory
+sudo ./build/record -file /path/to/config.toml -hash-dir /custom/hash/directory
+./runner --hash-directory /custom/hash/directory --config /path/to/config.toml
 ```
 
 ### 8.2 監視とロギング
