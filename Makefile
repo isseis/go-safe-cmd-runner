@@ -21,7 +21,7 @@ BUILD_FLAGS=-ldflags "-X main.DefaultHashDirectory=$(DEFAULT_HASH_DIRECTORY)"
 # Find all Go source files to use as dependencies for the build
 GO_SOURCES := $(shell find . -type f -name '*.go' -not -name '*_test.go')
 
-.PHONY: all lint build run clean test hash
+.PHONY: all lint build run clean test hash integration-test
 
 all: build
 
@@ -55,3 +55,6 @@ hash: $(BINARY_RECORD) ./sample/config.toml
 test: $(BINARY_RUNNER)
 	$(GOTEST) -v ./...
 	$(ENVCMD) -i $(BINARY_RUNNER) -dry-run -config ./sample/config.toml --disable-verification
+
+integration-test: $(BINARY_RUNNER)
+	$(ENVCMD) -i $(BINARY_RUNNER) -dry-run -config ./sample/config.toml
