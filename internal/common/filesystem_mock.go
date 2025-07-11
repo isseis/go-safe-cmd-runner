@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -34,6 +35,8 @@ type MockFileInfo struct {
 	mode    os.FileMode
 	modTime time.Time
 	isDir   bool
+	uid     uint32
+	gid     uint32
 }
 
 // Name returns the base name of the file
@@ -51,8 +54,13 @@ func (m *MockFileInfo) ModTime() time.Time { return m.modTime }
 // IsDir reports whether m describes a directory
 func (m *MockFileInfo) IsDir() bool { return m.isDir }
 
-// Sys returns the underlying data source (always nil for mock)
-func (m *MockFileInfo) Sys() any { return nil }
+// Sys returns the underlying data source (syscall.Stat_t for mock)
+func (m *MockFileInfo) Sys() any {
+	return &syscall.Stat_t{
+		Uid: m.uid,
+		Gid: m.gid,
+	}
+}
 
 // NewMockFileSystem creates a new MockFileSystem
 func NewMockFileSystem() *MockFileSystem {
@@ -72,6 +80,8 @@ func (m *MockFileSystem) CreateTempDir(prefix string) (string, error) {
 		mode:    DefaultDirPerm,
 		modTime: time.Now(),
 		isDir:   true,
+		uid:     0,
+		gid:     0,
 	}
 	return tempDir, nil
 }
@@ -113,6 +123,8 @@ func (m *MockFileSystem) MkdirAll(path string, perm os.FileMode) error {
 				mode:    perm,
 				modTime: time.Now(),
 				isDir:   true,
+				uid:     0,
+				gid:     0,
 			}
 		}
 	}
@@ -231,12 +243,19 @@ func (m *MockFileSystem) AddFile(path string, mode os.FileMode, content []byte) 
 		mode:    mode,
 		modTime: time.Now(),
 		isDir:   false,
+		uid:     0,
+		gid:     0,
 	}
 	return nil
 }
 
 // AddDir adds a directory to the mock filesystem (for testing)
 func (m *MockFileSystem) AddDir(path string, mode os.FileMode) {
+	m.AddDirWithOwner(path, mode, 0, 0)
+}
+
+// AddDirWithOwner adds a directory with specified owner to the mock filesystem (for testing)
+func (m *MockFileSystem) AddDirWithOwner(path string, mode os.FileMode, uid, gid uint32) {
 	path = filepath.Clean(path)
 
 	m.dirs[path] = true
@@ -245,5 +264,7 @@ func (m *MockFileSystem) AddDir(path string, mode os.FileMode) {
 		mode:    mode | os.ModeDir, // Add directory flag to mode
 		modTime: time.Now(),
 		isDir:   true,
+		uid:     uid,
+		gid:     gid,
 	}
 }

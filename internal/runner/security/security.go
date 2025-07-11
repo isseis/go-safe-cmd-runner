@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
@@ -22,6 +23,7 @@ var (
 	ErrCommandNotAllowed      = errors.New("command not allowed")
 	ErrInvalidPath            = errors.New("invalid path")
 	ErrInvalidRegexPattern    = errors.New("invalid regex pattern")
+	ErrInsecurePathComponent  = errors.New("insecure path component")
 )
 
 // Constants for security configuration
@@ -222,6 +224,7 @@ func (v *Validator) ValidateFilePermissions(filePath string) error {
 }
 
 // ValidateDirectoryPermissions validates that a directory has appropriate permissions
+// and checks the complete path from root to target for security
 func (v *Validator) ValidateDirectoryPermissions(dirPath string) error {
 	cleanPath, dirInfo, err := v.validatePathAndGetInfo(dirPath, "directory")
 	if err != nil {
@@ -235,7 +238,14 @@ func (v *Validator) ValidateDirectoryPermissions(dirPath string) error {
 		return err
 	}
 
-	return v.validatePermissions(cleanPath, dirInfo.Mode().Perm(), v.config.RequiredDirectoryPermissions, "directory")
+	// Validate the target directory permissions
+	if err := v.validatePermissions(cleanPath, dirInfo.Mode().Perm(), v.config.RequiredDirectoryPermissions, "directory"); err != nil {
+		return err
+	}
+
+	// SECURITY: Validate complete path from root to target directory
+	// This prevents attacks through compromised intermediate directories
+	return v.validateCompletePath(cleanPath)
 }
 
 // SanitizeEnvironmentVariables removes or sanitizes sensitive environment variables
@@ -308,5 +318,110 @@ func (v *Validator) ValidateAllEnvironmentVars(envVars map[string]string) error 
 			return err
 		}
 	}
+	return nil
+}
+
+// validateCompletePath validates the security of the complete path from root to target
+// This prevents attacks through compromised intermediate directories
+func (v *Validator) validateCompletePath(targetPath string) error {
+	slog.Debug("Validating complete path security", "target_path", targetPath)
+
+	// Note: Symlink attack protection is handled by safefileio package using openat2
+	// with RESOLVE_NO_SYMLINKS when opening hash files, so we don't need to check here
+
+	// Ensure the path is absolute
+	if !filepath.IsAbs(targetPath) {
+		return fmt.Errorf("%w: path must be absolute: %s", ErrInvalidPath, targetPath)
+	}
+
+	// Clean the path to handle any relative components
+	absPath := filepath.Clean(targetPath)
+
+	// Split the path into components, filtering out empty components
+	components := strings.Split(absPath, string(filepath.Separator))
+	if len(components) > 0 && components[0] == "" {
+		components = components[1:] // Remove empty first component from leading "/"
+	}
+
+	// Validate each directory component from root to target
+	currentPath := string(filepath.Separator)
+	for i, component := range components {
+		if component == "" {
+			continue // Skip any remaining empty components
+		}
+
+		// Build the current path
+		currentPath = filepath.Join(currentPath, component)
+
+		slog.Debug("Validating path component", "component_path", currentPath, "component", component)
+
+		// Get file info for this component
+		info, err := v.fs.Stat(currentPath)
+		if err != nil {
+			slog.Error("Failed to stat path component", "path", currentPath, "error", err)
+			return fmt.Errorf("failed to stat path component %s: %w", currentPath, err)
+		}
+
+		// Ensure intermediate components are directories
+		isLastComponent := (i == len(components)-1)
+		if !isLastComponent && !info.Mode().IsDir() {
+			return fmt.Errorf("%w: intermediate path component %s is not a directory", ErrInsecurePathComponent, currentPath)
+		}
+
+		// Validate directory permissions for security
+		if info.Mode().IsDir() {
+			if err := v.validateDirectoryComponentPermissions(currentPath, info.Mode().Perm()); err != nil {
+				return err
+			}
+		}
+	}
+
+	slog.Debug("Complete path validation successful", "path", absPath)
+	return nil
+}
+
+// validateDirectoryComponentPermissions validates that a directory component has secure permissions
+func (v *Validator) validateDirectoryComponentPermissions(dirPath string, perm os.FileMode) error {
+	// Get file info to check ownership
+	info, err := v.fs.Stat(dirPath)
+	if err != nil {
+		return fmt.Errorf("failed to stat directory %s: %w", dirPath, err)
+	}
+
+	// Get system-level file info for ownership checks
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fmt.Errorf("%w: failed to get system info for directory %s", ErrInsecurePathComponent, dirPath)
+	}
+
+	// Check that other users cannot write (world-writable check)
+	if perm&0o002 != 0 {
+		slog.Error("Directory writable by others detected",
+			"path", dirPath,
+			"permissions", fmt.Sprintf("%04o", perm))
+		return fmt.Errorf("%w: directory %s is writable by others (%04o)",
+			ErrInsecurePathComponent, dirPath, perm)
+	}
+
+	// Check that group cannot write unless owned by root
+	if perm&0o020 != 0 {
+		slog.Error("Directory has group write permissions",
+			"path", dirPath,
+			"permissions", fmt.Sprintf("%04o", perm),
+			"owner_uid", stat.Uid,
+			"owner_gid", stat.Gid)
+		// Only allow group write if owned by root (uid=0) and group (gid=0)
+		if stat.Uid != 0 || stat.Gid != 0 {
+			return fmt.Errorf("%w: directory %s has group write permissions (%04o) but is not owned by root (uid=%d, guid=%d)",
+				ErrInsecurePathComponent, dirPath, perm, stat.Uid, stat.Gid)
+		}
+	}
+
+	// Check that only root can write to the directory
+	if perm&0o200 != 0 && stat.Uid != 0 {
+		return fmt.Errorf("%w: directory %s is writable by non-root user (uid=%d)",
+			ErrInsecurePathComponent, dirPath, stat.Uid)
+	}
+
 	return nil
 }
