@@ -112,7 +112,7 @@ func (v *Validator) Record(filePath string) (string, error) {
 	}
 
 	// Ensure the directory exists
-	if err := os.MkdirAll(filepath.Dir(hashFilePath), 0o750); err != nil {
+	if err := os.MkdirAll(filepath.Dir(hashFilePath), 0o755); err != nil { //nolint:gosec
 		return "", fmt.Errorf("failed to create hash directory: %w", err)
 	}
 
@@ -272,5 +272,5 @@ func (v *Validator) writeHashManifest(filePath string, manifest HashManifest) er
 	jsonData = append(jsonData, '\n')
 
 	// Write to file
-	return safefileio.SafeWriteFile(filePath, jsonData, 0o640)
+	return safefileio.SafeWriteFile(filePath, jsonData, 0o644)
 }

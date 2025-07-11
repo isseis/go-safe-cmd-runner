@@ -11,25 +11,62 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
+	"github.com/isseis/go-safe-cmd-runner/internal/verification"
+)
+
+// Build-time variables (set via ldflags)
+var (
+	// DefaultHashDirectory is set at build time via ldflags
+	DefaultHashDirectory = "/usr/local/etc/go-safe-cmd-runner/hashes" // fallback default
 )
 
 // Error definitions
 var (
-	ErrConfigPathRequired               = errors.New("config file path is required")
-	ErrConfigVerificationNotImplemented = errors.New("configuration verification not implemented")
+	ErrConfigPathRequired = errors.New("config file path is required")
 )
 
 var (
-	configPath   = flag.String("config", "", "path to config file")
-	envFile      = flag.String("env-file", "", "path to environment file")
-	logLevel     = flag.String("log-level", "", "log level (debug, info, warn, error)")
-	dryRun       = flag.Bool("dry-run", false, "print commands without executing them")
-	verifyConfig = flag.Bool("verify-config", false, "verify configuration file integrity (not implemented)")
+	configPath          = flag.String("config", "", "path to config file")
+	envFile             = flag.String("env-file", "", "path to environment file")
+	logLevel            = flag.String("log-level", "", "log level (debug, info, warn, error)")
+	dryRun              = flag.Bool("dry-run", false, "print commands without executing them")
+	disableVerification = flag.Bool("disable-verification", false, "disable configuration file verification")
+	hashDirectory       = flag.String("hash-directory", DefaultHashDirectory, "directory containing hash files")
 )
+
+// getVerificationConfig determines the verification settings based on command line args and environment variables
+func getVerificationConfig() verification.Config {
+	// Start with default: verification enabled
+	enabled := true
+	hashDir := *hashDirectory
+
+	// Check environment variable for disabling verification
+	if envDisable := os.Getenv("GO_SAFE_CMD_RUNNER_DISABLE_VERIFICATION"); envDisable != "" {
+		if parsedDisable, err := strconv.ParseBool(envDisable); err == nil && parsedDisable {
+			enabled = false
+		}
+	}
+
+	// Check environment variable for hash directory override
+	if envHashDir := os.Getenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY"); envHashDir != "" {
+		hashDir = envHashDir
+	}
+
+	// Command line arguments take precedence over environment variables
+	if *disableVerification {
+		enabled = false
+	}
+
+	return verification.Config{
+		Enabled:       enabled,
+		HashDirectory: hashDir,
+	}
+}
 
 func main() {
 	// Wrap main logic in a separate function to properly handle errors and defer
@@ -40,17 +77,6 @@ func main() {
 
 func run() error {
 	flag.Parse()
-
-	// Handle verify-config option
-	if *verifyConfig {
-		fmt.Fprintln(os.Stderr, "ERROR: Configuration verification is not yet implemented")
-		fmt.Fprintln(os.Stderr, "Current implementation phase: 1 (warning only)")
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "WARNING: This feature is not yet implemented. Configuration files are currently")
-		fmt.Fprintln(os.Stderr, "not protected against tampering. Use appropriate file permissions and monitoring")
-		fmt.Fprintln(os.Stderr, "tools to mitigate this security risk.")
-		return ErrConfigVerificationNotImplemented
-	}
 
 	// Set up context with cancellation
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -66,6 +92,20 @@ func run() error {
 	cfg, err := cfgLoader.LoadConfig(*configPath)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Get verification configuration from command line args and environment variables
+	verificationConfig := getVerificationConfig()
+
+	// Initialize verification manager
+	verificationManager, err := verification.NewManager(verificationConfig)
+	if err != nil {
+		return fmt.Errorf("failed to initialize verification: %w", err)
+	}
+
+	// Verify configuration file integrity
+	if err := verificationManager.VerifyConfigFile(*configPath); err != nil {
+		return fmt.Errorf("config verification failed: %w", err)
 	}
 
 	// Initialize Runner with template engine from config loader

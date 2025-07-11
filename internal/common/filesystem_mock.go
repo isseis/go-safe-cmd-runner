@@ -242,7 +242,7 @@ func (m *MockFileSystem) AddDir(path string, mode os.FileMode) {
 	m.dirs[path] = true
 	m.files[path] = &MockFileInfo{
 		name:    filepath.Base(path),
-		mode:    mode,
+		mode:    mode | os.ModeDir, // Add directory flag to mode
 		modTime: time.Now(),
 		isDir:   true,
 	}

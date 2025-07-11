@@ -13,144 +13,146 @@ version = "1.0"
 
 # Global configuration settings
 [global]
-  # Global timeout for all commands in seconds (default: 3600)
-  timeout = 120
+# Global timeout for all commands in seconds (default: 3600)
+timeout = 120
 
-  # Working directory for command execution (must be absolute path)
-  workdir = "/tmp/cmd-runner"
+# Working directory for command execution (must be absolute path)
+workdir = "/tmp/cmd-runner"
 
-  # Log level: debug, info, warn, error (default: info)
-  log_level = "info"
+# Log level: debug, info, warn, error (default: info)
+log_level = "info"
 
 # Template definitions for reusable command configurations
 # Templates allow you to define common settings and variables that can be
 # applied to multiple command groups
 [templates]
 
-  # Development environment template
-  [templates.dev]
-    description = "Development environment template"
-    # Default environment variables for commands using this template
-    env = ["NODE_ENV=development", "DEBUG=true"]
+# Development environment template
+[templates.dev]
+description = "Development environment template"
+# Default environment variables for commands using this template
+env = ["NODE_ENV=development", "DEBUG=true"]
 
-    # Template variables that can be referenced in commands using {{.variable_name}}
-    [templates.dev.variables]
-      app_name = "myapp-dev"
-      port = "3000"
-      env_type = "development"
+# Template variables that can be referenced in commands using {{.variable_name}}
+[templates.dev.variables]
+app_name = "myapp-dev"
+port = "3000"
+env_type = "development"
 
-  # Production environment template
-  [templates.prod]
-    description = "Production environment template"
-    env = ["NODE_ENV=production", "DEBUG=false"]
+# Production environment template
+[templates.prod]
+description = "Production environment template"
+env = ["NODE_ENV=production", "DEBUG=false"]
 
-    [templates.prod.variables]
-      app_name = "myapp-prod"
-      port = "8080"
-      env_type = "production"
+[templates.prod.variables]
+app_name = "myapp-prod"
+port = "8080"
+env_type = "production"
 
 # Command groups define collections of related commands
 # Groups are executed in priority order, with dependencies resolved first
 
 [[groups]]
-  name = "setup"
-  description = "Initial setup and preparation"
-  priority = 1                    # Execution priority (lower numbers run first)
-  depends_on = []                 # Dependencies on other groups
-  template = "dev"                # Apply the 'dev' template to this group
+name = "setup"
+description = "Initial setup and preparation"
+priority = 1                                  # Execution priority (lower numbers run first)
+depends_on = []                               # Dependencies on other groups
+template = "dev"                              # Apply the 'dev' template to this group
 
-  # Commands within this group
-  [[groups.commands]]
-    name = "create_workspace"
-    description = "Create workspace directories"
-    cmd = "mkdir"
-    args = ["-p", "{{.app_name}}", "logs", "tmp"]  # Template variables are expanded
-    timeout = 30                  # Command-specific timeout (overrides global)
+# Commands within this group
+[[groups.commands]]
+name = "create_workspace"
+description = "Create workspace directories"
+cmd = "mkdir"
+args = ["-p", "{{.app_name}}", "logs", "tmp"] # Template variables are expanded
+timeout = 30                                  # Command-specific timeout (overrides global)
 
-  [[groups.commands]]
-    name = "show_environment"
-    description = "Display environment information"
-    cmd = "echo"
-    args = ["Environment: {{.env_type}}, App: {{.app_name}}, Port: {{.port}}"]
-    env = ["CUSTOM_VAR=setup_value"]  # Command-specific environment variables
-
-[[groups]]
-  name = "build"
-  description = "Build and compilation"
-  priority = 2
-  depends_on = ["setup"]          # This group depends on 'setup' group completion
-  template = "dev"                # Use development template
-
-  [[groups.commands]]
-    name = "build_start"
-    description = "Start build process"
-    cmd = "echo"
-    args = ["Starting build for {{.app_name}}..."]
-
-  [[groups.commands]]
-    name = "create_build_dirs"
-    description = "Create build directories"
-    cmd = "mkdir"
-    args = ["-p", "build/{{.app_name}}", "dist"]
-    dir = ""                      # Working directory (empty uses global/template setting)
-    timeout = 45
+[[groups.commands]]
+name = "show_environment"
+description = "Display environment information"
+cmd = "echo"
+args = ["Environment: {{.env_type}}, App: {{.app_name}}, Port: {{.port}}"]
+env = ["CUSTOM_VAR=setup_value"]                                           # Command-specific environment variables
 
 [[groups]]
-  name = "test"
-  description = "Testing and validation"
-  priority = 3
-  depends_on = ["build"]
-  # No template applied - uses global defaults
+name = "build"
+description = "Build and compilation"
+priority = 2
+depends_on = ["setup"]                # This group depends on 'setup' group completion
+template = "dev"                      # Use development template
 
-  [[groups.commands]]
-    name = "run_tests"
-    description = "Execute test suite"
-    cmd = "echo"
-    args = ["Running tests with external var: ${TEST_SUITE}"]  # ${VAR} syntax for runtime env vars
-    env = ["TEST_ENV=ci", "TIMEOUT=300"]
-    timeout = 60
+[[groups.commands]]
+name = "build_start"
+description = "Start build process"
+cmd = "echo"
+args = ["Starting build for {{.app_name}}..."]
 
-  [[groups.commands]]
-    name = "check_system"
-    description = "System information check"
-    cmd = "uname"
-    args = ["-a"]
-
-[[groups]]
-  name = "deploy"
-  description = "Deployment operations"
-  priority = 4
-  depends_on = ["test"]
-  template = "prod"               # Use production template for deployment
-
-  [[groups.commands]]
-    name = "prepare_deploy"
-    description = "Prepare deployment"
-    cmd = "echo"
-    args = ["Deploying {{.app_name}} to {{.env_type}} on port {{.port}}"]
-
-  [[groups.commands]]
-    name = "copy_artifacts"
-    description = "Copy build artifacts"
-    cmd = "cp"
-    args = ["-r", "build/", "deploy/"]
-    timeout = 90
+[[groups.commands]]
+name = "create_build_dirs"
+description = "Create build directories"
+cmd = "mkdir"
+args = ["-p", "build/{{.app_name}}", "dist"]
+dir = ""                                     # Working directory (empty uses global/template setting)
+timeout = 45
 
 [[groups]]
-  name = "cleanup"
-  description = "Cleanup and maintenance"
-  priority = 5
-  depends_on = ["deploy"]
+name = "test"
+description = "Testing and validation"
+priority = 3
+depends_on = ["build"]
+# No template applied - uses global defaults
 
-  [[groups.commands]]
-    name = "cleanup_temp"
-    description = "Remove temporary files"
-    cmd = "echo"
-    args = ["Cleaning up temporary files for ${DEPLOY_ENV:-default} environment"]
-    env = ["CLEANUP_MODE=safe"]
+[[groups.commands]]
+name = "run_tests"
+description = "Execute test suite"
+cmd = "echo"
+args = [
+  "Running tests with external var: ${TEST_SUITE}",
+] # ${VAR} syntax for runtime env vars
+env = ["TEST_ENV=ci", "TIMEOUT=300"]
+timeout = 60
 
-  [[groups.commands]]
-    name = "final_status"
-    description = "Display final status"
-    cmd = "echo"
-    args = ["Pipeline completed successfully!"]
+[[groups.commands]]
+name = "check_system"
+description = "System information check"
+cmd = "uname"
+args = ["-a"]
+
+[[groups]]
+name = "deploy"
+description = "Deployment operations"
+priority = 4
+depends_on = ["test"]
+template = "prod"                     # Use production template for deployment
+
+[[groups.commands]]
+name = "prepare_deploy"
+description = "Prepare deployment"
+cmd = "echo"
+args = ["Deploying {{.app_name}} to {{.env_type}} on port {{.port}}"]
+
+[[groups.commands]]
+name = "copy_artifacts"
+description = "Copy build artifacts"
+cmd = "cp"
+args = ["-r", "build/", "deploy/"]
+timeout = 90
+
+[[groups]]
+name = "cleanup"
+description = "Cleanup and maintenance"
+priority = 5
+depends_on = ["deploy"]
+
+[[groups.commands]]
+name = "cleanup_temp"
+description = "Remove temporary files"
+cmd = "echo"
+args = ["Cleaning up temporary files for ${DEPLOY_ENV:-default} environment"]
+env = ["CLEANUP_MODE=safe"]
+
+[[groups.commands]]
+name = "final_status"
+description = "Display final status"
+cmd = "echo"
+args = ["Pipeline completed successfully!"]

@@ -5,23 +5,26 @@ import (
 	"flag"
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // setupTestFlags initializes the command-line flags for testing and returns a cleanup function
-func setupTestFlags(errorHandling flag.ErrorHandling) func() {
+func setupTestFlags() func() {
 	// Save original command line arguments and flag.CommandLine
 	oldArgs := os.Args
 	oldCommandLine := flag.CommandLine
 
-	// Create new flag set with the specified error handling
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], errorHandling)
+	// Create new flag set with ExitOnError handling
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 
 	// Initialize all flags
 	configPath = flag.String("config", "", "path to config file")
 	envFile = flag.String("env-file", "", "path to environment file")
 	logLevel = flag.String("log-level", "", "log level (debug, info, warn, error)")
 	dryRun = flag.Bool("dry-run", false, "print commands without executing them")
-	verifyConfig = flag.Bool("verify-config", false, "verify configuration file integrity (not implemented)")
+	disableVerification = flag.Bool("disable-verification", false, "disable configuration file verification")
+	hashDirectory = flag.String("hash-directory", DefaultHashDirectory, "directory containing hash files")
 
 	// Return cleanup function to restore original state
 	return func() {
@@ -30,47 +33,122 @@ func setupTestFlags(errorHandling flag.ErrorHandling) func() {
 	}
 }
 
-func TestVerifyConfigOption(t *testing.T) {
-	// Setup test flags with ExitOnError handling
-	cleanup := setupTestFlags(flag.ExitOnError)
+func TestConfigPathRequired(t *testing.T) {
+	// Setup test flags
+	cleanup := setupTestFlags()
 	defer cleanup()
 
-	// Test args with --verify-config
-	os.Args = []string{"runner", "--verify-config"}
+	// Test args without --config
+	os.Args = []string{"runner"}
 
 	// Test run() function
 	err := run()
 	if err == nil {
-		t.Error("expected error when --verify-config is used")
+		t.Error("expected error when --config is not provided")
 	}
 
-	if !errors.Is(err, ErrConfigVerificationNotImplemented) {
-		t.Errorf("expected ErrConfigVerificationNotImplemented, got: %v", err)
-	}
-
-	// Verify the flag was parsed correctly
-	if !*verifyConfig {
-		t.Error("expected verifyConfig flag to be true")
+	if !errors.Is(err, ErrConfigPathRequired) {
+		t.Errorf("expected ErrConfigPathRequired, got: %v", err)
 	}
 }
 
-func TestVerifyConfigOptionHelp(t *testing.T) {
-	// Setup test flags with ContinueOnError handling
-	cleanup := setupTestFlags(flag.ContinueOnError)
-	defer cleanup()
+func TestGetVerificationConfig(t *testing.T) {
+	// Clear environment variables at start
+	oldEnvDisable := os.Getenv("GO_SAFE_CMD_RUNNER_DISABLE_VERIFICATION")
+	oldEnvHashDir := os.Getenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY")
+	defer func() {
+		os.Setenv("GO_SAFE_CMD_RUNNER_DISABLE_VERIFICATION", oldEnvDisable)
+		os.Setenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY", oldEnvHashDir)
+	}()
 
-	// Test that the help text contains the expected description
-	found := false
-	flag.VisitAll(func(f *flag.Flag) {
-		if f.Name == "verify-config" {
-			expectedUsage := "verify configuration file integrity (not implemented)"
-			if f.Usage == expectedUsage {
-				found = true
-			}
-		}
+	t.Run("default configuration", func(t *testing.T) {
+		cleanup := setupTestFlags()
+		defer cleanup()
+
+		// Clear environment variables
+		os.Unsetenv("GO_SAFE_CMD_RUNNER_DISABLE_VERIFICATION")
+		os.Unsetenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY")
+
+		// Reset flags to defaults
+		os.Args = []string{"runner"}
+		flag.Parse()
+
+		config := getVerificationConfig()
+		assert.True(t, config.Enabled, "verification should be enabled by default")
+		assert.Equal(t, DefaultHashDirectory, config.HashDirectory)
 	})
 
-	if !found {
-		t.Error("verify-config flag not found or has incorrect usage text")
-	}
+	t.Run("disabled via command line", func(t *testing.T) {
+		cleanup := setupTestFlags()
+		defer cleanup()
+
+		// Clear environment variables
+		os.Unsetenv("GO_SAFE_CMD_RUNNER_DISABLE_VERIFICATION")
+		os.Unsetenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY")
+
+		os.Args = []string{"runner", "--disable-verification"}
+		flag.Parse()
+
+		config := getVerificationConfig()
+		assert.False(t, config.Enabled, "verification should be disabled via command line")
+		assert.Equal(t, DefaultHashDirectory, config.HashDirectory)
+	})
+
+	t.Run("disabled via environment variable", func(t *testing.T) {
+		cleanup := setupTestFlags()
+		defer cleanup()
+
+		os.Setenv("GO_SAFE_CMD_RUNNER_DISABLE_VERIFICATION", "true")
+		defer os.Unsetenv("GO_SAFE_CMD_RUNNER_DISABLE_VERIFICATION")
+
+		os.Args = []string{"runner"}
+		flag.Parse()
+
+		config := getVerificationConfig()
+		assert.False(t, config.Enabled, "verification should be disabled via environment variable")
+	})
+
+	t.Run("custom hash directory via command line", func(t *testing.T) {
+		cleanup := setupTestFlags()
+		defer cleanup()
+
+		// Clear environment variables
+		os.Unsetenv("GO_SAFE_CMD_RUNNER_DISABLE_VERIFICATION")
+		os.Unsetenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY")
+
+		os.Args = []string{"runner", "--hash-directory", "/custom/path"}
+		flag.Parse()
+
+		config := getVerificationConfig()
+		assert.True(t, config.Enabled)
+		assert.Equal(t, "/custom/path", config.HashDirectory)
+	})
+
+	t.Run("custom hash directory via environment variable", func(t *testing.T) {
+		cleanup := setupTestFlags()
+		defer cleanup()
+
+		os.Setenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY", "/env/path")
+		defer os.Unsetenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY")
+
+		os.Args = []string{"runner"}
+		flag.Parse()
+
+		config := getVerificationConfig()
+		assert.Equal(t, "/env/path", config.HashDirectory)
+	})
+
+	t.Run("command line takes precedence over environment", func(t *testing.T) {
+		cleanup := setupTestFlags()
+		defer cleanup()
+
+		os.Setenv("GO_SAFE_CMD_RUNNER_DISABLE_VERIFICATION", "false")
+		defer os.Unsetenv("GO_SAFE_CMD_RUNNER_DISABLE_VERIFICATION")
+
+		os.Args = []string{"runner", "--disable-verification"}
+		flag.Parse()
+
+		config := getVerificationConfig()
+		assert.False(t, config.Enabled, "command line should take precedence over environment variable")
+	})
 }

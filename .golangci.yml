@@ -46,6 +46,7 @@ linters:
             - github.com/isseis/go-safe-cmd-runner/internal/filevalidator
             - github.com/isseis/go-safe-cmd-runner/internal/runner
             - github.com/isseis/go-safe-cmd-runner/internal/common
+            - github.com/isseis/go-safe-cmd-runner/internal/verification
             - github.com/pelletier/go-toml/v2
             - github.com/stretchr/testify/assert
             - github.com/stretchr/testify/require
@@ -63,6 +64,7 @@ linters:
             - github.com/joho/godotenv
             - github.com/isseis/go-safe-cmd-runner/internal/cmdcommon
             - github.com/isseis/go-safe-cmd-runner/internal/runner
+            - github.com/isseis/go-safe-cmd-runner/internal/verification
             - $gostd
 
     mnd:
@@ -75,8 +77,8 @@ linters:
         - assign
 
       ignored-numbers:
-        - '0o640' # Default file permissions for files
-        - '0o750' # Default file permissions for directories
+        - '0o644' # Default file permissions for files
+        - '0o755' # Default file permissions for directories
 
   exclusions:
     rules:
