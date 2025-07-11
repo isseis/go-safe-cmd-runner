@@ -22,7 +22,7 @@ import (
 // Build-time variables (set via ldflags)
 var (
 	// DefaultHashDirectory is set at build time via ldflags
-	DefaultHashDirectory = "/etc/go-safe-cmd-runner/hashes" // fallback default
+	DefaultHashDirectory = "/usr/local/etc/go-safe-cmd-runner/hashes" // fallback default
 )
 
 // Error definitions
