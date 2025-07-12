@@ -412,7 +412,7 @@ func (v *Validator) validateDirectoryComponentPermissions(dirPath string, perm o
 			"owner_gid", stat.Gid)
 		// Only allow group write if owned by root (uid=0) and group (gid=0)
 		if stat.Uid != 0 || stat.Gid != 0 {
-			return fmt.Errorf("%w: directory %s has group write permissions (%04o) but is not owned by root (uid=%d, guid=%d)",
+			return fmt.Errorf("%w: directory %s has group write permissions (%04o) but is not owned by root (uid=%d, gid=%d)",
 				ErrInsecurePathComponent, dirPath, perm, stat.Uid, stat.Gid)
 		}
 	}
