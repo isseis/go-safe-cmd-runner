@@ -238,8 +238,8 @@ func (v *Validator) ValidateDirectoryPermissions(dirPath string) error {
 		return err
 	}
 
-	// Validate the target directory permissions
-	if err := v.validatePermissions(cleanPath, dirInfo.Mode().Perm(), v.config.RequiredDirectoryPermissions, "directory"); err != nil {
+	// Check if the directory has the required permissions
+	if err := v.validatePermissions(dirPath, dirInfo.Mode().Perm(), v.config.RequiredDirectoryPermissions, "directory"); err != nil {
 		return err
 	}
 
@@ -323,29 +323,21 @@ func (v *Validator) ValidateAllEnvironmentVars(envVars map[string]string) error 
 
 // validateCompletePath validates the security of the complete path from root to target
 // This prevents attacks through compromised intermediate directories
-func (v *Validator) validateCompletePath(targetPath string) error {
-	slog.Debug("Validating complete path security", "target_path", targetPath)
+func (v *Validator) validateCompletePath(cleanDir string) error {
+	slog.Debug("Validating complete path security", "target_path", cleanDir)
 
 	// Note: Symlink attack protection is handled by safefileio package using openat2
 	// with RESOLVE_NO_SYMLINKS when opening hash files, so we don't need to check here
 
-	// Ensure the path is absolute
-	if !filepath.IsAbs(targetPath) {
-		return fmt.Errorf("%w: path must be absolute: %s", ErrInvalidPath, targetPath)
-	}
-
-	// Clean the path to handle any relative components
-	absPath := filepath.Clean(targetPath)
-
 	// Split the path into components, filtering out empty components
-	components := strings.Split(absPath, string(filepath.Separator))
+	components := strings.Split(cleanDir, string(filepath.Separator))
 	if len(components) > 0 && components[0] == "" {
 		components = components[1:] // Remove empty first component from leading "/"
 	}
 
 	// Validate each directory component from root to target
 	currentPath := string(filepath.Separator)
-	for i, component := range components {
+	for _, component := range components {
 		if component == "" {
 			continue // Skip any remaining empty components
 		}
@@ -362,37 +354,37 @@ func (v *Validator) validateCompletePath(targetPath string) error {
 			return fmt.Errorf("failed to stat path component %s: %w", currentPath, err)
 		}
 
-		// Ensure intermediate components are directories
-		isLastComponent := (i == len(components)-1)
-		if !isLastComponent && !info.Mode().IsDir() {
-			return fmt.Errorf("%w: intermediate path component %s is not a directory", ErrInsecurePathComponent, currentPath)
+		// Check if the component is not a symlink
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("%w: path component %s is a symlink", ErrInsecurePathComponent, currentPath)
+		}
+
+		// Ensure the component is a directory
+		if !info.Mode().IsDir() {
+			return fmt.Errorf("%w: path component %s is not a directory", ErrInsecurePathComponent, currentPath)
 		}
 
 		// Validate directory permissions for security
-		if info.Mode().IsDir() {
-			if err := v.validateDirectoryComponentPermissions(currentPath, info.Mode().Perm()); err != nil {
-				return err
-			}
+		if err := v.validateDirectoryPermissions(currentPath, info); err != nil {
+			return err
 		}
 	}
 
-	slog.Debug("Complete path validation successful", "path", absPath)
+	slog.Debug("Complete path validation successful", "path", cleanDir)
 	return nil
 }
 
-// validateDirectoryComponentPermissions validates that a directory component has secure permissions
-func (v *Validator) validateDirectoryComponentPermissions(dirPath string, perm os.FileMode) error {
-	// Get file info to check ownership
-	info, err := v.fs.Lstat(dirPath)
-	if err != nil {
-		return fmt.Errorf("failed to stat directory %s: %w", dirPath, err)
-	}
-
+// validateDirectoryPermissions validates that a directory component has secure permissions
+// info parameter should be the FileInfo for the directory at dirPath to avoid redundant filesystem calls
+func (v *Validator) validateDirectoryPermissions(dirPath string, info os.FileInfo) error {
 	// Get system-level file info for ownership checks
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
 		return fmt.Errorf("%w: failed to get system info for directory %s", ErrInsecurePathComponent, dirPath)
 	}
+
+	// Get permissions from the file info
+	perm := info.Mode().Perm()
 
 	// Check that other users cannot write (world-writable check)
 	if perm&0o002 != 0 {
