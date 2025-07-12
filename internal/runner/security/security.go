@@ -172,7 +172,7 @@ func (v *Validator) validatePathAndGetInfo(path, pathType string) (string, os.Fi
 	}
 
 	// Get file info
-	fileInfo, err := v.fs.Stat(cleanPath)
+	fileInfo, err := v.fs.Lstat(cleanPath)
 	if err != nil {
 		slog.Error("Failed to get "+pathType+" info", "path", cleanPath, "error", err)
 		return "", nil, fmt.Errorf("failed to stat %s: %w", cleanPath, err)
@@ -356,7 +356,7 @@ func (v *Validator) validateCompletePath(targetPath string) error {
 		slog.Debug("Validating path component", "component_path", currentPath, "component", component)
 
 		// Get file info for this component
-		info, err := v.fs.Stat(currentPath)
+		info, err := v.fs.Lstat(currentPath)
 		if err != nil {
 			slog.Error("Failed to stat path component", "path", currentPath, "error", err)
 			return fmt.Errorf("failed to stat path component %s: %w", currentPath, err)
@@ -383,7 +383,7 @@ func (v *Validator) validateCompletePath(targetPath string) error {
 // validateDirectoryComponentPermissions validates that a directory component has secure permissions
 func (v *Validator) validateDirectoryComponentPermissions(dirPath string, perm os.FileMode) error {
 	// Get file info to check ownership
-	info, err := v.fs.Stat(dirPath)
+	info, err := v.fs.Lstat(dirPath)
 	if err != nil {
 		return fmt.Errorf("failed to stat directory %s: %w", dirPath, err)
 	}

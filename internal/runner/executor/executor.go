@@ -152,7 +152,7 @@ func (fs *osFileSystem) RemoveAll(path string) error {
 }
 
 func (fs *osFileSystem) FileExists(path string) (bool, error) {
-	_, err := os.Stat(path)
+	_, err := os.Lstat(path)
 	if err == nil {
 		return true, nil
 	}

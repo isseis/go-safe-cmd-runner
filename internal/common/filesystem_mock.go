@@ -174,8 +174,8 @@ func (m *MockFileSystem) Remove(path string) error {
 	return nil
 }
 
-// Stat returns file information for the given path
-func (m *MockFileSystem) Stat(path string) (fs.FileInfo, error) {
+// Lstat returns file information for the given path
+func (m *MockFileSystem) Lstat(path string) (fs.FileInfo, error) {
 	path = filepath.Clean(path)
 
 	info, exists := m.files[path]
