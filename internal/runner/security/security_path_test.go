@@ -98,8 +98,7 @@ func TestValidator_ValidateDirectoryPermissions_CompletePath(t *testing.T) {
 			name:        "relative path rejected",
 			dirPath:     "relative/path",
 			shouldFail:  true,
-			expectedErr: os.ErrNotExist,
-			// TODO: This should be ErrInvalidPath, but mock filesystem returns ErrNotExist
+			expectedErr: ErrInvalidPath,
 		},
 		{
 			name:        "path does not exist",

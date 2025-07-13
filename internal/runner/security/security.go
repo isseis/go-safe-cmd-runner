@@ -165,6 +165,13 @@ func (v *Validator) validatePathAndGetInfo(path, pathType string) (string, os.Fi
 	cleanPath := filepath.Clean(path)
 	slog.Debug("Validating "+pathType+" permissions", "path", cleanPath)
 
+	// Check if path is absolute
+	if !filepath.IsAbs(cleanPath) {
+		err := fmt.Errorf("%w: path must be absolute, got relative path: %s", ErrInvalidPath, cleanPath)
+		slog.Error("Path validation failed", "path", cleanPath, "error", err)
+		return "", nil, err
+	}
+
 	if len(cleanPath) > v.config.MaxPathLength {
 		err := fmt.Errorf("%w: path too long (%d > %d)", ErrInvalidPath, len(cleanPath), v.config.MaxPathLength)
 		slog.Error("Path validation failed", "path", cleanPath, "error", err, "max_length", v.config.MaxPathLength)
