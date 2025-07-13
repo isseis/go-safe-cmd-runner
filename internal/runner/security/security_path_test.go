@@ -44,7 +44,7 @@ func TestValidator_ValidateDirectoryPermissions_CompletePath(t *testing.T) {
 			},
 			dirPath:     "/usr/local/etc/go-safe-cmd-runner/hashes",
 			shouldFail:  true,
-			expectedErr: ErrInvalidFilePermissions,
+			expectedErr: ErrInvalidDirPermissions,
 		},
 		{
 			name: "directory with group-writable intermediate directory owned by non-root",
@@ -57,7 +57,7 @@ func TestValidator_ValidateDirectoryPermissions_CompletePath(t *testing.T) {
 			},
 			dirPath:     "/opt/myapp/etc/go-safe-cmd-runner/hashes",
 			shouldFail:  true,
-			expectedErr: ErrInvalidFilePermissions,
+			expectedErr: ErrInvalidDirPermissions,
 		},
 		{
 			name: "directory with root group write owned by root",
@@ -82,7 +82,7 @@ func TestValidator_ValidateDirectoryPermissions_CompletePath(t *testing.T) {
 			},
 			dirPath:     "/usr/local/etc/go-safe-cmd-runner/hashes",
 			shouldFail:  true,
-			expectedErr: ErrInvalidFilePermissions,
+			expectedErr: ErrInvalidDirPermissions,
 		},
 		{
 			name: "directory owned by non-root user",
@@ -93,7 +93,7 @@ func TestValidator_ValidateDirectoryPermissions_CompletePath(t *testing.T) {
 			},
 			dirPath:     "/home/user/config",
 			shouldFail:  true,
-			expectedErr: ErrInvalidFilePermissions,
+			expectedErr: ErrInvalidDirPermissions,
 		},
 		{
 			name:        "relative path rejected",

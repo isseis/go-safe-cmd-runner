@@ -18,12 +18,37 @@ import (
 
 // Error definitions
 var (
+	// ErrInvalidFilePermissions is returned when a regular file has inappropriate permissions
+	// (e.g., world-writable, group-writable when not allowed, wrong file type)
 	ErrInvalidFilePermissions = errors.New("invalid file permissions")
-	ErrUnsafeEnvironmentVar   = errors.New("unsafe environment variable")
-	ErrCommandNotAllowed      = errors.New("command not allowed")
-	ErrInvalidPath            = errors.New("invalid path")
-	ErrInvalidRegexPattern    = errors.New("invalid regex pattern")
-	ErrInsecurePathComponent  = errors.New("insecure path component")
+
+	// ErrInvalidDirPermissions is returned when a directory has inappropriate permissions
+	// (e.g., world-writable, group-writable by non-root, writable by non-root user)
+	ErrInvalidDirPermissions = errors.New("invalid directory permissions")
+
+	// ErrUnsafeEnvironmentVar is returned when an environment variable contains
+	// potentially dangerous patterns that could lead to command injection
+	ErrUnsafeEnvironmentVar = errors.New("unsafe environment variable")
+
+	// ErrCommandNotAllowed is returned when a command does not match any allowed pattern
+	// in the security configuration
+	ErrCommandNotAllowed = errors.New("command not allowed")
+
+	// ErrInvalidPath is returned for path-related structural issues:
+	// - Empty paths
+	// - Relative paths (when absolute paths are required)
+	// - Paths that exceed maximum length limits
+	ErrInvalidPath = errors.New("invalid path")
+
+	// ErrInvalidRegexPattern is returned when a regex pattern in the security configuration
+	// cannot be compiled
+	ErrInvalidRegexPattern = errors.New("invalid regex pattern")
+
+	// ErrInsecurePathComponent is returned for structural security issues in path components:
+	// - Path components that are symbolic links (symlink attack prevention)
+	// - Path components that are not directories when they should be
+	// - Failed to get system information for path components
+	ErrInsecurePathComponent = errors.New("insecure path component")
 )
 
 // Constants for security configuration
@@ -238,7 +263,7 @@ func (v *Validator) ValidateDirectoryPermissions(dirPath string) error {
 
 	// Check if it's a directory
 	if !dirInfo.Mode().IsDir() {
-		err := fmt.Errorf("%w: %s is not a directory", ErrInvalidFilePermissions, cleanPath)
+		err := fmt.Errorf("%w: %s is not a directory", ErrInvalidDirPermissions, cleanPath)
 		slog.Warn("Invalid directory type", "path", cleanPath, "mode", dirInfo.Mode().String())
 		return err
 	}
@@ -387,7 +412,7 @@ func (v *Validator) validateDirectoryComponentPermissions(dirPath string, info o
 			"path", dirPath,
 			"permissions", fmt.Sprintf("%04o", perm))
 		return fmt.Errorf("%w: directory %s is writable by others (%04o)",
-			ErrInvalidFilePermissions, dirPath, perm)
+			ErrInvalidDirPermissions, dirPath, perm)
 	}
 
 	// Check that group cannot write unless owned by root
@@ -400,14 +425,14 @@ func (v *Validator) validateDirectoryComponentPermissions(dirPath string, info o
 		// Only allow group write if owned by root (uid=0) and group (gid=0)
 		if stat.Uid != 0 || stat.Gid != 0 {
 			return fmt.Errorf("%w: directory %s has group write permissions (%04o) but is not owned by root (uid=%d, gid=%d)",
-				ErrInvalidFilePermissions, dirPath, perm, stat.Uid, stat.Gid)
+				ErrInvalidDirPermissions, dirPath, perm, stat.Uid, stat.Gid)
 		}
 	}
 
 	// Check that only root can write to the directory
 	if perm&0o200 != 0 && stat.Uid != 0 {
 		return fmt.Errorf("%w: directory %s is writable by non-root user (uid=%d)",
-			ErrInvalidFilePermissions, dirPath, stat.Uid)
+			ErrInvalidDirPermissions, dirPath, stat.Uid)
 	}
 
 	return nil

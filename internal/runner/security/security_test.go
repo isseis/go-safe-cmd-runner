@@ -235,7 +235,7 @@ func TestValidator_ValidateDirectoryPermissions(t *testing.T) {
 
 		err := validator.ValidateDirectoryPermissions("/test-excessive-dir")
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, ErrInvalidFilePermissions))
+		assert.True(t, errors.Is(err, ErrInvalidDirPermissions))
 	})
 
 	t.Run("directory with only subset of allowed permissions", func(t *testing.T) {
@@ -260,7 +260,7 @@ func TestValidator_ValidateDirectoryPermissions(t *testing.T) {
 
 		err := validator.ValidateDirectoryPermissions("/test-file.txt")
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, ErrInvalidFilePermissions))
+		assert.True(t, errors.Is(err, ErrInvalidDirPermissions))
 		assert.Contains(t, err.Error(), "is not a directory")
 	})
 
