@@ -107,6 +107,19 @@ func TestValidator_ValidateDirectoryPermissions_CompletePath(t *testing.T) {
 			shouldFail:  true,
 			expectedErr: os.ErrNotExist,
 		},
+		{
+			name: "root directory with insecure permissions",
+			setupFunc: func(fs *common.MockFileSystem) {
+				// Replace default secure root with insecure one
+				fs.RemoveAll("/")
+				fs.AddDirWithOwner("/", 0o777, 0, 0) // World-writable root - insecure!
+				fs.AddDir("/usr", 0o755)
+				fs.AddDir("/usr/local", 0o755)
+			},
+			dirPath:     "/usr/local",
+			shouldFail:  true,
+			expectedErr: ErrInvalidDirPermissions,
+		},
 	}
 
 	for _, tt := range tests {

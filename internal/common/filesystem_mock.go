@@ -64,10 +64,15 @@ func (m *MockFileInfo) Sys() any {
 
 // NewMockFileSystem creates a new MockFileSystem
 func NewMockFileSystem() *MockFileSystem {
-	return &MockFileSystem{
+	fs := &MockFileSystem{
 		files: make(map[string]*MockFileInfo),
 		dirs:  make(map[string]bool),
 	}
+
+	// Add root directory by default (owned by root with secure permissions)
+	fs.AddDirWithOwner("/", 0o755, 0, 0)
+
+	return fs
 }
 
 // CreateTempDir creates a mock temporary directory

@@ -61,6 +61,12 @@ const (
 	DefaultMaxPathLength = 4096
 )
 
+// Constants for security configuration
+const (
+	UIDRoot = 0
+	GIDRoot = 0
+)
+
 // Config holds security-related configuration
 type Config struct {
 	// AllowedCommands is a list of allowed command patterns (regex)
@@ -185,17 +191,15 @@ func (v *Validator) validatePathAndGetInfo(path, pathType string) (string, os.Fi
 		slog.Error("Empty " + pathType + " path provided for permission validation")
 		return "", nil, fmt.Errorf("%w: empty path", ErrInvalidPath)
 	}
+	if !filepath.IsAbs(path) {
+		err := fmt.Errorf("%w: path must be absolute, got relative path: %s", ErrInvalidPath, path)
+		slog.Error("Path validation failed", "path", path, "error", err)
+		return "", nil, err
+	}
 
 	// Clean and validate the path
 	cleanPath := filepath.Clean(path)
 	slog.Debug("Validating "+pathType+" permissions", "path", cleanPath)
-
-	// Check if path is absolute
-	if !filepath.IsAbs(cleanPath) {
-		err := fmt.Errorf("%w: path must be absolute, got relative path: %s", ErrInvalidPath, cleanPath)
-		slog.Error("Path validation failed", "path", cleanPath, "error", err)
-		return "", nil, err
-	}
 
 	if len(cleanPath) > v.config.MaxPathLength {
 		err := fmt.Errorf("%w: path too long (%d > %d)", ErrInvalidPath, len(cleanPath), v.config.MaxPathLength)
@@ -256,21 +260,21 @@ func (v *Validator) ValidateFilePermissions(filePath string) error {
 // ValidateDirectoryPermissions validates that a directory has appropriate permissions
 // and checks the complete path from root to target for security
 func (v *Validator) ValidateDirectoryPermissions(dirPath string) error {
-	cleanPath, dirInfo, err := v.validatePathAndGetInfo(dirPath, "directory")
+	cleanDir, dirInfo, err := v.validatePathAndGetInfo(dirPath, "directory")
 	if err != nil {
 		return err
 	}
 
 	// Check if it's a directory
 	if !dirInfo.Mode().IsDir() {
-		err := fmt.Errorf("%w: %s is not a directory", ErrInvalidDirPermissions, cleanPath)
-		slog.Warn("Invalid directory type", "path", cleanPath, "mode", dirInfo.Mode().String())
+		err := fmt.Errorf("%w: %s is not a directory", ErrInvalidDirPermissions, dirPath)
+		slog.Warn("Invalid directory type", "path", dirPath, "mode", dirInfo.Mode().String())
 		return err
 	}
 
 	// SECURITY: Validate complete path from root to target directory
 	// This prevents attacks through compromised intermediate directories
-	return v.validateCompletePath(cleanPath, dirPath)
+	return v.validateCompletePath(cleanDir, dirPath)
 }
 
 // SanitizeEnvironmentVariables removes or sanitizes sensitive environment variables
@@ -348,49 +352,50 @@ func (v *Validator) ValidateAllEnvironmentVars(envVars map[string]string) error 
 
 // validateCompletePath validates the security of the complete path from root to target
 // This prevents attacks through compromised intermediate directories
-func (v *Validator) validateCompletePath(cleanDir string, originalDir string) error {
-	slog.Debug("Validating complete path security", "target_path", cleanDir)
+// cleanDir must be absolute and cleaned.
+func (v *Validator) validateCompletePath(cleanPath string, originalPath string) error {
+	slog.Debug("Validating complete path security", "target_path", originalPath)
 
-	// Note: Symlink attack protection is handled by safefileio package using openat2
-	// with RESOLVE_NO_SYMLINKS when opening hash files, so we don't need to check here
+	// Validate each directory component from target to root
+	for currentPath := cleanPath; ; {
+		slog.Debug("Validating path component", "component_path", currentPath)
 
-	// Validate each directory component from root to target
-	for cleanDir != "." && cleanDir != string(filepath.Separator) {
-		currentPath, component := filepath.Split(cleanDir)
-		cleanDir = filepath.Clean(currentPath)
-		if component == "" {
-			continue // Skip empty components
-		}
-
-		// Build the current path
-		currentPath = filepath.Join(currentPath, component)
-
-		slog.Debug("Validating path component", "component_path", currentPath, "component", component)
-
-		// Get file info for this component
 		info, err := v.fs.Lstat(currentPath)
 		if err != nil {
 			slog.Error("Failed to stat path component", "path", currentPath, "error", err)
 			return fmt.Errorf("failed to stat path component %s: %w", currentPath, err)
 		}
 
-		// Check if the component is not a symlink
-		if info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("%w: path component %s is a symlink", ErrInsecurePathComponent, currentPath)
+		if err := v.validateDirectoryComponentMode(currentPath, info); err != nil {
+			return err
 		}
-
-		// Ensure the component is a directory
-		if !info.Mode().IsDir() {
-			return fmt.Errorf("%w: path component %s is not a directory", ErrInsecurePathComponent, currentPath)
-		}
-
-		// Validate directory permissions for security
 		if err := v.validateDirectoryComponentPermissions(currentPath, info); err != nil {
 			return err
 		}
+
+		// Move to parent directory, or break if we reached root
+		parentPath := filepath.Dir(currentPath)
+		if parentPath == currentPath {
+			break
+		}
+		currentPath = parentPath
 	}
 
-	slog.Debug("Complete path validation successful", "original_path", originalDir, "final_path", cleanDir)
+	slog.Debug("Complete path validation successful", "original_path", originalPath, "final_path", cleanPath)
+	return nil
+}
+
+// validateDirectoryComponentMode validates that a directory component is a directory and not a symlink
+func (v *Validator) validateDirectoryComponentMode(dirPath string, info os.FileInfo) error {
+	// Check if the component is not a symlink
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%w: path component %s is a symlink", ErrInsecurePathComponent, dirPath)
+	}
+
+	// Ensure the component is a directory
+	if !info.Mode().IsDir() {
+		return fmt.Errorf("%w: path component %s is not a directory", ErrInsecurePathComponent, dirPath)
+	}
 	return nil
 }
 
@@ -403,7 +408,6 @@ func (v *Validator) validateDirectoryComponentPermissions(dirPath string, info o
 		return fmt.Errorf("%w: failed to get system info for directory %s", ErrInsecurePathComponent, dirPath)
 	}
 
-	// Get permissions from the file info
 	perm := info.Mode().Perm()
 
 	// Check that other users cannot write (world-writable check)
@@ -423,14 +427,14 @@ func (v *Validator) validateDirectoryComponentPermissions(dirPath string, info o
 			"owner_uid", stat.Uid,
 			"owner_gid", stat.Gid)
 		// Only allow group write if owned by root (uid=0) and group (gid=0)
-		if stat.Uid != 0 || stat.Gid != 0 {
+		if stat.Uid != UIDRoot || stat.Gid != GIDRoot {
 			return fmt.Errorf("%w: directory %s has group write permissions (%04o) but is not owned by root (uid=%d, gid=%d)",
 				ErrInvalidDirPermissions, dirPath, perm, stat.Uid, stat.Gid)
 		}
 	}
 
 	// Check that only root can write to the directory
-	if perm&0o200 != 0 && stat.Uid != 0 {
+	if perm&0o200 != 0 && stat.Uid != UIDRoot {
 		return fmt.Errorf("%w: directory %s is writable by non-root user (uid=%d)",
 			ErrInvalidDirPermissions, dirPath, stat.Uid)
 	}
