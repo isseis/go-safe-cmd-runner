@@ -245,7 +245,7 @@ func (v *Validator) ValidateDirectoryPermissions(dirPath string) error {
 
 	// SECURITY: Validate complete path from root to target directory
 	// This prevents attacks through compromised intermediate directories
-	return v.validateCompletePath(cleanPath)
+	return v.validateCompletePath(cleanPath, dirPath)
 }
 
 // SanitizeEnvironmentVariables removes or sanitizes sensitive environment variables
@@ -323,7 +323,7 @@ func (v *Validator) ValidateAllEnvironmentVars(envVars map[string]string) error 
 
 // validateCompletePath validates the security of the complete path from root to target
 // This prevents attacks through compromised intermediate directories
-func (v *Validator) validateCompletePath(cleanDir string) error {
+func (v *Validator) validateCompletePath(cleanDir string, originalDir string) error {
 	slog.Debug("Validating complete path security", "target_path", cleanDir)
 
 	// Note: Symlink attack protection is handled by safefileio package using openat2
@@ -365,7 +365,7 @@ func (v *Validator) validateCompletePath(cleanDir string) error {
 		}
 	}
 
-	slog.Debug("Complete path validation successful", "path", cleanDir)
+	slog.Debug("Complete path validation successful", "original_path", originalDir, "final_path", cleanDir)
 	return nil
 }
 

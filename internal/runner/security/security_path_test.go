@@ -2,6 +2,7 @@ package security
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -197,7 +198,8 @@ func TestValidator_ValidatePathComponents_EdgeCases(t *testing.T) {
 			}
 
 			// Run the validation
-			err = testValidator.validateCompletePath(tt.path)
+			originalPath, cleanPath := tt.path, filepath.Clean(tt.path)
+			err = testValidator.validateCompletePath(cleanPath, originalPath)
 
 			if tt.shouldFail {
 				assert.Error(t, err)
