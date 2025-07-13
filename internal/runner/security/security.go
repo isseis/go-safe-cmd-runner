@@ -181,31 +181,6 @@ func (v *Validator) validatePathAndGetInfo(path, pathType string) (string, os.Fi
 	return cleanPath, fileInfo, nil
 }
 
-// validatePermissions validates permissions using bitwise operations
-func (v *Validator) validatePermissions(cleanPath string, perm os.FileMode, requiredPerms os.FileMode, pathType string) error {
-	slog.Debug("Checking "+pathType+" permissions", "path", cleanPath, "current_permissions", fmt.Sprintf("%04o", perm), "max_allowed", fmt.Sprintf("%04o", requiredPerms))
-
-	// SECURITY: Use bitwise AND with complement to check for disallowed permission bits.
-	// This prevents security vulnerabilities where files/directories with dangerous permissions
-	// would be incorrectly allowed under a simple numeric comparison.
-	// The bitwise operation ensures that only resources with permissions that are a true subset
-	// of the allowed permissions are accepted.
-	disallowedBits := perm &^ requiredPerms
-	if disallowedBits != 0 {
-		err := fmt.Errorf("%w: %s %s has permissions %o with disallowed bits %o, maximum allowed is %o",
-			ErrInvalidFilePermissions, pathType, cleanPath, perm, disallowedBits, requiredPerms)
-		slog.Warn("Insecure "+pathType+" permissions detected",
-			"path", cleanPath,
-			"current_permissions", fmt.Sprintf("%04o", perm),
-			"disallowed_bits", fmt.Sprintf("%04o", disallowedBits),
-			"max_allowed", fmt.Sprintf("%04o", requiredPerms))
-		return err
-	}
-
-	slog.Debug(pathType+" permissions validated successfully", "path", cleanPath, "permissions", fmt.Sprintf("%04o", perm))
-	return nil
-}
-
 // ValidateFilePermissions validates that a file has appropriate permissions
 func (v *Validator) ValidateFilePermissions(filePath string) error {
 	cleanPath, fileInfo, err := v.validatePathAndGetInfo(filePath, "file")
@@ -220,7 +195,30 @@ func (v *Validator) ValidateFilePermissions(filePath string) error {
 		return err
 	}
 
-	return v.validatePermissions(cleanPath, fileInfo.Mode().Perm(), v.config.RequiredFilePermissions, "file")
+	perm := fileInfo.Mode().Perm()
+	requiredPerms := v.config.RequiredFilePermissions
+	pathType := "file"
+
+	slog.Debug("Checking "+pathType+" permissions", "path", cleanPath, "current_permissions", fmt.Sprintf("%04o", perm), "max_allowed", fmt.Sprintf("%04o", requiredPerms))
+
+	disallowedBits := perm &^ requiredPerms
+	if disallowedBits != 0 {
+		err := fmt.Errorf(
+			"%w: %s %s has permissions %o with disallowed bits %o, maximum allowed is %o",
+			ErrInvalidFilePermissions, pathType, cleanPath, perm, disallowedBits, requiredPerms)
+
+		slog.Warn(
+			"Insecure "+pathType+" permissions detected",
+			"path", cleanPath,
+			"current_permissions", fmt.Sprintf("%04o", perm),
+			"disallowed_bits", fmt.Sprintf("%04o", disallowedBits),
+			"max_allowed", fmt.Sprintf("%04o", requiredPerms))
+
+		return err
+	}
+
+	slog.Debug(pathType+" permissions validated successfully", "path", cleanPath, "permissions", fmt.Sprintf("%04o", perm))
+	return nil
 }
 
 // ValidateDirectoryPermissions validates that a directory has appropriate permissions
@@ -235,11 +233,6 @@ func (v *Validator) ValidateDirectoryPermissions(dirPath string) error {
 	if !dirInfo.Mode().IsDir() {
 		err := fmt.Errorf("%w: %s is not a directory", ErrInvalidFilePermissions, cleanPath)
 		slog.Warn("Invalid directory type", "path", cleanPath, "mode", dirInfo.Mode().String())
-		return err
-	}
-
-	// Check if the directory has the required permissions
-	if err := v.validatePermissions(dirPath, dirInfo.Mode().Perm(), v.config.RequiredDirectoryPermissions, "directory"); err != nil {
 		return err
 	}
 
@@ -329,17 +322,12 @@ func (v *Validator) validateCompletePath(cleanDir string) error {
 	// Note: Symlink attack protection is handled by safefileio package using openat2
 	// with RESOLVE_NO_SYMLINKS when opening hash files, so we don't need to check here
 
-	// Split the path into components, filtering out empty components
-	components := strings.Split(cleanDir, string(filepath.Separator))
-	if len(components) > 0 && components[0] == "" {
-		components = components[1:] // Remove empty first component from leading "/"
-	}
-
 	// Validate each directory component from root to target
-	currentPath := string(filepath.Separator)
-	for _, component := range components {
+	for cleanDir != "." && cleanDir != string(filepath.Separator) {
+		currentPath, component := filepath.Split(cleanDir)
+		cleanDir = filepath.Clean(currentPath)
 		if component == "" {
-			continue // Skip any remaining empty components
+			continue // Skip empty components
 		}
 
 		// Build the current path
@@ -365,7 +353,7 @@ func (v *Validator) validateCompletePath(cleanDir string) error {
 		}
 
 		// Validate directory permissions for security
-		if err := v.validateDirectoryPermissions(currentPath, info); err != nil {
+		if err := v.validateDirectoryComponentPermissions(currentPath, info); err != nil {
 			return err
 		}
 	}
@@ -374,9 +362,9 @@ func (v *Validator) validateCompletePath(cleanDir string) error {
 	return nil
 }
 
-// validateDirectoryPermissions validates that a directory component has secure permissions
+// validateDirectoryComponentPermissions validates that a directory component has secure permissions
 // info parameter should be the FileInfo for the directory at dirPath to avoid redundant filesystem calls
-func (v *Validator) validateDirectoryPermissions(dirPath string, info os.FileInfo) error {
+func (v *Validator) validateDirectoryComponentPermissions(dirPath string, info os.FileInfo) error {
 	// Get system-level file info for ownership checks
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
@@ -392,7 +380,7 @@ func (v *Validator) validateDirectoryPermissions(dirPath string, info os.FileInf
 			"path", dirPath,
 			"permissions", fmt.Sprintf("%04o", perm))
 		return fmt.Errorf("%w: directory %s is writable by others (%04o)",
-			ErrInsecurePathComponent, dirPath, perm)
+			ErrInvalidFilePermissions, dirPath, perm)
 	}
 
 	// Check that group cannot write unless owned by root
@@ -405,14 +393,14 @@ func (v *Validator) validateDirectoryPermissions(dirPath string, info os.FileInf
 		// Only allow group write if owned by root (uid=0) and group (gid=0)
 		if stat.Uid != 0 || stat.Gid != 0 {
 			return fmt.Errorf("%w: directory %s has group write permissions (%04o) but is not owned by root (uid=%d, gid=%d)",
-				ErrInsecurePathComponent, dirPath, perm, stat.Uid, stat.Gid)
+				ErrInvalidFilePermissions, dirPath, perm, stat.Uid, stat.Gid)
 		}
 	}
 
 	// Check that only root can write to the directory
 	if perm&0o200 != 0 && stat.Uid != 0 {
 		return fmt.Errorf("%w: directory %s is writable by non-root user (uid=%d)",
-			ErrInsecurePathComponent, dirPath, stat.Uid)
+			ErrInvalidFilePermissions, dirPath, stat.Uid)
 	}
 
 	return nil

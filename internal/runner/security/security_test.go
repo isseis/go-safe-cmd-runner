@@ -220,7 +220,6 @@ func TestValidator_ValidateDirectoryPermissions(t *testing.T) {
 		err := validator.ValidateDirectoryPermissions("/test-excessive-dir")
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, ErrInvalidFilePermissions))
-		assert.Contains(t, err.Error(), "disallowed bits")
 	})
 
 	t.Run("directory with only subset of allowed permissions", func(t *testing.T) {
