@@ -295,6 +295,7 @@ func (m *MockFileSystem) AddDirWithOwner(path string, mode os.FileMode, uid, gid
 // AddSymlink adds a symbolic link to the mock filesystem (for testing)
 func (m *MockFileSystem) AddSymlink(linkPath, targetPath string) {
 	linkPath = filepath.Clean(linkPath)
+	targetPath = filepath.Clean(targetPath)
 
 	m.symlinks[linkPath] = targetPath
 	m.files[linkPath] = &MockFileInfo{
