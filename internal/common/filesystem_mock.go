@@ -15,6 +15,11 @@ import (
 const (
 	// DefaultDirPerm represents default directory permissions (rwxr-xr-x)
 	DefaultDirPerm = 0o755
+
+	// SymlinkPerm represents default symlink permissions (rwxrwxrwx)
+	// In real system, permission of symlink is never used, but permission of
+	// target file/directory is used for permission check on system calls.
+	SymlinkPerm = 0o777
 )
 
 // MockFileSystem implements FileSystem for testing
@@ -23,6 +28,8 @@ type MockFileSystem struct {
 	dirs  map[string]bool
 	// Counter for creating unique temp directories
 	tempDirCounter int
+	// Symlinks maps symlink path to target path
+	symlinks map[string]string
 }
 
 // ErrDirectoryNotEmpty is returned when trying to remove a non-empty directory
@@ -30,13 +37,14 @@ var ErrDirectoryNotEmpty = errors.New("directory not empty")
 
 // MockFileInfo implements fs.FileInfo for testing
 type MockFileInfo struct {
-	name    string
-	size    int64
-	mode    os.FileMode
-	modTime time.Time
-	isDir   bool
-	uid     uint32
-	gid     uint32
+	name      string
+	size      int64
+	mode      os.FileMode
+	modTime   time.Time
+	isDir     bool
+	isSymlink bool
+	uid       uint32
+	gid       uint32
 }
 
 // Name returns the base name of the file
@@ -46,7 +54,12 @@ func (m *MockFileInfo) Name() string { return m.name }
 func (m *MockFileInfo) Size() int64 { return m.size }
 
 // Mode returns the file mode bits
-func (m *MockFileInfo) Mode() os.FileMode { return m.mode }
+func (m *MockFileInfo) Mode() os.FileMode {
+	if m.isSymlink {
+		return m.mode | os.ModeSymlink
+	}
+	return m.mode
+}
 
 // ModTime returns the modification time
 func (m *MockFileInfo) ModTime() time.Time { return m.modTime }
@@ -65,8 +78,9 @@ func (m *MockFileInfo) Sys() any {
 // NewMockFileSystem creates a new MockFileSystem
 func NewMockFileSystem() *MockFileSystem {
 	fs := &MockFileSystem{
-		files: make(map[string]*MockFileInfo),
-		dirs:  make(map[string]bool),
+		files:    make(map[string]*MockFileInfo),
+		dirs:     make(map[string]bool),
+		symlinks: make(map[string]string),
 	}
 
 	// Add root directory by default (owned by root with secure permissions)
@@ -81,12 +95,13 @@ func (m *MockFileSystem) CreateTempDir(prefix string) (string, error) {
 	tempDir := filepath.Join(os.TempDir(), fmt.Sprintf("%s%d", prefix, m.tempDirCounter))
 	m.dirs[tempDir] = true
 	m.files[tempDir] = &MockFileInfo{
-		name:    filepath.Base(tempDir),
-		mode:    DefaultDirPerm,
-		modTime: time.Now(),
-		isDir:   true,
-		uid:     0,
-		gid:     0,
+		name:      filepath.Base(tempDir),
+		mode:      DefaultDirPerm,
+		modTime:   time.Now(),
+		isDir:     true,
+		isSymlink: false,
+		uid:       0,
+		gid:       0,
 	}
 	return tempDir, nil
 }
@@ -124,12 +139,13 @@ func (m *MockFileSystem) MkdirAll(path string, perm os.FileMode) error {
 		if _, exists := m.dirs[currentPath]; !exists {
 			m.dirs[currentPath] = true
 			m.files[currentPath] = &MockFileInfo{
-				name:    filepath.Base(currentPath),
-				mode:    perm,
-				modTime: time.Now(),
-				isDir:   true,
-				uid:     0,
-				gid:     0,
+				name:      filepath.Base(currentPath),
+				mode:      perm,
+				modTime:   time.Now(),
+				isDir:     true,
+				isSymlink: false,
+				uid:       0,
+				gid:       0,
 			}
 		}
 	}
@@ -243,13 +259,14 @@ func (m *MockFileSystem) AddFile(path string, mode os.FileMode, content []byte) 
 	}
 
 	m.files[path] = &MockFileInfo{
-		name:    filepath.Base(path),
-		size:    int64(len(content)),
-		mode:    mode,
-		modTime: time.Now(),
-		isDir:   false,
-		uid:     0,
-		gid:     0,
+		name:      filepath.Base(path),
+		size:      int64(len(content)),
+		mode:      mode,
+		modTime:   time.Now(),
+		isDir:     false,
+		isSymlink: false,
+		uid:       0,
+		gid:       0,
 	}
 	return nil
 }
@@ -265,11 +282,28 @@ func (m *MockFileSystem) AddDirWithOwner(path string, mode os.FileMode, uid, gid
 
 	m.dirs[path] = true
 	m.files[path] = &MockFileInfo{
-		name:    filepath.Base(path),
-		mode:    mode | os.ModeDir, // Add directory flag to mode
-		modTime: time.Now(),
-		isDir:   true,
-		uid:     uid,
-		gid:     gid,
+		name:      filepath.Base(path),
+		mode:      mode | os.ModeDir, // Add directory flag to mode
+		modTime:   time.Now(),
+		isDir:     true,
+		isSymlink: false,
+		uid:       uid,
+		gid:       gid,
+	}
+}
+
+// AddSymlink adds a symbolic link to the mock filesystem (for testing)
+func (m *MockFileSystem) AddSymlink(linkPath, targetPath string) {
+	linkPath = filepath.Clean(linkPath)
+
+	m.symlinks[linkPath] = targetPath
+	m.files[linkPath] = &MockFileInfo{
+		name:      filepath.Base(linkPath),
+		mode:      SymlinkPerm,
+		modTime:   time.Now(),
+		isDir:     false,
+		isSymlink: true,
+		uid:       0,
+		gid:       0,
 	}
 }
