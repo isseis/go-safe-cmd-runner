@@ -72,7 +72,7 @@ func newValidator(algorithm HashAlgorithm, hashDir string, hashFilePathGetter Ha
 	}
 
 	// Ensure the hash directory exists and is a directory
-	info, err := os.Stat(hashDir)
+	info, err := os.Lstat(hashDir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("%w: %s", ErrHashDirNotExist, hashDir)

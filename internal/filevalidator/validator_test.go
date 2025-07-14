@@ -74,7 +74,7 @@ func TestValidator_RecordAndVerify(t *testing.T) {
 			t.Fatalf("GetHashFilePath failed: %v", err)
 		}
 
-		if _, err := os.Stat(hashFilePath); os.IsNotExist(err) {
+		if _, err := os.Lstat(hashFilePath); os.IsNotExist(err) {
 			t.Error("Hash file was not created")
 		}
 	})
@@ -367,7 +367,7 @@ func TestValidator_HashCollision(t *testing.T) {
 		}
 
 		// Verify the hash file exists
-		if _, err := os.Stat(hashFilePath); os.IsNotExist(err) {
+		if _, err := os.Lstat(hashFilePath); os.IsNotExist(err) {
 			t.Fatalf("Hash file does not exist: %s", hashFilePath)
 		}
 

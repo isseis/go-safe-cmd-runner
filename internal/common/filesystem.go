@@ -27,8 +27,8 @@ type FileSystem interface {
 	// Remove removes a single file or empty directory
 	Remove(path string) error
 
-	// Stat returns file information
-	Stat(path string) (fs.FileInfo, error)
+	// Lstat returns file information
+	Lstat(path string) (fs.FileInfo, error)
 
 	// FileExists checks if a file or directory exists
 	FileExists(path string) (bool, error)
@@ -70,14 +70,14 @@ func (fs *DefaultFileSystem) Remove(path string) error {
 	return os.Remove(path)
 }
 
-// Stat returns file information
-func (fs *DefaultFileSystem) Stat(path string) (fs.FileInfo, error) {
-	return os.Stat(path)
+// Lstat returns file information
+func (fs *DefaultFileSystem) Lstat(path string) (fs.FileInfo, error) {
+	return os.Lstat(path)
 }
 
 // FileExists checks if a file or directory exists
 func (fs *DefaultFileSystem) FileExists(path string) (bool, error) {
-	_, err := os.Stat(path)
+	_, err := os.Lstat(path)
 	if err == nil {
 		return true, nil
 	}
@@ -89,7 +89,7 @@ func (fs *DefaultFileSystem) FileExists(path string) (bool, error) {
 
 // IsDir checks if the path is a directory
 func (fs *DefaultFileSystem) IsDir(path string) (bool, error) {
-	info, err := os.Stat(path)
+	info, err := os.Lstat(path)
 	if err != nil {
 		return false, err
 	}

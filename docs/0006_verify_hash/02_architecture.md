@@ -228,9 +228,10 @@ log_level = "info"
    - 環境変数による無効化確認
    - コマンドライン引数による最終制御
 
-2. **ハッシュディレクトリ権限検証**
-   - ディレクトリの適切な権限確認（security.Validator使用）
-   - 書き込み権限が root のみであることを確認
+2. **ハッシュディレクトリ完全パス検証**
+   - **中間ディレクトリ権限検証**: ルートディレクトリから対象ディレクトリまでの全パスコンポーネントを検証
+   - **シンボリックリンク攻撃対策**: `safefileio`パッケージの`openat2`システムコールと`RESOLVE_NO_SYMLINKS`フラグにより自動的に保護
+   - **権限チェック**: 各中間ディレクトリが他ユーザー書き込み不可、システムディレクトリ以外はグループ書き込み不可
 
 3. **設定ファイル検証**
    - filevalidator.Validator を使用してハッシュ値検証
@@ -239,13 +240,16 @@ log_level = "info"
 ### 4.3 エラーハンドリング
 
 ```go
-// verification/errors.go
+// verification/errors.go と security/security.go
 var (
     ErrVerificationDisabled = errors.New("verification is disabled")
     ErrHashDirectoryEmpty = errors.New("hash directory cannot be empty")
     ErrHashDirectoryInvalid = errors.New("hash directory is invalid")
     ErrConfigNil = errors.New("config cannot be nil")
     ErrSecurityValidatorNotInitialized = errors.New("security validator not initialized")
+
+    // 完全パス検証用エラー
+    ErrInsecurePathComponent = errors.New("insecure path component")
 )
 ```
 

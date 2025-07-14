@@ -166,30 +166,30 @@ func TestDefaultFileSystem_RemoveAll(t *testing.T) {
 	}
 }
 
-func TestDefaultFileSystem_Stat(t *testing.T) {
+func TestDefaultFileSystem_Lstat(t *testing.T) {
 	fs := NewDefaultFileSystem()
 
 	// Create a temporary directory
-	tempDir, err := fs.CreateTempDir("test-stat-")
+	tempDir, err := fs.CreateTempDir("test-lstat-")
 	if err != nil {
 		t.Fatalf("CreateTempDir failed: %v", err)
 	}
 	defer fs.RemoveAll(tempDir)
 
-	// Test Stat on the directory
-	info, err := fs.Stat(tempDir)
+	// Test Lstat on the directory
+	info, err := fs.Lstat(tempDir)
 	if err != nil {
-		t.Fatalf("Stat failed: %v", err)
+		t.Fatalf("Lstat failed: %v", err)
 	}
 
 	if !info.IsDir() {
-		t.Error("Stat reported directory as not a directory")
+		t.Error("Lstat reported directory as not a directory")
 	}
 
-	// Test Stat on non-existent path
-	_, err = fs.Stat("/non/existent/path")
+	// Test Lstat on non-existent path
+	_, err = fs.Lstat("/non/existent/path")
 	if err == nil {
-		t.Error("Stat should fail for non-existent path")
+		t.Error("Lstat should fail for non-existent path")
 	}
 }
 
