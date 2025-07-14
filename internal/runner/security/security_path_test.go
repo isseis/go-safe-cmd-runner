@@ -148,10 +148,10 @@ func TestValidator_ValidateDirectoryPermissions_CompletePath(t *testing.T) {
 }
 
 func TestValidator_ValidateCompletePath_SymlinkProtection(t *testing.T) {
-	// Symlink attack protection is handled by safefileio package using openat2
-	// with RESOLVE_NO_SYMLINKS when opening hash files.
-	// This test documents that behavior rather than testing it here.
-	t.Skip("Symlink protection is handled by safefileio package with openat2 RESOLVE_NO_SYMLINKS")
+	// This test is skipped because the current mock filesystem does not support creating symlinks,
+	// which is necessary to test the symlink protection in `validateDirectoryComponentMode`.
+	// This protection is separate from the symlink handling in the `safefileio` package.
+	t.Skip("mock filesystem does not support symlinks to test path component symlink protection")
 }
 
 func TestValidator_ValidatePathComponents_EdgeCases(t *testing.T) {
