@@ -148,10 +148,109 @@ func TestValidator_ValidateDirectoryPermissions_CompletePath(t *testing.T) {
 }
 
 func TestValidator_ValidateCompletePath_SymlinkProtection(t *testing.T) {
-	// This test is skipped because the current mock filesystem does not support creating symlinks,
-	// which is necessary to test the symlink protection in `validateDirectoryComponentMode`.
-	// This protection is separate from the symlink handling in the `safefileio` package.
-	t.Skip("mock filesystem does not support symlinks to test path component symlink protection")
+	config := DefaultConfig()
+
+	tests := []struct {
+		name        string
+		setupFunc   func(*common.MockFileSystem)
+		path        string
+		shouldFail  bool
+		expectedErr error
+	}{
+		{
+			name: "path with symlink component should be rejected",
+			setupFunc: func(fs *common.MockFileSystem) {
+				// Create secure directory hierarchy, but skip /usr/local as we'll replace it with a symlink
+				fs.AddDir("/usr", 0o755)
+
+				// Create target directory for symlink
+				fs.AddDir("/tmp", 0o755)
+				fs.AddDir("/tmp/unsafe", 0o755)
+
+				// Create symlink in path - /usr/local becomes a symlink to /tmp/unsafe
+				err := fs.AddSymlink("/usr/local", "/tmp/unsafe")
+				require.NoError(t, err)
+			},
+			path:        "/usr/local", // Test the symlink path itself
+			shouldFail:  true,
+			expectedErr: ErrInsecurePathComponent,
+		},
+		{
+			name: "path with symlink target directory should be rejected",
+			setupFunc: func(fs *common.MockFileSystem) {
+				// Create secure directory hierarchy
+				fs.AddDir("/usr", 0o755)
+				fs.AddDir("/usr/local", 0o755)
+				fs.AddDir("/usr/local/etc", 0o755)
+
+				// Create target directory for symlink
+				fs.AddDir("/tmp", 0o755)
+				fs.AddDir("/tmp/unsafe", 0o755)
+
+				// Create symlink as the final component
+				err := fs.AddSymlink("/usr/local/etc/go-safe-cmd-runner", "/tmp/unsafe")
+				require.NoError(t, err)
+			},
+			path:        "/usr/local/etc/go-safe-cmd-runner",
+			shouldFail:  true,
+			expectedErr: ErrInsecurePathComponent,
+		},
+		{
+			name: "secure path with no symlinks should pass",
+			setupFunc: func(fs *common.MockFileSystem) {
+				// Create completely normal directory hierarchy
+				fs.AddDir("/usr", 0o755)
+				fs.AddDir("/usr/local", 0o755)
+				fs.AddDir("/usr/local/etc", 0o755)
+				fs.AddDir("/usr/local/etc/go-safe-cmd-runner", 0o755)
+				fs.AddDir("/usr/local/etc/go-safe-cmd-runner/hashes", 0o755)
+			},
+			path:       "/usr/local/etc/go-safe-cmd-runner/hashes",
+			shouldFail: false,
+		},
+		{
+			name: "AddSymlink should fail when path already exists",
+			setupFunc: func(fs *common.MockFileSystem) {
+				// Create directory first
+				fs.AddDir("/usr", 0o755)
+				fs.AddDir("/usr/existing", 0o755)
+
+				// Try to create symlink at existing path should fail
+				err := fs.AddSymlink("/usr/existing", "/tmp/target")
+				require.Error(t, err)
+				require.ErrorIs(t, err, os.ErrExist)
+			},
+			path:       "/usr/existing",
+			shouldFail: false, // The directory should still be valid, not a symlink
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create fresh mock filesystem for each test
+			testMockFS := common.NewMockFileSystem()
+			testValidator, err := NewValidatorWithFS(config, testMockFS)
+			require.NoError(t, err)
+
+			// Set up the test scenario
+			if tt.setupFunc != nil {
+				tt.setupFunc(testMockFS)
+			}
+
+			// Run the validation
+			originalPath, cleanPath := tt.path, filepath.Clean(tt.path)
+			err = testValidator.validateCompletePath(cleanPath, originalPath)
+
+			if tt.shouldFail {
+				assert.Error(t, err)
+				if tt.expectedErr != nil {
+					assert.ErrorIs(t, err, tt.expectedErr)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }
 
 func TestValidator_ValidatePathComponents_EdgeCases(t *testing.T) {
