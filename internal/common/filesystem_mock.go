@@ -40,7 +40,6 @@ type MockFileInfo struct {
 	name      string
 	size      int64
 	mode      os.FileMode
-	modTime   time.Time
 	isDir     bool
 	isSymlink bool
 	uid       uint32
@@ -61,8 +60,8 @@ func (m *MockFileInfo) Mode() os.FileMode {
 	return m.mode
 }
 
-// ModTime returns the modification time
-func (m *MockFileInfo) ModTime() time.Time { return m.modTime }
+// ModTime returns the zero time since we don't track modification time in tests
+func (m *MockFileInfo) ModTime() time.Time { return time.Time{} }
 
 // IsDir reports whether m describes a directory
 func (m *MockFileInfo) IsDir() bool { return m.isDir }
@@ -97,7 +96,6 @@ func (m *MockFileSystem) CreateTempDir(prefix string) (string, error) {
 	m.files[tempDir] = &MockFileInfo{
 		name:      filepath.Base(tempDir),
 		mode:      DefaultDirPerm,
-		modTime:   time.Now(),
 		isDir:     true,
 		isSymlink: false,
 		uid:       0,
@@ -139,9 +137,9 @@ func (m *MockFileSystem) MkdirAll(path string, perm os.FileMode) error {
 		if _, exists := m.dirs[currentPath]; !exists {
 			m.dirs[currentPath] = true
 			m.files[currentPath] = &MockFileInfo{
-				name:      filepath.Base(currentPath),
-				mode:      perm,
-				modTime:   time.Now(),
+				name: filepath.Base(currentPath),
+				mode: perm,
+
 				isDir:     true,
 				isSymlink: false,
 				uid:       0,
@@ -254,7 +252,6 @@ func (m *MockFileSystem) AddFile(path string, mode os.FileMode, content []byte) 
 		name:      filepath.Base(path),
 		size:      int64(len(content)),
 		mode:      mode,
-		modTime:   time.Now(),
 		isDir:     false,
 		isSymlink: false,
 		uid:       0,
@@ -276,7 +273,6 @@ func (m *MockFileSystem) AddDirWithOwner(path string, mode os.FileMode, uid, gid
 	m.files[path] = &MockFileInfo{
 		name:      filepath.Base(path),
 		mode:      mode | os.ModeDir, // Add directory flag to mode
-		modTime:   time.Now(),
 		isDir:     true,
 		isSymlink: false,
 		uid:       uid,
@@ -299,7 +295,6 @@ func (m *MockFileSystem) AddSymlink(linkPath, targetPath string) error {
 	m.files[linkPath] = &MockFileInfo{
 		name:      filepath.Base(linkPath),
 		mode:      SymlinkPerm,
-		modTime:   time.Now(),
 		isDir:     false,
 		isSymlink: true,
 		uid:       0,
