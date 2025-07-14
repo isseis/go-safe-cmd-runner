@@ -83,7 +83,8 @@ func NewMockFileSystem() *MockFileSystem {
 	}
 
 	// Add root directory by default (owned by root with secure permissions)
-	fs.AddDirWithOwner("/", 0o755, 0, 0)
+	// Ignore error since this is initial setup and root should not exist yet
+	_ = fs.AddDirWithOwner("/", 0o755, 0, 0)
 
 	return fs
 }
@@ -205,6 +206,18 @@ func (m *MockFileSystem) Lstat(path string) (fs.FileInfo, error) {
 	return info, nil
 }
 
+// Readlink returns the destination of the named symbolic link
+func (m *MockFileSystem) Readlink(name string) (string, error) {
+	name = filepath.Clean(name)
+
+	target, exists := m.symlinks[name]
+	if !exists {
+		return "", fmt.Errorf("readlink %s: %w", name, os.ErrNotExist)
+	}
+
+	return target, nil
+}
+
 // FileExists checks if a file or directory exists in the mock filesystem
 func (m *MockFileSystem) FileExists(path string) (bool, error) {
 	path = filepath.Clean(path)
@@ -245,8 +258,14 @@ func (m *MockFileSystem) GetDirs() []string {
 }
 
 // AddFile adds a file to the mock filesystem (for testing)
+// Returns an error if the path already exists, similar to creating a file that already exists
 func (m *MockFileSystem) AddFile(path string, mode os.FileMode, content []byte) error {
 	path = filepath.Clean(path)
+
+	// Check if the path already exists
+	if _, exists := m.files[path]; exists {
+		return os.ErrExist
+	}
 
 	m.files[path] = &MockFileInfo{
 		name:      filepath.Base(path),
@@ -261,13 +280,20 @@ func (m *MockFileSystem) AddFile(path string, mode os.FileMode, content []byte) 
 }
 
 // AddDir adds a directory to the mock filesystem (for testing)
-func (m *MockFileSystem) AddDir(path string, mode os.FileMode) {
-	m.AddDirWithOwner(path, mode, 0, 0)
+// Returns an error if the path already exists, similar to creating a directory that already exists
+func (m *MockFileSystem) AddDir(path string, mode os.FileMode) error {
+	return m.AddDirWithOwner(path, mode, 0, 0)
 }
 
 // AddDirWithOwner adds a directory with specified owner to the mock filesystem (for testing)
-func (m *MockFileSystem) AddDirWithOwner(path string, mode os.FileMode, uid, gid uint32) {
+// Returns an error if the path already exists, similar to creating a directory that already exists
+func (m *MockFileSystem) AddDirWithOwner(path string, mode os.FileMode, uid, gid uint32) error {
 	path = filepath.Clean(path)
+
+	// Check if the path already exists
+	if _, exists := m.files[path]; exists {
+		return os.ErrExist
+	}
 
 	m.dirs[path] = true
 	m.files[path] = &MockFileInfo{
@@ -278,6 +304,7 @@ func (m *MockFileSystem) AddDirWithOwner(path string, mode os.FileMode, uid, gid
 		uid:       uid,
 		gid:       gid,
 	}
+	return nil
 }
 
 // AddSymlink adds a symbolic link to the mock filesystem (for testing)
