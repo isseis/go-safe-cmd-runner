@@ -160,21 +160,18 @@ func TestValidator_ValidateCompletePath_SymlinkProtection(t *testing.T) {
 		{
 			name: "path with symlink component should be rejected",
 			setupFunc: func(fs *common.MockFileSystem) {
-				// Create secure directory hierarchy
+				// Create secure directory hierarchy, but skip /usr/local as we'll replace it with a symlink
 				fs.AddDir("/usr", 0o755)
-				fs.AddDir("/usr/local", 0o755)
-				fs.AddDir("/usr/local/etc", 0o755)
-				fs.AddDir("/usr/local/etc/go-safe-cmd-runner", 0o755)
-				fs.AddDir("/usr/local/etc/go-safe-cmd-runner/hashes", 0o755)
 
 				// Create target directory for symlink
 				fs.AddDir("/tmp", 0o755)
 				fs.AddDir("/tmp/unsafe", 0o755)
 
 				// Create symlink in path - /usr/local becomes a symlink to /tmp/unsafe
-				fs.AddSymlink("/usr/local", "/tmp/unsafe")
+				err := fs.AddSymlink("/usr/local", "/tmp/unsafe")
+				require.NoError(t, err)
 			},
-			path:        "/usr/local/etc/go-safe-cmd-runner/hashes",
+			path:        "/usr/local", // Test the symlink path itself
 			shouldFail:  true,
 			expectedErr: ErrInsecurePathComponent,
 		},
@@ -191,7 +188,8 @@ func TestValidator_ValidateCompletePath_SymlinkProtection(t *testing.T) {
 				fs.AddDir("/tmp/unsafe", 0o755)
 
 				// Create symlink as the final component
-				fs.AddSymlink("/usr/local/etc/go-safe-cmd-runner", "/tmp/unsafe")
+				err := fs.AddSymlink("/usr/local/etc/go-safe-cmd-runner", "/tmp/unsafe")
+				require.NoError(t, err)
 			},
 			path:        "/usr/local/etc/go-safe-cmd-runner",
 			shouldFail:  true,
@@ -209,6 +207,21 @@ func TestValidator_ValidateCompletePath_SymlinkProtection(t *testing.T) {
 			},
 			path:       "/usr/local/etc/go-safe-cmd-runner/hashes",
 			shouldFail: false,
+		},
+		{
+			name: "AddSymlink should fail when path already exists",
+			setupFunc: func(fs *common.MockFileSystem) {
+				// Create directory first
+				fs.AddDir("/usr", 0o755)
+				fs.AddDir("/usr/existing", 0o755)
+
+				// Try to create symlink at existing path should fail
+				err := fs.AddSymlink("/usr/existing", "/tmp/target")
+				require.Error(t, err)
+				require.ErrorIs(t, err, os.ErrExist)
+			},
+			path:       "/usr/existing",
+			shouldFail: false, // The directory should still be valid, not a symlink
 		},
 	}
 

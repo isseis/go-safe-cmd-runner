@@ -250,14 +250,6 @@ func (m *MockFileSystem) GetDirs() []string {
 func (m *MockFileSystem) AddFile(path string, mode os.FileMode, content []byte) error {
 	path = filepath.Clean(path)
 
-	// Create parent directories if they don't exist
-	dir := filepath.Dir(path)
-	if dir != "." && dir != "/" {
-		if err := m.MkdirAll(dir, DefaultDirPerm); err != nil {
-			return err
-		}
-	}
-
 	m.files[path] = &MockFileInfo{
 		name:      filepath.Base(path),
 		size:      int64(len(content)),
@@ -293,9 +285,15 @@ func (m *MockFileSystem) AddDirWithOwner(path string, mode os.FileMode, uid, gid
 }
 
 // AddSymlink adds a symbolic link to the mock filesystem (for testing)
-func (m *MockFileSystem) AddSymlink(linkPath, targetPath string) {
+// Returns an error if the linkPath already exists, similar to os.Symlink behavior
+func (m *MockFileSystem) AddSymlink(linkPath, targetPath string) error {
 	linkPath = filepath.Clean(linkPath)
 	targetPath = filepath.Clean(targetPath)
+
+	// Check if the linkPath already exists
+	if _, exists := m.files[linkPath]; exists {
+		return os.ErrExist
+	}
 
 	m.symlinks[linkPath] = targetPath
 	m.files[linkPath] = &MockFileInfo{
@@ -307,4 +305,6 @@ func (m *MockFileSystem) AddSymlink(linkPath, targetPath string) {
 		uid:       0,
 		gid:       0,
 	}
+
+	return nil
 }
