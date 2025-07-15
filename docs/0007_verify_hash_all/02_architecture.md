@@ -219,8 +219,11 @@ func (pr *PathResolver) ResolvePath(command string) (string, error) {
 
         // 4. コマンドファイルの存在確認
         fullPath := filepath.Join(dir, command)
-        if exists, _ := os.Stat(fullPath); exists != nil {
-            return fullPath, nil
+        if info, err := os.Stat(fullPath); err == nil && !info.IsDir() {
+            // 実行権限確認
+            if info.Mode()&0111 != 0 {
+                return fullPath, nil
+            }
         }
     }
 
@@ -389,8 +392,11 @@ func (pr *PathResolver) securePathResolution(command string) (string, error) {
 
         // 2. コマンドファイル確認
         fullPath := filepath.Join(dir, command)
-        if fileExists(fullPath) {
-            return fullPath, nil
+        if info, err := os.Stat(fullPath); err == nil && !info.IsDir() {
+            // 実行権限確認
+            if info.Mode()&0111 != 0 {
+                return fullPath, nil
+            }
         }
     }
 
