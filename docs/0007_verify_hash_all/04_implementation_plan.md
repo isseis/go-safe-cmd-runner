@@ -134,6 +134,7 @@ func (vm *Manager) VerifyGlobalFiles(globalConfig *runnertypes.GlobalConfig) (*V
             continue
         }
 
+        // ファイルのパーミッションチェックは行わない（ハッシュ値比較のみ）
         if err := vm.validator.Verify(filePath); err != nil {
             result.FailedFiles = append(result.FailedFiles, filePath)
         } else {
@@ -176,6 +177,7 @@ func (vm *Manager) VerifyGroupFiles(groupConfig *runnertypes.GroupConfig) (*Veri
             continue
         }
 
+        // ファイルのパーミッションチェックは行わない（ハッシュ値比較のみ）
         if err := vm.validator.Verify(file); err != nil {
             result.FailedFiles = append(result.FailedFiles, file)
         } else {
@@ -465,7 +467,7 @@ func (vm *Manager) VerifyCommandFile(command string) (*FileVerificationDetail, e
         return detail, nil
     }
 
-    // ハッシュ検証
+    // ハッシュ検証（パーミッションチェックは行わない）
     if err := vm.validator.Verify(resolvedPath); err != nil {
         detail.HashMatched = false
         detail.Error = err

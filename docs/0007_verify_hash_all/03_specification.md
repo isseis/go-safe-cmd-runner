@@ -210,12 +210,13 @@ func (vm *Manager) VerifyGlobalFiles(globalConfig *runnertypes.GlobalConfig) (*V
    └─ 有効時: 以下の処理を実行
 
 2. ファイル一覧取得
-   ├─ globalConfig.HashFiles から対象ファイル取得
+   ├─ globalConfig.VerifyFiles から対象ファイル取得
    └─ 空の場合: 成功を返す
 
 3. 各ファイル検証
-   ├─ filevalidator.Verify() 呼び出し
-   ├─ ハッシュ値比較
+   ├─ 標準パススキップチェック
+   ├─ filevalidator.Verify() 呼び出し（ハッシュ値比較のみ）
+   ├─ パーミッションチェックは行わない（第三者による書き込みを許可）
    ├─ 成功: verified_files カウンタ増加
    └─ 失敗: failed_files に追加、エラー返却
 
@@ -248,13 +249,15 @@ func (vm *Manager) VerifyGroupFiles(groupConfig *runnertypes.GroupConfig) (*Veri
    └─ 有効時: 以下の処理を実行
 
 2. 対象ファイル収集
-   ├─ groupConfig.HashFiles から明示的対象取得
+   ├─ groupConfig.VerifyFiles から明示的対象取得
    ├─ groupConfig.Commands から実行コマンド取得
    ├─ 各コマンドのパス解決（ResolveCommandPath使用）
    └─ 重複排除して統合リスト作成
 
 3. 各ファイル検証
-   ├─ filevalidator.Verify() 呼び出し
+   ├─ 標準パススキップチェック
+   ├─ filevalidator.Verify() 呼び出し（ハッシュ値比較のみ）
+   ├─ パーミッションチェックは行わない（第三者による書き込みを許可）
    ├─ 成功: verified_files カウンタ増加
    └─ 失敗: failed_files に追加（継続処理）
 
@@ -293,11 +296,12 @@ func (vm *Manager) VerifyCommandFile(command string) (*FileVerificationDetail, e
    └─ 検証対象: 次の処理に進む
 
 3. ハッシュ検証
-   ├─ filevalidator.Verify()呼び出し
+   ├─ filevalidator.Verify()呼び出し（ハッシュ値比較のみ）
+   ├─ パーミッションチェックは行わない（第三者による書き込みを許可）
    ├─ 成功: FileVerificationDetail作成
    └─ 失敗: エラー詳細を含むFileVerificationDetail作成
 
-3. 結果返却
+4. 結果返却
    ├─ 成功: nil error
    └─ 失敗: エラー返却
 ```
@@ -1253,7 +1257,7 @@ func (vm *Manager) validateHashFile(hashFilePath string) error {
         return fmt.Errorf("hash file not found: %w", err)
     }
 
-    // 2. 権限確認
+    // 2. ハッシュファイルの権限確認（設定ファイルと同様）
     if err := vm.security.ValidateFilePermissions(hashFilePath); err != nil {
         return fmt.Errorf("hash file permissions invalid: %w", err)
     }
@@ -1264,10 +1268,8 @@ func (vm *Manager) validateHashFile(hashFilePath string) error {
         return fmt.Errorf("hash file not owned by root: uid=%d", stat.Uid)
     }
 
-    // 4. 変更不可フラグ確認（将来拡張）
-    // if info.Mode() & os.ModeImmutable == 0 {
-    //     return fmt.Errorf("hash file should be immutable")
-    // }
+    // 注意: 検証対象ファイル自体のパーミッションチェックは行わない
+    // 第三者による書き込みを許可し、改ざんはハッシュ値で検出
 
     return nil
 }
