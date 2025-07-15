@@ -89,7 +89,7 @@ func (pr *PathResolver) ResolvePath(command string) (string, error) {
 	}
 
 	// Resolve from PATH environment variable
-	for _, dir := range strings.Split(pr.pathEnv, ":") {
+	for _, dir := range strings.Split(pr.pathEnv, string(os.PathListSeparator)) {
 		// Check if directory can be accessed
 		if !pr.canAccessDirectory(dir) {
 			continue // Skip inaccessible directories
