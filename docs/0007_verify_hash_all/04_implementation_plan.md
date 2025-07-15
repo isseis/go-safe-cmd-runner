@@ -128,7 +128,18 @@ func (vm *Manager) VerifyGlobalFiles(globalConfig *runnertypes.GlobalConfig) (*V
         result.Duration = time.Since(start)
     }()
 
+    // skip_standard_pathsフラグに基づいてPathResolverを初期化
+    vm.pathResolver.skipStandardPaths = globalConfig.SkipStandardPaths
+
     for _, hashFile := range globalConfig.HashFiles {
+        // 標準パススキップチェック
+        if vm.shouldSkipVerification(hashFile.Path) {
+            result.SkippedFiles = append(result.SkippedFiles, hashFile.Path)
+            slog.Info("Skipping global file verification for standard system path",
+                "file", hashFile.Path)
+            continue
+        }
+
         if err := vm.validator.Verify(hashFile.Path); err != nil {
             result.FailedFiles = append(result.FailedFiles, hashFile.Path)
         } else {
