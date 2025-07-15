@@ -149,12 +149,6 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 	}, nil
 }
 
-// NewRunnerWithSecurity creates a new command runner with custom security configuration
-// Deprecated: Use NewRunner with WithSecurity option instead
-func NewRunnerWithSecurity(config *runnertypes.Config, securityConfig *security.Config) (*Runner, error) {
-	return NewRunner(config, WithSecurity(securityConfig))
-}
-
 // LoadEnvironment loads environment variables from the specified .env file and system environment.
 // If envFile is empty, only system environment variables will be loaded.
 // If loadSystemEnv is true, system environment variables will be loaded first,

@@ -169,7 +169,7 @@ func TestNewRunnerWithSecurity(t *testing.T) {
 			MaxPathLength:           4096,
 		}
 
-		runner, err := NewRunnerWithSecurity(config, securityConfig)
+		runner, err := NewRunner(config, WithSecurity(securityConfig))
 		assert.NoError(t, err)
 		assert.NotNil(t, runner)
 		assert.Equal(t, config, runner.config)
@@ -188,14 +188,14 @@ func TestNewRunnerWithSecurity(t *testing.T) {
 			MaxPathLength:           4096,
 		}
 
-		runner, err := NewRunnerWithSecurity(config, invalidSecurityConfig)
+		runner, err := NewRunner(config, WithSecurity(invalidSecurityConfig))
 		assert.Error(t, err)
 		assert.Nil(t, runner)
 		assert.True(t, errors.Is(err, security.ErrInvalidRegexPattern))
 	})
 
 	t.Run("with nil security config", func(t *testing.T) {
-		runner, err := NewRunnerWithSecurity(config, nil)
+		runner, err := NewRunner(config, WithSecurity(nil))
 		assert.NoError(t, err)
 		assert.NotNil(t, runner)
 	})
