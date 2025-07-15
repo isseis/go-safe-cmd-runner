@@ -466,15 +466,15 @@ var (
 
 // 構造化エラー拡張
 type VerificationError struct {
-    Op           string              // operation: "global", "group", "command"
-    Phase        string              // "global", "group", "command"
-    Path         string              // file path
-    Group        string              // group name (group verification only)
-    Command      string              // command name (command verification only)
-    ExpectedHash string              // expected hash value
-    ActualHash   string              // actual hash value
-    Err          error               // underlying error
-    Details      []FileVerificationDetail // detailed results
+    Op           string   // operation: "global", "group", "command"
+    Phase        string   // "global", "group", "command"
+    Path         string   // file path
+    Group        string   // group name (group verification only)
+    Command      string   // command name (command verification only)
+    ExpectedHash string   // expected hash value
+    ActualHash   string   // actual hash value
+    Err          error    // underlying error
+    Details      []string // failed file paths
 }
 
 func (e *VerificationError) Error() string {
