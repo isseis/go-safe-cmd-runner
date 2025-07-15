@@ -155,15 +155,6 @@ func NewRunnerWithSecurity(config *runnertypes.Config, securityConfig *security.
 	return NewRunner(config, WithSecurity(securityConfig))
 }
 
-// NewRunnerWithComponents creates a new command runner with pre-configured components
-func NewRunnerWithComponents(config *runnertypes.Config, templateEngine *template.Engine, verificationManager *verification.Manager) (*Runner, error) {
-	options := []Option{WithTemplateEngine(templateEngine)}
-	if verificationManager != nil {
-		options = append(options, WithVerificationManager(verificationManager))
-	}
-	return NewRunner(config, options...)
-}
-
 // LoadEnvironment loads environment variables from the specified .env file and system environment.
 // If envFile is empty, only system environment variables will be loaded.
 // If loadSystemEnv is true, system environment variables will be loaded first,

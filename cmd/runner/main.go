@@ -123,7 +123,9 @@ func run() error {
 	}
 
 	// Initialize Runner with template engine from config loader
-	runner, err := runner.NewRunnerWithComponents(cfg, cfgLoader.GetTemplateEngine(), verificationManager)
+	runner, err := runner.NewRunner(cfg,
+		runner.WithTemplateEngine(cfgLoader.GetTemplateEngine()),
+		runner.WithVerificationManager(verificationManager))
 	if err != nil {
 		return fmt.Errorf("failed to initialize runner: %w", err)
 	}
