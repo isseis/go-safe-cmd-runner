@@ -182,6 +182,10 @@ func (m *Manager) VerifyGlobalFiles(globalConfig *runnertypes.GlobalConfig) (*Re
 	}
 
 	if len(result.FailedFiles) > 0 {
+		slog.Error("CRITICAL: Global file verification failed - program will terminate",
+			"failed_files", result.FailedFiles,
+			"verified_files", result.VerifiedFiles,
+			"total_files", result.TotalFiles)
 		return result, &VerificationError{
 			Op:      "global",
 			Details: result.FailedFiles,

@@ -6,7 +6,8 @@
       "Bash(golangci-lint run:*)",
       "Bash(./build/runner:*)",
       "Bash(unset LESSOPEN)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(gh pr create:*)"
     ],
     "deny": []
   }

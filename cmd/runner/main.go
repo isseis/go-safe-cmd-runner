@@ -108,15 +108,17 @@ func run() error {
 		return fmt.Errorf("config verification failed: %w", err)
 	}
 
-	// Verify global files
+	// Verify global files - CRITICAL: Program must exit if global verification fails
+	// to prevent execution with potentially compromised files
 	result, err := verificationManager.VerifyGlobalFiles(&cfg.Global)
 	if err != nil {
+		log.Printf("CRITICAL: Global file verification failed - terminating program for security")
 		return fmt.Errorf("global files verification failed: %w", err)
 	}
 
 	// Log global verification results
 	if result.TotalFiles > 0 {
-		log.Printf("Global files verification completed: %d verified, %d skipped, duration: %v",
+		log.Printf("Global files verification completed successfully: %d verified, %d skipped, duration: %v",
 			result.VerifiedFiles, len(result.SkippedFiles), result.Duration)
 	}
 
