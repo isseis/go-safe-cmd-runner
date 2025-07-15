@@ -65,11 +65,14 @@
 ```
 [起動] → [設定ファイル検証] → [設定読み込み] → [global検証] → [groups処理]
    │           │                   │               │              │
-   │           │                   │               │              ├─ グループ1検証
-   │           │                   │               │              │  ├─ 成功: コマンド実行
-   │           │                   │               │              │  └─ 失敗: スキップ
+   │           │                   │               │              ├─ グループ1: 一括バッチ検証
+   │           │                   │               │              │  ├─ ファイル収集（明示的+コマンド）
+   │           │                   │               │              │  ├─ 重複排除・スキップ判定
+   │           │                   │               │              │  ├─ 一括ハッシュ検証
+   │           │                   │               │              │  ├─ 成功: 全コマンド実行
+   │           │                   │               │              │  └─ 失敗: グループスキップ
    │           │                   │               │              │
-   │           │                   │               │              ├─ グループ2検証
+   │           │                   │               │              ├─ グループ2: 一括バッチ検証
    │           │                   │               │              │  └─ ...
    │           │                   │               │              │
    │           │                   │               ├─ 成功: 続行
@@ -171,16 +174,15 @@ type Manager struct {
 }
 
 // 新規メソッド
-func (vm *Manager) VerifyGlobalFiles(globalConfig *runnertypes.GlobalConfig) error
-func (vm *Manager) VerifyGroupFiles(groupConfig *runnertypes.GroupConfig) error
+func (vm *Manager) VerifyGlobalFiles(globalConfig *runnertypes.GlobalConfig) (*VerificationResult, error)
+func (vm *Manager) VerifyGroupFiles(groupConfig *runnertypes.GroupConfig) (*VerificationResult, error)
 func (vm *Manager) ResolveCommandPath(command string) (string, error)
-func (vm *Manager) VerifyCommandFile(command string) error
 
-// 内部メソッド
-func (vm *Manager) verifyFileList(files []runnertypes.HashFile) error
-func (vm *Manager) resolveRelativePath(path string) (string, error)
-func (vm *Manager) validatePATHDirectory(dir string) error
-func (vm *Manager) isStandardSystemPath(path string) bool
+// 内部メソッド（一括処理用）
+func (vm *Manager) collectAllVerificationFiles(groupConfig *runnertypes.GroupConfig) ([]string, error)
+func (vm *Manager) resolveAndCollectCommandPaths(commands []runnertypes.Command) ([]string, error)
+func (vm *Manager) verifyFileBatch(files []string) (*VerificationResult, error)
+func (vm *Manager) removeDuplicatePaths(paths []string) []string
 func (vm *Manager) shouldSkipVerification(path string) bool
 ```
 
@@ -244,6 +246,132 @@ func (pr *PathResolver) ShouldSkipVerification(path string) bool {
 }
 ```
 
+#### 3.2.4 一括バッチ検証の詳細設計
+
+```go
+// VerifyGroupFiles の一括バッチ処理実装
+func (vm *Manager) VerifyGroupFiles(groupConfig *runnertypes.GroupConfig) (*VerificationResult, error) {
+    if !vm.IsEnabled() {
+        return &VerificationResult{}, nil
+    }
+
+    // 1. 全ファイルの収集（明示的ファイル + コマンドファイル）
+    allFiles, err := vm.collectAllVerificationFiles(groupConfig)
+    if err != nil {
+        return nil, fmt.Errorf("failed to collect verification files: %w", err)
+    }
+
+    // 2. 重複排除
+    uniqueFiles := vm.removeDuplicatePaths(allFiles)
+
+    // 3. スキップ対象ファイルの分離
+    var filesToVerify []string
+    var skippedFiles []string
+
+    for _, file := range uniqueFiles {
+        if vm.shouldSkipVerification(file) {
+            skippedFiles = append(skippedFiles, file)
+            slog.Debug("Skipping verification for standard system path",
+                "group", groupConfig.Name, "file", file)
+        } else {
+            filesToVerify = append(filesToVerify, file)
+        }
+    }
+
+    // 4. 一括ハッシュ検証実行
+    result, err := vm.verifyFileBatch(filesToVerify)
+    if err != nil {
+        // 部分的な結果も含めて返す
+        result.SkippedFiles = skippedFiles
+        result.TotalFiles = len(uniqueFiles)
+        return result, &VerificationError{
+            Op: "group",
+            Group: groupConfig.Name,
+            Details: result.FailedFiles,
+            Err: ErrGroupVerificationFailed,
+        }
+    }
+
+    // 5. 最終結果の構築
+    result.SkippedFiles = skippedFiles
+    result.TotalFiles = len(uniqueFiles)
+
+    slog.Info("Group file verification completed",
+        "group", groupConfig.Name,
+        "total_files", result.TotalFiles,
+        "verified_files", result.VerifiedFiles,
+        "skipped_files", len(result.SkippedFiles))
+
+    return result, nil
+}
+
+// ファイル収集メソッド
+func (vm *Manager) collectAllVerificationFiles(groupConfig *runnertypes.GroupConfig) ([]string, error) {
+    var allFiles []string
+
+    // 明示的ハッシュファイル
+    for _, hashFile := range groupConfig.HashFiles {
+        allFiles = append(allFiles, hashFile.Path)
+    }
+
+    // コマンドファイルの解決と収集
+    commandFiles, err := vm.resolveAndCollectCommandPaths(groupConfig.Commands)
+    if err != nil {
+        return nil, err
+    }
+    allFiles = append(allFiles, commandFiles...)
+
+    return allFiles, nil
+}
+
+// コマンドパス解決
+func (vm *Manager) resolveAndCollectCommandPaths(commands []runnertypes.Command) ([]string, error) {
+    var resolvedPaths []string
+
+    for _, command := range commands {
+        resolvedPath, err := vm.pathResolver.Resolve(command.Cmd)
+        if err != nil {
+            slog.Warn("Failed to resolve command path, excluding from verification",
+                "command", command.Cmd,
+                "error", err.Error())
+            continue // エラーのコマンドは除外して続行
+        }
+        resolvedPaths = append(resolvedPaths, resolvedPath)
+    }
+
+    return resolvedPaths, nil
+}
+
+// 一括ファイル検証
+func (vm *Manager) verifyFileBatch(files []string) (*VerificationResult, error) {
+    result := &VerificationResult{
+        TotalFiles: len(files),
+    }
+
+    start := time.Now()
+    defer func() {
+        result.Duration = time.Since(start)
+    }()
+
+    for _, file := range files {
+        if err := vm.validator.Verify(file); err != nil {
+            result.FailedFiles = append(result.FailedFiles, file)
+            slog.Debug("File verification failed", "file", file, "error", err.Error())
+        } else {
+            result.VerifiedFiles++
+            slog.Debug("File verification succeeded", "file", file)
+        }
+    }
+
+    if len(result.FailedFiles) > 0 {
+        return result, fmt.Errorf("batch verification failed: %d/%d files failed",
+            len(result.FailedFiles), len(files))
+    }
+
+    return result, nil
+}
+```
+
 ### 3.3 処理フロー設計
 
 #### 3.3.1 main.go の変更
@@ -280,50 +408,30 @@ func main() {
 
 ```go
 func (r *Runner) executeGroup(group *runnertypes.GroupConfig) error {
-    // 1. 新規: グループファイル検証
+    // 1. 新規: グループ全体のファイル検証（一括バッチ処理）
     if r.verificationManager != nil {
-        if err := r.verificationManager.VerifyGroupFiles(group); err != nil {
+        result, err := r.verificationManager.VerifyGroupFiles(group)
+        if err != nil {
             slog.Warn("Group file verification failed, skipping group",
                 "group", group.Name,
+                "total_files", result.TotalFiles,
+                "verified_files", result.VerifiedFiles,
+                "failed_files", result.FailedFiles,
+                "skipped_files", result.SkippedFiles,
                 "error", err.Error())
             return nil // エラーを返さずスキップ
         }
+
+        slog.Info("Group file verification completed",
+            "group", group.Name,
+            "verified_files", result.VerifiedFiles,
+            "skipped_files", len(result.SkippedFiles),
+            "duration_ms", result.Duration.Milliseconds())
     }
 
-    // 2. コマンド実行ループ
+    // 2. コマンド実行ループ（検証は完了済み）
     for _, command := range group.Commands {
-        // 3. 新規: コマンドパス解決と検証
-        if r.verificationManager != nil {
-            // パス解決
-            resolvedPath, err := r.verificationManager.ResolveCommandPath(command.Cmd)
-            if err != nil {
-                slog.Warn("Command path resolution failed, skipping command",
-                    "group", group.Name,
-                    "command", command.Cmd,
-                    "error", err.Error())
-                continue
-            }
-
-            // 標準パススキップチェック
-            if r.verificationManager.ShouldSkipVerification(resolvedPath) {
-                slog.Info("Skipping verification for standard system path",
-                    "group", group.Name,
-                    "command", command.Cmd,
-                    "resolved_path", resolvedPath)
-            } else {
-                // 検証実行
-                if err := r.verificationManager.VerifyCommandFile(resolvedPath); err != nil {
-                    slog.Warn("Command file verification failed, skipping command",
-                        "group", group.Name,
-                        "command", command.Cmd,
-                        "resolved_path", resolvedPath,
-                        "error", err.Error())
-                    continue // コマンドをスキップ
-                }
-            }
-        }
-
-        // 4. 既存: コマンド実行
+        // 3. 既存: コマンド実行（検証なし、既に完了）
         if err := r.executeCommand(&command); err != nil {
             return err
         }
@@ -430,8 +538,10 @@ func (pr *PathResolver) securePathResolution(command string) (string, error) {
 
 ### 5.1 最適化戦略
 
+- **一括バッチ処理**: グループ内の全ファイルを一度に収集・検証することで効率化
+- **重複排除**: 同一ファイルの重複検証を自動的に排除
+- **早期スキップ判定**: 標準パスファイルの事前分離でI/O削減
 - **遅延評価**: groups検証は各グループ実行直前に実行
-- **キャッシュ**: 同一ファイルの重複検証を避ける
 - **並列処理**: 複数ファイルの検証を並列実行（将来拡張）
 
 ### 5.2 パフォーマンス目標
@@ -488,8 +598,45 @@ func TestManager_VerifyGlobalFiles(t *testing.T) {
 
     // テスト実行
     vm := NewManagerWithFS(config, mockFS)
-    err := vm.VerifyGlobalFiles(globalConfig)
+    result, err := vm.VerifyGlobalFiles(globalConfig)
     assert.NoError(t, err)
+    assert.Equal(t, 2, result.VerifiedFiles)
+    assert.Empty(t, result.FailedFiles)
+}
+
+func TestManager_VerifyGroupFiles_BatchProcessing(t *testing.T) {
+    mockFS := common.NewMockFileSystem()
+
+    // 明示的ファイル + コマンドファイル（重複あり）
+    mockFS.AddFile("/usr/bin/ls", 0755, []byte("ls binary"))
+    mockFS.AddFile("/usr/sbin/nginx", 0755, []byte("nginx binary"))
+    mockFS.AddFile("/etc/nginx.conf", 0644, []byte("nginx config"))
+
+    // ハッシュファイル作成
+    mockFS.AddFile("/hashes/usr/bin/ls.sha256", 0644, []byte("ls_hash"))
+    mockFS.AddFile("/hashes/usr/sbin/nginx.sha256", 0644, []byte("nginx_hash"))
+    mockFS.AddFile("/hashes/etc/nginx.conf.sha256", 0644, []byte("config_hash"))
+
+    groupConfig := &runnertypes.GroupConfig{
+        Name: "web-server",
+        HashFiles: []runnertypes.HashFile{
+            {Path: "/etc/nginx.conf"},  // 明示的ファイル
+            {Path: "/usr/bin/ls"},      // コマンドと重複
+        },
+        Commands: []runnertypes.Command{
+            {Cmd: "ls", Args: []string{"-la"}},           // 相対パス → /usr/bin/ls
+            {Cmd: "/usr/sbin/nginx", Args: []string{"-t"}}, // 絶対パス
+        },
+    }
+
+    // テスト実行（重複排除とバッチ処理を確認）
+    vm := NewManagerWithFS(config, mockFS)
+    result, err := vm.VerifyGroupFiles(groupConfig)
+
+    assert.NoError(t, err)
+    assert.Equal(t, 3, result.TotalFiles)      // 重複排除後の合計
+    assert.Equal(t, 3, result.VerifiedFiles)  // 全て検証成功
+    assert.Empty(t, result.FailedFiles)       // 失敗なし
 }
 ```
 
