@@ -97,15 +97,12 @@ timeout = 3600
 workdir = "/tmp"
 log_level = "info"
 
-# 新規追加: global ハッシュファイル
-[[global.hash_files]]
-path = "/usr/bin/systemctl"
-
-[[global.hash_files]]
-path = "/usr/bin/ls"
-
-[[global.hash_files]]
-path = "/etc/ssl/certs/ca-certificates.crt"
+# 新規追加: global 検証対象ファイル
+verify_files = [
+    "/usr/bin/systemctl",
+    "/usr/bin/ls",
+    "/etc/ssl/certs/ca-certificates.crt"
+]
 ```
 
 #### 3.1.2 groups セクション拡張
@@ -114,12 +111,11 @@ path = "/etc/ssl/certs/ca-certificates.crt"
 [[groups]]
 name = "system-maintenance"
 
-# 新規追加: groups ハッシュファイル
-[[groups.hash_files]]
-path = "/usr/sbin/logrotate"
-
-[[groups.hash_files]]
-path = "/etc/logrotate.conf"
+# 新規追加: groups 検証対象ファイル
+verify_files = [
+    "/usr/sbin/logrotate",
+    "/etc/logrotate.conf"
+]
 
 # 既存コマンド（自動的に検証対象に追加される）
 [[groups.commands]]
@@ -133,32 +129,31 @@ args = ["-t"]
 
 ### 3.2 新規コンポーネント設計
 
-#### 3.2.1 HashFilesConfig 構造体
+#### 3.2.1 VerifyFiles 構造体
 
 ```go
 // internal/runner/runnertypes/types.go 拡張
-type HashFile struct {
-    Path string `toml:"path"` // 検証対象ファイルパス
-}
-
 type GlobalConfig struct {
-    // 既存フィールド...
+    // 既存フィールド
     Timeout     int         `toml:"timeout"`
     Workdir     string      `toml:"workdir"`
     LogLevel    string      `toml:"log_level"`
+    Environment map[string]string `toml:"environment"`
 
     // 新規追加
-    HashFiles   []HashFile  `toml:"hash_files"`
-    SkipStandardPaths bool  `toml:"skip_standard_paths"`
+    VerifyFiles       []string `toml:"verify_files"`
+    SkipStandardPaths bool     `toml:"skip_standard_paths"`
 }
 
 type GroupConfig struct {
-    // 既存フィールド...
+    // 既存フィールド
     Name        string      `toml:"name"`
+    Description string      `toml:"description"`
     Commands    []Command   `toml:"commands"`
+    Environment map[string]string `toml:"environment"`
 
     // 新規追加
-    HashFiles   []HashFile  `toml:"hash_files"`
+    VerifyFiles []string `toml:"verify_files"`
 }
 ```
 
@@ -383,9 +378,9 @@ func (vm *Manager) VerifyGroupFiles(groupConfig *runnertypes.GroupConfig) (*Veri
 func (vm *Manager) collectAllVerificationFiles(groupConfig *runnertypes.GroupConfig) ([]string, error) {
     var allFiles []string
 
-    // 明示的ハッシュファイル
-    for _, hashFile := range groupConfig.HashFiles {
-        allFiles = append(allFiles, hashFile.Path)
+    // 明示的検証ファイル
+    for _, filePath := range groupConfig.VerifyFiles {
+        allFiles = append(allFiles, filePath)
     }
 
     // コマンドファイルの解決と収集
@@ -690,9 +685,9 @@ func TestManager_VerifyGlobalFiles(t *testing.T) {
 
     // 設定作成
     globalConfig := &runnertypes.GlobalConfig{
-        HashFiles: []runnertypes.HashFile{
-            {Path: "/usr/bin/ls"},
-            {Path: "/usr/bin/systemctl"},
+        VerifyFiles: []string{
+            "/usr/bin/ls",
+            "/usr/bin/systemctl",
         },
     }
 
@@ -719,9 +714,9 @@ func TestManager_VerifyGroupFiles_BatchProcessing(t *testing.T) {
 
     groupConfig := &runnertypes.GroupConfig{
         Name: "web-server",
-        HashFiles: []runnertypes.HashFile{
-            {Path: "/etc/nginx.conf"},  // 明示的ファイル
-            {Path: "/usr/bin/ls"},      // コマンドと重複
+        VerifyFiles: []string{
+            "/etc/nginx.conf",  // 明示的ファイル
+            "/usr/bin/ls",      // コマンドと重複
         },
         Commands: []runnertypes.Command{
             {Cmd: "ls", Args: []string{"-la"}},           // 相対パス → /usr/bin/ls

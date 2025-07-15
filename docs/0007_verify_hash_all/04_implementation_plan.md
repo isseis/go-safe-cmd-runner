@@ -55,22 +55,20 @@ workdir = "/tmp"
 log_level = "info"
 skip_standard_paths = false  # 新規追加
 
-# global ハッシュファイル
-[[global.hash_files]]
-path = "/usr/bin/systemctl"
-
-[[global.hash_files]]
-path = "/etc/ssl/certs/ca-certificates.crt"
+# global 検証対象ファイル
+verify_files = [
+    "/usr/bin/systemctl",
+    "/etc/ssl/certs/ca-certificates.crt"
+]
 
 [[groups]]
 name = "system-maintenance"
 
-# groups ハッシュファイル
-[[groups.hash_files]]
-path = "/usr/sbin/logrotate"
-
-[[groups.hash_files]]
-path = "/etc/logrotate.conf"
+# groups 検証対象ファイル
+verify_files = [
+    "/usr/sbin/logrotate",
+    "/etc/logrotate.conf"
+]
 
 # 既存コマンド（自動的に検証対象）
 [[groups.commands]]
@@ -82,10 +80,6 @@ args = ["status", "nginx"]
 
 ```go
 // internal/runner/runnertypes/types.go 拡張
-type HashFile struct {
-    Path string `toml:"path" json:"path"`
-}
-
 type GlobalConfig struct {
     // 既存フィールド
     Timeout     int    `toml:"timeout" json:"timeout"`
@@ -94,8 +88,8 @@ type GlobalConfig struct {
     Environment map[string]string `toml:"environment" json:"environment"`
 
     // 新規追加
-    HashFiles         []HashFile `toml:"hash_files" json:"hash_files"`
-    SkipStandardPaths bool       `toml:"skip_standard_paths" json:"skip_standard_paths"`
+    VerifyFiles       []string `toml:"verify_files" json:"verify_files"`
+    SkipStandardPaths bool     `toml:"skip_standard_paths" json:"skip_standard_paths"`
 }
 
 type GroupConfig struct {
@@ -106,7 +100,7 @@ type GroupConfig struct {
     Environment map[string]string `toml:"environment" json:"environment"`
 
     // 新規追加
-    HashFiles   []HashFile `toml:"hash_files" json:"hash_files"`
+    VerifyFiles []string `toml:"verify_files" json:"verify_files"`
 }
 ```
 
@@ -120,7 +114,7 @@ func (vm *Manager) VerifyGlobalFiles(globalConfig *runnertypes.GlobalConfig) (*V
     }
 
     result := &VerificationResult{
-        TotalFiles: len(globalConfig.HashFiles),
+        TotalFiles: len(globalConfig.VerifyFiles),
     }
 
     start := time.Now()
@@ -131,17 +125,17 @@ func (vm *Manager) VerifyGlobalFiles(globalConfig *runnertypes.GlobalConfig) (*V
     // skip_standard_pathsフラグに基づいてPathResolverを初期化
     vm.pathResolver.skipStandardPaths = globalConfig.SkipStandardPaths
 
-    for _, hashFile := range globalConfig.HashFiles {
+    for _, filePath := range globalConfig.VerifyFiles {
         // 標準パススキップチェック
-        if vm.shouldSkipVerification(hashFile.Path) {
-            result.SkippedFiles = append(result.SkippedFiles, hashFile.Path)
+        if vm.shouldSkipVerification(filePath) {
+            result.SkippedFiles = append(result.SkippedFiles, filePath)
             slog.Info("Skipping global file verification for standard system path",
-                "file", hashFile.Path)
+                "file", filePath)
             continue
         }
 
-        if err := vm.validator.Verify(hashFile.Path); err != nil {
-            result.FailedFiles = append(result.FailedFiles, hashFile.Path)
+        if err := vm.validator.Verify(filePath); err != nil {
+            result.FailedFiles = append(result.FailedFiles, filePath)
         } else {
             result.VerifiedFiles++
         }
@@ -423,8 +417,8 @@ func (vm *Manager) collectVerificationFiles(groupConfig *runnertypes.GroupConfig
     var allFiles []string
 
     // 明示的ファイル
-    for _, hashFile := range groupConfig.HashFiles {
-        allFiles = append(allFiles, hashFile.Path)
+    for _, filePath := range groupConfig.VerifyFiles {
+        allFiles = append(allFiles, filePath)
     }
 
     // コマンドファイル
@@ -650,15 +644,15 @@ vi /etc/go-safe-cmd-runner/config.toml
 # 標準パススキップを有効にする場合
 [global]
 skip_standard_paths = true
-
-[[global.hash_files]]
-path = "/usr/local/bin/custom_tool"  # カスタムツールは検証
+verify_files = [
+    "/usr/local/bin/custom_tool"  # カスタムツールは検証
+]
 
 [[groups]]
 name = "custom-group"
-
-[[groups.hash_files]]
-path = "/opt/custom/config.conf"  # カスタム設定は検証
+verify_files = [
+    "/opt/custom/config.conf"  # カスタム設定は検証
+]
 
 [[groups.commands]]
 cmd = "ls"  # 標準パス、スキップされる

@@ -18,15 +18,12 @@ workdir = "/tmp"
 log_level = "info"
 skip_standard_paths = false  # デフォルト: 標準パスも検証する
 
-# 新規追加: ハッシュ検証対象ファイル
-[[global.hash_files]]
-path = "/usr/bin/systemctl"
-
-[[global.hash_files]]
-path = "/usr/bin/ls"
-
-[[global.hash_files]]
-path = "/etc/ssl/certs/ca-certificates.crt"
+# 新規追加: 検証対象ファイル
+verify_files = [
+    "/usr/bin/systemctl",
+    "/usr/bin/ls",
+    "/etc/ssl/certs/ca-certificates.crt"
+]
 ```
 
 #### 2.1.2 groups セクション拡張
@@ -35,12 +32,11 @@ path = "/etc/ssl/certs/ca-certificates.crt"
 [[groups]]
 name = "system-maintenance"
 
-# 新規追加: グループ固有のハッシュ検証対象ファイル
-[[groups.hash_files]]
-path = "/usr/sbin/logrotate"
-
-[[groups.hash_files]]
-path = "/etc/logrotate.conf"
+# 新規追加: グループ固有の検証対象ファイル
+verify_files = [
+    "/usr/sbin/logrotate",
+    "/etc/logrotate.conf"
+]
 
 # 既存: コマンド定義（自動的に検証対象になる）
 [[groups.commands]]
@@ -60,10 +56,7 @@ args = ["-t"]
 // internal/runner/runnertypes/types.go
 package runnertypes
 
-// 新規追加: ハッシュファイル定義
-type HashFile struct {
-    Path string `toml:"path" json:"path"` // 検証対象ファイルパス（絶対パス）
-}
+// 注意: HashFile 構造体は不要になり、配列形式で簡素化
 
 // 既存構造体の拡張
 type GlobalConfig struct {
@@ -74,8 +67,8 @@ type GlobalConfig struct {
     Environment map[string]string `toml:"environment" json:"environment"`
 
     // 新規追加
-    HashFiles         []HashFile `toml:"hash_files" json:"hash_files"`
-    SkipStandardPaths bool       `toml:"skip_standard_paths" json:"skip_standard_paths"`
+    VerifyFiles       []string `toml:"verify_files" json:"verify_files"`
+    SkipStandardPaths bool     `toml:"skip_standard_paths" json:"skip_standard_paths"`
 }
 
 type GroupConfig struct {
@@ -86,7 +79,7 @@ type GroupConfig struct {
     Environment map[string]string `toml:"environment" json:"environment"`
 
     // 新規追加
-    HashFiles   []HashFile `toml:"hash_files" json:"hash_files"`
+    VerifyFiles []string `toml:"verify_files" json:"verify_files"`
 }
 
 // 既存（変更なし）
