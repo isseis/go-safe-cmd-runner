@@ -65,6 +65,20 @@ func (pr *PathResolver) validateCommandSafety(command string) error {
 	return pr.security.ValidateCommand(command)
 }
 
+// validateAndCacheCommand validates that a path points to an executable file and caches it
+func (pr *PathResolver) validateAndCacheCommand(path, cacheKey string) (string, error) {
+	if info, err := os.Stat(path); err != nil {
+		return "", fmt.Errorf("%w: %s", ErrCommandNotFound, cacheKey)
+	} else if info.IsDir() {
+		return "", fmt.Errorf("%w: %s is a directory", ErrCommandNotFound, cacheKey)
+	}
+
+	pr.mu.Lock()
+	pr.cache[cacheKey] = path
+	pr.mu.Unlock()
+	return path, nil
+}
+
 // ResolvePath resolves a command to its full path
 func (pr *PathResolver) ResolvePath(command string) (string, error) {
 	// Check cache first
@@ -80,12 +94,9 @@ func (pr *PathResolver) ResolvePath(command string) (string, error) {
 		return "", fmt.Errorf("unsafe command rejected: %w", err)
 	}
 
-	// If absolute path, return as is
+	// If absolute path, verify it exists and is not a directory
 	if filepath.IsAbs(command) {
-		pr.mu.Lock()
-		pr.cache[command] = command
-		pr.mu.Unlock()
-		return command, nil
+		return pr.validateAndCacheCommand(command, command)
 	}
 
 	// Resolve from PATH environment variable
@@ -97,13 +108,8 @@ func (pr *PathResolver) ResolvePath(command string) (string, error) {
 
 		// Check if command file exists
 		fullPath := filepath.Join(dir, command)
-
-		if info, err := os.Stat(fullPath); err == nil && !info.IsDir() {
-			// File exists and is not a directory
-			pr.mu.Lock()
-			pr.cache[command] = fullPath
-			pr.mu.Unlock()
-			return fullPath, nil
+		if _, err := os.Stat(fullPath); err == nil {
+			return pr.validateAndCacheCommand(fullPath, command)
 		}
 	}
 
