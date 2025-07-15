@@ -28,7 +28,26 @@ var (
 	ErrUndefinedVariable   = errors.New("undefined variable")
 	ErrCommandNotFound     = errors.New("command not found")
 	ErrCircularReference   = errors.New("circular variable reference detected")
+	ErrGroupVerification   = errors.New("group file verification failed")
 )
+
+// VerificationError contains detailed information about verification failures
+type VerificationError struct {
+	GroupName     string
+	TotalFiles    int
+	VerifiedFiles int
+	FailedFiles   int
+	SkippedFiles  int
+	Err           error
+}
+
+func (e *VerificationError) Error() string {
+	return fmt.Sprintf("group file verification failed for group %s: %v", e.GroupName, e.Err)
+}
+
+func (e *VerificationError) Unwrap() error {
+	return e.Err
+}
 
 // Constants
 const (
@@ -201,6 +220,18 @@ func (r *Runner) ExecuteAll(ctx context.Context) error {
 	// Execute groups sequentially
 	for _, group := range groups {
 		if err := r.ExecuteGroup(ctx, group); err != nil {
+			// Check if this is a verification error - if so, log warning and continue
+			var verErr *VerificationError
+			if errors.As(err, &verErr) {
+				slog.Warn("Group file verification failed, skipping group",
+					"group", verErr.GroupName,
+					"total_files", verErr.TotalFiles,
+					"verified_files", verErr.VerifiedFiles,
+					"failed_files", verErr.FailedFiles,
+					"skipped_files", verErr.SkippedFiles,
+					"error", verErr.Err.Error())
+				continue // Skip this group but continue with the next one
+			}
 			return fmt.Errorf("failed to execute group %s: %w", group.Name, err)
 		}
 	}
@@ -229,14 +260,14 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 	if r.verificationManager != nil {
 		result, err := r.verificationManager.VerifyGroupFiles(&processedGroup)
 		if err != nil {
-			slog.Warn("Group file verification failed, skipping group",
-				"group", processedGroup.Name,
-				"total_files", result.TotalFiles,
-				"verified_files", result.VerifiedFiles,
-				"failed_files", result.FailedFiles,
-				"skipped_files", result.SkippedFiles,
-				"error", err.Error())
-			return nil // Skip group but don't fail the entire execution
+			return &VerificationError{
+				GroupName:     processedGroup.Name,
+				TotalFiles:    result.TotalFiles,
+				VerifiedFiles: result.VerifiedFiles,
+				FailedFiles:   len(result.FailedFiles),
+				SkippedFiles:  len(result.SkippedFiles),
+				Err:           err,
+			}
 		}
 
 		if result.TotalFiles > 0 {
