@@ -42,4 +42,7 @@ var (
 
 	// ErrJSONParseError indicates that JSON parsing failed.
 	ErrJSONParseError = errors.New("failed to parse JSON hash file")
+
+	// ErrHashFileExists indicates that the hash file already exists.
+	ErrHashFileExists = errors.New("hash file already exists")
 )

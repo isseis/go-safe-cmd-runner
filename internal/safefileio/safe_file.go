@@ -155,6 +155,51 @@ func SafeWriteFile(filePath string, content []byte, perm os.FileMode) (err error
 	return safeWriteFileWithFS(filePath, content, perm, defaultFS)
 }
 
+// SafeWriteFileOverwrite writes a file safely, allowing overwrite of existing files.
+// It uses openat2 with RESOLVE_NO_SYMLINKS when available for atomic symlink-safe operations,
+// eliminating TOCTOU (Time-of-Check Time-of-Use) race conditions completely.
+// On systems without openat2, it falls back to path verification before opening the file.
+//
+// Note: The filepath parameter is intentionally not restricted to a safe directory as the
+// function is designed to work with any valid file path while maintaining security.
+func SafeWriteFileOverwrite(filePath string, content []byte, perm os.FileMode) (err error) {
+	return safeWriteFileOverwriteWithFS(filePath, content, perm, defaultFS)
+}
+
+// safeWriteFileOverwriteWithFS is the internal implementation that accepts a FileSystem for testing
+func safeWriteFileOverwriteWithFS(filePath string, content []byte, perm os.FileMode, fs FileSystem) (err error) {
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidFilePath, err)
+	}
+
+	// Use the FileSystem interface consistently for both testing and production
+	// Use O_TRUNC to overwrite existing files instead of O_EXCL
+	file, err := fs.SafeOpenFile(absPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	if err != nil {
+		return err
+	}
+
+	// Ensure the file is closed on error
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil && err == nil {
+			err = fmt.Errorf("failed to close file: %w", closeErr)
+		}
+	}()
+
+	// Validate the file is a regular file (not a device, pipe, etc.)
+	if _, err := validateFile(file, absPath); err != nil {
+		return err
+	}
+
+	// Write the content
+	if _, err = file.Write(content); err != nil {
+		return fmt.Errorf("failed to write to %s: %w", absPath, err)
+	}
+
+	return nil
+}
+
 // safeWriteFileWithFS is the internal implementation that accepts a FileSystem for testing
 func safeWriteFileWithFS(filePath string, content []byte, perm os.FileMode, fs FileSystem) (err error) {
 	absPath, err := filepath.Abs(filePath)

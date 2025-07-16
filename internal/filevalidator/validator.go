@@ -93,6 +93,14 @@ func newValidator(algorithm HashAlgorithm, hashDir string, hashFilePathGetter Ha
 // Record calculates the hash of the file at filePath and saves it to the hash directory.
 // The hash file is named using a URL-safe Base64 encoding of the file path.
 func (v *Validator) Record(filePath string) (string, error) {
+	return v.RecordWithOptions(filePath, false)
+}
+
+// RecordWithOptions calculates the hash of the file at filePath and saves it to the hash directory.
+// The hash file is named using a URL-safe Base64 encoding of the file path.
+// If force is true, existing hash files for the same file path will be overwritten.
+// Hash collisions (different file paths with same hash) always return an error regardless of force.
+func (v *Validator) RecordWithOptions(filePath string, force bool) (string, error) {
 	// Validate the file path
 	targetPath, err := validatePath(filePath)
 	if err != nil {
@@ -124,13 +132,18 @@ func (v *Validator) Record(filePath string) (string, error) {
 			return "", err
 		}
 
-		// If the paths don't match, it's a hash collision
+		// If the paths don't match, it's a hash collision - always return error
 		if existingManifest.File.Path != targetPath {
 			return "", fmt.Errorf("%w: hash collision detected between %s and %s",
 				ErrHashCollision, existingManifest.File.Path, targetPath)
 		}
 
-		// If we get here, the file already exists with the same path, so we can overwrite it
+		// If we get here, the file already exists with the same path
+		// If force is false, we should not overwrite it
+		if !force {
+			return "", fmt.Errorf("hash file already exists for %s: %w", targetPath, ErrHashFileExists)
+		}
+		// If force is true, we continue and overwrite it
 	} else if !os.IsNotExist(err) {
 		// Return error if it's not a "not exist" error
 		return "", fmt.Errorf("failed to check existing hash file: %w", err)
@@ -139,7 +152,7 @@ func (v *Validator) Record(filePath string) (string, error) {
 	// Create manifest hash file
 	manifest := createHashManifest(targetPath, hash, v.algorithm.Name())
 
-	err = v.writeHashManifest(hashFilePath, manifest)
+	err = v.writeHashManifest(hashFilePath, manifest, force)
 	if err != nil {
 		return "", fmt.Errorf("failed to write hash manifest: %w", err)
 	}
@@ -260,8 +273,8 @@ func (v *Validator) parseAndValidateHashFile(content []byte, targetPath string) 
 	return manifest.File.Path, manifest.File.Hash.Value, nil
 }
 
-// writeHashManifest writes a hash manifest in JSON format
-func (v *Validator) writeHashManifest(filePath string, manifest HashManifest) error {
+// writeHashManifest writes a hash manifest in JSON format with options
+func (v *Validator) writeHashManifest(filePath string, manifest HashManifest, force bool) error {
 	// Marshal to JSON manifest with indentation
 	jsonData, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
@@ -272,5 +285,8 @@ func (v *Validator) writeHashManifest(filePath string, manifest HashManifest) er
 	jsonData = append(jsonData, '\n')
 
 	// Write to file
+	if force {
+		return safefileio.SafeWriteFileOverwrite(filePath, jsonData, 0o644)
+	}
 	return safefileio.SafeWriteFile(filePath, jsonData, 0o644)
 }

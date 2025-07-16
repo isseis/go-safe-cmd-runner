@@ -614,3 +614,115 @@ func TestValidator_InvalidTimestamp(t *testing.T) {
 		}
 	})
 }
+
+func TestValidator_RecordWithOptions(t *testing.T) {
+	tempDir := safeTempDir(t)
+
+	// Create test files
+	testFile1Path := filepath.Join(tempDir, "test1.txt")
+	testFile2Path := filepath.Join(tempDir, "test2.txt")
+
+	if err := os.WriteFile(testFile1Path, []byte("content1"), 0o644); err != nil {
+		t.Fatalf("Failed to create test file 1: %v", err)
+	}
+	if err := os.WriteFile(testFile2Path, []byte("content2"), 0o644); err != nil {
+		t.Fatalf("Failed to create test file 2: %v", err)
+	}
+
+	// Create mock hash file path getter to simulate hash collision
+	mockGetter := &MockHashFilePathGetter{
+		filePath: filepath.Join(tempDir, "collision.json"),
+	}
+
+	testValidator := &Validator{
+		algorithm:          &SHA256{},
+		hashDir:            tempDir,
+		hashFilePathGetter: mockGetter,
+	}
+
+	t.Run("Record without force on new file", func(t *testing.T) {
+		hashFile, err := testValidator.RecordWithOptions(testFile1Path, false)
+		if err != nil {
+			t.Fatalf("Failed to record hash without force: %v", err)
+		}
+
+		// Verify the hash file was created
+		if _, err := os.Stat(hashFile); os.IsNotExist(err) {
+			t.Errorf("Hash file was not created: %s", hashFile)
+		}
+	})
+
+	t.Run("Record without force on existing file with different path should fail", func(t *testing.T) {
+		// Try to record the second file which will have the same hash file path
+		_, err := testValidator.RecordWithOptions(testFile2Path, false)
+		if err == nil {
+			t.Fatal("Expected error for hash collision, but got nil")
+		}
+
+		if !errors.Is(err, ErrHashCollision) {
+			t.Errorf("Expected ErrHashCollision, got: %v", err)
+		}
+	})
+
+	t.Run("Record with force on existing file with different path should still fail", func(t *testing.T) {
+		// Try to record the second file with force=true - should still fail due to hash collision
+		_, err := testValidator.RecordWithOptions(testFile2Path, true)
+		if err == nil {
+			t.Fatal("Expected error for hash collision even with force=true, but got nil")
+		}
+
+		if !errors.Is(err, ErrHashCollision) {
+			t.Errorf("Expected ErrHashCollision, got: %v", err)
+		}
+	})
+
+	t.Run("Record with force on same file should succeed", func(t *testing.T) {
+		// Try to record the same file again with force=true - should succeed
+		hashFile, err := testValidator.RecordWithOptions(testFile1Path, true)
+		if err != nil {
+			t.Fatalf("Failed to record hash with force for same file: %v", err)
+		}
+
+		// Verify the hash file was updated
+		if _, err := os.Stat(hashFile); os.IsNotExist(err) {
+			t.Errorf("Hash file was not created: %s", hashFile)
+		}
+
+		// Verify the content still has the correct file path
+		content, err := os.ReadFile(hashFile)
+		if err != nil {
+			t.Fatalf("Failed to read hash file: %v", err)
+		}
+
+		var manifest HashManifest
+		if err := json.Unmarshal(content, &manifest); err != nil {
+			t.Fatalf("Failed to unmarshal hash file: %v", err)
+		}
+
+		if manifest.File.Path != testFile1Path {
+			t.Errorf("Expected path %s, got %s", testFile1Path, manifest.File.Path)
+		}
+	})
+
+	t.Run("Record without force on same file should fail", func(t *testing.T) {
+		// Try to record the same file again without force - should fail because file exists
+		_, err := testValidator.RecordWithOptions(testFile1Path, false)
+		if err == nil {
+			t.Fatal("Expected error when recording same file without force, but got nil")
+		}
+
+		// The error should be file exists error, not hash collision
+		if errors.Is(err, ErrHashCollision) {
+			t.Error("Got ErrHashCollision for same file, expected file exists error")
+		}
+	})
+}
+
+// MockHashFilePathGetter is a mock implementation for testing hash collisions
+type MockHashFilePathGetter struct {
+	filePath string
+}
+
+func (m *MockHashFilePathGetter) GetHashFilePath(_ HashAlgorithm, _ string, _ string) (string, error) {
+	return m.filePath, nil
+}

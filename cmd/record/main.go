@@ -3,6 +3,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 
@@ -10,12 +11,41 @@ import (
 )
 
 func main() {
-	// Parse command line flags
-	config, err := cmdcommon.ParseFlags()
-	if err != nil {
-		cmdcommon.PrintUsage()
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+	// Parse command line flags with record-specific options
+	var (
+		file    = flag.String("file", "", "Path to the file to process")
+		hashDir = flag.String("hash-dir", "", "Directory containing hash files")
+		force   = flag.Bool("force", false, "Force overwrite existing hash files")
+	)
+	flag.Parse()
+
+	if *file == "" {
+		flag.Usage()
+		fmt.Fprintf(os.Stderr, "Error: file argument is required\n")
 		os.Exit(1)
+	}
+
+	// Set default hash directory if not specified
+	dir := *hashDir
+	if dir == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error getting current directory: %v\n", err)
+			os.Exit(1)
+		}
+		dir = cwd
+	}
+
+	// Ensure the directory exists
+	const dirPerm = 0o750
+	if err := os.MkdirAll(dir, dirPerm); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating hash directory: %v\n", err)
+		os.Exit(1)
+	}
+
+	config := &cmdcommon.Config{
+		File:    *file,
+		HashDir: dir,
 	}
 
 	// Create validator with SHA256 hasher
@@ -26,7 +56,7 @@ func main() {
 	}
 
 	// Record file hash
-	hashFile, err := validator.Record(config.File)
+	hashFile, err := validator.RecordWithOptions(config.File, *force)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error recording file hash: %v\n", err)
 		os.Exit(1)
