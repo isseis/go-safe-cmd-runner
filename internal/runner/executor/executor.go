@@ -27,7 +27,6 @@ var (
 type DefaultExecutor struct {
 	FS  FileSystem
 	Out OutputWriter
-	Env EnvironmentManager
 }
 
 // NewDefaultExecutor creates a new default command executor
@@ -35,7 +34,6 @@ func NewDefaultExecutor() CommandExecutor {
 	return &DefaultExecutor{
 		FS:  &osFileSystem{},
 		Out: &consoleOutputWriter{},
-		Env: &envManager{},
 	}
 }
 
@@ -214,27 +212,4 @@ func (w *outputWrapper) GetBuffer() []byte {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.buffer.Bytes()
-}
-
-// envManager implements EnvironmentManager
-type envManager struct{}
-
-func (m *envManager) LoadFromFile(_ string) (map[string]string, error) {
-	// TODO: Implement environment variable loading from file
-	return map[string]string{}, nil
-}
-
-func (m *envManager) Merge(envs ...map[string]string) map[string]string {
-	result := make(map[string]string)
-	for _, env := range envs {
-		for k, v := range env {
-			result[k] = v
-		}
-	}
-	return result
-}
-
-func (m *envManager) Resolve(s string, _ map[string]string) (string, error) {
-	// TODO: Implement environment variable resolution
-	return s, nil
 }

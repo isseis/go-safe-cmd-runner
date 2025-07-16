@@ -50,31 +50,6 @@ func (m *mockOutputWriter) Close() error {
 	return nil
 }
 
-type mockEnvManager struct{}
-
-func (m *mockEnvManager) LoadFromFile(_ string) (map[string]string, error) {
-	return map[string]string{"FROM_FILE": "value"}, nil
-}
-
-func (m *mockEnvManager) Merge(envs ...map[string]string) map[string]string {
-	result := make(map[string]string)
-	for _, env := range envs {
-		for k, v := range env {
-			result[k] = v
-		}
-	}
-	return result
-}
-
-func (m *mockEnvManager) Resolve(s string, _ map[string]string) (string, error) {
-	return s, nil
-}
-
-func TestNewDefaultExecutor(t *testing.T) {
-	exec := executor.NewDefaultExecutor()
-	assert.NotNil(t, exec, "NewDefaultExecutor should return a non-nil executor")
-}
-
 func TestExecute_Success(t *testing.T) {
 	tests := []struct {
 		name             string
@@ -140,7 +115,6 @@ func TestExecute_Success(t *testing.T) {
 			e := &executor.DefaultExecutor{
 				FS:  fileSystem,
 				Out: outputWriter,
-				Env: &mockEnvManager{},
 			}
 
 			result, err := e.Execute(context.Background(), tt.cmd, tt.env)
@@ -231,7 +205,6 @@ func TestExecute_Failure(t *testing.T) {
 			e := &executor.DefaultExecutor{
 				FS:  fileSystem,
 				Out: outputWriter,
-				Env: &mockEnvManager{},
 			}
 
 			ctx := context.Background()
@@ -269,7 +242,6 @@ func TestExecute_ContextCancellation(t *testing.T) {
 	e := &executor.DefaultExecutor{
 		FS:  fileSystem,
 		Out: &mockOutputWriter{},
-		Env: &mockEnvManager{},
 	}
 
 	// Create a context that we'll cancel
@@ -338,7 +310,6 @@ func TestValidate(t *testing.T) {
 			e := &executor.DefaultExecutor{
 				FS:  fileSystem,
 				Out: &mockOutputWriter{},
-				Env: &mockEnvManager{},
 			}
 
 			err := e.Validate(tt.cmd)
