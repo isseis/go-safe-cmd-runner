@@ -17,6 +17,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/template"
+	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/joho/godotenv"
 )
 
@@ -27,7 +28,26 @@ var (
 	ErrUndefinedVariable   = errors.New("undefined variable")
 	ErrCommandNotFound     = errors.New("command not found")
 	ErrCircularReference   = errors.New("circular variable reference detected")
+	ErrGroupVerification   = errors.New("group file verification failed")
 )
+
+// VerificationError contains detailed information about verification failures
+type VerificationError struct {
+	GroupName     string
+	TotalFiles    int
+	VerifiedFiles int
+	FailedFiles   int
+	SkippedFiles  int
+	Err           error
+}
+
+func (e *VerificationError) Error() string {
+	return fmt.Sprintf("group file verification failed for group %s: %v", e.GroupName, e.Err)
+}
+
+func (e *VerificationError) Unwrap() error {
+	return e.Err
+}
 
 // Constants
 const (
@@ -37,12 +57,13 @@ const (
 
 // Runner manages the execution of command groups
 type Runner struct {
-	executor        executor.CommandExecutor
-	config          *runnertypes.Config
-	envVars         map[string]string
-	validator       *security.Validator
-	templateEngine  *template.Engine
-	resourceManager *resource.Manager
+	executor            executor.CommandExecutor
+	config              *runnertypes.Config
+	envVars             map[string]string
+	validator           *security.Validator
+	templateEngine      *template.Engine
+	resourceManager     *resource.Manager
+	verificationManager *verification.Manager
 }
 
 // Option is a function type for configuring Runner instances
@@ -50,16 +71,24 @@ type Option func(*runnerOptions)
 
 // runnerOptions holds all configuration options for creating a Runner
 type runnerOptions struct {
-	securityConfig  *security.Config
-	templateEngine  *template.Engine
-	resourceManager *resource.Manager
-	executor        executor.CommandExecutor
+	securityConfig      *security.Config
+	templateEngine      *template.Engine
+	resourceManager     *resource.Manager
+	executor            executor.CommandExecutor
+	verificationManager *verification.Manager
 }
 
 // WithSecurity sets a custom security configuration
 func WithSecurity(securityConfig *security.Config) Option {
 	return func(opts *runnerOptions) {
 		opts.securityConfig = securityConfig
+	}
+}
+
+// WithVerificationManager sets a custom verification manager
+func WithVerificationManager(verificationManager *verification.Manager) Option {
+	return func(opts *runnerOptions) {
+		opts.verificationManager = verificationManager
 	}
 }
 
@@ -110,25 +139,14 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 	}
 
 	return &Runner{
-		executor:        opts.executor,
-		config:          config,
-		envVars:         make(map[string]string),
-		validator:       validator,
-		templateEngine:  opts.templateEngine,
-		resourceManager: opts.resourceManager,
+		executor:            opts.executor,
+		config:              config,
+		envVars:             make(map[string]string),
+		validator:           validator,
+		templateEngine:      opts.templateEngine,
+		resourceManager:     opts.resourceManager,
+		verificationManager: opts.verificationManager,
 	}, nil
-}
-
-// NewRunnerWithSecurity creates a new command runner with custom security configuration
-// Deprecated: Use NewRunner with WithSecurity option instead
-func NewRunnerWithSecurity(config *runnertypes.Config, securityConfig *security.Config) (*Runner, error) {
-	return NewRunner(config, WithSecurity(securityConfig))
-}
-
-// NewRunnerWithComponents creates a new command runner with pre-configured components
-// Deprecated: Use NewRunner with WithTemplateEngine and WithResourceManager options instead
-func NewRunnerWithComponents(config *runnertypes.Config, templateEngine *template.Engine, resourceManager *resource.Manager) (*Runner, error) {
-	return NewRunner(config, WithTemplateEngine(templateEngine), WithResourceManager(resourceManager))
 }
 
 // LoadEnvironment loads environment variables from the specified .env file and system environment.
@@ -187,6 +205,18 @@ func (r *Runner) ExecuteAll(ctx context.Context) error {
 	// Execute groups sequentially
 	for _, group := range groups {
 		if err := r.ExecuteGroup(ctx, group); err != nil {
+			// Check if this is a verification error - if so, log warning and continue
+			var verErr *VerificationError
+			if errors.As(err, &verErr) {
+				slog.Warn("Group file verification failed, skipping group",
+					"group", verErr.GroupName,
+					"total_files", verErr.TotalFiles,
+					"verified_files", verErr.VerifiedFiles,
+					"failed_files", verErr.FailedFiles,
+					"skipped_files", verErr.SkippedFiles,
+					"error", verErr.Err.Error())
+				continue // Skip this group but continue with the next one
+			}
 			return fmt.Errorf("failed to execute group %s: %w", group.Name, err)
 		}
 	}
@@ -209,6 +239,29 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 			return fmt.Errorf("failed to apply template %s to group %s: %w", group.Template, group.Name, err)
 		}
 		processedGroup = *appliedGroup
+	}
+
+	// Verify group files before execution
+	if r.verificationManager != nil {
+		result, err := r.verificationManager.VerifyGroupFiles(&processedGroup)
+		if err != nil {
+			return &VerificationError{
+				GroupName:     processedGroup.Name,
+				TotalFiles:    result.TotalFiles,
+				VerifiedFiles: result.VerifiedFiles,
+				FailedFiles:   len(result.FailedFiles),
+				SkippedFiles:  len(result.SkippedFiles),
+				Err:           err,
+			}
+		}
+
+		if result.TotalFiles > 0 {
+			slog.Info("Group file verification completed",
+				"group", processedGroup.Name,
+				"verified_files", result.VerifiedFiles,
+				"skipped_files", len(result.SkippedFiles),
+				"duration_ms", result.Duration.Milliseconds())
+		}
 	}
 
 	// Track resources for cleanup

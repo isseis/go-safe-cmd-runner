@@ -12,9 +12,11 @@ type Config struct {
 
 // GlobalConfig contains global configuration options
 type GlobalConfig struct {
-	Timeout  int    `toml:"timeout"`   // Global timeout in seconds
-	WorkDir  string `toml:"workdir"`   // Working directory
-	LogLevel string `toml:"log_level"` // Log level (debug, info, warn, error)
+	Timeout           int      `toml:"timeout"`             // Global timeout in seconds
+	WorkDir           string   `toml:"workdir"`             // Working directory
+	LogLevel          string   `toml:"log_level"`           // Log level (debug, info, warn, error)
+	VerifyFiles       []string `toml:"verify_files"`        // Files to verify at global level
+	SkipStandardPaths bool     `toml:"skip_standard_paths"` // Skip verification for standard system paths
 }
 
 // TemplateConfig represents a template configuration
@@ -37,6 +39,7 @@ type CommandGroup struct {
 	DependsOn   []string  `toml:"depends_on"`
 	Template    string    `toml:"template"` // Template to apply to this group
 	Commands    []Command `toml:"commands"`
+	VerifyFiles []string  `toml:"verify_files"` // Files to verify for this group
 }
 
 // Command represents a single command to be executed

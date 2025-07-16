@@ -1,0 +1,33 @@
+version = "1.0"
+
+[global]
+workdir = "/tmp/cmd-runner"
+log_level = "debug"
+skip_standard_paths = true
+
+[templates]
+
+# Development environment template
+[templates.dev]
+description = "Development environment template"
+# Default environment variables for commands using this template
+env = ["NODE_ENV=development", "DEBUG=true"]
+
+# Template variables that can be referenced in commands using {{.variable_name}}
+[templates.dev.variables]
+app_name = "myapp-dev"
+port = "3000"
+env_type = "development"
+
+[[groups]]
+name = "test"
+description = "Test group for command execution"
+priority = 1
+depends_on = []
+template = "dev"
+
+[[groups.commands]]
+name = "show_environment"
+description = "Display environment information"
+cmd = "echo"
+args = ["Environment: {{.env_type}}, App: {{.app_name}}, Port: {{.port}}"]

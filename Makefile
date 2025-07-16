@@ -49,7 +49,8 @@ clean:
 	$(GOCLEAN)
 	rm -f $(BINARY_RECORD) $(BINARY_VERIFY) $(BINARY_RUNNER)
 
-hash: $(BINARY_RECORD) ./sample/config.toml
+hash: $(BINARY_RECORD) ./sample/test.toml ./sample/config.toml
+	$(SUDOCMD) $(BINARY_RECORD) -file ./sample/test.toml -hash-dir $(DEFAULT_HASH_DIRECTORY)
 	$(SUDOCMD) $(BINARY_RECORD) -file ./sample/config.toml -hash-dir $(DEFAULT_HASH_DIRECTORY)
 
 test: $(BINARY_RUNNER)
@@ -57,4 +58,4 @@ test: $(BINARY_RUNNER)
 	$(ENVCMD) -i $(BINARY_RUNNER) -dry-run -config ./sample/config.toml --disable-verification
 
 integration-test: $(BINARY_RUNNER)
-	$(ENVCMD) -i $(BINARY_RUNNER) -dry-run -config ./sample/config.toml
+	$(ENVCMD) -i $(BINARY_RUNNER) -dry-run -config ./sample/test.toml

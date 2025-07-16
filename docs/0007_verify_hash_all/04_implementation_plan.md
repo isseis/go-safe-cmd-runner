@@ -19,25 +19,25 @@
 
 ### 3.1 タスク一覧
 
-- [ ] **Task 1.1**: 設定ファイル構造拡張
+- [x] **Task 1.1**: 設定ファイル構造拡張
   - **担当**: 開発者
   - **工数**: 2日
   - **依存**: なし
   - **成果物**: 拡張されたTOML設定構造
 
-- [ ] **Task 1.2**: runnertypes.Config 構造体拡張
+- [x] **Task 1.2**: runnertypes.Config 構造体拡張
   - **担当**: 開発者
   - **工数**: 1日
   - **依存**: Task 1.1
   - **成果物**: HashFile型定義、GlobalConfig/GroupConfig拡張
 
-- [ ] **Task 1.3**: verification.Manager メソッド拡張
+- [x] **Task 1.3**: verification.Manager メソッド拡張
   - **担当**: 開発者
   - **工数**: 3日
   - **依存**: Task 1.2
   - **成果物**: VerifyGlobalFiles/VerifyGroupFiles メソッド
 
-- [ ] **Task 1.4**: PathResolver 基本実装
+- [x] **Task 1.4**: PathResolver 基本実装
   - **担当**: 開発者
   - **工数**: 2日
   - **依存**: なし
@@ -200,35 +200,35 @@ func (vm *Manager) VerifyGroupFiles(groupConfig *runnertypes.GroupConfig) (*Veri
 
 ### 3.3 Phase 1 検証基準
 
-- [ ] TOML設定ファイルが正しく読み込まれる
-- [ ] HashFile構造体が適切に動作する
-- [ ] VerifyGlobalFiles/VerifyGroupFiles メソッドが基本動作する
-- [ ] 既存機能に影響がない
-- [ ] 基本的なユニットテストが通過する
+- [x] TOML設定ファイルが正しく読み込まれる
+- [x] HashFile構造体が適切に動作する
+- [x] VerifyGlobalFiles/VerifyGroupFiles メソッドが基本動作する
+- [x] 既存機能に影響がない
+- [x] 基本的なユニットテストが通過する
 
 ## 4. Phase 2: 検証機能実装
 
 ### 4.1 タスク一覧
 
-- [ ] **Task 2.1**: main.go への global 検証統合
+- [x] **Task 2.1**: main.go への global 検証統合
   - **担当**: 開発者
   - **工数**: 2日
   - **依存**: Phase 1 完了
   - **成果物**: 起動時 global 検証実装
 
-- [ ] **Task 2.2**: runner.executeGroup への groups 検証統合
+- [x] **Task 2.2**: runner.executeGroup への groups 検証統合
   - **担当**: 開発者
   - **工数**: 2日
   - **依存**: Task 2.1
   - **成果物**: グループ実行前検証実装
 
-- [ ] **Task 2.3**: エラーハンドリング実装
+- [x] **Task 2.3**: エラーハンドリング実装
   - **担当**: 開発者
   - **工数**: 1日
   - **依存**: Task 2.2
   - **成果物**: 適切なエラー処理とログ出力
 
-- [ ] **Task 2.4**: コマンドパス収集機能
+- [x] **Task 2.4**: コマンドパス収集機能
   - **担当**: 開発者
   - **工数**: 2日
   - **依存**: Task 2.2
@@ -316,11 +316,11 @@ func (r *Runner) executeGroup(group *runnertypes.GroupConfig) error {
 
 ### 4.3 Phase 2 検証基準
 
-- [ ] global 検証失敗時にプロセスが終了する
-- [ ] groups 検証失敗時にグループがスキップされる
-- [ ] 適切なログが出力される
-- [ ] エラーメッセージが分かりやすい
-- [ ] groups.commands からファイルが自動収集される
+- [x] global 検証失敗時にプロセスが終了する
+- [x] groups 検証失敗時にグループがスキップされる
+- [x] 適切なログが出力される
+- [x] エラーメッセージが分かりやすい
+- [x] groups.commands からファイルが自動収集される
 
 ## 5. Phase 3: 統合・テスト
 

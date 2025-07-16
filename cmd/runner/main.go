@@ -108,8 +108,24 @@ func run() error {
 		return fmt.Errorf("config verification failed: %w", err)
 	}
 
+	// Verify global files - CRITICAL: Program must exit if global verification fails
+	// to prevent execution with potentially compromised files
+	result, err := verificationManager.VerifyGlobalFiles(&cfg.Global)
+	if err != nil {
+		log.Printf("CRITICAL: Global file verification failed - terminating program for security")
+		return fmt.Errorf("global files verification failed: %w", err)
+	}
+
+	// Log global verification results
+	if result.TotalFiles > 0 {
+		log.Printf("Global files verification completed successfully: %d verified, %d skipped, duration: %v",
+			result.VerifiedFiles, len(result.SkippedFiles), result.Duration)
+	}
+
 	// Initialize Runner with template engine from config loader
-	runner, err := runner.NewRunnerWithComponents(cfg, cfgLoader.GetTemplateEngine(), nil)
+	runner, err := runner.NewRunner(cfg,
+		runner.WithTemplateEngine(cfgLoader.GetTemplateEngine()),
+		runner.WithVerificationManager(verificationManager))
 	if err != nil {
 		return fmt.Errorf("failed to initialize runner: %w", err)
 	}
