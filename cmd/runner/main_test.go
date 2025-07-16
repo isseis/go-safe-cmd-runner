@@ -108,6 +108,34 @@ func TestGetVerificationConfig(t *testing.T) {
 		assert.False(t, config.Enabled, "verification should be disabled via environment variable")
 	})
 
+	t.Run("invalid boolean in environment variable defaults to false", func(t *testing.T) {
+		cleanup := setupTestFlags()
+		defer cleanup()
+
+		os.Setenv("GO_SAFE_CMD_RUNNER_DISABLE_VERIFICATION", "not-a-boolean")
+		defer os.Unsetenv("GO_SAFE_CMD_RUNNER_DISABLE_VERIFICATION")
+
+		os.Args = []string{"runner"}
+		flag.Parse()
+
+		config := getVerificationConfig()
+		assert.True(t, config.Enabled, "verification should remain enabled with invalid boolean in environment")
+	})
+
+	t.Run("empty hash directory in environment uses default", func(t *testing.T) {
+		cleanup := setupTestFlags()
+		defer cleanup()
+
+		os.Setenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY", "")
+		defer os.Unsetenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY")
+
+		os.Args = []string{"runner"}
+		flag.Parse()
+
+		config := getVerificationConfig()
+		assert.Equal(t, DefaultHashDirectory, config.HashDirectory, "should use default hash directory when empty string is provided")
+	})
+
 	t.Run("custom hash directory via command line", func(t *testing.T) {
 		cleanup := setupTestFlags()
 		defer cleanup()
@@ -155,5 +183,33 @@ func TestGetVerificationConfig(t *testing.T) {
 		config := getVerificationConfig()
 		assert.False(t, config.Enabled, "command line should take precedence over environment variable")
 		assert.Equal(t, "/custom/path", config.HashDirectory)
+	})
+
+	t.Run("empty command line hash directory uses environment", func(t *testing.T) {
+		cleanup := setupTestFlags()
+		defer cleanup()
+
+		os.Setenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY", "/env/path")
+		defer os.Unsetenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY")
+
+		os.Args = []string{"runner", "--hash-directory="} // Empty value
+		flag.Parse()
+
+		config := getVerificationConfig()
+		assert.Equal(t, "/env/path", config.HashDirectory, "should use environment variable when command line value is empty")
+	})
+
+	t.Run("empty environment hash directory uses default", func(t *testing.T) {
+		cleanup := setupTestFlags()
+		defer cleanup()
+
+		os.Setenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY", "")
+		defer os.Unsetenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY")
+
+		os.Args = []string{"runner"}
+		flag.Parse()
+
+		config := getVerificationConfig()
+		assert.Equal(t, DefaultHashDirectory, config.HashDirectory, "should use default when environment variable is empty")
 	})
 }

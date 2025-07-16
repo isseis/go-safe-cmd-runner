@@ -50,7 +50,6 @@ func getVerificationConfig() verification.Config {
 			enabled = false
 		}
 	}
-
 	// Command line arguments take precedence over environment variables
 	if *disableVerification {
 		enabled = false
@@ -60,10 +59,13 @@ func getVerificationConfig() verification.Config {
 	if envHashDir := os.Getenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY"); envHashDir != "" {
 		hashDir = envHashDir
 	}
-
 	// Command line arguments take precedence over environment variables
 	if *hashDirectory != "" {
 		hashDir = *hashDirectory
+	}
+	// Set default hash directory if none specified
+	if hashDir == "" {
+		hashDir = DefaultHashDirectory
 	}
 
 	return verification.Config{
