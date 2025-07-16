@@ -49,15 +49,3 @@ type FileSystem interface {
 	// FileExists checks if a file exists
 	FileExists(path string) (bool, error)
 }
-
-// EnvironmentManager handles environment variable operations
-type EnvironmentManager interface {
-	// LoadFromFile loads environment variables from a file
-	LoadFromFile(path string) (map[string]string, error)
-
-	// Merge merges multiple environment variable maps
-	Merge(envs ...map[string]string) map[string]string
-
-	// Resolve resolves environment variable references in a string
-	Resolve(s string, env map[string]string) (string, error)
-}
