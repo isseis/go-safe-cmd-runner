@@ -14,15 +14,10 @@ import (
 	"strconv"
 	"syscall"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
-)
-
-// Build-time variables (set via ldflags)
-var (
-	// DefaultHashDirectory is set at build time via ldflags
-	DefaultHashDirectory = "/usr/local/etc/go-safe-cmd-runner/hashes" // fallback default
 )
 
 // Error definitions
@@ -36,14 +31,14 @@ var (
 	logLevel            = flag.String("log-level", "", "log level (debug, info, warn, error)")
 	dryRun              = flag.Bool("dry-run", false, "print commands without executing them")
 	disableVerification = flag.Bool("disable-verification", false, "disable configuration file verification")
-	hashDirectory       = flag.String("hash-directory", DefaultHashDirectory, "directory containing hash files")
+	hashDirectory       = flag.String("hash-directory", "", "directory containing hash files (default: "+cmdcommon.DefaultHashDirectory+")")
 )
 
 // getVerificationConfig determines the verification settings based on command line args and environment variables
 func getVerificationConfig() verification.Config {
 	// Start with default: verification enabled
 	enabled := true
-	hashDir := *hashDirectory
+	hashDir := ""
 
 	// Check environment variable for disabling verification
 	if envDisable := os.Getenv("GO_SAFE_CMD_RUNNER_DISABLE_VERIFICATION"); envDisable != "" {
@@ -51,15 +46,22 @@ func getVerificationConfig() verification.Config {
 			enabled = false
 		}
 	}
+	// Command line arguments take precedence over environment variables
+	if *disableVerification {
+		enabled = false
+	}
 
 	// Check environment variable for hash directory override
 	if envHashDir := os.Getenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY"); envHashDir != "" {
 		hashDir = envHashDir
 	}
-
 	// Command line arguments take precedence over environment variables
-	if *disableVerification {
-		enabled = false
+	if *hashDirectory != "" {
+		hashDir = *hashDirectory
+	}
+	// Set default hash directory if none specified
+	if hashDir == "" {
+		hashDir = cmdcommon.DefaultHashDirectory
 	}
 
 	return verification.Config{
