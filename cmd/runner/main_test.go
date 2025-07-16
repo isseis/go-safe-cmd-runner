@@ -6,6 +6,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -24,7 +25,7 @@ func setupTestFlags() func() {
 	logLevel = flag.String("log-level", "", "log level (debug, info, warn, error)")
 	dryRun = flag.Bool("dry-run", false, "print commands without executing them")
 	disableVerification = flag.Bool("disable-verification", false, "disable configuration file verification")
-	hashDirectory = flag.String("hash-directory", DefaultHashDirectory, "directory containing hash files")
+	hashDirectory = flag.String("hash-directory", cmdcommon.DefaultHashDirectory, "directory containing hash files")
 
 	// Return cleanup function to restore original state
 	return func() {
@@ -75,7 +76,7 @@ func TestGetVerificationConfig(t *testing.T) {
 
 		config := getVerificationConfig()
 		assert.True(t, config.Enabled, "verification should be enabled by default")
-		assert.Equal(t, DefaultHashDirectory, config.HashDirectory)
+		assert.Equal(t, cmdcommon.DefaultHashDirectory, config.HashDirectory)
 	})
 
 	t.Run("disabled via command line", func(t *testing.T) {
@@ -91,7 +92,7 @@ func TestGetVerificationConfig(t *testing.T) {
 
 		config := getVerificationConfig()
 		assert.False(t, config.Enabled, "verification should be disabled via command line")
-		assert.Equal(t, DefaultHashDirectory, config.HashDirectory)
+		assert.Equal(t, cmdcommon.DefaultHashDirectory, config.HashDirectory)
 	})
 
 	t.Run("disabled via environment variable", func(t *testing.T) {
@@ -133,7 +134,7 @@ func TestGetVerificationConfig(t *testing.T) {
 		flag.Parse()
 
 		config := getVerificationConfig()
-		assert.Equal(t, DefaultHashDirectory, config.HashDirectory, "should use default hash directory when empty string is provided")
+		assert.Equal(t, cmdcommon.DefaultHashDirectory, config.HashDirectory, "should use default hash directory when empty string is provided")
 	})
 
 	t.Run("custom hash directory via command line", func(t *testing.T) {
@@ -210,6 +211,6 @@ func TestGetVerificationConfig(t *testing.T) {
 		flag.Parse()
 
 		config := getVerificationConfig()
-		assert.Equal(t, DefaultHashDirectory, config.HashDirectory, "should use default when environment variable is empty")
+		assert.Equal(t, cmdcommon.DefaultHashDirectory, config.HashDirectory, "should use default when environment variable is empty")
 	})
 }

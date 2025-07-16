@@ -14,14 +14,10 @@ import (
 	"strconv"
 	"syscall"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
-)
-
-// Build-time variables (set via ldflags)
-var (
-	DefaultHashDirectory = "/usr/local/etc/go-safe-cmd-runner/hashes" // fallback default
 )
 
 // Error definitions
@@ -35,7 +31,7 @@ var (
 	logLevel            = flag.String("log-level", "", "log level (debug, info, warn, error)")
 	dryRun              = flag.Bool("dry-run", false, "print commands without executing them")
 	disableVerification = flag.Bool("disable-verification", false, "disable configuration file verification")
-	hashDirectory       = flag.String("hash-directory", "", "directory containing hash files (default: "+DefaultHashDirectory+")")
+	hashDirectory       = flag.String("hash-directory", "", "directory containing hash files (default: "+cmdcommon.DefaultHashDirectory+")")
 )
 
 // getVerificationConfig determines the verification settings based on command line args and environment variables
@@ -65,7 +61,7 @@ func getVerificationConfig() verification.Config {
 	}
 	// Set default hash directory if none specified
 	if hashDir == "" {
-		hashDir = DefaultHashDirectory
+		hashDir = cmdcommon.DefaultHashDirectory
 	}
 
 	return verification.Config{
