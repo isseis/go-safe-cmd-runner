@@ -25,6 +25,11 @@ const (
 	HashDirPermissions = 0o750
 )
 
+// Build-time variables (set via ldflags)
+var (
+	DefaultHashDirectory = "/usr/local/etc/go-safe-cmd-runner/hashes" // fallback default
+)
+
 // Config holds the common configuration for commands.
 type Config struct {
 	File    string
@@ -36,7 +41,7 @@ type Config struct {
 func ParseFlags() (*Config, error) {
 	var (
 		file    = flag.String("file", "", "Path to the file to process")
-		hashDir = flag.String("hash-dir", "", "Directory containing hash files (default: current directory)")
+		hashDir = flag.String("hash-dir", "", "Directory containing hash files (default: "+DefaultHashDirectory+")")
 	)
 	flag.Parse()
 

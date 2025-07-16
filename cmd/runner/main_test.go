@@ -128,6 +128,8 @@ func TestGetVerificationConfig(t *testing.T) {
 		cleanup := setupTestFlags()
 		defer cleanup()
 
+		// Clear command line flags
+		hashDirectory = new(string)
 		os.Setenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY", "/env/path")
 		defer os.Unsetenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY")
 
@@ -144,11 +146,14 @@ func TestGetVerificationConfig(t *testing.T) {
 
 		os.Setenv("GO_SAFE_CMD_RUNNER_DISABLE_VERIFICATION", "false")
 		defer os.Unsetenv("GO_SAFE_CMD_RUNNER_DISABLE_VERIFICATION")
+		os.Setenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY", "/env/path")
+		defer os.Unsetenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY")
 
-		os.Args = []string{"runner", "--disable-verification"}
+		os.Args = []string{"runner", "--disable-verification", "--hash-directory", "/custom/path"}
 		flag.Parse()
 
 		config := getVerificationConfig()
 		assert.False(t, config.Enabled, "command line should take precedence over environment variable")
+		assert.Equal(t, "/custom/path", config.HashDirectory)
 	})
 }
