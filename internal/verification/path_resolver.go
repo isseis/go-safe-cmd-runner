@@ -79,16 +79,12 @@ func (pr *PathResolver) validateAndCacheCommand(path, cacheKey string) (string, 
 	return path, nil
 }
 
-// ResolvePath resolves a command to its full path
+// ResolvePath resolves a command to its full path without security validation
 func (pr *PathResolver) ResolvePath(command string) (string, error) {
 	// Check cache first
 	pr.mu.RLock()
 	if cached, exists := pr.cache[command]; exists {
 		pr.mu.RUnlock()
-		// Validate cached command safety
-		if err := pr.validateCommandSafety(cached); err != nil {
-			return "", fmt.Errorf("unsafe command rejected: %w", err)
-		}
 		return cached, nil
 	}
 	pr.mu.RUnlock()
@@ -128,12 +124,12 @@ func (pr *PathResolver) ResolvePath(command string) (string, error) {
 		}
 	}
 
-	// Validate command safety AFTER path resolution
-	if err := pr.validateCommandSafety(resolvedPath); err != nil {
-		return "", fmt.Errorf("unsafe command rejected: %w", err)
-	}
-
 	return resolvedPath, nil
+}
+
+// ValidateCommand performs security validation on a resolved command path
+func (pr *PathResolver) ValidateCommand(resolvedPath string) error {
+	return pr.validateCommandSafety(resolvedPath)
 }
 
 // removeDuplicates removes duplicate strings from a slice

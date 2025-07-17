@@ -283,17 +283,26 @@ func (m *Manager) collectVerificationFiles(groupConfig *runnertypes.CommandGroup
 	return removeDuplicates(allFiles)
 }
 
-// ResolvePath resolves a command to its full path and validates it
+// ResolvePath resolves a command to its full path with optional validation
 func (m *Manager) ResolvePath(command string) (string, error) {
-	if !m.IsEnabled() {
-		return command, nil // Return original command if verification is disabled
-	}
-
 	if m.pathResolver == nil {
 		return "", ErrPathResolverNotInitialized
 	}
 
-	return m.pathResolver.ResolvePath(command)
+	// Always perform path resolution
+	resolvedPath, err := m.pathResolver.ResolvePath(command)
+	if err != nil {
+		return "", err
+	}
+
+	// Only perform validation if verification is enabled
+	if m.IsEnabled() {
+		if err := m.pathResolver.ValidateCommand(resolvedPath); err != nil {
+			return "", fmt.Errorf("unsafe command rejected: %w", err)
+		}
+	}
+
+	return resolvedPath, nil
 }
 
 // VerifyCommandFile verifies the integrity of a single command file
@@ -324,6 +333,12 @@ func (m *Manager) VerifyCommandFile(command string) (*FileDetail, error) {
 		return detail, fmt.Errorf("path resolution failed: %w", err)
 	}
 	detail.ResolvedPath = resolvedPath
+
+	// Validate command security after path resolution
+	if err := m.pathResolver.ValidateCommand(resolvedPath); err != nil {
+		detail.Error = err
+		return detail, fmt.Errorf("command validation failed: %w", err)
+	}
 
 	// Check if should skip verification
 	if m.shouldSkipVerification(resolvedPath) {
