@@ -28,14 +28,24 @@ const (
 
 // Filter provides environment variable filtering functionality with allowlist-based security
 type Filter struct {
-	config *runnertypes.Config
+	config          *runnertypes.Config
+	globalAllowlist map[string]bool // Map for O(1) lookups of allowed variables (always non-nil)
 }
 
 // NewFilter creates a new environment variable filter with the provided configuration
 func NewFilter(config *runnertypes.Config) *Filter {
-	return &Filter{
-		config: config,
+	f := &Filter{
+		config:          config,
+		globalAllowlist: make(map[string]bool), // Initialize with empty map
 	}
+
+	// Initialize the allowlist map with global allowlist if it exists
+	// Populate with new values
+	for _, v := range config.Global.EnvAllowlist {
+		f.globalAllowlist[v] = true
+	}
+
+	return f
 }
 
 // FilterSystemEnvironment filters system environment variables based on the provided allowlist
@@ -224,7 +234,20 @@ func (f *Filter) IsGlobalVariableAllowed(variable string) bool {
 }
 
 // isVariableAllowed checks if a variable is in the allowlist
+// It first checks the global allowlist map for O(1) lookups
+// If not found in the global map, it falls back to checking the provided allowlist slice
 func (f *Filter) isVariableAllowed(variable string, allowlist []string) bool {
+	// If allowlist is empty, nothing is allowed
+	if len(allowlist) == 0 {
+		return false
+	}
+
+	// Check the global map first for O(1) lookup
+	if f.globalAllowlist[variable] {
+		return true
+	}
+
+	// If not found in global map, check the provided allowlist
 	return slices.Contains(allowlist, variable)
 }
 
