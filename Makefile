@@ -58,4 +58,4 @@ test: $(BINARY_RUNNER)
 	$(ENVCMD) -i $(BINARY_RUNNER) -dry-run -config ./sample/config.toml --disable-verification
 
 integration-test: $(BINARY_RUNNER)
-	$(ENVCMD) -i PATH=/bin:/sbin/usr/bin:/usr/sbin LANG=C $(BINARY_RUNNER) -config ./sample/test.toml
+	$(ENVCMD) -i PATH=/bin:/sbin:/usr/bin:/usr/sbin LANG=C $(BINARY_RUNNER) -config ./sample/test.toml
