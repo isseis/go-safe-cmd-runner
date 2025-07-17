@@ -442,9 +442,6 @@ echo ".env.*" >> .gitignore
 ```bash
 # 設定ファイルの文法チェック
 ./cmd-runner -config config-dev.toml -validate
-
-# 環境変数の一貫性チェック
-./cmd-runner -config config-dev.toml -check-env
 ```
 
 ### 5.2 デプロイメント
