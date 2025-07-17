@@ -14,73 +14,73 @@
 ### フェーズ1: データ構造の拡張（推定工数: 2日）
 
 #### タスク1.1: 設定構造体の拡張
-- `internal/runner/runnertypes/config.go`に`EnvAllowlist`フィールドを追加
-  - `GlobalConfig`構造体に追加
-  - `CommandGroup`構造体に追加
-- 単体テストの更新
+- [x] `internal/runner/runnertypes/config.go`に`EnvAllowlist`フィールドを追加
+  - [x] `GlobalConfig`構造体に追加
+  - [x] `CommandGroup`構造体に追加
+- [x] 単体テストの更新
 
 #### タスク1.2: 環境変数管理構造体の実装
-- 新規パッケージ`internal/runner/environment`の作成
-- `Filter`構造体の実装
-  - システム環境変数フィルタリング機能
-  - .envファイル変数フィルタリング機能（新規追加）
-  - バリデーション機能
-- 単体テストの実装
+- [x] 新規パッケージ`internal/runner/environment`の作成
+- [x] `Filter`構造体の実装
+  - [x] システム環境変数フィルタリング機能
+  - [x] .envファイル変数フィルタリング機能（新規追加）
+  - [x] バリデーション機能
+- [x] 単体テストの実装
 
 ### フェーズ2: 環境変数フィルタリング機能（推定工数: 3日）
 
 #### タスク2.1: システム環境変数フィルタリングの実装
-- `Runner.LoadEnvironment`メソッドの更新
-- `filterSystemEnvironment`関数の実装
-- `filterEnvFileVariables`関数の実装（新規追加）
-- `buildAllowedVariableMaps`関数の実装
-- 単体テスト
+- [ ] `Runner.LoadEnvironment`メソッドの更新
+- [ ] `filterSystemEnvironment`関数の実装
+- [ ] `filterEnvFileVariables`関数の実装（新規追加）
+- [ ] `buildAllowedVariableMaps`関数の実装
+- [ ] 単体テスト
 
 #### タスク2.2: グループレベル環境変数解決の実装
-- `resolveGroupEnvironmentVars`関数の実装
-- `resolveEnvironmentVars`関数の更新
-- `resolveVariableReferences`関数の強化（引数にgroupNameを追加）
-- `isVariableAccessAllowed`関数の実装（groupName引数に変更）
-- 単体テストおよび統合テスト
+- [ ] `resolveGroupEnvironmentVars`関数の実装
+- [ ] `resolveEnvironmentVars`関数の更新
+- [ ] `resolveVariableReferences`関数の強化（引数にgroupNameを追加）
+- [ ] `isVariableAccessAllowed`関数の実装（groupName引数に変更）
+- [ ] 単体テストおよび統合テスト
 
 ### フェーズ3: 検証機能の実装（推定工数: 2日）
 
 #### タスク3.1: 環境変数名検証の実装
-- `validateVariableName`関数の実装
-- `validateVariableValue`関数の実装
-- `validateEnvironmentVariable`関数の実装
-- 単体テスト
+- [ ] `validateVariableName`関数の実装
+- [ ] `validateVariableValue`関数の実装
+- [ ] `validateEnvironmentVariable`関数の実装
+- [ ] 単体テスト
 
 #### タスク3.2: アクセス制御検証の実装
-- `isVariableAccessAllowed`関数の実装（groupName引数版）
-- `validateEnvironmentSecurity`関数の実装
-- `containsSensitiveData`関数の実装
-- セキュリティテスト
+- [ ] `isVariableAccessAllowed`関数の実装（groupName引数版）
+- [ ] `validateEnvironmentSecurity`関数の実装
+- [ ] `containsSensitiveData`関数の実装
+- [ ] セキュリティテスト
 
 ### フェーズ4: ログとエラー処理（推定工数: 1日）
 
 #### タスク4.1: ログ機能の実装
-- `logEnvironmentFiltering`関数の実装
-- `logVariableAccess`関数の実装（groupName引数版）
-- `getVariableNames`関数の実装
+- [ ] `logEnvironmentFiltering`関数の実装
+- [ ] `logVariableAccess`関数の実装（groupName引数版）
+- [ ] `getVariableNames`関数の実装
 
 #### タスク4.2: エラー処理の実装
-- エラータイプの定義
-- エラーメッセージテンプレートの作成（groupName対応版）
-- `formatUserError`関数の実装
+- [ ] エラータイプの定義
+- [ ] エラーメッセージテンプレートの作成（groupName対応版）
+- [ ] `formatUserError`関数の実装
 
 ### フェーズ5: 設定検証と統合（推定工数: 2日）
 
 #### タスク5.1: 設定検証ルールの実装
-- `ValidateEnvAllowlistConfiguration`関数の実装
-- `validateCommandEnvironmentReferences`関数の実装
-- `extractVariableReferences`関数の実装
-- 単体テスト
+- [ ] `ValidateEnvAllowlistConfiguration`関数の実装
+- [ ] `validateCommandEnvironmentReferences`関数の実装
+- [ ] `extractVariableReferences`関数の実装
+- [ ] 単体テスト
 
 #### タスク5.2: コマンド実行フローとの統合
-- `Runner.Run`メソッドの更新
-- `Runner.ExecuteCommand`メソッドの更新
-- 統合テスト
+- [ ] `Runner.Run`メソッドの更新
+- [ ] `Runner.ExecuteCommand`メソッドの更新
+- [ ] 統合テスト
 
 ## 4. テスト計画
 

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -23,12 +24,14 @@ import (
 
 // Error definitions
 var (
-	ErrCommandFailed       = errors.New("command failed")
-	ErrUnclosedVariableRef = errors.New("unclosed variable reference")
-	ErrUndefinedVariable   = errors.New("undefined variable")
-	ErrCommandNotFound     = errors.New("command not found")
-	ErrCircularReference   = errors.New("circular variable reference detected")
-	ErrGroupVerification   = errors.New("group file verification failed")
+	ErrCommandFailed        = errors.New("command failed")
+	ErrUnclosedVariableRef  = errors.New("unclosed variable reference")
+	ErrUndefinedVariable    = errors.New("undefined variable")
+	ErrCommandNotFound      = errors.New("command not found")
+	ErrCircularReference    = errors.New("circular variable reference detected")
+	ErrGroupVerification    = errors.New("group file verification failed")
+	ErrGroupNotFound        = errors.New("group not found")
+	ErrVariableAccessDenied = errors.New("variable access denied")
 )
 
 // VerificationError contains detailed information about verification failures
@@ -330,8 +333,15 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 
 // executeCommand executes a single command with environment variable resolution
 func (r *Runner) executeCommand(ctx context.Context, cmd runnertypes.Command) (*executor.Result, error) {
-	// Resolve environment variables for the command
-	envVars, err := r.resolveEnvironmentVars(cmd)
+	// Find the group name for this command
+	groupName := r.findGroupNameForCommand(cmd.Name)
+	return r.executeCommandInGroup(ctx, cmd, groupName)
+}
+
+// executeCommandInGroup executes a command within a specific group context
+func (r *Runner) executeCommandInGroup(ctx context.Context, cmd runnertypes.Command, groupName string) (*executor.Result, error) {
+	// Resolve environment variables for the command with group context
+	envVars, err := r.resolveEnvironmentVars(cmd, groupName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve environment variables: %w", err)
 	}
@@ -359,8 +369,20 @@ func (r *Runner) executeCommand(ctx context.Context, cmd runnertypes.Command) (*
 	return r.executor.Execute(ctx, cmd, envVars)
 }
 
-// resolveEnvironmentVars resolves environment variables for a command
-func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command) (map[string]string, error) {
+// findGroupNameForCommand finds the group name that contains the specified command
+func (r *Runner) findGroupNameForCommand(commandName string) string {
+	for _, group := range r.config.Groups {
+		for _, cmd := range group.Commands {
+			if cmd.Name == commandName {
+				return group.Name
+			}
+		}
+	}
+	return ""
+}
+
+// resolveEnvironmentVars resolves environment variables for a command with group context
+func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, groupName string) (map[string]string, error) {
 	envVars := make(map[string]string)
 
 	// Start with system environment variables
@@ -376,6 +398,17 @@ func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command) (map[string]str
 		envVars[k] = v
 	}
 
+	// Add group-level environment variables if group is specified
+	if groupName != "" {
+		groupEnvVars, err := r.resolveGroupEnvironmentVars(groupName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve group environment variables: %w", err)
+		}
+		for k, v := range groupEnvVars {
+			envVars[k] = v
+		}
+	}
+
 	// Add command-specific environment variables
 	for _, env := range cmd.Env {
 		parts := strings.SplitN(env, "=", envSeparatorParts)
@@ -384,7 +417,7 @@ func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command) (map[string]str
 			value := parts[1]
 
 			// Resolve variable references in the value
-			resolvedValue, err := r.resolveVariableReferences(value, envVars)
+			resolvedValue, err := r.resolveVariableReferences(value, envVars, groupName)
 			if err != nil {
 				return nil, fmt.Errorf("failed to resolve variable %s: %w", key, err)
 			}
@@ -396,13 +429,51 @@ func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command) (map[string]str
 	return envVars, nil
 }
 
+// resolveGroupEnvironmentVars resolves environment variables specific to a group
+func (r *Runner) resolveGroupEnvironmentVars(groupName string) (map[string]string, error) {
+	// Find the group
+	var group *runnertypes.CommandGroup
+	for _, g := range r.config.Groups {
+		if g.Name == groupName {
+			group = &g
+			break
+		}
+	}
+
+	if group == nil {
+		return nil, fmt.Errorf("%w: %s", ErrGroupNotFound, groupName)
+	}
+
+	envVars := make(map[string]string)
+
+	// Add group-level environment variables
+	for _, env := range group.Env {
+		parts := strings.SplitN(env, "=", envSeparatorParts)
+		if len(parts) == envSeparatorParts {
+			key := parts[0]
+			value := parts[1]
+
+			// Check if variable access is allowed
+			if r.isVariableAccessAllowed(key, groupName) {
+				envVars[key] = value
+			} else {
+				slog.Warn("Group environment variable access denied",
+					"variable", key,
+					"group", groupName)
+			}
+		}
+	}
+
+	return envVars, nil
+}
+
 // resolveVariableReferences resolves ${VAR} references in a string
-func (r *Runner) resolveVariableReferences(value string, envVars map[string]string) (string, error) {
-	return r.resolveVariableReferencesWithDepth(value, envVars, make(map[string]bool), 0)
+func (r *Runner) resolveVariableReferences(value string, envVars map[string]string, groupName string) (string, error) {
+	return r.resolveVariableReferencesWithDepth(value, envVars, make(map[string]bool), 0, groupName)
 }
 
 // resolveVariableReferencesWithDepth resolves ${VAR} references with circular dependency detection
-func (r *Runner) resolveVariableReferencesWithDepth(value string, envVars map[string]string, resolving map[string]bool, depth int) (string, error) {
+func (r *Runner) resolveVariableReferencesWithDepth(value string, envVars map[string]string, resolving map[string]bool, depth int, groupName string) (string, error) {
 	// Prevent infinite recursion by limiting the depth
 	if depth > maxResolutionDepth {
 		return "", fmt.Errorf("%w: maximum resolution depth exceeded (%d)", ErrCircularReference, maxResolutionDepth)
@@ -436,6 +507,11 @@ func (r *Runner) resolveVariableReferencesWithDepth(value string, envVars map[st
 			return "", fmt.Errorf("%w: variable %s references itself", ErrCircularReference, varName)
 		}
 
+		// Check if variable access is allowed for this group
+		if !r.isVariableAccessAllowed(varName, groupName) {
+			return "", fmt.Errorf("%w: %s (group: %s)", ErrVariableAccessDenied, varName, groupName)
+		}
+
 		varValue, exists := envVars[varName]
 		if !exists {
 			return "", fmt.Errorf("%w: %s", ErrUndefinedVariable, varName)
@@ -445,7 +521,7 @@ func (r *Runner) resolveVariableReferencesWithDepth(value string, envVars map[st
 		resolving[varName] = true
 
 		// Recursively resolve the variable value
-		resolvedValue, err := r.resolveVariableReferencesWithDepth(varValue, envVars, resolving, depth+1)
+		resolvedValue, err := r.resolveVariableReferencesWithDepth(varValue, envVars, resolving, depth+1, groupName)
 		if err != nil {
 			return "", err
 		}
@@ -552,4 +628,13 @@ func (r *Runner) CleanupAllResources() error {
 // CleanupAutoCleanupResources cleans up resources marked for auto cleanup
 func (r *Runner) CleanupAutoCleanupResources() error {
 	return r.resourceManager.CleanupAutoCleanup()
+}
+
+// isVariableAccessAllowed checks if a variable can be accessed in the given group context
+func (r *Runner) isVariableAccessAllowed(variable string, groupName string) bool {
+	// Create environment filter
+	filter := environment.NewFilter(r.config)
+
+	// Check if variable access is allowed in the group context
+	return filter.IsVariableAccessAllowed(variable, groupName)
 }

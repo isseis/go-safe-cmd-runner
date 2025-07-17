@@ -402,7 +402,18 @@ func TestRunner_ExecuteCommand(t *testing.T) {
 }
 
 func TestRunner_resolveVariableReferences(t *testing.T) {
-	runner := &Runner{}
+	config := &runnertypes.Config{
+		Global: runnertypes.GlobalConfig{
+			EnvAllowlist: []string{"HOME", "USER", "PATH", "GREETING", "CIRCULAR"},
+		},
+		Groups: []runnertypes.CommandGroup{
+			{
+				Name:         "test-group",
+				EnvAllowlist: []string{"HOME", "USER", "PATH", "GREETING", "CIRCULAR"},
+			},
+		},
+	}
+	runner := &Runner{config: config}
 	envVars := map[string]string{
 		"HOME":     "/home/user",
 		"USER":     "testuser",
@@ -444,7 +455,7 @@ func TestRunner_resolveVariableReferences(t *testing.T) {
 		{
 			name:        "undefined variable",
 			input:       "${UNDEFINED_VAR}",
-			expectedErr: ErrUndefinedVariable,
+			expectedErr: ErrVariableAccessDenied,
 		},
 		{
 			name:        "unclosed variable",
@@ -460,7 +471,7 @@ func TestRunner_resolveVariableReferences(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := runner.resolveVariableReferences(tt.input, envVars)
+			result, err := runner.resolveVariableReferences(tt.input, envVars, "test-group")
 
 			if tt.expectedErr != nil {
 				assert.Error(t, err)
@@ -518,7 +529,14 @@ func TestRunner_resolveEnvironmentVars(t *testing.T) {
 
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
-			WorkDir: "/tmp",
+			WorkDir:      "/tmp",
+			EnvAllowlist: []string{"SAFE_VAR", "PATH", "LOADED_VAR", "CMD_VAR", "REFERENCE_VAR"},
+		},
+		Groups: []runnertypes.CommandGroup{
+			{
+				Name:         "test-group",
+				EnvAllowlist: []string{"SAFE_VAR", "PATH", "LOADED_VAR", "CMD_VAR", "REFERENCE_VAR"},
+			},
 		},
 	}
 
@@ -536,7 +554,7 @@ func TestRunner_resolveEnvironmentVars(t *testing.T) {
 		},
 	}
 
-	envVars, err := runner.resolveEnvironmentVars(cmd)
+	envVars, err := runner.resolveEnvironmentVars(cmd, "test-group")
 	assert.NoError(t, err)
 
 	// Check that loaded vars are present
@@ -549,7 +567,18 @@ func TestRunner_resolveEnvironmentVars(t *testing.T) {
 }
 
 func TestRunner_resolveVariableReferences_ComplexCircular(t *testing.T) {
-	runner := &Runner{}
+	config := &runnertypes.Config{
+		Global: runnertypes.GlobalConfig{
+			EnvAllowlist: []string{"VAR1", "VAR2", "VAR3"},
+		},
+		Groups: []runnertypes.CommandGroup{
+			{
+				Name:         "test-group",
+				EnvAllowlist: []string{"VAR1", "VAR2", "VAR3"},
+			},
+		},
+	}
+	runner := &Runner{config: config}
 
 	// Test complex circular dependencies: VAR1 -> VAR2 -> VAR1
 	envVars := map[string]string{
@@ -582,7 +611,7 @@ func TestRunner_resolveVariableReferences_ComplexCircular(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := runner.resolveVariableReferences(tt.input, envVars)
+			_, err := runner.resolveVariableReferences(tt.input, envVars, "test-group")
 
 			assert.Error(t, err)
 			assert.True(t, errors.Is(err, tt.expectedErr), "expected error %v, got %v", tt.expectedErr, err)
