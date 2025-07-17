@@ -29,27 +29,24 @@ func NewManager(config Config) (*Manager, error) {
 
 // NewManagerWithFS creates a new verification manager with a custom file system
 func NewManagerWithFS(config Config, fs common.FileSystem) (*Manager, error) {
-	// Make a copy of the config to avoid modifying the original
-	configCopy := config
-
 	// Clean the hash directory path before validation
-	if configCopy.IsEnabled() && configCopy.HashDirectory != "" {
-		configCopy.HashDirectory = filepath.Clean(configCopy.HashDirectory)
+	if config.IsEnabled() && config.HashDirectory != "" {
+		config.HashDirectory = filepath.Clean(config.HashDirectory)
 	}
 
-	if err := configCopy.Validate(); err != nil {
+	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("config validation failed: %w", err)
 	}
 
 	manager := &Manager{
-		config: configCopy,
+		config: config,
 		fs:     fs,
 	}
 
 	// Initialize components only if verification is enabled
-	if configCopy.IsEnabled() {
+	if config.IsEnabled() {
 		// Initialize file validator with SHA256 algorithm
-		validator, err := filevalidator.New(&filevalidator.SHA256{}, configCopy.HashDirectory)
+		validator, err := filevalidator.New(&filevalidator.SHA256{}, config.HashDirectory)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize file validator: %w", err)
 		}
