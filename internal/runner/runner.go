@@ -342,7 +342,7 @@ func (r *Runner) executeCommand(ctx context.Context, cmd runnertypes.Command) (*
 	}
 
 	// Resolve and validate command path if verification manager is available
-	if r.verificationManager != nil && r.verificationManager.IsEnabled() {
+	if r.verificationManager != nil {
 		resolvedPath, err := r.verificationManager.ResolvePath(cmd.Cmd)
 		if err != nil {
 			return nil, fmt.Errorf("command path resolution failed: %w", err)

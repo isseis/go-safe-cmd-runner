@@ -69,36 +69,6 @@ func TestNewManagerWithFS(t *testing.T) {
 	assert.Equal(t, mockFS, manager.fs)
 }
 
-func TestManager_IsEnabled(t *testing.T) {
-	testCases := []struct {
-		name     string
-		config   Config
-		expected bool
-	}{
-		{
-			name: "enabled config",
-			config: Config{
-				Enabled: true,
-			},
-			expected: true,
-		},
-		{
-			name: "disabled config",
-			config: Config{
-				Enabled: false,
-			},
-			expected: false,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			manager := &Manager{config: tc.config}
-			assert.Equal(t, tc.expected, manager.IsEnabled())
-		})
-	}
-}
-
 func TestManager_GetConfig(t *testing.T) {
 	config := Config{
 		Enabled:       true,
@@ -109,26 +79,7 @@ func TestManager_GetConfig(t *testing.T) {
 	assert.Equal(t, config, manager.GetConfig())
 }
 
-func TestManager_VerifyConfigFile_Disabled(t *testing.T) {
-	config := Config{
-		Enabled: false,
-	}
-
-	manager := &Manager{config: config}
-	err := manager.VerifyConfigFile("/path/to/config.toml")
-	assert.NoError(t, err)
-}
-
-func TestManager_ValidateHashDirectory_Disabled(t *testing.T) {
-	config := Config{
-		Enabled: false,
-	}
-
-	manager := &Manager{config: config}
-	err := manager.ValidateHashDirectory()
-	assert.Error(t, err)
-	assert.ErrorIs(t, err, ErrVerificationDisabled)
-}
+// TestManager_ValidateHashDirectory_NoSecurityValidator tests that hash directory validation fails when no security validator is set
 
 func TestManager_ValidateHashDirectory_NoSecurityValidator(t *testing.T) {
 	config := Config{

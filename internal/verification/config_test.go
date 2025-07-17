@@ -12,7 +12,6 @@ func TestDefaultConfig(t *testing.T) {
 
 	assert.True(t, config.Enabled)
 	assert.Equal(t, "/usr/local/etc/go-safe-cmd-runner/hashes", config.HashDirectory)
-	assert.True(t, config.IsEnabled())
 }
 
 func TestConfig_Validate(t *testing.T) {
@@ -85,40 +84,6 @@ func TestConfig_Validate(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 			}
-		})
-	}
-}
-
-func TestConfig_IsEnabled(t *testing.T) {
-	testCases := []struct {
-		name     string
-		config   *Config
-		expected bool
-	}{
-		{
-			name:     "nil config",
-			config:   nil,
-			expected: false,
-		},
-		{
-			name: "disabled config",
-			config: &Config{
-				Enabled: false,
-			},
-			expected: false,
-		},
-		{
-			name: "enabled config",
-			config: &Config{
-				Enabled: true,
-			},
-			expected: true,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.expected, tc.config.IsEnabled())
 		})
 	}
 }

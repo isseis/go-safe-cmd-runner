@@ -42,8 +42,3 @@ func (c *Config) Validate() error {
 
 	return nil
 }
-
-// IsEnabled returns true if verification is enabled
-func (c *Config) IsEnabled() bool {
-	return c != nil && c.Enabled
-}
