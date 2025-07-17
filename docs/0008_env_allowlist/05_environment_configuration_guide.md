@@ -260,8 +260,8 @@ version = "1.0"
 
 [global]
 timeout = 3600
-workdir = "${APP_WORKDIR}"
-log_level = "${LOG_LEVEL}"
+workdir = "/path/to/working/directory"  # 環境変数の展開はサポートされていません
+log_level = "info"  # 環境変数の展開はサポートされていません
 
 # 環境別で異なる許可環境変数
 env_allowlist = [
@@ -275,6 +275,20 @@ env_allowlist = [
     "DATABASE_URL",
     "API_KEY"
 ]
+
+# コマンド定義内で環境変数を使用する例
+[[groups]]
+name = "web_app"
+
+  [[groups.commands]]
+  name = "start_server"
+  cmd = "node"
+  args = ["server.js"]
+  env = [
+    "NODE_ENV=${NODE_ENV}",  # ここで環境変数の展開が行われます
+    "DATABASE_URL=${DATABASE_URL}",
+    "API_KEY=${API_KEY}"
+  ]
 
 [[groups]]
 name = "web_app"
