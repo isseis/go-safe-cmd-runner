@@ -888,9 +888,8 @@ func validateCommandEnvironmentReferences(group runnertypes.CommandGroup) error 
         // 定義されている場合（空リスト含む）、その設定を使用
         allowedVars = group.EnvAllowlist
     } else {
-        // 未定義の場合、このバリデーションではスキップ
-        // （実行時にglobal.env_allowlistを継承する）
-        return nil
+        // 未定義の場合、グローバルのenv_allowlistを使用
+        allowedVars = globalEnvAllowlist
     }
 
     allowedVarMap := make(map[string]bool)
