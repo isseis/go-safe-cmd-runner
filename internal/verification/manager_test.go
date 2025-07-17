@@ -31,7 +31,8 @@ func TestNewManager(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			manager, err := NewManager(tc.hashDir)
+			mockFS := common.NewMockFileSystem()
+			manager, err := NewManagerWithOpts(tc.hashDir, withFS(mockFS), withFileValidatorDisabled())
 
 			if tc.expectError {
 				require.Error(t, err)

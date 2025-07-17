@@ -14,11 +14,11 @@ import (
 
 // Manager provides file verification capabilities
 type Manager struct {
-	hashDir      string
-	fs           common.FileSystem
-	validator    *filevalidator.Validator
-	security     *security.Validator
-	pathResolver *PathResolver
+	hashDir       string
+	fs            common.FileSystem
+	fileValidator *filevalidator.Validator
+	security      *security.Validator
+	pathResolver  *PathResolver
 }
 
 // Option is a function type for configuring Manager instances
@@ -26,25 +26,40 @@ type Option func(*managerOptions)
 
 // managerOptions holds all configuration options for creating a Manager
 type managerOptions struct {
-	fs common.FileSystem
+	fs                   common.FileSystem
+	fileValidatorEnabled bool
 }
 
-// withFS is an option for setting the file system
+func newOptions() *managerOptions {
+	return &managerOptions{
+		fileValidatorEnabled: true,
+		fs:                   common.NewDefaultFileSystem(),
+	}
+}
+
+// withFS is an option for setting the file system (for testing purposes)
 func withFS(fs common.FileSystem) Option {
 	return func(opts *managerOptions) {
 		opts.fs = fs
 	}
 }
 
+// withFileValidatorDisabled is an option for disabling the file validator (for testing purposes)
+func withFileValidatorDisabled() Option {
+	return func(opts *managerOptions) {
+		opts.fileValidatorEnabled = false
+	}
+}
+
 // NewManager creates a new verification manager with the default file system
 func NewManager(hashDir string) (*Manager, error) {
-	return NewManagerWithOpts(hashDir, withFS(common.NewDefaultFileSystem()))
+	return NewManagerWithOpts(hashDir)
 }
 
 // NewManagerWithOpts creates a new verification manager with a custom file system
 func NewManagerWithOpts(hashDir string, options ...Option) (*Manager, error) {
 	// Apply default options
-	opts := &managerOptions{}
+	opts := newOptions()
 	for _, option := range options {
 		option(opts)
 	}
@@ -63,9 +78,12 @@ func NewManagerWithOpts(hashDir string, options ...Option) (*Manager, error) {
 	}
 
 	// Initialize file validator with SHA256 algorithm
-	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize file validator: %w", err)
+	if opts.fileValidatorEnabled {
+		fileValidator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize file validator: %w", err)
+		}
+		manager.fileValidator = fileValidator
 	}
 
 	// Initialize security validator with default config
@@ -79,7 +97,6 @@ func NewManagerWithOpts(hashDir string, options ...Option) (*Manager, error) {
 	pathEnv := "" // Get from environment or use empty string for default
 	pathResolver := NewPathResolver(pathEnv, securityValidator, false)
 
-	manager.validator = validator
 	manager.security = securityValidator
 	manager.pathResolver = pathResolver
 
@@ -102,7 +119,7 @@ func (m *Manager) VerifyConfigFile(configPath string) error {
 	}
 
 	// Verify file hash using filevalidator
-	if err := m.validator.Verify(configPath); err != nil {
+	if err := m.fileValidator.Verify(configPath); err != nil {
 		slog.Error("Config file verification failed",
 			"config_path", configPath,
 			"error", err)
@@ -162,7 +179,7 @@ func (m *Manager) VerifyGlobalFiles(globalConfig *runnertypes.GlobalConfig) (*Re
 		}
 
 		// Verify file hash (no permission check, only hash comparison)
-		if err := m.validator.Verify(filePath); err != nil {
+		if err := m.fileValidator.Verify(filePath); err != nil {
 			result.FailedFiles = append(result.FailedFiles, filePath)
 			slog.Error("Global file verification failed",
 				"file", filePath,
@@ -213,7 +230,7 @@ func (m *Manager) VerifyGroupFiles(groupConfig *runnertypes.CommandGroup) (*Resu
 		}
 
 		// Verify file hash (no permission check, only hash comparison)
-		if err := m.validator.Verify(file); err != nil {
+		if err := m.fileValidator.Verify(file); err != nil {
 			result.FailedFiles = append(result.FailedFiles, file)
 			slog.Error("Group file verification failed",
 				"group", groupConfig.Name,
@@ -327,7 +344,7 @@ func (m *Manager) VerifyCommandFile(command string) (*FileDetail, error) {
 	}
 
 	// Verify hash (no permission check, only hash comparison)
-	if err := m.validator.Verify(resolvedPath); err != nil {
+	if err := m.fileValidator.Verify(resolvedPath); err != nil {
 		detail.HashMatched = false
 		detail.Error = err
 		return detail, fmt.Errorf("command file verification failed: %w", err)
