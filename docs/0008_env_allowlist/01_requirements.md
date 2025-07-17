@@ -35,7 +35,8 @@
 - [ ] GlobalConfig 構造体に EnvAllowlist フィールド（[]string型）を追加
 - [ ] CommandGroup 構造体に EnvAllowlist フィールド（[]string型）を追加
 - [ ] 設定ファイルの TOML 形式での env_allowlist 配列記述をサポート
-- [ ] env_allowlist が未定義の場合は空リスト扱いとし、環境変数を一切引き継がない
+- [ ] 設定ファイルの global セクションで env_allowlist が未定義の場合は空リスト扱いとし、環境変数を一切引き継がない
+- [ ] 設定ファイルの groups セクションで env_allowlist が未定義の場合は、global の env_allowlist を継承する
 
 ### 2.3 環境変数解決処理の変更
 - [ ] resolveEnvironmentVars 関数を変更し、許可された環境変数のみを処理するように修正
