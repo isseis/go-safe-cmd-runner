@@ -24,7 +24,7 @@
 │  ├─ 1. Config Loading                   │
 │  ├─ 2. Environment Setup               │  ← 変更
 │  │  ├─ System Env Filtering           │  ← 新規
-│  │  ├─ .env File Loading              │  ← 既存
+│  │  ├─ .env File Loading & Filtering  │  ← セキュリティ強化
 │  │  └─ Environment Validation         │  ← 強化
 │  ├─ 3. Groups Processing               │
 │  │  └─ Group Environment Resolution   │  ← 変更
@@ -40,6 +40,7 @@
 │  ├─ LoadEnvironment()                   │  ← 大幅変更
 │  ├─ resolveEnvironmentVars()            │  ← 大幅変更
 │  ├─ filterSystemEnvironment()           │  ← 新規
+│  ├─ filterEnvFileVariables()            │  ← 新規
 │  ├─ validateEnvironmentSecurity()       │  ← 新規
 │  └─ logEnvironmentFiltering()           │  ← 新規
 └─────────────────────────────────────────┘
@@ -78,7 +79,8 @@
    │           │                      │  └─ 許可されたもののみ取り込み
    │           │                      │
    │           │                      ├─ .env ファイル
-   │           │                      │  └─ 無制限で取り込み（既存動作維持）
+   │           │                      │  ├─ ファイル読み込み後にenv_allowlistでフィルタ
+   │           │                      │  └─ 許可されたもののみ取り込み
    │           │                      │
    │           │                      └─ 検証・ログ出力
    │           │
@@ -191,6 +193,7 @@ type Runner struct {
 
 // 新規メソッド
 func (r *Runner) filterSystemEnvironment(allowedVars []string) map[string]string
+func (r *Runner) filterEnvFileVariables(envVars map[string]string, allowedVars []string) map[string]string
 func (r *Runner) validateEnvironmentSecurity(envVars map[string]string) error
 func (r *Runner) logEnvironmentFiltering(allowed, filtered []string)
 func (r *Runner) resolveGroupEnvironmentVars(group runnertypes.CommandGroup, baseEnv map[string]string) (map[string]string, error)
@@ -214,6 +217,7 @@ type Filter struct {
 
 func NewFilter(allowedVars []string) *Filter
 func (f *Filter) FilterSystemEnvironment() map[string]string
+func (f *Filter) FilterEnvFileVariables(envVars map[string]string) map[string]string
 func (f *Filter) ValidateVariableReference(varName string) error
 func (f *Filter) LogFilteringResult(original, filtered int)
 
@@ -252,14 +256,15 @@ func (f *Filter) ValidateVariableValue(value string) error {
    ├─ 許可されたもののみ抽出
    └─ フィルタリング結果をログ出力
 
-4. .env ファイル読み込み（既存機能）
+4. .env ファイル読み込み（セキュリティ強化）
    ├─ ファイル存在チェック
    ├─ 権限検証
-   └─ 環境変数取り込み（上書き）
+   ├─ 環境変数取り込み
+   └─ env_allowlistによるフィルタリング適用
 
 5. 最終環境変数マップ構築
    ├─ システム環境変数（フィルタ済み）
-   ├─ .env ファイル変数（上書き）
+   ├─ .envファイル変数（フィルタ済み）
    └─ セキュリティ検証
 ```
 
@@ -269,7 +274,7 @@ func (f *Filter) ValidateVariableValue(value string) error {
 グループ実行開始
 ├─ 1. ベース環境変数準備
 │  ├─ グローバル環境変数（フィルタ済み）
-│  └─ .env ファイル変数
+│  └─ .envファイル変数（フィルタ済み）
 │
 ├─ 2. グループ環境変数フィルタリング
 │  ├─ groups[i].env_allowlist が定義されているかチェック
@@ -333,12 +338,17 @@ log.Printf("ERROR: Environment variable '%s' not allowed in group '%s'", varName
 **攻撃**: 悪意のある環境変数を設定してコマンド動作を変更
 **対策**: env_allowlistで明示的に許可された変数のみ使用
 
-#### 4.1.2 設定ファイル改ざん攻撃
+#### 4.1.2 .envファイル経由の環境変数インジェクション攻撃
+
+**攻撃**: .envファイルに悪意のある環境変数（LD_PRELOAD等）を注入してenv_allowlist制限を迂回
+**対策**: .envファイルからの変数読み込み時にもenv_allowlistフィルタリングを適用
+
+#### 4.1.3 設定ファイル改ざん攻撃
 
 **攻撃**: env_allowlist設定を改ざんして不正な環境変数を許可
 **対策**: 既存のファイル改ざん検出機能でconfig.tomlを保護
 
-#### 4.1.3 変数参照注入攻撃
+#### 4.1.4 変数参照注入攻撃
 
 **攻撃**: ${MALICIOUS_VAR}形式の参照で不正な変数を注入
 **対策**: 参照される変数もenv_allowlistチェック対象とする

@@ -178,6 +178,32 @@ func NewFilter(allowedVars []string, config FilterConfig) *Filter {
     }
 }
 
+// FilterSystemEnvironment はシステム環境変数をフィルタリング
+func (f *Filter) FilterSystemEnvironment() map[string]string {
+    // システム環境変数の取得とフィルタリング実装
+}
+
+// FilterEnvFileVariables は.envファイルからの環境変数をフィルタリング
+func (f *Filter) FilterEnvFileVariables(envVars map[string]string) map[string]string {
+    filtered := make(map[string]string)
+    for key, value := range envVars {
+        if f.allowedVars[key] {
+            filtered[key] = value
+        } else {
+            f.securityLogger.Printf("Denied .env variable: %s", key)
+        }
+    }
+    return filtered
+}
+
+// ValidateVariableReference は変数参照の妥当性を検証
+func (f *Filter) ValidateVariableReference(varName string) error {
+    if !f.allowedVars[varName] {
+        return fmt.Errorf("variable %s is not in allowlist", varName)
+    }
+    return nil
+}
+
 // ValidationResult はバリデーション結果を表す
 type ValidationResult struct {
     IsValid      bool     // バリデーション成功フラグ
@@ -285,7 +311,7 @@ func (r *Runner) LoadEnvironment(envFile string, loadSystemEnv bool) error {
         r.logEnvironmentFiltering(r.config.Global.EnvAllowlist, filteredEnv)
     }
 
-    // 3. .env ファイル読み込み（既存機能、検証強化）
+    // 3. .env ファイル読み込み（セキュリティ強化）
     if envFile != "" {
         if err := r.validator.ValidateFilePermissions(envFile); err != nil {
             return fmt.Errorf("security validation failed for environment file: %w", err)
@@ -296,13 +322,17 @@ func (r *Runner) LoadEnvironment(envFile string, loadSystemEnv bool) error {
             return fmt.Errorf("failed to load environment file %s: %w", envFile, err)
         }
 
-        // .env ファイルの変数は無制限で取り込み（既存動作維持）
-        for k, v := range fileEnv {
+        // .envファイルの変数にもenv_allowlistフィルタリングを適用（セキュリティ強化）
+        filteredFileEnv := r.filterEnvFileVariables(fileEnv, r.config.Global.EnvAllowlist)
+        for k, v := range filteredFileEnv {
             if err := r.validateEnvironmentVariable(k, v); err != nil {
                 return fmt.Errorf("invalid environment variable %s: %w", k, err)
             }
             envMap[k] = v
         }
+
+        r.logger.Printf("SECURITY: .env file variables filtered - original: %d, allowed: %d",
+            len(fileEnv), len(filteredFileEnv))
     }
 
     // 4. 最終検証
@@ -339,6 +369,26 @@ func (r *Runner) filterSystemEnvironment(allowedVars []string) map[string]string
     // セキュリティ監査ログ
     r.logger.Printf("SECURITY: System environment filtered - original: %d, allowed: %d",
         originalCount, len(filtered))
+
+    return filtered
+}
+
+// filterEnvFileVariables は.envファイルからの環境変数をフィルタリング
+func (r *Runner) filterEnvFileVariables(envVars map[string]string, allowedVars []string) map[string]string {
+    allowed := make(map[string]bool)
+    for _, v := range allowedVars {
+        allowed[v] = true
+    }
+
+    filtered := make(map[string]string)
+
+    for key, value := range envVars {
+        if allowed[key] {
+            filtered[key] = value
+        } else {
+            r.logger.Printf("SECURITY: .env variable '%s' denied - not in env_allowlist", key)
+        }
+    }
 
     return filtered
 }
@@ -407,7 +457,7 @@ func (r *Runner) resolveGroupEnvironmentVars(group runnertypes.CommandGroup) (ma
         r.logger.Printf("DEBUG: Group '%s' inheriting global env_allowlist: %v", group.Name, allowedVars)
     }
 
-    // 許可された変数のみをベース環境変数から抽出
+    // 許可された変数のみをベース環境変数（システム環境変数+.envファイル、両方フィルタ済み）から抽出
     groupEnv := make(map[string]string)
     allowedMap := make(map[string]bool)
     for _, v := range allowedVars {
@@ -1193,6 +1243,23 @@ func TestSecurity_EnvironmentVariableInjection(t *testing.T) {
                 "PATH": "/tmp/malicious:/usr/bin:/bin",
             },
             configEnvAllowlist:  []string{"HOME"}, // PATH not allowed
+            shouldBeBlocked: true,
+        },
+        {
+            name: ".env file LD_PRELOAD injection attack",
+            maliciousEnv: map[string]string{
+                "LD_PRELOAD": "/tmp/malicious.so",
+            },
+            configEnvAllowlist:  []string{"PATH", "HOME"}, // LD_PRELOAD not allowed
+            shouldBeBlocked: true,
+        },
+        {
+            name: ".env file environment bypass attack",
+            maliciousEnv: map[string]string{
+                "LD_LIBRARY_PATH": "/tmp/malicious",
+                "PYTHONPATH": "/tmp/malicious/python",
+            },
+            configEnvAllowlist:  []string{"PATH"}, // library paths not allowed
             shouldBeBlocked: true,
         },
         {
