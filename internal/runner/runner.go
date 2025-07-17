@@ -525,46 +525,6 @@ func (r *Runner) createCommandContext(ctx context.Context, cmd runnertypes.Comma
 	return context.WithTimeout(ctx, timeout)
 }
 
-// ExecuteCommand executes a single command by name from any group
-func (r *Runner) ExecuteCommand(ctx context.Context, commandName string) error {
-	// Find the command in all groups
-	for _, group := range r.config.Groups {
-		for _, cmd := range group.Commands {
-			if cmd.Name == commandName {
-				fmt.Printf("Executing command: %s from group: %s\n", cmd.Name, group.Name)
-
-				// Execute command with proper context cleanup
-				result, err := func() (*executor.Result, error) {
-					cmdCtx, cancel := r.createCommandContext(ctx, cmd)
-					defer cancel()
-					return r.executeCommandInGroup(cmdCtx, cmd, group.Name)
-				}()
-				if err != nil {
-					return fmt.Errorf("command %s failed: %w", cmd.Name, err)
-				}
-
-				// Display result
-				fmt.Printf("Exit code: %d\n", result.ExitCode)
-				if result.Stdout != "" {
-					fmt.Printf("Stdout: %s\n", result.Stdout)
-				}
-				if result.Stderr != "" {
-					fmt.Printf("Stderr: %s\n", result.Stderr)
-				}
-
-				// Check if command succeeded
-				if result.ExitCode != 0 {
-					return fmt.Errorf("%w: command %s failed with exit code %d", ErrCommandFailed, cmd.Name, result.ExitCode)
-				}
-
-				return nil
-			}
-		}
-	}
-
-	return fmt.Errorf("%w: %s", ErrCommandNotFound, commandName)
-}
-
 // ListCommands lists all available commands
 func (r *Runner) ListCommands() {
 	fmt.Println("Available commands:")

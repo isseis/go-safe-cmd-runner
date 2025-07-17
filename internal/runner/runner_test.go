@@ -356,52 +356,6 @@ func TestRunner_ExecuteAll(t *testing.T) {
 	mockExecutor.AssertExpectations(t)
 }
 
-func TestRunner_ExecuteCommand(t *testing.T) {
-	cleanup := setupSafeTestEnv(t)
-	defer cleanup()
-
-	config := &runnertypes.Config{
-		Global: runnertypes.GlobalConfig{
-			Timeout:  3600,
-			WorkDir:  "/tmp",
-			LogLevel: "info",
-		},
-		Groups: []runnertypes.CommandGroup{
-			{
-				Name: "test-group",
-				Commands: []runnertypes.Command{
-					{Name: "test-cmd", Cmd: "echo", Args: []string{"hello"}},
-				},
-			},
-		},
-	}
-
-	mockExecutor := new(MockExecutor)
-	runner, err := NewRunner(config)
-	require.NoError(t, err)
-	runner.executor = mockExecutor
-
-	t.Run("existing command", func(t *testing.T) {
-		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "test-cmd", Cmd: "echo", Args: []string{"hello"}, Dir: "/tmp"}, mock.Anything).Return(&executor.Result{ExitCode: 0, Stdout: "hello\n"}, nil)
-
-		ctx := context.Background()
-		err := runner.ExecuteCommand(ctx, "test-cmd")
-
-		assert.NoError(t, err)
-		mockExecutor.AssertExpectations(t)
-	})
-
-	t.Run("non-existing command", func(t *testing.T) {
-		ctx := context.Background()
-		err := runner.ExecuteCommand(ctx, "non-existing-cmd")
-
-		assert.Error(t, err)
-		if !errors.Is(err, ErrCommandNotFound) {
-			t.Errorf("expected %v, got %v", ErrCommandNotFound, err)
-		}
-	})
-}
-
 func TestRunner_resolveVariableReferences(t *testing.T) {
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
