@@ -283,6 +283,19 @@ func (m *Manager) collectVerificationFiles(groupConfig *runnertypes.CommandGroup
 	return removeDuplicates(allFiles)
 }
 
+// ResolvePath resolves a command to its full path and validates it
+func (m *Manager) ResolvePath(command string) (string, error) {
+	if !m.IsEnabled() {
+		return command, nil // Return original command if verification is disabled
+	}
+
+	if m.pathResolver == nil {
+		return "", ErrPathResolverNotInitialized
+	}
+
+	return m.pathResolver.ResolvePath(command)
+}
+
 // VerifyCommandFile verifies the integrity of a single command file
 func (m *Manager) VerifyCommandFile(command string) (*FileDetail, error) {
 	detail := &FileDetail{

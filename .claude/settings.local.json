@@ -13,7 +13,8 @@
       "Bash(/home/issei/git/go-safe-cmd-runner/build/record -file /home/issei/git/go-safe-cmd-runner/test_temp/test_file3.txt -hash-dir /home/issei/git/go-safe-cmd-runner/test_temp)",
       "Bash(/home/issei/git/go-safe-cmd-runner/build/record -file /home/issei/git/go-safe-cmd-runner/test_temp/test_file3.txt -hash-dir /home/issei/git/go-safe-cmd-runner/test_temp -force)",
       "Bash(rm:*)",
-      "Bash(../build/record:*)"
+      "Bash(../build/record:*)",
+      "Bash(PATH=/usr/bin:/bin ./build/runner -config sample/test.toml show_environment_variables)"
     ],
     "deny": []
   }

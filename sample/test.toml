@@ -11,7 +11,8 @@ skip_standard_paths = true
 [templates.dev]
 description = "Development environment template"
 # Default environment variables for commands using this template
-env = ["NODE_ENV=development", "DEBUG=true"]
+# CUSTOM_VAR is set to the environment variable LANG's value when runner is executed.
+env = ["NODE_ENV=development", "DEBUG=true", "CUSTOM_VAR=${LANG}"]
 
 # Template variables that can be referenced in commands using {{.variable_name}}
 [templates.dev.variables]
@@ -31,3 +32,10 @@ name = "show_environment"
 description = "Display environment information"
 cmd = "echo"
 args = ["Environment: {{.env_type}}, App: {{.app_name}}, Port: {{.port}}"]
+
+
+[[groups.commands]]
+name = "show_environment_variables"
+description = "Display environment information"
+cmd = "env"
+args = []

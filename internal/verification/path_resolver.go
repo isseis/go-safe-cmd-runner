@@ -85,35 +85,55 @@ func (pr *PathResolver) ResolvePath(command string) (string, error) {
 	pr.mu.RLock()
 	if cached, exists := pr.cache[command]; exists {
 		pr.mu.RUnlock()
+		// Validate cached command safety
+		if err := pr.validateCommandSafety(cached); err != nil {
+			return "", fmt.Errorf("unsafe command rejected: %w", err)
+		}
 		return cached, nil
 	}
 	pr.mu.RUnlock()
 
-	// Validate command safety
-	if err := pr.validateCommandSafety(command); err != nil {
-		return "", fmt.Errorf("unsafe command rejected: %w", err)
-	}
+	var resolvedPath string
+	var err error
 
 	// If absolute path, verify it exists and is not a directory
 	if filepath.IsAbs(command) {
-		return pr.validateAndCacheCommand(command, command)
-	}
+		resolvedPath, err = pr.validateAndCacheCommand(command, command)
+		if err != nil {
+			return "", err
+		}
+	} else {
+		// Resolve from PATH environment variable
+		found := false
+		for _, dir := range strings.Split(pr.pathEnv, string(os.PathListSeparator)) {
+			// Check if directory can be accessed
+			if !pr.canAccessDirectory(dir) {
+				continue // Skip inaccessible directories
+			}
 
-	// Resolve from PATH environment variable
-	for _, dir := range strings.Split(pr.pathEnv, string(os.PathListSeparator)) {
-		// Check if directory can be accessed
-		if !pr.canAccessDirectory(dir) {
-			continue // Skip inaccessible directories
+			// Check if command file exists
+			fullPath := filepath.Join(dir, command)
+			if _, err := os.Stat(fullPath); err == nil {
+				resolvedPath, err = pr.validateAndCacheCommand(fullPath, command)
+				if err != nil {
+					return "", err
+				}
+				found = true
+				break
+			}
 		}
 
-		// Check if command file exists
-		fullPath := filepath.Join(dir, command)
-		if _, err := os.Stat(fullPath); err == nil {
-			return pr.validateAndCacheCommand(fullPath, command)
+		if !found {
+			return "", fmt.Errorf("%w: %s", ErrCommandNotFound, command)
 		}
 	}
 
-	return "", fmt.Errorf("%w: %s", ErrCommandNotFound, command)
+	// Validate command safety AFTER path resolution
+	if err := pr.validateCommandSafety(resolvedPath); err != nil {
+		return "", fmt.Errorf("unsafe command rejected: %w", err)
+	}
+
+	return resolvedPath, nil
 }
 
 // removeDuplicates removes duplicate strings from a slice

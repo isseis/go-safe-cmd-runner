@@ -330,12 +330,6 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 
 // executeCommand executes a single command with environment variable resolution
 func (r *Runner) executeCommand(ctx context.Context, cmd runnertypes.Command) (*executor.Result, error) {
-	// Validate command against whitelist
-	if err := r.validator.ValidateCommand(cmd.Cmd); err != nil {
-		slog.Warn("Command validation failed", "command", cmd.Cmd, "error", err)
-		return nil, fmt.Errorf("command security validation failed: %w", err)
-	}
-
 	// Resolve environment variables for the command
 	envVars, err := r.resolveEnvironmentVars(cmd)
 	if err != nil {
@@ -345,6 +339,15 @@ func (r *Runner) executeCommand(ctx context.Context, cmd runnertypes.Command) (*
 	// Validate resolved environment variables
 	if err := r.validator.ValidateAllEnvironmentVars(envVars); err != nil {
 		return nil, fmt.Errorf("resolved environment variables security validation failed: %w", err)
+	}
+
+	// Resolve and validate command path if verification manager is available
+	if r.verificationManager != nil && r.verificationManager.IsEnabled() {
+		resolvedPath, err := r.verificationManager.ResolvePath(cmd.Cmd)
+		if err != nil {
+			return nil, fmt.Errorf("command path resolution failed: %w", err)
+		}
+		cmd.Cmd = resolvedPath
 	}
 
 	// Set working directory from global config if not specified
