@@ -46,41 +46,41 @@
 ### フェーズ3: 検証機能の実装（推定工数: 2日）
 
 #### タスク3.1: 環境変数名検証の実装
-- [ ] `validateVariableName`関数の実装
-- [ ] `validateVariableValue`関数の実装
-- [ ] `validateEnvironmentVariable`関数の実装
-- [ ] 単体テスト
+- [x] `validateVariableName`関数の実装
+- [x] `validateVariableValue`関数の実装
+- [x] `validateEnvironmentVariable`関数の実装
+- [x] 単体テスト
 
 #### タスク3.2: アクセス制御検証の実装
-- [ ] `isVariableAccessAllowed`関数の実装（groupName引数版）
-- [ ] `validateEnvironmentSecurity`関数の実装
-- [ ] `containsSensitiveData`関数の実装
-- [ ] セキュリティテスト
+- [x] `isVariableAccessAllowed`関数の実装（groupName引数版）
+- [x] `validateEnvironmentSecurity`関数の実装
+- [x] `containsSensitiveData`関数の実装
+- [x] セキュリティテスト
 
 ### フェーズ4: ログとエラー処理（推定工数: 1日）
 
 #### タスク4.1: ログ機能の実装
-- [ ] `logEnvironmentFiltering`関数の実装
-- [ ] `logVariableAccess`関数の実装（groupName引数版）
-- [ ] `getVariableNames`関数の実装
+- [x] `logEnvironmentFiltering`関数の実装
+- [x] `logVariableAccess`関数の実装（groupName引数版）
+- [x] `getVariableNames`関数の実装
 
 #### タスク4.2: エラー処理の実装
-- [ ] エラータイプの定義
-- [ ] エラーメッセージテンプレートの作成（groupName対応版）
-- [ ] `formatUserError`関数の実装
+- [x] エラータイプの定義
+- [x] エラーメッセージテンプレートの作成（groupName対応版）
+- [x] `formatUserError`関数の実装
 
 ### フェーズ5: 設定検証と統合（推定工数: 2日）
 
 #### タスク5.1: 設定検証ルールの実装
-- [ ] `ValidateEnvAllowlistConfiguration`関数の実装
-- [ ] `validateCommandEnvironmentReferences`関数の実装
-- [ ] `extractVariableReferences`関数の実装
-- [ ] 単体テスト
+- [x] `ValidateEnvAllowlistConfiguration`関数の実装
+- [x] `validateCommandEnvironmentReferences`関数の実装
+- [x] `extractVariableReferences`関数の実装
+- [x] 単体テスト
 
 #### タスク5.2: コマンド実行フローとの統合
-- [ ] `Runner.Run`メソッドの更新
-- [ ] `Runner.ExecuteCommand`メソッドの更新
-- [ ] 統合テスト
+- [x] `Runner.Run`メソッドの更新
+- [x] `Runner.ExecuteCommand`メソッドの更新
+- [x] 統合テスト
 
 ## 4. テスト計画
 
