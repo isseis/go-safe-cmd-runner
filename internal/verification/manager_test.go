@@ -51,7 +51,7 @@ func TestNewManager(t *testing.T) {
 func TestNewManagerWithFS(t *testing.T) {
 	mockFS := common.NewMockFileSystem()
 
-	manager, err := NewManagerWithFS("/usr/local/etc/go-safe-cmd-runner/hashes", mockFS)
+	manager, err := NewManagerWithOpts("/usr/local/etc/go-safe-cmd-runner/hashes", withFS(mockFS))
 	require.NoError(t, err)
 	assert.NotNil(t, manager)
 	assert.Equal(t, "/usr/local/etc/go-safe-cmd-runner/hashes", manager.hashDir)

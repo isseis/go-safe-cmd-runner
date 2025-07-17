@@ -21,13 +21,34 @@ type Manager struct {
 	pathResolver *PathResolver
 }
 
-// NewManager creates a new verification manager with the default file system
-func NewManager(hashDir string) (*Manager, error) {
-	return NewManagerWithFS(hashDir, common.NewDefaultFileSystem())
+// Option is a function type for configuring Manager instances
+type Option func(*managerOptions)
+
+// managerOptions holds all configuration options for creating a Manager
+type managerOptions struct {
+	fs common.FileSystem
 }
 
-// NewManagerWithFS creates a new verification manager with a custom file system
-func NewManagerWithFS(hashDir string, fs common.FileSystem) (*Manager, error) {
+// withFS is an option for setting the file system
+func withFS(fs common.FileSystem) Option {
+	return func(opts *managerOptions) {
+		opts.fs = fs
+	}
+}
+
+// NewManager creates a new verification manager with the default file system
+func NewManager(hashDir string) (*Manager, error) {
+	return NewManagerWithOpts(hashDir, withFS(common.NewDefaultFileSystem()))
+}
+
+// NewManagerWithOpts creates a new verification manager with a custom file system
+func NewManagerWithOpts(hashDir string, options ...Option) (*Manager, error) {
+	// Apply default options
+	opts := &managerOptions{}
+	for _, option := range options {
+		option(opts)
+	}
+
 	// Clean the hash directory path
 	if hashDir == "" {
 		return nil, ErrHashDirectoryEmpty
@@ -38,7 +59,7 @@ func NewManagerWithFS(hashDir string, fs common.FileSystem) (*Manager, error) {
 
 	manager := &Manager{
 		hashDir: hashDir,
-		fs:      fs,
+		fs:      opts.fs,
 	}
 
 	// Initialize file validator with SHA256 algorithm
@@ -49,7 +70,7 @@ func NewManagerWithFS(hashDir string, fs common.FileSystem) (*Manager, error) {
 
 	// Initialize security validator with default config
 	securityConfig := security.DefaultConfig()
-	securityValidator, err := security.NewValidatorWithFS(securityConfig, fs)
+	securityValidator, err := security.NewValidatorWithFS(securityConfig, opts.fs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize security validator: %w", err)
 	}
