@@ -3,6 +3,7 @@ package verification
 import (
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -94,7 +95,7 @@ func NewManagerWithOpts(hashDir string, options ...Option) (*Manager, error) {
 	}
 
 	// Initialize path resolver
-	pathEnv := "" // Get from environment or use empty string for default
+	pathEnv := os.Getenv("PATH") // Default to PATH environment variable if not explicitly set
 	pathResolver := NewPathResolver(pathEnv, securityValidator, false)
 
 	manager.security = securityValidator
