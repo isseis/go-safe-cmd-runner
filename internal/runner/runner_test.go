@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -368,7 +369,14 @@ func TestRunner_resolveVariableReferences(t *testing.T) {
 			},
 		},
 	}
-	runner := &Runner{config: config}
+
+	// Initialize the environment filter with the test configuration
+	envFilter := environment.NewFilter(config)
+
+	runner := &Runner{
+		config:    config,
+		envFilter: envFilter,
+	}
 	envVars := map[string]string{
 		"HOME":     "/home/user",
 		"USER":     "testuser",
@@ -533,7 +541,14 @@ func TestRunner_resolveVariableReferences_ComplexCircular(t *testing.T) {
 			},
 		},
 	}
-	runner := &Runner{config: config}
+
+	// Initialize the environment filter with the test configuration
+	envFilter := environment.NewFilter(config)
+
+	runner := &Runner{
+		config:    config,
+		envFilter: envFilter,
+	}
 
 	// Test complex circular dependencies: VAR1 -> VAR2 -> VAR1
 	envVars := map[string]string{

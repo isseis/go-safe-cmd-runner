@@ -66,6 +66,7 @@ type Runner struct {
 	templateEngine      *template.Engine
 	resourceManager     *resource.Manager
 	verificationManager *verification.Manager
+	envFilter           *environment.Filter
 }
 
 // Option is a function type for configuring Runner instances
@@ -140,6 +141,9 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 		opts.resourceManager = resource.NewManager(config.Global.WorkDir)
 	}
 
+	// Create environment filter
+	envFilter := environment.NewFilter(config)
+
 	return &Runner{
 		executor:            opts.executor,
 		config:              config,
@@ -148,6 +152,7 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 		templateEngine:      opts.templateEngine,
 		resourceManager:     opts.resourceManager,
 		verificationManager: opts.verificationManager,
+		envFilter:           envFilter,
 	}, nil
 }
 
@@ -165,12 +170,11 @@ func (r *Runner) LoadEnvironment(envFile string, loadSystemEnv bool) error {
 	}
 
 	// Create environment filter
-	filter := environment.NewFilter(r.config)
 	envMap := make(map[string]string)
 
 	// Load and filter system environment variables if requested
 	if loadSystemEnv {
-		filteredSystemEnv, err := filter.FilterSystemEnvironment(r.config.Global.EnvAllowlist)
+		filteredSystemEnv, err := r.envFilter.FilterSystemEnvironment(r.config.Global.EnvAllowlist)
 		if err != nil {
 			return fmt.Errorf("failed to filter system environment variables: %w", err)
 		}
@@ -187,7 +191,7 @@ func (r *Runner) LoadEnvironment(envFile string, loadSystemEnv bool) error {
 		}
 
 		// Filter .env file variables using global allowlist
-		filteredFileEnv, err := filter.FilterEnvFileVariables(fileEnv, r.config.Global.EnvAllowlist)
+		filteredFileEnv, err := r.envFilter.FilterEnvFileVariables(fileEnv, r.config.Global.EnvAllowlist)
 		if err != nil {
 			return fmt.Errorf("failed to filter .env file variables: %w", err)
 		}
@@ -375,15 +379,12 @@ func (r *Runner) executeCommandInGroup(ctx context.Context, cmd runnertypes.Comm
 
 // resolveEnvironmentVars resolves environment variables for a command with group context
 func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, groupName string) (map[string]string, error) {
-	// Create environment filter
-	filter := environment.NewFilter(r.config)
-
 	var envVars map[string]string
 	var err error
 
 	// Use the filter to resolve group environment variables with allowlist filtering
 	if groupName != "" {
-		envVars, err = filter.ResolveGroupEnvironmentVars(groupName, r.envVars)
+		envVars, err = r.envFilter.ResolveGroupEnvironmentVars(groupName, r.envVars)
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve group environment variables: %w", err)
 		}
@@ -392,7 +393,7 @@ func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, groupName strin
 		envVars = make(map[string]string)
 
 		// Filter system environment variables using global allowlist
-		filteredSystemEnv, err := filter.FilterSystemEnvironment(r.config.Global.EnvAllowlist)
+		filteredSystemEnv, err := r.envFilter.FilterSystemEnvironment(r.config.Global.EnvAllowlist)
 		if err != nil {
 			return nil, fmt.Errorf("failed to filter system environment variables: %w", err)
 		}
@@ -416,9 +417,9 @@ func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, groupName strin
 			// Check if variable is allowed
 			allowed := false
 			if groupName != "" {
-				allowed = filter.IsVariableAccessAllowed(key, groupName)
+				allowed = r.envFilter.IsVariableAccessAllowed(key, groupName)
 			} else {
-				allowed = filter.IsGlobalVariableAllowed(key)
+				allowed = r.envFilter.IsGlobalVariableAllowed(key)
 			}
 
 			if allowed {
@@ -487,7 +488,7 @@ func (r *Runner) resolveVariableReferencesWithDepth(value string, envVars map[st
 		}
 
 		// Check if variable access is allowed for this group
-		if !r.isVariableAccessAllowed(varName, groupName) {
+		if !r.envFilter.IsVariableAccessAllowed(varName, groupName) {
 			return "", fmt.Errorf("%w: %s (group: %s)", ErrVariableAccessDenied, varName, groupName)
 		}
 
@@ -567,13 +568,4 @@ func (r *Runner) CleanupAllResources() error {
 // CleanupAutoCleanupResources cleans up resources marked for auto cleanup
 func (r *Runner) CleanupAutoCleanupResources() error {
 	return r.resourceManager.CleanupAutoCleanup()
-}
-
-// isVariableAccessAllowed checks if a variable can be accessed in the given group context
-func (r *Runner) isVariableAccessAllowed(variable string, groupName string) bool {
-	// Create environment filter
-	filter := environment.NewFilter(r.config)
-
-	// Check if variable access is allowed in the group context
-	return filter.IsVariableAccessAllowed(variable, groupName)
 }
