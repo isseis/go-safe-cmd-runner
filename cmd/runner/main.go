@@ -11,7 +11,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
@@ -26,30 +25,16 @@ var (
 )
 
 var (
-	configPath          = flag.String("config", "", "path to config file")
-	envFile             = flag.String("env-file", "", "path to environment file")
-	logLevel            = flag.String("log-level", "", "log level (debug, info, warn, error)")
-	dryRun              = flag.Bool("dry-run", false, "print commands without executing them")
-	disableVerification = flag.Bool("disable-verification", false, "disable configuration file verification")
-	hashDirectory       = flag.String("hash-directory", "", "directory containing hash files (default: "+cmdcommon.DefaultHashDirectory+")")
+	configPath    = flag.String("config", "", "path to config file")
+	envFile       = flag.String("env-file", "", "path to environment file")
+	logLevel      = flag.String("log-level", "", "log level (debug, info, warn, error)")
+	dryRun        = flag.Bool("dry-run", false, "print commands without executing them")
+	hashDirectory = flag.String("hash-directory", "", "directory containing hash files (default: "+cmdcommon.DefaultHashDirectory+")")
 )
 
-// getVerificationConfig determines the verification settings based on command line args and environment variables
-func getVerificationConfig() verification.Config {
-	// Start with default: verification enabled
-	enabled := true
+// getHashDir determines the hash directory based on command line args and environment variables
+func getHashDir() string {
 	hashDir := ""
-
-	// Check environment variable for disabling verification
-	if envDisable := os.Getenv("GO_SAFE_CMD_RUNNER_DISABLE_VERIFICATION"); envDisable != "" {
-		if parsedDisable, err := strconv.ParseBool(envDisable); err == nil && parsedDisable {
-			enabled = false
-		}
-	}
-	// Command line arguments take precedence over environment variables
-	if *disableVerification {
-		enabled = false
-	}
 
 	// Check environment variable for hash directory override
 	if envHashDir := os.Getenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY"); envHashDir != "" {
@@ -64,10 +49,7 @@ func getVerificationConfig() verification.Config {
 		hashDir = cmdcommon.DefaultHashDirectory
 	}
 
-	return verification.Config{
-		Enabled:       enabled,
-		HashDirectory: hashDir,
-	}
+	return hashDir
 }
 
 func main() {
@@ -96,11 +78,11 @@ func run() error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// Get verification configuration from command line args and environment variables
-	verificationConfig := getVerificationConfig()
+	// Get hash directory from command line args and environment variables
+	hashDir := getHashDir()
 
 	// Initialize verification manager
-	verificationManager, err := verification.NewManager(verificationConfig)
+	verificationManager, err := verification.NewManager(hashDir)
 	if err != nil {
 		return fmt.Errorf("failed to initialize verification: %w", err)
 	}

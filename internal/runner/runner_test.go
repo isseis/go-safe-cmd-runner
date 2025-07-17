@@ -624,11 +624,7 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 
 	t.Run("disallowed command execution should fail", func(t *testing.T) {
 		// Test disallowed command - need verification manager for command validation
-		verificationConfig := verification.Config{
-			Enabled:       true,
-			HashDirectory: t.TempDir(),
-		}
-		verificationManager, err := verification.NewManager(verificationConfig)
+		verificationManager, err := verification.NewManager(t.TempDir())
 		require.NoError(t, err)
 
 		runner, err := NewRunner(config, WithVerificationManager(verificationManager))

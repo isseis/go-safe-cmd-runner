@@ -55,7 +55,7 @@ hash: $(BINARY_RECORD) ./sample/test.toml ./sample/config.toml
 
 test: $(BINARY_RUNNER)
 	$(GOTEST) -v ./...
-	$(ENVCMD) -i $(BINARY_RUNNER) -dry-run -config ./sample/config.toml --disable-verification
+	$(ENVCMD) -i $(BINARY_RUNNER) -dry-run -config ./sample/config.toml
 
 integration-test: $(BINARY_RUNNER)
 	$(ENVCMD) -i PATH=/bin:/sbin:/usr/bin:/usr/sbin LANG=C $(BINARY_RUNNER) -config ./sample/test.toml

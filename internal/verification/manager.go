@@ -14,7 +14,7 @@ import (
 
 // Manager provides file verification capabilities
 type Manager struct {
-	config       Config
+	hashDir      string
 	fs           common.FileSystem
 	validator    *filevalidator.Validator
 	security     *security.Validator
@@ -22,28 +22,27 @@ type Manager struct {
 }
 
 // NewManager creates a new verification manager with the default file system
-func NewManager(config Config) (*Manager, error) {
-	return NewManagerWithFS(config, common.NewDefaultFileSystem())
+func NewManager(hashDir string) (*Manager, error) {
+	return NewManagerWithFS(hashDir, common.NewDefaultFileSystem())
 }
 
 // NewManagerWithFS creates a new verification manager with a custom file system
-func NewManagerWithFS(config Config, fs common.FileSystem) (*Manager, error) {
+func NewManagerWithFS(hashDir string, fs common.FileSystem) (*Manager, error) {
 	// Clean the hash directory path
-	if config.HashDirectory != "" {
-		config.HashDirectory = filepath.Clean(config.HashDirectory)
+	if hashDir == "" {
+		return nil, ErrHashDirectoryEmpty
 	}
-
-	if err := config.Validate(); err != nil {
-		return nil, fmt.Errorf("config validation failed: %w", err)
+	if hashDir != "" {
+		hashDir = filepath.Clean(hashDir)
 	}
 
 	manager := &Manager{
-		config: config,
-		fs:     fs,
+		hashDir: hashDir,
+		fs:      fs,
 	}
 
 	// Initialize file validator with SHA256 algorithm
-	validator, err := filevalidator.New(&filevalidator.SHA256{}, config.HashDirectory)
+	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize file validator: %w", err)
 	}
@@ -66,22 +65,17 @@ func NewManagerWithFS(config Config, fs common.FileSystem) (*Manager, error) {
 	return manager, nil
 }
 
-// GetConfig returns the current configuration
-func (m *Manager) GetConfig() Config {
-	return m.config
-}
-
 // VerifyConfigFile verifies the integrity of a configuration file
 func (m *Manager) VerifyConfigFile(configPath string) error {
 	slog.Debug("Starting config file verification",
 		"config_path", configPath,
-		"hash_directory", m.config.HashDirectory)
+		"hash_directory", m.hashDir)
 
 	// Validate hash directory first
 	if err := m.ValidateHashDirectory(); err != nil {
 		return &Error{
 			Op:   "ValidateHashDirectory",
-			Path: m.config.HashDirectory,
+			Path: m.hashDir,
 			Err:  err,
 		}
 	}
@@ -100,7 +94,7 @@ func (m *Manager) VerifyConfigFile(configPath string) error {
 
 	slog.Info("Config file verification completed successfully",
 		"config_path", configPath,
-		"hash_directory", m.config.HashDirectory)
+		"hash_directory", m.hashDir)
 
 	return nil
 }
@@ -112,7 +106,7 @@ func (m *Manager) ValidateHashDirectory() error {
 	}
 
 	// Validate directory permissions using security validator
-	if err := m.security.ValidateDirectoryPermissions(m.config.HashDirectory); err != nil {
+	if err := m.security.ValidateDirectoryPermissions(m.hashDir); err != nil {
 		return fmt.Errorf("hash directory validation failed: %w", err)
 	}
 
