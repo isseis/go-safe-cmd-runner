@@ -52,7 +52,7 @@ func TestConfigPathRequired(t *testing.T) {
 	}
 }
 
-func TestGetVerificationConfig(t *testing.T) {
+func TestGetHashDir(t *testing.T) {
 	// Clear environment variables at start
 	oldEnvHashDir := os.Getenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY")
 	defer func() {

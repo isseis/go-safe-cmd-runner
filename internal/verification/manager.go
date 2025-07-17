@@ -288,7 +288,7 @@ func (m *Manager) collectVerificationFiles(groupConfig *runnertypes.CommandGroup
 	return removeDuplicates(allFiles)
 }
 
-// ResolvePath resolves a command to its full path with optional validation
+// ResolvePath resolves a command to its full path with security validation
 func (m *Manager) ResolvePath(command string) (string, error) {
 	if m.pathResolver == nil {
 		return "", ErrPathResolverNotInitialized
