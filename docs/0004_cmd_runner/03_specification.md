@@ -110,7 +110,7 @@ global = {
 [security]
   allowed_commands = ["mysqldump", "gzip", "tar"]
   allowed_dirs = ["/var/backups", "/tmp"]
-  allowed_env_vars = ["DB_.*"]  # 許可する環境変数名のパターン
+  allowed_env_allowlist = ["DB_.*"]  # 許可する環境変数名のパターン
   max_memory = "1G"
   max_cpu = 1.0
   secure_env = true  # セキュアな環境変数処理を有効化

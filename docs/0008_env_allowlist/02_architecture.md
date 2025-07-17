@@ -402,27 +402,12 @@ Phase 1: 検証モード
 
 Phase 2: 移行期間
 ├─ env_allowlist未定義時は警告ログ出力（環境変数なしで実行）
-├─ 定義済み環境では新動作適用
-└─ 移行ガイド提供
+└─ 定義済み環境では新動作適用
 
 Phase 3: 完全移行
 ├─ env_allowlist未定義時は環境変数なしで実行
 ├─ セキュリティ強化完了
 └─ ゼロトラスト環境変数モデル確立
-```
-
-#### 6.1.2 移行支援ツール
-
-```bash
-# 既存環境の環境変数使用状況分析ツール
-go run tools/env-analyzer.go -config config.toml
-
-# 出力例
-# Recommended env_allowlist for global:
-# env_allowlist = ["PATH", "HOME", "USER", "LANG"]
-#
-# Recommended env_allowlist for group 'web-server':
-# env_allowlist = ["PATH", "HOME", "NODE_ENV", "PORT"]
 ```
 
 ## 7. テスト戦略
