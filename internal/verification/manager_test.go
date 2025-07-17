@@ -44,19 +44,10 @@ func TestNewManager(t *testing.T) {
 				require.NoError(t, err)
 				assert.NotNil(t, manager)
 				assert.Equal(t, tc.hashDir, manager.hashDir)
+				assert.Equal(t, mockFS, manager.fs)
 			}
 		})
 	}
-}
-
-func TestNewManagerWithFS(t *testing.T) {
-	mockFS := common.NewMockFileSystem()
-
-	manager, err := NewManagerWithOpts("/usr/local/etc/go-safe-cmd-runner/hashes", withFS(mockFS))
-	require.NoError(t, err)
-	assert.NotNil(t, manager)
-	assert.Equal(t, "/usr/local/etc/go-safe-cmd-runner/hashes", manager.hashDir)
-	assert.Equal(t, mockFS, manager.fs)
 }
 
 // TestManager_ValidateHashDirectory_NoSecurityValidator tests that hash directory validation fails when no security validator is set
