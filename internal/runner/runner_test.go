@@ -279,6 +279,7 @@ func TestRunner_ExecuteGroup(t *testing.T) {
 					WorkDir:  "/tmp",
 					LogLevel: "info",
 				},
+				Groups: []runnertypes.CommandGroup{tt.group},
 			}
 
 			mockExecutor := new(MockExecutor)
@@ -630,6 +631,11 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 			LogLevel:     "info",
 			EnvAllowlist: []string{"PATH", "TEST_VAR", "DANGEROUS"},
 		},
+		Groups: []runnertypes.CommandGroup{
+			{
+				Name: "test-group",
+			},
+		},
 	}
 
 	t.Run("allowed command execution should succeed", func(t *testing.T) {
@@ -648,7 +654,7 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 		mockExecutor.On("Execute", mock.Anything, allowedCmd, mock.Anything).Return(&executor.Result{ExitCode: 0}, nil)
 
 		ctx := context.Background()
-		_, err = runner.executeCommand(ctx, allowedCmd)
+		_, err = runner.executeCommandInGroup(ctx, allowedCmd, "test-group")
 		assert.NoError(t, err)
 	})
 
@@ -667,7 +673,7 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 		}
 
 		ctx := context.Background()
-		_, err = runner.executeCommand(ctx, disallowedCmd)
+		_, err = runner.executeCommandInGroup(ctx, disallowedCmd, "test-group")
 		assert.Error(t, err)
 		t.Logf("Actual error: %v", err)
 		t.Logf("Error type: %T", err)
@@ -692,7 +698,7 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 		mockExecutor.On("Execute", mock.Anything, safeCmd, mock.Anything).
 			Return(&executor.Result{ExitCode: 0}, nil)
 
-		_, err = runner.executeCommand(context.Background(), safeCmd)
+		_, err = runner.executeCommandInGroup(context.Background(), safeCmd, "test-group")
 		assert.NoError(t, err)
 
 		// Test with unsafe environment variable value
@@ -704,7 +710,7 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 			Env:  []string{"DANGEROUS=value; rm -rf /"},
 		}
 
-		_, err = runner.executeCommand(context.Background(), unsafeCmd)
+		_, err = runner.executeCommandInGroup(context.Background(), unsafeCmd, "test-group")
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, security.ErrUnsafeEnvironmentVar), "expected error to wrap security.ErrUnsafeEnvironmentVar")
 	})

@@ -316,8 +316,8 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 		cmdCtx, cancel := r.createCommandContext(ctx, processedCmd)
 		defer cancel()
 
-		// Execute the command
-		result, err := r.executeCommand(cmdCtx, processedCmd)
+		// Execute the command with group context
+		result, err := r.executeCommandInGroup(cmdCtx, processedCmd, processedGroup.Name)
 		if err != nil {
 			fmt.Printf("    Command failed: %v\n", err)
 			return fmt.Errorf("command %s failed: %w", processedCmd.Name, err)
@@ -340,13 +340,6 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 
 	fmt.Printf("Group %s completed successfully\n", processedGroup.Name)
 	return nil
-}
-
-// executeCommand executes a single command with environment variable resolution
-func (r *Runner) executeCommand(ctx context.Context, cmd runnertypes.Command) (*executor.Result, error) {
-	// Find the group name for this command
-	groupName := r.findGroupNameForCommand(cmd.Name)
-	return r.executeCommandInGroup(ctx, cmd, groupName)
 }
 
 // executeCommandInGroup executes a command within a specific group context
@@ -378,18 +371,6 @@ func (r *Runner) executeCommandInGroup(ctx context.Context, cmd runnertypes.Comm
 
 	// Execute the command
 	return r.executor.Execute(ctx, cmd, envVars)
-}
-
-// findGroupNameForCommand finds the group name that contains the specified command
-func (r *Runner) findGroupNameForCommand(commandName string) string {
-	for _, group := range r.config.Groups {
-		for _, cmd := range group.Commands {
-			if cmd.Name == commandName {
-				return group.Name
-			}
-		}
-	}
-	return ""
 }
 
 // resolveEnvironmentVars resolves environment variables for a command with group context
@@ -556,7 +537,7 @@ func (r *Runner) ExecuteCommand(ctx context.Context, commandName string) error {
 				result, err := func() (*executor.Result, error) {
 					cmdCtx, cancel := r.createCommandContext(ctx, cmd)
 					defer cancel()
-					return r.executeCommand(cmdCtx, cmd)
+					return r.executeCommandInGroup(cmdCtx, cmd, group.Name)
 				}()
 				if err != nil {
 					return fmt.Errorf("command %s failed: %w", cmd.Name, err)
