@@ -506,11 +506,11 @@ func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, groupEnv map[st
 }
 
 // resolveVariableReferences は${VAR}形式の変数参照を解決（セキュリティ強化）
-func (r *Runner) resolveVariableReferences(value string, envVars map[string]string, commandName string) (string, error) {
-    return r.resolveVariableReferencesWithDepth(value, envVars, make(map[string]bool), 0, commandName)
+func (r *Runner) resolveVariableReferences(value string, envVars map[string]string, groupName string) (string, error) {
+    return r.resolveVariableReferencesWithDepth(value, envVars, make(map[string]bool), 0, groupName)
 }
 
-func (r *Runner) resolveVariableReferencesWithDepth(value string, envVars map[string]string, resolving map[string]bool, depth int, commandName string) (string, error) {
+func (r *Runner) resolveVariableReferencesWithDepth(value string, envVars map[string]string, resolving map[string]bool, depth int, groupName string) (string, error) {
     if depth > maxResolutionDepth {
         return "", fmt.Errorf("%w: maximum resolution depth exceeded (%d)", ErrCircularReference, maxResolutionDepth)
     }
@@ -543,9 +543,9 @@ func (r *Runner) resolveVariableReferencesWithDepth(value string, envVars map[st
         }
 
         // セキュリティチェック: 参照される変数が許可リストにあるか確認
-        if !r.isVariableAccessAllowed(varName, commandName) {
-            return "", fmt.Errorf("%w: variable %s not allowed for command %s",
-                ErrVariableNotAllowed, varName, commandName)
+        if !r.isVariableAccessAllowed(varName, groupName) {
+            return "", fmt.Errorf("%w: variable %s not allowed for group %s",
+                ErrVariableNotAllowed, varName, groupName)
         }
 
         // 循環参照チェック
@@ -561,7 +561,7 @@ func (r *Runner) resolveVariableReferencesWithDepth(value string, envVars map[st
 
         // 再帰的に解決
         resolving[varName] = true
-        resolvedVarValue, err := r.resolveVariableReferencesWithDepth(varValue, envVars, resolving, depth+1, commandName)
+        resolvedVarValue, err := r.resolveVariableReferencesWithDepth(varValue, envVars, resolving, depth+1, groupName)
         delete(resolving, varName)
 
         if err != nil {
@@ -647,19 +647,15 @@ func (r *Runner) validateEnvironmentVariable(name, value string) error {
 
 ```go
 // isVariableAccessAllowed は変数アクセスが許可されているかチェック
-func (r *Runner) isVariableAccessAllowed(varName, commandName string) bool {
+func (r *Runner) isVariableAccessAllowed(varName string, groupName string) bool {
     // グローバル許可リストをチェック
     if r.globalEnvAllowlist[varName] {
         return true
     }
 
-    // 現在実行中のグループの許可リストをチェック
-    // （実装では現在のグループコンテキストを追跡する必要がある）
-    currentGroup := r.getCurrentGroupName(commandName)
-    if currentGroup != "" {
-        if groupVars, exists := r.groupEnvAllowlist[currentGroup]; exists {
-            return groupVars[varName]
-        }
+    // 指定されたグループの許可リストをチェック
+    if groupVars, exists := r.groupEnvAllowlist[groupName]; exists {
+        return groupVars[varName]
     }
 
     return false
@@ -728,11 +724,11 @@ func (r *Runner) logEnvironmentFiltering(allowedVars []string, filteredVars map[
 }
 
 // logVariableAccess は変数アクセスをログに記録
-func (r *Runner) logVariableAccess(varName, commandName string, allowed bool) {
+func (r *Runner) logVariableAccess(varName string, groupName string, allowed bool) {
     if allowed {
-        r.logger.Printf("DEBUG: Variable access granted - var: %s, command: %s", varName, commandName)
+        r.logger.Printf("DEBUG: Variable access granted - var: %s, group: %s", varName, groupName)
     } else {
-        r.securityLogger.Printf("SECURITY: Variable access denied - var: %s, command: %s", varName, commandName)
+        r.securityLogger.Printf("SECURITY: Variable access denied - var: %s, group: %s", varName, groupName)
     }
 }
 
