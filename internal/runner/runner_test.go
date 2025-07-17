@@ -625,9 +625,10 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
-			Timeout:  3600,
-			WorkDir:  "/tmp",
-			LogLevel: "info",
+			Timeout:      3600,
+			WorkDir:      "/tmp",
+			LogLevel:     "info",
+			EnvAllowlist: []string{"PATH", "TEST_VAR", "DANGEROUS"},
 		},
 	}
 
@@ -760,7 +761,8 @@ func TestRunner_LoadEnvironmentWithSecurity(t *testing.T) {
 	t.Run("load environment with unsafe values", func(t *testing.T) {
 		config := &runnertypes.Config{
 			Global: runnertypes.GlobalConfig{
-				WorkDir: "/tmp",
+				WorkDir:      "/tmp",
+				EnvAllowlist: []string{"DANGEROUS"}, // Allow the variable to pass filtering so it can be validated
 			},
 		}
 		runner, err := NewRunner(config)

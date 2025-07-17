@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -156,6 +155,7 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 // If envFile is empty, only system environment variables will be loaded.
 // If loadSystemEnv is true, system environment variables will be loaded first,
 // then overridden by the .env file if specified.
+// Variables are filtered based on the global env_allowlist configuration.
 func (r *Runner) LoadEnvironment(envFile string, loadSystemEnv bool) error {
 	// Validate file permissions if a file is specified
 	if envFile != "" {
@@ -164,25 +164,36 @@ func (r *Runner) LoadEnvironment(envFile string, loadSystemEnv bool) error {
 		}
 	}
 
+	// Create environment filter
+	filter := environment.NewFilter(r.config)
 	envMap := make(map[string]string)
 
-	// Load system environment variables if requested
+	// Load and filter system environment variables if requested
 	if loadSystemEnv {
-		for _, env := range os.Environ() {
-			if i := strings.Index(env, "="); i >= 0 {
-				envMap[env[:i]] = env[i+1:]
-			}
+		filteredSystemEnv, err := filter.FilterSystemEnvironment(r.config.Global.EnvAllowlist)
+		if err != nil {
+			return fmt.Errorf("failed to filter system environment variables: %w", err)
+		}
+		for k, v := range filteredSystemEnv {
+			envMap[k] = v
 		}
 	}
 
-	// Load .env file if specified
+	// Load and filter .env file if specified
 	if envFile != "" {
 		fileEnv, err := godotenv.Read(envFile)
 		if err != nil {
 			return fmt.Errorf("failed to load environment file %s: %w", envFile, err)
 		}
-		// Override with values from .env file
-		for k, v := range fileEnv {
+
+		// Filter .env file variables using global allowlist
+		filteredFileEnv, err := filter.FilterEnvFileVariables(fileEnv, r.config.Global.EnvAllowlist)
+		if err != nil {
+			return fmt.Errorf("failed to filter .env file variables: %w", err)
+		}
+
+		// Override with filtered values from .env file
+		for k, v := range filteredFileEnv {
 			envMap[k] = v
 		}
 	}
@@ -383,28 +394,33 @@ func (r *Runner) findGroupNameForCommand(commandName string) string {
 
 // resolveEnvironmentVars resolves environment variables for a command with group context
 func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, groupName string) (map[string]string, error) {
-	envVars := make(map[string]string)
+	// Create environment filter
+	filter := environment.NewFilter(r.config)
 
-	// Start with system environment variables
-	for _, env := range os.Environ() {
-		parts := strings.SplitN(env, "=", envSeparatorParts)
-		if len(parts) == envSeparatorParts {
-			envVars[parts[0]] = parts[1]
-		}
-	}
+	var envVars map[string]string
+	var err error
 
-	// Add loaded environment variables from .env file
-	for k, v := range r.envVars {
-		envVars[k] = v
-	}
-
-	// Add group-level environment variables if group is specified
+	// Use the filter to resolve group environment variables with allowlist filtering
 	if groupName != "" {
-		groupEnvVars, err := r.resolveGroupEnvironmentVars(groupName)
+		envVars, err = filter.ResolveGroupEnvironmentVars(groupName, r.envVars)
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve group environment variables: %w", err)
 		}
-		for k, v := range groupEnvVars {
+	} else {
+		// For commands without group context, use global allowlist
+		envVars = make(map[string]string)
+
+		// Filter system environment variables using global allowlist
+		filteredSystemEnv, err := filter.FilterSystemEnvironment(r.config.Global.EnvAllowlist)
+		if err != nil {
+			return nil, fmt.Errorf("failed to filter system environment variables: %w", err)
+		}
+		for k, v := range filteredSystemEnv {
+			envVars[k] = v
+		}
+
+		// Add loaded environment variables from .env file (already filtered in LoadEnvironment)
+		for k, v := range r.envVars {
 			envVars[k] = v
 		}
 	}
@@ -416,50 +432,32 @@ func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, groupName strin
 			key := parts[0]
 			value := parts[1]
 
-			// Resolve variable references in the value
-			resolvedValue, err := r.resolveVariableReferences(value, envVars, groupName)
-			if err != nil {
-				return nil, fmt.Errorf("failed to resolve variable %s: %w", key, err)
+			// Check if variable is allowed
+			allowed := false
+			if groupName != "" {
+				allowed = filter.IsVariableAccessAllowed(key, groupName)
+			} else {
+				allowed = filter.IsGlobalVariableAllowed(key)
 			}
 
-			envVars[key] = resolvedValue
-		}
-	}
-
-	return envVars, nil
-}
-
-// resolveGroupEnvironmentVars resolves environment variables specific to a group
-func (r *Runner) resolveGroupEnvironmentVars(groupName string) (map[string]string, error) {
-	// Find the group
-	var group *runnertypes.CommandGroup
-	for _, g := range r.config.Groups {
-		if g.Name == groupName {
-			group = &g
-			break
-		}
-	}
-
-	if group == nil {
-		return nil, fmt.Errorf("%w: %s", ErrGroupNotFound, groupName)
-	}
-
-	envVars := make(map[string]string)
-
-	// Add group-level environment variables
-	for _, env := range group.Env {
-		parts := strings.SplitN(env, "=", envSeparatorParts)
-		if len(parts) == envSeparatorParts {
-			key := parts[0]
-			value := parts[1]
-
-			// Check if variable access is allowed
-			if r.isVariableAccessAllowed(key, groupName) {
-				envVars[key] = value
+			if allowed {
+				// Resolve variable references in the value
+				resolvedValue, err := r.resolveVariableReferences(value, envVars, groupName)
+				if err != nil {
+					return nil, fmt.Errorf("failed to resolve variable %s: %w", key, err)
+				}
+				envVars[key] = resolvedValue
 			} else {
-				slog.Warn("Group environment variable access denied",
-					"variable", key,
-					"group", groupName)
+				if groupName != "" {
+					slog.Warn("Command environment variable access denied",
+						"variable", key,
+						"command", cmd.Name,
+						"group", groupName)
+				} else {
+					slog.Warn("Command environment variable access denied by global allowlist",
+						"variable", key,
+						"command", cmd.Name)
+				}
 			}
 		}
 	}

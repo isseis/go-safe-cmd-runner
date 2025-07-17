@@ -30,18 +30,18 @@
 ### フェーズ2: 環境変数フィルタリング機能（推定工数: 3日）
 
 #### タスク2.1: システム環境変数フィルタリングの実装
-- [ ] `Runner.LoadEnvironment`メソッドの更新
-- [ ] `filterSystemEnvironment`関数の実装
-- [ ] `filterEnvFileVariables`関数の実装（新規追加）
-- [ ] `buildAllowedVariableMaps`関数の実装
-- [ ] 単体テスト
+- [x] `Runner.LoadEnvironment`メソッドの更新
+- [x] `filterSystemEnvironment`関数の実装
+- [x] `filterEnvFileVariables`関数の実装（新規追加）
+- [x] `buildAllowedVariableMaps`関数の実装
+- [x] 単体テスト
 
 #### タスク2.2: グループレベル環境変数解決の実装
-- [ ] `resolveGroupEnvironmentVars`関数の実装
-- [ ] `resolveEnvironmentVars`関数の更新
-- [ ] `resolveVariableReferences`関数の強化（引数にgroupNameを追加）
-- [ ] `isVariableAccessAllowed`関数の実装（groupName引数に変更）
-- [ ] 単体テストおよび統合テスト
+- [x] `resolveGroupEnvironmentVars`関数の実装
+- [x] `resolveEnvironmentVars`関数の更新
+- [x] `resolveVariableReferences`関数の強化（引数にgroupNameを追加）
+- [x] `isVariableAccessAllowed`関数の実装（groupName引数に変更）
+- [x] 単体テストおよび統合テスト
 
 ### フェーズ3: 検証機能の実装（推定工数: 2日）
 

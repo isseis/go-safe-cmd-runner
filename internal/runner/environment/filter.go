@@ -110,7 +110,7 @@ func (f *Filter) BuildAllowedVariableMaps() map[string][]string {
 }
 
 // ResolveGroupEnvironmentVars resolves environment variables for a specific group
-func (f *Filter) ResolveGroupEnvironmentVars(groupName string, _ map[string]string) (map[string]string, error) {
+func (f *Filter) ResolveGroupEnvironmentVars(groupName string, loadedEnvVars map[string]string) (map[string]string, error) {
 	// Find the group
 	var group *runnertypes.CommandGroup
 	for _, g := range f.config.Groups {
@@ -135,13 +135,21 @@ func (f *Filter) ResolveGroupEnvironmentVars(groupName string, _ map[string]stri
 		return nil, fmt.Errorf("failed to filter system environment: %w", err)
 	}
 
-	// Add group-level environment variables
+	// Start with filtered system environment variables
 	result := make(map[string]string)
 	for k, v := range filteredSystemEnv {
 		result[k] = v
 	}
 
-	// Add group-level environment variables (these override system vars)
+	// Add loaded environment variables from .env file (already filtered in LoadEnvironment)
+	// These override system variables
+	for k, v := range loadedEnvVars {
+		if f.isVariableAllowed(k, allowlist) {
+			result[k] = v
+		}
+	}
+
+	// Add group-level environment variables (these override both system and .env vars)
 	for _, env := range group.Env {
 		parts := strings.SplitN(env, "=", envSeparatorParts)
 		if len(parts) == envSeparatorParts {
@@ -164,6 +172,11 @@ func (f *Filter) ResolveGroupEnvironmentVars(groupName string, _ map[string]stri
 
 // IsVariableAccessAllowed checks if a variable can be accessed in the given group context
 func (f *Filter) IsVariableAccessAllowed(variable string, groupName string) bool {
+	// If no group name is provided, check against global allowlist only
+	if groupName == "" {
+		return f.IsGlobalVariableAllowed(variable)
+	}
+
 	// Find the group
 	var group *runnertypes.CommandGroup
 	for _, g := range f.config.Groups {
@@ -192,6 +205,19 @@ func (f *Filter) IsVariableAccessAllowed(variable string, groupName string) bool
 			"variable", variable,
 			"group", groupName,
 			"allowlist_size", len(allowlist))
+	}
+
+	return allowed
+}
+
+// IsGlobalVariableAllowed checks if a variable is allowed by global allowlist only
+func (f *Filter) IsGlobalVariableAllowed(variable string) bool {
+	allowed := f.isVariableAllowed(variable, f.config.Global.EnvAllowlist)
+
+	if !allowed {
+		slog.Warn("Variable access denied by global allowlist",
+			"variable", variable,
+			"allowlist_size", len(f.config.Global.EnvAllowlist))
 	}
 
 	return allowed
