@@ -975,21 +975,28 @@ func handleWarningError(err error, context string) {
 // エラーメッセージのテンプレート
 const (
     msgEnvAllowlistNotDefined = `
-INFO: No environment variables defined
+INFO: No global environment variables defined
 
-The configuration file has no 'env_allowlist' defined in [global] or [[groups]] sections.
-This means no system environment variables will be inherited, providing maximum security.
+The configuration file has no 'env_allowlist' defined in the [global] section.
+Groups without their own 'env_allowlist' will inherit this empty configuration.
 
-If you need environment variables, add them explicitly:
+If you need environment variables, you can define them at the global or group level:
 
+# Global environment variables (inherited by all groups without their own env_allowlist)
 [global]
 env_allowlist = ["PATH", "HOME", "USER"]
 
+# Group-specific environment variables (overrides global for this group)
 [[groups]]
 name = "example"
 env_allowlist = ["PATH", "HOME", "NODE_ENV"]
 
-Only explicitly allowed environment variables will be available.
+# Group that inherits from global (no env_allowlist defined)
+[[groups]]
+name = "another_example"
+# Will inherit from global.env_allowlist
+
+Only explicitly allowed environment variables will be available in each context.
 `
 
     msgVariableNotAllowed = `
