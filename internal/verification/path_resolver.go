@@ -79,7 +79,7 @@ func (pr *PathResolver) validateAndCacheCommand(path, cacheKey string) (string, 
 	return path, nil
 }
 
-// ResolvePath resolves a command to its full path
+// ResolvePath resolves a command to its full path without security validation
 func (pr *PathResolver) ResolvePath(command string) (string, error) {
 	// Check cache first
 	pr.mu.RLock()
@@ -89,31 +89,46 @@ func (pr *PathResolver) ResolvePath(command string) (string, error) {
 	}
 	pr.mu.RUnlock()
 
-	// Validate command safety
-	if err := pr.validateCommandSafety(command); err != nil {
-		return "", fmt.Errorf("unsafe command rejected: %w", err)
-	}
+	var resolvedPath string
+	var err error
 
 	// If absolute path, verify it exists and is not a directory
 	if filepath.IsAbs(command) {
-		return pr.validateAndCacheCommand(command, command)
+		resolvedPath, err = pr.validateAndCacheCommand(command, command)
+		if err != nil {
+			return "", err
+		}
+		return resolvedPath, nil
 	}
 
 	// Resolve from PATH environment variable
+	var lastErr error
 	for _, dir := range strings.Split(pr.pathEnv, string(os.PathListSeparator)) {
 		// Check if directory can be accessed
 		if !pr.canAccessDirectory(dir) {
 			continue // Skip inaccessible directories
 		}
 
-		// Check if command file exists
+		// Try to validate the command at this path
 		fullPath := filepath.Join(dir, command)
-		if _, err := os.Stat(fullPath); err == nil {
-			return pr.validateAndCacheCommand(fullPath, command)
+		resolved, err := pr.validateAndCacheCommand(fullPath, command)
+		if err == nil {
+			// Found a valid executable
+			return resolved, nil
 		}
+		// Save the last error in case we don't find any valid command
+		lastErr = err
 	}
 
+	if lastErr != nil {
+		return "", lastErr
+	}
 	return "", fmt.Errorf("%w: %s", ErrCommandNotFound, command)
+}
+
+// ValidateCommand performs security validation on a resolved command path
+func (pr *PathResolver) ValidateCommand(resolvedPath string) error {
+	return pr.validateCommandSafety(resolvedPath)
 }
 
 // removeDuplicates removes duplicate strings from a slice

@@ -13,6 +13,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/template"
+	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -601,11 +602,10 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 		},
 	}
 
-	t.Run("command whitelist validation", func(t *testing.T) {
+	t.Run("allowed command execution should succeed", func(t *testing.T) {
 		runner, err := NewRunner(config)
 		require.NoError(t, err)
 
-		// Test allowed command
 		allowedCmd := runnertypes.Command{
 			Name: "test-echo",
 			Cmd:  "echo",
@@ -620,16 +620,27 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 		ctx := context.Background()
 		_, err = runner.executeCommand(ctx, allowedCmd)
 		assert.NoError(t, err)
+	})
 
-		// Test disallowed command
+	t.Run("disallowed command execution should fail", func(t *testing.T) {
+		// Test disallowed command - need verification manager for command validation
+		verificationManager, err := verification.NewManager(t.TempDir())
+		require.NoError(t, err)
+
+		runner, err := NewRunner(config, WithVerificationManager(verificationManager))
+		require.NoError(t, err)
+
 		disallowedCmd := runnertypes.Command{
-			Name: "test-rm",
-			Cmd:  "rm",
-			Args: []string{"-rf", "/"},
+			Name: "test-xsession",
+			Cmd:  "/etc/X11/Xsession",
+			Args: []string{"failsafe"},
 		}
 
+		ctx := context.Background()
 		_, err = runner.executeCommand(ctx, disallowedCmd)
 		assert.Error(t, err)
+		t.Logf("Actual error: %v", err)
+		t.Logf("Error type: %T", err)
 		assert.True(t, errors.Is(err, security.ErrCommandNotAllowed), "expected error to wrap security.ErrCommandNotAllowed")
 	})
 

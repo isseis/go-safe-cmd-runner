@@ -85,20 +85,12 @@ type Config struct {
 func DefaultConfig() *Config {
 	return &Config{
 		AllowedCommands: []string{
-			// System commands
+			// System commands. The regex pattern is used to match the full path of the command
+			// after resolving the path using the PATH environment variable.
 			"^/bin/.*",
 			"^/usr/bin/.*",
+			"^/usr/sbin/.*",
 			"^/usr/local/bin/.*",
-			// Common commands without full path
-			"^echo$",
-			"^cat$",
-			"^ls$",
-			"^pwd$",
-			"^whoami$",
-			"^date$",
-			"^sleep$",
-			"^true$",
-			"^false$",
 		},
 		RequiredFilePermissions:      DefaultFilePermissions,
 		RequiredDirectoryPermissions: DefaultDirectoryPermissions,

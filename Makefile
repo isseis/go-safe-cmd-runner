@@ -50,12 +50,12 @@ clean:
 	rm -f $(BINARY_RECORD) $(BINARY_VERIFY) $(BINARY_RUNNER)
 
 hash: $(BINARY_RECORD) ./sample/test.toml ./sample/config.toml
-	$(SUDOCMD) $(BINARY_RECORD) -file ./sample/test.toml -hash-dir $(DEFAULT_HASH_DIRECTORY)
-	$(SUDOCMD) $(BINARY_RECORD) -file ./sample/config.toml -hash-dir $(DEFAULT_HASH_DIRECTORY)
+	$(SUDOCMD) $(BINARY_RECORD) -force -file ./sample/test.toml -hash-dir $(DEFAULT_HASH_DIRECTORY)
+	$(SUDOCMD) $(BINARY_RECORD) -force -file ./sample/config.toml -hash-dir $(DEFAULT_HASH_DIRECTORY)
 
 test: $(BINARY_RUNNER)
 	$(GOTEST) -v ./...
-	$(ENVCMD) -i $(BINARY_RUNNER) -dry-run -config ./sample/config.toml --disable-verification
+	$(ENVCMD) -i $(BINARY_RUNNER) -dry-run -config ./sample/config.toml
 
 integration-test: $(BINARY_RUNNER)
-	$(ENVCMD) -i PATH=/bin:/sbin/usr/bin:/usr/sbin $(BINARY_RUNNER) -config ./sample/test.toml
+	$(ENVCMD) -i PATH=/bin:/sbin:/usr/bin:/usr/sbin LANG=C $(BINARY_RUNNER) -config ./sample/test.toml

@@ -15,95 +15,112 @@ import (
 
 // Manager provides file verification capabilities
 type Manager struct {
-	config       Config
-	fs           common.FileSystem
-	validator    *filevalidator.Validator
-	security     *security.Validator
-	pathResolver *PathResolver
+	hashDir       string
+	fs            common.FileSystem
+	fileValidator *filevalidator.Validator
+	security      *security.Validator
+	pathResolver  *PathResolver
+}
+
+// Option is a function type for configuring Manager instances
+type Option func(*managerOptions)
+
+// managerOptions holds all configuration options for creating a Manager
+type managerOptions struct {
+	fs                   common.FileSystem
+	fileValidatorEnabled bool
+}
+
+func newOptions() *managerOptions {
+	return &managerOptions{
+		fileValidatorEnabled: true,
+		fs:                   common.NewDefaultFileSystem(),
+	}
+}
+
+// withFS is an option for setting the file system (for testing purposes)
+func withFS(fs common.FileSystem) Option {
+	return func(opts *managerOptions) {
+		opts.fs = fs
+	}
+}
+
+// withFileValidatorDisabled is an option for disabling the file validator (for testing purposes)
+func withFileValidatorDisabled() Option {
+	return func(opts *managerOptions) {
+		opts.fileValidatorEnabled = false
+	}
 }
 
 // NewManager creates a new verification manager with the default file system
-func NewManager(config Config) (*Manager, error) {
-	return NewManagerWithFS(config, common.NewDefaultFileSystem())
+func NewManager(hashDir string) (*Manager, error) {
+	return NewManagerWithOpts(hashDir)
 }
 
-// NewManagerWithFS creates a new verification manager with a custom file system
-func NewManagerWithFS(config Config, fs common.FileSystem) (*Manager, error) {
-	// Make a copy of the config to avoid modifying the original
-	configCopy := config
-
-	// Clean the hash directory path before validation
-	if configCopy.IsEnabled() && configCopy.HashDirectory != "" {
-		configCopy.HashDirectory = filepath.Clean(configCopy.HashDirectory)
+// NewManagerWithOpts creates a new verification manager with a custom file system
+func NewManagerWithOpts(hashDir string, options ...Option) (*Manager, error) {
+	// Apply default options
+	opts := newOptions()
+	for _, option := range options {
+		option(opts)
 	}
 
-	if err := configCopy.Validate(); err != nil {
-		return nil, fmt.Errorf("config validation failed: %w", err)
+	// Clean the hash directory path
+	if hashDir == "" {
+		return nil, ErrHashDirectoryEmpty
+	}
+	if hashDir != "" {
+		hashDir = filepath.Clean(hashDir)
 	}
 
 	manager := &Manager{
-		config: configCopy,
-		fs:     fs,
+		hashDir: hashDir,
+		fs:      opts.fs,
 	}
 
-	// Initialize components only if verification is enabled
-	if configCopy.IsEnabled() {
-		// Initialize file validator with SHA256 algorithm
-		validator, err := filevalidator.New(&filevalidator.SHA256{}, configCopy.HashDirectory)
+	// Initialize file validator with SHA256 algorithm
+	if opts.fileValidatorEnabled {
+		fileValidator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize file validator: %w", err)
 		}
-		manager.validator = validator
-
-		// Initialize security validator with default configuration
-		securityConfig := security.DefaultConfig()
-		securityValidator, err := security.NewValidatorWithFS(securityConfig, fs)
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize security validator: %w", err)
-		}
-		manager.security = securityValidator
-
-		// Initialize path resolver
-		pathEnv := os.Getenv("PATH")
-		manager.pathResolver = NewPathResolver(pathEnv, securityValidator, false)
+		manager.fileValidator = fileValidator
 	}
+
+	// Initialize security validator with default config
+	securityConfig := security.DefaultConfig()
+	securityValidator, err := security.NewValidatorWithFS(securityConfig, opts.fs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize security validator: %w", err)
+	}
+
+	// Initialize path resolver
+	pathEnv := os.Getenv("PATH") // Default to PATH environment variable if not explicitly set
+	pathResolver := NewPathResolver(pathEnv, securityValidator, false)
+
+	manager.security = securityValidator
+	manager.pathResolver = pathResolver
 
 	return manager, nil
 }
 
-// IsEnabled returns true if verification is enabled
-func (m *Manager) IsEnabled() bool {
-	return m.config.IsEnabled()
-}
-
-// GetConfig returns the current configuration
-func (m *Manager) GetConfig() Config {
-	return m.config
-}
-
 // VerifyConfigFile verifies the integrity of a configuration file
 func (m *Manager) VerifyConfigFile(configPath string) error {
-	if !m.IsEnabled() {
-		slog.Debug("Verification is disabled, skipping config file verification",
-			"config_path", configPath)
-		return nil
-	}
-
 	slog.Debug("Starting config file verification",
 		"config_path", configPath,
-		"hash_directory", m.config.HashDirectory)
+		"hash_directory", m.hashDir)
 
 	// Validate hash directory first
 	if err := m.ValidateHashDirectory(); err != nil {
 		return &Error{
 			Op:   "ValidateHashDirectory",
-			Path: m.config.HashDirectory,
+			Path: m.hashDir,
 			Err:  err,
 		}
 	}
 
 	// Verify file hash using filevalidator
-	if err := m.validator.Verify(configPath); err != nil {
+	if err := m.fileValidator.Verify(configPath); err != nil {
 		slog.Error("Config file verification failed",
 			"config_path", configPath,
 			"error", err)
@@ -116,23 +133,19 @@ func (m *Manager) VerifyConfigFile(configPath string) error {
 
 	slog.Info("Config file verification completed successfully",
 		"config_path", configPath,
-		"hash_directory", m.config.HashDirectory)
+		"hash_directory", m.hashDir)
 
 	return nil
 }
 
 // ValidateHashDirectory validates the hash directory security
 func (m *Manager) ValidateHashDirectory() error {
-	if !m.IsEnabled() {
-		return ErrVerificationDisabled
-	}
-
 	if m.security == nil {
 		return ErrSecurityValidatorNotInitialized
 	}
 
 	// Validate directory permissions using security validator
-	if err := m.security.ValidateDirectoryPermissions(m.config.HashDirectory); err != nil {
+	if err := m.security.ValidateDirectoryPermissions(m.hashDir); err != nil {
 		return fmt.Errorf("hash directory validation failed: %w", err)
 	}
 
@@ -141,10 +154,6 @@ func (m *Manager) ValidateHashDirectory() error {
 
 // VerifyGlobalFiles verifies the integrity of global files
 func (m *Manager) VerifyGlobalFiles(globalConfig *runnertypes.GlobalConfig) (*Result, error) {
-	if !m.IsEnabled() {
-		return &Result{}, nil
-	}
-
 	result := &Result{
 		TotalFiles:   len(globalConfig.VerifyFiles),
 		FailedFiles:  []string{},
@@ -171,7 +180,7 @@ func (m *Manager) VerifyGlobalFiles(globalConfig *runnertypes.GlobalConfig) (*Re
 		}
 
 		// Verify file hash (no permission check, only hash comparison)
-		if err := m.validator.Verify(filePath); err != nil {
+		if err := m.fileValidator.Verify(filePath); err != nil {
 			result.FailedFiles = append(result.FailedFiles, filePath)
 			slog.Error("Global file verification failed",
 				"file", filePath,
@@ -198,10 +207,6 @@ func (m *Manager) VerifyGlobalFiles(globalConfig *runnertypes.GlobalConfig) (*Re
 
 // VerifyGroupFiles verifies the integrity of group files
 func (m *Manager) VerifyGroupFiles(groupConfig *runnertypes.CommandGroup) (*Result, error) {
-	if !m.IsEnabled() {
-		return &Result{}, nil
-	}
-
 	// Collect all files to verify (explicit files + command files)
 	allFiles := m.collectVerificationFiles(groupConfig)
 
@@ -226,7 +231,7 @@ func (m *Manager) VerifyGroupFiles(groupConfig *runnertypes.CommandGroup) (*Resu
 		}
 
 		// Verify file hash (no permission check, only hash comparison)
-		if err := m.validator.Verify(file); err != nil {
+		if err := m.fileValidator.Verify(file); err != nil {
 			result.FailedFiles = append(result.FailedFiles, file)
 			slog.Error("Group file verification failed",
 				"group", groupConfig.Name,
@@ -283,6 +288,26 @@ func (m *Manager) collectVerificationFiles(groupConfig *runnertypes.CommandGroup
 	return removeDuplicates(allFiles)
 }
 
+// ResolvePath resolves a command to its full path with security validation
+func (m *Manager) ResolvePath(command string) (string, error) {
+	if m.pathResolver == nil {
+		return "", ErrPathResolverNotInitialized
+	}
+
+	// Always perform path resolution
+	resolvedPath, err := m.pathResolver.ResolvePath(command)
+	if err != nil {
+		return "", err
+	}
+
+	// Always perform validation when Manager exists
+	if err := m.pathResolver.ValidateCommand(resolvedPath); err != nil {
+		return "", fmt.Errorf("unsafe command rejected: %w", err)
+	}
+
+	return resolvedPath, nil
+}
+
 // VerifyCommandFile verifies the integrity of a single command file
 func (m *Manager) VerifyCommandFile(command string) (*FileDetail, error) {
 	detail := &FileDetail{
@@ -293,11 +318,6 @@ func (m *Manager) VerifyCommandFile(command string) (*FileDetail, error) {
 	defer func() {
 		detail.Duration = time.Since(start)
 	}()
-
-	if !m.IsEnabled() {
-		detail.HashMatched = true // Consider disabled verification as success
-		return detail, nil
-	}
 
 	// Resolve path
 	if m.pathResolver == nil {
@@ -312,6 +332,12 @@ func (m *Manager) VerifyCommandFile(command string) (*FileDetail, error) {
 	}
 	detail.ResolvedPath = resolvedPath
 
+	// Validate command security after path resolution
+	if err := m.pathResolver.ValidateCommand(resolvedPath); err != nil {
+		detail.Error = err
+		return detail, fmt.Errorf("command validation failed: %w", err)
+	}
+
 	// Check if should skip verification
 	if m.shouldSkipVerification(resolvedPath) {
 		detail.HashMatched = true // Skip is treated as success
@@ -319,7 +345,7 @@ func (m *Manager) VerifyCommandFile(command string) (*FileDetail, error) {
 	}
 
 	// Verify hash (no permission check, only hash comparison)
-	if err := m.validator.Verify(resolvedPath); err != nil {
+	if err := m.fileValidator.Verify(resolvedPath); err != nil {
 		detail.HashMatched = false
 		detail.Error = err
 		return detail, fmt.Errorf("command file verification failed: %w", err)
