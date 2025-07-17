@@ -1,3 +1,4 @@
+//nolint:revive // VerificationError is descriptive and distinguishes from the base Error type
 package verification
 
 import (
