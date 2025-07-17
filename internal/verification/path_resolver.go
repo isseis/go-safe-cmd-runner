@@ -98,33 +98,32 @@ func (pr *PathResolver) ResolvePath(command string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-	} else {
-		// Resolve from PATH environment variable
-		found := false
-		for _, dir := range strings.Split(pr.pathEnv, string(os.PathListSeparator)) {
-			// Check if directory can be accessed
-			if !pr.canAccessDirectory(dir) {
-				continue // Skip inaccessible directories
-			}
-
-			// Check if command file exists
-			fullPath := filepath.Join(dir, command)
-			if _, err := os.Stat(fullPath); err == nil {
-				resolvedPath, err = pr.validateAndCacheCommand(fullPath, command)
-				if err != nil {
-					return "", err
-				}
-				found = true
-				break
-			}
-		}
-
-		if !found {
-			return "", fmt.Errorf("%w: %s", ErrCommandNotFound, command)
-		}
+		return resolvedPath, nil
 	}
 
-	return resolvedPath, nil
+	// Resolve from PATH environment variable
+	var lastErr error
+	for _, dir := range strings.Split(pr.pathEnv, string(os.PathListSeparator)) {
+		// Check if directory can be accessed
+		if !pr.canAccessDirectory(dir) {
+			continue // Skip inaccessible directories
+		}
+
+		// Try to validate the command at this path
+		fullPath := filepath.Join(dir, command)
+		resolved, err := pr.validateAndCacheCommand(fullPath, command)
+		if err == nil {
+			// Found a valid executable
+			return resolved, nil
+		}
+		// Save the last error in case we don't find any valid command
+		lastErr = err
+	}
+
+	if lastErr != nil {
+		return "", lastErr
+	}
+	return "", fmt.Errorf("%w: %s", ErrCommandNotFound, command)
 }
 
 // ValidateCommand performs security validation on a resolved command path
