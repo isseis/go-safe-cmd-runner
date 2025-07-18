@@ -684,7 +684,6 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 			Env:  []string{"DANGEROUS=value; rm -rf /"},
 		}
 
-		testGroup = &config.Groups[0] // Get reference to the test group
 		_, err = runner.executeCommandInGroup(context.Background(), unsafeCmd, testGroup)
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, security.ErrUnsafeEnvironmentVar), "expected error to wrap security.ErrUnsafeEnvironmentVar")
