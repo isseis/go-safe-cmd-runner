@@ -6,6 +6,7 @@ package template
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 	"text/template"
@@ -96,9 +97,7 @@ func (e *Engine) SetVariables(vars map[string]string) {
 	if e.variables == nil {
 		e.variables = make(map[string]string)
 	}
-	for k, v := range vars {
-		e.variables[k] = v
-	}
+	maps.Copy(e.variables, vars)
 }
 
 // ApplyTemplate applies a template to a command group
@@ -139,12 +138,8 @@ func (e *Engine) ApplyTemplate(group *runnertypes.CommandGroup, templateName str
 func (e *Engine) applyTemplateToGroup(group *runnertypes.CommandGroup, tmpl *Template) error {
 	// Merge template variables with engine variables
 	variables := make(map[string]string)
-	for k, v := range e.variables {
-		variables[k] = v
-	}
-	for k, v := range tmpl.Variables {
-		variables[k] = v
-	}
+	maps.Copy(variables, e.variables)
+	maps.Copy(variables, tmpl.Variables)
 
 	// Expand template variables in group properties
 	if group.Description != "" {
@@ -183,12 +178,8 @@ func (e *Engine) applyTemplateToCommand(cmd *runnertypes.Command, tmpl *Template
 // mergeVariables merges template variables with engine variables
 func (e *Engine) mergeVariables(templateVars map[string]string) map[string]string {
 	variables := make(map[string]string)
-	for k, v := range e.variables {
-		variables[k] = v
-	}
-	for k, v := range templateVars {
-		variables[k] = v
-	}
+	maps.Copy(variables, e.variables)
+	maps.Copy(variables, templateVars)
 	return variables
 }
 
@@ -336,9 +327,7 @@ func (e *Engine) ValidateTemplate(name string) error {
 	for key, value := range tmpl.Variables {
 		// Create a temporary variable map for validation
 		tempVars := make(map[string]string)
-		for k, v := range tmpl.Variables {
-			tempVars[k] = v
-		}
+		maps.Copy(tempVars, tmpl.Variables)
 
 		_, err := e.expandString(value, tempVars)
 		if err != nil {

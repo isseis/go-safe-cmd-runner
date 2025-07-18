@@ -34,22 +34,16 @@ var (
 
 // getHashDir determines the hash directory based on command line args and environment variables
 func getHashDir() string {
-	hashDir := ""
-
-	// Check environment variable for hash directory override
-	if envHashDir := os.Getenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY"); envHashDir != "" {
-		hashDir = envHashDir
-	}
 	// Command line arguments take precedence over environment variables
 	if *hashDirectory != "" {
-		hashDir = *hashDirectory
+		return *hashDirectory
+	}
+	// Check environment variable for hash directory override
+	if envHashDir := os.Getenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY"); envHashDir != "" {
+		return envHashDir
 	}
 	// Set default hash directory if none specified
-	if hashDir == "" {
-		hashDir = cmdcommon.DefaultHashDirectory
-	}
-
-	return hashDir
+	return cmdcommon.DefaultHashDirectory
 }
 
 func main() {

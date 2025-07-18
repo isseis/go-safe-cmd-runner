@@ -264,7 +264,7 @@ func (m *Manager) shouldSkipVerification(path string) bool {
 
 // collectVerificationFiles collects all files to verify for a group
 func (m *Manager) collectVerificationFiles(groupConfig *runnertypes.CommandGroup) []string {
-	var allFiles []string
+	allFiles := make([]string, 0, len(groupConfig.VerifyFiles)+len(groupConfig.Commands))
 
 	// Add explicit files
 	allFiles = append(allFiles, groupConfig.VerifyFiles...)

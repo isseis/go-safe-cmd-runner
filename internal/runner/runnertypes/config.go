@@ -17,6 +17,7 @@ type GlobalConfig struct {
 	LogLevel          string   `toml:"log_level"`           // Log level (debug, info, warn, error)
 	VerifyFiles       []string `toml:"verify_files"`        // Files to verify at global level
 	SkipStandardPaths bool     `toml:"skip_standard_paths"` // Skip verification for standard system paths
+	EnvAllowlist      []string `toml:"env_allowlist"`       // Global environment variable allowlist
 }
 
 // TemplateConfig represents a template configuration
@@ -33,13 +34,15 @@ type TemplateConfig struct {
 
 // CommandGroup represents a group of related commands with a name
 type CommandGroup struct {
-	Name        string    `toml:"name"`
-	Description string    `toml:"description"`
-	Priority    int       `toml:"priority"`
-	DependsOn   []string  `toml:"depends_on"`
-	Template    string    `toml:"template"` // Template to apply to this group
-	Commands    []Command `toml:"commands"`
-	VerifyFiles []string  `toml:"verify_files"` // Files to verify for this group
+	Name         string    `toml:"name"`
+	Description  string    `toml:"description"`
+	Priority     int       `toml:"priority"`
+	DependsOn    []string  `toml:"depends_on"`
+	Template     string    `toml:"template"` // Template to apply to this group
+	Commands     []Command `toml:"commands"`
+	VerifyFiles  []string  `toml:"verify_files"`  // Files to verify for this group
+	Env          []string  `toml:"env"`           // Group-level environment variables
+	EnvAllowlist []string  `toml:"env_allowlist"` // Group-level environment variable allowlist
 }
 
 // Command represents a single command to be executed

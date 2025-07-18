@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -279,6 +280,7 @@ func TestRunner_ExecuteGroup(t *testing.T) {
 					WorkDir:  "/tmp",
 					LogLevel: "info",
 				},
+				Groups: []runnertypes.CommandGroup{tt.group},
 			}
 
 			mockExecutor := new(MockExecutor)
@@ -355,54 +357,26 @@ func TestRunner_ExecuteAll(t *testing.T) {
 	mockExecutor.AssertExpectations(t)
 }
 
-func TestRunner_ExecuteCommand(t *testing.T) {
-	cleanup := setupSafeTestEnv(t)
-	defer cleanup()
-
+func TestRunner_resolveVariableReferences(t *testing.T) {
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
-			Timeout:  3600,
-			WorkDir:  "/tmp",
-			LogLevel: "info",
+			EnvAllowlist: []string{"HOME", "USER", "PATH", "GREETING", "CIRCULAR"},
 		},
 		Groups: []runnertypes.CommandGroup{
 			{
-				Name: "test-group",
-				Commands: []runnertypes.Command{
-					{Name: "test-cmd", Cmd: "echo", Args: []string{"hello"}},
-				},
+				Name:         "test-group",
+				EnvAllowlist: []string{"HOME", "USER", "PATH", "GREETING", "CIRCULAR"},
 			},
 		},
 	}
 
-	mockExecutor := new(MockExecutor)
-	runner, err := NewRunner(config)
-	require.NoError(t, err)
-	runner.executor = mockExecutor
+	// Initialize the environment filter with the test configuration
+	envFilter := environment.NewFilter(config)
 
-	t.Run("existing command", func(t *testing.T) {
-		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "test-cmd", Cmd: "echo", Args: []string{"hello"}, Dir: "/tmp"}, mock.Anything).Return(&executor.Result{ExitCode: 0, Stdout: "hello\n"}, nil)
-
-		ctx := context.Background()
-		err := runner.ExecuteCommand(ctx, "test-cmd")
-
-		assert.NoError(t, err)
-		mockExecutor.AssertExpectations(t)
-	})
-
-	t.Run("non-existing command", func(t *testing.T) {
-		ctx := context.Background()
-		err := runner.ExecuteCommand(ctx, "non-existing-cmd")
-
-		assert.Error(t, err)
-		if !errors.Is(err, ErrCommandNotFound) {
-			t.Errorf("expected %v, got %v", ErrCommandNotFound, err)
-		}
-	})
-}
-
-func TestRunner_resolveVariableReferences(t *testing.T) {
-	runner := &Runner{}
+	runner := &Runner{
+		config:    config,
+		envFilter: envFilter,
+	}
 	envVars := map[string]string{
 		"HOME":     "/home/user",
 		"USER":     "testuser",
@@ -444,7 +418,7 @@ func TestRunner_resolveVariableReferences(t *testing.T) {
 		{
 			name:        "undefined variable",
 			input:       "${UNDEFINED_VAR}",
-			expectedErr: ErrUndefinedVariable,
+			expectedErr: ErrVariableAccessDenied,
 		},
 		{
 			name:        "unclosed variable",
@@ -460,7 +434,8 @@ func TestRunner_resolveVariableReferences(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := runner.resolveVariableReferences(tt.input, envVars)
+			testGroup := &config.Groups[0] // Get reference to the test group
+			result, err := runner.resolveVariableReferences(tt.input, envVars, testGroup)
 
 			if tt.expectedErr != nil {
 				assert.Error(t, err)
@@ -518,7 +493,14 @@ func TestRunner_resolveEnvironmentVars(t *testing.T) {
 
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
-			WorkDir: "/tmp",
+			WorkDir:      "/tmp",
+			EnvAllowlist: []string{"SAFE_VAR", "PATH", "LOADED_VAR", "CMD_VAR", "REFERENCE_VAR"},
+		},
+		Groups: []runnertypes.CommandGroup{
+			{
+				Name:         "test-group",
+				EnvAllowlist: []string{"SAFE_VAR", "PATH", "LOADED_VAR", "CMD_VAR", "REFERENCE_VAR"},
+			},
 		},
 	}
 
@@ -536,7 +518,7 @@ func TestRunner_resolveEnvironmentVars(t *testing.T) {
 		},
 	}
 
-	envVars, err := runner.resolveEnvironmentVars(cmd)
+	envVars, err := runner.resolveEnvironmentVars(cmd, &config.Groups[0])
 	assert.NoError(t, err)
 
 	// Check that loaded vars are present
@@ -549,7 +531,25 @@ func TestRunner_resolveEnvironmentVars(t *testing.T) {
 }
 
 func TestRunner_resolveVariableReferences_ComplexCircular(t *testing.T) {
-	runner := &Runner{}
+	config := &runnertypes.Config{
+		Global: runnertypes.GlobalConfig{
+			EnvAllowlist: []string{"VAR1", "VAR2", "VAR3"},
+		},
+		Groups: []runnertypes.CommandGroup{
+			{
+				Name:         "test-group",
+				EnvAllowlist: []string{"VAR1", "VAR2", "VAR3"},
+			},
+		},
+	}
+
+	// Initialize the environment filter with the test configuration
+	envFilter := environment.NewFilter(config)
+
+	runner := &Runner{
+		config:    config,
+		envFilter: envFilter,
+	}
 
 	// Test complex circular dependencies: VAR1 -> VAR2 -> VAR1
 	envVars := map[string]string{
@@ -582,7 +582,8 @@ func TestRunner_resolveVariableReferences_ComplexCircular(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := runner.resolveVariableReferences(tt.input, envVars)
+			testGroup := &config.Groups[0] // Get reference to the test group
+			_, err := runner.resolveVariableReferences(tt.input, envVars, testGroup)
 
 			assert.Error(t, err)
 			assert.True(t, errors.Is(err, tt.expectedErr), "expected error %v, got %v", tt.expectedErr, err)
@@ -596,9 +597,15 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
-			Timeout:  3600,
-			WorkDir:  "/tmp",
-			LogLevel: "info",
+			Timeout:      3600,
+			WorkDir:      "/tmp",
+			LogLevel:     "info",
+			EnvAllowlist: []string{"PATH", "TEST_VAR", "DANGEROUS"},
+		},
+		Groups: []runnertypes.CommandGroup{
+			{
+				Name: "test-group",
+			},
 		},
 	}
 
@@ -618,7 +625,8 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 		mockExecutor.On("Execute", mock.Anything, allowedCmd, mock.Anything).Return(&executor.Result{ExitCode: 0}, nil)
 
 		ctx := context.Background()
-		_, err = runner.executeCommand(ctx, allowedCmd)
+		testGroup := &config.Groups[0] // Get reference to the test group
+		_, err = runner.executeCommandInGroup(ctx, allowedCmd, testGroup)
 		assert.NoError(t, err)
 	})
 
@@ -637,7 +645,8 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 		}
 
 		ctx := context.Background()
-		_, err = runner.executeCommand(ctx, disallowedCmd)
+		testGroup := &config.Groups[0] // Get reference to the test group
+		_, err = runner.executeCommandInGroup(ctx, disallowedCmd, testGroup)
 		assert.Error(t, err)
 		t.Logf("Actual error: %v", err)
 		t.Logf("Error type: %T", err)
@@ -662,7 +671,8 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 		mockExecutor.On("Execute", mock.Anything, safeCmd, mock.Anything).
 			Return(&executor.Result{ExitCode: 0}, nil)
 
-		_, err = runner.executeCommand(context.Background(), safeCmd)
+		testGroup := &config.Groups[0] // Get reference to the test group
+		_, err = runner.executeCommandInGroup(context.Background(), safeCmd, testGroup)
 		assert.NoError(t, err)
 
 		// Test with unsafe environment variable value
@@ -674,7 +684,7 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 			Env:  []string{"DANGEROUS=value; rm -rf /"},
 		}
 
-		_, err = runner.executeCommand(context.Background(), unsafeCmd)
+		_, err = runner.executeCommandInGroup(context.Background(), unsafeCmd, testGroup)
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, security.ErrUnsafeEnvironmentVar), "expected error to wrap security.ErrUnsafeEnvironmentVar")
 	})
@@ -731,7 +741,8 @@ func TestRunner_LoadEnvironmentWithSecurity(t *testing.T) {
 	t.Run("load environment with unsafe values", func(t *testing.T) {
 		config := &runnertypes.Config{
 			Global: runnertypes.GlobalConfig{
-				WorkDir: "/tmp",
+				WorkDir:      "/tmp",
+				EnvAllowlist: []string{"DANGEROUS"}, // Allow the variable to pass filtering so it can be validated
 			},
 		}
 		runner, err := NewRunner(config)

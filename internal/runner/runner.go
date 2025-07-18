@@ -7,11 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
+	"maps"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -23,12 +24,14 @@ import (
 
 // Error definitions
 var (
-	ErrCommandFailed       = errors.New("command failed")
-	ErrUnclosedVariableRef = errors.New("unclosed variable reference")
-	ErrUndefinedVariable   = errors.New("undefined variable")
-	ErrCommandNotFound     = errors.New("command not found")
-	ErrCircularReference   = errors.New("circular variable reference detected")
-	ErrGroupVerification   = errors.New("group file verification failed")
+	ErrCommandFailed        = errors.New("command failed")
+	ErrUnclosedVariableRef  = errors.New("unclosed variable reference")
+	ErrUndefinedVariable    = errors.New("undefined variable")
+	ErrCommandNotFound      = errors.New("command not found")
+	ErrCircularReference    = errors.New("circular variable reference detected")
+	ErrGroupVerification    = errors.New("group file verification failed")
+	ErrGroupNotFound        = errors.New("group not found")
+	ErrVariableAccessDenied = errors.New("variable access denied")
 )
 
 // VerificationError contains detailed information about verification failures
@@ -64,6 +67,7 @@ type Runner struct {
 	templateEngine      *template.Engine
 	resourceManager     *resource.Manager
 	verificationManager *verification.Manager
+	envFilter           *environment.Filter
 }
 
 // Option is a function type for configuring Runner instances
@@ -138,6 +142,9 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 		opts.resourceManager = resource.NewManager(config.Global.WorkDir)
 	}
 
+	// Create environment filter
+	envFilter := environment.NewFilter(config)
+
 	return &Runner{
 		executor:            opts.executor,
 		config:              config,
@@ -146,6 +153,7 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 		templateEngine:      opts.templateEngine,
 		resourceManager:     opts.resourceManager,
 		verificationManager: opts.verificationManager,
+		envFilter:           envFilter,
 	}, nil
 }
 
@@ -153,6 +161,7 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 // If envFile is empty, only system environment variables will be loaded.
 // If loadSystemEnv is true, system environment variables will be loaded first,
 // then overridden by the .env file if specified.
+// Variables are filtered based on the global env_allowlist configuration.
 func (r *Runner) LoadEnvironment(envFile string, loadSystemEnv bool) error {
 	// Validate file permissions if a file is specified
 	if envFile != "" {
@@ -161,27 +170,33 @@ func (r *Runner) LoadEnvironment(envFile string, loadSystemEnv bool) error {
 		}
 	}
 
+	// Create environment filter
 	envMap := make(map[string]string)
 
-	// Load system environment variables if requested
+	// Load and filter system environment variables if requested
 	if loadSystemEnv {
-		for _, env := range os.Environ() {
-			if i := strings.Index(env, "="); i >= 0 {
-				envMap[env[:i]] = env[i+1:]
-			}
+		filteredSystemEnv, err := r.envFilter.FilterSystemEnvironment(nil)
+		if err != nil {
+			return fmt.Errorf("failed to filter system environment variables: %w", err)
 		}
+		maps.Copy(envMap, filteredSystemEnv)
 	}
 
-	// Load .env file if specified
+	// Load and filter .env file if specified
 	if envFile != "" {
 		fileEnv, err := godotenv.Read(envFile)
 		if err != nil {
 			return fmt.Errorf("failed to load environment file %s: %w", envFile, err)
 		}
-		// Override with values from .env file
-		for k, v := range fileEnv {
-			envMap[k] = v
+
+		// Filter .env file variables using global allowlist
+		filteredFileEnv, err := r.envFilter.FilterEnvFileVariables(fileEnv, nil)
+		if err != nil {
+			return fmt.Errorf("failed to filter .env file variables: %w", err)
 		}
+
+		// Override with filtered values from .env file
+		maps.Copy(envMap, filteredFileEnv)
 	}
 
 	// Validate all environment variables for safety
@@ -302,8 +317,8 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 		cmdCtx, cancel := r.createCommandContext(ctx, processedCmd)
 		defer cancel()
 
-		// Execute the command
-		result, err := r.executeCommand(cmdCtx, processedCmd)
+		// Execute the command with group context
+		result, err := r.executeCommandInGroup(cmdCtx, processedCmd, &processedGroup)
 		if err != nil {
 			fmt.Printf("    Command failed: %v\n", err)
 			return fmt.Errorf("command %s failed: %w", processedCmd.Name, err)
@@ -328,10 +343,10 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 	return nil
 }
 
-// executeCommand executes a single command with environment variable resolution
-func (r *Runner) executeCommand(ctx context.Context, cmd runnertypes.Command) (*executor.Result, error) {
-	// Resolve environment variables for the command
-	envVars, err := r.resolveEnvironmentVars(cmd)
+// executeCommandInGroup executes a command within a specific group context
+func (r *Runner) executeCommandInGroup(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup) (*executor.Result, error) {
+	// Resolve environment variables for the command with group context
+	envVars, err := r.resolveEnvironmentVars(cmd, group)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve environment variables: %w", err)
 	}
@@ -359,50 +374,72 @@ func (r *Runner) executeCommand(ctx context.Context, cmd runnertypes.Command) (*
 	return r.executor.Execute(ctx, cmd, envVars)
 }
 
-// resolveEnvironmentVars resolves environment variables for a command
-func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command) (map[string]string, error) {
-	envVars := make(map[string]string)
+// resolveEnvironmentVars resolves environment variables for a command with group context
+func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, group *runnertypes.CommandGroup) (map[string]string, error) {
+	var envVars map[string]string
+	var err error
 
-	// Start with system environment variables
-	for _, env := range os.Environ() {
-		parts := strings.SplitN(env, "=", envSeparatorParts)
-		if len(parts) == envSeparatorParts {
-			envVars[parts[0]] = parts[1]
+	// Use the filter to resolve group environment variables with allowlist filtering
+	if group != nil {
+		envVars, err = r.envFilter.ResolveGroupEnvironmentVars(group, r.envVars)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve group environment variables: %w", err)
 		}
-	}
+	} else {
+		// For commands without group context, use global allowlist and filter system environment variables
+		// FilterSystemEnvironment will create and return a new map
+		envVars, err = r.envFilter.FilterSystemEnvironment(nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to filter system environment variables: %w", err)
+		}
 
-	// Add loaded environment variables from .env file
-	for k, v := range r.envVars {
-		envVars[k] = v
+		// Add loaded environment variables from .env file (already filtered in LoadEnvironment)
+		maps.Copy(envVars, r.envVars)
 	}
 
 	// Add command-specific environment variables
 	for _, env := range cmd.Env {
 		parts := strings.SplitN(env, "=", envSeparatorParts)
-		if len(parts) == envSeparatorParts {
-			key := parts[0]
-			value := parts[1]
-
-			// Resolve variable references in the value
-			resolvedValue, err := r.resolveVariableReferences(value, envVars)
-			if err != nil {
-				return nil, fmt.Errorf("failed to resolve variable %s: %w", key, err)
-			}
-
-			envVars[key] = resolvedValue
+		if len(parts) != envSeparatorParts {
+			continue
 		}
-	}
 
+		variable, value := parts[0], parts[1]
+		allowed := r.envFilter.IsVariableAccessAllowed(variable, group)
+		if !allowed {
+			logDeniedEnvironmentVariableAccess(group, variable, cmd)
+			continue
+		}
+		// Resolve variable references in the value
+		resolvedValue, err := r.resolveVariableReferences(value, envVars, group)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve variable %s: %w", variable, err)
+		}
+		envVars[variable] = resolvedValue
+	}
 	return envVars, nil
 }
 
+func logDeniedEnvironmentVariableAccess(group *runnertypes.CommandGroup, variable string, cmd runnertypes.Command) {
+	if group != nil {
+		slog.Warn("Command environment variable access denied",
+			"variable", variable,
+			"command", cmd.Name,
+			"group", group.Name)
+	} else {
+		slog.Warn("Command environment variable access denied by global allowlist",
+			"variable", variable,
+			"command", cmd.Name)
+	}
+}
+
 // resolveVariableReferences resolves ${VAR} references in a string
-func (r *Runner) resolveVariableReferences(value string, envVars map[string]string) (string, error) {
-	return r.resolveVariableReferencesWithDepth(value, envVars, make(map[string]bool), 0)
+func (r *Runner) resolveVariableReferences(value string, envVars map[string]string, group *runnertypes.CommandGroup) (string, error) {
+	return r.resolveVariableReferencesWithDepth(value, envVars, make(map[string]bool), 0, group)
 }
 
 // resolveVariableReferencesWithDepth resolves ${VAR} references with circular dependency detection
-func (r *Runner) resolveVariableReferencesWithDepth(value string, envVars map[string]string, resolving map[string]bool, depth int) (string, error) {
+func (r *Runner) resolveVariableReferencesWithDepth(value string, envVars map[string]string, resolving map[string]bool, depth int, group *runnertypes.CommandGroup) (string, error) {
 	// Prevent infinite recursion by limiting the depth
 	if depth > maxResolutionDepth {
 		return "", fmt.Errorf("%w: maximum resolution depth exceeded (%d)", ErrCircularReference, maxResolutionDepth)
@@ -436,6 +473,18 @@ func (r *Runner) resolveVariableReferencesWithDepth(value string, envVars map[st
 			return "", fmt.Errorf("%w: variable %s references itself", ErrCircularReference, varName)
 		}
 
+		// Check if variable access is allowed for this group
+		if !r.envFilter.IsVariableAccessAllowed(varName, group) {
+			groupName := ""
+			if group != nil {
+				groupName = group.Name
+			}
+			if groupName == "" {
+				return "", fmt.Errorf("%w: %s (context: global)", ErrVariableAccessDenied, varName)
+			}
+			return "", fmt.Errorf("%w: %s (group: %s)", ErrVariableAccessDenied, varName, groupName)
+		}
+
 		varValue, exists := envVars[varName]
 		if !exists {
 			return "", fmt.Errorf("%w: %s", ErrUndefinedVariable, varName)
@@ -445,7 +494,7 @@ func (r *Runner) resolveVariableReferencesWithDepth(value string, envVars map[st
 		resolving[varName] = true
 
 		// Recursively resolve the variable value
-		resolvedValue, err := r.resolveVariableReferencesWithDepth(varValue, envVars, resolving, depth+1)
+		resolvedValue, err := r.resolveVariableReferencesWithDepth(varValue, envVars, resolving, depth+1, group)
 		if err != nil {
 			return "", err
 		}
@@ -468,46 +517,6 @@ func (r *Runner) createCommandContext(ctx context.Context, cmd runnertypes.Comma
 	}
 
 	return context.WithTimeout(ctx, timeout)
-}
-
-// ExecuteCommand executes a single command by name from any group
-func (r *Runner) ExecuteCommand(ctx context.Context, commandName string) error {
-	// Find the command in all groups
-	for _, group := range r.config.Groups {
-		for _, cmd := range group.Commands {
-			if cmd.Name == commandName {
-				fmt.Printf("Executing command: %s from group: %s\n", cmd.Name, group.Name)
-
-				// Execute command with proper context cleanup
-				result, err := func() (*executor.Result, error) {
-					cmdCtx, cancel := r.createCommandContext(ctx, cmd)
-					defer cancel()
-					return r.executeCommand(cmdCtx, cmd)
-				}()
-				if err != nil {
-					return fmt.Errorf("command %s failed: %w", cmd.Name, err)
-				}
-
-				// Display result
-				fmt.Printf("Exit code: %d\n", result.ExitCode)
-				if result.Stdout != "" {
-					fmt.Printf("Stdout: %s\n", result.Stdout)
-				}
-				if result.Stderr != "" {
-					fmt.Printf("Stderr: %s\n", result.Stderr)
-				}
-
-				// Check if command succeeded
-				if result.ExitCode != 0 {
-					return fmt.Errorf("%w: command %s failed with exit code %d", ErrCommandFailed, cmd.Name, result.ExitCode)
-				}
-
-				return nil
-			}
-		}
-	}
-
-	return fmt.Errorf("%w: %s", ErrCommandNotFound, commandName)
 }
 
 // ListCommands lists all available commands
