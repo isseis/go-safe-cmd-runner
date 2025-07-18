@@ -482,6 +482,9 @@ func (r *Runner) resolveVariableReferencesWithDepth(value string, envVars map[st
 			if group != nil {
 				groupName = group.Name
 			}
+			if groupName == "" {
+				return "", fmt.Errorf("%w: %s (context: global)", ErrVariableAccessDenied, varName)
+			}
 			return "", fmt.Errorf("%w: %s (group: %s)", ErrVariableAccessDenied, varName, groupName)
 		}
 
