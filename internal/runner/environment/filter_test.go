@@ -682,59 +682,6 @@ func TestValidateVariableValue(t *testing.T) {
 	}
 }
 
-func TestContainsSensitiveData(t *testing.T) {
-	config := &runnertypes.Config{}
-	filter := NewFilter(config)
-
-	tests := []struct {
-		name     string
-		varName  string
-		value    string
-		expected bool
-	}{
-		{
-			name:     "safe variable",
-			varName:  "SAFE_VAR",
-			value:    "safe_value",
-			expected: false,
-		},
-		{
-			name:     "password in name",
-			varName:  "DB_PASSWORD",
-			value:    "safe_value",
-			expected: true,
-		},
-		{
-			name:     "secret in value",
-			varName:  "CONFIG",
-			value:    "secret_token_123",
-			expected: true,
-		},
-		{
-			name:     "token in name",
-			varName:  "API_TOKEN",
-			value:    "safe_value",
-			expected: true,
-		},
-		{
-			name:     "key in value",
-			varName:  "CONFIG",
-			value:    "private_key_data",
-			expected: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := filter.ContainsSensitiveData(tt.varName, tt.value)
-			if result != tt.expected {
-				t.Errorf("ContainsSensitiveData(%s, %s): expected %v, got %v",
-					tt.varName, tt.value, tt.expected, result)
-			}
-		})
-	}
-}
-
 func TestGetVariableNames(t *testing.T) {
 	config := &runnertypes.Config{}
 	filter := NewFilter(config)

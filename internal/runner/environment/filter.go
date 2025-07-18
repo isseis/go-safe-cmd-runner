@@ -301,25 +301,6 @@ func (f *Filter) ValidateEnvironmentVariable(name, value string) error {
 	return nil
 }
 
-// ContainsSensitiveData checks if a variable name or value contains sensitive information
-func (f *Filter) ContainsSensitiveData(name, value string) bool {
-	sensitivePatterns := []string{
-		"password", "passwd", "secret", "token", "key", "auth",
-		"credential", "private", "secure", "hidden", "confidential",
-	}
-
-	lowerName := strings.ToLower(name)
-	lowerValue := strings.ToLower(value)
-
-	for _, pattern := range sensitivePatterns {
-		if strings.Contains(lowerName, pattern) || strings.Contains(lowerValue, pattern) {
-			return true
-		}
-	}
-
-	return false
-}
-
 // LogEnvironmentFiltering logs environment variable filtering actions
 func (f *Filter) LogEnvironmentFiltering(source string, totalVars, filteredVars int, allowlistSize int) {
 	slog.Info("Environment variable filtering completed",
