@@ -183,7 +183,8 @@ func (v *Validator) Verify(filePath string) error {
 	actualHash, err := v.calculateHash(targetPath)
 	if os.IsNotExist(err) {
 		return err
-	} else if err != nil {
+	}
+	if err != nil {
 		return fmt.Errorf("failed to calculate file hash: %w", err)
 	}
 

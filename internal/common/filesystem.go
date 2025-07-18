@@ -78,13 +78,10 @@ func (fs *DefaultFileSystem) Lstat(path string) (fs.FileInfo, error) {
 // FileExists checks if a file or directory exists
 func (fs *DefaultFileSystem) FileExists(path string) (bool, error) {
 	_, err := os.Lstat(path)
-	if err == nil {
-		return true, nil
-	}
 	if os.IsNotExist(err) {
 		return false, nil
 	}
-	return false, err
+	return err == nil, err
 }
 
 // IsDir checks if the path is a directory

@@ -174,27 +174,29 @@ func (f *Filter) ResolveGroupEnvironmentVars(group *runnertypes.CommandGroup, lo
 	// Add group-level environment variables (these override both system and .env vars)
 	for _, env := range group.Env {
 		parts := strings.SplitN(env, "=", envSeparatorParts)
-		if len(parts) == envSeparatorParts {
-			key := parts[0]
-			value := parts[1]
+		if len(parts) != envSeparatorParts {
+			continue
+		}
 
-			// Validate environment variable name and value
-			if err := f.ValidateEnvironmentVariable(key, value); err != nil {
-				slog.Warn("Group environment variable validation failed",
-					"variable", key,
-					"group", group.Name,
-					"error", err)
-				continue
-			}
+		key := parts[0]
+		value := parts[1]
 
-			// Check if variable is allowed
-			if f.isVariableAllowed(key, group.EnvAllowlist) {
-				result[key] = value
-			} else {
-				slog.Warn("Group environment variable rejected by allowlist",
-					"variable", key,
-					"group", group.Name)
-			}
+		// Validate environment variable name and value
+		if err := f.ValidateEnvironmentVariable(key, value); err != nil {
+			slog.Warn("Group environment variable validation failed",
+				"variable", key,
+				"group", group.Name,
+				"error", err)
+			continue
+		}
+
+		// Check if variable is allowed
+		if f.isVariableAllowed(key, group.EnvAllowlist) {
+			result[key] = value
+		} else {
+			slog.Warn("Group environment variable rejected by allowlist",
+				"variable", key,
+				"group", group.Name)
 		}
 	}
 

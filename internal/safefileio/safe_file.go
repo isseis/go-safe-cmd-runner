@@ -414,16 +414,16 @@ func (fs *osFS) safeOpenFileInternal(filePath string, flag int, perm os.FileMode
 	// #nosec G304 - absPath is properly validated above
 	file, err := os.OpenFile(absPath, flag|syscall.O_NOFOLLOW, perm)
 	if err != nil {
-		switch {
-		case os.IsExist(err):
+		if os.IsExist(err) {
 			return nil, ErrFileExists
-		case isNoFollowError(err):
-			return nil, ErrIsSymlink
-		case os.IsNotExist(err):
-			return nil, err // Return the original error for file not found
-		default:
-			return nil, fmt.Errorf("failed to open file: %w", err)
 		}
+		if isNoFollowError(err) {
+			return nil, ErrIsSymlink
+		}
+		if os.IsNotExist(err) {
+			return nil, err // Return the original error for file not found
+		}
+		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
 
 	// Detect symlink attack after ensureParentDirNoSymlinks call above.

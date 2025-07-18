@@ -151,13 +151,10 @@ func (fs *osFileSystem) RemoveAll(path string) error {
 
 func (fs *osFileSystem) FileExists(path string) (bool, error) {
 	_, err := os.Lstat(path)
-	if err == nil {
-		return true, nil
-	}
 	if os.IsNotExist(err) {
 		return false, nil
 	}
-	return false, err
+	return err == nil, err
 }
 
 // consoleOutputWriter implements OutputWriter by writing to stdout/stderr

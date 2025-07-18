@@ -190,8 +190,7 @@ func (r *Runner) LoadEnvironment(envFile string, loadSystemEnv bool) error {
 		}
 
 		// Filter .env file variables using global allowlist
-		groupAllowlist := []string{}
-		filteredFileEnv, err := r.envFilter.FilterEnvFileVariables(fileEnv, groupAllowlist)
+		filteredFileEnv, err := r.envFilter.FilterEnvFileVariables(fileEnv, nil)
 		if err != nil {
 			return fmt.Errorf("failed to filter .env file variables: %w", err)
 		}
