@@ -322,7 +322,7 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 		defer cancel()
 
 		// Execute the command with group context
-		result, err := r.executeCommandInGroup(cmdCtx, processedCmd, processedGroup.Name)
+		result, err := r.executeCommandInGroup(cmdCtx, processedCmd, &processedGroup)
 		if err != nil {
 			fmt.Printf("    Command failed: %v\n", err)
 			return fmt.Errorf("command %s failed: %w", processedCmd.Name, err)
@@ -348,9 +348,9 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 }
 
 // executeCommandInGroup executes a command within a specific group context
-func (r *Runner) executeCommandInGroup(ctx context.Context, cmd runnertypes.Command, groupName string) (*executor.Result, error) {
+func (r *Runner) executeCommandInGroup(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup) (*executor.Result, error) {
 	// Resolve environment variables for the command with group context
-	envVars, err := r.resolveEnvironmentVars(cmd, groupName)
+	envVars, err := r.resolveEnvironmentVars(cmd, group)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve environment variables: %w", err)
 	}
@@ -379,13 +379,13 @@ func (r *Runner) executeCommandInGroup(ctx context.Context, cmd runnertypes.Comm
 }
 
 // resolveEnvironmentVars resolves environment variables for a command with group context
-func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, groupName string) (map[string]string, error) {
+func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, group *runnertypes.CommandGroup) (map[string]string, error) {
 	var envVars map[string]string
 	var err error
 
 	// Use the filter to resolve group environment variables with allowlist filtering
-	if groupName != "" {
-		envVars, err = r.envFilter.ResolveGroupEnvironmentVars(groupName, r.envVars)
+	if group != nil {
+		envVars, err = r.envFilter.ResolveGroupEnvironmentVars(group, r.envVars)
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve group environment variables: %w", err)
 		}
@@ -417,25 +417,25 @@ func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, groupName strin
 
 			// Check if variable is allowed
 			allowed := false
-			if groupName != "" {
-				allowed = r.envFilter.IsVariableAccessAllowed(key, groupName)
+			if group != nil {
+				allowed = r.envFilter.IsVariableAccessAllowed(key, group)
 			} else {
 				allowed = r.envFilter.IsGlobalVariableAllowed(key)
 			}
 
 			if allowed {
 				// Resolve variable references in the value
-				resolvedValue, err := r.resolveVariableReferences(value, envVars, groupName)
+				resolvedValue, err := r.resolveVariableReferences(value, envVars, group)
 				if err != nil {
 					return nil, fmt.Errorf("failed to resolve variable %s: %w", key, err)
 				}
 				envVars[key] = resolvedValue
 			} else {
-				if groupName != "" {
+				if group != nil {
 					slog.Warn("Command environment variable access denied",
 						"variable", key,
 						"command", cmd.Name,
-						"group", groupName)
+						"group", group.Name)
 				} else {
 					slog.Warn("Command environment variable access denied by global allowlist",
 						"variable", key,
@@ -449,12 +449,12 @@ func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, groupName strin
 }
 
 // resolveVariableReferences resolves ${VAR} references in a string
-func (r *Runner) resolveVariableReferences(value string, envVars map[string]string, groupName string) (string, error) {
-	return r.resolveVariableReferencesWithDepth(value, envVars, make(map[string]bool), 0, groupName)
+func (r *Runner) resolveVariableReferences(value string, envVars map[string]string, group *runnertypes.CommandGroup) (string, error) {
+	return r.resolveVariableReferencesWithDepth(value, envVars, make(map[string]bool), 0, group)
 }
 
 // resolveVariableReferencesWithDepth resolves ${VAR} references with circular dependency detection
-func (r *Runner) resolveVariableReferencesWithDepth(value string, envVars map[string]string, resolving map[string]bool, depth int, groupName string) (string, error) {
+func (r *Runner) resolveVariableReferencesWithDepth(value string, envVars map[string]string, resolving map[string]bool, depth int, group *runnertypes.CommandGroup) (string, error) {
 	// Prevent infinite recursion by limiting the depth
 	if depth > maxResolutionDepth {
 		return "", fmt.Errorf("%w: maximum resolution depth exceeded (%d)", ErrCircularReference, maxResolutionDepth)
@@ -489,7 +489,11 @@ func (r *Runner) resolveVariableReferencesWithDepth(value string, envVars map[st
 		}
 
 		// Check if variable access is allowed for this group
-		if !r.envFilter.IsVariableAccessAllowed(varName, groupName) {
+		if !r.envFilter.IsVariableAccessAllowed(varName, group) {
+			groupName := ""
+			if group != nil {
+				groupName = group.Name
+			}
 			return "", fmt.Errorf("%w: %s (group: %s)", ErrVariableAccessDenied, varName, groupName)
 		}
 
@@ -502,7 +506,7 @@ func (r *Runner) resolveVariableReferencesWithDepth(value string, envVars map[st
 		resolving[varName] = true
 
 		// Recursively resolve the variable value
-		resolvedValue, err := r.resolveVariableReferencesWithDepth(varValue, envVars, resolving, depth+1, groupName)
+		resolvedValue, err := r.resolveVariableReferencesWithDepth(varValue, envVars, resolving, depth+1, group)
 		if err != nil {
 			return "", err
 		}

@@ -367,57 +367,56 @@ func TestIsVariableAccessAllowed(t *testing.T) {
 	}
 
 	filter := NewFilter(config)
+	testGroup := &config.Groups[0] // Get reference to the test group
 
 	tests := []struct {
-		name      string
-		variable  string
-		groupName string
-		expected  bool
+		name     string
+		variable string
+		group    *runnertypes.CommandGroup
+		expected bool
 	}{
 		{
-			name:      "global variable allowed",
-			variable:  "GLOBAL_VAR",
-			groupName: "testgroup",
-			expected:  true,
+			name:     "global variable allowed",
+			variable: "GLOBAL_VAR",
+			group:    testGroup,
+			expected: true,
 		},
 		{
-			name:      "group variable allowed",
-			variable:  "GROUP_VAR",
-			groupName: "testgroup",
-			expected:  true,
+			name:     "group variable allowed",
+			variable: "GROUP_VAR",
+			group:    testGroup,
+			expected: true,
 		},
 		{
-			name:      "variable not allowed",
-			variable:  "FORBIDDEN_VAR",
-			groupName: "testgroup",
-			expected:  false,
+			name:     "variable not allowed",
+			variable: "FORBIDDEN_VAR",
+			group:    testGroup,
+			expected: false,
 		},
 		{
-			name:      "non-existent group",
-			variable:  "ANY_VAR",
-			groupName: "nonexistent",
-			expected:  false,
+			name:     "nil group uses global allowlist",
+			variable: "GLOBAL_VAR",
+			group:    nil,
+			expected: true,
 		},
 		{
-			name:      "empty group name uses global allowlist",
-			variable:  "GLOBAL_VAR",
-			groupName: "",
-			expected:  true,
-		},
-		{
-			name:      "empty group name rejects non-global var",
-			variable:  "GROUP_VAR",
-			groupName: "",
-			expected:  false,
+			name:     "nil group rejects non-global var",
+			variable: "GROUP_VAR",
+			group:    nil,
+			expected: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := filter.IsVariableAccessAllowed(tt.variable, tt.groupName)
+			result := filter.IsVariableAccessAllowed(tt.variable, tt.group)
 			if result != tt.expected {
+				groupName := "nil"
+				if tt.group != nil {
+					groupName = tt.group.Name
+				}
 				t.Errorf("IsVariableAccessAllowed(%s, %s): expected %v, got %v",
-					tt.variable, tt.groupName, tt.expected, result)
+					tt.variable, groupName, tt.expected, result)
 			}
 		})
 	}

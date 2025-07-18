@@ -434,7 +434,8 @@ func TestRunner_resolveVariableReferences(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := runner.resolveVariableReferences(tt.input, envVars, "test-group")
+			testGroup := &config.Groups[0] // Get reference to the test group
+			result, err := runner.resolveVariableReferences(tt.input, envVars, testGroup)
 
 			if tt.expectedErr != nil {
 				assert.Error(t, err)
@@ -517,7 +518,7 @@ func TestRunner_resolveEnvironmentVars(t *testing.T) {
 		},
 	}
 
-	envVars, err := runner.resolveEnvironmentVars(cmd, "test-group")
+	envVars, err := runner.resolveEnvironmentVars(cmd, &config.Groups[0])
 	assert.NoError(t, err)
 
 	// Check that loaded vars are present
@@ -581,7 +582,8 @@ func TestRunner_resolveVariableReferences_ComplexCircular(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := runner.resolveVariableReferences(tt.input, envVars, "test-group")
+			testGroup := &config.Groups[0] // Get reference to the test group
+			_, err := runner.resolveVariableReferences(tt.input, envVars, testGroup)
 
 			assert.Error(t, err)
 			assert.True(t, errors.Is(err, tt.expectedErr), "expected error %v, got %v", tt.expectedErr, err)
@@ -623,7 +625,8 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 		mockExecutor.On("Execute", mock.Anything, allowedCmd, mock.Anything).Return(&executor.Result{ExitCode: 0}, nil)
 
 		ctx := context.Background()
-		_, err = runner.executeCommandInGroup(ctx, allowedCmd, "test-group")
+		testGroup := &config.Groups[0] // Get reference to the test group
+		_, err = runner.executeCommandInGroup(ctx, allowedCmd, testGroup)
 		assert.NoError(t, err)
 	})
 
@@ -642,7 +645,8 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 		}
 
 		ctx := context.Background()
-		_, err = runner.executeCommandInGroup(ctx, disallowedCmd, "test-group")
+		testGroup := &config.Groups[0] // Get reference to the test group
+		_, err = runner.executeCommandInGroup(ctx, disallowedCmd, testGroup)
 		assert.Error(t, err)
 		t.Logf("Actual error: %v", err)
 		t.Logf("Error type: %T", err)
@@ -667,7 +671,8 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 		mockExecutor.On("Execute", mock.Anything, safeCmd, mock.Anything).
 			Return(&executor.Result{ExitCode: 0}, nil)
 
-		_, err = runner.executeCommandInGroup(context.Background(), safeCmd, "test-group")
+		testGroup := &config.Groups[0] // Get reference to the test group
+		_, err = runner.executeCommandInGroup(context.Background(), safeCmd, testGroup)
 		assert.NoError(t, err)
 
 		// Test with unsafe environment variable value
@@ -679,7 +684,8 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 			Env:  []string{"DANGEROUS=value; rm -rf /"},
 		}
 
-		_, err = runner.executeCommandInGroup(context.Background(), unsafeCmd, "test-group")
+		testGroup = &config.Groups[0] // Get reference to the test group
+		_, err = runner.executeCommandInGroup(context.Background(), unsafeCmd, testGroup)
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, security.ErrUnsafeEnvironmentVar), "expected error to wrap security.ErrUnsafeEnvironmentVar")
 	})

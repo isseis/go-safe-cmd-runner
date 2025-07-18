@@ -120,18 +120,9 @@ func (f *Filter) BuildAllowedVariableMaps() map[string][]string {
 }
 
 // ResolveGroupEnvironmentVars resolves environment variables for a specific group
-func (f *Filter) ResolveGroupEnvironmentVars(groupName string, loadedEnvVars map[string]string) (map[string]string, error) {
-	// Find the group
-	var group *runnertypes.CommandGroup
-	for _, g := range f.config.Groups {
-		if g.Name == groupName {
-			group = &g
-			break
-		}
-	}
-
+func (f *Filter) ResolveGroupEnvironmentVars(group *runnertypes.CommandGroup, loadedEnvVars map[string]string) (map[string]string, error) {
 	if group == nil {
-		return nil, fmt.Errorf("%w: %s", ErrGroupNotFound, groupName)
+		return nil, fmt.Errorf("%w: group is nil", ErrGroupNotFound)
 	}
 
 	// Filter system environment variables
@@ -167,7 +158,7 @@ func (f *Filter) ResolveGroupEnvironmentVars(groupName string, loadedEnvVars map
 			} else {
 				slog.Warn("Group environment variable rejected by allowlist",
 					"variable", key,
-					"group", groupName)
+					"group", group.Name)
 			}
 		}
 	}
@@ -176,33 +167,17 @@ func (f *Filter) ResolveGroupEnvironmentVars(groupName string, loadedEnvVars map
 }
 
 // IsVariableAccessAllowed checks if a variable can be accessed in the given group context
-func (f *Filter) IsVariableAccessAllowed(variable string, groupName string) bool {
-	// If no group name is provided, check against global allowlist only
-	if groupName == "" {
-		return f.IsGlobalVariableAllowed(variable)
-	}
-
-	// Find the group
-	var group *runnertypes.CommandGroup
-	for _, g := range f.config.Groups {
-		if g.Name == groupName {
-			group = &g
-			break
-		}
-	}
-
+func (f *Filter) IsVariableAccessAllowed(variable string, group *runnertypes.CommandGroup) bool {
+	// If no group is provided, check against global allowlist only
 	if group == nil {
-		slog.Warn("Group not found for variable access check",
-			"variable", variable,
-			"group", groupName)
-		return false
+		return f.IsGlobalVariableAllowed(variable)
 	}
 
 	allowed := f.isVariableAllowed(variable, group.EnvAllowlist)
 	if !allowed {
 		slog.Warn("Variable access denied",
 			"variable", variable,
-			"group", groupName,
+			"group", group.Name,
 			"allowlist_size", len(group.EnvAllowlist)+len(f.globalAllowlist))
 	}
 
@@ -320,7 +295,12 @@ func (f *Filter) LogEnvironmentFiltering(source string, totalVars, filteredVars 
 }
 
 // LogVariableAccess logs variable access attempts for auditing
-func (f *Filter) LogVariableAccess(variable string, groupName string, allowed bool) {
+func (f *Filter) LogVariableAccess(variable string, group *runnertypes.CommandGroup, allowed bool) {
+	groupName := ""
+	if group != nil {
+		groupName = group.Name
+	}
+
 	if allowed {
 		slog.Debug("Variable access granted",
 			"variable", variable,
