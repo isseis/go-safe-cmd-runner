@@ -20,7 +20,76 @@ func TestNewFilter(t *testing.T) {
 	}
 }
 
-func TestFilterSystemEnvironment(t *testing.T) {
+func TestFilterSystemEnvironmentGlobalAllowlist(t *testing.T) {
+	// Set test environment variables
+	os.Setenv("TEST_VAR1", "value1")
+	os.Setenv("TEST_VAR2", "value2")
+	os.Setenv("TEST_VAR3", "value3")
+	defer func() {
+		os.Unsetenv("TEST_VAR1")
+		os.Unsetenv("TEST_VAR2")
+		os.Unsetenv("TEST_VAR3")
+	}()
+
+	tests := []struct {
+		name      string
+		allowlist []string
+		expected  map[string]string
+	}{
+		{
+			name:      "empty allowlist",
+			allowlist: []string{},
+			expected:  map[string]string{},
+		},
+		{
+			name:      "single allowed variable",
+			allowlist: []string{"TEST_VAR1"},
+			expected:  map[string]string{"TEST_VAR1": "value1"},
+		},
+		{
+			name:      "multiple allowed variables",
+			allowlist: []string{"TEST_VAR1", "TEST_VAR2"},
+			expected:  map[string]string{"TEST_VAR1": "value1", "TEST_VAR2": "value2"},
+		},
+		{
+			name:      "non-existent variable in allowlist",
+			allowlist: []string{"NON_EXISTENT"},
+			expected:  map[string]string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &runnertypes.Config{
+				Global: runnertypes.GlobalConfig{
+					EnvAllowlist: tt.allowlist,
+				},
+			}
+			filter := NewFilter(config)
+			result, err := filter.FilterSystemEnvironment(nil)
+			if err != nil {
+				t.Fatalf("FilterSystemEnvironment returned error: %v", err)
+			}
+
+			for key, expectedValue := range tt.expected {
+				if actualValue, exists := result[key]; !exists {
+					t.Errorf("Expected variable %s not found in result", key)
+				} else if actualValue != expectedValue {
+					t.Errorf("Variable %s: expected %s, got %s", key, expectedValue, actualValue)
+				}
+			}
+
+			// Check that no unexpected variables are present
+			for key := range result {
+				if _, expected := tt.expected[key]; !expected {
+					t.Errorf("Unexpected variable %s found in result", key)
+				}
+			}
+		})
+	}
+}
+
+func TestFilterSystemEnvironmentGroupAllowlist(t *testing.T) {
 	config := &runnertypes.Config{}
 	filter := NewFilter(config)
 
@@ -86,7 +155,69 @@ func TestFilterSystemEnvironment(t *testing.T) {
 	}
 }
 
-func TestFilterEnvFileVariables(t *testing.T) {
+func TestFilterEnvFileVariablesGlobalAllowlist(t *testing.T) {
+	envFileVars := map[string]string{
+		"ENV_VAR1": "value1",
+		"ENV_VAR2": "value2",
+		"ENV_VAR3": "value3",
+	}
+
+	tests := []struct {
+		name      string
+		allowlist []string
+		expected  map[string]string
+	}{
+		{
+			name:      "empty allowlist",
+			allowlist: []string{},
+			expected:  map[string]string{},
+		},
+		{
+			name:      "single allowed variable",
+			allowlist: []string{"ENV_VAR1"},
+			expected:  map[string]string{"ENV_VAR1": "value1"},
+		},
+		{
+			name:      "multiple allowed variables",
+			allowlist: []string{"ENV_VAR1", "ENV_VAR3"},
+			expected:  map[string]string{"ENV_VAR1": "value1", "ENV_VAR3": "value3"},
+		},
+		{
+			name:      "all variables allowed",
+			allowlist: []string{"ENV_VAR1", "ENV_VAR2", "ENV_VAR3"},
+			expected:  envFileVars,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &runnertypes.Config{
+				Global: runnertypes.GlobalConfig{
+					EnvAllowlist: tt.allowlist,
+				},
+			}
+			filter := NewFilter(config)
+			result, err := filter.FilterEnvFileVariables(envFileVars, nil)
+			if err != nil {
+				t.Fatalf("FilterEnvFileVariables returned error: %v", err)
+			}
+
+			if len(result) != len(tt.expected) {
+				t.Errorf("Expected %d variables, got %d", len(tt.expected), len(result))
+			}
+
+			for key, expectedValue := range tt.expected {
+				if actualValue, exists := result[key]; !exists {
+					t.Errorf("Expected variable %s not found in result", key)
+				} else if actualValue != expectedValue {
+					t.Errorf("Variable %s: expected %s, got %s", key, expectedValue, actualValue)
+				}
+			}
+		})
+	}
+}
+
+func TestFilterEnvFileVariablesGroupAllowlist(t *testing.T) {
 	config := &runnertypes.Config{}
 	filter := NewFilter(config)
 

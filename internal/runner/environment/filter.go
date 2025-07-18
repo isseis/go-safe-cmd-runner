@@ -49,7 +49,7 @@ func NewFilter(config *runnertypes.Config) *Filter {
 }
 
 // FilterSystemEnvironment filters system environment variables based on the provided allowlist
-func (f *Filter) FilterSystemEnvironment(allowlist []string) (map[string]string, error) {
+func (f *Filter) FilterSystemEnvironment(groupAllowlist []string) (map[string]string, error) {
 	result := make(map[string]string)
 
 	// Get system environment variables
@@ -63,7 +63,7 @@ func (f *Filter) FilterSystemEnvironment(allowlist []string) (map[string]string,
 		value := parts[1]
 
 		// Check if variable is in allowlist
-		if f.isVariableAllowed(key, allowlist) {
+		if f.isVariableAllowed(key, groupAllowlist) {
 			result[key] = value
 		}
 	}
@@ -71,18 +71,18 @@ func (f *Filter) FilterSystemEnvironment(allowlist []string) (map[string]string,
 	slog.Debug("Filtered system environment variables",
 		"total_vars", len(os.Environ()),
 		"filtered_vars", len(result),
-		"allowlist_size", len(allowlist))
+		"allowlist_size", len(groupAllowlist)+len(f.globalAllowlist))
 
 	return result, nil
 }
 
 // FilterEnvFileVariables filters environment variables from .env file based on allowlist
-func (f *Filter) FilterEnvFileVariables(envFileVars map[string]string, allowlist []string) (map[string]string, error) {
+func (f *Filter) FilterEnvFileVariables(envFileVars map[string]string, groupAllowlist []string) (map[string]string, error) {
 	result := make(map[string]string)
 
 	for key, value := range envFileVars {
 		// Check if variable is in allowlist
-		if f.isVariableAllowed(key, allowlist) {
+		if f.isVariableAllowed(key, groupAllowlist) {
 			result[key] = value
 		} else {
 			slog.Warn("Environment variable from .env file rejected by allowlist",
@@ -94,7 +94,7 @@ func (f *Filter) FilterEnvFileVariables(envFileVars map[string]string, allowlist
 	slog.Debug("Filtered .env file variables",
 		"total_vars", len(envFileVars),
 		"filtered_vars", len(result),
-		"allowlist_size", len(allowlist))
+		"allowlist_size", len(groupAllowlist)+len(f.globalAllowlist))
 
 	return result, nil
 }
@@ -134,13 +134,8 @@ func (f *Filter) ResolveGroupEnvironmentVars(groupName string, loadedEnvVars map
 		return nil, fmt.Errorf("%w: %s", ErrGroupNotFound, groupName)
 	}
 
-	// Build combined allowlist
-	allowlist := make([]string, 0, len(f.config.Global.EnvAllowlist)+len(group.EnvAllowlist))
-	allowlist = append(allowlist, f.config.Global.EnvAllowlist...)
-	allowlist = append(allowlist, group.EnvAllowlist...)
-
 	// Filter system environment variables
-	filteredSystemEnv, err := f.FilterSystemEnvironment(allowlist)
+	filteredSystemEnv, err := f.FilterSystemEnvironment(group.EnvAllowlist)
 	if err != nil {
 		return nil, fmt.Errorf("failed to filter system environment: %w", err)
 	}
@@ -154,7 +149,7 @@ func (f *Filter) ResolveGroupEnvironmentVars(groupName string, loadedEnvVars map
 	// Add loaded environment variables from .env file (already filtered in LoadEnvironment)
 	// These override system variables
 	for k, v := range loadedEnvVars {
-		if f.isVariableAllowed(k, allowlist) {
+		if f.isVariableAllowed(k, group.EnvAllowlist) {
 			result[k] = v
 		}
 	}
@@ -167,7 +162,7 @@ func (f *Filter) ResolveGroupEnvironmentVars(groupName string, loadedEnvVars map
 			value := parts[1]
 
 			// Check if variable is allowed
-			if f.isVariableAllowed(key, allowlist) {
+			if f.isVariableAllowed(key, group.EnvAllowlist) {
 				result[key] = value
 			} else {
 				slog.Warn("Group environment variable rejected by allowlist",
@@ -203,18 +198,12 @@ func (f *Filter) IsVariableAccessAllowed(variable string, groupName string) bool
 		return false
 	}
 
-	// Build combined allowlist
-	allowlist := make([]string, 0, len(f.config.Global.EnvAllowlist)+len(group.EnvAllowlist))
-	allowlist = append(allowlist, f.config.Global.EnvAllowlist...)
-	allowlist = append(allowlist, group.EnvAllowlist...)
-
-	allowed := f.isVariableAllowed(variable, allowlist)
-
+	allowed := f.isVariableAllowed(variable, group.EnvAllowlist)
 	if !allowed {
 		slog.Warn("Variable access denied",
 			"variable", variable,
 			"group", groupName,
-			"allowlist_size", len(allowlist))
+			"allowlist_size", len(group.EnvAllowlist)+len(f.globalAllowlist))
 	}
 
 	return allowed
@@ -222,7 +211,7 @@ func (f *Filter) IsVariableAccessAllowed(variable string, groupName string) bool
 
 // IsGlobalVariableAllowed checks if a variable is allowed by global allowlist only
 func (f *Filter) IsGlobalVariableAllowed(variable string) bool {
-	allowed := f.isVariableAllowed(variable, f.config.Global.EnvAllowlist)
+	allowed := f.isVariableAllowed(variable, nil)
 
 	if !allowed {
 		slog.Warn("Variable access denied by global allowlist",
@@ -236,19 +225,14 @@ func (f *Filter) IsGlobalVariableAllowed(variable string) bool {
 // isVariableAllowed checks if a variable is in the allowlist
 // It first checks the global allowlist map for O(1) lookups
 // If not found in the global map, it falls back to checking the provided allowlist slice
-func (f *Filter) isVariableAllowed(variable string, allowlist []string) bool {
-	// If allowlist is empty, nothing is allowed
-	if len(allowlist) == 0 {
-		return false
-	}
-
+func (f *Filter) isVariableAllowed(variable string, groupAllowlist []string) bool {
 	// Check the global map first for O(1) lookup
 	if f.globalAllowlist[variable] {
 		return true
 	}
 
 	// If not found in global map, check the provided allowlist
-	return slices.Contains(allowlist, variable)
+	return len(groupAllowlist) > 0 && slices.Contains(groupAllowlist, variable)
 }
 
 // ValidateVariableName validates that a variable name is safe and well-formed

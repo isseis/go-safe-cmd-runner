@@ -174,7 +174,7 @@ func (r *Runner) LoadEnvironment(envFile string, loadSystemEnv bool) error {
 
 	// Load and filter system environment variables if requested
 	if loadSystemEnv {
-		filteredSystemEnv, err := r.envFilter.FilterSystemEnvironment(r.config.Global.EnvAllowlist)
+		filteredSystemEnv, err := r.envFilter.FilterSystemEnvironment(nil)
 		if err != nil {
 			return fmt.Errorf("failed to filter system environment variables: %w", err)
 		}
@@ -191,7 +191,8 @@ func (r *Runner) LoadEnvironment(envFile string, loadSystemEnv bool) error {
 		}
 
 		// Filter .env file variables using global allowlist
-		filteredFileEnv, err := r.envFilter.FilterEnvFileVariables(fileEnv, r.config.Global.EnvAllowlist)
+		groupAllowlist := []string{}
+		filteredFileEnv, err := r.envFilter.FilterEnvFileVariables(fileEnv, groupAllowlist)
 		if err != nil {
 			return fmt.Errorf("failed to filter .env file variables: %w", err)
 		}
@@ -393,7 +394,7 @@ func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, groupName strin
 		envVars = make(map[string]string)
 
 		// Filter system environment variables using global allowlist
-		filteredSystemEnv, err := r.envFilter.FilterSystemEnvironment(r.config.Global.EnvAllowlist)
+		filteredSystemEnv, err := r.envFilter.FilterSystemEnvironment(nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to filter system environment variables: %w", err)
 		}
