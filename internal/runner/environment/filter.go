@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -133,9 +134,7 @@ func (f *Filter) ResolveGroupEnvironmentVars(group *runnertypes.CommandGroup, lo
 
 	// Start with filtered system environment variables
 	result := make(map[string]string)
-	for k, v := range filteredSystemEnv {
-		result[k] = v
-	}
+	maps.Copy(result, filteredSystemEnv)
 
 	// Add loaded environment variables from .env file (already filtered in LoadEnvironment)
 	// These override system variables
@@ -197,7 +196,7 @@ func (f *Filter) isVariableAllowed(variable string, groupAllowlist []string) boo
 	}
 
 	// If not found in global map, check the provided allowlist
-	return len(groupAllowlist) > 0 && slices.Contains(groupAllowlist, variable)
+	return slices.Contains(groupAllowlist, variable)
 }
 
 // ValidateVariableName validates that a variable name is safe and well-formed

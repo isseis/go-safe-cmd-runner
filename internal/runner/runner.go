@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"sort"
 	"strings"
 	"time"
@@ -178,9 +179,7 @@ func (r *Runner) LoadEnvironment(envFile string, loadSystemEnv bool) error {
 		if err != nil {
 			return fmt.Errorf("failed to filter system environment variables: %w", err)
 		}
-		for k, v := range filteredSystemEnv {
-			envMap[k] = v
-		}
+		maps.Copy(envMap, filteredSystemEnv)
 	}
 
 	// Load and filter .env file if specified
@@ -198,9 +197,7 @@ func (r *Runner) LoadEnvironment(envFile string, loadSystemEnv bool) error {
 		}
 
 		// Override with filtered values from .env file
-		for k, v := range filteredFileEnv {
-			envMap[k] = v
-		}
+		maps.Copy(envMap, filteredFileEnv)
 	}
 
 	// Validate all environment variables for safety
@@ -398,14 +395,10 @@ func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, group *runnerty
 		if err != nil {
 			return nil, fmt.Errorf("failed to filter system environment variables: %w", err)
 		}
-		for k, v := range filteredSystemEnv {
-			envVars[k] = v
-		}
+		maps.Copy(envVars, filteredSystemEnv)
 
 		// Add loaded environment variables from .env file (already filtered in LoadEnvironment)
-		for k, v := range r.envVars {
-			envVars[k] = v
-		}
+		maps.Copy(envVars, r.envVars)
 	}
 
 	// Add command-specific environment variables
