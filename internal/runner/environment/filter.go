@@ -81,10 +81,17 @@ func (f *Filter) FilterSystemEnvironment(groupAllowlist []string) (map[string]st
 		}
 	}
 
+	allowlistSize := 0
+	if groupAllowlist != nil {
+		allowlistSize = len(groupAllowlist)
+	} else {
+		allowlistSize = len(f.globalAllowlist)
+	}
+
 	slog.Debug("Filtered system environment variables",
 		"total_vars", len(os.Environ()),
 		"filtered_vars", len(result),
-		"allowlist_size", len(groupAllowlist)+len(f.globalAllowlist))
+		"allowlistSize", allowlistSize)
 
 	return result, nil
 }
@@ -117,10 +124,17 @@ func (f *Filter) FilterEnvFileVariables(envFileVars map[string]string, groupAllo
 		}
 	}
 
+	allowlistSize := 0
+	if groupAllowlist != nil {
+		allowlistSize = len(groupAllowlist)
+	} else {
+		allowlistSize = len(f.globalAllowlist)
+	}
+
 	slog.Debug("Filtered .env file variables",
 		"total_vars", len(envFileVars),
 		"filtered_vars", len(result),
-		"allowlist_size", len(groupAllowlist)+len(f.globalAllowlist))
+		"allowlistSize", allowlistSize)
 
 	return result, nil
 }
@@ -220,7 +234,7 @@ func (f *Filter) IsVariableAccessAllowed(variable string, group *runnertypes.Com
 		slog.Warn("Variable access denied",
 			"variable", variable,
 			"group", group.Name,
-			"allowlist_size", len(group.EnvAllowlist)+len(f.globalAllowlist))
+			"allowlist_size", len(group.EnvAllowlist))
 	}
 
 	return allowed
