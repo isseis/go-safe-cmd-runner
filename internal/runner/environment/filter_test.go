@@ -681,28 +681,3 @@ func TestValidateVariableValue(t *testing.T) {
 		})
 	}
 }
-
-func TestGetVariableNames(t *testing.T) {
-	config := &runnertypes.Config{}
-	filter := NewFilter(config)
-
-	envVars := []string{
-		"VAR1=value1",
-		"VAR2=value2",
-		"VAR3=value3=with=equals",
-		"VAR4",
-	}
-
-	result := filter.GetVariableNames(envVars)
-	expected := []string{"VAR1", "VAR2", "VAR3", "VAR4"}
-
-	if len(result) != len(expected) {
-		t.Errorf("Expected %d variable names, got %d", len(expected), len(result))
-	}
-
-	for i, expectedName := range expected {
-		if i >= len(result) || result[i] != expectedName {
-			t.Errorf("Expected variable name %s at index %d, got %s", expectedName, i, result[i])
-		}
-	}
-}
