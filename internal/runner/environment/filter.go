@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
 // Error definitions
@@ -29,8 +30,9 @@ const (
 
 // Filter provides environment variable filtering functionality with allowlist-based security
 type Filter struct {
-	config          *runnertypes.Config
-	globalAllowlist map[string]bool // Map for O(1) lookups of allowed variables (always non-nil)
+	config            *runnertypes.Config
+	globalAllowlist   map[string]bool // Map for O(1) lookups of allowed variables (always non-nil)
+	dangerousPatterns []string        // Pre-compiled list of dangerous patterns
 }
 
 // NewFilter creates a new environment variable filter with the provided configuration
@@ -38,6 +40,17 @@ func NewFilter(config *runnertypes.Config) *Filter {
 	f := &Filter{
 		config:          config,
 		globalAllowlist: make(map[string]bool), // Initialize with empty map
+		dangerousPatterns: []string{
+			// Command injection patterns
+			";", "&&", "||", "|", "$(", "`",
+			// Redirection patterns (more specific to avoid false positives, e.g. HTML tags)
+			">", "<",
+			// Destructive file system operations
+			"rm ", "del ", "format ", "mkfs ", "mkfs.",
+			"dd if=", "dd of=",
+			// Code execution patterns
+			"exec ", "exec(", "system ", "system(", "eval ", "eval(",
+		},
 	}
 
 	// Initialize the allowlist map with global allowlist if it exists
@@ -82,6 +95,19 @@ func (f *Filter) FilterEnvFileVariables(envFileVars map[string]string, groupAllo
 	result := make(map[string]string)
 
 	for key, value := range envFileVars {
+		// Validate environment variable name and value
+		if err := f.ValidateEnvironmentVariable(key, value); err != nil {
+			slog.Warn("Environment variable from .env file validation failed",
+				"variable", key,
+				"source", "env_file",
+				"error", err)
+			// Return security error for dangerous variable values
+			if errors.Is(err, ErrDangerousVariableValue) {
+				return nil, fmt.Errorf("%w: environment variable %s contains dangerous pattern", security.ErrUnsafeEnvironmentVar, key)
+			}
+			continue
+		}
+
 		// Check if variable is in allowlist
 		if f.isVariableAllowed(key, groupAllowlist) {
 			result[key] = value
@@ -150,6 +176,15 @@ func (f *Filter) ResolveGroupEnvironmentVars(group *runnertypes.CommandGroup, lo
 		if len(parts) == envSeparatorParts {
 			key := parts[0]
 			value := parts[1]
+
+			// Validate environment variable name and value
+			if err := f.ValidateEnvironmentVariable(key, value); err != nil {
+				slog.Warn("Group environment variable validation failed",
+					"variable", key,
+					"group", group.Name,
+					"error", err)
+				continue
+			}
 
 			// Check if variable is allowed
 			if f.isVariableAllowed(key, group.EnvAllowlist) {
@@ -225,14 +260,8 @@ func (f *Filter) ValidateVariableName(name string) error {
 
 // ValidateVariableValue validates that a variable value is safe
 func (f *Filter) ValidateVariableValue(value string) error {
-	// Check for potentially dangerous patterns
-	dangerousPatterns := []string{
-		";", "&&", "||", "|", "$(",
-		"`", "$(", "${", ">/", "<",
-		"rm ", "del ", "format ", "mkfs.",
-	}
-
-	for _, pattern := range dangerousPatterns {
+	// Check for potentially dangerous patterns using pre-compiled list
+	for _, pattern := range f.dangerousPatterns {
 		if strings.Contains(value, pattern) {
 			return fmt.Errorf("%w: %s", ErrDangerousVariableValue, pattern)
 		}

@@ -489,14 +489,37 @@ func TestValidateVariableValue(t *testing.T) {
 		value    string
 		expected bool
 	}{
+		// Safe values
 		{
-			name:     "safe value",
+			name:     "simple safe value",
 			value:    "safe_value_123",
 			expected: true,
 		},
 		{
+			name:     "empty value",
+			value:    "",
+			expected: true,
+		},
+
+		// Command injection patterns
+		{
 			name:     "value with semicolon",
 			value:    "value;dangerous",
+			expected: false,
+		},
+		{
+			name:     "value with double ampersand",
+			value:    "value && dangerous",
+			expected: false,
+		},
+		{
+			name:     "value with double pipe",
+			value:    "value || dangerous",
+			expected: false,
+		},
+		{
+			name:     "value with pipe",
+			value:    "value | dangerous",
 			expected: false,
 		},
 		{
@@ -509,15 +532,94 @@ func TestValidateVariableValue(t *testing.T) {
 			value:    "value`rm -rf /`",
 			expected: false,
 		},
+
+		// Redirection patterns
 		{
-			name:     "value with logical operators",
-			value:    "value && rm -rf /",
+			name:     "value with greater than",
+			value:    "value > file",
 			expected: false,
 		},
+		{
+			name:     "value with less than",
+			value:    "value < file",
+			expected: false,
+		},
+
+		// Destructive file operations
 		{
 			name:     "value with rm command",
 			value:    "rm -rf /tmp",
 			expected: false,
+		},
+		{
+			name:     "value with del command",
+			value:    "del /s /q *",
+			expected: false,
+		},
+		{
+			name:     "value with format command",
+			value:    "format C:",
+			expected: false,
+		},
+		{
+			name:     "value with mkfs command",
+			value:    "mkfs /dev/sda1",
+			expected: false,
+		},
+		{
+			name:     "value with mkfs. prefix",
+			value:    "mkfs.ext4 /dev/sda1",
+			expected: false,
+		},
+		{
+			name:     "value with dd if",
+			value:    "dd if=/dev/zero of=/dev/sda",
+			expected: false,
+		},
+		{
+			name:     "value with dd of",
+			value:    "dd if=source of=destination",
+			expected: false,
+		},
+
+		// Code execution patterns
+		{
+			name:     "value with exec",
+			value:    "exec /bin/sh",
+			expected: false,
+		},
+		{
+			name:     "value with system",
+			value:    "system('rm -rf /')",
+			expected: false,
+		},
+		{
+			name:     "value with eval",
+			value:    "eval('dangerous code')",
+			expected: false,
+		},
+
+		// Edge cases
+		{
+			name:     "value with partial match at start",
+			value:    "rmdir safe",
+			expected: true,
+		},
+		{
+			name:     "value with partial match in middle",
+			value:    "some_rm_command",
+			expected: true,
+		},
+		{
+			name:     "value with case sensitivity check",
+			value:    "RM -RF /",
+			expected: true, // Assuming case-sensitive matching
+		},
+		// False positives
+		{
+			name:     "value with HTML tag",
+			value:    "<div></div>",
+			expected: false, // Should be true, but false positives are allowed for now
 		},
 	}
 
