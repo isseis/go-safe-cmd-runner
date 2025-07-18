@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -161,7 +162,7 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 // If envFile is empty, only system environment variables will be loaded.
 // If loadSystemEnv is true, system environment variables will be loaded first,
 // then overridden by the .env file if specified.
-// Variables are filtered based on the global env_allowlist configuration.
+// Variables are stored unfiltered and will be filtered per-group during execution.
 func (r *Runner) LoadEnvironment(envFile string, loadSystemEnv bool) error {
 	// Validate file permissions if a file is specified
 	if envFile != "" {
@@ -170,35 +171,59 @@ func (r *Runner) LoadEnvironment(envFile string, loadSystemEnv bool) error {
 		}
 	}
 
-	// Create environment filter
+	// Create environment map
 	envMap := make(map[string]string)
 
-	// Load and filter system environment variables if requested
+	// Load system environment variables if requested
 	if loadSystemEnv {
-		filteredSystemEnv := r.envFilter.FilterSystemEnvironment()
-		maps.Copy(envMap, filteredSystemEnv)
+		for _, env := range os.Environ() {
+			parts := strings.SplitN(env, "=", envSeparatorParts)
+			if len(parts) != envSeparatorParts {
+				continue
+			}
+			variable, value := parts[0], parts[1]
+
+			// Validate environment variable name and value for safety
+			if err := r.envFilter.ValidateEnvironmentVariable(variable, value); err != nil {
+				slog.Warn("System environment variable validation failed",
+					"variable", variable,
+					"source", "system",
+					"error", err)
+				// Return security error for dangerous variable values
+				if errors.Is(err, environment.ErrDangerousVariableValue) {
+					return fmt.Errorf("%w: system environment variable %s contains dangerous pattern", security.ErrUnsafeEnvironmentVar, variable)
+				}
+				continue
+			}
+
+			envMap[variable] = value
+		}
 	}
 
-	// Load and filter .env file if specified
+	// Load .env file if specified
 	if envFile != "" {
 		fileEnv, err := godotenv.Read(envFile)
 		if err != nil {
 			return fmt.Errorf("failed to load environment file %s: %w", envFile, err)
 		}
 
-		// Filter .env file variables using global allowlist
-		filteredFileEnv, err := r.envFilter.FilterEnvFileVariables(fileEnv, nil)
-		if err != nil {
-			return fmt.Errorf("failed to filter .env file variables: %w", err)
+		// Validate .env file variables for safety
+		for variable, value := range fileEnv {
+			if err := r.envFilter.ValidateEnvironmentVariable(variable, value); err != nil {
+				slog.Warn("Environment variable from .env file validation failed",
+					"variable", variable,
+					"source", "env_file",
+					"error", err)
+				// Return security error for dangerous variable values
+				if errors.Is(err, environment.ErrDangerousVariableValue) {
+					return fmt.Errorf("%w: environment variable %s contains dangerous pattern", security.ErrUnsafeEnvironmentVar, variable)
+				}
+				continue
+			}
+
+			// Override with values from .env file
+			envMap[variable] = value
 		}
-
-		// Override with filtered values from .env file
-		maps.Copy(envMap, filteredFileEnv)
-	}
-
-	// Validate all environment variables for safety
-	if err := r.validator.ValidateAllEnvironmentVars(envMap); err != nil {
-		return fmt.Errorf("environment variable security validation failed: %w", err)
 	}
 
 	r.envVars = envMap
