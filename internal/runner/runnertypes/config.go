@@ -47,13 +47,12 @@ type CommandGroup struct {
 
 // Command represents a single command to be executed
 type Command struct {
-	Name         string   `toml:"name"`
-	Description  string   `toml:"description"`
-	Cmd          string   `toml:"cmd"`
-	Args         []string `toml:"args"`
-	Env          []string `toml:"env"`
-	Dir          string   `toml:"dir"`
-	Privileged   bool     `toml:"privileged"`
-	Timeout      int      `toml:"timeout"`       // Command-specific timeout (overrides global)
-	EnvAllowlist []string `toml:"env_allowlist"` // Command-level environment variable allowlist
+	Name        string   `toml:"name"`
+	Description string   `toml:"description"`
+	Cmd         string   `toml:"cmd"`
+	Args        []string `toml:"args"`
+	Env         []string `toml:"env"`
+	Dir         string   `toml:"dir"`
+	Privileged  bool     `toml:"privileged"`
+	Timeout     int      `toml:"timeout"` // Command-specific timeout (overrides global)
 }
