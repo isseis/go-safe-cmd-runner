@@ -387,15 +387,12 @@ func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, group *runnerty
 			return nil, fmt.Errorf("failed to resolve group environment variables: %w", err)
 		}
 	} else {
-		// For commands without group context, use global allowlist
-		envVars = make(map[string]string)
-
-		// Filter system environment variables using global allowlist
-		filteredSystemEnv, err := r.envFilter.FilterSystemEnvironment(nil)
+		// For commands without group context, use global allowlist and filter system environment variables
+		// FilterSystemEnvironment will create and return a new map
+		envVars, err = r.envFilter.FilterSystemEnvironment(nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to filter system environment variables: %w", err)
 		}
-		maps.Copy(envVars, filteredSystemEnv)
 
 		// Add loaded environment variables from .env file (already filtered in LoadEnvironment)
 		maps.Copy(envVars, r.envVars)
