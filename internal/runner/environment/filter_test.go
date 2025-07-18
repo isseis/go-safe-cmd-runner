@@ -290,24 +290,71 @@ func TestBuildAllowedVariableMaps(t *testing.T) {
 				Name:         "group2",
 				EnvAllowlist: []string{"GROUP2_VAR1"},
 			},
+			{
+				Name: "group3",
+				// EnvAllowlist is nil - should inherit global
+			},
 		},
 	}
 
 	filter := NewFilter(config)
 	result := filter.BuildAllowedVariableMaps()
 
-	// Check group1
+	// Check group1 - should only have group-level allowlist (global ignored)
 	group1Allowlist := result["group1"]
-	expectedGroup1 := []string{"GLOBAL_VAR1", "GLOBAL_VAR2", "GROUP1_VAR1", "GROUP1_VAR2"}
+	expectedGroup1 := []string{"GROUP1_VAR1", "GROUP1_VAR2"}
 	if len(group1Allowlist) != len(expectedGroup1) {
 		t.Errorf("Group1 allowlist length: expected %d, got %d", len(expectedGroup1), len(group1Allowlist))
 	}
+	for _, expectedVar := range expectedGroup1 {
+		found := false
+		for _, actualVar := range group1Allowlist {
+			if actualVar == expectedVar {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Expected variable %s not found in group1 allowlist", expectedVar)
+		}
+	}
 
-	// Check group2
+	// Check group2 - should only have group-level allowlist (global ignored)
 	group2Allowlist := result["group2"]
-	expectedGroup2 := []string{"GLOBAL_VAR1", "GLOBAL_VAR2", "GROUP2_VAR1"}
+	expectedGroup2 := []string{"GROUP2_VAR1"}
 	if len(group2Allowlist) != len(expectedGroup2) {
 		t.Errorf("Group2 allowlist length: expected %d, got %d", len(expectedGroup2), len(group2Allowlist))
+	}
+	for _, expectedVar := range expectedGroup2 {
+		found := false
+		for _, actualVar := range group2Allowlist {
+			if actualVar == expectedVar {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Expected variable %s not found in group2 allowlist", expectedVar)
+		}
+	}
+
+	// Check group3 - should inherit global allowlist (EnvAllowlist is nil)
+	group3Allowlist := result["group3"]
+	expectedGroup3 := []string{"GLOBAL_VAR1", "GLOBAL_VAR2"}
+	if len(group3Allowlist) != len(expectedGroup3) {
+		t.Errorf("Group3 allowlist length: expected %d, got %d", len(expectedGroup3), len(group3Allowlist))
+	}
+	for _, expectedVar := range expectedGroup3 {
+		found := false
+		for _, actualVar := range group3Allowlist {
+			if actualVar == expectedVar {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Expected variable %s not found in group3 allowlist", expectedVar)
+		}
 	}
 }
 
@@ -376,10 +423,10 @@ func TestIsVariableAccessAllowed(t *testing.T) {
 		expected bool
 	}{
 		{
-			name:     "global variable allowed",
+			name:     "global variable not allowed when group allowlist defined",
 			variable: "GLOBAL_VAR",
 			group:    testGroup,
-			expected: true,
+			expected: false, // Group allowlist overrides global, GLOBAL_VAR not in group allowlist
 		},
 		{
 			name:     "group variable allowed",

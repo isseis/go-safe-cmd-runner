@@ -54,7 +54,6 @@ func NewFilter(config *runnertypes.Config) *Filter {
 	}
 
 	// Initialize the allowlist map with global allowlist if it exists
-	// Populate with new values
 	for _, v := range config.Global.EnvAllowlist {
 		f.globalAllowlist[v] = true
 	}
@@ -126,21 +125,23 @@ func (f *Filter) FilterEnvFileVariables(envFileVars map[string]string, groupAllo
 	return result, nil
 }
 
-// BuildAllowedVariableMaps builds combined allowlist from global and group-level configurations
+// BuildAllowedVariableMaps builds allowlist maps for each group
+// If a group has env_allowlist defined, it overrides global settings
 func (f *Filter) BuildAllowedVariableMaps() map[string][]string {
 	result := make(map[string][]string)
 
-	// Start with global allowlist
+	// Global allowlist as fallback
 	globalAllowlist := f.config.Global.EnvAllowlist
 
-	// Add group-level allowlists
+	// Process each group
 	for _, group := range f.config.Groups {
-		// Combine global and group-level allowlists
-		combinedAllowlist := make([]string, 0, len(globalAllowlist)+len(group.EnvAllowlist))
-		combinedAllowlist = append(combinedAllowlist, globalAllowlist...)
-		combinedAllowlist = append(combinedAllowlist, group.EnvAllowlist...)
-
-		result[group.Name] = combinedAllowlist
+		// If group has env_allowlist defined (including empty slice), use it exclusively
+		// Otherwise, use global allowlist
+		if group.EnvAllowlist != nil {
+			result[group.Name] = group.EnvAllowlist
+		} else {
+			result[group.Name] = globalAllowlist
+		}
 	}
 
 	return result
@@ -224,14 +225,15 @@ func (f *Filter) IsVariableAccessAllowed(variable string, group *runnertypes.Com
 }
 
 // isVariableAllowed checks if a variable is in the allowlist
+// If groupAllowlist is provided (non-nil), it takes precedence over global allowlist
 func (f *Filter) isVariableAllowed(variable string, groupAllowlist []string) bool {
-	// Check the global map first
-	if f.globalAllowlist[variable] {
-		return true
+	// If group allowlist is provided, use it exclusively (ignore global)
+	if groupAllowlist != nil {
+		return slices.Contains(groupAllowlist, variable)
 	}
 
-	// If not found in global map, check the provided allowlist
-	return slices.Contains(groupAllowlist, variable)
+	// If no group allowlist provided, use global allowlist
+	return f.globalAllowlist[variable]
 }
 
 // ValidateVariableName validates that a variable name is safe and well-formed
