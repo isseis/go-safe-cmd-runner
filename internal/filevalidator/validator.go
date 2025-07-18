@@ -160,16 +160,6 @@ func (v *Validator) RecordWithOptions(filePath string, force bool) (string, erro
 	return hashFilePath, nil
 }
 
-// GetHashAlgorithm returns the hash algorithm used by the validator.
-func (v *Validator) GetHashAlgorithm() HashAlgorithm {
-	return v.algorithm
-}
-
-// GetHashDir returns the directory for storing the hash files.
-func (v *Validator) GetHashDir() string {
-	return v.hashDir
-}
-
 // Verify checks if the file at filePath matches its recorded hash.
 // Returns ErrMismatch if the hashes don't match, or ErrHashFileNotFound if no hash is recorded.
 func (v *Validator) Verify(filePath string) error {

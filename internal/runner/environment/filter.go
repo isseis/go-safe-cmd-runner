@@ -72,12 +72,11 @@ func (f *Filter) FilterSystemEnvironment(groupAllowlist []string) (map[string]st
 			continue
 		}
 
-		key := parts[0]
-		value := parts[1]
+		variable, value := parts[0], parts[1]
 
 		// Check if variable is in allowlist
-		if f.isVariableAllowed(key, groupAllowlist) {
-			result[key] = value
+		if f.isVariableAllowed(variable, groupAllowlist) {
+			result[variable] = value
 		}
 	}
 
@@ -100,26 +99,26 @@ func (f *Filter) FilterSystemEnvironment(groupAllowlist []string) (map[string]st
 func (f *Filter) FilterEnvFileVariables(envFileVars map[string]string, groupAllowlist []string) (map[string]string, error) {
 	result := make(map[string]string)
 
-	for key, value := range envFileVars {
+	for variable, value := range envFileVars {
 		// Validate environment variable name and value
-		if err := f.ValidateEnvironmentVariable(key, value); err != nil {
+		if err := f.ValidateEnvironmentVariable(variable, value); err != nil {
 			slog.Warn("Environment variable from .env file validation failed",
-				"variable", key,
+				"variable", variable,
 				"source", "env_file",
 				"error", err)
 			// Return security error for dangerous variable values
 			if errors.Is(err, ErrDangerousVariableValue) {
-				return nil, fmt.Errorf("%w: environment variable %s contains dangerous pattern", security.ErrUnsafeEnvironmentVar, key)
+				return nil, fmt.Errorf("%w: environment variable %s contains dangerous pattern", security.ErrUnsafeEnvironmentVar, variable)
 			}
 			continue
 		}
 
 		// Check if variable is in allowlist
-		if f.isVariableAllowed(key, groupAllowlist) {
-			result[key] = value
+		if f.isVariableAllowed(variable, groupAllowlist) {
+			result[variable] = value
 		} else {
 			slog.Warn("Environment variable from .env file rejected by allowlist",
-				"variable", key,
+				"variable", variable,
 				"source", "env_file")
 		}
 	}
@@ -137,28 +136,6 @@ func (f *Filter) FilterEnvFileVariables(envFileVars map[string]string, groupAllo
 		"allowlistSize", allowlistSize)
 
 	return result, nil
-}
-
-// BuildAllowedVariableMaps builds allowlist maps for each group
-// If a group has env_allowlist defined, it overrides global settings
-func (f *Filter) BuildAllowedVariableMaps() map[string][]string {
-	result := make(map[string][]string)
-
-	// Global allowlist as fallback
-	globalAllowlist := f.config.Global.EnvAllowlist
-
-	// Process each group
-	for _, group := range f.config.Groups {
-		// If group has env_allowlist defined (including empty slice), use it exclusively
-		// Otherwise, use global allowlist
-		if group.EnvAllowlist != nil {
-			result[group.Name] = group.EnvAllowlist
-		} else {
-			result[group.Name] = globalAllowlist
-		}
-	}
-
-	return result
 }
 
 // ResolveGroupEnvironmentVars resolves environment variables for a specific group
@@ -179,9 +156,9 @@ func (f *Filter) ResolveGroupEnvironmentVars(group *runnertypes.CommandGroup, lo
 
 	// Add loaded environment variables from .env file (already filtered in LoadEnvironment)
 	// These override system variables
-	for k, v := range loadedEnvVars {
-		if f.isVariableAllowed(k, group.EnvAllowlist) {
-			result[k] = v
+	for variable, value := range loadedEnvVars {
+		if f.isVariableAllowed(variable, group.EnvAllowlist) {
+			result[variable] = value
 		}
 	}
 
@@ -192,24 +169,23 @@ func (f *Filter) ResolveGroupEnvironmentVars(group *runnertypes.CommandGroup, lo
 			continue
 		}
 
-		key := parts[0]
-		value := parts[1]
+		variable, value := parts[0], parts[1]
 
 		// Validate environment variable name and value
-		if err := f.ValidateEnvironmentVariable(key, value); err != nil {
+		if err := f.ValidateEnvironmentVariable(variable, value); err != nil {
 			slog.Warn("Group environment variable validation failed",
-				"variable", key,
+				"variable", variable,
 				"group", group.Name,
 				"error", err)
 			continue
 		}
 
 		// Check if variable is allowed
-		if f.isVariableAllowed(key, group.EnvAllowlist) {
-			result[key] = value
+		if f.isVariableAllowed(variable, group.EnvAllowlist) {
+			result[variable] = value
 		} else {
 			slog.Warn("Group environment variable rejected by allowlist",
-				"variable", key,
+				"variable", variable,
 				"group", group.Name)
 		}
 	}
