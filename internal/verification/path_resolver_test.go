@@ -34,12 +34,9 @@ func TestPathResolver_ResolvePath(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set up PATH with both directories
-	oldPath := os.Getenv("PATH")
-	defer os.Setenv("PATH", oldPath)
-
 	// Create a path with dir1 first, then dir2
 	testPath := dir1 + string(os.PathListSeparator) + dir2
-	os.Setenv("PATH", testPath)
+	t.Setenv("PATH", testPath)
 
 	// Create a new PathResolver with our test PATH
 	resolver := NewPathResolver(testPath, nil, false)
