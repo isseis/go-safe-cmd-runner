@@ -404,36 +404,37 @@ func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, group *runnerty
 	// Add command-specific environment variables
 	for _, env := range cmd.Env {
 		parts := strings.SplitN(env, "=", envSeparatorParts)
-		if len(parts) == envSeparatorParts {
-			key := parts[0]
-			value := parts[1]
-
-			// Check if variable is allowed
-			allowed := r.envFilter.IsVariableAccessAllowed(key, group)
-
-			if allowed {
-				// Resolve variable references in the value
-				resolvedValue, err := r.resolveVariableReferences(value, envVars, group)
-				if err != nil {
-					return nil, fmt.Errorf("failed to resolve variable %s: %w", key, err)
-				}
-				envVars[key] = resolvedValue
-			} else {
-				if group != nil {
-					slog.Warn("Command environment variable access denied",
-						"variable", key,
-						"command", cmd.Name,
-						"group", group.Name)
-				} else {
-					slog.Warn("Command environment variable access denied by global allowlist",
-						"variable", key,
-						"command", cmd.Name)
-				}
-			}
+		if len(parts) != envSeparatorParts {
+			continue
 		}
-	}
 
+		variable, value := parts[0], parts[1]
+		allowed := r.envFilter.IsVariableAccessAllowed(variable, group)
+		if !allowed {
+			logDeniedEnvironmentVariableAccess(group, variable, cmd)
+			continue
+		}
+		// Resolve variable references in the value
+		resolvedValue, err := r.resolveVariableReferences(value, envVars, group)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve variable %s: %w", variable, err)
+		}
+		envVars[variable] = resolvedValue
+	}
 	return envVars, nil
+}
+
+func logDeniedEnvironmentVariableAccess(group *runnertypes.CommandGroup, variable string, cmd runnertypes.Command) {
+	if group != nil {
+		slog.Warn("Command environment variable access denied",
+			"variable", variable,
+			"command", cmd.Name,
+			"group", group.Name)
+	} else {
+		slog.Warn("Command environment variable access denied by global allowlist",
+			"variable", variable,
+			"command", cmd.Name)
+	}
 }
 
 // resolveVariableReferences resolves ${VAR} references in a string
