@@ -60,7 +60,9 @@ func (e *DefaultExecutor) Execute(ctx context.Context, cmd runnertypes.Command, 
 	}
 
 	// Set up environment variables
-	execCmd.Env = os.Environ()
+	// Only use the filtered environment variables provided in envVars
+	// This ensures allowlist filtering is properly enforced
+	execCmd.Env = make([]string, 0, len(envVars))
 	for k, v := range envVars {
 		execCmd.Env = append(execCmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
