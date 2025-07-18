@@ -277,8 +277,7 @@ func TestExecute_EnvironmentVariables(t *testing.T) {
 	}
 
 	// Set a test environment variable in the runner process
-	os.Setenv("LEAKED_VAR", "should_not_appear")
-	defer os.Unsetenv("LEAKED_VAR")
+	t.Setenv("LEAKED_VAR", "should_not_appear")
 
 	cmd := runnertypes.Command{
 		Cmd:  "printenv",

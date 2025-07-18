@@ -1,7 +1,6 @@
 package environment
 
 import (
-	"os"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -22,14 +21,9 @@ func TestNewFilter(t *testing.T) {
 
 func TestFilterSystemEnvironmentGlobalAllowlist(t *testing.T) {
 	// Set test environment variables
-	os.Setenv("TEST_VAR1", "value1")
-	os.Setenv("TEST_VAR2", "value2")
-	os.Setenv("TEST_VAR3", "value3")
-	defer func() {
-		os.Unsetenv("TEST_VAR1")
-		os.Unsetenv("TEST_VAR2")
-		os.Unsetenv("TEST_VAR3")
-	}()
+	t.Setenv("TEST_VAR1", "value1")
+	t.Setenv("TEST_VAR2", "value2")
+	t.Setenv("TEST_VAR3", "value3")
 
 	tests := []struct {
 		name      string
@@ -94,14 +88,9 @@ func TestFilterSystemEnvironmentGroupAllowlist(t *testing.T) {
 	filter := NewFilter(config)
 
 	// Set test environment variables
-	os.Setenv("TEST_VAR1", "value1")
-	os.Setenv("TEST_VAR2", "value2")
-	os.Setenv("TEST_VAR3", "value3")
-	defer func() {
-		os.Unsetenv("TEST_VAR1")
-		os.Unsetenv("TEST_VAR2")
-		os.Unsetenv("TEST_VAR3")
-	}()
+	t.Setenv("TEST_VAR1", "value1")
+	t.Setenv("TEST_VAR2", "value2")
+	t.Setenv("TEST_VAR3", "value3")
 
 	tests := []struct {
 		name      string
