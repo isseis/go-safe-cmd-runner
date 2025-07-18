@@ -264,6 +264,45 @@ func TestExecute_ContextCancellation(t *testing.T) {
 	assert.NotNil(t, result, "Result should still be returned even on failure")
 }
 
+func TestExecute_EnvironmentVariables(t *testing.T) {
+	// Test that only filtered environment variables are passed to executed commands
+	// and os.Environ() variables are not leaked through
+	fileSystem := &mockFileSystem{
+		existingPaths: make(map[string]bool),
+	}
+
+	e := &executor.DefaultExecutor{
+		FS:  fileSystem,
+		Out: &mockOutputWriter{},
+	}
+
+	// Set a test environment variable in the runner process
+	os.Setenv("LEAKED_VAR", "should_not_appear")
+	defer os.Unsetenv("LEAKED_VAR")
+
+	cmd := runnertypes.Command{
+		Cmd:  "printenv",
+		Args: []string{},
+	}
+
+	// Only provide filtered variables through envVars parameter
+	envVars := map[string]string{
+		"FILTERED_VAR": "allowed_value",
+		"PATH":         "/usr/bin:/bin", // Common required variable
+	}
+
+	ctx := context.Background()
+	result, err := e.Execute(ctx, cmd, envVars)
+
+	assert.NoError(t, err, "Execute should not return an error")
+	assert.NotNil(t, result, "Result should not be nil")
+
+	// Check that only allowed variables are present in the output
+	assert.Contains(t, result.Stdout, "FILTERED_VAR=allowed_value", "Filtered variable should be present")
+	assert.Contains(t, result.Stdout, "PATH=/usr/bin:/bin", "PATH variable should be present")
+	assert.NotContains(t, result.Stdout, "LEAKED_VAR=should_not_appear", "Leaked variable should not be present")
+}
+
 func TestValidate(t *testing.T) {
 	tests := []struct {
 		name    string
