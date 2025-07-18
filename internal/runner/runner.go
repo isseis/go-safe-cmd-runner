@@ -416,12 +416,7 @@ func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, group *runnerty
 			value := parts[1]
 
 			// Check if variable is allowed
-			allowed := false
-			if group != nil {
-				allowed = r.envFilter.IsVariableAccessAllowed(key, group)
-			} else {
-				allowed = r.envFilter.IsGlobalVariableAllowed(key)
-			}
+			allowed := r.envFilter.IsVariableAccessAllowed(key, group)
 
 			if allowed {
 				// Resolve variable references in the value

@@ -311,7 +311,7 @@ func TestBuildAllowedVariableMaps(t *testing.T) {
 	}
 }
 
-func TestIsGlobalVariableAllowed(t *testing.T) {
+func TestIsVariableAccessAllowedGlobalOnly(t *testing.T) {
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
 			EnvAllowlist: []string{"GLOBAL_VAR1", "GLOBAL_VAR2"},
@@ -344,9 +344,9 @@ func TestIsGlobalVariableAllowed(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := filter.IsGlobalVariableAllowed(tt.variable)
+			result := filter.IsVariableAccessAllowed(tt.variable, nil)
 			if result != tt.expected {
-				t.Errorf("IsGlobalVariableAllowed(%s): expected %v, got %v",
+				t.Errorf("IsVariableAccessAllowed(%s, nil): expected %v, got %v",
 					tt.variable, tt.expected, result)
 			}
 		})

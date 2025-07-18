@@ -167,10 +167,15 @@ func (f *Filter) ResolveGroupEnvironmentVars(group *runnertypes.CommandGroup, lo
 }
 
 // IsVariableAccessAllowed checks if a variable can be accessed in the given group context
+// If no group is provided, it checks against the global allowlist only
 func (f *Filter) IsVariableAccessAllowed(variable string, group *runnertypes.CommandGroup) bool {
 	// If no group is provided, check against global allowlist only
 	if group == nil {
-		return f.IsGlobalVariableAllowed(variable)
+		allowed := f.isVariableAllowed(variable, nil)
+		if !allowed {
+			slog.Warn("Variable access denied by global allowlist", "variable", variable, "allowlist_size", len(f.config.Global.EnvAllowlist))
+		}
+		return allowed
 	}
 
 	allowed := f.isVariableAllowed(variable, group.EnvAllowlist)
@@ -184,24 +189,9 @@ func (f *Filter) IsVariableAccessAllowed(variable string, group *runnertypes.Com
 	return allowed
 }
 
-// IsGlobalVariableAllowed checks if a variable is allowed by global allowlist only
-func (f *Filter) IsGlobalVariableAllowed(variable string) bool {
-	allowed := f.isVariableAllowed(variable, nil)
-
-	if !allowed {
-		slog.Warn("Variable access denied by global allowlist",
-			"variable", variable,
-			"allowlist_size", len(f.config.Global.EnvAllowlist))
-	}
-
-	return allowed
-}
-
 // isVariableAllowed checks if a variable is in the allowlist
-// It first checks the global allowlist map for O(1) lookups
-// If not found in the global map, it falls back to checking the provided allowlist slice
 func (f *Filter) isVariableAllowed(variable string, groupAllowlist []string) bool {
-	// Check the global map first for O(1) lookup
+	// Check the global map first
 	if f.globalAllowlist[variable] {
 		return true
 	}
