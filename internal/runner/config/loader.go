@@ -112,7 +112,6 @@ func (l *Loader) applyTemplates(cfg *runnertypes.Config) error {
 			TempDir:     tmplConfig.TempDir,
 			Cleanup:     tmplConfig.Cleanup,
 			WorkDir:     tmplConfig.WorkDir,
-			Env:         tmplConfig.Env,
 			Variables:   tmplConfig.Variables,
 		}
 

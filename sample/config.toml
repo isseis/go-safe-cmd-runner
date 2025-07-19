@@ -30,8 +30,6 @@ log_level = "info"
 # Development environment template
 [templates.dev]
 description = "Development environment template"
-# Default environment variables for commands using this template
-env = ["NODE_ENV=development", "DEBUG=true"]
 
 # Template variables that can be referenced in commands using {{.variable_name}}
 [templates.dev.variables]
@@ -42,7 +40,6 @@ env_type = "development"
 # Production environment template
 [templates.prod]
 description = "Production environment template"
-env = ["NODE_ENV=production", "DEBUG=false"]
 
 [templates.prod.variables]
 app_name = "myapp-prod"

@@ -26,7 +26,6 @@ type TemplateConfig struct {
 	TempDir     bool              `toml:"temp_dir"`  // Auto-generate temporary directory
 	Cleanup     bool              `toml:"cleanup"`   // Auto cleanup
 	WorkDir     string            `toml:"workdir"`   // Working directory (supports "auto")
-	Env         []string          `toml:"env"`       // Default environment variables
 	Variables   map[string]string `toml:"variables"` // Template variables
 }
 
