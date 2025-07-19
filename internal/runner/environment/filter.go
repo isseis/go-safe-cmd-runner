@@ -100,7 +100,7 @@ func (f *Filter) FilterSystemEnvironment() (map[string]string, error) {
 	return f.FilterGlobalVariables(sysEnv, SourceSystem)
 }
 
-// FilterGlobalVariables filters global environment variables based their names and values.
+// FilterGlobalVariables filters global environment variables based on their names and values.
 // It returns a map of filtered variables or an error if validation fails.
 func (f *Filter) FilterGlobalVariables(envFileVars map[string]string, src Source) (map[string]string, error) {
 	result := make(map[string]string)
@@ -119,7 +119,7 @@ func (f *Filter) FilterGlobalVariables(envFileVars map[string]string, src Source
 			continue
 		}
 
-		// Check if variable is in allowlist
+		// Add variable to the result map after validation
 		result[variable] = value
 	}
 

@@ -161,7 +161,8 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 // If envFile is empty, only system environment variables will be loaded.
 // If loadSystemEnv is true, system environment variables will be loaded first,
 // then overridden by the .env file if specified.
-// Variables are stored unfiltered and will be filtered per-group during execution.
+// Variables undergo global filtering and validation during loading, and will be filtered
+// per-group during execution.
 func (r *Runner) LoadEnvironment(envFile string, loadSystemEnv bool) error {
 	// Validate file permissions if a file is specified
 	if envFile != "" {
