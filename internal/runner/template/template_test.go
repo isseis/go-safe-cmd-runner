@@ -202,7 +202,6 @@ func TestApplyTemplate(t *testing.T) {
 		TempDir:     true,
 		Cleanup:     true,
 		WorkDir:     "/tmp/{{.app}}",
-		Privileged:  false,
 		Variables: map[string]string{
 			"app":     "myapp",
 			"version": "1.0.0",

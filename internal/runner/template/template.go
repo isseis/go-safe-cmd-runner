@@ -34,11 +34,10 @@ var (
 type Template struct {
 	Name        string            `toml:"name"`
 	Description string            `toml:"description"`
-	TempDir     bool              `toml:"temp_dir"`   // Auto-generate temporary directory
-	Cleanup     bool              `toml:"cleanup"`    // Auto cleanup
-	WorkDir     string            `toml:"workdir"`    // Working directory (supports "auto")
-	Privileged  bool              `toml:"privileged"` // Default privileged execution
-	Variables   map[string]string `toml:"variables"`  // Template variables
+	TempDir     bool              `toml:"temp_dir"`  // Auto-generate temporary directory
+	Cleanup     bool              `toml:"cleanup"`   // Auto cleanup
+	WorkDir     string            `toml:"workdir"`   // Working directory (supports "auto")
+	Variables   map[string]string `toml:"variables"` // Template variables
 }
 
 // Engine manages template expansion and application
@@ -159,11 +158,6 @@ func (e *Engine) applyTemplateToCommand(cmd *runnertypes.Command, tmpl *Template
 	// Apply working directory from template
 	if err := e.applyWorkingDirectory(cmd, tmpl, variables); err != nil {
 		return err
-	}
-
-	// Set privileged flag from template if not explicitly set
-	if tmpl.Privileged && !cmd.Privileged {
-		cmd.Privileged = tmpl.Privileged
 	}
 
 	// Expand template variables in command properties
