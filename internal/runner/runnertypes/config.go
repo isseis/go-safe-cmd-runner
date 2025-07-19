@@ -23,12 +23,11 @@ type GlobalConfig struct {
 // TemplateConfig represents a template configuration
 type TemplateConfig struct {
 	Description string            `toml:"description"`
-	TempDir     bool              `toml:"temp_dir"`   // Auto-generate temporary directory
-	Cleanup     bool              `toml:"cleanup"`    // Auto cleanup
-	WorkDir     string            `toml:"workdir"`    // Working directory (supports "auto")
-	Env         []string          `toml:"env"`        // Default environment variables
-	Privileged  bool              `toml:"privileged"` // Default privileged execution
-	Variables   map[string]string `toml:"variables"`  // Template variables
+	TempDir     bool              `toml:"temp_dir"`  // Auto-generate temporary directory
+	Cleanup     bool              `toml:"cleanup"`   // Auto cleanup
+	WorkDir     string            `toml:"workdir"`   // Working directory (supports "auto")
+	Env         []string          `toml:"env"`       // Default environment variables
+	Variables   map[string]string `toml:"variables"` // Template variables
 }
 
 // CommandGroup represents a group of related commands with a name

@@ -113,7 +113,6 @@ func (l *Loader) applyTemplates(cfg *runnertypes.Config) error {
 			Cleanup:     tmplConfig.Cleanup,
 			WorkDir:     tmplConfig.WorkDir,
 			Env:         tmplConfig.Env,
-			Privileged:  tmplConfig.Privileged,
 			Variables:   tmplConfig.Variables,
 		}
 
@@ -147,15 +146,6 @@ func (l *Loader) validateUnimplementedFields(cfg *runnertypes.Config) {
 					"command '%s': privileged field is not yet implemented",
 					cmd.Name))
 			}
-		}
-	}
-
-	// Check templates for privileged field usage
-	for templateName, tmpl := range cfg.Templates {
-		if tmpl.Privileged {
-			warnings = append(warnings, fmt.Sprintf(
-				"template '%s': privileged field is not yet implemented",
-				templateName))
 		}
 	}
 
