@@ -3,6 +3,7 @@ package runner
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
@@ -21,7 +22,7 @@ func TestLoadEnvironment_SystemVariableValidation(t *testing.T) {
 
 	// Create temporary .env file
 	tmpDir := t.TempDir()
-	envFile := tmpDir + "/.env"
+	envFile := filepath.Join(tmpDir, ".env")
 	envContent := `SAFE_VAR=safe_value
 `
 	err := os.WriteFile(envFile, []byte(envContent), 0o644)
@@ -92,7 +93,7 @@ func TestLoadEnvironment_EnvFileVariableValidation(t *testing.T) {
 
 	t.Run("Safe .env file variables should be loaded", func(t *testing.T) {
 		// Create .env file with safe variables
-		safeEnvFile := tmpDir + "/safe.env"
+		safeEnvFile := filepath.Join(tmpDir, "safe.env")
 		safeContent := `SAFE_VAR=safe_value
 PATH=/usr/bin:/bin
 `
@@ -108,7 +109,7 @@ PATH=/usr/bin:/bin
 
 	t.Run("Dangerous .env file variables should cause error", func(t *testing.T) {
 		// Create .env file with dangerous variable
-		dangerousEnvFile := tmpDir + "/dangerous.env"
+		dangerousEnvFile := filepath.Join(tmpDir, "dangerous.env")
 		dangerousContent := `DANGEROUS_VAR=value; rm -rf /
 SAFE_VAR=safe_value
 `
@@ -165,7 +166,7 @@ func TestLoadEnvironment_ValidationPatterns(t *testing.T) {
 	for _, pattern := range dangerousPatterns {
 		t.Run("Dangerous pattern: "+pattern.name, func(t *testing.T) {
 			// Create .env file with dangerous pattern
-			envFile := tmpDir + "/test_" + pattern.name + ".env"
+			envFile := filepath.Join(tmpDir, "test_"+pattern.name+".env")
 			content := "TEST_VAR=" + pattern.value + "\n"
 			err := os.WriteFile(envFile, []byte(content), 0o644)
 			require.NoError(t, err)
@@ -203,7 +204,7 @@ func TestLoadEnvironment_FilePermissionValidation(t *testing.T) {
 
 	t.Run("Correct file permissions should be accepted", func(t *testing.T) {
 		// Create .env file with correct permissions
-		goodEnvFile := tmpDir + "/good.env"
+		goodEnvFile := filepath.Join(tmpDir, "good.env")
 		content := "TEST_VAR=safe_value\n"
 		err := os.WriteFile(goodEnvFile, []byte(content), 0o644)
 		require.NoError(t, err)
@@ -215,7 +216,7 @@ func TestLoadEnvironment_FilePermissionValidation(t *testing.T) {
 
 	t.Run("Excessive file permissions should be rejected", func(t *testing.T) {
 		// Create .env file with excessive permissions
-		badEnvFile := tmpDir + "/bad.env"
+		badEnvFile := filepath.Join(tmpDir, "bad.env")
 		content := "TEST_VAR=safe_value\n"
 		err := os.WriteFile(badEnvFile, []byte(content), 0o777)
 		require.NoError(t, err)
@@ -242,7 +243,7 @@ func TestLoadEnvironment_MixedValidAndInvalidVariables(t *testing.T) {
 	}
 
 	// Create .env file with mix of safe and dangerous variables
-	envFile := tmpDir + "/mixed.env"
+	envFile := filepath.Join(tmpDir, "mixed.env")
 	content := `SAFE_VAR=safe_value
 DANGEROUS_VAR=value; rm -rf /
 ANOTHER_SAFE_VAR=another_safe_value
