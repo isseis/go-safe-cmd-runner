@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -16,7 +17,7 @@ import (
 func TestEnvironmentFilteringIntegration(t *testing.T) {
 	// Create temporary .env file for testing
 	tmpDir := t.TempDir()
-	envFile := tmpDir + "/.env"
+	envFile := filepath.Join(tmpDir, ".env")
 	envContent := `ENV_FILE_VAR1=env_value1
 ENV_FILE_VAR2=env_value2
 ENV_FILE_COMMON=env_common_value
@@ -165,7 +166,7 @@ ENV_FILE_GLOBAL=env_global_value
 func TestEnvironmentFilteringWithoutGlobalConfig(t *testing.T) {
 	// Create temporary .env file
 	tmpDir := t.TempDir()
-	envFile := tmpDir + "/.env"
+	envFile := filepath.Join(tmpDir, ".env")
 	envContent := `APP_CONFIG=from_env_file
 DATABASE_URL=postgres://localhost/test
 `
