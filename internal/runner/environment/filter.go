@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -61,8 +60,8 @@ func NewFilter(config *runnertypes.Config) *Filter {
 	return f
 }
 
-// FilterSystemEnvironment filters system environment variables based on the provided allowlist
-func (f *Filter) FilterSystemEnvironment(groupAllowlist []string) (map[string]string, error) {
+// FilterSystemEnvironment filters system environment variables using only the global allowlist.
+func (f *Filter) FilterSystemEnvironment() (map[string]string, error) {
 	result := make(map[string]string)
 
 	// Get system environment variables
@@ -74,23 +73,16 @@ func (f *Filter) FilterSystemEnvironment(groupAllowlist []string) (map[string]st
 
 		variable, value := parts[0], parts[1]
 
-		// Check if variable is in allowlist
-		if f.isVariableAllowed(variable, groupAllowlist) {
+		// Check if variable is in global allowlist
+		if f.globalAllowlist[variable] {
 			result[variable] = value
 		}
-	}
-
-	allowlistSize := 0
-	if groupAllowlist != nil {
-		allowlistSize = len(groupAllowlist)
-	} else {
-		allowlistSize = len(f.globalAllowlist)
 	}
 
 	slog.Debug("Filtered system environment variables",
 		"total_vars", len(os.Environ()),
 		"filtered_vars", len(result),
-		"allowlistSize", allowlistSize)
+		"allowlistSize", len(f.globalAllowlist))
 
 	return result, nil
 }
@@ -144,15 +136,20 @@ func (f *Filter) ResolveGroupEnvironmentVars(group *runnertypes.CommandGroup, lo
 		return nil, fmt.Errorf("%w: group is nil", ErrGroupNotFound)
 	}
 
-	// Filter system environment variables
-	filteredSystemEnv, err := f.FilterSystemEnvironment(group.EnvAllowlist)
-	if err != nil {
-		return nil, fmt.Errorf("failed to filter system environment: %w", err)
-	}
-
-	// Start with filtered system environment variables
 	result := make(map[string]string)
-	maps.Copy(result, filteredSystemEnv)
+
+	// Add system environment variables directly (no intermediate filtering)
+	for _, env := range os.Environ() {
+		parts := strings.SplitN(env, "=", envSeparatorParts)
+		if len(parts) != envSeparatorParts {
+			continue
+		}
+
+		variable, value := parts[0], parts[1]
+		if f.isVariableAllowed(variable, group.EnvAllowlist) {
+			result[variable] = value
+		}
+	}
 
 	// Add loaded environment variables from .env file (already filtered in LoadEnvironment)
 	// These override system variables

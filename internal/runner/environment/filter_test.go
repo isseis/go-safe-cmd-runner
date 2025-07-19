@@ -19,131 +19,6 @@ func TestNewFilter(t *testing.T) {
 	}
 }
 
-func TestFilterSystemEnvironmentGlobalAllowlist(t *testing.T) {
-	// Set test environment variables
-	t.Setenv("TEST_VAR1", "value1")
-	t.Setenv("TEST_VAR2", "value2")
-	t.Setenv("TEST_VAR3", "value3")
-
-	tests := []struct {
-		name      string
-		allowlist []string
-		expected  map[string]string
-	}{
-		{
-			name:      "empty allowlist",
-			allowlist: []string{},
-			expected:  map[string]string{},
-		},
-		{
-			name:      "single allowed variable",
-			allowlist: []string{"TEST_VAR1"},
-			expected:  map[string]string{"TEST_VAR1": "value1"},
-		},
-		{
-			name:      "multiple allowed variables",
-			allowlist: []string{"TEST_VAR1", "TEST_VAR2"},
-			expected:  map[string]string{"TEST_VAR1": "value1", "TEST_VAR2": "value2"},
-		},
-		{
-			name:      "non-existent variable in allowlist",
-			allowlist: []string{"NON_EXISTENT"},
-			expected:  map[string]string{},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			config := &runnertypes.Config{
-				Global: runnertypes.GlobalConfig{
-					EnvAllowlist: tt.allowlist,
-				},
-			}
-			filter := NewFilter(config)
-			result, err := filter.FilterSystemEnvironment(nil)
-			if err != nil {
-				t.Fatalf("FilterSystemEnvironment returned error: %v", err)
-			}
-
-			for key, expectedValue := range tt.expected {
-				if actualValue, exists := result[key]; !exists {
-					t.Errorf("Expected variable %s not found in result", key)
-				} else if actualValue != expectedValue {
-					t.Errorf("Variable %s: expected %s, got %s", key, expectedValue, actualValue)
-				}
-			}
-
-			// Check that no unexpected variables are present
-			for key := range result {
-				if _, expected := tt.expected[key]; !expected {
-					t.Errorf("Unexpected variable %s found in result", key)
-				}
-			}
-		})
-	}
-}
-
-func TestFilterSystemEnvironmentGroupAllowlist(t *testing.T) {
-	config := &runnertypes.Config{}
-	filter := NewFilter(config)
-
-	// Set test environment variables
-	t.Setenv("TEST_VAR1", "value1")
-	t.Setenv("TEST_VAR2", "value2")
-	t.Setenv("TEST_VAR3", "value3")
-
-	tests := []struct {
-		name      string
-		allowlist []string
-		expected  map[string]string
-	}{
-		{
-			name:      "empty allowlist",
-			allowlist: []string{},
-			expected:  map[string]string{},
-		},
-		{
-			name:      "single allowed variable",
-			allowlist: []string{"TEST_VAR1"},
-			expected:  map[string]string{"TEST_VAR1": "value1"},
-		},
-		{
-			name:      "multiple allowed variables",
-			allowlist: []string{"TEST_VAR1", "TEST_VAR2"},
-			expected:  map[string]string{"TEST_VAR1": "value1", "TEST_VAR2": "value2"},
-		},
-		{
-			name:      "non-existent variable in allowlist",
-			allowlist: []string{"NON_EXISTENT"},
-			expected:  map[string]string{},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := filter.FilterSystemEnvironment(tt.allowlist)
-			if err != nil {
-				t.Fatalf("FilterSystemEnvironment returned error: %v", err)
-			}
-
-			for key, expectedValue := range tt.expected {
-				if actualValue, exists := result[key]; !exists {
-					t.Errorf("Expected variable %s not found in result", key)
-				} else if actualValue != expectedValue {
-					t.Errorf("Variable %s: expected %s, got %s", key, expectedValue, actualValue)
-				}
-			}
-
-			// Check that no unexpected variables are present
-			for key := range result {
-				if _, expected := tt.expected[key]; !expected {
-					t.Errorf("Unexpected variable %s found in result", key)
-				}
-			}
-		})
-	}
-}
-
 func TestFilterEnvFileVariablesGlobalAllowlist(t *testing.T) {
 	envFileVars := map[string]string{
 		"ENV_VAR1": "value1",
@@ -584,6 +459,78 @@ func TestValidateVariableValue(t *testing.T) {
 				t.Errorf("ValidateVariableValue(%s): expected no error, got %v", tt.value, err)
 			} else if !tt.expected && err == nil {
 				t.Errorf("ValidateVariableValue(%s): expected error, got nil", tt.value)
+			}
+		})
+	}
+}
+
+func TestFilterSystemEnvironment(t *testing.T) {
+	tests := []struct {
+		name            string
+		envVars         map[string]string
+		globalAllowlist []string
+		expectedVars    []string
+		notExpectedVars []string
+	}{
+		{
+			name:            "filter with simple global allowlist",
+			envVars:         map[string]string{"TEST_PATH": "/bin", "TEST_HOME": "/home/user", "SECRET": "value"},
+			globalAllowlist: []string{"TEST_PATH", "TEST_HOME"},
+			expectedVars:    []string{"TEST_PATH", "TEST_HOME"},
+			notExpectedVars: []string{"SECRET"},
+		},
+		{
+			name:            "empty global allowlist",
+			envVars:         map[string]string{"TEST_PATH": "/bin", "TEST_HOME": "/home/user"},
+			globalAllowlist: []string{},
+			expectedVars:    []string{},
+			notExpectedVars: []string{"TEST_PATH", "TEST_HOME"},
+		},
+		{
+			name:            "no matching variables",
+			envVars:         map[string]string{"SECRET": "value", "PRIVATE": "data"},
+			globalAllowlist: []string{"NONEXISTENT1", "NONEXISTENT2"},
+			expectedVars:    []string{},
+			notExpectedVars: []string{"SECRET", "PRIVATE", "PATH", "HOME"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set up test environment
+			for key, value := range tt.envVars {
+				t.Setenv(key, value)
+			}
+
+			config := &runnertypes.Config{
+				Global: runnertypes.GlobalConfig{
+					EnvAllowlist: tt.globalAllowlist,
+				},
+			}
+			filter := NewFilter(config)
+			result, err := filter.FilterSystemEnvironment()
+			if err != nil {
+				t.Errorf("FilterSystemEnvironment() error = %v", err)
+				return
+			}
+
+			// Check expected variables are present
+			for _, expectedVar := range tt.expectedVars {
+				if _, exists := result[expectedVar]; !exists {
+					t.Errorf("Expected variable %s not found in result", expectedVar)
+				}
+			}
+
+			// Check unexpected variables are not present
+			for _, notExpectedVar := range tt.notExpectedVars {
+				if _, exists := result[notExpectedVar]; exists {
+					t.Errorf("Unexpected variable %s found in result", notExpectedVar)
+				}
+			}
+
+			// Verify only expected variables are present
+			if len(result) != len(tt.expectedVars) {
+				t.Errorf("Expected %d variables, got %d", len(tt.expectedVars), len(result))
 			}
 		})
 	}

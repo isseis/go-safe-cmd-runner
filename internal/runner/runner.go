@@ -175,7 +175,7 @@ func (r *Runner) LoadEnvironment(envFile string, loadSystemEnv bool) error {
 
 	// Load and filter system environment variables if requested
 	if loadSystemEnv {
-		filteredSystemEnv, err := r.envFilter.FilterSystemEnvironment(nil)
+		filteredSystemEnv, err := r.envFilter.FilterSystemEnvironment()
 		if err != nil {
 			return fmt.Errorf("failed to filter system environment variables: %w", err)
 		}
@@ -387,8 +387,8 @@ func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, group *runnerty
 		}
 	} else {
 		// For commands without group context, use global allowlist and filter system environment variables
-		// FilterSystemEnvironment will create and return a new map
-		envVars, err = r.envFilter.FilterSystemEnvironment(nil)
+		// FilterGlobalSystemEnvironment will create and return a new map
+		envVars, err = r.envFilter.FilterSystemEnvironment()
 		if err != nil {
 			return nil, fmt.Errorf("failed to filter system environment variables: %w", err)
 		}
