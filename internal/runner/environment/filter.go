@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -61,11 +60,11 @@ func NewFilter(config *runnertypes.Config) *Filter {
 	return f
 }
 
-// FilterSystemEnvironment filters system environment variables based on the provided allowlist
-func (f *Filter) FilterSystemEnvironment(groupAllowlist []string) (map[string]string, error) {
+// parseSystemEnvironment parses os.Environ() and filters variables based on the provided predicate
+// predicate takes a single string argument (variable name) and returns true if the variable is allowed.
+func (f *Filter) parseSystemEnvironment(predicate func(string) bool) map[string]string {
 	result := make(map[string]string)
 
-	// Get system environment variables
 	for _, env := range os.Environ() {
 		parts := strings.SplitN(env, "=", envSeparatorParts)
 		if len(parts) != envSeparatorParts {
@@ -73,29 +72,34 @@ func (f *Filter) FilterSystemEnvironment(groupAllowlist []string) (map[string]st
 		}
 
 		variable, value := parts[0], parts[1]
-
-		// Check if variable is in allowlist
-		if f.isVariableAllowed(variable, groupAllowlist) {
+		if predicate(variable) {
 			result[variable] = value
 		}
 	}
 
-	allowlistSize := 0
-	if groupAllowlist != nil {
-		allowlistSize = len(groupAllowlist)
-	} else {
-		allowlistSize = len(f.globalAllowlist)
-	}
+	return result
+}
+
+// FilterSystemEnvironment filters system environment variables using only the global allowlist.
+// Note: No validation is performed on system environment variables as they are considered
+// trusted sources controlled by the execution environment. Only allowlist filtering is applied
+// for performance and security design reasons.
+func (f *Filter) FilterSystemEnvironment() map[string]string {
+	result := f.parseSystemEnvironment(func(variable string) bool {
+		return f.globalAllowlist[variable]
+	})
 
 	slog.Debug("Filtered system environment variables",
 		"total_vars", len(os.Environ()),
 		"filtered_vars", len(result),
-		"allowlistSize", allowlistSize)
+		"allowlistSize", len(f.globalAllowlist))
 
-	return result, nil
+	return result
 }
 
 // FilterEnvFileVariables filters environment variables from .env file based on allowlist
+// Note: Full validation is performed on .env file variables as they come from external files
+// which may contain malicious content. Both allowlist filtering and security validation are applied.
 func (f *Filter) FilterEnvFileVariables(envFileVars map[string]string, groupAllowlist []string) (map[string]string, error) {
 	result := make(map[string]string)
 
@@ -139,22 +143,23 @@ func (f *Filter) FilterEnvFileVariables(envFileVars map[string]string, groupAllo
 }
 
 // ResolveGroupEnvironmentVars resolves environment variables for a specific group
+// Security model:
+// - System environment variables: trusted, only allowlist filtering applied
+// - .env file variables: already validated during loading, only allowlist filtering applied
+// - Group-defined variables: external configuration, full validation required
 func (f *Filter) ResolveGroupEnvironmentVars(group *runnertypes.CommandGroup, loadedEnvVars map[string]string) (map[string]string, error) {
 	if group == nil {
 		return nil, fmt.Errorf("%w: group is nil", ErrGroupNotFound)
 	}
 
-	// Filter system environment variables
-	filteredSystemEnv, err := f.FilterSystemEnvironment(group.EnvAllowlist)
-	if err != nil {
-		return nil, fmt.Errorf("failed to filter system environment: %w", err)
-	}
-
-	// Start with filtered system environment variables
-	result := make(map[string]string)
-	maps.Copy(result, filteredSystemEnv)
+	// Add system environment variables using the common parsing logic
+	// Note: No validation needed - system environment variables are trusted
+	result := f.parseSystemEnvironment(func(variable string) bool {
+		return f.isVariableAllowed(variable, group.EnvAllowlist)
+	})
 
 	// Add loaded environment variables from .env file (already filtered in LoadEnvironment)
+	// Note: These variables were already validated during the loading process
 	// These override system variables
 	for variable, value := range loadedEnvVars {
 		if f.isVariableAllowed(variable, group.EnvAllowlist) {
@@ -163,6 +168,7 @@ func (f *Filter) ResolveGroupEnvironmentVars(group *runnertypes.CommandGroup, lo
 	}
 
 	// Add group-level environment variables (these override both system and .env vars)
+	// Note: Full validation required as these come from external configuration
 	for _, env := range group.Env {
 		parts := strings.SplitN(env, "=", envSeparatorParts)
 		if len(parts) != envSeparatorParts {
@@ -194,15 +200,12 @@ func (f *Filter) ResolveGroupEnvironmentVars(group *runnertypes.CommandGroup, lo
 }
 
 // IsVariableAccessAllowed checks if a variable can be accessed in the given group context
-// If no group is provided, it checks against the global allowlist only
+// This function expects a non-nil group parameter
 func (f *Filter) IsVariableAccessAllowed(variable string, group *runnertypes.CommandGroup) bool {
-	// If no group is provided, check against global allowlist only
 	if group == nil {
-		allowed := f.isVariableAllowed(variable, nil)
-		if !allowed {
-			slog.Warn("Variable access denied by global allowlist", "variable", variable, "allowlist_size", len(f.config.Global.EnvAllowlist))
-		}
-		return allowed
+		// This should not happen in normal operation, but handle it gracefully for safety
+		slog.Error("IsVariableAccessAllowed called with nil group - this indicates a programming error")
+		return false
 	}
 
 	allowed := f.isVariableAllowed(variable, group.EnvAllowlist)
