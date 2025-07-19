@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -702,7 +703,7 @@ func TestRunner_LoadEnvironmentWithSecurity(t *testing.T) {
 
 		// Create a temporary .env file with correct permissions
 		tmpDir := t.TempDir()
-		envFile := tmpDir + "/.env"
+		envFile := filepath.Join(tmpDir, ".env")
 
 		err = os.WriteFile(envFile, []byte("TEST_VAR=test_value\n"), 0o644)
 		assert.NoError(t, err)
@@ -712,7 +713,7 @@ func TestRunner_LoadEnvironmentWithSecurity(t *testing.T) {
 		assert.NoError(t, err)
 
 		// Create a file with excessive permissions
-		badEnvFile := tmpDir + "/.env_bad"
+		badEnvFile := filepath.Join(tmpDir, ".env_bad")
 		err = os.WriteFile(badEnvFile, []byte("TEST_VAR=test_value\n"), 0o777)
 		assert.NoError(t, err)
 
@@ -734,7 +735,7 @@ func TestRunner_LoadEnvironmentWithSecurity(t *testing.T) {
 
 		// Create a temporary .env file with unsafe values
 		tmpDir := t.TempDir()
-		envFile := tmpDir + "/.env"
+		envFile := filepath.Join(tmpDir, ".env")
 
 		unsafeContent := "DANGEROUS=value; rm -rf /\n"
 		err = os.WriteFile(envFile, []byte(unsafeContent), 0o644)

@@ -161,7 +161,8 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 // If envFile is empty, only system environment variables will be loaded.
 // If loadSystemEnv is true, system environment variables will be loaded first,
 // then overridden by the .env file if specified.
-// Variables are filtered based on the global env_allowlist configuration.
+// Variables undergo global filtering and validation during loading, and will be filtered
+// per-group during execution.
 func (r *Runner) LoadEnvironment(envFile string, loadSystemEnv bool) error {
 	// Validate file permissions if a file is specified
 	if envFile != "" {
@@ -170,35 +171,29 @@ func (r *Runner) LoadEnvironment(envFile string, loadSystemEnv bool) error {
 		}
 	}
 
-	// Create environment filter
+	// Create environment map
 	envMap := make(map[string]string)
 
-	// Load and filter system environment variables if requested
+	// Load system environment variables if requested
 	if loadSystemEnv {
-		filteredSystemEnv := r.envFilter.FilterSystemEnvironment()
-		maps.Copy(envMap, filteredSystemEnv)
+		sysEnv, err := r.envFilter.FilterSystemEnvironment()
+		if err != nil {
+			return fmt.Errorf("failed to filter system environment variables: %w", err)
+		}
+		maps.Copy(envMap, sysEnv)
 	}
 
-	// Load and filter .env file if specified
+	// Load .env file if specified
 	if envFile != "" {
 		fileEnv, err := godotenv.Read(envFile)
 		if err != nil {
 			return fmt.Errorf("failed to load environment file %s: %w", envFile, err)
 		}
-
-		// Filter .env file variables using global allowlist
-		filteredFileEnv, err := r.envFilter.FilterEnvFileVariables(fileEnv, nil)
+		fileEnv, err = r.envFilter.FilterGlobalVariables(fileEnv, environment.SourceEnvFile)
 		if err != nil {
-			return fmt.Errorf("failed to filter .env file variables: %w", err)
+			return fmt.Errorf("failed to filter environment variables from file %s: %w", envFile, err)
 		}
-
-		// Override with filtered values from .env file
-		maps.Copy(envMap, filteredFileEnv)
-	}
-
-	// Validate all environment variables for safety
-	if err := r.validator.ValidateAllEnvironmentVars(envMap); err != nil {
-		return fmt.Errorf("environment variable security validation failed: %w", err)
+		maps.Copy(envMap, fileEnv)
 	}
 
 	r.envVars = envMap
