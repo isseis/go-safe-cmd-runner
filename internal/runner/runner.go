@@ -500,27 +500,7 @@ func (r *Runner) GetConfig() *runnertypes.Config {
 	return r.config
 }
 
-// GetSanitizedEnvironmentVars returns environment variables with sensitive values redacted
-func (r *Runner) GetSanitizedEnvironmentVars() map[string]string {
-	return r.validator.SanitizeEnvironmentVariables(r.envVars)
-}
-
-// GetTemplateEngine returns the template engine instance
-func (r *Runner) GetTemplateEngine() *template.Engine {
-	return r.templateEngine
-}
-
-// GetResourceManager returns the resource manager instance
-func (r *Runner) GetResourceManager() *resource.Manager {
-	return r.resourceManager
-}
-
 // CleanupAllResources cleans up all managed resources
 func (r *Runner) CleanupAllResources() error {
 	return r.resourceManager.CleanupAll()
-}
-
-// CleanupAutoCleanupResources cleans up resources marked for auto cleanup
-func (r *Runner) CleanupAutoCleanupResources() error {
-	return r.resourceManager.CleanupAutoCleanup()
 }

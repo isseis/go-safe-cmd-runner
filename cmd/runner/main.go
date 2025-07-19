@@ -135,9 +135,9 @@ func run() error {
 		return nil
 	}
 
-	// Ensure cleanup of resources on exit
+	// Ensure cleanup of all resources on exit (both auto-cleanup and manual cleanup resources)
 	defer func() {
-		if err := runner.CleanupAutoCleanupResources(); err != nil {
+		if err := runner.CleanupAllResources(); err != nil {
 			log.Printf("Warning: Failed to cleanup resources: %v", err)
 		}
 	}()
