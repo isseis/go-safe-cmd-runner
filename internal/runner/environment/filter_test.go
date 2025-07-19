@@ -454,11 +454,7 @@ func TestFilterSystemEnvironment(t *testing.T) {
 				},
 			}
 			filter := NewFilter(config)
-			result, err := filter.FilterSystemEnvironment()
-			if err != nil {
-				t.Errorf("FilterSystemEnvironment() error = %v", err)
-				return
-			}
+			result := filter.FilterSystemEnvironment()
 
 			// Check expected variables are present
 			for _, expectedVar := range tt.expectedVars {
@@ -544,11 +540,7 @@ func TestFilterSystemEnvironmentSkipsValidation(t *testing.T) {
 			filter := NewFilter(config)
 
 			// Execute FilterSystemEnvironment
-			result, err := filter.FilterSystemEnvironment()
-			if err != nil {
-				t.Errorf("FilterSystemEnvironment() should not return error for dangerous patterns, got: %v", err)
-				return
-			}
+			result := filter.FilterSystemEnvironment()
 
 			// Verify expected variables are present with their dangerous values intact
 			for _, expectedVar := range tt.expectedVars {
@@ -601,10 +593,7 @@ func TestFilterSystemEnvironmentVsEnvFileValidationDifference(t *testing.T) {
 	filter := NewFilter(config)
 
 	// Test 1: FilterSystemEnvironment should allow dangerous value through allowlist
-	systemResult, err := filter.FilterSystemEnvironment()
-	if err != nil {
-		t.Errorf("FilterSystemEnvironment() should not validate dangerous patterns, got error: %v", err)
-	}
+	systemResult := filter.FilterSystemEnvironment()
 	if value, exists := systemResult[varName]; !exists {
 		t.Error("System environment variable with dangerous pattern should be allowed through allowlist")
 	} else if value != dangerousValue {
@@ -616,7 +605,7 @@ func TestFilterSystemEnvironmentVsEnvFileValidationDifference(t *testing.T) {
 		varName: dangerousValue,
 	}
 
-	_, err = filter.FilterEnvFileVariables(envFileVars, []string{varName})
+	_, err := filter.FilterEnvFileVariables(envFileVars, []string{varName})
 	if err == nil {
 		t.Error("FilterEnvFileVariables() should reject dangerous patterns and return error")
 	}

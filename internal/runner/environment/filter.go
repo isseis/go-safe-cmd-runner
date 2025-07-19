@@ -84,7 +84,7 @@ func (f *Filter) parseSystemEnvironment(predicate func(string) bool) map[string]
 // Note: No validation is performed on system environment variables as they are considered
 // trusted sources controlled by the execution environment. Only allowlist filtering is applied
 // for performance and security design reasons.
-func (f *Filter) FilterSystemEnvironment() (map[string]string, error) {
+func (f *Filter) FilterSystemEnvironment() map[string]string {
 	result := f.parseSystemEnvironment(func(variable string) bool {
 		return f.globalAllowlist[variable]
 	})
@@ -94,7 +94,7 @@ func (f *Filter) FilterSystemEnvironment() (map[string]string, error) {
 		"filtered_vars", len(result),
 		"allowlistSize", len(f.globalAllowlist))
 
-	return result, nil
+	return result
 }
 
 // FilterEnvFileVariables filters environment variables from .env file based on allowlist

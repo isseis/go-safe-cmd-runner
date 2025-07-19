@@ -175,10 +175,7 @@ func (r *Runner) LoadEnvironment(envFile string, loadSystemEnv bool) error {
 
 	// Load and filter system environment variables if requested
 	if loadSystemEnv {
-		filteredSystemEnv, err := r.envFilter.FilterSystemEnvironment()
-		if err != nil {
-			return fmt.Errorf("failed to filter system environment variables: %w", err)
-		}
+		filteredSystemEnv := r.envFilter.FilterSystemEnvironment()
 		maps.Copy(envMap, filteredSystemEnv)
 	}
 
