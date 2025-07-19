@@ -15,7 +15,8 @@
       "Bash(rm:*)",
       "Bash(../build/record:*)",
       "Bash(PATH=/usr/bin:/bin ./build/runner -config sample/test.toml show_environment_variables)",
-      "Bash(git stash:*)"
+      "Bash(git stash:*)",
+      "Bash(build/record:*)"
     ],
     "deny": []
   }

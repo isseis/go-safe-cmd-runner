@@ -66,12 +66,11 @@ func (f *Filter) parseSystemEnvironment(predicate func(string) bool) map[string]
 	result := make(map[string]string)
 
 	for _, env := range os.Environ() {
-		parts := strings.SplitN(env, "=", envSeparatorParts)
-		if len(parts) != envSeparatorParts {
+		variable, value, ok := ParseEnvVariable(env)
+		if !ok {
 			continue
 		}
 
-		variable, value := parts[0], parts[1]
 		if predicate == nil || predicate(variable) {
 			result[variable] = value
 		}
@@ -134,8 +133,7 @@ func (f *Filter) FilterGlobalVariables(envFileVars map[string]string, src Source
 // ResolveGroupEnvironmentVars resolves environment variables for a specific group
 // Security model:
 // - System environment variables: trusted, only allowlist filtering applied
-// - .env file variables: already validated during loading, only allowlist filtering applied
-// - Group-defined variables: external configuration, full validation required
+// - .env file variables: validated during loading, only allowlist filtering applied
 func (f *Filter) ResolveGroupEnvironmentVars(group *runnertypes.CommandGroup, loadedEnvVars map[string]string) (map[string]string, error) {
 	if group == nil {
 		return nil, fmt.Errorf("%w: group is nil", ErrGroupNotFound)
@@ -153,35 +151,6 @@ func (f *Filter) ResolveGroupEnvironmentVars(group *runnertypes.CommandGroup, lo
 	for variable, value := range loadedEnvVars {
 		if f.isVariableAllowed(variable, group.EnvAllowlist) {
 			result[variable] = value
-		}
-	}
-
-	// Add group-level environment variables (these override both system and .env vars)
-	// Note: Full validation required as these come from external configuration
-	for _, env := range group.Env {
-		parts := strings.SplitN(env, "=", envSeparatorParts)
-		if len(parts) != envSeparatorParts {
-			continue
-		}
-
-		variable, value := parts[0], parts[1]
-
-		// Validate environment variable name and value
-		if err := f.ValidateEnvironmentVariable(variable, value); err != nil {
-			slog.Warn("Group environment variable validation failed",
-				"variable", variable,
-				"group", group.Name,
-				"error", err)
-			continue
-		}
-
-		// Check if variable is allowed
-		if f.isVariableAllowed(variable, group.EnvAllowlist) {
-			result[variable] = value
-		} else {
-			slog.Warn("Group environment variable rejected by allowlist",
-				"variable", variable,
-				"group", group.Name)
 		}
 	}
 

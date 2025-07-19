@@ -54,7 +54,6 @@ func (e *VerificationError) Unwrap() error {
 
 // Constants
 const (
-	envSeparatorParts  = 2
 	maxResolutionDepth = 100 // Maximum number of variable resolution iterations
 )
 
@@ -376,12 +375,11 @@ func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, group *runnerty
 
 	// Add command-specific environment variables
 	for _, env := range cmd.Env {
-		parts := strings.SplitN(env, "=", envSeparatorParts)
-		if len(parts) != envSeparatorParts {
+		variable, value, ok := environment.ParseEnvVariable(env)
+		if !ok {
 			continue
 		}
 
-		variable, value := parts[0], parts[1]
 		allowed := r.envFilter.IsVariableAccessAllowed(variable, group)
 		if !allowed {
 			slog.Warn("Command environment variable access denied", "variable", variable, "command", cmd.Name, "group", group.Name)
