@@ -261,5 +261,5 @@ ANOTHER_SAFE_VAR=another_safe_value
 	assert.Contains(t, err.Error(), "dangerous pattern")
 
 	// Should not have loaded any variables due to validation failure
-	assert.Empty(t, runner.envVars["SAFE_VAR"], "Safe variables should not be loaded if any variable fails validation")
+	assert.Empty(t, runner.envVars, "Safe variables should not be loaded if any variable fails validation")
 }
