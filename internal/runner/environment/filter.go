@@ -60,11 +60,11 @@ func NewFilter(config *runnertypes.Config) *Filter {
 	return f
 }
 
-// FilterSystemEnvironment filters system environment variables using only the global allowlist.
-func (f *Filter) FilterSystemEnvironment() (map[string]string, error) {
+// parseSystemEnvironment parses os.Environ() and filters variables based on the provided predicate
+// predicate takes a single string argument (variable name) and returns true if the variable is allowed.
+func (f *Filter) parseSystemEnvironment(predicate func(string) bool) map[string]string {
 	result := make(map[string]string)
 
-	// Get system environment variables
 	for _, env := range os.Environ() {
 		parts := strings.SplitN(env, "=", envSeparatorParts)
 		if len(parts) != envSeparatorParts {
@@ -72,12 +72,22 @@ func (f *Filter) FilterSystemEnvironment() (map[string]string, error) {
 		}
 
 		variable, value := parts[0], parts[1]
-
-		// Check if variable is in global allowlist
-		if f.globalAllowlist[variable] {
+		if predicate(variable) {
 			result[variable] = value
 		}
 	}
+
+	return result
+}
+
+// FilterSystemEnvironment filters system environment variables using only the global allowlist.
+// Note: No validation is performed on system environment variables as they are considered
+// trusted sources controlled by the execution environment. Only allowlist filtering is applied
+// for performance and security design reasons.
+func (f *Filter) FilterSystemEnvironment() (map[string]string, error) {
+	result := f.parseSystemEnvironment(func(variable string) bool {
+		return f.globalAllowlist[variable]
+	})
 
 	slog.Debug("Filtered system environment variables",
 		"total_vars", len(os.Environ()),
@@ -88,6 +98,8 @@ func (f *Filter) FilterSystemEnvironment() (map[string]string, error) {
 }
 
 // FilterEnvFileVariables filters environment variables from .env file based on allowlist
+// Note: Full validation is performed on .env file variables as they come from external files
+// which may contain malicious content. Both allowlist filtering and security validation are applied.
 func (f *Filter) FilterEnvFileVariables(envFileVars map[string]string, groupAllowlist []string) (map[string]string, error) {
 	result := make(map[string]string)
 
@@ -131,27 +143,23 @@ func (f *Filter) FilterEnvFileVariables(envFileVars map[string]string, groupAllo
 }
 
 // ResolveGroupEnvironmentVars resolves environment variables for a specific group
+// Security model:
+// - System environment variables: trusted, only allowlist filtering applied
+// - .env file variables: already validated during loading, only allowlist filtering applied
+// - Group-defined variables: external configuration, full validation required
 func (f *Filter) ResolveGroupEnvironmentVars(group *runnertypes.CommandGroup, loadedEnvVars map[string]string) (map[string]string, error) {
 	if group == nil {
 		return nil, fmt.Errorf("%w: group is nil", ErrGroupNotFound)
 	}
 
-	result := make(map[string]string)
-
-	// Add system environment variables directly (no intermediate filtering)
-	for _, env := range os.Environ() {
-		parts := strings.SplitN(env, "=", envSeparatorParts)
-		if len(parts) != envSeparatorParts {
-			continue
-		}
-
-		variable, value := parts[0], parts[1]
-		if f.isVariableAllowed(variable, group.EnvAllowlist) {
-			result[variable] = value
-		}
-	}
+	// Add system environment variables using the common parsing logic
+	// Note: No validation needed - system environment variables are trusted
+	result := f.parseSystemEnvironment(func(variable string) bool {
+		return f.isVariableAllowed(variable, group.EnvAllowlist)
+	})
 
 	// Add loaded environment variables from .env file (already filtered in LoadEnvironment)
+	// Note: These variables were already validated during the loading process
 	// These override system variables
 	for variable, value := range loadedEnvVars {
 		if f.isVariableAllowed(variable, group.EnvAllowlist) {
@@ -160,6 +168,7 @@ func (f *Filter) ResolveGroupEnvironmentVars(group *runnertypes.CommandGroup, lo
 	}
 
 	// Add group-level environment variables (these override both system and .env vars)
+	// Note: Full validation required as these come from external configuration
 	for _, env := range group.Env {
 		parts := strings.SplitN(env, "=", envSeparatorParts)
 		if len(parts) != envSeparatorParts {

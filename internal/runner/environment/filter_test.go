@@ -535,3 +535,145 @@ func TestFilterSystemEnvironment(t *testing.T) {
 		})
 	}
 }
+
+// TestFilterSystemEnvironmentSkipsValidation tests that FilterSystemEnvironment
+// does not apply ValidateEnvironmentVariable and only uses allowlist filtering,
+// even for environment variables with potentially dangerous values.
+func TestFilterSystemEnvironmentSkipsValidation(t *testing.T) {
+	tests := []struct {
+		name         string
+		envVars      map[string]string // Environment variables with dangerous patterns
+		allowlist    []string
+		expectedVars []string
+		description  string
+	}{
+		{
+			name: "dangerous patterns allowed through allowlist",
+			envVars: map[string]string{
+				"DANGEROUS_CMD": "rm -rf /tmp",           // Contains 'rm ' pattern
+				"INJECTION_VAR": "test; cat /etc/passwd", // Contains ';' pattern
+				"REDIRECT_VAR":  "output > /tmp/file",    // Contains '>' pattern
+				"SAFE_VAR":      "normal_value",          // Safe value
+				"NOT_ALLOWED":   "safe_but_not_allowed",  // Safe but not in allowlist
+			},
+			allowlist:    []string{"DANGEROUS_CMD", "INJECTION_VAR", "REDIRECT_VAR", "SAFE_VAR"},
+			expectedVars: []string{"DANGEROUS_CMD", "INJECTION_VAR", "REDIRECT_VAR", "SAFE_VAR"},
+			description:  "All allowlisted variables should be included, regardless of dangerous patterns",
+		},
+		{
+			name: "dangerous patterns filtered by allowlist only",
+			envVars: map[string]string{
+				"DANGEROUS_CMD": "rm -rf /tmp",
+				"SAFE_VAR":      "normal_value",
+			},
+			allowlist:    []string{"SAFE_VAR"}, // Only safe var in allowlist
+			expectedVars: []string{"SAFE_VAR"},
+			description:  "Dangerous variables should be filtered by allowlist, not by validation",
+		},
+		{
+			name: "command execution patterns in allowlisted vars",
+			envVars: map[string]string{
+				"EXEC_VAR":   "exec /bin/bash",
+				"SYSTEM_VAR": "system('malicious')",
+				"EVAL_VAR":   "eval(dangerous)",
+			},
+			allowlist:    []string{"EXEC_VAR", "SYSTEM_VAR", "EVAL_VAR"},
+			expectedVars: []string{"EXEC_VAR", "SYSTEM_VAR", "EVAL_VAR"},
+			description:  "Command execution patterns should pass through if allowlisted",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set up test environment variables
+			for key, value := range tt.envVars {
+				t.Setenv(key, value)
+			}
+
+			config := &runnertypes.Config{
+				Global: runnertypes.GlobalConfig{
+					EnvAllowlist: tt.allowlist,
+				},
+			}
+			filter := NewFilter(config)
+
+			// Execute FilterSystemEnvironment
+			result, err := filter.FilterSystemEnvironment()
+			if err != nil {
+				t.Errorf("FilterSystemEnvironment() should not return error for dangerous patterns, got: %v", err)
+				return
+			}
+
+			// Verify expected variables are present with their dangerous values intact
+			for _, expectedVar := range tt.expectedVars {
+				if value, exists := result[expectedVar]; !exists {
+					t.Errorf("Expected variable %s not found in result", expectedVar)
+				} else if expectedValue := tt.envVars[expectedVar]; value != expectedValue {
+					t.Errorf("Variable %s: expected value %q, got %q", expectedVar, expectedValue, value)
+				}
+			}
+
+			// Verify that variables not in allowlist are not present
+			for varName := range tt.envVars {
+				inAllowlist := false
+				for _, allowedVar := range tt.allowlist {
+					if varName == allowedVar {
+						inAllowlist = true
+						break
+					}
+				}
+				if !inAllowlist {
+					if _, exists := result[varName]; exists {
+						t.Errorf("Variable %s should not be present (not in allowlist)", varName)
+					}
+				}
+			}
+
+			// Verify only expected number of variables
+			if len(result) != len(tt.expectedVars) {
+				t.Errorf("Expected %d variables, got %d. Description: %s",
+					len(tt.expectedVars), len(result), tt.description)
+			}
+		})
+	}
+}
+
+// TestFilterSystemEnvironmentVsEnvFileValidationDifference demonstrates the security model difference:
+// system environment variables skip validation while .env file variables require validation.
+func TestFilterSystemEnvironmentVsEnvFileValidationDifference(t *testing.T) {
+	dangerousValue := "rm -rf /tmp; cat /etc/passwd"
+	varName := "DANGEROUS_VAR"
+
+	// Set up system environment variable with dangerous value
+	t.Setenv(varName, dangerousValue)
+
+	config := &runnertypes.Config{
+		Global: runnertypes.GlobalConfig{
+			EnvAllowlist: []string{varName},
+		},
+	}
+	filter := NewFilter(config)
+
+	// Test 1: FilterSystemEnvironment should allow dangerous value through allowlist
+	systemResult, err := filter.FilterSystemEnvironment()
+	if err != nil {
+		t.Errorf("FilterSystemEnvironment() should not validate dangerous patterns, got error: %v", err)
+	}
+	if value, exists := systemResult[varName]; !exists {
+		t.Error("System environment variable with dangerous pattern should be allowed through allowlist")
+	} else if value != dangerousValue {
+		t.Errorf("System environment variable value should be preserved: expected %q, got %q", dangerousValue, value)
+	}
+
+	// Test 2: FilterEnvFileVariables should reject the same dangerous value
+	envFileVars := map[string]string{
+		varName: dangerousValue,
+	}
+
+	_, err = filter.FilterEnvFileVariables(envFileVars, []string{varName})
+	if err == nil {
+		t.Error("FilterEnvFileVariables() should reject dangerous patterns and return error")
+	}
+
+	t.Logf("Security model validation: System env vars trusted (allowed), .env vars validated (rejected)")
+}
