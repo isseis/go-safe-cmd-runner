@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -176,28 +175,11 @@ func (r *Runner) LoadEnvironment(envFile string, loadSystemEnv bool) error {
 
 	// Load system environment variables if requested
 	if loadSystemEnv {
-		for _, env := range os.Environ() {
-			parts := strings.SplitN(env, "=", envSeparatorParts)
-			if len(parts) != envSeparatorParts {
-				continue
-			}
-			variable, value := parts[0], parts[1]
-
-			// Validate environment variable name and value for safety
-			if err := r.envFilter.ValidateEnvironmentVariable(variable, value); err != nil {
-				slog.Warn("System environment variable validation failed",
-					"variable", variable,
-					"source", "system",
-					"error", err)
-				// Return security error for dangerous variable values
-				if errors.Is(err, environment.ErrDangerousVariableValue) {
-					return fmt.Errorf("%w: system environment variable %s contains dangerous pattern", security.ErrUnsafeEnvironmentVar, variable)
-				}
-				continue
-			}
-
-			envMap[variable] = value
+		sysEnv, err := r.envFilter.FilterSystemEnvironment()
+		if err != nil {
+			return fmt.Errorf("failed to filter system environment variables: %w", err)
 		}
+		maps.Copy(envMap, sysEnv)
 	}
 
 	// Load .env file if specified
@@ -206,24 +188,11 @@ func (r *Runner) LoadEnvironment(envFile string, loadSystemEnv bool) error {
 		if err != nil {
 			return fmt.Errorf("failed to load environment file %s: %w", envFile, err)
 		}
-
-		// Validate .env file variables for safety
-		for variable, value := range fileEnv {
-			if err := r.envFilter.ValidateEnvironmentVariable(variable, value); err != nil {
-				slog.Warn("Environment variable from .env file validation failed",
-					"variable", variable,
-					"source", "env_file",
-					"error", err)
-				// Return security error for dangerous variable values
-				if errors.Is(err, environment.ErrDangerousVariableValue) {
-					return fmt.Errorf("%w: environment variable %s contains dangerous pattern", security.ErrUnsafeEnvironmentVar, variable)
-				}
-				continue
-			}
-
-			// Override with values from .env file
-			envMap[variable] = value
+		fileEnv, err = r.envFilter.FilterGlobalVariables(fileEnv, environment.SourceEnvFile)
+		if err != nil {
+			return fmt.Errorf("failed to filter environment variables from file %s: %w", envFile, err)
 		}
+		maps.Copy(envMap, fileEnv)
 	}
 
 	r.envVars = envMap

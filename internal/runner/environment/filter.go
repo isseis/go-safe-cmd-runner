@@ -72,7 +72,7 @@ func (f *Filter) parseSystemEnvironment(predicate func(string) bool) map[string]
 		}
 
 		variable, value := parts[0], parts[1]
-		if predicate(variable) {
+		if predicate == nil || predicate(variable) {
 			result[variable] = value
 		}
 	}
@@ -80,35 +80,37 @@ func (f *Filter) parseSystemEnvironment(predicate func(string) bool) map[string]
 	return result
 }
 
-// FilterSystemEnvironment filters system environment variables using only the global allowlist.
-// Note: No validation is performed on system environment variables as they are considered
-// trusted sources controlled by the execution environment. Only allowlist filtering is applied
-// for performance and security design reasons.
-func (f *Filter) FilterSystemEnvironment() map[string]string {
-	result := f.parseSystemEnvironment(func(variable string) bool {
-		return f.globalAllowlist[variable]
-	})
+// Source represents the source of global environment variables
+// Used to differentiate between system variables and .env file variables
+type Source string
 
-	slog.Debug("Filtered system environment variables",
-		"total_vars", len(os.Environ()),
-		"filtered_vars", len(result),
-		"allowlistSize", len(f.globalAllowlist))
+const (
+	// SourceSystem indicates variables from the system environment
+	SourceSystem Source = "system"
 
-	return result
+	// SourceEnvFile indicates variables loaded from a .env file
+	SourceEnvFile Source = "env_file"
+)
+
+// FilterSystemEnvironment filters system environment variables based on their names and values.
+// It returns a map of filtered variables or an error if validation fails.
+func (f *Filter) FilterSystemEnvironment() (map[string]string, error) {
+	// Get all system environment variables
+	sysEnv := f.parseSystemEnvironment(nil)
+	return f.FilterGlobalVariables(sysEnv, SourceSystem)
 }
 
-// FilterEnvFileVariables filters environment variables from .env file based on allowlist
-// Note: Full validation is performed on .env file variables as they come from external files
-// which may contain malicious content. Both allowlist filtering and security validation are applied.
-func (f *Filter) FilterEnvFileVariables(envFileVars map[string]string, groupAllowlist []string) (map[string]string, error) {
+// FilterGlobalVariables filters global environment variables based their names and values.
+// It returns a map of filtered variables or an error if validation fails.
+func (f *Filter) FilterGlobalVariables(envFileVars map[string]string, src Source) (map[string]string, error) {
 	result := make(map[string]string)
 
 	for variable, value := range envFileVars {
 		// Validate environment variable name and value
 		if err := f.ValidateEnvironmentVariable(variable, value); err != nil {
-			slog.Warn("Environment variable from .env file validation failed",
+			slog.Warn("Environment variable validation failed",
 				"variable", variable,
-				"source", "env_file",
+				"source", src,
 				"error", err)
 			// Return security error for dangerous variable values
 			if errors.Is(err, ErrDangerousVariableValue) {
@@ -118,26 +120,13 @@ func (f *Filter) FilterEnvFileVariables(envFileVars map[string]string, groupAllo
 		}
 
 		// Check if variable is in allowlist
-		if f.isVariableAllowed(variable, groupAllowlist) {
-			result[variable] = value
-		} else {
-			slog.Warn("Environment variable from .env file rejected by allowlist",
-				"variable", variable,
-				"source", "env_file")
-		}
+		result[variable] = value
 	}
 
-	allowlistSize := 0
-	if groupAllowlist != nil {
-		allowlistSize = len(groupAllowlist)
-	} else {
-		allowlistSize = len(f.globalAllowlist)
-	}
-
-	slog.Debug("Filtered .env file variables",
+	slog.Debug("Filtered global variables",
+		"source", src,
 		"total_vars", len(envFileVars),
-		"filtered_vars", len(result),
-		"allowlistSize", allowlistSize)
+		"filtered_vars", len(result))
 
 	return result, nil
 }
