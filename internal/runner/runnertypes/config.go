@@ -23,7 +23,6 @@ type GlobalConfig struct {
 // TemplateConfig represents a template configuration
 type TemplateConfig struct {
 	Description string            `toml:"description"`
-	Verify      []string          `toml:"verify"`     // Verification rule names
 	TempDir     bool              `toml:"temp_dir"`   // Auto-generate temporary directory
 	Cleanup     bool              `toml:"cleanup"`    // Auto cleanup
 	WorkDir     string            `toml:"workdir"`    // Working directory (supports "auto")

@@ -109,7 +109,6 @@ func (l *Loader) applyTemplates(cfg *runnertypes.Config) error {
 		tmpl := &template.Template{
 			Name:        name,
 			Description: tmplConfig.Description,
-			Verify:      tmplConfig.Verify,
 			TempDir:     tmplConfig.TempDir,
 			Cleanup:     tmplConfig.Cleanup,
 			WorkDir:     tmplConfig.WorkDir,
