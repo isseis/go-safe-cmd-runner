@@ -238,28 +238,32 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 	processedGroup := group
 
 	// Process new fields (TempDir, Cleanup, WorkDir)
+	var tempResource *resource.Resource
 	if processedGroup.TempDir {
 		// Create temporary directory for this group
-		tempResource, err := r.resourceManager.CreateTempDir(processedGroup.Name, processedGroup.Cleanup)
+		var err error
+		tempResource, err = r.resourceManager.CreateTempDir(processedGroup.Name, processedGroup.Cleanup)
 		if err != nil {
 			return fmt.Errorf("failed to create temp directory for group %s: %w", processedGroup.Name, err)
 		}
 		groupResources = append(groupResources, tempResource.ID)
-
-		// Set working directory to temp directory for commands without Dir specified
-		for i := range processedGroup.Commands {
-			if processedGroup.Commands[i].Dir == "" {
-				processedGroup.Commands[i].Dir = tempResource.Path
-			}
-		}
 	}
 
-	// Apply group WorkDir to commands without Dir specified
-	if processedGroup.WorkDir != "" {
-		for i := range processedGroup.Commands {
-			if processedGroup.Commands[i].Dir == "" {
-				processedGroup.Commands[i].Dir = processedGroup.WorkDir
-			}
+	// Determine and set the effective working directory for each command
+	for i := range processedGroup.Commands {
+		// Skip if command already has a directory specified
+		if processedGroup.Commands[i].Dir != "" {
+			continue
+		}
+
+		// Priority for working directory:
+		// 1. TempDir (if enabled)
+		// 2. Group's WorkDir
+		switch {
+		case tempResource != nil:
+			processedGroup.Commands[i].Dir = tempResource.Path
+		case processedGroup.WorkDir != "":
+			processedGroup.Commands[i].Dir = processedGroup.WorkDir
 		}
 	}
 
