@@ -140,48 +140,6 @@ func TestFilterEnvFileVariablesGroupAllowlist(t *testing.T) {
 	}
 }
 
-func TestIsVariableAccessAllowedGlobalOnly(t *testing.T) {
-	config := &runnertypes.Config{
-		Global: runnertypes.GlobalConfig{
-			EnvAllowlist: []string{"GLOBAL_VAR1", "GLOBAL_VAR2"},
-		},
-	}
-
-	filter := NewFilter(config)
-
-	tests := []struct {
-		name     string
-		variable string
-		expected bool
-	}{
-		{
-			name:     "global variable allowed",
-			variable: "GLOBAL_VAR1",
-			expected: true,
-		},
-		{
-			name:     "global variable allowed 2",
-			variable: "GLOBAL_VAR2",
-			expected: true,
-		},
-		{
-			name:     "variable not in global allowlist",
-			variable: "NOT_ALLOWED",
-			expected: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := filter.IsVariableAccessAllowed(tt.variable, nil)
-			if result != tt.expected {
-				t.Errorf("IsVariableAccessAllowed(%s, nil): expected %v, got %v",
-					tt.variable, tt.expected, result)
-			}
-		})
-	}
-}
-
 func TestIsVariableAccessAllowed(t *testing.T) {
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
@@ -220,18 +178,6 @@ func TestIsVariableAccessAllowed(t *testing.T) {
 			name:     "variable not allowed",
 			variable: "FORBIDDEN_VAR",
 			group:    testGroup,
-			expected: false,
-		},
-		{
-			name:     "nil group uses global allowlist",
-			variable: "GLOBAL_VAR",
-			group:    nil,
-			expected: true,
-		},
-		{
-			name:     "nil group rejects non-global var",
-			variable: "GROUP_VAR",
-			group:    nil,
 			expected: false,
 		},
 	}

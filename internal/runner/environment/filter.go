@@ -200,15 +200,12 @@ func (f *Filter) ResolveGroupEnvironmentVars(group *runnertypes.CommandGroup, lo
 }
 
 // IsVariableAccessAllowed checks if a variable can be accessed in the given group context
-// If no group is provided, it checks against the global allowlist only
+// This function expects a non-nil group parameter
 func (f *Filter) IsVariableAccessAllowed(variable string, group *runnertypes.CommandGroup) bool {
-	// If no group is provided, check against global allowlist only
 	if group == nil {
-		allowed := f.isVariableAllowed(variable, nil)
-		if !allowed {
-			slog.Warn("Variable access denied by global allowlist", "variable", variable, "allowlist_size", len(f.config.Global.EnvAllowlist))
-		}
-		return allowed
+		// This should not happen in normal operation, but handle it gracefully for safety
+		slog.Error("IsVariableAccessAllowed called with nil group - this indicates a programming error")
+		return false
 	}
 
 	allowed := f.isVariableAllowed(variable, group.EnvAllowlist)
