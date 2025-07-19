@@ -34,13 +34,10 @@ var (
 type Template struct {
 	Name        string            `toml:"name"`
 	Description string            `toml:"description"`
-	Verify      []string          `toml:"verify"`     // Verification rule names
-	TempDir     bool              `toml:"temp_dir"`   // Auto-generate temporary directory
-	Cleanup     bool              `toml:"cleanup"`    // Auto cleanup
-	WorkDir     string            `toml:"workdir"`    // Working directory (supports "auto")
-	Env         []string          `toml:"env"`        // Default environment variables
-	Privileged  bool              `toml:"privileged"` // Default privileged execution
-	Variables   map[string]string `toml:"variables"`  // Template variables
+	TempDir     bool              `toml:"temp_dir"`  // Auto-generate temporary directory
+	Cleanup     bool              `toml:"cleanup"`   // Auto cleanup
+	WorkDir     string            `toml:"workdir"`   // Working directory (supports "auto")
+	Variables   map[string]string `toml:"variables"` // Template variables
 }
 
 // Engine manages template expansion and application
@@ -163,14 +160,6 @@ func (e *Engine) applyTemplateToCommand(cmd *runnertypes.Command, tmpl *Template
 		return err
 	}
 
-	// Merge environment variables from template
-	e.mergeEnvironmentVariables(cmd, tmpl)
-
-	// Set privileged flag from template if not explicitly set
-	if tmpl.Privileged && !cmd.Privileged {
-		cmd.Privileged = tmpl.Privileged
-	}
-
 	// Expand template variables in command properties
 	return e.expandCommandProperties(cmd, variables)
 }
@@ -198,41 +187,6 @@ func (e *Engine) applyWorkingDirectory(cmd *runnertypes.Command, tmpl *Template,
 		}
 	}
 	return nil
-}
-
-// parseEnvVar parses an environment variable string into key and value
-func parseEnvVar(env string) (string, string) {
-	if idx := strings.Index(env, "="); idx != -1 {
-		return env[:idx], env[idx+1:]
-	}
-	return env, "" // Handle case where there's no value (just key)
-}
-
-// mergeEnvironmentVariables merges environment variables from template
-// Command's environment variables take precedence over template's variables
-func (e *Engine) mergeEnvironmentVariables(cmd *runnertypes.Command, tmpl *Template) {
-	if len(tmpl.Env) == 0 {
-		return
-	}
-
-	// Create a map of existing command environment variables (key -> index)
-	cmdEnvMap := make(map[string]int)
-	for i, env := range cmd.Env {
-		key, _ := parseEnvVar(env)
-		cmdEnvMap[key] = i
-	}
-
-	// Add template environment variables, but only if the key doesn't already exist
-	for _, templateEnv := range tmpl.Env {
-		templateKey, _ := parseEnvVar(templateEnv)
-
-		// If the key doesn't exist in command's env, add the template env var
-		if _, exists := cmdEnvMap[templateKey]; !exists {
-			cmd.Env = append(cmd.Env, templateEnv)
-			cmdEnvMap[templateKey] = len(cmd.Env) - 1
-		}
-		// If key already exists, command's value takes precedence (do nothing)
-	}
 }
 
 // expandCommandProperties expands template variables in command properties
