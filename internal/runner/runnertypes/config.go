@@ -38,7 +38,6 @@ type CommandGroup struct {
 	Template     string    `toml:"template"` // Template to apply to this group
 	Commands     []Command `toml:"commands"`
 	VerifyFiles  []string  `toml:"verify_files"`  // Files to verify for this group
-	Env          []string  `toml:"env"`           // Group-level environment variables
 	EnvAllowlist []string  `toml:"env_allowlist"` // Group-level environment variable allowlist
 }
 
