@@ -376,25 +376,10 @@ func (r *Runner) executeCommandInGroup(ctx context.Context, cmd runnertypes.Comm
 
 // resolveEnvironmentVars resolves environment variables for a command with group context
 func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, group *runnertypes.CommandGroup) (map[string]string, error) {
-	var envVars map[string]string
-	var err error
-
 	// Use the filter to resolve group environment variables with allowlist filtering
-	if group != nil {
-		envVars, err = r.envFilter.ResolveGroupEnvironmentVars(group, r.envVars)
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve group environment variables: %w", err)
-		}
-	} else {
-		// For commands without group context, use global allowlist and filter system environment variables
-		// FilterGlobalSystemEnvironment will create and return a new map
-		envVars, err = r.envFilter.FilterSystemEnvironment()
-		if err != nil {
-			return nil, fmt.Errorf("failed to filter system environment variables: %w", err)
-		}
-
-		// Add loaded environment variables from .env file (already filtered in LoadEnvironment)
-		maps.Copy(envVars, r.envVars)
+	envVars, err := r.envFilter.ResolveGroupEnvironmentVars(group, r.envVars)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve group environment variables: %w", err)
 	}
 
 	// Add command-specific environment variables
@@ -407,7 +392,7 @@ func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, group *runnerty
 		variable, value := parts[0], parts[1]
 		allowed := r.envFilter.IsVariableAccessAllowed(variable, group)
 		if !allowed {
-			logDeniedEnvironmentVariableAccess(group, variable, cmd)
+			slog.Warn("Command environment variable access denied", "variable", variable, "command", cmd.Name, "group", group.Name)
 			continue
 		}
 		// Resolve variable references in the value
@@ -418,19 +403,6 @@ func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, group *runnerty
 		envVars[variable] = resolvedValue
 	}
 	return envVars, nil
-}
-
-func logDeniedEnvironmentVariableAccess(group *runnertypes.CommandGroup, variable string, cmd runnertypes.Command) {
-	if group != nil {
-		slog.Warn("Command environment variable access denied",
-			"variable", variable,
-			"command", cmd.Name,
-			"group", group.Name)
-	} else {
-		slog.Warn("Command environment variable access denied by global allowlist",
-			"variable", variable,
-			"command", cmd.Name)
-	}
 }
 
 // resolveVariableReferences resolves ${VAR} references in a string
@@ -475,14 +447,7 @@ func (r *Runner) resolveVariableReferencesWithDepth(value string, envVars map[st
 
 		// Check if variable access is allowed for this group
 		if !r.envFilter.IsVariableAccessAllowed(varName, group) {
-			groupName := ""
-			if group != nil {
-				groupName = group.Name
-			}
-			if groupName == "" {
-				return "", fmt.Errorf("%w: %s (context: global)", ErrVariableAccessDenied, varName)
-			}
-			return "", fmt.Errorf("%w: %s (group: %s)", ErrVariableAccessDenied, varName, groupName)
+			return "", fmt.Errorf("%w: %s (group: %s)", ErrVariableAccessDenied, varName, group.Name)
 		}
 
 		varValue, exists := envVars[varName]
