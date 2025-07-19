@@ -66,12 +66,11 @@ func (f *Filter) parseSystemEnvironment(predicate func(string) bool) map[string]
 	result := make(map[string]string)
 
 	for _, env := range os.Environ() {
-		parts := strings.SplitN(env, "=", envSeparatorParts)
-		if len(parts) != envSeparatorParts {
+		variable, value, ok := ParseEnvVariable(env)
+		if !ok {
 			continue
 		}
 
-		variable, value := parts[0], parts[1]
 		if predicate == nil || predicate(variable) {
 			result[variable] = value
 		}
@@ -134,7 +133,7 @@ func (f *Filter) FilterGlobalVariables(envFileVars map[string]string, src Source
 // ResolveGroupEnvironmentVars resolves environment variables for a specific group
 // Security model:
 // - System environment variables: trusted, only allowlist filtering applied
-// - .env file variables: already validated during loading, only allowlist filtering applied
+// - .env file variables: validated during loading, only allowlist filtering applied
 func (f *Filter) ResolveGroupEnvironmentVars(group *runnertypes.CommandGroup, loadedEnvVars map[string]string) (map[string]string, error) {
 	if group == nil {
 		return nil, fmt.Errorf("%w: group is nil", ErrGroupNotFound)
