@@ -841,7 +841,8 @@ func TestCommandGroup_NewFields(t *testing.T) {
 					// Verify the command was called with the expected working directory
 					calls := mockExecutor.Calls
 					require.Len(t, calls, 1)
-					cmd := calls[0].Arguments[1].(runnertypes.Command)
+					cmd, ok := calls[0].Arguments[1].(runnertypes.Command)
+					require.True(t, ok, "expected calls[0].Arguments[1] to be of type runnertypes.Command, but it was not")
 					if tt.name == "WorkDir specified" {
 						assert.Equal(t, "/tmp", cmd.Dir)
 					} else {
