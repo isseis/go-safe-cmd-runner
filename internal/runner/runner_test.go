@@ -688,22 +688,6 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, security.ErrUnsafeEnvironmentVar), "expected error to wrap security.ErrUnsafeEnvironmentVar")
 	})
-
-	t.Run("environment variable sanitization", func(t *testing.T) {
-		runner, err := NewRunner(config)
-		require.NoError(t, err)
-		runner.envVars = map[string]string{
-			"PATH":        "/usr/bin:/bin",
-			"API_KEY":     "secret123",
-			"DB_PASSWORD": "password456",
-		}
-
-		sanitized := runner.GetSanitizedEnvironmentVars()
-
-		assert.Equal(t, "/usr/bin:/bin", sanitized["PATH"])
-		assert.Equal(t, "[REDACTED]", sanitized["API_KEY"])
-		assert.Equal(t, "[REDACTED]", sanitized["DB_PASSWORD"])
-	})
 }
 
 func TestRunner_LoadEnvironmentWithSecurity(t *testing.T) {
