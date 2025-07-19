@@ -205,11 +205,20 @@ env = ["NODE_ENV=production", "BUILD_ID=${CI_BUILD_ID}", "WEBPACK_ENV=production
 
 本要件定義書の実装状況：
 
-1. **グループレベル環境変数設定削除**: 未着手
-   - Phase 1 (コード構造変更): 未着手
-   - Phase 2 (処理ロジック変更): 未着手
-   - Phase 3 (テスト・検証): 未着手
-2. **将来拡張機能**: 要件定義のみ（実装対象外）
+1. **グループレベル環境変数設定削除**: **実装中**
+   - Phase 1 (コード構造変更): **未着手**（`CommandGroup.Env`フィールドが残存）
+   - Phase 2 (処理ロジック変更): **未着手**（`ResolveGroupEnvironmentVars`で`group.Env`処理が残存）
+   - Phase 3 (テスト・検証): **未着手**
+2. **関連する簡素化変更**: **完了**（2025年7月19日）
+   - 環境変数フィルタリングロジックの簡素化
+   - runnerインターフェースの簡素化
+   - テンプレートシステムの簡素化
+3. **将来拡張機能**: 要件定義のみ（実装対象外）
+
+**実装状況詳細**:
+- 現在のコードでは、まだ`internal/runner/runnertypes/config.go`の`CommandGroup`構造体に`Env`フィールドが残存
+- `internal/runner/environment/filter.go`の`ResolveGroupEnvironmentVars`関数（172行目）で`group.Env`処理が残存
+- 実装完了には上記コード変更が必要
 
 承認者: [プロジェクト責任者]
 承認日: [承認日]

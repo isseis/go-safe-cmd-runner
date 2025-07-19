@@ -126,15 +126,11 @@ func (f *Filter) ResolveGroupEnvironmentVars(group *runnertypes.CommandGroup, lo
         return nil, fmt.Errorf("%w: group is nil", ErrGroupNotFound)
     }
 
-    // Filter system environment variables
-    filteredSystemEnv, err := f.FilterSystemEnvironment(group.EnvAllowlist)
-    if err != nil {
-        return nil, fmt.Errorf("failed to filter system environment: %w", err)
-    }
-
-    // Start with filtered system environment variables
-    result := make(map[string]string)
-    maps.Copy(result, filteredSystemEnv)
+    // Add system environment variables using the common parsing logic
+    // Note: FilterSystemEnvironment now returns map directly (no error)
+    result := f.parseSystemEnvironment(func(variable string) bool {
+        return f.isVariableAllowed(variable, group.EnvAllowlist)
+    })
 
     // Add loaded environment variables from .env file (already filtered in LoadEnvironment)
     // These override system variables
@@ -145,9 +141,10 @@ func (f *Filter) ResolveGroupEnvironmentVars(group *runnertypes.CommandGroup, lo
     }
 
     // グループレベル環境変数処理を削除
-    // 以前のgroup.Env処理ブロックを完全削除
+    // 以前のgroup.Env処理ブロック（172-199行目）を完全削除
 
     return result, nil
+}
 }
 ```
 
@@ -233,11 +230,8 @@ func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, group *runnerty
         }
     } else {
         // For commands without group context, use global allowlist and filter system environment variables
-        // FilterSystemEnvironment will create and return a new map
-        envVars, err = r.envFilter.FilterSystemEnvironment(nil)
-        if err != nil {
-            return nil, fmt.Errorf("failed to filter system environment variables: %w", err)
-        }
+        // FilterSystemEnvironment now returns map directly (no error return)
+        envVars = r.envFilter.FilterSystemEnvironment()
 
         // Add loaded environment variables from .env file (already filtered in LoadEnvironment)
         maps.Copy(envVars, r.envVars)
@@ -569,9 +563,64 @@ func BenchmarkResolveEnvironmentVars(b *testing.B) {
 - **検証ツール**: 設定ファイルの構文チェック機能の活用
 - **段階的展開**: 開発環境での十分な検証後の本格展開
 
-## 13. 承認
+## 13. 実装状況（2025年7月19日時点）
+
+### 13.1 現在の実装状況
+
+**未完了**: グループ環境変数削除の実装はまだ完了していない
+
+1. **データ構造変更**: **未着手**
+   - `internal/runner/runnertypes/config.go`の`CommandGroup.Env`フィールドが残存
+   - TOMLパース機能でのグループ環境変数処理が残存
+
+2. **処理ロジック変更**: **未着手**
+   - `internal/runner/environment/filter.go`の`ResolveGroupEnvironmentVars`関数で`group.Env`処理が残存（172行目）
+   - `internal/runner/runner.go`の`resolveEnvironmentVars`関数は更新が必要
+
+3. **テスト・検証**: **未着手**
+   - グループ環境変数関連テストケースがまだ残存
+
+### 13.2 関連する完了済み変更（2025年7月19日）
+
+以下の関連する簡素化作業は既に完了しており、本実装を容易にする：
+
+1. **環境変数フィルタリングロジックの簡素化**
+   - `FilterSystemEnvironment`関数のエラー戻り値削除
+   - システム環境変数処理の効率化
+
+2. **runner インターフェースの簡素化**
+   - クリーンアップハンドリングの改善
+   - 一貫したエラー処理パターンの採用
+
+3. **テンプレートシステムの簡素化**
+   - 特権実行機能削除による複雑性軽減
+
+### 13.3 実装予定
+
+現在の実装は以下の順序で進める必要がある：
+
+```
+Phase 1: データ構造変更
+├── CommandGroup.Envフィールド削除
+├── 関連する定数・型定義の整理
+└── コンパイルエラー修正
+
+Phase 2: 処理ロジック変更
+├── ResolveGroupEnvironmentVars簡略化
+├── 環境変数マージロジック更新
+└── エラーハンドリング簡素化
+
+Phase 3: テスト・検証
+├── グループ環境変数テスト削除
+├── 新処理フローテスト追加
+└── 統合テスト実行
+```
+
+## 14. 承認
 
 本詳細設計書は、アーキテクチャ設計書に基づいて作成されており、グループレベル環境変数設定削除の具体的な実装方法を定義している。
+
+**注意**: 現在は設計段階であり、実装は未完了。上記実装状況セクションに示す通り、コード変更作業が必要。
 
 技術レビュー: [要レビュー]
 設計承認者: [プロジェクト責任者]
