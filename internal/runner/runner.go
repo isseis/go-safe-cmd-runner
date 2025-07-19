@@ -17,7 +17,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/template"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/joho/godotenv"
 )
@@ -63,7 +62,6 @@ type Runner struct {
 	config              *runnertypes.Config
 	envVars             map[string]string
 	validator           *security.Validator
-	templateEngine      *template.Engine
 	resourceManager     *resource.Manager
 	verificationManager *verification.Manager
 	envFilter           *environment.Filter
@@ -75,7 +73,6 @@ type Option func(*runnerOptions)
 // runnerOptions holds all configuration options for creating a Runner
 type runnerOptions struct {
 	securityConfig      *security.Config
-	templateEngine      *template.Engine
 	resourceManager     *resource.Manager
 	executor            executor.CommandExecutor
 	verificationManager *verification.Manager
@@ -92,13 +89,6 @@ func WithSecurity(securityConfig *security.Config) Option {
 func WithVerificationManager(verificationManager *verification.Manager) Option {
 	return func(opts *runnerOptions) {
 		opts.verificationManager = verificationManager
-	}
-}
-
-// WithTemplateEngine sets a custom template engine
-func WithTemplateEngine(engine *template.Engine) Option {
-	return func(opts *runnerOptions) {
-		opts.templateEngine = engine
 	}
 }
 
@@ -134,9 +124,6 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 	if opts.executor == nil {
 		opts.executor = executor.NewDefaultExecutor()
 	}
-	if opts.templateEngine == nil {
-		opts.templateEngine = template.NewEngine()
-	}
 	if opts.resourceManager == nil {
 		opts.resourceManager = resource.NewManager(config.Global.WorkDir)
 	}
@@ -149,7 +136,6 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 		config:              config,
 		envVars:             make(map[string]string),
 		validator:           validator,
-		templateEngine:      opts.templateEngine,
 		resourceManager:     opts.resourceManager,
 		verificationManager: opts.verificationManager,
 		envFilter:           envFilter,
@@ -237,14 +223,44 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 		fmt.Printf("Description: %s\n", group.Description)
 	}
 
-	// Apply template to the group if specified
-	processedGroup := group
-	if group.Template != "" {
-		appliedGroup, err := r.templateEngine.ApplyTemplate(&group, group.Template)
-		if err != nil {
-			return fmt.Errorf("failed to apply template %s to group %s: %w", group.Template, group.Name, err)
+	// Track resources for cleanup
+	groupResources := make([]string, 0)
+	defer func() {
+		// Clean up resources created for this group
+		for _, resourceID := range groupResources {
+			if err := r.resourceManager.CleanupResource(resourceID); err != nil {
+				slog.Warn("Failed to cleanup resource", "resource_id", resourceID, "error", err)
+			}
 		}
-		processedGroup = *appliedGroup
+	}()
+
+	// Process the group without template
+	processedGroup := group
+
+	// Process new fields (TempDir, Cleanup, WorkDir)
+	if processedGroup.TempDir {
+		// Create temporary directory for this group
+		tempResource, err := r.resourceManager.CreateTempDir(processedGroup.Name, processedGroup.Cleanup)
+		if err != nil {
+			return fmt.Errorf("failed to create temp directory for group %s: %w", processedGroup.Name, err)
+		}
+		groupResources = append(groupResources, tempResource.ID)
+
+		// Set working directory to temp directory for commands without Dir specified
+		for i := range processedGroup.Commands {
+			if processedGroup.Commands[i].Dir == "" {
+				processedGroup.Commands[i].Dir = tempResource.Path
+			}
+		}
+	}
+
+	// Apply group WorkDir to commands without Dir specified
+	if processedGroup.WorkDir != "" {
+		for i := range processedGroup.Commands {
+			if processedGroup.Commands[i].Dir == "" {
+				processedGroup.Commands[i].Dir = processedGroup.WorkDir
+			}
+		}
 	}
 
 	// Verify group files before execution
@@ -270,39 +286,12 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 		}
 	}
 
-	// Track resources for cleanup
-	groupResources := make([]string, 0)
-	defer func() {
-		// Clean up resources created for this group
-		for _, resourceID := range groupResources {
-			if err := r.resourceManager.CleanupResource(resourceID); err != nil {
-				slog.Warn("Failed to cleanup resource", "resource_id", resourceID, "error", err)
-			}
-		}
-	}()
-
 	// Execute commands in the group sequentially
 	for i, cmd := range processedGroup.Commands {
 		fmt.Printf("  [%d/%d] Executing command: %s\n", i+1, len(processedGroup.Commands), cmd.Name)
 
-		// Apply resource management to the command if needed
+		// Process the command
 		processedCmd := cmd
-		// Check if template specified temp_dir
-		if group.Template != "" {
-			tmpl, err := r.templateEngine.GetTemplate(group.Template)
-			if err == nil && tmpl.TempDir {
-				tempResource, err := r.resourceManager.CreateTempDir(cmd.Name, tmpl.Cleanup)
-				if err != nil {
-					return fmt.Errorf("failed to create temp directory for command %s: %w", cmd.Name, err)
-				}
-				groupResources = append(groupResources, tempResource.ID)
-
-				// Set working directory to temp directory if not already set
-				if processedCmd.Dir == "" || processedCmd.Dir == "{{.temp_dir}}" {
-					processedCmd.Dir = tempResource.Path
-				}
-			}
-		}
 
 		// Create command context with timeout
 		cmdCtx, cancel := r.createCommandContext(ctx, processedCmd)

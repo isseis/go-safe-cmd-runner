@@ -4,10 +4,9 @@ package runnertypes
 
 // Config represents the root configuration structure
 type Config struct {
-	Version   string                    `toml:"version"`
-	Global    GlobalConfig              `toml:"global"`
-	Templates map[string]TemplateConfig `toml:"templates"`
-	Groups    []CommandGroup            `toml:"groups"`
+	Version string         `toml:"version"`
+	Global  GlobalConfig   `toml:"global"`
+	Groups  []CommandGroup `toml:"groups"`
 }
 
 // GlobalConfig contains global configuration options
@@ -20,22 +19,18 @@ type GlobalConfig struct {
 	EnvAllowlist      []string `toml:"env_allowlist"`       // Global environment variable allowlist
 }
 
-// TemplateConfig represents a template configuration
-type TemplateConfig struct {
-	Description string            `toml:"description"`
-	TempDir     bool              `toml:"temp_dir"`  // Auto-generate temporary directory
-	Cleanup     bool              `toml:"cleanup"`   // Auto cleanup
-	WorkDir     string            `toml:"workdir"`   // Working directory (supports "auto")
-	Variables   map[string]string `toml:"variables"` // Template variables
-}
-
 // CommandGroup represents a group of related commands with a name
 type CommandGroup struct {
-	Name         string    `toml:"name"`
-	Description  string    `toml:"description"`
-	Priority     int       `toml:"priority"`
-	DependsOn    []string  `toml:"depends_on"`
-	Template     string    `toml:"template"` // Template to apply to this group
+	Name        string   `toml:"name"`
+	Description string   `toml:"description"`
+	Priority    int      `toml:"priority"`
+	DependsOn   []string `toml:"depends_on"`
+
+	// Fields for resource management
+	TempDir bool   `toml:"temp_dir"` // Auto-generate temporary directory
+	Cleanup bool   `toml:"cleanup"`  // Auto cleanup
+	WorkDir string `toml:"workdir"`  // Working directory
+
 	Commands     []Command `toml:"commands"`
 	VerifyFiles  []string  `toml:"verify_files"`  // Files to verify for this group
 	EnvAllowlist []string  `toml:"env_allowlist"` // Group-level environment variable allowlist

@@ -1,0 +1,12 @@
+{
+  "version": "1.0",
+  "format": "file-hash",
+  "timestamp": "2025-07-19T22:58:49.273291961Z",
+  "file": {
+    "path": "/home/issei/git/go-safe-cmd-runner/sample/test.toml",
+    "hash": {
+      "algorithm": "sha256",
+      "value": "9b9b6104ee7a0d694371709dbae0f03b3293a6f3668c53e98c8e08b3febd9356"
+    }
+  }
+}

@@ -14,7 +14,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/template"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -93,7 +92,6 @@ func TestNewRunner(t *testing.T) {
 		assert.NotNil(t, runner.executor)
 		assert.NotNil(t, runner.envVars)
 		assert.NotNil(t, runner.validator)
-		assert.NotNil(t, runner.templateEngine)
 		assert.NotNil(t, runner.resourceManager)
 	})
 
@@ -112,14 +110,6 @@ func TestNewRunner(t *testing.T) {
 		assert.NotNil(t, runner.validator)
 	})
 
-	t.Run("with custom template engine", func(t *testing.T) {
-		customEngine := template.NewEngine()
-		runner, err := NewRunner(config, WithTemplateEngine(customEngine))
-		assert.NoError(t, err)
-		assert.NotNil(t, runner)
-		assert.Equal(t, customEngine, runner.templateEngine)
-	})
-
 	t.Run("with multiple options", func(t *testing.T) {
 		securityConfig := &security.Config{
 			AllowedCommands:         []string{"^echo$"},
@@ -127,16 +117,13 @@ func TestNewRunner(t *testing.T) {
 			SensitiveEnvVars:        []string{".*PASSWORD.*"},
 			MaxPathLength:           4096,
 		}
-		customEngine := template.NewEngine()
 		customResourceManager := resource.NewManager("/custom/path")
 
 		runner, err := NewRunner(config,
 			WithSecurity(securityConfig),
-			WithTemplateEngine(customEngine),
 			WithResourceManager(customResourceManager))
 		assert.NoError(t, err)
 		assert.NotNil(t, runner)
-		assert.Equal(t, customEngine, runner.templateEngine)
 		assert.Equal(t, customResourceManager, runner.resourceManager)
 	})
 
@@ -179,7 +166,6 @@ func TestNewRunnerWithSecurity(t *testing.T) {
 		assert.NotNil(t, runner.executor)
 		assert.NotNil(t, runner.envVars)
 		assert.NotNil(t, runner.validator)
-		assert.NotNil(t, runner.templateEngine)
 		assert.NotNil(t, runner.resourceManager)
 	})
 
@@ -746,4 +732,123 @@ func TestRunner_LoadEnvironmentWithSecurity(t *testing.T) {
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, security.ErrUnsafeEnvironmentVar), "expected error to wrap security.ErrUnsafeEnvironmentVar")
 	})
+}
+
+// TestCommandGroup_NewFields tests the new fields added to CommandGroup for template replacement
+func TestCommandGroup_NewFields(t *testing.T) {
+	// Setup test environment
+	cleanup := setupSafeTestEnv(t)
+	defer cleanup()
+
+	tests := []struct {
+		name        string
+		group       runnertypes.CommandGroup
+		expectError bool
+		description string
+	}{
+		{
+			name: "TempDir enabled",
+			group: runnertypes.CommandGroup{
+				Name:    "test-tempdir",
+				TempDir: true,
+				Commands: []runnertypes.Command{
+					{Name: "test", Cmd: "echo", Args: []string{"hello"}},
+				},
+				EnvAllowlist: []string{"PATH"},
+			},
+			expectError: false,
+			description: "Should create temporary directory and set it as working directory",
+		},
+		{
+			name: "WorkDir specified",
+			group: runnertypes.CommandGroup{
+				Name:    "test-workdir",
+				WorkDir: "/tmp",
+				Commands: []runnertypes.Command{
+					{Name: "test", Cmd: "echo", Args: []string{"hello"}},
+				},
+				EnvAllowlist: []string{"PATH"},
+			},
+			expectError: false,
+			description: "Should set working directory from group WorkDir field",
+		},
+		{
+			name: "Cleanup enabled with TempDir",
+			group: runnertypes.CommandGroup{
+				Name:    "test-cleanup",
+				TempDir: true,
+				Cleanup: true,
+				Commands: []runnertypes.Command{
+					{Name: "test", Cmd: "echo", Args: []string{"hello"}},
+				},
+				EnvAllowlist: []string{"PATH"},
+			},
+			expectError: false,
+			description: "Should create temporary directory with cleanup enabled",
+		},
+		{
+			name: "Command with existing Dir should not be overridden",
+			group: runnertypes.CommandGroup{
+				Name:    "test-existing-dir",
+				WorkDir: "/tmp",
+				Commands: []runnertypes.Command{
+					{Name: "test", Cmd: "echo", Args: []string{"hello"}, Dir: "/usr"},
+				},
+				EnvAllowlist: []string{"PATH"},
+			},
+			expectError: false,
+			description: "Commands with existing Dir should not be overridden by group WorkDir",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &runnertypes.Config{
+				Global: runnertypes.GlobalConfig{
+					WorkDir:      "/tmp",
+					EnvAllowlist: []string{"PATH"},
+				},
+				Groups: []runnertypes.CommandGroup{tt.group},
+			}
+
+			// Create runner with mock executor to avoid actually executing commands
+			mockExecutor := &MockExecutor{}
+			mockExecutor.On("Execute", mock.Anything, mock.Anything, mock.Anything).Return(
+				&executor.Result{ExitCode: 0, Stdout: "test output", Stderr: ""}, nil)
+
+			runner, err := NewRunner(config, WithExecutor(mockExecutor))
+			require.NoError(t, err)
+
+			// Load basic environment
+			err = runner.LoadEnvironment("", true)
+			require.NoError(t, err)
+
+			// Execute the group
+			ctx := context.Background()
+			err = runner.ExecuteGroup(ctx, tt.group)
+
+			if tt.expectError {
+				assert.Error(t, err, tt.description)
+			} else {
+				assert.NoError(t, err, tt.description)
+
+				// Verify mock was called
+				mockExecutor.AssertExpectations(t)
+
+				// Additional verification based on test case
+				switch tt.name {
+				case "WorkDir specified", "Command with existing Dir should not be overridden":
+					// Verify the command was called with the expected working directory
+					calls := mockExecutor.Calls
+					require.Len(t, calls, 1)
+					cmd := calls[0].Arguments[1].(runnertypes.Command)
+					if tt.name == "WorkDir specified" {
+						assert.Equal(t, "/tmp", cmd.Dir)
+					} else {
+						assert.Equal(t, "/usr", cmd.Dir) // Should not be overridden
+					}
+				}
+			}
+		})
+	}
 }
