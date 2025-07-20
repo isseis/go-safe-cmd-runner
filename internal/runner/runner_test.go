@@ -1112,3 +1112,205 @@ func TestCommandGroup_TempDir_Detailed(t *testing.T) {
 		mockExecutor.AssertExpectations(t)
 	})
 }
+
+// TestRunner_EnvironmentVariablePriority tests the priority hierarchy for environment variables:
+// command-specific > global (loaded from system/env file)
+func TestRunner_EnvironmentVariablePriority(t *testing.T) {
+	cleanup := setupSafeTestEnv(t)
+	defer cleanup()
+
+	config := &runnertypes.Config{
+		Global: runnertypes.GlobalConfig{
+			WorkDir:      "/tmp",
+			EnvAllowlist: []string{"GLOBAL_VAR", "CMD_VAR", "OVERRIDE_VAR", "REFERENCE_VAR"},
+		},
+		Groups: []runnertypes.CommandGroup{
+			{
+				Name:         "test-group",
+				EnvAllowlist: []string{"GLOBAL_VAR", "CMD_VAR", "OVERRIDE_VAR", "REFERENCE_VAR"},
+			},
+		},
+	}
+
+	runner, err := NewRunner(config)
+	require.NoError(t, err)
+
+	// Set global environment variables (loaded from system/env file)
+	runner.envVars = map[string]string{
+		"GLOBAL_VAR":    "global_value",
+		"OVERRIDE_VAR":  "global_override",
+		"REFERENCE_VAR": "global_reference",
+	}
+
+	tests := []struct {
+		name           string
+		commandEnvVars []string // Command-level environment variables
+		expectedValues map[string]string
+		description    string
+	}{
+		{
+			name:           "global variables only",
+			commandEnvVars: nil,
+			expectedValues: map[string]string{
+				"GLOBAL_VAR":    "global_value",
+				"OVERRIDE_VAR":  "global_override",
+				"REFERENCE_VAR": "global_reference",
+			},
+			description: "Global variables should be available when no command variables override them",
+		},
+		{
+			name:           "command variables override global",
+			commandEnvVars: []string{"CMD_VAR=command_value", "OVERRIDE_VAR=command_override"},
+			expectedValues: map[string]string{
+				"GLOBAL_VAR":   "global_value",     // Global variable unchanged
+				"CMD_VAR":      "command_value",    // Command-specific variable
+				"OVERRIDE_VAR": "command_override", // Command overrides global
+			},
+			description: "Command environment variables should override global variables",
+		},
+		{
+			name:           "variable references with command priority",
+			commandEnvVars: []string{"REFERENCE_VAR=${GLOBAL_VAR}_referenced"},
+			expectedValues: map[string]string{
+				"GLOBAL_VAR":    "global_value",
+				"REFERENCE_VAR": "global_value_referenced", // Should resolve to global variable value
+			},
+			description: "Variable references should resolve using available variables",
+		},
+		{
+			name:           "command variable references other command variables",
+			commandEnvVars: []string{"CMD_VAR=command_value", "REFERENCE_VAR=${CMD_VAR}_referenced"},
+			expectedValues: map[string]string{
+				"CMD_VAR":       "command_value",
+				"REFERENCE_VAR": "command_value_referenced", // Should resolve to command variable value
+			},
+			description: "Command variables should be able to reference other command variables",
+		},
+		{
+			name:           "command direct value overrides reference",
+			commandEnvVars: []string{"REFERENCE_VAR=direct_command_value"},
+			expectedValues: map[string]string{
+				"REFERENCE_VAR": "direct_command_value", // Command value should override global
+			},
+			description: "Direct command variables should override global variables",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create test command with command-level environment variables
+			testCmd := runnertypes.Command{
+				Name: "test-env-priority",
+				Cmd:  "echo",
+				Args: []string{"test"},
+			}
+			if tt.commandEnvVars != nil {
+				testCmd.Env = tt.commandEnvVars
+			}
+
+			// Resolve environment variables using the runner
+			testGroup := &config.Groups[0]
+			resolvedEnv, err := runner.resolveEnvironmentVars(testCmd, testGroup)
+			require.NoError(t, err, tt.description)
+
+			// Verify expected values are present with correct priority
+			for key, expectedValue := range tt.expectedValues {
+				actualValue, exists := resolvedEnv[key]
+				assert.True(t, exists, "Environment variable %s should exist in %s", key, tt.name)
+				assert.Equal(t, expectedValue, actualValue, "Environment variable %s should have correct value in %s", key, tt.name)
+			}
+		})
+	}
+}
+
+// TestRunner_EnvironmentVariablePriority_EdgeCases tests edge cases for environment variable priority
+func TestRunner_EnvironmentVariablePriority_EdgeCases(t *testing.T) {
+	cleanup := setupSafeTestEnv(t)
+	defer cleanup()
+
+	config := &runnertypes.Config{
+		Global: runnertypes.GlobalConfig{
+			WorkDir:      "/tmp",
+			EnvAllowlist: []string{"EDGE_VAR", "CIRCULAR_VAR", "UNDEFINED_REF"},
+		},
+		Groups: []runnertypes.CommandGroup{
+			{
+				Name:         "test-group",
+				EnvAllowlist: []string{"EDGE_VAR", "CIRCULAR_VAR", "UNDEFINED_REF"},
+			},
+		},
+	}
+
+	runner, err := NewRunner(config)
+	require.NoError(t, err)
+
+	// Set global environment variables
+	runner.envVars = map[string]string{
+		"EDGE_VAR": "global_edge_value",
+	}
+
+	t.Run("empty variable values", func(t *testing.T) {
+		testGroup := config.Groups[0]
+
+		testCmd := runnertypes.Command{
+			Name: "test-empty",
+			Cmd:  "echo",
+			Args: []string{"test"},
+			Env:  []string{"EDGE_VAR="}, // Empty value at command level
+		}
+
+		resolvedEnv, err := runner.resolveEnvironmentVars(testCmd, &testGroup)
+		require.NoError(t, err)
+
+		// Command value should override global value even if empty
+		assert.Equal(t, "", resolvedEnv["EDGE_VAR"])
+	})
+
+	t.Run("malformed environment variable format", func(t *testing.T) {
+		testGroup := config.Groups[0]
+
+		testCmd := runnertypes.Command{
+			Name: "test-malformed",
+			Cmd:  "echo",
+			Args: []string{"test"},
+			Env:  []string{"MALFORMED_VAR"}, // No equals sign
+		}
+
+		_, err := runner.resolveEnvironmentVars(testCmd, &testGroup)
+		// Should handle malformed environment variables gracefully
+		assert.NoError(t, err)
+	})
+
+	t.Run("variable reference to undefined variable", func(t *testing.T) {
+		testGroup := config.Groups[0]
+
+		testCmd := runnertypes.Command{
+			Name: "test-undefined-ref",
+			Cmd:  "echo",
+			Args: []string{"test"},
+			Env:  []string{"UNDEFINED_REF=${NONEXISTENT_VAR}"},
+		}
+
+		_, err := runner.resolveEnvironmentVars(testCmd, &testGroup)
+		// Should fail when referencing undefined variable
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, ErrVariableAccessDenied))
+	})
+
+	t.Run("circular reference in command variables", func(t *testing.T) {
+		testGroup := config.Groups[0]
+
+		testCmd := runnertypes.Command{
+			Name: "test-circular",
+			Cmd:  "echo",
+			Args: []string{"test"},
+			Env:  []string{"CIRCULAR_VAR=${CIRCULAR_VAR}"},
+		}
+
+		_, err := runner.resolveEnvironmentVars(testCmd, &testGroup)
+		// Should detect and fail on circular references
+		// Note: Current implementation detects this as undefined variable rather than circular reference
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "undefined variable: CIRCULAR_VAR")
+	})
+}
