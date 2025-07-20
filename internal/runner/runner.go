@@ -202,10 +202,8 @@ func (r *Runner) ExecuteAll(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			// Context cancelled, don't execute remaining groups
-			if len(errs) > 0 {
-				return errs[0] // Return first error if any
-			}
-			return ctx.Err() // Return cancellation error
+			// Always prioritize cancellation error over previous errors
+			return ctx.Err()
 		default:
 		}
 

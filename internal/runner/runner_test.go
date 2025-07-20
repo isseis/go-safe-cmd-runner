@@ -981,6 +981,117 @@ func TestRunner_createCommandContext(t *testing.T) {
 	})
 }
 
+func TestRunner_CommandTimeoutBehavior(t *testing.T) {
+	config := &runnertypes.Config{
+		Global: runnertypes.GlobalConfig{
+			Timeout: 1, // 1 second timeout
+			WorkDir: "/tmp",
+		},
+		Groups: []runnertypes.CommandGroup{
+			{
+				Name: "timeout-test-group",
+				Commands: []runnertypes.Command{
+					{
+						Name: "sleep-command",
+						Cmd:  "sleep",
+						Args: []string{"5"}, // Sleep for 5 seconds, longer than timeout
+					},
+				},
+			},
+		},
+	}
+
+	t.Run("global timeout is enforced", func(t *testing.T) {
+		runner, err := NewRunner(config)
+		require.NoError(t, err)
+
+		ctx := context.Background()
+		start := time.Now()
+
+		err = runner.ExecuteAll(ctx)
+
+		elapsed := time.Since(start)
+
+		// Should fail due to timeout
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "signal: killed")
+
+		// Should complete within ~1 second (plus some buffer for processing)
+		assert.Less(t, elapsed, 2*time.Second)
+		assert.Greater(t, elapsed, 900*time.Millisecond) // At least close to 1 second
+	})
+
+	t.Run("command-specific timeout overrides global timeout", func(t *testing.T) {
+		// Create config with command-specific shorter timeout
+		configWithCmdTimeout := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				Timeout: 10, // 10 seconds global timeout
+				WorkDir: "/tmp",
+			},
+			Groups: []runnertypes.CommandGroup{
+				{
+					Name: "cmd-timeout-test-group",
+					Commands: []runnertypes.Command{
+						{
+							Name:    "sleep-command-short-timeout",
+							Cmd:     "sleep",
+							Args:    []string{"5"}, // Sleep for 5 seconds
+							Timeout: 1,             // But timeout after 1 second
+						},
+					},
+				},
+			},
+		}
+
+		runner, err := NewRunner(configWithCmdTimeout)
+		require.NoError(t, err)
+
+		ctx := context.Background()
+		start := time.Now()
+
+		err = runner.ExecuteAll(ctx)
+
+		elapsed := time.Since(start)
+
+		// Should fail due to command timeout (1 second), not global timeout (10 seconds)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "signal: killed")
+
+		// Should complete within ~1 second, not 10 seconds
+		assert.Less(t, elapsed, 2*time.Second)
+		assert.Greater(t, elapsed, 900*time.Millisecond)
+	})
+
+	t.Run("timeout with context cancellation prioritization", func(t *testing.T) {
+		runner, err := NewRunner(config)
+		require.NoError(t, err)
+
+		// Create a context that will be cancelled after 500ms
+		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		defer cancel()
+
+		start := time.Now()
+
+		err = runner.ExecuteAll(ctx)
+
+		elapsed := time.Since(start)
+
+		// Should fail due to context cancellation
+		assert.Error(t, err)
+		// Context cancellation can result in different error messages depending on timing
+		assert.True(t,
+			errors.Is(err, context.DeadlineExceeded) ||
+				errors.Is(err, context.Canceled) ||
+				strings.Contains(err.Error(), "signal: killed") ||
+				strings.Contains(err.Error(), "context deadline exceeded") ||
+				strings.Contains(err.Error(), "context canceled"))
+
+		// Should complete within ~500ms, not the command timeout of 1 second
+		assert.Less(t, elapsed, 800*time.Millisecond)
+		assert.Greater(t, elapsed, 400*time.Millisecond)
+	})
+}
+
 func TestRunner_resolveEnvironmentVars(t *testing.T) {
 	// Setup a custom test environment with specific variables
 	testEnv := map[string]string{
