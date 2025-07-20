@@ -19,6 +19,8 @@ var (
 	ErrVariableNameEmpty      = errors.New("variable name cannot be empty")
 	ErrInvalidVariableName    = errors.New("invalid variable name")
 	ErrDangerousVariableValue = errors.New("variable value contains dangerous pattern")
+	ErrVariableNotFound       = errors.New("variable reference not found")
+	ErrVariableNotAllowed     = errors.New("variable not allowed by group allowlist")
 )
 
 // Constants
