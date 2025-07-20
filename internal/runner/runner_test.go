@@ -572,7 +572,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 	cleanup := setupSafeTestEnv(t)
 	defer cleanup()
 
-	t.Run("first group fails, remaining groups should not execute", func(t *testing.T) {
+	t.Run("first group fails, but remaining groups should still execute", func(t *testing.T) {
 		config := &runnertypes.Config{
 			Global: runnertypes.GlobalConfig{
 				Timeout:  3600,
@@ -591,14 +591,14 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 					Name:     "group-2",
 					Priority: 2,
 					Commands: []runnertypes.Command{
-						{Name: "success-cmd", Cmd: "echo", Args: []string{"should not execute"}},
+						{Name: "success-cmd", Cmd: "echo", Args: []string{"should execute"}},
 					},
 				},
 				{
 					Name:     "group-3",
 					Priority: 3,
 					Commands: []runnertypes.Command{
-						{Name: "another-cmd", Cmd: "echo", Args: []string{"also should not execute"}},
+						{Name: "another-cmd", Cmd: "echo", Args: []string{"also should execute"}},
 					},
 				},
 			},
@@ -609,21 +609,27 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		require.NoError(t, err)
 		runner.executor = mockExecutor
 
-		// Only the first group's command should be called (and fail)
+		// First group's command should be called and fail
 		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "fail-cmd", Cmd: "false", Dir: "/tmp"}, mock.Anything).
 			Return(&executor.Result{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil)
 
-		// Remaining groups should not be executed
+		// Remaining groups should still be executed
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "success-cmd", Cmd: "echo", Args: []string{"should execute"}, Dir: "/tmp"}, mock.Anything).
+			Return(&executor.Result{ExitCode: 0, Stdout: "should execute\n", Stderr: ""}, nil)
+
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "another-cmd", Cmd: "echo", Args: []string{"also should execute"}, Dir: "/tmp"}, mock.Anything).
+			Return(&executor.Result{ExitCode: 0, Stdout: "also should execute\n", Stderr: ""}, nil)
 
 		ctx := context.Background()
 		err = runner.ExecuteAll(ctx)
 
+		// Should still return error from first group, but all groups executed
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, ErrCommandFailed))
 		mockExecutor.AssertExpectations(t)
 	})
 
-	t.Run("middle group fails, remaining groups should not execute", func(t *testing.T) {
+	t.Run("middle group fails, but remaining groups should still execute", func(t *testing.T) {
 		config := &runnertypes.Config{
 			Global: runnertypes.GlobalConfig{
 				Timeout:  3600,
@@ -649,7 +655,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 					Name:     "group-3",
 					Priority: 3,
 					Commands: []runnertypes.Command{
-						{Name: "should-not-execute", Cmd: "echo", Args: []string{"third"}},
+						{Name: "should-execute", Cmd: "echo", Args: []string{"third"}},
 					},
 				},
 			},
@@ -668,7 +674,9 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "fail-cmd", Cmd: "false", Dir: "/tmp"}, mock.Anything).
 			Return(&executor.Result{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil)
 
-		// Third group should not be executed
+		// Third group should still be executed
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "should-execute", Cmd: "echo", Args: []string{"third"}, Dir: "/tmp"}, mock.Anything).
+			Return(&executor.Result{ExitCode: 0, Stdout: "third\n", Stderr: ""}, nil)
 
 		ctx := context.Background()
 		err = runner.ExecuteAll(ctx)
@@ -678,7 +686,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		mockExecutor.AssertExpectations(t)
 	})
 
-	t.Run("group with multiple commands, second command fails", func(t *testing.T) {
+	t.Run("group with multiple commands, second command fails, but next group still executes", func(t *testing.T) {
 		config := &runnertypes.Config{
 			Global: runnertypes.GlobalConfig{
 				Timeout:  3600,
@@ -718,7 +726,10 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "fail-cmd", Cmd: "false", Dir: "/tmp"}, mock.Anything).
 			Return(&executor.Result{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil)
 
-		// Third command in group-1 and group-2 should not be executed
+		// Third command in group-1 should not be executed (group-level failure stops remaining commands in same group)
+		// But group-2 should still be executed (new behavior)
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "group2-cmd", Cmd: "echo", Args: []string{"group2"}, Dir: "/tmp"}, mock.Anything).
+			Return(&executor.Result{ExitCode: 0, Stdout: "group2\n", Stderr: ""}, nil)
 
 		ctx := context.Background()
 		err = runner.ExecuteAll(ctx)
@@ -728,7 +739,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		mockExecutor.AssertExpectations(t)
 	})
 
-	t.Run("executor error in first group", func(t *testing.T) {
+	t.Run("executor error in first group, but remaining groups should still execute", func(t *testing.T) {
 		config := &runnertypes.Config{
 			Global: runnertypes.GlobalConfig{
 				Timeout:  3600,
@@ -747,7 +758,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 					Name:     "group-2",
 					Priority: 2,
 					Commands: []runnertypes.Command{
-						{Name: "should-not-execute", Cmd: "echo", Args: []string{"second"}},
+						{Name: "should-execute", Cmd: "echo", Args: []string{"second"}},
 					},
 				},
 			},
@@ -762,7 +773,9 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "executor-error-cmd", Cmd: "nonexistent-command", Dir: "/tmp"}, mock.Anything).
 			Return((*executor.Result)(nil), errCommandNotFound)
 
-		// Second group should not be executed
+		// Second group should still be executed
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "should-execute", Cmd: "echo", Args: []string{"second"}, Dir: "/tmp"}, mock.Anything).
+			Return(&executor.Result{ExitCode: 0, Stdout: "second\n", Stderr: ""}, nil)
 
 		ctx := context.Background()
 		err = runner.ExecuteAll(ctx)
@@ -802,10 +815,6 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		require.NoError(t, err)
 		runner.executor = mockExecutor
 
-		// Mock executor should return context.Canceled error
-		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "long-running-cmd", Cmd: "sleep", Args: []string{"10"}, Dir: "/tmp"}, mock.Anything).
-			Return((*executor.Result)(nil), context.Canceled)
-
 		// Create a context that gets cancelled
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel() // Cancel immediately
@@ -814,7 +823,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, context.Canceled))
-		mockExecutor.AssertExpectations(t)
+		// No mock expectations since context is cancelled before any commands execute
 	})
 
 	t.Run("no groups to execute", func(t *testing.T) {

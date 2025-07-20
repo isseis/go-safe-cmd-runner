@@ -194,9 +194,27 @@ func (r *Runner) ExecuteAll(ctx context.Context) error {
 		return groups[i].Priority < groups[j].Priority
 	})
 
-	// Execute groups sequentially
+	var errs []error
+
+	// Execute all groups sequentially, collecting errors
 	for _, group := range groups {
+		// Check if context is already cancelled before executing next group
+		select {
+		case <-ctx.Done():
+			// Context cancelled, don't execute remaining groups
+			if len(errs) > 0 {
+				return errs[0] // Return first error if any
+			}
+			return ctx.Err() // Return cancellation error
+		default:
+		}
+
 		if err := r.ExecuteGroup(ctx, group); err != nil {
+			// Check if this is a context cancellation error - if so, stop execution
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return err
+			}
+
 			// Check if this is a verification error - if so, log warning and continue
 			var verErr *VerificationError
 			if errors.As(err, &verErr) {
@@ -209,14 +227,18 @@ func (r *Runner) ExecuteAll(ctx context.Context) error {
 					"error", verErr.Err.Error())
 				continue // Skip this group but continue with the next one
 			}
-			return fmt.Errorf("failed to execute group %s: %w", group.Name, err)
+			// Collect error but continue with next group
+			errs = append(errs, fmt.Errorf("failed to execute group %s: %w", group.Name, err))
 		}
 	}
 
-	return nil
-}
+	// Return the first error if any occurred
+	if len(errs) > 0 {
+		return errs[0]
+	}
 
-// ExecuteGroup executes all commands in a group sequentially
+	return nil
+} // ExecuteGroup executes all commands in a group sequentially
 func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGroup) error {
 	fmt.Printf("Executing group: %s\n", group.Name)
 	if group.Description != "" {
