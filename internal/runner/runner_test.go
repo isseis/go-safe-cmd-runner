@@ -21,6 +21,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var errCommandNotFound = errors.New("command not found")
+
 // setupTestEnv sets up a clean test environment and returns a cleanup function.
 // The cleanup function restores the original environment when called.
 func setupTestEnv(t *testing.T, envVars map[string]string) func() {
@@ -356,6 +358,172 @@ func TestRunner_ExecuteGroup(t *testing.T) {
 	}
 }
 
+func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
+	cleanup := setupSafeTestEnv(t)
+	defer cleanup()
+
+	t.Run("multiple commands with first failing", func(t *testing.T) {
+		group := runnertypes.CommandGroup{
+			Name: "test-first-fails",
+			Commands: []runnertypes.Command{
+				{Name: "cmd-1", Cmd: "false"}, // This fails
+				{Name: "cmd-2", Cmd: "echo", Args: []string{"second"}},
+				{Name: "cmd-3", Cmd: "echo", Args: []string{"third"}},
+			},
+		}
+
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				Timeout:  3600,
+				WorkDir:  "/tmp",
+				LogLevel: "info",
+			},
+			Groups: []runnertypes.CommandGroup{group},
+		}
+
+		mockExecutor := new(MockExecutor)
+		runner, err := NewRunner(config)
+		require.NoError(t, err)
+		runner.executor = mockExecutor
+
+		// First command fails with non-zero exit code
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "cmd-1", Cmd: "false", Dir: "/tmp"}, mock.Anything).
+			Return(&executor.Result{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil)
+
+		// Subsequent commands should not be executed due to fail-fast behavior
+		ctx := context.Background()
+		err = runner.ExecuteGroup(ctx, group)
+
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, ErrCommandFailed))
+		mockExecutor.AssertExpectations(t)
+	})
+
+	t.Run("multiple commands with middle failing", func(t *testing.T) {
+		group := runnertypes.CommandGroup{
+			Name: "test-middle-fails",
+			Commands: []runnertypes.Command{
+				{Name: "cmd-1", Cmd: "echo", Args: []string{"first"}},
+				{Name: "cmd-2", Cmd: "false"}, // This fails
+				{Name: "cmd-3", Cmd: "echo", Args: []string{"third"}},
+			},
+		}
+
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				Timeout:  3600,
+				WorkDir:  "/tmp",
+				LogLevel: "info",
+			},
+			Groups: []runnertypes.CommandGroup{group},
+		}
+
+		mockExecutor := new(MockExecutor)
+		runner, err := NewRunner(config)
+		require.NoError(t, err)
+		runner.executor = mockExecutor
+
+		// First command succeeds
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "cmd-1", Cmd: "echo", Args: []string{"first"}, Dir: "/tmp"}, mock.Anything).
+			Return(&executor.Result{ExitCode: 0, Stdout: "first\n", Stderr: ""}, nil)
+
+		// Second command fails
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "cmd-2", Cmd: "false", Dir: "/tmp"}, mock.Anything).
+			Return(&executor.Result{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil)
+
+		// Third command should not be executed due to fail-fast behavior
+
+		ctx := context.Background()
+		err = runner.ExecuteGroup(ctx, group)
+
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, ErrCommandFailed))
+		mockExecutor.AssertExpectations(t)
+	})
+
+	t.Run("executor returns error instead of non-zero exit code", func(t *testing.T) {
+		group := runnertypes.CommandGroup{
+			Name: "test-executor-error",
+			Commands: []runnertypes.Command{
+				{Name: "cmd-1", Cmd: "echo", Args: []string{"first"}},
+				{Name: "cmd-2", Cmd: "invalid-command"}, // This causes executor error
+				{Name: "cmd-3", Cmd: "echo", Args: []string{"third"}},
+			},
+		}
+
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				Timeout:  3600,
+				WorkDir:  "/tmp",
+				LogLevel: "info",
+			},
+			Groups: []runnertypes.CommandGroup{group},
+		}
+
+		mockExecutor := new(MockExecutor)
+		runner, err := NewRunner(config)
+		require.NoError(t, err)
+		runner.executor = mockExecutor
+
+		// First command succeeds
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "cmd-1", Cmd: "echo", Args: []string{"first"}, Dir: "/tmp"}, mock.Anything).
+			Return(&executor.Result{ExitCode: 0, Stdout: "first\n", Stderr: ""}, nil)
+
+		// Second command returns executor error
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "cmd-2", Cmd: "invalid-command", Dir: "/tmp"}, mock.Anything).
+			Return((*executor.Result)(nil), errCommandNotFound)
+
+		// Third command should not be executed
+
+		ctx := context.Background()
+		err = runner.ExecuteGroup(ctx, group)
+
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, errCommandNotFound))
+		mockExecutor.AssertExpectations(t)
+	})
+
+	t.Run("environment variable access denied causes error", func(t *testing.T) {
+		group := runnertypes.CommandGroup{
+			Name:         "test-env-error",
+			EnvAllowlist: []string{"VALID_VAR"}, // Note: INVALID_VAR is not in allowlist
+			Commands: []runnertypes.Command{
+				{Name: "cmd-1", Cmd: "echo", Args: []string{"first"}},
+				{Name: "cmd-2", Cmd: "echo", Args: []string{"test"}, Env: []string{"INVALID_VAR=${NONEXISTENT_VAR}"}},
+			},
+		}
+
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				Timeout:      3600,
+				WorkDir:      "/tmp",
+				LogLevel:     "info",
+				EnvAllowlist: []string{"VALID_VAR"},
+			},
+			Groups: []runnertypes.CommandGroup{group},
+		}
+
+		mockExecutor := new(MockExecutor)
+		runner, err := NewRunner(config)
+		require.NoError(t, err)
+		runner.executor = mockExecutor
+
+		// First command should succeed
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "cmd-1", Cmd: "echo", Args: []string{"first"}, Dir: "/tmp"}, mock.Anything).
+			Return(&executor.Result{ExitCode: 0, Stdout: "first\n", Stderr: ""}, nil)
+
+		// Second command should not be executed due to environment variable access denial
+
+		ctx := context.Background()
+		err = runner.ExecuteGroup(ctx, group)
+
+		// Should fail due to environment variable access denied
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, ErrVariableAccessDenied), "expected error to wrap ErrVariableAccessDenied")
+		mockExecutor.AssertExpectations(t)
+	})
+}
+
 func TestRunner_ExecuteAll(t *testing.T) {
 	cleanup := setupSafeTestEnv(t)
 	defer cleanup()
@@ -398,6 +566,276 @@ func TestRunner_ExecuteAll(t *testing.T) {
 
 	assert.NoError(t, err)
 	mockExecutor.AssertExpectations(t)
+}
+
+func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
+	cleanup := setupSafeTestEnv(t)
+	defer cleanup()
+
+	t.Run("first group fails, remaining groups should not execute", func(t *testing.T) {
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				Timeout:  3600,
+				WorkDir:  "/tmp",
+				LogLevel: "info",
+			},
+			Groups: []runnertypes.CommandGroup{
+				{
+					Name:     "group-1",
+					Priority: 1,
+					Commands: []runnertypes.Command{
+						{Name: "fail-cmd", Cmd: "false"},
+					},
+				},
+				{
+					Name:     "group-2",
+					Priority: 2,
+					Commands: []runnertypes.Command{
+						{Name: "success-cmd", Cmd: "echo", Args: []string{"should not execute"}},
+					},
+				},
+				{
+					Name:     "group-3",
+					Priority: 3,
+					Commands: []runnertypes.Command{
+						{Name: "another-cmd", Cmd: "echo", Args: []string{"also should not execute"}},
+					},
+				},
+			},
+		}
+
+		mockExecutor := new(MockExecutor)
+		runner, err := NewRunner(config)
+		require.NoError(t, err)
+		runner.executor = mockExecutor
+
+		// Only the first group's command should be called (and fail)
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "fail-cmd", Cmd: "false", Dir: "/tmp"}, mock.Anything).
+			Return(&executor.Result{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil)
+
+		// Remaining groups should not be executed
+
+		ctx := context.Background()
+		err = runner.ExecuteAll(ctx)
+
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, ErrCommandFailed))
+		mockExecutor.AssertExpectations(t)
+	})
+
+	t.Run("middle group fails, remaining groups should not execute", func(t *testing.T) {
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				Timeout:  3600,
+				WorkDir:  "/tmp",
+				LogLevel: "info",
+			},
+			Groups: []runnertypes.CommandGroup{
+				{
+					Name:     "group-1",
+					Priority: 1,
+					Commands: []runnertypes.Command{
+						{Name: "success-cmd-1", Cmd: "echo", Args: []string{"first"}},
+					},
+				},
+				{
+					Name:     "group-2",
+					Priority: 2,
+					Commands: []runnertypes.Command{
+						{Name: "fail-cmd", Cmd: "false"},
+					},
+				},
+				{
+					Name:     "group-3",
+					Priority: 3,
+					Commands: []runnertypes.Command{
+						{Name: "should-not-execute", Cmd: "echo", Args: []string{"third"}},
+					},
+				},
+			},
+		}
+
+		mockExecutor := new(MockExecutor)
+		runner, err := NewRunner(config)
+		require.NoError(t, err)
+		runner.executor = mockExecutor
+
+		// First group should succeed
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "success-cmd-1", Cmd: "echo", Args: []string{"first"}, Dir: "/tmp"}, mock.Anything).
+			Return(&executor.Result{ExitCode: 0, Stdout: "first\n", Stderr: ""}, nil)
+
+		// Second group should fail
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "fail-cmd", Cmd: "false", Dir: "/tmp"}, mock.Anything).
+			Return(&executor.Result{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil)
+
+		// Third group should not be executed
+
+		ctx := context.Background()
+		err = runner.ExecuteAll(ctx)
+
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, ErrCommandFailed))
+		mockExecutor.AssertExpectations(t)
+	})
+
+	t.Run("group with multiple commands, second command fails", func(t *testing.T) {
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				Timeout:  3600,
+				WorkDir:  "/tmp",
+				LogLevel: "info",
+			},
+			Groups: []runnertypes.CommandGroup{
+				{
+					Name:     "group-1",
+					Priority: 1,
+					Commands: []runnertypes.Command{
+						{Name: "success-cmd-1", Cmd: "echo", Args: []string{"first"}},
+						{Name: "fail-cmd", Cmd: "false"},
+						{Name: "should-not-execute", Cmd: "echo", Args: []string{"third"}},
+					},
+				},
+				{
+					Name:     "group-2",
+					Priority: 2,
+					Commands: []runnertypes.Command{
+						{Name: "group2-cmd", Cmd: "echo", Args: []string{"group2"}},
+					},
+				},
+			},
+		}
+
+		mockExecutor := new(MockExecutor)
+		runner, err := NewRunner(config)
+		require.NoError(t, err)
+		runner.executor = mockExecutor
+
+		// First command in group-1 should succeed
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "success-cmd-1", Cmd: "echo", Args: []string{"first"}, Dir: "/tmp"}, mock.Anything).
+			Return(&executor.Result{ExitCode: 0, Stdout: "first\n", Stderr: ""}, nil)
+
+		// Second command in group-1 should fail
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "fail-cmd", Cmd: "false", Dir: "/tmp"}, mock.Anything).
+			Return(&executor.Result{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil)
+
+		// Third command in group-1 and group-2 should not be executed
+
+		ctx := context.Background()
+		err = runner.ExecuteAll(ctx)
+
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, ErrCommandFailed))
+		mockExecutor.AssertExpectations(t)
+	})
+
+	t.Run("executor error in first group", func(t *testing.T) {
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				Timeout:  3600,
+				WorkDir:  "/tmp",
+				LogLevel: "info",
+			},
+			Groups: []runnertypes.CommandGroup{
+				{
+					Name:     "group-1",
+					Priority: 1,
+					Commands: []runnertypes.Command{
+						{Name: "executor-error-cmd", Cmd: "nonexistent-command"},
+					},
+				},
+				{
+					Name:     "group-2",
+					Priority: 2,
+					Commands: []runnertypes.Command{
+						{Name: "should-not-execute", Cmd: "echo", Args: []string{"second"}},
+					},
+				},
+			},
+		}
+
+		mockExecutor := new(MockExecutor)
+		runner, err := NewRunner(config)
+		require.NoError(t, err)
+		runner.executor = mockExecutor
+
+		// First command should return executor error
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "executor-error-cmd", Cmd: "nonexistent-command", Dir: "/tmp"}, mock.Anything).
+			Return((*executor.Result)(nil), errCommandNotFound)
+
+		// Second group should not be executed
+
+		ctx := context.Background()
+		err = runner.ExecuteAll(ctx)
+
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, errCommandNotFound))
+		mockExecutor.AssertExpectations(t)
+	})
+
+	t.Run("context cancellation during execution", func(t *testing.T) {
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				Timeout:  3600,
+				WorkDir:  "/tmp",
+				LogLevel: "info",
+			},
+			Groups: []runnertypes.CommandGroup{
+				{
+					Name:     "group-1",
+					Priority: 1,
+					Commands: []runnertypes.Command{
+						{Name: "long-running-cmd", Cmd: "sleep", Args: []string{"10"}},
+					},
+				},
+				{
+					Name:     "group-2",
+					Priority: 2,
+					Commands: []runnertypes.Command{
+						{Name: "should-not-execute", Cmd: "echo", Args: []string{"second"}},
+					},
+				},
+			},
+		}
+
+		mockExecutor := new(MockExecutor)
+		runner, err := NewRunner(config)
+		require.NoError(t, err)
+		runner.executor = mockExecutor
+
+		// Mock executor should return context.Canceled error
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "long-running-cmd", Cmd: "sleep", Args: []string{"10"}, Dir: "/tmp"}, mock.Anything).
+			Return((*executor.Result)(nil), context.Canceled)
+
+		// Create a context that gets cancelled
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel() // Cancel immediately
+
+		err = runner.ExecuteAll(ctx)
+
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, context.Canceled))
+		mockExecutor.AssertExpectations(t)
+	})
+
+	t.Run("no groups to execute", func(t *testing.T) {
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				Timeout:  3600,
+				WorkDir:  "/tmp",
+				LogLevel: "info",
+			},
+			Groups: []runnertypes.CommandGroup{}, // Empty groups
+		}
+
+		runner, err := NewRunner(config)
+		require.NoError(t, err)
+
+		ctx := context.Background()
+		err = runner.ExecuteAll(ctx)
+
+		// Should succeed with no groups to execute
+		assert.NoError(t, err)
+	})
 }
 
 func TestRunner_resolveVariableReferences(t *testing.T) {

@@ -375,8 +375,7 @@ func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, group *runnerty
 
 		allowed := r.envFilter.IsVariableAccessAllowed(variable, group)
 		if !allowed {
-			slog.Warn("Command environment variable access denied", "variable", variable, "command", cmd.Name, "group", group.Name)
-			continue
+			return nil, fmt.Errorf("%w: variable %s not allowed for command %s in group %s", ErrVariableAccessDenied, variable, cmd.Name, group.Name)
 		}
 		// Resolve variable references in the value
 		resolvedValue, err := r.resolveVariableReferences(value, envVars, group)
