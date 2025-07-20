@@ -446,23 +446,25 @@ func (r *Runner) resolveVariableReferencesWithDepth(value string, envVars map[st
 
 		varName := result[start+2 : end]
 
-		// Check for circular reference
+		// Check for circular reference first - this takes precedence over undefined variable errors
 		if resolving[varName] {
 			return "", fmt.Errorf("%w: variable %s references itself", ErrCircularReference, varName)
 		}
 
+		// Mark this variable as being resolved to detect cycles early
+		resolving[varName] = true
+
 		// Check if variable access is allowed for this group
 		if !r.envFilter.IsVariableAccessAllowed(varName, group) {
+			delete(resolving, varName) // Clean up before returning error
 			return "", fmt.Errorf("%w: %s (group: %s)", ErrVariableAccessDenied, varName, group.Name)
 		}
 
 		varValue, exists := envVars[varName]
 		if !exists {
+			delete(resolving, varName) // Clean up before returning error
 			return "", fmt.Errorf("%w: %s", ErrUndefinedVariable, varName)
 		}
-
-		// Mark this variable as being resolved to detect cycles
-		resolving[varName] = true
 
 		// Recursively resolve the variable value
 		resolvedValue, err := r.resolveVariableReferencesWithDepth(varValue, envVars, resolving, depth+1, group)

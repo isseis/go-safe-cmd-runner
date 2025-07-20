@@ -1090,6 +1090,69 @@ func TestRunner_resolveVariableReferences_ComplexCircular(t *testing.T) {
 	}
 }
 
+func TestRunner_CircularReferenceWithUndefinedVariable(t *testing.T) {
+	cleanup := setupSafeTestEnv(t)
+	defer cleanup()
+
+	config := &runnertypes.Config{
+		Global: runnertypes.GlobalConfig{
+			Timeout:      3600,
+			WorkDir:      "/tmp",
+			LogLevel:     "info",
+			EnvAllowlist: []string{"PATH", "DEFINED_VAR", "UNDEFINED_VAR", "SELF_REF"},
+		},
+		Groups: []runnertypes.CommandGroup{
+			{
+				Name: "test-group",
+			},
+		},
+	}
+
+	envFilter := environment.NewFilter(config)
+	runner := &Runner{
+		config:    config,
+		envFilter: envFilter,
+	}
+
+	// Test case where a variable references an undefined variable in a circular manner
+	// This should return CircularReference error, not UndefinedVariable error
+	envVars := map[string]string{
+		"DEFINED_VAR": "${UNDEFINED_VAR}",
+		// UNDEFINED_VAR is not defined, but if we had "UNDEFINED_VAR": "${DEFINED_VAR}",
+		// it would create a circular reference
+	}
+
+	tests := []struct {
+		name        string
+		input       string
+		envVars     map[string]string
+		expectedErr error
+	}{
+		{
+			name:        "self-referencing undefined variable should be circular reference",
+			input:       "${SELF_REF}",
+			envVars:     map[string]string{"SELF_REF": "${SELF_REF}"},
+			expectedErr: ErrCircularReference,
+		},
+		{
+			name:        "defined variable referencing undefined variable should be undefined",
+			input:       "${DEFINED_VAR}",
+			envVars:     envVars,
+			expectedErr: ErrUndefinedVariable,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testGroup := &config.Groups[0] // Get reference to the test group
+			_, err := runner.resolveVariableReferences(tt.input, tt.envVars, testGroup)
+
+			assert.Error(t, err)
+			assert.True(t, errors.Is(err, tt.expectedErr), "expected error %v, got %v", tt.expectedErr, err)
+		})
+	}
+}
+
 func TestRunner_SecurityIntegration(t *testing.T) {
 	cleanup := setupSafeTestEnv(t)
 	defer cleanup()
