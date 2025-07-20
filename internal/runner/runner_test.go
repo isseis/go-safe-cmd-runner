@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -73,6 +74,61 @@ func (m *MockExecutor) Execute(ctx context.Context, cmd runnertypes.Command, env
 func (m *MockExecutor) Validate(cmd runnertypes.Command) error {
 	args := m.Called(cmd)
 	return args.Error(0)
+}
+
+// MockFileSystem is a mock implementation of common.FileSystem
+type MockFileSystem struct {
+	mock.Mock
+}
+
+func (m *MockFileSystem) CreateTempDir(prefix string) (string, error) {
+	args := m.Called(prefix)
+	return args.String(0), args.Error(1)
+}
+
+func (m *MockFileSystem) TempDir() string {
+	args := m.Called()
+	return args.String(0)
+}
+
+func (m *MockFileSystem) MkdirAll(path string, perm fs.FileMode) error {
+	args := m.Called(path, perm)
+	return args.Error(0)
+}
+
+func (m *MockFileSystem) RemoveAll(path string) error {
+	args := m.Called(path)
+	return args.Error(0)
+}
+
+func (m *MockFileSystem) Remove(path string) error {
+	args := m.Called(path)
+	return args.Error(0)
+}
+
+func (m *MockFileSystem) Lstat(name string) (os.FileInfo, error) {
+	args := m.Called(name)
+	return args.Get(0).(os.FileInfo), args.Error(1)
+}
+
+func (m *MockFileSystem) Readlink(name string) (string, error) {
+	args := m.Called(name)
+	return args.String(0), args.Error(1)
+}
+
+func (m *MockFileSystem) Stat(name string) (os.FileInfo, error) {
+	args := m.Called(name)
+	return args.Get(0).(os.FileInfo), args.Error(1)
+}
+
+func (m *MockFileSystem) FileExists(path string) (bool, error) {
+	args := m.Called(path)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockFileSystem) IsDir(path string) (bool, error) {
+	args := m.Called(path)
+	return args.Bool(0), args.Error(1)
 }
 
 func TestNewRunner(t *testing.T) {
@@ -852,4 +908,207 @@ func TestCommandGroup_NewFields(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestCommandGroup_TempDir_Detailed tests TempDir functionality with detailed mock expectations
+func TestCommandGroup_TempDir_Detailed(t *testing.T) {
+	cleanup := setupSafeTestEnv(t)
+	defer cleanup()
+
+	t.Run("TempDir creates directory and sets Dir field", func(t *testing.T) {
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				WorkDir:      "/tmp",
+				EnvAllowlist: []string{"PATH"},
+			},
+		}
+
+		group := runnertypes.CommandGroup{
+			Name:    "test-tempdir-detailed",
+			TempDir: true,
+			Commands: []runnertypes.Command{
+				{Name: "test", Cmd: "echo", Args: []string{"hello"}},
+			},
+			EnvAllowlist: []string{"PATH"},
+		}
+
+		// Create mock file system
+		mockFS := &MockFileSystem{}
+
+		// Set expectation for MkdirAll - resource manager will create temp directory
+		mockFS.On("MkdirAll", mock.AnythingOfType("string"), mock.AnythingOfType("fs.FileMode")).Return(nil)
+		// Set expectation for RemoveAll - resource manager will clean up temp directory
+		mockFS.On("RemoveAll", mock.AnythingOfType("string")).Return(nil)
+
+		// Create resource manager with mock filesystem
+		resourceManager := resource.NewManagerWithFS("/tmp", mockFS)
+
+		// Create mock executor
+		mockExecutor := &MockExecutor{}
+
+		// Set expectation for Execute - verify that Dir field is properly set
+		mockExecutor.On("Execute", mock.Anything, mock.MatchedBy(func(cmd runnertypes.Command) bool {
+			// Verify that the command's Dir field has been set to a temp directory path
+			return cmd.Name == "test" &&
+				cmd.Cmd == "echo" &&
+				len(cmd.Args) == 1 && cmd.Args[0] == "hello" &&
+				cmd.Dir != "" && // Dir should be set
+				strings.Contains(cmd.Dir, "/tmp") // Should contain temp directory
+		}), mock.Anything).Return(
+			&executor.Result{ExitCode: 0, Stdout: "hello\n", Stderr: ""}, nil)
+
+		// Create runner with mocks
+		runner, err := NewRunner(config,
+			WithExecutor(mockExecutor),
+			WithResourceManager(resourceManager))
+		require.NoError(t, err)
+
+		// Load basic environment
+		err = runner.LoadEnvironment("", true)
+		require.NoError(t, err)
+
+		// Execute the group
+		ctx := context.Background()
+		err = runner.ExecuteGroup(ctx, group)
+
+		// Verify no error occurred
+		assert.NoError(t, err)
+
+		// Verify all mock expectations were met
+		mockFS.AssertExpectations(t)
+		mockExecutor.AssertExpectations(t)
+
+		// Verify that MkdirAll was called (temp directory was created)
+		mockFS.AssertCalled(t, "MkdirAll", mock.AnythingOfType("string"), mock.AnythingOfType("fs.FileMode"))
+	})
+
+	t.Run("TempDir with cleanup enabled", func(t *testing.T) {
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				WorkDir:      "/tmp",
+				EnvAllowlist: []string{"PATH"},
+			},
+		}
+
+		group := runnertypes.CommandGroup{
+			Name:    "test-tempdir-cleanup",
+			TempDir: true,
+			Cleanup: true,
+			Commands: []runnertypes.Command{
+				{Name: "test", Cmd: "echo", Args: []string{"hello"}},
+			},
+			EnvAllowlist: []string{"PATH"},
+		}
+
+		// Create mock file system
+		mockFS := &MockFileSystem{}
+
+		// Set expectation for MkdirAll - resource manager will create temp directory
+		mockFS.On("MkdirAll", mock.AnythingOfType("string"), mock.AnythingOfType("fs.FileMode")).Return(nil)
+		// Set expectation for RemoveAll - resource manager will clean up temp directory
+		mockFS.On("RemoveAll", mock.AnythingOfType("string")).Return(nil)
+
+		// Create resource manager with mock filesystem
+		resourceManager := resource.NewManagerWithFS("/tmp", mockFS)
+
+		// Create mock executor
+		mockExecutor := &MockExecutor{}
+
+		// Set expectation for Execute - verify that Dir field is properly set
+		mockExecutor.On("Execute", mock.Anything, mock.MatchedBy(func(cmd runnertypes.Command) bool {
+			// Verify that the command's Dir field has been set to a temp directory path
+			return cmd.Name == "test" &&
+				cmd.Cmd == "echo" &&
+				len(cmd.Args) == 1 && cmd.Args[0] == "hello" &&
+				cmd.Dir != "" && // Dir should be set
+				strings.Contains(cmd.Dir, "/tmp") // Should contain temp directory
+		}), mock.Anything).Return(
+			&executor.Result{ExitCode: 0, Stdout: "hello\n", Stderr: ""}, nil)
+
+		// Create runner with mocks
+		runner, err := NewRunner(config,
+			WithExecutor(mockExecutor),
+			WithResourceManager(resourceManager))
+		require.NoError(t, err)
+
+		// Load basic environment
+		err = runner.LoadEnvironment("", true)
+		require.NoError(t, err)
+
+		// Execute the group
+		ctx := context.Background()
+		err = runner.ExecuteGroup(ctx, group)
+
+		// Verify no error occurred
+		assert.NoError(t, err)
+
+		// Verify all mock expectations were met
+		mockFS.AssertExpectations(t)
+		mockExecutor.AssertExpectations(t)
+
+		// Verify that MkdirAll was called (temp directory was created)
+		mockFS.AssertCalled(t, "MkdirAll", mock.AnythingOfType("string"), mock.AnythingOfType("fs.FileMode"))
+	})
+
+	t.Run("Command with existing Dir is not overridden by TempDir", func(t *testing.T) {
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				WorkDir:      "/tmp",
+				EnvAllowlist: []string{"PATH"},
+			},
+		}
+
+		group := runnertypes.CommandGroup{
+			Name:    "test-existing-dir",
+			TempDir: true, // TempDir is enabled
+			Commands: []runnertypes.Command{
+				{Name: "test", Cmd: "echo", Args: []string{"hello"}, Dir: "/existing/dir"}, // But command already has Dir
+			},
+			EnvAllowlist: []string{"PATH"},
+		}
+
+		// Create mock file system
+		mockFS := &MockFileSystem{}
+
+		// Set expectation for MkdirAll - temp directory should still be created
+		mockFS.On("MkdirAll", mock.AnythingOfType("string"), mock.AnythingOfType("fs.FileMode")).Return(nil)
+		// Set expectation for RemoveAll - resource manager will clean up temp directory
+		mockFS.On("RemoveAll", mock.AnythingOfType("string")).Return(nil)
+
+		// Create resource manager with mock filesystem
+		resourceManager := resource.NewManagerWithFS("/tmp", mockFS)
+
+		// Create mock executor
+		mockExecutor := &MockExecutor{}
+
+		// Set expectation for Execute - verify that existing Dir is preserved
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{
+			Name: "test",
+			Cmd:  "echo",
+			Args: []string{"hello"},
+			Dir:  "/existing/dir", // Should preserve original Dir
+		}, mock.Anything).Return(
+			&executor.Result{ExitCode: 0, Stdout: "hello\n", Stderr: ""}, nil)
+
+		// Create runner with mocks
+		runner, err := NewRunner(config,
+			WithExecutor(mockExecutor),
+			WithResourceManager(resourceManager))
+		require.NoError(t, err)
+
+		// Load basic environment
+		err = runner.LoadEnvironment("", true)
+		require.NoError(t, err)
+
+		// Execute the group
+		ctx := context.Background()
+		err = runner.ExecuteGroup(ctx, group)
+
+		// Verify no error occurred
+		assert.NoError(t, err)
+
+		// Verify all mock expectations were met
+		mockFS.AssertExpectations(t)
+		mockExecutor.AssertExpectations(t)
+	})
 }
