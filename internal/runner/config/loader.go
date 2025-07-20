@@ -11,15 +11,13 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/template"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/pelletier/go-toml/v2"
 )
 
 // Loader handles loading and validating configurations
 type Loader struct {
-	templateEngine *template.Engine
-	fs             common.FileSystem
+	fs common.FileSystem
 }
 
 // Error definitions for the config package
@@ -45,14 +43,8 @@ func NewLoader() *Loader {
 // NewLoaderWithFS creates a new config loader with a custom FileSystem
 func NewLoaderWithFS(fs common.FileSystem) *Loader {
 	return &Loader{
-		templateEngine: template.NewEngine(),
-		fs:             fs,
+		fs: fs,
 	}
-}
-
-// GetTemplateEngine returns the template engine instance
-func (l *Loader) GetTemplateEngine() *template.Engine {
-	return l.templateEngine
 }
 
 // LoadConfig loads, validates, and applies templates to the configuration from the given path.
@@ -91,47 +83,10 @@ func (l *Loader) LoadConfig(path string) (*runnertypes.Config, error) {
 	}
 	cfg.Global.WorkDir = workDir
 
-	// Always apply templates
-	if err := l.applyTemplates(&cfg); err != nil {
-		return nil, err
-	}
-
 	// Check for deprecated fields and log warnings
 	l.validateUnimplementedFields(&cfg)
 
 	return &cfg, nil
-}
-
-// applyTemplates registers templates from configuration and applies them to command groups
-func (l *Loader) applyTemplates(cfg *runnertypes.Config) error {
-	// Register templates from configuration
-	for name, tmplConfig := range cfg.Templates {
-		tmpl := &template.Template{
-			Name:        name,
-			Description: tmplConfig.Description,
-			TempDir:     tmplConfig.TempDir,
-			Cleanup:     tmplConfig.Cleanup,
-			WorkDir:     tmplConfig.WorkDir,
-			Variables:   tmplConfig.Variables,
-		}
-
-		if err := l.templateEngine.RegisterTemplate(name, tmpl); err != nil {
-			return fmt.Errorf("failed to register template %s: %w", name, err)
-		}
-	}
-
-	// Apply templates to command groups
-	for i, group := range cfg.Groups {
-		if group.Template != "" {
-			appliedGroup, err := l.templateEngine.ApplyTemplate(&group, group.Template)
-			if err != nil {
-				return fmt.Errorf("failed to apply template %s to group %s: %w", group.Template, group.Name, err)
-			}
-			cfg.Groups[i] = *appliedGroup
-		}
-	}
-
-	return nil
 }
 
 // validateUnimplementedFields checks for unimplemented fields and logs warnings

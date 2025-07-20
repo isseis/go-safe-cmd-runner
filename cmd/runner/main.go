@@ -100,9 +100,8 @@ func run() error {
 			result.VerifiedFiles, len(result.SkippedFiles), result.Duration)
 	}
 
-	// Initialize Runner with template engine from config loader
+	// Initialize Runner
 	runner, err := runner.NewRunner(cfg,
-		runner.WithTemplateEngine(cfgLoader.GetTemplateEngine()),
 		runner.WithVerificationManager(verificationManager))
 	if err != nil {
 		return fmt.Errorf("failed to initialize runner: %w", err)

@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,12 +15,22 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/template"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+var (
+	errCommandNotFound  = errors.New("command not found")
+	errPermissionDenied = errors.New("permission denied")
+	errDeviceBusy       = errors.New("device busy")
+	errDiskFull         = errors.New("disk full")
+	errCleanupFailed    = errors.New("cleanup failed")
+	errResourceBusy     = errors.New("resource busy")
+)
+
+const defaultTestCommandName = "test"
 
 // setupTestEnv sets up a clean test environment and returns a cleanup function.
 // The cleanup function restores the original environment when called.
@@ -76,6 +87,61 @@ func (m *MockExecutor) Validate(cmd runnertypes.Command) error {
 	return args.Error(0)
 }
 
+// MockFileSystem is a mock implementation of common.FileSystem
+type MockFileSystem struct {
+	mock.Mock
+}
+
+func (m *MockFileSystem) CreateTempDir(prefix string) (string, error) {
+	args := m.Called(prefix)
+	return args.String(0), args.Error(1)
+}
+
+func (m *MockFileSystem) TempDir() string {
+	args := m.Called()
+	return args.String(0)
+}
+
+func (m *MockFileSystem) MkdirAll(path string, perm fs.FileMode) error {
+	args := m.Called(path, perm)
+	return args.Error(0)
+}
+
+func (m *MockFileSystem) RemoveAll(path string) error {
+	args := m.Called(path)
+	return args.Error(0)
+}
+
+func (m *MockFileSystem) Remove(path string) error {
+	args := m.Called(path)
+	return args.Error(0)
+}
+
+func (m *MockFileSystem) Lstat(name string) (os.FileInfo, error) {
+	args := m.Called(name)
+	return args.Get(0).(os.FileInfo), args.Error(1)
+}
+
+func (m *MockFileSystem) Readlink(name string) (string, error) {
+	args := m.Called(name)
+	return args.String(0), args.Error(1)
+}
+
+func (m *MockFileSystem) Stat(name string) (os.FileInfo, error) {
+	args := m.Called(name)
+	return args.Get(0).(os.FileInfo), args.Error(1)
+}
+
+func (m *MockFileSystem) FileExists(path string) (bool, error) {
+	args := m.Called(path)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockFileSystem) IsDir(path string) (bool, error) {
+	args := m.Called(path)
+	return args.Bool(0), args.Error(1)
+}
+
 func TestNewRunner(t *testing.T) {
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
@@ -93,7 +159,6 @@ func TestNewRunner(t *testing.T) {
 		assert.NotNil(t, runner.executor)
 		assert.NotNil(t, runner.envVars)
 		assert.NotNil(t, runner.validator)
-		assert.NotNil(t, runner.templateEngine)
 		assert.NotNil(t, runner.resourceManager)
 	})
 
@@ -112,14 +177,6 @@ func TestNewRunner(t *testing.T) {
 		assert.NotNil(t, runner.validator)
 	})
 
-	t.Run("with custom template engine", func(t *testing.T) {
-		customEngine := template.NewEngine()
-		runner, err := NewRunner(config, WithTemplateEngine(customEngine))
-		assert.NoError(t, err)
-		assert.NotNil(t, runner)
-		assert.Equal(t, customEngine, runner.templateEngine)
-	})
-
 	t.Run("with multiple options", func(t *testing.T) {
 		securityConfig := &security.Config{
 			AllowedCommands:         []string{"^echo$"},
@@ -127,16 +184,13 @@ func TestNewRunner(t *testing.T) {
 			SensitiveEnvVars:        []string{".*PASSWORD.*"},
 			MaxPathLength:           4096,
 		}
-		customEngine := template.NewEngine()
 		customResourceManager := resource.NewManager("/custom/path")
 
 		runner, err := NewRunner(config,
 			WithSecurity(securityConfig),
-			WithTemplateEngine(customEngine),
 			WithResourceManager(customResourceManager))
 		assert.NoError(t, err)
 		assert.NotNil(t, runner)
-		assert.Equal(t, customEngine, runner.templateEngine)
 		assert.Equal(t, customResourceManager, runner.resourceManager)
 	})
 
@@ -179,7 +233,6 @@ func TestNewRunnerWithSecurity(t *testing.T) {
 		assert.NotNil(t, runner.executor)
 		assert.NotNil(t, runner.envVars)
 		assert.NotNil(t, runner.validator)
-		assert.NotNil(t, runner.templateEngine)
 		assert.NotNil(t, runner.resourceManager)
 	})
 
@@ -314,6 +367,172 @@ func TestRunner_ExecuteGroup(t *testing.T) {
 	}
 }
 
+func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
+	cleanup := setupSafeTestEnv(t)
+	defer cleanup()
+
+	t.Run("multiple commands with first failing", func(t *testing.T) {
+		group := runnertypes.CommandGroup{
+			Name: "test-first-fails",
+			Commands: []runnertypes.Command{
+				{Name: "cmd-1", Cmd: "false"}, // This fails
+				{Name: "cmd-2", Cmd: "echo", Args: []string{"second"}},
+				{Name: "cmd-3", Cmd: "echo", Args: []string{"third"}},
+			},
+		}
+
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				Timeout:  3600,
+				WorkDir:  "/tmp",
+				LogLevel: "info",
+			},
+			Groups: []runnertypes.CommandGroup{group},
+		}
+
+		mockExecutor := new(MockExecutor)
+		runner, err := NewRunner(config)
+		require.NoError(t, err)
+		runner.executor = mockExecutor
+
+		// First command fails with non-zero exit code
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "cmd-1", Cmd: "false", Dir: "/tmp"}, mock.Anything).
+			Return(&executor.Result{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil)
+
+		// Subsequent commands should not be executed due to fail-fast behavior
+		ctx := context.Background()
+		err = runner.ExecuteGroup(ctx, group)
+
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, ErrCommandFailed))
+		mockExecutor.AssertExpectations(t)
+	})
+
+	t.Run("multiple commands with middle failing", func(t *testing.T) {
+		group := runnertypes.CommandGroup{
+			Name: "test-middle-fails",
+			Commands: []runnertypes.Command{
+				{Name: "cmd-1", Cmd: "echo", Args: []string{"first"}},
+				{Name: "cmd-2", Cmd: "false"}, // This fails
+				{Name: "cmd-3", Cmd: "echo", Args: []string{"third"}},
+			},
+		}
+
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				Timeout:  3600,
+				WorkDir:  "/tmp",
+				LogLevel: "info",
+			},
+			Groups: []runnertypes.CommandGroup{group},
+		}
+
+		mockExecutor := new(MockExecutor)
+		runner, err := NewRunner(config)
+		require.NoError(t, err)
+		runner.executor = mockExecutor
+
+		// First command succeeds
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "cmd-1", Cmd: "echo", Args: []string{"first"}, Dir: "/tmp"}, mock.Anything).
+			Return(&executor.Result{ExitCode: 0, Stdout: "first\n", Stderr: ""}, nil)
+
+		// Second command fails
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "cmd-2", Cmd: "false", Dir: "/tmp"}, mock.Anything).
+			Return(&executor.Result{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil)
+
+		// Third command should not be executed due to fail-fast behavior
+
+		ctx := context.Background()
+		err = runner.ExecuteGroup(ctx, group)
+
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, ErrCommandFailed))
+		mockExecutor.AssertExpectations(t)
+	})
+
+	t.Run("executor returns error instead of non-zero exit code", func(t *testing.T) {
+		group := runnertypes.CommandGroup{
+			Name: "test-executor-error",
+			Commands: []runnertypes.Command{
+				{Name: "cmd-1", Cmd: "echo", Args: []string{"first"}},
+				{Name: "cmd-2", Cmd: "invalid-command"}, // This causes executor error
+				{Name: "cmd-3", Cmd: "echo", Args: []string{"third"}},
+			},
+		}
+
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				Timeout:  3600,
+				WorkDir:  "/tmp",
+				LogLevel: "info",
+			},
+			Groups: []runnertypes.CommandGroup{group},
+		}
+
+		mockExecutor := new(MockExecutor)
+		runner, err := NewRunner(config)
+		require.NoError(t, err)
+		runner.executor = mockExecutor
+
+		// First command succeeds
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "cmd-1", Cmd: "echo", Args: []string{"first"}, Dir: "/tmp"}, mock.Anything).
+			Return(&executor.Result{ExitCode: 0, Stdout: "first\n", Stderr: ""}, nil)
+
+		// Second command returns executor error
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "cmd-2", Cmd: "invalid-command", Dir: "/tmp"}, mock.Anything).
+			Return((*executor.Result)(nil), errCommandNotFound)
+
+		// Third command should not be executed
+
+		ctx := context.Background()
+		err = runner.ExecuteGroup(ctx, group)
+
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, errCommandNotFound))
+		mockExecutor.AssertExpectations(t)
+	})
+
+	t.Run("environment variable access denied causes error", func(t *testing.T) {
+		group := runnertypes.CommandGroup{
+			Name:         "test-env-error",
+			EnvAllowlist: []string{"VALID_VAR"}, // Note: INVALID_VAR is not in allowlist
+			Commands: []runnertypes.Command{
+				{Name: "cmd-1", Cmd: "echo", Args: []string{"first"}},
+				{Name: "cmd-2", Cmd: "echo", Args: []string{"test"}, Env: []string{"INVALID_VAR=${NONEXISTENT_VAR}"}},
+			},
+		}
+
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				Timeout:      3600,
+				WorkDir:      "/tmp",
+				LogLevel:     "info",
+				EnvAllowlist: []string{"VALID_VAR"},
+			},
+			Groups: []runnertypes.CommandGroup{group},
+		}
+
+		mockExecutor := new(MockExecutor)
+		runner, err := NewRunner(config)
+		require.NoError(t, err)
+		runner.executor = mockExecutor
+
+		// First command should succeed
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "cmd-1", Cmd: "echo", Args: []string{"first"}, Dir: "/tmp"}, mock.Anything).
+			Return(&executor.Result{ExitCode: 0, Stdout: "first\n", Stderr: ""}, nil)
+
+		// Second command should not be executed due to environment variable access denial
+
+		ctx := context.Background()
+		err = runner.ExecuteGroup(ctx, group)
+
+		// Should fail due to environment variable access denied
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, ErrVariableAccessDenied), "expected error to wrap ErrVariableAccessDenied")
+		mockExecutor.AssertExpectations(t)
+	})
+}
+
 func TestRunner_ExecuteAll(t *testing.T) {
 	cleanup := setupSafeTestEnv(t)
 	defer cleanup()
@@ -356,6 +575,285 @@ func TestRunner_ExecuteAll(t *testing.T) {
 
 	assert.NoError(t, err)
 	mockExecutor.AssertExpectations(t)
+}
+
+func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
+	cleanup := setupSafeTestEnv(t)
+	defer cleanup()
+
+	t.Run("first group fails, but remaining groups should still execute", func(t *testing.T) {
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				Timeout:  3600,
+				WorkDir:  "/tmp",
+				LogLevel: "info",
+			},
+			Groups: []runnertypes.CommandGroup{
+				{
+					Name:     "group-1",
+					Priority: 1,
+					Commands: []runnertypes.Command{
+						{Name: "fail-cmd", Cmd: "false"},
+					},
+				},
+				{
+					Name:     "group-2",
+					Priority: 2,
+					Commands: []runnertypes.Command{
+						{Name: "success-cmd", Cmd: "echo", Args: []string{"should execute"}},
+					},
+				},
+				{
+					Name:     "group-3",
+					Priority: 3,
+					Commands: []runnertypes.Command{
+						{Name: "another-cmd", Cmd: "echo", Args: []string{"also should execute"}},
+					},
+				},
+			},
+		}
+
+		mockExecutor := new(MockExecutor)
+		runner, err := NewRunner(config)
+		require.NoError(t, err)
+		runner.executor = mockExecutor
+
+		// First group's command should be called and fail
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "fail-cmd", Cmd: "false", Dir: "/tmp"}, mock.Anything).
+			Return(&executor.Result{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil)
+
+		// Remaining groups should still be executed
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "success-cmd", Cmd: "echo", Args: []string{"should execute"}, Dir: "/tmp"}, mock.Anything).
+			Return(&executor.Result{ExitCode: 0, Stdout: "should execute\n", Stderr: ""}, nil)
+
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "another-cmd", Cmd: "echo", Args: []string{"also should execute"}, Dir: "/tmp"}, mock.Anything).
+			Return(&executor.Result{ExitCode: 0, Stdout: "also should execute\n", Stderr: ""}, nil)
+
+		ctx := context.Background()
+		err = runner.ExecuteAll(ctx)
+
+		// Should still return error from first group, but all groups executed
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, ErrCommandFailed))
+		mockExecutor.AssertExpectations(t)
+	})
+
+	t.Run("middle group fails, but remaining groups should still execute", func(t *testing.T) {
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				Timeout:  3600,
+				WorkDir:  "/tmp",
+				LogLevel: "info",
+			},
+			Groups: []runnertypes.CommandGroup{
+				{
+					Name:     "group-1",
+					Priority: 1,
+					Commands: []runnertypes.Command{
+						{Name: "success-cmd-1", Cmd: "echo", Args: []string{"first"}},
+					},
+				},
+				{
+					Name:     "group-2",
+					Priority: 2,
+					Commands: []runnertypes.Command{
+						{Name: "fail-cmd", Cmd: "false"},
+					},
+				},
+				{
+					Name:     "group-3",
+					Priority: 3,
+					Commands: []runnertypes.Command{
+						{Name: "should-execute", Cmd: "echo", Args: []string{"third"}},
+					},
+				},
+			},
+		}
+
+		mockExecutor := new(MockExecutor)
+		runner, err := NewRunner(config)
+		require.NoError(t, err)
+		runner.executor = mockExecutor
+
+		// First group should succeed
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "success-cmd-1", Cmd: "echo", Args: []string{"first"}, Dir: "/tmp"}, mock.Anything).
+			Return(&executor.Result{ExitCode: 0, Stdout: "first\n", Stderr: ""}, nil)
+
+		// Second group should fail
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "fail-cmd", Cmd: "false", Dir: "/tmp"}, mock.Anything).
+			Return(&executor.Result{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil)
+
+		// Third group should still be executed
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "should-execute", Cmd: "echo", Args: []string{"third"}, Dir: "/tmp"}, mock.Anything).
+			Return(&executor.Result{ExitCode: 0, Stdout: "third\n", Stderr: ""}, nil)
+
+		ctx := context.Background()
+		err = runner.ExecuteAll(ctx)
+
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, ErrCommandFailed))
+		mockExecutor.AssertExpectations(t)
+	})
+
+	t.Run("group with multiple commands, second command fails, but next group still executes", func(t *testing.T) {
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				Timeout:  3600,
+				WorkDir:  "/tmp",
+				LogLevel: "info",
+			},
+			Groups: []runnertypes.CommandGroup{
+				{
+					Name:     "group-1",
+					Priority: 1,
+					Commands: []runnertypes.Command{
+						{Name: "success-cmd-1", Cmd: "echo", Args: []string{"first"}},
+						{Name: "fail-cmd", Cmd: "false"},
+						{Name: "should-not-execute", Cmd: "echo", Args: []string{"third"}},
+					},
+				},
+				{
+					Name:     "group-2",
+					Priority: 2,
+					Commands: []runnertypes.Command{
+						{Name: "group2-cmd", Cmd: "echo", Args: []string{"group2"}},
+					},
+				},
+			},
+		}
+
+		mockExecutor := new(MockExecutor)
+		runner, err := NewRunner(config)
+		require.NoError(t, err)
+		runner.executor = mockExecutor
+
+		// First command in group-1 should succeed
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "success-cmd-1", Cmd: "echo", Args: []string{"first"}, Dir: "/tmp"}, mock.Anything).
+			Return(&executor.Result{ExitCode: 0, Stdout: "first\n", Stderr: ""}, nil)
+
+		// Second command in group-1 should fail
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "fail-cmd", Cmd: "false", Dir: "/tmp"}, mock.Anything).
+			Return(&executor.Result{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil)
+
+		// Third command in group-1 should not be executed (group-level failure stops remaining commands in same group)
+		// But group-2 should still be executed (new behavior)
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "group2-cmd", Cmd: "echo", Args: []string{"group2"}, Dir: "/tmp"}, mock.Anything).
+			Return(&executor.Result{ExitCode: 0, Stdout: "group2\n", Stderr: ""}, nil)
+
+		ctx := context.Background()
+		err = runner.ExecuteAll(ctx)
+
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, ErrCommandFailed))
+		mockExecutor.AssertExpectations(t)
+	})
+
+	t.Run("executor error in first group, but remaining groups should still execute", func(t *testing.T) {
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				Timeout:  3600,
+				WorkDir:  "/tmp",
+				LogLevel: "info",
+			},
+			Groups: []runnertypes.CommandGroup{
+				{
+					Name:     "group-1",
+					Priority: 1,
+					Commands: []runnertypes.Command{
+						{Name: "executor-error-cmd", Cmd: "nonexistent-command"},
+					},
+				},
+				{
+					Name:     "group-2",
+					Priority: 2,
+					Commands: []runnertypes.Command{
+						{Name: "should-execute", Cmd: "echo", Args: []string{"second"}},
+					},
+				},
+			},
+		}
+
+		mockExecutor := new(MockExecutor)
+		runner, err := NewRunner(config)
+		require.NoError(t, err)
+		runner.executor = mockExecutor
+
+		// First command should return executor error
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "executor-error-cmd", Cmd: "nonexistent-command", Dir: "/tmp"}, mock.Anything).
+			Return((*executor.Result)(nil), errCommandNotFound)
+
+		// Second group should still be executed
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{Name: "should-execute", Cmd: "echo", Args: []string{"second"}, Dir: "/tmp"}, mock.Anything).
+			Return(&executor.Result{ExitCode: 0, Stdout: "second\n", Stderr: ""}, nil)
+
+		ctx := context.Background()
+		err = runner.ExecuteAll(ctx)
+
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, errCommandNotFound))
+		mockExecutor.AssertExpectations(t)
+	})
+
+	t.Run("context cancellation during execution", func(t *testing.T) {
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				Timeout:  3600,
+				WorkDir:  "/tmp",
+				LogLevel: "info",
+			},
+			Groups: []runnertypes.CommandGroup{
+				{
+					Name:     "group-1",
+					Priority: 1,
+					Commands: []runnertypes.Command{
+						{Name: "long-running-cmd", Cmd: "sleep", Args: []string{"10"}},
+					},
+				},
+				{
+					Name:     "group-2",
+					Priority: 2,
+					Commands: []runnertypes.Command{
+						{Name: "should-not-execute", Cmd: "echo", Args: []string{"second"}},
+					},
+				},
+			},
+		}
+
+		mockExecutor := new(MockExecutor)
+		runner, err := NewRunner(config)
+		require.NoError(t, err)
+		runner.executor = mockExecutor
+
+		// Create a context that gets cancelled
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel() // Cancel immediately
+
+		err = runner.ExecuteAll(ctx)
+
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, context.Canceled))
+		// No mock expectations since context is cancelled before any commands execute
+	})
+
+	t.Run("no groups to execute", func(t *testing.T) {
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				Timeout:  3600,
+				WorkDir:  "/tmp",
+				LogLevel: "info",
+			},
+			Groups: []runnertypes.CommandGroup{}, // Empty groups
+		}
+
+		runner, err := NewRunner(config)
+		require.NoError(t, err)
+
+		ctx := context.Background()
+		err = runner.ExecuteAll(ctx)
+
+		// Should succeed with no groups to execute
+		assert.NoError(t, err)
+	})
 }
 
 func TestRunner_resolveVariableReferences(t *testing.T) {
@@ -483,6 +981,117 @@ func TestRunner_createCommandContext(t *testing.T) {
 	})
 }
 
+func TestRunner_CommandTimeoutBehavior(t *testing.T) {
+	config := &runnertypes.Config{
+		Global: runnertypes.GlobalConfig{
+			Timeout: 1, // 1 second timeout
+			WorkDir: "/tmp",
+		},
+		Groups: []runnertypes.CommandGroup{
+			{
+				Name: "timeout-test-group",
+				Commands: []runnertypes.Command{
+					{
+						Name: "sleep-command",
+						Cmd:  "sleep",
+						Args: []string{"5"}, // Sleep for 5 seconds, longer than timeout
+					},
+				},
+			},
+		},
+	}
+
+	t.Run("global timeout is enforced", func(t *testing.T) {
+		runner, err := NewRunner(config)
+		require.NoError(t, err)
+
+		ctx := context.Background()
+		start := time.Now()
+
+		err = runner.ExecuteAll(ctx)
+
+		elapsed := time.Since(start)
+
+		// Should fail due to timeout
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "signal: killed")
+
+		// Should complete within ~1 second (plus some buffer for processing)
+		assert.Less(t, elapsed, 2*time.Second)
+		assert.Greater(t, elapsed, 900*time.Millisecond) // At least close to 1 second
+	})
+
+	t.Run("command-specific timeout overrides global timeout", func(t *testing.T) {
+		// Create config with command-specific shorter timeout
+		configWithCmdTimeout := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				Timeout: 10, // 10 seconds global timeout
+				WorkDir: "/tmp",
+			},
+			Groups: []runnertypes.CommandGroup{
+				{
+					Name: "cmd-timeout-test-group",
+					Commands: []runnertypes.Command{
+						{
+							Name:    "sleep-command-short-timeout",
+							Cmd:     "sleep",
+							Args:    []string{"5"}, // Sleep for 5 seconds
+							Timeout: 1,             // But timeout after 1 second
+						},
+					},
+				},
+			},
+		}
+
+		runner, err := NewRunner(configWithCmdTimeout)
+		require.NoError(t, err)
+
+		ctx := context.Background()
+		start := time.Now()
+
+		err = runner.ExecuteAll(ctx)
+
+		elapsed := time.Since(start)
+
+		// Should fail due to command timeout (1 second), not global timeout (10 seconds)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "signal: killed")
+
+		// Should complete within ~1 second, not 10 seconds
+		assert.Less(t, elapsed, 2*time.Second)
+		assert.Greater(t, elapsed, 900*time.Millisecond)
+	})
+
+	t.Run("timeout with context cancellation prioritization", func(t *testing.T) {
+		runner, err := NewRunner(config)
+		require.NoError(t, err)
+
+		// Create a context that will be cancelled after 500ms
+		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		defer cancel()
+
+		start := time.Now()
+
+		err = runner.ExecuteAll(ctx)
+
+		elapsed := time.Since(start)
+
+		// Should fail due to context cancellation
+		assert.Error(t, err)
+		// Context cancellation can result in different error messages depending on timing
+		assert.True(t,
+			errors.Is(err, context.DeadlineExceeded) ||
+				errors.Is(err, context.Canceled) ||
+				strings.Contains(err.Error(), "signal: killed") ||
+				strings.Contains(err.Error(), "context deadline exceeded") ||
+				strings.Contains(err.Error(), "context canceled"))
+
+		// Should complete within ~500ms, not the command timeout of 1 second
+		assert.Less(t, elapsed, 800*time.Millisecond)
+		assert.Greater(t, elapsed, 400*time.Millisecond)
+	})
+}
+
 func TestRunner_resolveEnvironmentVars(t *testing.T) {
 	// Setup a custom test environment with specific variables
 	testEnv := map[string]string{
@@ -585,6 +1194,69 @@ func TestRunner_resolveVariableReferences_ComplexCircular(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			testGroup := &config.Groups[0] // Get reference to the test group
 			_, err := runner.resolveVariableReferences(tt.input, envVars, testGroup)
+
+			assert.Error(t, err)
+			assert.True(t, errors.Is(err, tt.expectedErr), "expected error %v, got %v", tt.expectedErr, err)
+		})
+	}
+}
+
+func TestRunner_CircularReferenceWithUndefinedVariable(t *testing.T) {
+	cleanup := setupSafeTestEnv(t)
+	defer cleanup()
+
+	config := &runnertypes.Config{
+		Global: runnertypes.GlobalConfig{
+			Timeout:      3600,
+			WorkDir:      "/tmp",
+			LogLevel:     "info",
+			EnvAllowlist: []string{"PATH", "DEFINED_VAR", "UNDEFINED_VAR", "SELF_REF"},
+		},
+		Groups: []runnertypes.CommandGroup{
+			{
+				Name: "test-group",
+			},
+		},
+	}
+
+	envFilter := environment.NewFilter(config)
+	runner := &Runner{
+		config:    config,
+		envFilter: envFilter,
+	}
+
+	// Test case where a variable references an undefined variable in a circular manner
+	// This should return CircularReference error, not UndefinedVariable error
+	envVars := map[string]string{
+		"DEFINED_VAR": "${UNDEFINED_VAR}",
+		// UNDEFINED_VAR is not defined, but if we had "UNDEFINED_VAR": "${DEFINED_VAR}",
+		// it would create a circular reference
+	}
+
+	tests := []struct {
+		name        string
+		input       string
+		envVars     map[string]string
+		expectedErr error
+	}{
+		{
+			name:        "self-referencing undefined variable should be circular reference",
+			input:       "${SELF_REF}",
+			envVars:     map[string]string{"SELF_REF": "${SELF_REF}"},
+			expectedErr: ErrCircularReference,
+		},
+		{
+			name:        "defined variable referencing undefined variable should be undefined",
+			input:       "${DEFINED_VAR}",
+			envVars:     envVars,
+			expectedErr: ErrUndefinedVariable,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testGroup := &config.Groups[0] // Get reference to the test group
+			_, err := runner.resolveVariableReferences(tt.input, tt.envVars, testGroup)
 
 			assert.Error(t, err)
 			assert.True(t, errors.Is(err, tt.expectedErr), "expected error %v, got %v", tt.expectedErr, err)
@@ -745,5 +1417,1023 @@ func TestRunner_LoadEnvironmentWithSecurity(t *testing.T) {
 		err = runner.LoadEnvironment(envFile, false)
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, security.ErrUnsafeEnvironmentVar), "expected error to wrap security.ErrUnsafeEnvironmentVar")
+	})
+}
+
+// TestCommandGroup_NewFields tests the new fields added to CommandGroup for template replacement
+func TestCommandGroup_NewFields(t *testing.T) {
+	// Setup test environment
+	cleanup := setupSafeTestEnv(t)
+	defer cleanup()
+
+	tests := []struct {
+		name        string
+		group       runnertypes.CommandGroup
+		expectError bool
+		description string
+	}{
+		{
+			name: "TempDir enabled",
+			group: runnertypes.CommandGroup{
+				Name:    "test-tempdir",
+				TempDir: true,
+				Commands: []runnertypes.Command{
+					{Name: "test", Cmd: "echo", Args: []string{"hello"}},
+				},
+				EnvAllowlist: []string{"PATH"},
+			},
+			expectError: false,
+			description: "Should create temporary directory and set it as working directory",
+		},
+		{
+			name: "WorkDir specified",
+			group: runnertypes.CommandGroup{
+				Name:    "test-workdir",
+				WorkDir: "/tmp",
+				Commands: []runnertypes.Command{
+					{Name: "test", Cmd: "echo", Args: []string{"hello"}},
+				},
+				EnvAllowlist: []string{"PATH"},
+			},
+			expectError: false,
+			description: "Should set working directory from group WorkDir field",
+		},
+		{
+			name: "Cleanup enabled with TempDir",
+			group: runnertypes.CommandGroup{
+				Name:    "test-cleanup",
+				TempDir: true,
+				Cleanup: true,
+				Commands: []runnertypes.Command{
+					{Name: "test", Cmd: "echo", Args: []string{"hello"}},
+				},
+				EnvAllowlist: []string{"PATH"},
+			},
+			expectError: false,
+			description: "Should create temporary directory with cleanup enabled",
+		},
+		{
+			name: "Command with existing Dir should not be overridden",
+			group: runnertypes.CommandGroup{
+				Name:    "test-existing-dir",
+				WorkDir: "/tmp",
+				Commands: []runnertypes.Command{
+					{Name: "test", Cmd: "echo", Args: []string{"hello"}, Dir: "/usr"},
+				},
+				EnvAllowlist: []string{"PATH"},
+			},
+			expectError: false,
+			description: "Commands with existing Dir should not be overridden by group WorkDir",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &runnertypes.Config{
+				Global: runnertypes.GlobalConfig{
+					WorkDir:      "/tmp",
+					EnvAllowlist: []string{"PATH"},
+				},
+				Groups: []runnertypes.CommandGroup{tt.group},
+			}
+
+			// Create runner with mock executor to avoid actually executing commands
+			mockExecutor := &MockExecutor{}
+			mockExecutor.On("Execute", mock.Anything, mock.Anything, mock.Anything).Return(
+				&executor.Result{ExitCode: 0, Stdout: "test output", Stderr: ""}, nil)
+
+			runner, err := NewRunner(config, WithExecutor(mockExecutor))
+			require.NoError(t, err)
+
+			// Load basic environment
+			err = runner.LoadEnvironment("", true)
+			require.NoError(t, err)
+
+			// Execute the group
+			ctx := context.Background()
+			err = runner.ExecuteGroup(ctx, tt.group)
+
+			if tt.expectError {
+				assert.Error(t, err, tt.description)
+			} else {
+				assert.NoError(t, err, tt.description)
+
+				// Verify mock was called
+				mockExecutor.AssertExpectations(t)
+
+				// Additional verification based on test case
+				switch tt.name {
+				case "WorkDir specified", "Command with existing Dir should not be overridden":
+					// Verify the command was called with the expected working directory
+					calls := mockExecutor.Calls
+					require.Len(t, calls, 1)
+					cmd, ok := calls[0].Arguments[1].(runnertypes.Command)
+					require.True(t, ok, "expected calls[0].Arguments[1] to be of type runnertypes.Command, but it was not")
+					if tt.name == "WorkDir specified" {
+						assert.Equal(t, "/tmp", cmd.Dir)
+					} else {
+						assert.Equal(t, "/usr", cmd.Dir) // Should not be overridden
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestCommandGroup_TempDir_Detailed tests TempDir functionality with detailed mock expectations
+func TestCommandGroup_TempDir_Detailed(t *testing.T) {
+	cleanup := setupSafeTestEnv(t)
+	defer cleanup()
+
+	t.Run("TempDir creates directory and sets Dir field", func(t *testing.T) {
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				WorkDir:      "/tmp",
+				EnvAllowlist: []string{"PATH"},
+			},
+		}
+
+		group := runnertypes.CommandGroup{
+			Name:    "test-tempdir-detailed",
+			TempDir: true,
+			Commands: []runnertypes.Command{
+				{Name: "test", Cmd: "echo", Args: []string{"hello"}},
+			},
+			EnvAllowlist: []string{"PATH"},
+		}
+
+		// Create mock file system
+		mockFS := &MockFileSystem{}
+
+		// Set expectation for MkdirAll - resource manager will create temp directory
+		mockFS.On("MkdirAll", mock.AnythingOfType("string"), mock.AnythingOfType("fs.FileMode")).Return(nil)
+		// Set expectation for RemoveAll - resource manager will clean up temp directory
+		mockFS.On("RemoveAll", mock.AnythingOfType("string")).Return(nil)
+
+		// Create resource manager with mock filesystem
+		resourceManager := resource.NewManagerWithFS("/tmp", mockFS)
+
+		// Create mock executor
+		mockExecutor := &MockExecutor{}
+
+		// Set expectation for Execute - verify that Dir field is properly set
+		mockExecutor.On("Execute", mock.Anything, mock.MatchedBy(func(cmd runnertypes.Command) bool {
+			// Verify that the command's Dir field has been set to a temp directory path
+			return cmd.Name == defaultTestCommandName &&
+				cmd.Cmd == "echo" &&
+				len(cmd.Args) == 1 && cmd.Args[0] == "hello" &&
+				cmd.Dir != "" && // Dir should be set
+				strings.Contains(cmd.Dir, "/tmp") // Should contain temp directory
+		}), mock.Anything).Return(
+			&executor.Result{ExitCode: 0, Stdout: "hello\n", Stderr: ""}, nil)
+
+		// Create runner with mocks
+		runner, err := NewRunner(config,
+			WithExecutor(mockExecutor),
+			WithResourceManager(resourceManager))
+		require.NoError(t, err)
+
+		// Load basic environment
+		err = runner.LoadEnvironment("", true)
+		require.NoError(t, err)
+
+		// Execute the group
+		ctx := context.Background()
+		err = runner.ExecuteGroup(ctx, group)
+
+		// Verify no error occurred
+		assert.NoError(t, err)
+
+		// Verify all mock expectations were met
+		mockFS.AssertExpectations(t)
+		mockExecutor.AssertExpectations(t)
+
+		// Verify that MkdirAll was called (temp directory was created)
+		mockFS.AssertCalled(t, "MkdirAll", mock.AnythingOfType("string"), mock.AnythingOfType("fs.FileMode"))
+	})
+
+	t.Run("TempDir with cleanup enabled", func(t *testing.T) {
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				WorkDir:      "/tmp",
+				EnvAllowlist: []string{"PATH"},
+			},
+		}
+
+		group := runnertypes.CommandGroup{
+			Name:    "test-tempdir-cleanup",
+			TempDir: true,
+			Cleanup: true,
+			Commands: []runnertypes.Command{
+				{Name: "test", Cmd: "echo", Args: []string{"hello"}},
+			},
+			EnvAllowlist: []string{"PATH"},
+		}
+
+		// Create mock file system
+		mockFS := &MockFileSystem{}
+
+		// Set expectation for MkdirAll - resource manager will create temp directory
+		mockFS.On("MkdirAll", mock.AnythingOfType("string"), mock.AnythingOfType("fs.FileMode")).Return(nil)
+		// Set expectation for RemoveAll - resource manager will clean up temp directory
+		mockFS.On("RemoveAll", mock.AnythingOfType("string")).Return(nil)
+
+		// Create resource manager with mock filesystem
+		resourceManager := resource.NewManagerWithFS("/tmp", mockFS)
+
+		// Create mock executor
+		mockExecutor := &MockExecutor{}
+
+		// Set expectation for Execute - verify that Dir field is properly set
+		mockExecutor.On("Execute", mock.Anything, mock.MatchedBy(func(cmd runnertypes.Command) bool {
+			// Verify that the command's Dir field has been set to a temp directory path
+			return cmd.Name == defaultTestCommandName &&
+				cmd.Cmd == "echo" &&
+				len(cmd.Args) == 1 && cmd.Args[0] == "hello" &&
+				cmd.Dir != "" && // Dir should be set
+				strings.Contains(cmd.Dir, "/tmp") // Should contain temp directory
+		}), mock.Anything).Return(
+			&executor.Result{ExitCode: 0, Stdout: "hello\n", Stderr: ""}, nil)
+
+		// Create runner with mocks
+		runner, err := NewRunner(config,
+			WithExecutor(mockExecutor),
+			WithResourceManager(resourceManager))
+		require.NoError(t, err)
+
+		// Load basic environment
+		err = runner.LoadEnvironment("", true)
+		require.NoError(t, err)
+
+		// Execute the group
+		ctx := context.Background()
+		err = runner.ExecuteGroup(ctx, group)
+
+		// Verify no error occurred
+		assert.NoError(t, err)
+
+		// Verify all mock expectations were met
+		mockFS.AssertExpectations(t)
+		mockExecutor.AssertExpectations(t)
+
+		// Verify that MkdirAll was called (temp directory was created)
+		mockFS.AssertCalled(t, "MkdirAll", mock.AnythingOfType("string"), mock.AnythingOfType("fs.FileMode"))
+	})
+
+	t.Run("Command with existing Dir is not overridden by TempDir", func(t *testing.T) {
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				WorkDir:      "/tmp",
+				EnvAllowlist: []string{"PATH"},
+			},
+		}
+
+		group := runnertypes.CommandGroup{
+			Name:    "test-existing-dir",
+			TempDir: true, // TempDir is enabled
+			Commands: []runnertypes.Command{
+				{Name: "test", Cmd: "echo", Args: []string{"hello"}, Dir: "/existing/dir"}, // But command already has Dir
+			},
+			EnvAllowlist: []string{"PATH"},
+		}
+
+		// Create mock file system
+		mockFS := &MockFileSystem{}
+
+		// Set expectation for MkdirAll - temp directory should still be created
+		mockFS.On("MkdirAll", mock.AnythingOfType("string"), mock.AnythingOfType("fs.FileMode")).Return(nil)
+		// Set expectation for RemoveAll - resource manager will clean up temp directory
+		mockFS.On("RemoveAll", mock.AnythingOfType("string")).Return(nil)
+
+		// Create resource manager with mock filesystem
+		resourceManager := resource.NewManagerWithFS("/tmp", mockFS)
+
+		// Create mock executor
+		mockExecutor := &MockExecutor{}
+
+		// Set expectation for Execute - verify that existing Dir is preserved
+		mockExecutor.On("Execute", mock.Anything, runnertypes.Command{
+			Name: "test",
+			Cmd:  "echo",
+			Args: []string{"hello"},
+			Dir:  "/existing/dir", // Should preserve original Dir
+		}, mock.Anything).Return(
+			&executor.Result{ExitCode: 0, Stdout: "hello\n", Stderr: ""}, nil)
+
+		// Create runner with mocks
+		runner, err := NewRunner(config,
+			WithExecutor(mockExecutor),
+			WithResourceManager(resourceManager))
+		require.NoError(t, err)
+
+		// Load basic environment
+		err = runner.LoadEnvironment("", true)
+		require.NoError(t, err)
+
+		// Execute the group
+		ctx := context.Background()
+		err = runner.ExecuteGroup(ctx, group)
+
+		// Verify no error occurred
+		assert.NoError(t, err)
+
+		// Verify all mock expectations were met
+		mockFS.AssertExpectations(t)
+		mockExecutor.AssertExpectations(t)
+	})
+}
+
+// TestRunner_EnvironmentVariablePriority tests the priority hierarchy for environment variables:
+// command-specific > global (loaded from system/env file)
+func TestRunner_EnvironmentVariablePriority(t *testing.T) {
+	cleanup := setupSafeTestEnv(t)
+	defer cleanup()
+
+	config := &runnertypes.Config{
+		Global: runnertypes.GlobalConfig{
+			WorkDir:      "/tmp",
+			EnvAllowlist: []string{"GLOBAL_VAR", "CMD_VAR", "OVERRIDE_VAR", "REFERENCE_VAR"},
+		},
+		Groups: []runnertypes.CommandGroup{
+			{
+				Name:         "test-group",
+				EnvAllowlist: []string{"GLOBAL_VAR", "CMD_VAR", "OVERRIDE_VAR", "REFERENCE_VAR"},
+			},
+		},
+	}
+
+	runner, err := NewRunner(config)
+	require.NoError(t, err)
+
+	// Set global environment variables (loaded from system/env file)
+	runner.envVars = map[string]string{
+		"GLOBAL_VAR":    "global_value",
+		"OVERRIDE_VAR":  "global_override",
+		"REFERENCE_VAR": "global_reference",
+	}
+
+	tests := []struct {
+		name           string
+		commandEnvVars []string // Command-level environment variables
+		expectedValues map[string]string
+		description    string
+	}{
+		{
+			name:           "global variables only",
+			commandEnvVars: nil,
+			expectedValues: map[string]string{
+				"GLOBAL_VAR":    "global_value",
+				"OVERRIDE_VAR":  "global_override",
+				"REFERENCE_VAR": "global_reference",
+			},
+			description: "Global variables should be available when no command variables override them",
+		},
+		{
+			name:           "command variables override global",
+			commandEnvVars: []string{"CMD_VAR=command_value", "OVERRIDE_VAR=command_override"},
+			expectedValues: map[string]string{
+				"GLOBAL_VAR":   "global_value",     // Global variable unchanged
+				"CMD_VAR":      "command_value",    // Command-specific variable
+				"OVERRIDE_VAR": "command_override", // Command overrides global
+			},
+			description: "Command environment variables should override global variables",
+		},
+		{
+			name:           "variable references with command priority",
+			commandEnvVars: []string{"REFERENCE_VAR=${GLOBAL_VAR}_referenced"},
+			expectedValues: map[string]string{
+				"GLOBAL_VAR":    "global_value",
+				"REFERENCE_VAR": "global_value_referenced", // Should resolve to global variable value
+			},
+			description: "Variable references should resolve using available variables",
+		},
+		{
+			name:           "command variable references other command variables",
+			commandEnvVars: []string{"CMD_VAR=command_value", "REFERENCE_VAR=${CMD_VAR}_referenced"},
+			expectedValues: map[string]string{
+				"CMD_VAR":       "command_value",
+				"REFERENCE_VAR": "command_value_referenced", // Should resolve to command variable value
+			},
+			description: "Command variables should be able to reference other command variables",
+		},
+		{
+			name:           "command direct value overrides reference",
+			commandEnvVars: []string{"REFERENCE_VAR=direct_command_value"},
+			expectedValues: map[string]string{
+				"REFERENCE_VAR": "direct_command_value", // Command value should override global
+			},
+			description: "Direct command variables should override global variables",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create test command with command-level environment variables
+			testCmd := runnertypes.Command{
+				Name: "test-env-priority",
+				Cmd:  "echo",
+				Args: []string{"test"},
+			}
+			if tt.commandEnvVars != nil {
+				testCmd.Env = tt.commandEnvVars
+			}
+
+			// Resolve environment variables using the runner
+			testGroup := &config.Groups[0]
+			resolvedEnv, err := runner.resolveEnvironmentVars(testCmd, testGroup)
+			require.NoError(t, err, tt.description)
+
+			// Verify expected values are present with correct priority
+			for key, expectedValue := range tt.expectedValues {
+				actualValue, exists := resolvedEnv[key]
+				assert.True(t, exists, "Environment variable %s should exist in %s", key, tt.name)
+				assert.Equal(t, expectedValue, actualValue, "Environment variable %s should have correct value in %s", key, tt.name)
+			}
+		})
+	}
+}
+
+// TestRunner_EnvironmentVariablePriority_CurrentImplementation tests the current implementation
+// which only supports command-specific > global priority (no group-specific variables yet)
+func TestRunner_EnvironmentVariablePriority_CurrentImplementation(t *testing.T) {
+	cleanup := setupSafeTestEnv(t)
+	defer cleanup()
+
+	config := &runnertypes.Config{
+		Global: runnertypes.GlobalConfig{
+			WorkDir:      "/tmp",
+			EnvAllowlist: []string{"GLOBAL_VAR", "CMD_VAR", "OVERRIDE_VAR", "REFERENCE_VAR"},
+		},
+		Groups: []runnertypes.CommandGroup{
+			{
+				Name:         "test-group",
+				EnvAllowlist: []string{"GLOBAL_VAR", "CMD_VAR", "OVERRIDE_VAR", "REFERENCE_VAR"},
+			},
+		},
+	}
+
+	runner, err := NewRunner(config)
+	require.NoError(t, err)
+
+	// Set global environment variables (loaded from system/env file)
+	runner.envVars = map[string]string{
+		"GLOBAL_VAR":    "global_value",
+		"OVERRIDE_VAR":  "global_override",
+		"REFERENCE_VAR": "global_reference",
+	}
+
+	tests := []struct {
+		name           string
+		commandEnvVars []string // Command-level environment variables
+		expectedValues map[string]string
+		description    string
+	}{
+		{
+			name:           "global variables only",
+			commandEnvVars: nil,
+			expectedValues: map[string]string{
+				"GLOBAL_VAR":    "global_value",
+				"OVERRIDE_VAR":  "global_override",
+				"REFERENCE_VAR": "global_reference",
+			},
+			description: "Global variables should be available when no command variables are specified",
+		},
+		{
+			name:           "command variables override global",
+			commandEnvVars: []string{"CMD_VAR=command_value", "OVERRIDE_VAR=command_override"},
+			expectedValues: map[string]string{
+				"GLOBAL_VAR":   "global_value",     // Global variable unchanged
+				"CMD_VAR":      "command_value",    // Command-specific variable
+				"OVERRIDE_VAR": "command_override", // Command overrides global
+			},
+			description: "Command environment variables should override global variables",
+		},
+		{
+			name:           "command variable references global",
+			commandEnvVars: []string{"REFERENCE_VAR=${GLOBAL_VAR}_referenced"},
+			expectedValues: map[string]string{
+				"GLOBAL_VAR":    "global_value",
+				"REFERENCE_VAR": "global_value_referenced", // Should resolve to global variable value
+			},
+			description: "Command variables should be able to reference global variables",
+		},
+		{
+			name:           "command variable references other command variables",
+			commandEnvVars: []string{"CMD_VAR=command_value", "REFERENCE_VAR=${CMD_VAR}_referenced"},
+			expectedValues: map[string]string{
+				"CMD_VAR":       "command_value",
+				"REFERENCE_VAR": "command_value_referenced", // Should resolve to command variable value
+			},
+			description: "Command variables should be able to reference other command variables",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create test command with command-level environment variables
+			testCmd := runnertypes.Command{
+				Name: "test-env-priority",
+				Cmd:  "echo",
+				Args: []string{"test"},
+			}
+			if tt.commandEnvVars != nil {
+				testCmd.Env = tt.commandEnvVars
+			}
+
+			// Resolve environment variables using the runner
+			testGroup := &config.Groups[0]
+			resolvedEnv, err := runner.resolveEnvironmentVars(testCmd, testGroup)
+			require.NoError(t, err, tt.description)
+
+			// Verify expected values are present with correct priority
+			for key, expectedValue := range tt.expectedValues {
+				actualValue, exists := resolvedEnv[key]
+				assert.True(t, exists, "Environment variable %s should exist in %s", key, tt.name)
+				assert.Equal(t, expectedValue, actualValue, "Environment variable %s should have correct value in %s", key, tt.name)
+			}
+		})
+	}
+}
+
+// TestRunner_EnvironmentVariablePriority_GroupLevelSupport documents the missing group-level environment variable support
+func TestRunner_EnvironmentVariablePriority_GroupLevelSupport(t *testing.T) {
+	t.Skip("Group-level environment variables are not yet implemented. CommandGroup struct needs an Env field similar to Command.Env")
+
+	// This test documents what the expected behavior should be when group-level environment variables are implemented:
+	// Priority order should be: command-specific > group-specific > global
+	//
+	// Required changes:
+	// 1. Add Env []string field to CommandGroup struct in runnertypes/config.go
+	// 2. Modify resolveEnvironmentVars method to apply group environment variables before command variables
+	// 3. Ensure variable resolution works across all three levels
+}
+
+// TestRunner_EnvironmentVariablePriority_EdgeCases tests edge cases for environment variable priority
+func TestRunner_EnvironmentVariablePriority_EdgeCases(t *testing.T) {
+	cleanup := setupSafeTestEnv(t)
+	defer cleanup()
+
+	config := &runnertypes.Config{
+		Global: runnertypes.GlobalConfig{
+			WorkDir:      "/tmp",
+			EnvAllowlist: []string{"EDGE_VAR", "CIRCULAR_VAR", "UNDEFINED_REF"},
+		},
+		Groups: []runnertypes.CommandGroup{
+			{
+				Name:         "test-group",
+				EnvAllowlist: []string{"EDGE_VAR", "CIRCULAR_VAR", "UNDEFINED_REF"},
+			},
+		},
+	}
+
+	runner, err := NewRunner(config)
+	require.NoError(t, err)
+
+	// Set global environment variables
+	runner.envVars = map[string]string{
+		"EDGE_VAR": "global_edge_value",
+	}
+
+	t.Run("empty variable values", func(t *testing.T) {
+		testGroup := config.Groups[0]
+
+		testCmd := runnertypes.Command{
+			Name: "test-empty",
+			Cmd:  "echo",
+			Args: []string{"test"},
+			Env:  []string{"EDGE_VAR="}, // Empty value at command level
+		}
+
+		resolvedEnv, err := runner.resolveEnvironmentVars(testCmd, &testGroup)
+		require.NoError(t, err)
+
+		// Command value should override global value even if empty
+		assert.Equal(t, "", resolvedEnv["EDGE_VAR"])
+	})
+
+	t.Run("malformed environment variable format", func(t *testing.T) {
+		testGroup := config.Groups[0]
+
+		testCmd := runnertypes.Command{
+			Name: "test-malformed",
+			Cmd:  "echo",
+			Args: []string{"test"},
+			Env:  []string{"MALFORMED_VAR"}, // No equals sign
+		}
+
+		_, err := runner.resolveEnvironmentVars(testCmd, &testGroup)
+		// Should handle malformed environment variables gracefully
+		assert.NoError(t, err)
+	})
+
+	t.Run("variable reference to undefined variable", func(t *testing.T) {
+		testGroup := config.Groups[0]
+
+		testCmd := runnertypes.Command{
+			Name: "test-undefined-ref",
+			Cmd:  "echo",
+			Args: []string{"test"},
+			Env:  []string{"UNDEFINED_REF=${NONEXISTENT_VAR}"},
+		}
+
+		_, err := runner.resolveEnvironmentVars(testCmd, &testGroup)
+		// Should fail when referencing undefined variable
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, ErrVariableAccessDenied))
+	})
+
+	t.Run("circular reference in command variables", func(t *testing.T) {
+		testGroup := config.Groups[0]
+
+		testCmd := runnertypes.Command{
+			Name: "test-circular",
+			Cmd:  "echo",
+			Args: []string{"test"},
+			Env:  []string{"CIRCULAR_VAR=${CIRCULAR_VAR}"},
+		}
+
+		_, err := runner.resolveEnvironmentVars(testCmd, &testGroup)
+		// Should detect and fail on circular references
+		// Note: Current implementation detects this as undefined variable rather than circular reference
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "undefined variable: CIRCULAR_VAR")
+	})
+}
+
+// TestResourceManagement_FailureScenarios tests various failure scenarios in resource management
+func TestResourceManagement_FailureScenarios(t *testing.T) {
+	cleanup := setupSafeTestEnv(t)
+	defer cleanup()
+
+	t.Run("temp directory creation failure", func(t *testing.T) {
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				WorkDir:      "/tmp",
+				EnvAllowlist: []string{"PATH"},
+			},
+		}
+
+		group := runnertypes.CommandGroup{
+			Name:    "test-tempdir-failure",
+			TempDir: true,
+			Commands: []runnertypes.Command{
+				{Name: "test", Cmd: "echo", Args: []string{"hello"}},
+			},
+			EnvAllowlist: []string{"PATH"},
+		}
+
+		// Create mock file system that fails on directory creation
+		mockFS := &MockFileSystem{}
+		mockFS.On("MkdirAll", mock.AnythingOfType("string"), mock.AnythingOfType("fs.FileMode")).
+			Return(errPermissionDenied)
+
+		// Create resource manager with mock filesystem
+		resourceManager := resource.NewManagerWithFS("/tmp", mockFS)
+
+		// Create mock executor (should not be called due to temp dir creation failure)
+		mockExecutor := &MockExecutor{}
+
+		// Create runner with mocks
+		runner, err := NewRunner(config,
+			WithExecutor(mockExecutor),
+			WithResourceManager(resourceManager))
+		require.NoError(t, err)
+
+		// Load basic environment
+		err = runner.LoadEnvironment("", true)
+		require.NoError(t, err)
+
+		// Execute the group - should fail due to temp directory creation failure
+		ctx := context.Background()
+		err = runner.ExecuteGroup(ctx, group)
+
+		// Verify error occurred
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to create temp directory for group test-tempdir-failure")
+
+		// Verify mock expectations
+		mockFS.AssertExpectations(t)
+		// Executor should not have been called
+		mockExecutor.AssertNotCalled(t, "Execute")
+	})
+
+	t.Run("temp directory cleanup failure", func(t *testing.T) {
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				WorkDir:      "/tmp",
+				EnvAllowlist: []string{"PATH"},
+			},
+		}
+
+		group := runnertypes.CommandGroup{
+			Name:    "test-cleanup-failure",
+			TempDir: true,
+			Cleanup: true, // Enable cleanup
+			Commands: []runnertypes.Command{
+				{Name: "test", Cmd: "echo", Args: []string{"hello"}},
+			},
+			EnvAllowlist: []string{"PATH"},
+		}
+
+		// Create mock file system
+		mockFS := &MockFileSystem{}
+		// Directory creation succeeds
+		mockFS.On("MkdirAll", mock.AnythingOfType("string"), mock.AnythingOfType("fs.FileMode")).Return(nil)
+		// Directory removal fails
+		mockFS.On("RemoveAll", mock.AnythingOfType("string")).Return(errDeviceBusy)
+
+		// Create resource manager with mock filesystem
+		resourceManager := resource.NewManagerWithFS("/tmp", mockFS)
+
+		// Create mock executor
+		mockExecutor := &MockExecutor{}
+		mockExecutor.On("Execute", mock.Anything, mock.MatchedBy(func(cmd runnertypes.Command) bool {
+			return cmd.Name == defaultTestCommandName && cmd.Dir != ""
+		}), mock.Anything).Return(
+			&executor.Result{ExitCode: 0, Stdout: "hello\n", Stderr: ""}, nil)
+
+		// Create runner with mocks
+		runner, err := NewRunner(config,
+			WithExecutor(mockExecutor),
+			WithResourceManager(resourceManager))
+		require.NoError(t, err)
+
+		// Load basic environment
+		err = runner.LoadEnvironment("", true)
+		require.NoError(t, err)
+
+		// Execute the group - should succeed despite cleanup failure (cleanup failure is logged as warning)
+		ctx := context.Background()
+		err = runner.ExecuteGroup(ctx, group)
+
+		// Command execution should succeed even if cleanup fails
+		assert.NoError(t, err)
+
+		// Verify mock expectations
+		mockFS.AssertExpectations(t)
+		mockExecutor.AssertExpectations(t)
+	})
+
+	t.Run("multiple temp directory failures", func(t *testing.T) {
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				WorkDir:      "/tmp",
+				EnvAllowlist: []string{"PATH"},
+			},
+			Groups: []runnertypes.CommandGroup{
+				{
+					Name:     "group-1",
+					Priority: 1,
+					TempDir:  true,
+					Commands: []runnertypes.Command{
+						{Name: "cmd-1", Cmd: "echo", Args: []string{"first"}},
+					},
+					EnvAllowlist: []string{"PATH"},
+				},
+				{
+					Name:     "group-2",
+					Priority: 2,
+					TempDir:  true,
+					Commands: []runnertypes.Command{
+						{Name: "cmd-2", Cmd: "echo", Args: []string{"second"}},
+					},
+					EnvAllowlist: []string{"PATH"},
+				},
+			},
+		}
+
+		// Create mock file system
+		mockFS := &MockFileSystem{}
+		// First directory creation succeeds
+		mockFS.On("MkdirAll", mock.AnythingOfType("string"), mock.AnythingOfType("fs.FileMode")).
+			Return(nil).Once()
+		// Second directory creation fails
+		mockFS.On("MkdirAll", mock.AnythingOfType("string"), mock.AnythingOfType("fs.FileMode")).
+			Return(errDiskFull)
+
+		// Cleanup for first directory succeeds
+		mockFS.On("RemoveAll", mock.AnythingOfType("string")).Return(nil)
+
+		// Create resource manager with mock filesystem
+		resourceManager := resource.NewManagerWithFS("/tmp", mockFS)
+
+		// Create mock executor
+		mockExecutor := &MockExecutor{}
+		// Only first group's command should execute
+		mockExecutor.On("Execute", mock.Anything, mock.MatchedBy(func(cmd runnertypes.Command) bool {
+			return cmd.Name == "cmd-1"
+		}), mock.Anything).Return(
+			&executor.Result{ExitCode: 0, Stdout: "first\n", Stderr: ""}, nil)
+
+		// Create runner with mocks
+		runner, err := NewRunner(config,
+			WithExecutor(mockExecutor),
+			WithResourceManager(resourceManager))
+		require.NoError(t, err)
+
+		// Load basic environment
+		err = runner.LoadEnvironment("", true)
+		require.NoError(t, err)
+
+		// Execute all groups - first should succeed, second should fail
+		ctx := context.Background()
+		err = runner.ExecuteAll(ctx)
+
+		// Should return error from second group's temp directory creation failure
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to execute group group-2")
+		assert.Contains(t, err.Error(), "failed to create temp directory")
+
+		// Verify mock expectations
+		mockFS.AssertExpectations(t)
+		mockExecutor.AssertExpectations(t)
+	})
+
+	t.Run("resource cleanup during early termination", func(t *testing.T) {
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				WorkDir:      "/tmp",
+				EnvAllowlist: []string{"PATH"},
+			},
+		}
+
+		group := runnertypes.CommandGroup{
+			Name:    "test-early-termination",
+			TempDir: true,
+			Cleanup: true,
+			Commands: []runnertypes.Command{
+				{Name: "first-cmd", Cmd: "echo", Args: []string{"first"}},
+				{Name: "failing-cmd", Cmd: "false"}, // This command will fail
+				{Name: "never-executed", Cmd: "echo", Args: []string{"never"}},
+			},
+			EnvAllowlist: []string{"PATH"},
+		}
+
+		// Create mock file system
+		mockFS := &MockFileSystem{}
+		// Directory creation and cleanup should succeed
+		mockFS.On("MkdirAll", mock.AnythingOfType("string"), mock.AnythingOfType("fs.FileMode")).Return(nil)
+		mockFS.On("RemoveAll", mock.AnythingOfType("string")).Return(nil)
+
+		// Create resource manager with mock filesystem
+		resourceManager := resource.NewManagerWithFS("/tmp", mockFS)
+
+		// Create mock executor
+		mockExecutor := &MockExecutor{}
+		// First command succeeds
+		mockExecutor.On("Execute", mock.Anything, mock.MatchedBy(func(cmd runnertypes.Command) bool {
+			return cmd.Name == "first-cmd"
+		}), mock.Anything).Return(
+			&executor.Result{ExitCode: 0, Stdout: "first\n", Stderr: ""}, nil)
+
+		// Second command fails
+		mockExecutor.On("Execute", mock.Anything, mock.MatchedBy(func(cmd runnertypes.Command) bool {
+			return cmd.Name == "failing-cmd"
+		}), mock.Anything).Return(
+			&executor.Result{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil)
+
+		// Third command should never be called due to failure of second command
+
+		// Create runner with mocks
+		runner, err := NewRunner(config,
+			WithExecutor(mockExecutor),
+			WithResourceManager(resourceManager))
+		require.NoError(t, err)
+
+		// Load basic environment
+		err = runner.LoadEnvironment("", true)
+		require.NoError(t, err)
+
+		// Execute the group - should fail on second command but still clean up resources
+		ctx := context.Background()
+		err = runner.ExecuteGroup(ctx, group)
+
+		// Should return error from failing command
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, ErrCommandFailed))
+
+		// Verify mock expectations
+		mockFS.AssertExpectations(t)
+		mockExecutor.AssertExpectations(t)
+
+		// Verify that cleanup was called despite the command failure
+		mockFS.AssertCalled(t, "RemoveAll", mock.AnythingOfType("string"))
+	})
+
+	t.Run("resource manager cleanup all failure", func(t *testing.T) {
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				WorkDir:      "/tmp",
+				EnvAllowlist: []string{"PATH"},
+			},
+		}
+
+		group := runnertypes.CommandGroup{
+			Name:    "test-cleanup-all",
+			TempDir: true,
+			Commands: []runnertypes.Command{
+				{Name: "test", Cmd: "echo", Args: []string{"hello"}},
+			},
+			EnvAllowlist: []string{"PATH"},
+		}
+
+		// Create mock file system
+		mockFS := &MockFileSystem{}
+		mockFS.On("MkdirAll", mock.AnythingOfType("string"), mock.AnythingOfType("fs.FileMode")).Return(nil)
+		mockFS.On("RemoveAll", mock.AnythingOfType("string")).Return(errCleanupFailed)
+
+		// Create resource manager with mock filesystem
+		resourceManager := resource.NewManagerWithFS("/tmp", mockFS)
+
+		// Create mock executor
+		mockExecutor := &MockExecutor{}
+		mockExecutor.On("Execute", mock.Anything, mock.MatchedBy(func(cmd runnertypes.Command) bool {
+			return cmd.Name == defaultTestCommandName
+		}), mock.Anything).Return(
+			&executor.Result{ExitCode: 0, Stdout: "hello\n", Stderr: ""}, nil)
+
+		// Create runner with mocks
+		runner, err := NewRunner(config,
+			WithExecutor(mockExecutor),
+			WithResourceManager(resourceManager))
+		require.NoError(t, err)
+
+		// Load basic environment
+		err = runner.LoadEnvironment("", true)
+		require.NoError(t, err)
+
+		// Execute the group
+		ctx := context.Background()
+		err = runner.ExecuteGroup(ctx, group)
+		assert.NoError(t, err)
+
+		// Now test CleanupAllResources - should return error
+		err = runner.CleanupAllResources()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "cleanup failed")
+
+		// Verify mock expectations
+		mockFS.AssertExpectations(t)
+		mockExecutor.AssertExpectations(t)
+	})
+
+	t.Run("concurrent resource access failure", func(t *testing.T) {
+		config := &runnertypes.Config{
+			Global: runnertypes.GlobalConfig{
+				WorkDir:      "/tmp",
+				EnvAllowlist: []string{"PATH"},
+			},
+		}
+
+		group := runnertypes.CommandGroup{
+			Name:    "test-concurrent",
+			TempDir: true,
+			Commands: []runnertypes.Command{
+				{Name: "test", Cmd: "echo", Args: []string{"hello"}},
+			},
+			EnvAllowlist: []string{"PATH"},
+		}
+
+		// Create mock file system that fails after first successful call
+		mockFS := &MockFileSystem{}
+		mockFS.On("MkdirAll", mock.AnythingOfType("string"), mock.AnythingOfType("fs.FileMode")).
+			Return(nil).Once()
+		mockFS.On("MkdirAll", mock.AnythingOfType("string"), mock.AnythingOfType("fs.FileMode")).
+			Return(errResourceBusy)
+		mockFS.On("RemoveAll", mock.AnythingOfType("string")).Return(nil)
+
+		// Create resource manager with mock filesystem
+		resourceManager := resource.NewManagerWithFS("/tmp", mockFS)
+
+		// Create mock executor
+		mockExecutor := &MockExecutor{}
+		mockExecutor.On("Execute", mock.Anything, mock.MatchedBy(func(cmd runnertypes.Command) bool {
+			return cmd.Name == defaultTestCommandName
+		}), mock.Anything).Return(
+			&executor.Result{ExitCode: 0, Stdout: "hello\n", Stderr: ""}, nil)
+
+		// Create runner with mocks
+		runner, err := NewRunner(config,
+			WithExecutor(mockExecutor),
+			WithResourceManager(resourceManager))
+		require.NoError(t, err)
+
+		// Load basic environment
+		err = runner.LoadEnvironment("", true)
+		require.NoError(t, err)
+
+		// First execution should succeed
+		ctx := context.Background()
+		err = runner.ExecuteGroup(ctx, group)
+		assert.NoError(t, err)
+
+		// Second execution should fail due to resource busy error
+		err = runner.ExecuteGroup(ctx, group)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to create temp directory")
+
+		// Verify mock expectations
+		mockFS.AssertExpectations(t)
+		mockExecutor.AssertExpectations(t)
 	})
 }

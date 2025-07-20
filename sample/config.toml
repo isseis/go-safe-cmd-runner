@@ -22,74 +22,53 @@ workdir = "/tmp/cmd-runner"
 # Log level: debug, info, warn, error (default: info)
 log_level = "info"
 
-# Template definitions for reusable command configurations
-# Templates allow you to define common settings and variables that can be
-# applied to multiple command groups
-[templates]
-
-# Development environment template
-[templates.dev]
-description = "Development environment template"
-
-# Template variables that can be referenced in commands using {{.variable_name}}
-[templates.dev.variables]
-app_name = "myapp-dev"
-port = "3000"
-env_type = "development"
-
-# Production environment template
-[templates.prod]
-description = "Production environment template"
-
-[templates.prod.variables]
-app_name = "myapp-prod"
-port = "8080"
-env_type = "production"
+# Global environment variable allowlist (optional)
+env_allowlist = ["PATH", "HOME", "USER", "TEST_SUITE", "DEPLOY_ENV", "CUSTOM_VAR", "TEST_ENV", "TIMEOUT", "CLEANUP_MODE"]
 
 # Command groups define collections of related commands
 # Groups are executed in priority order, with dependencies resolved first
 
 [[groups]]
 name = "setup"
-description = "Initial setup and preparation"
+description = "Initial setup and preparation with temporary directory"
 priority = 1                                  # Execution priority (lower numbers run first)
 depends_on = []                               # Dependencies on other groups
-template = "dev"                              # Apply the 'dev' template to this group
+temp_dir = true                               # Create temporary directory for this group
+cleanup = true                               # Auto-cleanup temporary resources after group execution
 
 # Commands within this group
 [[groups.commands]]
 name = "create_workspace"
 description = "Create workspace directories"
 cmd = "mkdir"
-args = ["-p", "{{.app_name}}", "logs", "tmp"] # Template variables are expanded
+args = ["-p", "myapp-dev", "logs", "tmp"]     # Direct values instead of template variables
 timeout = 30                                  # Command-specific timeout (overrides global)
 
 [[groups.commands]]
 name = "show_environment"
 description = "Display environment information"
 cmd = "echo"
-args = ["Environment: {{.env_type}}, App: {{.app_name}}, Port: {{.port}}"]
-env = ["CUSTOM_VAR=setup_value"]                                           # Command-specific environment variables
+args = ["Environment: development, App: myapp-dev, Port: 3000"]
+env = ["CUSTOM_VAR=setup_value"]             # Command-specific environment variables
 
 [[groups]]
 name = "build"
-description = "Build and compilation"
+description = "Build and compilation with custom working directory"
 priority = 2
-depends_on = ["setup"]                # This group depends on 'setup' group completion
-template = "dev"                      # Use development template
+depends_on = ["setup"]                       # This group depends on 'setup' group completion
+workdir = "/tmp/build-workspace"             # Custom working directory for this group
 
 [[groups.commands]]
 name = "build_start"
 description = "Start build process"
 cmd = "echo"
-args = ["Starting build for {{.app_name}}..."]
+args = ["Starting build for myapp-dev..."]
 
 [[groups.commands]]
 name = "create_build_dirs"
 description = "Create build directories"
 cmd = "mkdir"
-args = ["-p", "build/{{.app_name}}", "dist"]
-dir = ""                                     # Working directory (empty uses global/template setting)
+args = ["-p", "build/myapp-dev", "dist"]
 timeout = 45
 
 [[groups]]
@@ -97,7 +76,7 @@ name = "test"
 description = "Testing and validation"
 priority = 3
 depends_on = ["build"]
-# No template applied - uses global defaults
+# Uses global working directory as no specific workdir or temp_dir is set
 
 [[groups.commands]]
 name = "run_tests"
@@ -117,16 +96,17 @@ args = ["-a"]
 
 [[groups]]
 name = "deploy"
-description = "Deployment operations"
+description = "Deployment operations with temporary directory and cleanup"
 priority = 4
 depends_on = ["test"]
-template = "prod"                     # Use production template for deployment
+temp_dir = true                              # Create temporary directory for deployment
+cleanup = true                              # Auto-cleanup after deployment
 
 [[groups.commands]]
 name = "prepare_deploy"
 description = "Prepare deployment"
 cmd = "echo"
-args = ["Deploying {{.app_name}} to {{.env_type}} on port {{.port}}"]
+args = ["Deploying myapp-prod to production on port 8080"]
 
 [[groups.commands]]
 name = "copy_artifacts"
@@ -140,6 +120,7 @@ name = "cleanup"
 description = "Cleanup and maintenance"
 priority = 5
 depends_on = ["deploy"]
+workdir = "/tmp"                             # Use /tmp for cleanup operations
 
 [[groups.commands]]
 name = "cleanup_temp"

@@ -17,7 +17,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/template"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/joho/godotenv"
 )
@@ -63,7 +62,6 @@ type Runner struct {
 	config              *runnertypes.Config
 	envVars             map[string]string
 	validator           *security.Validator
-	templateEngine      *template.Engine
 	resourceManager     *resource.Manager
 	verificationManager *verification.Manager
 	envFilter           *environment.Filter
@@ -75,7 +73,6 @@ type Option func(*runnerOptions)
 // runnerOptions holds all configuration options for creating a Runner
 type runnerOptions struct {
 	securityConfig      *security.Config
-	templateEngine      *template.Engine
 	resourceManager     *resource.Manager
 	executor            executor.CommandExecutor
 	verificationManager *verification.Manager
@@ -92,13 +89,6 @@ func WithSecurity(securityConfig *security.Config) Option {
 func WithVerificationManager(verificationManager *verification.Manager) Option {
 	return func(opts *runnerOptions) {
 		opts.verificationManager = verificationManager
-	}
-}
-
-// WithTemplateEngine sets a custom template engine
-func WithTemplateEngine(engine *template.Engine) Option {
-	return func(opts *runnerOptions) {
-		opts.templateEngine = engine
 	}
 }
 
@@ -134,9 +124,6 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 	if opts.executor == nil {
 		opts.executor = executor.NewDefaultExecutor()
 	}
-	if opts.templateEngine == nil {
-		opts.templateEngine = template.NewEngine()
-	}
 	if opts.resourceManager == nil {
 		opts.resourceManager = resource.NewManager(config.Global.WorkDir)
 	}
@@ -149,7 +136,6 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 		config:              config,
 		envVars:             make(map[string]string),
 		validator:           validator,
-		templateEngine:      opts.templateEngine,
 		resourceManager:     opts.resourceManager,
 		verificationManager: opts.verificationManager,
 		envFilter:           envFilter,
@@ -208,9 +194,25 @@ func (r *Runner) ExecuteAll(ctx context.Context) error {
 		return groups[i].Priority < groups[j].Priority
 	})
 
-	// Execute groups sequentially
+	var groupErrs []error
+
+	// Execute all groups sequentially, collecting errors
 	for _, group := range groups {
+		// Check if context is already cancelled before executing next group
+		select {
+		case <-ctx.Done():
+			// Context cancelled, don't execute remaining groups
+			// Always prioritize cancellation error over previous errors
+			return ctx.Err()
+		default:
+		}
+
 		if err := r.ExecuteGroup(ctx, group); err != nil {
+			// Check if this is a context cancellation error - if so, stop execution
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return err
+			}
+
 			// Check if this is a verification error - if so, log warning and continue
 			var verErr *VerificationError
 			if errors.As(err, &verErr) {
@@ -223,8 +225,14 @@ func (r *Runner) ExecuteAll(ctx context.Context) error {
 					"error", verErr.Err.Error())
 				continue // Skip this group but continue with the next one
 			}
-			return fmt.Errorf("failed to execute group %s: %w", group.Name, err)
+			// Collect error but continue with next group
+			groupErrs = append(groupErrs, fmt.Errorf("failed to execute group %s: %w", group.Name, err))
 		}
+	}
+
+	// Return the first error if any occurred
+	if len(groupErrs) > 0 {
+		return groupErrs[0]
 	}
 
 	return nil
@@ -237,14 +245,48 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 		fmt.Printf("Description: %s\n", group.Description)
 	}
 
-	// Apply template to the group if specified
-	processedGroup := group
-	if group.Template != "" {
-		appliedGroup, err := r.templateEngine.ApplyTemplate(&group, group.Template)
-		if err != nil {
-			return fmt.Errorf("failed to apply template %s to group %s: %w", group.Template, group.Name, err)
+	// Track resources for cleanup
+	groupResources := make([]string, 0)
+	defer func() {
+		// Clean up resources created for this group
+		for _, resourceID := range groupResources {
+			if err := r.resourceManager.CleanupResource(resourceID); err != nil {
+				slog.Warn("Failed to cleanup resource", "resource_id", resourceID, "error", err)
+			}
 		}
-		processedGroup = *appliedGroup
+	}()
+
+	// Process the group without template
+	processedGroup := group
+
+	// Process new fields (TempDir, Cleanup, WorkDir)
+	var tempResource *resource.Resource
+	if processedGroup.TempDir {
+		// Create temporary directory for this group
+		var err error
+		tempResource, err = r.resourceManager.CreateTempDir(processedGroup.Name, processedGroup.Cleanup)
+		if err != nil {
+			return fmt.Errorf("failed to create temp directory for group %s: %w", processedGroup.Name, err)
+		}
+		groupResources = append(groupResources, tempResource.ID)
+	}
+
+	// Determine and set the effective working directory for each command
+	for i := range processedGroup.Commands {
+		// Skip if command already has a directory specified
+		if processedGroup.Commands[i].Dir != "" {
+			continue
+		}
+
+		// Priority for working directory:
+		// 1. TempDir (if enabled)
+		// 2. Group's WorkDir
+		switch {
+		case tempResource != nil:
+			processedGroup.Commands[i].Dir = tempResource.Path
+		case processedGroup.WorkDir != "":
+			processedGroup.Commands[i].Dir = processedGroup.WorkDir
+		}
 	}
 
 	// Verify group files before execution
@@ -270,39 +312,12 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 		}
 	}
 
-	// Track resources for cleanup
-	groupResources := make([]string, 0)
-	defer func() {
-		// Clean up resources created for this group
-		for _, resourceID := range groupResources {
-			if err := r.resourceManager.CleanupResource(resourceID); err != nil {
-				slog.Warn("Failed to cleanup resource", "resource_id", resourceID, "error", err)
-			}
-		}
-	}()
-
 	// Execute commands in the group sequentially
 	for i, cmd := range processedGroup.Commands {
 		fmt.Printf("  [%d/%d] Executing command: %s\n", i+1, len(processedGroup.Commands), cmd.Name)
 
-		// Apply resource management to the command if needed
+		// Process the command
 		processedCmd := cmd
-		// Check if template specified temp_dir
-		if group.Template != "" {
-			tmpl, err := r.templateEngine.GetTemplate(group.Template)
-			if err == nil && tmpl.TempDir {
-				tempResource, err := r.resourceManager.CreateTempDir(cmd.Name, tmpl.Cleanup)
-				if err != nil {
-					return fmt.Errorf("failed to create temp directory for command %s: %w", cmd.Name, err)
-				}
-				groupResources = append(groupResources, tempResource.ID)
-
-				// Set working directory to temp directory if not already set
-				if processedCmd.Dir == "" || processedCmd.Dir == "{{.temp_dir}}" {
-					processedCmd.Dir = tempResource.Path
-				}
-			}
-		}
 
 		// Create command context with timeout
 		cmdCtx, cancel := r.createCommandContext(ctx, processedCmd)
@@ -382,8 +397,7 @@ func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, group *runnerty
 
 		allowed := r.envFilter.IsVariableAccessAllowed(variable, group)
 		if !allowed {
-			slog.Warn("Command environment variable access denied", "variable", variable, "command", cmd.Name, "group", group.Name)
-			continue
+			return nil, fmt.Errorf("failed to resolve variable %s: %w", variable, ErrVariableAccessDenied)
 		}
 		// Resolve variable references in the value
 		resolvedValue, err := r.resolveVariableReferences(value, envVars, group)
@@ -430,23 +444,25 @@ func (r *Runner) resolveVariableReferencesWithDepth(value string, envVars map[st
 
 		varName := result[start+2 : end]
 
-		// Check for circular reference
+		// Check for circular reference first - this takes precedence over undefined variable errors
 		if resolving[varName] {
 			return "", fmt.Errorf("%w: variable %s references itself", ErrCircularReference, varName)
 		}
 
+		// Mark this variable as being resolved to detect cycles early
+		resolving[varName] = true
+
 		// Check if variable access is allowed for this group
 		if !r.envFilter.IsVariableAccessAllowed(varName, group) {
+			delete(resolving, varName) // Clean up before returning error
 			return "", fmt.Errorf("%w: %s (group: %s)", ErrVariableAccessDenied, varName, group.Name)
 		}
 
 		varValue, exists := envVars[varName]
 		if !exists {
+			delete(resolving, varName) // Clean up before returning error
 			return "", fmt.Errorf("%w: %s", ErrUndefinedVariable, varName)
 		}
-
-		// Mark this variable as being resolved to detect cycles
-		resolving[varName] = true
 
 		// Recursively resolve the variable value
 		resolvedValue, err := r.resolveVariableReferencesWithDepth(varValue, envVars, resolving, depth+1, group)

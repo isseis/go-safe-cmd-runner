@@ -4,35 +4,23 @@ version = "1.0"
 workdir = "/tmp/cmd-runner"
 log_level = "debug"
 skip_standard_paths = true
-
-[templates]
-
-# Development environment template
-[templates.dev]
-description = "Development environment template"
-# Default environment variables for commands using this template
-# CUSTOM_VAR is set to the environment variable LANG's value when runner is executed.
-env = ["NODE_ENV=development", "DEBUG=true", "CUSTOM_VAR=${LANG}"]
-
-# Template variables that can be referenced in commands using {{.variable_name}}
-[templates.dev.variables]
-app_name = "myapp-dev"
-port = "3000"
-env_type = "development"
+# Environment variable allowlist for testing
+env_allowlist = ["PATH", "HOME", "USER", "LANG", "NODE_ENV", "DEBUG", "CUSTOM_VAR"]
 
 [[groups]]
 name = "test"
-description = "Test group for command execution"
+description = "Test group for command execution with temporary directory"
 priority = 1
 depends_on = []
-template = "dev"
+temp_dir = true                    # Create temporary directory for testing
+cleanup = true                    # Auto-cleanup after test execution
 
 [[groups.commands]]
 name = "show_environment"
 description = "Display environment information"
 cmd = "echo"
-args = ["Environment: {{.env_type}}, App: {{.app_name}}, Port: {{.port}}"]
-
+args = ["Environment: development, App: myapp-dev, Port: 3000"]
+env = ["NODE_ENV=development", "DEBUG=true", "CUSTOM_VAR=${LANG}"]
 
 [[groups.commands]]
 name = "show_environment_variables"
