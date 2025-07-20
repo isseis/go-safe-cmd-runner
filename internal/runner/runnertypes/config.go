@@ -2,6 +2,8 @@
 // It includes types for configuration, commands, and other domain-specific structures.
 package runnertypes
 
+import "slices"
+
 // Config represents the root configuration structure
 type Config struct {
 	Version string         `toml:"version"`
@@ -46,4 +48,58 @@ type Command struct {
 	Dir         string   `toml:"dir"`
 	Privileged  bool     `toml:"privileged"`
 	Timeout     int      `toml:"timeout"` // Command-specific timeout (overrides global)
+}
+
+// InheritanceMode represents how environment allowlist inheritance works
+type InheritanceMode int
+
+const (
+	// InheritanceModeInherit indicates the group inherits from global allowlist
+	// This occurs when env_allowlist field is not defined (nil slice)
+	InheritanceModeInherit InheritanceMode = iota
+
+	// InheritanceModeExplicit indicates the group uses only its explicit allowlist
+	// This occurs when env_allowlist field has values: ["VAR1", "VAR2"]
+	InheritanceModeExplicit
+
+	// InheritanceModeReject indicates the group rejects all environment variables
+	// This occurs when env_allowlist field is explicitly empty: []
+	InheritanceModeReject
+)
+
+// String returns a string representation of InheritanceMode for logging
+func (m InheritanceMode) String() string {
+	switch m {
+	case InheritanceModeInherit:
+		return "inherit"
+	case InheritanceModeExplicit:
+		return "explicit"
+	case InheritanceModeReject:
+		return "reject"
+	default:
+		return "unknown"
+	}
+}
+
+// AllowlistResolution contains resolved allowlist information for debugging and logging
+type AllowlistResolution struct {
+	Mode            InheritanceMode
+	GroupAllowlist  []string
+	GlobalAllowlist []string
+	EffectiveList   []string // The actual allowlist being used
+	GroupName       string   // For logging context
+}
+
+// IsAllowed checks if a variable is allowed based on the resolved allowlist
+func (r *AllowlistResolution) IsAllowed(variable string) bool {
+	switch r.Mode {
+	case InheritanceModeReject:
+		return false
+	case InheritanceModeExplicit:
+		return slices.Contains(r.GroupAllowlist, variable)
+	case InheritanceModeInherit:
+		return slices.Contains(r.GlobalAllowlist, variable)
+	default:
+		return false
+	}
 }
