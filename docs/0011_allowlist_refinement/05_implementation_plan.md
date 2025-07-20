@@ -722,12 +722,12 @@ func (v *ConfigValidator) ValidateConfig(config *runnertypes.Config) (*Validatio
 ```
 
 **実装チェックリスト:**
-- [ ] ConfigValidator構造体の実装
-- [ ] ValidateConfig主要関数の実装
-- [ ] validateGlobalConfig関数の実装
-- [ ] validateGroup関数の実装
-- [ ] validateAllowlist関数の実装
-- [ ] validateCommand関数の実装
+- [x] ConfigValidator構造体の実装
+- [x] ValidateConfig主要関数の実装
+- [x] validateGlobalConfig関数の実装
+- [x] validateGroup関数の実装
+- [x] validateAllowlist関数の実装
+- [x] validateCommand関数の実装
 
 #### Step 3.3: レポート生成機能 (0.5日)
 
@@ -795,20 +795,20 @@ func validateConfigCommand(configPath string) error {
 #### Step 3.5: 単体テストの作成 (1日)
 
 **テスト実装チェックリスト:**
-- [ ] ConfigValidator単体テスト
-- [ ] 各検証関数のテスト
-- [ ] レポート生成のテスト
-- [ ] CLI統合のテスト
-- [ ] エラーケース・エッジケースのテスト
+- [x] ConfigValidator単体テスト
+- [x] 各検証関数のテスト
+- [x] レポート生成のテスト
+- [x] CLI統合のテスト
+- [x] エラーケース・エッジケースのテスト
 
 ### 4.3 Phase 3 完了条件
 
-- [ ] ConfigValidatorのすべてのテストがパス
-- [ ] CLI統合が正常に動作
-- [ ] 各種設定パターンで適切な検証結果
-- [ ] レポート出力の確認
-- [ ] パフォーマンスへの影響が許容範囲内
-- [ ] コードレビュー完了
+- [x] ConfigValidatorのすべてのテストがパス
+- [x] CLI統合が正常に動作
+- [x] 各種設定パターンで適切な検証結果
+- [x] レポート出力の確認
+- [x] パフォーマンスへの影響が許容範囲内
+- [x] コードレビュー完了
 
 ## 5. 統合テストと最終検証
 
