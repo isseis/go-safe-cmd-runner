@@ -194,7 +194,7 @@ func (r *Runner) ExecuteAll(ctx context.Context) error {
 		return groups[i].Priority < groups[j].Priority
 	})
 
-	var errs []error
+	var groupErrs []error
 
 	// Execute all groups sequentially, collecting errors
 	for _, group := range groups {
@@ -226,13 +226,13 @@ func (r *Runner) ExecuteAll(ctx context.Context) error {
 				continue // Skip this group but continue with the next one
 			}
 			// Collect error but continue with next group
-			errs = append(errs, fmt.Errorf("failed to execute group %s: %w", group.Name, err))
+			groupErrs = append(groupErrs, fmt.Errorf("failed to execute group %s: %w", group.Name, err))
 		}
 	}
 
 	// Return the first error if any occurred
-	if len(errs) > 0 {
-		return errs[0]
+	if len(groupErrs) > 0 {
+		return groupErrs[0]
 	}
 
 	return nil

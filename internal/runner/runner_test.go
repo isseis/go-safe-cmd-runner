@@ -30,7 +30,7 @@ var (
 	errResourceBusy     = errors.New("resource busy")
 )
 
-const testCommandName = "test"
+const defaultTestCommandName = "test"
 
 // setupTestEnv sets up a clean test environment and returns a cleanup function.
 // The cleanup function restores the original environment when called.
@@ -1579,7 +1579,7 @@ func TestCommandGroup_TempDir_Detailed(t *testing.T) {
 		// Set expectation for Execute - verify that Dir field is properly set
 		mockExecutor.On("Execute", mock.Anything, mock.MatchedBy(func(cmd runnertypes.Command) bool {
 			// Verify that the command's Dir field has been set to a temp directory path
-			return cmd.Name == testCommandName &&
+			return cmd.Name == defaultTestCommandName &&
 				cmd.Cmd == "echo" &&
 				len(cmd.Args) == 1 && cmd.Args[0] == "hello" &&
 				cmd.Dir != "" && // Dir should be set
@@ -1647,7 +1647,7 @@ func TestCommandGroup_TempDir_Detailed(t *testing.T) {
 		// Set expectation for Execute - verify that Dir field is properly set
 		mockExecutor.On("Execute", mock.Anything, mock.MatchedBy(func(cmd runnertypes.Command) bool {
 			// Verify that the command's Dir field has been set to a temp directory path
-			return cmd.Name == testCommandName &&
+			return cmd.Name == defaultTestCommandName &&
 				cmd.Cmd == "echo" &&
 				len(cmd.Args) == 1 && cmd.Args[0] == "hello" &&
 				cmd.Dir != "" && // Dir should be set
@@ -2148,7 +2148,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		// Create mock executor
 		mockExecutor := &MockExecutor{}
 		mockExecutor.On("Execute", mock.Anything, mock.MatchedBy(func(cmd runnertypes.Command) bool {
-			return cmd.Name == testCommandName && cmd.Dir != ""
+			return cmd.Name == defaultTestCommandName && cmd.Dir != ""
 		}), mock.Anything).Return(
 			&executor.Result{ExitCode: 0, Stdout: "hello\n", Stderr: ""}, nil)
 
@@ -2348,7 +2348,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		// Create mock executor
 		mockExecutor := &MockExecutor{}
 		mockExecutor.On("Execute", mock.Anything, mock.MatchedBy(func(cmd runnertypes.Command) bool {
-			return cmd.Name == testCommandName
+			return cmd.Name == defaultTestCommandName
 		}), mock.Anything).Return(
 			&executor.Result{ExitCode: 0, Stdout: "hello\n", Stderr: ""}, nil)
 
@@ -2408,7 +2408,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		// Create mock executor
 		mockExecutor := &MockExecutor{}
 		mockExecutor.On("Execute", mock.Anything, mock.MatchedBy(func(cmd runnertypes.Command) bool {
-			return cmd.Name == testCommandName
+			return cmd.Name == defaultTestCommandName
 		}), mock.Anything).Return(
 			&executor.Result{ExitCode: 0, Stdout: "hello\n", Stderr: ""}, nil)
 
