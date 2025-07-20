@@ -238,7 +238,9 @@ func (r *Runner) ExecuteAll(ctx context.Context) error {
 	}
 
 	return nil
-} // ExecuteGroup executes all commands in a group sequentially
+}
+
+// ExecuteGroup executes all commands in a group sequentially
 func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGroup) error {
 	fmt.Printf("Executing group: %s\n", group.Name)
 	if group.Description != "" {
