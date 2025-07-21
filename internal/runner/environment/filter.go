@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
@@ -31,9 +30,8 @@ const (
 
 // Filter provides environment variable filtering functionality with allowlist-based security
 type Filter struct {
-	config            *runnertypes.Config
-	globalAllowlist   map[string]bool // Map for O(1) lookups of allowed variables (always non-nil)
-	dangerousPatterns []string        // Pre-compiled list of dangerous patterns
+	config          *runnertypes.Config
+	globalAllowlist map[string]bool // Map for O(1) lookups of allowed variables (always non-nil)
 }
 
 // NewFilter creates a new environment variable filter with the provided configuration
@@ -41,17 +39,6 @@ func NewFilter(config *runnertypes.Config) *Filter {
 	f := &Filter{
 		config:          config,
 		globalAllowlist: make(map[string]bool), // Initialize with empty map
-		dangerousPatterns: []string{
-			// Command injection patterns
-			";", "&&", "||", "|", "$(", "`",
-			// Redirection patterns (more specific to avoid false positives, e.g. HTML tags)
-			">", "<",
-			// Destructive file system operations
-			"rm ", "del ", "format ", "mkfs ", "mkfs.",
-			"dd if=", "dd of=",
-			// Code execution patterns
-			"exec ", "exec(", "system ", "system(", "eval ", "eval(",
-		},
 	}
 
 	// Initialize the allowlist map with global allowlist if it exists
@@ -290,11 +277,10 @@ func (f *Filter) ValidateVariableName(name string) error {
 
 // ValidateVariableValue validates that a variable value is safe
 func (f *Filter) ValidateVariableValue(value string) error {
-	// Check for potentially dangerous patterns using pre-compiled list
-	for _, pattern := range f.dangerousPatterns {
-		if strings.Contains(value, pattern) {
-			return fmt.Errorf("%w: %s", ErrDangerousVariableValue, pattern)
-		}
+	// Use centralized security validation
+	if err := security.IsVariableValueSafe(value); err != nil {
+		// Wrap the security error with our local error type for consistency
+		return fmt.Errorf("%w: %s", ErrDangerousVariableValue, err.Error())
 	}
 
 	return nil

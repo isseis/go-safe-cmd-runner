@@ -156,14 +156,27 @@ func NewValidatorWithFS(config *Config, fs common.FileSystem) (*Validator, error
 
 	// Compile dangerous environment value patterns
 	dangerousPatterns := []string{
-		`;`,    // Command separator
-		`\|`,   // Pipe
-		`&&`,   // AND operator
-		`\|\|`, // OR operator
-		`\$\(`, // Command substitution
-		"`",    // Command substitution (backticks)
-		`>`,    // Redirect
-		`<`,    // Redirect
+		`;`,        // Command separator
+		`\|`,       // Pipe
+		`&&`,       // AND operator
+		`\|\|`,     // OR operator
+		`\$\(`,     // Command substitution
+		"`",        // Command substitution (backticks)
+		`>`,        // Redirect
+		`<`,        // Redirect
+		`rm `,      // Dangerous rm command
+		`del `,     // Dangerous del command
+		`format `,  // Dangerous format command
+		`mkfs `,    // Dangerous mkfs command
+		`mkfs\.`,   // Dangerous mkfs. command
+		`dd if=`,   // Dangerous dd input
+		`dd of=`,   // Dangerous dd output
+		`exec `,    // Code execution
+		`exec\(`,   // Code execution (function call)
+		`system `,  // System call
+		`system\(`, // System call (function call)
+		`eval `,    // Code evaluation
+		`eval\(`,   // Code evaluation (function call)
 	}
 	v.dangerousEnvRegexps = make([]*regexp.Regexp, len(dangerousPatterns))
 	for i, pattern := range dangerousPatterns {
@@ -342,6 +355,13 @@ func (v *Validator) ValidateAllEnvironmentVars(envVars map[string]string) error 
 	return nil
 }
 
+// ValidateVariableValue validates that a variable value contains no dangerous patterns
+// This is a convenience function that wraps ValidateEnvironmentValue for use by other packages
+func (v *Validator) ValidateVariableValue(value string) error {
+	// Use a dummy key name for the validation since we only care about the value
+	return v.ValidateEnvironmentValue("VAR", value)
+}
+
 // validateCompletePath validates the security of the complete path from root to target
 // This prevents attacks through compromised intermediate directories
 // cleanDir must be absolute and cleaned.
@@ -432,4 +452,14 @@ func (v *Validator) validateDirectoryComponentPermissions(dirPath string, info o
 	}
 
 	return nil
+}
+
+// IsVariableValueSafe validates that a variable value contains no dangerous patterns
+// This is a global convenience function that creates a default validator to check variable values
+func IsVariableValueSafe(value string) error {
+	validator, err := NewValidator(nil) // Use default config
+	if err != nil {
+		return fmt.Errorf("failed to create validator: %w", err)
+	}
+	return validator.ValidateVariableValue(value)
 }

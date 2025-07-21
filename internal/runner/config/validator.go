@@ -11,6 +11,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
 // Static error definitions
@@ -307,17 +308,10 @@ func (v *Validator) validateCommandEnv(env []string, location string, result *Va
 
 // validateVariableValue validates an environment variable value for dangerous patterns
 func (v *Validator) validateVariableValue(value string) error {
-	// Check for common dangerous patterns
-	dangerousPatterns := []string{
-		";", "&&", "||", "|", "`", "$(",
-		"rm ", "del ", "format ", "mkfs",
-		">", ">>", "<", "2>",
-	}
-
-	for _, pattern := range dangerousPatterns {
-		if strings.Contains(value, pattern) {
-			return fmt.Errorf("%w: %s", ErrDangerousPattern, pattern)
-		}
+	// Use centralized security validation
+	if err := security.IsVariableValueSafe(value); err != nil {
+		// Wrap the security error with our validation error type for consistency
+		return fmt.Errorf("%w: %s", ErrDangerousPattern, err.Error())
 	}
 
 	return nil
