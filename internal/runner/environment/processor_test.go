@@ -1,10 +1,12 @@
 package environment
 
 import (
+	"errors"
 	"os"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -33,13 +35,13 @@ func TestCommandEnvProcessor_ProcessCommandEnvironment(t *testing.T) {
 	processor := NewCommandEnvProcessor(filter)
 
 	tests := []struct {
-		name          string
-		cmd           runnertypes.Command
-		baseEnvVars   map[string]string
-		group         *runnertypes.CommandGroup
-		expectedVars  map[string]string
-		expectError   bool
-		errorContains string
+		name         string
+		cmd          runnertypes.Command
+		baseEnvVars  map[string]string
+		group        *runnertypes.CommandGroup
+		expectedVars map[string]string
+		expectError  bool
+		expectedErr  error
 	}{
 		{
 			name: "process simple command env variables",
@@ -95,8 +97,8 @@ func TestCommandEnvProcessor_ProcessCommandEnvironment(t *testing.T) {
 				Name:         "test_group",
 				EnvAllowlist: []string{"PATH"},
 			},
-			expectError:   true,
-			errorContains: "malformed environment variable",
+			expectError: true,
+			expectedErr: ErrMalformedEnvVariable,
 		},
 		{
 			name: "reject dangerous variable value",
@@ -111,8 +113,8 @@ func TestCommandEnvProcessor_ProcessCommandEnvironment(t *testing.T) {
 				Name:         "test_group",
 				EnvAllowlist: []string{"PATH"},
 			},
-			expectError:   true,
-			errorContains: "dangerous pattern",
+			expectError: true,
+			expectedErr: security.ErrUnsafeEnvironmentVar,
 		},
 		{
 			name: "reject invalid variable name",
@@ -127,8 +129,8 @@ func TestCommandEnvProcessor_ProcessCommandEnvironment(t *testing.T) {
 				Name:         "test_group",
 				EnvAllowlist: []string{"PATH"},
 			},
-			expectError:   true,
-			errorContains: "invalid variable name",
+			expectError: true,
+			expectedErr: ErrInvalidVariableName,
 		},
 	}
 
@@ -138,7 +140,7 @@ func TestCommandEnvProcessor_ProcessCommandEnvironment(t *testing.T) {
 
 			if tt.expectError {
 				assert.Error(t, err)
-				assert.Contains(t, err.Error(), tt.errorContains)
+				assert.True(t, errors.Is(err, tt.expectedErr), "Expected error type %v, got %v", tt.expectedErr, err)
 				return
 			}
 
@@ -173,13 +175,13 @@ func TestCommandEnvProcessor_ResolveVariableReferences(t *testing.T) {
 	os.Setenv("HOME", "/home/testuser")
 
 	tests := []struct {
-		name          string
-		value         string
-		envVars       map[string]string
-		group         *runnertypes.CommandGroup
-		expected      string
-		expectError   bool
-		errorContains string
+		name        string
+		value       string
+		envVars     map[string]string
+		group       *runnertypes.CommandGroup
+		expected    string
+		expectError bool
+		expectedErr error
 	}{
 		{
 			name:    "no variable references",
@@ -219,8 +221,8 @@ func TestCommandEnvProcessor_ResolveVariableReferences(t *testing.T) {
 				Name:         "test_group",
 				EnvAllowlist: []string{"PATH", "HOME"}, // USER not in allowlist
 			},
-			expectError:   true,
-			errorContains: "variable not allowed by group allowlist",
+			expectError: true,
+			expectedErr: ErrVariableNotAllowed,
 		},
 		{
 			name:    "variable not found",
@@ -230,8 +232,8 @@ func TestCommandEnvProcessor_ResolveVariableReferences(t *testing.T) {
 				Name:         "test_group",
 				EnvAllowlist: []string{"PATH", "HOME"},
 			},
-			expectError:   true,
-			errorContains: "variable reference not found",
+			expectError: true,
+			expectedErr: ErrVariableNotFound,
 		},
 		{
 			name:    "multiple variable references",
@@ -251,7 +253,7 @@ func TestCommandEnvProcessor_ResolveVariableReferences(t *testing.T) {
 
 			if tt.expectError {
 				assert.Error(t, err)
-				assert.Contains(t, err.Error(), tt.errorContains)
+				assert.True(t, errors.Is(err, tt.expectedErr), "Expected error type %v, got %v", tt.expectedErr, err)
 				return
 			}
 
@@ -271,11 +273,11 @@ func TestCommandEnvProcessor_ValidateBasicEnvVariable(t *testing.T) {
 	processor := NewCommandEnvProcessor(filter)
 
 	tests := []struct {
-		name          string
-		varName       string
-		varValue      string
-		expectError   bool
-		errorContains string
+		name        string
+		varName     string
+		varValue    string
+		expectError bool
+		expectedErr error
 	}{
 		{
 			name:     "valid variable",
@@ -283,25 +285,25 @@ func TestCommandEnvProcessor_ValidateBasicEnvVariable(t *testing.T) {
 			varValue: "safe_value",
 		},
 		{
-			name:          "invalid variable name - starts with digit",
-			varName:       "123INVALID",
-			varValue:      "value",
-			expectError:   true,
-			errorContains: "invalid variable name",
+			name:        "invalid variable name - starts with digit",
+			varName:     "123INVALID",
+			varValue:    "value",
+			expectError: true,
+			expectedErr: ErrInvalidVariableName,
 		},
 		{
-			name:          "empty variable name",
-			varName:       "",
-			varValue:      "value",
-			expectError:   true,
-			errorContains: "cannot be empty",
+			name:        "empty variable name",
+			varName:     "",
+			varValue:    "value",
+			expectError: true,
+			expectedErr: ErrVariableNameEmpty,
 		},
 		{
-			name:          "dangerous variable value",
-			varName:       "DANGEROUS",
-			varValue:      "value; rm -rf /",
-			expectError:   true,
-			errorContains: "dangerous pattern",
+			name:        "dangerous variable value",
+			varName:     "DANGEROUS",
+			varValue:    "value; rm -rf /",
+			expectError: true,
+			expectedErr: security.ErrUnsafeEnvironmentVar,
 		},
 	}
 
@@ -311,7 +313,7 @@ func TestCommandEnvProcessor_ValidateBasicEnvVariable(t *testing.T) {
 
 			if tt.expectError {
 				assert.Error(t, err)
-				assert.Contains(t, err.Error(), tt.errorContains)
+				assert.True(t, errors.Is(err, tt.expectedErr), "Expected error type %v, got %v", tt.expectedErr, err)
 			} else {
 				assert.NoError(t, err)
 			}
