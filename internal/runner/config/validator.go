@@ -168,34 +168,12 @@ func (v *Validator) validateAllowlist(allowlist []string, location string, resul
 	}
 }
 
-func isLetterOrUnderscore(char byte) bool {
-	return (char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z') || char == '_'
-}
-
-func isLetterOrUnderscoreOrDigit(char byte) bool {
-	return isLetterOrUnderscore(char) || (char >= '0' && char <= '9')
-}
-
-// validateVariableName validates an environment variable name
+// validateVariableName validates an environment variable name using centralized security validation
 func (v *Validator) validateVariableName(name string) error {
-	if name == "" {
-		return fmt.Errorf("%w: variable name cannot be empty", ErrInvalidVariableName)
+	if err := security.ValidateVariableName(name); err != nil {
+		// Wrap the security error with our validation error type for consistency
+		return fmt.Errorf("%w: %s", ErrInvalidVariableName, err.Error())
 	}
-
-	// Check first character - must be a letter or underscore
-	firstChar := name[0]
-	if !isLetterOrUnderscore(firstChar) {
-		return fmt.Errorf("%w: must start with a letter or underscore", ErrInvalidVariableName)
-	}
-
-	// Check remaining characters - must be letter, digit, or underscore
-	for i := 1; i < len(name); i++ {
-		char := name[i]
-		if !isLetterOrUnderscoreOrDigit(char) {
-			return fmt.Errorf("%w: contains invalid character '%c'", ErrInvalidVariableName, char)
-		}
-	}
-
 	return nil
 }
 

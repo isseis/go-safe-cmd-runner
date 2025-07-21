@@ -49,6 +49,15 @@ var (
 	// - Path components that are not directories when they should be
 	// - Failed to get system information for path components
 	ErrInsecurePathComponent = errors.New("insecure path component")
+
+	// ErrVariableNameEmpty is returned when a variable name is empty
+	ErrVariableNameEmpty = errors.New("variable name cannot be empty")
+
+	// ErrVariableNameInvalidStart is returned when a variable name starts with an invalid character
+	ErrVariableNameInvalidStart = errors.New("variable name must start with a letter or underscore")
+
+	// ErrVariableNameInvalidChar is returned when a variable name contains an invalid character
+	ErrVariableNameInvalidChar = errors.New("variable name contains invalid character")
 )
 
 // Constants for security configuration
@@ -452,6 +461,40 @@ func (v *Validator) validateDirectoryComponentPermissions(dirPath string, info o
 	}
 
 	return nil
+}
+
+// ValidateVariableName validates that a variable name is safe and well-formed
+// This is a global convenience function for validating environment variable names
+func ValidateVariableName(name string) error {
+	if name == "" {
+		return ErrVariableNameEmpty
+	}
+
+	// Check first character - must be a letter or underscore
+	firstChar := name[0]
+	if !isLetterOrUnderscore(firstChar) {
+		return ErrVariableNameInvalidStart
+	}
+
+	// Check remaining characters - must be letter, digit, or underscore
+	for i := 1; i < len(name); i++ {
+		char := name[i]
+		if !isLetterOrUnderscoreOrDigit(char) {
+			return fmt.Errorf("%w: '%c'", ErrVariableNameInvalidChar, char)
+		}
+	}
+
+	return nil
+}
+
+// isLetterOrUnderscore checks if a byte is a letter (A-Z, a-z) or underscore
+func isLetterOrUnderscore(char byte) bool {
+	return (char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z') || char == '_'
+}
+
+// isLetterOrUnderscoreOrDigit checks if a byte is a letter, digit, or underscore
+func isLetterOrUnderscoreOrDigit(char byte) bool {
+	return isLetterOrUnderscore(char) || (char >= '0' && char <= '9')
 }
 
 // IsVariableValueSafe validates that a variable value contains no dangerous patterns

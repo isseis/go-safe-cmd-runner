@@ -251,25 +251,15 @@ func (f *Filter) IsVariableAccessAllowed(variable string, group *runnertypes.Com
 	return allowed
 }
 
-// ValidateVariableName validates that a variable name is safe and well-formed
+// ValidateVariableName validates that a variable name is safe and well-formed using centralized security validation
 func (f *Filter) ValidateVariableName(name string) error {
 	if name == "" {
 		return ErrVariableNameEmpty
 	}
 
-	// Check for invalid characters
-	for i, char := range name {
-		if i == 0 {
-			// First character must be letter or underscore
-			if (char < 'A' || char > 'Z') && (char < 'a' || char > 'z') && char != '_' {
-				return fmt.Errorf("%w: %s (must start with letter or underscore)", ErrInvalidVariableName, name)
-			}
-		} else {
-			// Subsequent characters can be letters, digits, or underscores
-			if (char < 'A' || char > 'Z') && (char < 'a' || char > 'z') && (char < '0' || char > '9') && char != '_' {
-				return fmt.Errorf("%w: %s (contains invalid character)", ErrInvalidVariableName, name)
-			}
-		}
+	if err := security.ValidateVariableName(name); err != nil {
+		// Wrap the security error with our local error type for consistency
+		return fmt.Errorf("%w: %s", ErrInvalidVariableName, err.Error())
 	}
 
 	return nil
