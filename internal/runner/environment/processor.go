@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"regexp"
 	"strings"
@@ -36,24 +37,18 @@ func (p *CommandEnvProcessor) ProcessCommandEnvironment(
 ) (map[string]string, error) {
 	// Create a copy of base environment variables
 	envVars := make(map[string]string, len(baseEnvVars))
-	for k, v := range baseEnvVars {
-		envVars[k] = v
-	}
+	maps.Copy(envVars, baseEnvVars)
 
 	// Process each Command.Env entry
 	for i, env := range cmd.Env {
 		variable, value, ok := ParseEnvVariable(env)
 		if !ok {
-			p.logger.Warn("Invalid environment variable format in Command.Env",
-				"command", cmd.Name,
-				"env_index", i,
-				"env_entry", env)
-			continue
+			return nil, fmt.Errorf("invalid environment variable format in Command.Env in command %s, env_index: %d, env_entry: %s: %w", cmd.Name, i, env, ErrMalformedEnvVariable)
 		}
 
 		// Basic validation (but no allowlist check)
 		if err := p.validateBasicEnvVariable(variable, value); err != nil {
-			return nil, fmt.Errorf("invalid command environment variable %s in command %s: %w",
+			return nil, fmt.Errorf("malformed command environment variable %s in command %s: %w",
 				variable, cmd.Name, err)
 		}
 

@@ -95,11 +95,8 @@ func TestCommandEnvProcessor_ProcessCommandEnvironment(t *testing.T) {
 				Name:         "test_group",
 				EnvAllowlist: []string{"PATH"},
 			},
-			expectedVars: map[string]string{
-				"PATH":    "/usr/bin",
-				"VALID":   "value",
-				"ANOTHER": "valid",
-			},
+			expectError:   true,
+			errorContains: "malformed environment variable",
 		},
 		{
 			name: "reject dangerous variable value",

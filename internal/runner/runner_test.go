@@ -2022,8 +2022,9 @@ func TestRunner_EnvironmentVariablePriority_EdgeCases(t *testing.T) {
 		}
 
 		_, err := runner.resolveEnvironmentVars(testCmd, &testGroup)
-		// Should handle malformed environment variables gracefully
-		assert.NoError(t, err)
+		// Should fail when an environment variable is malformed
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, environment.ErrMalformedEnvVariable))
 	})
 
 	t.Run("variable reference to undefined variable", func(t *testing.T) {
