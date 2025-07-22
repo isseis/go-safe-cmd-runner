@@ -49,7 +49,19 @@ func (v *Validator) ValidateConfig(config *runnertypes.Config) (*ValidationResul
 	v.validateGlobalConfig(&config.Global, result)
 
 	// Validate groups
+	seenGroupNames := make(map[string]int)
 	for i, group := range config.Groups {
+		// Check for duplicate group names before individual validation
+		if _, exists := seenGroupNames[group.Name]; exists && group.Name != "" {
+			result.Errors = append(result.Errors, ValidationError{
+				Type:     "duplicate_group_name",
+				Message:  fmt.Sprintf("Group name '%s' appears multiple times", group.Name),
+				Location: fmt.Sprintf("groups[%d].name", i),
+				Severity: "error",
+			})
+		}
+		seenGroupNames[group.Name] = i
+
 		v.validateGroup(&group, i, &config.Global, result)
 	}
 
@@ -105,8 +117,7 @@ func (v *Validator) validateGroup(group *runnertypes.CommandGroup, index int, gl
 		})
 	}
 
-	// Check for duplicate group names
-	// This would need to be done at a higher level with access to all groups
+	// Note: Duplicate group names are now checked at the ValidateConfig level before calling this function
 
 	// Validate group allowlist
 	if group.EnvAllowlist != nil {

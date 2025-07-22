@@ -110,6 +110,114 @@ func TestConfigValidator_ValidateConfig(t *testing.T) {
 			expectValid:    false,
 			expectedErrors: 1,
 		},
+		{
+			name: "invalid configuration - duplicate group names",
+			config: &runnertypes.Config{
+				Global: runnertypes.GlobalConfig{
+					EnvAllowlist: []string{"PATH"},
+				},
+				Groups: []runnertypes.CommandGroup{
+					{
+						Name: "duplicate_group",
+						Commands: []runnertypes.Command{
+							{
+								Name: "test_cmd1",
+								Cmd:  "/bin/echo",
+							},
+						},
+					},
+					{
+						Name: "duplicate_group", // Duplicate name should cause error
+						Commands: []runnertypes.Command{
+							{
+								Name: "test_cmd2",
+								Cmd:  "/bin/echo",
+							},
+						},
+					},
+				},
+			},
+			expectValid:    false,
+			expectedErrors: 1,
+		},
+		{
+			name: "valid configuration - empty group names are not considered duplicates",
+			config: &runnertypes.Config{
+				Global: runnertypes.GlobalConfig{
+					EnvAllowlist: []string{"PATH"},
+				},
+				Groups: []runnertypes.CommandGroup{
+					{
+						Name: "", // Empty name
+						Commands: []runnertypes.Command{
+							{
+								Name: "test_cmd1",
+								Cmd:  "/bin/echo",
+							},
+						},
+					},
+					{
+						Name: "", // Another empty name - should not be considered duplicate
+						Commands: []runnertypes.Command{
+							{
+								Name: "test_cmd2",
+								Cmd:  "/bin/echo",
+							},
+						},
+					},
+				},
+			},
+			expectValid:    false,
+			expectedErrors: 2, // Two empty group name errors, but no duplicate error
+		},
+		{
+			name: "invalid configuration - multiple duplicate groups",
+			config: &runnertypes.Config{
+				Global: runnertypes.GlobalConfig{
+					EnvAllowlist: []string{"PATH"},
+				},
+				Groups: []runnertypes.CommandGroup{
+					{
+						Name: "group_a",
+						Commands: []runnertypes.Command{
+							{
+								Name: "test_cmd1",
+								Cmd:  "/bin/echo",
+							},
+						},
+					},
+					{
+						Name: "group_b",
+						Commands: []runnertypes.Command{
+							{
+								Name: "test_cmd2",
+								Cmd:  "/bin/echo",
+							},
+						},
+					},
+					{
+						Name: "group_a", // Duplicate of first group
+						Commands: []runnertypes.Command{
+							{
+								Name: "test_cmd3",
+								Cmd:  "/bin/echo",
+							},
+						},
+					},
+					{
+						Name: "group_b", // Duplicate of second group
+						Commands: []runnertypes.Command{
+							{
+								Name: "test_cmd4",
+								Cmd:  "/bin/echo",
+							},
+						},
+					},
+				},
+			},
+			expectValid:    false,
+			expectedErrors: 2, // Two duplicate group name errors
+		},
 	}
 
 	for _, tt := range tests {
