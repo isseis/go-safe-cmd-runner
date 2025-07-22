@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"slices"
-	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
@@ -20,6 +18,9 @@ var (
 	ErrVariableNameEmpty      = errors.New("variable name cannot be empty")
 	ErrInvalidVariableName    = errors.New("invalid variable name")
 	ErrDangerousVariableValue = errors.New("variable value contains dangerous pattern")
+	ErrVariableNotFound       = errors.New("variable reference not found")
+	ErrVariableNotAllowed     = errors.New("variable not allowed by group allowlist")
+	ErrMalformedEnvVariable   = errors.New("malformed environment variable")
 )
 
 // Constants
@@ -29,9 +30,8 @@ const (
 
 // Filter provides environment variable filtering functionality with allowlist-based security
 type Filter struct {
-	config            *runnertypes.Config
-	globalAllowlist   map[string]bool // Map for O(1) lookups of allowed variables (always non-nil)
-	dangerousPatterns []string        // Pre-compiled list of dangerous patterns
+	config          *runnertypes.Config
+	globalAllowlist map[string]bool // Map for O(1) lookups of allowed variables (always non-nil)
 }
 
 // NewFilter creates a new environment variable filter with the provided configuration
@@ -39,17 +39,6 @@ func NewFilter(config *runnertypes.Config) *Filter {
 	f := &Filter{
 		config:          config,
 		globalAllowlist: make(map[string]bool), // Initialize with empty map
-		dangerousPatterns: []string{
-			// Command injection patterns
-			";", "&&", "||", "|", "$(", "`",
-			// Redirection patterns (more specific to avoid false positives, e.g. HTML tags)
-			">", "<",
-			// Destructive file system operations
-			"rm ", "del ", "format ", "mkfs ", "mkfs.",
-			"dd if=", "dd of=",
-			// Code execution patterns
-			"exec ", "exec(", "system ", "system(", "eval ", "eval(",
-		},
 	}
 
 	// Initialize the allowlist map with global allowlist if it exists
@@ -142,14 +131,14 @@ func (f *Filter) ResolveGroupEnvironmentVars(group *runnertypes.CommandGroup, lo
 	// Add system environment variables using the common parsing logic
 	// Note: No validation needed - system environment variables are trusted
 	result := f.parseSystemEnvironment(func(variable string) bool {
-		return f.isVariableAllowed(variable, group.EnvAllowlist)
+		return f.IsVariableAccessAllowed(variable, group)
 	})
 
 	// Add loaded environment variables from .env file (already filtered in LoadEnvironment)
 	// Note: These variables were already validated during the loading process
 	// These override system variables
 	for variable, value := range loadedEnvVars {
-		if f.isVariableAllowed(variable, group.EnvAllowlist) {
+		if f.IsVariableAccessAllowed(variable, group) {
 			result[variable] = value
 		}
 	}
@@ -157,57 +146,120 @@ func (f *Filter) ResolveGroupEnvironmentVars(group *runnertypes.CommandGroup, lo
 	return result, nil
 }
 
-// IsVariableAccessAllowed checks if a variable can be accessed in the given group context
-// This function expects a non-nil group parameter
-func (f *Filter) IsVariableAccessAllowed(variable string, group *runnertypes.CommandGroup) bool {
+// determineInheritanceMode determines the inheritance mode based on group configuration
+func (f *Filter) determineInheritanceMode(group *runnertypes.CommandGroup) (runnertypes.InheritanceMode, error) {
 	if group == nil {
-		// This should not happen in normal operation, but handle it gracefully for safety
-		slog.Error("IsVariableAccessAllowed called with nil group - this indicates a programming error")
-		return false
+		return 0, ErrGroupNotFound
 	}
 
-	allowed := f.isVariableAllowed(variable, group.EnvAllowlist)
+	// nil slice = inherit, empty slice = reject, non-empty = explicit
+	if group.EnvAllowlist == nil {
+		return runnertypes.InheritanceModeInherit, nil
+	}
+
+	if len(group.EnvAllowlist) == 0 {
+		return runnertypes.InheritanceModeReject, nil
+	}
+
+	return runnertypes.InheritanceModeExplicit, nil
+}
+
+// resolveAllowlistConfiguration resolves the effective allowlist configuration for a group
+func (f *Filter) resolveAllowlistConfiguration(group *runnertypes.CommandGroup) (*runnertypes.AllowlistResolution, error) {
+	mode, err := f.determineInheritanceMode(group)
+	if err != nil {
+		return nil, fmt.Errorf("failed to determine inheritance mode: %w", err)
+	}
+
+	resolution := &runnertypes.AllowlistResolution{
+		Mode:           mode,
+		GroupAllowlist: group.EnvAllowlist,
+		GroupName:      group.Name,
+	}
+
+	// Convert global allowlist map to slice for consistent interface
+	globalList := make([]string, 0, len(f.globalAllowlist))
+	for variable := range f.globalAllowlist {
+		globalList = append(globalList, variable)
+	}
+	resolution.GlobalAllowlist = globalList
+
+	// Set effective list based on mode
+	switch mode {
+	case runnertypes.InheritanceModeInherit:
+		resolution.EffectiveList = resolution.GlobalAllowlist
+	case runnertypes.InheritanceModeExplicit:
+		resolution.EffectiveList = resolution.GroupAllowlist
+	case runnertypes.InheritanceModeReject:
+		resolution.EffectiveList = []string{} // Explicitly empty
+	}
+
+	// Log the resolution for debugging
+	slog.Debug("Resolved allowlist configuration",
+		"group", group.Name,
+		"mode", mode.String(),
+		"group_allowlist_size", len(group.EnvAllowlist),
+		"global_allowlist_size", len(f.globalAllowlist),
+		"effective_allowlist_size", len(resolution.EffectiveList))
+
+	return resolution, nil
+}
+
+// resolveAllowedVariable checks if a variable is allowed based on the inheritance configuration
+// This replaces the old isVariableAllowed function with clearer logic
+func (f *Filter) resolveAllowedVariable(variable string, group *runnertypes.CommandGroup) (bool, error) {
+	resolution, err := f.resolveAllowlistConfiguration(group)
+	if err != nil {
+		return false, fmt.Errorf("failed to resolve allowlist configuration: %w", err)
+	}
+
+	allowed := resolution.IsAllowed(variable)
+
 	if !allowed {
 		slog.Warn("Variable access denied",
 			"variable", variable,
 			"group", group.Name,
-			"allowlist_size", len(group.EnvAllowlist))
+			"inheritance_mode", resolution.Mode.String(),
+			"effective_allowlist_size", len(resolution.EffectiveList))
+	} else {
+		slog.Debug("Variable access granted",
+			"variable", variable,
+			"group", group.Name,
+			"inheritance_mode", resolution.Mode.String())
+	}
+
+	return allowed, nil
+}
+
+// IsVariableAccessAllowed checks if a variable can be accessed in the given group context
+// This function now uses the improved inheritance logic
+func (f *Filter) IsVariableAccessAllowed(variable string, group *runnertypes.CommandGroup) bool {
+	if group == nil {
+		slog.Error("IsVariableAccessAllowed called with nil group - this indicates a programming error")
+		return false
+	}
+
+	allowed, err := f.resolveAllowedVariable(variable, group)
+	if err != nil {
+		slog.Error("Failed to resolve variable allowlist",
+			"variable", variable,
+			"group", group.Name,
+			"error", err)
+		return false
 	}
 
 	return allowed
 }
 
-// isVariableAllowed checks if a variable is in the allowlist
-// If groupAllowlist is provided (non-nil), it takes precedence over global allowlist
-func (f *Filter) isVariableAllowed(variable string, groupAllowlist []string) bool {
-	// If group allowlist is provided, use it exclusively (ignore global)
-	if groupAllowlist != nil {
-		return slices.Contains(groupAllowlist, variable)
-	}
-
-	// If no group allowlist provided, use global allowlist
-	return f.globalAllowlist[variable]
-}
-
-// ValidateVariableName validates that a variable name is safe and well-formed
+// ValidateVariableName validates that a variable name is safe and well-formed using centralized security validation
 func (f *Filter) ValidateVariableName(name string) error {
 	if name == "" {
 		return ErrVariableNameEmpty
 	}
 
-	// Check for invalid characters
-	for i, char := range name {
-		if i == 0 {
-			// First character must be letter or underscore
-			if (char < 'A' || char > 'Z') && (char < 'a' || char > 'z') && char != '_' {
-				return fmt.Errorf("%w: %s (must start with letter or underscore)", ErrInvalidVariableName, name)
-			}
-		} else {
-			// Subsequent characters can be letters, digits, or underscores
-			if (char < 'A' || char > 'Z') && (char < 'a' || char > 'z') && (char < '0' || char > '9') && char != '_' {
-				return fmt.Errorf("%w: %s (contains invalid character)", ErrInvalidVariableName, name)
-			}
-		}
+	if err := security.ValidateVariableName(name); err != nil {
+		// Wrap the security error with our local error type for consistency
+		return fmt.Errorf("%w: %s", ErrInvalidVariableName, err.Error())
 	}
 
 	return nil
@@ -215,11 +267,10 @@ func (f *Filter) ValidateVariableName(name string) error {
 
 // ValidateVariableValue validates that a variable value is safe
 func (f *Filter) ValidateVariableValue(value string) error {
-	// Check for potentially dangerous patterns using pre-compiled list
-	for _, pattern := range f.dangerousPatterns {
-		if strings.Contains(value, pattern) {
-			return fmt.Errorf("%w: %s", ErrDangerousVariableValue, pattern)
-		}
+	// Use centralized security validation
+	if err := security.IsVariableValueSafe(value); err != nil {
+		// Wrap the security error with our local error type for consistency
+		return fmt.Errorf("%w: %s", ErrDangerousVariableValue, err.Error())
 	}
 
 	return nil

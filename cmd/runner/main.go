@@ -16,6 +16,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 )
 
@@ -25,11 +26,12 @@ var (
 )
 
 var (
-	configPath    = flag.String("config", "", "path to config file")
-	envFile       = flag.String("env-file", "", "path to environment file")
-	logLevel      = flag.String("log-level", "", "log level (debug, info, warn, error)")
-	dryRun        = flag.Bool("dry-run", false, "print commands without executing them")
-	hashDirectory = flag.String("hash-directory", "", "directory containing hash files (default: "+cmdcommon.DefaultHashDirectory+")")
+	configPath     = flag.String("config", "", "path to config file")
+	envFile        = flag.String("env-file", "", "path to environment file")
+	logLevel       = flag.String("log-level", "", "log level (debug, info, warn, error)")
+	dryRun         = flag.Bool("dry-run", false, "print commands without executing them")
+	hashDirectory  = flag.String("hash-directory", "", "directory containing hash files (default: "+cmdcommon.DefaultHashDirectory+")")
+	validateConfig = flag.Bool("validate", false, "validate configuration file and exit")
 )
 
 // getHashDir determines the hash directory based on command line args and environment variables
@@ -44,6 +46,31 @@ func getHashDir() string {
 	}
 	// Set default hash directory if none specified
 	return cmdcommon.DefaultHashDirectory
+}
+
+// validateConfigCommand implements config validation CLI command
+func validateConfigCommand(cfg *runnertypes.Config) error {
+	// Validate config
+	validator := config.NewConfigValidator()
+	result, err := validator.ValidateConfig(cfg)
+	if err != nil {
+		return fmt.Errorf("validation failed: %w", err)
+	}
+
+	// Generate and display report
+	report, err := validator.GenerateValidationReport(result)
+	if err != nil {
+		return fmt.Errorf("failed to generate report: %w", err)
+	}
+
+	fmt.Print(report)
+
+	// Exit with appropriate code
+	if !result.Valid {
+		os.Exit(1)
+	}
+
+	return nil
 }
 
 func main() {
@@ -70,6 +97,11 @@ func run() error {
 	cfg, err := cfgLoader.LoadConfig(*configPath)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Handle validate command
+	if *validateConfig {
+		return validateConfigCommand(cfg)
 	}
 
 	// Get hash directory from command line args and environment variables

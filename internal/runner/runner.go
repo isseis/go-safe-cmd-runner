@@ -382,31 +382,29 @@ func (r *Runner) executeCommandInGroup(ctx context.Context, cmd runnertypes.Comm
 
 // resolveEnvironmentVars resolves environment variables for a command with group context
 func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, group *runnertypes.CommandGroup) (map[string]string, error) {
-	// Use the filter to resolve group environment variables with allowlist filtering
-	envVars, err := r.envFilter.ResolveGroupEnvironmentVars(group, r.envVars)
+	// Step 1: Resolve system and .env file variables with allowlist filtering
+	systemEnvVars, err := r.envFilter.ResolveGroupEnvironmentVars(group, r.envVars)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve group environment variables: %w", err)
 	}
 
-	// Add command-specific environment variables
-	for _, env := range cmd.Env {
-		variable, value, ok := environment.ParseEnvVariable(env)
-		if !ok {
-			continue
-		}
+	slog.Debug("Resolved system environment variables",
+		"group", group.Name,
+		"system_vars_count", len(systemEnvVars))
 
-		allowed := r.envFilter.IsVariableAccessAllowed(variable, group)
-		if !allowed {
-			return nil, fmt.Errorf("failed to resolve variable %s: %w", variable, ErrVariableAccessDenied)
-		}
-		// Resolve variable references in the value
-		resolvedValue, err := r.resolveVariableReferences(value, envVars, group)
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve variable %s: %w", variable, err)
-		}
-		envVars[variable] = resolvedValue
+	// Step 2: Process Command.Env variables without allowlist checks
+	processor := environment.NewCommandEnvProcessor(r.envFilter)
+	finalEnvVars, err := processor.ProcessCommandEnvironment(cmd, systemEnvVars, group)
+	if err != nil {
+		return nil, fmt.Errorf("failed to process command environment variables: %w", err)
 	}
-	return envVars, nil
+
+	slog.Debug("Processed command environment variables",
+		"command", cmd.Name,
+		"group", group.Name,
+		"final_vars_count", len(finalEnvVars))
+
+	return finalEnvVars, nil
 }
 
 // resolveVariableReferences resolves ${VAR} references in a string

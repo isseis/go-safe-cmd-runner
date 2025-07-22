@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestNewFilter(t *testing.T) {
@@ -19,21 +20,83 @@ func TestNewFilter(t *testing.T) {
 	}
 }
 
-func TestIsVariableAccessAllowed(t *testing.T) {
-	config := &runnertypes.Config{
-		Global: runnertypes.GlobalConfig{
-			EnvAllowlist: []string{"GLOBAL_VAR"},
+func TestDetermineInheritanceMode(t *testing.T) {
+	tests := []struct {
+		name         string
+		group        *runnertypes.CommandGroup
+		expectedMode runnertypes.InheritanceMode
+		expectError  bool
+	}{
+		{
+			name:        "nil group should return error",
+			group:       nil,
+			expectError: true,
 		},
-		Groups: []runnertypes.CommandGroup{
-			{
-				Name:         "testgroup",
-				EnvAllowlist: []string{"GROUP_VAR"},
+		{
+			name: "nil allowlist should inherit",
+			group: &runnertypes.CommandGroup{
+				Name:         "test",
+				EnvAllowlist: nil,
 			},
+			expectedMode: runnertypes.InheritanceModeInherit,
+		},
+		{
+			name: "empty allowlist should reject",
+			group: &runnertypes.CommandGroup{
+				Name:         "test",
+				EnvAllowlist: []string{},
+			},
+			expectedMode: runnertypes.InheritanceModeReject,
+		},
+		{
+			name: "non-empty allowlist should be explicit",
+			group: &runnertypes.CommandGroup{
+				Name:         "test",
+				EnvAllowlist: []string{"VAR1", "VAR2"},
+			},
+			expectedMode: runnertypes.InheritanceModeExplicit,
 		},
 	}
 
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			filter := NewFilter(&runnertypes.Config{})
+			mode, err := filter.determineInheritanceMode(tt.group)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				return
+			}
+
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectedMode, mode)
+		})
+	}
+}
+
+func TestIsVariableAccessAllowedWithInheritance(t *testing.T) {
+	config := &runnertypes.Config{
+		Global: runnertypes.GlobalConfig{
+			EnvAllowlist: []string{"GLOBAL_VAR", "COMMON_VAR"},
+		},
+	}
+
+	// Groups for testing different inheritance modes
+	groupInherit := &runnertypes.CommandGroup{
+		Name:         "group-inherit",
+		EnvAllowlist: nil, // Inherit from global
+	}
+	groupExplicit := &runnertypes.CommandGroup{
+		Name:         "group-explicit",
+		EnvAllowlist: []string{"GROUP_VAR", "COMMON_VAR"}, // Explicit allowlist
+	}
+	groupReject := &runnertypes.CommandGroup{
+		Name:         "group-reject",
+		EnvAllowlist: []string{}, // Reject all
+	}
+	groupNil := (*runnertypes.CommandGroup)(nil)
+
 	filter := NewFilter(config)
-	testGroup := &config.Groups[0] // Get reference to the test group
 
 	tests := []struct {
 		name     string
@@ -41,22 +104,89 @@ func TestIsVariableAccessAllowed(t *testing.T) {
 		group    *runnertypes.CommandGroup
 		expected bool
 	}{
+		// --- InheritanceModeInherit ---
 		{
-			name:     "global variable not allowed when group allowlist defined",
+			name:     "[Inherit] Allowed global variable",
 			variable: "GLOBAL_VAR",
-			group:    testGroup,
-			expected: false, // Group allowlist overrides global, GLOBAL_VAR not in group allowlist
-		},
-		{
-			name:     "group variable allowed",
-			variable: "GROUP_VAR",
-			group:    testGroup,
+			group:    groupInherit,
 			expected: true,
 		},
 		{
-			name:     "variable not allowed",
-			variable: "FORBIDDEN_VAR",
-			group:    testGroup,
+			name:     "[Inherit] Allowed common variable",
+			variable: "COMMON_VAR",
+			group:    groupInherit,
+			expected: true,
+		},
+		{
+			name:     "[Inherit] Disallowed group-specific variable",
+			variable: "GROUP_VAR",
+			group:    groupInherit,
+			expected: false,
+		},
+		{
+			name:     "[Inherit] Disallowed undefined variable",
+			variable: "UNDEFINED_VAR",
+			group:    groupInherit,
+			expected: false,
+		},
+
+		// --- InheritanceModeExplicit ---
+		{
+			name:     "[Explicit] Disallowed global variable",
+			variable: "GLOBAL_VAR",
+			group:    groupExplicit,
+			expected: false,
+		},
+		{
+			name:     "[Explicit] Allowed group-specific variable",
+			variable: "GROUP_VAR",
+			group:    groupExplicit,
+			expected: true,
+		},
+		{
+			name:     "[Explicit] Allowed common variable",
+			variable: "COMMON_VAR",
+			group:    groupExplicit,
+			expected: true,
+		},
+		{
+			name:     "[Explicit] Disallowed undefined variable",
+			variable: "UNDEFINED_VAR",
+			group:    groupExplicit,
+			expected: false,
+		},
+
+		// --- InheritanceModeReject ---
+		{
+			name:     "[Reject] Disallowed global variable",
+			variable: "GLOBAL_VAR",
+			group:    groupReject,
+			expected: false,
+		},
+		{
+			name:     "[Reject] Disallowed group-specific variable",
+			variable: "GROUP_VAR",
+			group:    groupReject,
+			expected: false,
+		},
+		{
+			name:     "[Reject] Disallowed common variable",
+			variable: "COMMON_VAR",
+			group:    groupReject,
+			expected: false,
+		},
+		{
+			name:     "[Reject] Disallowed undefined variable",
+			variable: "UNDEFINED_VAR",
+			group:    groupReject,
+			expected: false,
+		},
+
+		// --- Edge Case: Nil Group ---
+		{
+			name:     "Nil group should always deny access",
+			variable: "ANY_VAR",
+			group:    groupNil,
 			expected: false,
 		},
 	}
@@ -64,14 +194,11 @@ func TestIsVariableAccessAllowed(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := filter.IsVariableAccessAllowed(tt.variable, tt.group)
-			if result != tt.expected {
-				groupName := "nil"
-				if tt.group != nil {
-					groupName = tt.group.Name
-				}
-				t.Errorf("IsVariableAccessAllowed(%s, %s): expected %v, got %v",
-					tt.variable, groupName, tt.expected, result)
+			groupName := "nil"
+			if tt.group != nil {
+				groupName = tt.group.Name
 			}
+			assert.Equal(t, tt.expected, result, "IsVariableAccessAllowed(%s, %s)", tt.variable, groupName)
 		})
 	}
 }

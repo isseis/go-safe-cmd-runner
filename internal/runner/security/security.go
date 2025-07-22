@@ -49,6 +49,15 @@ var (
 	// - Path components that are not directories when they should be
 	// - Failed to get system information for path components
 	ErrInsecurePathComponent = errors.New("insecure path component")
+
+	// ErrVariableNameEmpty is returned when a variable name is empty
+	ErrVariableNameEmpty = errors.New("variable name cannot be empty")
+
+	// ErrVariableNameInvalidStart is returned when a variable name starts with an invalid character
+	ErrVariableNameInvalidStart = errors.New("variable name must start with a letter or underscore")
+
+	// ErrVariableNameInvalidChar is returned when a variable name contains an invalid character
+	ErrVariableNameInvalidChar = errors.New("variable name contains invalid character")
 )
 
 // Constants for security configuration
@@ -156,14 +165,27 @@ func NewValidatorWithFS(config *Config, fs common.FileSystem) (*Validator, error
 
 	// Compile dangerous environment value patterns
 	dangerousPatterns := []string{
-		`;`,    // Command separator
-		`\|`,   // Pipe
-		`&&`,   // AND operator
-		`\|\|`, // OR operator
-		`\$\(`, // Command substitution
-		"`",    // Command substitution (backticks)
-		`>`,    // Redirect
-		`<`,    // Redirect
+		`;`,        // Command separator
+		`\|`,       // Pipe
+		`&&`,       // AND operator
+		`\|\|`,     // OR operator
+		`\$\(`,     // Command substitution
+		"`",        // Command substitution (backticks)
+		`>`,        // Redirect
+		`<`,        // Redirect
+		`rm `,      // Dangerous rm command
+		`del `,     // Dangerous del command
+		`format `,  // Dangerous format command
+		`mkfs `,    // Dangerous mkfs command
+		`mkfs\.`,   // Dangerous mkfs. command
+		`dd if=`,   // Dangerous dd input
+		`dd of=`,   // Dangerous dd output
+		`exec `,    // Code execution
+		`exec\(`,   // Code execution (function call)
+		`system `,  // System call
+		`system\(`, // System call (function call)
+		`eval `,    // Code evaluation
+		`eval\(`,   // Code evaluation (function call)
 	}
 	v.dangerousEnvRegexps = make([]*regexp.Regexp, len(dangerousPatterns))
 	for i, pattern := range dangerousPatterns {
@@ -342,6 +364,13 @@ func (v *Validator) ValidateAllEnvironmentVars(envVars map[string]string) error 
 	return nil
 }
 
+// ValidateVariableValue validates that a variable value contains no dangerous patterns
+// This is a convenience function that wraps ValidateEnvironmentValue for use by other packages
+func (v *Validator) ValidateVariableValue(value string) error {
+	// Use a dummy key name for the validation since we only care about the value
+	return v.ValidateEnvironmentValue("VAR", value)
+}
+
 // validateCompletePath validates the security of the complete path from root to target
 // This prevents attacks through compromised intermediate directories
 // cleanDir must be absolute and cleaned.
@@ -432,4 +461,48 @@ func (v *Validator) validateDirectoryComponentPermissions(dirPath string, info o
 	}
 
 	return nil
+}
+
+// ValidateVariableName validates that a variable name is safe and well-formed
+// This is a global convenience function for validating environment variable names
+func ValidateVariableName(name string) error {
+	if name == "" {
+		return ErrVariableNameEmpty
+	}
+
+	// Check first character - must be a letter or underscore
+	firstChar := name[0]
+	if !isLetterOrUnderscore(firstChar) {
+		return ErrVariableNameInvalidStart
+	}
+
+	// Check remaining characters - must be letter, digit, or underscore
+	for i := 1; i < len(name); i++ {
+		char := name[i]
+		if !isLetterOrUnderscoreOrDigit(char) {
+			return fmt.Errorf("%w: '%c'", ErrVariableNameInvalidChar, char)
+		}
+	}
+
+	return nil
+}
+
+// isLetterOrUnderscore checks if a byte is a letter (A-Z, a-z) or underscore
+func isLetterOrUnderscore(char byte) bool {
+	return (char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z') || char == '_'
+}
+
+// isLetterOrUnderscoreOrDigit checks if a byte is a letter, digit, or underscore
+func isLetterOrUnderscoreOrDigit(char byte) bool {
+	return isLetterOrUnderscore(char) || (char >= '0' && char <= '9')
+}
+
+// IsVariableValueSafe validates that a variable value contains no dangerous patterns
+// This is a global convenience function that creates a default validator to check variable values
+func IsVariableValueSafe(value string) error {
+	validator, err := NewValidator(nil) // Use default config
+	if err != nil {
+		return fmt.Errorf("failed to create validator: %w", err)
+	}
+	return validator.ValidateVariableValue(value)
 }

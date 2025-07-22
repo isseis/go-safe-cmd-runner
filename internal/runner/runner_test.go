@@ -528,7 +528,7 @@ func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
 
 		// Should fail due to environment variable access denied
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, ErrVariableAccessDenied), "expected error to wrap ErrVariableAccessDenied")
+		assert.True(t, errors.Is(err, environment.ErrVariableNotFound), "expected error to wrap ErrVariableNotFound")
 		mockExecutor.AssertExpectations(t)
 	})
 }
@@ -2022,8 +2022,9 @@ func TestRunner_EnvironmentVariablePriority_EdgeCases(t *testing.T) {
 		}
 
 		_, err := runner.resolveEnvironmentVars(testCmd, &testGroup)
-		// Should handle malformed environment variables gracefully
-		assert.NoError(t, err)
+		// Should fail when an environment variable is malformed
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, environment.ErrMalformedEnvVariable))
 	})
 
 	t.Run("variable reference to undefined variable", func(t *testing.T) {
@@ -2039,7 +2040,7 @@ func TestRunner_EnvironmentVariablePriority_EdgeCases(t *testing.T) {
 		_, err := runner.resolveEnvironmentVars(testCmd, &testGroup)
 		// Should fail when referencing undefined variable
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, ErrVariableAccessDenied))
+		assert.True(t, errors.Is(err, environment.ErrVariableNotFound))
 	})
 
 	t.Run("circular reference in command variables", func(t *testing.T) {
@@ -2056,7 +2057,7 @@ func TestRunner_EnvironmentVariablePriority_EdgeCases(t *testing.T) {
 		// Should detect and fail on circular references
 		// Note: Current implementation detects this as undefined variable rather than circular reference
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "undefined variable: CIRCULAR_VAR")
+		assert.Contains(t, err.Error(), "variable reference not found: CIRCULAR_VAR")
 	})
 }
 
