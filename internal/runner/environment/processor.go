@@ -173,7 +173,7 @@ func (p *CommandEnvProcessor) resolveSystemVariable(
 		p.logger.Warn("Command.Env references disallowed system variable",
 			"variable", varName,
 			"group", group.Name)
-		return "", fmt.Errorf("%w: %s", ErrVariableNotAllowed, varName)
+		return "", fmt.Errorf("%w: variable '%s' is not allowed in group '%s'", ErrVariableNotAllowed, varName, group.Name)
 	}
 
 	p.logger.Debug("System variable resolved for Command.Env",
