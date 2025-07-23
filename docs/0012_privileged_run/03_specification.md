@@ -253,16 +253,38 @@ func (m *LinuxPrivilegeManager) ElevatePrivileges(ctx context.Context, elevation
     }, nil
 }
 
-func (m *LinuxPrivilegeManager) WithPrivileges(ctx context.Context, elevationCtx ElevationContext, fn func() error) error {
+func (m *LinuxPrivilegeManager) WithPrivileges(ctx context.Context, elevationCtx ElevationContext, fn func() error) (err error) {
     cleanup, err := m.ElevatePrivileges(ctx, elevationCtx)
     if err != nil {
         return err
     }
 
-    // Ensure privileges are restored even if fn panics
+    // 単一のdefer文で通常の復帰とパニック時の復帰の両方を処理
     defer func() {
+        // 権限復帰処理（パニック時・通常時共通）
         if cleanup != nil {
             cleanup()
+        }
+
+        // 権限復帰の確認（Defense in Depth）
+        currentUID := syscall.Geteuid()
+        if currentUID != m.originalUID {
+            // 権限復帰が失敗している場合は致命的エラー
+            m.logger.Error("CRITICAL: Privilege restoration verification failed",
+                "expected_uid", m.originalUID,
+                "actual_uid", currentUID)
+            panic(fmt.Sprintf("CRITICAL: Privilege restoration verification failed: expected UID %d, got %d", m.originalUID, currentUID))
+        }
+
+        // パニック処理
+        if r := recover(); r != nil {
+            m.logger.Error("Panic occurred during privileged operation, privileges restored",
+                "operation", elevationCtx.Operation,
+                "command", elevationCtx.CommandName,
+                "panic", r)
+
+            // 元のパニックを再発生させる
+            panic(r)
         }
     }()
 
@@ -1188,15 +1210,30 @@ func (t *ElevationTracker) TrackRestoration(operation string) time.Duration {
 
 ```go
 func (m *LinuxPrivilegeManager) WithPrivileges(ctx context.Context, elevationCtx ElevationContext, fn func() error) (err error) {
-    // パニック時の権限復帰を保証
-    defer func() {
-        if r := recover(); r != nil {
-            // パニックが発生した場合でも権限を確実に復帰
-            if restoreErr := syscall.Seteuid(m.originalUID); restoreErr != nil {
-                // 権限復帰に失敗した場合は致命的エラー
-                panic(fmt.Sprintf("CRITICAL: Failed to restore privileges after panic: %v (original panic: %v)", restoreErr, r))
-            }
+    cleanup, err := m.ElevatePrivileges(ctx, elevationCtx)
+    if err != nil {
+        return err
+    }
 
+    // 単一のdefer文で通常の復帰とパニック時の復帰の両方を処理
+    defer func() {
+        // 権限復帰処理（パニック時・通常時共通）
+        if cleanup != nil {
+            cleanup()
+        }
+
+        // 権限復帰の確認（Defense in Depth）
+        currentUID := syscall.Geteuid()
+        if currentUID != m.originalUID {
+            // 権限復帰が失敗している場合は致命的エラー
+            m.logger.Error("CRITICAL: Privilege restoration verification failed",
+                "expected_uid", m.originalUID,
+                "actual_uid", currentUID)
+            panic(fmt.Sprintf("CRITICAL: Privilege restoration verification failed: expected UID %d, got %d", m.originalUID, currentUID))
+        }
+
+        // パニック処理
+        if r := recover(); r != nil {
             m.logger.Error("Panic occurred during privileged operation, privileges restored",
                 "operation", elevationCtx.Operation,
                 "command", elevationCtx.CommandName,
@@ -1204,17 +1241,6 @@ func (m *LinuxPrivilegeManager) WithPrivileges(ctx context.Context, elevationCtx
 
             // 元のパニックを再発生させる
             panic(r)
-        }
-    }()
-
-    cleanup, err := m.ElevatePrivileges(ctx, elevationCtx)
-    if err != nil {
-        return err
-    }
-
-    defer func() {
-        if cleanup != nil {
-            cleanup()
         }
     }()
 
