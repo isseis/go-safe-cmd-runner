@@ -576,7 +576,7 @@ func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path strin
     if execCmd.ProcessState != nil {
         result.ExitCode = execCmd.ProcessState.ExitCode()
     } else {
-        result.ExitCode = -1
+        result.ExitCode = ExitCodeUnknown
     }
 
     if cmdErr != nil {
