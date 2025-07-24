@@ -25,20 +25,22 @@ type PrivilegeManager struct {
     logger      *slog.Logger
 }
 
-// EscalatePrivileges escalates to root privileges
-func (pm *PrivilegeManager) EscalatePrivileges() error
-
-// RestorePrivileges restores original user privileges
-func (pm *PrivilegeManager) RestorePrivileges() error
-
 // WithPrivileges executes a function with escalated privileges
+// This is the ONLY public method to ensure safe privilege management
 func (pm *PrivilegeManager) WithPrivileges(fn func() error) error
+
+// escalatePrivileges escalates to root privileges (private method)
+func (pm *PrivilegeManager) escalatePrivileges() error
+
+// restorePrivileges restores original user privileges (private method)
+func (pm *PrivilegeManager) restorePrivileges() error
 ```
 
 **設計ポイント:**
-- `WithPrivileges` メソッドでdefer文による確実な権限復元
-- panic発生時でもrecover機構で権限復元を保証
-- 権限切り替えの全ての試行をログ記録
+- **セキュアな設計**: `WithPrivileges` のみを公開し、内部で権限昇格・復帰を保証
+- **確実な権限復元**: defer文による自動復元でヒューマンエラーを防止
+- **panic安全性**: recover機構で異常終了時も権限復元を保証
+- **責任の集約**: 権限管理ロジックを一箇所に集中して管理
 
 ### 2.2 特権対応Executor (PrivilegedExecutor)
 
@@ -123,26 +125,65 @@ func (phc *PrivilegedHashCalculator) CalculateHash(filePath string, privileged b
 ```go
 func (pm *PrivilegeManager) WithPrivileges(fn func() error) error {
     // 権限昇格
-    if err := pm.EscalatePrivileges(); err != nil {
-        return err
+    if err := pm.escalatePrivileges(); err != nil {
+        return fmt.Errorf("privilege escalation failed: %w", err)
     }
 
-    // defer文による確実な復元
+    // 単一のdefer文で権限復帰とpanic処理を統合
     defer func() {
-        if err := pm.RestorePrivileges(); err != nil {
-            slog.Error("Failed to restore privileges", "error", err)
-        }
-    }()
+        var panicValue interface{}
+        var context string
 
-    // panic復旧での権限復元
-    defer func() {
+        // panic検出
         if r := recover(); r != nil {
-            pm.RestorePrivileges()
-            panic(r)
+            panicValue = r
+            context = fmt.Sprintf("after panic: %v", r)
+            pm.logger.Error("Panic occurred during privileged operation, attempting privilege restoration",
+                "panic", r,
+                "original_uid", pm.originalUID)
+        } else {
+            context = "normal execution"
+        }
+
+        // 権限復帰実行（常に実行される）
+        if err := pm.restorePrivileges(); err != nil {
+            // 権限復帰失敗は致命的セキュリティリスク - 即座に終了
+            pm.emergencyShutdown(err, context)
+        }
+
+        // panic再発生（必要な場合のみ）
+        if panicValue != nil {
+            panic(panicValue)
         }
     }()
 
     return fn()
+}
+
+// emergencyShutdown handles critical privilege restoration failures
+func (pm *PrivilegeManager) emergencyShutdown(restoreErr error, context string) {
+    // 詳細なエラー情報を記録（複数の出力先に確実に記録）
+    criticalMsg := fmt.Sprintf("CRITICAL SECURITY FAILURE: Privilege restoration failed during %s", context)
+
+    // 構造化ログに記録
+    pm.logger.Error(criticalMsg,
+        "error", restoreErr,
+        "original_uid", pm.originalUID,
+        "current_uid", os.Getuid(),
+        "current_euid", os.Geteuid(),
+        "timestamp", time.Now().UTC(),
+        "process_id", os.Getpid(),
+    )
+
+    // システムログにも記録（rsyslog等による外部転送対応）
+    syslog.Err(fmt.Sprintf("%s: %v (PID: %d, UID: %d->%d)",
+        criticalMsg, restoreErr, os.Getpid(), pm.originalUID, os.Geteuid()))
+
+    // 標準エラー出力にも記録（最後の手段）
+    fmt.Fprintf(os.Stderr, "FATAL: %s: %v\n", criticalMsg, restoreErr)
+
+    // 即座にプロセス終了（defer処理をスキップ）
+    os.Exit(1)
 }
 ```
 
@@ -213,9 +254,15 @@ var (
 | エラー種類 | 動作 |
 |------------|------|
 | 権限昇格失敗 | コマンド実行中止、グループ実行中止、次グループ継続 |
-| 権限復元失敗 | 緊急ログ出力、プロセス終了検討 |
+| 権限復元失敗 | **即座にプロセス終了（os.Exit(1)）** - セキュリティ最優先 |
 | ハッシュ計算失敗 | コマンド実行中止、グループ実行中止 |
 | 特権コマンド実行失敗 | 標準エラーハンドリング |
+
+**権限復元失敗の緊急対応:**
+- 複数の出力先への詳細ログ記録（構造化ログ + syslog + stderr）
+- 現在のUID/EUID状態の記録
+- defer処理をバイパスして即座に終了
+- 一時ファイル等の残存よりもセキュリティを優先
 
 ## 7. パフォーマンス考慮事項
 
@@ -234,14 +281,21 @@ var (
 ### 8.1 単体テスト
 
 ```go
-// 権限管理のテスト
-func TestPrivilegeManager_EscalateAndRestore(t *testing.T)
-func TestPrivilegeManager_WithPrivileges(t *testing.T)
-func TestPrivilegeManager_PanicRecovery(t *testing.T)
+// 権限管理のテスト（WithPrivilegesメソッドに集約）
+func TestPrivilegeManager_WithPrivileges_Success(t *testing.T)
+func TestPrivilegeManager_WithPrivileges_EscalationFailure(t *testing.T)
+func TestPrivilegeManager_WithPrivileges_PanicRecovery(t *testing.T)
+func TestPrivilegeManager_WithPrivileges_RestoreFailure_EmergencyShutdown(t *testing.T)
+func TestPrivilegeManager_EmergencyShutdown_LoggingBehavior(t *testing.T)
 
 // 特権実行のテスト
 func TestPrivilegedExecutor_Execute(t *testing.T)
 func TestPrivilegedExecutor_ErrorHandling(t *testing.T)
+
+// 緊急終了テストの注意事項
+// - os.Exit(1)をテストするためにはプロセス分離が必要
+// - testdata/やintegration_test.goでサブプロセステストを実装
+// - ログ出力の検証にはbuffer interceptorを使用
 ```
 
 ### 8.2 統合テスト
@@ -272,8 +326,10 @@ sudo chmod u+s runner
 ### 9.2 監視とアラート
 
 - 権限昇格の頻度監視
-- 権限復元失敗のアラート
+- **権限復元失敗の即時アラート（最高優先度）**
 - 異常な権限操作パターンの検出
+- プロセス異常終了（exit code 1）の監視
+- syslogレベルでの重大エラー転送設定
 
 ### 9.3 セキュリティガイドライン
 
@@ -306,8 +362,10 @@ sudo chmod u+s runner
 ## 11. リスク軽減策
 
 ### 11.1 技術リスク
-- **権限復元失敗**: 複数の復元メカニズム（defer, recover, signal handler）
-- **セキュリティ脆弱性**: filevalidatorによる検証と最小権限原則
+- **権限復元失敗**: emergencyShutdownによる即座の終了で継続実行リスクを排除
+- **セキュリティ脆弱性**: 権限管理の単一責任化とfilevalidatorによる検証
+- **権限昇格の悪用**: 非公開メソッドによる直接アクセス防止
+- **ログ記録失敗**: 複数出力先（構造化ログ + syslog + stderr）による冗長化
 - **互換性問題**: 段階的導入と既存テストの継続実行
 
 ### 11.2 運用リスク
