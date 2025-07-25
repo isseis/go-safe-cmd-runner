@@ -101,7 +101,7 @@ func (e *DefaultExecutor) Execute(ctx context.Context, cmd runnertypes.Command, 
 	if execCmd.ProcessState != nil {
 		result.ExitCode = execCmd.ProcessState.ExitCode()
 	} else {
-		result.ExitCode = -1 // Or another non-zero value to indicate failure
+		result.ExitCode = ExitCodeUnknown // Use constant for unknown exit code
 	}
 
 	if cmdErr != nil {

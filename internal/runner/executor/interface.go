@@ -6,6 +6,13 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
+// Exit code constants
+const (
+	// ExitCodeUnknown is used when the process state is not available
+	// to determine the actual exit code.
+	ExitCodeUnknown = -1
+)
+
 // Stream names for command output
 const (
 	// StdoutStream is the name of the standard output stream
