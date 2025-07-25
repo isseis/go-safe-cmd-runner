@@ -128,10 +128,8 @@ import (
 
 // Manager interface for privilege management
 type Manager interface {
-    // ElevatePrivileges temporarily elevates to root privileges
-    ElevatePrivileges(ctx context.Context, elevationCtx ElevationContext) (func(), error)
-
     // WithPrivileges executes a function with elevated privileges
+    // This is the ONLY public method to ensure safe privilege management
     WithPrivileges(ctx context.Context, elevationCtx ElevationContext, fn func() error) error
 
     // IsPrivilegedExecutionSupported checks if privileged execution is available
@@ -233,12 +231,50 @@ func newPlatformManager(logger *slog.Logger) Manager {
     }
 }
 
-func (m *LinuxPrivilegeManager) ElevatePrivileges(ctx context.Context, elevationCtx ElevationContext) (func(), error) {
+func (m *LinuxPrivilegeManager) WithPrivileges(ctx context.Context, elevationCtx ElevationContext, fn func() error) (err error) {
+    // 権限昇格
+    if err := m.escalatePrivileges(ctx, elevationCtx); err != nil {
+        return fmt.Errorf("privilege escalation failed: %w", err)
+    }
+
+    // 単一のdefer文で権限復帰とpanic処理を統合
+    defer func() {
+        var panicValue interface{}
+        var context string
+
+        // panic検出
+        if r := recover(); r != nil {
+            panicValue = r
+            context = fmt.Sprintf("after panic: %v", r)
+            m.logger.Error("Panic occurred during privileged operation, attempting privilege restoration",
+                "panic", r,
+                "original_uid", m.originalUID)
+        } else {
+            context = "normal execution"
+        }
+
+        // 権限復帰実行（常に実行される）
+        if err := m.restorePrivileges(); err != nil {
+            // 権限復帰失敗は致命的セキュリティリスク - 即座に終了
+            m.emergencyShutdown(err, context)
+        }
+
+        // panic再発生（必要な場合のみ）
+        if panicValue != nil {
+            panic(panicValue)
+        }
+    }()
+
+    return fn()
+}
+
+// escalatePrivileges performs the actual privilege escalation (private method)
+func (m *LinuxPrivilegeManager) escalatePrivileges(ctx context.Context, elevationCtx ElevationContext) error {
     m.mu.Lock()
     defer m.mu.Unlock()
 
     if !m.IsPrivilegedExecutionSupported() {
-        return nil, fmt.Errorf("%w: binary not configured with setuid", ErrPrivilegedExecutionNotAvailable)
+        return fmt.Errorf("%w: binary not configured with setuid", ErrPrivilegedExecutionNotAvailable)
     }
 
     elevationCtx.StartTime = time.Now()
@@ -246,7 +282,7 @@ func (m *LinuxPrivilegeManager) ElevatePrivileges(ctx context.Context, elevation
     elevationCtx.TargetUID = 0
 
     if err := syscall.Seteuid(0); err != nil {
-        return nil, &PrivilegeError{
+        return &PrivilegeError{
             Operation:   elevationCtx.Operation,
             CommandName: elevationCtx.CommandName,
             OriginalUID: elevationCtx.OriginalUID,
@@ -261,20 +297,45 @@ func (m *LinuxPrivilegeManager) ElevatePrivileges(ctx context.Context, elevation
         "command", elevationCtx.CommandName,
         "original_uid", elevationCtx.OriginalUID)
 
-    return func() {
-        if err := syscall.Seteuid(m.originalUID); err != nil {
-            m.logger.Error("Critical: Failed to restore privileges",
-                "error", err,
-                "original_uid", m.originalUID)
-            panic(fmt.Sprintf("Failed to restore privileges: %v", err))
-        }
+    return nil
+}
 
-        duration := time.Since(elevationCtx.StartTime)
-        m.logger.Info("Privileges restored",
-            "operation", elevationCtx.Operation,
-            "command", elevationCtx.CommandName,
-            "duration_ms", duration.Milliseconds())
-    }, nil
+// restorePrivileges restores original privileges (private method)
+func (m *LinuxPrivilegeManager) restorePrivileges() error {
+    if err := syscall.Seteuid(m.originalUID); err != nil {
+        return err
+    }
+
+    m.logger.Info("Privileges restored",
+        "restored_uid", m.originalUID)
+
+    return nil
+}
+
+// emergencyShutdown handles critical privilege restoration failures
+func (m *LinuxPrivilegeManager) emergencyShutdown(restoreErr error, context string) {
+    // 詳細なエラー情報を記録（複数の出力先に確実に記録）
+    criticalMsg := fmt.Sprintf("CRITICAL SECURITY FAILURE: Privilege restoration failed during %s", context)
+
+    // 構造化ログに記録
+    m.logger.Error(criticalMsg,
+        "error", restoreErr,
+        "original_uid", m.originalUID,
+        "current_uid", os.Getuid(),
+        "current_euid", os.Geteuid(),
+        "timestamp", time.Now().UTC(),
+        "process_id", os.Getpid(),
+    )
+
+    // システムログにも記録（rsyslog等による外部転送対応）
+    syslog.Err(fmt.Sprintf("%s: %v (PID: %d, UID: %d->%d)",
+        criticalMsg, restoreErr, os.Getpid(), m.originalUID, os.Geteuid()))
+
+    // 標準エラー出力にも記録（最後の手段）
+    fmt.Fprintf(os.Stderr, "FATAL: %s: %v\n", criticalMsg, restoreErr)
+
+    // 即座にプロセス終了（defer処理をスキップ）
+    os.Exit(1)
 }
 
 // ... remaining methods
@@ -303,11 +364,11 @@ func newPlatformManager(logger *slog.Logger) Manager {
     }
 }
 
-func (m *WindowsPrivilegeManager) ElevatePrivileges(ctx context.Context, elevationCtx ElevationContext) (func(), error) {
+func (m *WindowsPrivilegeManager) WithPrivileges(ctx context.Context, elevationCtx ElevationContext, fn func() error) error {
     m.logger.Error("Privileged execution requested on unsupported platform",
         "operation", elevationCtx.Operation,
         "command", elevationCtx.CommandName)
-    return nil, ErrPlatformNotSupported
+    return ErrPlatformNotSupported
 }
 
 // ... remaining methods returning appropriate errors/no-ops
@@ -331,7 +392,7 @@ import (
     "github.com/stretchr/testify/require"
 )
 
-func TestLinuxPrivilegeManager_ElevatePrivileges(t *testing.T) {
+func TestLinuxPrivilegeManager_WithPrivileges(t *testing.T) {
     tests := []struct {
         name        string
         isSetuid    bool
@@ -365,17 +426,15 @@ func TestLinuxPrivilegeManager_ElevatePrivileges(t *testing.T) {
                 CommandName: "test",
             }
 
-            cleanup, err := manager.ElevatePrivileges(ctx, elevationCtx)
+            err := manager.WithPrivileges(ctx, elevationCtx, func() error {
+                // Test function that verifies privilege escalation
+                return nil
+            })
 
             if tt.expectError {
                 assert.Error(t, err)
-                assert.Nil(t, cleanup)
             } else {
                 assert.NoError(t, err)
-                assert.NotNil(t, cleanup)
-                if cleanup != nil {
-                    cleanup()
-                }
             }
         })
     }
@@ -785,7 +844,6 @@ func (m *LinuxPrivilegeManager) WithPrivileges(ctx context.Context, elevationCtx
         return fmt.Errorf("privilege escalation failed: %w", err)
     }
 
-    // 単一のdefer文で権限復帰とpanic処理を統合
     defer func() {
         var panicValue interface{}
         var context string
