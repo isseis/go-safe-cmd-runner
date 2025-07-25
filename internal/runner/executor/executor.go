@@ -12,33 +12,165 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/audit"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
 // Error definitions
 var (
-	ErrEmptyCommand = errors.New("command cannot be empty")
-	ErrDirNotExists = errors.New("directory does not exist")
-	ErrInvalidPath  = errors.New("invalid command path")
+	ErrEmptyCommand                    = errors.New("command cannot be empty")
+	ErrDirNotExists                    = errors.New("directory does not exist")
+	ErrInvalidPath                     = errors.New("invalid command path")
+	ErrNoPrivilegeManager              = errors.New("privileged execution requested but no privilege manager available")
+	ErrPrivilegedExecutionNotSupported = errors.New("privileged execution not supported on this system")
 )
 
 // DefaultExecutor is the default implementation of CommandExecutor
 type DefaultExecutor struct {
-	FS  FileSystem
-	Out OutputWriter
+	FS          FileSystem
+	Out         OutputWriter
+	PrivMgr     privilege.Manager // Optional privilege manager for privileged commands
+	AuditLogger *audit.Logger     // Optional audit logger for privileged operations
+}
+
+// Option is a functional option for configuring DefaultExecutor
+type Option func(*DefaultExecutor)
+
+// WithPrivilegeManager sets the privilege manager for the executor
+func WithPrivilegeManager(privMgr privilege.Manager) Option {
+	return func(e *DefaultExecutor) {
+		e.PrivMgr = privMgr
+	}
+}
+
+// WithFileSystem sets the file system for the executor
+func WithFileSystem(fs FileSystem) Option {
+	return func(e *DefaultExecutor) {
+		e.FS = fs
+	}
+}
+
+// WithOutputWriter sets the output writer for the executor
+func WithOutputWriter(out OutputWriter) Option {
+	return func(e *DefaultExecutor) {
+		e.Out = out
+	}
+}
+
+// WithAuditLogger sets the audit logger for the executor
+func WithAuditLogger(auditLogger *audit.Logger) Option {
+	return func(e *DefaultExecutor) {
+		e.AuditLogger = auditLogger
+	}
 }
 
 // NewDefaultExecutor creates a new default command executor
-func NewDefaultExecutor() CommandExecutor {
-	return &DefaultExecutor{
+func NewDefaultExecutor(opts ...Option) CommandExecutor {
+	e := &DefaultExecutor{
 		FS:  &osFileSystem{},
 		Out: &consoleOutputWriter{},
 	}
+
+	for _, opt := range opts {
+		opt(e)
+	}
+
+	return e
 }
 
 // Execute implements the CommandExecutor interface
 func (e *DefaultExecutor) Execute(ctx context.Context, cmd runnertypes.Command, envVars map[string]string) (*Result, error) {
+	if cmd.Privileged {
+		return e.executePrivileged(ctx, cmd, envVars)
+	}
+	return e.executeNormal(ctx, cmd, envVars)
+}
+
+// executePrivileged handles privileged command execution with audit logging and metrics
+func (e *DefaultExecutor) executePrivileged(ctx context.Context, cmd runnertypes.Command, envVars map[string]string) (*Result, error) {
+	startTime := time.Now()
+	var metrics audit.PrivilegeMetrics
+
+	// Pre-execution validation
+	if e.PrivMgr == nil {
+		return nil, ErrNoPrivilegeManager
+	}
+
+	if !e.PrivMgr.IsPrivilegedExecutionSupported() {
+		return nil, ErrPrivilegedExecutionNotSupported
+	}
+
+	// Validate the command before any privilege elevation
+	if err := e.Validate(cmd); err != nil {
+		return nil, fmt.Errorf("command validation failed: %w", err)
+	}
+
+	// Resolve command path with elevated privileges (needed for file access)
+	var resolvedPath string
+	pathResolutionCtx := privilege.ElevationContext{
+		Operation:   privilege.OperationFileAccess,
+		CommandName: cmd.Name,
+		FilePath:    cmd.Cmd,
+	}
+
+	privilegeStart := time.Now()
+	err := e.PrivMgr.WithPrivileges(ctx, pathResolutionCtx, func() error {
+		path, lookErr := exec.LookPath(cmd.Cmd)
+		if lookErr != nil {
+			return fmt.Errorf("failed to find command %q: %w", cmd.Cmd, lookErr)
+		}
+		resolvedPath = path
+		return nil
+	})
+	privilegeDuration := time.Since(privilegeStart)
+	metrics.ElevationCount++
+	metrics.TotalDuration += privilegeDuration
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve command path with privileges: %w", err)
+	}
+
+	// Execute command with elevated privileges
+	executionCtx := privilege.ElevationContext{
+		Operation:   privilege.OperationCommandExecution,
+		CommandName: cmd.Name,
+		FilePath:    resolvedPath,
+	}
+
+	var result *Result
+	privilegeStart = time.Now()
+	err = e.PrivMgr.WithPrivileges(ctx, executionCtx, func() error {
+		var execErr error
+		result, execErr = e.executeCommandWithPath(ctx, resolvedPath, cmd, envVars)
+		return execErr
+	})
+	privilegeDuration = time.Since(privilegeStart)
+	metrics.ElevationCount++
+	metrics.TotalDuration += privilegeDuration
+
+	if err != nil {
+		return nil, fmt.Errorf("privileged command execution failed: %w", err)
+	}
+
+	// Audit logging
+	if e.AuditLogger != nil {
+		executionDuration := time.Since(startTime)
+		auditResult := &audit.ExecutionResult{
+			Stdout:   result.Stdout,
+			Stderr:   result.Stderr,
+			ExitCode: result.ExitCode,
+		}
+		e.AuditLogger.LogPrivilegedExecution(ctx, cmd, auditResult, executionDuration, metrics)
+	}
+
+	return result, nil
+}
+
+// executeNormal handles normal (non-privileged) command execution
+func (e *DefaultExecutor) executeNormal(ctx context.Context, cmd runnertypes.Command, envVars map[string]string) (*Result, error) {
 	// Validate the command before execution
 	if err := e.Validate(cmd); err != nil {
 		return nil, fmt.Errorf("command validation failed: %w", err)
@@ -50,6 +182,11 @@ func (e *DefaultExecutor) Execute(ctx context.Context, cmd runnertypes.Command, 
 		return nil, fmt.Errorf("failed to find command %q: %w", cmd.Cmd, lookErr)
 	}
 
+	return e.executeCommandWithPath(ctx, path, cmd, envVars)
+}
+
+// executeCommandWithPath executes a command with the given resolved path
+func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path string, cmd runnertypes.Command, envVars map[string]string) (*Result, error) {
 	// Create the command with the resolved path
 	// #nosec G204 - The command and arguments are validated before execution
 	execCmd := exec.CommandContext(ctx, path, cmd.Args...)
