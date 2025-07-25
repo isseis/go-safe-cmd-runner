@@ -1210,41 +1210,66 @@ func (t *ElevationTracker) TrackRestoration(operation string) time.Duration {
 
 ```go
 func (m *LinuxPrivilegeManager) WithPrivileges(ctx context.Context, elevationCtx ElevationContext, fn func() error) (err error) {
-    cleanup, err := m.ElevatePrivileges(ctx, elevationCtx)
-    if err != nil {
-        return err
+    // 権限昇格
+    if err := m.escalatePrivileges(ctx, elevationCtx); err != nil {
+        return fmt.Errorf("privilege escalation failed: %w", err)
     }
 
-    // 単一のdefer文で通常の復帰とパニック時の復帰の両方を処理
+    // 単一のdefer文で権限復帰とpanic処理を統合
     defer func() {
-        // 権限復帰処理（パニック時・通常時共通）
-        if cleanup != nil {
-            cleanup()
-        }
+        var panicValue interface{}
+        var context string
 
-        // 権限復帰の確認（Defense in Depth）
-        currentUID := syscall.Geteuid()
-        if currentUID != m.originalUID {
-            // 権限復帰が失敗している場合は致命的エラー
-            m.logger.Error("CRITICAL: Privilege restoration verification failed",
-                "expected_uid", m.originalUID,
-                "actual_uid", currentUID)
-            panic(fmt.Sprintf("CRITICAL: Privilege restoration verification failed: expected UID %d, got %d", m.originalUID, currentUID))
-        }
-
-        // パニック処理
+        // panic検出
         if r := recover(); r != nil {
-            m.logger.Error("Panic occurred during privileged operation, privileges restored",
-                "operation", elevationCtx.Operation,
-                "command", elevationCtx.CommandName,
-                "panic", r)
+            panicValue = r
+            context = fmt.Sprintf("after panic: %v", r)
+            m.logger.Error("Panic occurred during privileged operation, attempting privilege restoration",
+                "panic", r,
+                "original_uid", m.originalUID)
+        } else {
+            context = "normal execution"
+        }
 
-            // 元のパニックを再発生させる
-            panic(r)
+        // 権限復帰実行（常に実行される）
+        if err := m.restorePrivileges(); err != nil {
+            // 権限復帰失敗は致命的セキュリティリスク - 即座に終了
+            m.emergencyShutdown(err, context)
+        }
+
+        // panic再発生（必要な場合のみ）
+        if panicValue != nil {
+            panic(panicValue)
         }
     }()
 
     return fn()
+}
+
+// emergencyShutdown handles critical privilege restoration failures
+func (m *LinuxPrivilegeManager) emergencyShutdown(restoreErr error, context string) {
+    // 詳細なエラー情報を記録（複数の出力先に確実に記録）
+    criticalMsg := fmt.Sprintf("CRITICAL SECURITY FAILURE: Privilege restoration failed during %s", context)
+
+    // 構造化ログに記録
+    m.logger.Error(criticalMsg,
+        "error", restoreErr,
+        "original_uid", m.originalUID,
+        "current_uid", os.Getuid(),
+        "current_euid", os.Geteuid(),
+        "timestamp", time.Now().UTC(),
+        "process_id", os.Getpid(),
+    )
+
+    // システムログにも記録（rsyslog等による外部転送対応）
+    syslog.Err(fmt.Sprintf("%s: %v (PID: %d, UID: %d->%d)",
+        criticalMsg, restoreErr, os.Getpid(), m.originalUID, os.Geteuid()))
+
+    // 標準エラー出力にも記録（最後の手段）
+    fmt.Fprintf(os.Stderr, "FATAL: %s: %v\n", criticalMsg, restoreErr)
+
+    // 即座にプロセス終了（defer処理をスキップ）
+    os.Exit(1)
 }
 ```
 
