@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"log/syslog"
 	"os"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -140,7 +141,11 @@ func (m *UnixPrivilegeManager) emergencyShutdown(restoreErr error, shutdownConte
 	)
 
 	// Also log to system logger (for external forwarding via rsyslog etc.)
-	if syslogWriter, err := syslog.New(syslog.LOG_ERR, "go-safe-cmd-runner"); err == nil {
+	progName := "go-safe-cmd-runner" // Default fallback
+	if execPath, err := os.Executable(); err == nil {
+		progName = filepath.Base(execPath)
+	}
+	if syslogWriter, err := syslog.New(syslog.LOG_ERR, progName); err == nil {
 		_ = syslogWriter.Err(fmt.Sprintf("%s: %v (PID: %d, UID: %d->%d)",
 			criticalMsg, restoreErr, os.Getpid(), m.originalUID, os.Geteuid()))
 		_ = syslogWriter.Close()
