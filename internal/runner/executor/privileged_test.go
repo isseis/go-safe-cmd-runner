@@ -2,71 +2,16 @@ package executor_test
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
+	privtesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 )
 
-// Test error definitions
-var (
-	ErrMockPrivilegeElevationFailed = errors.New("mock privilege elevation failure")
-)
-
-// MockPrivilegeManager for testing
-type MockPrivilegeManager struct {
-	supported      bool
-	elevationCalls []string
-	shouldFail     bool
-}
-
-func (m *MockPrivilegeManager) WithPrivileges(_ context.Context, elevationCtx privilege.ElevationContext, fn func() error) error {
-	m.elevationCalls = append(m.elevationCalls, string(elevationCtx.Operation))
-	if m.shouldFail {
-		return ErrMockPrivilegeElevationFailed
-	}
-	return fn()
-}
-
-func (m *MockPrivilegeManager) IsPrivilegedExecutionSupported() bool {
-	return m.supported
-}
-
-func (m *MockPrivilegeManager) GetCurrentUID() int {
-	return 1000
-}
-
-func (m *MockPrivilegeManager) GetOriginalUID() int {
-	return 1000
-}
-
-func (m *MockPrivilegeManager) HealthCheck(_ context.Context) error {
-	if !m.supported {
-		return privilege.ErrPrivilegedExecutionNotAvailable
-	}
-	return nil
-}
-
-func (m *MockPrivilegeManager) GetHealthStatus(_ context.Context) privilege.HealthStatus {
-	return privilege.HealthStatus{
-		IsSupported:      m.supported,
-		SetuidConfigured: m.supported,
-		OriginalUID:      1000,
-		CurrentUID:       1000,
-		EffectiveUID:     1000,
-		CanElevate:       m.supported,
-	}
-}
-
-func (m *MockPrivilegeManager) GetMetrics() privilege.Metrics {
-	return privilege.Metrics{}
-}
-
 func TestDefaultExecutor_WithPrivilegeManager(t *testing.T) {
-	mockPrivMgr := &MockPrivilegeManager{supported: true}
+	mockPrivMgr := privtesting.NewMockPrivilegeManager(true)
 
 	executor := executor.NewDefaultExecutor(
 		executor.WithPrivilegeManager(mockPrivMgr),
@@ -136,9 +81,7 @@ func TestDefaultExecutor_PrivilegedExecution(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockPrivMgr := &MockPrivilegeManager{
-				supported: tt.privilegeSupported,
-			}
+			mockPrivMgr := privtesting.NewMockPrivilegeManager(tt.privilegeSupported)
 
 			var exec executor.CommandExecutor
 			if tt.name == "privileged command fails with no manager" {
@@ -166,11 +109,11 @@ func TestDefaultExecutor_PrivilegedExecution(t *testing.T) {
 			}
 
 			if tt.name != "privileged command fails with no manager" {
-				if len(tt.expectElevations) == 0 && mockPrivMgr.elevationCalls == nil {
+				if len(tt.expectElevations) == 0 && mockPrivMgr.ElevationCalls == nil {
 					// Both nil and empty slice are acceptable for no elevations - no assertion needed
 					assert.True(t, true, "No elevations expected and none occurred")
 				} else {
-					assert.Equal(t, tt.expectElevations, mockPrivMgr.elevationCalls)
+					assert.Equal(t, tt.expectElevations, mockPrivMgr.ElevationCalls)
 				}
 			}
 		})
@@ -178,10 +121,7 @@ func TestDefaultExecutor_PrivilegedExecution(t *testing.T) {
 }
 
 func TestDefaultExecutor_PrivilegeElevationFailure(t *testing.T) {
-	mockPrivMgr := &MockPrivilegeManager{
-		supported:  true,
-		shouldFail: true,
-	}
+	mockPrivMgr := privtesting.NewFailingMockPrivilegeManager(true)
 
 	exec := executor.NewDefaultExecutor(
 		executor.WithPrivilegeManager(mockPrivMgr),

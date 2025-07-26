@@ -3,7 +3,6 @@ package filevalidator_test
 import (
 	"context"
 	"crypto/sha256"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -11,67 +10,9 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
+	privtesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testing"
 	"github.com/stretchr/testify/assert"
 )
-
-// MockPrivilegeManager for testing privileged file operations
-type MockPrivilegeManager struct {
-	supported         bool
-	elevationCalls    []string
-	shouldFail        bool
-	withPrivilegeFunc func() error
-}
-
-// Test error definitions
-var (
-	ErrMockPrivilegeElevationFailed = errors.New("mock privilege elevation failure")
-)
-
-func (m *MockPrivilegeManager) WithPrivileges(_ context.Context, elevationCtx privilege.ElevationContext, fn func() error) error {
-	m.elevationCalls = append(m.elevationCalls, string(elevationCtx.Operation))
-	if m.shouldFail {
-		return ErrMockPrivilegeElevationFailed
-	}
-	if m.withPrivilegeFunc != nil {
-		return m.withPrivilegeFunc()
-	}
-	return fn()
-}
-
-func (m *MockPrivilegeManager) IsPrivilegedExecutionSupported() bool {
-	return m.supported
-}
-
-func (m *MockPrivilegeManager) GetCurrentUID() int {
-	return 1000
-}
-
-func (m *MockPrivilegeManager) GetOriginalUID() int {
-	return 1000
-}
-
-func (m *MockPrivilegeManager) HealthCheck(_ context.Context) error {
-	if !m.supported {
-		return privilege.ErrPrivilegedExecutionNotAvailable
-	}
-	return nil
-}
-
-func (m *MockPrivilegeManager) GetHealthStatus(_ context.Context) privilege.HealthStatus {
-	return privilege.HealthStatus{
-		IsSupported:      m.supported,
-		SetuidConfigured: m.supported,
-		OriginalUID:      1000,
-		CurrentUID:       1000,
-		EffectiveUID:     1000,
-		CanElevate:       m.supported,
-	}
-}
-
-func (m *MockPrivilegeManager) GetMetrics() privilege.Metrics {
-	return privilege.Metrics{}
-}
 
 func TestNewValidatorWithPrivileges(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "test_privileged_validator")
@@ -79,7 +20,7 @@ func TestNewValidatorWithPrivileges(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	algorithm := &filevalidator.SHA256{}
-	mockPrivMgr := &MockPrivilegeManager{supported: true}
+	mockPrivMgr := privtesting.NewMockPrivilegeManager(true)
 	logger := slog.Default()
 
 	validator, err := filevalidator.NewValidatorWithPrivileges(algorithm, tempDir, mockPrivMgr, logger)
@@ -119,14 +60,14 @@ func TestValidatorWithPrivileges_RecordWithPrivileges(t *testing.T) {
 			assert.NoError(t, err)
 
 			algorithm := &filevalidator.SHA256{}
-			mockPrivMgr := &MockPrivilegeManager{supported: true}
+			mockPrivMgr := privtesting.NewMockPrivilegeManager(true)
 			logger := slog.Default()
 
 			validator, err := filevalidator.NewValidatorWithPrivileges(algorithm, tempDir, mockPrivMgr, logger)
 			assert.NoError(t, err)
 
 			// Reset elevation calls
-			mockPrivMgr.elevationCalls = nil
+			mockPrivMgr.ElevationCalls = nil
 
 			ctx := context.Background()
 			hash, err := validator.RecordWithPrivileges(ctx, testFile, tt.needsPrivileges, false)
@@ -135,9 +76,9 @@ func TestValidatorWithPrivileges_RecordWithPrivileges(t *testing.T) {
 			assert.NotEmpty(t, hash, "Hash should not be empty for file %s", testFile)
 
 			if tt.expectElevation {
-				assert.Contains(t, mockPrivMgr.elevationCalls, "file_hash_calculation")
+				assert.Contains(t, mockPrivMgr.ElevationCalls, "file_hash_calculation")
 			} else {
-				assert.Empty(t, mockPrivMgr.elevationCalls)
+				assert.Empty(t, mockPrivMgr.ElevationCalls)
 			}
 		})
 	}
@@ -155,7 +96,7 @@ func TestValidatorWithPrivileges_VerifyWithPrivileges(t *testing.T) {
 	assert.NoError(t, err)
 
 	algorithm := &filevalidator.SHA256{}
-	mockPrivMgr := &MockPrivilegeManager{supported: true}
+	mockPrivMgr := privtesting.NewMockPrivilegeManager(true)
 	logger := slog.Default()
 
 	validator, err := filevalidator.NewValidatorWithPrivileges(algorithm, tempDir, mockPrivMgr, logger)
@@ -185,7 +126,7 @@ func TestValidatorWithPrivileges_VerifyWithPrivileges(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Reset elevation calls
-			mockPrivMgr.elevationCalls = nil
+			mockPrivMgr.ElevationCalls = nil
 
 			ctx := context.Background()
 			err := validator.VerifyWithPrivileges(ctx, testFile, tt.needsPrivileges)
@@ -193,9 +134,9 @@ func TestValidatorWithPrivileges_VerifyWithPrivileges(t *testing.T) {
 			assert.NoError(t, err)
 
 			if tt.expectElevation {
-				assert.Contains(t, mockPrivMgr.elevationCalls, "file_hash_calculation")
+				assert.Contains(t, mockPrivMgr.ElevationCalls, "file_hash_calculation")
 			} else {
-				assert.Empty(t, mockPrivMgr.elevationCalls)
+				assert.Empty(t, mockPrivMgr.ElevationCalls)
 			}
 		})
 	}
@@ -216,7 +157,7 @@ func TestValidatorWithPrivileges_ValidateFileHashWithPrivileges(t *testing.T) {
 	expectedHash := fmt.Sprintf("%x", sha256.Sum256([]byte(testContent)))
 
 	algorithm := &filevalidator.SHA256{}
-	mockPrivMgr := &MockPrivilegeManager{supported: true}
+	mockPrivMgr := privtesting.NewMockPrivilegeManager(true)
 	logger := slog.Default()
 
 	validator, err := filevalidator.NewValidatorWithPrivileges(algorithm, tempDir, mockPrivMgr, logger)
@@ -255,7 +196,7 @@ func TestValidatorWithPrivileges_ValidateFileHashWithPrivileges(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Reset elevation calls
-			mockPrivMgr.elevationCalls = nil
+			mockPrivMgr.ElevationCalls = nil
 
 			ctx := context.Background()
 			err := validator.ValidateFileHashWithPrivileges(ctx, testFile, tt.expectedHash, tt.needsPrivileges)
@@ -267,9 +208,9 @@ func TestValidatorWithPrivileges_ValidateFileHashWithPrivileges(t *testing.T) {
 			}
 
 			if tt.expectElevation {
-				assert.Contains(t, mockPrivMgr.elevationCalls, "file_hash_calculation")
+				assert.Contains(t, mockPrivMgr.ElevationCalls, "file_hash_calculation")
 			} else {
-				assert.Empty(t, mockPrivMgr.elevationCalls)
+				assert.Empty(t, mockPrivMgr.ElevationCalls)
 			}
 		})
 	}
@@ -287,10 +228,7 @@ func TestValidatorWithPrivileges_PrivilegeElevationFailure(t *testing.T) {
 	assert.NoError(t, err)
 
 	algorithm := &filevalidator.SHA256{}
-	mockPrivMgr := &MockPrivilegeManager{
-		supported:  true,
-		shouldFail: true, // Force privilege elevation to fail
-	}
+	mockPrivMgr := privtesting.NewFailingMockPrivilegeManager(true)
 	logger := slog.Default()
 
 	validator, err := filevalidator.NewValidatorWithPrivileges(algorithm, tempDir, mockPrivMgr, logger)
