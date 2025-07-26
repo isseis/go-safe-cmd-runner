@@ -36,7 +36,7 @@ type ExecutionResult struct {
 
 // LogPrivilegedExecution logs the execution of a privileged command with full audit trail
 func (a *Logger) LogPrivilegedExecution(
-	_ context.Context,
+	ctx context.Context,
 	cmd runnertypes.Command,
 	result *ExecutionResult,
 	duration time.Duration,
@@ -63,7 +63,7 @@ func (a *Logger) LogPrivilegedExecution(
 	}
 
 	if result.ExitCode == 0 {
-		a.logger.LogAttrs(context.Background(), slog.LevelInfo, "Privileged command executed successfully", baseAttrs...)
+		a.logger.LogAttrs(ctx, slog.LevelInfo, "Privileged command executed successfully", baseAttrs...)
 	} else {
 		// Create new slice to avoid modifying baseAttrs
 		const additionalErrorAttrs = 2 // stdout and stderr
@@ -72,13 +72,13 @@ func (a *Logger) LogPrivilegedExecution(
 		errorAttrs = append(errorAttrs,
 			slog.String("stdout", result.Stdout),
 			slog.String("stderr", result.Stderr))
-		a.logger.LogAttrs(context.Background(), slog.LevelError, "Privileged command failed", errorAttrs...)
+		a.logger.LogAttrs(ctx, slog.LevelError, "Privileged command failed", errorAttrs...)
 	}
 }
 
 // LogPrivilegeEscalation logs privilege escalation events
 func (a *Logger) LogPrivilegeEscalation(
-	_ context.Context,
+	ctx context.Context,
 	operation string,
 	commandName string,
 	originalUID int,
@@ -99,15 +99,15 @@ func (a *Logger) LogPrivilegeEscalation(
 	}
 
 	if success {
-		a.logger.LogAttrs(context.Background(), slog.LevelInfo, "Privilege escalation successful", attrs...)
+		a.logger.LogAttrs(ctx, slog.LevelInfo, "Privilege escalation successful", attrs...)
 	} else {
-		a.logger.LogAttrs(context.Background(), slog.LevelWarn, "Privilege escalation failed", attrs...)
+		a.logger.LogAttrs(ctx, slog.LevelWarn, "Privilege escalation failed", attrs...)
 	}
 }
 
 // LogSecurityEvent logs security-related events and potential threats
 func (a *Logger) LogSecurityEvent(
-	_ context.Context,
+	ctx context.Context,
 	eventType string,
 	severity string,
 	message string,
@@ -131,10 +131,10 @@ func (a *Logger) LogSecurityEvent(
 
 	switch severity {
 	case "critical", "high":
-		a.logger.LogAttrs(context.Background(), slog.LevelError, "Security event", attrs...)
+		a.logger.LogAttrs(ctx, slog.LevelError, "Security event", attrs...)
 	case "medium":
-		a.logger.LogAttrs(context.Background(), slog.LevelWarn, "Security event", attrs...)
+		a.logger.LogAttrs(ctx, slog.LevelWarn, "Security event", attrs...)
 	default:
-		a.logger.LogAttrs(context.Background(), slog.LevelInfo, "Security event", attrs...)
+		a.logger.LogAttrs(ctx, slog.LevelInfo, "Security event", attrs...)
 	}
 }

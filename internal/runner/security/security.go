@@ -88,6 +88,12 @@ type Config struct {
 	SensitiveEnvVars []string
 	// MaxPathLength is the maximum allowed path length
 	MaxPathLength int
+	// DangerousCommands is a list of potentially dangerous commands when run with privileges
+	DangerousCommands []string
+	// ShellCommands is a list of shell commands
+	ShellCommands []string
+	// ShellMetacharacters is a list of shell metacharacters that require careful handling
+	ShellMetacharacters []string
 }
 
 // DefaultConfig returns a default security configuration
@@ -111,6 +117,42 @@ func DefaultConfig() *Config {
 			".*API.*",
 		},
 		MaxPathLength: DefaultMaxPathLength,
+		DangerousCommands: []string{
+			// Shell executables
+			"/bin/sh", "/bin/bash", "/usr/bin/sh", "/usr/bin/bash",
+			"/bin/zsh", "/usr/bin/zsh", "/bin/csh", "/usr/bin/csh",
+
+			// Privilege escalation tools
+			"/bin/su", "/usr/bin/su", "/usr/bin/sudo", "/usr/bin/doas",
+
+			// System administration tools that require careful use
+			"/sbin/init", "/usr/sbin/init",
+			"/bin/rm", "/usr/bin/rm", // without argument validation
+			"/bin/dd", "/usr/bin/dd", // can be destructive
+			"/bin/mount", "/usr/bin/mount",
+			"/bin/umount", "/usr/bin/umount",
+
+			// Package management
+			"/usr/bin/apt", "/usr/bin/apt-get",
+			"/usr/bin/yum", "/usr/bin/dnf", "/usr/bin/rpm",
+
+			// Service management
+			"/bin/systemctl", "/usr/bin/systemctl",
+			"/sbin/service", "/usr/sbin/service",
+		},
+		ShellCommands: []string{
+			"/bin/sh", "/bin/bash", "/usr/bin/sh", "/usr/bin/bash",
+			"/bin/zsh", "/usr/bin/zsh", "/bin/csh", "/usr/bin/csh",
+			"/bin/fish", "/usr/bin/fish",
+			"/bin/dash", "/usr/bin/dash",
+		},
+		ShellMetacharacters: []string{
+			";", "&", "|", "&&", "||",
+			"$", "`", "$(", "${",
+			">", "<", ">>", "<<",
+			"*", "?", "[", "]",
+			"~", "!",
+		},
 	}
 }
 
@@ -121,6 +163,8 @@ type Validator struct {
 	allowedCommandRegexps []*regexp.Regexp
 	sensitiveEnvRegexps   []*regexp.Regexp
 	dangerousEnvRegexps   []*regexp.Regexp
+	dangerousCommands     map[string]struct{}
+	shellCommands         map[string]struct{}
 }
 
 // NewValidator creates a new security validator with the given configuration.
@@ -194,6 +238,18 @@ func NewValidatorWithFS(config *Config, fs common.FileSystem) (*Validator, error
 			return nil, fmt.Errorf("%w: invalid dangerous env pattern %q: %w", ErrInvalidRegexPattern, pattern, err)
 		}
 		v.dangerousEnvRegexps[i] = re
+	}
+
+	// Initialize dangerous commands map
+	v.dangerousCommands = make(map[string]struct{})
+	for _, cmd := range config.DangerousCommands {
+		v.dangerousCommands[cmd] = struct{}{}
+	}
+
+	// Initialize shell commands map
+	v.shellCommands = make(map[string]struct{})
+	for _, cmd := range config.ShellCommands {
+		v.shellCommands[cmd] = struct{}{}
 	}
 
 	return v, nil
@@ -505,4 +561,33 @@ func IsVariableValueSafe(value string) error {
 		return fmt.Errorf("failed to create validator: %w", err)
 	}
 	return validator.ValidateVariableValue(value)
+}
+
+// IsDangerousCommand checks if a command path is potentially dangerous when run with privileges
+func (v *Validator) IsDangerousCommand(cmdPath string) bool {
+	_, exists := v.dangerousCommands[cmdPath]
+	return exists
+}
+
+// IsShellCommand checks if a command is a shell command
+func (v *Validator) IsShellCommand(cmdPath string) bool {
+	_, exists := v.shellCommands[cmdPath]
+	return exists
+}
+
+// HasShellMetacharacters checks if any argument contains shell metacharacters
+func (v *Validator) HasShellMetacharacters(args []string) bool {
+	for _, arg := range args {
+		for _, meta := range v.config.ShellMetacharacters {
+			if strings.Contains(arg, meta) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// IsRelativePath checks if a path is relative
+func (v *Validator) IsRelativePath(path string) bool {
+	return !strings.HasPrefix(path, "/")
 }

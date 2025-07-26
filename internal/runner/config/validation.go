@@ -6,7 +6,77 @@ import (
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
+
+// dangerousCommands is a set of potentially dangerous commands when run with privileges
+var dangerousCommands = map[string]struct{}{
+	// Shell executables
+	"/bin/sh":       {},
+	"/bin/bash":     {},
+	"/usr/bin/sh":   {},
+	"/usr/bin/bash": {},
+	"/bin/zsh":      {},
+	"/usr/bin/zsh":  {},
+	"/bin/csh":      {},
+	"/usr/bin/csh":  {},
+
+	// Privilege escalation tools
+	"/bin/su":       {},
+	"/usr/bin/su":   {},
+	"/usr/bin/sudo": {},
+	"/usr/bin/doas": {},
+
+	// System administration tools that require careful use
+	"/sbin/init":      {},
+	"/usr/sbin/init":  {},
+	"/bin/rm":         {}, // without argument validation
+	"/usr/bin/rm":     {},
+	"/bin/dd":         {}, // can be destructive
+	"/usr/bin/dd":     {},
+	"/bin/mount":      {},
+	"/usr/bin/mount":  {},
+	"/bin/umount":     {},
+	"/usr/bin/umount": {},
+
+	// Package management
+	"/usr/bin/apt":     {},
+	"/usr/bin/apt-get": {},
+	"/usr/bin/yum":     {},
+	"/usr/bin/dnf":     {},
+	"/usr/bin/rpm":     {},
+
+	// Service management
+	"/bin/systemctl":     {},
+	"/usr/bin/systemctl": {},
+	"/sbin/service":      {},
+	"/usr/sbin/service":  {},
+}
+
+// shellCommands is a set of shell commands
+var shellCommands = map[string]struct{}{
+	"/bin/sh":       {},
+	"/bin/bash":     {},
+	"/usr/bin/sh":   {},
+	"/usr/bin/bash": {},
+	"/bin/zsh":      {},
+	"/usr/bin/zsh":  {},
+	"/bin/csh":      {},
+	"/usr/bin/csh":  {},
+	"/bin/fish":     {},
+	"/usr/bin/fish": {},
+	"/bin/dash":     {},
+	"/usr/bin/dash": {},
+}
+
+// shellMetacharacters contains shell metacharacters that require careful handling
+var shellMetacharacters = []string{
+	";", "&", "|", "&&", "||",
+	"$", "`", "$(", "${",
+	">", "<", ">>", "<<",
+	"*", "?", "[", "]",
+	"~", "!",
+}
 
 // ValidatePrivilegedCommands validates configuration for potential security issues with privileged commands
 func ValidatePrivilegedCommands(cfg *runnertypes.Config) []ValidationWarning {
@@ -61,71 +131,52 @@ func ValidatePrivilegedCommands(cfg *runnertypes.Config) []ValidationWarning {
 	return warnings
 }
 
-// isDangerousCommand checks if a command path is potentially dangerous when run with privileges
-func isDangerousCommand(cmdPath string) bool {
-	dangerous := []string{
-		// Shell executables
-		"/bin/sh", "/bin/bash", "/usr/bin/sh", "/usr/bin/bash",
-		"/bin/zsh", "/usr/bin/zsh", "/bin/csh", "/usr/bin/csh",
+// Global security validator instance for backward compatibility
+var globalValidator *security.Validator
 
-		// Privilege escalation tools
-		"/bin/su", "/usr/bin/su", "/usr/bin/sudo",
-		"/usr/bin/doas",
-
-		// System administration tools that require careful use
-		"/sbin/init", "/usr/sbin/init",
-		"/bin/rm", "/usr/bin/rm", // without argument validation
-		"/bin/dd", "/usr/bin/dd", // can be destructive
-		"/bin/mount", "/usr/bin/mount",
-		"/bin/umount", "/usr/bin/umount",
-
-		// Package management
-		"/usr/bin/apt", "/usr/bin/apt-get",
-		"/usr/bin/yum", "/usr/bin/dnf",
-		"/usr/bin/rpm",
-
-		// Service management
-		"/bin/systemctl", "/usr/bin/systemctl",
-		"/sbin/service", "/usr/sbin/service",
-	}
-
-	for _, d := range dangerous {
-		if cmdPath == d {
-			return true
+// initGlobalValidator initializes the global validator if needed
+func initGlobalValidator() {
+	if globalValidator == nil {
+		var err error
+		globalValidator, err = security.NewValidator(nil) // Use default config
+		if err != nil {
+			// Fallback to legacy implementation if validator creation fails
+			return
 		}
 	}
-	return false
+}
+
+// isDangerousCommand checks if a command path is potentially dangerous when run with privileges
+func isDangerousCommand(cmdPath string) bool {
+	initGlobalValidator()
+	if globalValidator != nil {
+		return globalValidator.IsDangerousCommand(cmdPath)
+	}
+	// Fallback to legacy implementation
+	_, exists := dangerousCommands[cmdPath]
+	return exists
 }
 
 // isShellCommand checks if a command is a shell command
 func isShellCommand(cmdPath string) bool {
-	shells := []string{
-		"/bin/sh", "/bin/bash", "/usr/bin/sh", "/usr/bin/bash",
-		"/bin/zsh", "/usr/bin/zsh", "/bin/csh", "/usr/bin/csh",
-		"/bin/fish", "/usr/bin/fish",
-		"/bin/dash", "/usr/bin/dash",
+	initGlobalValidator()
+	if globalValidator != nil {
+		return globalValidator.IsShellCommand(cmdPath)
 	}
-
-	for _, shell := range shells {
-		if cmdPath == shell {
-			return true
-		}
-	}
-	return false
+	// Fallback to legacy implementation
+	_, exists := shellCommands[cmdPath]
+	return exists
 }
 
 // hasShellMetacharacters checks if any argument contains shell metacharacters
 func hasShellMetacharacters(args []string) bool {
-	metacharacters := []string{
-		";", "&", "|", "&&", "||",
-		"$", "`", "$(", "${",
-		">", "<", ">>", "<<",
-		"*", "?", "[", "]",
-		"~", "!",
+	initGlobalValidator()
+	if globalValidator != nil {
+		return globalValidator.HasShellMetacharacters(args)
 	}
-
+	// Fallback to legacy implementation
 	for _, arg := range args {
-		for _, meta := range metacharacters {
+		for _, meta := range shellMetacharacters {
 			if strings.Contains(arg, meta) {
 				return true
 			}
@@ -136,5 +187,10 @@ func hasShellMetacharacters(args []string) bool {
 
 // isRelativePath checks if a path is relative
 func isRelativePath(path string) bool {
+	initGlobalValidator()
+	if globalValidator != nil {
+		return globalValidator.IsRelativePath(path)
+	}
+	// Fallback to legacy implementation
 	return !strings.HasPrefix(path, "/")
 }
