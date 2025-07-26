@@ -22,6 +22,12 @@ type Manager interface {
 
 	// HealthCheck verifies privilege escalation works
 	HealthCheck(ctx context.Context) error
+
+	// GetHealthStatus performs comprehensive health check and returns status
+	GetHealthStatus(ctx context.Context) HealthStatus
+
+	// GetMetrics returns operational metrics
+	GetMetrics() Metrics
 }
 
 // NewManager creates a platform-appropriate privilege manager

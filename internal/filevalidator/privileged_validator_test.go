@@ -58,6 +58,21 @@ func (m *MockPrivilegeManager) HealthCheck(_ context.Context) error {
 	return nil
 }
 
+func (m *MockPrivilegeManager) GetHealthStatus(_ context.Context) privilege.HealthStatus {
+	return privilege.HealthStatus{
+		IsSupported:      m.supported,
+		SetuidConfigured: m.supported,
+		OriginalUID:      1000,
+		CurrentUID:       1000,
+		EffectiveUID:     1000,
+		CanElevate:       m.supported,
+	}
+}
+
+func (m *MockPrivilegeManager) GetMetrics() privilege.Metrics {
+	return privilege.Metrics{}
+}
+
 func TestNewValidatorWithPrivileges(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "test_privileged_validator")
 	assert.NoError(t, err)

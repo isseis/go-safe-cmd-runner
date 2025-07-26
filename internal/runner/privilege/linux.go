@@ -39,18 +39,18 @@ func newPlatformManager(logger *slog.Logger) Manager {
 func (m *LinuxPrivilegeManager) WithPrivileges(ctx context.Context, elevationCtx ElevationContext, fn func() error) (err error) {
 	start := time.Now()
 
-	// 権限昇格
+	// Perform privilege escalation
 	if err := m.escalatePrivileges(ctx, elevationCtx); err != nil {
 		m.metrics.RecordElevationFailure(err)
 		return fmt.Errorf("privilege escalation failed: %w", err)
 	}
 
-	// 単一のdefer文で権限復帰とpanic処理を統合
+	// Single defer for both privilege restoration and panic handling
 	defer func() {
 		var panicValue interface{}
 		var context string
 
-		// panic検出
+		// Detect panic
 		if r := recover(); r != nil {
 			panicValue = r
 			context = fmt.Sprintf("after panic: %v", r)
@@ -61,17 +61,17 @@ func (m *LinuxPrivilegeManager) WithPrivileges(ctx context.Context, elevationCtx
 			context = "normal execution"
 		}
 
-		// 権限復帰実行（常に実行される）
+		// Restore privileges (always executed)
 		if err := m.restorePrivileges(); err != nil {
-			// 権限復帰失敗は致命的セキュリティリスク - 即座に終了
+			// Privilege restoration failure is critical security risk - terminate immediately
 			m.emergencyShutdown(err, context)
 		} else if panicValue == nil && err == nil {
-			// 成功時のメトリクス記録
+			// Record metrics on success
 			duration := time.Since(start)
 			m.metrics.RecordElevationSuccess(duration)
 		}
 
-		// panic再発生（必要な場合のみ）
+		// Re-panic if necessary
 		if panicValue != nil {
 			panic(panicValue)
 		}
@@ -126,10 +126,10 @@ func (m *LinuxPrivilegeManager) restorePrivileges() error {
 
 // emergencyShutdown handles critical privilege restoration failures
 func (m *LinuxPrivilegeManager) emergencyShutdown(restoreErr error, context string) {
-	// 詳細なエラー情報を記録（複数の出力先に確実に記録）
+	// Record detailed error information (ensure logging to multiple destinations)
 	criticalMsg := fmt.Sprintf("CRITICAL SECURITY FAILURE: Privilege restoration failed during %s", context)
 
-	// 構造化ログに記録
+	// Log to structured logger
 	m.logger.Error(criticalMsg,
 		"error", restoreErr,
 		"original_uid", m.originalUID,
@@ -139,17 +139,17 @@ func (m *LinuxPrivilegeManager) emergencyShutdown(restoreErr error, context stri
 		"process_id", os.Getpid(),
 	)
 
-	// システムログにも記録（rsyslog等による外部転送対応）
+	// Also log to system logger (for external forwarding via rsyslog etc.)
 	if syslogWriter, err := syslog.New(syslog.LOG_ERR, "go-safe-cmd-runner"); err == nil {
 		_ = syslogWriter.Err(fmt.Sprintf("%s: %v (PID: %d, UID: %d->%d)",
 			criticalMsg, restoreErr, os.Getpid(), m.originalUID, os.Geteuid()))
 		_ = syslogWriter.Close()
 	}
 
-	// 標準エラー出力にも記録（最後の手段）
+	// Also log to stderr as last resort
 	fmt.Fprintf(os.Stderr, "FATAL: %s: %v\n", criticalMsg, restoreErr)
 
-	// 即座にプロセス終了（defer処理をスキップ）
+	// Immediately terminate process (skip defer processing)
 	os.Exit(1)
 }
 

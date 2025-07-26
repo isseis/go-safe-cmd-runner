@@ -48,42 +48,37 @@ func (v *ValidatorWithPrivileges) RecordWithPrivileges(
 	needsPrivileges bool,
 	force bool,
 ) (string, error) {
-	if needsPrivileges && v.privMgr != nil && v.privMgr.IsPrivilegedExecutionSupported() {
-		elevationCtx := privilege.ElevationContext{
-			Operation:   privilege.OperationFileHashCalculation,
-			CommandName: "file_hash_record",
-			FilePath:    filePath,
-		}
+	var result string
+	logFields := map[string]interface{}{
+		"force": force,
+	}
 
-		var result string
-		err := v.privMgr.WithPrivileges(ctx, elevationCtx, func() error {
+	err := v.executeWithPrivilegesIfNeeded(
+		ctx,
+		filePath,
+		needsPrivileges,
+		privilege.OperationFileHashCalculation,
+		"file_hash_record",
+		func() error {
 			var recordErr error
 			result, recordErr = v.RecordWithOptions(filePath, force)
 			return recordErr
-		})
-		if err != nil {
-			return "", fmt.Errorf("privileged file hash recording failed: %w", err)
-		}
-
-		v.logger.Info("File hash recorded with privileges",
-			"file_path", filePath,
-			"hash", result,
-			"force", force)
-
-		return result, nil
-	}
-
-	// Standard recording without privileges
-	result, err := v.RecordWithOptions(filePath, force)
+		},
+		func() error {
+			var recordErr error
+			result, recordErr = v.RecordWithOptions(filePath, force)
+			return recordErr
+		},
+		"File hash recorded with privileges",
+		"file hash recording",
+		logFields,
+	)
 	if err != nil {
-		return "", fmt.Errorf("file hash recording failed: %w", err)
+		return "", err
 	}
 
-	v.logger.Debug("File hash recorded",
-		"file_path", filePath,
-		"hash", result,
-		"force", force)
-
+	// Add hash to log fields after successful execution
+	logFields["hash"] = result
 	return result, nil
 }
 
@@ -93,40 +88,89 @@ func (v *ValidatorWithPrivileges) VerifyWithPrivileges(
 	filePath string,
 	needsPrivileges bool,
 ) error {
+	return v.executeWithPrivilegesIfNeeded(
+		ctx,
+		filePath,
+		needsPrivileges,
+		privilege.OperationFileHashCalculation,
+		"file_hash_verify",
+		func() error { return v.Verify(filePath) },
+		func() error { return v.Verify(filePath) },
+		"File hash verified with privileges",
+		"file hash verification",
+		map[string]interface{}{},
+	)
+}
+
+// executeWithPrivilegesIfNeeded is a helper method that encapsulates the common privilege execution logic
+func (v *ValidatorWithPrivileges) executeWithPrivilegesIfNeeded(
+	ctx context.Context,
+	filePath string,
+	needsPrivileges bool,
+	operation privilege.Operation,
+	commandName string,
+	privilegedAction func() error,
+	nonPrivilegedAction func() error,
+	successMsg string,
+	failureMsg string,
+	logFields map[string]interface{},
+) error {
 	if needsPrivileges && v.privMgr != nil && v.privMgr.IsPrivilegedExecutionSupported() {
 		elevationCtx := privilege.ElevationContext{
-			Operation:   privilege.OperationFileHashCalculation,
-			CommandName: "file_hash_verify",
+			Operation:   operation,
+			CommandName: commandName,
 			FilePath:    filePath,
 		}
 
-		err := v.privMgr.WithPrivileges(ctx, elevationCtx, func() error {
-			return v.Verify(filePath)
-		})
+		err := v.privMgr.WithPrivileges(ctx, elevationCtx, privilegedAction)
 		if err != nil {
-			v.logger.Error("Privileged file hash verification failed",
+			// Build error log args
+			logArgs := []interface{}{
 				"file_path", filePath,
-				"error", err)
-			return fmt.Errorf("privileged file hash verification failed: %w", err)
+				"error", err,
+			}
+			for k, v := range logFields {
+				logArgs = append(logArgs, k, v)
+			}
+			v.logger.Error(failureMsg, logArgs...)
+			return fmt.Errorf("privileged %s failed: %w", failureMsg, err)
 		}
 
-		v.logger.Info("File hash verified with privileges",
-			"file_path", filePath)
+		// Build success log args
+		logArgs := []interface{}{
+			"file_path", filePath,
+		}
+		for k, v := range logFields {
+			logArgs = append(logArgs, k, v)
+		}
+		v.logger.Info(successMsg, logArgs...)
 
 		return nil
 	}
 
-	// Standard verification without privileges
-	err := v.Verify(filePath)
+	// Standard execution without privileges
+	err := nonPrivilegedAction()
 	if err != nil {
-		v.logger.Error("File hash verification failed",
+		// Build error log args for non-privileged failure
+		logArgs := []interface{}{
 			"file_path", filePath,
-			"error", err)
-		return fmt.Errorf("file hash verification failed: %w", err)
+			"error", err,
+		}
+		for k, v := range logFields {
+			logArgs = append(logArgs, k, v)
+		}
+		v.logger.Error(failureMsg, logArgs...)
+		return fmt.Errorf("%s failed: %w", failureMsg, err)
 	}
 
-	v.logger.Debug("File hash verified",
-		"file_path", filePath)
+	// Build debug log args for non-privileged success
+	logArgs := []interface{}{
+		"file_path", filePath,
+	}
+	for k, v := range logFields {
+		logArgs = append(logArgs, k, v)
+	}
+	v.logger.Debug(successMsg, logArgs...)
 
 	return nil
 }
@@ -138,46 +182,22 @@ func (v *ValidatorWithPrivileges) ValidateFileHashWithPrivileges(
 	expectedHash string,
 	needsPrivileges bool,
 ) error {
-	if needsPrivileges && v.privMgr != nil && v.privMgr.IsPrivilegedExecutionSupported() {
-		elevationCtx := privilege.ElevationContext{
-			Operation:   privilege.OperationFileHashCalculation,
-			CommandName: "file_hash_validation",
-			FilePath:    filePath,
-		}
-
-		err := v.privMgr.WithPrivileges(ctx, elevationCtx, func() error {
-			return v.validateFileHash(filePath, expectedHash)
-		})
-		if err != nil {
-			v.logger.Error("Privileged file hash validation failed",
-				"file_path", filePath,
-				"expected_hash", expectedHash,
-				"error", err)
-			return fmt.Errorf("privileged file hash validation failed: %w", err)
-		}
-
-		v.logger.Info("File hash validated with privileges",
-			"file_path", filePath,
-			"expected_hash", expectedHash)
-
-		return nil
+	logFields := map[string]interface{}{
+		"expected_hash": expectedHash,
 	}
 
-	// Standard validation without privileges
-	err := v.validateFileHash(filePath, expectedHash)
-	if err != nil {
-		v.logger.Error("File hash validation failed",
-			"file_path", filePath,
-			"expected_hash", expectedHash,
-			"error", err)
-		return fmt.Errorf("file hash validation failed: %w", err)
-	}
-
-	v.logger.Debug("File hash validated",
-		"file_path", filePath,
-		"expected_hash", expectedHash)
-
-	return nil
+	return v.executeWithPrivilegesIfNeeded(
+		ctx,
+		filePath,
+		needsPrivileges,
+		privilege.OperationFileHashCalculation,
+		"file_hash_validation",
+		func() error { return v.validateFileHash(filePath, expectedHash) },
+		func() error { return v.validateFileHash(filePath, expectedHash) },
+		"File hash validated with privileges",
+		"file hash validation",
+		logFields,
+	)
 }
 
 // validateFileHash is a helper method for direct hash validation
