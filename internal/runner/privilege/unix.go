@@ -48,23 +48,23 @@ func (m *UnixPrivilegeManager) WithPrivileges(ctx context.Context, elevationCtx 
 	// Single defer for both privilege restoration and panic handling
 	defer func() {
 		var panicValue any
-		var context string
+		var shutdownContext string
 
 		// Detect panic
 		if r := recover(); r != nil {
 			panicValue = r
-			context = fmt.Sprintf("after panic: %v", r)
+			shutdownContext = fmt.Sprintf("after panic: %v", r)
 			m.logger.Error("Panic occurred during privileged operation, attempting privilege restoration",
 				"panic", r,
 				"original_uid", m.originalUID)
 		} else {
-			context = "normal execution"
+			shutdownContext = "normal execution"
 		}
 
 		// Restore privileges (always executed)
 		if err := m.restorePrivileges(); err != nil {
 			// Privilege restoration failure is critical security risk - terminate immediately
-			m.emergencyShutdown(err, context)
+			m.emergencyShutdown(err, shutdownContext)
 		} else if panicValue == nil {
 			// Record metrics on success
 			duration := time.Since(start)
@@ -125,9 +125,9 @@ func (m *UnixPrivilegeManager) restorePrivileges() error {
 }
 
 // emergencyShutdown handles critical privilege restoration failures
-func (m *UnixPrivilegeManager) emergencyShutdown(restoreErr error, context string) {
+func (m *UnixPrivilegeManager) emergencyShutdown(restoreErr error, shutdownContext string) {
 	// Record detailed error information (ensure logging to multiple destinations)
-	criticalMsg := fmt.Sprintf("CRITICAL SECURITY FAILURE: Privilege restoration failed during %s", context)
+	criticalMsg := fmt.Sprintf("CRITICAL SECURITY FAILURE: Privilege restoration failed during %s", shutdownContext)
 
 	// Log to structured logger
 	m.logger.Error(criticalMsg,
