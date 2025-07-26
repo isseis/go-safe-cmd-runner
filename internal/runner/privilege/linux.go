@@ -47,7 +47,7 @@ func (m *UnixPrivilegeManager) WithPrivileges(ctx context.Context, elevationCtx 
 
 	// Single defer for both privilege restoration and panic handling
 	defer func() {
-		var panicValue interface{}
+		var panicValue any
 		var context string
 
 		// Detect panic

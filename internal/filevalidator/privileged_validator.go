@@ -49,7 +49,7 @@ func (v *ValidatorWithPrivileges) RecordWithPrivileges(
 	force bool,
 ) (string, error) {
 	var result string
-	logFields := map[string]interface{}{
+	logFields := map[string]any{
 		"force": force,
 	}
 
@@ -107,7 +107,7 @@ func (v *ValidatorWithPrivileges) VerifyWithPrivileges(
 		func() error { return v.Verify(filePath) },
 		"File hash verified with privileges",
 		"file hash verification",
-		map[string]interface{}{},
+		map[string]any{},
 	)
 }
 
@@ -122,7 +122,7 @@ func (v *ValidatorWithPrivileges) executeWithPrivilegesIfNeeded(
 	nonPrivilegedAction func() error,
 	successMsg string,
 	failureMsg string,
-	logFields map[string]interface{},
+	logFields map[string]any,
 ) error {
 	if needsPrivileges && v.privMgr != nil && v.privMgr.IsPrivilegedExecutionSupported() {
 		elevationCtx := privilege.ElevationContext{
@@ -134,7 +134,7 @@ func (v *ValidatorWithPrivileges) executeWithPrivilegesIfNeeded(
 		err := v.privMgr.WithPrivileges(ctx, elevationCtx, privilegedAction)
 		if err != nil {
 			// Build error log args
-			logArgs := []interface{}{
+			logArgs := []any{
 				"file_path", filePath,
 				"error", err,
 			}
@@ -146,7 +146,7 @@ func (v *ValidatorWithPrivileges) executeWithPrivilegesIfNeeded(
 		}
 
 		// Build success log args
-		logArgs := []interface{}{
+		logArgs := []any{
 			"file_path", filePath,
 		}
 		for k, v := range logFields {
@@ -161,7 +161,7 @@ func (v *ValidatorWithPrivileges) executeWithPrivilegesIfNeeded(
 	err := nonPrivilegedAction()
 	if err != nil {
 		// Build error log args for non-privileged failure
-		logArgs := []interface{}{
+		logArgs := []any{
 			"file_path", filePath,
 			"error", err,
 		}
@@ -173,7 +173,7 @@ func (v *ValidatorWithPrivileges) executeWithPrivilegesIfNeeded(
 	}
 
 	// Build debug log args for non-privileged success
-	logArgs := []interface{}{
+	logArgs := []any{
 		"file_path", filePath,
 	}
 	for k, v := range logFields {
@@ -191,7 +191,7 @@ func (v *ValidatorWithPrivileges) ValidateFileHashWithPrivileges(
 	expectedHash string,
 	needsPrivileges bool,
 ) error {
-	logFields := map[string]interface{}{
+	logFields := map[string]any{
 		"expected_hash": expectedHash,
 	}
 

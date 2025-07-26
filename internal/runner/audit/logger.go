@@ -111,7 +111,7 @@ func (a *Logger) LogSecurityEvent(
 	eventType string,
 	severity string,
 	message string,
-	details map[string]interface{},
+	details map[string]any,
 ) {
 	attrs := []slog.Attr{
 		slog.String("audit_type", "security_event"),

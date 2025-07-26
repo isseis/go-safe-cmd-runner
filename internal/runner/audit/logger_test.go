@@ -113,7 +113,7 @@ func TestLogger_LogSecurityEvent(t *testing.T) {
 		eventType string
 		severity  string
 		message   string
-		details   map[string]interface{}
+		details   map[string]any
 		expectLog string
 	}{
 		{
@@ -121,7 +121,7 @@ func TestLogger_LogSecurityEvent(t *testing.T) {
 			eventType: "privilege_violation",
 			severity:  "critical",
 			message:   "Unauthorized privilege escalation attempt",
-			details: map[string]interface{}{
+			details: map[string]any{
 				"source_uid": 1000,
 				"target_uid": 0,
 				"command":    "/bin/su",
@@ -133,7 +133,7 @@ func TestLogger_LogSecurityEvent(t *testing.T) {
 			eventType: "audit_log",
 			severity:  "info",
 			message:   "Regular security audit",
-			details:   map[string]interface{}{},
+			details:   map[string]any{},
 			expectLog: "Security event",
 		},
 	}
