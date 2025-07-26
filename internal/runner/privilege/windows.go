@@ -8,7 +8,8 @@ import (
 )
 
 type WindowsPrivilegeManager struct {
-	logger *slog.Logger
+	logger  *slog.Logger
+	metrics Metrics
 }
 
 func newPlatformManager(logger *slog.Logger) Manager {
@@ -38,4 +39,22 @@ func (m *WindowsPrivilegeManager) GetOriginalUID() int {
 
 func (m *WindowsPrivilegeManager) HealthCheck(ctx context.Context) error {
 	return ErrPlatformNotSupported
+}
+
+// GetHealthStatus returns health status for Windows (always unsupported)
+func (m *WindowsPrivilegeManager) GetHealthStatus(ctx context.Context) HealthStatus {
+	return HealthStatus{
+		IsSupported:      false,
+		SetuidConfigured: false,
+		OriginalUID:      -1,
+		CurrentUID:       -1,
+		EffectiveUID:     -1,
+		CanElevate:       false,
+		Error:            "Privileged execution not supported on Windows",
+	}
+}
+
+// GetMetrics returns metrics snapshot for Windows
+func (m *WindowsPrivilegeManager) GetMetrics() Metrics {
+	return m.metrics.GetSnapshot()
 }

@@ -19,6 +19,7 @@ type LinuxPrivilegeManager struct {
 	originalUID int
 	originalGID int
 	isSetuid    bool
+	metrics     Metrics
 	mu          sync.RWMutex
 }
 
@@ -36,8 +37,11 @@ func newPlatformManager(logger *slog.Logger) Manager {
 
 // WithPrivileges executes a function with elevated privileges using safe privilege escalation
 func (m *LinuxPrivilegeManager) WithPrivileges(ctx context.Context, elevationCtx ElevationContext, fn func() error) (err error) {
+	start := time.Now()
+
 	// 権限昇格
 	if err := m.escalatePrivileges(ctx, elevationCtx); err != nil {
+		m.metrics.RecordElevationFailure(err)
 		return fmt.Errorf("privilege escalation failed: %w", err)
 	}
 
@@ -61,6 +65,10 @@ func (m *LinuxPrivilegeManager) WithPrivileges(ctx context.Context, elevationCtx
 		if err := m.restorePrivileges(); err != nil {
 			// 権限復帰失敗は致命的セキュリティリスク - 即座に終了
 			m.emergencyShutdown(err, context)
+		} else if panicValue == nil && err == nil {
+			// 成功時のメトリクス記録
+			duration := time.Since(start)
+			m.metrics.RecordElevationSuccess(duration)
 		}
 
 		// panic再発生（必要な場合のみ）
@@ -179,4 +187,9 @@ func (m *LinuxPrivilegeManager) HealthCheck(ctx context.Context) error {
 		}
 		return nil
 	})
+}
+
+// GetMetrics returns a snapshot of current privilege operation metrics
+func (m *LinuxPrivilegeManager) GetMetrics() Metrics {
+	return m.metrics.GetSnapshot()
 }

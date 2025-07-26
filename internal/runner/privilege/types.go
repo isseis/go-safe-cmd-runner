@@ -24,13 +24,3 @@ type ElevationContext struct {
 	OriginalUID int
 	TargetUID   int
 }
-
-// Metrics for privilege operations
-type Metrics struct {
-	ElevationAttempts  int64
-	ElevationSuccesses int64
-	ElevationFailures  int64
-	TotalElevationTime time.Duration
-	LastElevationTime  time.Time
-	LastError          string
-}
