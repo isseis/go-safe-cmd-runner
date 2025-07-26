@@ -88,8 +88,8 @@ type Config struct {
 	SensitiveEnvVars []string
 	// MaxPathLength is the maximum allowed path length
 	MaxPathLength int
-	// DangerousCommands is a list of potentially dangerous commands when run with privileges
-	DangerousCommands []string
+	// DangerousPrivilegedCommands is a list of potentially dangerous commands when run with privileges
+	DangerousPrivilegedCommands []string
 	// ShellCommands is a list of shell commands
 	ShellCommands []string
 	// ShellMetacharacters is a list of shell metacharacters that require careful handling
@@ -117,7 +117,7 @@ func DefaultConfig() *Config {
 			".*API.*",
 		},
 		MaxPathLength: DefaultMaxPathLength,
-		DangerousCommands: []string{
+		DangerousPrivilegedCommands: []string{
 			// Shell executables
 			"/bin/sh", "/bin/bash", "/usr/bin/sh", "/usr/bin/bash",
 			"/bin/zsh", "/usr/bin/zsh", "/bin/csh", "/usr/bin/csh",
@@ -158,13 +158,13 @@ func DefaultConfig() *Config {
 
 // Validator provides security validation functionality
 type Validator struct {
-	config                *Config
-	fs                    common.FileSystem
-	allowedCommandRegexps []*regexp.Regexp
-	sensitiveEnvRegexps   []*regexp.Regexp
-	dangerousEnvRegexps   []*regexp.Regexp
-	dangerousCommands     map[string]struct{}
-	shellCommands         map[string]struct{}
+	config                      *Config
+	fs                          common.FileSystem
+	allowedCommandRegexps       []*regexp.Regexp
+	sensitiveEnvRegexps         []*regexp.Regexp
+	dangerousEnvRegexps         []*regexp.Regexp
+	dangerousPrivilegedCommands map[string]struct{}
+	shellCommands               map[string]struct{}
 }
 
 // NewValidator creates a new security validator with the given configuration.
@@ -241,9 +241,9 @@ func NewValidatorWithFS(config *Config, fs common.FileSystem) (*Validator, error
 	}
 
 	// Initialize dangerous commands map
-	v.dangerousCommands = make(map[string]struct{})
-	for _, cmd := range config.DangerousCommands {
-		v.dangerousCommands[cmd] = struct{}{}
+	v.dangerousPrivilegedCommands = make(map[string]struct{})
+	for _, cmd := range config.DangerousPrivilegedCommands {
+		v.dangerousPrivilegedCommands[cmd] = struct{}{}
 	}
 
 	// Initialize shell commands map
@@ -563,9 +563,9 @@ func IsVariableValueSafe(value string) error {
 	return validator.ValidateVariableValue(value)
 }
 
-// IsDangerousCommand checks if a command path is potentially dangerous when run with privileges
-func (v *Validator) IsDangerousCommand(cmdPath string) bool {
-	_, exists := v.dangerousCommands[cmdPath]
+// IsDangerousPrivilegedCommand checks if a command path is potentially dangerous when run with privileges
+func (v *Validator) IsDangerousPrivilegedCommand(cmdPath string) bool {
+	_, exists := v.dangerousPrivilegedCommands[cmdPath]
 	return exists
 }
 

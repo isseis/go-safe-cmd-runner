@@ -6,7 +6,9 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestValidatePrivilegedCommands(t *testing.T) {
@@ -163,9 +165,13 @@ func TestValidatePrivilegedCommands(t *testing.T) {
 		},
 	}
 
+	// Create a security validator for testing
+	validator, err := security.NewValidator(nil) // Use default config
+	require.NoError(t, err, "Failed to create security validator")
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			warnings := config.ValidatePrivilegedCommands(tt.config)
+			warnings := config.ValidatePrivilegedCommands(tt.config, validator)
 
 			assert.Equal(t, len(tt.expected), len(warnings), "Number of warnings should match")
 
@@ -216,7 +222,9 @@ func TestIsDangerousCommand(t *testing.T) {
 				},
 			}
 
-			warnings := config.ValidatePrivilegedCommands(cfg)
+			validator, err := security.NewValidator(nil) // Use default config
+			require.NoError(t, err, "Failed to create security validator")
+			warnings := config.ValidatePrivilegedCommands(cfg, validator)
 			hasDangerousWarning := false
 			for _, warning := range warnings {
 				if warning.Type == "security" &&
@@ -266,7 +274,9 @@ func TestHasShellMetacharacters(t *testing.T) {
 				},
 			}
 
-			warnings := config.ValidatePrivilegedCommands(cfg)
+			validator, err := security.NewValidator(nil) // Use default config
+			require.NoError(t, err, "Failed to create security validator")
+			warnings := config.ValidatePrivilegedCommands(cfg, validator)
 			hasMetacharWarning := false
 			for _, warning := range warnings {
 				if warning.Type == "security" &&
@@ -307,7 +317,9 @@ func TestValidatorSingleton_ThreadSafety(t *testing.T) {
 					},
 				},
 			}
-			warnings := config.ValidatePrivilegedCommands(cfg)
+			validator, err := security.NewValidator(nil) // Use default config
+			require.NoError(t, err, "Failed to create security validator")
+			warnings := config.ValidatePrivilegedCommands(cfg, validator)
 			// /bin/bash should generate warnings
 			results[index] = len(warnings) > 0
 		}(i)
@@ -366,8 +378,11 @@ func TestValidatorSingleton_ConcurrentValidation(t *testing.T) {
 				},
 			}
 
+			validator, err := security.NewValidator(nil) // Use default config
+			require.NoError(t, err, "Failed to create security validator")
+
 			for _, cfg := range configs {
-				warnings := config.ValidatePrivilegedCommands(cfg)
+				warnings := config.ValidatePrivilegedCommands(cfg, validator)
 				// Each config should generate warnings
 				assert.Greater(t, len(warnings), 0, "Should generate warnings")
 			}

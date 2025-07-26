@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestValidator_IsDangerousCommand(t *testing.T) {
+func TestValidator_IsDangerousPrivilegedCommand(t *testing.T) {
 	validator, err := NewValidator(nil)
 	assert.NoError(t, err)
 
@@ -44,7 +44,7 @@ func TestValidator_IsDangerousCommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := validator.IsDangerousCommand(tt.cmdPath)
+			result := validator.IsDangerousPrivilegedCommand(tt.cmdPath)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -204,17 +204,17 @@ func TestValidator_IsRelativePath(t *testing.T) {
 
 func TestValidator_CustomConfig(t *testing.T) {
 	config := &Config{
-		DangerousCommands:   []string{"/custom/dangerous"},
-		ShellCommands:       []string{"/custom/shell"},
-		ShellMetacharacters: []string{"@", "#"},
+		DangerousPrivilegedCommands: []string{"/custom/dangerous"},
+		ShellCommands:               []string{"/custom/shell"},
+		ShellMetacharacters:         []string{"@", "#"},
 	}
 
 	validator, err := NewValidator(config)
 	assert.NoError(t, err)
 
 	// Test custom dangerous command
-	assert.True(t, validator.IsDangerousCommand("/custom/dangerous"))
-	assert.False(t, validator.IsDangerousCommand("/bin/bash")) // Not in custom list
+	assert.True(t, validator.IsDangerousPrivilegedCommand("/custom/dangerous"))
+	assert.False(t, validator.IsDangerousPrivilegedCommand("/bin/bash")) // Not in custom list
 
 	// Test custom shell command
 	assert.True(t, validator.IsShellCommand("/custom/shell"))

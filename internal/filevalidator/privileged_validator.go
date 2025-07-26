@@ -53,22 +53,33 @@ func (v *ValidatorWithPrivileges) RecordWithPrivileges(
 		"force": force,
 	}
 
+	// Define callbacks that both set the result and can be used to log the hash value
+	privilegedAction := func() error {
+		var recordErr error
+		result, recordErr = v.RecordWithOptions(filePath, force)
+		if recordErr == nil {
+			logFields["hash"] = result
+		}
+		return recordErr
+	}
+
+	nonPrivilegedAction := func() error {
+		var recordErr error
+		result, recordErr = v.RecordWithOptions(filePath, force)
+		if recordErr == nil {
+			logFields["hash"] = result
+		}
+		return recordErr
+	}
+
 	err := v.executeWithPrivilegesIfNeeded(
 		ctx,
 		filePath,
 		needsPrivileges,
 		privilege.OperationFileHashCalculation,
 		"file_hash_record",
-		func() error {
-			var recordErr error
-			result, recordErr = v.RecordWithOptions(filePath, force)
-			return recordErr
-		},
-		func() error {
-			var recordErr error
-			result, recordErr = v.RecordWithOptions(filePath, force)
-			return recordErr
-		},
+		privilegedAction,
+		nonPrivilegedAction,
 		"File hash recorded with privileges",
 		"file hash recording",
 		logFields,
@@ -77,8 +88,6 @@ func (v *ValidatorWithPrivileges) RecordWithPrivileges(
 		return "", err
 	}
 
-	// Add hash to log fields after successful execution
-	logFields["hash"] = result
 	return result, nil
 }
 

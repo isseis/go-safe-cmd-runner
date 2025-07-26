@@ -3,91 +3,21 @@ package config
 
 import (
 	"fmt"
-	"strings"
-	"sync"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
-// dangerousCommands is a set of potentially dangerous commands when run with privileges
-var dangerousCommands = map[string]struct{}{
-	// Shell executables
-	"/bin/sh":       {},
-	"/bin/bash":     {},
-	"/usr/bin/sh":   {},
-	"/usr/bin/bash": {},
-	"/bin/zsh":      {},
-	"/usr/bin/zsh":  {},
-	"/bin/csh":      {},
-	"/usr/bin/csh":  {},
-
-	// Privilege escalation tools
-	"/bin/su":       {},
-	"/usr/bin/su":   {},
-	"/usr/bin/sudo": {},
-	"/usr/bin/doas": {},
-
-	// System administration tools that require careful use
-	"/sbin/init":      {},
-	"/usr/sbin/init":  {},
-	"/bin/rm":         {}, // without argument validation
-	"/usr/bin/rm":     {},
-	"/bin/dd":         {}, // can be destructive
-	"/usr/bin/dd":     {},
-	"/bin/mount":      {},
-	"/usr/bin/mount":  {},
-	"/bin/umount":     {},
-	"/usr/bin/umount": {},
-
-	// Package management
-	"/usr/bin/apt":     {},
-	"/usr/bin/apt-get": {},
-	"/usr/bin/yum":     {},
-	"/usr/bin/dnf":     {},
-	"/usr/bin/rpm":     {},
-
-	// Service management
-	"/bin/systemctl":     {},
-	"/usr/bin/systemctl": {},
-	"/sbin/service":      {},
-	"/usr/sbin/service":  {},
-}
-
-// shellCommands is a set of shell commands
-var shellCommands = map[string]struct{}{
-	"/bin/sh":       {},
-	"/bin/bash":     {},
-	"/usr/bin/sh":   {},
-	"/usr/bin/bash": {},
-	"/bin/zsh":      {},
-	"/usr/bin/zsh":  {},
-	"/bin/csh":      {},
-	"/usr/bin/csh":  {},
-	"/bin/fish":     {},
-	"/usr/bin/fish": {},
-	"/bin/dash":     {},
-	"/usr/bin/dash": {},
-}
-
-// shellMetacharacters contains shell metacharacters that require careful handling
-var shellMetacharacters = []string{
-	";", "&", "|", "&&", "||",
-	"$", "`", "$(", "${",
-	">", "<", ">>", "<<",
-	"*", "?", "[", "]",
-	"~", "!",
-}
-
 // ValidatePrivilegedCommands validates configuration for potential security issues with privileged commands
-func ValidatePrivilegedCommands(cfg *runnertypes.Config) []ValidationWarning {
+// It explicitly takes a security validator as a parameter, making dependencies clear
+func ValidatePrivilegedCommands(cfg *runnertypes.Config, validator *security.Validator) []ValidationWarning {
 	var warnings []ValidationWarning
 
 	for _, group := range cfg.Groups {
 		for _, cmd := range group.Commands {
 			if cmd.Privileged {
 				// Check for potentially dangerous commands
-				if isDangerousPrivilegedCommand(cmd.Cmd) {
+				if validator.IsDangerousPrivilegedCommand(cmd.Cmd) {
 					warnings = append(warnings, ValidationWarning{
 						Type:       "security",
 						Location:   fmt.Sprintf("groups[%s].commands[%s]", group.Name, cmd.Name),
@@ -97,7 +27,7 @@ func ValidatePrivilegedCommands(cfg *runnertypes.Config) []ValidationWarning {
 				}
 
 				// Check for shell commands
-				if isShellCommand(cmd.Cmd) {
+				if validator.IsShellCommand(cmd.Cmd) {
 					warnings = append(warnings, ValidationWarning{
 						Type:       "security",
 						Location:   fmt.Sprintf("groups[%s].commands[%s]", group.Name, cmd.Name),
@@ -107,7 +37,7 @@ func ValidatePrivilegedCommands(cfg *runnertypes.Config) []ValidationWarning {
 				}
 
 				// Check for commands with shell metacharacters in arguments
-				if hasShellMetacharacters(cmd.Args) {
+				if validator.HasShellMetacharacters(cmd.Args) {
 					warnings = append(warnings, ValidationWarning{
 						Type:       "security",
 						Location:   fmt.Sprintf("groups[%s].commands[%s].args", group.Name, cmd.Name),
@@ -117,7 +47,7 @@ func ValidatePrivilegedCommands(cfg *runnertypes.Config) []ValidationWarning {
 				}
 
 				// Check for relative paths
-				if isRelativePath(cmd.Cmd) {
+				if validator.IsRelativePath(cmd.Cmd) {
 					warnings = append(warnings, ValidationWarning{
 						Type:       "security",
 						Location:   fmt.Sprintf("groups[%s].commands[%s].cmd", group.Name, cmd.Name),
@@ -130,77 +60,4 @@ func ValidatePrivilegedCommands(cfg *runnertypes.Config) []ValidationWarning {
 	}
 
 	return warnings
-}
-
-// validatorSingleton provides thread-safe access to the security validator
-type validatorSingleton struct {
-	mu        sync.RWMutex
-	validator *security.Validator
-	initOnce  sync.Once
-}
-
-// Global security validator instance for backward compatibility
-var globalValidatorSingleton = &validatorSingleton{}
-
-// getGlobalValidator returns the global validator instance, initializing it if necessary
-func getGlobalValidator() *security.Validator {
-	globalValidatorSingleton.initOnce.Do(func() {
-		validator, err := security.NewValidator(nil) // Use default config
-		if err != nil {
-			// Fallback to legacy implementation if validator creation fails
-			return
-		}
-		globalValidatorSingleton.mu.Lock()
-		globalValidatorSingleton.validator = validator
-		globalValidatorSingleton.mu.Unlock()
-	})
-
-	globalValidatorSingleton.mu.RLock()
-	defer globalValidatorSingleton.mu.RUnlock()
-	return globalValidatorSingleton.validator
-}
-
-// isDangerousPrivilegedCommand checks if a command path is potentially dangerous when run with privileges
-func isDangerousPrivilegedCommand(cmdPath string) bool {
-	if validator := getGlobalValidator(); validator != nil {
-		return validator.IsDangerousCommand(cmdPath)
-	}
-	// Fallback to legacy implementation
-	_, exists := dangerousCommands[cmdPath]
-	return exists
-}
-
-// isShellCommand checks if a command is a shell command
-func isShellCommand(cmdPath string) bool {
-	if validator := getGlobalValidator(); validator != nil {
-		return validator.IsShellCommand(cmdPath)
-	}
-	// Fallback to legacy implementation
-	_, exists := shellCommands[cmdPath]
-	return exists
-}
-
-// hasShellMetacharacters checks if any argument contains shell metacharacters
-func hasShellMetacharacters(args []string) bool {
-	if validator := getGlobalValidator(); validator != nil {
-		return validator.HasShellMetacharacters(args)
-	}
-	// Fallback to legacy implementation
-	for _, arg := range args {
-		for _, meta := range shellMetacharacters {
-			if strings.Contains(arg, meta) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// isRelativePath checks if a path is relative
-func isRelativePath(path string) bool {
-	if validator := getGlobalValidator(); validator != nil {
-		return validator.IsRelativePath(path)
-	}
-	// Fallback to legacy implementation
-	return !strings.HasPrefix(path, "/")
 }
