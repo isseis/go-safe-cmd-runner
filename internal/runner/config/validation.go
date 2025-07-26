@@ -86,7 +86,7 @@ func ValidatePrivilegedCommands(cfg *runnertypes.Config) []ValidationWarning {
 		for _, cmd := range group.Commands {
 			if cmd.Privileged {
 				// Check for potentially dangerous commands
-				if isDangerousCommand(cmd.Cmd) {
+				if isDangerousPrivilegedCommand(cmd.Cmd) {
 					warnings = append(warnings, ValidationWarning{
 						Type:       "security",
 						Location:   fmt.Sprintf("groups[%s].commands[%s]", group.Name, cmd.Name),
@@ -146,8 +146,8 @@ func initGlobalValidator() {
 	}
 }
 
-// isDangerousCommand checks if a command path is potentially dangerous when run with privileges
-func isDangerousCommand(cmdPath string) bool {
+// isDangerousPrivilegedCommand checks if a command path is potentially dangerous when run with privileges
+func isDangerousPrivilegedCommand(cmdPath string) bool {
 	initGlobalValidator()
 	if globalValidator != nil {
 		return globalValidator.IsDangerousCommand(cmdPath)
