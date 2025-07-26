@@ -53,17 +53,8 @@ func (v *ValidatorWithPrivileges) RecordWithPrivileges(
 		"force": force,
 	}
 
-	// Define callbacks that both set the result and can be used to log the hash value
-	privilegedAction := func() error {
-		var recordErr error
-		result, recordErr = v.RecordWithOptions(filePath, force)
-		if recordErr == nil {
-			logFields["hash"] = result
-		}
-		return recordErr
-	}
-
-	nonPrivilegedAction := func() error {
+	// Define single action that sets the result and logs the hash value
+	action := func() error {
 		var recordErr error
 		result, recordErr = v.RecordWithOptions(filePath, force)
 		if recordErr == nil {
@@ -78,8 +69,7 @@ func (v *ValidatorWithPrivileges) RecordWithPrivileges(
 		needsPrivileges,
 		privilege.OperationFileHashCalculation,
 		"file_hash_record",
-		privilegedAction,
-		nonPrivilegedAction,
+		action,
 		"File hash recorded with privileges",
 		"file hash recording",
 		logFields,
@@ -104,7 +94,6 @@ func (v *ValidatorWithPrivileges) VerifyWithPrivileges(
 		privilege.OperationFileHashCalculation,
 		"file_hash_verify",
 		func() error { return v.Verify(filePath) },
-		func() error { return v.Verify(filePath) },
 		"File hash verified with privileges",
 		"file hash verification",
 		map[string]any{},
@@ -118,8 +107,7 @@ func (v *ValidatorWithPrivileges) executeWithPrivilegesIfNeeded(
 	needsPrivileges bool,
 	operation privilege.Operation,
 	commandName string,
-	privilegedAction func() error,
-	nonPrivilegedAction func() error,
+	action func() error,
 	successMsg string,
 	failureMsg string,
 	logFields map[string]any,
@@ -131,7 +119,7 @@ func (v *ValidatorWithPrivileges) executeWithPrivilegesIfNeeded(
 			FilePath:    filePath,
 		}
 
-		err := v.privMgr.WithPrivileges(ctx, elevationCtx, privilegedAction)
+		err := v.privMgr.WithPrivileges(ctx, elevationCtx, action)
 		if err != nil {
 			// Build error log args
 			logArgs := []any{
@@ -158,7 +146,7 @@ func (v *ValidatorWithPrivileges) executeWithPrivilegesIfNeeded(
 	}
 
 	// Standard execution without privileges
-	err := nonPrivilegedAction()
+	err := action()
 	if err != nil {
 		// Build error log args for non-privileged failure
 		logArgs := []any{
@@ -201,16 +189,17 @@ func (v *ValidatorWithPrivileges) ValidateFileHashWithPrivileges(
 		needsPrivileges,
 		privilege.OperationFileHashCalculation,
 		"file_hash_validation",
-		func() error { return v.validateFileHash(filePath, expectedHash) },
-		func() error { return v.validateFileHash(filePath, expectedHash) },
+		func() error {
+			return v.validateFileHashWithLogging(filePath, expectedHash, logFields)
+		},
 		"File hash validated with privileges",
 		"file hash validation",
 		logFields,
 	)
 }
 
-// validateFileHash is a helper method for direct hash validation
-func (v *ValidatorWithPrivileges) validateFileHash(filePath string, expectedHash string) error {
+// validateFileHashWithLogging is a helper method that adds the actual hash to log fields
+func (v *ValidatorWithPrivileges) validateFileHashWithLogging(filePath string, expectedHash string, logFields map[string]any) error {
 	// #nosec G304 - filePath is validated by caller and comes from trusted sources
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -226,6 +215,9 @@ func (v *ValidatorWithPrivileges) validateFileHash(filePath string, expectedHash
 	if err != nil {
 		return fmt.Errorf("failed to calculate file hash: %w", err)
 	}
+
+	// Add actual hash to log fields for both success and failure cases
+	logFields["actual_hash"] = actualHash
 
 	if actualHash != expectedHash {
 		return fmt.Errorf("%w: expected %s, got %s", ErrHashValidationFailed, expectedHash, actualHash)
