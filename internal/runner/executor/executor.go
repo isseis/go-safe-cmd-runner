@@ -21,11 +21,10 @@ import (
 
 // Error definitions
 var (
-	ErrEmptyCommand                    = errors.New("command cannot be empty")
-	ErrDirNotExists                    = errors.New("directory does not exist")
-	ErrInvalidPath                     = errors.New("invalid command path")
-	ErrNoPrivilegeManager              = errors.New("privileged execution requested but no privilege manager available")
-	ErrPrivilegedExecutionNotSupported = errors.New("privileged execution not supported on this system")
+	ErrEmptyCommand       = errors.New("command cannot be empty")
+	ErrDirNotExists       = errors.New("directory does not exist")
+	ErrInvalidPath        = errors.New("invalid command path")
+	ErrNoPrivilegeManager = errors.New("privileged execution requested but no privilege manager available")
 )
 
 // DefaultExecutor is the default implementation of CommandExecutor
@@ -100,7 +99,7 @@ func (e *DefaultExecutor) executePrivileged(ctx context.Context, cmd runnertypes
 	}
 
 	if !e.PrivMgr.IsPrivilegedExecutionSupported() {
-		return nil, ErrPrivilegedExecutionNotSupported
+		return nil, privilege.ErrPlatformNotSupported
 	}
 
 	// Validate the command before any privilege elevation
