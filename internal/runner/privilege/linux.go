@@ -13,8 +13,8 @@ import (
 	"time"
 )
 
-// LinuxPrivilegeManager implements privilege management for Linux/Unix systems using setuid
-type LinuxPrivilegeManager struct {
+// UnixPrivilegeManager implements privilege management for Unix systems using setuid
+type UnixPrivilegeManager struct {
 	logger      *slog.Logger
 	originalUID int
 	originalGID int
@@ -27,7 +27,7 @@ func newPlatformManager(logger *slog.Logger) Manager {
 	originalUID := syscall.Getuid()
 	effectiveUID := syscall.Geteuid()
 
-	return &LinuxPrivilegeManager{
+	return &UnixPrivilegeManager{
 		logger:      logger,
 		originalUID: originalUID,
 		originalGID: syscall.Getgid(),
@@ -36,7 +36,7 @@ func newPlatformManager(logger *slog.Logger) Manager {
 }
 
 // WithPrivileges executes a function with elevated privileges using safe privilege escalation
-func (m *LinuxPrivilegeManager) WithPrivileges(ctx context.Context, elevationCtx ElevationContext, fn func() error) (err error) {
+func (m *UnixPrivilegeManager) WithPrivileges(ctx context.Context, elevationCtx ElevationContext, fn func() error) (err error) {
 	start := time.Now()
 
 	// Perform privilege escalation
@@ -81,7 +81,7 @@ func (m *LinuxPrivilegeManager) WithPrivileges(ctx context.Context, elevationCtx
 }
 
 // escalatePrivileges performs the actual privilege escalation (private method)
-func (m *LinuxPrivilegeManager) escalatePrivileges(_ context.Context, elevationCtx ElevationContext) error {
+func (m *UnixPrivilegeManager) escalatePrivileges(_ context.Context, elevationCtx ElevationContext) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -113,7 +113,7 @@ func (m *LinuxPrivilegeManager) escalatePrivileges(_ context.Context, elevationC
 }
 
 // restorePrivileges restores original privileges (private method)
-func (m *LinuxPrivilegeManager) restorePrivileges() error {
+func (m *UnixPrivilegeManager) restorePrivileges() error {
 	if err := syscall.Seteuid(m.originalUID); err != nil {
 		return err
 	}
@@ -125,7 +125,7 @@ func (m *LinuxPrivilegeManager) restorePrivileges() error {
 }
 
 // emergencyShutdown handles critical privilege restoration failures
-func (m *LinuxPrivilegeManager) emergencyShutdown(restoreErr error, context string) {
+func (m *UnixPrivilegeManager) emergencyShutdown(restoreErr error, context string) {
 	// Record detailed error information (ensure logging to multiple destinations)
 	criticalMsg := fmt.Sprintf("CRITICAL SECURITY FAILURE: Privilege restoration failed during %s", context)
 
@@ -154,22 +154,22 @@ func (m *LinuxPrivilegeManager) emergencyShutdown(restoreErr error, context stri
 }
 
 // IsPrivilegedExecutionSupported checks if privileged execution is available on this system
-func (m *LinuxPrivilegeManager) IsPrivilegedExecutionSupported() bool {
+func (m *UnixPrivilegeManager) IsPrivilegedExecutionSupported() bool {
 	return m.isSetuid
 }
 
 // GetCurrentUID returns the current effective user ID
-func (m *LinuxPrivilegeManager) GetCurrentUID() int {
+func (m *UnixPrivilegeManager) GetCurrentUID() int {
 	return syscall.Geteuid()
 }
 
 // GetOriginalUID returns the original user ID before any privilege elevation
-func (m *LinuxPrivilegeManager) GetOriginalUID() int {
+func (m *UnixPrivilegeManager) GetOriginalUID() int {
 	return m.originalUID
 }
 
 // HealthCheck verifies that privilege escalation works correctly
-func (m *LinuxPrivilegeManager) HealthCheck(ctx context.Context) error {
+func (m *UnixPrivilegeManager) HealthCheck(ctx context.Context) error {
 	if !m.IsPrivilegedExecutionSupported() {
 		return ErrPrivilegedExecutionNotAvailable
 	}
@@ -190,6 +190,6 @@ func (m *LinuxPrivilegeManager) HealthCheck(ctx context.Context) error {
 }
 
 // GetMetrics returns a snapshot of current privilege operation metrics
-func (m *LinuxPrivilegeManager) GetMetrics() Metrics {
+func (m *UnixPrivilegeManager) GetMetrics() Metrics {
 	return m.metrics.GetSnapshot()
 }

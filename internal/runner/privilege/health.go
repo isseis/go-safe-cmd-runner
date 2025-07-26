@@ -20,7 +20,7 @@ type HealthStatus struct {
 }
 
 // GetHealthStatus performs a comprehensive health check and returns the current status
-func (m *LinuxPrivilegeManager) GetHealthStatus(ctx context.Context) HealthStatus {
+func (m *UnixPrivilegeManager) GetHealthStatus(ctx context.Context) HealthStatus {
 	status := HealthStatus{
 		IsSupported:      m.IsPrivilegedExecutionSupported(),
 		SetuidConfigured: m.isSetuid,

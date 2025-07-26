@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
@@ -278,4 +279,101 @@ func TestHasShellMetacharacters(t *testing.T) {
 			assert.Equal(t, tt.expected, hasMetacharWarning)
 		})
 	}
+}
+
+// TestValidatorSingleton_ThreadSafety tests thread safety of validator access
+func TestValidatorSingleton_ThreadSafety(t *testing.T) {
+	const numGoroutines = 100
+	var wg sync.WaitGroup
+	results := make([]bool, numGoroutines)
+
+	// Launch multiple goroutines that try to access validation functions concurrently
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			// Test validation through the public API to ensure thread safety
+			cfg := &runnertypes.Config{
+				Groups: []runnertypes.CommandGroup{
+					{
+						Name: "test_group",
+						Commands: []runnertypes.Command{
+							{
+								Name:       "test_cmd",
+								Cmd:        "/bin/bash",
+								Privileged: true,
+							},
+						},
+					},
+				},
+			}
+			warnings := config.ValidatePrivilegedCommands(cfg)
+			// /bin/bash should generate warnings
+			results[index] = len(warnings) > 0
+		}(i)
+	}
+
+	wg.Wait()
+
+	// All results should be consistent
+	for i, result := range results {
+		assert.True(t, result, "Result at index %d should be true", i)
+	}
+}
+
+// TestValidatorSingleton_ConcurrentValidation tests concurrent validation calls
+func TestValidatorSingleton_ConcurrentValidation(t *testing.T) {
+	const numGoroutines = 50
+	var wg sync.WaitGroup
+
+	// Launch multiple goroutines that perform concurrent validation
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			// Test different validation scenarios concurrently
+			configs := []*runnertypes.Config{
+				{
+					Groups: []runnertypes.CommandGroup{
+						{
+							Name: "dangerous_group",
+							Commands: []runnertypes.Command{
+								{Name: "bash_cmd", Cmd: "/bin/bash", Privileged: true},
+							},
+						},
+					},
+				},
+				{
+					Groups: []runnertypes.CommandGroup{
+						{
+							Name: "shell_meta_group",
+							Commands: []runnertypes.Command{
+								{Name: "meta_cmd", Cmd: "/usr/bin/echo", Args: []string{"test", "|", "grep"}, Privileged: true},
+							},
+						},
+					},
+				},
+				{
+					Groups: []runnertypes.CommandGroup{
+						{
+							Name: "relative_group",
+							Commands: []runnertypes.Command{
+								{Name: "relative_cmd", Cmd: "echo", Privileged: true},
+							},
+						},
+					},
+				},
+			}
+
+			for _, cfg := range configs {
+				warnings := config.ValidatePrivilegedCommands(cfg)
+				// Each config should generate warnings
+				assert.Greater(t, len(warnings), 0, "Should generate warnings")
+			}
+		}()
+	}
+
+	wg.Wait()
+	// Test passes if no race conditions occur
 }

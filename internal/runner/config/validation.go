@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
@@ -131,26 +132,38 @@ func ValidatePrivilegedCommands(cfg *runnertypes.Config) []ValidationWarning {
 	return warnings
 }
 
-// Global security validator instance for backward compatibility
-var globalValidator *security.Validator
+// validatorSingleton provides thread-safe access to the security validator
+type validatorSingleton struct {
+	mu        sync.RWMutex
+	validator *security.Validator
+	initOnce  sync.Once
+}
 
-// initGlobalValidator initializes the global validator if needed
-func initGlobalValidator() {
-	if globalValidator == nil {
-		var err error
-		globalValidator, err = security.NewValidator(nil) // Use default config
+// Global security validator instance for backward compatibility
+var globalValidatorSingleton = &validatorSingleton{}
+
+// getGlobalValidator returns the global validator instance, initializing it if necessary
+func getGlobalValidator() *security.Validator {
+	globalValidatorSingleton.initOnce.Do(func() {
+		validator, err := security.NewValidator(nil) // Use default config
 		if err != nil {
 			// Fallback to legacy implementation if validator creation fails
 			return
 		}
-	}
+		globalValidatorSingleton.mu.Lock()
+		globalValidatorSingleton.validator = validator
+		globalValidatorSingleton.mu.Unlock()
+	})
+
+	globalValidatorSingleton.mu.RLock()
+	defer globalValidatorSingleton.mu.RUnlock()
+	return globalValidatorSingleton.validator
 }
 
 // isDangerousPrivilegedCommand checks if a command path is potentially dangerous when run with privileges
 func isDangerousPrivilegedCommand(cmdPath string) bool {
-	initGlobalValidator()
-	if globalValidator != nil {
-		return globalValidator.IsDangerousCommand(cmdPath)
+	if validator := getGlobalValidator(); validator != nil {
+		return validator.IsDangerousCommand(cmdPath)
 	}
 	// Fallback to legacy implementation
 	_, exists := dangerousCommands[cmdPath]
@@ -159,9 +172,8 @@ func isDangerousPrivilegedCommand(cmdPath string) bool {
 
 // isShellCommand checks if a command is a shell command
 func isShellCommand(cmdPath string) bool {
-	initGlobalValidator()
-	if globalValidator != nil {
-		return globalValidator.IsShellCommand(cmdPath)
+	if validator := getGlobalValidator(); validator != nil {
+		return validator.IsShellCommand(cmdPath)
 	}
 	// Fallback to legacy implementation
 	_, exists := shellCommands[cmdPath]
@@ -170,9 +182,8 @@ func isShellCommand(cmdPath string) bool {
 
 // hasShellMetacharacters checks if any argument contains shell metacharacters
 func hasShellMetacharacters(args []string) bool {
-	initGlobalValidator()
-	if globalValidator != nil {
-		return globalValidator.HasShellMetacharacters(args)
+	if validator := getGlobalValidator(); validator != nil {
+		return validator.HasShellMetacharacters(args)
 	}
 	// Fallback to legacy implementation
 	for _, arg := range args {
@@ -187,9 +198,8 @@ func hasShellMetacharacters(args []string) bool {
 
 // isRelativePath checks if a path is relative
 func isRelativePath(path string) bool {
-	initGlobalValidator()
-	if globalValidator != nil {
-		return globalValidator.IsRelativePath(path)
+	if validator := getGlobalValidator(); validator != nil {
+		return validator.IsRelativePath(path)
 	}
 	// Fallback to legacy implementation
 	return !strings.HasPrefix(path, "/")
