@@ -112,62 +112,46 @@ func (v *ValidatorWithPrivileges) executeWithPrivilegesIfNeeded(
 	failureMsg string,
 	logFields map[string]any,
 ) error {
+	var err error
+	wasPrivileged := false
+
+	// Execute action with or without privileges
 	if needsPrivileges && v.privMgr != nil && v.privMgr.IsPrivilegedExecutionSupported() {
 		elevationCtx := privilege.ElevationContext{
 			Operation:   operation,
 			CommandName: commandName,
 			FilePath:    filePath,
 		}
-
-		err := v.privMgr.WithPrivileges(ctx, elevationCtx, action)
-		if err != nil {
-			// Build error log args
-			logArgs := []any{
-				"file_path", filePath,
-				"error", err,
-			}
-			for k, v := range logFields {
-				logArgs = append(logArgs, k, v)
-			}
-			v.logger.Error(failureMsg, logArgs...)
-			return fmt.Errorf("privileged %s failed: %w", failureMsg, err)
-		}
-
-		// Build success log args
-		logArgs := []any{
-			"file_path", filePath,
-		}
-		for k, v := range logFields {
-			logArgs = append(logArgs, k, v)
-		}
-		v.logger.Info(successMsg, logArgs...)
-
-		return nil
+		err = v.privMgr.WithPrivileges(ctx, elevationCtx, action)
+		wasPrivileged = true
+	} else {
+		err = action()
 	}
 
-	// Standard execution without privileges
-	err := action()
+	// Build log arguments
+	logArgs := []any{"file_path", filePath}
 	if err != nil {
-		// Build error log args for non-privileged failure
-		logArgs := []any{
-			"file_path", filePath,
-			"error", err,
-		}
-		for k, v := range logFields {
-			logArgs = append(logArgs, k, v)
-		}
-		v.logger.Error(failureMsg, logArgs...)
-		return fmt.Errorf("%s failed: %w", failureMsg, err)
-	}
-
-	// Build debug log args for non-privileged success
-	logArgs := []any{
-		"file_path", filePath,
+		logArgs = append(logArgs, "error", err)
 	}
 	for k, v := range logFields {
 		logArgs = append(logArgs, k, v)
 	}
-	v.logger.Debug(successMsg, logArgs...)
+
+	// Log and return based on result
+	if err != nil {
+		v.logger.Error(failureMsg, logArgs...)
+		if wasPrivileged {
+			return fmt.Errorf("privileged %s failed: %w", failureMsg, err)
+		}
+		return fmt.Errorf("%s failed: %w", failureMsg, err)
+	}
+
+	// Log success
+	if wasPrivileged {
+		v.logger.Info(successMsg, logArgs...)
+	} else {
+		v.logger.Debug(successMsg, logArgs...)
+	}
 
 	return nil
 }
