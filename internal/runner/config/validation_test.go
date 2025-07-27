@@ -291,8 +291,8 @@ func TestHasShellMetacharacters(t *testing.T) {
 	}
 }
 
-// TestValidatorSingleton_ThreadSafety tests thread safety of validator access
-func TestValidatorSingleton_ThreadSafety(t *testing.T) {
+// TestValidatePrivilegedCommands_ConcurrentValidation tests thread safety of validator access
+func TestValidatePrivilegedCommands_ConcurrentValidation(t *testing.T) {
 	const numGoroutines = 100
 	var wg sync.WaitGroup
 	results := make([]bool, numGoroutines)
