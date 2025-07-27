@@ -201,7 +201,11 @@ func (v *ValidatorWithPrivileges) ValidateFileHashWithPrivileges(
 		privilege.OperationFileHashCalculation,
 		"file_hash_validation",
 		func() error {
-			return v.validateFileHashWithLogging(filePath, expectedHash, logFields)
+			actualHash, err := v.validateFileHashWithLogging(filePath, expectedHash)
+			if actualHash != "" {
+				logFields["actual_hash"] = actualHash
+			}
+			return err
 		},
 		"File hash validated with privileges",
 		"file hash validation",
@@ -209,18 +213,18 @@ func (v *ValidatorWithPrivileges) ValidateFileHashWithPrivileges(
 	)
 }
 
-// validateFileHashWithLogging is a helper method that adds the actual hash to log fields
-func (v *ValidatorWithPrivileges) validateFileHashWithLogging(filePath string, expectedHash string, logFields map[string]any) error {
+// validateFileHashWithLogging is a helper method that validates a file hash and returns the actual hash
+func (v *ValidatorWithPrivileges) validateFileHashWithLogging(filePath string, expectedHash string) (string, error) {
 	// Validate the file path first
 	targetPath, err := validatePath(filePath)
 	if err != nil {
-		return fmt.Errorf("file path validation failed: %w", err)
+		return "", fmt.Errorf("file path validation failed: %w", err)
 	}
 
 	// #nosec G304 - filePath is validated by validatePath above
 	file, err := os.Open(targetPath)
 	if err != nil {
-		return fmt.Errorf("failed to open file: %w", err)
+		return "", fmt.Errorf("failed to open file: %w", err)
 	}
 	defer func() {
 		if closeErr := file.Close(); closeErr != nil {
@@ -230,15 +234,12 @@ func (v *ValidatorWithPrivileges) validateFileHashWithLogging(filePath string, e
 
 	actualHash, err := v.algorithm.Sum(file)
 	if err != nil {
-		return fmt.Errorf("failed to calculate file hash: %w", err)
+		return "", fmt.Errorf("failed to calculate file hash: %w", err)
 	}
-
-	// Add actual hash to log fields for both success and failure cases
-	logFields["actual_hash"] = actualHash
 
 	if actualHash != expectedHash {
-		return fmt.Errorf("%w: expected %s, got %s", ErrHashValidationFailed, expectedHash, actualHash)
+		return actualHash, fmt.Errorf("%w: expected %s, got %s", ErrHashValidationFailed, expectedHash, actualHash)
 	}
 
-	return nil
+	return actualHash, nil
 }
