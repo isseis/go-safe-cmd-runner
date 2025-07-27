@@ -8,13 +8,15 @@ import (
 	"os"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
 // ValidatorWithPrivileges extends the base Validator with privilege management capabilities
 type ValidatorWithPrivileges struct {
 	*Validator
-	privMgr privilege.Manager
-	logger  *slog.Logger
+	privMgr      privilege.Manager
+	logger       *slog.Logger
+	secValidator *security.Validator
 }
 
 // Error definitions for privileged validation
@@ -29,15 +31,35 @@ func NewValidatorWithPrivileges(
 	privMgr privilege.Manager,
 	logger *slog.Logger,
 ) (*ValidatorWithPrivileges, error) {
+	return NewValidatorWithPrivilegesAndLogging(algorithm, hashDir, privMgr, logger, security.DefaultLoggingOptions())
+}
+
+// NewValidatorWithPrivilegesAndLogging creates a new validator with custom logging options
+func NewValidatorWithPrivilegesAndLogging(
+	algorithm HashAlgorithm,
+	hashDir string,
+	privMgr privilege.Manager,
+	logger *slog.Logger,
+	loggingOpts security.LoggingOptions,
+) (*ValidatorWithPrivileges, error) {
 	baseValidator, err := New(algorithm, hashDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create base validator: %w", err)
 	}
 
+	// Create security validator with logging options
+	secConfig := security.DefaultConfig()
+	secConfig.LoggingOptions = loggingOpts
+	secValidator, err := security.NewValidator(secConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create security validator: %w", err)
+	}
+
 	return &ValidatorWithPrivileges{
-		Validator: baseValidator,
-		privMgr:   privMgr,
-		logger:    logger,
+		Validator:    baseValidator,
+		privMgr:      privMgr,
+		logger:       logger,
+		secValidator: secValidator,
 	}, nil
 }
 
@@ -128,12 +150,17 @@ func (v *ValidatorWithPrivileges) executeWithPrivilegesIfNeeded(
 		err = action()
 	}
 
-	// Build log arguments
+	// Build safe log arguments with sensitive data protection
 	logArgs := []any{"file_path", filePath}
+
+	// Create safe log fields
+	safeFields := v.secValidator.CreateSafeLogFields(logFields)
 	if err != nil {
-		logArgs = append(logArgs, "error", err)
+		safeFields["error"] = v.secValidator.SanitizeErrorForLogging(err)
 	}
-	for k, v := range logFields {
+
+	// Convert safe fields to log arguments
+	for k, v := range safeFields {
 		logArgs = append(logArgs, k, v)
 	}
 
@@ -146,7 +173,7 @@ func (v *ValidatorWithPrivileges) executeWithPrivilegesIfNeeded(
 		return fmt.Errorf("%s failed: %w", failureMsg, err)
 	}
 
-	// Log success
+	// Log success with safe fields
 	if wasPrivileged {
 		v.logger.Info(successMsg, logArgs...)
 	} else {
