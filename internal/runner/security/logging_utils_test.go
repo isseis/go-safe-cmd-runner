@@ -1,31 +1,22 @@
-package filevalidator
+package security
 
 import (
-	"errors"
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-)
-
-// Static errors to satisfy err113 linter
-var (
-	errPasswordTest = errors.New("password=secret123 failed")
-	errLongTest     = errors.New("this is a very long error message that should be truncated")
-	errSecretTest   = errors.New("password=mysecret failed")
 )
 
 func TestSecurityValidator_SanitizeErrorForLogging(t *testing.T) {
 	tests := []struct {
 		name     string
-		opts     security.LoggingOptions
+		opts     LoggingOptions
 		err      error
 		expected string
 	}{
 		{
 			name: "redacted when include details false",
-			opts: security.LoggingOptions{
+			opts: LoggingOptions{
 				IncludeErrorDetails: false,
 			},
 			err:      errPasswordTest,
@@ -33,7 +24,7 @@ func TestSecurityValidator_SanitizeErrorForLogging(t *testing.T) {
 		},
 		{
 			name: "redacts sensitive patterns",
-			opts: security.LoggingOptions{
+			opts: LoggingOptions{
 				IncludeErrorDetails: true,
 				RedactSensitiveInfo: true,
 			},
@@ -42,7 +33,7 @@ func TestSecurityValidator_SanitizeErrorForLogging(t *testing.T) {
 		},
 		{
 			name: "truncates long messages",
-			opts: security.LoggingOptions{
+			opts: LoggingOptions{
 				IncludeErrorDetails:   true,
 				MaxErrorMessageLength: 20,
 			},
@@ -51,7 +42,7 @@ func TestSecurityValidator_SanitizeErrorForLogging(t *testing.T) {
 		},
 		{
 			name:     "nil error",
-			opts:     security.DefaultLoggingOptions(),
+			opts:     DefaultLoggingOptions(),
 			err:      nil,
 			expected: "",
 		},
@@ -60,9 +51,9 @@ func TestSecurityValidator_SanitizeErrorForLogging(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create security validator with the test options
-			config := security.DefaultConfig()
+			config := DefaultConfig()
 			config.LoggingOptions = tt.opts
-			validator, err := security.NewValidator(config)
+			validator, err := NewValidator(config)
 			require.NoError(t, err)
 
 			result := validator.SanitizeErrorForLogging(tt.err)
@@ -74,13 +65,13 @@ func TestSecurityValidator_SanitizeErrorForLogging(t *testing.T) {
 func TestSecurityValidator_SanitizeOutputForLogging(t *testing.T) {
 	tests := []struct {
 		name     string
-		opts     security.LoggingOptions
+		opts     LoggingOptions
 		output   string
 		expected string
 	}{
 		{
 			name: "redacts API keys",
-			opts: security.LoggingOptions{
+			opts: LoggingOptions{
 				RedactSensitiveInfo: true,
 			},
 			output:   "API call failed: api_key=abc123def",
@@ -88,7 +79,7 @@ func TestSecurityValidator_SanitizeOutputForLogging(t *testing.T) {
 		},
 		{
 			name: "truncates long output",
-			opts: security.LoggingOptions{
+			opts: LoggingOptions{
 				TruncateStdout:  true,
 				MaxStdoutLength: 20,
 			},
@@ -97,7 +88,7 @@ func TestSecurityValidator_SanitizeOutputForLogging(t *testing.T) {
 		},
 		{
 			name: "handles bearer tokens",
-			opts: security.LoggingOptions{
+			opts: LoggingOptions{
 				RedactSensitiveInfo: true,
 			},
 			output:   "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9",
@@ -105,7 +96,7 @@ func TestSecurityValidator_SanitizeOutputForLogging(t *testing.T) {
 		},
 		{
 			name:     "empty output returns empty string",
-			opts:     security.DefaultLoggingOptions(),
+			opts:     DefaultLoggingOptions(),
 			output:   "",
 			expected: "",
 		},
@@ -114,9 +105,9 @@ func TestSecurityValidator_SanitizeOutputForLogging(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create security validator with the test options
-			config := security.DefaultConfig()
+			config := DefaultConfig()
 			config.LoggingOptions = tt.opts
-			validator, err := security.NewValidator(config)
+			validator, err := NewValidator(config)
 			require.NoError(t, err)
 
 			result := validator.SanitizeOutputForLogging(tt.output)
@@ -126,13 +117,13 @@ func TestSecurityValidator_SanitizeOutputForLogging(t *testing.T) {
 }
 
 func TestSecurityValidator_CreateSafeLogFields(t *testing.T) {
-	config := security.DefaultConfig()
+	config := DefaultConfig()
 	config.LoggingOptions.RedactSensitiveInfo = true
 	config.LoggingOptions.IncludeErrorDetails = true // Enable error details to see redaction
 	config.LoggingOptions.MaxStdoutLength = 100      // Increase length to see full redacted output
 	config.LoggingOptions.TruncateStdout = true
 
-	validator, err := security.NewValidator(config)
+	validator, err := NewValidator(config)
 	require.NoError(t, err)
 
 	fields := map[string]any{
@@ -154,7 +145,7 @@ func TestSecurityValidator_CreateSafeLogFields(t *testing.T) {
 }
 
 func TestDefaultLoggingOptions(t *testing.T) {
-	opts := security.DefaultLoggingOptions()
+	opts := DefaultLoggingOptions()
 
 	// Verify secure defaults
 	assert.False(t, opts.IncludeErrorDetails, "Default should not include error details for security")
@@ -165,7 +156,7 @@ func TestDefaultLoggingOptions(t *testing.T) {
 }
 
 func TestVerboseLoggingOptions(t *testing.T) {
-	opts := security.VerboseLoggingOptions()
+	opts := VerboseLoggingOptions()
 
 	// Verify verbose settings
 	assert.True(t, opts.IncludeErrorDetails, "Verbose should include error details")
@@ -173,7 +164,7 @@ func TestVerboseLoggingOptions(t *testing.T) {
 	assert.True(t, opts.TruncateStdout, "Even verbose should truncate stdout")
 
 	// Verify higher limits
-	defaultOpts := security.DefaultLoggingOptions()
+	defaultOpts := DefaultLoggingOptions()
 	assert.Greater(t, opts.MaxErrorMessageLength, defaultOpts.MaxErrorMessageLength)
 	assert.Greater(t, opts.MaxStdoutLength, defaultOpts.MaxStdoutLength)
 }
