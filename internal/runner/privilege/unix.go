@@ -21,7 +21,7 @@ type UnixPrivilegeManager struct {
 	originalGID int
 	isSetuid    bool
 	metrics     Metrics
-	mu          sync.RWMutex
+	mu          sync.Mutex
 }
 
 func newPlatformManager(logger *slog.Logger) Manager {
