@@ -153,10 +153,31 @@ func (m *UnixPrivilegeManager) emergencyShutdown(restoreErr error, shutdownConte
 	if execPath, err := os.Executable(); err == nil {
 		progName = filepath.Base(execPath)
 	}
-	if syslogWriter, err := syslog.New(syslog.LOG_ERR, progName); err == nil {
-		_ = syslogWriter.Err(fmt.Sprintf("%s: %v (PID: %d, UID: %d->%d)",
-			criticalMsg, restoreErr, os.Getpid(), m.originalUID, os.Geteuid()))
-		_ = syslogWriter.Close()
+
+	// Try to log to syslog, but handle errors appropriately
+	syslogWriter, err := syslog.New(syslog.LOG_ERR, progName)
+	if err != nil {
+		m.logger.Error("Failed to initialize syslog for critical error logging",
+			"error", err,
+			"original_uid", m.originalUID,
+			"current_uid", os.Getuid(),
+			"current_euid", os.Geteuid(),
+			"timestamp", time.Now().UTC(),
+			"process_id", os.Getpid(),
+		)
+		// Optionally log the syslog initialization failure to stderr as fallback
+		fmt.Fprintf(os.Stderr, "FATAL: Failed to initialize syslog: %v\n", err)
+	} else {
+		// Log the critical message to syslog
+		if err := syslogWriter.Err(fmt.Sprintf("%s: %v (PID: %d, UID: %d->%d)",
+			criticalMsg, restoreErr, os.Getpid(), m.originalUID, os.Geteuid())); err != nil {
+			fmt.Fprintf(os.Stderr, "FATAL: Failed to write to syslog: %v\n", err)
+		}
+
+		// Close the syslog writer and check for errors
+		if err := syslogWriter.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "FATAL: Failed to close syslog writer: %v\n", err)
+		}
 	}
 
 	// Also log to stderr as last resort
