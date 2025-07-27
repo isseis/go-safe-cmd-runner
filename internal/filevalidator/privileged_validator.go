@@ -200,14 +200,20 @@ func (v *ValidatorWithPrivileges) ValidateFileHashWithPrivileges(
 
 // validateFileHashWithLogging is a helper method that adds the actual hash to log fields
 func (v *ValidatorWithPrivileges) validateFileHashWithLogging(filePath string, expectedHash string, logFields map[string]any) error {
-	// #nosec G304 - filePath is validated by caller and comes from trusted sources
-	file, err := os.Open(filePath)
+	// Validate the file path first
+	targetPath, err := validatePath(filePath)
+	if err != nil {
+		return fmt.Errorf("file path validation failed: %w", err)
+	}
+
+	// #nosec G304 - filePath is validated by validatePath above
+	file, err := os.Open(targetPath)
 	if err != nil {
 		return fmt.Errorf("failed to open file: %w", err)
 	}
 	defer func() {
 		if closeErr := file.Close(); closeErr != nil {
-			v.logger.Warn("Failed to close file", "file_path", filePath, "error", closeErr)
+			v.logger.Warn("Failed to close file", "file_path", targetPath, "error", closeErr)
 		}
 	}()
 

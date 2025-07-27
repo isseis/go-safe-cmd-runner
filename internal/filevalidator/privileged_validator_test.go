@@ -251,3 +251,60 @@ func TestValidatorWithPrivileges_PrivilegeElevationFailure(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "privileged file hash validation failed")
 }
+
+func TestValidatorWithPrivileges_PathValidation(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "test_path_validation")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	algorithm := &filevalidator.SHA256{}
+	mockPrivMgr := privtesting.NewMockPrivilegeManager(true)
+	logger := slog.Default()
+
+	validator, err := filevalidator.NewValidatorWithPrivileges(algorithm, tempDir, mockPrivMgr, logger)
+	assert.NoError(t, err)
+
+	ctx := context.Background()
+
+	tests := []struct {
+		name         string
+		filePath     string
+		expectError  bool
+		errorMessage string
+	}{
+		{
+			name:         "empty file path should fail",
+			filePath:     "",
+			expectError:  true,
+			errorMessage: "file path validation failed",
+		},
+		{
+			name:         "non-existent file should fail",
+			filePath:     "/non/existent/file.txt",
+			expectError:  true,
+			errorMessage: "file path validation failed",
+		},
+		{
+			name:         "directory instead of file should fail",
+			filePath:     tempDir,
+			expectError:  true,
+			errorMessage: "file path validation failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Test ValidateFileHashWithPrivileges with invalid paths
+			err := validator.ValidateFileHashWithPrivileges(ctx, tt.filePath, "somehash", false)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorMessage != "" {
+					assert.Contains(t, err.Error(), tt.errorMessage)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
