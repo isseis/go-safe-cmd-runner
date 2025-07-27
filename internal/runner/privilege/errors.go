@@ -4,6 +4,8 @@ package privilege
 import (
 	"fmt"
 	"time"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
 // Standard errors
@@ -17,7 +19,7 @@ var (
 
 // Error contains detailed information about privilege operation failures
 type Error struct {
-	Operation   Operation
+	Operation   runnertypes.Operation
 	CommandName string
 	OriginalUID int
 	TargetUID   int

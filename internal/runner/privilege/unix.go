@@ -40,21 +40,11 @@ func newPlatformManager(logger *slog.Logger) Manager {
 
 // WithPrivileges executes a function with elevated privileges using safe privilege escalation
 func (m *UnixPrivilegeManager) WithPrivileges(ctx context.Context, elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
-	// Convert to internal ElevationContext
-	internalCtx := ElevationContext{
-		Operation:   Operation(elevationCtx.Operation),
-		CommandName: elevationCtx.CommandName,
-		FilePath:    elevationCtx.FilePath,
-		StartTime:   elevationCtx.StartTime,
-		OriginalUID: elevationCtx.OriginalUID,
-		TargetUID:   elevationCtx.TargetUID,
-	}
-
-	return m.withPrivilegesInternal(ctx, internalCtx, fn)
+	return m.withPrivilegesInternal(ctx, elevationCtx, fn)
 }
 
-// withPrivilegesInternal is the original implementation using internal types
-func (m *UnixPrivilegeManager) withPrivilegesInternal(ctx context.Context, elevationCtx ElevationContext, fn func() error) (err error) {
+// withPrivilegesInternal is the original implementation using runnertypes
+func (m *UnixPrivilegeManager) withPrivilegesInternal(ctx context.Context, elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
 	// Lock for the entire duration of the privileged operation to prevent race conditions
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -109,7 +99,7 @@ func (m *UnixPrivilegeManager) withPrivilegesInternal(ctx context.Context, eleva
 
 // escalatePrivileges performs the actual privilege escalation (private method)
 // Note: This method assumes the caller (WithPrivileges) has already acquired the mutex lock
-func (m *UnixPrivilegeManager) escalatePrivileges(_ context.Context, elevationCtx ElevationContext) error {
+func (m *UnixPrivilegeManager) escalatePrivileges(_ context.Context, elevationCtx runnertypes.ElevationContext) error {
 	if !m.IsPrivilegedExecutionSupported() {
 		return fmt.Errorf("%w: binary not configured with setuid", ErrPrivilegedExecutionNotAvailable)
 	}
@@ -256,7 +246,7 @@ func (m *UnixPrivilegeManager) ElevatePrivileges() error {
 
 	if err := syscall.Seteuid(0); err != nil {
 		return &Error{
-			Operation:   OperationCommandExecution,
+			Operation:   runnertypes.OperationCommandExecution,
 			CommandName: "direct_elevation",
 			OriginalUID: m.originalUID,
 			TargetUID:   0,

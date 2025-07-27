@@ -20,8 +20,8 @@ func TestManager_Interface(t *testing.T) {
 }
 
 func TestElevationContext(t *testing.T) {
-	ctx := ElevationContext{
-		Operation:   OperationHealthCheck,
+	ctx := runnertypes.ElevationContext{
+		Operation:   runnertypes.OperationHealthCheck,
 		CommandName: "test",
 		FilePath:    "/test/path",
 		StartTime:   time.Now(),
@@ -29,7 +29,7 @@ func TestElevationContext(t *testing.T) {
 		TargetUID:   0,
 	}
 
-	assert.Equal(t, OperationHealthCheck, ctx.Operation)
+	assert.Equal(t, runnertypes.OperationHealthCheck, ctx.Operation)
 	assert.Equal(t, "test", ctx.CommandName)
 	assert.Equal(t, "/test/path", ctx.FilePath)
 	assert.Equal(t, 1000, ctx.OriginalUID)
@@ -38,7 +38,7 @@ func TestElevationContext(t *testing.T) {
 
 func TestPrivilegeError(t *testing.T) {
 	err := &Error{
-		Operation:   OperationCommandExecution,
+		Operation:   runnertypes.OperationCommandExecution,
 		CommandName: "test_cmd",
 		OriginalUID: 1000,
 		TargetUID:   0,
@@ -52,11 +52,11 @@ func TestPrivilegeError(t *testing.T) {
 }
 
 func TestOperationConstants(t *testing.T) {
-	operations := []Operation{
-		OperationFileHashCalculation,
-		OperationCommandExecution,
-		OperationFileAccess,
-		OperationHealthCheck,
+	operations := []runnertypes.Operation{
+		runnertypes.OperationFileHashCalculation,
+		runnertypes.OperationCommandExecution,
+		runnertypes.OperationFileAccess,
+		runnertypes.OperationHealthCheck,
 	}
 
 	expected := []string{
