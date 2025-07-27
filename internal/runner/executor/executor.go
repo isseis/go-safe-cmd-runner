@@ -195,7 +195,8 @@ func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path strin
 	// Create the command with the resolved path
 	// #nosec G204 - The command and arguments are validated before execution through:
 	// 1. Standard validation with e.Validate() for all commands
-	// 2. Additional security validation with e.validatePrivilegedCommand() for privileged commands
+	// 2. Additional security validation with e.validatePrivilegedCommand() for privileged commands only
+	//    (applied in executePrivileged before this function is called)
 	execCmd := exec.CommandContext(ctx, path, cmd.Args...)
 
 	// Set up working directory
