@@ -24,7 +24,7 @@ type MockPrivilegeManager struct {
 	Supported      bool
 	ElevationCalls []string
 	ShouldFail     bool
-	ExecFn         func() error // カスタム実行関数（テスト用）
+	ExecFn         func() error // Custom execution function (for testing)
 }
 
 // WithPrivileges executes the given function with privilege elevation
@@ -33,7 +33,7 @@ func (m *MockPrivilegeManager) WithPrivileges(_ context.Context, elevationCtx pr
 	if m.ShouldFail {
 		return ErrMockPrivilegeElevationFailed
 	}
-	// カスタム実行関数があれば、それを優先して実行
+	// If a custom execution function exists, prioritize and execute it
 	if m.ExecFn != nil {
 		return m.ExecFn()
 	}
