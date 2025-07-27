@@ -62,13 +62,18 @@ func (m *UnixPrivilegeManager) WithPrivileges(ctx context.Context, elevationCtx 
 			shutdownContext = "normal execution"
 		}
 
+		// Calculate duration before restoring privileges to get accurate elevation time
+		var duration time.Duration
+		if panicValue == nil {
+			duration = time.Since(start)
+		}
+
 		// Restore privileges (always executed)
 		if err := m.restorePrivileges(); err != nil {
 			// Privilege restoration failure is critical security risk - terminate immediately
 			m.emergencyShutdown(err, shutdownContext)
 		} else if panicValue == nil {
 			// Record metrics on success
-			duration := time.Since(start)
 			m.metrics.RecordElevationSuccess(duration)
 		}
 
