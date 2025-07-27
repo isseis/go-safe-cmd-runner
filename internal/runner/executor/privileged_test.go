@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
 	privtesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
@@ -57,7 +56,7 @@ func TestDefaultExecutor_PrivilegedExecution(t *testing.T) {
 			privilegeSupported: false,
 			expectError:        true,
 			errorMessage:       "privileged execution not supported",
-			expectedErrorType:  privilege.ErrPlatformNotSupported,
+			expectedErrorType:  runnertypes.ErrPlatformNotSupported,
 			noPrivilegeManager: false,
 		},
 		{

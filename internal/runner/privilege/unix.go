@@ -12,6 +12,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
 // UnixPrivilegeManager implements privilege management for Unix systems using setuid
@@ -37,7 +39,22 @@ func newPlatformManager(logger *slog.Logger) Manager {
 }
 
 // WithPrivileges executes a function with elevated privileges using safe privilege escalation
-func (m *UnixPrivilegeManager) WithPrivileges(ctx context.Context, elevationCtx ElevationContext, fn func() error) (err error) {
+func (m *UnixPrivilegeManager) WithPrivileges(ctx context.Context, elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
+	// Convert to internal ElevationContext
+	internalCtx := ElevationContext{
+		Operation:   Operation(elevationCtx.Operation),
+		CommandName: elevationCtx.CommandName,
+		FilePath:    elevationCtx.FilePath,
+		StartTime:   elevationCtx.StartTime,
+		OriginalUID: elevationCtx.OriginalUID,
+		TargetUID:   elevationCtx.TargetUID,
+	}
+
+	return m.withPrivilegesInternal(ctx, internalCtx, fn)
+}
+
+// withPrivilegesInternal is the original implementation using internal types
+func (m *UnixPrivilegeManager) withPrivilegesInternal(ctx context.Context, elevationCtx ElevationContext, fn func() error) (err error) {
 	// Lock for the entire duration of the privileged operation to prevent race conditions
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -209,8 +226,8 @@ func (m *UnixPrivilegeManager) HealthCheck(ctx context.Context) error {
 	}
 
 	// Test privilege elevation and restoration
-	testCtx := ElevationContext{
-		Operation:   OperationHealthCheck,
+	testCtx := runnertypes.ElevationContext{
+		Operation:   runnertypes.OperationHealthCheck,
 		CommandName: "health_check",
 	}
 
@@ -226,4 +243,34 @@ func (m *UnixPrivilegeManager) HealthCheck(ctx context.Context) error {
 // GetMetrics returns a snapshot of current privilege operation metrics
 func (m *UnixPrivilegeManager) GetMetrics() Metrics {
 	return m.metrics.GetSnapshot()
+}
+
+// ElevatePrivileges elevates privileges to root (implementation of runnertypes.PrivilegeManager)
+func (m *UnixPrivilegeManager) ElevatePrivileges() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if !m.isSetuid {
+		return ErrPrivilegedExecutionNotAvailable
+	}
+
+	if err := syscall.Seteuid(0); err != nil {
+		return &Error{
+			Operation:   OperationCommandExecution,
+			CommandName: "direct_elevation",
+			OriginalUID: m.originalUID,
+			TargetUID:   0,
+			SyscallErr:  err,
+		}
+	}
+
+	return nil
+}
+
+// DropPrivileges drops privileges to original user (implementation of runnertypes.PrivilegeManager)
+func (m *UnixPrivilegeManager) DropPrivileges() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	return m.restorePrivileges()
 }

@@ -7,14 +7,14 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
 // ValidatorWithPrivileges extends the base Validator with privilege management capabilities
 type ValidatorWithPrivileges struct {
 	*Validator
-	privMgr      privilege.Manager
+	privMgr      runnertypes.PrivilegeManager
 	logger       *slog.Logger
 	secValidator *security.Validator
 }
@@ -28,7 +28,7 @@ var (
 func NewValidatorWithPrivileges(
 	algorithm HashAlgorithm,
 	hashDir string,
-	privMgr privilege.Manager,
+	privMgr runnertypes.PrivilegeManager,
 	logger *slog.Logger,
 ) (*ValidatorWithPrivileges, error) {
 	return NewValidatorWithPrivilegesAndLogging(algorithm, hashDir, privMgr, logger, security.DefaultLoggingOptions())
@@ -38,7 +38,7 @@ func NewValidatorWithPrivileges(
 func NewValidatorWithPrivilegesAndLogging(
 	algorithm HashAlgorithm,
 	hashDir string,
-	privMgr privilege.Manager,
+	privMgr runnertypes.PrivilegeManager,
 	logger *slog.Logger,
 	loggingOpts security.LoggingOptions,
 ) (*ValidatorWithPrivileges, error) {
@@ -89,7 +89,7 @@ func (v *ValidatorWithPrivileges) RecordWithPrivileges(
 		ctx,
 		filePath,
 		needsPrivileges,
-		privilege.OperationFileHashCalculation,
+		runnertypes.OperationFileHashCalculation,
 		"file_hash_record",
 		action,
 		"File hash recorded with privileges",
@@ -113,7 +113,7 @@ func (v *ValidatorWithPrivileges) VerifyWithPrivileges(
 		ctx,
 		filePath,
 		needsPrivileges,
-		privilege.OperationFileHashCalculation,
+		runnertypes.OperationFileHashCalculation,
 		"file_hash_verify",
 		func() error { return v.Verify(filePath) },
 		"File hash verified with privileges",
@@ -127,7 +127,7 @@ func (v *ValidatorWithPrivileges) executeWithPrivilegesIfNeeded(
 	ctx context.Context,
 	filePath string,
 	needsPrivileges bool,
-	operation privilege.Operation,
+	operation runnertypes.Operation,
 	commandName string,
 	action func() error,
 	successMsg string,
@@ -139,7 +139,7 @@ func (v *ValidatorWithPrivileges) executeWithPrivilegesIfNeeded(
 
 	// Execute action with or without privileges
 	if needsPrivileges && v.privMgr != nil && v.privMgr.IsPrivilegedExecutionSupported() {
-		elevationCtx := privilege.ElevationContext{
+		elevationCtx := runnertypes.ElevationContext{
 			Operation:   operation,
 			CommandName: commandName,
 			FilePath:    filePath,
@@ -198,7 +198,7 @@ func (v *ValidatorWithPrivileges) ValidateFileHashWithPrivileges(
 		ctx,
 		filePath,
 		needsPrivileges,
-		privilege.OperationFileHashCalculation,
+		runnertypes.OperationFileHashCalculation,
 		"file_hash_validation",
 		func() error {
 			actualHash, err := v.validateFileHashWithLogging(filePath, expectedHash)

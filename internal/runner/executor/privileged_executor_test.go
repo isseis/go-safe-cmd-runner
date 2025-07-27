@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
 	privtesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
@@ -172,5 +171,5 @@ func TestPrivilegedCommandExecution_UnsupportedPlatform(t *testing.T) {
 	_, err := exec.Execute(context.Background(), cmd, map[string]string{})
 
 	// Assertion
-	assert.ErrorIs(t, err, privilege.ErrPlatformNotSupported)
+	assert.ErrorIs(t, err, runnertypes.ErrPlatformNotSupported)
 }

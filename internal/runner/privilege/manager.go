@@ -3,30 +3,19 @@ package privilege
 import (
 	"context"
 	"log/slog"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
-// Manager interface for privilege management
+// Manager interface for privilege management (extends runnertypes.PrivilegeManager)
 type Manager interface {
-	// WithPrivileges executes a function with elevated privileges
-	// This is the ONLY public method to ensure safe privilege management
-	WithPrivileges(ctx context.Context, elevationCtx ElevationContext, fn func() error) error
+	runnertypes.PrivilegeManager
 
-	// IsPrivilegedExecutionSupported checks if privileged execution is available
-	IsPrivilegedExecutionSupported() bool
-
-	// GetCurrentUID returns the current effective user ID
+	// Additional methods specific to privilege package
 	GetCurrentUID() int
-
-	// GetOriginalUID returns the original user ID
 	GetOriginalUID() int
-
-	// HealthCheck verifies privilege escalation works
 	HealthCheck(ctx context.Context) error
-
-	// GetHealthStatus performs comprehensive health check and returns status
 	GetHealthStatus(ctx context.Context) HealthStatus
-
-	// GetMetrics returns operational metrics
 	GetMetrics() Metrics
 }
 

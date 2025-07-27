@@ -67,7 +67,7 @@ type Runner struct {
 	resourceManager     *resource.Manager
 	verificationManager *verification.Manager
 	envFilter           *environment.Filter
-	privilegeManager    privilege.Manager // Optional privilege manager for privileged commands
+	privilegeManager    runnertypes.PrivilegeManager // Optional privilege manager for privileged commands
 }
 
 // Option is a function type for configuring Runner instances
@@ -79,7 +79,7 @@ type runnerOptions struct {
 	resourceManager     *resource.Manager
 	executor            executor.CommandExecutor
 	verificationManager *verification.Manager
-	privilegeManager    privilege.Manager
+	privilegeManager    runnertypes.PrivilegeManager
 	auditLogger         *audit.Logger
 }
 
@@ -112,7 +112,7 @@ func WithExecutor(exec executor.CommandExecutor) Option {
 }
 
 // WithPrivilegeManager sets a custom privilege manager
-func WithPrivilegeManager(privMgr privilege.Manager) Option {
+func WithPrivilegeManager(privMgr runnertypes.PrivilegeManager) Option {
 	return func(opts *runnerOptions) {
 		opts.privilegeManager = privMgr
 	}

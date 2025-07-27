@@ -5,6 +5,8 @@ package privilege
 import (
 	"context"
 	"log/slog"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
 type WindowsPrivilegeManager struct {
@@ -18,11 +20,21 @@ func newPlatformManager(logger *slog.Logger) Manager {
 	}
 }
 
-func (m *WindowsPrivilegeManager) WithPrivileges(ctx context.Context, elevationCtx ElevationContext, fn func() error) error {
+func (m *WindowsPrivilegeManager) WithPrivileges(ctx context.Context, elevationCtx runnertypes.ElevationContext, fn func() error) error {
 	m.logger.Error("Privileged execution requested on unsupported platform",
 		"operation", elevationCtx.Operation,
 		"command", elevationCtx.CommandName)
-	return ErrPlatformNotSupported
+	return runnertypes.runnertypes.ErrPlatformNotSupported
+}
+
+// ElevatePrivileges is not supported on Windows
+func (m *WindowsPrivilegeManager) ElevatePrivileges() error {
+	return runnertypes.runnertypes.ErrPlatformNotSupported
+}
+
+// DropPrivileges is not supported on Windows
+func (m *WindowsPrivilegeManager) DropPrivileges() error {
+	return runnertypes.runnertypes.ErrPlatformNotSupported
 }
 
 func (m *WindowsPrivilegeManager) IsPrivilegedExecutionSupported() bool {
@@ -38,7 +50,7 @@ func (m *WindowsPrivilegeManager) GetOriginalUID() int {
 }
 
 func (m *WindowsPrivilegeManager) HealthCheck(ctx context.Context) error {
-	return ErrPlatformNotSupported
+	return runnertypes.ErrPlatformNotSupported
 }
 
 // GetHealthStatus returns health status for Windows (always unsupported)

@@ -6,6 +6,7 @@ import (
 	"errors"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
 // Test constants
@@ -28,7 +29,7 @@ type MockPrivilegeManager struct {
 }
 
 // WithPrivileges executes the given function with privilege elevation
-func (m *MockPrivilegeManager) WithPrivileges(_ context.Context, elevationCtx privilege.ElevationContext, fn func() error) error {
+func (m *MockPrivilegeManager) WithPrivileges(_ context.Context, elevationCtx runnertypes.ElevationContext, fn func() error) error {
 	m.ElevationCalls = append(m.ElevationCalls, string(elevationCtx.Operation))
 	if m.ShouldFail {
 		return ErrMockPrivilegeElevationFailed
@@ -43,6 +44,22 @@ func (m *MockPrivilegeManager) WithPrivileges(_ context.Context, elevationCtx pr
 // IsPrivilegedExecutionSupported returns whether privileged execution is supported
 func (m *MockPrivilegeManager) IsPrivilegedExecutionSupported() bool {
 	return m.Supported
+}
+
+// ElevatePrivileges elevates privileges (mock implementation)
+func (m *MockPrivilegeManager) ElevatePrivileges() error {
+	if m.ShouldFail {
+		return ErrMockPrivilegeElevationFailed
+	}
+	return nil
+}
+
+// DropPrivileges drops privileges (mock implementation)
+func (m *MockPrivilegeManager) DropPrivileges() error {
+	if m.ShouldFail {
+		return ErrMockPrivilegeElevationFailed
+	}
+	return nil
 }
 
 // GetCurrentUID returns the current user ID

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -93,8 +94,8 @@ func TestManager_WithPrivileges_UnsupportedPlatform(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	elevationCtx := ElevationContext{
-		Operation:   OperationHealthCheck,
+	elevationCtx := runnertypes.ElevationContext{
+		Operation:   runnertypes.OperationHealthCheck,
 		CommandName: "test",
 	}
 

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -39,8 +40,8 @@ func TestUnixPrivilegeManager_ConcurrentAccess(t *testing.T) {
 
 			for j := 0; j < numOperationsPerGoroutine; j++ {
 				ctx := context.Background()
-				elevationCtx := ElevationContext{
-					Operation:   OperationFileAccess,
+				elevationCtx := runnertypes.ElevationContext{
+					Operation:   runnertypes.OperationFileAccess,
 					CommandName: "test_concurrent",
 					FilePath:    "/tmp/test",
 				}
@@ -88,8 +89,8 @@ func TestUnixPrivilegeManager_NoDeadlock(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	elevationCtx := ElevationContext{
-		Operation:   OperationFileAccess,
+	elevationCtx := runnertypes.ElevationContext{
+		Operation:   runnertypes.OperationFileAccess,
 		CommandName: "test_no_deadlock",
 		FilePath:    "/tmp/test",
 	}
@@ -139,8 +140,8 @@ func TestUnixPrivilegeManager_RaceConditionProtection(t *testing.T) {
 			defer wg.Done()
 
 			ctx := context.Background()
-			elevationCtx := ElevationContext{
-				Operation:   OperationFileAccess,
+			elevationCtx := runnertypes.ElevationContext{
+				Operation:   runnertypes.OperationFileAccess,
 				CommandName: "race_test",
 				FilePath:    "/tmp/test",
 			}
@@ -194,8 +195,8 @@ func TestUnixPrivilegeManager_LockSerialization(t *testing.T) {
 			defer wg.Done()
 
 			ctx := context.Background()
-			elevationCtx := ElevationContext{
-				Operation:   OperationFileAccess,
+			elevationCtx := runnertypes.ElevationContext{
+				Operation:   runnertypes.OperationFileAccess,
 				CommandName: "serialization_test",
 				FilePath:    "/tmp/test",
 			}

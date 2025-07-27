@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/audit"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
@@ -32,15 +31,15 @@ var (
 type DefaultExecutor struct {
 	FS          FileSystem
 	Out         OutputWriter
-	PrivMgr     privilege.Manager // Optional privilege manager for privileged commands
-	AuditLogger *audit.Logger     // Optional audit logger for privileged operations
+	PrivMgr     runnertypes.PrivilegeManager // Optional privilege manager for privileged commands
+	AuditLogger *audit.Logger                // Optional audit logger for privileged operations
 }
 
 // Option is a functional option for configuring DefaultExecutor
 type Option func(*DefaultExecutor)
 
 // WithPrivilegeManager sets the privilege manager for the executor
-func WithPrivilegeManager(privMgr privilege.Manager) Option {
+func WithPrivilegeManager(privMgr runnertypes.PrivilegeManager) Option {
 	return func(e *DefaultExecutor) {
 		e.PrivMgr = privMgr
 	}
@@ -100,7 +99,7 @@ func (e *DefaultExecutor) executePrivileged(ctx context.Context, cmd runnertypes
 	}
 
 	if !e.PrivMgr.IsPrivilegedExecutionSupported() {
-		return nil, privilege.ErrPlatformNotSupported
+		return nil, runnertypes.ErrPlatformNotSupported
 	}
 
 	// Validate the command before any privilege elevation
@@ -115,8 +114,8 @@ func (e *DefaultExecutor) executePrivileged(ctx context.Context, cmd runnertypes
 
 	// Resolve command path with elevated privileges (needed for file access)
 	var resolvedPath string
-	pathResolutionCtx := privilege.ElevationContext{
-		Operation:   privilege.OperationFileAccess,
+	pathResolutionCtx := runnertypes.ElevationContext{
+		Operation:   runnertypes.OperationFileAccess,
 		CommandName: cmd.Name,
 		FilePath:    cmd.Cmd,
 	}
@@ -139,8 +138,8 @@ func (e *DefaultExecutor) executePrivileged(ctx context.Context, cmd runnertypes
 	}
 
 	// Execute command with elevated privileges
-	executionCtx := privilege.ElevationContext{
-		Operation:   privilege.OperationCommandExecution,
+	executionCtx := runnertypes.ElevationContext{
+		Operation:   runnertypes.OperationCommandExecution,
 		CommandName: cmd.Name,
 		FilePath:    resolvedPath,
 	}
