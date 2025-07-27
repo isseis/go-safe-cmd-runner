@@ -153,55 +153,6 @@ func TestValidator_HasShellMetacharacters(t *testing.T) {
 	}
 }
 
-func TestValidator_IsRelativePath(t *testing.T) {
-	validator, err := NewValidator(nil)
-	assert.NoError(t, err)
-
-	tests := []struct {
-		name     string
-		path     string
-		expected bool
-	}{
-		{
-			name:     "absolute path",
-			path:     "/usr/bin/ls",
-			expected: false,
-		},
-		{
-			name:     "relative path",
-			path:     "bin/ls",
-			expected: true,
-		},
-		{
-			name:     "relative path with dot",
-			path:     "./bin/ls",
-			expected: true,
-		},
-		{
-			name:     "relative path with double dot",
-			path:     "../bin/ls",
-			expected: true,
-		},
-		{
-			name:     "just filename",
-			path:     "ls",
-			expected: true,
-		},
-		{
-			name:     "empty path",
-			path:     "",
-			expected: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := validator.IsRelativePath(tt.path)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
 func TestValidator_CustomConfig(t *testing.T) {
 	config := &Config{
 		DangerousPrivilegedCommands: []string{"/custom/dangerous"},

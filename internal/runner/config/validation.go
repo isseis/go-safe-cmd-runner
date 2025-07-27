@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
@@ -47,7 +48,7 @@ func ValidatePrivilegedCommands(cfg *runnertypes.Config, validator *security.Val
 				}
 
 				// Check for relative paths
-				if validator.IsRelativePath(cmd.Cmd) {
+				if !filepath.IsAbs(cmd.Cmd) {
 					warnings = append(warnings, ValidationWarning{
 						Type:       "security",
 						Location:   fmt.Sprintf("groups[%s].commands[%s].cmd", group.Name, cmd.Name),

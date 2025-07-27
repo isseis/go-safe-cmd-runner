@@ -586,8 +586,3 @@ func (v *Validator) HasShellMetacharacters(args []string) bool {
 	}
 	return false
 }
-
-// IsRelativePath checks if a path is relative
-func (v *Validator) IsRelativePath(path string) bool {
-	return !strings.HasPrefix(path, "/")
-}
