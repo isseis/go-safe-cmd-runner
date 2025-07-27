@@ -17,7 +17,7 @@ import (
 type Manager struct {
 	hashDir          string
 	fs               common.FileSystem
-	fileValidator    *filevalidator.Validator
+	fileValidator    filevalidator.FileValidator
 	security         *security.Validator
 	pathResolver     *PathResolver
 	privilegeManager runnertypes.PrivilegeManager
@@ -90,25 +90,20 @@ func NewManagerWithOpts(hashDir string, options ...Option) (*Manager, error) {
 
 	// Initialize file validator with SHA256 algorithm
 	if opts.fileValidatorEnabled {
-		var fileValidator *filevalidator.Validator
 		var err error
 
 		if opts.privilegeManager != nil {
 			// Use privileged validator when privilege manager is available
 			logger := slog.Default()
-			privilegedValidator, err := filevalidator.NewValidatorWithPrivileges(&filevalidator.SHA256{}, hashDir, opts.privilegeManager, logger)
-			if err == nil {
-				fileValidator = privilegedValidator.Validator
-			}
+			manager.fileValidator, err = filevalidator.NewValidatorWithPrivileges(&filevalidator.SHA256{}, hashDir, opts.privilegeManager, logger)
 		} else {
 			// Use standard validator
-			fileValidator, err = filevalidator.New(&filevalidator.SHA256{}, hashDir)
+			manager.fileValidator, err = filevalidator.New(&filevalidator.SHA256{}, hashDir)
 		}
 
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize file validator: %w", err)
 		}
-		manager.fileValidator = fileValidator
 	}
 
 	// Initialize security validator with default config

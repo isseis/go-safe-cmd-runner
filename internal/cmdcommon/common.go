@@ -79,13 +79,8 @@ func CreateValidator(hashDir string) (*filevalidator.Validator, error) {
 }
 
 // CreateValidatorWithPrivileges creates a new file validator with privilege management support.
-func CreateValidatorWithPrivileges(hashDir string, privMgr runnertypes.PrivilegeManager, logger *slog.Logger) (*filevalidator.Validator, error) {
-	privilegedValidator, err := filevalidator.NewValidatorWithPrivileges(&filevalidator.SHA256{}, hashDir, privMgr, logger)
-	if err != nil {
-		return nil, err
-	}
-	// Return the embedded Validator from ValidatorWithPrivileges
-	return privilegedValidator.Validator, nil
+func CreateValidatorWithPrivileges(hashDir string, privMgr runnertypes.PrivilegeManager, logger *slog.Logger) (*filevalidator.ValidatorWithPrivileges, error) {
+	return filevalidator.NewValidatorWithPrivileges(&filevalidator.SHA256{}, hashDir, privMgr, logger)
 }
 
 // PrintUsage prints the usage message for the command.

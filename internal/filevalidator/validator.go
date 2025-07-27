@@ -12,6 +12,12 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
 
+// FileValidator interface defines the basic file validation methods
+type FileValidator interface {
+	Record(filePath string) (string, error)
+	Verify(filePath string) error
+}
+
 // HashFilePathGetter is an interface for getting the path where the hash for a file would be stored.
 // This is used to test file validation logic for handling hash collisions.
 type HashFilePathGetter interface {
