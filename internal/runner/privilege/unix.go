@@ -38,6 +38,10 @@ func newPlatformManager(logger *slog.Logger) Manager {
 
 // WithPrivileges executes a function with elevated privileges using safe privilege escalation
 func (m *UnixPrivilegeManager) WithPrivileges(ctx context.Context, elevationCtx ElevationContext, fn func() error) (err error) {
+	// Lock for the entire duration of the privileged operation to prevent race conditions
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	start := time.Now()
 
 	// Perform privilege escalation
@@ -87,10 +91,8 @@ func (m *UnixPrivilegeManager) WithPrivileges(ctx context.Context, elevationCtx 
 }
 
 // escalatePrivileges performs the actual privilege escalation (private method)
+// Note: This method assumes the caller (WithPrivileges) has already acquired the mutex lock
 func (m *UnixPrivilegeManager) escalatePrivileges(_ context.Context, elevationCtx ElevationContext) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	if !m.IsPrivilegedExecutionSupported() {
 		return fmt.Errorf("%w: binary not configured with setuid", ErrPrivilegedExecutionNotAvailable)
 	}
@@ -119,6 +121,7 @@ func (m *UnixPrivilegeManager) escalatePrivileges(_ context.Context, elevationCt
 }
 
 // restorePrivileges restores original privileges (private method)
+// Note: This method assumes the caller (WithPrivileges) has already acquired the mutex lock
 func (m *UnixPrivilegeManager) restorePrivileges() error {
 	if err := syscall.Seteuid(m.originalUID); err != nil {
 		return err
