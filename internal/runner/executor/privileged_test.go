@@ -143,7 +143,7 @@ func TestDefaultExecutor_PrivilegeElevationFailure(t *testing.T) {
 
 	cmd := runnertypes.Command{
 		Name:       "test_fail",
-		Cmd:        "echo",
+		Cmd:        "/bin/echo", // Use absolute path to pass validation
 		Args:       []string{"test"},
 		Privileged: true,
 	}
@@ -155,7 +155,7 @@ func TestDefaultExecutor_PrivilegeElevationFailure(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Nil(t, result)
-	assert.True(t, errors.Is(err, executor.ErrPrivilegedCmdSecurity))
+	assert.True(t, errors.Is(err, privtesting.ErrMockPrivilegeElevationFailed))
 }
 
 func TestDefaultExecutor_BackwardCompatibility(t *testing.T) {
