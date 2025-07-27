@@ -66,12 +66,13 @@ func (a *Logger) LogPrivilegedExecution(
 		a.logger.LogAttrs(ctx, slog.LevelInfo, "Privileged command executed successfully", baseAttrs...)
 	} else {
 		// Create new slice to avoid modifying baseAttrs
-		const additionalErrorAttrs = 2 // stdout and stderr
-		errorAttrs := make([]slog.Attr, len(baseAttrs), len(baseAttrs)+additionalErrorAttrs)
-		copy(errorAttrs, baseAttrs)
-		errorAttrs = append(errorAttrs,
+		additionalAttrs := []slog.Attr{
 			slog.String("stdout", result.Stdout),
-			slog.String("stderr", result.Stderr))
+			slog.String("stderr", result.Stderr),
+		}
+		errorAttrs := make([]slog.Attr, len(baseAttrs), len(baseAttrs)+len(additionalAttrs))
+		copy(errorAttrs, baseAttrs)
+		errorAttrs = append(errorAttrs, additionalAttrs...)
 		a.logger.LogAttrs(ctx, slog.LevelError, "Privileged command failed", errorAttrs...)
 	}
 }
