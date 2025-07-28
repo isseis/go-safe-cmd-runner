@@ -365,4 +365,419 @@ func processFile(manager *verification.Manager, filePath string, needsPrivileges
 4. **監査可能性**: 全操作の詳細なログ記録
 5. **堅牢性**: 障害時の安全な停止機構
 
-この設計により、セキュリティを損なうことなく、システムファイルへの安全なアクセスが可能となる。
+## 9. コマンド検証・実行フロー (拡張版)
+
+### 9.1 概要
+
+ファイル検証に加えて、設定ファイルから読み込まれたコマンドの検証と実行までの完全なフローを解説する。このフローには、コマンドパス解決、バイナリ検証、特権コマンド実行が含まれる。
+
+### 9.2 完全なアーキテクチャ図
+
+```
+┌─────────────────┐    ┌──────────────────────┐    ┌─────────────────────┐
+│                 │    │                      │    │                     │
+│   設定ファイル   │───▶│   検証マネージャー    │───▶│  ファイル検証実行   │
+│                 │    │                      │    │                     │
+└─────────────────┘    └──────────────────────┘    └─────────────────────┘
+                               │                            │
+                               ▼                            ▼
+                        ┌──────────────────────┐    ┌─────────────────────┐
+                        │                      │    │                     │
+                        │  特権バリデータ選択  │    │   コマンド検証開始   │
+                        │                      │    │                     │
+                        └──────────────────────┘    └─────────────────────┘
+                               │                            │
+                    ┌──────────┴──────────┐                 ▼
+                    ▼                     ▼         ┌─────────────────────┐
+            ┌───────────────┐     ┌─────────────────────┐ │                     │
+            │               │     │                     │ │   パス解決・検証    │
+            │ 標準バリデータ │     │ 特権バリデータ      │ │                     │
+            │               │     │ (権限昇格付き)      │ └─────────────────────┘
+            └───────────────┘     └─────────────────────┘         │
+                                                                  ▼
+                                                          ┌─────────────────────┐
+                                                          │                     │
+                                                          │  コマンド実行       │
+                                                          │  (特権管理付き)     │
+                                                          └─────────────────────┘
+```
+
+### 9.3 コマンド検証・実行の詳細フロー
+
+#### Step 7: 設定ファイルからのコマンド読み込み
+
+```go
+// internal/runner/config/loader.go
+func LoadConfig(configPath string) (*runnertypes.Config, error) {
+    // 設定ファイルの検証（前述のファイル検証フロー）
+    if err := verificationManager.VerifyConfigFile(configPath); err != nil {
+        return nil, fmt.Errorf("config file verification failed: %w", err)
+    }
+
+    // TOMLファイルの解析
+    config := &runnertypes.Config{}
+    if err := toml.DecodeFile(configPath, config); err != nil {
+        return nil, fmt.Errorf("failed to decode config: %w", err)
+    }
+
+    return config, nil
+}
+```
+
+#### Step 8: コマンドパス解決と検証
+
+```go
+// internal/verification/manager.go
+func (m *Manager) VerifyCommandFile(command string) (*FileDetail, error) {
+    detail := &FileDetail{
+        Path: command,
+    }
+
+    start := time.Now()
+    defer func() {
+        detail.Duration = time.Since(start)
+    }()
+
+    // 1. パス解決（PathResolver使用）
+    if m.pathResolver == nil {
+        detail.Error = ErrPathResolverNotInitialized
+        return detail, ErrPathResolverNotInitialized
+    }
+
+    resolvedPath, err := m.pathResolver.ResolvePath(command)
+    if err != nil {
+        detail.Error = err
+        return detail, fmt.Errorf("path resolution failed: %w", err)
+    }
+    detail.ResolvedPath = resolvedPath
+
+    // 2. コマンドセキュリティ検証
+    if err := m.pathResolver.ValidateCommand(resolvedPath); err != nil {
+        detail.Error = err
+        return detail, fmt.Errorf("command validation failed: %w", err)
+    }
+
+    // 3. スキップ判定
+    if m.shouldSkipVerification(resolvedPath) {
+        detail.HashMatched = true
+        return detail, nil
+    }
+
+    // 4. バイナリハッシュ検証（特権バリデータ使用）
+    if err := m.fileValidator.Verify(resolvedPath); err != nil {
+        detail.HashMatched = false
+        detail.Error = err
+        return detail, fmt.Errorf("command file verification failed: %w", err)
+    }
+
+    detail.HashMatched = true
+    return detail, nil
+}
+```
+
+#### Step 9: 特権コマンド実行の準備
+
+```go
+// internal/runner/executor/executor.go (仮想的な拡張実装)
+func (e *DefaultExecutor) Execute(ctx context.Context, cmd runnertypes.Command, envVars map[string]string) (*Result, error) {
+    // 1. コマンド構造の検証
+    if err := e.Validate(cmd); err != nil {
+        return nil, fmt.Errorf("command validation failed: %w", err)
+    }
+
+    // 2. 特権コマンドの判定
+    if cmd.Privileged {
+        return e.executePrivileged(ctx, cmd, envVars)
+    }
+
+    return e.executeNormal(ctx, cmd, envVars)
+}
+
+// executePrivileged handles privileged command execution
+func (e *DefaultExecutor) executePrivileged(ctx context.Context, cmd runnertypes.Command, envVars map[string]string) (*Result, error) {
+    // 特権マネージャーの可用性確認
+    if e.PrivMgr == nil {
+        return nil, fmt.Errorf("privileged execution requested but no privilege manager available")
+    }
+
+    if !e.PrivMgr.IsPrivilegedExecutionSupported() {
+        return nil, fmt.Errorf("privileged execution not supported on this system")
+    }
+
+    // パス解決（特権付き）
+    var resolvedPath string
+    pathResolutionCtx := runnertypes.ElevationContext{
+        Operation:   runnertypes.OperationFileAccess,
+        CommandName: cmd.Name,
+        FilePath:    cmd.Cmd,
+    }
+
+    err := e.PrivMgr.WithPrivileges(ctx, pathResolutionCtx, func() error {
+        path, lookErr := exec.LookPath(cmd.Cmd)
+        if lookErr != nil {
+            return fmt.Errorf("failed to find command %q: %w", cmd.Cmd, lookErr)
+        }
+        resolvedPath = path
+        return nil
+    })
+
+    if err != nil {
+        return nil, fmt.Errorf("failed to resolve command path with privileges: %w", err)
+    }
+
+    // コマンド実行（特権付き）
+    executionCtx := runnertypes.ElevationContext{
+        Operation:   runnertypes.OperationCommandExecution,
+        CommandName: cmd.Name,
+        FilePath:    resolvedPath,
+    }
+
+    var result *Result
+    err = e.PrivMgr.WithPrivileges(ctx, executionCtx, func() error {
+        var execErr error
+        result, execErr = e.executeCommandWithPath(ctx, resolvedPath, cmd, envVars)
+        return execErr
+    })
+
+    if err != nil {
+        return nil, fmt.Errorf("privileged command execution failed: %w", err)
+    }
+
+    return result, nil
+}
+```
+
+### 9.4 統合実行フロー
+
+#### Step 10: 完全な実行シーケンス
+
+```
+1. 設定ファイル読み込み要求
+   ├─ 検証マネージャー初期化
+   ├─ 特権マネージャー設定確認
+   └─ バリデータ種別決定
+
+2. 設定ファイル検証
+   ├─ ハッシュディレクトリ検証
+   ├─ ファイルハッシュ検証
+   │  ├─ [特権必要時] seteuid(0)
+   │  ├─ ファイル読み込み・ハッシュ計算
+   │  └─ [特権必要時] seteuid(originalUID)
+   └─ 設定ファイル解析
+
+3. コマンドグループ処理
+   ├─ グループ内コマンド列挙
+   ├─ 依存関係解決
+   └─ コマンド順次実行
+
+4. 【個別コマンド実行フロー】
+   a. コマンド前処理
+      ├─ コマンド構造検証
+      ├─ 特権フラグ確認
+      └─ 実行方式決定
+
+   b. コマンドバイナリ検証
+      ├─ パス解決
+      │  ├─ [特権コマンド] ElevationContext(OperationFileAccess)
+      │  ├─ [特権コマンド] seteuid(0)
+      │  ├─ exec.LookPath実行
+      │  └─ [特権コマンド] seteuid(originalUID)
+      ├─ セキュリティ検証
+      ├─ ハッシュ検証
+      │  ├─ [特権必要時] seteuid(0)
+      │  ├─ バイナリハッシュ計算・比較
+      │  └─ [特権必要時] seteuid(originalUID)
+      └─ 実行可否判定
+
+   c. コマンド実行
+      ├─ 環境変数設定
+      ├─ 作業ディレクトリ設定
+      ├─ [特権コマンド] ElevationContext(OperationCommandExecution)
+      ├─ [特権コマンド] seteuid(0)
+      ├─ exec.CommandContext実行
+      ├─ [特権コマンド] seteuid(originalUID)
+      └─ 結果収集
+
+   d. 後処理
+      ├─ 実行結果ログ記録
+      ├─ 権限操作監査ログ
+      └─ エラーハンドリング
+
+5. 実行完了・結果報告
+```
+
+### 9.5 実際の使用例（コマンド実行まで）
+
+#### 設定ファイル例
+
+```toml
+# /etc/runner/config.toml
+version = "1.0"
+
+[global]
+timeout = 300
+workdir = "/tmp"
+verify_files = ["/etc/runner/config.toml"]
+
+[[groups]]
+name = "system-maintenance"
+description = "System maintenance commands requiring root privileges"
+
+  [[groups.commands]]
+  name = "mysql_backup"
+  description = "Backup MySQL database as root user"
+  cmd = "/usr/bin/mysqldump"
+  args = ["-u", "root", "-p${MYSQL_ROOT_PASSWORD}", "--single-transaction", "production"]
+  privileged = true
+  timeout = 1800
+
+  [[groups.commands]]
+  name = "log_cleanup"
+  description = "Clean old log files"
+  cmd = "/bin/find"
+  args = ["/var/log", "-name", "*.log.old", "-delete"]
+  privileged = true
+
+  [[groups.commands]]
+  name = "disk_usage_check"
+  description = "Check disk usage (non-privileged)"
+  cmd = "/bin/df"
+  args = ["-h"]
+  privileged = false
+```
+
+#### 実行例とログ出力
+
+```bash
+# setuid rootバイナリとして実行
+$ /usr/local/bin/go-safe-cmd-runner run -config /etc/runner/config.toml -group system-maintenance
+```
+
+**ログ出力例：**
+
+```
+# 1. 設定ファイル検証
+2025/07/27 23:56:46 INFO File hash verified with privileges file_path=/etc/runner/config.toml
+
+# 2. コマンドバイナリ検証
+2025/07/27 23:56:46 INFO File hash verified with privileges file_path=/usr/bin/mysqldump
+2025/07/27 23:56:46 INFO File hash verified with privileges file_path=/bin/find
+2025/07/27 23:56:46 DEBUG File hash verified file_path=/bin/df
+
+# 3. 特権コマンド実行
+2025/07/27 23:56:46 INFO Privilege elevation started operation=command_execution command=mysql_backup file_path=/usr/bin/mysqldump original_uid=1000 target_uid=0
+2025/07/27 23:56:48 INFO Privileged command executed successfully command=mysql_backup exit_code=0 execution_duration_ms=2340 elevation_count=2 total_privilege_duration_ms=45
+2025/07/27 23:56:48 INFO Privilege restoration completed command=mysql_backup duration_ms=2
+
+2025/07/27 23:56:48 INFO Privilege elevation started operation=command_execution command=log_cleanup file_path=/bin/find original_uid=1000 target_uid=0
+2025/07/27 23:56:48 INFO Privileged command executed successfully command=log_cleanup exit_code=0 execution_duration_ms=120 elevation_count=2 total_privilege_duration_ms=8
+2025/07/27 23:56:48 INFO Privilege restoration completed command=log_cleanup duration_ms=1
+
+# 4. 通常コマンド実行
+2025/07/27 23:56:48 INFO Command executed successfully command=disk_usage_check exit_code=0 execution_duration_ms=45
+```
+
+### 9.6 セキュリティ考慮事項（拡張版）
+
+#### 9.6.1 コマンド実行時の権限管理
+
+1. **コマンドパス解決**: 特権コマンドのパス解決は権限昇格下で実行
+2. **バイナリ検証**: 実行前に必ずバイナリのハッシュ検証を実施
+3. **実行時権限制御**: コマンド実行時のみ権限昇格、完了後即座に復帰
+4. **環境変数隔離**: 特権実行時の環境変数は厳格に制御
+
+#### 9.6.2 監査とコンプライアンス
+
+```go
+// 包括的な監査ログ例
+type AuditEntry struct {
+    Timestamp        time.Time `json:"timestamp"`
+    AuditType        string    `json:"audit_type"`
+    CommandName      string    `json:"command_name"`
+    CommandPath      string    `json:"command_path"`
+    CommandArgs      []string  `json:"command_args"`
+    Privileged       bool      `json:"privileged"`
+    UserID           int       `json:"user_id"`
+    OriginalUID      int       `json:"original_uid"`
+    ElevationCount   int       `json:"elevation_count"`
+    ExecutionTime    int64     `json:"execution_time_ms"`
+    PrivilegeTime    int64     `json:"privilege_time_ms"`
+    ExitCode         int       `json:"exit_code"`
+    Success          bool      `json:"success"`
+    ErrorMessage     string    `json:"error_message,omitempty"`
+}
+```
+
+### 9.7 エラーハンドリング（完全版）
+
+#### 9.7.1 段階的エラー処理
+
+```
+Error Recovery Strategy:
+├─ Configuration Phase
+│  ├─ Config File Not Found → Exit with clear error
+│  ├─ Config File Verification Failed → Security alert, exit
+│  └─ Config Parse Error → Configuration error report
+│
+├─ Command Resolution Phase
+│  ├─ Command Not Found → Skip command, log warning
+│  ├─ Path Resolution Failed → Security check failure
+│  └─ Binary Verification Failed → Security alert, halt execution
+│
+├─ Privilege Management Phase
+│  ├─ Privilege Escalation Failed → Skip privileged commands
+│  ├─ Privilege Restoration Failed → Emergency shutdown
+│  └─ Platform Not Supported → Graceful degradation
+│
+└─ Command Execution Phase
+   ├─ Command Timeout → Kill process, log timeout
+   ├─ Command Exit Error → Log failure, continue with next
+   └─ Unexpected Termination → Log crash, attempt cleanup
+```
+
+### 9.8 パフォーマンス最適化
+
+#### 9.8.1 権限昇格の最適化
+
+- **最小権限期間**: 各操作で独立した権限昇格（バッチ処理なし）
+- **並列実行制限**: 特権操作は常にシリアル実行
+- **キャッシュ活用**: バイナリハッシュの一時キャッシュ（セキュリティ範囲内）
+
+#### 9.8.2 メトリクス収集
+
+```go
+type ExecutionMetrics struct {
+    TotalCommands        int           `json:"total_commands"`
+    PrivilegedCommands   int           `json:"privileged_commands"`
+    SuccessfulCommands   int           `json:"successful_commands"`
+    FailedCommands       int           `json:"failed_commands"`
+    TotalExecutionTime   time.Duration `json:"total_execution_time"`
+    TotalPrivilegeTime   time.Duration `json:"total_privilege_time"`
+    AverageElevationTime time.Duration `json:"average_elevation_time"`
+    SecurityViolations   int           `json:"security_violations"`
+}
+```
+
+## 10. 結論（拡張版）
+
+特権バリデータ・マネージャーシステムにより、設定ファイル読み込みからコマンド実行まで、以下の包括的な機能が実現される：
+
+### 10.1 セキュリティ機能
+1. **設定ファイル整合性**: 改ざん検出による信頼性確保
+2. **バイナリ検証**: 実行前のコマンドバイナリ整合性確認
+3. **動的権限管理**: 必要最小限の期間のみの権限昇格
+4. **包括的監査**: 全段階での詳細ログ記録
+
+### 10.2 運用機能
+1. **統一インターフェース**: 特権/非特権処理の透明性
+2. **柔軟な設定**: コマンド単位での権限制御
+3. **堅牢なエラー処理**: 障害時の安全な停止・復旧機構
+4. **性能最適化**: 権限昇格オーバーヘッドの最小化
+
+### 10.3 コンプライアンス機能
+1. **詳細監査証跡**: 規制要件に対応した完全なログ記録
+2. **セキュリティアラート**: 権限異常の即座の検出・通知
+3. **変更追跡**: 設定・バイナリの変更履歴管理
+4. **アクセス制御**: 最小権限原則の厳格な実装
+
+この包括的な設計により、エンタープライズ環境においても安全で監査可能なシステム管理タスクの自動化が実現される。
