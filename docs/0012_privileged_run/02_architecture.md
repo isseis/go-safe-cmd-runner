@@ -5,97 +5,134 @@
 ### 1.1 アーキテクチャ原則
 - **最小権限の原則**: 権限昇格は必要な操作の直前に行い、操作完了後即座に降格
 - **セキュリティファースト**: 全ての権限操作は安全性を最優先に設計
-- **既存システムとの統合**: 現在のexecutorインターフェースとの完全な互換性
+- **既存システムとの統合**: 現在のファイル検証システムとの完全な互換性
 - **障害時の安全性**: 任意のエラー状況でも権限が適切に復元される
+- **型の統一**: runnertypesパッケージで権限管理関連の型を一元管理
 
 ### 1.2 システム境界
 - **対象プラットフォーム**: Linux/Unix系のみ
 - **権限モデル**: setuid root バイナリによる実効UID切り替え
-- **統合ポイント**: internal/runner/executor パッケージ
-- **セキュリティ統合**: internal/filevalidator との連携
+- **統合ポイント**: internal/filevalidator パッケージ
+- **実行フロー**: 設定ファイル読み込み → 検証管理 → 特権ファイル操作
 
 ## 2. コンポーネント設計
 
-### 2.1 権限管理コンポーネント (PrivilegeManager)
+### 2.1 権限管理インターフェース (runnertypes.PrivilegeManager)
 
 ```go
-// PrivilegeManager manages privilege escalation and restoration
-type PrivilegeManager struct {
-    originalUID int
-    logger      *slog.Logger
+// PrivilegeManager interface defines methods for privilege elevation/dropping
+type PrivilegeManager interface {
+    ElevatePrivileges() error
+    DropPrivileges() error
+    IsPrivilegedExecutionSupported() bool
+    WithPrivileges(ctx context.Context, elevationCtx ElevationContext, fn func() error) error
 }
 
-// WithPrivileges executes a function with escalated privileges
-// This is the ONLY public method to ensure safe privilege management
-func (pm *PrivilegeManager) WithPrivileges(fn func() error) error
+// Operation represents different types of privileged operations
+type Operation string
 
-// escalatePrivileges escalates to root privileges (private method)
-func (pm *PrivilegeManager) escalatePrivileges() error
+const (
+    OperationFileHashCalculation Operation = "file_hash_calculation"
+    OperationCommandExecution    Operation = "command_execution"
+    OperationFileAccess          Operation = "file_access"
+    OperationHealthCheck         Operation = "health_check"
+)
 
-// restorePrivileges restores original user privileges (private method)
-func (pm *PrivilegeManager) restorePrivileges() error
+// ElevationContext contains context information for privilege elevation
+type ElevationContext struct {
+    Operation   Operation
+    CommandName string
+    FilePath    string
+    StartTime   time.Time
+    OriginalUID int
+    TargetUID   int
+}
 ```
 
 **設計ポイント:**
-- **セキュアな設計**: `WithPrivileges` のみを公開し、内部で権限昇格・復帰を保証
-- **確実な権限復元**: defer文による自動復元でヒューマンエラーを防止
-- **panic安全性**: recover機構で異常終了時も権限復元を保証
-- **責任の集約**: 権限管理ロジックを一箇所に集中して管理
+- **型の統一**: runnertypesパッケージで権限関連型を一元管理
+- **セキュアな設計**: `WithPrivileges` メソッドで安全な権限管理を保証
+- **コンテキスト情報**: 操作種別とメタデータによる詳細な監査ログ
+- **プラットフォーム抽象化**: インターフェースによる実装の切り替え
 
-### 2.2 特権対応Executor (PrivilegedExecutor)
+### 2.2 権限管理実装 (privilege.Manager)
 
 ```go
-// PrivilegedExecutor extends the standard executor with privilege management
-type PrivilegedExecutor struct {
-    baseExecutor     executor.CommandExecutor
-    privilegeManager *PrivilegeManager
-    fileValidator    *filevalidator.Validator
-}
+// Manager interface for privilege management (extends runnertypes.PrivilegeManager)
+type Manager interface {
+    runnertypes.PrivilegeManager
 
-// Execute implements the CommandExecutor interface with privilege support
-func (pe *PrivilegedExecutor) Execute(ctx context.Context, cmd runnertypes.Command, envVars map[string]string) (*executor.Result, error)
+    // Additional methods specific to privilege package
+    GetCurrentUID() int
+    GetOriginalUID() int
+    HealthCheck(ctx context.Context) error
+    GetHealthStatus(ctx context.Context) HealthStatus
+    GetMetrics() Metrics
+}
 ```
 
 **設計ポイント:**
-- 既存の `CommandExecutor` インターフェースを完全実装
-- コンポジションパターンによる既存executorの拡張
-- privilegedフラグに基づく条件付き権限昇格
+- **インターフェース拡張**: runnertypesを基底として機能拡張
+- **プラットフォーム実装**: Unix/Linux用とWindows用の個別実装
+- **健全性チェック**: 権限昇格機能の動作確認機能
+- **メトリクス収集**: 権限操作の統計情報管理
 
-### 2.3 ハッシュ値計算の権限管理
+### 2.3 特権対応ファイル検証 (filevalidator.ValidatorWithPrivileges)
 
 ```go
-// PrivilegedHashCalculator handles hash calculation with privilege management
-type PrivilegedHashCalculator struct {
-    privilegeManager *PrivilegeManager
-    baseCalculator   filevalidator.HashCalculator
+// ValidatorWithPrivileges extends the base Validator with privilege management capabilities
+type ValidatorWithPrivileges struct {
+    *Validator
+    privMgr      runnertypes.PrivilegeManager
+    logger       *slog.Logger
+    secValidator *security.Validator
 }
 
-// CalculateHash calculates file hash with privilege escalation if needed
-func (phc *PrivilegedHashCalculator) CalculateHash(filePath string, privileged bool) (string, error)
+// RecordWithPrivileges calculates and records file hash with privilege elevation if needed
+func (v *ValidatorWithPrivileges) RecordWithPrivileges(
+    ctx context.Context,
+    filePath string,
+    needsPrivileges bool,
+    force bool,
+) (string, error)
+
+// VerifyWithPrivileges validates file hash with privilege elevation if needed
+func (v *ValidatorWithPrivileges) VerifyWithPrivileges(
+    ctx context.Context,
+    filePath string,
+    needsPrivileges bool,
+) error
 ```
 
 **設計ポイント:**
-- filevalidatorとの統合
-- privilegedコマンドのハッシュ計算時のみ権限昇格
-- 計算完了後の即座の権限降格
+- **コンポジション**: 基本Validatorを埋め込みによる拡張
+- **条件付き権限昇格**: needsPrivilegesフラグによる動的な権限管理
+- **セキュリティ統合**: security.Validatorとの連携による安全なログ出力
+- **統一インターフェース**: FileValidatorインターフェースによる抽象化
 
 ## 3. 権限切り替えフロー
 
-### 3.1 コマンド実行フロー
+### 3.1 ファイル検証フロー
 
 ```
-1. コマンド受信
-2. Privilegedフラグ確認
-   ├─ false: 標準executorで実行
-   └─ true: 特権実行フロー
-3. 【特権実行フロー】
-   a. ハッシュ値計算
+1. 設定ファイル読み込み
+2. 検証マネージャー初期化
+   ├─ PrivilegeManager が利用可能？
+   │  ├─ Yes: ValidatorWithPrivilegesを作成
+   │  └─ No:  標準Validatorを作成
+   └─ FileValidatorインターフェースで統一
+3. 【特権ファイル検証フロー】
+   a. ファイルハッシュ記録
+      ├─ ElevationContext(OperationFileHashCalculation)
       ├─ seteuid(0)
-      ├─ ファイルハッシュ計算
+      ├─ ファイル読み込み・ハッシュ計算
+      ├─ ハッシュファイル書き込み
       └─ seteuid(originalUID)
-   b. コマンド実行
+   b. ファイルハッシュ検証
+      ├─ ElevationContext(OperationFileHashCalculation)
       ├─ seteuid(0)
-      ├─ exec.Command実行
+      ├─ ファイル読み込み・ハッシュ計算
+      ├─ 保存済みハッシュと比較
       └─ seteuid(originalUID)
 4. 結果返却
 ```
@@ -201,39 +238,57 @@ slog.Info("Privilege restoration completed",
 
 ## 5. インターフェース設計
 
-### 5.1 Runner統合
+### 5.1 検証マネージャー統合
 
 ```go
-// NewRunner with privileged executor support
-func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
-    // 既存の実装を拡張
-    var executor executor.CommandExecutor
-
-    if hasPrivilegedCommands(config) {
-        privilegeManager := NewPrivilegeManager()
-        executor = NewPrivilegedExecutor(
-            executor.NewDefaultExecutor(),
-            privilegeManager,
-            fileValidator)
-    } else {
-        executor = executor.NewDefaultExecutor()
+// NewManagerWithOpts with privilege support
+func NewManagerWithOpts(hashDir string, options ...Option) (*Manager, error) {
+    opts := newOptions()
+    for _, option := range options {
+        option(opts)
     }
 
-    return &Runner{
-        executor: executor,
-        // ... 他のフィールド
-    }, nil
+    manager := &Manager{
+        hashDir:          hashDir,
+        fs:               opts.fs,
+        privilegeManager: opts.privilegeManager,  // 特権マネージャー設定
+    }
+
+    // バリデータの動的選択
+    if opts.fileValidatorEnabled {
+        var err error
+
+        if opts.privilegeManager != nil {
+            // 特権バリデータを作成
+            logger := slog.Default()
+            manager.fileValidator, err = filevalidator.NewValidatorWithPrivileges(
+                &filevalidator.SHA256{}, hashDir, opts.privilegeManager, logger)
+        } else {
+            // 標準バリデータを作成
+            manager.fileValidator, err = filevalidator.New(&filevalidator.SHA256{}, hashDir)
+        }
+
+        if err != nil {
+            return nil, fmt.Errorf("failed to initialize file validator: %w", err)
+        }
+    }
+
+    return manager, nil
 }
 ```
 
-### 5.2 設定互換性
+### 5.2 使用例
 
-```toml
-[[groups.commands]]
-name = "mysql_backup"
-cmd = "/usr/bin/mysqldump"
-args = ["-u", "root", "-p${MYSQL_ROOT_PASSWORD}", "database"]
-privileged = true  # この設定で特権実行が有効化
+```go
+// 特権マネージャー付きでの初期化
+privMgr := privilege.NewManager(slog.Default())
+manager, err := verification.NewManagerWithOpts(
+    "/etc/hashes",
+    verification.WithPrivilegeManager(privMgr),
+)
+
+// ファイル検証実行（権限昇格は自動判定）
+err = manager.VerifyConfigFile("/etc/sensitive-config.toml")
 ```
 
 ## 6. エラー処理戦略
