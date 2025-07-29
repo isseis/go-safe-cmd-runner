@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -16,6 +17,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 )
@@ -107,8 +109,15 @@ func run() error {
 	// Get hash directory from command line args and environment variables
 	hashDir := getHashDir()
 
-	// Initialize verification manager
-	verificationManager, err := verification.NewManager(hashDir)
+	// Initialize privilege manager
+	logger := slog.Default()
+	privMgr := privilege.NewManager(logger)
+
+	// Initialize verification manager with privilege support
+	verificationManager, err := verification.NewManagerWithOpts(
+		hashDir,
+		verification.WithPrivilegeManager(privMgr),
+	)
 	if err != nil {
 		return fmt.Errorf("failed to initialize verification: %w", err)
 	}
@@ -132,9 +141,10 @@ func run() error {
 			result.VerifiedFiles, len(result.SkippedFiles), result.Duration)
 	}
 
-	// Initialize Runner
+	// Initialize Runner with privilege support
 	runner, err := runner.NewRunner(cfg,
-		runner.WithVerificationManager(verificationManager))
+		runner.WithVerificationManager(verificationManager),
+		runner.WithPrivilegeManager(privMgr))
 	if err != nil {
 		return fmt.Errorf("failed to initialize runner: %w", err)
 	}
