@@ -157,7 +157,51 @@ func (v *ValidatorWithPrivileges) VerifyWithPrivileges(
 | コマンド実行 | 一般ユーザー | root | 一般ユーザー |
 | その他処理 | 一般ユーザー | - | 一般ユーザー |
 
-### 4.2 安全性保証メカニズム
+### 4.2 Setuid検出の改善
+
+**ファイルシステムベース検証**により、より堅牢なsetuid検出を実現：
+
+```go
+// isSetuidBinary checks if the current binary has the setuid bit set
+// This provides more robust detection than checking runtime UID/EUID which
+// can be altered by previous seteuid() calls
+func isSetuidBinary(logger *slog.Logger) bool {
+    // Get the path to the current executable
+    execPath, err := os.Executable()
+    if err != nil {
+        return false
+    }
+
+    // Get file information and check setuid bit
+    fileInfo, err := os.Stat(execPath)
+    if err != nil {
+        return false
+    }
+
+    hasSetuidBit := fileInfo.Mode()&os.ModeSetuid != 0
+
+    // Check root ownership - essential for setuid to work
+    var isOwnedByRoot bool
+    if stat, ok := fileInfo.Sys().(*syscall.Stat_t); ok {
+        isOwnedByRoot = stat.Uid == 0
+    }
+
+    originalUID := syscall.Getuid()
+
+    // Valid setuid scenario: setuid bit + root ownership + non-root real UID
+    return hasSetuidBit && isOwnedByRoot && originalUID != 0
+}
+```
+
+**従来方式との比較:**
+- **従来**: `effectiveUID == 0 && originalUID != 0` （実行時UID比較）
+- **改善後**: バイナリファイルのsetuidビット + root所有権の直接確認
+- **利点**:
+  - 事前の`seteuid()`呼び出しによる誤判定を防止
+  - rootが所有していないsetuidファイルの誤検出を防止
+  - より確実なsetuid実行環境の検証
+
+### 4.3 安全性保証メカニズム
 
 ```go
 func (pm *PrivilegeManager) WithPrivileges(fn func() error) error {

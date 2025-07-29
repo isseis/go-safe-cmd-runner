@@ -28,13 +28,15 @@ type UnixPrivilegeManager struct {
 
 func newPlatformManager(logger *slog.Logger) Manager {
 	originalUID := syscall.Getuid()
-	effectiveUID := syscall.Geteuid()
+
+	// Use filesystem-based verification for more robust setuid detection
+	isSetuid := isSetuidBinary(logger)
 
 	return &UnixPrivilegeManager{
 		logger:      logger,
 		originalUID: originalUID,
 		originalGID: syscall.Getgid(),
-		isSetuid:    effectiveUID == 0 && originalUID != 0,
+		isSetuid:    isSetuid,
 	}
 }
 
@@ -202,6 +204,60 @@ func (m *UnixPrivilegeManager) IsPrivilegedExecutionSupported() bool {
 // GetCurrentUID returns the current effective user ID
 func (m *UnixPrivilegeManager) GetCurrentUID() int {
 	return syscall.Geteuid()
+}
+
+// isSetuidBinary checks if the current binary has the setuid bit set and is owned by root
+// This provides more robust detection than checking runtime UID/EUID which
+// can be altered by previous seteuid() calls
+func isSetuidBinary(logger *slog.Logger) bool {
+	// Get the path to the current executable
+	execPath, err := os.Executable()
+	if err != nil {
+		logger.Warn("Failed to get executable path for setuid detection",
+			"error", err)
+		return false
+	}
+
+	// Get file information
+	fileInfo, err := os.Stat(execPath)
+	if err != nil {
+		logger.Warn("Failed to stat executable for setuid detection",
+			"path", execPath,
+			"error", err)
+		return false
+	}
+
+	// Check if the setuid bit is set
+	hasSetuidBit := fileInfo.Mode()&os.ModeSetuid != 0
+
+	// Check if the file is owned by root (UID 0)
+	// This is essential for setuid to work - only root-owned setuid binaries can escalate privileges
+	var isOwnedByRoot bool
+	if stat, ok := fileInfo.Sys().(*syscall.Stat_t); ok {
+		isOwnedByRoot = stat.Uid == 0
+	} else {
+		logger.Warn("Failed to get file ownership information for setuid detection",
+			"path", execPath)
+		return false
+	}
+
+	// Additional validation: ensure we can actually escalate privileges
+	// This catches cases where setuid bit is set but we're already running as root
+	originalUID := syscall.Getuid()
+	effectiveUID := syscall.Geteuid()
+
+	// True setuid scenario: setuid bit + root ownership + non-root real UID
+	isValidSetuid := hasSetuidBit && isOwnedByRoot && originalUID != 0
+
+	logger.Info("Setuid binary detection completed",
+		"executable_path", execPath,
+		"has_setuid_bit", hasSetuidBit,
+		"is_owned_by_root", isOwnedByRoot,
+		"original_uid", originalUID,
+		"effective_uid", effectiveUID,
+		"is_valid_setuid", isValidSetuid)
+
+	return isValidSetuid
 }
 
 // GetOriginalUID returns the original user ID before any privilege elevation

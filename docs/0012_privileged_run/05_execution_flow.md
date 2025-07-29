@@ -69,6 +69,51 @@ func NewManagerWithOpts(hashDir string, options ...Option) (*Manager, error) {
     }
 ```
 
+**特権マネージャーの初期化プロセス（改善版）:**
+
+```go
+// internal/runner/privilege/unix.go
+func newPlatformManager(logger *slog.Logger) Manager {
+    originalUID := syscall.Getuid()
+
+    // ファイルシステムベースの堅牢なsetuid検出
+    isSetuid := isSetuidBinary(logger)
+
+    return &UnixPrivilegeManager{
+        logger:      logger,
+        originalUID: originalUID,
+        originalGID: syscall.Getgid(),
+        isSetuid:    isSetuid,  // ←バイナリファイルのsetuidビット直接確認
+    }
+}
+
+// isSetuidBinary - より堅牢なsetuid検出
+func isSetuidBinary(logger *slog.Logger) bool {
+    execPath, err := os.Executable()
+    if err != nil {
+        return false
+    }
+
+    fileInfo, err := os.Stat(execPath)
+    if err != nil {
+        return false
+    }
+
+    hasSetuidBit := fileInfo.Mode()&os.ModeSetuid != 0
+
+    // root所有権の確認 - setuidが機能するための必須条件
+    var isOwnedByRoot bool
+    if stat, ok := fileInfo.Sys().(*syscall.Stat_t); ok {
+        isOwnedByRoot = stat.Uid == 0
+    }
+
+    originalUID := syscall.Getuid()
+
+    // 有効なsetuid環境: setuidビット + root所有権 + 非rootユーザー
+    return hasSetuidBit && isOwnedByRoot && originalUID != 0
+}
+```
+
 #### Step 2: バリデータの選択と初期化
 
 ```go
@@ -100,9 +145,11 @@ if opts.fileValidatorEnabled {
 ```
 
 **重要なポイント:**
-- 特権マネージャーの有無により動的にバリデータ種別を決定
-- `FileValidator`インターフェースにより両タイプが統一的に扱われる
-- セキュリティとパフォーマンスのバランスを考慮した設計
+- **堅牢なsetuid検出**: バイナリファイルのsetuidビット + root所有権の直接確認
+- **完全な検証**: setuidビット、root所有権、非rootユーザーの3条件すべてを確認
+- **動的バリデータ選択**: 特権マネージャーの有無により適切なバリデータを選択
+- **統一インターフェース**: `FileValidator`インターフェースにより両タイプを透明に扱う
+- **セキュリティ優先**: 実行時状態に依存しない確実な検証を実現
 
 ### 4.2 ファイル検証実行フェーズ
 
