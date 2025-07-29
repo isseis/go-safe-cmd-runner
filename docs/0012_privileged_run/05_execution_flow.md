@@ -69,22 +69,37 @@ func NewManagerWithOpts(hashDir string, options ...Option) (*Manager, error) {
     }
 ```
 
-**特権マネージャーの初期化プロセス（改善版）:**
+**特権マネージャーの初期化プロセス（拡張版）:**
 
 ```go
 // internal/runner/privilege/unix.go
 func newPlatformManager(logger *slog.Logger) Manager {
     originalUID := syscall.Getuid()
 
-    // ファイルシステムベースの堅牢なsetuid検出
-    isSetuid := isSetuidBinary(logger)
+    // 特権実行サポートの確認（Native root または Setuid binary）
+    privilegeSupported := isPrivilegeExecutionSupported(logger)
 
     return &UnixPrivilegeManager{
         logger:      logger,
         originalUID: originalUID,
         originalGID: syscall.Getgid(),
-        isSetuid:    isSetuid,  // ←バイナリファイルのsetuidビット直接確認
+        isSetuid:    privilegeSupported,  // ←両方の実行モードをサポート
     }
+}
+
+// 2つの実行モードをサポート
+func isPrivilegeExecutionSupported(logger *slog.Logger) bool {
+    originalUID := syscall.Getuid()
+    effectiveUID := syscall.Geteuid()
+
+    // Case 1: Native root実行（実UID・実効UIDともに0）
+    if originalUID == 0 && effectiveUID == 0 {
+        logger.Info("Privilege execution supported: native root execution")
+        return true
+    }
+
+    // Case 2: Setuid binary実行（ファイルシステムベース検証）
+    return isSetuidBinary(logger)
 }
 
 // isSetuidBinary - より堅牢なsetuid検出
@@ -145,11 +160,11 @@ if opts.fileValidatorEnabled {
 ```
 
 **重要なポイント:**
-- **堅牢なsetuid検出**: バイナリファイルのsetuidビット + root所有権の直接確認
-- **完全な検証**: setuidビット、root所有権、非rootユーザーの3条件すべてを確認
-- **動的バリデータ選択**: 特権マネージャーの有無により適切なバリデータを選択
+- **2つの実行モード**: Native root実行とSetuid binary実行の両方をサポート
+- **適応的権限管理**: 実行環境に応じてseteuid呼び出しの有無を決定
+- **堅牢な検証**: setuidバイナリでは3条件（setuidビット・root所有権・非rootユーザー）を確認
 - **統一インターフェース**: `FileValidator`インターフェースにより両タイプを透明に扱う
-- **セキュリティ優先**: 実行時状態に依存しない確実な検証を実現
+- **運用柔軟性**: rootユーザーによる直接実行も一般ユーザーによるsetuid実行も対応
 
 ### 4.2 ファイル検証実行フェーズ
 

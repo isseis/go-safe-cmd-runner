@@ -157,7 +157,31 @@ func (v *ValidatorWithPrivileges) VerifyWithPrivileges(
 | コマンド実行 | 一般ユーザー | root | 一般ユーザー |
 | その他処理 | 一般ユーザー | - | 一般ユーザー |
 
-### 4.2 Setuid検出の改善
+### 4.2 特権実行サポートの拡張
+
+**2つの特権実行モードをサポート**：
+
+#### 4.2.1 Native Root実行
+rootユーザーによる直接実行では、setuidビットに関係なく特権コマンドを実行可能：
+
+```go
+// isPrivilegeExecutionSupported checks for both native root and setuid execution
+func isPrivilegeExecutionSupported(logger *slog.Logger) bool {
+    originalUID := syscall.Getuid()
+    effectiveUID := syscall.Geteuid()
+
+    // Case 1: Native root execution (both real and effective UID are 0)
+    if originalUID == 0 && effectiveUID == 0 {
+        logger.Info("Privilege execution supported: native root execution")
+        return true
+    }
+
+    // Case 2: Setuid binary execution
+    return isSetuidBinary(logger)
+}
+```
+
+#### 4.2.2 Setuid Binary実行
 
 **ファイルシステムベース検証**により、より堅牢なsetuid検出を実現：
 
@@ -193,13 +217,20 @@ func isSetuidBinary(logger *slog.Logger) bool {
 }
 ```
 
+**実行モード比較:**
+
+| 実行モード | 実行ユーザー | setuidビット | 権限昇格方法 | ログメッセージ |
+|-----------|-------------|-------------|-------------|-------------|
+| Native Root | root (UID=0) | 不要 | seteuid不要 | "Native root execution - no privilege escalation needed" |
+| Setuid Binary | 一般ユーザー | 必要 + root所有 | seteuid(0) → seteuid(originalUID) | "Privileges elevated" → "Privileges restored" |
+
 **従来方式との比較:**
-- **従来**: `effectiveUID == 0 && originalUID != 0` （実行時UID比較）
-- **改善後**: バイナリファイルのsetuidビット + root所有権の直接確認
+- **従来**: `effectiveUID == 0 && originalUID != 0` （実行時UID比較のみ）
+- **改善後**: Native root + Setuid binaryの両方をサポート
 - **利点**:
-  - 事前の`seteuid()`呼び出しによる誤判定を防止
-  - rootが所有していないsetuidファイルの誤検出を防止
-  - より確実なsetuid実行環境の検証
+  - rootユーザーによる直接実行をサポート
+  - setuidバイナリでの堅牢な検証
+  - 実行環境に応じた適切な権限管理
 
 ### 4.3 安全性保証メカニズム
 

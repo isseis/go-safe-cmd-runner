@@ -23,7 +23,7 @@ type HealthStatus struct {
 func (m *UnixPrivilegeManager) GetHealthStatus(ctx context.Context) HealthStatus {
 	status := HealthStatus{
 		IsSupported:      m.IsPrivilegedExecutionSupported(),
-		SetuidConfigured: m.isSetuid,
+		SetuidConfigured: m.privilegeSupported,
 		OriginalUID:      m.originalUID,
 		CurrentUID:       m.GetCurrentUID(),
 		EffectiveUID:     m.GetCurrentUID(), // For consistency with JSON naming

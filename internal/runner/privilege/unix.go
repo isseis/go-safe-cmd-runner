@@ -18,25 +18,23 @@ import (
 
 // UnixPrivilegeManager implements privilege management for Unix systems using setuid
 type UnixPrivilegeManager struct {
-	logger      *slog.Logger
-	originalUID int
-	originalGID int
-	isSetuid    bool
-	metrics     Metrics
-	mu          sync.Mutex
+	logger             *slog.Logger
+	originalUID        int
+	privilegeSupported bool
+	metrics            Metrics
+	mu                 sync.Mutex
 }
 
 func newPlatformManager(logger *slog.Logger) Manager {
 	originalUID := syscall.Getuid()
 
-	// Use filesystem-based verification for more robust setuid detection
-	isSetuid := isSetuidBinary(logger)
+	// Check for privilege execution support (either setuid binary or native root)
+	privilegeSupported := isPrivilegeExecutionSupported(logger)
 
 	return &UnixPrivilegeManager{
-		logger:      logger,
-		originalUID: originalUID,
-		originalGID: syscall.Getgid(),
-		isSetuid:    isSetuid,
+		logger:             logger,
+		originalUID:        originalUID,
+		privilegeSupported: privilegeSupported,
 	}
 }
 
@@ -103,13 +101,23 @@ func (m *UnixPrivilegeManager) withPrivilegesInternal(ctx context.Context, eleva
 // Note: This method assumes the caller (WithPrivileges) has already acquired the mutex lock
 func (m *UnixPrivilegeManager) escalatePrivileges(_ context.Context, elevationCtx runnertypes.ElevationContext) error {
 	if !m.IsPrivilegedExecutionSupported() {
-		return fmt.Errorf("%w: binary not configured with setuid", ErrPrivilegedExecutionNotAvailable)
+		return fmt.Errorf("%w: privilege execution not supported", ErrPrivilegedExecutionNotAvailable)
 	}
 
 	elevationCtx.StartTime = time.Now()
 	elevationCtx.OriginalUID = m.originalUID
 	elevationCtx.TargetUID = 0
 
+	// For native root execution, no seteuid call is needed
+	if m.originalUID == 0 {
+		m.logger.Info("Native root execution - no privilege escalation needed",
+			"operation", elevationCtx.Operation,
+			"command", elevationCtx.CommandName,
+			"original_uid", elevationCtx.OriginalUID)
+		return nil
+	}
+
+	// For setuid binary execution, perform seteuid
 	if err := syscall.Seteuid(0); err != nil {
 		return &Error{
 			Operation:   elevationCtx.Operation,
@@ -132,6 +140,14 @@ func (m *UnixPrivilegeManager) escalatePrivileges(_ context.Context, elevationCt
 // restorePrivileges restores original privileges (private method)
 // Note: This method assumes the caller (WithPrivileges) has already acquired the mutex lock
 func (m *UnixPrivilegeManager) restorePrivileges() error {
+	// For native root execution, no privilege restoration is needed
+	if m.originalUID == 0 {
+		m.logger.Info("Native root execution - no privilege restoration needed",
+			"original_uid", m.originalUID)
+		return nil
+	}
+
+	// For setuid binary execution, restore privileges
 	if err := syscall.Seteuid(m.originalUID); err != nil {
 		return err
 	}
@@ -198,12 +214,31 @@ func (m *UnixPrivilegeManager) emergencyShutdown(restoreErr error, shutdownConte
 
 // IsPrivilegedExecutionSupported checks if privileged execution is available on this system
 func (m *UnixPrivilegeManager) IsPrivilegedExecutionSupported() bool {
-	return m.isSetuid
+	return m.privilegeSupported
 }
 
 // GetCurrentUID returns the current effective user ID
 func (m *UnixPrivilegeManager) GetCurrentUID() int {
 	return syscall.Geteuid()
+}
+
+// isPrivilegeExecutionSupported checks if privileged execution is supported
+// This includes both setuid binaries and native root execution
+func isPrivilegeExecutionSupported(logger *slog.Logger) bool {
+	originalUID := syscall.Getuid()
+	effectiveUID := syscall.Geteuid()
+
+	// Case 1: Native root execution (both real and effective UID are 0)
+	if originalUID == 0 && effectiveUID == 0 {
+		logger.Info("Privilege execution supported: native root execution",
+			"original_uid", originalUID,
+			"effective_uid", effectiveUID,
+			"execution_mode", "native_root")
+		return true
+	}
+
+	// Case 2: Setuid binary execution (check file system properties)
+	return isSetuidBinary(logger)
 }
 
 // isSetuidBinary checks if the current binary has the setuid bit set and is owned by root
@@ -249,13 +284,23 @@ func isSetuidBinary(logger *slog.Logger) bool {
 	// True setuid scenario: setuid bit + root ownership + non-root real UID
 	isValidSetuid := hasSetuidBit && isOwnedByRoot && originalUID != 0
 
-	logger.Info("Setuid binary detection completed",
-		"executable_path", execPath,
-		"has_setuid_bit", hasSetuidBit,
-		"is_owned_by_root", isOwnedByRoot,
-		"original_uid", originalUID,
-		"effective_uid", effectiveUID,
-		"is_valid_setuid", isValidSetuid)
+	if isValidSetuid {
+		logger.Info("Privilege execution supported: setuid binary execution",
+			"executable_path", execPath,
+			"has_setuid_bit", hasSetuidBit,
+			"is_owned_by_root", isOwnedByRoot,
+			"original_uid", originalUID,
+			"effective_uid", effectiveUID,
+			"execution_mode", "setuid_binary")
+	} else {
+		logger.Info("Setuid binary detection completed - not supported",
+			"executable_path", execPath,
+			"has_setuid_bit", hasSetuidBit,
+			"is_owned_by_root", isOwnedByRoot,
+			"original_uid", originalUID,
+			"effective_uid", effectiveUID,
+			"reason", "missing_required_conditions")
+	}
 
 	return isValidSetuid
 }
@@ -296,7 +341,7 @@ func (m *UnixPrivilegeManager) ElevatePrivileges() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if !m.isSetuid {
+	if !m.privilegeSupported {
 		return ErrPrivilegedExecutionNotAvailable
 	}
 
