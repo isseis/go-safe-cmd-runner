@@ -3,6 +3,7 @@ package filevalidator_test
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -305,6 +306,70 @@ func TestValidatorWithPrivileges_PathValidation(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 			}
+		})
+	}
+}
+
+func TestValidatorWithPrivileges_PrivilegesRequiredButUnavailable(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "test_privileges_required")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	// Create test file
+	testFile := filepath.Join(tempDir, "test.txt")
+	testContent := "test content"
+	err = os.WriteFile(testFile, []byte(testContent), 0o644)
+	assert.NoError(t, err)
+
+	tests := []struct {
+		name           string
+		setupValidator func() *filevalidator.ValidatorWithPrivileges
+		expectedError  error
+	}{
+		{
+			name: "privileges required but no privilege manager",
+			setupValidator: func() *filevalidator.ValidatorWithPrivileges {
+				// Use NewValidatorWithPrivileges with nil privilege manager
+				algorithm := &filevalidator.SHA256{}
+				logger := slog.Default()
+				validator, _ := filevalidator.NewValidatorWithPrivileges(algorithm, tempDir, nil, logger)
+				return validator
+			},
+			expectedError: filevalidator.ErrPrivilegesRequiredButNoManager,
+		},
+		{
+			name: "privileges required but not supported",
+			setupValidator: func() *filevalidator.ValidatorWithPrivileges {
+				// Mock privilege manager that doesn't support privileges
+				mockPrivMgr := privtesting.NewMockPrivilegeManager(false) // Not supported
+				algorithm := &filevalidator.SHA256{}
+				logger := slog.Default()
+				validator, _ := filevalidator.NewValidatorWithPrivileges(algorithm, tempDir, mockPrivMgr, logger)
+				return validator
+			},
+			expectedError: filevalidator.ErrPrivilegesRequiredButNotSupported,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			validator := tt.setupValidator()
+			ctx := context.Background()
+
+			// Test RecordWithPrivileges with needsPrivileges=true
+			_, err := validator.RecordWithPrivileges(ctx, testFile, true, false)
+			assert.Error(t, err)
+			assert.True(t, errors.Is(err, tt.expectedError), "Expected error %v, got %v", tt.expectedError, err)
+
+			// Test VerifyWithPrivileges with needsPrivileges=true
+			err = validator.VerifyWithPrivileges(ctx, testFile, true)
+			assert.Error(t, err)
+			assert.True(t, errors.Is(err, tt.expectedError), "Expected error %v, got %v", tt.expectedError, err)
+
+			// Test ValidateFileHashWithPrivileges with needsPrivileges=true
+			err = validator.ValidateFileHashWithPrivileges(ctx, testFile, "somehash", true)
+			assert.Error(t, err)
+			assert.True(t, errors.Is(err, tt.expectedError), "Expected error %v, got %v", tt.expectedError, err)
 		})
 	}
 }

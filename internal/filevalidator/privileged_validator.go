@@ -21,7 +21,9 @@ type ValidatorWithPrivileges struct {
 
 // Error definitions for privileged validation
 var (
-	ErrHashValidationFailed = errors.New("hash validation failed")
+	ErrHashValidationFailed              = errors.New("hash validation failed")
+	ErrPrivilegesRequiredButNoManager    = errors.New("privileges explicitly required but no privilege manager available")
+	ErrPrivilegesRequiredButNotSupported = errors.New("privileges explicitly required but privileged execution not supported")
 )
 
 // NewValidatorWithPrivileges creates a new validator with privilege management support
@@ -138,7 +140,16 @@ func (v *ValidatorWithPrivileges) executeWithPrivilegesIfNeeded(
 	wasPrivileged := false
 
 	// Execute action with or without privileges
-	if needsPrivileges && v.privMgr != nil && v.privMgr.IsPrivilegedExecutionSupported() {
+	if needsPrivileges {
+		// Validate that privileges are actually available when explicitly requested
+		if v.privMgr == nil {
+			return ErrPrivilegesRequiredButNoManager
+		}
+		if !v.privMgr.IsPrivilegedExecutionSupported() {
+			return ErrPrivilegesRequiredButNotSupported
+		}
+
+		// Execute with privileges
 		elevationCtx := runnertypes.ElevationContext{
 			Operation:   operation,
 			CommandName: commandName,
@@ -147,6 +158,7 @@ func (v *ValidatorWithPrivileges) executeWithPrivilegesIfNeeded(
 		err = v.privMgr.WithPrivileges(ctx, elevationCtx, action)
 		wasPrivileged = true
 	} else {
+		// Execute without privileges
 		err = action()
 	}
 

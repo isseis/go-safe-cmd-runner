@@ -232,7 +232,38 @@ func isSetuidBinary(logger *slog.Logger) bool {
   - setuidバイナリでの堅牢な検証
   - 実行環境に応じた適切な権限管理
 
-### 4.3 安全性保証メカニズム
+### 4.3 セキュリティ強化：明示的権限要求の厳格化
+
+**重要なセキュリティ改善**：`needsPrivileges = true`が明示的に指定された場合、権限昇格が利用できない状況では**エラーを返す**ように変更。
+
+```go
+// executeWithPrivilegesIfNeeded - セキュリティ強化版
+func (v *ValidatorWithPrivileges) executeWithPrivilegesIfNeeded(...) error {
+    if needsPrivileges {
+        // 権限が明示的に要求された場合の厳格チェック
+        if v.privMgr == nil {
+            return fmt.Errorf("privileges explicitly required but no privilege manager available")
+        }
+        if !v.privMgr.IsPrivilegedExecutionSupported() {
+            return fmt.Errorf("privileges explicitly required but privileged execution not supported")
+        }
+
+        // 権限昇格して実行
+        err = v.privMgr.WithPrivileges(ctx, elevationCtx, action)
+        wasPrivileged = true
+    } else {
+        // 通常権限で実行
+        err = action()
+    }
+}
+```
+
+**セキュリティ効果:**
+- **誤実行防止**: 権限が必要なコマンドが通常権限で実行されることを防止
+- **明確なエラー**: 権限昇格できない理由を明確に通知
+- **Fail-Safe設計**: 不確実な状況では安全側（エラー）に倒す
+
+### 4.4 安全性保証メカニズム
 
 ```go
 func (pm *PrivilegeManager) WithPrivileges(fn func() error) error {
