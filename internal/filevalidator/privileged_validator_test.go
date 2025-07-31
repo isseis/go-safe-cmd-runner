@@ -29,62 +29,6 @@ func TestNewValidatorWithPrivileges(t *testing.T) {
 	assert.NotNil(t, validator)
 }
 
-func TestValidatorWithPrivileges_RecordWithPrivileges(t *testing.T) {
-	tests := []struct {
-		name            string
-		needsPrivileges bool
-		expectElevation bool
-	}{
-		{
-			name:            "record with privileges",
-			needsPrivileges: true,
-			expectElevation: true,
-		},
-		{
-			name:            "record without privileges",
-			needsPrivileges: false,
-			expectElevation: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Create separate temp directory for each test to avoid conflicts
-			tempDir, err := os.MkdirTemp("", "test_privileged_record")
-			assert.NoError(t, err)
-			defer os.RemoveAll(tempDir)
-
-			// Create test file
-			testFile := filepath.Join(tempDir, "test.txt")
-			testContent := "test content for privileged recording"
-			err = os.WriteFile(testFile, []byte(testContent), 0o644)
-			assert.NoError(t, err)
-
-			algorithm := &filevalidator.SHA256{}
-			mockPrivMgr := privtesting.NewMockPrivilegeManager(true)
-			logger := slog.Default()
-
-			validator, err := filevalidator.NewValidatorWithPrivileges(algorithm, tempDir, mockPrivMgr, logger)
-			assert.NoError(t, err)
-
-			// Reset elevation calls
-			mockPrivMgr.ElevationCalls = nil
-
-			ctx := context.Background()
-			hash, err := validator.RecordWithPrivileges(ctx, testFile, tt.needsPrivileges, false)
-
-			assert.NoError(t, err)
-			assert.NotEmpty(t, hash, "Hash should not be empty for file %s", testFile)
-
-			if tt.expectElevation {
-				assert.Contains(t, mockPrivMgr.ElevationCalls, "file_hash_calculation")
-			} else {
-				assert.Empty(t, mockPrivMgr.ElevationCalls)
-			}
-		})
-	}
-}
-
 func TestValidatorWithPrivileges_VerifyWithPrivileges(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "test_privileged_verify")
 	assert.NoError(t, err)
@@ -104,7 +48,7 @@ func TestValidatorWithPrivileges_VerifyWithPrivileges(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Record the hash first
-	_, err = validator.RecordWithPrivileges(context.Background(), testFile, false, false)
+	_, err = validator.Record(testFile)
 	assert.NoError(t, err)
 
 	tests := []struct {
@@ -237,11 +181,6 @@ func TestValidatorWithPrivileges_PrivilegeElevationFailure(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Test RecordWithPrivileges failure
-	_, err = validator.RecordWithPrivileges(ctx, testFile, true, false)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "privileged file hash recording failed")
-
 	// Test VerifyWithPrivileges failure
 	err = validator.VerifyWithPrivileges(ctx, testFile, true)
 	assert.Error(t, err)
@@ -355,11 +294,6 @@ func TestValidatorWithPrivileges_PrivilegesRequiredButUnavailable(t *testing.T) 
 		t.Run(tt.name, func(t *testing.T) {
 			validator := tt.setupValidator()
 			ctx := context.Background()
-
-			// Test RecordWithPrivileges with needsPrivileges=true
-			_, err := validator.RecordWithPrivileges(ctx, testFile, true, false)
-			assert.Error(t, err)
-			assert.True(t, errors.Is(err, tt.expectedError), "Expected error %v, got %v", tt.expectedError, err)
 
 			// Test VerifyWithPrivileges with needsPrivileges=true
 			err = validator.VerifyWithPrivileges(ctx, testFile, true)

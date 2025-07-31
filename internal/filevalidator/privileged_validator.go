@@ -65,46 +65,6 @@ func NewValidatorWithPrivilegesAndLogging(
 	}, nil
 }
 
-// RecordWithPrivileges calculates and records file hash with privilege elevation if needed
-func (v *ValidatorWithPrivileges) RecordWithPrivileges(
-	ctx context.Context,
-	filePath string,
-	needsPrivileges bool,
-	force bool,
-) (string, error) {
-	var result string
-	logFields := map[string]any{
-		"force": force,
-	}
-
-	// Define single action that sets the result and logs the hash value
-	action := func() error {
-		var recordErr error
-		result, recordErr = v.RecordWithOptions(filePath, force)
-		if recordErr == nil {
-			logFields["hash"] = result
-		}
-		return recordErr
-	}
-
-	err := v.executeWithPrivilegesIfNeeded(
-		ctx,
-		filePath,
-		needsPrivileges,
-		runnertypes.OperationFileHashCalculation,
-		"file_hash_record",
-		action,
-		"File hash recorded with privileges",
-		"file hash recording",
-		logFields,
-	)
-	if err != nil {
-		return "", err
-	}
-
-	return result, nil
-}
-
 // VerifyWithPrivileges validates file hash with privilege elevation if needed
 func (v *ValidatorWithPrivileges) VerifyWithPrivileges(
 	ctx context.Context,
