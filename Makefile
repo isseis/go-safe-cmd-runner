@@ -1,3 +1,5 @@
+CHOWN=chown
+CHMOD=chmod
 ENVCMD=env
 GOCMD=go
 GOBUILD=$(GOCMD) build
@@ -58,4 +60,6 @@ test: $(BINARY_RUNNER)
 	$(ENVCMD) -i $(BINARY_RUNNER) -dry-run -config ./sample/config.toml
 
 integration-test: $(BINARY_RUNNER)
+	$(SUDOCMD) $(CHOWN) root:root $(BINARY_RUNNER)
+	$(SUDOCMD) $(CHMOD) u+s $(BINARY_RUNNER)
 	$(ENVCMD) -i PATH=/bin:/sbin:/usr/bin:/usr/sbin LANG=C $(BINARY_RUNNER) -config ./sample/test.toml
