@@ -26,24 +26,40 @@ var (
 	ErrPrivilegesRequiredButNotSupported = errors.New("privileges explicitly required but privileged execution not supported")
 )
 
+// ValidatorOption is a functional option for configuring ValidatorWithPrivileges
+type ValidatorOption func(*validatorConfig)
+
+// validatorConfig holds configuration options for ValidatorWithPrivileges
+type validatorConfig struct {
+	loggingOpts security.LoggingOptions
+}
+
+// WithLoggingOptions sets custom logging options
+func WithLoggingOptions(opts security.LoggingOptions) ValidatorOption {
+	return func(c *validatorConfig) {
+		c.loggingOpts = opts
+	}
+}
+
 // NewValidatorWithPrivileges creates a new validator with privilege management support
 func NewValidatorWithPrivileges(
 	algorithm HashAlgorithm,
 	hashDir string,
 	privMgr runnertypes.PrivilegeManager,
 	logger *slog.Logger,
+	opts ...ValidatorOption,
 ) (*ValidatorWithPrivileges, error) {
-	return NewValidatorWithPrivilegesAndLogging(algorithm, hashDir, privMgr, logger, security.DefaultLoggingOptions())
-}
+	// Set default configuration
+	config := &validatorConfig{
+		loggingOpts: security.DefaultLoggingOptions(),
+	}
 
-// NewValidatorWithPrivilegesAndLogging creates a new validator with custom logging options
-func NewValidatorWithPrivilegesAndLogging(
-	algorithm HashAlgorithm,
-	hashDir string,
-	privMgr runnertypes.PrivilegeManager,
-	logger *slog.Logger,
-	loggingOpts security.LoggingOptions,
-) (*ValidatorWithPrivileges, error) {
+	// Apply options
+	for _, opt := range opts {
+		opt(config)
+	}
+
+	// Create base validator
 	baseValidator, err := New(algorithm, hashDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create base validator: %w", err)
@@ -51,7 +67,7 @@ func NewValidatorWithPrivilegesAndLogging(
 
 	// Create security validator with logging options
 	secConfig := security.DefaultConfig()
-	secConfig.LoggingOptions = loggingOpts
+	secConfig.LoggingOptions = config.loggingOpts
 	secValidator, err := security.NewValidator(secConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create security validator: %w", err)

@@ -12,6 +12,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	privtesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testing"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -25,6 +26,35 @@ func TestNewValidatorWithPrivileges(t *testing.T) {
 	logger := slog.Default()
 
 	validator, err := filevalidator.NewValidatorWithPrivileges(algorithm, tempDir, mockPrivMgr, logger)
+	assert.NoError(t, err)
+	assert.NotNil(t, validator)
+}
+
+func TestNewValidatorWithPrivileges_WithCustomLoggingOptions(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "test_privileged_validator_options")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	algorithm := &filevalidator.SHA256{}
+	mockPrivMgr := privtesting.NewMockPrivilegeManager(true)
+	logger := slog.Default()
+
+	// Test with custom logging options
+	customLoggingOpts := security.LoggingOptions{
+		IncludeErrorDetails:   false,
+		MaxErrorMessageLength: 100,
+		RedactSensitiveInfo:   true,
+		TruncateStdout:        true,
+		MaxStdoutLength:       500,
+	}
+
+	validator, err := filevalidator.NewValidatorWithPrivileges(
+		algorithm,
+		tempDir,
+		mockPrivMgr,
+		logger,
+		filevalidator.WithLoggingOptions(customLoggingOpts),
+	)
 	assert.NoError(t, err)
 	assert.NotNil(t, validator)
 }
