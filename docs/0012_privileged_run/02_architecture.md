@@ -177,7 +177,7 @@ func isPrivilegeExecutionSupported(logger *slog.Logger) bool {
     }
 
     // Case 2: Setuid binary execution
-    return isSetuidBinary(logger)
+    return isRootOwnedSetuidBinary(logger)
 }
 ```
 
@@ -186,10 +186,10 @@ func isPrivilegeExecutionSupported(logger *slog.Logger) bool {
 **ファイルシステムベース検証**により、より堅牢なsetuid検出を実現：
 
 ```go
-// isSetuidBinary checks if the current binary has the setuid bit set
+// isRootOwnedSetuidBinary checks if the current binary has the setuid bit set and is owned by root
 // This provides more robust detection than checking runtime UID/EUID which
 // can be altered by previous seteuid() calls
-func isSetuidBinary(logger *slog.Logger) bool {
+func isRootOwnedSetuidBinary(logger *slog.Logger) bool {
     // Get the path to the current executable
     execPath, err := os.Executable()
     if err != nil {

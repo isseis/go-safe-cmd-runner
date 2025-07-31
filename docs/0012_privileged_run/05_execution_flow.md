@@ -99,11 +99,11 @@ func isPrivilegeExecutionSupported(logger *slog.Logger) bool {
     }
 
     // Case 2: Setuid binary実行（ファイルシステムベース検証）
-    return isSetuidBinary(logger)
+    return isRootOwnedSetuidBinary(logger)
 }
 
-// isSetuidBinary - より堅牢なsetuid検出
-func isSetuidBinary(logger *slog.Logger) bool {
+// isRootOwnedSetuidBinary - より堅牢なsetuid検出（root所有も判定）
+func isRootOwnedSetuidBinary(logger *slog.Logger) bool {
     execPath, err := os.Executable()
     if err != nil {
         return false
