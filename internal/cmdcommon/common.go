@@ -5,12 +5,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
 var (
@@ -76,11 +74,6 @@ func ParseFlags() (*Config, error) {
 // CreateValidator creates a new file validator with the specified hasher.
 func CreateValidator(hashDir string) (*filevalidator.Validator, error) {
 	return filevalidator.New(&filevalidator.SHA256{}, hashDir)
-}
-
-// CreateValidatorWithPrivileges creates a new file validator with privilege management support.
-func CreateValidatorWithPrivileges(hashDir string, privMgr runnertypes.PrivilegeManager, logger *slog.Logger) (*filevalidator.ValidatorWithPrivileges, error) {
-	return filevalidator.NewValidatorWithPrivileges(&filevalidator.SHA256{}, hashDir, privMgr, logger)
 }
 
 // PrintUsage prints the usage message for the command.
