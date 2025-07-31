@@ -89,10 +89,10 @@ func (v *ValidatorWithPrivileges) VerifyWithPrivileges(
 ) error {
 	return v.executeWithPrivilegesIfNeeded(
 		ctx,
-		filePath,
 		needsPrivileges,
 		runnertypes.OperationFileHashCalculation,
 		"file_hash_verify",
+		filePath,
 		func() error { return v.Verify(filePath) },
 		"File hash verified with privileges",
 		"file hash verification",
@@ -103,10 +103,10 @@ func (v *ValidatorWithPrivileges) VerifyWithPrivileges(
 // executeWithPrivilegesIfNeeded is a helper method that encapsulates the common privilege execution logic
 func (v *ValidatorWithPrivileges) executeWithPrivilegesIfNeeded(
 	ctx context.Context,
-	filePath string,
 	needsPrivileges bool,
 	operation runnertypes.Operation,
 	commandName string,
+	filePath string,
 	action func() error,
 	successMsg string,
 	failureMsg string,
@@ -184,10 +184,10 @@ func (v *ValidatorWithPrivileges) ValidateFileHashWithPrivileges(
 
 	return v.executeWithPrivilegesIfNeeded(
 		ctx,
-		filePath,
 		needsPrivileges,
 		runnertypes.OperationFileHashCalculation,
 		"file_hash_validation",
+		filePath,
 		func() error {
 			actualHash, err := v.validateFileHashWithLogging(filePath, expectedHash)
 			if actualHash != "" {
