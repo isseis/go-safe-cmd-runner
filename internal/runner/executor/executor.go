@@ -107,7 +107,8 @@ func (e *DefaultExecutor) executePrivileged(ctx context.Context, cmd runnertypes
 		return nil, fmt.Errorf("command validation failed: %w", err)
 	}
 
-	// Additional security validation for privileged commands
+	// Additional security validation for privileged commands BEFORE path resolution
+	// This ensures the original command in the config file uses absolute paths
 	if err := e.validatePrivilegedCommand(cmd); err != nil {
 		return nil, fmt.Errorf("privileged command security validation failed: %w", err)
 	}

@@ -45,7 +45,9 @@ $(BINARY_VERIFY): $(GO_SOURCES)
 
 $(BINARY_RUNNER): $(GO_SOURCES)
 	@mkdir -p $(@D)
-	$(GOBUILD) $(BUILD_FLAGS) -o build/runner -v cmd/runner/main.go
+	$(GOBUILD) $(BUILD_FLAGS) -o $@ -v cmd/runner/main.go
+	$(SUDOCMD) $(CHOWN) root:root $@
+	$(SUDOCMD) $(CHMOD) u+s $@
 
 clean:
 	$(GOCLEAN)
@@ -60,6 +62,4 @@ test: $(BINARY_RUNNER)
 	$(ENVCMD) -i $(BINARY_RUNNER) -dry-run -config ./sample/config.toml
 
 integration-test: $(BINARY_RUNNER)
-	$(SUDOCMD) $(CHOWN) root:root $(BINARY_RUNNER)
-	$(SUDOCMD) $(CHMOD) u+s $(BINARY_RUNNER)
 	$(ENVCMD) -i PATH=/bin:/sbin:/usr/bin:/usr/sbin LANG=C $(BINARY_RUNNER) -config ./sample/test.toml

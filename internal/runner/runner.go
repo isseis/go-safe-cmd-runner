@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -33,6 +34,7 @@ var (
 	ErrGroupVerification    = errors.New("group file verification failed")
 	ErrGroupNotFound        = errors.New("group not found")
 	ErrVariableAccessDenied = errors.New("variable access denied")
+	ErrPrivilegedPathConfig = errors.New("privileged command path configuration error")
 )
 
 // VerificationError contains detailed information about verification failures
@@ -401,13 +403,25 @@ func (r *Runner) executeCommandInGroup(ctx context.Context, cmd runnertypes.Comm
 		return nil, fmt.Errorf("resolved environment variables security validation failed: %w", err)
 	}
 
+	// Validate privileged commands before any path resolution
+	if cmd.Privileged {
+		if !filepath.IsAbs(cmd.Cmd) {
+			return nil, fmt.Errorf("%w: privileged commands must use absolute paths in configuration: %s", ErrPrivilegedPathConfig, cmd.Cmd)
+		}
+	}
+
 	// Resolve and validate command path if verification manager is available
 	if r.verificationManager != nil {
 		resolvedPath, err := r.verificationManager.ResolvePath(cmd.Cmd)
 		if err != nil {
 			return nil, fmt.Errorf("command path resolution failed: %w", err)
 		}
-		cmd.Cmd = resolvedPath
+
+		// Only update the command path for non-privileged commands
+		// Privileged commands must already be specified with absolute paths
+		if !cmd.Privileged {
+			cmd.Cmd = resolvedPath
+		}
 	}
 
 	// Set working directory from global config if not specified

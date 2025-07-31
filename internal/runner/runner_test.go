@@ -2438,3 +2438,111 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		mockExecutor.AssertExpectations(t)
 	})
 }
+
+// TestPrivilegedCommandPathValidation tests that privileged commands require absolute paths in configuration
+func TestPrivilegedCommandPathValidation(t *testing.T) {
+	tests := []struct {
+		name          string
+		cmd           runnertypes.Command
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name: "privileged command with relative path should fail",
+			cmd: runnertypes.Command{
+				Name:       "test_privileged_relative",
+				Cmd:        "whoami", // Relative path
+				Args:       []string{},
+				Privileged: true,
+			},
+			expectError:   true,
+			errorContains: "privileged commands must use absolute paths in configuration: whoami",
+		},
+		{
+			name: "privileged command with absolute path should succeed",
+			cmd: runnertypes.Command{
+				Name:       "test_privileged_absolute",
+				Cmd:        "/usr/bin/whoami", // Absolute path
+				Args:       []string{},
+				Privileged: true,
+			},
+			expectError: false,
+		},
+		{
+			name: "non-privileged command with relative path should succeed",
+			cmd: runnertypes.Command{
+				Name:       "test_normal_relative",
+				Cmd:        "echo", // Relative path, but not privileged
+				Args:       []string{"test"},
+				Privileged: false,
+			},
+			expectError: false,
+		},
+		{
+			name: "non-privileged command with absolute path should succeed",
+			cmd: runnertypes.Command{
+				Name:       "test_normal_absolute",
+				Cmd:        "/bin/echo", // Absolute path, not privileged
+				Args:       []string{"test"},
+				Privileged: false,
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create basic config
+			config := &runnertypes.Config{
+				Global: runnertypes.GlobalConfig{
+					WorkDir:  "/tmp/runner-test",
+					Timeout:  30,
+					LogLevel: "info",
+				},
+			}
+
+			// Create mock executor
+			mockExecutor := &MockExecutor{}
+			if !tt.expectError {
+				// Only set up expectation if we expect the command to reach execution
+				mockExecutor.On("Execute", mock.Anything, mock.MatchedBy(func(cmd runnertypes.Command) bool {
+					return cmd.Name == tt.cmd.Name
+				}), mock.Anything).Return(
+					&executor.Result{ExitCode: 0, Stdout: "test output\n", Stderr: ""}, nil)
+			}
+
+			// Create test group
+			testGroup := &runnertypes.CommandGroup{
+				Name:        "test-group",
+				Description: "Test group for path validation",
+				Priority:    1,
+				Commands:    []runnertypes.Command{tt.cmd},
+			}
+
+			// Create runner with minimal setup
+			runner, err := NewRunner(config, WithExecutor(mockExecutor))
+			require.NoError(t, err)
+
+			// Load environment without verification
+			err = runner.LoadEnvironment("", false)
+			require.NoError(t, err)
+
+			// Test executeCommandInGroup directly
+			ctx := context.Background()
+			_, err = runner.executeCommandInGroup(ctx, tt.cmd, testGroup)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains)
+				}
+				// Verify that Execute was not called for failed cases
+				mockExecutor.AssertNotCalled(t, "Execute")
+			} else {
+				assert.NoError(t, err)
+				// Verify that Execute was called for successful cases
+				mockExecutor.AssertExpectations(t)
+			}
+		})
+	}
+}
