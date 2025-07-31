@@ -31,8 +31,8 @@ var (
 )
 
 const (
-	// defaultTimeout is the default timeout for commands in second (3600 = 1 hour)
-	defaultTimeout = 3600
+	// defaultTimeout is the default timeout for commands in second (600 = 10 minutes)
+	defaultTimeout = 600
 )
 
 // NewLoader creates a new config loader
