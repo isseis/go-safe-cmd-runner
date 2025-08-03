@@ -11,14 +11,12 @@ import (
 
 func TestPathResolver_ResolvePath(t *testing.T) {
 	// Create a temporary directory for our test
-	tempDir, err := os.MkdirTemp("", "path-resolver-test")
-	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	// Create test directories in PATH
 	dir1 := filepath.Join(tempDir, "dir1")
 	dir2 := filepath.Join(tempDir, "dir2")
-	err = os.MkdirAll(dir1, 0o755)
+	err := os.MkdirAll(dir1, 0o755)
 	require.NoError(t, err)
 	err = os.MkdirAll(dir2, 0o755)
 	require.NoError(t, err)

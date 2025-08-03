@@ -17,9 +17,7 @@ import (
 )
 
 func TestNewValidatorWithPrivileges(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "test_privileged_validator")
-	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	algorithm := &filevalidator.SHA256{}
 	mockPrivMgr := privtesting.NewMockPrivilegeManager(true)
@@ -31,9 +29,7 @@ func TestNewValidatorWithPrivileges(t *testing.T) {
 }
 
 func TestNewValidatorWithPrivileges_WithCustomLoggingOptions(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "test_privileged_validator_options")
-	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	algorithm := &filevalidator.SHA256{}
 	mockPrivMgr := privtesting.NewMockPrivilegeManager(true)
@@ -60,14 +56,12 @@ func TestNewValidatorWithPrivileges_WithCustomLoggingOptions(t *testing.T) {
 }
 
 func TestValidatorWithPrivileges_VerifyWithPrivileges(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "test_privileged_verify")
-	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	// Create test file and record its hash first
 	testFile := filepath.Join(tempDir, "test.txt")
 	testContent := "test content for privileged verification"
-	err = os.WriteFile(testFile, []byte(testContent), 0o644)
+	err := os.WriteFile(testFile, []byte(testContent), 0o644)
 	assert.NoError(t, err)
 
 	algorithm := &filevalidator.SHA256{}
@@ -118,14 +112,12 @@ func TestValidatorWithPrivileges_VerifyWithPrivileges(t *testing.T) {
 }
 
 func TestValidatorWithPrivileges_ValidateFileHashWithPrivileges(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "test_privileged_validate")
-	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	// Create test file
 	testFile := filepath.Join(tempDir, "test.txt")
 	testContent := "test content for privileged validation"
-	err = os.WriteFile(testFile, []byte(testContent), 0o644)
+	err := os.WriteFile(testFile, []byte(testContent), 0o644)
 	assert.NoError(t, err)
 
 	// Calculate expected hash
@@ -192,14 +184,12 @@ func TestValidatorWithPrivileges_ValidateFileHashWithPrivileges(t *testing.T) {
 }
 
 func TestValidatorWithPrivileges_PrivilegeElevationFailure(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "test_privilege_failure")
-	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	// Create test file
 	testFile := filepath.Join(tempDir, "test.txt")
 	testContent := "test content"
-	err = os.WriteFile(testFile, []byte(testContent), 0o644)
+	err := os.WriteFile(testFile, []byte(testContent), 0o644)
 	assert.NoError(t, err)
 
 	algorithm := &filevalidator.SHA256{}
@@ -223,9 +213,7 @@ func TestValidatorWithPrivileges_PrivilegeElevationFailure(t *testing.T) {
 }
 
 func TestValidatorWithPrivileges_PathValidation(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "test_path_validation")
-	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	algorithm := &filevalidator.SHA256{}
 	mockPrivMgr := privtesting.NewMockPrivilegeManager(true)
@@ -280,14 +268,12 @@ func TestValidatorWithPrivileges_PathValidation(t *testing.T) {
 }
 
 func TestValidatorWithPrivileges_PrivilegesRequiredButUnavailable(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "test_privileges_required")
-	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	// Create test file
 	testFile := filepath.Join(tempDir, "test.txt")
 	testContent := "test content"
-	err = os.WriteFile(testFile, []byte(testContent), 0o644)
+	err := os.WriteFile(testFile, []byte(testContent), 0o644)
 	assert.NoError(t, err)
 
 	tests := []struct {
