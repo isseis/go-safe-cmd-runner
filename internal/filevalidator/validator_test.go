@@ -718,6 +718,98 @@ func TestValidator_RecordWithOptions(t *testing.T) {
 	})
 }
 
+// TestValidator_VerifyFromHandle tests the VerifyFromHandle method
+func TestValidator_VerifyFromHandle(t *testing.T) {
+	tempDir := safeTempDir(t)
+
+	// Create a validator
+	validator, err := New(&SHA256{}, tempDir)
+	if err != nil {
+		t.Fatalf("Failed to create validator: %v", err)
+	}
+
+	// Create a test file
+	testFile := createTestFileWithContent(t, "test content for VerifyFromHandle")
+	defer os.Remove(testFile)
+
+	// Record the hash
+	_, err = validator.Record(testFile)
+	if err != nil {
+		t.Fatalf("Failed to record hash: %v", err)
+	}
+
+	// Open the file
+	file, err := os.Open(testFile)
+	if err != nil {
+		t.Fatalf("Failed to open test file: %v", err)
+	}
+	defer file.Close()
+
+	// Test VerifyFromHandle
+	err = validator.VerifyFromHandle(file, testFile)
+	if err != nil {
+		t.Errorf("VerifyFromHandle failed: %v", err)
+	}
+}
+
+// TestValidator_VerifyFromHandle_Mismatch tests hash mismatch case
+func TestValidator_VerifyFromHandle_Mismatch(t *testing.T) {
+	tempDir := safeTempDir(t)
+
+	// Create a validator
+	validator, err := New(&SHA256{}, tempDir)
+	if err != nil {
+		t.Fatalf("Failed to create validator: %v", err)
+	}
+
+	// Create a test file
+	testFile := createTestFileWithContent(t, "test content")
+	defer os.Remove(testFile)
+
+	// Record the hash
+	_, err = validator.Record(testFile)
+	if err != nil {
+		t.Fatalf("Failed to record hash: %v", err)
+	}
+
+	// Create another file with different content
+	testFile2 := createTestFileWithContent(t, "different content")
+	defer os.Remove(testFile2)
+
+	// Open the second file
+	file, err := os.Open(testFile2)
+	if err != nil {
+		t.Fatalf("Failed to open test file: %v", err)
+	}
+	defer file.Close()
+
+	// Test VerifyFromHandle - should fail with mismatch
+	err = validator.VerifyFromHandle(file, testFile)
+	if !errors.Is(err, ErrMismatch) {
+		t.Errorf("Expected ErrMismatch, got: %v", err)
+	}
+}
+
+// Helper function for tests
+func createTestFileWithContent(t *testing.T, content string) string {
+	tmpFile, err := os.CreateTemp("", "test_file_*.txt")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+
+	_, err = tmpFile.WriteString(content)
+	if err != nil {
+		t.Fatalf("Failed to write content: %v", err)
+	}
+
+	err = tmpFile.Close()
+	if err != nil {
+		t.Fatalf("Failed to close temp file: %v", err)
+	}
+
+	return tmpFile.Name()
+}
+
 // MockHashFilePathGetter is a mock implementation for testing hash collisions
 type MockHashFilePathGetter struct {
 	filePath string

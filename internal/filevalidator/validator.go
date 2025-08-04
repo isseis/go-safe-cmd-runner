@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -286,4 +287,55 @@ func (v *Validator) writeHashManifest(filePath string, manifest HashManifest, fo
 		return safefileio.SafeWriteFileOverwrite(filePath, jsonData, 0o644)
 	}
 	return safefileio.SafeWriteFile(filePath, jsonData, 0o644)
+}
+
+// VerifyFromHandle verifies a file's hash using an already opened file handle
+func (v *Validator) VerifyFromHandle(file *os.File, targetPath string) error {
+	// ファイル内容を読み取り（一般権限）
+	content, err := io.ReadAll(file)
+	if err != nil {
+		return fmt.Errorf("failed to read file content: %w", err)
+	}
+
+	// ハッシュを計算（一般権限）
+	actualHash, err := v.algorithm.Sum(bytes.NewReader(content))
+	if err != nil {
+		return fmt.Errorf("failed to calculate hash: %w", err)
+	}
+
+	// 記録されたハッシュを読み取り（一般権限）
+	_, expectedHash, err := v.readAndParseHashFile(targetPath)
+	if err != nil {
+		return err
+	}
+
+	// ハッシュ比較
+	if expectedHash != actualHash {
+		return ErrMismatch
+	}
+
+	return nil
+}
+
+// verifyNormally performs normal file verification without privilege escalation
+func (v *Validator) verifyNormally(targetPath string) error { //nolint:unused // will be used in Phase 2
+	// 既存の検証ロジックを使用
+	actualHash, err := v.calculateHash(targetPath)
+	if os.IsNotExist(err) {
+		return err
+	}
+	if err != nil {
+		return fmt.Errorf("failed to calculate file hash: %w", err)
+	}
+
+	_, expectedHash, err := v.readAndParseHashFile(targetPath)
+	if err != nil {
+		return err
+	}
+
+	if expectedHash != actualHash {
+		return ErrMismatch
+	}
+
+	return nil
 }
