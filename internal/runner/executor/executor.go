@@ -113,46 +113,26 @@ func (e *DefaultExecutor) executePrivileged(ctx context.Context, cmd runnertypes
 		return nil, fmt.Errorf("privileged command security validation failed: %w", err)
 	}
 
-	// Resolve command path with elevated privileges (needed for file access)
-	var resolvedPath string
-	pathResolutionCtx := runnertypes.ElevationContext{
-		Operation:   runnertypes.OperationFileAccess,
-		CommandName: cmd.Name,
-		FilePath:    cmd.Cmd,
-	}
-
-	privilegeStart := time.Now()
-	err := e.PrivMgr.WithPrivileges(ctx, pathResolutionCtx, func() error {
-		path, lookErr := exec.LookPath(cmd.Cmd)
-		if lookErr != nil {
-			return fmt.Errorf("failed to find command %q: %w", cmd.Cmd, lookErr)
-		}
-		resolvedPath = path
-		return nil
-	})
-	privilegeDuration := time.Since(privilegeStart)
-	metrics.ElevationCount++
-	metrics.TotalDuration += privilegeDuration
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve command path with privileges: %w", err)
+	// Use the absolute path directly since privileged commands must use absolute paths
+	if !filepath.IsAbs(cmd.Cmd) {
+		return nil, fmt.Errorf("%w: privileged commands must use absolute paths: %s", ErrPrivilegedCmdSecurity, cmd.Cmd)
 	}
 
 	// Execute command with elevated privileges
 	executionCtx := runnertypes.ElevationContext{
 		Operation:   runnertypes.OperationCommandExecution,
 		CommandName: cmd.Name,
-		FilePath:    resolvedPath,
+		FilePath:    cmd.Cmd,
 	}
 
 	var result *Result
-	privilegeStart = time.Now()
-	err = e.PrivMgr.WithPrivileges(ctx, executionCtx, func() error {
+	privilegeStart := time.Now()
+	err := e.PrivMgr.WithPrivileges(ctx, executionCtx, func() error {
 		var execErr error
-		result, execErr = e.executeCommandWithPath(ctx, resolvedPath, cmd, envVars)
+		result, execErr = e.executeCommandWithPath(ctx, cmd.Cmd, cmd, envVars)
 		return execErr
 	})
-	privilegeDuration = time.Since(privilegeStart)
+	privilegeDuration := time.Since(privilegeStart)
 	metrics.ElevationCount++
 	metrics.TotalDuration += privilegeDuration
 

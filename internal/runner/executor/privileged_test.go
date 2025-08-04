@@ -43,7 +43,7 @@ func TestDefaultExecutor_PrivilegedExecution(t *testing.T) {
 			privilegeSupported: true,
 			expectError:        false,
 			noPrivilegeManager: false,
-			expectElevations:   []string{"file_access", "command_execution"},
+			expectElevations:   []string{"command_execution"},
 		},
 		{
 			name: "privileged command fails when not supported",
