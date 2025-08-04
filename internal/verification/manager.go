@@ -15,11 +15,12 @@ import (
 
 // Manager provides file verification capabilities
 type Manager struct {
-	hashDir       string
-	fs            common.FileSystem
-	fileValidator *filevalidator.Validator
-	security      *security.Validator
-	pathResolver  *PathResolver
+	hashDir          string
+	fs               common.FileSystem
+	fileValidator    filevalidator.FileValidator
+	security         *security.Validator
+	pathResolver     *PathResolver
+	privilegeManager runnertypes.PrivilegeManager
 }
 
 // Option is a function type for configuring Manager instances
@@ -29,6 +30,7 @@ type Option func(*managerOptions)
 type managerOptions struct {
 	fs                   common.FileSystem
 	fileValidatorEnabled bool
+	privilegeManager     runnertypes.PrivilegeManager
 }
 
 func newOptions() *managerOptions {
@@ -49,6 +51,13 @@ func withFS(fs common.FileSystem) Option {
 func withFileValidatorDisabled() Option {
 	return func(opts *managerOptions) {
 		opts.fileValidatorEnabled = false
+	}
+}
+
+// WithPrivilegeManager is an option for setting the privilege manager
+func WithPrivilegeManager(privMgr runnertypes.PrivilegeManager) Option {
+	return func(opts *managerOptions) {
+		opts.privilegeManager = privMgr
 	}
 }
 
@@ -74,17 +83,20 @@ func NewManagerWithOpts(hashDir string, options ...Option) (*Manager, error) {
 	}
 
 	manager := &Manager{
-		hashDir: hashDir,
-		fs:      opts.fs,
+		hashDir:          hashDir,
+		fs:               opts.fs,
+		privilegeManager: opts.privilegeManager,
 	}
 
 	// Initialize file validator with SHA256 algorithm
 	if opts.fileValidatorEnabled {
-		fileValidator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
+		var err error
+
+		// Use standard validator
+		manager.fileValidator, err = filevalidator.New(&filevalidator.SHA256{}, hashDir)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize file validator: %w", err)
 		}
-		manager.fileValidator = fileValidator
 	}
 
 	// Initialize security validator with default config

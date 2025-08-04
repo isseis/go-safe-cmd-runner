@@ -8,12 +8,15 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/audit"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
@@ -31,6 +34,7 @@ var (
 	ErrGroupVerification    = errors.New("group file verification failed")
 	ErrGroupNotFound        = errors.New("group not found")
 	ErrVariableAccessDenied = errors.New("variable access denied")
+	ErrPrivilegedPathConfig = errors.New("privileged command path configuration error")
 )
 
 // VerificationError contains detailed information about verification failures
@@ -65,6 +69,7 @@ type Runner struct {
 	resourceManager     *resource.Manager
 	verificationManager *verification.Manager
 	envFilter           *environment.Filter
+	privilegeManager    runnertypes.PrivilegeManager // Optional privilege manager for privileged commands
 }
 
 // Option is a function type for configuring Runner instances
@@ -76,6 +81,8 @@ type runnerOptions struct {
 	resourceManager     *resource.Manager
 	executor            executor.CommandExecutor
 	verificationManager *verification.Manager
+	privilegeManager    runnertypes.PrivilegeManager
+	auditLogger         *audit.Logger
 }
 
 // WithSecurity sets a custom security configuration
@@ -106,6 +113,20 @@ func WithExecutor(exec executor.CommandExecutor) Option {
 	}
 }
 
+// WithPrivilegeManager sets a custom privilege manager
+func WithPrivilegeManager(privMgr runnertypes.PrivilegeManager) Option {
+	return func(opts *runnerOptions) {
+		opts.privilegeManager = privMgr
+	}
+}
+
+// WithAuditLogger sets a custom audit logger
+func WithAuditLogger(auditLogger *audit.Logger) Option {
+	return func(opts *runnerOptions) {
+		opts.auditLogger = auditLogger
+	}
+}
+
 // NewRunner creates a new command runner with the given configuration and optional customizations
 func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 	// Apply default options
@@ -120,9 +141,28 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 		return nil, fmt.Errorf("failed to create security validator: %w", err)
 	}
 
+	// Create default privilege manager and audit logger if not provided but needed
+	if opts.privilegeManager == nil && hasPrivilegedCommands(config) {
+		opts.privilegeManager = privilege.NewManager(slog.Default())
+	}
+
+	if opts.auditLogger == nil && opts.privilegeManager != nil {
+		opts.auditLogger = audit.NewAuditLogger(slog.Default())
+	}
+
 	// Use provided components or create defaults
 	if opts.executor == nil {
-		opts.executor = executor.NewDefaultExecutor()
+		if opts.privilegeManager != nil {
+			executorOpts := []executor.Option{
+				executor.WithPrivilegeManager(opts.privilegeManager),
+			}
+			if opts.auditLogger != nil {
+				executorOpts = append(executorOpts, executor.WithAuditLogger(opts.auditLogger))
+			}
+			opts.executor = executor.NewDefaultExecutor(executorOpts...)
+		} else {
+			opts.executor = executor.NewDefaultExecutor()
+		}
 	}
 	if opts.resourceManager == nil {
 		opts.resourceManager = resource.NewManager(config.Global.WorkDir)
@@ -139,6 +179,7 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 		resourceManager:     opts.resourceManager,
 		verificationManager: opts.verificationManager,
 		envFilter:           envFilter,
+		privilegeManager:    opts.privilegeManager,
 	}, nil
 }
 
@@ -362,13 +403,25 @@ func (r *Runner) executeCommandInGroup(ctx context.Context, cmd runnertypes.Comm
 		return nil, fmt.Errorf("resolved environment variables security validation failed: %w", err)
 	}
 
+	// Validate privileged commands before any path resolution
+	if cmd.Privileged {
+		if !filepath.IsAbs(cmd.Cmd) {
+			return nil, fmt.Errorf("%w: privileged commands must use absolute paths in configuration: %s", ErrPrivilegedPathConfig, cmd.Cmd)
+		}
+	}
+
 	// Resolve and validate command path if verification manager is available
 	if r.verificationManager != nil {
 		resolvedPath, err := r.verificationManager.ResolvePath(cmd.Cmd)
 		if err != nil {
 			return nil, fmt.Errorf("command path resolution failed: %w", err)
 		}
-		cmd.Cmd = resolvedPath
+
+		// Only update the command path for non-privileged commands
+		// Privileged commands must already be specified with absolute paths
+		if !cmd.Privileged {
+			cmd.Cmd = resolvedPath
+		}
 	}
 
 	// Set working directory from global config if not specified
@@ -510,4 +563,16 @@ func (r *Runner) GetConfig() *runnertypes.Config {
 // CleanupAllResources cleans up all managed resources
 func (r *Runner) CleanupAllResources() error {
 	return r.resourceManager.CleanupAll()
+}
+
+// hasPrivilegedCommands checks if the configuration contains any privileged commands
+func hasPrivilegedCommands(config *runnertypes.Config) bool {
+	for _, group := range config.Groups {
+		for _, cmd := range group.Commands {
+			if cmd.Privileged {
+				return true
+			}
+		}
+	}
+	return false
 }

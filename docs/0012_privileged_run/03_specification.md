@@ -6,36 +6,12 @@
 
 ## 2. データ構造仕様
 
-### 2.1 既存構造体の確認
+### 2.1 権限管理の統一型定義
 
-既存の`runnertypes.Command`構造体は以下の通りで、`Privileged`フィールドが既に定義されている：
+権限管理に関連する型は`runnertypes`パッケージで一元管理される：
 
 ```go
 // internal/runner/runnertypes/config.go
-type Command struct {
-    Name        string   `toml:"name"`
-    Description string   `toml:"description"`
-    Cmd         string   `toml:"cmd"`
-    Args        []string `toml:"args"`
-    Env         []string `toml:"env"`
-    Dir         string   `toml:"dir"`
-    Privileged  bool     `toml:"privileged"`  // 本機能で活用
-    Timeout     int      `toml:"timeout"`
-}
-```
-
-### 2.2 新規データ構造
-
-#### 2.2.1 Privilege Manager関連
-
-```go
-// internal/runner/privilege/types.go
-package privilege
-
-import (
-    "context"
-    "time"
-)
 
 // Operation represents different types of privileged operations
 type Operation string
@@ -57,33 +33,67 @@ type ElevationContext struct {
     TargetUID   int
 }
 
-// Manager interface for privilege management
-type Manager interface {
-    // WithPrivileges executes a function with elevated privileges
-    // This is the ONLY public method to ensure safe privilege management
-    WithPrivileges(ctx context.Context, elevationCtx ElevationContext, fn func() error) error
-
-    // IsPrivilegedExecutionSupported checks if privileged execution is available
+// PrivilegeManager interface defines methods for privilege elevation/dropping
+type PrivilegeManager interface {
+    ElevatePrivileges() error
+    DropPrivileges() error
     IsPrivilegedExecutionSupported() bool
+    WithPrivileges(ctx context.Context, elevationCtx ElevationContext, fn func() error) error
+}
+```
 
-    // GetCurrentUID returns the current effective user ID
-    GetCurrentUID() int
+### 2.2 ファイル検証拡張構造
 
-    // GetOriginalUID returns the original user ID (before any elevation)
-    GetOriginalUID() int
+#### 2.2.1 基本バリデータインターフェース
 
-    // HealthCheck verifies that privilege escalation works correctly
-    HealthCheck(ctx context.Context) error
+```go
+// internal/filevalidator/validator.go
+
+// FileValidator interface defines the basic file validation methods
+type FileValidator interface {
+    Record(filePath string) (string, error)
+    Verify(filePath string) error
 }
 
-// Metrics for privilege operations
-type Metrics struct {
-    ElevationAttempts    int64
-    ElevationSuccesses   int64
-    ElevationFailures    int64
-    TotalElevationTime   time.Duration
-    LastElevationTime    time.Time
-    LastError           string
+// Validator provides functionality to record and verify file hashes
+type Validator struct {
+    algorithm          HashAlgorithm
+    hashDir            string
+    hashFilePathGetter HashFilePathGetter
+}
+```
+
+#### 2.2.2 特権対応バリデータ拡張
+
+```go
+// internal/filevalidator/privileged_validator.go
+
+// ValidatorWithPrivileges extends the base Validator with privilege management capabilities
+type ValidatorWithPrivileges struct {
+    *Validator
+    privMgr      runnertypes.PrivilegeManager
+    logger       *slog.Logger
+    secValidator *security.Validator
+}
+```
+
+### 2.3 権限管理実装構造
+
+#### 2.3.1 プラットフォーム固有Manager
+
+```go
+// internal/runner/privilege/manager.go
+
+// Manager interface for privilege management (extends runnertypes.PrivilegeManager)
+type Manager interface {
+    runnertypes.PrivilegeManager
+
+    // Additional methods specific to privilege package
+    GetCurrentUID() int
+    GetOriginalUID() int
+    HealthCheck(ctx context.Context) error
+    GetHealthStatus(ctx context.Context) HealthStatus
+    GetMetrics() Metrics
 }
 ```
 
@@ -614,63 +624,57 @@ func (v *Validator) validateFileHash(filePath string, expectedHash string) error
 
 ## 4. 実行フロー仕様
 
-### 4.1 通常コマンドの実行フロー
+### 4.1 標準ファイル検証フロー
 
 ```
-1. Command Processing
-   ├─ Load command from config
-   ├─ Check Privileged flag = false
-   └─ Continue to normal execution
+1. ファイル検証要求
+   ├─ 検証マネージャー初期化
+   ├─ 特権マネージャー = nil
+   └─ 標準バリデータ使用
 
-2. Normal Execution Flow
-   ├─ Validate command structure
-   ├─ Resolve command path (user privileges)
-   ├─ Setup environment variables
-   ├─ Execute command (user privileges)
-   └─ Return result
+2. 標準検証実行フロー
+   ├─ ファイルパス検証
+   ├─ ハッシュ計算（一般ユーザー権限）
+   ├─ 保存済みハッシュと比較
+   └─ 結果返却
 ```
 
-### 4.2 Privilegedコマンドの実行フロー
+### 4.2 特権ファイル検証フロー
 
 ```
-1. Command Processing
-   ├─ Load command from config
-   ├─ Check Privileged flag = true
-   └─ Route to privileged execution
+1. ファイル検証要求
+   ├─ 検証マネージャー初期化
+   ├─ 特権マネージャー設定済み
+   └─ ValidatorWithPrivileges使用
 
-2. Pre-execution Validation
-   ├─ Check privilege manager availability
-   ├─ Verify setuid binary configuration
-   ├─ Validate command structure
-   └─ Continue if all checks pass
+2. 特権検証前処理
+   ├─ 特権マネージャー利用可能性確認
+   ├─ setuidバイナリ設定確認
+   ├─ ファイルパス検証
+   └─ 続行可否判定
 
-3. Path Resolution with Privileges
-   ├─ ElevationContext(OperationFileAccess)
-   ├─ seteuid(0) [Root privileges]
-   ├─ exec.LookPath(cmd.Cmd)
-   ├─ seteuid(originalUID) [Restore privileges]
-   └─ Store resolved path
-
-4. File Validation with Privileges (if verification enabled)
+3. ファイルハッシュ記録（特権）
    ├─ ElevationContext(OperationFileHashCalculation)
-   ├─ seteuid(0) [Root privileges]
-   ├─ Calculate file hash
-   ├─ Compare with expected hash
-   ├─ seteuid(originalUID) [Restore privileges]
-   └─ Validate result
+   ├─ WithPrivileges実行開始
+   │  ├─ seteuid(0) [Root権限昇格]
+   │  ├─ ファイル読み込み・ハッシュ計算
+   │  ├─ ハッシュファイル書き込み
+   │  └─ seteuid(originalUID) [権限復帰]
+   └─ 結果返却
 
-5. Command Execution with Privileges
-   ├─ ElevationContext(OperationCommandExecution)
-   ├─ seteuid(0) [Root privileges]
-   ├─ exec.CommandContext(ctx, resolvedPath, args...)
-   ├─ Setup environment and execute
-   ├─ seteuid(originalUID) [Restore privileges]
-   └─ Return result
+4. ファイルハッシュ検証（特権）
+   ├─ ElevationContext(OperationFileHashCalculation)
+   ├─ WithPrivileges実行開始
+   │  ├─ seteuid(0) [Root権限昇格]
+   │  ├─ ファイル読み込み・ハッシュ計算
+   │  ├─ 保存済みハッシュと比較
+   │  └─ seteuid(originalUID) [権限復帰]
+   └─ 検証結果返却
 
-6. Result Processing
-   ├─ Log execution metrics
-   ├─ Record privilege usage
-   └─ Return to caller
+5. ログ記録・監査
+   ├─ 権限昇格ログ記録
+   ├─ 操作成功/失敗ログ記録
+   └─ セキュリティ監査情報出力
 ```
 
 ### 4.3 エラーハンドリングフロー

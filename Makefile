@@ -1,3 +1,5 @@
+CHOWN=chown
+CHMOD=chmod
 ENVCMD=env
 GOCMD=go
 GOBUILD=$(GOCMD) build
@@ -43,7 +45,9 @@ $(BINARY_VERIFY): $(GO_SOURCES)
 
 $(BINARY_RUNNER): $(GO_SOURCES)
 	@mkdir -p $(@D)
-	$(GOBUILD) $(BUILD_FLAGS) -o build/runner -v cmd/runner/main.go
+	$(GOBUILD) $(BUILD_FLAGS) -o $@ -v cmd/runner/main.go
+	$(SUDOCMD) $(CHOWN) root:root $@
+	$(SUDOCMD) $(CHMOD) u+s $@
 
 clean:
 	$(GOCLEAN)

@@ -74,7 +74,31 @@ const (
 const (
 	UIDRoot = 0
 	GIDRoot = 0
+
+	// Logging configuration constants
+	DefaultErrorMessageLength = 200  // Reasonable limit for error messages
+	DefaultStdoutLength       = 100  // Very limited stdout in logs
+	VerboseErrorMessageLength = 1000 // Longer error messages for debugging
+	VerboseStdoutLength       = 500  // More stdout for debugging
 )
+
+// LoggingOptions controls how sensitive information is handled in logs
+type LoggingOptions struct {
+	// IncludeErrorDetails controls whether full error messages are logged
+	IncludeErrorDetails bool `json:"include_error_details"`
+
+	// MaxErrorMessageLength limits the length of error messages in logs
+	MaxErrorMessageLength int `json:"max_error_message_length"`
+
+	// RedactSensitiveInfo enables automatic redaction of potentially sensitive patterns
+	RedactSensitiveInfo bool `json:"redact_sensitive_info"`
+
+	// TruncateStdout controls whether stdout is truncated in error logs
+	TruncateStdout bool `json:"truncate_stdout"`
+
+	// MaxStdoutLength limits the length of stdout in error logs
+	MaxStdoutLength int `json:"max_stdout_length"`
+}
 
 // Config holds security-related configuration
 type Config struct {
@@ -88,6 +112,14 @@ type Config struct {
 	SensitiveEnvVars []string
 	// MaxPathLength is the maximum allowed path length
 	MaxPathLength int
+	// DangerousPrivilegedCommands is a list of potentially dangerous commands when run with privileges
+	DangerousPrivilegedCommands []string
+	// ShellCommands is a list of shell commands
+	ShellCommands []string
+	// ShellMetacharacters is a list of shell metacharacters that require careful handling
+	ShellMetacharacters []string
+	// LoggingOptions controls sensitive information handling in logs
+	LoggingOptions LoggingOptions
 }
 
 // DefaultConfig returns a default security configuration
@@ -111,16 +143,83 @@ func DefaultConfig() *Config {
 			".*API.*",
 		},
 		MaxPathLength: DefaultMaxPathLength,
+		LoggingOptions: LoggingOptions{
+			IncludeErrorDetails:   false,                     // Secure default: don't include full error details
+			MaxErrorMessageLength: DefaultErrorMessageLength, // Reasonable limit for error messages
+			RedactSensitiveInfo:   true,                      // Enable automatic redaction
+			TruncateStdout:        true,                      // Truncate stdout for security
+			MaxStdoutLength:       DefaultStdoutLength,       // Very limited stdout in logs
+		},
+		DangerousPrivilegedCommands: []string{
+			// Shell executables
+			"/bin/sh", "/bin/bash", "/usr/bin/sh", "/usr/bin/bash",
+			"/bin/zsh", "/usr/bin/zsh", "/bin/csh", "/usr/bin/csh",
+
+			// Privilege escalation tools
+			"/bin/su", "/usr/bin/su", "/usr/bin/sudo", "/usr/bin/doas",
+
+			// System administration tools that require careful use
+			"/sbin/init", "/usr/sbin/init",
+			"/bin/rm", "/usr/bin/rm", // without argument validation
+			"/bin/dd", "/usr/bin/dd", // can be destructive
+			"/bin/mount", "/usr/bin/mount",
+			"/bin/umount", "/usr/bin/umount",
+
+			// Package management
+			"/usr/bin/apt", "/usr/bin/apt-get",
+			"/usr/bin/yum", "/usr/bin/dnf", "/usr/bin/rpm",
+
+			// Service management
+			"/bin/systemctl", "/usr/bin/systemctl",
+			"/sbin/service", "/usr/sbin/service",
+		},
+		ShellCommands: []string{
+			"/bin/sh", "/bin/bash", "/usr/bin/sh", "/usr/bin/bash",
+			"/bin/zsh", "/usr/bin/zsh", "/bin/csh", "/usr/bin/csh",
+			"/bin/fish", "/usr/bin/fish",
+			"/bin/dash", "/usr/bin/dash",
+		},
+		ShellMetacharacters: []string{
+			";", "&", "|", "&&", "||",
+			"$", "`", "$(", "${",
+			">", "<", ">>", "<<",
+			"*", "?", "[", "]",
+			"~", "!",
+		},
+	}
+}
+
+// DefaultLoggingOptions returns secure default logging options
+func DefaultLoggingOptions() LoggingOptions {
+	return LoggingOptions{
+		IncludeErrorDetails:   false,                     // Secure default: don't include full error details
+		MaxErrorMessageLength: DefaultErrorMessageLength, // Reasonable limit for error messages
+		RedactSensitiveInfo:   true,                      // Enable automatic redaction
+		TruncateStdout:        true,                      // Truncate stdout for security
+		MaxStdoutLength:       DefaultStdoutLength,       // Very limited stdout in logs
+	}
+}
+
+// VerboseLoggingOptions returns options suitable for debugging (less secure)
+func VerboseLoggingOptions() LoggingOptions {
+	return LoggingOptions{
+		IncludeErrorDetails:   true,                      // Include full error details for debugging
+		MaxErrorMessageLength: VerboseErrorMessageLength, // Longer error messages
+		RedactSensitiveInfo:   true,                      // Still redact sensitive patterns
+		TruncateStdout:        true,                      // Still truncate stdout
+		MaxStdoutLength:       VerboseStdoutLength,       // More stdout for debugging
 	}
 }
 
 // Validator provides security validation functionality
 type Validator struct {
-	config                *Config
-	fs                    common.FileSystem
-	allowedCommandRegexps []*regexp.Regexp
-	sensitiveEnvRegexps   []*regexp.Regexp
-	dangerousEnvRegexps   []*regexp.Regexp
+	config                      *Config
+	fs                          common.FileSystem
+	allowedCommandRegexps       []*regexp.Regexp
+	sensitiveEnvRegexps         []*regexp.Regexp
+	dangerousEnvRegexps         []*regexp.Regexp
+	dangerousPrivilegedCommands map[string]struct{}
+	shellCommands               map[string]struct{}
 }
 
 // NewValidator creates a new security validator with the given configuration.
@@ -194,6 +293,18 @@ func NewValidatorWithFS(config *Config, fs common.FileSystem) (*Validator, error
 			return nil, fmt.Errorf("%w: invalid dangerous env pattern %q: %w", ErrInvalidRegexPattern, pattern, err)
 		}
 		v.dangerousEnvRegexps[i] = re
+	}
+
+	// Initialize dangerous commands map
+	v.dangerousPrivilegedCommands = make(map[string]struct{})
+	for _, cmd := range config.DangerousPrivilegedCommands {
+		v.dangerousPrivilegedCommands[cmd] = struct{}{}
+	}
+
+	// Initialize shell commands map
+	v.shellCommands = make(map[string]struct{})
+	for _, cmd := range config.ShellCommands {
+		v.shellCommands[cmd] = struct{}{}
 	}
 
 	return v, nil
@@ -339,6 +450,189 @@ func (v *Validator) isSensitiveEnvVar(name string) bool {
 	}
 
 	return false
+}
+
+// SanitizeErrorForLogging sanitizes an error message for safe logging
+func (v *Validator) SanitizeErrorForLogging(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	errMsg := err.Error()
+
+	// If error details should not be included, return a generic message
+	if !v.config.LoggingOptions.IncludeErrorDetails {
+		return "[error details redacted for security]"
+	}
+
+	// Redact sensitive information if enabled
+	if v.config.LoggingOptions.RedactSensitiveInfo {
+		errMsg = v.redactSensitivePatterns(errMsg)
+	}
+
+	// Truncate if too long
+	if v.config.LoggingOptions.MaxErrorMessageLength > 0 && len(errMsg) > v.config.LoggingOptions.MaxErrorMessageLength {
+		errMsg = errMsg[:v.config.LoggingOptions.MaxErrorMessageLength] + "...[truncated]"
+	}
+
+	return errMsg
+}
+
+// SanitizeOutputForLogging sanitizes command output for safe logging
+func (v *Validator) SanitizeOutputForLogging(output string) string {
+	if output == "" {
+		return ""
+	}
+
+	// Redact sensitive information if enabled
+	if v.config.LoggingOptions.RedactSensitiveInfo {
+		output = v.redactSensitivePatterns(output)
+	}
+
+	// Truncate stdout if configured
+	if v.config.LoggingOptions.TruncateStdout && v.config.LoggingOptions.MaxStdoutLength > 0 && len(output) > v.config.LoggingOptions.MaxStdoutLength {
+		output = output[:v.config.LoggingOptions.MaxStdoutLength] + "...[truncated for security]"
+	}
+
+	return output
+}
+
+// redactSensitivePatterns removes or redacts potentially sensitive information
+func (v *Validator) redactSensitivePatterns(text string) string {
+	// Common patterns that might contain sensitive information
+	sensitivePatterns := []struct {
+		pattern     string
+		replacement string
+	}{
+		// API keys, tokens, passwords (common patterns)
+		{"password=", "password=[REDACTED]"},
+		{"token=", "token=[REDACTED]"},
+		{"key=", "key=[REDACTED]"},
+		{"secret=", "secret=[REDACTED]"},
+		{"api_key=", "api_key=[REDACTED]"},
+
+		// Environment variable assignments that might contain secrets
+		{"_PASSWORD=", "_PASSWORD=[REDACTED]"},
+		{"_TOKEN=", "_TOKEN=[REDACTED]"},
+		{"_KEY=", "_KEY=[REDACTED]"},
+		{"_SECRET=", "_SECRET=[REDACTED]"},
+
+		// Common credential patterns
+		{"Bearer ", "Bearer [REDACTED]"},
+		{"Basic ", "Basic [REDACTED]"},
+	}
+
+	result := text
+	for _, pattern := range sensitivePatterns {
+		result = v.performSimpleRedaction(result, pattern.pattern, pattern.replacement)
+	}
+
+	return result
+}
+
+// performSimpleRedaction performs basic pattern-based redaction
+func (v *Validator) performSimpleRedaction(text, pattern, _ string) string {
+	// Handle key=value patterns
+	if strings.Contains(pattern, "=") {
+		key := strings.TrimSuffix(pattern, "=")
+
+		// Look for key= pattern and replace only the value part
+		keyPattern := key + "="
+		lowerKey := strings.ToLower(keyPattern)
+
+		// Find all occurrences of the key= pattern
+		result := text
+		searchStart := 0
+
+		for {
+			lowerResult := strings.ToLower(result[searchStart:])
+			relativeIdx := strings.Index(lowerResult, lowerKey)
+			if relativeIdx == -1 {
+				break
+			}
+
+			startIdx := searchStart + relativeIdx
+
+			// Find the end of the value (space, newline, or end of string)
+			valueStart := startIdx + len(keyPattern)
+			valueEnd := valueStart
+			for valueEnd < len(result) && result[valueEnd] != ' ' && result[valueEnd] != '\n' && result[valueEnd] != '\t' {
+				valueEnd++
+			}
+
+			// Replace the value part with [REDACTED]
+			before := result[:valueStart]
+			after := result[valueEnd:]
+			result = before + "[REDACTED]" + after
+
+			// Move search start past the replacement to avoid infinite loop
+			searchStart = valueStart + len("[REDACTED]")
+			if searchStart >= len(result) {
+				break
+			}
+		}
+
+		return result
+	}
+
+	// Handle Bearer/Basic token patterns
+	if strings.Contains(pattern, "Bearer ") || strings.Contains(pattern, "Basic ") {
+		words := strings.Fields(text)
+		for i := range words {
+			if i > 0 && (strings.EqualFold(words[i-1], "Bearer") || strings.EqualFold(words[i-1], "Basic")) {
+				words[i] = "[REDACTED]"
+			}
+		}
+		return strings.Join(words, " ")
+	}
+
+	return text
+}
+
+// CreateSafeLogFields creates log fields with sensitive data redaction
+func (v *Validator) CreateSafeLogFields(fields map[string]any) map[string]any {
+	if !v.config.LoggingOptions.RedactSensitiveInfo {
+		return fields
+	}
+
+	safeFields := make(map[string]any)
+	for k, value := range fields {
+		switch val := value.(type) {
+		case string:
+			safeFields[k] = v.SanitizeOutputForLogging(val)
+		case error:
+			safeFields[k] = v.SanitizeErrorForLogging(val)
+		default:
+			// For non-string, non-error types, include as-is
+			safeFields[k] = value
+		}
+	}
+
+	return safeFields
+}
+
+// LogFieldsWithError creates safe log fields including a sanitized error
+func (v *Validator) LogFieldsWithError(baseFields map[string]any, err error) map[string]any {
+	fields := make(map[string]any)
+
+	// Copy base fields with sanitization
+	for k, value := range baseFields {
+		switch val := value.(type) {
+		case string:
+			fields[k] = v.SanitizeOutputForLogging(val)
+		case error:
+			fields[k] = v.SanitizeErrorForLogging(val)
+		default:
+			fields[k] = value
+		}
+	}
+
+	// Add sanitized error
+	if err != nil {
+		fields["error"] = v.SanitizeErrorForLogging(err)
+	}
+
+	return fields
 }
 
 // ValidateEnvironmentValue validates that an environment variable value is safe
@@ -505,4 +799,28 @@ func IsVariableValueSafe(value string) error {
 		return fmt.Errorf("failed to create validator: %w", err)
 	}
 	return validator.ValidateVariableValue(value)
+}
+
+// IsDangerousPrivilegedCommand checks if a command path is potentially dangerous when run with privileges
+func (v *Validator) IsDangerousPrivilegedCommand(cmdPath string) bool {
+	_, exists := v.dangerousPrivilegedCommands[cmdPath]
+	return exists
+}
+
+// IsShellCommand checks if a command is a shell command
+func (v *Validator) IsShellCommand(cmdPath string) bool {
+	_, exists := v.shellCommands[cmdPath]
+	return exists
+}
+
+// HasShellMetacharacters checks if any argument contains shell metacharacters
+func (v *Validator) HasShellMetacharacters(args []string) bool {
+	for _, arg := range args {
+		for _, meta := range v.config.ShellMetacharacters {
+			if strings.Contains(arg, meta) {
+				return true
+			}
+		}
+	}
+	return false
 }

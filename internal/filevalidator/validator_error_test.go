@@ -1,10 +1,11 @@
+//go:build linux || freebsd || openbsd || netbsd
+
 package filevalidator
 
 import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -152,68 +153,66 @@ func TestFilesystemEdgeCases(t *testing.T) {
 		}
 	})
 
-	if runtime.GOOS != "windows" {
-		t.Run("unreadable directory", func(t *testing.T) {
-			// Create a directory with no read permissions
-			dirPath := filepath.Join(tempDir, "noreaddir")
-			if err := os.Mkdir(dirPath, 0o700); err != nil {
-				t.Fatalf("Failed to create directory: %v", err)
-			}
+	t.Run("unreadable directory", func(t *testing.T) {
+		// Create a directory with no read permissions
+		dirPath := filepath.Join(tempDir, "noreaddir")
+		if err := os.Mkdir(dirPath, 0o700); err != nil {
+			t.Fatalf("Failed to create directory: %v", err)
+		}
 
-			// Create a file in the directory first
-			filePath := filepath.Join(dirPath, "test.txt")
-			if err := os.WriteFile(filePath, []byte("test"), 0o600); err != nil {
-				t.Fatalf("Failed to create test file: %v", err)
-			}
+		// Create a file in the directory first
+		filePath := filepath.Join(dirPath, "test.txt")
+		if err := os.WriteFile(filePath, []byte("test"), 0o600); err != nil {
+			t.Fatalf("Failed to create test file: %v", err)
+		}
 
-			// Make the directory unreadable
-			if err := os.Chmod(dirPath, 0o000); err != nil {
-				t.Fatalf("Failed to change directory permissions: %v", err)
-			}
-			t.Cleanup(func() { _ = os.Chmod(dirPath, 0o700) })
+		// Make the directory unreadable
+		if err := os.Chmod(dirPath, 0o000); err != nil {
+			t.Fatalf("Failed to change directory permissions: %v", err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(dirPath, 0o700) })
 
-			err := validator.Verify(filePath)
-			if err == nil {
-				t.Fatal("Expected error for unreadable directory, got nil")
-			}
-			// Check for permission error in the error chain
-			var perr *os.PathError
-			if !errors.As(err, &perr) || !os.IsPermission(perr) {
-				t.Errorf("Expected permission error, got: %v", err)
-			}
-		})
+		err := validator.Verify(filePath)
+		if err == nil {
+			t.Fatal("Expected error for unreadable directory, got nil")
+		}
+		// Check for permission error in the error chain
+		var perr *os.PathError
+		if !errors.As(err, &perr) || !os.IsPermission(perr) {
+			t.Errorf("Expected permission error, got: %v", err)
+		}
+	})
+
+	// This test requires root privileges to create a read-only mount
+	// Skipping by default, uncomment if running in a suitable environment
+	t.Run("read-only filesystem", func(t *testing.T) {
+		t.Skip("Skipping read-only filesystem test as it requires root privileges")
 
 		// This test requires root privileges to create a read-only mount
-		// Skipping by default, uncomment if running in a suitable environment
-		t.Run("read-only filesystem", func(t *testing.T) {
-			t.Skip("Skipping read-only filesystem test as it requires root privileges")
+		roDir := filepath.Join(tempDir, "ro")
+		if err := os.Mkdir(roDir, 0o755); err != nil {
+			t.Fatalf("Failed to create directory: %v", err)
+		}
 
-			// This test requires root privileges to create a read-only mount
-			roDir := filepath.Join(tempDir, "ro")
-			if err := os.Mkdir(roDir, 0o755); err != nil {
-				t.Fatalf("Failed to create directory: %v", err)
-			}
+		// Try to make directory read-only (this will only work as root)
+		if err := syscall.Mount("tmpfs", roDir, "tmpfs", syscall.MS_RDONLY, ""); err != nil {
+			t.Skipf("Skipping read-only filesystem test: %v", err)
+		}
+		defer syscall.Unmount(roDir, 0)
 
-			// Try to make directory read-only (this will only work as root)
-			if err := syscall.Mount("tmpfs", roDir, "tmpfs", syscall.MS_RDONLY, ""); err != nil {
-				t.Skipf("Skipping read-only filesystem test: %v", err)
-			}
-			defer syscall.Unmount(roDir, 0)
+		filePath := filepath.Join(roDir, "test.txt")
+		if err := os.WriteFile(filePath, []byte("test"), 0o644); err != nil {
+			t.Fatalf("Failed to create test file: %v", err)
+		}
 
-			filePath := filepath.Join(roDir, "test.txt")
-			if err := os.WriteFile(filePath, []byte("test"), 0o644); err != nil {
-				t.Fatalf("Failed to create test file: %v", err)
-			}
-
-			_, err := validator.Record(filePath)
-			if err == nil {
-				t.Fatal("Expected error for read-only filesystem, got nil")
-			}
-			if !os.IsPermission(err) && !strings.Contains(err.Error(), "read-only") {
-				t.Errorf("Expected read-only or permission error, got: %v", err)
-			}
-		})
-	}
+		_, err := validator.Record(filePath)
+		if err == nil {
+			t.Fatal("Expected error for read-only filesystem, got nil")
+		}
+		if !os.IsPermission(err) && !strings.Contains(err.Error(), "read-only") {
+			t.Errorf("Expected read-only or permission error, got: %v", err)
+		}
+	})
 }
 
 // TestErrorMessages verifies that error messages are clear and helpful

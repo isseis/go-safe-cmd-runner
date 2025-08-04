@@ -2,7 +2,10 @@
 // It includes types for configuration, commands, and other domain-specific structures.
 package runnertypes
 
-import "slices"
+import (
+	"fmt"
+	"slices"
+)
 
 // Config represents the root configuration structure
 type Config struct {
@@ -102,4 +105,37 @@ func (r *AllowlistResolution) IsAllowed(variable string) bool {
 	default:
 		return false
 	}
+}
+
+// Operation represents different types of privileged operations
+type Operation string
+
+// Supported privileged operations
+const (
+	OperationFileHashCalculation Operation = "file_hash_calculation"
+	OperationCommandExecution    Operation = "command_execution"
+	OperationFileAccess          Operation = "file_access"
+	OperationHealthCheck         Operation = "health_check"
+)
+
+// ElevationContext contains context information for privilege elevation
+type ElevationContext struct {
+	Operation   Operation
+	CommandName string
+	FilePath    string
+	OriginalUID int
+	TargetUID   int
+}
+
+// Standard privilege errors
+var (
+	ErrPrivilegedExecutionNotAvailable = fmt.Errorf("privileged execution not available: binary lacks required SUID bit or running as non-root user")
+)
+
+// PrivilegeManager interface defines methods for privilege elevation/dropping
+type PrivilegeManager interface {
+	ElevatePrivileges() error
+	DropPrivileges() error
+	IsPrivilegedExecutionSupported() bool
+	WithPrivileges(elevationCtx ElevationContext, fn func() error) error
 }

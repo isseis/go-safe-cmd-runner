@@ -18,8 +18,12 @@
       "Bash(git stash:*)",
       "Bash(build/record:*)",
       "Bash(./build/record:*)",
-      "Bash(./build/verify:*)"
+      "Bash(./build/verify:*)",
+      "Bash(true)"
     ],
-    "deny": []
+    "deny": [],
+    "env": {
+      "API_TIMEOUT_MS": "600000"
+    }
   }
 }

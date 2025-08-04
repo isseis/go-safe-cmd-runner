@@ -6,7 +6,6 @@ package config
 import (
 	"errors"
 	"fmt"
-	"log"
 	"path/filepath"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -31,8 +30,8 @@ var (
 )
 
 const (
-	// defaultTimeout is the default timeout for commands in second (3600 = 1 hour)
-	defaultTimeout = 3600
+	// defaultTimeout is the default timeout for commands in second (600 = 10 minutes)
+	defaultTimeout = 600
 )
 
 // NewLoader creates a new config loader
@@ -82,30 +81,5 @@ func (l *Loader) LoadConfig(path string) (*runnertypes.Config, error) {
 		return nil, fmt.Errorf("%w: %s", ErrWorkdirHasRelativeComponents, workDir)
 	}
 	cfg.Global.WorkDir = workDir
-
-	// Check for deprecated fields and log warnings
-	l.validateUnimplementedFields(&cfg)
-
 	return &cfg, nil
-}
-
-// validateUnimplementedFields checks for unimplemented fields and logs warnings
-func (l *Loader) validateUnimplementedFields(cfg *runnertypes.Config) {
-	var warnings []string
-
-	for _, group := range cfg.Groups {
-		for _, cmd := range group.Commands {
-			if cmd.Privileged {
-				warnings = append(warnings, fmt.Sprintf(
-					"command '%s': privileged field is not yet implemented",
-					cmd.Name))
-			}
-		}
-	}
-
-	if len(warnings) > 0 {
-		for _, warning := range warnings {
-			log.Printf("Warning: %s", warning)
-		}
-	}
 }

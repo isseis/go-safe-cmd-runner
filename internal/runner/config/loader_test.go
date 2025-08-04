@@ -57,16 +57,10 @@ version = "1.0"
 		t.Fatal("LoadConfig() returned nil config")
 	}
 
-	// Check that warnings were logged
+	// The privileged field is now implemented, so no warnings should be logged
 	logOutput := buf.String()
-	expectedWarnings := []string{
-		"privileged field is not yet implemented",
-	}
-
-	for _, warning := range expectedWarnings {
-		if !strings.Contains(logOutput, warning) {
-			t.Errorf("expected warning '%s' in log output: %s", warning, logOutput)
-		}
+	if strings.Contains(logOutput, "privileged field is not yet implemented") {
+		t.Errorf("unexpected warning about privileged field in log output: %s", logOutput)
 	}
 
 	// Verify config was loaded correctly despite warnings

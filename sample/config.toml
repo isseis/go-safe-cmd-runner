@@ -13,7 +13,7 @@ version = "1.0"
 
 # Global configuration settings
 [global]
-# Global timeout for all commands in seconds (default: 3600)
+# Global timeout for all commands in seconds (default: 600)
 timeout = 120
 
 # Working directory for command execution (must be absolute path)
@@ -23,7 +23,17 @@ workdir = "/tmp/cmd-runner"
 log_level = "info"
 
 # Global environment variable allowlist (optional)
-env_allowlist = ["PATH", "HOME", "USER", "TEST_SUITE", "DEPLOY_ENV", "CUSTOM_VAR", "TEST_ENV", "TIMEOUT", "CLEANUP_MODE"]
+env_allowlist = [
+  "PATH",
+  "HOME",
+  "USER",
+  "TEST_SUITE",
+  "DEPLOY_ENV",
+  "CUSTOM_VAR",
+  "TEST_ENV",
+  "TIMEOUT",
+  "CLEANUP_MODE",
+]
 
 # Command groups define collections of related commands
 # Groups are executed in priority order, with dependencies resolved first
@@ -31,32 +41,37 @@ env_allowlist = ["PATH", "HOME", "USER", "TEST_SUITE", "DEPLOY_ENV", "CUSTOM_VAR
 [[groups]]
 name = "setup"
 description = "Initial setup and preparation with temporary directory"
-priority = 1                                  # Execution priority (lower numbers run first)
-depends_on = []                               # Dependencies on other groups
-temp_dir = true                               # Create temporary directory for this group
-cleanup = true                               # Auto-cleanup temporary resources after group execution
+priority = 1                                                           # Execution priority (lower numbers run first)
+depends_on = []                                                        # Dependencies on other groups
+temp_dir = true                                                        # Create temporary directory for this group
+cleanup = true                                                         # Auto-cleanup temporary resources after group execution
 
 # Commands within this group
 [[groups.commands]]
 name = "create_workspace"
 description = "Create workspace directories"
 cmd = "mkdir"
-args = ["-p", "myapp-dev", "logs", "tmp"]     # Direct values instead of template variables
-timeout = 30                                  # Command-specific timeout (overrides global)
+args = [
+  "-p",
+  "myapp-dev",
+  "logs",
+  "tmp",
+] # Direct values instead of template variables
+timeout = 30 # Command-specific timeout (overrides global)
 
 [[groups.commands]]
 name = "show_environment"
 description = "Display environment information"
 cmd = "echo"
 args = ["Environment: development, App: myapp-dev, Port: 3000"]
-env = ["CUSTOM_VAR=setup_value"]             # Command-specific environment variables
+env = ["CUSTOM_VAR=setup_value"]                                # Command-specific environment variables
 
 [[groups]]
 name = "build"
 description = "Build and compilation with custom working directory"
 priority = 2
-depends_on = ["setup"]                       # This group depends on 'setup' group completion
-workdir = "/tmp/build-workspace"             # Custom working directory for this group
+depends_on = ["setup"]                                              # This group depends on 'setup' group completion
+workdir = "/tmp/build-workspace"                                    # Custom working directory for this group
 
 [[groups.commands]]
 name = "build_start"
@@ -99,8 +114,8 @@ name = "deploy"
 description = "Deployment operations with temporary directory and cleanup"
 priority = 4
 depends_on = ["test"]
-temp_dir = true                              # Create temporary directory for deployment
-cleanup = true                              # Auto-cleanup after deployment
+temp_dir = true                                                            # Create temporary directory for deployment
+cleanup = true                                                             # Auto-cleanup after deployment
 
 [[groups.commands]]
 name = "prepare_deploy"
@@ -120,7 +135,7 @@ name = "cleanup"
 description = "Cleanup and maintenance"
 priority = 5
 depends_on = ["deploy"]
-workdir = "/tmp"                             # Use /tmp for cleanup operations
+workdir = "/tmp"                        # Use /tmp for cleanup operations
 
 [[groups.commands]]
 name = "cleanup_temp"

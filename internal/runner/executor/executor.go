@@ -12,33 +12,150 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/audit"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
 // Error definitions
 var (
-	ErrEmptyCommand = errors.New("command cannot be empty")
-	ErrDirNotExists = errors.New("directory does not exist")
-	ErrInvalidPath  = errors.New("invalid command path")
+	ErrEmptyCommand          = errors.New("command cannot be empty")
+	ErrDirNotExists          = errors.New("directory does not exist")
+	ErrInvalidPath           = errors.New("invalid command path")
+	ErrNoPrivilegeManager    = errors.New("privileged execution requested but no privilege manager available")
+	ErrPrivilegedCmdSecurity = errors.New("privileged command security constraints violated")
 )
 
 // DefaultExecutor is the default implementation of CommandExecutor
 type DefaultExecutor struct {
-	FS  FileSystem
-	Out OutputWriter
+	FS          FileSystem
+	Out         OutputWriter
+	PrivMgr     runnertypes.PrivilegeManager // Optional privilege manager for privileged commands
+	AuditLogger *audit.Logger                // Optional audit logger for privileged operations
+}
+
+// Option is a functional option for configuring DefaultExecutor
+type Option func(*DefaultExecutor)
+
+// WithPrivilegeManager sets the privilege manager for the executor
+func WithPrivilegeManager(privMgr runnertypes.PrivilegeManager) Option {
+	return func(e *DefaultExecutor) {
+		e.PrivMgr = privMgr
+	}
+}
+
+// WithFileSystem sets the file system for the executor
+func WithFileSystem(fs FileSystem) Option {
+	return func(e *DefaultExecutor) {
+		e.FS = fs
+	}
+}
+
+// WithOutputWriter sets the output writer for the executor
+func WithOutputWriter(out OutputWriter) Option {
+	return func(e *DefaultExecutor) {
+		e.Out = out
+	}
+}
+
+// WithAuditLogger sets the audit logger for the executor
+func WithAuditLogger(auditLogger *audit.Logger) Option {
+	return func(e *DefaultExecutor) {
+		e.AuditLogger = auditLogger
+	}
 }
 
 // NewDefaultExecutor creates a new default command executor
-func NewDefaultExecutor() CommandExecutor {
-	return &DefaultExecutor{
+func NewDefaultExecutor(opts ...Option) CommandExecutor {
+	e := &DefaultExecutor{
 		FS:  &osFileSystem{},
 		Out: &consoleOutputWriter{},
 	}
+
+	for _, opt := range opts {
+		opt(e)
+	}
+
+	return e
 }
 
 // Execute implements the CommandExecutor interface
 func (e *DefaultExecutor) Execute(ctx context.Context, cmd runnertypes.Command, envVars map[string]string) (*Result, error) {
+	if cmd.Privileged {
+		return e.executePrivileged(ctx, cmd, envVars)
+	}
+	return e.executeNormal(ctx, cmd, envVars)
+}
+
+// executePrivileged handles privileged command execution with audit logging and metrics
+func (e *DefaultExecutor) executePrivileged(ctx context.Context, cmd runnertypes.Command, envVars map[string]string) (*Result, error) {
+	startTime := time.Now()
+	var metrics audit.PrivilegeMetrics
+
+	// Pre-execution validation
+	if e.PrivMgr == nil {
+		return nil, ErrNoPrivilegeManager
+	}
+
+	if !e.PrivMgr.IsPrivilegedExecutionSupported() {
+		return nil, runnertypes.ErrPrivilegedExecutionNotAvailable
+	}
+
+	// Validate the command before any privilege elevation
+	if err := e.Validate(cmd); err != nil {
+		return nil, fmt.Errorf("command validation failed: %w", err)
+	}
+
+	// Additional security validation for privileged commands BEFORE path resolution
+	// This ensures the original command in the config file uses absolute paths
+	if err := e.validatePrivilegedCommand(cmd); err != nil {
+		return nil, fmt.Errorf("privileged command security validation failed: %w", err)
+	}
+
+	// Use the absolute path directly since privileged commands must use absolute paths
+	if !filepath.IsAbs(cmd.Cmd) {
+		return nil, fmt.Errorf("%w: privileged commands must use absolute paths: %s", ErrPrivilegedCmdSecurity, cmd.Cmd)
+	}
+
+	// Execute command with elevated privileges
+	executionCtx := runnertypes.ElevationContext{
+		Operation:   runnertypes.OperationCommandExecution,
+		CommandName: cmd.Name,
+		FilePath:    cmd.Cmd,
+	}
+
+	var result *Result
+	privilegeStart := time.Now()
+	err := e.PrivMgr.WithPrivileges(executionCtx, func() error {
+		var execErr error
+		result, execErr = e.executeCommandWithPath(ctx, cmd.Cmd, cmd, envVars)
+		return execErr
+	})
+	privilegeDuration := time.Since(privilegeStart)
+	metrics.ElevationCount++
+	metrics.TotalDuration += privilegeDuration
+
+	if err != nil {
+		return nil, fmt.Errorf("privileged command execution failed: %w", err)
+	}
+
+	// Audit logging
+	if e.AuditLogger != nil {
+		executionDuration := time.Since(startTime)
+		auditResult := &audit.ExecutionResult{
+			Stdout:   result.Stdout,
+			Stderr:   result.Stderr,
+			ExitCode: result.ExitCode,
+		}
+		e.AuditLogger.LogPrivilegedExecution(ctx, cmd, auditResult, executionDuration, metrics)
+	}
+
+	return result, nil
+}
+
+// executeNormal handles normal (non-privileged) command execution
+func (e *DefaultExecutor) executeNormal(ctx context.Context, cmd runnertypes.Command, envVars map[string]string) (*Result, error) {
 	// Validate the command before execution
 	if err := e.Validate(cmd); err != nil {
 		return nil, fmt.Errorf("command validation failed: %w", err)
@@ -50,8 +167,16 @@ func (e *DefaultExecutor) Execute(ctx context.Context, cmd runnertypes.Command, 
 		return nil, fmt.Errorf("failed to find command %q: %w", cmd.Cmd, lookErr)
 	}
 
+	return e.executeCommandWithPath(ctx, path, cmd, envVars)
+}
+
+// executeCommandWithPath executes a command with the given resolved path
+func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path string, cmd runnertypes.Command, envVars map[string]string) (*Result, error) {
 	// Create the command with the resolved path
-	// #nosec G204 - The command and arguments are validated before execution
+	// #nosec G204 - The command and arguments are validated before execution through:
+	// 1. Standard validation with e.Validate() for all commands
+	// 2. Additional security validation with e.validatePrivilegedCommand() for privileged commands only
+	//    (applied in executePrivileged before this function is called)
 	execCmd := exec.CommandContext(ctx, path, cmd.Args...)
 
 	// Set up working directory
@@ -137,6 +262,27 @@ func (e *DefaultExecutor) Validate(cmd runnertypes.Command) error {
 		}
 	}
 
+	return nil
+}
+
+// validatePrivilegedCommand performs additional security checks specifically for privileged commands
+// This adds an extra layer of security validation beyond the basic validation
+func (e *DefaultExecutor) validatePrivilegedCommand(cmd runnertypes.Command) error {
+	// Enforce absolute paths for privileged commands
+	if !filepath.IsAbs(cmd.Cmd) {
+		return fmt.Errorf("%w: privileged commands must use absolute paths: %s", ErrPrivilegedCmdSecurity, cmd.Cmd)
+	}
+
+	// Ensure working directory is also absolute for privileged commands
+	if cmd.Dir != "" && !filepath.IsAbs(cmd.Dir) {
+		return fmt.Errorf("%w: privileged commands must use absolute working directory paths: %s", ErrPrivilegedCmdSecurity, cmd.Dir)
+	}
+
+	// Additional validation could include:
+	// 1. Check for suspicious or potentially dangerous arguments
+	// 2. Allowlist checking for permitted privileged commands
+	// 3. Check if command is in system directories like /bin, /usr/bin, etc.
+	// 4. Verify that the command binary has proper permissions
 	return nil
 }
 
