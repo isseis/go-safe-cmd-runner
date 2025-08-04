@@ -310,27 +310,6 @@ func (m *UnixPrivilegeManager) GetOriginalUID() int {
 	return m.originalUID
 }
 
-// HealthCheck verifies that privilege escalation works correctly
-func (m *UnixPrivilegeManager) HealthCheck(ctx context.Context) error {
-	if !m.IsPrivilegedExecutionSupported() {
-		return runnertypes.ErrPrivilegedExecutionNotAvailable
-	}
-
-	// Test privilege elevation and restoration
-	testCtx := runnertypes.ElevationContext{
-		Operation:   runnertypes.OperationHealthCheck,
-		CommandName: "health_check",
-	}
-
-	return m.WithPrivileges(ctx, testCtx, func() error {
-		// Verify we're actually running as root
-		if syscall.Geteuid() != 0 {
-			return fmt.Errorf("%w: still running as uid %d", ErrPrivilegeElevationFailed, syscall.Geteuid())
-		}
-		return nil
-	})
-}
-
 // GetMetrics returns a snapshot of current privilege operation metrics
 func (m *UnixPrivilegeManager) GetMetrics() Metrics {
 	return m.metrics.GetSnapshot()

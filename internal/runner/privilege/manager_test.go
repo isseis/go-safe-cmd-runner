@@ -106,20 +106,3 @@ func TestManager_WithPrivileges_UnsupportedPlatform(t *testing.T) {
 	// Should fail because setuid is not configured in test environment
 	assert.Error(t, err)
 }
-
-func TestManager_HealthCheck(t *testing.T) {
-	logger := slog.Default()
-	manager := NewManager(logger)
-
-	ctx := context.Background()
-	err := manager.HealthCheck(ctx)
-
-	if manager.IsPrivilegedExecutionSupported() {
-		// If supported, health check should pass
-		assert.NoError(t, err)
-	} else {
-		// If not supported, should return appropriate error
-		assert.Error(t, err)
-		assert.ErrorIs(t, err, runnertypes.ErrPrivilegedExecutionNotAvailable)
-	}
-}

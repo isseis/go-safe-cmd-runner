@@ -1,7 +1,6 @@
 package privilege
 
 import (
-	"context"
 	"log/slog"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -14,8 +13,6 @@ type Manager interface {
 	// Additional methods specific to privilege package
 	GetCurrentUID() int
 	GetOriginalUID() int
-	HealthCheck(ctx context.Context) error
-	GetHealthStatus(ctx context.Context) HealthStatus
 	GetMetrics() Metrics
 }
 

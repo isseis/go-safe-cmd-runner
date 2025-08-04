@@ -80,18 +80,6 @@ func (m *MockPrivilegeManager) HealthCheck(_ context.Context) error {
 	return nil
 }
 
-// GetHealthStatus returns the health status of the privilege manager
-func (m *MockPrivilegeManager) GetHealthStatus(_ context.Context) privilege.HealthStatus {
-	return privilege.HealthStatus{
-		IsSupported:      m.Supported,
-		SetuidConfigured: m.Supported,
-		OriginalUID:      MockUID,
-		CurrentUID:       MockUID,
-		EffectiveUID:     MockUID,
-		CanElevate:       m.Supported,
-	}
-}
-
 // GetMetrics returns metrics for the privilege manager
 func (m *MockPrivilegeManager) GetMetrics() privilege.Metrics {
 	return privilege.Metrics{}
