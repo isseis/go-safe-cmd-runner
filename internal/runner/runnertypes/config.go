@@ -3,10 +3,8 @@
 package runnertypes
 
 import (
-	"context"
 	"fmt"
 	"slices"
-	"time"
 )
 
 // Config represents the root configuration structure
@@ -125,7 +123,6 @@ type ElevationContext struct {
 	Operation   Operation
 	CommandName string
 	FilePath    string
-	StartTime   time.Time
 	OriginalUID int
 	TargetUID   int
 }
@@ -140,5 +137,5 @@ type PrivilegeManager interface {
 	ElevatePrivileges() error
 	DropPrivileges() error
 	IsPrivilegedExecutionSupported() bool
-	WithPrivileges(ctx context.Context, elevationCtx ElevationContext, fn func() error) error
+	WithPrivileges(elevationCtx ElevationContext, fn func() error) error
 }

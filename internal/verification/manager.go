@@ -92,15 +92,8 @@ func NewManagerWithOpts(hashDir string, options ...Option) (*Manager, error) {
 	if opts.fileValidatorEnabled {
 		var err error
 
-		if opts.privilegeManager != nil {
-			// Use privileged validator when privilege manager is available
-			logger := slog.Default()
-			manager.fileValidator, err = filevalidator.NewValidatorWithPrivileges(&filevalidator.SHA256{}, hashDir, opts.privilegeManager, logger)
-		} else {
-			// Use standard validator
-			manager.fileValidator, err = filevalidator.New(&filevalidator.SHA256{}, hashDir)
-		}
-
+		// Use standard validator
+		manager.fileValidator, err = filevalidator.New(&filevalidator.SHA256{}, hashDir)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize file validator: %w", err)
 		}

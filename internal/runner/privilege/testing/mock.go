@@ -29,7 +29,7 @@ type MockPrivilegeManager struct {
 }
 
 // WithPrivileges executes the given function with privilege elevation
-func (m *MockPrivilegeManager) WithPrivileges(_ context.Context, elevationCtx runnertypes.ElevationContext, fn func() error) error {
+func (m *MockPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) error {
 	m.ElevationCalls = append(m.ElevationCalls, string(elevationCtx.Operation))
 	if m.ShouldFail {
 		return ErrMockPrivilegeElevationFailed

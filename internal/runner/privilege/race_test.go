@@ -3,7 +3,6 @@
 package privilege
 
 import (
-	"context"
 	"log/slog"
 	"os"
 	"sync"
@@ -39,14 +38,13 @@ func TestUnixPrivilegeManager_ConcurrentAccess(t *testing.T) {
 			defer wg.Done()
 
 			for j := 0; j < numOperationsPerGoroutine; j++ {
-				ctx := context.Background()
 				elevationCtx := runnertypes.ElevationContext{
 					Operation:   runnertypes.OperationFileAccess,
 					CommandName: "test_concurrent",
 					FilePath:    "/tmp/test",
 				}
 
-				err := manager.WithPrivileges(ctx, elevationCtx, func() error {
+				err := manager.WithPrivileges(elevationCtx, func() error {
 					// Simulate some work that requires privileges
 					time.Sleep(1 * time.Millisecond)
 
@@ -88,7 +86,6 @@ func TestUnixPrivilegeManager_NoDeadlock(t *testing.T) {
 		t.Skip("Skipping test: privilege escalation not supported (not running with setuid)")
 	}
 
-	ctx := context.Background()
 	elevationCtx := runnertypes.ElevationContext{
 		Operation:   runnertypes.OperationFileAccess,
 		CommandName: "test_no_deadlock",
@@ -100,7 +97,7 @@ func TestUnixPrivilegeManager_NoDeadlock(t *testing.T) {
 	done := make(chan bool, 1)
 
 	go func() {
-		err := manager.WithPrivileges(ctx, elevationCtx, func() error {
+		err := manager.WithPrivileges(elevationCtx, func() error {
 			// Quick operation
 			return nil
 		})
@@ -139,14 +136,13 @@ func TestUnixPrivilegeManager_RaceConditionProtection(t *testing.T) {
 		go func() {
 			defer wg.Done()
 
-			ctx := context.Background()
 			elevationCtx := runnertypes.ElevationContext{
 				Operation:   runnertypes.OperationFileAccess,
 				CommandName: "race_test",
 				FilePath:    "/tmp/test",
 			}
 
-			err := manager.WithPrivileges(ctx, elevationCtx, func() error {
+			err := manager.WithPrivileges(elevationCtx, func() error {
 				// Check if we're actually running as root
 				if os.Geteuid() == 0 {
 					mu.Lock()
@@ -194,7 +190,6 @@ func TestUnixPrivilegeManager_LockSerialization(t *testing.T) {
 		go func(id int) {
 			defer wg.Done()
 
-			ctx := context.Background()
 			elevationCtx := runnertypes.ElevationContext{
 				Operation:   runnertypes.OperationFileAccess,
 				CommandName: "serialization_test",
@@ -202,7 +197,7 @@ func TestUnixPrivilegeManager_LockSerialization(t *testing.T) {
 			}
 
 			// The mutex in WithPrivileges should serialize these calls
-			err := manager.WithPrivileges(ctx, elevationCtx, func() error {
+			err := manager.WithPrivileges(elevationCtx, func() error {
 				// This function may not be called if setuid is not configured,
 				// but the mutex should still serialize the WithPrivileges calls
 				return nil

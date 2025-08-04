@@ -127,7 +127,7 @@ func (e *DefaultExecutor) executePrivileged(ctx context.Context, cmd runnertypes
 
 	var result *Result
 	privilegeStart := time.Now()
-	err := e.PrivMgr.WithPrivileges(ctx, executionCtx, func() error {
+	err := e.PrivMgr.WithPrivileges(executionCtx, func() error {
 		var execErr error
 		result, execErr = e.executeCommandWithPath(ctx, cmd.Cmd, cmd, envVars)
 		return execErr

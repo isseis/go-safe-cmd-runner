@@ -1,7 +1,6 @@
 package privilege
 
 import (
-	"context"
 	"log/slog"
 	"testing"
 	"time"
@@ -24,7 +23,6 @@ func TestElevationContext(t *testing.T) {
 		Operation:   runnertypes.OperationHealthCheck,
 		CommandName: "test",
 		FilePath:    "/test/path",
-		StartTime:   time.Now(),
 		OriginalUID: 1000,
 		TargetUID:   0,
 	}
@@ -93,13 +91,12 @@ func TestManager_WithPrivileges_UnsupportedPlatform(t *testing.T) {
 		t.Skip("Test environment has privileged execution enabled")
 	}
 
-	ctx := context.Background()
 	elevationCtx := runnertypes.ElevationContext{
 		Operation:   runnertypes.OperationHealthCheck,
 		CommandName: "test",
 	}
 
-	err := manager.WithPrivileges(ctx, elevationCtx, func() error {
+	err := manager.WithPrivileges(elevationCtx, func() error {
 		return nil
 	})
 

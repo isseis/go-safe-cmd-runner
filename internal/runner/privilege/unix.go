@@ -3,7 +3,6 @@
 package privilege
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"log/syslog"
@@ -26,25 +25,15 @@ type UnixPrivilegeManager struct {
 }
 
 func newPlatformManager(logger *slog.Logger) Manager {
-	originalUID := syscall.Getuid()
-
-	// Check for privilege execution support (either setuid binary or native root)
-	privilegeSupported := isPrivilegeExecutionSupported(logger)
-
 	return &UnixPrivilegeManager{
 		logger:             logger,
-		originalUID:        originalUID,
-		privilegeSupported: privilegeSupported,
+		originalUID:        syscall.Getuid(),
+		privilegeSupported: isPrivilegeExecutionSupported(logger),
 	}
 }
 
 // WithPrivileges executes a function with elevated privileges using safe privilege escalation
-func (m *UnixPrivilegeManager) WithPrivileges(ctx context.Context, elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
-	return m.withPrivilegesInternal(ctx, elevationCtx, fn)
-}
-
-// withPrivilegesInternal is the original implementation using runnertypes
-func (m *UnixPrivilegeManager) withPrivilegesInternal(ctx context.Context, elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
+func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
 	// Lock for the entire duration of the privileged operation to prevent race conditions
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -52,7 +41,7 @@ func (m *UnixPrivilegeManager) withPrivilegesInternal(ctx context.Context, eleva
 	start := time.Now()
 
 	// Perform privilege escalation
-	if err := m.escalatePrivileges(ctx, elevationCtx); err != nil {
+	if err := m.escalatePrivileges(elevationCtx); err != nil {
 		m.metrics.RecordElevationFailure(err)
 		return fmt.Errorf("privilege escalation failed: %w", err)
 	}
@@ -99,12 +88,11 @@ func (m *UnixPrivilegeManager) withPrivilegesInternal(ctx context.Context, eleva
 
 // escalatePrivileges performs the actual privilege escalation (private method)
 // Note: This method assumes the caller (WithPrivileges) has already acquired the mutex lock
-func (m *UnixPrivilegeManager) escalatePrivileges(_ context.Context, elevationCtx runnertypes.ElevationContext) error {
+func (m *UnixPrivilegeManager) escalatePrivileges(elevationCtx runnertypes.ElevationContext) error {
 	if !m.IsPrivilegedExecutionSupported() {
 		return fmt.Errorf("%w: privilege execution not supported", runnertypes.ErrPrivilegedExecutionNotAvailable)
 	}
 
-	elevationCtx.StartTime = time.Now()
 	elevationCtx.OriginalUID = m.originalUID
 	elevationCtx.TargetUID = 0
 
