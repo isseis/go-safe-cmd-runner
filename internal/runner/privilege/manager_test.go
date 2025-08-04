@@ -120,6 +120,6 @@ func TestManager_HealthCheck(t *testing.T) {
 	} else {
 		// If not supported, should return appropriate error
 		assert.Error(t, err)
-		assert.ErrorIs(t, err, ErrPrivilegedExecutionNotAvailable)
+		assert.ErrorIs(t, err, runnertypes.ErrPrivilegedExecutionNotAvailable)
 	}
 }

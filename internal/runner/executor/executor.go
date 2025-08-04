@@ -99,7 +99,7 @@ func (e *DefaultExecutor) executePrivileged(ctx context.Context, cmd runnertypes
 	}
 
 	if !e.PrivMgr.IsPrivilegedExecutionSupported() {
-		return nil, runnertypes.ErrPlatformNotSupported
+		return nil, runnertypes.ErrPrivilegedExecutionNotAvailable
 	}
 
 	// Validate the command before any privilege elevation

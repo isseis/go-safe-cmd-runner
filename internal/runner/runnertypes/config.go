@@ -132,7 +132,7 @@ type ElevationContext struct {
 
 // Standard privilege errors
 var (
-	ErrPlatformNotSupported = fmt.Errorf("privileged execution not supported on this platform")
+	ErrPrivilegedExecutionNotAvailable = fmt.Errorf("privileged execution not available: binary lacks required SUID bit or running as non-root user")
 )
 
 // PrivilegeManager interface defines methods for privilege elevation/dropping

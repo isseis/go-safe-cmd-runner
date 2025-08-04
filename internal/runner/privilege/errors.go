@@ -10,11 +10,9 @@ import (
 
 // Standard errors
 var (
-	ErrPrivilegedExecutionNotAvailable = fmt.Errorf("privileged execution not available (setuid not configured)")
-	ErrPrivilegeElevationFailed        = fmt.Errorf("failed to elevate privileges")
-	ErrPrivilegeRestorationFailed      = fmt.Errorf("failed to restore privileges")
-	ErrPlatformNotSupported            = fmt.Errorf("privileged execution not supported on this platform")
-	ErrInvalidUID                      = fmt.Errorf("invalid user ID")
+	ErrPrivilegeElevationFailed   = fmt.Errorf("failed to elevate privileges")
+	ErrPrivilegeRestorationFailed = fmt.Errorf("failed to restore privileges")
+	ErrInvalidUID                 = fmt.Errorf("invalid user ID")
 )
 
 // Error contains detailed information about privilege operation failures

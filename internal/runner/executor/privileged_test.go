@@ -56,7 +56,7 @@ func TestDefaultExecutor_PrivilegedExecution(t *testing.T) {
 			privilegeSupported: false,
 			expectError:        true,
 			errorMessage:       "privileged execution not supported",
-			expectedErrorType:  runnertypes.ErrPlatformNotSupported,
+			expectedErrorType:  runnertypes.ErrPrivilegedExecutionNotAvailable,
 			noPrivilegeManager: false,
 		},
 		{

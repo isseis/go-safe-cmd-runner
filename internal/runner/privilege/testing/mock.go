@@ -75,7 +75,7 @@ func (m *MockPrivilegeManager) GetOriginalUID() int {
 // HealthCheck performs a health check on the privilege manager
 func (m *MockPrivilegeManager) HealthCheck(_ context.Context) error {
 	if !m.Supported {
-		return privilege.ErrPrivilegedExecutionNotAvailable
+		return runnertypes.ErrPrivilegedExecutionNotAvailable
 	}
 	return nil
 }

@@ -101,7 +101,7 @@ func (m *UnixPrivilegeManager) withPrivilegesInternal(ctx context.Context, eleva
 // Note: This method assumes the caller (WithPrivileges) has already acquired the mutex lock
 func (m *UnixPrivilegeManager) escalatePrivileges(_ context.Context, elevationCtx runnertypes.ElevationContext) error {
 	if !m.IsPrivilegedExecutionSupported() {
-		return fmt.Errorf("%w: privilege execution not supported", ErrPrivilegedExecutionNotAvailable)
+		return fmt.Errorf("%w: privilege execution not supported", runnertypes.ErrPrivilegedExecutionNotAvailable)
 	}
 
 	elevationCtx.StartTime = time.Now()
@@ -313,7 +313,7 @@ func (m *UnixPrivilegeManager) GetOriginalUID() int {
 // HealthCheck verifies that privilege escalation works correctly
 func (m *UnixPrivilegeManager) HealthCheck(ctx context.Context) error {
 	if !m.IsPrivilegedExecutionSupported() {
-		return ErrPrivilegedExecutionNotAvailable
+		return runnertypes.ErrPrivilegedExecutionNotAvailable
 	}
 
 	// Test privilege elevation and restoration
@@ -342,7 +342,7 @@ func (m *UnixPrivilegeManager) ElevatePrivileges() error {
 	defer m.mu.Unlock()
 
 	if !m.privilegeSupported {
-		return ErrPrivilegedExecutionNotAvailable
+		return runnertypes.ErrPrivilegedExecutionNotAvailable
 	}
 
 	if err := syscall.Seteuid(0); err != nil {
