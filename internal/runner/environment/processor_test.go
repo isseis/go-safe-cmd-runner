@@ -1,7 +1,6 @@
 package environment
 
 import (
-	"errors"
 	"os"
 	"testing"
 
@@ -140,7 +139,7 @@ func TestCommandEnvProcessor_ProcessCommandEnvironment(t *testing.T) {
 
 			if tt.expectError {
 				assert.Error(t, err)
-				assert.True(t, errors.Is(err, tt.expectedErr), "Expected error type %v, got %v", tt.expectedErr, err)
+				assert.ErrorIs(t, err, tt.expectedErr, "Expected error type %v, got %v", tt.expectedErr, err)
 				return
 			}
 
@@ -253,7 +252,7 @@ func TestCommandEnvProcessor_ResolveVariableReferences(t *testing.T) {
 
 			if tt.expectError {
 				assert.Error(t, err)
-				assert.True(t, errors.Is(err, tt.expectedErr), "Expected error type %v, got %v", tt.expectedErr, err)
+				assert.ErrorIs(t, err, tt.expectedErr, "Expected error type %v, got %v", tt.expectedErr, err)
 				return
 			}
 
@@ -313,7 +312,7 @@ func TestCommandEnvProcessor_ValidateBasicEnvVariable(t *testing.T) {
 
 			if tt.expectError {
 				assert.Error(t, err)
-				assert.True(t, errors.Is(err, tt.expectedErr), "Expected error type %v, got %v", tt.expectedErr, err)
+				assert.ErrorIs(t, err, tt.expectedErr, "Expected error type %v, got %v", tt.expectedErr, err)
 			} else {
 				assert.NoError(t, err)
 			}

@@ -73,7 +73,7 @@ func TestError_Is(t *testing.T) {
 
 	assert.True(t, verificationErr.Is(ErrOriginalError))
 	assert.False(t, verificationErr.Is(ErrDifferentError))
-	assert.True(t, errors.Is(verificationErr, ErrOriginalError))
+	assert.ErrorIs(t, verificationErr, ErrOriginalError)
 }
 
 func TestStaticErrors(t *testing.T) {

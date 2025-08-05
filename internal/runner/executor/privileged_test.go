@@ -2,7 +2,6 @@ package executor_test
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
@@ -154,7 +153,7 @@ func TestDefaultExecutor_PrivilegeElevationFailure(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Nil(t, result)
-	assert.True(t, errors.Is(err, privtesting.ErrMockPrivilegeElevationFailed))
+	assert.ErrorIs(t, err, privtesting.ErrMockPrivilegeElevationFailed)
 }
 
 func TestDefaultExecutor_BackwardCompatibility(t *testing.T) {

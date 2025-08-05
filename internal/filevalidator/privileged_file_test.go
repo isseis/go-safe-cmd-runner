@@ -1,7 +1,6 @@
 package filevalidator
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -59,7 +58,7 @@ func TestOpenFileWithPrivileges_PermissionError(t *testing.T) {
 		file, err := OpenFileWithPrivileges(restrictedPath, nil)
 		assert.Error(t, err)
 		assert.Nil(t, file)
-		assert.True(t, errors.Is(err, runnertypes.ErrPrivilegedExecutionNotAvailable))
+		assert.ErrorIs(t, err, runnertypes.ErrPrivilegedExecutionNotAvailable)
 	})
 }
 
@@ -72,7 +71,7 @@ func TestOpenFileWithPrivileges_WithPrivilegeManager(t *testing.T) {
 		file, err := OpenFileWithPrivileges("/root/restricted", mockPM)
 		assert.Error(t, err)
 		assert.Nil(t, file)
-		assert.True(t, errors.Is(err, privilege.ErrPrivilegedExecutionNotSupported))
+		assert.ErrorIs(t, err, privilege.ErrPrivilegedExecutionNotSupported)
 	})
 
 	t.Run("privilege manager supported but execution fails", func(t *testing.T) {
