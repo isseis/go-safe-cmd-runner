@@ -5,25 +5,13 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"syscall"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
-// PrivilegeError represents privilege-related errors
-type PrivilegeError struct {
-	Operation string // "escalate" or "restore"
-	UID       int
-	Cause     error
-}
-
-func (e *PrivilegeError) Error() string {
-	return fmt.Sprintf("privilege %s failed for UID %d: %v", e.Operation, e.UID, e.Cause)
-}
-
-func (e *PrivilegeError) Unwrap() error {
-	return e.Cause
-}
-
 // OpenFileWithPrivileges opens a file with elevated privileges and immediately restores them
+// This function uses the existing privilege management infrastructure
 func OpenFileWithPrivileges(filepath string) (*os.File, error) {
 	// まず通常権限でのアクセスを試行
 	file, err := os.Open(filepath) //nolint:gosec // filepath is validated by caller
@@ -36,39 +24,29 @@ func OpenFileWithPrivileges(filepath string) (*os.File, error) {
 		return nil, fmt.Errorf("failed to open file %s: %w", filepath, err)
 	}
 
-	// 現在のUIDを保存
-	originalUID := os.Getuid()
+	// 既存の privilege manager を使用して安全な権限昇格を実行
+	privManager := privilege.NewManager(slog.Default())
 
-	// 既にrootの場合は権限昇格不要
-	if originalUID == 0 {
-		return nil, fmt.Errorf("failed to open file %s: %w", filepath, err)
+	// 権限昇格がサポートされているかチェック
+	if !privManager.IsPrivilegedExecutionSupported() {
+		return nil, fmt.Errorf("failed to open file %s: privileged execution not supported: %w", filepath, err)
 	}
 
-	// 権限昇格
-	if err := syscall.Seteuid(0); err != nil {
-		return nil, &PrivilegeError{
-			Operation: "escalate",
-			UID:       0,
-			Cause:     err,
-		}
+	var privilegedFile *os.File
+	privErr := privManager.WithPrivileges(runnertypes.ElevationContext{
+		Operation: runnertypes.OperationFileValidation,
+		FilePath:  filepath,
+	}, func() error {
+		var openErr error
+		privilegedFile, openErr = os.Open(filepath) //nolint:gosec // filepath is validated by caller
+		return openErr
+	})
+
+	if privErr != nil {
+		return nil, fmt.Errorf("failed to open file %s with privileges: %w", filepath, privErr)
 	}
 
-	// deferで確実に権限復元
-	defer func() {
-		if restoreErr := syscall.Seteuid(originalUID); restoreErr != nil {
-			slog.Error("Failed to restore privileges",
-				slog.String("error", restoreErr.Error()),
-				slog.String("file", filepath))
-		}
-	}()
-
-	// ファイルオープン（権限昇格状態）
-	file, err = os.Open(filepath) //nolint:gosec // filepath is validated by caller
-	if err != nil {
-		return nil, fmt.Errorf("failed to open file %s: %w", filepath, err)
-	}
-
-	return file, nil
+	return privilegedFile, nil
 }
 
 // needsPrivileges determines if a file requires privilege escalation to access
@@ -79,7 +57,7 @@ func needsPrivileges(filepath string) bool {
 }
 
 // IsPrivilegeError checks if error is a privilege-related error
+// This function now uses the existing privilege management error handling
 func IsPrivilegeError(err error) bool {
-	var privErr *PrivilegeError
-	return errors.As(err, &privErr)
+	return errors.Is(err, runnertypes.ErrPrivilegedExecutionNotAvailable)
 }

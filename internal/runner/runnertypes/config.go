@@ -115,6 +115,7 @@ const (
 	OperationFileHashCalculation Operation = "file_hash_calculation"
 	OperationCommandExecution    Operation = "command_execution"
 	OperationFileAccess          Operation = "file_access"
+	OperationFileValidation      Operation = "file_validation" // For file integrity validation
 	OperationHealthCheck         Operation = "health_check"
 )
 

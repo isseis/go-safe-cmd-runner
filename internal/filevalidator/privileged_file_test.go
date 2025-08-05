@@ -4,6 +4,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -65,12 +66,8 @@ func TestNeedsPrivileges(t *testing.T) {
 }
 
 func TestIsPrivilegeError(t *testing.T) {
-	// PrivilegeError の場合
-	privErr := &PrivilegeError{
-		Operation: "escalate",
-		UID:       0,
-		Cause:     os.ErrPermission,
-	}
+	// 権限関連エラーの場合
+	privErr := runnertypes.ErrPrivilegedExecutionNotAvailable
 	assert.True(t, IsPrivilegeError(privErr))
 
 	// 通常のエラーの場合
