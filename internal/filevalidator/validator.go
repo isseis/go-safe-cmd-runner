@@ -300,14 +300,11 @@ func (v *Validator) writeHashManifest(filePath string, manifest HashManifest, fo
 
 // VerifyFromHandle verifies a file's hash using an already opened file handle
 func (v *Validator) VerifyFromHandle(file *os.File, targetPath string) error {
-	// Read file content (normal privilege)
-	content, err := io.ReadAll(file)
-	if err != nil {
-		return fmt.Errorf("failed to read file content: %w", err)
+	// Calculate hash directly from file handle (normal privilege)
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("failed to seek file to start: %w", err)
 	}
-
-	// Calculate hash (normal privilege)
-	actualHash, err := v.algorithm.Sum(bytes.NewReader(content))
+	actualHash, err := v.algorithm.Sum(file)
 	if err != nil {
 		return fmt.Errorf("failed to calculate hash: %w", err)
 	}
