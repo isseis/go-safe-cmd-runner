@@ -38,7 +38,8 @@ func TestOpenFileWithPrivileges(t *testing.T) {
 				defer os.Remove(filepath)
 			}
 
-			file, err := OpenFileWithPrivileges(filepath)
+			// Create a mock privilege manager for testing
+			file, err := OpenFileWithPrivileges(filepath, nil) // nil for normal file access test
 			if tt.expectError {
 				assert.Error(t, err)
 			} else {
@@ -50,19 +51,6 @@ func TestOpenFileWithPrivileges(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestNeedsPrivileges(t *testing.T) {
-	// 通常のファイル（権限不要）
-	testFile := createTestFile(t, "test content")
-	defer os.Remove(testFile)
-
-	result := needsPrivileges(testFile)
-	assert.False(t, result, "normal file should not need privileges")
-
-	// 存在しないファイル
-	result = needsPrivileges("/tmp/non_existent_file")
-	assert.False(t, result, "non-existent file should not need privileges")
 }
 
 func TestIsPrivilegeError(t *testing.T) {

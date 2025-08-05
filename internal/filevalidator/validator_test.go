@@ -818,3 +818,55 @@ type MockHashFilePathGetter struct {
 func (m *MockHashFilePathGetter) GetHashFilePath(_ HashAlgorithm, _ string, _ string) (string, error) {
 	return m.filePath, nil
 }
+
+// TestValidator_VerifyWithPrivileges tests the VerifyWithPrivileges method
+func TestValidator_VerifyWithPrivileges(t *testing.T) {
+	tempDir := safeTempDir(t)
+
+	// Create a validator
+	validator, err := New(&SHA256{}, tempDir)
+	if err != nil {
+		t.Fatalf("Failed to create validator: %v", err)
+	}
+
+	// Create a test file
+	testFile := createTestFileWithContent(t, "test content for VerifyWithPrivileges")
+	defer os.Remove(testFile)
+
+	// Record the hash
+	_, err = validator.Record(testFile)
+	if err != nil {
+		t.Fatalf("Failed to record hash: %v", err)
+	}
+
+	// Test VerifyWithPrivileges with nil privilege manager (should fail now)
+	err = validator.VerifyWithPrivileges(testFile, nil)
+	if err == nil {
+		t.Errorf("Expected error with nil privilege manager, got nil")
+	}
+	if !strings.Contains(err.Error(), "privilege manager not available") {
+		t.Errorf("Expected privilege manager error, got: %v", err)
+	}
+}
+
+// TestValidator_VerifyWithPrivileges_NoPrivilegeManager tests error handling without privilege manager
+func TestValidator_VerifyWithPrivileges_NoPrivilegeManager(t *testing.T) {
+	tempDir := safeTempDir(t)
+
+	// Create a validator
+	validator, err := New(&SHA256{}, tempDir)
+	if err != nil {
+		t.Fatalf("Failed to create validator: %v", err)
+	}
+
+	// Test with non-existent file should return validation error (not privilege manager error)
+	err = validator.VerifyWithPrivileges("/tmp/non_existent_file", nil)
+	if err == nil {
+		t.Errorf("Expected error for non-existent file, got nil")
+	}
+	// Should get validation error before privilege manager check
+	if !strings.Contains(err.Error(), "no such file or directory") &&
+		!strings.Contains(err.Error(), "privilege manager not available") {
+		t.Errorf("Expected file not found or privilege manager error, got: %v", err)
+	}
+}

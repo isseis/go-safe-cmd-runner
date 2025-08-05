@@ -131,8 +131,8 @@ func (m *Manager) VerifyConfigFile(configPath string) error {
 		}
 	}
 
-	// Verify file hash using filevalidator
-	if err := m.fileValidator.Verify(configPath); err != nil {
+	// Verify file hash using filevalidator (with privilege fallback)
+	if err := m.verifyFileWithFallback(configPath); err != nil {
 		slog.Error("Config file verification failed",
 			"config_path", configPath,
 			"error", err)
@@ -191,8 +191,8 @@ func (m *Manager) VerifyGlobalFiles(globalConfig *runnertypes.GlobalConfig) (*Re
 			continue
 		}
 
-		// Verify file hash (no permission check, only hash comparison)
-		if err := m.fileValidator.Verify(filePath); err != nil {
+		// Verify file hash (try normal verification first, then with privileges if needed)
+		if err := m.verifyFileWithFallback(filePath); err != nil {
 			result.FailedFiles = append(result.FailedFiles, filePath)
 			slog.Error("Global file verification failed",
 				"file", filePath,
@@ -242,8 +242,8 @@ func (m *Manager) VerifyGroupFiles(groupConfig *runnertypes.CommandGroup) (*Resu
 			continue
 		}
 
-		// Verify file hash (no permission check, only hash comparison)
-		if err := m.fileValidator.Verify(file); err != nil {
+		// Verify file hash (try normal verification first, then with privileges if needed)
+		if err := m.verifyFileWithFallback(file); err != nil {
 			result.FailedFiles = append(result.FailedFiles, file)
 			slog.Error("Group file verification failed",
 				"group", groupConfig.Name,
@@ -318,4 +318,54 @@ func (m *Manager) ResolvePath(command string) (string, error) {
 	}
 
 	return resolvedPath, nil
+}
+
+// verifyFileWithFallback attempts file verification with normal privileges first,
+// then falls back to privileged verification if permission errors occur
+func (m *Manager) verifyFileWithFallback(filePath string) error {
+	// Try normal verification first
+	err := m.fileValidator.Verify(filePath)
+	if err == nil {
+		return nil // Success with normal privileges
+	}
+
+	// Check if this is a permission-related error that might be resolved with privilege escalation
+	if !isPermissionRelatedError(err) {
+		return err // Return original error for non-permission issues
+	}
+
+	// Permission error detected - try with privilege escalation if available
+	if m.privilegeManager == nil {
+		slog.Debug("Permission error encountered but no privilege manager available",
+			"file", filePath,
+			"error", err)
+		return err // Return original permission error
+	}
+
+	slog.Debug("Attempting privileged file verification",
+		"file", filePath,
+		"reason", "permission_denied_normal_access")
+
+	// Try verification with privileges
+	return m.fileValidator.VerifyWithPrivileges(filePath, m.privilegeManager)
+}
+
+// isPermissionRelatedError checks if an error is related to file permissions
+func isPermissionRelatedError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Check for standard permission errors
+	if os.IsPermission(err) {
+		return true
+	}
+
+	// Check for path errors that might be permission-related
+	// This covers cases where intermediate directory permissions prevent access
+	if pathErr, ok := err.(*os.PathError); ok {
+		return os.IsPermission(pathErr.Err)
+	}
+
+	return false
 }
