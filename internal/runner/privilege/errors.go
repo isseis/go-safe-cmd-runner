@@ -10,9 +10,10 @@ import (
 
 // Standard errors
 var (
-	ErrPrivilegeElevationFailed   = fmt.Errorf("failed to elevate privileges")
-	ErrPrivilegeRestorationFailed = fmt.Errorf("failed to restore privileges")
-	ErrInvalidUID                 = fmt.Errorf("invalid user ID")
+	ErrPrivilegeElevationFailed        = fmt.Errorf("failed to elevate privileges")
+	ErrPrivilegeRestorationFailed      = fmt.Errorf("failed to restore privileges")
+	ErrInvalidUID                      = fmt.Errorf("invalid user ID")
+	ErrPrivilegedExecutionNotSupported = fmt.Errorf("privileged execution not supported")
 )
 
 // Error contains detailed information about privilege operation failures

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
 
@@ -845,4 +846,88 @@ func TestValidator_VerifyWithPrivileges_NoPrivilegeManager(t *testing.T) {
 		!strings.Contains(err.Error(), "privilege manager not available") {
 		t.Errorf("Expected file not found or privilege manager error, got: %v", err)
 	}
+}
+
+// MockPrivilegeManager implements runnertypes.PrivilegeManager for testing
+type MockPrivilegeManager struct {
+	supported bool
+	shouldErr bool
+}
+
+func (m *MockPrivilegeManager) ElevatePrivileges() error {
+	if m.shouldErr {
+		return runnertypes.ErrPrivilegedExecutionNotAvailable
+	}
+	return nil
+}
+
+func (m *MockPrivilegeManager) DropPrivileges() error {
+	if m.shouldErr {
+		return runnertypes.ErrPrivilegedExecutionNotAvailable
+	}
+	return nil
+}
+
+func (m *MockPrivilegeManager) IsPrivilegedExecutionSupported() bool {
+	return m.supported
+}
+
+func (m *MockPrivilegeManager) WithPrivileges(_ runnertypes.ElevationContext, fn func() error) error {
+	if m.shouldErr {
+		return runnertypes.ErrPrivilegedExecutionNotAvailable
+	}
+	return fn()
+}
+
+// TestValidator_VerifyWithPrivileges_MockPrivilegeManager tests with mock privilege manager
+func TestValidator_VerifyWithPrivileges_MockPrivilegeManager(t *testing.T) {
+	tempDir := safeTempDir(t)
+
+	// Create a validator
+	validator, err := New(&SHA256{}, tempDir)
+	if err != nil {
+		t.Fatalf("Failed to create validator: %v", err)
+	}
+
+	// Create a test file and record its hash first
+	testFile := createTestFile(t, "test content for VerifyWithPrivileges")
+	_, err = validator.Record(testFile)
+	if err != nil {
+		t.Fatalf("Failed to record hash: %v", err)
+	}
+
+	t.Run("privilege manager not supported", func(t *testing.T) {
+		mockPM := &MockPrivilegeManager{supported: false}
+		err = validator.VerifyWithPrivileges(testFile, mockPM)
+		if err == nil {
+			t.Error("Expected error with unsupported privilege manager, got nil")
+		}
+		if !errors.Is(err, ErrPrivilegedExecutionNotSupported) {
+			t.Errorf("Expected privileged execution not supported error, got: %v", err)
+		}
+	})
+
+	t.Run("privilege manager supported but fails", func(t *testing.T) {
+		mockPM := &MockPrivilegeManager{supported: true, shouldErr: true}
+		// Use a file that would require permissions to simulate the scenario
+		restrictedFile := "/root/restricted_file"
+		err = validator.VerifyWithPrivileges(restrictedFile, mockPM)
+		if err == nil {
+			t.Error("Expected error with failing privilege manager, got nil")
+		}
+		// Should get either privilege execution error or validation error
+		if !errors.Is(err, runnertypes.ErrPrivilegedExecutionNotAvailable) &&
+			!errors.Is(err, os.ErrPermission) &&
+			!errors.Is(err, os.ErrNotExist) {
+			t.Errorf("Expected privilege execution, permission denied, or file not found error, got: %v", err)
+		}
+	})
+
+	t.Run("privilege manager supported and succeeds", func(t *testing.T) {
+		mockPM := &MockPrivilegeManager{supported: true, shouldErr: false}
+		err = validator.VerifyWithPrivileges(testFile, mockPM)
+		if err != nil {
+			t.Errorf("Expected no error with working privilege manager, got: %v", err)
+		}
+	})
 }

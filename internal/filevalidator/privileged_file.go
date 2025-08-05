@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
@@ -24,12 +25,12 @@ func OpenFileWithPrivileges(filepath string, privManager runnertypes.PrivilegeMa
 
 	// Return an error if PrivilegeManager is not provided
 	if privManager == nil {
-		return nil, fmt.Errorf("failed to open file %s: privilege manager not available: %w", filepath, err)
+		return nil, fmt.Errorf("failed to open file %s: %w: %v", filepath, runnertypes.ErrPrivilegedExecutionNotAvailable, err)
 	}
 
 	// Check if privilege escalation is supported
 	if !privManager.IsPrivilegedExecutionSupported() {
-		return nil, fmt.Errorf("failed to open file %s: privileged execution not supported: %w", filepath, err)
+		return nil, fmt.Errorf("privileged execution not supported for file %s: %w: %v", filepath, privilege.ErrPrivilegedExecutionNotSupported, err)
 	}
 
 	var privilegedFile *os.File
