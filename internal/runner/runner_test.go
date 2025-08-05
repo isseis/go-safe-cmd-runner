@@ -205,7 +205,7 @@ func TestNewRunner(t *testing.T) {
 		runner, err := NewRunner(config, WithSecurity(invalidSecurityConfig))
 		assert.Error(t, err)
 		assert.Nil(t, runner)
-		assert.True(t, errors.Is(err, security.ErrInvalidRegexPattern))
+		assert.ErrorIs(t, err, security.ErrInvalidRegexPattern)
 	})
 }
 
@@ -247,7 +247,7 @@ func TestNewRunnerWithSecurity(t *testing.T) {
 		runner, err := NewRunner(config, WithSecurity(invalidSecurityConfig))
 		assert.Error(t, err)
 		assert.Nil(t, runner)
-		assert.True(t, errors.Is(err, security.ErrInvalidRegexPattern))
+		assert.ErrorIs(t, err, security.ErrInvalidRegexPattern)
 	})
 
 	t.Run("with nil security config", func(t *testing.T) {
@@ -357,7 +357,7 @@ func TestRunner_ExecuteGroup(t *testing.T) {
 
 			if tt.expectedErr != nil {
 				assert.Error(t, err)
-				assert.True(t, errors.Is(err, tt.expectedErr), "expected error %v, got %v", tt.expectedErr, err)
+				assert.ErrorIs(t, err, tt.expectedErr, "expected error %v, got %v", tt.expectedErr, err)
 			} else {
 				assert.NoError(t, err)
 			}
@@ -404,7 +404,7 @@ func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
 		err = runner.ExecuteGroup(ctx, group)
 
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, ErrCommandFailed))
+		assert.ErrorIs(t, err, ErrCommandFailed)
 		mockExecutor.AssertExpectations(t)
 	})
 
@@ -446,7 +446,7 @@ func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
 		err = runner.ExecuteGroup(ctx, group)
 
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, ErrCommandFailed))
+		assert.ErrorIs(t, err, ErrCommandFailed)
 		mockExecutor.AssertExpectations(t)
 	})
 
@@ -488,7 +488,7 @@ func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
 		err = runner.ExecuteGroup(ctx, group)
 
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, errCommandNotFound))
+		assert.ErrorIs(t, err, errCommandNotFound)
 		mockExecutor.AssertExpectations(t)
 	})
 
@@ -528,7 +528,7 @@ func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
 
 		// Should fail due to environment variable access denied
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, environment.ErrVariableNotFound), "expected error to wrap ErrVariableNotFound")
+		assert.ErrorIs(t, err, environment.ErrVariableNotFound, "expected error to wrap ErrVariableNotFound")
 		mockExecutor.AssertExpectations(t)
 	})
 }
@@ -634,7 +634,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 
 		// Should still return error from first group, but all groups executed
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, ErrCommandFailed))
+		assert.ErrorIs(t, err, ErrCommandFailed)
 		mockExecutor.AssertExpectations(t)
 	})
 
@@ -691,7 +691,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		err = runner.ExecuteAll(ctx)
 
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, ErrCommandFailed))
+		assert.ErrorIs(t, err, ErrCommandFailed)
 		mockExecutor.AssertExpectations(t)
 	})
 
@@ -744,7 +744,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		err = runner.ExecuteAll(ctx)
 
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, ErrCommandFailed))
+		assert.ErrorIs(t, err, ErrCommandFailed)
 		mockExecutor.AssertExpectations(t)
 	})
 
@@ -790,7 +790,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		err = runner.ExecuteAll(ctx)
 
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, errCommandNotFound))
+		assert.ErrorIs(t, err, errCommandNotFound)
 		mockExecutor.AssertExpectations(t)
 	})
 
@@ -831,7 +831,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		err = runner.ExecuteAll(ctx)
 
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, context.Canceled))
+		assert.ErrorIs(t, err, context.Canceled)
 		// No mock expectations since context is cancelled before any commands execute
 	})
 
@@ -938,7 +938,7 @@ func TestRunner_resolveVariableReferences(t *testing.T) {
 
 			if tt.expectedErr != nil {
 				assert.Error(t, err)
-				assert.True(t, errors.Is(err, tt.expectedErr), "expected error %v, got %v", tt.expectedErr, err)
+				assert.ErrorIs(t, err, tt.expectedErr, "expected error %v, got %v", tt.expectedErr, err)
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.expected, result)
@@ -1196,7 +1196,7 @@ func TestRunner_resolveVariableReferences_ComplexCircular(t *testing.T) {
 			_, err := runner.resolveVariableReferences(tt.input, envVars, testGroup)
 
 			assert.Error(t, err)
-			assert.True(t, errors.Is(err, tt.expectedErr), "expected error %v, got %v", tt.expectedErr, err)
+			assert.ErrorIs(t, err, tt.expectedErr, "expected error %v, got %v", tt.expectedErr, err)
 		})
 	}
 }
@@ -1259,7 +1259,7 @@ func TestRunner_CircularReferenceWithUndefinedVariable(t *testing.T) {
 			_, err := runner.resolveVariableReferences(tt.input, tt.envVars, testGroup)
 
 			assert.Error(t, err)
-			assert.True(t, errors.Is(err, tt.expectedErr), "expected error %v, got %v", tt.expectedErr, err)
+			assert.ErrorIs(t, err, tt.expectedErr, "expected error %v, got %v", tt.expectedErr, err)
 		})
 	}
 }
@@ -1323,7 +1323,7 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 		assert.Error(t, err)
 		t.Logf("Actual error: %v", err)
 		t.Logf("Error type: %T", err)
-		assert.True(t, errors.Is(err, security.ErrCommandNotAllowed), "expected error to wrap security.ErrCommandNotAllowed")
+		assert.ErrorIs(t, err, security.ErrCommandNotAllowed, "expected error to wrap security.ErrCommandNotAllowed")
 	})
 
 	t.Run("command execution with environment variables", func(t *testing.T) {
@@ -1359,7 +1359,7 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 
 		_, err = runner.executeCommandInGroup(context.Background(), unsafeCmd, testGroup)
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, security.ErrUnsafeEnvironmentVar), "expected error to wrap security.ErrUnsafeEnvironmentVar")
+		assert.ErrorIs(t, err, security.ErrUnsafeEnvironmentVar, "expected error to wrap security.ErrUnsafeEnvironmentVar")
 	})
 }
 
@@ -1392,7 +1392,7 @@ func TestRunner_LoadEnvironmentWithSecurity(t *testing.T) {
 		// Should fail with excessive permissions
 		err = runner.LoadEnvironment(badEnvFile, false)
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, security.ErrInvalidFilePermissions), "expected error to wrap security.ErrInvalidFilePermissions")
+		assert.ErrorIs(t, err, security.ErrInvalidFilePermissions, "expected error to wrap security.ErrInvalidFilePermissions")
 	})
 
 	t.Run("load environment with unsafe values", func(t *testing.T) {
@@ -1416,7 +1416,7 @@ func TestRunner_LoadEnvironmentWithSecurity(t *testing.T) {
 		// Should fail due to unsafe environment variable value
 		err = runner.LoadEnvironment(envFile, false)
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, security.ErrUnsafeEnvironmentVar), "expected error to wrap security.ErrUnsafeEnvironmentVar")
+		assert.ErrorIs(t, err, security.ErrUnsafeEnvironmentVar, "expected error to wrap security.ErrUnsafeEnvironmentVar")
 	})
 }
 
@@ -2024,7 +2024,7 @@ func TestRunner_EnvironmentVariablePriority_EdgeCases(t *testing.T) {
 		_, err := runner.resolveEnvironmentVars(testCmd, &testGroup)
 		// Should fail when an environment variable is malformed
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, environment.ErrMalformedEnvVariable))
+		assert.ErrorIs(t, err, environment.ErrMalformedEnvVariable)
 	})
 
 	t.Run("variable reference to undefined variable", func(t *testing.T) {
@@ -2040,7 +2040,7 @@ func TestRunner_EnvironmentVariablePriority_EdgeCases(t *testing.T) {
 		_, err := runner.resolveEnvironmentVars(testCmd, &testGroup)
 		// Should fail when referencing undefined variable
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, environment.ErrVariableNotFound))
+		assert.ErrorIs(t, err, environment.ErrVariableNotFound)
 	})
 
 	t.Run("circular reference in command variables", func(t *testing.T) {
@@ -2311,7 +2311,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 
 		// Should return error from failing command
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, ErrCommandFailed))
+		assert.ErrorIs(t, err, ErrCommandFailed)
 
 		// Verify mock expectations
 		mockFS.AssertExpectations(t)

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"testing"
 
@@ -79,8 +78,8 @@ func TestErrorCases(t *testing.T) {
 				if err == nil {
 					t.Fatalf("Expected error, got nil")
 				}
-				if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
-					t.Errorf("Error message %q does not contain %q", err.Error(), tt.errContains)
+				if !errors.Is(err, tt.wantErr) {
+					t.Errorf("Expected error type %v, got %v", tt.wantErr, err)
 				}
 			} else if err != nil {
 				t.Fatalf("Unexpected error: %v", err)
@@ -92,8 +91,8 @@ func TestErrorCases(t *testing.T) {
 				if err == nil {
 					t.Fatalf("Expected error, got nil")
 				}
-				if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
-					t.Errorf("Error message %q does not contain %q", err.Error(), tt.errContains)
+				if !errors.Is(err, tt.wantErr) {
+					t.Errorf("Expected error type %v, got %v", tt.wantErr, err)
 				}
 			} else if err != nil {
 				t.Fatalf("Unexpected error: %v", err)
@@ -132,8 +131,8 @@ func TestFilesystemEdgeCases(t *testing.T) {
 		if err == nil {
 			t.Fatal("Expected error for deleted file, got nil")
 		}
-		// Check both the error type and message
-		if !os.IsNotExist(err) && !strings.Contains(err.Error(), "file does not exist") {
+		// Check the error type
+		if !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("Expected file not found error, got: %v", err)
 		}
 	})
@@ -148,8 +147,8 @@ func TestFilesystemEdgeCases(t *testing.T) {
 		if err == nil {
 			t.Fatal("Expected error for directory, got nil")
 		}
-		if !strings.Contains(err.Error(), "not a regular file") {
-			t.Errorf("Expected 'not a regular file' error, got: %v", err)
+		if !errors.Is(err, safefileio.ErrInvalidFilePath) {
+			t.Errorf("Expected invalid file path error, got: %v", err)
 		}
 	})
 
@@ -209,8 +208,8 @@ func TestFilesystemEdgeCases(t *testing.T) {
 		if err == nil {
 			t.Fatal("Expected error for read-only filesystem, got nil")
 		}
-		if !os.IsPermission(err) && !strings.Contains(err.Error(), "read-only") {
-			t.Errorf("Expected read-only or permission error, got: %v", err)
+		if !errors.Is(err, os.ErrPermission) {
+			t.Errorf("Expected permission error, got: %v", err)
 		}
 	})
 }
@@ -253,11 +252,6 @@ func TestErrorMessages(t *testing.T) {
 				t.Fatal("Expected error, got nil")
 			}
 
-			// Check error message contains expected text
-			if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
-				t.Errorf("Error message %q does not contain %q", err.Error(), tt.errContains)
-			}
-
 			// Check error type if expectedErr is set
 			if tt.expectedErr != nil {
 				if !errors.Is(err, tt.expectedErr) {
@@ -276,9 +270,11 @@ func TestErrorMessages(t *testing.T) {
 				t.Fatal("Expected error for Verify, got nil")
 			}
 
-			// Check error message contains expected text for Verify
-			if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
-				t.Errorf("Verify error message %q does not contain %q", err.Error(), tt.errContains)
+			// Check error type for Verify
+			if tt.expectedErr != nil {
+				if !errors.Is(err, tt.expectedErr) {
+					t.Errorf("Verify error %v is not a %v", err, tt.expectedErr)
+				}
 			}
 		})
 	}

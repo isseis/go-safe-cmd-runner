@@ -19,7 +19,9 @@
       "Bash(build/record:*)",
       "Bash(./build/record:*)",
       "Bash(./build/verify:*)",
-      "Bash(true)"
+      "Bash(true)",
+      "Bash(go tool cover:*)",
+      "Bash(/dev/null)"
     ],
     "deny": [],
     "env": {

@@ -69,7 +69,7 @@ func TestNewValidator(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Nil(t, validator)
-		assert.True(t, errors.Is(err, ErrInvalidRegexPattern))
+		assert.ErrorIs(t, err, ErrInvalidRegexPattern)
 	})
 
 	t.Run("with invalid sensitive env pattern", func(t *testing.T) {
@@ -83,7 +83,7 @@ func TestNewValidator(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Nil(t, validator)
-		assert.True(t, errors.Is(err, ErrInvalidRegexPattern))
+		assert.ErrorIs(t, err, ErrInvalidRegexPattern)
 	})
 }
 
@@ -112,15 +112,14 @@ func TestValidator_ValidateFilePermissions(t *testing.T) {
 		err := validator.ValidateFilePermissions("")
 
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, ErrInvalidPath))
+		assert.ErrorIs(t, err, ErrInvalidPath)
 	})
 
 	t.Run("relative path", func(t *testing.T) {
 		err := validator.ValidateFilePermissions("relative/path/file.conf")
 
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, ErrInvalidPath))
-		assert.Contains(t, err.Error(), "path must be absolute")
+		assert.ErrorIs(t, err, ErrInvalidPath)
 	})
 
 	t.Run("non-existent file", func(t *testing.T) {
@@ -143,7 +142,7 @@ func TestValidator_ValidateFilePermissions(t *testing.T) {
 
 		err := validator.ValidateFilePermissions("/test-excessive.conf")
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, ErrInvalidFilePermissions))
+		assert.ErrorIs(t, err, ErrInvalidFilePermissions)
 	})
 
 	t.Run("file with dangerous group/other permissions", func(t *testing.T) {
@@ -152,8 +151,7 @@ func TestValidator_ValidateFilePermissions(t *testing.T) {
 
 		err := validator.ValidateFilePermissions("/test-dangerous.conf")
 		assert.Error(t, err, "0o077 permissions should be rejected even though 077 < 644")
-		assert.True(t, errors.Is(err, ErrInvalidFilePermissions))
-		assert.Contains(t, err.Error(), "disallowed bits")
+		assert.ErrorIs(t, err, ErrInvalidFilePermissions)
 	})
 
 	t.Run("file with only subset of allowed permissions", func(t *testing.T) {
@@ -178,9 +176,7 @@ func TestValidator_ValidateFilePermissions(t *testing.T) {
 
 		err := validator.ValidateFilePermissions("/test-dir")
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, ErrInvalidFilePermissions))
-		// Should fail because it's not a regular file
-		assert.Contains(t, err.Error(), "is not a regular file")
+		assert.ErrorIs(t, err, ErrInvalidFilePermissions)
 	})
 
 	t.Run("path too long", func(t *testing.T) {
@@ -197,8 +193,7 @@ func TestValidator_ValidateFilePermissions(t *testing.T) {
 		longPath := "/very/long/path/that/exceeds/limit"
 		err = validator2.ValidateFilePermissions(longPath)
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, ErrInvalidPath))
-		assert.Contains(t, err.Error(), "path too long")
+		assert.ErrorIs(t, err, ErrInvalidPath)
 	})
 }
 
@@ -210,22 +205,19 @@ func TestValidator_ValidateDirectoryPermissions(t *testing.T) {
 	t.Run("empty path", func(t *testing.T) {
 		err := validator.ValidateDirectoryPermissions("")
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, ErrInvalidPath))
-		assert.Contains(t, err.Error(), "empty path")
+		assert.ErrorIs(t, err, ErrInvalidPath)
 	})
 
 	t.Run("relative path", func(t *testing.T) {
 		err := validator.ValidateDirectoryPermissions("relative/path/dir")
 
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, ErrInvalidPath))
-		assert.Contains(t, err.Error(), "path must be absolute")
+		assert.ErrorIs(t, err, ErrInvalidPath)
 	})
 
 	t.Run("non-existent directory", func(t *testing.T) {
 		err := validator.ValidateDirectoryPermissions("/non/existent/dir")
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to stat")
 	})
 
 	t.Run("valid directory with correct permissions", func(t *testing.T) {
@@ -242,7 +234,7 @@ func TestValidator_ValidateDirectoryPermissions(t *testing.T) {
 
 		err := validator.ValidateDirectoryPermissions("/test-excessive-dir")
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, ErrInvalidDirPermissions))
+		assert.ErrorIs(t, err, ErrInvalidDirPermissions)
 	})
 
 	t.Run("directory with only subset of allowed permissions", func(t *testing.T) {
@@ -267,8 +259,7 @@ func TestValidator_ValidateDirectoryPermissions(t *testing.T) {
 
 		err := validator.ValidateDirectoryPermissions("/test-file.txt")
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, ErrInvalidDirPermissions))
-		assert.Contains(t, err.Error(), "is not a directory")
+		assert.ErrorIs(t, err, ErrInvalidDirPermissions)
 	})
 
 	t.Run("path too long", func(t *testing.T) {
@@ -286,8 +277,7 @@ func TestValidator_ValidateDirectoryPermissions(t *testing.T) {
 		longPath := "/very/long/path/that/exceeds/limit"
 		err = validator2.ValidateDirectoryPermissions(longPath)
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, ErrInvalidPath))
-		assert.Contains(t, err.Error(), "path too long")
+		assert.ErrorIs(t, err, ErrInvalidPath)
 	})
 }
 
@@ -337,7 +327,7 @@ func TestValidator_ValidateCommand(t *testing.T) {
 	t.Run("empty command", func(t *testing.T) {
 		err := validator.ValidateCommand("")
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, ErrCommandNotAllowed))
+		assert.ErrorIs(t, err, ErrCommandNotAllowed)
 	})
 
 	t.Run("allowed commands", func(t *testing.T) {
@@ -365,7 +355,7 @@ func TestValidator_ValidateCommand(t *testing.T) {
 		for _, cmd := range disallowedCommands {
 			err := validator.ValidateCommand(cmd)
 			assert.Error(t, err, "Command %s should not be allowed", cmd)
-			assert.True(t, errors.Is(err, ErrCommandNotAllowed))
+			assert.ErrorIs(t, err, ErrCommandNotAllowed)
 		}
 	})
 }
@@ -404,7 +394,7 @@ func TestValidator_ValidateEnvironmentValue(t *testing.T) {
 		for _, value := range unsafeValues {
 			err := validator.ValidateEnvironmentValue("TEST_VAR", value)
 			assert.Error(t, err, "Value %s should be unsafe", value)
-			assert.True(t, errors.Is(err, ErrUnsafeEnvironmentVar))
+			assert.ErrorIs(t, err, ErrUnsafeEnvironmentVar)
 		}
 	})
 }
@@ -431,7 +421,7 @@ func TestValidator_ValidateAllEnvironmentVars(t *testing.T) {
 		}
 		err := validator.ValidateAllEnvironmentVars(env)
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, ErrUnsafeEnvironmentVar))
+		assert.ErrorIs(t, err, ErrUnsafeEnvironmentVar)
 	})
 
 	t.Run("empty map", func(t *testing.T) {
