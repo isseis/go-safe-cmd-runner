@@ -718,6 +718,75 @@ func TestValidator_RecordWithOptions(t *testing.T) {
 	})
 }
 
+// TestValidator_VerifyFromHandle tests the VerifyFromHandle method
+func TestValidator_VerifyFromHandle(t *testing.T) {
+	tempDir := safeTempDir(t)
+
+	// Create a validator
+	validator, err := New(&SHA256{}, tempDir)
+	if err != nil {
+		t.Fatalf("Failed to create validator: %v", err)
+	}
+
+	// Create a test file
+	testFile := createTestFile(t, "test content for VerifyFromHandle")
+
+	// Record the hash
+	_, err = validator.Record(testFile)
+	if err != nil {
+		t.Fatalf("Failed to record hash: %v", err)
+	}
+
+	// Open the file
+	file, err := os.Open(testFile)
+	if err != nil {
+		t.Fatalf("Failed to open test file: %v", err)
+	}
+	defer file.Close()
+
+	// Test VerifyFromHandle
+	err = validator.VerifyFromHandle(file, testFile)
+	if err != nil {
+		t.Errorf("VerifyFromHandle failed: %v", err)
+	}
+}
+
+// TestValidator_VerifyFromHandle_Mismatch tests hash mismatch case
+func TestValidator_VerifyFromHandle_Mismatch(t *testing.T) {
+	tempDir := safeTempDir(t)
+
+	// Create a validator
+	validator, err := New(&SHA256{}, tempDir)
+	if err != nil {
+		t.Fatalf("Failed to create validator: %v", err)
+	}
+
+	// Create a test file
+	testFile := createTestFile(t, "test content")
+
+	// Record the hash
+	_, err = validator.Record(testFile)
+	if err != nil {
+		t.Fatalf("Failed to record hash: %v", err)
+	}
+
+	// Create another file with different content
+	testFile2 := createTestFile(t, "different content")
+
+	// Open the second file
+	file, err := os.Open(testFile2)
+	if err != nil {
+		t.Fatalf("Failed to open test file: %v", err)
+	}
+	defer file.Close()
+
+	// Test VerifyFromHandle - should fail with mismatch
+	err = validator.VerifyFromHandle(file, testFile)
+	if !errors.Is(err, ErrMismatch) {
+		t.Errorf("Expected ErrMismatch, got: %v", err)
+	}
+}
+
 // MockHashFilePathGetter is a mock implementation for testing hash collisions
 type MockHashFilePathGetter struct {
 	filePath string
@@ -725,4 +794,55 @@ type MockHashFilePathGetter struct {
 
 func (m *MockHashFilePathGetter) GetHashFilePath(_ HashAlgorithm, _ string, _ string) (string, error) {
 	return m.filePath, nil
+}
+
+// TestValidator_VerifyWithPrivileges tests the VerifyWithPrivileges method
+func TestValidator_VerifyWithPrivileges(t *testing.T) {
+	tempDir := safeTempDir(t)
+
+	// Create a validator
+	validator, err := New(&SHA256{}, tempDir)
+	if err != nil {
+		t.Fatalf("Failed to create validator: %v", err)
+	}
+
+	// Create a test file
+	testFile := createTestFile(t, "test content for VerifyWithPrivileges")
+
+	// Record the hash
+	_, err = validator.Record(testFile)
+	if err != nil {
+		t.Fatalf("Failed to record hash: %v", err)
+	}
+
+	// Test VerifyWithPrivileges with nil privilege manager (should fail now)
+	err = validator.VerifyWithPrivileges(testFile, nil)
+	if err == nil {
+		t.Errorf("Expected error with nil privilege manager, got nil")
+	}
+	if !strings.Contains(err.Error(), "privilege manager not available") {
+		t.Errorf("Expected privilege manager error, got: %v", err)
+	}
+}
+
+// TestValidator_VerifyWithPrivileges_NoPrivilegeManager tests error handling without privilege manager
+func TestValidator_VerifyWithPrivileges_NoPrivilegeManager(t *testing.T) {
+	tempDir := safeTempDir(t)
+
+	// Create a validator
+	validator, err := New(&SHA256{}, tempDir)
+	if err != nil {
+		t.Fatalf("Failed to create validator: %v", err)
+	}
+
+	// Test with non-existent file should return validation error (not privilege manager error)
+	err = validator.VerifyWithPrivileges("/tmp/non_existent_file", nil)
+	if err == nil {
+		t.Errorf("Expected error for non-existent file, got nil")
+	}
+	// Should get validation error before privilege manager check
+	if !strings.Contains(err.Error(), "no such file or directory") &&
+		!strings.Contains(err.Error(), "privilege manager not available") {
+		t.Errorf("Expected file not found or privilege manager error, got: %v", err)
+	}
 }

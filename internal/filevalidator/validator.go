@@ -5,17 +5,27 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
+)
+
+// Error definitions for static error handling
+var (
+	ErrPrivilegeManagerNotAvailable    = errors.New("privilege manager not available")
+	ErrPrivilegedExecutionNotSupported = errors.New("privileged execution not supported")
 )
 
 // FileValidator interface defines the basic file validation methods
 type FileValidator interface {
 	Record(filePath string) (string, error)
 	Verify(filePath string) error
+	VerifyWithPrivileges(filePath string, privManager runnertypes.PrivilegeManager) error
 }
 
 // HashFilePathGetter is an interface for getting the path where the hash for a file would be stored.
@@ -286,4 +296,61 @@ func (v *Validator) writeHashManifest(filePath string, manifest HashManifest, fo
 		return safefileio.SafeWriteFileOverwrite(filePath, jsonData, 0o644)
 	}
 	return safefileio.SafeWriteFile(filePath, jsonData, 0o644)
+}
+
+// VerifyFromHandle verifies a file's hash using an already opened file handle
+func (v *Validator) VerifyFromHandle(file *os.File, targetPath string) error {
+	// Calculate hash directly from file handle (normal privilege)
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("failed to seek file to start: %w", err)
+	}
+	actualHash, err := v.algorithm.Sum(file)
+	if err != nil {
+		return fmt.Errorf("failed to calculate hash: %w", err)
+	}
+
+	// Read recorded hash (normal privilege)
+	_, expectedHash, err := v.readAndParseHashFile(targetPath)
+	if err != nil {
+		return err
+	}
+
+	// Compare hashes
+	if expectedHash != actualHash {
+		return ErrMismatch
+	}
+
+	return nil
+}
+
+// VerifyWithPrivileges verifies a file's integrity using privilege escalation
+// This method assumes that normal verification has already failed with a permission error
+func (v *Validator) VerifyWithPrivileges(filePath string, privManager runnertypes.PrivilegeManager) error {
+	// Validate the file path
+	targetPath, err := validatePath(filePath)
+	if err != nil {
+		return err
+	}
+
+	// Check if privilege manager is available
+	if privManager == nil {
+		return fmt.Errorf("failed to verify file %s: %w", targetPath, ErrPrivilegeManagerNotAvailable)
+	}
+
+	// Check if privilege escalation is supported
+	if !privManager.IsPrivilegedExecutionSupported() {
+		return fmt.Errorf("failed to verify file %s: %w", targetPath, ErrPrivilegedExecutionNotSupported)
+	}
+
+	// Open file with privileges
+	file, openErr := OpenFileWithPrivileges(targetPath, privManager)
+	if openErr != nil {
+		return fmt.Errorf("failed to open file with privileges: %w", openErr)
+	}
+	defer func() {
+		_ = file.Close() // Ignore close error
+	}()
+
+	// Verify using the opened file handle
+	return v.VerifyFromHandle(file, targetPath)
 }
