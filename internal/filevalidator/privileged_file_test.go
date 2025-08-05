@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
+	privtesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 )
@@ -66,7 +67,7 @@ func TestOpenFileWithPrivileges_WithPrivilegeManager(t *testing.T) {
 	testFile := createTestFile(t, "test content")
 
 	t.Run("privilege manager not supported", func(t *testing.T) {
-		mockPM := &MockPrivilegeManager{supported: false}
+		mockPM := privtesting.NewMockPrivilegeManager(false)
 		// Simulate permission error by trying to access non-existent path
 		file, err := OpenFileWithPrivileges("/root/restricted", mockPM)
 		assert.Error(t, err)
@@ -75,7 +76,7 @@ func TestOpenFileWithPrivileges_WithPrivilegeManager(t *testing.T) {
 	})
 
 	t.Run("privilege manager supported but execution fails", func(t *testing.T) {
-		mockPM := &MockPrivilegeManager{supported: true, shouldErr: true}
+		mockPM := privtesting.NewFailingMockPrivilegeManager(true)
 		// Simulate permission error
 		file, err := OpenFileWithPrivileges("/root/restricted", mockPM)
 		assert.Error(t, err)
@@ -84,7 +85,7 @@ func TestOpenFileWithPrivileges_WithPrivilegeManager(t *testing.T) {
 	})
 
 	t.Run("privilege manager supported and execution succeeds", func(t *testing.T) {
-		mockPM := &MockPrivilegeManager{supported: true, shouldErr: false}
+		mockPM := privtesting.NewMockPrivilegeManager(true)
 		file, err := OpenFileWithPrivileges(testFile, mockPM)
 		assert.NoError(t, err)
 		assert.NotNil(t, file)
