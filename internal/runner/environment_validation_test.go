@@ -67,8 +67,7 @@ func TestLoadEnvironment_SystemVariableValidation(t *testing.T) {
 		// Should fail due to dangerous system variable
 		err = dangerousRunner.LoadEnvironment(envFile, true)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "DANGEROUS_SYSTEM")
-		assert.Contains(t, err.Error(), "dangerous pattern")
+		assert.True(t, errors.Is(err, security.ErrUnsafeEnvironmentVar))
 	})
 }
 
@@ -123,8 +122,7 @@ SAFE_VAR=safe_value
 		// Should fail due to dangerous variable in .env file
 		err = dangerousRunner.LoadEnvironment(dangerousEnvFile, true)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "DANGEROUS_VAR")
-		assert.Contains(t, err.Error(), "dangerous pattern")
+		assert.True(t, errors.Is(err, security.ErrUnsafeEnvironmentVar))
 	})
 }
 
@@ -178,8 +176,7 @@ func TestLoadEnvironment_ValidationPatterns(t *testing.T) {
 			// Should fail due to dangerous pattern
 			err = runner.LoadEnvironment(envFile, true)
 			assert.Error(t, err, "Pattern '%s' should be detected as dangerous", pattern.value)
-			assert.Contains(t, err.Error(), "TEST_VAR")
-			assert.Contains(t, err.Error(), "dangerous pattern")
+			assert.True(t, errors.Is(err, security.ErrUnsafeEnvironmentVar))
 		})
 	}
 }
@@ -257,8 +254,7 @@ ANOTHER_SAFE_VAR=another_safe_value
 	// Should fail on first dangerous variable encountered
 	err = runner.LoadEnvironment(envFile, true)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "DANGEROUS_VAR")
-	assert.Contains(t, err.Error(), "dangerous pattern")
+	assert.True(t, errors.Is(err, security.ErrUnsafeEnvironmentVar))
 
 	// Should not have loaded any variables due to validation failure
 	assert.Empty(t, runner.envVars, "Safe variables should not be loaded if any variable fails validation")

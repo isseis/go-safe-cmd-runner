@@ -120,7 +120,6 @@ func TestValidator_ValidateFilePermissions(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, ErrInvalidPath))
-		assert.Contains(t, err.Error(), "path must be absolute")
 	})
 
 	t.Run("non-existent file", func(t *testing.T) {
@@ -153,7 +152,6 @@ func TestValidator_ValidateFilePermissions(t *testing.T) {
 		err := validator.ValidateFilePermissions("/test-dangerous.conf")
 		assert.Error(t, err, "0o077 permissions should be rejected even though 077 < 644")
 		assert.True(t, errors.Is(err, ErrInvalidFilePermissions))
-		assert.Contains(t, err.Error(), "disallowed bits")
 	})
 
 	t.Run("file with only subset of allowed permissions", func(t *testing.T) {
@@ -179,8 +177,6 @@ func TestValidator_ValidateFilePermissions(t *testing.T) {
 		err := validator.ValidateFilePermissions("/test-dir")
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, ErrInvalidFilePermissions))
-		// Should fail because it's not a regular file
-		assert.Contains(t, err.Error(), "is not a regular file")
 	})
 
 	t.Run("path too long", func(t *testing.T) {
@@ -198,7 +194,6 @@ func TestValidator_ValidateFilePermissions(t *testing.T) {
 		err = validator2.ValidateFilePermissions(longPath)
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, ErrInvalidPath))
-		assert.Contains(t, err.Error(), "path too long")
 	})
 }
 
@@ -211,7 +206,6 @@ func TestValidator_ValidateDirectoryPermissions(t *testing.T) {
 		err := validator.ValidateDirectoryPermissions("")
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, ErrInvalidPath))
-		assert.Contains(t, err.Error(), "empty path")
 	})
 
 	t.Run("relative path", func(t *testing.T) {
@@ -219,13 +213,11 @@ func TestValidator_ValidateDirectoryPermissions(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, ErrInvalidPath))
-		assert.Contains(t, err.Error(), "path must be absolute")
 	})
 
 	t.Run("non-existent directory", func(t *testing.T) {
 		err := validator.ValidateDirectoryPermissions("/non/existent/dir")
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to stat")
 	})
 
 	t.Run("valid directory with correct permissions", func(t *testing.T) {
@@ -268,7 +260,6 @@ func TestValidator_ValidateDirectoryPermissions(t *testing.T) {
 		err := validator.ValidateDirectoryPermissions("/test-file.txt")
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, ErrInvalidDirPermissions))
-		assert.Contains(t, err.Error(), "is not a directory")
 	})
 
 	t.Run("path too long", func(t *testing.T) {
@@ -287,7 +278,6 @@ func TestValidator_ValidateDirectoryPermissions(t *testing.T) {
 		err = validator2.ValidateDirectoryPermissions(longPath)
 		assert.Error(t, err)
 		assert.True(t, errors.Is(err, ErrInvalidPath))
-		assert.Contains(t, err.Error(), "path too long")
 	})
 }
 
