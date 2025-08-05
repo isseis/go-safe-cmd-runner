@@ -7,7 +7,6 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestOpenFileWithPrivileges(t *testing.T) {
@@ -58,18 +57,4 @@ func TestIsPrivilegeError(t *testing.T) {
 	// For normal errors
 	normalErr := os.ErrNotExist
 	assert.False(t, IsPrivilegeError(normalErr))
-}
-
-// Test helper function
-func createTestFile(t *testing.T, content string) string {
-	tmpFile, err := os.CreateTemp(t.TempDir(), "test_file_*.txt")
-	require.NoError(t, err)
-
-	_, err = tmpFile.WriteString(content)
-	require.NoError(t, err)
-
-	err = tmpFile.Close()
-	require.NoError(t, err)
-
-	return tmpFile.Name()
 }

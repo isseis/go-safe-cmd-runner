@@ -729,8 +729,7 @@ func TestValidator_VerifyFromHandle(t *testing.T) {
 	}
 
 	// Create a test file
-	testFile := createTestFileWithContent(t, "test content for VerifyFromHandle")
-	defer os.Remove(testFile)
+	testFile := createTestFile(t, "test content for VerifyFromHandle")
 
 	// Record the hash
 	_, err = validator.Record(testFile)
@@ -763,8 +762,7 @@ func TestValidator_VerifyFromHandle_Mismatch(t *testing.T) {
 	}
 
 	// Create a test file
-	testFile := createTestFileWithContent(t, "test content")
-	defer os.Remove(testFile)
+	testFile := createTestFile(t, "test content")
 
 	// Record the hash
 	_, err = validator.Record(testFile)
@@ -773,8 +771,7 @@ func TestValidator_VerifyFromHandle_Mismatch(t *testing.T) {
 	}
 
 	// Create another file with different content
-	testFile2 := createTestFileWithContent(t, "different content")
-	defer os.Remove(testFile2)
+	testFile2 := createTestFile(t, "different content")
 
 	// Open the second file
 	file, err := os.Open(testFile2)
@@ -788,26 +785,6 @@ func TestValidator_VerifyFromHandle_Mismatch(t *testing.T) {
 	if !errors.Is(err, ErrMismatch) {
 		t.Errorf("Expected ErrMismatch, got: %v", err)
 	}
-}
-
-// Helper function for tests
-func createTestFileWithContent(t *testing.T, content string) string {
-	tmpFile, err := os.CreateTemp("", "test_file_*.txt")
-	if err != nil {
-		t.Fatalf("Failed to create temp file: %v", err)
-	}
-
-	_, err = tmpFile.WriteString(content)
-	if err != nil {
-		t.Fatalf("Failed to write content: %v", err)
-	}
-
-	err = tmpFile.Close()
-	if err != nil {
-		t.Fatalf("Failed to close temp file: %v", err)
-	}
-
-	return tmpFile.Name()
 }
 
 // MockHashFilePathGetter is a mock implementation for testing hash collisions
@@ -830,8 +807,7 @@ func TestValidator_VerifyWithPrivileges(t *testing.T) {
 	}
 
 	// Create a test file
-	testFile := createTestFileWithContent(t, "test content for VerifyWithPrivileges")
-	defer os.Remove(testFile)
+	testFile := createTestFile(t, "test content for VerifyWithPrivileges")
 
 	// Record the hash
 	_, err = validator.Record(testFile)
