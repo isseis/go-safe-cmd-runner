@@ -11,23 +11,23 @@ import (
 // OpenFileWithPrivileges opens a file with elevated privileges and immediately restores them
 // This function uses the existing privilege management infrastructure
 func OpenFileWithPrivileges(filepath string, privManager runnertypes.PrivilegeManager) (*os.File, error) {
-	// まず通常権限でのアクセスを試行
+	// Attempt normal access with standard privileges first
 	file, err := os.Open(filepath) //nolint:gosec // filepath is validated by caller
 	if err == nil {
 		return file, nil
 	}
 
-	// 権限エラーでない場合は、権限昇格しても解決しない
+	// If the error is not a permission error, privilege escalation won't resolve it
 	if !os.IsPermission(err) {
 		return nil, fmt.Errorf("failed to open file %s: %w", filepath, err)
 	}
 
-	// PrivilegeManager が提供されていない場合はエラー
+	// Return an error if PrivilegeManager is not provided
 	if privManager == nil {
 		return nil, fmt.Errorf("failed to open file %s: privilege manager not available: %w", filepath, err)
 	}
 
-	// 権限昇格がサポートされているかチェック
+	// Check if privilege escalation is supported
 	if !privManager.IsPrivilegedExecutionSupported() {
 		return nil, fmt.Errorf("failed to open file %s: privileged execution not supported: %w", filepath, err)
 	}

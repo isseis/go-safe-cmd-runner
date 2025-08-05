@@ -2,6 +2,7 @@ package filevalidator
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -24,8 +25,8 @@ func TestOpenFileWithPrivileges(t *testing.T) {
 		},
 		{
 			name: "non-existent file",
-			setup: func(_ *testing.T) string {
-				return "/tmp/non_existent_file"
+			setup: func(t *testing.T) string {
+				return filepath.Join(t.TempDir(), "non_existent_file")
 			},
 			expectError: true,
 		},
@@ -34,10 +35,6 @@ func TestOpenFileWithPrivileges(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			filepath := tt.setup(t)
-			if filepath != "/tmp/non_existent_file" {
-				defer os.Remove(filepath)
-			}
-
 			// Create a mock privilege manager for testing
 			file, err := OpenFileWithPrivileges(filepath, nil) // nil for normal file access test
 			if tt.expectError {
@@ -54,18 +51,18 @@ func TestOpenFileWithPrivileges(t *testing.T) {
 }
 
 func TestIsPrivilegeError(t *testing.T) {
-	// 権限関連エラーの場合
+	// For privilege-related errors
 	privErr := runnertypes.ErrPrivilegedExecutionNotAvailable
 	assert.True(t, IsPrivilegeError(privErr))
 
-	// 通常のエラーの場合
+	// For normal errors
 	normalErr := os.ErrNotExist
 	assert.False(t, IsPrivilegeError(normalErr))
 }
 
-// テストヘルパー関数
+// Test helper function
 func createTestFile(t *testing.T, content string) string {
-	tmpFile, err := os.CreateTemp("", "test_file_*.txt")
+	tmpFile, err := os.CreateTemp(t.TempDir(), "test_file_*.txt")
 	require.NoError(t, err)
 
 	_, err = tmpFile.WriteString(content)
