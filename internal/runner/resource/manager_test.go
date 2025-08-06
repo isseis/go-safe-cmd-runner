@@ -1,42 +1,32 @@
 package resource
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestNewManager(t *testing.T) {
 	manager := NewManager("")
-	if manager == nil {
-		t.Fatal("NewManager() returned nil")
-	}
-	if manager.tempDirs == nil {
-		t.Error("Manager tempDirs map is nil")
-	}
-	if manager.baseDir == "" {
-		t.Error("Manager baseDir should be set to temp dir when empty")
-	}
+	assert.NotNil(t, manager, "NewManager should not return nil")
+	assert.NotNil(t, manager.tempDirs, "Manager tempDirs map should not be nil")
+	assert.NotEmpty(t, manager.baseDir, "Manager baseDir should not be empty")
 
 	// Test with custom base directory
 	customDir := "/tmp/test"
 	manager2 := NewManager(customDir)
-	if manager2.baseDir != customDir {
-		t.Errorf("Manager baseDir = %v, want %v", manager2.baseDir, customDir)
-	}
+	assert.Equal(t, customDir, manager2.baseDir, "Manager baseDir should match custom directory")
 }
 
 func TestNewManagerWithFS(t *testing.T) {
 	mockFS := common.NewMockFileSystem()
 	manager := NewManagerWithFS("/tmp", mockFS)
 
-	if manager == nil {
-		t.Fatal("NewManagerWithFS() returned nil")
-	}
-	if manager.fs != mockFS {
-		t.Error("Manager filesystem should be set to provided filesystem")
-	}
+	assert.NotNil(t, manager, "NewManagerWithFS should not return nil")
+	assert.Equal(t, mockFS, manager.fs, "Manager filesystem should be set to provided filesystem")
 }
 
 func TestCreateTempDir(t *testing.T) {
@@ -44,32 +34,19 @@ func TestCreateTempDir(t *testing.T) {
 	manager := NewManagerWithFS("/tmp", mockFS)
 
 	path, err := manager.CreateTempDir("test-command")
-	if err != nil {
-		t.Fatalf("CreateTempDir() failed: %v", err)
-	}
-
-	if path == "" {
-		t.Fatal("CreateTempDir() returned empty path")
-	}
+	assert.Nil(t, err, "CreateTempDir should not return an error")
+	assert.NotEmpty(t, path, "CreateTempDir should return a valid path")
 
 	// Check that directory was actually created in mock filesystem
 	exists, err := mockFS.FileExists(path)
-	if err != nil {
-		t.Fatalf("FileExists failed: %v", err)
-	}
-	if !exists {
-		t.Errorf("Temporary directory was not created: %s", path)
-	}
+	assert.Nil(t, err, "FileExists should not return an error")
+	assert.True(t, exists, "Temporary directory should exist after creation")
 
 	// Check that path is under the base directory
-	if !strings.HasPrefix(path, "/tmp") {
-		t.Errorf("Resource path %s is not under base directory %s", path, "/tmp")
-	}
+	assert.True(t, strings.HasPrefix(path, "/tmp"), "Resource path %s is not under base directory %s", path, "/tmp")
 
 	// Test IsTempDirManaged
-	if !manager.IsTempDirManaged(path) {
-		t.Errorf("Path %s should be managed by manager", path)
-	}
+	assert.True(t, manager.IsTempDirManaged(path), "Path %s should be managed by manager", path)
 }
 
 func TestCleanupTempDir(t *testing.T) {
@@ -78,44 +55,58 @@ func TestCleanupTempDir(t *testing.T) {
 
 	// Create a temp directory
 	path, err := manager.CreateTempDir("test-command")
-	if err != nil {
-		t.Fatalf("CreateTempDir() failed: %v", err)
-	}
+	assert.Nil(t, err, "CreateTempDir should not return an error")
 
 	// Verify directory exists
 	exists, err := mockFS.FileExists(path)
-	if err != nil {
-		t.Fatalf("FileExists failed: %v", err)
-	}
-	if !exists {
-		t.Fatalf("Temporary directory was not created: %s", path)
-	}
+	assert.Nil(t, err, "FileExists should not return an error")
+	assert.True(t, exists, "Temporary directory should exist after creation")
 
 	// Clean up the temp directory
 	err = manager.CleanupTempDir(path)
-	if err != nil {
-		t.Errorf("CleanupTempDir() failed: %v", err)
-	}
+	assert.Nil(t, err, "CleanupTempDir() failed")
 
 	// Verify directory was removed
 	exists, err = mockFS.FileExists(path)
-	if err != nil {
-		t.Fatalf("FileExists failed: %v", err)
-	}
-	if exists {
-		t.Errorf("Temp directory should have been removed: %s", path)
-	}
+	assert.Nil(t, err, "FileExists should not return an error")
+	assert.False(t, exists, "Temp directory should have been removed: %s", path)
 
 	// Verify it's no longer managed
-	if manager.IsTempDirManaged(path) {
-		t.Error("Path should no longer be managed after cleanup")
-	}
+	assert.False(t, manager.IsTempDirManaged(path), "Path should no longer be managed after cleanup")
 
 	// Try to cleanup non-existent temp directory
 	err = manager.CleanupTempDir("/non/existent/path")
-	if err == nil {
-		t.Error("CleanupTempDir() should return error for non-existent resource")
-	}
+	assert.Error(t, err, "CleanupTempDir() should return error for non-existent resource")
+}
+
+var errSimulatedFailure = fmt.Errorf("simulated failure")
+
+// failingFS is a mock file system that always fails RemoveAll
+// Used for testing error handling in CleanupTempDir
+type failingFS struct{ *common.MockFileSystem }
+
+func (fs *failingFS) RemoveAll(_ string) error { return errSimulatedFailure }
+
+func TestCleanupTempDir_ErrorCases(t *testing.T) {
+	t.Run("non-managed path", func(t *testing.T) {
+		// Test error when path is not managed
+		mockFS := common.NewMockFileSystem()
+		manager := NewManagerWithFS("/tmp", mockFS)
+
+		err := manager.CleanupTempDir("/not/managed/path")
+		assert.ErrorIs(t, err, ErrTempDirNotFound)
+	})
+
+	t.Run("error when RemoveAll fails", func(t *testing.T) {
+		// Test error when RemoveAll fails
+		failingFS := &failingFS{MockFileSystem: common.NewMockFileSystem()}
+		manager := NewManagerWithFS("/tmp", failingFS)
+		path, err := manager.CreateTempDir("fail-case")
+		assert.Nil(t, err, "CreateTempDir should succeed for setup")
+
+		err = manager.CleanupTempDir(path)
+		assert.ErrorIs(t, err, ErrCleanupFailed)
+	})
 }
 
 func TestCleanupAll(t *testing.T) {
@@ -124,61 +115,38 @@ func TestCleanupAll(t *testing.T) {
 
 	// Create multiple temp directories
 	path1, err := manager.CreateTempDir("test-command-1")
-	if err != nil {
-		t.Fatalf("CreateTempDir() failed: %v", err)
-	}
+	assert.Nil(t, err, "CreateTempDir should not return an error")
 
 	path2, err := manager.CreateTempDir("test-command-2")
-	if err != nil {
-		t.Fatalf("CreateTempDir() failed: %v", err)
-	}
+	assert.Nil(t, err, "CreateTempDir should not return an error")
 
 	// Verify directories exist
 	exists, err := mockFS.FileExists(path1)
-	if err != nil {
-		t.Fatalf("FileExists failed: %v", err)
-	}
-	if !exists {
-		t.Errorf("TempDir1 directory should exist: %s", path1)
-	}
+	assert.Nil(t, err, "FileExists should not return an error")
+	assert.True(t, exists, "TempDir1 directory should exist: %s", path1)
 
 	exists, err = mockFS.FileExists(path2)
-	if err != nil {
-		t.Fatalf("FileExists failed: %v", err)
-	}
-	if !exists {
-		t.Errorf("TempDir2 directory should exist: %s", path2)
-	}
+	assert.Nil(t, err, "FileExists should not return an error")
+	assert.True(t, exists, "TempDir2 directory should exist: %s", path2)
 
 	// Clean up all temp directories
 	err = manager.CleanupAll()
-	if err != nil {
-		t.Errorf("CleanupAll() failed: %v", err)
-	}
+	assert.Nil(t, err, "CleanupAll() failed")
 
 	// Verify directories were removed
 	exists, err = mockFS.FileExists(path1)
-	if err != nil {
-		t.Fatalf("FileExists failed: %v", err)
-	}
-	if exists {
-		t.Errorf("TempDir1 directory should have been removed: %s", path1)
-	}
+	assert.Nil(t, err, "FileExists should not return an error")
+	assert.False(t, exists, "TempDir1 directory should have been removed: %s", path1)
 
 	exists, err = mockFS.FileExists(path2)
-	if err != nil {
-		t.Fatalf("FileExists failed: %v", err)
-	}
-	if exists {
-		t.Errorf("TempDir2 directory should have been removed: %s", path2)
-	}
+	assert.Nil(t, err, "FileExists should not return an error")
+	assert.False(t, exists, "TempDir2 directory should have been removed: %s", path2)
+
+	exists, err = mockFS.FileExists(path2)
+	assert.Nil(t, err, "FileExists should not return an error")
+	assert.False(t, exists, "TempDir2 directory should have been removed: %s", path2)
 
 	// Verify both directories are no longer managed
-	if manager.IsTempDirManaged(path1) {
-		t.Error("Path1 should no longer be managed after CleanupAll")
-	}
-
-	if manager.IsTempDirManaged(path2) {
-		t.Error("Path2 should no longer be managed after CleanupAll")
-	}
+	assert.False(t, manager.IsTempDirManaged(path1), "Path1 should no longer be managed after CleanupAll")
+	assert.False(t, manager.IsTempDirManaged(path2), "Path2 should no longer be managed after CleanupAll")
 }
