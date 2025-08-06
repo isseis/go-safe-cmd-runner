@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -93,10 +92,10 @@ func (m *Manager) CreateTempDir(commandName string, autoCleanup bool) (*Resource
 
 	// Create the temporary directory path using the resource ID for uniqueness
 	safeName := sanitizeName(commandName)
-	tempDirPath := filepath.Join(m.baseDir, "cmd-runner", safeName, resourceID)
 
 	// Create the directory
-	if err := m.fs.MkdirAll(tempDirPath, defaultDirPerm); err != nil {
+	tempDirPath, err := m.fs.CreateTempDir(safeName)
+	if err != nil {
 		return nil, fmt.Errorf("failed to create temporary directory: %w", err)
 	}
 
