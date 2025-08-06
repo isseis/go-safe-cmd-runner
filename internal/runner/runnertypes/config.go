@@ -26,10 +26,9 @@ type GlobalConfig struct {
 
 // CommandGroup represents a group of related commands with a name
 type CommandGroup struct {
-	Name        string   `toml:"name"`
-	Description string   `toml:"description"`
-	Priority    int      `toml:"priority"`
-	DependsOn   []string `toml:"depends_on"`
+	Name        string `toml:"name"`
+	Description string `toml:"description"`
+	Priority    int    `toml:"priority"`
 
 	// Fields for resource management
 	TempDir bool   `toml:"temp_dir"` // Auto-generate temporary directory
