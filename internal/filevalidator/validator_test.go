@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	privtesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testing"
-	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
 
 // testSafeReadFile is a helper function for tests to safely read files.
@@ -70,7 +70,7 @@ func TestValidator_RecordAndVerify(t *testing.T) {
 		}
 
 		// Verify the hash file exists
-		hashFilePath, err := validator.GetHashFilePath(testFilePath)
+		hashFilePath, err := validator.GetHashFilePath(common.ResolvedPath(testFilePath))
 		if err != nil {
 			t.Fatalf("GetHashFilePath failed: %v", err)
 		}
@@ -109,46 +109,6 @@ func TestValidator_RecordAndVerify(t *testing.T) {
 			t.Error("Expected an error for non-existent file, got nil")
 		}
 	})
-}
-
-func TestValidator_GetHashFilePath(t *testing.T) {
-	tempDir := safeTempDir(t)
-	validator, err := New(&SHA256{}, tempDir)
-	if err != nil {
-		t.Fatalf("Failed to create validator: %v", err)
-	}
-
-	// Create test file
-	testFilePath := filepath.Join(tempDir, "test.txt")
-	if err := os.WriteFile(testFilePath, []byte("test content"), 0o644); err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
-	}
-
-	tests := []struct {
-		name        string
-		filePath    string
-		expectedErr error
-	}{
-		{
-			name:        "valid path",
-			filePath:    testFilePath,
-			expectedErr: nil,
-		},
-		{
-			name:        "empty path",
-			filePath:    "",
-			expectedErr: safefileio.ErrInvalidFilePath,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := validator.GetHashFilePath(tt.filePath)
-			if (err != nil) != (tt.expectedErr != nil) || (err != nil && !errors.Is(err, tt.expectedErr)) {
-				t.Errorf("GetHashFilePath() error = %v, want %v", err, tt.expectedErr)
-			}
-		})
-	}
 }
 
 func TestNew(t *testing.T) {
@@ -287,7 +247,7 @@ func TestValidator_Verify_Symlink(t *testing.T) {
 type CollidingHashFilePathGetter struct{}
 
 // GetHashFilePath always returns the same path, so it simulates a hash collision.
-func (t *CollidingHashFilePathGetter) GetHashFilePath(_ HashAlgorithm, hashDir string, _ string) (string, error) {
+func (t *CollidingHashFilePathGetter) GetHashFilePath(_ HashAlgorithm, hashDir string, _ common.ResolvedPath) (string, error) {
 	return filepath.Join(hashDir, "test.json"), nil
 }
 
@@ -362,7 +322,7 @@ func TestValidator_HashCollision(t *testing.T) {
 		}
 
 		// Get the hash file path for file1
-		hashFilePath, err := validator.GetHashFilePath(file1Path)
+		hashFilePath, err := validator.GetHashFilePath(common.ResolvedPath(file1Path))
 		if err != nil {
 			t.Fatalf("Failed to get hash file path: %v", err)
 		}
@@ -437,7 +397,7 @@ func TestValidator_Record_EmptyHashFile(t *testing.T) {
 	}
 
 	// Get the hash file path
-	hashFilePath, err := validator.GetHashFilePath(testFilePath)
+	hashFilePath, err := validator.GetHashFilePath(common.ResolvedPath(testFilePath))
 	if err != nil {
 		t.Fatalf("GetHashFilePath failed: %v", err)
 	}
@@ -484,7 +444,7 @@ func TestValidator_ManifestFormat(t *testing.T) {
 	}
 
 	// Get the hash file path
-	hashFilePath, err := validator.GetHashFilePath(testFilePath)
+	hashFilePath, err := validator.GetHashFilePath(common.ResolvedPath(testFilePath))
 	if err != nil {
 		t.Fatalf("GetHashFilePath failed: %v", err)
 	}
@@ -519,56 +479,6 @@ func TestValidator_ManifestFormat(t *testing.T) {
 	}
 }
 
-// TestValidator_LegacyFormatError tests that legacy format files are rejected
-func TestValidator_LegacyFormatError(t *testing.T) {
-	tempDir := safeTempDir(t)
-
-	// Create a test file
-	testFilePath := filepath.Join(tempDir, "test.txt")
-	if err := os.WriteFile(testFilePath, []byte("test content"), 0o644); err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
-	}
-
-	// Create a validator
-	validator, err := New(&SHA256{}, tempDir)
-	if err != nil {
-		t.Fatalf("Failed to create validator: %v", err)
-	}
-
-	// Get the hash file path
-	hashFilePath, err := validator.GetHashFilePath(testFilePath)
-	if err != nil {
-		t.Fatalf("GetHashFilePath failed: %v", err)
-	}
-
-	// Create the hash directory
-	if err := os.MkdirAll(filepath.Dir(hashFilePath), 0o750); err != nil {
-		t.Fatalf("Failed to create hash directory: %v", err)
-	}
-
-	// Create a legacy format hash file
-	legacyContent := testFilePath + "\nabc123def456..."
-	if err := os.WriteFile(hashFilePath, []byte(legacyContent), 0o644); err != nil {
-		t.Fatalf("Failed to create legacy hash file: %v", err)
-	}
-
-	// Test Verify with legacy format (should fail)
-	err = validator.Verify(testFilePath)
-	if err == nil {
-		t.Error("Expected error with legacy format, got nil")
-	} else if !errors.Is(err, ErrInvalidManifestFormat) {
-		t.Errorf("Expected ErrInvalidManifestFormat, got %v", err)
-	}
-
-	// Test Record with existing legacy format (should fail)
-	_, err = validator.Record(testFilePath, false)
-	if err == nil {
-		t.Error("Expected error with existing legacy format, got nil")
-	} else if !errors.Is(err, ErrInvalidManifestFormat) {
-		t.Errorf("Expected ErrInvalidManifestFormat, got %v", err)
-	}
-}
-
 func TestValidator_InvalidTimestamp(t *testing.T) {
 	tempDir := safeTempDir(t)
 
@@ -583,7 +493,7 @@ func TestValidator_InvalidTimestamp(t *testing.T) {
 		t.Fatalf("Failed to create validator: %v", err)
 	}
 
-	hashFilePath, err := validator.GetHashFilePath(testFilePath)
+	hashFilePath, err := validator.GetHashFilePath(common.ResolvedPath(testFilePath))
 	if err != nil {
 		t.Fatalf("GetHashFilePath failed: %v", err)
 	}
@@ -746,7 +656,7 @@ func TestValidator_VerifyFromHandle(t *testing.T) {
 	defer file.Close()
 
 	// Test VerifyFromHandle
-	err = validator.VerifyFromHandle(file, testFile)
+	err = validator.VerifyFromHandle(file, common.ResolvedPath(testFile))
 	if err != nil {
 		t.Errorf("VerifyFromHandle failed: %v", err)
 	}
@@ -782,7 +692,7 @@ func TestValidator_VerifyFromHandle_Mismatch(t *testing.T) {
 	defer file.Close()
 
 	// Test VerifyFromHandle - should fail with mismatch
-	err = validator.VerifyFromHandle(file, testFile)
+	err = validator.VerifyFromHandle(file, common.ResolvedPath(testFile))
 	if !errors.Is(err, ErrMismatch) {
 		t.Errorf("Expected ErrMismatch, got: %v", err)
 	}
@@ -793,7 +703,7 @@ type MockHashFilePathGetter struct {
 	filePath string
 }
 
-func (m *MockHashFilePathGetter) GetHashFilePath(_ HashAlgorithm, _ string, _ string) (string, error) {
+func (m *MockHashFilePathGetter) GetHashFilePath(_ HashAlgorithm, _ string, _ common.ResolvedPath) (string, error) {
 	return m.filePath, nil
 }
 

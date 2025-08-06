@@ -3,6 +3,8 @@ package filevalidator
 import (
 	"os"
 	"testing"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
 
 // BenchmarkValidator_Verify benchmarks the standard Verify method
@@ -56,7 +58,7 @@ func BenchmarkValidator_VerifyFromHandle(b *testing.B) {
 			b.Fatalf("Failed to open file: %v", err)
 		}
 
-		err = validator.VerifyFromHandle(file, testFile)
+		err = validator.VerifyFromHandle(file, common.ResolvedPath(testFile))
 		file.Close()
 
 		if err != nil {

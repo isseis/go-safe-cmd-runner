@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
 
 const (
@@ -34,13 +36,13 @@ type HashInfo struct {
 }
 
 // createHashManifest creates a hash manifest structure
-func createHashManifest(path, hash, algorithm string) HashManifest {
+func createHashManifest(path common.ResolvedPath, hash, algorithm string) HashManifest {
 	return HashManifest{
 		Version:   HashManifestVersion,
 		Format:    HashManifestFormat,
 		Timestamp: time.Now().UTC(),
 		File: FileInfo{
-			Path: path,
+			Path: path.String(),
 			Hash: HashInfo{
 				Algorithm: algorithm,
 				Value:     hash,
@@ -66,7 +68,7 @@ func unmarshalHashManifest(content []byte) (HashManifest, error) {
 }
 
 // validateHashManifest validates the content of manifest file
-func validateHashManifest(manifest HashManifest, algoName string, targetPath string) error {
+func validateHashManifest(manifest HashManifest, algoName string, targetPath common.ResolvedPath) error {
 	// Version validation
 	if manifest.Version != HashManifestVersion {
 		return fmt.Errorf("%w: version %s", ErrUnsupportedVersion, manifest.Version)
@@ -83,7 +85,7 @@ func validateHashManifest(manifest HashManifest, algoName string, targetPath str
 	}
 
 	// Path match confirmation
-	if manifest.File.Path != targetPath {
+	if manifest.File.Path != targetPath.String() {
 		return fmt.Errorf("%w: path mismatch", ErrHashCollision)
 	}
 

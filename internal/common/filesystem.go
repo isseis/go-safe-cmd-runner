@@ -84,3 +84,11 @@ func (fs *DefaultFileSystem) IsDir(path string) (bool, error) {
 	}
 	return info.IsDir(), nil
 }
+
+// ResolvedPath is a type that represents a file path that has been resolved
+// (e.g., through symlink resolution or absolute path conversion).
+type ResolvedPath string
+
+func (p ResolvedPath) String() string {
+	return string(p)
+}
