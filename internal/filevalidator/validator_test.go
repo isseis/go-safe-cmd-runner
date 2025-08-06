@@ -65,7 +65,7 @@ func TestValidator_RecordAndVerify(t *testing.T) {
 
 	// Test Record
 	t.Run("Record", func(t *testing.T) {
-		if _, err := validator.Record(testFilePath); err != nil {
+		if _, err := validator.Record(testFilePath, false); err != nil {
 			t.Fatalf("Record failed: %v", err)
 		}
 
@@ -224,7 +224,7 @@ func TestValidator_Record_Symlink(t *testing.T) {
 
 	// Test Record with symlink
 	// Symlinks are resolved before writing the hash file
-	_, err = validator.Record(symlinkPath)
+	_, err = validator.Record(symlinkPath, false)
 	if err != nil {
 		t.Errorf("Record failed: %v", err)
 	}
@@ -267,7 +267,7 @@ func TestValidator_Verify_Symlink(t *testing.T) {
 		t.Fatalf("Failed to create validator: %v", err)
 	}
 
-	if _, err := validator.Record(testFilePath); err != nil {
+	if _, err := validator.Record(testFilePath, false); err != nil {
 		t.Fatalf("Record failed: %v", err)
 	}
 
@@ -323,7 +323,7 @@ func TestValidator_HashCollision(t *testing.T) {
 
 	// Record the first file - should succeed
 	t.Run("Record first file", func(t *testing.T) {
-		if _, err := validator.Record(file1Path); err != nil {
+		if _, err := validator.Record(file1Path, false); err != nil {
 			t.Fatalf("Failed to record first file: %v", err)
 		}
 		// Verify the hash file was created with the correct content
@@ -344,7 +344,7 @@ func TestValidator_HashCollision(t *testing.T) {
 
 	// Record the second file - should fail with hash collision
 	t.Run("Record second file with collision", func(t *testing.T) {
-		_, err := validator.Record(file2Path)
+		_, err := validator.Record(file2Path, false)
 		if err == nil {
 			t.Fatal("Expected error when recording second file with same hash, got nil")
 		}
@@ -453,7 +453,7 @@ func TestValidator_Record_EmptyHashFile(t *testing.T) {
 	}
 
 	// Test Record with empty hash file - this should return ErrInvalidManifestFormat
-	_, err = validator.Record(testFilePath)
+	_, err = validator.Record(testFilePath, false)
 	if err == nil {
 		t.Error("Expected error with empty hash file, got nil")
 	} else if !errors.Is(err, ErrInvalidManifestFormat) {
@@ -478,7 +478,7 @@ func TestValidator_ManifestFormat(t *testing.T) {
 	}
 
 	// Record the file
-	_, err = validator.Record(testFilePath)
+	_, err = validator.Record(testFilePath, false)
 	if err != nil {
 		t.Fatalf("Record failed: %v", err)
 	}
@@ -561,7 +561,7 @@ func TestValidator_LegacyFormatError(t *testing.T) {
 	}
 
 	// Test Record with existing legacy format (should fail)
-	_, err = validator.Record(testFilePath)
+	_, err = validator.Record(testFilePath, false)
 	if err == nil {
 		t.Error("Expected error with existing legacy format, got nil")
 	} else if !errors.Is(err, ErrInvalidManifestFormat) {
@@ -616,7 +616,7 @@ func TestValidator_InvalidTimestamp(t *testing.T) {
 	})
 }
 
-func TestValidator_RecordWithOptions(t *testing.T) {
+func TestValidator_Record(t *testing.T) {
 	tempDir := safeTempDir(t)
 
 	// Create test files
@@ -642,7 +642,7 @@ func TestValidator_RecordWithOptions(t *testing.T) {
 	}
 
 	t.Run("Record without force on new file", func(t *testing.T) {
-		hashFile, err := testValidator.RecordWithOptions(testFile1Path, false)
+		hashFile, err := testValidator.Record(testFile1Path, false)
 		if err != nil {
 			t.Fatalf("Failed to record hash without force: %v", err)
 		}
@@ -655,7 +655,7 @@ func TestValidator_RecordWithOptions(t *testing.T) {
 
 	t.Run("Record without force on existing file with different path should fail", func(t *testing.T) {
 		// Try to record the second file which will have the same hash file path
-		_, err := testValidator.RecordWithOptions(testFile2Path, false)
+		_, err := testValidator.Record(testFile2Path, false)
 		if err == nil {
 			t.Fatal("Expected error for hash collision, but got nil")
 		}
@@ -667,7 +667,7 @@ func TestValidator_RecordWithOptions(t *testing.T) {
 
 	t.Run("Record with force on existing file with different path should still fail", func(t *testing.T) {
 		// Try to record the second file with force=true - should still fail due to hash collision
-		_, err := testValidator.RecordWithOptions(testFile2Path, true)
+		_, err := testValidator.Record(testFile2Path, true)
 		if err == nil {
 			t.Fatal("Expected error for hash collision even with force=true, but got nil")
 		}
@@ -679,7 +679,7 @@ func TestValidator_RecordWithOptions(t *testing.T) {
 
 	t.Run("Record with force on same file should succeed", func(t *testing.T) {
 		// Try to record the same file again with force=true - should succeed
-		hashFile, err := testValidator.RecordWithOptions(testFile1Path, true)
+		hashFile, err := testValidator.Record(testFile1Path, true)
 		if err != nil {
 			t.Fatalf("Failed to record hash with force for same file: %v", err)
 		}
@@ -707,7 +707,7 @@ func TestValidator_RecordWithOptions(t *testing.T) {
 
 	t.Run("Record without force on same file should fail", func(t *testing.T) {
 		// Try to record the same file again without force - should fail because file exists
-		_, err := testValidator.RecordWithOptions(testFile1Path, false)
+		_, err := testValidator.Record(testFile1Path, false)
 		if err == nil {
 			t.Fatal("Expected error when recording same file without force, but got nil")
 		}
@@ -733,7 +733,7 @@ func TestValidator_VerifyFromHandle(t *testing.T) {
 	testFile := createTestFile(t, "test content for VerifyFromHandle")
 
 	// Record the hash
-	_, err = validator.Record(testFile)
+	_, err = validator.Record(testFile, false)
 	if err != nil {
 		t.Fatalf("Failed to record hash: %v", err)
 	}
@@ -766,7 +766,7 @@ func TestValidator_VerifyFromHandle_Mismatch(t *testing.T) {
 	testFile := createTestFile(t, "test content")
 
 	// Record the hash
-	_, err = validator.Record(testFile)
+	_, err = validator.Record(testFile, false)
 	if err != nil {
 		t.Fatalf("Failed to record hash: %v", err)
 	}
@@ -811,7 +811,7 @@ func TestValidator_VerifyWithPrivileges(t *testing.T) {
 	testFile := createTestFile(t, "test content for VerifyWithPrivileges")
 
 	// Record the hash
-	_, err = validator.Record(testFile)
+	_, err = validator.Record(testFile, false)
 	if err != nil {
 		t.Fatalf("Failed to record hash: %v", err)
 	}
@@ -860,7 +860,7 @@ func TestValidator_VerifyWithPrivileges_MockPrivilegeManager(t *testing.T) {
 
 	// Create a test file and record its hash first
 	testFile := createTestFile(t, "test content for VerifyWithPrivileges")
-	_, err = validator.Record(testFile)
+	_, err = validator.Record(testFile, false)
 	if err != nil {
 		t.Fatalf("Failed to record hash: %v", err)
 	}

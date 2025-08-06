@@ -23,7 +23,7 @@ var (
 
 // FileValidator interface defines the basic file validation methods
 type FileValidator interface {
-	Record(filePath string) (string, error)
+	Record(filePath string, force bool) (string, error)
 	Verify(filePath string) error
 	VerifyWithPrivileges(filePath string, privManager runnertypes.PrivilegeManager) error
 }
@@ -108,15 +108,9 @@ func newValidator(algorithm HashAlgorithm, hashDir string, hashFilePathGetter Ha
 
 // Record calculates the hash of the file at filePath and saves it to the hash directory.
 // The hash file is named using a URL-safe Base64 encoding of the file path.
-func (v *Validator) Record(filePath string) (string, error) {
-	return v.RecordWithOptions(filePath, false)
-}
-
-// RecordWithOptions calculates the hash of the file at filePath and saves it to the hash directory.
-// The hash file is named using a URL-safe Base64 encoding of the file path.
 // If force is true, existing hash files for the same file path will be overwritten.
 // Hash collisions (different file paths with same hash) always return an error regardless of force.
-func (v *Validator) RecordWithOptions(filePath string, force bool) (string, error) {
+func (v *Validator) Record(filePath string, force bool) (string, error) {
 	// Validate the file path
 	targetPath, err := validatePath(filePath)
 	if err != nil {
