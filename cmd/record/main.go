@@ -56,7 +56,7 @@ func main() {
 	}
 
 	// Record file hash
-	hashFile, err := validator.RecordWithOptions(config.File, *force)
+	hashFile, err := validator.Record(config.File, *force)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error recording file hash: %v\n", err)
 		os.Exit(1)
