@@ -100,11 +100,3 @@ func (m *Manager) CleanupAll() error {
 
 	return nil
 }
-
-// IsTempDirManaged checks if a given path is managed by this manager
-func (m *Manager) IsTempDirManaged(path string) bool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	return m.tempDirs[path]
-}

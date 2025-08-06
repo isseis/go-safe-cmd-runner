@@ -44,9 +44,6 @@ func TestCreateTempDir(t *testing.T) {
 
 	// Check that path is under the base directory
 	assert.True(t, strings.HasPrefix(path, "/tmp"), "Resource path %s is not under base directory %s", path, "/tmp")
-
-	// Test IsTempDirManaged
-	assert.True(t, manager.IsTempDirManaged(path), "Path %s should be managed by manager", path)
 }
 
 func TestCleanupTempDir(t *testing.T) {
@@ -70,9 +67,6 @@ func TestCleanupTempDir(t *testing.T) {
 	exists, err = mockFS.FileExists(path)
 	assert.Nil(t, err, "FileExists should not return an error")
 	assert.False(t, exists, "Temp directory should have been removed: %s", path)
-
-	// Verify it's no longer managed
-	assert.False(t, manager.IsTempDirManaged(path), "Path should no longer be managed after cleanup")
 
 	// Try to cleanup non-existent temp directory
 	err = manager.CleanupTempDir("/non/existent/path")
@@ -146,7 +140,9 @@ func TestCleanupAll(t *testing.T) {
 	assert.Nil(t, err, "FileExists should not return an error")
 	assert.False(t, exists, "TempDir2 directory should have been removed: %s", path2)
 
-	// Verify both directories are no longer managed
-	assert.False(t, manager.IsTempDirManaged(path1), "Path1 should no longer be managed after CleanupAll")
-	assert.False(t, manager.IsTempDirManaged(path2), "Path2 should no longer be managed after CleanupAll")
+	// Try to cleanup non-existent temp directory
+	err = manager.CleanupTempDir(path1)
+	assert.Error(t, err, "CleanupTempDir() should return error for non-existent resource")
+	err = manager.CleanupTempDir(path2)
+	assert.Error(t, err, "CleanupTempDir() should return error for non-existent resource")
 }
