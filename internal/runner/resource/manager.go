@@ -180,10 +180,3 @@ func (m *Manager) cleanupResourceUnsafe(id string) error {
 	delete(m.resources, id)
 	return nil
 }
-
-// CleanupByCommand cleans up all resources associated with a specific command
-func (m *Manager) CleanupByCommand(commandName string) error {
-	return m.cleanupResources(func(_ string, r *Resource) bool {
-		return r.Command == commandName
-	}, fmt.Sprintf("command %s", commandName))
-}
