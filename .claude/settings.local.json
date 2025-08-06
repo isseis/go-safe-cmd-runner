@@ -21,7 +21,10 @@
       "Bash(./build/verify:*)",
       "Bash(true)",
       "Bash(go tool cover:*)",
-      "Bash(/dev/null)"
+      "Bash(/dev/null)",
+      "Bash(git --no-pager diff --staged)",
+      "Bash(git --no-pager status)",
+      "Bash(git --no-pager diff)"
     ],
     "deny": [],
     "env": {

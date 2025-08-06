@@ -241,7 +241,8 @@ func validatePath(filePath string) (common.ResolvedPath, error) {
 	if !fileInfo.Mode().IsRegular() {
 		return "", fmt.Errorf("%w: not a regular file: %s", safefileio.ErrInvalidFilePath, resolvedPath)
 	}
-	return common.ResolvedPath(resolvedPath), nil
+
+	return common.NewResolvedPath(resolvedPath)
 }
 
 // calculateHash calculates the hash of the file at the given path.
