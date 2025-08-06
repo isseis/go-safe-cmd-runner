@@ -1162,7 +1162,7 @@ func (m *EarlyDropManager) GetCurrentState() PrivilegeState {
 
 直接制御メソッドの代わりに検討可能な代替案：
 
-#### 9.3.1 高レベルヘルパー関数
+#### 9.4.1 高レベルヘルパー関数
 
 ```go
 // WithTemporaryElevation provides scoped elevation for multiple operations
@@ -1183,9 +1183,6 @@ func (m *EarlyDropManager) WithTemporaryElevation(ctx context.Context, operation
 }
 ```
 
-#### 9.3.2 テスト専用インターフェース
-
-```go
 #### 9.4.2 テスト専用インターフェース
 
 ```go
@@ -1221,7 +1218,6 @@ func (m *EarlyDropManager) WithPrivileges(ctx context.Context, elevationCtx Elev
 
     return err
 }
-```
 ```
 - [ ] 権限状態の継続的検証
 - [ ] メトリクス収集と監視
