@@ -36,33 +36,6 @@ func TestDefaultFileSystem_CreateTempDir(t *testing.T) {
 	}
 }
 
-func TestDefaultFileSystem_MkdirAll(t *testing.T) {
-	fs := NewDefaultFileSystem()
-
-	// Create a temporary base directory
-	baseDir, err := fs.CreateTempDir("test-mkdir-")
-	if err != nil {
-		t.Fatalf("CreateTempDir failed: %v", err)
-	}
-	defer fs.RemoveAll(baseDir)
-
-	// Test creating nested directories
-	nestedPath := filepath.Join(baseDir, "a", "b", "c")
-	err = fs.MkdirAll(nestedPath, 0o755)
-	if err != nil {
-		t.Fatalf("MkdirAll failed: %v", err)
-	}
-
-	// Verify the nested directory exists
-	exists, err := fs.FileExists(nestedPath)
-	if err != nil {
-		t.Fatalf("FileExists failed: %v", err)
-	}
-	if !exists {
-		t.Error("Nested directory does not exist")
-	}
-}
-
 func TestDefaultFileSystem_FileExists(t *testing.T) {
 	fs := NewDefaultFileSystem()
 
@@ -137,9 +110,9 @@ func TestDefaultFileSystem_RemoveAll(t *testing.T) {
 	}
 
 	nestedDir := filepath.Join(tempDir, "nested")
-	err = fs.MkdirAll(nestedDir, 0o755)
+	err = os.MkdirAll(nestedDir, 0o755)
 	if err != nil {
-		t.Fatalf("MkdirAll failed: %v", err)
+		t.Fatalf("os.MkdirAll failed: %v", err)
 	}
 
 	// Create a file in the nested directory

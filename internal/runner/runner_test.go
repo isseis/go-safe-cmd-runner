@@ -3,7 +3,6 @@ package runner
 import (
 	"context"
 	"errors"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -100,11 +99,6 @@ func (m *MockFileSystem) CreateTempDir(prefix string) (string, error) {
 func (m *MockFileSystem) TempDir() string {
 	args := m.Called()
 	return args.String(0)
-}
-
-func (m *MockFileSystem) MkdirAll(path string, perm fs.FileMode) error {
-	args := m.Called(path, perm)
-	return args.Error(0)
 }
 
 func (m *MockFileSystem) RemoveAll(path string) error {

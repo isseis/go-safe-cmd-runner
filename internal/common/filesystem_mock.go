@@ -110,48 +110,6 @@ func (m *MockFileSystem) TempDir() string {
 	return "/tmp"
 }
 
-// MkdirAll creates directories and all parent directories in the mock filesystem
-func (m *MockFileSystem) MkdirAll(path string, perm os.FileMode) error {
-	// Normalize path
-	path = filepath.Clean(path)
-
-	// Create all parent directories
-	parts := strings.Split(path, string(filepath.Separator))
-	currentPath := ""
-
-	for i, part := range parts {
-		switch {
-		case part == "" && i == 0:
-			// Root directory on Unix
-			currentPath = "/"
-		case part == "":
-			continue
-		case currentPath == "/":
-			currentPath = "/" + part
-		case currentPath == "":
-			currentPath = part
-		default:
-			currentPath = filepath.Join(currentPath, part)
-		}
-
-		// Create directory if it doesn't exist
-		if _, exists := m.dirs[currentPath]; !exists {
-			m.dirs[currentPath] = true
-			m.files[currentPath] = &MockFileInfo{
-				name: filepath.Base(currentPath),
-				mode: perm,
-
-				isDir:     true,
-				isSymlink: false,
-				uid:       0,
-				gid:       0,
-			}
-		}
-	}
-
-	return nil
-}
-
 // RemoveAll removes a directory and all its contents from the mock filesystem
 func (m *MockFileSystem) RemoveAll(path string) error {
 	path = filepath.Clean(path)

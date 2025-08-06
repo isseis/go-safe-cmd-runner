@@ -18,9 +18,6 @@ type FileSystem interface {
 	// TempDir returns the default directory for temporary files
 	TempDir() string
 
-	// MkdirAll creates a directory path recursively
-	MkdirAll(path string, perm os.FileMode) error
-
 	// RemoveAll removes a directory and all its contents
 	RemoveAll(path string) error
 
@@ -53,11 +50,6 @@ func (fs *DefaultFileSystem) CreateTempDir(prefix string) (string, error) {
 // TempDir returns the default directory for temporary files
 func (fs *DefaultFileSystem) TempDir() string {
 	return os.TempDir()
-}
-
-// MkdirAll creates a directory path recursively
-func (fs *DefaultFileSystem) MkdirAll(path string, perm os.FileMode) error {
-	return os.MkdirAll(path, perm)
 }
 
 // RemoveAll removes a directory and all its contents
