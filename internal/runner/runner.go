@@ -287,12 +287,12 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 	}
 
 	// Track resources for cleanup
-	groupResources := make([]string, 0)
+	groupTempDirs := make([]string, 0)
 	defer func() {
-		// Clean up resources created for this group
-		for _, resourceID := range groupResources {
-			if err := r.resourceManager.CleanupResource(resourceID); err != nil {
-				slog.Warn("Failed to cleanup resource", "resource_id", resourceID, "error", err)
+		// Clean up temp directories created for this group
+		for _, tempDirPath := range groupTempDirs {
+			if err := r.resourceManager.CleanupTempDir(tempDirPath); err != nil {
+				slog.Warn("Failed to cleanup temp directory", "path", tempDirPath, "error", err)
 			}
 		}
 	}()
@@ -301,15 +301,15 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 	processedGroup := group
 
 	// Process new fields (TempDir, Cleanup, WorkDir)
-	var tempResource *resource.Resource
+	var tempDirPath string
 	if processedGroup.TempDir {
 		// Create temporary directory for this group
 		var err error
-		tempResource, err = r.resourceManager.CreateTempDir(processedGroup.Name, processedGroup.Cleanup)
+		tempDirPath, err = r.resourceManager.CreateTempDir(processedGroup.Name)
 		if err != nil {
 			return fmt.Errorf("failed to create temp directory for group %s: %w", processedGroup.Name, err)
 		}
-		groupResources = append(groupResources, tempResource.ID)
+		groupTempDirs = append(groupTempDirs, tempDirPath)
 	}
 
 	// Determine and set the effective working directory for each command
@@ -323,8 +323,8 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 		// 1. TempDir (if enabled)
 		// 2. Group's WorkDir
 		switch {
-		case tempResource != nil:
-			processedGroup.Commands[i].Dir = tempResource.Path
+		case tempDirPath != "":
+			processedGroup.Commands[i].Dir = tempDirPath
 		case processedGroup.WorkDir != "":
 			processedGroup.Commands[i].Dir = processedGroup.WorkDir
 		}

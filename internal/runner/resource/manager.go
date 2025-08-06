@@ -7,37 +7,24 @@ import (
 	"fmt"
 	"os"
 	"sync"
-	"time"
 
-	"github.com/google/uuid"
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
 
 // Error definitions for the resource package
 var (
-	// ErrResourceNotFound is returned when a requested resource is not found
-	ErrResourceNotFound = errors.New("resource not found")
-	// ErrResourceAlreadyExists is returned when trying to create a resource that already exists
-	ErrResourceAlreadyExists = errors.New("resource already exists")
-	// ErrCleanupFailed is returned when resource cleanup fails
-	ErrCleanupFailed = errors.New("resource cleanup failed")
+	// ErrTempDirNotFound is returned when a requested temporary directory is not found
+	ErrTempDirNotFound = errors.New("temporary directory not found")
+	// ErrCleanupFailed is returned when temporary directory cleanup fails
+	ErrCleanupFailed = errors.New("temporary directory cleanup failed")
 )
 
-// Resource represents a managed resource
-type Resource struct {
-	ID          string    `json:"id"`
-	Path        string    `json:"path"`
-	Created     time.Time `json:"created"`
-	AutoCleanup bool      `json:"auto_cleanup"`
-	Command     string    `json:"command"` // Associated command name
-}
-
-// Manager handles resource lifecycle management
+// Manager handles temporary directory lifecycle management
 type Manager struct {
-	resources map[string]*Resource
-	mu        sync.RWMutex
-	baseDir   string
-	fs        common.FileSystem
+	tempDirs map[string]bool // directory path -> managed flag
+	mu       sync.RWMutex
+	baseDir  string
+	fs       common.FileSystem
 }
 
 // NewManager creates a new resource manager
@@ -51,99 +38,73 @@ func NewManagerWithFS(baseDir string, fs common.FileSystem) *Manager {
 		baseDir = os.TempDir()
 	}
 	return &Manager{
-		resources: make(map[string]*Resource),
-		baseDir:   baseDir,
-		fs:        fs,
+		tempDirs: make(map[string]bool),
+		baseDir:  baseDir,
+		fs:       fs,
 	}
 }
 
-// CreateTempDir creates a temporary directory for a command
-func (m *Manager) CreateTempDir(commandName string, autoCleanup bool) (*Resource, error) {
+// CreateTempDir creates a temporary directory for a command and returns its path
+func (m *Manager) CreateTempDir(commandName string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Generate a unique ID for the resource using UUID
-	uuidStr := uuid.New().String()
-	resourceID := fmt.Sprintf("tempdir_%s_%s", commandName, uuidStr)
-
-	// Check if resource already exists
-	if _, exists := m.resources[resourceID]; exists {
-		return nil, fmt.Errorf("%w: %s", ErrResourceAlreadyExists, resourceID)
-	}
-
-	// Create the directory
-	tempDirPath, err := m.fs.CreateTempDir(m.baseDir, resourceID)
+	// Create the directory with a meaningful prefix
+	prefix := fmt.Sprintf("tempdir_%s_", commandName)
+	tempDirPath, err := m.fs.CreateTempDir(m.baseDir, prefix)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create temporary directory: %w", err)
+		return "", fmt.Errorf("failed to create temporary directory: %w", err)
 	}
 
-	// Create the resource
-	resource := &Resource{
-		ID:          resourceID,
-		Path:        tempDirPath,
-		Created:     time.Now(),
-		AutoCleanup: autoCleanup,
-		Command:     commandName,
-	}
-
-	m.resources[resourceID] = resource
-	return resource, nil
+	// Store the path as managed
+	m.tempDirs[tempDirPath] = true
+	return tempDirPath, nil
 }
 
-// cleanupResources is a helper function that cleans up resources based on a filter function
-// The filter function should return true for resources that should be cleaned up
-func (m *Manager) cleanupResources(filter func(id string, r *Resource) bool, errorMsg string) error {
+// CleanupTempDir cleans up a specific temporary directory
+func (m *Manager) CleanupTempDir(path string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if !m.tempDirs[path] {
+		return fmt.Errorf("%w: %s", ErrTempDirNotFound, path)
+	}
+
+	err := m.fs.RemoveAll(path)
+	if err != nil {
+		return fmt.Errorf("%w: failed to cleanup temp dir %s: %v", ErrCleanupFailed, path, err)
+	}
+
+	delete(m.tempDirs, path)
+	return nil
+}
+
+// CleanupAll cleans up all managed temporary directories
+func (m *Manager) CleanupAll() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	var errs []error
-	for id, resource := range m.resources {
-		if filter == nil || filter(id, resource) {
-			if err := m.cleanupResourceUnsafe(id); err != nil {
-				errs = append(errs, err)
-			}
+	for path := range m.tempDirs {
+		err := m.fs.RemoveAll(path)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to cleanup %s: %w", path, err))
+		} else {
+			delete(m.tempDirs, path)
 		}
 	}
 
 	if len(errs) > 0 {
-		return fmt.Errorf("%w: %s: %d resources failed to cleanup", ErrCleanupFailed, errorMsg, len(errs))
+		return fmt.Errorf("%w: %d temp dirs failed to cleanup", ErrCleanupFailed, len(errs))
 	}
 
 	return nil
 }
 
-// CleanupResource cleans up a specific resource
-func (m *Manager) CleanupResource(id string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+// IsTempDirManaged checks if a given path is managed by this manager
+func (m *Manager) IsTempDirManaged(path string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 
-	if err := m.cleanupResourceUnsafe(id); err != nil {
-		if errors.Is(err, ErrResourceNotFound) {
-			return err
-		}
-		return fmt.Errorf("%w: %v", ErrCleanupFailed, err)
-	}
-	return nil
-}
-
-// CleanupAll cleans up all managed resources
-func (m *Manager) CleanupAll() error {
-	return m.cleanupResources(nil, "")
-}
-
-// cleanupResourceUnsafe cleans up a resource without locking (internal use)
-func (m *Manager) cleanupResourceUnsafe(id string) error {
-	resource, exists := m.resources[id]
-	if !exists {
-		return fmt.Errorf("%w: %s", ErrResourceNotFound, id)
-	}
-
-	// Since all resources are temporary directories, use RemoveAll
-	err := m.fs.RemoveAll(resource.Path)
-	if err != nil {
-		return fmt.Errorf("failed to cleanup resource %s: %w", id, err)
-	}
-
-	delete(m.resources, id)
-	return nil
+	return m.tempDirs[path]
 }
