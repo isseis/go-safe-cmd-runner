@@ -90,9 +90,9 @@ func NewMockFileSystem() *MockFileSystem {
 }
 
 // CreateTempDir creates a mock temporary directory
-func (m *MockFileSystem) CreateTempDir(prefix string) (string, error) {
+func (m *MockFileSystem) CreateTempDir(dir string, prefix string) (string, error) {
 	m.tempDirCounter++
-	tempDir := filepath.Join(os.TempDir(), fmt.Sprintf("%s%d", prefix, m.tempDirCounter))
+	tempDir := filepath.Join(dir, fmt.Sprintf("%s%d", prefix, m.tempDirCounter))
 	m.dirs[tempDir] = true
 	m.files[tempDir] = &MockFileInfo{
 		name:      filepath.Base(tempDir),

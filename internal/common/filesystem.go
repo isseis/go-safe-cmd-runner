@@ -13,7 +13,7 @@ import (
 // for file operations across all packages.
 type FileSystem interface {
 	// CreateTempDir creates a temporary directory with the given prefix
-	CreateTempDir(prefix string) (string, error)
+	CreateTempDir(dir string, prefix string) (string, error)
 
 	// TempDir returns the default directory for temporary files
 	TempDir() string
@@ -43,8 +43,8 @@ func NewDefaultFileSystem() *DefaultFileSystem {
 }
 
 // CreateTempDir creates a temporary directory with the given prefix
-func (fs *DefaultFileSystem) CreateTempDir(prefix string) (string, error) {
-	return os.MkdirTemp("", prefix)
+func (fs *DefaultFileSystem) CreateTempDir(dir string, prefix string) (string, error) {
+	return os.MkdirTemp(dir, prefix)
 }
 
 // TempDir returns the default directory for temporary files

@@ -11,7 +11,7 @@ func TestDefaultFileSystem_CreateTempDir(t *testing.T) {
 	fs := NewDefaultFileSystem()
 
 	// Test creating a temporary directory
-	dir, err := fs.CreateTempDir("test-")
+	dir, err := fs.CreateTempDir("", "test-")
 	if err != nil {
 		t.Fatalf("CreateTempDir failed: %v", err)
 	}
@@ -49,7 +49,7 @@ func TestDefaultFileSystem_FileExists(t *testing.T) {
 	}
 
 	// Test with existing file
-	tempDir, err := fs.CreateTempDir("test-exists-")
+	tempDir, err := fs.CreateTempDir("", "test-exists-")
 	if err != nil {
 		t.Fatalf("CreateTempDir failed: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestDefaultFileSystem_Remove(t *testing.T) {
 	fs := NewDefaultFileSystem()
 
 	// Create a temporary directory
-	tempDir, err := fs.CreateTempDir("test-remove-")
+	tempDir, err := fs.CreateTempDir("", "test-remove-")
 	if err != nil {
 		t.Fatalf("CreateTempDir failed: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestDefaultFileSystem_RemoveAll(t *testing.T) {
 	fs := NewDefaultFileSystem()
 
 	// Create a temporary directory with nested structure
-	tempDir, err := fs.CreateTempDir("test-removeall-")
+	tempDir, err := fs.CreateTempDir("", "test-removeall-")
 	if err != nil {
 		t.Fatalf("CreateTempDir failed: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestDefaultFileSystem_Lstat(t *testing.T) {
 	fs := NewDefaultFileSystem()
 
 	// Create a temporary directory
-	tempDir, err := fs.CreateTempDir("test-lstat-")
+	tempDir, err := fs.CreateTempDir("", "test-lstat-")
 	if err != nil {
 		t.Fatalf("CreateTempDir failed: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestDefaultFileSystem_IsDir(t *testing.T) {
 	fs := NewDefaultFileSystem()
 
 	// Create a temporary directory
-	tempDir, err := fs.CreateTempDir("test-isdir-")
+	tempDir, err := fs.CreateTempDir("", "test-isdir-")
 	if err != nil {
 		t.Fatalf("CreateTempDir failed: %v", err)
 	}

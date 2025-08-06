@@ -94,7 +94,7 @@ func (m *Manager) CreateTempDir(commandName string, autoCleanup bool) (*Resource
 	safeName := sanitizeName(commandName)
 
 	// Create the directory
-	tempDirPath, err := m.fs.CreateTempDir(safeName)
+	tempDirPath, err := m.fs.CreateTempDir(m.baseDir, safeName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temporary directory: %w", err)
 	}
