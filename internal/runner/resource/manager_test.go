@@ -75,33 +75,6 @@ func TestCreateTempDir(t *testing.T) {
 	}
 }
 
-func TestGetResource(t *testing.T) {
-	mockFS := common.NewMockFileSystem()
-	manager := NewManagerWithFS("/tmp", mockFS)
-
-	// Create a resource
-	resource, err := manager.CreateTempDir("test-command", true)
-	if err != nil {
-		t.Fatalf("CreateTempDir() failed: %v", err)
-	}
-
-	// Retrieve the resource
-	retrieved, err := manager.GetResource(resource.ID)
-	if err != nil {
-		t.Fatalf("GetResource() failed: %v", err)
-	}
-
-	if retrieved.ID != resource.ID {
-		t.Errorf("Retrieved resource ID = %v, want %v", retrieved.ID, resource.ID)
-	}
-
-	// Try to get non-existent resource
-	_, err = manager.GetResource("non-existent")
-	if err == nil {
-		t.Error("GetResource() should return error for non-existent resource")
-	}
-}
-
 func TestCleanupResource(t *testing.T) {
 	mockFS := common.NewMockFileSystem()
 	manager := NewManagerWithFS("/tmp", mockFS)
@@ -134,12 +107,6 @@ func TestCleanupResource(t *testing.T) {
 	}
 	if exists {
 		t.Errorf("Resource directory should have been removed: %s", resource.Path)
-	}
-
-	// Verify resource was removed from manager
-	_, err = manager.GetResource(resource.ID)
-	if err == nil {
-		t.Error("Resource should have been removed from manager")
 	}
 
 	// Try to cleanup non-existent resource

@@ -90,19 +90,6 @@ func (m *Manager) CreateTempDir(commandName string, autoCleanup bool) (*Resource
 	return resource, nil
 }
 
-// GetResource retrieves a resource by ID
-func (m *Manager) GetResource(id string) (*Resource, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	resource, exists := m.resources[id]
-	if !exists {
-		return nil, fmt.Errorf("%w: %s", ErrResourceNotFound, id)
-	}
-
-	return resource, nil
-}
-
 // cleanupResources is a helper function that cleans up resources based on a filter function
 // The filter function should return true for resources that should be cleaned up
 func (m *Manager) cleanupResources(filter func(id string, r *Resource) bool, errorMsg string) error {
