@@ -19,6 +19,7 @@ env_allowlist = [
     "COMPREHENSIVE_TEST",
     "NODE_ENV",
     "DEBUG_MODE",
+    "GOTRACEBACK",
 ]
 verify_files = ["/etc/passwd", "/bin/sh"]
 
