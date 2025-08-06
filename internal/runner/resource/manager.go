@@ -157,13 +157,6 @@ func (m *Manager) CleanupAll() error {
 	return m.cleanupResources(nil, "")
 }
 
-// CleanupAutoCleanup cleans up all resources marked for auto cleanup
-func (m *Manager) CleanupAutoCleanup() error {
-	return m.cleanupResources(func(_ string, r *Resource) bool {
-		return r.AutoCleanup
-	}, "auto-cleanup")
-}
-
 // cleanupResourceUnsafe cleans up a resource without locking (internal use)
 func (m *Manager) cleanupResourceUnsafe(id string) error {
 	resource, exists := m.resources[id]
