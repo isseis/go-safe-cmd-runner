@@ -616,7 +616,7 @@ func TestValidator_InvalidTimestamp(t *testing.T) {
 	})
 }
 
-func TestValidator_RecordWithOptions(t *testing.T) {
+func TestValidator_Record(t *testing.T) {
 	tempDir := safeTempDir(t)
 
 	// Create test files
