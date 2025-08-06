@@ -202,11 +202,3 @@ func (m *Manager) GetResourcesForCommand(commandName string) []*Resource {
 
 	return resources
 }
-
-// CleanupOldResources cleans up resources older than the specified duration
-func (m *Manager) CleanupOldResources(maxAge time.Duration) error {
-	cutoff := time.Now().Add(-maxAge)
-	return m.cleanupResources(func(_ string, r *Resource) bool {
-		return r.Created.Before(cutoff)
-	}, "old resources")
-}

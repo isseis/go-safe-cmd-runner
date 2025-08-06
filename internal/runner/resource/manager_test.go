@@ -3,7 +3,6 @@ package resource
 import (
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
@@ -377,41 +376,5 @@ func TestGetResourcesForCommand(t *testing.T) {
 	resourcesC := manager.GetResourcesForCommand("command-c")
 	if len(resourcesC) != 0 {
 		t.Errorf("GetResourcesForCommand(command-c) length = %d, want 0", len(resourcesC))
-	}
-}
-
-func TestCleanupOldResources(t *testing.T) {
-	mockFS := common.NewMockFileSystem()
-	manager := NewManagerWithFS("/tmp", mockFS)
-
-	// Create a resource
-	resource, err := manager.CreateTempDir("test-command", true)
-	if err != nil {
-		t.Fatalf("CreateTempDir() failed: %v", err)
-	}
-
-	// Simulate old resource by modifying creation time
-	resource.Created = time.Now().Add(-2 * time.Hour)
-	manager.resources[resource.ID] = resource
-
-	// Clean up resources older than 1 hour
-	err = manager.CleanupOldResources(1 * time.Hour)
-	if err != nil {
-		t.Errorf("CleanupOldResources() failed: %v", err)
-	}
-
-	// Verify old resource was removed
-	exists, err := mockFS.FileExists(resource.Path)
-	if err != nil {
-		t.Fatalf("FileExists failed: %v", err)
-	}
-	if exists {
-		t.Errorf("Old resource should have been removed: %s", resource.Path)
-	}
-
-	// Verify resource was removed from manager
-	resources := manager.ListResources()
-	if len(resources) != 0 {
-		t.Errorf("Resources should be empty after CleanupOldResources(), got %d", len(resources))
 	}
 }
