@@ -22,24 +22,11 @@ var (
 	ErrResourceAlreadyExists = errors.New("resource already exists")
 	// ErrCleanupFailed is returned when resource cleanup fails
 	ErrCleanupFailed = errors.New("resource cleanup failed")
-	// ErrUnknownResourceType is returned when an unknown resource type is encountered
-	ErrUnknownResourceType = errors.New("unknown resource type")
-)
-
-// Type represents the type of resource
-type Type int
-
-const (
-	// TypeTempDir represents a temporary directory resource
-	TypeTempDir Type = iota
-	// TypeFile represents a file resource
-	TypeFile
 )
 
 // Resource represents a managed resource
 type Resource struct {
 	ID          string    `json:"id"`
-	Type        Type      `json:"type"`
 	Path        string    `json:"path"`
 	Created     time.Time `json:"created"`
 	AutoCleanup bool      `json:"auto_cleanup"`
@@ -94,7 +81,6 @@ func (m *Manager) CreateTempDir(commandName string, autoCleanup bool) (*Resource
 	// Create the resource
 	resource := &Resource{
 		ID:          resourceID,
-		Type:        TypeTempDir,
 		Path:        tempDirPath,
 		Created:     time.Now(),
 		AutoCleanup: autoCleanup,
@@ -186,16 +172,8 @@ func (m *Manager) cleanupResourceUnsafe(id string) error {
 		return fmt.Errorf("%w: %s", ErrResourceNotFound, id)
 	}
 
-	var err error
-	switch resource.Type {
-	case TypeTempDir:
-		err = m.fs.RemoveAll(resource.Path)
-	case TypeFile:
-		err = m.fs.Remove(resource.Path)
-	default:
-		err = fmt.Errorf("%w: %d", ErrUnknownResourceType, resource.Type)
-	}
-
+	// Since all resources are temporary directories, use RemoveAll
+	err := m.fs.RemoveAll(resource.Path)
 	if err != nil {
 		return fmt.Errorf("failed to cleanup resource %s: %w", id, err)
 	}
@@ -232,33 +210,6 @@ func (m *Manager) CleanupOldResources(maxAge time.Duration) error {
 	return m.cleanupResources(func(_ string, r *Resource) bool {
 		return r.Created.Before(cutoff)
 	}, "old resources")
-}
-
-// sanitizeName sanitizes a name for use in file paths
-func sanitizeName(name string) string {
-	// Replace potentially problematic characters with underscores
-	result := ""
-	for _, r := range name {
-		switch {
-		case r >= 'a' && r <= 'z':
-			result += string(r)
-		case r >= 'A' && r <= 'Z':
-			result += string(r)
-		case r >= '0' && r <= '9':
-			result += string(r)
-		case r == '-' || r == '_':
-			result += string(r)
-		default:
-			result += "_"
-		}
-	}
-
-	// Ensure name is not empty
-	if result == "" {
-		result = "unnamed"
-	}
-
-	return result
 }
 
 // ApplyResourceToCommand applies resource management to a command

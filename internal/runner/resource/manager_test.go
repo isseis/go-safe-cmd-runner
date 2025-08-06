@@ -54,10 +54,6 @@ func TestCreateTempDir(t *testing.T) {
 		t.Fatal("CreateTempDir() returned nil resource")
 	}
 
-	if resource.Type != TypeTempDir {
-		t.Errorf("Resource type = %v, want %v", resource.Type, TypeTempDir)
-	}
-
 	if resource.Command != "test-command" {
 		t.Errorf("Resource command = %v, want test-command", resource.Command)
 	}
@@ -418,31 +414,6 @@ func TestCleanupOldResources(t *testing.T) {
 	resources := manager.ListResources()
 	if len(resources) != 0 {
 		t.Errorf("Resources should be empty after CleanupOldResources(), got %d", len(resources))
-	}
-}
-
-func TestSanitizeName(t *testing.T) {
-	tests := []struct {
-		name string
-		want string
-	}{
-		{"simple", "simple"},
-		{"with-hyphens", "with-hyphens"},
-		{"with_underscores", "with_underscores"},
-		{"with spaces", "with_spaces"},
-		{"with/slashes", "with_slashes"},
-		{"with@symbols", "with_symbols"},
-		{"", "unnamed"},
-		{"123", "123"},
-		{"Mixed-CASE_123", "Mixed-CASE_123"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := sanitizeName(tt.name); got != tt.want {
-				t.Errorf("sanitizeName() = %v, want %v", got, tt.want)
-			}
-		})
 	}
 }
 
