@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
 func TestNewManager(t *testing.T) {
@@ -414,107 +413,5 @@ func TestCleanupOldResources(t *testing.T) {
 	resources := manager.ListResources()
 	if len(resources) != 0 {
 		t.Errorf("Resources should be empty after CleanupOldResources(), got %d", len(resources))
-	}
-}
-
-func TestApplyResourceToCommand(t *testing.T) {
-	mockFS := common.NewMockFileSystem()
-	manager := NewManagerWithFS("/tmp", mockFS)
-
-	cmd := &runnertypes.Command{
-		Name: "test-command",
-		Cmd:  "echo",
-		Args: []string{"hello"},
-		Dir:  "",
-	}
-
-	// Test with temp directory disabled
-	err := manager.ApplyResourceToCommand(cmd, false)
-	if err != nil {
-		t.Errorf("ApplyResourceToCommand() failed: %v", err)
-	}
-	if cmd.Dir != "" {
-		t.Error("Command directory should not be modified when temp directory is disabled")
-	}
-
-	// Test with temp directory enabled
-	err = manager.ApplyResourceToCommand(cmd, true)
-	if err != nil {
-		t.Errorf("ApplyResourceToCommand() failed: %v", err)
-	}
-	if cmd.Dir == "" {
-		t.Error("Command directory should be set when temp directory is enabled")
-	}
-
-	// Verify temp directory was created
-	exists, err := mockFS.FileExists(cmd.Dir)
-	if err != nil {
-		t.Fatalf("FileExists failed: %v", err)
-	}
-	if !exists {
-		t.Errorf("Temp directory should exist: %s", cmd.Dir)
-	}
-
-	// Verify TEMP_DIR environment variable was added
-	found := false
-	for _, env := range cmd.Env {
-		if strings.HasPrefix(env, "TEMP_DIR=") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Error("TEMP_DIR environment variable should be added")
-	}
-}
-
-func TestApplyResourceToCommandWithExistingDir(t *testing.T) {
-	mockFS := common.NewMockFileSystem()
-	manager := NewManagerWithFS("/tmp", mockFS)
-
-	cmd := &runnertypes.Command{
-		Name: "test-command",
-		Cmd:  "echo",
-		Args: []string{"hello"},
-		Dir:  "/existing/dir",
-	}
-
-	// Test with temp directory enabled but existing directory
-	err := manager.ApplyResourceToCommand(cmd, true)
-	if err != nil {
-		t.Errorf("ApplyResourceToCommand() failed: %v", err)
-	}
-	if cmd.Dir != "/existing/dir" {
-		t.Error("Command directory should not be modified when already set")
-	}
-}
-
-func TestApplyResourceToCommandWithTemplatePlaceholder(t *testing.T) {
-	mockFS := common.NewMockFileSystem()
-	manager := NewManagerWithFS("/tmp", mockFS)
-
-	cmd := &runnertypes.Command{
-		Name: "test-command",
-		Cmd:  "echo",
-		Args: []string{"hello"},
-		Dir:  "{{.temp_dir}}",
-	}
-
-	// Test with temp directory enabled and template placeholder
-	err := manager.ApplyResourceToCommand(cmd, true)
-	if err != nil {
-		t.Errorf("ApplyResourceToCommand() failed: %v", err)
-	}
-	if cmd.Dir == "{{.temp_dir}}" {
-		t.Error("Template placeholder should be replaced with actual directory")
-	}
-
-	// Verify temp directory was created
-	exists, err := mockFS.FileExists(cmd.Dir)
-	if err != nil {
-		t.Fatalf("FileExists failed: %v", err)
-	}
-	if !exists {
-		t.Errorf("Temp directory should exist: %s", cmd.Dir)
 	}
 }

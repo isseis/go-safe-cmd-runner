@@ -11,7 +11,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
 // Error definitions for the resource package
@@ -210,28 +209,4 @@ func (m *Manager) CleanupOldResources(maxAge time.Duration) error {
 	return m.cleanupResources(func(_ string, r *Resource) bool {
 		return r.Created.Before(cutoff)
 	}, "old resources")
-}
-
-// ApplyResourceToCommand applies resource management to a command
-func (m *Manager) ApplyResourceToCommand(cmd *runnertypes.Command, tempDirEnabled bool) error {
-	if !tempDirEnabled {
-		return nil
-	}
-
-	// Create temporary directory for the command
-	resource, err := m.CreateTempDir(cmd.Name, true)
-	if err != nil {
-		return fmt.Errorf("failed to create temp directory for command %s: %w", cmd.Name, err)
-	}
-
-	// Set the command's working directory to the temp directory if not already set
-	if cmd.Dir == "" || cmd.Dir == "{{.temp_dir}}" {
-		cmd.Dir = resource.Path
-	}
-
-	// Add temp_dir variable to environment for template expansion
-	tempDirEnv := fmt.Sprintf("TEMP_DIR=%s", resource.Path)
-	cmd.Env = append(cmd.Env, tempDirEnv)
-
-	return nil
 }
