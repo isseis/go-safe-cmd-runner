@@ -13,13 +13,10 @@ import (
 // for file operations across all packages.
 type FileSystem interface {
 	// CreateTempDir creates a temporary directory with the given prefix
-	CreateTempDir(prefix string) (string, error)
+	CreateTempDir(dir string, prefix string) (string, error)
 
 	// TempDir returns the default directory for temporary files
 	TempDir() string
-
-	// MkdirAll creates a directory path recursively
-	MkdirAll(path string, perm os.FileMode) error
 
 	// RemoveAll removes a directory and all its contents
 	RemoveAll(path string) error
@@ -46,18 +43,13 @@ func NewDefaultFileSystem() *DefaultFileSystem {
 }
 
 // CreateTempDir creates a temporary directory with the given prefix
-func (fs *DefaultFileSystem) CreateTempDir(prefix string) (string, error) {
-	return os.MkdirTemp("", prefix)
+func (fs *DefaultFileSystem) CreateTempDir(dir string, prefix string) (string, error) {
+	return os.MkdirTemp(dir, prefix)
 }
 
 // TempDir returns the default directory for temporary files
 func (fs *DefaultFileSystem) TempDir() string {
 	return os.TempDir()
-}
-
-// MkdirAll creates a directory path recursively
-func (fs *DefaultFileSystem) MkdirAll(path string, perm os.FileMode) error {
-	return os.MkdirAll(path, perm)
 }
 
 // RemoveAll removes a directory and all its contents

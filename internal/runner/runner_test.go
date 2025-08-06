@@ -3,7 +3,6 @@ package runner
 import (
 	"context"
 	"errors"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -92,19 +91,14 @@ type MockFileSystem struct {
 	mock.Mock
 }
 
-func (m *MockFileSystem) CreateTempDir(prefix string) (string, error) {
-	args := m.Called(prefix)
+func (m *MockFileSystem) CreateTempDir(dir string, prefix string) (string, error) {
+	args := m.Called(dir, prefix)
 	return args.String(0), args.Error(1)
 }
 
 func (m *MockFileSystem) TempDir() string {
 	args := m.Called()
 	return args.String(0)
-}
-
-func (m *MockFileSystem) MkdirAll(path string, perm fs.FileMode) error {
-	args := m.Called(path, perm)
-	return args.Error(0)
 }
 
 func (m *MockFileSystem) RemoveAll(path string) error {
@@ -1565,8 +1559,8 @@ func TestCommandGroup_TempDir_Detailed(t *testing.T) {
 		// Create mock file system
 		mockFS := &MockFileSystem{}
 
-		// Set expectation for MkdirAll - resource manager will create temp directory
-		mockFS.On("MkdirAll", mock.AnythingOfType("string"), mock.AnythingOfType("fs.FileMode")).Return(nil)
+		// Set expectation for CreateTempDir - resource manager will create temp directory
+		mockFS.On("CreateTempDir", mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return("/tmp/test-temp-dir", nil)
 		// Set expectation for RemoveAll - resource manager will clean up temp directory
 		mockFS.On("RemoveAll", mock.AnythingOfType("string")).Return(nil)
 
@@ -1608,8 +1602,8 @@ func TestCommandGroup_TempDir_Detailed(t *testing.T) {
 		mockFS.AssertExpectations(t)
 		mockExecutor.AssertExpectations(t)
 
-		// Verify that MkdirAll was called (temp directory was created)
-		mockFS.AssertCalled(t, "MkdirAll", mock.AnythingOfType("string"), mock.AnythingOfType("fs.FileMode"))
+		// Verify that CreateTempDir was called (temp directory was created)
+		mockFS.AssertCalled(t, "CreateTempDir", mock.AnythingOfType("string"), mock.AnythingOfType("string"))
 	})
 
 	t.Run("TempDir with cleanup enabled", func(t *testing.T) {
@@ -1633,8 +1627,8 @@ func TestCommandGroup_TempDir_Detailed(t *testing.T) {
 		// Create mock file system
 		mockFS := &MockFileSystem{}
 
-		// Set expectation for MkdirAll - resource manager will create temp directory
-		mockFS.On("MkdirAll", mock.AnythingOfType("string"), mock.AnythingOfType("fs.FileMode")).Return(nil)
+		// Set expectation for CreateTempDir - resource manager will create temp directory
+		mockFS.On("CreateTempDir", mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return("/tmp/test-temp-dir", nil)
 		// Set expectation for RemoveAll - resource manager will clean up temp directory
 		mockFS.On("RemoveAll", mock.AnythingOfType("string")).Return(nil)
 
@@ -1676,8 +1670,8 @@ func TestCommandGroup_TempDir_Detailed(t *testing.T) {
 		mockFS.AssertExpectations(t)
 		mockExecutor.AssertExpectations(t)
 
-		// Verify that MkdirAll was called (temp directory was created)
-		mockFS.AssertCalled(t, "MkdirAll", mock.AnythingOfType("string"), mock.AnythingOfType("fs.FileMode"))
+		// Verify that CreateTempDir was called (temp directory was created)
+		mockFS.AssertCalled(t, "CreateTempDir", mock.AnythingOfType("string"), mock.AnythingOfType("string"))
 	})
 
 	t.Run("Command with existing Dir is not overridden by TempDir", func(t *testing.T) {
@@ -1700,8 +1694,8 @@ func TestCommandGroup_TempDir_Detailed(t *testing.T) {
 		// Create mock file system
 		mockFS := &MockFileSystem{}
 
-		// Set expectation for MkdirAll - temp directory should still be created
-		mockFS.On("MkdirAll", mock.AnythingOfType("string"), mock.AnythingOfType("fs.FileMode")).Return(nil)
+		// Set expectation for CreateTempDir - temp directory should still be created
+		mockFS.On("CreateTempDir", mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return("/tmp/test-temp-dir", nil)
 		// Set expectation for RemoveAll - resource manager will clean up temp directory
 		mockFS.On("RemoveAll", mock.AnythingOfType("string")).Return(nil)
 
@@ -2085,8 +2079,8 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 
 		// Create mock file system that fails on directory creation
 		mockFS := &MockFileSystem{}
-		mockFS.On("MkdirAll", mock.AnythingOfType("string"), mock.AnythingOfType("fs.FileMode")).
-			Return(errPermissionDenied)
+		mockFS.On("CreateTempDir", mock.AnythingOfType("string"), mock.AnythingOfType("string")).
+			Return("", errPermissionDenied)
 
 		// Create resource manager with mock filesystem
 		resourceManager := resource.NewManagerWithFS("/tmp", mockFS)
@@ -2139,7 +2133,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		// Create mock file system
 		mockFS := &MockFileSystem{}
 		// Directory creation succeeds
-		mockFS.On("MkdirAll", mock.AnythingOfType("string"), mock.AnythingOfType("fs.FileMode")).Return(nil)
+		mockFS.On("CreateTempDir", mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return("/tmp/test-temp-dir", nil)
 		// Directory removal fails
 		mockFS.On("RemoveAll", mock.AnythingOfType("string")).Return(errDeviceBusy)
 
@@ -2206,11 +2200,11 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		// Create mock file system
 		mockFS := &MockFileSystem{}
 		// First directory creation succeeds
-		mockFS.On("MkdirAll", mock.AnythingOfType("string"), mock.AnythingOfType("fs.FileMode")).
-			Return(nil).Once()
+		mockFS.On("CreateTempDir", mock.AnythingOfType("string"), mock.AnythingOfType("string")).
+			Return("/tmp/test-temp-dir", nil).Once()
 		// Second directory creation fails
-		mockFS.On("MkdirAll", mock.AnythingOfType("string"), mock.AnythingOfType("fs.FileMode")).
-			Return(errDiskFull)
+		mockFS.On("CreateTempDir", mock.AnythingOfType("string"), mock.AnythingOfType("string")).
+			Return("", errDiskFull)
 
 		// Cleanup for first directory succeeds
 		mockFS.On("RemoveAll", mock.AnythingOfType("string")).Return(nil)
@@ -2273,7 +2267,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		// Create mock file system
 		mockFS := &MockFileSystem{}
 		// Directory creation and cleanup should succeed
-		mockFS.On("MkdirAll", mock.AnythingOfType("string"), mock.AnythingOfType("fs.FileMode")).Return(nil)
+		mockFS.On("CreateTempDir", mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return("/tmp/test-temp-dir", nil)
 		mockFS.On("RemoveAll", mock.AnythingOfType("string")).Return(nil)
 
 		// Create resource manager with mock filesystem
@@ -2340,7 +2334,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 
 		// Create mock file system
 		mockFS := &MockFileSystem{}
-		mockFS.On("MkdirAll", mock.AnythingOfType("string"), mock.AnythingOfType("fs.FileMode")).Return(nil)
+		mockFS.On("CreateTempDir", mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return("/tmp/test-temp-dir", nil)
 		mockFS.On("RemoveAll", mock.AnythingOfType("string")).Return(errCleanupFailed)
 
 		// Create resource manager with mock filesystem
@@ -2397,10 +2391,10 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 
 		// Create mock file system that fails after first successful call
 		mockFS := &MockFileSystem{}
-		mockFS.On("MkdirAll", mock.AnythingOfType("string"), mock.AnythingOfType("fs.FileMode")).
-			Return(nil).Once()
-		mockFS.On("MkdirAll", mock.AnythingOfType("string"), mock.AnythingOfType("fs.FileMode")).
-			Return(errResourceBusy)
+		mockFS.On("CreateTempDir", mock.AnythingOfType("string"), mock.AnythingOfType("string")).
+			Return("/tmp/test-temp-dir", nil).Once()
+		mockFS.On("CreateTempDir", mock.AnythingOfType("string"), mock.AnythingOfType("string")).
+			Return("", errResourceBusy)
 		mockFS.On("RemoveAll", mock.AnythingOfType("string")).Return(nil)
 
 		// Create resource manager with mock filesystem

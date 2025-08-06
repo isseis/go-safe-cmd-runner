@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -35,11 +34,6 @@ const (
 	TypeTempDir Type = iota
 	// TypeFile represents a file resource
 	TypeFile
-)
-
-const (
-	// defaultDirPerm is the default permission for created directories
-	defaultDirPerm = 0o750
 )
 
 // Resource represents a managed resource
@@ -91,12 +85,9 @@ func (m *Manager) CreateTempDir(commandName string, autoCleanup bool) (*Resource
 		return nil, fmt.Errorf("%w: %s", ErrResourceAlreadyExists, resourceID)
 	}
 
-	// Create the temporary directory path using the resource ID for uniqueness
-	safeName := sanitizeName(commandName)
-	tempDirPath := filepath.Join(m.baseDir, "cmd-runner", safeName, resourceID)
-
 	// Create the directory
-	if err := m.fs.MkdirAll(tempDirPath, defaultDirPerm); err != nil {
+	tempDirPath, err := m.fs.CreateTempDir(m.baseDir, resourceID)
+	if err != nil {
 		return nil, fmt.Errorf("failed to create temporary directory: %w", err)
 	}
 
