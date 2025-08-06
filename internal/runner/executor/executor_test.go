@@ -18,11 +18,11 @@ type mockFileSystem struct {
 	err error
 }
 
-func (m *mockFileSystem) CreateTempDir(prefix string) (string, error) {
+func (m *mockFileSystem) CreateTempDir(dir, prefix string) (string, error) {
 	if m.err != nil {
 		return "", m.err
 	}
-	return os.MkdirTemp("", prefix)
+	return os.MkdirTemp(dir, prefix)
 }
 
 func (m *mockFileSystem) RemoveAll(_ string) error {

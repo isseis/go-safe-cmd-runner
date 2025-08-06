@@ -46,22 +46,6 @@ func (m *MockPrivilegeManager) IsPrivilegedExecutionSupported() bool {
 	return m.Supported
 }
 
-// ElevatePrivileges elevates privileges (mock implementation)
-func (m *MockPrivilegeManager) ElevatePrivileges() error {
-	if m.ShouldFail {
-		return ErrMockPrivilegeElevationFailed
-	}
-	return nil
-}
-
-// DropPrivileges drops privileges (mock implementation)
-func (m *MockPrivilegeManager) DropPrivileges() error {
-	if m.ShouldFail {
-		return ErrMockPrivilegeElevationFailed
-	}
-	return nil
-}
-
 // GetCurrentUID returns the current user ID
 func (m *MockPrivilegeManager) GetCurrentUID() int {
 	return MockUID

@@ -302,33 +302,3 @@ func (m *UnixPrivilegeManager) GetOriginalUID() int {
 func (m *UnixPrivilegeManager) GetMetrics() Metrics {
 	return m.metrics.GetSnapshot()
 }
-
-// ElevatePrivileges elevates privileges to root (implementation of runnertypes.PrivilegeManager)
-func (m *UnixPrivilegeManager) ElevatePrivileges() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if !m.privilegeSupported {
-		return runnertypes.ErrPrivilegedExecutionNotAvailable
-	}
-
-	if err := syscall.Seteuid(0); err != nil {
-		return &Error{
-			Operation:   runnertypes.OperationCommandExecution,
-			CommandName: "direct_elevation",
-			OriginalUID: m.originalUID,
-			TargetUID:   0,
-			SyscallErr:  err,
-		}
-	}
-
-	return nil
-}
-
-// DropPrivileges drops privileges to original user (implementation of runnertypes.PrivilegeManager)
-func (m *UnixPrivilegeManager) DropPrivileges() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	return m.restorePrivileges()
-}

@@ -289,8 +289,8 @@ func (e *DefaultExecutor) validatePrivilegedCommand(cmd runnertypes.Command) err
 // osFileSystem implements FileSystem using the standard os package
 type osFileSystem struct{}
 
-func (fs *osFileSystem) CreateTempDir(prefix string) (string, error) {
-	return os.MkdirTemp("", prefix)
+func (fs *osFileSystem) CreateTempDir(dir, prefix string) (string, error) {
+	return os.MkdirTemp(dir, prefix)
 }
 
 func (fs *osFileSystem) RemoveAll(path string) error {
