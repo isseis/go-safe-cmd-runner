@@ -36,11 +36,6 @@ const (
 	TypeFile
 )
 
-const (
-	// defaultDirPerm is the default permission for created directories
-	defaultDirPerm = 0o750
-)
-
 // Resource represents a managed resource
 type Resource struct {
 	ID          string    `json:"id"`
