@@ -133,10 +133,8 @@ var (
 	ErrPrivilegedExecutionNotAvailable = fmt.Errorf("privileged execution not available: binary lacks required SUID bit or running as non-root user")
 )
 
-// PrivilegeManager interface defines methods for privilege elevation/dropping
+// PrivilegeManager interface defines methods for privilege management
 type PrivilegeManager interface {
-	ElevatePrivileges() error
-	DropPrivileges() error
 	IsPrivilegedExecutionSupported() bool
 	WithPrivileges(elevationCtx ElevationContext, fn func() error) error
 }

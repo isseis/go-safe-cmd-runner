@@ -105,17 +105,8 @@ func dropToRealUID() error {
 type PrivilegeManager interface {
     // 既存メソッド
     IsPrivilegedExecutionSupported() bool
-    ExecuteWithPrivileges(cmd *exec.Cmd) error
     GetOriginalUID() int
-
-    // 新規追加: 早期特権放棄サポート
-    ElevatePrivileges() error                    // seteuid(0)
-    DropPrivileges() error                       // seteuid(getuid())
     WithPrivileges(ctx context.Context, elevationCtx ElevationContext, fn func() error) error
-
-    // 状態確認
-    IsCurrentlyElevated() bool                   // 現在特権状態か
-    CanElevatePrivileges() bool                  // 特権昇格可能か
 }
 
 // ElevationContext contains context for privilege operations
@@ -146,9 +137,10 @@ const (
 
 ```go
 // 従来: root権限でディレクトリ作成 → chown で所有権変更
-func (m *Manager) CreateTempDir(commandName string) (*Resource, error) {
+func (m *Manager) CreateTempDir(commandName string, autoCleanup bool) (*Resource, error) {
     // root権限でディレクトリ作成
-    if err := m.fs.MkdirAll(tempDirPath, defaultDirPerm); err != nil {
+    tempDirPath, err := m.fs.CreateTempDir(m.baseDir, resourceID)
+    if err != nil {
         return nil, fmt.Errorf("failed to create directory: %w", err)
     }
 
@@ -165,9 +157,10 @@ func (m *Manager) CreateTempDir(commandName string) (*Resource, error) {
 
 ```go
 // 新設計: 実UID権限でディレクトリ作成（adjustDirectoryOwnership不要）
-func (m *Manager) CreateTempDir(commandName string) (*Resource, error) {
+func (m *Manager) CreateTempDir(commandName string, autoCleanup bool) (*Resource, error) {
     // 既に実UID権限で動作しているため、自然にユーザー権限で作成される
-    if err := m.fs.MkdirAll(tempDirPath, defaultDirPerm); err != nil {
+    tempDirPath, err := m.fs.CreateTempDir(m.baseDir, resourceID)
+    if err != nil {
         return nil, fmt.Errorf("failed to create temporary directory: %w", err)
     }
 
@@ -176,10 +169,11 @@ func (m *Manager) CreateTempDir(commandName string) (*Resource, error) {
 
     resource := &Resource{
         ID:          resourceID,
-        Type:        ResourceTypeTempDir,
+        Type:        TypeTempDir,
         Path:        tempDirPath,
-        CommandName: commandName,
-        CreatedAt:   time.Now(),
+        Command:     commandName,
+        Created:     time.Now(),
+        AutoCleanup: autoCleanup,
     }
 
     m.resources[resourceID] = resource
@@ -397,7 +391,7 @@ type PrivilegeAuditLog struct {
     Timestamp   time.Time    `json:"timestamp"`
     Operation   Operation    `json:"operation"`
     Action      string       `json:"action"`        // "elevate", "restore", "failed"
-    CommandName string       `json:"command_name"`
+    Command     string       `json:"command"`
     ProcessID   int          `json:"process_id"`
     OriginalUID int          `json:"original_uid"`
     TargetUID   int          `json:"target_uid"`
@@ -427,8 +421,6 @@ func (pm *Manager) logPrivilegeOperation(log PrivilegeAuditLog) {
 // 1. PrivilegeManager インターフェース拡張
 type PrivilegeManager interface {
     // ... 既存メソッド
-    ElevatePrivileges() error
-    DropPrivileges() error
     WithPrivileges(ctx context.Context, elevationCtx ElevationContext, fn func() error) error
 }
 
@@ -453,9 +445,10 @@ func main() {
 
 ```go
 // adjustDirectoryOwnership メソッドの削除または無効化
-func (m *Manager) CreateTempDir(commandName string) (*Resource, error) {
+func (m *Manager) CreateTempDir(commandName string, autoCleanup bool) (*Resource, error) {
     // 実UID権限で自然にディレクトリ作成
-    if err := m.fs.MkdirAll(tempDirPath, defaultDirPerm); err != nil {
+    tempDirPath, err := m.fs.CreateTempDir(m.baseDir, resourceID)
+    if err != nil {
         return nil, fmt.Errorf("failed to create temporary directory: %w", err)
     }
 
@@ -690,6 +683,115 @@ alerts:
 - [ ] 特権昇格のオーバーヘッドが1ms未満
 - [ ] メモリ使用量の増加が5%未満
 
-## 12. まとめ
+## 12. 将来の拡張可能性
+
+### 12.1 直接的特権制御メソッド（YAGNI原則により現在は未実装）
+
+将来的に直接的な特権制御が必要になった場合に追加予定のメソッド：
+
+```go
+// PrivilegeManagerインターフェースへの将来的な追加候補
+type PrivilegeManager interface {
+    // ... 既存メソッド
+
+    // 将来の拡張: 直接的特権制御（必要時に実装）
+    ElevatePrivileges() error                    // seteuid(0) - テスト・デバッグ用途
+    DropPrivileges() error                       // seteuid(getuid()) - 緊急時復旧用途
+
+    // 将来の拡張: 状態確認メソッド（必要時に実装）
+    IsCurrentlyElevated() bool                   // 現在特権状態か - デバッグ・テスト用途
+    CanElevatePrivileges() bool                  // 特権昇格可能か - 事前チェック用途
+}
+```
+
+#### 12.1.1 想定される使用場面
+
+**A. テスト・デバッグ用途**
+```go
+// テストで特権状態を直接制御
+func TestPrivilegeState(t *testing.T) {
+    manager := privilege.NewManager(slog.Default())
+
+    // 手動で特権昇格
+    err := manager.ElevatePrivileges()
+    require.NoError(t, err)
+
+    // 何らかのテスト実行
+
+    // 手動で特権放棄
+    err = manager.DropPrivileges()
+    require.NoError(t, err)
+}
+```
+
+**B. 長時間特権が必要な処理**
+```go
+// 例外的なケース：複数の連続する特権操作
+func (m *Manager) performMultiplePrivilegedOperations() error {
+    if err := m.privilegeManager.ElevatePrivileges(); err != nil {
+        return err
+    }
+    defer m.privilegeManager.DropPrivileges()
+
+    // 複数の特権操作を連続実行
+    for _, op := range operations {
+        if err := op.execute(); err != nil {
+            return err
+        }
+    }
+    return nil
+}
+```
+
+**C. 緊急時・エラー処理**
+```go
+// 緊急時の状態復旧
+func (m *Manager) emergencyRestore() error {
+    // 現在の状態を確認
+    if m.privilegeManager.IsCurrentlyElevated() {
+        return m.privilegeManager.DropPrivileges()
+    }
+    return nil
+}
+```
+
+**D. 事前チェック・バリデーション**
+```go
+// 特権が必要な処理の事前チェック
+func (m *Manager) validatePrivilegedOperation() error {
+    if !m.privilegeManager.CanElevatePrivileges() {
+        return fmt.Errorf("privileged operation not supported in current environment")
+    }
+
+    if m.privilegeManager.IsCurrentlyElevated() {
+        return fmt.Errorf("already elevated - unexpected state")
+    }
+
+    return nil
+}
+```
+
+#### 12.1.2 実装ガイドライン
+
+将来実装する際の注意点：
+
+- **セキュリティファースト**: 直接制御メソッドは危険性が高いため慎重に実装
+- **監査ログ**: すべての直接制御を詳細にログ記録
+- **権限検証**: 呼び出し前後で権限状態を厳密に検証
+- **エラー処理**: 失敗時の安全な状態復帰を保証
+
+### 12.2 その他の将来的拡張
+
+#### 12.2.1 高度な監査機能
+- リアルタイム権限変更通知
+- 外部セキュリティシステムとの統合
+- 権限操作の統計分析
+
+#### 12.2.2 パフォーマンス最適化
+- 権限昇格のバッチ処理
+- キャッシュベースの権限状態管理
+- 非同期権限操作
+
+## 13. まとめ
 
 早期特権放棄アーキテクチャにより、SUIDバイナリのセキュリティリスクを大幅に軽減し、自然なファイル所有権管理を実現する。この設計は、セキュリティのベストプラクティスに準拠しつつ、既存機能との完全な互換性を保持する。

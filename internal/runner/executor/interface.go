@@ -47,8 +47,8 @@ type OutputWriter interface {
 
 // FileSystem defines the interface for file system operations
 type FileSystem interface {
-	// CreateTempDir creates a temporary directory
-	CreateTempDir(prefix string) (string, error)
+	// CreateTempDir creates a temporary directory with the given prefix
+	CreateTempDir(dir string, prefix string) (string, error)
 
 	// RemoveAll removes a directory and all its contents
 	RemoveAll(path string) error

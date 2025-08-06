@@ -19,14 +19,7 @@ type PrivilegeManager interface {
     GetOriginalUID() int
 
     // 早期特権放棄サポート（新規追加）
-    ElevatePrivileges() error                    // seteuid(0) 実行
-    DropPrivileges() error                       // seteuid(getuid()) 実行
     WithPrivileges(ctx context.Context, elevationCtx ElevationContext, fn func() error) error
-
-    // 状態確認メソッド（新規追加）
-    IsCurrentlyElevated() bool                   // 現在特権状態か確認
-    CanElevatePrivileges() bool                  // 特権昇格可能性確認
-    GetCurrentState() PrivilegeState             // 現在の詳細な権限状態取得
 }
 
 // PrivilegeState represents the current privilege state
@@ -42,7 +35,7 @@ type PrivilegeState struct {
 // ElevationContext contains context information for privilege operations
 type ElevationContext struct {
     Operation   Operation `json:"operation"`
-    CommandName string    `json:"command_name,omitempty"`
+    Command     string    `json:"command,omitempty"`
     FilePath    string    `json:"file_path,omitempty"`
     StartTime   time.Time `json:"start_time"`
     OriginalUID int       `json:"original_uid"`
@@ -577,7 +570,8 @@ func (m *Manager) CreateTempDir(commandName string) (*Resource, error) {
     // Create directory with real UID ownership (no privilege escalation needed)
     // Since we're running as real UID after early privilege drop,
     // the directory will naturally be owned by the correct user
-    if err := m.fs.MkdirAll(tempDirPath, defaultDirPerm); err != nil {
+    tempDirPath, err := m.fs.CreateTempDir(m.baseDir, resourceID)
+    if err != nil {
         return nil, fmt.Errorf("failed to create temporary directory: %w", err)
     }
 
@@ -587,7 +581,7 @@ func (m *Manager) CreateTempDir(commandName string) (*Resource, error) {
     // Create the resource
     resource := &Resource{
         ID:          resourceID,
-        Type:        ResourceTypeTempDir,
+        Type:        TypeTempDir,
         Path:        tempDirPath,
         CommandName: commandName,
         CreatedAt:   time.Now(),
@@ -901,7 +895,7 @@ type PrivilegeAuditLog struct {
     Timestamp    time.Time `json:"timestamp"`
     Operation    Operation `json:"operation"`
     Action       string    `json:"action"`        // "elevate", "restore", "early_drop", "emergency_shutdown"
-    CommandName  string    `json:"command_name,omitempty"`
+    Command      string    `json:"command,omitempty"`
     ProcessID    int       `json:"process_id"`
     OriginalUID  int       `json:"original_uid"`
     OriginalEUID int       `json:"original_euid,omitempty"`
@@ -990,6 +984,16 @@ func (m *EarlyDropManager) updateMetrics(duration time.Duration, success bool) {
 - [ ] Command Executor での特権管理統合
 - [ ] 設定ファイル対応追加
 
+### 8.3 将来的な拡張（YAGNI原則により現在は未実装）
+
+- [ ] `ElevatePrivileges()` メソッド（テスト・デバッグ用途向け）
+- [ ] `DropPrivileges()` メソッド（緊急時復旧用途向け）
+- [ ] `IsCurrentlyElevated()` メソッド（状態確認用途向け）
+- [ ] `CanElevatePrivileges()` メソッド（事前チェック用途向け）
+- [ ] `GetCurrentState()` メソッド（詳細状態取得用途向け）
+- [ ] 直接的特権制御の監査ログ強化
+- [ ] 長時間特権保持のための最適化
+
 ### 8.3 テスト実装
 
 - [ ] SUID環境での単体テスト
@@ -1003,6 +1007,222 @@ func (m *EarlyDropManager) updateMetrics(duration time.Duration, success bool) {
 - [ ] 詳細な監査ログ実装
 - [ ] セキュリティイベント記録
 - [ ] 複数出力先でのログ記録
+
+## 9. 将来的な拡張仕様（YAGNI原則により現在は未実装）
+
+### 9.1 直接的特権制御メソッド
+
+現在は `WithPrivileges()` による安全な特権管理のみを実装しているが、将来的に必要になった場合の拡張仕様：
+
+#### 9.1.1 ElevatePrivileges() メソッド
+
+```go
+// ElevatePrivileges elevates privileges to root (future extension)
+func (m *EarlyDropManager) ElevatePrivileges() error {
+    m.mutex.Lock()
+    defer m.mutex.Unlock()
+
+    // 状態チェック
+    if m.currentState.IsElevated {
+        return fmt.Errorf("%w: already elevated", ErrAlreadyElevated)
+    }
+
+    if !m.currentState.CanElevate {
+        return fmt.Errorf("%w: cannot elevate in current state", ErrNotPrivilegedBinary)
+    }
+
+    // 権限昇格実行
+    if err := syscall.Seteuid(0); err != nil {
+        return &PrivilegeError{
+            Operation:   OperationDirectElevation,
+            Reason:      "direct privilege elevation failed",
+            OriginalUID: m.originalUID,
+            TargetUID:   0,
+            SystemError: err,
+            Timestamp:   time.Now(),
+        }
+    }
+
+    // 状態更新
+    m.currentState.EffectiveUID = 0
+    m.currentState.IsElevated = true
+    m.currentState.LastChanged = time.Now()
+
+    m.logger.Warn("Direct privilege elevation performed",
+        "original_uid", m.originalUID,
+        "target_uid", 0,
+        "operation", OperationDirectElevation)
+
+    return nil
+}
+```
+
+#### 9.1.2 DropPrivileges() メソッド
+
+```go
+// DropPrivileges drops privileges to original UID (future extension)
+func (m *EarlyDropManager) DropPrivileges() error {
+    m.mutex.Lock()
+    defer m.mutex.Unlock()
+
+    // 状態チェック
+    if !m.currentState.IsElevated {
+        return fmt.Errorf("%w: not currently elevated", ErrNotElevated)
+    }
+
+    // 権限放棄実行
+    if err := syscall.Seteuid(m.originalUID); err != nil {
+        // 権限放棄失敗は致命的
+        m.emergencyShutdown(err, "direct privilege drop failed")
+    }
+
+    // 状態更新
+    m.currentState.EffectiveUID = m.originalUID
+    m.currentState.IsElevated = false
+    m.currentState.LastChanged = time.Now()
+
+    m.logger.Info("Direct privilege drop completed",
+        "target_uid", m.originalUID,
+        "operation", OperationDirectDrop)
+
+    return nil
+}
+```
+
+### 9.2 状態確認メソッド
+
+#### 9.2.1 IsCurrentlyElevated() メソッド
+
+```go
+// IsCurrentlyElevated checks if privileges are currently elevated (future extension)
+func (m *EarlyDropManager) IsCurrentlyElevated() bool {
+    m.mutex.RLock()
+    defer m.mutex.RUnlock()
+
+    return m.currentState.IsElevated
+}
+```
+
+#### 9.2.2 CanElevatePrivileges() メソッド
+
+```go
+// CanElevatePrivileges checks if privilege elevation is possible (future extension)
+func (m *EarlyDropManager) CanElevatePrivileges() bool {
+    m.mutex.RLock()
+    defer m.mutex.RUnlock()
+
+    return m.currentState.CanElevate
+}
+```
+
+#### 9.2.3 GetCurrentState() メソッド
+
+```go
+// GetCurrentState returns detailed privilege state information (future extension)
+func (m *EarlyDropManager) GetCurrentState() PrivilegeState {
+    m.mutex.RLock()
+    defer m.mutex.RUnlock()
+
+    // Return a copy to prevent external modification
+    return PrivilegeState{
+        RealUID:      m.currentState.RealUID,
+        EffectiveUID: m.currentState.EffectiveUID,
+        IsElevated:   m.currentState.IsElevated,
+        CanElevate:   m.currentState.CanElevate,
+        LastChanged:  m.currentState.LastChanged,
+        OperationID:  m.currentState.OperationID,
+    }
+}
+```
+
+### 9.3 拡張時の設計考慮事項
+
+#### 9.3.1 セキュリティ要件
+
+- **監査ログの強化**: 直接制御はすべて `WARN` レベル以上でログ記録
+- **権限状態検証**: 操作前後で必ず権限状態を検証
+- **失敗時の安全性**: 権限放棄失敗時は `emergencyShutdown()` を実行
+- **スレッドセーフ**: 状態確認メソッドは読み取り専用ロックを使用
+
+#### 9.3.2 使用制限
+
+- **テスト環境のみ**: 本番環境では `WithPrivileges()` の使用を推奨
+- **ドキュメント化**: 使用理由と安全性確保の手順を明記
+- **コードレビュー**: 直接制御を使用するコードは必須レビュー
+- **状態確認の限定**: デバッグ・バリデーション用途のみに制限
+
+#### 9.3.3 実装優先度
+
+1. **高**: `WithPrivileges()` による安全な特権管理
+2. **中**: 早期特権放棄の実装
+3. **低**: 状態確認メソッド（デバッグ・テスト用途）
+4. **最低**: 直接制御メソッド（必要時に実装）
+
+### 9.4 代替案検討
+
+直接制御メソッドの代わりに検討可能な代替案：
+
+#### 9.3.1 高レベルヘルパー関数
+
+```go
+// WithTemporaryElevation provides scoped elevation for multiple operations
+func (m *EarlyDropManager) WithTemporaryElevation(ctx context.Context, operations []func() error) error {
+    elevationCtx := ElevationContext{
+        Operation: OperationMultiplePrivileged,
+        Reason:    "batch privileged operations",
+    }
+
+    return m.WithPrivileges(ctx, elevationCtx, func() error {
+        for i, op := range operations {
+            if err := op(); err != nil {
+                return fmt.Errorf("operation %d failed: %w", i, err)
+            }
+        }
+        return nil
+    })
+}
+```
+
+#### 9.3.2 テスト専用インターフェース
+
+```go
+#### 9.4.2 テスト専用インターフェース
+
+```go
+// TestPrivilegeManager extends PrivilegeManager for testing
+type TestPrivilegeManager interface {
+    PrivilegeManager
+
+    // Test-only methods
+    ForceElevate() error    // テスト専用の直接昇格
+    ForceDrop() error       // テスト専用の直接放棄
+    GetTestState() TestPrivilegeState  // テスト専用状態取得
+}
+```
+
+#### 9.4.3 ログベース状態確認
+
+```go
+// 状態確認メソッドの代わりにログ解析で状態を把握
+func (m *EarlyDropManager) WithPrivileges(ctx context.Context, elevationCtx ElevationContext, fn func() error) error {
+    // 詳細な開始ログ
+    m.logger.Info("Starting privileged operation",
+        "operation", elevationCtx.Operation,
+        "current_state", "about_to_elevate",
+        "original_uid", m.originalUID)
+
+    // ... 実装
+
+    // 詳細な終了ログ
+    m.logger.Info("Completed privileged operation",
+        "operation", elevationCtx.Operation,
+        "final_state", "restored_to_original_uid",
+        "duration_ms", duration.Milliseconds())
+
+    return err
+}
+```
+```
 - [ ] 権限状態の継続的検証
 - [ ] メトリクス収集と監視
 
