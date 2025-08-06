@@ -103,19 +103,6 @@ func (m *Manager) GetResource(id string) (*Resource, error) {
 	return resource, nil
 }
 
-// ListResources returns all managed resources
-func (m *Manager) ListResources() []*Resource {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	resources := make([]*Resource, 0, len(m.resources))
-	for _, resource := range m.resources {
-		resources = append(resources, resource)
-	}
-
-	return resources
-}
-
 // cleanupResources is a helper function that cleans up resources based on a filter function
 // The filter function should return true for resources that should be cleaned up
 func (m *Manager) cleanupResources(filter func(id string, r *Resource) bool, errorMsg string) error {

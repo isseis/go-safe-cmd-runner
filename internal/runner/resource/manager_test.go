@@ -102,33 +102,6 @@ func TestGetResource(t *testing.T) {
 	}
 }
 
-func TestListResources(t *testing.T) {
-	mockFS := common.NewMockFileSystem()
-	manager := NewManagerWithFS("/tmp", mockFS)
-
-	// Initially should be empty
-	resources := manager.ListResources()
-	if len(resources) != 0 {
-		t.Errorf("ListResources() length = %d, want 0", len(resources))
-	}
-
-	// Create some resources
-	_, err := manager.CreateTempDir("test-command-1", true)
-	if err != nil {
-		t.Fatalf("CreateTempDir() failed: %v", err)
-	}
-
-	_, err = manager.CreateTempDir("test-command-2", false)
-	if err != nil {
-		t.Fatalf("CreateTempDir() failed: %v", err)
-	}
-
-	resources = manager.ListResources()
-	if len(resources) != 2 {
-		t.Errorf("ListResources() length = %d, want 2", len(resources))
-	}
-}
-
 func TestCleanupResource(t *testing.T) {
 	mockFS := common.NewMockFileSystem()
 	manager := NewManagerWithFS("/tmp", mockFS)
@@ -229,11 +202,5 @@ func TestCleanupAll(t *testing.T) {
 	}
 	if exists {
 		t.Errorf("Resource2 directory should have been removed: %s", resource2.Path)
-	}
-
-	// Verify all resources were removed from manager
-	resources := manager.ListResources()
-	if len(resources) != 0 {
-		t.Errorf("Resources should be empty after CleanupAll(), got %d", len(resources))
 	}
 }
