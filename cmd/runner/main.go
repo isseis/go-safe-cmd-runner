@@ -76,6 +76,10 @@ func validateConfigCommand(cfg *runnertypes.Config) error {
 }
 
 func main() {
+	if err := syscall.Seteuid(syscall.Getuid()); err != nil {
+		log.Fatalf("Failed to drop privileges: %v", err)
+	}
+
 	// Wrap main logic in a separate function to properly handle errors and defer
 	if err := run(); err != nil {
 		log.Fatalf("Error: %v", err)
