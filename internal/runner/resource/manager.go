@@ -187,18 +187,3 @@ func (m *Manager) CleanupByCommand(commandName string) error {
 		return r.Command == commandName
 	}, fmt.Sprintf("command %s", commandName))
 }
-
-// GetResourcesForCommand returns all resources associated with a command
-func (m *Manager) GetResourcesForCommand(commandName string) []*Resource {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	var resources []*Resource
-	for _, resource := range m.resources {
-		if resource.Command == commandName {
-			resources = append(resources, resource)
-		}
-	}
-
-	return resources
-}
