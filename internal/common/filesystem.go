@@ -4,8 +4,14 @@
 package common
 
 import (
+	"errors"
 	"io/fs"
 	"os"
+)
+
+// Error definitions for static error handling
+var (
+	ErrEmptyPath = errors.New("path cannot be empty")
 )
 
 // FileSystem defines the interface for file system operations
@@ -83,4 +89,21 @@ func (fs *DefaultFileSystem) IsDir(path string) (bool, error) {
 		return false, err
 	}
 	return info.IsDir(), nil
+}
+
+// ResolvedPath is a type that represents a file path that has been resolved
+// (e.g., through symlink resolution or absolute path conversion).
+type ResolvedPath string
+
+// NewResolvedPath creates a new ResolvedPath from a string.
+// Returns an error if the path is empty.
+func NewResolvedPath(path string) (ResolvedPath, error) {
+	if path == "" {
+		return "", ErrEmptyPath
+	}
+	return ResolvedPath(path), nil
+}
+
+func (p ResolvedPath) String() string {
+	return string(p)
 }

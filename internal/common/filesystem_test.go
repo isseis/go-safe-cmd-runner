@@ -208,3 +208,49 @@ func TestDefaultFileSystem_IsDir(t *testing.T) {
 		t.Error("IsDir should fail for non-existent path")
 	}
 }
+
+func TestNewResolvedPath(t *testing.T) {
+	tests := []struct {
+		name        string
+		path        string
+		expectError bool
+	}{
+		{
+			name:        "valid path",
+			path:        "/tmp/test",
+			expectError: false,
+		},
+		{
+			name:        "empty path should fail",
+			path:        "",
+			expectError: true,
+		},
+		{
+			name:        "relative path",
+			path:        "./test",
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := NewResolvedPath(tt.path)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("Expected error but got none")
+				}
+				if result != "" {
+					t.Errorf("Expected empty result but got %s", result)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+				if result.String() != tt.path {
+					t.Errorf("Expected %s but got %s", tt.path, result.String())
+				}
+			}
+		})
+	}
+}

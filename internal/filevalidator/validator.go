@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
@@ -32,7 +33,7 @@ type FileValidator interface {
 // This is used to test file validation logic for handling hash collisions.
 type HashFilePathGetter interface {
 	// GetHashFilePath returns the path where the given file's hash would be stored.
-	GetHashFilePath(hashAlgorithm HashAlgorithm, hashDir string, filePath string) (string, error)
+	GetHashFilePath(hashAlgorithm HashAlgorithm, hashDir string, filePath common.ResolvedPath) (string, error)
 }
 
 // ProductionHashFilePathGetter is a concrete implementation of HashFilePathGetter.
@@ -40,24 +41,19 @@ type ProductionHashFilePathGetter struct{}
 
 // GetHashFilePath returns the path where the given file's hash would be stored.
 // This implementation uses a simple hash function to generate a hash file path.
-func (p *ProductionHashFilePathGetter) GetHashFilePath(hashAlgorithm HashAlgorithm, hashDir string, filePath string) (string, error) {
+func (p *ProductionHashFilePathGetter) GetHashFilePath(hashAlgorithm HashAlgorithm, hashDir string, filePath common.ResolvedPath) (string, error) {
 	if hashAlgorithm == nil {
 		return "", ErrNilAlgorithm
 	}
 
-	targetPath, err := validatePath(filePath)
-	if err != nil {
-		return "", err
-	}
-
-	h := sha256.Sum256([]byte(targetPath))
+	h := sha256.Sum256([]byte(filePath.String()))
 	hashStr := base64.URLEncoding.EncodeToString(h[:])
 
 	return filepath.Join(hashDir, hashStr[:12]+".json"), nil
 }
 
 // GetHashFilePath returns the path where the hash for the given file would be stored.
-func (v *Validator) GetHashFilePath(filePath string) (string, error) {
+func (v *Validator) GetHashFilePath(filePath common.ResolvedPath) (string, error) {
 	return v.hashFilePathGetter.GetHashFilePath(v.algorithm, v.hashDir, filePath)
 }
 
@@ -118,7 +114,7 @@ func (v *Validator) Record(filePath string, force bool) (string, error) {
 	}
 
 	// Calculate the hash of the file
-	hash, err := v.calculateHash(targetPath)
+	hash, err := v.calculateHash(targetPath.String())
 	if err != nil {
 		return "", fmt.Errorf("failed to calculate hash: %w", err)
 	}
@@ -143,7 +139,7 @@ func (v *Validator) Record(filePath string, force bool) (string, error) {
 		}
 
 		// If the paths don't match, it's a hash collision - always return error
-		if existingManifest.File.Path != targetPath {
+		if existingManifest.File.Path != targetPath.String() {
 			return "", fmt.Errorf("%w: hash collision detected between %s and %s",
 				ErrHashCollision, existingManifest.File.Path, targetPath)
 		}
@@ -180,7 +176,7 @@ func (v *Validator) Verify(filePath string) error {
 	}
 
 	// Calculate the current hash
-	actualHash, err := v.calculateHash(targetPath)
+	actualHash, err := v.calculateHash(targetPath.String())
 	if os.IsNotExist(err) {
 		return err
 	}
@@ -202,7 +198,7 @@ func (v *Validator) Verify(filePath string) error {
 
 // readAndParseHashFile reads and parses a hash file, returning the file path and hash value.
 // It returns an error if the file cannot be read, the JSON is invalid, or the hash file format is incorrect.
-func (v *Validator) readAndParseHashFile(targetPath string) (string, string, error) {
+func (v *Validator) readAndParseHashFile(targetPath common.ResolvedPath) (string, string, error) {
 	// Get the path to the hash file
 	hashFilePath, err := v.GetHashFilePath(targetPath)
 	if err != nil {
@@ -223,7 +219,7 @@ func (v *Validator) readAndParseHashFile(targetPath string) (string, string, err
 }
 
 // validatePath validates and normalizes the given file path.
-func validatePath(filePath string) (string, error) {
+func validatePath(filePath string) (common.ResolvedPath, error) {
 	if filePath == "" {
 		return "", safefileio.ErrInvalidFilePath
 	}
@@ -245,7 +241,8 @@ func validatePath(filePath string) (string, error) {
 	if !fileInfo.Mode().IsRegular() {
 		return "", fmt.Errorf("%w: not a regular file: %s", safefileio.ErrInvalidFilePath, resolvedPath)
 	}
-	return resolvedPath, nil
+
+	return common.NewResolvedPath(resolvedPath)
 }
 
 // calculateHash calculates the hash of the file at the given path.
@@ -259,7 +256,7 @@ func (v *Validator) calculateHash(filePath string) (string, error) {
 }
 
 // parseAndValidateHashFile parses and validates a JSON hash file content and returns the path and hash
-func (v *Validator) parseAndValidateHashFile(content []byte, targetPath string) (string, string, error) {
+func (v *Validator) parseAndValidateHashFile(content []byte, targetPath common.ResolvedPath) (string, string, error) {
 	// Parse manifest format
 	manifest, err := unmarshalHashManifest(content)
 	if err != nil {
@@ -293,7 +290,7 @@ func (v *Validator) writeHashManifest(filePath string, manifest HashManifest, fo
 }
 
 // VerifyFromHandle verifies a file's hash using an already opened file handle
-func (v *Validator) VerifyFromHandle(file *os.File, targetPath string) error {
+func (v *Validator) VerifyFromHandle(file *os.File, targetPath common.ResolvedPath) error {
 	// Calculate hash directly from file handle (normal privilege)
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return fmt.Errorf("failed to seek file to start: %w", err)
@@ -337,7 +334,7 @@ func (v *Validator) VerifyWithPrivileges(filePath string, privManager runnertype
 	}
 
 	// Open file with privileges
-	file, openErr := OpenFileWithPrivileges(targetPath, privManager)
+	file, openErr := OpenFileWithPrivileges(targetPath.String(), privManager)
 	if openErr != nil {
 		return fmt.Errorf("failed to open file with privileges: %w", openErr)
 	}
