@@ -26,7 +26,7 @@ Ensure that executables and critical files have not been tampered with before ex
 - Hash files stored as JSON manifests in dedicated directory
 - File path encoded using Base64 URL-safe encoding to handle special characters
 - Manifest format includes file path, hash value, algorithm, and timestamp
-- Collision detection prevents different files from sharing the same hash file
+- Collision detection prevents two different file paths from mapping to the same hash manifest file, which could happen if their path hashes collide.
 
 **Verification Process**:
 ```go
@@ -104,7 +104,7 @@ func (v *Validator) ValidateEnvironmentValue(key, value string) error {
 
 **Dangerous Pattern Detection**:
 - Command separators: `;`, `|`, `&&`, `||`
-- Command substitution: `$(`, backticks
+- Command substitution: `$(...)`, backticks
 - File operations: `>`, `<`, `rm `, `dd if=`, `dd of=`
 - Code execution: `exec `, `system `, `eval `
 
@@ -531,7 +531,6 @@ The system implements multiple security layers:
 ### Hash Computation
 - Efficient streaming hash calculation
 - File size limits prevent resource exhaustion
-- Caching mechanisms for repeated verifications
 
 ### Environment Processing
 - O(1) allowlist lookups using map structures
