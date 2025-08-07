@@ -97,16 +97,7 @@ func (m *TempDirManager) CleanupAll() error {
 	}
 
 	if len(errs) > 0 {
-		return fmt.Errorf("%w: %d temp dirs failed to cleanup", ErrCleanupFailed, len(errs))
+		return fmt.Errorf("%w: %w", ErrCleanupFailed, errors.Join(errs...))
 	}
-
 	return nil
-}
-
-// IsTempDirManaged checks if a given path is managed by this manager
-func (m *TempDirManager) IsTempDirManaged(path string) bool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	return m.tempDirs[path]
 }

@@ -66,7 +66,7 @@ type Runner struct {
 	config              *runnertypes.Config
 	envVars             map[string]string
 	validator           *security.Validator
-	resourceManager     *tempdir.TempDirManager
+	tempDirManager      *tempdir.TempDirManager
 	verificationManager *verification.Manager
 	envFilter           *environment.Filter
 	privilegeManager    runnertypes.PrivilegeManager // Optional privilege manager for privileged commands
@@ -78,7 +78,7 @@ type Option func(*runnerOptions)
 // runnerOptions holds all configuration options for creating a Runner
 type runnerOptions struct {
 	securityConfig      *security.Config
-	resourceManager     *tempdir.TempDirManager
+	tempDirManager      *tempdir.TempDirManager
 	executor            executor.CommandExecutor
 	verificationManager *verification.Manager
 	privilegeManager    runnertypes.PrivilegeManager
@@ -102,7 +102,7 @@ func WithVerificationManager(verificationManager *verification.Manager) Option {
 // WithTempDirManager sets a custom temporary directory manager
 func WithTempDirManager(manager *tempdir.TempDirManager) Option {
 	return func(opts *runnerOptions) {
-		opts.resourceManager = manager
+		opts.tempDirManager = manager
 	}
 }
 
@@ -164,8 +164,8 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 			opts.executor = executor.NewDefaultExecutor()
 		}
 	}
-	if opts.resourceManager == nil {
-		opts.resourceManager = tempdir.NewTempDirManager(config.Global.WorkDir)
+	if opts.tempDirManager == nil {
+		opts.tempDirManager = tempdir.NewTempDirManager(config.Global.WorkDir)
 	}
 
 	// Create environment filter
@@ -176,7 +176,7 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 		config:              config,
 		envVars:             make(map[string]string),
 		validator:           validator,
-		resourceManager:     opts.resourceManager,
+		tempDirManager:      opts.tempDirManager,
 		verificationManager: opts.verificationManager,
 		envFilter:           envFilter,
 		privilegeManager:    opts.privilegeManager,
@@ -286,12 +286,12 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 		fmt.Printf("Description: %s\n", group.Description)
 	}
 
-	// Track resources for cleanup
+	// Track temporary directories for cleanup
 	groupTempDirs := make([]string, 0)
 	defer func() {
 		// Clean up temp directories created for this group
 		for _, tempDirPath := range groupTempDirs {
-			if err := r.resourceManager.CleanupTempDir(tempDirPath); err != nil {
+			if err := r.tempDirManager.CleanupTempDir(tempDirPath); err != nil {
 				slog.Warn("Failed to cleanup temp directory", "path", tempDirPath, "error", err)
 			}
 		}
@@ -305,7 +305,7 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 	if processedGroup.TempDir {
 		// Create temporary directory for this group
 		var err error
-		tempDirPath, err = r.resourceManager.CreateTempDir(processedGroup.Name)
+		tempDirPath, err = r.tempDirManager.CreateTempDir(processedGroup.Name)
 		if err != nil {
 			return fmt.Errorf("failed to create temp directory for group %s: %w", processedGroup.Name, err)
 		}
@@ -562,7 +562,7 @@ func (r *Runner) GetConfig() *runnertypes.Config {
 
 // CleanupAllResources cleans up all managed resources
 func (r *Runner) CleanupAllResources() error {
-	return r.resourceManager.CleanupAll()
+	return r.tempDirManager.CleanupAll()
 }
 
 // hasPrivilegedCommands checks if the configuration contains any privileged commands
