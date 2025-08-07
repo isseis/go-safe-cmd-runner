@@ -261,7 +261,7 @@ func TestExecute_ContextCancellation(t *testing.T) {
 
 	// Should get an error due to context cancellation
 	assert.Error(t, err, "Expected error due to context cancellation")
-	assert.Contains(t, err.Error(), "context canceled", "Error should indicate context cancellation")
+	assert.ErrorIs(t, err, context.Canceled, "Error should indicate context cancellation")
 	assert.NotNil(t, result, "Result should still be returned even on failure")
 }
 

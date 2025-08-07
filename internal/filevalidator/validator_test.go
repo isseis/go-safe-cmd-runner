@@ -721,7 +721,7 @@ func TestValidator_VerifyWithPrivileges(t *testing.T) {
 	// Test VerifyWithPrivileges with nil privilege manager (should fail now)
 	err = validator.VerifyWithPrivileges(testFile, nil)
 	assert.Error(t, err, "Expected error with nil privilege manager")
-	assert.Contains(t, err.Error(), "privilege manager not available", "Expected privilege manager error")
+	assert.ErrorIs(t, err, ErrPrivilegeManagerNotAvailable, "Expected privilege manager error")
 }
 
 // TestValidator_VerifyWithPrivileges_NoPrivilegeManager tests error handling without privilege manager
@@ -738,8 +738,8 @@ func TestValidator_VerifyWithPrivileges_NoPrivilegeManager(t *testing.T) {
 	err = validator.VerifyWithPrivileges("/tmp/non_existent_file", nil)
 	assert.Error(t, err, "Expected error for non-existent file")
 	// Should get validation error before privilege manager check
-	assert.True(t, strings.Contains(err.Error(), "no such file or directory") ||
-		strings.Contains(err.Error(), "privilege manager not available"),
+	assert.True(t, errors.Is(err, os.ErrNotExist) ||
+		errors.Is(err, ErrPrivilegeManagerNotAvailable),
 		"Expected file not found or privilege manager error, got: %v", err)
 }
 

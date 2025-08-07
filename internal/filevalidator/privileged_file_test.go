@@ -81,7 +81,7 @@ func TestOpenFileWithPrivileges_WithPrivilegeManager(t *testing.T) {
 		file, err := OpenFileWithPrivileges("/root/restricted", mockPM)
 		assert.Error(t, err)
 		assert.Nil(t, file)
-		assert.Contains(t, err.Error(), "failed to open file")
+		assert.ErrorIs(t, err, privtesting.ErrMockPrivilegeElevationFailed)
 	})
 
 	t.Run("privilege manager supported and execution succeeds", func(t *testing.T) {

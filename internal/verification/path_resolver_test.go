@@ -57,7 +57,6 @@ func TestPathResolver_ResolvePath(t *testing.T) {
 
 		_, err = resolver.ResolvePath("testdir")
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "testdir is a directory")
 		assert.ErrorIs(t, err, ErrCommandNotFound)
 	})
 }
