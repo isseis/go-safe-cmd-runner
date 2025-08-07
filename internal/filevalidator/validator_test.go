@@ -11,6 +11,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	privtesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testing"
+	"github.com/stretchr/testify/assert"
 )
 
 // testSafeReadFile is a helper function for tests to safely read files.
@@ -75,9 +76,8 @@ func TestValidator_RecordAndVerify(t *testing.T) {
 			t.Fatalf("GetHashFilePath failed: %v", err)
 		}
 
-		if _, err := os.Lstat(hashFilePath); os.IsNotExist(err) {
-			t.Error("Hash file was not created")
-		}
+		_, err = os.Lstat(hashFilePath)
+		assert.False(t, os.IsNotExist(err), "Hash file was not created")
 	})
 
 	// Test Verify with unmodified file
@@ -95,19 +95,14 @@ func TestValidator_RecordAndVerify(t *testing.T) {
 		}
 
 		err := validator.Verify(testFilePath)
-		if err == nil {
-			t.Error("Expected error with modified file, got nil")
-		} else if !errors.Is(err, ErrMismatch) {
-			t.Errorf("Expected ErrMismatch, got %v", err)
-		}
+		assert.Error(t, err, "Expected error with modified file")
+		assert.ErrorIs(t, err, ErrMismatch, "Expected ErrMismatch")
 	})
 
 	// Test Verify with non-existent file
 	t.Run("Verify non-existent", func(t *testing.T) {
 		err := validator.Verify(filepath.Join(tempDir, "nonexistent.txt"))
-		if err == nil {
-			t.Error("Expected an error for non-existent file, got nil")
-		}
+		assert.Error(t, err, "Expected an error for non-existent file")
 	})
 }
 
@@ -414,11 +409,8 @@ func TestValidator_Record_EmptyHashFile(t *testing.T) {
 
 	// Test Record with empty hash file - this should return ErrInvalidManifestFormat
 	_, err = validator.Record(testFilePath, false)
-	if err == nil {
-		t.Error("Expected error with empty hash file, got nil")
-	} else if !errors.Is(err, ErrInvalidManifestFormat) {
-		t.Errorf("Expected ErrInvalidManifestFormat, got %v", err)
-	}
+	assert.Error(t, err, "Expected error with empty hash file")
+	assert.ErrorIs(t, err, ErrInvalidManifestFormat, "Expected ErrInvalidManifestFormat")
 }
 
 // TestValidator_ManifestFormat tests that hash files are created in manifest format
@@ -728,12 +720,8 @@ func TestValidator_VerifyWithPrivileges(t *testing.T) {
 
 	// Test VerifyWithPrivileges with nil privilege manager (should fail now)
 	err = validator.VerifyWithPrivileges(testFile, nil)
-	if err == nil {
-		t.Errorf("Expected error with nil privilege manager, got nil")
-	}
-	if !strings.Contains(err.Error(), "privilege manager not available") {
-		t.Errorf("Expected privilege manager error, got: %v", err)
-	}
+	assert.Error(t, err, "Expected error with nil privilege manager")
+	assert.Contains(t, err.Error(), "privilege manager not available", "Expected privilege manager error")
 }
 
 // TestValidator_VerifyWithPrivileges_NoPrivilegeManager tests error handling without privilege manager
@@ -748,14 +736,11 @@ func TestValidator_VerifyWithPrivileges_NoPrivilegeManager(t *testing.T) {
 
 	// Test with non-existent file should return validation error (not privilege manager error)
 	err = validator.VerifyWithPrivileges("/tmp/non_existent_file", nil)
-	if err == nil {
-		t.Errorf("Expected error for non-existent file, got nil")
-	}
+	assert.Error(t, err, "Expected error for non-existent file")
 	// Should get validation error before privilege manager check
-	if !strings.Contains(err.Error(), "no such file or directory") &&
-		!strings.Contains(err.Error(), "privilege manager not available") {
-		t.Errorf("Expected file not found or privilege manager error, got: %v", err)
-	}
+	assert.True(t, strings.Contains(err.Error(), "no such file or directory") ||
+		strings.Contains(err.Error(), "privilege manager not available"),
+		"Expected file not found or privilege manager error, got: %v", err)
 }
 
 // TestValidator_VerifyWithPrivileges_MockPrivilegeManager tests with mock privilege manager
@@ -791,15 +776,12 @@ func TestValidator_VerifyWithPrivileges_MockPrivilegeManager(t *testing.T) {
 		// Use a file that would require permissions to simulate the scenario
 		restrictedFile := "/root/restricted_file"
 		err = validator.VerifyWithPrivileges(restrictedFile, mockPM)
-		if err == nil {
-			t.Error("Expected error with failing privilege manager, got nil")
-		}
+		assert.Error(t, err, "Expected error with failing privilege manager")
 		// Should get either privilege execution error or validation error
-		if !errors.Is(err, privtesting.ErrMockPrivilegeElevationFailed) &&
-			!errors.Is(err, os.ErrPermission) &&
-			!errors.Is(err, os.ErrNotExist) {
-			t.Errorf("Expected privilege execution, permission denied, or file not found error, got: %v", err)
-		}
+		assert.True(t, errors.Is(err, privtesting.ErrMockPrivilegeElevationFailed) ||
+			errors.Is(err, os.ErrPermission) ||
+			errors.Is(err, os.ErrNotExist),
+			"Expected privilege execution, permission denied, or file not found error, got: %v", err)
 	})
 
 	t.Run("privilege manager supported and succeeds", func(t *testing.T) {

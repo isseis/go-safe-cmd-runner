@@ -14,9 +14,7 @@ func TestNewFilter(t *testing.T) {
 
 	require.NotNil(t, filter, "NewFilter returned nil")
 
-	if filter.config != config {
-		t.Error("Filter config not set correctly")
-	}
+	assert.Equal(t, config, filter.config, "Filter config not set correctly")
 }
 
 func TestDetermineInheritanceMode(t *testing.T) {
@@ -251,10 +249,10 @@ func TestValidateVariableName(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := filter.ValidateVariableName(tt.varName)
-			if tt.expected && err != nil {
-				t.Errorf("ValidateVariableName(%s): expected no error, got %v", tt.varName, err)
-			} else if !tt.expected && err == nil {
-				t.Errorf("ValidateVariableName(%s): expected error, got nil", tt.varName)
+			if tt.expected {
+				assert.NoError(t, err, "ValidateVariableName(%s): expected no error", tt.varName)
+			} else {
+				assert.Error(t, err, "ValidateVariableName(%s): expected error", tt.varName)
 			}
 		})
 	}
@@ -406,10 +404,10 @@ func TestValidateVariableValue(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := filter.ValidateVariableValue(tt.value)
-			if tt.expected && err != nil {
-				t.Errorf("ValidateVariableValue(%s): expected no error, got %v", tt.value, err)
-			} else if !tt.expected && err == nil {
-				t.Errorf("ValidateVariableValue(%s): expected error, got nil", tt.value)
+			if tt.expected {
+				assert.NoError(t, err, "ValidateVariableValue(%s): expected no error", tt.value)
+			} else {
+				assert.Error(t, err, "ValidateVariableValue(%s): expected error", tt.value)
 			}
 		})
 	}

@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestDefaultFileSystem_CreateTempDir(t *testing.T) {
@@ -22,18 +24,14 @@ func TestDefaultFileSystem_CreateTempDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FileExists failed: %v", err)
 	}
-	if !exists {
-		t.Error("Created directory does not exist")
-	}
+	assert.True(t, exists, "Created directory does not exist")
 
 	// Verify it's a directory
 	isDir, err := fs.IsDir(dir)
 	if err != nil {
 		t.Fatalf("IsDir failed: %v", err)
 	}
-	if !isDir {
-		t.Error("Created path is not a directory")
-	}
+	assert.True(t, isDir, "Created path is not a directory")
 }
 
 func TestDefaultFileSystem_FileExists(t *testing.T) {
@@ -44,9 +42,7 @@ func TestDefaultFileSystem_FileExists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FileExists failed for non-existent path: %v", err)
 	}
-	if exists {
-		t.Error("Non-existent file reported as existing")
-	}
+	assert.False(t, exists, "Non-existent file reported as existing")
 
 	// Test with existing file
 	tempDir, err := fs.CreateTempDir("", "test-exists-")
@@ -237,19 +233,11 @@ func TestNewResolvedPath(t *testing.T) {
 			result, err := NewResolvedPath(tt.path)
 
 			if tt.expectError {
-				if err == nil {
-					t.Error("Expected error but got none")
-				}
-				if result != "" {
-					t.Errorf("Expected empty result but got %s", result)
-				}
+				assert.Error(t, err, "Expected error but got none")
+				assert.Empty(t, result, "Expected empty result but got %s", result)
 			} else {
-				if err != nil {
-					t.Errorf("Unexpected error: %v", err)
-				}
-				if result.String() != tt.path {
-					t.Errorf("Expected %s but got %s", tt.path, result.String())
-				}
+				assert.NoError(t, err, "Unexpected error")
+				assert.Equal(t, tt.path, result.String(), "Expected %s but got %s", tt.path, result.String())
 			}
 		})
 	}
