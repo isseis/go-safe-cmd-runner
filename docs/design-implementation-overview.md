@@ -14,40 +14,29 @@ The Go Safe Command Runner is a security-focused command execution framework des
 
 ### High-Level Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Command Line Interface                   │
-├─────────────────────┬───────────────────┬───────────────────┤
-│ runner              │ record            │ verify            │
-│ (Main executor)     │ (Hash recording)  │ (File validation) │
-└─────────────────────┴───────────────────┴───────────────────┘
-                              │
-┌─────────────────────────────────────────────────────────────┐
-│                      Core Engine                            │
-├─────────────────────────────────────────────────────────────┤
-│  ┌─────────────────┐  ┌─────────────────┐                  │
-│  │ Configuration   │  │ Security        │                  │
-│  │ Management      │  │ Framework       │                  │
-│  └─────────────────┘  └─────────────────┘                  │
-│  ┌─────────────────┐  ┌─────────────────┐                  │
-│  │ Command         │  │ File Integrity  │                  │
-│  │ Execution       │  │ Verification    │                  │
-│  └─────────────────┘  └─────────────────┘                  │
-│  ┌─────────────────┐  ┌─────────────────┐                  │
-│  │ Environment     │  │ Privilege       │                  │
-│  │ Management      │  │ Management      │                  │
-│  └─────────────────┘  └─────────────────┘                  │
-└─────────────────────────────────────────────────────────────┘
-                              │
-┌─────────────────────────────────────────────────────────────┐
-│                  System Interface Layer                     │
-├─────────────────────────────────────────────────────────────┤
-│  ┌─────────────────┐  ┌─────────────────┐                  │
-│  │ Safe File I/O   │  │ Process         │                  │
-│  │ (Symlink        │  │ Execution       │                  │
-│  │ Protection)     │  │                 │                  │
-│  └─────────────────┘  └─────────────────┘                  │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    CLI["Command Line Interface"]
+    subgraph CLI_Components[ ]
+        runner["runner\n(Main executor)"]
+        record["record\n(Hash recording)"]
+        verify["verify\n(File validation)"]
+    end
+    CLI --> CLI_Components
+    CLI_Components --> CoreEngine
+    subgraph CoreEngine["Core Engine"]
+        config["Configuration Management"]
+        security["Security Framework"]
+        command["Command Execution"]
+        integrity["File Integrity Verification"]
+        env["Environment Management"]
+        privilege["Privilege Management"]
+    end
+    CoreEngine --> SystemInterface
+    subgraph SystemInterface["System Interface Layer"]
+        safeio["Safe File I/O\n(Symlink Protection)"]
+        process["Process Execution"]
+    end
 ```
 
 ### Core Components
