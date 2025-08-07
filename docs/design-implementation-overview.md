@@ -91,7 +91,7 @@ func (l *Loader) LoadConfig(path string) (*runnertypes.Config, error) {
 **Security Flow:**
 ```
 File Access Request → Permission Check → Privilege Escalation (if needed)
-→ Hash Calculation → Verification → Privilege Restoration
+→ File Open → Privilege Restoration → Hash Calculation → Verification
 ```
 
 #### 4. Privilege Management (`internal/runner/privilege/`)
@@ -184,11 +184,12 @@ File Path Input → Security Check → Hash Calculation → Verification → Res
    ├── Permission analysis
    └── Privilege requirement determination
 
-2. Hash Calculation:
+2. File Access & Hash Calculation:
    ├── Privilege escalation (if file requires root access)
    ├── Safe file opening
-   ├── Streaming SHA-256 calculation
-   └── Privilege restoration
+   ├── Privilege restoration (immediately after file open)
+   ├── Streaming SHA-256 calculation (with normal privileges)
+   └── Hash comparison preparation
 
 3. Verification:
    ├── Hash comparison with stored values
