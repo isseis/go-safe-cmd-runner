@@ -5,6 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // safeTempDir creates a temporary directory and resolves any symlinks in its path
@@ -14,9 +17,7 @@ func safeTempDir(t *testing.T) string {
 	tempDir := t.TempDir()
 	// Resolve any symlinks in the path
 	realPath, err := filepath.EvalSymlinks(tempDir)
-	if err != nil {
-		t.Fatalf("Failed to resolve symlinks in temp dir: %v", err)
-	}
+	require.NoError(t, err, "Failed to resolve symlinks in temp dir")
 	return realPath
 }
 
@@ -43,9 +44,7 @@ func TestSafeWriteFile(t *testing.T) {
 				tempDir := safeTempDir(t)
 				filePath := filepath.Join(tempDir, "existing.txt")
 				// Create a file first with 0600 permissions
-				if err := os.WriteFile(filePath, []byte("old content"), 0o600); err != nil {
-					t.Fatalf("Failed to create test file: %v", err)
-				}
+				require.NoError(t, os.WriteFile(filePath, []byte("old content"), 0o600), "Failed to create test file")
 				// Note: safeWriteFile will preserve the original file's permissions
 				// rather than using the provided permissions when the file exists
 				return filePath, []byte("new content"), 0o600
@@ -70,21 +69,15 @@ func TestSafeWriteFile(t *testing.T) {
 
 				// Create a target directory
 				targetDir := filepath.Join(tempDir, "target")
-				if err := os.MkdirAll(targetDir, 0o755); err != nil {
-					t.Fatalf("Failed to create target directory: %v", err)
-				}
+				require.NoError(t, os.MkdirAll(targetDir, 0o755), "Failed to create target directory")
 
 				// Create a directory that will contain our test files
 				testDir := filepath.Join(tempDir, "testdir")
-				if err := os.Mkdir(testDir, 0o755); err != nil {
-					t.Fatalf("Failed to create test directory: %v", err)
-				}
+				require.NoError(t, os.Mkdir(testDir, 0o755), "Failed to create test directory")
 
 				// Create a symlink inside our test directory
 				symlinkPath := filepath.Join(testDir, "symlink")
-				if err := os.Symlink(targetDir, symlinkPath); err != nil {
-					t.Fatalf("Failed to create symlink: %v", err)
-				}
+				require.NoError(t, os.Symlink(targetDir, symlinkPath), "Failed to create symlink")
 
 				// Create a file path that includes the symlink
 				filePath := filepath.Join(symlinkPath, "file.txt")
@@ -100,41 +93,28 @@ func TestSafeWriteFile(t *testing.T) {
 			path, content, perm := tt.setup(t)
 
 			err := SafeWriteFile(path, content, perm)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("SafeWriteFile() error = %v, wantErr %v", err, tt.wantErr)
-			}
-
 			if tt.wantErr {
+				assert.Error(t, err, "SafeWriteFile() should return an error")
 				if tt.errType != nil {
-					if !errors.Is(err, tt.errType) {
-						t.Errorf("SafeWriteFile() error = %v, want error type %v", err, tt.errType)
-					}
-				} else if err == nil {
-					t.Error("expected error but got none")
+					assert.ErrorIs(t, err, tt.errType, "SafeWriteFile() error should be of expected type")
 				}
+			} else {
+				assert.NoError(t, err, "SafeWriteFile() should not return an error")
 			}
 
 			if !tt.wantErr {
 				// Verify file was created with correct content and permissions
 				info, err := os.Lstat(path)
-				if err != nil {
-					t.Fatalf("Failed to stat file: %v", err)
-				}
+				require.NoError(t, err, "Failed to stat file")
 
 				// On Unix-like systems, the actual permissions might be affected by umask
 				// So we'll only check that the file is readable and writable by the owner
-				if info.Mode()&0o600 != 0o600 { // Check if owner has read and write permissions
-					t.Errorf("File should be readable and writable by owner, got permissions %v", info.Mode())
-				}
+				assert.True(t, info.Mode()&0o600 == 0o600, "File should be readable and writable by owner, got permissions %v", info.Mode())
 
 				gotContent, err := os.ReadFile(path)
-				if err != nil {
-					t.Fatalf("Failed to read file: %v", err)
-				}
+				require.NoError(t, err, "Failed to read file")
 
-				if string(gotContent) != string(content) {
-					t.Errorf("File content %q, want %q", gotContent, content)
-				}
+				assert.Equal(t, string(content), string(gotContent), "File content should match")
 			}
 		})
 	}
@@ -187,14 +167,10 @@ func TestSafeReadFile(t *testing.T) {
 				symlink := filepath.Join(tempDir, "symlink.txt")
 
 				// Create target file
-				if err := os.WriteFile(targetFile, []byte("target content"), 0o600); err != nil {
-					t.Fatalf("Failed to create target file: %v", err)
-				}
+				require.NoError(t, os.WriteFile(targetFile, []byte("target content"), 0o600), "Failed to create target file")
 
 				// Create symlink
-				if err := os.Symlink(targetFile, symlink); err != nil {
-					t.Fatalf("Failed to create symlink: %v", err)
-				}
+				require.NoError(t, os.Symlink(targetFile, symlink), "Failed to create symlink")
 
 				return symlink
 			},
@@ -209,16 +185,13 @@ func TestSafeReadFile(t *testing.T) {
 
 				// Create a file that's slightly larger than the max allowed size
 				f, err := os.Create(filePath)
-				if err != nil {
-					t.Fatalf("Failed to create test file: %v", err)
-				}
+				require.NoError(t, err, "Failed to create test file")
 				//nolint:errcheck // In test, we don't need to check the error from Close()
 				defer f.Close()
 
 				// Write MaxFileSize + 1 bytes
-				if _, err := f.Write(make([]byte, MaxFileSize+1)); err != nil {
-					t.Fatalf("Failed to write test data: %v", err)
-				}
+				_, err = f.Write(make([]byte, MaxFileSize+1))
+				require.NoError(t, err, "Failed to write test data")
 
 				return filePath
 			},
@@ -232,24 +205,16 @@ func TestSafeReadFile(t *testing.T) {
 			path := tt.setup(t)
 
 			got, err := SafeReadFile(path)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("SafeReadFile() error = %v, wantErr %v", err, tt.wantErr)
-			}
-
 			if tt.wantErr {
+				assert.Error(t, err, "SafeReadFile() should return an error")
 				if tt.errType != nil {
-					if !errors.Is(err, tt.errType) {
-						t.Errorf("SafeReadFile() error = %v, want error type %v", err, tt.errType)
-					}
-				} else if err == nil {
-					t.Error("expected error but got none")
+					assert.ErrorIs(t, err, tt.errType, "SafeReadFile() error should be of expected type")
 				}
 				return
 			}
 
-			if string(got) != string(tt.want) {
-				t.Errorf("SafeReadFile() = %v, want %v", got, tt.want)
-			}
+			assert.NoError(t, err, "SafeReadFile() should not return an error")
+			assert.Equal(t, string(tt.want), string(got), "SafeReadFile() content should match")
 		})
 	}
 }
@@ -317,14 +282,10 @@ func TestSafeWriteFile_FileCloseError(t *testing.T) {
 		// Create a test file system that will return failing files
 		fs := failingCloseFS{FileSystem: defaultFS}
 		err := safeWriteFileWithFS(filePath, []byte("test"), 0o644, fs)
-		if err == nil {
-			t.Fatal("Expected error when closing file fails, got nil")
-		}
+		assert.Error(t, err, "Expected error when closing file fails")
 
 		// The error should be related to file closing
-		if !errors.Is(err, errSimulatedClose) {
-			t.Errorf("Expected error %q, got: %v", errSimulatedClose, err)
-		}
+		assert.ErrorIs(t, err, errSimulatedClose, "Expected specific close error")
 	})
 
 	t.Run("write error takes precedence over close error", func(t *testing.T) {
@@ -334,13 +295,9 @@ func TestSafeWriteFile_FileCloseError(t *testing.T) {
 		// Create a test file system that will return files that fail on both write and close
 		fs := failingWriteFS{FileSystem: defaultFS}
 		err := safeWriteFileWithFS(filePath, []byte("test"), 0o644, fs)
-		if err == nil {
-			t.Fatal("Expected error when writing to file, got nil")
-		}
+		assert.Error(t, err, "Expected error when writing to file")
 
 		// The error should be the write error, not the close error
-		if !errors.Is(err, errSimulatedWrite) {
-			t.Errorf("Expected error %q, got: %v", errSimulatedWrite, err)
-		}
+		assert.ErrorIs(t, err, errSimulatedWrite, "Expected specific write error")
 	})
 }

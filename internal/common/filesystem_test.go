@@ -14,23 +14,17 @@ func TestDefaultFileSystem_CreateTempDir(t *testing.T) {
 
 	// Test creating a temporary directory
 	dir, err := fs.CreateTempDir("", "test-")
-	if err != nil {
-		t.Fatalf("CreateTempDir failed: %v", err)
-	}
+	assert.NoError(t, err, "CreateTempDir failed")
 	defer os.RemoveAll(dir)
 
 	// Verify the directory exists
 	exists, err := fs.FileExists(dir)
-	if err != nil {
-		t.Fatalf("FileExists failed: %v", err)
-	}
+	assert.NoError(t, err, "FileExists failed")
 	assert.True(t, exists, "Created directory does not exist")
 
 	// Verify it's a directory
 	isDir, err := fs.IsDir(dir)
-	if err != nil {
-		t.Fatalf("IsDir failed: %v", err)
-	}
+	assert.NoError(t, err, "IsDir failed")
 	assert.True(t, isDir, "Created path is not a directory")
 }
 
@@ -39,25 +33,17 @@ func TestDefaultFileSystem_FileExists(t *testing.T) {
 
 	// Test with non-existent file
 	exists, err := fs.FileExists("/non/existent/path")
-	if err != nil {
-		t.Fatalf("FileExists failed for non-existent path: %v", err)
-	}
+	assert.NoError(t, err, "FileExists failed for non-existent path")
 	assert.False(t, exists, "Non-existent file reported as existing")
 
 	// Test with existing file
 	tempDir, err := fs.CreateTempDir("", "test-exists-")
-	if err != nil {
-		t.Fatalf("CreateTempDir failed: %v", err)
-	}
+	assert.NoError(t, err, "CreateTempDir failed")
 	defer fs.RemoveAll(tempDir)
 
 	exists, err = fs.FileExists(tempDir)
-	if err != nil {
-		t.Fatalf("FileExists failed for existing path: %v", err)
-	}
-	if !exists {
-		t.Error("Existing file reported as non-existent")
-	}
+	assert.NoError(t, err, "FileExists failed for existing path")
+	assert.True(t, exists, "Existing file reported as non-existent")
 }
 
 func TestDefaultFileSystem_Remove(t *testing.T) {
@@ -65,32 +51,22 @@ func TestDefaultFileSystem_Remove(t *testing.T) {
 
 	// Create a temporary directory
 	tempDir, err := fs.CreateTempDir("", "test-remove-")
-	if err != nil {
-		t.Fatalf("CreateTempDir failed: %v", err)
-	}
+	assert.NoError(t, err, "CreateTempDir failed")
 
 	// Create a file in the directory
 	filePath := filepath.Join(tempDir, "test.txt")
 	file, err := os.Create(filePath)
-	if err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
-	}
+	assert.NoError(t, err, "Failed to create test file")
 	file.Close()
 
 	// Remove the file
 	err = fs.Remove(filePath)
-	if err != nil {
-		t.Fatalf("Remove failed: %v", err)
-	}
+	assert.NoError(t, err, "Remove failed")
 
 	// Verify the file no longer exists
 	exists, err := fs.FileExists(filePath)
-	if err != nil {
-		t.Fatalf("FileExists failed: %v", err)
-	}
-	if exists {
-		t.Error("File still exists after removal")
-	}
+	assert.NoError(t, err, "FileExists failed")
+	assert.False(t, exists, "File still exists after removal")
 
 	// Clean up
 	fs.RemoveAll(tempDir)
@@ -101,38 +77,24 @@ func TestDefaultFileSystem_RemoveAll(t *testing.T) {
 
 	// Create a temporary directory with nested structure
 	tempDir, err := fs.CreateTempDir("", "test-removeall-")
-	if err != nil {
-		t.Fatalf("CreateTempDir failed: %v", err)
-	}
+	assert.NoError(t, err, "CreateTempDir failed")
 
 	nestedDir := filepath.Join(tempDir, "nested")
-	err = os.MkdirAll(nestedDir, 0o755)
-	if err != nil {
-		t.Fatalf("os.MkdirAll failed: %v", err)
-	}
+	assert.NoError(t, os.MkdirAll(nestedDir, 0o755), "os.MkdirAll failed")
 
 	// Create a file in the nested directory
 	filePath := filepath.Join(nestedDir, "test.txt")
 	file, err := os.Create(filePath)
-	if err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
-	}
+	assert.NoError(t, err, "Failed to create test file")
 	file.Close()
 
 	// Remove all
-	err = fs.RemoveAll(tempDir)
-	if err != nil {
-		t.Fatalf("RemoveAll failed: %v", err)
-	}
+	assert.NoError(t, fs.RemoveAll(tempDir), "RemoveAll failed")
 
 	// Verify the directory no longer exists
 	exists, err := fs.FileExists(tempDir)
-	if err != nil {
-		t.Fatalf("FileExists failed: %v", err)
-	}
-	if exists {
-		t.Error("Directory still exists after RemoveAll")
-	}
+	assert.NoError(t, err, "FileExists failed")
+	assert.False(t, exists, "Directory still exists after RemoveAll")
 }
 
 func TestDefaultFileSystem_Lstat(t *testing.T) {
@@ -140,26 +102,17 @@ func TestDefaultFileSystem_Lstat(t *testing.T) {
 
 	// Create a temporary directory
 	tempDir, err := fs.CreateTempDir("", "test-lstat-")
-	if err != nil {
-		t.Fatalf("CreateTempDir failed: %v", err)
-	}
+	assert.NoError(t, err, "CreateTempDir failed")
 	defer fs.RemoveAll(tempDir)
 
 	// Test Lstat on the directory
 	info, err := fs.Lstat(tempDir)
-	if err != nil {
-		t.Fatalf("Lstat failed: %v", err)
-	}
-
-	if !info.IsDir() {
-		t.Error("Lstat reported directory as not a directory")
-	}
+	assert.NoError(t, err, "Lstat failed")
+	assert.True(t, info.IsDir(), "Lstat reported directory as not a directory")
 
 	// Test Lstat on non-existent path
 	_, err = fs.Lstat("/non/existent/path")
-	if err == nil {
-		t.Error("Lstat should fail for non-existent path")
-	}
+	assert.Error(t, err, "Lstat should fail for non-existent path")
 }
 
 func TestDefaultFileSystem_IsDir(t *testing.T) {
@@ -167,42 +120,28 @@ func TestDefaultFileSystem_IsDir(t *testing.T) {
 
 	// Create a temporary directory
 	tempDir, err := fs.CreateTempDir("", "test-isdir-")
-	if err != nil {
-		t.Fatalf("CreateTempDir failed: %v", err)
-	}
+	assert.NoError(t, err, "CreateTempDir failed")
 	defer fs.RemoveAll(tempDir)
 
 	// Test with directory
 	isDir, err := fs.IsDir(tempDir)
-	if err != nil {
-		t.Fatalf("IsDir failed: %v", err)
-	}
-	if !isDir {
-		t.Error("Directory reported as not a directory")
-	}
+	assert.NoError(t, err, "IsDir failed")
+	assert.True(t, isDir, "Directory reported as not a directory")
 
 	// Create a file
 	filePath := filepath.Join(tempDir, "test.txt")
 	file, err := os.Create(filePath)
-	if err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
-	}
+	assert.NoError(t, err, "Failed to create test file")
 	file.Close()
 
 	// Test with file
 	isDir, err = fs.IsDir(filePath)
-	if err != nil {
-		t.Fatalf("IsDir failed for file: %v", err)
-	}
-	if isDir {
-		t.Error("File reported as directory")
-	}
+	assert.NoError(t, err, "IsDir failed for file")
+	assert.False(t, isDir, "File reported as directory")
 
 	// Test with non-existent path
 	_, err = fs.IsDir("/non/existent/path")
-	if err == nil {
-		t.Error("IsDir should fail for non-existent path")
-	}
+	assert.Error(t, err, "IsDir should fail for non-existent path")
 }
 
 func TestNewResolvedPath(t *testing.T) {
