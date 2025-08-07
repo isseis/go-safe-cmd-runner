@@ -204,7 +204,7 @@ Unix系環境でのファイル整合性検証を伴うセキュアなコマン�
 ## ビルドとインストール
 
 ### 前提条件
-- Go 1.23.10以降
+- Go 1.23以降
 - golangci-lint（開発用）
 
 ### ビルドコマンド
@@ -243,7 +243,7 @@ sudo install -o root -g root -m 0755 build/verify /usr/local/bin/go-safe-cmd-ver
 ## 開発
 
 ### 依存関係
-- `github.com/pelletier/go-toml/v2` - TOML設定パースィング
+- `github.com/pelletier/go-toml/v2` - TOML設定パーシング
 - `github.com/joho/godotenv` - 環境ファイル読み込み
 - `github.com/stretchr/testify` - テストフレームワーク
 

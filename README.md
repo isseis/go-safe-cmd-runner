@@ -204,7 +204,7 @@ This project is licensed under the MIT License. See the [LICENSE](./LICENSE) fil
 ## Building and Installation
 
 ### Prerequisites
-- Go 1.23.10 or later
+- Go 1.23 or later
 - golangci-lint (for development)
 
 ### Build Commands
