@@ -1,4 +1,4 @@
-package resource
+package tempdir
 
 import (
 	"fmt"
@@ -9,21 +9,21 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNewManager(t *testing.T) {
-	manager := NewManager("")
+func TestNewTempDirManager(t *testing.T) {
+	manager := NewTempDirManager("")
 	assert.NotNil(t, manager, "NewManager should not return nil")
 	assert.NotNil(t, manager.tempDirs, "Manager tempDirs map should not be nil")
 	assert.NotEmpty(t, manager.baseDir, "Manager baseDir should not be empty")
 
 	// Test with custom base directory
 	customDir := "/tmp/test"
-	manager2 := NewManager(customDir)
+	manager2 := NewTempDirManager(customDir)
 	assert.Equal(t, customDir, manager2.baseDir, "Manager baseDir should match custom directory")
 }
 
-func TestNewManagerWithFS(t *testing.T) {
+func TestNewTempDirManagerWithFS(t *testing.T) {
 	mockFS := common.NewMockFileSystem()
-	manager := NewManagerWithFS("/tmp", mockFS)
+	manager := NewTempDirManagerWithFS("/tmp", mockFS)
 
 	assert.NotNil(t, manager, "NewManagerWithFS should not return nil")
 	assert.Equal(t, mockFS, manager.fs, "Manager filesystem should be set to provided filesystem")
@@ -31,7 +31,7 @@ func TestNewManagerWithFS(t *testing.T) {
 
 func TestCreateTempDir(t *testing.T) {
 	mockFS := common.NewMockFileSystem()
-	manager := NewManagerWithFS("/tmp", mockFS)
+	manager := NewTempDirManagerWithFS("/tmp", mockFS)
 
 	path, err := manager.CreateTempDir("test-command")
 	assert.Nil(t, err, "CreateTempDir should not return an error")
@@ -48,7 +48,7 @@ func TestCreateTempDir(t *testing.T) {
 
 func TestCleanupTempDir(t *testing.T) {
 	mockFS := common.NewMockFileSystem()
-	manager := NewManagerWithFS("/tmp", mockFS)
+	manager := NewTempDirManagerWithFS("/tmp", mockFS)
 
 	// Create a temp directory
 	path, err := manager.CreateTempDir("test-command")
@@ -85,7 +85,7 @@ func TestCleanupTempDir_ErrorCases(t *testing.T) {
 	t.Run("non-managed path", func(t *testing.T) {
 		// Test error when path is not managed
 		mockFS := common.NewMockFileSystem()
-		manager := NewManagerWithFS("/tmp", mockFS)
+		manager := NewTempDirManagerWithFS("/tmp", mockFS)
 
 		err := manager.CleanupTempDir("/not/managed/path")
 		assert.ErrorIs(t, err, ErrTempDirNotFound)
@@ -94,7 +94,7 @@ func TestCleanupTempDir_ErrorCases(t *testing.T) {
 	t.Run("error when RemoveAll fails", func(t *testing.T) {
 		// Test error when RemoveAll fails
 		failingFS := &failingFS{MockFileSystem: common.NewMockFileSystem()}
-		manager := NewManagerWithFS("/tmp", failingFS)
+		manager := NewTempDirManagerWithFS("/tmp", failingFS)
 		path, err := manager.CreateTempDir("fail-case")
 		assert.Nil(t, err, "CreateTempDir should succeed for setup")
 
@@ -105,7 +105,7 @@ func TestCleanupTempDir_ErrorCases(t *testing.T) {
 
 func TestCleanupAll(t *testing.T) {
 	mockFS := common.NewMockFileSystem()
-	manager := NewManagerWithFS("/tmp", mockFS)
+	manager := NewTempDirManagerWithFS("/tmp", mockFS)
 
 	// Create multiple temp directories
 	path1, err := manager.CreateTempDir("test-command-1")

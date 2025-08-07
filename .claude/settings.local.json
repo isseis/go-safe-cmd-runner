@@ -24,7 +24,8 @@
       "Bash(/dev/null)",
       "Bash(git --no-pager diff --staged)",
       "Bash(git --no-pager status)",
-      "Bash(git --no-pager diff)"
+      "Bash(git --no-pager diff)",
+      "Bash(go list:*)"
     ],
     "deny": [],
     "env": {

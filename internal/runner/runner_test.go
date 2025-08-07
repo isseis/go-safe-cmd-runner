@@ -11,9 +11,9 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/tempdir"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -178,11 +178,11 @@ func TestNewRunner(t *testing.T) {
 			SensitiveEnvVars:        []string{".*PASSWORD.*"},
 			MaxPathLength:           4096,
 		}
-		customResourceManager := resource.NewManager("/custom/path")
+		customResourceManager := tempdir.NewTempDirManager("/custom/path")
 
 		runner, err := NewRunner(config,
 			WithSecurity(securityConfig),
-			WithResourceManager(customResourceManager))
+			WithTempDirManager(customResourceManager))
 		assert.NoError(t, err)
 		assert.NotNil(t, runner)
 		assert.Equal(t, customResourceManager, runner.resourceManager)
@@ -1565,7 +1565,7 @@ func TestCommandGroup_TempDir_Detailed(t *testing.T) {
 		mockFS.On("RemoveAll", mock.AnythingOfType("string")).Return(nil)
 
 		// Create resource manager with mock filesystem
-		resourceManager := resource.NewManagerWithFS("/tmp", mockFS)
+		resourceManager := tempdir.NewTempDirManagerWithFS("/tmp", mockFS)
 
 		// Create mock executor
 		mockExecutor := &MockExecutor{}
@@ -1584,7 +1584,7 @@ func TestCommandGroup_TempDir_Detailed(t *testing.T) {
 		// Create runner with mocks
 		runner, err := NewRunner(config,
 			WithExecutor(mockExecutor),
-			WithResourceManager(resourceManager))
+			WithTempDirManager(resourceManager))
 		require.NoError(t, err)
 
 		// Load basic environment
@@ -1633,7 +1633,7 @@ func TestCommandGroup_TempDir_Detailed(t *testing.T) {
 		mockFS.On("RemoveAll", mock.AnythingOfType("string")).Return(nil)
 
 		// Create resource manager with mock filesystem
-		resourceManager := resource.NewManagerWithFS("/tmp", mockFS)
+		resourceManager := tempdir.NewTempDirManagerWithFS("/tmp", mockFS)
 
 		// Create mock executor
 		mockExecutor := &MockExecutor{}
@@ -1652,7 +1652,7 @@ func TestCommandGroup_TempDir_Detailed(t *testing.T) {
 		// Create runner with mocks
 		runner, err := NewRunner(config,
 			WithExecutor(mockExecutor),
-			WithResourceManager(resourceManager))
+			WithTempDirManager(resourceManager))
 		require.NoError(t, err)
 
 		// Load basic environment
@@ -1700,7 +1700,7 @@ func TestCommandGroup_TempDir_Detailed(t *testing.T) {
 		mockFS.On("RemoveAll", mock.AnythingOfType("string")).Return(nil)
 
 		// Create resource manager with mock filesystem
-		resourceManager := resource.NewManagerWithFS("/tmp", mockFS)
+		resourceManager := tempdir.NewTempDirManagerWithFS("/tmp", mockFS)
 
 		// Create mock executor
 		mockExecutor := &MockExecutor{}
@@ -1717,7 +1717,7 @@ func TestCommandGroup_TempDir_Detailed(t *testing.T) {
 		// Create runner with mocks
 		runner, err := NewRunner(config,
 			WithExecutor(mockExecutor),
-			WithResourceManager(resourceManager))
+			WithTempDirManager(resourceManager))
 		require.NoError(t, err)
 
 		// Load basic environment
@@ -2083,7 +2083,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 			Return("", errPermissionDenied)
 
 		// Create resource manager with mock filesystem
-		resourceManager := resource.NewManagerWithFS("/tmp", mockFS)
+		resourceManager := tempdir.NewTempDirManagerWithFS("/tmp", mockFS)
 
 		// Create mock executor (should not be called due to temp dir creation failure)
 		mockExecutor := &MockExecutor{}
@@ -2091,7 +2091,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		// Create runner with mocks
 		runner, err := NewRunner(config,
 			WithExecutor(mockExecutor),
-			WithResourceManager(resourceManager))
+			WithTempDirManager(resourceManager))
 		require.NoError(t, err)
 
 		// Load basic environment
@@ -2138,7 +2138,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		mockFS.On("RemoveAll", mock.AnythingOfType("string")).Return(errDeviceBusy)
 
 		// Create resource manager with mock filesystem
-		resourceManager := resource.NewManagerWithFS("/tmp", mockFS)
+		resourceManager := tempdir.NewTempDirManagerWithFS("/tmp", mockFS)
 
 		// Create mock executor
 		mockExecutor := &MockExecutor{}
@@ -2150,7 +2150,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		// Create runner with mocks
 		runner, err := NewRunner(config,
 			WithExecutor(mockExecutor),
-			WithResourceManager(resourceManager))
+			WithTempDirManager(resourceManager))
 		require.NoError(t, err)
 
 		// Load basic environment
@@ -2210,7 +2210,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		mockFS.On("RemoveAll", mock.AnythingOfType("string")).Return(nil)
 
 		// Create resource manager with mock filesystem
-		resourceManager := resource.NewManagerWithFS("/tmp", mockFS)
+		resourceManager := tempdir.NewTempDirManagerWithFS("/tmp", mockFS)
 
 		// Create mock executor
 		mockExecutor := &MockExecutor{}
@@ -2223,7 +2223,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		// Create runner with mocks
 		runner, err := NewRunner(config,
 			WithExecutor(mockExecutor),
-			WithResourceManager(resourceManager))
+			WithTempDirManager(resourceManager))
 		require.NoError(t, err)
 
 		// Load basic environment
@@ -2271,7 +2271,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		mockFS.On("RemoveAll", mock.AnythingOfType("string")).Return(nil)
 
 		// Create resource manager with mock filesystem
-		resourceManager := resource.NewManagerWithFS("/tmp", mockFS)
+		resourceManager := tempdir.NewTempDirManagerWithFS("/tmp", mockFS)
 
 		// Create mock executor
 		mockExecutor := &MockExecutor{}
@@ -2292,7 +2292,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		// Create runner with mocks
 		runner, err := NewRunner(config,
 			WithExecutor(mockExecutor),
-			WithResourceManager(resourceManager))
+			WithTempDirManager(resourceManager))
 		require.NoError(t, err)
 
 		// Load basic environment
@@ -2338,7 +2338,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		mockFS.On("RemoveAll", mock.AnythingOfType("string")).Return(errCleanupFailed)
 
 		// Create resource manager with mock filesystem
-		resourceManager := resource.NewManagerWithFS("/tmp", mockFS)
+		resourceManager := tempdir.NewTempDirManagerWithFS("/tmp", mockFS)
 
 		// Create mock executor
 		mockExecutor := &MockExecutor{}
@@ -2350,7 +2350,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		// Create runner with mocks
 		runner, err := NewRunner(config,
 			WithExecutor(mockExecutor),
-			WithResourceManager(resourceManager))
+			WithTempDirManager(resourceManager))
 		require.NoError(t, err)
 
 		// Load basic environment
@@ -2398,7 +2398,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		mockFS.On("RemoveAll", mock.AnythingOfType("string")).Return(nil)
 
 		// Create resource manager with mock filesystem
-		resourceManager := resource.NewManagerWithFS("/tmp", mockFS)
+		resourceManager := tempdir.NewTempDirManagerWithFS("/tmp", mockFS)
 
 		// Create mock executor
 		mockExecutor := &MockExecutor{}
@@ -2410,7 +2410,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		// Create runner with mocks
 		runner, err := NewRunner(config,
 			WithExecutor(mockExecutor),
-			WithResourceManager(resourceManager))
+			WithTempDirManager(resourceManager))
 		require.NoError(t, err)
 
 		// Load basic environment

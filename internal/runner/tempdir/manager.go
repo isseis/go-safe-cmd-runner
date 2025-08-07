@@ -1,6 +1,6 @@
-// Package resource provides functionality for managing resources like
-// temporary directories, file cleanup, and resource lifecycle management.
-package resource
+// Package tempdir provides functionality for managing temporary directories
+// including creation, cleanup, and lifecycle management.
+package tempdir
 
 import (
 	"errors"
@@ -11,7 +11,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
 
-// Error definitions for the resource package
+// Error definitions for the tempdir package
 var (
 	// ErrTempDirNotFound is returned when a requested temporary directory is not found
 	ErrTempDirNotFound = errors.New("temporary directory not found")
@@ -19,25 +19,27 @@ var (
 	ErrCleanupFailed = errors.New("temporary directory cleanup failed")
 )
 
-// Manager handles temporary directory lifecycle management
-type Manager struct {
+// TempDirManager handles temporary directory lifecycle management
+//
+//nolint:revive // TempDirManager is intentionally explicit to avoid confusion with other managers
+type TempDirManager struct {
 	tempDirs map[string]bool // directory path -> managed flag
 	mu       sync.RWMutex
 	baseDir  string
 	fs       common.FileSystem
 }
 
-// NewManager creates a new resource manager
-func NewManager(baseDir string) *Manager {
-	return NewManagerWithFS(baseDir, common.NewDefaultFileSystem())
+// NewTempDirManager creates a new temporary directory manager
+func NewTempDirManager(baseDir string) *TempDirManager {
+	return NewTempDirManagerWithFS(baseDir, common.NewDefaultFileSystem())
 }
 
-// NewManagerWithFS creates a new resource manager with a custom FileSystem
-func NewManagerWithFS(baseDir string, fs common.FileSystem) *Manager {
+// NewTempDirManagerWithFS creates a new temporary directory manager with a custom FileSystem
+func NewTempDirManagerWithFS(baseDir string, fs common.FileSystem) *TempDirManager {
 	if baseDir == "" {
 		baseDir = os.TempDir()
 	}
-	return &Manager{
+	return &TempDirManager{
 		tempDirs: make(map[string]bool),
 		baseDir:  baseDir,
 		fs:       fs,
@@ -45,7 +47,7 @@ func NewManagerWithFS(baseDir string, fs common.FileSystem) *Manager {
 }
 
 // CreateTempDir creates a temporary directory for a command and returns its path
-func (m *Manager) CreateTempDir(commandName string) (string, error) {
+func (m *TempDirManager) CreateTempDir(commandName string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -62,7 +64,7 @@ func (m *Manager) CreateTempDir(commandName string) (string, error) {
 }
 
 // CleanupTempDir cleans up a specific temporary directory
-func (m *Manager) CleanupTempDir(path string) error {
+func (m *TempDirManager) CleanupTempDir(path string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -80,7 +82,7 @@ func (m *Manager) CleanupTempDir(path string) error {
 }
 
 // CleanupAll cleans up all managed temporary directories
-func (m *Manager) CleanupAll() error {
+func (m *TempDirManager) CleanupAll() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -99,4 +101,12 @@ func (m *Manager) CleanupAll() error {
 	}
 
 	return nil
+}
+
+// IsTempDirManaged checks if a given path is managed by this manager
+func (m *TempDirManager) IsTempDirManaged(path string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	return m.tempDirs[path]
 }

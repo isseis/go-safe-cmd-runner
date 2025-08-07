@@ -17,9 +17,9 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/tempdir"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/joho/godotenv"
 )
@@ -66,7 +66,7 @@ type Runner struct {
 	config              *runnertypes.Config
 	envVars             map[string]string
 	validator           *security.Validator
-	resourceManager     *resource.Manager
+	resourceManager     *tempdir.TempDirManager
 	verificationManager *verification.Manager
 	envFilter           *environment.Filter
 	privilegeManager    runnertypes.PrivilegeManager // Optional privilege manager for privileged commands
@@ -78,7 +78,7 @@ type Option func(*runnerOptions)
 // runnerOptions holds all configuration options for creating a Runner
 type runnerOptions struct {
 	securityConfig      *security.Config
-	resourceManager     *resource.Manager
+	resourceManager     *tempdir.TempDirManager
 	executor            executor.CommandExecutor
 	verificationManager *verification.Manager
 	privilegeManager    runnertypes.PrivilegeManager
@@ -99,8 +99,8 @@ func WithVerificationManager(verificationManager *verification.Manager) Option {
 	}
 }
 
-// WithResourceManager sets a custom resource manager
-func WithResourceManager(manager *resource.Manager) Option {
+// WithTempDirManager sets a custom temporary directory manager
+func WithTempDirManager(manager *tempdir.TempDirManager) Option {
 	return func(opts *runnerOptions) {
 		opts.resourceManager = manager
 	}
@@ -165,7 +165,7 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 		}
 	}
 	if opts.resourceManager == nil {
-		opts.resourceManager = resource.NewManager(config.Global.WorkDir)
+		opts.resourceManager = tempdir.NewTempDirManager(config.Global.WorkDir)
 	}
 
 	// Create environment filter
