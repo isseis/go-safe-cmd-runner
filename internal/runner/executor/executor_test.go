@@ -9,6 +9,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type mockFileSystem struct {
@@ -121,8 +122,8 @@ func TestExecute_Success(t *testing.T) {
 			if tt.wantErr {
 				assert.Error(t, err, "Expected error but got none")
 			} else {
-				assert.NoError(t, err, "Unexpected error")
-				assert.NotNil(t, result, "Result should not be nil")
+				require.NoError(t, err, "Unexpected error")
+				require.NotNil(t, result, "Result should not be nil")
 				assert.Equal(t, tt.expectedExitCode, result.ExitCode, "Exit code should match expected value")
 
 				// For pwd command, just check that stdout is not empty
@@ -222,8 +223,8 @@ func TestExecute_Failure(t *testing.T) {
 					assert.Contains(t, err.Error(), tt.errMsg, "Error message should contain expected text")
 				}
 			} else {
-				assert.NoError(t, err, "Unexpected error")
-				assert.NotNil(t, result, "Result should not be nil")
+				require.NoError(t, err, "Unexpected error")
+				require.NotNil(t, result, "Result should not be nil")
 
 				// For the stderr test case, check that stderr was captured
 				if tt.name == "command writing to stderr" {
@@ -260,7 +261,7 @@ func TestExecute_ContextCancellation(t *testing.T) {
 
 	// Should get an error due to context cancellation
 	assert.Error(t, err, "Expected error due to context cancellation")
-	assert.Contains(t, err.Error(), "context canceled", "Error should indicate context cancellation")
+	assert.ErrorIs(t, err, context.Canceled, "Error should indicate context cancellation")
 	assert.NotNil(t, result, "Result should still be returned even on failure")
 }
 
@@ -293,8 +294,8 @@ func TestExecute_EnvironmentVariables(t *testing.T) {
 	ctx := context.Background()
 	result, err := e.Execute(ctx, cmd, envVars)
 
-	assert.NoError(t, err, "Execute should not return an error")
-	assert.NotNil(t, result, "Result should not be nil")
+	require.NoError(t, err, "Execute should not return an error")
+	require.NotNil(t, result, "Result should not be nil")
 
 	// Check that only allowed variables are present in the output
 	assert.Contains(t, result.Stdout, "FILTERED_VAR=allowed_value", "Filtered variable should be present")

@@ -6,6 +6,9 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLoadConfigWithWarnings(t *testing.T) {
@@ -29,17 +32,12 @@ version = "1.0"
 
 	// Write config to temporary file
 	tmpFile, err := os.CreateTemp("", "test_config_*.toml")
-	if err != nil {
-		t.Fatalf("failed to create temp file: %v", err)
-	}
+	require.NoError(t, err, "failed to create temp file")
 	defer os.Remove(tmpFile.Name())
 
-	if _, err := tmpFile.WriteString(configContent); err != nil {
-		t.Fatalf("failed to write config: %v", err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		t.Fatalf("failed to close temp file: %v", err)
-	}
+	_, err = tmpFile.WriteString(configContent)
+	require.NoError(t, err, "failed to write config")
+	require.NoError(t, tmpFile.Close(), "failed to close temp file")
 
 	// Capture log output
 	var buf bytes.Buffer
@@ -49,37 +47,23 @@ version = "1.0"
 	// Load config
 	loader := NewLoader()
 	cfg, err := loader.LoadConfig(tmpFile.Name())
-	if err != nil {
-		t.Fatalf("LoadConfig() returned error: %v", err)
-	}
+	require.NoError(t, err, "LoadConfig() returned error")
 
-	if cfg == nil {
-		t.Fatal("LoadConfig() returned nil config")
-	}
+	require.NotNil(t, cfg, "LoadConfig() returned nil config")
 
 	// The privileged field is now implemented, so no warnings should be logged
 	logOutput := buf.String()
-	if strings.Contains(logOutput, "privileged field is not yet implemented") {
-		t.Errorf("unexpected warning about privileged field in log output: %s", logOutput)
-	}
+	assert.False(t, strings.Contains(logOutput, "privileged field is not yet implemented"), "unexpected warning about privileged field in log output: %s", logOutput)
 
 	// Verify config was loaded correctly despite warnings
-	if len(cfg.Groups) != 1 {
-		t.Errorf("expected 1 group, got %d", len(cfg.Groups))
-	}
+	assert.Len(t, cfg.Groups, 1, "expected 1 group")
 
-	if len(cfg.Groups[0].Commands) != 1 {
-		t.Errorf("expected 1 command, got %d", len(cfg.Groups[0].Commands))
-	}
+	assert.Len(t, cfg.Groups[0].Commands, 1, "expected 1 command")
 
 	cmd := cfg.Groups[0].Commands[0]
-	if cmd.Name != "test_cmd" {
-		t.Errorf("expected command name 'test_cmd', got '%s'", cmd.Name)
-	}
+	assert.Equal(t, "test_cmd", cmd.Name, "expected command name 'test_cmd'")
 
-	if !cmd.Privileged {
-		t.Error("expected privileged to be true")
-	}
+	assert.True(t, cmd.Privileged, "expected privileged to be true")
 }
 
 // TestLoadConfigSecurityWarning was removed as verification is now

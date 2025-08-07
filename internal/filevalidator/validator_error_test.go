@@ -10,15 +10,14 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
+	"github.com/stretchr/testify/assert"
 )
 
 // TestErrorCases tests various error conditions and their messages
 func TestErrorCases(t *testing.T) {
 	tempDir := safeTempDir(t)
 	validator, err := New(&SHA256{}, tempDir)
-	if err != nil {
-		t.Fatalf("Failed to create validator: %v", err)
-	}
+	assert.NoError(t, err, "Failed to create validator")
 
 	tests := []struct {
 		name        string
@@ -68,34 +67,24 @@ func TestErrorCases(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			filePath, err := tt.setup()
-			if err != nil {
-				t.Fatalf("Setup failed: %v", err)
-			}
+			assert.NoError(t, err, "Setup failed")
 
 			// Test Record
 			_, err = validator.Record(filePath, false)
 			if tt.wantErr != nil {
-				if err == nil {
-					t.Fatalf("Expected error, got nil")
-				}
-				if !errors.Is(err, tt.wantErr) {
-					t.Errorf("Expected error type %v, got %v", tt.wantErr, err)
-				}
-			} else if err != nil {
-				t.Fatalf("Unexpected error: %v", err)
+				assert.Error(t, err, "Expected error")
+				assert.ErrorIs(t, err, tt.wantErr, "Expected specific error type")
+			} else {
+				assert.NoError(t, err, "Unexpected error")
 			}
 
 			// Test Verify
 			err = validator.Verify(filePath)
 			if tt.wantErr != nil {
-				if err == nil {
-					t.Fatalf("Expected error, got nil")
-				}
-				if !errors.Is(err, tt.wantErr) {
-					t.Errorf("Expected error type %v, got %v", tt.wantErr, err)
-				}
-			} else if err != nil {
-				t.Fatalf("Unexpected error: %v", err)
+				assert.Error(t, err, "Expected error")
+				assert.ErrorIs(t, err, tt.wantErr, "Expected specific error type")
+			} else {
+				assert.NoError(t, err, "Unexpected error")
 			}
 		})
 	}
@@ -105,81 +94,52 @@ func TestErrorCases(t *testing.T) {
 func TestFilesystemEdgeCases(t *testing.T) {
 	tempDir := safeTempDir(t)
 	validator, err := New(&SHA256{}, tempDir)
-	if err != nil {
-		t.Fatalf("Failed to create validator: %v", err)
-	}
+	assert.NoError(t, err, "Failed to create validator")
 
-	t.Run("file deleted between operations", func(t *testing.T) {
-		// Create a test file
-		filePath := filepath.Join(tempDir, "tempfile.txt")
-		if err := os.WriteFile(filePath, []byte("test"), 0o644); err != nil {
-			t.Fatalf("Failed to create test file: %v", err)
-		}
-
-		// Record the file
-		if _, err := validator.Record(filePath, false); err != nil {
-			t.Fatalf("Failed to record file: %v", err)
-		}
+	t.Run("deleted file", func(t *testing.T) {
+		// Create and record a file
+		filePath := filepath.Join(tempDir, "deleted.txt")
+		assert.NoError(t, os.WriteFile(filePath, []byte("test"), 0o644), "Failed to create test file")
+		_, err := validator.Record(filePath, false)
+		assert.NoError(t, err, "Failed to record file")
 
 		// Delete the file
-		if err := os.Remove(filePath); err != nil {
-			t.Fatalf("Failed to delete test file: %v", err)
-		}
+		assert.NoError(t, os.Remove(filePath), "Failed to delete test file")
 
 		// Verify should fail with file not found
-		err := validator.Verify(filePath)
-		if err == nil {
-			t.Fatal("Expected error for deleted file, got nil")
-		}
+		err = validator.Verify(filePath)
+		assert.Error(t, err, "Expected error for deleted file")
 		// Check the error type
-		if !errors.Is(err, os.ErrNotExist) {
-			t.Errorf("Expected file not found error, got: %v", err)
-		}
+		assert.ErrorIs(t, err, os.ErrNotExist, "Expected file not found error")
 	})
 
 	t.Run("directory instead of file", func(t *testing.T) {
 		dirPath := filepath.Join(tempDir, "subdir")
-		if err := os.Mkdir(dirPath, 0o755); err != nil {
-			t.Fatalf("Failed to create directory: %v", err)
-		}
+		assert.NoError(t, os.Mkdir(dirPath, 0o755), "Failed to create directory")
 
 		_, err := validator.Record(dirPath, false)
-		if err == nil {
-			t.Fatal("Expected error for directory, got nil")
-		}
-		if !errors.Is(err, safefileio.ErrInvalidFilePath) {
-			t.Errorf("Expected invalid file path error, got: %v", err)
-		}
+		assert.Error(t, err, "Expected error for directory")
+		assert.ErrorIs(t, err, safefileio.ErrInvalidFilePath, "Expected invalid file path error")
 	})
 
 	t.Run("unreadable directory", func(t *testing.T) {
 		// Create a directory with no read permissions
 		dirPath := filepath.Join(tempDir, "noreaddir")
-		if err := os.Mkdir(dirPath, 0o700); err != nil {
-			t.Fatalf("Failed to create directory: %v", err)
-		}
+		assert.NoError(t, os.Mkdir(dirPath, 0o700), "Failed to create directory")
 
 		// Create a file in the directory first
 		filePath := filepath.Join(dirPath, "test.txt")
-		if err := os.WriteFile(filePath, []byte("test"), 0o600); err != nil {
-			t.Fatalf("Failed to create test file: %v", err)
-		}
+		assert.NoError(t, os.WriteFile(filePath, []byte("test"), 0o600), "Failed to create test file")
 
 		// Make the directory unreadable
-		if err := os.Chmod(dirPath, 0o000); err != nil {
-			t.Fatalf("Failed to change directory permissions: %v", err)
-		}
+		assert.NoError(t, os.Chmod(dirPath, 0o000), "Failed to change directory permissions")
 		t.Cleanup(func() { _ = os.Chmod(dirPath, 0o700) })
 
 		err := validator.Verify(filePath)
-		if err == nil {
-			t.Fatal("Expected error for unreadable directory, got nil")
-		}
+		assert.Error(t, err, "Expected error for unreadable directory")
 		// Check for permission error in the error chain
 		var perr *os.PathError
-		if !errors.As(err, &perr) || !os.IsPermission(perr) {
-			t.Errorf("Expected permission error, got: %v", err)
-		}
+		assert.True(t, errors.As(err, &perr) && os.IsPermission(perr), "Expected permission error, got: %v", err)
 	})
 
 	// This test requires root privileges to create a read-only mount
@@ -189,9 +149,7 @@ func TestFilesystemEdgeCases(t *testing.T) {
 
 		// This test requires root privileges to create a read-only mount
 		roDir := filepath.Join(tempDir, "ro")
-		if err := os.Mkdir(roDir, 0o755); err != nil {
-			t.Fatalf("Failed to create directory: %v", err)
-		}
+		assert.NoError(t, os.Mkdir(roDir, 0o755), "Failed to create directory")
 
 		// Try to make directory read-only (this will only work as root)
 		if err := syscall.Mount("tmpfs", roDir, "tmpfs", syscall.MS_RDONLY, ""); err != nil {
@@ -200,17 +158,11 @@ func TestFilesystemEdgeCases(t *testing.T) {
 		defer syscall.Unmount(roDir, 0)
 
 		filePath := filepath.Join(roDir, "test.txt")
-		if err := os.WriteFile(filePath, []byte("test"), 0o644); err != nil {
-			t.Fatalf("Failed to create test file: %v", err)
-		}
+		assert.NoError(t, os.WriteFile(filePath, []byte("test"), 0o644), "Failed to create test file")
 
 		_, err := validator.Record(filePath, false)
-		if err == nil {
-			t.Fatal("Expected error for read-only filesystem, got nil")
-		}
-		if !errors.Is(err, os.ErrPermission) {
-			t.Errorf("Expected permission error, got: %v", err)
-		}
+		assert.Error(t, err, "Expected error for read-only filesystem")
+		assert.ErrorIs(t, err, os.ErrPermission, "Expected permission error")
 	})
 }
 
@@ -218,9 +170,7 @@ func TestFilesystemEdgeCases(t *testing.T) {
 func TestErrorMessages(t *testing.T) {
 	tempDir := safeTempDir(t)
 	validator, err := New(&SHA256{}, tempDir)
-	if err != nil {
-		t.Fatalf("Failed to create validator: %v", err)
-	}
+	assert.NoError(t, err, "Failed to create validator")
 
 	tests := []struct {
 		name        string

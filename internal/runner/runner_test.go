@@ -1008,7 +1008,10 @@ func TestRunner_CommandTimeoutBehavior(t *testing.T) {
 
 		// Should fail due to timeout
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "signal: killed")
+		assert.True(t,
+			errors.Is(err, context.DeadlineExceeded) ||
+				strings.Contains(err.Error(), "signal: killed"),
+			"Expected timeout error, got: %v", err)
 
 		// Should complete within ~1 second (plus some buffer for processing)
 		assert.Less(t, elapsed, 2*time.Second)
@@ -1049,7 +1052,10 @@ func TestRunner_CommandTimeoutBehavior(t *testing.T) {
 
 		// Should fail due to command timeout (1 second), not global timeout (10 seconds)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "signal: killed")
+		assert.True(t,
+			errors.Is(err, context.DeadlineExceeded) ||
+				strings.Contains(err.Error(), "signal: killed"),
+			"Expected timeout error, got: %v", err)
 
 		// Should complete within ~1 second, not 10 seconds
 		assert.Less(t, elapsed, 2*time.Second)
@@ -1078,7 +1084,8 @@ func TestRunner_CommandTimeoutBehavior(t *testing.T) {
 				errors.Is(err, context.Canceled) ||
 				strings.Contains(err.Error(), "signal: killed") ||
 				strings.Contains(err.Error(), "context deadline exceeded") ||
-				strings.Contains(err.Error(), "context canceled"))
+				strings.Contains(err.Error(), "context canceled"),
+			"Expected context cancellation or timeout error, got: %v", err)
 
 		// Should complete within ~500ms, not the command timeout of 1 second
 		assert.Less(t, elapsed, 800*time.Millisecond)
@@ -2036,7 +2043,7 @@ func TestRunner_EnvironmentVariablePriority_EdgeCases(t *testing.T) {
 		// Should detect and fail on circular references
 		// Note: Current implementation detects this as undefined variable rather than circular reference
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "variable reference not found: CIRCULAR_VAR")
+		assert.ErrorIs(t, err, environment.ErrVariableNotFound)
 	})
 }
 
@@ -2348,7 +2355,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		// Now test CleanupAllResources - should return error
 		err = runner.CleanupAllResources()
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "cleanup failed")
+		assert.ErrorIs(t, err, tempdir.ErrCleanupFailed)
 
 		// Verify mock expectations
 		mockFS.AssertExpectations(t)
