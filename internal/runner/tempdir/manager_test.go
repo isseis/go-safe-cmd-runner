@@ -136,10 +136,6 @@ func TestCleanupAll(t *testing.T) {
 	assert.Nil(t, err, "FileExists should not return an error")
 	assert.False(t, exists, "TempDir2 directory should have been removed: %s", path2)
 
-	exists, err = mockFS.FileExists(path2)
-	assert.Nil(t, err, "FileExists should not return an error")
-	assert.False(t, exists, "TempDir2 directory should have been removed: %s", path2)
-
 	// Try to cleanup non-existent temp directory
 	err = manager.CleanupTempDir(path1)
 	assert.Error(t, err, "CleanupTempDir() should return error for non-existent resource")
