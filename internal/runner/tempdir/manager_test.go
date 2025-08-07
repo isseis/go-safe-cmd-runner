@@ -7,25 +7,26 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewTempDirManager(t *testing.T) {
 	manager := NewTempDirManager("")
-	assert.NotNil(t, manager, "NewManager should not return nil")
-	assert.NotNil(t, manager.tempDirs, "Manager tempDirs map should not be nil")
+	require.NotNil(t, manager, "NewManager should not return nil")
+	require.NotNil(t, manager.tempDirs, "Manager tempDirs map should not be nil")
 	assert.NotEmpty(t, manager.baseDir, "Manager baseDir should not be empty")
 
 	// Test with custom base directory
 	customDir := "/tmp/test"
 	manager2 := NewTempDirManager(customDir)
-	assert.Equal(t, customDir, manager2.baseDir, "Manager baseDir should match custom directory")
+	require.Equal(t, customDir, manager2.baseDir, "Manager baseDir should match custom directory")
 }
 
 func TestNewTempDirManagerWithFS(t *testing.T) {
 	mockFS := common.NewMockFileSystem()
 	manager := NewTempDirManagerWithFS("/tmp", mockFS)
 
-	assert.NotNil(t, manager, "NewManagerWithFS should not return nil")
+	require.NotNil(t, manager, "NewManagerWithFS should not return nil")
 	assert.Equal(t, mockFS, manager.fs, "Manager filesystem should be set to provided filesystem")
 }
 
@@ -34,12 +35,12 @@ func TestCreateTempDir(t *testing.T) {
 	manager := NewTempDirManagerWithFS("/tmp", mockFS)
 
 	path, err := manager.CreateTempDir("test-command")
-	assert.Nil(t, err, "CreateTempDir should not return an error")
-	assert.NotEmpty(t, path, "CreateTempDir should return a valid path")
+	require.NoError(t, err, "CreateTempDir should not return an error")
+	require.NotEmpty(t, path, "CreateTempDir should return a valid path")
 
 	// Check that directory was actually created in mock filesystem
 	exists, err := mockFS.FileExists(path)
-	assert.Nil(t, err, "FileExists should not return an error")
+	require.NoError(t, err, "FileExists should not return an error")
 	assert.True(t, exists, "Temporary directory should exist after creation")
 
 	// Check that path is under the base directory
@@ -52,20 +53,20 @@ func TestCleanupTempDir(t *testing.T) {
 
 	// Create a temp directory
 	path, err := manager.CreateTempDir("test-command")
-	assert.Nil(t, err, "CreateTempDir should not return an error")
+	require.NoError(t, err, "CreateTempDir should not return an error")
 
 	// Verify directory exists
 	exists, err := mockFS.FileExists(path)
-	assert.Nil(t, err, "FileExists should not return an error")
+	require.NoError(t, err, "FileExists should not return an error")
 	assert.True(t, exists, "Temporary directory should exist after creation")
 
 	// Clean up the temp directory
 	err = manager.CleanupTempDir(path)
-	assert.Nil(t, err, "CleanupTempDir() failed")
+	require.NoError(t, err, "CleanupTempDir() failed")
 
 	// Verify directory was removed
 	exists, err = mockFS.FileExists(path)
-	assert.Nil(t, err, "FileExists should not return an error")
+	require.NoError(t, err, "FileExists should not return an error")
 	assert.False(t, exists, "Temp directory should have been removed: %s", path)
 
 	// Try to cleanup non-existent temp directory
@@ -96,7 +97,7 @@ func TestCleanupTempDir_ErrorCases(t *testing.T) {
 		failingFS := &failingFS{MockFileSystem: common.NewMockFileSystem()}
 		manager := NewTempDirManagerWithFS("/tmp", failingFS)
 		path, err := manager.CreateTempDir("fail-case")
-		assert.Nil(t, err, "CreateTempDir should succeed for setup")
+		require.NoError(t, err, "CreateTempDir should succeed for setup")
 
 		err = manager.CleanupTempDir(path)
 		assert.ErrorIs(t, err, ErrCleanupFailed)
@@ -109,31 +110,31 @@ func TestCleanupAll(t *testing.T) {
 
 	// Create multiple temp directories
 	path1, err := manager.CreateTempDir("test-command-1")
-	assert.Nil(t, err, "CreateTempDir should not return an error")
+	require.NoError(t, err, "CreateTempDir should not return an error")
 
 	path2, err := manager.CreateTempDir("test-command-2")
-	assert.Nil(t, err, "CreateTempDir should not return an error")
+	require.NoError(t, err, "CreateTempDir should not return an error")
 
 	// Verify directories exist
 	exists, err := mockFS.FileExists(path1)
-	assert.Nil(t, err, "FileExists should not return an error")
+	require.NoError(t, err, "FileExists should not return an error")
 	assert.True(t, exists, "TempDir1 directory should exist: %s", path1)
 
 	exists, err = mockFS.FileExists(path2)
-	assert.Nil(t, err, "FileExists should not return an error")
+	require.NoError(t, err, "FileExists should not return an error")
 	assert.True(t, exists, "TempDir2 directory should exist: %s", path2)
 
 	// Clean up all temp directories
 	err = manager.CleanupAll()
-	assert.Nil(t, err, "CleanupAll() failed")
+	require.NoError(t, err, "CleanupAll() failed")
 
 	// Verify directories were removed
 	exists, err = mockFS.FileExists(path1)
-	assert.Nil(t, err, "FileExists should not return an error")
+	require.NoError(t, err, "FileExists should not return an error")
 	assert.False(t, exists, "TempDir1 directory should have been removed: %s", path1)
 
 	exists, err = mockFS.FileExists(path2)
-	assert.Nil(t, err, "FileExists should not return an error")
+	require.NoError(t, err, "FileExists should not return an error")
 	assert.False(t, exists, "TempDir2 directory should have been removed: %s", path2)
 
 	// Try to cleanup non-existent temp directory

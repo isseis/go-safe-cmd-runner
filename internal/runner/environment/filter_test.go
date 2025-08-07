@@ -5,15 +5,14 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewFilter(t *testing.T) {
 	config := &runnertypes.Config{}
 	filter := NewFilter(config)
 
-	if filter == nil {
-		t.Fatal("NewFilter returned nil")
-	}
+	require.NotNil(t, filter, "NewFilter returned nil")
 
 	if filter.config != config {
 		t.Error("Filter config not set correctly")

@@ -4,11 +4,12 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestValidator_IsDangerousPrivilegedCommand(t *testing.T) {
 	validator, err := NewValidator(nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	tests := []struct {
 		name     string
@@ -52,7 +53,7 @@ func TestValidator_IsDangerousPrivilegedCommand(t *testing.T) {
 
 func TestValidator_IsShellCommand(t *testing.T) {
 	validator, err := NewValidator(nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	tests := []struct {
 		name     string
@@ -101,7 +102,7 @@ func TestValidator_IsShellCommand(t *testing.T) {
 
 func TestValidator_HasShellMetacharacters(t *testing.T) {
 	validator, err := NewValidator(nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	tests := []struct {
 		name     string
@@ -161,7 +162,7 @@ func TestValidator_CustomConfig(t *testing.T) {
 	}
 
 	validator, err := NewValidator(config)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// Test custom dangerous command
 	assert.True(t, validator.IsDangerousPrivilegedCommand("/custom/dangerous"))
