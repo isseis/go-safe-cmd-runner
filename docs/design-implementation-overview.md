@@ -18,9 +18,9 @@ The Go Safe Command Runner is a security-focused command execution framework des
 flowchart TD
     CLI["Command Line Interface"]
     subgraph CLI_Components[ ]
-        runner["runner\n(Main executor)"]
-        record["record\n(Hash recording)"]
-        verify["verify\n(File validation)"]
+        runner["runner (Main executor)"]
+        record["record (Hash recording)"]
+        verify["verify (File validation)"]
     end
     CLI --> CLI_Components
     CLI_Components --> CoreEngine
@@ -34,7 +34,7 @@ flowchart TD
     end
     CoreEngine --> SystemInterface
     subgraph SystemInterface["System Interface Layer"]
-        safeio["Safe File I/O\n(Symlink Protection)"]
+        safeio["Safe File I/O (Symlink Protection)"]
         process["Process Execution"]
     end
 ```

@@ -18,9 +18,9 @@ Go Safe Command Runnerは、特権タスクの委譲と自動バッチ処理の�
 flowchart TD
     CLI["コマンドラインインターフェース"]
     subgraph CLI_Components[ ]
-        runner["runner\n(メイン実行器)"]
-        record["record\n(ハッシュ記録)"]
-        verify["verify\n(ファイル検証)"]
+        runner["runner (メイン実行器)"]
+        record["record (ハッシュ記録)"]
+        verify["verify (ファイル検証)"]
     end
     CLI --> CLI_Components
     CLI_Components --> CoreEngine
@@ -34,7 +34,7 @@ flowchart TD
     end
     CoreEngine --> SystemInterface
     subgraph SystemInterface["システムインターフェース層"]
-        safeio["安全なファイルI/O\n(シンボリックリンク保護)"]
+        safeio["安全なファイルI/O (シンボリックリンク保護)"]
         process["プロセス実行"]
     end
 ```
