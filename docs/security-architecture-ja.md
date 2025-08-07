@@ -294,7 +294,111 @@ AllowedCommands: []string{
 - 危険な特権操作の検出
 - パス解決セキュリティ検証
 
-### 6. 設定セキュリティ
+### 6. セキュアログと機密データ保護
+
+#### 目的
+パスワード、APIキー、トークンなどの機密情報がログファイルに露出することを防ぎ、機密データを侵害することなく安全な監査証跡を提供します。
+
+#### 実装詳細
+
+**ログセキュリティ設定**:
+```go
+// 場所: internal/runner/security/security.go:85-101
+type LoggingOptions struct {
+    // IncludeErrorDetails は完全なエラーメッセージをログに含めるかを制御
+    IncludeErrorDetails bool `json:"include_error_details"`
+
+    // MaxErrorMessageLength はログ内のエラーメッセージの長さを制限
+    MaxErrorMessageLength int `json:"max_error_message_length"`
+
+    // RedactSensitiveInfo は機密パターンの自動編集を有効化
+    RedactSensitiveInfo bool `json:"redact_sensitive_info"`
+
+    // TruncateStdout はエラーログでstdoutを切り詰めるかを制御
+    TruncateStdout bool `json:"truncate_stdout"`
+
+    // MaxStdoutLength はエラーログ内のstdoutの長さを制限
+    MaxStdoutLength int `json:"max_stdout_length"`
+}
+```
+
+**機密パターン検出と編集**:
+```go
+// 場所: internal/runner/security/security.go:500-531
+func (v *Validator) redactSensitivePatterns(text string) string {
+    sensitivePatterns := []struct {
+        pattern     string
+        replacement string
+    }{
+        // APIキー、トークン、パスワード（一般的なパターン）
+        {"password=", "password=[REDACTED]"},
+        {"token=", "token=[REDACTED]"},
+        {"key=", "key=[REDACTED]"},
+        {"secret=", "secret=[REDACTED]"},
+        {"api_key=", "api_key=[REDACTED]"},
+
+        // 機密を含む可能性のある環境変数代入
+        {"_PASSWORD=", "_PASSWORD=[REDACTED]"},
+        {"_TOKEN=", "_TOKEN=[REDACTED]"},
+        {"_KEY=", "_KEY=[REDACTED]"},
+        {"_SECRET=", "_SECRET=[REDACTED]"},
+
+        // 一般的な認証情報パターン
+        {"Bearer ", "Bearer [REDACTED]"},
+        {"Basic ", "Basic [REDACTED]"},
+    }
+    // パターンマッチングと置換ロジック
+}
+```
+
+**エラーメッセージのサニタイズ**:
+```go
+// 場所: internal/runner/security/security.go:455-479
+func (v *Validator) SanitizeErrorForLogging(err error) string {
+    if err == nil {
+        return ""
+    }
+
+    errMsg := err.Error()
+
+    // エラー詳細を含めるべきでない場合、汎用メッセージを返す
+    if !v.config.LoggingOptions.IncludeErrorDetails {
+        return "[error details redacted for security]"
+    }
+
+    // 有効化されている場合、機密情報を編集
+    if v.config.LoggingOptions.RedactSensitiveInfo {
+        errMsg = v.redactSensitivePatterns(errMsg)
+    }
+
+    // 長すぎる場合は切り詰め
+    if len(errMsg) > v.config.LoggingOptions.MaxErrorMessageLength {
+        errMsg = errMsg[:v.config.LoggingOptions.MaxErrorMessageLength] + "...[truncated]"
+    }
+
+    return errMsg
+}
+```
+
+**出力のサニタイズ**:
+- 認証情報漏洩を防ぐコマンド出力のサニタイズ
+- 設定可能な出力長の切り詰め
+- 機密情報の自動パターンベース編集
+- key=value形式と認証ヘッダーパターンの両方をサポート
+
+**セーフログ関数**:
+- `CreateSafeLogFields()`: サニタイズされたログフィールドマップを作成
+- `LogFieldsWithError()`: ベースフィールドとサニタイズされたエラー情報を結合
+- 構造化ログでの機密パターンの自動検出と編集
+
+#### セキュリティ保証
+- 一般的な機密パターン（パスワード、トークン、APIキー）の自動編集
+- 異なるセキュリティ環境に対応する設定可能なログ詳細レベル
+- エラーメッセージとコマンド出力による認証情報露出からの保護
+- ログファイルの肥大化と潜在的DoSを防ぐ長さベースの切り詰め
+- 環境変数パターンの検出とサニタイズ
+
+### 7. 設定セキュリティ
 
 #### 目的
 設定ファイルと全体的なシステム設定が改ざんされないことを確保し、セキュリティのベストプラクティスに従います。

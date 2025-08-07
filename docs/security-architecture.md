@@ -294,7 +294,111 @@ AllowedCommands: []string{
 - Detection of dangerous privileged operations
 - Path resolution security validation
 
-### 6. Configuration Security
+### 6. Secure Logging and Sensitive Data Protection
+
+#### Purpose
+Prevent sensitive information such as passwords, API keys, and tokens from being exposed in log files, providing secure audit trails without compromising confidential data.
+
+#### Implementation Details
+
+**Logging Security Configuration**:
+```go
+// Location: internal/runner/security/security.go:85-101
+type LoggingOptions struct {
+    // IncludeErrorDetails controls whether full error messages are logged
+    IncludeErrorDetails bool `json:"include_error_details"`
+
+    // MaxErrorMessageLength limits the length of error messages in logs
+    MaxErrorMessageLength int `json:"max_error_message_length"`
+
+    // RedactSensitiveInfo enables automatic redaction of potentially sensitive patterns
+    RedactSensitiveInfo bool `json:"redact_sensitive_info"`
+
+    // TruncateStdout controls whether stdout is truncated in error logs
+    TruncateStdout bool `json:"truncate_stdout"`
+
+    // MaxStdoutLength limits the length of stdout in error logs
+    MaxStdoutLength int `json:"max_stdout_length"`
+}
+```
+
+**Sensitive Pattern Detection and Redaction**:
+```go
+// Location: internal/runner/security/security.go:500-531
+func (v *Validator) redactSensitivePatterns(text string) string {
+    sensitivePatterns := []struct {
+        pattern     string
+        replacement string
+    }{
+        // API keys, tokens, passwords (common patterns)
+        {"password=", "password=[REDACTED]"},
+        {"token=", "token=[REDACTED]"},
+        {"key=", "key=[REDACTED]"},
+        {"secret=", "secret=[REDACTED]"},
+        {"api_key=", "api_key=[REDACTED]"},
+
+        // Environment variable assignments that might contain secrets
+        {"_PASSWORD=", "_PASSWORD=[REDACTED]"},
+        {"_TOKEN=", "_TOKEN=[REDACTED]"},
+        {"_KEY=", "_KEY=[REDACTED]"},
+        {"_SECRET=", "_SECRET=[REDACTED]"},
+
+        // Common credential patterns
+        {"Bearer ", "Bearer [REDACTED]"},
+        {"Basic ", "Basic [REDACTED]"},
+    }
+    // Pattern matching and replacement logic
+}
+```
+
+**Error Message Sanitization**:
+```go
+// Location: internal/runner/security/security.go:455-479
+func (v *Validator) SanitizeErrorForLogging(err error) string {
+    if err == nil {
+        return ""
+    }
+
+    errMsg := err.Error()
+
+    // If error details should not be included, return a generic message
+    if !v.config.LoggingOptions.IncludeErrorDetails {
+        return "[error details redacted for security]"
+    }
+
+    // Redact sensitive information if enabled
+    if v.config.LoggingOptions.RedactSensitiveInfo {
+        errMsg = v.redactSensitivePatterns(errMsg)
+    }
+
+    // Truncate if too long
+    if len(errMsg) > v.config.LoggingOptions.MaxErrorMessageLength {
+        errMsg = errMsg[:v.config.LoggingOptions.MaxErrorMessageLength] + "...[truncated]"
+    }
+
+    return errMsg
+}
+```
+
+**Output Sanitization**:
+- Command output sanitization to prevent credential leakage
+- Configurable output length truncation
+- Automatic pattern-based redaction of sensitive information
+- Support for both key=value and Authorization header patterns
+
+**Safe Logging Functions**:
+- `CreateSafeLogFields()`: Creates sanitized log field maps
+- `LogFieldsWithError()`: Combines base fields with sanitized error information
+- Automatic detection and redaction of sensitive patterns in structured logs
+
+#### Security Guarantees
+- Automatic redaction of common sensitive patterns (passwords, tokens, API keys)
+- Configurable log detail levels for different security environments
+- Protection against credential exposure through error messages and command output
+- Length-based truncation to prevent log file bloat and potential DoS
+- Environment variable pattern detection and sanitization
+
+### 7. Configuration Security
 
 #### Purpose
 Ensure that configuration files and the overall system configuration cannot be tampered with and follow security best practices.
