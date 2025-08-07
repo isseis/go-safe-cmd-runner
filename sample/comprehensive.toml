@@ -6,7 +6,7 @@ version = "1.0"
 timeout = 60
 workdir = "/tmp/cmd-runner-comprehensive"
 log_level = "debug"
-skip_standard_paths = false
+skip_standard_paths = true
 # Global environment variables - comprehensive list for testing
 env_allowlist = [
     "PATH",

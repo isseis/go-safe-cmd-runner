@@ -27,17 +27,6 @@ GO_SOURCES := $(shell find . -type f -name '*.go' -not -name '*_test.go')
 
 HASH_TARGETS := \
 	/etc/passwd \
-	/bin/ls \
-	/bin/sleep \
-	/bin/mkdir \
-	/bin/touch \
-	/bin/id \
-	/bin/sh \
-	/bin/echo \
-	/bin/env \
-	/bin/pwd \
-	/bin/printenv \
-	/usr/bin/whoami \
 	./sample/comprehensive.toml
 
 .PHONY: all lint build run clean test hash integration-test
