@@ -32,7 +32,6 @@ type CommandGroup struct {
 
 	// Fields for resource management
 	TempDir bool   `toml:"temp_dir"` // Auto-generate temporary directory
-	Cleanup bool   `toml:"cleanup"`  // Auto cleanup
 	WorkDir string `toml:"workdir"`  // Working directory
 
 	Commands     []Command `toml:"commands"`

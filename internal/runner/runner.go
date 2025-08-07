@@ -17,9 +17,9 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/tempdir"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/joho/godotenv"
 )
@@ -66,7 +66,7 @@ type Runner struct {
 	config              *runnertypes.Config
 	envVars             map[string]string
 	validator           *security.Validator
-	resourceManager     *resource.Manager
+	tempDirManager      *tempdir.TempDirManager
 	verificationManager *verification.Manager
 	envFilter           *environment.Filter
 	privilegeManager    runnertypes.PrivilegeManager // Optional privilege manager for privileged commands
@@ -78,7 +78,7 @@ type Option func(*runnerOptions)
 // runnerOptions holds all configuration options for creating a Runner
 type runnerOptions struct {
 	securityConfig      *security.Config
-	resourceManager     *resource.Manager
+	tempDirManager      *tempdir.TempDirManager
 	executor            executor.CommandExecutor
 	verificationManager *verification.Manager
 	privilegeManager    runnertypes.PrivilegeManager
@@ -99,10 +99,10 @@ func WithVerificationManager(verificationManager *verification.Manager) Option {
 	}
 }
 
-// WithResourceManager sets a custom resource manager
-func WithResourceManager(manager *resource.Manager) Option {
+// WithTempDirManager sets a custom temporary directory manager
+func WithTempDirManager(manager *tempdir.TempDirManager) Option {
 	return func(opts *runnerOptions) {
-		opts.resourceManager = manager
+		opts.tempDirManager = manager
 	}
 }
 
@@ -164,8 +164,8 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 			opts.executor = executor.NewDefaultExecutor()
 		}
 	}
-	if opts.resourceManager == nil {
-		opts.resourceManager = resource.NewManager(config.Global.WorkDir)
+	if opts.tempDirManager == nil {
+		opts.tempDirManager = tempdir.NewTempDirManager(config.Global.WorkDir)
 	}
 
 	// Create environment filter
@@ -176,7 +176,7 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 		config:              config,
 		envVars:             make(map[string]string),
 		validator:           validator,
-		resourceManager:     opts.resourceManager,
+		tempDirManager:      opts.tempDirManager,
 		verificationManager: opts.verificationManager,
 		envFilter:           envFilter,
 		privilegeManager:    opts.privilegeManager,
@@ -286,13 +286,13 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 		fmt.Printf("Description: %s\n", group.Description)
 	}
 
-	// Track resources for cleanup
-	groupResources := make([]string, 0)
+	// Track temporary directories for cleanup
+	groupTempDirs := make([]string, 0)
 	defer func() {
-		// Clean up resources created for this group
-		for _, resourceID := range groupResources {
-			if err := r.resourceManager.CleanupResource(resourceID); err != nil {
-				slog.Warn("Failed to cleanup resource", "resource_id", resourceID, "error", err)
+		// Clean up temp directories created for this group
+		for _, tempDirPath := range groupTempDirs {
+			if err := r.tempDirManager.CleanupTempDir(tempDirPath); err != nil {
+				slog.Warn("Failed to cleanup temp directory", "path", tempDirPath, "error", err)
 			}
 		}
 	}()
@@ -301,15 +301,15 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 	processedGroup := group
 
 	// Process new fields (TempDir, Cleanup, WorkDir)
-	var tempResource *resource.Resource
+	var tempDirPath string
 	if processedGroup.TempDir {
 		// Create temporary directory for this group
 		var err error
-		tempResource, err = r.resourceManager.CreateTempDir(processedGroup.Name, processedGroup.Cleanup)
+		tempDirPath, err = r.tempDirManager.CreateTempDir(processedGroup.Name)
 		if err != nil {
 			return fmt.Errorf("failed to create temp directory for group %s: %w", processedGroup.Name, err)
 		}
-		groupResources = append(groupResources, tempResource.ID)
+		groupTempDirs = append(groupTempDirs, tempDirPath)
 	}
 
 	// Determine and set the effective working directory for each command
@@ -323,8 +323,8 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 		// 1. TempDir (if enabled)
 		// 2. Group's WorkDir
 		switch {
-		case tempResource != nil:
-			processedGroup.Commands[i].Dir = tempResource.Path
+		case tempDirPath != "":
+			processedGroup.Commands[i].Dir = tempDirPath
 		case processedGroup.WorkDir != "":
 			processedGroup.Commands[i].Dir = processedGroup.WorkDir
 		}
@@ -562,7 +562,7 @@ func (r *Runner) GetConfig() *runnertypes.Config {
 
 // CleanupAllResources cleans up all managed resources
 func (r *Runner) CleanupAllResources() error {
-	return r.resourceManager.CleanupAll()
+	return r.tempDirManager.CleanupAll()
 }
 
 // hasPrivilegedCommands checks if the configuration contains any privileged commands
