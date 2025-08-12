@@ -1,28 +1,29 @@
-# Architecture for Logging System Redesign
+# ログシステム再設計のアーキテクチャ
 
-## 1. Overview
+## 1. 概要
 
-This document describes the proposed architecture for the redesigned logging system. It is based on the requirements outlined in `01_requirements.md`. The core of this architecture is to fully leverage the `log/slog` package and its `slog.Handler` interface to create a flexible and powerful logging pipeline.
+本文書は再設計されたログシステムの提案アーキテクチャを説明します。`01_requirements.md`で概説された要件に基づいています。このアーキテクチャの核心は`log/slog`パッケージとその`slog.Handler`インターフェースを最大限活用し、柔軟で強力なログパイプラインを構築することです。設計では実行毎の一意な名前を持つ圧縮JSONログ、権限降格前の安全なファイルハンドリング、SlackへのMarkdownサマリー通知を重視しています。
 
-## 2. Architectural Principles
+## 2. アーキテクチャの原則
 
-- **Single Responsibility**: Each component in the logging system should have a single, well-defined responsibility.
-- **Decoupling**: The application code that generates logs should be decoupled from the specifics of how logs are formatted and where they are sent.
-- **Extensibility**: The architecture should be easy to extend with new logging handlers without modifying the core application logic.
+- **単一責任**: ログシステムの各コンポーネントは単一の明確に定義された責任を持つべきです
+- **疎結合**: ログを生成するアプリケーションコードは、ログの形式やログの送信先の詳細から疎結合であるべきです
+- **拡張性**: アーキテクチャはコアアプリケーションロジックを変更することなく、新しいログハンドラーで容易に拡張できるべきです
 
-## 3. Proposed Architecture
+## 3. 提案アーキテクチャ
 
-The proposed architecture consists of three main components:
-1.  **Unified Logger**: A single `slog.Logger` instance used throughout the application.
-2.  **Multi-Handler**: A custom `slog.Handler` that dispatches log records to multiple underlying handlers.
-3.  **Specific Handlers**: Individual `slog.Handler` implementations for each output destination (machine-readable file and human-readable summary).
+提案アーキテクチャは以下のコンポーネントで構成されます：
+1.  **統一ログ**: アプリケーション全体で使用される単一の`slog.Logger`インスタンス（`slog.SetDefault`経由のデフォルトログ）
+2.  **MultiHandler（ファンアウト）**: ログレコードを複数の基盤ハンドラーにディスパッチするカスタム`slog.Handler`。すべてのハンドラーを試行し、高速失敗でなくエラーを集約します
+3.  **専用ハンドラー**: 各出力先（機械読み取り可能ファイル、人間読み取り可能サマリー、オプションでSlack）用の個別`slog.Handler`実装
+4.  **墨消しレイヤー（デコレーター）**: センシティブな属性（env、args、認証情報パターン）を任意のハンドラーに到達する前に墨消しする前処理レイヤー
 
-### System Diagram
+### システム図
 
 ```
 +---------------------+      +-------------------+      +------------------------+
-| Application Code    |----->|   slog.Logger     |----->|      MultiHandler      |
-| (e.g., runner)      |      | (Default Logger)  |      | (Custom slog.Handler)  |
+| アプリケーションコード  |----->|   slog.Logger     |----->|      MultiHandler      |
+| （例：runner）       |      | （デフォルトログ）   |      | （カスタムslog.Handler）|
 +---------------------+      +-------------------+      +------------------------+
                                                             |
                                                             |
@@ -36,49 +37,68 @@ The proposed architecture consists of three main components:
                                      |                                             |
                                      v                                             v
                          +-------------------------+                   +-------------------------+
-                         | Machine-Readable Log    |                   | Human-Readable Summary  |
-                         | (runner-log.json)       |                   | (stdout / Slack)        |
+                         | 機械読み取り可能ログ      |                   | 人間読み取り可能サマリー   |
+                         | (per-run .json.gz)      |                   | (stdout / Slack MD)     |
                          +-------------------------+                   +-------------------------+
 ```
 
-### Component Descriptions
+### コンポーネント説明
 
-#### 3.1. Application Code
-- All parts of the `runner` application will use the standard `slog` functions (e.g., `slog.Debug`, `slog.Info`, `slog.Error`).
-- The code will no longer use the standard `log` package. This ensures all log messages go through the `slog` pipeline.
+#### 3.1. アプリケーションコード
+- `runner`アプリケーションのすべての部分は標準の`slog`関数（例：`slog.Debug`、`slog.Info`、`slog.Error`）を使用します
+- コードは標準の`log`パッケージをもはや使用しません。これによりすべてのログメッセージが`slog`パイプラインを通ることを保証します
+- メッセージは構造化属性を含むべきです；自由形式の連結は避けます。監査イベントは`audit=true`でマークされます
 
 #### 3.2. `slog.Logger`
-- A single, global logger instance will be configured at the application's entry point (`main` function).
-- This logger will be initialized with the `MultiHandler`.
+- 単一のグローバルログインスタンスがアプリケーションのエントリーポイント（`main`関数）で設定されます
+- このログは`MultiHandler`で初期化されます
 
 #### 3.3. `MultiHandler`
-- This is a custom implementation of the `slog.Handler` interface.
-- Its primary role is to hold a list of other `slog.Handler` instances.
-- When its `Handle` method is called, it iterates through its list of handlers and calls the `Handle` method on each one.
-- It will also be responsible for checking if a handler is enabled for a given log level before dispatching the record.
+- `slog.Handler`インターフェースのカスタム実装
+- 複数ハンドラーへのファンアウト；各ハンドラーの`Enabled`がレコード毎に尊重されます
+- エラーポリシー：すべてのハンドラーへの配信を試行；複数エラーを集約（マルチエラー）し最後に返却
+- 不変設定（ハンドラースライスは作成後変更されない）で同時性安全を保証
 
 #### 3.4. JSON Handler
-- An instance of `slog.NewJSONHandler`.
-- **Responsibility**: To format log records as JSON.
-- **Output**: A specified log file (e.g., `runner-log.json`).
-- **Log Level**: Configured based on the `--log-level` command-line flag. This allows for detailed logs for debugging.
+- ログをJSONとして形式化する`slog.NewJSONHandler`
+- 出力：ホスト名とタイムスタンプを含む実行毎一意名ファイル、`0600`権限で作成、実行終了時に`.gz`圧縮
+- レベル：`--log-level`から設定
+- `WithAttrs`による共通属性注入：`hostname`、`pid`、`git_commit`、`build_version`、`schema_version=1`、`run_id`等
 
 #### 3.5. Text Handler
-- An instance of `slog.NewTextHandler`.
-- **Responsibility**: To format log records in a human-readable, plain-text format.
-- **Output**: Standard output by default. This output can be piped to other tools or a future handler could send it to a service like Slack.
-- **Log Level**: This will be fixed to a higher level, such as `slog.LevelInfo`. This ensures that only important summary messages are displayed, regardless of the `--log-level` setting for the JSON log.
+- 標準出力への人間読み取り可能出力用の`slog.NewTextHandler`
+- レベル：`info`以上に固定
+- 完了時に簡潔なタイトル行（`OK <group>`または`Fail <group>`）に続いて`RUN_SUMMARY ...`行を出力
 
-## 4. Initialization Flow
+#### 3.6. Slack通知（オプションハンドラー）
+- 各コマンドグループ実行終了時にMarkdownサマリーを投稿
+- 実行前エラー（設定解析失敗、権限エラー、ユーザー中断など）時もエラー通知を投稿
+- Webhook URL用環境変数経由設定（`.env`から読み込み可能）
+- 指数バックオフ（2s基底）で3回リトライ、5sタイムアウト、失敗は警告としてログ記録され終了コードには影響しない
 
-1.  **Parse Flags**: The `main` function will parse command-line flags, including `--log-level` and a new `--log-file` flag.
-2.  **Open Log File**: Open the file specified by `--log-file`.
-3.  **Create Handlers**:
-    - Instantiate `JSONHandler` with the file writer and the parsed log level.
-    - Instantiate `TextHandler` with `os.Stdout` and a fixed `slog.LevelInfo`.
-4.  **Create MultiHandler**: Instantiate the custom `MultiHandler` with the `JSONHandler` and `TextHandler`.
-5.  **Create Logger**: Create a new `slog.Logger` with the `MultiHandler`.
-6.  **Set Default Logger**: Call `slog.SetDefault` to make this logger the global default for the application.
+#### 3.7. 墨消し（デコレーター）
+- レコードを他のハンドラーに渡す前にargs、outputsの許可リスト基底環境フィルタリングとパターン基底認証情報墨消しを適用
+- 認証情報パターンには汎用トークンと主要クラウド認証情報（AWS、GCPなど）を含む
 
-## 5. Extensibility
-To add a new logging output (e.g., Slack), a new `SlackHandler` would be created and added to the `MultiHandler` during initialization, with no changes required to the rest of the application.
+## 4. 初期化フロー
+
+1.  **設定解析**: CLIフラグ、環境変数、TOML（`[logging] level, dir`）を優先度で解析：フラグ > 環境変数 > TOML > デフォルト
+2.  **実行毎ファイル名生成**: `<dir>/<hostname>_<timestamp>_<runid>.json`を構成（完了後gzip圧縮）
+3.  **権限降格前安全オープン**: 権限降格前にログファイルを安全に（シンボリックリンクなし）オープン
+3.  **ハンドラー作成**:
+    - ファイルライターと解析されたログレベルで`JSONHandler`をインスタンス化；共通属性を付加
+    - `os.Stdout`と固定`slog.LevelInfo`で`TextHandler`をインスタンス化
+    - オプションでSlack通知を配線（コマンドグループ終了時サマリーのみ）
+4.  **MultiHandler作成**: 墨消しデコレーターと専用ハンドラーでカスタム`MultiHandler`をインスタンス化
+5.  **ログ作成**: `MultiHandler`で新しい`slog.Logger`を作成
+6.  **デフォルトログ設定**: `slog.SetDefault`を呼び出しこのログをアプリケーションのグローバルデフォルトに設定
+7.  **シャットダウン時**: タイトル+サマリー行を出力；フラッシュ；JSONファイルをgzip圧縮；エラーを警告として処理
+8.  **実行前エラー処理**: 設定解析やファイルアクセス失敗時もrun_idを生成してログ記録；Slack通知を送信；適切なエラーメッセージでプロセス終了
+
+## 5. 拡張性
+新しいログ出力（例：Slack）を追加するには、初期化時に`MultiHandler`に新しいハンドラーを追加できます。墨消しデコレーターは出力先に関係なくセンシティブ情報が除去されることを保証します。
+
+## 6. 対象外／将来作業
+- 動的ログレベル再読み込み（SIGHUP） — 本イテレーションでは実装せず、文書化予定
+- Trace/Span IDs（OpenTelemetry） — スキーマプレースホルダーを予約可能；統合は延期
+- ローテーション/保持 — 外部で処理；ここではper-runファイルを使用
