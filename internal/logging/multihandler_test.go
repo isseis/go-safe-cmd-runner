@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
 	"testing"
 	"time"
 )
@@ -16,6 +17,7 @@ var (
 
 // mockHandler is a test implementation of slog.Handler
 type mockHandler struct {
+	mu          sync.Mutex
 	enabled     bool
 	records     []slog.Record
 	attrs       []slog.Attr
@@ -37,6 +39,9 @@ func (m *mockHandler) Enabled(_ context.Context, _ slog.Level) bool {
 }
 
 func (m *mockHandler) Handle(_ context.Context, r slog.Record) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if m.handleError != nil {
 		return m.handleError
 	}
@@ -45,6 +50,9 @@ func (m *mockHandler) Handle(_ context.Context, r slog.Record) error {
 }
 
 func (m *mockHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	newHandler := &mockHandler{
 		enabled:     m.enabled,
 		records:     make([]slog.Record, 0),
@@ -56,6 +64,9 @@ func (m *mockHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 }
 
 func (m *mockHandler) WithGroup(name string) slog.Handler {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	newHandler := &mockHandler{
 		enabled:     m.enabled,
 		records:     make([]slog.Record, 0),
@@ -64,6 +75,13 @@ func (m *mockHandler) WithGroup(name string) slog.Handler {
 		handleError: m.handleError,
 	}
 	return newHandler
+}
+
+// getRecordCount returns the number of records in a thread-safe manner
+func (m *mockHandler) getRecordCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.records)
 }
 
 func TestNewMultiHandler(t *testing.T) {
@@ -130,14 +148,14 @@ func TestMultiHandler_Handle(t *testing.T) {
 	}
 
 	// Check that enabled handlers received the record
-	if len(handler1.records) != 1 {
-		t.Errorf("Handler1 should have received 1 record, got %d", len(handler1.records))
+	if handler1.getRecordCount() != 1 {
+		t.Errorf("Handler1 should have received 1 record, got %d", handler1.getRecordCount())
 	}
-	if len(handler2.records) != 1 {
-		t.Errorf("Handler2 should have received 1 record, got %d", len(handler2.records))
+	if handler2.getRecordCount() != 1 {
+		t.Errorf("Handler2 should have received 1 record, got %d", handler2.getRecordCount())
 	}
-	if len(handler3.records) != 0 {
-		t.Errorf("Handler3 (disabled) should have received 0 records, got %d", len(handler3.records))
+	if handler3.getRecordCount() != 0 {
+		t.Errorf("Handler3 (disabled) should have received 0 records, got %d", handler3.getRecordCount())
 	}
 }
 
@@ -215,7 +233,7 @@ func TestMultiHandler_ConcurrentAccess(_ *testing.T) {
 
 	// Test concurrent access to Enabled
 	done := make(chan bool, 10)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		go func() {
 			multi.Enabled(context.Background(), slog.LevelInfo)
 			done <- true
@@ -223,12 +241,12 @@ func TestMultiHandler_ConcurrentAccess(_ *testing.T) {
 	}
 
 	// Wait for all goroutines to complete
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		<-done
 	}
 
 	// Test concurrent Handle calls
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		go func(_ int) {
 			record := slog.NewRecord(time.Now(), slog.LevelInfo, "test message", 0)
 			multi.Handle(context.Background(), record)
@@ -237,7 +255,7 @@ func TestMultiHandler_ConcurrentAccess(_ *testing.T) {
 	}
 
 	// Wait for all goroutines to complete
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		<-done
 	}
 }
