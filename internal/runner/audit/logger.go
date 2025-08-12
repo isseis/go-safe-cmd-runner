@@ -16,8 +16,15 @@ type Logger struct {
 	logger *slog.Logger
 }
 
-// NewAuditLogger creates a new audit logger instance
-func NewAuditLogger(logger *slog.Logger) *Logger {
+// NewAuditLogger creates a new audit logger instance using the global logger
+// This integrates with the new logging framework for unified logging
+func NewAuditLogger() *Logger {
+	return &Logger{logger: slog.Default()}
+}
+
+// NewAuditLoggerWithCustom creates a new audit logger instance with a custom logger
+// This method is preserved for backwards compatibility and testing
+func NewAuditLoggerWithCustom(logger *slog.Logger) *Logger {
 	return &Logger{logger: logger}
 }
 
@@ -44,6 +51,7 @@ func (a *Logger) LogPrivilegedExecution(
 ) {
 	baseAttrs := []slog.Attr{
 		slog.String("audit_type", "privileged_execution"),
+		slog.Bool("audit", true), // Mark as audit event for new logging framework
 		slog.Int64("timestamp", time.Now().Unix()),
 		slog.String("command_name", cmd.Name),
 		slog.String("command_path", cmd.Cmd),
@@ -69,6 +77,8 @@ func (a *Logger) LogPrivilegedExecution(
 		additionalAttrs := []slog.Attr{
 			slog.String("stdout", result.Stdout),
 			slog.String("stderr", result.Stderr),
+			slog.Bool("slack_notify", true), // Notify Slack for failed privileged commands
+			slog.String("message_type", "privileged_command_failure"),
 		}
 		errorAttrs := make([]slog.Attr, len(baseAttrs), len(baseAttrs)+len(additionalAttrs))
 		copy(errorAttrs, baseAttrs)
@@ -89,6 +99,7 @@ func (a *Logger) LogPrivilegeEscalation(
 ) {
 	attrs := []slog.Attr{
 		slog.String("audit_type", "privilege_escalation"),
+		slog.Bool("audit", true), // Mark as audit event
 		slog.Int64("timestamp", time.Now().Unix()),
 		slog.String("operation", operation),
 		slog.String("command_name", commandName),
@@ -102,7 +113,16 @@ func (a *Logger) LogPrivilegeEscalation(
 	if success {
 		a.logger.LogAttrs(ctx, slog.LevelInfo, "Privilege escalation successful", attrs...)
 	} else {
-		a.logger.LogAttrs(ctx, slog.LevelWarn, "Privilege escalation failed", attrs...)
+		// Failed privilege escalation should be notified via Slack
+		// Create new slice to avoid modifying the original attrs slice
+		const additionalAttrs = 2
+		failureAttrs := make([]slog.Attr, len(attrs), len(attrs)+additionalAttrs)
+		copy(failureAttrs, attrs)
+		failureAttrs = append(failureAttrs,
+			slog.Bool("slack_notify", true),
+			slog.String("message_type", "privilege_escalation_failure"),
+		)
+		a.logger.LogAttrs(ctx, slog.LevelWarn, "Privilege escalation failed", failureAttrs...)
 	}
 }
 
@@ -116,6 +136,7 @@ func (a *Logger) LogSecurityEvent(
 ) {
 	attrs := []slog.Attr{
 		slog.String("audit_type", "security_event"),
+		slog.Bool("audit", true), // Mark as audit event
 		slog.Int64("timestamp", time.Now().Unix()),
 		slog.String("event_type", eventType),
 		slog.String("severity", severity),
@@ -128,6 +149,15 @@ func (a *Logger) LogSecurityEvent(
 	// Add custom details
 	for key, value := range details {
 		attrs = append(attrs, slog.Any(key, value))
+	}
+
+	// Add Slack notification for critical and high severity events
+	shouldNotifySlack := severity == "critical" || severity == "high"
+	if shouldNotifySlack {
+		attrs = append(attrs,
+			slog.Bool("slack_notify", true),
+			slog.String("message_type", "security_alert"),
+		)
 	}
 
 	switch severity {

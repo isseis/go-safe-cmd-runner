@@ -1,0 +1,260 @@
+package logging
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"testing"
+	"time"
+)
+
+// Test errors
+var (
+	errHandler1 = errors.New("handler1 error")
+	errHandler2 = errors.New("handler2 error")
+)
+
+// mockHandler is a test implementation of slog.Handler
+type mockHandler struct {
+	enabled     bool
+	records     []slog.Record
+	attrs       []slog.Attr
+	groups      []string
+	handleError error
+}
+
+func newMockHandler(enabled bool) *mockHandler {
+	return &mockHandler{
+		enabled: enabled,
+		records: make([]slog.Record, 0),
+		attrs:   make([]slog.Attr, 0),
+		groups:  make([]string, 0),
+	}
+}
+
+func (m *mockHandler) Enabled(_ context.Context, _ slog.Level) bool {
+	return m.enabled
+}
+
+func (m *mockHandler) Handle(_ context.Context, r slog.Record) error {
+	if m.handleError != nil {
+		return m.handleError
+	}
+	m.records = append(m.records, r.Clone())
+	return nil
+}
+
+func (m *mockHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	newHandler := &mockHandler{
+		enabled:     m.enabled,
+		records:     make([]slog.Record, 0),
+		attrs:       append(m.attrs, attrs...),
+		groups:      m.groups,
+		handleError: m.handleError,
+	}
+	return newHandler
+}
+
+func (m *mockHandler) WithGroup(name string) slog.Handler {
+	newHandler := &mockHandler{
+		enabled:     m.enabled,
+		records:     make([]slog.Record, 0),
+		attrs:       m.attrs,
+		groups:      append(m.groups, name),
+		handleError: m.handleError,
+	}
+	return newHandler
+}
+
+func TestNewMultiHandler(t *testing.T) {
+	handler1 := newMockHandler(true)
+	handler2 := newMockHandler(false)
+
+	multi := NewMultiHandler(handler1, handler2)
+
+	if len(multi.handlers) != 2 {
+		t.Errorf("Expected 2 handlers, got %d", len(multi.handlers))
+	}
+}
+
+func TestMultiHandler_Enabled(t *testing.T) {
+	tests := []struct {
+		name     string
+		handlers []slog.Handler
+		expected bool
+	}{
+		{
+			name:     "at least one handler enabled",
+			handlers: []slog.Handler{newMockHandler(false), newMockHandler(true)},
+			expected: true,
+		},
+		{
+			name:     "no handlers enabled",
+			handlers: []slog.Handler{newMockHandler(false), newMockHandler(false)},
+			expected: false,
+		},
+		{
+			name:     "all handlers enabled",
+			handlers: []slog.Handler{newMockHandler(true), newMockHandler(true)},
+			expected: true,
+		},
+		{
+			name:     "no handlers",
+			handlers: []slog.Handler{},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			multi := NewMultiHandler(tt.handlers...)
+			result := multi.Enabled(context.Background(), slog.LevelInfo)
+			if result != tt.expected {
+				t.Errorf("Expected %v, got %v", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestMultiHandler_Handle(t *testing.T) {
+	handler1 := newMockHandler(true)
+	handler2 := newMockHandler(true)
+	handler3 := newMockHandler(false) // disabled handler
+
+	multi := NewMultiHandler(handler1, handler2, handler3)
+
+	record := slog.NewRecord(time.Now(), slog.LevelInfo, "test message", 0)
+	err := multi.Handle(context.Background(), record)
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+
+	// Check that enabled handlers received the record
+	if len(handler1.records) != 1 {
+		t.Errorf("Handler1 should have received 1 record, got %d", len(handler1.records))
+	}
+	if len(handler2.records) != 1 {
+		t.Errorf("Handler2 should have received 1 record, got %d", len(handler2.records))
+	}
+	if len(handler3.records) != 0 {
+		t.Errorf("Handler3 (disabled) should have received 0 records, got %d", len(handler3.records))
+	}
+}
+
+func TestMultiHandler_HandleWithErrors(t *testing.T) {
+	handler1 := newMockHandler(true)
+	handler1.handleError = errHandler1
+
+	handler2 := newMockHandler(true)
+	handler2.handleError = errHandler2
+
+	multi := NewMultiHandler(handler1, handler2)
+
+	record := slog.NewRecord(time.Now(), slog.LevelInfo, "test message", 0)
+	err := multi.Handle(context.Background(), record)
+
+	if err == nil {
+		t.Error("Expected error, got nil")
+	}
+
+	// Should contain both errors
+	errStr := err.Error()
+	if !contains(errStr, "handler1 error") {
+		t.Error("Expected error to contain 'handler1 error'")
+	}
+	if !contains(errStr, "handler2 error") {
+		t.Error("Expected error to contain 'handler2 error'")
+	}
+}
+
+func TestMultiHandler_WithAttrs(t *testing.T) {
+	handler1 := newMockHandler(true)
+	handler2 := newMockHandler(true)
+
+	multi := NewMultiHandler(handler1, handler2)
+	attrs := []slog.Attr{slog.String("key", "value")}
+
+	newMulti := multi.WithAttrs(attrs)
+
+	// Verify it returns a new MultiHandler
+	if newMulti == multi {
+		t.Error("WithAttrs should return a new MultiHandler instance")
+	}
+
+	// Verify the new MultiHandler has the same number of handlers
+	newMultiTyped := newMulti.(*MultiHandler)
+	if len(newMultiTyped.handlers) != 2 {
+		t.Errorf("Expected 2 handlers in new MultiHandler, got %d", len(newMultiTyped.handlers))
+	}
+}
+
+func TestMultiHandler_WithGroup(t *testing.T) {
+	handler1 := newMockHandler(true)
+	handler2 := newMockHandler(true)
+
+	multi := NewMultiHandler(handler1, handler2)
+	groupName := "testgroup"
+
+	newMulti := multi.WithGroup(groupName)
+
+	// Verify it returns a new MultiHandler
+	if newMulti == multi {
+		t.Error("WithGroup should return a new MultiHandler instance")
+	}
+
+	// Verify the new MultiHandler has the same number of handlers
+	newMultiTyped := newMulti.(*MultiHandler)
+	if len(newMultiTyped.handlers) != 2 {
+		t.Errorf("Expected 2 handlers in new MultiHandler, got %d", len(newMultiTyped.handlers))
+	}
+}
+
+func TestMultiHandler_ConcurrentAccess(_ *testing.T) {
+	handler := newMockHandler(true)
+	multi := NewMultiHandler(handler)
+
+	// Test concurrent access to Enabled
+	done := make(chan bool, 10)
+	for i := 0; i < 10; i++ {
+		go func() {
+			multi.Enabled(context.Background(), slog.LevelInfo)
+			done <- true
+		}()
+	}
+
+	// Wait for all goroutines to complete
+	for i := 0; i < 10; i++ {
+		<-done
+	}
+
+	// Test concurrent Handle calls
+	for i := 0; i < 10; i++ {
+		go func(_ int) {
+			record := slog.NewRecord(time.Now(), slog.LevelInfo, "test message", 0)
+			multi.Handle(context.Background(), record)
+			done <- true
+		}(i)
+	}
+
+	// Wait for all goroutines to complete
+	for i := 0; i < 10; i++ {
+		<-done
+	}
+}
+
+// Helper function to check if a string contains a substring
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
+		(len(s) > len(substr) && (s[:len(substr)] == substr ||
+			s[len(s)-len(substr):] == substr ||
+			containsInMiddle(s, substr))))
+}
+
+func containsInMiddle(s, substr string) bool {
+	for i := 1; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}

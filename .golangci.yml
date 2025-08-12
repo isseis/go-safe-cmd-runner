@@ -63,6 +63,7 @@ linters:
           allow:
             - github.com/joho/godotenv
             - github.com/isseis/go-safe-cmd-runner/internal/cmdcommon
+            - github.com/isseis/go-safe-cmd-runner/internal/logging
             - github.com/isseis/go-safe-cmd-runner/internal/runner
             - github.com/isseis/go-safe-cmd-runner/internal/verification
             - $gostd

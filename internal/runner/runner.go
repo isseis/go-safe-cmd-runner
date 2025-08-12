@@ -147,7 +147,7 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 	}
 
 	if opts.auditLogger == nil && opts.privilegeManager != nil {
-		opts.auditLogger = audit.NewAuditLogger(slog.Default())
+		opts.auditLogger = audit.NewAuditLogger()
 	}
 
 	// Use provided components or create defaults

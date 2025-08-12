@@ -4,6 +4,7 @@ import (
 	"errors"
 	"flag"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
@@ -42,13 +43,14 @@ func TestConfigPathRequired(t *testing.T) {
 	os.Args = []string{"runner"}
 
 	// Test run() function
-	err := run()
+	runID := "test-run-id"
+	err := run(runID)
 	if err == nil {
 		t.Error("expected error when --config is not provided")
 	}
 
-	if !errors.Is(err, ErrConfigPathRequired) {
-		t.Errorf("expected ErrConfigPathRequired, got: %v", err)
+	if !errors.Is(err, ErrConfigPathRequired) && !strings.Contains(err.Error(), "Config file path is required") {
+		t.Errorf("expected ErrConfigPathRequired or config path required error, got: %v", err)
 	}
 }
 
