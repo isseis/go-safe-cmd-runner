@@ -2,12 +2,10 @@
 package logging
 
 import (
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
@@ -58,22 +56,6 @@ func (s *SafeFileOpener) OpenFile(path string, flag int, perm os.FileMode) (*os.
 	return nil, ErrInvalidFileType
 }
 
-// GenerateLogFilename generates a unique log filename
-func (s *SafeFileOpener) GenerateLogFilename(dir string) (string, string, error) {
-	hostname, err := os.Hostname()
-	if err != nil {
-		hostname = "unknown"
-	}
-
-	runID := uuid.New().String()
-	timestamp := time.Now().Format("20060102T150405Z")
-
-	filename := fmt.Sprintf("%s_%s_%s.json", hostname, timestamp, runID)
-	fullPath := filepath.Join(dir, filename)
-
-	return fullPath, runID, nil
-}
-
 // GetBuildInfo returns build information for logging
 func GetBuildInfo() (gitCommit, buildVersion string) {
 	// These would typically be set via build flags
@@ -94,34 +76,6 @@ func GetBuildInfo() (gitCommit, buildVersion string) {
 // GenerateRunID generates a new UUID v4 for run identification
 func GenerateRunID() string {
 	return uuid.New().String()
-}
-
-// CompressLogFile compresses a log file to .gz format and removes the original
-func CompressLogFile(logPath string) error {
-	// This is a simplified implementation
-	// In a production environment, you'd want to use gzip compression
-	gzPath := logPath + ".gz"
-
-	// Read original file
-	// #nosec G304 - logPath is validated and safe for reading
-	data, err := os.ReadFile(logPath)
-	if err != nil {
-		return fmt.Errorf("failed to read log file for compression: %w", err)
-	}
-
-	// For now, just rename (in production, would actually compress)
-	err = os.WriteFile(gzPath, data, logFilePerm)
-	if err != nil {
-		return fmt.Errorf("failed to write compressed log file: %w", err)
-	}
-
-	// Remove original
-	err = os.Remove(logPath)
-	if err != nil {
-		return fmt.Errorf("failed to remove original log file: %w", err)
-	}
-
-	return nil
 }
 
 // ValidateLogDir ensures the log directory is safe and accessible
@@ -150,13 +104,4 @@ func ValidateLogDir(dir string) error {
 	}
 
 	return nil
-}
-
-// SecureRandom generates secure random bytes
-func SecureRandom(length int) ([]byte, error) {
-	bytes := make([]byte, length)
-	if _, err := rand.Read(bytes); err != nil {
-		return nil, fmt.Errorf("failed to generate secure random bytes: %w", err)
-	}
-	return bytes, nil
 }
