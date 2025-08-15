@@ -69,5 +69,5 @@ test: $(BINARY_RUNNER)
 
 integration-test: $(BINARY_RUNNER)
 	$(MKDIR) /tmp/cmd-runner-comprehensive /tmp/custom-workdir-test
-	$(ENVCMD) -i PATH=/bin:/sbin:/usr/bin:/usr/sbin LANG=C $(BINARY_RUNNER) -config ./sample/comprehensive.toml
+	$(ENVCMD) -i PATH=/bin:/sbin:/usr/bin:/usr/sbin LANG=C $(BINARY_RUNNER) -config ./sample/comprehensive.toml -log-level error
 	$(RM) -r /tmp/cmd-runner-comprehensive /tmp/custom-workdir-test

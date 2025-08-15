@@ -1,5 +1,6 @@
 # Comprehensive test configuration file for go-safe-cmd-runner
 # This file covers all major configuration features and edge cases for thorough testing
+# Including Slack notification integration
 version = "1.0"
 
 [global]
@@ -20,6 +21,8 @@ env_allowlist = [
     "NODE_ENV",
     "DEBUG_MODE",
     "GOTRACEBACK",
+    "SLACK_WEBHOOK_URL",
+    "LS_COLORS",
 ]
 verify_files = ["/etc/passwd", "/bin/sh"]
 
@@ -236,11 +239,29 @@ description = "Summarize multi-dependency test"
 cmd = "echo"
 args = ["Multi-dependency test completed successfully"]
 
-# Group 11: All features combined
+# Group 11: Slack notification test
+[[groups]]
+name = "slack_notification_test"
+description = "Test Slack notification functionality with WARNING level event"
+priority = 13
+
+[[groups.commands]]
+name = "generate_warning_event"
+description = "Generate a warning event to test Slack notifications"
+cmd = "echo"
+args = ["Generating warning event for Slack notification test"]
+
+[[groups.commands]]
+name = "test_invalid_log_level"
+description = "Test invalid log level to generate Slack notification"
+cmd = "echo"
+args = ["Testing Slack notification with warning event"]
+
+# Group 12: All features combined
 [[groups]]
 name = "comprehensive_final"
 description = "Final comprehensive test combining all features"
-priority = 13
+priority = 14
 temp_dir = true
 cleanup = true
 workdir = "/tmp/final-comprehensive-test"
@@ -266,5 +287,5 @@ env = ["FINAL_TEST_VAR=comprehensive_success"]
 name = "final_summary"
 description = "Final comprehensive test summary"
 cmd = "echo"
-args = ["🎉 All comprehensive tests completed successfully!"]
+args = ["🎉 All comprehensive tests completed successfully! Slack notifications active."]
 timeout = 15

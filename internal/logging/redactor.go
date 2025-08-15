@@ -61,6 +61,11 @@ func (r *RedactingHandler) Enabled(ctx context.Context, level slog.Level) bool {
 	return r.handler.Enabled(ctx, level)
 }
 
+// Handler returns the underlying handler
+func (r *RedactingHandler) Handler() slog.Handler {
+	return r.handler
+}
+
 // Handle redacts the log record and forwards it to the underlying handler
 func (r *RedactingHandler) Handle(ctx context.Context, record slog.Record) error {
 	// Create a new record with redacted attributes

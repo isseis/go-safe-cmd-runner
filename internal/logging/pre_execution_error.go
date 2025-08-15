@@ -100,11 +100,19 @@ func GetSlackWebhookURL() string {
 		os.Getenv("WEBHOOK_URL"),
 	}
 
+	// Debug: log environment variables
+	slog.Debug("Checking for Slack webhook URL",
+		"SLACK_WEBHOOK_URL", os.Getenv("SLACK_WEBHOOK_URL"),
+		"SLACK_URL", os.Getenv("SLACK_URL"),
+		"WEBHOOK_URL", os.Getenv("WEBHOOK_URL"))
+
 	for _, url := range urls {
 		if url != "" {
+			slog.Debug("Found Slack webhook URL", "url", url)
 			return url
 		}
 	}
 
+	slog.Debug("No Slack webhook URL found in environment variables")
 	return ""
 }

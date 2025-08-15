@@ -48,6 +48,13 @@ func (h *MultiHandler) Handle(ctx context.Context, r slog.Record) error {
 	return multiErr
 }
 
+// Handlers returns a copy of the underlying handlers slice
+func (h *MultiHandler) Handlers() []slog.Handler {
+	handlers := make([]slog.Handler, len(h.handlers))
+	copy(handlers, h.handlers)
+	return handlers
+}
+
 // WithAttrs returns a new MultiHandler whose handlers have the given attributes.
 func (h *MultiHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	newHandlers := make([]slog.Handler, len(h.handlers))
