@@ -336,7 +336,10 @@ func addSlackHandler(webhookURL, runID string) {
 
 // setupLogger initializes the logging system
 func setupLogger(level, logDir, runID string) error {
-	hostname, _ := os.Hostname()
+	hostname, err := os.Hostname()
+	if err != nil {
+		hostname = "unknown-host"
+	}
 	timestamp := time.Now().Format("20060102T150405Z")
 
 	var handlers []slog.Handler
