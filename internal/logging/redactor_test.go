@@ -86,7 +86,7 @@ func TestRedactingHandler_RedactCredentialPatterns(t *testing.T) {
 		value    string
 		expected string
 	}{
-		{"safe_key", "safe_value", "safe_value"},
+		{"safe_field", "safe_value", "safe_value"}, // Changed from "safe_key" to avoid "key" pattern
 		{"password", "secret123", "***"},
 		{"api_token", "token123", "***"},
 		{"normal_field", "password123", "***"}, // value contains pattern

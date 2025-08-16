@@ -220,6 +220,9 @@ type Validator struct {
 	dangerousEnvRegexps         []*regexp.Regexp
 	dangerousPrivilegedCommands map[string]struct{}
 	shellCommands               map[string]struct{}
+	// Common redaction functionality
+	redactionOptions  *common.RedactionOptions
+	sensitivePatterns *common.SensitivePatterns
 }
 
 // NewValidator creates a new security validator with the given configuration.
@@ -237,9 +240,15 @@ func NewValidatorWithFS(config *Config, fs common.FileSystem) (*Validator, error
 		config = DefaultConfig()
 	}
 
+	// Initialize common redaction functionality
+	sensitivePatterns := common.DefaultSensitivePatterns()
+	redactionOptions := common.DefaultRedactionOptions()
+
 	v := &Validator{
-		config: config,
-		fs:     fs,
+		config:            config,
+		fs:                fs,
+		sensitivePatterns: sensitivePatterns,
+		redactionOptions:  redactionOptions,
 	}
 
 	// Compile allowed command patterns
@@ -440,9 +449,13 @@ func (v *Validator) ValidateCommand(command string) error {
 
 // isSensitiveEnvVar checks if an environment variable name matches sensitive patterns
 func (v *Validator) isSensitiveEnvVar(name string) bool {
-	upperName := strings.ToUpper(name)
+	// Use the new common functionality first
+	if v.sensitivePatterns.IsSensitiveEnvVar(name) {
+		return true
+	}
 
-	// Check against compiled sensitive environment variable patterns
+	// Fallback to the legacy regex patterns for backward compatibility
+	upperName := strings.ToUpper(name)
 	for _, re := range v.sensitiveEnvRegexps {
 		if re.MatchString(upperName) {
 			return true
@@ -499,94 +512,8 @@ func (v *Validator) SanitizeOutputForLogging(output string) string {
 
 // redactSensitivePatterns removes or redacts potentially sensitive information
 func (v *Validator) redactSensitivePatterns(text string) string {
-	// Common patterns that might contain sensitive information
-	sensitivePatterns := []struct {
-		pattern     string
-		replacement string
-	}{
-		// API keys, tokens, passwords (common patterns)
-		{"password=", "password=[REDACTED]"},
-		{"token=", "token=[REDACTED]"},
-		{"key=", "key=[REDACTED]"},
-		{"secret=", "secret=[REDACTED]"},
-		{"api_key=", "api_key=[REDACTED]"},
-
-		// Environment variable assignments that might contain secrets
-		{"_PASSWORD=", "_PASSWORD=[REDACTED]"},
-		{"_TOKEN=", "_TOKEN=[REDACTED]"},
-		{"_KEY=", "_KEY=[REDACTED]"},
-		{"_SECRET=", "_SECRET=[REDACTED]"},
-
-		// Common credential patterns
-		{"Bearer ", "Bearer [REDACTED]"},
-		{"Basic ", "Basic [REDACTED]"},
-	}
-
-	result := text
-	for _, pattern := range sensitivePatterns {
-		result = v.performSimpleRedaction(result, pattern.pattern, pattern.replacement)
-	}
-
-	return result
-}
-
-// performSimpleRedaction performs basic pattern-based redaction
-func (v *Validator) performSimpleRedaction(text, pattern, _ string) string {
-	// Handle key=value patterns
-	if strings.Contains(pattern, "=") {
-		key := strings.TrimSuffix(pattern, "=")
-
-		// Look for key= pattern and replace only the value part
-		keyPattern := key + "="
-		lowerKey := strings.ToLower(keyPattern)
-
-		// Find all occurrences of the key= pattern
-		result := text
-		searchStart := 0
-
-		for {
-			lowerResult := strings.ToLower(result[searchStart:])
-			relativeIdx := strings.Index(lowerResult, lowerKey)
-			if relativeIdx == -1 {
-				break
-			}
-
-			startIdx := searchStart + relativeIdx
-
-			// Find the end of the value (space, newline, or end of string)
-			valueStart := startIdx + len(keyPattern)
-			valueEnd := valueStart
-			for valueEnd < len(result) && result[valueEnd] != ' ' && result[valueEnd] != '\n' && result[valueEnd] != '\t' {
-				valueEnd++
-			}
-
-			// Replace the value part with [REDACTED]
-			before := result[:valueStart]
-			after := result[valueEnd:]
-			result = before + "[REDACTED]" + after
-
-			// Move search start past the replacement to avoid infinite loop
-			searchStart = valueStart + len("[REDACTED]")
-			if searchStart >= len(result) {
-				break
-			}
-		}
-
-		return result
-	}
-
-	// Handle Bearer/Basic token patterns
-	if strings.Contains(pattern, "Bearer ") || strings.Contains(pattern, "Basic ") {
-		words := strings.Fields(text)
-		for i := range words {
-			if i > 0 && (strings.EqualFold(words[i-1], "Bearer") || strings.EqualFold(words[i-1], "Basic")) {
-				words[i] = "[REDACTED]"
-			}
-		}
-		return strings.Join(words, " ")
-	}
-
-	return text
+	// Use the new common redaction functionality
+	return v.redactionOptions.RedactText(text)
 }
 
 // CreateSafeLogFields creates log fields with sensitive data redaction
