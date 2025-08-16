@@ -28,9 +28,10 @@ GO_SOURCES := $(shell find . -type f -name '*.go' -not -name '*_test.go')
 HASH_TARGETS := \
 	/etc/passwd \
 	./sample/comprehensive.toml \
-	./sample/slack-notify.toml
+	./sample/slack-notify.toml \
+	./sample/slack-group-notification-test.toml
 
-.PHONY: all lint build run clean test hash integration-test integration-test-success slack-notify-test
+.PHONY: all lint build run clean test hash integration-test integration-test-success slack-notify-test slack-group-notification-test
 
 all: build
 
@@ -82,4 +83,32 @@ slack-notify-test: $(BINARY_RUNNER)
 	$(ENVCMD) -i PATH=/bin:/sbin:/usr/bin:/usr/sbin LANG=C $(BINARY_RUNNER) -config ./sample/slack-notify.toml -log-level warn -env-file $(PWD)/sample/.env || EXIT_CODE=$$?; \
 	$(RM) -r /tmp/cmd-runner-slack-test; \
 	echo "Slack notification test completed with exit code: $$EXIT_CODE"; \
+	exit $$EXIT_CODE
+
+# Test the new group-level Slack notification functionality
+# This target tests notifications sent after each command group execution
+slack-group-notification-test: $(BINARY_RUNNER)
+	@$(MKDIR) /tmp/slack-group-test
+	@EXIT_CODE=0; \
+	RUN_ID="slack-test-$$(date +%s)"; \
+	echo "Running Slack group notification test with run ID: $$RUN_ID"; \
+	$(ENVCMD) -i PATH=/bin:/sbin:/usr/bin:/usr/sbin LANG=C SLACK_WEBHOOK_URL="$$SLACK_WEBHOOK_URL" \
+		$(BINARY_RUNNER) -config ./sample/slack-group-notification-test.toml -log-level info -run-id "$$RUN_ID" --env-file $(PWD)/sample/.env \
+		2>&1 | tee /tmp/slack-group-test/test-output.log || EXIT_CODE=$$?; \
+	echo ""; \
+	echo "=== Test Results ==="; \
+	echo "Expected notifications:"; \
+	echo "  1. SUCCESS notification for 'success_group'"; \
+	echo "  2. ERROR notification for 'failure_group' (this group is designed to fail)"; \
+	echo "  3. SUCCESS notification for 'second_success_group'"; \
+	echo "  4. ERROR notification for 'mixed_group' (ends with failure)"; \
+	echo ""; \
+	echo "Check the log output above for messages containing:"; \
+	echo "  - 'slack_notify=true'"; \
+	echo "  - 'message_type=command_group_summary'"; \
+	echo "  - 'status=success' or 'status=error'"; \
+	echo ""; \
+	$(RM) -r /tmp/slack-group-test; \
+	echo ""; \
+	echo "Slack group notification test completed with exit code: $$EXIT_CODE"; \
 	exit $$EXIT_CODE

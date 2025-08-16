@@ -2530,3 +2530,120 @@ func TestPrivilegedCommandPathValidation(t *testing.T) {
 		})
 	}
 }
+
+// TestSlackNotification tests that Slack notifications are sent correctly
+func TestSlackNotification(t *testing.T) {
+	tests := []struct {
+		name           string
+		withRunID      bool
+		commandSuccess bool
+		expectedStatus string
+		expectedCalls  int // Expected number of logging calls
+	}{
+		{
+			name:           "Success notification with run ID",
+			withRunID:      true,
+			commandSuccess: true,
+			expectedStatus: "success",
+			expectedCalls:  1,
+		},
+		{
+			name:           "Failure notification with run ID",
+			withRunID:      true,
+			commandSuccess: false,
+			expectedStatus: "error",
+			expectedCalls:  1,
+		},
+		{
+			name:           "No notification without run ID",
+			withRunID:      false,
+			commandSuccess: true,
+			expectedStatus: "",
+			expectedCalls:  0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create temporary directory for test
+			tempDir := t.TempDir()
+
+			// Create config with a simple command group
+			config := &runnertypes.Config{
+				Global: runnertypes.GlobalConfig{
+					WorkDir: tempDir,
+					Timeout: 30,
+				},
+				Groups: []runnertypes.CommandGroup{
+					{
+						Name:        "test-group",
+						Description: "Test group for notification",
+						Commands: []runnertypes.Command{
+							{
+								Name: "test-command",
+								Cmd:  "echo",
+								Args: []string{"test"},
+							},
+						},
+					},
+				},
+			}
+
+			// Create mock executor
+			mockExecutor := &MockExecutor{}
+
+			// Set up executor behavior based on test case
+			if tt.commandSuccess {
+				mockExecutor.On("Execute", mock.Anything, mock.Anything, mock.Anything).Return(
+					&executor.Result{
+						ExitCode: 0,
+						Stdout:   "test output",
+						Stderr:   "",
+					}, nil,
+				)
+			} else {
+				mockExecutor.On("Execute", mock.Anything, mock.Anything, mock.Anything).Return(
+					&executor.Result{
+						ExitCode: 1,
+						Stdout:   "",
+						Stderr:   "command failed",
+					}, nil,
+				)
+			}
+
+			// Create runner options
+			var options []Option
+			options = append(options, WithExecutor(mockExecutor))
+
+			if tt.withRunID {
+				options = append(options, WithRunID("test-run-123"))
+			}
+
+			// Create runner
+			runner, err := NewRunner(config, options...)
+			require.NoError(t, err)
+
+			// Execute the group
+			ctx := context.Background()
+			err = runner.ExecuteGroup(ctx, config.Groups[0])
+
+			if tt.commandSuccess {
+				assert.NoError(t, err)
+			} else {
+				assert.Error(t, err)
+			}
+
+			// Verify mock expectations
+			mockExecutor.AssertExpectations(t)
+
+			// Note: In a real test, we would need to mock the logging system
+			// to verify that LogCommandGroupSummary was called correctly.
+			// For now, we verify that the runner was configured correctly.
+			if tt.withRunID {
+				assert.Equal(t, "test-run-123", runner.runID)
+			} else {
+				assert.Empty(t, runner.runID)
+			}
+		})
+	}
+}

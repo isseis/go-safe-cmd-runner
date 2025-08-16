@@ -43,6 +43,7 @@ var (
 	dryRun         = flag.Bool("dry-run", false, "print commands without executing them")
 	hashDirectory  = flag.String("hash-directory", "", "directory containing hash files (default: "+cmdcommon.DefaultHashDirectory+")")
 	validateConfig = flag.Bool("validate", false, "validate configuration file and exit")
+	runID          = flag.String("run-id", "", "unique identifier for this execution run (enables Slack notifications)")
 )
 
 // getHashDir determines the hash directory based on command line args and environment variables
@@ -85,36 +86,42 @@ func validateConfigCommand(cfg *runnertypes.Config) error {
 }
 
 func main() {
-	// Generate run ID early for error handling
-	runID := logging.GenerateRunID()
+	// Parse command line flags early to get runIDValue
+	flag.Parse()
+
+	// Use provided run ID or generate one for error handling
+	runIDValue := *runID
+	if runIDValue == "" {
+		runIDValue = logging.GenerateRunID()
+	}
 
 	if err := syscall.Seteuid(syscall.Getuid()); err != nil {
-		logging.HandlePreExecutionError(logging.ErrorTypePrivilegeDrop, fmt.Sprintf("Failed to drop privileges: %v", err), "main", runID)
+		logging.HandlePreExecutionError(logging.ErrorTypePrivilegeDrop, fmt.Sprintf("Failed to drop privileges: %v", err), "main", runIDValue)
 		os.Exit(1)
 	}
 
 	// Wrap main logic in a separate function to properly handle errors and defer
-	if err := run(runID); err != nil {
+	if err := run(runIDValue); err != nil {
 		// Check if this is a pre-execution error
 		if preExecErr, ok := err.(*logging.PreExecutionError); ok {
-			logging.HandlePreExecutionError(preExecErr.Type, preExecErr.Message, preExecErr.Component, runID)
+			logging.HandlePreExecutionError(preExecErr.Type, preExecErr.Message, preExecErr.Component, runIDValue)
 		} else {
-			logging.HandlePreExecutionError(logging.ErrorTypeSystemError, err.Error(), "main", runID)
+			logging.HandlePreExecutionError(logging.ErrorTypeSystemError, err.Error(), "main", runIDValue)
 		}
 		os.Exit(1)
 	}
 }
 
-func run(runID string) error {
+func run(runIDValue string) error {
 	flag.Parse()
 
 	// Setup logging system early - before any other operations that might use slog
-	if err := setupLogger(*logLevel, *logDir, runID); err != nil {
+	if err := setupLogger(*logLevel, *logDir, runIDValue); err != nil {
 		return &logging.PreExecutionError{
 			Type:      logging.ErrorTypeLogFileOpen,
 			Message:   fmt.Sprintf("Failed to setup logger: %v", err),
 			Component: "logging",
-			RunID:     runID,
+			RunID:     runIDValue,
 		}
 	}
 
@@ -128,7 +135,7 @@ func run(runID string) error {
 			Type:      logging.ErrorTypeInvalidArguments,
 			Message:   "Config file path is required",
 			Component: "config",
-			RunID:     runID,
+			RunID:     runIDValue,
 		}
 	}
 
@@ -140,7 +147,7 @@ func run(runID string) error {
 			Type:      logging.ErrorTypeConfigParsing,
 			Message:   fmt.Sprintf("Failed to load config: %v", err),
 			Component: "config",
-			RunID:     runID,
+			RunID:     runIDValue,
 		}
 	}
 
@@ -171,7 +178,7 @@ func run(runID string) error {
 			Type:      logging.ErrorTypeFileAccess,
 			Message:   fmt.Sprintf("Config verification failed: %v", err),
 			Component: "verification",
-			RunID:     runID,
+			RunID:     runIDValue,
 		}
 	}
 
@@ -184,7 +191,7 @@ func run(runID string) error {
 			Type:      logging.ErrorTypeFileAccess,
 			Message:   fmt.Sprintf("Global files verification failed: %v", err),
 			Component: "verification",
-			RunID:     runID,
+			RunID:     runIDValue,
 		}
 	}
 
@@ -194,13 +201,21 @@ func run(runID string) error {
 			"verified", result.VerifiedFiles,
 			"skipped", len(result.SkippedFiles),
 			"duration_ms", result.Duration.Milliseconds(),
-			"run_id", runID)
+			"run_id", runIDValue)
 	}
 
-	// Initialize Runner with privilege support
-	runner, err := runner.NewRunner(cfg,
+	// Initialize Runner with privilege support and run ID
+	runnerOptions := []runner.Option{
 		runner.WithVerificationManager(verificationManager),
-		runner.WithPrivilegeManager(privMgr))
+		runner.WithPrivilegeManager(privMgr),
+	}
+
+	// Add run ID if specified (enables Slack notifications)
+	if runIDValue != "" {
+		runnerOptions = append(runnerOptions, runner.WithRunID(runIDValue))
+	}
+
+	runner, err := runner.NewRunner(cfg, runnerOptions...)
 	if err != nil {
 		return fmt.Errorf("failed to initialize runner: %w", err)
 	}
@@ -227,10 +242,10 @@ func run(runID string) error {
 	slackURL := getSlackWebhookFromEnvFile(envFileToLoad)
 
 	if slackURL != "" {
-		addSlackHandler(slackURL, runID)
-		slog.Info("Slack handler added successfully", "webhook_url", slackURL, "run_id", runID)
+		addSlackHandler(slackURL, runIDValue)
+		slog.Info("Slack handler added successfully", "webhook_url", slackURL, "run_id", runIDValue)
 	} else {
-		slog.Debug("No Slack webhook URL found in env file", "run_id", runID, "env_file", envFileToLoad)
+		slog.Debug("No Slack webhook URL found in env file", "run_id", runIDValue, "env_file", envFileToLoad)
 	}
 
 	if *logLevel != "" {
@@ -247,7 +262,7 @@ func run(runID string) error {
 	// Ensure cleanup of all resources on exit (both auto-cleanup and manual cleanup resources)
 	defer func() {
 		if err := runner.CleanupAllResources(); err != nil {
-			slog.Warn("Failed to cleanup resources", "error", err, "run_id", runID)
+			slog.Warn("Failed to cleanup resources", "error", err, "run_id", runIDValue)
 		}
 	}()
 
@@ -300,12 +315,12 @@ func getSlackWebhookFromEnvFile(envFile string) string {
 }
 
 // addSlackHandler adds Slack handler to the current logger
-func addSlackHandler(webhookURL, runID string) {
+func addSlackHandler(webhookURL, runIDValue string) {
 	// Get the current logger
 	currentLogger := slog.Default()
 
 	// Create new Slack handler
-	slackHandler := logging.NewSlackHandler(webhookURL, runID)
+	slackHandler := logging.NewSlackHandler(webhookURL, runIDValue)
 
 	// Get existing handlers from the current logger if it's a MultiHandler
 	var existingHandlers []slog.Handler
@@ -335,7 +350,7 @@ func addSlackHandler(webhookURL, runID string) {
 }
 
 // setupLogger initializes the logging system
-func setupLogger(level, logDir, runID string) error {
+func setupLogger(level, logDir, runIDValue string) error {
 	hostname, err := os.Hostname()
 	if err != nil {
 		hostname = "unknown-host"
@@ -358,7 +373,7 @@ func setupLogger(level, logDir, runID string) error {
 			return fmt.Errorf("invalid log directory: %w", err)
 		}
 
-		logPath := filepath.Join(logDir, fmt.Sprintf("%s_%s_%s.json", hostname, timestamp, runID))
+		logPath := filepath.Join(logDir, fmt.Sprintf("%s_%s_%s.json", hostname, timestamp, runIDValue))
 		fileOpener := logging.NewSafeFileOpener()
 		logF, err := fileOpener.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, logFilePerm)
 		if err != nil {
@@ -383,14 +398,14 @@ func setupLogger(level, logDir, runID string) error {
 			slog.String("git_commit", gitCommit),
 			slog.String("build_version", buildVersion),
 			slog.Int("schema_version", 1),
-			slog.String("run_id", runID),
+			slog.String("run_id", runIDValue),
 		})
 		handlers = append(handlers, enrichedHandler)
 	}
 
 	// 3. Slack notification handler (optional)
 	if slackURL := logging.GetSlackWebhookURL(); slackURL != "" {
-		slackHandler := logging.NewSlackHandler(slackURL, runID)
+		slackHandler := logging.NewSlackHandler(slackURL, runIDValue)
 		handlers = append(handlers, slackHandler)
 	}
 
@@ -405,7 +420,7 @@ func setupLogger(level, logDir, runID string) error {
 	slog.Info("Logger initialized",
 		"log-level", level,
 		"log-dir", logDir,
-		"run_id", runID,
+		"run_id", runIDValue,
 		"hostname", hostname)
 
 	// Warn about invalid log level after logger is properly set up
