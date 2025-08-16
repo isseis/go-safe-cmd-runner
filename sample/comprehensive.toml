@@ -192,24 +192,11 @@ description = "Use verified command"
 cmd = "/bin/echo"
 args = ["Using verified command"]
 
-# Group 9: Slack notification test
-[[groups]]
-name = "slack_notification_test"
-description = "Test Slack notification functionality by triggering a privileged command failure"
-priority = 9
-
-[[groups.commands]]
-name = "trigger_privileged_failure"
-description = "Trigger privileged command failure to test Slack notifications"
-cmd = "/nonexistent/command/that/will/fail"
-args = []
-privileged = true
-
-# Group 10: All features combined
+# Group 9: All features combined
 [[groups]]
 name = "comprehensive_final"
 description = "Final comprehensive test combining all features"
-priority = 10
+priority = 9
 temp_dir = true
 cleanup = true
 workdir = "/tmp/final-comprehensive-test"
