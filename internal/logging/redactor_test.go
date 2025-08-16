@@ -3,9 +3,10 @@ package logging
 import (
 	"context"
 	"log/slog"
-	"regexp"
 	"testing"
 	"time"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
 
 // mockRedactorHandler for testing redactor
@@ -37,9 +38,12 @@ func (m *mockRedactorHandler) WithGroup(_ string) slog.Handler {
 }
 
 func TestDefaultRedactionConfig(t *testing.T) {
-	config := DefaultRedactionConfig()
+	options := common.DefaultRedactionOptions()
 
-	if len(config.CredentialPatterns) == 0 {
+	if options.Patterns == nil {
+		t.Error("Expected patterns to be set")
+	}
+	if len(options.Patterns.CredentialPatterns) == 0 {
 		t.Error("Expected non-empty credential patterns")
 	}
 }
@@ -47,23 +51,22 @@ func TestDefaultRedactionConfig(t *testing.T) {
 func TestNewRedactingHandler(t *testing.T) {
 	mockHandler := newMockRedactorHandler()
 
-	// Test with custom config
-	config := &RedactionConfig{
-		AllowedEnvKeys: []string{},
-		CredentialPatterns: []*regexp.Regexp{
-			regexp.MustCompile(`(?i)secret`),
-		},
+	// Test with custom options
+	options := &common.RedactionOptions{
+		LogPlaceholder:  "***",
+		TextPlaceholder: "[REDACTED]",
+		Patterns:        common.DefaultSensitivePatterns(),
 	}
 
-	redactor := NewRedactingHandler(mockHandler, config)
-	if redactor.config != config {
-		t.Error("Expected custom config to be used")
+	redactor := NewRedactingHandler(mockHandler, options)
+	if redactor.commonHandler == nil {
+		t.Error("Expected common handler to be set")
 	}
 
-	// Test with nil config (should use default)
+	// Test with nil options (should use default)
 	redactor2 := NewRedactingHandler(mockHandler, nil)
-	if redactor2.config == nil {
-		t.Error("Expected default config when nil provided")
+	if redactor2.commonHandler == nil {
+		t.Error("Expected common handler to be set with default options")
 	}
 }
 
@@ -71,15 +74,9 @@ func TestNewRedactingHandler(t *testing.T) {
 
 func TestRedactingHandler_RedactCredentialPatterns(t *testing.T) {
 	mockHandler := newMockRedactorHandler()
-	config := &RedactionConfig{
-		AllowedEnvKeys: []string{},
-		CredentialPatterns: []*regexp.Regexp{
-			regexp.MustCompile(`(?i)password`),
-			regexp.MustCompile(`(?i)token`),
-		},
-	}
+	options := common.DefaultRedactionOptions()
 
-	redactor := NewRedactingHandler(mockHandler, config)
+	redactor := NewRedactingHandler(mockHandler, options)
 
 	tests := []struct {
 		key      string
@@ -127,14 +124,9 @@ func TestRedactingHandler_RedactCredentialPatterns(t *testing.T) {
 
 func TestRedactingHandler_WithAttrs(t *testing.T) {
 	mockHandler := newMockRedactorHandler()
-	config := &RedactionConfig{
-		AllowedEnvKeys: []string{},
-		CredentialPatterns: []*regexp.Regexp{
-			regexp.MustCompile(`(?i)secret`),
-		},
-	}
+	options := common.DefaultRedactionOptions()
 
-	redactor := NewRedactingHandler(mockHandler, config)
+	redactor := NewRedactingHandler(mockHandler, options)
 
 	attrs := []slog.Attr{
 		slog.String("safe_attr", "safe_value"),
@@ -173,14 +165,9 @@ func TestRedactingHandler_WithGroup(t *testing.T) {
 
 func TestRedactingHandler_GroupedAttributes(t *testing.T) {
 	mockHandler := newMockRedactorHandler()
-	config := &RedactionConfig{
-		AllowedEnvKeys: []string{},
-		CredentialPatterns: []*regexp.Regexp{
-			regexp.MustCompile(`(?i)password`),
-		},
-	}
+	options := common.DefaultRedactionOptions()
 
-	redactor := NewRedactingHandler(mockHandler, config)
+	redactor := NewRedactingHandler(mockHandler, options)
 
 	record := slog.NewRecord(time.Now(), slog.LevelInfo, "test message", 0)
 	record.AddAttrs(slog.Group("auth",

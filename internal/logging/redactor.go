@@ -3,58 +3,23 @@ package logging
 import (
 	"context"
 	"log/slog"
-	"regexp"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
 
-// RedactionConfig contains configuration for redacting sensitive information
-// Deprecated: Use common.RedactionOptions instead
-type RedactionConfig struct {
-	// AllowedEnvKeys contains environment variable keys that are allowed in cleartext
-	AllowedEnvKeys []string
-	// CredentialPatterns contains regex patterns to match credentials that should be redacted
-	// Deprecated: Use common.SensitivePatterns instead
-	CredentialPatterns []*regexp.Regexp
-}
-
-// DefaultRedactionConfig returns a default redaction configuration
-// Deprecated: Use common.DefaultRedactionOptions instead
-func DefaultRedactionConfig() *RedactionConfig {
-	patterns := common.DefaultSensitivePatterns()
-
-	// Convert allowed env vars map to slice for backward compatibility
-	allowedEnv := make([]string, 0, len(patterns.AllowedEnvVars))
-	for key := range patterns.AllowedEnvVars {
-		allowedEnv = append(allowedEnv, key)
-	}
-
-	return &RedactionConfig{
-		AllowedEnvKeys:     allowedEnv,
-		CredentialPatterns: patterns.CredentialPatterns,
-	}
-}
-
 // RedactingHandler is a decorator that redacts sensitive information before forwarding to the underlying handler
 type RedactingHandler struct {
-	handler slog.Handler
-	config  *RedactionConfig
 	// Use the new common redacting handler internally
 	commonHandler *common.RedactingHandler
 }
 
 // NewRedactingHandler creates a new redacting handler that wraps the given handler
-func NewRedactingHandler(handler slog.Handler, config *RedactionConfig) *RedactingHandler {
-	if config == nil {
-		config = DefaultRedactionConfig()
+func NewRedactingHandler(handler slog.Handler, options *common.RedactionOptions) *RedactingHandler {
+	if options == nil {
+		options = common.DefaultRedactionOptions()
 	}
 
-	// Create options for the new common handler
-	options := common.DefaultRedactionOptions()
-
 	return &RedactingHandler{
-		handler:       handler,
-		config:        config,
 		commonHandler: common.NewRedactingHandler(handler, options),
 	}
 }
@@ -76,32 +41,28 @@ func (r *RedactingHandler) Handle(ctx context.Context, record slog.Record) error
 
 // WithAttrs returns a new RedactingHandler with the given attributes
 func (r *RedactingHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	// Create a new handler with attrs applied to the underlying handler
-	newUnderlyingHandler := r.handler.WithAttrs(attrs)
-
-	// Create new common handler with the new underlying handler
-	options := common.DefaultRedactionOptions()
-	newCommonHandler := common.NewRedactingHandler(newUnderlyingHandler, options)
-
+	newCommonHandler := r.commonHandler.WithAttrs(attrs)
+	if redactingHandler, ok := newCommonHandler.(*common.RedactingHandler); ok {
+		return &RedactingHandler{
+			commonHandler: redactingHandler,
+		}
+	}
+	// Fallback: wrap with a new RedactingHandler
 	return &RedactingHandler{
-		handler:       newUnderlyingHandler,
-		config:        r.config,
-		commonHandler: newCommonHandler,
+		commonHandler: common.NewRedactingHandler(newCommonHandler, common.DefaultRedactionOptions()),
 	}
 }
 
 // WithGroup returns a new RedactingHandler with the given group name
 func (r *RedactingHandler) WithGroup(name string) slog.Handler {
-	// Create a new handler with group applied to the underlying handler
-	newUnderlyingHandler := r.handler.WithGroup(name)
-
-	// Create new common handler with the new underlying handler
-	options := common.DefaultRedactionOptions()
-	newCommonHandler := common.NewRedactingHandler(newUnderlyingHandler, options)
-
+	newCommonHandler := r.commonHandler.WithGroup(name)
+	if redactingHandler, ok := newCommonHandler.(*common.RedactingHandler); ok {
+		return &RedactingHandler{
+			commonHandler: redactingHandler,
+		}
+	}
+	// Fallback: wrap with a new RedactingHandler
 	return &RedactingHandler{
-		handler:       newUnderlyingHandler,
-		config:        r.config,
-		commonHandler: newCommonHandler,
+		commonHandler: common.NewRedactingHandler(newCommonHandler, common.DefaultRedactionOptions()),
 	}
 }

@@ -342,7 +342,7 @@ func addSlackHandler(webhookURL, runIDValue string) {
 
 	// Create new MultiHandler with all handlers including Slack
 	multiHandler := logging.NewMultiHandler(allHandlers...)
-	redactedHandler := logging.NewRedactingHandler(multiHandler, logging.DefaultRedactionConfig())
+	redactedHandler := logging.NewRedactingHandler(multiHandler, nil)
 
 	// Set as default logger
 	newLogger := slog.New(redactedHandler)
@@ -411,7 +411,7 @@ func setupLogger(level, logDir, runIDValue string) error {
 
 	// Create MultiHandler with redaction
 	multiHandler := logging.NewMultiHandler(handlers...)
-	redactedHandler := logging.NewRedactingHandler(multiHandler, logging.DefaultRedactionConfig())
+	redactedHandler := logging.NewRedactingHandler(multiHandler, nil)
 
 	// Set as default logger
 	logger := slog.New(redactedHandler)
