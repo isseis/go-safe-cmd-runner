@@ -39,24 +39,8 @@ func (m *mockRedactorHandler) WithGroup(_ string) slog.Handler {
 func TestDefaultRedactionConfig(t *testing.T) {
 	config := DefaultRedactionConfig()
 
-	if len(config.AllowedEnvKeys) == 0 {
-		t.Error("Expected non-empty allowed environment keys")
-	}
-
 	if len(config.CredentialPatterns) == 0 {
 		t.Error("Expected non-empty credential patterns")
-	}
-
-	// Check that common safe env vars are included
-	found := false
-	for _, key := range config.AllowedEnvKeys {
-		if key == "PATH" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Error("Expected PATH to be in allowed environment keys")
 	}
 }
 
@@ -65,7 +49,7 @@ func TestNewRedactingHandler(t *testing.T) {
 
 	// Test with custom config
 	config := &RedactionConfig{
-		AllowedEnvKeys: []string{"SAFE_VAR"},
+		AllowedEnvKeys: []string{},
 		CredentialPatterns: []*regexp.Regexp{
 			regexp.MustCompile(`(?i)secret`),
 		},
@@ -83,48 +67,7 @@ func TestNewRedactingHandler(t *testing.T) {
 	}
 }
 
-func TestRedactingHandler_RedactEnvVars(t *testing.T) {
-	mockHandler := newMockRedactorHandler()
-	config := &RedactionConfig{
-		AllowedEnvKeys: []string{"SAFE_VAR"},
-		CredentialPatterns: []*regexp.Regexp{
-			regexp.MustCompile(`(?i)password`),
-		},
-	}
-
-	redactor := NewRedactingHandler(mockHandler, config)
-
-	record := slog.NewRecord(time.Now(), slog.LevelInfo, "test message", 0)
-	record.AddAttrs(
-		slog.String("env_SAFE_VAR", "safe_value"),
-		slog.String("env_SECRET_VAR", "secret_value"),
-	)
-
-	err := redactor.Handle(context.Background(), record)
-	if err != nil {
-		t.Errorf("Unexpected error: %v", err)
-	}
-
-	if len(mockHandler.records) != 1 {
-		t.Fatalf("Expected 1 record, got %d", len(mockHandler.records))
-	}
-
-	// Check attributes in the handled record
-	handledRecord := mockHandler.records[0]
-	attrs := make(map[string]string)
-	handledRecord.Attrs(func(attr slog.Attr) bool {
-		attrs[attr.Key] = attr.Value.String()
-		return true
-	})
-
-	if attrs["env_SAFE_VAR"] != "safe_value" {
-		t.Errorf("Expected safe var to be preserved, got %s", attrs["env_SAFE_VAR"])
-	}
-
-	if attrs["env_SECRET_VAR"] != "***" {
-		t.Errorf("Expected secret var to be redacted, got %s", attrs["env_SECRET_VAR"])
-	}
-}
+// Removed env_ prefix specific test as production no longer uses env_-prefixed attributes
 
 func TestRedactingHandler_RedactCredentialPatterns(t *testing.T) {
 	mockHandler := newMockRedactorHandler()
@@ -185,7 +128,7 @@ func TestRedactingHandler_RedactCredentialPatterns(t *testing.T) {
 func TestRedactingHandler_WithAttrs(t *testing.T) {
 	mockHandler := newMockRedactorHandler()
 	config := &RedactionConfig{
-		AllowedEnvKeys: []string{"SAFE_VAR"},
+		AllowedEnvKeys: []string{},
 		CredentialPatterns: []*regexp.Regexp{
 			regexp.MustCompile(`(?i)secret`),
 		},

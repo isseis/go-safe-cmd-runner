@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"regexp"
-	"strings"
 )
 
 // RedactionConfig contains configuration for redacting sensitive information
@@ -105,14 +104,6 @@ func (r *RedactingHandler) redactAttr(attr slog.Attr) slog.Attr {
 	key := attr.Key
 	value := attr.Value
 
-	// Check if this is an environment variable that should be redacted
-	if strings.HasPrefix(key, "env_") {
-		envKey := strings.TrimPrefix(key, "env_")
-		if !r.isAllowedEnvKey(envKey) {
-			return slog.Attr{Key: key, Value: slog.StringValue("***")}
-		}
-	}
-
 	// Check for credential patterns in the key
 	for _, pattern := range r.config.CredentialPatterns {
 		if pattern.MatchString(key) {
@@ -141,14 +132,4 @@ func (r *RedactingHandler) redactAttr(attr slog.Attr) slog.Attr {
 	}
 
 	return attr
-}
-
-// isAllowedEnvKey checks if an environment variable key is in the allowed list
-func (r *RedactingHandler) isAllowedEnvKey(key string) bool {
-	for _, allowedKey := range r.config.AllowedEnvKeys {
-		if strings.EqualFold(key, allowedKey) {
-			return true
-		}
-	}
-	return false
 }
