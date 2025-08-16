@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/audit"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
@@ -631,18 +632,15 @@ func (r *Runner) sendGroupNotification(group runnertypes.CommandGroup, result *g
 		return
 	}
 
-	// Log command group summary for Slack notification
-	// This replicates the functionality of logging.LogCommandGroupSummary
-	slog.Info("Command group execution completed",
-		"group", group.Name,
-		"command", result.lastCommand,
-		"status", result.status,
-		"exit_code", result.exitCode,
-		"duration_ms", duration.Milliseconds(),
-		"output", result.output,
-		"run_id", r.runID,
-		"slack_notify", true,
-		"message_type", "command_group_summary",
+	// Use centralized logging function to maintain consistency
+	logging.LogCommandGroupSummary(
+		group.Name,
+		result.lastCommand,
+		result.status,
+		result.exitCode,
+		duration.Milliseconds(),
+		result.output,
+		r.runID,
 	)
 }
 
