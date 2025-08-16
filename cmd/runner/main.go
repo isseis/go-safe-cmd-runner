@@ -30,6 +30,14 @@ const (
 	logFilePerm = 0o600
 )
 
+// LoggerConfig holds all configuration for logger setup
+type LoggerConfig struct {
+	Level           string
+	LogDir          string
+	RunID           string
+	SlackWebhookURL string
+}
+
 // Error definitions
 var (
 	ErrConfigPathRequired = errors.New("config file path is required")
@@ -115,21 +123,11 @@ func main() {
 func run(runIDValue string) error {
 	flag.Parse()
 
-	// Setup logging system early - before any other operations that might use slog
-	if err := setupLogger(*logLevel, *logDir, runIDValue); err != nil {
-		return &logging.PreExecutionError{
-			Type:      logging.ErrorTypeLogFileOpen,
-			Message:   fmt.Sprintf("Failed to setup logger: %v", err),
-			Component: "logging",
-			RunID:     runIDValue,
-		}
-	}
-
 	// Set up context with cancellation
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Load configuration
+	// Load configuration first to access environment settings
 	if *configPath == "" {
 		return &logging.PreExecutionError{
 			Type:      logging.ErrorTypeInvalidArguments,
@@ -154,6 +152,37 @@ func run(runIDValue string) error {
 	// Handle validate command
 	if *validateConfig {
 		return validateConfigCommand(cfg)
+	}
+
+	// Determine environment file to load
+	envFileToLoad := ""
+	if *envFile != "" {
+		envFileToLoad = *envFile
+	} else {
+		// Try to load default '.env' file if exists
+		if _, err := os.Stat(".env"); err == nil {
+			envFileToLoad = ".env"
+		}
+	}
+
+	// Get Slack webhook URL from environment file early
+	slackURL := getSlackWebhookFromEnvFile(envFileToLoad)
+
+	// Setup logging system with all configuration including Slack
+	loggerConfig := LoggerConfig{
+		Level:           *logLevel,
+		LogDir:          *logDir,
+		RunID:           runIDValue,
+		SlackWebhookURL: slackURL,
+	}
+
+	if err := setupLoggerWithConfig(loggerConfig); err != nil {
+		return &logging.PreExecutionError{
+			Type:      logging.ErrorTypeLogFileOpen,
+			Message:   fmt.Sprintf("Failed to setup logger: %v", err),
+			Component: "logging",
+			RunID:     runIDValue,
+		}
 	}
 
 	// Get hash directory from command line args and environment variables
@@ -220,32 +249,9 @@ func run(runIDValue string) error {
 		return fmt.Errorf("failed to initialize runner: %w", err)
 	}
 
-	// Load environment variables
-	envFileToLoad := ""
-	if *envFile != "" {
-		envFileToLoad = *envFile
-	} else {
-		// Try to load default '.env' file if exists
-		if _, err := os.Stat(".env"); err == nil {
-			envFileToLoad = ".env"
-		}
-	}
-
 	// Load environment variables from file and system environment
 	if err := runner.LoadEnvironment(envFileToLoad, true); err != nil {
 		return fmt.Errorf("failed to load environment: %w", err)
-	}
-
-	// Now that environment variables are loaded, add Slack handler if webhook URL is available
-	// Since LoadEnvironment doesn't set system env vars, we need to use a different approach
-	// For now, use the system environment variables approach and add .env loading to system env
-	slackURL := getSlackWebhookFromEnvFile(envFileToLoad)
-
-	if slackURL != "" {
-		addSlackHandler(slackURL, runIDValue)
-		slog.Info("Slack handler added successfully", "webhook_url", slackURL, "run_id", runIDValue)
-	} else {
-		slog.Debug("No Slack webhook URL found in env file", "run_id", runIDValue, "env_file", envFileToLoad)
 	}
 
 	if *logLevel != "" {
@@ -314,43 +320,8 @@ func getSlackWebhookFromEnvFile(envFile string) string {
 	return ""
 }
 
-// addSlackHandler adds Slack handler to the current logger
-func addSlackHandler(webhookURL, runIDValue string) {
-	// Get the current logger
-	currentLogger := slog.Default()
-
-	// Create new Slack handler
-	slackHandler := logging.NewSlackHandler(webhookURL, runIDValue)
-
-	// Get existing handlers from the current logger if it's a MultiHandler
-	var existingHandlers []slog.Handler
-
-	// Try to extract handlers from existing redacting handler
-	if redactingHandler, ok := currentLogger.Handler().(*logging.RedactingHandler); ok {
-		if multiHandler, ok := redactingHandler.Handler().(*logging.MultiHandler); ok {
-			existingHandlers = multiHandler.Handlers()
-		} else {
-			existingHandlers = []slog.Handler{redactingHandler.Handler()}
-		}
-	} else {
-		existingHandlers = []slog.Handler{currentLogger.Handler()}
-	}
-
-	// Add Slack handler to existing handlers
-	existingHandlers = append(existingHandlers, slackHandler)
-	allHandlers := existingHandlers
-
-	// Create new MultiHandler with all handlers including Slack
-	multiHandler := logging.NewMultiHandler(allHandlers...)
-	redactedHandler := logging.NewRedactingHandler(multiHandler, nil)
-
-	// Set as default logger
-	newLogger := slog.New(redactedHandler)
-	slog.SetDefault(newLogger)
-}
-
-// setupLogger initializes the logging system
-func setupLogger(level, logDir, runIDValue string) error {
+// setupLoggerWithConfig initializes the logging system with all handlers atomically
+func setupLoggerWithConfig(config LoggerConfig) error {
 	hostname, err := os.Hostname()
 	if err != nil {
 		hostname = "unknown-host"
@@ -367,13 +338,13 @@ func setupLogger(level, logDir, runIDValue string) error {
 	handlers = append(handlers, textHandler)
 
 	// 2. Machine-readable log handler (to file, per-run auto-named)
-	if logDir != "" {
+	if config.LogDir != "" {
 		// Validate log directory
-		if err := logging.ValidateLogDir(logDir); err != nil {
+		if err := logging.ValidateLogDir(config.LogDir); err != nil {
 			return fmt.Errorf("invalid log directory: %w", err)
 		}
 
-		logPath := filepath.Join(logDir, fmt.Sprintf("%s_%s_%s.json", hostname, timestamp, runIDValue))
+		logPath := filepath.Join(config.LogDir, fmt.Sprintf("%s_%s_%s.json", hostname, timestamp, config.RunID))
 		fileOpener := logging.NewSafeFileOpener()
 		logF, err := fileOpener.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, logFilePerm)
 		if err != nil {
@@ -381,7 +352,7 @@ func setupLogger(level, logDir, runIDValue string) error {
 		}
 
 		var slogLevel slog.Level
-		if err := slogLevel.UnmarshalText([]byte(level)); err != nil {
+		if err := slogLevel.UnmarshalText([]byte(config.Level)); err != nil {
 			slogLevel = slog.LevelInfo // Default to info on parse error
 			invalidLogLevel = true
 		}
@@ -398,14 +369,14 @@ func setupLogger(level, logDir, runIDValue string) error {
 			slog.String("git_commit", gitCommit),
 			slog.String("build_version", buildVersion),
 			slog.Int("schema_version", 1),
-			slog.String("run_id", runIDValue),
+			slog.String("run_id", config.RunID),
 		})
 		handlers = append(handlers, enrichedHandler)
 	}
 
 	// 3. Slack notification handler (optional)
-	if slackURL := logging.GetSlackWebhookURL(); slackURL != "" {
-		slackHandler := logging.NewSlackHandler(slackURL, runIDValue)
+	if config.SlackWebhookURL != "" {
+		slackHandler := logging.NewSlackHandler(config.SlackWebhookURL, config.RunID)
 		handlers = append(handlers, slackHandler)
 	}
 
@@ -418,14 +389,15 @@ func setupLogger(level, logDir, runIDValue string) error {
 	slog.SetDefault(logger)
 
 	slog.Info("Logger initialized",
-		"log-level", level,
-		"log-dir", logDir,
-		"run_id", runIDValue,
-		"hostname", hostname)
+		"log-level", config.Level,
+		"log-dir", config.LogDir,
+		"run_id", config.RunID,
+		"hostname", hostname,
+		"slack_enabled", config.SlackWebhookURL != "")
 
 	// Warn about invalid log level after logger is properly set up
 	if invalidLogLevel {
-		slog.Warn("Invalid log level provided, defaulting to INFO", "provided", level)
+		slog.Warn("Invalid log level provided, defaulting to INFO", "provided", config.Level)
 	}
 
 	return nil
