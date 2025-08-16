@@ -121,8 +121,6 @@ func main() {
 }
 
 func run(runIDValue string) error {
-	flag.Parse()
-
 	// Set up context with cancellation
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
