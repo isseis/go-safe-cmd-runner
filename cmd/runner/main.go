@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -23,6 +22,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
+	"github.com/joho/godotenv"
 )
 
 const (
@@ -276,7 +276,7 @@ func run(runIDValue string) error {
 	return nil
 }
 
-// getSlackWebhookFromEnvFile reads Slack webhook URL from .env file
+// getSlackWebhookFromEnvFile reads Slack webhook URL from .env file using godotenv
 func getSlackWebhookFromEnvFile(envFile string) string {
 	if envFile == "" {
 		return ""
@@ -289,29 +289,17 @@ func getSlackWebhookFromEnvFile(envFile string) string {
 		return ""
 	}
 
-	// Try to read the .env file directly
-	content, err := os.ReadFile(cleanPath) // #nosec G304 - path is validated above
+	// Use godotenv.Read to parse the .env file
+	envMap, err := godotenv.Read(cleanPath)
 	if err != nil {
 		slog.Debug("Failed to read env file", "file", cleanPath, "error", err)
 		return ""
 	}
 
-	lines := strings.Split(string(content), "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "#") || line == "" {
-			continue
-		}
-
-		if idx := strings.Index(line, "="); idx != -1 {
-			key := strings.TrimSpace(line[:idx])
-			value := strings.TrimSpace(line[idx+1:])
-
-			if (key == logging.SlackWebhookURLEnvVar) && value != "" {
-				slog.Debug("Found Slack webhook URL in env file", "key", key, "file", envFile)
-				return value
-			}
-		}
+	// Look for Slack webhook URL
+	if slackURL, exists := envMap[logging.SlackWebhookURLEnvVar]; exists && slackURL != "" {
+		slog.Debug("Found Slack webhook URL in env file", "key", logging.SlackWebhookURLEnvVar, "file", envFile)
+		return slackURL
 	}
 
 	slog.Debug("No Slack webhook URL found in env file", "file", envFile)
