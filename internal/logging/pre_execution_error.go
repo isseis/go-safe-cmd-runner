@@ -61,21 +61,6 @@ func HandlePreExecutionError(errorType ErrorType, errorMsg, component, runID str
 	fmt.Printf("RUN_SUMMARY run_id=%s exit_code=1 status=pre_execution_error duration_ms=0 verified=0 skipped=0 failed=0 warnings=0 errors=1\n", runID)
 }
 
-// NotifyPreExecutionErrorAsync sends a pre-execution error notification asynchronously
-func NotifyPreExecutionErrorAsync(errorType ErrorType, errorMsg, component, runID string) {
-	go func() {
-		// This will be handled by the SlackHandler if configured
-		slog.Error("Pre-execution error notification",
-			"error_type", string(errorType),
-			"error_message", errorMsg,
-			"component", component,
-			"run_id", runID,
-			"slack_notify", true,
-			"message_type", "pre_execution_error",
-		)
-	}()
-}
-
 // LogCommandGroupSummary logs a command group execution summary
 func LogCommandGroupSummary(group, command, status string, exitCode int, duration int64, output, runID string) {
 	slog.Info("Command group execution completed",
