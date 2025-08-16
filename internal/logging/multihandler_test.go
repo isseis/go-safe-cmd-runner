@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -177,10 +178,10 @@ func TestMultiHandler_HandleWithErrors(t *testing.T) {
 
 	// Should contain both errors
 	errStr := err.Error()
-	if !contains(errStr, "handler1 error") {
+	if !strings.Contains(errStr, "handler1 error") {
 		t.Error("Expected error to contain 'handler1 error'")
 	}
-	if !contains(errStr, "handler2 error") {
+	if !strings.Contains(errStr, "handler2 error") {
 		t.Error("Expected error to contain 'handler2 error'")
 	}
 }
@@ -258,21 +259,4 @@ func TestMultiHandler_ConcurrentAccess(_ *testing.T) {
 	for range 10 {
 		<-done
 	}
-}
-
-// Helper function to check if a string contains a substring
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
-		(len(s) > len(substr) && (s[:len(substr)] == substr ||
-			s[len(s)-len(substr):] == substr ||
-			containsInMiddle(s, substr))))
-}
-
-func containsInMiddle(s, substr string) bool {
-	for i := 1; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }
