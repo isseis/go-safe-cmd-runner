@@ -108,11 +108,7 @@ func main() {
 func run(runID string) error {
 	flag.Parse()
 
-	// Set up context with cancellation
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
-	// Setup logging system early
+	// Setup logging system early - before any other operations that might use slog
 	if err := setupLogger(*logLevel, *logDir, runID); err != nil {
 		return &logging.PreExecutionError{
 			Type:      logging.ErrorTypeLogFileOpen,
@@ -121,6 +117,10 @@ func run(runID string) error {
 			RunID:     runID,
 		}
 	}
+
+	// Set up context with cancellation
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	// Load configuration
 	if *configPath == "" {

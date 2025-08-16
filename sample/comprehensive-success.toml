@@ -192,18 +192,17 @@ description = "Use verified command"
 cmd = "/bin/echo"
 args = ["Using verified command"]
 
-# Group 9: Slack notification test
+# Group 9: Success test (replaces Slack notification test for success testing)
 [[groups]]
-name = "slack_notification_test"
-description = "Test Slack notification functionality by triggering a privileged command failure"
+name = "success_test"
+description = "Test successful execution without errors"
 priority = 9
 
 [[groups.commands]]
-name = "trigger_privileged_failure"
-description = "Trigger privileged command failure to test Slack notifications"
-cmd = "/nonexistent/command/that/will/fail"
-args = []
-privileged = true
+name = "success_command"
+description = "Simple successful command for testing"
+cmd = "echo"
+args = ["Success test completed without errors"]
 
 # Group 10: All features combined
 [[groups]]

@@ -29,7 +29,8 @@
       "Bash(go mod:*)",
       "Bash(../build/runner:*)",
       "Bash(build/runner:*)",
-      "Bash(sudo mkdir:*)"
+      "Bash(sudo mkdir:*)",
+      "Bash(sudo build/record:*)"
     ],
     "deny": [],
     "env": {

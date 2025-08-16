@@ -29,7 +29,7 @@ HASH_TARGETS := \
 	/etc/passwd \
 	./sample/comprehensive.toml
 
-.PHONY: all lint build run clean test hash integration-test
+.PHONY: all lint build run clean test hash integration-test integration-test-success
 
 all: build
 
@@ -69,5 +69,8 @@ test: $(BINARY_RUNNER)
 
 integration-test: $(BINARY_RUNNER)
 	$(MKDIR) /tmp/cmd-runner-comprehensive /tmp/custom-workdir-test
-	$(ENVCMD) -i PATH=/bin:/sbin:/usr/bin:/usr/sbin LANG=C $(BINARY_RUNNER) -config ./sample/comprehensive.toml -log-level error
-	$(RM) -r /tmp/cmd-runner-comprehensive /tmp/custom-workdir-test
+	@EXIT_CODE=0; \
+	$(ENVCMD) -i PATH=/bin:/sbin:/usr/bin:/usr/sbin LANG=C $(BINARY_RUNNER) -config ./sample/comprehensive.toml -log-level warn -env-file $(PWD)/sample/.env || EXIT_CODE=$$?; \
+	$(RM) -r /tmp/cmd-runner-comprehensive /tmp/custom-workdir-test; \
+	echo "Integration test completed with exit code: $$EXIT_CODE"; \
+	exit $$EXIT_CODE
