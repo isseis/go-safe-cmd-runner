@@ -4,6 +4,7 @@ package logging
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -13,7 +14,6 @@ import (
 
 // Common errors
 var (
-	ErrInvalidFileType   = errors.New("unexpected file type returned from safefileio")
 	ErrEmptyLogDirectory = errors.New("log directory cannot be empty")
 
 	// File permissions constants
@@ -34,7 +34,8 @@ func NewSafeFileOpener() *SafeFileOpener {
 }
 
 // OpenFile safely opens a file using the existing safefileio package
-func (s *SafeFileOpener) OpenFile(path string, flag int, perm os.FileMode) (*os.File, error) {
+// Returns an io.WriteCloser that can be used with slog.NewJSONHandler
+func (s *SafeFileOpener) OpenFile(path string, flag int, perm os.FileMode) (io.WriteCloser, error) {
 	// Ensure the directory exists
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, logDirPerm); err != nil {
@@ -47,13 +48,7 @@ func (s *SafeFileOpener) OpenFile(path string, flag int, perm os.FileMode) (*os.
 		return nil, fmt.Errorf("failed to open file %s safely: %w", path, err)
 	}
 
-	// Convert safefileio.File to *os.File
-	// The safefileio package returns a File interface, but we need *os.File for slog
-	if osFile, ok := file.(*os.File); ok {
-		return osFile, nil
-	}
-
-	return nil, ErrInvalidFileType
+	return file, nil
 }
 
 // GetBuildInfo returns build information for logging
