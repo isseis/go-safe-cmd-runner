@@ -42,18 +42,18 @@ linters:
           files:
             - "**/internal/**"
           allow:
-            - github.com/isseis/go-safe-cmd-runner/internal/safefileio
+            - $gostd
+            - github.com/isseis/go-safe-cmd-runner/internal/common
             - github.com/isseis/go-safe-cmd-runner/internal/filevalidator
             - github.com/isseis/go-safe-cmd-runner/internal/runner
-            - github.com/isseis/go-safe-cmd-runner/internal/common
+            - github.com/isseis/go-safe-cmd-runner/internal/safefileio
             - github.com/isseis/go-safe-cmd-runner/internal/verification
+            - github.com/google/uuid
+            - github.com/joho/godotenv
             - github.com/pelletier/go-toml/v2
             - github.com/stretchr/testify/assert
             - github.com/stretchr/testify/require
             - github.com/stretchr/testify/mock
-            - github.com/google/uuid
-            - github.com/joho/godotenv
-            - $gostd
 
         main:
           files:
@@ -61,12 +61,13 @@ linters:
             - "!$test"
             - "!**/internal/**"
           allow:
+            - $gostd
             - github.com/joho/godotenv
             - github.com/isseis/go-safe-cmd-runner/internal/cmdcommon
             - github.com/isseis/go-safe-cmd-runner/internal/logging
             - github.com/isseis/go-safe-cmd-runner/internal/runner
+            - github.com/isseis/go-safe-cmd-runner/internal/safefileio
             - github.com/isseis/go-safe-cmd-runner/internal/verification
-            - $gostd
 
     mnd:
       checks:

@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -21,6 +22,8 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
+	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/joho/godotenv"
 )
@@ -276,23 +279,34 @@ func run(runIDValue string) error {
 	return nil
 }
 
-// getSlackWebhookFromEnvFile reads Slack webhook URL from .env file using godotenv
+// getSlackWebhookFromEnvFile securely reads Slack webhook URL from .env file
 func getSlackWebhookFromEnvFile(envFile string) string {
 	if envFile == "" {
 		return ""
 	}
 
-	// Validate file path to prevent directory traversal
-	cleanPath := filepath.Clean(envFile)
-	if cleanPath != envFile {
-		slog.Debug("Invalid env file path", "original", envFile, "cleaned", cleanPath)
+	// Validate file path and permissions using security package
+	validator, err := security.NewValidator(security.DefaultConfig())
+	if err != nil {
+		slog.Debug("Failed to create security validator", "error", err)
+		return ""
+	}
+	if err := validator.ValidateFilePermissions(envFile); err != nil {
+		slog.Debug("Environment file validation failed", "file", envFile, "error", err)
 		return ""
 	}
 
-	// Use godotenv.Read to parse the .env file
-	envMap, err := godotenv.Read(cleanPath)
+	// Use safefileio for secure file reading
+	content, err := safefileio.SafeReadFile(envFile)
 	if err != nil {
-		slog.Debug("Failed to read env file", "file", cleanPath, "error", err)
+		slog.Debug("Failed to read env file securely", "file", envFile, "error", err)
+		return ""
+	}
+
+	// Parse content directly using godotenv.Parse (no temporary file needed)
+	envMap, err := godotenv.Parse(bytes.NewReader(content))
+	if err != nil {
+		slog.Debug("Failed to parse env file", "file", envFile, "error", err)
 		return ""
 	}
 
