@@ -40,12 +40,8 @@ func (h *MultiHandler) Handle(ctx context.Context, r slog.Record) error {
 	for _, handler := range h.handlers {
 		if handler.Enabled(ctx, r.Level) {
 			if err := handler.Handle(ctx, r.Clone()); err != nil {
-				// Aggregate all errors (first error + wrap)
-				if multiErr == nil {
-					multiErr = err
-				} else {
-					multiErr = errors.Join(multiErr, err)
-				}
+				// Aggregate all errors using errors.Join
+				multiErr = errors.Join(multiErr, err)
 			}
 		}
 	}
