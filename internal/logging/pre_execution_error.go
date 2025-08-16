@@ -78,24 +78,11 @@ func LogCommandGroupSummary(group, command, status string, exitCode int, duratio
 
 // GetSlackWebhookURL gets the Slack webhook URL from environment
 func GetSlackWebhookURL() string {
-	// Try different environment variable names
-	urls := []string{
-		os.Getenv("SLACK_WEBHOOK_URL"),
-		os.Getenv("SLACK_URL"),
-		os.Getenv("WEBHOOK_URL"),
-	}
+	url := os.Getenv("SLACK_WEBHOOK_URL")
 
-	// Debug: log environment variables
-	slog.Debug("Checking for Slack webhook URL",
-		"SLACK_WEBHOOK_URL", os.Getenv("SLACK_WEBHOOK_URL"),
-		"SLACK_URL", os.Getenv("SLACK_URL"),
-		"WEBHOOK_URL", os.Getenv("WEBHOOK_URL"))
-
-	for _, url := range urls {
-		if url != "" {
-			slog.Debug("Found Slack webhook URL", "url", url)
-			return url
-		}
+	if url != "" {
+		slog.Debug("Found Slack webhook URL")
+		return url
 	}
 
 	slog.Debug("No Slack webhook URL found in environment variables")
