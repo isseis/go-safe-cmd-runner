@@ -190,7 +190,9 @@ func (s *SlackHandler) buildCommandGroupSummary(r slog.Record) SlackMessage {
 
 	// Truncate output if too long
 	if len(output) > outputMaxLength {
-		output = output[:997] + "..."
+		const truncationSuffix = "..."
+		truncationPoint := outputMaxLength - len(truncationSuffix)
+		output = output[:truncationPoint] + truncationSuffix
 	}
 
 	title := fmt.Sprintf("%s %s %s", titleIcon, strings.ToUpper(status), group)
