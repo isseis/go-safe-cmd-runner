@@ -303,7 +303,7 @@ func getSlackWebhookFromEnvFile(envFile string) string {
 			key := strings.TrimSpace(line[:idx])
 			value := strings.TrimSpace(line[idx+1:])
 
-			if (key == "SLACK_WEBHOOK_URL" || key == "SLACK_URL" || key == "WEBHOOK_URL") && value != "" {
+			if (key == logging.SlackWebhookURLEnvVar) && value != "" {
 				slog.Debug("Found Slack webhook URL in env file", "key", key, "file", envFile)
 				return value
 			}

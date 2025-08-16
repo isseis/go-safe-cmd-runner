@@ -6,6 +6,12 @@ import (
 	"os"
 )
 
+// Environment variable names
+const (
+	// SlackWebhookURLEnvVar is the environment variable name for Slack webhook URL
+	SlackWebhookURLEnvVar = "SLACK_WEBHOOK_URL"
+)
+
 // ErrorType represents different types of pre-execution errors
 type ErrorType string
 
@@ -78,7 +84,7 @@ func LogCommandGroupSummary(group, command, status string, exitCode int, duratio
 
 // GetSlackWebhookURL gets the Slack webhook URL from environment
 func GetSlackWebhookURL() string {
-	url := os.Getenv("SLACK_WEBHOOK_URL")
+	url := os.Getenv(SlackWebhookURLEnvVar)
 
 	if url != "" {
 		slog.Debug("Found Slack webhook URL")
