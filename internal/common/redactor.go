@@ -4,6 +4,7 @@ package common
 import (
 	"context"
 	"log/slog"
+	"regexp"
 	"strings"
 )
 
@@ -93,123 +94,100 @@ func (ro *RedactionOptions) performKeyValueRedaction(text, key, placeholder stri
 
 // performSpacePatternRedaction handles patterns like "Bearer ", "Basic "
 func (ro *RedactionOptions) performSpacePatternRedaction(text, pattern, placeholder string) string {
-	lowerPattern := strings.ToLower(pattern)
-	result := text
-	searchStart := 0
+	// Escape pattern for regex and create case-insensitive pattern
+	// Match: pattern followed by one or more non-whitespace characters
+	escapedPattern := regexp.QuoteMeta(pattern)
+	regexPattern := `(?i)(` + escapedPattern + `)(\S+)`
 
-	for {
-		lowerResult := strings.ToLower(result[searchStart:])
-		relativeIdx := strings.Index(lowerResult, lowerPattern)
-		if relativeIdx == -1 {
-			break
-		}
-
-		startIdx := searchStart + relativeIdx
-		originalPattern := result[startIdx : startIdx+len(pattern)]
-
-		// Replace the token after the pattern
-		replacement := originalPattern + placeholder
-		valueStart := startIdx + len(pattern)
-		valueEnd := valueStart
-
-		// Find the end of the token (space, newline, or end of string)
-		for valueEnd < len(result) && result[valueEnd] != ' ' && result[valueEnd] != '\n' && result[valueEnd] != '\t' {
-			valueEnd++
-		}
-
-		result = result[:startIdx] + replacement + result[valueEnd:]
-		searchStart = startIdx + len(replacement)
+	re, err := regexp.Compile(regexPattern)
+	if err != nil {
+		// Fallback to original text if regex compilation fails
+		return text
 	}
 
-	return result
+	// Replace matching tokens with pattern + placeholder
+	return re.ReplaceAllStringFunc(text, func(match string) string {
+		// Find the original pattern in the match (preserving case)
+		patternLen := len(pattern)
+		if len(match) < patternLen {
+			return match
+		}
+
+		originalPattern := match[:patternLen]
+		return originalPattern + placeholder
+	})
 }
 
 // performColonPatternRedaction handles patterns like "Authorization:" or "Authorization: "
 // It will redact everything after the pattern up to the end of line (or end of string).
 func (ro *RedactionOptions) performColonPatternRedaction(text, pattern, placeholder string) string {
-	lowerPattern := strings.ToLower(pattern)
-	result := text
-	searchStart := 0
+	// Escape pattern for regex and create case-insensitive pattern
+	// Match: pattern + optional whitespace + optional auth scheme (Bearer/Basic) + value + line ending
+	escapedPattern := regexp.QuoteMeta(pattern)
+	regexPattern := `(?i)(` + escapedPattern + `)([ \t]*)((?:bearer |basic )?)[^\r\n]*`
 
-	for {
-		lowerResult := strings.ToLower(result[searchStart:])
-		relativeIdx := strings.Index(lowerResult, lowerPattern)
-		if relativeIdx == -1 {
-			break
-		}
-
-		startIdx := searchStart + relativeIdx
-		originalPattern := result[startIdx : startIdx+len(pattern)]
-
-		// Determine start of the header value
-		valueStart := startIdx + len(originalPattern)
-
-		// Preserve any whitespace after the colon/pattern
-		wsStart := valueStart
-		for wsStart < len(result) && (result[wsStart] == ' ' || result[wsStart] == '\t') {
-			wsStart++
-		}
-
-		// If the value starts with an auth scheme like Bearer/Basic, preserve the scheme
-		scheme := ""
-		lowerAfterWS := strings.ToLower(result[wsStart:])
-		switch {
-		case strings.HasPrefix(lowerAfterWS, "bearer "):
-			scheme = result[wsStart : wsStart+len("Bearer ")]
-		case strings.HasPrefix(lowerAfterWS, "basic "):
-			scheme = result[wsStart : wsStart+len("Basic ")]
-		}
-
-		// Compute the end of the header value (end-of-line)
-		valueEnd := wsStart
-		for valueEnd < len(result) && result[valueEnd] != '\n' && result[valueEnd] != '\r' {
-			valueEnd++
-		}
-
-		// Build replacement keeping original pattern, whitespace, optional scheme, then placeholder
-		replacement := originalPattern + result[valueStart:wsStart] + scheme + placeholder
-
-		result = result[:startIdx] + replacement + result[valueEnd:]
-		searchStart = startIdx + len(replacement)
+	re, err := regexp.Compile(regexPattern)
+	if err != nil {
+		// Fallback to original text if regex compilation fails
+		return text
 	}
 
-	return result
+	// Replace matching headers with pattern + whitespace + scheme + placeholder
+	return re.ReplaceAllStringFunc(text, func(match string) string {
+		// Extract the original case-preserving parts using submatch
+		submatches := re.FindStringSubmatch(match)
+		const minSubmatchCount = 4
+		if len(submatches) < minSubmatchCount {
+			return match
+		}
+
+		originalPattern := submatches[1] // Original pattern preserving case
+		whitespace := submatches[2]      // Whitespace after pattern
+		scheme := submatches[3]          // Auth scheme (Bearer/Basic) if present
+
+		return originalPattern + whitespace + scheme + placeholder
+	})
 }
 
 // performKeyValuePatternRedaction handles patterns like "key=value"
 func (ro *RedactionOptions) performKeyValuePatternRedaction(text, key, placeholder string) string {
-	lowerKey := strings.ToLower(key)
-	result := text
-	searchStart := 0
+	// Escape key for regex and create case-insensitive pattern
+	// Match: key + optional equals sign + value (non-whitespace characters)
+	escapedKey := regexp.QuoteMeta(key)
+	var regexPattern string
 
-	for {
-		lowerResult := strings.ToLower(result[searchStart:])
-		relativeIdx := strings.Index(lowerResult, lowerKey)
-		if relativeIdx == -1 {
-			break
-		}
-
-		startIdx := searchStart + relativeIdx
-		originalKey := result[startIdx : startIdx+len(key)]
-
-		// For regular key=value patterns
-		keyPattern := originalKey
-		if !strings.Contains(keyPattern, "=") {
-			keyPattern += "="
-		}
-		replacement := keyPattern + placeholder
-
-		valueStart := startIdx + len(keyPattern)
-		valueEnd := valueStart
-		for valueEnd < len(result) && result[valueEnd] != ' ' && result[valueEnd] != '\n' && result[valueEnd] != '\t' {
-			valueEnd++
-		}
-
-		result = result[:startIdx] + replacement + result[valueEnd:]
-		searchStart = startIdx + len(replacement)
+	if strings.Contains(key, "=") {
+		// Key already contains "=", match it exactly + value
+		regexPattern = `(?i)(` + escapedKey + `)(\S+)`
+	} else {
+		// Key without "=", add it and match value
+		regexPattern = `(?i)(` + escapedKey + `)(=)(\S+)`
 	}
 
-	return result
+	re, err := regexp.Compile(regexPattern)
+	if err != nil {
+		// Fallback to original text if regex compilation fails
+		return text
+	}
+
+	// Replace matching key=value pairs with key=placeholder
+	return re.ReplaceAllStringFunc(text, func(match string) string {
+		submatches := re.FindStringSubmatch(match)
+		const minSubmatchCount = 3
+		if len(submatches) < minSubmatchCount {
+			return match
+		}
+
+		if strings.Contains(key, "=") {
+			// Key already contains "=" (e.g., "Authorization=")
+			originalKey := submatches[1] // Original key preserving case
+			return originalKey + placeholder
+		}
+		// Key without "=" (e.g., "password")
+		originalKey := submatches[1] // Original key preserving case
+		equals := submatches[2]      // The "=" character
+		return originalKey + equals + placeholder
+	})
 }
 
 // RedactingHandler is a decorator that redacts sensitive information before forwarding to the underlying handler
