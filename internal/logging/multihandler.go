@@ -1,4 +1,8 @@
-// Package logging provides a multi-handler implementation for slog that distributes log records to multiple handlers.
+// Package logging provides a flexible and extensible logging framework built on top of slog.
+// It supports advanced features such as multi-handler log distribution, redaction of sensitive information,
+// and integration with external services like Slack for real-time alerting. The package is designed to help
+// applications manage log output efficiently, ensure sensitive data is protected, and enable seamless notification
+// workflows through pluggable handlers.
 package logging
 
 import (
