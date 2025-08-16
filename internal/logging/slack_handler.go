@@ -379,7 +379,9 @@ func (s *SlackHandler) buildPrivilegedCommandFailure(r slog.Record) SlackMessage
 
 	// Truncate stderr if too long
 	if len(stderr) > stderrMaxLength {
-		stderr = stderr[:497] + "..."
+		const truncationSuffix = "..."
+		truncationPoint := stderrMaxLength - len(truncationSuffix)
+		stderr = stderr[:truncationPoint] + truncationSuffix
 	}
 
 	hostname, _ := os.Hostname()
