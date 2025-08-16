@@ -16,9 +16,12 @@ import (
 const (
 	// HTTP status codes
 	httpTimeout     = 5 * time.Second
-	maxRetries      = 3
 	outputMaxLength = 1000
 	stderrMaxLength = 500
+
+	// Backoff configuration
+	backoffBase = 2 * time.Second // Base interval for exponential backoff
+	retryCount  = 3               // Number of retry attempts
 
 	// Color constants
 	colorDanger  = "danger"
@@ -501,6 +504,18 @@ func (s *SlackHandler) buildGenericMessage(r slog.Record) SlackMessage {
 	}
 }
 
+// generateBackoffIntervals creates exponential backoff intervals
+// For backoffBase=2s, count=3: returns [2s, 4s, 8s]
+// Formula: [base*2^0, base*2^1, base*2^2, ...]
+func generateBackoffIntervals(base time.Duration, count int) []time.Duration {
+	intervals := make([]time.Duration, count)
+	for i := range count {
+		// Exponential backoff: base * 2^i
+		intervals[i] = base * time.Duration(1<<i)
+	}
+	return intervals
+}
+
 // sendToSlack sends a message to Slack with retry logic
 func (s *SlackHandler) sendToSlack(ctx context.Context, message SlackMessage) error {
 	payload, err := json.Marshal(message)
@@ -511,13 +526,13 @@ func (s *SlackHandler) sendToSlack(ctx context.Context, message SlackMessage) er
 
 	slog.Debug("Sending Slack notification", "webhook_url", s.webhookURL, "run_id", s.runID, "message_text", message.Text)
 
-	// Retry logic: maxRetries attempts with exponential backoff
 	var lastErr error
-	for attempt := 0; attempt < maxRetries; attempt++ {
+
+	backoffIntervals := generateBackoffIntervals(backoffBase, retryCount)
+	for attempt := range backoffIntervals {
 		if attempt > 0 {
-			// Exponential backoff: 2s, 4s, 8s
-			const backoffBase = 2
-			backoff := time.Duration(backoffBase<<(attempt-1)) * time.Second
+			// Get backoff interval from predefined list
+			backoff := backoffIntervals[attempt-1]
 			slog.Debug("Retrying Slack notification", "attempt", attempt+1, "backoff_seconds", backoff.Seconds(), "run_id", s.runID)
 			select {
 			case <-ctx.Done():
@@ -563,6 +578,6 @@ func (s *SlackHandler) sendToSlack(ctx context.Context, message SlackMessage) er
 		return fmt.Errorf("%w: %d", ErrClientError, statusCode)
 	}
 
-	slog.Error("Failed to send Slack notification after all retries", "attempts", maxRetries, "last_error", lastErr, "run_id", s.runID)
-	return fmt.Errorf("failed to send to Slack after %d attempts: %w", maxRetries, lastErr)
+	slog.Error("Failed to send Slack notification after all retries", "attempts", len(backoffIntervals)+1, "last_error", lastErr, "run_id", s.runID)
+	return fmt.Errorf("failed to send to Slack after %d attempts: %w", len(backoffIntervals)+1, lastErr)
 }

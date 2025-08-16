@@ -31,7 +31,8 @@
       "Bash(build/runner:*)",
       "Bash(sudo mkdir:*)",
       "Bash(sudo build/record:*)",
-      "Bash(PATH:*)"
+      "Bash(PATH:*)",
+      "Bash(timeout:*)"
     ],
     "deny": [],
     "env": {
