@@ -54,7 +54,7 @@ var (
 	dryRun         = flag.Bool("dry-run", false, "print commands without executing them")
 	hashDirectory  = flag.String("hash-directory", "", "directory containing hash files (default: "+cmdcommon.DefaultHashDirectory+")")
 	validateConfig = flag.Bool("validate", false, "validate configuration file and exit")
-	runID          = flag.String("run-id", "", "unique identifier for this execution run (enables Slack notifications)")
+	runID          = flag.String("run-id", "", "unique identifier for this execution run (auto-generates UUID if not provided)")
 )
 
 // getHashDir determines the hash directory based on command line args and environment variables
