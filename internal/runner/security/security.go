@@ -14,6 +14,7 @@ import (
 	"syscall"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 )
 
 // Error definitions
@@ -221,8 +222,8 @@ type Validator struct {
 	dangerousPrivilegedCommands map[string]struct{}
 	shellCommands               map[string]struct{}
 	// Common redaction functionality
-	redactionOptions  *common.RedactionOptions
-	sensitivePatterns *common.SensitivePatterns
+	redactionOptions  *redaction.Options
+	sensitivePatterns *redaction.SensitivePatterns
 }
 
 // NewValidator creates a new security validator with the given configuration.
@@ -241,8 +242,8 @@ func NewValidatorWithFS(config *Config, fs common.FileSystem) (*Validator, error
 	}
 
 	// Initialize common redaction functionality
-	sensitivePatterns := common.DefaultSensitivePatterns()
-	redactionOptions := common.DefaultRedactionOptions()
+	sensitivePatterns := redaction.DefaultSensitivePatterns()
+	redactionOptions := redaction.DefaultOptions()
 
 	v := &Validator{
 		config:            config,

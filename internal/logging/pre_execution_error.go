@@ -45,6 +45,21 @@ func (e *PreExecutionError) Error() string {
 	return fmt.Sprintf("%s: %s (component: %s, run_id: %s)", e.Type, e.Message, e.Component, e.RunID)
 }
 
+// Is implements error wrapping for errors.Is
+func (e *PreExecutionError) Is(target error) bool {
+	_, ok := target.(*PreExecutionError)
+	return ok
+}
+
+// As implements error wrapping for errors.As
+func (e *PreExecutionError) As(target interface{}) bool {
+	if preExecErr, ok := target.(**PreExecutionError); ok {
+		*preExecErr = e
+		return true
+	}
+	return false
+}
+
 // HandlePreExecutionError handles pre-execution errors by logging and notifying
 func HandlePreExecutionError(errorType ErrorType, errorMsg, component, runID string) {
 	// Log to stderr as fallback (in case logging system isn't set up yet)
@@ -65,32 +80,4 @@ func HandlePreExecutionError(errorType ErrorType, errorMsg, component, runID str
 	// Output error summary
 	fmt.Printf("Error: %s\n", errorType)
 	fmt.Printf("RUN_SUMMARY run_id=%s exit_code=1 status=pre_execution_error duration_ms=0 verified=0 skipped=0 failed=0 warnings=0 errors=1\n", runID)
-}
-
-// LogCommandGroupSummary logs a command group execution summary
-func LogCommandGroupSummary(group, command, status string, exitCode int, duration int64, output, runID string) {
-	slog.Info("Command group execution completed",
-		"group", group,
-		"command", command,
-		"status", status,
-		"exit_code", exitCode,
-		"duration_ms", duration,
-		"output", output,
-		"run_id", runID,
-		"slack_notify", true,
-		"message_type", "command_group_summary",
-	)
-}
-
-// GetSlackWebhookURL gets the Slack webhook URL from environment
-func GetSlackWebhookURL() string {
-	url := os.Getenv(SlackWebhookURLEnvVar)
-
-	if url != "" {
-		slog.Debug("Found Slack webhook URL")
-		return url
-	}
-
-	slog.Debug("No Slack webhook URL found in environment variables")
-	return ""
 }

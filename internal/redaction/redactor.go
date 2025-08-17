@@ -1,5 +1,5 @@
-// Package common provides shared redaction functionality.
-package common
+// Package redaction provides shared redaction functionality.
+package redaction
 
 import (
 	"context"
@@ -8,8 +8,8 @@ import (
 	"strings"
 )
 
-// RedactionOptions controls how sensitive information is redacted
-type RedactionOptions struct {
+// Options controls how sensitive information is redacted
+type Options struct {
 	// LogPlaceholder is the placeholder used for log redaction (e.g., "***")
 	LogPlaceholder string
 	// TextPlaceholder is the placeholder used for text redaction (e.g., "[REDACTED]")
@@ -21,9 +21,9 @@ type RedactionOptions struct {
 	KeyValuePatterns []string
 }
 
-// DefaultRedactionOptions returns default redaction options
-func DefaultRedactionOptions() *RedactionOptions {
-	return &RedactionOptions{
+// DefaultOptions returns default redaction options
+func DefaultOptions() *Options {
+	return &Options{
 		LogPlaceholder:   "***",
 		TextPlaceholder:  "[REDACTED]",
 		Patterns:         DefaultSensitivePatterns(),
@@ -32,7 +32,7 @@ func DefaultRedactionOptions() *RedactionOptions {
 }
 
 // RedactText removes or redacts potentially sensitive information from text
-func (ro *RedactionOptions) RedactText(text string) string {
+func (ro *Options) RedactText(text string) string {
 	if text == "" {
 		return text
 	}
@@ -48,7 +48,7 @@ func (ro *RedactionOptions) RedactText(text string) string {
 }
 
 // RedactLogAttribute redacts sensitive information from a log attribute
-func (ro *RedactionOptions) RedactLogAttribute(attr slog.Attr) slog.Attr {
+func (ro *Options) RedactLogAttribute(attr slog.Attr) slog.Attr {
 	key := attr.Key
 	value := attr.Value
 
@@ -79,7 +79,7 @@ func (ro *RedactionOptions) RedactLogAttribute(attr slog.Attr) slog.Attr {
 }
 
 // performKeyValueRedaction performs redaction on key=value patterns
-func (ro *RedactionOptions) performKeyValueRedaction(text, key, placeholder string) string {
+func (ro *Options) performKeyValueRedaction(text, key, placeholder string) string {
 	if strings.Contains(key, ":") {
 		// For header-like patterns such as "Authorization:" or "Authorization: "
 		return ro.performColonPatternRedaction(text, key, placeholder)
@@ -93,7 +93,7 @@ func (ro *RedactionOptions) performKeyValueRedaction(text, key, placeholder stri
 }
 
 // performSpacePatternRedaction handles patterns like "Bearer ", "Basic "
-func (ro *RedactionOptions) performSpacePatternRedaction(text, pattern, placeholder string) string {
+func (ro *Options) performSpacePatternRedaction(text, pattern, placeholder string) string {
 	// Escape pattern for regex and create case-insensitive pattern
 	// Match: pattern followed by one or more non-whitespace characters
 	escapedPattern := regexp.QuoteMeta(pattern)
@@ -120,7 +120,7 @@ func (ro *RedactionOptions) performSpacePatternRedaction(text, pattern, placehol
 
 // performColonPatternRedaction handles patterns like "Authorization:" or "Authorization: "
 // It will redact everything after the pattern up to the end of line (or end of string).
-func (ro *RedactionOptions) performColonPatternRedaction(text, pattern, placeholder string) string {
+func (ro *Options) performColonPatternRedaction(text, pattern, placeholder string) string {
 	// Escape pattern for regex and create case-insensitive pattern
 	// Match: pattern + optional whitespace + optional auth scheme (Bearer/Basic) + value + line ending
 	escapedPattern := regexp.QuoteMeta(pattern)
@@ -150,7 +150,7 @@ func (ro *RedactionOptions) performColonPatternRedaction(text, pattern, placehol
 }
 
 // performKeyValuePatternRedaction handles patterns like "key=value"
-func (ro *RedactionOptions) performKeyValuePatternRedaction(text, key, placeholder string) string {
+func (ro *Options) performKeyValuePatternRedaction(text, key, placeholder string) string {
 	// Escape key for regex and create case-insensitive pattern
 	// Match: key + optional equals sign + value (non-whitespace characters)
 	escapedKey := regexp.QuoteMeta(key)
@@ -193,13 +193,13 @@ func (ro *RedactionOptions) performKeyValuePatternRedaction(text, key, placehold
 // RedactingHandler is a decorator that redacts sensitive information before forwarding to the underlying handler
 type RedactingHandler struct {
 	handler slog.Handler
-	options *RedactionOptions
+	options *Options
 }
 
 // NewRedactingHandler creates a new redacting handler that wraps the given handler
-func NewRedactingHandler(handler slog.Handler, options *RedactionOptions) *RedactingHandler {
+func NewRedactingHandler(handler slog.Handler, options *Options) *RedactingHandler {
 	if options == nil {
-		options = DefaultRedactionOptions()
+		options = DefaultOptions()
 	}
 	return &RedactingHandler{
 		handler: handler,

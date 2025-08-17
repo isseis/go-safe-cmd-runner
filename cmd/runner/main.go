@@ -113,8 +113,9 @@ func main() {
 
 	// Wrap main logic in a separate function to properly handle errors and defer
 	if err := run(runIDValue); err != nil {
-		// Check if this is a pre-execution error
-		if preExecErr, ok := err.(*logging.PreExecutionError); ok {
+		// Check if this is a pre-execution error using errors.As for safe type checking
+		var preExecErr *logging.PreExecutionError
+		if errors.As(err, &preExecErr) {
 			logging.HandlePreExecutionError(preExecErr.Type, preExecErr.Message, preExecErr.Component, runIDValue)
 		} else {
 			logging.HandlePreExecutionError(logging.ErrorTypeSystemError, err.Error(), "main", runIDValue)

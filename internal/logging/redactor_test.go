@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 )
 
 // mockRedactorHandler for testing redactor
@@ -38,7 +38,7 @@ func (m *mockRedactorHandler) WithGroup(_ string) slog.Handler {
 }
 
 func TestDefaultRedactionConfig(t *testing.T) {
-	options := common.DefaultRedactionOptions()
+	options := redaction.DefaultOptions()
 
 	if options.Patterns == nil {
 		t.Error("Expected patterns to be set")
@@ -52,10 +52,10 @@ func TestNewRedactingHandler(t *testing.T) {
 	mockHandler := newMockRedactorHandler()
 
 	// Test with custom options
-	options := &common.RedactionOptions{
+	options := &redaction.Options{
 		LogPlaceholder:  "***",
 		TextPlaceholder: "[REDACTED]",
-		Patterns:        common.DefaultSensitivePatterns(),
+		Patterns:        redaction.DefaultSensitivePatterns(),
 	}
 
 	redactor := NewRedactingHandler(mockHandler, options)
@@ -74,7 +74,7 @@ func TestNewRedactingHandler(t *testing.T) {
 
 func TestRedactingHandler_RedactCredentialPatterns(t *testing.T) {
 	mockHandler := newMockRedactorHandler()
-	options := common.DefaultRedactionOptions()
+	options := redaction.DefaultOptions()
 
 	redactor := NewRedactingHandler(mockHandler, options)
 
@@ -124,7 +124,7 @@ func TestRedactingHandler_RedactCredentialPatterns(t *testing.T) {
 
 func TestRedactingHandler_WithAttrs(t *testing.T) {
 	mockHandler := newMockRedactorHandler()
-	options := common.DefaultRedactionOptions()
+	options := redaction.DefaultOptions()
 
 	redactor := NewRedactingHandler(mockHandler, options)
 
@@ -165,7 +165,7 @@ func TestRedactingHandler_WithGroup(t *testing.T) {
 
 func TestRedactingHandler_GroupedAttributes(t *testing.T) {
 	mockHandler := newMockRedactorHandler()
-	options := common.DefaultRedactionOptions()
+	options := redaction.DefaultOptions()
 
 	redactor := NewRedactingHandler(mockHandler, options)
 

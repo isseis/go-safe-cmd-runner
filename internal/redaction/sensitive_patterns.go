@@ -1,5 +1,5 @@
-// Package common provides shared functionality across the go-safe-cmd-runner project.
-package common
+// Package redaction provides shared functionality across the go-safe-cmd-runner project.
+package redaction
 
 import (
 	"regexp"

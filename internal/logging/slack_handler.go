@@ -75,6 +75,19 @@ type SlackAttachmentField struct {
 	Short bool   `json:"short"`
 }
 
+// GetSlackWebhookURL gets the Slack webhook URL from environment
+func GetSlackWebhookURL() string {
+	url := os.Getenv(SlackWebhookURLEnvVar)
+
+	if url != "" {
+		slog.Debug("Found Slack webhook URL")
+		return url
+	}
+
+	slog.Debug("No Slack webhook URL found in environment variables")
+	return ""
+}
+
 // NewSlackHandler creates a new SlackHandler
 func NewSlackHandler(webhookURL, runID string) *SlackHandler {
 	slog.Debug("Creating Slack handler", "webhook_url", webhookURL, "run_id", runID, "timeout", httpTimeout)
