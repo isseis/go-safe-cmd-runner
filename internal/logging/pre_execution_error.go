@@ -26,8 +26,8 @@ const (
 	ErrorTypeFileAccess ErrorType = "file_access_failed"
 	// ErrorTypeUserInterrupted represents user interruption
 	ErrorTypeUserInterrupted ErrorType = "user_interrupted"
-	// ErrorTypeInvalidArguments represents invalid argument errors
-	ErrorTypeInvalidArguments ErrorType = "invalid_arguments"
+	// ErrorTypeRequiredArgumentMissing represents missing required argument errors
+	ErrorTypeRequiredArgumentMissing ErrorType = "required_argument_missing"
 	// ErrorTypeSystemError represents system errors
 	ErrorTypeSystemError ErrorType = "system_error"
 )

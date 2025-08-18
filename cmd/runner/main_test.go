@@ -56,8 +56,8 @@ func TestConfigPathRequired(t *testing.T) {
 		return
 	}
 
-	if preExecErr.Type != logging.ErrorTypeInvalidArguments {
-		t.Errorf("expected ErrorTypeInvalidArguments, got: %v", preExecErr.Type)
+	if preExecErr.Type != logging.ErrorTypeRequiredArgumentMissing {
+		t.Errorf("expected ErrorTypeRequiredArgumentMissing, got: %v", preExecErr.Type)
 	}
 }
 

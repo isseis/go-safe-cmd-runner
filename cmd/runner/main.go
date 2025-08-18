@@ -97,34 +97,33 @@ func validateConfigCommand(cfg *runnertypes.Config) error {
 }
 
 func main() {
-	// Parse command line flags early to get runIDValue
+	// Parse command line flags early to get runID
 	flag.Parse()
 
 	// Use provided run ID or generate one for error handling
-	runIDValue := *runID
-	if runIDValue == "" {
-		runIDValue = logging.GenerateRunID()
+	if *runID == "" {
+		*runID = logging.GenerateRunID()
 	}
 
 	if err := syscall.Seteuid(syscall.Getuid()); err != nil {
-		logging.HandlePreExecutionError(logging.ErrorTypePrivilegeDrop, fmt.Sprintf("Failed to drop privileges: %v", err), "main", runIDValue)
+		logging.HandlePreExecutionError(logging.ErrorTypePrivilegeDrop, fmt.Sprintf("Failed to drop privileges: %v", err), "main", *runID)
 		os.Exit(1)
 	}
 
 	// Wrap main logic in a separate function to properly handle errors and defer
-	if err := run(runIDValue); err != nil {
+	if err := run(*runID); err != nil {
 		// Check if this is a pre-execution error using errors.As for safe type checking
 		var preExecErr *logging.PreExecutionError
 		if errors.As(err, &preExecErr) {
-			logging.HandlePreExecutionError(preExecErr.Type, preExecErr.Message, preExecErr.Component, runIDValue)
+			logging.HandlePreExecutionError(preExecErr.Type, preExecErr.Message, preExecErr.Component, *runID)
 		} else {
-			logging.HandlePreExecutionError(logging.ErrorTypeSystemError, err.Error(), "main", runIDValue)
+			logging.HandlePreExecutionError(logging.ErrorTypeSystemError, err.Error(), "main", *runID)
 		}
 		os.Exit(1)
 	}
 }
 
-func run(runIDValue string) error {
+func run(runID string) error {
 	// Set up context with cancellation
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -132,10 +131,10 @@ func run(runIDValue string) error {
 	// Load configuration first to access environment settings
 	if *configPath == "" {
 		return &logging.PreExecutionError{
-			Type:      logging.ErrorTypeInvalidArguments,
+			Type:      logging.ErrorTypeRequiredArgumentMissing,
 			Message:   "Config file path is required",
 			Component: "config",
-			RunID:     runIDValue,
+			RunID:     runID,
 		}
 	}
 
@@ -147,7 +146,7 @@ func run(runIDValue string) error {
 			Type:      logging.ErrorTypeConfigParsing,
 			Message:   fmt.Sprintf("Failed to load config: %v", err),
 			Component: "config",
-			RunID:     runIDValue,
+			RunID:     runID,
 		}
 	}
 
@@ -174,7 +173,7 @@ func run(runIDValue string) error {
 	loggerConfig := LoggerConfig{
 		Level:           *logLevel,
 		LogDir:          *logDir,
-		RunID:           runIDValue,
+		RunID:           runID,
 		SlackWebhookURL: slackURL,
 	}
 
@@ -183,7 +182,7 @@ func run(runIDValue string) error {
 			Type:      logging.ErrorTypeLogFileOpen,
 			Message:   fmt.Sprintf("Failed to setup logger: %v", err),
 			Component: "logging",
-			RunID:     runIDValue,
+			RunID:     runID,
 		}
 	}
 
@@ -209,7 +208,7 @@ func run(runIDValue string) error {
 			Type:      logging.ErrorTypeFileAccess,
 			Message:   fmt.Sprintf("Config verification failed: %v", err),
 			Component: "verification",
-			RunID:     runIDValue,
+			RunID:     runID,
 		}
 	}
 
@@ -222,7 +221,7 @@ func run(runIDValue string) error {
 			Type:      logging.ErrorTypeFileAccess,
 			Message:   fmt.Sprintf("Global files verification failed: %v", err),
 			Component: "verification",
-			RunID:     runIDValue,
+			RunID:     runID,
 		}
 	}
 
@@ -232,18 +231,14 @@ func run(runIDValue string) error {
 			"verified", result.VerifiedFiles,
 			"skipped", len(result.SkippedFiles),
 			"duration_ms", result.Duration.Milliseconds(),
-			"run_id", runIDValue)
+			"run_id", runID)
 	}
 
 	// Initialize Runner with privilege support and run ID
 	runnerOptions := []runner.Option{
 		runner.WithVerificationManager(verificationManager),
 		runner.WithPrivilegeManager(privMgr),
-	}
-
-	// Add run ID if specified (enables Slack notifications)
-	if runIDValue != "" {
-		runnerOptions = append(runnerOptions, runner.WithRunID(runIDValue))
+		runner.WithRunID(runID),
 	}
 
 	runner, err := runner.NewRunner(cfg, runnerOptions...)
@@ -270,7 +265,7 @@ func run(runIDValue string) error {
 	// Ensure cleanup of all resources on exit (both auto-cleanup and manual cleanup resources)
 	defer func() {
 		if err := runner.CleanupAllResources(); err != nil {
-			slog.Warn("Failed to cleanup resources", "error", err, "run_id", runIDValue)
+			slog.Warn("Failed to cleanup resources", "error", err, "run_id", runID)
 		}
 	}()
 
