@@ -11,9 +11,26 @@ import (
 type SensitivePatterns struct {
 	// AllowedEnvVars contains environment variable names that are safe to log
 	AllowedEnvVars map[string]bool
-	// Combined patterns for efficient matching
+	// Combined patterns for efficient matching - always guaranteed to be non-nil
 	combinedCredentialPattern *regexp.Regexp
 	combinedEnvVarPattern     *regexp.Regexp
+}
+
+// NewSensitivePatterns creates a new SensitivePatterns with given pattern strings
+func NewSensitivePatterns(credentialPatterns, envVarPatterns []string, allowedEnvVars map[string]bool) (*SensitivePatterns, error) {
+	if allowedEnvVars == nil {
+		allowedEnvVars = make(map[string]bool)
+	}
+
+	patterns := &SensitivePatterns{
+		AllowedEnvVars: allowedEnvVars,
+	}
+
+	if err := patterns.buildCombinedPatterns(credentialPatterns, envVarPatterns); err != nil {
+		return nil, fmt.Errorf("failed to build combined patterns: %w", err)
+	}
+
+	return patterns, nil
 }
 
 // DefaultSensitivePatterns returns a default set of sensitive patterns
@@ -63,20 +80,20 @@ func DefaultSensitivePatterns() *SensitivePatterns {
 		"PAGER":    true,
 	}
 
-	patterns := &SensitivePatterns{
-		AllowedEnvVars: allowedEnvVars,
-	}
-
-	// Build combined patterns for efficiency
-	if err := patterns.buildCombinedPatterns(credentialPatterns, envVarPatterns); err != nil {
-		// This should not happen with our default patterns, but handle gracefully
-		panic(fmt.Sprintf("failed to build combined patterns: %v", err))
+	// Use constructor to ensure patterns are always properly initialized
+	patterns, err := NewSensitivePatterns(credentialPatterns, envVarPatterns, allowedEnvVars)
+	if err != nil {
+		// This should not happen with our default patterns
+		panic(fmt.Sprintf("failed to create default sensitive patterns: %v", err))
 	}
 	return patterns
 }
 
 // buildCombinedPatterns creates optimized combined regular expressions from pattern strings
+// This is an internal method and should only be called during construction
 func (sp *SensitivePatterns) buildCombinedPatterns(credentialPatterns, envVarPatterns []string) error {
+	compiledNeverMatch := regexp.MustCompile("$^")
+	sp.combinedCredentialPattern = compiledNeverMatch
 	// Combine credential patterns with OR operator
 	if len(credentialPatterns) > 0 {
 		combinedCredentialPattern := "(" + strings.Join(credentialPatterns, "|") + ")"
@@ -89,6 +106,7 @@ func (sp *SensitivePatterns) buildCombinedPatterns(credentialPatterns, envVarPat
 		sp.combinedCredentialPattern = compiled
 	}
 
+	sp.combinedEnvVarPattern = compiledNeverMatch
 	// Combine environment variable patterns with OR operator
 	if len(envVarPatterns) > 0 {
 		combinedEnvVarPattern := "(" + strings.Join(envVarPatterns, "|") + ")"
@@ -106,33 +124,20 @@ func (sp *SensitivePatterns) buildCombinedPatterns(credentialPatterns, envVarPat
 
 // IsSensitiveKey checks if a key (e.g., log attribute key) contains sensitive information
 func (sp *SensitivePatterns) IsSensitiveKey(key string) bool {
-	if sp.combinedCredentialPattern == nil {
-		// This should not happen if buildCombinedPatterns succeeded
-		return false
-	}
 	return sp.combinedCredentialPattern.MatchString(key)
 }
 
 // IsSensitiveValue checks if a value contains sensitive information
 func (sp *SensitivePatterns) IsSensitiveValue(value string) bool {
-	if sp.combinedCredentialPattern == nil {
-		// This should not happen if buildCombinedPatterns succeeded
-		return false
-	}
 	return sp.combinedCredentialPattern.MatchString(value)
 }
 
 // IsSensitiveEnvVar checks if an environment variable name is sensitive
 func (sp *SensitivePatterns) IsSensitiveEnvVar(name string) bool {
-	// Check if it's explicitly allowed
-	if sp.AllowedEnvVars[strings.ToUpper(name)] {
-		return false
-	}
-
 	upperName := strings.ToUpper(name)
 
-	if sp.combinedEnvVarPattern == nil {
-		// This should not happen if buildCombinedPatterns succeeded
+	// Check if it's explicitly allowed
+	if sp.AllowedEnvVars[upperName] {
 		return false
 	}
 	return sp.combinedEnvVarPattern.MatchString(upperName)

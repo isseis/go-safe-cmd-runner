@@ -72,19 +72,7 @@ func TestSensitivePatterns_CombinedPatterns(t *testing.T) {
 	})
 }
 
-func TestSensitivePatterns_ErrorHandling(t *testing.T) {
-	// Test that patterns without combined patterns return false (safe default)
-	patterns := &SensitivePatterns{
-		combinedCredentialPattern: nil, // Not built
-	}
-
-	// Should return false for safety when combined patterns are not available
-	assert.False(t, patterns.IsSensitiveKey("password"))
-	assert.False(t, patterns.IsSensitiveValue("my_token"))
-	assert.False(t, patterns.IsSensitiveKey("safe_field"))
-}
-
-func TestBuildCombinedPatterns(t *testing.T) {
+func TestNewSensitivePatterns(t *testing.T) {
 	credentialPatterns := []string{
 		`(?i)password`,
 		`(?i)token`,
@@ -96,26 +84,53 @@ func TestBuildCombinedPatterns(t *testing.T) {
 		`(?i).*SECRET.*`,
 	}
 
-	patterns := &SensitivePatterns{
-		AllowedEnvVars: make(map[string]bool),
+	allowedEnvVars := make(map[string]bool)
+
+	patterns, err := NewSensitivePatterns(credentialPatterns, envVarPatterns, allowedEnvVars)
+	require.NoError(t, err, "NewSensitivePatterns should succeed")
+
+	// Test that patterns work correctly through the public API
+	assert.True(t, patterns.IsSensitiveKey("password"))
+	assert.True(t, patterns.IsSensitiveKey("token"))
+	assert.True(t, patterns.IsSensitiveKey("secret"))
+	assert.False(t, patterns.IsSensitiveKey("safe"))
+
+	assert.True(t, patterns.IsSensitiveEnvVar("MY_PASSWORD_VAR"))
+	assert.True(t, patterns.IsSensitiveEnvVar("SECRET_KEY"))
+	assert.False(t, patterns.IsSensitiveEnvVar("NORMAL_VAR"))
+}
+
+func TestNewSensitivePatterns_ErrorHandling(t *testing.T) {
+	// Test with invalid regex patterns
+	invalidCredentialPatterns := []string{
+		`(?i)password`,
+		`[invalid`, // Invalid regex
 	}
 
-	err := patterns.buildCombinedPatterns(credentialPatterns, envVarPatterns)
-	require.NoError(t, err, "buildCombinedPatterns should succeed")
+	envVarPatterns := []string{
+		`(?i).*PASSWORD.*`,
+	}
 
-	// Verify combined patterns were created
-	require.NotNil(t, patterns.combinedCredentialPattern)
-	require.NotNil(t, patterns.combinedEnvVarPattern)
+	allowedEnvVars := make(map[string]bool)
 
-	// Test that combined patterns work correctly
-	assert.True(t, patterns.combinedCredentialPattern.MatchString("password"))
-	assert.True(t, patterns.combinedCredentialPattern.MatchString("token"))
-	assert.True(t, patterns.combinedCredentialPattern.MatchString("secret"))
-	assert.False(t, patterns.combinedCredentialPattern.MatchString("safe"))
+	patterns, err := NewSensitivePatterns(invalidCredentialPatterns, envVarPatterns, allowedEnvVars)
+	assert.Error(t, err, "NewSensitivePatterns should fail with invalid regex")
+	assert.Nil(t, patterns, "patterns should be nil on error")
+	assert.Contains(t, err.Error(), "failed to build combined patterns")
+}
 
-	assert.True(t, patterns.combinedEnvVarPattern.MatchString("MY_PASSWORD_VAR"))
-	assert.True(t, patterns.combinedEnvVarPattern.MatchString("SECRET_KEY"))
-	assert.False(t, patterns.combinedEnvVarPattern.MatchString("NORMAL_VAR"))
+func TestNewSensitivePatterns_EmptyPatterns(t *testing.T) {
+	// Test with empty patterns (should succeed and create never-matching patterns)
+	allowedEnvVars := make(map[string]bool)
+
+	patterns, err := NewSensitivePatterns([]string{}, []string{}, allowedEnvVars)
+	require.NoError(t, err, "NewSensitivePatterns should succeed with empty patterns")
+	require.NotNil(t, patterns, "patterns should not be nil")
+
+	// Should never match anything with empty patterns
+	assert.False(t, patterns.IsSensitiveKey("password"))
+	assert.False(t, patterns.IsSensitiveValue("secret_token"))
+	assert.False(t, patterns.IsSensitiveEnvVar("MY_PASSWORD"))
 }
 
 // Benchmark to verify performance improvement
