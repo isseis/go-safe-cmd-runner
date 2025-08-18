@@ -60,9 +60,20 @@ const (
 	maxResolutionDepth = 100 // Maximum number of variable resolution iterations
 )
 
+// GroupExecutionStatus represents the execution status of a command group
+type GroupExecutionStatus string
+
+const (
+	// GroupExecutionStatusSuccess indicates that the group execution was successful.
+	GroupExecutionStatusSuccess GroupExecutionStatus = "success"
+
+	// GroupExecutionStatusError indicates that the group execution encountered an error.
+	GroupExecutionStatusError GroupExecutionStatus = "error"
+)
+
 // groupExecutionResult holds the result of group execution for notification
 type groupExecutionResult struct {
-	status      string // "success" or "error"
+	status      GroupExecutionStatus
 	exitCode    int
 	lastCommand string
 	output      string
@@ -402,7 +413,7 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 			fmt.Printf("    Command failed: %v\n", err)
 			// Set failure result for notification
 			executionResult = &groupExecutionResult{
-				status:      "error",
+				status:      GroupExecutionStatusError,
 				exitCode:    1,
 				lastCommand: lastCommand,
 				output:      lastOutput,
@@ -425,7 +436,7 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 		if result.ExitCode != 0 {
 			// Set failure result for notification
 			executionResult = &groupExecutionResult{
-				status:      "error",
+				status:      GroupExecutionStatusError,
 				exitCode:    result.ExitCode,
 				lastCommand: lastCommand,
 				output:      lastOutput,
@@ -437,7 +448,7 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 
 	// Set success result for notification
 	executionResult = &groupExecutionResult{
-		status:      "success",
+		status:      GroupExecutionStatusSuccess,
 		exitCode:    0,
 		lastCommand: lastCommand,
 		output:      lastOutput,
