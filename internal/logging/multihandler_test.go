@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // Test errors
@@ -91,9 +93,7 @@ func TestNewMultiHandler(t *testing.T) {
 
 	multi := NewMultiHandler(handler1, handler2)
 
-	if len(multi.handlers) != 2 {
-		t.Errorf("Expected 2 handlers, got %d", len(multi.handlers))
-	}
+	assert.Len(t, multi.handlers, 2)
 }
 
 func TestMultiHandler_Enabled(t *testing.T) {
@@ -128,9 +128,7 @@ func TestMultiHandler_Enabled(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			multi := NewMultiHandler(tt.handlers...)
 			result := multi.Enabled(context.Background(), slog.LevelInfo)
-			if result != tt.expected {
-				t.Errorf("Expected %v, got %v", tt.expected, result)
-			}
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
@@ -144,20 +142,12 @@ func TestMultiHandler_Handle(t *testing.T) {
 
 	record := slog.NewRecord(time.Now(), slog.LevelInfo, "test message", 0)
 	err := multi.Handle(context.Background(), record)
-	if err != nil {
-		t.Errorf("Expected no error, got %v", err)
-	}
+	assert.NoError(t, err)
 
 	// Check that enabled handlers received the record
-	if handler1.getRecordCount() != 1 {
-		t.Errorf("Handler1 should have received 1 record, got %d", handler1.getRecordCount())
-	}
-	if handler2.getRecordCount() != 1 {
-		t.Errorf("Handler2 should have received 1 record, got %d", handler2.getRecordCount())
-	}
-	if handler3.getRecordCount() != 0 {
-		t.Errorf("Handler3 (disabled) should have received 0 records, got %d", handler3.getRecordCount())
-	}
+	assert.Equal(t, 1, handler1.getRecordCount(), "Handler1 should have received 1 record")
+	assert.Equal(t, 1, handler2.getRecordCount(), "Handler2 should have received 1 record")
+	assert.Equal(t, 0, handler3.getRecordCount(), "Handler3 (disabled) should have received 0 records")
 }
 
 func TestMultiHandler_HandleWithErrors(t *testing.T) {
@@ -172,18 +162,12 @@ func TestMultiHandler_HandleWithErrors(t *testing.T) {
 	record := slog.NewRecord(time.Now(), slog.LevelInfo, "test message", 0)
 	err := multi.Handle(context.Background(), record)
 
-	if err == nil {
-		t.Error("Expected error, got nil")
-	}
+	require.Error(t, err, "Expected error, got nil")
 
 	// Should contain both errors
 	errStr := err.Error()
-	if !strings.Contains(errStr, "handler1 error") {
-		t.Error("Expected error to contain 'handler1 error'")
-	}
-	if !strings.Contains(errStr, "handler2 error") {
-		t.Error("Expected error to contain 'handler2 error'")
-	}
+	assert.Contains(t, errStr, "handler1 error")
+	assert.Contains(t, errStr, "handler2 error")
 }
 
 func TestMultiHandler_WithAttrs(t *testing.T) {
@@ -196,15 +180,11 @@ func TestMultiHandler_WithAttrs(t *testing.T) {
 	newMulti := multi.WithAttrs(attrs)
 
 	// Verify it returns a new MultiHandler
-	if newMulti == multi {
-		t.Error("WithAttrs should return a new MultiHandler instance")
-	}
+	assert.NotSame(t, multi, newMulti, "WithAttrs should return a new MultiHandler instance")
 
 	// Verify the new MultiHandler has the same number of handlers
 	newMultiTyped := newMulti.(*MultiHandler)
-	if len(newMultiTyped.handlers) != 2 {
-		t.Errorf("Expected 2 handlers in new MultiHandler, got %d", len(newMultiTyped.handlers))
-	}
+	assert.Len(t, newMultiTyped.handlers, 2)
 }
 
 func TestMultiHandler_WithGroup(t *testing.T) {
@@ -217,15 +197,11 @@ func TestMultiHandler_WithGroup(t *testing.T) {
 	newMulti := multi.WithGroup(groupName)
 
 	// Verify it returns a new MultiHandler
-	if newMulti == multi {
-		t.Error("WithGroup should return a new MultiHandler instance")
-	}
+	assert.NotSame(t, multi, newMulti, "WithGroup should return a new MultiHandler instance")
 
 	// Verify the new MultiHandler has the same number of handlers
 	newMultiTyped := newMulti.(*MultiHandler)
-	if len(newMultiTyped.handlers) != 2 {
-		t.Errorf("Expected 2 handlers in new MultiHandler, got %d", len(newMultiTyped.handlers))
-	}
+	assert.Len(t, newMultiTyped.handlers, 2)
 }
 
 func TestMultiHandler_ConcurrentAccess(_ *testing.T) {

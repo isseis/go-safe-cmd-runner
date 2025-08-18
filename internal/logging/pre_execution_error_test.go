@@ -4,6 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // Static errors for testing to satisfy err113 linter
@@ -22,9 +25,7 @@ func TestPreExecutionError_ErrorMessage(t *testing.T) {
 	}
 
 	expected := "config_parsing_failed: test message (component: test component, run_id: test-run-id)"
-	if err.Error() != expected {
-		t.Errorf("Error() = %q, want %q", err.Error(), expected)
-	}
+	assert.Equal(t, expected, err.Error())
 }
 
 func TestPreExecutionError_Is(t *testing.T) {
@@ -37,14 +38,10 @@ func TestPreExecutionError_Is(t *testing.T) {
 
 	// Should return true for PreExecutionError type
 	var target *PreExecutionError
-	if !err.Is(target) {
-		t.Error("Is() should return true for PreExecutionError type")
-	}
+	assert.True(t, err.Is(target), "Is() should return true for PreExecutionError type")
 
 	// Should return false for other error types
-	if err.Is(errOtherError) {
-		t.Error("Is() should return false for other error types")
-	}
+	assert.False(t, err.Is(errOtherError), "Is() should return false for other error types")
 }
 
 func TestPreExecutionError_As_Success(t *testing.T) {
@@ -57,23 +54,13 @@ func TestPreExecutionError_As_Success(t *testing.T) {
 
 	// Test direct error
 	var target *PreExecutionError
-	if !errors.As(originalErr, &target) {
-		t.Fatal("errors.As() should return true for direct PreExecutionError")
-	}
+	require.True(t, errors.As(originalErr, &target), "errors.As() should return true for direct PreExecutionError")
 
 	// Verify the extracted error has the same content
-	if target.Type != originalErr.Type {
-		t.Errorf("Type = %q, want %q", target.Type, originalErr.Type)
-	}
-	if target.Message != originalErr.Message {
-		t.Errorf("Message = %q, want %q", target.Message, originalErr.Message)
-	}
-	if target.Component != originalErr.Component {
-		t.Errorf("Component = %q, want %q", target.Component, originalErr.Component)
-	}
-	if target.RunID != originalErr.RunID {
-		t.Errorf("RunID = %q, want %q", target.RunID, originalErr.RunID)
-	}
+	assert.Equal(t, originalErr.Type, target.Type)
+	assert.Equal(t, originalErr.Message, target.Message)
+	assert.Equal(t, originalErr.Component, target.Component)
+	assert.Equal(t, originalErr.RunID, target.RunID)
 }
 
 func TestPreExecutionError_As_WrappedError(t *testing.T) {
@@ -89,23 +76,13 @@ func TestPreExecutionError_As_WrappedError(t *testing.T) {
 
 	// Test wrapped error extraction
 	var target *PreExecutionError
-	if !errors.As(wrappedErr, &target) {
-		t.Fatal("errors.As() should return true for wrapped PreExecutionError")
-	}
+	require.True(t, errors.As(wrappedErr, &target), "errors.As() should return true for wrapped PreExecutionError")
 
 	// Verify the extracted error has the same content as the original
-	if target.Type != originalErr.Type {
-		t.Errorf("Type = %q, want %q", target.Type, originalErr.Type)
-	}
-	if target.Message != originalErr.Message {
-		t.Errorf("Message = %q, want %q", target.Message, originalErr.Message)
-	}
-	if target.Component != originalErr.Component {
-		t.Errorf("Component = %q, want %q", target.Component, originalErr.Component)
-	}
-	if target.RunID != originalErr.RunID {
-		t.Errorf("RunID = %q, want %q", target.RunID, originalErr.RunID)
-	}
+	assert.Equal(t, originalErr.Type, target.Type)
+	assert.Equal(t, originalErr.Message, target.Message)
+	assert.Equal(t, originalErr.Component, target.Component)
+	assert.Equal(t, originalErr.RunID, target.RunID)
 }
 
 func TestPreExecutionError_As_MultipleWrapping(t *testing.T) {
@@ -123,17 +100,11 @@ func TestPreExecutionError_As_MultipleWrapping(t *testing.T) {
 
 	// Test extraction through multiple wrap levels
 	var target *PreExecutionError
-	if !errors.As(level3, &target) {
-		t.Fatal("errors.As() should return true for multiply wrapped PreExecutionError")
-	}
+	require.True(t, errors.As(level3, &target), "errors.As() should return true for multiply wrapped PreExecutionError")
 
 	// Verify the extracted error is the original one
-	if target.Type != originalErr.Type {
-		t.Errorf("Type = %q, want %q", target.Type, originalErr.Type)
-	}
-	if target.Message != originalErr.Message {
-		t.Errorf("Message = %q, want %q", target.Message, originalErr.Message)
-	}
+	assert.Equal(t, originalErr.Type, target.Type)
+	assert.Equal(t, originalErr.Message, target.Message)
 }
 
 func TestPreExecutionError_As_False_Cases(t *testing.T) {
@@ -162,12 +133,8 @@ func TestPreExecutionError_As_False_Cases(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var target *PreExecutionError
-			if errors.As(tt.err, &target) {
-				t.Errorf("errors.As() should return false for %s", tt.name)
-			}
-			if target != nil {
-				t.Errorf("target should remain nil for %s, got %v", tt.name, target)
-			}
+			assert.False(t, errors.As(tt.err, &target), "errors.As() should return false for %s", tt.name)
+			assert.Nil(t, target, "target should remain nil for %s", tt.name)
 		})
 	}
 }
@@ -182,12 +149,8 @@ func TestPreExecutionError_As_WrongTargetType(t *testing.T) {
 
 	// Test with wrong target type (different error type)
 	var wrongTarget *customError
-	if errors.As(err, &wrongTarget) {
-		t.Error("errors.As() should return false for wrong target type")
-	}
-	if wrongTarget != nil {
-		t.Error("wrong target should remain nil")
-	}
+	assert.False(t, errors.As(err, &wrongTarget), "errors.As() should return false for wrong target type")
+	assert.Nil(t, wrongTarget, "wrong target should remain nil")
 }
 
 func TestPreExecutionError_As_Integration(t *testing.T) {
@@ -208,23 +171,13 @@ func TestPreExecutionError_As_Integration(t *testing.T) {
 	// Test the pattern used in main.go
 	err := wrappedError()
 	var preExecErr *PreExecutionError
-	if !errors.As(err, &preExecErr) {
-		t.Fatal("Should be able to extract PreExecutionError from wrapped error")
-	}
+	require.True(t, errors.As(err, &preExecErr), "Should be able to extract PreExecutionError from wrapped error")
 
 	// Verify all fields are correctly extracted
-	if preExecErr.Type != ErrorTypeConfigParsing {
-		t.Errorf("Type = %q, want %q", preExecErr.Type, ErrorTypeConfigParsing)
-	}
-	if preExecErr.Message != "integration test error" {
-		t.Errorf("Message = %q, want %q", preExecErr.Message, "integration test error")
-	}
-	if preExecErr.Component != "integration" {
-		t.Errorf("Component = %q, want %q", preExecErr.Component, "integration")
-	}
-	if preExecErr.RunID != "integration-test-id" {
-		t.Errorf("RunID = %q, want %q", preExecErr.RunID, "integration-test-id")
-	}
+	assert.Equal(t, ErrorTypeConfigParsing, preExecErr.Type)
+	assert.Equal(t, "integration test error", preExecErr.Message)
+	assert.Equal(t, "integration", preExecErr.Component)
+	assert.Equal(t, "integration-test-id", preExecErr.RunID)
 }
 
 func TestPreExecutionError_As_EdgeCases(t *testing.T) {
@@ -275,16 +228,12 @@ func TestPreExecutionError_As_EdgeCases(t *testing.T) {
 			var preExecErr *PreExecutionError
 			found := errors.As(err, &preExecErr)
 
-			if found != tt.shouldFind {
-				t.Errorf("errors.As() = %v, want %v. %s", found, tt.shouldFind, tt.description)
-			}
+			assert.Equal(t, tt.shouldFind, found, "errors.As() result: %s", tt.description)
 
-			if tt.shouldFind && preExecErr == nil {
-				t.Error("preExecErr should not be nil when found")
-			}
-
-			if !tt.shouldFind && preExecErr != nil {
-				t.Error("preExecErr should be nil when not found")
+			if tt.shouldFind {
+				assert.NotNil(t, preExecErr, "preExecErr should not be nil when found")
+			} else {
+				assert.Nil(t, preExecErr, "preExecErr should be nil when not found")
 			}
 		})
 	}

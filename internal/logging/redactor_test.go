@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // mockRedactorHandler for testing redactor
@@ -40,12 +42,8 @@ func (m *mockRedactorHandler) WithGroup(_ string) slog.Handler {
 func TestDefaultRedactionConfig(t *testing.T) {
 	options := redaction.DefaultOptions()
 
-	if options.Patterns == nil {
-		t.Error("Expected patterns to be set")
-	}
-	if len(options.Patterns.CredentialPatterns) == 0 {
-		t.Error("Expected non-empty credential patterns")
-	}
+	assert.NotNil(t, options.Patterns, "Expected patterns to be set")
+	assert.NotEmpty(t, options.Patterns.CredentialPatterns, "Expected non-empty credential patterns")
 }
 
 func TestNewRedactingHandler(t *testing.T) {
@@ -59,15 +57,11 @@ func TestNewRedactingHandler(t *testing.T) {
 	}
 
 	redactor := NewRedactingHandler(mockHandler, options)
-	if redactor.commonHandler == nil {
-		t.Error("Expected common handler to be set")
-	}
+	assert.NotNil(t, redactor.commonHandler, "Expected common handler to be set")
 
 	// Test with nil options (should use default)
 	redactor2 := NewRedactingHandler(mockHandler, nil)
-	if redactor2.commonHandler == nil {
-		t.Error("Expected common handler to be set with default options")
-	}
+	assert.NotNil(t, redactor2.commonHandler, "Expected common handler to be set with default options")
 }
 
 // Removed env_ prefix specific test as production no longer uses env_-prefixed attributes
@@ -97,15 +91,9 @@ func TestRedactingHandler_RedactCredentialPatterns(t *testing.T) {
 		record.AddAttrs(slog.String(test.key, test.value))
 
 		err := redactor.Handle(context.Background(), record)
-		if err != nil {
-			t.Errorf("Unexpected error for %s: %v", test.key, err)
-			continue
-		}
+		require.NoError(t, err, "Unexpected error for %s", test.key)
 
-		if len(mockHandler.records) != 1 {
-			t.Errorf("Expected 1 record for %s, got %d", test.key, len(mockHandler.records))
-			continue
-		}
+		require.Len(t, mockHandler.records, 1, "Expected 1 record for %s", test.key)
 
 		handledRecord := mockHandler.records[0]
 		var actualValue string
@@ -116,9 +104,7 @@ func TestRedactingHandler_RedactCredentialPatterns(t *testing.T) {
 			return true
 		})
 
-		if actualValue != test.expected {
-			t.Errorf("For key %s, expected %s, got %s", test.key, test.expected, actualValue)
-		}
+		assert.Equal(t, test.expected, actualValue, "For key %s", test.key)
 	}
 }
 
@@ -136,14 +122,10 @@ func TestRedactingHandler_WithAttrs(t *testing.T) {
 	newRedactor := redactor.WithAttrs(attrs)
 
 	// Verify it returns a new RedactingHandler
-	if newRedactor == redactor {
-		t.Error("WithAttrs should return a new RedactingHandler instance")
-	}
+	assert.NotSame(t, redactor, newRedactor, "WithAttrs should return a new RedactingHandler instance")
 
 	// Verify the new handler is properly typed
-	if _, ok := newRedactor.(*RedactingHandler); !ok {
-		t.Error("WithAttrs should return a RedactingHandler")
-	}
+	assert.IsType(t, &RedactingHandler{}, newRedactor, "WithAttrs should return a RedactingHandler")
 }
 
 func TestRedactingHandler_WithGroup(t *testing.T) {
@@ -153,14 +135,10 @@ func TestRedactingHandler_WithGroup(t *testing.T) {
 	newRedactor := redactor.WithGroup("testgroup")
 
 	// Verify it returns a new RedactingHandler
-	if newRedactor == redactor {
-		t.Error("WithGroup should return a new RedactingHandler instance")
-	}
+	assert.NotSame(t, redactor, newRedactor, "WithGroup should return a new RedactingHandler instance")
 
 	// Verify the new handler is properly typed
-	if _, ok := newRedactor.(*RedactingHandler); !ok {
-		t.Error("WithGroup should return a RedactingHandler")
-	}
+	assert.IsType(t, &RedactingHandler{}, newRedactor, "WithGroup should return a RedactingHandler")
 }
 
 func TestRedactingHandler_GroupedAttributes(t *testing.T) {
@@ -176,13 +154,9 @@ func TestRedactingHandler_GroupedAttributes(t *testing.T) {
 	))
 
 	err := redactor.Handle(context.Background(), record)
-	if err != nil {
-		t.Errorf("Unexpected error: %v", err)
-	}
+	require.NoError(t, err, "Unexpected error")
 
-	if len(mockHandler.records) != 1 {
-		t.Fatalf("Expected 1 record, got %d", len(mockHandler.records))
-	}
+	require.Len(t, mockHandler.records, 1, "Expected 1 record")
 
 	// The group structure should be preserved, but sensitive values redacted
 	handledRecord := mockHandler.records[0]
@@ -197,17 +171,11 @@ func TestRedactingHandler_GroupedAttributes(t *testing.T) {
 				groupValues[gAttr.Key] = gAttr.Value.String()
 			}
 
-			if groupValues["safe_field"] != "safe_value" {
-				t.Errorf("Expected safe_field to be preserved in group, got %s", groupValues["safe_field"])
-			}
-			if groupValues["password_field"] != "***" {
-				t.Errorf("Expected password_field to be redacted in group, got %s", groupValues["password_field"])
-			}
+			assert.Equal(t, "safe_value", groupValues["safe_field"], "Expected safe_field to be preserved in group")
+			assert.Equal(t, "***", groupValues["password_field"], "Expected password_field to be redacted in group")
 		}
 		return true
 	})
 
-	if !foundGroup {
-		t.Error("Expected to find auth group in handled record")
-	}
+	assert.True(t, foundGroup, "Expected to find auth group in handled record")
 }

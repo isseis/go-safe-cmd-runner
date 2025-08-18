@@ -6,6 +6,8 @@ import (
 	"os"
 	"syscall"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestIsNoFollowError(t *testing.T) {
@@ -40,9 +42,8 @@ func TestIsNoFollowError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := isNoFollowError(tt.err); got != tt.want {
-				t.Errorf("isNoFollowError() = %v, want %v", got, tt.want)
-			}
+			got := isNoFollowError(tt.err)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
