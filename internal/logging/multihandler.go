@@ -11,20 +11,23 @@ import (
 	"log/slog"
 )
 
+// ErrNoHandlers is returned when no handlers are provided to NewMultiHandler.
+var ErrNoHandlers = errors.New("at least one handler must be provided")
+
 // MultiHandler is a slog.Handler that dispatches log records to multiple handlers.
 type MultiHandler struct {
 	handlers []slog.Handler
 }
 
 // NewMultiHandler creates a new MultiHandler that wraps the given handlers.
-// It panics if no handlers are provided.
-func NewMultiHandler(handlers ...slog.Handler) *MultiHandler {
+// It returns an error if no handlers are provided.
+func NewMultiHandler(handlers ...slog.Handler) (*MultiHandler, error) {
 	if len(handlers) == 0 {
-		panic("NewMultiHandler: at least one handler must be provided")
+		return nil, ErrNoHandlers
 	}
 	return &MultiHandler{
 		handlers: handlers,
-	}
+	}, nil
 }
 
 // Enabled reports whether the handler handles records at the given level.

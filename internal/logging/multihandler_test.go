@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testGroupName = "testgroup"
+
 // Test errors
 var (
 	errHandler1 = errors.New("handler1 error")
@@ -91,15 +93,15 @@ func TestNewMultiHandler(t *testing.T) {
 	handler1 := newMockHandler(true)
 	handler2 := newMockHandler(false)
 
-	multi := NewMultiHandler(handler1, handler2)
-
+	multi, err := NewMultiHandler(handler1, handler2)
+	require.NoError(t, err)
 	assert.Len(t, multi.handlers, 2)
 }
 
-func TestNewMultiHandler_PanicsWithNoHandlers(t *testing.T) {
-	assert.Panics(t, func() {
-		NewMultiHandler()
-	}, "NewMultiHandler should panic when no handlers are provided")
+func TestNewMultiHandler_ErrorWithNoHandlers(t *testing.T) {
+	multi, err := NewMultiHandler()
+	assert.Nil(t, multi)
+	assert.ErrorIs(t, err, ErrNoHandlers)
 }
 
 func TestMultiHandler_Enabled(t *testing.T) {
@@ -127,7 +129,8 @@ func TestMultiHandler_Enabled(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			multi := NewMultiHandler(tt.handlers...)
+			multi, err := NewMultiHandler(tt.handlers...)
+			require.NoError(t, err)
 			result := multi.Enabled(context.Background(), slog.LevelInfo)
 			assert.Equal(t, tt.expected, result)
 		})
@@ -139,10 +142,11 @@ func TestMultiHandler_Handle(t *testing.T) {
 	handler2 := newMockHandler(true)
 	handler3 := newMockHandler(false) // disabled handler
 
-	multi := NewMultiHandler(handler1, handler2, handler3)
+	multi, err := NewMultiHandler(handler1, handler2, handler3)
+	require.NoError(t, err)
 
 	record := slog.NewRecord(time.Now(), slog.LevelInfo, "test message", 0)
-	err := multi.Handle(context.Background(), record)
+	err = multi.Handle(context.Background(), record)
 	assert.NoError(t, err)
 
 	// Check that enabled handlers received the record
@@ -158,10 +162,11 @@ func TestMultiHandler_HandleWithErrors(t *testing.T) {
 	handler2 := newMockHandler(true)
 	handler2.handleError = errHandler2
 
-	multi := NewMultiHandler(handler1, handler2)
+	multi, err := NewMultiHandler(handler1, handler2)
+	require.NoError(t, err)
 
 	record := slog.NewRecord(time.Now(), slog.LevelInfo, "test message", 0)
-	err := multi.Handle(context.Background(), record)
+	err = multi.Handle(context.Background(), record)
 
 	require.Error(t, err, "Expected error, got nil")
 
@@ -175,7 +180,8 @@ func TestMultiHandler_WithAttrs(t *testing.T) {
 	handler1 := newMockHandler(true)
 	handler2 := newMockHandler(true)
 
-	multi := NewMultiHandler(handler1, handler2)
+	multi, err := NewMultiHandler(handler1, handler2)
+	require.NoError(t, err)
 	attrs := []slog.Attr{slog.String("key", "value")}
 
 	newMulti := multi.WithAttrs(attrs)
@@ -192,8 +198,9 @@ func TestMultiHandler_WithGroup(t *testing.T) {
 	handler1 := newMockHandler(true)
 	handler2 := newMockHandler(true)
 
-	multi := NewMultiHandler(handler1, handler2)
-	groupName := "testgroup"
+	multi, err := NewMultiHandler(handler1, handler2)
+	require.NoError(t, err)
+	groupName := testGroupName
 
 	newMulti := multi.WithGroup(groupName)
 
@@ -205,9 +212,10 @@ func TestMultiHandler_WithGroup(t *testing.T) {
 	assert.Len(t, newMultiTyped.handlers, 2)
 }
 
-func TestMultiHandler_ConcurrentAccess(_ *testing.T) {
+func TestMultiHandler_ConcurrentAccess(t *testing.T) {
 	handler := newMockHandler(true)
-	multi := NewMultiHandler(handler)
+	multi, err := NewMultiHandler(handler)
+	require.NoError(t, err)
 
 	// Test concurrent access to Enabled
 	done := make(chan bool, 10)
