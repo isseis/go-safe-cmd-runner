@@ -33,7 +33,9 @@
       "Bash(sudo build/record:*)",
       "Bash(PATH:*)",
       "Bash(timeout:*)",
-      "Bash(go get:*)"
+      "Bash(go get:*)",
+      "Bash(sudo chown:*)",
+      "Bash(sudo chmod:*)"
     ],
     "deny": [],
     "env": {

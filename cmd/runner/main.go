@@ -23,7 +23,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/joho/godotenv"
@@ -286,16 +285,7 @@ func getSlackWebhookFromEnvFile(envFile string) (string, error) {
 		return "", nil
 	}
 
-	// Validate file path and permissions using security package
-	validator, err := security.NewValidator(security.DefaultConfig())
-	if err != nil {
-		return "", fmt.Errorf("failed to create security validator for environment file %q: %w", envFile, err)
-	}
-	if err := validator.ValidateFilePermissions(envFile); err != nil {
-		return "", fmt.Errorf("environment file security validation failed for %q: %w", envFile, err)
-	}
-
-	// Use safefileio for secure file reading
+	// Use safefileio for secure file reading (includes path validation and permission checks)
 	content, err := safefileio.SafeReadFile(envFile)
 	if err != nil {
 		return "", fmt.Errorf("failed to read environment file %q securely: %w", envFile, err)

@@ -16,4 +16,7 @@ var (
 
 	// ErrFileExists indicates that the file already exists.
 	ErrFileExists = errors.New("file exists")
+
+	// ErrInvalidFilePermissions indicates that the file has inappropriate permissions.
+	ErrInvalidFilePermissions = errors.New("invalid file permissions")
 )

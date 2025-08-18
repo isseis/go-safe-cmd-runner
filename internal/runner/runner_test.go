@@ -14,6 +14,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/tempdir"
+	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -1402,7 +1403,7 @@ func TestRunner_LoadEnvironmentWithSecurity(t *testing.T) {
 		// Should fail with excessive permissions
 		err = runner.LoadEnvironment(badEnvFile, false)
 		assert.Error(t, err)
-		assert.ErrorIs(t, err, security.ErrInvalidFilePermissions, "expected error to wrap security.ErrInvalidFilePermissions")
+		assert.ErrorIs(t, err, safefileio.ErrInvalidFilePermissions, "expected error to wrap safefileio.ErrInvalidFilePermissions")
 	})
 
 	t.Run("load environment with unsafe values", func(t *testing.T) {

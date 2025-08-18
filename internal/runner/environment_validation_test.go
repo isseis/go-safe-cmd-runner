@@ -8,6 +8,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
+	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -219,7 +220,7 @@ func TestLoadEnvironment_FilePermissionValidation(t *testing.T) {
 
 		err = runner.LoadEnvironment(badEnvFile, true)
 		assert.Error(t, err)
-		assert.ErrorIs(t, err, security.ErrInvalidFilePermissions, "Should return file permission error")
+		assert.ErrorIs(t, err, safefileio.ErrInvalidFilePermissions, "Should return file permission error")
 	})
 }
 
