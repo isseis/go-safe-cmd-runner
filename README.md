@@ -31,6 +31,14 @@ Common use cases include scheduled backups, system maintenance tasks, and delega
 - **Dry Run Mode**: Preview command execution without actual execution
 - **Timeout Control**: Configurable timeouts for command execution
 
+### Logging and Monitoring
+- **Multi-Handler Logging**: Route logs to multiple destinations simultaneously (console, file, Slack)
+- **Slack Integration**: Real-time notifications for security events and failures
+- **Audit Logging**: Comprehensive audit trail for privileged operations and security events
+- **Sensitive Data Redaction**: Automatic filtering of sensitive information from logs
+- **Structured Logging**: JSON-formatted logs with rich contextual information
+- **ULID Run Tracking**: Universally Unique Lexicographically Sortable Identifiers for time-ordered execution tracking
+
 ### File Operations
 - **Safe File I/O**: Symlink-aware file operations with security checks
 - **Hash Recording**: Record SHA-256 hashes of critical files for later verification
@@ -49,7 +57,12 @@ cmd/                    # Command-line entry points
 internal/              # Core implementation
 ├── cmdcommon/         # Shared command utilities
 ├── filevalidator/     # File integrity validation
+├── logging/           # Advanced logging system
+│   ├── multihandler/  # Multi-destination log handling
+│   ├── slack/         # Slack notification integration
+│   └── redaction/     # Sensitive data redaction
 ├── runner/            # Command execution engine
+│   ├── audit/         # Security audit logging
 │   ├── config/        # Configuration management
 │   ├── executor/      # Command execution logic
 │   └── privilege/     # Privilege management
@@ -75,6 +88,12 @@ internal/              # Core implementation
 
 # Custom hash directory
 ./runner -config config.toml -hash-directory /custom/hash/dir
+
+# Custom log directory and level
+./runner -config config.toml -log-dir /var/log/go-safe-cmd-runner -log-level debug
+
+# Execute with Slack notifications (requires SLACK_WEBHOOK_URL in environment file)
+./runner -config config.toml -env-file .env
 ```
 
 ### Hash Management
@@ -164,6 +183,28 @@ The system implements a strict allowlist-based approach for environment variable
 3. **Inheritance**: Groups without an explicit allowlist inherit from global settings
 4. **Zero Trust**: Undefined allowlists result in no environment variables being passed
 
+### Environment File Configuration
+Create a `.env` file for sensitive configuration that shouldn't be stored in the main TOML configuration:
+
+```bash
+# .env file for production environment
+# Slack webhook URL for notifications
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK
+
+# Optional: Override default log settings
+LOG_LEVEL=info
+LOG_DIR=/var/log/go-safe-cmd-runner
+
+# Application-specific variables
+DATABASE_URL=postgresql://localhost:5432/myapp
+API_KEY=your-secret-api-key
+```
+
+**Security Note**: The `.env` file undergoes strict security validation:
+- File permissions are checked (should be readable only by the owner)
+- Path traversal attacks are prevented
+- Content is parsed securely using safe file I/O operations
+
 ## Security Model
 
 ### File Integrity Verification
@@ -183,6 +224,12 @@ The system implements a strict allowlist-based approach for environment variable
 - Protection against environment variable injection attacks
 - Group-level and global environment control
 - Secure variable reference resolution
+
+### Logging Security
+- **Sensitive Data Redaction**: Automatic detection and redaction of secrets, tokens, and sensitive patterns
+- **Secure Notifications**: Encrypted Slack webhook communications for security alerts
+- **Audit Trail Protection**: Tamper-resistant logging with structured format
+- **Access Control**: Log file permissions and secure storage practices
 
 ## Out of Scope
 
@@ -204,7 +251,7 @@ This project is licensed under the MIT License. See the [LICENSE](./LICENSE) fil
 ## Building and Installation
 
 ### Prerequisites
-- Go 1.23 or later
+- Go 1.21 or later (required for slices package support)
 - golangci-lint (for development)
 
 ### Build Commands
@@ -245,6 +292,7 @@ sudo install -o root -g root -m 0755 build/verify /usr/local/bin/go-safe-cmd-ver
 ### Dependencies
 - `github.com/pelletier/go-toml/v2` - TOML configuration parsing
 - `github.com/joho/godotenv` - Environment file loading
+- `github.com/oklog/ulid/v2` - ULID generation for run tracking and identification
 - `github.com/stretchr/testify` - Testing framework
 
 ### Testing
@@ -265,6 +313,14 @@ The codebase follows Go best practices with:
 - Comprehensive error handling with custom error types
 - Security-first approach with extensive validation
 - Modular architecture with clear boundaries
+
+### Run Identification with ULID
+The system uses ULID (Universally Unique Lexicographically Sortable Identifier) for run tracking:
+- **Chronologically sortable**: ULIDs are naturally ordered by creation time
+- **URL-safe**: No special characters, making them suitable for filenames and URLs
+- **Compact**: 26-character fixed length (shorter than UUID's 36 characters)
+- **Collision-resistant**: Monotonic entropy ensures uniqueness even within the same millisecond
+- **Example**: `01K2YK812JA735M4TWZ6BK0JH9`
 
 ## Contributing
 
