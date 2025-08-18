@@ -18,6 +18,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
+	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
@@ -375,7 +376,7 @@ func setupLoggerWithConfig(config LoggerConfig) error {
 
 	// Create MultiHandler with redaction
 	multiHandler := logging.NewMultiHandler(handlers...)
-	redactedHandler := logging.NewRedactingHandler(multiHandler, nil)
+	redactedHandler := redaction.NewRedactingHandler(multiHandler, nil)
 
 	// Set as default logger
 	logger := slog.New(redactedHandler)

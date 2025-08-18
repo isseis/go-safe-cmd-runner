@@ -66,6 +66,7 @@ linters:
             - github.com/joho/godotenv
             - github.com/isseis/go-safe-cmd-runner/internal/cmdcommon
             - github.com/isseis/go-safe-cmd-runner/internal/logging
+            - github.com/isseis/go-safe-cmd-runner/internal/redaction
             - github.com/isseis/go-safe-cmd-runner/internal/runner
             - github.com/isseis/go-safe-cmd-runner/internal/safefileio
             - github.com/isseis/go-safe-cmd-runner/internal/verification

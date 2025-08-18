@@ -170,7 +170,7 @@ func setupLoggerWithConfig(config LoggerConfig) error {
 
     // Create MultiHandler with redaction
     multiHandler := logging.NewMultiHandler(handlers...)
-    redactedHandler := logging.NewRedactingHandler(multiHandler, nil)
+    redactedHandler := redaction.NewRedactingHandler(multiHandler, nil)
 
     // Set as default logger
     logger := slog.New(redactedHandler)
