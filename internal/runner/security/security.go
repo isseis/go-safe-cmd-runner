@@ -222,7 +222,7 @@ type Validator struct {
 	dangerousPrivilegedCommands map[string]struct{}
 	shellCommands               map[string]struct{}
 	// Common redaction functionality
-	redactionOptions  *redaction.Options
+	redactionConfig   *redaction.Config
 	sensitivePatterns *redaction.SensitivePatterns
 }
 
@@ -243,13 +243,13 @@ func NewValidatorWithFS(config *Config, fs common.FileSystem) (*Validator, error
 
 	// Initialize common redaction functionality
 	sensitivePatterns := redaction.DefaultSensitivePatterns()
-	redactionOptions := redaction.DefaultOptions()
+	redactionConfig := redaction.DefaultConfig()
 
 	v := &Validator{
 		config:            config,
 		fs:                fs,
 		sensitivePatterns: sensitivePatterns,
-		redactionOptions:  redactionOptions,
+		redactionConfig:   redactionConfig,
 	}
 
 	// Compile allowed command patterns
@@ -514,7 +514,7 @@ func (v *Validator) SanitizeOutputForLogging(output string) string {
 // redactSensitivePatterns removes or redacts potentially sensitive information
 func (v *Validator) redactSensitivePatterns(text string) string {
 	// Use the new common redaction functionality
-	return v.redactionOptions.RedactText(text)
+	return v.redactionConfig.RedactText(text)
 }
 
 // CreateSafeLogFields creates log fields with sensitive data redaction

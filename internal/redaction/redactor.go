@@ -8,8 +8,8 @@ import (
 	"strings"
 )
 
-// Options controls how sensitive information is redacted
-type Options struct {
+// Config controls how sensitive information is redacted
+type Config struct {
 	// LogPlaceholder is the placeholder used for log redaction (e.g., "***")
 	LogPlaceholder string
 	// TextPlaceholder is the placeholder used for text redaction (e.g., "[REDACTED]")
@@ -21,9 +21,9 @@ type Options struct {
 	KeyValuePatterns []string
 }
 
-// DefaultOptions returns default redaction options
-func DefaultOptions() *Options {
-	return &Options{
+// DefaultConfig returns default redaction configuration
+func DefaultConfig() *Config {
+	return &Config{
 		LogPlaceholder:   "***",
 		TextPlaceholder:  "[REDACTED]",
 		Patterns:         DefaultSensitivePatterns(),
@@ -32,7 +32,7 @@ func DefaultOptions() *Options {
 }
 
 // RedactText removes or redacts potentially sensitive information from text
-func (ro *Options) RedactText(text string) string {
+func (c *Config) RedactText(text string) string {
 	if text == "" {
 		return text
 	}
@@ -40,28 +40,28 @@ func (ro *Options) RedactText(text string) string {
 	result := text
 
 	// Apply key=value pattern redaction
-	for _, key := range ro.KeyValuePatterns {
-		result = ro.performKeyValueRedaction(result, key, ro.TextPlaceholder)
+	for _, key := range c.KeyValuePatterns {
+		result = c.performKeyValueRedaction(result, key, c.TextPlaceholder)
 	}
 
 	return result
 }
 
 // RedactLogAttribute redacts sensitive information from a log attribute
-func (ro *Options) RedactLogAttribute(attr slog.Attr) slog.Attr {
+func (c *Config) RedactLogAttribute(attr slog.Attr) slog.Attr {
 	key := attr.Key
 	value := attr.Value
 
 	// Check for sensitive patterns in the key
-	if ro.Patterns.IsSensitiveKey(key) {
-		return slog.Attr{Key: key, Value: slog.StringValue(ro.LogPlaceholder)}
+	if c.Patterns.IsSensitiveKey(key) {
+		return slog.Attr{Key: key, Value: slog.StringValue(c.LogPlaceholder)}
 	}
 
 	// Redact string values that match sensitive patterns
 	if value.Kind() == slog.KindString {
 		strValue := value.String()
-		if ro.Patterns.IsSensitiveValue(strValue) {
-			return slog.Attr{Key: key, Value: slog.StringValue(ro.LogPlaceholder)}
+		if c.Patterns.IsSensitiveValue(strValue) {
+			return slog.Attr{Key: key, Value: slog.StringValue(c.LogPlaceholder)}
 		}
 	}
 
@@ -70,7 +70,7 @@ func (ro *Options) RedactLogAttribute(attr slog.Attr) slog.Attr {
 		groupAttrs := value.Group()
 		redactedGroupAttrs := make([]slog.Attr, 0, len(groupAttrs))
 		for _, groupAttr := range groupAttrs {
-			redactedGroupAttrs = append(redactedGroupAttrs, ro.RedactLogAttribute(groupAttr))
+			redactedGroupAttrs = append(redactedGroupAttrs, c.RedactLogAttribute(groupAttr))
 		}
 		return slog.Attr{Key: key, Value: slog.GroupValue(redactedGroupAttrs...)}
 	}
@@ -79,21 +79,21 @@ func (ro *Options) RedactLogAttribute(attr slog.Attr) slog.Attr {
 }
 
 // performKeyValueRedaction performs redaction on key=value patterns
-func (ro *Options) performKeyValueRedaction(text, key, placeholder string) string {
+func (c *Config) performKeyValueRedaction(text, key, placeholder string) string {
 	if strings.Contains(key, ":") {
 		// For header-like patterns such as "Authorization:" or "Authorization: "
-		return ro.performColonPatternRedaction(text, key, placeholder)
+		return c.performColonPatternRedaction(text, key, placeholder)
 	}
 	if strings.Contains(key, " ") {
 		// For patterns like "Bearer ", "Basic " - replace the token after the space
-		return ro.performSpacePatternRedaction(text, key, placeholder)
+		return c.performSpacePatternRedaction(text, key, placeholder)
 	}
 	// For regular key=value patterns
-	return ro.performKeyValuePatternRedaction(text, key, placeholder)
+	return c.performKeyValuePatternRedaction(text, key, placeholder)
 }
 
 // performSpacePatternRedaction handles patterns like "Bearer ", "Basic "
-func (ro *Options) performSpacePatternRedaction(text, pattern, placeholder string) string {
+func (c *Config) performSpacePatternRedaction(text, pattern, placeholder string) string {
 	// Escape pattern for regex and create case-insensitive pattern
 	// Match: pattern followed by one or more non-whitespace characters
 	escapedPattern := regexp.QuoteMeta(pattern)
@@ -120,7 +120,7 @@ func (ro *Options) performSpacePatternRedaction(text, pattern, placeholder strin
 
 // performColonPatternRedaction handles patterns like "Authorization:" or "Authorization: "
 // It will redact everything after the pattern up to the end of line (or end of string).
-func (ro *Options) performColonPatternRedaction(text, pattern, placeholder string) string {
+func (c *Config) performColonPatternRedaction(text, pattern, placeholder string) string {
 	// Escape pattern for regex and create case-insensitive pattern
 	// Match: pattern + optional whitespace + optional auth scheme (Bearer/Basic) + value + line ending
 	escapedPattern := regexp.QuoteMeta(pattern)
@@ -150,7 +150,7 @@ func (ro *Options) performColonPatternRedaction(text, pattern, placeholder strin
 }
 
 // performKeyValuePatternRedaction handles patterns like "key=value"
-func (ro *Options) performKeyValuePatternRedaction(text, key, placeholder string) string {
+func (c *Config) performKeyValuePatternRedaction(text, key, placeholder string) string {
 	// Escape key for regex and create case-insensitive pattern
 	// Match: key + optional equals sign + value (non-whitespace characters)
 	escapedKey := regexp.QuoteMeta(key)
@@ -193,17 +193,17 @@ func (ro *Options) performKeyValuePatternRedaction(text, key, placeholder string
 // RedactingHandler is a decorator that redacts sensitive information before forwarding to the underlying handler
 type RedactingHandler struct {
 	handler slog.Handler
-	options *Options
+	config  *Config
 }
 
 // NewRedactingHandler creates a new redacting handler that wraps the given handler
-func NewRedactingHandler(handler slog.Handler, options *Options) *RedactingHandler {
-	if options == nil {
-		options = DefaultOptions()
+func NewRedactingHandler(handler slog.Handler, config *Config) *RedactingHandler {
+	if config == nil {
+		config = DefaultConfig()
 	}
 	return &RedactingHandler{
 		handler: handler,
-		options: options,
+		config:  config,
 	}
 }
 
@@ -223,7 +223,7 @@ func (r *RedactingHandler) Handle(ctx context.Context, record slog.Record) error
 	newRecord := slog.NewRecord(record.Time, record.Level, record.Message, record.PC)
 
 	record.Attrs(func(attr slog.Attr) bool {
-		redactedAttr := r.options.RedactLogAttribute(attr)
+		redactedAttr := r.config.RedactLogAttribute(attr)
 		newRecord.AddAttrs(redactedAttr)
 		return true
 	})
@@ -235,11 +235,11 @@ func (r *RedactingHandler) Handle(ctx context.Context, record slog.Record) error
 func (r *RedactingHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	redactedAttrs := make([]slog.Attr, 0, len(attrs))
 	for _, attr := range attrs {
-		redactedAttrs = append(redactedAttrs, r.options.RedactLogAttribute(attr))
+		redactedAttrs = append(redactedAttrs, r.config.RedactLogAttribute(attr))
 	}
 	return &RedactingHandler{
 		handler: r.handler.WithAttrs(redactedAttrs),
-		options: r.options,
+		config:  r.config,
 	}
 }
 
@@ -247,6 +247,6 @@ func (r *RedactingHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 func (r *RedactingHandler) WithGroup(name string) slog.Handler {
 	return &RedactingHandler{
 		handler: r.handler.WithGroup(name),
-		options: r.options,
+		config:  r.config,
 	}
 }
