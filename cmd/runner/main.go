@@ -358,12 +358,9 @@ func setupLoggerWithConfig(config LoggerConfig) error {
 		})
 
 		// Attach common attributes
-		gitCommit, buildVersion := logging.GetBuildInfo()
 		enrichedHandler := jsonHandler.WithAttrs([]slog.Attr{
 			slog.String("hostname", hostname),
 			slog.Int("pid", os.Getpid()),
-			slog.String("git_commit", gitCommit),
-			slog.String("build_version", buildVersion),
 			slog.Int("schema_version", 1),
 			slog.String("run_id", config.RunID),
 		})

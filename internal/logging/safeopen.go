@@ -51,23 +51,6 @@ func (s *SafeFileOpener) OpenFile(path string, flag int, perm os.FileMode) (io.W
 	return file, nil
 }
 
-// GetBuildInfo returns build information for logging
-func GetBuildInfo() (gitCommit, buildVersion string) {
-	// These would typically be set via build flags
-	// For now, return placeholder values
-	gitCommit = os.Getenv("GIT_COMMIT")
-	if gitCommit == "" {
-		gitCommit = "unknown"
-	}
-
-	buildVersion = os.Getenv("BUILD_VERSION")
-	if buildVersion == "" {
-		buildVersion = "dev"
-	}
-
-	return gitCommit, buildVersion
-}
-
 // GenerateRunID generates a new UUID v4 for run identification
 func GenerateRunID() string {
 	return uuid.New().String()
