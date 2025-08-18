@@ -29,13 +29,9 @@
       "Bash(go mod:*)",
       "Bash(../build/runner:*)",
       "Bash(build/runner:*)",
-      "Bash(sudo mkdir:*)",
-      "Bash(sudo build/record:*)",
       "Bash(PATH:*)",
       "Bash(timeout:*)",
-      "Bash(go get:*)",
-      "Bash(sudo chown:*)",
-      "Bash(sudo chmod:*)"
+      "Bash(go get:*)"
     ],
     "deny": [],
     "env": {

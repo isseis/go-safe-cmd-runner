@@ -57,15 +57,11 @@ var (
 	runID          = flag.String("run-id", "", "unique identifier for this execution run (auto-generates ULID if not provided)")
 )
 
-// getHashDir determines the hash directory based on command line args and environment variables
+// getHashDir determines the hash directory based on command line args embedded variables
 func getHashDir() string {
 	// Command line arguments take precedence over environment variables
 	if *hashDirectory != "" {
 		return *hashDirectory
-	}
-	// Check environment variable for hash directory override
-	if envHashDir := os.Getenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY"); envHashDir != "" {
-		return envHashDir
 	}
 	// Set default hash directory if none specified
 	return cmdcommon.DefaultHashDirectory
@@ -128,7 +124,7 @@ func run(runID string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Load configuration first to access environment settings
+	// Validate required arguments and hash directory early
 	if *configPath == "" {
 		return &logging.PreExecutionError{
 			Type:      logging.ErrorTypeRequiredArgumentMissing,
@@ -189,8 +185,17 @@ func run(runID string) error {
 		}
 	}
 
-	// Get hash directory from command line args and environment variables
+	// Get hash directory from command line args and environment variables early
+	// This is done early to catch invalid paths before processing config files
 	hashDir := getHashDir()
+	if !filepath.IsAbs(hashDir) {
+		return &logging.PreExecutionError{
+			Type:      logging.ErrorTypeFileAccess,
+			Message:   fmt.Sprintf("Hash directory must be absolute path, got relative path: %s", hashDir),
+			Component: "file",
+			RunID:     runID,
+		}
+	}
 
 	// Initialize privilege manager
 	logger := slog.Default()
