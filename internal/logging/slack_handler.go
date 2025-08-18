@@ -43,6 +43,8 @@ type SlackHandler struct {
 	runID      string
 	httpClient *http.Client
 	level      slog.Level
+	attrs      []slog.Attr // Accumulated attributes from WithAttrs calls
+	groups     []string    // Accumulated group names from WithGroup calls
 }
 
 // SlackMessage represents the structure of a Slack webhook message
@@ -136,6 +138,9 @@ func (s *SlackHandler) Enabled(_ context.Context, level slog.Level) bool {
 
 // Handle processes the log record and sends it to Slack if appropriate
 func (s *SlackHandler) Handle(ctx context.Context, r slog.Record) error {
+	// Apply accumulated attributes and groups to the record
+	r = s.applyAccumulatedContext(r)
+
 	// Only send specific types of messages to Slack
 	var shouldSend bool
 	var messageType string
@@ -179,15 +184,45 @@ func (s *SlackHandler) Handle(ctx context.Context, r slog.Record) error {
 }
 
 // WithAttrs returns a new SlackHandler with the given attributes
-func (s *SlackHandler) WithAttrs(_ []slog.Attr) slog.Handler {
-	// SlackHandler doesn't need to handle WithAttrs differently
-	return s
+func (s *SlackHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	if len(attrs) == 0 {
+		return s
+	}
+
+	// Create a new SlackHandler with accumulated attributes
+	newAttrs := make([]slog.Attr, len(s.attrs)+len(attrs))
+	copy(newAttrs, s.attrs)
+	copy(newAttrs[len(s.attrs):], attrs)
+
+	return &SlackHandler{
+		webhookURL: s.webhookURL,
+		runID:      s.runID,
+		httpClient: s.httpClient,
+		level:      s.level,
+		attrs:      newAttrs,
+		groups:     s.groups, // Copy existing groups
+	}
 }
 
 // WithGroup returns a new SlackHandler with the given group name
-func (s *SlackHandler) WithGroup(_ string) slog.Handler {
-	// SlackHandler doesn't need to handle WithGroup differently
-	return s
+func (s *SlackHandler) WithGroup(name string) slog.Handler {
+	if name == "" {
+		return s
+	}
+
+	// Create a new SlackHandler with accumulated group names
+	newGroups := make([]string, len(s.groups)+1)
+	copy(newGroups, s.groups)
+	newGroups[len(s.groups)] = name
+
+	return &SlackHandler{
+		webhookURL: s.webhookURL,
+		runID:      s.runID,
+		httpClient: s.httpClient,
+		level:      s.level,
+		attrs:      s.attrs, // Copy existing attributes
+		groups:     newGroups,
+	}
 }
 
 // buildCommandGroupSummary builds a Slack message for command group summary
@@ -621,4 +656,42 @@ func (s *SlackHandler) sendToSlack(ctx context.Context, message SlackMessage) er
 
 	slog.Error("Failed to send Slack notification after all retries", "attempts", len(backoffIntervals)+1, "last_error", lastErr, "run_id", s.runID)
 	return fmt.Errorf("failed to send to Slack after %d attempts: %w", len(backoffIntervals)+1, lastErr)
+}
+
+// applyAccumulatedContext applies accumulated attributes and groups to the record
+func (s *SlackHandler) applyAccumulatedContext(r slog.Record) slog.Record {
+	if len(s.attrs) == 0 && len(s.groups) == 0 {
+		return r // No accumulated context to apply
+	}
+
+	// Create a new record with the same basic properties
+	newRecord := slog.NewRecord(r.Time, r.Level, r.Message, r.PC)
+
+	// Apply groups by creating nested attribute groups
+	currentAttrs := s.attrs
+	for i := len(s.groups) - 1; i >= 0; i-- {
+		groupName := s.groups[i]
+		if groupName != "" {
+			// Convert []slog.Attr to []any for slog.Group
+			groupArgs := make([]any, len(currentAttrs))
+			for j, attr := range currentAttrs {
+				groupArgs[j] = attr
+			}
+			// Wrap current attributes in a group
+			currentAttrs = []slog.Attr{slog.Group(groupName, groupArgs...)}
+		}
+	}
+
+	// Add accumulated attributes (possibly grouped) to the new record
+	for _, attr := range currentAttrs {
+		newRecord.AddAttrs(attr)
+	}
+
+	// Add original record's attributes
+	r.Attrs(func(attr slog.Attr) bool {
+		newRecord.AddAttrs(attr)
+		return true
+	})
+
+	return newRecord
 }
