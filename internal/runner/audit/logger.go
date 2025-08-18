@@ -42,7 +42,7 @@ type ExecutionResult struct {
 }
 
 // LogPrivilegedExecution logs the execution of a privileged command with full audit trail
-func (a *Logger) LogPrivilegedExecution(
+func (l *Logger) LogPrivilegedExecution(
 	ctx context.Context,
 	cmd runnertypes.Command,
 	result *ExecutionResult,
@@ -71,7 +71,7 @@ func (a *Logger) LogPrivilegedExecution(
 	}
 
 	if result.ExitCode == 0 {
-		a.logger.LogAttrs(ctx, slog.LevelInfo, "Privileged command executed successfully", baseAttrs...)
+		l.logger.LogAttrs(ctx, slog.LevelInfo, "Privileged command executed successfully", baseAttrs...)
 	} else {
 		// Create new slice to avoid modifying baseAttrs
 		additionalAttrs := []slog.Attr{
@@ -83,12 +83,12 @@ func (a *Logger) LogPrivilegedExecution(
 		errorAttrs := make([]slog.Attr, len(baseAttrs), len(baseAttrs)+len(additionalAttrs))
 		copy(errorAttrs, baseAttrs)
 		errorAttrs = append(errorAttrs, additionalAttrs...)
-		a.logger.LogAttrs(ctx, slog.LevelError, "Privileged command failed", errorAttrs...)
+		l.logger.LogAttrs(ctx, slog.LevelError, "Privileged command failed", errorAttrs...)
 	}
 }
 
 // LogPrivilegeEscalation logs privilege escalation events
-func (a *Logger) LogPrivilegeEscalation(
+func (l *Logger) LogPrivilegeEscalation(
 	ctx context.Context,
 	operation string,
 	commandName string,
@@ -111,7 +111,7 @@ func (a *Logger) LogPrivilegeEscalation(
 	}
 
 	if success {
-		a.logger.LogAttrs(ctx, slog.LevelInfo, "Privilege escalation successful", attrs...)
+		l.logger.LogAttrs(ctx, slog.LevelInfo, "Privilege escalation successful", attrs...)
 	} else {
 		// Failed privilege escalation should be notified via Slack
 		// Create new slice to avoid modifying the original attrs slice
@@ -122,12 +122,12 @@ func (a *Logger) LogPrivilegeEscalation(
 			slog.Bool("slack_notify", true),
 			slog.String("message_type", "privilege_escalation_failure"),
 		)
-		a.logger.LogAttrs(ctx, slog.LevelWarn, "Privilege escalation failed", failureAttrs...)
+		l.logger.LogAttrs(ctx, slog.LevelWarn, "Privilege escalation failed", failureAttrs...)
 	}
 }
 
 // LogSecurityEvent logs security-related events and potential threats
-func (a *Logger) LogSecurityEvent(
+func (l *Logger) LogSecurityEvent(
 	ctx context.Context,
 	eventType string,
 	severity string,
@@ -162,10 +162,10 @@ func (a *Logger) LogSecurityEvent(
 
 	switch severity {
 	case "critical", "high":
-		a.logger.LogAttrs(ctx, slog.LevelError, "Security event", attrs...)
+		l.logger.LogAttrs(ctx, slog.LevelError, "Security event", attrs...)
 	case "medium":
-		a.logger.LogAttrs(ctx, slog.LevelWarn, "Security event", attrs...)
+		l.logger.LogAttrs(ctx, slog.LevelWarn, "Security event", attrs...)
 	default:
-		a.logger.LogAttrs(ctx, slog.LevelInfo, "Security event", attrs...)
+		l.logger.LogAttrs(ctx, slog.LevelInfo, "Security event", attrs...)
 	}
 }
