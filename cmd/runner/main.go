@@ -168,7 +168,10 @@ func run(runID string) error {
 	}
 
 	// Get Slack webhook URL from environment file early
-	slackURL := getSlackWebhookFromEnvFile(envFileToLoad)
+	slackURL, err := getSlackWebhookFromEnvFile(envFileToLoad)
+	if err != nil {
+		return fmt.Errorf("failed to read Slack configuration from environment file: %w", err)
+	}
 
 	// Setup logging system with all configuration including Slack
 	loggerConfig := LoggerConfig{
@@ -277,44 +280,41 @@ func run(runID string) error {
 }
 
 // getSlackWebhookFromEnvFile securely reads Slack webhook URL from .env file
-func getSlackWebhookFromEnvFile(envFile string) string {
+// Returns the webhook URL and an error if any issues occur during file access or parsing
+func getSlackWebhookFromEnvFile(envFile string) (string, error) {
 	if envFile == "" {
-		return ""
+		return "", nil
 	}
 
 	// Validate file path and permissions using security package
 	validator, err := security.NewValidator(security.DefaultConfig())
 	if err != nil {
-		slog.Warn("Failed to create security validator for environment file", "file", envFile, "error", err)
-		return ""
+		return "", fmt.Errorf("failed to create security validator for environment file %q: %w", envFile, err)
 	}
 	if err := validator.ValidateFilePermissions(envFile); err != nil {
-		slog.Warn("Environment file security validation failed", "file", envFile, "error", err)
-		return ""
+		return "", fmt.Errorf("environment file security validation failed for %q: %w", envFile, err)
 	}
 
 	// Use safefileio for secure file reading
 	content, err := safefileio.SafeReadFile(envFile)
 	if err != nil {
-		slog.Warn("Failed to read environment file securely", "file", envFile, "error", err)
-		return ""
+		return "", fmt.Errorf("failed to read environment file %q securely: %w", envFile, err)
 	}
 
 	// Parse content directly using godotenv.Parse (no temporary file needed)
 	envMap, err := godotenv.Parse(bytes.NewReader(content))
 	if err != nil {
-		slog.Warn("Failed to parse environment file", "file", envFile, "error", err)
-		return ""
+		return "", fmt.Errorf("failed to parse environment file %q: %w", envFile, err)
 	}
 
 	// Look for Slack webhook URL
 	if slackURL, exists := envMap[logging.SlackWebhookURLEnvVar]; exists && slackURL != "" {
 		slog.Debug("Found Slack webhook URL in env file", "key", logging.SlackWebhookURLEnvVar, "file", envFile)
-		return slackURL
+		return slackURL, nil
 	}
 
 	slog.Debug("No Slack webhook URL found in env file", "file", envFile)
-	return ""
+	return "", nil
 }
 
 // setupLoggerWithConfig initializes the logging system with all handlers atomically
