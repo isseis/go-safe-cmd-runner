@@ -76,6 +76,7 @@ func (l *Loader) LoadConfig(path string) (*runnertypes.Config, error) {
   - Privileged file access with controlled escalation
   - Atomic operations to prevent race conditions
   - Integration with privilege management
+  - Environment file verification - integrity validation of `.env` files before execution
 
 **Security Flow:**
 ```
@@ -139,12 +140,13 @@ Configuration Loading → Security Validation → Group Processing → Command E
 
 1. Configuration Loading:
    ├── TOML parsing and validation
-   ├── Path security checks
+   ├── Path security checks (hash directory absolute path validation)
    ├── Default value assignment
    └── Cross-reference validation
 
 2. Security Validation:
-   ├── File integrity verification
+   ├── Configuration file integrity verification
+   ├── Environment file integrity verification (when specified)
    ├── Environment variable filtering
    ├── Command path validation
    └── Permission checks
@@ -190,9 +192,9 @@ File Path Input → Security Check → Hash Calculation → Verification → Res
 
 ### 1. Defense in Depth
 Multiple security layers ensure that a single point of failure doesn't compromise the entire system:
-- **Input Validation**: All inputs validated at entry points
+- **Input Validation**: All inputs validated at entry points (including absolute path requirements)
 - **Path Security**: Comprehensive path validation and symlink protection
-- **File Integrity**: Hash-based verification of all critical files
+- **File Integrity**: Hash-based verification of all critical files (configuration, environment files, executables)
 - **Privilege Control**: Minimal privilege principle with controlled escalation
 - **Environment Isolation**: Strict allowlist-based environment filtering
 - **Command Validation**: Allowlist-based command execution control
@@ -305,6 +307,7 @@ func NewRunnerWithOptions(config *Config, opts ...Option) (*Runner, error) {
 - Write-protected configuration files
 - Regular integrity verification of critical files
 - Configuration template management
+- Simplified configuration with absolute path requirements (environment variable fallback removed)
 
 ### 3. Monitoring and Alerting
 - Structured logs for security events
