@@ -79,7 +79,7 @@ ENV_FILE_GLOBAL=env_global_value
 		},
 	}
 
-	runner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()))
+	runner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()), WithRunID("test-run-123"))
 	require.NoError(t, err)
 
 	// Load environment variables from both system and .env file
@@ -212,7 +212,7 @@ DATABASE_URL=postgres://localhost/test
 		},
 	}
 
-	runner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()))
+	runner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()), WithRunID("test-run-123"))
 	require.NoError(t, err)
 
 	// Load environment from both system and .env file

@@ -35,6 +35,7 @@ var (
 	ErrGroupNotFound        = errors.New("group not found")
 	ErrVariableAccessDenied = errors.New("variable access denied")
 	ErrPrivilegedPathConfig = errors.New("privileged command path configuration error")
+	ErrRunIDRequired        = errors.New("runID is required")
 )
 
 // VerificationError contains detailed information about verification failures
@@ -60,6 +61,26 @@ const (
 	maxResolutionDepth = 100 // Maximum number of variable resolution iterations
 )
 
+// GroupExecutionStatus represents the execution status of a command group
+type GroupExecutionStatus string
+
+const (
+	// GroupExecutionStatusSuccess indicates that the group execution was successful.
+	GroupExecutionStatusSuccess GroupExecutionStatus = "success"
+
+	// GroupExecutionStatusError indicates that the group execution encountered an error.
+	GroupExecutionStatusError GroupExecutionStatus = "error"
+)
+
+// groupExecutionResult holds the result of group execution for notification
+type groupExecutionResult struct {
+	status      GroupExecutionStatus
+	exitCode    int
+	lastCommand string
+	output      string
+	errorMsg    string
+}
+
 // Runner manages the execution of command groups
 type Runner struct {
 	executor            executor.CommandExecutor
@@ -70,6 +91,7 @@ type Runner struct {
 	verificationManager *verification.Manager
 	envFilter           *environment.Filter
 	privilegeManager    runnertypes.PrivilegeManager // Optional privilege manager for privileged commands
+	runID               string                       // Unique identifier for this execution run
 }
 
 // Option is a function type for configuring Runner instances
@@ -83,6 +105,7 @@ type runnerOptions struct {
 	verificationManager *verification.Manager
 	privilegeManager    runnertypes.PrivilegeManager
 	auditLogger         *audit.Logger
+	runID               string
 }
 
 // WithSecurity sets a custom security configuration
@@ -127,12 +150,24 @@ func WithAuditLogger(auditLogger *audit.Logger) Option {
 	}
 }
 
+// WithRunID sets a custom run ID for tracking execution
+func WithRunID(runID string) Option {
+	return func(opts *runnerOptions) {
+		opts.runID = runID
+	}
+}
+
 // NewRunner creates a new command runner with the given configuration and optional customizations
 func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 	// Apply default options
 	opts := &runnerOptions{}
 	for _, option := range options {
 		option(opts)
+	}
+
+	// Validate that runID is provided
+	if opts.runID == "" {
+		return nil, ErrRunIDRequired
 	}
 
 	// Create validator with provided or default security config
@@ -147,23 +182,22 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 	}
 
 	if opts.auditLogger == nil && opts.privilegeManager != nil {
-		opts.auditLogger = audit.NewAuditLogger(slog.Default())
+		opts.auditLogger = audit.NewAuditLogger()
 	}
 
 	// Use provided components or create defaults
 	if opts.executor == nil {
+		executorOpts := []executor.Option{}
+
 		if opts.privilegeManager != nil {
-			executorOpts := []executor.Option{
-				executor.WithPrivilegeManager(opts.privilegeManager),
-			}
-			if opts.auditLogger != nil {
-				executorOpts = append(executorOpts, executor.WithAuditLogger(opts.auditLogger))
-			}
-			opts.executor = executor.NewDefaultExecutor(executorOpts...)
-		} else {
-			opts.executor = executor.NewDefaultExecutor()
+			executorOpts = append(executorOpts, executor.WithPrivilegeManager(opts.privilegeManager))
 		}
+		if opts.auditLogger != nil {
+			executorOpts = append(executorOpts, executor.WithAuditLogger(opts.auditLogger))
+		}
+		opts.executor = executor.NewDefaultExecutor(executorOpts...)
 	}
+
 	if opts.tempDirManager == nil {
 		opts.tempDirManager = tempdir.NewTempDirManager(config.Global.WorkDir)
 	}
@@ -180,6 +214,7 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 		verificationManager: opts.verificationManager,
 		envFilter:           envFilter,
 		privilegeManager:    opts.privilegeManager,
+		runID:               opts.runID,
 	}, nil
 }
 
@@ -281,6 +316,9 @@ func (r *Runner) ExecuteAll(ctx context.Context) error {
 
 // ExecuteGroup executes all commands in a group sequentially
 func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGroup) error {
+	// Record execution start time for notification
+	startTime := time.Now()
+
 	fmt.Printf("Executing group: %s\n", group.Name)
 	if group.Description != "" {
 		fmt.Printf("Description: %s\n", group.Description)
@@ -294,6 +332,14 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 			if err := r.tempDirManager.CleanupTempDir(tempDirPath); err != nil {
 				slog.Warn("Failed to cleanup temp directory", "path", tempDirPath, "error", err)
 			}
+		}
+	}()
+
+	// Defer notification to ensure it's sent regardless of success or failure
+	var executionResult *groupExecutionResult
+	defer func() {
+		if executionResult != nil {
+			r.sendGroupNotification(group, executionResult, time.Since(startTime))
 		}
 	}()
 
@@ -354,11 +400,14 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 	}
 
 	// Execute commands in the group sequentially
+	var lastCommand string
+	var lastOutput string
 	for i, cmd := range processedGroup.Commands {
 		fmt.Printf("  [%d/%d] Executing command: %s\n", i+1, len(processedGroup.Commands), cmd.Name)
 
 		// Process the command
 		processedCmd := cmd
+		lastCommand = processedCmd.Name
 
 		// Create command context with timeout
 		cmdCtx, cancel := r.createCommandContext(ctx, processedCmd)
@@ -368,6 +417,14 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 		result, err := r.executeCommandInGroup(cmdCtx, processedCmd, &processedGroup)
 		if err != nil {
 			fmt.Printf("    Command failed: %v\n", err)
+			// Set failure result for notification
+			executionResult = &groupExecutionResult{
+				status:      GroupExecutionStatusError,
+				exitCode:    1,
+				lastCommand: lastCommand,
+				output:      lastOutput,
+				errorMsg:    err.Error(),
+			}
 			return fmt.Errorf("command %s failed: %w", processedCmd.Name, err)
 		}
 
@@ -375,6 +432,7 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 		fmt.Printf("    Exit code: %d\n", result.ExitCode)
 		if result.Stdout != "" {
 			fmt.Printf("    Stdout: %s\n", result.Stdout)
+			lastOutput = result.Stdout
 		}
 		if result.Stderr != "" {
 			fmt.Printf("    Stderr: %s\n", result.Stderr)
@@ -382,8 +440,25 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 
 		// Check if command succeeded
 		if result.ExitCode != 0 {
+			// Set failure result for notification
+			executionResult = &groupExecutionResult{
+				status:      GroupExecutionStatusError,
+				exitCode:    result.ExitCode,
+				lastCommand: lastCommand,
+				output:      lastOutput,
+				errorMsg:    fmt.Sprintf("command failed with exit code %d", result.ExitCode),
+			}
 			return fmt.Errorf("%w: command %s failed with exit code %d", ErrCommandFailed, processedCmd.Name, result.ExitCode)
 		}
+	}
+
+	// Set success result for notification
+	executionResult = &groupExecutionResult{
+		status:      GroupExecutionStatusSuccess,
+		exitCode:    0,
+		lastCommand: lastCommand,
+		output:      lastOutput,
+		errorMsg:    "",
 	}
 
 	fmt.Printf("Group %s completed successfully\n", processedGroup.Name)
@@ -563,6 +638,22 @@ func (r *Runner) GetConfig() *runnertypes.Config {
 // CleanupAllResources cleans up all managed resources
 func (r *Runner) CleanupAllResources() error {
 	return r.tempDirManager.CleanupAll()
+}
+
+// sendGroupNotification sends a Slack notification for group execution completion
+func (r *Runner) sendGroupNotification(group runnertypes.CommandGroup, result *groupExecutionResult, duration time.Duration) {
+	slog.Info(
+		"Command group execution completed",
+		"group", group.Name,
+		"command", result.lastCommand,
+		"status", result.status,
+		"exit_code", result.exitCode,
+		"duration_ms", duration.Milliseconds(),
+		"output", result.output,
+		"run_id", r.runID,
+		"slack_notify", true,
+		"message_type", "command_group_summary",
+	)
 }
 
 // hasPrivilegedCommands checks if the configuration contains any privileged commands

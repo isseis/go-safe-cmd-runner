@@ -264,7 +264,7 @@ func TestValidator_HashCollision(t *testing.T) {
 
 		// Verify the hash file exists
 		_, err = os.Lstat(hashFilePath)
-		require.False(t, os.IsNotExist(err), "Hash file does not exist: %s", hashFilePath)
+		require.NoError(t, err, "Hash file should exist: %s", hashFilePath)
 
 		// Read the original hash file content using test-safe function
 		originalContent, err := testSafeReadFile(hashDir, hashFilePath)
@@ -430,7 +430,7 @@ func TestValidator_Record(t *testing.T) {
 
 		// Verify the hash file was created
 		_, err = os.Stat(hashFile)
-		assert.False(t, os.IsNotExist(err), "Hash file was not created: %s", hashFile)
+		assert.NoError(t, err, "Hash file should exist: %s", hashFile)
 	})
 
 	t.Run("Record without force on existing file with different path should fail", func(t *testing.T) {
@@ -454,7 +454,7 @@ func TestValidator_Record(t *testing.T) {
 
 		// Verify the hash file was updated
 		_, err = os.Stat(hashFile)
-		assert.False(t, os.IsNotExist(err), "Hash file was not created: %s", hashFile)
+		assert.NoError(t, err, "Hash file should exist: %s", hashFile)
 
 		// Verify the content still has the correct file path
 		content, err := os.ReadFile(hashFile)
@@ -472,7 +472,7 @@ func TestValidator_Record(t *testing.T) {
 		assert.Error(t, err, "Expected error when recording same file without force")
 
 		// The error should be file exists error, not hash collision
-		assert.False(t, errors.Is(err, ErrHashCollision), "Got ErrHashCollision for same file, expected file exists error")
+		assert.NotErrorIs(t, err, ErrHashCollision, "Got ErrHashCollision for same file, expected file exists error")
 	})
 }
 

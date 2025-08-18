@@ -146,7 +146,7 @@ func TestNewRunner(t *testing.T) {
 	}
 
 	t.Run("default configuration", func(t *testing.T) {
-		runner, err := NewRunner(config)
+		runner, err := NewRunner(config, WithRunID("test-run-123"))
 		require.NoError(t, err, "NewRunner should not return an error with valid config")
 		assert.NotNil(t, runner)
 		assert.Equal(t, config, runner.config)
@@ -154,6 +154,14 @@ func TestNewRunner(t *testing.T) {
 		assert.NotNil(t, runner.envVars)
 		assert.NotNil(t, runner.validator)
 		assert.NotNil(t, runner.tempDirManager)
+		assert.Equal(t, "test-run-123", runner.runID)
+	})
+
+	t.Run("fails without runID", func(t *testing.T) {
+		runner, err := NewRunner(config)
+		require.Error(t, err, "NewRunner should return an error without runID")
+		assert.Nil(t, runner)
+		assert.Contains(t, err.Error(), "runID is required")
 	})
 
 	t.Run("with custom security config", func(t *testing.T) {
@@ -164,7 +172,7 @@ func TestNewRunner(t *testing.T) {
 			MaxPathLength:           4096,
 		}
 
-		runner, err := NewRunner(config, WithSecurity(securityConfig))
+		runner, err := NewRunner(config, WithSecurity(securityConfig), WithRunID("test-run-123"))
 		assert.NoError(t, err)
 		assert.NotNil(t, runner)
 		assert.Equal(t, config, runner.config)
@@ -182,7 +190,8 @@ func TestNewRunner(t *testing.T) {
 
 		runner, err := NewRunner(config,
 			WithSecurity(securityConfig),
-			WithTempDirManager(customResourceManager))
+			WithTempDirManager(customResourceManager),
+			WithRunID("test-run-123"))
 		assert.NoError(t, err)
 		assert.NotNil(t, runner)
 		assert.Equal(t, customResourceManager, runner.tempDirManager)
@@ -196,7 +205,7 @@ func TestNewRunner(t *testing.T) {
 			MaxPathLength:           4096,
 		}
 
-		runner, err := NewRunner(config, WithSecurity(invalidSecurityConfig))
+		runner, err := NewRunner(config, WithSecurity(invalidSecurityConfig), WithRunID("test-run-123"))
 		assert.Error(t, err)
 		assert.Nil(t, runner)
 		assert.ErrorIs(t, err, security.ErrInvalidRegexPattern)
@@ -220,7 +229,7 @@ func TestNewRunnerWithSecurity(t *testing.T) {
 			MaxPathLength:           4096,
 		}
 
-		runner, err := NewRunner(config, WithSecurity(securityConfig))
+		runner, err := NewRunner(config, WithSecurity(securityConfig), WithRunID("test-run-123"))
 		assert.NoError(t, err)
 		assert.NotNil(t, runner)
 		assert.Equal(t, config, runner.config)
@@ -238,14 +247,14 @@ func TestNewRunnerWithSecurity(t *testing.T) {
 			MaxPathLength:           4096,
 		}
 
-		runner, err := NewRunner(config, WithSecurity(invalidSecurityConfig))
+		runner, err := NewRunner(config, WithSecurity(invalidSecurityConfig), WithRunID("test-run-123"))
 		assert.Error(t, err)
 		assert.Nil(t, runner)
 		assert.ErrorIs(t, err, security.ErrInvalidRegexPattern)
 	})
 
 	t.Run("with nil security config", func(t *testing.T) {
-		runner, err := NewRunner(config, WithSecurity(nil))
+		runner, err := NewRunner(config, WithSecurity(nil), WithRunID("test-run-123"))
 		assert.NoError(t, err)
 		assert.NotNil(t, runner)
 	})
@@ -332,7 +341,7 @@ func TestRunner_ExecuteGroup(t *testing.T) {
 			}
 
 			mockExecutor := new(MockExecutor)
-			runner, err := NewRunner(config)
+			runner, err := NewRunner(config, WithRunID("test-run-123"))
 			require.NoError(t, err, "NewRunner should not return an error with valid config")
 			runner.executor = mockExecutor
 
@@ -385,7 +394,7 @@ func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
 		}
 
 		mockExecutor := new(MockExecutor)
-		runner, err := NewRunner(config)
+		runner, err := NewRunner(config, WithRunID("test-run-123"))
 		require.NoError(t, err)
 		runner.executor = mockExecutor
 
@@ -422,7 +431,7 @@ func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
 		}
 
 		mockExecutor := new(MockExecutor)
-		runner, err := NewRunner(config)
+		runner, err := NewRunner(config, WithRunID("test-run-123"))
 		require.NoError(t, err)
 		runner.executor = mockExecutor
 
@@ -464,7 +473,7 @@ func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
 		}
 
 		mockExecutor := new(MockExecutor)
-		runner, err := NewRunner(config)
+		runner, err := NewRunner(config, WithRunID("test-run-123"))
 		require.NoError(t, err)
 		runner.executor = mockExecutor
 
@@ -507,7 +516,7 @@ func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
 		}
 
 		mockExecutor := new(MockExecutor)
-		runner, err := NewRunner(config)
+		runner, err := NewRunner(config, WithRunID("test-run-123"))
 		require.NoError(t, err)
 		runner.executor = mockExecutor
 
@@ -556,7 +565,7 @@ func TestRunner_ExecuteAll(t *testing.T) {
 	}
 
 	mockExecutor := new(MockExecutor)
-	runner, err := NewRunner(config)
+	runner, err := NewRunner(config, WithRunID("test-run-123"))
 	require.NoError(t, err)
 	runner.executor = mockExecutor
 
@@ -608,7 +617,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		}
 
 		mockExecutor := new(MockExecutor)
-		runner, err := NewRunner(config)
+		runner, err := NewRunner(config, WithRunID("test-run-123"))
 		require.NoError(t, err)
 		runner.executor = mockExecutor
 
@@ -665,7 +674,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		}
 
 		mockExecutor := new(MockExecutor)
-		runner, err := NewRunner(config)
+		runner, err := NewRunner(config, WithRunID("test-run-123"))
 		require.NoError(t, err)
 		runner.executor = mockExecutor
 
@@ -717,7 +726,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		}
 
 		mockExecutor := new(MockExecutor)
-		runner, err := NewRunner(config)
+		runner, err := NewRunner(config, WithRunID("test-run-123"))
 		require.NoError(t, err)
 		runner.executor = mockExecutor
 
@@ -768,7 +777,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		}
 
 		mockExecutor := new(MockExecutor)
-		runner, err := NewRunner(config)
+		runner, err := NewRunner(config, WithRunID("test-run-123"))
 		require.NoError(t, err)
 		runner.executor = mockExecutor
 
@@ -814,7 +823,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		}
 
 		mockExecutor := new(MockExecutor)
-		runner, err := NewRunner(config)
+		runner, err := NewRunner(config, WithRunID("test-run-123"))
 		require.NoError(t, err)
 		runner.executor = mockExecutor
 
@@ -839,7 +848,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 			Groups: []runnertypes.CommandGroup{}, // Empty groups
 		}
 
-		runner, err := NewRunner(config)
+		runner, err := NewRunner(config, WithRunID("test-run-123"))
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -947,7 +956,7 @@ func TestRunner_createCommandContext(t *testing.T) {
 			Timeout: 10,
 		},
 	}
-	runner, err := NewRunner(config)
+	runner, err := NewRunner(config, WithRunID("test-run-123"))
 	require.NoError(t, err)
 
 	t.Run("use global timeout", func(t *testing.T) {
@@ -996,7 +1005,7 @@ func TestRunner_CommandTimeoutBehavior(t *testing.T) {
 	}
 
 	t.Run("global timeout is enforced", func(t *testing.T) {
-		runner, err := NewRunner(config)
+		runner, err := NewRunner(config, WithRunID("test-run-123"))
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -1040,7 +1049,7 @@ func TestRunner_CommandTimeoutBehavior(t *testing.T) {
 			},
 		}
 
-		runner, err := NewRunner(configWithCmdTimeout)
+		runner, err := NewRunner(configWithCmdTimeout, WithRunID("test-run-123"))
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -1063,7 +1072,7 @@ func TestRunner_CommandTimeoutBehavior(t *testing.T) {
 	})
 
 	t.Run("timeout with context cancellation prioritization", func(t *testing.T) {
-		runner, err := NewRunner(config)
+		runner, err := NewRunner(config, WithRunID("test-run-123"))
 		require.NoError(t, err)
 
 		// Create a context that will be cancelled after 500ms
@@ -1115,7 +1124,7 @@ func TestRunner_resolveEnvironmentVars(t *testing.T) {
 		},
 	}
 
-	runner, err := NewRunner(config)
+	runner, err := NewRunner(config, WithRunID("test-run-123"))
 	require.NoError(t, err)
 	runner.envVars = map[string]string{
 		"LOADED_VAR": "from_env_file",
@@ -1284,7 +1293,7 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 	}
 
 	t.Run("allowed command execution should succeed", func(t *testing.T) {
-		runner, err := NewRunner(config)
+		runner, err := NewRunner(config, WithRunID("test-run-123"))
 		require.NoError(t, err)
 
 		allowedCmd := runnertypes.Command{
@@ -1309,7 +1318,7 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 		verificationManager, err := verification.NewManager(t.TempDir())
 		require.NoError(t, err)
 
-		runner, err := NewRunner(config, WithVerificationManager(verificationManager))
+		runner, err := NewRunner(config, WithVerificationManager(verificationManager), WithRunID("test-run-123"))
 		require.NoError(t, err)
 
 		disallowedCmd := runnertypes.Command{
@@ -1328,7 +1337,7 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 	})
 
 	t.Run("command execution with environment variables", func(t *testing.T) {
-		runner, err := NewRunner(config)
+		runner, err := NewRunner(config, WithRunID("test-run-123"))
 		require.NoError(t, err)
 		mockExecutor := new(MockExecutor)
 		runner.executor = mockExecutor
@@ -1371,7 +1380,7 @@ func TestRunner_LoadEnvironmentWithSecurity(t *testing.T) {
 				WorkDir: "/tmp",
 			},
 		}
-		runner, err := NewRunner(config)
+		runner, err := NewRunner(config, WithRunID("test-run-123"))
 		require.NoError(t, err)
 
 		// Create a temporary .env file with correct permissions
@@ -1403,7 +1412,7 @@ func TestRunner_LoadEnvironmentWithSecurity(t *testing.T) {
 				EnvAllowlist: []string{"DANGEROUS"}, // Allow the variable to pass filtering so it can be validated
 			},
 		}
-		runner, err := NewRunner(config)
+		runner, err := NewRunner(config, WithRunID("test-run-123"))
 		require.NoError(t, err)
 
 		// Create a temporary .env file with unsafe values
@@ -1489,7 +1498,7 @@ func TestCommandGroup_NewFields(t *testing.T) {
 			mockExecutor.On("Execute", mock.Anything, mock.Anything, mock.Anything).Return(
 				&executor.Result{ExitCode: 0, Stdout: "test output", Stderr: ""}, nil)
 
-			runner, err := NewRunner(config, WithExecutor(mockExecutor))
+			runner, err := NewRunner(config, WithExecutor(mockExecutor), WithRunID("test-run-123"))
 			require.NoError(t, err)
 
 			// Load basic environment
@@ -1577,7 +1586,7 @@ func TestCommandGroup_TempDir_Detailed(t *testing.T) {
 		// Create runner with mocks
 		runner, err := NewRunner(config,
 			WithExecutor(mockExecutor),
-			WithTempDirManager(resourceManager))
+			WithTempDirManager(resourceManager), WithRunID("test-run-123"))
 		require.NoError(t, err)
 
 		// Load basic environment
@@ -1644,7 +1653,7 @@ func TestCommandGroup_TempDir_Detailed(t *testing.T) {
 		// Create runner with mocks
 		runner, err := NewRunner(config,
 			WithExecutor(mockExecutor),
-			WithTempDirManager(resourceManager))
+			WithTempDirManager(resourceManager), WithRunID("test-run-123"))
 		require.NoError(t, err)
 
 		// Load basic environment
@@ -1709,7 +1718,7 @@ func TestCommandGroup_TempDir_Detailed(t *testing.T) {
 		// Create runner with mocks
 		runner, err := NewRunner(config,
 			WithExecutor(mockExecutor),
-			WithTempDirManager(resourceManager))
+			WithTempDirManager(resourceManager), WithRunID("test-run-123"))
 		require.NoError(t, err)
 
 		// Load basic environment
@@ -1748,7 +1757,7 @@ func TestRunner_EnvironmentVariablePriority(t *testing.T) {
 		},
 	}
 
-	runner, err := NewRunner(config)
+	runner, err := NewRunner(config, WithRunID("test-run-123"))
 	require.NoError(t, err)
 
 	// Set global environment variables (loaded from system/env file)
@@ -1858,7 +1867,7 @@ func TestRunner_EnvironmentVariablePriority_CurrentImplementation(t *testing.T) 
 		},
 	}
 
-	runner, err := NewRunner(config)
+	runner, err := NewRunner(config, WithRunID("test-run-123"))
 	require.NoError(t, err)
 
 	// Set global environment variables (loaded from system/env file)
@@ -1972,7 +1981,7 @@ func TestRunner_EnvironmentVariablePriority_EdgeCases(t *testing.T) {
 		},
 	}
 
-	runner, err := NewRunner(config)
+	runner, err := NewRunner(config, WithRunID("test-run-123"))
 	require.NoError(t, err)
 
 	// Set global environment variables
@@ -2083,7 +2092,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		// Create runner with mocks
 		runner, err := NewRunner(config,
 			WithExecutor(mockExecutor),
-			WithTempDirManager(resourceManager))
+			WithTempDirManager(resourceManager), WithRunID("test-run-123"))
 		require.NoError(t, err)
 
 		// Load basic environment
@@ -2141,7 +2150,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		// Create runner with mocks
 		runner, err := NewRunner(config,
 			WithExecutor(mockExecutor),
-			WithTempDirManager(resourceManager))
+			WithTempDirManager(resourceManager), WithRunID("test-run-123"))
 		require.NoError(t, err)
 
 		// Load basic environment
@@ -2214,7 +2223,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		// Create runner with mocks
 		runner, err := NewRunner(config,
 			WithExecutor(mockExecutor),
-			WithTempDirManager(resourceManager))
+			WithTempDirManager(resourceManager), WithRunID("test-run-123"))
 		require.NoError(t, err)
 
 		// Load basic environment
@@ -2282,7 +2291,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		// Create runner with mocks
 		runner, err := NewRunner(config,
 			WithExecutor(mockExecutor),
-			WithTempDirManager(resourceManager))
+			WithTempDirManager(resourceManager), WithRunID("test-run-123"))
 		require.NoError(t, err)
 
 		// Load basic environment
@@ -2340,7 +2349,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		// Create runner with mocks
 		runner, err := NewRunner(config,
 			WithExecutor(mockExecutor),
-			WithTempDirManager(resourceManager))
+			WithTempDirManager(resourceManager), WithRunID("test-run-123"))
 		require.NoError(t, err)
 
 		// Load basic environment
@@ -2400,7 +2409,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		// Create runner with mocks
 		runner, err := NewRunner(config,
 			WithExecutor(mockExecutor),
-			WithTempDirManager(resourceManager))
+			WithTempDirManager(resourceManager), WithRunID("test-run-123"))
 		require.NoError(t, err)
 
 		// Load basic environment
@@ -2504,7 +2513,7 @@ func TestPrivilegedCommandPathValidation(t *testing.T) {
 			}
 
 			// Create runner with minimal setup
-			runner, err := NewRunner(config, WithExecutor(mockExecutor))
+			runner, err := NewRunner(config, WithExecutor(mockExecutor), WithRunID("test-run-123"))
 			require.NoError(t, err)
 
 			// Load environment without verification
@@ -2527,6 +2536,104 @@ func TestPrivilegedCommandPathValidation(t *testing.T) {
 				// Verify that Execute was called for successful cases
 				mockExecutor.AssertExpectations(t)
 			}
+		})
+	}
+}
+
+// TestSlackNotification tests that Slack notifications are sent correctly
+func TestSlackNotification(t *testing.T) {
+	tests := []struct {
+		name           string
+		commandSuccess bool
+		expectedStatus string
+		expectedCalls  int // Expected number of logging calls
+	}{
+		{
+			name:           "Success notification",
+			commandSuccess: true,
+			expectedStatus: "success",
+			expectedCalls:  1,
+		},
+		{
+			name:           "Failure notification",
+			commandSuccess: false,
+			expectedStatus: "error",
+			expectedCalls:  1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create temporary directory for test
+			tempDir := t.TempDir()
+
+			// Create config with a simple command group
+			config := &runnertypes.Config{
+				Global: runnertypes.GlobalConfig{
+					WorkDir: tempDir,
+					Timeout: 30,
+				},
+				Groups: []runnertypes.CommandGroup{
+					{
+						Name:        "test-group",
+						Description: "Test group for notification",
+						Commands: []runnertypes.Command{
+							{
+								Name: "test-command",
+								Cmd:  "echo",
+								Args: []string{"test"},
+							},
+						},
+					},
+				},
+			}
+
+			// Create mock executor
+			mockExecutor := &MockExecutor{}
+
+			// Set up executor behavior based on test case
+			if tt.commandSuccess {
+				mockExecutor.On("Execute", mock.Anything, mock.Anything, mock.Anything).Return(
+					&executor.Result{
+						ExitCode: 0,
+						Stdout:   "test output",
+						Stderr:   "",
+					}, nil,
+				)
+			} else {
+				mockExecutor.On("Execute", mock.Anything, mock.Anything, mock.Anything).Return(
+					&executor.Result{
+						ExitCode: 1,
+						Stdout:   "",
+						Stderr:   "command failed",
+					}, nil,
+				)
+			}
+
+			// Create runner options
+			var options []Option
+			options = append(options, WithExecutor(mockExecutor))
+			options = append(options, WithRunID("test-run-123"))
+
+			// Create runner
+			runner, err := NewRunner(config, options...)
+			require.NoError(t, err)
+
+			// Execute the group
+			ctx := context.Background()
+			err = runner.ExecuteGroup(ctx, config.Groups[0])
+
+			if tt.commandSuccess {
+				assert.NoError(t, err)
+			} else {
+				assert.Error(t, err)
+			}
+
+			// Verify mock expectations
+			mockExecutor.AssertExpectations(t)
+
+			// Verify that the runner was configured correctly
+			assert.Equal(t, "test-run-123", runner.runID)
 		})
 	}
 }

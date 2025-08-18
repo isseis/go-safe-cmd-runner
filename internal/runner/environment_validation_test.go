@@ -34,7 +34,7 @@ func TestLoadEnvironment_SystemVariableValidation(t *testing.T) {
 		},
 	}
 
-	runner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()))
+	runner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()), WithRunID("test-run-123"))
 	require.NoError(t, err)
 
 	t.Run("Safe system variables should be loaded", func(t *testing.T) {
@@ -60,7 +60,7 @@ func TestLoadEnvironment_SystemVariableValidation(t *testing.T) {
 		defer dangerousCleanup()
 
 		// Create new runner for this test
-		dangerousRunner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()))
+		dangerousRunner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()), WithRunID("test-run-123"))
 		require.NoError(t, err)
 
 		// Should fail due to dangerous system variable
@@ -86,7 +86,7 @@ func TestLoadEnvironment_EnvFileVariableValidation(t *testing.T) {
 		},
 	}
 
-	runner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()))
+	runner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()), WithRunID("test-run-123"))
 	require.NoError(t, err)
 
 	t.Run("Safe .env file variables should be loaded", func(t *testing.T) {
@@ -115,7 +115,7 @@ SAFE_VAR=safe_value
 		require.NoError(t, err)
 
 		// Create new runner for this test
-		dangerousRunner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()))
+		dangerousRunner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()), WithRunID("test-run-123"))
 		require.NoError(t, err)
 
 		// Should fail due to dangerous variable in .env file
@@ -169,7 +169,7 @@ func TestLoadEnvironment_ValidationPatterns(t *testing.T) {
 			require.NoError(t, err)
 
 			// Create new runner for each test
-			runner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()))
+			runner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()), WithRunID("test-run-123"))
 			require.NoError(t, err)
 
 			// Should fail due to dangerous pattern
@@ -195,7 +195,7 @@ func TestLoadEnvironment_FilePermissionValidation(t *testing.T) {
 		},
 	}
 
-	runner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()))
+	runner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()), WithRunID("test-run-123"))
 	require.NoError(t, err)
 
 	t.Run("Correct file permissions should be accepted", func(t *testing.T) {
@@ -247,7 +247,7 @@ ANOTHER_SAFE_VAR=another_safe_value
 	err := os.WriteFile(envFile, []byte(content), 0o644)
 	require.NoError(t, err)
 
-	runner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()))
+	runner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()), WithRunID("test-run-123"))
 	require.NoError(t, err)
 
 	// Should fail on first dangerous variable encountered

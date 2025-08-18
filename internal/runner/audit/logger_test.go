@@ -13,10 +13,15 @@ import (
 )
 
 func TestNewAuditLogger(t *testing.T) {
+	auditLogger := audit.NewAuditLogger()
+	assert.NotNil(t, auditLogger)
+}
+
+func TestNewAuditLoggerWithCustom(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&buf, nil))
 
-	auditLogger := audit.NewAuditLogger(logger)
+	auditLogger := audit.NewAuditLoggerWithCustom(logger)
 	assert.NotNil(t, auditLogger)
 }
 
@@ -63,7 +68,7 @@ func TestLogger_LogPrivilegedExecution(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
 			logger := slog.New(slog.NewJSONHandler(&buf, nil))
-			auditLogger := audit.NewAuditLogger(logger)
+			auditLogger := audit.NewAuditLoggerWithCustom(logger)
 
 			ctx := context.Background()
 			duration := 100 * time.Millisecond
@@ -87,7 +92,7 @@ func TestLogger_LogPrivilegedExecution(t *testing.T) {
 func TestLogger_LogPrivilegeEscalation(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&buf, nil))
-	auditLogger := audit.NewAuditLogger(logger)
+	auditLogger := audit.NewAuditLoggerWithCustom(logger)
 
 	ctx := context.Background()
 	operation := "command_execution"
@@ -142,7 +147,7 @@ func TestLogger_LogSecurityEvent(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
 			logger := slog.New(slog.NewJSONHandler(&buf, nil))
-			auditLogger := audit.NewAuditLogger(logger)
+			auditLogger := audit.NewAuditLoggerWithCustom(logger)
 
 			ctx := context.Background()
 			auditLogger.LogSecurityEvent(ctx, tt.eventType, tt.severity, tt.message, tt.details)

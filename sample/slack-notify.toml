@@ -1,0 +1,67 @@
+# Slack notification test configuration for go-safe-cmd-runner
+# This file is specifically designed to test Slack notification functionality
+version = "1.0"
+
+[global]
+timeout = 30
+workdir = "/tmp/cmd-runner-slack-test"
+log_level = "warn"
+skip_standard_paths = true
+# Environment variables for Slack notification testing
+env_allowlist = [
+    "PATH",
+    "HOME",
+    "LANG",
+    "SLACK_WEBHOOK_URL",
+    "GOTRACEBACK",
+]
+verify_files = ["/etc/passwd"]
+
+# Group 1: Basic successful test to establish baseline
+[[groups]]
+name = "baseline_test"
+description = "Basic test to ensure system is working before Slack notification tests"
+priority = 1
+
+[[groups.commands]]
+name = "system_check"
+description = "Verify system is ready for testing"
+cmd = "echo"
+args = ["System ready for Slack notification testing"]
+
+# Group 2: Slack notification trigger test
+[[groups]]
+name = "slack_notification_test"
+description = "Test Slack notification functionality by triggering a privileged command failure"
+priority = 2
+
+[[groups.commands]]
+name = "trigger_privileged_failure"
+description = "Trigger privileged command failure to test Slack notifications"
+cmd = "/nonexistent/command/that/will/fail"
+args = []
+privileged = true
+
+# Group 3: Alternative Slack notification test (command not found)
+[[groups]]
+name = "slack_command_error_test"
+description = "Test Slack notification with command resolution failure"
+priority = 3
+
+[[groups.commands]]
+name = "invalid_command_test"
+description = "Test with invalid command to trigger Slack notification"
+cmd = "/invalid/path/to/nonexistent/binary"
+args = ["test"]
+
+# Group 4: Successful completion test (no Slack notification expected)
+[[groups]]
+name = "success_completion_test"
+description = "Test successful command execution (should not trigger Slack notification)"
+priority = 4
+
+[[groups.commands]]
+name = "successful_command"
+description = "Command that should complete successfully"
+cmd = "echo"
+args = ["Slack notification test completed successfully - no notification expected for this command"]

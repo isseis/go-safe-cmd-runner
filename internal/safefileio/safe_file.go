@@ -5,7 +5,7 @@ package safefileio
 import (
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -74,7 +74,7 @@ func isOpenat2Available() bool {
 	}
 	defer func() {
 		if err := os.RemoveAll(testDir); err != nil {
-			log.Printf("failed to remove test directory: %v", err)
+			slog.Warn("failed to remove test directory", "error", err, "path", testDir)
 		}
 	}()
 
@@ -325,7 +325,7 @@ func SafeReadFileWithFS(filePath string, fs FileSystem) ([]byte, error) {
 	}
 	defer func() {
 		if closeErr := file.Close(); closeErr != nil {
-			log.Printf("error closing file: %v\n", closeErr)
+			slog.Warn("error closing file", "error", closeErr)
 		}
 	}()
 

@@ -1,5 +1,6 @@
 # Comprehensive test configuration file for go-safe-cmd-runner
 # This file covers all major configuration features and edge cases for thorough testing
+# Including Slack notification integration
 version = "1.0"
 
 [global]
@@ -20,6 +21,8 @@ env_allowlist = [
     "NODE_ENV",
     "DEBUG_MODE",
     "GOTRACEBACK",
+    "SLACK_WEBHOOK_URL",
+    "LS_COLORS",
 ]
 verify_files = ["/etc/passwd", "/bin/sh"]
 
@@ -71,7 +74,6 @@ args = ["TEST_SECURITY_VAR"]
 env = ["TEST_SECURITY_VAR=security_value"]
 
 # Group 3: Resource management tests - temporary directories and cleanup
-# TODO: Broken
 [[groups]]
 name = "resource_tests"
 description = "Test temporary directory creation and cleanup"
@@ -190,57 +192,11 @@ description = "Use verified command"
 cmd = "/bin/echo"
 args = ["Using verified command"]
 
-# Group 9: Complex dependency chain test
-[[groups]]
-name = "dependency_chain_a"
-description = "First link in dependency chain"
-priority = 9
-
-[[groups.commands]]
-name = "chain_step_a"
-description = "First step in dependency chain"
-cmd = "echo"
-args = ["Dependency chain step A"]
-
-[[groups]]
-name = "dependency_chain_b"
-description = "Second link in dependency chain"
-priority = 10
-
-[[groups.commands]]
-name = "chain_step_b"
-description = "Second step in dependency chain"
-cmd = "echo"
-args = ["Dependency chain step B"]
-
-[[groups]]
-name = "dependency_chain_c"
-description = "Final link in dependency chain"
-priority = 11
-
-[[groups.commands]]
-name = "chain_step_c"
-description = "Final step in dependency chain"
-cmd = "echo"
-args = ["Dependency chain step C - complete"]
-
-# Group 10: Multiple dependencies test
-[[groups]]
-name = "multi_dependency_test"
-description = "Test group with multiple dependencies"
-priority = 12
-
-[[groups.commands]]
-name = "multi_dep_summary"
-description = "Summarize multi-dependency test"
-cmd = "echo"
-args = ["Multi-dependency test completed successfully"]
-
-# Group 11: All features combined
+# Group 9: All features combined
 [[groups]]
 name = "comprehensive_final"
 description = "Final comprehensive test combining all features"
-priority = 13
+priority = 9
 temp_dir = true
 cleanup = true
 workdir = "/tmp/final-comprehensive-test"
@@ -266,5 +222,7 @@ env = ["FINAL_TEST_VAR=comprehensive_success"]
 name = "final_summary"
 description = "Final comprehensive test summary"
 cmd = "echo"
-args = ["🎉 All comprehensive tests completed successfully!"]
+args = [
+    "🎉 All comprehensive tests completed successfully! Slack notifications active.",
+]
 timeout = 15

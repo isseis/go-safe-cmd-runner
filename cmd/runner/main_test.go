@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
+	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -42,13 +43,21 @@ func TestConfigPathRequired(t *testing.T) {
 	os.Args = []string{"runner"}
 
 	// Test run() function
-	err := run()
+	runID := "test-run-id"
+	err := run(runID)
 	if err == nil {
 		t.Error("expected error when --config is not provided")
 	}
 
-	if !errors.Is(err, ErrConfigPathRequired) {
-		t.Errorf("expected ErrConfigPathRequired, got: %v", err)
+	// Check if the error is a PreExecutionError with the correct type
+	var preExecErr *logging.PreExecutionError
+	if !errors.As(err, &preExecErr) {
+		t.Errorf("expected PreExecutionError, got: %T", err)
+		return
+	}
+
+	if preExecErr.Type != logging.ErrorTypeRequiredArgumentMissing {
+		t.Errorf("expected ErrorTypeRequiredArgumentMissing, got: %v", preExecErr.Type)
 	}
 }
 
