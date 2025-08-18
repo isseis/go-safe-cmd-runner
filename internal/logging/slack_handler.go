@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -31,8 +32,9 @@ const (
 
 // Static errors for linting compliance
 var (
-	ErrServerError = errors.New("server error")
-	ErrClientError = errors.New("client error")
+	ErrServerError       = errors.New("server error")
+	ErrClientError       = errors.New("client error")
+	ErrInvalidWebhookURL = errors.New("invalid webhook URL")
 )
 
 // SlackHandler is a slog.Handler that sends notifications to Slack
@@ -75,6 +77,28 @@ type SlackAttachmentField struct {
 	Short bool   `json:"short"`
 }
 
+// validateWebhookURL validates that the webhook URL is a valid HTTPS URL
+func validateWebhookURL(webhookURL string) error {
+	if webhookURL == "" {
+		return fmt.Errorf("%w: empty URL", ErrInvalidWebhookURL)
+	}
+
+	parsedURL, err := url.Parse(webhookURL)
+	if err != nil {
+		return fmt.Errorf("%w: failed to parse URL: %v", ErrInvalidWebhookURL, err)
+	}
+
+	if parsedURL.Scheme != "https" {
+		return fmt.Errorf("%w: URL must use HTTPS scheme, got: %s", ErrInvalidWebhookURL, parsedURL.Scheme)
+	}
+
+	if parsedURL.Host == "" {
+		return fmt.Errorf("%w: URL must have a host", ErrInvalidWebhookURL)
+	}
+
+	return nil
+}
+
 // GetSlackWebhookURL gets the Slack webhook URL from environment
 func GetSlackWebhookURL() string {
 	url := os.Getenv(SlackWebhookURLEnvVar)
@@ -88,8 +112,12 @@ func GetSlackWebhookURL() string {
 	return ""
 }
 
-// NewSlackHandler creates a new SlackHandler
-func NewSlackHandler(webhookURL, runID string) *SlackHandler {
+// NewSlackHandler creates a new SlackHandler with URL validation
+func NewSlackHandler(webhookURL, runID string) (*SlackHandler, error) {
+	if err := validateWebhookURL(webhookURL); err != nil {
+		return nil, fmt.Errorf("invalid webhook URL: %w", err)
+	}
+
 	slog.Debug("Creating Slack handler", "webhook_url", webhookURL, "run_id", runID, "timeout", httpTimeout)
 	return &SlackHandler{
 		webhookURL: webhookURL,
@@ -98,7 +126,7 @@ func NewSlackHandler(webhookURL, runID string) *SlackHandler {
 			Timeout: httpTimeout,
 		},
 		level: slog.LevelInfo, // Only handle info level and above
-	}
+	}, nil
 }
 
 // Enabled reports whether the handler handles records at the given level

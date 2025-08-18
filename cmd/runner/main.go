@@ -370,7 +370,10 @@ func setupLoggerWithConfig(config LoggerConfig) error {
 
 	// 3. Slack notification handler (optional)
 	if config.SlackWebhookURL != "" {
-		slackHandler := logging.NewSlackHandler(config.SlackWebhookURL, config.RunID)
+		slackHandler, err := logging.NewSlackHandler(config.SlackWebhookURL, config.RunID)
+		if err != nil {
+			return fmt.Errorf("failed to create Slack handler: %w", err)
+		}
 		handlers = append(handlers, slackHandler)
 	}
 
