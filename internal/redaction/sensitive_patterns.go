@@ -9,10 +9,6 @@ import (
 
 // SensitivePatterns contains compiled patterns for detecting sensitive information
 type SensitivePatterns struct {
-	// CredentialPatterns contains regex patterns to match credentials in log keys and values
-	CredentialPatterns []*regexp.Regexp
-	// EnvVarPatterns contains regex patterns to match sensitive environment variable names
-	EnvVarPatterns []*regexp.Regexp
 	// AllowedEnvVars contains environment variable names that are safe to log
 	AllowedEnvVars map[string]bool
 	// Combined patterns for efficient matching
@@ -23,29 +19,29 @@ type SensitivePatterns struct {
 // DefaultSensitivePatterns returns a default set of sensitive patterns
 func DefaultSensitivePatterns() *SensitivePatterns {
 	// Common credential patterns for log keys and values
-	credentialPatterns := []*regexp.Regexp{
-		regexp.MustCompile(`(?i)(password|token|secret|key|api_key)`),
-		regexp.MustCompile(`(?i)aws_access_key_id`),
-		regexp.MustCompile(`(?i)aws_secret_access_key`),
-		regexp.MustCompile(`(?i)aws_session_token`),
-		regexp.MustCompile(`(?i)google_application_credentials`),
-		regexp.MustCompile(`(?i)gcp_service_account_key`),
-		regexp.MustCompile(`(?i)github_token`),
-		regexp.MustCompile(`(?i)gitlab_token`),
-		regexp.MustCompile(`(?i)bearer`),
-		regexp.MustCompile(`(?i)basic`),
-		regexp.MustCompile(`(?i)authorization`),
+	credentialPatterns := []string{
+		`(?i)(password|token|secret|key|api_key)`,
+		`(?i)aws_access_key_id`,
+		`(?i)aws_secret_access_key`,
+		`(?i)aws_session_token`,
+		`(?i)google_application_credentials`,
+		`(?i)gcp_service_account_key`,
+		`(?i)github_token`,
+		`(?i)gitlab_token`,
+		`(?i)bearer`,
+		`(?i)basic`,
+		`(?i)authorization`,
 	}
 
 	// Environment variable patterns (for config validation)
-	envVarPatterns := []*regexp.Regexp{
-		regexp.MustCompile(`(?i).*PASSWORD.*`),
-		regexp.MustCompile(`(?i).*SECRET.*`),
-		regexp.MustCompile(`(?i).*TOKEN.*`),
-		regexp.MustCompile(`(?i).*KEY.*`),
-		regexp.MustCompile(`(?i).*API.*`),
-		regexp.MustCompile(`(?i).*CREDENTIAL.*`),
-		regexp.MustCompile(`(?i).*AUTH.*`),
+	envVarPatterns := []string{
+		`(?i).*PASSWORD.*`,
+		`(?i).*SECRET.*`,
+		`(?i).*TOKEN.*`,
+		`(?i).*KEY.*`,
+		`(?i).*API.*`,
+		`(?i).*CREDENTIAL.*`,
+		`(?i).*AUTH.*`,
 	}
 
 	// Common safe environment variables
@@ -68,30 +64,22 @@ func DefaultSensitivePatterns() *SensitivePatterns {
 	}
 
 	patterns := &SensitivePatterns{
-		CredentialPatterns: credentialPatterns,
-		EnvVarPatterns:     envVarPatterns,
-		AllowedEnvVars:     allowedEnvVars,
+		AllowedEnvVars: allowedEnvVars,
 	}
 
 	// Build combined patterns for efficiency
-	if err := patterns.buildCombinedPatterns(); err != nil {
+	if err := patterns.buildCombinedPatterns(credentialPatterns, envVarPatterns); err != nil {
 		// This should not happen with our default patterns, but handle gracefully
 		panic(fmt.Sprintf("failed to build combined patterns: %v", err))
 	}
 	return patterns
 }
 
-// buildCombinedPatterns creates optimized combined regular expressions
-func (sp *SensitivePatterns) buildCombinedPatterns() error {
+// buildCombinedPatterns creates optimized combined regular expressions from pattern strings
+func (sp *SensitivePatterns) buildCombinedPatterns(credentialPatterns, envVarPatterns []string) error {
 	// Combine credential patterns with OR operator
-	if len(sp.CredentialPatterns) > 0 {
-		var credentialPatternStrings []string
-		for _, pattern := range sp.CredentialPatterns {
-			// Extract the pattern string (removing any flags)
-			patternStr := pattern.String()
-			credentialPatternStrings = append(credentialPatternStrings, patternStr)
-		}
-		combinedCredentialPattern := "(" + strings.Join(credentialPatternStrings, "|") + ")"
+	if len(credentialPatterns) > 0 {
+		combinedCredentialPattern := "(" + strings.Join(credentialPatterns, "|") + ")"
 
 		// Compile the combined pattern
 		compiled, err := regexp.Compile(combinedCredentialPattern)
@@ -102,13 +90,8 @@ func (sp *SensitivePatterns) buildCombinedPatterns() error {
 	}
 
 	// Combine environment variable patterns with OR operator
-	if len(sp.EnvVarPatterns) > 0 {
-		var envVarPatternStrings []string
-		for _, pattern := range sp.EnvVarPatterns {
-			patternStr := pattern.String()
-			envVarPatternStrings = append(envVarPatternStrings, patternStr)
-		}
-		combinedEnvVarPattern := "(" + strings.Join(envVarPatternStrings, "|") + ")"
+	if len(envVarPatterns) > 0 {
+		combinedEnvVarPattern := "(" + strings.Join(envVarPatterns, "|") + ")"
 
 		// Compile the combined pattern
 		compiled, err := regexp.Compile(combinedEnvVarPattern)

@@ -75,9 +75,6 @@ func TestSensitivePatterns_CombinedPatterns(t *testing.T) {
 func TestSensitivePatterns_ErrorHandling(t *testing.T) {
 	// Test that patterns without combined patterns return false (safe default)
 	patterns := &SensitivePatterns{
-		CredentialPatterns: []*regexp.Regexp{
-			regexp.MustCompile(`(?i)(password|token)`),
-		},
 		combinedCredentialPattern: nil, // Not built
 	}
 
@@ -88,24 +85,22 @@ func TestSensitivePatterns_ErrorHandling(t *testing.T) {
 }
 
 func TestBuildCombinedPatterns(t *testing.T) {
-	credentialPatterns := []*regexp.Regexp{
-		regexp.MustCompile(`(?i)password`),
-		regexp.MustCompile(`(?i)token`),
-		regexp.MustCompile(`(?i)secret`),
+	credentialPatterns := []string{
+		`(?i)password`,
+		`(?i)token`,
+		`(?i)secret`,
 	}
 
-	envVarPatterns := []*regexp.Regexp{
-		regexp.MustCompile(`(?i).*PASSWORD.*`),
-		regexp.MustCompile(`(?i).*SECRET.*`),
+	envVarPatterns := []string{
+		`(?i).*PASSWORD.*`,
+		`(?i).*SECRET.*`,
 	}
 
 	patterns := &SensitivePatterns{
-		CredentialPatterns: credentialPatterns,
-		EnvVarPatterns:     envVarPatterns,
-		AllowedEnvVars:     make(map[string]bool),
+		AllowedEnvVars: make(map[string]bool),
 	}
 
-	err := patterns.buildCombinedPatterns()
+	err := patterns.buildCombinedPatterns(credentialPatterns, envVarPatterns)
 	require.NoError(t, err, "buildCombinedPatterns should succeed")
 
 	// Verify combined patterns were created
