@@ -215,6 +215,18 @@ func run(runID string) error {
 		}
 	}
 
+	// Verify environment file integrity if specified
+	if envFileToLoad != "" {
+		if err := verificationManager.VerifyEnvironmentFile(envFileToLoad); err != nil {
+			return &logging.PreExecutionError{
+				Type:      logging.ErrorTypeFileAccess,
+				Message:   fmt.Sprintf("Environment file verification failed: %v", err),
+				Component: "verification",
+				RunID:     runID,
+			}
+		}
+	}
+
 	// Verify global files - CRITICAL: Program must exit if global verification fails
 	// to prevent execution with potentially compromised files
 	result, err := verificationManager.VerifyGlobalFiles(&cfg.Global)
