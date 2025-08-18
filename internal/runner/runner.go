@@ -170,18 +170,17 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 
 	// Use provided components or create defaults
 	if opts.executor == nil {
+		executorOpts := []executor.Option{}
+
 		if opts.privilegeManager != nil {
-			executorOpts := []executor.Option{
-				executor.WithPrivilegeManager(opts.privilegeManager),
-			}
-			if opts.auditLogger != nil {
-				executorOpts = append(executorOpts, executor.WithAuditLogger(opts.auditLogger))
-			}
-			opts.executor = executor.NewDefaultExecutor(executorOpts...)
-		} else {
-			opts.executor = executor.NewDefaultExecutor()
+			executorOpts = append(executorOpts, executor.WithPrivilegeManager(opts.privilegeManager))
 		}
+		if opts.auditLogger != nil {
+			executorOpts = append(executorOpts, executor.WithAuditLogger(opts.auditLogger))
+		}
+		opts.executor = executor.NewDefaultExecutor(executorOpts...)
 	}
+
 	if opts.tempDirManager == nil {
 		opts.tempDirManager = tempdir.NewTempDirManager(config.Global.WorkDir)
 	}
