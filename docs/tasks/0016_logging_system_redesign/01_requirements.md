@@ -25,9 +25,10 @@
 
 ### FR4: ログファイルの生成と配置
 - 機械読み取り可能ログファイルは実行毎（per-run）にユニークに生成され、ファイル名にはホスト名とタイムスタンプを含めなければならない（人間が名前から実行時刻を推測できるようにするため）
-- デフォルトの出力ディレクトリは現在の作業ディレクトリとする。TOML（設定ファイル）で設定可能でなければならない。ディレクトリのみ設定可能で、ファイル名は自動生成される
+- ファイル名形式：`<hostname>_<timestamp>_<runid>.json`
+- デフォルトの出力ディレクトリは設定されていない場合、`--log-dir`フラグで指定可能。ディレクトリのみ設定可能で、ファイル名は自動生成される
 - ログファイルは0600権限で作成されなければならない
-- 実行完了後、per-runログファイルはgzip圧縮されなければならない
+- 将来的にper-runログファイルのgzip圧縮機能の追加を検討
 
 ### FR5: 標準出力への既定動作
 人間読み取り可能サマリーについて特定の設定が提供されない場合、既定で標準出力に出力する。
@@ -39,9 +40,10 @@
 
 ### FR7: 構造化JSONスキーマ
 すべての機械読み取り可能ログ（JSON）は最低限以下のフィールドを持つスキーマに従わなければならない：
-`timestamp, level, msg, run_id, attempt, component, subsystem, command, args_hash, exit_code, duration_ms, verification_verified, verification_skipped, verification_failed, env_allowed_count, env_removed_count, privilege_initial_uid, privilege_effective_uid, warnings_count, errors_count, git_commit, build_version, schema_version, hostname, pid`
+`timestamp, level, msg, run_id, attempt, component, subsystem, command, args_hash, exit_code, duration_ms, verification_verified, verification_skipped, verification_failed, env_allowed_count, env_removed_count, privilege_initial_uid, privilege_effective_uid, warnings_count, errors_count, schema_version, hostname, pid`
 - `schema_version`の初期値は`1`
 - `run_id`はUUID v4でなければならない
+- 将来的に`git_commit`、`build_version`フィールドの追加を検討
 
 ### FR8: 機密情報の墨消し
 センシティブ情報はログ記録前に墨消しされなければならない：
@@ -56,10 +58,11 @@
 - Webhook URLは環境変数で提供され（`.env`ファイルから読み込み可能）、Slack失敗はコマンド終了コードに影響せず、警告としてログに記録する
 
 ### FR13: 実行前エラーの通知
-- コマンドグループ実行前に発生したエラー（設定解析失敗、権限エラー、ファイルアクセス失敗など）もログ記録とSlack通知の対象としなければならない
+- コマンドグループ実行前に発生したエラー（設定解析失敗、権限エラー、ファイルアクセス失敗、必須引数不足など）もログ記録とSlack通知の対象としなければならない
 - 実行前エラー時のSlack通知には以下を含める：エラータイトル行（`Error: <error_type>`）、エラーメッセージ、発生箇所（コンポーネント名）、環境情報（FR8に従い墨消し）
 - ユーザー中断（`[Request interrupted by user]`など）も実行前エラーとして同様に処理する
 - 実行前エラー時もrun_idを生成し、ログファイルに記録する（ただしコマンド実行は行われないため、該当フィールドは空またはN/A）
+- エラー型には`config_parsing_failed`、`log_file_open_failed`、`privilege_drop_failed`、`file_access_failed`、`user_interrupted`、`required_argument_missing`、`system_error`を含む
 
 ### FR10: 安全なファイルハンドリングと権限順序
 - ログファイルは権限降格前に安全に開かれなければならない。オープンはシンボリックリンク攻撃を防御しなければならない（安全なファイルAPIによるO_NOFOLLOWセマンティクスなど）

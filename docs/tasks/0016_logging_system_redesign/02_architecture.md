@@ -61,9 +61,10 @@
 
 #### 3.4. JSON Handler
 - ログをJSONとして形式化する`slog.NewJSONHandler`
-- 出力：ホスト名とタイムスタンプを含む実行毎一意名ファイル、`0600`権限で作成、実行終了時に`.gz`圧縮
+- 出力：ホスト名とタイムスタンプを含む実行毎一意名ファイル、`0600`権限で作成
+- ファイル名形式：`<hostname>_<timestamp>_<runid>.json`
 - レベル：`--log-level`から設定
-- `WithAttrs`による共通属性注入：`hostname`、`pid`、`git_commit`、`build_version`、`schema_version=1`、`run_id`等
+- `WithAttrs`による共通属性注入：`hostname`、`pid`、`schema_version=1`、`run_id`等
 
 #### 3.5. Text Handler
 - 標準出力への人間読み取り可能出力用の`slog.NewTextHandler`
@@ -82,18 +83,18 @@
 
 ## 4. 初期化フロー
 
-1.  **設定解析**: CLIフラグ、環境変数、TOML（`[logging] level, dir`）を優先度で解析：フラグ > 環境変数 > TOML > デフォルト
-2.  **実行毎ファイル名生成**: `<dir>/<hostname>_<timestamp>_<runid>.json`を構成（完了後gzip圧縮）
-3.  **権限降格前安全オープン**: 権限降格前にログファイルを安全に（シンボリックリンクなし）オープン
-3.  **ハンドラー作成**:
+1.  **run_id生成**: 早期にUUID v4形式のrun_idを生成（実行前エラー時も必要）
+2.  **設定解析**: CLIフラグ、環境変数、TOML（`[logging] level, dir`）を優先度で解析：フラグ > 環境変数 > TOML > デフォルト
+3.  **実行毎ファイル名生成**: `<dir>/<hostname>_<timestamp>_<runid>.json`を構成
+4.  **権限降格前安全オープン**: 権限降格前にログファイルを安全に（シンボリックリンクなし）オープン
+5.  **ハンドラー作成**:
     - ファイルライターと解析されたログレベルで`JSONHandler`をインスタンス化；共通属性を付加
     - `os.Stdout`と固定`slog.LevelInfo`で`TextHandler`をインスタンス化
     - オプションでSlack通知を配線（コマンドグループ終了時サマリーのみ）
-4.  **MultiHandler作成**: 墨消しデコレーターと専用ハンドラーでカスタム`MultiHandler`をインスタンス化
-5.  **ログ作成**: `MultiHandler`で新しい`slog.Logger`を作成
-6.  **デフォルトログ設定**: `slog.SetDefault`を呼び出しこのログをアプリケーションのグローバルデフォルトに設定
-7.  **シャットダウン時**: タイトル+サマリー行を出力；フラッシュ；JSONファイルをgzip圧縮；エラーを警告として処理
-8.  **実行前エラー処理**: 設定解析やファイルアクセス失敗時もrun_idを生成してログ記録；Slack通知を送信；適切なエラーメッセージでプロセス終了
+6.  **MultiHandler作成**: 墨消しデコレーターと専用ハンドラーでカスタム`MultiHandler`をインスタンス化
+7.  **ログ作成**: `MultiHandler`で新しい`slog.Logger`を作成
+8.  **デフォルトログ設定**: `slog.SetDefault`を呼び出しこのログをアプリケーションのグローバルデフォルトに設定
+9.  **実行前エラー処理**: 設定解析やファイルアクセス失敗時はrun_idを使用してログ記録；Slack通知を送信；適切なエラーメッセージでプロセス終了
 
 ## 5. 拡張性
 新しいログ出力（例：Slack）を追加するには、初期化時に`MultiHandler`に新しいハンドラーを追加できます。墨消しデコレーターは出力先に関係なくセンシティブ情報が除去されることを保証します。

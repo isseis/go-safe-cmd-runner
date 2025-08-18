@@ -6,16 +6,17 @@
 
 ## 2. ファイルとモジュール構造
 
-カスタムログコンポーネントを格納する新しいパッケージを作成します。
+実装されたログコンポーネントは以下の構造になっています。
 
-- `internal/logging/`: ログユーティリティ用の新パッケージ（標準`log`との混同を避けるため）
-  - `multihandler.go`: `MultiHandler`の実装を含む
+- `internal/logging/`: ログユーティリティ用のパッケージ（標準`log`との混同を避けるため）
+  - `multihandler.go`: `MultiHandler`の実装
   - `multihandler_test.go`: `MultiHandler`の単体テスト
-    - `redactor.go`: 属性/ペイロード用の墨消しデコレーター
-    - `safeopen.go`: 権限降格前に実行毎ログファイルを安全に開くヘルパー
-    - `summary.go`: タイトルとRUN_SUMMARY行、Slackペイロード（Markdown）の形式化ヘルパー
-    - `slack_handler.go`: Slack通知用のカスタムハンドラー
-    - `pre_execution_error.go`: 実行前エラー処理のヘルパー関数
+  - `redactor.go`: 属性/ペイロード用の墨消しデコレーター
+  - `redactor_test.go`: 墨消し機能の単体テスト
+  - `safeopen.go`: 権限降格前に実行毎ログファイルを安全に開くヘルパー
+  - `slack_handler.go`: Slack通知用のカスタムハンドラー
+  - `pre_execution_error.go`: 実行前エラー処理のヘルパー関数
+  - `pre_execution_error_test.go`: 実行前エラー処理の単体テスト
 
 メインアプリケーションロジックを更新：
 
@@ -107,112 +108,89 @@ var (
 
 ### 4.2. ログ初期化ロジック
 
-新しい関数`setupLogger`が作成され、`run`の開始時に呼び出されます。実行毎ファイル名`<hostname>_<timestamp>_<runid>.json`を生成し、安全に（シンボリックリンクなし）開き、ハンドラーを設定します。ファイルは完了時にgzip圧縮されます。
+新しい関数`setupLoggerWithConfig`が作成され、`run`の開始時に呼び出されます。実行毎ファイル名`<hostname>_<timestamp>_<runid>.json`を生成し、安全に（シンボリックリンクなし）開き、ハンドラーを設定します。
 
 ```go
-// cmd/runner/main.go内
-
-import (
-    // ... その他のインポート
-    "os"
-    "fmt"
-    "time"
-    "log/slog"
-    "github.com/isseis/go-safe-cmd-runner/internal/logging"
-)
-
-func run() error {
-    // ... フラグ解析はmainで実行、値はrunに渡されるかグローバルにアクセス
-
-    // 実行開始時にログを設定
-    if err := setupLogger(*logLevel, *logFile); err != nil {
-        // 設定失敗時は標準ログにフォールバック
-        slog.Error("Failed to setup logger", "error", err)
+// setupLoggerWithConfig initializes the logging system with all handlers atomically
+func setupLoggerWithConfig(config LoggerConfig) error {
+    hostname, err := os.Hostname()
+    if err != nil {
+        hostname = "unknown-host"
     }
-
-    // ... run関数の残り
-}
-
-func setupLogger(level, logDir string) error {
-    // run_id生成（実行前エラー時も必要）
-    runID := generateRunID() // UUID v4
-    hostname := getHostname()
     timestamp := time.Now().Format("20060102T150405Z")
 
     var handlers []slog.Handler
-    // フラグ/env/TOMLからログディレクトリを解決；空の場合はCWDをデフォルト
-    // ファイル名を構成：<dir>/<hostname>_<timestamp>_<runid>.json
+    var invalidLogLevel bool
 
-    // 1. 人間読み取り可能サマリーハンドラー（stdoutへ）
-    // このハンドラーはInfoレベル以上のみログ
+    // 1. Human-readable summary handler (to stdout)
     textHandler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
         Level: slog.LevelInfo,
     })
     handlers = append(handlers, textHandler)
 
-    // 2. 機械読み取り可能ログハンドラー（ファイルへ、実行毎自動命名）
-    if logDir != "" {
-        logPath := filepath.Join(logDir, fmt.Sprintf("%s_%s_%s.json", hostname, timestamp, runID))
-        logF, err := safeopen.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600) // O_NOFOLLOW使用
+    // 2. Machine-readable log handler (to file, per-run auto-named)
+    if config.LogDir != "" {
+        // Validate log directory
+        if err := logging.ValidateLogDir(config.LogDir); err != nil {
+            return fmt.Errorf("invalid log directory: %w", err)
+        }
+
+        logPath := filepath.Join(config.LogDir, fmt.Sprintf("%s_%s_%s.json", hostname, timestamp, config.RunID))
+        fileOpener := logging.NewSafeFileOpener()
+        logF, err := fileOpener.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, logFilePerm)
         if err != nil {
-            // 実行前エラーとしてログ記録・Slack通知
-            handlePreExecutionError("log_file_open_failed", fmt.Sprintf("Failed to open log file: %v", err), runID)
             return fmt.Errorf("failed to open log file: %w", err)
         }
 
         var slogLevel slog.Level
-        if err := slogLevel.UnmarshalText([]byte(level)); err != nil {
-            slogLevel = slog.LevelInfo // 解析エラー時はinfoをデフォルト
-            slog.Warn("Invalid log level provided, defaulting to INFO", "provided", level)
+        if err := slogLevel.UnmarshalText([]byte(config.Level)); err != nil {
+            slogLevel = slog.LevelInfo // Default to info on parse error
+            invalidLogLevel = true
         }
 
         jsonHandler := slog.NewJSONHandler(logF, &slog.HandlerOptions{
             Level: slogLevel,
         })
-        // 共通属性を付加
-        jsonHandler = jsonHandler.WithAttrs([]slog.Attr{
+
+        // Attach common attributes
+        enrichedHandler := jsonHandler.WithAttrs([]slog.Attr{
             slog.String("hostname", hostname),
             slog.Int("pid", os.Getpid()),
-            slog.String("git_commit", getGitCommit()),
-            slog.String("build_version", getBuildVersion()),
             slog.Int("schema_version", 1),
-            slog.String("run_id", runID),
+            slog.String("run_id", config.RunID),
         })
-        handlers = append(handlers, jsonHandler)
+        handlers = append(handlers, enrichedHandler)
     }
 
-    // 3. Slack通知ハンドラー（オプション）
-    if slackURL := getSlackWebhookURL(); slackURL != "" {
-        slackHandler := logging.NewSlackHandler(slackURL, runID)
+    // 3. Slack notification handler (optional)
+    if config.SlackWebhookURL != "" {
+        slackHandler := logging.NewSlackHandler(config.SlackWebhookURL, config.RunID)
         handlers = append(handlers, slackHandler)
     }
 
-    // 墨消しデコレーターをハンドラー前に挿入
+    // Create MultiHandler with redaction
     multiHandler := logging.NewMultiHandler(handlers...)
-    redactedHandler := logging.NewRedactingHandler(multiHandler, getRedactionConfig())
+    redactedHandler := logging.NewRedactingHandler(multiHandler, nil)
 
-    // 4. デフォルトログを作成・設定
+    // Set as default logger
     logger := slog.New(redactedHandler)
     slog.SetDefault(logger)
 
-    slog.Info("Logger initialized", "log-level", level, "log-dir", logDir, "run_id", runID)
+    slog.Info("Logger initialized",
+        "log-level", config.Level,
+        "log-dir", config.LogDir,
+        "run_id", config.RunID,
+        "hostname", hostname,
+        "slack_enabled", config.SlackWebhookURL != "")
+
+    // Warn about invalid log level after logger is properly set up
+    if invalidLogLevel {
+        slog.Warn("Invalid log level provided, defaulting to INFO", "provided", config.Level)
+    }
+
     return nil
 }
 
-// 実行前エラーのハンドリング関数
-func handlePreExecutionError(errorType, errorMsg, runID string) {
-    // 基本ログ出力（fallbackとして標準エラー出力）
-    fmt.Fprintf(os.Stderr, "Error: %s - %s (run_id: %s)\n", errorType, errorMsg, runID)
-
-    // Slack通知（設定されている場合）
-    if slackURL := getSlackWebhookURL(); slackURL != "" {
-        notifyPreExecutionError(slackURL, errorType, errorMsg, runID)
-    }
-
-    // エラーサマリー行出力
-    fmt.Printf("Error: %s\n", errorType)
-    fmt.Printf("RUN_SUMMARY run_id=%s exit_code=1 status=pre_execution_error duration_ms=0 verified=0 skipped=0 failed=0 warnings=0 errors=1\n", runID)
-}
 ```
 
 ### 4.3. `log`パッケージ呼び出しの置換
@@ -250,7 +228,7 @@ if err != nil {
 - **`main_test.go`での統合テスト**:
     - `--log-level`と`--log-dir`の組み合わせで`runner`を実行
     - stdoutにタイトル行と`RUN_SUMMARY`が含まれることを確認
-    - 実行毎JSONファイルが`0600`権限で存在し、完了後`.gz`に圧縮されることを確認
+    - 実行毎JSONファイルが`0600`権限で存在することを確認
     - 墨消しの確認：機密情報が`***`で置換される
     - テストダブル（HTTPサーバー）で429/5xxを含むSlackリトライロジックを確認
     - 実行前エラー時のSlack通知内容とフォーマットの確認
