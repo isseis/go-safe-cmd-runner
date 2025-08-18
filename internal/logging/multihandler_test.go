@@ -96,6 +96,12 @@ func TestNewMultiHandler(t *testing.T) {
 	assert.Len(t, multi.handlers, 2)
 }
 
+func TestNewMultiHandler_PanicsWithNoHandlers(t *testing.T) {
+	assert.Panics(t, func() {
+		NewMultiHandler()
+	}, "NewMultiHandler should panic when no handlers are provided")
+}
+
 func TestMultiHandler_Enabled(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -116,11 +122,6 @@ func TestMultiHandler_Enabled(t *testing.T) {
 			name:     "all handlers enabled",
 			handlers: []slog.Handler{newMockHandler(true), newMockHandler(true)},
 			expected: true,
-		},
-		{
-			name:     "no handlers",
-			handlers: []slog.Handler{},
-			expected: false,
 		},
 	}
 

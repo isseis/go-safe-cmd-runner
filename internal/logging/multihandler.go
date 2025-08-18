@@ -17,7 +17,11 @@ type MultiHandler struct {
 }
 
 // NewMultiHandler creates a new MultiHandler that wraps the given handlers.
+// It panics if no handlers are provided.
 func NewMultiHandler(handlers ...slog.Handler) *MultiHandler {
+	if len(handlers) == 0 {
+		panic("NewMultiHandler: at least one handler must be provided")
+	}
 	return &MultiHandler{
 		handlers: handlers,
 	}
