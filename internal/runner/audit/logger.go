@@ -5,6 +5,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -115,9 +116,7 @@ func (l *Logger) LogPrivilegeEscalation(
 	} else {
 		// Failed privilege escalation should be notified via Slack
 		// Create new slice to avoid modifying the original attrs slice
-		const additionalAttrs = 2
-		failureAttrs := make([]slog.Attr, len(attrs), len(attrs)+additionalAttrs)
-		copy(failureAttrs, attrs)
+		failureAttrs := slices.Clone(attrs)
 		failureAttrs = append(failureAttrs,
 			slog.Bool("slack_notify", true),
 			slog.String("message_type", "privilege_escalation_failure"),
