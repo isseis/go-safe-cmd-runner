@@ -570,7 +570,7 @@ func (s *SlackHandler) sendToSlack(ctx context.Context, message SlackMessage) er
 	var lastErr error
 
 	backoffIntervals := generateBackoffIntervals(backoffBase, retryCount)
-	for attempt := range backoffIntervals {
+	for attempt := 0; attempt <= retryCount; attempt++ {
 		if attempt > 0 {
 			// Get backoff interval from predefined list
 			backoff := backoffIntervals[attempt-1]
