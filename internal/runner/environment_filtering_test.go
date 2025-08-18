@@ -58,7 +58,7 @@ ENV_FILE_COMMON=env_common_value
 		},
 	}
 
-	runner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()))
+	runner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()), WithRunID("test-run-123"))
 	require.NoError(t, err)
 
 	// Load environment variables from both system and .env file
@@ -170,7 +170,7 @@ ENV_FILE_ONLY=env_file_only_value
 		},
 	}
 
-	runner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()))
+	runner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()), WithRunID("test-run-123"))
 	require.NoError(t, err)
 
 	// Load environment variables from both system and .env file
@@ -209,7 +209,7 @@ func TestLoadEnvironment_NoSystemEnv(t *testing.T) {
 		},
 	}
 
-	runner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()))
+	runner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()), WithRunID("test-run-123"))
 	require.NoError(t, err)
 
 	// Load environment variables only from .env file (loadSystemEnv = false)
@@ -239,7 +239,7 @@ func TestLoadEnvironment_EmptyEnvFile(t *testing.T) {
 		},
 	}
 
-	runner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()))
+	runner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()), WithRunID("test-run-123"))
 	require.NoError(t, err)
 
 	// Load environment variables with empty env file path

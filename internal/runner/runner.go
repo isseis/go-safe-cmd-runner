@@ -35,6 +35,7 @@ var (
 	ErrGroupNotFound        = errors.New("group not found")
 	ErrVariableAccessDenied = errors.New("variable access denied")
 	ErrPrivilegedPathConfig = errors.New("privileged command path configuration error")
+	ErrRunIDRequired        = errors.New("runID is required")
 )
 
 // VerificationError contains detailed information about verification failures
@@ -162,6 +163,11 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 	opts := &runnerOptions{}
 	for _, option := range options {
 		option(opts)
+	}
+
+	// Validate that runID is provided
+	if opts.runID == "" {
+		return nil, ErrRunIDRequired
 	}
 
 	// Create validator with provided or default security config
@@ -636,11 +642,6 @@ func (r *Runner) CleanupAllResources() error {
 
 // sendGroupNotification sends a Slack notification for group execution completion
 func (r *Runner) sendGroupNotification(group runnertypes.CommandGroup, result *groupExecutionResult, duration time.Duration) {
-	// Only send notification if runID is set (meaning this execution should be tracked)
-	if r.runID == "" {
-		return
-	}
-
 	slog.Info(
 		"Command group execution completed",
 		"group", group.Name,
