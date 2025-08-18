@@ -2,14 +2,16 @@
 package logging
 
 import (
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
-	"github.com/google/uuid"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
+	"github.com/oklog/ulid/v2"
 )
 
 // Common errors
@@ -51,9 +53,10 @@ func (s *SafeFileOpener) OpenFile(path string, flag int, perm os.FileMode) (io.W
 	return file, nil
 }
 
-// GenerateRunID generates a new UUID v4 for run identification
+// GenerateRunID generates a new ULID for run identification
 func GenerateRunID() string {
-	return uuid.New().String()
+	entropy := ulid.Monotonic(rand.Reader, 0)
+	return ulid.MustNew(ulid.Timestamp(time.Now()), entropy).String()
 }
 
 // ValidateLogDir ensures the log directory is safe and accessible

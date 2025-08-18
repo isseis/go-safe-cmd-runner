@@ -49,7 +49,7 @@ linters:
             - github.com/isseis/go-safe-cmd-runner/internal/runner
             - github.com/isseis/go-safe-cmd-runner/internal/safefileio
             - github.com/isseis/go-safe-cmd-runner/internal/verification
-            - github.com/google/uuid
+            - github.com/oklog/ulid/v2
             - github.com/joho/godotenv
             - github.com/pelletier/go-toml/v2
             - github.com/stretchr/testify/assert
