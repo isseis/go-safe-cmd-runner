@@ -285,25 +285,25 @@ func getSlackWebhookFromEnvFile(envFile string) string {
 	// Validate file path and permissions using security package
 	validator, err := security.NewValidator(security.DefaultConfig())
 	if err != nil {
-		slog.Debug("Failed to create security validator", "error", err)
+		slog.Warn("Failed to create security validator for environment file", "file", envFile, "error", err)
 		return ""
 	}
 	if err := validator.ValidateFilePermissions(envFile); err != nil {
-		slog.Debug("Environment file validation failed", "file", envFile, "error", err)
+		slog.Warn("Environment file security validation failed", "file", envFile, "error", err)
 		return ""
 	}
 
 	// Use safefileio for secure file reading
 	content, err := safefileio.SafeReadFile(envFile)
 	if err != nil {
-		slog.Debug("Failed to read env file securely", "file", envFile, "error", err)
+		slog.Warn("Failed to read environment file securely", "file", envFile, "error", err)
 		return ""
 	}
 
 	// Parse content directly using godotenv.Parse (no temporary file needed)
 	envMap, err := godotenv.Parse(bytes.NewReader(content))
 	if err != nil {
-		slog.Debug("Failed to parse env file", "file", envFile, "error", err)
+		slog.Warn("Failed to parse environment file", "file", envFile, "error", err)
 		return ""
 	}
 
