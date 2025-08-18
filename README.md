@@ -251,7 +251,7 @@ This project is licensed under the MIT License. See the [LICENSE](./LICENSE) fil
 ## Building and Installation
 
 ### Prerequisites
-- Go 1.21 or later (required for slices package support)
+- Go 1.22 or later (required for slices package support, range over count)
 - golangci-lint (for development)
 
 ### Build Commands
