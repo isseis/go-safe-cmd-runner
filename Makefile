@@ -27,6 +27,7 @@ GO_SOURCES := $(shell find . -type f -name '*.go' -not -name '*_test.go')
 
 HASH_TARGETS := \
 	/etc/passwd \
+	./sample/.env \
 	./sample/comprehensive.toml \
 	./sample/slack-notify.toml \
 	./sample/slack-group-notification-test.toml
