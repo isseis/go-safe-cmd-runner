@@ -20,181 +20,164 @@
 graph TD
     A[CLI Entry Point<br/>cmd/runner/main.go] --> B[Runner Core<br/>internal/runner/runner.go]
 
-    B --> C[ExecuteAll<br/>existing method]
+    B --> C[ExecuteAll<br/>unified method]
     B --> D[PerformDryRun<br/>new method]
 
-    D --> E[DryRun Analyzer<br/>internal/runner/dryrun/analyzer.go]
+    D --> C
 
-    E --> F[ExecutionPlan Generator]
-    E --> G[SecurityAnalyzer]
-    E --> H[VerificationStep Executor]
+    C --> E[ResourceManager<br/>internal/runner/resource/manager.go]
 
-    E --> I[DryRun Formatter<br/>internal/runner/dryrun/formatter.go]
+    E --> F[Command Execution]
+    E --> G[Filesystem Operations]
+    E --> H[Privilege Management]
+    E --> I[Network Operations]
 
-    I --> J[Summary Formatter]
-    I --> K[Detailed Formatter]
-    I --> L[Error Report Formatter]
+    E --> J[Analysis Recording<br/>dry-run only]
+    E --> K[Result Formatting<br/>dry-run only]
 
     style A fill:#e1f5fe
     style B fill:#f3e5f5
+    style C fill:#e8f5e8
     style D fill:#e8f5e8
     style E fill:#fff3e0
-    style I fill:#fce4ec
+    style J fill:#fce4ec
+    style K fill:#fce4ec
 ```
 
 ### 2.2 コンポーネント間の関係
 
 ```mermaid
 graph LR
-    subgraph "Existing Components"
+    subgraph "Core Components"
         A[Runner]
-        B[CommandExecutor]
+        B[ResourceManager]
         C[VerificationManager]
         D[PrivilegeManager]
+        E[CommandExecutor]
     end
 
-    subgraph "New DryRun Components"
-        E[DryRun Analyzer]
-        F[ExecutionPlan Generator]
-        G[SecurityAnalyzer]
-        H[VerificationStep Executor]
-        I[Formatter]
+    subgraph "Resource Management"
+        F[Command Execution]
+        G[Filesystem Operations]
+        H[Privilege Management]
+        I[Network Operations]
     end
 
-    A --> E
-    C --> H
-    D --> G
-    E --> F
-    E --> G
-    E --> H
-    E --> I
+    subgraph "Dry-Run Analysis"
+        J[Analysis Recording]
+        K[Security Analysis]
+        L[Result Aggregation]
+    end
+
+    A --> B
+    B --> F
+    B --> G
+    B --> H
+    B --> I
+
+    B --> J
+    B --> K
+    B --> L
+
+    C --> B
+    D --> B
+    E --> B
 
     style A fill:#e3f2fd
-    style E fill:#fff3e0
-    style I fill:#fce4ec
+    style B fill:#fff3e0
+    style J fill:#fce4ec
+    style K fill:#fce4ec
+    style L fill:#fce4ec
 ```
 
 **コンポーネントの役割:**
 - **Runner**: 既存機能を保持しつつ、dry-run用の新しいメソッドを追加
-- **DryRun Analyzer**: 実行計画の分析と検証を担当
-- **DryRun Formatter**: 結果の整形と出力を担当
+- **ResourceManager**: すべての副作用を統一的に管理（実行モード切替でdry-run対応）
+- **Analysis Recording**: dry-runモードでの詳細な分析情報記録
 
 ## 3. コンポーネント設計
 
-### 3.1 Runner拡張
+### 3.1 Resource Manager Pattern
 
-#### 3.1.1 新規メソッド
+#### 3.1.1 統一された実行フロー
+Resource Manager Patternにより、通常実行とdry-runの両方で同一の`ExecuteAll`メソッドを使用し、100%の実行パス整合性を保証します。
+
 ```go
 type Runner struct {
     // existing fields...
+    resourceManager ResourceManager  // 新規追加
 }
 
-// PerformDryRun performs a dry-run analysis without executing commands
-func (r *Runner) PerformDryRun(ctx context.Context, opts DryRunOptions) (*DryRunResult, error)
+// PerformDryRun performs a dry-run analysis using the same execution path
+func (r *Runner) PerformDryRun(ctx context.Context, opts DryRunOptions) (*DryRunResult, error) {
+    // ResourceManagerをdry-runモードに設定
+    r.resourceManager.SetMode(ExecutionModeDryRun, &opts)
 
-type DryRunOptions struct {
-    DetailLevel    DetailLevel    // Summary, Detailed, Full
-    OutputFormat   OutputFormat   // Text, JSON, YAML
-    ShowSensitive  bool          // Whether to show sensitive variables (masked)
-    VerifyFiles    bool          // Whether to perform file verification
+    // 通常実行と同じパスを実行（副作用のみインターセプト）
+    err := r.ExecuteAll(ctx)
+    if err != nil {
+        return nil, fmt.Errorf("dry-run analysis failed: %w", err)
+    }
+
+    // 分析結果を取得
+    return r.resourceManager.GetDryRunResults(), nil
 }
+```
 
+#### 3.1.2 ResourceManager インターフェース
+すべての副作用を統一的に管理するインターフェース（既実装済み）：
+
+```go
+type ResourceManager interface {
+    // Mode management
+    SetMode(mode ExecutionMode, opts *DryRunOptions)
+    GetMode() ExecutionMode
+
+    // Side effect operations (intercepted in dry-run mode)
+    ExecuteCommand(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) (*ExecutionResult, error)
+    CreateTempDir(groupName string) (string, error)
+    CleanupTempDir(tempDirPath string) error
+    WithPrivileges(ctx context.Context, fn func() error) error
+    SendNotification(message string, details map[string]interface{}) error
+
+    // Dry-run specific
+    GetDryRunResults() *DryRunResult
+    RecordAnalysis(analysis *ResourceAnalysis)
+}
+```
+
+### 3.2 実装済み型システム
+
+Resource Manager Patternにより、すべての型定義は`internal/runner/resource`パッケージに統合されています：
+
+#### 3.2.1 ResourceAnalysis システム
+```go
+// 各副作用操作の詳細な分析情報
+type ResourceAnalysis struct {
+    Type        ResourceType           `json:"type"`        // command, filesystem, privilege, network, process
+    Operation   ResourceOperation      `json:"operation"`   // create, delete, execute, escalate, send
+    Target      string                 `json:"target"`      // 操作対象（コマンド、パス等）
+    Parameters  map[string]interface{} `json:"parameters"`  // 操作パラメータ
+    Impact      ResourceImpact         `json:"impact"`      // 操作の影響
+    Timestamp   time.Time              `json:"timestamp"`   // 操作時刻
+}
+```
+
+#### 3.2.2 DryRunResult システム
+```go
+// dry-run分析の完全な結果
 type DryRunResult struct {
-    ExecutionPlan   *ExecutionPlan
-    Verification    *VerificationResults
-    SecurityAnalysis *SecurityAnalysis
-    Errors          []error
-    Warnings        []string
+    Metadata         *ResultMetadata     `json:"metadata"`
+    ExecutionPlan    *ExecutionPlan      `json:"execution_plan"`
+    ResourceAnalyses []ResourceAnalysis  `json:"resource_analyses"`
+    SecurityAnalysis *SecurityAnalysis   `json:"security_analysis"`
+    EnvironmentInfo  *EnvironmentInfo    `json:"environment_info"`
+    Errors          []DryRunError       `json:"errors"`
+    Warnings        []DryRunWarning     `json:"warnings"`
 }
 ```
 
-### 3.2 DryRun Analyzer
-
-#### 3.2.1 パッケージ構成
-```
-internal/runner/dryrun/
-├── analyzer.go        # メインの分析エンジン
-├── execution_plan.go  # 実行計画生成
-├── security.go        # セキュリティ分析
-├── verification.go    # ファイル検証
-└── types.go          # 型定義
-```
-
-#### 3.2.2 主要インターフェース
-```go
-// Analyzer performs comprehensive dry-run analysis
-type Analyzer interface {
-    AnalyzeExecution(ctx context.Context, config *runnertypes.Config, envVars map[string]string) (*AnalysisResult, error)
-    GenerateExecutionPlan(groups []runnertypes.CommandGroup, envVars map[string]string) (*ExecutionPlan, error)
-    AnalyzeSecurity(plan *ExecutionPlan) (*SecurityAnalysis, error)
-}
-
-// ExecutionPlanGenerator generates detailed execution plans
-type ExecutionPlanGenerator interface {
-    GeneratePlan(groups []runnertypes.CommandGroup, envVars map[string]string) (*ExecutionPlan, error)
-    ResolveVariables(command string, envVars map[string]string) (string, error)
-    DetectPrivilegeRequirements(cmd runnertypes.Command) (PrivilegeInfo, error)
-}
-
-// SecurityAnalyzer analyzes security implications
-type SecurityAnalyzer interface {
-    AnalyzeCommands(plan *ExecutionPlan) (*SecurityAnalysis, error)
-    DetectPrivilegeEscalation(commands []ResolvedCommand) ([]SecurityRisk, error)
-    ValidateEnvironmentAccess(envAccess []EnvironmentAccess) ([]SecurityRisk, error)
-}
-
-// VerificationStepExecutor performs file verification steps
-type VerificationStepExecutor interface {
-    PerformVerification(ctx context.Context, config *runnertypes.Config, envFile string) (*VerificationResults, error)
-    VerifyConfigIntegrity(configPath string) error
-    VerifyEnvironmentFile(envPath string) error
-    VerifyGlobalFiles(global *runnertypes.GlobalConfig) (*verification.Result, error)
-}
-```
-
-### 3.3 主要データ構造
-
-#### 3.3.1 実行計画
-```go
-type ExecutionPlan struct {
-    Groups           []GroupPlan      `json:"groups"`
-    TotalCommands    int              `json:"total_commands"`
-    EstimatedDuration time.Duration   `json:"estimated_duration"`
-    RequiresPrivilege bool            `json:"requires_privilege"`
-}
-
-type GroupPlan struct {
-    Name              string            `json:"name"`
-    Description       string            `json:"description"`
-    Priority          int               `json:"priority"`
-    WorkingDirectory  string            `json:"working_directory"`
-    Commands          []ResolvedCommand `json:"commands"`
-    Dependencies      []string          `json:"dependencies"`
-    EnvironmentVars   map[string]string `json:"environment_vars"`
-    EstimatedDuration time.Duration     `json:"estimated_duration"`
-}
-
-type ResolvedCommand struct {
-    Name            string        `json:"name"`
-    Description     string        `json:"description"`
-    CommandLine     string        `json:"command_line"`    // 環境変数展開後
-    OriginalCommand string        `json:"original_command"` // 元のテンプレート
-    WorkingDir      string        `json:"working_dir"`
-    Timeout         time.Duration `json:"timeout"`
-    RequiredUser    string        `json:"required_user"`   // root, current, etc.
-    PrivilegeInfo   PrivilegeInfo `json:"privilege_info"`
-    OutputSettings  OutputSettings `json:"output_settings"`
-}
-
-type PrivilegeInfo struct {
-    RequiresPrivilege bool     `json:"requires_privilege"`
-    TargetUser       string   `json:"target_user"`
-    Capabilities     []string `json:"capabilities"`
-    Risks            []string `json:"risks"`
-}
-```
-
-#### 3.3.2 セキュリティ分析
+#### 3.2.3 セキュリティ分析システム
 ```go
 type SecurityAnalysis struct {
     Risks              []SecurityRisk      `json:"risks"`
@@ -262,434 +245,70 @@ type FormatterOptions struct {
 
 ## 4. 実行フロー設計
 
-### 4.1 メインフロー
+### 4.1 統一実行フロー（Resource Manager Pattern）
 
 ```mermaid
 flowchart TD
-    A[CLI Flag Detection<br/>--dry-run] --> B[Configuration Loading<br/>& Validation]
-    B --> C[Environment Setup<br/>same as normal execution]
-    C --> D[DryRun Analyzer<br/>Initialization]
-    D --> E[File Verification<br/>Execution]
-    E --> F[Execution Plan<br/>Generation]
-    F --> G[Security Analysis]
-    G --> H[Result Formatting<br/>& Output]
+    A[CLI Flag Detection<br/>--dry-run or normal] --> B[Runner Initialization<br/>with ResourceManager]
+    B --> C[Mode Setting<br/>ResourceManager.SetMode()]
+    C --> D[ExecuteAll Method<br/>同一の実行パス]
+    D --> E[Resource Operations<br/>through ResourceManager]
+
+    E --> F{Execution Mode?}
+    F -->|Normal| G[Actual Side Effects<br/>Command, File, Privilege, Network]
+    F -->|Dry-Run| H[Simulated Operations<br/>+ Analysis Recording]
+
+    G --> I[Normal Result]
+    H --> J[Dry-Run Analysis Result<br/>GetDryRunResults()]
+
+    J --> K[Result Formatting<br/>& Output]
 
     style A fill:#ffecb3
     style B fill:#c8e6c9
-    style C fill:#c8e6c9
-    style D fill:#e1bee7
-    style E fill:#ffcdd2
-    style F fill:#dcedc8
-    style G fill:#ffab91
-    style H fill:#f8bbd9
+    style C fill:#e1bee7
+    style D fill:#e8f5e8
+    style E fill:#fff3e0
+    style H fill:#fce4ec
+    style J fill:#fce4ec
+    style K fill:#f8bbd9
 ```
 
-### 4.2 詳細実行手順
+### 4.2 詳細実行パス
 
-#### 4.2.1 初期化フェーズ
-1. 既存のRunner初期化処理を実行
-2. DryRun Analyzerの作成
-3. VerificationStepExecutorの初期化
+#### 4.2.1 実行パス統一の仕組み
+Resource Manager Patternにより、通常実行とdry-runは完全に同じコードパスを通ります：
 
-#### 4.2.2 分析フェーズ
-1. **ファイル検証**
-   - 設定ファイルの整合性確認
-   - 環境ファイルの整合性確認
-   - グローバルファイルの検証
+1. **初期化フェーズ**：
+   - Runner初期化（既存）
+   - ResourceManager初期化（新規）
+   - モード設定（Normal/DryRun）
 
-2. **実行計画生成**
-   - グループ依存関係の解決
-   - 実行順序の決定
-   - 環境変数の展開と解決
-   - コマンドラインの完全解決
+2. **実行フェーズ**：
+   - `ExecuteAll` → `ExecuteGroup` → `executeCommandInGroup`（既存パス）
+   - 全副作用がResourceManagerを経由
+   - モードに応じて実際実行 or シミュレーション
 
-3. **セキュリティ分析**
-   - 特権昇格要件の分析
-   - 環境変数アクセスパターンの分析
-   - ファイルアクセスパターンの分析
-   - 潜在的リスクの検出
+3. **結果フェーズ**：
+   - Normal: 既存の実行結果
+   - Dry-Run: ResourceManagerが蓄積した分析結果
 
-#### 4.2.3 出力フェーズ
-1. 結果の整形
-2. エラー・警告の集約
-3. 指定された形式での出力
+#### 4.2.2 副作用インターセプション
+各副作用操作でResourceManagerが自動的に処理を分岐：
+
+- **コマンド実行**: `ExecuteCommand()` → 実行 or 分析記録
+- **ファイルシステム**: `CreateTempDir()` → 作成 or シミュレーション
+- **特権管理**: `WithPrivileges()` → 昇格 or 分析記録
+- **ネットワーク**: `SendNotification()` → 送信 or 分析記録
 
 ## 5. 既存コードとの統合
 
-### 5.1 Runner構造体の拡張
-既存のRunner構造体に新しいメソッドを追加し、既存機能に影響を与えない設計：
+### 5.1 最小限の変更による統合
+Resource Manager Patternにより、既存コードへの変更を最小限に抑えます：
 
 ```go
-// 既存メソッドは変更なし
-func (r *Runner) ExecuteAll(ctx context.Context) error {
-    // existing implementation
-}
-
-// 新規メソッド追加
-func (r *Runner) PerformDryRun(ctx context.Context, opts DryRunOptions) (*DryRunResult, error) {
-    analyzer := dryrun.NewAnalyzer(
-        r.config,
-        r.verificationManager,
-        r.privilegeManager,
-    )
-
-    return analyzer.AnalyzeExecution(ctx, r.config, r.envVars)
-}
-```
-
-### 5.2 インターフェース保持
-既存のインターフェース（CommandExecutor, PrivilegeManager等）はそのまま活用し、新しい機能のみdryrunパッケージで実装。
-
-### 5.3 設定ファイル互換性
-既存のTOML設定ファイル形式を完全に維持し、新しい設定は必要に応じて追加。
-
-## 6. 拡張性とメンテナンス性
-
-### 6.1 プラガブルアーキテクチャー
-- フォーマッターは交換可能な設計
-- セキュリティアナライザーは拡張可能
-- 検証ステップは追加可能
-
-### 6.2 テスト戦略
-- 各コンポーネントは独立してテスト可能
-- モックインターフェースを活用
-- 既存テストとの分離
-
-### 6.3 エラーハンドリング
-- 段階的なエラー収集
-- ユーザーフレンドリーなエラーメッセージ
-- デバッグ情報の提供
-
-## 7. パフォーマンス考慮事項
-
-### 7.1 メモリ使用量
-- 大規模設定での効率的な処理
-- ストリーミング処理の活用
-- 不要なデータの早期解放
-
-### 7.2 実行時間
-- 並列処理可能な部分の最適化
-- キャッシュ機構の活用
-- プログレス表示の実装
-
-## 8. 実行パス整合性保証
-
-### 8.1 設計原則
-
-#### 8.1.1 共通コンポーネント活用
-通常実行とdry-runで同じコンポーネントを可能な限り共有し、実装の乖離を防ぐ。
-
-```mermaid
-graph TB
-    subgraph "Shared Components"
-        A[Config Loader]
-        B[Environment Processor]
-        C[Variable Resolver]
-        D[Verification Manager]
-        E[Privilege Manager]
-    end
-
-    subgraph "Normal Execution"
-        F[Runner.ExecuteAll]
-        G[Command Executor]
-    end
-
-    subgraph "Dry Run Execution"
-        H[Runner.PerformDryRun]
-        I[DryRun Analyzer]
-    end
-
-    A --> F
-    A --> H
-    B --> F
-    B --> H
-    C --> F
-    C --> I
-    D --> F
-    D --> I
-    E --> F
-    E --> I
-
-    style A fill:#e8f5e8
-    style B fill:#e8f5e8
-    style C fill:#e8f5e8
-    style D fill:#e8f5e8
-    style E fill:#e8f5e8
-```
-
-#### 8.1.2 段階的検証アプローチ
-各処理段階で通常実行と同じ検証ロジックを実行する。
-
-### 8.2 具体的保証メカニズム
-
-#### 8.2.1 共有インターフェースの強制
-```go
-// 通常実行とdry-runで同じインターフェースを使用
-type ExecutionContext interface {
-    ResolveVariables(cmd string, envVars map[string]string, group *runnertypes.CommandGroup) (string, error)
-    ValidatePrivileges(cmd runnertypes.Command) (PrivilegeInfo, error)
-    VerifyFileAccess(path string) error
-}
-
-// Runner構造体に共通メソッドを追加
-func (r *Runner) CreateExecutionContext() ExecutionContext {
-    return &executionContext{
-        envFilter:        r.envFilter,
-        privilegeManager: r.privilegeManager,
-        validator:       r.validator,
-    }
-}
-```
-
-#### 8.2.2 変数解決ロジックの共有
-```go
-// 既存のRunner.resolveVariableReferencesWithDepthを活用
-func (a *analyzer) resolveVariables(command string, envVars map[string]string, group *runnertypes.CommandGroup) (string, error) {
-    // 通常実行と同じロジックを使用
-    return a.runner.resolveVariableReferencesWithDepth(
-        command,
-        envVars,
-        make(map[string]bool),
-        0,
-        group,
-    )
-}
-```
-
-#### 8.2.3 ファイル検証の共有
-```go
-// 既存のVerificationManagerを直接使用
-func (a *analyzer) performVerification(ctx context.Context, config *runnertypes.Config) (*VerificationResults, error) {
-    // 通常実行と全く同じ検証処理
-    result, err := a.verificationManager.VerifyGlobalFiles(&config.Global)
-    if err != nil {
-        return nil, err
-    }
-
-    return &VerificationResults{
-        GlobalVerification: result,
-        // ... 他の検証結果
-    }, nil
-}
-```
-
-### 8.3 テスト戦略による整合性確認
-
-#### 8.3.1 比較テストフレームワーク
-```go
-type PathConsistencyTest struct {
-    testName     string
-    configPath   string
-    envFile      string
-    expectedDiff PathDifference
-}
-
-type PathDifference struct {
-    VariableResolution []VariableDiff
-    PrivilegeAnalysis  []PrivilegeDiff
-    FileVerification   []FileDiff
-    AcceptableDiffs    []string // 許容される差分
-}
-
-func TestExecutionPathConsistency(t *testing.T) {
-    tests := []PathConsistencyTest{
-        // 各種シナリオでの一貫性テスト
-    }
-
-    for _, test := range tests {
-        t.Run(test.testName, func(t *testing.T) {
-            // 1. 通常実行の準備段階を実行
-            normalResult := prepareNormalExecution(test.configPath, test.envFile)
-
-            // 2. dry-run実行
-            dryRunResult := performDryRun(test.configPath, test.envFile)
-
-            // 3. 結果の比較検証
-            diff := comparePaths(normalResult, dryRunResult)
-            assertAcceptableDifference(t, diff, test.expectedDiff)
-        })
-    }
-}
-```
-
-#### 8.3.2 継続的統合テスト
-```yaml
-# .github/workflows/path-consistency.yml
-name: Execution Path Consistency Check
-
-on: [push, pull_request]
-
-jobs:
-  consistency-test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Path Consistency Test
-        run: |
-          # 複数の設定パターンで一貫性テスト
-          go test -v ./internal/runner/dryrun -run TestExecutionPathConsistency
-
-      - name: Performance Comparison
-        run: |
-          # dry-runが通常実行準備段階の性能と大きく乖離していないことを確認
-          go test -bench=BenchmarkPathConsistency ./internal/runner/dryrun
-```
-
-### 8.4 実装レベルでの保証: 包括的副作用インターセプション
-
-#### 8.4.1 副作用の分類と対処
-dry-runで考慮すべき副作用を包括的に分析し、すべてをインターセプトする設計。
-
-**副作用の種類:**
-1. **コマンド実行**: 外部プログラムの実行
-2. **ファイルシステム**: 一時ディレクトリ作成・削除、ファイル変更
-3. **権限管理**: 特権昇格・降格（setuid/seteuid）
-4. **プロセス管理**: 子プロセス作成・終了
-5. **ネットワーク**: Slack通知、外部API呼び出し
-6. **システム状態**: 環境変数変更、シグナル処理
-
-#### 8.4.2 Resource Manager Pattern
-すべての副作用を統一的にインターセプトする設計。
-
-```mermaid
-sequenceDiagram
-    participant C as CLI
-    participant R as Runner
-    participant RM as ResourceManager
-    participant TDM as TempDirManager
-    participant PM as PrivilegeManager
-    participant CE as CommandExecutor
-
-    Note over C,CE: 通常実行とdry-runで同じフロー、副作用のみインターセプト
-
-    C->>R: PerformDryRun(ctx, opts) または ExecuteAll(ctx)
-    R->>RM: SetMode(DryRun/Normal)
-    R->>R: ExecuteAll(ctx) // 同じパス
-
-    loop for each group
-        R->>RM: CreateTempDir(groupName)
-        alt Normal Mode
-            RM->>TDM: CreateTempDir(groupName)
-            TDM-->>RM: /tmp/dir123
-        else Dry-Run Mode
-            RM->>RM: SimulateTempDir(groupName)
-            RM-->>RM: /tmp/dry-run-simulated-dir
-        end
-        RM-->>R: tempDirPath
-
-        loop for each command
-            alt privileged command
-                R->>RM: WithPrivileges(ctx, func)
-                alt Normal Mode
-                    RM->>PM: WithPrivileges(ctx, func)
-                else Dry-Run Mode
-                    RM->>RM: SimulatePrivilegeEscalation()
-                end
-            end
-
-            R->>RM: ExecuteCommand(ctx, cmd, env)
-            alt Normal Mode
-                RM->>CE: Execute(ctx, cmd, env)
-            else Dry-Run Mode
-                RM->>RM: AnalyzeCommand(cmd, env)
-            end
-        end
-
-        R->>RM: CleanupTempDir(tempDirPath)
-        alt Normal Mode
-            RM->>TDM: CleanupTempDir(tempDirPath)
-        else Dry-Run Mode
-            RM->>RM: SimulateCleanup(tempDirPath)
-        end
-    end
-```
-
-#### 8.4.3 包括的 ResourceManager インターフェース
-```go
-// ExecutionMode determines how all operations are handled
-type ExecutionMode int
-
-const (
-    ExecutionModeNormal ExecutionMode = iota
-    ExecutionModeDryRun
-)
-
-// ResourceManager manages all side-effects (commands, filesystem, privileges, etc.)
-type ResourceManager interface {
-    // Mode management
-    SetMode(mode ExecutionMode, opts *DryRunOptions)
-    GetMode() ExecutionMode
-
-    // Command execution
-    ExecuteCommand(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) (*ExecutionResult, error)
-
-    // Filesystem operations
-    CreateTempDir(groupName string) (string, error)
-    CleanupTempDir(tempDirPath string) error
-    CleanupAllTempDirs() error
-
-    // Privilege management
-    WithPrivileges(ctx context.Context, fn func() error) error
-    IsPrivilegeEscalationRequired(cmd runnertypes.Command) (bool, error)
-
-    // Network operations
-    SendNotification(message string, details map[string]interface{}) error
-
-    // Dry-run specific
-    GetDryRunResults() *DryRunResult // dry-runモードでのみ有効
-    RecordAnalysis(analysis *ResourceAnalysis)
-}
-
-// ResourceAnalysis captures analysis of a resource operation
-type ResourceAnalysis struct {
-    Type        ResourceType         `json:"type"`
-    Operation   ResourceOperation    `json:"operation"`
-    Target      string              `json:"target"`
-    Parameters  map[string]interface{} `json:"parameters"`
-    Impact      ResourceImpact      `json:"impact"`
-    Timestamp   time.Time           `json:"timestamp"`
-}
-
-type ResourceType string
-const (
-    ResourceTypeCommand     ResourceType = "command"
-    ResourceTypeFilesystem  ResourceType = "filesystem"
-    ResourceTypePrivilege   ResourceType = "privilege"
-    ResourceTypeNetwork     ResourceType = "network"
-    ResourceTypeProcess     ResourceType = "process"
-)
-
-type ResourceOperation string
-const (
-    OperationCreate  ResourceOperation = "create"
-    OperationDelete  ResourceOperation = "delete"
-    OperationExecute ResourceOperation = "execute"
-    OperationEscalate ResourceOperation = "escalate"
-    OperationSend    ResourceOperation = "send"
-)
-
-type ResourceImpact struct {
-    Reversible  bool     `json:"reversible"`
-    Persistent  bool     `json:"persistent"`
-    SecurityRisk string  `json:"security_risk,omitempty"`
-    Description string   `json:"description"`
-}
-
-// ExecutionResult unified result for both normal and dry-run
-type ExecutionResult struct {
-    ExitCode    int                  `json:"exit_code"`
-    Stdout      string               `json:"stdout"`
-    Stderr      string               `json:"stderr"`
-    Duration    time.Duration        `json:"duration"`
-    DryRun      bool                 `json:"dry_run"`
-    Analysis    *ResourceAnalysis    `json:"analysis,omitempty"`
-}
-```
-
-#### 8.4.4 Runner の包括的変更
-```go
-// Runner構造体の変更
+// Runner構造体への追加（最小限）
 type Runner struct {
-    // 既存のフィールドはそのまま、ただしResourceManagerに統合
+    // 既存フィールド（変更なし）
     config              *runnertypes.Config
     envVars             map[string]string
     validator           *security.Validator
@@ -697,490 +316,96 @@ type Runner struct {
     envFilter           *environment.Filter
     runID               string
 
-    // ★新規追加：すべての副作用を管理
+    // 新規追加（1フィールドのみ）
     resourceManager     ResourceManager
 }
 
-// すべての副作用関連のメソッドでresourceManagerを使用
-
-// 1. 一時ディレクトリ関連
-func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGroup) error {
-    // ... 既存のロジック ...
-
-    var tempDirPath string
-    if processedGroup.TempDir {
-        // ★変更：resourceManagerを使用
-        var err error
-        tempDirPath, err = r.resourceManager.CreateTempDir(processedGroup.Name)
-        if err != nil {
-            return fmt.Errorf("failed to create temp directory for group %s: %w", processedGroup.Name, err)
-        }
-        groupTempDirs = append(groupTempDirs, tempDirPath)
-    }
-
-    // ... 既存のロジック ...
-
-    defer func() {
-        // ★変更：resourceManagerを使用
-        for _, tempDirPath := range groupTempDirs {
-            if err := r.resourceManager.CleanupTempDir(tempDirPath); err != nil {
-                slog.Warn("Failed to cleanup temp directory", "path", tempDirPath, "error", err)
-            }
-        }
-    }()
-
-    // ... 既存のロジック ...
+// 既存メソッドは変更なし（内部でresourceManagerを使用するよう更新）
+func (r *Runner) ExecuteAll(ctx context.Context) error {
+    // 既存のロジック、ただし副作用はresourceManager経由
 }
 
-// 2. コマンド実行関連
-func (r *Runner) executeCommandInGroup(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup) (*executor.Result, error) {
-    // 環境変数解決（既存ロジック）
-    resolvedCmd, env, err := r.prepareCommandExecution(cmd, group)
-    if err != nil {
-        return nil, err
-    }
-
-    // ★変更：resourceManagerを使用
-    result, err := r.resourceManager.ExecuteCommand(ctx, resolvedCmd, group, env)
-    if err != nil {
-        return nil, err
-    }
-
-    // 既存の後処理ロジック（統一形式に変換）
-    return &executor.Result{
-        ExitCode: result.ExitCode,
-        Stdout:   result.Stdout,
-        Stderr:   result.Stderr,
-    }, nil
-}
-
-// 3. 特権管理関連（新規追加）
-func (r *Runner) executePrivilegedCommand(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) (*executor.Result, error) {
-    // ★変更：resourceManagerを使用
-    err := r.resourceManager.WithPrivileges(ctx, func() error {
-        result, err := r.resourceManager.ExecuteCommand(ctx, cmd, group, env)
-        if err != nil {
-            return err
-        }
-        // 結果を処理
-        return nil
-    })
-
-    return nil, err
-}
-
-// 4. 通知関連
-func (r *Runner) sendGroupNotification(group runnertypes.CommandGroup, result *groupExecutionResult, duration time.Duration) {
-    notificationData := map[string]interface{}{
-        "group":    group.Name,
-        "status":   result.status,
-        "duration": duration,
-        // ... その他の詳細 ...
-    }
-
-    message := fmt.Sprintf("Group %s execution %s", group.Name, result.status)
-
-    // ★変更：resourceManagerを使用
-    if err := r.resourceManager.SendNotification(message, notificationData); err != nil {
-        slog.Warn("Failed to send notification", "error", err)
-    }
-}
-
-// 5. dry-run用のエントリーポイント
+// 新規メソッド追加（シンプル）
 func (r *Runner) PerformDryRun(ctx context.Context, opts DryRunOptions) (*DryRunResult, error) {
-    // ★重要：resourceManagerをdry-runモードに設定
     r.resourceManager.SetMode(ExecutionModeDryRun, &opts)
-
-    // ★重要：通常実行と全く同じパスを実行
-    err := r.ExecuteAll(ctx)
+    err := r.ExecuteAll(ctx)  // 同じパス実行
     if err != nil {
-        return nil, fmt.Errorf("dry-run analysis failed: %w", err)
+        return nil, err
     }
-
-    // dry-run結果を取得
     return r.resourceManager.GetDryRunResults(), nil
 }
-
-// 通常実行用（変更なし、resourceManagerは既にnormalモードで初期化済み）
-func (r *Runner) ExecuteAll(ctx context.Context) error {
-    // 既存ロジックはそのまま
-    // すべての副作用はresourceManagerが適切に処理
-    // ...
-}
 ```
 
-#### 8.4.5 DefaultResourceManager 実装
-```go
-type DefaultResourceManager struct {
-    mode             ExecutionMode
-    dryRunOpts       *DryRunOptions
+### 5.2 既存インターフェース活用
+ResourceManagerが既存コンポーネントを内部で活用：
 
-    // Delegated components
-    executor         executor.CommandExecutor
-    tempDirManager   *tempdir.TempDirManager
-    privilegeManager runnertypes.PrivilegeManager
+- **CommandExecutor**: 通常実行時はそのまま使用
+- **PrivilegeManager**: 通常実行時はそのまま使用
+- **VerificationManager**: 両モードで共通使用
+- **TempDirManager**: 通常実行時はそのまま使用
 
-    // Dry-run state
-    dryRunResult     *DryRunResult
-    simulatedTempDirs map[string]string  // groupName -> simulatedPath
-    resourceAnalyses []ResourceAnalysis
+### 5.3 完全な後方互換性
+- 既存のTOML設定ファイル形式：完全互換
+- 既存のCLIインターフェース：変更なし
+- 既存のAPI：変更なし
 
-    // Logging
-    logger           *slog.Logger
-}
+## 6. 設計の利点
 
-// Mode management
-func (d *DefaultResourceManager) SetMode(mode ExecutionMode, opts *DryRunOptions) {
-    d.mode = mode
-    d.dryRunOpts = opts
+### 6.1 Resource Manager Pattern の利点
+- **完全な実行パス整合性**: 通常実行とdry-runで100%同じコードパス
+- **包括的副作用管理**: すべての副作用を統一的にインターセプション
+- **最小限のコード変更**: 既存機能への影響を最小化
+- **拡張可能性**: 新しい副作用タイプの追加が容易
 
-    if mode == ExecutionModeDryRun {
-        d.initializeDryRunState()
-    }
-}
+### 6.2 テスト戦略
+- **統一テストケース**: 通常実行とdry-runで同じテストを使用可能
+- **モード切替テスト**: ResourceManager.SetMode()でモード切替のテスト
+- **副作用分離**: dry-runでは副作用なしの完全テスト実行
 
-func (d *DefaultResourceManager) initializeDryRunState() {
-    d.dryRunResult = &DryRunResult{
-        Metadata:         &ResultMetadata{GeneratedAt: time.Now()},
-        ExecutionPlan:    &ExecutionPlan{},
-        Verification:     &VerificationResults{},
-        SecurityAnalysis: &SecurityAnalysis{},
-        Errors:          []DryRunError{},
-        Warnings:        []DryRunWarning{},
-    }
-    d.simulatedTempDirs = make(map[string]string)
-    d.resourceAnalyses = []ResourceAnalysis{}
-}
+### 6.3 運用上の利点
+- **一貫性保証**: 実行パスの乖離を構造的に防止
+- **包括的分析**: 実行前にすべての副作用を事前分析
+- **安全な検証**: 副作用なしの完全な事前検証
 
-// Command execution
-func (d *DefaultResourceManager) ExecuteCommand(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) (*ExecutionResult, error) {
-    switch d.mode {
-    case ExecutionModeNormal:
-        // 通常実行：既存のexecutorを使用
-        result, err := d.executor.Execute(ctx, cmd, env)
-        if err != nil {
-            return nil, err
-        }
-        return &ExecutionResult{
-            ExitCode: result.ExitCode,
-            Stdout:   result.Stdout,
-            Stderr:   result.Stderr,
-            Duration: 0, // executor doesn't track duration yet
-            DryRun:   false,
-        }, nil
+## 7. 実装状況
 
-    case ExecutionModeDryRun:
-        // dry-run実行：分析のみ実施
-        start := time.Now()
-        analysis := d.analyzeCommand(ctx, cmd, group, env)
-        duration := time.Since(start)
+### 7.1 Phase 1 完了済み（Foundation）
+✅ **ResourceManager インターフェース**: 完全実装済み
+✅ **ExecutionMode と関連型**: 完全実装済み
+✅ **ResourceAnalysis データ構造**: 完全実装済み
+✅ **DryRunResult 型システム**: 完全実装済み
+✅ **基本テストフレームワーク**: 完全実装済み
+✅ **Lint 対応**: 完全対応済み
 
-        // 分析結果を記録
-        d.recordAnalysis(&analysis)
-
-        return &ExecutionResult{
-            ExitCode: 0, // 成功として扱う
-            Stdout:   fmt.Sprintf("[DRY-RUN] Would execute: %s", cmd.Command),
-            Stderr:   "",
-            Duration: duration,
-            DryRun:   true,
-            Analysis: &analysis,
-        }, nil
-
-    default:
-        return nil, fmt.Errorf("unknown execution mode: %d", d.mode)
-    }
-}
-
-// Filesystem operations
-func (d *DefaultResourceManager) CreateTempDir(groupName string) (string, error) {
-    switch d.mode {
-    case ExecutionModeNormal:
-        // 通常実行：実際のディレクトリを作成
-        return d.tempDirManager.CreateTempDir(groupName)
-
-    case ExecutionModeDryRun:
-        // dry-run実行：シミュレーションのみ
-        simulatedPath := fmt.Sprintf("/tmp/dry-run-sim-%s-%d", groupName, time.Now().UnixNano())
-        d.simulatedTempDirs[groupName] = simulatedPath
-
-        analysis := ResourceAnalysis{
-            Type:      ResourceTypeFilesystem,
-            Operation: OperationCreate,
-            Target:    simulatedPath,
-            Parameters: map[string]interface{}{
-                "group_name": groupName,
-                "simulated": true,
-            },
-            Impact: ResourceImpact{
-                Reversible:   true,
-                Persistent:   false,
-                Description:  fmt.Sprintf("Would create temporary directory for group %s", groupName),
-            },
-            Timestamp: time.Now(),
-        }
-        d.recordAnalysis(&analysis)
-
-        d.logger.Info("Dry-run: Would create temp directory", "group", groupName, "path", simulatedPath)
-        return simulatedPath, nil
-
-    default:
-        return "", fmt.Errorf("unknown execution mode: %d", d.mode)
-    }
-}
-
-func (d *DefaultResourceManager) CleanupTempDir(tempDirPath string) error {
-    switch d.mode {
-    case ExecutionModeNormal:
-        // 通常実行：実際のクリーンアップ
-        return d.tempDirManager.CleanupTempDir(tempDirPath)
-
-    case ExecutionModeDryRun:
-        // dry-run実行：シミュレーションのみ
-        analysis := ResourceAnalysis{
-            Type:      ResourceTypeFilesystem,
-            Operation: OperationDelete,
-            Target:    tempDirPath,
-            Parameters: map[string]interface{}{
-                "simulated": true,
-            },
-            Impact: ResourceImpact{
-                Reversible:   false,
-                Persistent:   true,
-                Description:  fmt.Sprintf("Would cleanup temporary directory %s", tempDirPath),
-            },
-            Timestamp: time.Now(),
-        }
-        d.recordAnalysis(&analysis)
-
-        d.logger.Info("Dry-run: Would cleanup temp directory", "path", tempDirPath)
-        return nil
-
-    default:
-        return fmt.Errorf("unknown execution mode: %d", d.mode)
-    }
-}
-
-// Privilege management
-func (d *DefaultResourceManager) WithPrivileges(ctx context.Context, fn func() error) error {
-    switch d.mode {
-    case ExecutionModeNormal:
-        // 通常実行：実際の特権昇格
-        return d.privilegeManager.WithPrivileges(ctx, fn)
-
-    case ExecutionModeDryRun:
-        // dry-run実行：特権昇格のシミュレーション
-        analysis := ResourceAnalysis{
-            Type:      ResourceTypePrivilege,
-            Operation: OperationEscalate,
-            Target:    "root",
-            Parameters: map[string]interface{}{
-                "simulated": true,
-                "mechanism": "setuid",
-            },
-            Impact: ResourceImpact{
-                Reversible:   true,
-                Persistent:   false,
-                SecurityRisk: "HIGH",
-                Description:  "Would escalate privileges to root for privileged command execution",
-            },
-            Timestamp: time.Now(),
-        }
-        d.recordAnalysis(&analysis)
-
-        d.logger.Info("Dry-run: Would escalate privileges to root")
-
-        // 関数を実行（ただし特権昇格はしない）
-        return fn()
-
-    default:
-        return fmt.Errorf("unknown execution mode: %d", d.mode)
-    }
-}
-
-// Network operations
-func (d *DefaultResourceManager) SendNotification(message string, details map[string]interface{}) error {
-    switch d.mode {
-    case ExecutionModeNormal:
-        // 通常実行：実際の通知送信
-        // 実装は既存のSlack通知ロジックを使用
-        return d.sendSlackNotification(message, details)
-
-    case ExecutionModeDryRun:
-        // dry-run実行：通知のシミュレーション
-        analysis := ResourceAnalysis{
-            Type:      ResourceTypeNetwork,
-            Operation: OperationSend,
-            Target:    "slack_webhook",
-            Parameters: map[string]interface{}{
-                "message":   message,
-                "details":   details,
-                "simulated": true,
-            },
-            Impact: ResourceImpact{
-                Reversible:   false,
-                Persistent:   true,
-                Description:  fmt.Sprintf("Would send notification: %s", message),
-            },
-            Timestamp: time.Now(),
-        }
-        d.recordAnalysis(&analysis)
-
-        d.logger.Info("Dry-run: Would send notification", "message", message)
-        return nil
-
-    default:
-        return fmt.Errorf("unknown execution mode: %d", d.mode)
-    }
-}
-
-// Helper methods
-func (d *DefaultResourceManager) analyzeCommand(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) ResourceAnalysis {
-    // コマンド分析ロジック
-    return ResourceAnalysis{
-        Type:      ResourceTypeCommand,
-        Operation: OperationExecute,
-        Target:    cmd.Command,
-        Parameters: map[string]interface{}{
-            "working_dir": cmd.Dir,
-            "timeout":     cmd.Timeout,
-            "group":       group.Name,
-        },
-        Impact: ResourceImpact{
-            Reversible:  false,
-            Persistent:  true, // コマンドの出力や副作用は永続的
-            Description: fmt.Sprintf("Would execute command: %s", cmd.Command),
-        },
-        Timestamp: time.Now(),
-    }
-}
-
-func (d *DefaultResourceManager) recordAnalysis(analysis *ResourceAnalysis) {
-    d.resourceAnalyses = append(d.resourceAnalyses, *analysis)
-    // dryRunResultに分析結果を統合
-    d.integratAnalysisIntoDryRunResult(analysis)
-}
-
-func (d *DefaultResourceManager) GetDryRunResults() *DryRunResult {
-    if d.mode != ExecutionModeDryRun {
-        return nil
-    }
-
-    // 最終的な結果の構築
-    d.dryRunResult.Metadata.Duration = time.Since(d.dryRunResult.Metadata.GeneratedAt)
-    return d.dryRunResult
-}
+### 7.2 実装パッケージ構成
+```
+internal/runner/resource/
+├── manager.go         # ResourceManager インターフェース定義
+├── types.go          # 全型定義（DryRunResult, ResourceAnalysis等）
+├── manager_test.go   # ResourceManager テスト
+└── types_test.go     # 型システム テスト
 ```
 
-#### 8.4.6 この設計の利点
+### 7.3 次期実装（Phase 2以降）
+- **DefaultResourceManager 実装**
+- **Runner 統合**
+- **CLI インターフェース追加**
+- **フォーマッター実装**
 
-**1. 完全な副作用インターセプション**
-- コマンド実行、一時ディレクトリ、特権昇格、ネットワーク通信など、すべての副作用を統一的に処理
-- dry-runモードでは実際の副作用なしに、詳細な分析と記録を実施
+## 8. 実行パス整合性保証
 
-**2. 100%実行パス整合性**
-- `ExecuteAll` → `ExecuteGroup` → `executeCommandInGroup` の完全な実行フローを保持
-- 通常実行との相違は `ResourceManager.SetMode()` の呼び出しのみ
+### 8.1 Resource Manager Pattern による保証
+Resource Manager Patternにより、以下の方法で実行パス整合性を構造的に保証：
 
-**3. 段階的移行**
-- 既存のコンポーネント（executor, tempDirManager, privilegeManager）をそのまま活用
-- 既存機能への影響は最小限
+1. **同一実行パス**: `PerformDryRun()` → `ExecuteAll()` で通常実行と完全に同じパスを使用
+2. **副作用インターセプション**: ResourceManager が全副作用を統一的に処理（実行 or シミュレーション）
+3. **モード透過性**: 実行ロジックはモードを意識せず、ResourceManager が自動的に処理を分岐
 
-**4. 包括的分析機能**
-- 各副作用の詳細な影響分析（可逆性、永続性、セキュリティリスク）
-- タイムスタンプ付きの操作履歴
-- リソースタイプ別の分類と整理
+### 8.2 実装上の保証メカニズム
+- **統一インターフェース**: ResourceManager による全副作用の抽象化
+- **実装の共有**: 通常実行とdry-runで同じコード実行
+- **自動テスト**: 統一テストケースによる継続的な整合性検証
 
-**5. テストの統一**
-- 通常実行とdry-runで同じテストケース使用
-- ResourceManagerのモードを切り替えるだけで両方のパスをテスト
+---
 
-#### 8.4.7 移行計画
-
-**Phase 1: ResourceManager インターフェース導入**
-```go
-// 1. ResourceManager インターフェース定義
-// 2. DefaultResourceManager 実装
-// 3. 基本的なテストケース作成
-```
-
-**Phase 2: Runner の段階的統合**
-```go
-// 1. Runner 構造体に resourceManager フィールド追加
-// 2. コマンド実行部分を resourceManager 経由に変更
-// 3. 一時ディレクトリ管理を resourceManager 経由に変更
-// 4. 特権管理を resourceManager 経由に変更
-// 5. 通知機能を resourceManager 経由に変更
-```
-
-**Phase 3: Dry-Run 機能完成**
-```go
-// 1. PerformDryRun メソッド実装
-// 2. DryRun 結果フォーマッター実装
-// 3. 包括的なテストスイート作成
-// 4. CI/CD パイプラインでの一貫性テスト追加
-```
-
-**Phase 4: 最適化と監視**
-```go
-// 1. パフォーマンス最適化
-// 2. セキュリティ分析機能の強化
-// 3. 運用監視機能の追加
-// 4. ドキュメント整備
-```
-
-### 8.5 運用時の保証
-
-#### 8.5.1 バージョン管理
-```go
-const (
-    ExecutionLogicVersion = "1.0.0"
-    DryRunCompatibilityVersion = "1.0.0"
-)
-
-func (r *Runner) validateCompatibility() error {
-    if ExecutionLogicVersion != DryRunCompatibilityVersion {
-        return fmt.Errorf("execution logic version mismatch: normal=%s, dryrun=%s",
-            ExecutionLogicVersion, DryRunCompatibilityVersion)
-    }
-    return nil
-}
-```
-
-#### 8.5.2 警告システム
-```go
-type ConsistencyWarning struct {
-    Type        string
-    Description string
-    Impact      string
-    Recommendation string
-}
-
-func (a *analyzer) detectInconsistencies() []ConsistencyWarning {
-    warnings := []ConsistencyWarning{}
-
-    // 1. 実行時にのみ判明する条件の検出
-    if a.hasRuntimeDependentLogic() {
-        warnings = append(warnings, ConsistencyWarning{
-            Type: "runtime_dependency",
-            Description: "Command contains runtime-dependent logic",
-            Impact: "Dry-run results may differ from actual execution",
-            Recommendation: "Review conditional logic and external dependencies",
-        })
-    }
-
-    return warnings
-}
-```
-
-## 9. セキュリティ考慮事項
-
-### 9.1 機密情報の保護
-- 環境変数値のマスキング
-- ログ出力時の機密情報除去
-- 一時ファイルの安全な処理
-
-### 9.2 権限の最小化
-- 必要最小限の権限での実行
-- ファイルアクセスの制限
-- プロセス分離の維持
+**Resource Manager Pattern採用により、従来のDryRunAnalyzer設計は不要となり、より簡潔で堅牢なアーキテクチャを実現しました。**
