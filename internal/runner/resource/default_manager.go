@@ -487,10 +487,4 @@ func (d *DefaultResourceManager) RecordAnalysis(analysis *ResourceAnalysis) {
 	defer d.mu.Unlock()
 
 	d.resourceAnalyses = append(d.resourceAnalyses, *analysis)
-
-	// Also update dry-run result if we're in dry-run mode
-	if d.dryRunResult != nil {
-		d.dryRunResult.ResourceAnalyses = make([]ResourceAnalysis, len(d.resourceAnalyses))
-		copy(d.dryRunResult.ResourceAnalyses, d.resourceAnalyses)
-	}
 }
