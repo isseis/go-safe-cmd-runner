@@ -57,7 +57,7 @@ var (
 	runID          = flag.String("run-id", "", "unique identifier for this execution run (auto-generates ULID if not provided)")
 )
 
-// getHashDir determines the hash directory based on command line args embedded variables
+// getHashDir determines the hash directory based on command line args and an embedded variable
 func getHashDir() string {
 	// Command line arguments take precedence over environment variables
 	if *hashDirectory != "" {
