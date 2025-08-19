@@ -62,18 +62,9 @@ func TestConfigPathRequired(t *testing.T) {
 }
 
 func TestGetHashDir(t *testing.T) {
-	// Clear environment variables at start
-	oldEnvHashDir := os.Getenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY")
-	defer func() {
-		os.Setenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY", oldEnvHashDir)
-	}()
-
 	t.Run("default configuration", func(t *testing.T) {
 		cleanup := setupTestFlags()
 		defer cleanup()
-
-		// Clear environment variables
-		os.Unsetenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY")
 
 		// Reset flags to defaults
 		os.Args = []string{"runner"}
@@ -82,12 +73,9 @@ func TestGetHashDir(t *testing.T) {
 		assert.Equal(t, cmdcommon.DefaultHashDirectory, getHashDir())
 	})
 
-	t.Run("empty hash directory in environment uses default", func(t *testing.T) {
+	t.Run("empty hash directory in command line uses default", func(t *testing.T) {
 		cleanup := setupTestFlags()
 		defer cleanup()
-
-		os.Setenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY", "")
-		defer os.Unsetenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY")
 
 		os.Args = []string{"runner"}
 		flag.Parse()
@@ -99,66 +87,19 @@ func TestGetHashDir(t *testing.T) {
 		cleanup := setupTestFlags()
 		defer cleanup()
 
-		// Clear environment variables
-		os.Unsetenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY")
-
 		os.Args = []string{"runner", "--hash-directory", "/custom/path"}
 		flag.Parse()
 
 		assert.Equal(t, "/custom/path", getHashDir())
 	})
 
-	t.Run("custom hash directory via environment variable", func(t *testing.T) {
+	t.Run("command line takes precedence over default", func(t *testing.T) {
 		cleanup := setupTestFlags()
 		defer cleanup()
-
-		// Clear command line flags
-		hashDirectory = new(string)
-		os.Setenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY", "/env/path")
-		defer os.Unsetenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY")
-
-		os.Args = []string{"runner"}
-		flag.Parse()
-
-		assert.Equal(t, "/env/path", getHashDir())
-	})
-
-	t.Run("command line takes precedence over environment", func(t *testing.T) {
-		cleanup := setupTestFlags()
-		defer cleanup()
-
-		os.Setenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY", "/env/path")
-		defer os.Unsetenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY")
 
 		os.Args = []string{"runner", "--hash-directory", "/custom/path"}
 		flag.Parse()
 
 		assert.Equal(t, "/custom/path", getHashDir())
-	})
-
-	t.Run("empty command line hash directory uses environment", func(t *testing.T) {
-		cleanup := setupTestFlags()
-		defer cleanup()
-
-		os.Setenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY", "/env/path")
-		defer os.Unsetenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY")
-
-		os.Args = []string{"runner", "--hash-directory="} // Empty value
-		flag.Parse()
-
-		assert.Equal(t, "/env/path", getHashDir(), "should use environment variable when command line value is empty")
-	})
-
-	t.Run("empty environment hash directory uses default", func(t *testing.T) {
-		cleanup := setupTestFlags()
-		defer cleanup()
-
-		os.Setenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY", "")
-		defer os.Unsetenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY")
-
-		os.Args = []string{"runner"}
-		flag.Parse()
-
-		assert.Equal(t, cmdcommon.DefaultHashDirectory, getHashDir(), "should use default when environment variable is empty")
 	})
 }

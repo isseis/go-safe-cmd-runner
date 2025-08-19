@@ -356,7 +356,7 @@ func readFileContent(file File, filePath string) ([]byte, error) {
 	return content, nil
 }
 
-// validateFile checks if the file is a regular file and returns its FileInfo
+// validateFile checks if the file is a regular file, validates permissions, and returns its FileInfo
 // To prevent TOCTOU attacks, we use the file descriptor to get the file info
 func validateFile(file File, filePath string) (os.FileInfo, error) {
 	fileInfo, err := file.Stat()
@@ -366,6 +366,15 @@ func validateFile(file File, filePath string) (os.FileInfo, error) {
 
 	if !fileInfo.Mode().IsRegular() {
 		return nil, fmt.Errorf("%w: not a regular file: %s", ErrInvalidFilePath, filePath)
+	}
+
+	// Validate file permissions - files should not be world-writable or group-writable
+	const maxAllowedPerms = 0o644
+	perm := fileInfo.Mode().Perm()
+	disallowedBits := perm &^ maxAllowedPerms
+	if disallowedBits != 0 {
+		return nil, fmt.Errorf("%w: file %s has permissions %o with disallowed bits %o, maximum allowed is %o",
+			ErrInvalidFilePermissions, filePath, perm, disallowedBits, maxAllowedPerms)
 	}
 
 	return fileInfo, nil

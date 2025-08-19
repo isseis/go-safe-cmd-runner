@@ -150,6 +150,40 @@ func (m *Manager) VerifyConfigFile(configPath string) error {
 	return nil
 }
 
+// VerifyEnvironmentFile verifies the integrity of an environment file using hash validation
+func (m *Manager) VerifyEnvironmentFile(envFilePath string) error {
+	slog.Debug("Starting environment file verification",
+		"env_file_path", envFilePath,
+		"hash_directory", m.hashDir)
+
+	// Validate hash directory first
+	if err := m.ValidateHashDirectory(); err != nil {
+		return &Error{
+			Op:   "ValidateHashDirectory",
+			Path: m.hashDir,
+			Err:  err,
+		}
+	}
+
+	// Verify file hash using filevalidator (with privilege fallback)
+	if err := m.verifyFileWithFallback(envFilePath); err != nil {
+		slog.Error("Environment file verification failed",
+			"env_file_path", envFilePath,
+			"error", err)
+		return &Error{
+			Op:   "VerifyHash",
+			Path: envFilePath,
+			Err:  err,
+		}
+	}
+
+	slog.Info("Environment file verification completed successfully",
+		"env_file_path", envFilePath,
+		"hash_directory", m.hashDir)
+
+	return nil
+}
+
 // ValidateHashDirectory validates the hash directory security
 func (m *Manager) ValidateHashDirectory() error {
 	if m.security == nil {

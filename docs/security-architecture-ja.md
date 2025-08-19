@@ -27,6 +27,7 @@ Go Safe Command Runnerは、特権操作の安全な委譲と自動化された�
 - 特殊文字を処理するためBase64 URL-safe encodingを使用してファイルパスをエンコード
 - マニフェスト形式にはファイルパス、ハッシュ値、アルゴリズム、タイムスタンプが含まれる
 - 衝突検出により、パスのハッシュが衝突した場合に、異なるファイルパスが同じハッシュマニフェストファイルにマッピングされるのを防止
+- 環境ファイル検証のサポート - `.env`ファイルの整合性を実行前に検証
 
 **検証プロセス**:
 ```go
@@ -49,16 +50,34 @@ func (v *Validator) Verify(filePath string) error {
 }
 ```
 
+**環境ファイル検証**:
+```go
+// 場所: internal/verification/manager.go:153-185
+func (m *Manager) VerifyEnvironmentFile(envFilePath string) error {
+    // ハッシュディレクトリの検証
+    if err := m.ValidateHashDirectory(); err != nil {
+        return &Error{Op: "ValidateHashDirectory", Path: m.hashDir, Err: err}
+    }
+
+    // 特権フォールバック付きファイル検証
+    if err := m.verifyFileWithFallback(envFilePath); err != nil {
+        return &Error{Op: "VerifyHash", Path: envFilePath, Err: err}
+    }
+    return nil
+}
+```
+
 **特権ファイルアクセス**:
 - 権限により通常の検証が失敗した場合、特権昇格にフォールバック
 - 安全な特権管理を使用（特権管理セクション参照）
 - 場所: `internal/filevalidator/privileged_file.go`
 
 #### セキュリティ保証
-- 実行ファイルと設定ファイルの不正な変更を検出
+- 実行ファイル、設定ファイル、環境ファイルの不正な変更を検出
 - 改ざんされたバイナリの実行を防止
 - 暗号学的に強力なハッシュアルゴリズム（SHA-256）
 - 原子的ファイル操作により競合状態を防止
+- 環境ファイルの整合性検証による設定改ざん防止
 
 ### 2. 環境変数分離
 
@@ -418,6 +437,33 @@ func (v *Validator) ValidateFilePermissions(filePath string) error {
 }
 ```
 
+**設定簡素化（環境変数フォールバック削除）**:
+```go
+// 場所: cmd/runner/main.go:61-68 (変更後)
+func getHashDir() string {
+    // コマンドライン引数が優先
+    if *hashDirectory != "" {
+        return *hashDirectory
+    }
+    // デフォルトハッシュディレクトリを設定（環境変数フォールバック削除）
+    return cmdcommon.DefaultHashDirectory
+}
+```
+
+**早期パス検証**:
+```go
+// 場所: cmd/runner/main.go:188-199
+hashDir := getHashDir()
+if !filepath.IsAbs(hashDir) {
+    return &logging.PreExecutionError{
+        Type:      logging.ErrorTypeFileAccess,
+        Message:   fmt.Sprintf("Hash directory must be absolute path, got relative path: %s", hashDir),
+        Component: "file",
+        RunID:     runID,
+    }
+}
+```
+
 **ディレクトリセキュリティ検証**:
 - ルートからターゲットまでの完全パストラバーサル
 - パスコンポーネントでのシンボリックリンク検出
@@ -435,6 +481,8 @@ func (v *Validator) ValidateFilePermissions(filePath string) error {
 - 安全なファイルとディレクトリ権限
 - パストラバーサル攻撃の防止
 - 設定形式検証
+- 環境変数フォールバック廃止による設定の簡素化と攻撃面の削減
+- 絶対パス要求による早期検証強化
 
 ## セキュリティアーキテクチャパターン
 
@@ -442,9 +490,9 @@ func (v *Validator) ValidateFilePermissions(filePath string) error {
 
 システムは複数のセキュリティレイヤを実装します：
 
-1. **入力検証**: すべての入力がエントリポイントで検証
+1. **入力検証**: すべての入力がエントリポイントで検証（絶対パス要求を含む）
 2. **パスセキュリティ**: 包括的なパス検証とシンボリックリンク保護
-3. **ファイル整合性**: すべての重要ファイルのハッシュベース検証
+3. **ファイル整合性**: すべての重要ファイル（設定、環境ファイル、実行ファイル）のハッシュベース検証
 4. **特権制御**: 制御された昇格による最小特権原則
 5. **環境分離**: 厳格な許可リストベースの環境フィルタリング
 6. **コマンド検証**: 許可リストベースのコマンド実行制御

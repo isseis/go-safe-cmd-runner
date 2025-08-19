@@ -27,6 +27,7 @@ Ensure that executables and critical files have not been tampered with before ex
 - File path encoded using Base64 URL-safe encoding to handle special characters
 - Manifest format includes file path, hash value, algorithm, and timestamp
 - Collision detection prevents two different file paths from mapping to the same hash manifest file, which could happen if their path hashes collide.
+- Environment file verification support - integrity validation of `.env` files before execution
 
 **Verification Process**:
 ```go
@@ -49,16 +50,34 @@ func (v *Validator) Verify(filePath string) error {
 }
 ```
 
+**Environment File Verification**:
+```go
+// Location: internal/verification/manager.go:153-185
+func (m *Manager) VerifyEnvironmentFile(envFilePath string) error {
+    // Validate hash directory
+    if err := m.ValidateHashDirectory(); err != nil {
+        return &Error{Op: "ValidateHashDirectory", Path: m.hashDir, Err: err}
+    }
+
+    // Verify file with privilege fallback
+    if err := m.verifyFileWithFallback(envFilePath); err != nil {
+        return &Error{Op: "VerifyHash", Path: envFilePath, Err: err}
+    }
+    return nil
+}
+```
+
 **Privileged File Access**:
 - Falls back to privilege escalation when normal verification fails due to permissions
 - Uses secure privilege management (see Privilege Management section)
 - Location: `internal/filevalidator/privileged_file.go`
 
 #### Security Guarantees
-- Detects unauthorized modifications to executables and configuration files
+- Detects unauthorized modifications to executables, configuration files, and environment files
 - Prevents execution of tampered binaries
 - Cryptographically strong hash algorithm (SHA-256)
 - Atomic file operations prevent race conditions
+- Environment file integrity verification prevents configuration tampering
 
 ### 2. Environment Variable Isolation
 
@@ -418,6 +437,33 @@ func (v *Validator) ValidateFilePermissions(filePath string) error {
 }
 ```
 
+**Configuration Simplification (Environment Variable Fallback Removal)**:
+```go
+// Location: cmd/runner/main.go:61-68 (after change)
+func getHashDir() string {
+    // Command line arguments take precedence
+    if *hashDirectory != "" {
+        return *hashDirectory
+    }
+    // Set default hash directory (environment variable fallback removed)
+    return cmdcommon.DefaultHashDirectory
+}
+```
+
+**Early Path Validation**:
+```go
+// Location: cmd/runner/main.go:188-199
+hashDir := getHashDir()
+if !filepath.IsAbs(hashDir) {
+    return &logging.PreExecutionError{
+        Type:      logging.ErrorTypeFileAccess,
+        Message:   fmt.Sprintf("Hash directory must be absolute path, got relative path: %s", hashDir),
+        Component: "file",
+        RunID:     runID,
+    }
+}
+```
+
 **Directory Security Validation**:
 - Complete path traversal from root to target
 - Symlink detection in path components
@@ -435,6 +481,8 @@ func (v *Validator) ValidateFilePermissions(filePath string) error {
 - Secure file and directory permissions
 - Path traversal attack prevention
 - Configuration format validation
+- Reduced attack surface through environment variable fallback removal
+- Enhanced early validation with absolute path requirements
 
 ## Security Architecture Patterns
 
@@ -442,9 +490,9 @@ func (v *Validator) ValidateFilePermissions(filePath string) error {
 
 The system implements multiple security layers:
 
-1. **Input Validation**: All inputs validated at entry points
+1. **Input Validation**: All inputs validated at entry points (including absolute path requirements)
 2. **Path Security**: Comprehensive path validation and symlink protection
-3. **File Integrity**: Hash-based verification of all critical files
+3. **File Integrity**: Hash-based verification of all critical files (configuration, environment files, executables)
 4. **Privilege Control**: Minimal privilege principle with controlled escalation
 5. **Environment Isolation**: Strict allowlist-based environment filtering
 6. **Command Validation**: Allowlist-based command execution control
