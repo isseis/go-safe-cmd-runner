@@ -151,7 +151,7 @@ classDiagram
     class DryRunResult {
         +ResultMetadata metadata
         +ExecutionPlan executionPlan
-        +VerificationResults verification
+        +ResourceAnalyses resourceAnalyses
         +SecurityAnalysis securityAnalysis
         +EnvironmentInfo environmentInfo
         +[]DryRunError errors
@@ -326,21 +326,4 @@ func TestExecutionPathConsistency(t *testing.T) {
 
 ### 3.2 副作用インターセプションテスト
 ```go
-func TestSideEffectInterception(t *testing.T) {
-    // 1. dry-runモードで実際の副作用が発生しないことを確認
-    // 2. 各副作用が適切にResourceAnalysisとして記録されることを確認
-    // 3. 通常モードでは実際の副作用が発生することを確認
-}
-```
-
-## 4. セキュリティ要件
-
-### 4.1 機密情報保護
-- **環境変数マスキング**: `ShowSensitive=false`時の自動隠蔽
-- **ログ出力制御**: 機密情報の除去
-- **一時ファイル安全性**: dry-run時の適切な処理
-
-### 4.2 権限管理
-- **最小権限実行**: 必要最小限の権限での動作
-- **特権分析精度**: 正確な昇格要件検出
-- **アクセス制御**: ファイルシステムアクセスの制限
+func TestSideEffectInterception(t *testing

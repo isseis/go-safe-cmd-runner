@@ -122,6 +122,7 @@ func (d *DefaultResourceManager) ExecuteCommand(ctx context.Context, cmd runnert
     switch d.mode {
     case ExecutionModeNormal:
         // 通常実行：既存executorを使用
+        start := time.Now()
         result, err := d.executor.Execute(ctx, cmd, env)
         if err != nil {
             return nil, err
@@ -130,7 +131,7 @@ func (d *DefaultResourceManager) ExecuteCommand(ctx context.Context, cmd runnert
             ExitCode: result.ExitCode,
             Stdout:   result.Stdout,
             Stderr:   result.Stderr,
-            Duration: time.Since(start),
+            Duration: time.Since(start).Milliseconds(),
             DryRun:   false,
         }, nil
 
@@ -145,7 +146,7 @@ func (d *DefaultResourceManager) ExecuteCommand(ctx context.Context, cmd runnert
             ExitCode: 0,
             Stdout:   fmt.Sprintf("[DRY-RUN] Would execute: %s", cmd.Command),
             Stderr:   "",
-            Duration: time.Since(start),
+            Duration: time.Since(start).Milliseconds(),
             DryRun:   true,
             Analysis: &analysis,
         }, nil

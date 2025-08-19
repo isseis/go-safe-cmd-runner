@@ -218,9 +218,40 @@ type FileVerification struct {
     Verified   bool          `json:"verified"`
     HashValue  string        `json:"hash_value"`
     Algorithm  string        `json:"algorithm"`
-    Duration   time.Duration `json:"duration"`
+    Duration   int64         `json:"duration_ms"` // Duration in milliseconds
     Error      error         `json:"error,omitempty"`
 }
+```
+
+#### 3.3.4 実行結果
+```go
+// ExecutionResult represents the result of a command execution
+type ExecutionResult struct {
+    Command     string                 `json:"command"`      // Executed command
+    ExitCode    int                    `json:"exit_code"`    // Command exit code
+    Stdout      string                 `json:"stdout"`       // Standard output
+    Stderr      string                 `json:"stderr"`       // Standard error
+    Duration    int64                  `json:"duration_ms"`  // Execution duration in milliseconds
+    StartTime   time.Time              `json:"start_time"`   // Execution start time
+    EndTime     time.Time              `json:"end_time"`     // Execution end time
+    WorkingDir  string                 `json:"working_dir"`  // Working directory
+    Environment map[string]string      `json:"environment"`  // Environment variables used
+    Success     bool                   `json:"success"`      // True if exit code is 0
+    Error       error                  `json:"error,omitempty"` // Execution error if any
+    Metadata    map[string]interface{} `json:"metadata"`     // Additional metadata
+}
+
+// ExecutionStatus represents the status of command execution
+type ExecutionStatus string
+
+const (
+    ExecutionStatusPending   ExecutionStatus = "pending"
+    ExecutionStatusRunning   ExecutionStatus = "running"
+    ExecutionStatusCompleted ExecutionStatus = "completed"
+    ExecutionStatusFailed    ExecutionStatus = "failed"
+    ExecutionStatusCancelled ExecutionStatus = "cancelled"
+    ExecutionStatusTimeout   ExecutionStatus = "timeout"
+)
 ```
 
 ### 3.4 DryRun Formatter
