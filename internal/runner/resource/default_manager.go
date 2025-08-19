@@ -189,7 +189,16 @@ func (d *DefaultResourceManager) analyzeCommand(_ context.Context, cmd runnertyp
 func (d *DefaultResourceManager) analyzeCommandSecurity(cmd runnertypes.Command, analysis *ResourceAnalysis) {
 	cmdLower := strings.ToLower(cmd.Cmd)
 
-	// Check for potentially dangerous commands
+	// Initialize with no risk
+	currentRisk := ""
+
+	// Check for privilege escalation requirements first (lower priority)
+	if cmd.Privileged || strings.Contains(cmdLower, "sudo") {
+		currentRisk = "medium"
+		analysis.Impact.Description += " [PRIVILEGE: Requires elevated privileges]"
+	}
+
+	// Check for potentially dangerous commands (higher priority - can override privilege risk)
 	dangerousPatterns := []string{
 		"rm -rf", "sudo rm", "format", "mkfs", "fdisk",
 		"dd if=", "chmod 777", "chown root",
@@ -198,17 +207,14 @@ func (d *DefaultResourceManager) analyzeCommandSecurity(cmd runnertypes.Command,
 
 	for _, pattern := range dangerousPatterns {
 		if strings.Contains(cmdLower, pattern) {
-			analysis.Impact.SecurityRisk = "high"
+			currentRisk = "high"
 			analysis.Impact.Description += fmt.Sprintf(" [WARNING: Potentially dangerous command pattern: %s]", pattern)
 			break
 		}
 	}
 
-	// Check for privilege escalation requirements
-	if cmd.Privileged || strings.Contains(cmdLower, "sudo") {
-		analysis.Impact.SecurityRisk = "medium"
-		analysis.Impact.Description += " [PRIVILEGE: Requires elevated privileges]"
-	}
+	// Set the final risk level
+	analysis.Impact.SecurityRisk = currentRisk
 }
 
 // CreateTempDir creates a temporary directory

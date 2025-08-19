@@ -547,6 +547,23 @@ func TestDefaultResourceManager_analyzeCommandSecurity(t *testing.T) {
 			expectedSecurityRisk: "",
 			expectedDescription:  "",
 		},
+		{
+			name: "dangerous command with privilege should be high risk",
+			cmd: runnertypes.Command{
+				Cmd:        "sudo rm -rf /important/data",
+				Privileged: true,
+			},
+			expectedSecurityRisk: "high",
+			expectedDescription:  "rm -rf",
+		},
+		{
+			name: "privileged dangerous pattern should prioritize high risk",
+			cmd: runnertypes.Command{
+				Cmd: "sudo dd if=/dev/zero of=/dev/sda",
+			},
+			expectedSecurityRisk: "high",
+			expectedDescription:  "dd if=",
+		},
 	}
 
 	for _, tt := range tests {
