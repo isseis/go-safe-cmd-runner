@@ -7,6 +7,22 @@ import (
 	"time"
 )
 
+// isSensitiveKey checks if a parameter key contains sensitive information
+func isSensitiveKey(key string) bool {
+	sensitiveKeys := []string{
+		"password", "passwd", "token", "secret", "key", "auth",
+		"credential", "private", "api_key", "access_token",
+	}
+
+	keyLower := strings.ToLower(key)
+	for _, sensitive := range sensitiveKeys {
+		if strings.Contains(keyLower, sensitive) {
+			return true
+		}
+	}
+	return false
+}
+
 // FormatterOptions contains options for formatting dry-run results
 type FormatterOptions struct {
 	DetailLevel   DetailLevel
@@ -139,7 +155,7 @@ func (f *TextFormatter) writeResourceAnalyses(buf *strings.Builder, analyses []R
 		if opts.DetailLevel == DetailLevelFull && len(analysis.Parameters) > 0 {
 			buf.WriteString("   Parameters:\n")
 			for key, value := range analysis.Parameters {
-				if !opts.ShowSensitive && f.isSensitiveKey(key) {
+				if !opts.ShowSensitive && isSensitiveKey(key) {
 					fmt.Fprintf(buf, "     %s: [REDACTED]\n", key)
 				} else {
 					fmt.Fprintf(buf, "     %s: %v\n", key, value)
@@ -250,22 +266,6 @@ func (f *TextFormatter) writeErrorsAndWarnings(buf *strings.Builder, errors []Dr
 	}
 }
 
-// isSensitiveKey checks if a parameter key contains sensitive information
-func (f *TextFormatter) isSensitiveKey(key string) bool {
-	sensitiveKeys := []string{
-		"password", "passwd", "token", "secret", "key", "auth",
-		"credential", "private", "api_key", "access_token",
-	}
-
-	keyLower := strings.ToLower(key)
-	for _, sensitive := range sensitiveKeys {
-		if strings.Contains(keyLower, sensitive) {
-			return true
-		}
-	}
-	return false
-}
-
 // FormatResult formats a dry-run result as JSON
 func (f *JSONFormatter) FormatResult(result *DryRunResult, opts FormatterOptions) (string, error) {
 	// Create a copy for potential modification
@@ -296,7 +296,7 @@ func (f *JSONFormatter) FormatResult(result *DryRunResult, opts FormatterOptions
 func (f *JSONFormatter) redactSensitiveInfo(result *DryRunResult) {
 	for i := range result.ResourceAnalyses {
 		for key := range result.ResourceAnalyses[i].Parameters {
-			if f.isSensitiveKey(key) {
+			if isSensitiveKey(key) {
 				result.ResourceAnalyses[i].Parameters[key] = "[REDACTED]"
 			}
 		}
@@ -325,22 +325,6 @@ func (f *JSONFormatter) applyDetailedFilter(result *DryRunResult) {
 			result.ExecutionPlan.Groups[i].Commands = nil
 		}
 	}
-}
-
-// isSensitiveKey checks if a parameter key contains sensitive information (same logic as TextFormatter)
-func (f *JSONFormatter) isSensitiveKey(key string) bool {
-	sensitiveKeys := []string{
-		"password", "passwd", "token", "secret", "key", "auth",
-		"credential", "private", "api_key", "access_token",
-	}
-
-	keyLower := strings.ToLower(key)
-	for _, sensitive := range sensitiveKeys {
-		if strings.Contains(keyLower, sensitive) {
-			return true
-		}
-	}
-	return false
 }
 
 // NewFormatter creates a new formatter based on the output format
