@@ -23,7 +23,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/joho/godotenv"
@@ -58,15 +57,11 @@ var (
 	runID          = flag.String("run-id", "", "unique identifier for this execution run (auto-generates ULID if not provided)")
 )
 
-// getHashDir determines the hash directory based on command line args and environment variables
+// getHashDir determines the hash directory based on command line args and an embedded variable
 func getHashDir() string {
 	// Command line arguments take precedence over environment variables
 	if *hashDirectory != "" {
 		return *hashDirectory
-	}
-	// Check environment variable for hash directory override
-	if envHashDir := os.Getenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY"); envHashDir != "" {
-		return envHashDir
 	}
 	// Set default hash directory if none specified
 	return cmdcommon.DefaultHashDirectory
@@ -129,26 +124,10 @@ func run(runID string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Load configuration first to access environment settings
-	if *configPath == "" {
-		return &logging.PreExecutionError{
-			Type:      logging.ErrorTypeRequiredArgumentMissing,
-			Message:   "Config file path is required",
-			Component: "config",
-			RunID:     runID,
-		}
-	}
-
-	// Initialize config loader
-	cfgLoader := config.NewLoader()
-	cfg, err := cfgLoader.LoadConfig(*configPath)
+	// Load and validate configuration
+	cfg, err := loadAndValidateConfig(runID)
 	if err != nil {
-		return &logging.PreExecutionError{
-			Type:      logging.ErrorTypeConfigParsing,
-			Message:   fmt.Sprintf("Failed to load config: %v", err),
-			Component: "config",
-			RunID:     runID,
-		}
+		return err
 	}
 
 	// Handle validate command
@@ -156,6 +135,54 @@ func run(runID string) error {
 		return validateConfigCommand(cfg)
 	}
 
+	// Setup environment and logging
+	envFileToLoad, err := setupEnvironmentAndLogging(runID)
+	if err != nil {
+		return err
+	}
+
+	// Initialize verification and security
+	verificationManager, err := initializeVerificationManager(runID)
+	if err != nil {
+		return err
+	}
+
+	// Perform file verification
+	if err := performFileVerification(verificationManager, cfg, envFileToLoad, runID); err != nil {
+		return err
+	}
+
+	// Initialize and execute runner
+	return executeRunner(ctx, cfg, verificationManager, envFileToLoad, runID)
+}
+
+// loadAndValidateConfig loads configuration from file and validates basic requirements
+func loadAndValidateConfig(runID string) (*runnertypes.Config, error) {
+	if *configPath == "" {
+		return nil, &logging.PreExecutionError{
+			Type:      logging.ErrorTypeRequiredArgumentMissing,
+			Message:   "Config file path is required",
+			Component: "config",
+			RunID:     runID,
+		}
+	}
+
+	cfgLoader := config.NewLoader()
+	cfg, err := cfgLoader.LoadConfig(*configPath)
+	if err != nil {
+		return nil, &logging.PreExecutionError{
+			Type:      logging.ErrorTypeConfigParsing,
+			Message:   fmt.Sprintf("Failed to load config: %v", err),
+			Component: "config",
+			RunID:     runID,
+		}
+	}
+
+	return cfg, nil
+}
+
+// setupEnvironmentAndLogging determines environment file and sets up logging system
+func setupEnvironmentAndLogging(runID string) (string, error) {
 	// Determine environment file to load
 	envFileToLoad := ""
 	if *envFile != "" {
@@ -170,7 +197,7 @@ func run(runID string) error {
 	// Get Slack webhook URL from environment file early
 	slackURL, err := getSlackWebhookFromEnvFile(envFileToLoad)
 	if err != nil {
-		return fmt.Errorf("failed to read Slack configuration from environment file: %w", err)
+		return "", fmt.Errorf("failed to read Slack configuration from environment file: %w", err)
 	}
 
 	// Setup logging system with all configuration including Slack
@@ -182,7 +209,7 @@ func run(runID string) error {
 	}
 
 	if err := setupLoggerWithConfig(loggerConfig); err != nil {
-		return &logging.PreExecutionError{
+		return "", &logging.PreExecutionError{
 			Type:      logging.ErrorTypeLogFileOpen,
 			Message:   fmt.Sprintf("Failed to setup logger: %v", err),
 			Component: "logging",
@@ -190,8 +217,21 @@ func run(runID string) error {
 		}
 	}
 
-	// Get hash directory from command line args and environment variables
+	return envFileToLoad, nil
+}
+
+// initializeVerificationManager creates and configures the verification manager
+func initializeVerificationManager(runID string) (*verification.Manager, error) {
+	// Get hash directory from command line args and validate early
 	hashDir := getHashDir()
+	if !filepath.IsAbs(hashDir) {
+		return nil, &logging.PreExecutionError{
+			Type:      logging.ErrorTypeFileAccess,
+			Message:   fmt.Sprintf("Hash directory must be absolute path, got relative path: %s", hashDir),
+			Component: "file",
+			RunID:     runID,
+		}
+	}
 
 	// Initialize privilege manager
 	logger := slog.Default()
@@ -203,9 +243,14 @@ func run(runID string) error {
 		verification.WithPrivilegeManager(privMgr),
 	)
 	if err != nil {
-		return fmt.Errorf("failed to initialize verification: %w", err)
+		return nil, fmt.Errorf("failed to initialize verification: %w", err)
 	}
 
+	return verificationManager, nil
+}
+
+// performFileVerification verifies configuration, environment, and global files
+func performFileVerification(verificationManager *verification.Manager, cfg *runnertypes.Config, envFileToLoad, runID string) error {
 	// Verify configuration file integrity
 	if err := verificationManager.VerifyConfigFile(*configPath); err != nil {
 		return &logging.PreExecutionError{
@@ -216,8 +261,19 @@ func run(runID string) error {
 		}
 	}
 
+	// Verify environment file integrity if specified
+	if envFileToLoad != "" {
+		if err := verificationManager.VerifyEnvironmentFile(envFileToLoad); err != nil {
+			return &logging.PreExecutionError{
+				Type:      logging.ErrorTypeFileAccess,
+				Message:   fmt.Sprintf("Environment file verification failed: %v", err),
+				Component: "verification",
+				RunID:     runID,
+			}
+		}
+	}
+
 	// Verify global files - CRITICAL: Program must exit if global verification fails
-	// to prevent execution with potentially compromised files
 	result, err := verificationManager.VerifyGlobalFiles(&cfg.Global)
 	if err != nil {
 		slog.Error("CRITICAL: Global file verification failed - terminating program for security", "error", err)
@@ -237,6 +293,15 @@ func run(runID string) error {
 			"duration_ms", result.Duration.Milliseconds(),
 			"run_id", runID)
 	}
+
+	return nil
+}
+
+// executeRunner initializes and executes the runner with proper cleanup
+func executeRunner(ctx context.Context, cfg *runnertypes.Config, verificationManager *verification.Manager, envFileToLoad, runID string) error {
+	// Initialize privilege manager
+	logger := slog.Default()
+	privMgr := privilege.NewManager(logger)
 
 	// Initialize Runner with privilege support and run ID
 	runnerOptions := []runner.Option{
@@ -259,14 +324,14 @@ func run(runID string) error {
 		cfg.Global.LogLevel = *logLevel
 	}
 
-	// Run the command groups
+	// Handle dry run mode
 	if *dryRun {
 		fmt.Println("[DRY RUN] Would execute the following groups:")
 		runner.ListCommands()
 		return nil
 	}
 
-	// Ensure cleanup of all resources on exit (both auto-cleanup and manual cleanup resources)
+	// Ensure cleanup of all resources on exit
 	defer func() {
 		if err := runner.CleanupAllResources(); err != nil {
 			slog.Warn("Failed to cleanup resources", "error", err, "run_id", runID)
@@ -286,16 +351,7 @@ func getSlackWebhookFromEnvFile(envFile string) (string, error) {
 		return "", nil
 	}
 
-	// Validate file path and permissions using security package
-	validator, err := security.NewValidator(security.DefaultConfig())
-	if err != nil {
-		return "", fmt.Errorf("failed to create security validator for environment file %q: %w", envFile, err)
-	}
-	if err := validator.ValidateFilePermissions(envFile); err != nil {
-		return "", fmt.Errorf("environment file security validation failed for %q: %w", envFile, err)
-	}
-
-	// Use safefileio for secure file reading
+	// Use safefileio for secure file reading (includes path validation and permission checks)
 	content, err := safefileio.SafeReadFile(envFile)
 	if err != nil {
 		return "", fmt.Errorf("failed to read environment file %q securely: %w", envFile, err)

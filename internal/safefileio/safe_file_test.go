@@ -189,6 +189,10 @@ func TestSafeReadFile(t *testing.T) {
 				//nolint:errcheck // In test, we don't need to check the error from Close()
 				defer f.Close()
 
+				// Set proper permissions before writing content
+				err = f.Chmod(0o644)
+				require.NoError(t, err, "Failed to set file permissions")
+
 				// Write MaxFileSize + 1 bytes
 				_, err = f.Write(make([]byte, MaxFileSize+1))
 				require.NoError(t, err, "Failed to write test data")
