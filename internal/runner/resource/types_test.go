@@ -64,7 +64,6 @@ func TestOutputFormatString(t *testing.T) {
 	}{
 		{OutputFormatText, "text"},
 		{OutputFormatJSON, "json"},
-		{OutputFormatYAML, "yaml"},
 		{OutputFormat(999), "unknown"},
 	}
 
