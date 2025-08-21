@@ -78,7 +78,7 @@ func TestResourceAnalysis(t *testing.T) {
 		Type:      ResourceTypeCommand,
 		Operation: OperationExecute,
 		Target:    "echo test",
-		Parameters: map[string]interface{}{
+		Parameters: map[string]any{
 			"timeout": 30,
 		},
 		Impact: ResourceImpact{

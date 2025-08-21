@@ -72,7 +72,7 @@ func (d *DefaultResourceManager) IsPrivilegeEscalationRequired(cmd runnertypes.C
 }
 
 // SendNotification delegates to the active manager.
-func (d *DefaultResourceManager) SendNotification(message string, details map[string]interface{}) error {
+func (d *DefaultResourceManager) SendNotification(message string, details map[string]any) error {
 	return d.activeManager().SendNotification(message, details)
 }
 

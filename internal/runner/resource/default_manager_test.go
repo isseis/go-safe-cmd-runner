@@ -92,7 +92,7 @@ func TestDefaultResourceManager_PrivilegesAndNotifications(t *testing.T) {
 	prevLen := len(res.ResourceAnalyses)
 
 	// SendNotification should be no-op in normal and analysis in dry-run
-	err = mgr.SendNotification("msg", map[string]interface{}{"k": "v"})
+	err = mgr.SendNotification("msg", map[string]any{"k": "v"})
 	assert.NoError(t, err)
 
 	// After SendNotification, a network analysis should be recorded
@@ -105,6 +105,6 @@ func TestDefaultResourceManager_PrivilegesAndNotifications(t *testing.T) {
 		assert.Equal(t, "notification_service", last.Target)
 		// Parameters should include message and details
 		assert.Equal(t, "msg", last.Parameters["message"])
-		assert.Equal(t, map[string]interface{}{"k": "v"}, last.Parameters["details"])
+		assert.Equal(t, map[string]any{"k": "v"}, last.Parameters["details"])
 	}
 }

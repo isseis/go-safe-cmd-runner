@@ -94,7 +94,7 @@ func (d *DryRunResourceManagerImpl) analyzeCommand(_ context.Context, cmd runner
 		Type:      ResourceTypeCommand,
 		Operation: OperationExecute,
 		Target:    cmd.Cmd,
-		Parameters: map[string]interface{}{
+		Parameters: map[string]any{
 			"command":           cmd.Cmd,
 			"working_directory": cmd.Dir,
 			"timeout":           cmd.Timeout,
@@ -167,7 +167,7 @@ func (d *DryRunResourceManagerImpl) CreateTempDir(groupName string) (string, err
 		Type:      ResourceTypeFilesystem,
 		Operation: OperationCreate,
 		Target:    simulatedPath,
-		Parameters: map[string]interface{}{
+		Parameters: map[string]any{
 			"group_name": groupName,
 			"purpose":    "temporary_directory",
 		},
@@ -191,7 +191,7 @@ func (d *DryRunResourceManagerImpl) CleanupTempDir(tempDirPath string) error {
 		Type:      ResourceTypeFilesystem,
 		Operation: OperationDelete,
 		Target:    tempDirPath,
-		Parameters: map[string]interface{}{
+		Parameters: map[string]any{
 			"path": tempDirPath,
 		},
 		Impact: ResourceImpact{
@@ -220,7 +220,7 @@ func (d *DryRunResourceManagerImpl) WithPrivileges(_ context.Context, fn func() 
 		Type:      ResourceTypePrivilege,
 		Operation: OperationEscalate,
 		Target:    "system_privileges",
-		Parameters: map[string]interface{}{
+		Parameters: map[string]any{
 			"context": "privilege_escalation",
 		},
 		Impact: ResourceImpact{
@@ -260,13 +260,13 @@ func (d *DryRunResourceManagerImpl) IsPrivilegeEscalationRequired(cmd runnertype
 }
 
 // SendNotification simulates sending a notification in dry-run mode
-func (d *DryRunResourceManagerImpl) SendNotification(message string, details map[string]interface{}) error {
+func (d *DryRunResourceManagerImpl) SendNotification(message string, details map[string]any) error {
 	// Record the analysis
 	analysis := ResourceAnalysis{
 		Type:      ResourceTypeNetwork,
 		Operation: OperationSend,
 		Target:    "notification_service",
-		Parameters: map[string]interface{}{
+		Parameters: map[string]any{
 			"message": message,
 			"details": details,
 		},

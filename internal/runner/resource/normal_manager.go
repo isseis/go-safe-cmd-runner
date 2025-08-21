@@ -142,7 +142,7 @@ func (n *NormalResourceManager) IsPrivilegeEscalationRequired(cmd runnertypes.Co
 }
 
 // SendNotification sends a notification in normal mode
-func (n *NormalResourceManager) SendNotification(_ string, _ map[string]interface{}) error {
+func (n *NormalResourceManager) SendNotification(_ string, _ map[string]any) error {
 	// In normal mode, we would send actual notifications
 	// For now, we just log the notification (no-op)
 	return nil

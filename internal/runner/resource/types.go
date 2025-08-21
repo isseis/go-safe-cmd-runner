@@ -7,12 +7,12 @@ import (
 // ResourceAnalysis captures analysis of a resource operation
 // nolint:revive // ResourceAnalysis is intentionally named to be clear about its purpose
 type ResourceAnalysis struct {
-	Type       ResourceType           `json:"type"`
-	Operation  ResourceOperation      `json:"operation"`
-	Target     string                 `json:"target"`
-	Parameters map[string]interface{} `json:"parameters"`
-	Impact     ResourceImpact         `json:"impact"`
-	Timestamp  time.Time              `json:"timestamp"`
+	Type       ResourceType      `json:"type"`
+	Operation  ResourceOperation `json:"operation"`
+	Target     string            `json:"target"`
+	Parameters map[string]any    `json:"parameters"`
+	Impact     ResourceImpact    `json:"impact"`
+	Timestamp  time.Time         `json:"timestamp"`
 }
 
 // ResourceType represents the type of resource being operated on
