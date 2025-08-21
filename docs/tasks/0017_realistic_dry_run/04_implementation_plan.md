@@ -88,77 +88,63 @@ type ResourceManager interface {
 
 ---
 
-### Phase 2: Core Implementation（コア実装）
-**期間**: 4-5日
-**目標**: DefaultResourceManagerの完全実装
+### Phase 2: Core Implementation（コア実装）✅ 完了済み
+**期間**: 4-5日（完了）
+**目標**: DefaultResourceManagerの完全実装（委譲型ファサードによるモード切替とインターセプション）
 
 #### 2.2.1 作業項目
-- [ ] DefaultResourceManager の実装
-- [ ] コマンド実行のインターセプション
-- [ ] ファイルシステム操作のインターセプション
-- [ ] 特権管理のインターセプション
-- [ ] ネットワーク操作のインターセプション
-- [ ] リソース分析ロジックの実装
+- ✅ DefaultResourceManager の実装（Normal/DryRun 両マネージャへの委譲）
+- ✅ コマンド実行のインターセプション（実行/シミュレーションの切替）
+- ✅ ファイルシステム操作のインターセプション（TempDir作成/掃除の委譲）
+- ✅ 特権管理のインターセプション（WithPrivileges/検出の委譲）
+- ✅ ネットワーク操作のインターセプション（SendNotification の委譲）
+- ✅ リソース分析ロジックとの連携（DryRun側での分析記録を透過化）
 
 #### 2.2.2 成果物
 ```
 internal/runner/resource/
-├── manager.go            # ✅ 完了済み
-├── types.go             # ✅ 完了済み
-├── manager_test.go      # ✅ 完了済み
-├── types_test.go        # ✅ 完了済み
-├── default_manager.go   # DefaultResourceManager実装
-├── formatter.go         # 結果フォーマッター実装
-└── default_manager_test.go
+├── manager.go              # ✅ 完了済み
+├── types.go               # ✅ 完了済み
+├── manager_test.go        # ✅ 完了済み
+├── types_test.go          # ✅ 完了済み
+├── normal_manager.go      # ✅ 通常実行マネージャ（既存）
+├── dryrun_manager.go      # ✅ Dry-Runマネージャ（既存・分析含む）
+├── default_manager.go     # ✅ DefaultResourceManager実装（新規）
+├── default_manager_test.go# ✅ DefaultResourceManagerテスト（新規）
+└── formatter.go           # ✅ 結果フォーマッター（既存）
 ```
 
 **注意**: Resource Manager Pattern採用により、フォーマッター機能もresourceパッケージに統合。
 
 #### 2.2.3 実装詳細
 
-**DefaultResourceManager のコマンド実行**
+**DefaultResourceManager の委譲設計（要点）**
 ```go
-func (d *DefaultResourceManager) ExecuteCommand(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) (*ExecutionResult, error) {
-    switch d.mode {
-    case ExecutionModeNormal:
-        // 通常実行：既存executorを使用
-        start := time.Now()
-        result, err := d.executor.Execute(ctx, cmd, env)
-        if err != nil {
-            return nil, err
-        }
-        return &ExecutionResult{
-            ExitCode: result.ExitCode,
-            Stdout:   result.Stdout,
-            Stderr:   result.Stderr,
-            Duration: time.Since(start).Milliseconds(),
-            DryRun:   false,
-        }, nil
-
-    case ExecutionModeDryRun:
-        // dry-run: 分析のみ
-        start := time.Now()
-        analysis := d.analyzeCommand(ctx, cmd, group, env)
-
-        d.recordAnalysis(&analysis)
-
-        return &ExecutionResult{
-            ExitCode: 0,
-            Stdout:   fmt.Sprintf("[DRY-RUN] Would execute: %s", cmd.Command),
-            Stderr:   "",
-            Duration: time.Since(start).Milliseconds(),
-            DryRun:   true,
-            Analysis: &analysis,
-        }, nil
-    }
+// modeに応じて NormalResourceManager / DryRunResourceManagerImpl に委譲する。
+type DefaultResourceManager struct {
+    mode   ExecutionMode
+    normal *NormalResourceManager
+    dryrun *DryRunResourceManagerImpl
 }
+
+// SetMode: Dry-Runへ切替時は既存dryrunインスタンスのオプションを更新し、
+// 蓄積済みの分析結果は保持（必要に応じて外部でリセット）。
+func (d *DefaultResourceManager) SetMode(mode ExecutionMode, opts *DryRunOptions) { /* ... */ }
+
+// ExecuteCommand / CreateTempDir / CleanupTempDir / CleanupAllTempDirs /
+// WithPrivileges / IsPrivilegeEscalationRequired / SendNotification:
+// いずれも if mode==DryRun { delegate to d.dryrun } else { delegate to d.normal }
+
+// GetDryRunResults: Dry-Run時は結果を返し、通常時は nil を返す。
+func (d *DefaultResourceManager) GetDryRunResults() *DryRunResult { /* ... */ }
 ```
 
 #### 2.2.4 検証基準
-- [ ] 通常実行モードでの完全な動作
-- [ ] dry-runモードでの適切なシミュレーション
-- [ ] リソース分析の正確性
-- [ ] すべての副作用タイプの適切なインターセプション
+- ✅ 通常実行モードでの完全な動作（unit tests PASS）
+- ✅ dry-runモードでの適切なシミュレーション（unit tests PASS）
+- ✅ リソース分析の正確性（DryRunResourceManagerの分析テスト PASS）
+- ✅ すべての副作用タイプの適切なインターセプション（委譲テスト PASS）
+- ✅ 品質ゲート（pre-commit, lint, test）全通過
 
 ---
 
