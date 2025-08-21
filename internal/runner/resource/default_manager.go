@@ -30,19 +30,6 @@ func NewDefaultResourceManager(exec executor.CommandExecutor, fs executor.FileSy
 	return mgr
 }
 
-// SetMode switches the execution mode. When switching to dry-run, the previously
-// created dry-run manager will be used; opts can be provided to update options.
-func (d *DefaultResourceManager) SetMode(mode ExecutionMode, opts *DryRunOptions) {
-	d.mode = mode
-	if mode == ExecutionModeDryRun && opts != nil && d.dryrun != nil {
-		// Update options in place; keep accumulated analyses intact unless
-		// the caller resets explicitly by creating a new manager.
-		d.dryrun.mu.Lock()
-		d.dryrun.dryRunOptions = opts
-		d.dryrun.mu.Unlock()
-	}
-}
-
 // GetMode returns the current execution mode.
 func (d *DefaultResourceManager) GetMode() ExecutionMode { return d.mode }
 
