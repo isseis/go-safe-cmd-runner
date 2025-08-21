@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
@@ -25,9 +24,7 @@ import (
 var (
 	errCommandNotFound  = errors.New("command not found")
 	errPermissionDenied = errors.New("permission denied")
-	errDeviceBusy       = errors.New("device busy")
 	errDiskFull         = errors.New("disk full")
-	errCleanupFailed    = errors.New("cleanup failed")
 	errResourceBusy     = errors.New("resource busy")
 )
 
@@ -72,71 +69,6 @@ func setupSafeTestEnv(t *testing.T) func() {
 }
 
 var ErrExecutionFailed = errors.New("execution failed")
-
-// MockExecutor is a mock implementation of CommandExecutor
-type MockExecutor struct {
-	mock.Mock
-}
-
-func (m *MockExecutor) Execute(ctx context.Context, cmd runnertypes.Command, envVars map[string]string) (*executor.Result, error) {
-	args := m.Called(ctx, cmd, envVars)
-	return args.Get(0).(*executor.Result), args.Error(1)
-}
-
-func (m *MockExecutor) Validate(cmd runnertypes.Command) error {
-	args := m.Called(cmd)
-	return args.Error(0)
-}
-
-// MockFileSystem is a mock implementation of common.FileSystem
-type MockFileSystem struct {
-	mock.Mock
-}
-
-func (m *MockFileSystem) CreateTempDir(dir string, prefix string) (string, error) {
-	args := m.Called(dir, prefix)
-	return args.String(0), args.Error(1)
-}
-
-func (m *MockFileSystem) TempDir() string {
-	args := m.Called()
-	return args.String(0)
-}
-
-func (m *MockFileSystem) RemoveAll(path string) error {
-	args := m.Called(path)
-	return args.Error(0)
-}
-
-func (m *MockFileSystem) Remove(path string) error {
-	args := m.Called(path)
-	return args.Error(0)
-}
-
-func (m *MockFileSystem) Lstat(name string) (os.FileInfo, error) {
-	args := m.Called(name)
-	return args.Get(0).(os.FileInfo), args.Error(1)
-}
-
-func (m *MockFileSystem) Readlink(name string) (string, error) {
-	args := m.Called(name)
-	return args.String(0), args.Error(1)
-}
-
-func (m *MockFileSystem) Stat(name string) (os.FileInfo, error) {
-	args := m.Called(name)
-	return args.Get(0).(os.FileInfo), args.Error(1)
-}
-
-func (m *MockFileSystem) FileExists(path string) (bool, error) {
-	args := m.Called(path)
-	return args.Bool(0), args.Error(1)
-}
-
-func (m *MockFileSystem) IsDir(path string) (bool, error) {
-	args := m.Called(path)
-	return args.Bool(0), args.Error(1)
-}
 
 // MockResourceManager is a mock implementation of ResourceManager
 type MockResourceManager struct {
@@ -1348,7 +1280,8 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 	}
 
 	t.Run("allowed command execution should succeed", func(t *testing.T) {
-		runner, err := NewRunner(config, WithRunID("test-run-123"))
+		mockResourceManager := new(MockResourceManager)
+		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
 		require.NoError(t, err)
 
 		allowedCmd := runnertypes.Command{
@@ -1358,14 +1291,13 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 			Dir:  "/tmp",
 		}
 
-		mockExecutor := new(MockExecutor)
-		runner.executor = mockExecutor
-		mockExecutor.On("Execute", mock.Anything, allowedCmd, mock.Anything).Return(&executor.Result{ExitCode: 0}, nil)
+		testGroup := &config.Groups[0] // Get reference to the test group
+		mockResourceManager.On("ExecuteCommand", mock.Anything, allowedCmd, testGroup, mock.Anything).Return(&resource.ExecutionResult{ExitCode: 0}, nil)
 
 		ctx := context.Background()
-		testGroup := &config.Groups[0] // Get reference to the test group
 		_, err = runner.executeCommandInGroup(ctx, allowedCmd, testGroup)
 		assert.NoError(t, err)
+		mockResourceManager.AssertExpectations(t)
 	})
 
 	t.Run("disallowed command execution should fail", func(t *testing.T) {
@@ -1392,10 +1324,9 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 	})
 
 	t.Run("command execution with environment variables", func(t *testing.T) {
-		runner, err := NewRunner(config, WithRunID("test-run-123"))
+		mockResourceManager := new(MockResourceManager)
+		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
 		require.NoError(t, err)
-		mockExecutor := new(MockExecutor)
-		runner.executor = mockExecutor
 
 		// Test with safe environment variables
 		safeCmd := runnertypes.Command{
@@ -1406,8 +1337,8 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 			Env:  []string{"TEST_VAR=safe-value", "PATH=/usr/bin:/bin"},
 		}
 
-		mockExecutor.On("Execute", mock.Anything, safeCmd, mock.Anything).
-			Return(&executor.Result{ExitCode: 0}, nil)
+		mockResourceManager.On("ExecuteCommand", mock.Anything, safeCmd, mock.Anything, mock.Anything).
+			Return(&resource.ExecutionResult{ExitCode: 0}, nil)
 
 		testGroup := &config.Groups[0] // Get reference to the test group
 		_, err = runner.executeCommandInGroup(context.Background(), safeCmd, testGroup)
@@ -1548,12 +1479,18 @@ func TestCommandGroup_NewFields(t *testing.T) {
 				Groups: []runnertypes.CommandGroup{tt.group},
 			}
 
-			// Create runner with mock executor to avoid actually executing commands
-			mockExecutor := &MockExecutor{}
-			mockExecutor.On("Execute", mock.Anything, mock.Anything, mock.Anything).Return(
-				&executor.Result{ExitCode: 0, Stdout: "test output", Stderr: ""}, nil)
+			// Create runner with mock resource manager to avoid actually executing commands
+			mockResourceManager := &MockResourceManager{}
+			mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+				&resource.ExecutionResult{ExitCode: 0, Stdout: "test output", Stderr: ""}, nil)
 
-			runner, err := NewRunner(config, WithExecutor(mockExecutor), WithRunID("test-run-123"))
+			// Set up CreateTempDir and CleanupTempDir expectations if TempDir is enabled
+			if tt.group.TempDir {
+				mockResourceManager.On("CreateTempDir", tt.group.Name).Return("/tmp/test-temp-dir", nil)
+				mockResourceManager.On("CleanupTempDir", "/tmp/test-temp-dir").Return(nil)
+			}
+
+			runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
 			require.NoError(t, err)
 
 			// Load basic environment
@@ -1570,13 +1507,13 @@ func TestCommandGroup_NewFields(t *testing.T) {
 				assert.NoError(t, err, tt.description)
 
 				// Verify mock was called
-				mockExecutor.AssertExpectations(t)
+				mockResourceManager.AssertExpectations(t)
 
 				// Additional verification based on test case
 				switch tt.name {
 				case "WorkDir specified", "Command with existing Dir should not be overridden":
 					// Verify the command was called with the expected working directory
-					calls := mockExecutor.Calls
+					calls := mockResourceManager.Calls
 					require.Len(t, calls, 1)
 					cmd, ok := calls[0].Arguments[1].(runnertypes.Command)
 					require.True(t, ok, "expected calls[0].Arguments[1] to be of type runnertypes.Command, but it was not")
@@ -2488,14 +2425,14 @@ func TestPrivilegedCommandPathValidation(t *testing.T) {
 				},
 			}
 
-			// Create mock executor
-			mockExecutor := &MockExecutor{}
+			// Create mock resource manager
+			mockResourceManager := &MockResourceManager{}
 			if !tt.expectError {
 				// Only set up expectation if we expect the command to reach execution
-				mockExecutor.On("Execute", mock.Anything, mock.MatchedBy(func(cmd runnertypes.Command) bool {
+				mockResourceManager.On("ExecuteCommand", mock.Anything, mock.MatchedBy(func(cmd runnertypes.Command) bool {
 					return cmd.Name == tt.cmd.Name
-				}), mock.Anything).Return(
-					&executor.Result{ExitCode: 0, Stdout: "test output\n", Stderr: ""}, nil)
+				}), mock.Anything, mock.Anything).Return(
+					&resource.ExecutionResult{ExitCode: 0, Stdout: "test output\n", Stderr: ""}, nil)
 			}
 
 			// Create test group
@@ -2507,7 +2444,7 @@ func TestPrivilegedCommandPathValidation(t *testing.T) {
 			}
 
 			// Create runner with minimal setup
-			runner, err := NewRunner(config, WithExecutor(mockExecutor), WithRunID("test-run-123"))
+			runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
 			require.NoError(t, err)
 
 			// Load environment without verification
@@ -2523,12 +2460,12 @@ func TestPrivilegedCommandPathValidation(t *testing.T) {
 				if tt.errorContains != "" {
 					assert.Contains(t, err.Error(), tt.errorContains)
 				}
-				// Verify that Execute was not called for failed cases
-				mockExecutor.AssertNotCalled(t, "Execute")
+				// Verify that ExecuteCommand was not called for failed cases
+				mockResourceManager.AssertNotCalled(t, "ExecuteCommand")
 			} else {
 				assert.NoError(t, err)
-				// Verify that Execute was called for successful cases
-				mockExecutor.AssertExpectations(t)
+				// Verify that ExecuteCommand was called for successful cases
+				mockResourceManager.AssertExpectations(t)
 			}
 		})
 	}
@@ -2582,21 +2519,21 @@ func TestSlackNotification(t *testing.T) {
 				},
 			}
 
-			// Create mock executor
-			mockExecutor := &MockExecutor{}
+			// Create mock resource manager
+			mockResourceManager := &MockResourceManager{}
 
-			// Set up executor behavior based on test case
+			// Set up resource manager behavior based on test case
 			if tt.commandSuccess {
-				mockExecutor.On("Execute", mock.Anything, mock.Anything, mock.Anything).Return(
-					&executor.Result{
+				mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+					&resource.ExecutionResult{
 						ExitCode: 0,
 						Stdout:   "test output",
 						Stderr:   "",
 					}, nil,
 				)
 			} else {
-				mockExecutor.On("Execute", mock.Anything, mock.Anything, mock.Anything).Return(
-					&executor.Result{
+				mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+					&resource.ExecutionResult{
 						ExitCode: 1,
 						Stdout:   "",
 						Stderr:   "command failed",
@@ -2606,7 +2543,7 @@ func TestSlackNotification(t *testing.T) {
 
 			// Create runner options
 			var options []Option
-			options = append(options, WithExecutor(mockExecutor))
+			options = append(options, WithResourceManager(mockResourceManager))
 			options = append(options, WithRunID("test-run-123"))
 
 			// Create runner
@@ -2624,7 +2561,7 @@ func TestSlackNotification(t *testing.T) {
 			}
 
 			// Verify mock expectations
-			mockExecutor.AssertExpectations(t)
+			mockResourceManager.AssertExpectations(t)
 
 			// Verify that the runner was configured correctly
 			assert.Equal(t, "test-run-123", runner.runID)
