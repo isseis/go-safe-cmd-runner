@@ -113,8 +113,6 @@ const (
 	OutputFormatText OutputFormat = iota
 	// OutputFormatJSON represents JSON output
 	OutputFormatJSON
-	// OutputFormatYAML represents YAML output
-	OutputFormatYAML
 )
 
 // String returns the string representation of OutputFormat
@@ -124,8 +122,6 @@ func (o OutputFormat) String() string {
 		return "text"
 	case OutputFormatJSON:
 		return "json"
-	case OutputFormatYAML:
-		return "yaml"
 	default:
 		return unknownString
 	}

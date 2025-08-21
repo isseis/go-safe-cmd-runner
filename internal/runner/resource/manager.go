@@ -4,12 +4,20 @@ package resource
 
 import (
 	"context"
+	"errors"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
 const (
 	unknownString = "unknown"
+	sudoCommand   = "sudo"
+)
+
+// Static errors for better error handling
+var (
+	ErrPrivilegeManagerNotAvailable = errors.New("privilege manager not available")
+	ErrTempDirCleanupFailed         = errors.New("failed to cleanup some temp directories")
 )
 
 // ExecutionMode determines how all operations are handled
@@ -37,10 +45,6 @@ func (e ExecutionMode) String() string {
 // ResourceManager manages all side-effects (commands, filesystem, privileges, etc.)
 // nolint:revive // ResourceManager is intentionally named to be clear about its purpose
 type ResourceManager interface {
-	// Mode management
-	SetMode(mode ExecutionMode, opts *DryRunOptions)
-	GetMode() ExecutionMode
-
 	// Command execution
 	ExecuteCommand(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) (*ExecutionResult, error)
 
@@ -55,6 +59,11 @@ type ResourceManager interface {
 
 	// Network operations
 	SendNotification(message string, details map[string]interface{}) error
+}
+
+// DryRunResourceManager extends ResourceManager with dry-run specific functionality
+type DryRunResourceManager interface {
+	ResourceManager
 
 	// Dry-run specific
 	GetDryRunResults() *DryRunResult

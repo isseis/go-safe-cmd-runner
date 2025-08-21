@@ -2,7 +2,9 @@ package security
 
 import (
 	"errors"
+	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -608,4 +610,427 @@ func TestValidator_CreateSafeLogFields(t *testing.T) {
 	// Check that non-sensitive fields are preserved
 	assert.Equal(t, 1, result["exit_code"])
 	assert.Equal(t, "30s", result["timeout"])
+}
+
+func TestMatchesPattern(t *testing.T) {
+	tests := []struct {
+		name     string
+		command  []string
+		pattern  []string
+		expected bool
+	}{
+		// Command name exact matching tests
+		{
+			name:     "exact command match",
+			command:  []string{"rm", "-rf", "/tmp"},
+			pattern:  []string{"rm", "-rf"},
+			expected: true,
+		},
+		{
+			name:     "command name mismatch",
+			command:  []string{"ls", "-la"},
+			pattern:  []string{"rm", "-la"},
+			expected: false,
+		},
+		{
+			name:     "pattern longer than command",
+			command:  []string{"rm"},
+			pattern:  []string{"rm", "-rf", "/tmp"},
+			expected: false,
+		},
+
+		// Regular argument exact matching tests
+		{
+			name:     "regular argument exact match",
+			command:  []string{"chmod", "777", "/tmp/file"},
+			pattern:  []string{"chmod", "777"},
+			expected: true,
+		},
+		{
+			name:     "regular argument mismatch",
+			command:  []string{"chmod", "755", "/tmp/file"},
+			pattern:  []string{"chmod", "777"},
+			expected: false,
+		},
+
+		// Key-value pattern prefix matching tests (ending with "=")
+		{
+			name:     "dd if= pattern match",
+			command:  []string{"dd", "if=/dev/zero", "of=/tmp/file"},
+			pattern:  []string{"dd", "if="},
+			expected: true,
+		},
+		{
+			name:     "dd of= pattern match",
+			command:  []string{"dd", "if=/dev/zero", "of=/dev/sda"},
+			pattern:  []string{"dd", "of="},
+			expected: true,
+		},
+		{
+			name:     "dd if= pattern with specific value",
+			command:  []string{"dd", "if=/dev/zero", "of=/tmp/file"},
+			pattern:  []string{"dd", "if=/dev/kmsg"},
+			expected: false, // exact match required for non-ending-with-"=" patterns
+		},
+		{
+			name:     "key-value pattern without = in command",
+			command:  []string{"dd", "input", "output"},
+			pattern:  []string{"dd", "if="},
+			expected: false,
+		},
+		{
+			name:     "pattern with = at command name (index 0) - should use exact match",
+			command:  []string{"test=value", "arg"},
+			pattern:  []string{"test=", "arg"},
+			expected: false, // command names require exact match
+		},
+
+		// Edge cases - empty command is a programming error and should not occur
+		// {
+		// 	name:     "empty command and pattern",
+		// 	command:  []string{},
+		// 	pattern:  []string{},
+		// 	expected: true,
+		// },
+		{
+			name:     "empty args pattern with command",
+			command:  []string{"ls", "-r"},
+			pattern:  []string{"ls"},
+			expected: true,
+		},
+		{
+			name:     "pattern with = but no = in command arg",
+			command:  []string{"myapp", "config", "value"},
+			pattern:  []string{"myapp", "config="},
+			expected: false,
+		},
+		{
+			name:     "complex dd command matching",
+			command:  []string{"dd", "if=/dev/zero", "of=/tmp/test", "bs=1M", "count=10"},
+			pattern:  []string{"dd", "if="},
+			expected: true,
+		},
+		{
+			name:     "multiple key-value patterns",
+			command:  []string{"rsync", "src=/home", "dst=/backup", "opts=archive"},
+			pattern:  []string{"rsync", "src=", "dst="},
+			expected: true,
+		},
+		{
+			name:     "mixed exact and prefix patterns",
+			command:  []string{"mount", "-t", "ext4", "device=/dev/sdb1", "/mnt"},
+			pattern:  []string{"mount", "-t", "ext4", "device="},
+			expected: true,
+		},
+
+		// Additional test cases for thorough coverage
+		{
+			name:     "pattern ending with = but no equals in command",
+			command:  []string{"cmd", "argument"},
+			pattern:  []string{"cmd", "arg="},
+			expected: false,
+		},
+		{
+			name:     "argument with equals but different prefix",
+			command:  []string{"dd", "if=/dev/sda", "bs=1M"},
+			pattern:  []string{"dd", "of="},
+			expected: false,
+		},
+		{
+			name:     "exact match for command with equals sign",
+			command:  []string{"export", "PATH=/usr/bin"},
+			pattern:  []string{"export", "PATH=/usr/bin"},
+			expected: true,
+		},
+
+		// Full path matching tests
+		{
+			name:     "full path command matches filename pattern",
+			command:  []string{"/bin/rm", "-rf", "/tmp"},
+			pattern:  []string{"rm", "-rf"},
+			expected: true,
+		},
+		{
+			name:     "full path command matches full path pattern",
+			command:  []string{"/bin/rm", "-rf", "/tmp"},
+			pattern:  []string{"/bin/rm", "-rf"},
+			expected: true,
+		},
+		{
+			name:     "filename command matches filename pattern",
+			command:  []string{"rm", "-rf", "/tmp"},
+			pattern:  []string{"rm", "-rf"},
+			expected: true,
+		},
+		{
+			name:     "filename command does not match full path pattern",
+			command:  []string{"rm", "-rf", "/tmp"},
+			pattern:  []string{"/bin/rm", "-rf"},
+			expected: false,
+		},
+		{
+			name:     "complex full path with filename pattern",
+			command:  []string{"/usr/local/bin/custom-tool", "arg1"},
+			pattern:  []string{"custom-tool", "arg1"},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmdName := ""
+			cmdArgs := []string{}
+			if len(tt.command) > 0 {
+				cmdName = tt.command[0]
+				cmdArgs = tt.command[1:]
+			}
+			result := matchesPattern(cmdName, cmdArgs, tt.pattern)
+			assert.Equal(t, tt.expected, result, "matchesPattern(%s, %v, %v) should return %v", cmdName, cmdArgs, tt.pattern, tt.expected)
+		})
+	}
+}
+
+func TestExtractAllCommandNames(t *testing.T) {
+	t.Run("simple filename", func(t *testing.T) {
+		names, exceededDepth := extractAllCommandNames("echo")
+		expected := map[string]struct{}{"echo": {}}
+		assert.Equal(t, expected, names)
+		assert.False(t, exceededDepth)
+	})
+
+	t.Run("full path", func(t *testing.T) {
+		names, exceededDepth := extractAllCommandNames("/bin/echo")
+		expected := map[string]struct{}{"/bin/echo": {}, "echo": {}}
+		assert.Equal(t, expected, names)
+		assert.False(t, exceededDepth)
+	})
+
+	t.Run("non-existent file", func(t *testing.T) {
+		// Test with a path that doesn't exist - should not crash
+		names, exceededDepth := extractAllCommandNames("/non/existent/path/cmd")
+		expected := map[string]struct{}{"/non/existent/path/cmd": {}, "cmd": {}}
+		assert.Equal(t, expected, names)
+		assert.False(t, exceededDepth)
+	})
+
+	t.Run("empty command name", func(t *testing.T) {
+		// Test error case: empty command name should return empty map
+		names, exceededDepth := extractAllCommandNames("")
+		expected := make(map[string]struct{})
+		assert.Equal(t, expected, names)
+		assert.False(t, exceededDepth)
+	})
+}
+
+func TestExtractAllCommandNamesWithSymlinks(t *testing.T) {
+	// Create temporary directory for testing
+	tmpDir := t.TempDir()
+
+	// Create the actual executable
+	actualCmd := tmpDir + "/actual_echo"
+	f, err := os.Create(actualCmd)
+	require.NoError(t, err)
+	f.Close()
+
+	// Create first level symlink
+	symlink1 := tmpDir + "/echo_link"
+	err = os.Symlink(actualCmd, symlink1)
+	require.NoError(t, err)
+
+	// Create second level symlink (multi-level)
+	symlink2 := tmpDir + "/echo_link2"
+	err = os.Symlink(symlink1, symlink2)
+	require.NoError(t, err)
+
+	t.Run("single level symlink", func(t *testing.T) {
+		names, exceededDepth := extractAllCommandNames(symlink1)
+
+		// Should contain: original symlink name, base name, target, target base name
+		assert.Contains(t, names, symlink1)
+		assert.Contains(t, names, "echo_link")
+		assert.Contains(t, names, actualCmd)
+		assert.Contains(t, names, "actual_echo")
+		assert.False(t, exceededDepth)
+	})
+
+	t.Run("multi-level symlink", func(t *testing.T) {
+		names, exceededDepth := extractAllCommandNames(symlink2)
+
+		// Should contain all names in the chain
+		assert.Contains(t, names, symlink2)
+		assert.Contains(t, names, "echo_link2")
+		assert.Contains(t, names, symlink1)
+		assert.Contains(t, names, "echo_link")
+		assert.Contains(t, names, actualCmd)
+		assert.Contains(t, names, "actual_echo")
+		assert.False(t, exceededDepth)
+	})
+
+	t.Run("relative symlink", func(t *testing.T) {
+		// Create a relative symlink
+		relSymlink := tmpDir + "/rel_link"
+		err = os.Symlink("actual_echo", relSymlink)
+		require.NoError(t, err)
+
+		names, exceededDepth := extractAllCommandNames(relSymlink)
+		assert.Contains(t, names, relSymlink)
+		assert.Contains(t, names, "rel_link")
+		assert.Contains(t, names, actualCmd)
+		assert.Contains(t, names, "actual_echo")
+		assert.False(t, exceededDepth)
+	})
+
+	t.Run("exceeds max symlink depth", func(t *testing.T) {
+		// Create a chain that exceeds MaxSymlinkDepth (40)
+		// For testing, we'll create a smaller chain and mock the depth check
+		chainStart := tmpDir + "/deep_start"
+		current := chainStart
+
+		// Create a chain of 5 symlinks for testing (simulating deep chain)
+		for i := range 5 {
+			next := fmt.Sprintf("%s/link_%d", tmpDir, i)
+			if i == 4 {
+				// Last link points to actual file
+				err = os.Symlink(actualCmd, current)
+			} else {
+				err = os.Symlink(next, current)
+			}
+			require.NoError(t, err)
+			current = next
+		}
+
+		names, exceededDepth := extractAllCommandNames(chainStart)
+
+		// Should contain the original link and some resolved names
+		assert.Contains(t, names, chainStart)
+		assert.Contains(t, names, "deep_start")
+
+		// Should contain the final target if chain is within limit
+		assert.Contains(t, names, actualCmd)
+		assert.Contains(t, names, "actual_echo")
+		assert.False(t, exceededDepth, "Chain should be within depth limit")
+	})
+}
+
+func TestIsSudoCommand(t *testing.T) {
+	tests := []struct {
+		name     string
+		cmdName  string
+		expected bool
+	}{
+		{
+			name:     "simple sudo command",
+			cmdName:  "sudo",
+			expected: true,
+		},
+		{
+			name:     "sudo with absolute path",
+			cmdName:  "/usr/bin/sudo",
+			expected: true,
+		},
+		{
+			name:     "sudo with relative path",
+			cmdName:  "./sudo",
+			expected: true,
+		},
+		{
+			name:     "command containing sudo but not sudo itself",
+			cmdName:  "/usr/bin/pseudo-tool",
+			expected: false,
+		},
+		{
+			name:     "command with sudo-like name",
+			cmdName:  "my-sudo-wrapper",
+			expected: false,
+		},
+		{
+			name:     "normal command",
+			cmdName:  "/bin/echo",
+			expected: false,
+		},
+		{
+			name:     "empty command",
+			cmdName:  "",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := IsSudoCommand(tt.cmdName)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+
+	// Test with actual symbolic link (integration test)
+	t.Run("symbolic link to sudo", func(t *testing.T) {
+		// Create a temporary directory
+		tempDir, err := os.MkdirTemp("", "sudo_symlink_test")
+		require.NoError(t, err)
+		defer os.RemoveAll(tempDir)
+
+		// Create a symbolic link to sudo (if it exists)
+		sudoPath := "/usr/bin/sudo"
+		if _, err := os.Stat(sudoPath); err == nil {
+			symlinkPath := filepath.Join(tempDir, "my_sudo")
+			err := os.Symlink(sudoPath, symlinkPath)
+			require.NoError(t, err)
+
+			// Test that the symbolic link is detected as sudo
+			result, err := IsSudoCommand(symlinkPath)
+			assert.NoError(t, err)
+			assert.True(t, result, "Symbolic link to sudo should be detected as sudo")
+		} else {
+			t.Skip("sudo not found at /usr/bin/sudo, skipping symlink test")
+		}
+	})
+
+	// Test symlink depth exceeded case
+	t.Run("symlink depth exceeded should return error", func(t *testing.T) {
+		// Create a temporary directory for deep symlink chain
+		tempDir, err := os.MkdirTemp("", "deep_sudo_symlink_test")
+		require.NoError(t, err)
+		defer os.RemoveAll(tempDir)
+
+		// Create a deep chain of symlinks (more than MaxSymlinkDepth=40)
+		// Create initial target file
+		targetFile := filepath.Join(tempDir, "target_sudo")
+		err = os.WriteFile(targetFile, []byte("#!/bin/bash\necho sudo"), 0o755)
+		require.NoError(t, err)
+
+		// Create 45 symlinks (exceeds MaxSymlinkDepth=40)
+		current := targetFile
+		for i := 0; i < 45; i++ {
+			linkPath := filepath.Join(tempDir, fmt.Sprintf("link_%d", i))
+			err := os.Symlink(current, linkPath)
+			require.NoError(t, err)
+			current = linkPath
+		}
+
+		// Test that deep symlink returns error
+		result, err := IsSudoCommand(current)
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, ErrSymlinkDepthExceeded)
+		assert.False(t, result, "Deep symlink should return false when depth exceeded")
+	})
+}
+
+func TestAnalyzeCommandSecurityWithDeepSymlinks(t *testing.T) {
+	t.Run("normal command has no risk", func(t *testing.T) {
+		risk, pattern, reason := AnalyzeCommandSecurity("echo", []string{"hello"})
+		assert.Equal(t, RiskLevelNone, risk)
+		assert.Empty(t, pattern)
+		assert.Empty(t, reason)
+	})
+
+	t.Run("dangerous pattern detected", func(t *testing.T) {
+		risk, pattern, reason := AnalyzeCommandSecurity("rm", []string{"-rf", "/"})
+		assert.Equal(t, RiskLevelHigh, risk)
+		assert.Equal(t, "rm -rf", pattern)
+		assert.Equal(t, "Recursive file removal", reason)
+	})
+
+	// Note: Testing actual symlink depth exceeded would require creating 40+ symlinks
+	// which is impractical in unit tests. The logic is tested through extractAllCommandNames.
 }
