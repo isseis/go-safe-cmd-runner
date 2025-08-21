@@ -382,17 +382,17 @@ flowchart TD
     C --> E[Runner Initialization<br/>with appropriate ResourceManager]
     D --> E
 
-    E --> F[ExecuteAll Method<br/>同一の実行パス]
+    E --> F[ExecuteAll Method<br/>unified execution path]
     F --> G[Resource Operations<br/>through ResourceManager]
 
     G --> H{ResourceManager Type?}
-    H -->|DefaultResourceManager| I[Actual Side Effects<br/>Command, File, Privilege, Network]
-    H -->|DryRunResourceManager| J[Simulated Operations<br/>+ Analysis Recording]
+    H -->|NormalResourceManager| I[Actual Side Effects<br/>Command, File, Privilege, Network]
+    H -->|DryRunResourceManager| J[Simulated Operations<br/>and Analysis Recording]
 
     I --> K[Normal Result]
-    J --> L[Dry-Run Analysis Result<br/>GetDryRunResults()]
+    J --> L[Dry-Run Analysis Result<br/>GetDryRunResults]
 
-    L --> M[Result Formatting<br/>& Output]
+    L --> M[Result Formatting<br/>and Output]
 
     style A fill:#ffecb3
     style B fill:#fff9c4
@@ -402,6 +402,7 @@ flowchart TD
     style F fill:#e8f5e8
     style G fill:#fff3e0
     style H fill:#fff9c4
+    style I fill:#e8f5e8
     style J fill:#fce4ec
     style L fill:#fce4ec
     style M fill:#f8bbd9
