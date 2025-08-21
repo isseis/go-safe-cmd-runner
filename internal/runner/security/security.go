@@ -76,6 +76,12 @@ const (
 	UIDRoot = 0
 	GIDRoot = 0
 
+	// Symbolic link resolution limits
+	// SYMLOOP_MAX is typically 40 on Linux systems (POSIX.1-2008 minimum: 8)
+	// This value matches what Go's filepath.EvalSymlinks uses internally
+	// This prevents infinite loops when resolving symbolic links
+	MaxSymlinkDepth = 40
+
 	// Logging configuration constants
 	DefaultErrorMessageLength = 200  // Reasonable limit for error messages
 	DefaultStdoutLength       = 100  // Very limited stdout in logs
@@ -850,7 +856,12 @@ func checkCommandPatterns(cmdName string, cmdArgs []string, patterns []Dangerous
 
 // AnalyzeCommandSecurity analyzes a command with its arguments for dangerous patterns
 func AnalyzeCommandSecurity(cmdName string, args []string) (riskLevel RiskLevel, detectedPattern string, reason string) {
-	// Check high risk patterns first
+	// First, check if symlink depth is exceeded (highest priority security concern)
+	if _, exceededDepth := extractAllCommandNames(cmdName); exceededDepth {
+		return RiskLevelHigh, cmdName, "Symbolic link depth exceeds security limit (potential symlink attack)"
+	}
+
+	// Check high risk patterns
 	if riskLevel, pattern, reason := checkCommandPatterns(cmdName, args, highRiskPatterns); riskLevel != RiskLevelNone {
 		return riskLevel, pattern, reason
 	}
@@ -863,12 +874,76 @@ func AnalyzeCommandSecurity(cmdName string, args []string) (riskLevel RiskLevel,
 	return RiskLevelNone, "", ""
 }
 
+// extractAllCommandNames extracts all possible command names for matching:
+// 1. The original command name (could be full path or just filename)
+// 2. Just the base filename from the original command
+// 3. All symbolic link names in the chain (if any)
+// 4. The final target filename after resolving all symbolic links
+// Returns a map for O(1) lookup performance and a boolean indicating if symlink depth was exceeded.
+func extractAllCommandNames(cmdName string) (map[string]struct{}, bool) {
+	// Handle error case: empty command name (programming error or TOML file mistake)
+	if cmdName == "" {
+		return make(map[string]struct{}), false
+	}
+
+	seen := make(map[string]struct{})
+
+	// Add original command name
+	seen[cmdName] = struct{}{}
+
+	// Add base filename (no-op if cmdName is already just a filename)
+	seen[filepath.Base(cmdName)] = struct{}{}
+
+	// Resolve symbolic links iteratively to handle multi-level links
+	current := cmdName
+	exceededDepth := false
+
+	for depth := range MaxSymlinkDepth {
+		// Check if current path is a symbolic link
+		fileInfo, err := os.Lstat(current)
+		if err != nil {
+			// If we can't stat the file, stop here
+			break
+		}
+
+		// If it's not a symbolic link, we're done
+		if fileInfo.Mode()&os.ModeSymlink == 0 {
+			break
+		}
+
+		// If we're at the last iteration and still have a symlink, we exceeded the limit
+		if depth == MaxSymlinkDepth-1 {
+			exceededDepth = true
+			break
+		}
+
+		// Resolve the symbolic link
+		target, err := os.Readlink(current)
+		if err != nil {
+			break
+		}
+
+		// If target is relative, make it relative to the current directory
+		if !filepath.IsAbs(target) {
+			current = filepath.Join(filepath.Dir(current), target)
+		} else {
+			current = target
+		}
+
+		// Add the target name (both full path and base name)
+		seen[current] = struct{}{}
+		seen[filepath.Base(current)] = struct{}{}
+	}
+
+	return seen, exceededDepth
+}
+
 // matchesPattern checks if the command matches the dangerous pattern.
 //
 // Pattern matching rules:
 //  1. Empty commands are invalid (programming error) and always return false.
 //  2. Empty patterns match all valid commands.
-//  3. Command names (index 0): Requires exact string match.
+//  3. Command names (index 0): Matches against filename only, supporting full paths and symbolic links.
 //  4. Argument matching is order-independent.
 //  5. Argument count matching: Subset matching (command can have more arguments than pattern).
 //  6. Argument patterns ending with "=": Use prefix matching (e.g., "if="
@@ -885,8 +960,11 @@ func matchesPattern(cmdName string, cmdArgs []string, pattern []string) bool {
 		return false
 	}
 
-	// Command name must match exactly
-	if cmdName != pattern[0] {
+	// Extract all possible command names (original, base filename, symlink targets)
+	commandNames, _ := extractAllCommandNames(cmdName)
+
+	// Check if any of the extracted command names match the pattern[0]
+	if _, exists := commandNames[pattern[0]]; !exists {
 		return false
 	}
 

@@ -31,7 +31,9 @@
       "Bash(build/runner:*)",
       "Bash(PATH:*)",
       "Bash(timeout:*)",
-      "Bash(go get:*)"
+      "Bash(go get:*)",
+      "Bash(go:*)",
+      "Bash(getconf:*)"
     ],
     "deny": [],
     "env": {
