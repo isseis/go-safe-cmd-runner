@@ -125,26 +125,78 @@ func (r *Runner) PerformDryRun(ctx context.Context, opts DryRunOptions) (*DryRun
 ```
 
 #### 3.1.2 ResourceManager インターフェース
-すべての副作用を統一的に管理するインターフェース（既実装済み）：
+すべての副作用を統一的に管理するインターフェース（Phase 2で実装完了）：
 
 ```go
+// ResourceManager manages all side-effects (commands, filesystem, privileges, etc.)
 type ResourceManager interface {
-    // Mode management
-    SetMode(mode ExecutionMode, opts *DryRunOptions)
-    GetMode() ExecutionMode
-
-    // Side effect operations (intercepted in dry-run mode)
+    // Command execution
     ExecuteCommand(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) (*ExecutionResult, error)
+
+    // Filesystem operations
     CreateTempDir(groupName string) (string, error)
     CleanupTempDir(tempDirPath string) error
+    CleanupAllTempDirs() error
+
+    // Privilege management
     WithPrivileges(ctx context.Context, fn func() error) error
-    SendNotification(message string, details map[string]interface{}) error
+    IsPrivilegeEscalationRequired(cmd runnertypes.Command) (bool, error)
+
+    // Network operations
+    SendNotification(message string, details map[string]any) error
+}
+
+// DryRunResourceManager extends ResourceManager with dry-run specific functionality
+type DryRunResourceManager interface {
+    ResourceManager
 
     // Dry-run specific
     GetDryRunResults() *DryRunResult
     RecordAnalysis(analysis *ResourceAnalysis)
 }
 ```
+
+#### 3.1.3 DefaultResourceManager 委譲パターン (Phase 2実装完了)
+実際の実装では、委譲パターンによるファサード型ResourceManagerを採用しています：
+
+```go
+// DefaultResourceManager provides a mode-aware facade that delegates to
+// NormalResourceManager or DryRunResourceManagerImpl depending on ExecutionMode.
+type DefaultResourceManager struct {
+    mode   ExecutionMode
+    normal *NormalResourceManager
+    dryrun *DryRunResourceManagerImpl
+}
+
+// activeManager returns the manager corresponding to the current execution mode.
+func (d *DefaultResourceManager) activeManager() ResourceManager {
+    if d.mode == ExecutionModeDryRun {
+        return d.dryrun
+    }
+    return d.normal
+}
+
+// GetMode returns the current execution mode.
+func (d *DefaultResourceManager) GetMode() ExecutionMode { return d.mode }
+
+// 各操作は現在のモードに応じて適切なマネージャに委譲
+func (d *DefaultResourceManager) ExecuteCommand(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) (*ExecutionResult, error) {
+    return d.activeManager().ExecuteCommand(ctx, cmd, group, env)
+}
+
+// Dry-run結果は dry-runモード時のみ取得可能（通常時は nil）
+func (d *DefaultResourceManager) GetDryRunResults() *DryRunResult {
+    if d.mode == ExecutionModeDryRun {
+        return d.dryrun.GetDryRunResults()
+    }
+    return nil
+}
+```
+
+このパターンにより：
+- **実行パス整合性**: 両モードで同一のインターフェースとフローを使用
+- **モード切替の効率性**: 実行時のモード変更を支援
+- **状態管理**: dry-run分析結果を適切に管理
 
 ### 3.2 実装済み型システム
 
@@ -225,19 +277,36 @@ type FileVerification struct {
 
 #### 3.3.4 実行結果
 ```go
-// ExecutionResult represents the result of a command execution
+// ExecutionResult unified result for both normal and dry-run
 type ExecutionResult struct {
-    Command     string                 `json:"command"`      // Executed command
-    ExitCode    int                    `json:"exit_code"`    // Command exit code
-    Stdout      string                 `json:"stdout"`       // Standard output
-    Stderr      string                 `json:"stderr"`       // Standard error
-    Duration    int64                  `json:"duration_ms"`  // Execution duration in milliseconds
-    StartTime   time.Time              `json:"start_time"`   // Execution start time
-    EndTime     time.Time              `json:"end_time"`     // Execution end time
-    WorkingDir  string                 `json:"working_dir"`  // Working directory
-    Environment map[string]string      `json:"environment"`  // Environment variables used
-    Success     bool                   `json:"success"`      // True if exit code is 0
-    Error       error                  `json:"error,omitempty"` // Execution error if any
+    ExitCode int               `json:"exit_code"`
+    Stdout   string            `json:"stdout"`
+    Stderr   string            `json:"stderr"`
+    Duration int64             `json:"duration_ms"` // Duration in milliseconds
+    DryRun   bool              `json:"dry_run"`
+    Analysis *ResourceAnalysis `json:"analysis,omitempty"`
+}
+
+// DryRunResult represents the complete result of a dry-run analysis
+type DryRunResult struct {
+    Metadata         *ResultMetadata    `json:"metadata"`
+    ExecutionPlan    *ExecutionPlan     `json:"execution_plan"`
+    ResourceAnalyses []ResourceAnalysis `json:"resource_analyses"`
+    SecurityAnalysis *SecurityAnalysis  `json:"security_analysis"`
+    EnvironmentInfo  *EnvironmentInfo   `json:"environment_info"`
+    Errors           []DryRunError      `json:"errors"`
+    Warnings         []DryRunWarning    `json:"warnings"`
+}
+
+// ResultMetadata contains metadata about the dry-run result
+type ResultMetadata struct {
+    GeneratedAt     time.Time     `json:"generated_at"`
+    RunID           string        `json:"run_id"`
+    ConfigPath      string        `json:"config_path"`
+    EnvironmentFile string        `json:"environment_file"`
+    Version         string        `json:"version"`
+    Duration        time.Duration `json:"duration"`
+}
     Metadata    map[string]interface{} `json:"metadata"`     // Additional metadata
 }
 

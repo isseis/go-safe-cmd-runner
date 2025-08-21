@@ -2,15 +2,12 @@
 
 ## 1. API仕様
 
-### 1.1 ResourceManager インターフェース（既実装済み）
+### 1.1 ResourceManager インターフェース（Phase 2実装完了）
 
 #### 1.1.1 ResourceManager メイン仕様
 ```go
+// ResourceManager manages all side-effects (commands, filesystem, privileges, etc.)
 type ResourceManager interface {
-    // Mode management
-    SetMode(mode ExecutionMode, opts *DryRunOptions)
-    GetMode() ExecutionMode
-
     // Command execution
     ExecuteCommand(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) (*ExecutionResult, error)
 
@@ -24,7 +21,12 @@ type ResourceManager interface {
     IsPrivilegeEscalationRequired(cmd runnertypes.Command) (bool, error)
 
     // Network operations
-    SendNotification(message string, details map[string]interface{}) error
+    SendNotification(message string, details map[string]any) error
+}
+
+// DryRunResourceManager extends ResourceManager with dry-run specific functionality
+type DryRunResourceManager interface {
+    ResourceManager
 
     // Dry-run specific
     GetDryRunResults() *DryRunResult
@@ -32,7 +34,29 @@ type ResourceManager interface {
 }
 ```
 
-#### 1.1.2 Runner拡張メソッド
+#### 1.1.2 DefaultResourceManager（委譲パターンファサード）
+```go
+// DefaultResourceManager provides a mode-aware facade that delegates to
+// NormalResourceManager or DryRunResourceManagerImpl depending on ExecutionMode.
+type DefaultResourceManager struct {
+    mode   ExecutionMode
+    normal *NormalResourceManager
+    dryrun *DryRunResourceManagerImpl
+}
+
+// 実行モードに応じた適切なマネージャへの委譲
+func (d *DefaultResourceManager) activeManager() ResourceManager {
+    if d.mode == ExecutionModeDryRun {
+        return d.dryrun
+    }
+    return d.normal
+}
+
+// 現在のモード取得
+func (d *DefaultResourceManager) GetMode() ExecutionMode { return d.mode }
+```
+
+#### 1.1.3 Runner拡張メソッド（Phase 3で実装予定）
 
 **PerformDryRun メソッド**
 ```go
@@ -47,13 +71,13 @@ func (r *Runner) PerformDryRun(ctx context.Context, opts DryRunOptions) (*DryRun
 - `*DryRunResult`: 分析結果
 - `error`: エラー情報
 
-**動作（Resource Manager Pattern）:**
-1. ResourceManager.SetMode(ExecutionModeDryRun, opts) でモード設定
+**動作（DefaultResourceManager委譲パターン）:**
+1. `r.resourceManager`をdry-runモードに切替（新しいDryRunResourceManagerImplインスタンス作成またはリセット）
 2. 通常実行と完全に同じ`ExecuteAll()`パスを実行
-3. ResourceManagerが全副作用を自動的にインターセプト・分析
-4. GetDryRunResults()で蓄積された分析結果を取得・返却
+3. DefaultResourceManagerが全副作用をDryRunResourceManagerImplに委譲してインターセプト・分析
+4. `r.resourceManager.GetDryRunResults()`で蓄積された分析結果を取得・返却
 
-**重要**: DryRunAnalyzerは不要。ResourceManagerによる統一的な副作用管理により実現。
+**重要**: この設計により実行パスの100%整合性を保証
 
 ### 1.2 DryRunOptions 構造体
 
@@ -121,7 +145,28 @@ type ResourceImpact struct {
 }
 ```
 
-### 1.4 DryRunResult 構造体（既実装済み）
+### 1.4 ExecutionResult 構造体（Phase 2実装完了）
+
+```go
+// ExecutionResult unified result for both normal and dry-run
+type ExecutionResult struct {
+    ExitCode int               `json:"exit_code"`
+    Stdout   string            `json:"stdout"`
+    Stderr   string            `json:"stderr"`
+    Duration int64             `json:"duration_ms"` // Duration in milliseconds
+    DryRun   bool              `json:"dry_run"`
+    Analysis *ResourceAnalysis `json:"analysis,omitempty"`
+}
+```
+
+**フィールド説明:**
+- `ExitCode`: コマンドの終了コード（dry-runでは模擬値）
+- `Stdout/Stderr`: 標準出力/エラー出力（dry-runでは空文字列）
+- `Duration`: 実行時間（dry-runでは推定値）
+- `DryRun`: dry-runモードかどうかの判別フラグ
+- `Analysis`: dry-runモード時のリソース分析情報
+
+### 1.5 DryRunResult 構造体（Phase 2実装完了）
 
 ```go
 type DryRunResult struct {
