@@ -5,23 +5,12 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 )
 
-// isSensitiveKey checks if a parameter key contains sensitive information
-func isSensitiveKey(key string) bool {
-	sensitiveKeys := []string{
-		"password", "passwd", "token", "secret", "key", "auth",
-		"credential", "private", "api_key", "access_token",
-	}
-
-	keyLower := strings.ToLower(key)
-	for _, sensitive := range sensitiveKeys {
-		if strings.Contains(keyLower, sensitive) {
-			return true
-		}
-	}
-	return false
-}
+// Global sensitive patterns instance for reuse
+var defaultSensitivePatterns = redaction.DefaultSensitivePatterns()
 
 // FormatterOptions contains options for formatting dry-run results
 type FormatterOptions struct {
@@ -155,7 +144,7 @@ func (f *TextFormatter) writeResourceAnalyses(buf *strings.Builder, analyses []R
 		if opts.DetailLevel == DetailLevelFull && len(analysis.Parameters) > 0 {
 			buf.WriteString("   Parameters:\n")
 			for key, value := range analysis.Parameters {
-				if !opts.ShowSensitive && isSensitiveKey(key) {
+				if !opts.ShowSensitive && defaultSensitivePatterns.IsSensitiveKey(key) {
 					fmt.Fprintf(buf, "     %s: [REDACTED]\n", key)
 				} else {
 					fmt.Fprintf(buf, "     %s: %v\n", key, value)
@@ -296,7 +285,7 @@ func (f *JSONFormatter) FormatResult(result *DryRunResult, opts FormatterOptions
 func (f *JSONFormatter) redactSensitiveInfo(result *DryRunResult) {
 	for i := range result.ResourceAnalyses {
 		for key := range result.ResourceAnalyses[i].Parameters {
-			if isSensitiveKey(key) {
+			if defaultSensitivePatterns.IsSensitiveKey(key) {
 				result.ResourceAnalyses[i].Parameters[key] = "[REDACTED]"
 			}
 		}
