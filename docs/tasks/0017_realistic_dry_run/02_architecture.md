@@ -18,30 +18,37 @@
 
 ```mermaid
 graph TD
-    A[CLI Entry Point<br/>cmd/runner/main.go] --> B[Runner Core<br/>internal/runner/runner.go]
+    A[CLI Entry Point<br/>cmd/runner/main.go] --> B[Mode Detection<br/>--dry-run flag]
 
-    B --> C[ExecuteAll<br/>unified method]
-    B --> D[PerformDryRun<br/>new method]
+    B --> C{Dry-run Mode?}
+    C -->|Yes| D[WithDryRun Option<br/>DryRunResourceManager]
+    C -->|No| E[Default Option<br/>DefaultResourceManager]
 
-    D --> C
+    D --> F[Runner Initialization<br/>with appropriate ResourceManager]
+    E --> F
 
-    C --> E[ResourceManager<br/>internal/runner/resource/manager.go]
+    F --> G[ExecuteAll<br/>unified method for both modes]
 
-    E --> F[Command Execution]
-    E --> G[Filesystem Operations]
-    E --> H[Privilege Management]
-    E --> I[Network Operations]
+    G --> H[ResourceManager<br/>internal/runner/resource/manager.go]
 
-    E --> J[Analysis Recording<br/>dry-run only]
-    E --> K[Result Formatting<br/>dry-run only]
+    H --> I[Command Execution]
+    H --> J[Filesystem Operations]
+    H --> K[Privilege Management]
+    H --> L[Network Operations]
+
+    H --> M[Analysis Recording<br/>dry-run only]
+    H --> N[Result Formatting<br/>dry-run only]
 
     style A fill:#e1f5fe
     style B fill:#f3e5f5
-    style C fill:#e8f5e8
-    style D fill:#e8f5e8
-    style E fill:#fff3e0
-    style J fill:#fce4ec
-    style K fill:#fce4ec
+    style C fill:#fff9c4
+    style D fill:#fce4ec
+    style E fill:#e8f5e8
+    style F fill:#f3e5f5
+    style G fill:#e8f5e8
+    style H fill:#fff3e0
+    style M fill:#fce4ec
+    style N fill:#fce4ec
 ```
 
 ### 2.2 コンポーネント間の関係
@@ -91,8 +98,8 @@ graph LR
 ```
 
 **コンポーネントの役割:**
-- **Runner**: 既存機能を保持しつつ、dry-run用の新しいメソッドを追加
-- **ResourceManager**: すべての副作用を統一的に管理（実行モード切替でdry-run対応）
+- **Runner**: 既存機能を保持し、初期化時に適切なResourceManagerを設定
+- **ResourceManager**: すべての副作用を統一的に管理（モードに応じた実装を最初から選択）
 - **Analysis Recording**: dry-runモードでの詳細な分析情報記録
 
 ## 3. コンポーネント設計
@@ -108,19 +115,36 @@ type Runner struct {
     resourceManager ResourceManager  // 新規追加
 }
 
-// PerformDryRun performs a dry-run analysis using the same execution path
-func (r *Runner) PerformDryRun(ctx context.Context, opts DryRunOptions) (*DryRunResult, error) {
-    // ResourceManagerをdry-runモードに設定
-    r.resourceManager.SetMode(ExecutionModeDryRun, &opts)
+// NewRunner creates a new command runner with appropriate ResourceManager
+func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
+    // ... existing initialization code ...
 
-    // 通常実行と同じパスを実行（副作用のみインターセプト）
-    err := r.ExecuteAll(ctx)
-    if err != nil {
-        return nil, fmt.Errorf("dry-run analysis failed: %w", err)
+    // Check if dry-run mode is requested
+    if opts.dryRun {
+        // Create DryRunResourceManager with specified options
+        opts.resourceManager = resource.NewDryRunResourceManager(
+            opts.executor,
+            fs,
+            opts.privilegeManager,
+            opts.dryRunOptions,
+        )
+    } else {
+        // Create DefaultResourceManager for normal execution
+        opts.resourceManager = resource.NewDefaultResourceManager(
+            opts.executor,
+            fs,
+            opts.privilegeManager,
+            resource.ExecutionModeNormal,
+            &resource.DryRunOptions{},
+        )
     }
 
-    // 分析結果を取得
-    return r.resourceManager.GetDryRunResults(), nil
+    // ... rest of initialization ...
+}
+
+// GetDryRunResults returns dry-run analysis results if available
+func (r *Runner) GetDryRunResults() *resource.DryRunResult {
+    return r.resourceManager.GetDryRunResults()
 }
 ```
 
@@ -144,6 +168,9 @@ type ResourceManager interface {
 
     // Network operations
     SendNotification(message string, details map[string]any) error
+
+    // Dry-run results (returns nil for normal execution mode)
+    GetDryRunResults() *DryRunResult
 }
 
 // DryRunResourceManager extends ResourceManager with dry-run specific functionality
@@ -151,7 +178,6 @@ type DryRunResourceManager interface {
     ResourceManager
 
     // Dry-run specific
-    GetDryRunResults() *DryRunResult
     RecordAnalysis(analysis *ResourceAnalysis)
 }
 ```
@@ -195,7 +221,7 @@ func (d *DefaultResourceManager) GetDryRunResults() *DryRunResult {
 
 このパターンにより：
 - **実行パス整合性**: 両モードで同一のインターフェースとフローを使用
-- **モード切替の効率性**: 実行時のモード変更を支援
+- **初期化時の最適化**: 開始時にモードが決定され、適切なマネージャーを選択
 - **状態管理**: dry-run分析結果を適切に管理
 
 ### 3.2 実装済み型システム
@@ -349,28 +375,36 @@ type FormatterOptions struct {
 
 ```mermaid
 flowchart TD
-    A[CLI Flag Detection<br/>--dry-run or normal] --> B[Runner Initialization<br/>with ResourceManager]
-    B --> C[Mode Setting<br/>ResourceManager.SetMode()]
-    C --> D[ExecuteAll Method<br/>同一の実行パス]
-    D --> E[Resource Operations<br/>through ResourceManager]
+    A[CLI Flag Detection<br/>--dry-run or normal] --> B{Dry-run Mode?}
+    B -->|Yes| C[WithDryRun Option<br/>DryRunResourceManager]
+    B -->|No| D[Default Option<br/>DefaultResourceManager]
 
-    E --> F{Execution Mode?}
-    F -->|Normal| G[Actual Side Effects<br/>Command, File, Privilege, Network]
-    F -->|Dry-Run| H[Simulated Operations<br/>+ Analysis Recording]
+    C --> E[Runner Initialization<br/>with appropriate ResourceManager]
+    D --> E
 
-    G --> I[Normal Result]
-    H --> J[Dry-Run Analysis Result<br/>GetDryRunResults()]
+    E --> F[ExecuteAll Method<br/>同一の実行パス]
+    F --> G[Resource Operations<br/>through ResourceManager]
 
-    J --> K[Result Formatting<br/>& Output]
+    G --> H{ResourceManager Type?}
+    H -->|DefaultResourceManager| I[Actual Side Effects<br/>Command, File, Privilege, Network]
+    H -->|DryRunResourceManager| J[Simulated Operations<br/>+ Analysis Recording]
+
+    I --> K[Normal Result]
+    J --> L[Dry-Run Analysis Result<br/>GetDryRunResults()]
+
+    L --> M[Result Formatting<br/>& Output]
 
     style A fill:#ffecb3
-    style B fill:#c8e6c9
-    style C fill:#e1bee7
+    style B fill:#fff9c4
+    style C fill:#fce4ec
     style D fill:#e8f5e8
-    style E fill:#fff3e0
-    style H fill:#fce4ec
+    style E fill:#c8e6c9
+    style F fill:#e8f5e8
+    style G fill:#fff3e0
+    style H fill:#fff9c4
     style J fill:#fce4ec
-    style K fill:#f8bbd9
+    style L fill:#fce4ec
+    style M fill:#f8bbd9
 ```
 
 ### 4.2 詳細実行パス
@@ -379,18 +413,18 @@ flowchart TD
 Resource Manager Patternにより、通常実行とdry-runは完全に同じコードパスを通ります：
 
 1. **初期化フェーズ**：
-   - Runner初期化（既存）
-   - ResourceManager初期化（新規）
-   - モード設定（Normal/DryRun）
+   - CLI flags解析でdry-runモード判定
+   - モードに応じた適切なResourceManager作成
+   - Runner初期化（既存パス）
 
 2. **実行フェーズ**：
    - `ExecuteAll` → `ExecuteGroup` → `executeCommandInGroup`（既存パス）
    - 全副作用がResourceManagerを経由
-   - モードに応じて実際実行 or シミュレーション
+   - ResourceManagerの実装に応じて実際実行 or シミュレーション
 
 3. **結果フェーズ**：
    - Normal: 既存の実行結果
-   - Dry-Run: ResourceManagerが蓄積した分析結果
+   - Dry-Run: ResourceManagerが蓄積した分析結果を`GetDryRunResults()`で取得
 
 #### 4.2.2 副作用インターセプション
 各副作用操作でResourceManagerが自動的に処理を分岐：
@@ -426,13 +460,16 @@ func (r *Runner) ExecuteAll(ctx context.Context) error {
 }
 
 // 新規メソッド追加（シンプル）
-func (r *Runner) PerformDryRun(ctx context.Context, opts DryRunOptions) (*DryRunResult, error) {
-    r.resourceManager.SetMode(ExecutionModeDryRun, &opts)
-    err := r.ExecuteAll(ctx)  // 同じパス実行
-    if err != nil {
-        return nil, err
+func (r *Runner) GetDryRunResults() *resource.DryRunResult {
+    return r.resourceManager.GetDryRunResults()  // dry-runモードでのみ結果返却
+}
+
+// WithDryRun option function for initialization
+func WithDryRun(dryRunOptions *resource.DryRunOptions) Option {
+    return func(opts *runnerOptions) {
+        opts.dryRun = true
+        opts.dryRunOptions = dryRunOptions
     }
-    return r.resourceManager.GetDryRunResults(), nil
 }
 ```
 
@@ -456,10 +493,11 @@ ResourceManagerが既存コンポーネントを内部で活用：
 - **包括的副作用管理**: すべての副作用を統一的にインターセプション
 - **最小限のコード変更**: 既存機能への影響を最小化
 - **拡張可能性**: 新しい副作用タイプの追加が容易
+- **初期化時最適化**: モードが決定された段階で適切なマネージャーを選択
 
 ### 6.2 テスト戦略
 - **統一テストケース**: 通常実行とdry-runで同じテストを使用可能
-- **モード切替テスト**: ResourceManager.SetMode()でモード切替のテスト
+- **初期化テスト**: WithDryRunオプションでdry-runモードの初期化テスト
 - **副作用分離**: dry-runでは副作用なしの完全テスト実行
 
 ### 6.3 運用上の利点
@@ -497,9 +535,9 @@ internal/runner/resource/
 ### 8.1 Resource Manager Pattern による保証
 Resource Manager Patternにより、以下の方法で実行パス整合性を構造的に保証：
 
-1. **同一実行パス**: `PerformDryRun()` → `ExecuteAll()` で通常実行と完全に同じパスを使用
+1. **同一実行パス**: 両モードで `ExecuteAll()` を使用し、通常実行と完全に同じパスを使用
 2. **副作用インターセプション**: ResourceManager が全副作用を統一的に処理（実行 or シミュレーション）
-3. **モード透過性**: 実行ロジックはモードを意識せず、ResourceManager が自動的に処理を分岐
+3. **モード透過性**: 実行ロジックはモードを意識せず、ResourceManager の実装が自動的に処理を分岐
 
 ### 8.2 実装上の保証メカニズム
 - **統一インターフェース**: ResourceManager による全副作用の抽象化
@@ -508,4 +546,4 @@ Resource Manager Patternにより、以下の方法で実行パス整合性を�
 
 ---
 
-**Resource Manager Pattern採用により、従来のDryRunAnalyzer設計は不要となり、より簡潔で堅牢なアーキテクチャを実現しました。**
+**Resource Manager Pattern採用により、従来のPerformDryRunメソッドによる一時的な差し替えは不要となり、初期化時の適切なResourceManager選択によるより簡潔で効率的なアーキテクチャを実現しました。**
