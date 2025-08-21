@@ -2,6 +2,7 @@ package resource
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -9,6 +10,10 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
+)
+
+const (
+	riskLevelHigh = "high"
 )
 
 // DryRunResourceManagerImpl implements DryRunResourceManager for dry-run mode
@@ -127,9 +132,16 @@ func (d *DryRunResourceManagerImpl) analyzeCommandSecurity(cmd runnertypes.Comma
 	// Check for privilege escalation requirements first (lower priority)
 	isSudo, err := security.IsSudoCommand(cmd.Cmd)
 	if err != nil {
-		// Symlink depth exceeded - treat as high security risk
-		currentRisk = "high"
-		analysis.Impact.Description += fmt.Sprintf(" [SECURITY: %s]", err.Error())
+		// Handle different error types appropriately
+		if errors.Is(err, security.ErrSymlinkDepthExceeded) {
+			// Known security issue: symlink depth exceeded
+			currentRisk = riskLevelHigh
+			analysis.Impact.Description += " [SECURITY: Symbolic link depth exceeded]"
+		} else {
+			// Unknown error - treat as critical security concern
+			currentRisk = riskLevelHigh
+			analysis.Impact.Description += fmt.Sprintf(" [CRITICAL: Unknown sudo check failure - %s]", err.Error())
+		}
 	} else if cmd.Privileged || isSudo {
 		currentRisk = "medium"
 		analysis.Impact.Description += " [PRIVILEGE: Requires elevated privileges]"
@@ -214,7 +226,7 @@ func (d *DryRunResourceManagerImpl) WithPrivileges(_ context.Context, fn func() 
 		Impact: ResourceImpact{
 			Reversible:   true,
 			Persistent:   false,
-			SecurityRisk: "high",
+			SecurityRisk: riskLevelHigh,
 			Description:  "Execute function with elevated privileges",
 		},
 		Timestamp: time.Now(),

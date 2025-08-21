@@ -2,6 +2,7 @@ package resource
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -127,7 +128,10 @@ func (n *NormalResourceManager) IsPrivilegeEscalationRequired(cmd runnertypes.Co
 	// Check for sudo in command
 	isSudo, err := security.IsSudoCommand(cmd.Cmd)
 	if err != nil {
-		return false, fmt.Errorf("failed to check sudo command: %w", err)
+		if errors.Is(err, security.ErrSymlinkDepthExceeded) {
+			return false, fmt.Errorf("privilege escalation check failed due to excessive symbolic link depth (potential attack): %w", err)
+		}
+		return false, fmt.Errorf("privilege escalation check failed due to unknown error: %w", err)
 	}
 	if isSudo {
 		return true, nil
