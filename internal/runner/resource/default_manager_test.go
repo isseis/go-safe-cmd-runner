@@ -77,7 +77,34 @@ func TestDefaultResourceManager_PrivilegesAndNotifications(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, called)
 
+	// After WithPrivileges, a privilege analysis should be recorded
+	res := mgr.GetDryRunResults()
+	if assert.NotNil(t, res) {
+		if assert.GreaterOrEqual(t, len(res.ResourceAnalyses), 1) {
+			last := res.ResourceAnalyses[len(res.ResourceAnalyses)-1]
+			assert.Equal(t, ResourceTypePrivilege, last.Type)
+			assert.Equal(t, OperationEscalate, last.Operation)
+			assert.Equal(t, "system_privileges", last.Target)
+			// Parameters should include context of escalation
+			assert.Equal(t, "privilege_escalation", last.Parameters["context"])
+		}
+	}
+	prevLen := len(res.ResourceAnalyses)
+
 	// SendNotification should be no-op in normal and analysis in dry-run
 	err = mgr.SendNotification("msg", map[string]interface{}{"k": "v"})
 	assert.NoError(t, err)
+
+	// After SendNotification, a network analysis should be recorded
+	res2 := mgr.GetDryRunResults()
+	if assert.NotNil(t, res2) {
+		assert.Equal(t, prevLen+1, len(res2.ResourceAnalyses))
+		last := res2.ResourceAnalyses[len(res2.ResourceAnalyses)-1]
+		assert.Equal(t, ResourceTypeNetwork, last.Type)
+		assert.Equal(t, OperationSend, last.Operation)
+		assert.Equal(t, "notification_service", last.Target)
+		// Parameters should include message and details
+		assert.Equal(t, "msg", last.Parameters["message"])
+		assert.Equal(t, map[string]interface{}{"k": "v"}, last.Parameters["details"])
+	}
 }
