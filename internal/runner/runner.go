@@ -112,6 +112,8 @@ type runnerOptions struct {
 	auditLogger         *audit.Logger
 	runID               string
 	resourceManager     resource.ResourceManager
+	dryRun              bool
+	dryRunOptions       *resource.DryRunOptions
 }
 
 // WithSecurity sets a custom security configuration
@@ -170,6 +172,14 @@ func WithResourceManager(resourceManager resource.ResourceManager) Option {
 	}
 }
 
+// WithDryRun sets dry-run mode with optional configuration
+func WithDryRun(dryRunOptions *resource.DryRunOptions) Option {
+	return func(opts *runnerOptions) {
+		opts.dryRun = true
+		opts.dryRunOptions = dryRunOptions
+	}
+}
+
 // NewRunner creates a new command runner with the given configuration and optional customizations
 func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 	// Apply default options
@@ -222,13 +232,31 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 	if opts.resourceManager == nil {
 		// Create a simple FileSystem implementation
 		fs := &simpleFileSystem{}
-		opts.resourceManager = resource.NewDefaultResourceManager(
-			opts.executor,
-			fs,
-			opts.privilegeManager,
-			resource.ExecutionModeNormal,
-			nil, // DryRunOptions will be set later if needed
-		)
+
+		// Check if dry-run mode is requested
+		if opts.dryRun {
+			// Ensure dryRunOptions has default values if nil
+			if opts.dryRunOptions == nil {
+				opts.dryRunOptions = &resource.DryRunOptions{
+					DetailLevel:  resource.DetailLevelDetailed,
+					OutputFormat: resource.OutputFormatText,
+				}
+			}
+			opts.resourceManager = resource.NewDryRunResourceManager(
+				opts.executor,
+				fs,
+				opts.privilegeManager,
+				opts.dryRunOptions,
+			)
+		} else {
+			opts.resourceManager = resource.NewDefaultResourceManager(
+				opts.executor,
+				fs,
+				opts.privilegeManager,
+				resource.ExecutionModeNormal,
+				&resource.DryRunOptions{}, // Empty dry-run options for normal mode
+			)
+		}
 	}
 
 	return &Runner{
@@ -677,32 +705,9 @@ func (r *Runner) CleanupAllResources() error {
 	return r.resourceManager.CleanupAllTempDirs()
 }
 
-// PerformDryRun performs a dry-run analysis using the same execution path as normal execution
-func (r *Runner) PerformDryRun(ctx context.Context, opts *resource.DryRunOptions) (*resource.DryRunResult, error) {
-	// Create a new ResourceManager in dry-run mode
-	fs := &simpleFileSystem{}
-	dryRunManager := resource.NewDryRunResourceManager(
-		r.executor,
-		fs,
-		r.privilegeManager,
-		opts,
-	)
-
-	// Temporarily replace the resourceManager with the dry-run manager
-	originalManager := r.resourceManager
-	r.resourceManager = dryRunManager
-	defer func() {
-		r.resourceManager = originalManager
-	}()
-
-	// Execute the same path as normal execution
-	err := r.ExecuteAll(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("dry-run analysis failed: %w", err)
-	}
-
-	// Get the analysis results
-	return dryRunManager.GetDryRunResults(), nil
+// GetDryRunResults returns dry-run analysis results if available
+func (r *Runner) GetDryRunResults() *resource.DryRunResult {
+	return r.resourceManager.GetDryRunResults()
 }
 
 // sendGroupNotification sends a Slack notification for group execution completion
