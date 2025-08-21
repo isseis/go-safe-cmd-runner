@@ -752,3 +752,186 @@ func (v *Validator) HasShellMetacharacters(args []string) bool {
 	}
 	return false
 }
+
+// RiskLevel represents the security risk level of a command pattern
+type RiskLevel string
+
+const (
+	// RiskLevelNone indicates no security risk
+	RiskLevelNone RiskLevel = ""
+	// RiskLevelLow indicates low security risk
+	RiskLevelLow RiskLevel = "low"
+	// RiskLevelMedium indicates medium security risk
+	RiskLevelMedium RiskLevel = "medium"
+	// RiskLevelHigh indicates high security risk
+	RiskLevelHigh RiskLevel = "high"
+)
+
+// String returns the string representation of the risk level
+func (r RiskLevel) String() string {
+	return string(r)
+}
+
+// IsValid checks if the risk level is valid
+func (r RiskLevel) IsValid() bool {
+	switch r {
+	case RiskLevelNone, RiskLevelLow, RiskLevelMedium, RiskLevelHigh:
+		return true
+	default:
+		return false
+	}
+}
+
+// DangerousCommandPattern represents a dangerous command pattern with its risk level
+type DangerousCommandPattern struct {
+	Pattern   []string // Full command pattern including command name and arguments
+	RiskLevel RiskLevel
+	Reason    string
+}
+
+// Pre-sorted patterns by risk level for efficient lookup
+var (
+	highRiskPatterns   []DangerousCommandPattern
+	mediumRiskPatterns []DangerousCommandPattern
+)
+
+// init initializes the pre-sorted pattern lists for efficient lookup
+func init() {
+	patterns := GetDangerousCommandPatterns()
+	for _, p := range patterns {
+		switch p.RiskLevel {
+		case RiskLevelHigh:
+			highRiskPatterns = append(highRiskPatterns, p)
+		case RiskLevelMedium:
+			mediumRiskPatterns = append(mediumRiskPatterns, p)
+		case RiskLevelLow, RiskLevelNone:
+			// Skip low and none risk patterns as they don't need checking
+			continue
+		default:
+			// Skip invalid risk levels
+			continue
+		}
+	}
+}
+
+// GetDangerousCommandPatterns returns a list of dangerous command patterns for security analysis
+func GetDangerousCommandPatterns() []DangerousCommandPattern {
+	return []DangerousCommandPattern{
+		// File system destruction
+		{[]string{"rm", "-rf"}, RiskLevelHigh, "Recursive file removal"},
+		{[]string{"sudo", "rm"}, RiskLevelHigh, "Privileged file removal"},
+		{[]string{"format"}, RiskLevelHigh, "Disk formatting"},
+		{[]string{"mkfs"}, RiskLevelHigh, "File system creation"},
+		{[]string{"fdisk"}, RiskLevelHigh, "Disk partitioning"},
+
+		// Data manipulation
+		{[]string{"dd", "if="}, RiskLevelHigh, "Low-level disk operations"},
+		{[]string{"chmod", "777"}, RiskLevelMedium, "Overly permissive file permissions"},
+		{[]string{"chown", "root"}, RiskLevelMedium, "Ownership change to root"},
+
+		// Network operations
+		{[]string{"wget"}, RiskLevelMedium, "File download"},
+		{[]string{"curl"}, RiskLevelMedium, "Network request"},
+		{[]string{"nc", "-"}, RiskLevelMedium, "Network connection"},
+		{[]string{"netcat"}, RiskLevelMedium, "Network connection"},
+	}
+}
+
+// checkCommandPatterns checks if a command matches any patterns in the given list
+func checkCommandPatterns(cmdName string, cmdArgs []string, patterns []DangerousCommandPattern) (RiskLevel, string, string) {
+	for _, pattern := range patterns {
+		if matchesPattern(cmdName, cmdArgs, pattern.Pattern) {
+			displayPattern := strings.Join(pattern.Pattern, " ")
+			return pattern.RiskLevel, displayPattern, pattern.Reason
+		}
+	}
+	return RiskLevelNone, "", ""
+}
+
+// AnalyzeCommandSecurity analyzes a command with its arguments for dangerous patterns
+func AnalyzeCommandSecurity(cmdName string, args []string) (riskLevel RiskLevel, detectedPattern string, reason string) {
+	// Check high risk patterns first
+	if riskLevel, pattern, reason := checkCommandPatterns(cmdName, args, highRiskPatterns); riskLevel != RiskLevelNone {
+		return riskLevel, pattern, reason
+	}
+
+	// Then check medium risk patterns
+	if riskLevel, pattern, reason := checkCommandPatterns(cmdName, args, mediumRiskPatterns); riskLevel != RiskLevelNone {
+		return riskLevel, pattern, reason
+	}
+
+	return RiskLevelNone, "", ""
+}
+
+// matchesPattern checks if the command matches the dangerous pattern.
+//
+// Pattern matching rules:
+//  1. Empty commands are invalid (programming error) and always return false.
+//  2. Empty patterns match all valid commands.
+//  3. Command names (index 0): Requires exact string match.
+//  4. Argument matching is order-independent.
+//  5. Argument count matching: Subset matching (command can have more arguments than pattern).
+//  6. Argument patterns ending with "=": Use prefix matching (e.g., "if="
+//     matches "if=/dev/zero").
+//  7. Other arguments: Require exact string match.
+func matchesPattern(cmdName string, cmdArgs []string, pattern []string) bool {
+	// If command itself is empty, it's a programming error that should be caught early
+	if cmdName == "" {
+		return false
+	}
+
+	// Empty pattern never matches any command
+	if len(pattern) == 0 {
+		return false
+	}
+
+	// Command name must match exactly
+	if cmdName != pattern[0] {
+		return false
+	}
+
+	patternArgs := pattern[1:]
+
+	// Default: subset match, require command to have at least as many args as pattern
+	if len(cmdArgs) < len(patternArgs) {
+		return false
+	}
+
+	// Order-independent matching with one-time use of command args
+	matchedCommandArgs := make([]bool, len(cmdArgs))
+	for _, patternArg := range patternArgs {
+		foundMatch := false
+
+		// Prefix pattern when ending with '=' (e.g., "if=")
+		if strings.HasSuffix(patternArg, "=") {
+			for i, commandArg := range cmdArgs {
+				if matchedCommandArgs[i] {
+					continue
+				}
+				if strings.HasPrefix(commandArg, patternArg) {
+					matchedCommandArgs[i] = true
+					foundMatch = true
+					break
+				}
+			}
+		} else {
+			// Exact match
+			for i, commandArg := range cmdArgs {
+				if matchedCommandArgs[i] {
+					continue
+				}
+				if commandArg == patternArg {
+					matchedCommandArgs[i] = true
+					foundMatch = true
+					break
+				}
+			}
+		}
+
+		if !foundMatch {
+			return false
+		}
+	}
+
+	return true
+}

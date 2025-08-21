@@ -9,6 +9,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
 // DryRunResourceManagerImpl implements DryRunResourceManager for dry-run mode
@@ -121,30 +122,20 @@ func (d *DryRunResourceManagerImpl) analyzeCommand(_ context.Context, cmd runner
 
 // analyzeCommandSecurity analyzes security aspects of a command
 func (d *DryRunResourceManagerImpl) analyzeCommandSecurity(cmd runnertypes.Command, analysis *ResourceAnalysis) {
-	cmdLower := strings.ToLower(cmd.Cmd)
-
 	// Initialize with no risk
 	currentRisk := ""
 
 	// Check for privilege escalation requirements first (lower priority)
-	if cmd.Privileged || strings.Contains(cmdLower, "sudo") {
+	if cmd.Privileged || strings.Contains(cmd.Cmd, "sudo") {
 		currentRisk = "medium"
 		analysis.Impact.Description += " [PRIVILEGE: Requires elevated privileges]"
 	}
 
-	// Check for potentially dangerous commands (higher priority - can override privilege risk)
-	dangerousPatterns := []string{
-		"rm -rf", "sudo rm", "format", "mkfs", "fdisk",
-		"dd if=", "chmod 777", "chown root",
-		"wget", "curl", "nc -", "netcat",
-	}
-
-	for _, pattern := range dangerousPatterns {
-		if strings.Contains(cmdLower, pattern) {
-			currentRisk = "high"
-			analysis.Impact.Description += fmt.Sprintf(" [WARNING: Potentially dangerous command pattern: %s]", pattern)
-			break
-		}
+	// Use security package for dangerous pattern analysis (higher priority - can override privilege risk)
+	// Pass command and arguments separately to avoid ambiguity with spaces
+	if riskLevel, pattern, reason := security.AnalyzeCommandSecurity(cmd.Cmd, cmd.Args); riskLevel != security.RiskLevelNone {
+		currentRisk = riskLevel.String()
+		analysis.Impact.Description += fmt.Sprintf(" [WARNING: %s - %s]", reason, pattern)
 	}
 
 	// Set the final risk level
@@ -240,7 +231,7 @@ func (d *DryRunResourceManagerImpl) IsPrivilegeEscalationRequired(cmd runnertype
 	}
 
 	// Check for sudo in command
-	if strings.Contains(strings.ToLower(cmd.Cmd), "sudo") {
+	if strings.Contains(cmd.Cmd, "sudo") {
 		return true, nil
 	}
 

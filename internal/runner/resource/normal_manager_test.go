@@ -87,8 +87,8 @@ func createTestCommand() runnertypes.Command {
 	return runnertypes.Command{
 		Name:        "test-command",
 		Description: "Test command description",
-		Cmd:         "echo hello",
-		Args:        []string{"world"},
+		Cmd:         "echo",
+		Args:        []string{"hello", "world"},
 		Dir:         "/tmp",
 		Privileged:  false,
 		Timeout:     30,
@@ -220,9 +220,10 @@ func TestNormalResourceManager_IsPrivilegeEscalationRequired(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "sudo in command",
+			name: "sudo in command name",
 			cmd: runnertypes.Command{
-				Cmd:        "sudo ls",
+				Cmd:        "sudo",
+				Args:       []string{"ls"},
 				Privileged: false,
 			},
 			expected: true,

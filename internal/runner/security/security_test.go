@@ -609,3 +609,149 @@ func TestValidator_CreateSafeLogFields(t *testing.T) {
 	assert.Equal(t, 1, result["exit_code"])
 	assert.Equal(t, "30s", result["timeout"])
 }
+
+func TestMatchesPattern(t *testing.T) {
+	tests := []struct {
+		name     string
+		command  []string
+		pattern  []string
+		expected bool
+	}{
+		// Command name exact matching tests
+		{
+			name:     "exact command match",
+			command:  []string{"rm", "-rf", "/tmp"},
+			pattern:  []string{"rm", "-rf"},
+			expected: true,
+		},
+		{
+			name:     "command name mismatch",
+			command:  []string{"ls", "-la"},
+			pattern:  []string{"rm", "-la"},
+			expected: false,
+		},
+		{
+			name:     "pattern longer than command",
+			command:  []string{"rm"},
+			pattern:  []string{"rm", "-rf", "/tmp"},
+			expected: false,
+		},
+
+		// Regular argument exact matching tests
+		{
+			name:     "regular argument exact match",
+			command:  []string{"chmod", "777", "/tmp/file"},
+			pattern:  []string{"chmod", "777"},
+			expected: true,
+		},
+		{
+			name:     "regular argument mismatch",
+			command:  []string{"chmod", "755", "/tmp/file"},
+			pattern:  []string{"chmod", "777"},
+			expected: false,
+		},
+
+		// Key-value pattern prefix matching tests (ending with "=")
+		{
+			name:     "dd if= pattern match",
+			command:  []string{"dd", "if=/dev/zero", "of=/tmp/file"},
+			pattern:  []string{"dd", "if="},
+			expected: true,
+		},
+		{
+			name:     "dd of= pattern match",
+			command:  []string{"dd", "if=/dev/zero", "of=/dev/sda"},
+			pattern:  []string{"dd", "of="},
+			expected: true,
+		},
+		{
+			name:     "dd if= pattern with specific value",
+			command:  []string{"dd", "if=/dev/zero", "of=/tmp/file"},
+			pattern:  []string{"dd", "if=/dev/kmsg"},
+			expected: false, // exact match required for non-ending-with-"=" patterns
+		},
+		{
+			name:     "key-value pattern without = in command",
+			command:  []string{"dd", "input", "output"},
+			pattern:  []string{"dd", "if="},
+			expected: false,
+		},
+		{
+			name:     "pattern with = at command name (index 0) - should use exact match",
+			command:  []string{"test=value", "arg"},
+			pattern:  []string{"test=", "arg"},
+			expected: false, // command names require exact match
+		},
+
+		// Edge cases - empty command is a programming error and should not occur
+		// {
+		// 	name:     "empty command and pattern",
+		// 	command:  []string{},
+		// 	pattern:  []string{},
+		// 	expected: true,
+		// },
+		{
+			name:     "empty args pattern with command",
+			command:  []string{"ls", "-r"},
+			pattern:  []string{"ls"},
+			expected: true,
+		},
+		{
+			name:     "pattern with = but no = in command arg",
+			command:  []string{"myapp", "config", "value"},
+			pattern:  []string{"myapp", "config="},
+			expected: false,
+		},
+		{
+			name:     "complex dd command matching",
+			command:  []string{"dd", "if=/dev/zero", "of=/tmp/test", "bs=1M", "count=10"},
+			pattern:  []string{"dd", "if="},
+			expected: true,
+		},
+		{
+			name:     "multiple key-value patterns",
+			command:  []string{"rsync", "src=/home", "dst=/backup", "opts=archive"},
+			pattern:  []string{"rsync", "src=", "dst="},
+			expected: true,
+		},
+		{
+			name:     "mixed exact and prefix patterns",
+			command:  []string{"mount", "-t", "ext4", "device=/dev/sdb1", "/mnt"},
+			pattern:  []string{"mount", "-t", "ext4", "device="},
+			expected: true,
+		},
+
+		// Additional test cases for thorough coverage
+		{
+			name:     "pattern ending with = but no equals in command",
+			command:  []string{"cmd", "argument"},
+			pattern:  []string{"cmd", "arg="},
+			expected: false,
+		},
+		{
+			name:     "argument with equals but different prefix",
+			command:  []string{"dd", "if=/dev/sda", "bs=1M"},
+			pattern:  []string{"dd", "of="},
+			expected: false,
+		},
+		{
+			name:     "exact match for command with equals sign",
+			command:  []string{"export", "PATH=/usr/bin"},
+			pattern:  []string{"export", "PATH=/usr/bin"},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmdName := ""
+			cmdArgs := []string{}
+			if len(tt.command) > 0 {
+				cmdName = tt.command[0]
+				cmdArgs = tt.command[1:]
+			}
+			result := matchesPattern(cmdName, cmdArgs, tt.pattern)
+			assert.Equal(t, tt.expected, result, "matchesPattern(%s, %v, %v) should return %v", cmdName, cmdArgs, tt.pattern, tt.expected)
+		})
+	}
+}

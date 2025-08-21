@@ -147,17 +147,19 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 		expectedDescription  string
 	}{
 		{
-			name: "dangerous rm command",
+			name: "dangerous rm command with args",
 			cmd: runnertypes.Command{
-				Cmd: "rm -rf /important/data",
+				Cmd:  "rm",
+				Args: []string{"-rf", "/important/data"},
 			},
 			expectedSecurityRisk: "high",
-			expectedDescription:  "rm -rf",
+			expectedDescription:  "Recursive file removal",
 		},
 		{
 			name: "privileged command",
 			cmd: runnertypes.Command{
-				Cmd:        "systemctl restart nginx",
+				Cmd:        "systemctl",
+				Args:       []string{"restart", "nginx"},
 				Privileged: true,
 			},
 			expectedSecurityRisk: "medium",
@@ -166,7 +168,8 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 		{
 			name: "normal command",
 			cmd: runnertypes.Command{
-				Cmd: "ls -la",
+				Cmd:  "ls",
+				Args: []string{"-la"},
 			},
 			expectedSecurityRisk: "",
 			expectedDescription:  "",
@@ -174,11 +177,40 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 		{
 			name: "dangerous command with privilege should be high risk",
 			cmd: runnertypes.Command{
-				Cmd:        "sudo rm -rf /important/data",
+				Cmd:        "sudo",
+				Args:       []string{"rm", "-rf", "/important/data"},
 				Privileged: true,
 			},
 			expectedSecurityRisk: "high",
-			expectedDescription:  "rm -rf",
+			expectedDescription:  "Privileged file removal",
+		},
+		{
+			name: "dangerous command with args and privilege",
+			cmd: runnertypes.Command{
+				Cmd:        "rm",
+				Args:       []string{"-rf", "/important/data"},
+				Privileged: true,
+			},
+			expectedSecurityRisk: "high",
+			expectedDescription:  "Recursive file removal",
+		},
+		{
+			name: "dd command with separate args",
+			cmd: runnertypes.Command{
+				Cmd:  "dd",
+				Args: []string{"if=/dev/zero", "of=/dev/sda", "bs=1M"},
+			},
+			expectedSecurityRisk: "high",
+			expectedDescription:  "Low-level disk operations",
+		},
+		{
+			name: "chmod with separate args",
+			cmd: runnertypes.Command{
+				Cmd:  "chmod",
+				Args: []string{"777", "/tmp/test"},
+			},
+			expectedSecurityRisk: "medium",
+			expectedDescription:  "Overly permissive file permissions",
 		},
 	}
 
