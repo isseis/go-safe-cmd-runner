@@ -11,6 +11,7 @@ import (
 
 const (
 	unknownString = "unknown"
+	sudoCommand   = "sudo"
 )
 
 // Static errors for better error handling

@@ -212,6 +212,33 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 			expectedSecurityRisk: "medium",
 			expectedDescription:  "Overly permissive file permissions",
 		},
+		{
+			name: "sudo with absolute path detected as privileged",
+			cmd: runnertypes.Command{
+				Cmd:  "/usr/bin/sudo",
+				Args: []string{"ls"},
+			},
+			expectedSecurityRisk: "medium",
+			expectedDescription:  "PRIVILEGE",
+		},
+		{
+			name: "pseudo-tool not detected as sudo",
+			cmd: runnertypes.Command{
+				Cmd:  "/usr/bin/pseudo-tool",
+				Args: []string{"--help"},
+			},
+			expectedSecurityRisk: "",
+			expectedDescription:  "",
+		},
+		{
+			name: "command with sudo in name but not sudo itself",
+			cmd: runnertypes.Command{
+				Cmd:  "my-sudo-wrapper",
+				Args: []string{"ls"},
+			},
+			expectedSecurityRisk: "",
+			expectedDescription:  "",
+		},
 	}
 
 	for _, tt := range tests {

@@ -3,12 +3,12 @@ package resource
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
 // NormalResourceManager implements ResourceManager for normal execution mode
@@ -125,7 +125,11 @@ func (n *NormalResourceManager) IsPrivilegeEscalationRequired(cmd runnertypes.Co
 	}
 
 	// Check for sudo in command
-	if strings.Contains(strings.ToLower(cmd.Cmd), "sudo") {
+	isSudo, err := security.IsSudoCommand(cmd.Cmd)
+	if err != nil {
+		return false, fmt.Errorf("failed to check sudo command: %w", err)
+	}
+	if isSudo {
 		return true, nil
 	}
 

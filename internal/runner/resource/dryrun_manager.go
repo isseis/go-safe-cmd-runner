@@ -3,7 +3,6 @@ package resource
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -126,7 +125,12 @@ func (d *DryRunResourceManagerImpl) analyzeCommandSecurity(cmd runnertypes.Comma
 	currentRisk := ""
 
 	// Check for privilege escalation requirements first (lower priority)
-	if cmd.Privileged || strings.Contains(cmd.Cmd, "sudo") {
+	isSudo, err := security.IsSudoCommand(cmd.Cmd)
+	if err != nil {
+		// Symlink depth exceeded - treat as high security risk
+		currentRisk = "high"
+		analysis.Impact.Description += fmt.Sprintf(" [SECURITY: %s]", err.Error())
+	} else if cmd.Privileged || isSudo {
 		currentRisk = "medium"
 		analysis.Impact.Description += " [PRIVILEGE: Requires elevated privileges]"
 	}
@@ -231,7 +235,11 @@ func (d *DryRunResourceManagerImpl) IsPrivilegeEscalationRequired(cmd runnertype
 	}
 
 	// Check for sudo in command
-	if strings.Contains(cmd.Cmd, "sudo") {
+	isSudo, err := security.IsSudoCommand(cmd.Cmd)
+	if err != nil {
+		return false, fmt.Errorf("failed to check sudo command: %w", err)
+	}
+	if isSudo {
 		return true, nil
 	}
 

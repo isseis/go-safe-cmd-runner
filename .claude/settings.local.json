@@ -33,7 +33,8 @@
       "Bash(timeout:*)",
       "Bash(go get:*)",
       "Bash(go:*)",
-      "Bash(getconf:*)"
+      "Bash(getconf:*)",
+      "Bash(HASH_DIR=/tmp/hash ./build/runner -config /tmp/dangerous_test.toml -dry-run run all_groups)"
     ],
     "deny": [],
     "env": {

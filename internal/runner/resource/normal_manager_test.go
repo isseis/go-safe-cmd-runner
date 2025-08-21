@@ -236,6 +236,40 @@ func TestNormalResourceManager_IsPrivilegeEscalationRequired(t *testing.T) {
 			},
 			expected: false,
 		},
+		{
+			name: "sudo with absolute path",
+			cmd: runnertypes.Command{
+				Cmd:        "/usr/bin/sudo",
+				Args:       []string{"ls"},
+				Privileged: false,
+			},
+			expected: true,
+		},
+		{
+			name: "sudo with relative path",
+			cmd: runnertypes.Command{
+				Cmd:        "./sudo",
+				Args:       []string{"ls"},
+				Privileged: false,
+			},
+			expected: true,
+		},
+		{
+			name: "command containing sudo but not sudo itself",
+			cmd: runnertypes.Command{
+				Cmd:        "/usr/bin/pseudo-tool",
+				Privileged: false,
+			},
+			expected: false,
+		},
+		{
+			name: "command with sudo-like name",
+			cmd: runnertypes.Command{
+				Cmd:        "my-sudo-wrapper",
+				Privileged: false,
+			},
+			expected: false,
+		},
 	}
 
 	for _, tt := range tests {

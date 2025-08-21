@@ -35,6 +35,9 @@ var (
 	// in the security configuration
 	ErrCommandNotAllowed = errors.New("command not allowed")
 
+	// ErrSymlinkDepthExceeded is returned when symbolic link resolution exceeds MaxSymlinkDepth
+	ErrSymlinkDepthExceeded = errors.New("symbolic link depth exceeded")
+
 	// ErrInvalidPath is returned for path-related structural issues:
 	// - Empty paths
 	// - Relative paths (when absolute paths are required)
@@ -852,6 +855,17 @@ func checkCommandPatterns(cmdName string, cmdArgs []string, patterns []Dangerous
 		}
 	}
 	return RiskLevelNone, "", ""
+}
+
+// IsSudoCommand checks if the given command is sudo, considering symbolic links
+// Returns (isSudo, error) where error indicates if symlink depth was exceeded
+func IsSudoCommand(cmdName string) (bool, error) {
+	commandNames, exceededDepth := extractAllCommandNames(cmdName)
+	if exceededDepth {
+		return false, ErrSymlinkDepthExceeded
+	}
+	_, isSudo := commandNames["sudo"]
+	return isSudo, nil
 }
 
 // AnalyzeCommandSecurity analyzes a command with its arguments for dangerous patterns

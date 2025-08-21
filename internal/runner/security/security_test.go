@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -908,6 +909,110 @@ func TestExtractAllCommandNamesWithSymlinks(t *testing.T) {
 		assert.Contains(t, names, actualCmd)
 		assert.Contains(t, names, "actual_echo")
 		assert.False(t, exceededDepth, "Chain should be within depth limit")
+	})
+}
+
+func TestIsSudoCommand(t *testing.T) {
+	tests := []struct {
+		name     string
+		cmdName  string
+		expected bool
+	}{
+		{
+			name:     "simple sudo command",
+			cmdName:  "sudo",
+			expected: true,
+		},
+		{
+			name:     "sudo with absolute path",
+			cmdName:  "/usr/bin/sudo",
+			expected: true,
+		},
+		{
+			name:     "sudo with relative path",
+			cmdName:  "./sudo",
+			expected: true,
+		},
+		{
+			name:     "command containing sudo but not sudo itself",
+			cmdName:  "/usr/bin/pseudo-tool",
+			expected: false,
+		},
+		{
+			name:     "command with sudo-like name",
+			cmdName:  "my-sudo-wrapper",
+			expected: false,
+		},
+		{
+			name:     "normal command",
+			cmdName:  "/bin/echo",
+			expected: false,
+		},
+		{
+			name:     "empty command",
+			cmdName:  "",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := IsSudoCommand(tt.cmdName)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+
+	// Test with actual symbolic link (integration test)
+	t.Run("symbolic link to sudo", func(t *testing.T) {
+		// Create a temporary directory
+		tempDir, err := os.MkdirTemp("", "sudo_symlink_test")
+		require.NoError(t, err)
+		defer os.RemoveAll(tempDir)
+
+		// Create a symbolic link to sudo (if it exists)
+		sudoPath := "/usr/bin/sudo"
+		if _, err := os.Stat(sudoPath); err == nil {
+			symlinkPath := filepath.Join(tempDir, "my_sudo")
+			err := os.Symlink(sudoPath, symlinkPath)
+			require.NoError(t, err)
+
+			// Test that the symbolic link is detected as sudo
+			result, err := IsSudoCommand(symlinkPath)
+			assert.NoError(t, err)
+			assert.True(t, result, "Symbolic link to sudo should be detected as sudo")
+		} else {
+			t.Skip("sudo not found at /usr/bin/sudo, skipping symlink test")
+		}
+	})
+
+	// Test symlink depth exceeded case
+	t.Run("symlink depth exceeded should return error", func(t *testing.T) {
+		// Create a temporary directory for deep symlink chain
+		tempDir, err := os.MkdirTemp("", "deep_sudo_symlink_test")
+		require.NoError(t, err)
+		defer os.RemoveAll(tempDir)
+
+		// Create a deep chain of symlinks (more than MaxSymlinkDepth=40)
+		// Create initial target file
+		targetFile := filepath.Join(tempDir, "target_sudo")
+		err = os.WriteFile(targetFile, []byte("#!/bin/bash\necho sudo"), 0o755)
+		require.NoError(t, err)
+
+		// Create 45 symlinks (exceeds MaxSymlinkDepth=40)
+		current := targetFile
+		for i := 0; i < 45; i++ {
+			linkPath := filepath.Join(tempDir, fmt.Sprintf("link_%d", i))
+			err := os.Symlink(current, linkPath)
+			require.NoError(t, err)
+			current = linkPath
+		}
+
+		// Test that deep symlink returns error
+		result, err := IsSudoCommand(current)
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, ErrSymlinkDepthExceeded)
+		assert.False(t, result, "Deep symlink should return false when depth exceeded")
 	})
 }
 
