@@ -33,60 +33,47 @@ func NewDefaultResourceManager(exec executor.CommandExecutor, fs executor.FileSy
 // GetMode returns the current execution mode.
 func (d *DefaultResourceManager) GetMode() ExecutionMode { return d.mode }
 
+// activeManager returns the manager corresponding to the current execution mode.
+func (d *DefaultResourceManager) activeManager() ResourceManager {
+	if d.mode == ExecutionModeDryRun {
+		return d.dryrun
+	}
+	return d.normal
+}
+
 // ExecuteCommand delegates to the active manager.
 func (d *DefaultResourceManager) ExecuteCommand(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) (*ExecutionResult, error) {
-	if d.mode == ExecutionModeDryRun {
-		return d.dryrun.ExecuteCommand(ctx, cmd, group, env)
-	}
-	return d.normal.ExecuteCommand(ctx, cmd, group, env)
+	return d.activeManager().ExecuteCommand(ctx, cmd, group, env)
 }
 
 // CreateTempDir delegates to the active manager.
 func (d *DefaultResourceManager) CreateTempDir(groupName string) (string, error) {
-	if d.mode == ExecutionModeDryRun {
-		return d.dryrun.CreateTempDir(groupName)
-	}
-	return d.normal.CreateTempDir(groupName)
+	return d.activeManager().CreateTempDir(groupName)
 }
 
 // CleanupTempDir delegates to the active manager.
 func (d *DefaultResourceManager) CleanupTempDir(tempDirPath string) error {
-	if d.mode == ExecutionModeDryRun {
-		return d.dryrun.CleanupTempDir(tempDirPath)
-	}
-	return d.normal.CleanupTempDir(tempDirPath)
+	return d.activeManager().CleanupTempDir(tempDirPath)
 }
 
 // CleanupAllTempDirs delegates to the active manager.
 func (d *DefaultResourceManager) CleanupAllTempDirs() error {
-	if d.mode == ExecutionModeDryRun {
-		return d.dryrun.CleanupAllTempDirs()
-	}
-	return d.normal.CleanupAllTempDirs()
+	return d.activeManager().CleanupAllTempDirs()
 }
 
 // WithPrivileges delegates to the active manager.
 func (d *DefaultResourceManager) WithPrivileges(ctx context.Context, fn func() error) error {
-	if d.mode == ExecutionModeDryRun {
-		return d.dryrun.WithPrivileges(ctx, fn)
-	}
-	return d.normal.WithPrivileges(ctx, fn)
+	return d.activeManager().WithPrivileges(ctx, fn)
 }
 
 // IsPrivilegeEscalationRequired delegates to the active manager.
 func (d *DefaultResourceManager) IsPrivilegeEscalationRequired(cmd runnertypes.Command) (bool, error) {
-	if d.mode == ExecutionModeDryRun {
-		return d.dryrun.IsPrivilegeEscalationRequired(cmd)
-	}
-	return d.normal.IsPrivilegeEscalationRequired(cmd)
+	return d.activeManager().IsPrivilegeEscalationRequired(cmd)
 }
 
 // SendNotification delegates to the active manager.
 func (d *DefaultResourceManager) SendNotification(message string, details map[string]interface{}) error {
-	if d.mode == ExecutionModeDryRun {
-		return d.dryrun.SendNotification(message, details)
-	}
-	return d.normal.SendNotification(message, details)
+	return d.activeManager().SendNotification(message, details)
 }
 
 // GetDryRunResults returns dry-run results if in dry-run mode; otherwise nil.
