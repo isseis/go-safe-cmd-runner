@@ -284,7 +284,7 @@ func TestNormalResourceManager_IsPrivilegeEscalationRequired(t *testing.T) {
 func TestNormalResourceManager_SendNotification(t *testing.T) {
 	manager, _, _, _ := createTestNormalResourceManager()
 	message := "Test notification"
-	details := map[string]interface{}{"key": "value"}
+	details := map[string]any{"key": "value"}
 
 	err := manager.SendNotification(message, details)
 

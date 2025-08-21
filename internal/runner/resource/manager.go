@@ -58,7 +58,7 @@ type ResourceManager interface {
 	IsPrivilegeEscalationRequired(cmd runnertypes.Command) (bool, error)
 
 	// Network operations
-	SendNotification(message string, details map[string]interface{}) error
+	SendNotification(message string, details map[string]any) error
 }
 
 // DryRunResourceManager extends ResourceManager with dry-run specific functionality

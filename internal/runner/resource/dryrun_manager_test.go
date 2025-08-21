@@ -110,7 +110,7 @@ func TestDryRunResourceManager_WithPrivileges(t *testing.T) {
 func TestDryRunResourceManager_SendNotification(t *testing.T) {
 	manager := createTestDryRunResourceManager()
 	message := "Test notification"
-	details := map[string]interface{}{"key": "value"}
+	details := map[string]any{"key": "value"}
 
 	err := manager.SendNotification(message, details)
 
