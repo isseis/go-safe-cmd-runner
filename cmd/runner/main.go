@@ -22,6 +22,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
@@ -326,8 +327,30 @@ func executeRunner(ctx context.Context, cfg *runnertypes.Config, verificationMan
 
 	// Handle dry run mode
 	if *dryRun {
-		fmt.Println("[DRY RUN] Would execute the following groups:")
-		runner.ListCommands()
+		opts := &resource.DryRunOptions{
+			DetailLevel:   resource.DetailLevelDetailed,
+			OutputFormat:  resource.OutputFormatText,
+			ShowSensitive: false,
+			VerifyFiles:   true,
+		}
+
+		result, err := runner.PerformDryRun(ctx, opts)
+		if err != nil {
+			return fmt.Errorf("dry-run failed: %w", err)
+		}
+
+		// Use the formatter to display results
+		formatter := resource.NewTextFormatter()
+		output, err := formatter.FormatResult(result, resource.FormatterOptions{
+			DetailLevel:   opts.DetailLevel,
+			OutputFormat:  opts.OutputFormat,
+			ShowSensitive: opts.ShowSensitive,
+		})
+		if err != nil {
+			return fmt.Errorf("formatting failed: %w", err)
+		}
+
+		fmt.Print(output)
 		return nil
 	}
 

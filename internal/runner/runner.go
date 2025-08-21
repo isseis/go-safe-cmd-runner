@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/tempdir"
@@ -94,6 +96,7 @@ type Runner struct {
 	envFilter           *environment.Filter
 	privilegeManager    runnertypes.PrivilegeManager // Optional privilege manager for privileged commands
 	runID               string                       // Unique identifier for this execution run
+	resourceManager     resource.ResourceManager     // Manages all side-effects (commands, filesystem, privileges, etc.)
 }
 
 // Option is a function type for configuring Runner instances
@@ -108,6 +111,7 @@ type runnerOptions struct {
 	privilegeManager    runnertypes.PrivilegeManager
 	auditLogger         *audit.Logger
 	runID               string
+	resourceManager     resource.ResourceManager
 }
 
 // WithSecurity sets a custom security configuration
@@ -159,6 +163,13 @@ func WithRunID(runID string) Option {
 	}
 }
 
+// WithResourceManager sets a custom resource manager
+func WithResourceManager(resourceManager resource.ResourceManager) Option {
+	return func(opts *runnerOptions) {
+		opts.resourceManager = resourceManager
+	}
+}
+
 // NewRunner creates a new command runner with the given configuration and optional customizations
 func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 	// Apply default options
@@ -207,6 +218,19 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 	// Create environment filter
 	envFilter := environment.NewFilter(config)
 
+	// Create default ResourceManager if not provided
+	if opts.resourceManager == nil {
+		// Create a simple FileSystem implementation
+		fs := &simpleFileSystem{}
+		opts.resourceManager = resource.NewDefaultResourceManager(
+			opts.executor,
+			fs,
+			opts.privilegeManager,
+			resource.ExecutionModeNormal,
+			nil, // DryRunOptions will be set later if needed
+		)
+	}
+
 	return &Runner{
 		executor:            opts.executor,
 		config:              config,
@@ -217,6 +241,7 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 		envFilter:           envFilter,
 		privilegeManager:    opts.privilegeManager,
 		runID:               opts.runID,
+		resourceManager:     opts.resourceManager,
 	}, nil
 }
 
@@ -329,9 +354,9 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 	// Track temporary directories for cleanup
 	groupTempDirs := make([]string, 0)
 	defer func() {
-		// Clean up temp directories created for this group
+		// Clean up temp directories created for this group using ResourceManager
 		for _, tempDirPath := range groupTempDirs {
-			if err := r.tempDirManager.CleanupTempDir(tempDirPath); err != nil {
+			if err := r.resourceManager.CleanupTempDir(tempDirPath); err != nil {
 				slog.Warn("Failed to cleanup temp directory", "path", tempDirPath, "error", err)
 			}
 		}
@@ -351,9 +376,9 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 	// Process new fields (TempDir, Cleanup, WorkDir)
 	var tempDirPath string
 	if processedGroup.TempDir {
-		// Create temporary directory for this group
+		// Create temporary directory for this group using ResourceManager
 		var err error
-		tempDirPath, err = r.tempDirManager.CreateTempDir(processedGroup.Name)
+		tempDirPath, err = r.resourceManager.CreateTempDir(processedGroup.Name)
 		if err != nil {
 			return fmt.Errorf("failed to create temp directory for group %s: %w", processedGroup.Name, err)
 		}
@@ -506,8 +531,18 @@ func (r *Runner) executeCommandInGroup(ctx context.Context, cmd runnertypes.Comm
 		cmd.Dir = r.config.Global.WorkDir
 	}
 
-	// Execute the command
-	return r.executor.Execute(ctx, cmd, envVars)
+	// Execute the command using ResourceManager
+	result, err := r.resourceManager.ExecuteCommand(ctx, cmd, group, envVars)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert ResourceManager result to executor.Result
+	return &executor.Result{
+		ExitCode: result.ExitCode,
+		Stdout:   result.Stdout,
+		Stderr:   result.Stderr,
+	}, nil
 }
 
 // resolveEnvironmentVars resolves environment variables for a command with group context
@@ -639,7 +674,35 @@ func (r *Runner) GetConfig() *runnertypes.Config {
 
 // CleanupAllResources cleans up all managed resources
 func (r *Runner) CleanupAllResources() error {
-	return r.tempDirManager.CleanupAll()
+	return r.resourceManager.CleanupAllTempDirs()
+}
+
+// PerformDryRun performs a dry-run analysis using the same execution path as normal execution
+func (r *Runner) PerformDryRun(ctx context.Context, opts *resource.DryRunOptions) (*resource.DryRunResult, error) {
+	// Create a new ResourceManager in dry-run mode
+	fs := &simpleFileSystem{}
+	dryRunManager := resource.NewDryRunResourceManager(
+		r.executor,
+		fs,
+		r.privilegeManager,
+		opts,
+	)
+
+	// Temporarily replace the resourceManager with the dry-run manager
+	originalManager := r.resourceManager
+	r.resourceManager = dryRunManager
+	defer func() {
+		r.resourceManager = originalManager
+	}()
+
+	// Execute the same path as normal execution
+	err := r.ExecuteAll(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("dry-run analysis failed: %w", err)
+	}
+
+	// Get the analysis results
+	return dryRunManager.GetDryRunResults(), nil
 }
 
 // sendGroupNotification sends a Slack notification for group execution completion
@@ -668,4 +731,23 @@ func hasPrivilegedCommands(config *runnertypes.Config) bool {
 		}
 	}
 	return false
+}
+
+// simpleFileSystem implements executor.FileSystem using standard os operations
+type simpleFileSystem struct{}
+
+func (fs *simpleFileSystem) CreateTempDir(dir, prefix string) (string, error) {
+	return os.MkdirTemp(dir, prefix)
+}
+
+func (fs *simpleFileSystem) RemoveAll(path string) error {
+	return os.RemoveAll(path)
+}
+
+func (fs *simpleFileSystem) FileExists(path string) (bool, error) {
+	_, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return err == nil, err
 }
