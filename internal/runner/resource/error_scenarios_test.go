@@ -2,6 +2,7 @@ package resource
 
 import (
 	"context"
+	"strconv"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -208,7 +209,7 @@ func TestConcurrentExecution(t *testing.T) {
 			}
 
 			envVars := map[string]string{
-				"GOROUTINE_ID": string(rune(goroutineID)),
+				"GOROUTINE_ID": strconv.Itoa(goroutineID),
 			}
 
 			// Execute multiple commands in this goroutine

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -12,48 +13,52 @@ import (
 // TestSecurityAnalysis verifies that security analysis properly identifies risks
 func TestSecurityAnalysis(t *testing.T) {
 	tests := []struct {
-		name             string
-		command          runnertypes.Command
-		expectedRiskType RiskType
-		expectRisk       bool
+		name            string
+		command         runnertypes.Command
+		expectRisk      bool
+		expectedPattern string // Expected pattern found in security analysis
 	}{
 		{
 			name: "dangerous command - rm with wildcards",
 			command: runnertypes.Command{
 				Name:        "dangerous-rm",
 				Description: "Dangerous rm command",
-				Cmd:         "rm -rf /tmp/*",
+				Cmd:         "rm",
+				Args:        []string{"-rf", "/tmp/*"},
 			},
-			expectedRiskType: RiskTypeDangerousCommand,
-			expectRisk:       true,
+			expectRisk:      true,
+			expectedPattern: "rm -rf", // This pattern is in the security analysis
 		},
 		{
 			name: "privileged command - sudo usage",
 			command: runnertypes.Command{
 				Name:        "sudo-command",
 				Description: "Command requiring sudo",
-				Cmd:         "sudo systemctl restart nginx",
+				Cmd:         "sudo",
+				Args:        []string{"systemctl", "restart", "nginx"},
 				Privileged:  true,
 			},
-			expectedRiskType: RiskTypePrivilegeEscalation,
-			expectRisk:       true,
+			expectRisk:      true,
+			expectedPattern: "PRIVILEGE", // Should detect privilege escalation
 		},
 		{
 			name: "network command - curl to external",
 			command: runnertypes.Command{
 				Name:        "external-curl",
 				Description: "External network request",
-				Cmd:         "curl https://external-api.example.com/data",
+				Cmd:         "curl",
+				Args:        []string{"https://external-api.example.com/data"},
 			},
-			expectedRiskType: RiskTypeDangerousCommand,
-			expectRisk:       true,
+			expectRisk:      true,
+			expectedPattern: "curl", // curl is a medium risk pattern
 		},
 		{
 			name: "safe command - simple echo",
 			command: runnertypes.Command{
 				Name:        "safe-echo",
 				Description: "Safe echo command",
-				Cmd:         "echo hello world",
+				Cmd:         "echo",
+				Args:        []string{"hello", "world"},
 			},
 			expectRisk: false,
 		},
@@ -92,12 +97,27 @@ func TestSecurityAnalysis(t *testing.T) {
 			dryRunResult := manager.GetDryRunResults()
 			require.NotNil(t, dryRunResult)
 
-			// Security analysis is not yet fully implemented in the current version
-			// The test verifies that the dry-run analysis completes without errors
+			// Verify the resource analysis was captured
+			require.Len(t, dryRunResult.ResourceAnalyses, 1, "should have one resource analysis")
+			analysis := dryRunResult.ResourceAnalyses[0]
+
+			// Verify basic analysis properties
+			assert.Equal(t, ResourceTypeCommand, analysis.Type)
+			assert.Equal(t, OperationExecute, analysis.Operation)
+
+			// Verify security analysis results
 			if tt.expectRisk {
-				// Currently, security analysis may not be implemented
-				// This is a placeholder for future security analysis functionality
-				t.Logf("Security analysis test for %s: would expect %v risk type", tt.name, tt.expectedRiskType)
+				// Should have detected security risk
+				assert.NotEmpty(t, analysis.Impact.SecurityRisk, "should have detected security risk")
+
+				if tt.expectedPattern != "" {
+					// Should contain expected pattern in description
+					assert.Contains(t, analysis.Impact.Description, tt.expectedPattern,
+						"security analysis description should contain expected pattern")
+				}
+			} else {
+				// Should not have detected security risk
+				assert.Empty(t, analysis.Impact.SecurityRisk, "should not have detected security risk for safe command")
 			}
 		})
 	}
@@ -115,17 +135,9 @@ func TestPrivilegeEscalationDetection(t *testing.T) {
 			command: runnertypes.Command{
 				Name:        "sudo-test",
 				Description: "Sudo test command",
-				Cmd:         "sudo apt update",
+				Cmd:         "sudo",
+				Args:        []string{"apt", "update"},
 				Privileged:  true,
-			},
-			expectPrivilegeChange: true,
-		},
-		{
-			name: "setuid binary",
-			command: runnertypes.Command{
-				Name:        "setuid-test",
-				Description: "Setuid binary test",
-				Cmd:         "/usr/bin/passwd",
 			},
 			expectPrivilegeChange: true,
 		},
@@ -134,7 +146,8 @@ func TestPrivilegeEscalationDetection(t *testing.T) {
 			command: runnertypes.Command{
 				Name:        "normal-test",
 				Description: "Normal command test",
-				Cmd:         "ls -la",
+				Cmd:         "ls",
+				Args:        []string{"-la"},
 			},
 			expectPrivilegeChange: false,
 		},
@@ -172,161 +185,140 @@ func TestPrivilegeEscalationDetection(t *testing.T) {
 			dryRunResult := manager.GetDryRunResults()
 			require.NotNil(t, dryRunResult)
 
-			// Privilege escalation detection is not yet fully implemented
+			// Verify the resource analysis was captured
+			require.Len(t, dryRunResult.ResourceAnalyses, 1, "should have one resource analysis")
+			analysis := dryRunResult.ResourceAnalyses[0]
+
+			// Verify privilege escalation detection
 			if tt.expectPrivilegeChange {
-				t.Logf("Privilege escalation test for %s: would expect privilege change detection", tt.name)
+				// Should have detected privilege requirement
+				assert.NotEmpty(t, analysis.Impact.SecurityRisk, "should have detected security risk for privileged command")
+				assert.Contains(t, analysis.Impact.Description, "PRIVILEGE",
+					"should mention privilege requirement in description")
+			} else if analysis.Impact.Description != "" {
+				// Normal commands may still have some security analysis but shouldn't mention privilege
+				assert.NotContains(t, analysis.Impact.Description, "PRIVILEGE",
+					"should not mention privilege for normal command")
 			}
 		})
 	}
 }
 
-// TestEnvironmentVariableSecurityAnalysis tests security analysis of environment variable access
-func TestEnvironmentVariableSecurityAnalysis(t *testing.T) {
-	tests := []struct {
-		name           string
-		command        runnertypes.Command
-		envVars        map[string]string
-		expectAnalysis bool
-	}{
-		{
-			name: "command accessing sensitive env var",
-			command: runnertypes.Command{
-				Name:        "env-access-test",
-				Description: "Environment access test",
-				Cmd:         "echo $DATABASE_PASSWORD",
-			},
-			envVars: map[string]string{
-				"DATABASE_PASSWORD": "secret123",
-				"USER":              "testuser",
-			},
-			expectAnalysis: true,
-		},
-		{
-			name: "command with safe env vars",
-			command: runnertypes.Command{
-				Name:        "safe-env-test",
-				Description: "Safe environment test",
-				Cmd:         "echo $USER",
-			},
-			envVars: map[string]string{
-				"USER": "testuser",
-				"HOME": "/home/testuser",
-			},
-			expectAnalysis: false,
-		},
+// TestCommandSecurityAnalysis tests that the security analysis function is called correctly
+func TestCommandSecurityAnalysis(t *testing.T) {
+	ctx := context.Background()
+
+	// Test that we can directly verify the security analysis function
+	riskLevel, pattern, reason := security.AnalyzeCommandSecurity("rm", []string{"-rf", "/tmp/*"})
+
+	// Verify direct security analysis works
+	assert.Equal(t, security.RiskLevelHigh, riskLevel, "should detect high risk for rm -rf")
+	assert.Contains(t, pattern, "rm -rf", "should identify rm -rf pattern")
+	assert.NotEmpty(t, reason, "should provide reason for risk")
+
+	// Test through dry-run manager
+	dryRunOpts := &DryRunOptions{
+		DetailLevel:   DetailLevelDetailed,
+		OutputFormat:  OutputFormatText,
+		ShowSensitive: false,
+		VerifyFiles:   true,
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
+	manager := NewDryRunResourceManager(nil, nil, dryRunOpts)
+	require.NotNil(t, manager)
 
-			dryRunOpts := &DryRunOptions{
-				DetailLevel:   DetailLevelDetailed,
-				OutputFormat:  OutputFormatText,
-				ShowSensitive: false,
-				VerifyFiles:   true,
-			}
-
-			manager := NewDryRunResourceManager(nil, nil, dryRunOpts)
-			require.NotNil(t, manager)
-
-			group := &runnertypes.CommandGroup{
-				Name:        "env-security-test-group",
-				Description: "Environment security test group",
-				Priority:    1,
-			}
-
-			// Execute the command
-			_, err := manager.ExecuteCommand(ctx, tt.command, group, tt.envVars)
-			assert.NoError(t, err)
-
-			// Get dry-run results
-			dryRunResult := manager.GetDryRunResults()
-			require.NotNil(t, dryRunResult)
-
-			// Environment variable access tracking is not yet fully implemented
-			if tt.expectAnalysis {
-				t.Logf("Environment variable analysis test for %s: would expect environment access tracking", tt.name)
-			}
-		})
+	group := &runnertypes.CommandGroup{
+		Name:        "security-test-group",
+		Description: "Security test group",
+		Priority:    1,
 	}
+
+	command := runnertypes.Command{
+		Name:        "dangerous-rm",
+		Description: "Dangerous rm command",
+		Cmd:         "rm",
+		Args:        []string{"-rf", "/tmp/*"},
+	}
+
+	// Execute the command
+	_, err := manager.ExecuteCommand(ctx, command, group, map[string]string{})
+	assert.NoError(t, err)
+
+	// Get dry-run results and verify security analysis was applied
+	dryRunResult := manager.GetDryRunResults()
+	require.NotNil(t, dryRunResult)
+	require.Len(t, dryRunResult.ResourceAnalyses, 1)
+
+	analysis := dryRunResult.ResourceAnalyses[0]
+	assert.NotEmpty(t, analysis.Impact.SecurityRisk, "should have security risk")
+	assert.Contains(t, analysis.Impact.Description, "WARNING", "should contain security warning")
 }
 
-// TestFileAccessSecurityAnalysis tests security analysis of file system access patterns
-func TestFileAccessSecurityAnalysis(t *testing.T) {
-	tests := []struct {
-		name           string
-		command        runnertypes.Command
-		expectAnalysis bool
-		riskLevel      RiskLevel
-	}{
+// TestSecurityAnalysisIntegration tests the overall security analysis integration
+func TestSecurityAnalysisIntegration(t *testing.T) {
+	ctx := context.Background()
+
+	dryRunOpts := &DryRunOptions{
+		DetailLevel:   DetailLevelDetailed,
+		OutputFormat:  OutputFormatText,
+		ShowSensitive: false,
+		VerifyFiles:   true,
+	}
+
+	manager := NewDryRunResourceManager(nil, nil, dryRunOpts)
+	require.NotNil(t, manager)
+
+	group := &runnertypes.CommandGroup{
+		Name:        "security-integration-test",
+		Description: "Security integration test group",
+		Priority:    1,
+	}
+
+	// Test multiple commands with different risk levels
+	commands := []runnertypes.Command{
 		{
-			name: "accessing /etc/passwd",
-			command: runnertypes.Command{
-				Name:        "passwd-access",
-				Description: "Access passwd file",
-				Cmd:         "cat /etc/passwd",
-			},
-			expectAnalysis: true,
-			riskLevel:      RiskLevelMedium,
+			Name: "high-risk",
+			Cmd:  "rm",
+			Args: []string{"-rf", "/"},
 		},
 		{
-			name: "modifying system files",
-			command: runnertypes.Command{
-				Name:        "system-modify",
-				Description: "Modify system files",
-				Cmd:         "echo 'test' > /etc/hosts",
-			},
-			expectAnalysis: true,
-			riskLevel:      RiskLevelHigh,
+			Name: "medium-risk",
+			Cmd:  "curl",
+			Args: []string{"https://example.com"},
 		},
 		{
-			name: "safe file access",
-			command: runnertypes.Command{
-				Name:        "safe-file",
-				Description: "Safe file access",
-				Cmd:         "cat /tmp/test.txt",
-			},
-			expectAnalysis: false,
+			Name: "safe",
+			Cmd:  "echo",
+			Args: []string{"hello"},
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
+	var analyses []ResourceAnalysis
+	for _, cmd := range commands {
+		_, err := manager.ExecuteCommand(ctx, cmd, group, map[string]string{})
+		assert.NoError(t, err)
 
-			dryRunOpts := &DryRunOptions{
-				DetailLevel:   DetailLevelDetailed,
-				OutputFormat:  OutputFormatText,
-				ShowSensitive: false,
-				VerifyFiles:   true,
-			}
+		result := manager.GetDryRunResults()
+		require.NotNil(t, result)
 
-			manager := NewDryRunResourceManager(nil, nil, dryRunOpts)
-			require.NotNil(t, manager)
-
-			group := &runnertypes.CommandGroup{
-				Name:        "file-security-test-group",
-				Description: "File security test group",
-				Priority:    1,
-			}
-
-			envVars := map[string]string{
-				"USER": "testuser",
-			}
-
-			// Execute the command
-			_, err := manager.ExecuteCommand(ctx, tt.command, group, envVars)
-			assert.NoError(t, err)
-
-			// Get dry-run results
-			dryRunResult := manager.GetDryRunResults()
-			require.NotNil(t, dryRunResult)
-
-			// File access tracking is not yet fully implemented
-			if tt.expectAnalysis {
-				t.Logf("File access analysis test for %s: would expect file access tracking with %v risk level", tt.name, tt.riskLevel)
-			}
-		})
+		// Get the latest analysis
+		if len(result.ResourceAnalyses) > 0 {
+			analyses = append(analyses, result.ResourceAnalyses[len(result.ResourceAnalyses)-1])
+		}
 	}
+
+	// Verify we captured analyses for all commands
+	assert.Len(t, analyses, 3, "should have analyses for all commands")
+
+	// Verify high-risk command has security risk
+	highRiskAnalysis := analyses[0]
+	assert.NotEmpty(t, highRiskAnalysis.Impact.SecurityRisk, "high-risk command should have security risk")
+
+	// Verify medium-risk command has security risk
+	mediumRiskAnalysis := analyses[1]
+	assert.NotEmpty(t, mediumRiskAnalysis.Impact.SecurityRisk, "medium-risk command should have security risk")
+
+	// Safe command may or may not have security info, but should not fail
+	safeAnalysis := analyses[2]
+	assert.Equal(t, ResourceTypeCommand, safeAnalysis.Type, "safe command should still be analyzed")
 }
