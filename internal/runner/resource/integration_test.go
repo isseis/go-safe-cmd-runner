@@ -9,9 +9,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestExecutionPathConsistency verifies that normal and dry-run modes
-// follow exactly the same execution path with identical analysis results
-func TestExecutionPathConsistency(t *testing.T) {
+// TestDryRunExecutionPath verifies that dry-run mode properly analyzes
+// command execution without performing actual side effects
+func TestDryRunExecutionPath(t *testing.T) {
 	tests := []struct {
 		name             string
 		commands         []runnertypes.Command
@@ -20,7 +20,7 @@ func TestExecutionPathConsistency(t *testing.T) {
 		expectedAnalyses int // Expected number of resource analyses
 	}{
 		{
-			name: "basic command execution consistency",
+			name: "basic command dry-run execution",
 			commands: []runnertypes.Command{
 				{
 					Name:        "test-echo",
@@ -41,7 +41,7 @@ func TestExecutionPathConsistency(t *testing.T) {
 			expectedAnalyses: 1,
 		},
 		{
-			name: "multiple commands consistency",
+			name: "multiple commands dry-run execution",
 			commands: []runnertypes.Command{
 				{
 					Name:        "test-echo1",
@@ -73,11 +73,7 @@ func TestExecutionPathConsistency(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
 
-			// Test normal execution manager
-			normalManager := NewNormalResourceManager(nil, nil, nil)
-			require.NotNil(t, normalManager)
-
-			// Test dry-run execution manager
+			// Create dry-run execution manager
 			dryRunOpts := &DryRunOptions{
 				DetailLevel:   DetailLevelDetailed,
 				OutputFormat:  OutputFormatText,
@@ -163,7 +159,7 @@ func TestDryRunResultConsistency(t *testing.T) {
 	var results []*DryRunResult
 
 	// Run the same dry-run multiple times
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		manager := NewDryRunResourceManager(nil, nil, dryRunOpts)
 
 		_, err := manager.ExecuteCommand(ctx, command, group, envVars)
