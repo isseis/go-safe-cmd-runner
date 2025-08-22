@@ -114,6 +114,76 @@ func TestErrorScenariosConsistency(t *testing.T) {
 			expectedError: nil,
 			description:   "Both modes should accept valid commands",
 		},
+		{
+			name: "large environment variables",
+			command: runnertypes.Command{
+				Name: "large-env-test",
+				Cmd:  "echo $LARGE_VAR",
+			},
+			group: &runnertypes.CommandGroup{Name: "test-group"},
+			envVars: func() map[string]string {
+				largeValue := make([]byte, 10000)
+				for i := range largeValue {
+					largeValue[i] = 'A'
+				}
+				return map[string]string{
+					"LARGE_VAR": string(largeValue),
+				}
+			}(),
+			expectError:   false,
+			expectedError: nil,
+			description:   "Both modes should handle large environment variables",
+		},
+		{
+			name: "unicode command",
+			command: runnertypes.Command{
+				Name: "unicode-test",
+				Cmd:  "echo 'こんにちは世界'",
+			},
+			group: &runnertypes.CommandGroup{Name: "test-group"},
+			envVars: map[string]string{
+				"UNICODE_VAR": "値",
+			},
+			expectError:   false,
+			expectedError: nil,
+			description:   "Both modes should handle unicode characters",
+		},
+		{
+			name: "special characters in command",
+			command: runnertypes.Command{
+				Name: "special-chars",
+				Cmd:  "echo 'test with $@#%^&*()[]{}|\\;:\"<>?/'",
+			},
+			group:         &runnertypes.CommandGroup{Name: "test-group"},
+			envVars:       map[string]string{},
+			expectError:   false,
+			expectedError: nil,
+			description:   "Both modes should handle special characters",
+		},
+		{
+			name: "very long command",
+			command: runnertypes.Command{
+				Name: "long-cmd",
+				Cmd:  "echo " + string(make([]byte, 1000)),
+			},
+			group:         &runnertypes.CommandGroup{Name: "test-group"},
+			envVars:       map[string]string{},
+			expectError:   false,
+			expectedError: nil,
+			description:   "Both modes should handle very long commands",
+		},
+		{
+			name: "nil environment variables",
+			command: runnertypes.Command{
+				Name: "nil-env-test",
+				Cmd:  "echo test",
+			},
+			group:         &runnertypes.CommandGroup{Name: "test-group"},
+			envVars:       nil,
+			expectError:   false,
+			expectedError: nil,
+			description:   "Both modes should handle nil environment variables",
+		},
 	}
 
 	executionModes := []struct {
@@ -162,6 +232,96 @@ func TestErrorScenariosConsistency(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestConcurrentExecutionConsistency tests concurrent execution consistency between modes
+func TestConcurrentExecutionConsistency(t *testing.T) {
+	const numGoroutines = 5
+	const commandsPerGoroutine = 3
+
+	executionModes := []struct {
+		name     string
+		setup    func() ResourceManager
+		isDryRun bool
+	}{
+		{
+			name: "DryRun",
+			setup: func() ResourceManager {
+				opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
+				return NewDryRunResourceManager(nil, nil, opts)
+			},
+			isDryRun: true,
+		},
+		{
+			name: "Normal",
+			setup: func() ResourceManager {
+				mockExecutor := &mockCommandExecutor{}
+				mockFS := &mockFileSystem{}
+				return NewNormalResourceManager(mockExecutor, mockFS, nil)
+			},
+			isDryRun: false,
+		},
+	}
+
+	for _, mode := range executionModes {
+		t.Run(mode.name+"_concurrent", func(t *testing.T) {
+			results := make(chan *ExecutionResult, numGoroutines*commandsPerGoroutine)
+			errors := make(chan error, numGoroutines*commandsPerGoroutine)
+
+			for i := 0; i < numGoroutines; i++ {
+				go func(goroutineID int) {
+					ctx := context.Background()
+					manager := mode.setup()
+
+					group := &runnertypes.CommandGroup{
+						Name: "concurrent-test-group",
+					}
+
+					envVars := map[string]string{
+						"GOROUTINE_ID": strconv.Itoa(goroutineID),
+					}
+
+					for j := 0; j < commandsPerGoroutine; j++ {
+						command := runnertypes.Command{
+							Name: fmt.Sprintf("concurrent-cmd-%d-%d", goroutineID, j),
+							Cmd:  "echo concurrent test",
+						}
+
+						result, err := manager.ExecuteCommand(ctx, command, group, envVars)
+						if err != nil {
+							errors <- err
+						} else {
+							results <- result
+						}
+					}
+				}(i)
+			}
+
+			// Collect results
+			var collectedResults []*ExecutionResult
+			var collectedErrors []error
+
+			expectedResults := numGoroutines * commandsPerGoroutine
+			for i := 0; i < expectedResults; i++ {
+				select {
+				case result := <-results:
+					collectedResults = append(collectedResults, result)
+				case err := <-errors:
+					collectedErrors = append(collectedErrors, err)
+				}
+			}
+
+			// Verify results
+			assert.Empty(t, collectedErrors, "should not have any errors during concurrent execution")
+			assert.Len(t, collectedResults, expectedResults, "should have results from all executions")
+
+			// Verify mode consistency
+			for i, result := range collectedResults {
+				assert.Equal(t, mode.isDryRun, result.DryRun,
+					"result %d should have correct DryRun flag", i)
+			}
+		})
 	}
 }
 
