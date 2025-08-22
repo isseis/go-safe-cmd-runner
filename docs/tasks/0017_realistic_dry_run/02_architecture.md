@@ -360,7 +360,7 @@ type Formatter interface {
 }
 
 type FormatterOptions struct {
-    Format        OutputFormat  // Text, JSON, YAML
+    Format        OutputFormat  // Text, JSON
     DetailLevel   DetailLevel   // Summary, Detailed, Full
     ShowSensitive bool         // Show sensitive information (masked)
     ColorOutput   bool         // Use colored output for terminals
@@ -506,28 +506,43 @@ ResourceManagerが既存コンポーネントを内部で活用：
 
 ## 7. 実装状況
 
-### 7.1 Phase 1 完了済み（Foundation）
+### 7.1 Phase 1-4 完了済み（Foundation through CLI Integration）
 - ✅ **ResourceManager インターフェース**: 完全実装済み
 - ✅ **ExecutionMode と関連型**: 完全実装済み
 - ✅ **ResourceAnalysis データ構造**: 完全実装済み
 - ✅ **DryRunResult 型システム**: 完全実装済み
+- ✅ **DefaultResourceManager 実装**: 委譲パターンファサード完了
+- ✅ **Runner 統合**: WithDryRun・GetDryRunResults完了
+- ✅ **CLI インターフェース**: --dry-run、--format、--detail完全対応
+- ✅ **フォーマッター実装**: Text/JSON対応完了
 - ✅ **基本テストフレームワーク**: 完全実装済み
-- ✅ **Lint 対応**: 完全対応済み
+- ✅ **Lint 対応**: 完全対応済み（0 issues）
+- ✅ **コード品質向上**: 重複削除、デッドコード除去、静的エラー定義
 
-### 7.2 実装パッケージ構成
+### 7.2 実装パッケージ構成（完了）
 ```
 internal/runner/resource/
-├── manager.go         # ResourceManager インターフェース定義
-├── types.go          # 全型定義（DryRunResult, ResourceAnalysis等）
-├── manager_test.go   # ResourceManager テスト
-└── types_test.go     # 型システム テスト
+├── manager.go              # ✅ ResourceManager インターフェース定義
+├── types.go               # ✅ 全型定義（DryRunResult, ResourceAnalysis等）
+├── default_manager.go     # ✅ DefaultResourceManager実装（委譲パターン）
+├── normal_manager.go      # ✅ NormalResourceManager実装
+├── dryrun_manager.go      # ✅ DryRunResourceManagerImpl実装
+├── formatter.go           # ✅ Text/JSONフォーマッター実装
+├── manager_test.go        # ✅ ResourceManager テスト
+├── types_test.go          # ✅ 型システム テスト
+├── default_manager_test.go# ✅ DefaultResourceManager テスト
+├── normal_manager_test.go # ✅ NormalResourceManager テスト
+└── dryrun_manager_test.go # ✅ DryRunResourceManagerImpl テスト
+
+cmd/runner/
+└── main.go               # ✅ CLI統合（--dry-run、--format、--detail）
 ```
 
-### 7.3 次期実装（Phase 2以降）
-- **DefaultResourceManager 実装**
-- **Runner 統合**
-- **CLI インターフェース追加**
-- **フォーマッター実装**
+### 7.3 残作業（Phase 5）
+- **統合テスト・整合性テスト**
+- **パフォーマンステスト**
+- **セキュリティテスト**
+- **CI/CDパイプライン更新**
 
 ## 8. 実行パス整合性保証
 

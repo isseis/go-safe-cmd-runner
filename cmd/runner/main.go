@@ -44,7 +44,9 @@ type LoggerConfig struct {
 
 // Error definitions
 var (
-	ErrConfigPathRequired = errors.New("config file path is required")
+	ErrConfigPathRequired  = errors.New("config file path is required")
+	ErrInvalidDetailLevel  = errors.New("invalid detail level - valid options are: summary, detailed, full")
+	ErrInvalidOutputFormat = errors.New("invalid output format - valid options are: text, json")
 )
 
 var (
@@ -53,6 +55,8 @@ var (
 	logLevel       = flag.String("log-level", "info", "log level (debug, info, warn, error)")
 	logDir         = flag.String("log-dir", "", "directory to place per-run JSON log (auto-named). Overrides TOML/env if set.")
 	dryRun         = flag.Bool("dry-run", false, "print commands without executing them")
+	dryRunFormat   = flag.String("format", "text", "dry-run output format (text, json)")
+	dryRunDetail   = flag.String("detail", "detailed", "dry-run detail level (summary, detailed, full)")
 	hashDirectory  = flag.String("hash-directory", "", "directory containing hash files (default: "+cmdcommon.DefaultHashDirectory+")")
 	validateConfig = flag.Bool("validate", false, "validate configuration file and exit")
 	runID          = flag.String("run-id", "", "unique identifier for this execution run (auto-generates ULID if not provided)")
@@ -311,11 +315,28 @@ func executeRunner(ctx context.Context, cfg *runnertypes.Config, verificationMan
 		runner.WithRunID(runID),
 	}
 
+	// Parse dry-run options once for the entire function
+	var detailLevel resource.DetailLevel
+	var outputFormat resource.OutputFormat
+
 	// Add dry-run mode if requested
 	if *dryRun {
+		// Parse detail level
+		var err error
+		detailLevel, err = parseDryRunDetailLevel(*dryRunDetail)
+		if err != nil {
+			return fmt.Errorf("invalid detail level %q: %w", *dryRunDetail, err)
+		}
+
+		// Parse output format
+		outputFormat, err = parseDryRunOutputFormat(*dryRunFormat)
+		if err != nil {
+			return fmt.Errorf("invalid output format %q: %w", *dryRunFormat, err)
+		}
+
 		dryRunOpts := &resource.DryRunOptions{
-			DetailLevel:   resource.DetailLevelDetailed,
-			OutputFormat:  resource.OutputFormatText,
+			DetailLevel:   detailLevel,
+			OutputFormat:  outputFormat,
 			ShowSensitive: false,
 			VerifyFiles:   true,
 		}
@@ -352,10 +373,18 @@ func executeRunner(ctx context.Context, cfg *runnertypes.Config, verificationMan
 	if *dryRun {
 		result := runner.GetDryRunResults()
 		if result != nil {
-			formatter := resource.NewTextFormatter()
+			// Create appropriate formatter using pre-parsed values
+			var formatter resource.Formatter
+			switch outputFormat {
+			case resource.OutputFormatText:
+				formatter = resource.NewTextFormatter()
+			case resource.OutputFormatJSON:
+				formatter = resource.NewJSONFormatter()
+			}
+
 			output, err := formatter.FormatResult(result, resource.FormatterOptions{
-				DetailLevel:   resource.DetailLevelDetailed,
-				OutputFormat:  resource.OutputFormatText,
+				DetailLevel:   detailLevel,
+				OutputFormat:  outputFormat,
 				ShowSensitive: false,
 			})
 			if err != nil {
@@ -481,4 +510,30 @@ func setupLoggerWithConfig(config LoggerConfig) error {
 	}
 
 	return nil
+}
+
+// parseDryRunDetailLevel converts string to DetailLevel enum
+func parseDryRunDetailLevel(level string) (resource.DetailLevel, error) {
+	switch level {
+	case "summary":
+		return resource.DetailLevelSummary, nil
+	case "detailed":
+		return resource.DetailLevelDetailed, nil
+	case "full":
+		return resource.DetailLevelFull, nil
+	default:
+		return resource.DetailLevelSummary, ErrInvalidDetailLevel
+	}
+}
+
+// parseDryRunOutputFormat converts string to OutputFormat enum
+func parseDryRunOutputFormat(format string) (resource.OutputFormat, error) {
+	switch format {
+	case "text":
+		return resource.OutputFormatText, nil
+	case "json":
+		return resource.OutputFormatJSON, nil
+	default:
+		return resource.OutputFormatText, ErrInvalidOutputFormat
+	}
 }
