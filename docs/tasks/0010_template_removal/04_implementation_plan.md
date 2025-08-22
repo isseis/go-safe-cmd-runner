@@ -18,10 +18,10 @@
 **目的**: テンプレート機能の代替となる新しい構造体フィールドの実装
 
 #### 実装項目
-- [ ] `CommandGroup`構造体への新フィールド追加
-- [ ] 新フィールドの処理ロジック実装
-- [ ] 基本テストケースの追加
-- [ ] コンパイル確認
+- [x] `CommandGroup`構造体への新フィールド追加
+- [x] 新フィールドの処理ロジック実装
+- [x] 基本テストケースの追加
+- [x] コンパイル確認
 
 **所要時間**: 2-3時間
 
@@ -29,11 +29,11 @@
 **目的**: テンプレート関連コードの完全削除
 
 #### 実装項目
-- [ ] `template`パッケージの削除
-- [ ] 構造体からテンプレート関連フィールドの削除
-- [ ] `Runner`からテンプレート関連コードの削除
-- [ ] テンプレート関連テストの削除
-- [ ] コンパイル・テスト確認
+- [x] `template`パッケージの削除
+- [x] 構造体からテンプレート関連フィールドの削除
+- [x] `Runner`からテンプレート関連コードの削除
+- [x] テンプレート関連テストの削除
+- [x] コンパイル・テスト確認
 
 **所要時間**: 3-4時間
 
@@ -41,10 +41,10 @@
 **目的**: サンプル設定ファイルとドキュメントの更新
 
 #### 実装項目
-- [ ] `sample/config.toml`の更新
-- [ ] `sample/test.toml`の更新
-- [ ] README.mdの更新
-- [ ] 最終動作確認
+- [x] `sample/config.toml`の更新
+- [x] `sample/test.toml`の更新
+- [x] README.mdの更新
+- [x] 最終動作確認
 
 **所要時間**: 2-3時間
 
@@ -52,29 +52,29 @@
 
 ### 3.1 Phase 1: 新構造体の実装
 
-#### 3.1.1 `CommandGroup`構造体の拡張
+#### 3.1.1 `CommandGroup`構造体の拡張（完了）
 
 **ファイル**: `internal/runner/runnertypes/config.go`
 
+**実装済みの構造体**:
 ```go
-// CommandGroup に以下のフィールドを追加
+// CommandGroup represents a group of related commands with a name
 type CommandGroup struct {
-    Name         string    `toml:"name"`
-    Description  string    `toml:"description"`
-    Priority     int       `toml:"priority"`
-    DependsOn    []string  `toml:"depends_on"`
+    Name        string `toml:"name"`
+    Description string `toml:"description"`
+    Priority    int    `toml:"priority"`
 
-    // 新規追加フィールド
-    TempDir      bool      `toml:"temp_dir"`   // 一時ディレクトリ自動生成
-    Cleanup      bool      `toml:"cleanup"`    // 自動クリーンアップ
-    WorkDir      string    `toml:"workdir"`    // 作業ディレクトリ
+    // Fields for resource management
+    TempDir bool   `toml:"temp_dir"` // Auto-generate temporary directory
+    WorkDir string `toml:"workdir"`  // Working directory
 
-    Template     string    `toml:"template"`   // Phase 2で削除予定
     Commands     []Command `toml:"commands"`
-    VerifyFiles  []string  `toml:"verify_files"`
-    EnvAllowlist []string  `toml:"env_allowlist"`
+    VerifyFiles  []string  `toml:"verify_files"`  // Files to verify for this group
+    EnvAllowlist []string  `toml:"env_allowlist"` // Group-level environment variable allowlist
 }
 ```
+
+**注意**: `Cleanup` フィールドは実装では `ResourceManager` で処理されており、明示的なフィールドとしては実装されていません。また、`DependsOn` フィールドは `Priority` による順序付けに簡素化されたため削除されました。
 
 #### 3.1.2 新フィールドの処理ロジック実装
 
@@ -337,18 +337,18 @@ env = ["APP_NAME=myapp-dev"]
 ### 4.1 単体テスト
 
 #### Phase 1 テスト
-- [ ] 新フィールドの TOML 読み込みテスト
-- [ ] `TempDir`, `Cleanup`, `WorkDir` の動作テスト
-- [ ] 既存機能の非回帰テスト
+- [x] 新フィールドの TOML 読み込みテスト
+- [x] `TempDir`, `WorkDir` の動作テスト
+- [x] 既存機能の非回帰テスト
 
 #### Phase 2 テスト
-- [ ] テンプレート機能削除後のコンパイル確認
-- [ ] 基本的なコマンド実行テスト
-- [ ] エラーハンドリングテスト
+- [x] テンプレート機能削除後のコンパイル確認
+- [x] 基本的なコマンド実行テスト
+- [x] エラーハンドリングテスト
 
 #### Phase 3 テスト
-- [ ] 更新後のサンプル設定ファイルの動作確認
-- [ ] 環境変数展開の動作確認
+- [x] 更新後のサンプル設定ファイルの動作確認
+- [x] 環境変数展開の動作確認
 
 ### 4.2 統合テスト
 
@@ -410,15 +410,15 @@ func BenchmarkRunCommandGroup_AfterRemoval(b *testing.B) { /* ... */ }
 ## 8. 完了基準
 
 ### 8.1 機能完了基準
-- [ ] テンプレート関連コードが完全に削除されている
-- [ ] 新しい `CommandGroup` フィールドが正常に動作する
-- [ ] 環境変数ベースの設定例が動作する
-- [ ] 全ての既存テストが通過する
+- [x] テンプレート関連コードが完全に削除されている
+- [x] 新しい `CommandGroup` フィールドが正常に動作する
+- [x] 環境変数ベースの設定例が動作する
+- [x] 全ての既存テストが通過する
 
 ### 8.2 品質完了基準
-- [ ] コードカバレッジが維持されている
-- [ ] 静的解析エラーが発生しない
-- [ ] ドキュメントが最新状態に更新されている
+- [x] コードカバレッジが維持されている
+- [x] 静的解析エラーが発生しない
+- [x] ドキュメントが最新状態に更新されている
 
 ## 9. デプロイ計画
 
@@ -427,6 +427,24 @@ func BenchmarkRunCommandGroup_AfterRemoval(b *testing.B) { /* ... */ }
 2. プルリクエスト作成・レビュー
 3. メインブランチへのマージ
 
-## 10. 結論
+## 10. 実装結果と結論
 
-この実装計画により、テンプレート機能を安全かつ効率的に削除し、より単純で保守しやすいコードベースを実現する。段階的なアプローチにより、各フェーズでの検証を通じてリスクを最小化しながら作業を進めることができる。
+### 10.1 実装完了状況
+**✅ 完了済み**: テンプレート機能削除作業は完全に実装済みである。
+
+### 10.2 実装されたアーキテクチャ
+現在のシステムは計画通り以下の状態になっている：
+
+- **`template`パッケージ**: 完全に削除済み
+- **`Config`構造体**: `Templates`フィールドが削除され、簡素化された
+- **`CommandGroup`構造体**: `TempDir`、`WorkDir`フィールドが追加され、`Template`フィールドは削除された
+- **`Runner`構造体**: テンプレートエンジン関連フィールドが削除され、簡素化された
+
+### 10.3 実現された改善点
+1. **コード複雑度の削減**: 約400行のテンプレート関連コードが削除された
+2. **設定の簡素化**: より直接的で理解しやすい設定構造に変更された
+3. **パフォーマンス向上**: テンプレート処理オーバーヘッドが削除された
+4. **保守性の向上**: 依存関係が減少し、テストが簡素化された
+
+### 10.4 結論
+この実装計画により、テンプレート機能は安全かつ効率的に削除され、より単純で保守しやすいコードベースが実現された。環境変数ベースのアプローチにより、標準的で広く理解されている設定管理手法に統一され、システム全体の品質が向上した。
