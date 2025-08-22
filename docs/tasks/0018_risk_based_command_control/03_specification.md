@@ -236,14 +236,101 @@ func (e *ConfigurationError) Error() string {
 
 ### 2.3 Privilege Escalation Analyzer 仕様
 
-#### 2.3.1 Interface 定義
+#### 2.3.1 統合設計アプローチ
+
+既存の`security.IsSudoCommand`と新しい特権昇格分析機能の重複を避けるため、以下の階層化設計を採用します：
+
 ```go
+// 基盤レイヤー: security パッケージ内の基本判定関数（既存）
+func IsSudoCommand(cmdName string) (bool, error)                    // 既存関数を活用
+func IsSystemctlCommand(cmdName string) (bool, error)              // 新規追加
+func IsChmodCommand(cmdName string) (bool, error)                  // 新規追加
+func IsChownCommand(cmdName string) (bool, error)                  // 新規追加
+
+// 分析レイヤー: 詳細な特権昇格分析（新規）
 type PrivilegeEscalationAnalyzer interface {
     AnalyzePrivilegeEscalation(cmdName string, args []string) (*PrivilegeEscalationResult, error)
     IsPrivilegeEscalationCommand(cmdName string) bool
     GetRequiredPrivileges(cmdName string, args []string) ([]string, error)
 }
 
+// 統合レイヤー: 既存システムとの連携（既存関数を活用）
+type CommandDetector interface {
+    IsSudoCommand(cmdName string) (bool, error)
+    IsSystemctlCommand(cmdName string) (bool, error)
+    IsChmodCommand(cmdName string) (bool, error)
+    IsChownCommand(cmdName string) (bool, error)
+}
+
+#### 2.3.2 実装クラス設計
+
+```go
+type DefaultPrivilegeEscalationAnalyzer struct {
+    logger   Logger
+    detector CommandDetector  // 既存のsecurity関数群を活用
+}
+
+func NewDefaultPrivilegeEscalationAnalyzer(logger Logger) *DefaultPrivilegeEscalationAnalyzer {
+    return &DefaultPrivilegeEscalationAnalyzer{
+        logger:   logger,
+        detector: security.NewCommandDetector(), // 既存security関数のラッパー
+    }
+}
+
+// メイン分析関数：既存の判定関数を活用
+func (a *DefaultPrivilegeEscalationAnalyzer) AnalyzePrivilegeEscalation(
+    cmdName string,
+    args []string,
+) (*PrivilegeEscalationResult, error) {
+    result := &PrivilegeEscalationResult{
+        HasPrivilegeEscalation: false,
+        EscalationType:         PrivilegeEscalationNone,
+        RequiredPrivileges:     []string{},
+        RiskLevel:             security.RiskLevelNone,
+    }
+
+    // 既存のsecurity.IsSudoCommandを活用
+    if isSudo, err := a.detector.IsSudoCommand(cmdName); err != nil {
+        return nil, fmt.Errorf("sudo detection failed: %w", err)
+    } else if isSudo {
+        return a.analyzeSudoCommand(args)
+    }
+
+    // 既存パターンに合わせて他のコマンドも検出
+    if isSystemctl, err := a.detector.IsSystemctlCommand(cmdName); err != nil {
+        return nil, fmt.Errorf("systemctl detection failed: %w", err)
+    } else if isSystemctl {
+        return a.analyzeSystemctlCommand(args)
+    }
+
+    if isChmod, err := a.detector.IsChmodCommand(cmdName); err != nil {
+        return nil, fmt.Errorf("chmod detection failed: %w", err)
+    } else if isChmod {
+        return a.analyzeChmodCommand(args)
+    }
+
+    if isChown, err := a.detector.IsChownCommand(cmdName); err != nil {
+        return nil, fmt.Errorf("chown detection failed: %w", err)
+    } else if isChown {
+        return a.analyzeChownCommand(args)
+    }
+
+    // 本質的特権コマンドのチェック
+    if a.isInherentlyPrivilegedCommand(filepath.Base(cmdName)) {
+        result.HasPrivilegeEscalation = true
+        result.EscalationType = PrivilegeEscalationOther
+        result.RiskLevel = security.RiskLevelMedium
+        result.Description = fmt.Sprintf("Command '%s' requires elevated privileges", filepath.Base(cmdName))
+        result.RequiredPrivileges = []string{"root"}
+    }
+
+    return result, nil
+}
+```
+
+#### 2.3.3 データ構造定義
+
+```go
 type PrivilegeEscalationResult struct {
     HasPrivilegeEscalation bool
     EscalationType         PrivilegeEscalationType
@@ -291,51 +378,64 @@ func (t PrivilegeEscalationType) String() string {
 }
 ```
 
-#### 2.3.2 特権昇格パターン検出
+#### 2.3.4 Security Package の拡張
+
+既存の`security.IsSudoCommand`と同じパターンで他のコマンド検出関数を追加：
+
 ```go
-type DefaultPrivilegeEscalationAnalyzer struct {
-    logger Logger
+// internal/runner/security/command_analysis.go に追加
+
+// IsSystemctlCommand checks if the given command is systemctl, considering symbolic links
+func IsSystemctlCommand(cmdName string) (bool, error) {
+    commandNames, exceededDepth := extractAllCommandNames(cmdName)
+    if exceededDepth {
+        return false, ErrSymlinkDepthExceeded
+    }
+    _, isSystemctl := commandNames["systemctl"]
+    return isSystemctl, nil
 }
 
-func (a *DefaultPrivilegeEscalationAnalyzer) AnalyzePrivilegeEscalation(
-    cmdName string,
-    args []string,
-) (*PrivilegeEscalationResult, error) {
-    result := &PrivilegeEscalationResult{
-        HasPrivilegeEscalation: false,
-        EscalationType:         PrivilegeEscalationNone,
-        RequiredPrivileges:     []string{},
-        RiskLevel:             security.RiskLevelNone,
+// IsChmodCommand checks if the given command is chmod, considering symbolic links
+func IsChmodCommand(cmdName string) (bool, error) {
+    commandNames, exceededDepth := extractAllCommandNames(cmdName)
+    if exceededDepth {
+        return false, ErrSymlinkDepthExceeded
     }
+    _, isChmod := commandNames["chmod"]
+    return isChmod, nil
+}
 
-    // Extract base command name for pattern matching
-    baseCmdName := filepath.Base(cmdName)
-
-    switch baseCmdName {
-    case "sudo":
-        return a.analyzeSudoCommand(args)
-    case "su":
-        return a.analyzeSuCommand(args)
-    case "systemctl":
-        return a.analyzeSystemctlCommand(args)
-    case "service":
-        return a.analyzeServiceCommand(args)
-    case "chmod":
-        return a.analyzeChmodCommand(args)
-    case "chown":
-        return a.analyzeChownCommand(args)
-    default:
-        // Check if command requires inherent privilege escalation
-        if a.isInherentlyPrivilegedCommand(baseCmdName) {
-            result.HasPrivilegeEscalation = true
-            result.EscalationType = PrivilegeEscalationOther
-            result.RiskLevel = security.RiskLevelMedium
-            result.Description = fmt.Sprintf("Command '%s' requires elevated privileges", baseCmdName)
-            result.RequiredPrivileges = []string{"root"}
-        }
+// IsChownCommand checks if the given command is chown, considering symbolic links
+func IsChownCommand(cmdName string) (bool, error) {
+    commandNames, exceededDepth := extractAllCommandNames(cmdName)
+    if exceededDepth {
+        return false, ErrSymlinkDepthExceeded
     }
+    _, isChown := commandNames["chown"]
+    return isChown, nil
+}
 
-    return result, nil
+// CommandDetector provides unified interface for command detection
+type CommandDetector struct{}
+
+func NewCommandDetector() *CommandDetector {
+    return &CommandDetector{}
+}
+
+func (d *CommandDetector) IsSudoCommand(cmdName string) (bool, error) {
+    return IsSudoCommand(cmdName)
+}
+
+func (d *CommandDetector) IsSystemctlCommand(cmdName string) (bool, error) {
+    return IsSystemctlCommand(cmdName)
+}
+
+func (d *CommandDetector) IsChmodCommand(cmdName string) (bool, error) {
+    return IsChmodCommand(cmdName)
+}
+
+func (d *CommandDetector) IsChownCommand(cmdName string) (bool, error) {
+    return IsChownCommand(cmdName)
 }
 ```
 
@@ -538,7 +638,19 @@ flowchart TD
 
 ### 4.1 特権昇格分析の詳細実装
 
-#### 4.1.1 Sudo コマンド分析
+#### 4.1.1 統合アプローチの利点
+
+**重複排除のメリット**：
+- 既存の`security.IsSudoCommand`の活用により、シンボリックリンク対応や深度制限などの既存のセキュリティ機能を再利用
+- 単一のコマンド判定ロジックにより、一貫性のある動作を保証
+- 新しいコマンド検出の追加時も同じパターンで実装可能
+
+**既存システムとの連携**：
+- `NormalResourceManager.IsPrivilegeEscalationRequired`や`DryRunResourceManager.IsPrivilegeEscalationRequired`は既存の`security.IsSudoCommand`を継続使用
+- 新しい`PrivilegeEscalationAnalyzer`は詳細分析が必要な場合のみ使用
+- 段階的移行が可能
+
+#### 4.1.2 Sudo コマンド分析（既存関数活用版）
 ```go
 func (a *DefaultPrivilegeEscalationAnalyzer) analyzeSudoCommand(args []string) (*PrivilegeEscalationResult, error) {
     result := &PrivilegeEscalationResult{
@@ -573,7 +685,7 @@ func (a *DefaultPrivilegeEscalationAnalyzer) analyzeSudoCommand(args []string) (
 }
 ```
 
-#### 4.1.2 Systemctl コマンド分析
+#### 4.1.3 Systemctl コマンド分析（既存パターン準拠版）
 ```go
 func (a *DefaultPrivilegeEscalationAnalyzer) analyzeSystemctlCommand(args []string) (*PrivilegeEscalationResult, error) {
     result := &PrivilegeEscalationResult{
@@ -612,7 +724,7 @@ func (a *DefaultPrivilegeEscalationAnalyzer) analyzeSystemctlCommand(args []stri
 }
 ```
 
-#### 4.1.3 権限変更コマンド分析
+#### 4.1.4 権限変更コマンド分析（統合検出版）
 ```go
 func (a *DefaultPrivilegeEscalationAnalyzer) analyzeChmodCommand(args []string) (*PrivilegeEscalationResult, error) {
     result := &PrivilegeEscalationResult{
@@ -671,7 +783,7 @@ func (a *DefaultPrivilegeEscalationAnalyzer) analyzeChownCommand(args []string) 
 }
 ```
 
-#### 4.1.4 本質的に特権が必要なコマンド
+#### 4.1.5 本質的に特権が必要なコマンド（統合型）
 ```go
 func (a *DefaultPrivilegeEscalationAnalyzer) isInherentlyPrivilegedCommand(cmdName string) bool {
     privilegedCommands := map[string]bool{
@@ -695,9 +807,53 @@ func (a *DefaultPrivilegeEscalationAnalyzer) isInherentlyPrivilegedCommand(cmdNa
 }
 ```
 
-### 4.2 既存セキュリティ分析の活用
+### 4.2 既存セキュリティ分析の活用と統合
 
-#### 4.1.1 危険パターンマッチング
+#### 4.2.1 統合設計の実装戦略
+
+**段階的移行アプローチ**：
+1. **Phase 1**: 既存の`security.IsSudoCommand`をそのまま活用
+2. **Phase 2**: 同じパターンで他のコマンド検出関数を追加
+3. **Phase 3**: `CommandDetector`インターface経由で統一的にアクセス
+4. **Phase 4**: 必要に応じて詳細分析を`PrivilegeEscalationAnalyzer`で実行
+
+**既存システムとの互換性維持**：
+```go
+// 既存のコード（変更不要）
+func (n *NormalResourceManager) IsPrivilegeEscalationRequired(cmd runnertypes.Command) (bool, error) {
+    if cmd.Privileged {
+        return true, nil
+    }
+
+    // 既存のsecurity.IsSudoCommandをそのまま使用
+    isSudo, err := security.IsSudoCommand(cmd.Cmd)
+    if err != nil {
+        return false, fmt.Errorf("privilege escalation check failed: %w", err)
+    }
+    return isSudo, nil
+}
+
+// 新しいリスクベース分析（追加）
+func (n *NormalResourceManager) ExecuteCommand(command *config.Command, env map[string]string) (*ExecutionResult, error) {
+    // 既存のセキュリティ分析
+    riskLevel, detectedPattern, reason := security.AnalyzeCommandSecurity(command.Cmd, command.Args)
+
+    // 新しい特権昇格分析（詳細が必要な場合のみ）
+    privilegeResult, err := n.privilegeAnalyzer.AnalyzePrivilegeEscalation(command.Cmd, command.Args)
+    if err != nil {
+        return nil, fmt.Errorf("privilege escalation analysis failed: %w", err)
+    }
+
+    // リスク評価
+    if err := n.evaluator.EvaluateCommandExecution(riskLevel, detectedPattern, reason, privilegeResult, command); err != nil {
+        return nil, err
+    }
+
+    return n.executor.Execute(command, env)
+}
+```
+#### 4.2.2 危険パターンマッチング（既存機能）
+
 ```go
 // 既存の security.AnalyzeCommandSecurity を活用
 // 以下のパターンを検出:
@@ -722,27 +878,51 @@ var MediumRiskPatterns = []string{
 }
 ```
 
-#### 4.1.2 シンボリックリンク深度チェック
+#### 4.2.3 シンボリックリンク深度チェック（既存機能活用）
 ```go
+```go
+// 既存のextractAllCommandNames関数を活用
 const MaxSymlinkDepth = 40
 
 func checkSymlinkDepth(path string) (RiskLevel, error) {
-    depth, err := countSymlinkDepth(path)
-    if err != nil {
-        return RiskLevelNone, err
+    // extractAllCommandNames内でシンボリックリンクの深度チェックを実行
+    _, exceededDepth := extractAllCommandNames(path)
+    if exceededDepth {
+        return RiskLevelHigh, ErrSymlinkDepthExceeded
     }
-
-    if depth > MaxSymlinkDepth {
-        return RiskLevelHigh, nil
-    }
-
     return RiskLevelNone, nil
 }
 ```
 
-### 4.2 セキュリティ分析統合
+### 4.3 セキュリティ分析統合フロー
 
-#### 4.2.1 既存関数の活用
+#### 4.3.1 統合された分析プロセス
+
+```go
+// 統合されたセキュリティ分析フロー
+func (m *NormalResourceManager) performSecurityAnalysis(
+    command *config.Command,
+) (riskLevel security.RiskLevel, privilegeResult *PrivilegeEscalationResult, err error) {
+
+    // Step 1: 既存のセキュリティ分析（パターンマッチング、シンボリックリンクチェック）
+    riskLevel, detectedPattern, reason := security.AnalyzeCommandSecurity(command.Cmd, command.Args)
+
+    // Step 2: 詳細な特権昇格分析（既存のIsSudoCommand等を活用）
+    privilegeResult, err = m.privilegeAnalyzer.AnalyzePrivilegeEscalation(command.Cmd, command.Args)
+    if err != nil {
+        return riskLevel, nil, fmt.Errorf("privilege escalation analysis failed: %w", err)
+    }
+
+    // Step 3: 統合されたリスク評価
+    if err := m.evaluator.EvaluateCommandExecution(riskLevel, detectedPattern, reason, privilegeResult, command); err != nil {
+        return riskLevel, privilegeResult, err
+    }
+
+    return riskLevel, privilegeResult, nil
+}
+```
+#### 4.3.2 既存関数の活用と拡張方針
+**既存関数の継続活用**：
 現在の実装では`security.AnalyzeCommandSecurity(cmdName string, args []string)`関数が以下の戻り値を提供します：
 
 ```go
@@ -753,11 +933,28 @@ func AnalyzeCommandSecurity(cmdName string, args []string) (riskLevel RiskLevel,
 - `detectedPattern`: マッチした危険パターン（例："rm -rf"）
 - `reason`: リスク判定の理由（例："Recursive file removal"）
 
-#### 4.2.2 特権昇格リスクの判定
-現在の実装では特権昇格リスクの詳細分析は未実装のため、当面は以下のシンプルなルールを適用します：
+**特権昇格判定の統合化**：
+既存の`security.IsSudoCommand`パターンを拡張して一貫性を保ちます：
 
-- `privileged = true`が設定されている場合、Medium riskまでは許可
-- High riskは`privileged = true`でも明示的な`max_risk_level = "high"`が必要
+```go
+// 既存関数（変更なし）
+func IsSudoCommand(cmdName string) (bool, error)
+
+// 同じパターンで追加（新規）
+func IsSystemctlCommand(cmdName string) (bool, error)
+func IsChmodCommand(cmdName string) (bool, error)
+func IsChownCommand(cmdName string) (bool, error)
+
+// 統合インターフェース（新規）
+type CommandDetector interface {
+    IsSudoCommand(cmdName string) (bool, error)
+    IsSystemctlCommand(cmdName string) (bool, error)
+    IsChmodCommand(cmdName string) (bool, error)
+    IsChownCommand(cmdName string) (bool, error)
+}
+```
+
+**段階的移行戦略**：
 
 ## 5. 設定検証仕様
 
