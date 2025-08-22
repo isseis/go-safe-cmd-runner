@@ -204,19 +204,19 @@ func (m *NormalResourceManager) ExecuteCommand(
 
 ```mermaid
 block-beta
-    columns 1
+    columns 3
 
-    block:trusted["Trusted Zone"]
-        columns 1
+    block:trusted["Trusted Zone"]:2
+        columns 2
         Configuration["Configuration<br/>(Admin Control)"]
-        space:1
         SecurityEval["Security Evaluation<br/>(System Control)"]
         Configuration --> SecurityEval
     end
 
     space:1
 
-    block:execution["Execution Zone<br/>(Potential Risk Area)"]
+    block:execution["Execution Zone<br/>(Potential Risk Area)"]:1
+        columns 1
         CommandExec["Command Execution"]
     end
 
