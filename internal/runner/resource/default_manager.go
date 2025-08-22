@@ -8,13 +8,13 @@ import (
 )
 
 // DefaultResourceManager provides a mode-aware facade that delegates to
-// NormalResourceManager or DryRunResourceManagerImpl depending on ExecutionMode.
-// It implements DryRunResourceManager so callers can always query dry-run results
+// NormalResourceManager or DryRunResourceManager depending on ExecutionMode.
+// It implements DryRunResourceManagerInterface so callers can always query dry-run results
 // (returns nil in normal mode) and record analyses (no-op in normal mode).
 type DefaultResourceManager struct {
 	mode   ExecutionMode
 	normal *NormalResourceManager
-	dryrun *DryRunResourceManagerImpl
+	dryrun *DryRunResourceManager
 }
 
 // NewDefaultResourceManager creates a new DefaultResourceManager.

@@ -10,7 +10,7 @@ import (
 
 // Test helper functions for dry-run manager
 
-func createTestDryRunResourceManager() *DryRunResourceManagerImpl {
+func createTestDryRunResourceManager() *DryRunResourceManager {
 	mockExec := &MockExecutor{}
 	mockPriv := &MockPrivilegeManager{}
 

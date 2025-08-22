@@ -70,8 +70,8 @@ type ResourceManager interface {
 	GetDryRunResults() *DryRunResult
 }
 
-// DryRunResourceManager extends ResourceManager with dry-run specific functionality
-type DryRunResourceManager interface {
+// DryRunResourceManagerInterface extends ResourceManager with dry-run specific functionality
+type DryRunResourceManagerInterface interface {
 	ResourceManager
 
 	// Dry-run specific

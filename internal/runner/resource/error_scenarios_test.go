@@ -166,13 +166,13 @@ func TestErrorScenariosConsistency(t *testing.T) {
 	}
 }
 
-// TestErrorScenarios tests various error conditions and edge cases for DryRunResourceManagerImpl.
+// TestErrorScenarios tests various error conditions and edge cases for DryRunResourceManager.
 // This test focuses specifically on dry-run implementation behavior, while TestErrorScenariosConsistency
 // tests consistency between normal and dry-run modes.
 func TestErrorScenarios(t *testing.T) {
 	tests := []struct {
 		name         string
-		setup        func() (*DryRunResourceManagerImpl, error)
+		setup        func() (*DryRunResourceManager, error)
 		command      runnertypes.Command
 		group        *runnertypes.CommandGroup
 		envVars      map[string]string
@@ -181,7 +181,7 @@ func TestErrorScenarios(t *testing.T) {
 	}{
 		{
 			name: "nil command group",
-			setup: func() (*DryRunResourceManagerImpl, error) {
+			setup: func() (*DryRunResourceManager, error) {
 				opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
 				return NewDryRunResourceManager(nil, nil, opts), nil
 			},
@@ -196,7 +196,7 @@ func TestErrorScenarios(t *testing.T) {
 		},
 		{
 			name: "empty command",
-			setup: func() (*DryRunResourceManagerImpl, error) {
+			setup: func() (*DryRunResourceManager, error) {
 				opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
 				return NewDryRunResourceManager(nil, nil, opts), nil
 			},
@@ -213,7 +213,7 @@ func TestErrorScenarios(t *testing.T) {
 		},
 		{
 			name: "large environment variables",
-			setup: func() (*DryRunResourceManagerImpl, error) {
+			setup: func() (*DryRunResourceManager, error) {
 				opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
 				return NewDryRunResourceManager(nil, nil, opts), nil
 			},
@@ -238,7 +238,7 @@ func TestErrorScenarios(t *testing.T) {
 		},
 		{
 			name: "concurrent analysis recording",
-			setup: func() (*DryRunResourceManagerImpl, error) {
+			setup: func() (*DryRunResourceManager, error) {
 				opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
 				return NewDryRunResourceManager(nil, nil, opts), nil
 			},
@@ -255,7 +255,7 @@ func TestErrorScenarios(t *testing.T) {
 		},
 		{
 			name: "invalid dry-run options",
-			setup: func() (*DryRunResourceManagerImpl, error) {
+			setup: func() (*DryRunResourceManager, error) {
 				// Test with invalid detail level
 				opts := &DryRunOptions{DetailLevel: DetailLevel(999)}
 				return NewDryRunResourceManager(nil, nil, opts), nil
@@ -273,7 +273,7 @@ func TestErrorScenarios(t *testing.T) {
 		},
 		{
 			name: "analysis recording with nil options",
-			setup: func() (*DryRunResourceManagerImpl, error) {
+			setup: func() (*DryRunResourceManager, error) {
 				// Test with nil options
 				return NewDryRunResourceManager(nil, nil, nil), nil
 			},
@@ -290,7 +290,7 @@ func TestErrorScenarios(t *testing.T) {
 		},
 		{
 			name: "dry-run result consistency",
-			setup: func() (*DryRunResourceManagerImpl, error) {
+			setup: func() (*DryRunResourceManager, error) {
 				opts := &DryRunOptions{
 					DetailLevel:   DetailLevelDetailed,
 					OutputFormat:  OutputFormatJSON,

@@ -16,8 +16,8 @@ const (
 	riskLevelHigh = "high"
 )
 
-// DryRunResourceManagerImpl implements DryRunResourceManager for dry-run mode
-type DryRunResourceManagerImpl struct {
+// DryRunResourceManager implements DryRunResourceManagerInterface for dry-run mode
+type DryRunResourceManager struct {
 	// Core dependencies
 	executor         executor.CommandExecutor
 	privilegeManager runnertypes.PrivilegeManager
@@ -31,9 +31,9 @@ type DryRunResourceManagerImpl struct {
 	mu sync.RWMutex
 }
 
-// NewDryRunResourceManager creates a new DryRunResourceManagerImpl for dry-run mode
-func NewDryRunResourceManager(exec executor.CommandExecutor, privMgr runnertypes.PrivilegeManager, opts *DryRunOptions) *DryRunResourceManagerImpl {
-	return &DryRunResourceManagerImpl{
+// NewDryRunResourceManager creates a new DryRunResourceManager for dry-run mode
+func NewDryRunResourceManager(exec executor.CommandExecutor, privMgr runnertypes.PrivilegeManager, opts *DryRunOptions) *DryRunResourceManager {
+	return &DryRunResourceManager{
 		executor:         exec,
 		privilegeManager: privMgr,
 		dryRunOptions:    opts,
@@ -61,7 +61,7 @@ func NewDryRunResourceManager(exec executor.CommandExecutor, privMgr runnertypes
 }
 
 // ExecuteCommand simulates command execution in dry-run mode
-func (d *DryRunResourceManagerImpl) ExecuteCommand(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) (*ExecutionResult, error) {
+func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) (*ExecutionResult, error) {
 	start := time.Now()
 
 	// Validate command and group for consistency with normal mode
@@ -96,7 +96,7 @@ func (d *DryRunResourceManagerImpl) ExecuteCommand(ctx context.Context, cmd runn
 }
 
 // analyzeCommand analyzes a command for dry-run
-func (d *DryRunResourceManagerImpl) analyzeCommand(_ context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) ResourceAnalysis {
+func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) ResourceAnalysis {
 	analysis := ResourceAnalysis{
 		Type:      ResourceTypeCommand,
 		Operation: OperationExecute,
@@ -132,7 +132,7 @@ func (d *DryRunResourceManagerImpl) analyzeCommand(_ context.Context, cmd runner
 }
 
 // analyzeCommandSecurity analyzes security aspects of a command
-func (d *DryRunResourceManagerImpl) analyzeCommandSecurity(cmd runnertypes.Command, analysis *ResourceAnalysis) {
+func (d *DryRunResourceManager) analyzeCommandSecurity(cmd runnertypes.Command, analysis *ResourceAnalysis) {
 	// Initialize with no risk
 	currentRisk := ""
 
@@ -166,7 +166,7 @@ func (d *DryRunResourceManagerImpl) analyzeCommandSecurity(cmd runnertypes.Comma
 }
 
 // CreateTempDir simulates creating a temporary directory in dry-run mode
-func (d *DryRunResourceManagerImpl) CreateTempDir(groupName string) (string, error) {
+func (d *DryRunResourceManager) CreateTempDir(groupName string) (string, error) {
 	simulatedPath := fmt.Sprintf("/tmp/scr-%s-XXXXXX", groupName)
 
 	// Record the analysis
@@ -192,7 +192,7 @@ func (d *DryRunResourceManagerImpl) CreateTempDir(groupName string) (string, err
 }
 
 // CleanupTempDir simulates cleaning up a temporary directory in dry-run mode
-func (d *DryRunResourceManagerImpl) CleanupTempDir(tempDirPath string) error {
+func (d *DryRunResourceManager) CleanupTempDir(tempDirPath string) error {
 	// Record the analysis
 	analysis := ResourceAnalysis{
 		Type:      ResourceTypeFilesystem,
@@ -214,14 +214,14 @@ func (d *DryRunResourceManagerImpl) CleanupTempDir(tempDirPath string) error {
 }
 
 // CleanupAllTempDirs simulates cleaning up all temporary directories in dry-run mode
-func (d *DryRunResourceManagerImpl) CleanupAllTempDirs() error {
+func (d *DryRunResourceManager) CleanupAllTempDirs() error {
 	// In dry-run mode, there are no actual temp dirs to clean up
 	// This is just a simulation
 	return nil
 }
 
 // WithPrivileges simulates executing a function with elevated privileges in dry-run mode
-func (d *DryRunResourceManagerImpl) WithPrivileges(_ context.Context, fn func() error) error {
+func (d *DryRunResourceManager) WithPrivileges(_ context.Context, fn func() error) error {
 	// Record the analysis
 	analysis := ResourceAnalysis{
 		Type:      ResourceTypePrivilege,
@@ -247,7 +247,7 @@ func (d *DryRunResourceManagerImpl) WithPrivileges(_ context.Context, fn func() 
 }
 
 // IsPrivilegeEscalationRequired checks if a command requires privilege escalation
-func (d *DryRunResourceManagerImpl) IsPrivilegeEscalationRequired(cmd runnertypes.Command) (bool, error) {
+func (d *DryRunResourceManager) IsPrivilegeEscalationRequired(cmd runnertypes.Command) (bool, error) {
 	// Check if command is marked as privileged
 	if cmd.Privileged {
 		return true, nil
@@ -267,7 +267,7 @@ func (d *DryRunResourceManagerImpl) IsPrivilegeEscalationRequired(cmd runnertype
 }
 
 // SendNotification simulates sending a notification in dry-run mode
-func (d *DryRunResourceManagerImpl) SendNotification(message string, details map[string]any) error {
+func (d *DryRunResourceManager) SendNotification(message string, details map[string]any) error {
 	// Record the analysis
 	analysis := ResourceAnalysis{
 		Type:      ResourceTypeNetwork,
@@ -290,7 +290,7 @@ func (d *DryRunResourceManagerImpl) SendNotification(message string, details map
 }
 
 // GetDryRunResults returns the dry-run results
-func (d *DryRunResourceManagerImpl) GetDryRunResults() *DryRunResult {
+func (d *DryRunResourceManager) GetDryRunResults() *DryRunResult {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
@@ -306,7 +306,7 @@ func (d *DryRunResourceManagerImpl) GetDryRunResults() *DryRunResult {
 }
 
 // RecordAnalysis records a resource analysis
-func (d *DryRunResourceManagerImpl) RecordAnalysis(analysis *ResourceAnalysis) {
+func (d *DryRunResourceManager) RecordAnalysis(analysis *ResourceAnalysis) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -314,7 +314,7 @@ func (d *DryRunResourceManagerImpl) RecordAnalysis(analysis *ResourceAnalysis) {
 }
 
 // validateCommand validates command for consistency with normal mode
-func (d *DryRunResourceManagerImpl) validateCommand(cmd runnertypes.Command) error {
+func (d *DryRunResourceManager) validateCommand(cmd runnertypes.Command) error {
 	if cmd.Cmd == "" {
 		return ErrEmptyCommand
 	}
@@ -325,7 +325,7 @@ func (d *DryRunResourceManagerImpl) validateCommand(cmd runnertypes.Command) err
 }
 
 // validateCommandGroup validates command group for consistency with normal mode
-func (d *DryRunResourceManagerImpl) validateCommandGroup(group *runnertypes.CommandGroup) error {
+func (d *DryRunResourceManager) validateCommandGroup(group *runnertypes.CommandGroup) error {
 	if group == nil {
 		return ErrNilCommandGroup
 	}
