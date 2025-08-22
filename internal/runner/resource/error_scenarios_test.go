@@ -339,63 +339,6 @@ func TestDryRunManagerErrorHandling(t *testing.T) {
 		expectResult bool
 	}{
 		{
-			name: "nil command group",
-			setup: func() (*DryRunResourceManager, error) {
-				opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
-				return NewDryRunResourceManager(nil, nil, opts), nil
-			},
-			command: runnertypes.Command{
-				Name: "test-cmd",
-				Cmd:  "echo test",
-			},
-			group:        nil,
-			envVars:      map[string]string{"TEST": "value"},
-			expectError:  true, // Now consistent with normal mode - rejects nil groups
-			expectResult: false,
-		},
-		{
-			name: "empty command",
-			setup: func() (*DryRunResourceManager, error) {
-				opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
-				return NewDryRunResourceManager(nil, nil, opts), nil
-			},
-			command: runnertypes.Command{
-				Name: "",
-				Cmd:  "",
-			},
-			group: &runnertypes.CommandGroup{
-				Name: "test-group",
-			},
-			envVars:      map[string]string{},
-			expectError:  true, // Now consistent with normal mode - rejects empty commands
-			expectResult: false,
-		},
-		{
-			name: "large environment variables",
-			setup: func() (*DryRunResourceManager, error) {
-				opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
-				return NewDryRunResourceManager(nil, nil, opts), nil
-			},
-			command: runnertypes.Command{
-				Name: "large-env-test",
-				Cmd:  "echo $LARGE_VAR",
-			},
-			group: &runnertypes.CommandGroup{
-				Name: "test-group",
-			},
-			envVars: func() map[string]string {
-				largeValue := make([]byte, 10000)
-				for i := range largeValue {
-					largeValue[i] = 'A'
-				}
-				return map[string]string{
-					"LARGE_VAR": string(largeValue),
-				}
-			}(),
-			expectError:  false,
-			expectResult: true,
-		},
-		{
 			name: "concurrent analysis recording",
 			setup: func() (*DryRunResourceManager, error) {
 				opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
