@@ -9,12 +9,12 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/audit"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
@@ -230,9 +230,6 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 
 	// Create default ResourceManager if not provided
 	if opts.resourceManager == nil {
-		// Create a simple FileSystem implementation
-		fs := &simpleFileSystem{}
-
 		// Check if dry-run mode is requested
 		if opts.dryRun {
 			// Ensure dryRunOptions has default values if nil
@@ -248,6 +245,8 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 				opts.dryRunOptions,
 			)
 		} else {
+			// Use common.DefaultFileSystem for normal mode
+			fs := common.NewDefaultFileSystem()
 			opts.resourceManager = resource.NewDefaultResourceManager(
 				opts.executor,
 				fs,
@@ -735,23 +734,4 @@ func hasPrivilegedCommands(config *runnertypes.Config) bool {
 		}
 	}
 	return false
-}
-
-// simpleFileSystem implements executor.FileSystem using standard os operations
-type simpleFileSystem struct{}
-
-func (fs *simpleFileSystem) CreateTempDir(dir, prefix string) (string, error) {
-	return os.MkdirTemp(dir, prefix)
-}
-
-func (fs *simpleFileSystem) RemoveAll(path string) error {
-	return os.RemoveAll(path)
-}
-
-func (fs *simpleFileSystem) FileExists(path string) (bool, error) {
-	_, err := os.Lstat(path)
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	return err == nil, err
 }
