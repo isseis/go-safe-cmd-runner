@@ -360,7 +360,7 @@ type Formatter interface {
 }
 
 type FormatterOptions struct {
-    Format        OutputFormat  // Text, JSON, YAML
+    Format        OutputFormat  // Text, JSON
     DetailLevel   DetailLevel   // Summary, Detailed, Full
     ShowSensitive bool         // Show sensitive information (masked)
     ColorOutput   bool         // Use colored output for terminals

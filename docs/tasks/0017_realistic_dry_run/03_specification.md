@@ -109,7 +109,6 @@ type OutputFormat int
 const (
     OutputFormatText OutputFormat = iota
     OutputFormatJSON
-    OutputFormatYAML
 )
 ```
 
@@ -265,7 +264,7 @@ internal/runner/resource/         # ✅ Phase 1-2 完了
 ├── default_manager.go          # DefaultResourceManager 実装（委譲パターン）
 ├── normal_manager.go           # NormalResourceManager 実装（通常実行）
 ├── dryrun_manager.go          # DryRunResourceManagerImpl 実装（dry-run）
-├── formatter.go               # 結果フォーマット実装（Text/JSON/YAML）
+├── formatter.go               # 結果フォーマット実装（Text/JSON)
 ├── manager_test.go            # ResourceManager テスト
 ├── types_test.go              # 型システム テスト
 ├── default_manager_test.go    # DefaultResourceManager テスト
@@ -285,7 +284,7 @@ internal/runner/resource/         # ✅ Phase 1-2 完了
 - DefaultResourceManager実装（委譲パターンファサード）
 - NormalResourceManager実装（通常実行時の副作用処理）
 - DryRunResourceManagerImpl実装（dry-run時の分析・記録）
-- 結果フォーマッター実装（Text/JSON/YAML出力対応）
+- 結果フォーマッター実装（Text/JSON出力対応）
 - 包括的テストスイート
 
 #### 2.1.2 DefaultResourceManager 実装（Phase 2予定）
@@ -364,7 +363,7 @@ sequenceDiagram
 - ✅ **モード切り替えロジック**: Normal/DryRunの動的制御
 - ✅ **副作用インターセプション**: 各操作の条件分岐実装
 - ✅ **分析記録機能**: ResourceAnalysisの蓄積
-- ✅ **結果フォーマッター**: Text/JSON/YAML出力対応（`internal/runner/resource/formatter.go`）
+- ✅ **結果フォーマッター**: Text/JSON出力対応（`internal/runner/resource/formatter.go`）
 
 ### 2.3 Phase 3: Runner統合（完了済み）
 - ✅ **Runner構造体拡張**: resourceManagerフィールド追加

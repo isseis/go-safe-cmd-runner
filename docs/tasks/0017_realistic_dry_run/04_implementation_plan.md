@@ -108,7 +108,7 @@ type ResourceManager interface {
 - ✅ DefaultResourceManager実装（委譲パターンファサード）
 - ✅ NormalResourceManager実装（通常実行時の副作用処理）
 - ✅ DryRunResourceManagerImpl実装（dry-run時の分析・記録）
-- ✅ 結果フォーマッター実装（Text/JSON/YAML出力対応）
+- ✅ 結果フォーマッター実装（Text/JSON出力対応）
 - ✅ コマンド実行のインターセプション（ExecuteCommand の委譲）
 - ✅ ファイルシステム操作のインターセプション（TempDir関連の委譲）
 - ✅ 特権管理のインターセプション（WithPrivileges の委譲）
@@ -438,7 +438,6 @@ cmd/runner/
 #### 2.4.1 作業項目
 - [ ] テキストフォーマッターの実装
 - [ ] JSONフォーマッターの実装
-- [ ] YAMLフォーマッターの実装
 - [ ] 詳細レベル別の出力制御
 - [ ] セキュリティ情報のマスキング機能
 - [ ] CLI統合（main.go の更新）
@@ -452,7 +451,6 @@ internal/runner/resource/
 ├── formatter.go         # フォーマッター機能（統合）
 ├── text_formatter.go    # テキスト出力実装
 ├── json_formatter.go    # JSON出力実装
-├── yaml_formatter.go    # YAML出力実装
 └── formatter_test.go    # フォーマッターテスト
 
 cmd/runner/
@@ -701,7 +699,7 @@ README.md                    # 更新済み
 - ✅ ResourceManagerインターフェースの完全定義
 - ✅ すべての副作用の適切なインターセプション（DefaultResourceManager）
 - ✅ 詳細な分析結果の提供（DryRunResult型システム）
-- ✅ 複数出力形式のサポート（Text/JSON/YAML対応）
+- ✅ 複数出力形式のサポート（Text/JSON対応）
 - ✅ WithDryRunオプションによるdry-run実行パターン
 - ✅ GetDryRunResultsによる結果取得
 - ✅ 通常実行パスとの100%整合性（同じExecuteAllパス使用）
@@ -753,6 +751,6 @@ README.md                    # 更新済み
 - ✅ セキュリティ分析機能（危険なコマンドパターンの自動検出）
 - ✅ 包括的なテストカバレッジ（モード委譲、リソース分析、エラーハンドリング）
 - ✅ 品質保証（lint、テスト、型安全性の完全担保）
-- ✅ 複数出力形式対応（Text/JSON/YAML）
+- ✅ 複数出力形式対応（Text/JSON）
 
 **残作業**: Phase 4の完了（CLI拡張）とPhase 5の完了（統合テスト）により、完全なdry-run機能が実現される予定。
