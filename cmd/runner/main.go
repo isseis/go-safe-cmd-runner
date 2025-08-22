@@ -522,7 +522,7 @@ func parseDryRunDetailLevel(level string) (resource.DetailLevel, error) {
 	case "full":
 		return resource.DetailLevelFull, nil
 	default:
-		return resource.DetailLevelDetailed, ErrInvalidDetailLevel
+		return resource.DetailLevelSummary, ErrInvalidDetailLevel
 	}
 }
 
