@@ -39,11 +39,11 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd runnerty
 	start := time.Now()
 
 	// Validate command and group for consistency with dry-run mode
-	if err := n.validateCommand(cmd); err != nil {
+	if err := validateCommand(cmd); err != nil {
 		return nil, fmt.Errorf("command validation failed: %w", err)
 	}
 
-	if err := n.validateCommandGroup(group); err != nil {
+	if err := validateCommandGroup(group); err != nil {
 		return nil, fmt.Errorf("command group validation failed: %w", err)
 	}
 
@@ -160,27 +160,5 @@ func (n *NormalResourceManager) SendNotification(_ string, _ map[string]any) err
 
 // GetDryRunResults returns nil in normal mode since there are no dry-run results
 func (n *NormalResourceManager) GetDryRunResults() *DryRunResult {
-	return nil
-}
-
-// validateCommand validates command for consistency with dry-run mode
-func (n *NormalResourceManager) validateCommand(cmd runnertypes.Command) error {
-	if cmd.Cmd == "" {
-		return ErrEmptyCommand
-	}
-	if cmd.Name == "" {
-		return ErrEmptyCommandName
-	}
-	return nil
-}
-
-// validateCommandGroup validates command group for consistency with dry-run mode
-func (n *NormalResourceManager) validateCommandGroup(group *runnertypes.CommandGroup) error {
-	if group == nil {
-		return ErrNilCommandGroup
-	}
-	if group.Name == "" {
-		return ErrEmptyGroupName
-	}
 	return nil
 }

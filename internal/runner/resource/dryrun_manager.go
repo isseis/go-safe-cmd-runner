@@ -65,11 +65,11 @@ func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd runnerty
 	start := time.Now()
 
 	// Validate command and group for consistency with normal mode
-	if err := d.validateCommand(cmd); err != nil {
+	if err := validateCommand(cmd); err != nil {
 		return nil, fmt.Errorf("command validation failed: %w", err)
 	}
 
-	if err := d.validateCommandGroup(group); err != nil {
+	if err := validateCommandGroup(group); err != nil {
 		return nil, fmt.Errorf("command group validation failed: %w", err)
 	}
 
@@ -311,26 +311,4 @@ func (d *DryRunResourceManager) RecordAnalysis(analysis *ResourceAnalysis) {
 	defer d.mu.Unlock()
 
 	d.resourceAnalyses = append(d.resourceAnalyses, *analysis)
-}
-
-// validateCommand validates command for consistency with normal mode
-func (d *DryRunResourceManager) validateCommand(cmd runnertypes.Command) error {
-	if cmd.Cmd == "" {
-		return ErrEmptyCommand
-	}
-	if cmd.Name == "" {
-		return ErrEmptyCommandName
-	}
-	return nil
-}
-
-// validateCommandGroup validates command group for consistency with normal mode
-func (d *DryRunResourceManager) validateCommandGroup(group *runnertypes.CommandGroup) error {
-	if group == nil {
-		return ErrNilCommandGroup
-	}
-	if group.Name == "" {
-		return ErrEmptyGroupName
-	}
-	return nil
 }

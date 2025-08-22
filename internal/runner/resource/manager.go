@@ -87,3 +87,25 @@ type ExecutionResult struct {
 	DryRun   bool              `json:"dry_run"`
 	Analysis *ResourceAnalysis `json:"analysis,omitempty"`
 }
+
+// validateCommand validates command for consistency across execution modes
+func validateCommand(cmd runnertypes.Command) error {
+	if cmd.Cmd == "" {
+		return ErrEmptyCommand
+	}
+	if cmd.Name == "" {
+		return ErrEmptyCommandName
+	}
+	return nil
+}
+
+// validateCommandGroup validates command group for consistency across execution modes
+func validateCommandGroup(group *runnertypes.CommandGroup) error {
+	if group == nil {
+		return ErrNilCommandGroup
+	}
+	if group.Name == "" {
+		return ErrEmptyGroupName
+	}
+	return nil
+}
