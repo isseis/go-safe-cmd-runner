@@ -43,6 +43,10 @@ func NewJSONFormatter() *JSONFormatter {
 
 // FormatResult formats a dry-run result as text
 func (f *TextFormatter) FormatResult(result *DryRunResult, opts FormatterOptions) (string, error) {
+	if result == nil {
+		return "", ErrNilResult
+	}
+
 	var buf strings.Builder
 
 	// Header
@@ -257,6 +261,10 @@ func (f *TextFormatter) writeErrorsAndWarnings(buf *strings.Builder, errors []Dr
 
 // FormatResult formats a dry-run result as JSON
 func (f *JSONFormatter) FormatResult(result *DryRunResult, opts FormatterOptions) (string, error) {
+	if result == nil {
+		return "", ErrNilResult
+	}
+
 	// Create a copy for potential modification
 	resultCopy := *result
 

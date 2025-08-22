@@ -18,6 +18,7 @@ const (
 var (
 	ErrPrivilegeManagerNotAvailable = errors.New("privilege manager not available")
 	ErrTempDirCleanupFailed         = errors.New("failed to cleanup some temp directories")
+	ErrNilResult                    = errors.New("result cannot be nil")
 )
 
 // ExecutionMode determines how all operations are handled
