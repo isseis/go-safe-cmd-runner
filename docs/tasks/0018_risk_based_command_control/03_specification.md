@@ -900,7 +900,7 @@ name = "restart_service"
 description = "Restart application service"
 cmd = "systemctl"
 args = ["restart", "myapp.service"]
-privileged = true          # 全てのリスクを許可
+privileged = true          # 特権昇格リスクのみを許可
 ```
 
 #### 9.1.2 設定ファイルの検証

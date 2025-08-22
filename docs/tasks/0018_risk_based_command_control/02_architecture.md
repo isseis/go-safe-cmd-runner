@@ -109,6 +109,7 @@ flowchart TD
     EvaluatePermission[Evaluate Permission]
     PrivilegeEscalation{Is Privilege<br/>Escalation Risk?}
     PrivilegedCheck{privileged = true?}
+    RemovePrivilegeRisk[Remove Privilege Escalation Risk<br/>Recalculate with GetHighestNonPrivilegeRiskLevel]
     RiskCheck{actual ≤ max_risk?}
     Allow[ALLOW]
     Reject[REJECT]
@@ -120,12 +121,15 @@ flowchart TD
     EvaluatePermission --> PrivilegeEscalation
     PrivilegeEscalation -->|Yes| PrivilegedCheck
     PrivilegeEscalation -->|No| RiskCheck
-    PrivilegedCheck -->|Yes| Allow
+    PrivilegedCheck -->|Yes| RemovePrivilegeRisk
     PrivilegedCheck -->|No| Reject
+    RemovePrivilegeRisk --> RiskCheck
     RiskCheck -->|Yes| Allow
     RiskCheck -->|No| Reject
     Allow --> Execute
 ```
+
+**重要:** `privileged = true` フラグは特権昇格リスクのみを除外します。特権昇格リスクが除外された後、残りのセキュリティリスク（ファイル操作、ネットワーク通信等）は依然として `max_risk_level` 設定と照合されます。これにより、特権昇格が許可されたコマンドでも、他のセキュリティリスクに対する適切な制御が維持されます。
 
 ## 4. インターフェース設計
 
