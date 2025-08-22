@@ -13,7 +13,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/tempdir"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
@@ -26,6 +25,7 @@ var (
 	errPermissionDenied = errors.New("permission denied")
 	errDiskFull         = errors.New("disk full")
 	errResourceBusy     = errors.New("resource busy")
+	errCleanupFailed    = errors.New("cleanup failed")
 )
 
 const defaultTestCommandName = "test"
@@ -151,7 +151,6 @@ func TestNewRunner(t *testing.T) {
 		assert.NotNil(t, runner.executor)
 		assert.NotNil(t, runner.envVars)
 		assert.NotNil(t, runner.validator)
-		assert.NotNil(t, runner.tempDirManager)
 		assert.Equal(t, "test-run-123", runner.runID)
 	})
 
@@ -184,15 +183,12 @@ func TestNewRunner(t *testing.T) {
 			SensitiveEnvVars:        []string{".*PASSWORD.*"},
 			MaxPathLength:           4096,
 		}
-		customResourceManager := tempdir.NewTempDirManager("/custom/path")
 
 		runner, err := NewRunner(config,
 			WithSecurity(securityConfig),
-			WithTempDirManager(customResourceManager),
 			WithRunID("test-run-123"))
 		assert.NoError(t, err)
 		assert.NotNil(t, runner)
-		assert.Equal(t, customResourceManager, runner.tempDirManager)
 	})
 
 	t.Run("with invalid security config", func(t *testing.T) {
@@ -234,7 +230,6 @@ func TestNewRunnerWithSecurity(t *testing.T) {
 		assert.NotNil(t, runner.executor)
 		assert.NotNil(t, runner.envVars)
 		assert.NotNil(t, runner.validator)
-		assert.NotNil(t, runner.tempDirManager)
 	})
 
 	t.Run("with invalid security config", func(t *testing.T) {
@@ -2279,7 +2274,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		mockResourceManager.On("CleanupTempDir", "/tmp/test-temp-dir").Return(nil)
 
 		// CleanupAllTempDirs expectation for testing cleanup all failure
-		mockResourceManager.On("CleanupAllTempDirs").Return(tempdir.ErrCleanupFailed)
+		mockResourceManager.On("CleanupAllTempDirs").Return(errCleanupFailed)
 
 		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.MatchedBy(func(cmd runnertypes.Command) bool {
 			return cmd.Name == defaultTestCommandName
@@ -2302,7 +2297,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		// Now test CleanupAllResources - should return error
 		err = runner.CleanupAllResources()
 		assert.Error(t, err)
-		assert.ErrorIs(t, err, tempdir.ErrCleanupFailed)
+		assert.ErrorIs(t, err, errCleanupFailed)
 
 		// Verify mock expectations
 		mockResourceManager.AssertExpectations(t)

@@ -22,7 +22,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/tempdir"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/joho/godotenv"
@@ -91,7 +90,6 @@ type Runner struct {
 	config              *runnertypes.Config
 	envVars             map[string]string
 	validator           *security.Validator
-	tempDirManager      *tempdir.TempDirManager
 	verificationManager *verification.Manager
 	envFilter           *environment.Filter
 	privilegeManager    runnertypes.PrivilegeManager // Optional privilege manager for privileged commands
@@ -105,7 +103,6 @@ type Option func(*runnerOptions)
 // runnerOptions holds all configuration options for creating a Runner
 type runnerOptions struct {
 	securityConfig      *security.Config
-	tempDirManager      *tempdir.TempDirManager
 	executor            executor.CommandExecutor
 	verificationManager *verification.Manager
 	privilegeManager    runnertypes.PrivilegeManager
@@ -127,13 +124,6 @@ func WithSecurity(securityConfig *security.Config) Option {
 func WithVerificationManager(verificationManager *verification.Manager) Option {
 	return func(opts *runnerOptions) {
 		opts.verificationManager = verificationManager
-	}
-}
-
-// WithTempDirManager sets a custom temporary directory manager
-func WithTempDirManager(manager *tempdir.TempDirManager) Option {
-	return func(opts *runnerOptions) {
-		opts.tempDirManager = manager
 	}
 }
 
@@ -221,10 +211,6 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 		opts.executor = executor.NewDefaultExecutor(executorOpts...)
 	}
 
-	if opts.tempDirManager == nil {
-		opts.tempDirManager = tempdir.NewTempDirManager(config.Global.WorkDir)
-	}
-
 	// Create environment filter
 	envFilter := environment.NewFilter(config)
 
@@ -262,7 +248,6 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 		config:              config,
 		envVars:             make(map[string]string),
 		validator:           validator,
-		tempDirManager:      opts.tempDirManager,
 		verificationManager: opts.verificationManager,
 		envFilter:           envFilter,
 		privilegeManager:    opts.privilegeManager,
