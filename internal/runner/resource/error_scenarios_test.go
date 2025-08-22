@@ -166,11 +166,13 @@ func TestErrorScenariosConsistency(t *testing.T) {
 	}
 }
 
-// TestErrorScenarios tests various error conditions and edge cases
+// TestErrorScenarios tests various error conditions and edge cases for DryRunResourceManagerImpl.
+// This test focuses specifically on dry-run implementation behavior, while TestErrorScenariosConsistency
+// tests consistency between normal and dry-run modes.
 func TestErrorScenarios(t *testing.T) {
 	tests := []struct {
 		name         string
-		setup        func() (*DefaultResourceManager, error)
+		setup        func() (*DryRunResourceManagerImpl, error)
 		command      runnertypes.Command
 		group        *runnertypes.CommandGroup
 		envVars      map[string]string
@@ -179,9 +181,9 @@ func TestErrorScenarios(t *testing.T) {
 	}{
 		{
 			name: "nil command group",
-			setup: func() (*DefaultResourceManager, error) {
+			setup: func() (*DryRunResourceManagerImpl, error) {
 				opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
-				return NewDefaultResourceManager(nil, nil, nil, ExecutionModeDryRun, opts), nil
+				return NewDryRunResourceManager(nil, nil, opts), nil
 			},
 			command: runnertypes.Command{
 				Name: "test-cmd",
@@ -194,9 +196,9 @@ func TestErrorScenarios(t *testing.T) {
 		},
 		{
 			name: "empty command",
-			setup: func() (*DefaultResourceManager, error) {
+			setup: func() (*DryRunResourceManagerImpl, error) {
 				opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
-				return NewDefaultResourceManager(nil, nil, nil, ExecutionModeDryRun, opts), nil
+				return NewDryRunResourceManager(nil, nil, opts), nil
 			},
 			command: runnertypes.Command{
 				Name: "",
@@ -211,9 +213,9 @@ func TestErrorScenarios(t *testing.T) {
 		},
 		{
 			name: "large environment variables",
-			setup: func() (*DefaultResourceManager, error) {
+			setup: func() (*DryRunResourceManagerImpl, error) {
 				opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
-				return NewDefaultResourceManager(nil, nil, nil, ExecutionModeDryRun, opts), nil
+				return NewDryRunResourceManager(nil, nil, opts), nil
 			},
 			command: runnertypes.Command{
 				Name: "large-env-test",
@@ -231,6 +233,80 @@ func TestErrorScenarios(t *testing.T) {
 					"LARGE_VAR": string(largeValue),
 				}
 			}(),
+			expectError:  false,
+			expectResult: true,
+		},
+		{
+			name: "concurrent analysis recording",
+			setup: func() (*DryRunResourceManagerImpl, error) {
+				opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
+				return NewDryRunResourceManager(nil, nil, opts), nil
+			},
+			command: runnertypes.Command{
+				Name: "concurrent-test",
+				Cmd:  "echo concurrent",
+			},
+			group: &runnertypes.CommandGroup{
+				Name: "test-group",
+			},
+			envVars:      map[string]string{},
+			expectError:  false,
+			expectResult: true,
+		},
+		{
+			name: "invalid dry-run options",
+			setup: func() (*DryRunResourceManagerImpl, error) {
+				// Test with invalid detail level
+				opts := &DryRunOptions{DetailLevel: DetailLevel(999)}
+				return NewDryRunResourceManager(nil, nil, opts), nil
+			},
+			command: runnertypes.Command{
+				Name: "options-test",
+				Cmd:  "echo test",
+			},
+			group: &runnertypes.CommandGroup{
+				Name: "test-group",
+			},
+			envVars:      map[string]string{},
+			expectError:  false, // Should handle gracefully
+			expectResult: true,
+		},
+		{
+			name: "analysis recording with nil options",
+			setup: func() (*DryRunResourceManagerImpl, error) {
+				// Test with nil options
+				return NewDryRunResourceManager(nil, nil, nil), nil
+			},
+			command: runnertypes.Command{
+				Name: "nil-options-test",
+				Cmd:  "echo test",
+			},
+			group: &runnertypes.CommandGroup{
+				Name: "test-group",
+			},
+			envVars:      map[string]string{},
+			expectError:  false,
+			expectResult: true,
+		},
+		{
+			name: "dry-run result consistency",
+			setup: func() (*DryRunResourceManagerImpl, error) {
+				opts := &DryRunOptions{
+					DetailLevel:   DetailLevelDetailed,
+					OutputFormat:  OutputFormatJSON,
+					ShowSensitive: true,
+					VerifyFiles:   true,
+				}
+				return NewDryRunResourceManager(nil, nil, opts), nil
+			},
+			command: runnertypes.Command{
+				Name: "consistency-test",
+				Cmd:  "echo consistency",
+			},
+			group: &runnertypes.CommandGroup{
+				Name: "test-group",
+			},
+			envVars:      map[string]string{"SENSITIVE": "secret"},
 			expectError:  false,
 			expectResult: true,
 		},
@@ -253,6 +329,21 @@ func TestErrorScenarios(t *testing.T) {
 
 			if tt.expectResult {
 				assert.NotNil(t, result, "expected result but got nil")
+
+				// Dry-run specific validations
+				if result != nil {
+					assert.True(t, result.DryRun, "result should indicate dry-run mode")
+
+					// Check that dry-run results are available
+					dryRunResult := manager.GetDryRunResults()
+					assert.NotNil(t, dryRunResult, "dry-run results should be available")
+
+					// Validate metadata
+					if dryRunResult != nil && dryRunResult.Metadata != nil {
+						assert.NotEmpty(t, dryRunResult.Metadata.RunID, "run ID should be set")
+						assert.False(t, dryRunResult.Metadata.GeneratedAt.IsZero(), "generated time should be set")
+					}
+				}
 			}
 		})
 	}
