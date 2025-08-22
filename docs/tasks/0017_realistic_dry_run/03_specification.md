@@ -2,7 +2,7 @@
 
 ## 1. API仕様
 
-### 1.1 ResourceManager インターフェース（Phase 2実装完了）
+### 1.1 ResourceManager インターフェース（Phase 1-2実装完了）
 
 #### 1.1.1 ResourceManager メイン仕様
 ```go
@@ -34,7 +34,7 @@ type DryRunResourceManager interface {
 }
 ```
 
-#### 1.1.2 DefaultResourceManager（委譲パターンファサード）
+#### 1.1.2 DefaultResourceManager（委譲パターンファサード）（Phase 2実装完了）
 ```go
 // DefaultResourceManager provides a mode-aware facade that delegates to
 // NormalResourceManager or DryRunResourceManagerImpl depending on ExecutionMode.
@@ -194,6 +194,44 @@ type ResultMetadata struct {
 }
 ```
 
+### 1.6 CLI インターフェース仕様（Phase 4実装完了）
+
+#### 1.6.1 コマンドラインオプション
+```bash
+go-safe-cmd-runner --config config.toml [OPTIONS] COMMAND [ARGS...]
+
+Dry-Run Options:
+  --dry-run                    Enable dry-run mode (no side effects)
+  --format string             Output format: text, json (default "text")
+  --detail string             Detail level: summary, detailed, full (default "detailed")
+
+General Options:
+  --config string             Path to config file
+  --env-file string           Path to environment file
+  --log-level string          Log level: debug, info, warn, error (default "info")
+  --log-dir string            Directory to place per-run JSON log
+  --hash-directory string     Directory containing hash files
+  --validate                  Validate configuration file and exit
+  --run-id string             Unique identifier for this execution run
+```
+
+#### 1.6.2 Dry-Run実行例
+```bash
+# 基本的なdry-run実行
+./runner --config sample/test.toml --dry-run run all
+
+# JSON形式でサマリー出力
+./runner --config sample/test.toml --dry-run --format json --detail summary run all
+
+# 詳細情報をテキスト形式で出力
+./runner --config sample/test.toml --dry-run --format text --detail full run all
+```
+
+#### 1.6.3 エラーハンドリング
+- **静的エラー定義**: err113ルール準拠
+- **タイプセーフエラー**: 不正な値に対する適切なエラーメッセージ
+- **到達不可能コード除去**: デッドコード排除による品質向上
+
 ### 1.4 主要データ構造の関係
 
 ```mermaid
@@ -287,7 +325,7 @@ internal/runner/resource/         # ✅ Phase 1-2 完了
 - 結果フォーマッター実装（Text/JSON出力対応）
 - 包括的テストスイート
 
-#### 2.1.2 DefaultResourceManager 実装（Phase 2予定）
+#### 2.1.2 DefaultResourceManager 実装（Phase 2実装完了）
 
 Resource Manager Patternの核となる実装：
 
@@ -371,9 +409,20 @@ sequenceDiagram
 - ✅ **GetDryRunResults メソッド**: 分析結果取得
 - ✅ **副作用メソッド更新**: 全てResourceManager経由に変更
 
-### 2.4 Phase 4: CLIインターフェース（次期）
-- **--dry-runフラグ**: コマンドラインオプション追加
-- **ユーザーエクスペリエンス**: 進捗表示・エラー報告
+### 2.4 Phase 4: CLIインターフェース（完了済み）
+- ✅ **--dry-runフラグ**: コマンドラインオプション追加
+- ✅ **--formatオプション**: 出力フォーマット選択（text/json）
+- ✅ **--detailオプション**: 詳細レベル選択（summary/detailed/full）
+- ✅ **エラーハンドリング**: 静的エラー定義、タイプセーフティ確保
+- ✅ **コード品質**: 重複削除、デッドコード除去
+- ✅ **ユーザーエクスペリエンス**: 適切なフラグ解析とエラーメッセージ
+- ✅ **完全統合**: WithDryRunパターンによる実行パス整合性保証
+
+### 2.5 残作業（Phase 5）
+- **統合テスト・整合性テスト**: 実行パス整合性の完全検証
+- **パフォーマンステスト**: 大規模設定でのベンチマーク
+- **セキュリティテスト**: セキュリティ分析機能の検証
+- **CI/CDパイプライン**: 自動テスト体制の構築
 
 ## 3. テスト仕様
 
