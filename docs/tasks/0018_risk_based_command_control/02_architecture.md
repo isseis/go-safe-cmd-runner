@@ -21,14 +21,17 @@ block-beta
 
     block:system["Runner System"]
         columns 2
+        spacing 20px
 
         block:dryrun["Dry-run Mode Manager"]
+            spacing 15px
             SecurityAnalysis1["Security Analysis"]
             ReportGeneration["Report Generation"]
             SecurityAnalysis1 --> ReportGeneration
         end
 
         block:normal["Normal Mode Manager"]
+            spacing 15px
             SecurityAnalysis2["Security Analysis (NEW)"]
             RiskEvaluation["Risk Evaluation (NEW)"]
             CommandExecution["Command Execution (NEW)"]
@@ -39,12 +42,14 @@ block-beta
 
     block:shared["Shared Security Analysis Engine"]
         columns 2
+        spacing 20px
         PatternMatching["Pattern Matching"]
         SymlinkCheck["Symlink Depth Check"]
     end
 
     block:config["Configuration Layer"]
         columns 2
+        spacing 20px
         TOMLParser["TOML Parser"]
         RiskValidator["Risk Level Validator (NEW)"]
     end
