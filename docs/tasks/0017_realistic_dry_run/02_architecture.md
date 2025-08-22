@@ -333,8 +333,6 @@ type ResultMetadata struct {
     Version         string        `json:"version"`
     Duration        time.Duration `json:"duration"`
 }
-    Metadata    map[string]interface{} `json:"metadata"`     // Additional metadata
-}
 
 // ExecutionStatus represents the status of command execution
 type ExecutionStatus string
