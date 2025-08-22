@@ -44,10 +44,9 @@ type LoggerConfig struct {
 
 // Error definitions
 var (
-	ErrConfigPathRequired      = errors.New("config file path is required")
-	ErrUnsupportedOutputFormat = errors.New("unsupported output format")
-	ErrInvalidDetailLevel      = errors.New("invalid detail level - valid options are: summary, detailed, full")
-	ErrInvalidOutputFormat     = errors.New("invalid output format - valid options are: text, json")
+	ErrConfigPathRequired  = errors.New("config file path is required")
+	ErrInvalidDetailLevel  = errors.New("invalid detail level - valid options are: summary, detailed, full")
+	ErrInvalidOutputFormat = errors.New("invalid output format - valid options are: text, json")
 )
 
 var (
@@ -316,16 +315,21 @@ func executeRunner(ctx context.Context, cfg *runnertypes.Config, verificationMan
 		runner.WithRunID(runID),
 	}
 
+	// Parse dry-run options once for the entire function
+	var detailLevel resource.DetailLevel
+	var outputFormat resource.OutputFormat
+
 	// Add dry-run mode if requested
 	if *dryRun {
 		// Parse detail level
-		detailLevel, err := parseDryRunDetailLevel(*dryRunDetail)
+		var err error
+		detailLevel, err = parseDryRunDetailLevel(*dryRunDetail)
 		if err != nil {
 			return fmt.Errorf("invalid detail level %q: %w", *dryRunDetail, err)
 		}
 
 		// Parse output format
-		outputFormat, err := parseDryRunOutputFormat(*dryRunFormat)
+		outputFormat, err = parseDryRunOutputFormat(*dryRunFormat)
 		if err != nil {
 			return fmt.Errorf("invalid output format %q: %w", *dryRunFormat, err)
 		}
@@ -369,26 +373,13 @@ func executeRunner(ctx context.Context, cfg *runnertypes.Config, verificationMan
 	if *dryRun {
 		result := runner.GetDryRunResults()
 		if result != nil {
-			// Parse options for formatter
-			detailLevel, err := parseDryRunDetailLevel(*dryRunDetail)
-			if err != nil {
-				return fmt.Errorf("invalid detail level %q: %w", *dryRunDetail, err)
-			}
-
-			outputFormat, err := parseDryRunOutputFormat(*dryRunFormat)
-			if err != nil {
-				return fmt.Errorf("invalid output format %q: %w", *dryRunFormat, err)
-			}
-
-			// Create appropriate formatter
+			// Create appropriate formatter using pre-parsed values
 			var formatter resource.Formatter
 			switch outputFormat {
 			case resource.OutputFormatText:
 				formatter = resource.NewTextFormatter()
 			case resource.OutputFormatJSON:
 				formatter = resource.NewJSONFormatter()
-			default:
-				return fmt.Errorf("%w: %v", ErrUnsupportedOutputFormat, outputFormat)
 			}
 
 			output, err := formatter.FormatResult(result, resource.FormatterOptions{
