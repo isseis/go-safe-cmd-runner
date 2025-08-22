@@ -402,25 +402,26 @@ if *dryRun {
 
 ---
 
-### Phase 4: CLI Integration（CLIインターフェース）⚠️ **部分完了**
-**期間**: 2-3日（部分完了）
+### Phase 4: CLI Integration（CLIインターフェース）✅ **完了済み**
+**期間**: 2-3日（完了）
 **目標**: ユーザーフレンドリーなCLIインターフェースの提供
 
 #### 2.4.1 作業項目
 - ✅ WithDryRunオプションを使用したdry-run実行パターン実装
 - ✅ GetDryRunResultsを使用した結果取得
-- ⚠️ main.goでのdry-runフラグ処理（部分実装）
-- ❌ 出力フォーマットオプション（--format text|json|yaml）（未実装）
-- ❌ 詳細レベルオプション（--detail summary|detailed|full）（未実装）
-- ❌ エラーハンドリングとユーザーフィードバック（部分実装）
+- ✅ main.goでのdry-runフラグ処理（完全実装）
+- ✅ 出力フォーマットオプション（--format text|json）（実装完了）
+- ✅ 詳細レベルオプション（--detail summary|detailed|full）（実装完了）
+- ✅ エラーハンドリングとユーザーフィードバック（完全実装）
 - ❌ 進捗表示とリアルタイム出力（未実装）
 
-#### 2.4.2 成果物（部分完了）
+#### 2.4.2 成果物（完了）
 ```
 cmd/runner/
-└── main.go              # ⚠️ WithDryRunパターン実装（部分完了）
+└── main.go              # ✅ WithDryRunパターン実装（完全実装）
 ```
 - ✅ lint チェック通過（0 issues）
+- ✅ 全テスト通過
 
 **実装特徴**
 - **一貫性**: 通常実行とドライラン実行が100%同じパスを通る
@@ -724,18 +725,18 @@ README.md                    # 更新済み
 - ✅ **Phase 1 完了**: Foundation（ResourceManagerインターフェース・型システム）
 - ✅ **Phase 2 完了**: Core Implementation（DefaultResourceManager・フォーマッター実装）
 - ✅ **Phase 3 完了**: Runner Integration（WithDryRun・GetDryRunResults・完全統合）
-- ⚠️ **Phase 4 部分完了**: CLI Integration（WithDryRunパターン実装、CLI拡張未完了）
+- ✅ **Phase 4 完了**: CLI Integration（WithDryRunパターン・CLI拡張・テスト・lint完了）
 - ⚠️ **Phase 5 部分完了**: Testing（基本テスト完了、統合テスト未完了）
 
 **次のアクションアイテム**:
-1. **Phase 4完了**: CLI拡張（フォーマット・詳細レベルオプション）
+1. ✅ **Phase 4完了**: CLI拡張（フォーマット・詳細レベルオプション）
 2. **Phase 5完了**: 実行パス整合性テストと統合テスト
 3. **ドキュメント整備**: 実装ガイドとユーザーマニュアル
 
 **更新されたマイルストーン**:
 - ✅ **Week 1-2**: Phase 1-3 完了（Foundation & Core Implementation & Runner Integration）
-- ⚠️ **現在**: Phase 4 部分完了（WithDryRunパターン実装完了）
-- 🎯 **次期**: Phase 4-5 完了（CLI拡張 & 包括的テスト）、リリース準備
+- ✅ **現在**: Phase 4 完了（WithDryRunパターン・CLI拡張・テスト・lint完了）
+- 🎯 **次期**: Phase 5 完了（包括的テスト）、リリース準備
 
 **Resource Manager Pattern採用による効率化**:
 - パッケージ構成の簡素化により実装工数削減
