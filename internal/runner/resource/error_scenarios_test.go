@@ -84,9 +84,7 @@ func TestErrorScenarios(t *testing.T) {
 			ctx := context.Background()
 
 			manager, err := tt.setup()
-			if err != nil {
-				t.Fatalf("setup failed: %v", err)
-			}
+			require.NoError(t, err, "setup failed: %v", err)
 
 			result, err := manager.ExecuteCommand(ctx, tt.command, tt.group, tt.envVars)
 
