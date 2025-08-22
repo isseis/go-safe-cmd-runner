@@ -2,7 +2,6 @@ package resource
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strconv"
 	"testing"
@@ -152,7 +151,7 @@ func TestErrorScenariosConsistency(t *testing.T) {
 				if tt.expectError {
 					assert.Error(t, err, "expected error for %s", tt.description)
 					if tt.expectedError != nil {
-						assert.True(t, errors.Is(err, tt.expectedError),
+						assert.ErrorIs(t, err, tt.expectedError,
 							"expected error %v, got %v for %s", tt.expectedError, err, tt.description)
 					}
 					assert.Nil(t, result, "result should be nil when error occurs")
