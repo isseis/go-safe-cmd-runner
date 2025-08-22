@@ -92,6 +92,8 @@ func (p *CommandEnvProcessor) validateBasicEnvVariable(name, value string) error
 	return nil
 }
 
+var variableReferenceRegex = regexp.MustCompile(`\$\{([^}]+)\}`)
+
 // resolveVariableReferencesForCommandEnv resolves variable references for Command.Env values
 func (p *CommandEnvProcessor) resolveVariableReferencesForCommandEnv(
 	value string,
@@ -109,7 +111,7 @@ func (p *CommandEnvProcessor) resolveVariableReferencesForCommandEnv(
 	for i := 0; i < maxIterations && strings.Contains(result, "${"); i++ {
 		oldResult := result
 
-		result = regexp.MustCompile(`\$\{([^}]+)\}`).ReplaceAllStringFunc(result, func(match string) string {
+		result = variableReferenceRegex.ReplaceAllStringFunc(result, func(match string) string {
 			varName := match[2 : len(match)-1] // Remove ${ and }
 
 			resolvedValue, err := p.resolveVariableWithSecurityPolicy(varName, envVars, group)
@@ -137,7 +139,7 @@ func (p *CommandEnvProcessor) resolveVariableReferencesForCommandEnv(
 	// This indicates potential circular reference, but we need to be careful about malformed references
 	if strings.Contains(result, "${") {
 		// Check if the remaining references are well-formed (have closing braces)
-		if regexp.MustCompile(`\$\{[^}]+\}`).MatchString(result) {
+		if variableReferenceRegex.MatchString(result) {
 			// Well-formed references remaining after max iterations = circular reference
 			return "", fmt.Errorf("%w: exceeded maximum resolution iterations (%d)", ErrCircularReference, maxIterations)
 		}
