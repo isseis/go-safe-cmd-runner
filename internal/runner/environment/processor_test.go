@@ -282,12 +282,13 @@ func TestCommandEnvProcessor_ResolveVariableReferences_CircularReferences(t *tes
 	processor := NewCommandEnvProcessor(filter)
 
 	tests := []struct {
-		name        string
-		value       string
-		envVars     map[string]string
-		group       *runnertypes.CommandGroup
-		expectError bool
-		description string
+		name           string
+		value          string
+		envVars        map[string]string
+		group          *runnertypes.CommandGroup
+		expectError    bool
+		expectedResult string
+		description    string
 	}{
 		{
 			name:    "direct self-referencing variable",
@@ -334,8 +335,9 @@ func TestCommandEnvProcessor_ResolveVariableReferences_CircularReferences(t *tes
 				Name:         "test_group",
 				EnvAllowlist: []string{"VAR1", "VAR2", "VAR3"},
 			},
-			expectError: false,
-			description: "Deep but non-circular reference chains should resolve successfully",
+			expectError:    false,
+			expectedResult: "base/middle/final",
+			description:    "Deep but non-circular reference chains should resolve successfully",
 		},
 	}
 
@@ -348,10 +350,7 @@ func TestCommandEnvProcessor_ResolveVariableReferences_CircularReferences(t *tes
 				assert.Empty(t, result, "Result should be empty on error")
 			} else {
 				assert.NoError(t, err, "Expected no error for case: %s", tt.description)
-				// For the successful case, verify the expected resolution
-				if tt.name == "deep but non-circular reference chain" {
-					assert.Equal(t, "base/middle/final", result)
-				}
+				assert.Equal(t, tt.expectedResult, result, "Expected result mismatch for case: %s", tt.description)
 			}
 		})
 	}
