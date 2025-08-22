@@ -74,7 +74,7 @@ type CommandGroup struct {
 }
 ```
 
-**注意**: `Cleanup` フィールドは実装では `ResourceManager` で処理されており、明示的なフィールドとしては実装されていません。
+**注意**: `Cleanup` フィールドは実装では `ResourceManager` で処理されており、明示的なフィールドとしては実装されていません。また、`DependsOn` フィールドは `Priority` による順序付けに簡素化されたため削除されました。
 
 #### 3.1.2 新フィールドの処理ロジック実装
 
