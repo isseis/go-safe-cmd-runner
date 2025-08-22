@@ -32,7 +32,7 @@ HASH_TARGETS := \
 	./sample/slack-notify.toml \
 	./sample/slack-group-notification-test.toml
 
-.PHONY: all lint build run clean test hash integration-test integration-test-success slack-notify-test slack-group-notification-test
+.PHONY: all lint build run clean test benchmark coverage hash integration-test integration-test-success slack-notify-test slack-group-notification-test
 
 all: build
 
@@ -61,6 +61,7 @@ $(BINARY_RUNNER): $(GO_SOURCES)
 clean:
 	$(GOCLEAN)
 	rm -f $(BINARY_RECORD) $(BINARY_VERIFY) $(BINARY_RUNNER)
+	rm -f coverage.out coverage.html
 
 hash:
 	$(foreach file, $(HASH_TARGETS), \
@@ -69,6 +70,14 @@ hash:
 test: $(BINARY_RUNNER)
 	$(GOTEST) -v ./...
 	$(ENVCMD) -i PATH=/bin:/sbin:/usr/bin:/usr/sbin $(BINARY_RUNNER)  -dry-run -config ./sample/comprehensive.toml
+
+benchmark:
+	$(GOTEST) -bench=. -benchmem ./internal/runner/resource/
+
+coverage:
+	$(GOTEST) -coverprofile=coverage.out ./...
+	$(GOCMD) tool cover -html=coverage.out -o coverage.html
+	@echo "Coverage report generated: coverage.html"
 
 integration-test: $(BINARY_RUNNER)
 	$(MKDIR) /tmp/cmd-runner-comprehensive /tmp/custom-workdir-test

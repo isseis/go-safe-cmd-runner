@@ -35,8 +35,18 @@ func NewNormalResourceManager(exec executor.CommandExecutor, fs executor.FileSys
 }
 
 // ExecuteCommand executes a command in normal mode
-func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd runnertypes.Command, _ *runnertypes.CommandGroup, env map[string]string) (*ExecutionResult, error) {
+func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) (*ExecutionResult, error) {
 	start := time.Now()
+
+	// Validate command and group for consistency with dry-run mode
+	if err := validateCommand(cmd); err != nil {
+		return nil, fmt.Errorf("command validation failed: %w", err)
+	}
+
+	if err := validateCommandGroup(group); err != nil {
+		return nil, fmt.Errorf("command group validation failed: %w", err)
+	}
+
 	result, err := n.executor.Execute(ctx, cmd, env)
 	if err != nil {
 		return nil, fmt.Errorf("command execution failed: %w", err)

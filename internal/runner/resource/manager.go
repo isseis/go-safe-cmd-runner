@@ -18,6 +18,12 @@ const (
 var (
 	ErrPrivilegeManagerNotAvailable = errors.New("privilege manager not available")
 	ErrTempDirCleanupFailed         = errors.New("failed to cleanup some temp directories")
+	ErrNilResult                    = errors.New("result cannot be nil")
+	// Validation errors for consistent behavior across execution modes
+	ErrEmptyCommand     = errors.New("command cannot be empty")
+	ErrEmptyCommandName = errors.New("command name cannot be empty")
+	ErrNilCommandGroup  = errors.New("command group cannot be nil")
+	ErrEmptyGroupName   = errors.New("command group name cannot be empty")
 )
 
 // ExecutionMode determines how all operations are handled
@@ -64,8 +70,8 @@ type ResourceManager interface {
 	GetDryRunResults() *DryRunResult
 }
 
-// DryRunResourceManager extends ResourceManager with dry-run specific functionality
-type DryRunResourceManager interface {
+// DryRunResourceManagerInterface extends ResourceManager with dry-run specific functionality
+type DryRunResourceManagerInterface interface {
 	ResourceManager
 
 	// Dry-run specific
@@ -80,4 +86,26 @@ type ExecutionResult struct {
 	Duration int64             `json:"duration_ms"` // Duration in milliseconds
 	DryRun   bool              `json:"dry_run"`
 	Analysis *ResourceAnalysis `json:"analysis,omitempty"`
+}
+
+// validateCommand validates command for consistency across execution modes
+func validateCommand(cmd runnertypes.Command) error {
+	if cmd.Cmd == "" {
+		return ErrEmptyCommand
+	}
+	if cmd.Name == "" {
+		return ErrEmptyCommandName
+	}
+	return nil
+}
+
+// validateCommandGroup validates command group for consistency across execution modes
+func validateCommandGroup(group *runnertypes.CommandGroup) error {
+	if group == nil {
+		return ErrNilCommandGroup
+	}
+	if group.Name == "" {
+		return ErrEmptyGroupName
+	}
+	return nil
 }
