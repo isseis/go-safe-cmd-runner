@@ -244,7 +244,6 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 			}
 			opts.resourceManager = resource.NewDryRunResourceManager(
 				opts.executor,
-				fs,
 				opts.privilegeManager,
 				opts.dryRunOptions,
 			)
