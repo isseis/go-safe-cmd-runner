@@ -147,3 +147,8 @@ func (n *NormalResourceManager) SendNotification(_ string, _ map[string]any) err
 	// For now, we just log the notification (no-op)
 	return nil
 }
+
+// GetDryRunResults returns nil in normal mode since there are no dry-run results
+func (n *NormalResourceManager) GetDryRunResults() *DryRunResult {
+	return nil
+}

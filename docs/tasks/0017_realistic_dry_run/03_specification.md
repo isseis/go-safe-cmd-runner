@@ -2,15 +2,12 @@
 
 ## 1. API仕様
 
-### 1.1 ResourceManager インターフェース（既実装済み）
+### 1.1 ResourceManager インターフェース（Phase 2実装完了）
 
 #### 1.1.1 ResourceManager メイン仕様
 ```go
+// ResourceManager manages all side-effects (commands, filesystem, privileges, etc.)
 type ResourceManager interface {
-    // Mode management
-    SetMode(mode ExecutionMode, opts *DryRunOptions)
-    GetMode() ExecutionMode
-
     // Command execution
     ExecuteCommand(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) (*ExecutionResult, error)
 
@@ -24,7 +21,12 @@ type ResourceManager interface {
     IsPrivilegeEscalationRequired(cmd runnertypes.Command) (bool, error)
 
     // Network operations
-    SendNotification(message string, details map[string]interface{}) error
+    SendNotification(message string, details map[string]any) error
+}
+
+// DryRunResourceManager extends ResourceManager with dry-run specific functionality
+type DryRunResourceManager interface {
+    ResourceManager
 
     // Dry-run specific
     GetDryRunResults() *DryRunResult
@@ -32,28 +34,56 @@ type ResourceManager interface {
 }
 ```
 
-#### 1.1.2 Runner拡張メソッド
-
-**PerformDryRun メソッド**
+#### 1.1.2 DefaultResourceManager（委譲パターンファサード）
 ```go
-func (r *Runner) PerformDryRun(ctx context.Context, opts DryRunOptions) (*DryRunResult, error)
+// DefaultResourceManager provides a mode-aware facade that delegates to
+// NormalResourceManager or DryRunResourceManagerImpl depending on ExecutionMode.
+type DefaultResourceManager struct {
+    mode   ExecutionMode
+    normal *NormalResourceManager
+    dryrun *DryRunResourceManagerImpl
+}
+
+// 実行モードに応じた適切なマネージャへの委譲
+func (d *DefaultResourceManager) activeManager() ResourceManager {
+    if d.mode == ExecutionModeDryRun {
+        return d.dryrun
+    }
+    return d.normal
+}
+
+// 現在のモード取得
+func (d *DefaultResourceManager) GetMode() ExecutionMode { return d.mode }
+```
+
+#### 1.1.3 Runner拡張メソッド（Phase 3実装完了）
+
+**GetDryRunResults メソッド**
+```go
+func (r *Runner) GetDryRunResults() *resource.DryRunResult
+```
+
+**戻り値:**
+- `*resource.DryRunResult`: dry-runモードで実行された場合の分析結果（通常モードの場合はnil）
+
+**WithDryRun オプション関数**
+```go
+func WithDryRun(dryRunOptions *resource.DryRunOptions) Option
 ```
 
 **パラメータ:**
-- `ctx context.Context`: キャンセレーション用コンテキスト
-- `opts DryRunOptions`: dry-run実行オプション
+- `dryRunOptions *resource.DryRunOptions`: dry-run実行オプション
 
-**戻り値:**
-- `*DryRunResult`: 分析結果
-- `error`: エラー情報
+**用途:**
+- Runner初期化時にdry-runモードを指定するためのオプション関数
 
-**動作（Resource Manager Pattern）:**
-1. ResourceManager.SetMode(ExecutionModeDryRun, opts) でモード設定
-2. 通常実行と完全に同じ`ExecuteAll()`パスを実行
-3. ResourceManagerが全副作用を自動的にインターセプト・分析
-4. GetDryRunResults()で蓄積された分析結果を取得・返却
+**動作（初期化時ResourceManager選択パターン）:**
+1. コマンドラインで`--dry-run`フラグが指定されると`WithDryRun`オプションが設定される
+2. `NewRunner`初期化時に適切なResourceManager（DryRunResourceManagerまたはDefaultResourceManager）を選択
+3. 通常実行と完全に同じ`ExecuteAll()`パスを実行
+4. dry-runモードの場合、実行後に`GetDryRunResults()`で蓄積された分析結果を取得
 
-**重要**: DryRunAnalyzerは不要。ResourceManagerによる統一的な副作用管理により実現。
+**重要**: この設計により実行パスの100%整合性を保証
 
 ### 1.2 DryRunOptions 構造体
 
@@ -121,7 +151,28 @@ type ResourceImpact struct {
 }
 ```
 
-### 1.4 DryRunResult 構造体（既実装済み）
+### 1.4 ExecutionResult 構造体（Phase 2実装完了）
+
+```go
+// ExecutionResult unified result for both normal and dry-run
+type ExecutionResult struct {
+    ExitCode int               `json:"exit_code"`
+    Stdout   string            `json:"stdout"`
+    Stderr   string            `json:"stderr"`
+    Duration int64             `json:"duration_ms"` // Duration in milliseconds
+    DryRun   bool              `json:"dry_run"`
+    Analysis *ResourceAnalysis `json:"analysis,omitempty"`
+}
+```
+
+**フィールド説明:**
+- `ExitCode`: コマンドの終了コード（dry-runでは模擬値）
+- `Stdout/Stderr`: 標準出力/エラー出力（dry-runでは空文字列）
+- `Duration`: 実行時間（dry-runでは推定値）
+- `DryRun`: dry-runモードかどうかの判別フラグ
+- `Analysis`: dry-runモード時のリソース分析情報
+
+### 1.5 DryRunResult 構造体（Phase 2実装完了）
 
 ```go
 type DryRunResult struct {
@@ -206,18 +257,21 @@ classDiagram
 
 ### 2.1 ResourceManager 実装（Phase 1完了済み、Phase 2以降で拡張予定）
 
-#### 2.1.1 実装済みパッケージ構造
+#### 2.1.1 実装完了パッケージ構造
 ```
-internal/runner/resource/         # ✅ Phase 1 完了
-├── manager.go         # ResourceManager インターフェース定義
-├── types.go          # 全型定義（DryRunResult, ResourceAnalysis等）
-├── manager_test.go   # ResourceManager テスト
-└── types_test.go     # 型システム テスト
-
-# Phase 2以降で追加予定:
-├── default_manager.go # DefaultResourceManager 実装
-├── formatter.go      # 結果フォーマット実装
-└── testdata/         # 詳細テストデータ
+internal/runner/resource/         # ✅ Phase 1-2 完了
+├── manager.go                  # ResourceManager インターフェース定義
+├── types.go                    # 全型定義（DryRunResult, ResourceAnalysis等）
+├── default_manager.go          # DefaultResourceManager 実装（委譲パターン）
+├── normal_manager.go           # NormalResourceManager 実装（通常実行）
+├── dryrun_manager.go          # DryRunResourceManagerImpl 実装（dry-run）
+├── formatter.go               # 結果フォーマット実装（Text/JSON/YAML）
+├── manager_test.go            # ResourceManager テスト
+├── types_test.go              # 型システム テスト
+├── default_manager_test.go    # DefaultResourceManager テスト
+├── normal_manager_test.go     # NormalResourceManager テスト
+├── dryrun_manager_test.go     # DryRunResourceManagerImpl テスト
+└── testdata/                  # 詳細テストデータ
 ```
 
 **Phase 1で完了した内容:**
@@ -226,6 +280,13 @@ internal/runner/resource/         # ✅ Phase 1 完了
 - DryRunResult型システム完全実装
 - ExecutionMode, DetailLevel, OutputFormat等の列挙型
 - 基本テストフレームワーク
+
+**Phase 2で完了した内容:**
+- DefaultResourceManager実装（委譲パターンファサード）
+- NormalResourceManager実装（通常実行時の副作用処理）
+- DryRunResourceManagerImpl実装（dry-run時の分析・記録）
+- 結果フォーマッター実装（Text/JSON/YAML出力対応）
+- 包括的テストスイート
 
 #### 2.1.2 DefaultResourceManager 実装（Phase 2予定）
 
@@ -253,9 +314,9 @@ sequenceDiagram
     participant TDM as TempDirManager
     participant PM as PrivilegeManager
 
-    M->>R: PerformDryRun(ctx, opts)
-    R->>RM: SetMode(ExecutionModeDryRun, opts)
-    R->>R: ExecuteAll(ctx) // 同じ実行パス
+    M->>R: NewRunner(config, WithDryRun(opts))
+    R->>RM: Initialize with DryRunResourceManager
+    M->>R: ExecuteAll(ctx) // 同じ実行パス
 
     Note over R,PM: 通常実行と完全に同じフロー、副作用のみインターセプト
 
@@ -280,6 +341,7 @@ sequenceDiagram
         RM->>RM: SimulatePrivileges() + RecordAnalysis()
     end
 
+    M->>R: GetDryRunResults()
     R->>RM: GetDryRunResults()
     RM-->>R: DryRunResult
     R-->>M: DryRunResult
@@ -288,27 +350,30 @@ sequenceDiagram
 ## 2. 実装フェーズと仕様
 
 ### 2.1 Phase 1: Foundation（完了済み）
-✅ **ResourceManager インターフェース**: `internal/runner/resource/manager.go`
-✅ **ExecutionMode 型システム**: Normal/DryRun切り替え
-✅ **ResourceAnalysis データ構造**: 副作用操作の詳細記録
-✅ **DryRunResult 型階層**: 完全な分析結果構造
-✅ **基本テストフレームワーク**: 11テストケース
-✅ **Lint対応**: revive警告抑制
+- ✅ **ResourceManager インターフェース**: `internal/runner/resource/manager.go`
+- ✅ **ExecutionMode 型システム**: Normal/DryRun切り替え
+- ✅ **ResourceAnalysis データ構造**: 副作用操作の詳細記録
+- ✅ **DryRunResult 型階層**: 完全な分析結果構造
+- ✅ **基本テストフレームワーク**: 11テストケース
+- ✅ **Lint対応**: revive警告抑制
 
-### 2.2 Phase 2: DefaultResourceManager実装（次期）
-- **DefaultResourceManager構造体**: 副作用の統一管理
-- **モード切り替えロジック**: Normal/DryRunの動的制御
-- **副作用インターセプション**: 各操作の条件分岐実装
-- **分析記録機能**: ResourceAnalysisの蓄積
+### 2.2 Phase 2: DefaultResourceManager実装（完了済み）
+- ✅ **DefaultResourceManager構造体**: 副作用の統一管理（`internal/runner/resource/default_manager.go`）
+- ✅ **NormalResourceManager**: 通常実行時の副作用処理（`internal/runner/resource/normal_manager.go`）
+- ✅ **DryRunResourceManagerImpl**: dry-run時の分析・記録（`internal/runner/resource/dryrun_manager.go`）
+- ✅ **モード切り替えロジック**: Normal/DryRunの動的制御
+- ✅ **副作用インターセプション**: 各操作の条件分岐実装
+- ✅ **分析記録機能**: ResourceAnalysisの蓄積
+- ✅ **結果フォーマッター**: Text/JSON/YAML出力対応（`internal/runner/resource/formatter.go`）
 
-### 2.3 Phase 3: Runner統合（次期）
-- **Runner構造体拡張**: resourceManagerフィールド追加
-- **副作用メソッド更新**: 全てResourceManager経由に変更
-- **PerformDryRun実装**: SetMode→ExecuteAllの流れ
+### 2.3 Phase 3: Runner統合（完了済み）
+- ✅ **Runner構造体拡張**: resourceManagerフィールド追加
+- ✅ **WithDryRun オプション関数**: dry-runモード指定
+- ✅ **GetDryRunResults メソッド**: 分析結果取得
+- ✅ **副作用メソッド更新**: 全てResourceManager経由に変更
 
 ### 2.4 Phase 4: CLIインターフェース（次期）
 - **--dry-runフラグ**: コマンドラインオプション追加
-- **結果フォーマッター**: Text/JSON/YAML出力対応
 - **ユーザーエクスペリエンス**: 進捗表示・エラー報告
 
 ## 3. テスト仕様

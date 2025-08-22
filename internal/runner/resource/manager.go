@@ -59,6 +59,9 @@ type ResourceManager interface {
 
 	// Network operations
 	SendNotification(message string, details map[string]any) error
+
+	// Dry-run results (returns nil for normal execution mode)
+	GetDryRunResults() *DryRunResult
 }
 
 // DryRunResourceManager extends ResourceManager with dry-run specific functionality
@@ -66,7 +69,6 @@ type DryRunResourceManager interface {
 	ResourceManager
 
 	// Dry-run specific
-	GetDryRunResults() *DryRunResult
 	RecordAnalysis(analysis *ResourceAnalysis)
 }
 

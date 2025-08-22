@@ -14,10 +14,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/audit"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/tempdir"
@@ -94,6 +96,7 @@ type Runner struct {
 	envFilter           *environment.Filter
 	privilegeManager    runnertypes.PrivilegeManager // Optional privilege manager for privileged commands
 	runID               string                       // Unique identifier for this execution run
+	resourceManager     resource.ResourceManager     // Manages all side-effects (commands, filesystem, privileges, etc.)
 }
 
 // Option is a function type for configuring Runner instances
@@ -108,6 +111,9 @@ type runnerOptions struct {
 	privilegeManager    runnertypes.PrivilegeManager
 	auditLogger         *audit.Logger
 	runID               string
+	resourceManager     resource.ResourceManager
+	dryRun              bool
+	dryRunOptions       *resource.DryRunOptions
 }
 
 // WithSecurity sets a custom security configuration
@@ -159,6 +165,21 @@ func WithRunID(runID string) Option {
 	}
 }
 
+// WithResourceManager sets a custom resource manager
+func WithResourceManager(resourceManager resource.ResourceManager) Option {
+	return func(opts *runnerOptions) {
+		opts.resourceManager = resourceManager
+	}
+}
+
+// WithDryRun sets dry-run mode with optional configuration
+func WithDryRun(dryRunOptions *resource.DryRunOptions) Option {
+	return func(opts *runnerOptions) {
+		opts.dryRun = true
+		opts.dryRunOptions = dryRunOptions
+	}
+}
+
 // NewRunner creates a new command runner with the given configuration and optional customizations
 func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 	// Apply default options
@@ -207,6 +228,35 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 	// Create environment filter
 	envFilter := environment.NewFilter(config)
 
+	// Create default ResourceManager if not provided
+	if opts.resourceManager == nil {
+		// Check if dry-run mode is requested
+		if opts.dryRun {
+			// Ensure dryRunOptions has default values if nil
+			if opts.dryRunOptions == nil {
+				opts.dryRunOptions = &resource.DryRunOptions{
+					DetailLevel:  resource.DetailLevelDetailed,
+					OutputFormat: resource.OutputFormatText,
+				}
+			}
+			opts.resourceManager = resource.NewDryRunResourceManager(
+				opts.executor,
+				opts.privilegeManager,
+				opts.dryRunOptions,
+			)
+		} else {
+			// Use common.DefaultFileSystem for normal mode
+			fs := common.NewDefaultFileSystem()
+			opts.resourceManager = resource.NewDefaultResourceManager(
+				opts.executor,
+				fs,
+				opts.privilegeManager,
+				resource.ExecutionModeNormal,
+				&resource.DryRunOptions{}, // Empty dry-run options for normal mode
+			)
+		}
+	}
+
 	return &Runner{
 		executor:            opts.executor,
 		config:              config,
@@ -217,6 +267,7 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 		envFilter:           envFilter,
 		privilegeManager:    opts.privilegeManager,
 		runID:               opts.runID,
+		resourceManager:     opts.resourceManager,
 	}, nil
 }
 
@@ -329,9 +380,9 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 	// Track temporary directories for cleanup
 	groupTempDirs := make([]string, 0)
 	defer func() {
-		// Clean up temp directories created for this group
+		// Clean up temp directories created for this group using ResourceManager
 		for _, tempDirPath := range groupTempDirs {
-			if err := r.tempDirManager.CleanupTempDir(tempDirPath); err != nil {
+			if err := r.resourceManager.CleanupTempDir(tempDirPath); err != nil {
 				slog.Warn("Failed to cleanup temp directory", "path", tempDirPath, "error", err)
 			}
 		}
@@ -351,9 +402,9 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 	// Process new fields (TempDir, Cleanup, WorkDir)
 	var tempDirPath string
 	if processedGroup.TempDir {
-		// Create temporary directory for this group
+		// Create temporary directory for this group using ResourceManager
 		var err error
-		tempDirPath, err = r.tempDirManager.CreateTempDir(processedGroup.Name)
+		tempDirPath, err = r.resourceManager.CreateTempDir(processedGroup.Name)
 		if err != nil {
 			return fmt.Errorf("failed to create temp directory for group %s: %w", processedGroup.Name, err)
 		}
@@ -506,8 +557,18 @@ func (r *Runner) executeCommandInGroup(ctx context.Context, cmd runnertypes.Comm
 		cmd.Dir = r.config.Global.WorkDir
 	}
 
-	// Execute the command
-	return r.executor.Execute(ctx, cmd, envVars)
+	// Execute the command using ResourceManager
+	result, err := r.resourceManager.ExecuteCommand(ctx, cmd, group, envVars)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert ResourceManager result to executor.Result
+	return &executor.Result{
+		ExitCode: result.ExitCode,
+		Stdout:   result.Stdout,
+		Stderr:   result.Stderr,
+	}, nil
 }
 
 // resolveEnvironmentVars resolves environment variables for a command with group context
@@ -639,7 +700,12 @@ func (r *Runner) GetConfig() *runnertypes.Config {
 
 // CleanupAllResources cleans up all managed resources
 func (r *Runner) CleanupAllResources() error {
-	return r.tempDirManager.CleanupAll()
+	return r.resourceManager.CleanupAllTempDirs()
+}
+
+// GetDryRunResults returns dry-run analysis results if available
+func (r *Runner) GetDryRunResults() *resource.DryRunResult {
+	return r.resourceManager.GetDryRunResults()
 }
 
 // sendGroupNotification sends a Slack notification for group execution completion

@@ -26,7 +26,7 @@ func NewDefaultResourceManager(exec executor.CommandExecutor, fs executor.FileSy
 	}
 	// Create dry-run manager eagerly to keep state like analyses across mode flips
 	// and to simplify switching without re-wiring dependencies.
-	mgr.dryrun = NewDryRunResourceManager(exec, fs, privMgr, opts)
+	mgr.dryrun = NewDryRunResourceManager(exec, privMgr, opts)
 	return mgr
 }
 

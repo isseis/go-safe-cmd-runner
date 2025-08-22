@@ -12,14 +12,13 @@ import (
 
 func createTestDryRunResourceManager() *DryRunResourceManagerImpl {
 	mockExec := &MockExecutor{}
-	mockFS := &MockFileSystem{}
 	mockPriv := &MockPrivilegeManager{}
 
 	opts := &DryRunOptions{
 		DetailLevel: DetailLevelDetailed,
 	}
 
-	manager := NewDryRunResourceManager(mockExec, mockFS, mockPriv, opts)
+	manager := NewDryRunResourceManager(mockExec, mockPriv, opts)
 
 	return manager
 }

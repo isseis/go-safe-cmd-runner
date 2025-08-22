@@ -22,6 +22,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
@@ -310,6 +311,17 @@ func executeRunner(ctx context.Context, cfg *runnertypes.Config, verificationMan
 		runner.WithRunID(runID),
 	}
 
+	// Add dry-run mode if requested
+	if *dryRun {
+		dryRunOpts := &resource.DryRunOptions{
+			DetailLevel:   resource.DetailLevelDetailed,
+			OutputFormat:  resource.OutputFormatText,
+			ShowSensitive: false,
+			VerifyFiles:   true,
+		}
+		runnerOptions = append(runnerOptions, runner.WithDryRun(dryRunOpts))
+	}
+
 	runner, err := runner.NewRunner(cfg, runnerOptions...)
 	if err != nil {
 		return fmt.Errorf("failed to initialize runner: %w", err)
@@ -324,13 +336,6 @@ func executeRunner(ctx context.Context, cfg *runnertypes.Config, verificationMan
 		cfg.Global.LogLevel = *logLevel
 	}
 
-	// Handle dry run mode
-	if *dryRun {
-		fmt.Println("[DRY RUN] Would execute the following groups:")
-		runner.ListCommands()
-		return nil
-	}
-
 	// Ensure cleanup of all resources on exit
 	defer func() {
 		if err := runner.CleanupAllResources(); err != nil {
@@ -338,9 +343,28 @@ func executeRunner(ctx context.Context, cfg *runnertypes.Config, verificationMan
 		}
 	}()
 
+	// Execute all groups (works for both normal and dry-run modes)
 	if err := runner.ExecuteAll(ctx); err != nil {
 		return fmt.Errorf("error running commands: %w", err)
 	}
+
+	// If dry-run mode, display the analysis results
+	if *dryRun {
+		result := runner.GetDryRunResults()
+		if result != nil {
+			formatter := resource.NewTextFormatter()
+			output, err := formatter.FormatResult(result, resource.FormatterOptions{
+				DetailLevel:   resource.DetailLevelDetailed,
+				OutputFormat:  resource.OutputFormatText,
+				ShowSensitive: false,
+			})
+			if err != nil {
+				return fmt.Errorf("formatting failed: %w", err)
+			}
+			fmt.Print(output)
+		}
+	}
+
 	return nil
 }
 

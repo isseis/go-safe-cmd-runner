@@ -20,7 +20,6 @@ const (
 type DryRunResourceManagerImpl struct {
 	// Core dependencies
 	executor         executor.CommandExecutor
-	fileSystem       executor.FileSystem
 	privilegeManager runnertypes.PrivilegeManager
 
 	// Dry-run specific
@@ -33,10 +32,9 @@ type DryRunResourceManagerImpl struct {
 }
 
 // NewDryRunResourceManager creates a new DryRunResourceManagerImpl for dry-run mode
-func NewDryRunResourceManager(exec executor.CommandExecutor, fs executor.FileSystem, privMgr runnertypes.PrivilegeManager, opts *DryRunOptions) *DryRunResourceManagerImpl {
+func NewDryRunResourceManager(exec executor.CommandExecutor, privMgr runnertypes.PrivilegeManager, opts *DryRunOptions) *DryRunResourceManagerImpl {
 	return &DryRunResourceManagerImpl{
 		executor:         exec,
-		fileSystem:       fs,
 		privilegeManager: privMgr,
 		dryRunOptions:    opts,
 		dryRunResult: &DryRunResult{
