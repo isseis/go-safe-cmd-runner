@@ -325,10 +325,10 @@ func TestConcurrentExecutionConsistency(t *testing.T) {
 	}
 }
 
-// TestErrorScenarios tests various error conditions and edge cases for DryRunResourceManager.
+// TestDryRunManagerErrorHandling tests various error conditions and edge cases for DryRunResourceManager.
 // This test focuses specifically on dry-run implementation behavior, while TestErrorScenariosConsistency
 // tests consistency between normal and dry-run modes.
-func TestErrorScenarios(t *testing.T) {
+func TestDryRunManagerErrorHandling(t *testing.T) {
 	tests := []struct {
 		name         string
 		setup        func() (*DryRunResourceManager, error)
