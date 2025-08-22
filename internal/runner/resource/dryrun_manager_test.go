@@ -148,6 +148,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 		{
 			name: "dangerous rm command with args",
 			cmd: runnertypes.Command{
+				Name: "dangerous-rm",
 				Cmd:  "rm",
 				Args: []string{"-rf", "/important/data"},
 			},
@@ -157,6 +158,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 		{
 			name: "privileged command",
 			cmd: runnertypes.Command{
+				Name:       "restart-nginx",
 				Cmd:        "systemctl",
 				Args:       []string{"restart", "nginx"},
 				Privileged: true,
@@ -167,6 +169,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 		{
 			name: "normal command",
 			cmd: runnertypes.Command{
+				Name: "list-files",
 				Cmd:  "ls",
 				Args: []string{"-la"},
 			},
@@ -176,6 +179,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 		{
 			name: "dangerous command with privilege should be high risk",
 			cmd: runnertypes.Command{
+				Name:       "privileged-rm",
 				Cmd:        "sudo",
 				Args:       []string{"rm", "-rf", "/important/data"},
 				Privileged: true,
@@ -186,6 +190,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 		{
 			name: "dangerous command with args and privilege",
 			cmd: runnertypes.Command{
+				Name:       "rm-privileged",
 				Cmd:        "rm",
 				Args:       []string{"-rf", "/important/data"},
 				Privileged: true,
@@ -196,6 +201,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 		{
 			name: "dd command with separate args",
 			cmd: runnertypes.Command{
+				Name: "disk-dd",
 				Cmd:  "dd",
 				Args: []string{"if=/dev/zero", "of=/dev/sda", "bs=1M"},
 			},
@@ -205,6 +211,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 		{
 			name: "chmod with separate args",
 			cmd: runnertypes.Command{
+				Name: "change-perms",
 				Cmd:  "chmod",
 				Args: []string{"777", "/tmp/test"},
 			},
@@ -214,6 +221,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 		{
 			name: "sudo with absolute path detected as privileged",
 			cmd: runnertypes.Command{
+				Name: "sudo-ls",
 				Cmd:  "/usr/bin/sudo",
 				Args: []string{"ls"},
 			},
@@ -223,6 +231,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 		{
 			name: "pseudo-tool not detected as sudo",
 			cmd: runnertypes.Command{
+				Name: "pseudo-tool",
 				Cmd:  "/usr/bin/pseudo-tool",
 				Args: []string{"--help"},
 			},
@@ -232,6 +241,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 		{
 			name: "command with sudo in name but not sudo itself",
 			cmd: runnertypes.Command{
+				Name: "sudo-wrapper",
 				Cmd:  "my-sudo-wrapper",
 				Args: []string{"ls"},
 			},

@@ -2,13 +2,169 @@ package resource
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strconv"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// Mock implementations for testing
+type mockCommandExecutor struct{}
+
+func (m *mockCommandExecutor) Execute(_ context.Context, cmd runnertypes.Command, _ map[string]string) (*executor.Result, error) {
+	// Normal mode test implementation
+	return &executor.Result{
+		ExitCode: 0,
+		Stdout:   fmt.Sprintf("Mock execution: %s", cmd.Cmd),
+		Stderr:   "",
+	}, nil
+}
+
+func (m *mockCommandExecutor) Validate(_ runnertypes.Command) error {
+	// Executor level validation is minimal since validation happens at ResourceManager level
+	return nil
+}
+
+type mockFileSystem struct{}
+
+func (m *mockFileSystem) CreateTempDir(_, prefix string) (string, error) {
+	return fmt.Sprintf("/tmp/%s-mock", prefix), nil
+}
+
+func (m *mockFileSystem) RemoveAll(_ string) error {
+	return nil
+}
+
+func (m *mockFileSystem) FileExists(_ string) (bool, error) {
+	return true, nil
+}
+
+// TestErrorScenariosConsistency tests error handling consistency between execution modes
+func TestErrorScenariosConsistency(t *testing.T) {
+	tests := []struct {
+		name          string
+		command       runnertypes.Command
+		group         *runnertypes.CommandGroup
+		envVars       map[string]string
+		expectError   bool
+		expectedError error
+		description   string
+	}{
+		{
+			name: "empty command",
+			command: runnertypes.Command{
+				Name: "test-cmd",
+				Cmd:  "",
+			},
+			group:         &runnertypes.CommandGroup{Name: "test-group"},
+			envVars:       map[string]string{},
+			expectError:   true,
+			expectedError: ErrEmptyCommand,
+			description:   "Both modes should reject empty commands",
+		},
+		{
+			name: "empty command name",
+			command: runnertypes.Command{
+				Name: "",
+				Cmd:  "echo test",
+			},
+			group:         &runnertypes.CommandGroup{Name: "test-group"},
+			envVars:       map[string]string{},
+			expectError:   true,
+			expectedError: ErrEmptyCommandName,
+			description:   "Both modes should reject commands with empty names",
+		},
+		{
+			name: "nil command group",
+			command: runnertypes.Command{
+				Name: "test-cmd",
+				Cmd:  "echo test",
+			},
+			group:         nil,
+			envVars:       map[string]string{},
+			expectError:   true,
+			expectedError: ErrNilCommandGroup,
+			description:   "Both modes should reject nil command groups",
+		},
+		{
+			name: "empty group name",
+			command: runnertypes.Command{
+				Name: "test-cmd",
+				Cmd:  "echo test",
+			},
+			group:         &runnertypes.CommandGroup{Name: ""},
+			envVars:       map[string]string{},
+			expectError:   true,
+			expectedError: ErrEmptyGroupName,
+			description:   "Both modes should reject groups with empty names",
+		},
+		{
+			name: "valid command",
+			command: runnertypes.Command{
+				Name: "test-cmd",
+				Cmd:  "echo test",
+			},
+			group:         &runnertypes.CommandGroup{Name: "test-group"},
+			envVars:       map[string]string{"TEST": "value"},
+			expectError:   false,
+			expectedError: nil,
+			description:   "Both modes should accept valid commands",
+		},
+	}
+
+	executionModes := []struct {
+		name     string
+		setup    func() ResourceManager
+		isDryRun bool
+	}{
+		{
+			name: "DryRun",
+			setup: func() ResourceManager {
+				opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
+				return NewDryRunResourceManager(nil, nil, opts)
+			},
+			isDryRun: true,
+		},
+		{
+			name: "Normal",
+			setup: func() ResourceManager {
+				mockExecutor := &mockCommandExecutor{}
+				mockFS := &mockFileSystem{}
+				return NewNormalResourceManager(mockExecutor, mockFS, nil)
+			},
+			isDryRun: false,
+		},
+	}
+
+	for _, mode := range executionModes {
+		for _, tt := range tests {
+			t.Run(fmt.Sprintf("%s_%s", mode.name, tt.name), func(t *testing.T) {
+				ctx := context.Background()
+				manager := mode.setup()
+
+				result, err := manager.ExecuteCommand(ctx, tt.command, tt.group, tt.envVars)
+
+				if tt.expectError {
+					assert.Error(t, err, "expected error for %s", tt.description)
+					if tt.expectedError != nil {
+						assert.True(t, errors.Is(err, tt.expectedError),
+							"expected error %v, got %v for %s", tt.expectedError, err, tt.description)
+					}
+					assert.Nil(t, result, "result should be nil when error occurs")
+				} else {
+					assert.NoError(t, err, "unexpected error for %s: %v", tt.description, err)
+					assert.NotNil(t, result, "result should not be nil for valid command")
+					assert.Equal(t, mode.isDryRun, result.DryRun, "DryRun flag should match execution mode")
+				}
+			})
+		}
+	}
+}
 
 // TestErrorScenarios tests various error conditions and edge cases
 func TestErrorScenarios(t *testing.T) {
@@ -33,8 +189,8 @@ func TestErrorScenarios(t *testing.T) {
 			},
 			group:        nil,
 			envVars:      map[string]string{"TEST": "value"},
-			expectError:  false, // Dry-run mode handles nil group gracefully
-			expectResult: true,
+			expectError:  true, // Now consistent with normal mode - rejects nil groups
+			expectResult: false,
 		},
 		{
 			name: "empty command",
@@ -50,8 +206,8 @@ func TestErrorScenarios(t *testing.T) {
 				Name: "test-group",
 			},
 			envVars:      map[string]string{},
-			expectError:  false, // Dry-run mode handles empty command gracefully
-			expectResult: true,
+			expectError:  true, // Now consistent with normal mode - rejects empty commands
+			expectResult: false,
 		},
 		{
 			name: "large environment variables",

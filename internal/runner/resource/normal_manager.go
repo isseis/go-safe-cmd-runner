@@ -35,8 +35,18 @@ func NewNormalResourceManager(exec executor.CommandExecutor, fs executor.FileSys
 }
 
 // ExecuteCommand executes a command in normal mode
-func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd runnertypes.Command, _ *runnertypes.CommandGroup, env map[string]string) (*ExecutionResult, error) {
+func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) (*ExecutionResult, error) {
 	start := time.Now()
+
+	// Validate command and group for consistency with dry-run mode
+	if err := n.validateCommand(cmd); err != nil {
+		return nil, fmt.Errorf("command validation failed: %w", err)
+	}
+
+	if err := n.validateCommandGroup(group); err != nil {
+		return nil, fmt.Errorf("command group validation failed: %w", err)
+	}
+
 	result, err := n.executor.Execute(ctx, cmd, env)
 	if err != nil {
 		return nil, fmt.Errorf("command execution failed: %w", err)
@@ -150,5 +160,27 @@ func (n *NormalResourceManager) SendNotification(_ string, _ map[string]any) err
 
 // GetDryRunResults returns nil in normal mode since there are no dry-run results
 func (n *NormalResourceManager) GetDryRunResults() *DryRunResult {
+	return nil
+}
+
+// validateCommand validates command for consistency with dry-run mode
+func (n *NormalResourceManager) validateCommand(cmd runnertypes.Command) error {
+	if cmd.Cmd == "" {
+		return ErrEmptyCommand
+	}
+	if cmd.Name == "" {
+		return ErrEmptyCommandName
+	}
+	return nil
+}
+
+// validateCommandGroup validates command group for consistency with dry-run mode
+func (n *NormalResourceManager) validateCommandGroup(group *runnertypes.CommandGroup) error {
+	if group == nil {
+		return ErrNilCommandGroup
+	}
+	if group.Name == "" {
+		return ErrEmptyGroupName
+	}
 	return nil
 }

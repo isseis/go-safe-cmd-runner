@@ -19,6 +19,11 @@ var (
 	ErrPrivilegeManagerNotAvailable = errors.New("privilege manager not available")
 	ErrTempDirCleanupFailed         = errors.New("failed to cleanup some temp directories")
 	ErrNilResult                    = errors.New("result cannot be nil")
+	// Validation errors for consistent behavior across execution modes
+	ErrEmptyCommand     = errors.New("command cannot be empty")
+	ErrEmptyCommandName = errors.New("command name cannot be empty")
+	ErrNilCommandGroup  = errors.New("command group cannot be nil")
+	ErrEmptyGroupName   = errors.New("command group name cannot be empty")
 )
 
 // ExecutionMode determines how all operations are handled
