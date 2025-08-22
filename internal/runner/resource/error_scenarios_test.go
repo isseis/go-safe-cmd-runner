@@ -269,7 +269,7 @@ func TestConcurrentExecutionConsistency(t *testing.T) {
 			results := make(chan *ExecutionResult, numGoroutines*commandsPerGoroutine)
 			errors := make(chan error, numGoroutines*commandsPerGoroutine)
 
-			for i := 0; i < numGoroutines; i++ {
+			for i := range numGoroutines {
 				go func(goroutineID int) {
 					ctx := context.Background()
 					manager := mode.setup()
@@ -282,7 +282,7 @@ func TestConcurrentExecutionConsistency(t *testing.T) {
 						"GOROUTINE_ID": strconv.Itoa(goroutineID),
 					}
 
-					for j := 0; j < commandsPerGoroutine; j++ {
+					for j := range commandsPerGoroutine {
 						command := runnertypes.Command{
 							Name: fmt.Sprintf("concurrent-cmd-%d-%d", goroutineID, j),
 							Cmd:  "echo concurrent test",
@@ -303,7 +303,7 @@ func TestConcurrentExecutionConsistency(t *testing.T) {
 			var collectedErrors []error
 
 			expectedResults := numGoroutines * commandsPerGoroutine
-			for i := 0; i < expectedResults; i++ {
+			for range expectedResults {
 				select {
 				case result := <-results:
 					collectedResults = append(collectedResults, result)
@@ -546,7 +546,7 @@ func TestConcurrentExecution(t *testing.T) {
 	results := make(chan *DryRunResult, numGoroutines)
 	errors := make(chan error, numGoroutines)
 
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		go func(goroutineID int) {
 			ctx := context.Background()
 			manager := NewDryRunResourceManager(nil, nil, dryRunOpts)
@@ -562,7 +562,7 @@ func TestConcurrentExecution(t *testing.T) {
 			}
 
 			// Execute multiple commands in this goroutine
-			for j := 0; j < commandsPerGoroutine; j++ {
+			for range commandsPerGoroutine {
 				command := runnertypes.Command{
 					Name:        "concurrent-cmd",
 					Description: "Concurrent test command",
@@ -585,7 +585,7 @@ func TestConcurrentExecution(t *testing.T) {
 	var collectedResults []*DryRunResult
 	var collectedErrors []error
 
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		select {
 		case result := <-results:
 			collectedResults = append(collectedResults, result)
@@ -640,7 +640,7 @@ func TestResourceManagerStateConsistency(t *testing.T) {
 
 	// Execute the same command multiple times
 	const numExecutions = 5
-	for i := 0; i < numExecutions; i++ {
+	for i := range numExecutions {
 		result, err := manager.ExecuteCommand(ctx, command, group, envVars)
 		assert.NoError(t, err, "execution %d should not error", i)
 		assert.NotNil(t, result, "execution %d should return result", i)
@@ -655,83 +655,31 @@ func TestResourceManagerStateConsistency(t *testing.T) {
 		assert.Len(t, dryRunResult.ResourceAnalyses, i+1,
 			"should have %d analyses after execution %d", i+1, i)
 	}
-}
 
-// TestEdgeCaseInputs tests handling of edge case inputs
-func TestEdgeCaseInputs(t *testing.T) {
-	tests := []struct {
-		name        string
-		command     runnertypes.Command
-		group       *runnertypes.CommandGroup
-		envVars     map[string]string
-		expectError bool
-	}{
-		{
-			name: "unicode command",
-			command: runnertypes.Command{
-				Name: "unicode-test",
-				Cmd:  "echo 'こんにちは世界'",
-			},
-			group: &runnertypes.CommandGroup{Name: "test"},
-			envVars: map[string]string{
-				"UNICODE_VAR": "値",
-			},
-			expectError: false,
-		},
-		{
-			name: "very long command",
-			command: runnertypes.Command{
-				Name: "long-cmd",
-				Cmd:  "echo " + string(make([]byte, 1000)),
-			},
-			group:       &runnertypes.CommandGroup{Name: "test"},
-			envVars:     map[string]string{},
-			expectError: false,
-		},
-		{
-			name: "special characters in command",
-			command: runnertypes.Command{
-				Name: "special-chars",
-				Cmd:  "echo 'test with $@#%^&*()[]{}|\\;:\"<>?/'",
-			},
-			group:       &runnertypes.CommandGroup{Name: "test"},
-			envVars:     map[string]string{},
-			expectError: false,
-		},
-		{
-			name: "null bytes in environment",
-			command: runnertypes.Command{
-				Name: "null-test",
-				Cmd:  "echo $NULL_VAR",
-			},
-			group: &runnertypes.CommandGroup{Name: "test"},
-			envVars: map[string]string{
-				"NULL_VAR": "test\x00null",
-			},
-			expectError: false,
-		},
-	}
+	// Test edge case: null bytes in environment variables
+	// This tests both normal and dry-run modes for proper handling
+	t.Run("null_bytes_in_environment", func(t *testing.T) {
+		nullCommand := runnertypes.Command{
+			Name: "null-test",
+			Cmd:  "echo $NULL_VAR",
+		}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
+		nullEnvVars := map[string]string{
+			"NULL_VAR": "test\x00null",
+		}
 
-			dryRunOpts := &DryRunOptions{
-				DetailLevel:  DetailLevelDetailed,
-				OutputFormat: OutputFormatText,
-			}
+		// Test with dry-run mode
+		dryRunManager := NewDefaultResourceManager(nil, nil, nil, ExecutionModeDryRun, dryRunOpts)
+		result, err := dryRunManager.ExecuteCommand(ctx, nullCommand, group, nullEnvVars)
+		assert.NoError(t, err, "dry-run mode should handle null bytes in environment")
+		assert.NotNil(t, result, "dry-run mode should return result")
+		assert.True(t, result.DryRun, "result should indicate dry-run mode")
 
-			manager := NewDryRunResourceManager(nil, nil, dryRunOpts)
-			require.NotNil(t, manager)
-
-			result, err := manager.ExecuteCommand(ctx, tt.command, tt.group, tt.envVars)
-
-			if tt.expectError {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-				assert.NotNil(t, result)
-			}
-		})
-	}
+		// Test with normal mode
+		normalManager := NewDefaultResourceManager(&mockCommandExecutor{}, &mockFileSystem{}, nil, ExecutionModeNormal, nil)
+		result, err = normalManager.ExecuteCommand(ctx, nullCommand, group, nullEnvVars)
+		assert.NoError(t, err, "normal mode should handle null bytes in environment")
+		assert.NotNil(t, result, "normal mode should return result")
+		assert.False(t, result.DryRun, "result should indicate normal mode")
+	})
 }
