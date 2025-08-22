@@ -16,46 +16,47 @@ Normal execution mode でのコマンド実行時にセキュリティ分析を�
 ### 2.1 全体構成図
 
 ```mermaid
-block-beta
-    columns 1
+flowchart TB
+    %% Runner System with managers side-by-side
+    subgraph RunnerSystem[Runner System]
+        direction TB
 
-    block:system["Runner System"]
-        columns 2
-        spacing 20px
-
-        block:dryrun["Dry-run Mode Manager"]
-            spacing 15px
-            SecurityAnalysis1["Security Analysis"]
-            ReportGeneration["Report Generation"]
-            SecurityAnalysis1 --> ReportGeneration
+        subgraph Dryrun[Dry-run Mode Manager]
+            direction TB
+            SA1["Security Analysis"]
+            RG["Report Generation"]
+            SA1 --> RG
         end
 
-        block:normal["Normal Mode Manager"]
-            spacing 15px
-            SecurityAnalysis2["Security Analysis (NEW)"]
-            RiskEvaluation["Risk Evaluation (NEW)"]
-            CommandExecution["Command Execution (NEW)"]
-            SecurityAnalysis2 --> RiskEvaluation
-            RiskEvaluation --> CommandExecution
+        subgraph Normal["Normal Mode Manager"]
+            direction TB
+            SA2["Security Analysis (NEW)"]
+            RE["Risk Evaluation (NEW)"]
+            CE["Command Execution (NEW)"]
+            SA2 --> RE
+            RE --> CE
         end
     end
 
-    block:shared["Shared Security Analysis Engine"]
-        columns 2
-        spacing 20px
-        PatternMatching["Pattern Matching"]
-        SymlinkCheck["Symlink Depth Check"]
+    %% Shared analysis engine and configuration layer below
+    subgraph Shared["Shared Security Analysis Engine"]
+        direction LR
+        PM["Pattern Matching"]
+        SC["Symlink Depth Check"]
     end
 
-    block:config["Configuration Layer"]
-        columns 2
-        spacing 20px
-        TOMLParser["TOML Parser"]
-        RiskValidator["Risk Level Validator (NEW)"]
+    subgraph Config["Configuration Layer"]
+        direction LR
+        TP["TOML Parser"]
+        RV["Risk Level Validator (NEW)"]
     end
 
-    system --> shared
-    shared --> config
+    %% Connections
+    RunnerSystem --> Shared
+    Shared --> Config
+
+    %% Make Normal block visually distinct (supported style for nodes/subgraphs varies by renderer)
+    style Normal fill:#eef3ff,stroke:#3f51b5,stroke-width:2
 ```
 
 ### 2.2 コンポーネント構成
@@ -251,27 +252,26 @@ func (m *NormalResourceManager) ExecuteCommand(
 ### 5.1 セキュリティ境界
 
 ```mermaid
-block-beta
-    columns 3
-
-    block:trusted["Trusted Zone"]:2
-        columns 2
+flowchart LR
+    %% Trusted (admin) zone on the left, execution zone on the right
+    subgraph TrustedZone["Trusted Zone"]
+        direction TB
         Configuration["Configuration<br/>(Admin Control)"]
         SecurityEval["Security Evaluation<br/>(System Control)"]
         Configuration --> SecurityEval
     end
 
-    space:1
-
-    block:execution["Execution Zone<br/>(Potential Risk Area)"]:1
-        columns 1
+    subgraph ExecutionZone["Execution Zone<br/>(Potential Risk Area)"]
+        direction TB
         CommandExec["Command Execution"]
     end
 
-    trusted --> execution
+    TrustedZone --> ExecutionZone
 
-    style trusted fill:#e1f5fe
-    style execution fill:#ffebee
+    %% apply consistent node styles (subgraph styling support varies by renderer)
+    style Configuration fill:#e1f5fe,stroke:#90caf9,stroke-width:1px
+    style SecurityEval fill:#e1f5fe,stroke:#90caf9,stroke-width:1px
+    style CommandExec fill:#ffebee,stroke:#ef9a9a,stroke-width:1px
 ```
 
 ### 5.2 セキュリティ制御ポイント
