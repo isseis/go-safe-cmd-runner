@@ -15,6 +15,9 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
+// ErrCircularReference is returned when a circular variable reference is detected.
+var ErrCircularReference = errors.New("circular variable reference detected")
+
 // CommandEnvProcessor handles command-specific environment variable processing
 type CommandEnvProcessor struct {
 	filter *Filter
@@ -121,12 +124,24 @@ func (p *CommandEnvProcessor) resolveVariableReferencesForCommandEnv(
 		})
 
 		if result == oldResult {
+			// No more substitutions were made, we're done
 			break
 		}
 	}
 
 	if resolutionError != nil {
 		return "", resolutionError
+	}
+
+	// Check if we exceeded max iterations and still have unresolved references
+	// This indicates potential circular reference, but we need to be careful about malformed references
+	if strings.Contains(result, "${") {
+		// Check if the remaining references are well-formed (have closing braces)
+		if regexp.MustCompile(`\$\{[^}]+\}`).MatchString(result) {
+			// Well-formed references remaining after max iterations = circular reference
+			return "", fmt.Errorf("%w: exceeded maximum resolution iterations (%d)", ErrCircularReference, maxIterations)
+		}
+		// Malformed references (like ${UNCLOSED) are left as-is
 	}
 
 	return result, nil
