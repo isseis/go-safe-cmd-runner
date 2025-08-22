@@ -244,6 +244,16 @@ func TestCommandEnvProcessor_ResolveVariableReferences(t *testing.T) {
 			},
 			expected: "/home/testuser/bin",
 		},
+		{
+			name:    "unclosed variable reference",
+			value:   "${UNCLOSED",
+			envVars: map[string]string{},
+			group: &runnertypes.CommandGroup{
+				Name:         "test_group",
+				EnvAllowlist: []string{"PATH", "HOME"},
+			},
+			expected: "${UNCLOSED", // The current implementation leaves malformed references as-is
+		},
 	}
 
 	for _, tt := range tests {
@@ -258,6 +268,90 @@ func TestCommandEnvProcessor_ResolveVariableReferences(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestCommandEnvProcessor_ResolveVariableReferences_CircularReferences(t *testing.T) {
+	config := &runnertypes.Config{
+		Global: runnertypes.GlobalConfig{
+			EnvAllowlist: []string{"CIRCULAR_VAR", "VAR1", "VAR2", "VAR3"},
+		},
+	}
+	filter := NewFilter(config)
+	processor := NewCommandEnvProcessor(filter)
+
+	tests := []struct {
+		name           string
+		value          string
+		envVars        map[string]string
+		group          *runnertypes.CommandGroup
+		expectError    bool
+		expectedResult string
+		description    string
+	}{
+		{
+			name:    "direct self-referencing variable",
+			value:   "${CIRCULAR_VAR}",
+			envVars: map[string]string{"CIRCULAR_VAR": "${CIRCULAR_VAR}"},
+			group: &runnertypes.CommandGroup{
+				Name:         "test_group",
+				EnvAllowlist: []string{"CIRCULAR_VAR"},
+			},
+			expectError: true,
+			description: "A variable that references itself should be detected as infinite loop after max iterations",
+		},
+		{
+			name:    "indirect circular reference (VAR1 -> VAR2 -> VAR1)",
+			value:   "${VAR1}",
+			envVars: map[string]string{"VAR1": "${VAR2}", "VAR2": "${VAR1}"},
+			group: &runnertypes.CommandGroup{
+				Name:         "test_group",
+				EnvAllowlist: []string{"VAR1", "VAR2"},
+			},
+			expectError: true,
+			description: "Two variables referencing each other should be detected as infinite loop",
+		},
+		{
+			name:    "complex nested circular reference",
+			value:   "${VAR1}",
+			envVars: map[string]string{"VAR1": "prefix-${VAR2}-suffix", "VAR2": "nested-${VAR1}-nested"},
+			group: &runnertypes.CommandGroup{
+				Name:         "test_group",
+				EnvAllowlist: []string{"VAR1", "VAR2"},
+			},
+			expectError: true,
+			description: "Complex nested circular references should be detected",
+		},
+		{
+			name:  "deep but non-circular reference chain",
+			value: "${VAR1}",
+			envVars: map[string]string{
+				"VAR1": "${VAR2}/final",
+				"VAR2": "${VAR3}/middle",
+				"VAR3": "base",
+			},
+			group: &runnertypes.CommandGroup{
+				Name:         "test_group",
+				EnvAllowlist: []string{"VAR1", "VAR2", "VAR3"},
+			},
+			expectError:    false,
+			expectedResult: "base/middle/final",
+			description:    "Deep but non-circular reference chains should resolve successfully",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := processor.resolveVariableReferencesForCommandEnv(tt.value, tt.envVars, tt.group)
+
+			if tt.expectError {
+				assert.Error(t, err, "Expected error for case: %s", tt.description)
+				assert.Empty(t, result, "Result should be empty on error")
+			} else {
+				assert.NoError(t, err, "Expected no error for case: %s", tt.description)
+				assert.Equal(t, tt.expectedResult, result, "Expected result mismatch for case: %s", tt.description)
+			}
 		})
 	}
 }

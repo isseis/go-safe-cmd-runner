@@ -11,7 +11,6 @@ import (
 	"maps"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -22,7 +21,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/tempdir"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/joho/godotenv"
@@ -31,10 +29,7 @@ import (
 // Error definitions
 var (
 	ErrCommandFailed        = errors.New("command failed")
-	ErrUnclosedVariableRef  = errors.New("unclosed variable reference")
-	ErrUndefinedVariable    = errors.New("undefined variable")
 	ErrCommandNotFound      = errors.New("command not found")
-	ErrCircularReference    = errors.New("circular variable reference detected")
 	ErrGroupVerification    = errors.New("group file verification failed")
 	ErrGroupNotFound        = errors.New("group not found")
 	ErrVariableAccessDenied = errors.New("variable access denied")
@@ -59,11 +54,6 @@ func (e *VerificationError) Error() string {
 func (e *VerificationError) Unwrap() error {
 	return e.Err
 }
-
-// Constants
-const (
-	maxResolutionDepth = 100 // Maximum number of variable resolution iterations
-)
 
 // GroupExecutionStatus represents the execution status of a command group
 type GroupExecutionStatus string
@@ -91,7 +81,6 @@ type Runner struct {
 	config              *runnertypes.Config
 	envVars             map[string]string
 	validator           *security.Validator
-	tempDirManager      *tempdir.TempDirManager
 	verificationManager *verification.Manager
 	envFilter           *environment.Filter
 	privilegeManager    runnertypes.PrivilegeManager // Optional privilege manager for privileged commands
@@ -105,7 +94,6 @@ type Option func(*runnerOptions)
 // runnerOptions holds all configuration options for creating a Runner
 type runnerOptions struct {
 	securityConfig      *security.Config
-	tempDirManager      *tempdir.TempDirManager
 	executor            executor.CommandExecutor
 	verificationManager *verification.Manager
 	privilegeManager    runnertypes.PrivilegeManager
@@ -127,13 +115,6 @@ func WithSecurity(securityConfig *security.Config) Option {
 func WithVerificationManager(verificationManager *verification.Manager) Option {
 	return func(opts *runnerOptions) {
 		opts.verificationManager = verificationManager
-	}
-}
-
-// WithTempDirManager sets a custom temporary directory manager
-func WithTempDirManager(manager *tempdir.TempDirManager) Option {
-	return func(opts *runnerOptions) {
-		opts.tempDirManager = manager
 	}
 }
 
@@ -221,10 +202,6 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 		opts.executor = executor.NewDefaultExecutor(executorOpts...)
 	}
 
-	if opts.tempDirManager == nil {
-		opts.tempDirManager = tempdir.NewTempDirManager(config.Global.WorkDir)
-	}
-
 	// Create environment filter
 	envFilter := environment.NewFilter(config)
 
@@ -262,7 +239,6 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 		config:              config,
 		envVars:             make(map[string]string),
 		validator:           validator,
-		tempDirManager:      opts.tempDirManager,
 		verificationManager: opts.verificationManager,
 		envFilter:           envFilter,
 		privilegeManager:    opts.privilegeManager,
@@ -596,76 +572,6 @@ func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, group *runnerty
 		"final_vars_count", len(finalEnvVars))
 
 	return finalEnvVars, nil
-}
-
-// resolveVariableReferences resolves ${VAR} references in a string
-func (r *Runner) resolveVariableReferences(value string, envVars map[string]string, group *runnertypes.CommandGroup) (string, error) {
-	return r.resolveVariableReferencesWithDepth(value, envVars, make(map[string]bool), 0, group)
-}
-
-// resolveVariableReferencesWithDepth resolves ${VAR} references with circular dependency detection
-func (r *Runner) resolveVariableReferencesWithDepth(value string, envVars map[string]string, resolving map[string]bool, depth int, group *runnertypes.CommandGroup) (string, error) {
-	// Prevent infinite recursion by limiting the depth
-	if depth > maxResolutionDepth {
-		return "", fmt.Errorf("%w: maximum resolution depth exceeded (%d)", ErrCircularReference, maxResolutionDepth)
-	}
-
-	result := value
-	iterations := 0
-
-	// Simple variable resolution - replace ${VAR} with value
-	for strings.Contains(result, "${") {
-		iterations++
-		if iterations > maxResolutionDepth {
-			return "", fmt.Errorf("%w: too many resolution iterations", ErrCircularReference)
-		}
-
-		start := strings.Index(result, "${")
-		if start == -1 {
-			break
-		}
-
-		end := strings.Index(result[start:], "}")
-		if end == -1 {
-			return "", fmt.Errorf("%w in: %s", ErrUnclosedVariableRef, value)
-		}
-		end += start
-
-		varName := result[start+2 : end]
-
-		// Check for circular reference first - this takes precedence over undefined variable errors
-		if resolving[varName] {
-			return "", fmt.Errorf("%w: variable %s references itself", ErrCircularReference, varName)
-		}
-
-		// Mark this variable as being resolved to detect cycles early
-		resolving[varName] = true
-
-		// Check if variable access is allowed for this group
-		if !r.envFilter.IsVariableAccessAllowed(varName, group) {
-			delete(resolving, varName) // Clean up before returning error
-			return "", fmt.Errorf("%w: %s (group: %s)", ErrVariableAccessDenied, varName, group.Name)
-		}
-
-		varValue, exists := envVars[varName]
-		if !exists {
-			delete(resolving, varName) // Clean up before returning error
-			return "", fmt.Errorf("%w: %s", ErrUndefinedVariable, varName)
-		}
-
-		// Recursively resolve the variable value
-		resolvedValue, err := r.resolveVariableReferencesWithDepth(varValue, envVars, resolving, depth+1, group)
-		if err != nil {
-			return "", err
-		}
-
-		// Unmark the variable after resolution
-		delete(resolving, varName)
-
-		result = result[:start] + resolvedValue + result[end+1:]
-	}
-
-	return result, nil
 }
 
 // createCommandContext creates a context with timeout for command execution

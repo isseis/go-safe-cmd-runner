@@ -13,7 +13,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/tempdir"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
@@ -26,6 +25,7 @@ var (
 	errPermissionDenied = errors.New("permission denied")
 	errDiskFull         = errors.New("disk full")
 	errResourceBusy     = errors.New("resource busy")
+	errCleanupFailed    = errors.New("cleanup failed")
 )
 
 const defaultTestCommandName = "test"
@@ -151,7 +151,6 @@ func TestNewRunner(t *testing.T) {
 		assert.NotNil(t, runner.executor)
 		assert.NotNil(t, runner.envVars)
 		assert.NotNil(t, runner.validator)
-		assert.NotNil(t, runner.tempDirManager)
 		assert.Equal(t, "test-run-123", runner.runID)
 	})
 
@@ -184,15 +183,12 @@ func TestNewRunner(t *testing.T) {
 			SensitiveEnvVars:        []string{".*PASSWORD.*"},
 			MaxPathLength:           4096,
 		}
-		customResourceManager := tempdir.NewTempDirManager("/custom/path")
 
 		runner, err := NewRunner(config,
 			WithSecurity(securityConfig),
-			WithTempDirManager(customResourceManager),
 			WithRunID("test-run-123"))
 		assert.NoError(t, err)
 		assert.NotNil(t, runner)
-		assert.Equal(t, customResourceManager, runner.tempDirManager)
 	})
 
 	t.Run("with invalid security config", func(t *testing.T) {
@@ -234,7 +230,6 @@ func TestNewRunnerWithSecurity(t *testing.T) {
 		assert.NotNil(t, runner.executor)
 		assert.NotNil(t, runner.envVars)
 		assert.NotNil(t, runner.validator)
-		assert.NotNil(t, runner.tempDirManager)
 	})
 
 	t.Run("with invalid security config", func(t *testing.T) {
@@ -846,97 +841,6 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 	})
 }
 
-func TestRunner_resolveVariableReferences(t *testing.T) {
-	config := &runnertypes.Config{
-		Global: runnertypes.GlobalConfig{
-			EnvAllowlist: []string{"HOME", "USER", "PATH", "GREETING", "CIRCULAR"},
-		},
-		Groups: []runnertypes.CommandGroup{
-			{
-				Name:         "test-group",
-				EnvAllowlist: []string{"HOME", "USER", "PATH", "GREETING", "CIRCULAR"},
-			},
-		},
-	}
-
-	// Initialize the environment filter with the test configuration
-	envFilter := environment.NewFilter(config)
-
-	runner := &Runner{
-		config:    config,
-		envFilter: envFilter,
-	}
-	envVars := map[string]string{
-		"HOME":     "/home/user",
-		"USER":     "testuser",
-		"PATH":     "/usr/bin:/bin",
-		"GREETING": "Hello",
-		"CIRCULAR": "${CIRCULAR}", // Circular reference to itself
-	}
-
-	tests := []struct {
-		name        string
-		input       string
-		expected    string
-		expectedErr error
-	}{
-		{
-			name:        "simple variable",
-			input:       "${HOME}",
-			expected:    "/home/user",
-			expectedErr: nil,
-		},
-		{
-			name:        "variable in text",
-			input:       "Welcome ${USER}!",
-			expected:    "Welcome testuser!",
-			expectedErr: nil,
-		},
-		{
-			name:        "multiple variables",
-			input:       "${GREETING} ${USER}",
-			expected:    "Hello testuser",
-			expectedErr: nil,
-		},
-		{
-			name:        "no variables",
-			input:       "plain text",
-			expected:    "plain text",
-			expectedErr: nil,
-		},
-		{
-			name:        "undefined variable",
-			input:       "${UNDEFINED_VAR}",
-			expectedErr: ErrVariableAccessDenied,
-		},
-		{
-			name:        "unclosed variable",
-			input:       "${UNCLOSED",
-			expectedErr: ErrUnclosedVariableRef,
-		},
-		{
-			name:        "circular reference",
-			input:       "${CIRCULAR}",
-			expectedErr: ErrCircularReference,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			testGroup := &config.Groups[0] // Get reference to the test group
-			result, err := runner.resolveVariableReferences(tt.input, envVars, testGroup)
-
-			if tt.expectedErr != nil {
-				assert.Error(t, err)
-				assert.ErrorIs(t, err, tt.expectedErr, "expected error %v, got %v", tt.expectedErr, err)
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, tt.expected, result)
-			}
-		})
-	}
-}
-
 func TestRunner_createCommandContext(t *testing.T) {
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
@@ -1135,130 +1039,6 @@ func TestRunner_resolveEnvironmentVars(t *testing.T) {
 	// Check that command vars are present
 	assert.Equal(t, "command_value", envVars["CMD_VAR"])
 	assert.Equal(t, "from_env_file", envVars["REFERENCE_VAR"])
-}
-
-func TestRunner_resolveVariableReferences_ComplexCircular(t *testing.T) {
-	config := &runnertypes.Config{
-		Global: runnertypes.GlobalConfig{
-			EnvAllowlist: []string{"VAR1", "VAR2", "VAR3"},
-		},
-		Groups: []runnertypes.CommandGroup{
-			{
-				Name:         "test-group",
-				EnvAllowlist: []string{"VAR1", "VAR2", "VAR3"},
-			},
-		},
-	}
-
-	// Initialize the environment filter with the test configuration
-	envFilter := environment.NewFilter(config)
-
-	runner := &Runner{
-		config:    config,
-		envFilter: envFilter,
-	}
-
-	// Test complex circular dependencies: VAR1 -> VAR2 -> VAR1
-	envVars := map[string]string{
-		"VAR1": "${VAR2}",
-		"VAR2": "${VAR1}",
-		"VAR3": "prefix-${VAR1}-suffix",
-	}
-
-	tests := []struct {
-		name        string
-		input       string
-		expectedErr error
-	}{
-		{
-			name:        "direct circular VAR1",
-			input:       "${VAR1}",
-			expectedErr: ErrCircularReference,
-		},
-		{
-			name:        "direct circular VAR2",
-			input:       "${VAR2}",
-			expectedErr: ErrCircularReference,
-		},
-		{
-			name:        "indirect circular through VAR3",
-			input:       "${VAR3}",
-			expectedErr: ErrCircularReference,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			testGroup := &config.Groups[0] // Get reference to the test group
-			_, err := runner.resolveVariableReferences(tt.input, envVars, testGroup)
-
-			assert.Error(t, err)
-			assert.ErrorIs(t, err, tt.expectedErr, "expected error %v, got %v", tt.expectedErr, err)
-		})
-	}
-}
-
-func TestRunner_CircularReferenceWithUndefinedVariable(t *testing.T) {
-	cleanup := setupSafeTestEnv(t)
-	defer cleanup()
-
-	config := &runnertypes.Config{
-		Global: runnertypes.GlobalConfig{
-			Timeout:      3600,
-			WorkDir:      "/tmp",
-			LogLevel:     "info",
-			EnvAllowlist: []string{"PATH", "DEFINED_VAR", "UNDEFINED_VAR", "SELF_REF"},
-		},
-		Groups: []runnertypes.CommandGroup{
-			{
-				Name: "test-group",
-			},
-		},
-	}
-
-	envFilter := environment.NewFilter(config)
-	runner := &Runner{
-		config:    config,
-		envFilter: envFilter,
-	}
-
-	// Test case where a variable references an undefined variable in a circular manner
-	// This should return CircularReference error, not UndefinedVariable error
-	envVars := map[string]string{
-		"DEFINED_VAR": "${UNDEFINED_VAR}",
-		// UNDEFINED_VAR is not defined, but if we had "UNDEFINED_VAR": "${DEFINED_VAR}",
-		// it would create a circular reference
-	}
-
-	tests := []struct {
-		name        string
-		input       string
-		envVars     map[string]string
-		expectedErr error
-	}{
-		{
-			name:        "self-referencing undefined variable should be circular reference",
-			input:       "${SELF_REF}",
-			envVars:     map[string]string{"SELF_REF": "${SELF_REF}"},
-			expectedErr: ErrCircularReference,
-		},
-		{
-			name:        "defined variable referencing undefined variable should be undefined",
-			input:       "${DEFINED_VAR}",
-			envVars:     envVars,
-			expectedErr: ErrUndefinedVariable,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			testGroup := &config.Groups[0] // Get reference to the test group
-			_, err := runner.resolveVariableReferences(tt.input, tt.envVars, testGroup)
-
-			assert.Error(t, err)
-			assert.ErrorIs(t, err, tt.expectedErr, "expected error %v, got %v", tt.expectedErr, err)
-		})
-	}
 }
 
 func TestRunner_SecurityIntegration(t *testing.T) {
@@ -2279,7 +2059,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		mockResourceManager.On("CleanupTempDir", "/tmp/test-temp-dir").Return(nil)
 
 		// CleanupAllTempDirs expectation for testing cleanup all failure
-		mockResourceManager.On("CleanupAllTempDirs").Return(tempdir.ErrCleanupFailed)
+		mockResourceManager.On("CleanupAllTempDirs").Return(errCleanupFailed)
 
 		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.MatchedBy(func(cmd runnertypes.Command) bool {
 			return cmd.Name == defaultTestCommandName
@@ -2302,7 +2082,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		// Now test CleanupAllResources - should return error
 		err = runner.CleanupAllResources()
 		assert.Error(t, err)
-		assert.ErrorIs(t, err, tempdir.ErrCleanupFailed)
+		assert.ErrorIs(t, err, errCleanupFailed)
 
 		// Verify mock expectations
 		mockResourceManager.AssertExpectations(t)
