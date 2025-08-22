@@ -19,8 +19,141 @@ type Command struct {
     Name         string   `toml:"name"`
     Description  string   `toml:"description"`
     Cmd          string   `toml:"cmd"`
-    Args         []string `toml:"args"`
-    WorkingDir   string   `toml:"working_dir"`
+    Args         []string                Privileged: true,
+                // MaxRiskLevel 未設定でも privileged = true でも high risk は拒否
+            },
+            expectedError: &SecurityViolationError{},
+            },
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            evaluator := NewDefaultRiskEvaluator(logger)
+            err := evaluator.EvaluateCommandExecution(tt.riskLevel, tt.detectedPattern, tt.reason, tt.privilegeResult, tt.command)
+
+            if tt.expectedError != nil {
+                assert.Error(t, err)
+                assert.IsType(t, tt.expectedError, err)
+            } else {
+                assert.NoError(t, err)
+            }
+        })
+    }
+}
+```
+
+#### 7.1.2 Privilege Escalation Analyzer Tests
+```go
+func TestPrivilegeEscalationAnalyzer(t *testing.T) {
+    tests := []struct {
+        name                   string
+        cmdName                string
+        args                   []string
+        expectedHasEscalation  bool
+        expectedType          PrivilegeEscalationType
+        expectedRiskLevel     security.RiskLevel
+        expectedTargetUser    string
+        expectedServiceName   string
+    }{
+        {
+            name:                  "sudo_as_root",
+            cmdName:               "sudo",
+            args:                  []string{"-u", "root", "systemctl", "restart", "nginx"},
+            expectedHasEscalation: true,
+            expectedType:         PrivilegeEscalationSudo,
+            expectedRiskLevel:    security.RiskLevelHigh,
+            expectedTargetUser:   "root",
+        },
+        {
+            name:                  "sudo_shell",
+            cmdName:               "sudo",
+            args:                  []string{"-s"},
+            expectedHasEscalation: true,
+            expectedType:         PrivilegeEscalationSudo,
+            expectedRiskLevel:    security.RiskLevelHigh,
+        },
+        {
+            name:                  "systemctl_start",
+            cmdName:               "systemctl",
+            args:                  []string{"start", "nginx"},
+            expectedHasEscalation: true,
+            expectedType:         PrivilegeEscalationSystemd,
+            expectedRiskLevel:    security.RiskLevelMedium,
+            expectedServiceName:  "nginx",
+        },
+        {
+            name:                  "systemctl_enable",
+            cmdName:               "systemctl",
+            args:                  []string{"enable", "nginx"},
+            expectedHasEscalation: true,
+            expectedType:         PrivilegeEscalationSystemd,
+            expectedRiskLevel:    security.RiskLevelHigh,
+            expectedServiceName:  "nginx",
+        },
+        {
+            name:                  "chmod_777",
+            cmdName:               "chmod",
+            args:                  []string{"777", "/tmp/file"},
+            expectedHasEscalation: true,
+            expectedType:         PrivilegeEscalationChmod,
+            expectedRiskLevel:    security.RiskLevelMedium,
+        },
+        {
+            name:                  "chmod_setuid",
+            cmdName:               "chmod",
+            args:                  []string{"4755", "/usr/bin/myapp"},
+            expectedHasEscalation: true,
+            expectedType:         PrivilegeEscalationChmod,
+            expectedRiskLevel:    security.RiskLevelHigh,
+        },
+        {
+            name:                  "regular_command",
+            cmdName:               "ls",
+            args:                  []string{"-la"},
+            expectedHasEscalation: false,
+            expectedType:         PrivilegeEscalationNone,
+            expectedRiskLevel:    security.RiskLevelNone,
+        },
+    }
+
+    analyzer := NewDefaultPrivilegeEscalationAnalyzer(logger)
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            result, err := analyzer.AnalyzePrivilegeEscalation(tt.cmdName, tt.args)
+
+            assert.NoError(t, err)
+            assert.Equal(t, tt.expectedHasEscalation, result.HasPrivilegeEscalation)
+            assert.Equal(t, tt.expectedType, result.EscalationType)
+            assert.Equal(t, tt.expectedRiskLevel, result.RiskLevel)
+
+            if tt.expectedTargetUser != "" {
+                assert.Equal(t, tt.expectedTargetUser, result.TargetUser)
+            }
+
+            if tt.expectedServiceName != "" {
+                assert.Equal(t, tt.expectedServiceName, result.ServiceName)
+            }
+        })
+    }
+},
+        },
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            evaluator := NewDefaultRiskEvaluator(logger)
+            err := evaluator.EvaluateCommandExecution(tt.riskLevel, tt.detectedPattern, tt.reason, tt.command)
+
+            if tt.expectedError != nil {
+                assert.Error(t, err)
+                assert.IsType(t, tt.expectedError, err)
+            } else {
+                assert.NoError(t, err)
+            }
+        })
+    }
+}orkingDir   string   `toml:"working_dir"`
     Env          []string `toml:"env"`
     Privileged   bool     `toml:"privileged"`
     MaxRiskLevel string   `toml:"max_risk_level"` // NEW FIELD
@@ -101,13 +234,121 @@ func (e *ConfigurationError) Error() string {
 }
 ```
 
-### 2.3 Risk Evaluator 仕様
+### 2.3 Privilege Escalation Analyzer 仕様
 
 #### 2.3.1 Interface 定義
 ```go
+type PrivilegeEscalationAnalyzer interface {
+    AnalyzePrivilegeEscalation(cmdName string, args []string) (*PrivilegeEscalationResult, error)
+    IsPrivilegeEscalationCommand(cmdName string) bool
+    GetRequiredPrivileges(cmdName string, args []string) ([]string, error)
+}
+
+type PrivilegeEscalationResult struct {
+    HasPrivilegeEscalation bool
+    EscalationType         PrivilegeEscalationType
+    RequiredPrivileges     []string
+    RiskLevel             security.RiskLevel
+    Description           string
+    TargetUser            string   // 対象ユーザー（sudo -u user など）
+    ServiceName           string   // サービス名（systemctl start service など）
+}
+
+type PrivilegeEscalationType int
+
+const (
+    PrivilegeEscalationNone PrivilegeEscalationType = iota
+    PrivilegeEscalationSudo       // sudo command
+    PrivilegeEscalationSu         // su command
+    PrivilegeEscalationSystemd    // systemctl/systemd operations
+    PrivilegeEscalationService    // service management
+    PrivilegeEscalationChmod      // chmod with elevated permissions
+    PrivilegeEscalationChown      // chown operations
+    PrivilegeEscalationOther      // other privilege escalation
+)
+
+func (t PrivilegeEscalationType) String() string {
+    switch t {
+    case PrivilegeEscalationNone:
+        return "NONE"
+    case PrivilegeEscalationSudo:
+        return "SUDO"
+    case PrivilegeEscalationSu:
+        return "SU"
+    case PrivilegeEscalationSystemd:
+        return "SYSTEMD"
+    case PrivilegeEscalationService:
+        return "SERVICE"
+    case PrivilegeEscalationChmod:
+        return "CHMOD"
+    case PrivilegeEscalationChown:
+        return "CHOWN"
+    case PrivilegeEscalationOther:
+        return "OTHER"
+    default:
+        return "UNKNOWN"
+    }
+}
+```
+
+#### 2.3.2 特権昇格パターン検出
+```go
+type DefaultPrivilegeEscalationAnalyzer struct {
+    logger Logger
+}
+
+func (a *DefaultPrivilegeEscalationAnalyzer) AnalyzePrivilegeEscalation(
+    cmdName string,
+    args []string,
+) (*PrivilegeEscalationResult, error) {
+    result := &PrivilegeEscalationResult{
+        HasPrivilegeEscalation: false,
+        EscalationType:         PrivilegeEscalationNone,
+        RequiredPrivileges:     []string{},
+        RiskLevel:             security.RiskLevelNone,
+    }
+
+    // Extract base command name for pattern matching
+    baseCmdName := filepath.Base(cmdName)
+
+    switch baseCmdName {
+    case "sudo":
+        return a.analyzeSudoCommand(args)
+    case "su":
+        return a.analyzeSuCommand(args)
+    case "systemctl":
+        return a.analyzeSystemctlCommand(args)
+    case "service":
+        return a.analyzeServiceCommand(args)
+    case "chmod":
+        return a.analyzeChmodCommand(args)
+    case "chown":
+        return a.analyzeChownCommand(args)
+    default:
+        // Check if command requires inherent privilege escalation
+        if a.isInherentlyPrivilegedCommand(baseCmdName) {
+            result.HasPrivilegeEscalation = true
+            result.EscalationType = PrivilegeEscalationOther
+            result.RiskLevel = security.RiskLevelMedium
+            result.Description = fmt.Sprintf("Command '%s' requires elevated privileges", baseCmdName)
+            result.RequiredPrivileges = []string{"root"}
+        }
+    }
+
+    return result, nil
+}
+```
+
+### 2.4 Risk Evaluator 仕様
+
+#### 2.4.1 Interface 定義
+```go
 type RiskEvaluator interface {
     EvaluateCommandExecution(
-        analysis *security.AnalysisResult,
+        riskLevel security.RiskLevel,
+        detectedPattern string,
+        reason string,
+        privilegeResult *PrivilegeEscalationResult,
         command *config.Command,
     ) error
 }
@@ -117,24 +358,32 @@ type DefaultRiskEvaluator struct {
 }
 ```
 
-#### 2.3.2 評価ロジック
+#### 2.4.2 評価ロジック
 ```go
 func (e *DefaultRiskEvaluator) EvaluateCommandExecution(
-    analysis *security.AnalysisResult,
+    riskLevel security.RiskLevel,
+    detectedPattern string,
+    reason string,
+    privilegeResult *PrivilegeEscalationResult,
     command *config.Command,
 ) error {
     // Step 1: max_risk_level の取得
     maxLevel := parseRiskLevel(command.MaxRiskLevel)
 
     // Step 2: 実際のリスクレベル取得
-    actualLevel := analysis.GetHighestRiskLevel()
+    actualLevel := riskLevel
 
-    // Step 3: 特権昇格リスクのチェック
-    if analysis.HasPrivilegeEscalationRisk() && command.Privileged {
+    // Step 3: 特権昇格リスクの詳細チェック
+    if privilegeResult.HasPrivilegeEscalation && command.Privileged {
         e.logger.Info("Privilege escalation allowed due to privileged flag",
-            "command", command.Name)
-        // 特権昇格リスクを除外して再評価
-        actualLevel = analysis.GetHighestNonPrivilegeRiskLevel()
+            "command", command.Name,
+            "escalation_type", privilegeResult.EscalationType.String(),
+            "target_user", privilegeResult.TargetUser,
+            "service_name", privilegeResult.ServiceName)
+
+        // 特権昇格リスクを除外した実効リスクレベルを計算
+        effectiveLevel := calculateEffectiveRiskLevel(riskLevel, privilegeResult)
+        actualLevel = effectiveLevel
     }
 
     // Step 4: 比較評価
@@ -142,7 +391,7 @@ func (e *DefaultRiskEvaluator) EvaluateCommandExecution(
         return &SecurityViolationError{
             Command:         buildCommandString(command),
             DetectedRisk:    actualLevel.String(),
-            DetectedPattern: analysis.GetRiskDescription(),
+            DetectedPattern: detectedPattern,
             RequiredSetting: fmt.Sprintf("Add 'max_risk_level = \"%s\"' to command configuration", actualLevel.String()),
             CommandPath:     buildCommandPath(command),
             RunID:           generateRunID(),
@@ -150,6 +399,25 @@ func (e *DefaultRiskEvaluator) EvaluateCommandExecution(
     }
 
     return nil
+}
+
+// calculateEffectiveRiskLevel calculates the effective risk level after excluding privilege escalation risks
+func calculateEffectiveRiskLevel(
+    originalRisk security.RiskLevel,
+    privilegeResult *PrivilegeEscalationResult,
+) security.RiskLevel {
+    // If the original risk is solely due to privilege escalation, reduce it
+    if privilegeResult.HasPrivilegeEscalation {
+        // If privilege escalation is the primary risk, the effective risk is lower
+        if originalRisk == security.RiskLevelHigh && privilegeResult.RiskLevel == security.RiskLevelHigh {
+            return security.RiskLevelMedium // Still has some risk from the privilege escalation context
+        }
+        if originalRisk == security.RiskLevelMedium && privilegeResult.RiskLevel == security.RiskLevelMedium {
+            return security.RiskLevelNone
+        }
+    }
+
+    return originalRisk
 }
 ```
 
@@ -210,24 +478,31 @@ func (m *NormalResourceManager) ExecuteCommand(
 ) (*ExecutionResult, error) {
 
     // Phase 1: セキュリティ分析実行
-    analysis, err := security.AnalyzeCommandSecurity(command, env)
+    riskLevel, detectedPattern, reason := security.AnalyzeCommandSecurity(command.Cmd, command.Args)
+
+    // Phase 2: 特権昇格分析実行
+    privilegeResult, err := m.privilegeAnalyzer.AnalyzePrivilegeEscalation(command.Cmd, command.Args)
     if err != nil {
-        return nil, fmt.Errorf("security analysis failed: %w", err)
+        return nil, fmt.Errorf("privilege escalation analysis failed: %w", err)
     }
 
-    // Phase 2: リスク評価
-    if err := m.evaluator.EvaluateCommandExecution(analysis, command); err != nil {
+    // Phase 3: リスク評価
+    if err := m.evaluator.EvaluateCommandExecution(riskLevel, detectedPattern, reason, privilegeResult, command); err != nil {
         // セキュリティ違反をログに記録
         m.logger.Error("Command execution blocked",
             "error", err,
-            "command", command.Name)
+            "command", command.Name,
+            "risk_level", riskLevel.String(),
+            "privilege_escalation", privilegeResult.HasPrivilegeEscalation,
+            "escalation_type", privilegeResult.EscalationType.String())
         return nil, err
     }
 
-    // Phase 3: コマンド実行
+    // Phase 4: コマンド実行
     m.logger.Info("Command passed security evaluation",
         "command", command.Name,
-        "risk_level", analysis.GetHighestRiskLevel().String())
+        "risk_level", riskLevel.String(),
+        "privilege_escalation_allowed", privilegeResult.HasPrivilegeEscalation && command.Privileged)
 
     return m.executor.Execute(command, env)
 }
@@ -261,7 +536,166 @@ flowchart TD
 
 ## 4. セキュリティ分析仕様
 
-### 4.1 既存セキュリティ分析の活用
+### 4.1 特権昇格分析の詳細実装
+
+#### 4.1.1 Sudo コマンド分析
+```go
+func (a *DefaultPrivilegeEscalationAnalyzer) analyzeSudoCommand(args []string) (*PrivilegeEscalationResult, error) {
+    result := &PrivilegeEscalationResult{
+        HasPrivilegeEscalation: true,
+        EscalationType:         PrivilegeEscalationSudo,
+        RiskLevel:             security.RiskLevelMedium,
+        Description:           "Sudo command execution",
+        RequiredPrivileges:    []string{"sudo"},
+    }
+
+    // Parse sudo arguments to extract target user and command
+    for i, arg := range args {
+        switch arg {
+        case "-u", "--user":
+            if i+1 < len(args) {
+                result.TargetUser = args[i+1]
+                if result.TargetUser == "root" {
+                    result.RiskLevel = security.RiskLevelHigh
+                    result.Description = "Sudo execution as root user"
+                }
+            }
+        case "-s", "--shell":
+            result.RiskLevel = security.RiskLevelHigh
+            result.Description = "Sudo shell execution"
+        case "-i", "--login":
+            result.RiskLevel = security.RiskLevelHigh
+            result.Description = "Sudo login shell execution"
+        }
+    }
+
+    return result, nil
+}
+```
+
+#### 4.1.2 Systemctl コマンド分析
+```go
+func (a *DefaultPrivilegeEscalationAnalyzer) analyzeSystemctlCommand(args []string) (*PrivilegeEscalationResult, error) {
+    result := &PrivilegeEscalationResult{
+        HasPrivilegeEscalation: true,
+        EscalationType:         PrivilegeEscalationSystemd,
+        RiskLevel:             security.RiskLevelMedium,
+        Description:           "Systemd service management",
+        RequiredPrivileges:    []string{"systemctl"},
+    }
+
+    if len(args) > 0 {
+        action := args[0]
+        switch action {
+        case "start", "stop", "restart", "reload":
+            result.RiskLevel = security.RiskLevelMedium
+            if len(args) > 1 {
+                result.ServiceName = args[1]
+                result.Description = fmt.Sprintf("Systemd %s service '%s'", action, result.ServiceName)
+            }
+        case "enable", "disable":
+            result.RiskLevel = security.RiskLevelHigh
+            if len(args) > 1 {
+                result.ServiceName = args[1]
+                result.Description = fmt.Sprintf("Systemd %s service '%s' (persistent change)", action, result.ServiceName)
+            }
+        case "mask", "unmask":
+            result.RiskLevel = security.RiskLevelHigh
+            result.Description = fmt.Sprintf("Systemd %s operation (security impact)", action)
+        case "daemon-reload":
+            result.RiskLevel = security.RiskLevelHigh
+            result.Description = "Systemd daemon configuration reload"
+        }
+    }
+
+    return result, nil
+}
+```
+
+#### 4.1.3 権限変更コマンド分析
+```go
+func (a *DefaultPrivilegeEscalationAnalyzer) analyzeChmodCommand(args []string) (*PrivilegeEscalationResult, error) {
+    result := &PrivilegeEscalationResult{
+        HasPrivilegeEscalation: false,
+        EscalationType:         PrivilegeEscalationNone,
+        RiskLevel:             security.RiskLevelNone,
+    }
+
+    for _, arg := range args {
+        // Check for dangerous permission patterns
+        if strings.Contains(arg, "777") || strings.Contains(arg, "666") {
+            result.HasPrivilegeEscalation = true
+            result.EscalationType = PrivilegeEscalationChmod
+            result.RiskLevel = security.RiskLevelMedium
+            result.Description = "Overly permissive file permissions"
+            result.RequiredPrivileges = []string{"file_owner"}
+            break
+        }
+
+        // Check for setuid/setgid bits
+        if strings.Contains(arg, "4") || strings.Contains(arg, "2") {
+            if len(arg) == 4 && (arg[0] == '4' || arg[0] == '2') {
+                result.HasPrivilegeEscalation = true
+                result.EscalationType = PrivilegeEscalationChmod
+                result.RiskLevel = security.RiskLevelHigh
+                result.Description = "Setting setuid/setgid bits"
+                result.RequiredPrivileges = []string{"file_owner", "potential_privilege_escalation"}
+                break
+            }
+        }
+    }
+
+    return result, nil
+}
+
+func (a *DefaultPrivilegeEscalationAnalyzer) analyzeChownCommand(args []string) (*PrivilegeEscalationResult, error) {
+    result := &PrivilegeEscalationResult{
+        HasPrivilegeEscalation: true,
+        EscalationType:         PrivilegeEscalationChown,
+        RiskLevel:             security.RiskLevelMedium,
+        Description:           "File ownership change",
+        RequiredPrivileges:    []string{"file_owner"},
+    }
+
+    for _, arg := range args {
+        if strings.Contains(arg, "root") {
+            result.RiskLevel = security.RiskLevelHigh
+            result.Description = "Ownership change to root user"
+            result.RequiredPrivileges = []string{"root"}
+            result.TargetUser = "root"
+            break
+        }
+    }
+
+    return result, nil
+}
+```
+
+#### 4.1.4 本質的に特権が必要なコマンド
+```go
+func (a *DefaultPrivilegeEscalationAnalyzer) isInherentlyPrivilegedCommand(cmdName string) bool {
+    privilegedCommands := map[string]bool{
+        "iptables":   true,
+        "mount":      true,
+        "umount":     true,
+        "modprobe":   true,
+        "insmod":     true,
+        "rmmod":      true,
+        "useradd":    true,
+        "userdel":    true,
+        "usermod":    true,
+        "passwd":     true,
+        "visudo":     true,
+        "crontab":    true,
+        "at":         true,
+        "nohup":      true,
+    }
+
+    return privilegedCommands[cmdName]
+}
+```
+
+### 4.2 既存セキュリティ分析の活用
 
 #### 4.1.1 危険パターンマッチング
 ```go
@@ -306,74 +740,24 @@ func checkSymlinkDepth(path string) (RiskLevel, error) {
 }
 ```
 
-### 4.2 分析結果の構造
+### 4.2 セキュリティ分析統合
 
-#### 4.2.1 AnalysisResult 構造体
+#### 4.2.1 既存関数の活用
+現在の実装では`security.AnalyzeCommandSecurity(cmdName string, args []string)`関数が以下の戻り値を提供します：
+
 ```go
-type AnalysisResult struct {
-    CommandString          string
-    DetectedPatterns       []DetectedPattern
-    SymlinkRisk           RiskLevel
-    EnvironmentRisk       RiskLevel
-    OverallRisk           RiskLevel
-    Warnings              []string
-    HasPrivilegeEscalation bool  // NEW: 特権昇格リスクの有無
-}
-
-type DetectedPattern struct {
-    Pattern               string    // マッチしたパターン
-    RiskLevel             RiskLevel // このパターンのリスクレベル
-    Description           string    // パターンの説明
-    Location              string    // コマンド内での位置
-    IsPrivilegeEscalation bool      // NEW: 特権昇格リスクかどうか
-}
-
-func (a *AnalysisResult) GetHighestRiskLevel() RiskLevel {
-    maxRisk := RiskLevelNone
-
-    for _, pattern := range a.DetectedPatterns {
-        if pattern.RiskLevel.Severity() > maxRisk.Severity() {
-            maxRisk = pattern.RiskLevel
-        }
-    }
-
-    if a.SymlinkRisk.Severity() > maxRisk.Severity() {
-        maxRisk = a.SymlinkRisk
-    }
-
-    if a.EnvironmentRisk.Severity() > maxRisk.Severity() {
-        maxRisk = a.EnvironmentRisk
-    }
-
-    return maxRisk
-}
-
-// NEW: 特権昇格リスクを除外した最高リスクレベルを取得
-func (a *AnalysisResult) GetHighestNonPrivilegeRiskLevel() RiskLevel {
-    maxRisk := RiskLevelNone
-
-    for _, pattern := range a.DetectedPatterns {
-        if !pattern.IsPrivilegeEscalation && pattern.RiskLevel.Severity() > maxRisk.Severity() {
-            maxRisk = pattern.RiskLevel
-        }
-    }
-
-    if a.SymlinkRisk.Severity() > maxRisk.Severity() {
-        maxRisk = a.SymlinkRisk
-    }
-
-    if a.EnvironmentRisk.Severity() > maxRisk.Severity() {
-        maxRisk = a.EnvironmentRisk
-    }
-
-    return maxRisk
-}
-
-// NEW: 特権昇格リスクの有無をチェック
-func (a *AnalysisResult) HasPrivilegeEscalationRisk() bool {
-    return a.HasPrivilegeEscalation
-}
+func AnalyzeCommandSecurity(cmdName string, args []string) (riskLevel RiskLevel, detectedPattern string, reason string)
 ```
+
+- `riskLevel`: 検出されたリスクレベル（RiskLevelNone, RiskLevelMedium, RiskLevelHigh）
+- `detectedPattern`: マッチした危険パターン（例："rm -rf"）
+- `reason`: リスク判定の理由（例："Recursive file removal"）
+
+#### 4.2.2 特権昇格リスクの判定
+現在の実装では特権昇格リスクの詳細分析は未実装のため、当面は以下のシンプルなルールを適用します：
+
+- `privileged = true`が設定されている場合、Medium riskまでは許可
+- High riskは`privileged = true`でも明示的な`max_risk_level = "high"`が必要
 
 ## 5. 設定検証仕様
 
@@ -494,8 +878,8 @@ func LoadConfig(filepath string) (*Config, error) {
 #### 6.3.1 Logger Interface
 ```go
 type SecurityLogger interface {
-    LogSecurityViolation(violation *SecurityViolationError, analysis *AnalysisResult)
-    LogSecurityPassed(command *config.Command, analysis *AnalysisResult)
+    LogSecurityViolation(violation *SecurityViolationError, riskLevel security.RiskLevel, detectedPattern string, reason string)
+    LogSecurityPassed(command *config.Command, riskLevel security.RiskLevel)
     LogAnalysisError(command *config.Command, err error)
 }
 
@@ -505,16 +889,18 @@ type DefaultSecurityLogger struct {
 
 func (l *DefaultSecurityLogger) LogSecurityViolation(
     violation *SecurityViolationError,
-    analysis *AnalysisResult,
+    riskLevel security.RiskLevel,
+    detectedPattern string,
+    reason string,
 ) {
     l.logger.Error("command_security_violation",
         "command", violation.Command,
         "command_name", extractCommandName(violation.CommandPath),
         "detected_risk", violation.DetectedRisk,
-        "detected_patterns", analysis.GetPatternDescriptions(),
+        "detected_pattern", detectedPattern,
+        "reason", reason,
         "command_path", violation.CommandPath,
-        "run_id", violation.RunID,
-        "analysis_duration_ms", analysis.Duration.Milliseconds())
+        "run_id", violation.RunID)
 }
 ```
 
@@ -526,76 +912,108 @@ func (l *DefaultSecurityLogger) LogSecurityViolation(
 ```go
 func TestRiskEvaluator_EvaluateCommandExecution(t *testing.T) {
     tests := []struct {
-        name          string
-        analysis      *security.AnalysisResult
-        command       *config.Command
-        expectedError error
-        description   string
+        name            string
+        riskLevel       security.RiskLevel
+        detectedPattern string
+        reason          string
+        privilegeResult *PrivilegeEscalationResult
+        command         *config.Command
+        expectedError   error
+        description     string
     }{
         {
-            name: "high_risk_without_permission",
-            analysis: &security.AnalysisResult{
-                OverallRisk: RiskLevelHigh,
-                DetectedPatterns: []DetectedPattern{{
-                    Pattern: "rm -rf",
-                    RiskLevel: RiskLevelHigh,
-                    Description: "Recursive file removal",
-                }},
+            name:            "high_risk_without_permission",
+            riskLevel:       security.RiskLevelHigh,
+            detectedPattern: "rm -rf",
+            reason:          "Recursive file removal",
+            privilegeResult: &PrivilegeEscalationResult{
+                HasPrivilegeEscalation: false,
+                EscalationType:         PrivilegeEscalationNone,
+                RiskLevel:             security.RiskLevelNone,
             },
             command: &config.Command{
                 Name: "dangerous_rm",
-                Cmd: "rm",
+                Cmd:  "rm",
                 Args: []string{"-rf", "/tmp"},
                 // MaxRiskLevel 未設定
             },
             expectedError: &SecurityViolationError{},
-            description: "High riskコマンドは許可設定なしで拒否される",
+            description:   "High riskコマンドは許可設定なしで拒否される",
         },
         {
-            name: "high_risk_with_permission",
-            analysis: &security.AnalysisResult{
-                OverallRisk: RiskLevelHigh,
-                DetectedPatterns: []DetectedPattern{{
-                    Pattern: "rm -rf",
-                    RiskLevel: RiskLevelHigh,
-                    Description: "Recursive file removal",
-                }},
-            },
-            command: &config.Command{
-                Name: "controlled_rm",
-                Cmd: "rm",
-                Args: []string{"-rf", "/tmp/safe"},
-                MaxRiskLevel: "high",
-            },
-            expectedError: nil,
-            description: "High riskコマンドは適切な許可設定で実行可能",
-        },
-        {
-            name: "privileged_bypass_privilege_escalation",
-            analysis: &security.AnalysisResult{
-                OverallRisk: RiskLevelHigh,
+            name:            "privilege_escalation_with_privileged_flag",
+            riskLevel:       security.RiskLevelHigh,
+            detectedPattern: "sudo",
+            reason:          "Privilege escalation detected",
+            privilegeResult: &PrivilegeEscalationResult{
                 HasPrivilegeEscalation: true,
+                EscalationType:         PrivilegeEscalationSudo,
+                RiskLevel:             security.RiskLevelHigh,
+                Description:           "Sudo execution as root user",
+                TargetUser:            "root",
             },
             command: &config.Command{
-                Name: "privileged_operation",
-                Cmd: "systemctl",
-                Args: []string{"restart", "nginx"},
+                Name:       "privileged_sudo",
+                Cmd:        "sudo",
+                Args:       []string{"-u", "root", "systemctl", "restart", "nginx"},
                 Privileged: true,
-                // MaxRiskLevel 未設定でも privileged = true で特権昇格リスクは実行可能
+                // MaxRiskLevel 未設定でも privileged = true で特権昇格リスクは除外
             },
             expectedError: nil,
-            description: "privileged=trueは特権昇格リスクのみを許可",
+            description:   "privileged=trueは特権昇格リスクを除外し、残りのリスクで評価",
         },
         {
-            name: "privileged_does_not_bypass_other_risks",
-            analysis: &security.AnalysisResult{
-                OverallRisk: RiskLevelHigh,
-                HasPrivilegeEscalation: false, // 特権昇格以外のリスク
+            name:            "privilege_escalation_without_privileged_flag",
+            riskLevel:       security.RiskLevelMedium,
+            detectedPattern: "sudo",
+            reason:          "Privilege escalation detected",
+            privilegeResult: &PrivilegeEscalationResult{
+                HasPrivilegeEscalation: true,
+                EscalationType:         PrivilegeEscalationSudo,
+                RiskLevel:             security.RiskLevelMedium,
+                Description:           "Sudo command execution",
             },
             command: &config.Command{
-                Name: "dangerous_file_operation",
-                Cmd: "rm",
-                Args: []string{"-rf", "/tmp/data"},
+                Name: "unprivileged_sudo",
+                Cmd:  "sudo",
+                Args: []string{"ls", "/root"},
+                // Privileged: false (デフォルト)
+                // MaxRiskLevel 未設定
+            },
+            expectedError: &SecurityViolationError{},
+            description:   "privileged=falseの場合、特権昇格リスクも通常通り評価される",
+        },
+        {
+            name:            "mixed_risk_privilege_escalation_excluded",
+            riskLevel:       security.RiskLevelHigh,
+            detectedPattern: "sudo rm -rf",
+            reason:          "Recursive file removal with sudo",
+            privilegeResult: &PrivilegeEscalationResult{
+                HasPrivilegeEscalation: true,
+                EscalationType:         PrivilegeEscalationSudo,
+                RiskLevel:             security.RiskLevelMedium,
+                Description:           "Sudo command execution",
+            },
+            command: &config.Command{
+                Name:         "mixed_risk_operation",
+                Cmd:          "sudo",
+                Args:         []string{"rm", "-rf", "/tmp/safe"},
+                Privileged:   true,
+                MaxRiskLevel: "medium", // 特権昇格リスク除外後の実効リスクに対する許可
+            },
+            expectedError: nil,
+            description:   "特権昇格リスクが除外されても、残りのファイル削除リスクは評価される",
+            description:   "privileged=trueはmedium riskまで許可",
+        },
+        {
+            name:            "privileged_does_not_bypass_high_risk",
+            riskLevel:       security.RiskLevelHigh,
+            detectedPattern: "rm -rf",
+            reason:          "Recursive file removal",
+            command: &config.Command{
+                Name:       "dangerous_file_operation",
+                Cmd:        "rm",
+                Args:       []string{"-rf", "/tmp/data"},
                 Privileged: true,
                 // privileged=true でも特権昇格以外のリスクはチェックされる
             },
@@ -835,13 +1253,10 @@ func BenchmarkSecurityAnalysis(b *testing.B) {
 
     for i := 0; i < b.N; i++ {
         for _, cmd := range commands {
-            analysis, err := security.AnalyzeCommandSecurity(cmd, nil)
-            if err != nil {
-                b.Fatal(err)
-            }
+            riskLevel, detectedPattern, reason := security.AnalyzeCommandSecurity(cmd.Cmd, cmd.Args)
 
             evaluator := NewDefaultRiskEvaluator(nil)
-            err = evaluator.EvaluateCommandExecution(analysis, cmd)
+            err := evaluator.EvaluateCommandExecution(riskLevel, detectedPattern, reason, cmd)
             // エラーは許可（テスト用の危険コマンドが含まれるため）
         }
     }

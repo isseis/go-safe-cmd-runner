@@ -71,6 +71,7 @@ block-beta
 
 #### 2.2.2 新規コンポーネント
 - **Risk Evaluator**: セキュリティ分析結果と設定値を照合し実行可否を判定
+- **Privilege Escalation Analyzer**: 特権昇格リスクの詳細分析（NEW）
 - **Security Error Types**: セキュリティ違反時の専用エラー型
 
 ## 3. データフロー
@@ -103,24 +104,26 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    AnalysisResult[Security Analysis Result]
+    SecurityAnalysis[Security Analysis<br/>AnalyzeCommandSecurity]
     ExtractRisk[Extract Risk Level<br/>None, Medium, High]
+    PrivilegeAnalysis[Privilege Escalation Analysis<br/>NEW: AnalyzePrivilegeEscalation]
     GetConfig[Get Command Configuration<br/>- max_risk_level setting<br/>- privileged flag]
     EvaluatePermission[Evaluate Permission]
-    PrivilegeEscalation{Is Privilege<br/>Escalation Risk?}
+    HasPrivilegeRisk{Has Privilege<br/>Escalation Risk?}
     PrivilegedCheck{privileged = true?}
-    RemovePrivilegeRisk[Remove Privilege Escalation Risk<br/>Recalculate with GetHighestNonPrivilegeRiskLevel]
-    RiskCheck{actual ≤ max_risk?}
+    RemovePrivilegeRisk[Remove Privilege Escalation Risk<br/>Recalculate Effective Risk Level]
+    RiskCheck{effective_risk ≤ max_risk?}
     Allow[ALLOW]
     Reject[REJECT]
     Execute[EXECUTE]
 
-    AnalysisResult --> ExtractRisk
-    ExtractRisk --> GetConfig
+    SecurityAnalysis --> ExtractRisk
+    ExtractRisk --> PrivilegeAnalysis
+    PrivilegeAnalysis --> GetConfig
     GetConfig --> EvaluatePermission
-    EvaluatePermission --> PrivilegeEscalation
-    PrivilegeEscalation -->|Yes| PrivilegedCheck
-    PrivilegeEscalation -->|No| RiskCheck
+    EvaluatePermission --> HasPrivilegeRisk
+    HasPrivilegeRisk -->|Yes| PrivilegedCheck
+    HasPrivilegeRisk -->|No| RiskCheck
     PrivilegedCheck -->|Yes| RemovePrivilegeRisk
     PrivilegedCheck -->|No| Reject
     RemovePrivilegeRisk --> RiskCheck
@@ -129,16 +132,52 @@ flowchart TD
     Allow --> Execute
 ```
 
-**重要:** `privileged = true` フラグは特権昇格リスクのみを除外します。特権昇格リスクが除外された後、残りのセキュリティリスク（ファイル操作、ネットワーク通信等）は依然として `max_risk_level` 設定と照合されます。これにより、特権昇格が許可されたコマンドでも、他のセキュリティリスクに対する適切な制御が維持されます。
+**特権昇格リスク分析:** システムは以下の段階でコマンドの特権昇格リスクを詳細に分析します：
+1. **パターンベース検出**: `sudo`, `su`, `systemctl` などの特権昇格コマンドを検出
+2. **コンテキスト分析**: 実行ユーザーと対象操作の権限レベルを比較
+3. **リスク分類**: 特権昇格リスクを他のセキュリティリスクから分離
+4. **条件付き許可**: `privileged = true`フラグによる特権昇格リスクの除外
 
 ## 4. インターフェース設計
 
-### 4.1 Risk Evaluator Interface
+### 4.1 Privilege Escalation Analyzer Interface
+
+```go
+type PrivilegeEscalationAnalyzer interface {
+    AnalyzePrivilegeEscalation(cmdName string, args []string) (*PrivilegeEscalationResult, error)
+    IsPrivilegeEscalationCommand(cmdName string) bool
+    GetRequiredPrivileges(cmdName string, args []string) ([]string, error)
+}
+
+type PrivilegeEscalationResult struct {
+    HasPrivilegeEscalation bool
+    EscalationType         PrivilegeEscalationType
+    RequiredPrivileges     []string
+    RiskLevel             security.RiskLevel
+    Description           string
+}
+
+type PrivilegeEscalationType int
+
+const (
+    PrivilegeEscalationNone PrivilegeEscalationType = iota
+    PrivilegeEscalationSudo    // sudo command
+    PrivilegeEscalationSu      // su command
+    PrivilegeEscalationSystemd // systemctl/systemd operations
+    PrivilegeEscalationService // service management
+    PrivilegeEscalationOther   // other privilege escalation
+)
+```
+
+### 4.2 Risk Evaluator Interface
 
 ```go
 type RiskEvaluator interface {
     EvaluateCommandExecution(
-        analysis *security.AnalysisResult,
+        riskLevel security.RiskLevel,
+        detectedPattern string,
+        reason string,
+        privilegeResult *PrivilegeEscalationResult,
         command *config.Command,
     ) error
 }
@@ -153,7 +192,7 @@ type SecurityViolationError struct {
 }
 ```
 
-### 4.2 Enhanced Command Configuration
+### 4.3 Enhanced Command Configuration
 
 ```go
 type Command struct {
@@ -167,13 +206,14 @@ type Command struct {
 }
 ```
 
-### 4.3 Normal Manager Enhanced Interface
+### 4.4 Normal Manager Enhanced Interface
 
 ```go
 type NormalResourceManager struct {
-    executor      CommandExecutor
-    outputWriter  OutputWriter
-    evaluator     RiskEvaluator  // NEW
+    executor             CommandExecutor
+    outputWriter         OutputWriter
+    evaluator            RiskEvaluator               // NEW
+    privilegeAnalyzer    PrivilegeEscalationAnalyzer // NEW
 }
 
 func (m *NormalResourceManager) ExecuteCommand(
@@ -181,19 +221,22 @@ func (m *NormalResourceManager) ExecuteCommand(
     env map[string]string,
 ) (*ExecutionResult, error) {
     // 1. Security Analysis (NEW)
-    analysis, err := security.AnalyzeCommandSecurity(command, env)
+    riskLevel, detectedPattern, reason := security.AnalyzeCommandSecurity(command.Cmd, command.Args)
+
+    // 2. Privilege Escalation Analysis (NEW)
+    privilegeResult, err := m.privilegeAnalyzer.AnalyzePrivilegeEscalation(command.Cmd, command.Args)
     if err != nil {
+        return nil, fmt.Errorf("privilege escalation analysis failed: %w", err)
+    }
+
+    // 3. Risk Evaluation (NEW)
+    // privileged=true flag can exclude privilege escalation risks
+    // Other security risks are still evaluated against max_risk_level
+    if err := m.evaluator.EvaluateCommandExecution(riskLevel, detectedPattern, reason, privilegeResult, command); err != nil {
         return nil, err
     }
 
-    // 2. Risk Evaluation (NEW)
-    // privileged=true is only applied to privilege escalation risks
-    // Other security risks are still checked
-    if err := m.evaluator.EvaluateCommandExecution(analysis, command); err != nil {
-        return nil, err
-    }
-
-    // 3. Execute (EXISTING)
+    // 4. Execute (EXISTING)
     return m.executor.Execute(command, env)
 }
 ```
@@ -371,19 +414,48 @@ func TestRiskBasedExecution(t *testing.T) {
 ## 10. 実装優先順位
 
 ### 10.1 Phase 1: 基本機能
-1. Risk Evaluator の実装
-2. Configuration の拡張
-3. Normal Manager の統合
+1. **Privilege Escalation Analyzer の実装**
+   - 基本的な特権昇格パターン検出（sudo, su, systemctl）
+   - PrivilegeEscalationResult 構造体の実装
+   - 各コマンド種別に応じた分析メソッド
 
-### 10.2 Phase 2: エラーハンドリング
-1. Security Error Types の実装
-2. 詳細エラーメッセージの実装
-3. ログ統合
+2. **Risk Evaluator の拡張**
+   - 特権昇格リスクを考慮した評価ロジック
+   - 実効リスクレベル計算機能
+   - 詳細なエラーメッセージ生成
+
+3. **Normal Manager の統合**
+   - 特権昇格分析の統合
+   - ログ出力の拡張
+
+### 10.2 Phase 2: 高度な分析機能
+1. **詳細特権昇格分析**
+   - chmod/chown コマンドの詳細分析
+   - setuid/setgid ビット検出
+   - 本質的特権コマンドの拡張
+
+2. **Security Error Types の拡張**
+   - 特権昇格専用エラータイプ
+   - 詳細エラーメッセージテンプレート
+   - コンテキスト情報の追加
+
+3. **ログシステムの強化**
+   - 特権昇格分析結果のログ
+   - セキュリティ監査ログの拡張
 
 ### 10.3 Phase 3: テストと最適化
-1. テストスイートの拡張
-2. パフォーマンス最適化
-3. ドキュメント整備
+1. **テストスイートの拡張**
+   - 特権昇格分析のユニットテスト
+   - エンドツーエンドテストの充実
+   - エッジケースのテスト
+
+2. **パフォーマンス最適化**
+   - 特権昇格分析のキャッシュ機能
+   - 並列分析の実装
+
+3. **ドキュメント整備**
+   - 実装ガイドライン
+   - セキュリティベストプラクティス
 
 ## 11. 拡張性設計
 
@@ -391,8 +463,13 @@ func TestRiskBasedExecution(t *testing.T) {
 
 - **Custom Risk Patterns**: ユーザー定義の危険パターン
 - **Dynamic Risk Assessment**: 実行時コンテキストを考慮した評価
+- **Advanced Privilege Analysis**:
+  - ユーザー権限とファイル権限の詳細マッピング
+  - SELinux/AppArmorとの統合
+  - コンテナ環境での特権分析
 - **Risk Metrics**: セキュリティ違反の統計と分析
 - **Integration Hooks**: 外部システムとの連携
+- **Machine Learning**: 異常なコマンドパターンの自動検出
 
 ### 11.2 アーキテクチャの柔軟性
 
