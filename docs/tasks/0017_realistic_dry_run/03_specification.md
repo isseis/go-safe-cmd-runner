@@ -350,27 +350,27 @@ sequenceDiagram
 ## 2. 実装フェーズと仕様
 
 ### 2.1 Phase 1: Foundation（完了済み）
-✅ **ResourceManager インターフェース**: `internal/runner/resource/manager.go`
-✅ **ExecutionMode 型システム**: Normal/DryRun切り替え
-✅ **ResourceAnalysis データ構造**: 副作用操作の詳細記録
-✅ **DryRunResult 型階層**: 完全な分析結果構造
-✅ **基本テストフレームワーク**: 11テストケース
-✅ **Lint対応**: revive警告抑制
+- ✅ **ResourceManager インターフェース**: `internal/runner/resource/manager.go`
+- ✅ **ExecutionMode 型システム**: Normal/DryRun切り替え
+- ✅ **ResourceAnalysis データ構造**: 副作用操作の詳細記録
+- ✅ **DryRunResult 型階層**: 完全な分析結果構造
+- ✅ **基本テストフレームワーク**: 11テストケース
+- ✅ **Lint対応**: revive警告抑制
 
 ### 2.2 Phase 2: DefaultResourceManager実装（完了済み）
-✅ **DefaultResourceManager構造体**: 副作用の統一管理（`internal/runner/resource/default_manager.go`）
-✅ **NormalResourceManager**: 通常実行時の副作用処理（`internal/runner/resource/normal_manager.go`）
-✅ **DryRunResourceManagerImpl**: dry-run時の分析・記録（`internal/runner/resource/dryrun_manager.go`）
-✅ **モード切り替えロジック**: Normal/DryRunの動的制御
-✅ **副作用インターセプション**: 各操作の条件分岐実装
-✅ **分析記録機能**: ResourceAnalysisの蓄積
-✅ **結果フォーマッター**: Text/JSON/YAML出力対応（`internal/runner/resource/formatter.go`）
+- ✅ **DefaultResourceManager構造体**: 副作用の統一管理（`internal/runner/resource/default_manager.go`）
+- ✅ **NormalResourceManager**: 通常実行時の副作用処理（`internal/runner/resource/normal_manager.go`）
+- ✅ **DryRunResourceManagerImpl**: dry-run時の分析・記録（`internal/runner/resource/dryrun_manager.go`）
+- ✅ **モード切り替えロジック**: Normal/DryRunの動的制御
+- ✅ **副作用インターセプション**: 各操作の条件分岐実装
+- ✅ **分析記録機能**: ResourceAnalysisの蓄積
+- ✅ **結果フォーマッター**: Text/JSON/YAML出力対応（`internal/runner/resource/formatter.go`）
 
 ### 2.3 Phase 3: Runner統合（完了済み）
-✅ **Runner構造体拡張**: resourceManagerフィールド追加
-✅ **WithDryRun オプション関数**: dry-runモード指定
-✅ **GetDryRunResults メソッド**: 分析結果取得
-✅ **副作用メソッド更新**: 全てResourceManager経由に変更
+- ✅ **Runner構造体拡張**: resourceManagerフィールド追加
+- ✅ **WithDryRun オプション関数**: dry-runモード指定
+- ✅ **GetDryRunResults メソッド**: 分析結果取得
+- ✅ **副作用メソッド更新**: 全てResourceManager経由に変更
 
 ### 2.4 Phase 4: CLIインターフェース（次期）
 - **--dry-runフラグ**: コマンドラインオプション追加

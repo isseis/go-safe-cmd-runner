@@ -507,12 +507,12 @@ ResourceManagerが既存コンポーネントを内部で活用：
 ## 7. 実装状況
 
 ### 7.1 Phase 1 完了済み（Foundation）
-✅ **ResourceManager インターフェース**: 完全実装済み
-✅ **ExecutionMode と関連型**: 完全実装済み
-✅ **ResourceAnalysis データ構造**: 完全実装済み
-✅ **DryRunResult 型システム**: 完全実装済み
-✅ **基本テストフレームワーク**: 完全実装済み
-✅ **Lint 対応**: 完全対応済み
+- ✅ **ResourceManager インターフェース**: 完全実装済み
+- ✅ **ExecutionMode と関連型**: 完全実装済み
+- ✅ **ResourceAnalysis データ構造**: 完全実装済み
+- ✅ **DryRunResult 型システム**: 完全実装済み
+- ✅ **基本テストフレームワーク**: 完全実装済み
+- ✅ **Lint 対応**: 完全対応済み
 
 ### 7.2 実装パッケージ構成
 ```
