@@ -953,6 +953,26 @@ func TestIsPrivilegeEscalationCommand(t *testing.T) {
 			cmdName:  "",
 			expected: false,
 		},
+		{
+			name:     "simple su command",
+			cmdName:  "su",
+			expected: true,
+		},
+		{
+			name:     "su with absolute path",
+			cmdName:  "/bin/su",
+			expected: true,
+		},
+		{
+			name:     "simple doas command",
+			cmdName:  "doas",
+			expected: true,
+		},
+		{
+			name:     "doas with absolute path",
+			cmdName:  "/usr/bin/doas",
+			expected: true,
+		},
 	}
 
 	for _, tt := range tests {
