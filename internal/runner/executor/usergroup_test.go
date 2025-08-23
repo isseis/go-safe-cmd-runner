@@ -224,7 +224,106 @@ func TestDefaultExecutor_Execute_Integration(t *testing.T) {
 
 // TestUserGroupCommandValidation_PathRequirements tests the additional security validations for user/group commands
 func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
-	t.Skip("Skipping user/group path requirement tests for now, as relative path component checking is done by the Validate method")
+	tests := []struct {
+		name          string
+		cmd           runnertypes.Command
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name: "relative path fails for privileged command",
+			cmd: runnertypes.Command{
+				Name:       "test_relative_path",
+				Cmd:        "echo", // Relative path
+				Args:       []string{"test"},
+				RunAsUser:  "testuser",
+				RunAsGroup: "testgroup",
+			},
+			expectError:   true,
+			errorContains: "privileged commands must use absolute paths",
+		},
+		{
+			name: "absolute path works for privileged command",
+			cmd: runnertypes.Command{
+				Name:       "test_absolute_path",
+				Cmd:        "/usr/bin/echo", // Absolute path
+				Args:       []string{"test"},
+				RunAsUser:  "testuser",
+				RunAsGroup: "testgroup",
+			},
+			expectError: false,
+		},
+		{
+			name: "relative working directory fails for privileged command",
+			cmd: runnertypes.Command{
+				Name:       "test_relative_dir",
+				Cmd:        "/usr/bin/echo",
+				Args:       []string{"test"},
+				Dir:        "tmp", // Relative working directory
+				RunAsUser:  "testuser",
+				RunAsGroup: "testgroup",
+			},
+			expectError:   true,
+			errorContains: "directory does not exist", // Basic validation fails first
+		},
+		{
+			name: "absolute working directory works for privileged command",
+			cmd: runnertypes.Command{
+				Name:       "test_absolute_dir",
+				Cmd:        "/usr/bin/echo",
+				Args:       []string{"test"},
+				Dir:        "/tmp", // Absolute working directory
+				RunAsUser:  "testuser",
+				RunAsGroup: "testgroup",
+			},
+			expectError: false,
+		},
+		// Relative path component checking is done by the Validate method,
+		// so it has been removed from validatePrivilegedCommand
+		{
+			name: "path with . components fails in standard validation",
+			cmd: runnertypes.Command{
+				Name:       "test_path_with_dots",
+				Cmd:        "/usr/bin/../bin/echo", // Absolute path but contains relative path components
+				Args:       []string{"test"},
+				RunAsUser:  "testuser",
+				RunAsGroup: "testgroup",
+			},
+			expectError:   true,
+			errorContains: "command path contains relative path components", // Error message from standard validation
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a mock filesystem for directory validation
+			mockFS := &executor.MockFileSystem{
+				ExistingPaths: map[string]bool{
+					"/tmp": true,
+				},
+			}
+			mockPrivMgr := privilegetesting.NewMockPrivilegeManager(true)
+
+			exec := executor.NewDefaultExecutor(
+				executor.WithPrivilegeManager(mockPrivMgr),
+				executor.WithFileSystem(mockFS),
+			)
+
+			ctx := context.Background()
+			envVars := map[string]string{"PATH": "/usr/bin"}
+
+			_, err := exec.Execute(ctx, tt.cmd, envVars)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }
 
 // TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging tests audit logging for user/group command execution
