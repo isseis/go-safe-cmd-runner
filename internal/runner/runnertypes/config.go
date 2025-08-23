@@ -3,6 +3,7 @@
 package runnertypes
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 )
@@ -41,14 +42,27 @@ type CommandGroup struct {
 
 // Command represents a single command to be executed
 type Command struct {
-	Name        string   `toml:"name"`
-	Description string   `toml:"description"`
-	Cmd         string   `toml:"cmd"`
-	Args        []string `toml:"args"`
-	Env         []string `toml:"env"`
-	Dir         string   `toml:"dir"`
-	Privileged  bool     `toml:"privileged"`
-	Timeout     int      `toml:"timeout"` // Command-specific timeout (overrides global)
+	Name         string   `toml:"name"`
+	Description  string   `toml:"description"`
+	Cmd          string   `toml:"cmd"`
+	Args         []string `toml:"args"`
+	Env          []string `toml:"env"`
+	Dir          string   `toml:"dir"`
+	Privileged   bool     `toml:"privileged"`
+	Timeout      int      `toml:"timeout"`        // Command-specific timeout (overrides global)
+	RunAsUser    string   `toml:"run_as_user"`    // User to execute command as (using seteuid)
+	RunAsGroup   string   `toml:"run_as_group"`   // Group to execute command as (using setegid)
+	MaxRiskLevel string   `toml:"max_risk_level"` // Maximum allowed risk level (low, medium, high)
+}
+
+// GetMaxRiskLevel returns the parsed maximum risk level for this command
+func (c *Command) GetMaxRiskLevel() (RiskLevel, error) {
+	return ParseRiskLevel(c.MaxRiskLevel)
+}
+
+// HasUserGroupSpecification returns true if either run_as_user or run_as_group is specified
+func (c *Command) HasUserGroupSpecification() bool {
+	return c.RunAsUser != "" || c.RunAsGroup != ""
 }
 
 // InheritanceMode represents how environment allowlist inheritance works
@@ -67,6 +81,50 @@ const (
 	// This occurs when env_allowlist field is explicitly empty: []
 	InheritanceModeReject
 )
+
+// RiskLevel represents the security risk level of a command
+type RiskLevel int
+
+const (
+	// RiskLevelLow indicates commands with minimal security risk
+	RiskLevelLow RiskLevel = iota
+
+	// RiskLevelMedium indicates commands with moderate security risk
+	RiskLevelMedium
+
+	// RiskLevelHigh indicates commands with high security risk
+	RiskLevelHigh
+)
+
+// String returns a string representation of RiskLevel
+func (r RiskLevel) String() string {
+	switch r {
+	case RiskLevelLow:
+		return "low"
+	case RiskLevelMedium:
+		return "medium"
+	case RiskLevelHigh:
+		return "high"
+	default:
+		return "unknown"
+	}
+}
+
+// ParseRiskLevel converts a string to RiskLevel
+func ParseRiskLevel(s string) (RiskLevel, error) {
+	switch s {
+	case "low":
+		return RiskLevelLow, nil
+	case "medium":
+		return RiskLevelMedium, nil
+	case "high":
+		return RiskLevelHigh, nil
+	case "":
+		return RiskLevelLow, nil // Default to low risk
+	default:
+		return RiskLevelLow, fmt.Errorf("%w: %s", ErrInvalidRiskLevel, s)
+	}
+}
 
 // String returns a string representation of InheritanceMode for logging
 func (m InheritanceMode) String() string {
@@ -129,10 +187,15 @@ type ElevationContext struct {
 // Standard privilege errors
 var (
 	ErrPrivilegedExecutionNotAvailable = fmt.Errorf("privileged execution not available: binary lacks required SUID bit or running as non-root user")
+	ErrInvalidRiskLevel                = errors.New("invalid risk level")
 )
 
 // PrivilegeManager interface defines methods for privilege management
 type PrivilegeManager interface {
 	IsPrivilegedExecutionSupported() bool
 	WithPrivileges(elevationCtx ElevationContext, fn func() error) error
+
+	// Enhanced privilege management for user/group specification
+	WithUserGroup(user, group string, fn func() error) error
+	IsUserGroupSupported() bool
 }

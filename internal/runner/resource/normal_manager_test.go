@@ -63,6 +63,16 @@ func (m *MockPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
 	return args.Error(0)
 }
 
+func (m *MockPrivilegeManager) WithUserGroup(user, group string, fn func() error) error {
+	args := m.Called(user, group, fn)
+	return args.Error(0)
+}
+
+func (m *MockPrivilegeManager) IsUserGroupSupported() bool {
+	args := m.Called()
+	return args.Bool(0)
+}
+
 // Test constants
 const testTempPath = "/tmp/scr-test-group-12345"
 
