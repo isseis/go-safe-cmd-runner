@@ -46,6 +46,24 @@ func (m *MockPrivilegeManager) IsPrivilegedExecutionSupported() bool {
 	return m.Supported
 }
 
+// WithUserGroup executes a function with specified user and group privileges
+func (m *MockPrivilegeManager) WithUserGroup(user, group string, fn func() error) error {
+	m.ElevationCalls = append(m.ElevationCalls, "user_group_change:"+user+":"+group)
+	if m.ShouldFail {
+		return ErrMockPrivilegeElevationFailed
+	}
+	// If a custom execution function exists, prioritize and execute it
+	if m.ExecFn != nil {
+		return m.ExecFn()
+	}
+	return fn()
+}
+
+// IsUserGroupSupported returns whether user/group privilege changes are supported
+func (m *MockPrivilegeManager) IsUserGroupSupported() bool {
+	return m.Supported
+}
+
 // GetCurrentUID returns the current user ID
 func (m *MockPrivilegeManager) GetCurrentUID() int {
 	return MockUID

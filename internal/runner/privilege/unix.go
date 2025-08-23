@@ -3,6 +3,7 @@
 package privilege
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"log/syslog"
@@ -302,3 +303,95 @@ func (m *UnixPrivilegeManager) GetOriginalUID() int {
 func (m *UnixPrivilegeManager) GetMetrics() Metrics {
 	return m.metrics.GetSnapshot()
 }
+
+// WithUserGroup executes a function with specified user and group privileges
+func (m *UnixPrivilegeManager) WithUserGroup(user, group string, fn func() error) (err error) {
+	// Lock for the entire duration of the privileged operation
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	start := time.Now()
+
+	// Get current UID/GID before any changes
+	originalUID := syscall.Getuid()
+	originalGID := syscall.Getgid()
+
+	// Perform user/group changes
+	if err := m.changeUserGroup(user, group); err != nil {
+		m.metrics.RecordElevationFailure(err)
+		return fmt.Errorf("user/group change failed: %w", err)
+	}
+
+	// Single defer for both privilege restoration and panic handling
+	defer func() {
+		if restoreErr := m.restoreUserGroup(originalUID, originalGID); restoreErr != nil {
+			m.logger.Error("Critical failure in user/group privilege restoration",
+				"restore_error", restoreErr,
+				"original_uid", originalUID,
+				"original_gid", originalGID)
+			m.emergencyShutdown(restoreErr, "user_group_restore")
+		}
+
+		// Record metrics after restoration
+		duration := time.Since(start)
+		if err != nil {
+			m.metrics.RecordElevationFailure(err)
+		} else {
+			m.metrics.RecordElevationSuccess(duration)
+		}
+	}()
+
+	// Execute the function with changed privileges
+	err = fn()
+	if err != nil {
+		m.logger.Error("Function execution failed with user/group privileges",
+			"error", err,
+			"user", user,
+			"group", group)
+	}
+
+	return err
+}
+
+// IsUserGroupSupported checks if user/group privilege changes are supported
+func (m *UnixPrivilegeManager) IsUserGroupSupported() bool {
+	// User/group changes are supported on Unix systems when running with appropriate privileges
+	return m.privilegeSupported
+}
+
+// changeUserGroup changes the effective user and group IDs
+func (m *UnixPrivilegeManager) changeUserGroup(user, group string) error {
+	// TODO: Implement user/group name to UID/GID resolution
+	// For now, this is a placeholder that would need to:
+	// 1. Look up user/group names to get UID/GID
+	// 2. Call setegid/seteuid system calls
+	// 3. Handle permission validation
+
+	m.logger.Info("User/group change requested",
+		"user", user,
+		"group", group)
+
+	// Placeholder implementation - needs proper user/group lookup
+	return fmt.Errorf("%w: user=%s, group=%s", ErrUserGroupChangeNotImplemented, user, group)
+}
+
+// restoreUserGroup restores the original user and group IDs
+func (m *UnixPrivilegeManager) restoreUserGroup(originalUID, originalGID int) error {
+	// Restore group first, then user (reverse order of setting)
+	if err := syscall.Setegid(originalGID); err != nil {
+		return fmt.Errorf("failed to restore group ID to %d: %w", originalGID, err)
+	}
+
+	if err := syscall.Seteuid(originalUID); err != nil {
+		return fmt.Errorf("failed to restore user ID to %d: %w", originalUID, err)
+	}
+
+	m.logger.Info("User/group privileges restored",
+		"restored_uid", originalUID,
+		"restored_gid", originalGID)
+
+	return nil
+}
+
+// ErrUserGroupChangeNotImplemented indicates that user/group change functionality is not yet implemented.
+var ErrUserGroupChangeNotImplemented = errors.New("user/group change not yet implemented")
