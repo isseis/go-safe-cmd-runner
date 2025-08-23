@@ -40,6 +40,22 @@ func newPlatformManager(logger *slog.Logger) Manager {
 
 // WithPrivileges executes a function with elevated privileges using safe privilege escalation
 func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
+	// Handle different types of privilege operations
+	switch elevationCtx.Operation {
+	case runnertypes.OperationUserGroupExecution:
+		// Handle user/group execution - withUserGroupInternal manages its own locking
+		return m.withUserGroupInternal(elevationCtx.RunAsUser, elevationCtx.RunAsGroup, fn, false)
+	case runnertypes.OperationUserGroupDryRun:
+		// Handle user/group dry-run validation - withUserGroupInternal manages its own locking
+		return m.withUserGroupInternal(elevationCtx.RunAsUser, elevationCtx.RunAsGroup, fn, true)
+	default:
+		// Handle traditional privilege escalation (sudo-like)
+		return m.withPrivilegesInternal(elevationCtx, fn)
+	}
+}
+
+// withPrivilegesInternal handles traditional privilege escalation
+func (m *UnixPrivilegeManager) withPrivilegesInternal(elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
 	// Lock for the entire duration of the privileged operation to prevent race conditions
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -309,18 +325,8 @@ func (m *UnixPrivilegeManager) GetMetrics() Metrics {
 	return m.metrics.GetSnapshot()
 }
 
-// WithUserGroup executes a function with specified user and group privileges
-func (m *UnixPrivilegeManager) WithUserGroup(user, group string, fn func() error) (err error) {
-	return m.WithUserGroupOptions(user, group, fn, false)
-}
-
-// WithUserGroupDryRun validates user/group configuration without making actual privilege changes
-func (m *UnixPrivilegeManager) WithUserGroupDryRun(user, group string, fn func() error) (err error) {
-	return m.WithUserGroupOptions(user, group, fn, true)
-}
-
-// WithUserGroupOptions executes a function with specified user and group privileges with dry-run option
-func (m *UnixPrivilegeManager) WithUserGroupOptions(user, group string, fn func() error, dryRun bool) (err error) {
+// withUserGroupInternal executes a function with specified user and group privileges with dry-run option
+func (m *UnixPrivilegeManager) withUserGroupInternal(user, group string, fn func() error, dryRun bool) (err error) {
 	// Lock for the entire duration of the privileged operation
 	m.mu.Lock()
 	defer m.mu.Unlock()

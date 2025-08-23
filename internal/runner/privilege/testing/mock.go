@@ -30,7 +30,16 @@ type MockPrivilegeManager struct {
 
 // WithPrivileges executes the given function with privilege elevation
 func (m *MockPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) error {
-	m.ElevationCalls = append(m.ElevationCalls, string(elevationCtx.Operation))
+	// Record different types of operations differently for test verification
+	switch elevationCtx.Operation {
+	case runnertypes.OperationUserGroupExecution:
+		m.ElevationCalls = append(m.ElevationCalls, "user_group_change:"+elevationCtx.RunAsUser+":"+elevationCtx.RunAsGroup)
+	case runnertypes.OperationUserGroupDryRun:
+		m.ElevationCalls = append(m.ElevationCalls, "user_group_dry_run:"+elevationCtx.RunAsUser+":"+elevationCtx.RunAsGroup)
+	default:
+		m.ElevationCalls = append(m.ElevationCalls, string(elevationCtx.Operation))
+	}
+
 	if m.ShouldFail {
 		return ErrMockPrivilegeElevationFailed
 	}
@@ -44,32 +53,6 @@ func (m *MockPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
 // IsPrivilegedExecutionSupported returns whether privileged execution is supported
 func (m *MockPrivilegeManager) IsPrivilegedExecutionSupported() bool {
 	return m.Supported
-}
-
-// WithUserGroup executes a function with specified user and group privileges
-func (m *MockPrivilegeManager) WithUserGroup(user, group string, fn func() error) error {
-	m.ElevationCalls = append(m.ElevationCalls, "user_group_change:"+user+":"+group)
-	if m.ShouldFail {
-		return ErrMockPrivilegeElevationFailed
-	}
-	// If a custom execution function exists, prioritize and execute it
-	if m.ExecFn != nil {
-		return m.ExecFn()
-	}
-	return fn()
-}
-
-// WithUserGroupDryRun validates user/group configuration without making actual privilege changes
-func (m *MockPrivilegeManager) WithUserGroupDryRun(user, group string, fn func() error) error {
-	m.ElevationCalls = append(m.ElevationCalls, "user_group_dry_run:"+user+":"+group)
-	if m.ShouldFail {
-		return ErrMockPrivilegeElevationFailed
-	}
-	// If a custom execution function exists, prioritize and execute it
-	if m.ExecFn != nil {
-		return m.ExecFn()
-	}
-	return fn()
 }
 
 // IsUserGroupSupported returns whether user/group privilege changes are supported

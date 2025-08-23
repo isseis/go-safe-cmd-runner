@@ -107,7 +107,7 @@ func TestManager_WithPrivileges_UnsupportedPlatform(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestManager_WithUserGroup_ValidUser(t *testing.T) {
+func TestManager_WithPrivileges_UserGroup_ValidUser(t *testing.T) {
 	logger := slog.Default()
 	manager := NewManager(logger)
 
@@ -117,7 +117,13 @@ func TestManager_WithUserGroup_ValidUser(t *testing.T) {
 
 	t.Run("dry_run_mode", func(t *testing.T) {
 		var executed bool
-		err := manager.WithUserGroupDryRun(currentUser, currentGroup, func() error {
+		executionCtx := runnertypes.ElevationContext{
+			Operation:   runnertypes.OperationUserGroupDryRun,
+			CommandName: "test_command",
+			RunAsUser:   currentUser,
+			RunAsGroup:  currentGroup,
+		}
+		err := manager.WithPrivileges(executionCtx, func() error {
 			executed = true
 			return nil
 		})
@@ -130,7 +136,13 @@ func TestManager_WithUserGroup_ValidUser(t *testing.T) {
 	if manager.GetCurrentUID() == 0 {
 		t.Run("actual_change", func(t *testing.T) {
 			var executed bool
-			err := manager.WithUserGroup(currentUser, currentGroup, func() error {
+			executionCtx := runnertypes.ElevationContext{
+				Operation:   runnertypes.OperationUserGroupExecution,
+				CommandName: "test_command",
+				RunAsUser:   currentUser,
+				RunAsGroup:  currentGroup,
+			}
+			err := manager.WithPrivileges(executionCtx, func() error {
 				executed = true
 				return nil
 			})
@@ -141,12 +153,18 @@ func TestManager_WithUserGroup_ValidUser(t *testing.T) {
 	}
 }
 
-func TestManager_WithUserGroup_InvalidUser(t *testing.T) {
+func TestManager_WithPrivileges_UserGroup_InvalidUser(t *testing.T) {
 	logger := slog.Default()
 	manager := NewManager(logger)
 
 	t.Run("invalid_user", func(t *testing.T) {
-		err := manager.WithUserGroupDryRun("nonexistent_user_12345", "", func() error {
+		executionCtx := runnertypes.ElevationContext{
+			Operation:   runnertypes.OperationUserGroupDryRun,
+			CommandName: "test_command",
+			RunAsUser:   "nonexistent_user_12345",
+			RunAsGroup:  "",
+		}
+		err := manager.WithPrivileges(executionCtx, func() error {
 			return nil
 		})
 
@@ -155,7 +173,13 @@ func TestManager_WithUserGroup_InvalidUser(t *testing.T) {
 	})
 
 	t.Run("invalid_group", func(t *testing.T) {
-		err := manager.WithUserGroupDryRun("", "nonexistent_group_12345", func() error {
+		executionCtx := runnertypes.ElevationContext{
+			Operation:   runnertypes.OperationUserGroupDryRun,
+			CommandName: "test_command",
+			RunAsUser:   "",
+			RunAsGroup:  "nonexistent_group_12345",
+		}
+		err := manager.WithPrivileges(executionCtx, func() error {
 			return nil
 		})
 
@@ -164,13 +188,19 @@ func TestManager_WithUserGroup_InvalidUser(t *testing.T) {
 	})
 }
 
-func TestManager_WithUserGroup_EmptyUserGroup(t *testing.T) {
+func TestManager_WithPrivileges_UserGroup_EmptyUserGroup(t *testing.T) {
 	logger := slog.Default()
 	manager := NewManager(logger)
 
 	t.Run("empty_user_and_group", func(t *testing.T) {
 		var executed bool
-		err := manager.WithUserGroupDryRun("", "", func() error {
+		executionCtx := runnertypes.ElevationContext{
+			Operation:   runnertypes.OperationUserGroupDryRun,
+			CommandName: "test_command",
+			RunAsUser:   "",
+			RunAsGroup:  "",
+		}
+		err := manager.WithPrivileges(executionCtx, func() error {
 			executed = true
 			return nil
 		})
@@ -181,14 +211,20 @@ func TestManager_WithUserGroup_EmptyUserGroup(t *testing.T) {
 	})
 }
 
-func TestManager_WithUserGroup_FunctionError(t *testing.T) {
+func TestManager_WithPrivileges_UserGroup_FunctionError(t *testing.T) {
 	logger := slog.Default()
 	manager := NewManager(logger)
 
 	currentUser := getCurrentUser(t)
 
 	expectedErr := assert.AnError
-	err := manager.WithUserGroupDryRun(currentUser, "", func() error {
+	executionCtx := runnertypes.ElevationContext{
+		Operation:   runnertypes.OperationUserGroupDryRun,
+		CommandName: "test_command",
+		RunAsUser:   currentUser,
+		RunAsGroup:  "",
+	}
+	err := manager.WithPrivileges(executionCtx, func() error {
 		return expectedErr
 	})
 

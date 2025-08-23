@@ -170,6 +170,8 @@ type Operation string
 const (
 	OperationFileHashCalculation Operation = "file_hash_calculation"
 	OperationCommandExecution    Operation = "command_execution"
+	OperationUserGroupExecution  Operation = "user_group_execution"
+	OperationUserGroupDryRun     Operation = "user_group_dry_run"
 	OperationFileAccess          Operation = "file_access"
 	OperationFileValidation      Operation = "file_validation" // For file integrity validation
 	OperationHealthCheck         Operation = "health_check"
@@ -182,6 +184,9 @@ type ElevationContext struct {
 	FilePath    string
 	OriginalUID int
 	TargetUID   int
+	// User/group privilege change fields
+	RunAsUser  string
+	RunAsGroup string
 }
 
 // Standard privilege errors
@@ -196,7 +201,5 @@ type PrivilegeManager interface {
 	WithPrivileges(elevationCtx ElevationContext, fn func() error) error
 
 	// Enhanced privilege management for user/group specification
-	WithUserGroup(user, group string, fn func() error) error
-	WithUserGroupDryRun(user, group string, fn func() error) error
 	IsUserGroupSupported() bool
 }

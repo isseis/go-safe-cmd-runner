@@ -17,7 +17,7 @@ import (
 
 // Use common mock implementations from testing.go
 
-func TestDefaultExecutor_ExecuteWithUserGroup(t *testing.T) {
+func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 	t.Run("user_group_execution_success", func(t *testing.T) {
 		mockPriv := privilegetesting.NewMockPrivilegeManager(true)
 		exec := executor.NewDefaultExecutor(
@@ -40,7 +40,7 @@ func TestDefaultExecutor_ExecuteWithUserGroup(t *testing.T) {
 		assert.NotNil(t, result)
 		assert.Equal(t, 0, result.ExitCode)
 
-		// Verify that WithUserGroup was called
+		// Verify that user/group privilege escalation was called
 		assert.Contains(t, mockPriv.ElevationCalls, "user_group_change:testuser:testgroup")
 	})
 
@@ -134,7 +134,7 @@ func TestDefaultExecutor_ExecuteWithUserGroup(t *testing.T) {
 		assert.NotNil(t, result)
 		assert.Equal(t, 0, result.ExitCode)
 
-		// Verify that WithUserGroup was called with empty group
+		// Verify that user/group privilege escalation was called with empty group
 		assert.Contains(t, mockPriv.ElevationCalls, "user_group_change:testuser:")
 	})
 
@@ -160,7 +160,7 @@ func TestDefaultExecutor_ExecuteWithUserGroup(t *testing.T) {
 		assert.NotNil(t, result)
 		assert.Equal(t, 0, result.ExitCode)
 
-		// Verify that WithUserGroup was called with empty user
+		// Verify that user/group privilege escalation was called with empty user
 		assert.Contains(t, mockPriv.ElevationCalls, "user_group_change::testgroup")
 	})
 }
@@ -227,8 +227,8 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 	t.Skip("Skipping user/group path requirement tests for now, as relative path component checking is done by the Validate method")
 }
 
-// TestDefaultExecutor_ExecuteWithUserGroup_AuditLogging tests audit logging for user/group command execution
-func TestDefaultExecutor_ExecuteWithUserGroup_AuditLogging(t *testing.T) {
+// TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging tests audit logging for user/group command execution
+func TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging(t *testing.T) {
 	t.Run("audit_logging_successful_execution", func(t *testing.T) {
 		mockPriv := privilegetesting.NewMockPrivilegeManager(true)
 

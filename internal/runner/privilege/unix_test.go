@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -151,7 +152,7 @@ func TestUnixPrivilegeManager_GroupLookup(t *testing.T) {
 	})
 }
 
-func TestUnixPrivilegeManager_WithUserGroupOptions(t *testing.T) {
+func TestUnixPrivilegeManager_WithUserGroupInternal(t *testing.T) {
 	logger := slog.Default()
 	manager := &UnixPrivilegeManager{
 		logger:             logger,
@@ -163,10 +164,16 @@ func TestUnixPrivilegeManager_WithUserGroupOptions(t *testing.T) {
 
 	t.Run("with_dry_run", func(t *testing.T) {
 		var executed bool
-		err := manager.WithUserGroupOptions(currentUser.Username, "", func() error {
+		executionCtx := runnertypes.ElevationContext{
+			Operation:   runnertypes.OperationUserGroupDryRun,
+			CommandName: "test_command",
+			RunAsUser:   currentUser.Username,
+			RunAsGroup:  "",
+		}
+		err := manager.WithPrivileges(executionCtx, func() error {
 			executed = true
 			return nil
-		}, true)
+		})
 
 		assert.NoError(t, err)
 		assert.True(t, executed)
@@ -174,9 +181,15 @@ func TestUnixPrivilegeManager_WithUserGroupOptions(t *testing.T) {
 
 	t.Run("function_error_propagation", func(t *testing.T) {
 		expectedErr := assert.AnError
-		err := manager.WithUserGroupOptions(currentUser.Username, "", func() error {
+		executionCtx := runnertypes.ElevationContext{
+			Operation:   runnertypes.OperationUserGroupDryRun,
+			CommandName: "test_command",
+			RunAsUser:   currentUser.Username,
+			RunAsGroup:  "",
+		}
+		err := manager.WithPrivileges(executionCtx, func() error {
 			return expectedErr
-		}, true)
+		})
 
 		assert.Equal(t, expectedErr, err)
 	})
@@ -195,7 +208,13 @@ func TestUnixPrivilegeManager_PrivilegeValidation(t *testing.T) {
 	t.Run("dry_run_works_without_privilege_support", func(t *testing.T) {
 		// Dry-run should work even without privilege support
 		var executed bool
-		err := manager.WithUserGroupDryRun(currentUser.Username, "", func() error {
+		executionCtx := runnertypes.ElevationContext{
+			Operation:   runnertypes.OperationUserGroupDryRun,
+			CommandName: "test_command",
+			RunAsUser:   currentUser.Username,
+			RunAsGroup:  "",
+		}
+		err := manager.WithPrivileges(executionCtx, func() error {
 			executed = true
 			return nil
 		})

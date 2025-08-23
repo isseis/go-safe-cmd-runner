@@ -134,8 +134,15 @@ func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd runnertype
 
 		// Validate user/group configuration in dry-run mode
 		if d.privilegeManager != nil && d.privilegeManager.IsUserGroupSupported() {
-			// Use dry-run validation to check user/group configuration
-			err := d.privilegeManager.WithUserGroupDryRun(cmd.RunAsUser, cmd.RunAsGroup, func() error {
+			// Use unified WithPrivileges API with dry-run operation for validation
+			executionCtx := runnertypes.ElevationContext{
+				Operation:   runnertypes.OperationUserGroupDryRun,
+				CommandName: cmd.Name,
+				FilePath:    cmd.Cmd,
+				RunAsUser:   cmd.RunAsUser,
+				RunAsGroup:  cmd.RunAsGroup,
+			}
+			err := d.privilegeManager.WithPrivileges(executionCtx, func() error {
 				return nil // No-op function for dry-run validation
 			})
 

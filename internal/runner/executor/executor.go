@@ -190,9 +190,18 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, cmd runnerty
 		return nil, fmt.Errorf("%w: privileged commands must use absolute paths: %s", ErrPrivilegedCmdSecurity, cmd.Cmd)
 	}
 
+	// Create elevation context for user/group execution
+	executionCtx := runnertypes.ElevationContext{
+		Operation:   runnertypes.OperationUserGroupExecution,
+		CommandName: cmd.Name,
+		FilePath:    cmd.Cmd,
+		RunAsUser:   cmd.RunAsUser,
+		RunAsGroup:  cmd.RunAsGroup,
+	}
+
 	var result *Result
 	privilegeStart := time.Now()
-	err := e.PrivMgr.WithUserGroup(cmd.RunAsUser, cmd.RunAsGroup, func() error {
+	err := e.PrivMgr.WithPrivileges(executionCtx, func() error {
 		var execErr error
 		result, execErr = e.executeCommandWithPath(ctx, cmd.Cmd, cmd, envVars)
 		return execErr
