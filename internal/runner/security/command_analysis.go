@@ -13,6 +13,9 @@ var (
 	mediumRiskPatterns []DangerousCommandPattern
 )
 
+// privilegeCommands is a pre-defined list of privilege escalation commands.
+var privilegeCommands = []string{"sudo", "su", "doas"}
+
 // init initializes the pre-sorted pattern lists for efficient lookup
 func init() {
 	patterns := GetDangerousCommandPatterns()
@@ -123,7 +126,6 @@ func IsPrivilegeEscalationCommand(cmdName string) (bool, error) {
 	}
 
 	// Check for any privilege escalation commands
-	privilegeCommands := []string{"sudo", "su", "doas"}
 	for _, cmd := range privilegeCommands {
 		if _, exists := commandNames[cmd]; exists {
 			return true, nil
