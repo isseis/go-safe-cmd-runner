@@ -488,34 +488,34 @@ gantt
 ### 7.1 Phase 1: 基盤実装
 
 #### Privilege Escalation Analyzer
-- [ ] `internal/runner/security/privilege.go` 実装
-- [ ] `PrivilegeEscalationAnalyzer` インターフェース定義
-- [ ] `DefaultPrivilegeEscalationAnalyzer` 構造体実装
-- [ ] `AnalyzePrivilegeEscalation` メソッド実装
-- [ ] `IsPrivilegeEscalationCommand` メソッド実装
-- [ ] `GetRequiredPrivileges` メソッド実装
-- [ ] 基本的な特権昇格パターン検出実装
-- [ ] ログ出力実装
-- [ ] `internal/runner/security/privilege_test.go` 実装
-- [ ] 単体テスト実装（カバレッジ ≥ 90%）
+- [x] `internal/runner/security/privilege.go` 実装
+- [x] `PrivilegeEscalationAnalyzer` インターフェース定義
+- [x] `DefaultPrivilegeEscalationAnalyzer` 構造体実装
+- [x] `AnalyzePrivilegeEscalation` メソッド実装
+- [x] `IsPrivilegeEscalationCommand` メソッド実装
+- [x] `GetRequiredPrivileges` メソッド実装
+- [x] 基本的な特権昇格パターン検出実装
+- [x] ログ出力実装
+- [x] `internal/runner/security/privilege_test.go` 実装
+- [x] 単体テスト実装（カバレッジ ≥ 90%）
 
 #### Risk Evaluator
-- [ ] `internal/runner/security/risk_evaluator.go` 実装
-- [ ] `RiskEvaluator` インターフェース定義
-- [ ] `DefaultRiskEvaluator` 構造体実装
-- [ ] `EvaluateCommandExecution` メソッド実装
-- [ ] 特権昇格リスク分離ロジック実装
-- [ ] `max_risk_level` 照合ロジック実装
-- [ ] `internal/runner/security/risk_evaluator_test.go` 実装
-- [ ] 単体テスト実装（カバレッジ ≥ 90%）
+- [x] `internal/runner/security/risk_evaluator.go` 実装
+- [x] `RiskEvaluator` インターフェース定義
+- [x] `DefaultRiskEvaluator` 構造体実装
+- [x] `EvaluateCommandExecution` メソッド実装
+- [x] 特権昇格リスク分離ロジック実装
+- [x] `max_risk_level` 照合ロジック実装
+- [x] `internal/runner/security/risk_evaluator_test.go` 実装
+- [x] 単体テスト実装（カバレッジ ≥ 90%）
 
 #### Security Error Types
-- [ ] `internal/runner/runnertypes/errors.go` 拡張
-- [ ] `SecurityViolationError` 構造体定義
-- [ ] エラーメソッド実装（Error, Is, Unwrap）
-- [ ] ヘルパー関数実装
-- [ ] JSON シリアライゼーション対応
-- [ ] エラー型テスト実装
+- [x] `internal/runner/runnertypes/errors.go` 拡張
+- [x] `SecurityViolationError` 構造体定義
+- [x] エラーメソッド実装（Error, Is, Unwrap）
+- [x] ヘルパー関数実装
+- [x] JSON シリアライゼーション対応
+- [x] エラー型テスト実装
 
 ### 7.2 Phase 2: 統合実装
 
