@@ -40,7 +40,7 @@ name = "trigger_privileged_failure"
 description = "Trigger privileged command failure to test Slack notifications"
 cmd = "/nonexistent/command/that/will/fail"
 args = []
-privileged = true
+run_as_user = "root"
 
 # Group 3: Alternative Slack notification test (command not found)
 [[groups]]

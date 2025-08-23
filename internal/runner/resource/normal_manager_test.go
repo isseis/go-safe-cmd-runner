@@ -95,7 +95,6 @@ func createTestCommand() runnertypes.Command {
 		Cmd:         "echo",
 		Args:        []string{"hello", "world"},
 		Dir:         "/tmp",
-		Privileged:  false,
 		Timeout:     30,
 	}
 }

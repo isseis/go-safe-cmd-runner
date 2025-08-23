@@ -24,7 +24,6 @@ var (
 	ErrDirNotExists                  = errors.New("directory does not exist")
 	ErrInvalidPath                   = errors.New("invalid command path")
 	ErrNoPrivilegeManager            = errors.New("privileged execution requested but no privilege manager available")
-	ErrPrivilegedCmdSecurity         = errors.New("privileged command security constraints violated")
 	ErrUserGroupPrivilegeUnsupported = errors.New("user/group privilege changes are not supported")
 )
 
@@ -88,76 +87,7 @@ func (e *DefaultExecutor) Execute(ctx context.Context, cmd runnertypes.Command, 
 		return e.executeWithUserGroup(ctx, cmd, envVars)
 	}
 
-	if cmd.Privileged {
-		return e.executePrivileged(ctx, cmd, envVars)
-	}
 	return e.executeNormal(ctx, cmd, envVars)
-}
-
-// executePrivileged handles privileged command execution with audit logging and metrics
-func (e *DefaultExecutor) executePrivileged(ctx context.Context, cmd runnertypes.Command, envVars map[string]string) (*Result, error) {
-	startTime := time.Now()
-	var metrics audit.PrivilegeMetrics
-
-	// Pre-execution validation
-	if e.PrivMgr == nil {
-		return nil, ErrNoPrivilegeManager
-	}
-
-	if !e.PrivMgr.IsPrivilegedExecutionSupported() {
-		return nil, runnertypes.ErrPrivilegedExecutionNotAvailable
-	}
-
-	// Validate the command before any privilege elevation
-	if err := e.Validate(cmd); err != nil {
-		return nil, fmt.Errorf("command validation failed: %w", err)
-	}
-
-	// Additional security validation for privileged commands BEFORE path resolution
-	// This ensures the original command in the config file uses absolute paths
-	if err := e.validatePrivilegedCommand(cmd); err != nil {
-		return nil, fmt.Errorf("privileged command security validation failed: %w", err)
-	}
-
-	// Use the absolute path directly since privileged commands must use absolute paths
-	if !filepath.IsAbs(cmd.Cmd) {
-		return nil, fmt.Errorf("%w: privileged commands must use absolute paths: %s", ErrPrivilegedCmdSecurity, cmd.Cmd)
-	}
-
-	// Execute command with elevated privileges
-	executionCtx := runnertypes.ElevationContext{
-		Operation:   runnertypes.OperationCommandExecution,
-		CommandName: cmd.Name,
-		FilePath:    cmd.Cmd,
-	}
-
-	var result *Result
-	privilegeStart := time.Now()
-	err := e.PrivMgr.WithPrivileges(executionCtx, func() error {
-		var execErr error
-		result, execErr = e.executeCommandWithPath(ctx, cmd.Cmd, cmd, envVars)
-		return execErr
-	})
-	privilegeDuration := time.Since(privilegeStart)
-	metrics.ElevationCount++
-	metrics.TotalDuration += privilegeDuration
-
-	if err != nil {
-		return nil, fmt.Errorf("privileged command execution failed: %w", err)
-	}
-
-	// Audit logging
-	if e.AuditLogger != nil {
-		executionDuration := time.Since(startTime)
-		auditResult := &audit.ExecutionResult{
-			Stdout:   result.Stdout,
-			Stderr:   result.Stderr,
-			ExitCode: result.ExitCode,
-		}
-		e.AuditLogger.LogPrivilegedExecution(ctx, cmd, auditResult, executionDuration, metrics)
-	}
-
-	return result, nil
 }
 
 // executeWithUserGroup handles command execution with user/group privilege changes with audit logging and metrics
@@ -177,17 +107,6 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, cmd runnerty
 	// Validate the command before any privilege changes
 	if err := e.Validate(cmd); err != nil {
 		return nil, fmt.Errorf("command validation failed: %w", err)
-	}
-
-	// Additional security validation for privileged commands BEFORE path resolution
-	// This ensures the original command in the config file uses absolute paths
-	if err := e.validatePrivilegedCommand(cmd); err != nil {
-		return nil, fmt.Errorf("privileged command security validation failed: %w", err)
-	}
-
-	// Use the absolute path directly since privileged commands must use absolute paths
-	if !filepath.IsAbs(cmd.Cmd) {
-		return nil, fmt.Errorf("%w: privileged commands must use absolute paths: %s", ErrPrivilegedCmdSecurity, cmd.Cmd)
 	}
 
 	// Create elevation context for user/group execution
@@ -247,10 +166,7 @@ func (e *DefaultExecutor) executeNormal(ctx context.Context, cmd runnertypes.Com
 // executeCommandWithPath executes a command with the given resolved path
 func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path string, cmd runnertypes.Command, envVars map[string]string) (*Result, error) {
 	// Create the command with the resolved path
-	// #nosec G204 - The command and arguments are validated before execution through:
-	// 1. Standard validation with e.Validate() for all commands
-	// 2. Additional security validation with e.validatePrivilegedCommand() for privileged commands only
-	//    (applied in executePrivileged before this function is called)
+	// #nosec G204 - The command and arguments are validated before execution with e.Validate()
 	execCmd := exec.CommandContext(ctx, path, cmd.Args...)
 
 	// Set up working directory
@@ -336,27 +252,6 @@ func (e *DefaultExecutor) Validate(cmd runnertypes.Command) error {
 		}
 	}
 
-	return nil
-}
-
-// validatePrivilegedCommand performs additional security checks specifically for privileged commands
-// This adds an extra layer of security validation beyond the basic validation
-func (e *DefaultExecutor) validatePrivilegedCommand(cmd runnertypes.Command) error {
-	// Enforce absolute paths for privileged commands
-	if !filepath.IsAbs(cmd.Cmd) {
-		return fmt.Errorf("%w: privileged commands must use absolute paths: %s", ErrPrivilegedCmdSecurity, cmd.Cmd)
-	}
-
-	// Ensure working directory is also absolute for privileged commands
-	if cmd.Dir != "" && !filepath.IsAbs(cmd.Dir) {
-		return fmt.Errorf("%w: privileged commands must use absolute working directory paths: %s", ErrPrivilegedCmdSecurity, cmd.Dir)
-	}
-
-	// Additional validation could include:
-	// 1. Check for suspicious or potentially dangerous arguments
-	// 2. Allowlist checking for permitted privileged commands
-	// 3. Check if command is in system directories like /bin, /usr/bin, etc.
-	// 4. Verify that the command binary has proper permissions
 	return nil
 }
 

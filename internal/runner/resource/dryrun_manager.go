@@ -166,12 +166,6 @@ func (d *DryRunResourceManager) analyzeCommandSecurity(cmd runnertypes.Command, 
 	// Initialize with no risk
 	currentRisk := ""
 
-	// Check for privilege escalation requirements first (lower priority)
-	if cmd.Privileged {
-		currentRisk = "medium"
-		analysis.Impact.Description += " [PRIVILEGE: Requires elevated privileges]"
-	}
-
 	// Use security package for dangerous pattern analysis (higher priority - can override privilege risk)
 	// Pass command and arguments separately to avoid ambiguity with spaces
 	if riskLevel, pattern, reason := security.AnalyzeCommandSecurity(cmd.Cmd, cmd.Args); riskLevel != security.RiskLevelNone {

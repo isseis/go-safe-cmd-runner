@@ -48,7 +48,6 @@ type Command struct {
 	Args         []string `toml:"args"`
 	Env          []string `toml:"env"`
 	Dir          string   `toml:"dir"`
-	Privileged   bool     `toml:"privileged"`
 	Timeout      int      `toml:"timeout"`        // Command-specific timeout (overrides global)
 	RunAsUser    string   `toml:"run_as_user"`    // User to execute command as (using seteuid)
 	RunAsGroup   string   `toml:"run_as_group"`   // Group to execute command as (using setegid)

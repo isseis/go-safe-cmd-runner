@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -252,11 +251,6 @@ func (v *Validator) validateCommand(cmd *runnertypes.Command, index int, locatio
 		})
 	}
 
-	// Validate privileged commands
-	if cmd.Privileged {
-		v.validatePrivilegedCommand(cmd, cmdLocation, result)
-	}
-
 	// Validate command environment variables
 	v.validateCommandEnv(cmd.Env, fmt.Sprintf("%s.env", cmdLocation), result)
 }
@@ -432,52 +426,4 @@ func (v *Validator) getStatusString(valid bool) string {
 		return "VALID"
 	}
 	return "INVALID"
-}
-
-// validatePrivilegedCommand validates privileged command security
-func (v *Validator) validatePrivilegedCommand(cmd *runnertypes.Command, location string, result *ValidationResult) {
-	// Skip validation if security validator is not available
-	if v.securityValidator == nil {
-		return
-	}
-
-	// Check for potentially dangerous commands
-	if v.securityValidator.IsDangerousPrivilegedCommand(cmd.Cmd) {
-		result.Warnings = append(result.Warnings, ValidationWarning{
-			Type:       "security",
-			Location:   fmt.Sprintf("%s.cmd", location),
-			Message:    fmt.Sprintf("Privileged command uses potentially dangerous path: %s", cmd.Cmd),
-			Suggestion: "Consider using a safer alternative or additional validation",
-		})
-	}
-
-	// Check for shell commands
-	if v.securityValidator.IsShellCommand(cmd.Cmd) {
-		result.Warnings = append(result.Warnings, ValidationWarning{
-			Type:       "security",
-			Location:   fmt.Sprintf("%s.cmd", location),
-			Message:    "Privileged shell commands require extra caution",
-			Suggestion: "Avoid using shell commands with privileges or implement strict argument validation",
-		})
-	}
-
-	// Check for commands with shell metacharacters in arguments
-	if v.securityValidator.HasShellMetacharacters(cmd.Args) {
-		result.Warnings = append(result.Warnings, ValidationWarning{
-			Type:       "security",
-			Location:   fmt.Sprintf("%s.args", location),
-			Message:    "Command arguments contain shell metacharacters - ensure proper escaping",
-			Suggestion: "Use absolute paths and avoid shell metacharacters in arguments",
-		})
-	}
-
-	// Check for relative paths
-	if !filepath.IsAbs(cmd.Cmd) {
-		result.Warnings = append(result.Warnings, ValidationWarning{
-			Type:       "security",
-			Location:   fmt.Sprintf("%s.cmd", location),
-			Message:    "Privileged command uses relative path - consider using absolute path for security",
-			Suggestion: "Use absolute path to prevent PATH-based attacks",
-		})
-	}
 }

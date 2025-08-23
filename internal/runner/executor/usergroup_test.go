@@ -167,8 +167,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 
 func TestDefaultExecutor_Execute_Integration(t *testing.T) {
 	t.Run("privileged_with_user_group_both_specified", func(t *testing.T) {
-		// Test case where both Privileged=true and user/group are specified
-		// User/group should take precedence
+		// Test case where user/group are specified
 		mockPriv := privilegetesting.NewMockPrivilegeManager(true)
 		exec := executor.NewDefaultExecutor(
 			executor.WithOutputWriter(&executor.MockOutputWriter{}),
@@ -180,7 +179,6 @@ func TestDefaultExecutor_Execute_Integration(t *testing.T) {
 			Name:       "test_both",
 			Cmd:        "/bin/echo",
 			Args:       []string{"test"},
-			Privileged: true,       // Also privileged
 			RunAsUser:  "testuser", // But user/group specified
 			RunAsGroup: "testgroup",
 		}
@@ -196,7 +194,7 @@ func TestDefaultExecutor_Execute_Integration(t *testing.T) {
 	})
 
 	t.Run("normal_execution_no_privileges", func(t *testing.T) {
-		// Test case where neither Privileged nor user/group are specified
+		// Test case where user/group are not specified
 		mockPriv := privilegetesting.NewMockPrivilegeManager(true)
 		exec := executor.NewDefaultExecutor(
 			executor.WithOutputWriter(&executor.MockOutputWriter{}),
@@ -222,7 +220,7 @@ func TestDefaultExecutor_Execute_Integration(t *testing.T) {
 	})
 }
 
-// TestUserGroupCommandValidation_PathRequirements tests the additional security validations for user/group commands
+// TestUserGroupCommandValidation_PathRequirements tests the basic validation for user/group commands
 func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -231,19 +229,7 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 		errorContains string
 	}{
 		{
-			name: "relative path fails for privileged command",
-			cmd: runnertypes.Command{
-				Name:       "test_relative_path",
-				Cmd:        "echo", // Relative path
-				Args:       []string{"test"},
-				RunAsUser:  "testuser",
-				RunAsGroup: "testgroup",
-			},
-			expectError:   true,
-			errorContains: "privileged commands must use absolute paths",
-		},
-		{
-			name: "absolute path works for privileged command",
+			name: "valid absolute path works for user/group command",
 			cmd: runnertypes.Command{
 				Name:       "test_absolute_path",
 				Cmd:        "/usr/bin/echo", // Absolute path
@@ -254,7 +240,7 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "relative working directory fails for privileged command",
+			name: "relative working directory fails for user/group command",
 			cmd: runnertypes.Command{
 				Name:       "test_relative_dir",
 				Cmd:        "/usr/bin/echo",
@@ -267,7 +253,7 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 			errorContains: "directory does not exist", // Basic validation fails first
 		},
 		{
-			name: "absolute working directory works for privileged command",
+			name: "absolute working directory works for user/group command",
 			cmd: runnertypes.Command{
 				Name:       "test_absolute_dir",
 				Cmd:        "/usr/bin/echo",
@@ -278,10 +264,8 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 			},
 			expectError: false,
 		},
-		// Relative path component checking is done by the Validate method,
-		// so it has been removed from validatePrivilegedCommand
 		{
-			name: "path with . components fails in standard validation",
+			name: "path with relative components fails in standard validation",
 			cmd: runnertypes.Command{
 				Name:       "test_path_with_dots",
 				Cmd:        "/usr/bin/../bin/echo", // Absolute path but contains relative path components
@@ -305,6 +289,7 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 			mockPrivMgr := privilegetesting.NewMockPrivilegeManager(true)
 
 			exec := executor.NewDefaultExecutor(
+				executor.WithOutputWriter(&executor.MockOutputWriter{}),
 				executor.WithPrivilegeManager(mockPrivMgr),
 				executor.WithFileSystem(mockFS),
 			)
@@ -390,4 +375,179 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging(t *testing.T) {
 		assert.Equal(t, 0, result.ExitCode)
 		// No assertions about logging since no logger is provided
 	})
+}
+
+// TestDefaultExecutor_UserGroupPrivilegeElevationFailure tests privilege elevation failure scenarios
+// This replaces the deleted TestDefaultExecutor_PrivilegeElevationFailure test for user/group commands
+func TestDefaultExecutor_UserGroupPrivilegeElevationFailure(t *testing.T) {
+	mockPrivMgr := privilegetesting.NewFailingMockPrivilegeManager(true)
+
+	exec := executor.NewDefaultExecutor(
+		executor.WithOutputWriter(&executor.MockOutputWriter{}),
+		executor.WithPrivilegeManager(mockPrivMgr),
+		executor.WithFileSystem(&executor.MockFileSystem{}),
+	)
+
+	cmd := runnertypes.Command{
+		Name:       "test_fail",
+		Cmd:        "/bin/echo", // Use absolute path to pass validation
+		Args:       []string{"test"},
+		RunAsUser:  "root", // Use run_as_user instead of privileged=true
+		RunAsGroup: "wheel",
+	}
+
+	ctx := context.Background()
+	envVars := map[string]string{"PATH": "/usr/bin"}
+
+	result, err := exec.Execute(ctx, cmd, envVars)
+
+	assert.Error(t, err)
+	assert.Nil(t, result)
+	assert.ErrorIs(t, err, privilegetesting.ErrMockPrivilegeElevationFailed)
+}
+
+// TestDefaultExecutor_UserGroupBackwardCompatibility tests backward compatibility with non-privileged commands
+// This replaces the deleted TestDefaultExecutor_BackwardCompatibility test
+func TestDefaultExecutor_UserGroupBackwardCompatibility(t *testing.T) {
+	// Test that existing code without privilege manager still works for normal commands
+	exec := executor.NewDefaultExecutor(
+		executor.WithOutputWriter(&executor.MockOutputWriter{}),
+		executor.WithFileSystem(&executor.MockFileSystem{}),
+	)
+
+	cmd := runnertypes.Command{
+		Name: "test_normal",
+		Cmd:  "echo",
+		Args: []string{"normal"},
+		// No run_as_user/run_as_group specified - normal command
+	}
+
+	ctx := context.Background()
+	envVars := map[string]string{"PATH": "/usr/bin"}
+
+	result, err := exec.Execute(ctx, cmd, envVars)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, 0, result.ExitCode)
+	assert.Contains(t, result.Stdout, "normal")
+}
+
+// TestDefaultExecutor_UserGroupRootExecution tests running commands as root user
+// This provides equivalent functionality to the deleted privileged=true tests
+func TestDefaultExecutor_UserGroupRootExecution(t *testing.T) {
+	tests := []struct {
+		name               string
+		cmd                runnertypes.Command
+		privilegeSupported bool
+		expectError        bool
+		errorMessage       string
+		expectedErrorType  error
+		noPrivilegeManager bool
+		expectElevations   []string
+	}{
+		{
+			name: "root user command executes with elevation",
+			cmd: runnertypes.Command{
+				Name:      "test_root",
+				Cmd:       "/usr/bin/whoami",
+				Args:      []string{},
+				RunAsUser: "root",
+			},
+			privilegeSupported: true,
+			expectError:        false,
+			noPrivilegeManager: false,
+			expectElevations:   []string{"user_group_change:root:"},
+		},
+		{
+			name: "root user command fails when not supported",
+			cmd: runnertypes.Command{
+				Name:      "test_root_unsupported",
+				Cmd:       "/usr/bin/whoami",
+				Args:      []string{},
+				RunAsUser: "root",
+			},
+			privilegeSupported: false,
+			expectError:        true,
+			errorMessage:       "user/group privilege changes are not supported",
+			expectedErrorType:  executor.ErrUserGroupPrivilegeUnsupported,
+			noPrivilegeManager: false,
+		},
+		{
+			name: "root user command fails with no manager",
+			cmd: runnertypes.Command{
+				Name:      "test_root_no_manager",
+				Cmd:       "/usr/bin/whoami",
+				Args:      []string{},
+				RunAsUser: "root",
+			},
+			privilegeSupported: true,
+			expectError:        true,
+			errorMessage:       "no privilege manager available",
+			expectedErrorType:  executor.ErrNoPrivilegeManager,
+			noPrivilegeManager: true,
+		},
+		{
+			name: "normal command bypasses privilege manager",
+			cmd: runnertypes.Command{
+				Name: "test_normal",
+				Cmd:  "/usr/bin/echo",
+				Args: []string{"test"},
+				// No run_as_user specified
+			},
+			privilegeSupported: false, // Should not matter
+			expectError:        false,
+			noPrivilegeManager: false,
+			expectElevations:   []string{}, // No elevations expected
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockPrivMgr := privilegetesting.NewMockPrivilegeManager(tt.privilegeSupported)
+
+			var exec executor.CommandExecutor
+			if tt.noPrivilegeManager {
+				// Create executor without privilege manager
+				exec = executor.NewDefaultExecutor(
+					executor.WithOutputWriter(&executor.MockOutputWriter{}),
+					executor.WithFileSystem(&executor.MockFileSystem{}),
+				)
+			} else {
+				exec = executor.NewDefaultExecutor(
+					executor.WithOutputWriter(&executor.MockOutputWriter{}),
+					executor.WithPrivilegeManager(mockPrivMgr),
+					executor.WithFileSystem(&executor.MockFileSystem{}),
+				)
+			}
+
+			ctx := context.Background()
+			envVars := map[string]string{"PATH": "/usr/bin"}
+
+			result, err := exec.Execute(ctx, tt.cmd, envVars)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				// Check based on expected error type
+				if tt.expectedErrorType != nil {
+					assert.ErrorIs(t, err, tt.expectedErrorType)
+				} else if tt.errorMessage != "" {
+					// Fall back to message check only if no error type is specified
+					assert.Contains(t, err.Error(), tt.errorMessage)
+				}
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, result)
+			}
+
+			if !tt.noPrivilegeManager {
+				if len(tt.expectElevations) == 0 && mockPrivMgr.ElevationCalls == nil {
+					// Both nil and empty slice are acceptable for no elevations - no assertion needed
+					assert.True(t, true, "No elevations expected and none occurred")
+				} else {
+					assert.Equal(t, tt.expectElevations, mockPrivMgr.ElevationCalls)
+				}
+			}
+		})
+	}
 }

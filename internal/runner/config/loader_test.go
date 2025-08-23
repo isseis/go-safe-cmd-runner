@@ -27,7 +27,7 @@ version = "1.0"
     name = "test_cmd"
     cmd = "echo"
     args = ["hello"]
-    privileged = true
+    run_as_user = "root"
 `
 
 	// Write config to temporary file
@@ -62,8 +62,6 @@ version = "1.0"
 
 	cmd := cfg.Groups[0].Commands[0]
 	assert.Equal(t, "test_cmd", cmd.Name, "expected command name 'test_cmd'")
-
-	assert.True(t, cmd.Privileged, "expected privileged to be true")
 }
 
 // TestLoadConfigSecurityWarning was removed as verification is now
