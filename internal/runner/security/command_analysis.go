@@ -185,7 +185,7 @@ func IsNetworkOperation(cmdName string, args []string) (bool, bool) {
 		// Check for network-related arguments
 		allArgs := strings.Join(args, " ")
 		if strings.Contains(allArgs, "://") || // URLs
-			strings.Contains(allArgs, "@") { // Email or SSH-style addresses
+			containsSSHStyleAddress(args) { // SSH-style user@host:path addresses
 			return true, false
 		}
 		return false, false
@@ -198,6 +198,43 @@ func IsNetworkOperation(cmdName string, args []string) (bool, bool) {
 	}
 
 	return false, false
+}
+
+// containsSSHStyleAddress checks if any argument contains SSH-style addresses (user@host:path)
+// This is more specific than just checking for "@" to avoid false positives with email addresses
+func containsSSHStyleAddress(args []string) bool {
+	for _, arg := range args {
+		// Look for pattern: [user@]host:path
+		// Must contain both @ and : with @ appearing before :
+		atIndex := strings.Index(arg, "@")
+		colonIndex := strings.Index(arg, ":")
+
+		// SSH-style address requires both @ and : with @ before :
+		if atIndex != -1 && colonIndex != -1 && atIndex < colonIndex {
+			// Additional validation: ensure there's content before @, between @ and :, and after :
+			if atIndex > 0 && colonIndex > atIndex+1 && colonIndex < len(arg)-1 {
+				// More specific validation: check if the part after : looks like a path
+				pathPart := arg[colonIndex+1:]
+				// SSH-style paths typically start with / or ~ or contain /
+				if strings.HasPrefix(pathPart, "/") || strings.HasPrefix(pathPart, "~") || strings.Contains(pathPart, "/") {
+					return true
+				}
+			}
+		}
+
+		// Also check for host:path pattern (without user@)
+		if colonIndex != -1 && atIndex == -1 {
+			// Ensure there's content before and after :
+			if colonIndex > 0 && colonIndex < len(arg)-1 {
+				// Simple heuristic: if it looks like a path (contains / or ~) after :, it's likely SSH-style
+				pathPart := arg[colonIndex+1:]
+				if strings.Contains(pathPart, "/") || strings.HasPrefix(pathPart, "~") {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // AnalyzeCommandSecurity analyzes a command with its arguments for dangerous patterns
