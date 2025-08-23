@@ -156,7 +156,7 @@ func (d *DryRunResourceManager) analyzeCommandSecurity(cmd runnertypes.Command, 
 
 	// Use security package for dangerous pattern analysis (higher priority - can override privilege risk)
 	// Pass command and arguments separately to avoid ambiguity with spaces
-	if riskLevel, pattern, reason := security.AnalyzeCommandSecurity(cmd.Cmd, cmd.Args); riskLevel != security.RiskLevelNone {
+	if riskLevel, pattern, reason := security.AnalyzeCommandSecurity(cmd.Cmd, cmd.Args); riskLevel != runnertypes.RiskLevelNone {
 		currentRisk = riskLevel.String()
 		analysis.Impact.Description += fmt.Sprintf(" [WARNING: %s - %s]", reason, pattern)
 	}

@@ -41,14 +41,15 @@ type CommandGroup struct {
 
 // Command represents a single command to be executed
 type Command struct {
-	Name        string   `toml:"name"`
-	Description string   `toml:"description"`
-	Cmd         string   `toml:"cmd"`
-	Args        []string `toml:"args"`
-	Env         []string `toml:"env"`
-	Dir         string   `toml:"dir"`
-	Privileged  bool     `toml:"privileged"`
-	Timeout     int      `toml:"timeout"` // Command-specific timeout (overrides global)
+	Name         string   `toml:"name"`
+	Description  string   `toml:"description"`
+	Cmd          string   `toml:"cmd"`
+	Args         []string `toml:"args"`
+	Env          []string `toml:"env"`
+	Dir          string   `toml:"dir"`
+	Privileged   bool     `toml:"privileged"`
+	MaxRiskLevel string   `toml:"max_risk_level"` // Maximum allowed risk level
+	Timeout      int      `toml:"timeout"`        // Command-specific timeout (overrides global)
 }
 
 // InheritanceMode represents how environment allowlist inheritance works
@@ -126,13 +127,76 @@ type ElevationContext struct {
 	TargetUID   int
 }
 
-// Standard privilege errors
+// Standard errors
 var (
 	ErrPrivilegedExecutionNotAvailable = fmt.Errorf("privileged execution not available: binary lacks required SUID bit or running as non-root user")
+	ErrInvalidMaxRiskLevel             = fmt.Errorf("invalid max_risk_level")
 )
+
+// RiskLevel represents the security risk level of a command pattern
+type RiskLevel string
+
+const (
+	// RiskLevelNone indicates no security risk
+	RiskLevelNone RiskLevel = ""
+	// RiskLevelLow indicates low security risk
+	RiskLevelLow RiskLevel = "low"
+	// RiskLevelMedium indicates medium security risk
+	RiskLevelMedium RiskLevel = "medium"
+	// RiskLevelHigh indicates high security risk
+	RiskLevelHigh RiskLevel = "high"
+)
+
+// String returns the string representation of the risk level
+func (r RiskLevel) String() string {
+	return string(r)
+}
+
+// IsValid checks if the risk level is valid
+func (r RiskLevel) IsValid() bool {
+	switch r {
+	case RiskLevelNone, RiskLevelLow, RiskLevelMedium, RiskLevelHigh:
+		return true
+	default:
+		return false
+	}
+}
 
 // PrivilegeManager interface defines methods for privilege management
 type PrivilegeManager interface {
 	IsPrivilegedExecutionSupported() bool
 	WithPrivileges(elevationCtx ElevationContext, fn func() error) error
+}
+
+// ValidateMaxRiskLevel validates the max_risk_level field
+func (c *Command) ValidateMaxRiskLevel() error {
+	if c.MaxRiskLevel == "" {
+		return nil // Empty is valid, will use default
+	}
+
+	riskLevel := RiskLevel(c.MaxRiskLevel)
+	if !riskLevel.IsValid() {
+		return fmt.Errorf("%w: '%s' must be one of 'low', 'medium', 'high', or empty", ErrInvalidMaxRiskLevel, c.MaxRiskLevel)
+	}
+
+	return nil
+}
+
+// GetMaxRiskLevel returns the parsed max_risk_level or default value
+func (c *Command) GetMaxRiskLevel() RiskLevel {
+	if c.MaxRiskLevel == "" {
+		// Default based on privileged flag
+		if c.Privileged {
+			return RiskLevelHigh
+		}
+		return RiskLevelMedium
+	}
+
+	return RiskLevel(c.MaxRiskLevel)
+}
+
+// SetDefaults sets default values for Command fields
+func (c *Command) SetDefaults() {
+	// Don't set a default value in MaxRiskLevel field itself,
+	// let GetMaxRiskLevel() handle the default logic
 }

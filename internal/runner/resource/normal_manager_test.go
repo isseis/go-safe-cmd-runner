@@ -78,7 +78,7 @@ func createTestNormalResourceManager() (*NormalResourceManager, *MockExecutor, *
 	mockFS := &MockFileSystem{}
 	mockPriv := &MockPrivilegeManager{}
 
-	manager := NewNormalResourceManager(mockExec, mockFS, mockPriv)
+	manager := NewNormalResourceManager(mockExec, mockFS, mockPriv, nil, nil, nil)
 
 	return manager, mockExec, mockFS, mockPriv
 }

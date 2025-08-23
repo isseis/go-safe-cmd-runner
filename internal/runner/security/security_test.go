@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -1019,14 +1020,14 @@ func TestIsSudoCommand(t *testing.T) {
 func TestAnalyzeCommandSecurityWithDeepSymlinks(t *testing.T) {
 	t.Run("normal command has no risk", func(t *testing.T) {
 		risk, pattern, reason := AnalyzeCommandSecurity("echo", []string{"hello"})
-		assert.Equal(t, RiskLevelNone, risk)
+		assert.Equal(t, runnertypes.RiskLevelNone, risk)
 		assert.Empty(t, pattern)
 		assert.Empty(t, reason)
 	})
 
 	t.Run("dangerous pattern detected", func(t *testing.T) {
 		risk, pattern, reason := AnalyzeCommandSecurity("rm", []string{"-rf", "/"})
-		assert.Equal(t, RiskLevelHigh, risk)
+		assert.Equal(t, runnertypes.RiskLevelHigh, risk)
 		assert.Equal(t, "rm -rf", pattern)
 		assert.Equal(t, "Recursive file removal", reason)
 	})

@@ -22,7 +22,7 @@ type DefaultResourceManager struct {
 func NewDefaultResourceManager(exec executor.CommandExecutor, fs executor.FileSystem, privMgr runnertypes.PrivilegeManager, mode ExecutionMode, opts *DryRunOptions) *DefaultResourceManager {
 	mgr := &DefaultResourceManager{
 		mode:   mode,
-		normal: NewNormalResourceManager(exec, fs, privMgr),
+		normal: NewNormalResourceManager(exec, fs, privMgr, nil, nil, nil),
 	}
 	// Create dry-run manager eagerly to keep state like analyses across mode flips
 	// and to simplify switching without re-wiring dependencies.

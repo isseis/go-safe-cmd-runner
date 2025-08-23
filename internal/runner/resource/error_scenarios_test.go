@@ -204,7 +204,7 @@ func TestErrorScenariosConsistency(t *testing.T) {
 			setup: func() ResourceManager {
 				mockExecutor := &mockCommandExecutor{}
 				mockFS := &mockFileSystem{}
-				return NewNormalResourceManager(mockExecutor, mockFS, nil)
+				return NewNormalResourceManager(mockExecutor, mockFS, nil, nil, nil, nil)
 			},
 			isDryRun: false,
 		},
@@ -258,7 +258,7 @@ func TestConcurrentExecutionConsistency(t *testing.T) {
 			setup: func() ResourceManager {
 				mockExecutor := &mockCommandExecutor{}
 				mockFS := &mockFileSystem{}
-				return NewNormalResourceManager(mockExecutor, mockFS, nil)
+				return NewNormalResourceManager(mockExecutor, mockFS, nil, nil, nil, nil)
 			},
 			isDryRun: false,
 		},

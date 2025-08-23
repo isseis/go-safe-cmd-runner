@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -19,22 +20,37 @@ type NormalResourceManager struct {
 	fileSystem       executor.FileSystem
 	privilegeManager runnertypes.PrivilegeManager
 
+	// Security components (NEW in Phase 2)
+	privilegeAnalyzer security.PrivilegeEscalationAnalyzer
+	riskEvaluator     security.RiskEvaluator
+	logger            *slog.Logger
+
 	// State management
 	mu       sync.RWMutex
 	tempDirs []string
 }
 
 // NewNormalResourceManager creates a new NormalResourceManager for normal execution mode
-func NewNormalResourceManager(exec executor.CommandExecutor, fs executor.FileSystem, privMgr runnertypes.PrivilegeManager) *NormalResourceManager {
+func NewNormalResourceManager(
+	exec executor.CommandExecutor,
+	fs executor.FileSystem,
+	privMgr runnertypes.PrivilegeManager,
+	privilegeAnalyzer security.PrivilegeEscalationAnalyzer,
+	riskEvaluator security.RiskEvaluator,
+	logger *slog.Logger,
+) *NormalResourceManager {
 	return &NormalResourceManager{
-		executor:         exec,
-		fileSystem:       fs,
-		privilegeManager: privMgr,
-		tempDirs:         make([]string, 0),
+		executor:          exec,
+		fileSystem:        fs,
+		privilegeManager:  privMgr,
+		privilegeAnalyzer: privilegeAnalyzer,
+		riskEvaluator:     riskEvaluator,
+		logger:            logger,
+		tempDirs:          make([]string, 0),
 	}
 }
 
-// ExecuteCommand executes a command in normal mode
+// ExecuteCommand executes a command in normal mode with security analysis
 func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) (*ExecutionResult, error) {
 	start := time.Now()
 
@@ -47,6 +63,47 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd runnerty
 		return nil, fmt.Errorf("command group validation failed: %w", err)
 	}
 
+	// Phase 2: Integrated Security Analysis Flow
+	// 1. Basic Security Analysis using AnalyzeCommandSecurity function
+	riskLevel, detectedPattern, reason := security.AnalyzeCommandSecurity(cmd.Cmd, cmd.Args)
+
+	// 2. Privilege Escalation Analysis (NEW)
+	var privilegeResult *security.PrivilegeEscalationResult
+	if n.privilegeAnalyzer != nil {
+		var err error
+		privilegeResult, err = n.privilegeAnalyzer.AnalyzePrivilegeEscalation(ctx, cmd.Cmd, cmd.Args)
+		if err != nil {
+			n.logger.Warn("Privilege escalation analysis failed", "command", cmd.Name, "error", err)
+			return nil, fmt.Errorf("privilege escalation analysis failed: %w", err)
+		}
+	}
+
+	// 3. Comprehensive Risk Evaluation (NEW)
+	if n.riskEvaluator != nil {
+		err := n.riskEvaluator.EvaluateCommandExecution(
+			ctx,
+			riskLevel,
+			detectedPattern,
+			reason,
+			privilegeResult,
+			&cmd,
+		)
+		if err != nil {
+			n.logger.Error("Command execution denied by security policy",
+				"command", cmd.Name,
+				"risk_level", riskLevel,
+				"error", err)
+			return nil, fmt.Errorf("security policy violation: %w", err)
+		}
+
+		n.logger.Info("Command security analysis passed",
+			"command", cmd.Name,
+			"risk_level", riskLevel,
+			"privileged", cmd.Privileged,
+			"privilege_escalation", privilegeResult != nil && privilegeResult.IsPrivilegeEscalation)
+	}
+
+	// 4. Command Execution (existing functionality)
 	result, err := n.executor.Execute(ctx, cmd, env)
 	if err != nil {
 		return nil, fmt.Errorf("command execution failed: %w", err)

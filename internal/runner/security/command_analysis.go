@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
 // Pre-sorted patterns by risk level for efficient lookup
@@ -18,11 +20,11 @@ func init() {
 	patterns := GetDangerousCommandPatterns()
 	for _, p := range patterns {
 		switch p.RiskLevel {
-		case RiskLevelHigh:
+		case string(runnertypes.RiskLevelHigh):
 			highRiskPatterns = append(highRiskPatterns, p)
-		case RiskLevelMedium:
+		case string(runnertypes.RiskLevelMedium):
 			mediumRiskPatterns = append(mediumRiskPatterns, p)
-		case RiskLevelLow, RiskLevelNone:
+		case string(runnertypes.RiskLevelLow), string(runnertypes.RiskLevelNone):
 			// Skip low and none risk patterns as they don't need checking
 			continue
 		default:
@@ -36,22 +38,22 @@ func init() {
 func GetDangerousCommandPatterns() []DangerousCommandPattern {
 	return []DangerousCommandPattern{
 		// File system destruction
-		{[]string{"rm", "-rf"}, RiskLevelHigh, "Recursive file removal"},
-		{[]string{"sudo", "rm"}, RiskLevelHigh, "Privileged file removal"},
-		{[]string{"format"}, RiskLevelHigh, "Disk formatting"},
-		{[]string{"mkfs"}, RiskLevelHigh, "File system creation"},
-		{[]string{"fdisk"}, RiskLevelHigh, "Disk partitioning"},
+		{[]string{"rm", "-rf"}, string(runnertypes.RiskLevelHigh), "Recursive file removal"},
+		{[]string{"sudo", "rm"}, string(runnertypes.RiskLevelHigh), "Privileged file removal"},
+		{[]string{"format"}, string(runnertypes.RiskLevelHigh), "Disk formatting"},
+		{[]string{"mkfs"}, string(runnertypes.RiskLevelHigh), "File system creation"},
+		{[]string{"fdisk"}, string(runnertypes.RiskLevelHigh), "Disk partitioning"},
 
 		// Data manipulation
-		{[]string{"dd", "if="}, RiskLevelHigh, "Low-level disk operations"},
-		{[]string{"chmod", "777"}, RiskLevelMedium, "Overly permissive file permissions"},
-		{[]string{"chown", "root"}, RiskLevelMedium, "Ownership change to root"},
+		{[]string{"dd", "if="}, string(runnertypes.RiskLevelHigh), "Low-level disk operations"},
+		{[]string{"chmod", "777"}, string(runnertypes.RiskLevelMedium), "Overly permissive file permissions"},
+		{[]string{"chown", "root"}, string(runnertypes.RiskLevelMedium), "Ownership change to root"},
 
 		// Network operations
-		{[]string{"wget"}, RiskLevelMedium, "File download"},
-		{[]string{"curl"}, RiskLevelMedium, "Network request"},
-		{[]string{"nc", "-"}, RiskLevelMedium, "Network connection"},
-		{[]string{"netcat"}, RiskLevelMedium, "Network connection"},
+		{[]string{"wget"}, string(runnertypes.RiskLevelMedium), "File download"},
+		{[]string{"curl"}, string(runnertypes.RiskLevelMedium), "Network request"},
+		{[]string{"nc", "-"}, string(runnertypes.RiskLevelMedium), "Network connection"},
+		{[]string{"netcat"}, string(runnertypes.RiskLevelMedium), "Network connection"},
 	}
 }
 
@@ -96,14 +98,14 @@ func (v *Validator) HasShellMetacharacters(args []string) bool {
 }
 
 // checkCommandPatterns checks if a command matches any patterns in the given list
-func checkCommandPatterns(cmdName string, cmdArgs []string, patterns []DangerousCommandPattern) (RiskLevel, string, string) {
+func checkCommandPatterns(cmdName string, cmdArgs []string, patterns []DangerousCommandPattern) (runnertypes.RiskLevel, string, string) {
 	for _, pattern := range patterns {
 		if matchesPattern(cmdName, cmdArgs, pattern.Pattern) {
 			displayPattern := strings.Join(pattern.Pattern, " ")
-			return pattern.RiskLevel, displayPattern, pattern.Reason
+			return runnertypes.RiskLevel(pattern.RiskLevel), displayPattern, pattern.Reason
 		}
 	}
-	return RiskLevelNone, "", ""
+	return runnertypes.RiskLevelNone, "", ""
 }
 
 // IsSudoCommand checks if the given command is sudo, considering symbolic links
@@ -118,23 +120,23 @@ func IsSudoCommand(cmdName string) (bool, error) {
 }
 
 // AnalyzeCommandSecurity analyzes a command with its arguments for dangerous patterns
-func AnalyzeCommandSecurity(cmdName string, args []string) (riskLevel RiskLevel, detectedPattern string, reason string) {
+func AnalyzeCommandSecurity(cmdName string, args []string) (riskLevel runnertypes.RiskLevel, detectedPattern string, reason string) {
 	// First, check if symlink depth is exceeded (highest priority security concern)
 	if _, exceededDepth := extractAllCommandNames(cmdName); exceededDepth {
-		return RiskLevelHigh, cmdName, "Symbolic link depth exceeds security limit (potential symlink attack)"
+		return runnertypes.RiskLevelHigh, cmdName, "Symbolic link depth exceeds security limit (potential symlink attack)"
 	}
 
 	// Check high risk patterns
-	if riskLevel, pattern, reason := checkCommandPatterns(cmdName, args, highRiskPatterns); riskLevel != RiskLevelNone {
+	if riskLevel, pattern, reason := checkCommandPatterns(cmdName, args, highRiskPatterns); riskLevel != runnertypes.RiskLevelNone {
 		return riskLevel, pattern, reason
 	}
 
 	// Then check medium risk patterns
-	if riskLevel, pattern, reason := checkCommandPatterns(cmdName, args, mediumRiskPatterns); riskLevel != RiskLevelNone {
+	if riskLevel, pattern, reason := checkCommandPatterns(cmdName, args, mediumRiskPatterns); riskLevel != runnertypes.RiskLevelNone {
 		return riskLevel, pattern, reason
 	}
 
-	return RiskLevelNone, "", ""
+	return runnertypes.RiskLevelNone, "", ""
 }
 
 // extractAllCommandNames extracts all possible command names for matching:
