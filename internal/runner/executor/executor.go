@@ -20,11 +20,12 @@ import (
 
 // Error definitions
 var (
-	ErrEmptyCommand          = errors.New("command cannot be empty")
-	ErrDirNotExists          = errors.New("directory does not exist")
-	ErrInvalidPath           = errors.New("invalid command path")
-	ErrNoPrivilegeManager    = errors.New("privileged execution requested but no privilege manager available")
-	ErrPrivilegedCmdSecurity = errors.New("privileged command security constraints violated")
+	ErrEmptyCommand                  = errors.New("command cannot be empty")
+	ErrDirNotExists                  = errors.New("directory does not exist")
+	ErrInvalidPath                   = errors.New("invalid command path")
+	ErrNoPrivilegeManager            = errors.New("privileged execution requested but no privilege manager available")
+	ErrPrivilegedCmdSecurity         = errors.New("privileged command security constraints violated")
+	ErrUserGroupPrivilegeUnsupported = errors.New("user/group privilege changes are not supported")
 )
 
 // DefaultExecutor is the default implementation of CommandExecutor
@@ -82,6 +83,11 @@ func NewDefaultExecutor(opts ...Option) CommandExecutor {
 
 // Execute implements the CommandExecutor interface
 func (e *DefaultExecutor) Execute(ctx context.Context, cmd runnertypes.Command, envVars map[string]string) (*Result, error) {
+	// Check if user/group specification requires privilege management
+	if cmd.HasUserGroupSpecification() {
+		return e.executeWithUserGroup(ctx, cmd, envVars)
+	}
+
 	if cmd.Privileged {
 		return e.executePrivileged(ctx, cmd, envVars)
 	}
@@ -154,7 +160,47 @@ func (e *DefaultExecutor) executePrivileged(ctx context.Context, cmd runnertypes
 	return result, nil
 }
 
-// executeNormal handles normal (non-privileged) command execution
+// executeWithUserGroup handles command execution with user/group privilege changes
+func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, cmd runnertypes.Command, envVars map[string]string) (*Result, error) {
+	// Pre-execution validation
+	if e.PrivMgr == nil {
+		return nil, ErrNoPrivilegeManager
+	}
+
+	if !e.PrivMgr.IsUserGroupSupported() {
+		return nil, ErrUserGroupPrivilegeUnsupported
+	}
+
+	// Validate the command before any privilege changes
+	if err := e.Validate(cmd); err != nil {
+		return nil, fmt.Errorf("command validation failed: %w", err)
+	}
+
+	// Resolve the command path first
+	var resolvedPath string
+	if filepath.IsAbs(cmd.Cmd) {
+		resolvedPath = cmd.Cmd
+	} else {
+		path, lookErr := exec.LookPath(cmd.Cmd)
+		if lookErr != nil {
+			return nil, fmt.Errorf("failed to find command %q: %w", cmd.Cmd, lookErr)
+		}
+		resolvedPath = path
+	}
+
+	var result *Result
+	err := e.PrivMgr.WithUserGroup(cmd.RunAsUser, cmd.RunAsGroup, func() error {
+		var execErr error
+		result, execErr = e.executeCommandWithPath(ctx, resolvedPath, cmd, envVars)
+		return execErr
+	})
+	if err != nil {
+		return nil, fmt.Errorf("user/group privilege execution failed: %w", err)
+	}
+
+	return result, nil
+}
+
 func (e *DefaultExecutor) executeNormal(ctx context.Context, cmd runnertypes.Command, envVars map[string]string) (*Result, error) {
 	// Validate the command before execution
 	if err := e.Validate(cmd); err != nil {

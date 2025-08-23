@@ -8,13 +8,18 @@ import (
 	"log/slog"
 	"log/syslog"
 	"os"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
+
+// ErrInsufficientPrivileges is returned when the user lacks sufficient privileges to change user/group.
+var ErrInsufficientPrivileges = errors.New("insufficient privileges to change user/group")
 
 // UnixPrivilegeManager implements privilege management for Unix systems using setuid
 type UnixPrivilegeManager struct {
@@ -306,6 +311,16 @@ func (m *UnixPrivilegeManager) GetMetrics() Metrics {
 
 // WithUserGroup executes a function with specified user and group privileges
 func (m *UnixPrivilegeManager) WithUserGroup(user, group string, fn func() error) (err error) {
+	return m.WithUserGroupOptions(user, group, fn, false)
+}
+
+// WithUserGroupDryRun validates user/group configuration without making actual privilege changes
+func (m *UnixPrivilegeManager) WithUserGroupDryRun(user, group string, fn func() error) (err error) {
+	return m.WithUserGroupOptions(user, group, fn, true)
+}
+
+// WithUserGroupOptions executes a function with specified user and group privileges with dry-run option
+func (m *UnixPrivilegeManager) WithUserGroupOptions(user, group string, fn func() error, dryRun bool) (err error) {
 	// Lock for the entire duration of the privileged operation
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -317,19 +332,29 @@ func (m *UnixPrivilegeManager) WithUserGroup(user, group string, fn func() error
 	originalGID := syscall.Getgid()
 
 	// Perform user/group changes
-	if err := m.changeUserGroup(user, group); err != nil {
-		m.metrics.RecordElevationFailure(err)
-		return fmt.Errorf("user/group change failed: %w", err)
+	if dryRun {
+		if err := m.changeUserGroupDryRun(user, group); err != nil {
+			m.metrics.RecordElevationFailure(err)
+			return fmt.Errorf("user/group validation failed: %w", err)
+		}
+	} else {
+		if err := m.changeUserGroup(user, group); err != nil {
+			m.metrics.RecordElevationFailure(err)
+			return fmt.Errorf("user/group change failed: %w", err)
+		}
 	}
 
 	// Single defer for both privilege restoration and panic handling
 	defer func() {
-		if restoreErr := m.restoreUserGroup(originalUID, originalGID); restoreErr != nil {
-			m.logger.Error("Critical failure in user/group privilege restoration",
-				"restore_error", restoreErr,
-				"original_uid", originalUID,
-				"original_gid", originalGID)
-			m.emergencyShutdown(restoreErr, "user_group_restore")
+		// Only restore privileges if not in dry-run mode
+		if !dryRun {
+			if restoreErr := m.restoreUserGroup(originalUID, originalGID); restoreErr != nil {
+				m.logger.Error("Critical failure in user/group privilege restoration",
+					"restore_error", restoreErr,
+					"original_uid", originalUID,
+					"original_gid", originalGID)
+				m.emergencyShutdown(restoreErr, "user_group_restore")
+			}
 		}
 
 		// Record metrics after restoration
@@ -341,13 +366,14 @@ func (m *UnixPrivilegeManager) WithUserGroup(user, group string, fn func() error
 		}
 	}()
 
-	// Execute the function with changed privileges
+	// Execute the function with changed privileges (or in dry-run mode)
 	err = fn()
 	if err != nil {
 		m.logger.Error("Function execution failed with user/group privileges",
 			"error", err,
 			"user", user,
-			"group", group)
+			"group", group,
+			"dry_run", dryRun)
 	}
 
 	return err
@@ -360,19 +386,96 @@ func (m *UnixPrivilegeManager) IsUserGroupSupported() bool {
 }
 
 // changeUserGroup changes the effective user and group IDs
-func (m *UnixPrivilegeManager) changeUserGroup(user, group string) error {
-	// TODO: Implement user/group name to UID/GID resolution
-	// For now, this is a placeholder that would need to:
-	// 1. Look up user/group names to get UID/GID
-	// 2. Call setegid/seteuid system calls
-	// 3. Handle permission validation
+func (m *UnixPrivilegeManager) changeUserGroup(userName, groupName string) error {
+	return m.changeUserGroupInternal(userName, groupName, false)
+}
 
+// changeUserGroupDryRun validates user/group configuration without making actual changes
+func (m *UnixPrivilegeManager) changeUserGroupDryRun(userName, groupName string) error {
+	return m.changeUserGroupInternal(userName, groupName, true)
+}
+
+// changeUserGroupInternal implements the core user/group change logic with optional dry-run mode
+func (m *UnixPrivilegeManager) changeUserGroupInternal(userName, groupName string, dryRun bool) error {
 	m.logger.Info("User/group change requested",
-		"user", user,
-		"group", group)
+		"user", userName,
+		"group", groupName,
+		"dry_run", dryRun)
 
-	// Placeholder implementation - needs proper user/group lookup
-	return fmt.Errorf("%w: user=%s, group=%s", ErrUserGroupChangeNotImplemented, user, group)
+	// Resolve user name to UID
+	var targetUID int
+	if userName != "" {
+		userInfo, err := user.Lookup(userName)
+		if err != nil {
+			return fmt.Errorf("failed to lookup user %s: %w", userName, err)
+		}
+
+		uid, err := strconv.Atoi(userInfo.Uid)
+		if err != nil {
+			return fmt.Errorf("invalid UID %s for user %s: %w", userInfo.Uid, userName, err)
+		}
+		targetUID = uid
+	} else {
+		// If no user specified, keep current user
+		targetUID = syscall.Getuid()
+	}
+
+	// Resolve group name to GID
+	var targetGID int
+	if groupName != "" {
+		groupInfo, err := user.LookupGroup(groupName)
+		if err != nil {
+			return fmt.Errorf("failed to lookup group %s: %w", groupName, err)
+		}
+
+		gid, err := strconv.Atoi(groupInfo.Gid)
+		if err != nil {
+			return fmt.Errorf("invalid GID %s for group %s: %w", groupInfo.Gid, groupName, err)
+		}
+		targetGID = gid
+	} else {
+		// If no group specified, keep current group
+		targetGID = syscall.Getgid()
+	}
+
+	// Validate that we have permission to change to the target user/group
+	currentEUID := syscall.Geteuid()
+	if currentEUID != 0 && targetUID != syscall.Getuid() {
+		return fmt.Errorf("%w: user %s (UID %d), current EUID %d", ErrInsufficientPrivileges, userName, targetUID, currentEUID)
+	}
+
+	// Set group first, then user (standard practice)
+	if dryRun {
+		m.logger.Info("Dry-run mode: would change user/group privileges",
+			"user", userName,
+			"group", groupName,
+			"target_uid", targetUID,
+			"target_gid", targetGID,
+			"current_uid", syscall.Getuid(),
+			"current_gid", syscall.Getgid())
+	} else {
+		if err := syscall.Setegid(targetGID); err != nil {
+			return fmt.Errorf("failed to set effective group ID to %d (group %s): %w", targetGID, groupName, err)
+		}
+
+		if err := syscall.Seteuid(targetUID); err != nil {
+			// Try to restore original GID on failure
+			if restoreErr := syscall.Setegid(syscall.Getgid()); restoreErr != nil {
+				m.logger.Error("Failed to restore GID after UID change failure",
+					"restore_error", restoreErr,
+					"original_gid", syscall.Getgid())
+			}
+			return fmt.Errorf("failed to set effective user ID to %d (user %s): %w", targetUID, userName, err)
+		}
+
+		m.logger.Info("User/group privileges changed successfully",
+			"user", userName,
+			"group", groupName,
+			"target_uid", targetUID,
+			"target_gid", targetGID)
+	}
+
+	return nil
 }
 
 // restoreUserGroup restores the original user and group IDs
@@ -392,6 +495,3 @@ func (m *UnixPrivilegeManager) restoreUserGroup(originalUID, originalGID int) er
 
 	return nil
 }
-
-// ErrUserGroupChangeNotImplemented indicates that user/group change functionality is not yet implemented.
-var ErrUserGroupChangeNotImplemented = errors.New("user/group change not yet implemented")

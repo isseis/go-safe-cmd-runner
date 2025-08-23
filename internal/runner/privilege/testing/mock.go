@@ -59,6 +59,19 @@ func (m *MockPrivilegeManager) WithUserGroup(user, group string, fn func() error
 	return fn()
 }
 
+// WithUserGroupDryRun validates user/group configuration without making actual privilege changes
+func (m *MockPrivilegeManager) WithUserGroupDryRun(user, group string, fn func() error) error {
+	m.ElevationCalls = append(m.ElevationCalls, "user_group_dry_run:"+user+":"+group)
+	if m.ShouldFail {
+		return ErrMockPrivilegeElevationFailed
+	}
+	// If a custom execution function exists, prioritize and execute it
+	if m.ExecFn != nil {
+		return m.ExecFn()
+	}
+	return fn()
+}
+
 // IsUserGroupSupported returns whether user/group privilege changes are supported
 func (m *MockPrivilegeManager) IsUserGroupSupported() bool {
 	return m.Supported

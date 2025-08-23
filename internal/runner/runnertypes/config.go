@@ -197,5 +197,6 @@ type PrivilegeManager interface {
 
 	// Enhanced privilege management for user/group specification
 	WithUserGroup(user, group string, fn func() error) error
+	WithUserGroupDryRun(user, group string, fn func() error) error
 	IsUserGroupSupported() bool
 }
