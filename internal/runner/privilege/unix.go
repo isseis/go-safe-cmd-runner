@@ -334,12 +334,10 @@ func (m *UnixPrivilegeManager) WithUserGroupOptions(user, group string, fn func(
 	// Perform user/group changes
 	if dryRun {
 		if err := m.changeUserGroupDryRun(user, group); err != nil {
-			m.metrics.RecordElevationFailure(err)
 			return fmt.Errorf("user/group validation failed: %w", err)
 		}
 	} else {
 		if err := m.changeUserGroup(user, group); err != nil {
-			m.metrics.RecordElevationFailure(err)
 			return fmt.Errorf("user/group change failed: %w", err)
 		}
 	}
