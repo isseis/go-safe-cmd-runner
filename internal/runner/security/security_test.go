@@ -912,7 +912,7 @@ func TestExtractAllCommandNamesWithSymlinks(t *testing.T) {
 	})
 }
 
-func TestIsSudoCommand(t *testing.T) {
+func TestIsPrivilegeEscalationCommand(t *testing.T) {
 	tests := []struct {
 		name     string
 		cmdName  string
@@ -952,6 +952,26 @@ func TestIsSudoCommand(t *testing.T) {
 			name:     "empty command",
 			cmdName:  "",
 			expected: false,
+		},
+		{
+			name:     "simple su command",
+			cmdName:  "su",
+			expected: true,
+		},
+		{
+			name:     "su with absolute path",
+			cmdName:  "/bin/su",
+			expected: true,
+		},
+		{
+			name:     "simple doas command",
+			cmdName:  "doas",
+			expected: true,
+		},
+		{
+			name:     "doas with absolute path",
+			cmdName:  "/usr/bin/doas",
+			expected: true,
 		},
 	}
 
