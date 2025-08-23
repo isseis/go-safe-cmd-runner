@@ -160,8 +160,11 @@ func (e *DefaultExecutor) executePrivileged(ctx context.Context, cmd runnertypes
 	return result, nil
 }
 
-// executeWithUserGroup handles command execution with user/group privilege changes
+// executeWithUserGroup handles command execution with user/group privilege changes with audit logging and metrics
 func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, cmd runnertypes.Command, envVars map[string]string) (*Result, error) {
+	startTime := time.Now()
+	var metrics audit.PrivilegeMetrics
+
 	// Pre-execution validation
 	if e.PrivMgr == nil {
 		return nil, ErrNoPrivilegeManager
@@ -188,13 +191,29 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, cmd runnerty
 	}
 
 	var result *Result
+	privilegeStart := time.Now()
 	err := e.PrivMgr.WithUserGroup(cmd.RunAsUser, cmd.RunAsGroup, func() error {
 		var execErr error
 		result, execErr = e.executeCommandWithPath(ctx, cmd.Cmd, cmd, envVars)
 		return execErr
 	})
+	privilegeDuration := time.Since(privilegeStart)
+	metrics.ElevationCount++
+	metrics.TotalDuration += privilegeDuration
+
 	if err != nil {
 		return nil, fmt.Errorf("user/group privilege execution failed: %w", err)
+	}
+
+	// Audit logging
+	if e.AuditLogger != nil {
+		executionDuration := time.Since(startTime)
+		auditResult := &audit.ExecutionResult{
+			Stdout:   result.Stdout,
+			Stderr:   result.Stderr,
+			ExitCode: result.ExitCode,
+		}
+		e.AuditLogger.LogUserGroupExecution(ctx, cmd, auditResult, executionDuration, metrics)
 	}
 
 	return result, nil

@@ -3,9 +3,12 @@
 package executor_test
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/audit"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	privilegetesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -222,4 +225,70 @@ func TestDefaultExecutor_Execute_Integration(t *testing.T) {
 // TestUserGroupCommandValidation_PathRequirements tests the additional security validations for user/group commands
 func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 	t.Skip("Skipping user/group path requirement tests for now, as relative path component checking is done by the Validate method")
+}
+
+// TestDefaultExecutor_ExecuteWithUserGroup_AuditLogging tests audit logging for user/group command execution
+func TestDefaultExecutor_ExecuteWithUserGroup_AuditLogging(t *testing.T) {
+	t.Run("audit_logging_successful_execution", func(t *testing.T) {
+		mockPriv := privilegetesting.NewMockPrivilegeManager(true)
+
+		// Create a real audit logger with custom slog handler to capture logs
+		var logBuffer bytes.Buffer
+		logger := slog.New(slog.NewJSONHandler(&logBuffer, nil))
+		auditLogger := audit.NewAuditLoggerWithCustom(logger)
+
+		exec := executor.NewDefaultExecutor(
+			executor.WithOutputWriter(&executor.MockOutputWriter{}),
+			executor.WithPrivilegeManager(mockPriv),
+			executor.WithFileSystem(&executor.MockFileSystem{}),
+			executor.WithAuditLogger(auditLogger),
+		)
+
+		cmd := runnertypes.Command{
+			Name:       "test_audit_user_group",
+			Cmd:        "/bin/echo",
+			Args:       []string{"test"},
+			RunAsUser:  "testuser",
+			RunAsGroup: "testgroup",
+		}
+
+		result, err := exec.Execute(context.Background(), cmd, map[string]string{})
+
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.Equal(t, 0, result.ExitCode)
+
+		// Verify audit logging was called
+		logOutput := logBuffer.String()
+		assert.Contains(t, logOutput, "user_group_execution")
+		assert.Contains(t, logOutput, "test_audit_user_group")
+		assert.Contains(t, logOutput, "testuser")
+		assert.Contains(t, logOutput, "testgroup")
+	})
+
+	t.Run("no_audit_logging_when_logger_nil", func(t *testing.T) {
+		mockPriv := privilegetesting.NewMockPrivilegeManager(true)
+
+		exec := executor.NewDefaultExecutor(
+			executor.WithOutputWriter(&executor.MockOutputWriter{}),
+			executor.WithPrivilegeManager(mockPriv),
+			executor.WithFileSystem(&executor.MockFileSystem{}),
+			// No audit logger provided
+		)
+
+		cmd := runnertypes.Command{
+			Name:       "test_no_audit",
+			Cmd:        "/bin/echo",
+			Args:       []string{"test"},
+			RunAsUser:  "testuser",
+			RunAsGroup: "testgroup",
+		}
+
+		result, err := exec.Execute(context.Background(), cmd, map[string]string{})
+
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.Equal(t, 0, result.ExitCode)
+		// No assertions about logging since no logger is provided
+	})
 }

@@ -88,6 +88,60 @@ func (l *Logger) LogPrivilegedExecution(
 	}
 }
 
+// LogUserGroupExecution logs the execution of a command with user/group privilege changes
+func (l *Logger) LogUserGroupExecution(
+	ctx context.Context,
+	cmd runnertypes.Command,
+	result *ExecutionResult,
+	duration time.Duration,
+	privilegeMetrics PrivilegeMetrics,
+) {
+	baseAttrs := []slog.Attr{
+		slog.String("audit_type", "user_group_execution"),
+		slog.Bool("audit", true), // Mark as audit event for new logging framework
+		slog.Int64("timestamp", time.Now().Unix()),
+		slog.String("command_name", cmd.Name),
+		slog.String("command_path", cmd.Cmd),
+		slog.String("command_args", strings.Join(cmd.Args, " ")),
+		slog.Int("exit_code", result.ExitCode),
+		slog.Int64("execution_duration_ms", duration.Milliseconds()),
+		slog.Int("user_id", os.Getuid()),
+		slog.Int("effective_user_id", os.Geteuid()),
+		slog.Int("process_id", os.Getpid()),
+		slog.Int("elevation_count", privilegeMetrics.ElevationCount),
+		slog.Int64("total_privilege_duration_ms", privilegeMetrics.TotalDuration.Milliseconds()),
+	}
+
+	// Add user/group information
+	if cmd.RunAsUser != "" {
+		baseAttrs = append(baseAttrs, slog.String("run_as_user", cmd.RunAsUser))
+	}
+	if cmd.RunAsGroup != "" {
+		baseAttrs = append(baseAttrs, slog.String("run_as_group", cmd.RunAsGroup))
+	}
+
+	// Add working directory if specified
+	if cmd.Dir != "" {
+		baseAttrs = append(baseAttrs, slog.String("working_directory", cmd.Dir))
+	}
+
+	if result.ExitCode == 0 {
+		l.logger.LogAttrs(ctx, slog.LevelInfo, "User/group command executed successfully", baseAttrs...)
+	} else {
+		// Create new slice to avoid modifying baseAttrs
+		additionalAttrs := []slog.Attr{
+			slog.String("stdout", result.Stdout),
+			slog.String("stderr", result.Stderr),
+			slog.Bool("slack_notify", true), // Notify Slack for failed user/group commands
+			slog.String("message_type", "user_group_command_failure"),
+		}
+		errorAttrs := make([]slog.Attr, len(baseAttrs), len(baseAttrs)+len(additionalAttrs))
+		copy(errorAttrs, baseAttrs)
+		errorAttrs = append(errorAttrs, additionalAttrs...)
+		l.logger.LogAttrs(ctx, slog.LevelError, "User/group command failed", errorAttrs...)
+	}
+}
+
 // LogPrivilegeEscalation logs privilege escalation events
 func (l *Logger) LogPrivilegeEscalation(
 	ctx context.Context,
