@@ -2,7 +2,6 @@ package resource
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -137,19 +136,7 @@ func (d *DryRunResourceManager) analyzeCommandSecurity(cmd runnertypes.Command, 
 	currentRisk := ""
 
 	// Check for privilege escalation requirements first (lower priority)
-	isSudo, err := security.IsSudoCommand(cmd.Cmd)
-	if err != nil {
-		// Handle different error types appropriately
-		if errors.Is(err, security.ErrSymlinkDepthExceeded) {
-			// Known security issue: symlink depth exceeded
-			currentRisk = riskLevelHigh
-			analysis.Impact.Description += " [SECURITY: Symbolic link depth exceeded]"
-		} else {
-			// Unknown error - treat as critical security concern
-			currentRisk = riskLevelHigh
-			analysis.Impact.Description += fmt.Sprintf(" [CRITICAL: Unknown sudo check failure - %s]", err.Error())
-		}
-	} else if cmd.Privileged || isSudo {
+	if cmd.Privileged {
 		currentRisk = "medium"
 		analysis.Impact.Description += " [PRIVILEGE: Requires elevated privileges]"
 	}
@@ -244,26 +231,6 @@ func (d *DryRunResourceManager) WithPrivileges(_ context.Context, fn func() erro
 	// In dry-run mode, we simulate the privilege escalation by just calling the function
 	// This maintains the same execution path without actually escalating privileges
 	return fn()
-}
-
-// IsPrivilegeEscalationRequired checks if a command requires privilege escalation
-func (d *DryRunResourceManager) IsPrivilegeEscalationRequired(cmd runnertypes.Command) (bool, error) {
-	// Check if command is marked as privileged
-	if cmd.Privileged {
-		return true, nil
-	}
-
-	// Check for sudo in command
-	isSudo, err := security.IsSudoCommand(cmd.Cmd)
-	if err != nil {
-		return false, fmt.Errorf("failed to check sudo command: %w", err)
-	}
-	if isSudo {
-		return true, nil
-	}
-
-	// Additional checks can be added here for specific command patterns
-	return false, nil
 }
 
 // SendNotification simulates sending a notification in dry-run mode

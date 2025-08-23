@@ -912,7 +912,7 @@ func TestExtractAllCommandNamesWithSymlinks(t *testing.T) {
 	})
 }
 
-func TestIsSudoCommand(t *testing.T) {
+func TestIsPrivilegeEscalationCommand(t *testing.T) {
 	tests := []struct {
 		name     string
 		cmdName  string

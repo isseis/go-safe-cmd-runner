@@ -66,11 +66,6 @@ func (d *DefaultResourceManager) WithPrivileges(ctx context.Context, fn func() e
 	return d.activeManager().WithPrivileges(ctx, fn)
 }
 
-// IsPrivilegeEscalationRequired delegates to the active manager.
-func (d *DefaultResourceManager) IsPrivilegeEscalationRequired(cmd runnertypes.Command) (bool, error) {
-	return d.activeManager().IsPrivilegeEscalationRequired(cmd)
-}
-
 // SendNotification delegates to the active manager.
 func (d *DefaultResourceManager) SendNotification(message string, details map[string]any) error {
 	return d.activeManager().SendNotification(message, details)

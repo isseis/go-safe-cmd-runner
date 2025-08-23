@@ -2,14 +2,12 @@ package resource
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
 // NormalResourceManager implements ResourceManager for normal execution mode
@@ -126,29 +124,6 @@ func (n *NormalResourceManager) WithPrivileges(_ context.Context, fn func() erro
 		// TODO: Add appropriate fields when needed
 	}
 	return n.privilegeManager.WithPrivileges(elevationCtx, fn)
-}
-
-// IsPrivilegeEscalationRequired checks if a command requires privilege escalation
-func (n *NormalResourceManager) IsPrivilegeEscalationRequired(cmd runnertypes.Command) (bool, error) {
-	// Check if command is marked as privileged
-	if cmd.Privileged {
-		return true, nil
-	}
-
-	// Check for sudo in command
-	isSudo, err := security.IsSudoCommand(cmd.Cmd)
-	if err != nil {
-		if errors.Is(err, security.ErrSymlinkDepthExceeded) {
-			return false, fmt.Errorf("privilege escalation check failed due to excessive symbolic link depth (potential attack): %w", err)
-		}
-		return false, fmt.Errorf("privilege escalation check failed due to unknown error: %w", err)
-	}
-	if isSudo {
-		return true, nil
-	}
-
-	// Additional checks can be added here for specific command patterns
-	return false, nil
 }
 
 // SendNotification sends a notification in normal mode
