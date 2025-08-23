@@ -40,6 +40,22 @@ func TestStandardEvaluator_EvaluateRisk(t *testing.T) {
 			expected: runnertypes.RiskLevelHigh,
 		},
 		{
+			name: "destructive file operation - find with exec rm",
+			cmd: &runnertypes.Command{
+				Cmd:  "find",
+				Args: []string{"/tmp", "-name", "*.log", "-exec", "rm", "{}", ";"},
+			},
+			expected: runnertypes.RiskLevelHigh,
+		},
+		{
+			name: "safe file operation - find with exec stat",
+			cmd: &runnertypes.Command{
+				Cmd:  "find",
+				Args: []string{"/tmp", "-name", "*.log", "-exec", "stat", "{}", ";"},
+			},
+			expected: runnertypes.RiskLevelLow,
+		},
+		{
 			name: "network operation - wget",
 			cmd: &runnertypes.Command{
 				Cmd:  "wget",
@@ -145,9 +161,27 @@ func TestIsDestructiveFileOperation(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "find with exec",
+			name:     "find with exec rm (destructive)",
 			cmd:      "find",
 			args:     []string{"/tmp", "-name", "*.log", "-exec", "rm", "{}", ";"},
+			expected: true,
+		},
+		{
+			name:     "find with exec stat (safe)",
+			cmd:      "find",
+			args:     []string{"/tmp", "-name", "*.log", "-exec", "stat", "{}", ";"},
+			expected: false,
+		},
+		{
+			name:     "find with exec cat (safe)",
+			cmd:      "find",
+			args:     []string{"/tmp", "-name", "*.log", "-exec", "cat", "{}", ";"},
+			expected: false,
+		},
+		{
+			name:     "find with exec shred (destructive)",
+			cmd:      "find",
+			args:     []string{"/tmp", "-name", "*.tmp", "-exec", "shred", "-u", "{}", ";"},
 			expected: true,
 		},
 		{

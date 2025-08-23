@@ -70,9 +70,16 @@ func isDestructiveFileOperation(cmd string, args []string) bool {
 
 	// Check for destructive flags in common commands
 	if cmd == "find" {
-		for _, arg := range args {
-			if arg == "-delete" || arg == "-exec" {
+		for i, arg := range args {
+			if arg == "-delete" {
 				return true
+			}
+			if arg == "-exec" && i+1 < len(args) {
+				// Check if the command following -exec is destructive
+				execCmd := args[i+1]
+				if destructiveCommands[execCmd] {
+					return true
+				}
 			}
 		}
 	}
