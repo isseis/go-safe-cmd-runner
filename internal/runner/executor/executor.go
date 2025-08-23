@@ -228,6 +228,7 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, cmd runnerty
 	return result, nil
 }
 
+// executeNormal handles normal (non-privileged) command execution
 func (e *DefaultExecutor) executeNormal(ctx context.Context, cmd runnertypes.Command, envVars map[string]string) (*Result, error) {
 	// Validate the command before execution
 	if err := e.Validate(cmd); err != nil {
