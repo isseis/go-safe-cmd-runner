@@ -61,7 +61,6 @@ type ResourceManager interface {
 
 	// Privilege management
 	WithPrivileges(ctx context.Context, fn func() error) error
-	IsPrivilegeEscalationRequired(cmd runnertypes.Command) (bool, error)
 
 	// Network operations
 	SendNotification(message string, details map[string]any) error

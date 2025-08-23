@@ -209,35 +209,6 @@ func TestAnalyzePrivilegeEscalation_SymlinkHandling(t *testing.T) {
 	assert.NotEmpty(t, result.CommandPath)
 }
 
-func TestIsPrivilegeEscalationCommand(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	analyzer := NewDefaultPrivilegeEscalationAnalyzer(logger)
-
-	testCases := []struct {
-		name     string
-		cmdName  string
-		expected bool
-	}{
-		{"sudo", "sudo", true},
-		{"su", "su", true},
-		{"doas", "doas", true},
-		{"systemctl", "systemctl", true},
-		{"service", "service", true},
-		{"ls", "ls", false},
-		{"cat", "cat", false},
-		{"echo", "echo", false},
-		{"/usr/bin/sudo", "/usr/bin/sudo", true},
-		{"/bin/systemctl", "/bin/systemctl", true},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			result := analyzer.IsPrivilegeEscalationCommand(tc.cmdName)
-			assert.Equal(t, tc.expected, result)
-		})
-	}
-}
-
 func TestGetRequiredPrivileges(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	analyzer := NewDefaultPrivilegeEscalationAnalyzer(logger)

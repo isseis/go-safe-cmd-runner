@@ -108,13 +108,29 @@ func checkCommandPatterns(cmdName string, cmdArgs []string, patterns []Dangerous
 
 // IsSudoCommand checks if the given command is sudo, considering symbolic links
 // Returns (isSudo, error) where error indicates if symlink depth was exceeded
+// Deprecated: Use IsPrivilegeEscalationCommand instead
 func IsSudoCommand(cmdName string) (bool, error) {
+	return IsPrivilegeEscalationCommand(cmdName)
+}
+
+// IsPrivilegeEscalationCommand checks if the given command is a privilege escalation command
+// (sudo, su, doas), considering symbolic links
+// Returns (isPrivilegeEscalation, error) where error indicates if symlink depth was exceeded
+func IsPrivilegeEscalationCommand(cmdName string) (bool, error) {
 	commandNames, exceededDepth := extractAllCommandNames(cmdName)
 	if exceededDepth {
 		return false, ErrSymlinkDepthExceeded
 	}
-	_, isSudo := commandNames["sudo"]
-	return isSudo, nil
+
+	// Check for any privilege escalation commands
+	privilegeCommands := []string{"sudo", "su", "doas"}
+	for _, cmd := range privilegeCommands {
+		if _, exists := commandNames[cmd]; exists {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 // AnalyzeCommandSecurity analyzes a command with its arguments for dangerous patterns

@@ -112,11 +112,6 @@ func (m *MockResourceManager) WithPrivileges(ctx context.Context, fn func() erro
 	return args.Error(0)
 }
 
-func (m *MockResourceManager) IsPrivilegeEscalationRequired(cmd runnertypes.Command) (bool, error) {
-	args := m.Called(cmd)
-	return args.Bool(0), args.Error(1)
-}
-
 func (m *MockResourceManager) SendNotification(message string, details map[string]any) error {
 	args := m.Called(message, details)
 	return args.Error(0)
