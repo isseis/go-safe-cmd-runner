@@ -2,7 +2,6 @@ package executor_test
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
@@ -12,44 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type mockFileSystem struct {
-	// A map to configure which paths exist.
-	existingPaths map[string]bool
-	// An error to return from methods, for testing error paths.
-	err error
-}
-
-func (m *mockFileSystem) CreateTempDir(dir, prefix string) (string, error) {
-	if m.err != nil {
-		return "", m.err
-	}
-	return os.MkdirTemp(dir, prefix)
-}
-
-func (m *mockFileSystem) RemoveAll(_ string) error {
-	return m.err
-}
-
-func (m *mockFileSystem) FileExists(path string) (bool, error) {
-	if m.err != nil {
-		return false, m.err
-	}
-	exists := m.existingPaths[path]
-	return exists, nil
-}
-
-type mockOutputWriter struct {
-	outputs []string
-}
-
-func (m *mockOutputWriter) Write(_ string, data []byte) error {
-	m.outputs = append(m.outputs, string(data))
-	return nil
-}
-
-func (m *mockOutputWriter) Close() error {
-	return nil
-}
+// Use common mock implementations from testing.go
 
 func TestExecute_Success(t *testing.T) {
 	tests := []struct {
@@ -102,16 +64,16 @@ func TestExecute_Success(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fileSystem := &mockFileSystem{
-				existingPaths: make(map[string]bool),
+			fileSystem := &executor.MockFileSystem{
+				ExistingPaths: make(map[string]bool),
 			}
 
 			// Set up directory existence for working directory tests
 			if tt.cmd.Dir != "" {
-				fileSystem.existingPaths[tt.cmd.Dir] = true
+				fileSystem.ExistingPaths[tt.cmd.Dir] = true
 			}
 
-			outputWriter := &mockOutputWriter{}
+			outputWriter := &executor.MockOutputWriter{}
 
 			e := &executor.DefaultExecutor{
 				FS:  fileSystem,
@@ -192,16 +154,16 @@ func TestExecute_Failure(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fileSystem := &mockFileSystem{
-				existingPaths: make(map[string]bool),
+			fileSystem := &executor.MockFileSystem{
+				ExistingPaths: make(map[string]bool),
 			}
 
 			// Set up directory existence for working directory tests
 			if tt.cmd.Dir != "" {
-				fileSystem.existingPaths[tt.cmd.Dir] = true
+				fileSystem.ExistingPaths[tt.cmd.Dir] = true
 			}
 
-			outputWriter := &mockOutputWriter{}
+			outputWriter := &executor.MockOutputWriter{}
 
 			e := &executor.DefaultExecutor{
 				FS:  fileSystem,
@@ -228,7 +190,7 @@ func TestExecute_Failure(t *testing.T) {
 
 				// For the stderr test case, check that stderr was captured
 				if tt.name == "command writing to stderr" {
-					assert.NotEmpty(t, outputWriter.outputs, "Should have captured output")
+					assert.NotEmpty(t, outputWriter.Outputs, "Should have captured output")
 				}
 			}
 		})
@@ -236,13 +198,13 @@ func TestExecute_Failure(t *testing.T) {
 }
 
 func TestExecute_ContextCancellation(t *testing.T) {
-	fileSystem := &mockFileSystem{
-		existingPaths: make(map[string]bool),
+	fileSystem := &executor.MockFileSystem{
+		ExistingPaths: make(map[string]bool),
 	}
 
 	e := &executor.DefaultExecutor{
 		FS:  fileSystem,
-		Out: &mockOutputWriter{},
+		Out: &executor.MockOutputWriter{},
 	}
 
 	// Create a context that we'll cancel
@@ -268,13 +230,13 @@ func TestExecute_ContextCancellation(t *testing.T) {
 func TestExecute_EnvironmentVariables(t *testing.T) {
 	// Test that only filtered environment variables are passed to executed commands
 	// and os.Environ() variables are not leaked through
-	fileSystem := &mockFileSystem{
-		existingPaths: make(map[string]bool),
+	fileSystem := &executor.MockFileSystem{
+		ExistingPaths: make(map[string]bool),
 	}
 
 	e := &executor.DefaultExecutor{
 		FS:  fileSystem,
-		Out: &mockOutputWriter{},
+		Out: &executor.MockOutputWriter{},
 	}
 
 	// Set a test environment variable in the runner process
@@ -336,19 +298,19 @@ func TestValidate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fileSystem := &mockFileSystem{
-				existingPaths: make(map[string]bool),
+			fileSystem := &executor.MockFileSystem{
+				ExistingPaths: make(map[string]bool),
 			}
 
 			// Set up directory existence based on test case
 			if tt.cmd.Dir != "" {
 				// For non-empty Dir, configure whether it exists
-				fileSystem.existingPaths[tt.cmd.Dir] = !tt.wantErr
+				fileSystem.ExistingPaths[tt.cmd.Dir] = !tt.wantErr
 			}
 
 			e := &executor.DefaultExecutor{
 				FS:  fileSystem,
-				Out: &mockOutputWriter{},
+				Out: &executor.MockOutputWriter{},
 			}
 
 			err := e.Validate(tt.cmd)

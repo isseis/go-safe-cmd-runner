@@ -248,8 +248,8 @@ func TestPrivilegedCommandValidation_PathRequirements(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a mock filesystem for directory validation
-			mockFS := &mockFileSystem{
-				existingPaths: map[string]bool{
+			mockFS := &executor.MockFileSystem{
+				ExistingPaths: map[string]bool{
 					"/tmp": true,
 				},
 			}

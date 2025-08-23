@@ -176,22 +176,21 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, cmd runnerty
 		return nil, fmt.Errorf("command validation failed: %w", err)
 	}
 
-	// Resolve the command path first
-	var resolvedPath string
-	if filepath.IsAbs(cmd.Cmd) {
-		resolvedPath = cmd.Cmd
-	} else {
-		path, lookErr := exec.LookPath(cmd.Cmd)
-		if lookErr != nil {
-			return nil, fmt.Errorf("failed to find command %q: %w", cmd.Cmd, lookErr)
-		}
-		resolvedPath = path
+	// Additional security validation for privileged commands BEFORE path resolution
+	// This ensures the original command in the config file uses absolute paths
+	if err := e.validatePrivilegedCommand(cmd); err != nil {
+		return nil, fmt.Errorf("privileged command security validation failed: %w", err)
+	}
+
+	// Use the absolute path directly since privileged commands must use absolute paths
+	if !filepath.IsAbs(cmd.Cmd) {
+		return nil, fmt.Errorf("%w: privileged commands must use absolute paths: %s", ErrPrivilegedCmdSecurity, cmd.Cmd)
 	}
 
 	var result *Result
 	err := e.PrivMgr.WithUserGroup(cmd.RunAsUser, cmd.RunAsGroup, func() error {
 		var execErr error
-		result, execErr = e.executeCommandWithPath(ctx, resolvedPath, cmd, envVars)
+		result, execErr = e.executeCommandWithPath(ctx, cmd.Cmd, cmd, envVars)
 		return execErr
 	})
 	if err != nil {
