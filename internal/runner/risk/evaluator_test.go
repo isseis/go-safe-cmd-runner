@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
 func TestStandardEvaluator_EvaluateRisk(t *testing.T) {
@@ -250,7 +251,7 @@ func TestIsNetworkOperation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := isNetworkOperation(tt.cmd, tt.args)
+			result, _ := security.IsNetworkOperation(tt.cmd, tt.args)
 			if result != tt.expected {
 				t.Errorf("expected %v, got %v", tt.expected, result)
 			}

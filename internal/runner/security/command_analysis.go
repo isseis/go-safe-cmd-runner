@@ -16,6 +16,24 @@ var (
 // privilegeCommands is a pre-defined list of privilege escalation commands.
 var privilegeCommands = []string{"sudo", "su", "doas"}
 
+// Network command sets for efficient lookup
+var (
+	alwaysNetworkCommands = map[string]struct{}{
+		"curl":   {},
+		"wget":   {},
+		"nc":     {},
+		"netcat": {},
+		"telnet": {},
+		"ssh":    {},
+		"scp":    {},
+	}
+
+	conditionalNetworkCommands = map[string]struct{}{
+		"rsync": {},
+		"git":   {},
+	}
+)
+
 // init initializes the pre-sorted pattern lists for efficient lookup
 func init() {
 	patterns := GetDangerousCommandPatterns()
@@ -133,6 +151,53 @@ func IsPrivilegeEscalationCommand(cmdName string) (bool, error) {
 	}
 
 	return false, nil
+}
+
+// IsNetworkOperation checks if the command performs network operations
+// This function considers symbolic links to detect network commands properly
+// Returns (isNetwork, isHighRisk) where isHighRisk indicates symlink depth exceeded
+func IsNetworkOperation(cmdName string, args []string) (bool, bool) {
+	// Extract all possible command names including symlink targets
+	commandNames, exceededDepth := extractAllCommandNames(cmdName)
+
+	// If symlink depth exceeded, this is a high risk security concern
+	if exceededDepth {
+		return false, true
+	}
+
+	// Check if any of the command names match always-network commands
+	for name := range commandNames {
+		if _, exists := alwaysNetworkCommands[name]; exists {
+			return true, false
+		}
+	}
+
+	// Check if any command name matches conditional network commands
+	hasConditionalNetworkCommand := false
+	for name := range commandNames {
+		if _, exists := conditionalNetworkCommands[name]; exists {
+			hasConditionalNetworkCommand = true
+			break
+		}
+	}
+
+	if hasConditionalNetworkCommand {
+		// Check for network-related arguments
+		allArgs := strings.Join(args, " ")
+		if strings.Contains(allArgs, "://") || // URLs
+			strings.Contains(allArgs, "@") { // Email or SSH-style addresses
+			return true, false
+		}
+		return false, false
+	}
+
+	// Check for network-related arguments in any command
+	allArgs := strings.Join(args, " ")
+	if strings.Contains(allArgs, "://") { // URLs
+		return true, false
+	}
+
+	return false, false
 }
 
 // AnalyzeCommandSecurity analyzes a command with its arguments for dangerous patterns

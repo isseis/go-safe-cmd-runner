@@ -3,8 +3,6 @@
 package risk
 
 import (
-	"strings"
-
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
@@ -39,7 +37,11 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.Command) (runnertypes.
 	}
 
 	// Check for network operations
-	if isNetworkOperation(cmd.Cmd, cmd.Args) {
+	isNetwork, isHighRisk := security.IsNetworkOperation(cmd.Cmd, cmd.Args)
+	if isHighRisk {
+		return runnertypes.RiskLevelHigh, nil
+	}
+	if isNetwork {
 		return runnertypes.RiskLevelMedium, nil
 	}
 
@@ -81,48 +83,6 @@ func isDestructiveFileOperation(cmd string, args []string) bool {
 				return true
 			}
 		}
-	}
-
-	return false
-}
-
-// isNetworkOperation checks if the command performs network operations
-func isNetworkOperation(cmd string, args []string) bool {
-	// Commands that are always network-related
-	alwaysNetworkCommands := map[string]bool{
-		"curl":   true,
-		"wget":   true,
-		"nc":     true,
-		"netcat": true,
-		"telnet": true,
-		"ssh":    true,
-		"scp":    true,
-	}
-
-	if alwaysNetworkCommands[cmd] {
-		return true
-	}
-
-	// Commands that may or may not be network-related
-	conditionalNetworkCommands := map[string]bool{
-		"rsync": true,
-		"git":   true,
-	}
-
-	if conditionalNetworkCommands[cmd] {
-		// Check for network-related arguments
-		allArgs := strings.Join(args, " ")
-		if strings.Contains(allArgs, "://") || // URLs
-			strings.Contains(allArgs, "@") { // Email or SSH-style addresses
-			return true
-		}
-		return false
-	}
-
-	// Check for network-related arguments in any command
-	allArgs := strings.Join(args, " ")
-	if strings.Contains(allArgs, "://") { // URLs
-		return true
 	}
 
 	return false
