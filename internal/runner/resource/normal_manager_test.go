@@ -135,6 +135,55 @@ func TestNormalResourceManager_ExecuteCommand(t *testing.T) {
 	mockExec.AssertExpectations(t)
 }
 
+func TestNormalResourceManager_ExecuteCommand_PrivilegeEscalationBlocked(t *testing.T) {
+	manager, _, _, _ := createTestNormalResourceManager()
+
+	// Test various privilege escalation commands
+	testCases := []struct {
+		name string
+		cmd  string
+		args []string
+	}{
+		{
+			name: "sudo command blocked",
+			cmd:  "sudo",
+			args: []string{"ls", "/root"},
+		},
+		{
+			name: "su command blocked",
+			cmd:  "su",
+			args: []string{"root"},
+		},
+		{
+			name: "doas command blocked",
+			cmd:  "doas",
+			args: []string{"ls", "/root"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := runnertypes.Command{
+				Name:        "test-privilege-command",
+				Description: "Test privilege escalation command",
+				Cmd:         tc.cmd,
+				Args:        tc.args,
+				Dir:         "/tmp",
+				Timeout:     30,
+			}
+			group := createTestCommandGroup()
+			env := map[string]string{"TEST": "value"}
+			ctx := context.Background()
+
+			result, err := manager.ExecuteCommand(ctx, cmd, group, env)
+
+			assert.Error(t, err)
+			assert.Nil(t, result)
+			assert.ErrorIs(t, err, runnertypes.ErrCriticalRiskBlocked)
+		})
+	}
+}
+
 func TestNormalResourceManager_CreateTempDir(t *testing.T) {
 	manager, _, mockFS, _ := createTestNormalResourceManager()
 	groupName := "test-group"

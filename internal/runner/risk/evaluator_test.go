@@ -21,7 +21,23 @@ func TestStandardEvaluator_EvaluateRisk(t *testing.T) {
 				Cmd:  "sudo",
 				Args: []string{"ls", "/root"},
 			},
-			expected: runnertypes.RiskLevelHigh,
+			expected: runnertypes.RiskLevelCritical,
+		},
+		{
+			name: "privilege escalation command - su",
+			cmd: &runnertypes.Command{
+				Cmd:  "su",
+				Args: []string{"root"},
+			},
+			expected: runnertypes.RiskLevelCritical,
+		},
+		{
+			name: "privilege escalation command - doas",
+			cmd: &runnertypes.Command{
+				Cmd:  "doas",
+				Args: []string{"ls", "/root"},
+			},
+			expected: runnertypes.RiskLevelCritical,
 		},
 		{
 			name: "destructive file operation - rm",

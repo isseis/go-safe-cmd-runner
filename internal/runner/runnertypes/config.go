@@ -96,6 +96,9 @@ const (
 
 	// RiskLevelHigh indicates commands with high security risk
 	RiskLevelHigh
+
+	// RiskLevelCritical indicates commands that should be blocked (e.g., privilege escalation)
+	RiskLevelCritical
 )
 
 // Risk level string constants used for string representation and parsing.
@@ -108,6 +111,8 @@ const (
 	MediumRiskLevelString = "medium"
 	// HighRiskLevelString represents a high risk level.
 	HighRiskLevelString = "high"
+	// CriticalRiskLevelString represents a critical risk level that blocks execution.
+	CriticalRiskLevelString = "critical"
 )
 
 // String returns a string representation of RiskLevel
@@ -121,6 +126,8 @@ func (r RiskLevel) String() string {
 		return MediumRiskLevelString
 	case RiskLevelHigh:
 		return HighRiskLevelString
+	case RiskLevelCritical:
+		return CriticalRiskLevelString
 	default:
 		return UnknownRiskLevelString
 	}
@@ -137,6 +144,8 @@ func ParseRiskLevel(s string) (RiskLevel, error) {
 		return RiskLevelMedium, nil
 	case HighRiskLevelString:
 		return RiskLevelHigh, nil
+	case CriticalRiskLevelString:
+		return RiskLevelCritical, nil
 	case "":
 		return RiskLevelLow, nil // Default to low risk for empty strings
 	default:
@@ -211,6 +220,8 @@ type ElevationContext struct {
 var (
 	ErrPrivilegedExecutionNotAvailable = fmt.Errorf("privileged execution not available: binary lacks required SUID bit or running as non-root user")
 	ErrInvalidRiskLevel                = errors.New("invalid risk level")
+	ErrPrivilegeEscalationBlocked      = errors.New("privilege escalation command blocked for security")
+	ErrCriticalRiskBlocked             = errors.New("critical risk command execution blocked")
 )
 
 // PrivilegeManager interface defines methods for privilege management

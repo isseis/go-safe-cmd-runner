@@ -22,13 +22,13 @@ func NewStandardEvaluator() Evaluator {
 
 // EvaluateRisk analyzes a command and returns its risk level
 func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.Command) (runnertypes.RiskLevel, error) {
-	// Check for privilege escalation commands (highest risk)
+	// Check for privilege escalation commands (critical risk - should be blocked)
 	isPrivEsc, err := security.IsPrivilegeEscalationCommand(cmd.Cmd)
 	if err != nil {
 		return runnertypes.RiskLevelUnknown, err
 	}
 	if isPrivEsc {
-		return runnertypes.RiskLevelHigh, nil
+		return runnertypes.RiskLevelCritical, nil
 	}
 
 	// Check for destructive file operations

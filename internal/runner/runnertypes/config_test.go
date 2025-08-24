@@ -36,6 +36,12 @@ func TestParseRiskLevel(t *testing.T) {
 			hasError: false,
 		},
 		{
+			name:     "valid critical risk",
+			input:    "critical",
+			expected: RiskLevelCritical,
+			hasError: false,
+		},
+		{
 			name:     "empty string defaults to low",
 			input:    "",
 			expected: RiskLevelLow,
@@ -76,6 +82,7 @@ func TestRiskLevelString(t *testing.T) {
 		{RiskLevelLow, "low"},
 		{RiskLevelMedium, "medium"},
 		{RiskLevelHigh, "high"},
+		{RiskLevelCritical, "critical"},
 		{RiskLevel(999), "unknown"},
 	}
 
