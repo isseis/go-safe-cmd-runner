@@ -208,14 +208,32 @@ func TestAnalyzePrivilegeEscalation_SymlinkHandling(t *testing.T) {
 	analyzer := NewDefaultPrivilegeEscalationAnalyzer(logger)
 	ctx := context.Background()
 
-	// Test with absolute path
-	result, err := analyzer.AnalyzePrivilegeEscalation(ctx, "/usr/bin/sudo", []string{"ls"})
+	// Create a temporary directory for the symlink test
+	tempDir := t.TempDir()
+	symlinkPath := tempDir + "/symlink_to_sudo"
+	sudoPath := "/usr/bin/sudo"
+
+	// Create a symlink to the sudo binary
+	err := os.Symlink(sudoPath, symlinkPath)
+	require.NoError(t, err, "Failed to create symlink")
+
+	// Test with the symlink path
+	result, err := analyzer.AnalyzePrivilegeEscalation(ctx, symlinkPath, []string{"ls"})
 	require.NoError(t, err)
 
 	assert.True(t, result.IsPrivilegeEscalation)
 	assert.Equal(t, PrivilegeEscalationTypeSudo, result.EscalationType)
 	assert.Equal(t, RiskLevelHigh, result.RiskLevel)
-	assert.NotEmpty(t, result.CommandPath)
+	assert.Equal(t, sudoPath, result.CommandPath)
+
+	// Test with absolute path
+	result, err = analyzer.AnalyzePrivilegeEscalation(ctx, sudoPath, []string{"ls"})
+	require.NoError(t, err)
+
+	assert.True(t, result.IsPrivilegeEscalation)
+	assert.Equal(t, PrivilegeEscalationTypeSudo, result.EscalationType)
+	assert.Equal(t, RiskLevelHigh, result.RiskLevel)
+	assert.Equal(t, sudoPath, result.CommandPath)
 }
 
 func TestGetRequiredPrivileges(t *testing.T) {
