@@ -423,7 +423,8 @@ func (m *UnixPrivilegeManager) changeUserGroupInternal(userName, groupName strin
 
 	// Resolve group name to GID
 	var targetGID int
-	if groupName != "" {
+	switch {
+	case groupName != "":
 		groupInfo, err := user.LookupGroup(groupName)
 		if err != nil {
 			return fmt.Errorf("failed to lookup group %s: %w", groupName, err)
@@ -434,7 +435,7 @@ func (m *UnixPrivilegeManager) changeUserGroupInternal(userName, groupName strin
 			return fmt.Errorf("invalid GID %s for group %s: %w", groupInfo.Gid, groupName, err)
 		}
 		targetGID = gid
-	} else if userName != "" {
+	case userName != "":
 		// If user is specified but group is not, default to user's primary group
 		userInfo, err := user.Lookup(userName)
 		if err != nil {
@@ -449,7 +450,7 @@ func (m *UnixPrivilegeManager) changeUserGroupInternal(userName, groupName strin
 		m.logger.Info("Defaulting to user's primary group",
 			"user", userName,
 			"primary_gid", targetGID)
-	} else {
+	default:
 		// If neither user nor group specified, keep current effective group
 		targetGID = syscall.Getegid()
 	}
