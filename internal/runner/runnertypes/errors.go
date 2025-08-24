@@ -28,15 +28,23 @@ type SecurityViolationError struct {
 // Error implements the error interface
 func (e *SecurityViolationError) Error() string {
 	if e.PrivilegeInfo != nil && e.PrivilegeInfo.IsPrivilegeEscalation {
+		// Build privilege escalation details
+		privilegeDetails := fmt.Sprintf("privilege escalation detected (type: %s, requires: %v)",
+			e.PrivilegeInfo.EscalationType, e.PrivilegeInfo.RequiredPrivileges)
+
+		// Add pattern information, avoiding redundancy if patterns are the same
+		if e.PrivilegeInfo.DetectedPattern != "" && e.PrivilegeInfo.DetectedPattern != e.DetectedPattern {
+			privilegeDetails += fmt.Sprintf(", escalation pattern: %s", e.PrivilegeInfo.DetectedPattern)
+		}
+
 		return fmt.Sprintf("security violation: command '%s' has risk level '%s' which exceeds allowed limit (%s). "+
-			"Privilege escalation detected: %s (type: %s, requires: %v). Pattern: %s. Path: %s",
-			e.Command, e.DetectedRisk, e.RequiredSetting, e.PrivilegeInfo.DetectedPattern,
-			e.PrivilegeInfo.EscalationType, e.PrivilegeInfo.RequiredPrivileges,
+			"%s. Risk pattern: %s. Path: %s",
+			e.Command, e.DetectedRisk, e.RequiredSetting, privilegeDetails,
 			e.DetectedPattern, e.CommandPath)
 	}
 
 	return fmt.Sprintf("security violation: command '%s' has risk level '%s' which exceeds allowed limit (%s). "+
-		"Pattern: %s. Path: %s",
+		"Risk pattern: %s. Path: %s",
 		e.Command, e.DetectedRisk, e.RequiredSetting, e.DetectedPattern, e.CommandPath)
 }
 
