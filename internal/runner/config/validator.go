@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -251,6 +252,11 @@ func (v *Validator) validateCommand(cmd *runnertypes.Command, index int, locatio
 		})
 	}
 
+	// Validate privileged commands (run_as_user or run_as_group specified)
+	if cmd.HasUserGroupSpecification() {
+		v.validatePrivilegedCommand(cmd, cmdLocation, result)
+	}
+
 	// Validate command environment variables
 	v.validateCommandEnv(cmd.Env, fmt.Sprintf("%s.env", cmdLocation), result)
 }
@@ -426,4 +432,118 @@ func (v *Validator) getStatusString(valid bool) string {
 		return "VALID"
 	}
 	return "INVALID"
+}
+
+// validatePrivilegedCommand validates privileged command security for commands with run_as_user or run_as_group
+func (v *Validator) validatePrivilegedCommand(cmd *runnertypes.Command, location string, result *ValidationResult) {
+	// Skip validation if security validator is not available
+	if v.securityValidator == nil {
+		return
+	}
+
+	// Check for potentially dangerous commands
+	if v.securityValidator.IsDangerousPrivilegedCommand(cmd.Cmd) {
+		result.Warnings = append(result.Warnings, ValidationWarning{
+			Type:       "security",
+			Location:   fmt.Sprintf("%s.cmd", location),
+			Message:    fmt.Sprintf("Privileged command uses potentially dangerous path: %s (run_as_user: %s, run_as_group: %s)", cmd.Cmd, cmd.RunAsUser, cmd.RunAsGroup),
+			Suggestion: "Consider using a safer alternative or additional validation",
+		})
+	}
+
+	// Check for shell commands
+	if v.securityValidator.IsShellCommand(cmd.Cmd) {
+		result.Warnings = append(result.Warnings, ValidationWarning{
+			Type:       "security",
+			Location:   fmt.Sprintf("%s.cmd", location),
+			Message:    fmt.Sprintf("Privileged shell commands require extra caution (run_as_user: %s, run_as_group: %s)", cmd.RunAsUser, cmd.RunAsGroup),
+			Suggestion: "Avoid using shell commands with privileges or implement strict argument validation",
+		})
+	}
+
+	// Check for commands with shell metacharacters in arguments
+	if v.securityValidator.HasShellMetacharacters(cmd.Args) {
+		result.Warnings = append(result.Warnings, ValidationWarning{
+			Type:       "security",
+			Location:   fmt.Sprintf("%s.args", location),
+			Message:    fmt.Sprintf("Privileged command arguments contain shell metacharacters - ensure proper escaping (run_as_user: %s, run_as_group: %s)", cmd.RunAsUser, cmd.RunAsGroup),
+			Suggestion: "Use absolute paths and avoid shell metacharacters in arguments",
+		})
+	}
+
+	// Check for relative paths
+	if !filepath.IsAbs(cmd.Cmd) {
+		result.Warnings = append(result.Warnings, ValidationWarning{
+			Type:       "security",
+			Location:   fmt.Sprintf("%s.cmd", location),
+			Message:    fmt.Sprintf("Privileged command uses relative path - consider using absolute path for security (run_as_user: %s, run_as_group: %s)", cmd.RunAsUser, cmd.RunAsGroup),
+			Suggestion: "Use absolute path to prevent PATH-based attacks",
+		})
+	}
+
+	// Special validation for root privileges
+	if cmd.RunAsUser == "root" || cmd.RunAsUser == "0" {
+		v.validateRootPrivilegedCommand(cmd, location, result)
+	}
+}
+
+// validateRootPrivilegedCommand provides additional validation for commands running as root
+func (v *Validator) validateRootPrivilegedCommand(cmd *runnertypes.Command, location string, result *ValidationResult) {
+	// Check for especially dangerous patterns when running as root
+	dangerousRootPatterns := []string{
+		"rm", "rmdir", "del", "delete",
+		"format", "mkfs", "dd",
+		"chmod", "chown", "chgrp",
+		"mount", "umount",
+		"fdisk", "parted", "gdisk",
+	}
+
+	cmdBase := filepath.Base(cmd.Cmd)
+	for _, dangerous := range dangerousRootPatterns {
+		if strings.Contains(strings.ToLower(cmdBase), dangerous) {
+			result.Warnings = append(result.Warnings, ValidationWarning{
+				Type:       "security",
+				Location:   fmt.Sprintf("%s.cmd", location),
+				Message:    fmt.Sprintf("Command '%s' running as root contains potentially destructive pattern '%s'", cmd.Cmd, dangerous),
+				Suggestion: "Carefully review command and arguments, consider using safer alternatives or additional safeguards",
+			})
+		}
+	}
+
+	// Check for dangerous argument patterns when running as root
+	for i, arg := range cmd.Args {
+		argLower := strings.ToLower(arg)
+		if strings.Contains(argLower, "rf") || strings.Contains(argLower, "force") ||
+			strings.Contains(argLower, "recursive") || strings.Contains(argLower, "all") {
+			result.Warnings = append(result.Warnings, ValidationWarning{
+				Type:       "security",
+				Location:   fmt.Sprintf("%s.args[%d]", location, i),
+				Message:    fmt.Sprintf("Root command argument '%s' contains potentially destructive flag", arg),
+				Suggestion: "Carefully review destructive flags when running as root",
+			})
+		}
+
+		// Check for wildcard patterns
+		if strings.Contains(arg, "*") || strings.Contains(arg, "?") {
+			result.Warnings = append(result.Warnings, ValidationWarning{
+				Type:       "security",
+				Location:   fmt.Sprintf("%s.args[%d]", location, i),
+				Message:    fmt.Sprintf("Root command argument '%s' contains wildcards - ensure this is intentional", arg),
+				Suggestion: "Wildcards in root commands can be dangerous, consider using explicit paths",
+			})
+		}
+
+		// Check for system-critical paths
+		criticalPaths := []string{"/", "/bin", "/sbin", "/usr", "/etc", "/var", "/boot", "/sys", "/proc", "/dev"}
+		for _, criticalPath := range criticalPaths {
+			if strings.HasPrefix(arg, criticalPath) && (len(arg) == len(criticalPath) || arg[len(criticalPath)] == '/') {
+				result.Warnings = append(result.Warnings, ValidationWarning{
+					Type:       "security",
+					Location:   fmt.Sprintf("%s.args[%d]", location, i),
+					Message:    fmt.Sprintf("Root command targets system-critical path '%s'", arg),
+					Suggestion: "Be extremely cautious when operating on system-critical paths as root",
+				})
+			}
+		}
+	}
 }
