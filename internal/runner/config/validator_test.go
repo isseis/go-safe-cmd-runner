@@ -881,12 +881,12 @@ func TestConfigValidator_ValidateRootPrivilegedCommand(t *testing.T) {
 			expectedWarnings: 0, // should not trigger root-specific validation
 		},
 		{
-			name: "root command with user ID 0",
+			name: "root command (username)",
 			cmd: &runnertypes.Command{
-				Name:      "root_uid_cmd",
+				Name:      "root_username_cmd",
 				Cmd:       "/bin/rm",
 				Args:      []string{"-f", "/tmp/test"},
-				RunAsUser: "0", // numeric root ID
+				RunAsUser: "root", // username, not numeric ID
 			},
 			expectedWarnings: 1, // dangerous command only (f is not rf/force/recursive/all)
 		},
@@ -899,7 +899,7 @@ func TestConfigValidator_ValidateRootPrivilegedCommand(t *testing.T) {
 			}
 
 			// Call validateRootPrivilegedCommand directly
-			if tt.cmd.RunAsUser == "root" || tt.cmd.RunAsUser == "0" {
+			if tt.cmd.RunAsUser == "root" {
 				validator.validateRootPrivilegedCommand(tt.cmd, "test.commands[0]", result)
 			}
 			assert.Len(t, result.Warnings, tt.expectedWarnings)
