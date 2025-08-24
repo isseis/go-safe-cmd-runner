@@ -121,7 +121,7 @@ func (re *DefaultRiskEvaluator) EvaluateCommandExecution(...) error
 
 **実装詳細**:
 - 基本リスクレベルと特権昇格リスクの統合評価
-- `privileged=true` フラグによる特権昇格リスクの除外
+- `run_as_user`/`run_as_group` 設定による特権昇格リスクの除外
 - `max_risk_level` 設定との照合
 - 詳細なエラーメッセージ生成
 - セキュリティ違反ログの出力
