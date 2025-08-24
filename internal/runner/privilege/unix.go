@@ -158,8 +158,7 @@ func (m *UnixPrivilegeManager) handleCleanupAndMetrics(execCtx *executionContext
 func (m *UnixPrivilegeManager) restorePrivilegesAndMetrics(execCtx *executionContext, panicValue any, shutdownContext string, duration time.Duration) {
 	if execCtx.needsUserGroupChange && execCtx.elevationCtx.Operation != runnertypes.OperationUserGroupDryRun {
 		if err := m.restoreUserGroupInternal(execCtx.originalEGID); err != nil {
-			m.logger.Error("Failed to restore user/group during cleanup",
-				"error", err, "original_euid", execCtx.originalEUID, "original_egid", execCtx.originalEGID)
+			m.emergencyShutdown(err, fmt.Sprintf("user_group_restore_failure_%s", shutdownContext))
 		}
 	}
 
