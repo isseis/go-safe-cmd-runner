@@ -108,23 +108,38 @@ privileged = true                # EXISTING: Root privileges
 ## Implementation Status
 
 ### ✅ Completed
-- Risk-based command classification and enforcement
-- Enhanced privilege management interfaces
+- Risk-based command classification system (Low, Medium, High, Critical)
+- Critical risk command blocking (特権昇格コマンドのブロック)
+- Enhanced privilege management interfaces (設計レベル)
 - Sudo/su/doas prohibition with symlink protection
+- TOML設定ファイルでのmax_risk_level/run_as_user/run_as_groupフィールド対応
+- Dry-run modeでの完全なセキュリティ分析
 - Comprehensive testing suite
 - Documentation and configuration examples
 - Backward compatibility maintenance
 
-### ✅ Recent Security Enhancement (August 2025)
-- **Primary Group Defaulting**: When `run_as_user` is specified without `run_as_group`, the system now defaults to the specified user's primary group instead of keeping root group privileges
-- **Security Fix**: Prevents unintended file ownership and permission issues when running as a specific user but with root group privileges
-- **Enhanced Logging**: Added informative logging when defaulting to primary group occurs
+### ✅ Latest Integration (August 2024)
+- **Main Branch Merge**: Successfully merged all main branch enhancements including:
+  - **Critical Risk Level**: Added new `RiskLevelCritical` for privilege escalation commands
+  - **Enhanced Security Analysis**: Integrated advanced security analysis functions from main branch
+  - **Improved Network Detection**: Enhanced network operation detection with SSH-style address parsing
+  - **Extended Risk Classification**: Comprehensive risk evaluation across all command types
 
-### 🚧 Partial Implementation
-- User/group privilege management (system call implementation complete, advanced privilege separation pending)
+### ✅ Enhanced Security Implementation (August 2024)
+- **Primary Group Defaulting**: When `run_as_user` is specified without `run_as_group`, the system defaults to the specified user's primary group
+- **Privilege Escalation Blocking**: All privilege escalation commands (sudo/su/doas) are classified as Critical risk and blocked regardless of `max_risk_level` settings
+- **User/Group Interface**: Complete implementation of `WithUserGroup` and `IsUserGroupSupported` methods
+- **Dry-run Enhancement**: Full user/group privilege analysis in dry-run mode with comprehensive testing
 
-### 🎯 Ready for Production
-The core risk-based command control system is production-ready and provides significant security improvements over the previous implementation. The enhanced privilege management provides a foundation for granular privilege control as suggested by the user.
+### 🚧 Remaining Implementation Tasks
+- **Normal Manager Risk Level Enforcement**: max_risk_level制御の実装（現在はCritical riskのみブロック、High/Medium riskの制御は未実装）
+- **Advanced Privilege Separation**: より高度なユーザー・グループ権限管理の実装
+- **User/Group Privilege Execution**: Normal modeでのrun_as_user/run_as_group実行機能
+
+### 🎯 Current Status
+**部分的実装完了**: コアセキュリティ機能は実装済みで特権昇格コマンドは確実にブロックされるが、max_risk_level制御は完全実装に至っていない。Dry-run modeでは完全にリスク分析が動作しているが、Normal execution modeではCritical riskのみブロック対象となっている。
+
+**実用レベル**: 最も危険な特権昇格攻撃は防御できるレベルに達している。
 
 ## User Benefits
 

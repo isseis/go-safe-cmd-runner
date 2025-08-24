@@ -40,9 +40,10 @@
 **F4**: TOML設定ファイルの `groups.commands` セクションに `max_risk_level` フィールドを追加
 
 **F5**: `max_risk_level` の値：
+- `"critical"`: Critical risk コマンドまで許可（特権昇格コマンドを除く）
 - `"high"`: High risk コマンドまで許可
 - `"medium"`: Medium risk コマンドまで許可
-- `"none"` または未設定: リスクのないコマンドのみ許可
+- `"low"` または未設定: Low risk コマンドのみ許可
 
 **F6**: コマンドの実際のリスクレベルが設定された `max_risk_level` を超える場合、実行を拒否
 
@@ -214,14 +215,14 @@ Run ID: 01K35WM4J8BBX09DY348H7JDEX
 ## 6. 受け入れ条件
 
 ### 6.1 機能テスト
-- [x] High risk コマンドが `max_risk_level = "high"` で実行可能
-- [x] High risk コマンドが `max_risk_level` 未設定で実行拒否
-- [x] Medium risk コマンドが `max_risk_level = "medium"` で実行可能
-- [x] Medium risk コマンドが `max_risk_level` 未設定で実行拒否
+- [ ] High risk コマンドが `max_risk_level = "high"` で実行可能（**未実装** - Normal modeでmax_risk_level制御は未実装）
+- [ ] High risk コマンドが `max_risk_level` 未設定で実行拒否（**未実装** - Normal modeでmax_risk_level制御は未実装）
+- [ ] Medium risk コマンドが `max_risk_level = "medium"` で実行可能（**未実装** - Normal modeでmax_risk_level制御は未実装）
+- [ ] Medium risk コマンドが `max_risk_level` 未設定で実行拒否（**未実装** - Normal modeでmax_risk_level制御は未実装）
 - [x] 深いシンボリックリンクが適切に検出・拒否される
 - [x] 安全なコマンドは設定なしで実行可能
-- [x] **特権昇格コマンド（sudo, su, doas）が `max_risk_level` 設定に関わらず一律で実行拒否**
-- [x] **`run_as_user`/`run_as_group` 設定による安全な権限昇格が正常に動作**
+- [x] **特権昇格コマンド（sudo, su, doas）が `max_risk_level` 設定に関わらず一律で実行拒否**（Critical riskとして分類され拒否）
+- [x] **`run_as_user`/`run_as_group` 設定による安全な権限昇格が正常に動作**（設定構造体とDry-runで実装済み）
 
 ### 6.2 エラーハンドリング
 - [x] 適切なエラーメッセージが表示される

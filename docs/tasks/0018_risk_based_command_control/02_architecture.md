@@ -75,10 +75,22 @@ flowchart TB
   - `max_risk_level` フィールドの追加（NEW）
   - 設定値の検証（NEW）
 
-#### 2.2.2 拡張コンポーネント
-- **IsPrivilegeEscalationCommand**: 既存の `IsSudoCommand` を拡張して sudo/su/doas を検出
-- **Risk Evaluator**: セキュリティ分析結果と設定値を照合し実行可否を判定
-- **Security Error Types**: セキュリティ違反時の専用エラー型
+#### 2.2.2 新規追加コンポーネント
+- **Risk Evaluation Package** (`internal/runner/risk/`)
+  - `StandardEvaluator`: 統合リスク評価ロジック
+  - 特権昇格・破壊的操作・ネットワーク・システム変更の分析
+  - リスクレベル分類（Unknown, Low, Medium, High, Critical）
+
+- **Enhanced Privilege Management** (`internal/runner/privilege/`)
+  - `WithUserGroup`: ユーザー/グループ権限での実行機能
+  - Primary Group デフォルト機能
+  - Dry-run モード対応
+
+- **Extended Security Functions** (`internal/runner/security/`)
+  - `IsPrivilegeEscalationCommand`: sudo/su/doas 検出
+  - `IsNetworkOperation`: ネットワーク操作検出
+  - `IsSystemModification`: システム変更検出
+  - Enhanced symlink depth checking
 
 ## 3. データフロー
 
@@ -440,10 +452,10 @@ func TestRiskBasedExecution(t *testing.T) {
    - [x] SecurityViolationError の実装
    - [x] 明確なエラーメッセージ生成
 
-3. **Normal Manager の統合** ✅ 完了
-   - [x] `security.IsPrivilegeEscalationCommand()` の使用
+3. **Normal Manager の統合** ⚠️ 部分実装
+   - [x] `security.IsPrivilegeEscalationCommand()` の使用（Critical riskの検出とブロック）
    - [x] シンボリックリンク深度超過エラーの適切な処理
-   - [x] 簡略化されたリスク評価フローの実装
+   - [ ] **max_risk_level制御の実装（未実装）** - Normal modeでHigh/Medium riskの制御は未実装
 
 ### 10.2 Phase 2: 高度な分析機能
 1. **システムコマンド分析の拡張** ✅ 完了

@@ -12,16 +12,104 @@ Normal Mode での実行時にセキュリティ分析を統合し、リスク�
 - 設定ファイル拡張の詳細
 - エラーハンドリングの実装
 
-## 2. 特権昇格コマンド検出の詳細設計
+## 2. リスクベースコマンド制御の詳細設計
 
-### 2.1 既存機能の拡張
+### 2.1 Risk Evaluation Package の実装
 
 ```go
-// internal/runner/security/command_analysis.go
+// internal/runner/risk/evaluator.go
+
+// RiskEvaluator evaluates the security risk of commands
+type RiskEvaluator interface {
+    EvaluateRisk(cmd *runnertypes.Command) (runnertypes.RiskLevel, error)
+}
+
+// StandardEvaluator implements comprehensive risk evaluation
+type StandardEvaluator struct {
+    logger *slog.Logger
+}
+
+// EvaluateRisk analyzes a command and returns its risk level
+func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.Command) (runnertypes.RiskLevel, error) {
+    // Check for privilege escalation commands (critical risk - should be blocked)
+    isPrivEsc, err := security.IsPrivilegeEscalationCommand(cmd.Cmd)
+    if err != nil {
+        return runnertypes.RiskLevelUnknown, err
+    }
+    if isPrivEsc {
+        return runnertypes.RiskLevelCritical, nil
+    }
+
+    // Check for destructive file operations
+    if security.IsDestructiveFileOperation(cmd.Cmd, cmd.Args) {
+        return runnertypes.RiskLevelHigh, nil
+    }
+
+    // Check for network operations
+    isNetwork, isHighRisk := security.IsNetworkOperation(cmd.Cmd, cmd.Args)
+    if isHighRisk {
+        return runnertypes.RiskLevelHigh, nil
+    }
+    if isNetwork {
+        return runnertypes.RiskLevelMedium, nil
+    }
+
+    // Check for system modification commands
+    if security.IsSystemModification(cmd.Cmd, cmd.Args) {
+        return runnertypes.RiskLevelMedium, nil
+    }
+
+    // Default to low risk for safe commands
+    return runnertypes.RiskLevelLow, nil
+}
+```
+
+### 2.2 Risk Level Classification System
+
+```go
+// internal/runner/runnertypes/config.go
+
+type RiskLevel int
+
+const (
+    // RiskLevelUnknown indicates commands whose risk level cannot be determined
+    RiskLevelUnknown RiskLevel = iota
+    // RiskLevelLow indicates commands with minimal security risk
+    RiskLevelLow
+    // RiskLevelMedium indicates commands with moderate security risk
+    RiskLevelMedium
+    // RiskLevelHigh indicates commands with high security risk
+    RiskLevelHigh
+    // RiskLevelCritical indicates commands that should be blocked (e.g., privilege escalation)
+    RiskLevelCritical
+)
+```
+
+### 2.3 Enhanced Privilege Management
+
+```go
+// internal/runner/privilege/unix.go
+
+// WithUserGroup executes a function with specified user and group privileges
+func (m *UnixPrivilegeManager) WithUserGroup(user, group string, fn func() error) error {
+    elevationCtx := runnertypes.ElevationContext{
+        Operation:  runnertypes.OperationUserGroupExecution,
+        RunAsUser:  user,
+        RunAsGroup: group,
+    }
+    return m.WithPrivileges(elevationCtx, fn)
+}
+
+// IsUserGroupSupported checks if user/group privilege changes are supported
+func (m *UnixPrivilegeManager) IsUserGroupSupported() bool {
+    return m.privilegeSupported
+}
+### 2.4 Security Analysis Integration
+
+```go
+// internal/runner/security/command_analysis.go - Enhanced Functions
 
 // IsPrivilegeEscalationCommand checks if the given command is a privilege escalation command
-// (sudo, su, doas), considering symbolic links
-// Returns (isPrivilegeEscalation, error) where error indicates if symlink depth was exceeded
 func IsPrivilegeEscalationCommand(cmdName string) (bool, error) {
     commandNames, exceededDepth := extractAllCommandNames(cmdName)
     if exceededDepth {
@@ -29,131 +117,34 @@ func IsPrivilegeEscalationCommand(cmdName string) (bool, error) {
     }
 
     // Check for any privilege escalation commands
-    privilegeCommands := []string{"sudo", "su", "doas"}
     for _, cmd := range privilegeCommands {
         if _, exists := commandNames[cmd]; exists {
             return true, nil
         }
     }
-
     return false, nil
 }
 
-// IsSudoCommand is maintained for backward compatibility
-// Deprecated: Use IsPrivilegeEscalationCommand instead
-func IsSudoCommand(cmdName string) (bool, error) {
-    return IsPrivilegeEscalationCommand(cmdName)
+// IsDestructiveFileOperation checks if the command performs destructive file operations
+func IsDestructiveFileOperation(cmdName string, args []string) bool {
+    // Implementation leverages existing security analysis
+    destructiveCommands := map[string]bool{
+        "rm": true, "rmdir": true, "unlink": true, "shred": true, "dd": true,
+    }
+    return destructiveCommands[cmdName] || hasDestructiveArgs(args)
+}
+
+// IsNetworkOperation checks if the command performs network operations
+func IsNetworkOperation(cmdName string, args []string) (bool, bool) {
+    // Returns (isNetwork, isHighRisk)
+    // Implementation includes smart detection for git/rsync operations
+}
+
+// IsSystemModification checks if the command modifies system settings
+func IsSystemModification(cmdName string, args []string) bool {
+    // Covers package managers, service management, system configuration
 }
 ```
-
-### 2.2 実装詳細
-
-この実装により以下の利点が得られます：
-
-1. **既存機能の活用**: `extractAllCommandNames()` によるシンボリックリンク解決
-2. **シンボリックリンク攻撃対策**: 深度制限による保護
-3. **拡張性**: 新しい特権昇格コマンドの追加が容易
-4. **下位互換性**: 既存の `IsSudoCommand` は継続使用可能
-
-### 2.3 セキュリティ考慮事項
-
-- **シンボリックリンク解決**: パス操作による回避を防止
-- **複数コマンド対応**: sudo, su, doas の包括的検出
-- **エラーハンドリング**: シンボリックリンク深度超過の適切な処理
-```go
-    EscalationType PrivilegeEscalationType
-
-    // RequiredPrivileges lists the specific privileges required
-    RequiredPrivileges []string
-
-    // RiskLevel indicates the risk level of the privilege escalation
-    RiskLevel RiskLevel
-
-    // Description provides a human-readable description of the escalation
-    Description string
-
-    // DetectedPatterns lists the patterns that were detected
-    DetectedPatterns []string
-
-    // Context provides additional context about the escalation
-    Context map[string]interface{}
-}
-
-// PrivilegeEscalationType enumerates types of privilege escalation
-type PrivilegeEscalationType int
-
-const (
-    PrivilegeEscalationNone PrivilegeEscalationType = iota
-    PrivilegeEscalationSudo    // sudo command
-    PrivilegeEscalationSu      // su command
-    PrivilegeEscalationSystemd // systemctl/systemd operations
-    PrivilegeEscalationService // service management
-    PrivilegeEscalationChmod   // file permission changes
-    PrivilegeEscalationChown   // ownership changes
-    PrivilegeEscalationSetuid  // setuid operations
-    PrivilegeEscalationOther   // other privilege escalation
-)
-
-// String returns the string representation of PrivilegeEscalationType
-func (t PrivilegeEscalationType) String() string {
-    switch t {
-    case PrivilegeEscalationNone:
-        return "none"
-    case PrivilegeEscalationSudo:
-        return "sudo"
-    case PrivilegeEscalationSu:
-        return "su"
-    case PrivilegeEscalationSystemd:
-        return "systemd"
-    case PrivilegeEscalationService:
-        return "service"
-    case PrivilegeEscalationChmod:
-        return "chmod"
-    case PrivilegeEscalationChown:
-        return "chown"
-    case PrivilegeEscalationSetuid:
-        return "setuid"
-    case PrivilegeEscalationOther:
-        return "other"
-    default:
-        return "unknown"
-    }
-}
-```
-
-### 2.2 実装詳細
-
-```go
-// DefaultPrivilegeEscalationAnalyzer provides the default implementation
-type DefaultPrivilegeEscalationAnalyzer struct {
-    // privilegePatterns defines patterns for different privilege escalation commands
-    privilegePatterns map[string]*PrivilegePattern
-
-    // systemCommands defines inherently privileged commands
-    systemCommands map[string]bool
-}
-
-// PrivilegePattern defines a pattern for privilege escalation detection
-type PrivilegePattern struct {
-    Type        PrivilegeEscalationType
-    Pattern     *regexp.Regexp
-    RiskLevel   RiskLevel
-    Description string
-    Validator   func(args []string) bool
-}
-
-// NewDefaultPrivilegeEscalationAnalyzer creates a new analyzer instance
-func NewDefaultPrivilegeEscalationAnalyzer() *DefaultPrivilegeEscalationAnalyzer {
-    analyzer := &DefaultPrivilegeEscalationAnalyzer{
-        privilegePatterns: make(map[string]*PrivilegePattern),
-        systemCommands:    make(map[string]bool),
-    }
-
-    analyzer.initializePatterns()
-    analyzer.initializeSystemCommands()
-
-    return analyzer
-}
 
 // initializePatterns sets up the privilege escalation patterns
 func (a *DefaultPrivilegeEscalationAnalyzer) initializePatterns() {
@@ -1371,22 +1362,24 @@ name = "security_test"
 ## 8. 実装計画
 
 ### 8.1 Phase 1: 基本実装
-- [ ] Privilege Escalation Analyzer の基本実装
-- [ ] Enhanced Risk Evaluator の実装
-- [ ] Security Error Types の定義
-- [ ] Normal Manager への統合
-- [ ] 基本テストケースの作成
+- [x] Privilege Escalation Analyzer の基本実装（Critical riskとして特権昇格コマンドをブロック）
+- [x] Enhanced Risk Evaluator の実装（risk.StandardEvaluator）
+- [x] Security Error Types の定義（ErrCriticalRiskBlocked）
+- [⚠️] Normal Manager への統合（部分実装：Critical riskのみブロック、max_risk_level制御は未実装）
+- [x] 基本テストケースの作成
 
 ### 8.2 Phase 2: 高度な機能
-- [ ] 詳細な特権昇格分析（chmod, chown, setuid等）
-- [ ] 設定検証の拡張
-- [ ] エラーハンドリングの改善
-- [ ] 統合テストの充実
+- [x] 詳細な特権昇格分析（sudo/su/doas検出、シンボリック解決）
+- [x] 設定検証の拡張（max_risk_level/run_as_user/run_as_groupフィールド）
+- [⚠️] エラーハンドリングの改善（Critical riskのみ対応、High/Medium riskエラー未実装）
+- [x] 統合テストの充実（Dry-run modeは完全実装）
 
 ### 8.3 Phase 3: 最適化とドキュメント
-- [ ] パフォーマンス最適化
-- [ ] エンドツーエンドテスト
-- [ ] ドキュメント整備
-- [ ] 運用ガイドライン作成
+- [ ] **max_risk_level制御の完全実装（未実装の主要機能）**
+- [ ] **Normal modeでのrun_as_user/run_as_group実行機能（設定構造は完成）**
+- [x] パフォーマンス最適化（既存セキュリティ関数の活用により効率化）
+- [x] エンドツーエンドテスト
+- [x] ドキュメント整備
+- [x] 運用ガイドライン作成
 
 この詳細設計書に基づいて、段階的な実装を進めることができます。各コンポーネントは独立してテスト可能な設計となっており、TDD アプローチでの開発に適しています。
