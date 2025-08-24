@@ -20,6 +20,8 @@ var (
 	errSecretTest   = errors.New("password=mysecret failed")
 )
 
+const passwdPath = "/usr/bin/passwd"
+
 func TestDefaultConfig(t *testing.T) {
 	config := DefaultConfig()
 
@@ -1090,7 +1092,6 @@ func TestAnalyzeCommandSecuritySetuidSetgid(t *testing.T) {
 	// Integration test with real setuid binary (if available)
 	t.Run("real setuid binary integration test", func(t *testing.T) {
 		// Check if passwd command exists and has setuid bit
-		passwdPath := "/usr/bin/passwd"
 		if fileInfo, err := os.Stat(passwdPath); err == nil && fileInfo.Mode()&os.ModeSetuid != 0 {
 			risk, pattern, reason, err := AnalyzeCommandSecurity(passwdPath, []string{})
 			require.NoError(t, err)
@@ -1139,7 +1140,6 @@ func TestHasSetuidOrSetgidBit(t *testing.T) {
 	// Integration test with real setuid binary
 	t.Run("real setuid binary", func(t *testing.T) {
 		// Check if passwd command exists and has setuid bit
-		passwdPath := "/usr/bin/passwd"
 		if fileInfo, err := os.Stat(passwdPath); err == nil && fileInfo.Mode()&os.ModeSetuid != 0 {
 			hasSetuidOrSetgid, err := hasSetuidOrSetgidBit(passwdPath)
 			assert.NoError(t, err)

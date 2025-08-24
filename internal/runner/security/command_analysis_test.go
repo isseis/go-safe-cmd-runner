@@ -1,8 +1,180 @@
 package security
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
+	// Create temporary directory for testing
+	tmpDir := t.TempDir()
+
+	t.Run("normal executable without setuid/setgid", func(t *testing.T) {
+		// Create a normal executable
+		normalExec := filepath.Join(tmpDir, "normal_exec")
+		err := os.WriteFile(normalExec, []byte("#!/bin/bash\necho test"), 0o755)
+		require.NoError(t, err)
+
+		risk, pattern, reason, err := AnalyzeCommandSecurity(normalExec, []string{})
+		require.NoError(t, err)
+		assert.Equal(t, RiskLevelNone, risk)
+		assert.Empty(t, pattern)
+		assert.Empty(t, reason)
+	})
+
+	t.Run("executable with setuid bit", func(t *testing.T) {
+		// Create an executable file with setuid bit
+		setuidExec := filepath.Join(tmpDir, "setuid_exec")
+		err := os.WriteFile(setuidExec, []byte("#!/bin/bash\necho test"), 0o755)
+		require.NoError(t, err)
+
+		// Set the setuid bit (requires the file to be executable first)
+		err = os.Chmod(setuidExec, 0o755|os.ModeSetuid) // setuid + rwxr-xr-x
+		require.NoError(t, err)
+
+		// Verify the setuid bit is actually set
+		fileInfo, err := os.Stat(setuidExec)
+		require.NoError(t, err)
+		assert.True(t, fileInfo.Mode()&os.ModeSetuid != 0, "setuid bit should be set")
+
+		risk, pattern, reason, err := AnalyzeCommandSecurity(setuidExec, []string{})
+		require.NoError(t, err)
+		assert.Equal(t, RiskLevelHigh, risk)
+		assert.Equal(t, setuidExec, pattern)
+		assert.Equal(t, "Executable has setuid or setgid bit set", reason)
+	})
+
+	t.Run("executable with setgid bit", func(t *testing.T) {
+		// Create an executable file with setgid bit
+		setgidExec := filepath.Join(tmpDir, "setgid_exec")
+		err := os.WriteFile(setgidExec, []byte("#!/bin/bash\necho test"), 0o755)
+		require.NoError(t, err)
+
+		// Set the setgid bit (requires the file to be executable first)
+		err = os.Chmod(setgidExec, 0o755|os.ModeSetgid) // setgid + rwxr-xr-x
+		require.NoError(t, err)
+
+		// Verify the setgid bit is actually set
+		fileInfo, err := os.Stat(setgidExec)
+		require.NoError(t, err)
+		assert.True(t, fileInfo.Mode()&os.ModeSetgid != 0, "setgid bit should be set")
+
+		risk, pattern, reason, err := AnalyzeCommandSecurity(setgidExec, []string{})
+		require.NoError(t, err)
+		assert.Equal(t, RiskLevelHigh, risk)
+		assert.Equal(t, setgidExec, pattern)
+		assert.Equal(t, "Executable has setuid or setgid bit set", reason)
+	})
+
+	t.Run("executable with both setuid and setgid bits", func(t *testing.T) {
+		// Create an executable file with both setuid and setgid bits
+		setuidSetgidExec := filepath.Join(tmpDir, "setuid_setgid_exec")
+		err := os.WriteFile(setuidSetgidExec, []byte("#!/bin/bash\necho test"), 0o755)
+		require.NoError(t, err)
+
+		// Set both setuid and setgid bits
+		err = os.Chmod(setuidSetgidExec, 0o755|os.ModeSetuid|os.ModeSetgid) // setuid+setgid + rwxr-xr-x
+		require.NoError(t, err)
+
+		// Verify both bits are actually set
+		fileInfo, err := os.Stat(setuidSetgidExec)
+		require.NoError(t, err)
+		assert.True(t, fileInfo.Mode()&os.ModeSetuid != 0, "setuid bit should be set")
+		assert.True(t, fileInfo.Mode()&os.ModeSetgid != 0, "setgid bit should be set")
+
+		risk, pattern, reason, err := AnalyzeCommandSecurity(setuidSetgidExec, []string{})
+		require.NoError(t, err)
+		assert.Equal(t, RiskLevelHigh, risk)
+		assert.Equal(t, setuidSetgidExec, pattern)
+		assert.Equal(t, "Executable has setuid or setgid bit set", reason)
+	})
+
+	t.Run("non-executable file with setuid bit", func(t *testing.T) {
+		// Create a non-executable file with setuid bit (should not be detected as risky)
+		nonExecFile := filepath.Join(tmpDir, "non_exec_setuid")
+		err := os.WriteFile(nonExecFile, []byte("not executable"), 0o644)
+		require.NoError(t, err)
+
+		// Set the setuid bit on non-executable file
+		err = os.Chmod(nonExecFile, 0o644|os.ModeSetuid) // setuid + rw-r--r--
+		require.NoError(t, err)
+
+		// Verify the setuid bit is set but file is not executable
+		fileInfo, err := os.Stat(nonExecFile)
+		require.NoError(t, err)
+		assert.True(t, fileInfo.Mode()&os.ModeSetuid != 0, "setuid bit should be set")
+		assert.False(t, fileInfo.Mode()&0o111 != 0, "file should not be executable")
+
+		// The function should still detect setuid bit regardless of executable status
+		// because the security risk comes from the setuid bit itself
+		risk, pattern, reason, err := AnalyzeCommandSecurity(nonExecFile, []string{})
+		require.NoError(t, err)
+		assert.Equal(t, RiskLevelHigh, risk)
+		assert.Equal(t, nonExecFile, pattern)
+		assert.Equal(t, "Executable has setuid or setgid bit set", reason)
+	})
+
+	t.Run("directory with setgid bit", func(t *testing.T) {
+		// Create a directory with setgid bit (should not be detected as risky)
+		setgidDir := filepath.Join(tmpDir, "setgid_dir")
+		err := os.Mkdir(setgidDir, 0o755)
+		require.NoError(t, err)
+
+		// Set the setgid bit on directory
+		err = os.Chmod(setgidDir, 0o755|os.ModeSetgid) // setgid + rwxr-xr-x
+		require.NoError(t, err)
+
+		// Verify the setgid bit is set and it's a directory
+		fileInfo, err := os.Stat(setgidDir)
+		require.NoError(t, err)
+		assert.True(t, fileInfo.Mode()&os.ModeSetgid != 0, "setgid bit should be set")
+		assert.True(t, fileInfo.IsDir(), "should be a directory")
+
+		// The function should not detect directories as risky even with setgid
+		// because hasSetuidOrSetgidBit only checks regular files
+		risk, pattern, reason, err := AnalyzeCommandSecurity(setgidDir, []string{})
+		require.NoError(t, err)
+		assert.Equal(t, RiskLevelNone, risk)
+		assert.Empty(t, pattern)
+		assert.Empty(t, reason)
+	})
+
+	t.Run("non-existent file", func(t *testing.T) {
+		// Test with non-existent file - should not cause panic and fallback gracefully
+		nonExistentFile := filepath.Join(tmpDir, "non_existent")
+
+		risk, pattern, reason, err := AnalyzeCommandSecurity(nonExistentFile, []string{})
+		require.NoError(t, err)
+		assert.Equal(t, RiskLevelNone, risk)
+		assert.Empty(t, pattern)
+		assert.Empty(t, reason)
+	})
+
+	t.Run("relative path should return error", func(t *testing.T) {
+		// Test with relative path - should return error
+		_, _, _, err := AnalyzeCommandSecurity("relative/path", []string{})
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, ErrInvalidPath)
+		assert.Contains(t, err.Error(), "path must be absolute")
+	})
+
+	t.Run("integration test with real setuid binary", func(t *testing.T) {
+		// Check if passwd command exists and has setuid bit (common on most Unix systems)
+		if fileInfo, err := os.Stat(passwdPath); err == nil && fileInfo.Mode()&os.ModeSetuid != 0 {
+			risk, pattern, reason, err := AnalyzeCommandSecurity(passwdPath, []string{})
+			require.NoError(t, err)
+			assert.Equal(t, RiskLevelHigh, risk)
+			assert.Equal(t, passwdPath, pattern)
+			assert.Equal(t, "Executable has setuid or setgid bit set", reason)
+		} else {
+			t.Skip("No setuid passwd binary found for integration test")
+		}
+	})
+}
 
 func TestContainsSSHStyleAddress(t *testing.T) {
 	tests := []struct {
@@ -272,4 +444,186 @@ func TestIsNetworkOperation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHasSetuidOrSetgidBit_Detailed(t *testing.T) {
+	// Create temporary directory for testing
+	tmpDir := t.TempDir()
+
+	t.Run("normal file without setuid/setgid", func(t *testing.T) {
+		normalFile := filepath.Join(tmpDir, "normal")
+		err := os.WriteFile(normalFile, []byte("test content"), 0o644)
+		require.NoError(t, err)
+
+		hasSetuidOrSetgid, err := hasSetuidOrSetgidBit(normalFile)
+		assert.NoError(t, err)
+		assert.False(t, hasSetuidOrSetgid)
+	})
+
+	t.Run("executable file without setuid/setgid", func(t *testing.T) {
+		execFile := filepath.Join(tmpDir, "normal_exec")
+		err := os.WriteFile(execFile, []byte("#!/bin/bash\necho test"), 0o755)
+		require.NoError(t, err)
+
+		hasSetuidOrSetgid, err := hasSetuidOrSetgidBit(execFile)
+		assert.NoError(t, err)
+		assert.False(t, hasSetuidOrSetgid)
+	})
+
+	t.Run("file with setuid bit", func(t *testing.T) {
+		setuidFile := filepath.Join(tmpDir, "setuid_file")
+		err := os.WriteFile(setuidFile, []byte("#!/bin/bash\necho test"), 0o755)
+		require.NoError(t, err)
+
+		// Set the setuid bit
+		err = os.Chmod(setuidFile, 0o755|os.ModeSetuid) // setuid + rwxr-xr-x
+		require.NoError(t, err)
+
+		// Verify the setuid bit is actually set
+		fileInfo, err := os.Stat(setuidFile)
+		require.NoError(t, err)
+		assert.True(t, fileInfo.Mode()&os.ModeSetuid != 0, "setuid bit should be set")
+
+		hasSetuidOrSetgid, err := hasSetuidOrSetgidBit(setuidFile)
+		assert.NoError(t, err)
+		assert.True(t, hasSetuidOrSetgid)
+	})
+
+	t.Run("file with setgid bit", func(t *testing.T) {
+		setgidFile := filepath.Join(tmpDir, "setgid_file")
+		err := os.WriteFile(setgidFile, []byte("#!/bin/bash\necho test"), 0o755)
+		require.NoError(t, err)
+
+		// Set the setgid bit
+		err = os.Chmod(setgidFile, 0o755|os.ModeSetgid) // setgid + rwxr-xr-x
+		require.NoError(t, err)
+
+		// Verify the setgid bit is actually set
+		fileInfo, err := os.Stat(setgidFile)
+		require.NoError(t, err)
+		assert.True(t, fileInfo.Mode()&os.ModeSetgid != 0, "setgid bit should be set")
+
+		hasSetuidOrSetgid, err := hasSetuidOrSetgidBit(setgidFile)
+		assert.NoError(t, err)
+		assert.True(t, hasSetuidOrSetgid)
+	})
+
+	t.Run("file with both setuid and setgid bits", func(t *testing.T) {
+		bothBitsFile := filepath.Join(tmpDir, "both_bits_file")
+		err := os.WriteFile(bothBitsFile, []byte("#!/bin/bash\necho test"), 0o755)
+		require.NoError(t, err)
+
+		// Set both setuid and setgid bits
+		err = os.Chmod(bothBitsFile, 0o755|os.ModeSetuid|os.ModeSetgid) // setuid+setgid + rwxr-xr-x
+		require.NoError(t, err)
+
+		// Verify both bits are actually set
+		fileInfo, err := os.Stat(bothBitsFile)
+		require.NoError(t, err)
+		assert.True(t, fileInfo.Mode()&os.ModeSetuid != 0, "setuid bit should be set")
+		assert.True(t, fileInfo.Mode()&os.ModeSetgid != 0, "setgid bit should be set")
+
+		hasSetuidOrSetgid, err := hasSetuidOrSetgidBit(bothBitsFile)
+		assert.NoError(t, err)
+		assert.True(t, hasSetuidOrSetgid)
+	})
+
+	t.Run("non-executable file with setuid bit", func(t *testing.T) {
+		nonExecSetuidFile := filepath.Join(tmpDir, "non_exec_setuid")
+		err := os.WriteFile(nonExecSetuidFile, []byte("not executable"), 0o644)
+		require.NoError(t, err)
+
+		// Set the setuid bit on non-executable file
+		err = os.Chmod(nonExecSetuidFile, 0o644|os.ModeSetuid) // setuid + rw-r--r--
+		require.NoError(t, err)
+
+		// Verify the setuid bit is set but file is not executable
+		fileInfo, err := os.Stat(nonExecSetuidFile)
+		require.NoError(t, err)
+		assert.True(t, fileInfo.Mode()&os.ModeSetuid != 0, "setuid bit should be set")
+		assert.False(t, fileInfo.Mode()&0o111 != 0, "file should not be executable")
+
+		// Function should still detect setuid bit regardless of executable status
+		hasSetuidOrSetgid, err := hasSetuidOrSetgidBit(nonExecSetuidFile)
+		assert.NoError(t, err)
+		assert.True(t, hasSetuidOrSetgid)
+	})
+
+	t.Run("directory with setgid bit", func(t *testing.T) {
+		setgidDir := filepath.Join(tmpDir, "setgid_dir")
+		err := os.Mkdir(setgidDir, 0o755)
+		require.NoError(t, err)
+
+		// Set the setgid bit on directory
+		err = os.Chmod(setgidDir, 0o755|os.ModeSetgid) // setgid + rwxr-xr-x
+		require.NoError(t, err)
+
+		// Verify the setgid bit is set and it's a directory
+		fileInfo, err := os.Stat(setgidDir)
+		require.NoError(t, err)
+		assert.True(t, fileInfo.Mode()&os.ModeSetgid != 0, "setgid bit should be set")
+		assert.True(t, fileInfo.IsDir(), "should be a directory")
+
+		// Function should return false for directories (not regular files)
+		hasSetuidOrSetgid, err := hasSetuidOrSetgidBit(setgidDir)
+		assert.NoError(t, err)
+		assert.False(t, hasSetuidOrSetgid)
+	})
+
+	t.Run("symbolic link to setuid file", func(t *testing.T) {
+		// Create a setuid file
+		setuidFile := filepath.Join(tmpDir, "original_setuid")
+		err := os.WriteFile(setuidFile, []byte("#!/bin/bash\necho test"), 0o755)
+		require.NoError(t, err)
+		err = os.Chmod(setuidFile, 0o755|os.ModeSetuid) // setuid
+		require.NoError(t, err)
+
+		// Create a symbolic link to the setuid file
+		symlinkFile := filepath.Join(tmpDir, "symlink_to_setuid")
+		err = os.Symlink(setuidFile, symlinkFile)
+		require.NoError(t, err)
+
+		// Function should follow the symlink and detect setuid bit
+		hasSetuidOrSetgid, err := hasSetuidOrSetgidBit(symlinkFile)
+		assert.NoError(t, err)
+		assert.True(t, hasSetuidOrSetgid)
+	})
+
+	t.Run("non-existent file", func(t *testing.T) {
+		nonExistentFile := filepath.Join(tmpDir, "non_existent")
+
+		hasSetuidOrSetgid, err := hasSetuidOrSetgidBit(nonExistentFile)
+		assert.Error(t, err, "should return error for non-existent file")
+		assert.False(t, hasSetuidOrSetgid)
+	})
+
+	t.Run("integration test with real setuid binary", func(t *testing.T) {
+		// Check if passwd command exists and has setuid bit (common on most Unix systems)
+		if fileInfo, err := os.Stat(passwdPath); err == nil && fileInfo.Mode()&os.ModeSetuid != 0 {
+			hasSetuidOrSetgid, err := hasSetuidOrSetgidBit(passwdPath)
+			assert.NoError(t, err)
+			assert.True(t, hasSetuidOrSetgid)
+		} else {
+			t.Skip("No setuid passwd binary found for integration test")
+		}
+	})
+
+	t.Run("integration test with real setgid binary", func(t *testing.T) {
+		// Check for common setgid binaries
+		possibleSetgidPaths := []string{
+			"/usr/bin/write",
+			"/usr/bin/wall",
+			"/usr/bin/expiry",
+		}
+
+		for _, path := range possibleSetgidPaths {
+			if fileInfo, err := os.Stat(path); err == nil && fileInfo.Mode()&os.ModeSetgid != 0 {
+				hasSetuidOrSetgid, err := hasSetuidOrSetgidBit(path)
+				assert.NoError(t, err)
+				assert.True(t, hasSetuidOrSetgid)
+				return // Found one, test passed
+			}
+		}
+		t.Skip("No setgid binary found for integration test")
+	})
 }
