@@ -16,16 +16,25 @@ func TestNewDefaultPrivilegeEscalationAnalyzer(t *testing.T) {
 
 	assert.NotNil(t, analyzer)
 	assert.NotNil(t, analyzer.logger)
-	assert.NotNil(t, analyzer.sudoCommands)
-	assert.NotNil(t, analyzer.systemCommands)
-	assert.NotNil(t, analyzer.serviceCommands)
+	assert.NotNil(t, analyzer.commandChecks)
 
 	// Check default commands are set
-	assert.True(t, analyzer.sudoCommands["sudo"])
-	assert.True(t, analyzer.sudoCommands["su"])
-	assert.True(t, analyzer.sudoCommands["doas"])
-	assert.True(t, analyzer.systemCommands["systemctl"])
-	assert.True(t, analyzer.serviceCommands["service"])
+	assert.Contains(t, analyzer.commandChecks, "sudo")
+	assert.Contains(t, analyzer.commandChecks, "su")
+	assert.Contains(t, analyzer.commandChecks, "doas")
+	assert.Contains(t, analyzer.commandChecks, "systemctl")
+	assert.Contains(t, analyzer.commandChecks, "service")
+
+	// Check command properties
+	sudoInfo := analyzer.commandChecks["sudo"]
+	assert.Equal(t, PrivilegeEscalationTypeSudo, sudoInfo.EscalationType)
+	assert.Equal(t, RiskLevelHigh, sudoInfo.RiskLevel)
+	assert.Equal(t, []string{"root"}, sudoInfo.RequiredPrivileges)
+
+	systemctlInfo := analyzer.commandChecks["systemctl"]
+	assert.Equal(t, PrivilegeEscalationTypeSystemd, systemctlInfo.EscalationType)
+	assert.Equal(t, RiskLevelMedium, systemctlInfo.RiskLevel)
+	assert.Equal(t, []string{"systemd"}, systemctlInfo.RequiredPrivileges)
 }
 
 func TestAnalyzePrivilegeEscalation_BasicSudo(t *testing.T) {
@@ -58,7 +67,7 @@ func TestAnalyzePrivilegeEscalation_BasicSudo(t *testing.T) {
 			args:    []string{"-", "root"},
 			expected: &PrivilegeEscalationResult{
 				IsPrivilegeEscalation: true,
-				EscalationType:        PrivilegeEscalationTypeSudo,
+				EscalationType:        PrivilegeEscalationTypeSu,
 				RiskLevel:             RiskLevelHigh,
 				RequiredPrivileges:    []string{"root"},
 				DetectedPattern:       "su",

@@ -42,29 +42,61 @@ type PrivilegeEscalationAnalyzer interface {
 	GetRequiredPrivileges(cmdName string, args []string) ([]string, error)
 }
 
+// PrivilegeCheckInfo contains information about a specific privilege escalation command
+type PrivilegeCheckInfo struct {
+	EscalationType     PrivilegeEscalationType
+	RiskLevel          RiskLevel
+	RequiredPrivileges []string
+	Reason             string
+}
+
 // DefaultPrivilegeEscalationAnalyzer is the default implementation of PrivilegeEscalationAnalyzer
 type DefaultPrivilegeEscalationAnalyzer struct {
-	logger          *slog.Logger
-	sudoCommands    map[string]bool
-	systemCommands  map[string]bool
-	serviceCommands map[string]bool
+	logger        *slog.Logger
+	commandChecks map[string]*PrivilegeCheckInfo
 }
 
 // NewDefaultPrivilegeEscalationAnalyzer creates a new DefaultPrivilegeEscalationAnalyzer
 func NewDefaultPrivilegeEscalationAnalyzer(logger *slog.Logger) *DefaultPrivilegeEscalationAnalyzer {
+	commandChecks := map[string]*PrivilegeCheckInfo{
+		// Sudo-like commands
+		"sudo": {
+			EscalationType:     PrivilegeEscalationTypeSudo,
+			RiskLevel:          RiskLevelHigh,
+			RequiredPrivileges: []string{"root"},
+			Reason:             "Command requires root privileges for execution",
+		},
+		"su": {
+			EscalationType:     PrivilegeEscalationTypeSu,
+			RiskLevel:          RiskLevelHigh,
+			RequiredPrivileges: []string{"root"},
+			Reason:             "Command requires root privileges for execution",
+		},
+		"doas": {
+			EscalationType:     PrivilegeEscalationTypeSudo,
+			RiskLevel:          RiskLevelHigh,
+			RequiredPrivileges: []string{"root"},
+			Reason:             "Command requires root privileges for execution",
+		},
+		// Systemd commands
+		"systemctl": {
+			EscalationType:     PrivilegeEscalationTypeSystemd,
+			RiskLevel:          RiskLevelMedium,
+			RequiredPrivileges: []string{"systemd"},
+			Reason:             "Command can control system services",
+		},
+		// Service commands
+		"service": {
+			EscalationType:     PrivilegeEscalationTypeService,
+			RiskLevel:          RiskLevelMedium,
+			RequiredPrivileges: []string{"service"},
+			Reason:             "Command can control system services",
+		},
+	}
+
 	return &DefaultPrivilegeEscalationAnalyzer{
-		logger: logger,
-		sudoCommands: map[string]bool{
-			"sudo": true,
-			"su":   true,
-			"doas": true,
-		},
-		systemCommands: map[string]bool{
-			"systemctl": true,
-		},
-		serviceCommands: map[string]bool{
-			"service": true,
-		},
+		logger:        logger,
+		commandChecks: commandChecks,
 	}
 }
 
@@ -92,50 +124,14 @@ func (a *DefaultPrivilegeEscalationAnalyzer) AnalyzePrivilegeEscalation(
 	// Get base command name from path
 	baseCommand := filepath.Base(commandPath)
 
-	// Check for sudo commands
-	if a.sudoCommands[baseCommand] {
+	// Check if this command is in our privilege escalation command map
+	if checkInfo, exists := a.commandChecks[baseCommand]; exists {
 		result.IsPrivilegeEscalation = true
-		result.EscalationType = PrivilegeEscalationTypeSudo
-		result.RiskLevel = RiskLevelHigh
-		result.RequiredPrivileges = []string{"root"}
+		result.EscalationType = checkInfo.EscalationType
+		result.RiskLevel = checkInfo.RiskLevel
+		result.RequiredPrivileges = checkInfo.RequiredPrivileges
 		result.DetectedPattern = baseCommand
-		result.Reason = "Command requires root privileges for execution"
-
-		a.logger.Info("privilege escalation detected",
-			"type", result.EscalationType,
-			"command", cmdName,
-			"path", commandPath,
-			"risk_level", result.RiskLevel)
-
-		return result, nil
-	}
-
-	// Check for systemd commands
-	if a.systemCommands[baseCommand] {
-		result.IsPrivilegeEscalation = true
-		result.EscalationType = PrivilegeEscalationTypeSystemd
-		result.RiskLevel = RiskLevelMedium
-		result.RequiredPrivileges = []string{"systemd"}
-		result.DetectedPattern = baseCommand
-		result.Reason = "Command can control system services"
-
-		a.logger.Info("privilege escalation detected",
-			"type", result.EscalationType,
-			"command", cmdName,
-			"path", commandPath,
-			"risk_level", result.RiskLevel)
-
-		return result, nil
-	}
-
-	// Check for service commands
-	if a.serviceCommands[baseCommand] {
-		result.IsPrivilegeEscalation = true
-		result.EscalationType = PrivilegeEscalationTypeService
-		result.RiskLevel = RiskLevelMedium
-		result.RequiredPrivileges = []string{"service"}
-		result.DetectedPattern = baseCommand
-		result.Reason = "Command can control system services"
+		result.Reason = checkInfo.Reason
 
 		a.logger.Info("privilege escalation detected",
 			"type", result.EscalationType,
@@ -156,10 +152,8 @@ func (a *DefaultPrivilegeEscalationAnalyzer) AnalyzePrivilegeEscalation(
 // IsPrivilegeEscalationCommand checks if a command is a privilege escalation command
 func (a *DefaultPrivilegeEscalationAnalyzer) IsPrivilegeEscalationCommand(cmdName string) bool {
 	baseCommand := filepath.Base(cmdName)
-
-	return a.sudoCommands[baseCommand] ||
-		a.systemCommands[baseCommand] ||
-		a.serviceCommands[baseCommand]
+	_, exists := a.commandChecks[baseCommand]
+	return exists
 }
 
 // GetRequiredPrivileges returns the required privileges for a command
@@ -168,16 +162,8 @@ func (a *DefaultPrivilegeEscalationAnalyzer) GetRequiredPrivileges(
 ) ([]string, error) {
 	baseCommand := filepath.Base(cmdName)
 
-	if a.sudoCommands[baseCommand] {
-		return []string{"root"}, nil
-	}
-
-	if a.systemCommands[baseCommand] {
-		return []string{"systemd"}, nil
-	}
-
-	if a.serviceCommands[baseCommand] {
-		return []string{"service"}, nil
+	if checkInfo, exists := a.commandChecks[baseCommand]; exists {
+		return checkInfo.RequiredPrivileges, nil
 	}
 
 	return []string{}, nil
