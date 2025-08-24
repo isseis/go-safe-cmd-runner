@@ -57,14 +57,13 @@ name = "privileged_whoami"
 description = "Test privileged command execution"
 cmd = "/usr/bin/whoami"
 args = []
-privileged = true
+run_as_user = "root"
 
 [[groups.commands]]
 name = "unprivileged_id"
 description = "Test unprivileged command execution"
 cmd = "id"
 args = []
-privileged = false
 
 [[groups.commands]]
 name = "custom_env_test"
@@ -208,7 +207,7 @@ name = "final_privileged_test"
 description = "Final privileged operation test"
 cmd = "/usr/bin/whoami"
 args = []
-privileged = true
+run_as_user = "root"
 timeout = 30
 
 [[groups.commands]]

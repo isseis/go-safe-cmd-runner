@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/risk"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
@@ -16,6 +17,7 @@ type NormalResourceManager struct {
 	executor         executor.CommandExecutor
 	fileSystem       executor.FileSystem
 	privilegeManager runnertypes.PrivilegeManager
+	riskEvaluator    risk.Evaluator
 
 	// State management
 	mu       sync.RWMutex
@@ -28,6 +30,7 @@ func NewNormalResourceManager(exec executor.CommandExecutor, fs executor.FileSys
 		executor:         exec,
 		fileSystem:       fs,
 		privilegeManager: privMgr,
+		riskEvaluator:    risk.NewStandardEvaluator(),
 		tempDirs:         make([]string, 0),
 	}
 }
@@ -43,6 +46,18 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd runnerty
 
 	if err := validateCommandGroup(group); err != nil {
 		return nil, fmt.Errorf("command group validation failed: %w", err)
+	}
+
+	// Evaluate security risk before execution
+	riskLevel, err := n.riskEvaluator.EvaluateRisk(&cmd)
+	if err != nil {
+		return nil, fmt.Errorf("risk evaluation failed: %w", err)
+	}
+
+	// Block critical risk commands (privilege escalation)
+	if riskLevel == runnertypes.RiskLevelCritical {
+		return nil, fmt.Errorf("%w: command %s detected as privilege escalation command",
+			runnertypes.ErrCriticalRiskBlocked, cmd.Cmd)
 	}
 
 	result, err := n.executor.Execute(ctx, cmd, env)

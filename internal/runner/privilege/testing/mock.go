@@ -30,7 +30,16 @@ type MockPrivilegeManager struct {
 
 // WithPrivileges executes the given function with privilege elevation
 func (m *MockPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) error {
-	m.ElevationCalls = append(m.ElevationCalls, string(elevationCtx.Operation))
+	// Record different types of operations differently for test verification
+	switch elevationCtx.Operation {
+	case runnertypes.OperationUserGroupExecution:
+		m.ElevationCalls = append(m.ElevationCalls, "user_group_change:"+elevationCtx.RunAsUser+":"+elevationCtx.RunAsGroup)
+	case runnertypes.OperationUserGroupDryRun:
+		m.ElevationCalls = append(m.ElevationCalls, "user_group_dry_run:"+elevationCtx.RunAsUser+":"+elevationCtx.RunAsGroup)
+	default:
+		m.ElevationCalls = append(m.ElevationCalls, string(elevationCtx.Operation))
+	}
+
 	if m.ShouldFail {
 		return ErrMockPrivilegeElevationFailed
 	}

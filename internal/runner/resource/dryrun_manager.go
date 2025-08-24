@@ -124,8 +124,39 @@ func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd runnertype
 		analysis.Parameters["group_description"] = group.Description
 	}
 
-	// Analyze security risks
+	// Analyze security risks first
 	d.analyzeCommandSecurity(cmd, &analysis)
+
+	// Add user/group privilege specification if present (after security analysis)
+	if cmd.HasUserGroupSpecification() {
+		analysis.Parameters["run_as_user"] = cmd.RunAsUser
+		analysis.Parameters["run_as_group"] = cmd.RunAsGroup
+
+		// Validate user/group configuration in dry-run mode
+		if d.privilegeManager != nil && d.privilegeManager.IsPrivilegedExecutionSupported() {
+			// Use unified WithPrivileges API with dry-run operation for validation
+			executionCtx := runnertypes.ElevationContext{
+				Operation:   runnertypes.OperationUserGroupDryRun,
+				CommandName: cmd.Name,
+				FilePath:    cmd.Cmd,
+				RunAsUser:   cmd.RunAsUser,
+				RunAsGroup:  cmd.RunAsGroup,
+			}
+			err := d.privilegeManager.WithPrivileges(executionCtx, func() error {
+				return nil // No-op function for dry-run validation
+			})
+
+			if err != nil {
+				analysis.Impact.Description += fmt.Sprintf(" [ERROR: User/Group validation failed: %v]", err)
+				// User/group validation failures are high priority - override any lower risk
+				analysis.Impact.SecurityRisk = riskLevelHigh
+			} else {
+				analysis.Impact.Description += " [INFO: User/Group configuration validated]"
+			}
+		} else {
+			analysis.Impact.Description += " [WARNING: User/Group privilege management not supported]"
+		}
+	}
 
 	return analysis
 }
@@ -134,12 +165,6 @@ func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd runnertype
 func (d *DryRunResourceManager) analyzeCommandSecurity(cmd runnertypes.Command, analysis *ResourceAnalysis) {
 	// Initialize with no risk
 	currentRisk := ""
-
-	// Check for privilege escalation requirements first (lower priority)
-	if cmd.Privileged {
-		currentRisk = "medium"
-		analysis.Impact.Description += " [PRIVILEGE: Requires elevated privileges]"
-	}
 
 	// Use security package for dangerous pattern analysis (higher priority - can override privilege risk)
 	// Pass command and arguments separately to avoid ambiguity with spaces

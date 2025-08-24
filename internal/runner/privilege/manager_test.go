@@ -2,12 +2,15 @@ package privilege
 
 import (
 	"log/slog"
+	"os/user"
 	"testing"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 )
+
+const fallbackUser = "root"
 
 func TestManager_Interface(t *testing.T) {
 	logger := slog.Default()
@@ -102,4 +105,160 @@ func TestManager_WithPrivileges_UnsupportedPlatform(t *testing.T) {
 
 	// Should fail because setuid is not configured in test environment
 	assert.Error(t, err)
+}
+
+func TestManager_WithPrivileges_UserGroup_ValidUser(t *testing.T) {
+	logger := slog.Default()
+	manager := NewManager(logger)
+
+	// Test with current user (should work in dry-run mode)
+	currentUser := getCurrentUser(t)
+	currentGroup := getCurrentGroup(t)
+
+	t.Run("dry_run_mode", func(t *testing.T) {
+		var executed bool
+		executionCtx := runnertypes.ElevationContext{
+			Operation:   runnertypes.OperationUserGroupDryRun,
+			CommandName: "test_command",
+			RunAsUser:   currentUser,
+			RunAsGroup:  currentGroup,
+		}
+		err := manager.WithPrivileges(executionCtx, func() error {
+			executed = true
+			return nil
+		})
+
+		assert.NoError(t, err)
+		assert.True(t, executed)
+	})
+
+	// Only test actual user/group change if running as root
+	if manager.GetCurrentUID() == 0 {
+		t.Run("actual_change", func(t *testing.T) {
+			var executed bool
+			executionCtx := runnertypes.ElevationContext{
+				Operation:   runnertypes.OperationUserGroupExecution,
+				CommandName: "test_command",
+				RunAsUser:   currentUser,
+				RunAsGroup:  currentGroup,
+			}
+			err := manager.WithPrivileges(executionCtx, func() error {
+				executed = true
+				return nil
+			})
+
+			assert.NoError(t, err)
+			assert.True(t, executed)
+		})
+	}
+}
+
+func TestManager_WithPrivileges_UserGroup_InvalidUser(t *testing.T) {
+	logger := slog.Default()
+	manager := NewManager(logger)
+
+	t.Run("invalid_user", func(t *testing.T) {
+		executionCtx := runnertypes.ElevationContext{
+			Operation:   runnertypes.OperationUserGroupDryRun,
+			CommandName: "test_command",
+			RunAsUser:   "nonexistent_user_12345",
+			RunAsGroup:  "",
+		}
+		err := manager.WithPrivileges(executionCtx, func() error {
+			return nil
+		})
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to lookup user")
+	})
+
+	t.Run("invalid_group", func(t *testing.T) {
+		executionCtx := runnertypes.ElevationContext{
+			Operation:   runnertypes.OperationUserGroupDryRun,
+			CommandName: "test_command",
+			RunAsUser:   "",
+			RunAsGroup:  "nonexistent_group_12345",
+		}
+		err := manager.WithPrivileges(executionCtx, func() error {
+			return nil
+		})
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to lookup group")
+	})
+}
+
+func TestManager_WithPrivileges_UserGroup_EmptyUserGroup(t *testing.T) {
+	logger := slog.Default()
+	manager := NewManager(logger)
+
+	t.Run("empty_user_and_group", func(t *testing.T) {
+		var executed bool
+		executionCtx := runnertypes.ElevationContext{
+			Operation:   runnertypes.OperationUserGroupDryRun,
+			CommandName: "test_command",
+			RunAsUser:   "",
+			RunAsGroup:  "",
+		}
+		err := manager.WithPrivileges(executionCtx, func() error {
+			executed = true
+			return nil
+		})
+
+		// Should succeed with empty user/group (uses current user/group)
+		assert.NoError(t, err)
+		assert.True(t, executed)
+	})
+}
+
+func TestManager_WithPrivileges_UserGroup_FunctionError(t *testing.T) {
+	logger := slog.Default()
+	manager := NewManager(logger)
+
+	currentUser := getCurrentUser(t)
+
+	expectedErr := assert.AnError
+	executionCtx := runnertypes.ElevationContext{
+		Operation:   runnertypes.OperationUserGroupDryRun,
+		CommandName: "test_command",
+		RunAsUser:   currentUser,
+		RunAsGroup:  "",
+	}
+	err := manager.WithPrivileges(executionCtx, func() error {
+		return expectedErr
+	})
+
+	// Should return the function error
+	assert.Equal(t, expectedErr, err)
+}
+
+// Helper functions for tests
+func getCurrentUser(t *testing.T) string {
+	t.Helper()
+
+	// Try to get current user, fallback to "root" if we can't determine
+	user, err := user.Current()
+	if err != nil {
+		t.Logf("Warning: Could not get current user: %v", err)
+		return fallbackUser // Fallback for tests
+	}
+	return user.Username
+}
+
+func getCurrentGroup(t *testing.T) string {
+	t.Helper()
+
+	// Try to get current user's primary group
+	currentUser, err := user.Current()
+	if err != nil {
+		t.Logf("Warning: Could not get current user: %v", err)
+		return fallbackUser // Fallback for tests
+	}
+
+	group, err := user.LookupGroupId(currentUser.Gid)
+	if err != nil {
+		t.Logf("Warning: Could not get primary group: %v", err)
+		return fallbackUser // Fallback for tests
+	}
+	return group.Name
 }

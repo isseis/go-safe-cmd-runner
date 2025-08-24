@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
-	"path/filepath"
 	"sort"
 	"time"
 
@@ -33,7 +32,6 @@ var (
 	ErrGroupVerification    = errors.New("group file verification failed")
 	ErrGroupNotFound        = errors.New("group not found")
 	ErrVariableAccessDenied = errors.New("variable access denied")
-	ErrPrivilegedPathConfig = errors.New("privileged command path configuration error")
 	ErrRunIDRequired        = errors.New("runID is required")
 )
 
@@ -181,7 +179,7 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 	}
 
 	// Create default privilege manager and audit logger if not provided but needed
-	if opts.privilegeManager == nil && hasPrivilegedCommands(config) {
+	if opts.privilegeManager == nil && hasUserGroupCommands(config) {
 		opts.privilegeManager = privilege.NewManager(slog.Default())
 	}
 
@@ -507,13 +505,6 @@ func (r *Runner) executeCommandInGroup(ctx context.Context, cmd runnertypes.Comm
 		return nil, fmt.Errorf("resolved environment variables security validation failed: %w", err)
 	}
 
-	// Validate privileged commands before any path resolution
-	if cmd.Privileged {
-		if !filepath.IsAbs(cmd.Cmd) {
-			return nil, fmt.Errorf("%w: privileged commands must use absolute paths in configuration: %s", ErrPrivilegedPathConfig, cmd.Cmd)
-		}
-	}
-
 	// Resolve and validate command path if verification manager is available
 	if r.verificationManager != nil {
 		resolvedPath, err := r.verificationManager.ResolvePath(cmd.Cmd)
@@ -521,11 +512,8 @@ func (r *Runner) executeCommandInGroup(ctx context.Context, cmd runnertypes.Comm
 			return nil, fmt.Errorf("command path resolution failed: %w", err)
 		}
 
-		// Only update the command path for non-privileged commands
-		// Privileged commands must already be specified with absolute paths
-		if !cmd.Privileged {
-			cmd.Cmd = resolvedPath
-		}
+		// Update the command path
+		cmd.Cmd = resolvedPath
 	}
 
 	// Set working directory from global config if not specified
@@ -630,11 +618,11 @@ func (r *Runner) sendGroupNotification(group runnertypes.CommandGroup, result *g
 	)
 }
 
-// hasPrivilegedCommands checks if the configuration contains any privileged commands
-func hasPrivilegedCommands(config *runnertypes.Config) bool {
+// hasUserGroupCommands checks if the configuration contains any commands with user/group specifications
+func hasUserGroupCommands(config *runnertypes.Config) bool {
 	for _, group := range config.Groups {
 		for _, cmd := range group.Commands {
-			if cmd.Privileged {
+			if cmd.HasUserGroupSpecification() {
 				return true
 			}
 		}

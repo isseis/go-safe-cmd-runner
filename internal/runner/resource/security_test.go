@@ -30,16 +30,16 @@ func TestSecurityAnalysis(t *testing.T) {
 			expectedPattern: "rm -rf", // This pattern is in the security analysis
 		},
 		{
-			name: "privileged command - sudo usage",
+			name: "sudo rm command with user specification",
 			command: runnertypes.Command{
-				Name:        "sudo-command",
-				Description: "Command requiring sudo",
+				Name:        "sudo-rm-command",
+				Description: "Command requiring sudo with rm",
 				Cmd:         "sudo",
-				Args:        []string{"systemctl", "restart", "nginx"},
-				Privileged:  true,
+				Args:        []string{"rm", "-rf", "/tmp/files"},
+				RunAsUser:   "root",
 			},
 			expectRisk:      true,
-			expectedPattern: "PRIVILEGE", // Should detect privilege escalation
+			expectedPattern: "Privileged", // Should detect privileged file removal
 		},
 		{
 			name: "network command - curl to external",
@@ -131,13 +131,13 @@ func TestPrivilegeEscalationDetection(t *testing.T) {
 		expectPrivilegeChange bool
 	}{
 		{
-			name: "sudo command",
+			name: "sudo rm command",
 			command: runnertypes.Command{
-				Name:        "sudo-test",
-				Description: "Sudo test command",
+				Name:        "sudo-rm-test",
+				Description: "Sudo rm test command",
 				Cmd:         "sudo",
-				Args:        []string{"apt", "update"},
-				Privileged:  true,
+				Args:        []string{"rm", "-rf", "/tmp/test"},
+				RunAsUser:   "root",
 			},
 			expectPrivilegeChange: true,
 		},
@@ -191,13 +191,13 @@ func TestPrivilegeEscalationDetection(t *testing.T) {
 
 			// Verify privilege escalation detection
 			if tt.expectPrivilegeChange {
-				// Should have detected privilege requirement
+				// Should have detected security risk for privileged command
 				assert.NotEmpty(t, analysis.Impact.SecurityRisk, "should have detected security risk for privileged command")
-				assert.Contains(t, analysis.Impact.Description, "PRIVILEGE",
+				assert.Contains(t, analysis.Impact.Description, "Privileged",
 					"should mention privilege requirement in description")
 			} else if analysis.Impact.Description != "" {
 				// Normal commands may still have some security analysis but shouldn't mention privilege
-				assert.NotContains(t, analysis.Impact.Description, "PRIVILEGE",
+				assert.NotContains(t, analysis.Impact.Description, "Privileged",
 					"should not mention privilege for normal command")
 			}
 		})

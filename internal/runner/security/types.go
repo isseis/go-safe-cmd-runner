@@ -119,6 +119,12 @@ type Config struct {
 	ShellCommands []string
 	// ShellMetacharacters is a list of shell metacharacters that require careful handling
 	ShellMetacharacters []string
+	// DangerousRootPatterns is a list of potentially destructive command patterns when running as root
+	DangerousRootPatterns []string
+	// DangerousRootArgPatterns is a list of potentially destructive argument patterns when running as root
+	DangerousRootArgPatterns []string
+	// SystemCriticalPaths is a list of system-critical paths that require extra caution
+	SystemCriticalPaths []string
 	// LoggingOptions controls sensitive information handling in logs
 	LoggingOptions LoggingOptions
 }
@@ -222,6 +228,19 @@ func DefaultConfig() *Config {
 			">", "<", ">>", "<<",
 			"*", "?", "[", "]",
 			"~", "!",
+		},
+		DangerousRootPatterns: []string{
+			"rm", "rmdir", "del", "delete",
+			"format", "mkfs", "dd",
+			"chmod", "chown", "chgrp",
+			"mount", "umount",
+			"fdisk", "parted", "gdisk",
+		},
+		DangerousRootArgPatterns: []string{
+			"rf", "force", "recursive", "all",
+		},
+		SystemCriticalPaths: []string{
+			"/", "/bin", "/sbin", "/usr", "/etc", "/var", "/boot", "/sys", "/proc", "/dev",
 		},
 	}
 }
