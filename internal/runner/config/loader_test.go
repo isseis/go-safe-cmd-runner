@@ -62,9 +62,6 @@ version = "1.0"
 
 	cmd := cfg.Groups[0].Commands[0]
 	assert.Equal(t, "test_cmd", cmd.Name, "expected command name 'test_cmd'")
+	assert.Equal(t, "root", cmd.RunAsUser, "expected run_as_user to be 'root'")
+	assert.True(t, cmd.HasUserGroupSpecification(), "expected command to have user/group specification")
 }
-
-// TestLoadConfigSecurityWarning was removed as verification is now
-// implemented and enabled by default through the verification package.
-// This test was testing for security warnings when verification was not implemented (phase 1).
-// The verification feature is now fully implemented.
