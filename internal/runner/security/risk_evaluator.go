@@ -69,30 +69,28 @@ func (re *DefaultRiskEvaluator) EvaluateCommandExecution(
 
 	// Compare risk levels
 	if re.isRiskLevelExceeded(effectiveRiskLevel, maxAllowedRiskLevel) {
-		// Create privilege escalation info for error reporting
-		var privilegeInfo *PrivilegeEscalationInfo
+		// Create privilege escalation info objects directly if needed
+		var privilegeInfoForLogging *PrivilegeEscalationInfo
+		var privilegeInfoForError *runnertypes.PrivilegeEscalationInfo
+
 		if privilegeResult.IsPrivilegeEscalation {
-			privilegeInfo = &PrivilegeEscalationInfo{
+			privilegeInfoForLogging = &PrivilegeEscalationInfo{
 				IsPrivilegeEscalation: privilegeResult.IsPrivilegeEscalation,
 				EscalationType:        privilegeResult.EscalationType,
+				RequiredPrivileges:    privilegeResult.RequiredPrivileges,
+				DetectedPattern:       privilegeResult.DetectedPattern,
+			}
+
+			privilegeInfoForError = &runnertypes.PrivilegeEscalationInfo{
+				IsPrivilegeEscalation: privilegeResult.IsPrivilegeEscalation,
+				EscalationType:        string(privilegeResult.EscalationType),
 				RequiredPrivileges:    privilegeResult.RequiredPrivileges,
 				DetectedPattern:       privilegeResult.DetectedPattern,
 			}
 		}
 
 		// Log security violation
-		re.logSecurityViolation(command, effectiveRiskLevel, maxAllowedRiskLevel, detectedPattern, reason, privilegeInfo)
-
-		// Create PrivilegeEscalationInfo for runnertypes if needed
-		var privilegeInfoForError *runnertypes.PrivilegeEscalationInfo
-		if privilegeInfo != nil {
-			privilegeInfoForError = &runnertypes.PrivilegeEscalationInfo{
-				IsPrivilegeEscalation: privilegeInfo.IsPrivilegeEscalation,
-				EscalationType:        string(privilegeInfo.EscalationType),
-				RequiredPrivileges:    privilegeInfo.RequiredPrivileges,
-				DetectedPattern:       privilegeInfo.DetectedPattern,
-			}
-		}
+		re.logSecurityViolation(command, effectiveRiskLevel, maxAllowedRiskLevel, detectedPattern, reason, privilegeInfoForLogging)
 
 		// Return security violation error
 		return runnertypes.NewSecurityViolationError(
