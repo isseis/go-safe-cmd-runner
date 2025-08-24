@@ -68,36 +68,27 @@ internal/runner/
 - ✅ 既存機能との完全後方互換性
 - ✅ すべてのテストケースの通過
 
-### 🚧 Phase 2: 拡張リスク制御実装 (未実装)
+### ✅ Phase 2: 拡張リスク制御実装 (実装完了)
 
 #### 2.2.1 拡張 Risk Level Enforcement
 
-**目標**: Critical以外のリスクレベル（High/Medium）の制御実装
+**目標**: Critical以外のリスクレベル（High/Medium）の制御実装 - **完了**
 
-**実装ファイル**: `internal/runner/resource/normal_manager.go`
+**実装ファイル**: `internal/runner/resource/normal_manager.go` - **完了**
 
-**実装タスク**:
-```go
-// 1. インターフェース定義
-type PrivilegeEscalationAnalyzer interface {
-    AnalyzePrivilegeEscalation(ctx context.Context, cmdName string, args []string) (*PrivilegeEscalationResult, error)
-    IsPrivilegeEscalationCommand(cmdName string) bool
-    GetRequiredPrivileges(cmdName string, args []string) ([]string, error)
-}
+**実装済み機能**:
+- Complete max_risk_level enforcement for all risk levels
+- Multi-layer security analysis integration
+- Risk level threshold-based command blocking
+- Comprehensive error handling and logging
+- Type conversion between risk level systems
+- Backward compatibility maintenance
 
-// 2. 基本構造体実装
-type DefaultPrivilegeEscalationAnalyzer struct {
-    logger          *slog.Logger
-    sudoCommands    map[string]bool
-    systemCommands  map[string]bool
-    serviceCommands map[string]bool
-}
-
-// 3. 核となるメソッド実装
-func (a *DefaultPrivilegeEscalationAnalyzer) AnalyzePrivilegeEscalation(
-    ctx context.Context, cmdName string, args []string) (*PrivilegeEscalationResult, error)
-
-func (a *DefaultPrivilegeEscalationAnalyzer) IsPrivilegeEscalationCommand(cmdName string) bool
+**テスト結果**: 全てのテストケースが通過
+- Low risk commands with various max_risk_level settings
+- Medium risk commands with threshold validation
+- High risk commands with proper blocking/allowing
+- Invalid configuration error handling
 
 func (a *DefaultPrivilegeEscalationAnalyzer) GetRequiredPrivileges(
     cmdName string, args []string) ([]string, error)
@@ -155,27 +146,25 @@ type DefaultRiskEvaluator struct {
 func (re *DefaultRiskEvaluator) EvaluateCommandExecution(...) error
 ```
 
-**実装詳細**:
+**実装詳細**: **完了**
 - 基本リスクレベルと特権昇格リスクの統合評価
 - `run_as_user`/`run_as_group` 設定による特権昇格リスクの除外
 - `max_risk_level` 設定との照合
 - 詳細なエラーメッセージ生成
 - セキュリティ違反ログの出力
 
-**受け入れ基準**:
-- [ ] 基本リスクレベルの評価
-- [ ] 特権昇格リスクの分離評価
-- [ ] privileged フラグによる例外処理
-- [ ] max_risk_level との照合
-- [ ] SecurityViolationError の生成
+**受け入れ基準**: ✅ **全て完了**
+- [x] 基本リスクレベルの評価
+- [x] 特権昇格リスクの分離評価
+- [x] privileged フラグによる例外処理
+- [x] max_risk_level との照合
+- [x] SecurityViolationError の生成
 
-**テストケース**: `internal/runner/security/risk_evaluator_test.go`
-```go
-func TestEvaluateCommandExecution_AllowedRisk(t *testing.T)
-func TestEvaluateCommandExecution_ExceededRisk(t *testing.T)
-func TestEvaluateCommandExecution_PrivilegedBypass(t *testing.T)
-func TestEvaluateCommandExecution_PrivilegeEscalationHandling(t *testing.T)
-```
+**テストケース**: `internal/runner/security/risk_evaluator_test.go` ✅ **完了**
+- `TestEvaluateCommandExecution_AllowedRisk` ✅
+- `TestEvaluateCommandExecution_ExceededRisk` ✅
+- `TestEvaluateCommandExecution_PrivilegedBypass` ✅
+- `TestEvaluateCommandExecution_PrivilegeEscalationHandling` ✅
 
 #### 2.1.3 Security Error Types 拡張
 

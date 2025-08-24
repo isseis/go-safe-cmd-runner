@@ -215,10 +215,10 @@ Run ID: 01K35WM4J8BBX09DY348H7JDEX
 ## 6. 受け入れ条件
 
 ### 6.1 機能テスト
-- [ ] High risk コマンドが `max_risk_level = "high"` で実行可能（**未実装** - Normal modeでmax_risk_level制御は未実装）
-- [ ] High risk コマンドが `max_risk_level` 未設定で実行拒否（**未実装** - Normal modeでmax_risk_level制御は未実装）
-- [ ] Medium risk コマンドが `max_risk_level = "medium"` で実行可能（**未実装** - Normal modeでmax_risk_level制御は未実装）
-- [ ] Medium risk コマンドが `max_risk_level` 未設定で実行拒否（**未実装** - Normal modeでmax_risk_level制御は未実装）
+- [x] High risk コマンドが `max_risk_level = "high"` で実行可能（**実装完了** - Normal modeで完全実装）
+- [x] High risk コマンドが `max_risk_level` 未設定で実行拒否（**実装完了** - Normal modeで完全実装）
+- [x] Medium risk コマンドが `max_risk_level = "medium"` で実行可能（**実装完了** - Normal modeで完全実装）
+- [x] Medium risk コマンドが `max_risk_level` 未設定で実行拒否（**実装完了** - Normal modeで完全実装）
 - [x] 深いシンボリックリンクが適切に検出・拒否される
 - [x] 安全なコマンドは設定なしで実行可能
 - [x] **特権昇格コマンド（sudo, su, doas）が `max_risk_level` 設定に関わらず一律で実行拒否**（Critical riskとして分類され拒否）
