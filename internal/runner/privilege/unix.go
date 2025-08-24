@@ -63,12 +63,20 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
 
 // executionContext holds context for privilege execution
 type executionContext struct {
-	elevationCtx             runnertypes.ElevationContext
+	elevationCtx runnertypes.ElevationContext
+	// needsPrivilegeEscalation indicates whether system-level privilege escalation (setuid to root) is required.
+	// This is needed to gain administrative privileges for operations like file validation or user switching.
+	// When true, escalatePrivileges() will call syscall.Seteuid(0) to become root.
 	needsPrivilegeEscalation bool
-	needsUserGroupChange     bool
-	originalEUID             int
-	originalEGID             int
-	start                    time.Time
+	// needsUserGroupChange indicates whether user/group identity change is required.
+	// This controls whether changeUserGroupInternal() should be called to validate or switch to the target user/group.
+	// IMPORTANT: This operation requires root privileges (needsPrivilegeEscalation=true) to be performed first,
+	// because only root can change effective UID/GID to arbitrary values via syscall.Seteuid()/Setegid().
+	// The typical flow is: current_user -> root (via escalatePrivileges) -> target_user (via changeUserGroupInternal).
+	needsUserGroupChange bool
+	originalEUID         int
+	originalEGID         int
+	start                time.Time
 }
 
 // prepareExecution validates and prepares the execution context
