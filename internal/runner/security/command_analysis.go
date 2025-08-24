@@ -116,6 +116,63 @@ func (v *Validator) HasShellMetacharacters(args []string) bool {
 	return false
 }
 
+// IsDangerousRootCommand checks if a command contains dangerous patterns when running as root
+func (v *Validator) IsDangerousRootCommand(cmdPath string) bool {
+	cmdBase := filepath.Base(cmdPath)
+	cmdLower := strings.ToLower(cmdBase)
+
+	for _, dangerous := range v.config.DangerousRootPatterns {
+		if strings.Contains(cmdLower, dangerous) {
+			return true
+		}
+	}
+	return false
+}
+
+// HasDangerousRootArgs checks if any argument contains dangerous patterns for root commands
+func (v *Validator) HasDangerousRootArgs(args []string) []int {
+	var dangerousIndices []int
+
+	for i, arg := range args {
+		argLower := strings.ToLower(arg)
+		for _, dangerousPattern := range v.config.DangerousRootArgPatterns {
+			if strings.Contains(argLower, dangerousPattern) {
+				dangerousIndices = append(dangerousIndices, i)
+				break
+			}
+		}
+	}
+	return dangerousIndices
+}
+
+// HasWildcards checks if any argument contains wildcards
+func (v *Validator) HasWildcards(args []string) []int {
+	var wildcardIndices []int
+
+	for i, arg := range args {
+		if strings.Contains(arg, "*") || strings.Contains(arg, "?") {
+			wildcardIndices = append(wildcardIndices, i)
+		}
+	}
+	return wildcardIndices
+}
+
+// HasSystemCriticalPaths checks if any argument targets system-critical paths
+func (v *Validator) HasSystemCriticalPaths(args []string) []int {
+	var criticalIndices []int
+
+	for i, arg := range args {
+		for _, criticalPath := range v.config.SystemCriticalPaths {
+			if strings.HasPrefix(arg, criticalPath) &&
+				(len(arg) == len(criticalPath) || arg[len(criticalPath)] == '/') {
+				criticalIndices = append(criticalIndices, i)
+				break
+			}
+		}
+	}
+	return criticalIndices
+}
+
 // checkCommandPatterns checks if a command matches any patterns in the given list
 func checkCommandPatterns(cmdName string, cmdArgs []string, patterns []DangerousCommandPattern) (RiskLevel, string, string) {
 	for _, pattern := range patterns {

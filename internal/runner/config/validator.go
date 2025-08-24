@@ -482,68 +482,61 @@ func (v *Validator) validatePrivilegedCommand(cmd *runnertypes.Command, location
 	}
 
 	// Special validation for root privileges
-	if cmd.RunAsUser == "root" || cmd.RunAsUser == "0" {
+	if cmd.RunAsUser == "root" {
 		v.validateRootPrivilegedCommand(cmd, location, result)
 	}
 }
 
 // validateRootPrivilegedCommand provides additional validation for commands running as root
 func (v *Validator) validateRootPrivilegedCommand(cmd *runnertypes.Command, location string, result *ValidationResult) {
-	// Check for especially dangerous patterns when running as root
-	dangerousRootPatterns := []string{
-		"rm", "rmdir", "del", "delete",
-		"format", "mkfs", "dd",
-		"chmod", "chown", "chgrp",
-		"mount", "umount",
-		"fdisk", "parted", "gdisk",
+	// Skip validation if security validator is not available
+	if v.securityValidator == nil {
+		return
 	}
 
-	cmdBase := filepath.Base(cmd.Cmd)
-	for _, dangerous := range dangerousRootPatterns {
-		if strings.Contains(strings.ToLower(cmdBase), dangerous) {
-			result.Warnings = append(result.Warnings, ValidationWarning{
-				Type:       "security",
-				Location:   fmt.Sprintf("%s.cmd", location),
-				Message:    fmt.Sprintf("Command '%s' running as root contains potentially destructive pattern '%s'", cmd.Cmd, dangerous),
-				Suggestion: "Carefully review command and arguments, consider using safer alternatives or additional safeguards",
-			})
-		}
+	// Check for especially dangerous patterns when running as root
+	if v.securityValidator.IsDangerousRootCommand(cmd.Cmd) {
+		result.Warnings = append(result.Warnings, ValidationWarning{
+			Type:       "security",
+			Location:   fmt.Sprintf("%s.cmd", location),
+			Message:    fmt.Sprintf("Command '%s' running as root contains potentially destructive pattern", cmd.Cmd),
+			Suggestion: "Carefully review command and arguments, consider using safer alternatives or additional safeguards",
+		})
 	}
 
 	// Check for dangerous argument patterns when running as root
-	for i, arg := range cmd.Args {
-		argLower := strings.ToLower(arg)
-		if strings.Contains(argLower, "rf") || strings.Contains(argLower, "force") ||
-			strings.Contains(argLower, "recursive") || strings.Contains(argLower, "all") {
+	if dangerousIndices := v.securityValidator.HasDangerousRootArgs(cmd.Args); len(dangerousIndices) > 0 {
+		for _, i := range dangerousIndices {
 			result.Warnings = append(result.Warnings, ValidationWarning{
 				Type:       "security",
 				Location:   fmt.Sprintf("%s.args[%d]", location, i),
-				Message:    fmt.Sprintf("Root command argument '%s' contains potentially destructive flag", arg),
+				Message:    fmt.Sprintf("Root command argument '%s' contains potentially destructive flag", cmd.Args[i]),
 				Suggestion: "Carefully review destructive flags when running as root",
 			})
 		}
+	}
 
-		// Check for wildcard patterns
-		if strings.Contains(arg, "*") || strings.Contains(arg, "?") {
+	// Check for wildcard patterns
+	if wildcardIndices := v.securityValidator.HasWildcards(cmd.Args); len(wildcardIndices) > 0 {
+		for _, i := range wildcardIndices {
 			result.Warnings = append(result.Warnings, ValidationWarning{
 				Type:       "security",
 				Location:   fmt.Sprintf("%s.args[%d]", location, i),
-				Message:    fmt.Sprintf("Root command argument '%s' contains wildcards - ensure this is intentional", arg),
+				Message:    fmt.Sprintf("Root command argument '%s' contains wildcards - ensure this is intentional", cmd.Args[i]),
 				Suggestion: "Wildcards in root commands can be dangerous, consider using explicit paths",
 			})
 		}
+	}
 
-		// Check for system-critical paths
-		criticalPaths := []string{"/", "/bin", "/sbin", "/usr", "/etc", "/var", "/boot", "/sys", "/proc", "/dev"}
-		for _, criticalPath := range criticalPaths {
-			if strings.HasPrefix(arg, criticalPath) && (len(arg) == len(criticalPath) || arg[len(criticalPath)] == '/') {
-				result.Warnings = append(result.Warnings, ValidationWarning{
-					Type:       "security",
-					Location:   fmt.Sprintf("%s.args[%d]", location, i),
-					Message:    fmt.Sprintf("Root command targets system-critical path '%s'", arg),
-					Suggestion: "Be extremely cautious when operating on system-critical paths as root",
-				})
-			}
+	// Check for system-critical paths
+	if criticalIndices := v.securityValidator.HasSystemCriticalPaths(cmd.Args); len(criticalIndices) > 0 {
+		for _, i := range criticalIndices {
+			result.Warnings = append(result.Warnings, ValidationWarning{
+				Type:       "security",
+				Location:   fmt.Sprintf("%s.args[%d]", location, i),
+				Message:    fmt.Sprintf("Root command targets system-critical path '%s'", cmd.Args[i]),
+				Suggestion: "Be extremely cautious when operating on system-critical paths as root",
+			})
 		}
 	}
 }
