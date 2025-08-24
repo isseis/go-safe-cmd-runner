@@ -1,18 +1,6 @@
 # Go Safe Command Runner
 
-A secure command execution framework for Go designed for privileged task delegation and automated batch process[[groups.commands]]
-name = "db_backup"
-description = "Backup database"
-cmd = "mysqldump"
-args = ["--all-databases", "--single-transaction"]
-env = ["BACKUP_DIR=/backups"]
-
-[[groups.commands]]
-name = "system_backup"
-description = "Backup system files"
-cmd = "rsync"
-args = ["-av", "/etc/", "/backups/etc/"]
-run_as_user = "root"ehensive security controls.
+A secure command execution framework for Go designed for privileged task delegation and automated batch processing with comprehensive security controls.
 
 Project page: https://github.com/isseis/go-safe-cmd-runner/
 
