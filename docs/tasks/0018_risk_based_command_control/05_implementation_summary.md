@@ -131,15 +131,29 @@ privileged = true                # EXISTING: Root privileges
 - **User/Group Interface**: Complete implementation of `WithUserGroup` and `IsUserGroupSupported` methods
 - **Dry-run Enhancement**: Full user/group privilege analysis in dry-run mode with comprehensive testing
 
-### 🚧 Remaining Implementation Tasks
-- **Normal Manager Risk Level Enforcement**: max_risk_level制御の実装（現在はCritical riskのみブロック、High/Medium riskの制御は未実装）
-- **Advanced Privilege Separation**: より高度なユーザー・グループ権限管理の実装
-- **User/Group Privilege Execution**: Normal modeでのrun_as_user/run_as_group実行機能
+### ✅ Phase 1 Security Integration (August 24, 2025)
+- **Normal Manager Integration**: Successfully integrated `PrivilegeEscalationAnalyzer` and `RiskEvaluator` from security package into Normal Manager
+- **Multi-Layer Security Analysis**: Implemented comprehensive security analysis with three-step evaluation:
+  1. Basic risk evaluation using existing risk package
+  2. Privilege escalation analysis using security package
+  3. Comprehensive risk evaluation with security package evaluator
+- **Type System Harmonization**: Created type conversion between `runnertypes.RiskLevel` and `security.RiskLevel` systems
+- **Logger Integration**: Added structured logging support throughout security analysis pipeline
+- **Critical Risk Blocking**: Maintained backward compatibility with existing critical risk blocking for privilege escalation commands
+- **Test Integration**: Updated all test files to support new constructor signatures with logger parameters
 
-### 🎯 Current Status
-**部分的実装完了**: コアセキュリティ機能は実装済みで特権昇格コマンドは確実にブロックされるが、max_risk_level制御は完全実装に至っていない。Dry-run modeでは完全にリスク分析が動作しているが、Normal execution modeではCritical riskのみブロック対象となっている。
+### 🚧 Remaining Implementation Tasks (Phase 2-3)
+- **Risk Level Enforcement Expansion**: Implementation of max_risk_level control for High/Medium risk commands (currently only Critical risk is blocked)
+- **Advanced Privilege Separation**: More sophisticated user/group privilege management implementation
+- **User/Group Privilege Execution**: Normal mode run_as_user/run_as_group execution functionality
+- **Enhanced Risk Control**: Full max_risk_level threshold enforcement across all risk levels
 
-**実用レベル**: 最も危険な特権昇格攻撃は防御できるレベルに達している。
+### 🎯 Current Status (Phase 1 Complete)
+**Phase 1 Security Integration Completed**: Successfully integrated security analysis components into Normal Manager with comprehensive privilege escalation detection. All tests passing, lint checks clear.
+
+**Security Level**: Critical privilege escalation commands (sudo/su/doas) are reliably blocked with enhanced security analysis pipeline. Multi-layer security evaluation is operational in both dry-run and normal execution modes.
+
+**Next Steps**: Ready for Phase 2 implementation focusing on expanded risk level enforcement and advanced privilege management capabilities.
 
 ## User Benefits
 

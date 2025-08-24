@@ -2,6 +2,7 @@ package resource
 
 import (
 	"context"
+	"log/slog"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
@@ -18,7 +19,7 @@ func TestDefaultResourceManager_ModeDelegation(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("Normal Mode", func(t *testing.T) {
-		mgr := NewDefaultResourceManager(mockExec, mockFS, mockPriv, ExecutionModeNormal, &DryRunOptions{})
+		mgr := NewDefaultResourceManager(mockExec, mockFS, mockPriv, slog.Default(), ExecutionModeNormal, &DryRunOptions{})
 
 		expected := &executor.Result{ExitCode: 0, Stdout: "ok"}
 
@@ -31,7 +32,7 @@ func TestDefaultResourceManager_ModeDelegation(t *testing.T) {
 	})
 
 	t.Run("Dry Run Mode", func(t *testing.T) {
-		mgr := NewDefaultResourceManager(mockExec, mockFS, mockPriv, ExecutionModeDryRun, &DryRunOptions{DetailLevel: DetailLevelDetailed})
+		mgr := NewDefaultResourceManager(mockExec, mockFS, mockPriv, slog.Default(), ExecutionModeDryRun, &DryRunOptions{DetailLevel: DetailLevelDetailed})
 
 		res2, err := mgr.ExecuteCommand(ctx, cmd, createTestCommandGroup(), env)
 		assert.NoError(t, err)
@@ -47,7 +48,7 @@ func TestDefaultResourceManager_TempDirDelegation(t *testing.T) {
 	mockPriv := &MockPrivilegeManager{}
 
 	t.Run("CreateTempDir Normal", func(t *testing.T) {
-		mgr := NewDefaultResourceManager(mockExec, mockFS, mockPriv, ExecutionModeNormal, &DryRunOptions{})
+		mgr := NewDefaultResourceManager(mockExec, mockFS, mockPriv, slog.Default(), ExecutionModeNormal, &DryRunOptions{})
 		mockFS.On("CreateTempDir", "", "scr-group-").Return("/tmp/scr-group-123", nil)
 		path, err := mgr.CreateTempDir("group")
 		assert.NoError(t, err)
@@ -56,7 +57,7 @@ func TestDefaultResourceManager_TempDirDelegation(t *testing.T) {
 
 	t.Run("CreateTempDir Dry Run", func(t *testing.T) {
 		// Dry-run
-		mgr := NewDefaultResourceManager(mockExec, mockFS, mockPriv, ExecutionModeDryRun, &DryRunOptions{})
+		mgr := NewDefaultResourceManager(mockExec, mockFS, mockPriv, slog.Default(), ExecutionModeDryRun, &DryRunOptions{})
 
 		path2, err := mgr.CreateTempDir("group")
 		assert.NoError(t, err)
@@ -69,7 +70,7 @@ func TestDefaultResourceManager_PrivilegesAndNotifications(t *testing.T) {
 	mockFS := &MockFileSystem{}
 	mockPriv := &MockPrivilegeManager{}
 
-	mgr := NewDefaultResourceManager(mockExec, mockFS, mockPriv, ExecutionModeDryRun, &DryRunOptions{})
+	mgr := NewDefaultResourceManager(mockExec, mockFS, mockPriv, slog.Default(), ExecutionModeDryRun, &DryRunOptions{})
 
 	// WithPrivileges should call provided fn in dry-run
 	called := false

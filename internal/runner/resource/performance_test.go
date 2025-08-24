@@ -2,6 +2,7 @@ package resource
 
 import (
 	"context"
+	"log/slog"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -168,7 +169,7 @@ func BenchmarkResourceManagerModeSwitch(b *testing.B) {
 			DetailLevel:  DetailLevelDetailed,
 			OutputFormat: OutputFormatText,
 		}
-		manager := NewDefaultResourceManager(nil, nil, nil, ExecutionModeDryRun, dryRunOpts)
+		manager := NewDefaultResourceManager(nil, nil, nil, slog.Default(), ExecutionModeDryRun, dryRunOpts)
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {

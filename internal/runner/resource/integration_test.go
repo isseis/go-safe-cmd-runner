@@ -2,6 +2,7 @@ package resource
 
 import (
 	"context"
+	"log/slog"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -217,7 +218,7 @@ func TestDefaultResourceManagerModeConsistency(t *testing.T) {
 
 	t.Run("normal mode delegation", func(t *testing.T) {
 		dryRunOpts := &DryRunOptions{}
-		manager := NewDefaultResourceManager(nil, nil, nil, ExecutionModeNormal, dryRunOpts)
+		manager := NewDefaultResourceManager(nil, nil, nil, slog.Default(), ExecutionModeNormal, dryRunOpts)
 		require.NotNil(t, manager)
 
 		assert.Equal(t, ExecutionModeNormal, manager.GetMode())
@@ -232,7 +233,7 @@ func TestDefaultResourceManagerModeConsistency(t *testing.T) {
 			OutputFormat: OutputFormatText,
 		}
 
-		manager := NewDefaultResourceManager(nil, nil, nil, ExecutionModeDryRun, dryRunOpts)
+		manager := NewDefaultResourceManager(nil, nil, nil, slog.Default(), ExecutionModeDryRun, dryRunOpts)
 		require.NotNil(t, manager)
 
 		assert.Equal(t, ExecutionModeDryRun, manager.GetMode())

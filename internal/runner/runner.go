@@ -226,6 +226,7 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 				opts.executor,
 				fs,
 				opts.privilegeManager,
+				slog.Default(), // Logger for Phase 1 implementation
 				resource.ExecutionModeNormal,
 				&resource.DryRunOptions{}, // Empty dry-run options for normal mode
 			)

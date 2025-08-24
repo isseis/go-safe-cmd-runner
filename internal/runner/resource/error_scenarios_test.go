@@ -3,6 +3,7 @@ package resource
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"testing"
 
@@ -204,7 +205,7 @@ func TestErrorScenariosConsistency(t *testing.T) {
 			setup: func() ResourceManager {
 				mockExecutor := &mockCommandExecutor{}
 				mockFS := &mockFileSystem{}
-				return NewNormalResourceManager(mockExecutor, mockFS, nil)
+				return NewNormalResourceManager(mockExecutor, mockFS, nil, slog.Default())
 			},
 			isDryRun: false,
 		},
@@ -258,7 +259,7 @@ func TestConcurrentExecutionConsistency(t *testing.T) {
 			setup: func() ResourceManager {
 				mockExecutor := &mockCommandExecutor{}
 				mockFS := &mockFileSystem{}
-				return NewNormalResourceManager(mockExecutor, mockFS, nil)
+				return NewNormalResourceManager(mockExecutor, mockFS, nil, slog.Default())
 			},
 			isDryRun: false,
 		},
@@ -619,7 +620,7 @@ func TestResourceManagerStateConsistency(t *testing.T) {
 		VerifyFiles:   true,
 	}
 
-	manager := NewDefaultResourceManager(nil, nil, nil, ExecutionModeDryRun, dryRunOpts)
+	manager := NewDefaultResourceManager(nil, nil, nil, slog.Default(), ExecutionModeDryRun, dryRunOpts)
 	require.NotNil(t, manager)
 
 	command := runnertypes.Command{
@@ -669,14 +670,14 @@ func TestResourceManagerStateConsistency(t *testing.T) {
 		}
 
 		// Test with dry-run mode
-		dryRunManager := NewDefaultResourceManager(nil, nil, nil, ExecutionModeDryRun, dryRunOpts)
+		dryRunManager := NewDefaultResourceManager(nil, nil, nil, slog.Default(), ExecutionModeDryRun, dryRunOpts)
 		result, err := dryRunManager.ExecuteCommand(ctx, nullCommand, group, nullEnvVars)
 		assert.NoError(t, err, "dry-run mode should handle null bytes in environment")
 		assert.NotNil(t, result, "dry-run mode should return result")
 		assert.True(t, result.DryRun, "result should indicate dry-run mode")
 
 		// Test with normal mode
-		normalManager := NewDefaultResourceManager(&mockCommandExecutor{}, &mockFileSystem{}, nil, ExecutionModeNormal, nil)
+		normalManager := NewDefaultResourceManager(&mockCommandExecutor{}, &mockFileSystem{}, nil, slog.Default(), ExecutionModeNormal, nil)
 		result, err = normalManager.ExecuteCommand(ctx, nullCommand, group, nullEnvVars)
 		assert.NoError(t, err, "normal mode should handle null bytes in environment")
 		assert.NotNil(t, result, "normal mode should return result")

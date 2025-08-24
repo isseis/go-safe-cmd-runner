@@ -3,12 +3,14 @@ package resource
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/risk"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
 // NormalResourceManager implements ResourceManager for normal execution mode
@@ -19,19 +21,33 @@ type NormalResourceManager struct {
 	privilegeManager runnertypes.PrivilegeManager
 	riskEvaluator    risk.Evaluator
 
+	// Phase 1: New security components
+	privilegeAnalyzer security.PrivilegeEscalationAnalyzer
+	securityEvaluator security.RiskEvaluator
+	logger            *slog.Logger
+
 	// State management
 	mu       sync.RWMutex
 	tempDirs []string
 }
 
 // NewNormalResourceManager creates a new NormalResourceManager for normal execution mode
-func NewNormalResourceManager(exec executor.CommandExecutor, fs executor.FileSystem, privMgr runnertypes.PrivilegeManager) *NormalResourceManager {
+func NewNormalResourceManager(
+	exec executor.CommandExecutor,
+	fs executor.FileSystem,
+	privMgr runnertypes.PrivilegeManager,
+	logger *slog.Logger,
+) *NormalResourceManager {
 	return &NormalResourceManager{
 		executor:         exec,
 		fileSystem:       fs,
 		privilegeManager: privMgr,
 		riskEvaluator:    risk.NewStandardEvaluator(),
-		tempDirs:         make([]string, 0),
+		// Phase 1: Initialize new security components
+		privilegeAnalyzer: security.NewDefaultPrivilegeEscalationAnalyzer(logger),
+		securityEvaluator: security.NewDefaultRiskEvaluator(logger),
+		logger:            logger,
+		tempDirs:          make([]string, 0),
 	}
 }
 
@@ -48,13 +64,35 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd runnerty
 		return nil, fmt.Errorf("command group validation failed: %w", err)
 	}
 
-	// Evaluate security risk before execution
+	// Phase 1: Integrated security analysis
+	// Step 1: Evaluate basic security risk
 	riskLevel, err := n.riskEvaluator.EvaluateRisk(&cmd)
 	if err != nil {
 		return nil, fmt.Errorf("risk evaluation failed: %w", err)
 	}
 
-	// Block critical risk commands (privilege escalation)
+	// Step 2: Analyze privilege escalation
+	privilegeResult, err := n.privilegeAnalyzer.AnalyzePrivilegeEscalation(ctx, cmd.Cmd, cmd.Args)
+	if err != nil {
+		return nil, fmt.Errorf("privilege escalation analysis failed: %w", err)
+	}
+
+	// Step 3: Comprehensive risk evaluation
+	// Convert runnertypes.RiskLevel to security.RiskLevel
+	securityRiskLevel := n.convertToSecurityRiskLevel(riskLevel)
+	err = n.securityEvaluator.EvaluateCommandExecution(
+		ctx,
+		securityRiskLevel,
+		"", // detectedPattern - will be filled by evaluator
+		"", // reason - will be filled by evaluator
+		privilegeResult,
+		&cmd,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("security evaluation failed: %w", err)
+	}
+
+	// Legacy: Block critical risk commands (privilege escalation) for backward compatibility
 	if riskLevel == runnertypes.RiskLevelCritical {
 		return nil, fmt.Errorf("%w: command %s detected as privilege escalation command",
 			runnertypes.ErrCriticalRiskBlocked, cmd.Cmd)
@@ -72,6 +110,22 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd runnerty
 		Duration: time.Since(start).Milliseconds(),
 		DryRun:   false,
 	}, nil
+}
+
+// convertToSecurityRiskLevel converts runnertypes.RiskLevel to security.RiskLevel
+func (n *NormalResourceManager) convertToSecurityRiskLevel(level runnertypes.RiskLevel) security.RiskLevel {
+	switch level {
+	case runnertypes.RiskLevelLow:
+		return security.RiskLevelLow
+	case runnertypes.RiskLevelMedium:
+		return security.RiskLevelMedium
+	case runnertypes.RiskLevelHigh:
+		return security.RiskLevelHigh
+	case runnertypes.RiskLevelCritical:
+		return security.RiskLevelHigh // Map critical to high for security evaluator
+	default:
+		return security.RiskLevelNone
+	}
 }
 
 // CreateTempDir creates a temporary directory in normal mode

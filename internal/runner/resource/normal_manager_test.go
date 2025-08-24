@@ -3,6 +3,7 @@ package resource
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
@@ -88,7 +89,7 @@ func createTestNormalResourceManager() (*NormalResourceManager, *MockExecutor, *
 	mockFS := &MockFileSystem{}
 	mockPriv := &MockPrivilegeManager{}
 
-	manager := NewNormalResourceManager(mockExec, mockFS, mockPriv)
+	manager := NewNormalResourceManager(mockExec, mockFS, mockPriv, slog.Default())
 
 	return manager, mockExec, mockFS, mockPriv
 }

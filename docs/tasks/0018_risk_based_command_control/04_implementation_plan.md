@@ -32,13 +32,49 @@ internal/runner/
 
 ## 2. 実装フェーズ
 
-### 2.1 Phase 1: 基盤実装 (Week 1-2)
+### ✅ Phase 1: 基盤実装完了 (August 24, 2025)
 
-#### 2.1.1 Privilege Escalation Analyzer 基本実装
+**実装状況**: Phase 1は正常に完了済み
 
-**目標**: 特権昇格コマンドの検出と分析機能の実装
+#### ✅ Phase 1.1: Normal Manager セキュリティ統合完了
 
-**実装ファイル**: `internal/runner/security/privilege.go`
+**実装内容**:
+- `internal/runner/resource/normal_manager.go` への `PrivilegeEscalationAnalyzer` と `RiskEvaluator` 統合
+- セキュリティ分析パイプライン（3段階評価）の実装
+- `runnertypes.RiskLevel` と `security.RiskLevel` 間の型変換機能
+- 構造化ログ（slog）によるセキュリティイベント記録
+- Critical risk command のブロック機能（特権昇格コマンド検出）
+
+**統合されたセキュリティ分析パイプライン**:
+1. 基本リスク評価（既存 risk package）
+2. 特権昇格分析（security package）
+3. 統合リスク評価（security package evaluator）
+
+**実装ファイル**:
+- ✅ `internal/runner/resource/normal_manager.go` - セキュリティ機能統合済み
+- ✅ `internal/runner/resource/default_manager.go` - ロガー対応済み
+- ✅ `internal/runner/runner.go` - リソースマネージャ初期化更新済み
+- ✅ 全テストファイル - ロガーパラメータ対応済み
+
+**テスト結果**:
+- ✅ `make test`: 全テスト通過
+- ✅ `make lint`: リントエラーなし（0 issues）
+- ✅ セキュリティログ出力確認済み（特権昇格検出動作確認済み）
+
+**受け入れ基準達成**:
+- ✅ 特権昇格コマンド（sudo/su/doas）の検出・ブロック
+- ✅ セキュリティ分析パイプラインの動作確認
+- ✅ ログ出力の実装・動作確認
+- ✅ 既存機能との完全後方互換性
+- ✅ すべてのテストケースの通過
+
+### 🚧 Phase 2: 拡張リスク制御実装 (未実装)
+
+#### 2.2.1 拡張 Risk Level Enforcement
+
+**目標**: Critical以外のリスクレベル（High/Medium）の制御実装
+
+**実装ファイル**: `internal/runner/resource/normal_manager.go`
 
 **実装タスク**:
 ```go
@@ -409,12 +445,16 @@ gantt
 
 ### 3.2 マイルストーン
 
-| マイルストーン | 完了予定日 | 成果物 |
-|----------------|------------|--------|
-| Phase 1 完了 | 2024-01-22 | 基本セキュリティ機能実装 |
-| Phase 2 完了 | 2024-01-29 | Normal Manager 統合完了 |
-| Phase 3 完了 | 2024-02-05 | 高度な分析機能実装 |
-| Phase 4 完了 | 2024-02-12 | 最終成果物完成 |
+| マイルストーン | 完了予定日 | 成果物 | 実装状況 |
+|----------------|------------|--------|----------|
+| ✅ Phase 1 完了 | 2025-08-24 | 基本セキュリティ機能実装・Normal Manager統合 | **完了済み** |
+| 🚧 Phase 2 完了 | TBD | 拡張リスク制御・max_risk_level制御 | **未実装** |
+| 🚧 Phase 3 完了 | TBD | 高度な分析機能実装 | **未実装** |
+| 🚧 Phase 4 完了 | TBD | 最終成果物完成 | **未実装** |
+
+**現在の実装状況 (2025-08-24)**:
+- ✅ **Phase 1 完了**: Normal Manager へのセキュリティ統合、特権昇格検出、セキュリティ分析パイプライン実装
+- 🚧 **Phase 2以降**: 未実装（max_risk_level制御、高度な特権管理等）
 
 ## 4. リスク管理
 
