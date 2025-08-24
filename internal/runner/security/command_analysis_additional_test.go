@@ -16,9 +16,27 @@ func TestIsDestructiveFileOperation(t *testing.T) {
 			expected: true,
 		},
 		{
+			name:     "rm with force flag",
+			cmd:      "rm",
+			args:     []string{"-rf", "/tmp/test"},
+			expected: true,
+		},
+		{
 			name:     "rmdir command",
 			cmd:      "rmdir",
 			args:     []string{"directory"},
+			expected: true,
+		},
+		{
+			name:     "unlink command",
+			cmd:      "unlink",
+			args:     []string{"/tmp/file"},
+			expected: true,
+		},
+		{
+			name:     "shred command",
+			cmd:      "shred",
+			args:     []string{"-u", "file.txt"},
 			expected: true,
 		},
 		{
@@ -34,6 +52,24 @@ func TestIsDestructiveFileOperation(t *testing.T) {
 			expected: true,
 		},
 		{
+			name:     "find with exec shred (destructive)",
+			cmd:      "find",
+			args:     []string{"/tmp", "-name", "*.tmp", "-exec", "shred", "-u", "{}", ";"},
+			expected: true,
+		},
+		{
+			name:     "find with exec stat (safe)",
+			cmd:      "find",
+			args:     []string{"/tmp", "-name", "*.log", "-exec", "stat", "{}", ";"},
+			expected: false,
+		},
+		{
+			name:     "find with exec cat (safe)",
+			cmd:      "find",
+			args:     []string{"/tmp", "-name", "*.log", "-exec", "cat", "{}", ";"},
+			expected: false,
+		},
+		{
 			name:     "rsync with delete",
 			cmd:      "rsync",
 			args:     []string{"-av", "--delete", "src/", "dst/"},
@@ -43,6 +79,12 @@ func TestIsDestructiveFileOperation(t *testing.T) {
 			name:     "rsync with delete-before",
 			cmd:      "rsync",
 			args:     []string{"-av", "--delete-before", "src/", "dst/"},
+			expected: true,
+		},
+		{
+			name:     "rsync with delete-after",
+			cmd:      "rsync",
+			args:     []string{"-av", "--delete-after", "src/", "dst/"},
 			expected: true,
 		},
 		{
@@ -67,6 +109,12 @@ func TestIsDestructiveFileOperation(t *testing.T) {
 			name:     "safe rsync",
 			cmd:      "rsync",
 			args:     []string{"-av", "src/", "dst/"},
+			expected: false,
+		},
+		{
+			name:     "safe cat",
+			cmd:      "cat",
+			args:     []string{"file.txt"},
 			expected: false,
 		},
 	}
@@ -107,6 +155,12 @@ func TestIsSystemModification(t *testing.T) {
 			expected: true,
 		},
 		{
+			name:     "apt install vim",
+			cmd:      "apt",
+			args:     []string{"install", "vim"},
+			expected: true,
+		},
+		{
 			name:     "apt remove",
 			cmd:      "apt",
 			args:     []string{"remove", "nginx"},
@@ -119,9 +173,21 @@ func TestIsSystemModification(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "npm install",
+			name:     "npm install express",
 			cmd:      "npm",
 			args:     []string{"install", "express"},
+			expected: true,
+		},
+		{
+			name:     "npm install package",
+			cmd:      "npm",
+			args:     []string{"install", "package"},
+			expected: true,
+		},
+		{
+			name:     "mount sdb1",
+			cmd:      "mount",
+			args:     []string{"/dev/sdb1", "/mnt"},
 			expected: true,
 		},
 		{
@@ -134,6 +200,12 @@ func TestIsSystemModification(t *testing.T) {
 			name:     "safe apt list",
 			cmd:      "apt",
 			args:     []string{"list"},
+			expected: false,
+		},
+		{
+			name:     "safe apt list installed",
+			cmd:      "apt",
+			args:     []string{"list", "--installed"},
 			expected: false,
 		},
 		{
@@ -155,6 +227,79 @@ func TestIsSystemModification(t *testing.T) {
 			result := IsSystemModification(tt.cmd, tt.args)
 			if result != tt.expected {
 				t.Errorf("IsSystemModification(%q, %v) = %v, want %v", tt.cmd, tt.args, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestIsNetworkOperation_FromEvaluatorTests(t *testing.T) {
+	tests := []struct {
+		name     string
+		cmd      string
+		args     []string
+		expected bool
+	}{
+		{
+			name:     "wget with URL",
+			cmd:      "wget",
+			args:     []string{"https://example.com/file.txt"},
+			expected: true,
+		},
+		{
+			name:     "curl with URL",
+			cmd:      "curl",
+			args:     []string{"-O", "https://example.com/file.txt"},
+			expected: true,
+		},
+		{
+			name:     "ssh command",
+			cmd:      "ssh",
+			args:     []string{"user@host"},
+			expected: true,
+		},
+		{
+			name:     "rsync with remote",
+			cmd:      "rsync",
+			args:     []string{"-av", "user@host:/path/", "local/"},
+			expected: true,
+		},
+		{
+			name:     "git with URL",
+			cmd:      "git",
+			args:     []string{"clone", "https://github.com/user/repo.git"},
+			expected: true,
+		},
+		{
+			name:     "command with http URL in args",
+			cmd:      "myapp",
+			args:     []string{"--url", "http://api.example.com"},
+			expected: true,
+		},
+		{
+			name:     "safe local git",
+			cmd:      "git",
+			args:     []string{"status"},
+			expected: false,
+		},
+		{
+			name:     "safe local rsync",
+			cmd:      "rsync",
+			args:     []string{"-av", "src/", "dst/"},
+			expected: false,
+		},
+		{
+			name:     "safe command",
+			cmd:      "ls",
+			args:     []string{"-la"},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, _ := IsNetworkOperation(tt.cmd, tt.args)
+			if result != tt.expected {
+				t.Errorf("IsNetworkOperation(%q, %v) = %v, want %v", tt.cmd, tt.args, result, tt.expected)
 			}
 		})
 	}
