@@ -384,34 +384,6 @@ func IsSystemModification(cmd string, args []string) bool {
 	return false
 }
 
-// AnalyzeCommandSecurity analyzes a command with its arguments for dangerous patterns
-func AnalyzeCommandSecurity(cmdName string, args []string) (riskLevel RiskLevel, detectedPattern string, reason string) {
-	// First, check if symlink depth is exceeded (highest priority security concern)
-	if _, exceededDepth := extractAllCommandNames(cmdName); exceededDepth {
-		return RiskLevelHigh, cmdName, "Symbolic link depth exceeds security limit (potential symlink attack)"
-	}
-
-	// Check high risk patterns first (more specific than generic setuid/setgid)
-	if riskLevel, pattern, reason := checkCommandPatterns(cmdName, args, highRiskPatterns); riskLevel != RiskLevelNone {
-		return riskLevel, pattern, reason
-	}
-
-	// Then check medium risk patterns
-	if riskLevel, pattern, reason := checkCommandPatterns(cmdName, args, mediumRiskPatterns); riskLevel != RiskLevelNone {
-		return riskLevel, pattern, reason
-	}
-
-	// Check for setuid/setgid binaries (general security risk)
-	// Only check if cmdName is an absolute path to avoid path resolution inconsistencies
-	if filepath.IsAbs(cmdName) {
-		if hasSetuidOrSetgid, err := hasSetuidOrSetgidBit(cmdName); err == nil && hasSetuidOrSetgid {
-			return RiskLevelHigh, cmdName, "Executable has setuid or setgid bit set"
-		}
-	}
-
-	return RiskLevelNone, "", ""
-}
-
 // AnalyzeCommandSecurityWithResolvedPath analyzes a command with its arguments for dangerous patterns.
 // This function expects a resolved absolute path for optimal security checking.
 // Use this version when you have already resolved the command path through the unified path resolution system.
