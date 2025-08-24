@@ -1054,3 +1054,99 @@ func TestAnalyzeCommandSecurityWithDeepSymlinks(t *testing.T) {
 	// Note: Testing actual symlink depth exceeded would require creating 40+ symlinks
 	// which is impractical in unit tests. The logic is tested through extractAllCommandNames.
 }
+
+func TestAnalyzeCommandSecuritySetuidSetgid(t *testing.T) {
+	// Create temporary directory for testing
+	tmpDir, err := os.MkdirTemp("", "setuid_test")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	t.Run("normal executable without setuid/setgid", func(t *testing.T) {
+		// Create a normal executable
+		normalExec := filepath.Join(tmpDir, "normal_exec")
+		err := os.WriteFile(normalExec, []byte("#!/bin/bash\necho test"), 0o755)
+		require.NoError(t, err)
+
+		risk, pattern, reason := AnalyzeCommandSecurity(normalExec, []string{})
+		assert.Equal(t, RiskLevelNone, risk)
+		assert.Empty(t, pattern)
+		assert.Empty(t, reason)
+	})
+
+	// Integration test with real setuid binary (if available)
+	t.Run("real setuid binary integration test", func(t *testing.T) {
+		// Check if passwd command exists and has setuid bit
+		passwdPath := "/usr/bin/passwd"
+		if fileInfo, err := os.Stat(passwdPath); err == nil && fileInfo.Mode()&os.ModeSetuid != 0 {
+			risk, pattern, reason := AnalyzeCommandSecurity(passwdPath, []string{})
+			assert.Equal(t, RiskLevelHigh, risk)
+			assert.Equal(t, passwdPath, pattern)
+			assert.Equal(t, "Executable has setuid or setgid bit set", reason)
+		} else {
+			t.Skip("No setuid passwd binary found for integration test")
+		}
+	})
+
+	t.Run("non-existent executable", func(t *testing.T) {
+		// Test with non-existent file - should not cause panic and fallback to other checks
+		risk, pattern, reason := AnalyzeCommandSecurity("/non/existent/file", []string{})
+		assert.Equal(t, RiskLevelNone, risk)
+		assert.Empty(t, pattern)
+		assert.Empty(t, reason)
+	})
+}
+
+func TestHasSetuidOrSetgidBit(t *testing.T) {
+	// Create temporary directory for testing
+	tmpDir, err := os.MkdirTemp("", "setuid_helper_test")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	t.Run("normal file", func(t *testing.T) {
+		normalFile := filepath.Join(tmpDir, "normal")
+		err := os.WriteFile(normalFile, []byte("test"), 0o644)
+		require.NoError(t, err)
+
+		hasSetuidOrSetgid, err := hasSetuidOrSetgidBit(normalFile)
+		assert.NoError(t, err)
+		assert.False(t, hasSetuidOrSetgid)
+	})
+
+	// Integration test with real setuid binary
+	t.Run("real setuid binary", func(t *testing.T) {
+		// Check if passwd command exists and has setuid bit
+		passwdPath := "/usr/bin/passwd"
+		if fileInfo, err := os.Stat(passwdPath); err == nil && fileInfo.Mode()&os.ModeSetuid != 0 {
+			hasSetuidOrSetgid, err := hasSetuidOrSetgidBit(passwdPath)
+			assert.NoError(t, err)
+			assert.True(t, hasSetuidOrSetgid)
+		} else {
+			t.Skip("No setuid passwd binary found for integration test")
+		}
+	})
+
+	t.Run("directory", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "testdir")
+		err := os.Mkdir(dir, 0o755)
+		require.NoError(t, err)
+
+		hasSetuidOrSetgid, err := hasSetuidOrSetgidBit(dir)
+		assert.NoError(t, err)
+		assert.False(t, hasSetuidOrSetgid) // directories are not regular files
+	})
+
+	t.Run("non-existent file", func(t *testing.T) {
+		hasSetuidOrSetgid, err := hasSetuidOrSetgidBit("/non/existent/file")
+		assert.Error(t, err)
+		assert.False(t, hasSetuidOrSetgid)
+	})
+
+	t.Run("relative path - command in PATH", func(t *testing.T) {
+		// Test with a common command that should exist in PATH
+		// Note: This test might be system-dependent
+		hasSetuidOrSetgid, err := hasSetuidOrSetgidBit("echo")
+		// We don't assert the result as it depends on system configuration,
+		// but we check that the function doesn't crash
+		t.Logf("echo command setuid/setgid status: %v, error: %v", hasSetuidOrSetgid, err)
+	})
+}

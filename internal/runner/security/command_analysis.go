@@ -3,6 +3,7 @@ package security
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -391,7 +392,7 @@ func AnalyzeCommandSecurity(cmdName string, args []string) (riskLevel RiskLevel,
 		return RiskLevelHigh, cmdName, "Symbolic link depth exceeds security limit (potential symlink attack)"
 	}
 
-	// Check high risk patterns
+	// Check high risk patterns first (more specific than generic setuid/setgid)
 	if riskLevel, pattern, reason := checkCommandPatterns(cmdName, args, highRiskPatterns); riskLevel != RiskLevelNone {
 		return riskLevel, pattern, reason
 	}
@@ -399,6 +400,11 @@ func AnalyzeCommandSecurity(cmdName string, args []string) (riskLevel RiskLevel,
 	// Then check medium risk patterns
 	if riskLevel, pattern, reason := checkCommandPatterns(cmdName, args, mediumRiskPatterns); riskLevel != RiskLevelNone {
 		return riskLevel, pattern, reason
+	}
+
+	// Check for setuid/setgid binaries (general security risk)
+	if hasSetuidOrSetgid, err := hasSetuidOrSetgidBit(cmdName); err == nil && hasSetuidOrSetgid {
+		return RiskLevelHigh, cmdName, "Executable has setuid or setgid bit set"
 	}
 
 	return RiskLevelNone, "", ""
@@ -542,4 +548,46 @@ func matchesPattern(cmdName string, cmdArgs []string, pattern []string) bool {
 	}
 
 	return true
+}
+
+// hasSetuidOrSetgidBit checks if the given command path has setuid or setgid bit set
+// Returns (hasSetuidOrSetgid, error)
+func hasSetuidOrSetgidBit(cmdPath string) (bool, error) {
+	// If the path is not absolute, try to find it in PATH
+	execPath := cmdPath
+	if !filepath.IsAbs(cmdPath) {
+		// Try to resolve the executable path using PATH
+		if resolvedPath, err := findExecutableInPath(cmdPath); err == nil {
+			execPath = resolvedPath
+		} else {
+			// If we can't find it in PATH, use the original path
+			// This allows for relative paths that might exist
+			execPath = cmdPath
+		}
+	}
+
+	// Get file information
+	fileInfo, err := os.Stat(execPath)
+	if err != nil {
+		// If we can't stat the file, assume it's not setuid/setgid
+		return false, err
+	}
+
+	// Check if it's a regular file
+	if !fileInfo.Mode().IsRegular() {
+		return false, nil
+	}
+
+	// Check for setuid or setgid bits
+	mode := fileInfo.Mode()
+	hasSetuidBit := mode&os.ModeSetuid != 0
+	hasSetgidBit := mode&os.ModeSetgid != 0
+
+	return hasSetuidBit || hasSetgidBit, nil
+}
+
+// findExecutableInPath searches for an executable in the PATH environment variable
+func findExecutableInPath(cmdName string) (string, error) {
+	// Use Go's standard library to find the executable in PATH
+	return exec.LookPath(cmdName)
 }
