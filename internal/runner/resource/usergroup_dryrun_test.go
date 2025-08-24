@@ -9,6 +9,7 @@ import (
 	privilegetesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 // MockExecutor and related types are defined in normal_manager_test.go
@@ -17,8 +18,10 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 	t.Run("valid_user_group_specification", func(t *testing.T) {
 		mockExec := &MockExecutor{}
 		mockPriv := privilegetesting.NewMockPrivilegeManager(true)
+		mockPathResolver := &MockPathResolver{}
+		mockPathResolver.On("ResolvePath", "echo").Return("/usr/bin/echo", nil)
 
-		manager := NewDryRunResourceManager(mockExec, mockPriv, nil, &DryRunOptions{})
+		manager := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
 
 		cmd := runnertypes.Command{
 			Name:       "test_user_group",
@@ -54,7 +57,10 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		mockExec := &MockExecutor{}
 		mockPriv := privilegetesting.NewFailingMockPrivilegeManager(true) // Will fail user/group validation
 
-		manager := NewDryRunResourceManager(mockExec, mockPriv, nil, &DryRunOptions{})
+		mockPathResolver := &MockPathResolver{}
+		setupStandardCommandPaths(mockPathResolver)
+		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
+		manager := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
 
 		cmd := runnertypes.Command{
 			Name:       "test_invalid_user_group",
@@ -88,7 +94,10 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		mockExec := &MockExecutor{}
 		mockPriv := privilegetesting.NewMockPrivilegeManager(false) // Not supported
 
-		manager := NewDryRunResourceManager(mockExec, mockPriv, nil, &DryRunOptions{})
+		mockPathResolver := &MockPathResolver{}
+		setupStandardCommandPaths(mockPathResolver)
+		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
+		manager := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
 
 		cmd := runnertypes.Command{
 			Name:       "test_user_group_unsupported",
@@ -119,7 +128,10 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		mockExec := &MockExecutor{}
 		// No privilege manager provided
 
-		manager := NewDryRunResourceManager(mockExec, nil, nil, &DryRunOptions{})
+		mockPathResolver := &MockPathResolver{}
+		setupStandardCommandPaths(mockPathResolver)
+		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
+		manager := NewDryRunResourceManager(mockExec, nil, mockPathResolver, &DryRunOptions{})
 
 		cmd := runnertypes.Command{
 			Name:       "test_no_privmgr",
@@ -150,7 +162,10 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		mockExec := &MockExecutor{}
 		mockPriv := privilegetesting.NewMockPrivilegeManager(true)
 
-		manager := NewDryRunResourceManager(mockExec, mockPriv, nil, &DryRunOptions{})
+		mockPathResolver := &MockPathResolver{}
+		setupStandardCommandPaths(mockPathResolver)
+		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
+		manager := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
 
 		cmd := runnertypes.Command{
 			Name:      "test_user_only",
@@ -186,7 +201,10 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		mockExec := &MockExecutor{}
 		mockPriv := privilegetesting.NewMockPrivilegeManager(true)
 
-		manager := NewDryRunResourceManager(mockExec, mockPriv, nil, &DryRunOptions{})
+		mockPathResolver := &MockPathResolver{}
+		setupStandardCommandPaths(mockPathResolver)
+		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
+		manager := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
 
 		cmd := runnertypes.Command{
 			Name: "test_no_user_group",

@@ -218,6 +218,9 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 			var pathResolver resource.PathResolver
 			if opts.verificationManager != nil {
 				pathResolver = opts.verificationManager
+			} else {
+				// Create a default PathResolver when verification manager is not provided
+				pathResolver = verification.NewPathResolver("", validator, false)
 			}
 			opts.resourceManager = resource.NewDryRunResourceManager(
 				opts.executor,
@@ -232,6 +235,9 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 			var pathResolver resource.PathResolver
 			if opts.verificationManager != nil {
 				pathResolver = opts.verificationManager
+			} else {
+				// Create a default PathResolver when verification manager is not provided
+				pathResolver = verification.NewPathResolver("", validator, false)
 			}
 			opts.resourceManager = resource.NewDefaultResourceManager(
 				opts.executor,

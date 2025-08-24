@@ -7,6 +7,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -75,7 +76,9 @@ func TestSecurityAnalysis(t *testing.T) {
 				VerifyFiles:   true,
 			}
 
-			manager := NewDryRunResourceManager(nil, nil, nil, dryRunOpts)
+			mockPathResolver := &MockPathResolver{}
+			setupStandardCommandPaths(mockPathResolver) // fallback
+			manager := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
 			require.NotNil(t, manager)
 
 			group := &runnertypes.CommandGroup{
@@ -164,7 +167,9 @@ func TestPrivilegeEscalationDetection(t *testing.T) {
 				VerifyFiles:   true,
 			}
 
-			manager := NewDryRunResourceManager(nil, nil, nil, dryRunOpts)
+			mockPathResolver := &MockPathResolver{}
+			setupStandardCommandPaths(mockPathResolver) // fallback
+			manager := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
 			require.NotNil(t, manager)
 
 			group := &runnertypes.CommandGroup{
@@ -224,7 +229,10 @@ func TestCommandSecurityAnalysis(t *testing.T) {
 		VerifyFiles:   true,
 	}
 
-	manager := NewDryRunResourceManager(nil, nil, nil, dryRunOpts)
+	mockPathResolver := &MockPathResolver{}
+	mockPathResolver.On("ResolvePath", "rm").Return("/usr/bin/rm", nil)
+	mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
+	manager := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
 	require.NotNil(t, manager)
 
 	group := &runnertypes.CommandGroup{
@@ -265,7 +273,12 @@ func TestSecurityAnalysisIntegration(t *testing.T) {
 		VerifyFiles:   true,
 	}
 
-	manager := NewDryRunResourceManager(nil, nil, nil, dryRunOpts)
+	mockPathResolver := &MockPathResolver{}
+	mockPathResolver.On("ResolvePath", "rm").Return("/usr/bin/rm", nil)
+	mockPathResolver.On("ResolvePath", "curl").Return("/usr/bin/curl", nil)
+	mockPathResolver.On("ResolvePath", "echo").Return("/usr/bin/echo", nil)
+	mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
+	manager := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
 	require.NotNil(t, manager)
 
 	group := &runnertypes.CommandGroup{

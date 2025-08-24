@@ -38,6 +38,10 @@ type DryRunResourceManager struct {
 
 // NewDryRunResourceManager creates a new DryRunResourceManager for dry-run mode
 func NewDryRunResourceManager(exec executor.CommandExecutor, privMgr runnertypes.PrivilegeManager, pathResolver PathResolver, opts *DryRunOptions) *DryRunResourceManager {
+	if pathResolver == nil {
+		panic("PathResolver is required for DryRunResourceManager")
+	}
+
 	return &DryRunResourceManager{
 		executor:         exec,
 		privilegeManager: privMgr,
@@ -80,7 +84,10 @@ func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd runnerty
 	}
 
 	// Analyze the command
-	analysis := d.analyzeCommand(ctx, cmd, group, env)
+	analysis, err := d.analyzeCommand(ctx, cmd, group, env)
+	if err != nil {
+		return nil, fmt.Errorf("command analysis failed: %w", err)
+	}
 
 	// Record the analysis
 	d.RecordAnalysis(&analysis)
@@ -102,7 +109,7 @@ func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd runnerty
 }
 
 // analyzeCommand analyzes a command for dry-run
-func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) ResourceAnalysis {
+func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) (ResourceAnalysis, error) {
 	analysis := ResourceAnalysis{
 		Type:      ResourceTypeCommand,
 		Operation: OperationExecute,
@@ -132,7 +139,9 @@ func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd runnertype
 	}
 
 	// Analyze security risks first
-	d.analyzeCommandSecurity(cmd, &analysis)
+	if err := d.analyzeCommandSecurity(cmd, &analysis); err != nil {
+		return ResourceAnalysis{}, err
+	}
 
 	// Add user/group privilege specification if present (after security analysis)
 	if cmd.HasUserGroupSpecification() {
@@ -165,39 +174,24 @@ func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd runnertype
 		}
 	}
 
-	return analysis
+	return analysis, nil
 }
 
 // analyzeCommandSecurity analyzes security aspects of a command
-func (d *DryRunResourceManager) analyzeCommandSecurity(cmd runnertypes.Command, analysis *ResourceAnalysis) {
-	// Initialize with no risk
-	currentRisk := ""
-
-	// Try to resolve command path using unified path resolution system if available
-	if d.pathResolver != nil {
-		if resolvedPath, err := d.pathResolver.ResolvePath(cmd.Cmd); err == nil {
-			// Use the new unified approach with resolved path
-			if riskLevel, pattern, reason := security.AnalyzeCommandSecurityWithResolvedPath(resolvedPath, cmd.Args); riskLevel != security.RiskLevelNone {
-				currentRisk = riskLevel.String()
-				analysis.Impact.Description += fmt.Sprintf(" [WARNING: %s - %s]", reason, pattern)
-			}
-		} else {
-			// If path resolution fails, fall back to original AnalyzeCommandSecurity
-			if riskLevel, pattern, reason := security.AnalyzeCommandSecurity(cmd.Cmd, cmd.Args); riskLevel != security.RiskLevelNone {
-				currentRisk = riskLevel.String()
-				analysis.Impact.Description += fmt.Sprintf(" [WARNING: %s - %s]", reason, pattern)
-			}
-		}
-	} else {
-		// No path resolver available, use original AnalyzeCommandSecurity for backwards compatibility
-		if riskLevel, pattern, reason := security.AnalyzeCommandSecurity(cmd.Cmd, cmd.Args); riskLevel != security.RiskLevelNone {
-			currentRisk = riskLevel.String()
-			analysis.Impact.Description += fmt.Sprintf(" [WARNING: %s - %s]", reason, pattern)
-		}
+func (d *DryRunResourceManager) analyzeCommandSecurity(cmd runnertypes.Command, analysis *ResourceAnalysis) error {
+	// PathResolver is guaranteed to be non-nil due to constructor validation
+	resolvedPath, err := d.pathResolver.ResolvePath(cmd.Cmd)
+	if err != nil {
+		return fmt.Errorf("failed to resolve command path '%s': %w", cmd.Cmd, err)
 	}
 
-	// Set the final risk level
-	analysis.Impact.SecurityRisk = currentRisk
+	// Analyze security with resolved path
+	if riskLevel, pattern, reason := security.AnalyzeCommandSecurityWithResolvedPath(resolvedPath, cmd.Args); riskLevel != security.RiskLevelNone {
+		analysis.Impact.SecurityRisk = riskLevel.String()
+		analysis.Impact.Description += fmt.Sprintf(" [WARNING: %s - %s]", reason, pattern)
+	}
+
+	return nil
 }
 
 // CreateTempDir simulates creating a temporary directory in dry-run mode

@@ -14,15 +14,20 @@ import (
 func createTestDryRunResourceManager() *DryRunResourceManager {
 	mockExec := &MockExecutor{}
 	mockPriv := &MockPrivilegeManager{}
+	mockPathResolver := &MockPathResolver{}
+
 	// Add default expectations for privilege manager
 	mockPriv.On("IsPrivilegedExecutionSupported").Return(true)
 	mockPriv.On("WithPrivileges", mock.Anything, mock.Anything).Return(nil)
+
+	// Add default expectation for path resolver
+	setupStandardCommandPaths(mockPathResolver) // fallback
 
 	opts := &DryRunOptions{
 		DetailLevel: DetailLevelDetailed,
 	}
 
-	manager := NewDryRunResourceManager(mockExec, mockPriv, nil, opts)
+	manager := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts)
 
 	return manager
 }
@@ -250,4 +255,46 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDryRunResourceManager_PathResolverRequired(t *testing.T) {
+	mockExec := &MockExecutor{}
+	mockPriv := &MockPrivilegeManager{}
+	opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
+
+	// Test that providing nil PathResolver panics
+	assert.Panics(t, func() {
+		NewDryRunResourceManager(mockExec, mockPriv, nil, opts)
+	})
+}
+
+func TestDryRunResourceManager_PathResolutionFailure(t *testing.T) {
+	mockExec := &MockExecutor{}
+	mockPriv := &MockPrivilegeManager{}
+	mockPathResolver := &MockPathResolver{}
+
+	mockPriv.On("IsPrivilegedExecutionSupported").Return(true)
+	mockPriv.On("WithPrivileges", mock.Anything, mock.Anything).Return(nil)
+
+	// Mock path resolution failure
+	mockPathResolver.On("ResolvePath", "nonexistent-cmd").Return("", assert.AnError)
+
+	opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
+	manager := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts)
+
+	cmd := runnertypes.Command{
+		Name: "test-failure",
+		Cmd:  "nonexistent-cmd",
+		Args: []string{"arg1"},
+	}
+	group := createTestCommandGroup()
+	env := map[string]string{}
+	ctx := context.Background()
+
+	result, err := manager.ExecuteCommand(ctx, cmd, group, env)
+
+	assert.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "command analysis failed")
+	assert.Contains(t, err.Error(), "failed to resolve command path")
 }
