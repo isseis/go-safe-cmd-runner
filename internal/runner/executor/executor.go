@@ -25,6 +25,7 @@ var (
 	ErrInvalidPath                   = errors.New("invalid command path")
 	ErrNoPrivilegeManager            = errors.New("privileged execution requested but no privilege manager available")
 	ErrUserGroupPrivilegeUnsupported = errors.New("user/group privilege changes are not supported")
+	ErrPrivilegedCmdSecurity         = errors.New("privileged command failed security validation")
 )
 
 // DefaultExecutor is the default implementation of CommandExecutor
@@ -107,6 +108,12 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, cmd runnerty
 	// Validate the command before any privilege changes
 	if err := e.Validate(cmd); err != nil {
 		return nil, fmt.Errorf("command validation failed: %w", err)
+	}
+
+	// Additional security validation for privileged commands BEFORE path resolution
+	// This ensures the original command in the config file uses absolute paths
+	if err := e.validatePrivilegedCommand(cmd); err != nil {
+		return nil, fmt.Errorf("privileged command security validation failed: %w", err)
 	}
 
 	// Create elevation context for user/group execution
@@ -326,4 +333,25 @@ func (w *outputWrapper) GetBuffer() []byte {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.buffer.Bytes()
+}
+
+// validatePrivilegedCommand performs additional security checks specifically for privileged commands
+// This adds an extra layer of security validation beyond the basic validation
+func (e *DefaultExecutor) validatePrivilegedCommand(cmd runnertypes.Command) error {
+	// Enforce absolute paths for privileged commands
+	if !filepath.IsAbs(cmd.Cmd) {
+		return fmt.Errorf("%w: privileged commands must use absolute paths: %s", ErrPrivilegedCmdSecurity, cmd.Cmd)
+	}
+
+	// Ensure working directory is also absolute for privileged commands
+	if cmd.Dir != "" && !filepath.IsAbs(cmd.Dir) {
+		return fmt.Errorf("%w: privileged commands must use absolute working directory paths: %s", ErrPrivilegedCmdSecurity, cmd.Dir)
+	}
+
+	// Additional validation could include:
+	// 1. Check for suspicious or potentially dangerous arguments
+	// 2. Allowlist checking for permitted privileged commands
+	// 3. Check if command is in system directories like /bin, /usr/bin, etc.
+	// 4. Verify that the command binary has proper permissions
+	return nil
 }
