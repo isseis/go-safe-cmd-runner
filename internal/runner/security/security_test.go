@@ -1044,7 +1044,7 @@ func TestAnalyzeCommandSecurityWithDeepSymlinks(t *testing.T) {
 		if err != nil {
 			echoPath = "/bin/echo" // fallback
 		}
-		risk, pattern, reason := AnalyzeCommandSecurityWithResolvedPath(echoPath, []string{"hello"})
+		risk, pattern, reason := AnalyzeCommandSecurity(echoPath, []string{"hello"})
 		assert.Equal(t, RiskLevelNone, risk)
 		assert.Empty(t, pattern)
 		assert.Empty(t, reason)
@@ -1056,7 +1056,7 @@ func TestAnalyzeCommandSecurityWithDeepSymlinks(t *testing.T) {
 		if err != nil {
 			rmPath = "/bin/rm" // fallback
 		}
-		risk, pattern, reason := AnalyzeCommandSecurityWithResolvedPath(rmPath, []string{"-rf", "/"})
+		risk, pattern, reason := AnalyzeCommandSecurity(rmPath, []string{"-rf", "/"})
 		assert.Equal(t, RiskLevelHigh, risk)
 		assert.Equal(t, "rm -rf", pattern)
 		assert.Equal(t, "Recursive file removal", reason)
@@ -1078,7 +1078,7 @@ func TestAnalyzeCommandSecuritySetuidSetgid(t *testing.T) {
 		err := os.WriteFile(normalExec, []byte("#!/bin/bash\necho test"), 0o755)
 		require.NoError(t, err)
 
-		risk, pattern, reason := AnalyzeCommandSecurityWithResolvedPath(normalExec, []string{})
+		risk, pattern, reason := AnalyzeCommandSecurity(normalExec, []string{})
 		assert.Equal(t, RiskLevelNone, risk)
 		assert.Empty(t, pattern)
 		assert.Empty(t, reason)
@@ -1089,7 +1089,7 @@ func TestAnalyzeCommandSecuritySetuidSetgid(t *testing.T) {
 		// Check if passwd command exists and has setuid bit
 		passwdPath := "/usr/bin/passwd"
 		if fileInfo, err := os.Stat(passwdPath); err == nil && fileInfo.Mode()&os.ModeSetuid != 0 {
-			risk, pattern, reason := AnalyzeCommandSecurityWithResolvedPath(passwdPath, []string{})
+			risk, pattern, reason := AnalyzeCommandSecurity(passwdPath, []string{})
 			assert.Equal(t, RiskLevelHigh, risk)
 			assert.Equal(t, passwdPath, pattern)
 			assert.Equal(t, "Executable has setuid or setgid bit set", reason)
@@ -1100,7 +1100,7 @@ func TestAnalyzeCommandSecuritySetuidSetgid(t *testing.T) {
 
 	t.Run("non-existent executable", func(t *testing.T) {
 		// Test with non-existent file - should not cause panic and fallback to other checks
-		risk, pattern, reason := AnalyzeCommandSecurityWithResolvedPath("/non/existent/file", []string{})
+		risk, pattern, reason := AnalyzeCommandSecurity("/non/existent/file", []string{})
 		assert.Equal(t, RiskLevelNone, risk)
 		assert.Empty(t, pattern)
 		assert.Empty(t, reason)

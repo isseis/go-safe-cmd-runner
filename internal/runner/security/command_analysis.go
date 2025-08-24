@@ -384,10 +384,10 @@ func IsSystemModification(cmd string, args []string) bool {
 	return false
 }
 
-// AnalyzeCommandSecurityWithResolvedPath analyzes a command with its arguments for dangerous patterns.
+// AnalyzeCommandSecurity analyzes a command with its arguments for dangerous patterns.
 // This function expects a resolved absolute path for optimal security checking.
 // Use this version when you have already resolved the command path through the unified path resolution system.
-func AnalyzeCommandSecurityWithResolvedPath(resolvedPath string, args []string) (riskLevel RiskLevel, detectedPattern string, reason string) {
+func AnalyzeCommandSecurity(resolvedPath string, args []string) (riskLevel RiskLevel, detectedPattern string, reason string) {
 	// First, check if symlink depth is exceeded (highest priority security concern)
 	if _, exceededDepth := extractAllCommandNames(resolvedPath); exceededDepth {
 		return RiskLevelHigh, resolvedPath, "Symbolic link depth exceeds security limit (potential symlink attack)"

@@ -186,7 +186,7 @@ func (d *DryRunResourceManager) analyzeCommandSecurity(cmd runnertypes.Command, 
 	}
 
 	// Analyze security with resolved path
-	if riskLevel, pattern, reason := security.AnalyzeCommandSecurityWithResolvedPath(resolvedPath, cmd.Args); riskLevel != security.RiskLevelNone {
+	if riskLevel, pattern, reason := security.AnalyzeCommandSecurity(resolvedPath, cmd.Args); riskLevel != security.RiskLevelNone {
 		analysis.Impact.SecurityRisk = riskLevel.String()
 		analysis.Impact.Description += fmt.Sprintf(" [WARNING: %s - %s]", reason, pattern)
 	}
