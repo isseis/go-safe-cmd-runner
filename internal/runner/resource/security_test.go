@@ -219,7 +219,8 @@ func TestCommandSecurityAnalysis(t *testing.T) {
 	if err != nil {
 		rmPath = "/bin/rm" // fallback
 	}
-	riskLevel, pattern, reason := security.AnalyzeCommandSecurity(rmPath, []string{"-rf", "/tmp/*"})
+	riskLevel, pattern, reason, err := security.AnalyzeCommandSecurity(rmPath, []string{"-rf", "/tmp/*"})
+	require.NoError(t, err)
 
 	// Verify direct security analysis works
 	assert.Equal(t, security.RiskLevelHigh, riskLevel, "should detect high risk for rm -rf")

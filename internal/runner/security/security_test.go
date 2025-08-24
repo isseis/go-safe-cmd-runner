@@ -1044,7 +1044,8 @@ func TestAnalyzeCommandSecurityWithDeepSymlinks(t *testing.T) {
 		if err != nil {
 			echoPath = "/bin/echo" // fallback
 		}
-		risk, pattern, reason := AnalyzeCommandSecurity(echoPath, []string{"hello"})
+		risk, pattern, reason, err := AnalyzeCommandSecurity(echoPath, []string{"hello"})
+		require.NoError(t, err)
 		assert.Equal(t, RiskLevelNone, risk)
 		assert.Empty(t, pattern)
 		assert.Empty(t, reason)
@@ -1056,7 +1057,8 @@ func TestAnalyzeCommandSecurityWithDeepSymlinks(t *testing.T) {
 		if err != nil {
 			rmPath = "/bin/rm" // fallback
 		}
-		risk, pattern, reason := AnalyzeCommandSecurity(rmPath, []string{"-rf", "/"})
+		risk, pattern, reason, err := AnalyzeCommandSecurity(rmPath, []string{"-rf", "/"})
+		require.NoError(t, err)
 		assert.Equal(t, RiskLevelHigh, risk)
 		assert.Equal(t, "rm -rf", pattern)
 		assert.Equal(t, "Recursive file removal", reason)
@@ -1078,7 +1080,8 @@ func TestAnalyzeCommandSecuritySetuidSetgid(t *testing.T) {
 		err := os.WriteFile(normalExec, []byte("#!/bin/bash\necho test"), 0o755)
 		require.NoError(t, err)
 
-		risk, pattern, reason := AnalyzeCommandSecurity(normalExec, []string{})
+		risk, pattern, reason, err := AnalyzeCommandSecurity(normalExec, []string{})
+		require.NoError(t, err)
 		assert.Equal(t, RiskLevelNone, risk)
 		assert.Empty(t, pattern)
 		assert.Empty(t, reason)
@@ -1089,7 +1092,8 @@ func TestAnalyzeCommandSecuritySetuidSetgid(t *testing.T) {
 		// Check if passwd command exists and has setuid bit
 		passwdPath := "/usr/bin/passwd"
 		if fileInfo, err := os.Stat(passwdPath); err == nil && fileInfo.Mode()&os.ModeSetuid != 0 {
-			risk, pattern, reason := AnalyzeCommandSecurity(passwdPath, []string{})
+			risk, pattern, reason, err := AnalyzeCommandSecurity(passwdPath, []string{})
+			require.NoError(t, err)
 			assert.Equal(t, RiskLevelHigh, risk)
 			assert.Equal(t, passwdPath, pattern)
 			assert.Equal(t, "Executable has setuid or setgid bit set", reason)
@@ -1100,10 +1104,19 @@ func TestAnalyzeCommandSecuritySetuidSetgid(t *testing.T) {
 
 	t.Run("non-existent executable", func(t *testing.T) {
 		// Test with non-existent file - should not cause panic and fallback to other checks
-		risk, pattern, reason := AnalyzeCommandSecurity("/non/existent/file", []string{})
+		risk, pattern, reason, err := AnalyzeCommandSecurity("/non/existent/file", []string{})
+		require.NoError(t, err)
 		assert.Equal(t, RiskLevelNone, risk)
 		assert.Empty(t, pattern)
 		assert.Empty(t, reason)
+	})
+
+	t.Run("relative path should return error", func(t *testing.T) {
+		// Test with relative path - should return error
+		_, _, _, err := AnalyzeCommandSecurity("relative/path", []string{})
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, ErrInvalidPath)
+		assert.Contains(t, err.Error(), "path must be absolute")
 	})
 }
 

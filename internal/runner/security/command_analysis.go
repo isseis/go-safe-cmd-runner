@@ -387,29 +387,34 @@ func IsSystemModification(cmd string, args []string) bool {
 // AnalyzeCommandSecurity analyzes a command with its arguments for dangerous patterns.
 // This function expects a resolved absolute path for optimal security checking.
 // Use this version when you have already resolved the command path through the unified path resolution system.
-func AnalyzeCommandSecurity(resolvedPath string, args []string) (riskLevel RiskLevel, detectedPattern string, reason string) {
+func AnalyzeCommandSecurity(resolvedPath string, args []string) (riskLevel RiskLevel, detectedPattern string, reason string, err error) {
+	// Validate that resolvedPath is an absolute path (programming error if not)
+	if !filepath.IsAbs(resolvedPath) {
+		return RiskLevelNone, "", "", fmt.Errorf("%w: path must be absolute, got relative path: %s", ErrInvalidPath, resolvedPath)
+	}
+
 	// First, check if symlink depth is exceeded (highest priority security concern)
 	if _, exceededDepth := extractAllCommandNames(resolvedPath); exceededDepth {
-		return RiskLevelHigh, resolvedPath, "Symbolic link depth exceeds security limit (potential symlink attack)"
+		return RiskLevelHigh, resolvedPath, "Symbolic link depth exceeds security limit (potential symlink attack)", nil
 	}
 
 	// Check high risk patterns first (more specific than generic setuid/setgid)
 	if riskLevel, pattern, reason := checkCommandPatterns(resolvedPath, args, highRiskPatterns); riskLevel != RiskLevelNone {
-		return riskLevel, pattern, reason
+		return riskLevel, pattern, reason, nil
 	}
 
 	// Then check medium risk patterns
 	if riskLevel, pattern, reason := checkCommandPatterns(resolvedPath, args, mediumRiskPatterns); riskLevel != RiskLevelNone {
-		return riskLevel, pattern, reason
+		return riskLevel, pattern, reason, nil
 	}
 
 	// Check for setuid/setgid binaries (general security risk)
 	// Since we have a resolved path, we can safely check setuid/setgid bits
 	if hasSetuidOrSetgid, err := hasSetuidOrSetgidBit(resolvedPath); err == nil && hasSetuidOrSetgid {
-		return RiskLevelHigh, resolvedPath, "Executable has setuid or setgid bit set"
+		return RiskLevelHigh, resolvedPath, "Executable has setuid or setgid bit set", nil
 	}
 
-	return RiskLevelNone, "", ""
+	return RiskLevelNone, "", "", nil
 }
 
 // extractAllCommandNames extracts all possible command names for matching:
