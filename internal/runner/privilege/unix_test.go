@@ -82,7 +82,7 @@ func TestUnixPrivilegeManager_ChangeUserGroupInternal(t *testing.T) {
 	})
 
 	t.Run("dry_run_false_insufficient_privileges", func(t *testing.T) {
-		// Unless running as root, actual user changes should fail with insufficient privileges
+		// Unless running as root, actual user changes should fail
 		if manager.GetCurrentUID() != 0 {
 			// Try to change to a different user (if current user is not root)
 			err := manager.changeUserGroupInternal("root", "", false)
@@ -90,7 +90,12 @@ func TestUnixPrivilegeManager_ChangeUserGroupInternal(t *testing.T) {
 				t.Skip("Test environment allows user changes (possibly running as root)")
 			}
 			assert.Error(t, err)
-			assert.Contains(t, err.Error(), "insufficient privileges")
+			// The error could be either "insufficient privileges" or "operation not permitted"
+			// depending on whether privilege escalation is supported
+			errorContainsExpectedMessage := strings.Contains(err.Error(), "insufficient privileges") ||
+				strings.Contains(err.Error(), "operation not permitted") ||
+				strings.Contains(err.Error(), "failed to set effective user ID")
+			assert.True(t, errorContainsExpectedMessage, "Error should contain expected message: %v", err)
 		}
 	})
 }

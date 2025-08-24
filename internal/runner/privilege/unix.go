@@ -21,6 +21,9 @@ import (
 // ErrInsufficientPrivileges is returned when the user lacks sufficient privileges to change user/group.
 var ErrInsufficientPrivileges = errors.New("insufficient privileges to change user/group")
 
+// ErrUnsupportedOperationType is returned when an unsupported operation type is encountered
+var ErrUnsupportedOperationType = errors.New("unsupported operation type")
+
 // UnixPrivilegeManager implements privilege management for Unix systems using setuid
 type UnixPrivilegeManager struct {
 	logger             *slog.Logger
@@ -40,72 +43,127 @@ func newPlatformManager(logger *slog.Logger) Manager {
 
 // WithPrivileges executes a function with elevated privileges using safe privilege escalation
 func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
-	// Handle different types of privilege operations
-	switch elevationCtx.Operation {
-	case runnertypes.OperationUserGroupExecution:
-		// Handle user/group execution - withUserGroupInternal manages its own locking
-		return m.withUserGroupInternal(elevationCtx.RunAsUser, elevationCtx.RunAsGroup, fn, false)
-	case runnertypes.OperationUserGroupDryRun:
-		// Handle user/group dry-run validation - withUserGroupInternal manages its own locking
-		return m.withUserGroupInternal(elevationCtx.RunAsUser, elevationCtx.RunAsGroup, fn, true)
-	default:
-		// Handle traditional privilege escalation (sudo-like)
-		return m.withPrivilegesInternal(elevationCtx, fn)
-	}
-}
-
-// withPrivilegesInternal handles traditional privilege escalation
-func (m *UnixPrivilegeManager) withPrivilegesInternal(elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
-	// Lock for the entire duration of the privileged operation to prevent race conditions
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	start := time.Now()
-
-	// Perform privilege escalation
-	if err := m.escalatePrivileges(elevationCtx); err != nil {
+	execCtx, err := m.prepareExecution(elevationCtx)
+	if err != nil {
 		m.metrics.RecordElevationFailure(err)
-		return fmt.Errorf("privilege escalation failed: %w", err)
+		return err
 	}
 
-	// Single defer for both privilege restoration and panic handling
-	defer func() {
-		var panicValue any
-		var shutdownContext string
+	if err := m.performElevation(execCtx); err != nil {
+		m.metrics.RecordElevationFailure(err)
+		return err
+	}
 
-		// Detect panic
-		if r := recover(); r != nil {
-			panicValue = r
-			shutdownContext = fmt.Sprintf("after panic: %v", r)
-			m.logger.Error("Panic occurred during privileged operation, attempting privilege restoration",
-				"panic", r,
-				"original_uid", m.originalUID)
-		} else {
-			shutdownContext = "normal execution"
+	defer m.handleCleanupAndMetrics(execCtx)
+	return fn()
+}
+
+// executionContext holds context for privilege execution
+type executionContext struct {
+	elevationCtx             runnertypes.ElevationContext
+	needsPrivilegeEscalation bool
+	needsUserGroupChange     bool
+	originalEUID             int
+	originalEGID             int
+	start                    time.Time
+}
+
+// prepareExecution validates and prepares the execution context
+func (m *UnixPrivilegeManager) prepareExecution(elevationCtx runnertypes.ElevationContext) (*executionContext, error) {
+	execCtx := &executionContext{
+		elevationCtx: elevationCtx,
+		originalEUID: syscall.Geteuid(),
+		originalEGID: syscall.Getegid(),
+		start:        time.Now(),
+	}
+
+	switch elevationCtx.Operation {
+	case runnertypes.OperationUserGroupExecution:
+		execCtx.needsPrivilegeEscalation = true
+		execCtx.needsUserGroupChange = true
+	case runnertypes.OperationUserGroupDryRun:
+		execCtx.needsPrivilegeEscalation = false
+		execCtx.needsUserGroupChange = true
+	case runnertypes.OperationFileValidation:
+		execCtx.needsPrivilegeEscalation = true
+		execCtx.needsUserGroupChange = false
+	default:
+		return nil, fmt.Errorf("%w: %s", ErrUnsupportedOperationType, elevationCtx.Operation)
+	}
+
+	return execCtx, nil
+}
+
+// performElevation performs the actual privilege escalation and user/group changes
+func (m *UnixPrivilegeManager) performElevation(execCtx *executionContext) error {
+	if execCtx.needsPrivilegeEscalation {
+		if err := m.escalatePrivileges(execCtx.elevationCtx); err != nil {
+			return fmt.Errorf("privilege escalation failed: %w", err)
 		}
+	}
 
-		// Calculate duration before restoring privileges to get accurate elevation time
-		var duration time.Duration
-		if panicValue == nil {
-			duration = time.Since(start)
+	if execCtx.needsUserGroupChange {
+		isDryRun := execCtx.elevationCtx.Operation == runnertypes.OperationUserGroupDryRun
+		if err := m.changeUserGroupInternal(execCtx.elevationCtx.RunAsUser, execCtx.elevationCtx.RunAsGroup, isDryRun); err != nil {
+			if execCtx.needsPrivilegeEscalation {
+				if restoreErr := m.restorePrivileges(); restoreErr != nil {
+					m.emergencyShutdown(restoreErr, "user_group_change_failure")
+				}
+			}
+			return fmt.Errorf("user/group change failed: %w", err)
 		}
+	}
 
-		// Restore privileges (always executed)
+	return nil
+}
+
+// handleCleanupAndMetrics handles panic recovery, cleanup, and metrics recording
+func (m *UnixPrivilegeManager) handleCleanupAndMetrics(execCtx *executionContext) {
+	var panicValue any
+	var shutdownContext string
+
+	if r := recover(); r != nil {
+		panicValue = r
+		shutdownContext = fmt.Sprintf("after panic: %v", r)
+		m.logger.Error("Panic occurred during privileged operation, attempting privilege restoration",
+			"panic", r, "original_uid", m.originalUID)
+	} else {
+		shutdownContext = "normal execution"
+	}
+
+	var duration time.Duration
+	if panicValue == nil {
+		duration = time.Since(execCtx.start)
+	}
+
+	m.restorePrivilegesAndMetrics(execCtx, panicValue, shutdownContext, duration)
+
+	if panicValue != nil {
+		panic(panicValue)
+	}
+}
+
+// restorePrivilegesAndMetrics handles privilege restoration and metrics recording
+func (m *UnixPrivilegeManager) restorePrivilegesAndMetrics(execCtx *executionContext, panicValue any, shutdownContext string, duration time.Duration) {
+	if execCtx.needsUserGroupChange && execCtx.elevationCtx.Operation != runnertypes.OperationUserGroupDryRun {
+		if err := m.restoreUserGroupInternal(execCtx.originalEGID); err != nil {
+			m.logger.Error("Failed to restore user/group during cleanup",
+				"error", err, "original_euid", execCtx.originalEUID, "original_egid", execCtx.originalEGID)
+		}
+	}
+
+	if execCtx.needsPrivilegeEscalation {
 		if err := m.restorePrivileges(); err != nil {
-			// Privilege restoration failure is critical security risk - terminate immediately
 			m.emergencyShutdown(err, shutdownContext)
 		} else if panicValue == nil {
-			// Record metrics on success
 			m.metrics.RecordElevationSuccess(duration)
 		}
-
-		// Re-panic if necessary
-		if panicValue != nil {
-			panic(panicValue)
-		}
-	}()
-
-	return fn()
+	} else if panicValue == nil && (execCtx.needsPrivilegeEscalation || execCtx.needsUserGroupChange) {
+		m.metrics.RecordElevationSuccess(duration)
+	}
 }
 
 // escalatePrivileges performs the actual privilege escalation (private method)
@@ -162,7 +220,7 @@ func (m *UnixPrivilegeManager) restorePrivileges() error {
 		return err
 	}
 
-	m.logger.Info("Privileges restored",
+	m.logger.Info("Privileges fully restored to original state",
 		"restored_uid", m.originalUID)
 
 	return nil
@@ -325,73 +383,10 @@ func (m *UnixPrivilegeManager) GetMetrics() Metrics {
 	return m.metrics.GetSnapshot()
 }
 
-// withUserGroupInternal executes a function with specified user and group privileges with dry-run option
-func (m *UnixPrivilegeManager) withUserGroupInternal(user, group string, fn func() error, dryRun bool) (err error) {
-	// Lock for the entire duration of the privileged operation
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	start := time.Now()
-
-	// Get current UID/GID before any changes
-	originalUID := syscall.Getuid()
-	originalGID := syscall.Getgid()
-
-	// Perform user/group changes
-	if dryRun {
-		if err := m.changeUserGroupDryRun(user, group); err != nil {
-			return fmt.Errorf("user/group validation failed: %w", err)
-		}
-	} else {
-		if err := m.changeUserGroup(user, group); err != nil {
-			return fmt.Errorf("user/group change failed: %w", err)
-		}
-	}
-
-	// Single defer for both privilege restoration and panic handling
-	defer func() {
-		// Only restore privileges if not in dry-run mode
-		if !dryRun {
-			if restoreErr := m.restoreUserGroup(originalUID, originalGID); restoreErr != nil {
-				m.logger.Error("Critical failure in user/group privilege restoration",
-					"restore_error", restoreErr,
-					"original_uid", originalUID,
-					"original_gid", originalGID)
-				m.emergencyShutdown(restoreErr, "user_group_restore")
-			}
-		}
-
-		// Record metrics after restoration
-		duration := time.Since(start)
-		if err != nil {
-			m.metrics.RecordElevationFailure(err)
-		} else {
-			m.metrics.RecordElevationSuccess(duration)
-		}
-	}()
-
-	// Execute the function with changed privileges (or in dry-run mode)
-	err = fn()
-	if err != nil {
-		m.logger.Error("Function execution failed with user/group privileges",
-			"error", err,
-			"user", user,
-			"group", group,
-			"dry_run", dryRun)
-	}
-
-	return err
-}
-
 // IsUserGroupSupported checks if user/group privilege changes are supported
 func (m *UnixPrivilegeManager) IsUserGroupSupported() bool {
 	// User/group changes are supported on Unix systems when running with appropriate privileges
 	return m.privilegeSupported
-}
-
-// changeUserGroup changes the effective user and group IDs
-func (m *UnixPrivilegeManager) changeUserGroup(userName, groupName string) error {
-	return m.changeUserGroupInternal(userName, groupName, false)
 }
 
 // changeUserGroupDryRun validates user/group configuration without making actual changes
@@ -400,6 +395,7 @@ func (m *UnixPrivilegeManager) changeUserGroupDryRun(userName, groupName string)
 }
 
 // changeUserGroupInternal implements the core user/group change logic with optional dry-run mode
+// Note: This method assumes the caller has already acquired appropriate privileges
 func (m *UnixPrivilegeManager) changeUserGroupInternal(userName, groupName string, dryRun bool) error {
 	m.logger.Info("User/group change requested",
 		"user", userName,
@@ -420,8 +416,8 @@ func (m *UnixPrivilegeManager) changeUserGroupInternal(userName, groupName strin
 		}
 		targetUID = uid
 	} else {
-		// If no user specified, keep current user
-		targetUID = syscall.Getuid()
+		// If no user specified, keep current effective user
+		targetUID = syscall.Geteuid()
 	}
 
 	// Resolve group name to GID
@@ -438,17 +434,10 @@ func (m *UnixPrivilegeManager) changeUserGroupInternal(userName, groupName strin
 		}
 		targetGID = gid
 	} else {
-		// If no group specified, keep current group
-		targetGID = syscall.Getgid()
+		// If no group specified, keep current effective group
+		targetGID = syscall.Getegid()
 	}
 
-	// Validate that we have permission to change to the target user/group
-	currentEUID := syscall.Geteuid()
-	if currentEUID != 0 && targetUID != syscall.Getuid() {
-		return fmt.Errorf("%w: user %s (UID %d), current EUID %d", ErrInsufficientPrivileges, userName, targetUID, currentEUID)
-	}
-
-	// Set group first, then user (standard practice)
 	if dryRun {
 		m.logger.Info("Dry-run mode: would change user/group privileges",
 			"user", userName,
@@ -457,45 +446,43 @@ func (m *UnixPrivilegeManager) changeUserGroupInternal(userName, groupName strin
 			"target_gid", targetGID,
 			"current_uid", syscall.Getuid(),
 			"current_gid", syscall.Getgid())
-	} else {
-		if err := syscall.Setegid(targetGID); err != nil {
-			return fmt.Errorf("failed to set effective group ID to %d (group %s): %w", targetGID, groupName, err)
-		}
-
-		if err := syscall.Seteuid(targetUID); err != nil {
-			// Try to restore original GID on failure
-			if restoreErr := syscall.Setegid(syscall.Getgid()); restoreErr != nil {
-				m.logger.Error("Failed to restore GID after UID change failure",
-					"restore_error", restoreErr,
-					"original_gid", syscall.Getgid())
-			}
-			return fmt.Errorf("failed to set effective user ID to %d (user %s): %w", targetUID, userName, err)
-		}
-
-		m.logger.Info("User/group privileges changed successfully",
-			"user", userName,
-			"group", groupName,
-			"target_uid", targetUID,
-			"target_gid", targetGID)
+		return nil
 	}
+
+	// Set group first, then user (standard practice)
+	if err := syscall.Setegid(targetGID); err != nil {
+		return fmt.Errorf("failed to set effective group ID to %d (group %s): %w", targetGID, groupName, err)
+	}
+
+	if err := syscall.Seteuid(targetUID); err != nil {
+		// Try to restore original GID on failure
+		if restoreErr := syscall.Setegid(syscall.Getegid()); restoreErr != nil {
+			m.logger.Error("Failed to restore GID after UID change failure",
+				"restore_error", restoreErr)
+		}
+		return fmt.Errorf("failed to set effective user ID to %d (user %s): %w", targetUID, userName, err)
+	}
+
+	m.logger.Info("User/group privileges changed successfully",
+		"user", userName,
+		"group", groupName,
+		"target_uid", targetUID,
+		"target_gid", targetGID)
 
 	return nil
 }
 
-// restoreUserGroup restores the original user and group IDs
-func (m *UnixPrivilegeManager) restoreUserGroup(originalUID, originalGID int) error {
-	// Restore group first, then user (reverse order of setting)
-	if err := syscall.Setegid(originalGID); err != nil {
-		return fmt.Errorf("failed to restore group ID to %d: %w", originalGID, err)
+// restoreUserGroupInternal restores the original effective group ID only
+// Note: User ID restoration is handled by restorePrivileges() to avoid conflicts
+func (m *UnixPrivilegeManager) restoreUserGroupInternal(originalEGID int) error {
+	// Only restore group ID - user ID will be restored by restorePrivileges()
+	if err := syscall.Setegid(originalEGID); err != nil {
+		return fmt.Errorf("failed to restore effective group ID to %d: %w", originalEGID, err)
 	}
 
-	if err := syscall.Seteuid(originalUID); err != nil {
-		return fmt.Errorf("failed to restore user ID to %d: %w", originalUID, err)
-	}
-
-	m.logger.Info("User/group privileges restored",
-		"restored_uid", originalUID,
-		"restored_gid", originalGID)
+	m.logger.Info("User/group privileges partially restored (group only)",
+		"restored_egid", originalEGID,
+		"note", "user ID will be restored by privilege restoration")
 
 	return nil
 }
