@@ -101,7 +101,7 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, cmd runnerty
 		return nil, ErrNoPrivilegeManager
 	}
 
-	if !e.PrivMgr.IsUserGroupSupported() {
+	if !e.PrivMgr.IsPrivilegedExecutionSupported() {
 		return nil, ErrUserGroupPrivilegeUnsupported
 	}
 

@@ -15,7 +15,7 @@ func createTestDryRunResourceManager() *DryRunResourceManager {
 	mockExec := &MockExecutor{}
 	mockPriv := &MockPrivilegeManager{}
 	// Add default expectations for privilege manager
-	mockPriv.On("IsUserGroupSupported").Return(true)
+	mockPriv.On("IsPrivilegedExecutionSupported").Return(true)
 	mockPriv.On("WithPrivileges", mock.Anything, mock.Anything).Return(nil)
 
 	opts := &DryRunOptions{

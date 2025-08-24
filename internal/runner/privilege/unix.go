@@ -390,12 +390,6 @@ func (m *UnixPrivilegeManager) GetMetrics() Metrics {
 	return m.metrics.GetSnapshot()
 }
 
-// IsUserGroupSupported checks if user/group privilege changes are supported
-func (m *UnixPrivilegeManager) IsUserGroupSupported() bool {
-	// User/group changes are supported on Unix systems when running with appropriate privileges
-	return m.privilegeSupported
-}
-
 // changeUserGroupDryRun validates user/group configuration without making actual changes
 func (m *UnixPrivilegeManager) changeUserGroupDryRun(userName, groupName string) error {
 	return m.changeUserGroupInternal(userName, groupName, true)

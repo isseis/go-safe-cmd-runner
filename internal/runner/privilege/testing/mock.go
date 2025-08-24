@@ -55,11 +55,6 @@ func (m *MockPrivilegeManager) IsPrivilegedExecutionSupported() bool {
 	return m.Supported
 }
 
-// IsUserGroupSupported returns whether user/group privilege changes are supported
-func (m *MockPrivilegeManager) IsUserGroupSupported() bool {
-	return m.Supported
-}
-
 // GetCurrentUID returns the current user ID
 func (m *MockPrivilegeManager) GetCurrentUID() int {
 	return MockUID

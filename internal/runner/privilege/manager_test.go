@@ -232,17 +232,6 @@ func TestManager_WithPrivileges_UserGroup_FunctionError(t *testing.T) {
 	assert.Equal(t, expectedErr, err)
 }
 
-func TestManager_UserGroupSupported(t *testing.T) {
-	logger := slog.Default()
-	manager := NewManager(logger)
-
-	// Should match the privileged execution support status
-	expected := manager.IsPrivilegedExecutionSupported()
-	actual := manager.IsUserGroupSupported()
-
-	assert.Equal(t, expected, actual)
-}
-
 // Helper functions for tests
 func getCurrentUser(t *testing.T) string {
 	t.Helper()

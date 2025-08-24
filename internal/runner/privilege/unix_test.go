@@ -242,8 +242,4 @@ func TestUnixPrivilegeManager_PrivilegeValidation(t *testing.T) {
 		assert.NoError(t, err)
 		assert.True(t, executed)
 	})
-
-	t.Run("user_group_supported_matches_privilege_supported", func(t *testing.T) {
-		assert.Equal(t, manager.privilegeSupported, manager.IsUserGroupSupported())
-	})
 }
