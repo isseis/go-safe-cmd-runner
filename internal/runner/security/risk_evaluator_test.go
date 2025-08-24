@@ -171,11 +171,10 @@ func TestEvaluateCommandExecution_PrivilegedBypass(t *testing.T) {
 		Reason:                "Command requires root privileges",
 	}
 
-	// Command marked as privileged should bypass checks
+	// Command with privilege escalation - should pass with current risk level limit
 	command := &runnertypes.Command{
-		Name:       "privileged-sudo",
-		Cmd:        "sudo",
-		Privileged: true,
+		Name: "privilege-sudo",
+		Cmd:  "sudo",
 	}
 
 	err := evaluator.EvaluateCommandExecution(
@@ -183,6 +182,7 @@ func TestEvaluateCommandExecution_PrivilegedBypass(t *testing.T) {
 		privilegeResult, command,
 	)
 
+	// Should pass because RiskLevelHigh is within the default max allowed level
 	assert.NoError(t, err)
 }
 

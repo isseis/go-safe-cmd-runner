@@ -191,11 +191,23 @@ description = "Use verified command"
 cmd = "/bin/echo"
 args = ["Using verified command"]
 
-# Group 9: All features combined
+# Group 9: Success test (replaces Slack notification test for success testing)
+[[groups]]
+name = "success_test"
+description = "Test successful execution without errors"
+priority = 9
+
+[[groups.commands]]
+name = "success_command"
+description = "Simple successful command for testing"
+cmd = "echo"
+args = ["Success test completed without errors"]
+
+# Group 10: All features combined
 [[groups]]
 name = "comprehensive_final"
 description = "Final comprehensive test combining all features"
-priority = 9
+priority = 10
 temp_dir = true
 cleanup = true
 workdir = "/tmp/final-comprehensive-test"

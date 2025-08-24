@@ -75,9 +75,9 @@ flowchart TB
   - `max_risk_level` フィールドの追加（NEW）
   - 設定値の検証（NEW）
 
-#### 2.2.2 新規コンポーネント
+#### 2.2.2 拡張コンポーネント
+- **IsPrivilegeEscalationCommand**: 既存の `IsSudoCommand` を拡張して sudo/su/doas を検出
 - **Risk Evaluator**: セキュリティ分析結果と設定値を照合し実行可否を判定
-- **Privilege Escalation Analyzer**: 特権昇格リスクの詳細分析（NEW）
 - **Security Error Types**: セキュリティ違反時の専用エラー型
 
 ## 3. データフロー
@@ -112,70 +112,36 @@ flowchart TD
 flowchart TD
     SecurityAnalysis[Security Analysis<br/>AnalyzeCommandSecurity]
     ExtractRisk[Extract Risk Level<br/>None, Medium, High]
-    PrivilegeAnalysis[Privilege Escalation Analysis<br/>NEW: AnalyzePrivilegeEscalation]
-    GetConfig[Get Command Configuration<br/>- max_risk_level setting<br/>- privileged flag]
-    EvaluatePermission[Evaluate Permission]
-    HasPrivilegeRisk{Has Privilege<br/>Escalation Risk?}
-    PrivilegedCheck{privileged = true?}
-    RemovePrivilegeRisk[Remove Privilege Escalation Risk<br/>Recalculate Effective Risk Level]
-    RiskCheck{effective_risk ≤ max_risk?}
+    CheckProhibited{Prohibited Command?<br/>sudo/su/doas}
+    GetConfig[Get Command Configuration<br/>max_risk_level setting]
+    RiskCheck{risk_level ≤ max_risk?}
     Allow[ALLOW]
-    Reject[REJECT]
+    RejectProhibited[REJECT<br/>Privilege Escalation Prohibited]
+    RejectRisk[REJECT<br/>Risk Level Too High]
     Execute[EXECUTE]
 
     SecurityAnalysis --> ExtractRisk
-    ExtractRisk --> PrivilegeAnalysis
-    PrivilegeAnalysis --> GetConfig
-    GetConfig --> EvaluatePermission
-    EvaluatePermission --> HasPrivilegeRisk
-    HasPrivilegeRisk -->|Yes| PrivilegedCheck
-    HasPrivilegeRisk -->|No| RiskCheck
-    PrivilegedCheck -->|Yes| RemovePrivilegeRisk
-    PrivilegedCheck -->|No| Reject
-    RemovePrivilegeRisk --> RiskCheck
+    SecurityAnalysis --> CheckProhibited
+    CheckProhibited -->|Yes<br/>sudo/su/doas| RejectProhibited
+    CheckProhibited -->|No<br/>Other commands| GetConfig
+    GetConfig --> RiskCheck
     RiskCheck -->|Yes| Allow
-    RiskCheck -->|No| Reject
+    RiskCheck -->|No| RejectRisk
     Allow --> Execute
+
+    style CheckProhibited fill:#ffebee,stroke:#ef5350,stroke-width:2px
+    style RejectProhibited fill:#ffcdd2,stroke:#d32f2f,stroke-width:2px
 ```
 
-**特権昇格リスク分析:** システムは以下の段階でコマンドの特権昇格リスクを詳細に分析します：
-1. **パターンベース検出**: `sudo`, `su`, `systemctl` などの特権昇格コマンドを検出
-2. **コンテキスト分析**: 実行ユーザーと対象操作の権限レベルを比較
-3. **リスク分類**: 特権昇格リスクを他のセキュリティリスクから分離
-4. **条件付き許可**: `privileged = true`フラグによる特権昇格リスクの除外
+**特権昇格コマンド検出:** システムは以下の段階でコマンドを処理します：
+1. **セキュリティ分析**: 既存の `security.AnalyzeCommandSecurity` でコマンドとリスクを分析
+2. **特権昇格コマンド検出**: コマンド名が `sudo`, `su`, `doas` の場合は即座に実行拒否
+3. **通常リスク評価**: その他のコマンドは `max_risk_level` 設定とリスクレベルを比較
+4. **代替手段の案内**: 禁止時に `run_as_user`/`run_as_group` による安全な権限昇格メカニズムを案内
 
 ## 4. インターフェース設計
 
-### 4.1 Privilege Escalation Analyzer Interface
-
-```go
-type PrivilegeEscalationAnalyzer interface {
-    AnalyzePrivilegeEscalation(cmdName string, args []string) (*PrivilegeEscalationResult, error)
-    IsPrivilegeEscalationCommand(cmdName string) bool
-    GetRequiredPrivileges(cmdName string, args []string) ([]string, error)
-}
-
-type PrivilegeEscalationResult struct {
-    HasPrivilegeEscalation bool
-    EscalationType         PrivilegeEscalationType
-    RequiredPrivileges     []string
-    RiskLevel             security.RiskLevel
-    Description           string
-}
-
-type PrivilegeEscalationType int
-
-const (
-    PrivilegeEscalationNone PrivilegeEscalationType = iota
-    PrivilegeEscalationSudo    // sudo command
-    PrivilegeEscalationSu      // su command
-    PrivilegeEscalationSystemd // systemctl/systemd operations
-    PrivilegeEscalationService // service management
-    PrivilegeEscalationOther   // other privilege escalation
-)
-```
-
-### 4.2 Risk Evaluator Interface
+### 4.1 Risk Evaluator Interface
 
 ```go
 type RiskEvaluator interface {
@@ -183,7 +149,6 @@ type RiskEvaluator interface {
         riskLevel security.RiskLevel,
         detectedPattern string,
         reason string,
-        privilegeResult *PrivilegeEscalationResult,
         command *config.Command,
     ) error
 }
@@ -196,9 +161,18 @@ type SecurityViolationError struct {
     CommandPath     string
     RunID           string
 }
+
+type PrivilegeEscalationProhibitedError struct {
+    Command         string
+    DetectedCommand string
+    Reason          string
+    Alternative     string
+    CommandPath     string
+    RunID           string
+}
 ```
 
-### 4.3 Enhanced Command Configuration
+### 4.2 Enhanced Command Configuration
 
 ```go
 type Command struct {
@@ -206,45 +180,59 @@ type Command struct {
     Description  string   `toml:"description"`
     Cmd          string   `toml:"cmd"`
     Args         []string `toml:"args"`
-    MaxRiskLevel string   `toml:"max_risk_level"` // NEW
-    Privileged   bool     `toml:"privileged"`     // EXISTING
+    MaxRiskLevel string   `toml:"max_risk_level"` // NEW: "none", "medium", "high"
+    RunAsUser    string   `toml:"run_as_user"`    // User to execute command as (using seteuid)
+    RunAsGroup   string   `toml:"run_as_group"`   // Group to execute command as (using setegid)
     // ... other existing fields
 }
 ```
 
-### 4.4 Normal Manager Enhanced Interface
+### 4.3 Normal Manager Enhanced Interface
 
 ```go
 type NormalResourceManager struct {
-    executor             CommandExecutor
-    outputWriter         OutputWriter
-    evaluator            RiskEvaluator               // NEW
-    privilegeAnalyzer    PrivilegeEscalationAnalyzer // NEW
+    executor     CommandExecutor
+    outputWriter OutputWriter
+    evaluator    RiskEvaluator    // NEW: simplified risk evaluation
 }
 
 func (m *NormalResourceManager) ExecuteCommand(
     command *config.Command,
     env map[string]string,
 ) (*ExecutionResult, error) {
-    // 1. Security Analysis (NEW)
+    // 1. Security Analysis (using existing function)
     riskLevel, detectedPattern, reason := security.AnalyzeCommandSecurity(command.Cmd, command.Args)
 
-    // 2. Privilege Escalation Analysis (NEW)
-    privilegeResult, err := m.privilegeAnalyzer.AnalyzePrivilegeEscalation(command.Cmd, command.Args)
+    // 2. Check for prohibited privilege escalation commands
+    isProhibited, err := security.IsPrivilegeEscalationCommand(command.Cmd)
     if err != nil {
-        return nil, fmt.Errorf("privilege escalation analysis failed: %w", err)
+        // Handle symlink depth exceeded error
+        if errors.Is(err, security.ErrSymlinkDepthExceeded) {
+            return nil, &SecurityViolationError{
+                Command:         command.Cmd,
+                DetectedRisk:    "HIGH",
+                DetectedPattern: "Symlink depth exceeded",
+                Reason:          "Potential symlink attack detected",
+            }
+        }
+        return nil, fmt.Errorf("failed to check privilege escalation: %w", err)
     }
 
-    // 3. Risk Evaluation (NEW)
-    // privileged=true flag can exclude privilege escalation risks
-    // Other security risks are still evaluated against max_risk_level
-    if err := m.evaluator.EvaluateCommandExecution(riskLevel, detectedPattern, reason, privilegeResult, command); err != nil {
+    if isProhibited {
+        return nil, &PrivilegeEscalationProhibitedError{
+            Command:     command.Cmd,
+            Reason:      "Privilege escalation commands (sudo, su, doas) are prohibited in TOML files",
+            Alternative: "Use 'run_as_user'/'run_as_group' setting for safe privilege escalation",
+        }
+    }
+
+    // 3. Risk evaluation for all other commands
+    if err := m.evaluator.EvaluateCommandExecution(riskLevel, detectedPattern, reason, command); err != nil {
         return nil, err
     }
 
-    // 4. Execute (EXISTING)
+    // 4. Execute command
     return m.executor.Execute(command, env)
-}
 ```
 
 ## 5. セキュリティ設計
@@ -283,15 +271,18 @@ flowchart LR
 2. **Pre-execution Analysis**
    - セキュリティパターンマッチング
    - シンボリックリンク深度チェック
+   - 特権昇格コマンド検出（sudo, su, doas）
    - 環境変数検査
 
 3. **Risk-based Access Control**
+   - **特権昇格コマンドの一律禁止**: `sudo`/`su`/`doas` は設定に関わらず実行拒否
    - 実際のリスクレベルと許可レベルの照合
-   - 特権昇格リスクに対する`privileged`フラグによる例外処理
-   - その他のセキュリティリスクは`privileged=true`でもチェック対象
+   - システムコマンド（systemctl等）は従来通りリスクベース制御
+   - `run_as_user`/`run_as_group` による安全な権限昇格メカニズムの推奨
 
 4. **Audit and Logging**
    - セキュリティ違反の詳細ログ
+   - 特権昇格コマンド使用試行の記録
    - 実行拒否の追跡可能性
 
 ## 6. エラーハンドリング戦略
@@ -302,9 +293,10 @@ flowchart LR
 type SecurityError string
 
 const (
-    SecurityErrorRiskTooHigh     SecurityError = "command_security_violation"
-    SecurityErrorAnalysisFailed  SecurityError = "security_analysis_failed"
-    SecurityErrorConfigInvalid   SecurityError = "invalid_security_config"
+    SecurityErrorRiskTooHigh            SecurityError = "command_security_violation"
+    SecurityErrorPrivilegeEscalation    SecurityError = "privilege_escalation_prohibited"
+    SecurityErrorAnalysisFailed         SecurityError = "security_analysis_failed"
+    SecurityErrorConfigInvalid          SecurityError = "invalid_security_config"
 )
 ```
 
@@ -394,6 +386,16 @@ func TestRiskBasedExecution(t *testing.T) {
         expectedError   error
     }{
         {
+            name: "sudo_always_prohibited",
+            command: &config.Command{
+                Cmd: "sudo", Args: []string{"ls"},
+                MaxRiskLevel: "high",  // Even with high permission
+                Privileged: true,      // Even with privilege flag
+            },
+            shouldExecute: false,
+            expectedError: SecurityErrorPrivilegeEscalation,
+        },
+        {
             name: "high_risk_with_permission",
             command: &config.Command{
                 Cmd: "rm", Args: []string{"-rf", "/tmp"},
@@ -406,11 +408,20 @@ func TestRiskBasedExecution(t *testing.T) {
             name: "high_risk_without_permission",
             command: &config.Command{
                 Cmd: "rm", Args: []string{"-rf", "/tmp"},
-                // MaxRiskLevel not set
+                // MaxRiskLevel not set (defaults to "none")
             },
             expectedRisk: "HIGH",
             shouldExecute: false,
             expectedError: SecurityErrorRiskTooHigh,
+        },
+        {
+            name: "safe_command_always_allowed",
+            command: &config.Command{
+                Cmd: "echo", Args: []string{"hello"},
+                // No max_risk_level needed
+            },
+            expectedRisk: "NONE",
+            shouldExecute: true,
         },
     }
 }
@@ -419,48 +430,49 @@ func TestRiskBasedExecution(t *testing.T) {
 ## 10. 実装優先順位
 
 ### 10.1 Phase 1: 基本機能
-1. **Privilege Escalation Analyzer の実装**
-   - 基本的な特権昇格パターン検出（sudo, su, systemctl）
-   - PrivilegeEscalationResult 構造体の実装
-   - 各コマンド種別に応じた分析メソッド
+1. **既存機能の拡張** ✅ 完了
+   - [x] `security.IsPrivilegeEscalationCommand()` の実装完了（sudo, su, doas対応）
+   - [x] 既存の `IsSudoCommand()` との下位互換性維持
+   - [x] PrivilegeEscalationProhibitedError の実装
 
-2. **Risk Evaluator の拡張**
-   - 特権昇格リスクを考慮した評価ロジック
-   - 実効リスクレベル計算機能
-   - 詳細なエラーメッセージ生成
+2. **Risk Evaluator の基本実装** ✅ 完了
+   - [x] 基本的なリスクレベル vs max_risk_level の比較
+   - [x] SecurityViolationError の実装
+   - [x] 明確なエラーメッセージ生成
 
-3. **Normal Manager の統合**
-   - 特権昇格分析の統合
-   - ログ出力の拡張
+3. **Normal Manager の統合** ✅ 完了
+   - [x] `security.IsPrivilegeEscalationCommand()` の使用
+   - [x] シンボリックリンク深度超過エラーの適切な処理
+   - [x] 簡略化されたリスク評価フローの実装
 
 ### 10.2 Phase 2: 高度な分析機能
-1. **詳細特権昇格分析**
-   - chmod/chown コマンドの詳細分析
-   - setuid/setgid ビット検出
-   - 本質的特権コマンドの拡張
+1. **システムコマンド分析の拡張** ✅ 完了
+   - [x] systemctl/service コマンドの詳細分析
+   - [x] chmod/chown コマンドの危険パターン検出
+   - [x] 本質的特権コマンドの拡張
 
-2. **Security Error Types の拡張**
-   - 特権昇格専用エラータイプ
-   - 詳細エラーメッセージテンプレート
-   - コンテキスト情報の追加
+2. **Security Error Types の完全実装** ✅ 完了
+   - [x] PrivilegeEscalationProhibitedError の詳細実装
+   - [x] 詳細エラーメッセージテンプレート
+   - [x] コンテキスト情報の追加
 
-3. **ログシステムの強化**
-   - 特権昇格分析結果のログ
-   - セキュリティ監査ログの拡張
+3. **ログシステムの強化** ✅ 完了
+   - [x] 特権昇格禁止の監査ログ
+   - [x] セキュリティ違反統計の収集
 
 ### 10.3 Phase 3: テストと最適化
-1. **テストスイートの拡張**
-   - 特権昇格分析のユニットテスト
-   - エンドツーエンドテストの充実
-   - エッジケースのテスト
+1. **テストスイートの拡張** ✅ 完了
+   - [x] 特権昇格分析のユニットテスト
+   - [x] エンドツーエンドテストの充実
+   - [x] エッジケースのテスト
 
-2. **パフォーマンス最適化**
-   - 特権昇格分析のキャッシュ機能
-   - 並列分析の実装
+2. **パフォーマンス最適化** ⚠️ 部分実装
+   - [ ] 特権昇格分析のキャッシュ機能
+   - [ ] 並列分析の実装
 
-3. **ドキュメント整備**
-   - 実装ガイドライン
-   - セキュリティベストプラクティス
+3. **ドキュメント整備** ✅ 完了
+   - [x] 実装ガイドライン
+   - [x] セキュリティベストプラクティス
 
 ## 11. 拡張性設計
 

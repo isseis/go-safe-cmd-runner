@@ -6,6 +6,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 // Test helper functions for dry-run manager
@@ -13,6 +14,9 @@ import (
 func createTestDryRunResourceManager() *DryRunResourceManager {
 	mockExec := &MockExecutor{}
 	mockPriv := &MockPrivilegeManager{}
+	// Add default expectations for privilege manager
+	mockPriv.On("IsPrivilegedExecutionSupported").Return(true)
+	mockPriv.On("WithPrivileges", mock.Anything, mock.Anything).Return(nil)
 
 	opts := &DryRunOptions{
 		DetailLevel: DetailLevelDetailed,
@@ -156,15 +160,15 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 			expectedDescription:  "Recursive file removal",
 		},
 		{
-			name: "privileged command",
+			name: "user/group privilege command",
 			cmd: runnertypes.Command{
-				Name:       "restart-nginx",
-				Cmd:        "systemctl",
-				Args:       []string{"restart", "nginx"},
-				Privileged: true,
+				Name:      "restart-nginx",
+				Cmd:       "systemctl",
+				Args:      []string{"restart", "nginx"},
+				RunAsUser: "root",
 			},
-			expectedSecurityRisk: "medium",
-			expectedDescription:  "PRIVILEGE",
+			expectedSecurityRisk: "",
+			expectedDescription:  "User/Group configuration validated",
 		},
 		{
 			name: "normal command",
@@ -177,23 +181,23 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 			expectedDescription:  "",
 		},
 		{
-			name: "dangerous command with privilege should be high risk",
+			name: "dangerous command with user specification should be high risk",
 			cmd: runnertypes.Command{
-				Name:       "privileged-rm",
-				Cmd:        "sudo",
-				Args:       []string{"rm", "-rf", "/important/data"},
-				Privileged: true,
+				Name:      "privileged-rm",
+				Cmd:       "sudo",
+				Args:      []string{"rm", "-rf", "/important/data"},
+				RunAsUser: "root",
 			},
 			expectedSecurityRisk: "high",
 			expectedDescription:  "Privileged file removal",
 		},
 		{
-			name: "dangerous command with args and privilege",
+			name: "dangerous command with args and user specification",
 			cmd: runnertypes.Command{
-				Name:       "rm-privileged",
-				Cmd:        "rm",
-				Args:       []string{"-rf", "/important/data"},
-				Privileged: true,
+				Name:      "rm-privileged",
+				Cmd:       "rm",
+				Args:      []string{"-rf", "/important/data"},
+				RunAsUser: "root",
 			},
 			expectedSecurityRisk: "high",
 			expectedDescription:  "Recursive file removal",

@@ -25,42 +25,72 @@ func TestNewAuditLoggerWithCustom(t *testing.T) {
 	assert.NotNil(t, auditLogger)
 }
 
-func TestLogger_LogPrivilegedExecution(t *testing.T) {
+func TestLogger_LogUserGroupExecution(t *testing.T) {
 	tests := []struct {
-		name         string
-		cmd          runnertypes.Command
-		result       *audit.ExecutionResult
-		expectLogMsg string
+		name     string
+		cmd      runnertypes.Command
+		result   *audit.ExecutionResult
+		duration time.Duration
+		metrics  audit.PrivilegeMetrics
 	}{
 		{
-			name: "successful privileged execution",
+			name: "successful user/group command",
 			cmd: runnertypes.Command{
-				Name:       "test_cmd",
+				Name:       "test_user_group_cmd",
 				Cmd:        "/bin/echo",
-				Args:       []string{"hello"},
-				Privileged: true,
+				Args:       []string{"test"},
+				RunAsUser:  "testuser",
+				RunAsGroup: "testgroup",
 			},
 			result: &audit.ExecutionResult{
-				Stdout:   "hello\n",
+				Stdout:   "test output",
 				Stderr:   "",
 				ExitCode: 0,
 			},
-			expectLogMsg: "Privileged command executed successfully",
+			duration: 100 * time.Millisecond,
+			metrics: audit.PrivilegeMetrics{
+				ElevationCount: 1,
+				TotalDuration:  50 * time.Millisecond,
+			},
 		},
 		{
-			name: "failed privileged execution",
+			name: "failed user/group command",
 			cmd: runnertypes.Command{
-				Name:       "test_fail",
+				Name:       "test_failed_user_group_cmd",
 				Cmd:        "/bin/false",
 				Args:       []string{},
-				Privileged: true,
+				RunAsUser:  "testuser",
+				RunAsGroup: "testgroup",
 			},
 			result: &audit.ExecutionResult{
 				Stdout:   "",
 				Stderr:   "command failed",
 				ExitCode: 1,
 			},
-			expectLogMsg: "Privileged command failed",
+			duration: 200 * time.Millisecond,
+			metrics: audit.PrivilegeMetrics{
+				ElevationCount: 1,
+				TotalDuration:  75 * time.Millisecond,
+			},
+		},
+		{
+			name: "user only command",
+			cmd: runnertypes.Command{
+				Name:      "test_user_only_cmd",
+				Cmd:       "/bin/id",
+				Args:      []string{},
+				RunAsUser: "testuser",
+			},
+			result: &audit.ExecutionResult{
+				Stdout:   "uid=1001(testuser)",
+				Stderr:   "",
+				ExitCode: 0,
+			},
+			duration: 50 * time.Millisecond,
+			metrics: audit.PrivilegeMetrics{
+				ElevationCount: 1,
+				TotalDuration:  25 * time.Millisecond,
+			},
 		},
 	}
 
@@ -71,20 +101,18 @@ func TestLogger_LogPrivilegedExecution(t *testing.T) {
 			auditLogger := audit.NewAuditLoggerWithCustom(logger)
 
 			ctx := context.Background()
-			duration := 100 * time.Millisecond
-			metrics := audit.PrivilegeMetrics{
-				ElevationCount: 2,
-				TotalDuration:  50 * time.Millisecond,
-			}
-
-			auditLogger.LogPrivilegedExecution(ctx, tt.cmd, tt.result, duration, metrics)
+			auditLogger.LogUserGroupExecution(ctx, tt.cmd, tt.result, tt.duration, tt.metrics)
 
 			logOutput := buf.String()
-			assert.Contains(t, logOutput, tt.expectLogMsg)
-			assert.Contains(t, logOutput, "audit_type")
-			assert.Contains(t, logOutput, "privileged_execution")
+			assert.Contains(t, logOutput, "user_group_execution")
 			assert.Contains(t, logOutput, tt.cmd.Name)
 			assert.Contains(t, logOutput, tt.cmd.Cmd)
+			if tt.cmd.RunAsUser != "" {
+				assert.Contains(t, logOutput, tt.cmd.RunAsUser)
+			}
+			if tt.cmd.RunAsGroup != "" {
+				assert.Contains(t, logOutput, tt.cmd.RunAsGroup)
+			}
 		})
 	}
 }

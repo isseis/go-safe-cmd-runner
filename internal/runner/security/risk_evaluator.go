@@ -58,19 +58,7 @@ func (re *DefaultRiskEvaluator) EvaluateCommandExecution(
 	privilegeResult *PrivilegeEscalationResult,
 	command *runnertypes.Command,
 ) error {
-	// If command is marked as privileged, bypass privilege escalation restrictions
-	if command.Privileged {
-		re.logger.Info("command marked as privileged, bypassing privilege escalation checks",
-			"command", command.Name,
-			"cmd", command.Cmd,
-			"privilege_escalation", privilegeResult.IsPrivilegeEscalation,
-			"escalation_type", privilegeResult.EscalationType,
-		)
-
-		// Still check basic risk level if max_risk_level is defined in the future
-		// For now, allow all privileged commands
-		return nil
-	}
+	// No privileged command bypass - all commands are subject to risk evaluation
 
 	// Determine the effective risk level
 	effectiveRiskLevel := re.determineEffectiveRiskLevel(riskLevel, privilegeResult)

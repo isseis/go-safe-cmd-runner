@@ -12,42 +12,55 @@ Normal Mode での実行時にセキュリティ分析を統合し、リスク�
 - 設定ファイル拡張の詳細
 - エラーハンドリングの実装
 
-## 2. Privilege Escalation Analyzer 詳細設計
+## 2. 特権昇格コマンド検出の詳細設計
 
-### 2.1 インターフェース定義
+### 2.1 既存機能の拡張
 
 ```go
-// internal/runner/security/privilege.go
-package security
+// internal/runner/security/command_analysis.go
 
-import (
-    "context"
-    "fmt"
-    "regexp"
-    "strings"
-)
+// IsPrivilegeEscalationCommand checks if the given command is a privilege escalation command
+// (sudo, su, doas), considering symbolic links
+// Returns (isPrivilegeEscalation, error) where error indicates if symlink depth was exceeded
+func IsPrivilegeEscalationCommand(cmdName string) (bool, error) {
+    commandNames, exceededDepth := extractAllCommandNames(cmdName)
+    if exceededDepth {
+        return false, ErrSymlinkDepthExceeded
+    }
 
-// PrivilegeEscalationAnalyzer defines the interface for privilege escalation analysis
-type PrivilegeEscalationAnalyzer interface {
-    // AnalyzePrivilegeEscalation analyzes a command for privilege escalation risks
-    AnalyzePrivilegeEscalation(ctx context.Context, cmdName string, args []string) (*PrivilegeEscalationResult, error)
+    // Check for any privilege escalation commands
+    privilegeCommands := []string{"sudo", "su", "doas"}
+    for _, cmd := range privilegeCommands {
+        if _, exists := commandNames[cmd]; exists {
+            return true, nil
+        }
+    }
 
-    // IsPrivilegeEscalationCommand checks if a command is a privilege escalation command
-    IsPrivilegeEscalationCommand(cmdName string) bool
-
-    // GetRequiredPrivileges returns the privileges required by a command
-    GetRequiredPrivileges(cmdName string, args []string) ([]string, error)
-
-    // GetEscalationType determines the type of privilege escalation
-    GetEscalationType(cmdName string, args []string) PrivilegeEscalationType
+    return false, nil
 }
 
-// PrivilegeEscalationResult represents the result of privilege escalation analysis
-type PrivilegeEscalationResult struct {
-    // HasPrivilegeEscalation indicates if the command has privilege escalation
-    HasPrivilegeEscalation bool
+// IsSudoCommand is maintained for backward compatibility
+// Deprecated: Use IsPrivilegeEscalationCommand instead
+func IsSudoCommand(cmdName string) (bool, error) {
+    return IsPrivilegeEscalationCommand(cmdName)
+}
+```
 
-    // EscalationType specifies the type of privilege escalation
+### 2.2 実装詳細
+
+この実装により以下の利点が得られます：
+
+1. **既存機能の活用**: `extractAllCommandNames()` によるシンボリックリンク解決
+2. **シンボリックリンク攻撃対策**: 深度制限による保護
+3. **拡張性**: 新しい特権昇格コマンドの追加が容易
+4. **下位互換性**: 既存の `IsSudoCommand` は継続使用可能
+
+### 2.3 セキュリティ考慮事項
+
+- **シンボリックリンク解決**: パス操作による回避を防止
+- **複数コマンド対応**: sudo, su, doas の包括的検出
+- **エラーハンドリング**: シンボリックリンク深度超過の適切な処理
+```go
     EscalationType PrivilegeEscalationType
 
     // RequiredPrivileges lists the specific privileges required
@@ -158,6 +171,13 @@ func (a *DefaultPrivilegeEscalationAnalyzer) initializePatterns() {
             RiskLevel:   RiskLevelHigh,
             Description: "Switch user context",
             Validator:   a.validateSuArgs,
+        },
+        "doas": {
+            Type:        PrivilegeEscalationSudo, // Use same type as sudo
+            Pattern:     regexp.MustCompile(`^doas$`),
+            RiskLevel:   RiskLevelHigh,
+            Description: "Execute command with elevated privileges using doas",
+            Validator:   a.validateDoasArgs,
         },
         "systemctl": {
             Type:        PrivilegeEscalationSystemd,
@@ -281,6 +301,22 @@ func (a *DefaultPrivilegeEscalationAnalyzer) validateSudoArgs(args []string) boo
     return true
 }
 
+func (a *DefaultPrivilegeEscalationAnalyzer) validateDoasArgs(args []string) bool {
+    // Validate doas arguments - similar to sudo validation
+    if len(args) == 0 {
+        return false // doas without arguments is suspicious
+    }
+
+    // Check for shell escapes or dangerous patterns
+    for _, arg := range args {
+        if strings.Contains(arg, ";") || strings.Contains(arg, "|") || strings.Contains(arg, "&") {
+            return false
+        }
+    }
+
+    return true
+}
+
 func (a *DefaultPrivilegeEscalationAnalyzer) validateSystemctlArgs(args []string) bool {
     if len(args) == 0 {
         return true
@@ -337,6 +373,22 @@ func TestPrivilegeEscalationAnalyzer(t *testing.T) {
             args:                  []string{"ls", "-la"},
             expectedHasEscalation: true,
             expectedType:          PrivilegeEscalationSudo,
+            expectedRiskLevel:     RiskLevelHigh,
+        },
+        {
+            name:                  "su_command_detected",
+            cmdName:               "su",
+            args:                  []string{"-", "root"},
+            expectedHasEscalation: true,
+            expectedType:          PrivilegeEscalationSu,
+            expectedRiskLevel:     RiskLevelHigh,
+        },
+        {
+            name:                  "doas_command_detected",
+            cmdName:               "doas",
+            args:                  []string{"ls", "-la"},
+            expectedHasEscalation: true,
+            expectedType:          PrivilegeEscalationSudo, // Same type as sudo
             expectedRiskLevel:     RiskLevelHigh,
         },
         {
@@ -443,7 +495,14 @@ func (e *DefaultEnhancedRiskEvaluator) EvaluateCommandExecution(
         return fmt.Errorf("command cannot be nil")
     }
 
-    // Calculate effective risk level
+    // Check for prohibited privilege escalation commands first
+    if privilegeResult != nil && privilegeResult.HasPrivilegeEscalation {
+        if e.isProhibitedPrivilegeEscalationCommand(privilegeResult.EscalationType) {
+            return e.createPrivilegeEscalationProhibitedError(command, privilegeResult)
+        }
+    }
+
+    // Calculate effective risk level for other commands
     effectiveRisk, err := e.CalculateEffectiveRisk(baseRiskLevel, privilegeResult, command)
     if err != nil {
         return fmt.Errorf("failed to calculate effective risk: %w", err)
@@ -531,6 +590,31 @@ func (e *DefaultEnhancedRiskEvaluator) combineRisks(risk1, risk2 RiskLevel) Risk
     return risk2
 }
 
+// isProhibitedPrivilegeEscalationCommand checks if a privilege escalation type is prohibited
+func (e *DefaultEnhancedRiskEvaluator) isProhibitedPrivilegeEscalationCommand(escalationType PrivilegeEscalationType) bool {
+    switch escalationType {
+    case PrivilegeEscalationSudo, PrivilegeEscalationSu:
+        return true // sudo, su, and doas commands are always prohibited
+    default:
+        return false
+    }
+}
+
+// createPrivilegeEscalationProhibitedError creates an error for prohibited privilege escalation commands
+func (e *DefaultEnhancedRiskEvaluator) createPrivilegeEscalationProhibitedError(
+    command *config.Command,
+    privilegeResult *PrivilegeEscalationResult,
+) error {
+    return &PrivilegeEscalationProhibitedError{
+        Command:         command.Cmd,
+        DetectedCommand: privilegeResult.DetectedPatterns[0],
+        Reason:          "Privilege escalation commands (sudo, su, doas) are prohibited in TOML files",
+        Alternative:     "Use 'run_as_user'/'run_as_group' setting for safe privilege escalation",
+        CommandPath:     fmt.Sprintf("groups.%s.commands.%s", command.GroupName, command.Name),
+        RunID:           command.RunID,
+    }
+}
+
 // getMaxAllowedRiskLevel determines the maximum allowed risk level for a command
 func (e *DefaultEnhancedRiskEvaluator) getMaxAllowedRiskLevel(command *config.Command) (RiskLevel, error) {
     if command.MaxRiskLevel == "" {
@@ -571,10 +655,10 @@ func (e *DefaultEnhancedRiskEvaluator) createSecurityViolationError(
             Description:        privilegeResult.Description,
         }
 
-        // Suggest privileged flag if not set
-        if !command.Privileged {
+        // Suggest run_as_user/run_as_group if not set
+        if command.RunAsUser == "" && command.RunAsGroup == "" {
             violation.Suggestion = fmt.Sprintf(
-                "Consider setting 'privileged = true' in the command configuration if this privilege escalation is intended, or set 'max_risk_level = \"%s\"' to allow this risk level",
+                "Consider setting 'run_as_user'/'run_as_group' in the command configuration if this privilege escalation is intended, or set 'max_risk_level = \"%s\"' to allow this risk level",
                 effectiveRisk.String(),
             )
         }
@@ -600,6 +684,16 @@ type SecurityViolationError struct {
     Suggestion          string
 }
 
+// PrivilegeEscalationProhibitedError represents an error for prohibited privilege escalation commands
+type PrivilegeEscalationProhibitedError struct {
+    Command         string
+    DetectedCommand string
+    Reason          string
+    Alternative     string
+    CommandPath     string
+    RunID           string
+}
+
 // PrivilegeEscalationDetails provides details about privilege escalation
 type PrivilegeEscalationDetails struct {
     Type               string
@@ -607,7 +701,7 @@ type PrivilegeEscalationDetails struct {
     Description        string
 }
 
-// Error implements the error interface
+// Error implements the error interface for SecurityViolationError
 func (e *SecurityViolationError) Error() string {
     var parts []string
 
@@ -630,9 +724,21 @@ func (e *SecurityViolationError) Error() string {
     return strings.Join(parts, "; ")
 }
 
-// Is implements error equality checking
+// Error implements the error interface for PrivilegeEscalationProhibitedError
+func (e *PrivilegeEscalationProhibitedError) Error() string {
+    return fmt.Sprintf("privilege escalation prohibited: command '%s' (detected: %s) - %s. %s",
+        e.Command, e.DetectedCommand, e.Reason, e.Alternative)
+}
+
+// Is implements error equality checking for SecurityViolationError
 func (e *SecurityViolationError) Is(target error) bool {
     _, ok := target.(*SecurityViolationError)
+    return ok
+}
+
+// Is implements error equality checking for PrivilegeEscalationProhibitedError
+func (e *PrivilegeEscalationProhibitedError) Is(target error) bool {
+    _, ok := target.(*PrivilegeEscalationProhibitedError)
     return ok
 }
 ```
@@ -794,9 +900,9 @@ func (c *Command) ValidateSecurityConfig() error {
         }
     }
 
-    // Validate Privileged flag with MaxRiskLevel
-    if c.Privileged && c.MaxRiskLevel == "none" {
-        errors = append(errors, "privileged=true conflicts with max_risk_level='none'")
+    // Validate run_as_user/run_as_group with MaxRiskLevel
+    if (c.RunAsUser != "" || c.RunAsGroup != "") && c.MaxRiskLevel == "none" {
+        errors = append(errors, "run_as_user/run_as_group conflicts with max_risk_level='none'")
     }
 
     if len(errors) > 0 {
@@ -854,16 +960,33 @@ description = "Operations with various security levels"
   cmd = "systemctl"
   args = ["restart", "nginx"]
   max_risk_level = "high"
-  privileged = true
+  run_as_user = "root"
+
+  # ❌ This configuration is PROHIBITED and will always fail
+  # [[groups.commands]]
+  # name = "prohibited_sudo"
+  # description = "Sudo commands are prohibited in TOML files"
+  # cmd = "sudo"
+  # args = ["systemctl", "status", "nginx"]
+  # max_risk_level = "high"  # This setting has no effect for sudo/su/doas
+  # run_as_user = "root"        # This setting has no effect for sudo/su/doas
+
+  # ✅ RECOMMENDED: Use run_as_user for safe privilege escalation
+  [[groups.commands]]
+  name = "safe_privileged_operation"
+  description = "Privileged operation using safe mechanism"
+  cmd = "systemctl"
+  args = ["status", "nginx"]
+  run_as_user = "root"
+  max_risk_level = "medium"
 
   [[groups.commands]]
-  name = "privileged_sudo_operation"
-  description = "Sudo operation with privilege flag"
-  cmd = "sudo"
-  args = ["systemctl", "status", "nginx"]
-  privileged = true
-  # max_risk_level not needed for privilege escalation when privileged=true
-  # but other risks still evaluated
+  name = "safe_privileged_cleanup"
+  description = "Privileged cleanup using safe mechanism"
+  cmd = "rm"
+  args = ["-rf", "/tmp/app_temp_files"]
+  run_as_user = "root"
+  max_risk_level = "high"
 ```
 
 ## 6. エラーハンドリング詳細設計
@@ -1080,27 +1203,55 @@ func TestNormalManagerSecurityIntegration(t *testing.T) {
             expectedError: &security.SecurityViolationError{},
         },
         {
-            name: "sudo_command_with_privilege_flag_allowed",
+            name: "sudo_command_always_blocked",
             command: &config.Command{
-                Name:       "sudo_operation",
-                Cmd:        "sudo",
-                Args:       []string{"systemctl", "status", "nginx"},
-                Privileged: true,
-                // Privilege escalation allowed, other risks still evaluated
+                Name:         "sudo_operation",
+                Cmd:          "sudo",
+                Args:         []string{"systemctl", "status", "nginx"},
+                MaxRiskLevel: "high", // Even with high risk level...
+                Privileged:   true,   // ...and privilege flag...
+                // sudo commands are always blocked
+            },
+            shouldExecute: false,
+            expectedError: &security.PrivilegeEscalationProhibitedError{},
+        },
+        {
+            name: "su_command_always_blocked",
+            command: &config.Command{
+                Name:         "su_operation",
+                Cmd:          "su",
+                Args:         []string{"-", "root"},
+                MaxRiskLevel: "high",
+                Privileged:   true,
+                // su commands are always blocked
+            },
+            shouldExecute: false,
+            expectedError: &security.PrivilegeEscalationProhibitedError{},
+        },
+        {
+            name: "doas_command_always_blocked",
+            command: &config.Command{
+                Name:         "doas_operation",
+                Cmd:          "doas",
+                Args:         []string{"ls", "-la"},
+                MaxRiskLevel: "high",
+                Privileged:   true,
+                // doas commands are always blocked
+            },
+            shouldExecute: false,
+            expectedError: &security.PrivilegeEscalationProhibitedError{},
+        },
+        {
+            name: "privileged_rm_with_explicit_permission",
+            command: &config.Command{
+                Name:         "privileged_cleanup",
+                Cmd:          "rm",
+                Args:         []string{"-rf", "/tmp/app_files"},
+                MaxRiskLevel: "high",    // Explicitly allow high risk
+                Privileged:   true,      // Run with privileges
             },
             shouldExecute: true,
             expectedError: nil,
-        },
-        {
-            name: "sudo_command_without_privilege_flag_blocked",
-            command: &config.Command{
-                Name: "unauthorized_sudo",
-                Cmd:  "sudo",
-                Args: []string{"rm", "-rf", "/"},
-                // No privilege flag - should be blocked
-            },
-            shouldExecute: false,
-            expectedError: &security.SecurityViolationError{},
         },
     }
 
@@ -1165,7 +1316,7 @@ name = "security_test"
   name = "sudo_with_privilege"
   cmd = "sudo"
   args = ["echo", "privileged operation"]
-  privileged = true
+  run_as_user = "root"
 `
 
     configFile := createTempConfigFile(t, configContent)

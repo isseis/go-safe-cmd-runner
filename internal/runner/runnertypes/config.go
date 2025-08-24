@@ -48,7 +48,6 @@ type Command struct {
 	Args         []string `toml:"args"`
 	Env          []string `toml:"env"`
 	Dir          string   `toml:"dir"`
-	Privileged   bool     `toml:"privileged"`
 	Timeout      int      `toml:"timeout"`        // Command-specific timeout (overrides global)
 	RunAsUser    string   `toml:"run_as_user"`    // User to execute command as (using seteuid)
 	RunAsGroup   string   `toml:"run_as_group"`   // Group to execute command as (using setegid)
@@ -86,43 +85,71 @@ const (
 type RiskLevel int
 
 const (
+	// RiskLevelUnknown indicates commands whose risk level cannot be determined
+	RiskLevelUnknown RiskLevel = iota
+
 	// RiskLevelLow indicates commands with minimal security risk
-	RiskLevelLow RiskLevel = iota
+	RiskLevelLow
 
 	// RiskLevelMedium indicates commands with moderate security risk
 	RiskLevelMedium
 
 	// RiskLevelHigh indicates commands with high security risk
 	RiskLevelHigh
+
+	// RiskLevelCritical indicates commands that should be blocked (e.g., privilege escalation)
+	RiskLevelCritical
+)
+
+// Risk level string constants used for string representation and parsing.
+const (
+	// UnknownRiskLevelString represents an unknown risk level.
+	UnknownRiskLevelString = "unknown"
+	// LowRiskLevelString represents a low risk level.
+	LowRiskLevelString = "low"
+	// MediumRiskLevelString represents a medium risk level.
+	MediumRiskLevelString = "medium"
+	// HighRiskLevelString represents a high risk level.
+	HighRiskLevelString = "high"
+	// CriticalRiskLevelString represents a critical risk level that blocks execution.
+	CriticalRiskLevelString = "critical"
 )
 
 // String returns a string representation of RiskLevel
 func (r RiskLevel) String() string {
 	switch r {
+	case RiskLevelUnknown:
+		return UnknownRiskLevelString
 	case RiskLevelLow:
-		return "low"
+		return LowRiskLevelString
 	case RiskLevelMedium:
-		return "medium"
+		return MediumRiskLevelString
 	case RiskLevelHigh:
-		return "high"
+		return HighRiskLevelString
+	case RiskLevelCritical:
+		return CriticalRiskLevelString
 	default:
-		return "unknown"
+		return UnknownRiskLevelString
 	}
 }
 
 // ParseRiskLevel converts a string to RiskLevel
 func ParseRiskLevel(s string) (RiskLevel, error) {
 	switch s {
-	case "low":
+	case UnknownRiskLevelString:
+		return RiskLevelUnknown, nil
+	case LowRiskLevelString:
 		return RiskLevelLow, nil
-	case "medium":
+	case MediumRiskLevelString:
 		return RiskLevelMedium, nil
-	case "high":
+	case HighRiskLevelString:
 		return RiskLevelHigh, nil
+	case CriticalRiskLevelString:
+		return RiskLevelCritical, nil
 	case "":
-		return RiskLevelLow, nil // Default to low risk
+		return RiskLevelLow, nil // Default to low risk for empty strings
 	default:
-		return RiskLevelLow, fmt.Errorf("%w: %s", ErrInvalidRiskLevel, s)
+		return RiskLevelUnknown, fmt.Errorf("%w: %s", ErrInvalidRiskLevel, s)
 	}
 }
 
@@ -170,6 +197,8 @@ type Operation string
 const (
 	OperationFileHashCalculation Operation = "file_hash_calculation"
 	OperationCommandExecution    Operation = "command_execution"
+	OperationUserGroupExecution  Operation = "user_group_execution"
+	OperationUserGroupDryRun     Operation = "user_group_dry_run"
 	OperationFileAccess          Operation = "file_access"
 	OperationFileValidation      Operation = "file_validation" // For file integrity validation
 	OperationHealthCheck         Operation = "health_check"
@@ -182,12 +211,17 @@ type ElevationContext struct {
 	FilePath    string
 	OriginalUID int
 	TargetUID   int
+	// User/group privilege change fields
+	RunAsUser  string
+	RunAsGroup string
 }
 
 // Standard privilege errors
 var (
 	ErrPrivilegedExecutionNotAvailable = fmt.Errorf("privileged execution not available: binary lacks required SUID bit or running as non-root user")
 	ErrInvalidRiskLevel                = errors.New("invalid risk level")
+	ErrPrivilegeEscalationBlocked      = errors.New("privilege escalation command blocked for security")
+	ErrCriticalRiskBlocked             = errors.New("critical risk command execution blocked")
 )
 
 // PrivilegeManager interface defines methods for privilege management
