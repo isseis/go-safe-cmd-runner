@@ -228,7 +228,7 @@ func TestIsDestructiveFileOperation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := isDestructiveFileOperation(tt.cmd, tt.args)
+			result := security.IsDestructiveFileOperation(tt.cmd, tt.args)
 			if result != tt.expected {
 				t.Errorf("expected %v, got %v", tt.expected, result)
 			}
@@ -368,7 +368,7 @@ func TestIsSystemModification(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := isSystemModification(tt.cmd, tt.args)
+			result := security.IsSystemModification(tt.cmd, tt.args)
 			if result != tt.expected {
 				t.Errorf("expected %v, got %v", tt.expected, result)
 			}

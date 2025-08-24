@@ -294,6 +294,96 @@ func containsSSHStyleAddress(args []string) bool {
 	return false
 }
 
+// IsDestructiveFileOperation checks if the command performs destructive file operations
+func IsDestructiveFileOperation(cmd string, args []string) bool {
+	destructiveCommands := map[string]bool{
+		"rm":     true,
+		"rmdir":  true,
+		"unlink": true,
+		"shred":  true,
+		"dd":     true, // Can be dangerous when used incorrectly
+	}
+
+	if destructiveCommands[cmd] {
+		return true
+	}
+
+	// Check for destructive flags in common commands
+	if cmd == "find" {
+		for i, arg := range args {
+			if arg == "-delete" {
+				return true
+			}
+			if arg == "-exec" && i+1 < len(args) {
+				// Check if the command following -exec is destructive
+				execCmd := args[i+1]
+				if destructiveCommands[execCmd] {
+					return true
+				}
+			}
+		}
+	}
+
+	if cmd == "rsync" {
+		for _, arg := range args {
+			if arg == "--delete" || arg == "--delete-before" || arg == "--delete-after" {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// IsSystemModification checks if the command modifies system settings
+func IsSystemModification(cmd string, args []string) bool {
+	systemCommands := map[string]bool{
+		"systemctl":   true,
+		"service":     true,
+		"chkconfig":   true,
+		"update-rc.d": true,
+		"mount":       true,
+		"umount":      true,
+		"fdisk":       true,
+		"parted":      true,
+		"mkfs":        true,
+		"fsck":        true,
+		"crontab":     true,
+		"at":          true,
+		"batch":       true,
+	}
+
+	if systemCommands[cmd] {
+		return true
+	}
+
+	// Check for package management commands
+	packageManagers := map[string]bool{
+		"apt":     true,
+		"apt-get": true,
+		"yum":     true,
+		"dnf":     true,
+		"zypper":  true,
+		"pacman":  true,
+		"brew":    true,
+		"pip":     true,
+		"npm":     true,
+		"yarn":    true,
+	}
+
+	if packageManagers[cmd] {
+		// Only consider install/remove operations as medium risk
+		for _, arg := range args {
+			if arg == "install" || arg == "remove" || arg == "uninstall" ||
+				arg == "upgrade" || arg == "update" {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
 // AnalyzeCommandSecurity analyzes a command with its arguments for dangerous patterns
 func AnalyzeCommandSecurity(cmdName string, args []string) (riskLevel RiskLevel, detectedPattern string, reason string) {
 	// First, check if symlink depth is exceeded (highest priority security concern)
