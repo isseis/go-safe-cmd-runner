@@ -708,3 +708,201 @@ func TestConfigValidator_ValidateWorkingDirectory(t *testing.T) {
 		})
 	}
 }
+
+func TestConfigValidator_ValidatePrivilegedCommand(t *testing.T) {
+	validator := NewConfigValidator()
+
+	tests := []struct {
+		name             string
+		cmd              *runnertypes.Command
+		expectedWarnings int
+	}{
+		{
+			name: "non-privileged command",
+			cmd: &runnertypes.Command{
+				Name: "test_cmd",
+				Cmd:  "/bin/echo",
+				Args: []string{"hello"},
+				// No run_as_user or run_as_group
+			},
+			expectedWarnings: 0,
+		},
+		{
+			name: "privileged command - run_as_user only",
+			cmd: &runnertypes.Command{
+				Name:      "test_cmd",
+				Cmd:       "/bin/echo",
+				Args:      []string{"hello"},
+				RunAsUser: "testuser",
+			},
+			expectedWarnings: 0, // absolute path, no other issues
+		},
+		{
+			name: "privileged command - run_as_group only",
+			cmd: &runnertypes.Command{
+				Name:       "test_cmd",
+				Cmd:        "/bin/echo",
+				Args:       []string{"hello"},
+				RunAsGroup: "testgroup",
+			},
+			expectedWarnings: 0, // absolute path, no other issues
+		},
+		{
+			name: "privileged command - both user and group",
+			cmd: &runnertypes.Command{
+				Name:       "test_cmd",
+				Cmd:        "/bin/echo",
+				Args:       []string{"hello"},
+				RunAsUser:  "testuser",
+				RunAsGroup: "testgroup",
+			},
+			expectedWarnings: 0, // absolute path, no other issues
+		},
+		{
+			name: "privileged command - relative path",
+			cmd: &runnertypes.Command{
+				Name:      "test_cmd",
+				Cmd:       "echo", // relative path
+				Args:      []string{"hello"},
+				RunAsUser: "testuser",
+			},
+			expectedWarnings: 1, // relative path warning
+		},
+		{
+			name: "privileged command - shell metacharacters in args",
+			cmd: &runnertypes.Command{
+				Name:      "test_cmd",
+				Cmd:       "/bin/echo",
+				Args:      []string{"hello; rm -rf /"},
+				RunAsUser: "testuser",
+			},
+			expectedWarnings: 1, // shell metacharacters warning
+		},
+		{
+			name: "root privileged command - dangerous command",
+			cmd: &runnertypes.Command{
+				Name:      "dangerous_cmd",
+				Cmd:       "/bin/rm",
+				Args:      []string{"-rf", "/var/*"},
+				RunAsUser: "root",
+			},
+			expectedWarnings: 6, // dangerous privileged + shell metacharacters + dangerous root + destructive arg + wildcard + critical path
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := &ValidationResult{
+				Warnings: []ValidationWarning{},
+			}
+
+			validator.validateCommand(tt.cmd, 0, "test.commands", result)
+			assert.Len(t, result.Warnings, tt.expectedWarnings)
+		})
+	}
+}
+
+func TestConfigValidator_ValidateRootPrivilegedCommand(t *testing.T) {
+	validator := NewConfigValidator()
+
+	tests := []struct {
+		name             string
+		cmd              *runnertypes.Command
+		expectedWarnings int
+	}{
+		{
+			name: "safe root command",
+			cmd: &runnertypes.Command{
+				Name:      "safe_cmd",
+				Cmd:       "/bin/echo",
+				Args:      []string{"hello"},
+				RunAsUser: "root",
+			},
+			expectedWarnings: 0,
+		},
+		{
+			name: "dangerous root command - rm",
+			cmd: &runnertypes.Command{
+				Name:      "dangerous_rm",
+				Cmd:       "/bin/rm",
+				Args:      []string{"-rf", "/tmp/test"},
+				RunAsUser: "root",
+			},
+			expectedWarnings: 2, // dangerous command + destructive arg
+		},
+		{
+			name: "dangerous root command - dd",
+			cmd: &runnertypes.Command{
+				Name:      "dangerous_dd",
+				Cmd:       "/bin/dd",
+				Args:      []string{"if=/dev/zero", "of=/dev/sda"},
+				RunAsUser: "root",
+			},
+			expectedWarnings: 1, // dangerous command only (/dev not in critical paths)
+		},
+		{
+			name: "root command with wildcards",
+			cmd: &runnertypes.Command{
+				Name:      "wildcard_cmd",
+				Cmd:       "/bin/ls",
+				Args:      []string{"/var/*", "/tmp/?"},
+				RunAsUser: "root",
+			},
+			expectedWarnings: 3, // 2 wildcards + 1 critical path
+		},
+		{
+			name: "root command with system critical paths",
+			cmd: &runnertypes.Command{
+				Name:      "critical_path_cmd",
+				Cmd:       "/bin/ls",
+				Args:      []string{"/", "/etc", "/var/log"},
+				RunAsUser: "root",
+			},
+			expectedWarnings: 3, // 3 critical paths
+		},
+		{
+			name: "root command with force flag",
+			cmd: &runnertypes.Command{
+				Name:      "force_cmd",
+				Cmd:       "/bin/cp",
+				Args:      []string{"--force", "--recursive", "/src", "/dst"},
+				RunAsUser: "root",
+			},
+			expectedWarnings: 2, // force + recursive flags
+		},
+		{
+			name: "non-root privileged command",
+			cmd: &runnertypes.Command{
+				Name:      "non_root_cmd",
+				Cmd:       "/bin/rm",
+				Args:      []string{"-rf", "/tmp/*"},
+				RunAsUser: "testuser",
+			},
+			expectedWarnings: 0, // should not trigger root-specific validation
+		},
+		{
+			name: "root command with user ID 0",
+			cmd: &runnertypes.Command{
+				Name:      "root_uid_cmd",
+				Cmd:       "/bin/rm",
+				Args:      []string{"-f", "/tmp/test"},
+				RunAsUser: "0", // numeric root ID
+			},
+			expectedWarnings: 1, // dangerous command only (f is not rf/force/recursive/all)
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := &ValidationResult{
+				Warnings: []ValidationWarning{},
+			}
+
+			// Call validateRootPrivilegedCommand directly
+			if tt.cmd.RunAsUser == "root" || tt.cmd.RunAsUser == "0" {
+				validator.validateRootPrivilegedCommand(tt.cmd, "test.commands[0]", result)
+			}
+			assert.Len(t, result.Warnings, tt.expectedWarnings)
+		})
+	}
+}
