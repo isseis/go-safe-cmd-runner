@@ -25,7 +25,7 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.Command) (runnertypes.
 	// Check for privilege escalation commands (highest risk)
 	isPrivEsc, err := security.IsPrivilegeEscalationCommand(cmd.Cmd)
 	if err != nil {
-		return runnertypes.RiskLevelLow, err
+		return runnertypes.RiskLevelUnknown, err
 	}
 	if isPrivEsc {
 		return runnertypes.RiskLevelHigh, nil

@@ -85,8 +85,11 @@ const (
 type RiskLevel int
 
 const (
+	// RiskLevelUnknown indicates commands whose risk level cannot be determined
+	RiskLevelUnknown RiskLevel = iota
+
 	// RiskLevelLow indicates commands with minimal security risk
-	RiskLevelLow RiskLevel = iota
+	RiskLevelLow
 
 	// RiskLevelMedium indicates commands with moderate security risk
 	RiskLevelMedium
@@ -95,33 +98,49 @@ const (
 	RiskLevelHigh
 )
 
+// Risk level string constants used for string representation and parsing.
+const (
+	// UnknownRiskLevelString represents an unknown risk level.
+	UnknownRiskLevelString = "unknown"
+	// LowRiskLevelString represents a low risk level.
+	LowRiskLevelString = "low"
+	// MediumRiskLevelString represents a medium risk level.
+	MediumRiskLevelString = "medium"
+	// HighRiskLevelString represents a high risk level.
+	HighRiskLevelString = "high"
+)
+
 // String returns a string representation of RiskLevel
 func (r RiskLevel) String() string {
 	switch r {
+	case RiskLevelUnknown:
+		return UnknownRiskLevelString
 	case RiskLevelLow:
-		return "low"
+		return LowRiskLevelString
 	case RiskLevelMedium:
-		return "medium"
+		return MediumRiskLevelString
 	case RiskLevelHigh:
-		return "high"
+		return HighRiskLevelString
 	default:
-		return "unknown"
+		return UnknownRiskLevelString
 	}
 }
 
 // ParseRiskLevel converts a string to RiskLevel
 func ParseRiskLevel(s string) (RiskLevel, error) {
 	switch s {
-	case "low":
+	case UnknownRiskLevelString:
+		return RiskLevelUnknown, nil
+	case LowRiskLevelString:
 		return RiskLevelLow, nil
-	case "medium":
+	case MediumRiskLevelString:
 		return RiskLevelMedium, nil
-	case "high":
+	case HighRiskLevelString:
 		return RiskLevelHigh, nil
 	case "":
-		return RiskLevelLow, nil // Default to low risk
+		return RiskLevelLow, nil // Default to low risk for empty strings
 	default:
-		return RiskLevelLow, fmt.Errorf("%w: %s", ErrInvalidRiskLevel, s)
+		return RiskLevelUnknown, fmt.Errorf("%w: %s", ErrInvalidRiskLevel, s)
 	}
 }
 

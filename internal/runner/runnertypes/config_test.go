@@ -12,6 +12,12 @@ func TestParseRiskLevel(t *testing.T) {
 		hasError bool
 	}{
 		{
+			name:     "valid unknown risk",
+			input:    "unknown",
+			expected: RiskLevelUnknown,
+			hasError: false,
+		},
+		{
 			name:     "valid low risk",
 			input:    "low",
 			expected: RiskLevelLow,
@@ -38,7 +44,7 @@ func TestParseRiskLevel(t *testing.T) {
 		{
 			name:     "invalid risk level",
 			input:    "invalid",
-			expected: RiskLevelLow,
+			expected: RiskLevelUnknown,
 			hasError: true,
 		},
 	}
@@ -91,6 +97,12 @@ func TestCommandGetMaxRiskLevel(t *testing.T) {
 		expectError bool
 	}{
 		{
+			name:        "valid unknown risk",
+			maxRiskStr:  "unknown",
+			expected:    RiskLevelUnknown,
+			expectError: false,
+		},
+		{
 			name:        "valid low risk",
 			maxRiskStr:  "low",
 			expected:    RiskLevelLow,
@@ -117,7 +129,7 @@ func TestCommandGetMaxRiskLevel(t *testing.T) {
 		{
 			name:        "invalid risk level",
 			maxRiskStr:  "invalid",
-			expected:    RiskLevelLow,
+			expected:    RiskLevelUnknown,
 			expectError: true,
 		},
 	}
