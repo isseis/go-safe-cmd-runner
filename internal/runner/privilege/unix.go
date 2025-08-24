@@ -441,8 +441,23 @@ func (m *UnixPrivilegeManager) changeUserGroupInternal(userName, groupName strin
 			return fmt.Errorf("invalid GID %s for group %s: %w", groupInfo.Gid, groupName, err)
 		}
 		targetGID = gid
+	} else if userName != "" {
+		// If user is specified but group is not, default to user's primary group
+		userInfo, err := user.Lookup(userName)
+		if err != nil {
+			return fmt.Errorf("failed to lookup user %s for primary group: %w", userName, err)
+		}
+
+		gid, err := strconv.Atoi(userInfo.Gid)
+		if err != nil {
+			return fmt.Errorf("invalid primary GID %s for user %s: %w", userInfo.Gid, userName, err)
+		}
+		targetGID = gid
+		m.logger.Info("Defaulting to user's primary group",
+			"user", userName,
+			"primary_gid", targetGID)
 	} else {
-		// If no group specified, keep current effective group
+		// If neither user nor group specified, keep current effective group
 		targetGID = syscall.Getegid()
 	}
 

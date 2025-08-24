@@ -61,6 +61,15 @@ func TestUnixPrivilegeManager_ChangeUserGroupDryRun(t *testing.T) {
 			assert.NoError(t, err)
 		}
 	})
+
+	t.Run("user_only_defaults_to_primary_group", func(t *testing.T) {
+		currentUser, err := user.Current()
+		require.NoError(t, err, "Failed to get current user")
+
+		// Test that specifying only user defaults to their primary group
+		err = manager.changeUserGroupDryRun(currentUser.Username, "")
+		assert.NoError(t, err)
+	})
 }
 
 func TestUnixPrivilegeManager_ChangeUserGroupInternal(t *testing.T) {
@@ -97,6 +106,12 @@ func TestUnixPrivilegeManager_ChangeUserGroupInternal(t *testing.T) {
 				strings.Contains(err.Error(), "failed to set effective user ID")
 			assert.True(t, errorContainsExpectedMessage, "Error should contain expected message: %v", err)
 		}
+	})
+
+	t.Run("dry_run_user_only_defaults_to_primary_group", func(t *testing.T) {
+		// Test that when only user is specified, it defaults to user's primary group
+		err := manager.changeUserGroupInternal(currentUser.Username, "", true)
+		assert.NoError(t, err)
 	})
 }
 
