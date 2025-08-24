@@ -3,7 +3,6 @@ package security
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -403,8 +402,39 @@ func AnalyzeCommandSecurity(cmdName string, args []string) (riskLevel RiskLevel,
 	}
 
 	// Check for setuid/setgid binaries (general security risk)
-	if hasSetuidOrSetgid, err := hasSetuidOrSetgidBit(cmdName); err == nil && hasSetuidOrSetgid {
-		return RiskLevelHigh, cmdName, "Executable has setuid or setgid bit set"
+	// Only check if cmdName is an absolute path to avoid path resolution inconsistencies
+	if filepath.IsAbs(cmdName) {
+		if hasSetuidOrSetgid, err := hasSetuidOrSetgidBit(cmdName); err == nil && hasSetuidOrSetgid {
+			return RiskLevelHigh, cmdName, "Executable has setuid or setgid bit set"
+		}
+	}
+
+	return RiskLevelNone, "", ""
+}
+
+// AnalyzeCommandSecurityWithResolvedPath analyzes a command with its arguments for dangerous patterns.
+// This function expects a resolved absolute path for optimal security checking.
+// Use this version when you have already resolved the command path through the unified path resolution system.
+func AnalyzeCommandSecurityWithResolvedPath(resolvedPath string, args []string) (riskLevel RiskLevel, detectedPattern string, reason string) {
+	// First, check if symlink depth is exceeded (highest priority security concern)
+	if _, exceededDepth := extractAllCommandNames(resolvedPath); exceededDepth {
+		return RiskLevelHigh, resolvedPath, "Symbolic link depth exceeds security limit (potential symlink attack)"
+	}
+
+	// Check high risk patterns first (more specific than generic setuid/setgid)
+	if riskLevel, pattern, reason := checkCommandPatterns(resolvedPath, args, highRiskPatterns); riskLevel != RiskLevelNone {
+		return riskLevel, pattern, reason
+	}
+
+	// Then check medium risk patterns
+	if riskLevel, pattern, reason := checkCommandPatterns(resolvedPath, args, mediumRiskPatterns); riskLevel != RiskLevelNone {
+		return riskLevel, pattern, reason
+	}
+
+	// Check for setuid/setgid binaries (general security risk)
+	// Since we have a resolved path, we can safely check setuid/setgid bits
+	if hasSetuidOrSetgid, err := hasSetuidOrSetgidBit(resolvedPath); err == nil && hasSetuidOrSetgid {
+		return RiskLevelHigh, resolvedPath, "Executable has setuid or setgid bit set"
 	}
 
 	return RiskLevelNone, "", ""
@@ -551,23 +581,12 @@ func matchesPattern(cmdName string, cmdArgs []string, pattern []string) bool {
 }
 
 // hasSetuidOrSetgidBit checks if the given command path has setuid or setgid bit set
+// This function expects a resolved absolute path. Path resolution should be done
+// by the caller using the unified path resolution system.
 // Returns (hasSetuidOrSetgid, error)
 func hasSetuidOrSetgidBit(cmdPath string) (bool, error) {
-	// If the path is not absolute, try to find it in PATH
-	execPath := cmdPath
-	if !filepath.IsAbs(cmdPath) {
-		// Try to resolve the executable path using PATH
-		if resolvedPath, err := findExecutableInPath(cmdPath); err == nil {
-			execPath = resolvedPath
-		} else {
-			// If we can't find it in PATH, use the original path
-			// This allows for relative paths that might exist
-			execPath = cmdPath
-		}
-	}
-
 	// Get file information
-	fileInfo, err := os.Stat(execPath)
+	fileInfo, err := os.Stat(cmdPath)
 	if err != nil {
 		// If we can't stat the file, assume it's not setuid/setgid
 		return false, err
@@ -584,10 +603,4 @@ func hasSetuidOrSetgidBit(cmdPath string) (bool, error) {
 	hasSetgidBit := mode&os.ModeSetgid != 0
 
 	return hasSetuidBit || hasSetgidBit, nil
-}
-
-// findExecutableInPath searches for an executable in the PATH environment variable
-func findExecutableInPath(cmdName string) (string, error) {
-	// Use Go's standard library to find the executable in PATH
-	return exec.LookPath(cmdName)
 }

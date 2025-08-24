@@ -81,7 +81,7 @@ func TestDryRunExecutionPath(t *testing.T) {
 				ShowSensitive: false,
 				VerifyFiles:   true,
 			}
-			dryRunManager := NewDryRunResourceManager(nil, nil, dryRunOpts)
+			dryRunManager := NewDryRunResourceManager(nil, nil, nil, dryRunOpts)
 			require.NotNil(t, dryRunManager)
 
 			// Execute commands in dry-run mode
@@ -161,7 +161,7 @@ func TestDryRunResultConsistency(t *testing.T) {
 
 	// Run the same dry-run multiple times
 	for range 3 {
-		manager := NewDryRunResourceManager(nil, nil, dryRunOpts)
+		manager := NewDryRunResourceManager(nil, nil, nil, dryRunOpts)
 
 		_, err := manager.ExecuteCommand(ctx, command, group, envVars)
 		require.NoError(t, err)
@@ -218,7 +218,7 @@ func TestDefaultResourceManagerModeConsistency(t *testing.T) {
 
 	t.Run("normal mode delegation", func(t *testing.T) {
 		dryRunOpts := &DryRunOptions{}
-		manager := NewDefaultResourceManager(nil, nil, nil, slog.Default(), ExecutionModeNormal, dryRunOpts)
+		manager := NewDefaultResourceManager(nil, nil, nil, nil, slog.Default(), ExecutionModeNormal, dryRunOpts)
 		require.NotNil(t, manager)
 
 		assert.Equal(t, ExecutionModeNormal, manager.GetMode())
@@ -233,7 +233,7 @@ func TestDefaultResourceManagerModeConsistency(t *testing.T) {
 			OutputFormat: OutputFormatText,
 		}
 
-		manager := NewDefaultResourceManager(nil, nil, nil, slog.Default(), ExecutionModeDryRun, dryRunOpts)
+		manager := NewDefaultResourceManager(nil, nil, nil, nil, slog.Default(), ExecutionModeDryRun, dryRunOpts)
 		require.NotNil(t, manager)
 
 		assert.Equal(t, ExecutionModeDryRun, manager.GetMode())

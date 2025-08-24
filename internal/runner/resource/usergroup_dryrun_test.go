@@ -18,7 +18,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		mockExec := &MockExecutor{}
 		mockPriv := privilegetesting.NewMockPrivilegeManager(true)
 
-		manager := NewDryRunResourceManager(mockExec, mockPriv, &DryRunOptions{})
+		manager := NewDryRunResourceManager(mockExec, mockPriv, nil, &DryRunOptions{})
 
 		cmd := runnertypes.Command{
 			Name:       "test_user_group",
@@ -54,7 +54,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		mockExec := &MockExecutor{}
 		mockPriv := privilegetesting.NewFailingMockPrivilegeManager(true) // Will fail user/group validation
 
-		manager := NewDryRunResourceManager(mockExec, mockPriv, &DryRunOptions{})
+		manager := NewDryRunResourceManager(mockExec, mockPriv, nil, &DryRunOptions{})
 
 		cmd := runnertypes.Command{
 			Name:       "test_invalid_user_group",
@@ -88,7 +88,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		mockExec := &MockExecutor{}
 		mockPriv := privilegetesting.NewMockPrivilegeManager(false) // Not supported
 
-		manager := NewDryRunResourceManager(mockExec, mockPriv, &DryRunOptions{})
+		manager := NewDryRunResourceManager(mockExec, mockPriv, nil, &DryRunOptions{})
 
 		cmd := runnertypes.Command{
 			Name:       "test_user_group_unsupported",
@@ -119,7 +119,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		mockExec := &MockExecutor{}
 		// No privilege manager provided
 
-		manager := NewDryRunResourceManager(mockExec, nil, &DryRunOptions{})
+		manager := NewDryRunResourceManager(mockExec, nil, nil, &DryRunOptions{})
 
 		cmd := runnertypes.Command{
 			Name:       "test_no_privmgr",
@@ -150,7 +150,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		mockExec := &MockExecutor{}
 		mockPriv := privilegetesting.NewMockPrivilegeManager(true)
 
-		manager := NewDryRunResourceManager(mockExec, mockPriv, &DryRunOptions{})
+		manager := NewDryRunResourceManager(mockExec, mockPriv, nil, &DryRunOptions{})
 
 		cmd := runnertypes.Command{
 			Name:      "test_user_only",
@@ -186,7 +186,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		mockExec := &MockExecutor{}
 		mockPriv := privilegetesting.NewMockPrivilegeManager(true)
 
-		manager := NewDryRunResourceManager(mockExec, mockPriv, &DryRunOptions{})
+		manager := NewDryRunResourceManager(mockExec, mockPriv, nil, &DryRunOptions{})
 
 		cmd := runnertypes.Command{
 			Name: "test_no_user_group",

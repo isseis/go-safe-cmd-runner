@@ -214,18 +214,30 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 					OutputFormat: resource.OutputFormatText,
 				}
 			}
+			// For dry-run mode, create a simple path resolver using verification manager
+			var pathResolver resource.PathResolver
+			if opts.verificationManager != nil {
+				pathResolver = opts.verificationManager
+			}
 			opts.resourceManager = resource.NewDryRunResourceManager(
 				opts.executor,
 				opts.privilegeManager,
+				pathResolver,
 				opts.dryRunOptions,
 			)
 		} else {
 			// Use common.DefaultFileSystem for normal mode
 			fs := common.NewDefaultFileSystem()
+			// For normal mode, create a simple path resolver using verification manager
+			var pathResolver resource.PathResolver
+			if opts.verificationManager != nil {
+				pathResolver = opts.verificationManager
+			}
 			opts.resourceManager = resource.NewDefaultResourceManager(
 				opts.executor,
 				fs,
 				opts.privilegeManager,
+				pathResolver,
 				slog.Default(), // Logger for Phase 1 implementation
 				resource.ExecutionModeNormal,
 				&resource.DryRunOptions{}, // Empty dry-run options for normal mode

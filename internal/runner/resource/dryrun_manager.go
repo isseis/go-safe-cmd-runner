@@ -11,6 +11,11 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
+// PathResolver interface for resolving command paths
+type PathResolver interface {
+	ResolvePath(command string) (string, error)
+}
+
 const (
 	riskLevelHigh = "high"
 )
@@ -20,6 +25,7 @@ type DryRunResourceManager struct {
 	// Core dependencies
 	executor         executor.CommandExecutor
 	privilegeManager runnertypes.PrivilegeManager
+	pathResolver     PathResolver
 
 	// Dry-run specific
 	dryRunOptions    *DryRunOptions
@@ -31,10 +37,11 @@ type DryRunResourceManager struct {
 }
 
 // NewDryRunResourceManager creates a new DryRunResourceManager for dry-run mode
-func NewDryRunResourceManager(exec executor.CommandExecutor, privMgr runnertypes.PrivilegeManager, opts *DryRunOptions) *DryRunResourceManager {
+func NewDryRunResourceManager(exec executor.CommandExecutor, privMgr runnertypes.PrivilegeManager, pathResolver PathResolver, opts *DryRunOptions) *DryRunResourceManager {
 	return &DryRunResourceManager{
 		executor:         exec,
 		privilegeManager: privMgr,
+		pathResolver:     pathResolver,
 		dryRunOptions:    opts,
 		dryRunResult: &DryRunResult{
 			Metadata: &ResultMetadata{
@@ -166,11 +173,27 @@ func (d *DryRunResourceManager) analyzeCommandSecurity(cmd runnertypes.Command, 
 	// Initialize with no risk
 	currentRisk := ""
 
-	// Use security package for dangerous pattern analysis (higher priority - can override privilege risk)
-	// Pass command and arguments separately to avoid ambiguity with spaces
-	if riskLevel, pattern, reason := security.AnalyzeCommandSecurity(cmd.Cmd, cmd.Args); riskLevel != security.RiskLevelNone {
-		currentRisk = riskLevel.String()
-		analysis.Impact.Description += fmt.Sprintf(" [WARNING: %s - %s]", reason, pattern)
+	// Try to resolve command path using unified path resolution system if available
+	if d.pathResolver != nil {
+		if resolvedPath, err := d.pathResolver.ResolvePath(cmd.Cmd); err == nil {
+			// Use the new unified approach with resolved path
+			if riskLevel, pattern, reason := security.AnalyzeCommandSecurityWithResolvedPath(resolvedPath, cmd.Args); riskLevel != security.RiskLevelNone {
+				currentRisk = riskLevel.String()
+				analysis.Impact.Description += fmt.Sprintf(" [WARNING: %s - %s]", reason, pattern)
+			}
+		} else {
+			// If path resolution fails, fall back to original AnalyzeCommandSecurity
+			if riskLevel, pattern, reason := security.AnalyzeCommandSecurity(cmd.Cmd, cmd.Args); riskLevel != security.RiskLevelNone {
+				currentRisk = riskLevel.String()
+				analysis.Impact.Description += fmt.Sprintf(" [WARNING: %s - %s]", reason, pattern)
+			}
+		}
+	} else {
+		// No path resolver available, use original AnalyzeCommandSecurity for backwards compatibility
+		if riskLevel, pattern, reason := security.AnalyzeCommandSecurity(cmd.Cmd, cmd.Args); riskLevel != security.RiskLevelNone {
+			currentRisk = riskLevel.String()
+			analysis.Impact.Description += fmt.Sprintf(" [WARNING: %s - %s]", reason, pattern)
+		}
 	}
 
 	// Set the final risk level

@@ -22,7 +22,7 @@ func createTestDryRunResourceManager() *DryRunResourceManager {
 		DetailLevel: DetailLevelDetailed,
 	}
 
-	manager := NewDryRunResourceManager(mockExec, mockPriv, opts)
+	manager := NewDryRunResourceManager(mockExec, mockPriv, nil, opts)
 
 	return manager
 }

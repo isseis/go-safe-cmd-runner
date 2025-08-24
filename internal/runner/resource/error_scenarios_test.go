@@ -196,7 +196,7 @@ func TestErrorScenariosConsistency(t *testing.T) {
 			name: "DryRun",
 			setup: func() ResourceManager {
 				opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
-				return NewDryRunResourceManager(nil, nil, opts)
+				return NewDryRunResourceManager(nil, nil, nil, opts)
 			},
 			isDryRun: true,
 		},
@@ -250,7 +250,7 @@ func TestConcurrentExecutionConsistency(t *testing.T) {
 			name: "DryRun",
 			setup: func() ResourceManager {
 				opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
-				return NewDryRunResourceManager(nil, nil, opts)
+				return NewDryRunResourceManager(nil, nil, nil, opts)
 			},
 			isDryRun: true,
 		},
@@ -343,7 +343,7 @@ func TestDryRunManagerErrorHandling(t *testing.T) {
 			name: "concurrent analysis recording",
 			setup: func() (*DryRunResourceManager, error) {
 				opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
-				return NewDryRunResourceManager(nil, nil, opts), nil
+				return NewDryRunResourceManager(nil, nil, nil, opts), nil
 			},
 			command: runnertypes.Command{
 				Name: "concurrent-test",
@@ -361,7 +361,7 @@ func TestDryRunManagerErrorHandling(t *testing.T) {
 			setup: func() (*DryRunResourceManager, error) {
 				// Test with invalid detail level
 				opts := &DryRunOptions{DetailLevel: DetailLevel(999)}
-				return NewDryRunResourceManager(nil, nil, opts), nil
+				return NewDryRunResourceManager(nil, nil, nil, opts), nil
 			},
 			command: runnertypes.Command{
 				Name: "options-test",
@@ -378,7 +378,7 @@ func TestDryRunManagerErrorHandling(t *testing.T) {
 			name: "analysis recording with nil options",
 			setup: func() (*DryRunResourceManager, error) {
 				// Test with nil options
-				return NewDryRunResourceManager(nil, nil, nil), nil
+				return NewDryRunResourceManager(nil, nil, nil, nil), nil
 			},
 			command: runnertypes.Command{
 				Name: "nil-options-test",
@@ -400,7 +400,7 @@ func TestDryRunManagerErrorHandling(t *testing.T) {
 					ShowSensitive: true,
 					VerifyFiles:   true,
 				}
-				return NewDryRunResourceManager(nil, nil, opts), nil
+				return NewDryRunResourceManager(nil, nil, nil, opts), nil
 			},
 			command: runnertypes.Command{
 				Name: "consistency-test",
@@ -550,7 +550,7 @@ func TestConcurrentExecution(t *testing.T) {
 	for i := range numGoroutines {
 		go func(goroutineID int) {
 			ctx := context.Background()
-			manager := NewDryRunResourceManager(nil, nil, dryRunOpts)
+			manager := NewDryRunResourceManager(nil, nil, nil, dryRunOpts)
 
 			group := &runnertypes.CommandGroup{
 				Name:        "concurrent-test-group",
@@ -620,7 +620,7 @@ func TestResourceManagerStateConsistency(t *testing.T) {
 		VerifyFiles:   true,
 	}
 
-	manager := NewDefaultResourceManager(nil, nil, nil, slog.Default(), ExecutionModeDryRun, dryRunOpts)
+	manager := NewDefaultResourceManager(nil, nil, nil, nil, slog.Default(), ExecutionModeDryRun, dryRunOpts)
 	require.NotNil(t, manager)
 
 	command := runnertypes.Command{
@@ -670,14 +670,14 @@ func TestResourceManagerStateConsistency(t *testing.T) {
 		}
 
 		// Test with dry-run mode
-		dryRunManager := NewDefaultResourceManager(nil, nil, nil, slog.Default(), ExecutionModeDryRun, dryRunOpts)
+		dryRunManager := NewDefaultResourceManager(nil, nil, nil, nil, slog.Default(), ExecutionModeDryRun, dryRunOpts)
 		result, err := dryRunManager.ExecuteCommand(ctx, nullCommand, group, nullEnvVars)
 		assert.NoError(t, err, "dry-run mode should handle null bytes in environment")
 		assert.NotNil(t, result, "dry-run mode should return result")
 		assert.True(t, result.DryRun, "result should indicate dry-run mode")
 
 		// Test with normal mode
-		normalManager := NewDefaultResourceManager(&mockCommandExecutor{}, &mockFileSystem{}, nil, slog.Default(), ExecutionModeNormal, nil)
+		normalManager := NewDefaultResourceManager(&mockCommandExecutor{}, &mockFileSystem{}, nil, nil, slog.Default(), ExecutionModeNormal, nil)
 		result, err = normalManager.ExecuteCommand(ctx, nullCommand, group, nullEnvVars)
 		assert.NoError(t, err, "normal mode should handle null bytes in environment")
 		assert.NotNil(t, result, "normal mode should return result")

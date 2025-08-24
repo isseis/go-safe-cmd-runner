@@ -75,7 +75,7 @@ func TestSecurityAnalysis(t *testing.T) {
 				VerifyFiles:   true,
 			}
 
-			manager := NewDryRunResourceManager(nil, nil, dryRunOpts)
+			manager := NewDryRunResourceManager(nil, nil, nil, dryRunOpts)
 			require.NotNil(t, manager)
 
 			group := &runnertypes.CommandGroup{
@@ -164,7 +164,7 @@ func TestPrivilegeEscalationDetection(t *testing.T) {
 				VerifyFiles:   true,
 			}
 
-			manager := NewDryRunResourceManager(nil, nil, dryRunOpts)
+			manager := NewDryRunResourceManager(nil, nil, nil, dryRunOpts)
 			require.NotNil(t, manager)
 
 			group := &runnertypes.CommandGroup{
@@ -224,7 +224,7 @@ func TestCommandSecurityAnalysis(t *testing.T) {
 		VerifyFiles:   true,
 	}
 
-	manager := NewDryRunResourceManager(nil, nil, dryRunOpts)
+	manager := NewDryRunResourceManager(nil, nil, nil, dryRunOpts)
 	require.NotNil(t, manager)
 
 	group := &runnertypes.CommandGroup{
@@ -265,7 +265,7 @@ func TestSecurityAnalysisIntegration(t *testing.T) {
 		VerifyFiles:   true,
 	}
 
-	manager := NewDryRunResourceManager(nil, nil, dryRunOpts)
+	manager := NewDryRunResourceManager(nil, nil, nil, dryRunOpts)
 	require.NotNil(t, manager)
 
 	group := &runnertypes.CommandGroup{

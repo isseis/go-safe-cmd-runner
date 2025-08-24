@@ -53,7 +53,7 @@ func BenchmarkDryRunPerformance(b *testing.B) {
 					VerifyFiles:   true,
 				}
 
-				manager := NewDryRunResourceManager(nil, nil, dryRunOpts)
+				manager := NewDryRunResourceManager(nil, nil, nil, dryRunOpts)
 
 				// Execute all commands
 				for _, cmd := range commands {
@@ -169,7 +169,7 @@ func BenchmarkResourceManagerModeSwitch(b *testing.B) {
 			DetailLevel:  DetailLevelDetailed,
 			OutputFormat: OutputFormatText,
 		}
-		manager := NewDefaultResourceManager(nil, nil, nil, slog.Default(), ExecutionModeDryRun, dryRunOpts)
+		manager := NewDefaultResourceManager(nil, nil, nil, nil, slog.Default(), ExecutionModeDryRun, dryRunOpts)
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -215,7 +215,7 @@ func BenchmarkMemoryUsage(b *testing.B) {
 			VerifyFiles:   true,
 		}
 
-		manager := NewDryRunResourceManager(nil, nil, dryRunOpts)
+		manager := NewDryRunResourceManager(nil, nil, nil, dryRunOpts)
 
 		// Execute all commands
 		for _, cmd := range commands {
