@@ -222,6 +222,7 @@ var (
 	ErrInvalidRiskLevel                = errors.New("invalid risk level")
 	ErrPrivilegeEscalationBlocked      = errors.New("privilege escalation command blocked for security")
 	ErrCriticalRiskBlocked             = errors.New("critical risk command execution blocked")
+	ErrCommandSecurityViolation        = errors.New("command security violation: risk level too high")
 )
 
 // PrivilegeManager interface defines methods for privilege management

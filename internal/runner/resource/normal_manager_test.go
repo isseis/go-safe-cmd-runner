@@ -195,6 +195,113 @@ func TestNormalResourceManager_ExecuteCommand_PrivilegeEscalationBlocked(t *test
 	}
 }
 
+func TestNormalResourceManager_ExecuteCommand_MaxRiskLevelControl(t *testing.T) {
+	manager, mockExec, _, _ := createTestNormalResourceManager()
+	group := createTestCommandGroup()
+	env := map[string]string{"TEST": "value"}
+	ctx := context.Background()
+
+	testCases := []struct {
+		name          string
+		cmd           string
+		args          []string
+		maxRiskLevel  string
+		shouldExecute bool
+		expectedError string
+	}{
+		{
+			name:          "low risk command with no max_risk_level (default low)",
+			cmd:           "echo",
+			args:          []string{"hello"},
+			maxRiskLevel:  "", // Default to low
+			shouldExecute: true,
+		},
+		{
+			name:          "low risk command with low max_risk_level",
+			cmd:           "echo",
+			args:          []string{"hello"},
+			maxRiskLevel:  "low",
+			shouldExecute: true,
+		},
+		{
+			name:          "medium risk command with high max_risk_level",
+			cmd:           "wget",
+			args:          []string{"http://example.com/file.txt"},
+			maxRiskLevel:  "high",
+			shouldExecute: true,
+		},
+		{
+			name:          "high risk command with high max_risk_level",
+			cmd:           "rm",
+			args:          []string{"-rf", "/tmp/test"},
+			maxRiskLevel:  "high",
+			shouldExecute: true,
+		},
+		{
+			name:          "high risk command with low max_risk_level should be blocked",
+			cmd:           "rm",
+			args:          []string{"-rf", "/tmp/test"},
+			maxRiskLevel:  "low",
+			shouldExecute: false,
+			expectedError: "command security violation",
+		},
+		{
+			name:          "medium risk command with low max_risk_level should be blocked",
+			cmd:           "wget",
+			args:          []string{"http://example.com/file.txt"},
+			maxRiskLevel:  "low",
+			shouldExecute: false,
+			expectedError: "command security violation",
+		},
+		{
+			name:          "invalid max_risk_level should return error",
+			cmd:           "echo",
+			args:          []string{"hello"},
+			maxRiskLevel:  "invalid",
+			shouldExecute: false,
+			expectedError: "invalid max_risk_level configuration",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := runnertypes.Command{
+				Name:         "test-command",
+				Description:  "Test command",
+				Cmd:          tc.cmd,
+				Args:         tc.args,
+				MaxRiskLevel: tc.maxRiskLevel,
+				Dir:          "/tmp",
+				Timeout:      30,
+			}
+
+			if tc.shouldExecute {
+				expectedResult := &executor.Result{
+					ExitCode: 0,
+					Stdout:   "success",
+					Stderr:   "",
+				}
+				mockExec.On("Execute", ctx, cmd, env).Return(expectedResult, nil).Once()
+			}
+
+			result, err := manager.ExecuteCommand(ctx, cmd, group, env)
+
+			if tc.shouldExecute {
+				assert.NoError(t, err)
+				assert.NotNil(t, result)
+			} else {
+				assert.Error(t, err)
+				assert.Nil(t, result)
+				if tc.expectedError != "" {
+					assert.Contains(t, err.Error(), tc.expectedError)
+				}
+			}
+		})
+	}
+
+	mockExec.AssertExpectations(t)
+}
+
 func TestNormalResourceManager_CreateTempDir(t *testing.T) {
 	manager, _, mockFS, _ := createTestNormalResourceManager()
 	groupName := "test-group"

@@ -452,10 +452,10 @@ func TestRiskBasedExecution(t *testing.T) {
    - [x] SecurityViolationError の実装
    - [x] 明確なエラーメッセージ生成
 
-3. **Normal Manager の統合** ⚠️ 部分実装
+3. **Normal Manager の統合** ✅ 完了
    - [x] `security.IsPrivilegeEscalationCommand()` の使用（Critical riskの検出とブロック）
    - [x] シンボリックリンク深度超過エラーの適切な処理
-   - [ ] **max_risk_level制御の実装（未実装）** - Normal modeでHigh/Medium riskの制御は未実装
+   - [x] **max_risk_level制御の実装（完了）** - Normal modeでHigh/Medium riskの制御が実装完了
 
 ### 10.2 Phase 2: 高度な分析機能
 1. **システムコマンド分析の拡張** ✅ 完了

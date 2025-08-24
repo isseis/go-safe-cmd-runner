@@ -98,6 +98,25 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd runnerty
 			runnertypes.ErrCriticalRiskBlocked, cmd.Cmd)
 	}
 
+	// Phase 1: max_risk_level control implementation
+	maxAllowedRisk, err := cmd.GetMaxRiskLevel()
+	if err != nil {
+		return nil, fmt.Errorf("invalid max_risk_level configuration: %w", err)
+	}
+
+	// Check if the command risk level exceeds the maximum allowed risk level
+	if riskLevel > maxAllowedRisk {
+		n.logger.Error("Command execution rejected due to risk level violation",
+			"command", cmd.Name,
+			"cmd_binary", cmd.Cmd,
+			"detected_risk", riskLevel.String(),
+			"max_allowed_risk", maxAllowedRisk.String(),
+			"command_path", group.Name,
+		)
+		return nil, fmt.Errorf("%w: command %s (risk: %s) exceeds maximum allowed risk level (%s)",
+			runnertypes.ErrCommandSecurityViolation, cmd.Cmd, riskLevel.String(), maxAllowedRisk.String())
+	}
+
 	result, err := n.executor.Execute(ctx, cmd, env)
 	if err != nil {
 		return nil, fmt.Errorf("command execution failed: %w", err)
