@@ -403,15 +403,20 @@ func AnalyzeCommandSecurity(resolvedPath string, args []string) (riskLevel RiskL
 		return riskLevel, pattern, reason, nil
 	}
 
+	// Check for setuid/setgid binaries (highest priority security risk)
+	// Since we have a resolved path, we can safely check setuid/setgid bits
+	hasSetuidOrSetgid, setuidErr := hasSetuidOrSetgidBit(resolvedPath)
+	if setuidErr != nil {
+		// Log and treat stat errors as potential security risks
+		return RiskLevelHigh, resolvedPath, fmt.Sprintf("Unable to check setuid/setgid status: %v", setuidErr), nil
+	}
+	if hasSetuidOrSetgid {
+		return RiskLevelHigh, resolvedPath, "Executable has setuid or setgid bit set", nil
+	}
+
 	// Then check medium risk patterns
 	if riskLevel, pattern, reason := checkCommandPatterns(resolvedPath, args, mediumRiskPatterns); riskLevel != RiskLevelNone {
 		return riskLevel, pattern, reason, nil
-	}
-
-	// Check for setuid/setgid binaries (general security risk)
-	// Since we have a resolved path, we can safely check setuid/setgid bits
-	if hasSetuidOrSetgid, err := hasSetuidOrSetgidBit(resolvedPath); err == nil && hasSetuidOrSetgid {
-		return RiskLevelHigh, resolvedPath, "Executable has setuid or setgid bit set", nil
 	}
 
 	return RiskLevelNone, "", "", nil

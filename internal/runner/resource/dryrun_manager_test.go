@@ -2,6 +2,7 @@ package resource
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -150,7 +151,24 @@ func TestDryRunResourceManager_GetDryRunResults(t *testing.T) {
 }
 
 func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
-	manager := createTestDryRunResourceManager()
+	// Create manager with standard command paths
+	mockExec := &MockExecutor{}
+	mockPriv := &MockPrivilegeManager{}
+	mockPathResolver := &MockPathResolver{}
+
+	// Add default expectations for privilege manager
+	mockPriv.On("IsPrivilegedExecutionSupported").Return(true)
+	mockPriv.On("WithPrivileges", mock.Anything, mock.Anything).Return(nil)
+
+	// Setup standard command paths
+	setupStandardCommandPaths(mockPathResolver)
+
+	opts := &DryRunOptions{
+		DetailLevel: DetailLevelDetailed,
+	}
+
+	manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts)
+	require.NoError(t, err)
 
 	tests := []struct {
 		name                 string
@@ -232,16 +250,61 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 			expectedDescription:  "Overly permissive file permissions",
 		},
 		{
-			name: "command with sudo in name but not sudo itself",
+			name: "executable without setuid bit but with chmod 777 pattern",
 			cmd: runnertypes.Command{
-				Name: "sudo-wrapper",
-				Cmd:  "my-sudo-wrapper",
-				Args: []string{"ls"},
+				Name: "chmod-test",
+				Cmd:  "chmod", // Use the actual chmod command
+				Args: []string{"777", "/tmp/test"},
 			},
-			expectedSecurityRisk: "",
-			expectedDescription:  "",
+			expectedSecurityRisk: "medium",
+			expectedDescription:  "Overly permissive file permissions",
 		},
 	}
+
+	// Add a test case for setuid binary (high priority)
+	t.Run("setuid binary takes priority over medium risk patterns", func(t *testing.T) {
+		// Create a temporary file with setuid bit
+		setuidFile, err := os.CreateTemp("", "setuid-test-*")
+		require.NoError(t, err)
+		defer os.Remove(setuidFile.Name())
+		require.NoError(t, setuidFile.Close())
+
+		// Set executable and setuid bit
+		err = os.Chmod(setuidFile.Name(), 0o755|os.ModeSetuid)
+		require.NoError(t, err)
+
+		// Create a separate manager with setuid file path resolver
+		mockExec := &MockExecutor{}
+		mockPriv := &MockPrivilegeManager{}
+		mockPathResolver := &MockPathResolver{}
+
+		mockPriv.On("IsPrivilegedExecutionSupported").Return(true)
+		mockPriv.On("WithPrivileges", mock.Anything, mock.Anything).Return(nil)
+
+		setupStandardCommandPaths(mockPathResolver)
+		mockPathResolver.On("ResolvePath", "setuid-chmod").Return(setuidFile.Name(), nil)
+
+		opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
+		setuidManager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts)
+		require.NoError(t, err)
+
+		cmd := runnertypes.Command{
+			Name: "setuid-chmod",
+			Cmd:  "setuid-chmod",
+			Args: []string{"777", "/tmp/test"}, // This would normally be medium risk
+		}
+
+		ctx := context.Background()
+		group := createTestCommandGroup()
+		env := map[string]string{}
+
+		result, err := setuidManager.ExecuteCommand(ctx, cmd, group, env)
+
+		assert.NoError(t, err)
+		assert.NotNil(t, result.Analysis)
+		assert.Equal(t, "high", result.Analysis.Impact.SecurityRisk) // setuid takes priority over medium risk
+		assert.Contains(t, result.Analysis.Impact.Description, "setuid")
+	})
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

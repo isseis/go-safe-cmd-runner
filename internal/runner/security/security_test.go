@@ -1095,12 +1095,13 @@ func TestAnalyzeCommandSecuritySetuidSetgid(t *testing.T) {
 	})
 
 	t.Run("non-existent executable", func(t *testing.T) {
-		// Test with non-existent file - should not cause panic and fallback to other checks
+		// Test with non-existent file - should be treated as high risk due to stat error
 		risk, pattern, reason, err := AnalyzeCommandSecurity("/non/existent/file", []string{})
 		require.NoError(t, err)
-		assert.Equal(t, RiskLevelNone, risk)
-		assert.Empty(t, pattern)
-		assert.Empty(t, reason)
+		// After the fix, stat errors are treated as high risk
+		assert.Equal(t, RiskLevelHigh, risk)
+		assert.Equal(t, "/non/existent/file", pattern)
+		assert.Contains(t, reason, "Unable to check setuid/setgid status")
 	})
 
 	t.Run("relative path should return error", func(t *testing.T) {

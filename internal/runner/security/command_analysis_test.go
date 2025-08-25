@@ -144,14 +144,15 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 	})
 
 	t.Run("non-existent file", func(t *testing.T) {
-		// Test with non-existent file - should not cause panic and fallback gracefully
+		// Test with non-existent file - should be treated as high risk due to stat error
 		nonExistentFile := filepath.Join(tmpDir, "non_existent")
 
 		risk, pattern, reason, err := AnalyzeCommandSecurity(nonExistentFile, []string{})
 		require.NoError(t, err)
-		assert.Equal(t, RiskLevelNone, risk)
-		assert.Empty(t, pattern)
-		assert.Empty(t, reason)
+		// After the fix, stat errors are treated as high risk
+		assert.Equal(t, RiskLevelHigh, risk)
+		assert.Equal(t, nonExistentFile, pattern)
+		assert.Contains(t, reason, "Unable to check setuid/setgid status")
 	})
 
 	t.Run("relative path should return error", func(t *testing.T) {
@@ -173,6 +174,61 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 		} else {
 			t.Skip("No setuid passwd binary found for integration test")
 		}
+	})
+
+	t.Run("setuid binary takes priority over medium risk patterns", func(t *testing.T) {
+		// Create an executable that would match a medium risk pattern (chmod 777)
+		// but also has setuid bit set - should be classified as high risk due to setuid
+		setuidExec := filepath.Join(tmpDir, "chmod")
+		err := os.WriteFile(setuidExec, []byte("#!/bin/bash\necho test"), 0o755)
+		require.NoError(t, err)
+
+		// Set the setuid bit
+		err = os.Chmod(setuidExec, 0o755|os.ModeSetuid)
+		require.NoError(t, err)
+
+		// Verify the setuid bit is actually set
+		fileInfo, err := os.Stat(setuidExec)
+		require.NoError(t, err)
+		assert.True(t, fileInfo.Mode()&os.ModeSetuid != 0, "setuid bit should be set")
+
+		// Test with arguments that would match medium risk pattern "chmod 777"
+		risk, pattern, reason, err := AnalyzeCommandSecurity(setuidExec, []string{"777"})
+		require.NoError(t, err)
+
+		// Should be classified as high risk due to setuid bit, not medium risk due to pattern
+		assert.Equal(t, RiskLevelHigh, risk)
+		assert.Equal(t, setuidExec, pattern)
+		assert.Equal(t, "Executable has setuid or setgid bit set", reason)
+
+		// Verify that without setuid bit, it would be medium risk
+		normalExec := filepath.Join(tmpDir, "chmod")
+		err = os.WriteFile(normalExec, []byte("#!/bin/bash\necho test"), 0o755)
+		require.NoError(t, err)
+
+		riskNormal, patternNormal, reasonNormal, errNormal := AnalyzeCommandSecurity(normalExec, []string{"777"})
+		require.NoError(t, errNormal)
+		assert.Equal(t, RiskLevelMedium, riskNormal)
+		assert.Equal(t, "chmod 777", patternNormal)
+		assert.Equal(t, "Overly permissive file permissions", reasonNormal)
+	})
+
+	t.Run("stat error treated as high risk", func(t *testing.T) {
+		// Create a file and then remove it to simulate stat error
+		tempFile := filepath.Join(tmpDir, "temp_file")
+		err := os.WriteFile(tempFile, []byte("test"), 0o755)
+		require.NoError(t, err)
+
+		// Remove the file to cause stat error
+		err = os.Remove(tempFile)
+		require.NoError(t, err)
+
+		// Analyze the non-existent file - should be treated as high risk due to stat error
+		risk, pattern, reason, err := AnalyzeCommandSecurity(tempFile, []string{})
+		require.NoError(t, err)
+		assert.Equal(t, RiskLevelHigh, risk)
+		assert.Equal(t, tempFile, pattern)
+		assert.Contains(t, reason, "Unable to check setuid/setgid status")
 	})
 }
 
