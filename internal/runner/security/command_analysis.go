@@ -424,6 +424,69 @@ func AnalyzeCommandSecurity(resolvedPath string, args []string) (riskLevel runne
 	return runnertypes.RiskLevelUnknown, "", "", nil
 }
 
+// AnalyzeCommandSecurityWithConfig analyzes a command with its arguments for dangerous patterns
+// with enhanced security validation including directory-based risk assessment and hash validation.
+func AnalyzeCommandSecurityWithConfig(resolvedPath string, args []string, globalConfig *runnertypes.GlobalConfig, hashDir string) (riskLevel runnertypes.RiskLevel, detectedPattern string, reason string, err error) {
+	// Step 1: Input validation
+	if resolvedPath == "" {
+		return runnertypes.RiskLevelUnknown, "", "", fmt.Errorf("%w: empty command path", ErrInvalidPath)
+	}
+
+	if !filepath.IsAbs(resolvedPath) {
+		return runnertypes.RiskLevelUnknown, "", "", fmt.Errorf("%w: path must be absolute, got relative path: %s", ErrInvalidPath, resolvedPath)
+	}
+
+	// Step 2: Symbolic link depth check
+	if _, exceededDepth := extractAllCommandNames(resolvedPath); exceededDepth {
+		return runnertypes.RiskLevelHigh, resolvedPath, "Symbolic link depth exceeds security limit (potential symlink attack)", nil
+	}
+
+	// Step 3: Directory-based default risk assessment
+	defaultRisk := getDefaultRiskByDirectory(resolvedPath)
+
+	// Step 4: Hash validation
+	if !shouldSkipHashValidation(resolvedPath, globalConfig) {
+		if err := validateFileHash(resolvedPath, hashDir); err != nil {
+			return runnertypes.RiskLevelCritical, resolvedPath,
+				fmt.Sprintf("Hash validation failed: %v", err), nil
+		}
+	}
+
+	// Step 5: High-risk pattern analysis
+	if riskLevel, pattern, reason := checkCommandPatterns(resolvedPath, args, highRiskPatterns); riskLevel != runnertypes.RiskLevelUnknown {
+		return riskLevel, pattern, reason, nil
+	}
+
+	// Step 6: setuid/setgid check
+	hasSetuidOrSetgid, setuidErr := hasSetuidOrSetgidBit(resolvedPath)
+	if setuidErr != nil {
+		return runnertypes.RiskLevelHigh, resolvedPath,
+			fmt.Sprintf("Unable to check setuid/setgid status: %v", setuidErr), nil
+	}
+	if hasSetuidOrSetgid {
+		return runnertypes.RiskLevelHigh, resolvedPath,
+			"Executable has setuid or setgid bit set", nil
+	}
+
+	// Step 7: Medium-risk pattern analysis
+	if riskLevel, pattern, reason := checkCommandPatterns(resolvedPath, args, mediumRiskPatterns); riskLevel != runnertypes.RiskLevelUnknown {
+		return riskLevel, pattern, reason, nil
+	}
+
+	// Step 8: Individual command override application
+	if overrideRisk, found := getCommandRiskOverride(resolvedPath); found {
+		return overrideRisk, resolvedPath, "Explicit risk level override", nil
+	}
+
+	// Step 9: Apply default risk level
+	if defaultRisk != runnertypes.RiskLevelUnknown {
+		return defaultRisk, "", "Default directory-based risk level", nil
+	}
+
+	// Fallback: no specific risk identified
+	return runnertypes.RiskLevelUnknown, "", "", nil
+}
+
 // extractAllCommandNames extracts all possible command names for matching:
 // 1. The original command name (could be full path or just filename)
 // 2. Just the base filename from the original command

@@ -10,6 +10,106 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestAnalyzeCommandSecurity_Integration(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	testCases := []struct {
+		name            string
+		setupFile       func() string
+		args            []string
+		globalConfig    *runnertypes.GlobalConfig
+		expectedRisk    runnertypes.RiskLevel
+		expectedPattern string
+		expectedReason  string
+		expectError     bool
+	}{
+		{
+			name: "standard directory with SkipStandardPaths=true should apply directory risk",
+			setupFile: func() string {
+				// Use a standard directory path (simulated)
+				return "/bin/ls"
+			},
+			args: []string{},
+			globalConfig: &runnertypes.GlobalConfig{
+				SkipStandardPaths: true,
+			},
+			expectedRisk:   runnertypes.RiskLevelLow,
+			expectedReason: "Default directory-based risk level",
+		},
+		{
+			name: "non-standard directory should use default unknown risk",
+			setupFile: func() string {
+				// Create a test file in a non-standard directory
+				testFile := filepath.Join(tmpDir, "test_unknown")
+				err := os.WriteFile(testFile, []byte("#!/bin/bash\necho test"), 0o755)
+				require.NoError(t, err)
+				return testFile
+			},
+			args: []string{},
+			globalConfig: &runnertypes.GlobalConfig{
+				SkipStandardPaths: false, // Hash validation enabled
+			},
+			expectedRisk:   runnertypes.RiskLevelUnknown,
+			expectedReason: "",
+		},
+		{
+			name: "setuid binary should have high priority",
+			setupFile: func() string {
+				// Create a setuid binary
+				setuidFile := filepath.Join(tmpDir, "setuid_test")
+				err := os.WriteFile(setuidFile, []byte("#!/bin/bash\necho test"), 0o755)
+				require.NoError(t, err)
+				err = os.Chmod(setuidFile, 0o755|os.ModeSetuid)
+				require.NoError(t, err)
+				return setuidFile
+			},
+			args:           []string{},
+			globalConfig:   nil,
+			expectedRisk:   runnertypes.RiskLevelHigh,
+			expectedReason: "Executable has setuid or setgid bit set",
+		},
+		{
+			name: "relative path should return error",
+			setupFile: func() string {
+				return "relative/path"
+			},
+			args:        []string{},
+			expectError: true,
+		},
+		{
+			name: "empty path should return error",
+			setupFile: func() string {
+				return ""
+			},
+			args:        []string{},
+			expectError: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			cmdPath := tc.setupFile()
+
+			// Use empty hashDir for tests since hash validation is not the main focus
+			risk, pattern, reason, err := AnalyzeCommandSecurityWithConfig(cmdPath, tc.args, tc.globalConfig, "")
+
+			if tc.expectError {
+				assert.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tc.expectedRisk, risk)
+			if tc.expectedPattern != "" {
+				assert.Equal(t, tc.expectedPattern, pattern)
+			}
+			if tc.expectedReason != "" {
+				assert.Equal(t, tc.expectedReason, reason)
+			}
+		})
+	}
+}
+
 func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 	// Create temporary directory for testing
 	tmpDir := t.TempDir()

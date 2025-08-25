@@ -37,6 +37,9 @@ var (
 	// - Paths that exceed maximum length limits
 	ErrInvalidPath = errors.New("invalid path")
 
+	// ErrHashValidationFailed is returned when file hash validation fails
+	ErrHashValidationFailed = errors.New("hash validation failed")
+
 	// ErrInvalidRegexPattern is returned when a regex pattern in the security configuration
 	// cannot be compiled
 	ErrInvalidRegexPattern = errors.New("invalid regex pattern")

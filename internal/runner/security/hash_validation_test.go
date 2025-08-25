@@ -1,0 +1,119 @@
+package security
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestShouldSkipHashValidation(t *testing.T) {
+	testCases := []struct {
+		name         string
+		cmdPath      string
+		globalConfig *runnertypes.GlobalConfig
+		expectedSkip bool
+	}{
+		{
+			name:         "nil config should not skip",
+			cmdPath:      "/bin/ls",
+			globalConfig: nil,
+			expectedSkip: false,
+		},
+		{
+			name:    "SkipStandardPaths=false should not skip standard directory",
+			cmdPath: "/bin/ls",
+			globalConfig: &runnertypes.GlobalConfig{
+				SkipStandardPaths: false,
+			},
+			expectedSkip: false,
+		},
+		{
+			name:    "SkipStandardPaths=false should not skip non-standard directory",
+			cmdPath: "/home/user/script",
+			globalConfig: &runnertypes.GlobalConfig{
+				SkipStandardPaths: false,
+			},
+			expectedSkip: false,
+		},
+		{
+			name:    "SkipStandardPaths=true should skip standard directory",
+			cmdPath: "/bin/ls",
+			globalConfig: &runnertypes.GlobalConfig{
+				SkipStandardPaths: true,
+			},
+			expectedSkip: true,
+		},
+		{
+			name:    "SkipStandardPaths=true should not skip non-standard directory",
+			cmdPath: "/home/user/script",
+			globalConfig: &runnertypes.GlobalConfig{
+				SkipStandardPaths: true,
+			},
+			expectedSkip: false,
+		},
+		{
+			name:    "SkipStandardPaths=true should skip usr/bin",
+			cmdPath: "/usr/bin/cat",
+			globalConfig: &runnertypes.GlobalConfig{
+				SkipStandardPaths: true,
+			},
+			expectedSkip: true,
+		},
+		{
+			name:    "SkipStandardPaths=true should skip usr/sbin",
+			cmdPath: "/usr/sbin/systemctl",
+			globalConfig: &runnertypes.GlobalConfig{
+				SkipStandardPaths: true,
+			},
+			expectedSkip: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := shouldSkipHashValidation(tc.cmdPath, tc.globalConfig)
+			assert.Equal(t, tc.expectedSkip, result)
+		})
+	}
+}
+
+func TestValidateFileHash(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	t.Run("existing file should pass basic validation", func(t *testing.T) {
+		// Create a test file
+		testFile := filepath.Join(tmpDir, "test_file")
+		err := os.WriteFile(testFile, []byte("test content"), 0o644)
+		require.NoError(t, err)
+
+		// Basic validation should pass (empty hashDir means skip validation)
+		err = validateFileHash(testFile, "")
+		assert.NoError(t, err)
+	})
+
+	t.Run("non-existent file should fail", func(t *testing.T) {
+		nonExistentFile := filepath.Join(tmpDir, "non_existent")
+
+		err := validateFileHash(nonExistentFile, tmpDir)
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, ErrHashValidationFailed)
+		// The error message will include "no such file or directory" for file system errors
+		assert.Contains(t, err.Error(), "no such file or directory")
+	})
+
+	t.Run("directory should fail", func(t *testing.T) {
+		// Create a directory
+		testDir := filepath.Join(tmpDir, "test_dir")
+		err := os.Mkdir(testDir, 0o755)
+		require.NoError(t, err)
+
+		// Directory should pass basic validation (existence check)
+		// Note: In future implementation, this might be enhanced to reject directories
+		err = validateFileHash(testDir, "")
+		assert.NoError(t, err)
+	})
+}

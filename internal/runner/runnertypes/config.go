@@ -20,6 +20,7 @@ type GlobalConfig struct {
 	Timeout           int      `toml:"timeout"`             // Global timeout in seconds
 	WorkDir           string   `toml:"workdir"`             // Working directory
 	LogLevel          string   `toml:"log_level"`           // Log level (debug, info, warn, error)
+	HashDir           string   `toml:"hash_dir"`            // Directory containing hash files for verification
 	VerifyFiles       []string `toml:"verify_files"`        // Files to verify at global level
 	SkipStandardPaths bool     `toml:"skip_standard_paths"` // Skip verification for standard system paths
 	EnvAllowlist      []string `toml:"env_allowlist"`       // Global environment variable allowlist
