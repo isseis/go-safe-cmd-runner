@@ -222,7 +222,11 @@ func TestCommandSecurityAnalysis(t *testing.T) {
 	ctx := context.Background()
 
 	// Test that we can directly verify the security analysis function
-	riskLevel, pattern, reason, err := security.AnalyzeCommandSecurity("/bin/rm", []string{"-rf", "/tmp/*"}, false, "")
+	opts := &security.AnalysisOptions{
+		SkipStandardPaths: false,
+		HashDir:           "",
+	}
+	riskLevel, pattern, reason, err := security.AnalyzeCommandSecurity("/bin/rm", []string{"-rf", "/tmp/*"}, opts)
 	require.NoError(t, err)
 
 	// Verify direct security analysis works

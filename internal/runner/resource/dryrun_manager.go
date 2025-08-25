@@ -209,7 +209,31 @@ func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd runnertype
 	return analysis, nil
 }
 
-// analyzeCommandSecurity analyzes security aspects of a command
+// AnalyzeCommandSecurity performs a comprehensive security analysis of a command and its arguments.
+//
+// Parameters:
+//   - resolvedPath: The absolute, resolved file system path to the command binary to be executed.
+//   - args:         The list of arguments to be passed to the command.
+//   - skipStandardPaths: If true, skips hash validation for commands located in standard system
+//     directories (e.g., /bin, /usr/bin), assuming they are trusted.
+//   - hashDir:      The directory containing trusted hash files for validating command binaries.
+//
+// Returns:
+//   - riskLevel:        The assessed risk level of the command (High, Medium, Low, or Unknown).
+//   - detectedPattern:  The dangerous pattern detected, if any, otherwise an empty string.
+//   - reason:           A human-readable explanation of the risk assessment or detection.
+//   - err:              An error if the analysis could not be completed (e.g., invalid path), otherwise nil.
+//
+// Security Validation Workflow:
+//  1. Validates the input path and ensures it is absolute.
+//  2. Checks for excessive symbolic link depth to prevent symlink attacks.
+//  3. Assesses default risk based on the directory of the command.
+//  4. Performs hash validation of the command binary against trusted hashes (unless skipped).
+//  5. Analyzes the command and its arguments for known dangerous patterns.
+//  6. Returns the highest detected risk level, the matching pattern, and a reason for the assessment.
+//
+// This function is a wrapper around AnalyzeCommandSecurityWithValidator and is intended for general use
+// when a pre-initialized file validator is not required.
 func (d *DryRunResourceManager) analyzeCommandSecurity(cmd runnertypes.Command, analysis *ResourceAnalysis) error {
 	// PathResolver is guaranteed to be non-nil due to constructor validation
 	resolvedPath, err := d.pathResolver.ResolvePath(cmd.Cmd)
@@ -218,7 +242,12 @@ func (d *DryRunResourceManager) analyzeCommandSecurity(cmd runnertypes.Command, 
 	}
 
 	// Analyze security with resolved path using cached validator
-	riskLevel, pattern, reason, err := security.AnalyzeCommandSecurityWithValidator(resolvedPath, cmd.Args, d.skipStandardPaths, d.hashDir, d.validator)
+	opts := &security.AnalysisOptions{
+		SkipStandardPaths: d.skipStandardPaths,
+		HashDir:           d.hashDir,
+		Validator:         d.validator,
+	}
+	riskLevel, pattern, reason, err := security.AnalyzeCommandSecurity(resolvedPath, cmd.Args, opts)
 	if err != nil {
 		return fmt.Errorf("security analysis failed for command '%s': %w", cmd.Cmd, err)
 	}

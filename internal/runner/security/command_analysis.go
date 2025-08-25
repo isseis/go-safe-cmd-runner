@@ -387,15 +387,63 @@ func IsSystemModification(cmd string, args []string) bool {
 	return false
 }
 
+// AnalysisOptions contains configuration options for command security analysis
+type AnalysisOptions struct {
+	// SkipStandardPaths determines whether to skip hash validation for standard system paths
+	SkipStandardPaths bool
+	// HashDir specifies the directory containing hash files for validation
+	HashDir string
+	// Validator is a pre-initialized file validator for better performance in batch operations
+	Validator *filevalidator.Validator
+}
+
 // AnalyzeCommandSecurity analyzes a command with its arguments for dangerous
 // patterns with enhanced security validation including directory-based risk
 // assessment and hash validation.
-func AnalyzeCommandSecurity(resolvedPath string, args []string, skipStandardPaths bool, hashDir string) (riskLevel runnertypes.RiskLevel, detectedPattern string, reason string, err error) {
-	return AnalyzeCommandSecurityWithValidator(resolvedPath, args, skipStandardPaths, hashDir, nil)
-}
+//
+// This is the primary entry point for command security analysis. It performs
+// comprehensive security checks including:
+//   - Pattern-based dangerous command detection
+//   - setuid/setgid bit analysis
+//   - Directory-based default risk assessment
+//   - Optional hash validation for executable integrity
+//
+// Usage examples:
+//
+//	// Basic analysis (no hash validation)
+//	risk, pattern, reason, err := AnalyzeCommandSecurity("/bin/rm", []string{"-rf", "/"}, nil)
+//
+//	// Analysis with hash validation
+//	opts := &AnalysisOptions{
+//		SkipStandardPaths: false,
+//		HashDir:          "/path/to/hashes",
+//	}
+//	risk, pattern, reason, err := AnalyzeCommandSecurity("/usr/local/bin/custom", []string{}, opts)
+//
+//	// Analysis with pre-initialized validator (recommended for batch operations)
+//	validator, _ := filevalidator.New(&filevalidator.SHA256{}, "/path/to/hashes")
+//	opts := &AnalysisOptions{
+//		SkipStandardPaths: true,
+//		Validator:        validator,
+//	}
+//	risk, pattern, reason, err := AnalyzeCommandSecurity("/usr/local/bin/custom", []string{}, opts)
+//
+// Parameters:
+//   - resolvedPath: Absolute path to the command executable
+//   - args: Command line arguments
+//   - opts: Configuration options (nil is acceptable for default behavior)
+//
+// Returns:
+//   - riskLevel: Security risk level (Unknown, Low, Medium, High, Critical)
+//   - detectedPattern: Matched dangerous pattern (if any)
+//   - reason: Human-readable explanation of the risk assessment
+//   - err: Error if analysis fails
+func AnalyzeCommandSecurity(resolvedPath string, args []string, opts *AnalysisOptions) (riskLevel runnertypes.RiskLevel, detectedPattern string, reason string, err error) {
+	// Handle nil options
+	if opts == nil {
+		opts = &AnalysisOptions{}
+	}
 
-// AnalyzeCommandSecurityWithValidator analyzes a command with a pre-initialized validator for better performance
-func AnalyzeCommandSecurityWithValidator(resolvedPath string, args []string, skipStandardPaths bool, hashDir string, validator *filevalidator.Validator) (riskLevel runnertypes.RiskLevel, detectedPattern string, reason string, err error) {
 	// Step 1: Input validation
 	if resolvedPath == "" {
 		return runnertypes.RiskLevelUnknown, "", "", fmt.Errorf("%w: empty command path", ErrInvalidPath)
@@ -413,17 +461,17 @@ func AnalyzeCommandSecurityWithValidator(resolvedPath string, args []string, ski
 	// Step 3: Directory-based default risk assessment
 	defaultRisk := getDefaultRiskByDirectory(resolvedPath)
 
-	// Step 4: Hash validation (skip for standard paths when skipStandardPaths=true)
-	if !shouldSkipHashValidation(resolvedPath, skipStandardPaths) {
+	// Step 4: Hash validation (skip for standard paths when SkipStandardPaths=true)
+	if !shouldSkipHashValidation(resolvedPath, opts.SkipStandardPaths) {
 		// Use provided validator if available, otherwise create new one
-		if validator != nil {
-			if err := validateFileHash(resolvedPath, validator); err != nil {
+		if opts.Validator != nil {
+			if err := validateFileHash(resolvedPath, opts.Validator); err != nil {
 				return runnertypes.RiskLevelCritical, resolvedPath,
 					fmt.Sprintf("Hash validation failed: %v", err), nil
 			}
-		} else if hashDir != "" {
+		} else if opts.HashDir != "" {
 			// Fallback to creating validator (for backward compatibility)
-			tempValidator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
+			tempValidator, err := filevalidator.New(&filevalidator.SHA256{}, opts.HashDir)
 			if err != nil {
 				return runnertypes.RiskLevelCritical, resolvedPath,
 					fmt.Sprintf("Hash validation failed to initialize validator: %v", err), nil
