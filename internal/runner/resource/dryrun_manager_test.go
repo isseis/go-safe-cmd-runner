@@ -7,6 +7,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 // Test helper functions for dry-run manager
@@ -27,7 +28,10 @@ func createTestDryRunResourceManager() *DryRunResourceManager {
 		DetailLevel: DetailLevelDetailed,
 	}
 
-	manager := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts)
+	manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts)
+	if err != nil {
+		panic(err) // This is a test helper, so panic is acceptable here
+	}
 
 	return manager
 }
@@ -262,10 +266,10 @@ func TestDryRunResourceManager_PathResolverRequired(t *testing.T) {
 	mockPriv := &MockPrivilegeManager{}
 	opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
 
-	// Test that providing nil PathResolver panics
-	assert.Panics(t, func() {
-		NewDryRunResourceManager(mockExec, mockPriv, nil, opts)
-	})
+	// Test that providing nil PathResolver returns an error
+	_, err := NewDryRunResourceManager(mockExec, mockPriv, nil, opts)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "PathResolver is required")
 }
 
 func TestDryRunResourceManager_PathResolutionFailure(t *testing.T) {
@@ -280,7 +284,12 @@ func TestDryRunResourceManager_PathResolutionFailure(t *testing.T) {
 	mockPathResolver.On("ResolvePath", "nonexistent-cmd").Return("", assert.AnError)
 
 	opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
-	manager := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts)
+	manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts)
+	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("Failed to create DryRunResourceManager: %v", err)
+	}
+	require.NoError(t, err)
 
 	cmd := runnertypes.Command{
 		Name: "test-failure",

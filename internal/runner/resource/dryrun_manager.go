@@ -2,6 +2,7 @@ package resource
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -9,6 +10,11 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
+)
+
+// Static errors
+var (
+	ErrPathResolverRequired = errors.New("PathResolver is required for DryRunResourceManager")
 )
 
 // PathResolver interface for resolving command paths
@@ -37,9 +43,9 @@ type DryRunResourceManager struct {
 }
 
 // NewDryRunResourceManager creates a new DryRunResourceManager for dry-run mode
-func NewDryRunResourceManager(exec executor.CommandExecutor, privMgr runnertypes.PrivilegeManager, pathResolver PathResolver, opts *DryRunOptions) *DryRunResourceManager {
+func NewDryRunResourceManager(exec executor.CommandExecutor, privMgr runnertypes.PrivilegeManager, pathResolver PathResolver, opts *DryRunOptions) (*DryRunResourceManager, error) {
 	if pathResolver == nil {
-		panic("PathResolver is required for DryRunResourceManager")
+		return nil, ErrPathResolverRequired
 	}
 
 	return &DryRunResourceManager{
@@ -66,7 +72,7 @@ func NewDryRunResourceManager(exec executor.CommandExecutor, privMgr runnertypes
 			Warnings: make([]DryRunWarning, 0),
 		},
 		resourceAnalyses: make([]ResourceAnalysis, 0),
-	}
+	}, nil
 }
 
 // ExecuteCommand simulates command execution in dry-run mode

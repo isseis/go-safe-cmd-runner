@@ -78,7 +78,11 @@ func TestSecurityAnalysis(t *testing.T) {
 
 			mockPathResolver := &MockPathResolver{}
 			setupStandardCommandPaths(mockPathResolver) // fallback
-			manager := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
+			manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
+			require.NoError(t, err)
+			if err != nil {
+				t.Fatalf("Failed to create DryRunResourceManager: %v", err)
+			}
 			require.NotNil(t, manager)
 
 			group := &runnertypes.CommandGroup{
@@ -169,7 +173,11 @@ func TestPrivilegeEscalationDetection(t *testing.T) {
 
 			mockPathResolver := &MockPathResolver{}
 			setupStandardCommandPaths(mockPathResolver) // fallback
-			manager := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
+			manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
+			require.NoError(t, err)
+			if err != nil {
+				t.Fatalf("Failed to create DryRunResourceManager: %v", err)
+			}
 			require.NotNil(t, manager)
 
 			group := &runnertypes.CommandGroup{
@@ -183,7 +191,7 @@ func TestPrivilegeEscalationDetection(t *testing.T) {
 			}
 
 			// Execute the command
-			_, err := manager.ExecuteCommand(ctx, tt.command, group, envVars)
+			_, err = manager.ExecuteCommand(ctx, tt.command, group, envVars)
 			assert.NoError(t, err)
 
 			// Get dry-run results
@@ -233,7 +241,11 @@ func TestCommandSecurityAnalysis(t *testing.T) {
 	mockPathResolver := &MockPathResolver{}
 	setupStandardCommandPaths(mockPathResolver)
 	mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-	manager := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
+	manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
+	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("Failed to create DryRunResourceManager: %v", err)
+	}
 	require.NotNil(t, manager)
 
 	group := &runnertypes.CommandGroup{
@@ -276,7 +288,11 @@ func TestSecurityAnalysisIntegration(t *testing.T) {
 
 	mockPathResolver := &MockPathResolver{}
 	setupStandardCommandPaths(mockPathResolver)
-	manager := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
+	manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
+	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("Failed to create DryRunResourceManager: %v", err)
+	}
 	require.NotNil(t, manager)
 
 	group := &runnertypes.CommandGroup{

@@ -85,10 +85,11 @@ func TestDryRunExecutionPath(t *testing.T) {
 			mockPathResolver := &MockPathResolver{}
 			setupStandardCommandPaths(mockPathResolver)
 			mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-			dryRunManager := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
-			require.NotNil(t, dryRunManager)
-
-			// Execute commands in dry-run mode
+			dryRunManager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
+			if err != nil {
+				t.Fatalf("Failed to create DryRunResourceManager: %v", err)
+			}
+			require.NotNil(t, dryRunManager) // Execute commands in dry-run mode
 			for _, cmd := range tt.commands {
 				group := tt.groups[0] // Use first group for simplicity
 				result, err := dryRunManager.ExecuteCommand(ctx, cmd, group, tt.envVars)
@@ -165,9 +166,13 @@ func TestDryRunResultConsistency(t *testing.T) {
 		mockPathResolver := &MockPathResolver{}
 		setupStandardCommandPaths(mockPathResolver)
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-		manager := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
+		manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
+		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("Failed to create DryRunResourceManager: %v", err)
+		}
 
-		_, err := manager.ExecuteCommand(ctx, command, group, envVars)
+		_, err = manager.ExecuteCommand(ctx, command, group, envVars)
 		require.NoError(t, err)
 
 		result := manager.GetDryRunResults()
@@ -225,7 +230,8 @@ func TestDefaultResourceManagerModeConsistency(t *testing.T) {
 		mockPathResolver := &MockPathResolver{}
 		setupStandardCommandPaths(mockPathResolver)
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-		manager := NewDefaultResourceManager(nil, nil, nil, mockPathResolver, slog.Default(), ExecutionModeNormal, dryRunOpts)
+		manager, err := NewDefaultResourceManager(nil, nil, nil, mockPathResolver, slog.Default(), ExecutionModeNormal, dryRunOpts)
+		require.NoError(t, err)
 		require.NotNil(t, manager)
 
 		assert.Equal(t, ExecutionModeNormal, manager.GetMode())
@@ -243,13 +249,14 @@ func TestDefaultResourceManagerModeConsistency(t *testing.T) {
 		mockPathResolver := &MockPathResolver{}
 		setupStandardCommandPaths(mockPathResolver)
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-		manager := NewDefaultResourceManager(nil, nil, nil, mockPathResolver, slog.Default(), ExecutionModeDryRun, dryRunOpts)
+		manager, err := NewDefaultResourceManager(nil, nil, nil, mockPathResolver, slog.Default(), ExecutionModeDryRun, dryRunOpts)
+		require.NoError(t, err)
 		require.NotNil(t, manager)
 
 		assert.Equal(t, ExecutionModeDryRun, manager.GetMode())
 
 		// Execute a command
-		_, err := manager.ExecuteCommand(ctx, command, group, envVars)
+		_, err = manager.ExecuteCommand(ctx, command, group, envVars)
 		assert.NoError(t, err)
 
 		// Dry-run mode should provide results

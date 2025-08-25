@@ -200,7 +200,11 @@ func TestErrorScenariosConsistency(t *testing.T) {
 				mockPathResolver := &MockPathResolver{}
 				setupStandardCommandPaths(mockPathResolver)
 				mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-				return NewDryRunResourceManager(nil, nil, mockPathResolver, opts)
+				manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, opts)
+				if err != nil {
+					panic(err)
+				}
+				return manager
 			},
 			isDryRun: true,
 		},
@@ -257,7 +261,11 @@ func TestConcurrentExecutionConsistency(t *testing.T) {
 				mockPathResolver := &MockPathResolver{}
 				setupStandardCommandPaths(mockPathResolver)
 				mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-				return NewDryRunResourceManager(nil, nil, mockPathResolver, opts)
+				manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, opts)
+				if err != nil {
+					panic(err)
+				}
+				return manager
 			},
 			isDryRun: true,
 		},
@@ -353,7 +361,11 @@ func TestDryRunManagerErrorHandling(t *testing.T) {
 				mockPathResolver := &MockPathResolver{}
 				setupStandardCommandPaths(mockPathResolver)
 				mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-				return NewDryRunResourceManager(nil, nil, mockPathResolver, opts), nil
+				manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, opts)
+				if err != nil {
+					panic(err)
+				}
+				return manager, nil
 			},
 			command: runnertypes.Command{
 				Name: "concurrent-test",
@@ -374,7 +386,11 @@ func TestDryRunManagerErrorHandling(t *testing.T) {
 				mockPathResolver := &MockPathResolver{}
 				setupStandardCommandPaths(mockPathResolver)
 				mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-				return NewDryRunResourceManager(nil, nil, mockPathResolver, opts), nil
+				manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, opts)
+				if err != nil {
+					panic(err)
+				}
+				return manager, nil
 			},
 			command: runnertypes.Command{
 				Name: "options-test",
@@ -394,7 +410,11 @@ func TestDryRunManagerErrorHandling(t *testing.T) {
 				mockPathResolver := &MockPathResolver{}
 				setupStandardCommandPaths(mockPathResolver)
 				mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-				return NewDryRunResourceManager(nil, nil, mockPathResolver, nil), nil
+				manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, nil)
+				if err != nil {
+					panic(err)
+				}
+				return manager, nil
 			},
 			command: runnertypes.Command{
 				Name: "nil-options-test",
@@ -419,7 +439,11 @@ func TestDryRunManagerErrorHandling(t *testing.T) {
 				mockPathResolver := &MockPathResolver{}
 				setupStandardCommandPaths(mockPathResolver)
 				mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-				return NewDryRunResourceManager(nil, nil, mockPathResolver, opts), nil
+				manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, opts)
+				if err != nil {
+					panic(err)
+				}
+				return manager, nil
 			},
 			command: runnertypes.Command{
 				Name: "consistency-test",
@@ -572,7 +596,11 @@ func TestConcurrentExecution(t *testing.T) {
 			mockPathResolver := &MockPathResolver{}
 			setupStandardCommandPaths(mockPathResolver)
 			mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-			manager := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
+			manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
+			if err != nil {
+				errors <- fmt.Errorf("failed to create DryRunResourceManager: %w", err)
+				return
+			}
 
 			group := &runnertypes.CommandGroup{
 				Name:        "concurrent-test-group",
@@ -645,7 +673,8 @@ func TestResourceManagerStateConsistency(t *testing.T) {
 	mockPathResolver := &MockPathResolver{}
 	setupStandardCommandPaths(mockPathResolver)
 	mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-	manager := NewDefaultResourceManager(nil, nil, nil, mockPathResolver, slog.Default(), ExecutionModeDryRun, dryRunOpts)
+	manager, err := NewDefaultResourceManager(nil, nil, nil, mockPathResolver, slog.Default(), ExecutionModeDryRun, dryRunOpts)
+	require.NoError(t, err)
 	require.NotNil(t, manager)
 
 	command := runnertypes.Command{
@@ -698,7 +727,8 @@ func TestResourceManagerStateConsistency(t *testing.T) {
 		mockPathResolver := &MockPathResolver{}
 		setupStandardCommandPaths(mockPathResolver)
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-		dryRunManager := NewDefaultResourceManager(nil, nil, nil, mockPathResolver, slog.Default(), ExecutionModeDryRun, dryRunOpts)
+		dryRunManager, err := NewDefaultResourceManager(nil, nil, nil, mockPathResolver, slog.Default(), ExecutionModeDryRun, dryRunOpts)
+		require.NoError(t, err)
 		result, err := dryRunManager.ExecuteCommand(ctx, nullCommand, group, nullEnvVars)
 		assert.NoError(t, err, "dry-run mode should handle null bytes in environment")
 		assert.NotNil(t, result, "dry-run mode should return result")
@@ -707,7 +737,8 @@ func TestResourceManagerStateConsistency(t *testing.T) {
 		// Test with normal mode
 		mockPathResolver2 := &MockPathResolver{}
 		mockPathResolver2.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil)
-		normalManager := NewDefaultResourceManager(&mockCommandExecutor{}, &mockFileSystem{}, nil, mockPathResolver2, slog.Default(), ExecutionModeNormal, nil)
+		normalManager, err := NewDefaultResourceManager(&mockCommandExecutor{}, &mockFileSystem{}, nil, mockPathResolver2, slog.Default(), ExecutionModeNormal, nil)
+		require.NoError(t, err)
 		result, err = normalManager.ExecuteCommand(ctx, nullCommand, group, nullEnvVars)
 		assert.NoError(t, err, "normal mode should handle null bytes in environment")
 		assert.NotNil(t, result, "normal mode should return result")

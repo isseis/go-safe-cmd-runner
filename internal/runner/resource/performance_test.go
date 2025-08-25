@@ -7,6 +7,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 // BenchmarkDryRunPerformance benchmarks dry-run performance with various numbers of commands
@@ -57,7 +58,8 @@ func BenchmarkDryRunPerformance(b *testing.B) {
 				mockPathResolver := &MockPathResolver{}
 				setupStandardCommandPaths(mockPathResolver)
 				mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-				manager := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
+				manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
+				require.NoError(b, err)
 
 				// Execute all commands
 				for _, cmd := range commands {
@@ -173,7 +175,8 @@ func BenchmarkResourceManagerModeSwitch(b *testing.B) {
 		mockPathResolver := &MockPathResolver{}
 		setupStandardCommandPaths(mockPathResolver)
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-		manager := NewDefaultResourceManager(nil, nil, nil, mockPathResolver, slog.Default(), ExecutionModeDryRun, dryRunOpts)
+		manager, err := NewDefaultResourceManager(nil, nil, nil, mockPathResolver, slog.Default(), ExecutionModeDryRun, dryRunOpts)
+		require.NoError(b, err)
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -222,7 +225,8 @@ func BenchmarkMemoryUsage(b *testing.B) {
 		mockPathResolver := &MockPathResolver{}
 		setupStandardCommandPaths(mockPathResolver)
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-		manager := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
+		manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
+		require.NoError(b, err)
 
 		// Execute all commands
 		for _, cmd := range commands {
@@ -240,7 +244,7 @@ func BenchmarkMemoryUsage(b *testing.B) {
 
 		// Format results to measure full memory usage
 		formatter := NewTextFormatter()
-		_, err := formatter.FormatResult(result, FormatterOptions{
+		_, err = formatter.FormatResult(result, FormatterOptions{
 			DetailLevel:  DetailLevelDetailed,
 			OutputFormat: OutputFormatText,
 		})

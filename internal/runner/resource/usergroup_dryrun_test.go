@@ -10,6 +10,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 // MockExecutor and related types are defined in normal_manager_test.go
@@ -21,7 +22,11 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		mockPathResolver := &MockPathResolver{}
 		setupStandardCommandPaths(mockPathResolver)
 
-		manager := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
+		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
+		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("Failed to create DryRunResourceManager: %v", err)
+		}
 
 		cmd := runnertypes.Command{
 			Name:       "test_user_group",
@@ -60,7 +65,11 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		mockPathResolver := &MockPathResolver{}
 		setupStandardCommandPaths(mockPathResolver)
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-		manager := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
+		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
+		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("Failed to create DryRunResourceManager: %v", err)
+		}
 
 		cmd := runnertypes.Command{
 			Name:       "test_invalid_user_group",
@@ -97,7 +106,11 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		mockPathResolver := &MockPathResolver{}
 		setupStandardCommandPaths(mockPathResolver)
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-		manager := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
+		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
+		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("Failed to create DryRunResourceManager: %v", err)
+		}
 
 		cmd := runnertypes.Command{
 			Name:       "test_user_group_unsupported",
@@ -131,7 +144,11 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		mockPathResolver := &MockPathResolver{}
 		setupStandardCommandPaths(mockPathResolver)
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-		manager := NewDryRunResourceManager(mockExec, nil, mockPathResolver, &DryRunOptions{})
+		manager, err := NewDryRunResourceManager(mockExec, nil, mockPathResolver, &DryRunOptions{})
+		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("Failed to create DryRunResourceManager: %v", err)
+		}
 
 		cmd := runnertypes.Command{
 			Name:       "test_no_privmgr",
@@ -165,7 +182,11 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		mockPathResolver := &MockPathResolver{}
 		setupStandardCommandPaths(mockPathResolver)
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-		manager := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
+		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
+		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("Failed to create DryRunResourceManager: %v", err)
+		}
 
 		cmd := runnertypes.Command{
 			Name:      "test_user_only",
@@ -204,7 +225,11 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		mockPathResolver := &MockPathResolver{}
 		setupStandardCommandPaths(mockPathResolver)
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-		manager := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
+		manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
+		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("Failed to create DryRunResourceManager: %v", err)
+		}
 
 		cmd := runnertypes.Command{
 			Name: "test_no_user_group",
