@@ -232,7 +232,7 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 			name: "valid absolute path works for user/group command",
 			cmd: runnertypes.Command{
 				Name:       "test_absolute_path",
-				Cmd:        "/usr/bin/echo", // Absolute path
+				Cmd:        "/bin/echo", // Absolute path
 				Args:       []string{"test"},
 				RunAsUser:  "testuser",
 				RunAsGroup: "testgroup",
@@ -243,7 +243,7 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 			name: "relative working directory fails for user/group command",
 			cmd: runnertypes.Command{
 				Name:       "test_relative_dir",
-				Cmd:        "/usr/bin/echo",
+				Cmd:        "/bin/echo",
 				Args:       []string{"test"},
 				Dir:        "tmp", // Relative working directory
 				RunAsUser:  "testuser",
@@ -256,7 +256,7 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 			name: "absolute working directory works for user/group command",
 			cmd: runnertypes.Command{
 				Name:       "test_absolute_dir",
-				Cmd:        "/usr/bin/echo",
+				Cmd:        "/bin/echo",
 				Args:       []string{"test"},
 				Dir:        "/tmp", // Absolute working directory
 				RunAsUser:  "testuser",
@@ -268,7 +268,7 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 			name: "path with relative components fails in standard validation",
 			cmd: runnertypes.Command{
 				Name:       "test_path_with_dots",
-				Cmd:        "/usr/bin/../bin/echo", // Absolute path but contains relative path components
+				Cmd:        "/bin/../bin/echo", // Absolute path but contains relative path components
 				Args:       []string{"test"},
 				RunAsUser:  "testuser",
 				RunAsGroup: "testgroup",
@@ -491,7 +491,7 @@ func TestDefaultExecutor_UserGroupRootExecution(t *testing.T) {
 			name: "normal command bypasses privilege manager",
 			cmd: runnertypes.Command{
 				Name: "test_normal",
-				Cmd:  "/usr/bin/echo",
+				Cmd:  "/bin/echo",
 				Args: []string{"test"},
 				// No run_as_user specified
 			},

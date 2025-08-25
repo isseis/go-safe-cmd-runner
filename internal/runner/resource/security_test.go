@@ -236,7 +236,7 @@ func TestCommandSecurityAnalysis(t *testing.T) {
 	}
 
 	mockPathResolver := &MockPathResolver{}
-	mockPathResolver.On("ResolvePath", "rm").Return("/usr/bin/rm", nil)
+	setupStandardCommandPaths(mockPathResolver)
 	mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
 	manager := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
 	require.NotNil(t, manager)
@@ -280,10 +280,7 @@ func TestSecurityAnalysisIntegration(t *testing.T) {
 	}
 
 	mockPathResolver := &MockPathResolver{}
-	mockPathResolver.On("ResolvePath", "rm").Return("/usr/bin/rm", nil)
-	mockPathResolver.On("ResolvePath", "curl").Return("/usr/bin/curl", nil)
-	mockPathResolver.On("ResolvePath", "echo").Return("/usr/bin/echo", nil)
-	mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
+	setupStandardCommandPaths(mockPathResolver)
 	manager := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
 	require.NotNil(t, manager)
 

@@ -71,14 +71,14 @@ func (m *MockPathResolver) ResolvePath(command string) (string, error) {
 
 // setupStandardCommandPaths sets up common command path mappings for MockPathResolver
 func setupStandardCommandPaths(mockPathResolver *MockPathResolver) {
-	mockPathResolver.On("ResolvePath", "rm").Return("/usr/bin/rm", nil)
+	mockPathResolver.On("ResolvePath", "dd").Return("/bin/dd", nil)
+	mockPathResolver.On("ResolvePath", "chmod").Return("/bin/chmod", nil)
+	mockPathResolver.On("ResolvePath", "echo").Return("/bin/echo", nil)
+	mockPathResolver.On("ResolvePath", "ls").Return("/bin/ls", nil)
+	mockPathResolver.On("ResolvePath", "rm").Return("/bin/rm", nil)
+	mockPathResolver.On("ResolvePath", "systemctl").Return("/bin/systemctl", nil)
 	mockPathResolver.On("ResolvePath", "sudo").Return("/usr/bin/sudo", nil)
 	mockPathResolver.On("ResolvePath", "curl").Return("/usr/bin/curl", nil)
-	mockPathResolver.On("ResolvePath", "echo").Return("/usr/bin/echo", nil)
-	mockPathResolver.On("ResolvePath", "dd").Return("/usr/bin/dd", nil)
-	mockPathResolver.On("ResolvePath", "chmod").Return("/usr/bin/chmod", nil)
-	mockPathResolver.On("ResolvePath", "systemctl").Return("/usr/bin/systemctl", nil)
-	mockPathResolver.On("ResolvePath", "ls").Return("/usr/bin/ls", nil)
 	mockPathResolver.On("ResolvePath", "wget").Return("/usr/bin/wget", nil)
 	mockPathResolver.On("ResolvePath", "my-sudo-wrapper").Return("/usr/bin/my-sudo-wrapper", nil)
 }

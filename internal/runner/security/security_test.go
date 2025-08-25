@@ -338,7 +338,7 @@ func TestValidator_ValidateCommand(t *testing.T) {
 	t.Run("allowed commands", func(t *testing.T) {
 		allowedCommands := []string{
 			"/bin/echo",
-			"/usr/bin/ls",
+			"/bin/ls",
 			"/bin/cat",
 			"/usr/bin/grep",
 		}

@@ -19,7 +19,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 		mockExec := &MockExecutor{}
 		mockPriv := privilegetesting.NewMockPrivilegeManager(true)
 		mockPathResolver := &MockPathResolver{}
-		mockPathResolver.On("ResolvePath", "echo").Return("/usr/bin/echo", nil)
+		setupStandardCommandPaths(mockPathResolver)
 
 		manager := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, &DryRunOptions{})
 
