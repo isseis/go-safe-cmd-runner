@@ -567,6 +567,9 @@ func matchesPattern(cmdName string, cmdArgs []string, pattern []string) bool {
 // by the caller using the unified path resolution system.
 // Returns (hasSetuidOrSetgid, error)
 func hasSetuidOrSetgidBit(cmdPath string) (bool, error) {
+	if !filepath.IsAbs(cmdPath) {
+		return false, fmt.Errorf("%w: path must be absolute, got relative path: %s", ErrInvalidPath, cmdPath)
+	}
 	// Get file information
 	fileInfo, err := os.Stat(cmdPath)
 	if err != nil {

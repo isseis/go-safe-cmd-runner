@@ -1158,11 +1158,7 @@ func TestHasSetuidOrSetgidBit(t *testing.T) {
 	})
 
 	t.Run("relative path - command in PATH", func(t *testing.T) {
-		// Test with a common command that should exist in PATH
-		// Note: This test might be system-dependent
-		hasSetuidOrSetgid, err := hasSetuidOrSetgidBit("echo")
-		// We don't assert the result as it depends on system configuration,
-		// but we check that the function doesn't crash
-		t.Logf("echo command setuid/setgid status: %v, error: %v", hasSetuidOrSetgid, err)
+		_, err := hasSetuidOrSetgidBit("echo")
+		assert.Error(t, err)
 	})
 }
