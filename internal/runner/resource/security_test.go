@@ -226,7 +226,7 @@ func TestCommandSecurityAnalysis(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify direct security analysis works
-	assert.Equal(t, security.RiskLevelHigh, riskLevel, "should detect high risk for rm -rf")
+	assert.Equal(t, runnertypes.RiskLevelHigh, riskLevel, "should detect high risk for rm -rf")
 	assert.Contains(t, pattern, "rm -rf", "should identify rm -rf pattern")
 	assert.NotEmpty(t, reason, "should provide reason for risk")
 

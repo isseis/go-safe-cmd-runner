@@ -2,6 +2,8 @@ package resource
 
 import (
 	"time"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
 // ResourceAnalysis captures analysis of a resource operation
@@ -184,42 +186,12 @@ type SecurityAnalysis struct {
 
 // SecurityRisk represents a security risk
 type SecurityRisk struct {
-	Level       RiskLevel `json:"level"`
-	Type        RiskType  `json:"type"`
-	Description string    `json:"description"`
-	Command     string    `json:"command"`
-	Group       string    `json:"group"`
-	Mitigation  string    `json:"mitigation"`
-}
-
-// RiskLevel represents the severity level of a security risk
-type RiskLevel int
-
-const (
-	// RiskLevelLow represents low risk
-	RiskLevelLow RiskLevel = iota
-	// RiskLevelMedium represents medium risk
-	RiskLevelMedium
-	// RiskLevelHigh represents high risk
-	RiskLevelHigh
-	// RiskLevelCritical represents critical risk
-	RiskLevelCritical
-)
-
-// String returns the string representation of RiskLevel
-func (r RiskLevel) String() string {
-	switch r {
-	case RiskLevelLow:
-		return "low"
-	case RiskLevelMedium:
-		return "medium"
-	case RiskLevelHigh:
-		return "high"
-	case RiskLevelCritical:
-		return "critical"
-	default:
-		return unknownString
-	}
+	Level       runnertypes.RiskLevel `json:"level"`
+	Type        RiskType              `json:"type"`
+	Description string                `json:"description"`
+	Command     string                `json:"command"`
+	Group       string                `json:"group"`
+	Mitigation  string                `json:"mitigation"`
 }
 
 // RiskType represents the type of security risk

@@ -6,6 +6,8 @@ package security
 import (
 	"errors"
 	"os"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
 // Error definitions
@@ -129,39 +131,10 @@ type Config struct {
 	LoggingOptions LoggingOptions
 }
 
-// RiskLevel represents the security risk level of a command pattern
-type RiskLevel string
-
-const (
-	// RiskLevelNone indicates no security risk
-	RiskLevelNone RiskLevel = ""
-	// RiskLevelLow indicates low security risk
-	RiskLevelLow RiskLevel = "low"
-	// RiskLevelMedium indicates medium security risk
-	RiskLevelMedium RiskLevel = "medium"
-	// RiskLevelHigh indicates high security risk
-	RiskLevelHigh RiskLevel = "high"
-)
-
-// String returns the string representation of the risk level
-func (r RiskLevel) String() string {
-	return string(r)
-}
-
-// IsValid checks if the risk level is valid
-func (r RiskLevel) IsValid() bool {
-	switch r {
-	case RiskLevelNone, RiskLevelLow, RiskLevelMedium, RiskLevelHigh:
-		return true
-	default:
-		return false
-	}
-}
-
 // DangerousCommandPattern represents a dangerous command pattern with its risk level
 type DangerousCommandPattern struct {
 	Pattern   []string // Full command pattern including command name and arguments
-	RiskLevel RiskLevel
+	RiskLevel runnertypes.RiskLevel
 	Reason    string
 }
 
