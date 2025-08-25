@@ -30,10 +30,3 @@ type PrivilegeEscalationResult struct {
 	DetectedPattern       string
 	Reason                string
 }
-
-// PrivilegeCheckInfo contains information about a specific privilege escalation command
-type PrivilegeCheckInfo struct {
-	EscalationType     PrivilegeEscalationType
-	RequiredPrivileges []string
-	Reason             string
-}
