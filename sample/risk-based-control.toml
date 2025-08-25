@@ -1,0 +1,114 @@
+# Example configuration demonstrating risk-based command control and enhanced privilege management
+version = "1.0"
+
+[global]
+timeout = 300
+workdir = "/opt/safe-runner"
+log_level = "info"
+verify_files = ["/etc/ssl/certs/ca-certificates.crt"]
+skip_standard_paths = false
+env_allowlist = ["PATH", "HOME", "USER", "LANG"]
+
+# Group with low-risk commands (no max_risk_level needed, defaults to low)
+[[groups]]
+name = "safe_operations"
+description = "Safe information gathering commands"
+
+[[groups.commands]]
+name = "system_info"
+description = "Display system information"
+cmd = "uname"
+args = ["-a"]
+
+[[groups.commands]]
+name = "list_files"
+description = "List files in working directory"
+cmd = "ls"
+args = ["-la"]
+
+[[groups.commands]]
+name = "show_date"
+description = "Display current date and time"
+cmd = "date"
+
+# Group with medium-risk commands (requires explicit max_risk_level)
+[[groups]]
+name = "network_operations"
+description = "Network-related commands with medium risk"
+
+[[groups.commands]]
+name = "download_config"
+description = "Download configuration from trusted source"
+cmd = "wget"
+args = ["https://trusted.example.com/config.json", "-O", "/tmp/config.json"]
+max_risk_level = "medium"
+
+[[groups.commands]]
+name = "check_connectivity"
+description = "Test network connectivity"
+cmd = "curl"
+args = ["-I", "https://api.example.com/health"]
+max_risk_level = "medium"
+
+# Group with high-risk commands (requires explicit max_risk_level)
+[[groups]]
+name = "maintenance_operations"
+description = "High-risk maintenance commands"
+
+[[groups.commands]]
+name = "cleanup_temp"
+description = "Clean up temporary files"
+cmd = "rm"
+args = ["-rf", "/tmp/app_temp_files"]
+max_risk_level = "high"
+
+[[groups.commands]]
+name = "system_update"
+description = "Update package list"
+cmd = "apt"
+args = ["update"]
+max_risk_level = "medium"
+run_as_user = "root"
+
+# Group demonstrating user/group privilege specification
+[[groups]]
+name = "database_operations"
+description = "Database operations with specific user privileges"
+
+[[groups.commands]]
+name = "backup_database"
+description = "Create database backup"
+cmd = "/usr/bin/pg_dump"
+args = ["myapp_db"]
+run_as_user = "postgres"
+run_as_group = "postgres"
+max_risk_level = "medium"
+
+[[groups.commands]]
+name = "log_analysis"
+description = "Analyze application logs"
+cmd = "/usr/local/bin/log_analyzer"
+args = ["--input", "/var/log/myapp/app.log"]
+run_as_user = "logger"
+max_risk_level = "low"
+
+# Group demonstrating privilege escalation prohibition
+[[groups]]
+name = "secure_operations"
+description = "Commands that demonstrate proper privilege handling"
+
+[[groups.commands]]
+name = "restart_service"
+description = "Restart application service using privilege flag"
+cmd = "systemctl"
+args = ["restart", "myapp"]
+run_as_user = "root"
+max_risk_level = "medium"
+
+# Note: The following would be rejected during execution
+# [[groups.commands]]
+# name = "invalid_sudo"
+# description = "This command would be rejected - sudo in TOML is prohibited"
+# cmd = "sudo"
+# args = ["systemctl", "restart", "myapp"]
+# # This will fail validation and be rejected before execution

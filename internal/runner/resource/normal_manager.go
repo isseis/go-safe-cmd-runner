@@ -3,6 +3,7 @@ package resource
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -19,18 +20,27 @@ type NormalResourceManager struct {
 	privilegeManager runnertypes.PrivilegeManager
 	riskEvaluator    risk.Evaluator
 
+	// Logging
+	logger *slog.Logger
+
 	// State management
 	mu       sync.RWMutex
 	tempDirs []string
 }
 
 // NewNormalResourceManager creates a new NormalResourceManager for normal execution mode
-func NewNormalResourceManager(exec executor.CommandExecutor, fs executor.FileSystem, privMgr runnertypes.PrivilegeManager) *NormalResourceManager {
+func NewNormalResourceManager(
+	exec executor.CommandExecutor,
+	fs executor.FileSystem,
+	privMgr runnertypes.PrivilegeManager,
+	logger *slog.Logger,
+) *NormalResourceManager {
 	return &NormalResourceManager{
 		executor:         exec,
 		fileSystem:       fs,
 		privilegeManager: privMgr,
 		riskEvaluator:    risk.NewStandardEvaluator(),
+		logger:           logger,
 		tempDirs:         make([]string, 0),
 	}
 }
@@ -48,16 +58,30 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd runnerty
 		return nil, fmt.Errorf("command group validation failed: %w", err)
 	}
 
-	// Evaluate security risk before execution
-	riskLevel, err := n.riskEvaluator.EvaluateRisk(&cmd)
+	// Unified Risk Evaluation Approach
+	// Step 1: Evaluate security risk (includes privilege escalation detection)
+	effectiveRisk, err := n.riskEvaluator.EvaluateRisk(&cmd)
 	if err != nil {
 		return nil, fmt.Errorf("risk evaluation failed: %w", err)
 	}
 
-	// Block critical risk commands (privilege escalation)
-	if riskLevel == runnertypes.RiskLevelCritical {
-		return nil, fmt.Errorf("%w: command %s detected as privilege escalation command",
-			runnertypes.ErrCriticalRiskBlocked, cmd.Cmd)
+	// Step 2: Get maximum allowed risk level from configuration
+	maxAllowedRisk, err := cmd.GetMaxRiskLevel()
+	if err != nil {
+		return nil, fmt.Errorf("invalid max_risk_level configuration: %w", err)
+	}
+
+	// Step 3: Unified risk level comparison
+	if effectiveRisk > maxAllowedRisk {
+		n.logger.Error("Command execution rejected due to risk level violation",
+			"command", cmd.Name,
+			"cmd_binary", cmd.Cmd,
+			"effective_risk", effectiveRisk.String(),
+			"max_allowed_risk", maxAllowedRisk.String(),
+			"command_path", group.Name,
+		)
+		return nil, fmt.Errorf("%w: command %s (effective risk: %s) exceeds maximum allowed risk level (%s)",
+			runnertypes.ErrCommandSecurityViolation, cmd.Cmd, effectiveRisk.String(), maxAllowedRisk.String())
 	}
 
 	result, err := n.executor.Execute(ctx, cmd, env)

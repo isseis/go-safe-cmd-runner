@@ -42,7 +42,8 @@
 **F5**: `max_risk_level` の値：
 - `"high"`: High risk コマンドまで許可
 - `"medium"`: Medium risk コマンドまで許可
-- `"none"` または未設定: リスクのないコマンドのみ許可
+- `"low"` または未設定: Low risk コマンドのみ許可
+- 備考： `"critical"` を設定することはできない。
 
 **F6**: コマンドの実際のリスクレベルが設定された `max_risk_level` を超える場合、実行を拒否
 
@@ -155,21 +156,6 @@ args = ["--config", "/etc/secure/config.json"]
 run_as_user = "secure_user"
 run_as_group = "secure_group"
 max_risk_level = "medium"
-name = "privileged_cleanup"  # このような設定は常に拒否される
-cmd = "sudo"
-args = ["rm", "-rf", "/tmp/files"]
-max_risk_level = "high"  # この設定でも実行拒否
-```
-
-# ✅ 推奨: run_as_user による安全な権限昇格
-```toml
-[[groups.commands]]
-name = "privileged_cleanup"
-description = "Remove temporary files with elevated privileges"
-cmd = "/bin/rm"
-args = ["-rf", "/tmp/files"]
-run_as_user = "root"  # 安全な権限昇格メカニズム
-max_risk_level = "high"
 ```
 
 ## 4. 想定されるエラーメッセージ
@@ -198,6 +184,17 @@ Details:
 Run ID: 01K35WM4J8BBX09DY348H7JDEX
 ```
 
+### 4.3 Critical リスクレベル設定の拒否
+```
+Error: invalid_max_risk_level - Critical risk level cannot be set in configuration
+Details:
+  Setting: max_risk_level = "critical"
+  Reason: Critical risk level is reserved for internal security classification only
+  Alternative: Use 'max_risk_level = "high"' for highest allowed risk level, or 'run_as_user'/'run_as_group' for privilege requirements
+  Command Path: groups.admin_tasks.commands.system_operation
+Run ID: 01K35WM4J8BBX09DY348H7JDEX
+```
+
 ## 5. 実装対象範囲
 
 ### 5.1 修正対象ファイル
@@ -214,14 +211,15 @@ Run ID: 01K35WM4J8BBX09DY348H7JDEX
 ## 6. 受け入れ条件
 
 ### 6.1 機能テスト
-- [x] High risk コマンドが `max_risk_level = "high"` で実行可能
-- [x] High risk コマンドが `max_risk_level` 未設定で実行拒否
-- [x] Medium risk コマンドが `max_risk_level = "medium"` で実行可能
-- [x] Medium risk コマンドが `max_risk_level` 未設定で実行拒否
+- [x] `max_risk_level = "critical"` の設定はエラーとなり実行拒否（**実装完了** - ParseRiskLevel関数で明示的に拒否）
+- [x] High risk コマンドが `max_risk_level = "high"` で実行可能（**実装完了** - Normal modeで完全実装）
+- [x] High risk コマンドが `max_risk_level` 未設定で実行拒否（**実装完了** - Normal modeで完全実装）
+- [x] Medium risk コマンドが `max_risk_level = "medium"` で実行可能（**実装完了** - Normal modeで完全実装）
+- [x] Medium risk コマンドが `max_risk_level` 未設定で実行拒否（**実装完了** - Normal modeで完全実装）
 - [x] 深いシンボリックリンクが適切に検出・拒否される
 - [x] 安全なコマンドは設定なしで実行可能
-- [x] **特権昇格コマンド（sudo, su, doas）が `max_risk_level` 設定に関わらず一律で実行拒否**
-- [x] **`run_as_user`/`run_as_group` 設定による安全な権限昇格が正常に動作**
+- [x] **特権昇格コマンド（sudo, su, doas）が `max_risk_level` 設定に関わらず一律で実行拒否**（Critical riskとして分類され拒否）
+- [x] **`run_as_user`/`run_as_group` 設定による安全な権限昇格が正常に動作**（設定構造体とDry-runで実装済み）
 
 ### 6.2 エラーハンドリング
 - [x] 適切なエラーメッセージが表示される

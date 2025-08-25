@@ -384,24 +384,42 @@ func IsSystemModification(cmd string, args []string) bool {
 	return false
 }
 
-// AnalyzeCommandSecurity analyzes a command with its arguments for dangerous patterns
-func AnalyzeCommandSecurity(cmdName string, args []string) (riskLevel RiskLevel, detectedPattern string, reason string) {
-	// First, check if symlink depth is exceeded (highest priority security concern)
-	if _, exceededDepth := extractAllCommandNames(cmdName); exceededDepth {
-		return RiskLevelHigh, cmdName, "Symbolic link depth exceeds security limit (potential symlink attack)"
+// AnalyzeCommandSecurity analyzes a command with its arguments for dangerous patterns.
+// This function expects a resolved absolute path for optimal security checking.
+// Use this version when you have already resolved the command path through the unified path resolution system.
+func AnalyzeCommandSecurity(resolvedPath string, args []string) (riskLevel RiskLevel, detectedPattern string, reason string, err error) {
+	// Validate that resolvedPath is an absolute path (programming error if not)
+	if !filepath.IsAbs(resolvedPath) {
+		return RiskLevelNone, "", "", fmt.Errorf("%w: path must be absolute, got relative path: %s", ErrInvalidPath, resolvedPath)
 	}
 
-	// Check high risk patterns
-	if riskLevel, pattern, reason := checkCommandPatterns(cmdName, args, highRiskPatterns); riskLevel != RiskLevelNone {
-		return riskLevel, pattern, reason
+	// First, check if symlink depth is exceeded
+	if _, exceededDepth := extractAllCommandNames(resolvedPath); exceededDepth {
+		return RiskLevelHigh, resolvedPath, "Symbolic link depth exceeds security limit (potential symlink attack)", nil
+	}
+
+	// Check high risk patterns first (more specific than generic setuid/setgid)
+	if riskLevel, pattern, reason := checkCommandPatterns(resolvedPath, args, highRiskPatterns); riskLevel != RiskLevelNone {
+		return riskLevel, pattern, reason, nil
+	}
+
+	// Check for setuid/setgid binaries
+	// Since we have a resolved path, we can safely check setuid/setgid bits
+	hasSetuidOrSetgid, setuidErr := hasSetuidOrSetgidBit(resolvedPath)
+	if setuidErr != nil {
+		// Log and treat stat errors as potential security risks
+		return RiskLevelHigh, resolvedPath, fmt.Sprintf("Unable to check setuid/setgid status: %v", setuidErr), nil
+	}
+	if hasSetuidOrSetgid {
+		return RiskLevelHigh, resolvedPath, "Executable has setuid or setgid bit set", nil
 	}
 
 	// Then check medium risk patterns
-	if riskLevel, pattern, reason := checkCommandPatterns(cmdName, args, mediumRiskPatterns); riskLevel != RiskLevelNone {
-		return riskLevel, pattern, reason
+	if riskLevel, pattern, reason := checkCommandPatterns(resolvedPath, args, mediumRiskPatterns); riskLevel != RiskLevelNone {
+		return riskLevel, pattern, reason, nil
 	}
 
-	return RiskLevelNone, "", ""
+	return RiskLevelNone, "", "", nil
 }
 
 // extractAllCommandNames extracts all possible command names for matching:
@@ -542,4 +560,32 @@ func matchesPattern(cmdName string, cmdArgs []string, pattern []string) bool {
 	}
 
 	return true
+}
+
+// hasSetuidOrSetgidBit checks if the given command path has setuid or setgid bit set
+// This function expects a resolved absolute path. Path resolution should be done
+// by the caller using the unified path resolution system.
+// Returns (hasSetuidOrSetgid, error)
+func hasSetuidOrSetgidBit(cmdPath string) (bool, error) {
+	if !filepath.IsAbs(cmdPath) {
+		return false, fmt.Errorf("%w: path must be absolute, got relative path: %s", ErrInvalidPath, cmdPath)
+	}
+	// Get file information
+	fileInfo, err := os.Stat(cmdPath)
+	if err != nil {
+		// If we can't stat the file, assume it's not setuid/setgid
+		return false, err
+	}
+
+	// Check if it's a regular file
+	if !fileInfo.Mode().IsRegular() {
+		return false, nil
+	}
+
+	// Check for setuid or setgid bits
+	mode := fileInfo.Mode()
+	hasSetuidBit := mode&os.ModeSetuid != 0
+	hasSetgidBit := mode&os.ModeSetgid != 0
+
+	return hasSetuidBit || hasSetgidBit, nil
 }

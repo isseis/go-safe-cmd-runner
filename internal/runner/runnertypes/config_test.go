@@ -36,10 +36,10 @@ func TestParseRiskLevel(t *testing.T) {
 			hasError: false,
 		},
 		{
-			name:     "valid critical risk",
+			name:     "critical risk is prohibited in configuration",
 			input:    "critical",
-			expected: RiskLevelCritical,
-			hasError: false,
+			expected: RiskLevelUnknown,
+			hasError: true,
 		},
 		{
 			name:     "empty string defaults to low",

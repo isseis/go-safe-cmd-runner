@@ -2,9 +2,12 @@ package resource
 
 import (
 	"context"
+	"log/slog"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 // BenchmarkDryRunPerformance benchmarks dry-run performance with various numbers of commands
@@ -52,7 +55,11 @@ func BenchmarkDryRunPerformance(b *testing.B) {
 					VerifyFiles:   true,
 				}
 
-				manager := NewDryRunResourceManager(nil, nil, dryRunOpts)
+				mockPathResolver := &MockPathResolver{}
+				setupStandardCommandPaths(mockPathResolver)
+				mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
+				manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
+				require.NoError(b, err)
 
 				// Execute all commands
 				for _, cmd := range commands {
@@ -80,9 +87,6 @@ func BenchmarkFormatterPerformance(b *testing.B) {
 			RunID:      "benchmark-run",
 			ConfigPath: "/test/config.toml",
 			Version:    "test",
-		},
-		ExecutionPlan: &ExecutionPlan{
-			TotalCommands: 100,
 		},
 		ResourceAnalyses: make([]ResourceAnalysis, 100),
 	}
@@ -168,7 +172,11 @@ func BenchmarkResourceManagerModeSwitch(b *testing.B) {
 			DetailLevel:  DetailLevelDetailed,
 			OutputFormat: OutputFormatText,
 		}
-		manager := NewDefaultResourceManager(nil, nil, nil, ExecutionModeDryRun, dryRunOpts)
+		mockPathResolver := &MockPathResolver{}
+		setupStandardCommandPaths(mockPathResolver)
+		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
+		manager, err := NewDefaultResourceManager(nil, nil, nil, mockPathResolver, slog.Default(), ExecutionModeDryRun, dryRunOpts)
+		require.NoError(b, err)
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -214,7 +222,11 @@ func BenchmarkMemoryUsage(b *testing.B) {
 			VerifyFiles:   true,
 		}
 
-		manager := NewDryRunResourceManager(nil, nil, dryRunOpts)
+		mockPathResolver := &MockPathResolver{}
+		setupStandardCommandPaths(mockPathResolver)
+		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
+		manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
+		require.NoError(b, err)
 
 		// Execute all commands
 		for _, cmd := range commands {
@@ -232,7 +244,7 @@ func BenchmarkMemoryUsage(b *testing.B) {
 
 		// Format results to measure full memory usage
 		formatter := NewTextFormatter()
-		_, err := formatter.FormatResult(result, FormatterOptions{
+		_, err = formatter.FormatResult(result, FormatterOptions{
 			DetailLevel:  DetailLevelDetailed,
 			OutputFormat: OutputFormatText,
 		})

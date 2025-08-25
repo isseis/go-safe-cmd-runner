@@ -214,21 +214,48 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 					OutputFormat: resource.OutputFormatText,
 				}
 			}
-			opts.resourceManager = resource.NewDryRunResourceManager(
+			// For dry-run mode, create a simple path resolver using verification manager
+			var pathResolver resource.PathResolver
+			if opts.verificationManager != nil {
+				pathResolver = opts.verificationManager
+			} else {
+				// Create a default PathResolver when verification manager is not provided
+				pathResolver = verification.NewPathResolver("", validator, false)
+			}
+			resourceManager, err := resource.NewDryRunResourceManager(
 				opts.executor,
 				opts.privilegeManager,
+				pathResolver,
 				opts.dryRunOptions,
 			)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create dry-run resource manager: %w", err)
+			}
+			opts.resourceManager = resourceManager
 		} else {
 			// Use common.DefaultFileSystem for normal mode
 			fs := common.NewDefaultFileSystem()
-			opts.resourceManager = resource.NewDefaultResourceManager(
+			// For normal mode, create a simple path resolver using verification manager
+			var pathResolver resource.PathResolver
+			if opts.verificationManager != nil {
+				pathResolver = opts.verificationManager
+			} else {
+				// Create a default PathResolver when verification manager is not provided
+				pathResolver = verification.NewPathResolver("", validator, false)
+			}
+			resourceManager, err := resource.NewDefaultResourceManager(
 				opts.executor,
 				fs,
 				opts.privilegeManager,
+				pathResolver,
+				slog.Default(), // Logger for Phase 1 implementation
 				resource.ExecutionModeNormal,
 				&resource.DryRunOptions{}, // Empty dry-run options for normal mode
 			)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create default resource manager: %w", err)
+			}
+			opts.resourceManager = resourceManager
 		}
 	}
 

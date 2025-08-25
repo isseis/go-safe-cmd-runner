@@ -2,6 +2,8 @@ package resource
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -19,15 +21,19 @@ type DefaultResourceManager struct {
 
 // NewDefaultResourceManager creates a new DefaultResourceManager.
 // If mode is ExecutionModeDryRun, opts may be used to configure the dry-run behavior.
-func NewDefaultResourceManager(exec executor.CommandExecutor, fs executor.FileSystem, privMgr runnertypes.PrivilegeManager, mode ExecutionMode, opts *DryRunOptions) *DefaultResourceManager {
+func NewDefaultResourceManager(exec executor.CommandExecutor, fs executor.FileSystem, privMgr runnertypes.PrivilegeManager, pathResolver PathResolver, logger *slog.Logger, mode ExecutionMode, opts *DryRunOptions) (*DefaultResourceManager, error) {
 	mgr := &DefaultResourceManager{
 		mode:   mode,
-		normal: NewNormalResourceManager(exec, fs, privMgr),
+		normal: NewNormalResourceManager(exec, fs, privMgr, logger),
 	}
 	// Create dry-run manager eagerly to keep state like analyses across mode flips
 	// and to simplify switching without re-wiring dependencies.
-	mgr.dryrun = NewDryRunResourceManager(exec, privMgr, opts)
-	return mgr
+	dryrunManager, err := NewDryRunResourceManager(exec, privMgr, pathResolver, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create dry-run resource manager: %w", err)
+	}
+	mgr.dryrun = dryrunManager
+	return mgr, nil
 }
 
 // GetMode returns the current execution mode.

@@ -145,12 +145,6 @@ func TestDryRunResult(t *testing.T) {
 			Version:         "1.0.0",
 			Duration:        time.Second * 5,
 		},
-		ExecutionPlan: &ExecutionPlan{
-			Groups:            []GroupPlan{},
-			TotalCommands:     0,
-			EstimatedDuration: time.Second * 10,
-			RequiresPrivilege: false,
-		},
 		ResourceAnalyses: []ResourceAnalysis{},
 		SecurityAnalysis: &SecurityAnalysis{
 			Risks:             []SecurityRisk{},
@@ -169,10 +163,7 @@ func TestDryRunResult(t *testing.T) {
 	}
 
 	assert.NotNil(t, result.Metadata)
-	assert.NotNil(t, result.ExecutionPlan)
 	assert.NotNil(t, result.SecurityAnalysis)
 	assert.NotNil(t, result.EnvironmentInfo)
 	assert.Equal(t, "test-run-1", result.Metadata.RunID)
-	assert.Equal(t, 0, result.ExecutionPlan.TotalCommands)
-	assert.False(t, result.ExecutionPlan.RequiresPrivilege)
 }

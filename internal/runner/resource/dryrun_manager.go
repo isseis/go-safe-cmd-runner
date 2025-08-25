@@ -2,6 +2,7 @@ package resource
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -10,6 +11,16 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
+
+// Static errors
+var (
+	ErrPathResolverRequired = errors.New("PathResolver is required for DryRunResourceManager")
+)
+
+// PathResolver interface for resolving command paths
+type PathResolver interface {
+	ResolvePath(command string) (string, error)
+}
 
 const (
 	riskLevelHigh = "high"
@@ -20,6 +31,7 @@ type DryRunResourceManager struct {
 	// Core dependencies
 	executor         executor.CommandExecutor
 	privilegeManager runnertypes.PrivilegeManager
+	pathResolver     PathResolver
 
 	// Dry-run specific
 	dryRunOptions    *DryRunOptions
@@ -31,17 +43,21 @@ type DryRunResourceManager struct {
 }
 
 // NewDryRunResourceManager creates a new DryRunResourceManager for dry-run mode
-func NewDryRunResourceManager(exec executor.CommandExecutor, privMgr runnertypes.PrivilegeManager, opts *DryRunOptions) *DryRunResourceManager {
+func NewDryRunResourceManager(exec executor.CommandExecutor, privMgr runnertypes.PrivilegeManager, pathResolver PathResolver, opts *DryRunOptions) (*DryRunResourceManager, error) {
+	if pathResolver == nil {
+		return nil, ErrPathResolverRequired
+	}
+
 	return &DryRunResourceManager{
 		executor:         exec,
 		privilegeManager: privMgr,
+		pathResolver:     pathResolver,
 		dryRunOptions:    opts,
 		dryRunResult: &DryRunResult{
 			Metadata: &ResultMetadata{
 				GeneratedAt: time.Now(),
 				RunID:       fmt.Sprintf("dryrun-%d", time.Now().Unix()),
 			},
-			ExecutionPlan:    &ExecutionPlan{},
 			ResourceAnalyses: make([]ResourceAnalysis, 0),
 			SecurityAnalysis: &SecurityAnalysis{
 				Risks:             make([]SecurityRisk, 0),
@@ -56,7 +72,7 @@ func NewDryRunResourceManager(exec executor.CommandExecutor, privMgr runnertypes
 			Warnings: make([]DryRunWarning, 0),
 		},
 		resourceAnalyses: make([]ResourceAnalysis, 0),
-	}
+	}, nil
 }
 
 // ExecuteCommand simulates command execution in dry-run mode
@@ -73,7 +89,10 @@ func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd runnerty
 	}
 
 	// Analyze the command
-	analysis := d.analyzeCommand(ctx, cmd, group, env)
+	analysis, err := d.analyzeCommand(ctx, cmd, group, env)
+	if err != nil {
+		return nil, fmt.Errorf("command analysis failed: %w", err)
+	}
 
 	// Record the analysis
 	d.RecordAnalysis(&analysis)
@@ -95,7 +114,7 @@ func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd runnerty
 }
 
 // analyzeCommand analyzes a command for dry-run
-func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) ResourceAnalysis {
+func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) (ResourceAnalysis, error) {
 	analysis := ResourceAnalysis{
 		Type:      ResourceTypeCommand,
 		Operation: OperationExecute,
@@ -125,7 +144,9 @@ func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd runnertype
 	}
 
 	// Analyze security risks first
-	d.analyzeCommandSecurity(cmd, &analysis)
+	if err := d.analyzeCommandSecurity(cmd, &analysis); err != nil {
+		return ResourceAnalysis{}, err
+	}
 
 	// Add user/group privilege specification if present (after security analysis)
 	if cmd.HasUserGroupSpecification() {
@@ -158,23 +179,28 @@ func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd runnertype
 		}
 	}
 
-	return analysis
+	return analysis, nil
 }
 
 // analyzeCommandSecurity analyzes security aspects of a command
-func (d *DryRunResourceManager) analyzeCommandSecurity(cmd runnertypes.Command, analysis *ResourceAnalysis) {
-	// Initialize with no risk
-	currentRisk := ""
+func (d *DryRunResourceManager) analyzeCommandSecurity(cmd runnertypes.Command, analysis *ResourceAnalysis) error {
+	// PathResolver is guaranteed to be non-nil due to constructor validation
+	resolvedPath, err := d.pathResolver.ResolvePath(cmd.Cmd)
+	if err != nil {
+		return fmt.Errorf("failed to resolve command path '%s': %w. This typically occurs if the command is not found in the system PATH or there are permission issues preventing access", cmd.Cmd, err)
+	}
 
-	// Use security package for dangerous pattern analysis (higher priority - can override privilege risk)
-	// Pass command and arguments separately to avoid ambiguity with spaces
-	if riskLevel, pattern, reason := security.AnalyzeCommandSecurity(cmd.Cmd, cmd.Args); riskLevel != security.RiskLevelNone {
-		currentRisk = riskLevel.String()
+	// Analyze security with resolved path
+	riskLevel, pattern, reason, err := security.AnalyzeCommandSecurity(resolvedPath, cmd.Args)
+	if err != nil {
+		return fmt.Errorf("security analysis failed for command '%s': %w", cmd.Cmd, err)
+	}
+	if riskLevel != security.RiskLevelNone {
+		analysis.Impact.SecurityRisk = riskLevel.String()
 		analysis.Impact.Description += fmt.Sprintf(" [WARNING: %s - %s]", reason, pattern)
 	}
 
-	// Set the final risk level
-	analysis.Impact.SecurityRisk = currentRisk
+	return nil
 }
 
 // CreateTempDir simulates creating a temporary directory in dry-run mode

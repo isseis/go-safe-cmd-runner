@@ -503,3 +503,18 @@ func (m *UnixPrivilegeManager) restoreUserGroupInternal(originalEGID int) error 
 
 	return nil
 }
+
+// WithUserGroup executes a function with specified user and group privileges
+func (m *UnixPrivilegeManager) WithUserGroup(user, group string, fn func() error) error {
+	elevationCtx := runnertypes.ElevationContext{
+		Operation:  runnertypes.OperationUserGroupExecution,
+		RunAsUser:  user,
+		RunAsGroup: group,
+	}
+	return m.WithPrivileges(elevationCtx, fn)
+}
+
+// IsUserGroupSupported checks if user/group privilege changes are supported
+func (m *UnixPrivilegeManager) IsUserGroupSupported() bool {
+	return m.privilegeSupported
+}

@@ -3,6 +3,7 @@ package resource
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
@@ -58,9 +59,43 @@ func (m *MockPrivilegeManager) IsPrivilegedExecutionSupported() bool {
 	return args.Bool(0)
 }
 
+// MockPathResolver for testing
+type MockPathResolver struct {
+	mock.Mock
+}
+
+func (m *MockPathResolver) ResolvePath(command string) (string, error) {
+	args := m.Called(command)
+	return args.String(0), args.Error(1)
+}
+
+// setupStandardCommandPaths sets up common command path mappings for MockPathResolver
+func setupStandardCommandPaths(mockPathResolver *MockPathResolver) {
+	mockPathResolver.On("ResolvePath", "dd").Return("/bin/dd", nil)
+	mockPathResolver.On("ResolvePath", "chmod").Return("/bin/chmod", nil)
+	mockPathResolver.On("ResolvePath", "echo").Return("/bin/echo", nil)
+	mockPathResolver.On("ResolvePath", "ls").Return("/bin/ls", nil)
+	mockPathResolver.On("ResolvePath", "rm").Return("/bin/rm", nil)
+	mockPathResolver.On("ResolvePath", "systemctl").Return("/bin/systemctl", nil)
+	mockPathResolver.On("ResolvePath", "sudo").Return("/usr/bin/sudo", nil)
+	mockPathResolver.On("ResolvePath", "curl").Return("/usr/bin/curl", nil)
+	mockPathResolver.On("ResolvePath", "wget").Return("/usr/bin/wget", nil)
+	mockPathResolver.On("ResolvePath", "my-sudo-wrapper").Return("/usr/bin/my-sudo-wrapper", nil)
+}
+
 func (m *MockPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) error {
 	args := m.Called(elevationCtx, fn)
 	return args.Error(0)
+}
+
+func (m *MockPrivilegeManager) WithUserGroup(user, group string, fn func() error) error {
+	args := m.Called(user, group, fn)
+	return args.Error(0)
+}
+
+func (m *MockPrivilegeManager) IsUserGroupSupported() bool {
+	args := m.Called()
+	return args.Bool(0)
 }
 
 // Test constants
@@ -78,7 +113,7 @@ func createTestNormalResourceManager() (*NormalResourceManager, *MockExecutor, *
 	mockFS := &MockFileSystem{}
 	mockPriv := &MockPrivilegeManager{}
 
-	manager := NewNormalResourceManager(mockExec, mockFS, mockPriv)
+	manager := NewNormalResourceManager(mockExec, mockFS, mockPriv, slog.Default())
 
 	return manager, mockExec, mockFS, mockPriv
 }
@@ -164,12 +199,13 @@ func TestNormalResourceManager_ExecuteCommand_PrivilegeEscalationBlocked(t *test
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			cmd := runnertypes.Command{
-				Name:        "test-privilege-command",
-				Description: "Test privilege escalation command",
-				Cmd:         tc.cmd,
-				Args:        tc.args,
-				Dir:         "/tmp",
-				Timeout:     30,
+				Name:         "test-privilege-command",
+				Description:  "Test privilege escalation command",
+				Cmd:          tc.cmd,
+				Args:         tc.args,
+				Dir:          "/tmp",
+				Timeout:      30,
+				MaxRiskLevel: "low", // Default max risk level to ensure Critical risk is blocked
 			}
 			group := createTestCommandGroup()
 			env := map[string]string{"TEST": "value"}
@@ -179,9 +215,117 @@ func TestNormalResourceManager_ExecuteCommand_PrivilegeEscalationBlocked(t *test
 
 			assert.Error(t, err)
 			assert.Nil(t, result)
-			assert.ErrorIs(t, err, runnertypes.ErrCriticalRiskBlocked)
+			// Unified approach: should be blocked by security violation, not critical risk error
+			assert.ErrorIs(t, err, runnertypes.ErrCommandSecurityViolation)
 		})
 	}
+}
+
+func TestNormalResourceManager_ExecuteCommand_MaxRiskLevelControl(t *testing.T) {
+	manager, mockExec, _, _ := createTestNormalResourceManager()
+	group := createTestCommandGroup()
+	env := map[string]string{"TEST": "value"}
+	ctx := context.Background()
+
+	testCases := []struct {
+		name          string
+		cmd           string
+		args          []string
+		maxRiskLevel  string
+		shouldExecute bool
+		expectedError string
+	}{
+		{
+			name:          "low risk command with no max_risk_level (default low)",
+			cmd:           "echo",
+			args:          []string{"hello"},
+			maxRiskLevel:  "", // Default to low
+			shouldExecute: true,
+		},
+		{
+			name:          "low risk command with low max_risk_level",
+			cmd:           "echo",
+			args:          []string{"hello"},
+			maxRiskLevel:  "low",
+			shouldExecute: true,
+		},
+		{
+			name:          "medium risk command with high max_risk_level",
+			cmd:           "wget",
+			args:          []string{"http://example.com/file.txt"},
+			maxRiskLevel:  "high",
+			shouldExecute: true,
+		},
+		{
+			name:          "high risk command with high max_risk_level",
+			cmd:           "rm",
+			args:          []string{"-rf", "/tmp/test"},
+			maxRiskLevel:  "high",
+			shouldExecute: true,
+		},
+		{
+			name:          "high risk command with low max_risk_level should be blocked",
+			cmd:           "rm",
+			args:          []string{"-rf", "/tmp/test"},
+			maxRiskLevel:  "low",
+			shouldExecute: false,
+			expectedError: "command security violation",
+		},
+		{
+			name:          "medium risk command with low max_risk_level should be blocked",
+			cmd:           "wget",
+			args:          []string{"http://example.com/file.txt"},
+			maxRiskLevel:  "low",
+			shouldExecute: false,
+			expectedError: "command security violation",
+		},
+		{
+			name:          "invalid max_risk_level should return error",
+			cmd:           "echo",
+			args:          []string{"hello"},
+			maxRiskLevel:  "invalid",
+			shouldExecute: false,
+			expectedError: "invalid max_risk_level configuration",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := runnertypes.Command{
+				Name:         "test-command",
+				Description:  "Test command",
+				Cmd:          tc.cmd,
+				Args:         tc.args,
+				MaxRiskLevel: tc.maxRiskLevel,
+				Dir:          "/tmp",
+				Timeout:      30,
+			}
+
+			if tc.shouldExecute {
+				expectedResult := &executor.Result{
+					ExitCode: 0,
+					Stdout:   "success",
+					Stderr:   "",
+				}
+				mockExec.On("Execute", ctx, cmd, env).Return(expectedResult, nil).Once()
+			}
+
+			result, err := manager.ExecuteCommand(ctx, cmd, group, env)
+
+			if tc.shouldExecute {
+				assert.NoError(t, err)
+				assert.NotNil(t, result)
+			} else {
+				assert.Error(t, err)
+				assert.Nil(t, result)
+				if tc.expectedError != "" {
+					assert.Contains(t, err.Error(), tc.expectedError)
+				}
+			}
+		})
+	}
+
+	mockExec.AssertExpectations(t)
 }
 
 func TestNormalResourceManager_CreateTempDir(t *testing.T) {

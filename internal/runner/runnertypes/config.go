@@ -133,7 +133,8 @@ func (r RiskLevel) String() string {
 	}
 }
 
-// ParseRiskLevel converts a string to RiskLevel
+// ParseRiskLevel converts a string to RiskLevel for user configuration
+// Critical level is prohibited in user configuration and reserved for internal use
 func ParseRiskLevel(s string) (RiskLevel, error) {
 	switch s {
 	case UnknownRiskLevelString:
@@ -145,11 +146,11 @@ func ParseRiskLevel(s string) (RiskLevel, error) {
 	case HighRiskLevelString:
 		return RiskLevelHigh, nil
 	case CriticalRiskLevelString:
-		return RiskLevelCritical, nil
+		return RiskLevelUnknown, fmt.Errorf("%w: critical risk level cannot be set in configuration (reserved for internal use only)", ErrInvalidRiskLevel)
 	case "":
 		return RiskLevelLow, nil // Default to low risk for empty strings
 	default:
-		return RiskLevelUnknown, fmt.Errorf("%w: %s", ErrInvalidRiskLevel, s)
+		return RiskLevelUnknown, fmt.Errorf("%w: %s (supported: low, medium, high)", ErrInvalidRiskLevel, s)
 	}
 }
 
@@ -222,10 +223,15 @@ var (
 	ErrInvalidRiskLevel                = errors.New("invalid risk level")
 	ErrPrivilegeEscalationBlocked      = errors.New("privilege escalation command blocked for security")
 	ErrCriticalRiskBlocked             = errors.New("critical risk command execution blocked")
+	ErrCommandSecurityViolation        = errors.New("command security violation: risk level too high")
 )
 
 // PrivilegeManager interface defines methods for privilege management
 type PrivilegeManager interface {
 	IsPrivilegedExecutionSupported() bool
 	WithPrivileges(elevationCtx ElevationContext, fn func() error) error
+
+	// Enhanced privilege management for user/group specification
+	WithUserGroup(user, group string, fn func() error) error
+	IsUserGroupSupported() bool
 }

@@ -64,7 +64,6 @@ func (f *TextFormatter) FormatResult(result *DryRunResult, opts FormatterOptions
 
 	if opts.DetailLevel == DetailLevelFull {
 		f.writeEnvironmentInfo(&buf, result.EnvironmentInfo)
-		f.writeExecutionPlan(&buf, result.ExecutionPlan)
 	}
 
 	// Errors and warnings
@@ -215,21 +214,6 @@ func (f *TextFormatter) writeEnvironmentInfo(buf *strings.Builder, envInfo *Envi
 	buf.WriteString("\n")
 }
 
-// writeExecutionPlan writes the execution plan section
-func (f *TextFormatter) writeExecutionPlan(buf *strings.Builder, plan *ExecutionPlan) {
-	if plan == nil {
-		return
-	}
-
-	buf.WriteString("=== EXECUTION PLAN ===\n")
-	fmt.Fprintf(buf, "Total Commands: %d\n", plan.TotalCommands)
-	if plan.EstimatedDuration > 0 {
-		fmt.Fprintf(buf, "Estimated Duration: %v\n", plan.EstimatedDuration)
-	}
-	fmt.Fprintf(buf, "Requires Privilege: %t\n", plan.RequiresPrivilege)
-	buf.WriteString("\n")
-}
-
 // writeErrorsAndWarnings writes the errors and warnings section
 func (f *TextFormatter) writeErrorsAndWarnings(buf *strings.Builder, errors []DryRunError, warnings []DryRunWarning) {
 	if len(errors) > 0 {
@@ -278,7 +262,7 @@ func (f *JSONFormatter) FormatResult(result *DryRunResult, opts FormatterOptions
 	case DetailLevelSummary:
 		f.applySummaryFilter(&resultCopy)
 	case DetailLevelDetailed:
-		f.applyDetailedFilter(&resultCopy)
+		// keep all details
 	}
 
 	data, err := json.MarshalIndent(&resultCopy, "", "  ")
@@ -304,23 +288,10 @@ func (f *JSONFormatter) redactSensitiveInfo(result *DryRunResult) {
 func (f *JSONFormatter) applySummaryFilter(result *DryRunResult) {
 	// Keep only basic information for summary
 	result.EnvironmentInfo = nil
-	result.ExecutionPlan = nil
 
 	// Simplify resource analyses
 	for i := range result.ResourceAnalyses {
 		result.ResourceAnalyses[i].Parameters = nil
-	}
-}
-
-// applyDetailedFilter applies detailed-level filtering
-func (f *JSONFormatter) applyDetailedFilter(result *DryRunResult) {
-	// For detailed level, we keep most information
-	// Only remove the most verbose details
-	if result.ExecutionPlan != nil {
-		// Simplify execution plan
-		for i := range result.ExecutionPlan.Groups {
-			result.ExecutionPlan.Groups[i].Commands = nil
-		}
 	}
 }
 
