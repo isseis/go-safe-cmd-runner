@@ -130,7 +130,6 @@ func (o OutputFormat) String() string {
 // DryRunResult represents the complete result of a dry-run analysis
 type DryRunResult struct {
 	Metadata         *ResultMetadata    `json:"metadata"`
-	ExecutionPlan    *ExecutionPlan     `json:"execution_plan"`
 	ResourceAnalyses []ResourceAnalysis `json:"resource_analyses"`
 	SecurityAnalysis *SecurityAnalysis  `json:"security_analysis"`
 	EnvironmentInfo  *EnvironmentInfo   `json:"environment_info"`
@@ -146,13 +145,6 @@ type ResultMetadata struct {
 	EnvironmentFile string        `json:"environment_file"`
 	Version         string        `json:"version"`
 	Duration        time.Duration `json:"duration"`
-}
-
-// ExecutionPlan represents the planned execution
-type ExecutionPlan struct {
-	TotalCommands     int           `json:"total_commands"`
-	EstimatedDuration time.Duration `json:"estimated_duration"`
-	RequiresPrivilege bool          `json:"requires_privilege"`
 }
 
 // ResolvedCommand represents a fully resolved command

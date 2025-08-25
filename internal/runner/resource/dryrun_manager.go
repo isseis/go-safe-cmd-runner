@@ -52,7 +52,6 @@ func NewDryRunResourceManager(exec executor.CommandExecutor, privMgr runnertypes
 				GeneratedAt: time.Now(),
 				RunID:       fmt.Sprintf("dryrun-%d", time.Now().Unix()),
 			},
-			ExecutionPlan:    &ExecutionPlan{},
 			ResourceAnalyses: make([]ResourceAnalysis, 0),
 			SecurityAnalysis: &SecurityAnalysis{
 				Risks:             make([]SecurityRisk, 0),

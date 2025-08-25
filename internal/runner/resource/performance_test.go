@@ -86,9 +86,6 @@ func BenchmarkFormatterPerformance(b *testing.B) {
 			ConfigPath: "/test/config.toml",
 			Version:    "test",
 		},
-		ExecutionPlan: &ExecutionPlan{
-			TotalCommands: 100,
-		},
 		ResourceAnalyses: make([]ResourceAnalysis, 100),
 	}
 

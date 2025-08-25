@@ -115,9 +115,6 @@ func TestDryRunExecutionPath(t *testing.T) {
 			assert.NotNil(t, dryRunResult.Metadata, "metadata should be present")
 			assert.NotZero(t, dryRunResult.Metadata.GeneratedAt, "generation time should be set")
 
-			// Verify execution plan
-			assert.NotNil(t, dryRunResult.ExecutionPlan, "execution plan should be present")
-
 			// Verify that each analysis has required fields
 			for i, analysis := range dryRunResult.ResourceAnalyses {
 				assert.Equal(t, ResourceTypeCommand, analysis.Type,
