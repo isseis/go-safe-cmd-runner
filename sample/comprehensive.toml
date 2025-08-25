@@ -22,7 +22,6 @@ env_allowlist = [
     "DEBUG_MODE",
     "GOTRACEBACK",
     "SLACK_WEBHOOK_URL",
-    "LS_COLORS",
 ]
 verify_files = ["/etc/passwd", "/bin/sh"]
 

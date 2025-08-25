@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,7 +15,7 @@ import (
 )
 
 // TestLoadEnvironment_SystemVariableValidation tests that system environment variables
-// are validated for security during loading
+// are loaded without validation (validation is deferred to execution time)
 func TestLoadEnvironment_SystemVariableValidation(t *testing.T) {
 	// Create clean test environment to avoid interference from system variables
 	cleanup := setupSafeTestEnv(t)
@@ -50,7 +51,7 @@ func TestLoadEnvironment_SystemVariableValidation(t *testing.T) {
 		assert.Contains(t, runner.envVars, "USER")
 	})
 
-	t.Run("Dangerous system variables should cause error", func(t *testing.T) {
+	t.Run("Dangerous system variables should be loaded (validation deferred)", func(t *testing.T) {
 		// Set a dangerous system environment variable
 		dangerousCleanup := setupTestEnv(t, map[string]string{
 			"DANGEROUS_SYSTEM": "value; rm -rf /",
@@ -64,15 +65,17 @@ func TestLoadEnvironment_SystemVariableValidation(t *testing.T) {
 		dangerousRunner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()), WithRunID("test-run-123"))
 		require.NoError(t, err)
 
-		// Should fail due to dangerous system variable
+		// Should succeed in loading (validation deferred to execution time)
 		err = dangerousRunner.LoadEnvironment(envFile, true)
-		assert.Error(t, err)
-		assert.ErrorIs(t, err, security.ErrUnsafeEnvironmentVar)
+		assert.NoError(t, err, "LoadEnvironment should succeed - validation is deferred to execution time")
+
+		// Dangerous variable should be loaded but not validated yet
+		assert.Equal(t, "value; rm -rf /", dangerousRunner.envVars["DANGEROUS_SYSTEM"])
 	})
 }
 
 // TestLoadEnvironment_EnvFileVariableValidation tests that .env file variables
-// are validated for security during loading
+// are loaded without validation (validation is deferred to execution time)
 func TestLoadEnvironment_EnvFileVariableValidation(t *testing.T) {
 	// Setup clean test environment
 	cleanup := setupSafeTestEnv(t)
@@ -106,7 +109,7 @@ PATH=/usr/bin:/bin
 		assert.Equal(t, "/usr/bin:/bin", runner.envVars["PATH"])
 	})
 
-	t.Run("Dangerous .env file variables should cause error", func(t *testing.T) {
+	t.Run("Dangerous .env file variables should be loaded (validation deferred)", func(t *testing.T) {
 		// Create .env file with dangerous variable
 		dangerousEnvFile := filepath.Join(tmpDir, "dangerous.env")
 		dangerousContent := `DANGEROUS_VAR=value; rm -rf /
@@ -119,14 +122,17 @@ SAFE_VAR=safe_value
 		dangerousRunner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()), WithRunID("test-run-123"))
 		require.NoError(t, err)
 
-		// Should fail due to dangerous variable in .env file
+		// Should succeed in loading (validation deferred to execution time)
 		err = dangerousRunner.LoadEnvironment(dangerousEnvFile, true)
-		assert.Error(t, err)
-		assert.ErrorIs(t, err, security.ErrUnsafeEnvironmentVar)
+		assert.NoError(t, err, "LoadEnvironment should succeed - validation is deferred to execution time")
+
+		// Dangerous variable should be loaded but not validated yet
+		assert.Equal(t, "value; rm -rf /", dangerousRunner.envVars["DANGEROUS_VAR"])
+		assert.Equal(t, "safe_value", dangerousRunner.envVars["SAFE_VAR"])
 	})
 }
 
-// TestLoadEnvironment_ValidationPatterns tests various dangerous patterns
+// TestLoadEnvironment_ValidationPatterns tests that dangerous patterns are loaded but not validated
 func TestLoadEnvironment_ValidationPatterns(t *testing.T) {
 	// Setup clean test environment
 	cleanup := setupSafeTestEnv(t)
@@ -162,7 +168,7 @@ func TestLoadEnvironment_ValidationPatterns(t *testing.T) {
 	}
 
 	for _, pattern := range dangerousPatterns {
-		t.Run("Dangerous pattern: "+pattern.name, func(t *testing.T) {
+		t.Run("Dangerous pattern loaded: "+pattern.name, func(t *testing.T) {
 			// Create .env file with dangerous pattern
 			envFile := filepath.Join(tmpDir, "test_"+pattern.name+".env")
 			content := "TEST_VAR=" + pattern.value + "\n"
@@ -173,10 +179,12 @@ func TestLoadEnvironment_ValidationPatterns(t *testing.T) {
 			runner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()), WithRunID("test-run-123"))
 			require.NoError(t, err)
 
-			// Should fail due to dangerous pattern
+			// Should succeed in loading (validation deferred to execution time)
 			err = runner.LoadEnvironment(envFile, true)
-			assert.Error(t, err, "Pattern '%s' should be detected as dangerous", pattern.value)
-			assert.ErrorIs(t, err, security.ErrUnsafeEnvironmentVar)
+			assert.NoError(t, err, "Pattern '%s' should be loaded - validation deferred to execution time", pattern.value)
+
+			// Dangerous variable should be loaded but not validated yet
+			assert.Equal(t, pattern.value, runner.envVars["TEST_VAR"])
 		})
 	}
 }
@@ -235,7 +243,7 @@ func TestLoadEnvironment_MixedValidAndInvalidVariables(t *testing.T) {
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
 			WorkDir:      tmpDir,
-			EnvAllowlist: []string{"SAFE_VAR", "DANGEROUS_VAR", "PATH", "HOME", "USER"},
+			EnvAllowlist: []string{"SAFE_VAR", "DANGEROUS_VAR", "ANOTHER_SAFE_VAR", "PATH", "HOME", "USER"},
 		},
 	}
 
@@ -251,11 +259,66 @@ ANOTHER_SAFE_VAR=another_safe_value
 	runner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()), WithRunID("test-run-123"))
 	require.NoError(t, err)
 
-	// Should fail on first dangerous variable encountered
+	// Should succeed in loading (validation deferred to execution time)
 	err = runner.LoadEnvironment(envFile, true)
-	assert.Error(t, err)
-	assert.ErrorIs(t, err, security.ErrUnsafeEnvironmentVar)
+	assert.NoError(t, err, "LoadEnvironment should succeed - validation is deferred to execution time")
 
-	// Should not have loaded any variables due to validation failure
-	assert.Empty(t, runner.envVars, "Safe variables should not be loaded if any variable fails validation")
+	// All variables should be loaded, including dangerous ones (validation deferred)
+	assert.Equal(t, "safe_value", runner.envVars["SAFE_VAR"])
+	assert.Equal(t, "value; rm -rf /", runner.envVars["DANGEROUS_VAR"])
+	assert.Equal(t, "another_safe_value", runner.envVars["ANOTHER_SAFE_VAR"])
+}
+
+// TestExecutionTimeValidation tests that environment variables are validated during command execution
+func TestExecutionTimeValidation(t *testing.T) {
+	// Setup clean test environment
+	cleanup := setupSafeTestEnv(t)
+	defer cleanup()
+
+	tmpDir := t.TempDir()
+
+	// Create .env file with dangerous variable
+	envFile := filepath.Join(tmpDir, "dangerous.env")
+	content := `DANGEROUS_VAR=value; rm -rf /
+`
+	err := os.WriteFile(envFile, []byte(content), 0o644)
+	require.NoError(t, err)
+
+	config := &runnertypes.Config{
+		Global: runnertypes.GlobalConfig{
+			WorkDir:      tmpDir,
+			EnvAllowlist: []string{"DANGEROUS_VAR", "PATH", "HOME", "USER"},
+		},
+		Groups: []runnertypes.CommandGroup{
+			{
+				Name:         "test-group",
+				EnvAllowlist: []string{"DANGEROUS_VAR", "PATH", "HOME", "USER"},
+				Commands: []runnertypes.Command{
+					{
+						Name: "test-command",
+						Cmd:  "echo",
+						Args: []string{"test"},
+						Env:  []string{"DANGEROUS_VAR=value; rm -rf /"}, // Use the dangerous variable with value
+					},
+				},
+			},
+		},
+	}
+
+	runner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()), WithRunID("test-run-123"))
+	require.NoError(t, err)
+
+	// LoadEnvironment should succeed (no validation yet)
+	err = runner.LoadEnvironment(envFile, true)
+	assert.NoError(t, err, "LoadEnvironment should succeed - validation is deferred")
+
+	// Dangerous variable should be loaded
+	assert.Equal(t, "value; rm -rf /", runner.envVars["DANGEROUS_VAR"])
+
+	// Now attempt to execute a command that uses this dangerous variable
+	// This should fail during validation at execution time
+	ctx := context.Background()
+	err = runner.ExecuteGroup(ctx, config.Groups[0])
+	assert.Error(t, err, "ExecuteGroup should fail due to dangerous environment variable")
+	assert.ErrorIs(t, err, security.ErrUnsafeEnvironmentVar, "Should return unsafe environment variable error")
 }

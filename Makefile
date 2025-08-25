@@ -69,7 +69,7 @@ hash:
 
 test: $(BINARY_RUNNER)
 	$(GOTEST) -v ./...
-	$(ENVCMD) -i PATH=/bin:/sbin:/usr/bin:/usr/sbin $(BINARY_RUNNER)  -dry-run -config ./sample/comprehensive.toml
+	$(ENVCMD) -i PATH=/bin:/sbin:/usr/bin:/usr/sbin $(BINARY_RUNNER) -dry-run -config ./sample/comprehensive.toml
 
 benchmark:
 	$(GOTEST) -bench=. -benchmem ./internal/runner/resource/
@@ -82,7 +82,7 @@ coverage:
 integration-test: $(BINARY_RUNNER)
 	$(MKDIR) /tmp/cmd-runner-comprehensive /tmp/custom-workdir-test
 	@EXIT_CODE=0; \
-	$(ENVCMD) -i PATH=/bin:/sbin:/usr/bin:/usr/sbin LANG=C $(BINARY_RUNNER) -config ./sample/comprehensive.toml -log-level warn -env-file $(PWD)/sample/.env || EXIT_CODE=$$?; \
+	$(BINARY_RUNNER) -config ./sample/comprehensive.toml -log-level warn -env-file $(PWD)/sample/.env || EXIT_CODE=$$?; \
 	$(RM) -r /tmp/cmd-runner-comprehensive /tmp/custom-workdir-test; \
 	echo "Integration test completed with exit code: $$EXIT_CODE"; \
 	exit $$EXIT_CODE

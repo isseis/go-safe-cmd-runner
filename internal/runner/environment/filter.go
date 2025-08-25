@@ -80,34 +80,30 @@ const (
 	SourceEnvFile Source = "env_file"
 )
 
-// FilterSystemEnvironment filters system environment variables based on their names and values.
-// It returns a map of filtered variables or an error if validation fails.
+// FilterSystemEnvironment filters system environment variables based on their names.
+// Validation is deferred to command execution time to validate only variables actually used.
+// It returns a map of filtered variables.
 func (f *Filter) FilterSystemEnvironment() (map[string]string, error) {
-	// Get all system environment variables
+	// Get all system environment variables (validation deferred to execution time)
 	sysEnv := f.parseSystemEnvironment(nil)
 	return f.FilterGlobalVariables(sysEnv, SourceSystem)
 }
 
-// FilterGlobalVariables filters global environment variables based on their names and values.
-// It returns a map of filtered variables or an error if validation fails.
+// FilterGlobalVariables filters global environment variables based on their names.
+// Validation is deferred to command execution time to validate only variables actually used.
+// It returns a map of filtered variables.
 func (f *Filter) FilterGlobalVariables(envFileVars map[string]string, src Source) (map[string]string, error) {
 	result := make(map[string]string)
 
 	for variable, value := range envFileVars {
-		// Validate environment variable name and value
-		if err := f.ValidateEnvironmentVariable(variable, value); err != nil {
-			slog.Warn("Environment variable validation failed",
-				"variable", variable,
-				"source", src,
-				"error", err)
-			// Return security error for dangerous variable values
-			if errors.Is(err, ErrDangerousVariableValue) {
-				return nil, fmt.Errorf("%w: environment variable %s contains dangerous pattern", security.ErrUnsafeEnvironmentVar, variable)
-			}
+		// Basic variable name validation (empty name check)
+		if variable == "" {
+			slog.Warn("Environment variable has empty name",
+				"source", src)
 			continue
 		}
 
-		// Add variable to the result map after validation
+		// Add variable to the result map (validation deferred to execution time)
 		result[variable] = value
 	}
 
@@ -121,21 +117,21 @@ func (f *Filter) FilterGlobalVariables(envFileVars map[string]string, src Source
 
 // ResolveGroupEnvironmentVars resolves environment variables for a specific group
 // Security model:
-// - System environment variables: trusted, only allowlist filtering applied
-// - .env file variables: validated during loading, only allowlist filtering applied
+// - System environment variables: filtered by allowlist, validated at execution time
+// - .env file variables: filtered by allowlist, validated at execution time
 func (f *Filter) ResolveGroupEnvironmentVars(group *runnertypes.CommandGroup, loadedEnvVars map[string]string) (map[string]string, error) {
 	if group == nil {
 		return nil, fmt.Errorf("%w: group is nil", ErrGroupNotFound)
 	}
 
 	// Add system environment variables using the common parsing logic
-	// Note: No validation needed - system environment variables are trusted
+	// Note: Validation deferred to execution time - only variables actually used are validated
 	result := f.parseSystemEnvironment(func(variable string) bool {
 		return f.IsVariableAccessAllowed(variable, group)
 	})
 
 	// Add loaded environment variables from .env file (already filtered in LoadEnvironment)
-	// Note: These variables were already validated during the loading process
+	// Note: Validation deferred to execution time - only variables actually used are validated
 	// These override system variables
 	for variable, value := range loadedEnvVars {
 		if f.IsVariableAccessAllowed(variable, group) {
