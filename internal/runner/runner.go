@@ -100,8 +100,6 @@ type runnerOptions struct {
 	resourceManager     resource.ResourceManager
 	dryRun              bool
 	dryRunOptions       *resource.DryRunOptions
-	skipStandardPaths   bool
-	hashDir             string
 }
 
 // WithSecurity sets a custom security configuration
@@ -158,14 +156,6 @@ func WithDryRun(dryRunOptions *resource.DryRunOptions) Option {
 	return func(opts *runnerOptions) {
 		opts.dryRun = true
 		opts.dryRunOptions = dryRunOptions
-	}
-}
-
-// WithSecurityAnalysisOptions sets security analysis configuration
-func WithSecurityAnalysisOptions(skipStandardPaths bool, hashDir string) Option {
-	return func(opts *runnerOptions) {
-		opts.skipStandardPaths = skipStandardPaths
-		opts.hashDir = hashDir
 	}
 }
 
@@ -232,11 +222,6 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 				// Create a default PathResolver when verification manager is not provided
 				pathResolver = verification.NewPathResolver("", validator, false)
 			}
-			// Set security analysis options in DryRunOptions
-			if opts.dryRunOptions != nil {
-				opts.dryRunOptions.SkipStandardPaths = opts.skipStandardPaths
-				opts.dryRunOptions.HashDir = opts.hashDir
-			}
 			resourceManager, err := resource.NewDryRunResourceManager(
 				opts.executor,
 				opts.privilegeManager,
@@ -266,7 +251,6 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 				slog.Default(), // Logger for Phase 1 implementation
 				resource.ExecutionModeNormal,
 				&resource.DryRunOptions{}, // Empty dry-run options for normal mode
-				resource.WithSecurityAnalysis(opts.skipStandardPaths, opts.hashDir),
 			)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create default resource manager: %w", err)

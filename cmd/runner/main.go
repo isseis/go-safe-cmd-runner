@@ -316,7 +316,6 @@ func executeRunner(ctx context.Context, cfg *runnertypes.Config, verificationMan
 		runner.WithVerificationManager(verificationManager),
 		runner.WithPrivilegeManager(privMgr),
 		runner.WithRunID(runID),
-		runner.WithSecurityAnalysisOptions(false, hashDir), // skipStandardPaths=false for thorough security analysis
 	}
 
 	// Parse dry-run options once for the entire function
@@ -343,8 +342,8 @@ func executeRunner(ctx context.Context, cfg *runnertypes.Config, verificationMan
 			OutputFormat:      outputFormat,
 			ShowSensitive:     false,
 			VerifyFiles:       true,
-			SkipStandardPaths: false,   // skipStandardPaths=false for thorough security analysis
-			HashDir:           hashDir, // Hash directory from command line args
+			SkipStandardPaths: cfg.Global.SkipStandardPaths, // Use setting from TOML config
+			HashDir:           hashDir,                      // Hash directory from command line args
 		}
 		runnerOptions = append(runnerOptions, runner.WithDryRun(dryRunOpts))
 	}
