@@ -860,7 +860,7 @@ func (c *Command) ValidateSecurityConfig() error {
     }
 
     if len(errors) > 0 {
-        return fmt.Errorf("security configuration validation failed: %s", strings.Join(errors, "; ")))
+        return fmt.Errorf("security configuration validation failed: %s", strings.Join(errors, "; "))
     }
 
     return nil
