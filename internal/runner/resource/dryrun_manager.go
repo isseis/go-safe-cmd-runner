@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
@@ -37,7 +36,6 @@ type DryRunResourceManager struct {
 	// Security analysis configuration
 	skipStandardPaths bool
 	hashDir           string
-	validator         *filevalidator.Validator // Cached validator for performance
 
 	// Dry-run specific
 	dryRunOptions    *DryRunOptions
@@ -57,19 +55,9 @@ func NewDryRunResourceManager(exec executor.CommandExecutor, privMgr runnertypes
 	// Extract security analysis configuration from options
 	var skipStandardPaths bool
 	var hashDir string
-	var validator *filevalidator.Validator
 	if opts != nil {
 		skipStandardPaths = opts.SkipStandardPaths
 		hashDir = opts.HashDir
-
-		// Initialize validator if hashDir is provided
-		if hashDir != "" {
-			var err error
-			validator, err = filevalidator.New(&filevalidator.SHA256{}, hashDir)
-			if err != nil {
-				return nil, fmt.Errorf("failed to create file validator: %w", err)
-			}
-		}
 	}
 
 	return &DryRunResourceManager{
@@ -78,7 +66,6 @@ func NewDryRunResourceManager(exec executor.CommandExecutor, privMgr runnertypes
 		pathResolver:      pathResolver,
 		skipStandardPaths: skipStandardPaths,
 		hashDir:           hashDir,
-		validator:         validator,
 		dryRunOptions:     opts,
 		dryRunResult: &DryRunResult{
 			Metadata: &ResultMetadata{
@@ -245,7 +232,6 @@ func (d *DryRunResourceManager) analyzeCommandSecurity(cmd runnertypes.Command, 
 	opts := &security.AnalysisOptions{
 		SkipStandardPaths: d.skipStandardPaths,
 		HashDir:           d.hashDir,
-		Validator:         d.validator,
 	}
 	riskLevel, pattern, reason, err := security.AnalyzeCommandSecurity(resolvedPath, cmd.Args, opts)
 	if err != nil {

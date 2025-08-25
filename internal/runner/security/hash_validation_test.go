@@ -4,10 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestShouldSkipHashValidation(t *testing.T) {
@@ -89,11 +87,7 @@ func TestValidateFileHash(t *testing.T) {
 	t.Run("non-existent file should fail", func(t *testing.T) {
 		nonExistentFile := filepath.Join(tmpDir, "non_existent")
 
-		// Create validator instance
-		validator, err := filevalidator.New(&filevalidator.SHA256{}, tmpDir)
-		require.NoError(t, err)
-
-		err = validateFileHash(nonExistentFile, validator)
+		err := validateFileHash(nonExistentFile, tmpDir)
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, ErrHashValidationFailed)
 		// The error message will include "no such file or directory" for file system errors

@@ -237,6 +237,22 @@ func initializeVerificationManager(runID string) (*verification.Manager, error) 
 			RunID:     runID,
 		}
 	}
+	info, err := os.Stat(hashDir)
+	if err != nil {
+		return nil, &logging.PreExecutionError{
+			Type:      logging.ErrorTypeFileAccess,
+			Message:   fmt.Sprintf("Failed to access hash directory: %s", hashDir),
+			Component: "file",
+			RunID:     runID,
+		}
+	} else if !info.IsDir() {
+		return nil, &logging.PreExecutionError{
+			Type:      logging.ErrorTypeFileAccess,
+			Message:   fmt.Sprintf("Hash directory is not a directory: %s", hashDir),
+			Component: "file",
+			RunID:     runID,
+		}
+	}
 
 	// Initialize privilege manager
 	logger := slog.Default()

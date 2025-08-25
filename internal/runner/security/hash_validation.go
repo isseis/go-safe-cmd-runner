@@ -17,9 +17,11 @@ func shouldSkipHashValidation(cmdPath string, skipStandardPaths bool) bool {
 }
 
 // validateFileHash performs file hash validation using provided validator
-func validateFileHash(cmdPath string, validator *filevalidator.Validator) error {
-	if validator == nil {
-		return fmt.Errorf("%w: validator is not provided", ErrHashValidationFailed)
+func validateFileHash(cmdPath string, hashDir string) error {
+	// Fallback to creating validator (for backward compatibility)
+	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
+	if err != nil {
+		return fmt.Errorf("hash validation failed to initialize validator: %w", err)
 	}
 
 	// Perform hash validation using filevalidator

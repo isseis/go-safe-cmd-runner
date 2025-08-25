@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
@@ -393,8 +392,6 @@ type AnalysisOptions struct {
 	SkipStandardPaths bool
 	// HashDir specifies the directory containing hash files for validation
 	HashDir string
-	// Validator is a pre-initialized file validator for better performance in batch operations
-	Validator *filevalidator.Validator
 }
 
 // AnalyzeCommandSecurity analyzes a command with its arguments for dangerous
@@ -462,24 +459,10 @@ func AnalyzeCommandSecurity(resolvedPath string, args []string, opts *AnalysisOp
 	defaultRisk := getDefaultRiskByDirectory(resolvedPath)
 
 	// Step 4: Hash validation (skip for standard paths when SkipStandardPaths=true)
-	if !shouldSkipHashValidation(resolvedPath, opts.SkipStandardPaths) {
-		// Use provided validator if available, otherwise create new one
-		if opts.Validator != nil {
-			if err := validateFileHash(resolvedPath, opts.Validator); err != nil {
-				return runnertypes.RiskLevelCritical, resolvedPath,
-					fmt.Sprintf("Hash validation failed: %v", err), nil
-			}
-		} else if opts.HashDir != "" {
-			// Fallback to creating validator (for backward compatibility)
-			tempValidator, err := filevalidator.New(&filevalidator.SHA256{}, opts.HashDir)
-			if err != nil {
-				return runnertypes.RiskLevelCritical, resolvedPath,
-					fmt.Sprintf("Hash validation failed to initialize validator: %v", err), nil
-			}
-			if err := validateFileHash(resolvedPath, tempValidator); err != nil {
-				return runnertypes.RiskLevelCritical, resolvedPath,
-					fmt.Sprintf("Hash validation failed: %v", err), nil
-			}
+	if !shouldSkipHashValidation(resolvedPath, opts.SkipStandardPaths) && opts.HashDir != "" {
+		if err := validateFileHash(resolvedPath, opts.HashDir); err != nil {
+			return runnertypes.RiskLevelCritical, resolvedPath,
+				fmt.Sprintf("Hash validation failed: %v", err), nil
 		}
 	}
 
