@@ -79,6 +79,10 @@ type DryRunOptions struct {
 	ShowTimings      bool         `json:"show_timings"`
 	ShowDependencies bool         `json:"show_dependencies"`
 	MaxDepth         int          `json:"max_depth"` // Maximum depth for variable resolution
+
+	// Security analysis configuration
+	SkipStandardPaths bool   `json:"skip_standard_paths"` // Skip hash validation for standard system paths
+	HashDir           string `json:"hash_dir"`            // Directory containing hash files
 }
 
 // DetailLevel represents the level of detail in output

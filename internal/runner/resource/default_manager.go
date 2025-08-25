@@ -54,7 +54,17 @@ func NewDefaultResourceManager(exec executor.CommandExecutor, fs executor.FileSy
 	}
 	// Create dry-run manager eagerly to keep state like analyses across mode flips
 	// and to simplify switching without re-wiring dependencies.
-	dryrunManager, err := NewDryRunResourceManager(exec, privMgr, pathResolver, dryRunOpts, opts.skipStandardPaths, opts.hashDir)
+	// Copy security analysis options to DryRunOptions if not already set
+	if dryRunOpts != nil {
+		if dryRunOpts.HashDir == "" {
+			dryRunOpts.HashDir = opts.hashDir
+		}
+		// Only override if not explicitly set
+		if !dryRunOpts.SkipStandardPaths && opts.skipStandardPaths {
+			dryRunOpts.SkipStandardPaths = opts.skipStandardPaths
+		}
+	}
+	dryrunManager, err := NewDryRunResourceManager(exec, privMgr, pathResolver, dryRunOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create dry-run resource manager: %w", err)
 	}

@@ -232,13 +232,16 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 				// Create a default PathResolver when verification manager is not provided
 				pathResolver = verification.NewPathResolver("", validator, false)
 			}
+			// Set security analysis options in DryRunOptions
+			if opts.dryRunOptions != nil {
+				opts.dryRunOptions.SkipStandardPaths = opts.skipStandardPaths
+				opts.dryRunOptions.HashDir = opts.hashDir
+			}
 			resourceManager, err := resource.NewDryRunResourceManager(
 				opts.executor,
 				opts.privilegeManager,
 				pathResolver,
 				opts.dryRunOptions,
-				opts.skipStandardPaths,
-				opts.hashDir,
 			)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create dry-run resource manager: %w", err)

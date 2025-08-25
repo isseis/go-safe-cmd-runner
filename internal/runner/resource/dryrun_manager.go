@@ -47,9 +47,17 @@ type DryRunResourceManager struct {
 }
 
 // NewDryRunResourceManager creates a new DryRunResourceManager for dry-run mode
-func NewDryRunResourceManager(exec executor.CommandExecutor, privMgr runnertypes.PrivilegeManager, pathResolver PathResolver, opts *DryRunOptions, skipStandardPaths bool, hashDir string) (*DryRunResourceManager, error) {
+func NewDryRunResourceManager(exec executor.CommandExecutor, privMgr runnertypes.PrivilegeManager, pathResolver PathResolver, opts *DryRunOptions) (*DryRunResourceManager, error) {
 	if pathResolver == nil {
 		return nil, ErrPathResolverRequired
+	}
+
+	// Extract security analysis configuration from options
+	var skipStandardPaths bool
+	var hashDir string
+	if opts != nil {
+		skipStandardPaths = opts.SkipStandardPaths
+		hashDir = opts.HashDir
 	}
 
 	return &DryRunResourceManager{

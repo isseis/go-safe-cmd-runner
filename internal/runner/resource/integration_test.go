@@ -85,7 +85,7 @@ func TestDryRunExecutionPath(t *testing.T) {
 			mockPathResolver := &MockPathResolver{}
 			setupStandardCommandPaths(mockPathResolver)
 			mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-			dryRunManager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts, false, "")
+			dryRunManager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
 			if err != nil {
 				t.Fatalf("Failed to create DryRunResourceManager: %v", err)
 			}
@@ -166,7 +166,7 @@ func TestDryRunResultConsistency(t *testing.T) {
 		mockPathResolver := &MockPathResolver{}
 		setupStandardCommandPaths(mockPathResolver)
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-		manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts, false, "")
+		manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
 		require.NoError(t, err)
 		if err != nil {
 			t.Fatalf("Failed to create DryRunResourceManager: %v", err)
