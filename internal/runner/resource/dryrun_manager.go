@@ -33,6 +33,10 @@ type DryRunResourceManager struct {
 	privilegeManager runnertypes.PrivilegeManager
 	pathResolver     PathResolver
 
+	// Security analysis configuration
+	skipStandardPaths bool
+	hashDir           string
+
 	// Dry-run specific
 	dryRunOptions    *DryRunOptions
 	dryRunResult     *DryRunResult
@@ -43,16 +47,18 @@ type DryRunResourceManager struct {
 }
 
 // NewDryRunResourceManager creates a new DryRunResourceManager for dry-run mode
-func NewDryRunResourceManager(exec executor.CommandExecutor, privMgr runnertypes.PrivilegeManager, pathResolver PathResolver, opts *DryRunOptions) (*DryRunResourceManager, error) {
+func NewDryRunResourceManager(exec executor.CommandExecutor, privMgr runnertypes.PrivilegeManager, pathResolver PathResolver, opts *DryRunOptions, skipStandardPaths bool, hashDir string) (*DryRunResourceManager, error) {
 	if pathResolver == nil {
 		return nil, ErrPathResolverRequired
 	}
 
 	return &DryRunResourceManager{
-		executor:         exec,
-		privilegeManager: privMgr,
-		pathResolver:     pathResolver,
-		dryRunOptions:    opts,
+		executor:          exec,
+		privilegeManager:  privMgr,
+		pathResolver:      pathResolver,
+		skipStandardPaths: skipStandardPaths,
+		hashDir:           hashDir,
+		dryRunOptions:     opts,
 		dryRunResult: &DryRunResult{
 			Metadata: &ResultMetadata{
 				GeneratedAt: time.Now(),
@@ -191,7 +197,7 @@ func (d *DryRunResourceManager) analyzeCommandSecurity(cmd runnertypes.Command, 
 	}
 
 	// Analyze security with resolved path
-	riskLevel, pattern, reason, err := security.AnalyzeCommandSecurity(resolvedPath, cmd.Args, false /* skipStandardPaths */, "" /* hashDir */)
+	riskLevel, pattern, reason, err := security.AnalyzeCommandSecurity(resolvedPath, cmd.Args, d.skipStandardPaths, d.hashDir)
 	if err != nil {
 		return fmt.Errorf("security analysis failed for command '%s': %w", cmd.Cmd, err)
 	}

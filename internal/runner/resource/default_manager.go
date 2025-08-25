@@ -9,6 +9,23 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
+// DefaultResourceManagerOption is a functional option for configuring DefaultResourceManager
+type DefaultResourceManagerOption func(*defaultResourceManagerOptions)
+
+// defaultResourceManagerOptions holds configuration options for DefaultResourceManager
+type defaultResourceManagerOptions struct {
+	skipStandardPaths bool
+	hashDir           string
+}
+
+// WithSecurityAnalysis sets security analysis configuration for DefaultResourceManager
+func WithSecurityAnalysis(skipStandardPaths bool, hashDir string) DefaultResourceManagerOption {
+	return func(opts *defaultResourceManagerOptions) {
+		opts.skipStandardPaths = skipStandardPaths
+		opts.hashDir = hashDir
+	}
+}
+
 // DefaultResourceManager provides a mode-aware facade that delegates to
 // NormalResourceManager or DryRunResourceManager depending on ExecutionMode.
 // It implements DryRunResourceManagerInterface so callers can always query dry-run results
@@ -21,14 +38,23 @@ type DefaultResourceManager struct {
 
 // NewDefaultResourceManager creates a new DefaultResourceManager.
 // If mode is ExecutionModeDryRun, opts may be used to configure the dry-run behavior.
-func NewDefaultResourceManager(exec executor.CommandExecutor, fs executor.FileSystem, privMgr runnertypes.PrivilegeManager, pathResolver PathResolver, logger *slog.Logger, mode ExecutionMode, opts *DryRunOptions) (*DefaultResourceManager, error) {
+func NewDefaultResourceManager(exec executor.CommandExecutor, fs executor.FileSystem, privMgr runnertypes.PrivilegeManager, pathResolver PathResolver, logger *slog.Logger, mode ExecutionMode, dryRunOpts *DryRunOptions, options ...DefaultResourceManagerOption) (*DefaultResourceManager, error) {
+	// Apply options
+	opts := &defaultResourceManagerOptions{
+		skipStandardPaths: false, // default value
+		hashDir:           "",    // default value
+	}
+	for _, option := range options {
+		option(opts)
+	}
+
 	mgr := &DefaultResourceManager{
 		mode:   mode,
 		normal: NewNormalResourceManager(exec, fs, privMgr, logger),
 	}
 	// Create dry-run manager eagerly to keep state like analyses across mode flips
 	// and to simplify switching without re-wiring dependencies.
-	dryrunManager, err := NewDryRunResourceManager(exec, privMgr, pathResolver, opts)
+	dryrunManager, err := NewDryRunResourceManager(exec, privMgr, pathResolver, dryRunOpts, opts.skipStandardPaths, opts.hashDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create dry-run resource manager: %w", err)
 	}

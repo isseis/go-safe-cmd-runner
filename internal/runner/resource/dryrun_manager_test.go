@@ -29,7 +29,7 @@ func createTestDryRunResourceManager() *DryRunResourceManager {
 		DetailLevel: DetailLevelDetailed,
 	}
 
-	manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts)
+	manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts, false, "")
 	if err != nil {
 		panic(err) // This is a test helper, so panic is acceptable here
 	}
@@ -167,7 +167,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 		DetailLevel: DetailLevelDetailed,
 	}
 
-	manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts)
+	manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts, false, "")
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -285,7 +285,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 		mockPathResolver.On("ResolvePath", "setuid-chmod").Return(setuidFile.Name(), nil)
 
 		opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
-		setuidManager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts)
+		setuidManager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts, false, "")
 		require.NoError(t, err)
 
 		cmd := runnertypes.Command{
@@ -330,7 +330,7 @@ func TestDryRunResourceManager_PathResolverRequired(t *testing.T) {
 	opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
 
 	// Test that providing nil PathResolver returns an error
-	_, err := NewDryRunResourceManager(mockExec, mockPriv, nil, opts)
+	_, err := NewDryRunResourceManager(mockExec, mockPriv, nil, opts, false, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "PathResolver is required")
 }
@@ -347,7 +347,7 @@ func TestDryRunResourceManager_PathResolutionFailure(t *testing.T) {
 	mockPathResolver.On("ResolvePath", "nonexistent-cmd").Return("", assert.AnError)
 
 	opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
-	manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts)
+	manager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts, false, "")
 	require.NoError(t, err)
 	if err != nil {
 		t.Fatalf("Failed to create DryRunResourceManager: %v", err)

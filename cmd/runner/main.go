@@ -308,11 +308,15 @@ func executeRunner(ctx context.Context, cfg *runnertypes.Config, verificationMan
 	logger := slog.Default()
 	privMgr := privilege.NewManager(logger)
 
+	// Get hash directory from command line args
+	hashDir := getHashDir()
+
 	// Initialize Runner with privilege support and run ID
 	runnerOptions := []runner.Option{
 		runner.WithVerificationManager(verificationManager),
 		runner.WithPrivilegeManager(privMgr),
 		runner.WithRunID(runID),
+		runner.WithSecurityAnalysisOptions(false, hashDir), // skipStandardPaths=false for thorough security analysis
 	}
 
 	// Parse dry-run options once for the entire function

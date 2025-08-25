@@ -100,6 +100,8 @@ type runnerOptions struct {
 	resourceManager     resource.ResourceManager
 	dryRun              bool
 	dryRunOptions       *resource.DryRunOptions
+	skipStandardPaths   bool
+	hashDir             string
 }
 
 // WithSecurity sets a custom security configuration
@@ -156,6 +158,14 @@ func WithDryRun(dryRunOptions *resource.DryRunOptions) Option {
 	return func(opts *runnerOptions) {
 		opts.dryRun = true
 		opts.dryRunOptions = dryRunOptions
+	}
+}
+
+// WithSecurityAnalysisOptions sets security analysis configuration
+func WithSecurityAnalysisOptions(skipStandardPaths bool, hashDir string) Option {
+	return func(opts *runnerOptions) {
+		opts.skipStandardPaths = skipStandardPaths
+		opts.hashDir = hashDir
 	}
 }
 
@@ -227,6 +237,8 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 				opts.privilegeManager,
 				pathResolver,
 				opts.dryRunOptions,
+				opts.skipStandardPaths,
+				opts.hashDir,
 			)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create dry-run resource manager: %w", err)
@@ -251,6 +263,7 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 				slog.Default(), // Logger for Phase 1 implementation
 				resource.ExecutionModeNormal,
 				&resource.DryRunOptions{}, // Empty dry-run options for normal mode
+				resource.WithSecurityAnalysis(opts.skipStandardPaths, opts.hashDir),
 			)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create default resource manager: %w", err)

@@ -78,7 +78,7 @@ func TestSecurityAnalysis(t *testing.T) {
 
 			mockPathResolver := &MockPathResolver{}
 			setupStandardCommandPaths(mockPathResolver) // fallback
-			manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
+			manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts, false, "")
 			require.NoError(t, err)
 			if err != nil {
 				t.Fatalf("Failed to create DryRunResourceManager: %v", err)
@@ -173,7 +173,7 @@ func TestPrivilegeEscalationDetection(t *testing.T) {
 
 			mockPathResolver := &MockPathResolver{}
 			setupStandardCommandPaths(mockPathResolver) // fallback
-			manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
+			manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts, false, "")
 			require.NoError(t, err)
 			if err != nil {
 				t.Fatalf("Failed to create DryRunResourceManager: %v", err)
@@ -241,7 +241,7 @@ func TestCommandSecurityAnalysis(t *testing.T) {
 	mockPathResolver := &MockPathResolver{}
 	setupStandardCommandPaths(mockPathResolver)
 	mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-	manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
+	manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts, false, "")
 	require.NoError(t, err)
 	if err != nil {
 		t.Fatalf("Failed to create DryRunResourceManager: %v", err)
@@ -288,7 +288,7 @@ func TestSecurityAnalysisIntegration(t *testing.T) {
 
 	mockPathResolver := &MockPathResolver{}
 	setupStandardCommandPaths(mockPathResolver)
-	manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
+	manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts, false, "")
 	require.NoError(t, err)
 	if err != nil {
 		t.Fatalf("Failed to create DryRunResourceManager: %v", err)

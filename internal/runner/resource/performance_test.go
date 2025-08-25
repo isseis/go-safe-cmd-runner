@@ -58,7 +58,7 @@ func BenchmarkDryRunPerformance(b *testing.B) {
 				mockPathResolver := &MockPathResolver{}
 				setupStandardCommandPaths(mockPathResolver)
 				mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-				manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
+				manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts, false, "")
 				require.NoError(b, err)
 
 				// Execute all commands
@@ -225,7 +225,7 @@ func BenchmarkMemoryUsage(b *testing.B) {
 		mockPathResolver := &MockPathResolver{}
 		setupStandardCommandPaths(mockPathResolver)
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-		manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts)
+		manager, err := NewDryRunResourceManager(nil, nil, mockPathResolver, dryRunOpts, false, "")
 		require.NoError(b, err)
 
 		// Execute all commands
