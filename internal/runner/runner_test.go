@@ -1166,7 +1166,7 @@ func TestRunner_LoadEnvironmentWithSecurity(t *testing.T) {
 		assert.ErrorIs(t, err, safefileio.ErrInvalidFilePermissions, "expected error to wrap safefileio.ErrInvalidFilePermissions")
 	})
 
-	t.Run("load environment with unsafe values", func(t *testing.T) {
+	t.Run("load environment with unsafe values (validation deferred)", func(t *testing.T) {
 		config := &runnertypes.Config{
 			Global: runnertypes.GlobalConfig{
 				WorkDir:      "/tmp",
@@ -1184,10 +1184,12 @@ func TestRunner_LoadEnvironmentWithSecurity(t *testing.T) {
 		err = os.WriteFile(envFile, []byte(unsafeContent), 0o644)
 		assert.NoError(t, err)
 
-		// Should fail due to unsafe environment variable value
+		// Should succeed in loading (validation deferred to execution time)
 		err = runner.LoadEnvironment(envFile, false)
-		assert.Error(t, err)
-		assert.ErrorIs(t, err, security.ErrUnsafeEnvironmentVar, "expected error to wrap security.ErrUnsafeEnvironmentVar")
+		assert.NoError(t, err, "LoadEnvironment should succeed - validation is deferred to execution time")
+
+		// The dangerous variable should be loaded but not validated yet
+		assert.Equal(t, "value; rm -rf /", runner.envVars["DANGEROUS"])
 	})
 }
 
