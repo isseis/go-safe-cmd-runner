@@ -13,7 +13,6 @@ env_allowlist = ["PATH", "HOME", "USER", "LANG"]
 [[groups]]
 name = "safe_operations"
 description = "Safe information gathering commands"
-priority = 1
 
 [[groups.commands]]
 name = "system_info"
@@ -36,7 +35,6 @@ cmd = "date"
 [[groups]]
 name = "network_operations"
 description = "Network-related commands with medium risk"
-priority = 2
 
 [[groups.commands]]
 name = "download_config"
@@ -56,7 +54,6 @@ max_risk_level = "medium"
 [[groups]]
 name = "maintenance_operations"
 description = "High-risk maintenance commands"
-priority = 3
 
 [[groups.commands]]
 name = "cleanup_temp"
@@ -77,7 +74,6 @@ run_as_user = "root"
 [[groups]]
 name = "database_operations"
 description = "Database operations with specific user privileges"
-priority = 4
 
 [[groups.commands]]
 name = "backup_database"
@@ -100,7 +96,6 @@ max_risk_level = "low"
 [[groups]]
 name = "secure_operations"
 description = "Commands that demonstrate proper privilege handling"
-priority = 5
 
 [[groups.commands]]
 name = "restart_service"
