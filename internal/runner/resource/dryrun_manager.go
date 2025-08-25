@@ -187,7 +187,7 @@ func (d *DryRunResourceManager) analyzeCommandSecurity(cmd runnertypes.Command, 
 	// PathResolver is guaranteed to be non-nil due to constructor validation
 	resolvedPath, err := d.pathResolver.ResolvePath(cmd.Cmd)
 	if err != nil {
-		return fmt.Errorf("failed to resolve command path '%s': %w", cmd.Cmd, err)
+		return fmt.Errorf("failed to resolve command path '%s': %w. This typically occurs if the command is not found in the system PATH or there are permission issues preventing access", cmd.Cmd, err)
 	}
 
 	// Analyze security with resolved path
