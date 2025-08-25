@@ -149,9 +149,6 @@ Details:
   Setting: max_risk_level = "invalid_level"
   Valid Values: none, low, medium, high, critical
 ```
-  Valid Options: "whitelist", "risk_based"
-  Location: security.validation_mode
-```
 
 ## 5. 実装対象範囲
 
