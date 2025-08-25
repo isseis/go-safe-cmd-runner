@@ -417,13 +417,12 @@ type AnalysisOptions struct {
 //	}
 //	risk, pattern, reason, err := AnalyzeCommandSecurity("/usr/local/bin/custom", []string{}, opts)
 //
-//	// Analysis with pre-initialized validator (recommended for batch operations)
-//	validator, _ := filevalidator.New(&filevalidator.SHA256{}, "/path/to/hashes")
+//	// Analysis skipping standard paths (useful for system commands)
 //	opts := &AnalysisOptions{
 //		SkipStandardPaths: true,
-//		Validator:        validator,
+//		HashDir:          "/path/to/hashes",
 //	}
-//	risk, pattern, reason, err := AnalyzeCommandSecurity("/usr/local/bin/custom", []string{}, opts)
+//	risk, pattern, reason, err := AnalyzeCommandSecurity("/bin/ls", []string{"-la"}, opts)
 //
 // Parameters:
 //   - resolvedPath: Absolute path to the command executable
