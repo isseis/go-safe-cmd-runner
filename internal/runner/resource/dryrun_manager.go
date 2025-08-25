@@ -33,10 +33,6 @@ type DryRunResourceManager struct {
 	privilegeManager runnertypes.PrivilegeManager
 	pathResolver     PathResolver
 
-	// Security analysis configuration
-	skipStandardPaths bool
-	hashDir           string
-
 	// Dry-run specific
 	dryRunOptions    *DryRunOptions
 	dryRunResult     *DryRunResult
@@ -51,22 +47,17 @@ func NewDryRunResourceManager(exec executor.CommandExecutor, privMgr runnertypes
 	if pathResolver == nil {
 		return nil, ErrPathResolverRequired
 	}
-
-	// Extract security analysis configuration from options
-	var skipStandardPaths bool
-	var hashDir string
-	if opts != nil {
-		skipStandardPaths = opts.SkipStandardPaths
-		hashDir = opts.HashDir
+	if opts == nil {
+		opts = &DryRunOptions{}
 	}
 
+	// Extract security analysis configuration from options
 	return &DryRunResourceManager{
-		executor:          exec,
-		privilegeManager:  privMgr,
-		pathResolver:      pathResolver,
-		skipStandardPaths: skipStandardPaths,
-		hashDir:           hashDir,
-		dryRunOptions:     opts,
+		executor:         exec,
+		privilegeManager: privMgr,
+		pathResolver:     pathResolver,
+
+		dryRunOptions: opts,
 		dryRunResult: &DryRunResult{
 			Metadata: &ResultMetadata{
 				GeneratedAt: time.Now(),
@@ -230,8 +221,8 @@ func (d *DryRunResourceManager) analyzeCommandSecurity(cmd runnertypes.Command, 
 
 	// Analyze security with resolved path using cached validator
 	opts := &security.AnalysisOptions{
-		SkipStandardPaths: d.skipStandardPaths,
-		HashDir:           d.hashDir,
+		SkipStandardPaths: d.dryRunOptions.SkipStandardPaths,
+		HashDir:           d.dryRunOptions.HashDir,
 	}
 	riskLevel, pattern, reason, err := security.AnalyzeCommandSecurity(resolvedPath, cmd.Args, opts)
 	if err != nil {
