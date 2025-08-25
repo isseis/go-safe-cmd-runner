@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
@@ -390,6 +391,11 @@ func IsSystemModification(cmd string, args []string) bool {
 // patterns with enhanced security validation including directory-based risk
 // assessment and hash validation.
 func AnalyzeCommandSecurity(resolvedPath string, args []string, skipStandardPaths bool, hashDir string) (riskLevel runnertypes.RiskLevel, detectedPattern string, reason string, err error) {
+	return AnalyzeCommandSecurityWithValidator(resolvedPath, args, skipStandardPaths, hashDir, nil)
+}
+
+// AnalyzeCommandSecurityWithValidator analyzes a command with a pre-initialized validator for better performance
+func AnalyzeCommandSecurityWithValidator(resolvedPath string, args []string, skipStandardPaths bool, hashDir string, validator *filevalidator.Validator) (riskLevel runnertypes.RiskLevel, detectedPattern string, reason string, err error) {
 	// Step 1: Input validation
 	if resolvedPath == "" {
 		return runnertypes.RiskLevelUnknown, "", "", fmt.Errorf("%w: empty command path", ErrInvalidPath)
@@ -408,10 +414,24 @@ func AnalyzeCommandSecurity(resolvedPath string, args []string, skipStandardPath
 	defaultRisk := getDefaultRiskByDirectory(resolvedPath)
 
 	// Step 4: Hash validation (skip for standard paths when skipStandardPaths=true)
-	if hashDir != "" && !shouldSkipHashValidation(resolvedPath, skipStandardPaths) {
-		if err := validateFileHash(resolvedPath, hashDir); err != nil {
-			return runnertypes.RiskLevelCritical, resolvedPath,
-				fmt.Sprintf("Hash validation failed: %v", err), nil
+	if !shouldSkipHashValidation(resolvedPath, skipStandardPaths) {
+		// Use provided validator if available, otherwise create new one
+		if validator != nil {
+			if err := validateFileHash(resolvedPath, validator); err != nil {
+				return runnertypes.RiskLevelCritical, resolvedPath,
+					fmt.Sprintf("Hash validation failed: %v", err), nil
+			}
+		} else if hashDir != "" {
+			// Fallback to creating validator (for backward compatibility)
+			tempValidator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
+			if err != nil {
+				return runnertypes.RiskLevelCritical, resolvedPath,
+					fmt.Sprintf("Hash validation failed to initialize validator: %v", err), nil
+			}
+			if err := validateFileHash(resolvedPath, tempValidator); err != nil {
+				return runnertypes.RiskLevelCritical, resolvedPath,
+					fmt.Sprintf("Hash validation failed: %v", err), nil
+			}
 		}
 	}
 

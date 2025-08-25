@@ -16,16 +16,10 @@ func shouldSkipHashValidation(cmdPath string, skipStandardPaths bool) bool {
 	return isStandardDirectory(cmdPath) // Skip only standard directories
 }
 
-// validateFileHash performs file hash validation using filevalidator
-func validateFileHash(cmdPath string, hashDir string) error {
-	if hashDir == "" {
-		return fmt.Errorf("%w: hash directory is not configured", ErrHashValidationFailed)
-	}
-
-	// Create filevalidator instance
-	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
-	if err != nil {
-		return fmt.Errorf("%w: failed to create file validator: %v", ErrHashValidationFailed, err)
+// validateFileHash performs file hash validation using provided validator
+func validateFileHash(cmdPath string, validator *filevalidator.Validator) error {
+	if validator == nil {
+		return fmt.Errorf("%w: validator is not provided", ErrHashValidationFailed)
 	}
 
 	// Perform hash validation using filevalidator

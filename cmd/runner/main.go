@@ -339,10 +339,12 @@ func executeRunner(ctx context.Context, cfg *runnertypes.Config, verificationMan
 		}
 
 		dryRunOpts := &resource.DryRunOptions{
-			DetailLevel:   detailLevel,
-			OutputFormat:  outputFormat,
-			ShowSensitive: false,
-			VerifyFiles:   true,
+			DetailLevel:       detailLevel,
+			OutputFormat:      outputFormat,
+			ShowSensitive:     false,
+			VerifyFiles:       true,
+			SkipStandardPaths: false,   // skipStandardPaths=false for thorough security analysis
+			HashDir:           hashDir, // Hash directory from command line args
 		}
 		runnerOptions = append(runnerOptions, runner.WithDryRun(dryRunOpts))
 	}
