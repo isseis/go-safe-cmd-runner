@@ -14,12 +14,16 @@ type PrivilegeEscalationType string
 const (
 	// PrivilegeEscalationTypeSudo represents sudo-like privilege escalation commands
 	PrivilegeEscalationTypeSudo PrivilegeEscalationType = "sudo"
+
 	// PrivilegeEscalationTypeSu represents su-like privilege escalation commands
 	PrivilegeEscalationTypeSu PrivilegeEscalationType = "su"
+
 	// PrivilegeEscalationTypeSystemd represents systemd service control commands
 	PrivilegeEscalationTypeSystemd PrivilegeEscalationType = "systemd"
+
 	// PrivilegeEscalationTypeService represents legacy service control commands
 	PrivilegeEscalationTypeService PrivilegeEscalationType = "service"
+
 	// PrivilegeEscalationTypeOther represents other types of privilege escalation
 	PrivilegeEscalationTypeOther PrivilegeEscalationType = "other"
 )
@@ -50,15 +54,12 @@ type PrivilegeCheckInfo struct {
 	Reason             string
 }
 
-// DefaultPrivilegeEscalationAnalyzer is the default implementation of PrivilegeEscalationAnalyzer
-type DefaultPrivilegeEscalationAnalyzer struct {
-	logger        *slog.Logger
-	commandChecks map[string]*PrivilegeCheckInfo
-}
+// Define commandChecks as a package-level variable
+var commandChecks = map[string]*PrivilegeCheckInfo{}
 
-// NewDefaultPrivilegeEscalationAnalyzer creates a new DefaultPrivilegeEscalationAnalyzer
-func NewDefaultPrivilegeEscalationAnalyzer(logger *slog.Logger) *DefaultPrivilegeEscalationAnalyzer {
-	commandChecks := map[string]*PrivilegeCheckInfo{
+func init() {
+	// Initialize commandChecks only once
+	commandChecks = map[string]*PrivilegeCheckInfo{
 		// Sudo-like commands
 		"sudo": {
 			EscalationType:     PrivilegeEscalationTypeSudo,
@@ -93,7 +94,16 @@ func NewDefaultPrivilegeEscalationAnalyzer(logger *slog.Logger) *DefaultPrivileg
 			Reason:             "Command can control system services",
 		},
 	}
+}
 
+// DefaultPrivilegeEscalationAnalyzer is the default implementation of PrivilegeEscalationAnalyzer
+type DefaultPrivilegeEscalationAnalyzer struct {
+	logger        *slog.Logger
+	commandChecks map[string]*PrivilegeCheckInfo
+}
+
+// NewDefaultPrivilegeEscalationAnalyzer creates a new DefaultPrivilegeEscalationAnalyzer
+func NewDefaultPrivilegeEscalationAnalyzer(logger *slog.Logger) *DefaultPrivilegeEscalationAnalyzer {
 	return &DefaultPrivilegeEscalationAnalyzer{
 		logger:        logger,
 		commandChecks: commandChecks,

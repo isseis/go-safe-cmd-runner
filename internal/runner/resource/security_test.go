@@ -2,7 +2,6 @@ package resource
 
 import (
 	"context"
-	"os/exec"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -215,11 +214,7 @@ func TestCommandSecurityAnalysis(t *testing.T) {
 	ctx := context.Background()
 
 	// Test that we can directly verify the security analysis function
-	rmPath, err := exec.LookPath("rm")
-	if err != nil {
-		rmPath = "/bin/rm" // fallback
-	}
-	riskLevel, pattern, reason, err := security.AnalyzeCommandSecurity(rmPath, []string{"-rf", "/tmp/*"})
+	riskLevel, pattern, reason, err := security.AnalyzeCommandSecurity("/bin/rm", []string{"-rf", "/tmp/*"})
 	require.NoError(t, err)
 
 	// Verify direct security analysis works
