@@ -156,21 +156,6 @@ args = ["--config", "/etc/secure/config.json"]
 run_as_user = "secure_user"
 run_as_group = "secure_group"
 max_risk_level = "medium"
-name = "privileged_cleanup"  # このような設定は常に拒否される
-cmd = "sudo"
-args = ["rm", "-rf", "/tmp/files"]
-max_risk_level = "high"  # この設定でも実行拒否
-```
-
-# ✅ 推奨: run_as_user による安全な権限昇格
-```toml
-[[groups.commands]]
-name = "privileged_cleanup"
-description = "Remove temporary files with elevated privileges"
-cmd = "/bin/rm"
-args = ["-rf", "/tmp/files"]
-run_as_user = "root"  # 安全な権限昇格メカニズム
-max_risk_level = "high"
 ```
 
 ## 4. 想定されるエラーメッセージ
@@ -226,7 +211,7 @@ Run ID: 01K35WM4J8BBX09DY348H7JDEX
 ## 6. 受け入れ条件
 
 ### 6.1 機能テスト
-- [ ] `max_risk_level = "critical"` の設定はエラーとなり実行拒否
+- [x] `max_risk_level = "critical"` の設定はエラーとなり実行拒否（**実装完了** - ParseRiskLevel関数で明示的に拒否）
 - [x] High risk コマンドが `max_risk_level = "high"` で実行可能（**実装完了** - Normal modeで完全実装）
 - [x] High risk コマンドが `max_risk_level` 未設定で実行拒否（**実装完了** - Normal modeで完全実装）
 - [x] Medium risk コマンドが `max_risk_level = "medium"` で実行可能（**実装完了** - Normal modeで完全実装）
