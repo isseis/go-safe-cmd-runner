@@ -26,8 +26,8 @@ func validateFileHash(cmdPath string, validator *filevalidator.Validator) error 
 	if err := validator.Verify(cmdPath); err != nil {
 		// Check if error is due to missing hash file (not necessarily a failure)
 		if isHashFileNotFound(err) {
-			// Hash file not found - this might be acceptable depending on policy
-			// For now, we treat this as validation failure
+			// Hash file not found. The current security policy is to treat this as
+			// a validation failure.
 			return fmt.Errorf("%w: no hash recorded for file: %s", ErrHashValidationFailed, cmdPath)
 		}
 		// Hash validation failed
