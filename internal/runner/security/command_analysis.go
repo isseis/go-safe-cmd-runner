@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
 // Pre-sorted patterns by risk level for efficient lookup
@@ -39,11 +41,11 @@ func init() {
 	patterns := GetDangerousCommandPatterns()
 	for _, p := range patterns {
 		switch p.RiskLevel {
-		case RiskLevelHigh:
+		case runnertypes.RiskLevelHigh:
 			highRiskPatterns = append(highRiskPatterns, p)
-		case RiskLevelMedium:
+		case runnertypes.RiskLevelMedium:
 			mediumRiskPatterns = append(mediumRiskPatterns, p)
-		case RiskLevelLow, RiskLevelNone:
+		case runnertypes.RiskLevelLow, runnertypes.RiskLevelUnknown:
 			// Skip low and none risk patterns as they don't need checking
 			continue
 		default:
@@ -57,22 +59,22 @@ func init() {
 func GetDangerousCommandPatterns() []DangerousCommandPattern {
 	return []DangerousCommandPattern{
 		// File system destruction
-		{[]string{"rm", "-rf"}, RiskLevelHigh, "Recursive file removal"},
-		{[]string{"sudo", "rm"}, RiskLevelHigh, "Privileged file removal"},
-		{[]string{"format"}, RiskLevelHigh, "Disk formatting"},
-		{[]string{"mkfs"}, RiskLevelHigh, "File system creation"},
-		{[]string{"fdisk"}, RiskLevelHigh, "Disk partitioning"},
+		{[]string{"rm", "-rf"}, runnertypes.RiskLevelHigh, "Recursive file removal"},
+		{[]string{"sudo", "rm"}, runnertypes.RiskLevelHigh, "Privileged file removal"},
+		{[]string{"format"}, runnertypes.RiskLevelHigh, "Disk formatting"},
+		{[]string{"mkfs"}, runnertypes.RiskLevelHigh, "File system creation"},
+		{[]string{"fdisk"}, runnertypes.RiskLevelHigh, "Disk partitioning"},
 
 		// Data manipulation
-		{[]string{"dd", "if="}, RiskLevelHigh, "Low-level disk operations"},
-		{[]string{"chmod", "777"}, RiskLevelMedium, "Overly permissive file permissions"},
-		{[]string{"chown", "root"}, RiskLevelMedium, "Ownership change to root"},
+		{[]string{"dd", "if="}, runnertypes.RiskLevelHigh, "Low-level disk operations"},
+		{[]string{"chmod", "777"}, runnertypes.RiskLevelMedium, "Overly permissive file permissions"},
+		{[]string{"chown", "root"}, runnertypes.RiskLevelMedium, "Ownership change to root"},
 
 		// Network operations
-		{[]string{"wget"}, RiskLevelMedium, "File download"},
-		{[]string{"curl"}, RiskLevelMedium, "Network request"},
-		{[]string{"nc", "-"}, RiskLevelMedium, "Network connection"},
-		{[]string{"netcat"}, RiskLevelMedium, "Network connection"},
+		{[]string{"wget"}, runnertypes.RiskLevelMedium, "File download"},
+		{[]string{"curl"}, runnertypes.RiskLevelMedium, "Network request"},
+		{[]string{"nc", "-"}, runnertypes.RiskLevelMedium, "Network connection"},
+		{[]string{"netcat"}, runnertypes.RiskLevelMedium, "Network connection"},
 	}
 }
 
@@ -174,14 +176,14 @@ func (v *Validator) HasSystemCriticalPaths(args []string) []int {
 }
 
 // checkCommandPatterns checks if a command matches any patterns in the given list
-func checkCommandPatterns(cmdName string, cmdArgs []string, patterns []DangerousCommandPattern) (RiskLevel, string, string) {
+func checkCommandPatterns(cmdName string, cmdArgs []string, patterns []DangerousCommandPattern) (runnertypes.RiskLevel, string, string) {
 	for _, pattern := range patterns {
 		if matchesPattern(cmdName, cmdArgs, pattern.Pattern) {
 			displayPattern := strings.Join(pattern.Pattern, " ")
 			return pattern.RiskLevel, displayPattern, pattern.Reason
 		}
 	}
-	return RiskLevelNone, "", ""
+	return runnertypes.RiskLevelUnknown, "", ""
 }
 
 // IsSudoCommand checks if the given command is sudo, considering symbolic links
@@ -387,19 +389,19 @@ func IsSystemModification(cmd string, args []string) bool {
 // AnalyzeCommandSecurity analyzes a command with its arguments for dangerous patterns.
 // This function expects a resolved absolute path for optimal security checking.
 // Use this version when you have already resolved the command path through the unified path resolution system.
-func AnalyzeCommandSecurity(resolvedPath string, args []string) (riskLevel RiskLevel, detectedPattern string, reason string, err error) {
+func AnalyzeCommandSecurity(resolvedPath string, args []string) (riskLevel runnertypes.RiskLevel, detectedPattern string, reason string, err error) {
 	// Validate that resolvedPath is an absolute path (programming error if not)
 	if !filepath.IsAbs(resolvedPath) {
-		return RiskLevelNone, "", "", fmt.Errorf("%w: path must be absolute, got relative path: %s", ErrInvalidPath, resolvedPath)
+		return runnertypes.RiskLevelUnknown, "", "", fmt.Errorf("%w: path must be absolute, got relative path: %s", ErrInvalidPath, resolvedPath)
 	}
 
 	// First, check if symlink depth is exceeded
 	if _, exceededDepth := extractAllCommandNames(resolvedPath); exceededDepth {
-		return RiskLevelHigh, resolvedPath, "Symbolic link depth exceeds security limit (potential symlink attack)", nil
+		return runnertypes.RiskLevelHigh, resolvedPath, "Symbolic link depth exceeds security limit (potential symlink attack)", nil
 	}
 
 	// Check high risk patterns first (more specific than generic setuid/setgid)
-	if riskLevel, pattern, reason := checkCommandPatterns(resolvedPath, args, highRiskPatterns); riskLevel != RiskLevelNone {
+	if riskLevel, pattern, reason := checkCommandPatterns(resolvedPath, args, highRiskPatterns); riskLevel != runnertypes.RiskLevelUnknown {
 		return riskLevel, pattern, reason, nil
 	}
 
@@ -408,18 +410,18 @@ func AnalyzeCommandSecurity(resolvedPath string, args []string) (riskLevel RiskL
 	hasSetuidOrSetgid, setuidErr := hasSetuidOrSetgidBit(resolvedPath)
 	if setuidErr != nil {
 		// Log and treat stat errors as potential security risks
-		return RiskLevelHigh, resolvedPath, fmt.Sprintf("Unable to check setuid/setgid status: %v", setuidErr), nil
+		return runnertypes.RiskLevelHigh, resolvedPath, fmt.Sprintf("Unable to check setuid/setgid status: %v", setuidErr), nil
 	}
 	if hasSetuidOrSetgid {
-		return RiskLevelHigh, resolvedPath, "Executable has setuid or setgid bit set", nil
+		return runnertypes.RiskLevelHigh, resolvedPath, "Executable has setuid or setgid bit set", nil
 	}
 
 	// Then check medium risk patterns
-	if riskLevel, pattern, reason := checkCommandPatterns(resolvedPath, args, mediumRiskPatterns); riskLevel != RiskLevelNone {
+	if riskLevel, pattern, reason := checkCommandPatterns(resolvedPath, args, mediumRiskPatterns); riskLevel != runnertypes.RiskLevelUnknown {
 		return riskLevel, pattern, reason, nil
 	}
 
-	return RiskLevelNone, "", "", nil
+	return runnertypes.RiskLevelUnknown, "", "", nil
 }
 
 // extractAllCommandNames extracts all possible command names for matching:

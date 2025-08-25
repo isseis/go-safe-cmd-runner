@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -120,14 +121,14 @@ func TestDryRunOptions(t *testing.T) {
 
 func TestRiskLevelString(t *testing.T) {
 	tests := []struct {
-		level    RiskLevel
+		level    runnertypes.RiskLevel
 		expected string
 	}{
-		{RiskLevelLow, "low"},
-		{RiskLevelMedium, "medium"},
-		{RiskLevelHigh, "high"},
-		{RiskLevelCritical, "critical"},
-		{RiskLevel(999), "unknown"},
+		{runnertypes.RiskLevelLow, "low"},
+		{runnertypes.RiskLevelMedium, "medium"},
+		{runnertypes.RiskLevelHigh, "high"},
+		{runnertypes.RiskLevelCritical, "critical"},
+		{runnertypes.RiskLevel(999), "unknown"},
 	}
 
 	for _, test := range tests {

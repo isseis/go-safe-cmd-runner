@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -21,7 +22,7 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 
 		risk, pattern, reason, err := AnalyzeCommandSecurity(normalExec, []string{})
 		require.NoError(t, err)
-		assert.Equal(t, RiskLevelNone, risk)
+		assert.Equal(t, runnertypes.RiskLevelUnknown, risk)
 		assert.Empty(t, pattern)
 		assert.Empty(t, reason)
 	})
@@ -43,7 +44,7 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 
 		risk, pattern, reason, err := AnalyzeCommandSecurity(setuidExec, []string{})
 		require.NoError(t, err)
-		assert.Equal(t, RiskLevelHigh, risk)
+		assert.Equal(t, runnertypes.RiskLevelHigh, risk)
 		assert.Equal(t, setuidExec, pattern)
 		assert.Equal(t, "Executable has setuid or setgid bit set", reason)
 	})
@@ -65,7 +66,7 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 
 		risk, pattern, reason, err := AnalyzeCommandSecurity(setgidExec, []string{})
 		require.NoError(t, err)
-		assert.Equal(t, RiskLevelHigh, risk)
+		assert.Equal(t, runnertypes.RiskLevelHigh, risk)
 		assert.Equal(t, setgidExec, pattern)
 		assert.Equal(t, "Executable has setuid or setgid bit set", reason)
 	})
@@ -88,7 +89,7 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 
 		risk, pattern, reason, err := AnalyzeCommandSecurity(setuidSetgidExec, []string{})
 		require.NoError(t, err)
-		assert.Equal(t, RiskLevelHigh, risk)
+		assert.Equal(t, runnertypes.RiskLevelHigh, risk)
 		assert.Equal(t, setuidSetgidExec, pattern)
 		assert.Equal(t, "Executable has setuid or setgid bit set", reason)
 	})
@@ -113,7 +114,7 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 		// because the security risk comes from the setuid bit itself
 		risk, pattern, reason, err := AnalyzeCommandSecurity(nonExecFile, []string{})
 		require.NoError(t, err)
-		assert.Equal(t, RiskLevelHigh, risk)
+		assert.Equal(t, runnertypes.RiskLevelHigh, risk)
 		assert.Equal(t, nonExecFile, pattern)
 		assert.Equal(t, "Executable has setuid or setgid bit set", reason)
 	})
@@ -138,7 +139,7 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 		// because hasSetuidOrSetgidBit only checks regular files
 		risk, pattern, reason, err := AnalyzeCommandSecurity(setgidDir, []string{})
 		require.NoError(t, err)
-		assert.Equal(t, RiskLevelNone, risk)
+		assert.Equal(t, runnertypes.RiskLevelUnknown, risk)
 		assert.Empty(t, pattern)
 		assert.Empty(t, reason)
 	})
@@ -150,7 +151,7 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 		risk, pattern, reason, err := AnalyzeCommandSecurity(nonExistentFile, []string{})
 		require.NoError(t, err)
 		// After the fix, stat errors are treated as high risk
-		assert.Equal(t, RiskLevelHigh, risk)
+		assert.Equal(t, runnertypes.RiskLevelHigh, risk)
 		assert.Equal(t, nonExistentFile, pattern)
 		assert.Contains(t, reason, "Unable to check setuid/setgid status")
 	})
@@ -168,7 +169,7 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 		if fileInfo, err := os.Stat(passwdPath); err == nil && fileInfo.Mode()&os.ModeSetuid != 0 {
 			risk, pattern, reason, err := AnalyzeCommandSecurity(passwdPath, []string{})
 			require.NoError(t, err)
-			assert.Equal(t, RiskLevelHigh, risk)
+			assert.Equal(t, runnertypes.RiskLevelHigh, risk)
 			assert.Equal(t, passwdPath, pattern)
 			assert.Equal(t, "Executable has setuid or setgid bit set", reason)
 		} else {
@@ -197,7 +198,7 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 		require.NoError(t, err)
 
 		// Should be classified as high risk due to setuid bit, not medium risk due to pattern
-		assert.Equal(t, RiskLevelHigh, risk)
+		assert.Equal(t, runnertypes.RiskLevelHigh, risk)
 		assert.Equal(t, setuidExec, pattern)
 		assert.Equal(t, "Executable has setuid or setgid bit set", reason)
 
@@ -208,7 +209,7 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 
 		riskNormal, patternNormal, reasonNormal, errNormal := AnalyzeCommandSecurity(normalExec, []string{"777"})
 		require.NoError(t, errNormal)
-		assert.Equal(t, RiskLevelMedium, riskNormal)
+		assert.Equal(t, runnertypes.RiskLevelMedium, riskNormal)
 		assert.Equal(t, "chmod 777", patternNormal)
 		assert.Equal(t, "Overly permissive file permissions", reasonNormal)
 	})
@@ -226,7 +227,7 @@ func TestAnalyzeCommandSecurity_SetuidSetgid(t *testing.T) {
 		// Analyze the non-existent file - should be treated as high risk due to stat error
 		risk, pattern, reason, err := AnalyzeCommandSecurity(tempFile, []string{})
 		require.NoError(t, err)
-		assert.Equal(t, RiskLevelHigh, risk)
+		assert.Equal(t, runnertypes.RiskLevelHigh, risk)
 		assert.Equal(t, tempFile, pattern)
 		assert.Contains(t, reason, "Unable to check setuid/setgid status")
 	})

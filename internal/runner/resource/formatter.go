@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
 // Global sensitive patterns instance for reuse
@@ -103,7 +104,7 @@ func (f *TextFormatter) writeSummary(buf *strings.Builder, result *DryRunResult)
 
 	// Security summary
 	if result.SecurityAnalysis != nil {
-		riskCounts := make(map[RiskLevel]int)
+		riskCounts := make(map[runnertypes.RiskLevel]int)
 		for _, risk := range result.SecurityAnalysis.Risks {
 			riskCounts[risk.Level]++
 		}
