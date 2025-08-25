@@ -386,41 +386,117 @@ func IsSystemModification(cmd string, args []string) bool {
 	return false
 }
 
-// AnalyzeCommandSecurity analyzes a command with its arguments for dangerous patterns.
-// This function expects a resolved absolute path for optimal security checking.
-// Use this version when you have already resolved the command path through the unified path resolution system.
-func AnalyzeCommandSecurity(resolvedPath string, args []string) (riskLevel runnertypes.RiskLevel, detectedPattern string, reason string, err error) {
-	// Validate that resolvedPath is an absolute path (programming error if not)
+// AnalysisOptions contains configuration options for command security analysis
+type AnalysisOptions struct {
+	// SkipStandardPaths determines whether to skip hash validation for standard system paths
+	SkipStandardPaths bool
+	// HashDir specifies the directory containing hash files for validation
+	HashDir string
+}
+
+// AnalyzeCommandSecurity analyzes a command with its arguments for dangerous
+// patterns with enhanced security validation including directory-based risk
+// assessment and hash validation.
+//
+// This is the primary entry point for command security analysis. It performs
+// comprehensive security checks including:
+//   - Pattern-based dangerous command detection
+//   - setuid/setgid bit analysis
+//   - Directory-based default risk assessment
+//   - Optional hash validation for executable integrity
+//
+// Usage examples:
+//
+//	// Basic analysis (no hash validation)
+//	risk, pattern, reason, err := AnalyzeCommandSecurity("/bin/rm", []string{"-rf", "/"}, nil)
+//
+//	// Analysis with hash validation
+//	opts := &AnalysisOptions{
+//		SkipStandardPaths: false,
+//		HashDir:          "/path/to/hashes",
+//	}
+//	risk, pattern, reason, err := AnalyzeCommandSecurity("/usr/local/bin/custom", []string{}, opts)
+//
+//	// Analysis skipping standard paths (useful for system commands)
+//	opts := &AnalysisOptions{
+//		SkipStandardPaths: true,
+//		HashDir:          "/path/to/hashes",
+//	}
+//	risk, pattern, reason, err := AnalyzeCommandSecurity("/bin/ls", []string{"-la"}, opts)
+//
+// Parameters:
+//   - resolvedPath: Absolute path to the command executable
+//   - args: Command line arguments
+//   - opts: Configuration options (nil is acceptable for default behavior)
+//
+// Returns:
+//   - riskLevel: Security risk level (Unknown, Low, Medium, High, Critical)
+//   - detectedPattern: Matched dangerous pattern (if any)
+//   - reason: Human-readable explanation of the risk assessment
+//   - err: Error if analysis fails
+func AnalyzeCommandSecurity(resolvedPath string, args []string, opts *AnalysisOptions) (riskLevel runnertypes.RiskLevel, detectedPattern string, reason string, err error) {
+	// Handle nil options
+	if opts == nil {
+		opts = &AnalysisOptions{}
+	}
+
+	// Step 1: Input validation
+	if resolvedPath == "" {
+		return runnertypes.RiskLevelUnknown, "", "", fmt.Errorf("%w: empty command path", ErrInvalidPath)
+	}
+
 	if !filepath.IsAbs(resolvedPath) {
 		return runnertypes.RiskLevelUnknown, "", "", fmt.Errorf("%w: path must be absolute, got relative path: %s", ErrInvalidPath, resolvedPath)
 	}
 
-	// First, check if symlink depth is exceeded
+	// Step 2: Symbolic link depth check
 	if _, exceededDepth := extractAllCommandNames(resolvedPath); exceededDepth {
 		return runnertypes.RiskLevelHigh, resolvedPath, "Symbolic link depth exceeds security limit (potential symlink attack)", nil
 	}
 
-	// Check high risk patterns first (more specific than generic setuid/setgid)
+	// Step 3: Directory-based default risk assessment
+	defaultRisk := getDefaultRiskByDirectory(resolvedPath)
+
+	// Step 4: Hash validation (skip for standard paths when SkipStandardPaths=true)
+	if !shouldSkipHashValidation(resolvedPath, opts.SkipStandardPaths) && opts.HashDir != "" {
+		if err := validateFileHash(resolvedPath, opts.HashDir); err != nil {
+			return runnertypes.RiskLevelCritical, resolvedPath,
+				fmt.Sprintf("Hash validation failed: %v", err), nil
+		}
+	}
+
+	// Step 5: High-risk pattern analysis
 	if riskLevel, pattern, reason := checkCommandPatterns(resolvedPath, args, highRiskPatterns); riskLevel != runnertypes.RiskLevelUnknown {
 		return riskLevel, pattern, reason, nil
 	}
 
-	// Check for setuid/setgid binaries
-	// Since we have a resolved path, we can safely check setuid/setgid bits
+	// Step 6: setuid/setgid check
 	hasSetuidOrSetgid, setuidErr := hasSetuidOrSetgidBit(resolvedPath)
 	if setuidErr != nil {
-		// Log and treat stat errors as potential security risks
-		return runnertypes.RiskLevelHigh, resolvedPath, fmt.Sprintf("Unable to check setuid/setgid status: %v", setuidErr), nil
+		return runnertypes.RiskLevelHigh, resolvedPath,
+			fmt.Sprintf("Unable to check setuid/setgid status: %v", setuidErr), nil
 	}
 	if hasSetuidOrSetgid {
-		return runnertypes.RiskLevelHigh, resolvedPath, "Executable has setuid or setgid bit set", nil
+		return runnertypes.RiskLevelHigh, resolvedPath,
+			"Executable has setuid or setgid bit set", nil
 	}
 
-	// Then check medium risk patterns
+	// Step 7: Medium-risk pattern analysis
 	if riskLevel, pattern, reason := checkCommandPatterns(resolvedPath, args, mediumRiskPatterns); riskLevel != runnertypes.RiskLevelUnknown {
 		return riskLevel, pattern, reason, nil
 	}
 
+	// Step 8: Individual command override application
+	if overrideRisk, found := getCommandRiskOverride(resolvedPath); found {
+		return overrideRisk, resolvedPath, "Explicit risk level override", nil
+	}
+
+	// Step 9: Apply default risk level
+	if defaultRisk != runnertypes.RiskLevelUnknown {
+		return defaultRisk, "", "Default directory-based risk level", nil
+	}
+
+	// Fallback: no specific risk identified
 	return runnertypes.RiskLevelUnknown, "", "", nil
 }
 

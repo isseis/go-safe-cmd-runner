@@ -47,12 +47,17 @@ func NewDryRunResourceManager(exec executor.CommandExecutor, privMgr runnertypes
 	if pathResolver == nil {
 		return nil, ErrPathResolverRequired
 	}
+	if opts == nil {
+		opts = &DryRunOptions{}
+	}
 
+	// Extract security analysis configuration from options
 	return &DryRunResourceManager{
 		executor:         exec,
 		privilegeManager: privMgr,
 		pathResolver:     pathResolver,
-		dryRunOptions:    opts,
+
+		dryRunOptions: opts,
 		dryRunResult: &DryRunResult{
 			Metadata: &ResultMetadata{
 				GeneratedAt: time.Now(),
@@ -182,7 +187,8 @@ func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd runnertype
 	return analysis, nil
 }
 
-// analyzeCommandSecurity analyzes security aspects of a command
+// analyzeCommandSecurity resolves the command path and performs security analysis
+// using the configuration stored in the DryRunResourceManager.
 func (d *DryRunResourceManager) analyzeCommandSecurity(cmd runnertypes.Command, analysis *ResourceAnalysis) error {
 	// PathResolver is guaranteed to be non-nil due to constructor validation
 	resolvedPath, err := d.pathResolver.ResolvePath(cmd.Cmd)
@@ -190,8 +196,12 @@ func (d *DryRunResourceManager) analyzeCommandSecurity(cmd runnertypes.Command, 
 		return fmt.Errorf("failed to resolve command path '%s': %w. This typically occurs if the command is not found in the system PATH or there are permission issues preventing access", cmd.Cmd, err)
 	}
 
-	// Analyze security with resolved path
-	riskLevel, pattern, reason, err := security.AnalyzeCommandSecurity(resolvedPath, cmd.Args)
+	// Analyze security with resolved path using cached validator
+	opts := &security.AnalysisOptions{
+		SkipStandardPaths: d.dryRunOptions.SkipStandardPaths,
+		HashDir:           d.dryRunOptions.HashDir,
+	}
+	riskLevel, pattern, reason, err := security.AnalyzeCommandSecurity(resolvedPath, cmd.Args, opts)
 	if err != nil {
 		return fmt.Errorf("security analysis failed for command '%s': %w", cmd.Cmd, err)
 	}

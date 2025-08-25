@@ -237,6 +237,22 @@ func initializeVerificationManager(runID string) (*verification.Manager, error) 
 			RunID:     runID,
 		}
 	}
+	info, err := os.Stat(hashDir)
+	if err != nil {
+		return nil, &logging.PreExecutionError{
+			Type:      logging.ErrorTypeFileAccess,
+			Message:   fmt.Sprintf("Failed to access hash directory: %s", hashDir),
+			Component: "file",
+			RunID:     runID,
+		}
+	} else if !info.IsDir() {
+		return nil, &logging.PreExecutionError{
+			Type:      logging.ErrorTypeFileAccess,
+			Message:   fmt.Sprintf("Hash directory is not a directory: %s", hashDir),
+			Component: "file",
+			RunID:     runID,
+		}
+	}
 
 	// Initialize privilege manager
 	logger := slog.Default()
@@ -308,6 +324,9 @@ func executeRunner(ctx context.Context, cfg *runnertypes.Config, verificationMan
 	logger := slog.Default()
 	privMgr := privilege.NewManager(logger)
 
+	// Get hash directory from command line args
+	hashDir := getHashDir()
+
 	// Initialize Runner with privilege support and run ID
 	runnerOptions := []runner.Option{
 		runner.WithVerificationManager(verificationManager),
@@ -335,10 +354,12 @@ func executeRunner(ctx context.Context, cfg *runnertypes.Config, verificationMan
 		}
 
 		dryRunOpts := &resource.DryRunOptions{
-			DetailLevel:   detailLevel,
-			OutputFormat:  outputFormat,
-			ShowSensitive: false,
-			VerifyFiles:   true,
+			DetailLevel:       detailLevel,
+			OutputFormat:      outputFormat,
+			ShowSensitive:     false,
+			VerifyFiles:       true,
+			SkipStandardPaths: cfg.Global.SkipStandardPaths, // Use setting from TOML config
+			HashDir:           hashDir,                      // Hash directory from command line args
 		}
 		runnerOptions = append(runnerOptions, runner.WithDryRun(dryRunOpts))
 	}

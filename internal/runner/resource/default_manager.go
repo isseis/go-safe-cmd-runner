@@ -21,14 +21,14 @@ type DefaultResourceManager struct {
 
 // NewDefaultResourceManager creates a new DefaultResourceManager.
 // If mode is ExecutionModeDryRun, opts may be used to configure the dry-run behavior.
-func NewDefaultResourceManager(exec executor.CommandExecutor, fs executor.FileSystem, privMgr runnertypes.PrivilegeManager, pathResolver PathResolver, logger *slog.Logger, mode ExecutionMode, opts *DryRunOptions) (*DefaultResourceManager, error) {
+func NewDefaultResourceManager(exec executor.CommandExecutor, fs executor.FileSystem, privMgr runnertypes.PrivilegeManager, pathResolver PathResolver, logger *slog.Logger, mode ExecutionMode, dryRunOpts *DryRunOptions) (*DefaultResourceManager, error) {
 	mgr := &DefaultResourceManager{
 		mode:   mode,
 		normal: NewNormalResourceManager(exec, fs, privMgr, logger),
 	}
 	// Create dry-run manager eagerly to keep state like analyses across mode flips
 	// and to simplify switching without re-wiring dependencies.
-	dryrunManager, err := NewDryRunResourceManager(exec, privMgr, pathResolver, opts)
+	dryrunManager, err := NewDryRunResourceManager(exec, privMgr, pathResolver, dryRunOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create dry-run resource manager: %w", err)
 	}

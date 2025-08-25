@@ -61,7 +61,7 @@ func TestSecurityAnalysis(t *testing.T) {
 				Cmd:         "echo",
 				Args:        []string{"hello", "world"},
 			},
-			expectRisk: false,
+			expectRisk: true, // Now expects risk due to directory-based assessment
 		},
 	}
 
@@ -222,7 +222,11 @@ func TestCommandSecurityAnalysis(t *testing.T) {
 	ctx := context.Background()
 
 	// Test that we can directly verify the security analysis function
-	riskLevel, pattern, reason, err := security.AnalyzeCommandSecurity("/bin/rm", []string{"-rf", "/tmp/*"})
+	opts := &security.AnalysisOptions{
+		SkipStandardPaths: false,
+		HashDir:           "",
+	}
+	riskLevel, pattern, reason, err := security.AnalyzeCommandSecurity("/bin/rm", []string{"-rf", "/tmp/*"}, opts)
 	require.NoError(t, err)
 
 	// Verify direct security analysis works

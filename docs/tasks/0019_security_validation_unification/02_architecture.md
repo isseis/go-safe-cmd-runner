@@ -1,385 +1,405 @@
 # アーキテクチャ設計書: セキュリティ検証メカニズムの統一
 
-## 1. 概要
+## 1. システム概要
 
 ### 1.1 設計目標
-PathResolver.ValidateCommand とリスクレベル評価システムを統一し、ハードコーディングされたリスクベース計算による単一のセキュリティメカニズムを構築する。
+- パス制限撤廃による実行可能性の向上
+- ハッシュ検証による同名ファイル誤実行防止
+- リスクベース評価との統合による包括的セキュリティ
 
-### 1.2 設計原則
-- **統一性**: 全セキュリティ検証をリスクベース単一システムで実行
-- **互換性**: 現状のハードコーディングされたホワイトリストとの互換性保証
-- **拡張性**: 将来のセキュリティ要件に対応可能な設計
+### 1.2 アーキテクチャ原則
+- **単一責任**: AnalyzeCommandSecurityでセキュリティ判定を一元化
+- **設定最小化**: skip_standard_pathsのみの簡素な設定
+- **性能重視**: 標準ディレクトリでのハッシュ検証スキップ
 
 ## 2. システムアーキテクチャ
 
-### 2.1 統合後のアーキテクチャ概要
+### 2.1 統合後のフロー
 
 ```mermaid
 flowchart TD
     Request[Command Execution Request]
     PathResolver[Path Resolver]
-    UnifiedValidator[Unified Risk-based Validator]
-    ConfigManager[Security Config Manager]
-    RiskCalculator[Hardcoded Risk Calculator]
-    RiskEvaluator[Risk-based Evaluator]
-    SecurityLogger[Security Logger]
-    Decision{Validation Result}
+    AnalyzeCmd[AnalyzeCommandSecurity]
+    DirCheck[Directory Risk Check]
+    HashCheck[Hash Validation Check]
+    PatternCheck[Pattern Analysis]
+    Override[Override Check]
+    Decision{Risk Decision}
     Allow[ALLOW]
-    Deny[DENY with Details]
+    Block[BLOCK]
 
     Request --> PathResolver
-    PathResolver --> UnifiedValidator
-    UnifiedValidator --> ConfigManager
-    ConfigManager --> RiskCalculator
-    RiskCalculator --> RiskEvaluator
-    RiskEvaluator --> Decision
-    UnifiedValidator --> SecurityLogger
-    Decision --> |Pass| Allow
-    Decision --> |Fail| Deny
+    PathResolver --> AnalyzeCmd
+    AnalyzeCmd --> DirCheck
+    DirCheck --> HashCheck
+    HashCheck --> PatternCheck
+    PatternCheck --> Override
+    Override --> Decision
+    Decision -->|Pass| Allow
+    Decision -->|Fail| Block
 
-    style UnifiedValidator fill:#e1f5fe,stroke:#0277bd,stroke-width:2px
-    style ConfigManager fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
-    style RiskCalculator fill:#e8f5e8,stroke:#2e7d32,stroke-width:2px
-    style RiskEvaluator fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    style AnalyzeCmd fill:#e1f5fe,stroke:#0277bd,stroke-width:3px
+    style HashCheck fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    style DirCheck fill:#e8f5e8,stroke:#2e7d32,stroke-width:2px
 ```
 
 ### 2.2 コンポーネント構成
 
-#### 2.2.1 Unified Risk-based Validator
+#### 2.2.1 PathResolver（最大限簡素化）
 ```go
-// internal/security/unified_validator.go
-type UnifiedValidator interface {
-    ValidateCommand(ctx context.Context, resolvedPath string) error
-    ValidateCommandWithArgs(ctx context.Context, resolvedPath string, args []string) error
-    GetMaxRiskLevel() RiskLevel
-    SetMaxRiskLevel(level RiskLevel) error
-}
-
-type RiskLevel int
-
-const (
-    RiskLevelNone RiskLevel = iota
-    RiskLevelLow
-    RiskLevelMedium
-    RiskLevelHigh
-    RiskLevelCritical
-)
-```
-
-#### 2.2.2 Security Config Manager
-```go
-// internal/security/config_manager.go
-type SecurityConfigManager interface {
-    GetMaxRiskLevel() RiskLevel
-    CalculateRiskLevel(cmdPath string) RiskLevel
-    ValidateConfig() error
-}
-
-type SecurityConfig struct {
-    MaxRiskLevel    string `toml:"max_risk_level"`   // "none" | "low" | "medium" | "high" | "critical"
-
-    // Cache configuration
-    EnableCache     bool `toml:"enable_cache"`
-    CacheSize       int  `toml:"cache_size"`
-}
-
-type HardcodedRiskCalculator interface {
-    CalculateDefaultRiskLevel(cmdPath string) RiskLevel
-    GetExplicitRiskLevels() map[string]RiskLevel
-}
-```
-
-## 3. データフロー
-
-### 3.1 統合リスクベース検証フロー
-
-```mermaid
-flowchart TD
-    Start[Command Validation Request]
-    GetConfig[Get Security Config]
-    GetMaxRisk[Get Max Risk Level]
-    CheckCustom{Custom Risk Set?}
-    UseCustom[Use Custom Risk Level]
-    EvaluateRisk[Evaluate Command Risk]
-    CompareRisk[Compare with Max Risk Level]
-
-    LogDecision[Log Security Decision]
-    Cache[Update Cache]
-    Return[Return Result]
-
-    Start --> GetConfig
-    GetConfig --> GetMaxRisk
-    GetMaxRisk --> CheckCustom
-    CheckCustom -->|Yes| UseCustom
-    CheckCustom -->|No| EvaluateRisk
-    UseCustom --> EvaluateRisk
-
-    EvaluateRisk --> CompareRisk
-    CompareRisk --> LogDecision
-    LogDecision --> Cache
-    Cache --> Return
-
-    style CheckCustom fill:#ffebee,stroke:#d32f2f,stroke-width:2px
-    style EvaluateRisk fill:#e8f5e8,stroke:#2e7d32,stroke-width:2px
-    style LogDecision fill:#e1f5fe,stroke:#0277bd,stroke-width:2px
-```
-
-## 4. インターフェース設計
-
-### 4.1 Path Resolver Integration
-
-```go
-// internal/verification/path_resolver.go - 拡張
+// internal/verification/path_resolver.go
 type PathResolver struct {
-    // 既存フィールド
-    searchPaths []string
-    cache       map[string]string
-
-    // 新規追加（統合されたセキュリティ）
-    riskValidator    security.UnifiedValidator
-    configManager    security.SecurityConfigManager
+    pathEnv           string
+    cache             map[string]string
+    mu                sync.RWMutex
+    // セキュリティ関連フィールドを完全削除
+    // security フィールド削除
+    // パス制限関連フィールド削除
 }
 
-// ValidateCommand - 既存メソッドを拡張
-func (pr *PathResolver) ValidateCommand(resolvedPath string) error {
-    if pr.unifiedValidator != nil {
-        // 新しい統合検証システムを使用
-        return pr.unifiedValidator.ValidateCommand(context.Background(), resolvedPath)
+// ValidateCommandメソッドを完全削除
+// validateCommandSafetyメソッドも完全削除
+// セキュリティ検証は AnalyzeCommandSecurity で実行される
+
+// PathResolverは純粋なパス解決コンポーネントに集中
+// NewPathResolver(pathEnv string) *PathResolver
+```
+
+#### 2.2.2 Manager調整
+```go
+// internal/verification/manager.go の修正
+func (m *Manager) ResolveAndValidateCommand(command string) (string, error) {
+    if m.pathResolver == nil {
+        return "", ErrPathResolverNotInitialized
     }
 
-    // フォールバック: 既存のシステム
-    return pr.validateCommandSafety(resolvedPath)
-}
-
-// ValidateCommandWithArgs - 新規メソッド
-func (pr *PathResolver) ValidateCommandWithArgs(resolvedPath string, args []string) error {
-    if pr.unifiedValidator != nil {
-        return pr.unifiedValidator.ValidateCommandWithArgs(context.Background(), resolvedPath, args)
+    // パス解決のみ実行
+    resolvedPath, err := m.pathResolver.ResolvePath(command)
+    if err != nil {
+        return "", err
     }
 
-    // Legacy fallback
-    return pr.validateCommandSafety(resolvedPath)
+    // ValidateCommand呼び出しを削除
+    // セキュリティ検証は AnalyzeCommandSecurity で実行される
+
+    return resolvedPath, nil
 }
 ```
 
-### 4.2 Unified Validator Implementation
-
+#### 2.2.3 統合セキュリティ分析エンジン
 ```go
-// internal/security/unified_validator.go
-type DefaultUnifiedValidator struct {
-    config           SecurityConfigManager
-    riskEvaluator    RiskEvaluator
-    legacyValidator  *Validator
-    logger           Logger
-    cache            ValidationCache
-}
-
-func (v *DefaultUnifiedValidator) ValidateCommand(ctx context.Context, resolvedPath string) error {
-    return v.ValidateCommandWithArgs(ctx, resolvedPath, []string{})
-}
-
-func (v *DefaultUnifiedValidator) ValidateCommandWithArgs(ctx context.Context, resolvedPath string, args []string) error {
-    // 1. Check cache
-    if result, found := v.cache.Get(resolvedPath, args); found {
-        v.logger.Debug("validation cache hit", "path", resolvedPath)
-        return result
+// internal/runner/security/command_analysis.go の拡張
+func AnalyzeCommandSecurity(resolvedPath string, args []string, globalConfig *runnertypes.GlobalConfig) (riskLevel runnertypes.RiskLevel, detectedPattern string, reason string, err error) {
+    // 1. パス検証
+    if !filepath.IsAbs(resolvedPath) {
+        return runnertypes.RiskLevelUnknown, "", "", fmt.Errorf("%w: path must be absolute", ErrInvalidPath)
     }
 
-    // 2. Determine validation mode
-    mode := v.config.GetValidationMode()
+    // 2. ディレクトリベースデフォルトリスク判定
+    defaultRisk := getDefaultRiskByDirectory(resolvedPath)
 
-    var err error
-    switch mode {
-    case ValidationModeWhitelist:
-        err = v.validateWithWhitelist(resolvedPath)
-    case ValidationModeRiskBased:
-        err = v.validateWithRiskLevel(resolvedPath, args)
-    default:
-        err = fmt.Errorf("unsupported validation mode: %v", mode)
-    }
-
-    // 3. Cache result
-    v.cache.Set(resolvedPath, args, err)
-
-    // 4. Log decision
-    v.logValidationDecision(resolvedPath, args, mode, err)
-
-    return err
-}
-
-func (v *DefaultUnifiedValidator) validateWithRiskLevel(resolvedPath string, args []string) error {
-    // Use existing risk analysis
-    riskLevel, pattern, reason, err := security.AnalyzeCommandSecurity(resolvedPath, args)
-    if err != nil {
-        return fmt.Errorf("risk analysis failed: %w", err)
-    }
-
-    maxAllowedRisk := v.config.GetDefaultMaxRiskLevel()
-    if riskLevel > maxAllowedRisk {
-        return &SecurityViolationError{
-            Command:         resolvedPath,
-            DetectedRisk:    riskLevel.String(),
-            DetectedPattern: pattern,
-            MaxAllowedRisk:  maxAllowedRisk.String(),
-            Reason:          reason,
-            Phase:           "verification",
+    // 3. ハッシュ検証
+    if shouldSkipHashValidation(resolvedPath, globalConfig) {
+        // 標準ディレクトリ + SkipStandardPaths=true の場合はスキップ
+    } else {
+        if err := validateFileHash(resolvedPath); err != nil {
+            return runnertypes.RiskLevelCritical, resolvedPath, fmt.Sprintf("Hash validation failed: %v", err), nil
         }
     }
 
-    return nil
-}
-```
-
-### 4.3 Error Types
-
-```go
-// internal/security/errors.go
-type SecurityViolationError struct {
-    Command         string
-    DetectedRisk    string
-    DetectedPattern string
-    MaxAllowedRisk  string
-    Reason          string
-    Phase           string
-    Timestamp       time.Time
-}
-
-func (e *SecurityViolationError) Error() string {
-    return fmt.Sprintf("command_verification_failed - Command blocked during %s phase: %s (risk: %s > %s)",
-        e.Phase, e.Command, e.DetectedRisk, e.MaxAllowedRisk)
-}
-
-type ConfigurationError struct {
-    Setting     string
-    Value       string
-    ValidValues []string
-    Location    string
-}
-
-func (e *ConfigurationError) Error() string {
-    return fmt.Sprintf("invalid_security_configuration - %s: invalid value '%s', valid options: %v",
-        e.Setting, e.Value, e.ValidValues)
-}
-```
-## 5. （削除）
-
-## 6. （削除）
-
-## 7. 監査・ログ設計
-
-### 7.1 Security Logging
-
-```go
-// internal/security/logger.go
-type SecurityLogger interface {
-    LogValidationDecision(decision *ValidationDecision)
-    LogConfigChange(change *ConfigChange)
-}
-
-type ValidationDecision struct {
-    Timestamp       time.Time
-    Command         string
-    Arguments       []string
-    ValidationMode  ValidationMode
-    Result          ValidationResult
-    RiskLevel       RiskLevel
-    Pattern         string
-    Reason          string
-    ProcessID       int
-    UserID          int
-    GroupID         int
-}
-
-type ConfigChange struct {
-    Timestamp    time.Time
-    ChangedBy    string
-    OldConfig    *SecurityConfig
-    NewConfig    *SecurityConfig
-    ChangeReason string
-}
-```
-
-### 7.2 Audit Trail
-
-```go
-// internal/security/audit.go
-type AuditTrail interface {
-    RecordSecurityEvent(event *SecurityEvent)
-    QueryEvents(filter *EventFilter) ([]*SecurityEvent, error)
-    GenerateReport(period TimePeriod) (*SecurityReport, error)
-}
-
-type SecurityEvent struct {
-    EventID     string
-    Timestamp   time.Time
-    EventType   SecurityEventType
-    Severity    Severity
-    Command     string
-    UserContext UserContext
-    Decision    ValidationResult
-    Metadata    map[string]interface{}
-}
-
-type SecurityReport struct {
-    Period           TimePeriod
-    TotalValidations int64
-    BlockedCommands  int64
-    RiskDistribution map[RiskLevel]int64
-    TopBlockedCommands []CommandFrequency
-    SecurityTrends   []TrendData
-}
-```
-
-## 8. 性能考慮事項
-
-### 8.1 Performance Optimization
-
-- **Caching Strategy**: LRU cache with TTL for validation results
-- **Risk Analysis Optimization**: Reuse existing optimized `AnalyzeCommandSecurity`
-- **Pattern Compilation**: Pre-compile regex patterns at startup
-- **Concurrent Processing**: Thread-safe cache and validation logic
-
-### 8.2 Performance Monitoring
-
-```go
-// internal/security/metrics.go
-type PerformanceMetrics struct {
-    ValidationLatency prometheus.Histogram
-    CacheHitRate     prometheus.Counter
-    ValidationCount  prometheus.Counter
-    ErrorRate        prometheus.Counter
-}
-
-func (pm *PerformanceMetrics) RecordValidation(duration time.Duration, cacheHit bool, err error) {
-    pm.ValidationLatency.Observe(duration.Seconds())
-    pm.ValidationCount.Inc()
-
-    if cacheHit {
-        pm.CacheHitRate.Inc()
+    // 4. 既存パターン分析（高リスクパターン優先）
+    if riskLevel, pattern, reason := checkCommandPatterns(resolvedPath, args, highRiskPatterns); riskLevel != runnertypes.RiskLevelUnknown {
+        return riskLevel, pattern, reason, nil
     }
 
-    if err != nil {
-        pm.ErrorRate.Inc()
+    // 5. setuid/setgid チェック
+    if hasSetuidOrSetgid, setuidErr := hasSetuidOrSetgidBit(resolvedPath); setuidErr != nil {
+        return runnertypes.RiskLevelHigh, resolvedPath, fmt.Sprintf("Unable to check setuid/setgid status: %v", setuidErr), nil
+    } else if hasSetuidOrSetgid {
+        return runnertypes.RiskLevelHigh, resolvedPath, "Executable has setuid or setgid bit set", nil
+    }
+
+    // 6. 中リスクパターン分析
+    if riskLevel, pattern, reason := checkCommandPatterns(resolvedPath, args, mediumRiskPatterns); riskLevel != runnertypes.RiskLevelUnknown {
+        return riskLevel, pattern, reason, nil
+    }
+
+    // 7. 個別コマンドオーバーライド適用
+    if overrideRisk, found := getCommandRiskOverride(resolvedPath); found {
+        return overrideRisk, resolvedPath, "Explicit risk level override", nil
+    }
+
+    // 8. デフォルトリスクレベル適用
+    return defaultRisk, "", "Default directory-based risk level", nil
+}
+```
+
+## 3. 詳細設計
+
+### 3.1 ディレクトリベースリスク判定
+
+```go
+// internal/runner/security/directory_risk.go (新規作成)
+package security
+
+import (
+    "path/filepath"
+    "strings"
+    "github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+)
+
+// 標準ディレクトリ定義
+var StandardDirectories = []string{
+    "/bin",
+    "/usr/bin",
+    "/usr/local/bin",
+    "/sbin",
+    "/usr/sbin",
+    "/usr/local/sbin",
+}
+
+// デフォルトリスクレベルマップ
+var DefaultRiskLevels = map[string]runnertypes.RiskLevel{
+    "/bin":             runnertypes.RiskLevelLow,
+    "/usr/bin":         runnertypes.RiskLevelLow,
+    "/usr/local/bin":   runnertypes.RiskLevelLow,
+    "/sbin":            runnertypes.RiskLevelMedium,
+    "/usr/sbin":        runnertypes.RiskLevelMedium,
+    "/usr/local/sbin":  runnertypes.RiskLevelMedium,
+}
+
+// getDefaultRiskByDirectory はコマンドパスに基づくデフォルトリスクレベルを返す
+func getDefaultRiskByDirectory(cmdPath string) runnertypes.RiskLevel {
+    dir := filepath.Dir(cmdPath)
+
+    // 完全一致チェック
+    if risk, exists := DefaultRiskLevels[dir]; exists {
+        return risk
+    }
+
+    // プレフィックスマッチ（サブディレクトリ対応）
+    for stdDir, risk := range DefaultRiskLevels {
+        if strings.HasPrefix(cmdPath, stdDir+"/") {
+            return risk
+        }
+    }
+
+    // デフォルト: 非標準ディレクトリは個別分析に委ねる
+    return runnertypes.RiskLevelUnknown
+}
+
+// isStandardDirectory は標準ディレクトリかどうかを判定
+func isStandardDirectory(cmdPath string) bool {
+    dir := filepath.Dir(cmdPath)
+
+    for _, stdDir := range StandardDirectories {
+        if dir == stdDir || strings.HasPrefix(cmdPath, stdDir+"/") {
+            return true
+        }
+    }
+    return false
+}
+```
+
+### 3.2 ハッシュ検証統合
+
+```go
+// internal/runner/security/hash_validation.go (新規作成)
+package security
+
+import (
+    "github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
+)
+
+// shouldSkipHashValidation はハッシュ検証をスキップするかを判定
+func shouldSkipHashValidation(cmdPath string, globalConfig *runnertypes.GlobalConfig) bool {
+    if !globalConfig.SkipStandardPaths {
+        return false // SkipStandardPaths=false の場合は全て検証
+    }
+
+    return isStandardDirectory(cmdPath) // 標準ディレクトリのみスキップ
+}
+
+// validateFileHash はファイルのハッシュ検証を実行
+func validateFileHash(cmdPath string) error {
+    // 既存のfilevalidatorパッケージを活用
+    validator := filevalidator.NewValidator()  // 実装に応じて調整
+    return validator.ValidateFile(cmdPath)
+}
+```
+
+### 3.3 個別コマンドオーバーライド
+
+```go
+// internal/runner/security/command_overrides.go (新規作成)
+package security
+
+import (
+    "github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+)
+
+// 個別コマンドのリスクレベルオーバーライド
+var CommandRiskOverrides = map[string]runnertypes.RiskLevel{
+    "/usr/bin/sudo":       runnertypes.RiskLevelCritical,
+    "/bin/su":             runnertypes.RiskLevelCritical,
+    "/usr/bin/curl":       runnertypes.RiskLevelMedium,
+    "/usr/bin/wget":       runnertypes.RiskLevelMedium,
+    "/usr/sbin/systemctl": runnertypes.RiskLevelHigh,
+    "/usr/sbin/service":   runnertypes.RiskLevelHigh,
+    "/bin/rm":             runnertypes.RiskLevelHigh,
+    "/usr/bin/dd":         runnertypes.RiskLevelHigh,
+}
+
+// getCommandRiskOverride は個別コマンドのオーバーライドを取得
+func getCommandRiskOverride(cmdPath string) (runnertypes.RiskLevel, bool) {
+    risk, exists := CommandRiskOverrides[cmdPath]
+    return risk, exists
+}
+```
+
+## 4. 設定システム
+
+### 4.1 GlobalConfig拡張
+
+```go
+// internal/runner/runnertypes/config.go - 既存のGlobalConfig構造体
+type GlobalConfig struct {
+    Timeout           int      `toml:"timeout"`
+    WorkDir           string   `toml:"workdir"`
+    LogLevel          string   `toml:"log_level"`
+    VerifyFiles       []string `toml:"verify_files"`
+    SkipStandardPaths bool     `toml:"skip_standard_paths"` // 既存フィールド活用
+    EnvAllowlist      []string `toml:"env_allowlist"`
+}
+```
+
+### 4.2 設定ファイル例
+
+```toml
+[global]
+timeout = 300
+workdir = "/tmp"
+log_level = "info"
+verify_files = ["config.toml"]
+skip_standard_paths = false  # false: 全ファイル検証, true: 標準ディレクトリをスキップ
+env_allowlist = ["PATH", "HOME"]
+```
+
+## 5. エラーハンドリング
+
+### 5.1 エラー型定義
+
+```go
+// internal/runner/security/errors.go への追加
+var (
+    // ハッシュ検証関連エラー
+    ErrHashValidationFailed = errors.New("hash validation failed")
+    ErrHashManifestNotFound = errors.New("hash manifest not found")
+
+    // 既存エラーの拡張
+    ErrCommandNotAllowed = errors.New("command not allowed") // パス制限から汎用エラーに変更
+)
+
+// HashValidationError はハッシュ検証失敗の詳細エラー
+type HashValidationError struct {
+    Command      string
+    ExpectedHash string
+    ActualHash   string
+    Err          error
+}
+
+func (e *HashValidationError) Error() string {
+    return fmt.Sprintf("hash validation failed for %s: expected %s, got %s",
+        e.Command, e.ExpectedHash, e.ActualHash)
+}
+```
+
+## 6. テスト戦略
+
+### 6.1 ユニットテスト
+
+```go
+// internal/runner/security/command_analysis_test.go への追加
+func TestAnalyzeCommandSecurity_DirectoryBasedRisk(t *testing.T) {
+    tests := []struct {
+        name         string
+        cmdPath      string
+        expectedRisk runnertypes.RiskLevel
+    }{
+        {"bin directory", "/bin/ls", runnertypes.RiskLevelLow},
+        {"usr/bin directory", "/usr/bin/git", runnertypes.RiskLevelLow},
+        {"sbin directory", "/sbin/iptables", runnertypes.RiskLevelMedium},
+        {"custom directory", "/opt/custom/tool", runnertypes.RiskLevelUnknown},
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            risk := getDefaultRiskByDirectory(tt.cmdPath)
+            assert.Equal(t, tt.expectedRisk, risk)
+        })
+    }
+}
+
+func TestAnalyzeCommandSecurity_HashValidation(t *testing.T) {
+    tests := []struct {
+        name           string
+        cmdPath        string
+        skipStdPaths   bool
+        hashValidFail  bool
+        expectedRisk   runnertypes.RiskLevel
+        expectedReason string
+    }{
+        {
+            name:           "standard dir skip hash",
+            cmdPath:        "/bin/ls",
+            skipStdPaths:   true,
+            expectedRisk:   runnertypes.RiskLevelLow,
+        },
+        {
+            name:           "custom dir hash fail",
+            cmdPath:        "/opt/tool",
+            hashValidFail:  true,
+            expectedRisk:   runnertypes.RiskLevelCritical,
+            expectedReason: "Hash validation failed",
+        },
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            // テスト実装
+        })
     }
 }
 ```
 
-## 9. テスト戦略
+## 7. パフォーマンス考慮事項
 
-### 9.1 Unit Testing
+### 7.1 最適化戦略
 
-- **Unified Validator**: 各検証モードの単体テスト
-- **Config Manager**: 設定解析と検証のテスト
+- **ハッシュ検証スキップ**: 標準ディレクトリでの性能向上
+- **ディレクトリ判定キャッシュ**: 頻繁なディレクトリ判定の最適化
+- **設定キャッシュ**: 設定読み込みの最適化
 
-### 9.2 Integration Testing
+### 7.2 メトリクス収集
 
-- **End-to-End**: PathResolver から Unified Validator までの完全フロー
-- **Performance**: 負荷テストとベンチマーク
+```go
+// internal/runner/security/metrics.go (新規作成)
+type SecurityMetrics struct {
+    HashValidationCount    prometheus.Counter
+    HashValidationSkipped  prometheus.Counter
+    DirectoryRiskHits      prometheus.CounterVec
+    ValidationDuration     prometheus.Histogram
+}
 
-### 9.3 Security Testing
+func (m *SecurityMetrics) RecordHashValidation(skipped bool, duration time.Duration) {
+    if skipped {
+        m.HashValidationSkipped.Inc()
+    } else {
+        m.HashValidationCount.Inc()
+    }
+    m.ValidationDuration.Observe(duration.Seconds())
+}
+```
 
-- **Risk Level Validation**: 各リスクレベルでの適切なブロック
-- **Bypass Prevention**: セキュリティ迂回の防止テスト
-- **Configuration Security**: 設定ファイルのセキュリティ検証
-
-この統合アーキテクチャにより、go-safe-cmd-runner は統一され、保守しやすく、拡張可能なセキュリティシステムを獲得します。
+この統合アーキテクチャにより、パス制限を撤廃しつつ、ハッシュ検証とリスクベース評価で強固なセキュリティを実現します。
