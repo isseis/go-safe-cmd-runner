@@ -5,11 +5,7 @@
 ### 1.1 現在の状況
 - **PathResolver.ValidateCommand**: ホワイトリストベースのコマンド許可検証（`internal/verification/path_resolver.go`）
 - **リスクレベル評価システム**: リスクベースアクセス制御（`internal/runner/security/command_analysis.go`）
-- **二重検証メカニズム*### 7.1 Phase 1: 基盤整備 (3週間)
-- 統合リスクベース検証エンジンの設計・実装
-- PathResolver への統合
-- ハードコーディングされたリスクレベル計算ルールの実装
-- 基本テストケースの作成るモジュールで独立したセキュリティ検証を実行
+- **二重検証メカニズム**: 2つのモジュールで独立したセキュリティ検証を実行
 
 ### 1.2 特定された問題
 - **機能重複**:
@@ -153,15 +149,16 @@ Details:
 ## 5. 実装対象範囲
 
 ### 5.1 修正対象ファイル
-- `internal/verification/path_resolver.go`: 統合セキュリティ検証の実装
-- `internal/runner/security/validator.go`: 設定統合と互換性レイヤー
-- `internal/runner/security/command_analysis.go`: API インターフェース調整
-- `internal/runner/security/config.go`: 統合設定構造体
+- `internal/verification/path_resolver.go`: PathResolverの統合セキュリティ検証実装
+- `internal/runner/security/validator.go`: 既存のValidator構造体の拡張
+- `internal/runner/security/command_analysis.go`: 既存のAnalyzeCommandSecurity関数の活用
+- `internal/runner/security/types.go`: 既存の設定構造体の拡張
 - 関連テストファイル群
 
-### 5.2 新規追加予定
-- `internal/security/unified_validator.go`: 統一検証エンジン
-- 統合テストスイート
+### 5.2 実装方針の変更
+- **新規パッケージは作成しない**: 既存の `internal/runner/security` パッケージを活用
+- **既存のRiskLevel型を使用**: `internal/runner/runnertypes/config.go` の `RiskLevel` 型を活用
+- **統合テストスイート**: 既存テストの拡張
 
 ### 5.3 ドキュメント更新
 - セキュリティ設定ガイド

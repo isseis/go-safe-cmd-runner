@@ -23,27 +23,31 @@
 
 **実装項目**:
 ```
-internal/security/
-├── risk_validator.go           # リスクベース検証エンジン
-├── config_manager.go           # 設定管理
-├── hardcoded_risk_calculator.go # ハードコーディングリスク計算
-├── validation_cache.go         # 検証結果キャッシュ
-├── errors.go                  # 統合エラー型
-└── interfaces.go              # インターフェース定義
+既存パッケージの拡張:
+internal/runner/security/
+├── validator.go                # 既存Validatorにリスクベース機能追加
+├── command_analysis.go         # 既存AnalyzeCommandSecurity関数を活用
+└── types.go                   # 既存Config構造体の拡張
+
+internal/verification/
+└── path_resolver.go            # PathResolverへの統合機能追加
+
+internal/runner/runnertypes/
+└── config.go                   # 既存RiskLevel型を活用
 ```
 
 **詳細タスク**:
-- [ ] `UnifiedValidator` インターフェースの定義（リスクベース専用）
-- [ ] `RiskBasedValidator` の基本実装
-- [ ] `SecurityConfigManager` の実装
-- [ ] `HardcodedRiskCalculator` の実装
-- [ ] 基本的なエラー型の定義
+- [ ] `Validator` 構造体にリスクベース検証メソッド追加
+- [ ] 既存 `AnalyzeCommandSecurity` 関数との統合
+- [ ] 既存 `Config` 構造体の拡張
+- [ ] ハードコーディングリスク計算ロジックの実装
+- [ ] 既存エラー型の活用と拡張
 - [ ] 単体テストの作成
 
 **成果物**:
-- リスクベース検証エンジンの MVP版
-- ハードコーディングリスク計算機能
-- 設定管理システム
+- 既存Validatorに統合されたリスクベース検証機能
+- 既存AnalyzeCommandSecurityと連携したリスク計算
+- 既存設定システムの活用
 - 基本テストカバレッジ 80%
 
 #### Week 2: Path Resolver Integration
@@ -256,212 +260,129 @@ examples/
 
 #### 3.1.1 Unified Validator
 ```go
-// internal/security/unified_validator.go
+// internal/runner/security/validator.go の拡張
 package security
 
 import (
     "context"
     "fmt"
     "time"
+
+    "github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
-type UnifiedValidator interface {
-    ValidateCommand(ctx context.Context, resolvedPath string) error
-    ValidateCommandWithArgs(ctx context.Context, resolvedPath string, args []string) error
-    GetValidationMode() ValidationMode
-    SetValidationMode(mode ValidationMode) error
-    GetStats() *ValidationStats
+// 既存Validator構造体に機能追加
+type Validator struct {
+    // 既存フィールド...
+    config                      *Config
+    fs                          common.FileSystem
+    allowedCommandRegexps       []*regexp.Regexp
+    // 新規追加: リスクベース検証サポート
+    riskBasedValidation         bool
+    defaultMaxRiskLevel         runnertypes.RiskLevel
 }
 
-type DefaultUnifiedValidator struct {
-    config        SecurityConfigManager
-    riskEvaluator RiskEvaluator
-    legacyValidator *Validator
-    cache         ValidationCache
-    logger        SecurityLogger
-    metrics       *PerformanceMetrics
-}
+// 既存NewValidator関数を拡張（新規関数は作成しない）
+// func NewValidator(config *Config) (*Validator, error) {
+//     // 既存の実装にリスクベース機能を追加
+// }
 
-func NewUnifiedValidator(config SecurityConfigManager, logger SecurityLogger) (*DefaultUnifiedValidator, error) {
-    if config == nil {
-        return nil, fmt.Errorf("config manager cannot be nil")
-    }
-
-    validator := &DefaultUnifiedValidator{
-        config: config,
-        logger: logger,
-        metrics: NewPerformanceMetrics(),
-    }
-
-    // Initialize components based on configuration
-    if err := validator.initialize(); err != nil {
-        return nil, fmt.Errorf("failed to initialize validator: %w", err)
-    }
-
-    return validator, nil
-}
-
-func (v *DefaultUnifiedValidator) ValidateCommandWithArgs(ctx context.Context, resolvedPath string, args []string) error {
-    start := time.Now()
-    defer func() {
-        v.metrics.RecordValidation(time.Since(start), false, nil)
-    }()
-
-    // Input validation
-    if resolvedPath == "" {
-        return fmt.Errorf("resolved path cannot be empty")
-    }
-
-    // Check cache first
-    if result, found := v.cache.Get(resolvedPath, args); found {
-        v.metrics.RecordCacheHit()
-        v.logger.LogValidationDecision(&ValidationDecision{
-            Command:    resolvedPath,
-            Arguments:  args,
-            Result:     ValidationResultFromError(result),
-            CacheHit:   true,
-            Timestamp:  time.Now(),
-        })
-        return result
-    }
-
-    // Determine validation mode
-    mode := v.config.GetValidationMode()
-
-    var err error
-    var decision *ValidationDecision
-
-    switch mode {
-    case ValidationModeWhitelist:
-        decision, err = v.validateWithWhitelist(resolvedPath, args)
-    case ValidationModeRiskBased:
-        decision, err = v.validateWithRiskLevel(resolvedPath, args)
-    case ValidationModeHybrid:
-        decision, err = v.validateHybrid(resolvedPath, args)
-    default:
-        err = fmt.Errorf("unsupported validation mode: %v", mode)
-    }
-
-    // Cache result
-    v.cache.Set(resolvedPath, args, err)
-
-    // Log decision
-    if decision != nil {
-        decision.Timestamp = time.Now()
-        v.logger.LogValidationDecision(decision)
-    }
-
-    return err
-}
-
-func (v *DefaultUnifiedValidator) validateWithRiskLevel(resolvedPath string, args []string) (*ValidationDecision, error) {
-    // Use existing risk analysis
+// 新規メソッド: リスクベース検証
+func (v *Validator) ValidateCommandWithRisk(ctx context.Context, resolvedPath string, args []string, maxRiskLevel runnertypes.RiskLevel) error {
+    // 既存のAnalyzeCommandSecurity関数を活用
     riskLevel, pattern, reason, err := AnalyzeCommandSecurity(resolvedPath, args)
     if err != nil {
-        return nil, fmt.Errorf("risk analysis failed: %w", err)
+        return fmt.Errorf("risk analysis failed: %w", err)
     }
 
-    maxAllowedRisk := v.config.GetDefaultMaxRiskLevel()
-
-    decision := &ValidationDecision{
-        Command:        resolvedPath,
-        Arguments:      args,
-        ValidationMode: ValidationModeRiskBased,
-        RiskLevel:      riskLevel,
-        Pattern:        pattern,
-        Reason:         reason,
-        MaxAllowedRisk: maxAllowedRisk,
+    if riskLevel > maxRiskLevel {
+        return fmt.Errorf("command risk level %s exceeds maximum allowed %s", riskLevel.String(), maxRiskLevel.String())
     }
 
-    if riskLevel > maxAllowedRisk {
-        decision.Result = ValidationResultBlocked
-        return decision, &SecurityViolationError{
-            Command:         resolvedPath,
-            DetectedRisk:    riskLevel.String(),
-            DetectedPattern: pattern,
-            MaxAllowedRisk:  maxAllowedRisk.String(),
-            Reason:          reason,
-            Phase:           "verification",
-        }
-    }
-
-    decision.Result = ValidationResultAllowed
-    return decision, nil
+    return nil
 }
+
+// 既存ValidateCommandメソッドの拡張 (新規メソッドは作成せず、既存メソッドを拡張)
+// func (v *Validator) ValidateCommand(command string) error {
+//     if v.riskBasedValidation {
+//         return v.ValidateCommandWithRisk(context.Background(), command, []string{}, v.defaultMaxRiskLevel)
+//     }
+//
+//     // 既存のホワイトリスト検証ロジック
+//     for _, re := range v.allowedCommandRegexps {
+//         if re.MatchString(command) {
+//             return nil
+//         }
+//     }
+//
+//     return fmt.Errorf("%w: command %s does not match any allowed pattern", ErrCommandNotAllowed, command)
+// }
 ```
 
-#### 3.1.2 Configuration Manager
+#### 3.1.2 既存Config構造体の活用
 ```go
-// internal/security/config_manager.go
+// internal/runner/security/types.go の拡張
 package security
 
 import (
     "fmt"
     "strings"
+
+    "github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
-type SecurityConfigManager interface {
-    GetValidationMode() ValidationMode
-    GetDefaultMaxRiskLevel() RiskLevel
-    GetSecurityConfig() *SecurityConfig
-    UpdateConfig(config *SecurityConfig) error
-    ValidateConfig() error
+// 既存Config構造体にフィールド追加
+type Config struct {
+    // 既存フィールド...
+    AllowedCommands []string
+    RequiredFilePermissions os.FileMode
+    // 新規追加
+    UseRiskBasedValidation bool                   `toml:"use_risk_based_validation"`
+    DefaultMaxRiskLevel    string                `toml:"default_max_risk_level"`
+    riskLevelCache         runnertypes.RiskLevel // パース済み値のキャッシュ
 }
 
-type DefaultSecurityConfigManager struct {
-    config *SecurityConfig
-    logger SecurityLogger
-}
-
-func NewSecurityConfigManager(config *SecurityConfig, logger SecurityLogger) (*DefaultSecurityConfigManager, error) {
-    if config == nil {
-        config = DefaultSecurityConfig()
-    }
-
-    mgr := &DefaultSecurityConfigManager{
-        config: config,
-        logger: logger,
-    }
-
-    if err := mgr.ValidateConfig(); err != nil {
-        return nil, fmt.Errorf("invalid configuration: %w", err)
-    }
-
-    return mgr, nil
-}
-
-func (m *DefaultSecurityConfigManager) GetValidationMode() ValidationMode {
-    switch strings.ToLower(m.config.ValidationMode) {
-    case "whitelist":
-        return ValidationModeWhitelist
-    case "risk_based":
-        return ValidationModeRiskBased
-    case "hybrid":
-        return ValidationModeHybrid
-    default:
-        return ValidationModeRiskBased // Default to risk-based
+// 既存DefaultConfig関数の拡張
+func DefaultConfig() *Config {
+    return &Config{
+        // 既存設定...
+        AllowedCommands: []string{
+            "^/bin/.*",
+            "^/usr/bin/.*",
+            "^/usr/sbin/.*",
+            "^/usr/local/bin/.*",
+        },
+        // 新規追加
+        UseRiskBasedValidation: false,                          // デフォルトは既存のホワイトリストモード
+        DefaultMaxRiskLevel:    runnertypes.MediumRiskLevelString, // "medium"
+        riskLevelCache:         runnertypes.RiskLevelMedium,
     }
 }
 
-func (m *DefaultSecurityConfigManager) ValidateConfig() error {
-    validModes := []string{"whitelist", "risk_based", "hybrid"}
-    if !contains(validModes, strings.ToLower(m.config.ValidationMode)) {
-        return &ConfigurationError{
-            Setting:     "validation_mode",
-            Value:       m.config.ValidationMode,
-            ValidValues: validModes,
-            Location:    "security.validation_mode",
-        }
+// 新規メソッド: リスクレベルのパースとキャッシュ
+func (c *Config) GetDefaultMaxRiskLevel() (runnertypes.RiskLevel, error) {
+    if c.riskLevelCache != runnertypes.RiskLevelUnknown {
+        return c.riskLevelCache, nil
     }
 
-    validRiskLevels := []string{"none", "low", "medium", "high"}
-    if !contains(validRiskLevels, strings.ToLower(m.config.DefaultMaxRiskLevel)) {
-        return &ConfigurationError{
-            Setting:     "default_max_risk_level",
-            Value:       m.config.DefaultMaxRiskLevel,
-            ValidValues: validRiskLevels,
-            Location:    "security.default_max_risk_level",
-        }
+    parsed, err := runnertypes.ParseRiskLevel(c.DefaultMaxRiskLevel)
+    if err != nil {
+        return runnertypes.RiskLevelUnknown, err
+    }
+
+    c.riskLevelCache = parsed
+    return parsed, nil
+}
+
+// 新規メソッド: 設定の検証
+func (c *Config) ValidateRiskBasedConfig() error {
+    if !c.UseRiskBasedValidation {
+        return nil // リスクベースではない場合は検証しない
+    }
+
+    _, err := runnertypes.ParseRiskLevel(c.DefaultMaxRiskLevel)
+    if err != nil {
+        return fmt.Errorf("invalid default_max_risk_level: %w", err)
     }
 
     return nil

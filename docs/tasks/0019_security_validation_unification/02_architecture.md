@@ -45,48 +45,44 @@ flowchart TD
 
 ### 2.2 コンポーネント構成
 
-#### 2.2.1 Unified Risk-based Validator
+#### 2.2.1 統合リスクベース検証機能
 ```go
-// internal/security/unified_validator.go
-type UnifiedValidator interface {
-    ValidateCommand(ctx context.Context, resolvedPath string) error
-    ValidateCommandWithArgs(ctx context.Context, resolvedPath string, args []string) error
-    GetMaxRiskLevel() RiskLevel
-    SetMaxRiskLevel(level RiskLevel) error
+// 既存のinternal/runner/securityパッケージを拡張
+// internal/runner/security/validator.goに統合機能を追加
+type ValidatorWithRiskLevel interface {
+    ValidateCommand(resolvedPath string) error
+    ValidateCommandWithRisk(ctx context.Context, resolvedPath string, args []string, maxRiskLevel runnertypes.RiskLevel) error
 }
 
-type RiskLevel int
-
-const (
-    RiskLevelNone RiskLevel = iota
-    RiskLevelLow
-    RiskLevelMedium
-    RiskLevelHigh
-    RiskLevelCritical
-)
+// 既存のRiskLevel型を使用
+// internal/runner/runnertypes/config.goで定義済み
+// type RiskLevel int // 既存
+// const (
+//     RiskLevelUnknown RiskLevel = iota
+//     RiskLevelLow
+//     RiskLevelMedium
+//     RiskLevelHigh
+//     RiskLevelCritical
+// )
 ```
 
-#### 2.2.2 Security Config Manager
+#### 2.2.2 既存セキュリティ設定の活用
 ```go
-// internal/security/config_manager.go
-type SecurityConfigManager interface {
-    GetMaxRiskLevel() RiskLevel
-    CalculateRiskLevel(cmdPath string) RiskLevel
-    ValidateConfig() error
-}
+// 既存のinternal/runner/security/types.goで定義済み
+// type Config struct {
+//     AllowedCommands []string
+//     // ... 他の設定
+// }
 
-type SecurityConfig struct {
-    MaxRiskLevel    string `toml:"max_risk_level"`   // "none" | "low" | "medium" | "high" | "critical"
+// 既存のinternal/runner/runnertypes/config.goで定義済み
+// type Command struct {
+//     MaxRiskLevel string `toml:"max_risk_level"`
+//     // ...
+// }
+// func (c *Command) GetMaxRiskLevel() (RiskLevel, error)
 
-    // Cache configuration
-    EnableCache     bool `toml:"enable_cache"`
-    CacheSize       int  `toml:"cache_size"`
-}
-
-type HardcodedRiskCalculator interface {
-    CalculateDefaultRiskLevel(cmdPath string) RiskLevel
-    GetExplicitRiskLevels() map[string]RiskLevel
-}
+// 既存のinternal/runner/security/command_analysis.goで実装済み
+// func AnalyzeCommandSecurity(resolvedPath string, args []string) (riskLevel runnertypes.RiskLevel, detectedPattern string, reason string, err error)
 ```
 
 ## 3. データフロー
@@ -162,16 +158,17 @@ func (pr *PathResolver) ValidateCommandWithArgs(resolvedPath string, args []stri
 }
 ```
 
-### 4.2 Unified Validator Implementation
+### 4.2 PathResolverの統合機能拡張
 
 ```go
-// internal/security/unified_validator.go
-type DefaultUnifiedValidator struct {
-    config           SecurityConfigManager
-    riskEvaluator    RiskEvaluator
-    legacyValidator  *Validator
-    logger           Logger
-    cache            ValidationCache
+// internal/verification/path_resolver.go の拡張
+type PathResolver struct {
+    // 既存フィールド...
+    pathEnv           string
+    security          *security.Validator
+    cache             map[string]string
+    // 新規追加: リスクベース検証サポート
+    useRiskBasedValidation bool
 }
 
 func (v *DefaultUnifiedValidator) ValidateCommand(ctx context.Context, resolvedPath string) error {
