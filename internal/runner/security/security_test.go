@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -1041,11 +1040,7 @@ func TestIsPrivilegeEscalationCommand(t *testing.T) {
 
 func TestAnalyzeCommandSecurityWithDeepSymlinks(t *testing.T) {
 	t.Run("normal command has no risk", func(t *testing.T) {
-		// Resolve path for echo command
-		echoPath, err := exec.LookPath("echo")
-		if err != nil {
-			echoPath = "/bin/echo" // fallback
-		}
+		echoPath := "/bin/echo"
 		risk, pattern, reason, err := AnalyzeCommandSecurity(echoPath, []string{"hello"})
 		require.NoError(t, err)
 		assert.Equal(t, RiskLevelNone, risk)
@@ -1054,11 +1049,7 @@ func TestAnalyzeCommandSecurityWithDeepSymlinks(t *testing.T) {
 	})
 
 	t.Run("dangerous pattern detected", func(t *testing.T) {
-		// Resolve path for rm command
-		rmPath, err := exec.LookPath("rm")
-		if err != nil {
-			rmPath = "/bin/rm" // fallback
-		}
+		rmPath := "/bin/rm"
 		risk, pattern, reason, err := AnalyzeCommandSecurity(rmPath, []string{"-rf", "/"})
 		require.NoError(t, err)
 		assert.Equal(t, RiskLevelHigh, risk)
