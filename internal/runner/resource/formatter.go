@@ -278,7 +278,7 @@ func (f *JSONFormatter) FormatResult(result *DryRunResult, opts FormatterOptions
 	case DetailLevelSummary:
 		f.applySummaryFilter(&resultCopy)
 	case DetailLevelDetailed:
-		f.applyDetailedFilter(&resultCopy)
+		// keep all details
 	}
 
 	data, err := json.MarshalIndent(&resultCopy, "", "  ")
@@ -309,18 +309,6 @@ func (f *JSONFormatter) applySummaryFilter(result *DryRunResult) {
 	// Simplify resource analyses
 	for i := range result.ResourceAnalyses {
 		result.ResourceAnalyses[i].Parameters = nil
-	}
-}
-
-// applyDetailedFilter applies detailed-level filtering
-func (f *JSONFormatter) applyDetailedFilter(result *DryRunResult) {
-	// For detailed level, we keep most information
-	// Only remove the most verbose details
-	if result.ExecutionPlan != nil {
-		// Simplify execution plan
-		for i := range result.ExecutionPlan.Groups {
-			result.ExecutionPlan.Groups[i].Commands = nil
-		}
 	}
 }
 

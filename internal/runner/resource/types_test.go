@@ -146,7 +146,6 @@ func TestDryRunResult(t *testing.T) {
 			Duration:        time.Second * 5,
 		},
 		ExecutionPlan: &ExecutionPlan{
-			Groups:            []GroupPlan{},
 			TotalCommands:     0,
 			EstimatedDuration: time.Second * 10,
 			RequiresPrivilege: false,

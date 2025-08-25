@@ -150,23 +150,9 @@ type ResultMetadata struct {
 
 // ExecutionPlan represents the planned execution
 type ExecutionPlan struct {
-	Groups            []GroupPlan   `json:"groups"`
 	TotalCommands     int           `json:"total_commands"`
 	EstimatedDuration time.Duration `json:"estimated_duration"`
 	RequiresPrivilege bool          `json:"requires_privilege"`
-}
-
-// GroupPlan represents the execution plan for a command group
-type GroupPlan struct {
-	Name              string            `json:"name"`
-	Description       string            `json:"description"`
-	Priority          int               `json:"priority"`
-	WorkingDirectory  string            `json:"working_directory"`
-	Commands          []ResolvedCommand `json:"commands"`
-	Dependencies      []string          `json:"dependencies"`
-	EnvironmentVars   map[string]string `json:"environment_vars"`
-	EstimatedDuration time.Duration     `json:"estimated_duration"`
-	RequiresPrivilege bool              `json:"requires_privilege"`
 }
 
 // ResolvedCommand represents a fully resolved command
