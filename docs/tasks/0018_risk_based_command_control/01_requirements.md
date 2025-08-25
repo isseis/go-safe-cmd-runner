@@ -40,10 +40,10 @@
 **F4**: TOML設定ファイルの `groups.commands` セクションに `max_risk_level` フィールドを追加
 
 **F5**: `max_risk_level` の値：
-- `"critical"`: Critical risk コマンドまで許可（特権昇格コマンドを除く）
 - `"high"`: High risk コマンドまで許可
 - `"medium"`: Medium risk コマンドまで許可
 - `"low"` または未設定: Low risk コマンドのみ許可
+- 備考： `"critical"` を設定することはできない。
 
 **F6**: コマンドの実際のリスクレベルが設定された `max_risk_level` を超える場合、実行を拒否
 
@@ -199,6 +199,17 @@ Details:
 Run ID: 01K35WM4J8BBX09DY348H7JDEX
 ```
 
+### 4.3 Critical リスクレベル設定の拒否
+```
+Error: invalid_max_risk_level - Critical risk level cannot be set in configuration
+Details:
+  Setting: max_risk_level = "critical"
+  Reason: Critical risk level is reserved for internal security classification only
+  Alternative: Use 'max_risk_level = "high"' for highest allowed risk level, or 'run_as_user'/'run_as_group' for privilege requirements
+  Command Path: groups.admin_tasks.commands.system_operation
+Run ID: 01K35WM4J8BBX09DY348H7JDEX
+```
+
 ## 5. 実装対象範囲
 
 ### 5.1 修正対象ファイル
@@ -215,6 +226,7 @@ Run ID: 01K35WM4J8BBX09DY348H7JDEX
 ## 6. 受け入れ条件
 
 ### 6.1 機能テスト
+- [ ] `max_risk_level = "critical"` の設定はエラーとなり実行拒否
 - [x] High risk コマンドが `max_risk_level = "high"` で実行可能（**実装完了** - Normal modeで完全実装）
 - [x] High risk コマンドが `max_risk_level` 未設定で実行拒否（**実装完了** - Normal modeで完全実装）
 - [x] Medium risk コマンドが `max_risk_level = "medium"` で実行可能（**実装完了** - Normal modeで完全実装）

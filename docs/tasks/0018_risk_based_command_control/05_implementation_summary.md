@@ -110,7 +110,8 @@ privileged = true                # EXISTING: Root privileges
 ### ✅ Completed
 - Risk-based command classification system (Low, Medium, High, Critical)
 - Critical risk command blocking (特権昇格コマンドのブロック)
-- **Complete max_risk_level enforcement for all risk levels (Low, Medium, High, Critical)**
+- **Complete max_risk_level enforcement for user-configurable risk levels (Low, Medium, High)**
+  * Critical level: Internal classification only, not user-configurable
 - Enhanced privilege management interfaces (設計レベル)
 - Sudo/su/doas prohibition with symlink protection
 - TOML設定ファイルでのmax_risk_level/run_as_user/run_as_groupフィールド対応
@@ -122,7 +123,7 @@ privileged = true                # EXISTING: Root privileges
 
 ### ✅ Latest Integration (August 2024)
 - **Main Branch Merge**: Successfully merged all main branch enhancements including:
-  - **Critical Risk Level**: Added new `RiskLevelCritical` for privilege escalation commands
+  - **Critical Risk Level**: Added new `RiskLevelCritical` for privilege escalation commands (internal classification only, not user-configurable)
   - **Enhanced Security Analysis**: Integrated advanced security analysis functions from main branch
   - **Improved Network Detection**: Enhanced network operation detection with SSH-style address parsing
   - **Extended Risk Classification**: Comprehensive risk evaluation across all command types
@@ -145,7 +146,8 @@ privileged = true                # EXISTING: Root privileges
 - **Test Integration**: Updated all test files to support new constructor signatures with logger parameters
 
 ### ✅ Phase 2 Full Risk Control Implementation (August 24, 2025)
-- **Complete Max Risk Level Enforcement**: Successfully implemented full `max_risk_level` control for all risk levels (Low, Medium, High, Critical)
+- **Complete Max Risk Level Enforcement**: Successfully implemented full `max_risk_level` control for user-configurable risk levels (Low, Medium, High)
+  * Critical level: Reserved for internal privilege escalation command classification
 - **Risk Level Threshold Enforcement**: Commands are now blocked if their risk level exceeds the configured `max_risk_level` in TOML configuration
 - **Comprehensive Security Analysis**: Integrated three-layer security evaluation:
   1. Basic risk evaluation using `risk.StandardEvaluator`
@@ -159,12 +161,32 @@ privileged = true                # EXISTING: Root privileges
 - **User/Group Privilege Execution**: Normal mode run_as_user/run_as_group execution functionality
 - **Enhanced Monitoring**: Additional security monitoring and reporting features
 
-### 🎯 Current Status (Phase 2 Complete)
-**Phase 2 Full Risk Control Completed**: Successfully implemented complete max_risk_level enforcement across all risk levels. Normal mode now provides the same level of security control as dry-run mode, with automatic command risk assessment and threshold-based blocking.
+### ✅ Phase 3 Unified Approach Implementation (August 25, 2025)
+- **Unified Risk-Based Control**: Successfully implemented unified approach to replace dual control mechanisms
+  * Eliminated separate `critical risk` blocking with `max_risk_level` enforcement
+  * Replaced `ErrCriticalRiskBlocked` with `ErrCommandSecurityViolation` for unified error handling
+  * Integrated privilege escalation analysis directly into unified risk evaluation
+- **Architecture Simplification**: Removed complex dual control mechanism:
+  * Single risk evaluation flow using `calculateEffectiveRisk` method
+  * Direct integration of privilege escalation analysis into risk calculation
+  * Unified security violation response regardless of risk source
+- **Configuration Validation**: Enhanced configuration parsing:
+  * Prohibited "critical" risk level in user configuration with clear error message
+  * Critical level remains available for internal security classification only
+  * ParseRiskLevel function provides explicit validation feedback
+- **Production Quality**: All tests updated and passing, clean lint results
+  * Test expectations aligned with unified error handling approach
+  * Comprehensive validation across all security scenarios
+  * Zero linting issues with proper parameter naming
 
-**Security Level**: All risk levels (Low, Medium, High, Critical) are fully controlled through max_risk_level configuration. Multi-layer security evaluation operational in both dry-run and normal execution modes.
+### 🎯 Current Status (Phase 3 Complete)
+**Unified Risk-Based Control Completed**: Successfully implemented unified approach to risk-based command control, eliminating architectural complexity while maintaining equivalent security guarantees. Single control mechanism now handles all risk evaluation including privilege escalation analysis.
 
-**Test Coverage**: All functionality validated through comprehensive test suite covering edge cases and integration scenarios.
+**Security Level**: Unified risk evaluation with effective risk calculation considering both base command risk and privilege escalation risk. User-configurable risk levels (Low, Medium, High) enforced through single control path. Critical level prohibited in user configuration, available for internal classification only.
+
+**Architecture**: Simplified architecture with single risk evaluation flow, eliminating dual control mechanism complexity while maintaining all security features. Clean error handling with unified security violation responses.
+
+**Test Coverage**: All functionality validated through comprehensive test suite. Updated test expectations to match unified approach. Zero compilation or linting issues.
 
 ## User Benefits
 

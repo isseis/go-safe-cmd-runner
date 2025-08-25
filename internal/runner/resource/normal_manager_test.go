@@ -199,12 +199,13 @@ func TestNormalResourceManager_ExecuteCommand_PrivilegeEscalationBlocked(t *test
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			cmd := runnertypes.Command{
-				Name:        "test-privilege-command",
-				Description: "Test privilege escalation command",
-				Cmd:         tc.cmd,
-				Args:        tc.args,
-				Dir:         "/tmp",
-				Timeout:     30,
+				Name:         "test-privilege-command",
+				Description:  "Test privilege escalation command",
+				Cmd:          tc.cmd,
+				Args:         tc.args,
+				Dir:          "/tmp",
+				Timeout:      30,
+				MaxRiskLevel: "low", // Default max risk level to ensure Critical risk is blocked
 			}
 			group := createTestCommandGroup()
 			env := map[string]string{"TEST": "value"}
@@ -214,7 +215,8 @@ func TestNormalResourceManager_ExecuteCommand_PrivilegeEscalationBlocked(t *test
 
 			assert.Error(t, err)
 			assert.Nil(t, result)
-			assert.ErrorIs(t, err, runnertypes.ErrCriticalRiskBlocked)
+			// Unified approach: should be blocked by security violation, not critical risk error
+			assert.ErrorIs(t, err, runnertypes.ErrCommandSecurityViolation)
 		})
 	}
 }

@@ -1,42 +1,47 @@
-# 詳細設計書: Normal Mode リスクベースコマンド制御
+# 詳細設計書: Normal Mode 統合リスクベースコマンド制御
 
 ## 1. 概要
 
 ### 1.1 目的
-Normal Mode での実行時にセキュリティ分析を統合し、リスクレベルに基づいてコマンド実行を制御する機能の詳細設計を定義する。
+Normal Mode での実行時にセキュリティ分析を統合し、リスクレベルに基づく単一の制御機構でコマンド実行を安全に管理する機能の詳細設計を定義する。
 
-### 1.2 設計範囲
-- 特権昇格分析機能の実装詳細
-- リスク評価器の拡張機能
+### 1.2 設計方針
+従来の二重制御機構（直接ブロック + リスク評価）を廃止し、統一されたリスク評価システムによる制御を実装する。特権昇格コマンド（sudo/su/doas）はCriticalリスクレベルとして分類され、設定可能な最大リスクレベル（none/low/medium/high）による統一制御で安全性を担保する。
+
+### 1.3 設計範囲
+- 統一リスク評価機能の実装詳細
+- 特権昇格分析のリスク分類統合
 - Normal Manager への統合方法
 - 設定ファイル拡張の詳細
-- エラーハンドリングの実装
+- 統一エラーハンドリングの実装
 
-## 2. リスクベースコマンド制御の詳細設計
+## 2. 統合リスクベースコマンド制御の詳細設計
 
 ### 2.1 Risk Evaluation Package の実装
 
 ```go
 // internal/runner/risk/evaluator.go
 
-// RiskEvaluator evaluates the security risk of commands
+// RiskEvaluator evaluates the security risk of commands using unified approach
 type RiskEvaluator interface {
     EvaluateRisk(cmd *runnertypes.Command) (runnertypes.RiskLevel, error)
 }
 
-// StandardEvaluator implements comprehensive risk evaluation
+// StandardEvaluator implements unified risk evaluation including privilege escalation
 type StandardEvaluator struct {
     logger *slog.Logger
 }
 
-// EvaluateRisk analyzes a command and returns its risk level
+// EvaluateRisk analyzes a command and returns its risk level using unified classification
 func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.Command) (runnertypes.RiskLevel, error) {
-    // Check for privilege escalation commands (critical risk - should be blocked)
+    // Check for privilege escalation commands (automatic Critical risk classification)
     isPrivEsc, err := security.IsPrivilegeEscalationCommand(cmd.Cmd)
     if err != nil {
         return runnertypes.RiskLevelUnknown, err
     }
     if isPrivEsc {
+        // Unified approach: privilege escalation commands are classified as Critical
+        // and controlled by max_risk_level configuration (which cannot be set to "critical")
         return runnertypes.RiskLevelCritical, nil
     }
 
@@ -81,6 +86,7 @@ const (
     // RiskLevelHigh indicates commands with high security risk
     RiskLevelHigh
     // RiskLevelCritical indicates commands that should be blocked (e.g., privilege escalation)
+    // NOTE: This level is for internal classification only and cannot be set in configuration
     RiskLevelCritical
 )
 ```
@@ -486,14 +492,7 @@ func (e *DefaultEnhancedRiskEvaluator) EvaluateCommandExecution(
         return fmt.Errorf("command cannot be nil")
     }
 
-    // Check for prohibited privilege escalation commands first
-    if privilegeResult != nil && privilegeResult.HasPrivilegeEscalation {
-        if e.isProhibitedPrivilegeEscalationCommand(privilegeResult.EscalationType) {
-            return e.createPrivilegeEscalationProhibitedError(command, privilegeResult)
-        }
-    }
-
-    // Calculate effective risk level for other commands
+    // Calculate effective risk level including privilege escalation analysis
     effectiveRisk, err := e.CalculateEffectiveRisk(baseRiskLevel, privilegeResult, command)
     if err != nil {
         return fmt.Errorf("failed to calculate effective risk: %w", err)
@@ -505,7 +504,7 @@ func (e *DefaultEnhancedRiskEvaluator) EvaluateCommandExecution(
         return fmt.Errorf("failed to get max allowed risk level: %w", err)
     }
 
-    // Check if effective risk exceeds allowed level
+    // Check if effective risk exceeds allowed level (unified control)
     if effectiveRisk > maxRiskLevel {
         return e.createSecurityViolationError(
             command,
@@ -539,14 +538,14 @@ func (e *DefaultEnhancedRiskEvaluator) CalculateEffectiveRisk(
         return baseRisk, nil
     }
 
-    // If privilege escalation is explicitly allowed, exclude privilege escalation risk
-    if command.Privileged {
-        // Calculate risk without privilege escalation component
-        return e.calculateNonPrivilegeRisk(baseRisk, privilegeResult)
+    // Privilege escalation detected - classify as Critical risk unless explicitly allowed
+    if !command.Privileged {
+        // sudo/su/doas commands without explicit privilege flag are Critical risk
+        return RiskLevelCritical, nil
     }
 
-    // Privilege escalation detected but not allowed - combine risks
-    return e.combineRisks(baseRisk, privilegeResult.RiskLevel), nil
+    // For privileged commands, calculate risk without privilege escalation component
+    return e.calculateNonPrivilegeRisk(baseRisk, privilegeResult)
 }
 
 // calculateNonPrivilegeRisk calculates risk excluding privilege escalation components
@@ -580,23 +579,6 @@ func (e *DefaultEnhancedRiskEvaluator) combineRisks(risk1, risk2 RiskLevel) Risk
     }
     return risk2
 }
-
-// isProhibitedPrivilegeEscalationCommand checks if a privilege escalation type is prohibited
-func (e *DefaultEnhancedRiskEvaluator) isProhibitedPrivilegeEscalationCommand(escalationType PrivilegeEscalationType) bool {
-    switch escalationType {
-    case PrivilegeEscalationSudo, PrivilegeEscalationSu:
-        return true // sudo, su, and doas commands are always prohibited
-    default:
-        return false
-    }
-}
-
-// createPrivilegeEscalationProhibitedError creates an error for prohibited privilege escalation commands
-func (e *DefaultEnhancedRiskEvaluator) createPrivilegeEscalationProhibitedError(
-    command *config.Command,
-    privilegeResult *PrivilegeEscalationResult,
-) error {
-    return &PrivilegeEscalationProhibitedError{
         Command:         command.Cmd,
         DetectedCommand: privilegeResult.DetectedPatterns[0],
         Reason:          "Privilege escalation commands (sudo, su, doas) are prohibited in TOML files",
@@ -675,16 +657,6 @@ type SecurityViolationError struct {
     Suggestion          string
 }
 
-// PrivilegeEscalationProhibitedError represents an error for prohibited privilege escalation commands
-type PrivilegeEscalationProhibitedError struct {
-    Command         string
-    DetectedCommand string
-    Reason          string
-    Alternative     string
-    CommandPath     string
-    RunID           string
-}
-
 // PrivilegeEscalationDetails provides details about privilege escalation
 type PrivilegeEscalationDetails struct {
     Type               string
@@ -715,21 +687,9 @@ func (e *SecurityViolationError) Error() string {
     return strings.Join(parts, "; ")
 }
 
-// Error implements the error interface for PrivilegeEscalationProhibitedError
-func (e *PrivilegeEscalationProhibitedError) Error() string {
-    return fmt.Sprintf("privilege escalation prohibited: command '%s' (detected: %s) - %s. %s",
-        e.Command, e.DetectedCommand, e.Reason, e.Alternative)
-}
-
 // Is implements error equality checking for SecurityViolationError
 func (e *SecurityViolationError) Is(target error) bool {
     _, ok := target.(*SecurityViolationError)
-    return ok
-}
-
-// Is implements error equality checking for PrivilegeEscalationProhibitedError
-func (e *PrivilegeEscalationProhibitedError) Is(target error) bool {
-    _, ok := target.(*PrivilegeEscalationProhibitedError)
     return ok
 }
 ```
@@ -869,7 +829,7 @@ type Command struct {
     Args         []string `toml:"args"`
 
     // Security Configuration (NEW)
-    MaxRiskLevel string   `toml:"max_risk_level"` // "none", "low", "medium", "high"
+    MaxRiskLevel string   `toml:"max_risk_level"` // "none", "low", "medium", "high" (NOT "critical")
 
     // Privilege Configuration (EXISTING, enhanced validation)
     Privileged   bool     `toml:"privileged"`
@@ -886,7 +846,10 @@ func (c *Command) ValidateSecurityConfig() error {
 
     // Validate MaxRiskLevel
     if c.MaxRiskLevel != "" {
-        if _, err := ParseRiskLevel(c.MaxRiskLevel); err != nil {
+        // Explicitly reject "critical" setting
+        if c.MaxRiskLevel == "critical" {
+            errors = append(errors, "max_risk_level='critical' is not allowed (use run_as_user/run_as_group for privilege escalation)")
+        } else if _, err := ParseRiskLevel(c.MaxRiskLevel); err != nil {
             errors = append(errors, fmt.Sprintf("invalid max_risk_level '%s': %v", c.MaxRiskLevel, err))
         }
     }
@@ -897,7 +860,7 @@ func (c *Command) ValidateSecurityConfig() error {
     }
 
     if len(errors) > 0 {
-        return fmt.Errorf("security configuration validation failed: %s", strings.Join(errors, "; "))
+        return fmt.Errorf("security configuration validation failed: %s", strings.Join(errors, "; ")))
     }
 
     return nil
@@ -1194,43 +1157,43 @@ func TestNormalManagerSecurityIntegration(t *testing.T) {
             expectedError: &security.SecurityViolationError{},
         },
         {
-            name: "sudo_command_always_blocked",
+            name: "sudo_command_blocked_by_critical_risk",
             command: &config.Command{
                 Name:         "sudo_operation",
                 Cmd:          "sudo",
                 Args:         []string{"systemctl", "status", "nginx"},
-                MaxRiskLevel: "high", // Even with high risk level...
-                Privileged:   true,   // ...and privilege flag...
-                // sudo commands are always blocked
+                MaxRiskLevel: "high",     // Allows up to High risk
+                Privileged:   false,     // No explicit privilege
+                // sudo commands are classified as Critical risk and blocked
             },
             shouldExecute: false,
-            expectedError: &security.PrivilegeEscalationProhibitedError{},
+            expectedError: &security.SecurityViolationError{},
         },
         {
-            name: "su_command_always_blocked",
+            name: "su_command_blocked_by_critical_risk",
             command: &config.Command{
                 Name:         "su_operation",
                 Cmd:          "su",
                 Args:         []string{"-", "root"},
-                MaxRiskLevel: "high",
-                Privileged:   true,
-                // su commands are always blocked
+                MaxRiskLevel: "high",     // Allows up to High risk
+                Privileged:   false,     // No explicit privilege
+                // su commands are classified as Critical risk and blocked
             },
             shouldExecute: false,
-            expectedError: &security.PrivilegeEscalationProhibitedError{},
+            expectedError: &security.SecurityViolationError{},
         },
         {
-            name: "doas_command_always_blocked",
+            name: "doas_command_blocked_by_critical_risk",
             command: &config.Command{
                 Name:         "doas_operation",
                 Cmd:          "doas",
                 Args:         []string{"ls", "-la"},
-                MaxRiskLevel: "high",
-                Privileged:   true,
-                // doas commands are always blocked
+                MaxRiskLevel: "high",     // Allows up to High risk
+                Privileged:   false,     // No explicit privilege
+                // doas commands are classified as Critical risk and blocked
             },
             shouldExecute: false,
-            expectedError: &security.PrivilegeEscalationProhibitedError{},
+            expectedError: &security.SecurityViolationError{},
         },
         {
             name: "privileged_rm_with_explicit_permission",

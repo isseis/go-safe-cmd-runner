@@ -79,7 +79,8 @@ flowchart TB
 - **Risk Evaluation Package** (`internal/runner/risk/`)
   - `StandardEvaluator`: 統合リスク評価ロジック
   - 特権昇格・破壊的操作・ネットワーク・システム変更の分析
-  - リスクレベル分類（Unknown, Low, Medium, High, Critical）
+  - リスクレベル分類（Unknown, Low, Medium, High, Critical*）
+    * Critical: 内部分類のみ、設定不可（特権昇格コマンドの自動ブロック用）
 
 - **Enhanced Privilege Management** (`internal/runner/privilege/`)
   - `WithUserGroup`: ユーザー/グループ権限での実行機能
@@ -123,33 +124,32 @@ flowchart TD
 ```mermaid
 flowchart TD
     SecurityAnalysis[Security Analysis<br/>AnalyzeCommandSecurity]
-    ExtractRisk[Extract Risk Level<br/>None, Medium, High]
-    CheckProhibited{Prohibited Command?<br/>sudo/su/doas}
+    ExtractRisk[Extract Risk Level<br/>None, Low, Medium, High, Critical]
     GetConfig[Get Command Configuration<br/>max_risk_level setting]
-    RiskCheck{risk_level ≤ max_risk?}
+    RiskCheck{risk_level ≤ max_risk?<br/>Critical always blocked}
     Allow[ALLOW]
-    RejectProhibited[REJECT<br/>Privilege Escalation Prohibited]
     RejectRisk[REJECT<br/>Risk Level Too High]
     Execute[EXECUTE]
 
     SecurityAnalysis --> ExtractRisk
-    SecurityAnalysis --> CheckProhibited
-    CheckProhibited -->|Yes<br/>sudo/su/doas| RejectProhibited
-    CheckProhibited -->|No<br/>Other commands| GetConfig
+    ExtractRisk --> GetConfig
     GetConfig --> RiskCheck
-    RiskCheck -->|Yes| Allow
-    RiskCheck -->|No| RejectRisk
+    RiskCheck -->|Yes<br/>Within limits| Allow
+    RiskCheck -->|No<br/>Exceeds limit or Critical| RejectRisk
     Allow --> Execute
 
-    style CheckProhibited fill:#ffebee,stroke:#ef5350,stroke-width:2px
-    style RejectProhibited fill:#ffcdd2,stroke:#d32f2f,stroke-width:2px
+    style RiskCheck fill:#ffebee,stroke:#ef5350,stroke-width:2px
+    style RejectRisk fill:#ffcdd2,stroke:#d32f2f,stroke-width:2px
 ```
 
 **特権昇格コマンド検出:** システムは以下の段階でコマンドを処理します：
 1. **セキュリティ分析**: 既存の `security.AnalyzeCommandSecurity` でコマンドとリスクを分析
-2. **特権昇格コマンド検出**: コマンド名が `sudo`, `su`, `doas` の場合は即座に実行拒否
-3. **通常リスク評価**: その他のコマンドは `max_risk_level` 設定とリスクレベルを比較
-4. **代替手段の案内**: 禁止時に `run_as_user`/`run_as_group` による安全な権限昇格メカニズムを案内
+2. **統一リスク評価**: すべてのコマンド（特権昇格含む）を統一的なリスクレベル評価で処理
+   - `sudo`, `su`, `doas` → `Critical` リスクレベルに自動分類
+   - `Critical` レベルは `max_risk_level` 設定不可のため実質的にブロック
+3. **代替手段の案内**: 実行拒否時に `run_as_user`/`run_as_group` による安全な権限昇格メカニズムを案内
+
+**設計の統一化:** 特権昇格コマンドの専用ブロック機能は、リスクレベル評価に統合することで、より一貫性のあるセキュリティ制御を実現できます。
 
 ## 4. インターフェース設計
 
@@ -192,7 +192,7 @@ type Command struct {
     Description  string   `toml:"description"`
     Cmd          string   `toml:"cmd"`
     Args         []string `toml:"args"`
-    MaxRiskLevel string   `toml:"max_risk_level"` // NEW: "none", "medium", "high"
+    MaxRiskLevel string   `toml:"max_risk_level"` // NEW: "none", "low", "medium", "high" (NOT "critical")
     RunAsUser    string   `toml:"run_as_user"`    // User to execute command as (using seteuid)
     RunAsGroup   string   `toml:"run_as_group"`   // Group to execute command as (using setegid)
     // ... other existing fields
@@ -215,35 +215,20 @@ func (m *NormalResourceManager) ExecuteCommand(
     // 1. Security Analysis (using existing function)
     riskLevel, detectedPattern, reason := security.AnalyzeCommandSecurity(command.Cmd, command.Args)
 
-    // 2. Check for prohibited privilege escalation commands
-    isProhibited, err := security.IsPrivilegeEscalationCommand(command.Cmd)
-    if err != nil {
-        // Handle symlink depth exceeded error
-        if errors.Is(err, security.ErrSymlinkDepthExceeded) {
-            return nil, &SecurityViolationError{
-                Command:         command.Cmd,
-                DetectedRisk:    "HIGH",
-                DetectedPattern: "Symlink depth exceeded",
-                Reason:          "Potential symlink attack detected",
+    // 2. Unified Risk Evaluation (handles both regular and privilege escalation commands)
+    if err := m.evaluator.EvaluateCommandExecution(riskLevel, detectedPattern, reason, command); err != nil {
+        // Check if this is a Critical risk (privilege escalation) command
+        if riskLevel == security.RiskLevelCritical {
+            return nil, &PrivilegeEscalationProhibitedError{
+                Command:     command.Cmd,
+                Reason:      "Privilege escalation commands (sudo, su, doas) are prohibited in TOML files",
+                Alternative: "Use 'run_as_user'/'run_as_group' setting for safe privilege escalation",
             }
         }
-        return nil, fmt.Errorf("failed to check privilege escalation: %w", err)
-    }
-
-    if isProhibited {
-        return nil, &PrivilegeEscalationProhibitedError{
-            Command:     command.Cmd,
-            Reason:      "Privilege escalation commands (sudo, su, doas) are prohibited in TOML files",
-            Alternative: "Use 'run_as_user'/'run_as_group' setting for safe privilege escalation",
-        }
-    }
-
-    // 3. Risk evaluation for all other commands
-    if err := m.evaluator.EvaluateCommandExecution(riskLevel, detectedPattern, reason, command); err != nil {
         return nil, err
     }
 
-    // 4. Execute command
+    // 3. Execute command
     return m.executor.Execute(command, env)
 ```
 
@@ -277,7 +262,8 @@ flowchart LR
 ### 5.2 セキュリティ制御ポイント
 
 1. **Configuration Validation**
-   - `max_risk_level` の値検証
+   - `max_risk_level` の値検証（"none", "low", "medium", "high"のみ許可）
+   - `"critical"`値の明示的拒否
    - 不正な設定値の拒否
 
 2. **Pre-execution Analysis**

@@ -64,7 +64,7 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd runnerty
 		return nil, fmt.Errorf("command group validation failed: %w", err)
 	}
 
-	// Phase 1: Integrated security analysis
+	// Unified Risk Evaluation Approach
 	// Step 1: Evaluate basic security risk
 	riskLevel, err := n.riskEvaluator.EvaluateRisk(&cmd)
 	if err != nil {
@@ -77,44 +77,28 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd runnerty
 		return nil, fmt.Errorf("privilege escalation analysis failed: %w", err)
 	}
 
-	// Step 3: Comprehensive risk evaluation
-	// Convert runnertypes.RiskLevel to security.RiskLevel
-	securityRiskLevel := n.convertToSecurityRiskLevel(riskLevel)
-	err = n.securityEvaluator.EvaluateCommandExecution(
-		ctx,
-		securityRiskLevel,
-		"", // detectedPattern - will be filled by evaluator
-		"", // reason - will be filled by evaluator
-		privilegeResult,
-		&cmd,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("security evaluation failed: %w", err)
-	}
+	// Step 3: Calculate effective risk level including privilege escalation
+	effectiveRisk := n.calculateEffectiveRisk(riskLevel, privilegeResult, &cmd)
 
-	// Legacy: Block critical risk commands (privilege escalation) for backward compatibility
-	if riskLevel == runnertypes.RiskLevelCritical {
-		return nil, fmt.Errorf("%w: command %s detected as privilege escalation command",
-			runnertypes.ErrCriticalRiskBlocked, cmd.Cmd)
-	}
-
-	// Phase 1: max_risk_level control implementation
+	// Step 4: Get maximum allowed risk level from configuration
 	maxAllowedRisk, err := cmd.GetMaxRiskLevel()
 	if err != nil {
 		return nil, fmt.Errorf("invalid max_risk_level configuration: %w", err)
 	}
 
-	// Check if the command risk level exceeds the maximum allowed risk level
-	if riskLevel > maxAllowedRisk {
+	// Step 5: Unified risk level comparison (replaces dual control mechanism)
+	if effectiveRisk > maxAllowedRisk {
 		n.logger.Error("Command execution rejected due to risk level violation",
 			"command", cmd.Name,
 			"cmd_binary", cmd.Cmd,
-			"detected_risk", riskLevel.String(),
+			"effective_risk", effectiveRisk.String(),
 			"max_allowed_risk", maxAllowedRisk.String(),
+			"privilege_escalation", privilegeResult.IsPrivilegeEscalation,
+			"escalation_type", privilegeResult.EscalationType,
 			"command_path", group.Name,
 		)
-		return nil, fmt.Errorf("%w: command %s (risk: %s) exceeds maximum allowed risk level (%s)",
-			runnertypes.ErrCommandSecurityViolation, cmd.Cmd, riskLevel.String(), maxAllowedRisk.String())
+		return nil, fmt.Errorf("%w: command %s (effective risk: %s) exceeds maximum allowed risk level (%s)",
+			runnertypes.ErrCommandSecurityViolation, cmd.Cmd, effectiveRisk.String(), maxAllowedRisk.String())
 	}
 
 	result, err := n.executor.Execute(ctx, cmd, env)
@@ -131,20 +115,21 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd runnerty
 	}, nil
 }
 
-// convertToSecurityRiskLevel converts runnertypes.RiskLevel to security.RiskLevel
-func (n *NormalResourceManager) convertToSecurityRiskLevel(level runnertypes.RiskLevel) security.RiskLevel {
-	switch level {
-	case runnertypes.RiskLevelLow:
-		return security.RiskLevelLow
-	case runnertypes.RiskLevelMedium:
-		return security.RiskLevelMedium
-	case runnertypes.RiskLevelHigh:
-		return security.RiskLevelHigh
-	case runnertypes.RiskLevelCritical:
-		return security.RiskLevelHigh // Map critical to high for security evaluator
-	default:
-		return security.RiskLevelNone
+// calculateEffectiveRisk calculates the effective risk considering privilege escalation
+func (n *NormalResourceManager) calculateEffectiveRisk(
+	baseRisk runnertypes.RiskLevel,
+	privilegeResult *security.PrivilegeEscalationResult,
+	_ *runnertypes.Command,
+) runnertypes.RiskLevel {
+	// If no privilege escalation detected, return base risk
+	if privilegeResult == nil || !privilegeResult.IsPrivilegeEscalation {
+		return baseRisk
 	}
+
+	// Privilege escalation detected - classify as Critical risk unless explicitly allowed
+	// Note: In this unified approach, we don't have a Privileged field yet,
+	// so all privilege escalation commands are treated as Critical risk
+	return runnertypes.RiskLevelCritical
 }
 
 // CreateTempDir creates a temporary directory in normal mode

@@ -529,7 +529,8 @@ gantt
 
 #### Enhanced Configuration Support ✅ **完了**
 - [x] `internal/runner/runnertypes/config.go` 拡張
-- [x] `RiskLevel` 型定義（Unknown, Low, Medium, High, Critical）
+- [x] `RiskLevel` 型定義（Unknown, Low, Medium, High, Critical*）
+  * Critical: 内部分類のみ、max_risk_level設定では使用不可
 - [x] `ParseRiskLevel` 関数実装
 - [x] リスクレベル文字列変換実装
 - [x] `Command` 構造体の User/Group フィールド追加
