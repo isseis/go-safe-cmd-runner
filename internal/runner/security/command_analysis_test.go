@@ -90,8 +90,11 @@ func TestAnalyzeCommandSecurity_Integration(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			cmdPath := tc.setupFile()
 
+			// Convert globalConfig to skipStandardPaths boolean
+			skipStandardPaths := tc.globalConfig != nil && tc.globalConfig.SkipStandardPaths
+
 			// Use empty hashDir for tests since hash validation is not the main focus
-			risk, pattern, reason, err := AnalyzeCommandSecurityWithConfig(cmdPath, tc.args, tc.globalConfig, "")
+			risk, pattern, reason, err := AnalyzeCommandSecurityWithConfig(cmdPath, tc.args, skipStandardPaths, "")
 
 			if tc.expectError {
 				assert.Error(t, err)

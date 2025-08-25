@@ -194,7 +194,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 				Args:      []string{"restart", "nginx"},
 				RunAsUser: "root",
 			},
-			expectedSecurityRisk: "",
+			expectedSecurityRisk: "high", // Expect high due to systemctl command override
 			expectedDescription:  "User/Group configuration validated",
 		},
 		{
@@ -204,7 +204,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 				Cmd:  "ls",
 				Args: []string{"-la"},
 			},
-			expectedSecurityRisk: "",
+			expectedSecurityRisk: "low", // Now expects low due to directory-based assessment
 			expectedDescription:  "",
 		},
 		{

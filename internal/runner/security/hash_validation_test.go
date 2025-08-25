@@ -75,7 +75,9 @@ func TestShouldSkipHashValidation(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result := shouldSkipHashValidation(tc.cmdPath, tc.globalConfig)
+			// Convert globalConfig to skipStandardPaths boolean
+			skipStandardPaths := tc.globalConfig != nil && tc.globalConfig.SkipStandardPaths
+			result := shouldSkipHashValidation(tc.cmdPath, skipStandardPaths)
 			assert.Equal(t, tc.expectedSkip, result)
 		})
 	}

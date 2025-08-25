@@ -61,7 +61,7 @@ func TestSecurityAnalysis(t *testing.T) {
 				Cmd:         "echo",
 				Args:        []string{"hello", "world"},
 			},
-			expectRisk: false,
+			expectRisk: true, // Now expects risk due to directory-based assessment
 		},
 	}
 

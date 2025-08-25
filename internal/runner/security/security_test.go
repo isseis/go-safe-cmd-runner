@@ -1041,7 +1041,12 @@ func TestIsPrivilegeEscalationCommand(t *testing.T) {
 
 func TestAnalyzeCommandSecurityWithDeepSymlinks(t *testing.T) {
 	t.Run("normal command has no risk", func(t *testing.T) {
-		echoPath := "/bin/echo"
+		// Use a temporary file in a non-standard directory to avoid directory-based risk
+		tmpDir := t.TempDir()
+		echoPath := filepath.Join(tmpDir, "echo")
+		err := os.WriteFile(echoPath, []byte("#!/bin/bash\necho hello"), 0o755)
+		require.NoError(t, err)
+
 		risk, pattern, reason, err := AnalyzeCommandSecurity(echoPath, []string{"hello"})
 		require.NoError(t, err)
 		assert.Equal(t, runnertypes.RiskLevelUnknown, risk)

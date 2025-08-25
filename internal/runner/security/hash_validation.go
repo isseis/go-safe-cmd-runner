@@ -5,16 +5,11 @@ import (
 	"fmt"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
 // shouldSkipHashValidation determines whether to skip hash validation
-func shouldSkipHashValidation(cmdPath string, globalConfig *runnertypes.GlobalConfig) bool {
-	if globalConfig == nil {
-		return false // Validate all files when no config provided
-	}
-
-	if !globalConfig.SkipStandardPaths {
+func shouldSkipHashValidation(cmdPath string, skipStandardPaths bool) bool {
+	if !skipStandardPaths {
 		return false // Validate all files when SkipStandardPaths=false
 	}
 
