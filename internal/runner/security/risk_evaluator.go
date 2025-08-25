@@ -24,18 +24,6 @@ type PrivilegeEscalationInfo struct {
 	DetectedPattern       string
 }
 
-// RiskEvaluator interface defines methods for comprehensive risk evaluation
-type RiskEvaluator interface {
-	EvaluateCommandExecution(
-		ctx context.Context,
-		riskLevel RiskLevel,
-		detectedPattern string,
-		reason string,
-		privilegeResult *PrivilegeEscalationResult,
-		command *runnertypes.Command,
-	) error
-}
-
 // DefaultRiskEvaluator is the default implementation of RiskEvaluator
 type DefaultRiskEvaluator struct {
 	logger *slog.Logger
