@@ -49,7 +49,6 @@ type PrivilegeEscalationAnalyzer interface {
 // PrivilegeCheckInfo contains information about a specific privilege escalation command
 type PrivilegeCheckInfo struct {
 	EscalationType     PrivilegeEscalationType
-	RiskLevel          RiskLevel
 	RequiredPrivileges []string
 	Reason             string
 }
@@ -63,33 +62,28 @@ func init() {
 		// Sudo-like commands
 		"sudo": {
 			EscalationType:     PrivilegeEscalationTypeSudo,
-			RiskLevel:          RiskLevelHigh,
 			RequiredPrivileges: []string{"root"},
 			Reason:             "Command requires root privileges for execution",
 		},
 		"su": {
 			EscalationType:     PrivilegeEscalationTypeSu,
-			RiskLevel:          RiskLevelHigh,
 			RequiredPrivileges: []string{"root"},
 			Reason:             "Command requires root privileges for execution",
 		},
 		"doas": {
 			EscalationType:     PrivilegeEscalationTypeSudo,
-			RiskLevel:          RiskLevelHigh,
 			RequiredPrivileges: []string{"root"},
 			Reason:             "Command requires root privileges for execution",
 		},
 		// Systemd commands
 		"systemctl": {
 			EscalationType:     PrivilegeEscalationTypeSystemd,
-			RiskLevel:          RiskLevelMedium,
 			RequiredPrivileges: []string{"systemd"},
 			Reason:             "Command can control system services",
 		},
 		// Service commands
 		"service": {
 			EscalationType:     PrivilegeEscalationTypeService,
-			RiskLevel:          RiskLevelMedium,
 			RequiredPrivileges: []string{"service"},
 			Reason:             "Command can control system services",
 		},
@@ -138,16 +132,15 @@ func (a *DefaultPrivilegeEscalationAnalyzer) AnalyzePrivilegeEscalation(
 	if checkInfo, exists := a.commandChecks[baseCommand]; exists {
 		result.IsPrivilegeEscalation = true
 		result.EscalationType = checkInfo.EscalationType
-		result.RiskLevel = checkInfo.RiskLevel
 		result.RequiredPrivileges = checkInfo.RequiredPrivileges
 		result.DetectedPattern = baseCommand
 		result.Reason = checkInfo.Reason
+		// Note: RiskLevel is intentionally not set here as it should be determined by the risk evaluator
 
 		a.logger.Info("privilege escalation detected",
 			"type", result.EscalationType,
 			"command", cmdName,
-			"path", commandPath,
-			"risk_level", result.RiskLevel)
+			"path", commandPath)
 
 		return result, nil
 	}

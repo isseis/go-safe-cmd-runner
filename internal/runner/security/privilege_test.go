@@ -28,12 +28,10 @@ func TestNewDefaultPrivilegeEscalationAnalyzer(t *testing.T) {
 	// Check command properties
 	sudoInfo := analyzer.commandChecks["sudo"]
 	assert.Equal(t, PrivilegeEscalationTypeSudo, sudoInfo.EscalationType)
-	assert.Equal(t, RiskLevelHigh, sudoInfo.RiskLevel)
 	assert.Equal(t, []string{"root"}, sudoInfo.RequiredPrivileges)
 
 	systemctlInfo := analyzer.commandChecks["systemctl"]
 	assert.Equal(t, PrivilegeEscalationTypeSystemd, systemctlInfo.EscalationType)
-	assert.Equal(t, RiskLevelMedium, systemctlInfo.RiskLevel)
 	assert.Equal(t, []string{"systemd"}, systemctlInfo.RequiredPrivileges)
 }
 
@@ -55,7 +53,6 @@ func TestAnalyzePrivilegeEscalation_BasicSudo(t *testing.T) {
 			expected: &PrivilegeEscalationResult{
 				IsPrivilegeEscalation: true,
 				EscalationType:        PrivilegeEscalationTypeSudo,
-				RiskLevel:             RiskLevelHigh,
 				RequiredPrivileges:    []string{"root"},
 				DetectedPattern:       "sudo",
 				Reason:                "Command requires root privileges for execution",
@@ -68,7 +65,6 @@ func TestAnalyzePrivilegeEscalation_BasicSudo(t *testing.T) {
 			expected: &PrivilegeEscalationResult{
 				IsPrivilegeEscalation: true,
 				EscalationType:        PrivilegeEscalationTypeSu,
-				RiskLevel:             RiskLevelHigh,
 				RequiredPrivileges:    []string{"root"},
 				DetectedPattern:       "su",
 				Reason:                "Command requires root privileges for execution",
@@ -81,7 +77,6 @@ func TestAnalyzePrivilegeEscalation_BasicSudo(t *testing.T) {
 			expected: &PrivilegeEscalationResult{
 				IsPrivilegeEscalation: true,
 				EscalationType:        PrivilegeEscalationTypeSudo,
-				RiskLevel:             RiskLevelHigh,
 				RequiredPrivileges:    []string{"root"},
 				DetectedPattern:       "doas",
 				Reason:                "Command requires root privileges for execution",
@@ -96,7 +91,6 @@ func TestAnalyzePrivilegeEscalation_BasicSudo(t *testing.T) {
 
 			assert.Equal(t, tc.expected.IsPrivilegeEscalation, result.IsPrivilegeEscalation)
 			assert.Equal(t, tc.expected.EscalationType, result.EscalationType)
-			assert.Equal(t, tc.expected.RiskLevel, result.RiskLevel)
 			assert.Equal(t, tc.expected.RequiredPrivileges, result.RequiredPrivileges)
 			assert.Equal(t, tc.expected.DetectedPattern, result.DetectedPattern)
 			assert.Equal(t, tc.expected.Reason, result.Reason)
@@ -123,7 +117,6 @@ func TestAnalyzePrivilegeEscalation_SystemCommands(t *testing.T) {
 			expected: &PrivilegeEscalationResult{
 				IsPrivilegeEscalation: true,
 				EscalationType:        PrivilegeEscalationTypeSystemd,
-				RiskLevel:             RiskLevelMedium,
 				RequiredPrivileges:    []string{"systemd"},
 				DetectedPattern:       "systemctl",
 				Reason:                "Command can control system services",
@@ -136,7 +129,6 @@ func TestAnalyzePrivilegeEscalation_SystemCommands(t *testing.T) {
 			expected: &PrivilegeEscalationResult{
 				IsPrivilegeEscalation: true,
 				EscalationType:        PrivilegeEscalationTypeService,
-				RiskLevel:             RiskLevelMedium,
 				RequiredPrivileges:    []string{"service"},
 				DetectedPattern:       "service",
 				Reason:                "Command can control system services",
@@ -151,7 +143,6 @@ func TestAnalyzePrivilegeEscalation_SystemCommands(t *testing.T) {
 
 			assert.Equal(t, tc.expected.IsPrivilegeEscalation, result.IsPrivilegeEscalation)
 			assert.Equal(t, tc.expected.EscalationType, result.EscalationType)
-			assert.Equal(t, tc.expected.RiskLevel, result.RiskLevel)
 			assert.Equal(t, tc.expected.RequiredPrivileges, result.RequiredPrivileges)
 			assert.Equal(t, tc.expected.DetectedPattern, result.DetectedPattern)
 			assert.Equal(t, tc.expected.Reason, result.Reason)
@@ -223,7 +214,6 @@ func TestAnalyzePrivilegeEscalation_SymlinkHandling(t *testing.T) {
 
 	assert.True(t, result.IsPrivilegeEscalation)
 	assert.Equal(t, PrivilegeEscalationTypeSudo, result.EscalationType)
-	assert.Equal(t, RiskLevelHigh, result.RiskLevel)
 	assert.Equal(t, sudoPath, result.CommandPath)
 
 	// Test with absolute path
@@ -232,7 +222,6 @@ func TestAnalyzePrivilegeEscalation_SymlinkHandling(t *testing.T) {
 
 	assert.True(t, result.IsPrivilegeEscalation)
 	assert.Equal(t, PrivilegeEscalationTypeSudo, result.EscalationType)
-	assert.Equal(t, RiskLevelHigh, result.RiskLevel)
 	assert.Equal(t, sudoPath, result.CommandPath)
 }
 
