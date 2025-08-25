@@ -393,7 +393,7 @@ func AnalyzeCommandSecurity(resolvedPath string, args []string) (riskLevel RiskL
 		return RiskLevelNone, "", "", fmt.Errorf("%w: path must be absolute, got relative path: %s", ErrInvalidPath, resolvedPath)
 	}
 
-	// First, check if symlink depth is exceeded (highest priority security concern)
+	// First, check if symlink depth is exceeded
 	if _, exceededDepth := extractAllCommandNames(resolvedPath); exceededDepth {
 		return RiskLevelHigh, resolvedPath, "Symbolic link depth exceeds security limit (potential symlink attack)", nil
 	}
@@ -403,7 +403,7 @@ func AnalyzeCommandSecurity(resolvedPath string, args []string) (riskLevel RiskL
 		return riskLevel, pattern, reason, nil
 	}
 
-	// Check for setuid/setgid binaries (highest priority security risk)
+	// Check for setuid/setgid binaries
 	// Since we have a resolved path, we can safely check setuid/setgid bits
 	hasSetuidOrSetgid, setuidErr := hasSetuidOrSetgidBit(resolvedPath)
 	if setuidErr != nil {
