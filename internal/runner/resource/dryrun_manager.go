@@ -191,7 +191,7 @@ func (d *DryRunResourceManager) analyzeCommandSecurity(cmd runnertypes.Command, 
 	}
 
 	// Analyze security with resolved path
-	riskLevel, pattern, reason, err := security.AnalyzeCommandSecurity(resolvedPath, cmd.Args)
+	riskLevel, pattern, reason, err := security.AnalyzeCommandSecurity(resolvedPath, cmd.Args, false /* skipStandardPaths */, "" /* hashDir */)
 	if err != nil {
 		return fmt.Errorf("security analysis failed for command '%s': %w", cmd.Cmd, err)
 	}

@@ -1,13 +1,11 @@
 package security
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestShouldSkipHashValidation(t *testing.T) {
@@ -86,17 +84,6 @@ func TestShouldSkipHashValidation(t *testing.T) {
 func TestValidateFileHash(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	t.Run("existing file should pass basic validation", func(t *testing.T) {
-		// Create a test file
-		testFile := filepath.Join(tmpDir, "test_file")
-		err := os.WriteFile(testFile, []byte("test content"), 0o644)
-		require.NoError(t, err)
-
-		// Basic validation should pass (empty hashDir means skip validation)
-		err = validateFileHash(testFile, "")
-		assert.NoError(t, err)
-	})
-
 	t.Run("non-existent file should fail", func(t *testing.T) {
 		nonExistentFile := filepath.Join(tmpDir, "non_existent")
 
@@ -105,17 +92,5 @@ func TestValidateFileHash(t *testing.T) {
 		assert.ErrorIs(t, err, ErrHashValidationFailed)
 		// The error message will include "no such file or directory" for file system errors
 		assert.Contains(t, err.Error(), "no such file or directory")
-	})
-
-	t.Run("directory should fail", func(t *testing.T) {
-		// Create a directory
-		testDir := filepath.Join(tmpDir, "test_dir")
-		err := os.Mkdir(testDir, 0o755)
-		require.NoError(t, err)
-
-		// Directory should pass basic validation (existence check)
-		// Note: In future implementation, this might be enhanced to reject directories
-		err = validateFileHash(testDir, "")
-		assert.NoError(t, err)
 	})
 }

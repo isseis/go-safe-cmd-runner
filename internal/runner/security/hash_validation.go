@@ -19,8 +19,7 @@ func shouldSkipHashValidation(cmdPath string, skipStandardPaths bool) bool {
 // validateFileHash performs file hash validation using filevalidator
 func validateFileHash(cmdPath string, hashDir string) error {
 	if hashDir == "" {
-		// If no hash directory provided, skip validation
-		return nil
+		return fmt.Errorf("%w: hash directory is not configured", ErrHashValidationFailed)
 	}
 
 	// Create filevalidator instance

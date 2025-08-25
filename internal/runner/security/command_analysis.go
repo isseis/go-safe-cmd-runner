@@ -386,18 +386,10 @@ func IsSystemModification(cmd string, args []string) bool {
 	return false
 }
 
-// AnalyzeCommandSecurity analyzes a command with its arguments for dangerous patterns.
-// This function expects a resolved absolute path for optimal security checking.
-// Use this version when you have already resolved the command path through the unified path resolution system.
-func AnalyzeCommandSecurity(resolvedPath string, args []string) (riskLevel runnertypes.RiskLevel, detectedPattern string, reason string, err error) {
-	// Call the enhanced version with false skipStandardPaths and empty hashDir for backward compatibility
-	return AnalyzeCommandSecurityWithConfig(resolvedPath, args, false, "")
-}
-
-// AnalyzeCommandSecurityWithConfig analyzes a command with its arguments for dangerous patterns
-// with enhanced security validation including directory-based risk assessment and hash validation.
-// This is the main implementation that supports both basic and enhanced security analysis.
-func AnalyzeCommandSecurityWithConfig(resolvedPath string, args []string, skipStandardPaths bool, hashDir string) (riskLevel runnertypes.RiskLevel, detectedPattern string, reason string, err error) {
+// AnalyzeCommandSecurity analyzes a command with its arguments for dangerous
+// patterns with enhanced security validation including directory-based risk
+// assessment and hash validation.
+func AnalyzeCommandSecurity(resolvedPath string, args []string, skipStandardPaths bool, hashDir string) (riskLevel runnertypes.RiskLevel, detectedPattern string, reason string, err error) {
 	// Step 1: Input validation
 	if resolvedPath == "" {
 		return runnertypes.RiskLevelUnknown, "", "", fmt.Errorf("%w: empty command path", ErrInvalidPath)
@@ -416,7 +408,7 @@ func AnalyzeCommandSecurityWithConfig(resolvedPath string, args []string, skipSt
 	defaultRisk := getDefaultRiskByDirectory(resolvedPath)
 
 	// Step 4: Hash validation (skip for standard paths when skipStandardPaths=true)
-	if !shouldSkipHashValidation(resolvedPath, skipStandardPaths) {
+	if hashDir != "" && !shouldSkipHashValidation(resolvedPath, skipStandardPaths) {
 		if err := validateFileHash(resolvedPath, hashDir); err != nil {
 			return runnertypes.RiskLevelCritical, resolvedPath,
 				fmt.Sprintf("Hash validation failed: %v", err), nil
