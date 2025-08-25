@@ -322,3 +322,114 @@ func TestExecutionTimeValidation(t *testing.T) {
 	assert.Error(t, err, "ExecuteGroup should fail due to dangerous environment variable")
 	assert.ErrorIs(t, err, security.ErrUnsafeEnvironmentVar, "Should return unsafe environment variable error")
 }
+
+// TestExecutionTimeVariableNameValidation tests that environment variable names are validated during command execution
+func TestExecutionTimeVariableNameValidation(t *testing.T) {
+	// Setup clean test environment
+	cleanup := setupSafeTestEnv(t)
+	defer cleanup()
+
+	tmpDir := t.TempDir()
+
+	// Create .env file with invalid variable name (contains space)
+	envFile := filepath.Join(tmpDir, "invalid_name.env")
+	content := `INVALID NAME=some_value
+`
+	err := os.WriteFile(envFile, []byte(content), 0o644)
+	require.NoError(t, err)
+
+	config := &runnertypes.Config{
+		Global: runnertypes.GlobalConfig{
+			WorkDir:      tmpDir,
+			EnvAllowlist: []string{"INVALID NAME", "PATH", "HOME", "USER"}, // Allow the invalid name to pass filtering
+		},
+		Groups: []runnertypes.CommandGroup{
+			{
+				Name:         "test-group-invalid-name",
+				EnvAllowlist: []string{"INVALID NAME", "PATH", "HOME", "USER"},
+				Commands: []runnertypes.Command{
+					{
+						Name: "test-command-invalid-name",
+						Cmd:  "echo",
+						Args: []string{"test"},
+						Env:  []string{"INVALID NAME=some_value"}, // Use the invalid variable name
+					},
+				},
+			},
+		},
+	}
+
+	runner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()), WithRunID("test-run-123"))
+	require.NoError(t, err)
+
+	// LoadEnvironment should succeed (no validation yet, even for invalid names)
+	err = runner.LoadEnvironment(envFile, true)
+	assert.NoError(t, err, "LoadEnvironment should succeed - validation is deferred")
+
+	// Invalid variable name should be loaded but not validated yet
+	assert.Equal(t, "some_value", runner.envVars["INVALID NAME"])
+
+	// Now attempt to execute a command that uses this invalid variable name
+	// This should fail during validation at execution time
+	ctx := context.Background()
+	err = runner.ExecuteGroup(ctx, config.Groups[0])
+	assert.Error(t, err, "ExecuteGroup should fail due to invalid environment variable name")
+	// The error should be about malformed environment variable (which includes name validation)
+	assert.Contains(t, err.Error(), "malformed", "Should return malformed environment variable error")
+}
+
+// TestExecutionTimeValidationDemonstration tests that validation occurs during execution, not loading
+func TestExecutionTimeValidationDemonstration(t *testing.T) {
+	// Setup clean test environment
+	cleanup := setupSafeTestEnv(t)
+	defer cleanup()
+
+	tmpDir := t.TempDir()
+
+	// Create .env file with safe variables
+	envFile := filepath.Join(tmpDir, "demonstration.env")
+	content := `SAFE_VAR=safe_value
+`
+	err := os.WriteFile(envFile, []byte(content), 0o644)
+	require.NoError(t, err)
+
+	config := &runnertypes.Config{
+		Global: runnertypes.GlobalConfig{
+			WorkDir:      tmpDir,
+			EnvAllowlist: []string{"SAFE_VAR", "DANGEROUS_CMD_VAR", "PATH", "HOME", "USER"},
+		},
+		Groups: []runnertypes.CommandGroup{
+			{
+				Name:         "validation-demo-group",
+				EnvAllowlist: []string{"SAFE_VAR", "DANGEROUS_CMD_VAR", "PATH", "HOME", "USER"},
+				Commands: []runnertypes.Command{
+					{
+						Name: "dangerous-env-command",
+						Cmd:  "echo",
+						Args: []string{"test"},
+						Env:  []string{"DANGEROUS_CMD_VAR=command; rm -rf /"}, // Dangerous value in command env
+					},
+				},
+			},
+		},
+	}
+
+	runner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()), WithRunID("test-run-123"))
+	require.NoError(t, err)
+
+	// LoadEnvironment should succeed (validation is deferred)
+	err = runner.LoadEnvironment(envFile, true)
+	assert.NoError(t, err, "LoadEnvironment should succeed - validation is deferred")
+
+	// Verify the env file variables are loaded
+	assert.Equal(t, "safe_value", runner.envVars["SAFE_VAR"])
+
+	// Now attempt to execute - this should fail during environment variable processing/validation
+	ctx := context.Background()
+	err = runner.ExecuteGroup(ctx, config.Groups[0])
+
+	// Should fail due to dangerous variable in command Env field
+	assert.Error(t, err, "ExecuteGroup should fail due to dangerous environment variable in Command.Env")
+	assert.ErrorIs(t, err, security.ErrUnsafeEnvironmentVar, "Should return unsafe environment variable error")
+	assert.Contains(t, err.Error(), "DANGEROUS_CMD_VAR", "Error should mention the dangerous variable")
+}
