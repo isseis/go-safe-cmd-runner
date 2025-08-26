@@ -392,7 +392,8 @@ func validateFile(file File, filePath string, operation FileOperation) (os.FileI
 	if perm&groupWritePermission != 0 {
 		isOwnerAndOnlyMember, err := groupmembership.IsCurrentUserOnlyGroupMember(stat.Uid, stat.Gid)
 		if err != nil {
-			// If CGO is disabled, we cannot validate group membership, so we reject group-writable files
+			// If group membership cannot be reliably determined (e.g., due to an error reading
+			// /etc/group), we must reject group-writable files as a security precaution.
 			return nil, fmt.Errorf("failed to check group membership: %w", err)
 		}
 		if !isOwnerAndOnlyMember {
