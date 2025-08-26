@@ -197,11 +197,11 @@ max_risk_level = "low"
 # 空のenv_allowlistのため環境変数は利用不可
 
 [[groups.commands]]
-name = "system_maintenance"
+name = "package_update"
 cmd = "/usr/bin/apt"
 args = ["update"]
-# システムコマンドは通常高リスク
-max_risk_level = "high"
+# パッケージ管理操作は中リスク
+max_risk_level = "medium"
 # 必要時に昇格された権限で実行
 run_as_user = "root"
 ```
@@ -222,8 +222,8 @@ run_as_user = "root"
 3. **自動ブロック**: リスク閾値を超えるコマンドは自動的にブロック
 4. **リスクカテゴリ**:
    - **低リスク**: 基本ファイル操作（ls、cat、grep）
-   - **中リスク**: ファイル変更（cp、mv、chmod）
-   - **高リスク**: システム管理（mount、systemctl、apt）
+   - **中リスク**: ファイル変更（cp、mv、chmod）、パッケージ管理（apt、yum）
+   - **高リスク**: システム管理（mount、systemctl）、破壊的操作（rm -rf）
    - **クリティカルリスク**: 特権昇格コマンド（sudo、su）- 常にブロック
 
 ### ユーザーとグループ実行
