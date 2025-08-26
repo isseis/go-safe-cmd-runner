@@ -751,7 +751,7 @@ The system implements multiple security layers:
 
 ### Risk Assessment
 - Pre-compiled regex patterns for efficient command analysis
-- O(1) risk level lookups using map-based pattern matching
+- O(1) risk level lookups using pre-compiled pattern matching
 - Minimal overhead for risk evaluation
 - Cached results for repeated command analysis
 
