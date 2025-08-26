@@ -101,10 +101,13 @@ func getGroupMembers(gid uint32) ([]string, error) {
 	}
 	defer C.free_string_array(members, count)
 
+	// Create a slice that directly refers to the C array's memory
+	// This is more idiomatic and safer than manual pointer arithmetic
+	cArray := (*[1 << 30]*C.char)(unsafe.Pointer(members))[:count:count]
+
 	result := make([]string, int(count))
-	for i := 0; i < int(count); i++ {
-		memberPtr := (**C.char)(unsafe.Pointer(uintptr(unsafe.Pointer(members)) + uintptr(i)*unsafe.Sizeof((*C.char)(nil))))
-		result[i] = C.GoString(*memberPtr)
+	for i, cStr := range cArray {
+		result[i] = C.GoString(cStr)
 	}
 	return result, nil
 }
