@@ -86,6 +86,17 @@ func TestSafeWriteFile(t *testing.T) {
 			wantErr: true,
 			errType: ErrIsSymlink,
 		},
+		{
+			name: "write with group writable permissions should succeed for owned file",
+			setup: func(t *testing.T) (string, []byte, os.FileMode) {
+				tempDir := safeTempDir(t)
+				filePath := filepath.Join(tempDir, "group_writable_new.txt")
+				content := []byte("test content")
+				// Use group writable permissions
+				return filePath, content, 0o664
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -202,6 +213,39 @@ func TestSafeReadFile(t *testing.T) {
 			wantErr: true,
 			errType: ErrFileTooLarge,
 		},
+		{
+			name: "world writable file should fail",
+			setup: func(t *testing.T) string {
+				tempDir := safeTempDir(t)
+				filePath := filepath.Join(tempDir, "world_writable.txt")
+
+				// Create file with world writable permissions (666)
+				require.NoError(t, os.WriteFile(filePath, []byte("test content"), 0o666), "Failed to create test file")
+
+				// Explicitly set world writable permissions to bypass umask
+				require.NoError(t, os.Chmod(filePath, 0o666), "Failed to set world writable permissions")
+
+				return filePath
+			},
+			wantErr: true,
+			errType: ErrInvalidFilePermissions,
+		},
+		{
+			name: "group writable file owned by current user should succeed",
+			setup: func(t *testing.T) string {
+				tempDir := safeTempDir(t)
+				filePath := filepath.Join(tempDir, "group_writable.txt")
+
+				// Create file with group writable permissions (664)
+				// Since the test creates the file, the current user will be the owner
+				// and will be in the file's group
+				require.NoError(t, os.WriteFile(filePath, []byte("test content"), 0o664), "Failed to create test file")
+
+				return filePath
+			},
+			want:    []byte("test content"),
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -276,6 +320,77 @@ func (fs failingWriteFS) SafeOpenFile(name string, flag int, perm os.FileMode) (
 		return nil, err
 	}
 	return &failingWriteCloseFS{File: f}, nil
+}
+
+func TestValidateFilePermissions(t *testing.T) {
+	tests := []struct {
+		name        string
+		permissions os.FileMode
+		expectError bool
+		errorType   error
+	}{
+		{
+			name:        "normal permissions (644)",
+			permissions: 0o644,
+			expectError: false,
+		},
+		{
+			name:        "normal permissions (600)",
+			permissions: 0o600,
+			expectError: false,
+		},
+		{
+			name:        "executable permissions (755)",
+			permissions: 0o755,
+			expectError: false,
+		},
+		{
+			name:        "group writable (664) should succeed for owner",
+			permissions: 0o664,
+			expectError: false,
+		},
+		{
+			name:        "world writable (666) should fail",
+			permissions: 0o666,
+			expectError: true,
+			errorType:   ErrInvalidFilePermissions,
+		},
+		{
+			name:        "world writable and executable (777) should fail",
+			permissions: 0o777,
+			expectError: true,
+			errorType:   ErrInvalidFilePermissions,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tempDir := safeTempDir(t)
+			filePath := filepath.Join(tempDir, "test_permissions.txt")
+
+			// Create file with specified permissions
+			require.NoError(t, os.WriteFile(filePath, []byte("test content"), tt.permissions), "Failed to create test file")
+
+			// For world writable tests, explicitly set the permissions using chmod
+			// to bypass umask restrictions
+			const worldWritePermission = 0o002
+			if tt.permissions&worldWritePermission != 0 {
+				require.NoError(t, os.Chmod(filePath, tt.permissions), "Failed to set world writable permissions")
+			}
+
+			// Try to read the file (which will validate permissions)
+			_, err := SafeReadFile(filePath)
+
+			if tt.expectError {
+				assert.Error(t, err, "Expected error for permissions %o", tt.permissions)
+				if tt.errorType != nil {
+					assert.ErrorIs(t, err, tt.errorType, "Expected specific error type for permissions %o", tt.permissions)
+				}
+			} else {
+				assert.NoError(t, err, "Expected no error for permissions %o", tt.permissions)
+			}
+		})
+	}
 }
 
 func TestSafeWriteFile_FileCloseError(t *testing.T) {

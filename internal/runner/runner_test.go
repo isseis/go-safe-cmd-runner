@@ -1160,6 +1160,10 @@ func TestRunner_LoadEnvironmentWithSecurity(t *testing.T) {
 		err = os.WriteFile(badEnvFile, []byte("TEST_VAR=test_value\n"), 0o777)
 		assert.NoError(t, err)
 
+		// Explicitly set world writable permissions to bypass umask
+		err = os.Chmod(badEnvFile, 0o777)
+		assert.NoError(t, err)
+
 		// Should fail with excessive permissions
 		err = runner.LoadEnvironment(badEnvFile, false)
 		assert.Error(t, err)

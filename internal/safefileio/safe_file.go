@@ -11,6 +11,8 @@ import (
 	"runtime"
 	"syscall"
 	"unsafe"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 )
 
 // openat2 constants for RESOLVE flags
@@ -21,6 +23,14 @@ const (
 	AtFdcwd = -0x64
 	// SysOpenat2 is the system call number for openat2 on Linux
 	SysOpenat2 = 437
+)
+
+const (
+	// maxAllowedPerms defines the maximum allowed file permissions
+	// rwxr-xr-x with setuid/setgid allowed
+	maxAllowedPerms = 0o4755
+	// groupWritePermission represents the group write bit (020)
+	groupWritePermission = 0o020
 )
 
 // openHow struct for openat2 system call
@@ -368,12 +378,37 @@ func validateFile(file File, filePath string) (os.FileInfo, error) {
 		return nil, fmt.Errorf("%w: not a regular file: %s", ErrInvalidFilePath, filePath)
 	}
 
-	// Validate file permissions - files should not be world-writable or group-writable
-	const maxAllowedPerms = 0o644
+	// Get file stat info for UID/GID
+	stat, ok := fileInfo.Sys().(*syscall.Stat_t)
+	if !ok {
+		return nil, fmt.Errorf("%w: failed to get file stat info", ErrInvalidFilePath)
+	}
+
 	perm := fileInfo.Mode().Perm()
-	disallowedBits := perm &^ maxAllowedPerms
+
+	// Always forbid world writable
+	if perm&0o002 != 0 {
+		return nil, fmt.Errorf("%w: file %s is world-writable with permissions %o",
+			ErrInvalidFilePermissions, filePath, perm)
+	}
+
+	// Check group writable - allow only if user owns the file and is the only member of the group
+	if perm&groupWritePermission != 0 {
+		isOwnerAndOnlyMember, err := groupmembership.IsCurrentUserOnlyGroupMember(stat.Uid, stat.Gid)
+		if err != nil {
+			// If CGO is disabled, we cannot validate group membership, so we reject group-writable files
+			return nil, fmt.Errorf("failed to check group membership: %w", err)
+		}
+		if !isOwnerAndOnlyMember {
+			return nil, fmt.Errorf("%w: file %s is group-writable with permissions %o, but current user is not the owner or not the only member of the group",
+				ErrInvalidFilePermissions, filePath, perm)
+		}
+	}
+
+	// Check other disallowed bits (excluding group writable which we handled above)
+	disallowedBits := perm &^ (maxAllowedPerms | groupWritePermission)
 	if disallowedBits != 0 {
-		return nil, fmt.Errorf("%w: file %s has permissions %o with disallowed bits %o, maximum allowed is %o",
+		return nil, fmt.Errorf("%w: file %s has permissions %o with disallowed bits %o, maximum allowed is %o (plus group writable under conditions)",
 			ErrInvalidFilePermissions, filePath, perm, disallowedBits, maxAllowedPerms)
 	}
 
