@@ -342,8 +342,8 @@ type SecurityPattern struct {
 
 **Command Risk Analysis**:
 - Low Risk: Standard system utilities (ls, cat, grep)
-- Medium Risk: File modification commands (cp, mv, chmod)
-- High Risk: System administration commands (mount, systemctl)
+- Medium Risk: File modification commands (cp, mv, chmod), package management (apt, yum)
+- High Risk: System administration commands (mount, systemctl), destructive operations (rm -rf)
 - Critical Risk: Privilege escalation commands (sudo, su) - automatically blocked
 
 **Risk Level Configuration**:

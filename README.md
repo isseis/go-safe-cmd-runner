@@ -197,11 +197,11 @@ max_risk_level = "low"
 # No environment variables available due to empty env_allowlist
 
 [[groups.commands]]
-name = "system_maintenance"
+name = "package_update"
 cmd = "/usr/bin/apt"
 args = ["update"]
-# System commands are typically high-risk
-max_risk_level = "high"
+# Package management operations are medium-risk
+max_risk_level = "medium"
 # Execute with elevated privileges when needed
 run_as_user = "root"
 ```
@@ -222,8 +222,8 @@ The system automatically assesses and controls command execution based on securi
 3. **Automatic Blocking**: Commands exceeding their risk threshold are automatically blocked
 4. **Risk Categories**:
    - **Low Risk**: Basic file operations (ls, cat, grep)
-   - **Medium Risk**: File modifications (cp, mv, chmod)
-   - **High Risk**: System administration (mount, systemctl, apt)
+   - **Medium Risk**: File modifications (cp, mv, chmod), package management (apt, yum)
+   - **High Risk**: System administration (mount, systemctl), destructive operations (rm -rf)
    - **Critical Risk**: Privilege escalation commands (sudo, su) - always blocked
 
 ### User and Group Execution
