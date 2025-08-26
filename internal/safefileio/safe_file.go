@@ -25,12 +25,27 @@ const (
 	SysOpenat2 = 437
 )
 
+// FileOperation represents the type of file operation being performed
+type FileOperation int
+
 const (
-	// maxAllowedPerms defines the maximum allowed file permissions
+	// FileOpRead indicates a read operation
+	FileOpRead FileOperation = iota
+	// FileOpWrite indicates a write operation
+	FileOpWrite
+)
+
+const (
+	// maxAllowedPermsRead defines the maximum allowed file permissions for read operations
 	// rwxr-xr-x with setuid/setgid allowed
-	maxAllowedPerms = 0o4755
+	maxAllowedPermsRead = 0o4755
+	// maxAllowedPermsWrite defines the maximum allowed file permissions for write operations
+	// rw-r--r-- (more restrictive for write operations)
+	maxAllowedPermsWrite = 0o644
 	// groupWritePermission represents the group write bit (020)
 	groupWritePermission = 0o020
+	// allPermissionBits represents all possible permission and special bits
+	allPermissionBits = 0o7777
 )
 
 // openHow struct for openat2 system call
@@ -178,47 +193,28 @@ func SafeWriteFileOverwrite(filePath string, content []byte, perm os.FileMode) (
 
 // safeWriteFileOverwriteWithFS is the internal implementation that accepts a FileSystem for testing
 func safeWriteFileOverwriteWithFS(filePath string, content []byte, perm os.FileMode, fs FileSystem) (err error) {
-	absPath, err := filepath.Abs(filePath)
-	if err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidFilePath, err)
-	}
-
-	// Use the FileSystem interface consistently for both testing and production
-	// Use O_TRUNC to overwrite existing files instead of O_EXCL
-	file, err := fs.SafeOpenFile(absPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
-	if err != nil {
-		return err
-	}
-
-	// Ensure the file is closed on error
-	defer func() {
-		if closeErr := file.Close(); closeErr != nil && err == nil {
-			err = fmt.Errorf("failed to close file: %w", closeErr)
-		}
-	}()
-
-	// Validate the file is a regular file (not a device, pipe, etc.)
-	if _, err := validateFile(file, absPath); err != nil {
-		return err
-	}
-
-	// Write the content
-	if _, err = file.Write(content); err != nil {
-		return fmt.Errorf("failed to write to %s: %w", absPath, err)
-	}
-
-	return nil
+	return safeWriteFileCommon(filePath, content, perm, fs, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
 }
 
 // safeWriteFileWithFS is the internal implementation that accepts a FileSystem for testing
 func safeWriteFileWithFS(filePath string, content []byte, perm os.FileMode, fs FileSystem) (err error) {
+	return safeWriteFileCommon(filePath, content, perm, fs, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
+}
+
+// safeWriteFileCommon contains the common logic for safe file writing operations
+func safeWriteFileCommon(filePath string, content []byte, perm os.FileMode, fs FileSystem, flags int) (err error) {
 	absPath, err := filepath.Abs(filePath)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidFilePath, err)
 	}
 
+	// Pre-validate requested permissions for write operation
+	if err := validateRequestedPermissions(perm, FileOpWrite); err != nil {
+		return err
+	}
+
 	// Use the FileSystem interface consistently for both testing and production
-	file, err := fs.SafeOpenFile(absPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
+	file, err := fs.SafeOpenFile(absPath, flags, perm)
 	if err != nil {
 		return err
 	}
@@ -231,7 +227,7 @@ func safeWriteFileWithFS(filePath string, content []byte, perm os.FileMode, fs F
 	}()
 
 	// Validate the file is a regular file (not a device, pipe, etc.)
-	if _, err := validateFile(file, absPath); err != nil {
+	if _, err := validateFile(file, absPath, FileOpWrite); err != nil {
 		return err
 	}
 
@@ -344,7 +340,7 @@ func SafeReadFileWithFS(filePath string, fs FileSystem) ([]byte, error) {
 
 // readFileContent reads and validates the content of an already opened file
 func readFileContent(file File, filePath string) ([]byte, error) {
-	fileInfo, err := validateFile(file, filePath)
+	fileInfo, err := validateFile(file, filePath, FileOpRead)
 	if err != nil {
 		return nil, err
 	}
@@ -366,9 +362,9 @@ func readFileContent(file File, filePath string) ([]byte, error) {
 	return content, nil
 }
 
-// validateFile checks if the file is a regular file, validates permissions, and returns its FileInfo
+// validateFile checks if the file is a regular file, validates permissions based on operation type, and returns its FileInfo
 // To prevent TOCTOU attacks, we use the file descriptor to get the file info
-func validateFile(file File, filePath string) (os.FileInfo, error) {
+func validateFile(file File, filePath string, operation FileOperation) (os.FileInfo, error) {
 	fileInfo, err := file.Stat()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get file info: %w", err)
@@ -405,6 +401,17 @@ func validateFile(file File, filePath string) (os.FileInfo, error) {
 		}
 	}
 
+	// Select maximum allowed permissions based on operation type
+	var maxAllowedPerms os.FileMode
+	switch operation {
+	case FileOpRead:
+		maxAllowedPerms = maxAllowedPermsRead
+	case FileOpWrite:
+		maxAllowedPerms = maxAllowedPermsWrite
+	default:
+		return nil, fmt.Errorf("%w: unknown file operation", ErrInvalidFilePath)
+	}
+
 	// Check other disallowed bits (excluding group writable which we handled above)
 	disallowedBits := perm &^ (maxAllowedPerms | groupWritePermission)
 	if disallowedBits != 0 {
@@ -413,6 +420,31 @@ func validateFile(file File, filePath string) (os.FileInfo, error) {
 	}
 
 	return fileInfo, nil
+}
+
+// validateRequestedPermissions validates the requested permissions before file creation/modification
+func validateRequestedPermissions(perm os.FileMode, operation FileOperation) error {
+	// Select maximum allowed permissions based on operation type
+	var maxAllowedPerms os.FileMode
+	switch operation {
+	case FileOpRead:
+		maxAllowedPerms = maxAllowedPermsRead
+	case FileOpWrite:
+		maxAllowedPerms = maxAllowedPermsWrite
+	default:
+		return fmt.Errorf("%w: unknown file operation", ErrInvalidFilePath)
+	}
+
+	// Check if requested permissions exceed the maximum allowed
+	// Use full mode to include setuid/setgid/sticky bits, not just Perm()
+	fullMode := perm & allPermissionBits // Include all permission and special bits
+	disallowedBits := fullMode &^ (maxAllowedPerms | groupWritePermission)
+	if disallowedBits != 0 {
+		return fmt.Errorf("%w: requested permissions %o exceed maximum allowed %o for %v operation",
+			ErrInvalidFilePermissions, fullMode, maxAllowedPerms, operation)
+	}
+
+	return nil
 }
 
 // safeOpenFileInternal is the internal implementation of safeOpenFile
