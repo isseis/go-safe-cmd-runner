@@ -226,6 +226,10 @@ func TestLoadEnvironment_FilePermissionValidation(t *testing.T) {
 		err := os.WriteFile(badEnvFile, []byte(content), 0o777)
 		require.NoError(t, err)
 
+		// Explicitly set world writable permissions to bypass umask
+		err = os.Chmod(badEnvFile, 0o777)
+		require.NoError(t, err)
+
 		err = runner.LoadEnvironment(badEnvFile, true)
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, safefileio.ErrInvalidFilePermissions, "Should return file permission error")

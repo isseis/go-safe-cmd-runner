@@ -86,6 +86,17 @@ func TestSafeWriteFile(t *testing.T) {
 			wantErr: true,
 			errType: ErrIsSymlink,
 		},
+		{
+			name: "write with group writable permissions should succeed for owned file",
+			setup: func(t *testing.T) (string, []byte, os.FileMode) {
+				tempDir := safeTempDir(t)
+				filePath := filepath.Join(tempDir, "group_writable_new.txt")
+				content := []byte("test content")
+				// Use group writable permissions
+				return filePath, content, 0o664
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -202,6 +213,39 @@ func TestSafeReadFile(t *testing.T) {
 			wantErr: true,
 			errType: ErrFileTooLarge,
 		},
+		{
+			name: "world writable file should fail",
+			setup: func(t *testing.T) string {
+				tempDir := safeTempDir(t)
+				filePath := filepath.Join(tempDir, "world_writable.txt")
+
+				// Create file with world writable permissions (666)
+				require.NoError(t, os.WriteFile(filePath, []byte("test content"), 0o666), "Failed to create test file")
+
+				// Explicitly set world writable permissions to bypass umask
+				require.NoError(t, os.Chmod(filePath, 0o666), "Failed to set world writable permissions")
+
+				return filePath
+			},
+			wantErr: true,
+			errType: ErrInvalidFilePermissions,
+		},
+		{
+			name: "group writable file owned by current user should succeed",
+			setup: func(t *testing.T) string {
+				tempDir := safeTempDir(t)
+				filePath := filepath.Join(tempDir, "group_writable.txt")
+
+				// Create file with group writable permissions (664)
+				// Since the test creates the file, the current user will be the owner
+				// and will be in the file's group
+				require.NoError(t, os.WriteFile(filePath, []byte("test content"), 0o664), "Failed to create test file")
+
+				return filePath
+			},
+			want:    []byte("test content"),
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -278,6 +322,142 @@ func (fs failingWriteFS) SafeOpenFile(name string, flag int, perm os.FileMode) (
 	return &failingWriteCloseFS{File: f}, nil
 }
 
+func TestValidateFilePermissions(t *testing.T) {
+	tests := []struct {
+		name        string
+		permissions os.FileMode
+		operation   FileOperation
+		expectError bool
+		errorType   error
+	}{
+		{
+			name:        "normal permissions (644) for read",
+			permissions: 0o644,
+			operation:   FileOpRead,
+			expectError: false,
+		},
+		{
+			name:        "normal permissions (644) for write",
+			permissions: 0o644,
+			operation:   FileOpWrite,
+			expectError: false,
+		},
+		{
+			name:        "executable permissions (755) for read",
+			permissions: 0o755,
+			operation:   FileOpRead,
+			expectError: false,
+		},
+		{
+			name:        "executable permissions (755) for write - should fail",
+			permissions: 0o755,
+			operation:   FileOpWrite,
+			expectError: true,
+			errorType:   ErrInvalidFilePermissions,
+		},
+		{
+			name:        "setuid permissions (4755) for read",
+			permissions: 0o4755,
+			operation:   FileOpRead,
+			expectError: false,
+		},
+		{
+			name:        "setuid permissions (4755) for write - should fail",
+			permissions: 0o4755,
+			operation:   FileOpWrite,
+			expectError: true,
+			errorType:   ErrInvalidFilePermissions,
+		},
+		{
+			name:        "normal permissions (600) for read",
+			permissions: 0o600,
+			operation:   FileOpRead,
+			expectError: false,
+		},
+		{
+			name:        "normal permissions (600) for write",
+			permissions: 0o600,
+			operation:   FileOpWrite,
+			expectError: false,
+		},
+		{
+			name:        "group writable (664) should succeed for owner in both operations",
+			permissions: 0o664,
+			operation:   FileOpRead,
+			expectError: false,
+		},
+		{
+			name:        "group writable (664) for write should succeed for owner",
+			permissions: 0o664,
+			operation:   FileOpWrite,
+			expectError: false,
+		},
+		{
+			name:        "world writable (666) should fail for read",
+			permissions: 0o666,
+			operation:   FileOpRead,
+			expectError: true,
+			errorType:   ErrInvalidFilePermissions,
+		},
+		{
+			name:        "world writable (666) should fail for write",
+			permissions: 0o666,
+			operation:   FileOpWrite,
+			expectError: true,
+			errorType:   ErrInvalidFilePermissions,
+		},
+		{
+			name:        "world writable and executable (777) should fail for read",
+			permissions: 0o777,
+			operation:   FileOpRead,
+			expectError: true,
+			errorType:   ErrInvalidFilePermissions,
+		},
+		{
+			name:        "world writable and executable (777) should fail for write",
+			permissions: 0o777,
+			operation:   FileOpWrite,
+			expectError: true,
+			errorType:   ErrInvalidFilePermissions,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tempDir := safeTempDir(t)
+			filePath := filepath.Join(tempDir, "test_permissions.txt")
+
+			// Create file with specified permissions
+			require.NoError(t, os.WriteFile(filePath, []byte("test content"), tt.permissions), "Failed to create test file")
+
+			// For world writable tests, explicitly set the permissions using chmod
+			// to bypass umask restrictions
+			const worldWritePermission = 0o002
+			if tt.permissions&worldWritePermission != 0 {
+				require.NoError(t, os.Chmod(filePath, tt.permissions), "Failed to set world writable permissions")
+			}
+
+			// Try to test the operation based on the test case
+			var err error
+			switch tt.operation {
+			case FileOpRead:
+				_, err = SafeReadFile(filePath)
+			case FileOpWrite:
+				err = SafeWriteFileOverwrite(filePath, []byte("new content"), tt.permissions)
+			}
+
+			if tt.expectError {
+				assert.Error(t, err, "Expected error for permissions %o with operation %v", tt.permissions, tt.operation)
+				if tt.errorType != nil {
+					assert.ErrorIs(t, err, tt.errorType, "Expected specific error type for permissions %o with operation %v", tt.permissions, tt.operation)
+				}
+			} else {
+				assert.NoError(t, err, "Expected no error for permissions %o with operation %v", tt.permissions, tt.operation)
+			}
+		})
+	}
+}
+
 func TestSafeWriteFile_FileCloseError(t *testing.T) {
 	t.Run("close error only", func(t *testing.T) {
 		tempDir := safeTempDir(t)
@@ -304,4 +484,72 @@ func TestSafeWriteFile_FileCloseError(t *testing.T) {
 		// The error should be the write error, not the close error
 		assert.ErrorIs(t, err, errSimulatedWrite, "Expected specific write error")
 	})
+}
+
+func TestSetuidSetgidBehavior(t *testing.T) {
+	t.Run("SafeReadFile allows reading file with setuid/setgid bits", func(t *testing.T) {
+		tempDir := safeTempDir(t)
+		filePath := filepath.Join(tempDir, "setuid_setgid_read.txt")
+
+		// Create file normally first to avoid umask surprises, then chmod explicitly
+		content := []byte("read-ok")
+		require.NoError(t, os.WriteFile(filePath, content, 0o644), "failed to create file")
+
+		// Explicitly set setuid and setgid bits; avoid umask by chmod after creation
+		require.NoError(t, os.Chmod(filePath, 0o6755), "failed to chmod setuid/setgid")
+
+		got, err := SafeReadFile(filePath)
+		assert.NoError(t, err, "SafeReadFile should allow reading file with setuid/setgid bits")
+		assert.Equal(t, string(content), string(got))
+	})
+
+	t.Run("SafeWriteFile forbids creating file with setuid/setgid bits", func(t *testing.T) {
+		tempDir := safeTempDir(t)
+		filePath := filepath.Join(tempDir, "setuid_setgid_create.txt")
+
+		// Try to create a new file with setuid/setgid bits in requested perm
+		err := SafeWriteFile(filePath, []byte("deny"), 0o6755)
+		assert.Error(t, err, "SafeWriteFile should reject setuid/setgid perms on creation")
+		assert.ErrorIs(t, err, ErrInvalidFilePermissions)
+		// Note: depending on the kernel/filesystem, the file may have been created
+		// before validation failed. We don't assert non-existence to avoid flakiness.
+		// Cleanup if it exists.
+		if _, statErr := os.Lstat(filePath); statErr == nil {
+			_ = os.Remove(filePath)
+		}
+	})
+}
+
+// TestValidateFileOperationDifferences tests that read and write operations have different permission requirements
+func TestValidateFileOperationDifferences(t *testing.T) {
+	tempDir := safeTempDir(t)
+
+	// Test executable file - should be allowed for read but not for write
+	execFilePath := filepath.Join(tempDir, "executable_file.txt")
+	require.NoError(t, os.WriteFile(execFilePath, []byte("executable content"), 0o755))
+
+	// Read should succeed
+	_, err := SafeReadFile(execFilePath)
+	assert.NoError(t, err, "Reading executable file should succeed")
+
+	// Write should fail
+	err = SafeWriteFileOverwrite(execFilePath, []byte("new content"), 0o755)
+	assert.Error(t, err, "Writing to executable file should fail")
+	assert.ErrorIs(t, err, ErrInvalidFilePermissions, "Should fail with permission error")
+
+	// Test setuid file - should be allowed for read but not for write
+	setuidFilePath := filepath.Join(tempDir, "setuid_file.txt")
+	require.NoError(t, os.WriteFile(setuidFilePath, []byte("setuid content"), 0o644))
+	// Explicitly set setuid bit after file creation
+	require.NoError(t, os.Chmod(setuidFilePath, 0o4644))
+
+	// Read should succeed
+	_, err = SafeReadFile(setuidFilePath)
+	assert.NoError(t, err, "Reading setuid file should succeed")
+
+	// Write should fail - try to create a new file with setuid permissions
+	newSetuidFilePath := filepath.Join(tempDir, "new_setuid_file.txt")
+	err = SafeWriteFile(newSetuidFilePath, []byte("new content"), 0o4644)
+	assert.Error(t, err, "Creating a file with setuid permissions should fail")
+	assert.ErrorIs(t, err, ErrInvalidFilePermissions, "Should fail with permission error")
 }

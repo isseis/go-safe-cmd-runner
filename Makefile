@@ -68,7 +68,8 @@ hash:
 		$(SUDOCMD) $(BINARY_RECORD) -force -file $(file) -hash-dir $(DEFAULT_HASH_DIRECTORY);)
 
 test: $(BINARY_RUNNER)
-	$(GOTEST) -v ./...
+	$(ENVCMD) CGO_ENABLED=1 $(GOTEST) -v ./internal/groupmembership/...
+	$(ENVCMD) CGO_ENABLED=0 $(GOTEST) -v ./...
 	$(ENVCMD) -i PATH=/bin:/sbin:/usr/bin:/usr/sbin $(BINARY_RUNNER) -dry-run -config ./sample/comprehensive.toml
 
 benchmark:
