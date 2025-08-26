@@ -19,17 +19,22 @@ Common use cases include scheduled backups, system maintenance tasks, and delega
 
 ### Core Security Features
 - **File Integrity Verification**: SHA-256 hash validation of executables and configuration files before execution
+- **Risk-Based Command Control**: Intelligent security assessment that automatically blocks high-risk operations while allowing safe commands
+- **User/Group Execution Security**: Secure user and group switching with comprehensive validation and audit trails
 - **Environment Variable Isolation**: Allowlist-based environment variable filtering at global and group levels
 - **Privilege Management**: Controlled privilege escalation and automatic privilege dropping
 - **Path Validation**: Command path resolution with symlink attack prevention
 - **Configuration Validation**: Comprehensive TOML configuration file validation
+- **Sensitive Data Protection**: Automatic detection and redaction of passwords, tokens, and API keys in all outputs
 
 ### Command Execution
 - **Batch Processing**: Execute commands in organized groups with dependency management
 - **Background Execution**: Support for long-running processes with proper signal handling
-- **Output Capture**: Structured logging and output management
-- **Dry Run Mode**: Preview command execution without actual execution
+- **Output Capture**: Structured logging and output management with automatic sensitive data redaction
+- **Enhanced Dry Run Mode**: Realistic simulation with comprehensive security analysis and risk assessment
 - **Timeout Control**: Configurable timeouts for command execution
+- **User/Group Context**: Execute commands as specific users or groups with proper validation
+- **Risk Assessment**: Automatic evaluation of command security risk levels with configurable thresholds
 
 ### Logging and Monitoring
 - **Multi-Handler Logging**: Route logs to multiple destinations simultaneously (console, file, Slack)
@@ -57,17 +62,19 @@ cmd/                    # Command-line entry points
 internal/              # Core implementation
 ├── cmdcommon/         # Shared command utilities
 ├── filevalidator/     # File integrity validation
-├── logging/           # Advanced logging system
-│   ├── multihandler/  # Multi-destination log handling
-│   ├── slack/         # Slack notification integration
-│   └── redaction/     # Sensitive data redaction
+├── groupmembership/   # User/group membership validation
+├── logging/           # Advanced logging system with Slack integration
+├── redaction/         # Automatic sensitive data filtering
 ├── runner/            # Command execution engine
 │   ├── audit/         # Security audit logging
 │   ├── config/        # Configuration management
 │   ├── executor/      # Command execution logic
-│   └── privilege/     # Privilege management
+│   ├── privilege/     # Privilege management
+│   ├── resource/      # Unified resource management (normal/dry-run)
+│   ├── risk/          # Risk-based command assessment
+│   └── security/      # Security validation framework
 ├── safefileio/        # Secure file operations
-└── verification/      # Hash verification system
+└── verification/      # Centralized file verification management
 ```
 
 ## Command Line Tools
@@ -94,6 +101,9 @@ internal/              # Core implementation
 
 # Execute with Slack notifications (requires SLACK_WEBHOOK_URL in environment file)
 ./runner -config config.toml -env-file .env
+
+# Risk assessment only mode (analyze without execution)
+./runner -config config.toml -dry-run -validate
 ```
 
 ### Hash Management
@@ -118,6 +128,8 @@ version = "1.0"
 timeout = 3600
 workdir = "/tmp"
 log_level = "info"
+# Skip verification for standard system paths
+skip_standard_paths = true
 # Environment variable allowlist for security
 env_allowlist = [
     "PATH",
@@ -141,20 +153,25 @@ description = "Backup database"
 cmd = "mysqldump"
 args = ["--all-databases", "--single-transaction"]
 env = ["BACKUP_DIR=/backups"]
-privileged = false
+# Execute as specific user for security
+run_as_user = "mysql"
+run_as_group = "mysql"
+# Allow medium-risk commands for database operations
+max_risk_level = "medium"
 
 [[groups.commands]]
 name = "system_backup"
 description = "Backup system files"
 cmd = "rsync"
 args = ["-av", "/etc/", "/backups/etc/"]
-privileged = true
+# High-risk operations require explicit authorization
+max_risk_level = "high"
 ```
 
 ### Advanced Configuration Features
 ```toml
 [global]
-# Skip verification of standard system paths
+# Skip verification of standard system paths for better performance
 skip_standard_paths = true
 # Global file verification list
 verify_files = ["/usr/bin/rsync", "/etc/rsync.conf"]
@@ -172,7 +189,21 @@ verify_files = ["/usr/local/bin/deploy.sh"]
 name = "deploy_app"
 cmd = "/usr/local/bin/deploy.sh"
 args = ["production"]
+# Execute as deployment user with specific group
+run_as_user = "deployer"
+run_as_group = "www-data"
+# Only allow low-risk deployment commands
+max_risk_level = "low"
 # No environment variables available due to empty env_allowlist
+
+[[groups.commands]]
+name = "system_maintenance"
+cmd = "/usr/bin/apt"
+args = ["update"]
+# System commands are typically high-risk
+max_risk_level = "high"
+# Execute with elevated privileges when needed
+run_as_user = "root"
 ```
 
 ### Environment Variable Security
@@ -182,6 +213,26 @@ The system implements a strict allowlist-based approach for environment variable
 2. **Group Override**: Groups can define their own allowlist, completely overriding global settings
 3. **Inheritance**: Groups without an explicit allowlist inherit from global settings
 4. **Zero Trust**: Undefined allowlists result in no environment variables being passed
+
+### Risk-Based Command Control
+The system automatically assesses and controls command execution based on security risk levels:
+
+1. **Risk Level Assessment**: Commands are automatically classified as low, medium, high, or critical risk
+2. **Configurable Thresholds**: Each command can specify its maximum allowed risk level using `max_risk_level`
+3. **Automatic Blocking**: Commands exceeding their risk threshold are automatically blocked
+4. **Risk Categories**:
+   - **Low Risk**: Basic file operations (ls, cat, grep)
+   - **Medium Risk**: File modifications (cp, mv, chmod)
+   - **High Risk**: System administration (mount, systemctl, apt)
+   - **Critical Risk**: Privilege escalation commands (sudo, su) - always blocked
+
+### User and Group Execution
+Secure delegation of command execution to specific users and groups:
+
+1. **User Context**: Commands can be executed as specific users using `run_as_user`
+2. **Group Context**: Set specific group context using `run_as_group`
+3. **Membership Validation**: System validates user and group membership before execution
+4. **Audit Trail**: Complete audit log of all user/group context switches
 
 ### Environment File Configuration
 Create a `.env` file for sensitive configuration that shouldn't be stored in the main TOML configuration:
@@ -209,27 +260,43 @@ API_KEY=your-secret-api-key
 
 ### File Integrity Verification
 - All executables and critical files are verified against pre-recorded SHA-256 hashes
-- Configuration files are automatically verified before execution
+- Configuration files and environment files are automatically verified before execution
 - Group-specific and global file verification lists
+- Centralized verification management with automatic fallback to privileged access
 - Execution is aborted if any verification fails
+
+### Risk-Based Security Control
+- **Intelligent Risk Assessment**: Commands are automatically evaluated for security risk
+- **Configurable Risk Thresholds**: Each command can define acceptable risk levels
+- **Automatic Threat Blocking**: High-risk and privilege escalation commands are blocked
+- **Risk-Based Audit Logging**: Enhanced logging based on command risk levels
+
+### User and Group Security
+- **Secure User Switching**: Commands can execute as specific users with proper validation
+- **Group Membership Validation**: System verifies group membership before execution
+- **Privilege Boundary Enforcement**: Strict controls on user/group privilege escalation
+- **Complete Audit Trail**: Full logging of all user/group context changes
 
 ### Privilege Management
 - Automatic privilege dropping after initialization
 - Controlled privilege escalation for specific commands
 - Minimal privilege principle enforcement
-- Comprehensive audit logging
+- Risk-aware privilege management
+- Comprehensive audit logging with security context
 
 ### Environment Isolation
 - Strict allowlist-based environment variable filtering
 - Protection against environment variable injection attacks
 - Group-level and global environment control
 - Secure variable reference resolution
+- Automatic sensitive data detection in environment variables
 
 ### Logging Security
-- **Sensitive Data Redaction**: Automatic detection and redaction of secrets, tokens, and sensitive patterns
-- **Secure Notifications**: Encrypted Slack webhook communications for security alerts
-- **Audit Trail Protection**: Tamper-resistant logging with structured format
+- **Sensitive Data Redaction**: Automatic detection and redaction of secrets, tokens, API keys, and sensitive patterns
+- **Multi-Channel Secure Notifications**: Encrypted Slack webhook communications with data protection
+- **Audit Trail Protection**: Tamper-resistant logging with structured format and risk context
 - **Access Control**: Log file permissions and secure storage practices
+- **Real-Time Security Alerts**: Immediate notification of security violations and high-risk operations
 
 ## Out of Scope
 
