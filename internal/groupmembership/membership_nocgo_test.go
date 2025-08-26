@@ -21,9 +21,9 @@ func TestGetGroupMembers_NoCGO(t *testing.T) {
 	require.NoError(t, err, "Failed to parse current user GID")
 
 	// Test getting members of current user's primary group
-	members, err := GetGroupMembers(uint32(currentGID))
-	assert.NoError(t, err, "GetGroupMembers should not return an error")
-	assert.NotNil(t, members, "GetGroupMembers should return a slice")
+	members, err := getGroupMembers(uint32(currentGID))
+	assert.NoError(t, err, "getGroupMembers should not return an error")
+	assert.NotNil(t, members, "getGroupMembers should return a slice")
 
 	// The result might be empty if the group has no explicit members
 	// (only primary group assignment), which is valid
@@ -34,9 +34,9 @@ func TestGetGroupMembers_InvalidGID_NoCGO(t *testing.T) {
 	// Use a GID that's very unlikely to exist
 	const invalidGID = 99999
 
-	members, err := GetGroupMembers(invalidGID)
-	assert.NoError(t, err, "GetGroupMembers should not return an error for non-existent group")
-	assert.Empty(t, members, "GetGroupMembers should return empty slice for non-existent group")
+	members, err := getGroupMembers(invalidGID)
+	assert.NoError(t, err, "getGroupMembers should not return an error for non-existent group")
+	assert.Empty(t, members, "getGroupMembers should return empty slice for non-existent group")
 }
 
 func TestIsCurrentUserOnlyGroupMember_NoCGO(t *testing.T) {

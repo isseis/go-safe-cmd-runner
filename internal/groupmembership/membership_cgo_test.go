@@ -22,8 +22,8 @@ func TestGetGroupMembers(t *testing.T) {
 
 	// Test getting members of current user's primary group
 	members, err := getGroupMembers(uint32(currentGID))
-	assert.NoError(t, err, "GetGroupMembers should not return an error")
-	assert.NotNil(t, members, "GetGroupMembers should return a slice")
+	assert.NoError(t, err, "getGroupMembers should not return an error")
+	assert.NotNil(t, members, "getGroupMembers should return a slice")
 
 	// The result might be empty if the group has no explicit members
 	// (only primary group assignment), which is valid
@@ -35,8 +35,8 @@ func TestGetGroupMembers_InvalidGID(t *testing.T) {
 	const invalidGID = 99999
 
 	members, err := getGroupMembers(invalidGID)
-	assert.NoError(t, err, "GetGroupMembers should not return an error for non-existent group")
-	assert.Empty(t, members, "GetGroupMembers should return empty slice for non-existent group")
+	assert.NoError(t, err, "getGroupMembers should not return an error for non-existent group")
+	assert.Empty(t, members, "getGroupMembers should return empty slice for non-existent group")
 }
 
 func TestIsCurrentUserOnlyGroupMember(t *testing.T) {

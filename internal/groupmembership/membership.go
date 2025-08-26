@@ -1,97 +1,16 @@
-//go:build cgo
-
-// Package groupmembership provides utilities for checking group membership
-// and related user/group operations using system calls.
 package groupmembership
-
-/*
-#include <sys/types.h>
-#include <grp.h>
-#include <stdlib.h>
-#include <string.h>
-
-// get_group_members returns the members of a group given its GID
-// Returns a null-terminated array of strings, or NULL if error
-// Caller is responsible for freeing the returned array and its strings
-char** get_group_members(gid_t gid, int* count) {
-    struct group *grp = getgrgid(gid);
-    if (grp == NULL || grp->gr_mem == NULL) {
-        *count = 0;
-        return NULL;
-    }
-
-    // Count members
-    int member_count = 0;
-    while (grp->gr_mem[member_count] != NULL) {
-        member_count++;
-    }
-
-    // Allocate array for member names
-    char** members = malloc((member_count + 1) * sizeof(char*));
-    if (members == NULL) {
-        *count = 0;
-        return NULL;
-    }
-
-    // Copy member names
-    for (int i = 0; i < member_count; i++) {
-        members[i] = strdup(grp->gr_mem[i]);
-        if (members[i] == NULL) {
-            // Free already allocated strings on error
-            for (int j = 0; j < i; j++) {
-                free(members[j]);
-            }
-            free(members);
-            *count = 0;
-            return NULL;
-        }
-    }
-    members[member_count] = NULL;
-
-    *count = member_count;
-    return members;
-}
-
-// free_string_array frees an array of strings returned by get_group_members
-void free_string_array(char** arr, int count) {
-    if (arr == NULL) return;
-    for (int i = 0; i < count; i++) {
-        free(arr[i]);
-    }
-    free(arr);
-}
-*/
-import "C"
 
 import (
 	"fmt"
 	"os/user"
 	"slices"
 	"strconv"
-	"unsafe"
 )
 
-// getGroupMembers returns all members of a group given its GID
-func getGroupMembers(gid uint32) ([]string, error) {
-	var count C.int
-	members := C.get_group_members(C.gid_t(gid), &count)
-	if members == nil {
-		return []string{}, nil
-	}
-	defer C.free_string_array(members, count)
-
-	result := make([]string, int(count))
-	for i := 0; i < int(count); i++ {
-		memberPtr := (**C.char)(unsafe.Pointer(uintptr(unsafe.Pointer(members)) + uintptr(i)*unsafe.Sizeof((*C.char)(nil))))
-		result[i] = C.GoString(*memberPtr)
-	}
-	return result, nil
-}
-
-// IsCurrentUserOnlyGroupMember checks if:
+// IsCurrentUserOnlyGroupMember implements the common logic for checking if:
 // 1. Current user is the file owner
 // 2. Current user is a member of the file's group
-// 3. Current user is the ONLY member of the file's group (excluding primary group assignment)
+// 3. Current user is the ONLY member of the file's group
 func IsCurrentUserOnlyGroupMember(fileUID, fileGID uint32) (bool, error) {
 	// Get current user
 	currentUser, err := user.Current()
@@ -132,7 +51,6 @@ func IsCurrentUserOnlyGroupMember(fileUID, fileGID uint32) (bool, error) {
 	// Check if current user is the only member
 	if len(groupMembers) == 0 {
 		// Group has no explicit members, only primary group users
-		// Need to check if the group is anyone's primary group other than current user
 		// For simplicity, we'll allow this case if it's the user's primary group
 		return currentUser.Gid == fileGidStr, nil
 	}
