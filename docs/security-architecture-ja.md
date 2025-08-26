@@ -13,7 +13,7 @@ Go Safe Command Runnerは、特権操作の安全な委譲と自動化された�
 ### 1. ファイル整合性検証
 
 #### 目的
-実行前に実行ファイルや重要なファイルが改ざんされていないことを確認し、侵害されたバイナリの実行を防止します。
+実行前に実行ファイルや重要なファイルが改ざんされていないことを確認し、侵害されたバイナリの実行を防止します。システムは現在、`internal/verification/` パッケージによる一元化された検証管理を提供します。
 
 #### 実装詳細
 
@@ -67,6 +67,12 @@ func (m *Manager) VerifyEnvironmentFile(envFilePath string) error {
 }
 ```
 
+**一元化検証管理**:
+- 場所: `internal/verification/manager.go`
+- すべてのファイル検証操作のための統一インターフェース
+- 権限制限ファイルに対する自動特権昇格フォールバック
+- 標準システムパススキップ機能
+
 **特権ファイルアクセス**:
 - 権限により通常の検証が失敗した場合、特権昇格にフォールバック
 - 安全な特権管理を使用（特権管理セクション参照）
@@ -108,7 +114,7 @@ type Filter struct {
 
 **変数検証**:
 ```go
-// 場所: internal/runner/security/security.go:639-649
+// 場所: internal/runner/security/environment_validation.go:47-56
 func (v *Validator) ValidateEnvironmentValue(key, value string) error {
     // コンパイルされた正規表現を使用して危険なパターンをチェック
     for _, re := range v.dangerousEnvRegexps {
@@ -291,7 +297,7 @@ type PathResolver struct {
 
 **デフォルト許可パターン**:
 ```go
-// 場所: internal/runner/security/security.go:128-135
+// 場所: internal/runner/security/types.go:147-154
 AllowedCommands: []string{
     "^/bin/.*",
     "^/usr/bin/.*",
@@ -313,16 +319,97 @@ AllowedCommands: []string{
 - 危険な特権操作の検出
 - パス解決セキュリティ検証
 
-### 6. セキュアログと機密データ保護
+### 6. リスクベースコマンド制御
 
 #### 目的
-パスワード、APIキー、トークンなどの機密情報がログファイルに露出することを防ぎ、機密データを侵害することなく安全な監査証跡を提供します。
+コマンドリスク評価に基づくインテリジェントなセキュリティ制御を実装し、高リスク操作を自動的にブロックしながら安全なコマンドの正常実行を可能にします。
 
 #### 実装詳細
 
+**リスク評価エンジン**:
+```go
+// 場所: internal/runner/risk/evaluator.go
+type Evaluator struct {
+    patterns []SecurityPattern
+}
+
+type SecurityPattern struct {
+    Pattern   *regexp.Regexp
+    RiskLevel runnertypes.RiskLevel
+    Category  string
+}
+```
+
+**コマンドリスク分析**:
+- 低リスク: 標準システムユーティリティ（ls、cat、grep）
+- 中リスク: ファイル変更コマンド（cp、mv、chmod）
+- 高リスク: システム管理コマンド（mount、systemctl）
+- クリティカルリスク: 特権昇格コマンド（sudo、su）- 自動的にブロック
+
+**リスクレベル設定**:
+```go
+// 場所: internal/runner/runnertypes/config.go
+type Command struct {
+    MaxRiskLevel string `toml:"max_risk_level"` // 許可される最大リスクレベル
+}
+```
+
+#### セキュリティ保証
+- 特権昇格試行の自動ブロック
+- コマンド毎の設定可能リスク閾値
+- 包括的コマンドパターンマッチング
+- リスクベース監査ログ
+
+### 7. リソース管理セキュリティ
+
+#### 目的
+通常実行とdry-runモードの両方でセキュリティ境界を維持する安全なリソース管理を提供します。
+
+#### 実装詳細
+
+**統一リソースインターフェース**:
+```go
+// 場所: internal/runner/resource/manager.go
+type ResourceManager interface {
+    ExecuteCommand(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) (*ExecutionResult, error)
+    WithPrivileges(ctx context.Context, fn func() error) error
+    SendNotification(message string, details map[string]any) error
+}
+```
+
+**実行モードセキュリティ**:
+- 通常モード: 完全な特権管理とコマンド実行
+- dry-runモード: 実際の実行なしでのセキュリティ分析
+- 両モード間での一貫したセキュリティ検証
+
+#### セキュリティ保証
+- モードに依存しないセキュリティ検証
+- 特権境界執行
+- 安全な通知処理
+- リソースライフサイクル管理
+
+### 8. セキュアログと機密データ保護
+
+#### 目的
+パスワード、APIキー、トークンなどの機密情報がログファイルに露出することを防ぎ、機密データを侵害することなく安全な監査証跡を提供します。専用の編集サービスで強化されています。
+
+#### 実装詳細
+
+**一元化データ編集**:
+```go
+// 場所: internal/redaction/redactor.go
+type Redactor struct {
+    patterns []SensitivePattern
+}
+
+func (r *Redactor) RedactText(text string) string {
+    // 設定されたすべての編集パターンを適用
+}
+```
+
 **ログセキュリティ設定**:
 ```go
-// 場所: internal/runner/security/security.go:85-101
+// 場所: internal/runner/security/types.go:92-107
 type LoggingOptions struct {
     // IncludeErrorDetails は完全なエラーメッセージをログに含めるかを制御
     IncludeErrorDetails bool `json:"include_error_details"`
@@ -343,7 +430,7 @@ type LoggingOptions struct {
 
 **機密パターン検出と編集**:
 ```go
-// 場所: internal/runner/security/security.go:500-531
+// 場所: internal/runner/security/logging_security.go:49-52
 func (v *Validator) redactSensitivePatterns(text string) string {
     sensitivePatterns := []struct {
         pattern     string
@@ -372,7 +459,7 @@ func (v *Validator) redactSensitivePatterns(text string) string {
 
 **エラーメッセージのサニタイズ**:
 ```go
-// 場所: internal/runner/security/security.go:455-479
+// 場所: internal/runner/security/logging_security.go:4-26
 func (v *Validator) SanitizeErrorForLogging(err error) string {
     if err == nil {
         return ""
@@ -417,7 +504,74 @@ func (v *Validator) SanitizeErrorForLogging(err error) string {
 - ログファイルの肥大化と潜在的DoSを防ぐ長さベースの切り詰め
 - 環境変数パターンの検出とサニタイズ
 
-### 7. 設定セキュリティ
+### 9. ユーザーとグループ実行セキュリティ
+
+#### 目的
+厳格なセキュリティ境界と包括的な監査証跡を維持しながら、安全なユーザーとグループ切り替え機能を提供します。
+
+#### 実装詳細
+
+**ユーザー・グループ設定**:
+```go
+// 場所: internal/runner/runnertypes/config.go
+type Command struct {
+    RunAsUser    string `toml:"run_as_user"`    // コマンドを実行するユーザー
+    RunAsGroup   string `toml:"run_as_group"`   // コマンドを実行するグループ
+    MaxRiskLevel string `toml:"max_risk_level"` // 許可される最大リスクレベル
+}
+```
+
+**グループメンバーシップ検証**:
+```go
+// 場所: internal/groupmembership/membership.go
+type GroupMembershipChecker interface {
+    IsUserInGroup(username, groupname string) (bool, error)
+    GetGroupMembers(groupname string) ([]string, error)
+}
+```
+
+**セキュリティ検証フロー**:
+1. ユーザー存在と権限の検証
+2. グループが指定されている場合のグループメンバーシップ確認
+3. 特権昇格要件のチェック
+4. リスクベース制限の適用
+5. 適切な特権でのコマンド実行
+
+#### セキュリティ保証
+- 包括的ユーザーとグループ検証
+- 特権昇格境界執行
+- グループメンバーシップ確認
+- ユーザー・グループ切り替えの完全監査証跡
+
+### 10. マルチチャンネル通知セキュリティ
+
+#### 目的
+外部通信で機密情報を保護しながら、重要なセキュリティイベントに対する安全な通知機能を提供します。
+
+#### 実装詳細
+
+**Slack統合**:
+```go
+// 場所: internal/logging/slack_handler.go
+type SlackHandler struct {
+    webhookURL string
+    redactor   *redaction.Redactor
+}
+```
+
+**安全な通知処理**:
+- 送信前の機密データ自動編集
+- 設定可能な通知チャンネル
+- レート制限とエラー処理
+- 安全なWebhook URL管理
+
+#### セキュリティ保証
+- 外部通知での機密データ保護
+- 安全な通信チャンネル管理
+- 悪用を防ぐレート制限
+- 包括的エラー処理
+
+### 11. 設定セキュリティ
 
 #### 目的
 設定ファイルと全体的なシステム設定が改ざんされないことを確保し、セキュリティのベストプラクティスに従います。
@@ -426,7 +580,7 @@ func (v *Validator) SanitizeErrorForLogging(err error) string {
 
 **ファイル権限検証**:
 ```go
-// 場所: internal/runner/security/security.go:345-383
+// 場所: internal/runner/security/file_validation.go:44-75
 func (v *Validator) ValidateFilePermissions(filePath string) error {
     // ワールド書き込み可能ファイルをチェック
     disallowedBits := perm &^ requiredPerms
@@ -495,7 +649,9 @@ if !filepath.IsAbs(hashDir) {
 3. **ファイル整合性**: すべての重要ファイル（設定、環境ファイル、実行ファイル）のハッシュベース検証
 4. **特権制御**: 制御された昇格による最小特権原則
 5. **環境分離**: 厳格な許可リストベースの環境フィルタリング
-6. **コマンド検証**: 許可リストベースのコマンド実行制御
+6. **コマンド検証**: 許可リスト検証を伴うリスクベースコマンド実行制御
+7. **データ保護**: 全出力における機密情報の自動編集
+8. **ユーザー・グループセキュリティ**: メンバーシップ検証を伴う安全なユーザー・グループ切り替え
 
 ### ゼロトラストモデル
 
@@ -567,12 +723,15 @@ if !filepath.IsAbs(hashDir) {
 - 任意のコマンド実行
 - シェルメタ文字の悪用
 - PATH操作
+- コマンド操作による特権昇格
 
 **対策**:
-- 許可リストベースのコマンド検証
-- 完全パス解決
+- 許可リスト執行を伴うリスクベースコマンド検証
+- セキュリティ検証を伴う完全パス解決
 - シェルメタ文字検出
 - コマンドパス検証
+- リスクレベル執行とブロック
+- ユーザー・グループ実行検証
 
 ## パフォーマンス考慮事項
 
@@ -590,6 +749,18 @@ if !filepath.IsAbs(hashDir) {
 - システムコールを使用した高速特権昇格/復元
 - パフォーマンス監視のためのメトリクス収集
 
+### リスク評価
+- 効率的コマンド分析のための事前コンパイル正規表現パターン
+- 事前コンパイルパターンを使用したO(1)リスクレベル検索
+- リスク評価の最小オーバーヘッド
+- 繰り返しコマンド分析の結果キャッシュ
+
+### データ編集
+- 大出力のストリーミング編集
+- 機密データの事前コンパイルパターン
+- 通常操作への最小パフォーマンス影響
+- 設定可能な編集ポリシー
+
 ## デプロイメントセキュリティ
 
 ### バイナリ配布
@@ -606,9 +777,13 @@ if !filepath.IsAbs(hashDir) {
 - セキュリティイベントの構造化ログ
 - 集中ログのためのsyslog統合
 - 緊急シャットダウンイベントは即座の注意が必要
+- リアルタイムセキュリティアラートのSlack統合
+- 全監視チャンネルでの自動機密データ編集
 
 ## 結論
 
 Go Safe Command Runnerは、特権委譲による安全なコマンド実行のための包括的なセキュリティフレームワークを提供します。多層アプローチは、最新のセキュリティプリミティブ（openat2）と実証済みのセキュリティ原則（多層防御、ゼロトラスト、フェイルセーフ設計）を組み合わせて、セキュリティを重視する環境での本番使用に適した堅牢なシステムを作成します。
 
-実装は、包括的な入力検証、安全な特権管理、広範な監査機能を含むセキュリティエンジニアリングのベストプラクティスを実証しています。システムは安全に失敗し、セキュリティ関連操作への完全な可視性を提供するよう設計されています。
+実装は、包括的な入力検証、リスクベースコマンド制御、安全な特権管理、自動機密データ保護、広範な監査機能を含むセキュリティエンジニアリングのベストプラクティスを実証しています。システムは安全に失敗し、セキュリティ関連操作への完全な可視性を提供するよう設計されています。
+
+主要なセキュリティ革新機能には、コマンド実行のためのインテリジェントリスク評価、一貫したセキュリティ境界を持つ統一リソース管理、全チャンネルでの自動機密データ編集、安全なユーザー・グループ実行機能、セキュリティ対応メッセージングを伴う包括的マルチチャンネル通知が含まれます。システムは、運用の柔軟性と透明性を維持しながら、エンタープライズグレードのセキュリティ制御を提供します。

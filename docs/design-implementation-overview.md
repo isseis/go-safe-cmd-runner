@@ -48,6 +48,8 @@ flowchart TD
   - Path security validation (absolute paths, no relative components)
   - Default value assignment
   - Cross-reference validation between sections
+  - Risk-based command control configuration
+  - User/group execution specification support
 
 **Implementation Highlights:**
 ```go
@@ -130,6 +132,47 @@ func (m *Manager) WithPrivileges(ctx ElevationContext, fn func() error) error {
   - Dangerous command detection
   - File permission validation
   - Path traversal attack prevention
+  - Risk-based command analysis and blocking
+  - Sensitive data redaction in logs
+
+#### 8. Resource Management (`internal/runner/resource/`)
+- **Purpose**: Unified management of all side-effects in both normal and dry-run modes
+- **Key Features**:
+  - Command execution abstraction
+  - Temporary directory lifecycle management
+  - Privilege escalation coordination
+  - Dry-run simulation with realistic analysis
+  - Network operations (Slack notifications)
+
+#### 9. Verification Management (`internal/verification/`)
+- **Purpose**: Centralized file verification and path resolution
+- **Key Features**:
+  - Config and environment file verification
+  - Command path resolution with security validation
+  - Privileged file access fallback
+  - Skip verification for standard system paths
+
+#### 10. Risk Assessment (`internal/runner/risk/`)
+- **Purpose**: Risk-based security evaluation for command execution
+- **Key Features**:
+  - Command risk level analysis (low, medium, high, critical)
+  - Security policy enforcement based on risk levels
+  - Command override detection and blocking
+
+#### 11. Logging and Audit (`internal/logging/`, `internal/runner/audit/`)
+- **Purpose**: Secure logging with sensitive data protection
+- **Key Features**:
+  - Multi-channel logging (file, syslog, Slack)
+  - Automatic sensitive data redaction
+  - Pre-execution error handling
+  - Structured audit trails
+
+#### 12. Data Redaction (`internal/redaction/`)
+- **Purpose**: Automatic filtering of sensitive information from logs and outputs
+- **Key Features**:
+  - Pattern-based detection of passwords, tokens, API keys
+  - Environment variable sanitization
+  - Configurable redaction policies
 
 ## Data Flow Architecture
 
@@ -148,21 +191,26 @@ Configuration Loading → Security Validation → Group Processing → Command E
    ├── Configuration file integrity verification
    ├── Environment file integrity verification (when specified)
    ├── Environment variable filtering
-   ├── Command path validation
-   └── Permission checks
+   ├── Command path validation and risk assessment
+   ├── Permission checks
+   └── User/group execution validation
 
 3. Group Processing:
    ├── Dependency resolution
    ├── Priority ordering
    ├── Resource allocation (temp directories)
-   └── Environment preparation
+   ├── Environment preparation
+   └── Risk-based command filtering
 
 4. Command Execution:
+   ├── Risk level evaluation and enforcement
    ├── Privilege escalation (if needed)
+   ├── User/group switching (if specified)
    ├── Process spawning with isolation
-   ├── Output capture and monitoring
+   ├── Output capture and monitoring with redaction
    ├── Privilege restoration
-   └── Cleanup and logging
+   ├── Resource cleanup
+   └── Audit logging and notifications
 ```
 
 ### File Verification Flow
@@ -197,7 +245,8 @@ Multiple security layers ensure that a single point of failure doesn't compromis
 - **File Integrity**: Hash-based verification of all critical files (configuration, environment files, executables)
 - **Privilege Control**: Minimal privilege principle with controlled escalation
 - **Environment Isolation**: Strict allowlist-based environment filtering
-- **Command Validation**: Allowlist-based command execution control
+- **Command Validation**: Allowlist-based command execution control with risk assessment
+- **Data Protection**: Automatic redaction of sensitive information in logs and outputs
 
 ### 2. Zero Trust Model
 No implicit trust in system environment:
@@ -268,6 +317,17 @@ func NewRunnerWithOptions(config *Config, opts ...Option) (*Runner, error) {
 }
 ```
 
+### 5. Resource Management Pattern
+Unified handling of side-effects across execution modes:
+```go
+type ResourceManager interface {
+    ExecuteCommand(ctx context.Context, cmd Command, group *CommandGroup, env map[string]string) (*ExecutionResult, error)
+    CreateTempDir(groupName string) (string, error)
+    WithPrivileges(ctx context.Context, fn func() error) error
+    SendNotification(message string, details map[string]any) error
+}
+```
+
 ## Testing Strategy
 
 ### 1. Unit Testing
@@ -293,6 +353,8 @@ func NewRunnerWithOptions(config *Config, opts ...Option) (*Runner, error) {
 - Memory usage optimization
 - Concurrent operation performance
 - Large file handling efficiency
+- Risk evaluation performance testing
+- Dry-run simulation accuracy validation
 
 ## Deployment Considerations
 
@@ -314,12 +376,16 @@ func NewRunnerWithOptions(config *Config, opts ...Option) (*Runner, error) {
 - Syslog integration for centralized logging
 - Emergency shutdown event monitoring
 - Performance metrics collection
+- Slack integration for critical alerts
+- Sensitive data redaction in all logs
 
 ### 4. Security Operations
 - Regular security audits of configuration
 - Privilege operation monitoring
 - File integrity verification schedules
 - Incident response procedures
+- Risk-based command monitoring and alerting
+- User/group execution audit trails
 
 ## Performance Characteristics
 
@@ -341,6 +407,18 @@ func NewRunnerWithOptions(config *Config, opts ...Option) (*Runner, error) {
 - Metrics collection for performance monitoring
 - Resource usage tracking
 
+### 4. Risk Assessment
+- O(1) risk level lookups using pre-compiled patterns
+- Efficient command analysis using regex matching
+- Minimal overhead for risk evaluation
+- Cached results for repeated command analysis
+
+### 5. Data Redaction
+- Pre-compiled regex patterns for sensitive data detection
+- Streaming redaction for large outputs
+- Minimal performance impact on normal operations
+- Configurable redaction policies
+
 ## Future Extensibility
 
 ### 1. Plugin Architecture
@@ -349,6 +427,9 @@ The interface-driven design enables easy extension:
 - Additional privilege backends
 - Extended security validators
 - Custom output formatters
+- Pluggable risk assessment engines
+- Custom notification backends
+- Extended redaction patterns
 
 ### 2. Platform Support
 Current focus on Linux/Unix with extensibility for:
@@ -363,9 +444,14 @@ Well-defined interfaces for integration with:
 - Monitoring and alerting platforms
 - Audit and compliance systems
 - Identity and access management
+- SIEM and security orchestration platforms
+- ChatOps and collaboration tools (Slack, Teams)
+- Container orchestration platforms
 
 ## Conclusion
 
-The Go Safe Command Runner demonstrates security engineering best practices through its multi-layered security approach, comprehensive input validation, secure privilege management, and extensive audit capabilities. The system is designed to fail securely and provide complete visibility into security-relevant operations, making it suitable for production use in security-conscious environments.
+The Go Safe Command Runner demonstrates security engineering best practices through its multi-layered security approach, comprehensive input validation, secure privilege management, risk-based command control, and extensive audit capabilities. The system is designed to fail securely and provide complete visibility into security-relevant operations, making it suitable for production use in security-conscious environments.
 
-The implementation showcases modern Go development patterns including interface-driven design, composition-based architecture, and comprehensive testing strategies. The system's modular design enables easy extension and customization while maintaining strict security boundaries.
+The implementation showcases modern Go development patterns including interface-driven design, composition-based architecture, resource management patterns, and comprehensive testing strategies. The system's modular design enables easy extension and customization while maintaining strict security boundaries.
+
+Key innovations include unified resource management for both normal and dry-run modes, intelligent risk assessment for command security, automatic sensitive data protection, and comprehensive audit capabilities with multi-channel notifications. The system provides enterprise-grade security controls while maintaining operational flexibility and extensibility.

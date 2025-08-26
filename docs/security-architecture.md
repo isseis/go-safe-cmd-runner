@@ -13,7 +13,7 @@ The Go Safe Command Runner implements multiple layers of security controls to en
 ### 1. File Integrity Verification
 
 #### Purpose
-Ensure that executables and critical files have not been tampered with before execution, preventing the execution of compromised binaries.
+Ensure that executables and critical files have not been tampered with before execution, preventing the execution of compromised binaries. The system now provides centralized verification management through the `internal/verification/` package.
 
 #### Implementation Details
 
@@ -67,6 +67,12 @@ func (m *Manager) VerifyEnvironmentFile(envFilePath string) error {
 }
 ```
 
+**Centralized Verification Management**:
+- Location: `internal/verification/manager.go`
+- Unified interface for all file verification operations
+- Automatic privilege escalation fallback for permission-restricted files
+- Standard system path skip functionality
+
 **Privileged File Access**:
 - Falls back to privilege escalation when normal verification fails due to permissions
 - Uses secure privilege management (see Privilege Management section)
@@ -108,7 +114,7 @@ type Filter struct {
 
 **Variable Validation**:
 ```go
-// Location: internal/runner/security/security.go:639-649
+// Location: internal/runner/security/environment_validation.go:47-56
 func (v *Validator) ValidateEnvironmentValue(key, value string) error {
     // Check for dangerous patterns using compiled regexes
     for _, re := range v.dangerousEnvRegexps {
@@ -291,7 +297,7 @@ type PathResolver struct {
 
 **Default Allowed Patterns**:
 ```go
-// Location: internal/runner/security/security.go:128-135
+// Location: internal/runner/security/types.go:147-154
 AllowedCommands: []string{
     "^/bin/.*",
     "^/usr/bin/.*",
@@ -313,16 +319,97 @@ AllowedCommands: []string{
 - Detection of dangerous privileged operations
 - Path resolution security validation
 
-### 6. Secure Logging and Sensitive Data Protection
+### 6. Risk-Based Command Control
 
 #### Purpose
-Prevent sensitive information such as passwords, API keys, and tokens from being exposed in log files, providing secure audit trails without compromising confidential data.
+Implement intelligent security controls based on command risk assessment, automatically blocking high-risk operations while allowing safe commands to execute normally.
 
 #### Implementation Details
 
+**Risk Assessment Engine**:
+```go
+// Location: internal/runner/risk/evaluator.go
+type Evaluator struct {
+    patterns []SecurityPattern
+}
+
+type SecurityPattern struct {
+    Pattern   *regexp.Regexp
+    RiskLevel runnertypes.RiskLevel
+    Category  string
+}
+```
+
+**Command Risk Analysis**:
+- Low Risk: Standard system utilities (ls, cat, grep)
+- Medium Risk: File modification commands (cp, mv, chmod)
+- High Risk: System administration commands (mount, systemctl)
+- Critical Risk: Privilege escalation commands (sudo, su) - automatically blocked
+
+**Risk Level Configuration**:
+```go
+// Location: internal/runner/runnertypes/config.go
+type Command struct {
+    MaxRiskLevel string `toml:"max_risk_level"` // Maximum allowed risk level
+}
+```
+
+#### Security Guarantees
+- Automatic blocking of privilege escalation attempts
+- Configurable risk thresholds per command
+- Comprehensive command pattern matching
+- Risk-based audit logging
+
+### 7. Resource Management Security
+
+#### Purpose
+Provide secure resource management that maintains security boundaries across both normal execution and dry-run modes.
+
+#### Implementation Details
+
+**Unified Resource Interface**:
+```go
+// Location: internal/runner/resource/manager.go
+type ResourceManager interface {
+    ExecuteCommand(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) (*ExecutionResult, error)
+    WithPrivileges(ctx context.Context, fn func() error) error
+    SendNotification(message string, details map[string]any) error
+}
+```
+
+**Execution Mode Security**:
+- Normal mode: Full privilege management and command execution
+- Dry-run mode: Security analysis without actual execution
+- Consistent security validation across both modes
+
+#### Security Guarantees
+- Mode-independent security validation
+- Privilege boundary enforcement
+- Secure notification handling
+- Resource lifecycle management
+
+### 8. Secure Logging and Sensitive Data Protection
+
+#### Purpose
+Prevent sensitive information such as passwords, API keys, and tokens from being exposed in log files, providing secure audit trails without compromising confidential data. Enhanced with dedicated redaction services.
+
+#### Implementation Details
+
+**Centralized Data Redaction**:
+```go
+// Location: internal/redaction/redactor.go
+type Redactor struct {
+    patterns []SensitivePattern
+}
+
+func (r *Redactor) RedactText(text string) string {
+    // Apply all configured redaction patterns
+}
+```
+
 **Logging Security Configuration**:
 ```go
-// Location: internal/runner/security/security.go:85-101
+// Location: internal/runner/security/types.go:92-107
 type LoggingOptions struct {
     // IncludeErrorDetails controls whether full error messages are logged
     IncludeErrorDetails bool `json:"include_error_details"`
@@ -343,7 +430,7 @@ type LoggingOptions struct {
 
 **Sensitive Pattern Detection and Redaction**:
 ```go
-// Location: internal/runner/security/security.go:500-531
+// Location: internal/runner/security/logging_security.go:49-52
 func (v *Validator) redactSensitivePatterns(text string) string {
     sensitivePatterns := []struct {
         pattern     string
@@ -372,7 +459,7 @@ func (v *Validator) redactSensitivePatterns(text string) string {
 
 **Error Message Sanitization**:
 ```go
-// Location: internal/runner/security/security.go:455-479
+// Location: internal/runner/security/logging_security.go:4-26
 func (v *Validator) SanitizeErrorForLogging(err error) string {
     if err == nil {
         return ""
@@ -417,7 +504,74 @@ func (v *Validator) SanitizeErrorForLogging(err error) string {
 - Length-based truncation to prevent log file bloat and potential DoS
 - Environment variable pattern detection and sanitization
 
-### 7. Configuration Security
+### 9. User and Group Execution Security
+
+#### Purpose
+Provide secure user and group switching capabilities while maintaining strict security boundaries and comprehensive audit trails.
+
+#### Implementation Details
+
+**User/Group Configuration**:
+```go
+// Location: internal/runner/runnertypes/config.go
+type Command struct {
+    RunAsUser    string `toml:"run_as_user"`    // User to execute command as
+    RunAsGroup   string `toml:"run_as_group"`   // Group to execute command as
+    MaxRiskLevel string `toml:"max_risk_level"` // Maximum allowed risk level
+}
+```
+
+**Group Membership Validation**:
+```go
+// Location: internal/groupmembership/membership.go
+type GroupMembershipChecker interface {
+    IsUserInGroup(username, groupname string) (bool, error)
+    GetGroupMembers(groupname string) ([]string, error)
+}
+```
+
+**Security Validation Flow**:
+1. Validate user existence and permissions
+2. Verify group membership if group is specified
+3. Check privilege escalation requirements
+4. Apply risk-based restrictions
+5. Execute with appropriate privileges
+
+#### Security Guarantees
+- Comprehensive user and group validation
+- Privilege escalation boundary enforcement
+- Group membership verification
+- Full audit trail for user/group switches
+
+### 10. Multi-Channel Notification Security
+
+#### Purpose
+Provide secure notification capabilities for critical security events while protecting sensitive information in external communications.
+
+#### Implementation Details
+
+**Slack Integration**:
+```go
+// Location: internal/logging/slack_handler.go
+type SlackHandler struct {
+    webhookURL string
+    redactor   *redaction.Redactor
+}
+```
+
+**Secure Notification Processing**:
+- Automatic redaction of sensitive data before transmission
+- Configurable notification channels
+- Rate limiting and error handling
+- Secure webhook URL management
+
+#### Security Guarantees
+- Sensitive data protection in external notifications
+- Secure communication channel management
+- Rate limiting prevents abuse
+- Comprehensive error handling
+
+### 11. Configuration Security
 
 #### Purpose
 Ensure that configuration files and the overall system configuration cannot be tampered with and follow security best practices.
@@ -426,7 +580,7 @@ Ensure that configuration files and the overall system configuration cannot be t
 
 **File Permission Validation**:
 ```go
-// Location: internal/runner/security/security.go:345-383
+// Location: internal/runner/security/file_validation.go:44-75
 func (v *Validator) ValidateFilePermissions(filePath string) error {
     // Check for world-writable files
     disallowedBits := perm &^ requiredPerms
@@ -495,7 +649,9 @@ The system implements multiple security layers:
 3. **File Integrity**: Hash-based verification of all critical files (configuration, environment files, executables)
 4. **Privilege Control**: Minimal privilege principle with controlled escalation
 5. **Environment Isolation**: Strict allowlist-based environment filtering
-6. **Command Validation**: Allowlist-based command execution control
+6. **Command Validation**: Risk-based command execution control with allowlist validation
+7. **Data Protection**: Automatic redaction of sensitive information across all outputs
+8. **User/Group Security**: Secure user and group switching with membership validation
 
 ### Zero Trust Model
 
@@ -567,12 +723,15 @@ The system implements multiple security layers:
 - Arbitrary command execution
 - Shell metacharacter exploitation
 - PATH manipulation
+- Privilege escalation through command manipulation
 
 **Mitigations**:
-- Allowlist-based command validation
-- Full path resolution
+- Risk-based command validation with allowlist enforcement
+- Full path resolution with security validation
 - Shell metacharacter detection
 - Command path verification
+- Risk level enforcement and blocking
+- User/group execution validation
 
 ## Performance Considerations
 
@@ -590,6 +749,18 @@ The system implements multiple security layers:
 - Fast privilege escalation/restoration using system calls
 - Metrics collection for performance monitoring
 
+### Risk Assessment
+- Pre-compiled regex patterns for efficient command analysis
+- O(1) risk level lookups using pre-compiled pattern matching
+- Minimal overhead for risk evaluation
+- Cached results for repeated command analysis
+
+### Data Redaction
+- Streaming redaction for large outputs
+- Pre-compiled sensitive data patterns
+- Minimal performance impact on normal operations
+- Configurable redaction policies
+
 ## Deployment Security
 
 ### Binary Distribution
@@ -606,9 +777,13 @@ The system implements multiple security layers:
 - Structured logs for security events
 - Syslog integration for centralized logging
 - Emergency shutdown events require immediate attention
+- Slack integration for real-time security alerts
+- Automatic sensitive data redaction in all monitoring channels
 
 ## Conclusion
 
 The Go Safe Command Runner provides a comprehensive security framework for safe command execution with privilege delegation. The multi-layered approach combines modern security primitives (openat2) with proven security principles (defense in depth, zero trust, fail-safe design) to create a robust system suitable for production use in security-conscious environments.
 
-The implementation demonstrates security engineering best practices including comprehensive input validation, secure privilege management, and extensive audit capabilities. The system is designed to fail securely and provide complete visibility into security-relevant operations.
+The implementation demonstrates security engineering best practices including comprehensive input validation, risk-based command control, secure privilege management, automatic sensitive data protection, and extensive audit capabilities. The system is designed to fail securely and provide complete visibility into security-relevant operations.
+
+Key security innovations include intelligent risk assessment for command execution, unified resource management with consistent security boundaries, automatic sensitive data redaction across all channels, secure user/group execution capabilities, and comprehensive multi-channel notification with security-aware messaging. The system provides enterprise-grade security controls while maintaining operational flexibility and transparency.
