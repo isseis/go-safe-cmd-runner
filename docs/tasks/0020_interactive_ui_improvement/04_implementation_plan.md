@@ -7,12 +7,12 @@
 ## 2. 実装フェーズ
 
 ### Phase 1: Terminal Package の基盤実装
-- [ ] `internal/terminal/preference.go` - ユーザー設定管理（CLICOLOR_FORCE対応）
-- [ ] `internal/terminal/preference_test.go` - ユーザー設定のテスト
-- [ ] `internal/terminal/detector.go` - 対話性検出
-- [ ] `internal/terminal/detector_test.go` - 対話性検出のテスト
-- [ ] `internal/terminal/color.go` - カラー対応検出（シンプル実装）
-- [ ] `internal/terminal/color_test.go` - カラー対応検出のテスト
+- [x] `internal/terminal/preference.go` - ユーザー設定管理（CLICOLOR_FORCE対応）
+- [x] `internal/terminal/preference_test.go` - ユーザー設定のテスト
+- [x] `internal/terminal/detector.go` - 対話性検出
+- [x] `internal/terminal/detector_test.go` - 対話性検出のテスト
+- [x] `internal/terminal/color.go` - カラー対応検出（シンプル実装）
+- [x] `internal/terminal/color_test.go` - カラー対応検出のテスト
 
 ### Phase 2: Terminal Capabilities 統合インターフェース
 - [ ] `internal/terminal/capabilities.go` - 統合インターフェース
