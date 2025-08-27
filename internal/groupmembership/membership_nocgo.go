@@ -11,67 +11,17 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
-	"time"
 )
-
-// legacyGroupMemberCache holds cached group membership data with expiration (for backward compatibility)
-type legacyGroupMemberCache struct {
-	members []string
-	expiry  time.Time
-}
-
-// legacy cache for group membership data with thread safety (for backward compatibility)
-var (
-	legacyMembershipCache = make(map[uint32]legacyGroupMemberCache)
-	legacyCacheMutex      sync.RWMutex
-	legacyCacheTimeout    = 30 * time.Second // Cache timeout duration
-)
-
-// clearExpiredCache removes expired cache entries
-func clearExpiredCache() {
-	now := time.Now()
-	for gid, entry := range legacyMembershipCache {
-		if now.After(entry.expiry) {
-			delete(legacyMembershipCache, gid)
-		}
-	}
-}
 
 // getGroupMembers returns all members of a group given its GID by parsing /etc/group
 // and /etc/passwd to find users with this GID as their primary group
-// Results are cached for performance with a configurable timeout
+// This is a stateless function - caching is handled by the GroupMembership struct
 func getGroupMembers(gid uint32) ([]string, error) {
-	// Check cache first
-	legacyCacheMutex.RLock()
-	if cached, exists := legacyMembershipCache[gid]; exists && time.Now().Before(cached.expiry) {
-		legacyCacheMutex.RUnlock()
-		return cached.members, nil
-	}
-	legacyCacheMutex.RUnlock()
-
-	// Cache miss or expired - acquire write lock and compute
-	legacyCacheMutex.Lock()
-	defer legacyCacheMutex.Unlock()
-
-	// Double-check after acquiring write lock (another goroutine might have populated it)
-	if cached, exists := legacyMembershipCache[gid]; exists && time.Now().Before(cached.expiry) {
-		return cached.members, nil
-	}
-
-	// Clear expired entries periodically (simple cleanup strategy)
-	clearExpiredCache()
-
 	groupEntry, err := findGroupByGID(gid)
 	if err != nil {
 		return nil, err
 	}
 	if groupEntry == nil {
-		// Cache empty result too
-		legacyMembershipCache[gid] = legacyGroupMemberCache{
-			members: []string{},
-			expiry:  time.Now().Add(legacyCacheTimeout),
-		}
 		return []string{}, nil // Group not found
 	}
 
@@ -104,54 +54,7 @@ func getGroupMembers(gid uint32) ([]string, error) {
 		result = append(result, member)
 	}
 
-	// Cache the result
-	legacyMembershipCache[gid] = legacyGroupMemberCache{
-		members: result,
-		expiry:  time.Now().Add(legacyCacheTimeout),
-	}
-
 	return result, nil
-}
-
-// SetCacheTimeoutDeprecated allows configuring the cache timeout duration
-// This is useful for testing and performance tuning
-// DEPRECATED: Use GroupMembership.SetCacheTimeout instead
-func SetCacheTimeoutDeprecated(timeout time.Duration) {
-	legacyCacheMutex.Lock()
-	defer legacyCacheMutex.Unlock()
-	legacyCacheTimeout = timeout
-}
-
-// ClearCacheDeprecated manually clears all cached group membership data
-// This is useful when system group/user configuration changes are detected
-// DEPRECATED: Use GroupMembership.ClearCache instead
-func ClearCacheDeprecated() {
-	legacyCacheMutex.Lock()
-	defer legacyCacheMutex.Unlock()
-	legacyMembershipCache = make(map[uint32]legacyGroupMemberCache)
-}
-
-// GetCacheStatsDeprecated returns cache statistics for monitoring and debugging
-// DEPRECATED: Use GroupMembership.GetCacheStats instead
-func GetCacheStatsDeprecated() map[string]interface{} {
-	legacyCacheMutex.RLock()
-	defer legacyCacheMutex.RUnlock()
-
-	totalEntries := len(legacyMembershipCache)
-	expiredEntries := 0
-	now := time.Now()
-
-	for _, entry := range legacyMembershipCache {
-		if now.After(entry.expiry) {
-			expiredEntries++
-		}
-	}
-
-	return map[string]interface{}{
-		"total_entries":   totalEntries,
-		"expired_entries": expiredEntries,
-		"cache_timeout":   legacyCacheTimeout.String(),
-	}
 }
 
 // groupEntry represents a parsed line from /etc/group
