@@ -394,7 +394,7 @@ func (h *InteractiveHandler) Handle(ctx context.Context, r slog.Record) error {
 
     if r.Level >= slog.LevelError && h.logFilePath != "" {
         estimatedLine := h.lineTracker.EstimateCurrentLine()
-        logHint := h.formatLogFileHint(estimatedLine, colorSupported)
+        logHint := h.formatter.FormatLogFileHint(h.logFilePath, estimatedLine, colorSupported)
         message = message + "\n" + logHint
     }
 
@@ -403,17 +403,57 @@ func (h *InteractiveHandler) Handle(ctx context.Context, r slog.Record) error {
 
     return err
 }
+```
 
-func (h *InteractiveHandler) formatLogFileHint(estimatedLine int, colorSupported bool) string {
-    if colorSupported {
-        return fmt.Sprintf("\033[90mDetails: %s (around line %d)\033[0m",
-            h.logFilePath, estimatedLine)
+### 3.2 Message Formatter (カラーリング統合版)
+```go
+// logging/message_formatter.go
+package logging
+
+import "log/slog"
+
+type MessageFormatter interface {
+    FormatRecordWithColor(r slog.Record, colorSupported bool) string
+    FormatLogFileHint(logFilePath string, estimatedLine int, colorSupported bool) string
+}
+
+type DefaultMessageFormatter struct{}
+
+func NewMessageFormatter() MessageFormatter {
+    return &DefaultMessageFormatter{}
+}
+
+func (f *DefaultMessageFormatter) FormatRecordWithColor(r slog.Record, colorSupported bool) string {
+    // シンプル実装：ANSIエスケープシーケンス不使用
+    // レベル別にプレフィックス記号で視覚的区別
+    levelPrefix := f.getLevelPrefix(r.Level)
+    timestamp := r.Time.Format("15:04:05")
+    return fmt.Sprintf("%s [%s] %s", levelPrefix, timestamp, r.Message)
+}
+
+func (f *DefaultMessageFormatter) FormatLogFileHint(logFilePath string, estimatedLine int, colorSupported bool) string {
+    // 将来拡張：colorSupportedがtrueの場合はカラー対応
+    // 今回はシンプル実装のため常に同じフォーマット
+    return fmt.Sprintf("Details: %s (around line %d)", logFilePath, estimatedLine)
+}
+
+func (f *DefaultMessageFormatter) getLevelPrefix(level slog.Level) string {
+    switch level {
+    case slog.LevelDebug:
+        return "[DEBUG]"
+    case slog.LevelInfo:
+        return "[INFO] "
+    case slog.LevelWarn:
+        return "[WARN] "
+    case slog.LevelError:
+        return "[ERROR]"
+    default:
+        return "[LOG]  "
     }
-    return fmt.Sprintf("Details: %s (around line %d)", h.logFilePath, estimatedLine)
 }
 ```
 
-### 3.2 Conditional Text Handler (terminalパッケージ対応版)
+### 3.3 Conditional Text Handler (terminalパッケージ対応版)
 ```go
 // logging/conditional_text_handler.go
 package logging
