@@ -12,6 +12,8 @@ import (
 const (
 	// DefaultCacheTimeout is the default timeout duration for cache entries
 	DefaultCacheTimeout = 30 * time.Second
+	// CleanupInterval defines how often to perform full cache cleanup (every N cache misses)
+	CleanupInterval = 10
 )
 
 // GroupMembership provides group membership checking functionality with explicit cache management
@@ -19,6 +21,8 @@ type GroupMembership struct {
 	// cache for group membership data with thread safety
 	membershipCache map[uint32]groupMemberCache
 	cacheMutex      sync.RWMutex
+	// cleanupCounter tracks cache misses to trigger periodic cleanup
+	cleanupCounter int
 }
 
 // groupMemberCache holds cached group membership data with expiration
@@ -54,8 +58,12 @@ func (gm *GroupMembership) GetGroupMembers(gid uint32) ([]string, error) {
 		return cached.members, nil
 	}
 
-	// Clear expired entries periodically (simple cleanup strategy)
-	gm.clearExpiredCache()
+	// Increment cleanup counter and perform periodic cleanup
+	gm.cleanupCounter++
+	if gm.cleanupCounter >= CleanupInterval {
+		gm.clearExpiredCache()
+		gm.cleanupCounter = 0
+	}
 
 	// Get group members using the appropriate implementation (CGO or non-CGO)
 	members, err := getGroupMembers(gid)
@@ -156,6 +164,7 @@ func (gm *GroupMembership) ClearCache() {
 	gm.cacheMutex.Lock()
 	defer gm.cacheMutex.Unlock()
 	gm.membershipCache = make(map[uint32]groupMemberCache)
+	gm.cleanupCounter = 0
 }
 
 // CacheStats represents cache statistics in a type-safe manner
