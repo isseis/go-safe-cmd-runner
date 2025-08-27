@@ -1,7 +1,6 @@
 package terminal
 
 import (
-	"os"
 	"testing"
 )
 
@@ -70,13 +69,8 @@ func TestCapabilities_Integration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Clear environment
-			os.Clearenv()
-
-			// Set test environment variables
-			for key, value := range tt.envVars {
-				os.Setenv(key, value)
-			}
+			// Set up clean environment for testing
+			setupCleanEnv(t, tt.envVars)
 
 			capabilities := NewCapabilities(tt.options)
 
@@ -154,13 +148,8 @@ func TestCapabilities_ColorPriorityLogic(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Clear environment
-			os.Clearenv()
-
-			// Set test environment variables
-			for key, value := range tt.envVars {
-				os.Setenv(key, value)
-			}
+			// Set up clean environment for testing
+			setupCleanEnv(t, tt.envVars)
 
 			capabilities := NewCapabilities(tt.options)
 
@@ -173,11 +162,8 @@ func TestCapabilities_ColorPriorityLogic(t *testing.T) {
 
 func TestCapabilities_ComponentIntegration(t *testing.T) {
 	t.Run("All components work together", func(t *testing.T) {
-		// Clear environment
-		os.Clearenv()
-
-		// Set up test environment: interactive terminal with color support
-		os.Setenv("TERM", "xterm")
+		// Set up clean test environment: interactive terminal with color support
+		setupCleanEnv(t, map[string]string{"TERM": "xterm"})
 
 		// Create capabilities with no explicit options
 		options := Options{}
@@ -263,13 +249,8 @@ func TestCapabilities_ExplicitUserPreferenceLogic(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Clear environment
-			os.Clearenv()
-
-			// Set test environment variables
-			for key, value := range tt.envVars {
-				os.Setenv(key, value)
-			}
+			// Set up clean environment for testing
+			setupCleanEnv(t, tt.envVars)
 
 			capabilities := NewCapabilities(tt.options)
 

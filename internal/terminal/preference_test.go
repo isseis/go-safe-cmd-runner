@@ -1,7 +1,6 @@
 package terminal
 
 import (
-	"os"
 	"testing"
 )
 
@@ -22,7 +21,7 @@ func TestUserPreference_CLICOLORForce(t *testing.T) {
 		{
 			name:         "CLICOLOR_FORCE=0 allows other checks",
 			envVars:      map[string]string{"CLICOLOR_FORCE": "0", "CLICOLOR": "1"},
-			wantColor:    true,
+			wantColor:    true, // CLICOLOR=1 enables color (NO_COLOR not set)
 			wantExplicit: true,
 		},
 		{
@@ -40,7 +39,7 @@ func TestUserPreference_CLICOLORForce(t *testing.T) {
 		{
 			name:         "CLICOLOR=1 enables color",
 			envVars:      map[string]string{"CLICOLOR": "1"},
-			wantColor:    true,
+			wantColor:    true, // CLICOLOR=1 enables color (NO_COLOR not set)
 			wantExplicit: true,
 		},
 		{
@@ -59,21 +58,16 @@ func TestUserPreference_CLICOLORForce(t *testing.T) {
 		},
 		{
 			name:         "no preferences set",
-			envVars:      map[string]string{},
+			envVars:      map[string]string{}, // Empty map - NO_COLOR not set, other vars set to ""
 			wantColor:    false,
-			wantExplicit: false,
+			wantExplicit: false, // No explicit preferences when NO_COLOR is not set
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Clear environment
-			os.Clearenv()
-
-			// Set test environment variables
-			for key, value := range tt.envVars {
-				os.Setenv(key, value)
-			}
+			// Always set up clean environment for testing to ensure isolation from real environment
+			setupCleanEnv(t, tt.envVars)
 
 			pref := NewUserPreference(tt.options)
 
@@ -132,13 +126,8 @@ func TestUserPreference_PriorityLogic(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Clear environment
-			os.Clearenv()
-
-			// Set test environment variables
-			for key, value := range tt.envVars {
-				os.Setenv(key, value)
-			}
+			// Always set up clean environment for testing to ensure isolation from real environment
+			setupCleanEnv(t, tt.envVars)
 
 			pref := NewUserPreference(tt.options)
 
@@ -178,19 +167,19 @@ func TestUserPreference_EnvVarParsing(t *testing.T) {
 			name:         "CLICOLOR_FORCE=0",
 			envVars:      map[string]string{"CLICOLOR_FORCE": "0"},
 			wantColor:    false,
-			wantExplicit: false,
+			wantExplicit: false, // CLICOLOR_FORCE=0 is not explicit, NO_COLOR not set
 		},
 		{
 			name:         "CLICOLOR_FORCE=false",
 			envVars:      map[string]string{"CLICOLOR_FORCE": "false"},
 			wantColor:    false,
-			wantExplicit: false,
+			wantExplicit: false, // CLICOLOR_FORCE=false is not explicit, NO_COLOR not set
 		},
 		{
 			name:         "CLICOLOR_FORCE=invalid",
 			envVars:      map[string]string{"CLICOLOR_FORCE": "invalid"},
 			wantColor:    false,
-			wantExplicit: false,
+			wantExplicit: false, // CLICOLOR_FORCE=invalid is not explicit, NO_COLOR not set
 		},
 		{
 			name:         "NO_COLOR set",
@@ -220,13 +209,8 @@ func TestUserPreference_EnvVarParsing(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Clear environment
-			os.Clearenv()
-
-			// Set test environment variables
-			for key, value := range tt.envVars {
-				os.Setenv(key, value)
-			}
+			// Always set up clean environment for testing to ensure isolation from real environment
+			setupCleanEnv(t, tt.envVars)
 
 			pref := NewUserPreference(PreferenceOptions{})
 

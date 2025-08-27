@@ -1,7 +1,6 @@
 package terminal
 
 import (
-	"os"
 	"testing"
 )
 
@@ -76,13 +75,8 @@ func TestColorDetector_SupportsColor(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Clear environment
-			os.Clearenv()
-
-			// Set test environment variables
-			for key, value := range tt.envVars {
-				os.Setenv(key, value)
-			}
+			// Set up clean environment for testing
+			setupCleanEnv(t, tt.envVars)
 
 			detector := NewColorDetector()
 
@@ -116,8 +110,7 @@ func TestColorDetector_CommonTerminals(t *testing.T) {
 
 	for _, terminal := range supportedTerminals {
 		t.Run(terminal, func(t *testing.T) {
-			os.Clearenv()
-			os.Setenv("TERM", terminal)
+			setupCleanEnv(t, map[string]string{"TERM": terminal})
 
 			detector := NewColorDetector()
 
@@ -140,8 +133,7 @@ func TestColorDetector_NonColorTerminals(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			os.Clearenv()
-			os.Setenv("TERM", tt.terminal)
+			setupCleanEnv(t, map[string]string{"TERM": tt.terminal})
 
 			detector := NewColorDetector()
 
@@ -168,8 +160,7 @@ func TestColorDetector_CaseInsensitive(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			os.Clearenv()
-			os.Setenv("TERM", tt.termValue)
+			setupCleanEnv(t, map[string]string{"TERM": tt.termValue})
 
 			detector := NewColorDetector()
 

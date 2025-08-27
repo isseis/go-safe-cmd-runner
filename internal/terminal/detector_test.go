@@ -1,7 +1,6 @@
 package terminal
 
 import (
-	"os"
 	"testing"
 )
 
@@ -58,13 +57,8 @@ func TestInteractiveDetector_IsInteractive(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Clear environment
-			os.Clearenv()
-
-			// Set test environment variables
-			for key, value := range tt.envVars {
-				os.Setenv(key, value)
-			}
+			// Set up clean environment for testing
+			setupCleanEnv(t, tt.envVars)
 
 			detector := NewInteractiveDetector(tt.options)
 
@@ -150,13 +144,8 @@ func TestInteractiveDetector_IsCIEnvironment(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Clear environment
-			os.Clearenv()
-
-			// Set test environment variables
-			for key, value := range tt.envVars {
-				os.Setenv(key, value)
-			}
+			// Set up clean environment for testing
+			setupCleanEnv(t, tt.envVars)
 
 			detector := NewInteractiveDetector(DetectorOptions{})
 
@@ -225,13 +214,8 @@ func TestInteractiveDetector_PriorityLogic(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Clear environment
-			os.Clearenv()
-
-			// Set test environment variables
-			for key, value := range tt.envVars {
-				os.Setenv(key, value)
-			}
+			// Set up clean environment for testing
+			setupCleanEnv(t, tt.envVars)
 
 			detector := NewInteractiveDetector(tt.options)
 

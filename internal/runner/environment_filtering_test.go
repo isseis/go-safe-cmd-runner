@@ -21,8 +21,7 @@ func TestLoadEnvironment_GroupBasedFiltering(t *testing.T) {
 		"SYSTEM_COMMON": "system_common_value",
 		"PATH":          "/usr/bin:/bin",
 	}
-	cleanup := setupTestEnv(t, testSystemEnv)
-	defer cleanup()
+	setupTestEnv(t, testSystemEnv)
 
 	// Create temporary .env file
 	tmpDir := t.TempDir()
@@ -151,8 +150,7 @@ func TestLoadEnvironment_OverridesBehavior(t *testing.T) {
 		"SYSTEM_ONLY":  "system_only_value",
 		"PATH":         "/usr/bin:/bin",
 	}
-	cleanup := setupTestEnv(t, testSystemEnv)
-	defer cleanup()
+	setupTestEnv(t, testSystemEnv)
 
 	// Create temporary .env file that overrides OVERRIDE_VAR
 	tmpDir := t.TempDir()
@@ -191,8 +189,7 @@ func TestLoadEnvironment_NoSystemEnv(t *testing.T) {
 		"SYSTEM_VAR": "system_value",
 		"PATH":       "/usr/bin:/bin",
 	}
-	cleanup := setupTestEnv(t, testSystemEnv)
-	defer cleanup()
+	setupTestEnv(t, testSystemEnv)
 
 	// Create temporary .env file
 	tmpDir := t.TempDir()
@@ -229,8 +226,7 @@ func TestLoadEnvironment_EmptyEnvFile(t *testing.T) {
 		"SYSTEM_VAR": "system_value",
 		"PATH":       "/usr/bin:/bin",
 	}
-	cleanup := setupTestEnv(t, testSystemEnv)
-	defer cleanup()
+	setupTestEnv(t, testSystemEnv)
 
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
