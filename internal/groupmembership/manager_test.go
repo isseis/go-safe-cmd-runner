@@ -37,7 +37,7 @@ func TestGroupMembership(t *testing.T) {
 
 		// Verify cache stats
 		stats := gm.GetCacheStats()
-		assert.Equal(t, 1, stats["total_entries"])
+		assert.Equal(t, 1, stats.TotalEntries)
 	})
 
 	t.Run("GetGroupMembers with invalid GID", func(t *testing.T) {
@@ -80,7 +80,7 @@ func TestGroupMembership(t *testing.T) {
 
 		// Verify cache has entry
 		stats := gm.GetCacheStats()
-		assert.Equal(t, 1, stats["total_entries"])
+		assert.Equal(t, 1, stats.TotalEntries)
 
 		// Wait for expiration
 		time.Sleep(150 * time.Millisecond)
@@ -91,7 +91,7 @@ func TestGroupMembership(t *testing.T) {
 
 		// Verify expired entries were cleaned up
 		stats = gm.GetCacheStats()
-		assert.Equal(t, 1, stats["total_entries"]) // Only the new entry
+		assert.Equal(t, 1, stats.TotalEntries) // Only the new entry
 	})
 
 	t.Run("ClearCache", func(t *testing.T) {
@@ -105,14 +105,14 @@ func TestGroupMembership(t *testing.T) {
 
 		// Verify cache has entries
 		stats := gm.GetCacheStats()
-		assert.Equal(t, 2, stats["total_entries"])
+		assert.Equal(t, 2, stats.TotalEntries)
 
 		// Clear cache
 		gm.ClearCache()
 
 		// Verify cache is empty
 		stats = gm.GetCacheStats()
-		assert.Equal(t, 0, stats["total_entries"])
+		assert.Equal(t, 0, stats.TotalEntries)
 	})
 
 	t.Run("SetCacheTimeout", func(t *testing.T) {
@@ -127,13 +127,16 @@ func TestGroupMembership(t *testing.T) {
 		gm := New()
 
 		stats := gm.GetCacheStats()
-		assert.Contains(t, stats, "total_entries")
-		assert.Contains(t, stats, "expired_entries")
-		assert.Contains(t, stats, "cache_timeout")
 
-		assert.IsType(t, 0, stats["total_entries"])
-		assert.IsType(t, 0, stats["expired_entries"])
-		assert.IsType(t, "", stats["cache_timeout"])
+		// Type-safe access to cache statistics
+		assert.IsType(t, 0, stats.TotalEntries)
+		assert.IsType(t, 0, stats.ExpiredEntries)
+		assert.IsType(t, time.Duration(0), stats.CacheTimeout)
+
+		// Verify initial values
+		assert.Equal(t, 0, stats.TotalEntries)
+		assert.Equal(t, 0, stats.ExpiredEntries)
+		assert.Equal(t, DefaultCacheTimeout, stats.CacheTimeout)
 	})
 }
 

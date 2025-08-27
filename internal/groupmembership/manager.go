@@ -172,8 +172,15 @@ func (gm *GroupMembership) SetCacheTimeout(timeout time.Duration) {
 	gm.cacheTimeout = timeout
 }
 
+// CacheStats represents cache statistics in a type-safe manner
+type CacheStats struct {
+	TotalEntries   int           `json:"total_entries"`
+	ExpiredEntries int           `json:"expired_entries"`
+	CacheTimeout   time.Duration `json:"cache_timeout"`
+}
+
 // GetCacheStats returns cache statistics for monitoring and debugging
-func (gm *GroupMembership) GetCacheStats() map[string]interface{} {
+func (gm *GroupMembership) GetCacheStats() CacheStats {
 	gm.cacheMutex.RLock()
 	defer gm.cacheMutex.RUnlock()
 
@@ -187,10 +194,10 @@ func (gm *GroupMembership) GetCacheStats() map[string]interface{} {
 		}
 	}
 
-	return map[string]interface{}{
-		"total_entries":   totalEntries,
-		"expired_entries": expiredEntries,
-		"cache_timeout":   gm.cacheTimeout.String(),
+	return CacheStats{
+		TotalEntries:   totalEntries,
+		ExpiredEntries: expiredEntries,
+		CacheTimeout:   gm.cacheTimeout,
 	}
 }
 
