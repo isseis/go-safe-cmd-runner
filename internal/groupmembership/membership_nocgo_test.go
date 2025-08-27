@@ -135,22 +135,22 @@ func TestParsePasswdLine(t *testing.T) {
 // TestGroupMembershipCache tests the caching functionality
 func TestGroupMembershipCache(t *testing.T) {
 	// Clear cache before test
-	cacheMutex.Lock()
-	membershipCache = make(map[uint32]groupMemberCache)
-	cacheMutex.Unlock()
+	legacyCacheMutex.Lock()
+	legacyMembershipCache = make(map[uint32]legacyGroupMemberCache)
+	legacyCacheMutex.Unlock()
 
 	// Set a very short cache timeout for testing
-	originalTimeout := cacheTimeout
-	cacheTimeout = 100 * time.Millisecond
+	originalTimeout := legacyCacheTimeout
+	legacyCacheTimeout = 100 * time.Millisecond
 	defer func() {
-		cacheTimeout = originalTimeout
+		legacyCacheTimeout = originalTimeout
 	}()
 
 	t.Run("cache_hit", func(t *testing.T) {
 		// Clear cache
-		cacheMutex.Lock()
-		membershipCache = make(map[uint32]groupMemberCache)
-		cacheMutex.Unlock()
+		legacyCacheMutex.Lock()
+		legacyMembershipCache = make(map[uint32]legacyGroupMemberCache)
+		legacyCacheMutex.Unlock()
 
 		// First call should populate cache
 		members1, err1 := getGroupMembers(0) // root group usually exists
@@ -169,18 +169,18 @@ func TestGroupMembershipCache(t *testing.T) {
 
 	t.Run("cache_expiry", func(t *testing.T) {
 		// Clear cache
-		cacheMutex.Lock()
-		membershipCache = make(map[uint32]groupMemberCache)
-		cacheMutex.Unlock()
+		legacyCacheMutex.Lock()
+		legacyMembershipCache = make(map[uint32]legacyGroupMemberCache)
+		legacyCacheMutex.Unlock()
 
 		// First call should populate cache
 		_, err1 := getGroupMembers(0)
 		assert.NoError(t, err1)
 
 		// Verify cache is populated
-		cacheMutex.RLock()
-		_, exists := membershipCache[0]
-		cacheMutex.RUnlock()
+		legacyCacheMutex.RLock()
+		_, exists := legacyMembershipCache[0]
+		legacyCacheMutex.RUnlock()
 		assert.True(t, exists, "Cache should be populated")
 
 		// Wait for cache to expire
@@ -193,26 +193,26 @@ func TestGroupMembershipCache(t *testing.T) {
 
 	t.Run("cache_cleanup", func(t *testing.T) {
 		// Clear cache
-		cacheMutex.Lock()
-		membershipCache = make(map[uint32]groupMemberCache)
-		cacheMutex.Unlock()
+		legacyCacheMutex.Lock()
+		legacyMembershipCache = make(map[uint32]legacyGroupMemberCache)
+		legacyCacheMutex.Unlock()
 
 		// Add an expired entry manually
-		cacheMutex.Lock()
-		membershipCache[999] = groupMemberCache{
+		legacyCacheMutex.Lock()
+		legacyMembershipCache[999] = legacyGroupMemberCache{
 			members: []string{"test"},
 			expiry:  time.Now().Add(-1 * time.Hour), // Expired 1 hour ago
 		}
-		cacheMutex.Unlock()
+		legacyCacheMutex.Unlock()
 
 		// Call getGroupMembers which should trigger cleanup
 		_, err := getGroupMembers(0)
 		assert.NoError(t, err)
 
 		// Verify expired entry was cleaned up
-		cacheMutex.RLock()
-		_, exists := membershipCache[999]
-		cacheMutex.RUnlock()
+		legacyCacheMutex.RLock()
+		_, exists := legacyMembershipCache[999]
+		legacyCacheMutex.RUnlock()
 		assert.False(t, exists, "Expired cache entry should be cleaned up")
 	})
 }
@@ -460,64 +460,64 @@ func TestFileReadingErrors(t *testing.T) {
 // TestCacheUtilityFunctions tests cache management functions
 func TestCacheUtilityFunctions(t *testing.T) {
 	t.Run("SetCacheTimeout", func(t *testing.T) {
-		originalTimeout := cacheTimeout
-		defer SetCacheTimeout(originalTimeout)
+		originalTimeout := legacyCacheTimeout
+		defer SetCacheTimeoutDeprecated(originalTimeout)
 
 		newTimeout := 5 * time.Second
-		SetCacheTimeout(newTimeout)
+		SetCacheTimeoutDeprecated(newTimeout)
 
-		cacheMutex.RLock()
-		actual := cacheTimeout
-		cacheMutex.RUnlock()
+		legacyCacheMutex.RLock()
+		actual := legacyCacheTimeout
+		legacyCacheMutex.RUnlock()
 
 		assert.Equal(t, newTimeout, actual)
 	})
 
 	t.Run("ClearCache", func(t *testing.T) {
 		// Start with clean cache
-		ClearCache()
+		ClearCacheDeprecated()
 
 		// Add some test data to cache
-		cacheMutex.Lock()
-		membershipCache[100] = groupMemberCache{
+		legacyCacheMutex.Lock()
+		legacyMembershipCache[100] = legacyGroupMemberCache{
 			members: []string{"test1", "test2"},
 			expiry:  time.Now().Add(time.Hour),
 		}
-		membershipCache[200] = groupMemberCache{
+		legacyMembershipCache[200] = legacyGroupMemberCache{
 			members: []string{"test3"},
 			expiry:  time.Now().Add(time.Hour),
 		}
-		cacheMutex.Unlock()
+		legacyCacheMutex.Unlock()
 
 		// Verify cache has data
-		stats := GetCacheStats()
+		stats := GetCacheStatsDeprecated()
 		assert.Equal(t, 2, stats["total_entries"])
 
 		// Clear cache
-		ClearCache()
+		ClearCacheDeprecated()
 
 		// Verify cache is empty
-		stats = GetCacheStats()
+		stats = GetCacheStatsDeprecated()
 		assert.Equal(t, 0, stats["total_entries"])
 		assert.Equal(t, 0, stats["expired_entries"])
 	})
 
 	t.Run("GetCacheStats", func(t *testing.T) {
-		ClearCache()
+		ClearCacheDeprecated()
 
 		// Add fresh and expired entries
-		cacheMutex.Lock()
-		membershipCache[100] = groupMemberCache{
+		legacyCacheMutex.Lock()
+		legacyMembershipCache[100] = legacyGroupMemberCache{
 			members: []string{"current"},
 			expiry:  time.Now().Add(time.Hour), // Fresh
 		}
-		membershipCache[200] = groupMemberCache{
+		legacyMembershipCache[200] = legacyGroupMemberCache{
 			members: []string{"expired"},
 			expiry:  time.Now().Add(-time.Hour), // Expired
 		}
-		cacheMutex.Unlock()
+		legacyCacheMutex.Unlock()
 
-		stats := GetCacheStats()
+		stats := GetCacheStatsDeprecated()
 		assert.Equal(t, 2, stats["total_entries"])
 		assert.Equal(t, 1, stats["expired_entries"])
 		assert.Contains(t, stats["cache_timeout"].(string), "30s") // Default timeout

@@ -15,25 +15,25 @@ import (
 	"time"
 )
 
-// groupMemberCache holds cached group membership data with expiration
-type groupMemberCache struct {
+// legacyGroupMemberCache holds cached group membership data with expiration (for backward compatibility)
+type legacyGroupMemberCache struct {
 	members []string
 	expiry  time.Time
 }
 
-// cache for group membership data with thread safety
+// legacy cache for group membership data with thread safety (for backward compatibility)
 var (
-	membershipCache = make(map[uint32]groupMemberCache)
-	cacheMutex      sync.RWMutex
-	cacheTimeout    = 30 * time.Second // Cache timeout duration
+	legacyMembershipCache = make(map[uint32]legacyGroupMemberCache)
+	legacyCacheMutex      sync.RWMutex
+	legacyCacheTimeout    = 30 * time.Second // Cache timeout duration
 )
 
 // clearExpiredCache removes expired cache entries
 func clearExpiredCache() {
 	now := time.Now()
-	for gid, entry := range membershipCache {
+	for gid, entry := range legacyMembershipCache {
 		if now.After(entry.expiry) {
-			delete(membershipCache, gid)
+			delete(legacyMembershipCache, gid)
 		}
 	}
 }
@@ -43,19 +43,19 @@ func clearExpiredCache() {
 // Results are cached for performance with a configurable timeout
 func getGroupMembers(gid uint32) ([]string, error) {
 	// Check cache first
-	cacheMutex.RLock()
-	if cached, exists := membershipCache[gid]; exists && time.Now().Before(cached.expiry) {
-		cacheMutex.RUnlock()
+	legacyCacheMutex.RLock()
+	if cached, exists := legacyMembershipCache[gid]; exists && time.Now().Before(cached.expiry) {
+		legacyCacheMutex.RUnlock()
 		return cached.members, nil
 	}
-	cacheMutex.RUnlock()
+	legacyCacheMutex.RUnlock()
 
 	// Cache miss or expired - acquire write lock and compute
-	cacheMutex.Lock()
-	defer cacheMutex.Unlock()
+	legacyCacheMutex.Lock()
+	defer legacyCacheMutex.Unlock()
 
 	// Double-check after acquiring write lock (another goroutine might have populated it)
-	if cached, exists := membershipCache[gid]; exists && time.Now().Before(cached.expiry) {
+	if cached, exists := legacyMembershipCache[gid]; exists && time.Now().Before(cached.expiry) {
 		return cached.members, nil
 	}
 
@@ -68,9 +68,9 @@ func getGroupMembers(gid uint32) ([]string, error) {
 	}
 	if groupEntry == nil {
 		// Cache empty result too
-		membershipCache[gid] = groupMemberCache{
+		legacyMembershipCache[gid] = legacyGroupMemberCache{
 			members: []string{},
-			expiry:  time.Now().Add(cacheTimeout),
+			expiry:  time.Now().Add(legacyCacheTimeout),
 		}
 		return []string{}, nil // Group not found
 	}
@@ -105,40 +105,43 @@ func getGroupMembers(gid uint32) ([]string, error) {
 	}
 
 	// Cache the result
-	membershipCache[gid] = groupMemberCache{
+	legacyMembershipCache[gid] = legacyGroupMemberCache{
 		members: result,
-		expiry:  time.Now().Add(cacheTimeout),
+		expiry:  time.Now().Add(legacyCacheTimeout),
 	}
 
 	return result, nil
 }
 
-// SetCacheTimeout allows configuring the cache timeout duration
+// SetCacheTimeoutDeprecated allows configuring the cache timeout duration
 // This is useful for testing and performance tuning
-func SetCacheTimeout(timeout time.Duration) {
-	cacheMutex.Lock()
-	defer cacheMutex.Unlock()
-	cacheTimeout = timeout
+// DEPRECATED: Use GroupMembership.SetCacheTimeout instead
+func SetCacheTimeoutDeprecated(timeout time.Duration) {
+	legacyCacheMutex.Lock()
+	defer legacyCacheMutex.Unlock()
+	legacyCacheTimeout = timeout
 }
 
-// ClearCache manually clears all cached group membership data
+// ClearCacheDeprecated manually clears all cached group membership data
 // This is useful when system group/user configuration changes are detected
-func ClearCache() {
-	cacheMutex.Lock()
-	defer cacheMutex.Unlock()
-	membershipCache = make(map[uint32]groupMemberCache)
+// DEPRECATED: Use GroupMembership.ClearCache instead
+func ClearCacheDeprecated() {
+	legacyCacheMutex.Lock()
+	defer legacyCacheMutex.Unlock()
+	legacyMembershipCache = make(map[uint32]legacyGroupMemberCache)
 }
 
-// GetCacheStats returns cache statistics for monitoring and debugging
-func GetCacheStats() map[string]interface{} {
-	cacheMutex.RLock()
-	defer cacheMutex.RUnlock()
+// GetCacheStatsDeprecated returns cache statistics for monitoring and debugging
+// DEPRECATED: Use GroupMembership.GetCacheStats instead
+func GetCacheStatsDeprecated() map[string]interface{} {
+	legacyCacheMutex.RLock()
+	defer legacyCacheMutex.RUnlock()
 
-	totalEntries := len(membershipCache)
+	totalEntries := len(legacyMembershipCache)
 	expiredEntries := 0
 	now := time.Now()
 
-	for _, entry := range membershipCache {
+	for _, entry := range legacyMembershipCache {
 		if now.After(entry.expiry) {
 			expiredEntries++
 		}
@@ -147,7 +150,7 @@ func GetCacheStats() map[string]interface{} {
 	return map[string]interface{}{
 		"total_entries":   totalEntries,
 		"expired_entries": expiredEntries,
-		"cache_timeout":   cacheTimeout.String(),
+		"cache_timeout":   legacyCacheTimeout.String(),
 	}
 }
 
