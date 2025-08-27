@@ -130,22 +130,23 @@ func TestColorDetector_CommonTerminals(t *testing.T) {
 
 func TestColorDetector_NonColorTerminals(t *testing.T) {
 	// Test terminals that should not support color
-	nonColorTerminals := []string{
-		"dumb",
-		"", // empty string
+	tests := []struct {
+		name     string
+		terminal string
+	}{
+		{"dumb terminal", "dumb"},
+		{"empty string", ""},
 	}
 
-	for _, terminal := range nonColorTerminals {
-		t.Run(terminal, func(t *testing.T) {
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
 			os.Clearenv()
-			if terminal != "" {
-				os.Setenv("TERM", terminal)
-			}
+			os.Setenv("TERM", tt.terminal)
 
 			detector := NewColorDetector()
 
 			if detector.SupportsColor() {
-				t.Errorf("Terminal '%s' should not support color but does", terminal)
+				t.Errorf("Terminal '%s' should not support color but does", tt.terminal)
 			}
 		})
 	}

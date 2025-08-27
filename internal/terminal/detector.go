@@ -10,6 +10,22 @@ import (
 	"golang.org/x/term"
 )
 
+// ciEnvVars contains common CI environment variables
+var ciEnvVars = []string{
+	"CI",                     // Generic CI indicator
+	"CONTINUOUS_INTEGRATION", // Generic CI indicator
+	"GITHUB_ACTIONS",         // GitHub Actions
+	"TRAVIS",                 // Travis CI
+	"CIRCLECI",               // Circle CI
+	"JENKINS_URL",            // Jenkins
+	"BUILD_NUMBER",           // Jenkins/TeamCity/etc
+	"GITLAB_CI",              // GitLab CI
+	"APPVEYOR",               // AppVeyor
+	"BUILDKITE",              // Buildkite
+	"DRONE",                  // Drone CI
+	"TF_BUILD",               // Azure DevOps
+}
+
 // DetectorOptions contains options for controlling interactive detection
 type DetectorOptions struct {
 	ForceInteractive    bool // Force interactive mode regardless of environment
@@ -63,22 +79,6 @@ func (d *DefaultInteractiveDetector) IsTerminal() bool {
 
 // IsCIEnvironment checks if the current environment is a CI/CD system
 func (d *DefaultInteractiveDetector) IsCIEnvironment() bool {
-	// List of common CI environment variables
-	ciEnvVars := []string{
-		"CI",                     // Generic CI indicator
-		"CONTINUOUS_INTEGRATION", // Generic CI indicator
-		"GITHUB_ACTIONS",         // GitHub Actions
-		"TRAVIS",                 // Travis CI
-		"CIRCLECI",               // Circle CI
-		"JENKINS_URL",            // Jenkins
-		"BUILD_NUMBER",           // Jenkins/TeamCity/etc
-		"GITLAB_CI",              // GitLab CI
-		"APPVEYOR",               // AppVeyor
-		"BUILDKITE",              // Buildkite
-		"DRONE",                  // Drone CI
-		"TF_BUILD",               // Azure DevOps
-	}
-
 	for _, envVar := range ciEnvVars {
 		if value := os.Getenv(envVar); value != "" {
 			// Special handling for CI variable - should be truthy
