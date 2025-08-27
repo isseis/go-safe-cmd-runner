@@ -203,28 +203,3 @@ func (gm *GroupMembership) clearExpiredCache() {
 		}
 	}
 }
-
-// Package-level functions for backward compatibility
-// These use a default global instance
-
-var defaultManager = New()
-
-// IsUserInGroup checks if a user is a member of a group using the default instance
-func IsUserInGroup(username, groupName string) (bool, error) {
-	return defaultManager.IsUserInGroup(username, groupName)
-}
-
-// ClearCache clears the global cache (for backward compatibility)
-func ClearCache() {
-	defaultManager.ClearCache()
-}
-
-// SetCacheTimeout sets the global cache timeout (for backward compatibility)
-func SetCacheTimeout(timeout time.Duration) {
-	defaultManager.SetCacheTimeout(timeout)
-}
-
-// GetCacheStats returns global cache statistics (for backward compatibility)
-func GetCacheStats() map[string]interface{} {
-	return defaultManager.GetCacheStats()
-}

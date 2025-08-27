@@ -153,36 +153,3 @@ func TestGroupMembershipIsCurrentUserOnlyGroupMember(t *testing.T) {
 	// We can't assert the specific value, but we can check it's a valid boolean
 	t.Logf("Current user is only group member: %v", isOnlyMember)
 }
-
-// TestPackageLevelFunctions tests backward compatibility functions
-func TestPackageLevelFunctions(t *testing.T) {
-	t.Run("IsUserInGroup package function", func(t *testing.T) {
-		// Test with root group (should exist on most systems)
-		isMember, err := IsUserInGroup("root", "root")
-		if err != nil {
-			t.Skipf("Skipping test: %v", err)
-		}
-		assert.NoError(t, err)
-		assert.IsType(t, false, isMember)
-	})
-
-	t.Run("ClearCache package function", func(t *testing.T) {
-		// Test that the package-level function works
-		ClearCache()
-
-		stats := GetCacheStats()
-		assert.Equal(t, 0, stats["total_entries"])
-	})
-
-	t.Run("SetCacheTimeout package function", func(t *testing.T) {
-		originalTimeout := 30 * time.Second
-		defer SetCacheTimeout(originalTimeout)
-
-		newTimeout := 5 * time.Second
-		SetCacheTimeout(newTimeout)
-
-		// We can't directly access the timeout, but we can verify it through stats
-		stats := GetCacheStats()
-		assert.Contains(t, stats["cache_timeout"].(string), "5s")
-	})
-}
