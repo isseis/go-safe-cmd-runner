@@ -44,100 +44,373 @@ graph TB
     CTH --> IMD
 ```
 
-## 2. コンポーネント設計
+## 2. システム構成要素
 
-### 2.1 Interactive Handler (新規)
-対話的環境向けのログハンドラー
+### 2.1 新規パッケージ構成
+```
+internal/
+├── logging/
+│   ├── pre_execution_error.go         # 既存（修正）
+│   ├── interactive_handler.go         # 新規
+│   ├── conditional_text_handler.go    # 新規
+│   ├── message_formatter.go           # 新規
+│   ├── log_line_tracker.go           # 新規
+│   └── message_templates.go           # 新規
+└── terminal/
+    ├── detector.go                    # 新規：対話性検出
+    ├── color.go                       # 新規：カラー対応検出
+    ├── preference.go                  # 新規：ユーザー設定管理
+    └── capabilities.go                # 新規：端末機能統合
+```
 
-#### 2.1.1 責任
-- 対話的環境での適切なログメッセージフォーマット
-- ターミナル出力の制御
-- カラー表示の管理
-- ログファイル参照ヒント情報の提供
+## 3. コンポーネント設計
 
-#### 2.1.2 実装方法
+### 3.1 Terminal Package (新規)
+端末機能に関する責任を分離した専用パッケージ
+
+#### 3.1.1 責任の分離
+- **対話性検出**: CI環境、ターミナル判定
+- **カラー対応検出**: 端末のカラー表示能力判定
+- **ユーザー設定管理**: NO_COLOR, CLICOLOR等の環境変数処理
+- **端末機能統合**: 上記機能の統合インターフェース
+
+#### 3.1.2 Terminal Capabilities インターフェース
 ```go
+// terminal/capabilities.go
+package terminal
+
+// Capabilities は端末の全体的な能力を表す統合インターフェース
+type Capabilities interface {
+    IsInteractive() bool
+    SupportsColor() bool
+    GetColorProfile() ColorProfile
+    HasExplicitUserPreference() bool
+}
+
+// DefaultCapabilities は標準的な端末機能検出実装
+type DefaultCapabilities struct {
+    detector    InteractiveDetector
+    colorSupport ColorDetector
+    userPref    UserPreference
+}
+
+func NewCapabilities(options ...Option) Capabilities {
+    return &DefaultCapabilities{
+        detector:     NewInteractiveDetector(),
+        colorSupport: NewColorDetector(),
+        userPref:     NewUserPreference(),
+    }
+}
+```
+
+#### 3.1.3 対話性検出 (detector.go)
+```go
+// terminal/detector.go
+package terminal
+
+import (
+    "os"
+    "golang.org/x/term"
+)
+
+// InteractiveDetector は実行環境の対話性を判定する
+type InteractiveDetector interface {
+    IsInteractive() bool
+    IsTerminal() bool
+    IsCIEnvironment() bool
+}
+
+type DefaultInteractiveDetector struct {
+    forceInteractive *bool
+    stdout           *os.File
+    stderr           *os.File
+}
+
+func NewInteractiveDetector(options ...DetectorOption) InteractiveDetector {
+    detector := &DefaultInteractiveDetector{
+        stdout: os.Stdout,
+        stderr: os.Stderr,
+    }
+
+    for _, opt := range options {
+        opt(detector)
+    }
+
+    return detector
+}
+
+func (d *DefaultInteractiveDetector) IsInteractive() bool {
+    // テスト用の強制設定が優先
+    if d.forceInteractive != nil {
+        return *d.forceInteractive
+    }
+
+    // CI環境の検出
+    if d.IsCIEnvironment() {
+        return false
+    }
+
+    // ターミナルかどうかの判定
+    return d.IsTerminal()
+}
+
+func (d *DefaultInteractiveDetector) IsTerminal() bool {
+    return term.IsTerminal(int(d.stdout.Fd()))
+}
+
+func (d *DefaultInteractiveDetector) IsCIEnvironment() bool {
+    return os.Getenv("CI") != ""
+}
+```
+
+#### 3.1.4 カラー対応検出 (color.go)
+```go
+// terminal/color.go
+package terminal
+
+import (
+    "os"
+    "strings"
+)
+
+// ColorDetector は端末のカラー表示能力を判定する
+type ColorDetector interface {
+    SupportsColor() bool
+    GetColorProfile() ColorProfile
+    IsColorCapableTerminal() bool
+}
+
+// ColorProfile はカラー対応レベルを表す
+type ColorProfile int
+
+const (
+    ColorProfileNone ColorProfile = iota
+    ColorProfileBasic              // 8色
+    ColorProfile256                // 256色
+    ColorProfileTrueColor          // 1600万色
+)
+
+type DefaultColorDetector struct {
+    termEnv      string
+    colortermEnv string
+}
+
+func NewColorDetector() ColorDetector {
+    return &DefaultColorDetector{
+        termEnv:      os.Getenv("TERM"),
+        colortermEnv: os.Getenv("COLORTERM"),
+    }
+}
+
+func (d *DefaultColorDetector) SupportsColor() bool {
+    return d.IsColorCapableTerminal()
+}
+
+func (d *DefaultColorDetector) GetColorProfile() ColorProfile {
+    if !d.IsColorCapableTerminal() {
+        return ColorProfileNone
+    }
+
+    // TrueColor対応の判定
+    if d.colortermEnv == "truecolor" || d.colortermEnv == "24bit" {
+        return ColorProfileTrueColor
+    }
+
+    // 256色対応の判定
+    if strings.Contains(d.termEnv, "256color") {
+        return ColorProfile256
+    }
+
+    // 基本カラー対応
+    return ColorProfileBasic
+}
+
+func (d *DefaultColorDetector) IsColorCapableTerminal() bool {
+    // COLORTERM環境変数による高度なカラー対応の判定
+    if d.colortermEnv == "truecolor" || d.colortermEnv == "24bit" {
+        return true
+    }
+
+    // カラー対応が確実なターミナル
+    colorTerminals := []string{
+        "xterm", "xterm-color", "xterm-256color",
+        "screen", "screen-256color",
+        "tmux", "tmux-256color",
+        "rxvt", "rxvt-unicode", "rxvt-256color",
+        "linux", "cygwin", "konsole", "gnome", "vte",
+    }
+
+    // 直接マッチの確認
+    for _, colorTerm := range colorTerminals {
+        if strings.HasPrefix(d.termEnv, colorTerm) {
+            return true
+        }
+    }
+
+    // 複合パターンの確認（screen.xterm-256color等）
+    if strings.HasPrefix(d.termEnv, "screen.") {
+        suffix := strings.TrimPrefix(d.termEnv, "screen.")
+        for _, colorTerm := range colorTerminals {
+            if strings.HasPrefix(suffix, colorTerm) {
+                return true
+            }
+        }
+    }
+
+    // tmux複合パターンの確認
+    if strings.HasPrefix(d.termEnv, "tmux.") {
+        suffix := strings.TrimPrefix(d.termEnv, "tmux.")
+        for _, colorTerm := range colorTerminals {
+            if strings.HasPrefix(suffix, colorTerm) {
+                return true
+            }
+        }
+    }
+
+    // カラーサフィックスの確認
+    colorSuffixes := []string{"-color", "-256color", "-88color", "color"}
+    for _, suffix := range colorSuffixes {
+        if strings.HasSuffix(d.termEnv, suffix) {
+            return true
+        }
+    }
+
+    return false
+}
+```
+
+#### 3.1.5 ユーザー設定管理 (preference.go)
+```go
+// terminal/preference.go
+package terminal
+
+import "os"
+
+// UserPreference はユーザーの明示的な設定を管理する
+type UserPreference interface {
+    WantsColor() *bool
+    HasExplicitPreference() bool
+    IsColorForced() bool
+    IsColorDisabled() bool
+}
+
+type DefaultUserPreference struct {
+    noColorEnv  string
+    cliColorEnv string
+}
+
+func NewUserPreference() UserPreference {
+    return &DefaultUserPreference{
+        noColorEnv:  os.Getenv("NO_COLOR"),
+        cliColorEnv: os.Getenv("CLICOLOR"),
+    }
+}
+
+// WantsColor はユーザーの明示的なカラー設定希望を返す
+// 戻り値: nil = 明示的な希望なし, true = カラー希望, false = カラー拒否
+func (p *DefaultUserPreference) WantsColor() *bool {
+    // NO_COLOR環境変数による明示的な無効化（業界標準）
+    if p.noColorEnv != "" {
+        return &[]bool{false}[0]
+    }
+
+    // CLICOLOR環境変数によるユーザー希望の判定（Unix系標準）
+    if p.cliColorEnv != "" {
+        // "0" 以外の場合はカラー希望
+        if p.cliColorEnv != "0" {
+            return &[]bool{true}[0]
+        } else {
+            return &[]bool{false}[0]
+        }
+    }
+
+    // 明示的な希望がない場合はnilを返す
+    return nil
+}
+
+func (p *DefaultUserPreference) HasExplicitPreference() bool {
+    return p.noColorEnv != "" || p.cliColorEnv != ""
+}
+
+func (p *DefaultUserPreference) IsColorForced() bool {
+    return p.cliColorEnv != "" && p.cliColorEnv != "0"
+}
+
+func (p *DefaultUserPreference) IsColorDisabled() bool {
+    return p.noColorEnv != "" || p.cliColorEnv == "0"
+}
+```
+
+### 3.2 Interactive Handler (logging package - 修正)
+terminalパッケージを使用するように修正
+
+#### 3.2.1 修正された実装
+```go
+// logging/interactive_handler.go
+package logging
+
+import (
+    "context"
+    "fmt"
+    "io"
+    "log/slog"
+    "os"
+
+    "internal/terminal"
+)
+
 type InteractiveHandler struct {
-    detector     InteractiveDetector
+    capabilities terminal.Capabilities
     formatter    MessageFormatter
     level        slog.Level
-    output       io.Writer // os.Stderr
-    logFilePath  string    // 現在のログファイルパス
-    lineTracker  *LogLineTracker // ログファイル行数追跡
+    output       io.Writer
+    logFilePath  string
+    lineTracker  *LogLineTracker
 }
 
 func NewInteractiveHandler(level slog.Level, logFilePath string) *InteractiveHandler {
     return &InteractiveHandler{
-        detector:    NewInteractiveDetector(),
-        formatter:   NewMessageFormatter(),
-        level:       level,
-        output:      os.Stderr,
-        logFilePath: logFilePath,
-        lineTracker: NewLogLineTracker(),
+        capabilities: terminal.NewCapabilities(),
+        formatter:    NewMessageFormatter(),
+        level:        level,
+        output:       os.Stderr,
+        logFilePath:  logFilePath,
+        lineTracker:  globalLineTracker,
     }
 }
 
 func (h *InteractiveHandler) Enabled(ctx context.Context, level slog.Level) bool {
-    return h.detector.IsInteractive() && level >= h.level
+    return h.capabilities.IsInteractive() && level >= h.level
 }
 
 func (h *InteractiveHandler) Handle(ctx context.Context, r slog.Record) error {
-    if !h.detector.IsInteractive() {
-        return nil // 非対話的環境では何もしない
+    if !h.capabilities.IsInteractive() {
+        return nil
     }
 
-    // メインメッセージの生成
-    message := h.formatter.FormatRecord(r)
+    // カラー対応を考慮したフォーマッターの設定
+    colorSupported := h.capabilities.SupportsColor()
+    message := h.formatter.FormatRecordWithColor(r, colorSupported)
 
-    // ログファイルヒント情報の追加（エラーレベル以上の場合）
+    // ログファイルヒント情報の追加
     if r.Level >= slog.LevelError && h.logFilePath != "" {
         estimatedLine := h.lineTracker.EstimateCurrentLine()
-        logHint := h.formatLogFileHint(estimatedLine)
+        logHint := h.formatLogFileHint(estimatedLine, colorSupported)
         message = message + "\n" + logHint
     }
 
     _, err := fmt.Fprintf(h.output, "%s\n", message)
-
-    // 行数追跡を更新
     h.lineTracker.IncrementLine()
 
     return err
 }
 
-func (h *InteractiveHandler) formatLogFileHint(estimatedLine int) string {
-    if h.detector.SupportsColor() {
+func (h *InteractiveHandler) formatLogFileHint(estimatedLine int, colorSupported bool) string {
+    if colorSupported {
         return fmt.Sprintf("\033[90mDetails: %s (around line %d)\033[0m",
             h.logFilePath, estimatedLine)
     }
     return fmt.Sprintf("Details: %s (around line %d)", h.logFilePath, estimatedLine)
-}
-```
-
-### 2.2 Interactive Mode Detector
-対話的実行環境を検知する機能（共有コンポーネント）
-
-#### 2.2.1 責任
-- ターミナル環境の検出
-- CI/CD環境の判定
-- カラー表示対応の判定
-
-#### 2.2.2 実装方法
-```go
-type InteractiveDetector interface {
-    IsInteractive() bool
-    SupportsColor() bool
-}
-
-type DefaultInteractiveDetector struct {
-    forceInteractive *bool
-    noColor          bool
-}
-
-func (d *DefaultInteractiveDetector) IsInteractive() bool {
-    if d.forceInteractive != nil {
-        return *d.forceInteractive
-    }
-    return term.IsTerminal(int(os.Stdout.Fd())) && os.Getenv("CI") == ""
 }
 ```
 
