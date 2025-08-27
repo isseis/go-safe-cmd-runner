@@ -8,6 +8,22 @@ import (
 	"strings"
 )
 
+// colorTerminals lists TERM values (or prefixes) that are known to support
+// basic terminal colors. Declared at package scope to avoid reallocating the
+// slice on every SupportsColor call.
+var colorTerminals = []string{
+	"xterm",
+	"screen",
+	"tmux",
+	"rxvt",
+	"vt100",
+	"vt220",
+	"ansi",
+	"linux",
+	"cygwin",
+	"putty",
+}
+
 // ColorDetector interface defines methods for detecting color support
 type ColorDetector interface {
 	SupportsColor() bool
@@ -37,21 +53,7 @@ func (d *DefaultColorDetector) SupportsColor() bool {
 		return false
 	}
 
-	// List of terminal types that support color
-	colorTerminals := []string{
-		"xterm",
-		"screen",
-		"tmux",
-		"rxvt",
-		"vt100",
-		"vt220",
-		"ansi",
-		"linux",
-		"cygwin",
-		"putty",
-	}
-
-	// Check for exact matches or prefixes
+	// Check for exact matches or prefixes using package-level list
 	for _, colorTerm := range colorTerminals {
 		if term == colorTerm || strings.HasPrefix(term, colorTerm+"-") {
 			return true
