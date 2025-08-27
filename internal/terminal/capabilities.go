@@ -53,11 +53,7 @@ func (c *DefaultCapabilities) SupportsColor() bool {
 
 	// If no explicit user preference, fall back to terminal capability detection
 	// Only enable color if both interactive and terminal supports color
-	if c.IsInteractive() && c.colorDetector.SupportsColor() {
-		return true
-	}
-
-	return false
+	return c.IsInteractive() && c.colorDetector.SupportsColor()
 }
 
 // HasExplicitUserPreference returns true if the user has explicitly set
