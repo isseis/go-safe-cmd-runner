@@ -1,0 +1,140 @@
+package groupmembership
+
+import (
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+)
+
+// TestGroupMembership tests the new GroupMembership struct
+func TestGroupMembership(t *testing.T) {
+	t.Run("New creates instance", func(t *testing.T) {
+		gm := New()
+		assert.NotNil(t, gm)
+	})
+
+	t.Run("GetGroupMembers with valid GID", func(t *testing.T) {
+		gm := New()
+
+		// Test with a valid GID (0 = root group exists on most systems)
+		members, err := gm.GetGroupMembers(0)
+		assert.NoError(t, err)
+		assert.NotNil(t, members)
+
+		// Test caching - second call should be from cache
+		members2, err := gm.GetGroupMembers(0)
+		assert.NoError(t, err)
+		assert.Equal(t, members, members2)
+
+		// Verify cache stats
+		stats := gm.GetCacheStats()
+		assert.Equal(t, 1, stats.TotalEntries)
+	})
+
+	t.Run("GetGroupMembers with invalid GID", func(t *testing.T) {
+		gm := New()
+
+		// Test with an invalid GID
+		members, err := gm.GetGroupMembers(99999)
+		assert.NoError(t, err)
+		assert.Empty(t, members) // Should return empty slice for non-existent group
+	})
+
+	t.Run("IsUserInGroup with valid group", func(t *testing.T) {
+		gm := New()
+
+		// Test with root group (should exist on most systems)
+		isMember, err := gm.IsUserInGroup("root", "root")
+		if err != nil {
+			t.Skipf("Skipping test: %v", err)
+		}
+		assert.NoError(t, err)
+		// We can't assert the specific result since it depends on system configuration
+		assert.IsType(t, false, isMember)
+	})
+
+	t.Run("IsUserInGroup with invalid group", func(t *testing.T) {
+		gm := New()
+
+		// Test with non-existent group
+		_, err := gm.IsUserInGroup("testuser", "nonexistent_group_12345")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to lookup group")
+	})
+
+	t.Run("cache behavior", func(t *testing.T) {
+		gm := New()
+
+		// Add entry to cache
+		_, err := gm.GetGroupMembers(0)
+		assert.NoError(t, err)
+
+		// Verify cache has entry
+		stats := gm.GetCacheStats()
+		assert.Equal(t, 1, stats.TotalEntries)
+		assert.Equal(t, DefaultCacheTimeout, stats.CacheTimeout)
+
+		// Add another entry
+		_, err = gm.GetGroupMembers(1)
+		assert.NoError(t, err)
+
+		// Verify cache has both entries
+		stats = gm.GetCacheStats()
+		assert.Equal(t, 2, stats.TotalEntries)
+	})
+
+	t.Run("ClearCache", func(t *testing.T) {
+		gm := New()
+
+		// Add entries to cache
+		_, err := gm.GetGroupMembers(0)
+		assert.NoError(t, err)
+		_, err = gm.GetGroupMembers(1)
+		assert.NoError(t, err)
+
+		// Verify cache has entries
+		stats := gm.GetCacheStats()
+		assert.Equal(t, 2, stats.TotalEntries)
+
+		// Clear cache
+		gm.ClearCache()
+
+		// Verify cache is empty
+		stats = gm.GetCacheStats()
+		assert.Equal(t, 0, stats.TotalEntries)
+	})
+
+	t.Run("GetCacheStats format", func(t *testing.T) {
+		gm := New()
+
+		stats := gm.GetCacheStats()
+
+		// Type-safe access to cache statistics
+		assert.IsType(t, 0, stats.TotalEntries)
+		assert.IsType(t, 0, stats.ExpiredEntries)
+		assert.IsType(t, time.Duration(0), stats.CacheTimeout)
+
+		// Verify initial values
+		assert.Equal(t, 0, stats.TotalEntries)
+		assert.Equal(t, 0, stats.ExpiredEntries)
+		assert.Equal(t, DefaultCacheTimeout, stats.CacheTimeout)
+	})
+}
+
+// TestGroupMembershipIsCurrentUserOnlyGroupMember tests the IsCurrentUserOnlyGroupMember method
+func TestGroupMembershipIsCurrentUserOnlyGroupMember(t *testing.T) {
+	gm := New()
+
+	// Create a temporary file to get its owner information
+	uid, gid, cleanup := createTempFileWithStat(t)
+	defer cleanup()
+
+	// Test with the file we just created (should be owned by current user)
+	isOnlyMember, err := gm.IsCurrentUserOnlyGroupMember(uid, gid)
+	assert.NoError(t, err, "IsCurrentUserOnlyGroupMember should not return an error")
+
+	// The result depends on the system configuration
+	// We can't assert the specific value, but we can check it's a valid boolean
+	t.Logf("Current user is only group member: %v", isOnlyMember)
+}

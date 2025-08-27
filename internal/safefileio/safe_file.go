@@ -65,12 +65,14 @@ type FileSystemConfig struct {
 type osFS struct {
 	openat2Available bool
 	config           FileSystemConfig
+	groupMembership  *groupmembership.GroupMembership
 }
 
 // NewFileSystem creates a new FileSystem with the given configuration
 func NewFileSystem(config FileSystemConfig) FileSystem {
 	fs := &osFS{
-		config: config,
+		config:          config,
+		groupMembership: groupmembership.New(),
 	}
 
 	if !config.DisableOpenat2 {
@@ -150,6 +152,8 @@ func openat2(dirfd int, pathname string, how *openHow) (int, error) {
 type FileSystem interface {
 	// SafeOpenFile opens a file with security checks to prevent symlink attacks and TOCTOU race conditions
 	SafeOpenFile(name string, flag int, perm os.FileMode) (File, error)
+	// GetGroupMembership returns the GroupMembership instance for security checks
+	GetGroupMembership() *groupmembership.GroupMembership
 }
 
 // File is an interface that abstracts file operations
@@ -163,6 +167,11 @@ type File interface {
 // IsOpenat2Available returns true if openat2 is available and enabled
 func (fs *osFS) IsOpenat2Available() bool {
 	return fs.openat2Available
+}
+
+// GetGroupMembership returns the GroupMembership instance for security checks
+func (fs *osFS) GetGroupMembership() *groupmembership.GroupMembership {
+	return fs.groupMembership
 }
 
 func (fs *osFS) SafeOpenFile(name string, flag int, perm os.FileMode) (File, error) {
@@ -227,7 +236,7 @@ func safeWriteFileCommon(filePath string, content []byte, perm os.FileMode, fs F
 	}()
 
 	// Validate the file is a regular file (not a device, pipe, etc.)
-	if _, err := validateFile(file, absPath, FileOpWrite); err != nil {
+	if _, err := validateFile(file, absPath, FileOpWrite, fs.GetGroupMembership()); err != nil {
 		return err
 	}
 
@@ -335,12 +344,12 @@ func SafeReadFileWithFS(filePath string, fs FileSystem) ([]byte, error) {
 		}
 	}()
 
-	return readFileContent(file, absPath)
+	return readFileContent(file, absPath, fs)
 }
 
 // readFileContent reads and validates the content of an already opened file
-func readFileContent(file File, filePath string) ([]byte, error) {
-	fileInfo, err := validateFile(file, filePath, FileOpRead)
+func readFileContent(file File, filePath string, fs FileSystem) ([]byte, error) {
+	fileInfo, err := validateFile(file, filePath, FileOpRead, fs.GetGroupMembership())
 	if err != nil {
 		return nil, err
 	}
@@ -364,7 +373,7 @@ func readFileContent(file File, filePath string) ([]byte, error) {
 
 // validateFile checks if the file is a regular file, validates permissions based on operation type, and returns its FileInfo
 // To prevent TOCTOU attacks, we use the file descriptor to get the file info
-func validateFile(file File, filePath string, operation FileOperation) (os.FileInfo, error) {
+func validateFile(file File, filePath string, operation FileOperation, groupMembership *groupmembership.GroupMembership) (os.FileInfo, error) {
 	fileInfo, err := file.Stat()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get file info: %w", err)
@@ -390,7 +399,7 @@ func validateFile(file File, filePath string, operation FileOperation) (os.FileI
 
 	// Check group writable - allow only if user owns the file and is the only member of the group
 	if perm&groupWritePermission != 0 {
-		isOwnerAndOnlyMember, err := groupmembership.IsCurrentUserOnlyGroupMember(stat.Uid, stat.Gid)
+		isOwnerAndOnlyMember, err := groupMembership.IsCurrentUserOnlyGroupMember(stat.Uid, stat.Gid)
 		if err != nil {
 			// If group membership cannot be reliably determined (e.g., due to an error reading
 			// /etc/group), we must reject group-writable files as a security precaution.

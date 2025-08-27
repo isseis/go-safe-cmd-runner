@@ -11,67 +11,17 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
-	"time"
 )
-
-// groupMemberCache holds cached group membership data with expiration
-type groupMemberCache struct {
-	members []string
-	expiry  time.Time
-}
-
-// cache for group membership data with thread safety
-var (
-	membershipCache = make(map[uint32]groupMemberCache)
-	cacheMutex      sync.RWMutex
-	cacheTimeout    = 30 * time.Second // Cache timeout duration
-)
-
-// clearExpiredCache removes expired cache entries
-func clearExpiredCache() {
-	now := time.Now()
-	for gid, entry := range membershipCache {
-		if now.After(entry.expiry) {
-			delete(membershipCache, gid)
-		}
-	}
-}
 
 // getGroupMembers returns all members of a group given its GID by parsing /etc/group
 // and /etc/passwd to find users with this GID as their primary group
-// Results are cached for performance with a configurable timeout
+// This is a stateless function - caching is handled by the GroupMembership struct
 func getGroupMembers(gid uint32) ([]string, error) {
-	// Check cache first
-	cacheMutex.RLock()
-	if cached, exists := membershipCache[gid]; exists && time.Now().Before(cached.expiry) {
-		cacheMutex.RUnlock()
-		return cached.members, nil
-	}
-	cacheMutex.RUnlock()
-
-	// Cache miss or expired - acquire write lock and compute
-	cacheMutex.Lock()
-	defer cacheMutex.Unlock()
-
-	// Double-check after acquiring write lock (another goroutine might have populated it)
-	if cached, exists := membershipCache[gid]; exists && time.Now().Before(cached.expiry) {
-		return cached.members, nil
-	}
-
-	// Clear expired entries periodically (simple cleanup strategy)
-	clearExpiredCache()
-
 	groupEntry, err := findGroupByGID(gid)
 	if err != nil {
 		return nil, err
 	}
 	if groupEntry == nil {
-		// Cache empty result too
-		membershipCache[gid] = groupMemberCache{
-			members: []string{},
-			expiry:  time.Now().Add(cacheTimeout),
-		}
 		return []string{}, nil // Group not found
 	}
 
@@ -104,51 +54,7 @@ func getGroupMembers(gid uint32) ([]string, error) {
 		result = append(result, member)
 	}
 
-	// Cache the result
-	membershipCache[gid] = groupMemberCache{
-		members: result,
-		expiry:  time.Now().Add(cacheTimeout),
-	}
-
 	return result, nil
-}
-
-// SetCacheTimeout allows configuring the cache timeout duration
-// This is useful for testing and performance tuning
-func SetCacheTimeout(timeout time.Duration) {
-	cacheMutex.Lock()
-	defer cacheMutex.Unlock()
-	cacheTimeout = timeout
-}
-
-// ClearCache manually clears all cached group membership data
-// This is useful when system group/user configuration changes are detected
-func ClearCache() {
-	cacheMutex.Lock()
-	defer cacheMutex.Unlock()
-	membershipCache = make(map[uint32]groupMemberCache)
-}
-
-// GetCacheStats returns cache statistics for monitoring and debugging
-func GetCacheStats() map[string]interface{} {
-	cacheMutex.RLock()
-	defer cacheMutex.RUnlock()
-
-	totalEntries := len(membershipCache)
-	expiredEntries := 0
-	now := time.Now()
-
-	for _, entry := range membershipCache {
-		if now.After(entry.expiry) {
-			expiredEntries++
-		}
-	}
-
-	return map[string]interface{}{
-		"total_entries":   totalEntries,
-		"expired_entries": expiredEntries,
-		"cache_timeout":   cacheTimeout.String(),
-	}
 }
 
 // groupEntry represents a parsed line from /etc/group
