@@ -1,8 +1,13 @@
+// Package terminal provides helpers for detecting terminal capabilities and
+// determining whether the current process should be treated as interactive
+// or running in a CI/non-interactive environment.
 package terminal
 
 import (
 	"os"
 	"strings"
+
+	"golang.org/x/term"
 )
 
 // DetectorOptions contains options for controlling interactive detection
@@ -51,22 +56,9 @@ func (d *DefaultInteractiveDetector) IsInteractive() bool {
 
 // IsTerminal checks if stdout and stderr are connected to a terminal
 func (d *DefaultInteractiveDetector) IsTerminal() bool {
-	// Check if stdout and stderr are terminals
-	// In a real implementation, this would use syscalls to check terminal status
-	// For now, we use a simple approach that works across platforms
-
-	// Check if we're running in a terminal by looking at file descriptors
-	// This is a simplified implementation - in production, you'd use:
-	// - golang.org/x/term.IsTerminal() on Unix
-	// - Windows-specific terminal detection
-
-	// For this simple implementation, we assume non-terminal in test environments
-	// and check for common terminal indicators
-	if term := os.Getenv("TERM"); term != "" && term != "dumb" {
-		return true
-	}
-
-	return false
+	// Check if both stdout and stderr are connected to a terminal
+	// This uses golang.org/x/term.IsTerminal() which is reliable on Unix systems
+	return term.IsTerminal(int(os.Stdout.Fd())) && term.IsTerminal(int(os.Stderr.Fd()))
 }
 
 // IsCIEnvironment checks if the current environment is a CI/CD system

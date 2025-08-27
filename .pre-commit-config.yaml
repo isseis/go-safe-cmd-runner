@@ -16,6 +16,11 @@ repos:
         types: [go]
         pass_filenames: false
         verbose: true
+    -   id: golangci-lint
+        name: golangci-lint
+        entry: /home/issei/go/bin/golangci-lint run
+        language: system
+        types: [go]
 
 -   repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -27,13 +32,6 @@ repos:
     -   id: check-merge-conflict
     -   id: no-commit-to-branch
         args: [--branch, main]
-
--   repo: https://github.com/golangci/golangci-lint
-    rev: v2.1.6
-    hooks:
-    -   id: golangci-lint-config-verify
-    -   id: golangci-lint
-        args: [--config=.golangci.yml]
 
 -   repo: https://github.com/shutter-network/pre-commit-go-hooks
     rev: 53239641ec106cda9a7acf9150c98be8d5ffa1ec
