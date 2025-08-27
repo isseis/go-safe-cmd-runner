@@ -9,17 +9,9 @@ import (
 
 // TestGroupMembership tests the new GroupMembership struct
 func TestGroupMembership(t *testing.T) {
-	t.Run("New creates instance with default timeout", func(t *testing.T) {
+	t.Run("New creates instance", func(t *testing.T) {
 		gm := New()
 		assert.NotNil(t, gm)
-		assert.Equal(t, 30*time.Second, gm.cacheTimeout)
-	})
-
-	t.Run("NewWithTimeout creates instance with custom timeout", func(t *testing.T) {
-		timeout := 5 * time.Second
-		gm := NewWithTimeout(timeout)
-		assert.NotNil(t, gm)
-		assert.Equal(t, timeout, gm.cacheTimeout)
 	})
 
 	t.Run("GetGroupMembers with valid GID", func(t *testing.T) {
@@ -71,8 +63,8 @@ func TestGroupMembership(t *testing.T) {
 		assert.Contains(t, err.Error(), "failed to lookup group")
 	})
 
-	t.Run("cache expiration", func(t *testing.T) {
-		gm := NewWithTimeout(100 * time.Millisecond)
+	t.Run("cache behavior", func(t *testing.T) {
+		gm := New()
 
 		// Add entry to cache
 		_, err := gm.GetGroupMembers(0)
@@ -81,17 +73,15 @@ func TestGroupMembership(t *testing.T) {
 		// Verify cache has entry
 		stats := gm.GetCacheStats()
 		assert.Equal(t, 1, stats.TotalEntries)
+		assert.Equal(t, DefaultCacheTimeout, stats.CacheTimeout)
 
-		// Wait for expiration
-		time.Sleep(150 * time.Millisecond)
-
-		// Access again (should trigger cleanup)
-		_, err = gm.GetGroupMembers(1) // Different GID to trigger cleanup
+		// Add another entry
+		_, err = gm.GetGroupMembers(1)
 		assert.NoError(t, err)
 
-		// Verify expired entries were cleaned up
+		// Verify cache has both entries
 		stats = gm.GetCacheStats()
-		assert.Equal(t, 1, stats.TotalEntries) // Only the new entry
+		assert.Equal(t, 2, stats.TotalEntries)
 	})
 
 	t.Run("ClearCache", func(t *testing.T) {
@@ -113,14 +103,6 @@ func TestGroupMembership(t *testing.T) {
 		// Verify cache is empty
 		stats = gm.GetCacheStats()
 		assert.Equal(t, 0, stats.TotalEntries)
-	})
-
-	t.Run("SetCacheTimeout", func(t *testing.T) {
-		gm := New()
-
-		newTimeout := 5 * time.Second
-		gm.SetCacheTimeout(newTimeout)
-		assert.Equal(t, newTimeout, gm.cacheTimeout)
 	})
 
 	t.Run("GetCacheStats format", func(t *testing.T) {

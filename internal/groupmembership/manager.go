@@ -19,7 +19,6 @@ type GroupMembership struct {
 	// cache for group membership data with thread safety
 	membershipCache map[uint32]groupMemberCache
 	cacheMutex      sync.RWMutex
-	cacheTimeout    time.Duration
 }
 
 // groupMemberCache holds cached group membership data with expiration
@@ -28,16 +27,10 @@ type groupMemberCache struct {
 	expiry  time.Time
 }
 
-// New creates a new GroupMembership instance with default cache timeout
+// New creates a new GroupMembership instance
 func New() *GroupMembership {
-	return NewWithTimeout(DefaultCacheTimeout)
-}
-
-// NewWithTimeout creates a new GroupMembership instance with specified cache timeout
-func NewWithTimeout(timeout time.Duration) *GroupMembership {
 	return &GroupMembership{
 		membershipCache: make(map[uint32]groupMemberCache),
-		cacheTimeout:    timeout,
 	}
 }
 
@@ -73,7 +66,7 @@ func (gm *GroupMembership) GetGroupMembers(gid uint32) ([]string, error) {
 	// Cache the result
 	gm.membershipCache[gid] = groupMemberCache{
 		members: members,
-		expiry:  time.Now().Add(gm.cacheTimeout),
+		expiry:  time.Now().Add(DefaultCacheTimeout),
 	}
 
 	return members, nil
@@ -165,13 +158,6 @@ func (gm *GroupMembership) ClearCache() {
 	gm.membershipCache = make(map[uint32]groupMemberCache)
 }
 
-// SetCacheTimeout updates the cache timeout duration
-func (gm *GroupMembership) SetCacheTimeout(timeout time.Duration) {
-	gm.cacheMutex.Lock()
-	defer gm.cacheMutex.Unlock()
-	gm.cacheTimeout = timeout
-}
-
 // CacheStats represents cache statistics in a type-safe manner
 type CacheStats struct {
 	TotalEntries   int           `json:"total_entries"`
@@ -197,7 +183,7 @@ func (gm *GroupMembership) GetCacheStats() CacheStats {
 	return CacheStats{
 		TotalEntries:   totalEntries,
 		ExpiredEntries: expiredEntries,
-		CacheTimeout:   gm.cacheTimeout,
+		CacheTimeout:   DefaultCacheTimeout,
 	}
 }
 
