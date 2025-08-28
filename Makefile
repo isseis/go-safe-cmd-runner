@@ -11,7 +11,7 @@ GOGET=$(GOCMD) get
 GOLINT=golangci-lint run
 SUDOCMD=sudo
 
-ENVSET=$(ENVCMD) -i HOME=$(HOME) USER=$(USER) PATH=/bin:/sbin:/usr/bin:/usr/sbin
+ENVSET=$(ENVCMD) -i HOME=$(HOME) USER=$(USER) PATH=/bin:/sbin:/usr/bin:/usr/sbin LANG=C
 
 # Configuration paths
 DEFAULT_HASH_DIRECTORY=/usr/local/etc/go-safe-cmd-runner/hashes
@@ -70,22 +70,22 @@ hash:
 		$(SUDOCMD) $(BINARY_RECORD) -force -file $(file) -hash-dir $(DEFAULT_HASH_DIRECTORY);)
 
 test: $(BINARY_RUNNER)
-	$(ENVSET) CGO_ENABLED=1 $(GOTEST) -v ./internal/groupmembership/...
-	$(ENVSET) CGO_ENABLED=0 $(GOTEST) -v ./...
+	$(ENVSET) CGO_ENABLED=1 $(GOTEST) -race -p 2 -v ./...
+	$(ENVSET) CGO_ENABLED=0 $(GOTEST) -p 2 -v ./...
 	$(ENVSET) $(BINARY_RUNNER) -dry-run -config ./sample/comprehensive.toml
 
 benchmark:
 	$(GOTEST) -bench=. -benchmem ./internal/runner/resource/
 
 coverage:
-	$(GOTEST) -coverprofile=coverage.out ./...
+	$(ENVSET) $(GOTEST) -coverprofile=coverage.out ./...
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 
 integration-test: $(BINARY_RUNNER)
 	$(MKDIR) /tmp/cmd-runner-comprehensive /tmp/custom-workdir-test
 	@EXIT_CODE=0; \
-	$(BINARY_RUNNER) -config ./sample/comprehensive.toml -log-level warn -env-file $(PWD)/sample/.env || EXIT_CODE=$$?; \
+	$(ENVSET) $(BINARY_RUNNER) -config ./sample/comprehensive.toml -log-level warn -env-file $(PWD)/sample/.env || EXIT_CODE=$$?; \
 	$(RM) -r /tmp/cmd-runner-comprehensive /tmp/custom-workdir-test; \
 	echo "Integration test completed with exit code: $$EXIT_CODE"; \
 	exit $$EXIT_CODE
