@@ -34,8 +34,7 @@ ENV_FILE_GLOBAL=env_global_value
 		"SYSTEM_GLOBAL": "system_global_value",
 		"PATH":          "/usr/bin:/bin:/usr/local/bin", // Keep PATH for printenv to work
 	}
-	cleanup := setupTestEnv(t, testSystemEnv)
-	defer cleanup()
+	setupTestEnv(t, testSystemEnv)
 
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
@@ -180,8 +179,7 @@ DATABASE_URL=postgres://localhost/test
 		"APP_CONFIG": "from_system", // This should be overridden by .env
 		"PATH":       "/usr/bin:/bin",
 	}
-	cleanup := setupTestEnv(t, testSystemEnv)
-	defer cleanup()
+	setupTestEnv(t, testSystemEnv)
 
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{

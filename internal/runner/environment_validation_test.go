@@ -18,8 +18,7 @@ import (
 // are loaded without validation (validation is deferred to execution time)
 func TestLoadEnvironment_SystemVariableValidation(t *testing.T) {
 	// Create clean test environment to avoid interference from system variables
-	cleanup := setupSafeTestEnv(t)
-	defer cleanup()
+	setupSafeTestEnv(t)
 
 	// Create temporary .env file
 	tmpDir := t.TempDir()
@@ -53,13 +52,12 @@ func TestLoadEnvironment_SystemVariableValidation(t *testing.T) {
 
 	t.Run("Dangerous system variables should be loaded (validation deferred)", func(t *testing.T) {
 		// Set a dangerous system environment variable
-		dangerousCleanup := setupTestEnv(t, map[string]string{
+		setupTestEnv(t, map[string]string{
 			"DANGEROUS_SYSTEM": "value; rm -rf /",
 			"PATH":             "/usr/bin:/bin",
 			"HOME":             "/home/test",
 			"USER":             "test",
 		})
-		defer dangerousCleanup()
 
 		// Create new runner for this test
 		dangerousRunner, err := NewRunner(config, WithExecutor(executor.NewDefaultExecutor()), WithRunID("test-run-123"))
@@ -78,8 +76,7 @@ func TestLoadEnvironment_SystemVariableValidation(t *testing.T) {
 // are loaded without validation (validation is deferred to execution time)
 func TestLoadEnvironment_EnvFileVariableValidation(t *testing.T) {
 	// Setup clean test environment
-	cleanup := setupSafeTestEnv(t)
-	defer cleanup()
+	setupSafeTestEnv(t)
 
 	tmpDir := t.TempDir()
 
@@ -135,8 +132,7 @@ SAFE_VAR=safe_value
 // TestLoadEnvironment_ValidationPatterns tests that dangerous patterns are loaded but not validated
 func TestLoadEnvironment_ValidationPatterns(t *testing.T) {
 	// Setup clean test environment
-	cleanup := setupSafeTestEnv(t)
-	defer cleanup()
+	setupSafeTestEnv(t)
 
 	tmpDir := t.TempDir()
 
@@ -192,8 +188,7 @@ func TestLoadEnvironment_ValidationPatterns(t *testing.T) {
 // TestLoadEnvironment_FilePermissionValidation tests file permission validation
 func TestLoadEnvironment_FilePermissionValidation(t *testing.T) {
 	// Setup clean test environment
-	cleanup := setupSafeTestEnv(t)
-	defer cleanup()
+	setupSafeTestEnv(t)
 
 	tmpDir := t.TempDir()
 
@@ -239,8 +234,7 @@ func TestLoadEnvironment_FilePermissionValidation(t *testing.T) {
 // TestLoadEnvironment_MixedValidAndInvalidVariables tests loading with a mix of valid and invalid variables
 func TestLoadEnvironment_MixedValidAndInvalidVariables(t *testing.T) {
 	// Setup clean test environment
-	cleanup := setupSafeTestEnv(t)
-	defer cleanup()
+	setupSafeTestEnv(t)
 
 	tmpDir := t.TempDir()
 
@@ -276,8 +270,7 @@ ANOTHER_SAFE_VAR=another_safe_value
 // TestExecutionTimeValidation tests that environment variables are validated during command execution
 func TestExecutionTimeValidation(t *testing.T) {
 	// Setup clean test environment
-	cleanup := setupSafeTestEnv(t)
-	defer cleanup()
+	setupSafeTestEnv(t)
 
 	tmpDir := t.TempDir()
 
@@ -330,8 +323,7 @@ func TestExecutionTimeValidation(t *testing.T) {
 // TestExecutionTimeVariableNameValidation tests that environment variable names are validated during command execution
 func TestExecutionTimeVariableNameValidation(t *testing.T) {
 	// Setup clean test environment
-	cleanup := setupSafeTestEnv(t)
-	defer cleanup()
+	setupSafeTestEnv(t)
 
 	tmpDir := t.TempDir()
 
@@ -385,8 +377,7 @@ func TestExecutionTimeVariableNameValidation(t *testing.T) {
 // TestExecutionTimeValidationDemonstration tests that validation occurs during execution, not loading
 func TestExecutionTimeValidationDemonstration(t *testing.T) {
 	// Setup clean test environment
-	cleanup := setupSafeTestEnv(t)
-	defer cleanup()
+	setupSafeTestEnv(t)
 
 	tmpDir := t.TempDir()
 

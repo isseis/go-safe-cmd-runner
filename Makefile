@@ -11,6 +11,8 @@ GOGET=$(GOCMD) get
 GOLINT=golangci-lint run
 SUDOCMD=sudo
 
+ENVSET=$(ENVCMD) -i HOME=$(HOME) USER=$(USER) PATH=/bin:/sbin:/usr/bin:/usr/sbin LANG=C
+
 # Configuration paths
 DEFAULT_HASH_DIRECTORY=/usr/local/etc/go-safe-cmd-runner/hashes
 
@@ -68,22 +70,22 @@ hash:
 		$(SUDOCMD) $(BINARY_RECORD) -force -file $(file) -hash-dir $(DEFAULT_HASH_DIRECTORY);)
 
 test: $(BINARY_RUNNER)
-	$(ENVCMD) CGO_ENABLED=1 $(GOTEST) -v ./internal/groupmembership/...
-	$(ENVCMD) CGO_ENABLED=0 $(GOTEST) -v ./...
-	$(ENVCMD) -i PATH=/bin:/sbin:/usr/bin:/usr/sbin $(BINARY_RUNNER) -dry-run -config ./sample/comprehensive.toml
+	$(ENVSET) CGO_ENABLED=1 $(GOTEST) -race -p 2 -v ./...
+	$(ENVSET) CGO_ENABLED=0 $(GOTEST) -p 2 -v ./...
+	$(ENVSET) $(BINARY_RUNNER) -dry-run -config ./sample/comprehensive.toml
 
 benchmark:
 	$(GOTEST) -bench=. -benchmem ./internal/runner/resource/
 
 coverage:
-	$(GOTEST) -coverprofile=coverage.out ./...
+	$(ENVSET) $(GOTEST) -coverprofile=coverage.out ./...
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 
 integration-test: $(BINARY_RUNNER)
 	$(MKDIR) /tmp/cmd-runner-comprehensive /tmp/custom-workdir-test
 	@EXIT_CODE=0; \
-	$(BINARY_RUNNER) -config ./sample/comprehensive.toml -log-level warn -env-file $(PWD)/sample/.env || EXIT_CODE=$$?; \
+	$(ENVSET) $(BINARY_RUNNER) -config ./sample/comprehensive.toml -log-level warn -env-file $(PWD)/sample/.env || EXIT_CODE=$$?; \
 	$(RM) -r /tmp/cmd-runner-comprehensive /tmp/custom-workdir-test; \
 	echo "Integration test completed with exit code: $$EXIT_CODE"; \
 	exit $$EXIT_CODE
@@ -91,7 +93,7 @@ integration-test: $(BINARY_RUNNER)
 slack-notify-test: $(BINARY_RUNNER)
 	$(MKDIR) /tmp/cmd-runner-slack-test
 	@EXIT_CODE=0; \
-	$(ENVCMD) -i PATH=/bin:/sbin:/usr/bin:/usr/sbin LANG=C $(BINARY_RUNNER) -config ./sample/slack-notify.toml -log-level warn -env-file $(PWD)/sample/.env || EXIT_CODE=$$?; \
+	$(ENVSET) $(BINARY_RUNNER) -config ./sample/slack-notify.toml -log-level warn -env-file $(PWD)/sample/.env || EXIT_CODE=$$?; \
 	$(RM) -r /tmp/cmd-runner-slack-test; \
 	echo "Slack notification test completed with exit code: $$EXIT_CODE"; \
 	exit $$EXIT_CODE
@@ -103,7 +105,7 @@ slack-group-notification-test: $(BINARY_RUNNER)
 	@EXIT_CODE=0; \
 	RUN_ID="slack-test-$$(date +%s)"; \
 	echo "Running Slack group notification test with run ID: $$RUN_ID"; \
-	$(ENVCMD) -i PATH=/bin:/sbin:/usr/bin:/usr/sbin LANG=C SLACK_WEBHOOK_URL="$$SLACK_WEBHOOK_URL" \
+	$(ENVSET) SLACK_WEBHOOK_URL="$$SLACK_WEBHOOK_URL" \
 		$(BINARY_RUNNER) -config ./sample/slack-group-notification-test.toml -log-level info -run-id "$$RUN_ID" --env-file $(PWD)/sample/.env \
 		2>&1 | tee /tmp/slack-group-test/test-output.log || EXIT_CODE=$$?; \
 	echo ""; \

@@ -30,42 +30,26 @@ var (
 
 const defaultTestCommandName = "test"
 
-// setupTestEnv sets up a clean test environment and returns a cleanup function.
-// The cleanup function restores the original environment when called.
-func setupTestEnv(t *testing.T, envVars map[string]string) func() {
+// setupTestEnv sets up a clean test environment.
+func setupTestEnv(t *testing.T, envVars map[string]string) {
 	t.Helper()
-	originalEnv := os.Environ()
-
-	// Clear the environment
-	os.Clearenv()
 
 	// Set up the test environment variables
 	for key, value := range envVars {
-		err := os.Setenv(key, value)
-		require.NoError(t, err, "failed to set environment variable %s", key)
-	}
-
-	// Return a cleanup function that restores the original environment
-	return func() {
-		os.Clearenv()
-		for _, env := range originalEnv {
-			if eq := strings.Index(env, "="); eq >= 0 {
-				os.Setenv(env[:eq], env[eq+1:])
-			}
-		}
+		t.Setenv(key, value)
 	}
 }
 
-// setupSafeTestEnv sets up a minimal safe environment for tests and returns a cleanup function.
+// setupSafeTestEnv sets up a minimal safe environment for tests.
 // This is useful for security-related tests where we want to ensure a clean, minimal environment.
-func setupSafeTestEnv(t *testing.T) func() {
+func setupSafeTestEnv(t *testing.T) {
 	t.Helper()
 	safeEnv := map[string]string{
 		"PATH": "/usr/bin:/bin",
 		"HOME": "/home/test",
 		"USER": "test",
 	}
-	return setupTestEnv(t, safeEnv)
+	setupTestEnv(t, safeEnv)
 }
 
 var ErrExecutionFailed = errors.New("execution failed")
@@ -249,8 +233,7 @@ func TestNewRunnerWithSecurity(t *testing.T) {
 }
 
 func TestRunner_ExecuteGroup(t *testing.T) {
-	cleanup := setupSafeTestEnv(t)
-	defer cleanup()
+	setupSafeTestEnv(t)
 
 	tests := []struct {
 		name        string
@@ -358,8 +341,7 @@ func TestRunner_ExecuteGroup(t *testing.T) {
 }
 
 func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
-	cleanup := setupSafeTestEnv(t)
-	defer cleanup()
+	setupSafeTestEnv(t)
 
 	t.Run("multiple commands with first failing", func(t *testing.T) {
 		group := runnertypes.CommandGroup{
@@ -520,8 +502,7 @@ func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
 }
 
 func TestRunner_ExecuteAll(t *testing.T) {
-	cleanup := setupSafeTestEnv(t)
-	defer cleanup()
+	setupSafeTestEnv(t)
 
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
@@ -563,8 +544,7 @@ func TestRunner_ExecuteAll(t *testing.T) {
 }
 
 func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
-	cleanup := setupSafeTestEnv(t)
-	defer cleanup()
+	setupSafeTestEnv(t)
 
 	t.Run("first group fails, but remaining groups should still execute", func(t *testing.T) {
 		config := &runnertypes.Config{
@@ -994,8 +974,7 @@ func TestRunner_resolveEnvironmentVars(t *testing.T) {
 		"SAFE_VAR": "safe_value",
 		"PATH":     "/usr/bin:/bin",
 	}
-	cleanup := setupTestEnv(t, testEnv)
-	defer cleanup()
+	setupTestEnv(t, testEnv)
 
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
@@ -1037,8 +1016,7 @@ func TestRunner_resolveEnvironmentVars(t *testing.T) {
 }
 
 func TestRunner_SecurityIntegration(t *testing.T) {
-	cleanup := setupSafeTestEnv(t)
-	defer cleanup()
+	setupSafeTestEnv(t)
 
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
@@ -1200,8 +1178,7 @@ func TestRunner_LoadEnvironmentWithSecurity(t *testing.T) {
 // TestCommandGroup_NewFields tests the new fields added to CommandGroup for template replacement
 func TestCommandGroup_NewFields(t *testing.T) {
 	// Setup test environment
-	cleanup := setupSafeTestEnv(t)
-	defer cleanup()
+	setupSafeTestEnv(t)
 
 	tests := []struct {
 		name        string
@@ -1311,8 +1288,7 @@ func TestCommandGroup_NewFields(t *testing.T) {
 
 // TestCommandGroup_TempDir_Detailed tests TempDir functionality with detailed mock expectations
 func TestCommandGroup_TempDir_Detailed(t *testing.T) {
-	cleanup := setupSafeTestEnv(t)
-	defer cleanup()
+	setupSafeTestEnv(t)
 
 	t.Run("TempDir creates directory and sets Dir field", func(t *testing.T) {
 		config := &runnertypes.Config{
@@ -1490,8 +1466,7 @@ func TestCommandGroup_TempDir_Detailed(t *testing.T) {
 // TestRunner_EnvironmentVariablePriority tests the priority hierarchy for environment variables:
 // command-specific > global (loaded from system/env file)
 func TestRunner_EnvironmentVariablePriority(t *testing.T) {
-	cleanup := setupSafeTestEnv(t)
-	defer cleanup()
+	setupSafeTestEnv(t)
 
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
@@ -1600,8 +1575,7 @@ func TestRunner_EnvironmentVariablePriority(t *testing.T) {
 // TestRunner_EnvironmentVariablePriority_CurrentImplementation tests the current implementation
 // which only supports command-specific > global priority (no group-specific variables yet)
 func TestRunner_EnvironmentVariablePriority_CurrentImplementation(t *testing.T) {
-	cleanup := setupSafeTestEnv(t)
-	defer cleanup()
+	setupSafeTestEnv(t)
 
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
@@ -1714,8 +1688,7 @@ func TestRunner_EnvironmentVariablePriority_GroupLevelSupport(t *testing.T) {
 
 // TestRunner_EnvironmentVariablePriority_EdgeCases tests edge cases for environment variable priority
 func TestRunner_EnvironmentVariablePriority_EdgeCases(t *testing.T) {
-	cleanup := setupSafeTestEnv(t)
-	defer cleanup()
+	setupSafeTestEnv(t)
 
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
@@ -1807,8 +1780,7 @@ func TestRunner_EnvironmentVariablePriority_EdgeCases(t *testing.T) {
 
 // TestResourceManagement_FailureScenarios tests various failure scenarios in resource management
 func TestResourceManagement_FailureScenarios(t *testing.T) {
-	cleanup := setupSafeTestEnv(t)
-	defer cleanup()
+	setupSafeTestEnv(t)
 
 	t.Run("temp directory creation failure", func(t *testing.T) {
 		config := &runnertypes.Config{

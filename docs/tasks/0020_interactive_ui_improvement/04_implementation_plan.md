@@ -15,8 +15,8 @@
 - [x] `internal/terminal/color_test.go` - カラー対応検出のテスト
 
 ### Phase 2: Terminal Capabilities 統合インターフェース
-- [ ] `internal/terminal/capabilities.go` - 統合インターフェース
-- [ ] `internal/terminal/capabilities_test.go` - 統合機能のテスト
+- [x] `internal/terminal/capabilities.go` - 統合インターフェース
+- [x] `internal/terminal/capabilities_test.go` - 統合機能のテスト
 
 ### Phase 3: Logging Package の改善
 - [ ] `internal/logging/interactive_handler.go` - 対話的環境用ハンドラ
@@ -95,10 +95,10 @@ type Capabilities interface {
 ```
 
 **実装要件:**
-- [ ] 各コンポーネントの統合
-- [ ] オプション駆動の設定
-- [ ] ユーザー設定の優先度制御
-- [ ] CLICOLOR_FORCE=1の特別処理
+- [x] 各コンポーネントの統合
+- [x] オプション駆動の設定
+- [x] ユーザー設定の優先度制御
+- [x] CLICOLOR_FORCE=1の特別処理
 
 **重要な優先度ロジック:**
 1. コマンドライン引数（最優先）
@@ -108,9 +108,9 @@ type Capabilities interface {
 5. 端末機能自動検出
 
 **テスト要件:**
-- [ ] 環境変数の組み合わせテスト
-- [ ] 優先度ロジックの確認
-- [ ] オプション設定のテスト
+- [x] 環境変数の組み合わせテスト
+- [x] 優先度ロジックの確認
+- [x] オプション設定のテスト
 
 ### 3.3 Phase 3: Logging Package の改善
 

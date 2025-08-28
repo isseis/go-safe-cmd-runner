@@ -1,7 +1,6 @@
 package environment
 
 import (
-	"os"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -159,19 +158,8 @@ func TestCommandEnvProcessor_ResolveVariableReferences(t *testing.T) {
 	processor := NewCommandEnvProcessor(filter)
 
 	// Set up test environment variables
-	originalPath := os.Getenv("PATH")
-	originalHome := os.Getenv("HOME")
-	defer func() {
-		if originalPath != "" {
-			os.Setenv("PATH", originalPath)
-		}
-		if originalHome != "" {
-			os.Setenv("HOME", originalHome)
-		}
-	}()
-
-	os.Setenv("PATH", "/usr/bin:/bin")
-	os.Setenv("HOME", "/home/testuser")
+	t.Setenv("PATH", "/usr/bin:/bin")
+	t.Setenv("HOME", "/home/testuser")
 
 	tests := []struct {
 		name        string
@@ -424,12 +412,8 @@ func TestCommandEnvProcessor_InheritanceModeIntegration(t *testing.T) {
 	processor := NewCommandEnvProcessor(filter)
 
 	// Set up system environment
-	os.Setenv("GLOBAL_VAR", "global_value")
-	os.Setenv("GROUP_VAR", "group_value")
-	defer func() {
-		os.Unsetenv("GLOBAL_VAR")
-		os.Unsetenv("GROUP_VAR")
-	}()
+	t.Setenv("GLOBAL_VAR", "global_value")
+	t.Setenv("GROUP_VAR", "group_value")
 
 	tests := []struct {
 		name        string
