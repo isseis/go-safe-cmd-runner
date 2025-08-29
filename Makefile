@@ -23,18 +23,27 @@ define check_gofumpt
 	fi
 endef
 
-# Format a single file and report if it was changed
-# Usage: $(call format_file,filename)
-define format_file
-	if [ -f "$(1)" ]; then \
-		BEFORE_HASH=$$(md5sum "$(1)" 2>/dev/null | cut -d' ' -f1 || echo ""); \
-		$(GOFUMPTCMD) -w "$(1)" || { echo "Error: $(GOFUMPTCMD) failed on $(1)"; exit 1; }; \
-		AFTER_HASH=$$(md5sum "$(1)" 2>/dev/null | cut -d' ' -f1 || echo ""); \
-		if [ "$$BEFORE_HASH" != "$$AFTER_HASH" ]; then \
-			echo "Formatted: $(1)"; \
+# Format files from a list and display what was formatted
+# Usage: $(call format_files_from_list,file_list_command)
+define format_files_from_list
+	TEMP_FILE="/tmp/fmt-files-$$$$.tmp"; \
+	$(1) | while IFS= read -r file; do \
+		if [ -f "$$file" ] && $(GOFUMPTCMD) -d "$$file" | grep -q .; then \
+			printf '%s\n' "$$file"; \
 		fi; \
-	fi
+	done > "$$TEMP_FILE"; \
+	if [ -s "$$TEMP_FILE" ]; then \
+		echo "Formatting files:"; \
+		while IFS= read -r file; do \
+			printf '  %s\n' "$$file"; \
+		done < "$$TEMP_FILE"; \
+		while IFS= read -r file; do \
+			$(GOFUMPTCMD) -w "$$file" || { echo "Error: $(GOFUMPTCMD) failed on $$file"; exit 1; }; \
+		done < "$$TEMP_FILE"; \
+	fi; \
+	rm -f "$$TEMP_FILE"
 endef
+
 
 
 ENVSET=$(ENVCMD) -i HOME=$(HOME) USER=$(USER) PATH=/bin:/sbin:/usr/bin:/usr/sbin LANG=C
@@ -102,20 +111,15 @@ test: $(BINARY_RUNNER)
 
 fmt:
 	$(call check_gofumpt)
-	@CHANGED_FILES=$$(git diff --name-only | grep '\.go$$'); \
-	if [ -n "$$CHANGED_FILES" ]; then \
-		for file in $$CHANGED_FILES; do \
-			$(call format_file,$$file); \
-		done; \
+	@if git diff --name-only | grep -q '\.go$$'; then \
+		$(call format_files_from_list,git diff --name-only | grep '\.go$$'); \
 	else \
 		echo "No changed Go files to format"; \
 	fi
 
 fmt-all:
 	$(call check_gofumpt)
-	@find . -name '*.go' -not -path './vendor/*' | while read file; do \
-		$(call format_file,$$file); \
-	done
+	@$(call format_files_from_list,find . -name '*.go' -not -path './vendor/*')
 
 benchmark:
 	$(GOTEST) -bench=. -benchmem ./internal/runner/resource/
