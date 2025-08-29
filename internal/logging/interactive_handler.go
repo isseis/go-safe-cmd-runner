@@ -17,17 +17,23 @@ var (
 	ErrInteractiveHandlerLineTrackerRequired  = errors.New("InteractiveHandler: LineTracker is required")
 )
 
+// attrWithGroups represents an attribute along with the group prefix it should receive
+type attrWithGroups struct {
+	attr   slog.Attr
+	groups []string // The groups that were active when this attribute was added
+}
+
 // InteractiveHandler is a slog handler that provides enhanced output for interactive terminals.
 // It integrates with the terminal package to detect capabilities and provide colored output
 // with log file hints for error-level messages.
 type InteractiveHandler struct {
-	capabilities terminal.Capabilities
-	formatter    MessageFormatter
-	lineTracker  LogLineTracker
-	writer       io.Writer
-	level        slog.Level
-	attrs        []slog.Attr
-	groups       []string
+	capabilities    terminal.Capabilities
+	formatter       MessageFormatter
+	lineTracker     LogLineTracker
+	writer          io.Writer
+	level           slog.Level
+	attrsWithGroups []attrWithGroups // Attributes with their corresponding group context
+	groups          []string
 }
 
 // InteractiveHandlerOptions configures the InteractiveHandler.
@@ -85,12 +91,32 @@ func (h *InteractiveHandler) Handle(_ context.Context, r slog.Record) error {
 		return nil
 	}
 
-	var record slog.Record
-	if len(h.groups) > 0 {
-		// When groups are active, we need to reconstruct the record from scratch
-		// to ensure record-level attributes (not WithAttrs attributes) are prefixed
+	// Create a new record with the same basic properties
+	record := slog.NewRecord(r.Time, r.Level, r.Message, r.PC)
 
-		// Build group prefix from all groups
+	// Add all accumulated attributes with their appropriate prefixes
+	for _, attrWithGroups := range h.attrsWithGroups {
+		attr := attrWithGroups.attr
+		if len(attrWithGroups.groups) > 0 {
+			// Build prefix from the groups that were active when this attribute was added
+			prefix := ""
+			for _, group := range attrWithGroups.groups {
+				if prefix != "" {
+					prefix += "."
+				}
+				prefix += group
+			}
+			attr = slog.Attr{
+				Key:   prefix + "." + attr.Key,
+				Value: attr.Value,
+			}
+		}
+		record.AddAttrs(attr)
+	}
+
+	// Add all record attributes with current group prefix (if any)
+	if len(h.groups) > 0 {
+		// Build group prefix from current groups
 		prefix := ""
 		for _, group := range h.groups {
 			if prefix != "" {
@@ -100,13 +126,6 @@ func (h *InteractiveHandler) Handle(_ context.Context, r slog.Record) error {
 		}
 		prefix += "."
 
-		// Create a new record with the same basic properties
-		record = slog.NewRecord(r.Time, r.Level, r.Message, r.PC)
-
-		// Add all accumulated attributes WITHOUT group prefix (they were added before WithGroup)
-		record.AddAttrs(h.attrs...)
-
-		// Add all record attributes WITH group prefix (they are processed after WithGroup)
 		r.Attrs(func(attr slog.Attr) bool {
 			record.AddAttrs(slog.Attr{
 				Key:   prefix + attr.Key,
@@ -115,9 +134,11 @@ func (h *InteractiveHandler) Handle(_ context.Context, r slog.Record) error {
 			return true
 		})
 	} else {
-		// No groups active, use original record with accumulated attributes
-		record = r.Clone()
-		record.AddAttrs(h.attrs...)
+		// No current groups, add record attributes as-is
+		r.Attrs(func(attr slog.Attr) bool {
+			record.AddAttrs(attr)
+			return true
+		})
 	}
 
 	// Format the main message
@@ -148,18 +169,29 @@ func (h *InteractiveHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 		return h
 	}
 
-	newAttrs := make([]slog.Attr, len(h.attrs)+len(attrs))
-	copy(newAttrs, h.attrs)
-	copy(newAttrs[len(h.attrs):], attrs)
+	// Create a copy of current groups for these new attributes
+	groupsCopy := make([]string, len(h.groups))
+	copy(groupsCopy, h.groups)
+
+	// Create new attributes with group context
+	newAttrsWithGroups := make([]attrWithGroups, len(h.attrsWithGroups)+len(attrs))
+	copy(newAttrsWithGroups, h.attrsWithGroups)
+
+	for i, attr := range attrs {
+		newAttrsWithGroups[len(h.attrsWithGroups)+i] = attrWithGroups{
+			attr:   attr,
+			groups: groupsCopy,
+		}
+	}
 
 	return &InteractiveHandler{
-		capabilities: h.capabilities,
-		formatter:    h.formatter,
-		lineTracker:  h.lineTracker,
-		writer:       h.writer,
-		level:        h.level,
-		attrs:        newAttrs,
-		groups:       h.groups,
+		capabilities:    h.capabilities,
+		formatter:       h.formatter,
+		lineTracker:     h.lineTracker,
+		writer:          h.writer,
+		level:           h.level,
+		attrsWithGroups: newAttrsWithGroups,
+		groups:          h.groups,
 	}
 }
 
@@ -174,12 +206,12 @@ func (h *InteractiveHandler) WithGroup(name string) slog.Handler {
 	newGroups[len(h.groups)] = name
 
 	return &InteractiveHandler{
-		capabilities: h.capabilities,
-		formatter:    h.formatter,
-		lineTracker:  h.lineTracker,
-		writer:       h.writer,
-		level:        h.level,
-		attrs:        h.attrs,
-		groups:       newGroups,
+		capabilities:    h.capabilities,
+		formatter:       h.formatter,
+		lineTracker:     h.lineTracker,
+		writer:          h.writer,
+		level:           h.level,
+		attrsWithGroups: h.attrsWithGroups, // Preserve existing attributes with their group context
+		groups:          newGroups,
 	}
 }

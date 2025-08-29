@@ -564,3 +564,69 @@ func TestInteractiveHandler_Handle_WithGroups(t *testing.T) {
 	// Note: In standard slog behavior, WithAttrs attributes exist without prefix
 	// since they were added before WithGroup was called
 }
+
+func TestInteractiveHandler_Handle_WithAttrsAfterGroup(t *testing.T) {
+	var buf bytes.Buffer
+	caps := &interactiveTestCapabilities{interactive: true, supportsColor: false}
+	formatter := &interactiveTestMessageFormatter{}
+	tracker := &interactiveTestLogLineTracker{}
+
+	handler, err := NewInteractiveHandler(InteractiveHandlerOptions{
+		Level:        slog.LevelInfo,
+		Writer:       &buf,
+		Capabilities: caps,
+		Formatter:    formatter,
+		LineTracker:  tracker,
+	})
+	if err != nil {
+		t.Fatalf("NewInteractiveHandler failed: %v", err)
+	}
+
+	// Create a handler with groups first, then add attributes
+	handlerWithGroup := handler.WithGroup("auth").WithGroup("session")
+	handlerWithAttrs := handlerWithGroup.WithAttrs([]slog.Attr{
+		slog.String("component", "database"),
+		slog.String("operation", "query"),
+	})
+
+	ctx := context.Background()
+	now := time.Now()
+	record := slog.NewRecord(now, slog.LevelInfo, "test message", 0)
+	record.AddAttrs(slog.String("user_id", "12345"))
+
+	err = handlerWithAttrs.Handle(ctx, record)
+	if err != nil {
+		t.Errorf("Handle should not return error: %v", err)
+	}
+
+	// Formatter should have been called
+	if !formatter.formatRecordCalled {
+		t.Error("Formatter should have been called")
+	}
+
+	// Verify that group prefixes were applied correctly
+	// When WithAttrs is called after WithGroup, the attributes should be prefixed
+	testCases := []struct {
+		key      string
+		expected string
+		desc     string
+	}{
+		{"auth.session.component", "database", "WithAttrs attributes should be prefixed when added after WithGroup"},
+		{"auth.session.operation", "query", "WithAttrs attributes should be prefixed when added after WithGroup"},
+		{"auth.session.user_id", "12345", "record-level attributes should be prefixed with group hierarchy"},
+	}
+
+	for _, tc := range testCases {
+		value, found := formatter.GetAttribute(tc.key)
+		if !found {
+			t.Errorf("Expected to find attribute %q, but it was not found. %s", tc.key, tc.desc)
+			continue
+		}
+		if value.String() != tc.expected {
+			t.Errorf("For attribute %q: expected %q, got %q. %s", tc.key, tc.expected, value.String(), tc.desc)
+		}
+	}
+
+	// Note: This test verifies the critical case where WithAttrs is called after WithGroup
+	// The attributes should be prefixed with the group hierarchy
+}
