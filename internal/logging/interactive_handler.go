@@ -87,15 +87,32 @@ func (h *InteractiveHandler) Handle(_ context.Context, r slog.Record) error {
 
 	// Create a copy of the record and apply accumulated context
 	record := r.Clone()
-	record.AddAttrs(h.attrs...)
 
-	// Apply group context
+	// Apply group context to attributes by prefixing keys
+	attrs := h.attrs
 	if len(h.groups) > 0 {
-		// Add group information as attributes
-		for i, group := range h.groups {
-			record.AddAttrs(slog.String("group_"+string(rune('0'+i)), group))
+		// Build group prefix from all groups
+		prefix := ""
+		for _, group := range h.groups {
+			if prefix != "" {
+				prefix += "."
+			}
+			prefix += group
 		}
+		prefix += "."
+
+		// Apply prefix to all accumulated attributes
+		prefixedAttrs := make([]slog.Attr, len(attrs))
+		for i, attr := range attrs {
+			prefixedAttrs[i] = slog.Attr{
+				Key:   prefix + attr.Key,
+				Value: attr.Value,
+			}
+		}
+		attrs = prefixedAttrs
 	}
+
+	record.AddAttrs(attrs...)
 
 	// Format the main message
 	message := h.formatter.FormatRecordWithColor(record, h.capabilities.SupportsColor())
