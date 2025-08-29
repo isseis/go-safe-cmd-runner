@@ -28,7 +28,7 @@ func TestDefaultMessageFormatter_FormatRecordWithColor(t *testing.T) {
 			name:      "debug level with color",
 			record:    slog.NewRecord(now, slog.LevelDebug, "debug message", 0),
 			useColor:  true,
-			expecteds: []string{"2024-01-01 12:00:00 * DEBUG debug message"},
+			expecteds: []string{"2024-01-01 12:00:00 \033[90m* DEBUG\033[0m debug message"},
 		},
 		{
 			name:      "debug level without color",
@@ -40,7 +40,7 @@ func TestDefaultMessageFormatter_FormatRecordWithColor(t *testing.T) {
 			name:      "info level with color",
 			record:    slog.NewRecord(now, slog.LevelInfo, "info message", 0),
 			useColor:  true,
-			expecteds: []string{"2024-01-01 12:00:00 + INFO  info message"},
+			expecteds: []string{"2024-01-01 12:00:00 \033[32m+ INFO \033[0m info message"},
 		},
 		{
 			name:      "info level without color",
@@ -52,7 +52,7 @@ func TestDefaultMessageFormatter_FormatRecordWithColor(t *testing.T) {
 			name:      "warn level with color",
 			record:    slog.NewRecord(now, slog.LevelWarn, "warn message", 0),
 			useColor:  true,
-			expecteds: []string{"2024-01-01 12:00:00 ! WARN  warn message"},
+			expecteds: []string{"2024-01-01 12:00:00 \033[33m! WARN \033[0m warn message"},
 		},
 		{
 			name:      "warn level without color",
@@ -64,7 +64,7 @@ func TestDefaultMessageFormatter_FormatRecordWithColor(t *testing.T) {
 			name:      "error level with color",
 			record:    slog.NewRecord(now, slog.LevelError, "error message", 0),
 			useColor:  true,
-			expecteds: []string{"2024-01-01 12:00:00 X ERROR error message"},
+			expecteds: []string{"2024-01-01 12:00:00 \033[31mX ERROR\033[0m error message"},
 		},
 		{
 			name:      "error level without color",
@@ -138,7 +138,7 @@ func TestDefaultMessageFormatter_FormatRecordInteractive(t *testing.T) {
 			name:      "info level with color - no timestamp",
 			record:    slog.NewRecord(now, slog.LevelInfo, "test message", 0),
 			useColor:  true,
-			expecteds: []string{"+ INFO  test message"},
+			expecteds: []string{"\033[32m+ INFO \033[0m test message"},
 		},
 		{
 			name: "warn level with priority attribute",
@@ -148,7 +148,7 @@ func TestDefaultMessageFormatter_FormatRecordInteractive(t *testing.T) {
 				return r
 			}(),
 			useColor:  true,
-			expecteds: []string{"! WARN  access denied variable=SHELL"},
+			expecteds: []string{"\033[33m! WARN \033[0m access denied variable=SHELL"},
 		},
 		{
 			name: "error level with multiple priority attributes",
@@ -158,7 +158,7 @@ func TestDefaultMessageFormatter_FormatRecordInteractive(t *testing.T) {
 				return r
 			}(),
 			useColor:  true,
-			expecteds: []string{"X ERROR operation failed error=timeout component=auth"},
+			expecteds: []string{"\033[31mX ERROR\033[0m operation failed error=timeout component=auth"},
 		},
 		{
 			name:      "debug level without color",
@@ -198,7 +198,7 @@ func TestDefaultMessageFormatter_FormatLogFileHint(t *testing.T) {
 			name:       "valid line with color",
 			lineNumber: 42,
 			useColor:   true,
-			expected:   "* Check log file around line 42 for more details",
+			expected:   "\033[36m* \033[0mCheck log file around line 42 for more details",
 		},
 		{
 			name:       "valid line without color",
@@ -239,13 +239,13 @@ func TestDefaultMessageFormatter_FormatLevel(t *testing.T) {
 		useColor bool
 		expected string
 	}{
-		{"debug with color", slog.LevelDebug, true, "* DEBUG"},
+		{"debug with color", slog.LevelDebug, true, "\033[90m* DEBUG\033[0m"},
 		{"debug without color", slog.LevelDebug, false, "[DEBUG]"},
-		{"info with color", slog.LevelInfo, true, "+ INFO "},
+		{"info with color", slog.LevelInfo, true, "\033[32m+ INFO \033[0m"},
 		{"info without color", slog.LevelInfo, false, "[INFO ]"},
-		{"warn with color", slog.LevelWarn, true, "! WARN "},
+		{"warn with color", slog.LevelWarn, true, "\033[33m! WARN \033[0m"},
 		{"warn without color", slog.LevelWarn, false, "[WARN ]"},
-		{"error with color", slog.LevelError, true, "X ERROR"},
+		{"error with color", slog.LevelError, true, "\033[31mX ERROR\033[0m"},
 		{"error without color", slog.LevelError, false, "[ERROR]"},
 	}
 

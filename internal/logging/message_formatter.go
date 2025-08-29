@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/color"
 )
 
 // MessageFormatter handles formatting log messages with optional color support.
@@ -152,7 +154,7 @@ func (f *DefaultMessageFormatter) FormatLogFileHint(lineNumber int, useColor boo
 	var sb strings.Builder
 
 	if useColor {
-		sb.WriteString("* ")
+		sb.WriteString(color.Cyan("* "))
 	} else {
 		sb.WriteString("HINT: ")
 	}
@@ -169,15 +171,15 @@ func (f *DefaultMessageFormatter) formatLevel(level slog.Level, useColor bool) s
 	if useColor {
 		switch level {
 		case slog.LevelDebug:
-			return "* DEBUG"
+			return color.Gray("* DEBUG")
 		case slog.LevelInfo:
-			return "+ INFO "
+			return color.Green("+ INFO ")
 		case slog.LevelWarn:
-			return "! WARN "
+			return color.Yellow("! WARN ")
 		case slog.LevelError:
-			return "X ERROR"
+			return color.Red("X ERROR")
 		default:
-			return "> " + level.String()
+			return color.Gray("> " + level.String())
 		}
 	} else {
 		switch level {
