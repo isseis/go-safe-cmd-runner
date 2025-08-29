@@ -45,7 +45,7 @@ const (
 )
 
 // FormatCommandMessage formats command-related messages with consistent structure
-func (t *MessageTemplates) FormatCommandMessage(template, commandName string, _ map[string]interface{}) string {
+func (t *MessageTemplates) FormatCommandMessage(template, commandName string, _ map[string]any) string {
 	// This could be expanded to use text/template for more complex formatting
 	// For now, keep it simple
 	return template + " command=" + commandName

@@ -33,11 +33,15 @@ type interactiveTestMessageFormatter struct {
 	formatRecordCalled bool
 	formatHintCalled   bool
 	recordMessage      string
+	capturedRecord     *slog.Record
 }
 
 func (m *interactiveTestMessageFormatter) FormatRecordWithColor(record slog.Record, useColor bool) string {
 	m.formatRecordCalled = true
 	m.recordMessage = record.Message
+	// Capture the record for attribute inspection
+	recordCopy := record.Clone()
+	m.capturedRecord = &recordCopy
 	if useColor {
 		return "@ " + record.Message
 	}
@@ -53,6 +57,25 @@ func (m *interactiveTestMessageFormatter) FormatLogFileHint(lineNumber int, useC
 		return "* Line " + string(rune('0'+lineNumber))
 	}
 	return "HINT: Line " + string(rune('0'+lineNumber))
+}
+
+// GetAttribute returns the value of an attribute by key from the captured record
+func (m *interactiveTestMessageFormatter) GetAttribute(key string) (slog.Value, bool) {
+	if m.capturedRecord == nil {
+		return slog.Value{}, false
+	}
+
+	var found bool
+	var result slog.Value
+	m.capturedRecord.Attrs(func(attr slog.Attr) bool {
+		if attr.Key == key {
+			result = attr.Value
+			found = true
+			return false // Stop iteration
+		}
+		return true // Continue iteration
+	})
+	return result, found
 }
 
 // interactiveTestLogLineTracker implements LogLineTracker for testing
@@ -494,13 +517,17 @@ func TestInteractiveHandler_Handle_WithGroups(t *testing.T) {
 		t.Fatalf("NewInteractiveHandler failed: %v", err)
 	}
 
-	// Add group to handler
-	const testGroupName2 = "testgroup"
-	handlerWithGroup := handler.WithGroup(testGroupName2)
+	// Add attributes and groups to handler
+	handlerWithAttrs := handler.WithAttrs([]slog.Attr{
+		slog.String("component", "database"),
+		slog.String("operation", "query"),
+	})
+	handlerWithGroup := handlerWithAttrs.WithGroup("auth").WithGroup("session")
 
 	ctx := context.Background()
 	now := time.Now()
 	record := slog.NewRecord(now, slog.LevelInfo, "test message", 0)
+	record.AddAttrs(slog.String("user_id", "12345"))
 
 	err = handlerWithGroup.Handle(ctx, record)
 	if err != nil {
@@ -510,5 +537,35 @@ func TestInteractiveHandler_Handle_WithGroups(t *testing.T) {
 	// Formatter should have been called
 	if !formatter.formatRecordCalled {
 		t.Error("Formatter should have been called")
+	}
+
+	// Verify that group prefixes were applied correctly
+	testCases := []struct {
+		key      string
+		expected string
+		desc     string
+	}{
+		{"auth.session.component", "database", "component attribute should be prefixed with group hierarchy"},
+		{"auth.session.operation", "query", "operation attribute should be prefixed with group hierarchy"},
+		{"user_id", "12345", "record-level attributes should not be prefixed"},
+	}
+
+	for _, tc := range testCases {
+		value, found := formatter.GetAttribute(tc.key)
+		if !found {
+			t.Errorf("Expected to find attribute %q, but it was not found. %s", tc.key, tc.desc)
+			continue
+		}
+		if value.String() != tc.expected {
+			t.Errorf("For attribute %q: expected %q, got %q. %s", tc.key, tc.expected, value.String(), tc.desc)
+		}
+	}
+
+	// Verify that original attribute keys (without prefix) do not exist
+	originalKeys := []string{"component", "operation"}
+	for _, key := range originalKeys {
+		if _, found := formatter.GetAttribute(key); found {
+			t.Errorf("Expected attribute %q to be prefixed and not found without prefix, but it was found", key)
+		}
 	}
 }
