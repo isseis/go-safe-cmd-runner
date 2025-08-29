@@ -19,15 +19,15 @@
 - [x] `internal/terminal/capabilities_test.go` - 統合機能のテスト
 
 ### Phase 3: Logging Package の改善
-- [ ] `internal/logging/interactive_handler.go` - 対話的環境用ハンドラ
-- [ ] `internal/logging/interactive_handler_test.go` - 対話的ハンドラのテスト
-- [ ] `internal/logging/conditional_text_handler.go` - 条件付きテキストハンドラ
-- [ ] `internal/logging/conditional_text_handler_test.go` - 条件付きハンドラのテスト
-- [ ] `internal/logging/message_formatter.go` - メッセージフォーマッタ
-- [ ] `internal/logging/message_formatter_test.go` - フォーマッタのテスト
-- [ ] `internal/logging/log_line_tracker.go` - ログ行追跡
-- [ ] `internal/logging/log_line_tracker_test.go` - 行追跡のテスト
-- [ ] `internal/logging/message_templates.go` - メッセージテンプレート
+- [x] `internal/logging/interactive_handler.go` - 対話的環境用ハンドラ
+- [x] `internal/logging/interactive_handler_test.go` - 対話的ハンドラのテスト
+- [x] `internal/logging/conditional_text_handler.go` - 条件付きテキストハンドラ
+- [x] `internal/logging/conditional_text_handler_test.go` - 条件付きハンドラのテスト
+- [x] `internal/logging/message_formatter.go` - メッセージフォーマッタ
+- [x] `internal/logging/message_formatter_test.go` - フォーマッタのテスト
+- [x] `internal/logging/log_line_tracker.go` - ログ行追跡
+- [x] `internal/logging/log_line_tracker_test.go` - 行追跡のテスト
+- [x] `internal/logging/message_templates.go` - メッセージテンプレート
 
 ### Phase 4: 既存システムとの統合
 - [ ] `cmd/runner/main.go` の `setupLoggerWithConfig` 関数修正
@@ -116,40 +116,40 @@ type Capabilities interface {
 
 #### 3.3.1 対話的ハンドラ (`internal/logging/interactive_handler.go`)
 **実装要件:**
-- [ ] Terminalパッケージとの統合
-- [ ] カラーメッセージのフォーマット
-- [ ] エラーレベルでのログファイルヒント
-- [ ] slog標準パターンの準拠（重複チェック除去）
+- [x] Terminalパッケージとの統合
+- [x] カラーメッセージのフォーマット
+- [x] エラーレベルでのログファイルヒント
+- [x] slog標準パターンの準拠（重複チェック除去）
 
 **テスト要件:**
-- [ ] カラー出力のテスト
-- [ ] 非対話環境での無効化テスト
-- [ ] ログファイルヒントのテスト
+- [x] カラー出力のテスト
+- [x] 非対話環境での無効化テスト
+- [x] ログファイルヒントのテスト
 
 #### 3.3.2 条件付きテキストハンドラ (`internal/logging/conditional_text_handler.go`)
 **実装要件:**
-- [ ] 非対話環境での標準出力
-- [ ] 対話環境での無効化
-- [ ] 既存TextHandlerのラップ
+- [x] 非対話環境での標準出力
+- [x] 対話環境での無効化
+- [x] 既存TextHandlerのラップ
 
 #### 3.3.3 メッセージフォーマッタ (`internal/logging/message_formatter.go`) - カラーリング統合版
 **実装要件:**
-- [ ] `FormatRecordWithColor` - メインメッセージのフォーマット
-- [ ] `FormatLogFileHint` - ログファイルヒントのフォーマット
-- [ ] カラーリング操作の一元管理（将来拡張対応）
-- [ ] レベル別の視覚的区別（記号やプレフィックスで対応）
-- [ ] シンプル実装（ANSIエスケープシーケンス不使用）
+- [x] `FormatRecordWithColor` - メインメッセージのフォーマット
+- [x] `FormatLogFileHint` - ログファイルヒントのフォーマット
+- [x] カラーリング操作の一元管理（将来拡張対応）
+- [x] レベル別の視覚的区別（記号やプレフィックスで対応）
+- [x] シンプル実装（ANSIエスケープシーケンス不使用）
 
 **設計改善:**
-- [ ] カラーリング操作をformatterに統一
-- [ ] InteractiveHandler内での直接的なANSI操作を除去
-- [ ] 一貫性のある責務分離
+- [x] カラーリング操作をformatterに統一
+- [x] InteractiveHandler内での直接的なANSI操作を除去
+- [x] 一貫性のある責務分離
 
 #### 3.3.4 ログ行追跡 (`internal/logging/log_line_tracker.go`)
 **実装要件:**
-- [ ] グローバルカウンター
-- [ ] スレッドセーフ実装
-- [ ] 推定行番号計算
+- [x] グローバルカウンター
+- [x] スレッドセーフ実装
+- [x] 推定行番号計算
 
 ### 3.4 Phase 4: 既存システムとの統合
 

@@ -1,0 +1,149 @@
+package logging
+
+import (
+	"log/slog"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// MessageFormatter handles formatting log messages with optional color support.
+type MessageFormatter interface {
+	// FormatRecordWithColor formats a log record with optional color support
+	FormatRecordWithColor(record slog.Record, useColor bool) string
+
+	// FormatLogFileHint formats a log file hint message for error-level logs
+	FormatLogFileHint(lineNumber int, useColor bool) string
+}
+
+// DefaultMessageFormatter provides a simple implementation of MessageFormatter
+// without ANSI escape sequences, using symbols and prefixes for visual distinction.
+type DefaultMessageFormatter struct{}
+
+// NewDefaultMessageFormatter creates a new DefaultMessageFormatter.
+func NewDefaultMessageFormatter() *DefaultMessageFormatter {
+	return &DefaultMessageFormatter{}
+}
+
+// FormatRecordWithColor formats a log record with optional color support.
+// This implementation uses simple symbols and formatting for visual distinction
+// without ANSI escape sequences.
+func (f *DefaultMessageFormatter) FormatRecordWithColor(record slog.Record, useColor bool) string {
+	var sb strings.Builder
+
+	// Add timestamp
+	timestamp := record.Time.Format("2006-01-02 15:04:05")
+	sb.WriteString(timestamp)
+	sb.WriteString(" ")
+
+	// Add level with symbol/prefix for visual distinction
+	levelStr := f.formatLevel(record.Level, useColor)
+	sb.WriteString(levelStr)
+	sb.WriteString(" ")
+
+	// Add message
+	sb.WriteString(record.Message)
+
+	// Add attributes
+	if record.NumAttrs() > 0 {
+		sb.WriteString(" ")
+		f.appendAttrs(&sb, record)
+	}
+
+	return sb.String()
+}
+
+// FormatLogFileHint formats a log file hint message for error-level logs.
+func (f *DefaultMessageFormatter) FormatLogFileHint(lineNumber int, useColor bool) string {
+	if lineNumber <= 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+
+	if useColor {
+		sb.WriteString("* ")
+	} else {
+		sb.WriteString("HINT: ")
+	}
+
+	sb.WriteString("Check log file around line ")
+	sb.WriteString(strconv.Itoa(lineNumber))
+	sb.WriteString(" for more details")
+
+	return sb.String()
+}
+
+// formatLevel formats the log level with visual distinction
+func (f *DefaultMessageFormatter) formatLevel(level slog.Level, useColor bool) string {
+	if useColor {
+		switch level {
+		case slog.LevelDebug:
+			return "* DEBUG"
+		case slog.LevelInfo:
+			return "+ INFO "
+		case slog.LevelWarn:
+			return "! WARN "
+		case slog.LevelError:
+			return "X ERROR"
+		default:
+			return "> " + level.String()
+		}
+	} else {
+		switch level {
+		case slog.LevelDebug:
+			return "[DEBUG]"
+		case slog.LevelInfo:
+			return "[INFO ]"
+		case slog.LevelWarn:
+			return "[WARN ]"
+		case slog.LevelError:
+			return "[ERROR]"
+		default:
+			return "[" + strings.ToUpper(level.String()) + "]"
+		}
+	}
+}
+
+// appendAttrs appends log record attributes to the string builder
+func (f *DefaultMessageFormatter) appendAttrs(sb *strings.Builder, record slog.Record) {
+	attrs := make([]slog.Attr, 0, record.NumAttrs())
+	record.Attrs(func(attr slog.Attr) bool {
+		attrs = append(attrs, attr)
+		return true
+	})
+
+	for i, attr := range attrs {
+		if i > 0 {
+			sb.WriteString(" ")
+		}
+		sb.WriteString(attr.Key)
+		sb.WriteString("=")
+		sb.WriteString(f.formatValue(attr.Value))
+	}
+}
+
+// formatValue formats a slog.Value for display
+func (f *DefaultMessageFormatter) formatValue(value slog.Value) string {
+	switch value.Kind() {
+	case slog.KindString:
+		return value.String()
+	case slog.KindTime:
+		return value.Time().Format(time.RFC3339)
+	case slog.KindDuration:
+		return value.Duration().String()
+	case slog.KindGroup:
+		// For group values, format as comma-separated key=value pairs
+		attrs := value.Group()
+		if len(attrs) == 0 {
+			return "{}"
+		}
+		var parts []string
+		for _, attr := range attrs {
+			parts = append(parts, attr.Key+"="+f.formatValue(attr.Value))
+		}
+		return "{" + strings.Join(parts, ",") + "}"
+	default:
+		return value.String()
+	}
+}
