@@ -3,6 +3,8 @@ CHMOD=chmod
 MKDIR=mkdir -p
 RM=rm
 ENVCMD=env
+
+GITCMD=git
 GOCMD=go
 GOBUILD=$(GOCMD) build
 GOCLEAN=$(GOCMD) clean
@@ -10,6 +12,42 @@ GOTEST=$(GOCMD) test
 GOGET=$(GOCMD) get
 GOLINT=golangci-lint run
 SUDOCMD=sudo
+GOFUMPTCMD=gofumpt
+
+# Common gofumpt check and error message
+define check_gofumpt
+	@if ! command -v $(GOFUMPTCMD) >/dev/null 2>&1; then \
+		echo "Error: $(GOFUMPTCMD) is required but not found in PATH"; \
+		echo "Please install gofumpt: go install mvdan.cc/gofumpt@latest"; \
+		exit 1; \
+	fi
+endef
+
+# Format files from a list and display what was formatted
+# Usage: $(call format_files_from_list,file_list_command)
+define format_files_from_list
+	TEMP_FILE=$$(mktemp); \
+	trap "rm -f \"$$TEMP_FILE\"" EXIT; \
+	$(1) | while IFS= read -r file; do \
+		if [ -f "$$file" ] && $(GOFUMPTCMD) -d "$$file" | grep -q .; then \
+			printf '%s\n' "$$file"; \
+		fi; \
+	done > "$$TEMP_FILE"; \
+	if [ -s "$$TEMP_FILE" ]; then \
+		echo "Formatting files:"; \
+		while IFS= read -r file; do \
+			printf '  %s\n' "$$file"; \
+		done < "$$TEMP_FILE"; \
+		while IFS= read -r file; do \
+			if ! $(GOFUMPTCMD) -w "$$file"; then \
+				echo "Error: $(GOFUMPTCMD) failed on $$file"; \
+				exit 1; \
+			fi; \
+		done < "$$TEMP_FILE"; \
+	fi
+endef
+
+
 
 ENVSET=$(ENVCMD) -i HOME=$(HOME) USER=$(USER) PATH=/bin:/sbin:/usr/bin:/usr/sbin LANG=C
 
@@ -34,7 +72,7 @@ HASH_TARGETS := \
 	./sample/slack-notify.toml \
 	./sample/slack-group-notification-test.toml
 
-.PHONY: all lint build run clean test benchmark coverage hash integration-test integration-test-success slack-notify-test slack-group-notification-test
+.PHONY: all lint build run clean test benchmark coverage hash integration-test integration-test-success slack-notify-test slack-group-notification-test fmt fmt-all
 
 all: build
 
@@ -73,6 +111,21 @@ test: $(BINARY_RUNNER)
 	$(ENVSET) CGO_ENABLED=1 $(GOTEST) -race -p 2 -v ./...
 	$(ENVSET) CGO_ENABLED=0 $(GOTEST) -p 2 -v ./...
 	$(ENVSET) $(BINARY_RUNNER) -dry-run -config ./sample/comprehensive.toml
+
+fmt:
+	$(call check_gofumpt)
+	@TEMP_CHANGED="/tmp/fmt-changed-$$$$.tmp"; \
+	{ git diff --name-only HEAD; git diff --name-only --cached; } | grep '\.go$$' | sort -u > "$$TEMP_CHANGED"; \
+	if [ -s "$$TEMP_CHANGED" ]; then \
+		$(call format_files_from_list,cat "$$TEMP_CHANGED"); \
+	else \
+		echo "No changed Go files to format"; \
+	fi; \
+	rm -f "$$TEMP_CHANGED"
+
+fmt-all:
+	$(call check_gofumpt)
+	@$(call format_files_from_list,find . -name '*.go' -not -path './vendor/*')
 
 benchmark:
 	$(GOTEST) -bench=. -benchmem ./internal/runner/resource/
