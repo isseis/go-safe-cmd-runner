@@ -1,7 +1,7 @@
 ---
 applyTo: '**'
 ---
-1. If the factor of the selected LLM model is not 0, stop the process.
+1. Select GPT-5 mini LLM model.
 2. Run `pre-commit` (without `--all-files` option) to check staged files, and if fails, stop the process.
 3. Get staged change `git --no-pager diff --staged`
 4. Propose commit message for it.
