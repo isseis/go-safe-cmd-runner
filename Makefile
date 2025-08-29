@@ -27,6 +27,7 @@ endef
 # Usage: $(call format_files_from_list,file_list_command)
 define format_files_from_list
 	TEMP_FILE="/tmp/fmt-files-$$$$.tmp"; \
+	ERROR_FILE="/tmp/fmt-error-$$$$.tmp"; \
 	$(1) | while IFS= read -r file; do \
 		if [ -f "$$file" ] && $(GOFUMPTCMD) -d "$$file" | grep -q .; then \
 			printf '%s\n' "$$file"; \
@@ -38,10 +39,18 @@ define format_files_from_list
 			printf '  %s\n' "$$file"; \
 		done < "$$TEMP_FILE"; \
 		while IFS= read -r file; do \
-			$(GOFUMPTCMD) -w "$$file" || { echo "Error: $(GOFUMPTCMD) failed on $$file"; exit 1; }; \
+			if ! $(GOFUMPTCMD) -w "$$file"; then \
+				echo "Error: $(GOFUMPTCMD) failed on $$file"; \
+				touch "$$ERROR_FILE"; \
+				break; \
+			fi; \
 		done < "$$TEMP_FILE"; \
+		if [ -f "$$ERROR_FILE" ]; then \
+			rm -f "$$TEMP_FILE" "$$ERROR_FILE"; \
+			exit 1; \
+		fi; \
 	fi; \
-	rm -f "$$TEMP_FILE"
+	rm -f "$$TEMP_FILE" "$$ERROR_FILE"
 endef
 
 
