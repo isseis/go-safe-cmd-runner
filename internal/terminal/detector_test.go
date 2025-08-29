@@ -49,6 +49,21 @@ func TestInteractiveDetector_IsInteractive(t *testing.T) {
 			wantInteractive: false,
 		},
 		{
+			name:            "TERM environment variable indicates terminal",
+			envVars:         map[string]string{"TERM": "xterm-256color"},
+			wantInteractive: true,
+		},
+		{
+			name:            "TERM=dumb should not be interactive",
+			envVars:         map[string]string{"TERM": "dumb"},
+			wantInteractive: false,
+		},
+		{
+			name:            "Empty TERM should not be interactive",
+			envVars:         map[string]string{"TERM": ""},
+			wantInteractive: false,
+		},
+		{
 			name:            "No CI environment - depends on terminal check",
 			envVars:         map[string]string{},
 			wantInteractive: false, // In tests, stdout/stderr are not terminals

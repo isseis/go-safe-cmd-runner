@@ -141,8 +141,8 @@ func (h *InteractiveHandler) Handle(_ context.Context, r slog.Record) error {
 		})
 	}
 
-	// Format the main message
-	message := h.formatter.FormatRecordWithColor(record, h.capabilities.SupportsColor())
+	// Format the main message using interactive formatting for better readability
+	message := h.formatter.FormatRecordInteractive(record, h.capabilities.SupportsColor())
 
 	// Write the main message
 	if _, err := h.writer.Write([]byte(message + "\n")); err != nil {

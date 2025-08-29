@@ -12,6 +12,10 @@ type MessageFormatter interface {
 	// FormatRecordWithColor formats a log record with optional color support
 	FormatRecordWithColor(record slog.Record, useColor bool) string
 
+	// FormatRecordInteractive formats a log record for interactive display
+	// with simplified formatting optimized for human readability
+	FormatRecordInteractive(record slog.Record, useColor bool) string
+
 	// FormatLogFileHint formats a log file hint message for error-level logs
 	FormatLogFileHint(lineNumber int, useColor bool) string
 }
@@ -51,6 +55,92 @@ func (f *DefaultMessageFormatter) FormatRecordWithColor(record slog.Record, useC
 	}
 
 	return sb.String()
+}
+
+// FormatRecordInteractive formats a log record for interactive display with simplified formatting.
+// This version prioritizes readability over completeness, showing only essential information.
+func (f *DefaultMessageFormatter) FormatRecordInteractive(record slog.Record, useColor bool) string {
+	var sb strings.Builder
+
+	// Add level with symbol/prefix for visual distinction
+	levelStr := f.formatLevel(record.Level, useColor)
+	sb.WriteString(levelStr)
+	sb.WriteString(" ")
+
+	// Add message
+	sb.WriteString(record.Message)
+
+	// For interactive display, show only key attributes based on message importance
+	if record.NumAttrs() > 0 {
+		f.appendInteractiveAttrs(&sb, record)
+	}
+
+	return sb.String()
+}
+
+// appendInteractiveAttrs appends selected attributes for interactive display
+func (f *DefaultMessageFormatter) appendInteractiveAttrs(sb *strings.Builder, record slog.Record) {
+	// Priority attributes to show in interactive mode (in order of preference)
+	priorityKeys := []string{"error", "group", "command", "file", "component", "variable"}
+
+	var foundAttrs []slog.Attr
+
+	// First pass: collect priority attributes in priority order
+	for _, priorityKey := range priorityKeys {
+		record.Attrs(func(attr slog.Attr) bool {
+			if attr.Key == priorityKey || strings.HasSuffix(attr.Key, "."+priorityKey) {
+				foundAttrs = append(foundAttrs, attr)
+				return false // Stop after finding the first match for this priority key
+			}
+			return true
+		})
+	}
+
+	// If no priority attributes found, collect up to maxInteractiveAttrs most relevant ones
+	const maxInteractiveAttrs = 3
+	if len(foundAttrs) == 0 {
+		count := 0
+		record.Attrs(func(attr slog.Attr) bool {
+			if count >= maxInteractiveAttrs {
+				return false
+			}
+			// Skip internal/noisy attributes
+			if !f.shouldSkipInteractiveAttr(attr.Key) {
+				foundAttrs = append(foundAttrs, attr)
+				count++
+			}
+			return true
+		})
+	}
+
+	// Format found attributes
+	if len(foundAttrs) > 0 {
+		sb.WriteString(" ")
+		for i, attr := range foundAttrs {
+			if i > 0 {
+				sb.WriteString(" ")
+			}
+			sb.WriteString(attr.Key)
+			sb.WriteString("=")
+			sb.WriteString(f.formatValue(attr.Value))
+		}
+	}
+}
+
+// shouldSkipInteractiveAttr determines if an attribute should be skipped in interactive mode
+func (f *DefaultMessageFormatter) shouldSkipInteractiveAttr(key string) bool {
+	skipKeys := []string{
+		"time", "level", "msg", "run_id", "hostname", "pid", "schema_version",
+		"duration_ms", "verified_files", "skipped_files", "total_files",
+		"interactive_mode", "color_support", "slack_enabled",
+	}
+
+	for _, skipKey := range skipKeys {
+		if key == skipKey {
+			return true
+		}
+	}
+	return false
 }
 
 // FormatLogFileHint formats a log file hint message for error-level logs.

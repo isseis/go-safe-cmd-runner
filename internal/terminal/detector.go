@@ -72,9 +72,26 @@ func (d *DefaultInteractiveDetector) IsInteractive() bool {
 
 // IsTerminal checks if stdout and stderr are connected to a terminal
 func (d *DefaultInteractiveDetector) IsTerminal() bool {
-	// Check if both stdout and stderr are connected to a terminal
-	// This uses golang.org/x/term.IsTerminal() which is reliable on Unix systems
-	return term.IsTerminal(int(os.Stdout.Fd())) && term.IsTerminal(int(os.Stderr.Fd()))
+	// Check if stdout OR stderr is connected to a terminal
+	// Many integrated terminals and IDEs don't connect both streams as TTY
+	// but we should still provide interactive output if at least one is available
+	stdoutIsTTY := term.IsTerminal(int(os.Stdout.Fd()))
+	stderrIsTTY := term.IsTerminal(int(os.Stderr.Fd()))
+
+	// If either output stream is a TTY, consider it interactive
+	// This handles cases like IDE integrated terminals, Claude Code, etc.
+	if stdoutIsTTY || stderrIsTTY {
+		return true
+	}
+
+	// Additional heuristics for integrated development environments
+	// If TERM is set to a meaningful value, likely running in a terminal-like environment
+	termEnv := os.Getenv("TERM")
+	if termEnv != "" && termEnv != "dumb" {
+		return true
+	}
+
+	return false
 }
 
 // IsCIEnvironment checks if the current environment is a CI/CD system

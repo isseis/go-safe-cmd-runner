@@ -73,6 +73,7 @@ linters:
             - github.com/isseis/go-safe-cmd-runner/internal/redaction
             - github.com/isseis/go-safe-cmd-runner/internal/runner
             - github.com/isseis/go-safe-cmd-runner/internal/safefileio
+            - github.com/isseis/go-safe-cmd-runner/internal/terminal
             - github.com/isseis/go-safe-cmd-runner/internal/verification
 
     mnd:

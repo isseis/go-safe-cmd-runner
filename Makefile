@@ -49,7 +49,7 @@ endef
 
 
 
-ENVSET=$(ENVCMD) -i HOME=$(HOME) USER=$(USER) PATH=/bin:/sbin:/usr/bin:/usr/sbin LANG=C
+ENVSET=$(ENVCMD) -i HOME=$(HOME) USER=$(USER) PATH=/bin:/sbin:/usr/bin:/usr/sbin LANG=C TERM=$(TERM)
 
 # Configuration paths
 DEFAULT_HASH_DIRECTORY=/usr/local/etc/go-safe-cmd-runner/hashes

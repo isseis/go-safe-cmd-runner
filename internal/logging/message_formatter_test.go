@@ -124,6 +124,67 @@ func TestDefaultMessageFormatter_FormatRecordWithAttributes(t *testing.T) {
 	}
 }
 
+func TestDefaultMessageFormatter_FormatRecordInteractive(t *testing.T) {
+	formatter := NewDefaultMessageFormatter()
+	now := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name      string
+		record    slog.Record
+		useColor  bool
+		expecteds []string
+	}{
+		{
+			name:      "info level with color - no timestamp",
+			record:    slog.NewRecord(now, slog.LevelInfo, "test message", 0),
+			useColor:  true,
+			expecteds: []string{"+ INFO  test message"},
+		},
+		{
+			name: "warn level with priority attribute",
+			record: func() slog.Record {
+				r := slog.NewRecord(now, slog.LevelWarn, "access denied", 0)
+				r.AddAttrs(slog.String("variable", "SHELL"), slog.String("run_id", "123"), slog.String("hostname", "test"))
+				return r
+			}(),
+			useColor:  true,
+			expecteds: []string{"! WARN  access denied variable=SHELL"},
+		},
+		{
+			name: "error level with multiple priority attributes",
+			record: func() slog.Record {
+				r := slog.NewRecord(now, slog.LevelError, "operation failed", 0)
+				r.AddAttrs(slog.String("component", "auth"), slog.String("error", "timeout"), slog.String("duration_ms", "5000"))
+				return r
+			}(),
+			useColor:  true,
+			expecteds: []string{"X ERROR operation failed error=timeout component=auth"},
+		},
+		{
+			name:      "debug level without color",
+			record:    slog.NewRecord(now, slog.LevelDebug, "debug info", 0),
+			useColor:  false,
+			expecteds: []string{"[DEBUG] debug info"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := formatter.FormatRecordInteractive(tt.record, tt.useColor)
+			found := false
+			for _, expected := range tt.expecteds {
+				if result == expected {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("FormatRecordInteractive() = %q, expected one of %v", result, tt.expecteds)
+			}
+		})
+	}
+}
+
 func TestDefaultMessageFormatter_FormatLogFileHint(t *testing.T) {
 	formatter := NewDefaultMessageFormatter()
 
