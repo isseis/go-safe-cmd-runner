@@ -26,8 +26,8 @@ endef
 # Format files from a list and display what was formatted
 # Usage: $(call format_files_from_list,file_list_command)
 define format_files_from_list
-	TEMP_FILE="/tmp/fmt-files-$$$$.tmp"; \
-	ERROR_FILE="/tmp/fmt-error-$$$$.tmp"; \
+	TEMP_FILE=$$(mktemp); \
+	trap "rm -f \"$$TEMP_FILE\"" EXIT; \
 	$(1) | while IFS= read -r file; do \
 		if [ -f "$$file" ] && $(GOFUMPTCMD) -d "$$file" | grep -q .; then \
 			printf '%s\n' "$$file"; \
@@ -41,16 +41,10 @@ define format_files_from_list
 		while IFS= read -r file; do \
 			if ! $(GOFUMPTCMD) -w "$$file"; then \
 				echo "Error: $(GOFUMPTCMD) failed on $$file"; \
-				touch "$$ERROR_FILE"; \
-				break; \
+				exit 1; \
 			fi; \
 		done < "$$TEMP_FILE"; \
-		if [ -f "$$ERROR_FILE" ]; then \
-			rm -f "$$TEMP_FILE" "$$ERROR_FILE"; \
-			exit 1; \
-		fi; \
-	fi; \
-	rm -f "$$TEMP_FILE" "$$ERROR_FILE"
+	fi
 endef
 
 
@@ -120,11 +114,14 @@ test: $(BINARY_RUNNER)
 
 fmt:
 	$(call check_gofumpt)
-	@if git diff --name-only | grep -q '\.go$$'; then \
-		$(call format_files_from_list,git diff --name-only | grep '\.go$$'); \
+	@TEMP_CHANGED="/tmp/fmt-changed-$$$$.tmp"; \
+	{ git diff --name-only HEAD; git diff --name-only --cached; } | grep '\.go$$' | sort -u > "$$TEMP_CHANGED"; \
+	if [ -s "$$TEMP_CHANGED" ]; then \
+		$(call format_files_from_list,cat "$$TEMP_CHANGED"); \
 	else \
 		echo "No changed Go files to format"; \
-	fi
+	fi; \
+	rm -f "$$TEMP_CHANGED"
 
 fmt-all:
 	$(call check_gofumpt)
