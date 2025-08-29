@@ -17,6 +17,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Code Quality
 - `make lint` - Run linter with golangci-lint
 - `golangci-lint run` - Run linter directly
+- `make fmt` - Run formetter with gofumpt
 
 ### Individual Binary Builds
 - Build record binary: `go build -o build/record -v cmd/record/main.go`
@@ -79,3 +80,5 @@ This is a Go-based secure command runner with the following core components:
 - Security-focused codebase with extensive validation
 - Comprehensive error handling with custom error types
 - Interface-driven design for testability and modularity
+- After editing *go files, make sure to run `make fmt` to format the files.
+- After editing files, make sure to run `make test` and `make lint` and fix errors.
