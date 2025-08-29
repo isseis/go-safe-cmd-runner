@@ -3,6 +3,8 @@ CHMOD=chmod
 MKDIR=mkdir -p
 RM=rm
 ENVCMD=env
+
+GITCMD=git
 GOCMD=go
 GOBUILD=$(GOCMD) build
 GOCLEAN=$(GOCMD) clean
@@ -10,6 +12,30 @@ GOTEST=$(GOCMD) test
 GOGET=$(GOCMD) get
 GOLINT=golangci-lint run
 SUDOCMD=sudo
+GOFUMPTCMD=gofumpt
+
+# Common gofumpt check and error message
+define check_gofumpt
+	@if ! command -v $(GOFUMPTCMD) >/dev/null 2>&1; then \
+		echo "Error: $(GOFUMPTCMD) is required but not found in PATH"; \
+		echo "Please install gofumpt: go install mvdan.cc/gofumpt@latest"; \
+		exit 1; \
+	fi
+endef
+
+# Format a single file and report if it was changed
+# Usage: $(call format_file,filename)
+define format_file
+	if [ -f "$(1)" ]; then \
+		BEFORE_HASH=$$(md5sum "$(1)" 2>/dev/null | cut -d' ' -f1 || echo ""); \
+		$(GOFUMPTCMD) -w "$(1)" || { echo "Error: $(GOFUMPTCMD) failed on $(1)"; exit 1; }; \
+		AFTER_HASH=$$(md5sum "$(1)" 2>/dev/null | cut -d' ' -f1 || echo ""); \
+		if [ "$$BEFORE_HASH" != "$$AFTER_HASH" ]; then \
+			echo "Formatted: $(1)"; \
+		fi; \
+	fi
+endef
+
 
 ENVSET=$(ENVCMD) -i HOME=$(HOME) USER=$(USER) PATH=/bin:/sbin:/usr/bin:/usr/sbin LANG=C
 
@@ -34,7 +60,7 @@ HASH_TARGETS := \
 	./sample/slack-notify.toml \
 	./sample/slack-group-notification-test.toml
 
-.PHONY: all lint build run clean test benchmark coverage hash integration-test integration-test-success slack-notify-test slack-group-notification-test
+.PHONY: all lint build run clean test benchmark coverage hash integration-test integration-test-success slack-notify-test slack-group-notification-test fmt fmt-all
 
 all: build
 
@@ -73,6 +99,23 @@ test: $(BINARY_RUNNER)
 	$(ENVSET) CGO_ENABLED=1 $(GOTEST) -race -p 2 -v ./...
 	$(ENVSET) CGO_ENABLED=0 $(GOTEST) -p 2 -v ./...
 	$(ENVSET) $(BINARY_RUNNER) -dry-run -config ./sample/comprehensive.toml
+
+fmt:
+	$(call check_gofumpt)
+	@CHANGED_FILES=$$(git diff --name-only | grep '\.go$$'); \
+	if [ -n "$$CHANGED_FILES" ]; then \
+		for file in $$CHANGED_FILES; do \
+			$(call format_file,$$file); \
+		done; \
+	else \
+		echo "No changed Go files to format"; \
+	fi
+
+fmt-all:
+	$(call check_gofumpt)
+	@find . -name '*.go' -not -path './vendor/*' | while read file; do \
+		$(call format_file,$$file); \
+	done
 
 benchmark:
 	$(GOTEST) -bench=. -benchmem ./internal/runner/resource/
