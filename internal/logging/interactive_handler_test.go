@@ -539,15 +539,15 @@ func TestInteractiveHandler_Handle_WithGroups(t *testing.T) {
 		t.Error("Formatter should have been called")
 	}
 
-	// Verify that group prefixes were applied correctly
+	// Verify that group prefixes were applied correctly (standard slog behavior)
 	testCases := []struct {
 		key      string
 		expected string
 		desc     string
 	}{
-		{"auth.session.component", "database", "component attribute should be prefixed with group hierarchy"},
-		{"auth.session.operation", "query", "operation attribute should be prefixed with group hierarchy"},
-		{"user_id", "12345", "record-level attributes should not be prefixed"},
+		{"component", "database", "WithAttrs attributes should not be prefixed (added before WithGroup)"},
+		{"operation", "query", "WithAttrs attributes should not be prefixed (added before WithGroup)"},
+		{"auth.session.user_id", "12345", "record-level attributes should be prefixed with group hierarchy"},
 	}
 
 	for _, tc := range testCases {
@@ -561,11 +561,6 @@ func TestInteractiveHandler_Handle_WithGroups(t *testing.T) {
 		}
 	}
 
-	// Verify that original attribute keys (without prefix) do not exist
-	originalKeys := []string{"component", "operation"}
-	for _, key := range originalKeys {
-		if _, found := formatter.GetAttribute(key); found {
-			t.Errorf("Expected attribute %q to be prefixed and not found without prefix, but it was found", key)
-		}
-	}
+	// Note: In standard slog behavior, WithAttrs attributes exist without prefix
+	// since they were added before WithGroup was called
 }

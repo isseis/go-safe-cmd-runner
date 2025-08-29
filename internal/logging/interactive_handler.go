@@ -85,12 +85,11 @@ func (h *InteractiveHandler) Handle(_ context.Context, r slog.Record) error {
 		return nil
 	}
 
-	// Create a copy of the record and apply accumulated context
-	record := r.Clone()
-
-	// Apply group context to attributes by prefixing keys
-	attrs := h.attrs
+	var record slog.Record
 	if len(h.groups) > 0 {
+		// When groups are active, we need to reconstruct the record from scratch
+		// to ensure record-level attributes (not WithAttrs attributes) are prefixed
+
 		// Build group prefix from all groups
 		prefix := ""
 		for _, group := range h.groups {
@@ -101,18 +100,25 @@ func (h *InteractiveHandler) Handle(_ context.Context, r slog.Record) error {
 		}
 		prefix += "."
 
-		// Apply prefix to all accumulated attributes
-		prefixedAttrs := make([]slog.Attr, len(attrs))
-		for i, attr := range attrs {
-			prefixedAttrs[i] = slog.Attr{
+		// Create a new record with the same basic properties
+		record = slog.NewRecord(r.Time, r.Level, r.Message, r.PC)
+
+		// Add all accumulated attributes WITHOUT group prefix (they were added before WithGroup)
+		record.AddAttrs(h.attrs...)
+
+		// Add all record attributes WITH group prefix (they are processed after WithGroup)
+		r.Attrs(func(attr slog.Attr) bool {
+			record.AddAttrs(slog.Attr{
 				Key:   prefix + attr.Key,
 				Value: attr.Value,
-			}
-		}
-		attrs = prefixedAttrs
+			})
+			return true
+		})
+	} else {
+		// No groups active, use original record with accumulated attributes
+		record = r.Clone()
+		record.AddAttrs(h.attrs...)
 	}
-
-	record.AddAttrs(attrs...)
 
 	// Format the main message
 	message := h.formatter.FormatRecordWithColor(record, h.capabilities.SupportsColor())
