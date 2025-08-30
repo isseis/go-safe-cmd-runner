@@ -38,6 +38,9 @@ Common use cases include scheduled backups, system maintenance tasks, and delega
 
 ### Logging and Monitoring
 - **Multi-Handler Logging**: Route logs to multiple destinations simultaneously (console, file, Slack)
+- **Interactive Terminal Support**: Color-coded output with enhanced visibility for interactive environments
+- **Smart Terminal Detection**: Automatic detection of terminal capabilities and CI environments
+- **Color Control**: Support for CLICOLOR, NO_COLOR, and CLICOLOR_FORCE environment variables
 - **Slack Integration**: Real-time notifications for security events and failures
 - **Audit Logging**: Comprehensive audit trail for privileged operations and security events
 - **Sensitive Data Redaction**: Automatic filtering of sensitive information from logs
@@ -63,7 +66,7 @@ internal/              # Core implementation
 ├── cmdcommon/         # Shared command utilities
 ├── filevalidator/     # File integrity validation
 ├── groupmembership/   # User/group membership validation
-├── logging/           # Advanced logging system with Slack integration
+├── logging/           # Advanced logging system with interactive UI and Slack integration
 ├── redaction/         # Automatic sensitive data filtering
 ├── runner/            # Command execution engine
 │   ├── audit/         # Security audit logging
@@ -74,6 +77,7 @@ internal/              # Core implementation
 │   ├── risk/          # Risk-based command assessment
 │   └── security/      # Security validation framework
 ├── safefileio/        # Secure file operations
+├── terminal/          # Terminal capabilities detection and interactive UI support
 └── verification/      # Centralized file verification management
 ```
 
@@ -98,6 +102,11 @@ internal/              # Core implementation
 
 # Custom log directory and level
 ./runner -config config.toml -log-dir /var/log/go-safe-cmd-runner -log-level debug
+
+# Control color output for interactive terminals
+CLICOLOR=1 ./runner -config config.toml      # Enable color (default when interactive)
+NO_COLOR=1 ./runner -config config.toml      # Disable color completely
+CLICOLOR_FORCE=1 ./runner -config config.toml # Force color even in non-interactive environments
 
 # Execute with Slack notifications (requires SLACK_WEBHOOK_URL in environment file)
 ./runner -config config.toml -env-file .env
