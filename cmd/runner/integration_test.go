@@ -79,27 +79,10 @@ func TestSetupLoggerWithConfig_IntegrationWithNewHandlers(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Set up environment variables for test
-			originalEnv := make(map[string]string)
+			// Set up environment variables using t.Setenv for automatic cleanup
 			for key, value := range tc.envVars {
-				originalEnv[key] = os.Getenv(key)
-				if value == "" {
-					os.Unsetenv(key)
-				} else {
-					os.Setenv(key, value)
-				}
+				t.Setenv(key, value)
 			}
-
-			// Clean up environment after test
-			defer func() {
-				for key, originalValue := range originalEnv {
-					if originalValue == "" {
-						os.Unsetenv(key)
-					} else {
-						os.Setenv(key, originalValue)
-					}
-				}
-			}()
 
 			// Capture original logger to restore later
 			originalLogger := slog.Default()
@@ -163,6 +146,7 @@ func TestTerminalCapabilitiesIntegration(t *testing.T) {
 			name: "disabled_color_mode",
 			envVars: map[string]string{
 				"NO_COLOR": "1",
+				"CI":       "",
 				"TERM":     "xterm-256color",
 			},
 			expectColor:       false,
@@ -171,6 +155,7 @@ func TestTerminalCapabilitiesIntegration(t *testing.T) {
 		{
 			name: "auto_detection",
 			envVars: map[string]string{
+				"CI":   "",
 				"TERM": "xterm-256color",
 			},
 			expectColor:       true, // TERM indicates color support
@@ -180,26 +165,17 @@ func TestTerminalCapabilitiesIntegration(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Set up environment variables
-			originalEnv := make(map[string]string)
+			// Set up environment variables using t.Setenv for automatic cleanup
 			for key, value := range tc.envVars {
-				originalEnv[key] = os.Getenv(key)
 				if value == "" {
-					os.Unsetenv(key)
+					// For empty values, we want to unset the variable
+					// but t.Setenv doesn't support unsetting, so we use a special marker
+					// that our code will treat as unset
+					t.Setenv(key, "")
 				} else {
-					os.Setenv(key, value)
+					t.Setenv(key, value)
 				}
 			}
-
-			defer func() {
-				for key, originalValue := range originalEnv {
-					if originalValue == "" {
-						os.Unsetenv(key)
-					} else {
-						os.Setenv(key, originalValue)
-					}
-				}
-			}()
 
 			// Test terminal capabilities
 			capabilities := terminal.NewCapabilities(terminal.Options{})
@@ -242,9 +218,8 @@ func TestHandlerChainIntegration(t *testing.T) {
 		os.Stdout = originalStdout
 	}()
 
-	// Set environment for testing
-	os.Setenv("TERM", "dumb") // Disable interactive features
-	defer os.Unsetenv("TERM")
+	// Set environment for testing using t.Setenv for automatic cleanup
+	t.Setenv("TERM", "dumb") // Disable interactive features
 
 	// Note: We can't easily redirect stderr/stdout for this test since
 	// the handlers are created internally, but we can test basic setup
