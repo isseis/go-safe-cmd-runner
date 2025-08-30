@@ -36,7 +36,8 @@
       "Bash(getconf:*)",
       "Bash(HASH_DIR=/tmp/hash ./build/runner -config /tmp/dangerous_test.toml -dry-run run all_groups)",
       "Bash(git --no-pager log --oneline -5)",
-      "Bash(git fetch:*)"
+      "Bash(git fetch:*)",
+      "Bash(tty)"
     ],
     "deny": [],
     "env": {

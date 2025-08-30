@@ -212,7 +212,7 @@ func (f *Filter) resolveAllowedVariable(variable string, group *runnertypes.Comm
 	allowed := resolution.IsAllowed(variable)
 
 	if !allowed {
-		slog.Warn("Variable access denied",
+		slog.Debug("Variable access denied",
 			"variable", variable,
 			"group", group.Name,
 			"inheritance_mode", resolution.Mode.String(),

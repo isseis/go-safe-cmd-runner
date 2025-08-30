@@ -48,6 +48,18 @@ func (m *interactiveTestMessageFormatter) FormatRecordWithColor(record slog.Reco
 	return "[FORMATTED] " + record.Message
 }
 
+func (m *interactiveTestMessageFormatter) FormatRecordInteractive(record slog.Record, useColor bool) string {
+	m.formatRecordCalled = true
+	m.recordMessage = record.Message
+	// Capture the record for attribute inspection
+	recordCopy := record.Clone()
+	m.capturedRecord = &recordCopy
+	if useColor {
+		return ">> " + record.Message
+	}
+	return "[INTERACTIVE] " + record.Message
+}
+
 func (m *interactiveTestMessageFormatter) FormatLogFileHint(lineNumber int, useColor bool) string {
 	m.formatHintCalled = true
 	if lineNumber <= 0 {

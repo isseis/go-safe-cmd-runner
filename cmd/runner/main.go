@@ -25,6 +25,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
+	"github.com/isseis/go-safe-cmd-runner/internal/terminal"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/joho/godotenv"
 )
@@ -50,16 +51,18 @@ var (
 )
 
 var (
-	configPath     = flag.String("config", "", "path to config file")
-	envFile        = flag.String("env-file", "", "path to environment file")
-	logLevel       = flag.String("log-level", "info", "log level (debug, info, warn, error)")
-	logDir         = flag.String("log-dir", "", "directory to place per-run JSON log (auto-named). Overrides TOML/env if set.")
-	dryRun         = flag.Bool("dry-run", false, "print commands without executing them")
-	dryRunFormat   = flag.String("format", "text", "dry-run output format (text, json)")
-	dryRunDetail   = flag.String("detail", "detailed", "dry-run detail level (summary, detailed, full)")
-	hashDirectory  = flag.String("hash-directory", "", "directory containing hash files (default: "+cmdcommon.DefaultHashDirectory+")")
-	validateConfig = flag.Bool("validate", false, "validate configuration file and exit")
-	runID          = flag.String("run-id", "", "unique identifier for this execution run (auto-generates ULID if not provided)")
+	configPath       = flag.String("config", "", "path to config file")
+	envFile          = flag.String("env-file", "", "path to environment file")
+	logLevel         = flag.String("log-level", "info", "log level (debug, info, warn, error)")
+	logDir           = flag.String("log-dir", "", "directory to place per-run JSON log (auto-named). Overrides TOML/env if set.")
+	dryRun           = flag.Bool("dry-run", false, "print commands without executing them")
+	dryRunFormat     = flag.String("format", "text", "dry-run output format (text, json)")
+	dryRunDetail     = flag.String("detail", "detailed", "dry-run detail level (summary, detailed, full)")
+	hashDirectory    = flag.String("hash-directory", "", "directory containing hash files (default: "+cmdcommon.DefaultHashDirectory+")")
+	validateConfig   = flag.Bool("validate", false, "validate configuration file and exit")
+	runID            = flag.String("run-id", "", "unique identifier for this execution run (auto-generates ULID if not provided)")
+	forceInteractive = flag.Bool("interactive", false, "force interactive mode with colored output (overrides environment detection)")
+	forceQuiet       = flag.Bool("quiet", false, "force non-interactive mode (disables colored output)")
 )
 
 // getHashDir determines the hash directory based on command line args and an embedded variable
@@ -458,13 +461,56 @@ func setupLoggerWithConfig(config LoggerConfig) error {
 	var handlers []slog.Handler
 	var invalidLogLevel bool
 
-	// 1. Human-readable summary handler (to stdout)
-	textHandler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	})
-	handlers = append(handlers, textHandler)
+	// Parse log level for all handlers
+	var slogLevel slog.Level
+	if err := slogLevel.UnmarshalText([]byte(config.Level)); err != nil {
+		slogLevel = slog.LevelInfo // Default to info on parse error
+		invalidLogLevel = true
+	}
 
-	// 2. Machine-readable log handler (to file, per-run auto-named)
+	// Initialize terminal capabilities with command line overrides
+	terminalOptions := terminal.Options{
+		DetectorOptions: terminal.DetectorOptions{
+			ForceInteractive:    *forceInteractive,
+			ForceNonInteractive: *forceQuiet,
+		},
+		// PreferenceOptions use environment variables by default
+	}
+	capabilities := terminal.NewCapabilities(terminalOptions)
+
+	// 1. Interactive handler (for colored output when appropriate)
+	if capabilities.IsInteractive() {
+		// Create message formatter and line tracker for interactive output
+		formatter := logging.NewDefaultMessageFormatter()
+		lineTracker := logging.NewDefaultLogLineTracker()
+
+		interactiveHandler, err := logging.NewInteractiveHandler(logging.InteractiveHandlerOptions{
+			Level:        slogLevel,
+			Writer:       os.Stderr, // Interactive messages go to stderr
+			Capabilities: capabilities,
+			Formatter:    formatter,
+			LineTracker:  lineTracker,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create interactive handler: %w", err)
+		}
+		handlers = append(handlers, interactiveHandler)
+	}
+
+	// 2. Conditional text handler (for non-interactive stdout output)
+	conditionalTextHandler, err := logging.NewConditionalTextHandler(logging.ConditionalTextHandlerOptions{
+		TextHandlerOptions: &slog.HandlerOptions{
+			Level: slogLevel,
+		},
+		Writer:       os.Stdout,
+		Capabilities: capabilities,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create conditional text handler: %w", err)
+	}
+	handlers = append(handlers, conditionalTextHandler)
+
+	// 3. Machine-readable log handler (to file, per-run auto-named)
 	if config.LogDir != "" {
 		// Validate log directory
 		if err := logging.ValidateLogDir(config.LogDir); err != nil {
@@ -476,12 +522,6 @@ func setupLoggerWithConfig(config LoggerConfig) error {
 		logF, err := fileOpener.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, logFilePerm)
 		if err != nil {
 			return fmt.Errorf("failed to open log file: %w", err)
-		}
-
-		var slogLevel slog.Level
-		if err := slogLevel.UnmarshalText([]byte(config.Level)); err != nil {
-			slogLevel = slog.LevelInfo // Default to info on parse error
-			invalidLogLevel = true
 		}
 
 		jsonHandler := slog.NewJSONHandler(logF, &slog.HandlerOptions{
@@ -498,7 +538,7 @@ func setupLoggerWithConfig(config LoggerConfig) error {
 		handlers = append(handlers, enrichedHandler)
 	}
 
-	// 3. Slack notification handler (optional)
+	// 4. Slack notification handler (optional)
 	if config.SlackWebhookURL != "" {
 		slackHandler, err := logging.NewSlackHandler(config.SlackWebhookURL, config.RunID)
 		if err != nil {
@@ -523,6 +563,8 @@ func setupLoggerWithConfig(config LoggerConfig) error {
 		"log-dir", config.LogDir,
 		"run_id", config.RunID,
 		"hostname", hostname,
+		"interactive_mode", capabilities.IsInteractive(),
+		"color_support", capabilities.SupportsColor(),
 		"slack_enabled", config.SlackWebhookURL != "")
 
 	// Warn about invalid log level after logger is properly set up

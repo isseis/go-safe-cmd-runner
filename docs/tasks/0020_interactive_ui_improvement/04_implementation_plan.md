@@ -30,9 +30,9 @@
 - [x] `internal/logging/message_templates.go` - メッセージテンプレート
 
 ### Phase 4: 既存システムとの統合
-- [ ] `cmd/runner/main.go` の `setupLoggerWithConfig` 関数修正
-- [ ] 既存ハンドラとの統合テスト
-- [ ] エンドツーエンドテスト
+- [x] `cmd/runner/main.go` の `setupLoggerWithConfig` 関数修正
+- [x] 既存ハンドラとの統合テスト
+- [x] エンドツーエンドテスト
 
 ### Phase 5: ドキュメントと最終検証
 - [ ] README.md の更新
@@ -155,22 +155,22 @@ type Capabilities interface {
 
 #### 3.4.1 main.go の修正
 **修正箇所:**
-- [ ] `setupLoggerWithConfig`関数の改修
-- [ ] ハンドラチェーンの構築
-- [ ] Terminal optionsの設定
+- [x] `setupLoggerWithConfig`関数の改修
+- [x] ハンドラチェーンの構築
+- [x] Terminal optionsの設定
 
 **実装要件:**
-- [ ] 既存設定との互換性維持
-- [ ] 段階的な移行サポート
-- [ ] エラーハンドリングの改善
+- [x] 既存設定との互換性維持
+- [x] 段階的な移行サポート
+- [x] エラーハンドリングの改善
 
 #### 3.4.2 統合テスト
 **テストシナリオ:**
-- [ ] 対話環境でのカラー出力
-- [ ] 非対話環境での通常出力
-- [ ] ログファイル出力の継続
-- [ ] Slack通知の継続
-- [ ] 環境変数の各組み合わせ
+- [x] 対話環境でのカラー出力
+- [x] 非対話環境での通常出力
+- [x] ログファイル出力の継続
+- [x] Slack通知の継続
+- [x] 環境変数の各組み合わせ
 
 ## 4. テスト戦略
 
