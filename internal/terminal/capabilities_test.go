@@ -234,10 +234,10 @@ func TestCapabilities_ExplicitUserPreferenceLogic(t *testing.T) {
 			description:  "NO_COLOR should be considered explicit preference",
 		},
 		{
-			name:         "CLICOLOR is explicit",
+			name:         "CLICOLOR is not explicit",
 			envVars:      map[string]string{"CLICOLOR": "1"},
-			wantExplicit: true,
-			description:  "CLICOLOR should be considered explicit preference",
+			wantExplicit: false,
+			description:  "CLICOLOR is no longer considered explicit - only applies in interactive mode",
 		},
 		{
 			name:         "No explicit preferences",

@@ -21,8 +21,8 @@ func TestUserPreference_CLICOLORForce(t *testing.T) {
 		{
 			name:         "CLICOLOR_FORCE=0 allows other checks",
 			envVars:      map[string]string{"CLICOLOR_FORCE": "0", "CLICOLOR": "1"},
-			wantColor:    true, // CLICOLOR=1 enables color (NO_COLOR not set)
-			wantExplicit: true,
+			wantColor:    false, // CLICOLOR is now handled in capabilities, not preference
+			wantExplicit: false, // CLICOLOR is no longer explicit
 		},
 		{
 			name:         "NO_COLOR disables color",
@@ -33,14 +33,14 @@ func TestUserPreference_CLICOLORForce(t *testing.T) {
 		{
 			name:         "CLICOLOR=0 disables color",
 			envVars:      map[string]string{"CLICOLOR": "0"},
-			wantColor:    false,
-			wantExplicit: true,
+			wantColor:    false, // CLICOLOR is now handled in capabilities, not preference
+			wantExplicit: false, // CLICOLOR is no longer explicit
 		},
 		{
 			name:         "CLICOLOR=1 enables color",
 			envVars:      map[string]string{"CLICOLOR": "1"},
-			wantColor:    true, // CLICOLOR=1 enables color (NO_COLOR not set)
-			wantExplicit: true,
+			wantColor:    false, // CLICOLOR is now handled in capabilities, not preference
+			wantExplicit: false, // CLICOLOR is no longer explicit
 		},
 		{
 			name:         "force color option overrides env",
@@ -117,10 +117,10 @@ func TestUserPreference_PriorityLogic(t *testing.T) {
 			description: "NO_COLOR should override CLICOLOR",
 		},
 		{
-			name:        "CLICOLOR fourth priority",
+			name:        "CLICOLOR no longer handled in preference",
 			envVars:     map[string]string{"CLICOLOR": "1"},
-			wantColor:   true,
-			description: "CLICOLOR=1 should enable color when no higher priority options set",
+			wantColor:   false,
+			description: "CLICOLOR is now handled in capabilities, not preference",
 		},
 	}
 
@@ -196,14 +196,14 @@ func TestUserPreference_EnvVarParsing(t *testing.T) {
 		{
 			name:         "CLICOLOR=1",
 			envVars:      map[string]string{"CLICOLOR": "1"},
-			wantColor:    true,
-			wantExplicit: true,
+			wantColor:    false, // CLICOLOR is now handled in capabilities, not preference
+			wantExplicit: false, // CLICOLOR is no longer explicit - it only applies in interactive mode
 		},
 		{
 			name:         "CLICOLOR=0",
 			envVars:      map[string]string{"CLICOLOR": "0"},
-			wantColor:    false,
-			wantExplicit: true,
+			wantColor:    false, // CLICOLOR is now handled in capabilities, not preference
+			wantExplicit: false, // CLICOLOR is no longer explicit - it only applies in interactive mode
 		},
 	}
 
