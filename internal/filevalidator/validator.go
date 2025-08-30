@@ -132,7 +132,7 @@ func (v *Validator) Record(filePath string, force bool) (string, error) {
 	}
 
 	// Ensure the directory exists with restrictive permissions
-	if err := os.MkdirAll(filepath.Dir(hashFilePath), hashDirectoryPermissions); err != nil { //nolint:gosec
+	if err := os.MkdirAll(filepath.Dir(hashFilePath), hashDirectoryPermissions); err != nil {
 		return "", fmt.Errorf("failed to create hash directory: %w", err)
 	}
 
