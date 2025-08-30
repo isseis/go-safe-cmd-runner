@@ -74,7 +74,12 @@ func (c *DefaultCapabilities) SupportsColor() bool {
 // Supports: "1", "true", "yes" (case insensitive)
 func isTruthy(value string) bool {
 	lower := strings.ToLower(strings.TrimSpace(value))
-	return lower == "1" || lower == "true" || lower == "yes"
+	switch lower {
+	case "1", "true", "yes":
+		return true
+	default:
+		return false
+	}
 }
 
 // HasExplicitUserPreference returns true if the user has explicitly set
