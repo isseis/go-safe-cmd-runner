@@ -2,7 +2,6 @@ package terminal
 
 import (
 	"os"
-	"strings"
 )
 
 // PreferenceOptions contains command-line options for terminal preferences
@@ -45,12 +44,8 @@ func (p *UserPreference) SupportsColor() bool {
 		return false
 	}
 
-	// Priority 4: CLICOLOR environment variable
-	if cliColor := os.Getenv("CLICOLOR"); cliColor != "" {
-		return isTruthy(cliColor)
-	}
-
-	// Priority 5: Default behavior (no color)
+	// Priority 4: Default behavior (no color)
+	// Note: CLICOLOR is now handled in capabilities.go only for interactive mode
 	return false
 }
 
@@ -74,17 +69,9 @@ func (p *UserPreference) HasExplicitPreference() bool {
 		return true
 	}
 
-	// Any setting of CLICOLOR is explicit
-	if cliColor := os.Getenv("CLICOLOR"); cliColor != "" {
-		return true
-	}
+	// NOTE: CLICOLOR is NOT considered an explicit preference
+	// CLICOLOR should only apply when in interactive mode (TTY connected)
+	// This follows standard Unix behavior where CLICOLOR is ignored for pipes
 
 	return false
-}
-
-// isTruthy checks if a string value should be considered "true"
-// Supports: "1", "true", "yes" (case insensitive)
-func isTruthy(value string) bool {
-	lower := strings.ToLower(strings.TrimSpace(value))
-	return lower == "1" || lower == "true" || lower == "yes"
 }

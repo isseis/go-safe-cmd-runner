@@ -1,5 +1,10 @@
 package terminal
 
+import (
+	"os"
+	"strings"
+)
+
 // Options contains all terminal-related configuration options
 type Options struct {
 	// PreferenceOptions for color settings
@@ -43,17 +48,38 @@ func (c *DefaultCapabilities) IsInteractive() bool {
 // 1. Command line arguments (highest priority)
 // 2. CLICOLOR_FORCE=1 (overrides other conditions)
 // 3. NO_COLOR environment variable
-// 4. CLICOLOR environment variable
+// 4. CLICOLOR environment variable (only applies in interactive mode)
 // 5. Terminal capability auto-detection
 func (c *DefaultCapabilities) SupportsColor() bool {
-	// Check user preferences first (handles priorities 1-4)
+	// Check user preferences first (handles priorities 1-3: command line args, CLICOLOR_FORCE, NO_COLOR)
 	if c.userPreference.HasExplicitPreference() {
 		return c.userPreference.SupportsColor()
 	}
 
-	// If no explicit user preference, fall back to terminal capability detection
-	// Only enable color if both interactive and terminal supports color
-	return c.IsInteractive() && c.colorDetector.SupportsColor()
+	// Check if we are in interactive mode first
+	if !c.IsInteractive() || !c.colorDetector.SupportsColor() {
+		return false
+	}
+
+	// Priority 4: CLICOLOR environment variable (only applies in interactive mode)
+	if cliColor := os.Getenv("CLICOLOR"); cliColor != "" {
+		return isTruthy(cliColor)
+	}
+
+	// Priority 5: Default behavior when interactive and color-capable
+	return true
+}
+
+// isTruthy checks if a string value should be considered "true"
+// Supports: "1", "true", "yes" (case insensitive)
+func isTruthy(value string) bool {
+	lower := strings.ToLower(strings.TrimSpace(value))
+	switch lower {
+	case "1", "true", "yes":
+		return true
+	default:
+		return false
+	}
 }
 
 // HasExplicitUserPreference returns true if the user has explicitly set
