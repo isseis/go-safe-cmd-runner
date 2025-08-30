@@ -16,6 +16,12 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
 
+const (
+	// hashDirectoryPermissions defines the permissions for hash directories
+	// 0o750 = owner: read/write/execute, group: read/execute, others: none
+	hashDirectoryPermissions = 0o750
+)
+
 // Error definitions for static error handling
 var (
 	ErrPrivilegeManagerNotAvailable    = errors.New("privilege manager not available")
@@ -125,8 +131,8 @@ func (v *Validator) Record(filePath string, force bool) (string, error) {
 		return "", err
 	}
 
-	// Ensure the directory exists
-	if err := os.MkdirAll(filepath.Dir(hashFilePath), 0o755); err != nil { //nolint:gosec
+	// Ensure the directory exists with restrictive permissions
+	if err := os.MkdirAll(filepath.Dir(hashFilePath), hashDirectoryPermissions); err != nil { //nolint:gosec
 		return "", fmt.Errorf("failed to create hash directory: %w", err)
 	}
 
