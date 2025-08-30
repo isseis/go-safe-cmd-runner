@@ -35,7 +35,7 @@ type DetectorOptions struct {
 // InteractiveDetector interface defines methods for detecting interactive terminal capabilities
 type InteractiveDetector interface {
 	IsInteractive() bool
-	IsTerminal() bool
+	IsTerminal() bool // Checks for terminal-like environment (TTY or heuristics)
 	IsCIEnvironment() bool
 }
 
@@ -70,22 +70,24 @@ func (d *DefaultInteractiveDetector) IsInteractive() bool {
 	return d.IsTerminal()
 }
 
-// IsTerminal checks if stdout and stderr are connected to a terminal
+// IsTerminal checks if the current environment supports terminal-like interaction.
+// This includes both actual TTY connections and terminal-like environments such as
+// IDE integrated terminals, Claude Code, and other development environments.
 func (d *DefaultInteractiveDetector) IsTerminal() bool {
-	// Check if stdout OR stderr is connected to a terminal
+	// First, check for actual TTY connections on stdout OR stderr
 	// Many integrated terminals and IDEs don't connect both streams as TTY
 	// but we should still provide interactive output if at least one is available
 	stdoutIsTTY := term.IsTerminal(int(os.Stdout.Fd()))
 	stderrIsTTY := term.IsTerminal(int(os.Stderr.Fd()))
 
-	// If either output stream is a TTY, consider it interactive
-	// This handles cases like IDE integrated terminals, Claude Code, etc.
+	// If either output stream is a TTY, we have a real terminal
 	if stdoutIsTTY || stderrIsTTY {
 		return true
 	}
 
-	// Additional heuristics for integrated development environments
+	// Apply heuristics for terminal-like environments that may not have TTY
 	// If TERM is set to a meaningful value, likely running in a terminal-like environment
+	// This handles cases like IDE integrated terminals, Claude Code, etc.
 	termEnv := os.Getenv("TERM")
 	if termEnv != "" && termEnv != "dumb" {
 		return true

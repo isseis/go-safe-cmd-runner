@@ -119,18 +119,11 @@ timeout_seconds = 10
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Build the runner binary if it doesn't exist
-			runnerBinary := filepath.Join(tempDir, "test-runner")
-			buildCmd := exec.Command("go", "build", "-o", runnerBinary, ".")
-			buildCmd.Dir = filepath.Dir(configFile) // Set working directory to temp
-
-			// Copy source files to temp directory for building
 			srcDir, err := os.Getwd()
 			if err != nil {
 				t.Fatalf("Failed to get working directory: %v", err)
 			}
-
-			// Actually, just use go run instead of building
+			// Use go run to execute the command
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 
