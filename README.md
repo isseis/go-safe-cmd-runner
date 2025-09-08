@@ -64,6 +64,7 @@ cmd/                    # Command-line entry points
 
 internal/              # Core implementation
 ├── cmdcommon/         # Shared command utilities
+├── common/            # Common utilities and filesystem abstraction
 ├── filevalidator/     # File integrity validation
 ├── groupmembership/   # User/group membership validation
 ├── logging/           # Advanced logging system with interactive UI and Slack integration
@@ -71,10 +72,12 @@ internal/              # Core implementation
 ├── runner/            # Command execution engine
 │   ├── audit/         # Security audit logging
 │   ├── config/        # Configuration management
+│   ├── environment/   # Environment variable processing and filtering
 │   ├── executor/      # Command execution logic
 │   ├── privilege/     # Privilege management
 │   ├── resource/      # Unified resource management (normal/dry-run)
 │   ├── risk/          # Risk-based command assessment
+│   ├── runnertypes/   # Type definitions and interfaces
 │   └── security/      # Security validation framework
 ├── safefileio/        # Secure file operations
 ├── terminal/          # Terminal capabilities detection and interactive UI support
@@ -327,8 +330,9 @@ This project is licensed under the MIT License. See the [LICENSE](./LICENSE) fil
 ## Building and Installation
 
 ### Prerequisites
-- Go 1.22 or later (required for slices package support, range over count)
+- Go 1.23 or later (required for slices package support, range over count)
 - golangci-lint (for development)
+- gofumpt (for code formatting)
 
 ### Build Commands
 ```bash
@@ -346,8 +350,20 @@ make test
 # Run linter
 make lint
 
+# Format code (changed files only)
+make fmt
+
+# Format all Go files
+make fmt-all
+
 # Clean build artifacts
 make clean
+
+# Run benchmarks
+make benchmark
+
+# Generate coverage report
+make coverage
 ```
 
 ### Installation
@@ -370,6 +386,7 @@ sudo install -o root -g root -m 0755 build/verify /usr/local/bin/go-safe-cmd-ver
 - `github.com/joho/godotenv` - Environment file loading
 - `github.com/oklog/ulid/v2` - ULID generation for run tracking and identification
 - `github.com/stretchr/testify` - Testing framework
+- `golang.org/x/term` - Terminal capability detection for interactive features
 
 ### Testing
 ```bash
@@ -381,6 +398,10 @@ go test -v ./internal/runner
 
 # Run integration tests
 make integration-test
+
+# Run Slack notification tests (requires SLACK_WEBHOOK_URL)
+make slack-notify-test
+make slack-group-notification-test
 ```
 
 ### Project Structure

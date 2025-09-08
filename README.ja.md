@@ -61,19 +61,23 @@ cmd/                    # コマンドライン エントリーポイント
 
 internal/              # コア実装
 ├── cmdcommon/         # 共有コマンドユーティリティ
+├── common/            # 共通ユーティリティとファイルシステム抽象化
 ├── filevalidator/     # ファイル整合性検証
 ├── groupmembership/   # ユーザー・グループメンバーシップ検証
-├── logging/           # Slack統合を備えた高度なログシステム
+├── logging/           # インタラクティブUIとSlack統合を備えた高度なログシステム
 ├── redaction/         # 機密データの自動フィルタリング
 ├── runner/            # コマンド実行エンジン
 │   ├── audit/         # セキュリティ監査ログ
 │   ├── config/        # 設定管理
+│   ├── environment/   # 環境変数処理とフィルタリング
 │   ├── executor/      # コマンド実行ロジック
 │   ├── privilege/     # 権限管理
 │   ├── resource/      # 統一リソース管理（通常・ドライラン）
 │   ├── risk/          # リスクベースコマンド評価
+│   ├── runnertypes/   # 型定義とインターフェース
 │   └── security/      # セキュリティ検証フレームワーク
 ├── safefileio/        # セキュアファイル操作
+├── terminal/          # ターミナル機能検出とインタラクティブUIサポート
 └── verification/      # 一元化ファイル検証管理
 ```
 
@@ -318,8 +322,9 @@ Unix系環境でのファイル整合性検証を伴うセキュアなコマン�
 ## ビルドとインストール
 
 ### 前提条件
-- Go 1.22以降（slicesパッケージサポート、range over count に必要）
+- Go 1.23以降（slicesパッケージサポート、range over count に必要）
 - golangci-lint（開発用）
+- gofumpt（コードフォーマット用）
 
 ### ビルドコマンド
 ```bash
@@ -337,8 +342,20 @@ make test
 # リンターを実行
 make lint
 
+# コードをフォーマット（変更されたファイルのみ）
+make fmt
+
+# すべてのGoファイルをフォーマット
+make fmt-all
+
 # ビルド成果物をクリーン
 make clean
+
+# ベンチマークを実行
+make benchmark
+
+# カバレッジレポートを生成
+make coverage
 ```
 
 ### インストール
@@ -361,6 +378,7 @@ sudo install -o root -g root -m 0755 build/verify /usr/local/bin/go-safe-cmd-ver
 - `github.com/joho/godotenv` - 環境ファイル読み込み
 - `github.com/oklog/ulid/v2` - 実行追跡と識別のためのULID生成
 - `github.com/stretchr/testify` - テストフレームワーク
+- `golang.org/x/term` - インタラクティブ機能のためのターミナル機能検出
 
 ### テスト
 ```bash
@@ -372,6 +390,10 @@ go test -v ./internal/runner
 
 # 統合テストを実行
 make integration-test
+
+# Slack通知テストを実行（SLACK_WEBHOOK_URLが必要）
+make slack-notify-test
+make slack-group-notification-test
 ```
 
 ### プロジェクト構造
