@@ -185,15 +185,15 @@ func (m *Manager) WithPrivileges(ctx ElevationContext, fn func() error) error {
 #### 14. グループメンバーシップ管理 (`internal/groupmembership/`)
 - **目的**: ユーザーグループメンバーシップの安全な管理
 - **主要機能**:
-  - CGOとノンCGO実装の両方をサポート
+  - CGOと非CGO実装の両方をサポート
   - グループ情報の解析と検証
   - ユーザー・グループの関連付け管理
 
-#### 15. 色彩管理 (`internal/color/`)
-- **目的**: コンソール出力の色彩制御
+#### 15. カラー管理 (`internal/color/`)
+- **目的**: コンソール出力のカラー制御
 - **主要機能**:
-  - 端末色彩サポートの検出
-  - 設定可能な色彩出力制御
+  - 端末カラーサポートの検出
+  - 設定可能なカラー出力制御
 
 #### 16. 共通ユーティリティ (`internal/common/`, `internal/cmdcommon/`)
 - **目的**: パッケージ間で共有される基本機能の提供
@@ -459,7 +459,7 @@ go-safe-cmd-runner/
 │   └── verify/                    # ファイル検証コマンド
 ├── internal/                      # 内部パッケージ
 │   ├── cmdcommon/                 # コマンド共通ユーティリティ
-│   ├── color/                     # 色彩管理
+│   ├── color/                     # カラー管理
 │   ├── common/                    # 共通インターフェースとユーティリティ
 │   ├── filevalidator/             # ファイル整合性検証
 │   ├── groupmembership/           # グループメンバーシップ管理

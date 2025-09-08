@@ -300,11 +300,11 @@ type TerminalCapabilities interface {
 - 対話的操作の適切な処理
 - クロスプラットフォーム端末セキュリティ
 
-#### 🎨 **色彩管理セキュリティ (`internal/color/`)**
+#### 🎨 **カラー管理セキュリティ (`internal/color/`)**
 
 **実装された機能**:
 ```go
-// 検証済み色彩制御
+// 検証済みカラー制御
 func (c *ColorManager) Colorize(text string, color ColorCode) string {
     // 検証済み制御シーケンスのみ使用
     // 端末インジェクション攻撃防止
@@ -313,7 +313,7 @@ func (c *ColorManager) Colorize(text string, color ColorCode) string {
 
 **セキュリティ評価**: ✅ **良好**
 - 制御シーケンスインジェクション防止
-- 端末機能ベースの安全な色彩制御
+- 端末機能ベースの安全なカラー制御
 - 検証済みエスケープシーケンスのみ使用
 
 ### 4. 統合セキュリティアーキテクチャの評価

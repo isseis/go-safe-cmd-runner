@@ -504,6 +504,90 @@ func (v *Validator) SanitizeErrorForLogging(err error) string {
 - ログファイルの肥大化と潜在的DoSを防ぐ長さベースの切り詰め
 - 環境変数パターンの検出とサニタイズ
 
+### 9. 端末セキュリティ (`internal/terminal/`)
+
+#### 目的
+端末能力の検出と対話的操作の安全な処理を提供し、端末ベースの攻撃や情報漏洩を防ぎます。
+
+#### 実装詳細
+
+**端末能力検出**:
+```go
+// 場所: internal/terminal/capabilities.go
+type CapabilityDetector interface {
+    DetectColorSupport() bool
+    IsInteractive() bool
+    GetTerminalSize() (width, height int, err error)
+}
+```
+
+**対話的操作のセキュリティ**:
+- プロンプト入力のバリデーション
+- 安全な端末状態管理
+- 端末制御シーケンス注入に対する保護
+- ユーザー入力の安全な取り扱い
+
+#### セキュリティ保証
+- 安全な端末能力検出
+- 端末インジェクション攻撃の保護
+- 対話的操作のセキュアな処理
+- クロスプラットフォームの一貫したセキュリティ
+
+### 10. 色彩出力セキュリティ (`internal/color/`)
+
+#### 目的
+色付き出力機能を安全に提供し、端末制御シーケンスを介した注入攻撃を防止します。
+
+#### 実装詳細
+
+**安全な色彩管理**:
+```go
+// 場所: internal/color/color.go
+type ColorManager interface {
+    Enable() bool
+    Colorize(text string, color ColorCode) string
+}
+```
+
+**色彩出力の保護**:
+- 検証済みの制御シーケンスのみを許可
+- 端末能力に基づく色彩有効化
+- 制御シーケンスインジェクションからの保護
+- 安全なエスケープ処理
+
+#### セキュリティ保証
+- 検証済み制御シーケンスによる注入防止
+- 端末能力に基づくセキュリティ判断
+- 安全な色彩出力の生成
+
+### 11. 共通ユーティリティセキュリティ (`internal/common/`, `internal/cmdcommon/`)
+
+#### 目的
+パッケージ横断の基盤機能を提供し、テスト可能で再現性のある安全な実装を保証します。
+
+#### 実装詳細
+
+**ファイルシステム抽象**:
+```go
+// 場所: internal/common/filesystem.go
+type FileSystem interface {
+    CreateTempDir(dir string, prefix string) (string, error)
+    FileExists(path string) (bool, error)
+    Lstat(path string) (fs.FileInfo, error)
+    IsDir(path string) (bool, error)
+}
+```
+
+**モック実装**:
+- テスト用のモックファイルシステムを提供し、本番と同等のセキュリティ特性でテスト可能にする
+- エラー条件や境界ケースのテストをサポート
+
+#### セキュリティ保証
+- 実装間での一貫したセキュリティ挙動
+- セキュリティパスの包括的なテストカバレッジ
+- 型安全なインターフェース契約
+- モック実装はセキュリティプロパティを保持
+
 ### 9. ユーザーとグループ実行セキュリティ
 
 #### 目的
