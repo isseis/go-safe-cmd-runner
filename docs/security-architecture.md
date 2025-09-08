@@ -571,7 +571,94 @@ type SlackHandler struct {
 - Rate limiting prevents abuse
 - Comprehensive error handling
 
-### 11. Configuration Security
+### 11. Terminal Security (`internal/terminal/`)
+
+#### Purpose
+Provide secure terminal capability detection and interactive operation handling while preventing terminal-based attacks and information disclosure.
+
+#### Implementation Details
+
+**Terminal Capability Detection**:
+```go
+// Location: internal/terminal/capabilities.go
+type CapabilityDetector interface {
+    DetectColorSupport() bool
+    IsInteractive() bool
+    GetTerminalSize() (width, height int, err error)
+}
+```
+
+**Interactive Operation Security**:
+- Input validation for interactive prompts
+- Safe terminal state management
+- Protection against terminal control sequence injection
+- Secure handling of user input
+
+#### Security Guarantees
+- Safe terminal capability detection
+- Protection against terminal injection attacks
+- Secure interactive operation handling
+- Cross-platform compatibility with consistent security
+
+### 12. Color Output Security (`internal/color/`)
+
+#### Purpose
+Provide secure color output capabilities while preventing terminal injection attacks through color control sequences.
+
+#### Implementation Details
+
+**Safe Color Management**:
+```go
+// Location: internal/color/color.go
+type ColorManager interface {
+    Enable() bool
+    Colorize(text string, color ColorCode) string
+}
+```
+
+**Color Output Protection**:
+- Validated color control sequences only
+- Terminal capability-based color enablement
+- Protection against control sequence injection
+- Safe color escaping
+
+#### Security Guarantees
+- Validated color control sequences prevent injection
+- Terminal capability-based security decisions
+- Safe color output generation
+- Protection against terminal manipulation
+
+### 13. Common Utilities Security (`internal/common/`, `internal/cmdcommon/`)
+
+#### Purpose
+Provide secure foundational interfaces and utilities with comprehensive testing support.
+
+#### Implementation Details
+
+**File System Abstraction**:
+```go
+// Location: internal/common/filesystem.go
+type FileSystem interface {
+    CreateTempDir(dir string, prefix string) (string, error)
+    FileExists(path string) (bool, error)
+    Lstat(path string) (fs.FileInfo, error)
+    IsDir(path string) (bool, error)
+}
+```
+
+**Mock Implementation Security**:
+- Comprehensive mock file system for testing
+- Consistent security behavior in test and production
+- Type-safe interface implementations
+- Error condition testing support
+
+#### Security Guarantees
+- Consistent security behavior across implementations
+- Comprehensive test coverage for security paths
+- Type-safe interface contracts
+- Mock implementations maintain security properties
+
+### 15. Configuration Security
 
 #### Purpose
 Ensure that configuration files and the overall system configuration cannot be tampered with and follow security best practices.

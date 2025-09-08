@@ -2,7 +2,48 @@
 
 ## Executive Summary
 
-The Go Safe Command Runner is a security-focused command execution framework designed for privileged task delegation and automated batch processing. The system provides multiple layers of security controls to enable safe execution of privileged operations while maintaining strict security boundaries.
+The Go Safe Command Runner is a security-focused command execution framework#### 11. Logging and Audit (`internal/logging/`, `internal/runner/audit/`)
+- **Purpose**: Secure logging with sensitive data protection
+- **Key Features**:
+  - Multi-handler logging (file, syslog, Slack notifications)
+  - Conditional text handler and interactive log handler
+  - Pre-execution error handling
+  - Structured audit trails
+  - Automatic sensitive data redaction
+
+#### 12. Data Redaction (`internal/redaction/`)
+- **Purpose**: Automatic filtering of sensitive information from logs and output
+- **Key Features**:
+  - Pattern-based detection of passwords, tokens, API keys
+  - Environment variable sanitization
+  - Configurable redaction policies
+
+#### 13. Terminal Capabilities (`internal/terminal/`)
+- **Purpose**: Safe handling of terminal capabilities and interactive operations
+- **Key Features**:
+  - Terminal capability detection and management
+  - Interactive prompt processing
+  - Cross-platform terminal operations
+
+#### 14. Group Membership Management (`internal/groupmembership/`)
+- **Purpose**: Safe management of user group memberships
+- **Key Features**:
+  - Support for both CGO and non-CGO implementations
+  - Group information parsing and validation
+  - User-group association management
+
+#### 15. Color Management (`internal/color/`)
+- **Purpose**: Console output color control
+- **Key Features**:
+  - Terminal color support detection
+  - Configurable color output control
+
+#### 16. Common Utilities (`internal/common/`, `internal/cmdcommon/`)
+- **Purpose**: Providing basic functionality shared across packages
+- **Key Features**:
+  - File system abstraction interfaces
+  - Test support through mock implementations
+  - Command common utilitiesprivileged task delegation and automated batch processing. The system provides multiple layers of security controls to enable safe execution of privileged operations while maintaining strict security boundaries.
 
 **Key Use Cases:**
 - Scheduled backup operations with root privileges
@@ -419,10 +460,45 @@ type ResourceManager interface {
 - Minimal performance impact on normal operations
 - Configurable redaction policies
 
+## Package Structure
+
+The current package structure of the project is:
+
+```
+go-safe-cmd-runner/
+├── cmd/                           # Entry points
+│   ├── record/                    # Hash recording command
+│   ├── runner/                    # Main execution command
+│   └── verify/                    # File verification command
+├── internal/                      # Internal packages
+│   ├── cmdcommon/                 # Command common utilities
+│   ├── color/                     # Color management
+│   ├── common/                    # Common interfaces and utilities
+│   ├── filevalidator/             # File integrity validation
+│   ├── groupmembership/           # Group membership management
+│   ├── logging/                   # Log management
+│   ├── redaction/                 # Data redaction
+│   ├── runner/                    # Core execution engine
+│   │   ├── audit/                 # Audit functionality
+│   │   ├── config/                # Configuration management
+│   │   ├── environment/           # Environment variable management
+│   │   ├── executor/              # Command execution
+│   │   ├── privilege/             # Privilege management
+│   │   ├── resource/              # Resource management
+│   │   ├── risk/                  # Risk assessment
+│   │   ├── runnertypes/           # Type definitions
+│   │   └── security/              # Security framework
+│   ├── safefileio/                # Safe file I/O
+│   ├── terminal/                  # Terminal capabilities management
+│   └── verification/              # Verification management
+├── docs/                          # Project documentation
+└── sample/                        # Sample configuration files
+```
+
 ## Future Extensibility
 
 ### 1. Plugin Architecture
-The interface-driven design enables easy extension:
+Interface-driven design enables easy extension:
 - Custom hash algorithms
 - Additional privilege backends
 - Extended security validators
@@ -432,11 +508,10 @@ The interface-driven design enables easy extension:
 - Extended redaction patterns
 
 ### 2. Platform Support
-Current focus on Linux/Unix with extensibility for:
+Current focus on Linux/Unix with extensibility to:
 - Windows privilege management
 - macOS security features
 - Container runtime integration
-- Cloud platform adapters
 
 ### 3. Integration Points
 Well-defined interfaces for integration with:
