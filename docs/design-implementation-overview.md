@@ -2,48 +2,7 @@
 
 ## Executive Summary
 
-The Go Safe Command Runner is a security-focused command execution framework#### 11. Logging and Audit (`internal/logging/`, `internal/runner/audit/`)
-- **Purpose**: Secure logging with sensitive data protection
-- **Key Features**:
-  - Multi-handler logging (file, syslog, Slack notifications)
-  - Conditional text handler and interactive log handler
-  - Pre-execution error handling
-  - Structured audit trails
-  - Automatic sensitive data redaction
-
-#### 12. Data Redaction (`internal/redaction/`)
-- **Purpose**: Automatic filtering of sensitive information from logs and output
-- **Key Features**:
-  - Pattern-based detection of passwords, tokens, API keys
-  - Environment variable sanitization
-  - Configurable redaction policies
-
-#### 13. Terminal Capabilities (`internal/terminal/`)
-- **Purpose**: Safe handling of terminal capabilities and interactive operations
-- **Key Features**:
-  - Terminal capability detection and management
-  - Interactive prompt processing
-  - Cross-platform terminal operations
-
-#### 14. Group Membership Management (`internal/groupmembership/`)
-- **Purpose**: Safe management of user group memberships
-- **Key Features**:
-  - Support for both CGO and non-CGO implementations
-  - Group information parsing and validation
-  - User-group association management
-
-#### 15. Color Management (`internal/color/`)
-- **Purpose**: Console output color control
-- **Key Features**:
-  - Terminal color support detection
-  - Configurable color output control
-
-#### 16. Common Utilities (`internal/common/`, `internal/cmdcommon/`)
-- **Purpose**: Providing basic functionality shared across packages
-- **Key Features**:
-  - File system abstraction interfaces
-  - Test support through mock implementations
-  - Command common utilitiesprivileged task delegation and automated batch processing. The system provides multiple layers of security controls to enable safe execution of privileged operations while maintaining strict security boundaries.
+The Go Safe Command Runner is a security-focused command execution framework designed for privileged task delegation and automated batch processing. The system provides multiple layers of security controls to enable safe execution of privileged operations while maintaining strict security boundaries.
 
 **Key Use Cases:**
 - Scheduled backup operations with root privileges
@@ -177,7 +136,7 @@ func (m *Manager) WithPrivileges(ctx ElevationContext, fn func() error) error {
   - Sensitive data redaction in logs
 
 #### 8. Resource Management (`internal/runner/resource/`)
-- **Purpose**: Unified management of all side-effects in both normal and dry-run modes
+- **Purpose**: Unified management of side effects for both normal execution and dry-run modes
 - **Key Features**:
   - Command execution abstraction
   - Temporary directory lifecycle management
@@ -186,34 +145,62 @@ func (m *Manager) WithPrivileges(ctx ElevationContext, fn func() error) error {
   - Network operations (Slack notifications)
 
 #### 9. Verification Management (`internal/verification/`)
-- **Purpose**: Centralized file verification and path resolution
+- **Purpose**: Centralized management of file verification and path resolution
 - **Key Features**:
-  - Config and environment file verification
+  - Configuration and environment file verification
   - Command path resolution with security validation
   - Privileged file access fallback
-  - Skip verification for standard system paths
+  - Standard system path skip functionality
 
 #### 10. Risk Assessment (`internal/runner/risk/`)
-- **Purpose**: Risk-based security evaluation for command execution
+- **Purpose**: Risk-based security assessment for command execution
 - **Key Features**:
   - Command risk level analysis (low, medium, high, critical)
-  - Security policy enforcement based on risk levels
+  - Risk level-based security policy enforcement
   - Command override detection and blocking
 
 #### 11. Logging and Audit (`internal/logging/`, `internal/runner/audit/`)
 - **Purpose**: Secure logging with sensitive data protection
 - **Key Features**:
-  - Multi-channel logging (file, syslog, Slack)
-  - Automatic sensitive data redaction
+  - Multi-handler logging (file, syslog, Slack notifications)
+  - Conditional text handler and interactive log handler
   - Pre-execution error handling
   - Structured audit trails
+  - Automatic sensitive data redaction
 
 #### 12. Data Redaction (`internal/redaction/`)
-- **Purpose**: Automatic filtering of sensitive information from logs and outputs
+- **Purpose**: Automatic filtering of sensitive information from logs and output
 - **Key Features**:
   - Pattern-based detection of passwords, tokens, API keys
   - Environment variable sanitization
   - Configurable redaction policies
+
+#### 13. Terminal Capabilities (`internal/terminal/`)
+- **Purpose**: Safe handling of terminal capabilities and interactive operations
+- **Key Features**:
+  - Terminal capability detection and management
+  - Interactive prompt processing
+  - Cross-platform terminal operations
+
+#### 14. Group Membership Management (`internal/groupmembership/`)
+- **Purpose**: Safe management of user group memberships
+- **Key Features**:
+  - Support for both CGO and non-CGO implementations
+  - Group information parsing and validation
+  - User-group association management
+
+#### 15. Color Management (`internal/color/`)
+- **Purpose**: Console output color control
+- **Key Features**:
+  - Terminal color support detection
+  - Configurable color output control
+
+#### 16. Common Utilities (`internal/common/`, `internal/cmdcommon/`)
+- **Purpose**: Providing basic functionality shared across packages
+- **Key Features**:
+  - File system abstraction interfaces
+  - Test support through mock implementations
+  - Command common utilities
 
 ## Data Flow Architecture
 
@@ -238,13 +225,13 @@ Configuration Loading → Security Validation → Group Processing → Command E
 
 3. Group Processing:
    ├── Dependency resolution
-   ├── Priority ordering
-   ├── Resource allocation (temp directories)
+   ├── Priority determination
+   ├── Resource allocation (temporary directories)
    ├── Environment preparation
    └── Risk-based command filtering
 
 4. Command Execution:
-   ├── Risk level evaluation and enforcement
+   ├── Risk level assessment and enforcement
    ├── Privilege escalation (if needed)
    ├── User/group switching (if specified)
    ├── Process spawning with isolation
@@ -257,37 +244,37 @@ Configuration Loading → Security Validation → Group Processing → Command E
 ### File Verification Flow
 
 ```
-File Path Input → Security Check → Hash Calculation → Verification → Result
+File Path Input → Security Checks → Hash Calculation → Verification → Result
 
-1. Security Check:
+1. Security Checks:
    ├── Path validation (no symlinks, absolute path)
    ├── Permission analysis
    └── Privilege requirement determination
 
-2. File Access & Hash Calculation:
+2. File Access and Hash Calculation:
    ├── Privilege escalation (if file requires root access)
-   ├── Safe file opening
+   ├── Secure file opening
    ├── Privilege restoration (immediately after file open)
-   ├── Streaming SHA-256 calculation (with normal privileges)
+   ├── Streaming SHA-256 calculation (runs with normal privileges)
    └── Hash comparison preparation
 
 3. Verification:
    ├── Hash comparison with stored values
-   ├── Error reporting with detailed context
-   └── Audit logging
+   ├── Detailed error reporting with context
+   └── Audit log recording
 ```
 
 ## Security Design Principles
 
 ### 1. Defense in Depth
-Multiple security layers ensure that a single point of failure doesn't compromise the entire system:
+Multiple security layers implemented to ensure no single point of failure compromises the entire system:
 - **Input Validation**: All inputs validated at entry points (including absolute path requirements)
 - **Path Security**: Comprehensive path validation and symlink protection
 - **File Integrity**: Hash-based verification of all critical files (configuration, environment files, executables)
 - **Privilege Control**: Minimal privilege principle with controlled escalation
 - **Environment Isolation**: Strict allowlist-based environment filtering
 - **Command Validation**: Allowlist-based command execution control with risk assessment
-- **Data Protection**: Automatic redaction of sensitive information in logs and outputs
+- **Data Protection**: Automatic redaction of sensitive information in logs and output
 
 ### 2. Zero Trust Model
 No implicit trust in system environment:
@@ -297,7 +284,7 @@ No implicit trust in system environment:
 - Privileges granted only when necessary and immediately revoked
 
 ### 3. Fail-Safe Design
-System designed to fail securely:
+System designed to fail safely:
 - Default deny for all operations
 - Emergency shutdown on security failures
 - Comprehensive error handling and logging
@@ -331,102 +318,40 @@ Component composition for feature extension:
 ```go
 type ValidatorWithPrivileges struct {
     *Validator                    // Base functionality
-    privMgr      PrivilegeManager // Extended capability
+    privMgr      PrivilegeManager // Extended functionality
     logger       *slog.Logger     // Observability
 }
 ```
 
 ### 3. Context-Aware Operations
-Operations carry context for security and observability:
+Operations with context for security and observability:
 ```go
-type ElevationContext struct {
-    Operation  string
-    FilePath   string
-    Reason     string
-}
+func (m *Manager) ExecuteWithContext(
+    ctx context.Context,
+    elevationCtx ElevationContext,
+    cmd Command,
+) (*Result, error)
 ```
 
-### 4. Builder Pattern for Configuration
-Flexible configuration with sensible defaults:
-```go
-func NewRunnerWithOptions(config *Config, opts ...Option) (*Runner, error) {
-    options := &runnerOptions{}
-    for _, opt := range opts {
-        opt(options)
-    }
-    // Apply options and create runner
-}
-```
-
-### 5. Resource Management Pattern
-Unified handling of side-effects across execution modes:
+### 4. Resource Management Patterns
+Proper resource lifecycle management:
 ```go
 type ResourceManager interface {
-    ExecuteCommand(ctx context.Context, cmd Command, group *CommandGroup, env map[string]string) (*ExecutionResult, error)
-    CreateTempDir(groupName string) (string, error)
-    WithPrivileges(ctx context.Context, fn func() error) error
-    SendNotification(message string, details map[string]any) error
+    Acquire(ctx context.Context) (Resource, error)
+    Release(resource Resource) error
+}
+
+// Usage with automatic cleanup
+func (r *Runner) executeWithResources(ctx context.Context) error {
+    resource, err := r.resourceMgr.Acquire(ctx)
+    if err != nil {
+        return err
+    }
+    defer r.resourceMgr.Release(resource)
+
+    return r.performOperation(resource)
 }
 ```
-
-## Testing Strategy
-
-### 1. Unit Testing
-- Comprehensive test coverage for all core components
-- Mock implementations for external dependencies
-- Error condition testing with custom error types
-- Race condition testing for concurrent operations
-
-### 2. Integration Testing
-- End-to-end workflow testing
-- File system interaction testing
-- Privilege operation testing
-- Configuration loading and validation testing
-
-### 3. Security Testing
-- Symlink attack prevention testing
-- Path traversal attack testing
-- Privilege escalation boundary testing
-- Environment variable injection testing
-
-### 4. Performance Testing
-- Hash calculation performance benchmarks
-- Memory usage optimization
-- Concurrent operation performance
-- Large file handling efficiency
-- Risk evaluation performance testing
-- Dry-run simulation accuracy validation
-
-## Deployment Considerations
-
-### 1. Binary Distribution
-- Setuid bit configuration for privilege escalation
-- Root ownership requirements
-- Binary integrity verification before deployment
-- Secure installation procedures
-
-### 2. Configuration Management
-- Secure hash directory permissions (755 or stricter)
-- Write-protected configuration files
-- Regular integrity verification of critical files
-- Configuration template management
-- Simplified configuration with absolute path requirements (environment variable fallback removed)
-
-### 3. Monitoring and Alerting
-- Structured logs for security events
-- Syslog integration for centralized logging
-- Emergency shutdown event monitoring
-- Performance metrics collection
-- Slack integration for critical alerts
-- Sensitive data redaction in all logs
-
-### 4. Security Operations
-- Regular security audits of configuration
-- Privilege operation monitoring
-- File integrity verification schedules
-- Incident response procedures
-- Risk-based command monitoring and alerting
-- User/group execution audit trails
 
 ## Performance Characteristics
 
@@ -494,6 +419,37 @@ go-safe-cmd-runner/
 ├── docs/                          # Project documentation
 └── sample/                        # Sample configuration files
 ```
+
+## Deployment Considerations
+
+### 1. Binary Distribution
+- Setuid bit configuration for privilege escalation
+- Root ownership requirements
+- Binary integrity verification before deployment
+- Secure installation procedures
+
+### 2. Configuration Management
+- Secure hash directory permissions (755 or stricter)
+- Write-protected configuration files
+- Regular integrity verification of critical files
+- Configuration template management
+- Simplified configuration with absolute path requirements (environment variable fallback removed)
+
+### 3. Monitoring and Alerting
+- Structured logs for security events
+- Syslog integration for centralized logging
+- Emergency shutdown event monitoring
+- Performance metrics collection
+- Slack integration for critical alerts
+- Sensitive data redaction in all logs
+
+### 4. Security Operations
+- Regular security audits of configuration
+- Privilege operation monitoring
+- File integrity verification schedules
+- Incident response procedures
+- Risk-based command monitoring and alerting
+- User/group execution audit trails
 
 ## Future Extensibility
 
