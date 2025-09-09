@@ -82,13 +82,20 @@ go-safe-cmd-runnerは、セキュリティを重視したGoベースのコマン
 ```go
 // WithPrivileges: Template Method パターンによる適切な責任分離
 func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
-    m.mu.Lock()                           // 排他制御
-    defer m.mu.Unlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-    execCtx, err := m.prepareExecution()  // 準備フェーズ
-    if err := m.performElevation()        // 実行フェーズ
-    defer m.handleCleanupAndMetrics()     // クリーンアップフェーズ
-    return fn()
+	execCtx, err := m.prepareExecution(elevationCtx) // 準備フェーズ
+	if err != nil {
+		return err
+	}
+
+	if err := m.performElevation(execCtx); err != nil { // 実行フェーズ
+		return err
+	}
+
+	defer m.handleCleanupAndMetrics(execCtx) // クリーンアップフェーズ
+	return fn()
 }
 ```
 
@@ -109,9 +116,14 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
 ```go
 // 権限復元失敗時の緊急シャットダウン処理
 func (m *UnixPrivilegeManager) emergencyShutdown(restoreErr error, shutdownContext string) {
-    criticalMsg := fmt.Sprintf("CRITICAL SECURITY FAILURE: Privilege restoration failed")
-    m.logger.Error(criticalMsg, "error", restoreErr)
-    os.Exit(1) // 権限リーク防止のための即座終了
+	criticalMsg := fmt.Sprintf("CRITICAL SECURITY FAILURE: Privilege restoration failed during %s", shutdownContext)
+	m.logger.Error(criticalMsg,
+		"error", restoreErr,
+		"original_uid", m.originalUID,
+		"current_euid", os.Geteuid(),
+	)
+	// システムロガーと標準エラー出力にもログを記録
+	os.Exit(1) // 権限リーク防止のための即座終了
 }
 ```
 
@@ -139,12 +151,20 @@ func (m *UnixPrivilegeManager) emergencyShutdown(restoreErr error, shutdownConte
 ```go
 // 多層的な検証システム
 func (v *Validator) ValidateConfig(config *runnertypes.Config) (*ValidationResult, error) {
+    result := &ValidationResult{ Valid: true }
     // 1. 構造的検証
     v.validateGlobalConfig(&config.Global, result)
-    // 2. セキュリティ検証
-    v.validatePrivilegedCommand(cmd, cmdLocation, result)
+    // 2. セキュリティ検証 (委譲)
+    for _, group := range config.Groups {
+        for _, cmd := range group.Commands {
+            if cmd.HasUserGroupSpecification() {
+                v.validatePrivilegedCommand(&cmd, "location", result)
+            }
+        }
+    }
     // 3. 危険パターン検出
     dangerousVars := []string{"LD_LIBRARY_PATH", "LD_PRELOAD", "DYLD_LIBRARY_PATH"}
+    // ... など
 }
 ```
 
@@ -156,17 +176,10 @@ func (v *Validator) ValidateConfig(config *runnertypes.Config) (*ValidationResul
 - **重複検出**: 設定の整合性確保
 
 #### 🛡️ **コマンドインジェクション対策**
-```go
-// 多層コマンド検証
-dangerousPatterns := []string{
-    `;`, `\|`, `&&`, `\$\(`, "`",    // シェルメタキャラクター
-    `>`, `<`,                      // I/Oリダイレクション
-    `rm `, `exec `,                // 高リスクコマンド
-}
-```
+このシステムは、コマンドと引数の文字列を危険なパターンのセットに対して検証することで、コマンドインジェクションを防ぎます。単一の配列にパターンをハードコーディングする代わりに、ロジックは `internal/runner/security` パッケージ内の `IsShellMetacharacter` や `IsDangerousPrivilegedCommand` といった専用の検証関数にカプセル化されています。これにより、保守性とテスト性が向上しています。
 
 **セキュリティ評価**: ✅ **改善機会ありの良好**
-- 一般的なインジェクションベクターを防ぐ包括的パターンマッチング
+- 一般的なインジェクションベクターを防ぐ包括的検証関数
 - 追加セキュリティのためのホワイトリストベースアプローチ
 - **静的パターンの利点**:
   - **改ざん耐性**: 実行ファイル埋め込みによりパターン改ざんが困難
@@ -177,8 +190,11 @@ dangerousPatterns := []string{
 #### 🗂️ **ファイル整合性検証**
 ```go
 // 暗号整合性検証
-hash := sha256.Sum256(data)
-encodedPath := base64.URLEncoding.EncodeToString([]byte(filePath))
+func (p *ProductionHashFilePathGetter) GetHashFilePath(hashAlgorithm HashAlgorithm, hashDir string, filePath common.ResolvedPath) (string, error) {
+	h := sha256.Sum256([]byte(filePath.String()))
+	hashStr := base64.URLEncoding.EncodeToString(h[:])
+	return filepath.Join(hashDir, hashStr[:12]+".json"), nil
+}
 ```
 
 **セキュリティ評価**: ✅ **非常に良好**
@@ -189,11 +205,17 @@ encodedPath := base64.URLEncoding.EncodeToString([]byte(filePath))
 #### 🔒 **パストラバーサル対策**
 ```go
 // openat2システムコールによる保護
-func openat2(dirfd int, pathname string, how *openHow) (int, error) {
-    how := openHow{
-        flags:   uint64(flag),
-        resolve: ResolveNoSymlinks,  // シンボリックリンク無効化
+func (fs *osFS) safeOpenFileInternal(filePath string, flag int, perm os.FileMode) (*os.File, error) {
+    if fs.openat2Available {
+        how := openHow{
+            flags:   uint64(flag),
+            mode:    uint64(perm),
+            resolve: ResolveNoSymlinks, // シンボリックリンク無効化
+        }
+        fd, err := openat2(AtFdcwd, absPath, &how)
+        // ...
     }
+    // ... フォールバック実装
 }
 ```
 
@@ -204,15 +226,23 @@ func openat2(dirfd int, pathname string, how *openHow) (int, error) {
 #### 🟢 **拡張されたログセキュリティ (`internal/logging/`)**
 
 **実装された機能**:
+リダクションは、他のログハンドラをラップする `RedactingHandler` によって処理されます。このデコレータパターンにより、柔軟で構成可能なロギングパイプラインが可能になります。
 ```go
-// マルチハンドラログシステム
-type MultiHandler struct {
-    handlers []slog.Handler
-    redactor *redaction.Redactor
+// RedactingHandler は機密情報をリダクションするデコレータです
+type RedactingHandler struct {
+	handler slog.Handler
+	config  *redaction.Config
 }
 
-func (m *MultiHandler) Handle(ctx context.Context, r slog.Record) error {
-    // 機密データ編集後、複数チャンネルに配信
+func (r *RedactingHandler) Handle(ctx context.Context, record slog.Record) error {
+    // リダクションされた属性を持つ新しいレコードを作成
+    newRecord := slog.NewRecord(record.Time, record.Level, record.Message, record.PC)
+    record.Attrs(func(attr slog.Attr) bool {
+        redactedAttr := r.config.RedactLogAttribute(attr)
+        newRecord.AddAttrs(redactedAttr)
+        return true
+    })
+    return r.handler.Handle(ctx, newRecord)
 }
 ```
 
@@ -227,12 +257,13 @@ func (m *MultiHandler) Handle(ctx context.Context, r slog.Record) error {
 **実装された機能**:
 ```go
 // 機密データパターン検出
-func (r *Redactor) RedactText(text string) string {
-    patterns := []SensitivePattern{
-        {Pattern: "password=.*", Replacement: "password=[REDACTED]"},
-        {Pattern: "token=.*", Replacement: "token=[REDACTED]"},
-        {Pattern: "Bearer .*", Replacement: "Bearer [REDACTED]"},
-    }
+func (c *Config) RedactText(text string) string {
+	result := text
+	// key=value パターンのリダクションを適用
+	for _, key := range c.KeyValuePatterns {
+		result = c.performKeyValueRedaction(result, key, c.TextPlaceholder)
+	}
+	return result
 }
 ```
 
@@ -247,15 +278,17 @@ func (r *Redactor) RedactText(text string) string {
 **実装された機能**:
 ```go
 // 動的リスク評価
-type RiskEvaluator struct {
-    patterns []SecurityPattern
-}
+type StandardEvaluator struct{}
 
-func (e *RiskEvaluator) EvaluateCommand(command string) RiskLevel {
-    // Critical: sudo, su, rm -rf
-    // High: mount, systemctl
-    // Medium: chmod, package management
-    // Low: ls, cat, grep
+func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.Command) (runnertypes.RiskLevel, error) {
+    if isPrivEsc, _ := security.IsPrivilegeEscalationCommand(cmd.Cmd); isPrivEsc {
+        return runnertypes.RiskLevelCritical, nil
+    }
+    if security.IsDestructiveFileOperation(cmd.Cmd, cmd.Args) {
+        return runnertypes.RiskLevelHigh, nil
+    }
+    // ... 中リスク、低リスクレベルについても同様
+    return runnertypes.RiskLevelLow, nil
 }
 ```
 
@@ -270,9 +303,16 @@ func (e *RiskEvaluator) EvaluateCommand(command string) RiskLevel {
 **実装された機能**:
 ```go
 // セキュアなグループ検証
-type GroupMembershipChecker interface {
-    IsUserInGroup(username, groupname string) (bool, error)
-    GetGroupMembers(groupname string) ([]string, error)
+type GroupMembership struct {
+    // ... 内部キャッシュフィールド
+}
+
+func (gm *GroupMembership) IsUserInGroup(username, groupName string) (bool, error) {
+    // ... 実装
+}
+
+func (gm *GroupMembership) GetGroupMembers(gid uint32) ([]string, error) {
+    // ... 実装
 }
 ```
 
@@ -292,12 +332,6 @@ type Capabilities interface {
     SupportsColor() bool
     HasExplicitUserPreference() bool
 }
-
-type InteractiveDetector interface {
-    IsInteractive() bool
-    IsTerminal() bool
-    IsCIEnvironment() bool
-}
 ```
 
 **セキュリティ評価**: ✅ **良好**
@@ -309,15 +343,15 @@ type InteractiveDetector interface {
 
 **実装された機能**:
 ```go
-// 端末色彩サポート検出
-type ColorDetector interface {
-    SupportsColor() bool
-}
+// 検証済みカラー制御
+type Color func(text string) string
 
-func (d *DefaultColorDetector) SupportsColor() bool {
-    // TERM環境変数による色彩対応端末識別
-    // 不明な端末では安全のためカラー出力無効化
+func NewColor(ansiCode string) Color {
+	return func(text string) string {
+		return ansiCode + text + "\033[0m" // resetCode
+	}
 }
+// 事前定義された検証済みのANSIコードを使用することで、ターミナルインジェクションを防止します。
 ```
 
 **セキュリティ評価**: ✅ **良好**
@@ -435,7 +469,7 @@ func TestPrivilegeEscalationFailure(t *testing.T) {
 
 ### フェーズ1: 即座のソフトウェア改善（1-2週間）
 
-**動的パターン検出強化**:
+**静的パターン評価の強化**:
 ```go
 // 設定可能な脅威パターンシステム
 type ThreatPatternConfig struct {
@@ -528,9 +562,9 @@ find /usr/local/bin -perm -4000 -exec ls -l {} \;
 
 **SRE視点 - 推奨SLI/SLO**:
 ```yaml
-availability: 99.9%    # 月6043分以内の月間ダウンタイム
+availability: 99.9%    # 月43分以内の月間ダウンタイム
 latency_p95: 5s       # 95%のコマンドが5秒以内で完了
-error_rate: < 0.1%    # エラー率10.1%未満
+error_rate: < 0.1%    # エラー率0.1%未満
 ```
 
 **運用監視要件**:

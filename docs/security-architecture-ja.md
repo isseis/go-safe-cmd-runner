@@ -114,14 +114,12 @@ type Filter struct {
 
 **変数検証**:
 ```go
-// 場所: internal/runner/security/environment_validation.go:47-56
-func (v *Validator) ValidateEnvironmentValue(key, value string) error {
-    // コンパイルされた正規表現を使用して危険なパターンをチェック
-    for _, re := range v.dangerousEnvRegexps {
-        if re.MatchString(value) {
-            return fmt.Errorf("%w: environment variable %s contains potentially dangerous pattern",
-                ErrUnsafeEnvironmentVar, key)
-        }
+// 場所: internal/runner/config/validator.go
+func (v *Validator) validateVariableValue(value string) error {
+    // 一元化されたセキュリティ検証を使用
+    if err := security.IsVariableValueSafe(value); err != nil {
+        // 一貫性のため検証エラー型でセキュリティエラーをラップ
+        return fmt.Errorf("%w: %s", ErrDangerousPattern, err.Error())
     }
     return nil
 }
@@ -212,7 +210,7 @@ type UnixPrivilegeManager struct {
 **特権昇格プロセス**:
 ```go
 // 場所: internal/runner/privilege/unix.go:36-87
-func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) error {
+func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
     m.mu.Lock()  // スレッドセーフティのためのグローバルロック
     defer m.mu.Unlock()
 
@@ -329,14 +327,18 @@ AllowedCommands: []string{
 **リスク評価エンジン**:
 ```go
 // 場所: internal/runner/risk/evaluator.go
-type Evaluator struct {
-    patterns []SecurityPattern
-}
+type StandardEvaluator struct{}
 
-type SecurityPattern struct {
-    Pattern   *regexp.Regexp
-    RiskLevel runnertypes.RiskLevel
-    Category  string
+func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.Command) (runnertypes.RiskLevel, error) {
+    // 特権昇格コマンドをチェック（クリティカルリスク - ブロックされるべき）
+    isPrivEsc, err := security.IsPrivilegeEscalationCommand(cmd.Cmd)
+    if err != nil {
+        return runnertypes.RiskLevelUnknown, err
+    }
+    if isPrivEsc {
+        return runnertypes.RiskLevelCritical, nil
+    }
+    // ... 追加のリスク評価ロジック
 }
 ```
 

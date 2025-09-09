@@ -114,14 +114,12 @@ type Filter struct {
 
 **Variable Validation**:
 ```go
-// Location: internal/runner/security/environment_validation.go:47-56
-func (v *Validator) ValidateEnvironmentValue(key, value string) error {
-    // Check for dangerous patterns using compiled regexes
-    for _, re := range v.dangerousEnvRegexps {
-        if re.MatchString(value) {
-            return fmt.Errorf("%w: environment variable %s contains potentially dangerous pattern",
-                ErrUnsafeEnvironmentVar, key)
-        }
+// Location: internal/runner/config/validator.go
+func (v *Validator) validateVariableValue(value string) error {
+    // Use centralized security validation
+    if err := security.IsVariableValueSafe(value); err != nil {
+        // Wrap the security error with our validation error type for consistency
+        return fmt.Errorf("%w: %s", ErrDangerousPattern, err.Error())
     }
     return nil
 }
@@ -212,7 +210,7 @@ type UnixPrivilegeManager struct {
 **Privilege Escalation Process**:
 ```go
 // Location: internal/runner/privilege/unix.go:36-87
-func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) error {
+func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
     m.mu.Lock()  // Global lock for thread safety
     defer m.mu.Unlock()
 
@@ -329,14 +327,18 @@ Implement intelligent security controls based on command risk assessment, automa
 **Risk Assessment Engine**:
 ```go
 // Location: internal/runner/risk/evaluator.go
-type Evaluator struct {
-    patterns []SecurityPattern
-}
+type StandardEvaluator struct{}
 
-type SecurityPattern struct {
-    Pattern   *regexp.Regexp
-    RiskLevel runnertypes.RiskLevel
-    Category  string
+func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.Command) (runnertypes.RiskLevel, error) {
+    // Check for privilege escalation commands (critical risk - should be blocked)
+    isPrivEsc, err := security.IsPrivilegeEscalationCommand(cmd.Cmd)
+    if err != nil {
+        return runnertypes.RiskLevelUnknown, err
+    }
+    if isPrivEsc {
+        return runnertypes.RiskLevelCritical, nil
+    }
+    // ... additional risk assessment logic
 }
 ```
 

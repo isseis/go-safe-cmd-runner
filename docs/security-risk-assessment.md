@@ -82,13 +82,20 @@ Low Risk:     4 items (dependency updates, code quality improvements)
 ```go
 // WithPrivileges: Proper responsibility separation using Template Method pattern
 func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
-    m.mu.Lock()                           // Exclusive control
-    defer m.mu.Unlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-    execCtx, err := m.prepareExecution()  // Preparation phase
-    if err := m.performElevation()        // Execution phase
-    defer m.handleCleanupAndMetrics()     // Cleanup phase
-    return fn()
+	execCtx, err := m.prepareExecution(elevationCtx) // Preparation phase
+	if err != nil {
+		return err
+	}
+
+	if err := m.performElevation(execCtx); err != nil { // Execution phase
+		return err
+	}
+
+	defer m.handleCleanupAndMetrics(execCtx) // Cleanup phase
+	return fn()
 }
 ```
 
@@ -103,9 +110,14 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
 **Fail-Safe Design Implementation**:
 ```go
 func (m *UnixPrivilegeManager) emergencyShutdown(restoreErr error, shutdownContext string) {
-    criticalMsg := fmt.Sprintf("CRITICAL SECURITY FAILURE: Privilege restoration failed")
-    m.logger.Error(criticalMsg, "error", restoreErr, "context", shutdownContext)
-    os.Exit(1) // Immediate termination to prevent privilege leakage
+	criticalMsg := fmt.Sprintf("CRITICAL SECURITY FAILURE: Privilege restoration failed during %s", shutdownContext)
+	m.logger.Error(criticalMsg,
+		"error", restoreErr,
+		"original_uid", m.originalUID,
+		"current_euid", os.Geteuid(),
+	)
+	// Also log to system logger and stderr
+	os.Exit(1) // Immediate termination to prevent privilege leakage
 }
 ```
 
@@ -133,9 +145,10 @@ func (m *UnixPrivilegeManager) emergencyShutdown(restoreErr error, shutdownConte
 ```go
 // Emergency shutdown processing for privilege restoration failure
 func (m *UnixPrivilegeManager) emergencyShutdown(restoreErr error, shutdownContext string) {
-    criticalMsg := fmt.Sprintf("CRITICAL SECURITY FAILURE: Privilege restoration failed")
-    m.logger.Error(criticalMsg, "error", restoreErr)
-    os.Exit(1) // Immediate termination to prevent privilege leakage
+	criticalMsg := fmt.Sprintf("CRITICAL SECURITY FAILURE: Privilege restoration failed during %s", shutdownContext)
+	m.logger.Error(criticalMsg, "error", restoreErr)
+	// Also log to system logger and stderr
+	os.Exit(1) // Immediate termination to prevent privilege leakage
 }
 ```
 
@@ -163,12 +176,20 @@ func (m *UnixPrivilegeManager) emergencyShutdown(restoreErr error, shutdownConte
 ```go
 // Multi-layered validation system
 func (v *Validator) ValidateConfig(config *runnertypes.Config) (*ValidationResult, error) {
+    result := &ValidationResult{ Valid: true }
     // 1. Structural validation
     v.validateGlobalConfig(&config.Global, result)
-    // 2. Security validation
-    v.validatePrivilegedCommand(cmd, cmdLocation, result)
+    // 2. Security validation (delegated)
+    for _, group := range config.Groups {
+        for _, cmd := range group.Commands {
+            if cmd.HasUserGroupSpecification() {
+                v.validatePrivilegedCommand(&cmd, "location", result)
+            }
+        }
+    }
     // 3. Dangerous pattern detection
     dangerousVars := []string{"LD_LIBRARY_PATH", "LD_PRELOAD", "DYLD_LIBRARY_PATH"}
+    // ... and so on
 }
 ```
 
@@ -180,29 +201,25 @@ func (v *Validator) ValidateConfig(config *runnertypes.Config) (*ValidationResul
 - **Duplicate Detection**: Configuration consistency assurance
 
 #### 🛡️ **Command Injection Countermeasures**
-```go
-// Multi-layer command validation
-dangerousPatterns := []string{
-    `;`, `\|`, `&&`, `\$\(`, "`",    // Shell metacharacters
-    `>`, `<`,                      // I/O redirection
-    `rm `, `exec `,                // High-risk commands
-}
-```
+The system prevents command injection by validating command and argument strings against a set of dangerous patterns. Instead of hardcoding patterns in a single array, the logic is encapsulated in dedicated validation functions within the `internal/runner/security` package, such as `IsShellMetacharacter` and `IsDangerousPrivilegedCommand`. This improves maintainability and testability.
 
 **Security Evaluation**: ✅ **Good with Enhancement Opportunities**
-- Comprehensive pattern matching to prevent common injection vectors
-- Whitelist-based approach for additional security
+- Comprehensive validation functions to prevent common injection vectors.
+- Whitelist-based approach for additional security.
 - **Static Pattern Advantages**:
-  - **Tamper Resistance**: Pattern modification difficult due to executable embedding
-  - **Dependency Reduction**: No external configuration files needed, minimizing attack surface
-  - **Consistency Guarantee**: Unified security policy across deployment environments
-  - **TOCTOU Attack Avoidance**: Eliminates time-of-check-time-of-use attacks from external file dependencies
+  - **Tamper Resistance**: Pattern modification difficult due to executable embedding.
+  - **Dependency Reduction**: No external configuration files needed, minimizing attack surface.
+  - **Consistency Guarantee**: Unified security policy across deployment environments.
+  - **TOCTOU Attack Avoidance**: Eliminates time-of-check-time-of-use attacks from external file dependencies.
 
 #### 🗂️ **File Integrity Verification**
 ```go
 // Cryptographic integrity verification
-hash := sha256.Sum256(data)
-encodedPath := base64.URLEncoding.EncodeToString([]byte(filePath))
+func (p *ProductionHashFilePathGetter) GetHashFilePath(hashAlgorithm HashAlgorithm, hashDir string, filePath common.ResolvedPath) (string, error) {
+	h := sha256.Sum256([]byte(filePath.String()))
+	hashStr := base64.URLEncoding.EncodeToString(h[:])
+	return filepath.Join(hashDir, hashStr[:12]+".json"), nil
+}
 ```
 
 **Security Evaluation**: ✅ **Excellent**
@@ -213,11 +230,17 @@ encodedPath := base64.URLEncoding.EncodeToString([]byte(filePath))
 #### 🔒 **Path Traversal Protection**
 ```go
 // Protection using openat2 system call
-func openat2(dirfd int, pathname string, how *openHow) (int, error) {
-    how := openHow{
-        flags:   uint64(flag),
-        resolve: ResolveNoSymlinks,  // Symlink disabling
+func (fs *osFS) safeOpenFileInternal(filePath string, flag int, perm os.FileMode) (*os.File, error) {
+    if fs.openat2Available {
+        how := openHow{
+            flags:   uint64(flag),
+            mode:    uint64(perm),
+            resolve: ResolveNoSymlinks, // Symlink disabling
+        }
+        fd, err := openat2(AtFdcwd, absPath, &how)
+        // ...
     }
+    // ... fallback implementation
 }
 ```
 
@@ -226,15 +249,23 @@ func openat2(dirfd int, pathname string, how *openHow) (int, error) {
 #### 🟢 **Enhanced Logging Security (`internal/logging/`)**
 
 **Implemented Features**:
+Redaction is handled by a `RedactingHandler` that wraps other log handlers. This decorator pattern allows for flexible and composable logging pipelines.
 ```go
-// Multi-handler logging system
-type MultiHandler struct {
-    handlers []slog.Handler
-    redactor *redaction.Redactor
+// RedactingHandler is a decorator that redacts sensitive information
+type RedactingHandler struct {
+	handler slog.Handler
+	config  *redaction.Config
 }
 
-func (m *MultiHandler) Handle(ctx context.Context, r slog.Record) error {
-    // Distribute to multiple channels after sensitive data redaction
+func (r *RedactingHandler) Handle(ctx context.Context, record slog.Record) error {
+    // Create a new record with redacted attributes
+    newRecord := slog.NewRecord(record.Time, record.Level, record.Message, record.PC)
+    record.Attrs(func(attr slog.Attr) bool {
+        redactedAttr := r.config.RedactLogAttribute(attr)
+        newRecord.AddAttrs(redactedAttr)
+        return true
+    })
+    return r.handler.Handle(ctx, newRecord)
 }
 ```
 
@@ -249,12 +280,13 @@ func (m *MultiHandler) Handle(ctx context.Context, r slog.Record) error {
 **Implemented Features**:
 ```go
 // Sensitive data pattern detection
-func (r *Redactor) RedactText(text string) string {
-    patterns := []SensitivePattern{
-        {Pattern: "password=.*", Replacement: "password=[REDACTED]"},
-        {Pattern: "token=.*", Replacement: "token=[REDACTED]"},
-        {Pattern: "Bearer .*", Replacement: "Bearer [REDACTED]"},
-    }
+func (c *Config) RedactText(text string) string {
+	result := text
+	// Apply key=value pattern redaction
+	for _, key := range c.KeyValuePatterns {
+		result = c.performKeyValueRedaction(result, key, c.TextPlaceholder)
+	}
+	return result
 }
 ```
 
@@ -269,15 +301,17 @@ func (r *Redactor) RedactText(text string) string {
 **Implemented Features**:
 ```go
 // Dynamic risk assessment
-type RiskEvaluator struct {
-    patterns []SecurityPattern
-}
+type StandardEvaluator struct{}
 
-func (e *RiskEvaluator) EvaluateCommand(command string) RiskLevel {
-    // Critical: sudo, su, rm -rf
-    // High: mount, systemctl
-    // Medium: chmod, package management
-    // Low: ls, cat, grep
+func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.Command) (runnertypes.RiskLevel, error) {
+    if isPrivEsc, _ := security.IsPrivilegeEscalationCommand(cmd.Cmd); isPrivEsc {
+        return runnertypes.RiskLevelCritical, nil
+    }
+    if security.IsDestructiveFileOperation(cmd.Cmd, cmd.Args) {
+        return runnertypes.RiskLevelHigh, nil
+    }
+    // ... and so on for Medium and Low risk levels
+    return runnertypes.RiskLevelLow, nil
 }
 ```
 
@@ -292,9 +326,16 @@ func (e *RiskEvaluator) EvaluateCommand(command string) RiskLevel {
 **Implemented Features**:
 ```go
 // Secure group verification
-type GroupMembershipChecker interface {
-    IsUserInGroup(username, groupname string) (bool, error)
-    GetGroupMembers(groupname string) ([]string, error)
+type GroupMembership struct {
+    // ... internal cache fields
+}
+
+func (gm *GroupMembership) IsUserInGroup(username, groupName string) (bool, error) {
+    // ... implementation
+}
+
+func (gm *GroupMembership) GetGroupMembers(gid uint32) ([]string, error) {
+    // ... implementation
 }
 ```
 
@@ -309,10 +350,10 @@ type GroupMembershipChecker interface {
 **Implemented Features**:
 ```go
 // Safe terminal operations
-type TerminalCapabilities interface {
-    DetectColorSupport() bool
+type Capabilities interface {
     IsInteractive() bool
-    GetTerminalSize() (width, height int, err error)
+    SupportsColor() bool
+    HasExplicitUserPreference() bool
 }
 ```
 
@@ -323,10 +364,14 @@ type TerminalCapabilities interface {
 **Implemented Features**:
 ```go
 // Validated color control
-func (c *ColorManager) Colorize(text string, color ColorCode) string {
-    // Uses only validated control sequences
-    // Prevents terminal injection attacks
+type Color func(text string) string
+
+func NewColor(ansiCode string) Color {
+	return func(text string) string {
+		return ansiCode + text + "\033[0m" // resetCode
+	}
 }
+// Prevents terminal injection by using predefined, validated ANSI codes.
 ```
 
 **Security Evaluation**: ✅ **Good**
@@ -533,11 +578,17 @@ dangerousPatterns := []string{
 #### 🔒 **Path Traversal Protection**
 ```go
 // Advanced protection via openat2 system call
-func openat2(dirfd int, pathname string, how *openHow) (int, error) {
-    how := openHow{
-        flags:   uint64(flag),
-        resolve: ResolveNoSymlinks,  // Kernel-level symlink protection
+func (fs *osFS) safeOpenFileInternal(filePath string, flag int, perm os.FileMode) (*os.File, error) {
+    if fs.openat2Available {
+        how := openHow{
+            flags:   uint64(flag),
+            mode:    uint64(perm),
+            resolve: ResolveNoSymlinks, // Kernel-level symlink protection
+        }
+        fd, err := openat2(AtFdcwd, absPath, &how)
+        // ...
     }
+    // ... fallback implementation
 }
 ```
 
@@ -547,25 +598,21 @@ func openat2(dirfd int, pathname string, how *openHow) (int, error) {
 - Zero-tolerance policy for symbolic links in critical paths
 
 #### 🛡️ **Command Injection Protection**
-```go
-// Multi-layer command validation
-dangerousPatterns := []string{
-    `;`, `\|`, `&&`, `\$\(`, "`",    // Shell metacharacters
-    `>`, `<`,                      // I/O redirection
-    `rm `, `exec `,                // High-risk commands
-}
-```
+The system prevents command injection by validating command and argument strings against a set of dangerous patterns. Instead of hardcoding patterns in a single array, the logic is encapsulated in dedicated validation functions within the `internal/runner/security` package, such as `IsShellMetacharacter` and `IsDangerousPrivilegedCommand`. This improves maintainability and testability.
 
 **Security Assessment**: ✅ **Good with Enhancement Opportunities**
-- Comprehensive pattern matching prevents common injection vectors
-- Whitelist-based approach for additional security
-- **Recommendation**: Implement dynamic pattern updates
+- Comprehensive validation functions to prevent common injection vectors.
+- Whitelist-based approach for additional security.
+- **Recommendation**: Implement dynamic pattern updates.
 
 #### 🗂️ **File Integrity Verification**
 ```go
 // Cryptographic integrity validation
-hash := sha256.Sum256(data)
-encodedPath := base64.URLEncoding.EncodeToString([]byte(filePath))
+func (p *ProductionHashFilePathGetter) GetHashFilePath(hashAlgorithm HashAlgorithm, hashDir string, filePath common.ResolvedPath) (string, error) {
+	h := sha256.Sum256([]byte(filePath.String()))
+	hashStr := base64.URLEncoding.EncodeToString(h[:])
+	return filepath.Join(hashDir, hashStr[:12]+".json"), nil
+}
 ```
 
 **Security Assessment**: ✅ **Very Good**

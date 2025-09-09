@@ -96,16 +96,22 @@ File Access Request → Permission Check → Privilege Escalation (if needed)
 
 **Privilege Escalation Pattern:**
 ```go
-func (m *Manager) WithPrivileges(ctx ElevationContext, fn func() error) error {
-    m.mu.Lock()
-    defer m.mu.Unlock()
+// WithPrivileges: Proper responsibility separation using Template Method pattern
+func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-    if err := m.escalatePrivileges(ctx); err != nil {
-        return err
-    }
+	execCtx, err := m.prepareExecution(elevationCtx) // Preparation phase
+	if err != nil {
+		return err
+	}
 
-    defer m.emergencyShutdownOnRestoreFailure(fn) // Fail-safe mechanism
-    return fn()
+	if err := m.performElevation(execCtx); err != nil { // Execution phase
+		return err
+	}
+
+	defer m.handleCleanupAndMetrics(execCtx) // Cleanup phase
+	return fn()
 }
 ```
 

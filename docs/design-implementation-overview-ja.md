@@ -96,16 +96,22 @@ func (l *Loader) LoadConfig(path string) (*runnertypes.Config, error) {
 
 **特権昇格パターン:**
 ```go
-func (m *Manager) WithPrivileges(ctx ElevationContext, fn func() error) error {
-    m.mu.Lock()
-    defer m.mu.Unlock()
+// WithPrivileges: Proper responsibility separation using Template Method pattern
+func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-    if err := m.escalatePrivileges(ctx); err != nil {
-        return err
-    }
+	execCtx, err := m.prepareExecution(elevationCtx) // Preparation phase
+	if err != nil {
+		return err
+	}
 
-    defer m.emergencyShutdownOnRestoreFailure(fn) // フェイルセーフメカニズム
-    return fn()
+	if err := m.performElevation(execCtx); err != nil { // Execution phase
+		return err
+	}
+
+	defer m.handleCleanupAndMetrics(execCtx) // Cleanup phase
+	return fn()
 }
 ```
 
@@ -352,7 +358,7 @@ func NewRunnerWithOptions(config *Config, opts ...Option) (*Runner, error) {
 type ResourceManager interface {
     ExecuteCommand(ctx context.Context, cmd Command, group *CommandGroup, env map[string]string) (*ExecutionResult, error)
     CreateTempDir(groupName string) (string, error)
-    WithPrivileges(ctx context.Context, fn func() error) error
+    WithPrivileges(context ElevationContext, fn func() error) error
     SendNotification(message string, details map[string]any) error
 }
 ```
