@@ -480,7 +480,7 @@ find /usr/local/bin -perm -4000 -exec ls -l {} \;
 
 **SRE Perspective - Recommended SLI/SLO**:
 ```yaml
-availability: 99.9%    # Maximum 6043 minutes monthly downtime
+availability: 99.9%    # Maximum 43 minutes monthly downtime
 latency_p95: 5s       # 95% of commands complete within 5 seconds
 error_rate: < 0.1%    # Error rate under 0.1%
 ```
