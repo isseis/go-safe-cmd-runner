@@ -62,7 +62,7 @@ go-safe-cmd-runnerは、セキュリティを重視したGoベースのコマン
 ### 🎯 **推奨ソフトウェア改善**
 
 #### 高優先度（ソフトウェアアーキテクチャ）
-- [ ] **動的パターン更新** - 設定可能な脅威検出パターンの実装
+- [ ] **静的パターン評価向上** - 埋め込み静的パターンの利点をさらに活用
 - [ ] **拡張エラーハンドリング** - セキュリティ対応エラーメッセージの標準化
 
 #### 中優先度（コード品質）
@@ -282,39 +282,48 @@ type GroupMembershipChecker interface {
 - 権限境界の厳格な管理
 - クロスプラットフォーム対応
 
-#### 🖥️ **端末セキュリティ (`internal/terminal/`)**
+#### 🖥️ **端末機能検出 (`internal/terminal/`)**
 
 **実装された機能**:
 ```go
-// 安全な端末操作
-type TerminalCapabilities interface {
-    DetectColorSupport() bool
+// 端末能力検出
+type Capabilities interface {
     IsInteractive() bool
-    GetTerminalSize() (width, height int, err error)
+    SupportsColor() bool
+    HasExplicitUserPreference() bool
+}
+
+type InteractiveDetector interface {
+    IsInteractive() bool
+    IsTerminal() bool
+    IsCIEnvironment() bool
 }
 ```
 
 **セキュリティ評価**: ✅ **良好**
-- 端末インジェクション攻撃の防止
-- 制御シーケンスの安全な処理
-- 対話的操作の適切な処理
-- クロスプラットフォーム端末セキュリティ
+- CI/CD環境の自動検出による適切な出力制御
+- 保守的なデフォルト設定（不明な端末での色彩出力無効化）
+- クロスプラットフォーム端末能力検出
 
-#### 🎨 **カラー管理セキュリティ (`internal/color/`)**
+#### 🎨 **カラー管理 (`internal/color/`)**
 
 **実装された機能**:
 ```go
-// 検証済みカラー制御
-func (c *ColorManager) Colorize(text string, color ColorCode) string {
-    // 検証済み制御シーケンスのみ使用
-    // 端末インジェクション攻撃防止
+// 端末色彩サポート検出
+type ColorDetector interface {
+    SupportsColor() bool
+}
+
+func (d *DefaultColorDetector) SupportsColor() bool {
+    // TERM環境変数による色彩対応端末識別
+    // 不明な端末では安全のためカラー出力無効化
 }
 ```
 
 **セキュリティ評価**: ✅ **良好**
-- 制御シーケンスインジェクション防止
-- 端末機能ベースの安全なカラー制御
-- 検証済みエスケープシーケンスのみ使用
+- 保守的アプローチによる不明端末でのエスケープシーケンス出力防止
+- 既知の色彩対応端末パターンでの検証済み制御
+- 端末能力に基づく安全な出力制御
 
 ### 4. 統合セキュリティアーキテクチャの評価
 
@@ -346,7 +355,7 @@ func (c *ColorManager) Colorize(text string, color ColorCode) string {
 - 拡張されたログシステムによる可視性向上
 - データ編集システムによる情報漏洩リスク軽減
 - リスクベース制御による動的セキュリティ強化
-- 端末セキュリティ機能による攻撃表面削減
+- 端末能力検出による適切な出力制御
 
 ### 3. システム管理者視点のリスク
 
