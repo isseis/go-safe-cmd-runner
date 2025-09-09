@@ -628,98 +628,61 @@ type ColorManager interface {
 - Safe color output generation
 - Protection against terminal manipulation
 
-### 13. Common Utilities Security (`internal/common/`, `internal/cmdcommon/`)
+### 11. Terminal Capability Detection (`internal/terminal/`)
 
 #### Purpose
-Provide secure foundational interfaces and utilities with comprehensive testing support.
-
-#### Implementation Details
-
-**File System Abstraction**:
-```go
-// Location: internal/common/filesystem.go
-type FileSystem interface {
-    CreateTempDir(dir string, prefix string) (string, error)
-    FileExists(path string) (bool, error)
-    Lstat(path string) (fs.FileInfo, error)
-    IsDir(path string) (bool, error)
-}
-```
-
-**Mock Implementation Security**:
-- Comprehensive mock file system for testing
-- Consistent security behavior in test and production
-- Type-safe interface implementations
-- Error condition testing support
-
-#### Security Guarantees
-- Consistent security behavior across implementations
-- Comprehensive test coverage for security paths
-- Type-safe interface contracts
-- Mock implementations maintain security properties
-
-### 15. Configuration Security
-- Rate limiting prevents abuse
-- Comprehensive error handling
-
-### 11. Terminal Security (`internal/terminal/`)
-
-#### Purpose
-Provide secure terminal capability detection and interactive operation handling while preventing terminal-based attacks and information disclosure.
+Provide terminal capability detection for color support and interactive execution environments.
 
 #### Implementation Details
 
 **Terminal Capability Detection**:
 ```go
 // Location: internal/terminal/capabilities.go
-type CapabilityDetector interface {
-    DetectColorSupport() bool
+type Capabilities interface {
     IsInteractive() bool
-    GetTerminalSize() (width, height int, err error)
+    SupportsColor() bool
+    HasExplicitUserPreference() bool
 }
 ```
 
-**Interactive Operation Security**:
-- Input validation for interactive prompts
-- Safe terminal state management
-- Protection against terminal control sequence injection
-- Secure handling of user input
+**Interactive Environment Detection**:
+- CI/CD environment automatic detection for proper output control
+- TTY detection for stdout/stderr connections
+- Terminal environment heuristics via TERM environment variable
+- Conservative defaults for unknown terminals
 
 #### Security Guarantees
+- Conservative approach prevents escape sequence output on unknown terminals
 - Safe terminal capability detection
-- Protection against terminal injection attacks
-- Secure interactive operation handling
-- Cross-platform compatibility with consistent security
+- Consistent cross-platform behavior
 
-### 12. Color Output Security (`internal/color/`)
+### 12. Color Management (`internal/color/`)
 
 #### Purpose
-Provide secure color output capabilities while preventing terminal injection attacks through color control sequences.
+Provide secure color output capabilities based on terminal color support capabilities.
 
 #### Implementation Details
 
-**Safe Color Management**:
+**Color Support Detection**:
 ```go
-// Location: internal/color/color.go
-type ColorManager interface {
-    Enable() bool
-    Colorize(text string, color ColorCode) string
+// Location: internal/terminal/color.go
+type ColorDetector interface {
+    SupportsColor() bool
 }
 ```
 
-**Color Output Protection**:
-- Validated color control sequences only
-- Terminal capability-based color enablement
-- Protection against control sequence injection
-- Safe color escaping
+**Color Output Control**:
+- Known terminal pattern matching for color-capable terminals
+- Conservative fallback disabling color output for unknown terminals
+- TERM environment variable parsing for terminal type determination
+- User preference priority control integrated with terminal capabilities
 
 #### Security Guarantees
-- Validated color control sequences prevent injection
-- Terminal capability-based security decisions
-- Safe color output generation
-- Protection against terminal manipulation
+- Conservative approach prevents escape sequence output on unknown terminals
+- Validated control only on known color-supporting terminals
+- Safe output control based on terminal capabilities
 
-### 13. Common Utilities Security (`internal/common/`, `internal/cmdcommon/`)
+### 13. Common Utilities (`internal/common/`, `internal/cmdcommon/`)
 
 #### Purpose
 Provide secure foundational interfaces and utilities with comprehensive testing support.
@@ -749,7 +712,7 @@ type FileSystem interface {
 - Type-safe interface contracts
 - Mock implementations maintain security properties
 
-### 15. Configuration Security
+### 14. Configuration Security
 
 #### Purpose
 Ensure that configuration files and the overall system configuration cannot be tampered with and follow security best practices.
