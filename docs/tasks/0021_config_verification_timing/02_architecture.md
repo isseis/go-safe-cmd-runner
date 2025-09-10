@@ -302,16 +302,138 @@ type VerificationStep struct {
     Critical bool
 }
 
-func (vc *VerificationChain) Execute() error {
-    for _, step := range vc.steps {
-        if err := step.Verify(); err != nil {
-            if step.Critical {
-                return step.OnFail(err)
-            }
-            // Log warning for non-critical steps
-        }
+// VerificationResult は検証チェーンの実行結果を表す
+type VerificationResult struct {
+    CriticalErrors    []error  // クリティカルエラー（実行継続不可）
+    NonCriticalErrors []error  // 非クリティカルエラー（警告レベル）
+    StepsExecuted     int      // 実行されたステップ数
+    StepsFailed       int      // 失敗したステップ数
+}
+
+// HasCriticalErrors はクリティカルエラーの有無を返す
+func (vr *VerificationResult) HasCriticalErrors() bool {
+    return len(vr.CriticalErrors) > 0
+}
+
+// HasAnyErrors はエラー（クリティカル・非クリティカル問わず）の有無を返す
+func (vr *VerificationResult) HasAnyErrors() bool {
+    return len(vr.CriticalErrors) > 0 || len(vr.NonCriticalErrors) > 0
+}
+
+// ToError は結果をerrorインターフェースとして返す
+// クリティカルエラーがある場合はそれを優先し、なければ非クリティカルエラーを返す
+func (vr *VerificationResult) ToError() error {
+    if len(vr.CriticalErrors) > 0 {
+        return fmt.Errorf("verification failed with %d critical error(s): %w",
+            len(vr.CriticalErrors), errors.Join(vr.CriticalErrors...))
+    }
+    if len(vr.NonCriticalErrors) > 0 {
+        return fmt.Errorf("verification completed with %d warning(s): %w",
+            len(vr.NonCriticalErrors), errors.Join(vr.NonCriticalErrors...))
     }
     return nil
+}
+
+func (vc *VerificationChain) Execute() *VerificationResult {
+    result := &VerificationResult{
+        CriticalErrors:    make([]error, 0),
+        NonCriticalErrors: make([]error, 0),
+    }
+
+    for _, step := range vc.steps {
+        result.StepsExecuted++
+
+        if err := step.Verify(); err != nil {
+            result.StepsFailed++
+
+            if step.Critical {
+                // クリティカルエラー：即座に失敗処理を実行して記録
+                criticalErr := step.OnFail(err)
+                result.CriticalErrors = append(result.CriticalErrors, criticalErr)
+                // クリティカルエラーが発生した場合は処理を中断
+                break
+            } else {
+                // 非クリティカルエラー：警告として記録し、処理を継続
+                nonCriticalErr := fmt.Errorf("non-critical verification failed in step %T: %w", step, err)
+                result.NonCriticalErrors = append(result.NonCriticalErrors, nonCriticalErr)
+
+                // 警告ログ出力（既存の動作を保持）
+                slog.Warn("Non-critical verification step failed",
+                    "step", fmt.Sprintf("%T", step),
+                    "error", err.Error())
+            }
+        }
+    }
+
+    return result
+}
+```
+
+### 5.5. 使用例
+
+```go
+// メイン実行フローでのVerificationChainの使用例
+func performVerification(hashDir string, runID string) error {
+    chain := NewVerificationChain()
+
+    // ハッシュディレクトリ検証ステップ（クリティカル）
+    chain.AddStep(&VerificationStep{
+        Verify: func() error {
+            return validateHashDirectory(hashDir)
+        },
+        OnFail: func(err error) error {
+            logCriticalToStderr("hash_directory", "Hash directory validation failed", err)
+            return fmt.Errorf("critical: hash directory validation failed: %w", err)
+        },
+        Critical: true,
+    })
+
+    // 設定ファイル検証ステップ（クリティカル）
+    chain.AddStep(&VerificationStep{
+        Verify: func() error {
+            return verificationManager.VerifyConfigFile(*configPath)
+        },
+        OnFail: func(err error) error {
+            logCriticalToStderr("config_verification", "Config file verification failed", err)
+            return fmt.Errorf("critical: config verification failed: %w", err)
+        },
+        Critical: true,
+    })
+
+    // 環境ファイル検証ステップ（非クリティカル：環境ファイルは任意のため）
+    if envFile != "" {
+        chain.AddStep(&VerificationStep{
+            Verify: func() error {
+                return verificationManager.VerifyEnvironmentFile(envFile)
+            },
+            OnFail: func(err error) error {
+                return fmt.Errorf("environment file verification warning: %w", err)
+            },
+            Critical: false,  // 警告レベル
+        })
+    }
+
+    // 実行
+    result := chain.Execute()
+
+    // 結果の処理
+    if result.HasCriticalErrors() {
+        // クリティカルエラーがある場合は即座に終了
+        return result.ToError()
+    }
+
+    if result.HasAnyErrors() {
+        // 非クリティカルエラーがある場合はログに記録（実行は継続）
+        slog.Warn("Verification completed with warnings",
+            "warnings_count", len(result.NonCriticalErrors),
+            "details", result.ToError().Error())
+    }
+
+    slog.Info("Verification chain completed successfully",
+        "steps_executed", result.StepsExecuted,
+        "steps_failed", result.StepsFailed)
+
+    return nil  // 成功
 }
 ```
 
@@ -350,9 +472,49 @@ func (rm *ResourceManager) CleanupAll() error {
     }
 
     if len(errors) > 0 {
-        return fmt.Errorf("cleanup errors: %v", errors)
+        // errors.Joinを使用して複数エラーを適切にラップ
+        // これにより、errors.Is/errors.Asによる個別エラー検査が可能になる
+        return fmt.Errorf("cleanup failed: %w", errors.Join(errors...))
     }
     return nil
+}
+```
+
+### 6.4. マルチエラーハンドリングの使用例
+
+```go
+// ResourceManagerのクリーンアップエラーを検査する例
+func handleCleanupError(err error) {
+    if err == nil {
+        return
+    }
+
+    // 個別のエラータイプを検査可能
+    if errors.Is(err, os.ErrPermission) {
+        slog.Error("Permission denied during cleanup", "error", err)
+    }
+
+    // 特定のエラータイプを抽出可能
+    var pathErr *os.PathError
+    if errors.As(err, &pathErr) {
+        slog.Error("Path-related cleanup error", "path", pathErr.Path, "op", pathErr.Op)
+    }
+
+    // VerificationResultとの整合性
+    // ResourceManagerでも同様のマルチエラーアプローチを採用
+    slog.Error("Cleanup failed with multiple errors", "error", err)
+}
+
+// マルチエラー生成の統一パターン
+func combineErrors(errors []error) error {
+    if len(errors) == 0 {
+        return nil
+    }
+    if len(errors) == 1 {
+        return errors[0]
+    }
+    // Go 1.20以降：errors.Joinを使用
+    return errors.Join(errors...)
 }
 ```
 

@@ -77,9 +77,8 @@ func validateHashDirectory(path string) error {
             fmt.Errorf("path contains relative components"))
     }
 
-    // シンボリックリンク攻撃防止（safefileioパッケージを使用）
-    // SafeReadFileアプローチを利用してディレクトリパスの安全性を検証
-    if err := validatePathSafety(path); err != nil {
+    // シンボリックリンク攻撃防止（safefileioパッケージの公開関数を使用）
+    if err := safefileio.EnsureParentDirsNoSymlinks(path); err != nil {
         if errors.Is(err, safefileio.ErrIsSymlink) {
             return NewHashDirectoryError(HashDirErrorSymlink, path, err)
         }
@@ -106,43 +105,12 @@ func validateHashDirectory(path string) error {
     return nil
 }
 
-// validatePathSafety は指定されたパスがシンボリックリンクを含まないことを検証する
-// safefileioパッケージの内部ロジックを活用してディレクトリパスの安全性を確認
-func validatePathSafety(path string) error {
-    // 絶対パスに変換
-    absPath, err := filepath.Abs(path)
-    if err != nil {
-        return fmt.Errorf("failed to resolve absolute path: %w", err)
-    }
-
-    // パスコンポーネントを分割してシンボリックリンクをチェック
-    dir := filepath.Dir(absPath)
-    components := strings.Split(strings.TrimPrefix(dir, "/"), "/")
-
-    currentPath := "/"
-    for _, component := range components {
-        if component == "" {
-            continue
-        }
-        currentPath = filepath.Join(currentPath, component)
-
-        // os.Lstatを使用してシンボリックリンクを検出（safefileioと同じアプローチ）
-        fi, err := os.Lstat(currentPath)
-        if err != nil {
-            if os.IsNotExist(err) {
-                continue // 存在しないパスは後でディレクトリ存在確認でチェック
-            }
-            return fmt.Errorf("failed to stat path component %s: %w", currentPath, err)
-        }
-
-        // シンボリックリンクチェック
-        if fi.Mode()&os.ModeSymlink != 0 {
-            return fmt.Errorf("%w: %s", safefileio.ErrIsSymlink, currentPath)
-        }
-    }
-
-    return nil
-}
+// 注意: validatePathSafety関数は不要
+// 理由：
+// 1. safefileio.EnsureParentDirsNoSymlinks()が既に存在し、同じ機能を提供
+// 2. safefileioの実装はクロスプラットフォーム対応済み（filepath.VolumeName等を使用）
+// 3. コードの重複を避け、一元化された検証ロジックを使用することでセキュリティと保守性を向上
+// 4. safefileio.EnsureParentDirsNoSymlinks()を公開関数として利用可能にする
 ```
 
 #### 3.1.2. エラーハンドリング仕様
@@ -206,7 +174,7 @@ sequenceDiagram
     Main->>App: Initialize application
 ```
 
-#### 3.2.2. 新しいrun関数仕様
+#### 3.2.2. 新しいrun関数仕様（VerificationChain使用版）
 
 ```go
 func run(runID string) error {
@@ -227,20 +195,23 @@ func run(runID string) error {
         return err
     }
 
-    // 4. 設定ファイルハッシュ検証（タイミング変更）
-    if err := performConfigFileVerification(verificationManager, runID); err != nil {
-        return err
-    }
-
-    // 5. 環境ファイルハッシュ検証（新規追加）
-    envFileToLoad, err := determineEnvironmentFile()
+    // 4-5. VerificationChainを使用した統合検証フロー（新規）
+    result, err := performVerificationChain(verificationManager, runID)
     if err != nil {
         return err
     }
-    if envFileToLoad != "" {
-        if err := performEnvironmentFileVerification(verificationManager, envFileToLoad, runID); err != nil {
-            return err
-        }
+
+    // 検証結果の処理
+    if result.HasCriticalErrors() {
+        // クリティカルエラーがある場合は即座に終了
+        return result.ToError()
+    }
+
+    if result.HasAnyErrors() {
+        // 非クリティカルエラー（警告）がある場合はログに記録（実行は継続）
+        slog.Warn("Verification completed with warnings",
+            "warnings_count", len(result.NonCriticalErrors),
+            "details", result.ToError().Error())
     }
 
     // 6. 設定ファイル読み込み（検証後実行）
@@ -250,6 +221,10 @@ func run(runID string) error {
     }
 
     // 7. 環境ファイルからの設定読み込み（検証後実行）
+    envFileToLoad, err := determineEnvironmentFile()
+    if err != nil {
+        return err
+    }
     slackWebhookURL, err := loadSlackWebhookFromVerifiedEnv(envFileToLoad)
     if err != nil {
         return err
@@ -263,6 +238,94 @@ func run(runID string) error {
     // ---- 以降は検証対象外のため変更なし ----
     // 9. その他の初期化処理
     return executeRunner(ctx, cfg, verificationManager, envFileToLoad, runID)
+}
+```
+
+#### 3.2.3. VerificationChain実装仕様
+
+```go
+// VerificationResult は検証チェーンの実行結果を表す（アーキテクチャ設計書より）
+type VerificationResult struct {
+    CriticalErrors    []error  // クリティカルエラー（実行継続不可）
+    NonCriticalErrors []error  // 非クリティカルエラー（警告レベル）
+    StepsExecuted     int      // 実行されたステップ数
+    StepsFailed       int      // 失敗したステップ数
+}
+
+// HasCriticalErrors はクリティカルエラーの有無を返す
+func (vr *VerificationResult) HasCriticalErrors() bool {
+    return len(vr.CriticalErrors) > 0
+}
+
+// HasAnyErrors はエラー（クリティカル・非クリティカル問わず）の有無を返す
+func (vr *VerificationResult) HasAnyErrors() bool {
+    return len(vr.CriticalErrors) > 0 || len(vr.NonCriticalErrors) > 0
+}
+
+// ToError は結果をerrorインターフェースとして返す
+// errors.Joinを使用して複数エラーを適切にラップ
+func (vr *VerificationResult) ToError() error {
+    if len(vr.CriticalErrors) > 0 {
+        return fmt.Errorf("verification failed with %d critical error(s): %w",
+            len(vr.CriticalErrors), errors.Join(vr.CriticalErrors...))
+    }
+    if len(vr.NonCriticalErrors) > 0 {
+        return fmt.Errorf("verification completed with %d warning(s): %w",
+            len(vr.NonCriticalErrors), errors.Join(vr.NonCriticalErrors...))
+    }
+    return nil
+}
+
+// performVerificationChain は統合検証フローを実行する
+func performVerificationChain(verificationManager *verification.Manager, runID string) (*VerificationResult, error) {
+    chain := NewVerificationChain()
+
+    // 設定ファイル検証ステップ（クリティカル）
+    chain.AddStep(&VerificationStep{
+        Name: "ConfigFileVerification",
+        Verify: func() error {
+            if *configPath == "" {
+                return fmt.Errorf("config file path is required")
+            }
+            return verificationManager.VerifyConfigFile(*configPath)
+        },
+        OnFail: func(err error) error {
+            logCriticalToStderr("config_verification", "Config file verification failed", err)
+            return fmt.Errorf("critical: config verification failed: %w", err)
+        },
+        Critical: true,
+    })
+
+    // 環境ファイル検証ステップ（非クリティカル：環境ファイルは任意のため）
+    envFileToLoad, err := determineEnvironmentFile()
+    if err != nil {
+        return nil, fmt.Errorf("failed to determine environment file: %w", err)
+    }
+
+    if envFileToLoad != "" {
+        chain.AddStep(&VerificationStep{
+            Name: "EnvironmentFileVerification",
+            Verify: func() error {
+                return verificationManager.VerifyEnvironmentFile(envFileToLoad)
+            },
+            OnFail: func(err error) error {
+                // 非クリティカルなので強制stderr出力はしない
+                return fmt.Errorf("environment file verification warning: %w", err)
+            },
+            Critical: false,  // 警告レベル
+        })
+    }
+
+    // 検証チェーン実行
+    result := chain.Execute()
+
+    slog.Info("Verification chain completed",
+        "steps_executed", result.StepsExecuted,
+        "steps_failed", result.StepsFailed,
+        "has_critical_errors", result.HasCriticalErrors(),
+        "has_warnings", len(result.NonCriticalErrors) > 0)
+
+    return result, nil
 }
 ```
 
@@ -362,11 +425,23 @@ func setupVerifiedLogger(slackWebhookURL, runID string) error {
     return nil
 }
 
-// getSlackWebhookFromEnvFile は環境ファイルからSlack WebhookURLを取得する
+// getSlackWebhookFromEnvFile は検証済みの環境ファイルからSlack WebhookURLを取得する
 // 注意: この関数を呼び出す前に環境ファイルの検証が完了していること
 func getSlackWebhookFromEnvFile(envFile string) (string, error) {
-    // 既存の実装を再利用（関数名変更なしでコメントで検証済みを明示）
-    return getSlackWebhookFromEnvFile(envFile) // 既存関数の呼び出し
+    if envFile == "" {
+        return "", nil // 環境ファイルが指定されていない場合はSlack通知なし
+    }
+
+    // 検証済みの環境ファイルから安全にWebhook URLを読み取り
+    envMap, err := godotenv.Read(envFile)
+    if err != nil {
+        return "", fmt.Errorf("failed to read verified environment file %s: %w", envFile, err)
+    }
+
+    // Slack Webhook URLを取得（存在しない場合は空文字列）
+    webhookURL := envMap["SLACK_WEBHOOK_URL"]
+
+    return webhookURL, nil
 }
 ```
 
@@ -507,6 +582,39 @@ func CreatePreExecutionError(errorType logging.ErrorType, message, component, ru
         Component: component,
         RunID:     runID,
     }
+}
+
+// combineErrors は複数のエラーを適切にラップするユーティリティ関数
+// Go 1.20以降のerrors.Joinを使用して、個別エラー検査可能な形式で結合
+func combineErrors(errors []error) error {
+    if len(errors) == 0 {
+        return nil
+    }
+    if len(errors) == 1 {
+        return errors[0]
+    }
+    // errors.Joinを使用することで、errors.Is/errors.Asによる検査が可能
+    return errors.Join(errors...)
+}
+
+// handleMultipleErrors は複数エラーを適切に処理する標準パターン
+func handleMultipleErrors(componentName string, errors []error) error {
+    if len(errors) == 0 {
+        return nil
+    }
+
+    // 個別エラーをログに記録
+    for i, err := range errors {
+        slog.Error("Component operation failed",
+            "component", componentName,
+            "error_index", i,
+            "error", err.Error())
+    }
+
+    // 結合エラーを返す
+    combinedErr := combineErrors(errors)
+    return fmt.Errorf("%s failed with %d error(s): %w",
+        componentName, len(errors), combinedErr)
 }
 ```
 
@@ -693,7 +801,93 @@ func TestValidateHashDirectory(t *testing.T) {
 
 ### 4.2. 統合テスト
 
-#### 4.2.1. 実行フローテスト
+#### 4.2.1. VerificationChain統合テスト
+
+```go
+func TestVerificationChainIntegration(t *testing.T) {
+    // テストシナリオ：全て正常なケース
+    t.Run("AllVerificationStepsSucceed", func(t *testing.T) {
+        // セットアップ
+        tempDir := setupTestEnvironment(t)
+        defer os.RemoveAll(tempDir)
+
+        verificationManager := createMockVerificationManager(t)
+        runID := "test-run-001"
+
+        // 実行
+        result, err := performVerificationChain(verificationManager, runID)
+
+        // 検証
+        assert.NoError(t, err)
+        assert.NotNil(t, result)
+        assert.False(t, result.HasCriticalErrors())
+        assert.False(t, result.HasAnyErrors())
+        assert.Equal(t, 2, result.StepsExecuted) // 設定ファイル + 環境ファイル
+        assert.Equal(t, 0, result.StepsFailed)
+    })
+
+    // テストシナリオ：クリティカルエラー発生
+    t.Run("CriticalErrorOccurs", func(t *testing.T) {
+        // セットアップ
+        tempDir := setupTestEnvironment(t)
+        defer os.RemoveAll(tempDir)
+
+        verificationManager := createMockVerificationManagerWithConfigError(t)
+        runID := "test-run-002"
+
+        // 実行
+        result, err := performVerificationChain(verificationManager, runID)
+
+        // 検証
+        assert.NoError(t, err) // performVerificationChain自体はエラーを返さない
+        assert.NotNil(t, result)
+        assert.True(t, result.HasCriticalErrors())
+        assert.Equal(t, 1, len(result.CriticalErrors))
+        assert.Equal(t, 1, result.StepsExecuted) // 設定ファイル検証で停止
+        assert.Equal(t, 1, result.StepsFailed)
+
+        // エラー内容の検証
+        combinedErr := result.ToError()
+        assert.Error(t, combinedErr)
+        assert.Contains(t, combinedErr.Error(), "critical error(s)")
+
+        // errors.Joinによる個別エラー検査
+        assert.True(t, errors.Is(combinedErr, expectedConfigError))
+    })
+
+    // テストシナリオ：非クリティカル警告発生
+    t.Run("NonCriticalWarningsOccur", func(t *testing.T) {
+        // セットアップ
+        tempDir := setupTestEnvironment(t)
+        defer os.RemoveAll(tempDir)
+
+        verificationManager := createMockVerificationManagerWithEnvWarning(t)
+        runID := "test-run-003"
+
+        // 実行
+        result, err := performVerificationChain(verificationManager, runID)
+
+        // 検証
+        assert.NoError(t, err)
+        assert.NotNil(t, result)
+        assert.False(t, result.HasCriticalErrors())
+        assert.True(t, result.HasAnyErrors())
+        assert.Equal(t, 1, len(result.NonCriticalErrors))
+        assert.Equal(t, 2, result.StepsExecuted) // 両ステップ実行
+        assert.Equal(t, 1, result.StepsFailed)  // 環境ファイルのみ失敗
+
+        // 警告内容の検証
+        combinedErr := result.ToError()
+        assert.Error(t, combinedErr)
+        assert.Contains(t, combinedErr.Error(), "warning(s)")
+
+        // errors.Joinによる個別エラー検査
+        assert.True(t, errors.Is(combinedErr, expectedEnvWarning))
+    })
+}
+```
+
+#### 4.2.2. 実行フローテスト
 
 ```go
 func TestSecureExecutionFlow(t *testing.T) {
@@ -719,6 +913,7 @@ func TestSecureExecutionFlow(t *testing.T) {
         // 検証
         assert.NoError(t, err)
         assert.Contains(t, string(output), "verification completed successfully")
+        assert.Contains(t, string(output), "Verification chain completed")
     })
 
     // テストシナリオ：設定ファイル検証失敗
@@ -747,6 +942,31 @@ func TestSecureExecutionFlow(t *testing.T) {
         exitError, ok := err.(*exec.ExitError)
         assert.True(t, ok)
         assert.Equal(t, 1, exitError.ExitCode())
+    })
+
+    // テストシナリオ：環境ファイル検証警告
+    t.Run("EnvironmentFileVerificationWarning", func(t *testing.T) {
+        // セットアップ
+        tempDir := setupTestEnvironment(t)
+        defer os.RemoveAll(tempDir)
+
+        configFile := createTestConfigFile(t, tempDir)
+        envFile := createTestEnvFile(t, tempDir)
+        hashDir := createTestHashFiles(t, tempDir, configFile) // 環境ファイルのハッシュを除外
+
+        // 実行
+        cmd := exec.Command("./build/runner",
+            "--config", configFile,
+            "--env-file", envFile,
+            "--hash-directory", hashDir,
+            "--dry-run")
+
+        output, err := cmd.CombinedOutput()
+
+        // 検証：実行は継続するが警告が出力される
+        assert.NoError(t, err) // プログラムは正常終了
+        assert.Contains(t, string(output), "Verification completed with warnings")
+        assert.Contains(t, string(output), "environment file verification warning")
     })
 }
 ```
