@@ -128,8 +128,30 @@ func (r *HashDirectoryResolver) Resolve() (string, error) {
 
 func (r *HashDirectoryResolver) validatePath(path string) (string, error) {
     // Absolute path validation
+    if !filepath.IsAbs(path) {
+        return "", fmt.Errorf("hash directory must be absolute path: %s", path)
+    }
+
     // Directory existence check
-    // Permission check
+    info, err := os.Stat(path)
+    if err != nil {
+        return "", fmt.Errorf("hash directory access failed: %w", err)
+    }
+    if !info.IsDir() {
+        return "", fmt.Errorf("hash directory is not a directory: %s", path)
+    }
+
+    // Permission check - ensure directory is readable and executable
+    if info.Mode().Perm()&0500 != 0500 { // Read and execute permission required
+        return "", fmt.Errorf("hash directory has insufficient permissions: %s (need at least r-x------)", path)
+    }
+
+    // Symlink prevention using safefileio package
+    if err := validatePathSafety(path); err != nil {
+        return "", fmt.Errorf("hash directory path security validation failed: %w", err)
+    }
+
+    return path, nil
 }
 ```
 

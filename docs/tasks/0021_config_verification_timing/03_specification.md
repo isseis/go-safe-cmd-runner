@@ -98,6 +98,11 @@ func validateHashDirectory(path string) error {
         return NewHashDirectoryError(HashDirErrorNotDirectory, path, nil)
     }
 
+    // パーミッション確認（最低限の読み取り・実行権限が必要）
+    if info.Mode().Perm()&0500 != 0500 {
+        return NewHashDirectoryError(HashDirErrorInsufficientPermissions, path, nil)
+    }
+
     return nil
 }
 
@@ -442,15 +447,17 @@ const (
     HashDirErrorSymlink
     HashDirErrorNotExists
     HashDirErrorNotDirectory
+    HashDirErrorInsufficientPermissions
 )
 
 // 詳細エラーメッセージテンプレート
 var hashDirectoryErrorMessages = map[HashDirectoryErrorSubtype]string{
-    HashDirErrorEmpty:        "Hash directory path is empty",
-    HashDirErrorNotAbsolute:  "Hash directory must be absolute path, got: %s",
-    HashDirErrorSymlink:      "Hash directory path contains symbolic links: %s",
-    HashDirErrorNotExists:    "Hash directory does not exist: %s",
-    HashDirErrorNotDirectory: "Hash directory is not a directory: %s",
+    HashDirErrorEmpty:                 "Hash directory path is empty",
+    HashDirErrorNotAbsolute:           "Hash directory must be absolute path, got: %s",
+    HashDirErrorSymlink:               "Hash directory path contains symbolic links: %s",
+    HashDirErrorNotExists:             "Hash directory does not exist: %s",
+    HashDirErrorNotDirectory:          "Hash directory is not a directory: %s",
+    HashDirErrorInsufficientPermissions: "Hash directory has insufficient permissions: %s (need at least r-x------)",
 }
 
 func (e *HashDirectoryError) Error() string {
@@ -651,6 +658,17 @@ func TestValidateHashDirectory(t *testing.T) {
             },
             expectErr: true,
         },
+        {
+            name: "Invalid_InsufficientPermissions",
+            setupFunc: func() string {
+                // 不適切なパーミッションのディレクトリ作成
+                baseDir, _ := os.MkdirTemp("", "test-perm-*")
+                restrictedDir := filepath.Join(baseDir, "restricted")
+                os.MkdirAll(restrictedDir, 0000) // パーミッション無し
+                return restrictedDir
+            },
+            expectErr: true,
+        },
     }
 
     for _, tt := range tests {
@@ -843,6 +861,7 @@ func TestSecurityScenarios(t *testing.T) {
 
 # 異常系ログ例（必ずstderrに出力）
 [CRITICAL] Hash directory validation failed: directory does not exist: /invalid/path
+[CRITICAL] Hash directory validation failed: has insufficient permissions: /opt/hashes (need at least r-x------)
 [CRITICAL] Config file verification failed: hash mismatch for /opt/config/app.toml
 [CRITICAL] Environment file verification failed: permission denied: /opt/config/.env
 ```
