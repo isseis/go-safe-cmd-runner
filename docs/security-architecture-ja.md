@@ -114,14 +114,12 @@ type Filter struct {
 
 **変数検証**:
 ```go
-// 場所: internal/runner/security/environment_validation.go:47-56
-func (v *Validator) ValidateEnvironmentValue(key, value string) error {
-    // コンパイルされた正規表現を使用して危険なパターンをチェック
-    for _, re := range v.dangerousEnvRegexps {
-        if re.MatchString(value) {
-            return fmt.Errorf("%w: environment variable %s contains potentially dangerous pattern",
-                ErrUnsafeEnvironmentVar, key)
-        }
+// 場所: internal/runner/config/validator.go
+func (v *Validator) validateVariableValue(value string) error {
+    // 一元化されたセキュリティ検証を使用
+    if err := security.IsVariableValueSafe(value); err != nil {
+        // 一貫性のため検証エラー型でセキュリティエラーをラップ
+        return fmt.Errorf("%w: %s", ErrDangerousPattern, err.Error())
     }
     return nil
 }
@@ -212,7 +210,7 @@ type UnixPrivilegeManager struct {
 **特権昇格プロセス**:
 ```go
 // 場所: internal/runner/privilege/unix.go:36-87
-func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) error {
+func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
     m.mu.Lock()  // スレッドセーフティのためのグローバルロック
     defer m.mu.Unlock()
 
@@ -329,14 +327,18 @@ AllowedCommands: []string{
 **リスク評価エンジン**:
 ```go
 // 場所: internal/runner/risk/evaluator.go
-type Evaluator struct {
-    patterns []SecurityPattern
-}
+type StandardEvaluator struct{}
 
-type SecurityPattern struct {
-    Pattern   *regexp.Regexp
-    RiskLevel runnertypes.RiskLevel
-    Category  string
+func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.Command) (runnertypes.RiskLevel, error) {
+    // 特権昇格コマンドをチェック（クリティカルリスク - ブロックされるべき）
+    isPrivEsc, err := security.IsPrivilegeEscalationCommand(cmd.Cmd)
+    if err != nil {
+        return runnertypes.RiskLevelUnknown, err
+    }
+    if isPrivEsc {
+        return runnertypes.RiskLevelCritical, nil
+    }
+    // ... 追加のリスク評価ロジック
 }
 ```
 
@@ -504,7 +506,109 @@ func (v *Validator) SanitizeErrorForLogging(err error) string {
 - ログファイルの肥大化と潜在的DoSを防ぐ長さベースの切り詰め
 - 環境変数パターンの検出とサニタイズ
 
-### 9. ユーザーとグループ実行セキュリティ
+### 9. 端末能力検出 (`internal/terminal/`)
+
+#### 目的
+端末の色彩サポートと対話的実行環境を検出し、適切な出力形式を選択するための端末能力判定機能を提供します。
+
+#### 実装詳細
+
+**端末能力検出インターフェース**:
+```go
+// 場所: internal/terminal/capabilities.go
+type Capabilities interface {
+    IsInteractive() bool
+    SupportsColor() bool
+    HasExplicitUserPreference() bool
+}
+```
+
+**対話的環境検出**:
+```go
+// 場所: internal/terminal/detector.go
+type InteractiveDetector interface {
+    IsInteractive() bool
+    IsTerminal() bool // TTY環境または端末類似環境をチェック
+    IsCIEnvironment() bool
+}
+```
+
+**実装機能**:
+- **CI/CD環境検出**: GitHub Actions、Travis CI、Jenkins等の自動判定
+- **TTY検出**: stdout/stderrのTTY接続状況確認
+- **端末環境ヒューリスティック**: TERM環境変数による端末類似環境判定
+- **色彩サポート検出**: TERM値に基づく色彩対応端末識別
+- **ユーザー設定優先順位**: コマンドライン引数、環境変数の優先順位制御
+
+#### セキュリティ特性
+- **保守的なデフォルト**: 不明な端末では色彩出力を無効化
+- **環境変数検証**: CI環境変数の適切な解析
+- **設定の優先順位制御**: セキュリティに配慮した設定継承
+
+### 10. 色彩管理 (`internal/color/`)
+
+#### 目的
+端末の色彩サポート能力に基づいて安全な色付き出力を提供し、色彩制御シーケンスの適切な管理を行います。
+
+#### 実装詳細
+
+**色彩管理インターフェース**:
+```go
+// 場所: internal/color/color.go
+type ColorManager interface {
+    Enable() bool
+    Colorize(text string, color ColorCode) string
+}
+```
+
+**色彩サポート検出**:
+```go
+// 場所: internal/terminal/color.go
+type ColorDetector interface {
+    SupportsColor() bool
+}
+```
+
+**実装機能**:
+- **既知端末パターンマッチング**: xterm、screen、tmux等の色彩対応端末識別
+- **保守的なフォールバック**: 不明な端末での色彩出力無効化
+- **TERM環境変数解析**: 端末タイプに基づく色彩サポート判定
+- **ユーザー設定統合**: 端末能力とユーザー設定の優先順位制御
+
+#### セキュリティ特性
+- **保守的なアプローチ**: 不明な端末では色彩出力を無効化してエスケープシーケンス出力を防止
+- **検証済みパターン**: 既知の色彩対応端末のみでの色彩有効化
+- **安全なデフォルト**: 色彩サポートが不明な場合の安全な動作保証
+
+### 11. 共通ユーティリティ (`internal/common/`, `internal/cmdcommon/`)
+
+#### 目的
+パッケージ横断の基盤機能を提供し、テスト可能で再現性のある安全な実装を保証します。
+
+#### 実装詳細
+
+**ファイルシステム抽象**:
+```go
+// 場所: internal/common/filesystem.go
+type FileSystem interface {
+    CreateTempDir(dir string, prefix string) (string, error)
+    FileExists(path string) (bool, error)
+    Lstat(path string) (fs.FileInfo, error)
+    IsDir(path string) (bool, error)
+}
+```
+
+**モック実装**:
+- テスト用のモックファイルシステムを提供し、本番と同等のセキュリティ特性でテスト可能にする
+- エラー条件や境界ケースのテストをサポート
+
+#### セキュリティ保証
+- 実装間での一貫したセキュリティ挙動
+- セキュリティパスの包括的なテストカバレッジ
+- 型安全なインターフェース契約
+- モック実装はセキュリティプロパティを保持
+
+### 12. ユーザーとグループ実行セキュリティ
 
 #### 目的
 厳格なセキュリティ境界と包括的な監査証跡を維持しながら、安全なユーザーとグループ切り替え機能を提供します。
@@ -543,7 +647,7 @@ type GroupMembershipChecker interface {
 - グループメンバーシップ確認
 - ユーザー・グループ切り替えの完全監査証跡
 
-### 10. マルチチャンネル通知セキュリティ
+### 13. マルチチャンネル通知セキュリティ
 
 #### 目的
 外部通信で機密情報を保護しながら、重要なセキュリティイベントに対する安全な通知機能を提供します。
@@ -571,7 +675,7 @@ type SlackHandler struct {
 - 悪用を防ぐレート制限
 - 包括的エラー処理
 
-### 11. 設定セキュリティ
+### 14. 設定セキュリティ
 
 #### 目的
 設定ファイルと全体的なシステム設定が改ざんされないことを確保し、セキュリティのベストプラクティスに従います。

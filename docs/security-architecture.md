@@ -114,14 +114,12 @@ type Filter struct {
 
 **Variable Validation**:
 ```go
-// Location: internal/runner/security/environment_validation.go:47-56
-func (v *Validator) ValidateEnvironmentValue(key, value string) error {
-    // Check for dangerous patterns using compiled regexes
-    for _, re := range v.dangerousEnvRegexps {
-        if re.MatchString(value) {
-            return fmt.Errorf("%w: environment variable %s contains potentially dangerous pattern",
-                ErrUnsafeEnvironmentVar, key)
-        }
+// Location: internal/runner/config/validator.go
+func (v *Validator) validateVariableValue(value string) error {
+    // Use centralized security validation
+    if err := security.IsVariableValueSafe(value); err != nil {
+        // Wrap the security error with our validation error type for consistency
+        return fmt.Errorf("%w: %s", ErrDangerousPattern, err.Error())
     }
     return nil
 }
@@ -212,7 +210,7 @@ type UnixPrivilegeManager struct {
 **Privilege Escalation Process**:
 ```go
 // Location: internal/runner/privilege/unix.go:36-87
-func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) error {
+func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
     m.mu.Lock()  // Global lock for thread safety
     defer m.mu.Unlock()
 
@@ -329,14 +327,18 @@ Implement intelligent security controls based on command risk assessment, automa
 **Risk Assessment Engine**:
 ```go
 // Location: internal/runner/risk/evaluator.go
-type Evaluator struct {
-    patterns []SecurityPattern
-}
+type StandardEvaluator struct{}
 
-type SecurityPattern struct {
-    Pattern   *regexp.Regexp
-    RiskLevel runnertypes.RiskLevel
-    Category  string
+func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.Command) (runnertypes.RiskLevel, error) {
+    // Check for privilege escalation commands (critical risk - should be blocked)
+    isPrivEsc, err := security.IsPrivilegeEscalationCommand(cmd.Cmd)
+    if err != nil {
+        return runnertypes.RiskLevelUnknown, err
+    }
+    if isPrivEsc {
+        return runnertypes.RiskLevelCritical, nil
+    }
+    // ... additional risk assessment logic
 }
 ```
 
@@ -571,7 +573,91 @@ type SlackHandler struct {
 - Rate limiting prevents abuse
 - Comprehensive error handling
 
-### 11. Configuration Security
+### 11. Terminal Capability Detection (`internal/terminal/`)
+
+#### Purpose
+Provide terminal capability detection for color support and interactive execution environments.
+
+#### Implementation Details
+
+**Terminal Capability Detection**:
+```go
+// Location: internal/terminal/capabilities.go
+type Capabilities interface {
+    IsInteractive() bool
+    SupportsColor() bool
+    HasExplicitUserPreference() bool
+}
+```
+
+**Interactive Environment Detection**:
+- CI/CD environment automatic detection for proper output control
+- TTY detection for stdout/stderr connections
+- Terminal environment heuristics via TERM environment variable
+- Conservative defaults for unknown terminals
+
+#### Security Guarantees
+- Conservative approach prevents escape sequence output on unknown terminals
+- Safe terminal capability detection
+- Consistent cross-platform behavior
+
+### 12. Color Management (`internal/color/`)
+
+#### Purpose
+Provide secure color output capabilities based on terminal color support capabilities.
+
+#### Implementation Details
+
+**Color Support Detection**:
+```go
+// Location: internal/terminal/color.go
+type ColorDetector interface {
+    SupportsColor() bool
+}
+```
+
+**Color Output Control**:
+- Known terminal pattern matching for color-capable terminals
+- Conservative fallback disabling color output for unknown terminals
+- TERM environment variable parsing for terminal type determination
+- User preference priority control integrated with terminal capabilities
+
+#### Security Guarantees
+- Conservative approach prevents escape sequence output on unknown terminals
+- Validated control only on known color-supporting terminals
+- Safe output control based on terminal capabilities
+
+### 13. Common Utilities (`internal/common/`, `internal/cmdcommon/`)
+
+#### Purpose
+Provide secure foundational interfaces and utilities with comprehensive testing support.
+
+#### Implementation Details
+
+**File System Abstraction**:
+```go
+// Location: internal/common/filesystem.go
+type FileSystem interface {
+    CreateTempDir(dir string, prefix string) (string, error)
+    FileExists(path string) (bool, error)
+    Lstat(path string) (fs.FileInfo, error)
+    IsDir(path string) (bool, error)
+}
+```
+
+**Mock Implementation Security**:
+- Comprehensive mock file system for testing
+- Consistent security behavior in test and production
+- Type-safe interface implementations
+- Error condition testing support
+
+#### Security Guarantees
+- Consistent security behavior across implementations
+- Comprehensive test coverage for security paths
+- Type-safe interface contracts
+- Mock implementations maintain security properties
+
+### 14. Configuration Security
 
 #### Purpose
 Ensure that configuration files and the overall system configuration cannot be tampered with and follow security best practices.

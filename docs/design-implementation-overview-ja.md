@@ -96,16 +96,22 @@ func (l *Loader) LoadConfig(path string) (*runnertypes.Config, error) {
 
 **特権昇格パターン:**
 ```go
-func (m *Manager) WithPrivileges(ctx ElevationContext, fn func() error) error {
-    m.mu.Lock()
-    defer m.mu.Unlock()
+// WithPrivileges: Proper responsibility separation using Template Method pattern
+func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-    if err := m.escalatePrivileges(ctx); err != nil {
-        return err
-    }
+	execCtx, err := m.prepareExecution(elevationCtx) // Preparation phase
+	if err != nil {
+		return err
+	}
 
-    defer m.emergencyShutdownOnRestoreFailure(fn) // フェイルセーフメカニズム
-    return fn()
+	if err := m.performElevation(execCtx); err != nil { // Execution phase
+		return err
+	}
+
+	defer m.handleCleanupAndMetrics(execCtx) // Cleanup phase
+	return fn()
 }
 ```
 
@@ -162,10 +168,11 @@ func (m *Manager) WithPrivileges(ctx ElevationContext, fn func() error) error {
 #### 11. ログと監査 (`internal/logging/`, `internal/runner/audit/`)
 - **目的**: 機密データ保護を伴う安全なログ記録
 - **主要機能**:
-  - マルチチャンネルログ（ファイル、syslog、Slack）
-  - 自動機密データ編集
+  - マルチハンドラログ（ファイル、syslog、Slack通知）
+  - 条件付きテキストハンドラと対話的ログハンドラ
   - 実行前エラー処理
   - 構造化監査証跡
+  - 機密データの自動編集機能
 
 #### 12. データ編集 (`internal/redaction/`)
 - **目的**: ログと出力からの機密情報の自動フィルタリング
@@ -173,6 +180,34 @@ func (m *Manager) WithPrivileges(ctx ElevationContext, fn func() error) error {
   - パスワード、トークン、APIキーのパターンベース検出
   - 環境変数のサニタイズ
   - 設定可能な編集ポリシー
+
+#### 13. 端末機能検出 (`internal/terminal/`)
+- **目的**: 端末の色彩サポートと対話的実行環境の検出
+- **主要機能**:
+  - 対話的端末環境の検出（TTY/CI環境判定）
+  - 端末色彩サポートの検出と管理
+  - ユーザー色彩設定の優先順位制御
+  - クロスプラットフォーム端末能力判定
+
+#### 14. グループメンバーシップ管理 (`internal/groupmembership/`)
+- **目的**: ユーザーグループメンバーシップの安全な管理
+- **主要機能**:
+  - CGOと非CGO実装の両方をサポート
+  - グループ情報の解析と検証
+  - ユーザー・グループの関連付け管理
+
+#### 15. カラー管理 (`internal/color/`)
+- **目的**: コンソール出力のカラー制御
+- **主要機能**:
+  - 端末カラーサポートの検出
+  - 設定可能なカラー出力制御
+
+#### 16. 共通ユーティリティ (`internal/common/`, `internal/cmdcommon/`)
+- **目的**: パッケージ間で共有される基本機能の提供
+- **主要機能**:
+  - ファイルシステム抽象化インターフェース
+  - モック実装によるテストサポート
+  - コマンド共通ユーティリティ
 
 ## データフローアーキテクチャ
 
@@ -323,7 +358,7 @@ func NewRunnerWithOptions(config *Config, opts ...Option) (*Runner, error) {
 type ResourceManager interface {
     ExecuteCommand(ctx context.Context, cmd Command, group *CommandGroup, env map[string]string) (*ExecutionResult, error)
     CreateTempDir(groupName string) (string, error)
-    WithPrivileges(ctx context.Context, fn func() error) error
+    WithPrivileges(context ElevationContext, fn func() error) error
     SendNotification(message string, details map[string]any) error
 }
 ```
@@ -419,6 +454,41 @@ type ResourceManager interface {
 - 通常操作への最小パフォーマンス影響
 - 設定可能な編集ポリシー
 
+## パッケージ構造
+
+プロジェクトの現在のパッケージ構造は以下の通りです：
+
+```
+go-safe-cmd-runner/
+├── cmd/                           # エントリポイント
+│   ├── record/                    # ハッシュ記録コマンド
+│   ├── runner/                    # メイン実行コマンド
+│   └── verify/                    # ファイル検証コマンド
+├── internal/                      # 内部パッケージ
+│   ├── cmdcommon/                 # コマンド共通ユーティリティ
+│   ├── color/                     # カラー管理
+│   ├── common/                    # 共通インターフェースとユーティリティ
+│   ├── filevalidator/             # ファイル整合性検証
+│   ├── groupmembership/           # グループメンバーシップ管理
+│   ├── logging/                   # ログ管理
+│   ├── redaction/                 # データ編集
+│   ├── runner/                    # コア実行エンジン
+│   │   ├── audit/                 # 監査機能
+│   │   ├── config/                # 設定管理
+│   │   ├── environment/           # 環境変数管理
+│   │   ├── executor/              # コマンド実行
+│   │   ├── privilege/             # 特権管理
+│   │   ├── resource/              # リソース管理
+│   │   ├── risk/                  # リスク評価
+│   │   ├── runnertypes/           # 型定義
+│   │   └── security/              # セキュリティフレームワーク
+│   ├── safefileio/                # 安全なファイルI/O
+│   ├── terminal/                  # 端末機能管理
+│   └── verification/              # 検証管理
+├── docs/                          # プロジェクトドキュメント
+└── sample/                        # サンプル設定ファイル
+```
+
 ## 将来の拡張性
 
 ### 1. プラグインアーキテクチャ
@@ -450,7 +520,7 @@ Linux/Unixへの現在の焦点と以下への拡張性:
 
 ## まとめ
 
-Go Safe Command Runnerは、多層セキュリティアプローチ、包括的な入力検証、安全な特権管理、リスクベースコマンド制御、広範な監査機能を通じて、セキュリティエンジニアリングのベストプラクティスを実証しています。システムは安全に失敗し、セキュリティ関連操作への完全な可視性を提供するよう設計されており、セキュリティを重視する環境での本番使用に適しています。
+Go Safe Command Runnerは、多層セキュリティアプローチ、包括的な入力検証、安全な特権管理、リスクベースコマンド制御、広範な監査機能を通じて、セキュリティエンジニアリングのベストプラクティスを実証しています。**総合セキュリティ評価A（優秀）**を獲得し、**クリティカルリスク0件**を達成したシステムは、安全に失敗し、セキュリティ関連操作への完全な可視性を提供するよう設計されており、セキュリティを重視する環境での本番使用に適しています。
 
 実装は、インターフェース駆動設計、コンポジションベースアーキテクチャ、リソース管理パターン、包括的テスト戦略を含む現代的なGo開発パターンを示しています。システムのモジュラー設計により、厳格なセキュリティ境界を維持しながら簡単な拡張とカスタマイズが可能です。
 
