@@ -235,16 +235,7 @@ flowchart TD
 
 ### 4.1. コア インターフェース
 
-主要なコンポーネント間の契約を定義するインターフェース：
-
-```go
-// CriticalLogger - 強制ログ出力
-type CriticalLogger interface {
-    LogCritical(format string, args ...interface{})
-    LogVerificationFailure(component string, err error)
-}
-
-```
+実装では標準の`log/slog`パッケージを使用してログ出力を行い、独自インターフェースは定義していません。
 
 ### 4.2. データ型定義
 
