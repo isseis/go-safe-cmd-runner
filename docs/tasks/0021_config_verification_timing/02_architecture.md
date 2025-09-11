@@ -238,18 +238,6 @@ flowchart TD
 主要なコンポーネント間の契約を定義するインターフェース：
 
 ```go
-// HashDirectoryResolver - ハッシュディレクトリの解決と検証
-type HashDirectoryResolver interface {
-    Resolve() (string, error)
-    Validate(path string) error
-}
-
-// PreVerifier - 事前検証システム
-type PreVerifier interface {
-    VerifyConfigFile(path string) error
-    VerifyEnvironmentFile(path string) error
-}
-
 // CriticalLogger - 強制ログ出力
 type CriticalLogger interface {
     LogCritical(format string, args ...interface{})
