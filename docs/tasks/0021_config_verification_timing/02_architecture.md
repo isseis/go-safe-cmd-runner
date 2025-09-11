@@ -11,6 +11,14 @@
 - **最小権限の原則**: 必要最小限のデータのみ信頼境界内で使用
 - **検証可能性**: 実行フローが明確で監査可能
 
+### 1.2. 抽象度レベル
+
+本アーキテクチャ設計書では、以下の抽象度で設計を記述する：
+- **システム全体のフロー**: シーケンス図とフローチャートで表現
+- **コンポーネント間関係**: 依存関係図で表現
+- **主要インターフェース**: 型定義とシグネチャのみ（実装は詳細仕様書）
+- **設計パターン**: 概念レベルでの説明
+
 ## 2. 現在のアーキテクチャの問題点
 
 ### 2.1. 実行フローの問題
@@ -75,8 +83,10 @@ flowchart TD
 ```mermaid
 graph TB
     subgraph "Trust Boundary"
-        CLA[Command Line Arguments<br/>(Validated)]
-        ENV[Environment Variables<br/>(Pre-verified)]
+        CLA["Command Line Arguments
+        (Validated)"]
+        ENV["Environment Variables
+        (Pre-verified)"]
         CLA --> HDR[Hash Directory Resolver]
         ENV --> HDR
         HDR --> VM[verification.Manager]
@@ -84,8 +94,10 @@ graph TB
         VM --> EFV[Environment File Verification]
     end
 
-    CFV --> CFL[Config File Loading<br/>(Post-verified)]
-    EFV --> EFL[Environment File Loading<br/>(Post-verified)]
+    CFV --> CFL["Config File Loading
+    (Post-verified)"]
+    EFV --> EFL["Environment File Loading
+    (Post-verified)"]
     CFL --> AI[Application Initialization]
     EFL --> AI
 
@@ -100,476 +112,285 @@ graph TB
     style AI fill:#e0f2f1
 ```
 
-### 3.3. データフロー設計
+### 3.3. 詳細な実行シーケンス
 
-#### 3.3.1. ハッシュディレクトリ解決
+#### 3.3.1. メイン実行フローのシーケンス図
 
-```go
-type HashDirectoryResolver struct {
-    cmdlineArgs  *CommandLineArgs
-    envVars      *EnvironmentVariables
-    defaultValue string
-}
+```mermaid
+sequenceDiagram
+    participant CLI as Command Line Interface
+    participant HDR as Hash Directory Resolver
+    participant VM as Verification Manager
+    participant CFL as Config File Loader
+    participant EFL as Environment File Loader
+    participant LOG as Logger System
+    participant APP as Application
 
-func (r *HashDirectoryResolver) Resolve() (string, error) {
-    // Priority 1: Command line argument
-    if r.cmdlineArgs.HashDirectory != "" {
-        return r.validatePath(r.cmdlineArgs.HashDirectory)
-    }
+    CLI->>HDR: Resolve hash directory path
+    HDR->>HDR: Validate directory (absolute path, permissions, symlinks)
+    alt Directory validation fails
+        HDR-->>CLI: Critical Error
+        CLI->>CLI: Exit(1)
+    end
+    HDR-->>CLI: Validated hash directory
 
-    // Priority 2: Environment variable
-    if envValue := r.envVars.Get("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY"); envValue != "" {
-        return r.validatePath(envValue)
-    }
+    CLI->>VM: Initialize(hashDir)
+    VM-->>CLI: Verification manager ready
 
-    // Priority 3: Default value
-    return r.validatePath(r.defaultValue)
-}
+    CLI->>VM: VerifyConfigFile(configPath)
+    VM->>VM: Calculate hash and compare
+    alt Config verification fails
+        VM-->>CLI: Critical Error + stderr output
+        CLI->>CLI: Exit(1)
+    end
+    VM-->>CLI: Config file verified
 
-func (r *HashDirectoryResolver) validatePath(path string) (string, error) {
-    // Absolute path validation
-    if !filepath.IsAbs(path) {
-        return "", fmt.Errorf("hash directory must be absolute path: %s", path)
-    }
+    CLI->>VM: VerifyEnvironmentFile(envPath)
+    VM->>VM: Calculate hash and compare
+    alt Environment verification fails (non-critical)
+        VM-->>CLI: Warning + stderr output
+        Note over CLI: Continue execution with warning
+    end
+    VM-->>CLI: Environment file verified/warning
 
-    // Directory existence check
-    info, err := os.Stat(path)
-    if err != nil {
-        return "", fmt.Errorf("hash directory access failed: %w", err)
-    }
-    if !info.IsDir() {
-        return "", fmt.Errorf("hash directory is not a directory: %s", path)
-    }
+    CLI->>CFL: Load config file (post-verification)
+    CFL-->>CLI: Configuration loaded
 
-    // Permission check - ensure directory is readable and executable
-    if info.Mode().Perm()&0500 != 0500 { // Read and execute permission required
-        return "", fmt.Errorf("hash directory has insufficient permissions: %s (need at least r-x------)", path)
-    }
+    CLI->>EFL: Load environment settings (post-verification)
+    EFL-->>CLI: Environment settings loaded
 
-    // Symlink prevention using safefileio package
-    if err := validatePathSafety(path); err != nil {
-        return "", fmt.Errorf("hash directory path security validation failed: %w", err)
-    }
+    CLI->>LOG: Initialize logger with verified settings
+    LOG-->>CLI: Logger system ready
 
-    return path, nil
-}
+    CLI->>APP: Start application with verified configuration
+    APP-->>CLI: Application running
 ```
 
-#### 3.3.2. 事前検証システム
+#### 3.3.2. 検証チェーンの実行フロー
 
-```go
-type PreVerificationManager struct {
-    hashDir          string
-    verificationMgr  *verification.Manager
-    stderrLogger     *StderrLogger
-}
+```mermaid
+sequenceDiagram
+    participant VC as VerificationChain
+    participant VS1 as ConfigVerificationStep
+    participant VS2 as EnvironmentVerificationStep
+    participant STDERR as Stderr Output
+    participant RESULT as VerificationResult
 
-func (m *PreVerificationManager) VerifyConfigFile(configPath string) error {
-    if err := m.verificationMgr.VerifyConfigFile(configPath); err != nil {
-        m.stderrLogger.LogCritical("Config file verification failed: %v", err)
-        return err
-    }
-    return nil
-}
+    VC->>VS1: Execute verification
+    VS1->>VS1: Verify config file hash
+    alt Config verification succeeds
+        VS1-->>VC: Success
+    else Config verification fails (critical)
+        VS1->>STDERR: Output critical error
+        VS1-->>VC: Critical Error
+        VC->>RESULT: Add critical error
+        Note over VC: Stop chain execution
+        VC-->>VC: Return result with critical error
+    end
 
-func (m *PreVerificationManager) VerifyEnvironmentFile(envPath string) error {
-    if err := m.verificationMgr.VerifyEnvironmentFile(envPath); err != nil {
-        m.stderrLogger.LogCritical("Environment file verification failed: %v", err)
-        return err
-    }
-    return nil
-}
+    VC->>VS2: Execute verification (if reached)
+    VS2->>VS2: Verify environment file hash
+    alt Environment verification succeeds
+        VS2-->>VC: Success
+    else Environment verification fails (non-critical)
+        VS2-->>VC: Non-critical Error
+        VC->>RESULT: Add warning
+        Note over VC: Continue execution
+    end
+
+    VC->>RESULT: Compile final result
+    RESULT-->>VC: Complete verification result
 ```
 
 ### 3.4. エラーハンドリング設計
 
-#### 3.4.1. 強制stderr出力システム
+#### 3.4.1. エラー処理フロー
 
-```go
-type StderrLogger struct {
-    writer io.Writer
-}
+```mermaid
+flowchart TD
+    A["エラー発生"] --> B{"エラータイプ判定"}
 
-func (l *StderrLogger) LogCritical(format string, args ...interface{}) {
-    // Always output to stderr regardless of log level settings
-    fmt.Fprintf(l.writer, "[CRITICAL] "+format+"\n", args...)
-}
+    B -->|"クリティカル"| C["強制stderr出力"]
+    B -->|"非クリティカル"| D["警告ログ出力"]
+
+    C --> E["即座にプログラム終了"]
+    D --> F["実行継続"]
+
+    E --> G["Exit Code 1"]
+    F --> H["正常フロー継続"]
+
+    style C fill:#ffcccc
+    style E fill:#ff9999
+    style G fill:#ff6666
+    style D fill:#fff3e0
+    style F fill:#e8f5e8
+    style H fill:#e0f2f1
 ```
 
-#### 3.4.2. セーフ終了システム
+#### 3.4.2. エラーレベル分類
 
-```go
-type SafeExitManager struct {
-    exitCode int
-    cleanup  []func() error
-}
-
-func (m *SafeExitManager) FailWithCode(code int, message string) {
-    fmt.Fprintf(os.Stderr, "[FATAL] %s\n", message)
-    for _, cleanup := range m.cleanup {
-        if err := cleanup(); err != nil {
-            fmt.Fprintf(os.Stderr, "[CLEANUP_ERROR] %v\n", err)
-        }
-    }
-    os.Exit(code)
-}
-```
+- **クリティカルエラー**: システムの安全性に直結する検証失敗
+  - 設定ファイルハッシュ検証失敗
+  - ハッシュディレクトリアクセス失敗
+  - 必須パラメータ不足
+- **非クリティカルエラー（警告）**: 実行継続可能な問題
+  - 環境ファイルハッシュ検証失敗（環境ファイルは任意のため）
+  - パフォーマンス関連の問題
 
 ## 4. インターフェース設計
 
 ### 4.1. コア インターフェース
 
+主要なコンポーネント間の契約を定義するインターフェース：
+
 ```go
-// ハッシュディレクトリ解決インターフェース
+// HashDirectoryResolver - ハッシュディレクトリの解決と検証
 type HashDirectoryResolver interface {
     Resolve() (string, error)
     Validate(path string) error
 }
 
-// 事前検証インターフェース
+// PreVerifier - 事前検証システム
 type PreVerifier interface {
     VerifyConfigFile(path string) error
     VerifyEnvironmentFile(path string) error
 }
 
-// セーフ終了インターフェース
-type SafeExitHandler interface {
-    FailWithError(err error)
-    FailWithMessage(message string)
-}
-
-// 強制ログ出力インターフェース
+// CriticalLogger - 強制ログ出力
 type CriticalLogger interface {
     LogCritical(format string, args ...interface{})
     LogVerificationFailure(component string, err error)
 }
+
+// VerificationChain - 検証チェーン管理
+type VerificationChain interface {
+    AddStep(step VerificationStep)
+    Execute() *VerificationResult
+}
 ```
 
-### 4.2. 設定値優先順位インターフェース
+### 4.2. データ型定義
 
 ```go
-type ConfigValueResolver interface {
-    ResolveHashDirectory() (string, error)
-    GetSource() ConfigSource
-}
-
+// ConfigSource - 設定値のソース
 type ConfigSource int
-
 const (
     ConfigSourceCommandLine ConfigSource = iota
     ConfigSourceEnvironment
     ConfigSourceDefault
 )
-```
 
-## 5. セキュリティアーキテクチャ
-
-### 5.1. 信頼境界の実装
-
-```go
-type TrustBoundary struct {
-    trustedData   map[string]interface{}
-    untrustedData map[string]interface{}
-    validator     DataValidator
+// VerificationResult - 検証結果
+type VerificationResult struct {
+    CriticalErrors    []error
+    NonCriticalErrors []error
+    StepsExecuted     int
+    StepsFailed       int
 }
 
-func (tb *TrustBoundary) MoveTrusted(key string, data interface{}) error {
-    if err := tb.validator.Validate(data); err != nil {
-        return err
-    }
-    tb.trustedData[key] = data
-    delete(tb.untrustedData, key)
-    return nil
-}
-
-func (tb *TrustBoundary) GetTrusted(key string) (interface{}, bool) {
-    data, exists := tb.trustedData[key]
-    return data, exists
-}
-```
-
-### 5.2. 検証チェーンの実装
-
-```go
-type VerificationChain struct {
-    steps []VerificationStep
-}
-
+// VerificationStep - 検証ステップ
 type VerificationStep struct {
     Name     string
     Verify   func() error
     OnFail   func(error) error
     Critical bool
 }
-
-// VerificationResult は検証チェーンの実行結果を表す
-type VerificationResult struct {
-    CriticalErrors    []error  // クリティカルエラー（実行継続不可）
-    NonCriticalErrors []error  // 非クリティカルエラー（警告レベル）
-    StepsExecuted     int      // 実行されたステップ数
-    StepsFailed       int      // 失敗したステップ数
-}
-
-// HasCriticalErrors はクリティカルエラーの有無を返す
-func (vr *VerificationResult) HasCriticalErrors() bool {
-    return len(vr.CriticalErrors) > 0
-}
-
-// HasAnyErrors はエラー（クリティカル・非クリティカル問わず）の有無を返す
-func (vr *VerificationResult) HasAnyErrors() bool {
-    return len(vr.CriticalErrors) > 0 || len(vr.NonCriticalErrors) > 0
-}
-
-// ToError は結果をerrorインターフェースとして返す
-// クリティカルエラーがある場合はそれを優先し、なければ非クリティカルエラーを返す
-func (vr *VerificationResult) ToError() error {
-    if len(vr.CriticalErrors) > 0 {
-        return fmt.Errorf("verification failed with %d critical error(s): %w",
-            len(vr.CriticalErrors), errors.Join(vr.CriticalErrors...))
-    }
-    if len(vr.NonCriticalErrors) > 0 {
-        return fmt.Errorf("verification completed with %d warning(s): %w",
-            len(vr.NonCriticalErrors), errors.Join(vr.NonCriticalErrors...))
-    }
-    return nil
-}
-
-func (vc *VerificationChain) Execute() *VerificationResult {
-    result := &VerificationResult{
-        CriticalErrors:    make([]error, 0),
-        NonCriticalErrors: make([]error, 0),
-    }
-
-    for _, step := range vc.steps {
-        result.StepsExecuted++
-
-        if err := step.Verify(); err != nil {
-            result.StepsFailed++
-
-            if step.Critical {
-                // クリティカルエラー：即座に失敗処理を実行して記録
-                criticalErr := step.OnFail(err)
-                result.CriticalErrors = append(result.CriticalErrors, criticalErr)
-                // クリティカルエラーが発生した場合は処理を中断
-                break
-            } else {
-                // 非クリティカルエラー：警告として記録し、処理を継続
-                nonCriticalErr := fmt.Errorf("non-critical verification failed in step %T: %w", step, err)
-                result.NonCriticalErrors = append(result.NonCriticalErrors, nonCriticalErr)
-
-                // 警告ログ出力（既存の動作を保持）
-                slog.Warn("Non-critical verification step failed",
-                    "step", fmt.Sprintf("%T", step),
-                    "error", err.Error())
-            }
-        }
-    }
-
-    return result
-}
 ```
 
-### 5.5. 使用例
+## 5. セキュリティアーキテクチャ
 
-```go
-// メイン実行フローでのVerificationChainの使用例
-func performVerification(hashDir string, runID string) error {
-    chain := NewVerificationChain()
+### 5.1. 信頼境界の設計
 
-    // ハッシュディレクトリ検証ステップ（クリティカル）
-    chain.AddStep(&VerificationStep{
-        Verify: func() error {
-            return validateHashDirectory(hashDir)
-        },
-        OnFail: func(err error) error {
-            logCriticalToStderr("hash_directory", "Hash directory validation failed", err)
-            return fmt.Errorf("critical: hash directory validation failed: %w", err)
-        },
-        Critical: true,
-    })
+```mermaid
+graph TB
+    subgraph "信頼されない領域 (Untrusted Zone)"
+        UI[User Input]
+        CF[Config Files]
+        EF[Environment Files]
+        CMD[Command Line Args]
+    end
 
-    // 設定ファイル検証ステップ（クリティカル）
-    chain.AddStep(&VerificationStep{
-        Verify: func() error {
-            return verificationManager.VerifyConfigFile(*configPath)
-        },
-        OnFail: func(err error) error {
-            logCriticalToStderr("config_verification", "Config file verification failed", err)
-            return fmt.Errorf("critical: config verification failed: %w", err)
-        },
-        Critical: true,
-    })
+    subgraph "検証レイヤー (Verification Layer)"
+        HDV[Hash Directory Validator]
+        CFV[Config File Verifier]
+        EFV[Environment File Verifier]
+        CLI_V[CLI Args Validator]
+    end
 
-    // 環境ファイル検証ステップ（非クリティカル：環境ファイルは任意のため）
-    if envFile != "" {
-        chain.AddStep(&VerificationStep{
-            Verify: func() error {
-                return verificationManager.VerifyEnvironmentFile(envFile)
-            },
-            OnFail: func(err error) error {
-                return fmt.Errorf("environment file verification warning: %w", err)
-            },
-            Critical: false,  // 警告レベル
-        })
-    }
+    subgraph "信頼される領域 (Trusted Zone)"
+        VCF[Verified Config]
+        VEF[Verified Environment]
+        VHDR[Verified Hash Dir]
+        LOG[Logger System]
+        APP[Application Logic]
+    end
 
-    // 実行
-    result := chain.Execute()
+    UI --> CMD
+    CMD --> CLI_V
+    CF --> CFV
+    EF --> EFV
+    CMD --> HDV
 
-    // 結果の処理
-    if result.HasCriticalErrors() {
-        // クリティカルエラーがある場合は即座に終了
-        return result.ToError()
-    }
+    CLI_V -->|validated| VHDR
+    HDV -->|validated| VHDR
+    CFV -->|verified| VCF
+    EFV -->|verified| VEF
 
-    if result.HasAnyErrors() {
-        // 非クリティカルエラーがある場合はログに記録（実行は継続）
-        slog.Warn("Verification completed with warnings",
-            "warnings_count", len(result.NonCriticalErrors),
-            "details", result.ToError().Error())
-    }
+    VHDR --> LOG
+    VCF --> APP
+    VEF --> LOG
+    LOG --> APP
 
-    slog.Info("Verification chain completed successfully",
-        "steps_executed", result.StepsExecuted,
-        "steps_failed", result.StepsFailed)
-
-    return nil  // 成功
-}
+    style UI fill:#ffcccc
+    style CF fill:#ffcccc
+    style EF fill:#ffcccc
+    style CMD fill:#ffcccc
+    style HDV fill:#fff3e0
+    style CFV fill:#fff3e0
+    style EFV fill:#fff3e0
+    style CLI_V fill:#fff3e0
+    style VCF fill:#e8f5e8
+    style VEF fill:#e8f5e8
+    style VHDR fill:#e8f5e8
+    style LOG fill:#e0f2f1
+    style APP fill:#e0f2f1
 ```
 
-## 6. パフォーマンス考慮事項
+### 5.2. 検証チェーンパターン
 
-### 6.1. 最適化ポイント
+検証チェーンは、複数の検証ステップを順次実行し、エラーレベルに応じて適切に処理する設計パターン：
 
-- **単一初期化**: verification.Managerの重複初期化防止
-- **並列処理**: 設定ファイルと環境ファイルの並列検証（可能な場合）
-- **キャッシュ**: ハッシュ計算結果のキャッシュ
-- **遅延評価**: 不要な検証の回避
+- **クリティカル検証**: 失敗時は即座に処理を停止
+- **非クリティカル検証**: 失敗時は警告として記録し処理を継続
+- **結果集約**: 全ての検証結果を統合して最終判定
 
-### 6.2. リソース管理
+## 6. 非機能要件
 
-```go
-type ResourceManager struct {
-    resources []io.Closer
-    mutex     sync.Mutex
-}
+### 6.1. パフォーマンス要件
 
-func (rm *ResourceManager) Register(resource io.Closer) {
-    rm.mutex.Lock()
-    defer rm.mutex.Unlock()
-    rm.resources = append(rm.resources, resource)
-}
+- **起動時間**: 検証追加による起動時間増加は100ms未満
+- **メモリ使用量**: verification.Manager追加メモリ使用量は10MB未満
+- **ハッシュ計算**: ファイルサイズ1MBあたり50ms未満
 
-func (rm *ResourceManager) CleanupAll() error {
-    rm.mutex.Lock()
-    defer rm.mutex.Unlock()
+### 6.2. 運用要件
 
-    var errors []error
-    for _, resource := range rm.resources {
-        if err := resource.Close(); err != nil {
-            errors = append(errors, err)
-        }
-    }
+- **ログ出力**: クリティカルエラーは必ずstderrに出力
+- **監視項目**: 検証成功/失敗率、検証処理時間、ハッシュディレクトリソース
+- **可用性**: 検証失敗時の確実なプログラム停止
 
-    if len(errors) > 0 {
-        // errors.Joinを使用して複数エラーを適切にラップ
-        // これにより、errors.Is/errors.Asによる個別エラー検査が可能になる
-        return fmt.Errorf("cleanup failed: %w", errors.Join(errors...))
-    }
-    return nil
-}
-```
+## 7. 設計原則
 
-### 6.4. マルチエラーハンドリングの使用例
+### 7.1. セキュリティ原則
 
-```go
-// ResourceManagerのクリーンアップエラーを検査する例
-func handleCleanupError(err error) {
-    if err == nil {
-        return
-    }
+- **デフォルト拒否**: 検証が完了するまで一切の操作を許可しない
+- **早期検証**: 可能な限り早期に全ての入力を検証
+- **明示的エラー**: セキュリティ関連エラーは明確に分類・出力
 
-    // 個別のエラータイプを検査可能
-    if errors.Is(err, os.ErrPermission) {
-        slog.Error("Permission denied during cleanup", "error", err)
-    }
+### 7.2. 設計パターン
 
-    // 特定のエラータイプを抽出可能
-    var pathErr *os.PathError
-    if errors.As(err, &pathErr) {
-        slog.Error("Path-related cleanup error", "path", pathErr.Path, "op", pathErr.Op)
-    }
-
-    // VerificationResultとの整合性
-    // ResourceManagerでも同様のマルチエラーアプローチを採用
-    slog.Error("Cleanup failed with multiple errors", "error", err)
-}
-
-// マルチエラー生成の統一パターン
-func combineErrors(errors []error) error {
-    if len(errors) == 0 {
-        return nil
-    }
-    if len(errors) == 1 {
-        return errors[0]
-    }
-    // Go 1.20以降：errors.Joinを使用
-    return errors.Join(errors...)
-}
-```
-
-## 7. 実装上の考慮事項
-
-### 7.1. エラー分類
-
-```go
-type VerificationErrorType int
-
-const (
-    ErrorTypeConfigNotFound VerificationErrorType = iota
-    ErrorTypeConfigInvalid
-    ErrorTypeHashMismatch
-    ErrorTypePermissionDenied
-    ErrorTypeSystemError
-)
-
-type VerificationError struct {
-    Type      VerificationErrorType
-    Component string
-    Path      string
-    Cause     error
-}
-```
-
-### 7.2. 監査ログ
-
-```go
-type AuditLogger struct {
-    logger *slog.Logger
-}
-
-func (al *AuditLogger) LogVerificationAttempt(component, path string) {
-    al.logger.Info("Verification attempt",
-        "component", component,
-        "path", path,
-        "timestamp", time.Now())
-}
-
-func (al *AuditLogger) LogVerificationResult(component, path string, success bool, duration time.Duration) {
-    al.logger.Info("Verification result",
-        "component", component,
-        "path", path,
-        "success", success,
-        "duration_ms", duration.Milliseconds())
-}
-```
-
-### 7.3. テスト可能性
-
-- **依存性注入**: 外部依存関係のモック化
-- **インターフェース分離**: テスト対象の明確化
-- **状態管理**: テスト間の状態隔離
-- **エラーシミュレーション**: 異常系テストの実装
+- **責任の分離**: 検証・実行・ログ出力の明確な責任分担
+- **チェーンオブレスポンシビリティ**: 複数検証ステップの連鎖実行
+- **依存性注入**: テスト可能性と柔軟性の確保
 
 ## 8. マイグレーション戦略
 
