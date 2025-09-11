@@ -141,40 +141,51 @@ func handleHashDirectoryValidationError(err error, runID string) {
 ```mermaid
 sequenceDiagram
     participant Main as main()
-    participant Args as Command Args
-    participant Hash as Hash Directory
+    participant HDR as Hash Directory Resolver
     participant VM as verification.Manager
-    participant CF as Config File
-    participant EF as Environment File
+    participant CFL as Config File Loader
+    participant EFL as Environment File Loader
+    participant LOG as Logger System
     participant App as Application
 
-    Main->>Args: Parse arguments
-    Main->>Hash: Validate hash directory
-    alt Hash validation fails
-        Hash-->>Main: Error
-        Main->>Main: Exit with error
+    Main->>HDR: Resolve and validate hash directory
+    alt Hash directory validation fails
+        HDR-->>Main: Critical Error + stderr output
+        Main->>Main: Exit(1)
     end
+    HDR-->>Main: Validated hash directory
 
-    Main->>VM: Initialize verification manager
-    Main->>CF: Verify config file hash
+    Main->>VM: Initialize(hashDir)
+    VM-->>Main: Verification manager ready
+
+    Main->>VM: VerifyConfigFile(configPath)
     alt Config verification fails
-        CF-->>Main: Error + stderr output
-        Main->>Main: Exit with error
+        VM-->>Main: Critical Error + stderr output
+        Main->>Main: Exit(1)
     end
+    VM-->>Main: Config file verified
 
-    Main->>EF: Verify environment file hash
-    alt Env verification fails
-        EF-->>Main: Error + stderr output
-        Main->>Main: Exit with error
+    Main->>VM: VerifyEnvironmentFile(envPath)
+    alt Environment verification fails
+        VM-->>Main: Warning + stderr output
+        Note over Main: Continue execution with warning
     end
+    VM-->>Main: Environment file verified/warning
 
-    Main->>CF: Load verified config
-    Main->>EF: Load Slack webhook from verified env
-    Main->>Main: Setup verified logger
-    Main->>App: Initialize application
+    Main->>CFL: Load config file (post-verification)
+    CFL-->>Main: Configuration loaded
+
+    Main->>EFL: Load environment settings (post-verification)
+    EFL-->>Main: Environment settings loaded
+
+    Main->>LOG: Initialize logger with verified settings
+    LOG-->>Main: Logger system ready
+
+    Main->>App: Start application with verified configuration
+    App-->>Main: Application running
 ```
 
-#### 3.2.2. 新しいrun関数仕様（VerificationChain使用版）
+#### 3.2.2. 新しいrun関数仕様（シンプル検証版）
 
 ```go
 func run(runID string) error {
@@ -195,23 +206,23 @@ func run(runID string) error {
         return err
     }
 
-    // 4-5. VerificationChainを使用した統合検証フロー（新規）
-    result, err := performVerificationChain(verificationManager, runID)
+    // 4. 設定ファイル検証（クリティカル）
+    if err := performConfigFileVerification(verificationManager, runID); err != nil {
+        return err // クリティカルエラーのため即座に終了
+    }
+
+    // 5. 環境ファイル検証（非クリティカル）
+    envFileToLoad, err := determineEnvironmentFile()
     if err != nil {
         return err
     }
-
-    // 検証結果の処理
-    if result.HasCriticalErrors() {
-        // クリティカルエラーがある場合は即座に終了
-        return result.ToError()
-    }
-
-    if result.HasAnyErrors() {
-        // 非クリティカルエラー（警告）がある場合はログに記録（実行は継続）
-        slog.Warn("Verification completed with warnings",
-            "warnings_count", len(result.NonCriticalErrors),
-            "details", result.ToError().Error())
+    if envFileToLoad != "" {
+        if err := performEnvironmentFileVerification(verificationManager, envFileToLoad, runID); err != nil {
+            // 非クリティカルエラーのため警告として記録し実行継続
+            slog.Warn("Environment file verification failed, continuing execution",
+                "env_file", envFileToLoad,
+                "error", err.Error())
+        }
     }
 
     // 6. 設定ファイル読み込み（検証後実行）
@@ -221,10 +232,6 @@ func run(runID string) error {
     }
 
     // 7. 環境ファイルからの設定読み込み（検証後実行）
-    envFileToLoad, err := determineEnvironmentFile()
-    if err != nil {
-        return err
-    }
     slackWebhookURL, err := loadSlackWebhookFromVerifiedEnv(envFileToLoad)
     if err != nil {
         return err
@@ -241,93 +248,22 @@ func run(runID string) error {
 }
 ```
 
-#### 3.2.3. VerificationChain実装仕様
+#### 3.2.3. 検証関数の詳細実装仕様
 
 ```go
-// VerificationResult は検証チェーンの実行結果を表す（アーキテクチャ設計書より）
-type VerificationResult struct {
-    CriticalErrors    []error  // クリティカルエラー（実行継続不可）
-    NonCriticalErrors []error  // 非クリティカルエラー（警告レベル）
-    StepsExecuted     int      // 実行されたステップ数
-    StepsFailed       int      // 失敗したステップ数
-}
-
-// HasCriticalErrors はクリティカルエラーの有無を返す
-func (vr *VerificationResult) HasCriticalErrors() bool {
-    return len(vr.CriticalErrors) > 0
-}
-
-// HasAnyErrors はエラー（クリティカル・非クリティカル問わず）の有無を返す
-func (vr *VerificationResult) HasAnyErrors() bool {
-    return len(vr.CriticalErrors) > 0 || len(vr.NonCriticalErrors) > 0
-}
-
-// ToError は結果をerrorインターフェースとして返す
-// errors.Joinを使用して複数エラーを適切にラップ
-func (vr *VerificationResult) ToError() error {
-    if len(vr.CriticalErrors) > 0 {
-        return fmt.Errorf("verification failed with %d critical error(s): %w",
-            len(vr.CriticalErrors), errors.Join(vr.CriticalErrors...))
-    }
-    if len(vr.NonCriticalErrors) > 0 {
-        return fmt.Errorf("verification completed with %d warning(s): %w",
-            len(vr.NonCriticalErrors), errors.Join(vr.NonCriticalErrors...))
-    }
-    return nil
-}
-
-// performVerificationChain は統合検証フローを実行する
-func performVerificationChain(verificationManager *verification.Manager, runID string) (*VerificationResult, error) {
-    chain := NewVerificationChain()
-
-    // 設定ファイル検証ステップ（クリティカル）
-    chain.AddStep(&VerificationStep{
-        Name: "ConfigFileVerification",
-        Verify: func() error {
-            if *configPath == "" {
-                return fmt.Errorf("config file path is required")
-            }
-            return verificationManager.VerifyConfigFile(*configPath)
-        },
-        OnFail: func(err error) error {
-            logCriticalToStderr("config_verification", "Config file verification failed", err)
-            return fmt.Errorf("critical: config verification failed: %w", err)
-        },
-        Critical: true,
-    })
-
-    // 環境ファイル検証ステップ（非クリティカル：環境ファイルは任意のため）
-    envFileToLoad, err := determineEnvironmentFile()
+// initializeVerificationManager はハッシュディレクトリを使用してverification.Managerを初期化する
+func initializeVerificationManager(hashDir, runID string) (*verification.Manager, error) {
+    manager, err := verification.NewManager(hashDir)
     if err != nil {
-        return nil, fmt.Errorf("failed to determine environment file: %w", err)
+        return nil, &logging.PreExecutionError{
+            Type:      logging.ErrorTypeFileAccess,
+            Message:   fmt.Sprintf("Failed to initialize verification manager: %v", err),
+            Component: "verification_manager",
+            RunID:     runID,
+        }
     }
-
-    if envFileToLoad != "" {
-        chain.AddStep(&VerificationStep{
-            Name: "EnvironmentFileVerification",
-            Verify: func() error {
-                return verificationManager.VerifyEnvironmentFile(envFileToLoad)
-            },
-            OnFail: func(err error) error {
-                // 非クリティカルなので強制stderr出力はしない
-                return fmt.Errorf("environment file verification warning: %w", err)
-            },
-            Critical: false,  // 警告レベル
-        })
-    }
-
-    // 検証チェーン実行
-    result := chain.Execute()
-
-    slog.Info("Verification chain completed",
-        "steps_executed", result.StepsExecuted,
-        "steps_failed", result.StepsFailed,
-        "has_critical_errors", result.HasCriticalErrors(),
-        "has_warnings", len(result.NonCriticalErrors) > 0)
-
-    return result, nil
+    return manager, nil
 }
-```
 
 #### 3.2.2. 補助関数仕様
 
@@ -345,7 +281,7 @@ func determineEnvironmentFile() (string, error) {
     return "", nil
 }
 
-// performConfigFileVerification は設定ファイルの事前検証を実行する
+// performConfigFileVerification は設定ファイルの事前検証を実行する（クリティカル）
 func performConfigFileVerification(verificationManager *verification.Manager, runID string) error {
     if *configPath == "" {
         return &logging.PreExecutionError{
@@ -357,8 +293,8 @@ func performConfigFileVerification(verificationManager *verification.Manager, ru
     }
 
     if err := verificationManager.VerifyConfigFile(*configPath); err != nil {
-        // 強制stderr出力
-        fmt.Fprintf(os.Stderr, "[CRITICAL] Config file verification failed: %v\n", err)
+        // 強制stderr出力（クリティカルエラー）
+        logCriticalToStderr("config_verification", "Config file verification failed", err)
 
         return &logging.PreExecutionError{
             Type:      logging.ErrorTypeFileAccess,
@@ -370,18 +306,11 @@ func performConfigFileVerification(verificationManager *verification.Manager, ru
     return nil
 }
 
-// performEnvironmentFileVerification は環境ファイルの事前検証を実行する
+// performEnvironmentFileVerification は環境ファイルの事前検証を実行する（非クリティカル）
 func performEnvironmentFileVerification(verificationManager *verification.Manager, envPath, runID string) error {
     if err := verificationManager.VerifyEnvironmentFile(envPath); err != nil {
-        // 強制stderr出力
-        fmt.Fprintf(os.Stderr, "[CRITICAL] Environment file verification failed: %v\n", err)
-
-        return &logging.PreExecutionError{
-            Type:      logging.ErrorTypeFileAccess,
-            Message:   fmt.Sprintf("Environment file verification failed: %v", err),
-            Component: "environment_verification",
-            RunID:     runID,
-        }
+        // 非クリティカルなので通常ログ出力のみ（stderrへの強制出力はしない）
+        return fmt.Errorf("environment file verification failed: %w", err)
     }
     return nil
 }
@@ -801,12 +730,12 @@ func TestValidateHashDirectory(t *testing.T) {
 
 ### 4.2. 統合テスト
 
-#### 4.2.1. VerificationChain統合テスト
+#### 4.2.1. 検証処理統合テスト
 
 ```go
-func TestVerificationChainIntegration(t *testing.T) {
+func TestVerificationIntegration(t *testing.T) {
     // テストシナリオ：全て正常なケース
-    t.Run("AllVerificationStepsSucceed", func(t *testing.T) {
+    t.Run("AllVerificationSucceeds", func(t *testing.T) {
         // セットアップ
         tempDir := setupTestEnvironment(t)
         defer os.RemoveAll(tempDir)
@@ -815,19 +744,15 @@ func TestVerificationChainIntegration(t *testing.T) {
         runID := "test-run-001"
 
         // 実行
-        result, err := performVerificationChain(verificationManager, runID)
-
-        // 検証
+        err := performConfigFileVerification(verificationManager, runID)
         assert.NoError(t, err)
-        assert.NotNil(t, result)
-        assert.False(t, result.HasCriticalErrors())
-        assert.False(t, result.HasAnyErrors())
-        assert.Equal(t, 2, result.StepsExecuted) // 設定ファイル + 環境ファイル
-        assert.Equal(t, 0, result.StepsFailed)
+
+        err = performEnvironmentFileVerification(verificationManager, "test.env", runID)
+        assert.NoError(t, err)
     })
 
-    // テストシナリオ：クリティカルエラー発生
-    t.Run("CriticalErrorOccurs", func(t *testing.T) {
+    // テストシナリオ：設定ファイル検証失敗（クリティカル）
+    t.Run("ConfigVerificationFails", func(t *testing.T) {
         // セットアップ
         tempDir := setupTestEnvironment(t)
         defer os.RemoveAll(tempDir)
@@ -836,53 +761,36 @@ func TestVerificationChainIntegration(t *testing.T) {
         runID := "test-run-002"
 
         // 実行
-        result, err := performVerificationChain(verificationManager, runID)
+        err := performConfigFileVerification(verificationManager, runID)
 
         // 検証
-        assert.NoError(t, err) // performVerificationChain自体はエラーを返さない
-        assert.NotNil(t, result)
-        assert.True(t, result.HasCriticalErrors())
-        assert.Equal(t, 1, len(result.CriticalErrors))
-        assert.Equal(t, 1, result.StepsExecuted) // 設定ファイル検証で停止
-        assert.Equal(t, 1, result.StepsFailed)
+        assert.Error(t, err)
 
-        // エラー内容の検証
-        combinedErr := result.ToError()
-        assert.Error(t, combinedErr)
-        assert.Contains(t, combinedErr.Error(), "critical error(s)")
-
-        // errors.Joinによる個別エラー検査
-        assert.True(t, errors.Is(combinedErr, expectedConfigError))
+        var preExecErr *logging.PreExecutionError
+        assert.True(t, errors.As(err, &preExecErr))
+        assert.Equal(t, logging.ErrorTypeFileAccess, preExecErr.Type)
+        assert.Equal(t, "config_verification", preExecErr.Component)
     })
 
-    // テストシナリオ：非クリティカル警告発生
-    t.Run("NonCriticalWarningsOccur", func(t *testing.T) {
+    // テストシナリオ：環境ファイル検証失敗（非クリティカル）
+    t.Run("EnvironmentVerificationFails", func(t *testing.T) {
         // セットアップ
         tempDir := setupTestEnvironment(t)
         defer os.RemoveAll(tempDir)
 
-        verificationManager := createMockVerificationManagerWithEnvWarning(t)
+        verificationManager := createMockVerificationManagerWithEnvError(t)
         runID := "test-run-003"
 
         // 実行
-        result, err := performVerificationChain(verificationManager, runID)
+        err := performEnvironmentFileVerification(verificationManager, "test.env", runID)
 
-        // 検証
-        assert.NoError(t, err)
-        assert.NotNil(t, result)
-        assert.False(t, result.HasCriticalErrors())
-        assert.True(t, result.HasAnyErrors())
-        assert.Equal(t, 1, len(result.NonCriticalErrors))
-        assert.Equal(t, 2, result.StepsExecuted) // 両ステップ実行
-        assert.Equal(t, 1, result.StepsFailed)  // 環境ファイルのみ失敗
+        // 検証：非クリティカルなのでエラーは返されるが、PreExecutionErrorではない
+        assert.Error(t, err)
+        assert.Contains(t, err.Error(), "environment file verification failed")
 
-        // 警告内容の検証
-        combinedErr := result.ToError()
-        assert.Error(t, combinedErr)
-        assert.Contains(t, combinedErr.Error(), "warning(s)")
-
-        // errors.Joinによる個別エラー検査
-        assert.True(t, errors.Is(combinedErr, expectedEnvWarning))
+        // PreExecutionErrorではないことを確認（非クリティカル）
+        var preExecErr *logging.PreExecutionError
+        assert.False(t, errors.As(err, &preExecErr))
     })
 }
 ```
@@ -913,7 +821,6 @@ func TestSecureExecutionFlow(t *testing.T) {
         // 検証
         assert.NoError(t, err)
         assert.Contains(t, string(output), "verification completed successfully")
-        assert.Contains(t, string(output), "Verification chain completed")
     })
 
     // テストシナリオ：設定ファイル検証失敗
@@ -965,8 +872,7 @@ func TestSecureExecutionFlow(t *testing.T) {
 
         // 検証：実行は継続するが警告が出力される
         assert.NoError(t, err) // プログラムは正常終了
-        assert.Contains(t, string(output), "Verification completed with warnings")
-        assert.Contains(t, string(output), "environment file verification warning")
+        assert.Contains(t, string(output), "Environment file verification failed, continuing execution")
     })
 }
 ```

@@ -166,40 +166,34 @@ sequenceDiagram
     APP-->>CLI: Application running
 ```
 
-#### 3.3.2. 検証チェーンの実行フロー
+#### 3.3.2. 検証処理の実行フロー
 
 ```mermaid
 sequenceDiagram
-    participant VC as VerificationChain
-    participant VS1 as ConfigVerificationStep
-    participant VS2 as EnvironmentVerificationStep
+    participant CLI as Command Line Interface
+    participant VM as Verification Manager
     participant STDERR as Stderr Output
-    participant RESULT as VerificationResult
 
-    VC->>VS1: Execute verification
-    VS1->>VS1: Verify config file hash
-    alt Config verification succeeds
-        VS1-->>VC: Success
-    else Config verification fails (critical)
-        VS1->>STDERR: Output critical error
-        VS1-->>VC: Critical Error
-        VC->>RESULT: Add critical error
-        Note over VC: Stop chain execution
-        VC-->>VC: Return result with critical error
+    CLI->>VM: VerifyConfigFile(configPath)
+    VM->>VM: Calculate config file hash
+    alt Config verification fails
+        VM->>STDERR: Output critical error
+        VM-->>CLI: Critical Error
+        CLI->>CLI: Exit(1)
+    else Config verification succeeds
+        VM-->>CLI: Success
     end
 
-    VC->>VS2: Execute verification (if reached)
-    VS2->>VS2: Verify environment file hash
-    alt Environment verification succeeds
-        VS2-->>VC: Success
-    else Environment verification fails (non-critical)
-        VS2-->>VC: Non-critical Error
-        VC->>RESULT: Add warning
-        Note over VC: Continue execution
+    CLI->>VM: VerifyEnvironmentFile(envPath)
+    VM->>VM: Calculate environment file hash
+    alt Environment verification fails
+        VM-->>CLI: Warning (non-critical)
+        Note over CLI: Continue execution with warning
+    else Environment verification succeeds
+        VM-->>CLI: Success
     end
 
-    VC->>RESULT: Compile final result
-    RESULT-->>VC: Complete verification result
+    Note over CLI: All verifications complete, proceed to file loading
 ```
 
 ### 3.4. エラーハンドリング設計
@@ -262,11 +256,6 @@ type CriticalLogger interface {
     LogVerificationFailure(component string, err error)
 }
 
-// VerificationChain - 検証チェーン管理
-type VerificationChain interface {
-    AddStep(step VerificationStep)
-    Execute() *VerificationResult
-}
 ```
 
 ### 4.2. データ型定義
@@ -280,20 +269,11 @@ const (
     ConfigSourceDefault
 )
 
-// VerificationResult - 検証結果
-type VerificationResult struct {
-    CriticalErrors    []error
-    NonCriticalErrors []error
-    StepsExecuted     int
-    StepsFailed       int
-}
-
-// VerificationStep - 検証ステップ
-type VerificationStep struct {
-    Name     string
-    Verify   func() error
-    OnFail   func(error) error
-    Critical bool
+// HashDirectoryError - ハッシュディレクトリエラーの詳細分類
+type HashDirectoryError struct {
+    Type    string // エラータイプ（"not_absolute", "not_exists", "symlink", etc.）
+    Path    string // 問題のあるパス
+    Cause   error  // 根本原因
 }
 ```
 
@@ -356,13 +336,13 @@ graph TB
     style APP fill:#e0f2f1
 ```
 
-### 5.2. 検証チェーンパターン
+### 5.2. 検証処理パターン
 
-検証チェーンは、複数の検証ステップを順次実行し、エラーレベルに応じて適切に処理する設計パターン：
+検証処理は以下のシンプルなパターンで実装：
 
-- **クリティカル検証**: 失敗時は即座に処理を停止
-- **非クリティカル検証**: 失敗時は警告として記録し処理を継続
-- **結果集約**: 全ての検証結果を統合して最終判定
+- **設定ファイル検証**: クリティカルエラー（失敗時は即座に終了）
+- **環境ファイル検証**: 非クリティカルエラー（警告として記録し実行継続）
+- **段階的検証**: 前の検証が成功した場合のみ次の検証を実行
 
 ## 6. 非機能要件
 
