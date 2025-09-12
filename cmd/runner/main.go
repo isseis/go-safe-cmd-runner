@@ -50,6 +50,60 @@ var (
 	ErrInvalidOutputFormat = errors.New("invalid output format - valid options are: text, json")
 )
 
+// HashDirectoryErrorType represents different types of hash directory validation errors
+type HashDirectoryErrorType int
+
+const (
+	// HashDirectoryErrorTypeRelativePath indicates a relative path was provided instead of absolute
+	HashDirectoryErrorTypeRelativePath HashDirectoryErrorType = iota
+	// HashDirectoryErrorTypeNotFound indicates the directory does not exist
+	HashDirectoryErrorTypeNotFound
+	// HashDirectoryErrorTypeNotDirectory indicates the path exists but is not a directory
+	HashDirectoryErrorTypeNotDirectory
+	// HashDirectoryErrorTypePermission indicates insufficient permissions to access the directory
+	HashDirectoryErrorTypePermission
+	// HashDirectoryErrorTypeSymlinkAttack indicates a potential symlink attack
+	HashDirectoryErrorTypeSymlinkAttack
+)
+
+// HashDirectoryError represents an error in hash directory validation
+type HashDirectoryError struct {
+	Type  HashDirectoryErrorType
+	Path  string
+	Cause error
+}
+
+// Error implements the error interface for HashDirectoryError
+func (e *HashDirectoryError) Error() string {
+	switch e.Type {
+	case HashDirectoryErrorTypeRelativePath:
+		return fmt.Sprintf("hash directory must be absolute path, got relative path: %s", e.Path)
+	case HashDirectoryErrorTypeNotFound:
+		return fmt.Sprintf("hash directory not found: %s", e.Path)
+	case HashDirectoryErrorTypeNotDirectory:
+		return fmt.Sprintf("hash directory path is not a directory: %s", e.Path)
+	case HashDirectoryErrorTypePermission:
+		return fmt.Sprintf("insufficient permissions to access hash directory: %s", e.Path)
+	case HashDirectoryErrorTypeSymlinkAttack:
+		return fmt.Sprintf("potential symlink attack detected for hash directory: %s", e.Path)
+	default:
+		return fmt.Sprintf("unknown hash directory error for path: %s", e.Path)
+	}
+}
+
+// Is implements error unwrapping for HashDirectoryError
+func (e *HashDirectoryError) Is(target error) bool {
+	if e.Cause != nil {
+		return errors.Is(e.Cause, target)
+	}
+	return false
+}
+
+// Unwrap implements error unwrapping for HashDirectoryError
+func (e *HashDirectoryError) Unwrap() error {
+	return e.Cause
+}
+
 var (
 	configPath       = flag.String("config", "", "path to config file")
 	envFile          = flag.String("env-file", "", "path to environment file")
@@ -73,6 +127,95 @@ func getHashDir() string {
 	}
 	// Set default hash directory if none specified
 	return cmdcommon.DefaultHashDirectory
+}
+
+// validateHashDirectorySecurely validates hash directory with security checks
+func validateHashDirectorySecurely(path string) (string, error) {
+	// Check if path is absolute
+	if !filepath.IsAbs(path) {
+		return "", &HashDirectoryError{
+			Type: HashDirectoryErrorTypeRelativePath,
+			Path: path,
+		}
+	}
+
+	// Check if path exists and get info
+	info, err := os.Lstat(path) // Use Lstat to detect symlinks
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", &HashDirectoryError{
+				Type:  HashDirectoryErrorTypeNotFound,
+				Path:  path,
+				Cause: err,
+			}
+		}
+		return "", &HashDirectoryError{
+			Type:  HashDirectoryErrorTypePermission,
+			Path:  path,
+			Cause: err,
+		}
+	}
+
+	// Check for symlink attack
+	if info.Mode()&os.ModeSymlink != 0 {
+		return "", &HashDirectoryError{
+			Type: HashDirectoryErrorTypeSymlinkAttack,
+			Path: path,
+		}
+	}
+
+	// Check if path is a directory
+	if !info.IsDir() {
+		return "", &HashDirectoryError{
+			Type: HashDirectoryErrorTypeNotDirectory,
+			Path: path,
+		}
+	}
+
+	// Resolve to clean absolute path
+	cleanPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", &HashDirectoryError{
+			Type:  HashDirectoryErrorTypePermission,
+			Path:  path,
+			Cause: err,
+		}
+	}
+
+	return cleanPath, nil
+}
+
+// getHashDirectoryWithValidation determines hash directory with priority-based resolution and validation
+func getHashDirectoryWithValidation() (string, error) {
+	var path string
+
+	// Priority 1: Command line argument
+	if *hashDirectory != "" {
+		path = *hashDirectory
+	} else {
+		// Priority 2: Environment variable
+		if envPath := os.Getenv("HASH_DIRECTORY"); envPath != "" {
+			path = envPath
+		} else {
+			// Priority 3: Default value
+			path = cmdcommon.DefaultHashDirectory
+			// Convert relative default to absolute path
+			if !filepath.IsAbs(path) {
+				cwd, err := os.Getwd()
+				if err != nil {
+					return "", &HashDirectoryError{
+						Type:  HashDirectoryErrorTypePermission,
+						Path:  path,
+						Cause: err,
+					}
+				}
+				path = filepath.Join(cwd, path)
+			}
+		}
+	}
+
+	// Validate the resolved path securely
+	return validateHashDirectorySecurely(path)
 }
 
 // validateConfigCommand implements config validation CLI command
