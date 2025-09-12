@@ -34,50 +34,74 @@ import (
 )
 
 // getHashDirectoryWithValidation はハッシュディレクトリを優先順位に従って取得・検証する
+// safefileioパッケージの機能を活用してセキュアな検証を実行する
 func getHashDirectoryWithValidation() (string, error) {
+    var candidatePath string
+
     // 1. コマンドライン引数（最高優先度）
     if *hashDirectory != "" {
-        if err := validateHashDirectory(*hashDirectory); err != nil {
-            return "", fmt.Errorf("command line hash directory validation failed: %w", err)
-        }
-        return *hashDirectory, nil
+        candidatePath = *hashDirectory
+    } else if envHashDir := os.Getenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY"); envHashDir != "" {
+        // 2. 環境変数（中優先度）
+        candidatePath = envHashDir
+    } else {
+        // 3. デフォルト値（最低優先度）
+        candidatePath = cmdcommon.DefaultHashDirectory
     }
 
-    // 2. 環境変数（中優先度）
-    if envHashDir := os.Getenv("GO_SAFE_CMD_RUNNER_HASH_DIRECTORY"); envHashDir != "" {
-        if err := validateHashDirectory(envHashDir); err != nil {
-            return "", fmt.Errorf("environment variable hash directory validation failed: %w", err)
-        }
-        return envHashDir, nil
+    // セキュアな検証実行
+    validatedPath, err := validateHashDirectorySecurely(candidatePath)
+    if err != nil {
+        return "", fmt.Errorf("hash directory validation failed: %w", err)
     }
 
-    // 3. デフォルト値（最低優先度）
-    defaultHashDir := cmdcommon.DefaultHashDirectory
-    if err := validateHashDirectory(defaultHashDir); err != nil {
-        return "", fmt.Errorf("default hash directory validation failed: %w", err)
-    }
-    return defaultHashDir, nil
+    return validatedPath, nil
 }
 
-// validateHashDirectory はハッシュディレクトリのパス検証を行う
-func validateHashDirectory(path string) error {
+// validateHashDirectorySecurely はハッシュディレクトリのセキュアな検証を行う
+// safefileioパッケージの機能を最大限活用してTOCTOU攻撃やシンボリックリンク攻撃を防御
+func validateHashDirectorySecurely(path string) (string, error) {
     // 空文字チェック
     if path == "" {
-        return NewHashDirectoryError(HashDirErrorTypeEmpty, "", nil)
+        return "", NewHashDirectoryError(HashDirErrorTypeEmpty, "", nil)
     }
 
     // 絶対パスチェック
     if !filepath.IsAbs(path) {
-        return NewHashDirectoryError(HashDirErrorTypeNotAbsolute, path, nil)
+        return "", NewHashDirectoryError(HashDirErrorTypeNotAbsolute, path, nil)
     }
 
     // パスの正規化チェック（相対パス要素の検出）
-    if path != filepath.Clean(path) {
-        return NewHashDirectoryError(HashDirErrorTypeNotAbsolute, path,
+    cleanPath := filepath.Clean(path)
+    if path != cleanPath {
+        return "", NewHashDirectoryError(HashDirErrorTypeNotAbsolute, path,
             fmt.Errorf("path contains relative components"))
     }
 
-    // シンボリックリンク攻撃防止（safefileioパッケージの公開関数を使用）
+    // safefileioの機能を活用したセキュアな検証
+    // 注意: safefileio.EnsureParentDirsNoSymlinks()やその他のセキュリティ機能の
+    // 具体的な使用方法は実装時に既存のAPIを確認して決定する
+    if err := validateHashDirectoryPathSecurity(cleanPath); err != nil {
+        return "", err
+    }
+
+    // セキュアなディレクトリ存在・権限確認
+    if err := validateHashDirectoryAccess(cleanPath); err != nil {
+        return "", err
+    }
+
+    return cleanPath, nil
+}
+
+// validateHashDirectoryPathSecurity はパスレベルのセキュリティチェックを実行
+func validateHashDirectoryPathSecurity(path string) error {
+    // safefileioパッケージの既存機能を活用
+    // 実装例（実際のAPIは実装時に確認）:
+    // - safefileio.EnsureParentDirsNoSymlinks(path)
+    // - safefileio.ValidatePathSecurity(path)
+    // 詳細実装は既存のsafefileio APIを調査して決定
+
+    // プレースホルダー: シンボリックリンク攻撃防止
     if err := safefileio.EnsureParentDirsNoSymlinks(path); err != nil {
         if errors.Is(err, safefileio.ErrIsSymlink) {
             return NewHashDirectoryError(HashDirErrorTypeSymlink, path, err)
@@ -86,7 +110,12 @@ func validateHashDirectory(path string) error {
             fmt.Errorf("failed to validate path security: %w", err))
     }
 
-    // ディレクトリ存在確認
+    return nil
+}
+
+// validateHashDirectoryAccess はディレクトリのアクセス権限をセキュアに確認
+func validateHashDirectoryAccess(path string) error {
+    // ディレクトリ存在確認（TOCTOU攻撃に対して可能な限り安全に）
     info, err := os.Stat(path)
     if err != nil {
         return NewHashDirectoryError(HashDirErrorTypeNotExists, path, err)
@@ -105,12 +134,16 @@ func validateHashDirectory(path string) error {
     return nil
 }
 
-// 注意: validatePathSafety関数は不要
-// 理由：
-// 1. safefileio.EnsureParentDirsNoSymlinks()が既に存在し、同じ機能を提供
-// 2. safefileioの実装はクロスプラットフォーム対応済み（filepath.VolumeName等を使用）
-// 3. コードの重複を避け、一元化された検証ロジックを使用することでセキュリティと保守性を向上
-// 4. safefileio.EnsureParentDirsNoSymlinks()を公開関数として利用可能にする
+// 設計メモ:
+// --configと--env-fileの検証が不要な理由：
+// 1. config.LoadConfig()とgetSlackWebhookFromEnvFile()でsafefileio.SafeReadFile()を使用
+// 2. SafeReadFile()が包括的セキュリティ検証を実行（シンボリンク、TOCTOU、権限等）
+// 3. 実際のファイル読み込み時に検証されるため、早期検証は冗長
+//
+// --hash-directoryの検証が必要な理由：
+// 1. verification.Manager初期化時に必要（設定ファイル読み込み前）
+// 2. セキュリティの根幹となるディレクトリのため事前検証が不可欠
+// 3. safefileio層を直接使用しないos.Stat()処理のため独自検証が必要
 ```
 
 #### 3.1.2. エラーハンドリング仕様
@@ -189,11 +222,11 @@ sequenceDiagram
 
 ```go
 func run(runID string) error {
-    // 1. コマンドライン引数検証（変更なし）
+    // 1. シグナルハンドリング設定
     ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
     defer stop()
 
-    // 2. ハッシュディレクトリ検証（新規追加）
+    // 2. ハッシュディレクトリ検証（セキュリティクリティカル）
     hashDir, err := getHashDirectoryWithValidation()
     if err != nil {
         handleHashDirectoryValidationError(err, runID)
