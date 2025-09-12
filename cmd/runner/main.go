@@ -142,23 +142,6 @@ func validateHashDirectorySecurely(path string) (string, error) {
 	// Clean the absolute path
 	cleanPath := filepath.Clean(path)
 
-	// First check if the target path exists and is accessible
-	_, err := os.Lstat(cleanPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", &HashDirectoryError{
-				Type:  HashDirectoryErrorTypeNotFound,
-				Path:  cleanPath,
-				Cause: err,
-			}
-		}
-		return "", &HashDirectoryError{
-			Type:  HashDirectoryErrorTypePermission,
-			Path:  cleanPath,
-			Cause: err,
-		}
-	}
-
 	// Use safefileio pattern: recursively validate all parent directories for symlink attacks
 	// This approach mirrors ensureParentDirsNoSymlinks but includes the target directory itself
 	if err := validatePathComponentsSecurely(cleanPath); err != nil {
@@ -177,7 +160,9 @@ func validateHashDirectorySecurely(path string) (string, error) {
 				Cause: err,
 			}
 		}
-		if os.IsNotExist(err) {
+		// Check for NotExist errors in the wrapped error
+		var pathErr *os.PathError
+		if errors.As(err, &pathErr) && os.IsNotExist(pathErr.Err) {
 			return "", &HashDirectoryError{
 				Type:  HashDirectoryErrorTypeNotFound,
 				Path:  cleanPath,
