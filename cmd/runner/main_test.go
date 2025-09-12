@@ -207,7 +207,8 @@ func TestGetHashDirectoryWithValidation(t *testing.T) {
 		// Create default hash directory for testing
 		defaultDir := cmdcommon.DefaultHashDirectory
 		if !filepath.IsAbs(defaultDir) {
-			cwd, _ := os.Getwd()
+			cwd, err := os.Getwd()
+			require.NoError(t, err)
 			defaultDir = filepath.Join(cwd, defaultDir)
 		}
 		err := os.MkdirAll(defaultDir, 0o755)
