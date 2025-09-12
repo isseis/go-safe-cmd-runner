@@ -185,19 +185,9 @@ func TestGetHashDirectoryWithValidation(t *testing.T) {
 		cleanup := setupTestFlags()
 		defer cleanup()
 
-		// Clear any existing HASH_DIRECTORY environment variable
-		originalEnv := os.Getenv("HASH_DIRECTORY")
-		defer func() {
-			if originalEnv != "" {
-				os.Setenv("HASH_DIRECTORY", originalEnv)
-			} else {
-				os.Unsetenv("HASH_DIRECTORY")
-			}
-		}()
-
 		// Create temporary directory for testing
 		tempDir := t.TempDir()
-		os.Setenv("HASH_DIRECTORY", tempDir)
+		t.Setenv("HASH_DIRECTORY", tempDir)
 
 		os.Args = []string{"runner"}
 		flag.Parse()
