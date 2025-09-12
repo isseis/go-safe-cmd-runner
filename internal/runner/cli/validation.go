@@ -11,7 +11,6 @@ import (
 
 // Error definitions
 var (
-	ErrConfigPathRequired     = errors.New("config file path is required")
 	ErrInvalidDetailLevel     = errors.New("invalid detail level - valid options are: summary, detailed, full")
 	ErrInvalidOutputFormat    = errors.New("invalid output format - valid options are: text, json")
 	ErrConfigValidationFailed = errors.New("config validation failed")
