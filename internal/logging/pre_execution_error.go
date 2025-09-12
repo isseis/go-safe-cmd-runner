@@ -28,6 +28,8 @@ const (
 	ErrorTypeUserInterrupted ErrorType = "user_interrupted"
 	// ErrorTypeRequiredArgumentMissing represents missing required argument errors
 	ErrorTypeRequiredArgumentMissing ErrorType = "required_argument_missing"
+	// ErrorTypeBuildConfig represents build-time configuration errors
+	ErrorTypeBuildConfig ErrorType = "build_config_error"
 	// ErrorTypeSystemError represents system errors
 	ErrorTypeSystemError ErrorType = "system_error"
 )

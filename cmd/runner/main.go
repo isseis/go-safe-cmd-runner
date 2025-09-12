@@ -143,7 +143,7 @@ func validateHashDirectorySecurely(path string) (string, error) {
 	cleanPath := filepath.Clean(path)
 
 	// First check if the target path exists and is accessible
-	info, err := os.Lstat(cleanPath)
+	_, err := os.Lstat(cleanPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", &HashDirectoryError{
@@ -159,22 +159,6 @@ func validateHashDirectorySecurely(path string) (string, error) {
 		}
 	}
 
-	// Check for symlink attack (must be done before IsDir check since symlinks to dirs return true for IsDir)
-	if info.Mode()&os.ModeSymlink != 0 {
-		return "", &HashDirectoryError{
-			Type: HashDirectoryErrorTypeSymlinkAttack,
-			Path: cleanPath,
-		}
-	}
-
-	// Check if path is a directory
-	if !info.IsDir() {
-		return "", &HashDirectoryError{
-			Type: HashDirectoryErrorTypeNotDirectory,
-			Path: cleanPath,
-		}
-	}
-
 	// Use safefileio pattern: recursively validate all parent directories for symlink attacks
 	// This approach mirrors ensureParentDirsNoSymlinks but includes the target directory itself
 	if err := validatePathComponentsSecurely(cleanPath); err != nil {
@@ -182,6 +166,13 @@ func validateHashDirectorySecurely(path string) (string, error) {
 		if errors.Is(err, safefileio.ErrIsSymlink) {
 			return "", &HashDirectoryError{
 				Type:  HashDirectoryErrorTypeSymlinkAttack,
+				Path:  cleanPath,
+				Cause: err,
+			}
+		}
+		if errors.Is(err, safefileio.ErrInvalidFilePath) {
+			return "", &HashDirectoryError{
+				Type:  HashDirectoryErrorTypeNotDirectory,
 				Path:  cleanPath,
 				Cause: err,
 			}
@@ -260,6 +251,17 @@ func splitHashDirPathComponents(dirPath string) []string {
 	return components
 }
 
+// ErrDefaultHashDirectoryNotAbsolute is returned when DefaultHashDirectory is not an absolute path
+var ErrDefaultHashDirectoryNotAbsolute = fmt.Errorf("default hash directory must be absolute path")
+
+// validateDefaultHashDirectory validates that DefaultHashDirectory is an absolute path
+func validateDefaultHashDirectory() error {
+	if !filepath.IsAbs(cmdcommon.DefaultHashDirectory) {
+		return fmt.Errorf("%w, got: %s", ErrDefaultHashDirectoryNotAbsolute, cmdcommon.DefaultHashDirectory)
+	}
+	return nil
+}
+
 // getHashDirectoryWithValidation determines hash directory with priority-based resolution and validation
 func getHashDirectoryWithValidation() (string, error) {
 	var path string
@@ -267,26 +269,12 @@ func getHashDirectoryWithValidation() (string, error) {
 	// Priority 1: Command line argument
 	if *hashDirectory != "" {
 		path = *hashDirectory
-	} else {
+	} else if envPath := os.Getenv("HASH_DIRECTORY"); envPath != "" {
 		// Priority 2: Environment variable
-		if envPath := os.Getenv("HASH_DIRECTORY"); envPath != "" {
-			path = envPath
-		} else {
-			// Priority 3: Default value
-			path = cmdcommon.DefaultHashDirectory
-			// Convert relative default to absolute path
-			if !filepath.IsAbs(path) {
-				cwd, err := os.Getwd()
-				if err != nil {
-					return "", &HashDirectoryError{
-						Type:  HashDirectoryErrorTypePermission,
-						Path:  path,
-						Cause: err,
-					}
-				}
-				path = filepath.Join(cwd, path)
-			}
-		}
+		path = envPath
+	} else {
+		// Priority 3: Default value (already validated at startup)
+		path = cmdcommon.DefaultHashDirectory
 	}
 
 	// Validate the resolved path securely
@@ -325,6 +313,13 @@ func main() {
 	// Use provided run ID or generate one for error handling
 	if *runID == "" {
 		*runID = logging.GenerateRunID()
+	}
+
+	// Validate DefaultHashDirectory early - this should never fail in production
+	// but helps catch build-time configuration errors
+	if err := validateDefaultHashDirectory(); err != nil {
+		logging.HandlePreExecutionError(logging.ErrorTypeBuildConfig, fmt.Sprintf("Invalid default hash directory: %v", err), "main", *runID)
+		os.Exit(1)
 	}
 
 	if err := syscall.Seteuid(syscall.Getuid()); err != nil {
