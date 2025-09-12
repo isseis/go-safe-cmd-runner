@@ -204,20 +204,19 @@ func TestGetHashDirectoryWithValidation(t *testing.T) {
 		os.Args = []string{"runner"}
 		flag.Parse()
 
-		// Create default hash directory for testing
-		defaultDir := cmdcommon.DefaultHashDirectory
-		if !filepath.IsAbs(defaultDir) {
-			cwd, err := os.Getwd()
-			require.NoError(t, err)
-			defaultDir = filepath.Join(cwd, defaultDir)
-		}
-		err := os.MkdirAll(defaultDir, 0o755)
-		require.NoError(t, err)
-		defer os.RemoveAll(defaultDir)
+		// Use temporary directory instead of system default to avoid permission issues in CI
+		tempDir := t.TempDir()
+
+		// Temporarily override DefaultHashDirectory for this test
+		originalDefault := cmdcommon.DefaultHashDirectory
+		cmdcommon.DefaultHashDirectory = tempDir
+		defer func() {
+			cmdcommon.DefaultHashDirectory = originalDefault
+		}()
 
 		result, err := getHashDirectoryWithValidation()
 		assert.NoError(t, err)
-		assert.Equal(t, defaultDir, result)
+		assert.Equal(t, tempDir, result)
 	})
 }
 
