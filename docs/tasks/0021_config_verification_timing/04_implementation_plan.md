@@ -91,19 +91,19 @@
 
 **目標**: 設定ファイル・環境ファイル検証フローを実装
 
-- [ ] **設定ファイル検証機能**
-  - [ ] `performConfigFileVerification()` 関数実装
-  - [ ] verification.Manager連携機能
-  - [ ] クリティカルエラーハンドリング
+- [x] **設定ファイル検証機能**
+  - [x] `performConfigFileVerification()` 関数実装
+  - [x] verification.Manager連携機能
+  - [x] クリティカルエラーハンドリング
 
-- [ ] **環境ファイル検証機能**
-  - [ ] `performEnvironmentFileVerification()` 関数実装
-  - [ ] 非クリティカル警告処理
-  - [ ] 実行継続ロジック
+- [x] **環境ファイル検証機能**
+  - [x] `performEnvironmentFileVerification()` 関数実装
+  - [x] 非クリティカル警告処理
+  - [x] 実行継続ロジック
 
-- [ ] **検証管理機能**
-  - [ ] `initializeVerificationManager()` 関数実装
-  - [ ] verification.Manager初期化タイミング調整
+- [x] **検証管理機能**
+  - [x] `initializeVerificationManager()` 関数実装
+  - [x] verification.Manager初期化タイミング調整
 
 **期待される成果物**:
 - ファイル検証機能（設定・環境両方）
@@ -113,15 +113,15 @@
 
 **目標**: セキュリティクリティカルなエラーの確実な出力
 
-- [ ] **強制出力機能実装**
-  - [ ] `logCriticalToStderr()` 関数実装
-  - [ ] ログレベルに依存しない出力機能
-  - [ ] タイムスタンプ付きエラーフォーマット
+- [x] **強制出力機能実装**
+  - [x] `logCriticalToStderr()` 関数実装
+  - [x] ログレベルに依存しない出力機能
+  - [x] タイムスタンプ付きエラーフォーマット
 
-- [ ] **エラー分類システム**
-  - [ ] クリティカル vs. 非クリティカル判定
-  - [ ] ErrorType拡張（設定検証・環境検証）
-  - [ ] エラーメッセージ標準化
+- [x] **エラー分類システム**
+  - [x] クリティカル vs. 非クリティカル判定
+  - [x] ErrorType拡張（設定検証・環境検証）
+  - [x] エラーメッセージ標準化
 
 **期待される成果物**:
 - 強制stderr出力機能

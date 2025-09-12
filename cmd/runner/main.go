@@ -50,6 +50,43 @@ var (
 	ErrInvalidOutputFormat = errors.New("invalid output format - valid options are: text, json")
 )
 
+// ErrorSeverity represents the severity level of an error
+type ErrorSeverity int
+
+const (
+	// ErrorSeverityCritical indicates a security-critical error that should terminate execution
+	ErrorSeverityCritical ErrorSeverity = iota
+	// ErrorSeverityWarning indicates a non-critical issue that allows continued execution
+	ErrorSeverityWarning
+	// ErrorSeverityInfo indicates an informational message
+	ErrorSeverityInfo
+)
+
+// ErrorType represents different categories of errors for classification
+type ErrorType int
+
+const (
+	// ErrorTypeConfigVerification indicates configuration file verification errors
+	ErrorTypeConfigVerification ErrorType = iota
+	// ErrorTypeEnvironmentVerification indicates environment file verification errors
+	ErrorTypeEnvironmentVerification
+	// ErrorTypeHashDirectoryValidation indicates hash directory validation errors
+	ErrorTypeHashDirectoryValidation
+	// ErrorTypeGlobalVerification indicates global file verification errors
+	ErrorTypeGlobalVerification
+)
+
+// ClassifiedError represents an error with severity and type classification
+type ClassifiedError struct {
+	Type      ErrorType
+	Severity  ErrorSeverity
+	Message   string
+	Cause     error
+	Component string
+	FilePath  string
+	Timestamp time.Time
+}
+
 // HashDirectoryErrorType represents different types of hash directory validation errors
 type HashDirectoryErrorType int
 
@@ -428,32 +465,29 @@ func setupEnvironmentAndLogging(runID string) (string, error) {
 
 // initializeVerificationManager creates and configures the verification manager
 func initializeVerificationManager(runID string) (*verification.Manager, error) {
-	// Get hash directory from command line args and validate early
-	hashDir := getHashDir()
-	if !filepath.IsAbs(hashDir) {
-		return nil, &logging.PreExecutionError{
-			Type:      logging.ErrorTypeFileAccess,
-			Message:   fmt.Sprintf("Hash directory must be absolute path, got relative path: %s", hashDir),
-			Component: "file",
-			RunID:     runID,
-		}
-	}
-	info, err := os.Stat(hashDir)
+	// Use secure hash directory validation with priority-based resolution
+	hashDir, err := getHashDirectoryWithValidation()
 	if err != nil {
+		classifiedErr := classifyVerificationError(
+			ErrorTypeHashDirectoryValidation,
+			ErrorSeverityCritical,
+			"Hash directory validation failed",
+			hashDir,
+			err,
+		)
+		logClassifiedError(classifiedErr)
+
 		return nil, &logging.PreExecutionError{
 			Type:      logging.ErrorTypeFileAccess,
-			Message:   fmt.Sprintf("Failed to access hash directory: %s", hashDir),
-			Component: "file",
-			RunID:     runID,
-		}
-	} else if !info.IsDir() {
-		return nil, &logging.PreExecutionError{
-			Type:      logging.ErrorTypeFileAccess,
-			Message:   fmt.Sprintf("Hash directory is not a directory: %s", hashDir),
+			Message:   fmt.Sprintf("Hash directory validation failed: %v", err),
 			Component: "file",
 			RunID:     runID,
 		}
 	}
+
+	slog.Info("Hash directory validation completed successfully",
+		"hash_directory", hashDir,
+		"run_id", runID)
 
 	// Initialize privilege manager
 	logger := slog.Default()
@@ -465,16 +499,33 @@ func initializeVerificationManager(runID string) (*verification.Manager, error) 
 		verification.WithPrivilegeManager(privMgr),
 	)
 	if err != nil {
+		classifiedErr := classifyVerificationError(
+			ErrorTypeHashDirectoryValidation,
+			ErrorSeverityCritical,
+			"Failed to initialize verification manager",
+			hashDir,
+			err,
+		)
+		logClassifiedError(classifiedErr)
 		return nil, fmt.Errorf("failed to initialize verification: %w", err)
 	}
 
 	return verificationManager, nil
 }
 
-// performFileVerification verifies configuration, environment, and global files
-func performFileVerification(verificationManager *verification.Manager, cfg *runnertypes.Config, envFileToLoad, runID string) error {
-	// Verify configuration file integrity
+// performConfigFileVerification verifies configuration file integrity
+func performConfigFileVerification(verificationManager *verification.Manager, runID string) error {
 	if err := verificationManager.VerifyConfigFile(*configPath); err != nil {
+		// Create classified error for config verification failure
+		classifiedErr := classifyVerificationError(
+			ErrorTypeConfigVerification,
+			ErrorSeverityCritical,
+			fmt.Sprintf("Config file verification failed: %s", *configPath),
+			*configPath,
+			err,
+		)
+		logClassifiedError(classifiedErr)
+
 		return &logging.PreExecutionError{
 			Type:      logging.ErrorTypeFileAccess,
 			Message:   fmt.Sprintf("Config verification failed: %v", err),
@@ -483,22 +534,113 @@ func performFileVerification(verificationManager *verification.Manager, cfg *run
 		}
 	}
 
-	// Verify environment file integrity if specified
-	if envFileToLoad != "" {
-		if err := verificationManager.VerifyEnvironmentFile(envFileToLoad); err != nil {
-			return &logging.PreExecutionError{
-				Type:      logging.ErrorTypeFileAccess,
-				Message:   fmt.Sprintf("Environment file verification failed: %v", err),
-				Component: "verification",
-				RunID:     runID,
-			}
-		}
+	slog.Info("Config file verification completed successfully",
+		"config_path", *configPath,
+		"run_id", runID)
+	return nil
+}
+
+// performEnvironmentFileVerification verifies environment file integrity
+func performEnvironmentFileVerification(verificationManager *verification.Manager, envFilePath, runID string) error {
+	if envFilePath == "" {
+		slog.Debug("No environment file specified, skipping verification", "run_id", runID)
+		return nil
+	}
+
+	if err := verificationManager.VerifyEnvironmentFile(envFilePath); err != nil {
+		// Environment file verification failure is non-critical - log warning but continue execution
+		classifiedErr := classifyVerificationError(
+			ErrorTypeEnvironmentVerification,
+			ErrorSeverityWarning,
+			fmt.Sprintf("Environment file verification warning: %s", envFilePath),
+			envFilePath,
+			err,
+		)
+		logClassifiedError(classifiedErr)
+
+		slog.Warn("Environment file verification failed - continuing execution",
+			"env_file", envFilePath,
+			"error", err,
+			"run_id", runID)
+		return nil // Continue execution for environment file failures
+	}
+
+	slog.Info("Environment file verification completed successfully",
+		"env_file", envFilePath,
+		"run_id", runID)
+	return nil
+}
+
+// logCriticalToStderr logs critical security-related errors to stderr regardless of log level
+func logCriticalToStderr(component, message string, err error) {
+	timestamp := time.Now().Format("2006-01-02T15:04:05Z07:00")
+	fmt.Fprintf(os.Stderr, "[%s] CRITICAL: %s - Component: %s, Error: %v\n", timestamp, message, component, err)
+}
+
+// logClassifiedError logs errors based on their classification with appropriate severity handling
+func logClassifiedError(classifiedErr *ClassifiedError) {
+	switch classifiedErr.Severity {
+	case ErrorSeverityCritical:
+		logCriticalToStderr(classifiedErr.Component, classifiedErr.Message, classifiedErr.Cause)
+		slog.Error("CRITICAL: Security error detected",
+			"error_type", classifiedErr.Type,
+			"message", classifiedErr.Message,
+			"component", classifiedErr.Component,
+			"file_path", classifiedErr.FilePath,
+			"cause", classifiedErr.Cause)
+	case ErrorSeverityWarning:
+		slog.Warn("Security warning",
+			"error_type", classifiedErr.Type,
+			"message", classifiedErr.Message,
+			"component", classifiedErr.Component,
+			"file_path", classifiedErr.FilePath,
+			"cause", classifiedErr.Cause)
+	case ErrorSeverityInfo:
+		slog.Info("Security information",
+			"error_type", classifiedErr.Type,
+			"message", classifiedErr.Message,
+			"component", classifiedErr.Component,
+			"file_path", classifiedErr.FilePath)
+	}
+}
+
+// classifyVerificationError creates a ClassifiedError for verification-related errors
+func classifyVerificationError(errorType ErrorType, severity ErrorSeverity, message, filePath string, cause error) *ClassifiedError {
+	return &ClassifiedError{
+		Type:      errorType,
+		Severity:  severity,
+		Message:   message,
+		Cause:     cause,
+		Component: "verification", // Always verification for this helper function
+		FilePath:  filePath,
+		Timestamp: time.Now(),
+	}
+}
+
+// performFileVerification verifies configuration, environment, and global files
+func performFileVerification(verificationManager *verification.Manager, cfg *runnertypes.Config, envFileToLoad, runID string) error {
+	// Verify configuration file integrity - CRITICAL
+	if err := performConfigFileVerification(verificationManager, runID); err != nil {
+		return err
+	}
+
+	// Verify environment file integrity - NON-CRITICAL
+	if err := performEnvironmentFileVerification(verificationManager, envFileToLoad, runID); err != nil {
+		return err
 	}
 
 	// Verify global files - CRITICAL: Program must exit if global verification fails
 	result, err := verificationManager.VerifyGlobalFiles(&cfg.Global)
 	if err != nil {
-		slog.Error("CRITICAL: Global file verification failed - terminating program for security", "error", err)
+		classifiedErr := classifyVerificationError(
+			ErrorTypeGlobalVerification,
+			ErrorSeverityCritical,
+			"Global files verification failed - terminating for security",
+			"", // No single file path for global verification
+			err,
+		)
+		logClassifiedError(classifiedErr)
+
 		return &logging.PreExecutionError{
 			Type:      logging.ErrorTypeFileAccess,
 			Message:   fmt.Sprintf("Global files verification failed: %v", err),
