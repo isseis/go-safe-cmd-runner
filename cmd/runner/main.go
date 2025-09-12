@@ -468,11 +468,16 @@ func initializeVerificationManager(runID string) (*verification.Manager, error) 
 	// Use secure hash directory validation with priority-based resolution
 	hashDir, err := getHashDirectoryWithValidation()
 	if err != nil {
+		// Extract the failed path from HashDirectoryError for better logging
+		failedPath := hashDir // fallback to returned hashDir
+		if hashDirErr, ok := err.(*HashDirectoryError); ok {
+			failedPath = hashDirErr.Path
+		}
+
 		classifiedErr := classifyVerificationError(
 			ErrorTypeHashDirectoryValidation,
-			ErrorSeverityCritical,
 			"Hash directory validation failed",
-			hashDir,
+			failedPath,
 			err,
 		)
 		logClassifiedError(classifiedErr)
@@ -501,9 +506,8 @@ func initializeVerificationManager(runID string) (*verification.Manager, error) 
 	if err != nil {
 		classifiedErr := classifyVerificationError(
 			ErrorTypeHashDirectoryValidation,
-			ErrorSeverityCritical,
 			"Failed to initialize verification manager",
-			hashDir,
+			hashDir, // hashDir is valid here since getHashDirectoryWithValidation succeeded
 			err,
 		)
 		logClassifiedError(classifiedErr)
@@ -519,7 +523,6 @@ func performConfigFileVerification(verificationManager *verification.Manager, ru
 		// Create classified error for config verification failure
 		classifiedErr := classifyVerificationError(
 			ErrorTypeConfigVerification,
-			ErrorSeverityCritical,
 			fmt.Sprintf("Config file verification failed: %s", *configPath),
 			*configPath,
 			err,
@@ -548,21 +551,21 @@ func performEnvironmentFileVerification(verificationManager *verification.Manage
 	}
 
 	if err := verificationManager.VerifyEnvironmentFile(envFilePath); err != nil {
-		// Environment file verification failure is non-critical - log warning but continue execution
+		// Environment file verification failure is CRITICAL - terminate execution for security
 		classifiedErr := classifyVerificationError(
 			ErrorTypeEnvironmentVerification,
-			ErrorSeverityWarning,
-			fmt.Sprintf("Environment file verification warning: %s", envFilePath),
+			fmt.Sprintf("Environment file verification failed: %s", envFilePath),
 			envFilePath,
 			err,
 		)
 		logClassifiedError(classifiedErr)
 
-		slog.Warn("Environment file verification failed - continuing execution",
-			"env_file", envFilePath,
-			"error", err,
-			"run_id", runID)
-		return nil // Continue execution for environment file failures
+		return &logging.PreExecutionError{
+			Type:      logging.ErrorTypeFileAccess,
+			Message:   fmt.Sprintf("Environment file verification failed: %v", err),
+			Component: "verification",
+			RunID:     runID,
+		}
 	}
 
 	slog.Info("Environment file verification completed successfully",
@@ -604,11 +607,11 @@ func logClassifiedError(classifiedErr *ClassifiedError) {
 	}
 }
 
-// classifyVerificationError creates a ClassifiedError for verification-related errors
-func classifyVerificationError(errorType ErrorType, severity ErrorSeverity, message, filePath string, cause error) *ClassifiedError {
+// classifyVerificationError creates a ClassifiedError for critical verification-related errors
+func classifyVerificationError(errorType ErrorType, message, filePath string, cause error) *ClassifiedError {
 	return &ClassifiedError{
 		Type:      errorType,
-		Severity:  severity,
+		Severity:  ErrorSeverityCritical, // All verification errors are critical for security
 		Message:   message,
 		Cause:     cause,
 		Component: "verification", // Always verification for this helper function
@@ -624,7 +627,7 @@ func performFileVerification(verificationManager *verification.Manager, cfg *run
 		return err
 	}
 
-	// Verify environment file integrity - NON-CRITICAL
+	// Verify environment file integrity - CRITICAL
 	if err := performEnvironmentFileVerification(verificationManager, envFileToLoad, runID); err != nil {
 		return err
 	}
@@ -634,7 +637,6 @@ func performFileVerification(verificationManager *verification.Manager, cfg *run
 	if err != nil {
 		classifiedErr := classifyVerificationError(
 			ErrorTypeGlobalVerification,
-			ErrorSeverityCritical,
 			"Global files verification failed - terminating for security",
 			"", // No single file path for global verification
 			err,
