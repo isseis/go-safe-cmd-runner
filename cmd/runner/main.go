@@ -139,15 +139,8 @@ func validateHashDirectorySecurely(path string) (string, error) {
 		}
 	}
 
-	// Resolve to clean absolute path first
-	cleanPath, err := filepath.Abs(path)
-	if err != nil {
-		return "", &HashDirectoryError{
-			Type:  HashDirectoryErrorTypePermission,
-			Path:  path,
-			Cause: err,
-		}
-	}
+	// Clean the absolute path
+	cleanPath := filepath.Clean(path)
 
 	// First check if the target path exists and is accessible
 	info, err := os.Lstat(cleanPath)
