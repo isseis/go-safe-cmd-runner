@@ -476,6 +476,7 @@ func initializeVerificationManager(runID string) (*verification.Manager, error) 
 
 		classifiedErr := classifyVerificationError(
 			ErrorTypeHashDirectoryValidation,
+			ErrorSeverityCritical,
 			"Hash directory validation failed",
 			failedPath,
 			err,
@@ -506,6 +507,7 @@ func initializeVerificationManager(runID string) (*verification.Manager, error) 
 	if err != nil {
 		classifiedErr := classifyVerificationError(
 			ErrorTypeHashDirectoryValidation,
+			ErrorSeverityCritical,
 			"Failed to initialize verification manager",
 			hashDir, // hashDir is valid here since getHashDirectoryWithValidation succeeded
 			err,
@@ -523,6 +525,7 @@ func performConfigFileVerification(verificationManager *verification.Manager, ru
 		// Create classified error for config verification failure
 		classifiedErr := classifyVerificationError(
 			ErrorTypeConfigVerification,
+			ErrorSeverityCritical,
 			fmt.Sprintf("Config file verification failed: %s", *configPath),
 			*configPath,
 			err,
@@ -554,6 +557,7 @@ func performEnvironmentFileVerification(verificationManager *verification.Manage
 		// Environment file verification failure is CRITICAL - terminate execution for security
 		classifiedErr := classifyVerificationError(
 			ErrorTypeEnvironmentVerification,
+			ErrorSeverityCritical,
 			fmt.Sprintf("Environment file verification failed: %s", envFilePath),
 			envFilePath,
 			err,
@@ -607,11 +611,13 @@ func logClassifiedError(classifiedErr *ClassifiedError) {
 	}
 }
 
-// classifyVerificationError creates a ClassifiedError for critical verification-related errors
-func classifyVerificationError(errorType ErrorType, message, filePath string, cause error) *ClassifiedError {
+// classifyVerificationError creates a ClassifiedError for verification-related errors with configurable severity
+//
+//nolint:unparam // severity parameter is intentionally configurable for future flexibility, even though currently all calls use ErrorSeverityCritical
+func classifyVerificationError(errorType ErrorType, severity ErrorSeverity, message, filePath string, cause error) *ClassifiedError {
 	return &ClassifiedError{
 		Type:      errorType,
-		Severity:  ErrorSeverityCritical, // All verification errors are critical for security
+		Severity:  severity,
 		Message:   message,
 		Cause:     cause,
 		Component: "verification", // Always verification for this helper function
@@ -637,6 +643,7 @@ func performFileVerification(verificationManager *verification.Manager, cfg *run
 	if err != nil {
 		classifiedErr := classifyVerificationError(
 			ErrorTypeGlobalVerification,
+			ErrorSeverityCritical,
 			"Global files verification failed - terminating for security",
 			"", // No single file path for global verification
 			err,
