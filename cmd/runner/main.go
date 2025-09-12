@@ -50,6 +50,60 @@ var (
 	ErrInvalidOutputFormat = errors.New("invalid output format - valid options are: text, json")
 )
 
+// HashDirectoryErrorType represents different types of hash directory validation errors
+type HashDirectoryErrorType int
+
+const (
+	// HashDirectoryErrorTypeRelativePath indicates a relative path was provided instead of absolute
+	HashDirectoryErrorTypeRelativePath HashDirectoryErrorType = iota
+	// HashDirectoryErrorTypeNotFound indicates the directory does not exist
+	HashDirectoryErrorTypeNotFound
+	// HashDirectoryErrorTypeNotDirectory indicates the path exists but is not a directory
+	HashDirectoryErrorTypeNotDirectory
+	// HashDirectoryErrorTypePermission indicates insufficient permissions to access the directory
+	HashDirectoryErrorTypePermission
+	// HashDirectoryErrorTypeSymlinkAttack indicates a potential symlink attack
+	HashDirectoryErrorTypeSymlinkAttack
+)
+
+// HashDirectoryError represents an error in hash directory validation
+type HashDirectoryError struct {
+	Type  HashDirectoryErrorType
+	Path  string
+	Cause error
+}
+
+// Error implements the error interface for HashDirectoryError
+func (e *HashDirectoryError) Error() string {
+	switch e.Type {
+	case HashDirectoryErrorTypeRelativePath:
+		return fmt.Sprintf("hash directory must be absolute path, got relative path: %s", e.Path)
+	case HashDirectoryErrorTypeNotFound:
+		return fmt.Sprintf("hash directory not found: %s", e.Path)
+	case HashDirectoryErrorTypeNotDirectory:
+		return fmt.Sprintf("hash directory path is not a directory: %s", e.Path)
+	case HashDirectoryErrorTypePermission:
+		return fmt.Sprintf("insufficient permissions to access hash directory: %s", e.Path)
+	case HashDirectoryErrorTypeSymlinkAttack:
+		return fmt.Sprintf("potential symlink attack detected for hash directory: %s", e.Path)
+	default:
+		return fmt.Sprintf("unknown hash directory error for path: %s", e.Path)
+	}
+}
+
+// Is implements error unwrapping for HashDirectoryError
+func (e *HashDirectoryError) Is(target error) bool {
+	if e.Cause != nil {
+		return errors.Is(e.Cause, target)
+	}
+	return false
+}
+
+// Unwrap implements error unwrapping for HashDirectoryError
+func (e *HashDirectoryError) Unwrap() error {
+	return e.Cause
+}
+
 var (
 	configPath       = flag.String("config", "", "path to config file")
 	envFile          = flag.String("env-file", "", "path to environment file")
@@ -73,6 +127,143 @@ func getHashDir() string {
 	}
 	// Set default hash directory if none specified
 	return cmdcommon.DefaultHashDirectory
+}
+
+// validateHashDirectorySecurely validates hash directory with security checks
+func validateHashDirectorySecurely(path string) (string, error) {
+	// Check if path is absolute
+	if !filepath.IsAbs(path) {
+		return "", &HashDirectoryError{
+			Type: HashDirectoryErrorTypeRelativePath,
+			Path: path,
+		}
+	}
+
+	// Clean the absolute path
+	cleanPath := filepath.Clean(path)
+
+	// Use safefileio pattern: recursively validate all parent directories for symlink attacks
+	// This approach mirrors ensureParentDirsNoSymlinks but includes the target directory itself
+	if err := validatePathComponentsSecurely(cleanPath); err != nil {
+		// Convert safefileio errors to HashDirectoryError
+		if errors.Is(err, safefileio.ErrIsSymlink) {
+			return "", &HashDirectoryError{
+				Type:  HashDirectoryErrorTypeSymlinkAttack,
+				Path:  cleanPath,
+				Cause: err,
+			}
+		}
+		if errors.Is(err, safefileio.ErrInvalidFilePath) {
+			return "", &HashDirectoryError{
+				Type:  HashDirectoryErrorTypeNotDirectory,
+				Path:  cleanPath,
+				Cause: err,
+			}
+		}
+		// Check for NotExist errors in the wrapped error
+		var pathErr *os.PathError
+		if errors.As(err, &pathErr) && os.IsNotExist(pathErr.Err) {
+			return "", &HashDirectoryError{
+				Type:  HashDirectoryErrorTypeNotFound,
+				Path:  cleanPath,
+				Cause: err,
+			}
+		}
+		return "", &HashDirectoryError{
+			Type:  HashDirectoryErrorTypePermission,
+			Path:  cleanPath,
+			Cause: err,
+		}
+	}
+
+	return cleanPath, nil
+}
+
+// validatePathComponentsSecurely validates all path components from root to target
+// using the same secure approach as safefileio.ensureParentDirsNoSymlinks
+func validatePathComponentsSecurely(absPath string) error {
+	// Split path into components for step-by-step validation
+	components := splitHashDirPathComponents(absPath)
+
+	// Start from root and validate each component
+	currentPath := filepath.VolumeName(absPath) + string(os.PathSeparator)
+
+	for _, component := range components {
+		currentPath = filepath.Join(currentPath, component)
+
+		// Use os.Lstat to detect symlinks without following them
+		fi, err := os.Lstat(currentPath)
+		if err != nil {
+			return fmt.Errorf("failed to validate path component %s: %w", currentPath, err)
+		}
+
+		// Reject any symlinks in the path hierarchy
+		if fi.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("%w: symlink found in path: %s", safefileio.ErrIsSymlink, currentPath)
+		}
+
+		// Ensure each component is a directory
+		if !fi.IsDir() {
+			return fmt.Errorf("%w: path component is not a directory: %s", safefileio.ErrInvalidFilePath, currentPath)
+		}
+	}
+
+	return nil
+}
+
+// splitHashDirPathComponents splits directory path into components
+// Similar to safefileio.splitPathComponents but includes target directory
+func splitHashDirPathComponents(dirPath string) []string {
+	components := []string{}
+	current := dirPath
+
+	for {
+		parent := filepath.Dir(current)
+		if parent == current {
+			// Reached root directory
+			break
+		}
+
+		components = append(components, filepath.Base(current))
+		current = parent
+	}
+
+	// Reverse slice to get root-to-target order
+	for i, j := 0, len(components)-1; i < j; i, j = i+1, j-1 {
+		components[i], components[j] = components[j], components[i]
+	}
+
+	return components
+}
+
+// ErrDefaultHashDirectoryNotAbsolute is returned when DefaultHashDirectory is not an absolute path
+var ErrDefaultHashDirectoryNotAbsolute = fmt.Errorf("default hash directory must be absolute path")
+
+// validateDefaultHashDirectory validates that DefaultHashDirectory is an absolute path
+func validateDefaultHashDirectory() error {
+	if !filepath.IsAbs(cmdcommon.DefaultHashDirectory) {
+		return fmt.Errorf("%w, got: %s", ErrDefaultHashDirectoryNotAbsolute, cmdcommon.DefaultHashDirectory)
+	}
+	return nil
+}
+
+// getHashDirectoryWithValidation determines hash directory with priority-based resolution and validation
+func getHashDirectoryWithValidation() (string, error) {
+	var path string
+
+	// Priority 1: Command line argument
+	if *hashDirectory != "" {
+		path = *hashDirectory
+	} else if envPath := os.Getenv("HASH_DIRECTORY"); envPath != "" {
+		// Priority 2: Environment variable
+		path = envPath
+	} else {
+		// Priority 3: Default value (already validated at startup)
+		path = cmdcommon.DefaultHashDirectory
+	}
+
+	// Validate the resolved path securely
+	return validateHashDirectorySecurely(path)
 }
 
 // validateConfigCommand implements config validation CLI command
@@ -107,6 +298,13 @@ func main() {
 	// Use provided run ID or generate one for error handling
 	if *runID == "" {
 		*runID = logging.GenerateRunID()
+	}
+
+	// Validate DefaultHashDirectory early - this should never fail in production
+	// but helps catch build-time configuration errors
+	if err := validateDefaultHashDirectory(); err != nil {
+		logging.HandlePreExecutionError(logging.ErrorTypeBuildConfig, fmt.Sprintf("Invalid default hash directory: %v", err), "main", *runID)
+		os.Exit(1)
 	}
 
 	if err := syscall.Seteuid(syscall.Getuid()); err != nil {
