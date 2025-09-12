@@ -139,40 +139,7 @@ func validateHashDirectorySecurely(path string) (string, error) {
 		}
 	}
 
-	// Check if path exists and get info
-	info, err := os.Lstat(path) // Use Lstat to detect symlinks
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", &HashDirectoryError{
-				Type:  HashDirectoryErrorTypeNotFound,
-				Path:  path,
-				Cause: err,
-			}
-		}
-		return "", &HashDirectoryError{
-			Type:  HashDirectoryErrorTypePermission,
-			Path:  path,
-			Cause: err,
-		}
-	}
-
-	// Check for symlink attack
-	if info.Mode()&os.ModeSymlink != 0 {
-		return "", &HashDirectoryError{
-			Type: HashDirectoryErrorTypeSymlinkAttack,
-			Path: path,
-		}
-	}
-
-	// Check if path is a directory
-	if !info.IsDir() {
-		return "", &HashDirectoryError{
-			Type: HashDirectoryErrorTypeNotDirectory,
-			Path: path,
-		}
-	}
-
-	// Resolve to clean absolute path
+	// Resolve to clean absolute path first
 	cleanPath, err := filepath.Abs(path)
 	if err != nil {
 		return "", &HashDirectoryError{
@@ -182,7 +149,122 @@ func validateHashDirectorySecurely(path string) (string, error) {
 		}
 	}
 
+	// First check if the target path exists and is accessible
+	info, err := os.Lstat(cleanPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", &HashDirectoryError{
+				Type:  HashDirectoryErrorTypeNotFound,
+				Path:  cleanPath,
+				Cause: err,
+			}
+		}
+		return "", &HashDirectoryError{
+			Type:  HashDirectoryErrorTypePermission,
+			Path:  cleanPath,
+			Cause: err,
+		}
+	}
+
+	// Check for symlink attack (must be done before IsDir check since symlinks to dirs return true for IsDir)
+	if info.Mode()&os.ModeSymlink != 0 {
+		return "", &HashDirectoryError{
+			Type: HashDirectoryErrorTypeSymlinkAttack,
+			Path: cleanPath,
+		}
+	}
+
+	// Check if path is a directory
+	if !info.IsDir() {
+		return "", &HashDirectoryError{
+			Type: HashDirectoryErrorTypeNotDirectory,
+			Path: cleanPath,
+		}
+	}
+
+	// Use safefileio pattern: recursively validate all parent directories for symlink attacks
+	// This approach mirrors ensureParentDirsNoSymlinks but includes the target directory itself
+	if err := validatePathComponentsSecurely(cleanPath); err != nil {
+		// Convert safefileio errors to HashDirectoryError
+		if errors.Is(err, safefileio.ErrIsSymlink) {
+			return "", &HashDirectoryError{
+				Type:  HashDirectoryErrorTypeSymlinkAttack,
+				Path:  cleanPath,
+				Cause: err,
+			}
+		}
+		if os.IsNotExist(err) {
+			return "", &HashDirectoryError{
+				Type:  HashDirectoryErrorTypeNotFound,
+				Path:  cleanPath,
+				Cause: err,
+			}
+		}
+		return "", &HashDirectoryError{
+			Type:  HashDirectoryErrorTypePermission,
+			Path:  cleanPath,
+			Cause: err,
+		}
+	}
+
 	return cleanPath, nil
+}
+
+// validatePathComponentsSecurely validates all path components from root to target
+// using the same secure approach as safefileio.ensureParentDirsNoSymlinks
+func validatePathComponentsSecurely(absPath string) error {
+	// Split path into components for step-by-step validation
+	components := splitHashDirPathComponents(absPath)
+
+	// Start from root and validate each component
+	currentPath := filepath.VolumeName(absPath) + string(os.PathSeparator)
+
+	for _, component := range components {
+		currentPath = filepath.Join(currentPath, component)
+
+		// Use os.Lstat to detect symlinks without following them
+		fi, err := os.Lstat(currentPath)
+		if err != nil {
+			return fmt.Errorf("failed to validate path component %s: %w", currentPath, err)
+		}
+
+		// Reject any symlinks in the path hierarchy
+		if fi.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("%w: symlink found in path: %s", safefileio.ErrIsSymlink, currentPath)
+		}
+
+		// Ensure each component is a directory
+		if !fi.IsDir() {
+			return fmt.Errorf("%w: path component is not a directory: %s", safefileio.ErrInvalidFilePath, currentPath)
+		}
+	}
+
+	return nil
+}
+
+// splitHashDirPathComponents splits directory path into components
+// Similar to safefileio.splitPathComponents but includes target directory
+func splitHashDirPathComponents(dirPath string) []string {
+	components := []string{}
+	current := dirPath
+
+	for {
+		parent := filepath.Dir(current)
+		if parent == current {
+			// Reached root directory
+			break
+		}
+
+		components = append(components, filepath.Base(current))
+		current = parent
+	}
+
+	// Reverse slice to get root-to-target order
+	for i, j := 0, len(components)-1; i < j; i, j = i+1, j-1 {
+		components[i], components[j] = components[j], components[i]
+	}
+
+	return components
 }
 
 // getHashDirectoryWithValidation determines hash directory with priority-based resolution and validation
