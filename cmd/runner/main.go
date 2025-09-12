@@ -607,7 +607,8 @@ func logClassifiedError(classifiedErr *ClassifiedError) {
 			"error_type", classifiedErr.Type,
 			"message", classifiedErr.Message,
 			"component", classifiedErr.Component,
-			"file_path", classifiedErr.FilePath)
+			"file_path", classifiedErr.FilePath,
+			"cause", classifiedErr.Cause)
 	}
 }
 
