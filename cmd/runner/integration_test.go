@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/terminal"
 )
 
@@ -14,14 +15,14 @@ import (
 func TestSetupLoggerWithConfig_IntegrationWithNewHandlers(t *testing.T) {
 	testCases := []struct {
 		name           string
-		config         LoggerConfig
+		config         bootstrap.LoggerConfig
 		envVars        map[string]string
 		expectHandlers int
 		expectError    bool
 	}{
 		{
 			name: "interactive_environment_with_color_support",
-			config: LoggerConfig{
+			config: bootstrap.LoggerConfig{
 				Level:           "info",
 				LogDir:          "",
 				RunID:           "test-run-001",
@@ -36,7 +37,7 @@ func TestSetupLoggerWithConfig_IntegrationWithNewHandlers(t *testing.T) {
 		},
 		{
 			name: "non_interactive_environment",
-			config: LoggerConfig{
+			config: bootstrap.LoggerConfig{
 				Level:           "debug",
 				LogDir:          "",
 				RunID:           "test-run-002",
@@ -51,7 +52,7 @@ func TestSetupLoggerWithConfig_IntegrationWithNewHandlers(t *testing.T) {
 		},
 		{
 			name: "full_handler_chain_with_log_and_slack",
-			config: LoggerConfig{
+			config: bootstrap.LoggerConfig{
 				Level:           "warn",
 				LogDir:          t.TempDir(),
 				RunID:           "test-run-003",
@@ -65,7 +66,7 @@ func TestSetupLoggerWithConfig_IntegrationWithNewHandlers(t *testing.T) {
 		},
 		{
 			name: "invalid_log_directory",
-			config: LoggerConfig{
+			config: bootstrap.LoggerConfig{
 				Level:           "info",
 				LogDir:          "/invalid/nonexistent/path",
 				RunID:           "test-run-004",
@@ -89,7 +90,7 @@ func TestSetupLoggerWithConfig_IntegrationWithNewHandlers(t *testing.T) {
 			defer slog.SetDefault(originalLogger)
 
 			// Run the function under test
-			err := setupLoggerWithConfig(tc.config)
+			err := bootstrap.SetupLoggerWithConfig(tc.config, false, false)
 
 			// Check error expectation
 			if tc.expectError {
@@ -200,7 +201,7 @@ func TestHandlerChainIntegration(t *testing.T) {
 	// Create temporary directory for log files
 	logDir := t.TempDir()
 
-	config := LoggerConfig{
+	config := bootstrap.LoggerConfig{
 		Level:           "debug",
 		LogDir:          logDir,
 		RunID:           "integration-test-run",
@@ -226,7 +227,7 @@ func TestHandlerChainIntegration(t *testing.T) {
 	// the handlers are created internally, but we can test basic setup
 
 	// Test setup
-	err := setupLoggerWithConfig(config)
+	err := bootstrap.SetupLoggerWithConfig(config, false, false)
 	if err != nil {
 		t.Fatalf("Setup failed: %v", err)
 	}
@@ -275,13 +276,13 @@ func TestHandlerChainIntegration(t *testing.T) {
 func TestErrorHandling(t *testing.T) {
 	testCases := []struct {
 		name        string
-		config      LoggerConfig
+		config      bootstrap.LoggerConfig
 		expectError bool
 		errorType   string
 	}{
 		{
 			name: "invalid_log_level",
-			config: LoggerConfig{
+			config: bootstrap.LoggerConfig{
 				Level:           "invalid-level",
 				LogDir:          "",
 				RunID:           "test-error-001",
@@ -292,7 +293,7 @@ func TestErrorHandling(t *testing.T) {
 		},
 		{
 			name: "invalid_slack_webhook",
-			config: LoggerConfig{
+			config: bootstrap.LoggerConfig{
 				Level:           "info",
 				LogDir:          "",
 				RunID:           "test-error-002",
@@ -303,7 +304,7 @@ func TestErrorHandling(t *testing.T) {
 		},
 		{
 			name: "nonexistent_log_directory",
-			config: LoggerConfig{
+			config: bootstrap.LoggerConfig{
 				Level:           "info",
 				LogDir:          "/path/does/not/exist",
 				RunID:           "test-error-003",
@@ -320,7 +321,7 @@ func TestErrorHandling(t *testing.T) {
 			originalLogger := slog.Default()
 			defer slog.SetDefault(originalLogger)
 
-			err := setupLoggerWithConfig(tc.config)
+			err := bootstrap.SetupLoggerWithConfig(tc.config, false, false)
 
 			if tc.expectError {
 				if err == nil {

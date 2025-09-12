@@ -9,6 +9,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/hashdir"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -79,7 +80,7 @@ func TestGetHashDir(t *testing.T) {
 		os.Args = []string{"runner"}
 		flag.Parse()
 
-		assert.Equal(t, cmdcommon.DefaultHashDirectory, getHashDir())
+		assert.Equal(t, cmdcommon.DefaultHashDirectory, hashdir.GetHashDir(hashDirectory, cmdcommon.DefaultHashDirectory))
 	})
 
 	t.Run("empty hash directory in command line uses default", func(t *testing.T) {
@@ -89,7 +90,7 @@ func TestGetHashDir(t *testing.T) {
 		os.Args = []string{"runner"}
 		flag.Parse()
 
-		assert.Equal(t, cmdcommon.DefaultHashDirectory, getHashDir(), "should use default hash directory when empty string is provided")
+		assert.Equal(t, cmdcommon.DefaultHashDirectory, hashdir.GetHashDir(hashDirectory, cmdcommon.DefaultHashDirectory), "should use default hash directory when empty string is provided")
 	})
 
 	t.Run("custom hash directory via command line", func(t *testing.T) {
@@ -99,7 +100,7 @@ func TestGetHashDir(t *testing.T) {
 		os.Args = []string{"runner", "--hash-directory", "/custom/path"}
 		flag.Parse()
 
-		assert.Equal(t, "/custom/path", getHashDir())
+		assert.Equal(t, "/custom/path", hashdir.GetHashDir(hashDirectory, cmdcommon.DefaultHashDirectory))
 	})
 
 	t.Run("command line takes precedence over default", func(t *testing.T) {
@@ -109,18 +110,18 @@ func TestGetHashDir(t *testing.T) {
 		os.Args = []string{"runner", "--hash-directory", "/custom/path"}
 		flag.Parse()
 
-		assert.Equal(t, "/custom/path", getHashDir())
+		assert.Equal(t, "/custom/path", hashdir.GetHashDir(hashDirectory, cmdcommon.DefaultHashDirectory))
 	})
 }
 
 // Define a static error for testing
 var errTestUnderlying = errors.New("underlying error")
 
-// TestHashDirectoryError tests the HashDirectoryError type
+// TestHashDirectoryError tests the hashdir.HashDirectoryError type
 func TestHashDirectoryError(t *testing.T) {
 	t.Run("error creation and behavior", func(t *testing.T) {
-		err := &HashDirectoryError{
-			Type:  HashDirectoryErrorTypeRelativePath,
+		err := &hashdir.HashDirectoryError{
+			Type:  hashdir.HashDirectoryErrorTypeRelativePath,
 			Path:  "relative/path",
 			Cause: errTestUnderlying,
 		}
@@ -141,7 +142,7 @@ func TestGetHashDirectoryWithValidation(t *testing.T) {
 		os.Args = []string{"runner", "--hash-directory", tempDir}
 		flag.Parse()
 
-		result, err := getHashDirectoryWithValidation()
+		result, err := hashdir.GetWithValidation(hashDirectory, cmdcommon.DefaultHashDirectory)
 		assert.NoError(t, err)
 		assert.Equal(t, tempDir, result)
 	})
@@ -153,13 +154,13 @@ func TestGetHashDirectoryWithValidation(t *testing.T) {
 		os.Args = []string{"runner", "--hash-directory", "relative/path"}
 		flag.Parse()
 
-		result, err := getHashDirectoryWithValidation()
+		result, err := hashdir.GetWithValidation(hashDirectory, cmdcommon.DefaultHashDirectory)
 		assert.Error(t, err)
 		assert.Empty(t, result)
 
-		var hashDirErr *HashDirectoryError
+		var hashDirErr *hashdir.HashDirectoryError
 		require.True(t, errors.As(err, &hashDirErr))
-		assert.Equal(t, HashDirectoryErrorTypeRelativePath, hashDirErr.Type)
+		assert.Equal(t, hashdir.HashDirectoryErrorTypeRelativePath, hashDirErr.Type)
 		assert.Equal(t, "relative/path", hashDirErr.Path)
 	})
 
@@ -171,13 +172,13 @@ func TestGetHashDirectoryWithValidation(t *testing.T) {
 		os.Args = []string{"runner", "--hash-directory", nonExistentPath}
 		flag.Parse()
 
-		result, err := getHashDirectoryWithValidation()
+		result, err := hashdir.GetWithValidation(hashDirectory, cmdcommon.DefaultHashDirectory)
 		assert.Error(t, err)
 		assert.Empty(t, result)
 
-		var hashDirErr *HashDirectoryError
+		var hashDirErr *hashdir.HashDirectoryError
 		require.True(t, errors.As(err, &hashDirErr))
-		assert.Equal(t, HashDirectoryErrorTypeNotFound, hashDirErr.Type)
+		assert.Equal(t, hashdir.HashDirectoryErrorTypeNotFound, hashDirErr.Type)
 		assert.Equal(t, nonExistentPath, hashDirErr.Path)
 	})
 
@@ -192,7 +193,7 @@ func TestGetHashDirectoryWithValidation(t *testing.T) {
 		os.Args = []string{"runner"}
 		flag.Parse()
 
-		result, err := getHashDirectoryWithValidation()
+		result, err := hashdir.GetWithValidation(hashDirectory, cmdcommon.DefaultHashDirectory)
 		assert.NoError(t, err)
 		assert.Equal(t, tempDir, result)
 	})
@@ -214,7 +215,7 @@ func TestGetHashDirectoryWithValidation(t *testing.T) {
 			cmdcommon.DefaultHashDirectory = originalDefault
 		}()
 
-		result, err := getHashDirectoryWithValidation()
+		result, err := hashdir.GetWithValidation(hashDirectory, cmdcommon.DefaultHashDirectory)
 		assert.NoError(t, err)
 		assert.Equal(t, tempDir, result)
 	})
@@ -224,30 +225,30 @@ func TestGetHashDirectoryWithValidation(t *testing.T) {
 func TestValidateHashDirectorySecurely(t *testing.T) {
 	t.Run("valid absolute path", func(t *testing.T) {
 		tempDir := t.TempDir()
-		result, err := validateHashDirectorySecurely(tempDir)
+		result, err := hashdir.ValidateSecurely(tempDir)
 		assert.NoError(t, err)
 		assert.Equal(t, tempDir, result)
 	})
 
 	t.Run("relative path should fail", func(t *testing.T) {
-		result, err := validateHashDirectorySecurely("relative/path")
+		result, err := hashdir.ValidateSecurely("relative/path")
 		assert.Error(t, err)
 		assert.Empty(t, result)
 
-		var hashDirErr *HashDirectoryError
+		var hashDirErr *hashdir.HashDirectoryError
 		require.True(t, errors.As(err, &hashDirErr))
-		assert.Equal(t, HashDirectoryErrorTypeRelativePath, hashDirErr.Type)
+		assert.Equal(t, hashdir.HashDirectoryErrorTypeRelativePath, hashDirErr.Type)
 	})
 
 	t.Run("non-existent directory should fail", func(t *testing.T) {
 		nonExistentPath := "/non/existent/directory"
-		result, err := validateHashDirectorySecurely(nonExistentPath)
+		result, err := hashdir.ValidateSecurely(nonExistentPath)
 		assert.Error(t, err)
 		assert.Empty(t, result)
 
-		var hashDirErr *HashDirectoryError
+		var hashDirErr *hashdir.HashDirectoryError
 		require.True(t, errors.As(err, &hashDirErr))
-		assert.Equal(t, HashDirectoryErrorTypeNotFound, hashDirErr.Type)
+		assert.Equal(t, hashdir.HashDirectoryErrorTypeNotFound, hashDirErr.Type)
 	})
 
 	t.Run("file instead of directory should fail", func(t *testing.T) {
@@ -256,13 +257,13 @@ func TestValidateHashDirectorySecurely(t *testing.T) {
 		defer os.Remove(tempFile.Name())
 		tempFile.Close()
 
-		result, err := validateHashDirectorySecurely(tempFile.Name())
+		result, err := hashdir.ValidateSecurely(tempFile.Name())
 		assert.Error(t, err)
 		assert.Empty(t, result)
 
-		var hashDirErr *HashDirectoryError
+		var hashDirErr *hashdir.HashDirectoryError
 		require.True(t, errors.As(err, &hashDirErr))
-		assert.Equal(t, HashDirectoryErrorTypeNotDirectory, hashDirErr.Type)
+		assert.Equal(t, hashdir.HashDirectoryErrorTypeNotDirectory, hashDirErr.Type)
 	})
 
 	t.Run("symlink attack prevention", func(t *testing.T) {
@@ -274,12 +275,12 @@ func TestValidateHashDirectorySecurely(t *testing.T) {
 		err := os.Symlink(targetDir, symlinkPath)
 		require.NoError(t, err)
 
-		result, err := validateHashDirectorySecurely(symlinkPath)
+		result, err := hashdir.ValidateSecurely(symlinkPath)
 		assert.Error(t, err)
 		assert.Empty(t, result)
 
-		var hashDirErr *HashDirectoryError
+		var hashDirErr *hashdir.HashDirectoryError
 		require.True(t, errors.As(err, &hashDirErr))
-		assert.Equal(t, HashDirectoryErrorTypeSymlinkAttack, hashDirErr.Type)
+		assert.Equal(t, hashdir.HashDirectoryErrorTypeSymlinkAttack, hashDirErr.Type)
 	})
 }
