@@ -62,7 +62,7 @@ flowchart TD
     D --> E["設定ファイルハッシュ検証"]
     E --> F["環境ファイルハッシュ検証"]
     F --> G["設定ファイル読み込み"]
-    G --> H["環境ファイルからの設定読み込み"]
+    G --> H["環境ファイル読み込み"]
     H --> I["ログシステム初期化"]
     I --> J["その他の初期化処理"]
     J --> K2["アプリケーション実行"]
@@ -147,11 +147,12 @@ sequenceDiagram
 
     CLI->>VM: VerifyEnvironmentFile(envPath)
     VM->>VM: Calculate hash and compare
-    alt Environment verification fails (non-critical)
-        VM-->>CLI: Warning + stderr output
-        Note over CLI: Continue execution with warning
+    alt Environment verification fails
+        VM->>STDERR: Output critical error
+        VM-->>CLI: Critical Error
+        CLI->>CLI: Exit(1)
     end
-    VM-->>CLI: Environment file verified/warning
+    VM-->>CLI: Environment file verified
 
     CLI->>CFL: Load config file (post-verification)
     CFL-->>CLI: Configuration loaded
@@ -187,8 +188,9 @@ sequenceDiagram
     CLI->>VM: VerifyEnvironmentFile(envPath)
     VM->>VM: Calculate environment file hash
     alt Environment verification fails
-        VM-->>CLI: Warning (non-critical)
-        Note over CLI: Continue execution with warning
+        VM->>STDERR: Output critical error
+        VM-->>CLI: Critical Error
+        CLI->>CLI: Exit(1)
     else Environment verification succeeds
         VM-->>CLI: Success
     end
@@ -225,10 +227,10 @@ flowchart TD
 
 - **クリティカルエラー**: システムの安全性に直結する検証失敗
   - 設定ファイルハッシュ検証失敗
+  - 環境ファイルハッシュ検証失敗
   - ハッシュディレクトリアクセス失敗
   - 必須パラメータ不足
 - **非クリティカルエラー（警告）**: 実行継続可能な問題
-  - 環境ファイルハッシュ検証失敗（環境ファイルは任意のため）
   - パフォーマンス関連の問題
 
 ## 4. インターフェース設計

@@ -63,43 +63,43 @@ func getHashDirectoryWithValidation() (string, error) {
 func validateHashDirectory(path string) error {
     // 空文字チェック
     if path == "" {
-        return NewHashDirectoryError(HashDirErrorEmpty, "", nil)
+        return NewHashDirectoryError(HashDirErrorTypeEmpty, "", nil)
     }
 
     // 絶対パスチェック
     if !filepath.IsAbs(path) {
-        return NewHashDirectoryError(HashDirErrorNotAbsolute, path, nil)
+        return NewHashDirectoryError(HashDirErrorTypeNotAbsolute, path, nil)
     }
 
     // パスの正規化チェック（相対パス要素の検出）
     if path != filepath.Clean(path) {
-        return NewHashDirectoryError(HashDirErrorNotAbsolute, path,
+        return NewHashDirectoryError(HashDirErrorTypeNotAbsolute, path,
             fmt.Errorf("path contains relative components"))
     }
 
     // シンボリックリンク攻撃防止（safefileioパッケージの公開関数を使用）
     if err := safefileio.EnsureParentDirsNoSymlinks(path); err != nil {
         if errors.Is(err, safefileio.ErrIsSymlink) {
-            return NewHashDirectoryError(HashDirErrorSymlink, path, err)
+            return NewHashDirectoryError(HashDirErrorTypeSymlink, path, err)
         }
-        return NewHashDirectoryError(HashDirErrorSymlink, path,
+        return NewHashDirectoryError(HashDirErrorTypeSymlink, path,
             fmt.Errorf("failed to validate path security: %w", err))
     }
 
     // ディレクトリ存在確認
     info, err := os.Stat(path)
     if err != nil {
-        return NewHashDirectoryError(HashDirErrorNotExists, path, err)
+        return NewHashDirectoryError(HashDirErrorTypeNotExists, path, err)
     }
 
     // ディレクトリ確認
     if !info.IsDir() {
-        return NewHashDirectoryError(HashDirErrorNotDirectory, path, nil)
+        return NewHashDirectoryError(HashDirErrorTypeNotDirectory, path, nil)
     }
 
     // パーミッション確認（最低限の読み取り・実行権限が必要）
     if info.Mode().Perm()&0500 != 0500 {
-        return NewHashDirectoryError(HashDirErrorInsufficientPermissions, path, nil)
+        return NewHashDirectoryError(HashDirErrorTypeInsufficientPermissions, path, nil)
     }
 
     return nil
@@ -264,8 +264,9 @@ func initializeVerificationManager(hashDir, runID string) (*verification.Manager
     }
     return manager, nil
 }
+```
 
-#### 3.2.2. 補助関数仕様
+#### 3.2.4. 補助関数仕様
 
 ```go
 // determineEnvironmentFile は使用する環境ファイルを決定する
@@ -434,40 +435,44 @@ var errorMessageTemplates = map[logging.ErrorType]string{
     logging.ErrorTypeLogFileOpen:             "Log file operation failed: %s",
 }
 
-// HashDirectoryError は詳細なハッシュディレクトリエラー分類
-type HashDirectoryError struct {
-    ErrorType logging.ErrorType
-    Subtype   HashDirectoryErrorSubtype
-    Path      string
-    Cause     error
-}
-
-// HashDirectoryErrorSubtype はハッシュディレクトリエラーの詳細分類
-type HashDirectoryErrorSubtype int
+// HashDirectoryErrorType はハッシュディレクトリエラーの分類を型安全に定義
+type HashDirectoryErrorType string
 
 const (
-    HashDirErrorEmpty HashDirectoryErrorSubtype = iota
-    HashDirErrorNotAbsolute
-    HashDirErrorSymlink
-    HashDirErrorNotExists
-    HashDirErrorNotDirectory
-    HashDirErrorInsufficientPermissions
+    HashDirErrorTypeEmpty                 HashDirectoryErrorType = "empty"
+    HashDirErrorTypeNotAbsolute          HashDirectoryErrorType = "not_absolute"
+    HashDirErrorTypeSymlink              HashDirectoryErrorType = "contains_symlink"
+    HashDirErrorTypeNotExists            HashDirectoryErrorType = "not_exists"
+    HashDirErrorTypeNotDirectory         HashDirectoryErrorType = "not_directory"
+    HashDirErrorTypeInsufficientPermissions HashDirectoryErrorType = "insufficient_permissions"
 )
 
+// HashDirectoryError は詳細なハッシュディレクトリエラー分類
+type HashDirectoryError struct {
+    Type  HashDirectoryErrorType
+    Path  string
+    Cause error
+}
+
+// String は HashDirectoryErrorType の文字列表現を返す
+func (t HashDirectoryErrorType) String() string {
+    return string(t)
+}
+
 // 詳細エラーメッセージテンプレート
-var hashDirectoryErrorMessages = map[HashDirectoryErrorSubtype]string{
-    HashDirErrorEmpty:                 "Hash directory path is empty",
-    HashDirErrorNotAbsolute:           "Hash directory must be absolute path, got: %s",
-    HashDirErrorSymlink:               "Hash directory path contains symbolic links: %s",
-    HashDirErrorNotExists:             "Hash directory does not exist: %s",
-    HashDirErrorNotDirectory:          "Hash directory is not a directory: %s",
-    HashDirErrorInsufficientPermissions: "Hash directory has insufficient permissions: %s (need at least r-x------)",
+var hashDirectoryErrorMessages = map[HashDirectoryErrorType]string{
+    HashDirErrorTypeEmpty:                 "Hash directory path is empty",
+    HashDirErrorTypeNotAbsolute:           "Hash directory must be absolute path, got: %s",
+    HashDirErrorTypeSymlink:               "Hash directory path contains symbolic links: %s",
+    HashDirErrorTypeNotExists:             "Hash directory does not exist: %s",
+    HashDirErrorTypeNotDirectory:          "Hash directory is not a directory: %s",
+    HashDirErrorTypeInsufficientPermissions: "Hash directory has insufficient permissions: %s (need at least r-x------)",
 }
 
 func (e *HashDirectoryError) Error() string {
-    template, exists := hashDirectoryErrorMessages[e.Subtype]
+    template, exists := hashDirectoryErrorMessages[e.Type]
     if !exists {
-        return fmt.Sprintf("Unknown hash directory error: %v", e.Subtype)
+        return fmt.Sprintf("Unknown hash directory error: %v", e.Type)
     }
 
     var message string
@@ -485,12 +490,11 @@ func (e *HashDirectoryError) Error() string {
 }
 
 // NewHashDirectoryError は型安全なハッシュディレクトリエラーを作成
-func NewHashDirectoryError(subtype HashDirectoryErrorSubtype, path string, cause error) *HashDirectoryError {
+func NewHashDirectoryError(errorType HashDirectoryErrorType, path string, cause error) *HashDirectoryError {
     return &HashDirectoryError{
-        ErrorType: logging.ErrorTypeHashDirectoryValidation,
-        Subtype:   subtype,
-        Path:      path,
-        Cause:     cause,
+        Type:  errorType,
+        Path:  path,
+        Cause: cause,
     }
 }
 
@@ -702,6 +706,13 @@ func TestValidateHashDirectory(t *testing.T) {
                 baseDir, _ := os.MkdirTemp("", "test-perm-*")
                 restrictedDir := filepath.Join(baseDir, "restricted")
                 os.MkdirAll(restrictedDir, 0000) // パーミッション無し
+
+                // テスト終了時にクリーンアップできるようパーミッション修正
+                t.Cleanup(func() {
+                    _ = os.Chmod(restrictedDir, 0o755)
+                    _ = os.RemoveAll(baseDir)
+                })
+
                 return restrictedDir
             },
             expectErr: true,
