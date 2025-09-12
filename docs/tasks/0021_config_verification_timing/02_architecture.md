@@ -242,14 +242,6 @@ flowchart TD
 ### 4.2. データ型定義
 
 ```go
-// ConfigSource - 設定値のソース
-type ConfigSource int
-const (
-    ConfigSourceCommandLine ConfigSource = iota
-    ConfigSourceEnvironment
-    ConfigSourceDefault
-)
-
 // HashDirectoryError - ハッシュディレクトリエラーの詳細分類
 type HashDirectoryError struct {
     Type    string // エラータイプ（"not_absolute", "not_exists", "symlink", etc.）
