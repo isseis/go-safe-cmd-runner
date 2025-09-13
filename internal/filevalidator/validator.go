@@ -33,6 +33,8 @@ type FileValidator interface {
 	Record(filePath string, force bool) (string, error)
 	Verify(filePath string) error
 	VerifyWithPrivileges(filePath string, privManager runnertypes.PrivilegeManager) error
+	VerifyAndRead(filePath string) ([]byte, error)
+	VerifyAndReadWithPrivileges(filePath string, privManager runnertypes.PrivilegeManager) ([]byte, error)
 }
 
 // HashFilePathGetter is an interface for getting the path where the hash for a file would be stored.
@@ -350,4 +352,89 @@ func (v *Validator) VerifyWithPrivileges(filePath string, privManager runnertype
 
 	// Verify using the opened file handle
 	return v.VerifyFromHandle(file, targetPath)
+}
+
+// verifyAndReadContent performs the common verification and reading logic
+// readContent should return the file content and any read error
+func (v *Validator) verifyAndReadContent(targetPath common.ResolvedPath, readContent func() ([]byte, error)) ([]byte, error) {
+	// Read file content
+	content, err := readContent()
+	if err != nil {
+		return nil, err
+	}
+
+	// Calculate hash of the content we just read
+	actualHash, err := v.algorithm.Sum(bytes.NewReader(content))
+	if err != nil {
+		return nil, err
+	}
+
+	// Get expected hash
+	_, expectedHash, err := v.readAndParseHashFile(targetPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Compare hashes
+	if expectedHash != actualHash {
+		return nil, ErrMismatch
+	}
+
+	return content, nil
+}
+
+// VerifyAndRead atomically verifies file integrity and returns its content to prevent TOCTOU attacks
+func (v *Validator) VerifyAndRead(filePath string) ([]byte, error) {
+	// Validate the file path
+	targetPath, err := validatePath(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Use common verification logic with normal file reading
+	return v.verifyAndReadContent(targetPath, func() ([]byte, error) {
+		content, err := safefileio.SafeReadFile(targetPath.String())
+		if err != nil {
+			return nil, fmt.Errorf("failed to read file: %w", err)
+		}
+		return content, nil
+	})
+}
+
+// VerifyAndReadWithPrivileges atomically verifies file integrity and returns its content using privileged access
+func (v *Validator) VerifyAndReadWithPrivileges(filePath string, privManager runnertypes.PrivilegeManager) ([]byte, error) {
+	// Validate the file path
+	targetPath, err := validatePath(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if privilege manager is available
+	if privManager == nil {
+		return nil, fmt.Errorf("failed to verify and read file %s: %w", targetPath, ErrPrivilegeManagerNotAvailable)
+	}
+
+	// Check if privilege escalation is supported
+	if !privManager.IsPrivilegedExecutionSupported() {
+		return nil, fmt.Errorf("failed to verify and read file %s: %w", targetPath, ErrPrivilegedExecutionNotSupported)
+	}
+
+	// Use common verification logic with privileged file reading
+	return v.verifyAndReadContent(targetPath, func() ([]byte, error) {
+		// Open file with privileges
+		file, openErr := OpenFileWithPrivileges(targetPath.String(), privManager)
+		if openErr != nil {
+			return nil, fmt.Errorf("failed to open file with privileges: %w", openErr)
+		}
+		defer func() {
+			_ = file.Close() // Ignore close error
+		}()
+
+		// Read content from the opened file handle
+		content, err := io.ReadAll(file)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read file content: %w", err)
+		}
+		return content, nil
+	})
 }

@@ -615,3 +615,87 @@ func TestValidator_VerifyWithPrivileges_MockPrivilegeManager(t *testing.T) {
 		assert.NoError(t, err, "Expected no error with working privilege manager")
 	})
 }
+
+// TestValidator_HashAlgorithmConsistency tests that the validator uses the configured
+// hash algorithm consistently in both recording and verification.
+// This test would fail with hardcoded sha256.Sum256() but passes with v.algorithm.Sum().
+func TestValidator_HashAlgorithmConsistency(t *testing.T) {
+	tempDir := safeTempDir(t)
+
+	// Create a test file with content that will produce different hashes with different algorithms
+	// Using content that's shorter than 64 chars to ensure MockHashAlgorithm pads with zeros
+	testContent := "short"
+	testFilePath := filepath.Join(tempDir, "test_file.txt")
+	err := os.WriteFile(testFilePath, []byte(testContent), 0o644)
+	require.NoError(t, err, "Failed to create test file")
+
+	// Create validator with MockHashAlgorithm (not SHA-256)
+	mockAlgo := &MockHashAlgorithm{}
+	validator, err := New(mockAlgo, tempDir)
+	require.NoError(t, err, "Failed to create validator")
+
+	// Record the file - this should use mockAlgo.Sum()
+	hashFilePath, err := validator.Record(testFilePath, false)
+	require.NoError(t, err, "Failed to record file")
+
+	// Verify the file - this should also use mockAlgo.Sum()
+	// If the code was still using hardcoded sha256.Sum256(), this would fail
+	// because the hash in the recorded file would be from MockHashAlgorithm
+	// but the verification would use SHA-256
+	err = validator.Verify(testFilePath)
+	assert.NoError(t, err, "Verification failed - this indicates hash algorithm inconsistency")
+
+	// Additional verification: Check that the hash file contains the expected algorithm name and hash
+	hashFileContent, err := testSafeReadFile(tempDir, hashFilePath)
+	require.NoError(t, err, "Failed to read hash file")
+
+	var manifest map[string]any
+	err = json.Unmarshal(hashFileContent, &manifest)
+	require.NoError(t, err, "Failed to unmarshal hash file")
+
+	// Verify the file structure: manifest.file.hash.algorithm and manifest.file.hash.value
+	require.Contains(t, manifest, "file", "Hash file should contain 'file' section")
+	fileSection, ok := manifest["file"].(map[string]any)
+	require.True(t, ok, "File section should be a map")
+
+	require.Contains(t, fileSection, "hash", "File section should contain 'hash'")
+	hashSection, ok := fileSection["hash"].(map[string]any)
+	require.True(t, ok, "Hash section should be a map")
+
+	// Verify the algorithm name is correctly stored
+	require.Contains(t, hashSection, "algorithm", "Hash section should contain 'algorithm'")
+	assert.Equal(t, "mock", hashSection["algorithm"], "Hash file should contain the correct algorithm name")
+
+	// Verify the hash value is what MockHashAlgorithm would produce
+	expectedHash, err := mockAlgo.Sum(strings.NewReader(testContent))
+	require.NoError(t, err, "Failed to calculate expected hash")
+
+	require.Contains(t, hashSection, "value", "Hash section should contain 'value'")
+	assert.Equal(t, expectedHash, hashSection["value"], "Hash file should contain the hash from MockHashAlgorithm")
+}
+
+// TestValidator_CrossAlgorithmVerificationFails tests that verification properly fails when
+// attempting to verify a file that was recorded with a different algorithm.
+// This ensures proper algorithm validation and prevents security issues.
+func TestValidator_CrossAlgorithmVerificationFails(t *testing.T) {
+	tempDir := safeTempDir(t)
+
+	testFilePath := filepath.Join(tempDir, "cross_algo_test.txt")
+	err := os.WriteFile(testFilePath, []byte("test content"), 0o644)
+	require.NoError(t, err, "Failed to create test file")
+
+	// Record with MockHashAlgorithm
+	mockValidator, err := New(&MockHashAlgorithm{}, tempDir)
+	require.NoError(t, err, "Failed to create mock validator")
+	_, err = mockValidator.Record(testFilePath, false)
+	require.NoError(t, err, "Failed to record file with MockHashAlgorithm")
+
+	// Attempt verification with SHA-256 validator (different algorithm)
+	sha256Validator, err := New(&SHA256{}, tempDir)
+	require.NoError(t, err, "Failed to create SHA-256 validator")
+
+	// This should fail due to algorithm mismatch
+	err = sha256Validator.Verify(testFilePath)
+	assert.Error(t, err, "Cross-algorithm verification should fail")
+	assert.Contains(t, err.Error(), "algorithm mismatch", "Error should indicate algorithm mismatch")
+}

@@ -10,7 +10,6 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
-	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -46,17 +45,12 @@ func NewLoaderWithFS(fs common.FileSystem) *Loader {
 	}
 }
 
-// LoadConfig loads, validates, and applies templates to the configuration from the given path.
-func (l *Loader) LoadConfig(path string) (*runnertypes.Config, error) {
-	// Read the config file safely
-	data, err := safefileio.SafeReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read config file: %w", err)
-	}
-
-	// Parse the config file
+// LoadConfig loads and validates configuration from byte content instead of file path
+// This prevents TOCTOU attacks by using already-verified file content
+func (l *Loader) LoadConfig(content []byte) (*runnertypes.Config, error) {
+	// Parse the config content
 	var cfg runnertypes.Config
-	if err := toml.Unmarshal(data, &cfg); err != nil {
+	if err := toml.Unmarshal(content, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
 

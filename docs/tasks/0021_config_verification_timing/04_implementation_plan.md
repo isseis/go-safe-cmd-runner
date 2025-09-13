@@ -89,17 +89,17 @@
 
 #### 3.2.1. ファイル検証フロー実装
 
-**目標**: 設定ファイル・環境ファイル検証フローを実装
+**目標**: 設定ファイル検証フローを実装（環境ファイル機能は削除済み）
 
 - [x] **設定ファイル検証機能**
   - [x] `performConfigFileVerification()` 関数実装
   - [x] verification.Manager連携機能
   - [x] クリティカルエラーハンドリング
 
-- [x] **環境ファイル検証機能**
-  - [x] `performEnvironmentFileVerification()` 関数実装
-  - [x] クリティカルエラーハンドリング（セキュリティ強化）
-  - [x] 検証失敗時の実行終了ロジック
+- [x] **環境ファイル機能削除**
+  - [x] 環境ファイル検証関連機能を削除
+  - [x] Slack webhook URLは単純にOS環境変数から取得
+  - [x] 実行フローを簡素化
 
 - [x] **検証管理機能**
   - [x] `initializeVerificationManager()` 関数実装
@@ -133,20 +133,18 @@
 
 **目標**: セキュアな実行順序への全面的変更
 
-- [ ] **新しいrun()関数実装**
-  - [ ] セキュア実行フロー実装
-  - [ ] 検証→読み込み順序の徹底
-  - [ ] 段階的失敗ハンドリング
+- [x] **新しいrun()関数実装**
+  - [x] セキュア実行フロー実装
+  - [x] 検証→読み込み順序の徹底
+  - [x] 段階的失敗ハンドリング
 
-- [ ] **既存フロー削除**
-  - [ ] 古い`getHashDir()`関数削除
-  - [ ] 設定ファイル依存初期化処理削除
-  - [ ] 未検証データ使用箇所の完全除去
+- [x] **既存フロー削除**
+  - [x] 古い`getHashDir()`関数削除
+  - [x] 設定ファイル依存初期化処理削除
+  - [x] 未検証データ使用箇所の完全除去
 
-- [ ] **補助関数実装**
-  - [ ] `determineEnvironmentFile()` 関数実装
-  - [ ] `loadSlackWebhookFromVerifiedEnv()` 関数実装
-  - [ ] `setupVerifiedLogger()` 関数実装
+- [x] **補助関数実装**
+  - [x] `setupVerifiedLogger()` 関数実装（環境ファイル関連機能は削除済み）
 
 **期待される成果物**:
 - 完全に修正されたmain.go
@@ -157,15 +155,14 @@
 
 **目標**: 検証後読み込みへの確実な変更
 
-- [ ] **設定読み込み順序修正**
-  - [ ] config.LoadConfig()実行タイミング変更
-  - [ ] 環境ファイル読み込みタイミング変更
-  - [ ] ログシステム初期化タイミング変更
+- [x] **設定読み込み順序修正**
+  - [x] config.LoadConfig()実行タイミング変更
+  - [x] ログシステム初期化タイミング変更（環境ファイル依存削除済み）
 
-- [ ] **依存関係整理**
-  - [ ] 検証済みデータのみ使用の徹底
-  - [ ] 未検証データアクセスの完全排除
-  - [ ] 信頼境界の明確化
+- [x] **依存関係整理**
+  - [x] 検証済みデータのみ使用の徹底
+  - [x] 未検証データアクセスの完全排除
+  - [x] 信頼境界の明確化
 
 **期待される成果物**:
 - 修正された初期化フロー
@@ -184,7 +181,6 @@
 
 - [ ] **異常系統合テスト**
   - [ ] 設定ファイル検証失敗テスト
-  - [ ] 環境ファイル検証警告テスト
   - [ ] ハッシュディレクトリ検証失敗テスト
 
 - [ ] **検証フロー統合テスト**
@@ -202,7 +198,6 @@
 
 - [ ] **攻撃シナリオテスト**
   - [ ] 悪意のある設定ファイルテスト
-  - [ ] 悪意のある環境ファイルテスト
   - [ ] シンボリックリンク攻撃テスト
   - [ ] TOCTOU攻撃対策テスト
 
@@ -293,8 +288,7 @@ func initializeVerificationManager(hashDir, runID string) (*verification.Manager
 // ステップ2: 設定ファイル検証
 func performConfigFileVerification(verificationManager *verification.Manager, runID string) error
 
-// ステップ3: 環境ファイル検証
-func performEnvironmentFileVerification(verificationManager *verification.Manager, envPath, runID string) error
+// 環境ファイル検証機能は削除済み - Slack webhookは単純にOS環境変数から取得
 
 // ステップ4: 強制stderr出力
 func logCriticalToStderr(component, message string, err error)

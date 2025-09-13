@@ -48,12 +48,22 @@ func TestConfigPathRequired(t *testing.T) {
 	cleanup := setupTestFlags()
 	defer cleanup()
 
-	// Test args without --config
-	os.Args = []string{"runner"}
+	// Create temporary hash directory to avoid hash directory validation failure
+	tempHashDir, err := os.MkdirTemp("", "test-hash-dir-")
+	if err != nil {
+		t.Fatalf("failed to create temp hash dir: %v", err)
+	}
+	defer os.RemoveAll(tempHashDir)
+
+	// Test args without --config but with valid hash directory
+	os.Args = []string{"runner", "--hash-directory", tempHashDir}
+
+	// Parse flags to set the hashDirectory value
+	flag.Parse()
 
 	// Test run() function
 	runID := "test-run-id"
-	err := run(runID)
+	err = run(runID)
 	if err == nil {
 		t.Error("expected error when --config is not provided")
 	}
@@ -61,12 +71,12 @@ func TestConfigPathRequired(t *testing.T) {
 	// Check if the error is a PreExecutionError with the correct type
 	var preExecErr *logging.PreExecutionError
 	if !errors.As(err, &preExecErr) {
-		t.Errorf("expected PreExecutionError, got: %T", err)
+		t.Errorf("expected PreExecutionError, got: %T (error: %v)", err, err)
 		return
 	}
 
 	if preExecErr.Type != logging.ErrorTypeRequiredArgumentMissing {
-		t.Errorf("expected ErrorTypeRequiredArgumentMissing, got: %v", preExecErr.Type)
+		t.Errorf("expected ErrorTypeRequiredArgumentMissing, got: %v (message: %s)", preExecErr.Type, preExecErr.Message)
 	}
 }
 
