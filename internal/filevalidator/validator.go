@@ -364,7 +364,10 @@ func (v *Validator) verifyAndReadContent(targetPath common.ResolvedPath, readCon
 	}
 
 	// Calculate hash of the content we just read
-	actualHash := fmt.Sprintf("%x", sha256.Sum256(content))
+	actualHash, err := v.algorithm.Sum(bytes.NewReader(content))
+	if err != nil {
+		return nil, err
+	}
 
 	// Get expected hash
 	_, expectedHash, err := v.readAndParseHashFile(targetPath)
