@@ -39,7 +39,9 @@
       "Bash(git fetch:*)",
       "Bash(tty)",
       "Bash(time:*)",
-      "Bash(CLICOLOR=1 ./build/runner -dry-run -config ./sample/comprehensive.toml)"
+      "Bash(CLICOLOR=1 ./build/runner -dry-run -config ./sample/comprehensive.toml)",
+      "Bash(unset:*)",
+      "Bash(ENVSET=\"env -i HOME=/home/issei USER=issei PATH=/bin:/sbin:/usr/bin:/usr/sbin LANG=C TERM=xterm-256color\" make integration-test)"
     ],
     "deny": [],
     "env": {

@@ -345,47 +345,23 @@ func TestErrorHandling(t *testing.T) {
 func TestSecureExecutionFlow(t *testing.T) {
 	testCases := []struct {
 		name          string
-		setupFunc     func(t *testing.T) (tempDir string, configPath string)
+		setupFunc     func(t *testing.T) string
 		hashDirectory string
 		expectError   bool
 		errorContains string
 	}{
 		{
 			name: "successful_execution_with_valid_config_and_hash_dir",
-			setupFunc: func(t *testing.T) (string, string) {
-				tempDir := t.TempDir()
-				configPath := filepath.Join(tempDir, "config.toml")
-				configContent := `
-[global]
-log_level = "info"
-
-[[groups]]
-name = "test-group"
-
-[[groups.commands]]
-name = "echo-test"
-cmd = ["echo", "hello"]
-`
-				if err := os.WriteFile(configPath, []byte(configContent), 0o644); err != nil {
-					t.Fatalf("Failed to create config file: %v", err)
-				}
-				return tempDir, configPath
+			// Only create the temporary directory; config file was unused by the test
+			setupFunc: func(t *testing.T) string {
+				return t.TempDir()
 			},
 			expectError: false,
 		},
 		{
 			name: "failure_with_invalid_hash_directory",
-			setupFunc: func(t *testing.T) (string, string) {
-				tempDir := t.TempDir()
-				configPath := filepath.Join(tempDir, "config.toml")
-				configContent := `
-[global]
-log_level = "info"
-`
-				if err := os.WriteFile(configPath, []byte(configContent), 0o644); err != nil {
-					t.Fatalf("Failed to create config file: %v", err)
-				}
-				return tempDir, configPath
+			setupFunc: func(t *testing.T) string {
+				return t.TempDir()
 			},
 			hashDirectory: "/nonexistent/hash/directory",
 			expectError:   true,
@@ -395,7 +371,7 @@ log_level = "info"
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			tempDir, _ := tc.setupFunc(t)
+			tempDir := tc.setupFunc(t)
 
 			var hashDir string
 			if tc.hashDirectory != "" {
