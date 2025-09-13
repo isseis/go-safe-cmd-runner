@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLoadConfigWithWarnings(t *testing.T) {
-	// Create a temporary config file with unimplemented fields
+func TestLoadConfigFromContent(t *testing.T) {
+	// Create config content for testing
 	configContent := `
 version = "1.0"
 
@@ -30,26 +30,17 @@ version = "1.0"
     run_as_user = "root"
 `
 
-	// Write config to temporary file
-	tmpFile, err := os.CreateTemp("", "test_config_*.toml")
-	require.NoError(t, err, "failed to create temp file")
-	defer os.Remove(tmpFile.Name())
-
-	_, err = tmpFile.WriteString(configContent)
-	require.NoError(t, err, "failed to write config")
-	require.NoError(t, tmpFile.Close(), "failed to close temp file")
-
 	// Capture log output
 	var buf bytes.Buffer
 	log.SetOutput(&buf)
 	defer log.SetOutput(os.Stderr)
 
-	// Load config
+	// Load config from content
 	loader := NewLoader()
-	cfg, err := loader.LoadConfig(tmpFile.Name())
-	require.NoError(t, err, "LoadConfig() returned error")
+	cfg, err := loader.LoadConfig([]byte(configContent))
+	require.NoError(t, err, "LoadConfigFromContent() returned error")
 
-	require.NotNil(t, cfg, "LoadConfig() returned nil config")
+	require.NotNil(t, cfg, "LoadConfigFromContent() returned nil config")
 
 	// The privileged field is now implemented, so no warnings should be logged
 	logOutput := buf.String()

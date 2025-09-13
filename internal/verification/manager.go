@@ -150,6 +150,43 @@ func (m *Manager) VerifyConfigFile(configPath string) error {
 	return nil
 }
 
+// VerifyAndReadConfigFile performs atomic verification and reading of a configuration file
+// This prevents TOCTOU attacks by reading the file content once and verifying it against the hash
+func (m *Manager) VerifyAndReadConfigFile(configPath string) ([]byte, error) {
+	slog.Debug("Starting atomic config file verification and reading",
+		"config_path", configPath,
+		"hash_directory", m.hashDir)
+
+	// Validate hash directory first
+	if err := m.ValidateHashDirectory(); err != nil {
+		return nil, &Error{
+			Op:   "ValidateHashDirectory",
+			Path: m.hashDir,
+			Err:  err,
+		}
+	}
+
+	// Read and verify file content atomically using filevalidator
+	content, err := m.readAndVerifyFileWithFallback(configPath)
+	if err != nil {
+		slog.Error("Config file verification and reading failed",
+			"config_path", configPath,
+			"error", err)
+		return nil, &Error{
+			Op:   "ReadAndVerifyHash",
+			Path: configPath,
+			Err:  err,
+		}
+	}
+
+	slog.Info("Config file verification and reading completed successfully",
+		"config_path", configPath,
+		"hash_directory", m.hashDir,
+		"content_size", len(content))
+
+	return content, nil
+}
+
 // VerifyEnvironmentFile verifies the integrity of an environment file using hash validation
 func (m *Manager) VerifyEnvironmentFile(envFilePath string) error {
 	slog.Debug("Starting environment file verification",
@@ -402,4 +439,34 @@ func isPermissionRelatedError(err error) bool {
 	}
 
 	return false
+}
+
+// readAndVerifyFileWithFallback attempts file reading and verification with normal privileges first,
+// then falls back to privileged access if permission errors occur
+func (m *Manager) readAndVerifyFileWithFallback(filePath string) ([]byte, error) {
+	// Try normal verification and reading first
+	content, err := m.fileValidator.VerifyAndRead(filePath)
+	if err == nil {
+		return content, nil // Success with normal privileges
+	}
+
+	// Check if this is a permission-related error that might be resolved with privilege escalation
+	if !isPermissionRelatedError(err) {
+		return nil, err // Return original error for non-permission issues
+	}
+
+	// Permission error detected - try with privilege escalation if available
+	if m.privilegeManager == nil {
+		slog.Debug("Permission error encountered but no privilege manager available",
+			"file", filePath,
+			"error", err)
+		return nil, err // Return original permission error
+	}
+
+	slog.Debug("Attempting privileged file verification and reading",
+		"file", filePath,
+		"reason", "permission_denied_normal_access")
+
+	// Try verification and reading with privileges
+	return m.fileValidator.VerifyAndReadWithPrivileges(filePath, m.privilegeManager)
 }

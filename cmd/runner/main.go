@@ -18,7 +18,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/cli"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/filecheck"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/hashdir"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
@@ -93,13 +92,30 @@ func run(runID string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Load and validate configuration
-	cfg, err := bootstrap.LoadAndValidateConfig(*configPath, runID)
+	// Phase 1: Get validated hash directory (using secure validation)
+	validatedHashDir, err := hashdir.GetWithValidation(hashDirectory, cmdcommon.DefaultHashDirectory)
+	if err != nil {
+		return &logging.PreExecutionError{
+			Type:      logging.ErrorTypeFileAccess,
+			Message:   fmt.Sprintf("Hash directory validation failed: %v", err),
+			Component: "file",
+			RunID:     runID,
+		}
+	}
+
+	// Phase 2: Initialize verification manager with validated hash directory
+	verificationManager, err := bootstrap.InitializeVerificationManager(hashDirectory, cmdcommon.DefaultHashDirectory, runID)
 	if err != nil {
 		return err
 	}
 
-	// Handle validate command
+	// Phase 3: Verify and load configuration atomically (to prevent TOCTOU attacks)
+	cfg, err := bootstrap.LoadConfig(verificationManager, *configPath, runID)
+	if err != nil {
+		return err
+	}
+
+	// Handle validate command (after verification and loading)
 	if *validateConfig {
 		err := cli.ValidateConfigCommand(cfg)
 		if err != nil {
@@ -112,34 +128,40 @@ func run(runID string) error {
 		return nil
 	}
 
-	// Setup logging
+	// Phase 4: Setup logging (using bootstrap package)
 	if err := bootstrap.SetupLogging(*logLevel, *logDir, runID, *forceInteractive, *forceQuiet); err != nil {
 		return err
 	}
 
-	// Initialize verification and security
-	verificationManager, err := bootstrap.InitializeVerificationManager(hashDirectory, cmdcommon.DefaultHashDirectory, runID)
+	// Phase 5: Perform global file verification (using verification manager directly)
+	result, err := verificationManager.VerifyGlobalFiles(&cfg.Global)
 	if err != nil {
-		return err
+		return &logging.PreExecutionError{
+			Type:      logging.ErrorTypeFileAccess,
+			Message:   fmt.Sprintf("Global files verification failed: %v", err),
+			Component: "verification",
+			RunID:     runID,
+		}
 	}
 
-	// Perform file verification
-	if err := filecheck.PerformFileVerification(verificationManager, cfg, *configPath, runID); err != nil {
-		return err
+	// Log global verification results
+	if result.TotalFiles > 0 {
+		slog.Info("Global files verification completed successfully",
+			"verified", result.VerifiedFiles,
+			"skipped", len(result.SkippedFiles),
+			"duration_ms", result.Duration.Milliseconds(),
+			"run_id", runID)
 	}
 
-	// Initialize and execute runner
-	return executeRunner(ctx, cfg, verificationManager, runID)
+	// Phase 6: Initialize and execute runner with all verified data
+	return executeRunner(ctx, cfg, verificationManager, validatedHashDir, runID)
 }
 
 // executeRunner initializes and executes the runner with proper cleanup
-func executeRunner(ctx context.Context, cfg *runnertypes.Config, verificationManager *verification.Manager, runID string) error {
+func executeRunner(ctx context.Context, cfg *runnertypes.Config, verificationManager *verification.Manager, hashDir, runID string) error {
 	// Initialize privilege manager
 	logger := slog.Default()
 	privMgr := privilege.NewManager(logger)
-
-	// Get hash directory from command line args
-	hashDir := hashdir.GetHashDir(hashDirectory, cmdcommon.DefaultHashDirectory)
 
 	// Initialize Runner with privilege support and run ID
 	runnerOptions := []runner.Option{
