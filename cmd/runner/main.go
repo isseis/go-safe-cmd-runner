@@ -26,6 +26,15 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 )
 
+// SilentExitError indicates that the program should exit with status 1
+// without printing additional error messages (e.g., for validation failures
+// where the validation report has already been displayed)
+type SilentExitError struct{}
+
+func (e SilentExitError) Error() string {
+	return "silent exit requested"
+}
+
 var (
 	configPath       = flag.String("config", "", "path to config file")
 	envFile          = flag.String("env-file", "", "path to environment file")
@@ -64,11 +73,16 @@ func main() {
 
 	// Wrap main logic in a separate function to properly handle errors and defer
 	if err := run(*runID); err != nil {
-		// Check if this is a pre-execution error using errors.As for safe type checking
+		var silentErr SilentExitError
 		var preExecErr *logging.PreExecutionError
-		if errors.As(err, &preExecErr) {
+		switch {
+		case errors.As(err, &silentErr):
+			// Check for silent exit error first (validation failure with report already printed)
+			// revive:disable:empty-block This empty block is intentional to handle specific cases
+		case errors.As(err, &preExecErr):
+			// Check if this is a pre-execution error using errors.As for safe type checking
 			logging.HandlePreExecutionError(preExecErr.Type, preExecErr.Message, preExecErr.Component, *runID)
-		} else {
+		default:
 			logging.HandlePreExecutionError(logging.ErrorTypeSystemError, err.Error(), "main", *runID)
 		}
 		os.Exit(1)
@@ -88,7 +102,15 @@ func run(runID string) error {
 
 	// Handle validate command
 	if *validateConfig {
-		return cli.ValidateConfigCommand(cfg)
+		err := cli.ValidateConfigCommand(cfg)
+		if err != nil {
+			if errors.Is(err, cli.ErrConfigValidationFailed) {
+				// Config validation failed - return silent exit error to avoid additional error messages
+				return SilentExitError{}
+			}
+			return err
+		}
+		return nil
 	}
 
 	// Setup environment and logging
