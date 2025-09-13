@@ -3,8 +3,6 @@ package runner
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -13,7 +11,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
-	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -1112,69 +1109,6 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 	})
 }
 
-func TestRunner_LoadEnvironmentWithSecurity(t *testing.T) {
-	t.Run("load environment with file permission validation", func(t *testing.T) {
-		config := &runnertypes.Config{
-			Global: runnertypes.GlobalConfig{
-				WorkDir: "/tmp",
-			},
-		}
-		runner, err := NewRunner(config, WithRunID("test-run-123"))
-		require.NoError(t, err)
-
-		// Create a temporary .env file with correct permissions
-		tmpDir := t.TempDir()
-		envFile := filepath.Join(tmpDir, ".env")
-
-		err = os.WriteFile(envFile, []byte("TEST_VAR=test_value\n"), 0o644)
-		assert.NoError(t, err)
-
-		// Should succeed with correct permissions
-		err = runner.LoadEnvironment(envFile, false)
-		assert.NoError(t, err)
-
-		// Create a file with excessive permissions
-		badEnvFile := filepath.Join(tmpDir, ".env_bad")
-		err = os.WriteFile(badEnvFile, []byte("TEST_VAR=test_value\n"), 0o777)
-		assert.NoError(t, err)
-
-		// Explicitly set world writable permissions to bypass umask
-		err = os.Chmod(badEnvFile, 0o777)
-		assert.NoError(t, err)
-
-		// Should fail with excessive permissions
-		err = runner.LoadEnvironment(badEnvFile, false)
-		assert.Error(t, err)
-		assert.ErrorIs(t, err, safefileio.ErrInvalidFilePermissions, "expected error to wrap safefileio.ErrInvalidFilePermissions")
-	})
-
-	t.Run("load environment with unsafe values (validation deferred)", func(t *testing.T) {
-		config := &runnertypes.Config{
-			Global: runnertypes.GlobalConfig{
-				WorkDir:      "/tmp",
-				EnvAllowlist: []string{"DANGEROUS"}, // Allow the variable to pass filtering so it can be validated
-			},
-		}
-		runner, err := NewRunner(config, WithRunID("test-run-123"))
-		require.NoError(t, err)
-
-		// Create a temporary .env file with unsafe values
-		tmpDir := t.TempDir()
-		envFile := filepath.Join(tmpDir, ".env")
-
-		unsafeContent := "DANGEROUS=value; rm -rf /\n"
-		err = os.WriteFile(envFile, []byte(unsafeContent), 0o644)
-		assert.NoError(t, err)
-
-		// Should succeed in loading (validation deferred to execution time)
-		err = runner.LoadEnvironment(envFile, false)
-		assert.NoError(t, err, "LoadEnvironment should succeed - validation is deferred to execution time")
-
-		// The dangerous variable should be loaded but not validated yet
-		assert.Equal(t, "value; rm -rf /", runner.envVars["DANGEROUS"])
-	})
-}
-
 // TestCommandGroup_NewFields tests the new fields added to CommandGroup for template replacement
 func TestCommandGroup_NewFields(t *testing.T) {
 	// Setup test environment
@@ -1252,7 +1186,7 @@ func TestCommandGroup_NewFields(t *testing.T) {
 			require.NoError(t, err)
 
 			// Load basic environment
-			err = runner.LoadEnvironment("", true)
+			err = runner.LoadSystemEnvironment()
 			require.NoError(t, err)
 
 			// Execute the group
@@ -1332,7 +1266,7 @@ func TestCommandGroup_TempDir_Detailed(t *testing.T) {
 		require.NoError(t, err)
 
 		// Load basic environment
-		err = runner.LoadEnvironment("", true)
+		err = runner.LoadSystemEnvironment()
 		require.NoError(t, err)
 
 		// Execute the group
@@ -1391,7 +1325,7 @@ func TestCommandGroup_TempDir_Detailed(t *testing.T) {
 		require.NoError(t, err)
 
 		// Load basic environment
-		err = runner.LoadEnvironment("", true)
+		err = runner.LoadSystemEnvironment()
 		require.NoError(t, err)
 
 		// Execute the group
@@ -1448,7 +1382,7 @@ func TestCommandGroup_TempDir_Detailed(t *testing.T) {
 		require.NoError(t, err)
 
 		// Load basic environment
-		err = runner.LoadEnvironment("", true)
+		err = runner.LoadSystemEnvironment()
 		require.NoError(t, err)
 
 		// Execute the group
@@ -1809,7 +1743,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		require.NoError(t, err)
 
 		// Load basic environment
-		err = runner.LoadEnvironment("", true)
+		err = runner.LoadSystemEnvironment()
 		require.NoError(t, err)
 
 		// Execute the group - should fail due to temp directory creation failure
@@ -1862,7 +1796,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		require.NoError(t, err)
 
 		// Load basic environment
-		err = runner.LoadEnvironment("", true)
+		err = runner.LoadSystemEnvironment()
 		require.NoError(t, err)
 
 		// Execute the group - should succeed despite cleanup failure (cleanup failure is logged as warning)
@@ -1927,7 +1861,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		require.NoError(t, err)
 
 		// Load basic environment
-		err = runner.LoadEnvironment("", true)
+		err = runner.LoadSystemEnvironment()
 		require.NoError(t, err)
 
 		// Execute all groups - first should succeed, second should fail
@@ -1989,7 +1923,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		require.NoError(t, err)
 
 		// Load basic environment
-		err = runner.LoadEnvironment("", true)
+		err = runner.LoadSystemEnvironment()
 		require.NoError(t, err)
 
 		// Execute the group - should fail on second command but still clean up resources
@@ -2044,7 +1978,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		require.NoError(t, err)
 
 		// Load basic environment
-		err = runner.LoadEnvironment("", true)
+		err = runner.LoadSystemEnvironment()
 		require.NoError(t, err)
 
 		// Execute the group
@@ -2098,7 +2032,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		require.NoError(t, err)
 
 		// Load basic environment
-		err = runner.LoadEnvironment("", true)
+		err = runner.LoadSystemEnvironment()
 		require.NoError(t, err)
 
 		// First execution should succeed

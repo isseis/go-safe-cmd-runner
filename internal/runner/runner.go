@@ -3,12 +3,10 @@
 package runner
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
-	"maps"
 	"sort"
 	"time"
 
@@ -20,9 +18,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
-	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
-	"github.com/joho/godotenv"
 )
 
 // Error definitions
@@ -272,46 +268,14 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 	}, nil
 }
 
-// LoadEnvironment loads environment variables from the specified .env file and system environment.
-// If envFile is empty, only system environment variables will be loaded.
-// If loadSystemEnv is true, system environment variables will be loaded first,
-// then overridden by the .env file if specified.
-// Variables undergo global filtering and validation during loading, and will be filtered
-// per-group during execution.
-func (r *Runner) LoadEnvironment(envFile string, loadSystemEnv bool) error {
-	// Create environment map
-	envMap := make(map[string]string)
-
-	// Load system environment variables if requested
-	if loadSystemEnv {
-		sysEnv, err := r.envFilter.FilterSystemEnvironment()
-		if err != nil {
-			return fmt.Errorf("failed to filter system environment variables: %w", err)
-		}
-		maps.Copy(envMap, sysEnv)
+// LoadSystemEnvironment loads and filters system environment variables.
+// This is a convenience method that wraps the filtering and setting operations.
+func (r *Runner) LoadSystemEnvironment() error {
+	sysEnv, err := r.envFilter.FilterSystemEnvironment()
+	if err != nil {
+		return fmt.Errorf("failed to filter system environment variables: %w", err)
 	}
-
-	// Load .env file if specified
-	if envFile != "" {
-		// Use SafeReadFile for secure file reading (includes path validation and permission checks)
-		content, err := safefileio.SafeReadFile(envFile)
-		if err != nil {
-			return fmt.Errorf("failed to read environment file %s securely: %w", envFile, err)
-		}
-
-		// Parse content using godotenv.Parse
-		fileEnv, err := godotenv.Parse(bytes.NewReader(content))
-		if err != nil {
-			return fmt.Errorf("failed to parse environment file %s: %w", envFile, err)
-		}
-		fileEnv, err = r.envFilter.FilterGlobalVariables(fileEnv, environment.SourceEnvFile)
-		if err != nil {
-			return fmt.Errorf("failed to filter environment variables from file %s: %w", envFile, err)
-		}
-		maps.Copy(envMap, fileEnv)
-	}
-
-	r.envVars = envMap
+	r.envVars = sysEnv
 	return nil
 }
 

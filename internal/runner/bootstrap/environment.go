@@ -7,20 +7,9 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 )
 
-// SetupEnvironmentAndLogging determines environment file and sets up logging system
-func SetupEnvironmentAndLogging(envFile, logLevel, logDir, runID string, forceInteractive, forceQuiet bool) (string, error) {
-	// Determine environment file to load
-	envFileToLoad := ""
-	if envFile != "" {
-		envFileToLoad = envFile
-	} else {
-		// Try to load default '.env' file if exists
-		if _, err := os.Stat(".env"); err == nil {
-			envFileToLoad = ".env"
-		}
-	}
-
-	// Get Slack webhook URL from OS environment variables (not from file)
+// SetupLogging sets up logging system without environment file handling
+func SetupLogging(logLevel, logDir, runID string, forceInteractive, forceQuiet bool) error {
+	// Get Slack webhook URL from OS environment variables
 	slackURL := os.Getenv(logging.SlackWebhookURLEnvVar)
 
 	// Setup logging system with all configuration including Slack
@@ -32,7 +21,7 @@ func SetupEnvironmentAndLogging(envFile, logLevel, logDir, runID string, forceIn
 	}
 
 	if err := SetupLoggerWithConfig(loggerConfig, forceInteractive, forceQuiet); err != nil {
-		return "", &logging.PreExecutionError{
+		return &logging.PreExecutionError{
 			Type:      logging.ErrorTypeLogFileOpen,
 			Message:   fmt.Sprintf("Failed to setup logger: %v", err),
 			Component: "logging",
@@ -40,5 +29,5 @@ func SetupEnvironmentAndLogging(envFile, logLevel, logDir, runID string, forceIn
 		}
 	}
 
-	return envFileToLoad, nil
+	return nil
 }

@@ -5,7 +5,6 @@ go 1.23.0
 toolchain go1.24.6
 
 require (
-	github.com/joho/godotenv v1.5.1
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/pelletier/go-toml/v2 v2.0.8
 	github.com/stretchr/testify v1.8.3

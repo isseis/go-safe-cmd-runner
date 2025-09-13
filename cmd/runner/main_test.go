@@ -25,7 +25,6 @@ func setupTestFlags() func() {
 
 	// Initialize all flags - match the original flags from main.go
 	configPath = flag.String("config", "", "path to config file")
-	envFile = flag.String("env-file", "", "path to environment file")
 	logLevel = flag.String("log-level", "info", "log level (debug, info, warn, error)")
 	logDir = flag.String("log-dir", "", "directory to place per-run JSON log (auto-named). Overrides TOML/env if set.")
 	dryRun = flag.Bool("dry-run", false, "print commands without executing them")
