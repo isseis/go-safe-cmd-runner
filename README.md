@@ -111,7 +111,7 @@ CLICOLOR=1 ./runner -config config.toml      # Enable color (default when intera
 NO_COLOR=1 ./runner -config config.toml      # Disable color completely
 CLICOLOR_FORCE=1 ./runner -config config.toml # Force color even in non-interactive environments
 
-# Execute with Slack notifications (requires SLACK_WEBHOOK_URL in environment file)
+# Execute with Slack notifications (requires GSCR_SLACK_WEBHOOK_URL in environment file)
 ./runner -config config.toml -env-file .env
 
 # Risk assessment only mode (analyze without execution)
@@ -252,7 +252,7 @@ Create a `.env` file for sensitive configuration that shouldn't be stored in the
 ```bash
 # .env file for production environment
 # Slack webhook URL for notifications
-SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK
+GSCR_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK
 
 # Optional: Override default log settings
 LOG_LEVEL=info
@@ -399,7 +399,7 @@ go test -v ./internal/runner
 # Run integration tests
 make integration-test
 
-# Run Slack notification tests (requires SLACK_WEBHOOK_URL)
+# Run Slack notification tests (requires GSCR_SLACK_WEBHOOK_URL)
 make slack-notify-test
 make slack-group-notification-test
 ```

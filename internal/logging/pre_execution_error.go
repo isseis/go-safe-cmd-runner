@@ -9,7 +9,7 @@ import (
 // Environment variable names
 const (
 	// SlackWebhookURLEnvVar is the environment variable name for Slack webhook URL
-	SlackWebhookURLEnvVar = "SLACK_WEBHOOK_URL"
+	SlackWebhookURLEnvVar = "GSCR_SLACK_WEBHOOK_URL"
 )
 
 // ErrorType represents different types of pre-execution errors

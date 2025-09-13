@@ -23,6 +23,16 @@ define check_gofumpt
 	fi
 endef
 
+# Check for Slack webhook URL environment variable
+define check_slack_webhook
+	@if [ -z "$$GSCR_SLACK_WEBHOOK_URL" ]; then \
+		echo "Warning: GSCR_SLACK_WEBHOOK_URL environment variable is not set"; \
+		echo "Slack notifications will be disabled during this test"; \
+		echo "To enable notifications, set: export GSCR_SLACK_WEBHOOK_URL=your_webhook_url"; \
+		echo ""; \
+	fi
+endef
+
 # Format files from a list and display what was formatted
 # Usage: $(call format_files_from_list,file_list_command)
 define format_files_from_list
@@ -48,8 +58,18 @@ define format_files_from_list
 endef
 
 
-
-ENVSET=$(ENVCMD) -i HOME=$(HOME) USER=$(USER) PATH=/bin:/sbin:/usr/bin:/usr/sbin LANG=C TERM=$(TERM)
+ENVSET=$(ENVCMD) -i \
+	HOME=$(HOME) \
+	USER=$(USER) \
+	PATH=/bin:/sbin:/usr/bin:/usr/sbin \
+	LANG=C \
+	TERM=$(TERM) \
+	TEST_GLOBAL_VAR=global_test_value \
+	COMPREHENSIVE_TEST=enabled \
+	NODE_ENV=test \
+	DEBUG_MODE=true \
+	FINAL_TEST_VAR=comprehensive_success \
+	TEST_SECURITY_VAR=security_value
 
 # Configuration paths
 DEFAULT_HASH_DIRECTORY=/usr/local/etc/go-safe-cmd-runner/hashes
@@ -67,7 +87,6 @@ GO_SOURCES := $(shell find . -type f -name '*.go' -not -name '*_test.go')
 
 HASH_TARGETS := \
 	/etc/passwd \
-	./sample/.env \
 	./sample/comprehensive.toml \
 	./sample/slack-notify.toml \
 	./sample/slack-group-notification-test.toml
@@ -136,17 +155,21 @@ coverage:
 	@echo "Coverage report generated: coverage.html"
 
 integration-test: $(BINARY_RUNNER)
+	$(call check_slack_webhook)
 	$(MKDIR) /tmp/cmd-runner-comprehensive /tmp/custom-workdir-test
 	@EXIT_CODE=0; \
-	$(ENVSET) $(BINARY_RUNNER) -config ./sample/comprehensive.toml -log-level warn -env-file $(PWD)/sample/.env || EXIT_CODE=$$?; \
+	$(ENVSET) GSCR_SLACK_WEBHOOK_URL="$$GSCR_SLACK_WEBHOOK_URL" \
+		$(BINARY_RUNNER) -config ./sample/comprehensive.toml -log-level warn || EXIT_CODE=$$?; \
 	$(RM) -r /tmp/cmd-runner-comprehensive /tmp/custom-workdir-test; \
 	echo "Integration test completed with exit code: $$EXIT_CODE"; \
 	exit $$EXIT_CODE
 
 slack-notify-test: $(BINARY_RUNNER)
+	$(call check_slack_webhook)
 	$(MKDIR) /tmp/cmd-runner-slack-test
 	@EXIT_CODE=0; \
-	$(ENVSET) $(BINARY_RUNNER) -config ./sample/slack-notify.toml -log-level warn -env-file $(PWD)/sample/.env || EXIT_CODE=$$?; \
+	$(ENVSET) GSCR_SLACK_WEBHOOK_URL="$$GSCR_SLACK_WEBHOOK_URL" \
+		$(BINARY_RUNNER) -config ./sample/slack-notify.toml -log-level warn || EXIT_CODE=$$?; \
 	$(RM) -r /tmp/cmd-runner-slack-test; \
 	echo "Slack notification test completed with exit code: $$EXIT_CODE"; \
 	exit $$EXIT_CODE
@@ -154,12 +177,13 @@ slack-notify-test: $(BINARY_RUNNER)
 # Test the new group-level Slack notification functionality
 # This target tests notifications sent after each command group execution
 slack-group-notification-test: $(BINARY_RUNNER)
+	$(call check_slack_webhook)
 	@$(MKDIR) /tmp/slack-group-test
 	@EXIT_CODE=0; \
 	RUN_ID="slack-test-$$(date +%s)"; \
 	echo "Running Slack group notification test with run ID: $$RUN_ID"; \
-	$(ENVSET) SLACK_WEBHOOK_URL="$$SLACK_WEBHOOK_URL" \
-		$(BINARY_RUNNER) -config ./sample/slack-group-notification-test.toml -log-level info -run-id "$$RUN_ID" --env-file $(PWD)/sample/.env \
+	$(ENVSET) GSCR_SLACK_WEBHOOK_URL="$$GSCR_SLACK_WEBHOOK_URL" \
+		$(BINARY_RUNNER) -config ./sample/slack-group-notification-test.toml -log-level info -run-id "$$RUN_ID" \
 		2>&1 | tee /tmp/slack-group-test/test-output.log || EXIT_CODE=$$?; \
 	echo ""; \
 	echo "=== Test Results ==="; \
