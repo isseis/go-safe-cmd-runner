@@ -23,6 +23,16 @@ define check_gofumpt
 	fi
 endef
 
+# Check for Slack webhook URL environment variable
+define check_slack_webhook
+	@if [ -z "$$SLACK_WEBHOOK_URL" ]; then \
+		echo "Warning: SLACK_WEBHOOK_URL environment variable is not set"; \
+		echo "Slack notifications will be disabled during this test"; \
+		echo "To enable notifications, set: export SLACK_WEBHOOK_URL=your_webhook_url"; \
+		echo ""; \
+	fi
+endef
+
 # Format files from a list and display what was formatted
 # Usage: $(call format_files_from_list,file_list_command)
 define format_files_from_list
@@ -136,17 +146,21 @@ coverage:
 	@echo "Coverage report generated: coverage.html"
 
 integration-test: $(BINARY_RUNNER)
+	$(call check_slack_webhook)
 	$(MKDIR) /tmp/cmd-runner-comprehensive /tmp/custom-workdir-test
 	@EXIT_CODE=0; \
-	$(ENVSET) $(BINARY_RUNNER) -config ./sample/comprehensive.toml -log-level warn -env-file $(PWD)/sample/.env || EXIT_CODE=$$?; \
+	$(ENVSET) SLACK_WEBHOOK_URL="$$SLACK_WEBHOOK_URL" \
+		$(BINARY_RUNNER) -config ./sample/comprehensive.toml -log-level warn -env-file $(PWD)/sample/.env || EXIT_CODE=$$?; \
 	$(RM) -r /tmp/cmd-runner-comprehensive /tmp/custom-workdir-test; \
 	echo "Integration test completed with exit code: $$EXIT_CODE"; \
 	exit $$EXIT_CODE
 
 slack-notify-test: $(BINARY_RUNNER)
+	$(call check_slack_webhook)
 	$(MKDIR) /tmp/cmd-runner-slack-test
 	@EXIT_CODE=0; \
-	$(ENVSET) $(BINARY_RUNNER) -config ./sample/slack-notify.toml -log-level warn -env-file $(PWD)/sample/.env || EXIT_CODE=$$?; \
+	$(ENVSET) SLACK_WEBHOOK_URL="$$SLACK_WEBHOOK_URL" \
+		$(BINARY_RUNNER) -config ./sample/slack-notify.toml -log-level warn -env-file $(PWD)/sample/.env || EXIT_CODE=$$?; \
 	$(RM) -r /tmp/cmd-runner-slack-test; \
 	echo "Slack notification test completed with exit code: $$EXIT_CODE"; \
 	exit $$EXIT_CODE
@@ -154,6 +168,7 @@ slack-notify-test: $(BINARY_RUNNER)
 # Test the new group-level Slack notification functionality
 # This target tests notifications sent after each command group execution
 slack-group-notification-test: $(BINARY_RUNNER)
+	$(call check_slack_webhook)
 	@$(MKDIR) /tmp/slack-group-test
 	@EXIT_CODE=0; \
 	RUN_ID="slack-test-$$(date +%s)"; \

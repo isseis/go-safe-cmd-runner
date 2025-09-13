@@ -1,7 +1,6 @@
 package bootstrap
 
 import (
-	"bytes"
 	"fmt"
 	"log/slog"
 	"os"
@@ -10,9 +9,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
-	"github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 	"github.com/isseis/go-safe-cmd-runner/internal/terminal"
-	"github.com/joho/godotenv"
 )
 
 const (
@@ -26,35 +23,6 @@ type LoggerConfig struct {
 	LogDir          string
 	RunID           string
 	SlackWebhookURL string
-}
-
-// GetSlackWebhookFromEnvFile securely reads Slack webhook URL from .env file
-// Returns the webhook URL and an error if any issues occur during file access or parsing
-func GetSlackWebhookFromEnvFile(envFile string) (string, error) {
-	if envFile == "" {
-		return "", nil
-	}
-
-	// Use safefileio for secure file reading (includes path validation and permission checks)
-	content, err := safefileio.SafeReadFile(envFile)
-	if err != nil {
-		return "", fmt.Errorf("failed to read environment file %q securely: %w", envFile, err)
-	}
-
-	// Parse content directly using godotenv.Parse (no temporary file needed)
-	envMap, err := godotenv.Parse(bytes.NewReader(content))
-	if err != nil {
-		return "", fmt.Errorf("failed to parse environment file %q: %w", envFile, err)
-	}
-
-	// Look for Slack webhook URL
-	if slackURL, exists := envMap[logging.SlackWebhookURLEnvVar]; exists && slackURL != "" {
-		slog.Debug("Found Slack webhook URL in env file", "key", logging.SlackWebhookURLEnvVar, "file", envFile)
-		return slackURL, nil
-	}
-
-	slog.Debug("No Slack webhook URL found in env file", "file", envFile)
-	return "", nil
 }
 
 // SetupLoggerWithConfig initializes the logging system with all handlers atomically

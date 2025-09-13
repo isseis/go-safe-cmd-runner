@@ -20,11 +20,8 @@ func SetupEnvironmentAndLogging(envFile, logLevel, logDir, runID string, forceIn
 		}
 	}
 
-	// Get Slack webhook URL from environment file early
-	slackURL, err := GetSlackWebhookFromEnvFile(envFileToLoad)
-	if err != nil {
-		return "", fmt.Errorf("failed to read Slack configuration from environment file: %w", err)
-	}
+	// Get Slack webhook URL from OS environment variables (not from file)
+	slackURL := os.Getenv(logging.SlackWebhookURLEnvVar)
 
 	// Setup logging system with all configuration including Slack
 	loggerConfig := LoggerConfig{

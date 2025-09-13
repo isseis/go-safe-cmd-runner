@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"errors"
 	"log/slog"
 	"testing"
 	"time"
@@ -198,5 +199,155 @@ func TestSlackHandler_WithGroupEmptyString(t *testing.T) {
 
 	if newHandler != handler {
 		t.Error("WithGroup with empty string should return the same handler")
+	}
+}
+
+func TestValidateWebhookURL(t *testing.T) {
+	tests := []struct {
+		name        string
+		url         string
+		expectError bool
+		errorType   error
+	}{
+		{
+			name:        "valid HTTPS URL",
+			url:         "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
+			expectError: false,
+		},
+		{
+			name:        "empty URL",
+			url:         "",
+			expectError: true,
+			errorType:   ErrInvalidWebhookURL,
+		},
+		{
+			name:        "HTTP URL (should be rejected)",
+			url:         "http://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
+			expectError: true,
+			errorType:   ErrInvalidWebhookURL,
+		},
+		{
+			name:        "URL without scheme",
+			url:         "hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
+			expectError: true,
+			errorType:   ErrInvalidWebhookURL,
+		},
+		{
+			name:        "URL without host",
+			url:         "https:///services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
+			expectError: true,
+			errorType:   ErrInvalidWebhookURL,
+		},
+		{
+			name:        "malformed URL with invalid characters",
+			url:         "https://hooks.slack.com/services/T00000000/B00000000/XXXX\x00XX",
+			expectError: true,
+			errorType:   ErrInvalidWebhookURL,
+		},
+		{
+			name:        "URL with only protocol",
+			url:         "https://",
+			expectError: true,
+			errorType:   ErrInvalidWebhookURL,
+		},
+		{
+			name:        "FTP protocol (should be rejected)",
+			url:         "ftp://example.com/webhook",
+			expectError: true,
+			errorType:   ErrInvalidWebhookURL,
+		},
+		{
+			name:        "localhost HTTPS URL (valid for testing)",
+			url:         "https://localhost:8080/webhook",
+			expectError: false,
+		},
+		{
+			name:        "URL with special characters in path (valid)",
+			url:         "https://hooks.slack.com/services/T00000000/B00000000/XXXX%20XX",
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateWebhookURL(tt.url)
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error for URL: %s", tt.url)
+					return
+				}
+
+				if tt.errorType != nil && !errors.Is(err, tt.errorType) {
+					t.Errorf("Expected error type %v, got %v", tt.errorType, err)
+				}
+			} else if err != nil {
+				t.Errorf("Unexpected error for valid URL %s: %v", tt.url, err)
+			}
+		})
+	}
+}
+
+func TestNewSlackHandler_URLValidation(t *testing.T) {
+	tests := []struct {
+		name        string
+		url         string
+		runID       string
+		expectError bool
+	}{
+		{
+			name:        "valid URL and run ID",
+			url:         "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
+			runID:       "test-run-123",
+			expectError: false,
+		},
+		{
+			name:        "invalid URL",
+			url:         "http://invalid-url",
+			runID:       "test-run-123",
+			expectError: true,
+		},
+		{
+			name:        "empty URL",
+			url:         "",
+			runID:       "test-run-123",
+			expectError: true,
+		},
+		{
+			name:        "valid URL with empty run ID (should work)",
+			url:         "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
+			runID:       "",
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler, err := NewSlackHandler(tt.url, tt.runID)
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error for URL: %s", tt.url)
+				}
+				if handler != nil {
+					t.Errorf("Expected nil handler when error occurs")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error for valid input: %v", err)
+				}
+				if handler == nil {
+					t.Errorf("Expected non-nil handler for valid input")
+				}
+				if handler != nil {
+					if handler.webhookURL != tt.url {
+						t.Errorf("Expected webhook URL %s, got %s", tt.url, handler.webhookURL)
+					}
+					if handler.runID != tt.runID {
+						t.Errorf("Expected run ID %s, got %s", tt.runID, handler.runID)
+					}
+				}
+			}
+		})
 	}
 }
