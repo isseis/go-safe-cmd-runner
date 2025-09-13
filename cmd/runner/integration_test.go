@@ -13,6 +13,26 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/terminal"
 )
 
+// validateTestError is a helper function to validate test errors consistently
+// across multiple test functions. It checks if the error matches the expected
+// error condition and optionally validates that the error message contains
+// a specific substring.
+func validateTestError(t *testing.T, err error, expectError bool, errorContains string) {
+	t.Helper()
+
+	if expectError {
+		if err == nil {
+			t.Errorf("Expected error but got none")
+		} else if errorContains != "" && !strings.Contains(err.Error(), errorContains) {
+			t.Errorf("Expected error to contain %q, but got: %v", errorContains, err)
+		}
+	} else {
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+	}
+}
+
 // TestSetupLoggerWithConfig_IntegrationWithNewHandlers tests the integration
 // of the new terminal-aware handlers with the existing logging system
 func TestSetupLoggerWithConfig_IntegrationWithNewHandlers(t *testing.T) {
@@ -448,17 +468,13 @@ cmd = ["echo", "integration-test"]
 
 			// Step 1: Hash directory validation
 			validatedHashDir, err := hashdir.GetWithValidation(&hashDir, cmdcommon.DefaultHashDirectory)
-			if tc.expectError {
-				if err == nil {
-					t.Errorf("Expected error but got none")
-				} else if tc.errorContains != "" && !strings.Contains(err.Error(), tc.errorContains) {
-					t.Errorf("Expected error to contain %q, but got: %v", tc.errorContains, err)
-				}
-				return
-			}
 
-			if err != nil {
-				t.Fatalf("Unexpected hash directory validation error: %v", err)
+			// Validate the error using the helper function
+			validateTestError(t, err, tc.expectError, tc.errorContains)
+
+			// If we expected an error, return early as the test is complete
+			if tc.expectError {
+				return
 			}
 
 			// Step 2: Verify config file exists and is readable
@@ -550,39 +566,33 @@ cmd = ["rm", "-rf", "/tmp/should-not-execute"]
 
 			_, err := hashdir.GetWithValidation(&hashDir, cmdcommon.DefaultHashDirectory)
 
-			if tc.expectError {
-				if err == nil {
-					t.Errorf("Expected error but got none")
-				} else if tc.errorContains != "" && !strings.Contains(err.Error(), tc.errorContains) {
-					t.Errorf("Expected error to contain %q, but got: %v", tc.errorContains, err)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("Unexpected error: %v", err)
-				} else {
-					// Verify config file is readable for successful cases
-					if _, err := os.Stat(configPath); err != nil {
-						t.Errorf("Config file should be readable: %v", err)
-					}
+			// Validate the error using the helper function
+			validateTestError(t, err, tc.expectError, tc.errorContains)
 
-					// Additional security validation for malicious config case
-					if tc.name == "malicious_config_file_content" {
-						// Verify that the malicious config file contains dangerous commands
-						// This validates that our test setup correctly creates a security risk scenario
-						configContent, readErr := os.ReadFile(configPath)
-						if readErr != nil {
-							t.Errorf("Failed to read malicious config: %v", readErr)
-						} else {
-							configStr := string(configContent)
-							// Verify the config contains the dangerous command pattern
-							if !strings.Contains(configStr, "rm") || !strings.Contains(configStr, "-rf") {
-								t.Errorf("Malicious config should contain dangerous rm -rf command pattern")
-							}
-							if !strings.Contains(configStr, "/tmp/should-not-execute") {
-								t.Errorf("Malicious config should target test-specific path")
-							}
-							t.Log("Malicious config properly contains dangerous command - would require dry-run or security controls for safe execution")
+			// Handle additional validation for successful cases
+			if !tc.expectError && err == nil {
+				// Verify config file is readable for successful cases
+				if _, err := os.Stat(configPath); err != nil {
+					t.Errorf("Config file should be readable: %v", err)
+				}
+
+				// Additional security validation for malicious config case
+				if tc.name == "malicious_config_file_content" {
+					// Verify that the malicious config file contains dangerous commands
+					// This validates that our test setup correctly creates a security risk scenario
+					configContent, readErr := os.ReadFile(configPath)
+					if readErr != nil {
+						t.Errorf("Failed to read malicious config: %v", readErr)
+					} else {
+						configStr := string(configContent)
+						// Verify the config contains the dangerous command pattern
+						if !strings.Contains(configStr, "rm") || !strings.Contains(configStr, "-rf") {
+							t.Errorf("Malicious config should contain dangerous rm -rf command pattern")
 						}
+						if !strings.Contains(configStr, "/tmp/should-not-execute") {
+							t.Errorf("Malicious config should target test-specific path")
+						}
+						t.Log("Malicious config properly contains dangerous command - would require dry-run or security controls for safe execution")
 					}
 				}
 			}
@@ -771,17 +781,8 @@ func TestSecurityBoundaryValidation(t *testing.T) {
 
 			_, err := hashdir.GetWithValidation(&hashDir, cmdcommon.DefaultHashDirectory)
 
-			if tc.expectError {
-				if err == nil {
-					t.Errorf("Expected error but got none")
-				} else if tc.errorContains != "" && !strings.Contains(err.Error(), tc.errorContains) {
-					t.Errorf("Expected error to contain %q, but got: %v", tc.errorContains, err)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("Unexpected error: %v", err)
-				}
-			}
+			// Validate the error using the helper function
+			validateTestError(t, err, tc.expectError, tc.errorContains)
 		})
 	}
 }
