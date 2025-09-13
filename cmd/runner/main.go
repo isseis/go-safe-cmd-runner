@@ -104,7 +104,7 @@ func run(runID string) error {
 	}
 
 	// Phase 2: Initialize verification manager with validated hash directory
-	verificationManager, err := bootstrap.InitializeVerificationManager(hashDirectory, cmdcommon.DefaultHashDirectory, runID)
+	verificationManager, err := bootstrap.InitializeVerificationManager(validatedHashDir, runID)
 	if err != nil {
 		return err
 	}
