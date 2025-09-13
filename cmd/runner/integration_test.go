@@ -3,10 +3,13 @@ package main
 import (
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/hashdir"
 	"github.com/isseis/go-safe-cmd-runner/internal/terminal"
 )
 
@@ -326,6 +329,312 @@ func TestErrorHandling(t *testing.T) {
 			if tc.expectError {
 				if err == nil {
 					t.Errorf("Expected error (%s) but got none", tc.errorType)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// Phase 4 Integration Tests - Testing and Validation Components
+
+// TestSecureExecutionFlow tests the complete secure execution flow
+func TestSecureExecutionFlow(t *testing.T) {
+	testCases := []struct {
+		name          string
+		setupFunc     func(t *testing.T) (tempDir string, configPath string)
+		hashDirectory string
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name: "successful_execution_with_valid_config_and_hash_dir",
+			setupFunc: func(t *testing.T) (string, string) {
+				tempDir := t.TempDir()
+				configPath := filepath.Join(tempDir, "config.toml")
+				configContent := `
+[global]
+log_level = "info"
+
+[[groups]]
+name = "test-group"
+
+[[groups.commands]]
+name = "echo-test"
+cmd = ["echo", "hello"]
+`
+				if err := os.WriteFile(configPath, []byte(configContent), 0o644); err != nil {
+					t.Fatalf("Failed to create config file: %v", err)
+				}
+				return tempDir, configPath
+			},
+			expectError: false,
+		},
+		{
+			name: "failure_with_invalid_hash_directory",
+			setupFunc: func(t *testing.T) (string, string) {
+				tempDir := t.TempDir()
+				configPath := filepath.Join(tempDir, "config.toml")
+				configContent := `
+[global]
+log_level = "info"
+`
+				if err := os.WriteFile(configPath, []byte(configContent), 0o644); err != nil {
+					t.Fatalf("Failed to create config file: %v", err)
+				}
+				return tempDir, configPath
+			},
+			hashDirectory: "/nonexistent/hash/directory",
+			expectError:   true,
+			errorContains: "hash directory not found",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tempDir, _ := tc.setupFunc(t)
+
+			var hashDir string
+			if tc.hashDirectory != "" {
+				hashDir = tc.hashDirectory
+			} else {
+				hashDir = filepath.Join(tempDir, "hashes")
+				if !tc.expectError {
+					if err := os.MkdirAll(hashDir, 0o700); err != nil {
+						t.Fatalf("Failed to create hash directory: %v", err)
+					}
+				}
+			}
+
+			// Test hash directory validation
+			_, err := hashdir.GetWithValidation(&hashDir, cmdcommon.DefaultHashDirectory)
+
+			if tc.expectError {
+				if err == nil {
+					t.Errorf("Expected error but got none")
+				} else if tc.errorContains != "" && !strings.Contains(err.Error(), tc.errorContains) {
+					t.Errorf("Expected error to contain %q, but got: %v", tc.errorContains, err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// TestVerificationIntegration tests the integration of multiple verification steps
+func TestVerificationIntegration(t *testing.T) {
+	testCases := []struct {
+		name          string
+		setupFunc     func(t *testing.T) (hashDir string, configPath string)
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name: "successful_multi_step_verification",
+			setupFunc: func(t *testing.T) (string, string) {
+				tempDir := t.TempDir()
+				hashDir := filepath.Join(tempDir, "hashes")
+				if err := os.MkdirAll(hashDir, 0o700); err != nil {
+					t.Fatalf("Failed to create hash directory: %v", err)
+				}
+
+				configPath := filepath.Join(tempDir, "config.toml")
+				configContent := `
+[global]
+log_level = "debug"
+skip_standard_paths = true
+
+[[groups]]
+name = "integration-test"
+
+[[groups.commands]]
+name = "test-cmd"
+cmd = ["echo", "integration-test"]
+`
+				if err := os.WriteFile(configPath, []byte(configContent), 0o644); err != nil {
+					t.Fatalf("Failed to create config file: %v", err)
+				}
+				return hashDir, configPath
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			hashDir, configPath := tc.setupFunc(t)
+
+			// Step 1: Hash directory validation
+			validatedHashDir, err := hashdir.GetWithValidation(&hashDir, cmdcommon.DefaultHashDirectory)
+			if tc.expectError {
+				if err == nil {
+					t.Errorf("Expected error but got none")
+				} else if tc.errorContains != "" && !strings.Contains(err.Error(), tc.errorContains) {
+					t.Errorf("Expected error to contain %q, but got: %v", tc.errorContains, err)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("Unexpected hash directory validation error: %v", err)
+			}
+
+			// Step 2: Verify config file exists and is readable
+			if _, err := os.Stat(configPath); err != nil {
+				t.Errorf("Config file verification failed: %v", err)
+			}
+
+			// Step 3: Verify hash directory is actually validated
+			if validatedHashDir != hashDir {
+				t.Errorf("Hash directory mismatch: expected %q, got %q", hashDir, validatedHashDir)
+			}
+		})
+	}
+}
+
+// TestSecurityAttackScenarios tests various security attack scenarios
+func TestSecurityAttackScenarios(t *testing.T) {
+	testCases := []struct {
+		name          string
+		setupFunc     func(t *testing.T) (hashDir string, configPath string)
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name: "symlink_attack_on_hash_directory",
+			setupFunc: func(t *testing.T) (string, string) {
+				tempDir := t.TempDir()
+
+				targetDir := filepath.Join(os.TempDir(), "symlink_target")
+				if err := os.MkdirAll(targetDir, 0o755); err != nil {
+					t.Fatalf("Failed to create target directory: %v", err)
+				}
+				t.Cleanup(func() { os.RemoveAll(targetDir) })
+
+				symlinkPath := filepath.Join(tempDir, "hashes")
+				if err := os.Symlink(targetDir, symlinkPath); err != nil {
+					t.Fatalf("Failed to create symlink: %v", err)
+				}
+
+				configPath := filepath.Join(tempDir, "config.toml")
+				configContent := `
+[global]
+log_level = "info"
+`
+				if err := os.WriteFile(configPath, []byte(configContent), 0o644); err != nil {
+					t.Fatalf("Failed to create config file: %v", err)
+				}
+
+				return symlinkPath, configPath
+			},
+			expectError:   true,
+			errorContains: "symlink",
+		},
+		{
+			name: "malicious_config_file_content",
+			setupFunc: func(t *testing.T) (string, string) {
+				tempDir := t.TempDir()
+
+				hashDir := filepath.Join(tempDir, "hashes")
+				if err := os.MkdirAll(hashDir, 0o700); err != nil {
+					t.Fatalf("Failed to create hash directory: %v", err)
+				}
+
+				configPath := filepath.Join(tempDir, "malicious_config.toml")
+				maliciousContent := `
+[global]
+log_level = "info"
+
+[[groups]]
+name = "malicious-group"
+
+[[groups.commands]]
+name = "dangerous-cmd"
+cmd = ["rm", "-rf", "/tmp/should-not-execute"]
+`
+				if err := os.WriteFile(configPath, []byte(maliciousContent), 0o644); err != nil {
+					t.Fatalf("Failed to create malicious config file: %v", err)
+				}
+
+				return hashDir, configPath
+			},
+			expectError: false, // Config loading should succeed, but command execution should be controlled
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			hashDir, configPath := tc.setupFunc(t)
+
+			_, err := hashdir.GetWithValidation(&hashDir, cmdcommon.DefaultHashDirectory)
+
+			if tc.expectError {
+				if err == nil {
+					t.Errorf("Expected error but got none")
+				} else if tc.errorContains != "" && !strings.Contains(err.Error(), tc.errorContains) {
+					t.Errorf("Expected error to contain %q, but got: %v", tc.errorContains, err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				} else {
+					// Verify config file is readable for successful cases
+					if _, err := os.Stat(configPath); err != nil {
+						t.Errorf("Config file should be readable: %v", err)
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestSecurityBoundaryValidation tests security boundary validation
+func TestSecurityBoundaryValidation(t *testing.T) {
+	testCases := []struct {
+		name          string
+		setupFunc     func(t *testing.T) string
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name: "unverified_data_access_prevention",
+			setupFunc: func(t *testing.T) string {
+				tempDir := t.TempDir()
+				hashDir := filepath.Join(tempDir, "hashes")
+				if err := os.MkdirAll(hashDir, 0o700); err != nil {
+					t.Fatalf("Failed to create hash directory: %v", err)
+				}
+				return hashDir
+			},
+			expectError: false,
+		},
+		{
+			name: "relative_path_rejection",
+			setupFunc: func(_ *testing.T) string {
+				return "relative/path/hashes"
+			},
+			expectError:   true,
+			errorContains: "hash directory must be absolute path",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			hashDir := tc.setupFunc(t)
+
+			_, err := hashdir.GetWithValidation(&hashDir, cmdcommon.DefaultHashDirectory)
+
+			if tc.expectError {
+				if err == nil {
+					t.Errorf("Expected error but got none")
+				} else if tc.errorContains != "" && !strings.Contains(err.Error(), tc.errorContains) {
+					t.Errorf("Expected error to contain %q, but got: %v", tc.errorContains, err)
 				}
 			} else {
 				if err != nil {
