@@ -14,6 +14,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/hashdir"
+	privilegetesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/terminal"
@@ -21,6 +22,9 @@ import (
 )
 
 // Mock implementations for testing
+// Note: MockExecutor and MockPathResolver are imported from internal/runner/resource/normal_manager_test.go
+// MockPrivilegeManager is imported from internal/runner/privilege/testing
+
 type MockExecutor struct {
 	mock.Mock
 }
@@ -35,30 +39,6 @@ func (m *MockExecutor) Execute(ctx context.Context, cmd runnertypes.Command, env
 
 func (m *MockExecutor) Validate(cmd runnertypes.Command) error {
 	args := m.Called(cmd)
-	return args.Error(0)
-}
-
-type MockPrivilegeManager struct {
-	mock.Mock
-}
-
-func (m *MockPrivilegeManager) IsPrivilegedExecutionSupported() bool {
-	args := m.Called()
-	return args.Bool(0)
-}
-
-func (m *MockPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) error {
-	args := m.Called(elevationCtx, fn)
-	return args.Error(0)
-}
-
-func (m *MockPrivilegeManager) IsUserGroupSupported() bool {
-	args := m.Called()
-	return args.Bool(0)
-}
-
-func (m *MockPrivilegeManager) WithUserGroup(user, group string, fn func() error) error {
-	args := m.Called(user, group, fn)
 	return args.Error(0)
 }
 
@@ -755,13 +735,8 @@ func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 
 			// Create DryRunResourceManager with mocks
 			mockExec := &MockExecutor{}
-			mockPriv := &MockPrivilegeManager{}
+			mockPriv := privilegetesting.NewMockPrivilegeManager(true)
 			mockPathResolver := &MockPathResolver{}
-
-			// Setup mock expectations
-			mockPriv.On("IsPrivilegedExecutionSupported").Return(true)
-			mockPriv.On("IsUserGroupSupported").Return(true)
-			mockPriv.On("WithPrivileges", mock.Anything, mock.Anything).Return(nil)
 
 			// Setup command path resolution
 			mockPathResolver.On("ResolvePath", tc.cmd.Cmd).Return("/usr/bin/"+tc.cmd.Cmd, nil)
