@@ -37,7 +37,6 @@ func (e SilentExitError) Error() string {
 
 var (
 	configPath       = flag.String("config", "", "path to config file")
-	envFile          = flag.String("env-file", "", "path to environment file")
 	logLevel         = flag.String("log-level", "info", "log level (debug, info, warn, error)")
 	logDir           = flag.String("log-dir", "", "directory to place per-run JSON log (auto-named). Overrides TOML/env if set.")
 	dryRun           = flag.Bool("dry-run", false, "print commands without executing them")
@@ -113,9 +112,8 @@ func run(runID string) error {
 		return nil
 	}
 
-	// Setup environment and logging
-	envFileToLoad, err := bootstrap.SetupEnvironmentAndLogging(*envFile, *logLevel, *logDir, runID, *forceInteractive, *forceQuiet)
-	if err != nil {
+	// Setup logging
+	if err := bootstrap.SetupLogging(*logLevel, *logDir, runID, *forceInteractive, *forceQuiet); err != nil {
 		return err
 	}
 
@@ -126,16 +124,16 @@ func run(runID string) error {
 	}
 
 	// Perform file verification
-	if err := filecheck.PerformFileVerification(verificationManager, cfg, *configPath, envFileToLoad, runID); err != nil {
+	if err := filecheck.PerformFileVerification(verificationManager, cfg, *configPath, runID); err != nil {
 		return err
 	}
 
 	// Initialize and execute runner
-	return executeRunner(ctx, cfg, verificationManager, envFileToLoad, runID)
+	return executeRunner(ctx, cfg, verificationManager, runID)
 }
 
 // executeRunner initializes and executes the runner with proper cleanup
-func executeRunner(ctx context.Context, cfg *runnertypes.Config, verificationManager *verification.Manager, envFileToLoad, runID string) error {
+func executeRunner(ctx context.Context, cfg *runnertypes.Config, verificationManager *verification.Manager, runID string) error {
 	// Initialize privilege manager
 	logger := slog.Default()
 	privMgr := privilege.NewManager(logger)
@@ -185,8 +183,8 @@ func executeRunner(ctx context.Context, cfg *runnertypes.Config, verificationMan
 		return fmt.Errorf("failed to initialize runner: %w", err)
 	}
 
-	// Load environment variables from file and system environment
-	if err := runner.LoadEnvironment(envFileToLoad, true); err != nil {
+	// Load system environment variables
+	if err := runner.LoadSystemEnvironment(); err != nil {
 		return fmt.Errorf("failed to load environment: %w", err)
 	}
 

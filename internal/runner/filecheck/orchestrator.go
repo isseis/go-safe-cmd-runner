@@ -38,47 +38,10 @@ func PerformConfigFileVerification(verificationManager *verification.Manager, co
 	return nil
 }
 
-// PerformEnvironmentFileVerification verifies environment file integrity
-func PerformEnvironmentFileVerification(verificationManager *verification.Manager, envFilePath, runID string) error {
-	if envFilePath == "" {
-		slog.Debug("No environment file specified, skipping verification", "run_id", runID)
-		return nil
-	}
-
-	if err := verificationManager.VerifyEnvironmentFile(envFilePath); err != nil {
-		// Environment file verification failure is CRITICAL - terminate execution for security
-		classifiedErr := runnererrors.ClassifyVerificationError(
-			runnererrors.ErrorTypeEnvironmentVerification,
-			runnererrors.ErrorSeverityCritical,
-			fmt.Sprintf("Environment file verification failed: %s", envFilePath),
-			envFilePath,
-			err,
-		)
-		runnererrors.LogClassifiedError(classifiedErr)
-
-		return &logging.PreExecutionError{
-			Type:      logging.ErrorTypeFileAccess,
-			Message:   fmt.Sprintf("Environment file verification failed: %v", err),
-			Component: "verification",
-			RunID:     runID,
-		}
-	}
-
-	slog.Info("Environment file verification completed successfully",
-		"env_file", envFilePath,
-		"run_id", runID)
-	return nil
-}
-
-// PerformFileVerification verifies configuration, environment, and global files
-func PerformFileVerification(verificationManager *verification.Manager, cfg *runnertypes.Config, configPath, envFileToLoad, runID string) error {
+// PerformFileVerification verifies configuration and global files
+func PerformFileVerification(verificationManager *verification.Manager, cfg *runnertypes.Config, configPath, runID string) error {
 	// Verify configuration file integrity - CRITICAL
 	if err := PerformConfigFileVerification(verificationManager, configPath, runID); err != nil {
-		return err
-	}
-
-	// Verify environment file integrity - CRITICAL
-	if err := PerformEnvironmentFileVerification(verificationManager, envFileToLoad, runID); err != nil {
 		return err
 	}
 
