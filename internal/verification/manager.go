@@ -394,31 +394,13 @@ func (m *Manager) ResolvePath(command string) (string, error) {
 // verifyFileWithFallback attempts file verification with normal privileges first,
 // then falls back to privileged verification if permission errors occur
 func (m *Manager) verifyFileWithFallback(filePath string) error {
-	// Try normal verification first
-	err := m.fileValidator.Verify(filePath)
-	if err == nil {
-		return nil // Success with normal privileges
+	normalOp := func() error {
+		return m.fileValidator.Verify(filePath)
 	}
-
-	// Check if this is a permission-related error that might be resolved with privilege escalation
-	if !isPermissionRelatedError(err) {
-		return err // Return original error for non-permission issues
+	privilegedOp := func() error {
+		return m.fileValidator.VerifyWithPrivileges(filePath, m.privilegeManager)
 	}
-
-	// Permission error detected - try with privilege escalation if available
-	if m.privilegeManager == nil {
-		slog.Debug("Permission error encountered but no privilege manager available",
-			"file", filePath,
-			"error", err)
-		return err // Return original permission error
-	}
-
-	slog.Debug("Attempting privileged file verification",
-		"file", filePath,
-		"reason", "permission_denied_normal_access")
-
-	// Try verification with privileges
-	return m.fileValidator.VerifyWithPrivileges(filePath, m.privilegeManager)
+	return m.executeWithPrivilegeFallback(filePath, normalOp, privilegedOp, "file_verification")
 }
 
 // isPermissionRelatedError checks if an error is related to file permissions
@@ -441,13 +423,47 @@ func isPermissionRelatedError(err error) bool {
 	return false
 }
 
-// readAndVerifyFileWithFallback attempts file reading and verification with normal privileges first,
-// then falls back to privileged access if permission errors occur
-func (m *Manager) readAndVerifyFileWithFallback(filePath string) ([]byte, error) {
-	// Try normal verification and reading first
-	content, err := m.fileValidator.VerifyAndRead(filePath)
+// executeWithPrivilegeFallback executes normal and privileged operations with fallback logic.
+// It first attempts the normal operation, and if it encounters a permission error and a privilege
+// manager is available, it falls back to the privileged operation.
+func (m *Manager) executeWithPrivilegeFallback(filePath string, normalOp func() error, privilegedOp func() error, operationName string) error {
+	// Try normal operation first
+	err := normalOp()
 	if err == nil {
-		return content, nil // Success with normal privileges
+		return nil // Success with normal privileges
+	}
+
+	// Check if this is a permission-related error that might be resolved with privilege escalation
+	if !isPermissionRelatedError(err) {
+		return err // Return original error for non-permission issues
+	}
+
+	// Permission error detected - try with privilege escalation if available
+	if m.privilegeManager == nil {
+		slog.Debug("Permission error encountered but no privilege manager available",
+			"file", filePath,
+			"operation", operationName,
+			"error", err)
+		return err // Return original permission error
+	}
+
+	slog.Debug("Attempting privileged operation",
+		"file", filePath,
+		"operation", operationName,
+		"reason", "permission_denied_normal_access")
+
+	// Try operation with privileges
+	return privilegedOp()
+}
+
+// executeWithPrivilegeFallbackForRead executes read operations with fallback logic.
+// It first attempts the normal operation, and if it encounters a permission error and a privilege
+// manager is available, it falls back to the privileged operation.
+func (m *Manager) executeWithPrivilegeFallbackForRead(filePath string, normalOp func() ([]byte, error), privilegedOp func() ([]byte, error), operationName string) ([]byte, error) {
+	// Try normal operation first
+	result, err := normalOp()
+	if err == nil {
+		return result, nil // Success with normal privileges
 	}
 
 	// Check if this is a permission-related error that might be resolved with privilege escalation
@@ -459,14 +475,28 @@ func (m *Manager) readAndVerifyFileWithFallback(filePath string) ([]byte, error)
 	if m.privilegeManager == nil {
 		slog.Debug("Permission error encountered but no privilege manager available",
 			"file", filePath,
+			"operation", operationName,
 			"error", err)
 		return nil, err // Return original permission error
 	}
 
-	slog.Debug("Attempting privileged file verification and reading",
+	slog.Debug("Attempting privileged operation",
 		"file", filePath,
+		"operation", operationName,
 		"reason", "permission_denied_normal_access")
 
-	// Try verification and reading with privileges
-	return m.fileValidator.VerifyAndReadWithPrivileges(filePath, m.privilegeManager)
+	// Try operation with privileges
+	return privilegedOp()
+}
+
+// readAndVerifyFileWithFallback attempts file reading and verification with normal privileges first,
+// then falls back to privileged access if permission errors occur
+func (m *Manager) readAndVerifyFileWithFallback(filePath string) ([]byte, error) {
+	normalOp := func() ([]byte, error) {
+		return m.fileValidator.VerifyAndRead(filePath)
+	}
+	privilegedOp := func() ([]byte, error) {
+		return m.fileValidator.VerifyAndReadWithPrivileges(filePath, m.privilegeManager)
+	}
+	return m.executeWithPrivilegeFallbackForRead(filePath, normalOp, privilegedOp, "file_verification_and_reading")
 }
