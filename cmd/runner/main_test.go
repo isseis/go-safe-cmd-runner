@@ -188,7 +188,7 @@ func TestGetHashDirectoryWithValidation(t *testing.T) {
 
 		// Create temporary directory for testing
 		tempDir := t.TempDir()
-		t.Setenv("HASH_DIRECTORY", tempDir)
+		t.Setenv("GSCR_HASH_DIRECTORY", tempDir)
 
 		os.Args = []string{"runner"}
 		flag.Parse()

@@ -144,7 +144,7 @@ func GetWithValidation(hashDirectory *string, defaultHashDirectory string) (stri
 	// Priority 1: Command line argument
 	if hashDirectory != nil && *hashDirectory != "" {
 		path = *hashDirectory
-	} else if envPath := os.Getenv("HASH_DIRECTORY"); envPath != "" {
+	} else if envPath := os.Getenv("GSCR_HASH_DIRECTORY"); envPath != "" {
 		// Priority 2: Environment variable
 		path = envPath
 	} else {

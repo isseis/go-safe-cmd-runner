@@ -103,7 +103,7 @@ internal/              # コア実装
 # カスタムログディレクトリとレベル
 ./runner -config config.toml -log-dir /var/log/go-safe-cmd-runner -log-level debug
 
-# Slack通知付きで実行（環境ファイルにSLACK_WEBHOOK_URLが必要）
+# Slack通知付きで実行（環境ファイルにGSCR_SLACK_WEBHOOK_URLが必要）
 ./runner -config config.toml -env-file .env
 
 # リスク評価のみモード（実行せずに解析）
@@ -244,7 +244,7 @@ run_as_user = "root"
 ```bash
 # 本番環境用の.envファイル
 # Slack通知用のwebhook URL
-SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK
+GSCR_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK
 
 # オプション: デフォルトログ設定の上書き
 LOG_LEVEL=info
@@ -391,7 +391,7 @@ go test -v ./internal/runner
 # 統合テストを実行
 make integration-test
 
-# Slack通知テストを実行（SLACK_WEBHOOK_URLが必要）
+# Slack通知テストを実行（GSCR_SLACK_WEBHOOK_URLが必要）
 make slack-notify-test
 make slack-group-notification-test
 ```
