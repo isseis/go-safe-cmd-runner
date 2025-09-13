@@ -33,6 +33,36 @@ func validateTestError(t *testing.T, err error, expectError bool, errorContains 
 	}
 }
 
+// validateMaliciousConfig validates that a malicious config file contains
+// expected dangerous patterns and target paths for security testing purposes.
+func validateMaliciousConfig(t *testing.T, configPath string, expectedPatterns []string, targetPath string) {
+	t.Helper()
+
+	// Verify that the malicious config file contains dangerous commands
+	// This validates that our test setup correctly creates a security risk scenario
+	configContent, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Errorf("Failed to read malicious config: %v", err)
+		return
+	}
+
+	configStr := string(configContent)
+
+	// Verify the config contains all expected dangerous patterns
+	for _, pattern := range expectedPatterns {
+		if !strings.Contains(configStr, pattern) {
+			t.Errorf("Malicious config should contain dangerous pattern %q", pattern)
+		}
+	}
+
+	// Verify the target path if specified
+	if targetPath != "" && !strings.Contains(configStr, targetPath) {
+		t.Errorf("Malicious config should target test-specific path %q", targetPath)
+	}
+
+	t.Log("Malicious config properly contains dangerous command - would require dry-run or security controls for safe execution")
+}
+
 // TestSetupLoggerWithConfig_IntegrationWithNewHandlers tests the integration
 // of the new terminal-aware handlers with the existing logging system
 func TestSetupLoggerWithConfig_IntegrationWithNewHandlers(t *testing.T) {
@@ -493,10 +523,13 @@ cmd = ["echo", "integration-test"]
 // TestSecurityAttackScenarios tests various security attack scenarios
 func TestSecurityAttackScenarios(t *testing.T) {
 	testCases := []struct {
-		name          string
-		setupFunc     func(t *testing.T) (hashDir string, configPath string)
-		expectError   bool
-		errorContains string
+		name             string
+		setupFunc        func(t *testing.T) (hashDir string, configPath string)
+		expectError      bool
+		errorContains    string
+		validateConfig   bool
+		expectedPatterns []string
+		targetPath       string
 	}{
 		{
 			name: "symlink_attack_on_hash_directory",
@@ -556,7 +589,10 @@ cmd = ["rm", "-rf", "/tmp/should-not-execute"]
 
 				return hashDir, configPath
 			},
-			expectError: false, // Config loading should succeed - actual command execution control tested in TestMaliciousConfigCommandControlSecurity
+			expectError:      false, // Config loading should succeed - actual command execution control tested in TestMaliciousConfigCommandControlSecurity
+			validateConfig:   true,
+			expectedPatterns: []string{"rm", "-rf"},
+			targetPath:       "/tmp/should-not-execute",
 		},
 	}
 
@@ -569,32 +605,25 @@ cmd = ["rm", "-rf", "/tmp/should-not-execute"]
 			// Validate the error using the helper function
 			validateTestError(t, err, tc.expectError, tc.errorContains)
 
-			// Handle additional validation for successful cases
-			if !tc.expectError && err == nil {
-				// Verify config file is readable for successful cases
-				if _, err := os.Stat(configPath); err != nil {
-					t.Errorf("Config file should be readable: %v", err)
-				}
+			// For expected error cases, we've completed validation
+			// No need to perform additional validations as the test's primary goal
+			// (error detection) has been achieved
+			if tc.expectError {
+				return
+			}
 
-				// Additional security validation for malicious config case
-				if tc.name == "malicious_config_file_content" {
-					// Verify that the malicious config file contains dangerous commands
-					// This validates that our test setup correctly creates a security risk scenario
-					configContent, readErr := os.ReadFile(configPath)
-					if readErr != nil {
-						t.Errorf("Failed to read malicious config: %v", readErr)
-					} else {
-						configStr := string(configContent)
-						// Verify the config contains the dangerous command pattern
-						if !strings.Contains(configStr, "rm") || !strings.Contains(configStr, "-rf") {
-							t.Errorf("Malicious config should contain dangerous rm -rf command pattern")
-						}
-						if !strings.Contains(configStr, "/tmp/should-not-execute") {
-							t.Errorf("Malicious config should target test-specific path")
-						}
-						t.Log("Malicious config properly contains dangerous command - would require dry-run or security controls for safe execution")
-					}
-				}
+			// Continue with additional validations even if hash validation failed
+			// This provides more comprehensive diagnostic information
+
+			// Verify config file is readable (independent of hash directory validation)
+			if _, statErr := os.Stat(configPath); statErr != nil {
+				t.Errorf("Config file should be readable: %v", statErr)
+				// Continue to next validation - don't return early
+			}
+
+			// Perform additional security validation if required (independent of previous validations)
+			if tc.validateConfig {
+				validateMaliciousConfig(t, configPath, tc.expectedPatterns, tc.targetPath)
 			}
 		})
 	}
