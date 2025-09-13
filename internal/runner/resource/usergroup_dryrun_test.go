@@ -6,6 +6,7 @@ import (
 	"context"
 	"testing"
 
+	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testing"
 	privilegetesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
@@ -13,11 +14,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// MockExecutor and related types are defined in normal_manager_test.go
+// MockExecutor is now imported from internal/runner/executor/testing
 
 func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 	t.Run("valid_user_group_specification", func(t *testing.T) {
-		mockExec := &MockExecutor{}
+		mockExec := executortesting.NewMockExecutor()
 		mockPriv := privilegetesting.NewMockPrivilegeManager(true)
 		mockPathResolver := &MockPathResolver{}
 		setupStandardCommandPaths(mockPathResolver)
@@ -59,7 +60,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 	})
 
 	t.Run("invalid_user_group_specification", func(t *testing.T) {
-		mockExec := &MockExecutor{}
+		mockExec := executortesting.NewMockExecutor()
 		mockPriv := privilegetesting.NewFailingMockPrivilegeManager(true) // Will fail user/group validation
 
 		mockPathResolver := &MockPathResolver{}
@@ -100,7 +101,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 	})
 
 	t.Run("user_group_not_supported", func(t *testing.T) {
-		mockExec := &MockExecutor{}
+		mockExec := executortesting.NewMockExecutor()
 		mockPriv := privilegetesting.NewMockPrivilegeManager(false) // Not supported
 
 		mockPathResolver := &MockPathResolver{}
@@ -138,7 +139,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 	})
 
 	t.Run("no_privilege_manager", func(t *testing.T) {
-		mockExec := &MockExecutor{}
+		mockExec := executortesting.NewMockExecutor()
 		// No privilege manager provided
 
 		mockPathResolver := &MockPathResolver{}
@@ -176,7 +177,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 	})
 
 	t.Run("only_user_specified", func(t *testing.T) {
-		mockExec := &MockExecutor{}
+		mockExec := executortesting.NewMockExecutor()
 		mockPriv := privilegetesting.NewMockPrivilegeManager(true)
 
 		mockPathResolver := &MockPathResolver{}
@@ -219,7 +220,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 	})
 
 	t.Run("no_user_group_specification", func(t *testing.T) {
-		mockExec := &MockExecutor{}
+		mockExec := executortesting.NewMockExecutor()
 		mockPriv := privilegetesting.NewMockPrivilegeManager(true)
 
 		mockPathResolver := &MockPathResolver{}

@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -14,7 +15,7 @@ import (
 // Test helper functions for dry-run manager
 
 func createTestDryRunResourceManager() *DryRunResourceManager {
-	mockExec := &MockExecutor{}
+	mockExec := executortesting.NewMockExecutor()
 	mockPriv := &MockPrivilegeManager{}
 	mockPathResolver := &MockPathResolver{}
 
@@ -152,7 +153,7 @@ func TestDryRunResourceManager_GetDryRunResults(t *testing.T) {
 
 func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 	// Create manager with standard command paths
-	mockExec := &MockExecutor{}
+	mockExec := executortesting.NewMockExecutor()
 	mockPriv := &MockPrivilegeManager{}
 	mockPathResolver := &MockPathResolver{}
 
@@ -274,7 +275,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 		require.NoError(t, err)
 
 		// Create a separate manager with setuid file path resolver
-		mockExec := &MockExecutor{}
+		mockExec := executortesting.NewMockExecutor()
 		mockPriv := &MockPrivilegeManager{}
 		mockPathResolver := &MockPathResolver{}
 
@@ -325,7 +326,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 }
 
 func TestDryRunResourceManager_PathResolverRequired(t *testing.T) {
-	mockExec := &MockExecutor{}
+	mockExec := executortesting.NewMockExecutor()
 	mockPriv := &MockPrivilegeManager{}
 	opts := &DryRunOptions{DetailLevel: DetailLevelDetailed}
 
@@ -336,7 +337,7 @@ func TestDryRunResourceManager_PathResolverRequired(t *testing.T) {
 }
 
 func TestDryRunResourceManager_PathResolutionFailure(t *testing.T) {
-	mockExec := &MockExecutor{}
+	mockExec := executortesting.NewMockExecutor()
 	mockPriv := &MockPrivilegeManager{}
 	mockPathResolver := &MockPathResolver{}
 

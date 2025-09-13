@@ -12,7 +12,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
+	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/hashdir"
 	privilegetesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
@@ -21,27 +21,7 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-// Mock implementations for testing
-// Note: MockExecutor and MockPathResolver are imported from internal/runner/resource/normal_manager_test.go
-// MockPrivilegeManager is imported from internal/runner/privilege/testing
-
-type MockExecutor struct {
-	mock.Mock
-}
-
-func (m *MockExecutor) Execute(ctx context.Context, cmd runnertypes.Command, env map[string]string) (*executor.Result, error) {
-	args := m.Called(ctx, cmd, env)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*executor.Result), args.Error(1)
-}
-
-func (m *MockExecutor) Validate(cmd runnertypes.Command) error {
-	args := m.Called(cmd)
-	return args.Error(0)
-}
-
+// MockPathResolver is defined locally as it's specific to resource management
 type MockPathResolver struct {
 	mock.Mock
 }
@@ -734,7 +714,7 @@ func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 			}
 
 			// Create DryRunResourceManager with mocks
-			mockExec := &MockExecutor{}
+			mockExec := executortesting.NewMockExecutor()
 			mockPriv := privilegetesting.NewMockPrivilegeManager(true)
 			mockPathResolver := &MockPathResolver{}
 

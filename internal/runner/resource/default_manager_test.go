@@ -6,13 +6,14 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
+	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
 func TestDefaultResourceManager_ModeDelegation(t *testing.T) {
-	mockExec := &MockExecutor{}
+	mockExec := executortesting.NewMockExecutor()
 	mockFS := &MockFileSystem{}
 	mockPriv := &MockPrivilegeManager{}
 	mockPathResolver := &MockPathResolver{}
@@ -50,7 +51,7 @@ func TestDefaultResourceManager_ModeDelegation(t *testing.T) {
 }
 
 func TestDefaultResourceManager_TempDirDelegation(t *testing.T) {
-	mockExec := &MockExecutor{}
+	mockExec := executortesting.NewMockExecutor()
 	mockFS := &MockFileSystem{}
 	mockPriv := &MockPrivilegeManager{}
 	mockPathResolver := &MockPathResolver{}
@@ -78,7 +79,7 @@ func TestDefaultResourceManager_TempDirDelegation(t *testing.T) {
 }
 
 func TestDefaultResourceManager_PrivilegesAndNotifications(t *testing.T) {
-	mockExec := &MockExecutor{}
+	mockExec := executortesting.NewMockExecutor()
 	mockFS := &MockFileSystem{}
 	mockPriv := &MockPrivilegeManager{}
 	mockPathResolver := &MockPathResolver{}
