@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
+	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/hashdir"
 	"github.com/isseis/go-safe-cmd-runner/internal/terminal"
@@ -783,7 +785,7 @@ func TestSecurityBoundaryValidation(t *testing.T) {
 		errorContains string
 	}{
 		{
-			name: "unverified_data_access_prevention",
+			name: "successful_validation_with_existing_directory",
 			setupFunc: func(t *testing.T) string {
 				tempDir := t.TempDir()
 				hashDir := filepath.Join(tempDir, "hashes")
@@ -814,4 +816,41 @@ func TestSecurityBoundaryValidation(t *testing.T) {
 			validateTestError(t, err, tc.expectError, tc.errorContains)
 		})
 	}
+}
+
+// TestUnverifiedDataAccessPrevention tests that access to unverified data is properly prevented
+func TestUnverifiedDataAccessPrevention(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Create hash directory
+	hashDir := filepath.Join(tempDir, "hashes")
+	if err := os.MkdirAll(hashDir, 0o700); err != nil {
+		t.Fatalf("Failed to create hash directory: %v", err)
+	}
+
+	// Create a data file that has no corresponding hash file (unverified data)
+	unverifiedFile := filepath.Join(tempDir, "unverified_data.txt")
+	if err := os.WriteFile(unverifiedFile, []byte("sensitive unverified data"), 0o644); err != nil {
+		t.Fatalf("Failed to create unverified data file: %v", err)
+	}
+
+	// Attempt to verify the unverified file - this should fail
+	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
+	if err != nil {
+		t.Fatalf("Failed to create validator: %v", err)
+	}
+
+	// Test that verification of unverified data fails appropriately
+	err = validator.Verify(unverifiedFile)
+	if err == nil {
+		t.Error("Expected verification to fail for unverified data, but it succeeded")
+		return
+	}
+
+	// Verify that the error is the expected hash file not found error
+	if !errors.Is(err, filevalidator.ErrHashFileNotFound) {
+		t.Errorf("Expected ErrHashFileNotFound, but got: %v", err)
+	}
+
+	t.Log("Successfully prevented access to unverified data - hash verification properly failed")
 }
