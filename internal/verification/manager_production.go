@@ -60,9 +60,8 @@ func validateProductionConstraints(hashDir string) error {
 		)
 	}
 
-	// Additional security checks can be added here
-	// For example: directory ownership, permissions, etc.
-
+	// Additional checks are redundant here since ValidateHashDirectory is
+	// called when manager is used.
 	slog.Debug("Production constraints validated successfully",
 		"hash_directory", hashDir,
 		"default_directory", defaultHashDirectory)
