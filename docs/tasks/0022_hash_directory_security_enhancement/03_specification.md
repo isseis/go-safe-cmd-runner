@@ -1771,9 +1771,3 @@ func (m *Manager) reset() {
     // セキュリティ上重要：前の使用状態が残らないよう確実にクリア
 }
 ```
-
-このように、要件定義書、アーキテクチャ設計書、詳細設計書を作成しました。次に実装計画書も作成しましょうか？
-
-<function_calls>
-<invoke name="TodoWrite">
-<parameter name="todos">[{"content": "docs/tasks\u30c7\u30a3\u30ec\u30af\u30c8\u30ea\u3092\u8abf\u67fb\u3057\u9069\u5207\u306a\u756a\u53f7\u3092\u6c7a\u5b9a\u3059\u308b", "status": "completed", "activeForm": "docs/tasks\u30c7\u30a3\u30ec\u30af\u30c8\u30ea\u3092\u8abf\u67fb\u3057\u9069\u5207\u306a\u756a\u53f7\u3092\u6c7a\u5b9a\u4e2d"}, {"content": "\u8981\u4ef6\u5b9a\u7fa9\u66f8\u3092\u4f5c\u6210\u3059\u308b", "status": "completed", "activeForm": "\u8981\u4ef6\u5b9a\u7fa9\u66f8\u3092\u4f5c\u6210\u4e2d"}, {"content": "\u30a2\u30fc\u30ad\u30c6\u30af\u30c1\u30e3\u8a2d\u8a08\u66f8\u3092\u4f5c\u6210\u3059\u308b", "status": "completed", "activeForm": "\u30a2\u30fc\u30ad\u30c6\u30af\u30c1\u30e3\u8a2d\u8a08\u66f8\u3092\u4f5c\u6210\u4e2d"}, {"content": "\u8a73\u7d30\u8a2d\u8a08\u66f8\u3092\u4f5c\u6210\u3059\u308b", "status": "completed", "activeForm": "\u8a73\u7d30\u8a2d\u8a08\u66f8\u3092\u4f5c\u6210\u4e2d"}, {"content": "\u5b9f\u88c5\u8a08\u753b\u66f8\u3092\u4f5c\u6210\u3059\u308b", "status": "in_progress", "activeForm": "\u5b9f\u88c5\u8a08\u753b\u66f8\u3092\u4f5c\u6210\u4e2d"}]
