@@ -148,9 +148,13 @@ func (e *HashDirectorySecurityError) Error() string {
 package verification
 
 import (
+    "fmt"
+    "log/slog"
     "runtime"
+    "time"
 
     "github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
+    "github.com/isseis/go-safe-cmd-runner/internal/runner/hashdir"
 )
 
 // NewManager creates a verification manager for production use
@@ -214,8 +218,10 @@ package verification
 
 import (
     "fmt"
+    "log/slog"
     "runtime"
     "strings"
+    "time"
 )
 
 // NewManagerForTest creates a verification manager for testing purposes
@@ -304,6 +310,7 @@ package verification
 import (
     "fmt"
     "log/slog"
+    "path/filepath"
 
     "github.com/isseis/go-safe-cmd-runner/internal/common"
     "github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
@@ -719,7 +726,7 @@ lint:
 	@echo "Security linting..."
 	golangci-lint run --config $(LINT_CONFIG)
 	@echo "Custom production API checks..."
-	@$(SECURITY_SCRIPT)
+	@$(ADDITIONAL_CHECKS)
 	@echo "✅ Linting completed"
 
 # Format code
@@ -903,7 +910,7 @@ generate_security_report() {
     local timestamp
     timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-    cat > additional-security-report.json << EOF
+    cat > security-check-report.json << EOF
 {
     "timestamp": "$timestamp",
     "check_type": "additional_security_validation",
@@ -922,7 +929,7 @@ generate_security_report() {
 }
 EOF
 
-    echo -e "${BLUE}Security report generated: additional-security-report.json${NC}"
+    echo -e "${BLUE}Security report generated: security-check-report.json${NC}"
 }
 
 # Main execution
@@ -1447,7 +1454,7 @@ func TestCustomHashDirectoryInTests(t *testing.T) {
 
 func TestSecurityViolationPrevention(t *testing.T) {
     t.Run("production mode prevents custom hash directory", func(t *testing.T) {
-        // この是正はプロダクション環境でのセキュリティテスト
+        // この検証はプロダクション環境でのセキュリティテスト
         // 実際のプロダクションビルドでは、NewManagerForTestは利用不可
 
         // プロダクションマネージャーは常にデフォルトディレクトリを使用
@@ -1660,84 +1667,5 @@ func mapSeverityToSecurityLevel(severity Severity) SecurityLevel {
     default:
         return SecurityLevelLow
     }
-}
-```
-
-## 7. パフォーマンス最適化設計
-
-### 7.1 ビルド時最適化
-
-#### コンパイル時最適化
-```go
-// internal/verification/build_optimization.go
-//go:build !testing
-
-package verification
-
-// Production build optimizations
-
-const (
-    // プロダクションビルドでは高速化を優先
-    EnableDebugLogging     = false
-    EnableDetailedMetrics  = false
-    EnableRuntimeChecks    = false
-    MaxConcurrentOperations = 10
-)
-
-func init() {
-    // プロダクション環境での初期化最適化
-    optimizeForProduction()
-}
-
-func optimizeForProduction() {
-    // ガベージコレクションの調整
-    // ログレベルの最適化
-    // メモリプールの事前割り当て等
-}
-```
-
-### 7.2 実行時最適化
-
-#### メモリプール設計
-```go
-// internal/verification/memory_pool.go
-
-import (
-    "sync"
-)
-
-// ManagerPool provides object pooling for Manager instances
-type ManagerPool struct {
-    pool sync.Pool
-}
-
-// GlobalManagerPool is the global instance of ManagerPool
-var GlobalManagerPool = &ManagerPool{
-    pool: sync.Pool{
-        New: func() interface{} {
-            // 新しいマネージャーインスタンスの作成
-            // 注意: これはプールされたインスタンスなので、
-            // 適切な初期化とリセットが必要
-            return &Manager{}
-        },
-    },
-}
-
-// Get retrieves a Manager from the pool
-func (mp *ManagerPool) Get() *Manager {
-    return mp.pool.Get().(*Manager)
-}
-
-// Put returns a Manager to the pool
-func (mp *ManagerPool) Put(manager *Manager) {
-    // リセット処理
-    manager.reset()
-    mp.pool.Put(manager)
-}
-
-// reset clears the Manager state for reuse
-func (m *Manager) reset() {
-    // 状態のリセット処理
-    // セキュリティ上重要：前の使用状態が残らないよう確実にクリア
 }
 ```

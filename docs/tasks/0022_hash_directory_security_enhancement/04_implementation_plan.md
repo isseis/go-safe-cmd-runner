@@ -447,10 +447,13 @@ ls -la build/ | awk '{print "Binary size: " $5}'
 #### 実行時モニタリング
 ```go
 // セキュリティイベントのログ監視
-slog.Info("Security event",
-    "event_type", "api_usage",
-    "api_name", "NewManager",
-    "caller", runtime.Caller(1))
+if _, file, line, ok := runtime.Caller(1); ok {
+    slog.Info("Security event",
+        "event_type", "api_usage",
+        "api_name", "NewManager",
+        "caller_file", file,
+        "caller_line", line)
+}
 ```
 
 ## 7. 完了基準

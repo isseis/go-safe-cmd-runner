@@ -313,12 +313,6 @@ test-full:
 ```yaml
 # .golangci-security.yml
 run:
-  # テストファイルとテスト専用ディレクトリを除外
-  skip-files:
-    - ".*_test\\.go$"
-    - ".*/testing/.*\\.go$"
-  skip-dirs:
-    - "internal/verification/testing"
   # タイムアウト設定（大きなプロジェクト向け）
   timeout: 5m
 
@@ -327,6 +321,12 @@ linters:
     - forbidigo
   disable-all: false
 
+# テストファイルをグローバルに除外（推奨方法）
+issues:
+  exclude-files:
+    - ".*_test\\.go$"
+    - ".*/testing/.*\\.go$"
+
 linters-settings:
   forbidigo:
     # テスト用API・削除されたAPI の使用を禁止
@@ -334,7 +334,6 @@ linters-settings:
       # テスト用API（プロダクションコードでは禁止）
       - p: 'verification\.NewManagerForTest\('
         msg: 'NewManagerForTest is only allowed in test files'
-        pkg: '^(?!.*_test\.go$).*'  # テストファイル以外で検出
 
       - p: 'verification\.newManagerInternal\('
         msg: 'newManagerInternal is internal API, use NewManager() instead'
