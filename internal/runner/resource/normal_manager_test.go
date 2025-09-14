@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
+	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -14,20 +15,7 @@ import (
 
 // Mock implementations for testing
 
-// MockExecutor implements executor.CommandExecutor for testing
-type MockExecutor struct {
-	mock.Mock
-}
-
-func (m *MockExecutor) Execute(ctx context.Context, cmd runnertypes.Command, env map[string]string) (*executor.Result, error) {
-	args := m.Called(ctx, cmd, env)
-	return args.Get(0).(*executor.Result), args.Error(1)
-}
-
-func (m *MockExecutor) Validate(cmd runnertypes.Command) error {
-	args := m.Called(cmd)
-	return args.Error(0)
-}
+// MockExecutor is now imported from internal/runner/executor/testing
 
 // MockFileSystem implements executor.FileSystem for testing
 type MockFileSystem struct {
@@ -108,8 +96,8 @@ var (
 
 // Test helper functions
 
-func createTestNormalResourceManager() (*NormalResourceManager, *MockExecutor, *MockFileSystem, *MockPrivilegeManager) {
-	mockExec := &MockExecutor{}
+func createTestNormalResourceManager() (*NormalResourceManager, *executortesting.MockExecutor, *MockFileSystem, *MockPrivilegeManager) {
+	mockExec := executortesting.NewMockExecutor()
 	mockFS := &MockFileSystem{}
 	mockPriv := &MockPrivilegeManager{}
 
