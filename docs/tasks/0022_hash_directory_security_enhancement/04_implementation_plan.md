@@ -111,8 +111,8 @@ graph TD
   - フラグ定義の検出ルール
 
 - [ ] **Task 2.2.2**: `scripts/additional-security-checks.sh` 作成
-  - forbidigo を補完する追加チェック
-  - バイナリセキュリティ検証
+  - バイナリセキュリティ検証（テストアーティファクト検出）
+  - ビルド環境整合性チェック
   - ビルドタグ検証機能
 
 #### 2.3 コマンドライン引数の削除
@@ -314,23 +314,25 @@ graph TD
 
     B --> E[NewManagerForTest検出]
     B --> F[newManagerInternal直接使用検出]
-    B --> G[hash-directory フラグ検出]
+    B --> G[削除済みAPI・フラグ検出]
+    B --> H[危険なimportパターン検出]
 
-    D --> H[バイナリセキュリティ検証]
-    D --> I[ビルドタグ検証]
-    D --> J[依存関係チェック]
+    D --> I[バイナリセキュリティ検証]
+    D --> J[ビルド環境整合性チェック]
+    D --> K[ビルドタグ検証]
 
-    E --> K[正確なエラー報告]
-    F --> K
-    G --> K
+    E --> L[正確なエラー報告]
+    F --> L
+    G --> L
+    H --> L
 
-    H --> L[バイナリ品質確認]
-    I --> L
-    J --> L
+    I --> M[バイナリ品質確認]
+    J --> M
+    K --> M
 
     style B fill:#c8e6c9
-    style K fill:#ffcdd2
-    style L fill:#e1f5fe
+    style L fill:#ffcdd2
+    style M fill:#e1f5fe
 ```
 
 ## 4. テスト計画
@@ -356,24 +358,26 @@ graph TD
 sequenceDiagram
     participant Dev as Developer
     participant CI as CI/CD
-    participant Security as Security Check
+    participant Security as golangci-lint forbidigo
     participant Build as Build Process
+    participant Additional as additional-security-checks.sh
     participant Test as Test Suite
 
     Dev->>CI: Code Push
-    CI->>Security: Run security-check
-    Security->>Security: API Usage Validation
-    Security->>Security: Build Tag Verification
-    Security->>CI: Security Report
+    CI->>Security: Run golangci-lint forbidigo
+    Security->>Security: AST-based API Validation
+    Security->>CI: Primary Security Report
 
-    alt Security Pass
+    alt Primary Security Pass
         CI->>Build: Production Build
         Build->>Build: Binary Validation
+        Build->>Additional: Run additional-security-checks.sh
+        Additional->>CI: Supplementary Security Report
         CI->>Test: Test Suite (with testing tag)
         Test->>Test: Unit Tests
         Test->>Test: Integration Tests
         Test->>CI: Test Results
-    else Security Fail
+    else Primary Security Fail
         CI->>Dev: Security Violation Alert
     end
 

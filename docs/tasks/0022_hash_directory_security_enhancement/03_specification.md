@@ -747,8 +747,8 @@ validate-production: build
 	@$(SCRIPTS_DIR)/validate-production-binary.sh $(BUILD_DIR)/runner
 	@echo "Testing basic functionality..."
 	@$(BUILD_DIR)/runner --help > /dev/null
-	@echo "Verifying no test APIs linked..."
-	@! strings $(BUILD_DIR)/runner | grep -i "NewManagerForTest" || (echo "❌ Test API found in production binary" && exit 1)
+	@echo "Running final binary validation..."
+	@$(ADDITIONAL_CHECKS)
 	@echo "✅ Production validation passed"
 
 # Development workflow
@@ -866,49 +866,33 @@ check_build_tags() {
     return $errors
 }
 
-# Function to check flag definitions
-check_flag_definitions() {
+# Function to check build environment consistency
+check_build_environment() {
     local errors=0
 
-    echo -e "${BLUE}Checking for forbidden flag definitions...${NC}"
+    echo -e "${BLUE}Checking build environment consistency...${NC}"
 
-    # Check for hash-directory flag definition
-    local flag_files
-    flag_files=$(find ./cmd/ -name "*.go" -type f -exec grep -l "hash-directory" {} \; 2>/dev/null || true)
+    # Check Go version
+    if command -v go >/dev/null 2>&1; then
+        local go_version=$(go version | grep -o 'go[0-9.]*' | head -1)
+        echo -e "${BLUE}Go version: ${go_version}${NC}"
 
-    if [ -n "$flag_files" ]; then
-        echo -e "${RED}❌ ERROR: hash-directory flag found in:${NC}"
-        echo "$flag_files" | while IFS= read -r file; do
-            echo -e "${RED}  - $file${NC}"
-            grep -n "hash-directory" "$file" | sed 's/^/    /'
-        done
-        errors=$((errors + 1))
+        # Basic version check (Go 1.23+)
+        if go version | grep -E 'go1\.(2[3-9]|[3-9][0-9])' >/dev/null; then
+            echo -e "${GREEN}✅ Go version is compatible${NC}"
+        else
+            echo -e "${YELLOW}⚠️  Go version may not support all features${NC}"
+        fi
     else
-        echo -e "${GREEN}✅ No hash-directory flag definitions found${NC}"
+        echo -e "${RED}❌ ERROR: Go not found${NC}"
+        errors=$((errors + 1))
     fi
 
-    return $errors
-}
-
-# Function to check import patterns
-check_import_patterns() {
-    local errors=0
-
-    echo -e "${BLUE}Checking import patterns...${NC}"
-
-    # Find production files importing testing-only packages
-    local problematic_imports
-    problematic_imports=$(find ./cmd/runner -name "*.go" ! -name "*_test.go" -type f | xargs grep -l "verification.*testing" 2>/dev/null || true)
-
-    if [ -n "$problematic_imports" ]; then
-        echo -e "${RED}❌ ERROR: Testing imports found in production code:${NC}"
-        echo "$problematic_imports" | while IFS= read -r file; do
-            echo -e "${RED}  - $file${NC}"
-            grep -n "verification.*testing" "$file" | sed 's/^/    /'
-        done
-        errors=$((errors + 1))
+    # Check golangci-lint availability
+    if command -v golangci-lint >/dev/null 2>&1; then
+        echo -e "${GREEN}✅ golangci-lint is available${NC}"
     else
-        echo -e "${GREEN}✅ No problematic testing imports found${NC}"
+        echo -e "${YELLOW}⚠️  golangci-lint not found (required for security validation)${NC}"
     fi
 
     return $errors
@@ -928,7 +912,7 @@ generate_security_report() {
     "details": {
         "binary_security_check": "completed",
         "build_tag_check": "completed",
-        "dependency_check": "completed"
+        "build_environment_check": "completed"
     },
     "summary": {
         "total_errors": $2,
@@ -961,12 +945,7 @@ main() {
     fi
     echo
 
-    if ! check_flag_definitions; then
-        total_errors=$((total_errors + $?))
-    fi
-    echo
-
-    if ! check_import_patterns; then
+    if ! check_build_environment; then
         total_errors=$((total_errors + $?))
     fi
     echo
@@ -1159,24 +1138,15 @@ jobs:
       run: |
         chmod +x build/*
 
-    - name: Final Security Validation
+    - name: Final Binary Security Validation
       run: |
         echo "::group::Final Security Validation"
-        # Binary analysis
+        # Use our standardized additional security checks
+        make security-check
+
+        # Basic binary analysis
         file build/runner
-        ldd build/runner || echo "Static binary - good!"
-
-        # String analysis for security
-        strings build/runner | grep -i "test" > strings-output.txt || true
-        if [ -s strings-output.txt ]; then
-          echo "::warning::Test-related strings found in production binary"
-          cat strings-output.txt
-        fi
-
-        # Check for debugging symbols
-        if file build/runner | grep -q "not stripped"; then
-          echo "::warning::Binary contains debugging symbols"
-        fi
+        echo "Binary size: $(stat -c%s build/runner | numfmt --to=iec-i --suffix=B)"
         echo "::endgroup::"
 
     - name: Deployment Ready Notification

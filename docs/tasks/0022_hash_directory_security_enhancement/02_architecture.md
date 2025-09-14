@@ -172,7 +172,7 @@ flowchart TD
 | 偽ハッシュディレクトリ攻撃 | `--hash-directory` による任意指定可能 | ✅ 完全防止 | コマンドライン引数削除 |
 | テスト用API悪用 | なし（新規対策） | ✅ ビルドタグ制約 | `//go:build testing` |
 | 内部API直接アクセス | なし（新規対策） | ✅ パッケージレベル制限 | internal package + 小文字関数 |
-| CI/CD環境での誤用 | なし（新規対策） | ✅ 自動検出 | grep + golangci-lint |
+| CI/CD環境での誤用 | なし（新規対策） | ✅ 自動検出 | golangci-lint forbidigo |
 
 ### 3.3 セキュリティ検証ポイント
 
@@ -181,17 +181,18 @@ flowchart TD
 // ✅ 許可されるパターン（プロダクション）
 manager, err := verification.NewManager()
 
-// ❌ コンパイルエラー（プロダクションビルドでは使用不可）
+// ❌ forbidigoによりビルド時エラー（プロダクションコードでは禁止）
 manager, err := verification.NewManagerForTest("/custom/path")
 ```
 
-#### Build-time Verification
+#### Build-time Verification (AST-based)
 ```bash
-# CI/CDでの自動チェック
-if grep -r "NewManagerForTest\|newManagerInternal" --include="*.go" --exclude="*_test.go" ./cmd/; then
-  echo "ERROR: Test-only API found in production code"
-  exit 1
-fi
+# forbidigoによる正確な検証
+golangci-lint run --config .golangci-security.yml ./...
+
+# 検出例:
+# ERROR: NewManagerForTest is only allowed in test files (forbidigo)
+# ERROR: hash-directory flag has been removed for security (forbidigo)
 ```
 
 ## 4. API設計
@@ -311,26 +312,56 @@ test-full:
 #### Forbidigo Linter Configuration
 ```yaml
 # .golangci-security.yml
+run:
+  # テストファイルとテスト専用ディレクトリを除外
+  skip-files:
+    - ".*_test\\.go$"
+    - ".*/testing/.*\\.go$"
+  skip-dirs:
+    - "internal/verification/testing"
+  # タイムアウト設定（大きなプロジェクト向け）
+  timeout: 5m
+
 linters:
   enable:
     - forbidigo
+  disable-all: false
 
 linters-settings:
   forbidigo:
+    # テスト用API・削除されたAPI の使用を禁止
     forbid:
       # テスト用API（プロダクションコードでは禁止）
       - p: 'verification\.NewManagerForTest\('
         msg: 'NewManagerForTest is only allowed in test files'
+        pkg: '^(?!.*_test\.go$).*'  # テストファイル以外で検出
+
       - p: 'verification\.newManagerInternal\('
         msg: 'newManagerInternal is internal API, use NewManager() instead'
-      # 削除されたフラグ使用の検出
+
+      # 削除されたハッシュディレクトリ関連API
+      - p: 'hashdir\.GetWithValidation'
+        msg: 'GetWithValidation has been removed, use verification.NewManager() instead'
+
+      - p: 'hashdir\.GetHashDir'
+        msg: 'GetHashDir has been removed for security'
+
+      # 削除されたコマンドラインフラグ
       - p: 'flag\.String.*hash-directory'
         msg: 'hash-directory flag has been removed for security'
+
+      # 危険なimportパターン
+      - p: 'import.*".*verification/testing.*"'
+        msg: 'testing packages should not be imported in production code'
+
     # AST解析を有効化（より正確な検出）
     analyze-types: true
-    # テストファイルは除外
-    exclude-dirs:
-      - "*_test.go"
+
+issues:
+  # セキュリティルール違反は例外なし
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
 ```
 
 ### 5.3 CI/CD Integration
@@ -351,14 +382,14 @@ jobs:
         with:
           go-version: '1.23.10'
 
-      - name: Security linting with forbidigo
+      - name: Primary security validation
         run: |
-          echo "Running AST-based security validation..."
+          echo "Running AST-based security validation with forbidigo..."
           golangci-lint run --config .golangci-security.yml ./...
 
-      - name: Additional security checks
+      - name: Supplementary security checks
         run: |
-          echo "Running supplementary security validation..."
+          echo "Running additional security validation..."
           make security-check
 ```
 
