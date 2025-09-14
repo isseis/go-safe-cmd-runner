@@ -791,7 +791,7 @@ help:
 
 set -euo pipefail
 
-echo "=== Production API Usage Security Check ==="
+echo "=== Additional Security Validation ==="
 
 # Color definitions for output
 RED='\033[0;31m'
@@ -802,13 +802,7 @@ NC='\033[0m' # No Color
 
 # Configuration
 PRODUCTION_PATHS=("./cmd/runner" "./internal/runner" "./internal/verification")
-TEST_ONLY_APIS=(
-    "NewManagerForTest"
-    "newManagerInternal"
-    "NewManagerWithCustomHashDir"
-    "CreateManagerForTesting"
-)
-EXCLUDED_PATTERNS=("*_test.go" "*/testing/*" "*/testutil/*")
+BUILD_DIR="./build"
 
 # Function to check for binary security properties
 check_binary_security() {
@@ -816,10 +810,10 @@ check_binary_security() {
 
     echo -e "${BLUE}Checking binary security properties...${NC}"
 
-    if [ -f "./build/runner" ]; then
+    if [ -f "${BUILD_DIR}/runner" ]; then
         # Check for test-related strings in production binary
         echo -e "${YELLOW}Scanning binary for test-related artifacts...${NC}"
-        if strings ./build/runner | grep -i -E "(test|debug|development)" > /tmp/binary_strings.txt 2>/dev/null; then
+        if strings "${BUILD_DIR}/runner" | grep -i -E "(test|debug|development)" > /tmp/binary_strings.txt 2>/dev/null; then
             if [ -s /tmp/binary_strings.txt ]; then
                 echo -e "${YELLOW}⚠️  Test-related strings found in production binary:${NC}"
                 head -10 /tmp/binary_strings.txt | sed 's/^/    /'
@@ -830,14 +824,14 @@ check_binary_security() {
         fi
 
         # Check if binary is stripped
-        if file ./build/runner | grep -q "not stripped"; then
+        if file "${BUILD_DIR}/runner" | grep -q "not stripped"; then
             echo -e "${YELLOW}⚠️  Binary contains debugging symbols (consider stripping)${NC}"
         else
             echo -e "${GREEN}✅ Binary is properly stripped${NC}"
         fi
 
         # Check binary size (basic sanity check)
-        local size=$(stat -f%z ./build/runner 2>/dev/null || stat -c%s ./build/runner 2>/dev/null || echo "0")
+        local size=$(stat -f%z "${BUILD_DIR}/runner" 2>/dev/null || stat -c%s "${BUILD_DIR}/runner" 2>/dev/null || echo "0")
         echo -e "${BLUE}Binary size: $(( size / 1024 / 1024 ))MB${NC}"
     else
         echo -e "${YELLOW}⚠️  Production binary not found, skipping binary security checks${NC}"
@@ -925,33 +919,33 @@ generate_security_report() {
     local timestamp
     timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-    cat > security-check-report.json << EOF
+    cat > additional-security-report.json << EOF
 {
     "timestamp": "$timestamp",
-    "check_type": "production_api_security",
+    "check_type": "additional_security_validation",
     "version": "1.0",
     "status": "$1",
     "details": {
-        "test_api_check": "completed",
+        "binary_security_check": "completed",
         "build_tag_check": "completed",
-        "flag_definition_check": "completed",
-        "import_pattern_check": "completed"
+        "dependency_check": "completed"
     },
     "summary": {
         "total_errors": $2,
-        "security_level": "maximum"
-    }
+        "security_level": "supplementary"
+    },
+    "note": "This complements the main golangci-lint forbidigo validation"
 }
 EOF
 
-    echo -e "${BLUE}Security report generated: security-check-report.json${NC}"
+    echo -e "${BLUE}Security report generated: additional-security-report.json${NC}"
 }
 
 # Main execution
 main() {
-    echo -e "${BLUE}Starting production API security validation...${NC}"
+    echo -e "${BLUE}Starting additional security validation...${NC}"
     echo -e "${BLUE}Target paths: ${PRODUCTION_PATHS[*]}${NC}"
-    echo -e "${BLUE}Test-only APIs: ${TEST_ONLY_APIS[*]}${NC}"
+    echo -e "${BLUE}Build directory: ${BUILD_DIR}${NC}"
     echo
 
     local total_errors=0
@@ -979,11 +973,11 @@ main() {
 
     # Generate report and exit with appropriate code
     if [ $total_errors -eq 0 ]; then
-        echo -e "${GREEN}✅ All security checks passed!${NC}"
+        echo -e "${GREEN}✅ All additional security checks passed!${NC}"
         generate_security_report "PASSED" $total_errors
         exit 0
     else
-        echo -e "${RED}❌ Security validation failed with $total_errors errors${NC}"
+        echo -e "${RED}❌ Additional security validation failed with $total_errors errors${NC}"
         generate_security_report "FAILED" $total_errors
         exit 1
     fi
