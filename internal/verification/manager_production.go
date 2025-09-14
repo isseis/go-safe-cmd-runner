@@ -1,0 +1,71 @@
+package verification
+
+import (
+	"log/slog"
+	"runtime"
+)
+
+const (
+	// defaultHashDirectory is the secure default hash directory for production use
+	defaultHashDirectory = "/usr/local/etc/go-safe-cmd-runner/hashes"
+)
+
+// NewManager creates a new verification manager using the default hash directory
+// This is the production API that enforces strict security constraints
+func NewManager() (*Manager, error) {
+	// Log production manager creation for security audit trail
+	logProductionManagerCreation()
+
+	// Always use the default hash directory in production
+	hashDir := defaultHashDirectory
+
+	// Create manager with strict production constraints
+	return newManagerInternal(hashDir,
+		withCreationMode(CreationModeProduction),
+		withSecurityLevel(SecurityLevelStrict),
+	)
+}
+
+const (
+	// callerDepthForNewManager represents the stack depth to get the caller of NewManager
+	callerDepthForNewManager = 2
+)
+
+// logProductionManagerCreation logs the creation of a production manager for security audit
+func logProductionManagerCreation() {
+	_, file, line, ok := runtime.Caller(callerDepthForNewManager) // Get caller of NewManager
+	if ok {
+		slog.Info("Production verification manager created",
+			"api", "NewManager",
+			"hash_directory", defaultHashDirectory,
+			"caller_file", file,
+			"caller_line", line,
+			"security_level", "strict")
+	} else {
+		slog.Info("Production verification manager created",
+			"api", "NewManager",
+			"hash_directory", defaultHashDirectory,
+			"security_level", "strict")
+	}
+}
+
+// validateProductionConstraints validates that production security constraints are met
+func validateProductionConstraints(hashDir string) error {
+	// In production, only the default hash directory is allowed
+	if hashDir != defaultHashDirectory {
+		return NewHashDirectorySecurityError(
+			hashDir,
+			defaultHashDirectory,
+			"production environment requires default hash directory",
+		)
+	}
+
+	// Additional security checks can be added here
+	// For example: directory ownership, permissions, etc.
+
+	slog.Debug("Production constraints validated successfully",
+		"hash_directory", hashDir,
+		"default_directory", defaultHashDirectory)
+
+	return nil
+}

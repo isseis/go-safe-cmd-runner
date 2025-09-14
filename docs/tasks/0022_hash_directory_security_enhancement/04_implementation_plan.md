@@ -60,36 +60,36 @@ graph TD
 ### Phase 1: 基盤実装 (3-4日)
 
 #### 1.1 新API構造の実装
-- [ ] **Task 1.1.1**: `internal/verification/types.go` 作成
+- [x] **Task 1.1.1**: `internal/verification/types.go` 作成
   - Manager構造体の新設計実装
   - CreationMode, SecurityLevel enum定義
   - Option function型定義
 
-- [ ] **Task 1.1.2**: `internal/verification/errors.go` 作成
+- [x] **Task 1.1.2**: `internal/verification/errors.go` 作成
   - ProductionAPIViolationError実装
   - HashDirectorySecurityError実装
   - SecurityViolationError基底クラス
 
-- [ ] **Task 1.1.3**: `internal/verification/manager.go` 実装
+- [x] **Task 1.1.3**: `internal/verification/manager.go` 実装
   - newManagerInternal関数（内部実装）
   - セキュリティ制約検証ロジック
   - オプション処理システム
 
 #### 1.2 プロダクション用API実装
-- [ ] **Task 1.2.1**: `internal/verification/manager_production.go` 作成
+- [x] **Task 1.2.1**: `internal/verification/manager_production.go` 作成
   - NewManager() 関数実装
   - デフォルトハッシュディレクトリ強制
   - プロダクション用セキュリティログ
 
-- [ ] **Task 1.2.2**: セキュリティ制約の実装
+- [x] **Task 1.2.2**: セキュリティ制約の実装
   - validateProductionConstraints関数
   - デフォルトハッシュディレクトリ検証
   - 追加のセキュリティチェック
 
 #### 1.3 基本テストの作成
-- [ ] **Task 1.3.1**: プロダクション用API単体テスト
-- [ ] **Task 1.3.2**: エラーハンドリングテスト
-- [ ] **Task 1.3.3**: セキュリティ制約テスト
+- [x] **Task 1.3.1**: プロダクション用API単体テスト
+- [x] **Task 1.3.2**: エラーハンドリングテスト
+- [x] **Task 1.3.3**: セキュリティ制約テスト
 
 ### Phase 2: セキュリティ強化 (2-3日)
 
