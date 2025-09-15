@@ -92,7 +92,14 @@ func run(runID string) error {
 	defer stop()
 
 	// Phase 1: Initialize verification manager with secure default hash directory
-	verificationManager, err := verification.NewManager()
+	// For dry-run mode, skip hash directory validation since no actual file verification is needed
+	var verificationManager *verification.Manager
+	var err error
+	if *dryRun {
+		verificationManager, err = verification.NewManagerForDryRun()
+	} else {
+		verificationManager, err = verification.NewManager()
+	}
 	if err != nil {
 		return &logging.PreExecutionError{
 			Type:      logging.ErrorTypeFileAccess,
