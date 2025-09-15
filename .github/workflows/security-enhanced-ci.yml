@@ -23,7 +23,7 @@ jobs:
           cache: true
 
       - name: Install Gosec
-        run: go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest
+        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
 
       - name: Run Gosec security scanner
         run: gosec -fmt sarif -out gosec-report.sarif -stdout -verbose=text ./...
