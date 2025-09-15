@@ -93,7 +93,7 @@ func NewManagerForTest(hashDir string, options ...TestOption) (*Manager, error) 
 	internalOpts.creationMode = CreationModeTesting
 	internalOpts.securityLevel = SecurityLevelRelaxed
 	internalOpts.skipHashDirectoryValidation = true
-	internalOpts.fileValidatorEnabled = false // Disable by default for testing
+	// Keep fileValidatorEnabled = true by default for proper testing
 
 	// Apply user-provided options
 	for _, opt := range options {
@@ -110,9 +110,7 @@ func NewManagerForTest(hashDir string, options ...TestOption) (*Manager, error) 
 		internalOptions = append(internalOptions, withSkipHashDirectoryValidationInternal())
 	}
 
-	if internalOpts.fileValidatorEnabled {
-		// File validator is enabled - don't add the disabled option
-	} else {
+	if !internalOpts.fileValidatorEnabled {
 		internalOptions = append(internalOptions, withFileValidatorDisabledInternal())
 	}
 

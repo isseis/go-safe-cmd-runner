@@ -54,9 +54,9 @@ func TestConfigPathRequired(t *testing.T) {
 	// Parse flags
 	flag.Parse()
 
-	// Test runForTest() function (test-specific version)
+	// Test runForTestWithTempHashDir() function to avoid CI hash directory issues
 	runID := "test-run-id"
-	err := runForTest(runID)
+	err := runForTestWithTempHashDir(runID)
 	if err == nil {
 		t.Error("expected error when --config is not provided")
 	}
@@ -75,8 +75,8 @@ func TestConfigPathRequired(t *testing.T) {
 
 func TestNewManagerProduction(t *testing.T) {
 	t.Run("creates manager with default hash directory", func(t *testing.T) {
-		// Production manager creation should use default hash directory
-		runErr, managerErr := runForTestWithManager()
+		// Use temporary hash directory to avoid CI environment issues
+		runErr, managerErr := runForTestWithManagerUsingTempDir()
 		if managerErr != nil {
 			t.Fatalf("manager creation should not fail: %v", managerErr)
 		}
