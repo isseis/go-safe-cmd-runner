@@ -28,7 +28,7 @@ def main():
         'command',
         nargs='?',
         default='all',
-        choices=['all', 'build-env', 'build-tags', 'patterns', 'binary'],
+        choices=['all', 'build-env', 'build-tags', 'patterns', 'binary', 'production-validation', 'build-security'],
         help='Security check to run'
     )
     parser.add_argument(
@@ -53,6 +53,10 @@ def main():
                 return 1
             success = (checker.check_binary_security(args.binary_path) and
                       checker.check_binary_permissions(args.binary_path))
+        elif args.command == 'production-validation':
+            success = checker.validate_production_binaries()
+        elif args.command == 'build-security':
+            success = checker.run_build_security_check()
         else:  # 'all' or default
             return checker.run_all_checks()
 

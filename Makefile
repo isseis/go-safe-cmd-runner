@@ -77,9 +77,14 @@ ENVSET=$(ENVCMD) -i \
 DEFAULT_HASH_DIRECTORY=/usr/local/etc/go-safe-cmd-runner/hashes
 
 BINARY_NAME=go-safe-cmd-runner
-BINARY_RECORD=build/record
-BINARY_VERIFY=build/verify
-BINARY_RUNNER=build/runner
+# Production binaries
+BINARY_RECORD=build/prod/record
+BINARY_VERIFY=build/prod/verify
+BINARY_RUNNER=build/prod/runner
+# Test binaries
+BINARY_TEST_RECORD=build/test/record
+BINARY_TEST_VERIFY=build/test/verify
+BINARY_TEST_RUNNER=build/test/runner
 
 # Build flags to embed configuration values
 # TODO: Add -s -w flags for production after stable operation
@@ -94,7 +99,7 @@ HASH_TARGETS := \
 	./sample/slack-notify.toml \
 	./sample/slack-group-notification-test.toml
 
-.PHONY: all lint build run clean test benchmark coverage hash integration-test integration-test-success slack-notify-test slack-group-notification-test fmt fmt-all
+.PHONY: all lint build run clean test benchmark coverage hash integration-test integration-test-success slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check
 
 all: build
 
@@ -102,17 +107,26 @@ lint:
 	$(GOLINT)
 
 # The phony 'build' target now depends on the actual binary file.
-build: $(BINARY_RECORD) $(BINARY_VERIFY) $(BINARY_RUNNER)
+build: security-check $(BINARY_RECORD) $(BINARY_VERIFY) $(BINARY_RUNNER)
+
+# Security check: Verify production binaries exclude test functions
+security-check:
+	$(PYTHON) scripts/additional-security-checks.py production-validation
+
+# Build with comprehensive security validation
+build-security-check:
+	$(PYTHON) scripts/additional-security-checks.py build-security
 
 # This rule tells make how to build the binary from the source files.
 # It will only run if the binary doesn't exist or if a .go file has changed.
+# Production binary build rules
 $(BINARY_RECORD): $(GO_SOURCES)
 	@$(MKDIR) $(@D)
-	$(GOBUILD) $(BUILD_FLAGS) -o build/record -v cmd/record/main.go
+	$(GOBUILD) $(BUILD_FLAGS) -o $@ -v cmd/record/main.go
 
 $(BINARY_VERIFY): $(GO_SOURCES)
 	@$(MKDIR) $(@D)
-	$(GOBUILD) $(BUILD_FLAGS) -o build/verify -v cmd/verify/main.go
+	$(GOBUILD) $(BUILD_FLAGS) -o $@ -v cmd/verify/main.go
 
 $(BINARY_RUNNER): $(GO_SOURCES)
 	@$(MKDIR) $(@D)
@@ -120,19 +134,39 @@ $(BINARY_RUNNER): $(GO_SOURCES)
 	$(SUDOCMD) $(CHOWN) root:root $@
 	$(SUDOCMD) $(CHMOD) u+s $@
 
+# Test binary build rules
+$(BINARY_TEST_RECORD): $(GO_SOURCES)
+	@$(MKDIR) $(@D)
+	$(GOBUILD) $(BUILD_FLAGS) -tags test -o $@ -v cmd/record/main.go
+
+$(BINARY_TEST_VERIFY): $(GO_SOURCES)
+	@$(MKDIR) $(@D)
+	$(GOBUILD) $(BUILD_FLAGS) -tags test -o $@ -v cmd/verify/main.go
+
+$(BINARY_TEST_RUNNER): $(GO_SOURCES)
+	@$(MKDIR) $(@D)
+	$(GOBUILD) $(BUILD_FLAGS) -tags test -o $@ -v cmd/runner/main.go
+
 clean:
 	$(GOCLEAN)
 	rm -f $(BINARY_RECORD) $(BINARY_VERIFY) $(BINARY_RUNNER)
+	rm -f $(BINARY_TEST_RECORD) $(BINARY_TEST_VERIFY) $(BINARY_TEST_RUNNER)
 	rm -f coverage.out coverage.html
 
 hash:
 	$(foreach file, $(HASH_TARGETS), \
 		$(SUDOCMD) $(BINARY_RECORD) -force -file $(file) -hash-dir $(DEFAULT_HASH_DIRECTORY);)
 
-test: $(BINARY_RUNNER)
+# Production build without test tags
+build-production: $(BINARY_RECORD) $(BINARY_VERIFY) $(BINARY_RUNNER)
+
+# Test build with test tags enabled
+build-test: $(BINARY_TEST_RECORD) $(BINARY_TEST_VERIFY) $(BINARY_TEST_RUNNER)
+
+test: build-test
 	$(ENVSET) CGO_ENABLED=1 $(GOTEST) -tags test -race -p 2 -v ./...
 	$(ENVSET) CGO_ENABLED=0 $(GOTEST) -tags test -p 2 -v ./...
-	$(ENVSET) $(BINARY_RUNNER) -dry-run -config ./sample/comprehensive.toml
+	$(ENVSET) $(BINARY_TEST_RUNNER) -dry-run -config ./sample/comprehensive.toml
 	$(PYTHON) scripts/test_additional_security_checks.py
 
 fmt:

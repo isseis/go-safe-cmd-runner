@@ -397,3 +397,107 @@ class SecurityChecker:
         else:
             self.print_error("Some security checks failed")
             return 1
+
+    def validate_production_binaries(self) -> bool:
+        """Comprehensive validation for production binaries."""
+        self.print_info("=== Production Binary Validation ===")
+
+        build_dir = Path("build")
+        if not build_dir.exists():
+            self.print_error("Build directory not found. Run 'make build' first.")
+            return False
+
+        binaries = ["record", "verify", "runner"]
+        all_passed = True
+
+        for binary_name in binaries:
+            binary_path = build_dir / binary_name
+
+            self.print_info(f"\n--- Validating {binary_name} ---")
+
+            # Check if binary exists
+            if not binary_path.is_file():
+                self.print_error(f"Binary not found: {binary_path}")
+                all_passed = False
+                continue
+
+            # Check binary properties
+            file_stat = binary_path.stat()
+            size_mb = file_stat.st_size / (1024 * 1024)
+            self.print_info(f"Binary size: {size_mb:.1f}MB ({file_stat.st_size} bytes)")
+
+            # Check permissions
+            if not self.check_binary_permissions(str(binary_path)):
+                all_passed = False
+
+            # Check security (test function exclusion)
+            if not self.check_binary_security(str(binary_path)):
+                all_passed = False
+
+            # Additional checks for runner binary (should have setuid)
+            if binary_name == "runner":
+                mode = file_stat.st_mode
+                if not (mode & stat.S_ISUID):
+                    self.print_warning("Runner binary does not have setuid bit (this is expected in CI)")
+                else:
+                    self.print_success("Runner binary has setuid bit set")
+
+        if all_passed:
+            self.print_success("=== All production binaries passed validation ===")
+        else:
+            self.print_error("=== Some production binaries failed validation ===")
+
+        return all_passed
+
+    def run_build_security_check(self) -> bool:
+        """Run comprehensive build and security check."""
+        self.print_info("=== Build Security Check ===")
+
+        success = True
+
+        # Step 1: Check build environment
+        self.print_info("\n--- Step 1: Build Environment ---")
+        if not self.check_build_environment():
+            success = False
+
+        # Step 2: Check Go modules
+        self.print_info("\n--- Step 2: Go Modules Verification ---")
+        try:
+            self.run_command(['go', 'mod', 'tidy'])
+            # Check if go mod tidy changed anything
+            result = self.run_command(['git', 'diff', '--name-only'], capture_output=True, check=False)
+            if result.stdout.strip():
+                self.print_error("go mod tidy resulted in changes. Please commit the changes first.")
+                success = False
+            else:
+                self.print_success("Go modules are up to date")
+        except subprocess.CalledProcessError as e:
+            self.print_error(f"Go modules check failed: {e}")
+            success = False
+
+        # Step 3: Build tags compliance
+        self.print_info("\n--- Step 3: Build Tags ---")
+        if not self.check_build_tags():
+            success = False
+
+        # Step 4: Forbidden patterns
+        self.print_info("\n--- Step 4: Code Patterns ---")
+        if not self.check_forbidden_patterns():
+            success = False
+
+        # Step 5: Production binary validation (if binaries exist)
+        self.print_info("\n--- Step 5: Production Binaries ---")
+        if Path("build").exists() and any(Path(f"build/{b}").exists() for b in ["record", "verify", "runner"]):
+            if not self.validate_production_binaries():
+                success = False
+        else:
+            self.print_info("No production binaries found - skipping binary validation")
+
+        # Summary
+        self.print_info("\n=== Build Security Check Summary ===")
+        if success:
+            self.print_success("All build security checks passed")
+        else:
+            self.print_error("Some build security checks failed")
+
+        return success
