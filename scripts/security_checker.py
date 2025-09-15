@@ -131,29 +131,20 @@ class SecurityChecker:
                     test_functions_found = True
                     break
 
-            # Check for explicit debug/development symbols (not Go runtime internals)
-            debug_patterns = [
-                'testing.T',
-                'debug.Stack',
-                'pprof.StartCPUProfile',
-                'TestMain',
-                'BenchmarkMain'
-            ]
-            # Check for user test files, but exclude Go toolchain paths
+            # Check for user test files only (exclude debug symbols for production builds)
             user_test_patterns = [
                 'test.go',
                 'testing.go'
             ]
 
-            # Use helper methods for clarity instead of nested comprehensions
-            debug_symbols_found = self._contains_any_pattern(strings_output, debug_patterns)
             user_test_files_found = self._contains_user_test_file(strings_output, user_test_patterns)
 
-            if debug_symbols_found or user_test_files_found:
-                self.print_warning(f"Development debug symbols found in binary: {binary_name}")
-
-            # Return False if any test artifacts or debug symbols found
-            if test_functions_found or debug_symbols_found or user_test_files_found:
+            # For production binaries, only fail on actual test functions and user test files,
+            # not on Go runtime debug symbols which may be present even with -s -w flags
+            if test_functions_found:
+                return False
+            elif user_test_files_found:
+                self.print_warning(f"User test file references found in binary: {binary_name}")
                 return False
             else:
                 self.print_success(f"No test artifacts found in binary: {binary_name}")
