@@ -23,6 +23,13 @@ repos:
         types: [go]
         pass_filenames: false
 
+    -   id: py test
+        name: python test
+        entry: python3 scripts/test_additional_security_checks.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
 -   repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:

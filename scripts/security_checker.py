@@ -47,19 +47,29 @@ class SecurityChecker:
         print(message)
 
     def run_command(self, cmd: List[str], capture_output: bool = True,
-                   check: bool = True) -> subprocess.CompletedProcess:
-        """Run a shell command and return the result."""
-        # Always run with check=False and handle errors explicitly so this
-        # function consistently returns a CompletedProcess on success.
+                                    check: bool = True) -> subprocess.CompletedProcess:
+        """Run a shell command and return the CompletedProcess.
+
+        Notes:
+        - The underlying subprocess.run is always invoked with check=False so
+            that this function can inspect the CompletedProcess regardless of
+            the child process exit code.
+        - If the caller passes check=True and the subprocess exit code is
+            non-zero, this function will raise subprocess.CalledProcessError to
+            signal failure. If check=False (the default behavior for the
+            internal run), the CompletedProcess is returned even for non-zero
+            exit codes.
+        """
         result = subprocess.run(
-            cmd,
-            capture_output=capture_output,
-            text=True,
-            check=False
+                cmd,
+                capture_output=capture_output,
+                text=True,
+                check=False
         )
 
         if check and result.returncode != 0:
-            raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
+                # Raise with stdout/stderr attached for caller convenience.
+                raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
 
         return result
 
