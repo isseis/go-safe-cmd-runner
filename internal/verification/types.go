@@ -2,7 +2,6 @@ package verification
 
 import (
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
 // CreationMode represents how the Manager was created
@@ -51,11 +50,11 @@ func (s SecurityLevel) String() string {
 
 // managerInternalOptions holds all configuration options for creating a Manager internally
 type managerInternalOptions struct {
-	fs                   common.FileSystem
-	fileValidatorEnabled bool
-	privilegeManager     runnertypes.PrivilegeManager
-	creationMode         CreationMode
-	securityLevel        SecurityLevel
+	fs                          common.FileSystem
+	fileValidatorEnabled        bool
+	creationMode                CreationMode
+	securityLevel               SecurityLevel
+	skipHashDirectoryValidation bool
 }
 
 func newInternalOptions() *managerInternalOptions {
@@ -98,10 +97,14 @@ func withFileValidatorDisabledInternal() InternalOption {
 	}
 }
 
-// withPrivilegeManagerInternal is an internal option for setting the privilege manager
-// Currently unused but may be needed for future privilege manager integration
-// func withPrivilegeManagerInternal(privMgr runnertypes.PrivilegeManager) InternalOption {
-// 	return func(opts *managerInternalOptions) {
-// 		opts.privilegeManager = privMgr
-// 	}
-// }
+// withSkipHashDirectoryValidationInternal is an internal option for skipping hash directory validation
+func withSkipHashDirectoryValidationInternal() InternalOption {
+	return func(opts *managerInternalOptions) {
+		opts.skipHashDirectoryValidation = true
+	}
+}
+
+// Ensure the internal option is referenced in non-test builds so linters
+// don't report it as unused. Tests will actively use this option, but
+// static analyzers run across packages/build tags and may flag it.
+var _ = withSkipHashDirectoryValidationInternal

@@ -37,6 +37,10 @@ jobs:
             go test -tags test -v -coverprofile=coverage-cgo${{ matrix.cgo }}.txt -covermode=atomic ./...
           fi
 
+      - name: Run additional security checks
+        if: matrix.cgo == 1
+        run: python3 scripts/test_additional_security_checks.py
+
       - name: Upload coverage to Codecov
         continue-on-error: true  # Don't fail the build if Codecov is rate limited
         uses: codecov/codecov-action@v3

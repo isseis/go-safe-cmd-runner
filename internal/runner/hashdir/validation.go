@@ -12,16 +12,6 @@ import (
 // ErrDefaultHashDirectoryNotAbsolute is returned when DefaultHashDirectory is not an absolute path
 var ErrDefaultHashDirectoryNotAbsolute = fmt.Errorf("default hash directory must be absolute path")
 
-// GetHashDir determines the hash directory based on command line args and default value
-func GetHashDir(hashDirectory *string, defaultHashDirectory string) string {
-	// Command line arguments take precedence over environment variables
-	if hashDirectory != nil && *hashDirectory != "" {
-		return *hashDirectory
-	}
-	// Set default hash directory if none specified
-	return defaultHashDirectory
-}
-
 // ValidateSecurely validates hash directory with security checks
 func ValidateSecurely(path string) (string, error) {
 	// Check if path is absolute
@@ -135,23 +125,4 @@ func ValidateDefaultHashDirectory(defaultHashDirectory string) error {
 		return fmt.Errorf("%w, got: %s", ErrDefaultHashDirectoryNotAbsolute, defaultHashDirectory)
 	}
 	return nil
-}
-
-// GetWithValidation determines hash directory with priority-based resolution and validation
-func GetWithValidation(hashDirectory *string, defaultHashDirectory string) (string, error) {
-	var path string
-
-	// Priority 1: Command line argument
-	if hashDirectory != nil && *hashDirectory != "" {
-		path = *hashDirectory
-	} else if envPath := os.Getenv("GSCR_HASH_DIRECTORY"); envPath != "" {
-		// Priority 2: Environment variable
-		path = envPath
-	} else {
-		// Priority 3: Default value (already validated at startup)
-		path = defaultHashDirectory
-	}
-
-	// Validate the resolved path securely
-	return ValidateSecurely(path)
 }

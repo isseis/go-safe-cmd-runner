@@ -15,12 +15,11 @@ import (
 
 // Manager provides file verification capabilities
 type Manager struct {
-	hashDir          string
-	fs               common.FileSystem
-	fileValidator    filevalidator.FileValidator
-	security         *security.Validator
-	pathResolver     *PathResolver
-	privilegeManager runnertypes.PrivilegeManager
+	hashDir       string
+	fs            common.FileSystem
+	fileValidator filevalidator.FileValidator
+	security      *security.Validator
+	pathResolver  *PathResolver
 }
 
 // VerifyConfigFile verifies the integrity of a configuration file
@@ -301,111 +300,13 @@ func (m *Manager) ResolvePath(command string) (string, error) {
 // verifyFileWithFallback attempts file verification with normal privileges first,
 // then falls back to privileged verification if permission errors occur
 func (m *Manager) verifyFileWithFallback(filePath string) error {
-	normalOp := func() error {
-		return m.fileValidator.Verify(filePath)
-	}
-	privilegedOp := func() error {
-		return m.fileValidator.VerifyWithPrivileges(filePath, m.privilegeManager)
-	}
-	return m.executeWithPrivilegeFallback(filePath, normalOp, privilegedOp, "file_verification")
-}
-
-// isPermissionRelatedError checks if an error is related to file permissions
-func isPermissionRelatedError(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	// Check for standard permission errors
-	if os.IsPermission(err) {
-		return true
-	}
-
-	// Check for path errors that might be permission-related
-	// This covers cases where intermediate directory permissions prevent access
-	if pathErr, ok := err.(*os.PathError); ok {
-		return os.IsPermission(pathErr.Err)
-	}
-
-	return false
-}
-
-// executeWithPrivilegeFallback executes normal and privileged operations with fallback logic.
-// It first attempts the normal operation, and if it encounters a permission error and a privilege
-// manager is available, it falls back to the privileged operation.
-func (m *Manager) executeWithPrivilegeFallback(filePath string, normalOp func() error, privilegedOp func() error, operationName string) error {
-	// Try normal operation first
-	err := normalOp()
-	if err == nil {
-		return nil // Success with normal privileges
-	}
-
-	// Check if this is a permission-related error that might be resolved with privilege escalation
-	if !isPermissionRelatedError(err) {
-		return err // Return original error for non-permission issues
-	}
-
-	// Permission error detected - try with privilege escalation if available
-	if m.privilegeManager == nil {
-		slog.Debug("Permission error encountered but no privilege manager available",
-			"file", filePath,
-			"operation", operationName,
-			"error", err)
-		return err // Return original permission error
-	}
-
-	slog.Debug("Attempting privileged operation",
-		"file", filePath,
-		"operation", operationName,
-		"reason", "permission_denied_normal_access")
-
-	// Try operation with privileges
-	return privilegedOp()
-}
-
-// executeWithPrivilegeFallbackForRead executes read operations with fallback logic.
-// It first attempts the normal operation, and if it encounters a permission error and a privilege
-// manager is available, it falls back to the privileged operation.
-func (m *Manager) executeWithPrivilegeFallbackForRead(filePath string, normalOp func() ([]byte, error), privilegedOp func() ([]byte, error), operationName string) ([]byte, error) {
-	// Try normal operation first
-	result, err := normalOp()
-	if err == nil {
-		return result, nil // Success with normal privileges
-	}
-
-	// Check if this is a permission-related error that might be resolved with privilege escalation
-	if !isPermissionRelatedError(err) {
-		return nil, err // Return original error for non-permission issues
-	}
-
-	// Permission error detected - try with privilege escalation if available
-	if m.privilegeManager == nil {
-		slog.Debug("Permission error encountered but no privilege manager available",
-			"file", filePath,
-			"operation", operationName,
-			"error", err)
-		return nil, err // Return original permission error
-	}
-
-	slog.Debug("Attempting privileged operation",
-		"file", filePath,
-		"operation", operationName,
-		"reason", "permission_denied_normal_access")
-
-	// Try operation with privileges
-	return privilegedOp()
+	return m.fileValidator.Verify(filePath)
 }
 
 // readAndVerifyFileWithFallback attempts file reading and verification with normal privileges first,
 // then falls back to privileged access if permission errors occur
 func (m *Manager) readAndVerifyFileWithFallback(filePath string) ([]byte, error) {
-	normalOp := func() ([]byte, error) {
-		return m.fileValidator.VerifyAndRead(filePath)
-	}
-	privilegedOp := func() ([]byte, error) {
-		return m.fileValidator.VerifyAndReadWithPrivileges(filePath, m.privilegeManager)
-	}
-	return m.executeWithPrivilegeFallbackForRead(filePath, normalOp, privilegedOp, "file_verification_and_reading")
+	return m.fileValidator.VerifyAndRead(filePath)
 }
 
 // newManagerInternal creates a new verification manager with internal configuration
@@ -431,9 +332,8 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 	}
 
 	manager := &Manager{
-		hashDir:          hashDir,
-		fs:               opts.fs,
-		privilegeManager: opts.privilegeManager,
+		hashDir: hashDir,
+		fs:      opts.fs,
 	}
 
 	// Initialize file validator with SHA256 algorithm
@@ -474,8 +374,11 @@ func validateSecurityConstraints(hashDir string, opts *managerInternalOptions) e
 	}
 
 	// Validate the hash directory itself using the provided filesystem
-	if err := validateHashDirectoryWithFS(hashDir, opts.fs); err != nil {
-		return err
+	// Skip validation if explicitly requested (typically for testing)
+	if !opts.skipHashDirectoryValidation {
+		if err := validateHashDirectoryWithFS(hashDir, opts.fs); err != nil {
+			return err
+		}
 	}
 
 	return nil

@@ -1,0 +1,112 @@
+version: "2"
+
+run:
+  timeout: 10m
+
+linters:
+  enable:
+    # Security-focused linters
+    - "forbidigo"   # Forbid specific function calls and patterns
+    - "gosec"       # Security linter
+    - "depguard"    # Forbid certain package imports
+
+linters-settings:
+  forbidigo:
+    # Forbid testing APIs from being used in production code
+    forbid:
+      - p: 'NewManagerForTest'
+        msg: 'NewManagerForTest is only allowed in test files'
+        pkg: 'github.com/isseis/go-safe-cmd-runner/internal/verification'
+
+      - p: 'newManagerInternal'
+        msg: 'newManagerInternal should not be called directly - use NewManager or NewManagerForTest'
+        pkg: 'github.com/isseis/go-safe-cmd-runner/internal/verification'
+
+      # Detect any remaining hash-directory flags or related constructs
+      - p: '--hash-directory'
+        msg: 'hash-directory flag has been removed for security reasons'
+
+      - p: 'flag\.String.*hash.*directory'
+        msg: 'custom hash directory flags are not allowed in production code'
+
+      - p: 'hashdir\.Get.*'
+        msg: 'hashdir.Get* functions have been replaced with verification.NewManager()'
+
+      # Detect dangerous import patterns
+      - p: '^import.*".*internal/verification.*"$'
+        msg: 'verification package should be imported through public APIs only'
+        exclude_files:
+          - '**/*_test.go'
+          - '**/internal/verification/**'
+
+    analyze_types: true
+
+  depguard:
+    rules:
+      production_security:
+        files:
+          - $all
+          - "!$test"
+          - "!**/internal/verification/**"
+        deny:
+          - pkg: "github.com/isseis/go-safe-cmd-runner/internal/verification"
+            desc: "verification package should only be used through bootstrap or cmd packages"
+        allow:
+          - $gostd
+          - github.com/isseis/go-safe-cmd-runner/internal/bootstrap
+          - github.com/isseis/go-safe-cmd-runner/cmd
+
+  gosec:
+    # Additional security rules
+    includes:
+      - G101  # Look for hardcoded credentials
+      - G102  # Bind to all interfaces
+      - G103  # Audit the use of unsafe block
+      - G104  # Audit errors not checked
+      - G106  # Audit the use of ssh.InsecureIgnoreHostKey
+      - G107  # Url provided to HTTP request as taint input
+      - G108  # Profiling endpoint automatically exposed on /debug/pprof
+      - G109  # Potential Integer overflow made by strconv.Atoi result conversion to int16/32
+      - G110  # Potential DoS vulnerability via decompression bomb
+      - G201  # SQL query construction using format string
+      - G202  # SQL query construction using string concatenation
+      - G203  # Use of unescaped data in HTML templates
+      - G204  # Audit use of command execution
+      - G301  # Poor file permissions used when creating a directory
+      - G302  # Poor file permissions used with chmod
+      - G303  # Creating tempfile using a predictable path
+      - G304  # File path provided as taint input
+      - G305  # File traversal when extracting zip/tar archive
+      - G306  # Poor file permissions used when writing to a new file
+      - G307  # Poor file permissions used when creating a file with os.Create
+      - G401  # Detect the usage of DES, RC4, MD5 or SHA1
+      - G402  # Look for bad TLS connection settings
+      - G403  # Ensure minimum RSA key length of 2048 bits
+      - G404  # Insecure random number source (rand)
+      - G501  # Import blocklist: crypto/md5
+      - G502  # Import blocklist: crypto/des
+      - G503  # Import blocklist: crypto/rc4
+      - G504  # Import blocklist: net/http/cgi
+      - G505  # Import blocklist: crypto/sha1
+      - G601  # Implicit memory aliasing of items from a range statement
+
+# Exclude test files from certain security checks
+issues:
+  exclude-rules:
+    # Allow testing APIs in test files
+    - path: _test\.go
+      linters:
+        - forbidigo
+      text: "NewManagerForTest is only allowed in test files"
+
+    # Allow internal package imports in test files
+    - path: _test\.go
+      linters:
+        - depguard
+      text: "verification package should only be used through bootstrap or cmd packages"
+
+    # Allow verification package usage within its own directory
+    - path: internal/verification/.*\.go
+      linters:
+        - depguard
+      text: "verification package should only be used through bootstrap or cmd packages"

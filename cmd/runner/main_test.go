@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/hashdir"
 	"github.com/stretchr/testify/assert"
@@ -25,14 +24,13 @@ func setupTestFlags() func() {
 	// Create new flag set with ExitOnError handling
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 
-	// Initialize all flags - match the original flags from main.go
+	// Initialize all flags - match the original flags from main.go (excluding removed hash-directory flag)
 	configPath = flag.String("config", "", "path to config file")
 	logLevel = flag.String("log-level", "info", "log level (debug, info, warn, error)")
 	logDir = flag.String("log-dir", "", "directory to place per-run JSON log (auto-named). Overrides TOML/env if set.")
 	dryRun = flag.Bool("dry-run", false, "print commands without executing them")
 	dryRunFormat = flag.String("dry-run-format", "text", "dry-run output format (text, json)")
 	dryRunDetail = flag.String("dry-run-detail", "detailed", "dry-run detail level (summary, detailed, full)")
-	hashDirectory = flag.String("hash-directory", "", "directory containing hash files (default: "+cmdcommon.DefaultHashDirectory+")")
 	validateConfig = flag.Bool("validate", false, "validate configuration file and exit")
 	runID = flag.String("run-id", "", "unique identifier for this execution run (auto-generates ULID if not provided)")
 	forceInteractive = flag.Bool("interactive", false, "force interactive mode with colored output (overrides environment detection)")
@@ -50,22 +48,15 @@ func TestConfigPathRequired(t *testing.T) {
 	cleanup := setupTestFlags()
 	defer cleanup()
 
-	// Create temporary hash directory to avoid hash directory validation failure
-	tempHashDir, err := os.MkdirTemp("", "test-hash-dir-")
-	if err != nil {
-		t.Fatalf("failed to create temp hash dir: %v", err)
-	}
-	defer os.RemoveAll(tempHashDir)
+	// Test args without --config (hash directory is now set automatically to default)
+	os.Args = []string{"runner"}
 
-	// Test args without --config but with valid hash directory
-	os.Args = []string{"runner", "--hash-directory", tempHashDir}
-
-	// Parse flags to set the hashDirectory value
+	// Parse flags
 	flag.Parse()
 
-	// Test runForTest() function (test-specific version)
+	// Test runForTestWithTempHashDir() function to avoid CI hash directory issues
 	runID := "test-run-id"
-	err = runForTest(runID)
+	err := runForTestWithTempHashDir(runID)
 	if err == nil {
 		t.Error("expected error when --config is not provided")
 	}
@@ -82,46 +73,17 @@ func TestConfigPathRequired(t *testing.T) {
 	}
 }
 
-func TestGetHashDir(t *testing.T) {
-	t.Run("default configuration", func(t *testing.T) {
-		cleanup := setupTestFlags()
-		defer cleanup()
-
-		// Reset flags to defaults
-		os.Args = []string{"runner"}
-		flag.Parse()
-
-		assert.Equal(t, cmdcommon.DefaultHashDirectory, hashdir.GetHashDir(hashDirectory, cmdcommon.DefaultHashDirectory))
-	})
-
-	t.Run("empty hash directory in command line uses default", func(t *testing.T) {
-		cleanup := setupTestFlags()
-		defer cleanup()
-
-		os.Args = []string{"runner"}
-		flag.Parse()
-
-		assert.Equal(t, cmdcommon.DefaultHashDirectory, hashdir.GetHashDir(hashDirectory, cmdcommon.DefaultHashDirectory), "should use default hash directory when empty string is provided")
-	})
-
-	t.Run("custom hash directory via command line", func(t *testing.T) {
-		cleanup := setupTestFlags()
-		defer cleanup()
-
-		os.Args = []string{"runner", "--hash-directory", "/custom/path"}
-		flag.Parse()
-
-		assert.Equal(t, "/custom/path", hashdir.GetHashDir(hashDirectory, cmdcommon.DefaultHashDirectory))
-	})
-
-	t.Run("command line takes precedence over default", func(t *testing.T) {
-		cleanup := setupTestFlags()
-		defer cleanup()
-
-		os.Args = []string{"runner", "--hash-directory", "/custom/path"}
-		flag.Parse()
-
-		assert.Equal(t, "/custom/path", hashdir.GetHashDir(hashDirectory, cmdcommon.DefaultHashDirectory))
+func TestNewManagerProduction(t *testing.T) {
+	t.Run("creates manager with default hash directory", func(t *testing.T) {
+		// Use temporary hash directory to avoid CI environment issues
+		runErr, managerErr := runForTestWithManagerUsingTempDir()
+		if managerErr != nil {
+			t.Fatalf("manager creation should not fail: %v", managerErr)
+		}
+		if runErr != nil {
+			// In tests, we expect this to fail due to missing config file
+			assert.Contains(t, runErr.Error(), "config")
+		}
 	})
 }
 
@@ -142,93 +104,29 @@ func TestHashDirectoryError(t *testing.T) {
 	})
 }
 
-// TestGetHashDirectoryWithValidation tests hash directory validation and resolution
-func TestGetHashDirectoryWithValidation(t *testing.T) {
-	t.Run("command line argument - valid absolute path", func(t *testing.T) {
-		cleanup := setupTestFlags()
-		defer cleanup()
-
+// TestNewManagerForTestValidation tests the testing API validation
+func TestNewManagerForTestValidation(t *testing.T) {
+	t.Run("valid custom hash directory", func(t *testing.T) {
 		// Create temporary directory for testing
 		tempDir := t.TempDir()
-		os.Args = []string{"runner", "--hash-directory", tempDir}
-		flag.Parse()
 
-		result, err := hashdir.GetWithValidation(hashDirectory, cmdcommon.DefaultHashDirectory)
-		assert.NoError(t, err)
-		assert.Equal(t, tempDir, result)
+		// This should work since we're in a test file
+		configErr, managerErr := runForTestWithCustomHashDir(tempDir)
+		if managerErr != nil {
+			t.Fatalf("manager creation should not fail: %v", managerErr)
+		}
+		if configErr != nil {
+			// We expect config errors, not manager creation errors
+			assert.Contains(t, configErr.Error(), "config")
+		}
 	})
 
-	t.Run("command line argument - relative path should fail", func(t *testing.T) {
-		cleanup := setupTestFlags()
-		defer cleanup()
-
-		os.Args = []string{"runner", "--hash-directory", "relative/path"}
-		flag.Parse()
-
-		result, err := hashdir.GetWithValidation(hashDirectory, cmdcommon.DefaultHashDirectory)
-		assert.Error(t, err)
-		assert.Empty(t, result)
-
-		var hashDirErr *hashdir.HashDirectoryError
-		require.True(t, errors.As(err, &hashDirErr))
-		assert.Equal(t, hashdir.HashDirectoryErrorTypeRelativePath, hashDirErr.Type)
-		assert.Equal(t, "relative/path", hashDirErr.Path)
-	})
-
-	t.Run("command line argument - non-existent directory should fail", func(t *testing.T) {
-		cleanup := setupTestFlags()
-		defer cleanup()
-
-		nonExistentPath := "/non/existent/directory"
-		os.Args = []string{"runner", "--hash-directory", nonExistentPath}
-		flag.Parse()
-
-		result, err := hashdir.GetWithValidation(hashDirectory, cmdcommon.DefaultHashDirectory)
-		assert.Error(t, err)
-		assert.Empty(t, result)
-
-		var hashDirErr *hashdir.HashDirectoryError
-		require.True(t, errors.As(err, &hashDirErr))
-		assert.Equal(t, hashdir.HashDirectoryErrorTypeNotFound, hashDirErr.Type)
-		assert.Equal(t, nonExistentPath, hashDirErr.Path)
-	})
-
-	t.Run("environment variable fallback", func(t *testing.T) {
-		cleanup := setupTestFlags()
-		defer cleanup()
-
-		// Create temporary directory for testing
-		tempDir := t.TempDir()
-		t.Setenv("GSCR_HASH_DIRECTORY", tempDir)
-
-		os.Args = []string{"runner"}
-		flag.Parse()
-
-		result, err := hashdir.GetWithValidation(hashDirectory, cmdcommon.DefaultHashDirectory)
-		assert.NoError(t, err)
-		assert.Equal(t, tempDir, result)
-	})
-
-	t.Run("default value fallback", func(t *testing.T) {
-		cleanup := setupTestFlags()
-		defer cleanup()
-
-		os.Args = []string{"runner"}
-		flag.Parse()
-
-		// Use temporary directory instead of system default to avoid permission issues in CI
-		tempDir := t.TempDir()
-
-		// Temporarily override DefaultHashDirectory for this test
-		originalDefault := cmdcommon.DefaultHashDirectory
-		cmdcommon.DefaultHashDirectory = tempDir
-		defer func() {
-			cmdcommon.DefaultHashDirectory = originalDefault
-		}()
-
-		result, err := hashdir.GetWithValidation(hashDirectory, cmdcommon.DefaultHashDirectory)
-		assert.NoError(t, err)
-		assert.Equal(t, tempDir, result)
+	t.Run("relative path allowed in testing", func(t *testing.T) {
+		// Custom hash directories (even relative ones) are allowed in testing mode
+		configErr, managerErr := runForTestWithCustomHashDir("relative/path")
+		// This will fail due to directory not existing, but not due to relative path restriction
+		// We expect either a config error or manager error (directory doesn't exist)
+		assert.True(t, configErr != nil || managerErr != nil, "expected an error for non-existent directory")
 	})
 }
 

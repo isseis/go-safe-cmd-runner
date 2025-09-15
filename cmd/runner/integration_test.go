@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testing"
@@ -453,8 +452,8 @@ func TestSecureExecutionFlow(t *testing.T) {
 				}
 			}
 
-			// Test hash directory validation
-			_, err := hashdir.GetWithValidation(&hashDir, cmdcommon.DefaultHashDirectory)
+			// Test hash directory validation using secure validation function
+			_, err := hashdir.ValidateSecurely(hashDir)
 
 			if tc.expectError {
 				if err == nil {
@@ -515,7 +514,7 @@ cmd = ["echo", "integration-test"]
 			hashDir, configPath := tc.setupFunc(t)
 
 			// Step 1: Hash directory validation
-			validatedHashDir, err := hashdir.GetWithValidation(&hashDir, cmdcommon.DefaultHashDirectory)
+			validatedHashDir, err := hashdir.ValidateSecurely(hashDir)
 
 			// Validate the error using the helper function
 			validateTestError(t, err, tc.expectError, tc.errorContains)
@@ -618,7 +617,7 @@ cmd = ["rm", "-rf", "/tmp/should-not-execute"]
 		t.Run(tc.name, func(t *testing.T) {
 			hashDir, configPath := tc.setupFunc(t)
 
-			_, err := hashdir.GetWithValidation(&hashDir, cmdcommon.DefaultHashDirectory)
+			_, err := hashdir.ValidateSecurely(hashDir)
 
 			// Validate the error using the helper function
 			validateTestError(t, err, tc.expectError, tc.errorContains)
@@ -834,7 +833,7 @@ func TestSecurityBoundaryValidation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			hashDir := tc.setupFunc(t)
 
-			_, err := hashdir.GetWithValidation(&hashDir, cmdcommon.DefaultHashDirectory)
+			_, err := hashdir.ValidateSecurely(hashDir)
 
 			// Validate the error using the helper function
 			validateTestError(t, err, tc.expectError, tc.errorContains)
