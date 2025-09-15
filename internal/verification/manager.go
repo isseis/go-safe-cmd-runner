@@ -13,6 +13,8 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
+const securePathEnv = "/sbin:/usr/sbin:/bin:/usr/bin"
+
 // Manager provides file verification capabilities
 type Manager struct {
 	hashDir                     string
@@ -404,9 +406,8 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 		return nil, fmt.Errorf("failed to initialize security validator: %w", err)
 	}
 
-	// Initialize path resolver
-	pathEnv := os.Getenv("PATH") // Default to PATH environment variable if not explicitly set
-	pathResolver := NewPathResolver(pathEnv, securityValidator, false)
+	// Initialize path resolver with secure fixed PATH (do not inherit from environment)
+	pathResolver := NewPathResolver(securePathEnv, securityValidator, false)
 
 	manager.security = securityValidator
 	manager.pathResolver = pathResolver
