@@ -15,6 +15,9 @@ func InitializeVerificationManager(validatedHashDir, runID string) (*verificatio
 		"hash_directory", validatedHashDir,
 		"run_id", runID)
 
+	// SECURITY: Remove runtime testing detection to prevent security bypass
+	// Testing should use build tags or separate test functions instead
+
 	// Note: In production, we always use the default hash directory
 	// The validatedHashDir parameter is ignored for security
 	verificationManager, err := verification.NewManager()

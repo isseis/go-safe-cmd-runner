@@ -480,11 +480,7 @@ func validateSecurityConstraints(hashDir string, opts *managerInternalOptions) e
 
 	// Validate the hash directory itself using the provided filesystem
 	if err := validateHashDirectoryWithFS(hashDir, opts.fs); err != nil {
-		return &Error{
-			Op:   "ValidateHashDirectory",
-			Path: hashDir,
-			Err:  err,
-		}
+		return err
 	}
 
 	return nil
