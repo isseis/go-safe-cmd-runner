@@ -98,9 +98,9 @@ HASH_TARGETS := \
 	./sample/slack-notify.toml \
 	./sample/slack-group-notification-test.toml
 
-.PHONY: all lint build build-with-validation run clean test benchmark coverage hash integration-test integration-test-success slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check
+.PHONY: all lint build run clean test benchmark coverage hash integration-test integration-test-success slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check
 
-all: build-with-validation
+all: security-check
 
 lint:
 	$(GOLINT)
@@ -108,12 +108,8 @@ lint:
 # Build production binaries only
 build: $(BINARY_RECORD) $(BINARY_VERIFY) $(BINARY_RUNNER)
 
-# Build with security validation - runs security check after build completion
-build-with-validation: build
-	$(MAKE) security-check
-
 # Security check: Verify production binaries exclude test functions
-security-check:
+security-check: build
 	$(PYTHON) scripts/additional-security-checks.py production-validation
 
 # Build with comprehensive security validation
