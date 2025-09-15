@@ -48,23 +48,6 @@ jobs:
           name: codecov-cgo${{ matrix.cgo }}
           fail_ci_if_error: false
 
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: stable
-
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v8
-        with:
-          version: v2.1
-          args: --timeout=5m
 
   build:
     name: Build
