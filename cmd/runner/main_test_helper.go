@@ -66,18 +66,12 @@ func runForTestWithManager() (error, error) {
 // runForTestWithCustomHashDir is a helper for testing custom hash directories
 func runForTestWithCustomHashDir(hashDir string) (error, error) {
 	// Test manager creation with custom hash directory
-	_, err := verification.NewManagerForTest(hashDir)
-	if err != nil {
-		return nil, err
-	}
-
-	// Create a simple test run
 	verificationManager, err := verification.NewManagerForTest(hashDir)
 	if err != nil {
 		return nil, err
 	}
 
 	// Try to load config (will fail without config file, but tests manager creation)
-	_, err = bootstrap.LoadConfig(verificationManager, *configPath, "test-run-id")
-	return err, nil
+	configErr, err := bootstrap.LoadConfig(verificationManager, *configPath, "test-run-id")
+	return configErr, nil
 }
