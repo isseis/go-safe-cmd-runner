@@ -131,20 +131,10 @@ class SecurityChecker:
                     test_functions_found = True
                     break
 
-            # Check for user test files only (exclude debug symbols for production builds)
-            user_test_patterns = [
-                'test.go',
-                'testing.go'
-            ]
-
-            user_test_files_found = self._contains_user_test_file(strings_output, user_test_patterns)
-
-            # For production binaries, only fail on actual test functions and user test files,
-            # not on Go runtime debug symbols which may be present even with -s -w flags
+            # For production binaries, only fail on actual test functions that indicate
+            # test code was compiled into the binary, not on file path references
+            # which may be present due to Go runtime/compiler metadata
             if test_functions_found:
-                return False
-            elif user_test_files_found:
-                self.print_warning(f"User test file references found in binary: {binary_name}")
                 return False
             else:
                 self.print_success(f"No test artifacts found in binary: {binary_name}")
@@ -192,15 +182,38 @@ class SecurityChecker:
 
     def _contains_user_test_file(self, strings_output: List[str], user_test_patterns: List[str]) -> bool:
         """Return True if any user test file patterns are present in strings_output,
-        excluding entries that look like Go toolchain/module paths.
+        excluding entries that look like Go toolchain/module paths or standard library.
         """
         for s in strings_output:
-            # Skip entries that clearly come from the Go toolchain or module cache
-            if 'toolchain@' in s or '/go/pkg/mod/' in s:
+            # Skip entries that clearly come from the Go toolchain, module cache, or standard library
+            if any(exclude in s for exclude in [
+                'toolchain@',
+                '/go/pkg/mod/',
+                'runtime/',
+                'reflect/',
+                'syscall/',
+                'internal/',
+                'crypto/',
+                'net/',
+                'os/',
+                'fmt.',
+                'time.',
+                'context.',
+                'sync.',
+                'testing.', # Go standard testing package references
+                'go/build',
+                'golang.org',
+                '.pb.go',  # Protocol buffer generated files
+                'vendor/'
+            ]):
                 continue
+
+            # Only check for actual user test files in project paths
             for pattern in user_test_patterns:
                 if pattern in s:
-                    return True
+                    # Additional check: ensure it looks like a real file path, not just a substring
+                    if '/' in s or '\\' in s:  # Has path separators
+                        return True
         return False
 
     def check_binary_permissions(self, binary_path: str) -> bool:

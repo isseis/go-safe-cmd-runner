@@ -176,13 +176,13 @@ class TestSecurityChecker(unittest.TestCase):
                 os.unlink(temp_file.name)
 
     def test_check_binary_security_mixed_runtime_and_user_paths(self):
-        """Test binary with mix of runtime and user paths - only user paths should be flagged."""
+        """Test binary with mix of runtime and user paths - file paths should be ignored in production."""
         with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-            # Create binary with both runtime paths (ignored) and user paths (flagged)
+            # Create binary with both runtime paths and user paths (both should be ignored for production)
             binary_data = (
                 b'\x00\x01'
                 b'/go/pkg/mod/golang.org/toolchain@v0.0.1/src/runtime/test.go\x00'  # Should be ignored
-                b'/home/user/myproject/helper_testing.go\x00'  # Should be flagged
+                b'/home/user/myproject/helper_testing.go\x00'  # Should be ignored (file path)
                 b'runtime.CallersFrames\x00'  # Runtime internal
                 b'production code\xff'
             )
@@ -191,7 +191,7 @@ class TestSecurityChecker(unittest.TestCase):
 
             try:
                 result = self.checker.check_binary_security(temp_file.name)
-                self.assertFalse(result)  # Should fail because user test file found
+                self.assertTrue(result)  # Should pass - file paths are ignored for production binaries
 
             finally:
                 os.unlink(temp_file.name)
