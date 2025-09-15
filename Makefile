@@ -82,6 +82,7 @@ BINARY_VERIFY=build/verify
 BINARY_RUNNER=build/runner
 
 # Build flags to embed configuration values
+# TODO: Add -s -w flags for production after stable operation
 BUILD_FLAGS=-ldflags "-X main.DefaultHashDirectory=$(DEFAULT_HASH_DIRECTORY)"
 
 # Find all Go source files to use as dependencies for the build

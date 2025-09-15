@@ -141,17 +141,35 @@ class SecurityChecker:
                     test_functions_found = True
                     break
 
-            # Check for debug/development symbols
-            runtime_caller_found = any('runtime.Caller' in s for s in strings_output)
-            test_keyword_found = any('test' in s.lower() for s in strings_output)
-            if runtime_caller_found and test_keyword_found:
+            # Check for explicit debug/development symbols (not Go runtime internals)
+            debug_patterns = [
+                'testing.T',
+                'debug.Stack',
+                'pprof.StartCPUProfile',
+                'TestMain',
+                'BenchmarkMain'
+            ]
+            # Check for user test files, but exclude Go toolchain paths
+            user_test_patterns = [
+                'test.go',
+                'testing.go'
+            ]
+
+            debug_symbols_found = any(pattern in s for s in strings_output for pattern in debug_patterns)
+            user_test_files_found = any(
+                pattern in s for s in strings_output for pattern in user_test_patterns
+                if not ('toolchain@' in s or '/go/pkg/mod/' in s)
+            )
+
+            if debug_symbols_found or user_test_files_found:
                 self.print_warning(f"Development debug symbols found in binary: {binary_name}")
 
-            if not test_functions_found:
+            # Return False if any test artifacts or debug symbols found
+            if test_functions_found or debug_symbols_found or user_test_files_found:
+                return False
+            else:
                 self.print_success(f"No test artifacts found in binary: {binary_name}")
                 return True
-            else:
-                return False
 
         except Exception as e:
             self.print_warning(f"Failed to analyze binary strings: {e}")
@@ -279,14 +297,17 @@ class SecurityChecker:
         # Check for hardcoded hash directories
         hardcoded_hash_dirs = []
         for go_file in Path('.').rglob('*.go'):
-            # Skip vendor directory and test files
-            if 'vendor' in go_file.parts or go_file.name.endswith('_test.go'):
+            # Skip vendor directory, test files, and the legitimate definition file
+            if ('vendor' in go_file.parts or
+                go_file.name.endswith('_test.go') or
+                str(go_file) == 'internal/cmdcommon/common.go' or
+                'Makefile' in str(go_file)):
                 continue
 
             try:
                 with open(go_file, 'r', encoding='utf-8') as f:
                     content = f.read()
-                    if '.gocmdhashes' in content:
+                    if 'go-safe-cmd-runner/hashes' in content:
                         hardcoded_hash_dirs.append(str(go_file))
             except (IOError, UnicodeDecodeError):
                 continue

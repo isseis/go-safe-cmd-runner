@@ -145,6 +145,68 @@ class TestSecurityChecker(unittest.TestCase):
             finally:
                 os.unlink(temp_file.name)
 
+    def test_check_binary_security_go_runtime_internals_ignored(self):
+        """Test that Go runtime internals are not flagged as debug symbols."""
+        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+            # Create binary with Go runtime strings that should be ignored
+            binary_data = (
+                b'\x00\x01runtime.CallersFrames\x00'
+                b'/home/issei/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.6.linux-arm64/src/runtime/synctest.go\x00'
+                b'synctest\x00writeString\x00WriteString\x00'
+                b'production code\x02normal data\xff'
+            )
+            temp_file.write(binary_data)
+            temp_file.flush()
+
+            try:
+                result = self.checker.check_binary_security(temp_file.name)
+                self.assertTrue(result)  # Should pass because these are Go runtime internals
+
+            finally:
+                os.unlink(temp_file.name)
+
+    def test_check_binary_security_user_debug_symbols_detected(self):
+        """Test that user debug symbols are properly detected."""
+        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+            # Create binary with actual debug symbols that should be flagged
+            binary_data = (
+                b'\x00\x01testing.T\x00'
+                b'debug.Stack\x00'
+                b'TestMain\x00'
+                b'/home/user/project/test.go\x00'  # User test file, not toolchain
+                b'production code\xff'
+            )
+            temp_file.write(binary_data)
+            temp_file.flush()
+
+            try:
+                result = self.checker.check_binary_security(temp_file.name)
+                self.assertFalse(result)  # Should fail because user debug symbols found
+
+            finally:
+                os.unlink(temp_file.name)
+
+    def test_check_binary_security_mixed_runtime_and_user_paths(self):
+        """Test binary with mix of runtime and user paths - only user paths should be flagged."""
+        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+            # Create binary with both runtime paths (ignored) and user paths (flagged)
+            binary_data = (
+                b'\x00\x01'
+                b'/go/pkg/mod/golang.org/toolchain@v0.0.1/src/runtime/test.go\x00'  # Should be ignored
+                b'/home/user/myproject/helper_testing.go\x00'  # Should be flagged
+                b'runtime.CallersFrames\x00'  # Runtime internal
+                b'production code\xff'
+            )
+            temp_file.write(binary_data)
+            temp_file.flush()
+
+            try:
+                result = self.checker.check_binary_security(temp_file.name)
+                self.assertFalse(result)  # Should fail because user test file found
+
+            finally:
+                os.unlink(temp_file.name)
+
     @patch.object(SecurityChecker, 'run_command')
     def test_check_build_environment_go_not_found(self, mock_run_command):
         """Test check_build_environment when go command fails."""
