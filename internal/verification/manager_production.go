@@ -3,11 +3,8 @@ package verification
 import (
 	"log/slog"
 	"runtime"
-)
 
-const (
-	// defaultHashDirectory is the secure default hash directory for production use
-	defaultHashDirectory = "/usr/local/etc/go-safe-cmd-runner/hashes"
+	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 )
 
 // NewManager creates a new verification manager using the default hash directory
@@ -17,7 +14,7 @@ func NewManager() (*Manager, error) {
 	logProductionManagerCreation()
 
 	// Always use the default hash directory in production
-	hashDir := defaultHashDirectory
+	hashDir := cmdcommon.DefaultHashDirectory
 
 	// Create manager with strict production constraints
 	return newManagerInternal(hashDir,
@@ -36,7 +33,7 @@ func logProductionManagerCreation() {
 	// Build base logging arguments
 	args := []any{
 		"api", "NewManager",
-		"hash_directory", defaultHashDirectory,
+		"hash_directory", cmdcommon.DefaultHashDirectory,
 		"security_level", "strict",
 	}
 
@@ -51,10 +48,10 @@ func logProductionManagerCreation() {
 // validateProductionConstraints validates that production security constraints are met
 func validateProductionConstraints(hashDir string) error {
 	// In production, only the default hash directory is allowed
-	if hashDir != defaultHashDirectory {
+	if hashDir != cmdcommon.DefaultHashDirectory {
 		return NewHashDirectorySecurityError(
 			hashDir,
-			defaultHashDirectory,
+			cmdcommon.DefaultHashDirectory,
 			"production environment requires default hash directory",
 		)
 	}
@@ -63,7 +60,7 @@ func validateProductionConstraints(hashDir string) error {
 	// called when manager is used.
 	slog.Debug("Production constraints validated successfully",
 		"hash_directory", hashDir,
-		"default_directory", defaultHashDirectory)
+		"default_directory", cmdcommon.DefaultHashDirectory)
 
 	return nil
 }
