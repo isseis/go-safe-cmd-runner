@@ -98,7 +98,7 @@ HASH_TARGETS := \
 	./sample/slack-notify.toml \
 	./sample/slack-group-notification-test.toml
 
-.PHONY: all lint build run clean test benchmark coverage hash integration-test integration-test-success slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check
+.PHONY: all lint build run clean test benchmark coverage coverage-internal hash integration-test integration-test-success slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check
 
 all: security-check
 
@@ -188,6 +188,12 @@ coverage:
 	$(ENVSET) $(GOTEST) -coverprofile=coverage.out ./...
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
+
+coverage-internal:
+	$(ENVSET) $(GOTEST) -tags test -coverprofile=coverage_internal.out ./internal/...
+	$(GOCMD) tool cover -html=coverage_internal.out -o coverage_internal.html
+	@echo "Internal packages coverage report generated: coverage_internal.html"
+	@$(GOCMD) tool cover -func=coverage_internal.out | tail -1
 
 integration-test: $(BINARY_RUNNER)
 	$(call check_slack_webhook)

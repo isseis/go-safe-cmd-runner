@@ -15,12 +15,13 @@ import (
 
 // Manager provides file verification capabilities
 type Manager struct {
-	hashDir       string
-	fs            common.FileSystem
-	fileValidator filevalidator.FileValidator
-	security      *security.Validator
-	pathResolver  *PathResolver
-	isDryRun      bool
+	hashDir                     string
+	fs                          common.FileSystem
+	fileValidator               filevalidator.FileValidator
+	security                    *security.Validator
+	pathResolver                *PathResolver
+	isDryRun                    bool
+	skipHashDirectoryValidation bool
 }
 
 // VerifyConfigFile verifies the integrity of a configuration file
@@ -29,13 +30,9 @@ func (m *Manager) VerifyConfigFile(configPath string) error {
 		"config_path", configPath,
 		"hash_directory", m.hashDir)
 
-	// Validate hash directory first
-	if err := m.ValidateHashDirectory(); err != nil {
-		return &Error{
-			Op:   "ValidateHashDirectory",
-			Path: m.hashDir,
-			Err:  err,
-		}
+	// Ensure hash directory is validated
+	if err := m.ensureHashDirectoryValidated(); err != nil {
+		return err
 	}
 
 	// Verify file hash using filevalidator (with privilege fallback)
@@ -64,13 +61,9 @@ func (m *Manager) VerifyAndReadConfigFile(configPath string) ([]byte, error) {
 		"config_path", configPath,
 		"hash_directory", m.hashDir)
 
-	// Validate hash directory first
-	if err := m.ValidateHashDirectory(); err != nil {
-		return nil, &Error{
-			Op:   "ValidateHashDirectory",
-			Path: m.hashDir,
-			Err:  err,
-		}
+	// Ensure hash directory is validated
+	if err := m.ensureHashDirectoryValidated(); err != nil {
+		return nil, err
 	}
 
 	// Read and verify file content atomically using filevalidator
@@ -100,13 +93,9 @@ func (m *Manager) VerifyEnvironmentFile(envFilePath string) error {
 		"env_file_path", envFilePath,
 		"hash_directory", m.hashDir)
 
-	// Validate hash directory first
-	if err := m.ValidateHashDirectory(); err != nil {
-		return &Error{
-			Op:   "ValidateHashDirectory",
-			Path: m.hashDir,
-			Err:  err,
-		}
+	// Ensure hash directory is validated
+	if err := m.ensureHashDirectoryValidated(); err != nil {
+		return err
 	}
 
 	// Verify file hash using filevalidator (with privilege fallback)
@@ -134,10 +123,12 @@ func (m *Manager) ValidateHashDirectory() error {
 		return ErrSecurityValidatorNotInitialized
 	}
 
-	// Skip hash directory validation if in dry-run mode
-	if m.isDryRun {
-		slog.Debug("Skipping hash directory validation - dry-run mode",
-			"hash_directory", m.hashDir)
+	// Skip hash directory validation if explicitly requested or in dry-run mode
+	if m.skipHashDirectoryValidation || m.isDryRun {
+		slog.Debug("Skipping hash directory validation",
+			"hash_directory", m.hashDir,
+			"skip_validation", m.skipHashDirectoryValidation,
+			"dry_run", m.isDryRun)
 		return nil
 	}
 
@@ -149,8 +140,30 @@ func (m *Manager) ValidateHashDirectory() error {
 	return nil
 }
 
+// ensureHashDirectoryValidated calls ValidateHashDirectory and wraps any error
+// into the package Error type used by Manager public methods.
+func (m *Manager) ensureHashDirectoryValidated() error {
+	if err := m.ValidateHashDirectory(); err != nil {
+		return &Error{
+			Op:   "ValidateHashDirectory",
+			Path: m.hashDir,
+			Err:  err,
+		}
+	}
+	return nil
+}
+
 // VerifyGlobalFiles verifies the integrity of global files
 func (m *Manager) VerifyGlobalFiles(globalConfig *runnertypes.GlobalConfig) (*Result, error) {
+	if globalConfig == nil {
+		return nil, ErrConfigNil
+	}
+
+	// Ensure hash directory is validated
+	if err := m.ensureHashDirectoryValidated(); err != nil {
+		return nil, err
+	}
+
 	result := &Result{
 		TotalFiles:   len(globalConfig.VerifyFiles),
 		FailedFiles:  []string{},
@@ -204,6 +217,15 @@ func (m *Manager) VerifyGlobalFiles(globalConfig *runnertypes.GlobalConfig) (*Re
 
 // VerifyGroupFiles verifies the integrity of group files
 func (m *Manager) VerifyGroupFiles(groupConfig *runnertypes.CommandGroup) (*Result, error) {
+	if groupConfig == nil {
+		return nil, ErrConfigNil
+	}
+
+	// Ensure hash directory is validated
+	if err := m.ensureHashDirectoryValidated(); err != nil {
+		return nil, err
+	}
+
 	// Collect all files to verify (explicit files + command files)
 	allFiles := m.collectVerificationFiles(groupConfig)
 
@@ -253,6 +275,11 @@ func (m *Manager) VerifyGroupFiles(groupConfig *runnertypes.CommandGroup) (*Resu
 
 // shouldSkipVerification checks if a file should be skipped based on configuration
 func (m *Manager) shouldSkipVerification(path string) bool {
+	// Skip verification if file validator is disabled
+	if m.fileValidator == nil {
+		return true
+	}
+
 	if m.pathResolver == nil {
 		return false
 	}
@@ -261,6 +288,10 @@ func (m *Manager) shouldSkipVerification(path string) bool {
 
 // collectVerificationFiles collects all files to verify for a group
 func (m *Manager) collectVerificationFiles(groupConfig *runnertypes.CommandGroup) []string {
+	if groupConfig == nil {
+		return []string{}
+	}
+
 	allFiles := make([]string, 0, len(groupConfig.VerifyFiles)+len(groupConfig.Commands))
 
 	// Add explicit files
@@ -349,9 +380,10 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 	}
 
 	manager := &Manager{
-		hashDir:  hashDir,
-		fs:       opts.fs,
-		isDryRun: opts.isDryRun,
+		hashDir:                     hashDir,
+		fs:                          opts.fs,
+		isDryRun:                    opts.isDryRun,
+		skipHashDirectoryValidation: opts.skipHashDirectoryValidation,
 	}
 
 	// Initialize file validator with SHA256 algorithm
