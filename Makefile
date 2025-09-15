@@ -14,6 +14,8 @@ GOLINT=golangci-lint run
 SUDOCMD=sudo
 GOFUMPTCMD=gofumpt
 
+PYTHON=python3
+
 # Common gofumpt check and error message
 define check_gofumpt
 	@if ! command -v $(GOFUMPTCMD) >/dev/null 2>&1; then \
@@ -130,6 +132,7 @@ test: $(BINARY_RUNNER)
 	$(ENVSET) CGO_ENABLED=1 $(GOTEST) -tags test -race -p 2 -v ./...
 	$(ENVSET) CGO_ENABLED=0 $(GOTEST) -tags test -p 2 -v ./...
 	$(ENVSET) $(BINARY_RUNNER) -dry-run -config ./sample/comprehensive.toml
+	$(PYTHON) scripts/test_additional_security_checks.py
 
 fmt:
 	$(call check_gofumpt)
