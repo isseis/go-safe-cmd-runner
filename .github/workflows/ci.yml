@@ -98,7 +98,7 @@ jobs:
       - name: Verify production build excludes test functions
         run: |
           # Build production binary without test tags
-          go build -o /tmp/prod_runner ./cmd/runner
+          go build -ldflags "-s -w" -o /tmp/prod_runner ./cmd/runner
           # Verify test functions from this package are not present in the binary
           if strings /tmp/prod_runner | grep "github.com/isseis/go-safe-cmd-runner" | grep -i "fortest"; then
             echo "ERROR: Test functions found in production binary!"

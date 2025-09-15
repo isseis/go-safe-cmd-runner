@@ -87,8 +87,7 @@ BINARY_TEST_VERIFY=build/test/verify
 BINARY_TEST_RUNNER=build/test/runner
 
 # Build flags to embed configuration values
-# TODO: Add -s -w flags for production after stable operation
-BUILD_FLAGS=-ldflags "-X main.DefaultHashDirectory=$(DEFAULT_HASH_DIRECTORY)"
+BUILD_FLAGS=-ldflags "-s -w -X main.DefaultHashDirectory=$(DEFAULT_HASH_DIRECTORY)"
 
 # Find all Go source files to use as dependencies for the build
 GO_SOURCES := $(shell find . -type f -name '*.go' -not -name '*_test.go')
