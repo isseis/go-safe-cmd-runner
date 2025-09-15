@@ -105,7 +105,7 @@ all: build-with-validation
 lint:
 	$(GOLINT)
 
-# The phony 'build' target builds binaries only
+# Build production binaries only
 build: $(BINARY_RECORD) $(BINARY_VERIFY) $(BINARY_RUNNER)
 
 # Build with security validation - runs security check after build completion
@@ -160,8 +160,6 @@ hash:
 	$(foreach file, $(HASH_TARGETS), \
 		$(SUDOCMD) $(BINARY_RECORD) -force -file $(file) -hash-dir $(DEFAULT_HASH_DIRECTORY);)
 
-# Production build without test tags
-build-production: $(BINARY_RECORD) $(BINARY_VERIFY) $(BINARY_RUNNER)
 
 # Test build with test tags enabled
 build-test: $(BINARY_TEST_RECORD) $(BINARY_TEST_VERIFY) $(BINARY_TEST_RUNNER)

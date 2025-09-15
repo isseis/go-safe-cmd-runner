@@ -82,7 +82,7 @@ jobs:
         env:
           CGO_ENABLED: ${{ matrix.cgo }}
         run: |
-          make build-production
+          make build
           echo "Built production binaries with CGO_ENABLED=${{ matrix.cgo }}"
 
       - name: Build test binaries
