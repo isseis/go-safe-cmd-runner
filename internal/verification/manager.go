@@ -23,11 +23,6 @@ type Manager struct {
 	privilegeManager runnertypes.PrivilegeManager
 }
 
-// Legacy options removed - use internal options and APIs instead
-
-// Legacy functions replaced by newManagerInternal and production/testing APIs
-// These functions are deprecated and will be removed
-
 // VerifyConfigFile verifies the integrity of a configuration file
 func (m *Manager) VerifyConfigFile(configPath string) error {
 	slog.Debug("Starting config file verification",
