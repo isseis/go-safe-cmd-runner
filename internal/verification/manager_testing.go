@@ -88,12 +88,16 @@ func NewManagerForTest(hashDir string, options ...TestOption) (*Manager, error) 
 		withSkipHashDirectoryValidationInternal(), // Skip hash directory validation by default for testing
 	}
 
-	// Apply test options
-	for _, opt := range options {
+	// Apply all TestOption functions to a single internal options instance
+	// then convert it once to InternalOption values. This avoids creating
+	// many temporary managerInternalOptions instances.
+	if len(options) > 0 {
 		internalOpts := newInternalOptions()
-		opt(internalOpts)
+		for _, opt := range options {
+			opt(internalOpts)
+		}
 
-		// Convert to internal options
+		// Convert to internal options once
 		if internalOpts.fs != nil {
 			internalOptions = append(internalOptions, withFSInternal(internalOpts.fs))
 		}
