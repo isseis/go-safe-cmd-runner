@@ -33,20 +33,19 @@ const (
 
 // logProductionManagerCreation logs the creation of a production manager for security audit
 func logProductionManagerCreation() {
-	_, file, line, ok := runtime.Caller(callerDepthForNewManager) // Get caller of NewManager
-	if ok {
-		slog.Info("Production verification manager created",
-			"api", "NewManager",
-			"hash_directory", defaultHashDirectory,
-			"caller_file", file,
-			"caller_line", line,
-			"security_level", "strict")
-	} else {
-		slog.Info("Production verification manager created",
-			"api", "NewManager",
-			"hash_directory", defaultHashDirectory,
-			"security_level", "strict")
+	// Build base logging arguments
+	args := []any{
+		"api", "NewManager",
+		"hash_directory", defaultHashDirectory,
+		"security_level", "strict",
 	}
+
+	// Add caller information if available
+	if _, file, line, ok := runtime.Caller(callerDepthForNewManager); ok {
+		args = append(args, "caller_file", file, "caller_line", line)
+	}
+
+	slog.Info("Production verification manager created", args...)
 }
 
 // validateProductionConstraints validates that production security constraints are met
