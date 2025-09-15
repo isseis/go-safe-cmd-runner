@@ -145,11 +145,9 @@ class SecurityChecker:
                 'testing.go'
             ]
 
-            debug_symbols_found = any(pattern in s for s in strings_output for pattern in debug_patterns)
-            user_test_files_found = any(
-                pattern in s for s in strings_output for pattern in user_test_patterns
-                if not ('toolchain@' in s or '/go/pkg/mod/' in s)
-            )
+            # Use helper methods for clarity instead of nested comprehensions
+            debug_symbols_found = self._contains_any_pattern(strings_output, debug_patterns)
+            user_test_files_found = self._contains_user_test_file(strings_output, user_test_patterns)
 
             if debug_symbols_found or user_test_files_found:
                 self.print_warning(f"Development debug symbols found in binary: {binary_name}")
@@ -192,6 +190,27 @@ class SecurityChecker:
 
         self.print_success("Build environment integrity check passed")
         return True
+
+    def _contains_any_pattern(self, strings_output: List[str], patterns: List[str]) -> bool:
+        """Return True if any of the given patterns appear in any string in strings_output."""
+        for s in strings_output:
+            for pattern in patterns:
+                if pattern in s:
+                    return True
+        return False
+
+    def _contains_user_test_file(self, strings_output: List[str], user_test_patterns: List[str]) -> bool:
+        """Return True if any user test file patterns are present in strings_output,
+        excluding entries that look like Go toolchain/module paths.
+        """
+        for s in strings_output:
+            # Skip entries that clearly come from the Go toolchain or module cache
+            if 'toolchain@' in s or '/go/pkg/mod/' in s:
+                continue
+            for pattern in user_test_patterns:
+                if pattern in s:
+                    return True
+        return False
 
     def check_binary_permissions(self, binary_path: str) -> bool:
         """Check binary permissions and integrity."""
