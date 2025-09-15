@@ -111,18 +111,22 @@ func TestNewManagerForTestValidation(t *testing.T) {
 		tempDir := t.TempDir()
 
 		// This should work since we're in a test file
-		_, err := runForTestWithCustomHashDir(tempDir)
-		if err != nil {
+		configErr, managerErr := runForTestWithCustomHashDir(tempDir)
+		if managerErr != nil {
+			t.Fatalf("manager creation should not fail: %v", managerErr)
+		}
+		if configErr != nil {
 			// We expect config errors, not manager creation errors
-			assert.Contains(t, err.Error(), "config")
+			assert.Contains(t, configErr.Error(), "config")
 		}
 	})
 
 	t.Run("relative path allowed in testing", func(t *testing.T) {
 		// Custom hash directories (even relative ones) are allowed in testing mode
-		_, err := runForTestWithCustomHashDir("relative/path")
+		configErr, managerErr := runForTestWithCustomHashDir("relative/path")
 		// This will fail due to directory not existing, but not due to relative path restriction
-		assert.Error(t, err)
+		// We expect either a config error or manager error (directory doesn't exist)
+		assert.True(t, configErr != nil || managerErr != nil, "expected an error for non-existent directory")
 	})
 }
 
