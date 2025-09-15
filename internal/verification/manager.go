@@ -300,12 +300,21 @@ func (m *Manager) ResolvePath(command string) (string, error) {
 // verifyFileWithFallback attempts file verification with normal privileges first,
 // then falls back to privileged verification if permission errors occur
 func (m *Manager) verifyFileWithFallback(filePath string) error {
+	if m.fileValidator == nil {
+		// File validator is disabled (e.g., in dry-run mode) - skip verification
+		return nil
+	}
 	return m.fileValidator.Verify(filePath)
 }
 
 // readAndVerifyFileWithFallback attempts file reading and verification with normal privileges first,
 // then falls back to privileged access if permission errors occur
 func (m *Manager) readAndVerifyFileWithFallback(filePath string) ([]byte, error) {
+	if m.fileValidator == nil {
+		// File validator is disabled (e.g., in dry-run mode) - fallback to normal file reading
+		// #nosec G304 - filePath comes from verified configuration and is sanitized by path resolver
+		return os.ReadFile(filePath)
+	}
 	return m.fileValidator.VerifyAndRead(filePath)
 }
 
