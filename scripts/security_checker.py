@@ -379,8 +379,8 @@ class SecurityChecker:
         if not self.check_forbidden_patterns():
             success = False
 
-        # Check binaries if they exist
-        binaries = ["build/runner", "build/record", "build/verify"]
+        # Check production binaries if they exist
+        binaries = ["build/prod/runner", "build/prod/record", "build/prod/verify"]
         for binary in binaries:
             if Path(binary).is_file():
                 if not self.check_binary_security(binary):
@@ -402,9 +402,9 @@ class SecurityChecker:
         """Comprehensive validation for production binaries."""
         self.print_info("=== Production Binary Validation ===")
 
-        build_dir = Path("build")
+        build_dir = Path("build/prod")
         if not build_dir.exists():
-            self.print_error("Build directory not found. Run 'make build' first.")
+            self.print_error("Production build directory not found. Run 'make build' first.")
             return False
 
         binaries = ["record", "verify", "runner"]
@@ -487,7 +487,7 @@ class SecurityChecker:
 
         # Step 5: Production binary validation (if binaries exist)
         self.print_info("\n--- Step 5: Production Binaries ---")
-        if Path("build").exists() and any(Path(f"build/{b}").exists() for b in ["record", "verify", "runner"]):
+        if Path("build/prod").exists() and any(Path(f"build/prod/{b}").exists() for b in ["record", "verify", "runner"]):
             if not self.validate_production_binaries():
                 success = False
         else:
