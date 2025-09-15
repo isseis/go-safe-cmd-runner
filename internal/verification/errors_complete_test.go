@@ -89,9 +89,18 @@ func TestHashDirectorySecurityErrorComplete(t *testing.T) {
 	})
 }
 
+// Test error constants for consistent error testing
+var (
+	errTestUnderlying   = errors.New("underlying error")
+	errTestDifferent    = errors.New("different error")
+	errTestHashMismatch = errors.New("hash mismatch")
+	errTestRootCause    = errors.New("root cause")
+	errTestVerifyFailed = errors.New("verification failed")
+)
+
 // TestError tests the general verification Error type
 func TestError(t *testing.T) {
-	baseErr := errors.New("underlying error")
+	baseErr := errTestUnderlying
 
 	t.Run("error_with_path", func(t *testing.T) {
 		err := &Error{
@@ -126,7 +135,7 @@ func TestError(t *testing.T) {
 
 		// Test Is functionality
 		assert.True(t, err.Is(baseErr))
-		assert.False(t, err.Is(errors.New("different error")))
+		assert.False(t, err.Is(errTestDifferent))
 
 		// Test errors.Is with wrapper
 		assert.True(t, errors.Is(err, baseErr))
@@ -143,7 +152,7 @@ func TestError(t *testing.T) {
 
 // TestVerificationError tests the VerificationError type
 func TestVerificationError(t *testing.T) {
-	baseErr := errors.New("verification failed")
+	baseErr := errTestVerifyFailed
 
 	t.Run("error_with_group", func(t *testing.T) {
 		err := &VerificationError{
@@ -182,7 +191,7 @@ func TestVerificationError(t *testing.T) {
 
 		// Test Is functionality
 		assert.True(t, err.Is(baseErr))
-		assert.False(t, err.Is(errors.New("different error")))
+		assert.False(t, err.Is(errTestDifferent))
 
 		// Test errors.Is with wrapper
 		assert.True(t, errors.Is(err, baseErr))
@@ -224,7 +233,7 @@ func TestPredefinedErrors(t *testing.T) {
 			assert.True(t, errors.Is(tc.err, tc.err))
 
 			// Verify it implements error interface
-			var _ error = tc.err
+			_ = tc.err
 		})
 	}
 }
@@ -261,7 +270,7 @@ func TestResult(t *testing.T) {
 // TestFileDetail tests the FileDetail struct
 func TestFileDetail(t *testing.T) {
 	t.Run("file_detail_creation", func(t *testing.T) {
-		testErr := errors.New("hash mismatch")
+		testErr := errTestHashMismatch
 		detail := FileDetail{
 			Path:         "ls",
 			ResolvedPath: "/usr/bin/ls",
@@ -298,7 +307,7 @@ func TestFileDetail(t *testing.T) {
 func TestErrorWrapping(t *testing.T) {
 	t.Run("nested_error_wrapping", func(t *testing.T) {
 		// Create a chain of errors
-		rootErr := errors.New("root cause")
+		rootErr := errTestRootCause
 
 		verifyErr := &Error{
 			Op:   "VerifyHash",

@@ -2,12 +2,16 @@ package verification
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+const testHashDir = "/usr/local/etc/go-safe-cmd-runner/hashes"
 
 func TestNewManager(t *testing.T) {
 	testCases := []struct {
@@ -18,7 +22,7 @@ func TestNewManager(t *testing.T) {
 	}{
 		{
 			name:        "valid hash directory",
-			hashDir:     "/usr/local/etc/go-safe-cmd-runner/hashes",
+			hashDir:     testHashDir,
 			expectError: false,
 		},
 		{
@@ -44,8 +48,8 @@ func TestNewManager(t *testing.T) {
 			mockFS := common.NewMockFileSystem()
 
 			// Set up mock filesystem for valid directories
-			if tc.hashDir == "/usr/local/etc/go-safe-cmd-runner/hashes" {
-				err := mockFS.AddDir("/usr/local/etc/go-safe-cmd-runner/hashes", 0o755)
+			if tc.hashDir == testHashDir {
+				err := mockFS.AddDir(testHashDir, 0o755)
 				require.NoError(t, err)
 			}
 
@@ -81,7 +85,7 @@ func TestNewManager(t *testing.T) {
 
 func TestManager_ValidateHashDirectory_NoSecurityValidator(t *testing.T) {
 	manager := &Manager{
-		hashDir:  "/usr/local/etc/go-safe-cmd-runner/hashes",
+		hashDir:  testHashDir,
 		security: nil, // No security validator
 	}
 
@@ -98,7 +102,7 @@ func TestManager_ValidateHashDirectory_RelativePath(t *testing.T) {
 	}{
 		{
 			name:        "absolute path should succeed (if security validator passes)",
-			hashDir:     "/usr/local/etc/go-safe-cmd-runner/hashes",
+			hashDir:     testHashDir,
 			expectError: false,
 		},
 		{
@@ -129,7 +133,7 @@ func TestManager_ValidateHashDirectory_RelativePath(t *testing.T) {
 				mockFS.AddDir(tc.hashDir, 0o755)
 
 				// For absolute paths, also create parent directories to ensure proper path validation
-				if tc.hashDir == "/usr/local/etc/go-safe-cmd-runner/hashes" {
+				if tc.hashDir == testHashDir {
 					// Create parent directories
 					mockFS.AddDir("/", 0o755)
 					mockFS.AddDir("/usr", 0o755)
@@ -172,7 +176,7 @@ func TestManager_VerifyConfigFile_ErrorWrapping(t *testing.T) {
 	// Create manager with mocked components that will fail
 	mockFS := common.NewMockFileSystem()
 	manager := &Manager{
-		hashDir: "/usr/local/etc/go-safe-cmd-runner/hashes",
+		hashDir: testHashDir,
 		fs:      mockFS,
 		// Leave validator and security nil to trigger errors
 	}
@@ -192,10 +196,10 @@ func TestNewManagerProduction(t *testing.T) {
 		// We can't easily test the actual NewManager function due to filesystem requirements
 		// Instead, test the internal implementation with mocked filesystem
 		mockFS := common.NewMockFileSystem()
-		err := mockFS.AddDir("/usr/local/etc/go-safe-cmd-runner/hashes", 0o755)
+		err := mockFS.AddDir(testHashDir, 0o755)
 		require.NoError(t, err)
 
-		manager, err := newManagerInternal("/usr/local/etc/go-safe-cmd-runner/hashes",
+		manager, err := newManagerInternal(testHashDir,
 			withFSInternal(mockFS),
 			withFileValidatorDisabledInternal(),
 			withCreationMode(CreationModeProduction),
@@ -204,7 +208,7 @@ func TestNewManagerProduction(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.NotNil(t, manager)
-		assert.Equal(t, "/usr/local/etc/go-safe-cmd-runner/hashes", manager.hashDir)
+		assert.Equal(t, testHashDir, manager.hashDir)
 	})
 
 	t.Run("validates production constraints", func(t *testing.T) {
@@ -220,6 +224,122 @@ func TestNewManagerProduction(t *testing.T) {
 		var hashDirErr *HashDirectorySecurityError
 		assert.True(t, errors.As(err, &hashDirErr))
 		assert.Equal(t, "/custom/hash/dir", hashDirErr.RequestedDir)
-		assert.Equal(t, "/usr/local/etc/go-safe-cmd-runner/hashes", hashDirErr.DefaultDir)
+		assert.Equal(t, testHashDir, hashDirErr.DefaultDir)
+	})
+}
+
+// TestManager_ResolvePath_Integration tests end-to-end path resolution with securePathEnv
+func TestManager_ResolvePath_Integration(t *testing.T) {
+	// Create a temporary directory structure that mimics the secure path
+	tempDir := t.TempDir()
+
+	// Create directories that match parts of securePathEnv: /sbin:/usr/sbin:/bin:/usr/bin
+	sbinDir := filepath.Join(tempDir, "sbin")
+	usrSbinDir := filepath.Join(tempDir, "usr", "sbin")
+	binDir := filepath.Join(tempDir, "bin")
+	usrBinDir := filepath.Join(tempDir, "usr", "bin")
+
+	require.NoError(t, os.MkdirAll(sbinDir, 0o755))
+	require.NoError(t, os.MkdirAll(usrSbinDir, 0o755))
+	require.NoError(t, os.MkdirAll(binDir, 0o755))
+	require.NoError(t, os.MkdirAll(usrBinDir, 0o755))
+
+	// Create test commands in different directories
+	testCmd1 := filepath.Join(binDir, "testcmd")
+	testCmd2 := filepath.Join(usrBinDir, "anothercmd")
+	testCmd3 := filepath.Join(sbinDir, "systemcmd")
+
+	require.NoError(t, os.WriteFile(testCmd1, []byte("#!/bin/sh\necho test\n"), 0o755))
+	require.NoError(t, os.WriteFile(testCmd2, []byte("#!/bin/sh\necho another\n"), 0o755))
+	require.NoError(t, os.WriteFile(testCmd3, []byte("#!/bin/sh\necho system\n"), 0o755))
+
+	// Create a test secure path using our temporary directories
+	testSecurePath := sbinDir + ":" + usrSbinDir + ":" + binDir + ":" + usrBinDir
+
+	t.Run("resolves commands from secure PATH correctly", func(t *testing.T) {
+		// Create a manager with a custom path resolver using our test secure path
+		// We need to use the real filesystem for path resolution, not the mock
+		// For integration testing, we disable security validation to focus on PATH resolution
+		testPathResolver := NewPathResolver(testSecurePath, nil, false)
+		manager, err := NewManagerForTest(testHashDir,
+			WithFileValidatorDisabled(),
+			WithPathResolver(testPathResolver),
+		)
+		require.NoError(t, err)
+
+		// Test resolving commands that exist in the secure PATH
+		resolved, err := manager.ResolvePath("testcmd")
+		require.NoError(t, err)
+		assert.Equal(t, testCmd1, resolved) // Should find in /bin first
+
+		resolved, err = manager.ResolvePath("anothercmd")
+		require.NoError(t, err)
+		assert.Equal(t, testCmd2, resolved) // Should find in /usr/bin
+
+		resolved, err = manager.ResolvePath("systemcmd")
+		require.NoError(t, err)
+		assert.Equal(t, testCmd3, resolved) // Should find in /sbin first
+	})
+
+	t.Run("fails to resolve commands not in secure PATH", func(t *testing.T) {
+		// Create a manager with a custom path resolver using our test secure path
+		// For integration testing, we disable security validation to focus on PATH resolution
+		testPathResolver := NewPathResolver(testSecurePath, nil, false)
+		manager, err := NewManagerForTest(testHashDir,
+			WithFileValidatorDisabled(),
+			WithPathResolver(testPathResolver),
+		)
+		require.NoError(t, err)
+
+		// Test resolving a command that doesn't exist
+		_, err = manager.ResolvePath("nonexistentcommand")
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, ErrCommandNotFound)
+	})
+
+	t.Run("respects PATH precedence from securePathEnv", func(t *testing.T) {
+		// Create the same command in multiple directories
+		duplicateCmd1 := filepath.Join(sbinDir, "duplicate")
+		duplicateCmd2 := filepath.Join(binDir, "duplicate")
+
+		require.NoError(t, os.WriteFile(duplicateCmd1, []byte("#!/bin/sh\necho sbin\n"), 0o755))
+		require.NoError(t, os.WriteFile(duplicateCmd2, []byte("#!/bin/sh\necho bin\n"), 0o755))
+
+		// Create a manager with a custom path resolver using our test secure path
+		// For integration testing, we disable security validation to focus on PATH resolution
+		testPathResolver := NewPathResolver(testSecurePath, nil, false)
+		manager, err := NewManagerForTest(testHashDir,
+			WithFileValidatorDisabled(),
+			WithPathResolver(testPathResolver),
+		)
+		require.NoError(t, err)
+
+		// Should find the first one in the PATH order (/sbin comes first)
+		resolved, err := manager.ResolvePath("duplicate")
+		require.NoError(t, err)
+		assert.Equal(t, duplicateCmd1, resolved) // Should find /sbin/duplicate first
+	})
+
+	t.Run("integration with default securePathEnv structure", func(t *testing.T) {
+		// Test that our Manager correctly uses the hardcoded securePathEnv
+		// We can't easily test with the actual system paths, but we can verify
+		// that the Manager uses its pathResolver correctly
+		mockFS := common.NewMockFileSystem()
+		require.NoError(t, mockFS.AddDir(testHashDir, 0o755))
+
+		manager, err := newManagerInternal(testHashDir,
+			withFSInternal(mockFS),
+			withFileValidatorDisabledInternal(),
+			withCreationMode(CreationModeTesting),
+			withSecurityLevel(SecurityLevelRelaxed))
+		require.NoError(t, err)
+
+		// Verify that the manager has a pathResolver initialized
+		assert.NotNil(t, manager.pathResolver)
+
+		// Test with a command that definitely won't exist
+		_, err = manager.ResolvePath("definitely-nonexistent-command-12345")
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, ErrCommandNotFound)
 	})
 }

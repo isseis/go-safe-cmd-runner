@@ -71,6 +71,13 @@ func WithSkipHashDirectoryValidation() TestOption {
 	}
 }
 
+// WithPathResolver sets a custom path resolver for testing
+func WithPathResolver(pathResolver *PathResolver) TestOption {
+	return func(opts *managerInternalOptions) {
+		opts.customPathResolver = pathResolver
+	}
+}
+
 // NewManagerForTest creates a new verification manager for testing with a custom hash directory
 // This API allows custom hash directories for testing purposes and uses relaxed security constraints
 func NewManagerForTest(hashDir string, options ...TestOption) (*Manager, error) {
@@ -116,6 +123,10 @@ func NewManagerForTest(hashDir string, options ...TestOption) (*Manager, error) 
 
 	if internalOpts.fs != nil {
 		internalOptions = append(internalOptions, withFSInternal(internalOpts.fs))
+	}
+
+	if internalOpts.customPathResolver != nil {
+		internalOptions = append(internalOptions, withCustomPathResolverInternal(internalOpts.customPathResolver))
 	}
 
 	// Create manager with testing constraints (allows custom hash directory)
