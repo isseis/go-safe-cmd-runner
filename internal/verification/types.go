@@ -56,6 +56,7 @@ type managerInternalOptions struct {
 	securityLevel               SecurityLevel
 	skipHashDirectoryValidation bool
 	isDryRun                    bool
+	customPathResolver          *PathResolver
 }
 
 func newInternalOptions() *managerInternalOptions {
@@ -112,7 +113,17 @@ func withDryRunModeInternal() InternalOption {
 	}
 }
 
-// Ensure the internal option is referenced in non-test builds so linters
-// don't report it as unused. Tests will actively use this option, but
-// static analyzers run across packages/build tags and may flag it.
-var _ = withSkipHashDirectoryValidationInternal
+// withCustomPathResolverInternal is an internal option for setting a custom path resolver
+func withCustomPathResolverInternal(pathResolver *PathResolver) InternalOption {
+	return func(opts *managerInternalOptions) {
+		opts.customPathResolver = pathResolver
+	}
+}
+
+// Ensure the internal options are referenced in non-test builds so linters
+// don't report them as unused. Tests will actively use these options, but
+// static analyzers run across packages/build tags and may flag them.
+var (
+	_ = withSkipHashDirectoryValidationInternal
+	_ = withCustomPathResolverInternal
+)

@@ -407,7 +407,13 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 	}
 
 	// Initialize path resolver with secure fixed PATH (do not inherit from environment)
-	pathResolver := NewPathResolver(securePathEnv, securityValidator, false)
+	// Use custom path resolver if provided, otherwise create the default one
+	var pathResolver *PathResolver
+	if opts.customPathResolver != nil {
+		pathResolver = opts.customPathResolver
+	} else {
+		pathResolver = NewPathResolver(securePathEnv, securityValidator, false)
+	}
 
 	manager.security = securityValidator
 	manager.pathResolver = pathResolver

@@ -257,22 +257,15 @@ func TestManager_ResolvePath_Integration(t *testing.T) {
 	testSecurePath := sbinDir + ":" + usrSbinDir + ":" + binDir + ":" + usrBinDir
 
 	t.Run("resolves commands from secure PATH correctly", func(t *testing.T) {
-		// Create a manager with a custom securePathEnv for testing
-		mockFS := common.NewMockFileSystem()
-		require.NoError(t, mockFS.AddDir(testHashDir, 0o755))
-
-		// Create manager using internal constructor with custom options
-		manager, err := newManagerInternal(testHashDir,
-			withFSInternal(mockFS),
-			withFileValidatorDisabledInternal(),
-			withCreationMode(CreationModeTesting),
-			withSecurityLevel(SecurityLevelRelaxed))
-		require.NoError(t, err)
-
-		// Override the pathResolver to use our test secure path
+		// Create a manager with a custom path resolver using our test secure path
 		// We need to use the real filesystem for path resolution, not the mock
 		// For integration testing, we disable security validation to focus on PATH resolution
-		manager.pathResolver = NewPathResolver(testSecurePath, nil, false)
+		testPathResolver := NewPathResolver(testSecurePath, nil, false)
+		manager, err := NewManagerForTest(testHashDir,
+			WithFileValidatorDisabled(),
+			WithPathResolver(testPathResolver),
+		)
+		require.NoError(t, err)
 
 		// Test resolving commands that exist in the secure PATH
 		resolved, err := manager.ResolvePath("testcmd")
@@ -289,20 +282,14 @@ func TestManager_ResolvePath_Integration(t *testing.T) {
 	})
 
 	t.Run("fails to resolve commands not in secure PATH", func(t *testing.T) {
-		// Create a manager with our test secure path
-		mockFS := common.NewMockFileSystem()
-		require.NoError(t, mockFS.AddDir(testHashDir, 0o755))
-
-		manager, err := newManagerInternal(testHashDir,
-			withFSInternal(mockFS),
-			withFileValidatorDisabledInternal(),
-			withCreationMode(CreationModeTesting),
-			withSecurityLevel(SecurityLevelRelaxed))
-		require.NoError(t, err)
-
-		// Override the pathResolver to use our test secure path
+		// Create a manager with a custom path resolver using our test secure path
 		// For integration testing, we disable security validation to focus on PATH resolution
-		manager.pathResolver = NewPathResolver(testSecurePath, nil, false)
+		testPathResolver := NewPathResolver(testSecurePath, nil, false)
+		manager, err := NewManagerForTest(testHashDir,
+			WithFileValidatorDisabled(),
+			WithPathResolver(testPathResolver),
+		)
+		require.NoError(t, err)
 
 		// Test resolving a command that doesn't exist
 		_, err = manager.ResolvePath("nonexistentcommand")
@@ -318,18 +305,14 @@ func TestManager_ResolvePath_Integration(t *testing.T) {
 		require.NoError(t, os.WriteFile(duplicateCmd1, []byte("#!/bin/sh\necho sbin\n"), 0o755))
 		require.NoError(t, os.WriteFile(duplicateCmd2, []byte("#!/bin/sh\necho bin\n"), 0o755))
 
-		mockFS := common.NewMockFileSystem()
-		require.NoError(t, mockFS.AddDir(testHashDir, 0o755))
-
-		manager, err := newManagerInternal(testHashDir,
-			withFSInternal(mockFS),
-			withFileValidatorDisabledInternal(),
-			withCreationMode(CreationModeTesting),
-			withSecurityLevel(SecurityLevelRelaxed))
-		require.NoError(t, err)
-
+		// Create a manager with a custom path resolver using our test secure path
 		// For integration testing, we disable security validation to focus on PATH resolution
-		manager.pathResolver = NewPathResolver(testSecurePath, nil, false)
+		testPathResolver := NewPathResolver(testSecurePath, nil, false)
+		manager, err := NewManagerForTest(testHashDir,
+			WithFileValidatorDisabled(),
+			WithPathResolver(testPathResolver),
+		)
+		require.NoError(t, err)
 
 		// Should find the first one in the PATH order (/sbin comes first)
 		resolved, err := manager.ResolvePath("duplicate")

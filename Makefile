@@ -10,7 +10,7 @@ GOBUILD=$(GOCMD) build
 GOCLEAN=$(GOCMD) clean
 GOTEST=$(GOCMD) test
 GOGET=$(GOCMD) get
-GOLINT=golangci-lint run
+GOLINT=golangci-lint run --build-tags test
 SUDOCMD=sudo
 GOFUMPTCMD=gofumpt
 

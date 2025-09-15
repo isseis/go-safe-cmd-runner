@@ -8,7 +8,6 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
@@ -22,7 +21,7 @@ func createTempHashDir() (string, func(), error) {
 	}
 
 	cleanup := func() {
-		os.RemoveAll(tempDir)
+		_ = os.RemoveAll(tempDir) // Ignore cleanup errors in test helper
 	}
 
 	return tempDir, cleanup, nil
@@ -75,56 +74,6 @@ func runForTestWithTempHashDir(runID string) error {
 	_ = cfg
 
 	return nil
-}
-
-// runForTest is a test-only version of run() that uses the default verification manager
-// This function should ONLY be called from tests to avoid security issues
-func runForTest(runID string) error {
-	// Set up context with cancellation
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
-	// Phase 1: Initialize verification manager with default hash directory for testing
-	verificationManager, err := verification.NewManagerForTest(cmdcommon.DefaultHashDirectory)
-	if err != nil {
-		return &logging.PreExecutionError{
-			Type:      logging.ErrorTypeFileAccess,
-			Message:   "Verification manager initialization failed",
-			Component: "verification",
-			RunID:     runID,
-		}
-	}
-
-	// Phase 2: Verify and load configuration atomically (to prevent TOCTOU attacks)
-	cfg, err := bootstrap.LoadConfig(verificationManager, *configPath, runID)
-	if err != nil {
-		return err
-	}
-
-	// The rest of the function follows the same logic as run()
-	// Handle validate command (after verification and loading)
-	if *validateConfig {
-		// Return silently for config validation in tests
-		return nil
-	}
-
-	// For testing, we skip the actual execution phases
-	_ = ctx
-	_ = cfg
-
-	return nil
-}
-
-// runForTestWithManager is a helper for testing manager creation
-func runForTestWithManager() (error, error) {
-	// Test manager creation directly
-	_, err := verification.NewManagerForTest(cmdcommon.DefaultHashDirectory)
-	if err != nil {
-		return nil, err
-	}
-
-	// Test the full runForTest flow
-	return runForTest("test-run-id"), nil
 }
 
 // runForTestWithManagerUsingTempDir is a helper that uses temporary hash directory
