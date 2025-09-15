@@ -24,7 +24,13 @@ func NewManager() (*Manager, error) {
 }
 
 const (
-	// callerDepthForNewManager represents the stack depth to get the caller of NewManager
+	// callerDepthForNewManager is the stack depth passed to runtime.
+	// Caller to obtain the caller of NewManager.
+	// Stack frames:
+	//   0: runtime.Caller
+	//   1: logProductionManagerCreation
+	//   2: NewManager (we want the caller of NewManager)
+	// If the call stack changes, this value may need to be updated.
 	callerDepthForNewManager = 2
 )
 
