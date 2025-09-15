@@ -38,6 +38,7 @@ func NewManagerForDryRun() (*Manager, error) {
 		withSecurityLevel(SecurityLevelStrict),
 		withSkipHashDirectoryValidationInternal(),
 		withFileValidatorDisabledInternal(),
+		withDryRunModeInternal(),
 	)
 }
 

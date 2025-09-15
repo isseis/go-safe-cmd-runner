@@ -20,6 +20,7 @@ type Manager struct {
 	fileValidator filevalidator.FileValidator
 	security      *security.Validator
 	pathResolver  *PathResolver
+	isDryRun      bool
 }
 
 // VerifyConfigFile verifies the integrity of a configuration file
@@ -131,6 +132,13 @@ func (m *Manager) VerifyEnvironmentFile(envFilePath string) error {
 func (m *Manager) ValidateHashDirectory() error {
 	if m.security == nil {
 		return ErrSecurityValidatorNotInitialized
+	}
+
+	// Skip hash directory validation if in dry-run mode
+	if m.isDryRun {
+		slog.Debug("Skipping hash directory validation - dry-run mode",
+			"hash_directory", m.hashDir)
+		return nil
 	}
 
 	// Validate directory permissions using security validator
@@ -341,8 +349,9 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 	}
 
 	manager := &Manager{
-		hashDir: hashDir,
-		fs:      opts.fs,
+		hashDir:  hashDir,
+		fs:       opts.fs,
+		isDryRun: opts.isDryRun,
 	}
 
 	// Initialize file validator with SHA256 algorithm
