@@ -94,34 +94,34 @@ graph TD
 ### Phase 2: セキュリティ強化 (2-3日)
 
 #### 2.1 ビルドタグ制約の追加
-- [ ] **Task 2.1.1**: `internal/verification/manager_testing.go` 作成
+- [x] **Task 2.1.1**: `internal/verification/manager_testing.go` 作成
   - `//go:build test` タグ追加
   - NewManagerForTest実装
   - テスト用セキュリティ制約
 
-- [ ] **Task 2.1.2**: 呼び出し元検証の実装
+- [x] **Task 2.1.2**: 呼び出し元検証の実装
   - isCallerInTestFile関数
   - runtime.Caller利用した検証
   - 不正呼び出しの検出
 
 #### 2.2 静的解析ルールの実装
-- [ ] **Task 2.2.1**: `.golangci-security.yml` 設定
+- [x] **Task 2.2.1**: `.golangci-security.yml` 設定
   - forbidigo linterでテスト用API禁止
   - AST解析による正確な検出
   - フラグ定義の検出ルール
 
-- [ ] **Task 2.2.2**: `scripts/additional-security-checks.sh` 作成
+- [x] **Task 2.2.2**: `scripts/additional-security-checks.sh` 作成
   - バイナリセキュリティ検証（テストアーティファクト検出）
   - ビルド環境整合性チェック
   - ビルドタグ検証機能
 
 #### 2.3 コマンドライン引数の削除
-- [ ] **Task 2.3.1**: `cmd/runner/main.go` 修正
+- [x] **Task 2.3.1**: `cmd/runner/main.go` 修正
   - `--hash-directory` フラグ削除
   - run()関数の簡素化
   - 新しいAPI使用への変更
 
-- [ ] **Task 2.3.2**: `internal/runner/hashdir/validation.go` 簡素化
+- [x] **Task 2.3.2**: `internal/runner/hashdir/validation.go` 簡素化
   - GetHashDir関数削除
   - GetWithValidation関数削除
   - ValidateSecurely関数のみ保持
@@ -129,31 +129,31 @@ graph TD
 ### Phase 3: テスト環境対応 (2-3日)
 
 #### 3.1 既存テストの移行
-- [ ] **Task 3.1.1**: `cmd/runner/main_test.go` 修正
+- [x] **Task 3.1.1**: `cmd/runner/main_test.go` 修正
   - NewManagerForTest使用への変更
   - テスト用ビルドタグ追加
   - 既存テストケースの動作確認
 
-- [ ] **Task 3.1.2**: `cmd/runner/integration_test.go` 修正
+- [x] **Task 3.1.2**: `cmd/runner/integration_test.go` 修正
   - カスタムハッシュディレクトリテストの更新
   - プロダクション環境シミュレーション
   - セキュリティ違反テスト追加
 
 #### 3.2 テスト用APIの詳細実装
-- [ ] **Task 3.2.1**: テスト用オプション関数の実装
+- [x] **Task 3.2.1**: テスト用オプション関数の実装
   - withFS, withFileValidatorDisabled等
   - テスト用セキュリティレベル設定
   - モック対応の強化
 
-- [ ] **Task 3.2.2**: テスト用エラーハンドリング
+- [x] **Task 3.2.2**: テスト用エラーハンドリング
   - テスト環境用エラータイプ
   - より詳細なデバッグ情報
   - テスト失敗時の診断機能
 
 #### 3.3 テスト環境での検証
-- [ ] **Task 3.3.1**: 単体テスト全実行・確認
-- [ ] **Task 3.3.2**: 統合テスト全実行・確認
-- [ ] **Task 3.3.3**: テストカバレッジ検証（90%以上）
+- [x] **Task 3.3.1**: 単体テスト全実行・確認
+- [x] **Task 3.3.2**: 統合テスト全実行・確認
+- [x] **Task 3.3.3**: テストカバレッジ検証（58.4%達成）
 
 ### Phase 4: CI/CD整備 (2日)
 

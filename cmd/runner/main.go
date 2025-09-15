@@ -41,7 +41,6 @@ var (
 	dryRun           = flag.Bool("dry-run", false, "print commands without executing them")
 	dryRunFormat     = flag.String("dry-run-format", "text", "dry-run output format (text, json)")
 	dryRunDetail     = flag.String("dry-run-detail", "detailed", "dry-run detail level (summary, detailed, full)")
-	hashDirectory    = flag.String("hash-directory", "", "directory containing hash files (default: "+cmdcommon.DefaultHashDirectory+")")
 	validateConfig   = flag.Bool("validate", false, "validate configuration file and exit")
 	runID            = flag.String("run-id", "", "unique identifier for this execution run (auto-generates ULID if not provided)")
 	forceInteractive = flag.Bool("interactive", false, "force interactive mode with colored output (overrides environment detection)")
@@ -92,21 +91,15 @@ func run(runID string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Phase 1: Get validated hash directory (using secure validation)
-	validatedHashDir, err := hashdir.GetWithValidation(hashDirectory, cmdcommon.DefaultHashDirectory)
+	// Phase 1: Initialize verification manager with secure default hash directory
+	verificationManager, err := verification.NewManager()
 	if err != nil {
 		return &logging.PreExecutionError{
 			Type:      logging.ErrorTypeFileAccess,
-			Message:   fmt.Sprintf("Hash directory validation failed: %v", err),
-			Component: "file",
+			Message:   fmt.Sprintf("Verification manager initialization failed: %v", err),
+			Component: "verification",
 			RunID:     runID,
 		}
-	}
-
-	// Phase 2: Initialize verification manager with validated hash directory
-	verificationManager, err := bootstrap.InitializeVerificationManager(validatedHashDir, runID)
-	if err != nil {
-		return err
 	}
 
 	// Phase 3: Verify and load configuration atomically (to prevent TOCTOU attacks)
@@ -154,11 +147,11 @@ func run(runID string) error {
 	}
 
 	// Phase 6: Initialize and execute runner with all verified data
-	return executeRunner(ctx, cfg, verificationManager, validatedHashDir, runID)
+	return executeRunner(ctx, cfg, verificationManager, runID)
 }
 
 // executeRunner initializes and executes the runner with proper cleanup
-func executeRunner(ctx context.Context, cfg *runnertypes.Config, verificationManager *verification.Manager, hashDir, runID string) error {
+func executeRunner(ctx context.Context, cfg *runnertypes.Config, verificationManager *verification.Manager, runID string) error {
 	// Initialize privilege manager
 	logger := slog.Default()
 	privMgr := privilege.NewManager(logger)
@@ -194,8 +187,8 @@ func executeRunner(ctx context.Context, cfg *runnertypes.Config, verificationMan
 			OutputFormat:      outputFormat,
 			ShowSensitive:     false,
 			VerifyFiles:       true,
-			SkipStandardPaths: cfg.Global.SkipStandardPaths, // Use setting from TOML config
-			HashDir:           hashDir,                      // Hash directory from command line args
+			SkipStandardPaths: cfg.Global.SkipStandardPaths,   // Use setting from TOML config
+			HashDir:           cmdcommon.DefaultHashDirectory, // Use secure default hash directory
 		}
 		runnerOptions = append(runnerOptions, runner.WithDryRun(dryRunOpts))
 	}
