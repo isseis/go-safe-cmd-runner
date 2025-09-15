@@ -168,8 +168,28 @@ class SecurityChecker:
             if filename == 'manager_testing.go' or filename.endswith('_testing.go'):
                 try:
                     with open(go_file, 'r', encoding='utf-8') as f:
-                        first_line = f.readline().strip()
-                        if not first_line.startswith('//go:build test'):
+                        content = f.read()
+                        lines = content.split('\n')
+
+                        # Find the package declaration line
+                        package_line_idx = None
+                        for i, line in enumerate(lines):
+                            stripped = line.strip()
+                            if stripped.startswith('package '):
+                                package_line_idx = i
+                                break
+
+                        # Check for //go:build test constraint before package declaration
+                        has_test_constraint = False
+                        check_until = package_line_idx if package_line_idx is not None else len(lines)
+
+                        for i in range(check_until):
+                            line = lines[i].strip()
+                            if line.startswith('//go:build test'):
+                                has_test_constraint = True
+                                break
+
+                        if not has_test_constraint:
                             files_without_test_tag.append(str(go_file))
                 except (IOError, UnicodeDecodeError) as e:
                     self.print_warning(f"Could not read file {go_file}: {e}")
