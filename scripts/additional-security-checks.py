@@ -10,6 +10,7 @@ This is a Python port of the original bash script.
 import os
 import sys
 import subprocess
+import shutil
 import stat
 import argparse
 from pathlib import Path
@@ -53,17 +54,61 @@ class SecurityChecker:
     def run_command(self, cmd: List[str], capture_output: bool = True,
                    check: bool = True) -> subprocess.CompletedProcess:
         """Run a shell command and return the result."""
-        try:
-            return subprocess.run(
-                cmd,
-                capture_output=capture_output,
-                text=True,
-                check=check
+        # Always run with check=False and handle errors explicitly so this
+        # function consistently returns a CompletedProcess on success.
+        result = subprocess.run(
+            cmd,
+            capture_output=capture_output,
+            text=True,
+            check=False
+        )
+
+        if check and result.returncode != 0:
+            # Raise a CalledProcessError with stdout/stderr attached to match
+            # prior behaviour when callers expect exceptions on failure.
+            raise subprocess.CalledProcessError(
+                result.returncode, cmd, output=result.stdout, stderr=result.stderr
             )
-        except subprocess.CalledProcessError as e:
-            if check:
-                raise
-            return e
+
+        return result
+
+    def extract_strings_from_binary(self, binary_path: str, min_length: int = 4) -> List[str]:
+        """Extract printable strings from a binary file using Python."""
+        strings = []
+        try:
+            with open(binary_path, 'rb') as f:
+                current_string = bytearray()
+
+                while True:
+                    byte = f.read(1)
+                    if not byte:
+                        break
+
+                    byte_val = byte[0]
+                    # Check if byte is printable ASCII (32-126)
+                    if 32 <= byte_val <= 126:
+                        current_string.append(byte_val)
+                    else:
+                        # End of string, add if long enough
+                        if len(current_string) >= min_length:
+                            try:
+                                strings.append(current_string.decode('ascii'))
+                            except UnicodeDecodeError:
+                                pass
+                        current_string = bytearray()
+
+                # Handle final string if file doesn't end with non-printable
+                if len(current_string) >= min_length:
+                    try:
+                        strings.append(current_string.decode('ascii'))
+                    except UnicodeDecodeError:
+                        pass
+
+        except IOError as e:
+            self.print_warning(f"Could not read binary file {binary_path}: {e}")
+            return []
+
+        return strings
 
     def check_binary_security(self, binary_path: str) -> bool:
         """Check if a binary contains test artifacts."""
@@ -74,54 +119,42 @@ class SecurityChecker:
             self.print_error(f"Binary not found: {binary_path}")
             return False
 
-        # Check for test function symbols in the binary
-        strings_available = True
+        # Extract strings from binary using Python implementation
         try:
-            subprocess.run(['which', 'strings'],
-                         capture_output=True, check=True)
-        except subprocess.CalledProcessError:
-            strings_available = False
+            strings_output = self.extract_strings_from_binary(binary_path)
 
-        if strings_available:
-            try:
-                # Get strings output
-                result = self.run_command(['strings', binary_path])
-                strings_output = result.stdout
+            # Check for common test function patterns
+            test_patterns = [
+                'NewManagerForTest',
+                'testing.T',
+                '_test.go'
+            ]
 
-                # Check for common test function patterns
-                test_patterns = [
-                    'NewManagerForTest',
-                    'testing.T',
-                    '_test.go'
-                ]
+            test_functions_found = False
+            for pattern in test_patterns:
+                matches = [s for s in strings_output if pattern in s]
+                if matches:
+                    self.print_error(f"Test functions found in production binary: {binary_name}")
+                    # Show first 5 matches
+                    for match in matches[:5]:
+                        print(match)
+                    test_functions_found = True
+                    break
 
-                test_functions_found = False
-                for pattern in test_patterns:
-                    if pattern in strings_output:
-                        self.print_error(f"Test functions found in production binary: {binary_name}")
-                        # Show first 5 matches
-                        lines = strings_output.split('\n')
-                        matches = [line for line in lines if pattern in line][:5]
-                        for match in matches:
-                            print(match)
-                        test_functions_found = True
-                        break
+            # Check for debug/development symbols
+            runtime_caller_found = any('runtime.Caller' in s for s in strings_output)
+            test_keyword_found = any('test' in s.lower() for s in strings_output)
+            if runtime_caller_found and test_keyword_found:
+                self.print_warning(f"Development debug symbols found in binary: {binary_name}")
 
-                # Check for debug/development symbols
-                if 'runtime.Caller' in strings_output and 'test' in strings_output:
-                    self.print_warning(f"Development debug symbols found in binary: {binary_name}")
-
-                if not test_functions_found:
-                    self.print_success(f"No test artifacts found in binary: {binary_name}")
-                    return True
-                else:
-                    return False
-
-            except subprocess.CalledProcessError:
-                self.print_warning("Failed to run strings command on binary")
+            if not test_functions_found:
+                self.print_success(f"No test artifacts found in binary: {binary_name}")
                 return True
-        else:
-            self.print_warning("strings command not available, skipping binary artifact check")
+            else:
+                return False
+
+        except Exception as e:
+            self.print_warning(f"Failed to analyze binary strings: {e}")
             return True
 
     def check_build_environment(self) -> bool:
@@ -168,26 +201,16 @@ class SecurityChecker:
             if filename == 'manager_testing.go' or filename.endswith('_testing.go'):
                 try:
                     with open(go_file, 'r', encoding='utf-8') as f:
-                        content = f.read()
-                        lines = content.split('\n')
+                        lines = f.readlines()
 
-                        # Find the package declaration line
-                        package_line_idx = None
-                        for i, line in enumerate(lines):
-                            stripped = line.strip()
-                            if stripped.startswith('package '):
-                                package_line_idx = i
-                                break
-
-                        # Check for //go:build test constraint before package declaration
-                        has_test_constraint = False
+                        # Find the package declaration index
+                        package_line_idx = next((i for i, l in enumerate(lines) if l.strip().startswith('package ')), None)
                         check_until = package_line_idx if package_line_idx is not None else len(lines)
 
-                        for i in range(check_until):
-                            line = lines[i].strip()
-                            if line.startswith('//go:build test'):
-                                has_test_constraint = True
-                                break
+                        # Check for //go:build test constraint before package declaration
+                        has_test_constraint = any(
+                            l.strip().startswith('//go:build test') for l in lines[:check_until]
+                        )
 
                         if not has_test_constraint:
                             files_without_test_tag.append(str(go_file))
@@ -209,19 +232,25 @@ class SecurityChecker:
 
         patterns_found = False
 
-        # Check for removed hash-directory flag usage
+        # Check for removed --hash-directory flag usage using Python search.
+        hash_flag_matches: List[str] = []
         try:
-            result = subprocess.run([
-                'grep', '-r', '--hash-directory', '.',
-                '--include=*.go', '--exclude-dir=vendor'
-            ], capture_output=True, text=True, check=False)
+            for go_file in Path('.').rglob('*.go'):
+                if 'vendor' in go_file.parts:
+                    continue
+                try:
+                    text = go_file.read_text(encoding='utf-8')
+                except (IOError, UnicodeDecodeError):
+                    continue
+                if '--hash-directory' in text:
+                    hash_flag_matches.append(str(go_file))
 
-            if result.returncode == 0:
+            if hash_flag_matches:
                 self.print_error("Found forbidden --hash-directory flag usage:")
-                print(result.stdout)
+                for m in hash_flag_matches:
+                    print(m)
                 patterns_found = True
         except Exception as e:
-            # grep command might not be available or other issues
             self.print_warning(f"Could not check for --hash-directory pattern: {e}")
 
         # Check for direct newManagerInternal usage outside verification package
@@ -282,15 +311,18 @@ class SecurityChecker:
 
         self.print_info(f"Checking binary permissions for: {binary_file.name}")
 
-        # Check file permissions
+        # Check file permissions using mode bits.
         file_stat = binary_file.stat()
-        perms = oct(file_stat.st_mode)[-3:]  # Get last 3 digits
+        mode = file_stat.st_mode
+        is_executable = bool(mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH))
 
-        if perms not in ['755']:
-            self.print_warning(f"Binary has non-standard permissions: {perms} (expected 755)")
+        # Expect owner-executable and owner-readable (rwx for owner is common for 755)
+        owner_perms = (mode & 0o700) >> 6
+        if owner_perms != 0o7:
+            # owner_perms is small int 0-7; compare to 0o7 (7) for rwx
+            self.print_warning(f"Binary owner permissions unexpected: {oct((mode & 0o700) >> 6)} (expected 0o7)")
 
-        # Check if binary is executable
-        if not os.access(binary_path, os.X_OK):
+        if not is_executable:
             self.print_error(f"Binary is not executable: {binary_path}")
             return False
 

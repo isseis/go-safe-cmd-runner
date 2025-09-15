@@ -72,6 +72,6 @@ func runForTestWithCustomHashDir(hashDir string) (error, error) {
 	}
 
 	// Try to load config (will fail without config file, but tests manager creation)
-	configErr, err := bootstrap.LoadConfig(verificationManager, *configPath, "test-run-id")
+	_, configErr := bootstrap.LoadConfig(verificationManager, *configPath, "test-run-id")
 	return configErr, nil
 }
