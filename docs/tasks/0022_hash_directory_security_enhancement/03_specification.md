@@ -11,7 +11,7 @@ graph TD
     subgraph "internal/verification/"
         A[manager.go<br/>共通内部実装]
         B[manager_production.go<br/>プロダクション用API]
-        C[manager_testing.go<br/>テスト用API //go:build testing]
+        C[manager_testing.go<br/>テスト用API //go:build test]
         D[types.go<br/>共通型定義]
         E[errors.go<br/>エラー定義]
     end
@@ -212,7 +212,7 @@ func logProductionManagerCreation(file string, line int) {
 #### manager_testing.go
 ```go
 // internal/verification/manager_testing.go
-//go:build testing
+//go:build test
 
 package verification
 
@@ -855,7 +855,7 @@ check_build_tags() {
 
     # Find files with testing build tag in production paths
     local testing_files
-    testing_files=$(find "${PRODUCTION_PATHS[@]}" -name "*.go" -type f -exec grep -l "//go:build testing" {} \; 2>/dev/null || true)
+    testing_files=$(find "${PRODUCTION_PATHS[@]}" -name "*.go" -type f -exec grep -l "//go:build test" {} \; 2>/dev/null || true)
 
     if [ -n "$testing_files" ]; then
         echo -e "${YELLOW}Files with testing build tag found:${NC}"
@@ -1169,7 +1169,7 @@ jobs:
 #### manager_test.go修正版
 ```go
 // internal/verification/manager_test.go
-//go:build testing
+//go:build test
 
 package verification
 
@@ -1372,7 +1372,7 @@ func BenchmarkNewManagerForTest(b *testing.B) {
 #### integration_test.go修正版
 ```go
 // cmd/runner/integration_test.go
-//go:build testing
+//go:build test
 
 package main
 

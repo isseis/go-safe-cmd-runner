@@ -60,7 +60,7 @@ graph TB
         G --> I
         H --> I
 
-        J["//go:build testing"]
+        J["//go:build test"]
         G -.-> J
         K["🔒 Security: Build-tag enforced separation"]
         G -.-> K
@@ -90,7 +90,7 @@ graph TB
    - シンプルで安全なAPI
 
 2. **Testing Manager** (`internal/verification/manager_testing.go`)
-   - テスト環境専用（`//go:build testing`）
+   - テスト環境専用（`//go:build test`）
    - 柔軟なハッシュディレクトリ指定
    - 豊富なテスト用オプション
 
@@ -134,7 +134,7 @@ flowchart TD
 ```mermaid
 flowchart TD
     A[test code] --> B[NewManagerForTest customDir, opts...]
-    B --> C[manager_testing.go<br/>//go:build testing]
+    B --> C[manager_testing.go<br/>//go:build test]
     C --> D[customHashDirectory]
     C --> E[newManagerInternal customDir, opts...]
     E --> F[manager.go ✓ Test Flexible]
@@ -170,7 +170,7 @@ flowchart TD
 | 攻撃種類 | 現在の脆弱性 | 対策後の防御 | 実装方法 |
 |---------|-------------|-------------|----------|
 | 偽ハッシュディレクトリ攻撃 | `--hash-directory` による任意指定可能 | ✅ 完全防止 | コマンドライン引数削除 |
-| テスト用API悪用 | なし（新規対策） | ✅ ビルドタグ制約 | `//go:build testing` |
+| テスト用API悪用 | なし（新規対策） | ✅ ビルドタグ制約 | `//go:build test` |
 | 内部API直接アクセス | なし（新規対策） | ✅ パッケージレベル制限 | internal package + 小文字関数 |
 | CI/CD環境での誤用 | なし（新規対策） | ✅ 自動検出 | golangci-lint forbidigo |
 
@@ -216,7 +216,7 @@ func NewManager() (*Manager, error) {
 #### Testing API
 ```go
 // internal/verification/manager_testing.go
-//go:build testing
+//go:build test
 
 package verification
 
@@ -257,7 +257,7 @@ func run(runID string) error {
 #### テスト環境での使用
 ```go
 // cmd/runner/integration_test.go
-//go:build testing
+//go:build test
 
 func TestCustomHashDirectory(t *testing.T) {
     tempDir := t.TempDir()

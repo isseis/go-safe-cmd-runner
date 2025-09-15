@@ -95,7 +95,7 @@ graph TD
 
 #### 2.1 ビルドタグ制約の追加
 - [ ] **Task 2.1.1**: `internal/verification/manager_testing.go` 作成
-  - `//go:build testing` タグ追加
+  - `//go:build test` タグ追加
   - NewManagerForTest実装
   - テスト用セキュリティ制約
 
@@ -289,7 +289,7 @@ func NewManager() (*Manager, error) {
 #### テスト用API実装例
 ```go
 // internal/verification/manager_testing.go
-//go:build testing
+//go:build test
 
 func NewManagerForTest(hashDir string, options ...Option) (*Manager, error) {
     // 1. 呼び出し元検証
