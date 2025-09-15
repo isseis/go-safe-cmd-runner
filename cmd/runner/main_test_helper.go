@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os/signal"
 	"syscall"
 
@@ -26,9 +25,10 @@ func runForTest(runID string) error {
 	if err != nil {
 		return &logging.PreExecutionError{
 			Type:      logging.ErrorTypeFileAccess,
-			Message:   fmt.Sprintf("Hash directory validation failed: %v", err),
+			Message:   "Hash directory validation failed",
 			Component: "file",
 			RunID:     runID,
+			Err:       err,
 		}
 	}
 
