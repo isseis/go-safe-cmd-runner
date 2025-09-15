@@ -337,11 +337,13 @@ class SecurityChecker:
         mode = file_stat.st_mode
         is_executable = bool(mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH))
 
-        # Expect owner-executable and owner-readable (rwx for owner is common for 755)
-        owner_perms = (mode & 0o700) >> 6
-        if owner_perms != 0o7:
-            # owner_perms is small int 0-7; compare to 0o7 (7) for rwx
-            self.print_warning(f"Binary owner permissions unexpected: {oct((mode & 0o700) >> 6)} (expected 0o7)")
+        # Expect owner-executable and owner-readable (r-x for owner is sufficient)
+        owner_mask = stat.S_IRWXU  # Owner read/write/execute mask (0o700)
+        owner_perms = (mode & owner_mask) >> 6
+        required_perms = stat.S_IRUSR | stat.S_IXUSR  # Read and execute for owner
+        if not (mode & required_perms == required_perms):
+            # Check that both read and execute bits are set
+            self.print_warning(f"Binary owner permissions unexpected: {oct(owner_perms)} (expected at least r-x)")
 
         if not is_executable:
             self.print_error(f"Binary is not executable: {binary_path}")
