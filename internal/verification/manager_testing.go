@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
 // isCallerInTestFile checks if the caller is in a test file
@@ -48,13 +47,6 @@ func WithFS(fs common.FileSystem) TestOption {
 func WithFileValidatorDisabled() TestOption {
 	return func(opts *managerInternalOptions) {
 		opts.fileValidatorEnabled = false
-	}
-}
-
-// WithPrivilegeManager sets a custom privilege manager for testing
-func WithPrivilegeManager(privMgr runnertypes.PrivilegeManager) TestOption {
-	return func(opts *managerInternalOptions) {
-		opts.privilegeManager = privMgr
 	}
 }
 
@@ -99,10 +91,6 @@ func NewManagerForTest(hashDir string, options ...TestOption) (*Manager, error) 
 		}
 		if !internalOpts.fileValidatorEnabled {
 			internalOptions = append(internalOptions, withFileValidatorDisabledInternal())
-		}
-		if internalOpts.privilegeManager != nil {
-			// Will be used when privilege manager support is added
-			// internalOptions = append(internalOptions, withPrivilegeManagerInternal(internalOpts.privilegeManager))
 		}
 		if internalOpts.securityLevel == SecurityLevelRelaxed {
 			internalOptions = append(internalOptions, withSecurityLevel(SecurityLevelRelaxed))

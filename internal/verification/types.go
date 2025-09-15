@@ -2,7 +2,6 @@ package verification
 
 import (
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
 // CreationMode represents how the Manager was created
@@ -53,7 +52,6 @@ func (s SecurityLevel) String() string {
 type managerInternalOptions struct {
 	fs                   common.FileSystem
 	fileValidatorEnabled bool
-	privilegeManager     runnertypes.PrivilegeManager
 	creationMode         CreationMode
 	securityLevel        SecurityLevel
 }
@@ -97,11 +95,3 @@ func withFileValidatorDisabledInternal() InternalOption {
 		opts.fileValidatorEnabled = false
 	}
 }
-
-// withPrivilegeManagerInternal is an internal option for setting the privilege manager
-// Currently unused but may be needed for future privilege manager integration
-// func withPrivilegeManagerInternal(privMgr runnertypes.PrivilegeManager) InternalOption {
-// 	return func(opts *managerInternalOptions) {
-// 		opts.privilegeManager = privMgr
-// 	}
-// }
