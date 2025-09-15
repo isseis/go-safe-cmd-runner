@@ -76,11 +76,13 @@ func TestConfigPathRequired(t *testing.T) {
 func TestNewManagerProduction(t *testing.T) {
 	t.Run("creates manager with default hash directory", func(t *testing.T) {
 		// Production manager creation should use default hash directory
-		_, err := runForTestWithManager()
-		if err != nil {
+		runErr, managerErr := runForTestWithManager()
+		if managerErr != nil {
+			t.Fatalf("manager creation should not fail: %v", managerErr)
+		}
+		if runErr != nil {
 			// In tests, we expect this to fail due to missing config file
-			// but the manager creation itself should not fail
-			assert.Contains(t, err.Error(), "config")
+			assert.Contains(t, runErr.Error(), "config")
 		}
 	})
 }
