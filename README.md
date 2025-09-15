@@ -15,6 +15,28 @@ Go Safe Command Runner addresses the critical need for secure command execution 
 
 Common use cases include scheduled backups, system maintenance tasks, and delegating specific administrative operations to non-root users while maintaining security controls.
 
+## ⚠️ Breaking Changes (Security Enhancement)
+
+**Version 2.0.0 introduces important security improvements with breaking changes:**
+
+### Removed Features (Security)
+- **`--hash-directory` flag**: Removed from the runner to prevent custom hash directory specification in production
+- **Custom hash directory API**: Internal APIs no longer accept custom hash directories in production builds
+- **Hash directory configuration**: Configuration file hash directory specification is no longer supported
+
+### Security Enhancements
+- **Fixed Hash Directory**: Production builds use only the default hash directory (`/usr/local/etc/go-safe-cmd-runner/hashes`)
+- **API Separation**: Testing and production APIs are completely separated with build tags
+- **Static Analysis**: Automated detection of security violations in code and builds
+- **Enhanced Verification**: Stronger file integrity verification with centralized management
+
+### Migration Guide
+- **Configuration**: Remove any `hash_directory` settings from your TOML configuration files
+- **Scripts**: Remove `--hash-directory` flag from any scripts or automation
+- **Development**: Use separate test APIs for testing with `//go:build test` tag
+
+For detailed migration information, see [Verification API Documentation](docs/verification_api.md).
+
 ## Features
 
 ### Core Security Features
@@ -100,8 +122,7 @@ internal/              # Core implementation
 # Use custom environment file
 ./runner -config config.toml -env-file .env.production
 
-# Custom hash directory
-./runner -config config.toml -hash-directory /custom/hash/dir
+# Note: --hash-directory flag removed for security (uses default: /usr/local/etc/go-safe-cmd-runner/hashes)
 
 # Custom log directory and level
 ./runner -config config.toml -log-dir /var/log/go-safe-cmd-runner -log-level debug
