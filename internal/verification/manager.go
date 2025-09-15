@@ -20,6 +20,7 @@ type Manager struct {
 	fileValidator filevalidator.FileValidator
 	security      *security.Validator
 	pathResolver  *PathResolver
+	isDryRun      bool
 }
 
 // VerifyConfigFile verifies the integrity of a configuration file
@@ -131,6 +132,13 @@ func (m *Manager) VerifyEnvironmentFile(envFilePath string) error {
 func (m *Manager) ValidateHashDirectory() error {
 	if m.security == nil {
 		return ErrSecurityValidatorNotInitialized
+	}
+
+	// Skip hash directory validation if in dry-run mode
+	if m.isDryRun {
+		slog.Debug("Skipping hash directory validation - dry-run mode",
+			"hash_directory", m.hashDir)
+		return nil
 	}
 
 	// Validate directory permissions using security validator
@@ -300,12 +308,21 @@ func (m *Manager) ResolvePath(command string) (string, error) {
 // verifyFileWithFallback attempts file verification with normal privileges first,
 // then falls back to privileged verification if permission errors occur
 func (m *Manager) verifyFileWithFallback(filePath string) error {
+	if m.fileValidator == nil {
+		// File validator is disabled (e.g., in dry-run mode) - skip verification
+		return nil
+	}
 	return m.fileValidator.Verify(filePath)
 }
 
 // readAndVerifyFileWithFallback attempts file reading and verification with normal privileges first,
 // then falls back to privileged access if permission errors occur
 func (m *Manager) readAndVerifyFileWithFallback(filePath string) ([]byte, error) {
+	if m.fileValidator == nil {
+		// File validator is disabled (e.g., in dry-run mode) - fallback to normal file reading
+		// #nosec G304 - filePath comes from verified configuration and is sanitized by path resolver
+		return os.ReadFile(filePath)
+	}
 	return m.fileValidator.VerifyAndRead(filePath)
 }
 
@@ -332,8 +349,9 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 	}
 
 	manager := &Manager{
-		hashDir: hashDir,
-		fs:      opts.fs,
+		hashDir:  hashDir,
+		fs:       opts.fs,
+		isDryRun: opts.isDryRun,
 	}
 
 	// Initialize file validator with SHA256 algorithm

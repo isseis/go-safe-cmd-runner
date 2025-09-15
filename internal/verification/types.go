@@ -55,6 +55,7 @@ type managerInternalOptions struct {
 	creationMode                CreationMode
 	securityLevel               SecurityLevel
 	skipHashDirectoryValidation bool
+	isDryRun                    bool
 }
 
 func newInternalOptions() *managerInternalOptions {
@@ -101,6 +102,13 @@ func withFileValidatorDisabledInternal() InternalOption {
 func withSkipHashDirectoryValidationInternal() InternalOption {
 	return func(opts *managerInternalOptions) {
 		opts.skipHashDirectoryValidation = true
+	}
+}
+
+// withDryRunModeInternal is an internal option for marking the manager as dry-run mode
+func withDryRunModeInternal() InternalOption {
+	return func(opts *managerInternalOptions) {
+		opts.isDryRun = true
 	}
 }
 

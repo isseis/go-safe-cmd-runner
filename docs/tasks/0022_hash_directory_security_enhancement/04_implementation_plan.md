@@ -158,31 +158,31 @@ graph TD
 ### Phase 4: CI/CD整備 (2日)
 
 #### 4.1 Makefileの更新
-- [ ] **Task 4.1.1**: セキュリティチェックターゲット追加
+- [x] **Task 4.1.1**: セキュリティチェックターゲット追加
   - `make security-check` 実装
   - `make build` にセキュリティチェック統合
   - 新しいテストターゲットの追加
 
-- [ ] **Task 4.1.2**: ビルドプロセスの最適化
+- [x] **Task 4.1.2**: ビルドプロセスの最適化
   - プロダクション/テストビルドの分離
   - 自動検証パイプライン
   - エラー時のわかりやすいメッセージ
 
 #### 4.2 GitHub Actions設定
-- [ ] **Task 4.2.1**: `.github/workflows/security-enhanced-ci.yml` 作成
+- [x] **Task 4.2.1**: `.github/workflows/security-enhanced-ci.yml` 作成
   - セキュリティ検証ジョブ
   - ビルド・テストジョブ
   - デプロイメント検証ジョブ
 
-- [ ] **Task 4.2.2**: セキュリティスキャンの統合
+- [x] **Task 4.2.2**: セキュリティスキャンの統合
   - Gosec統合
   - Trivy脆弱性スキャン
   - 自動セキュリティレポート生成
 
 #### 4.3 開発者ツールの整備
-- [ ] **Task 4.3.1**: 開発者向けスクリプト作成
-  - `scripts/validate-production-binary.sh`
-  - `scripts/build-security-check.sh`
+- [x] **Task 4.3.1**: 開発者向けスクリプト作成
+  - 既存の `scripts/additional-security-checks.py` を拡張
+  - `production-validation` と `build-security` 機能を追加
   - デバッグ支援ツール
 
 ### Phase 5: 統合・検証 (2-3日)

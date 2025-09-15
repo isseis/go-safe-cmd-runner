@@ -23,6 +23,25 @@ func NewManager() (*Manager, error) {
 	)
 }
 
+// NewManagerForDryRun creates a new verification manager for dry-run mode
+// that skips hash directory validation since dry-run doesn't need actual file verification
+func NewManagerForDryRun() (*Manager, error) {
+	// Log dry-run manager creation for security audit trail
+	logDryRunManagerCreation()
+
+	// Always use the default hash directory in production
+	hashDir := cmdcommon.DefaultHashDirectory
+
+	// Create manager with dry-run constraints (skip hash directory validation and file validator)
+	return newManagerInternal(hashDir,
+		withCreationMode(CreationModeProduction),
+		withSecurityLevel(SecurityLevelStrict),
+		withSkipHashDirectoryValidationInternal(),
+		withFileValidatorDisabledInternal(),
+		withDryRunModeInternal(),
+	)
+}
+
 const (
 	// callerDepthForNewManager is the stack depth passed to runtime.
 	// Caller to obtain the caller of NewManager.
@@ -32,6 +51,15 @@ const (
 	//   2: NewManager (we want the caller of NewManager)
 	// If the call stack changes, this value may need to be updated.
 	callerDepthForNewManager = 2
+
+	// callerDepthForNewManagerForDryRun is the stack depth passed to runtime.
+	// Caller to obtain the caller of NewManagerForDryRun.
+	// Stack frames:
+	//   0: runtime.Caller
+	//   1: logDryRunManagerCreation
+	//   2: NewManagerForDryRun (we want the caller of NewManagerForDryRun)
+	// If the call stack changes, this value may need to be updated.
+	callerDepthForNewManagerForDryRun = 2
 )
 
 // logProductionManagerCreation logs the creation of a production manager for security audit
@@ -49,6 +77,26 @@ func logProductionManagerCreation() {
 	}
 
 	slog.Info("Production verification manager created", args...)
+}
+
+// logDryRunManagerCreation logs the creation of a dry-run manager for security audit
+func logDryRunManagerCreation() {
+	// Build base logging arguments
+	args := []any{
+		"api", "NewManagerForDryRun",
+		"hash_directory", cmdcommon.DefaultHashDirectory,
+		"security_level", "strict",
+		"mode", "dry-run",
+		"skip_hash_directory_validation", true,
+		"file_validator_enabled", false,
+	}
+
+	// Add caller information if available
+	if _, file, line, ok := runtime.Caller(callerDepthForNewManagerForDryRun); ok {
+		args = append(args, "caller_file", file, "caller_line", line)
+	}
+
+	slog.Info("Dry-run verification manager created", args...)
 }
 
 // validateProductionConstraints validates that production security constraints are met

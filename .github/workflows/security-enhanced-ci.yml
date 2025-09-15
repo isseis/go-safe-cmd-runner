@@ -1,0 +1,245 @@
+name: Security Enhanced CI
+
+on:
+  push:
+    branches: [ main, 'issei/*' ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+
+      - name: Install Gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+
+      - name: Run Gosec security scanner
+        run: gosec -fmt sarif -out gosec-report.sarif -stdout -verbose=text ./...
+        continue-on-error: true
+
+      - name: Upload Gosec SARIF file
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: gosec-report.sarif
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+        continue-on-error: true
+
+      - name: Upload Trivy SARIF file
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  build-security-validation:
+    name: Build & Security Validation
+    runs-on: ubuntu-latest
+    needs: security-scan
+    strategy:
+      matrix:
+        cgo: [0, 1]
+        build-type: [production, test]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+
+      - name: Install CGO dependencies
+        if: matrix.cgo == 1
+        run: sudo apt-get update && sudo apt-get install -y build-essential
+
+      - name: Build production binaries
+        if: matrix.build-type == 'production'
+        env:
+          CGO_ENABLED: ${{ matrix.cgo }}
+        run: |
+          make build
+          echo "Built production binaries with CGO_ENABLED=${{ matrix.cgo }}"
+
+      - name: Build test binaries
+        if: matrix.build-type == 'test'
+        env:
+          CGO_ENABLED: ${{ matrix.cgo }}
+        run: |
+          make build-test
+          echo "Built test binaries with CGO_ENABLED=${{ matrix.cgo }}"
+
+      - name: Run security checks on production binaries
+        if: matrix.build-type == 'production'
+        run: |
+          python3 scripts/additional-security-checks.py production-validation
+          echo "Security validation passed for production binaries"
+
+      - name: Upload production artifacts
+        if: matrix.build-type == 'production' && matrix.cgo == 1
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-binaries-cgo${{ matrix.cgo }}
+          path: |
+            build/prod/record
+            build/prod/verify
+            build/prod/runner
+          retention-days: 30
+
+  test-comprehensive:
+    name: Comprehensive Testing
+    runs-on: ubuntu-latest
+    needs: build-security-validation
+    strategy:
+      matrix:
+        cgo: [0, 1]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+
+      - name: Install CGO dependencies
+        if: matrix.cgo == 1
+        run: sudo apt-get update && sudo apt-get install -y build-essential
+
+      - name: Run comprehensive tests
+        env:
+          CGO_ENABLED: ${{ matrix.cgo }}
+        run: |
+          make test
+          echo "Comprehensive tests completed with CGO_ENABLED=${{ matrix.cgo }}"
+
+      - name: Generate test coverage
+        if: matrix.cgo == 1
+        env:
+          CGO_ENABLED: ${{ matrix.cgo }}
+        run: |
+          make coverage
+          echo "Test coverage report generated"
+
+      - name: Upload coverage to Codecov
+        if: matrix.cgo == 1
+        continue-on-error: true
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.out
+          flags: cgo${{ matrix.cgo }}
+          name: codecov-security-enhanced-cgo${{ matrix.cgo }}
+          fail_ci_if_error: false
+
+  lint:
+    name: Code Quality & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.1
+          args: --timeout=5m
+
+      - name: Verify modules
+        run: |
+          go mod tidy
+          if [ -n "$(git diff --name-only)" ]; then
+            echo "ERROR: go mod tidy resulted in changes:"
+            git diff
+            exit 1
+          fi
+          echo "PASS: go mod tidy check completed"
+
+  deployment-validation:
+    name: Deployment Validation
+    runs-on: ubuntu-latest
+    needs: [build-security-validation, test-comprehensive, lint]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download production artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: production-binaries-cgo1
+          path: ./artifacts
+
+      - name: Validate deployment artifacts
+        run: |
+          echo "Validating deployment artifacts..."
+          ls -la ./artifacts/
+
+          # Verify binaries exist and are executable
+          for binary in record verify runner; do
+            if [ ! -f "./artifacts/$binary" ]; then
+              echo "ERROR: Missing binary: $binary"
+              exit 1
+            fi
+            chmod +x "./artifacts/$binary"
+            echo "PASS: Binary $binary found and made executable"
+          done
+
+          # Final security validation using Python script
+          echo "Running final security validation..."
+          # Create temporary build directory structure for the validation script
+          mkdir -p build/prod
+          cp ./artifacts/* build/prod/
+          python3 scripts/additional-security-checks.py production-validation
+          echo "PASS: Deployment artifacts passed security validation"
+
+      - name: Generate security report
+        run: |
+          echo "# Security Validation Report" > security-report.md
+          echo "- Build Date: $(date -u)" >> security-report.md
+          echo "- Commit: ${{ github.sha }}" >> security-report.md
+          echo "- Branch: ${{ github.ref_name }}" >> security-report.md
+          echo "- CGO Enabled: Multiple configurations tested" >> security-report.md
+          echo "- Security Scans: Gosec + Trivy completed" >> security-report.md
+          echo "- Test Coverage: Generated and uploaded" >> security-report.md
+          echo "- Production Binary Security: Validated" >> security-report.md
+
+          echo "Generated security validation report:"
+          cat security-report.md
+
+      - name: Upload security report
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-validation-report
+          path: security-report.md
+          retention-days: 90

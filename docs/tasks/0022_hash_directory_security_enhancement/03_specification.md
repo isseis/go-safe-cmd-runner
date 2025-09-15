@@ -28,8 +28,8 @@ graph TD
     end
 
     subgraph "scripts/"
-        K[additional-security-checks.py<br/>補助セキュリティ検証]
-        L[build-security-check.sh<br/>ビルド時セキュリティ検証]
+        K[additional-security-checks.py<br/>統合セキュリティ検証]
+        L[security_checker.py<br/>セキュリティ検証ロジック]
     end
 
     subgraph ".github/workflows/"
@@ -751,7 +751,7 @@ install-tools:
 validate-production: build
 	@echo "=== Validating production deployment ==="
 	@echo "Checking binary security..."
-	@$(SCRIPTS_DIR)/validate-production-binary.sh $(BUILD_DIR)/runner
+	@$(PYTHON) $(SCRIPTS_DIR)/additional-security-checks.py production-validation
 	@echo "Testing basic functionality..."
 	@$(BUILD_DIR)/runner --help > /dev/null
 	@echo "Running final binary validation..."
