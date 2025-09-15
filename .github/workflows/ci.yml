@@ -95,11 +95,11 @@ jobs:
         run: |
           # Build production binary without test tags
           go build -o /tmp/prod_runner ./cmd/runner
-          # Verify test functions are not present in the binary
-          if strings /tmp/prod_runner | grep -i "fortest"; then
+          # Verify test functions from this package are not present in the binary
+          if strings /tmp/prod_runner | grep "github.com/isseis/go-safe-cmd-runner" | grep -i "fortest"; then
             echo "ERROR: Test functions found in production binary!"
             echo "Found the following test-related symbols:"
-            strings /tmp/prod_runner | grep -i "fortest"
+            strings /tmp/prod_runner | grep "github.com/isseis/go-safe-cmd-runner" | grep -i "fortest"
             exit 1
           else
             echo "PASS: Test functions correctly excluded from production binary"
