@@ -185,7 +185,7 @@ benchmark:
 	$(GOTEST) -bench=. -benchmem ./internal/runner/resource/
 
 coverage:
-	$(ENVSET) $(GOTEST) -coverprofile=coverage.out ./...
+	$(ENVSET) $(GOTEST) -tags test -coverprofile=coverage.out $$(go list ./internal/... | grep -v '/testing$$')
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 
