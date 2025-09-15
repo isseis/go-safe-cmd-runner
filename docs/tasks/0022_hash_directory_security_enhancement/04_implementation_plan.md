@@ -110,7 +110,7 @@ graph TD
   - AST解析による正確な検出
   - フラグ定義の検出ルール
 
-- [x] **Task 2.2.2**: `scripts/additional-security-checks.sh` 作成
+- [x] **Task 2.2.2**: `scripts/additional-security-checks.py` 作成
   - バイナリセキュリティ検証（テストアーティファクト検出）
   - ビルド環境整合性チェック
   - ビルドタグ検証機能
@@ -310,7 +310,7 @@ func NewManagerForTest(hashDir string, options ...Option) (*Manager, error) {
 ```mermaid
 graph TD
     A[golangci-lint forbidigo] --> B[AST解析]
-    C[additional-security-checks.sh] --> D[補助チェック]
+    C[additional-security-checks.py] --> D[補助チェック]
 
     B --> E[NewManagerForTest検出]
     B --> F[newManagerInternal直接使用検出]
@@ -360,7 +360,7 @@ sequenceDiagram
     participant CI as CI/CD
     participant Security as golangci-lint forbidigo
     participant Build as Build Process
-    participant Additional as additional-security-checks.sh
+    participant Additional as additional-security-checks.py
     participant Test as Test Suite
 
     Dev->>CI: Code Push
@@ -371,7 +371,7 @@ sequenceDiagram
     alt Primary Security Pass
         CI->>Build: Production Build
         Build->>Build: Binary Validation
-        Build->>Additional: Run additional-security-checks.sh
+        Build->>Additional: Run additional-security-checks.py
         Additional->>CI: Supplementary Security Report
         CI->>Test: Test Suite (with testing tag)
         Test->>Test: Unit Tests

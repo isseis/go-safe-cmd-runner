@@ -28,7 +28,7 @@ graph TD
     end
 
     subgraph "scripts/"
-        K[additional-security-checks.sh<br/>補助セキュリティ検証]
+        K[additional-security-checks.py<br/>補助セキュリティ検証]
         L[build-security-check.sh<br/>ビルド時セキュリティ検証]
     end
 
@@ -649,7 +649,7 @@ GO_BUILD_FLAGS := -v -trimpath
 GO_TEST_FLAGS := -v -race -count=1
 
 # Security check parameters
-ADDITIONAL_CHECKS := $(SCRIPTS_DIR)/additional-security-checks.sh
+ADDITIONAL_CHECKS := $(SCRIPTS_DIR)/additional-security-checks.py
 LINT_CONFIG := .golangci-security.yml
 
 # Default target
@@ -790,187 +790,374 @@ help:
 
 ### 4.2 補助セキュリティチェックスクリプト
 
-#### additional-security-checks.sh
-```bash
-#!/bin/bash
-# scripts/additional-security-checks.sh
-# Supplementary security checks to complement forbidigo linter
+#### additional-security-checks.py
+```python
+#!/usr/bin/env python3
+"""
+additional-security-checks.py
+Supplementary security validation script for go-safe-cmd-runner
+This script provides additional security checks beyond golangci-lint forbidigo
 
-set -euo pipefail
+This is a Python port of the original bash script.
+"""
 
-echo "=== Additional Security Validation ==="
+import os
+import sys
+import subprocess
+import stat
+import argparse
+from pathlib import Path
+from typing import List, Optional
 
-# Color definitions for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
 
-# Configuration
-PRODUCTION_PATHS=("./cmd/runner" "./internal/runner" "./internal/verification")
-BUILD_DIR="./build"
+class Colors:
+    """ANSI color codes for terminal output."""
+    RED = '\033[0;31m'
+    GREEN = '\033[0;32m'
+    YELLOW = '\033[1;33m'
+    NC = '\033[0m'  # No Color
 
-# Function to check for binary security properties
-check_binary_security() {
-    local errors=0
 
-    echo -e "${BLUE}Checking binary security properties...${NC}"
+class SecurityChecker:
+    """Security checker for go-safe-cmd-runner project."""
 
-    if [ -f "${BUILD_DIR}/runner" ]; then
-        # Check for test-related strings in production binary
-        echo -e "${YELLOW}Scanning binary for test-related artifacts...${NC}"
-        if strings "${BUILD_DIR}/runner" | grep -i -E "(test|debug|development)" > /tmp/binary_strings.txt 2>/dev/null; then
-            if [ -s /tmp/binary_strings.txt ]; then
-                echo -e "${YELLOW}⚠️  Test-related strings found in production binary:${NC}"
-                head -10 /tmp/binary_strings.txt | sed 's/^/    /'
-                echo "    ... (check /tmp/binary_strings.txt for full list)"
-            fi
-        else
-            echo -e "${GREEN}✅ No obvious test artifacts found in binary${NC}"
-        fi
+    def __init__(self):
+        self.exit_code = 0
 
-        # Check if binary is stripped
-        if file "${BUILD_DIR}/runner" | grep -q "not stripped"; then
-            echo -e "${YELLOW}⚠️  Binary contains debugging symbols (consider stripping)${NC}"
-        else
-            echo -e "${GREEN}✅ Binary is properly stripped${NC}"
-        fi
+    def print_status(self, color: str, message: str) -> None:
+        """Print colored status message."""
+        print(f"{color}{message}{Colors.NC}")
 
-        # Check binary size (basic sanity check)
-        local size=$(stat -f%z "${BUILD_DIR}/runner" 2>/dev/null || stat -c%s "${BUILD_DIR}/runner" 2>/dev/null || echo "0")
-        echo -e "${BLUE}Binary size: $(( size / 1024 / 1024 ))MB${NC}"
-    else
-        echo -e "${YELLOW}⚠️  Production binary not found, skipping binary security checks${NC}"
-    fi
+    def print_error(self, message: str) -> None:
+        """Print error message."""
+        self.print_status(Colors.RED, f"ERROR: {message}")
 
-    return $errors
-}
+    def print_success(self, message: str) -> None:
+        """Print success message."""
+        self.print_status(Colors.GREEN, f"PASS: {message}")
 
-# Function to check build tag compliance
-check_build_tags() {
-    local errors=0
+    def print_warning(self, message: str) -> None:
+        """Print warning message."""
+        self.print_status(Colors.YELLOW, f"WARNING: {message}")
 
-    echo -e "${BLUE}Checking build tag compliance...${NC}"
+    def print_info(self, message: str) -> None:
+        """Print info message."""
+        self.print_status(Colors.NC, f"INFO: {message}")
 
-    # Find files with testing build tag in production paths
-    local testing_files
-    testing_files=$(find "${PRODUCTION_PATHS[@]}" -name "*.go" -type f -exec grep -l "//go:build test" {} \; 2>/dev/null || true)
+    def run_command(self, cmd: List[str], capture_output: bool = True,
+                   check: bool = True) -> subprocess.CompletedProcess:
+        """Run a shell command and return the result."""
+        try:
+            return subprocess.run(
+                cmd,
+                capture_output=capture_output,
+                text=True,
+                check=check
+            )
+        except subprocess.CalledProcessError as e:
+            if check:
+                raise
+            return e
 
-    if [ -n "$testing_files" ]; then
-        echo -e "${YELLOW}Files with testing build tag found:${NC}"
-        echo "$testing_files" | while IFS= read -r file; do
-            # Verify these files only contain test-safe content
-            if [[ "$file" != *"manager_testing.go" ]]; then
-                echo -e "${RED}❌ ERROR: Unexpected testing build tag in: $file${NC}"
-                errors=$((errors + 1))
-            else
-                echo -e "${GREEN}✅ Expected testing build tag in: $file${NC}"
-            fi
-        done
-    fi
+    def check_binary_security(self, binary_path: str) -> bool:
+        """Check if a binary contains test artifacts."""
+        binary_name = Path(binary_path).name
+        self.print_info(f"Checking binary security for: {binary_name}")
 
-    return $errors
-}
+        if not Path(binary_path).is_file():
+            self.print_error(f"Binary not found: {binary_path}")
+            return False
 
-# Function to check build environment consistency
-check_build_environment() {
-    local errors=0
+        # Check for test function symbols in the binary
+        strings_available = True
+        try:
+            subprocess.run(['which', 'strings'],
+                         capture_output=True, check=True)
+        except subprocess.CalledProcessError:
+            strings_available = False
 
-    echo -e "${BLUE}Checking build environment consistency...${NC}"
+        if strings_available:
+            try:
+                # Get strings output
+                result = self.run_command(['strings', binary_path])
+                strings_output = result.stdout
 
-    # Check Go version
-    if command -v go >/dev/null 2>&1; then
-        local go_version=$(go version | grep -o 'go[0-9.]*' | head -1)
-        echo -e "${BLUE}Go version: ${go_version}${NC}"
+                # Check for common test function patterns
+                test_patterns = [
+                    'NewManagerForTest',
+                    'testing.T',
+                    '_test.go'
+                ]
 
-        # Basic version check (Go 1.23+)
-        if go version | grep -E 'go1\.(2[3-9]|[3-9][0-9])' >/dev/null; then
-            echo -e "${GREEN}✅ Go version is compatible${NC}"
-        else
-            echo -e "${YELLOW}⚠️  Go version may not support all features${NC}"
-        fi
-    else
-        echo -e "${RED}❌ ERROR: Go not found${NC}"
-        errors=$((errors + 1))
-    fi
+                test_functions_found = False
+                for pattern in test_patterns:
+                    if pattern in strings_output:
+                        self.print_error(f"Test functions found in production binary: {binary_name}")
+                        # Show first 5 matches
+                        lines = strings_output.split('\n')
+                        matches = [line for line in lines if pattern in line][:5]
+                        for match in matches:
+                            print(match)
+                        test_functions_found = True
+                        break
 
-    # Check golangci-lint availability
-    if command -v golangci-lint >/dev/null 2>&1; then
-        echo -e "${GREEN}✅ golangci-lint is available${NC}"
-    else
-        echo -e "${YELLOW}⚠️  golangci-lint not found (required for security validation)${NC}"
-    fi
+                # Check for debug/development symbols
+                if 'runtime.Caller' in strings_output and 'test' in strings_output:
+                    self.print_warning(f"Development debug symbols found in binary: {binary_name}")
 
-    return $errors
-}
+                if not test_functions_found:
+                    self.print_success(f"No test artifacts found in binary: {binary_name}")
+                    return True
+                else:
+                    return False
 
-# Function to generate security report
-generate_security_report() {
-    local timestamp
-    timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+            except subprocess.CalledProcessError:
+                self.print_warning("Failed to run strings command on binary")
+                return True
+        else:
+            self.print_warning("strings command not available, skipping binary artifact check")
+            return True
 
-    cat > security-check-report.json << EOF
-{
-    "timestamp": "$timestamp",
-    "check_type": "additional_security_validation",
-    "version": "1.0",
-    "status": "$1",
-    "details": {
-        "binary_security_check": "completed",
-        "build_tag_check": "completed",
-        "build_environment_check": "completed"
-    },
-    "summary": {
-        "total_errors": $2,
-        "security_level": "supplementary"
-    },
-    "note": "This complements the main golangci-lint forbidigo validation"
-}
-EOF
+    def check_build_environment(self) -> bool:
+        """Validate build environment integrity."""
+        self.print_info("Checking build environment integrity")
 
-    echo -e "${BLUE}Security report generated: security-check-report.json${NC}"
-}
+        # Check Go version
+        try:
+            result = self.run_command(['go', 'version'])
+            go_version = result.stdout.strip()
+            self.print_info(f"Go version: {go_version}")
+        except subprocess.CalledProcessError:
+            self.print_error("Go is not installed or not in PATH")
+            return False
 
-# Main execution
-main() {
-    echo -e "${BLUE}Starting additional security validation...${NC}"
-    echo -e "${BLUE}Target paths: ${PRODUCTION_PATHS[*]}${NC}"
-    echo -e "${BLUE}Build directory: ${BUILD_DIR}${NC}"
-    echo
+        # Check for go.mod file
+        if not Path('go.mod').is_file():
+            self.print_error("go.mod file not found")
+            return False
 
-    local total_errors=0
+        # Verify module integrity
+        try:
+            self.run_command(['go', 'mod', 'verify'])
+        except subprocess.CalledProcessError:
+            self.print_error("go mod verify failed - module integrity check failed")
+            return False
 
-    # Run all checks
-    if ! check_binary_security; then
-        total_errors=$((total_errors + $?))
-    fi
-    echo
+        self.print_success("Build environment integrity check passed")
+        return True
 
-    if ! check_build_tags; then
-        total_errors=$((total_errors + $?))
-    fi
-    echo
+    def check_build_tags(self) -> bool:
+        """Validate build tag compliance."""
+        self.print_info("Checking build tag compliance")
 
-    if ! check_build_environment; then
-        total_errors=$((total_errors + $?))
-    fi
-    echo
+        files_without_test_tag = []
 
-    # Generate report and exit with appropriate code
-    if [ $total_errors -eq 0 ]; then
-        echo -e "${GREEN}✅ All additional security checks passed!${NC}"
-        generate_security_report "PASSED" $total_errors
-        exit 0
-    else
-        echo -e "${RED}❌ Additional security validation failed with $total_errors errors${NC}"
-        generate_security_report "FAILED" $total_errors
-        exit 1
-    fi
-}
+        # Find all .go files
+        for go_file in Path('.').rglob('*.go'):
+            # Skip vendor directory
+            if 'vendor' in go_file.parts:
+                continue
 
-# Script execution
-main "$@"
+            filename = go_file.name
+            if filename == 'manager_testing.go' or filename.endswith('_testing.go'):
+                try:
+                    with open(go_file, 'r', encoding='utf-8') as f:
+                        first_line = f.readline().strip()
+                        if not first_line.startswith('//go:build test'):
+                            files_without_test_tag.append(str(go_file))
+                except (IOError, UnicodeDecodeError) as e:
+                    self.print_warning(f"Could not read file {go_file}: {e}")
+
+        if files_without_test_tag:
+            self.print_error("Files with testing APIs missing '//go:build test' tag:")
+            for file_path in files_without_test_tag:
+                print(file_path)
+            return False
+
+        self.print_success("Build tag compliance check passed")
+        return True
+
+    def check_forbidden_patterns(self) -> bool:
+        """Check for forbidden patterns in source code."""
+        self.print_info("Checking for forbidden patterns in source code")
+
+        patterns_found = False
+
+        # Check for removed hash-directory flag usage
+        try:
+            result = subprocess.run([
+                'grep', '-r', '--hash-directory', '.',
+                '--include=*.go', '--exclude-dir=vendor'
+            ], capture_output=True, text=True, check=False)
+
+            if result.returncode == 0:
+                self.print_error("Found forbidden --hash-directory flag usage:")
+                print(result.stdout)
+                patterns_found = True
+        except Exception as e:
+            # grep command might not be available or other issues
+            self.print_warning(f"Could not check for --hash-directory pattern: {e}")
+
+        # Check for direct newManagerInternal usage outside verification package
+        found_files = []
+        for go_file in Path('.').rglob('*.go'):
+            # Skip vendor directory, verification package, and test files
+            if ('vendor' in go_file.parts or
+                'internal/verification' in str(go_file) or
+                go_file.name.endswith('_test.go')):
+                continue
+
+            try:
+                with open(go_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    if 'newManagerInternal' in content:
+                        found_files.append(str(go_file))
+            except (IOError, UnicodeDecodeError):
+                continue
+
+        if found_files:
+            self.print_error("Found forbidden direct newManagerInternal usage outside verification package:")
+            for file_path in found_files:
+                print(file_path)
+            patterns_found = True
+
+        # Check for hardcoded hash directories
+        hardcoded_hash_dirs = []
+        for go_file in Path('.').rglob('*.go'):
+            # Skip vendor directory and test files
+            if 'vendor' in go_file.parts or go_file.name.endswith('_test.go'):
+                continue
+
+            try:
+                with open(go_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    if '.gocmdhashes' in content:
+                        hardcoded_hash_dirs.append(str(go_file))
+            except (IOError, UnicodeDecodeError):
+                continue
+
+        if hardcoded_hash_dirs:
+            self.print_warning("Found potential hardcoded hash directory references:")
+            for file_path in hardcoded_hash_dirs:
+                print(file_path)
+
+        if not patterns_found:
+            self.print_success("No forbidden patterns found")
+            return True
+        else:
+            return False
+
+    def check_binary_permissions(self, binary_path: str) -> bool:
+        """Check binary permissions and integrity."""
+        binary_file = Path(binary_path)
+
+        if not binary_file.is_file():
+            return True  # Skip if binary doesn't exist
+
+        self.print_info(f"Checking binary permissions for: {binary_file.name}")
+
+        # Check file permissions
+        file_stat = binary_file.stat()
+        perms = oct(file_stat.st_mode)[-3:]  # Get last 3 digits
+
+        if perms not in ['755']:
+            self.print_warning(f"Binary has non-standard permissions: {perms} (expected 755)")
+
+        # Check if binary is executable
+        if not os.access(binary_path, os.X_OK):
+            self.print_error(f"Binary is not executable: {binary_path}")
+            return False
+
+        self.print_success("Binary permissions check passed")
+        return True
+
+    def run_all_checks(self) -> int:
+        """Run all security checks."""
+        self.print_info("Starting additional security checks for go-safe-cmd-runner")
+
+        success = True
+
+        # Check build environment
+        if not self.check_build_environment():
+            success = False
+
+        # Check build tags
+        if not self.check_build_tags():
+            success = False
+
+        # Check for forbidden patterns
+        if not self.check_forbidden_patterns():
+            success = False
+
+        # Check binaries if they exist
+        binaries = ["build/runner", "build/record", "build/verify"]
+        for binary in binaries:
+            if Path(binary).is_file():
+                if not self.check_binary_security(binary):
+                    success = False
+                if not self.check_binary_permissions(binary):
+                    success = False
+            else:
+                self.print_info(f"Binary not found (skipping): {binary}")
+
+        # Final status
+        if success:
+            self.print_success("All additional security checks passed")
+            return 0
+        else:
+            self.print_error("Some security checks failed")
+            return 1
+
+
+def main():
+    """Main entry point."""
+    parser = argparse.ArgumentParser(
+        description="Additional security checks for go-safe-cmd-runner"
+    )
+    parser.add_argument(
+        'command',
+        nargs='?',
+        default='all',
+        choices=['all', 'build-env', 'build-tags', 'patterns', 'binary'],
+        help='Security check to run'
+    )
+    parser.add_argument(
+        'binary_path',
+        nargs='?',
+        help='Binary path (required for binary command)'
+    )
+
+    args = parser.parse_args()
+    checker = SecurityChecker()
+
+    try:
+        if args.command == 'build-env':
+            success = checker.check_build_environment()
+        elif args.command == 'build-tags':
+            success = checker.check_build_tags()
+        elif args.command == 'patterns':
+            success = checker.check_forbidden_patterns()
+        elif args.command == 'binary':
+            if not args.binary_path:
+                checker.print_error("Binary path required for binary check")
+                return 1
+            success = (checker.check_binary_security(args.binary_path) and
+                      checker.check_binary_permissions(args.binary_path))
+        else:  # 'all' or default
+            return checker.run_all_checks()
+
+        return 0 if success else 1
+
+    except KeyboardInterrupt:
+        checker.print_error("Interrupted by user")
+        return 130
+    except Exception as e:
+        checker.print_error(f"Unexpected error: {e}")
+        return 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())
 ```
 
 ### 4.3 CI/CD設定詳細
