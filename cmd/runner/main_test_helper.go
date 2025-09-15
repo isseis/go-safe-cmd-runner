@@ -33,7 +33,7 @@ func runForTest(runID string) error {
 	}
 
 	// Phase 2: Initialize verification manager with validated hash directory FOR TESTING
-	verificationManager, err := bootstrap.InitializeVerificationManagerForTest(validatedHashDir, runID)
+	verificationManager, err := bootstrap.InitializeVerificationManagerForTest(validatedHashDir)
 	if err != nil {
 		return err
 	}
