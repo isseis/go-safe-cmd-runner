@@ -10,20 +10,9 @@ import os
 import subprocess
 from unittest.mock import patch, MagicMock, mock_open
 from pathlib import Path
-import sys
 
-# Add the scripts directory to the path so we can import the module
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-# Import the module with a different approach
-import importlib.util
-script_path = os.path.join(os.path.dirname(__file__), 'additional-security-checks.py')
-spec = importlib.util.spec_from_file_location("additional_security_checks", script_path)
-additional_security_checks = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(additional_security_checks)
-
-SecurityChecker = additional_security_checks.SecurityChecker
-Colors = additional_security_checks.Colors
+# Import the security checker classes directly from the module
+from security_checker import SecurityChecker, Colors
 
 
 class TestSecurityChecker(unittest.TestCase):
