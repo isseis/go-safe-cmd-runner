@@ -50,6 +50,13 @@ func WithFileValidatorDisabled() TestOption {
 	}
 }
 
+// WithFileValidatorEnabled enables file validation for testing
+func WithFileValidatorEnabled() TestOption {
+	return func(opts *managerInternalOptions) {
+		opts.fileValidatorEnabled = true
+	}
+}
+
 // WithTestingSecurityLevel sets the security level to relaxed for testing
 func WithTestingSecurityLevel() TestOption {
 	return func(opts *managerInternalOptions) {
@@ -81,35 +88,36 @@ func NewManagerForTest(hashDir string, options ...TestOption) (*Manager, error) 
 		"hash_directory", hashDir,
 		"security_level", "relaxed")
 
-	// Convert TestOption to InternalOption
-	internalOptions := []InternalOption{
-		withCreationMode(CreationModeTesting),
-		withSecurityLevel(SecurityLevelRelaxed),
-		withSkipHashDirectoryValidationInternal(), // Skip hash directory validation by default for testing
+	// Start with default testing options
+	internalOpts := newInternalOptions()
+	internalOpts.creationMode = CreationModeTesting
+	internalOpts.securityLevel = SecurityLevelRelaxed
+	internalOpts.skipHashDirectoryValidation = true
+	internalOpts.fileValidatorEnabled = false // Disable by default for testing
+
+	// Apply user-provided options
+	for _, opt := range options {
+		opt(internalOpts)
 	}
 
-	// Apply all TestOption functions to a single internal options instance
-	// then convert it once to InternalOption values. This avoids creating
-	// many temporary managerInternalOptions instances.
-	if len(options) > 0 {
-		internalOpts := newInternalOptions()
-		for _, opt := range options {
-			opt(internalOpts)
-		}
+	// Convert to InternalOption array
+	internalOptions := []InternalOption{
+		withCreationMode(internalOpts.creationMode),
+		withSecurityLevel(internalOpts.securityLevel),
+	}
 
-		// Convert to internal options once
-		if internalOpts.fs != nil {
-			internalOptions = append(internalOptions, withFSInternal(internalOpts.fs))
-		}
-		if !internalOpts.fileValidatorEnabled {
-			internalOptions = append(internalOptions, withFileValidatorDisabledInternal())
-		}
-		if internalOpts.securityLevel == SecurityLevelRelaxed {
-			internalOptions = append(internalOptions, withSecurityLevel(SecurityLevelRelaxed))
-		}
-		if internalOpts.skipHashDirectoryValidation {
-			internalOptions = append(internalOptions, withSkipHashDirectoryValidationInternal())
-		}
+	if internalOpts.skipHashDirectoryValidation {
+		internalOptions = append(internalOptions, withSkipHashDirectoryValidationInternal())
+	}
+
+	if internalOpts.fileValidatorEnabled {
+		// File validator is enabled - don't add the disabled option
+	} else {
+		internalOptions = append(internalOptions, withFileValidatorDisabledInternal())
+	}
+
+	if internalOpts.fs != nil {
+		internalOptions = append(internalOptions, withFSInternal(internalOpts.fs))
 	}
 
 	// Create manager with testing constraints (allows custom hash directory)
