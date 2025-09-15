@@ -50,10 +50,11 @@ func (s SecurityLevel) String() string {
 
 // managerInternalOptions holds all configuration options for creating a Manager internally
 type managerInternalOptions struct {
-	fs                   common.FileSystem
-	fileValidatorEnabled bool
-	creationMode         CreationMode
-	securityLevel        SecurityLevel
+	fs                          common.FileSystem
+	fileValidatorEnabled        bool
+	creationMode                CreationMode
+	securityLevel               SecurityLevel
+	skipHashDirectoryValidation bool
 }
 
 func newInternalOptions() *managerInternalOptions {
@@ -95,3 +96,15 @@ func withFileValidatorDisabledInternal() InternalOption {
 		opts.fileValidatorEnabled = false
 	}
 }
+
+// withSkipHashDirectoryValidationInternal is an internal option for skipping hash directory validation
+func withSkipHashDirectoryValidationInternal() InternalOption {
+	return func(opts *managerInternalOptions) {
+		opts.skipHashDirectoryValidation = true
+	}
+}
+
+// Ensure the internal option is referenced in non-test builds so linters
+// don't report it as unused. Tests will actively use this option, but
+// static analyzers run across packages/build tags and may flag it.
+var _ = withSkipHashDirectoryValidationInternal

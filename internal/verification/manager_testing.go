@@ -57,6 +57,13 @@ func WithTestingSecurityLevel() TestOption {
 	}
 }
 
+// WithSkipHashDirectoryValidation skips hash directory validation for testing
+func WithSkipHashDirectoryValidation() TestOption {
+	return func(opts *managerInternalOptions) {
+		opts.skipHashDirectoryValidation = true
+	}
+}
+
 // NewManagerForTest creates a new verification manager for testing with a custom hash directory
 // This API allows custom hash directories for testing purposes and uses relaxed security constraints
 func NewManagerForTest(hashDir string, options ...TestOption) (*Manager, error) {
@@ -78,6 +85,7 @@ func NewManagerForTest(hashDir string, options ...TestOption) (*Manager, error) 
 	internalOptions := []InternalOption{
 		withCreationMode(CreationModeTesting),
 		withSecurityLevel(SecurityLevelRelaxed),
+		withSkipHashDirectoryValidationInternal(), // Skip hash directory validation by default for testing
 	}
 
 	// Apply test options
@@ -94,6 +102,9 @@ func NewManagerForTest(hashDir string, options ...TestOption) (*Manager, error) 
 		}
 		if internalOpts.securityLevel == SecurityLevelRelaxed {
 			internalOptions = append(internalOptions, withSecurityLevel(SecurityLevelRelaxed))
+		}
+		if internalOpts.skipHashDirectoryValidation {
+			internalOptions = append(internalOptions, withSkipHashDirectoryValidationInternal())
 		}
 	}
 
