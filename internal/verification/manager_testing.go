@@ -14,19 +14,21 @@ import (
 // isCallerInTestFile checks if the caller is in a test file
 // This prevents testing APIs from being called from production code
 func isCallerInTestFile() bool {
-	// Check up to 10 levels in the call stack
-	for i := 2; i < 12; i++ {
-		if _, file, _, ok := runtime.Caller(i); ok {
-			// Check if the file is a test file
-			if strings.HasSuffix(file, "_test.go") {
-				return true
-			}
-			// Also allow calls from testing infrastructure files
-			if strings.Contains(file, "/testing/") {
-				return true
-			}
-		} else {
+	// Iterate through the entire call stack until no more frames are available
+	for i := 2; ; i++ {
+		_, file, _, ok := runtime.Caller(i)
+		if !ok {
+			// No more stack frames available
 			break
+		}
+
+		// Check if the file is a test file
+		if strings.HasSuffix(file, "_test.go") {
+			return true
+		}
+		// Also allow calls from testing infrastructure files
+		if strings.Contains(file, "/testing/") {
+			return true
 		}
 	}
 	return false
