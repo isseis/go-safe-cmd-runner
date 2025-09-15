@@ -4,7 +4,9 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -90,4 +92,100 @@ func TestStaticErrors(t *testing.T) {
 	assert.Equal(t, "hash directory is invalid", ErrHashDirectoryInvalid.Error())
 	assert.Equal(t, "config cannot be nil", ErrConfigNil.Error())
 	assert.Equal(t, "security validator not initialized", ErrSecurityValidatorNotInitialized.Error())
+}
+
+// Test SecurityViolationError
+func TestSecurityViolationError(t *testing.T) {
+	err := &SecurityViolationError{
+		Op:      "TestOperation",
+		Context: "test context",
+	}
+
+	assert.Contains(t, err.Error(), "security violation in TestOperation: test context")
+	assert.Contains(t, err.Error(), "at")
+}
+
+// Test ProductionAPIViolationError
+func TestProductionAPIViolationError(t *testing.T) {
+	err := NewProductionAPIViolationError("NewManagerForTest", "/path/to/test.go", 42)
+
+	assert.Equal(t, "NewManagerForTest", err.APIName)
+	assert.Equal(t, "/path/to/test.go", err.CallerFile)
+	assert.Equal(t, 42, err.CallerLine)
+
+	errorMsg := err.Error()
+	assert.Contains(t, errorMsg, "production API violation")
+	assert.Contains(t, errorMsg, "testing API NewManagerForTest")
+	assert.Contains(t, errorMsg, "/path/to/test.go:42")
+}
+
+// Test HashDirectorySecurityError
+func TestHashDirectorySecurityError(t *testing.T) {
+	err := NewHashDirectorySecurityError(
+		"/custom/hash/dir",
+		"/usr/local/etc/go-safe-cmd-runner/hashes",
+		"production environment requires default directory",
+	)
+
+	assert.Equal(t, "/custom/hash/dir", err.RequestedDir)
+	assert.Equal(t, "/usr/local/etc/go-safe-cmd-runner/hashes", err.DefaultDir)
+	assert.Equal(t, "production environment requires default directory", err.Reason)
+
+	errorMsg := err.Error()
+	assert.Contains(t, errorMsg, "hash directory security violation")
+	assert.Contains(t, errorMsg, "/custom/hash/dir")
+	assert.Contains(t, errorMsg, "/usr/local/etc/go-safe-cmd-runner/hashes")
+	assert.Contains(t, errorMsg, "production environment requires default directory")
+}
+
+// Test security constraint validation
+func TestValidateProductionConstraints(t *testing.T) {
+	t.Run("accepts default hash directory", func(t *testing.T) {
+		err := validateProductionConstraints("/usr/local/etc/go-safe-cmd-runner/hashes")
+		assert.NoError(t, err)
+	})
+
+	t.Run("rejects custom hash directory", func(t *testing.T) {
+		err := validateProductionConstraints("/custom/hash/dir")
+		require.Error(t, err)
+
+		var hashDirErr *HashDirectorySecurityError
+		assert.True(t, errors.As(err, &hashDirErr))
+		assert.Equal(t, "/custom/hash/dir", hashDirErr.RequestedDir)
+		assert.Equal(t, "/usr/local/etc/go-safe-cmd-runner/hashes", hashDirErr.DefaultDir)
+		assert.Equal(t, "production environment requires default hash directory", hashDirErr.Reason)
+	})
+}
+
+// Test security constraint validation in manager creation
+func TestSecurityConstraintsInManager(t *testing.T) {
+	t.Run("production mode with strict security enforces constraints", func(t *testing.T) {
+		_, err := newManagerInternal("/custom/dir",
+			withFSInternal(common.NewMockFileSystem()),
+			withFileValidatorDisabledInternal(),
+			withCreationMode(CreationModeProduction),
+			withSecurityLevel(SecurityLevelStrict),
+		)
+
+		require.Error(t, err)
+		var hashDirErr *HashDirectorySecurityError
+		assert.True(t, errors.As(err, &hashDirErr))
+	})
+
+	t.Run("testing mode with relaxed security allows custom directories", func(t *testing.T) {
+		mockFS := common.NewMockFileSystem()
+		mockFS.AddDir("/custom", 0o755)
+		mockFS.AddDir("/custom/dir", 0o755)
+
+		manager, err := newManagerInternal("/custom/dir",
+			withFSInternal(mockFS),
+			withFileValidatorDisabledInternal(),
+			withCreationMode(CreationModeTesting),
+			withSecurityLevel(SecurityLevelRelaxed),
+		)
+
+		require.NoError(t, err)
+		assert.NotNil(t, manager)
+		assert.Equal(t, "/custom/dir", manager.hashDir)
+	})
 }

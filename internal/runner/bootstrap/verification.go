@@ -5,7 +5,6 @@ import (
 	"log/slog"
 
 	runnererrors "github.com/isseis/go-safe-cmd-runner/internal/runner/errors"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 )
 
@@ -16,15 +15,12 @@ func InitializeVerificationManager(validatedHashDir, runID string) (*verificatio
 		"hash_directory", validatedHashDir,
 		"run_id", runID)
 
-	// Initialize privilege manager
-	logger := slog.Default()
-	privMgr := privilege.NewManager(logger)
+	// SECURITY: Remove runtime testing detection to prevent security bypass
+	// Testing should use build tags or separate test functions instead
 
-	// Initialize verification manager with privilege support
-	verificationManager, err := verification.NewManagerWithOpts(
-		validatedHashDir,
-		verification.WithPrivilegeManager(privMgr),
-	)
+	// Note: In production, we always use the default hash directory
+	// The validatedHashDir parameter is ignored for security
+	verificationManager, err := verification.NewManager()
 	if err != nil {
 		classifiedErr := runnererrors.ClassifyVerificationError(
 			runnererrors.ErrorTypeHashDirectoryValidation,

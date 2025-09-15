@@ -32,9 +32,9 @@ jobs:
           CGO_ENABLED: ${{ matrix.cgo }}
         run: |
           if [ "${{ matrix.cgo }}" = "1" ]; then
-            go test -v -race -coverprofile=coverage-cgo${{ matrix.cgo }}.txt -covermode=atomic ./...
+            go test -tags test -v -race -coverprofile=coverage-cgo${{ matrix.cgo }}.txt -covermode=atomic ./...
           else
-            go test -v -coverprofile=coverage-cgo${{ matrix.cgo }}.txt -covermode=atomic ./...
+            go test -tags test -v -coverprofile=coverage-cgo${{ matrix.cgo }}.txt -covermode=atomic ./...
           fi
 
       - name: Upload coverage to Codecov
@@ -90,3 +90,17 @@ jobs:
 
       - name: Verify modules
         run: go mod tidy && git diff --exit-code
+
+      - name: Verify production build excludes test functions
+        run: |
+          # Build production binary without test tags
+          go build -o /tmp/prod_runner ./cmd/runner
+          # Verify test functions from this package are not present in the binary
+          if strings /tmp/prod_runner | grep "github.com/isseis/go-safe-cmd-runner" | grep -i "fortest"; then
+            echo "ERROR: Test functions found in production binary!"
+            echo "Found the following test-related symbols:"
+            strings /tmp/prod_runner | grep "github.com/isseis/go-safe-cmd-runner" | grep -i "fortest"
+            exit 1
+          else
+            echo "PASS: Test functions correctly excluded from production binary"
+          fi

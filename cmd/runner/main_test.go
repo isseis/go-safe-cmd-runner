@@ -1,3 +1,5 @@
+//go:build test
+
 package main
 
 import (
@@ -61,9 +63,9 @@ func TestConfigPathRequired(t *testing.T) {
 	// Parse flags to set the hashDirectory value
 	flag.Parse()
 
-	// Test run() function
+	// Test runForTest() function (test-specific version)
 	runID := "test-run-id"
-	err = run(runID)
+	err = runForTest(runID)
 	if err == nil {
 		t.Error("expected error when --config is not provided")
 	}

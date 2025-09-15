@@ -28,6 +28,74 @@ var (
 	ErrCommandNotFound = errors.New("command not found in PATH")
 )
 
+// SecurityViolationError is the base error type for security-related violations
+type SecurityViolationError struct {
+	Op      string    // operation that was attempted
+	Context string    // additional context about the violation
+	Time    time.Time // when the violation occurred
+}
+
+// Error returns the error message
+func (e *SecurityViolationError) Error() string {
+	return fmt.Sprintf("security violation in %s: %s (at %s)", e.Op, e.Context, e.Time.Format(time.RFC3339))
+}
+
+// ProductionAPIViolationError is returned when testing APIs are used in production builds
+type ProductionAPIViolationError struct {
+	SecurityViolationError
+	APIName    string // name of the API that was misused
+	CallerFile string // file that made the invalid call
+	CallerLine int    // line number that made the invalid call
+}
+
+// NewProductionAPIViolationError creates a new ProductionAPIViolationError
+func NewProductionAPIViolationError(apiName, callerFile string, callerLine int) *ProductionAPIViolationError {
+	return &ProductionAPIViolationError{
+		SecurityViolationError: SecurityViolationError{
+			Op:      "APIViolation",
+			Context: fmt.Sprintf("testing API %s called from production code", apiName),
+			Time:    time.Now(),
+		},
+		APIName:    apiName,
+		CallerFile: callerFile,
+		CallerLine: callerLine,
+	}
+}
+
+// Error returns the error message
+func (e *ProductionAPIViolationError) Error() string {
+	return fmt.Sprintf("production API violation: testing API %s called from %s:%d (at %s)",
+		e.APIName, e.CallerFile, e.CallerLine, e.Time.Format(time.RFC3339))
+}
+
+// HashDirectorySecurityError is returned when hash directory security constraints are violated
+type HashDirectorySecurityError struct {
+	SecurityViolationError
+	RequestedDir string // directory that was requested
+	DefaultDir   string // the required default directory
+	Reason       string // specific reason for rejection
+}
+
+// NewHashDirectorySecurityError creates a new HashDirectorySecurityError
+func NewHashDirectorySecurityError(requestedDir, defaultDir, reason string) *HashDirectorySecurityError {
+	return &HashDirectorySecurityError{
+		SecurityViolationError: SecurityViolationError{
+			Op:      "HashDirectoryValidation",
+			Context: fmt.Sprintf("custom hash directory rejected: %s", reason),
+			Time:    time.Now(),
+		},
+		RequestedDir: requestedDir,
+		DefaultDir:   defaultDir,
+		Reason:       reason,
+	}
+}
+
+// Error returns the error message
+func (e *HashDirectorySecurityError) Error() string {
+	return fmt.Sprintf("hash directory security violation: requested '%s' but only '%s' allowed (%s) (at %s)",
+		e.RequestedDir, e.DefaultDir, e.Reason, e.Time.Format(time.RFC3339))
+}
+
 // Error represents a verification error with context
 type Error struct {
 	Op   string // operation that failed

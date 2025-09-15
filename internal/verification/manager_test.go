@@ -30,19 +30,30 @@ func TestNewManager(t *testing.T) {
 		{
 			name:        "relative hash directory",
 			hashDir:     "relative/path/hashes",
-			expectError: false, // NewManager doesn't validate path format, only emptiness
+			expectError: true, // Hash directory validation now checks if directory exists
 		},
 		{
 			name:        "dot relative hash directory",
 			hashDir:     "./hashes",
-			expectError: false, // NewManager doesn't validate path format, only emptiness
+			expectError: true, // Hash directory validation now checks if directory exists
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			mockFS := common.NewMockFileSystem()
-			manager, err := NewManagerWithOpts(tc.hashDir, withFS(mockFS), withFileValidatorDisabled())
+
+			// Set up mock filesystem for valid directories
+			if tc.hashDir == "/usr/local/etc/go-safe-cmd-runner/hashes" {
+				err := mockFS.AddDir("/usr/local/etc/go-safe-cmd-runner/hashes", 0o755)
+				require.NoError(t, err)
+			}
+
+			manager, err := newManagerInternal(tc.hashDir,
+				withFSInternal(mockFS),
+				withFileValidatorDisabledInternal(),
+				withCreationMode(CreationModeTesting),
+				withSecurityLevel(SecurityLevelRelaxed))
 
 			if tc.expectError {
 				require.Error(t, err)
@@ -128,7 +139,11 @@ func TestManager_ValidateHashDirectory_RelativePath(t *testing.T) {
 				}
 			}
 
-			manager, err := NewManagerWithOpts(tc.hashDir, withFS(mockFS), withFileValidatorDisabled())
+			manager, err := newManagerInternal(tc.hashDir,
+				withFSInternal(mockFS),
+				withFileValidatorDisabledInternal(),
+				withCreationMode(CreationModeTesting),
+				withSecurityLevel(SecurityLevelRelaxed))
 			require.NoError(t, err)
 
 			// The ValidateHashDirectory method delegates to the security validator
@@ -169,4 +184,42 @@ func TestManager_VerifyConfigFile_ErrorWrapping(t *testing.T) {
 	var verificationErr *Error
 	assert.True(t, errors.As(err, &verificationErr))
 	assert.Equal(t, "ValidateHashDirectory", verificationErr.Op)
+}
+
+// Test new production API
+func TestNewManagerProduction(t *testing.T) {
+	t.Run("creates manager with default hash directory", func(t *testing.T) {
+		// We can't easily test the actual NewManager function due to filesystem requirements
+		// Instead, test the internal implementation with mocked filesystem
+		mockFS := common.NewMockFileSystem()
+		err := mockFS.AddDir("/usr/local/etc/go-safe-cmd-runner/hashes", 0o755)
+		require.NoError(t, err)
+
+		manager, err := newManagerInternal("/usr/local/etc/go-safe-cmd-runner/hashes",
+			withFSInternal(mockFS),
+			withFileValidatorDisabledInternal(),
+			withCreationMode(CreationModeProduction),
+			withSecurityLevel(SecurityLevelStrict),
+		)
+
+		require.NoError(t, err)
+		assert.NotNil(t, manager)
+		assert.Equal(t, "/usr/local/etc/go-safe-cmd-runner/hashes", manager.hashDir)
+	})
+
+	t.Run("validates production constraints", func(t *testing.T) {
+		// Test that non-default directory is rejected in production mode
+		_, err := newManagerInternal("/custom/hash/dir",
+			withFSInternal(common.NewMockFileSystem()),
+			withFileValidatorDisabledInternal(),
+			withCreationMode(CreationModeProduction),
+			withSecurityLevel(SecurityLevelStrict),
+		)
+
+		require.Error(t, err)
+		var hashDirErr *HashDirectorySecurityError
+		assert.True(t, errors.As(err, &hashDirErr))
+		assert.Equal(t, "/custom/hash/dir", hashDirErr.RequestedDir)
+		assert.Equal(t, "/usr/local/etc/go-safe-cmd-runner/hashes", hashDirErr.DefaultDir)
+	})
 }

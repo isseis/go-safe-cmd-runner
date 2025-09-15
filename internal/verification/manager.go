@@ -23,99 +23,6 @@ type Manager struct {
 	privilegeManager runnertypes.PrivilegeManager
 }
 
-// Option is a function type for configuring Manager instances
-type Option func(*managerOptions)
-
-// managerOptions holds all configuration options for creating a Manager
-type managerOptions struct {
-	fs                   common.FileSystem
-	fileValidatorEnabled bool
-	privilegeManager     runnertypes.PrivilegeManager
-}
-
-func newOptions() *managerOptions {
-	return &managerOptions{
-		fileValidatorEnabled: true,
-		fs:                   common.NewDefaultFileSystem(),
-	}
-}
-
-// withFS is an option for setting the file system (for testing purposes)
-func withFS(fs common.FileSystem) Option {
-	return func(opts *managerOptions) {
-		opts.fs = fs
-	}
-}
-
-// withFileValidatorDisabled is an option for disabling the file validator (for testing purposes)
-func withFileValidatorDisabled() Option {
-	return func(opts *managerOptions) {
-		opts.fileValidatorEnabled = false
-	}
-}
-
-// WithPrivilegeManager is an option for setting the privilege manager
-func WithPrivilegeManager(privMgr runnertypes.PrivilegeManager) Option {
-	return func(opts *managerOptions) {
-		opts.privilegeManager = privMgr
-	}
-}
-
-// NewManager creates a new verification manager with the default file system
-func NewManager(hashDir string) (*Manager, error) {
-	return NewManagerWithOpts(hashDir)
-}
-
-// NewManagerWithOpts creates a new verification manager with a custom file system
-func NewManagerWithOpts(hashDir string, options ...Option) (*Manager, error) {
-	// Apply default options
-	opts := newOptions()
-	for _, option := range options {
-		option(opts)
-	}
-
-	// Clean the hash directory path
-	if hashDir == "" {
-		return nil, ErrHashDirectoryEmpty
-	}
-	if hashDir != "" {
-		hashDir = filepath.Clean(hashDir)
-	}
-
-	manager := &Manager{
-		hashDir:          hashDir,
-		fs:               opts.fs,
-		privilegeManager: opts.privilegeManager,
-	}
-
-	// Initialize file validator with SHA256 algorithm
-	if opts.fileValidatorEnabled {
-		var err error
-
-		// Use standard validator
-		manager.fileValidator, err = filevalidator.New(&filevalidator.SHA256{}, hashDir)
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize file validator: %w", err)
-		}
-	}
-
-	// Initialize security validator with default config
-	securityConfig := security.DefaultConfig()
-	securityValidator, err := security.NewValidatorWithFS(securityConfig, opts.fs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize security validator: %w", err)
-	}
-
-	// Initialize path resolver
-	pathEnv := os.Getenv("PATH") // Default to PATH environment variable if not explicitly set
-	pathResolver := NewPathResolver(pathEnv, securityValidator, false)
-
-	manager.security = securityValidator
-	manager.pathResolver = pathResolver
-
-	return manager, nil
-}
-
 // VerifyConfigFile verifies the integrity of a configuration file
 func (m *Manager) VerifyConfigFile(configPath string) error {
 	slog.Debug("Starting config file verification",
@@ -499,4 +406,104 @@ func (m *Manager) readAndVerifyFileWithFallback(filePath string) ([]byte, error)
 		return m.fileValidator.VerifyAndReadWithPrivileges(filePath, m.privilegeManager)
 	}
 	return m.executeWithPrivilegeFallbackForRead(filePath, normalOp, privilegedOp, "file_verification_and_reading")
+}
+
+// newManagerInternal creates a new verification manager with internal configuration
+// This is the core implementation used by both production and testing APIs
+func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, error) {
+	// Apply default options
+	opts := newInternalOptions()
+	for _, option := range options {
+		option(opts)
+	}
+
+	// Clean the hash directory path
+	if hashDir == "" {
+		return nil, ErrHashDirectoryEmpty
+	}
+	if hashDir != "" {
+		hashDir = filepath.Clean(hashDir)
+	}
+
+	// Perform security constraint validation
+	if err := validateSecurityConstraints(hashDir, opts); err != nil {
+		return nil, err
+	}
+
+	manager := &Manager{
+		hashDir:          hashDir,
+		fs:               opts.fs,
+		privilegeManager: opts.privilegeManager,
+	}
+
+	// Initialize file validator with SHA256 algorithm
+	if opts.fileValidatorEnabled {
+		var err error
+
+		// Use standard validator
+		manager.fileValidator, err = filevalidator.New(&filevalidator.SHA256{}, hashDir)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize file validator: %w", err)
+		}
+	}
+
+	// Initialize security validator with default config
+	securityConfig := security.DefaultConfig()
+	securityValidator, err := security.NewValidatorWithFS(securityConfig, opts.fs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize security validator: %w", err)
+	}
+
+	// Initialize path resolver
+	pathEnv := os.Getenv("PATH") // Default to PATH environment variable if not explicitly set
+	pathResolver := NewPathResolver(pathEnv, securityValidator, false)
+
+	manager.security = securityValidator
+	manager.pathResolver = pathResolver
+
+	return manager, nil
+}
+
+// validateSecurityConstraints validates security constraints based on creation mode and security level
+func validateSecurityConstraints(hashDir string, opts *managerInternalOptions) error {
+	// In production mode with strict security, enforce additional constraints
+	if opts.creationMode == CreationModeProduction && opts.securityLevel == SecurityLevelStrict {
+		if err := validateProductionConstraints(hashDir); err != nil {
+			return err
+		}
+	}
+
+	// Validate the hash directory itself using the provided filesystem
+	if err := validateHashDirectoryWithFS(hashDir, opts.fs); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validateHashDirectoryWithFS performs basic validation of the hash directory using provided filesystem
+func validateHashDirectoryWithFS(hashDir string, fs common.FileSystem) error {
+	if hashDir == "" {
+		return ErrHashDirectoryEmpty
+	}
+
+	// Check if directory exists
+	exists, err := fs.FileExists(hashDir)
+	if err != nil {
+		return fmt.Errorf("cannot access hash directory: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("%w: %s", ErrHashDirectoryInvalid, hashDir)
+	}
+
+	// Check if path is a directory
+	isDir, err := fs.IsDir(hashDir)
+	if err != nil {
+		return fmt.Errorf("cannot check if path is directory: %w", err)
+	}
+	if !isDir {
+		return fmt.Errorf("%w: path is not a directory: %s", ErrHashDirectoryInvalid, hashDir)
+	}
+
+	return nil
 }
