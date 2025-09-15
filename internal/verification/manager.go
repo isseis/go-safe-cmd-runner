@@ -30,13 +30,9 @@ func (m *Manager) VerifyConfigFile(configPath string) error {
 		"config_path", configPath,
 		"hash_directory", m.hashDir)
 
-	// Validate hash directory first
-	if err := m.ValidateHashDirectory(); err != nil {
-		return &Error{
-			Op:   "ValidateHashDirectory",
-			Path: m.hashDir,
-			Err:  err,
-		}
+	// Ensure hash directory is validated
+	if err := m.ensureHashDirectoryValidated(); err != nil {
+		return err
 	}
 
 	// Verify file hash using filevalidator (with privilege fallback)
@@ -65,13 +61,9 @@ func (m *Manager) VerifyAndReadConfigFile(configPath string) ([]byte, error) {
 		"config_path", configPath,
 		"hash_directory", m.hashDir)
 
-	// Validate hash directory first
-	if err := m.ValidateHashDirectory(); err != nil {
-		return nil, &Error{
-			Op:   "ValidateHashDirectory",
-			Path: m.hashDir,
-			Err:  err,
-		}
+	// Ensure hash directory is validated
+	if err := m.ensureHashDirectoryValidated(); err != nil {
+		return nil, err
 	}
 
 	// Read and verify file content atomically using filevalidator
@@ -101,13 +93,9 @@ func (m *Manager) VerifyEnvironmentFile(envFilePath string) error {
 		"env_file_path", envFilePath,
 		"hash_directory", m.hashDir)
 
-	// Validate hash directory first
-	if err := m.ValidateHashDirectory(); err != nil {
-		return &Error{
-			Op:   "ValidateHashDirectory",
-			Path: m.hashDir,
-			Err:  err,
-		}
+	// Ensure hash directory is validated
+	if err := m.ensureHashDirectoryValidated(); err != nil {
+		return err
 	}
 
 	// Verify file hash using filevalidator (with privilege fallback)
@@ -152,19 +140,28 @@ func (m *Manager) ValidateHashDirectory() error {
 	return nil
 }
 
+// ensureHashDirectoryValidated calls ValidateHashDirectory and wraps any error
+// into the package Error type used by Manager public methods.
+func (m *Manager) ensureHashDirectoryValidated() error {
+	if err := m.ValidateHashDirectory(); err != nil {
+		return &Error{
+			Op:   "ValidateHashDirectory",
+			Path: m.hashDir,
+			Err:  err,
+		}
+	}
+	return nil
+}
+
 // VerifyGlobalFiles verifies the integrity of global files
 func (m *Manager) VerifyGlobalFiles(globalConfig *runnertypes.GlobalConfig) (*Result, error) {
 	if globalConfig == nil {
 		return nil, ErrConfigNil
 	}
 
-	// Validate hash directory first
-	if err := m.ValidateHashDirectory(); err != nil {
-		return nil, &Error{
-			Op:   "ValidateHashDirectory",
-			Path: m.hashDir,
-			Err:  err,
-		}
+	// Ensure hash directory is validated
+	if err := m.ensureHashDirectoryValidated(); err != nil {
+		return nil, err
 	}
 
 	result := &Result{
@@ -224,13 +221,9 @@ func (m *Manager) VerifyGroupFiles(groupConfig *runnertypes.CommandGroup) (*Resu
 		return nil, ErrConfigNil
 	}
 
-	// Validate hash directory first
-	if err := m.ValidateHashDirectory(); err != nil {
-		return nil, &Error{
-			Op:   "ValidateHashDirectory",
-			Path: m.hashDir,
-			Err:  err,
-		}
+	// Ensure hash directory is validated
+	if err := m.ensureHashDirectoryValidated(); err != nil {
+		return nil, err
 	}
 
 	// Collect all files to verify (explicit files + command files)
