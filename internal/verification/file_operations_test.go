@@ -14,6 +14,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// invalidHashDirManager returns a Manager configured with a non-existent
+// hash directory to exercise hash directory validation failure paths in
+// tests.
+func invalidHashDirManager() *Manager {
+	return &Manager{
+		hashDir: "/non/existent/hash/directory",
+		fs:      common.NewDefaultFileSystem(),
+	}
+}
+
 // TestVerifyAndReadConfigFile tests the VerifyAndReadConfigFile method
 func TestVerifyAndReadConfigFile(t *testing.T) {
 	t.Run("successful_verification_and_read", func(t *testing.T) {
@@ -62,11 +72,7 @@ func TestVerifyAndReadConfigFile(t *testing.T) {
 	})
 
 	t.Run("hash_directory_validation_failure", func(t *testing.T) {
-		// Create manager with invalid hash directory
-		manager := &Manager{
-			hashDir: "/non/existent/hash/directory",
-			fs:      common.NewDefaultFileSystem(),
-		}
+		manager := invalidHashDirManager()
 
 		configPath := "/some/config.toml"
 
@@ -123,11 +129,7 @@ func TestVerifyEnvironmentFile(t *testing.T) {
 	})
 
 	t.Run("hash_directory_validation_failure", func(t *testing.T) {
-		// Create manager with invalid hash directory
-		manager := &Manager{
-			hashDir: "/non/existent/hash/directory",
-			fs:      common.NewDefaultFileSystem(),
-		}
+		manager := invalidHashDirManager()
 
 		envPath := "/some/.env"
 
@@ -180,11 +182,7 @@ func TestVerifyGlobalFiles(t *testing.T) {
 	})
 
 	t.Run("hash_directory_validation_failure", func(t *testing.T) {
-		// Create manager with invalid hash directory
-		manager := &Manager{
-			hashDir: "/non/existent/hash/directory",
-			fs:      common.NewDefaultFileSystem(),
-		}
+		manager := invalidHashDirManager()
 
 		globalConfig := &runnertypes.GlobalConfig{
 			VerifyFiles: []string{},
@@ -241,11 +239,7 @@ func TestVerifyGroupFiles(t *testing.T) {
 	})
 
 	t.Run("hash_directory_validation_failure", func(t *testing.T) {
-		// Create manager with invalid hash directory
-		manager := &Manager{
-			hashDir: "/non/existent/hash/directory",
-			fs:      common.NewDefaultFileSystem(),
-		}
+		manager := invalidHashDirManager()
 
 		groupConfig := &runnertypes.CommandGroup{
 			Name:        "test-group",
