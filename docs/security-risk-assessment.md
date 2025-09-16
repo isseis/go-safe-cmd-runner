@@ -501,10 +501,6 @@ func (m *Manager) ValidateConfigurationChain(configPath, envPath string) error {
     if err := m.VerifyConfigFile(configPath); err != nil {
         return fmt.Errorf("config pre-verification failed: %w", err)
     }
-    // 2. 環境ファイル事前検証
-    if err := m.VerifyEnvironmentFile(envPath); err != nil {
-        return fmt.Errorf("environment pre-verification failed: %w", err)
-    }
     return nil
 }
 ```
