@@ -154,14 +154,17 @@ CLICOLOR_FORCE=1 ./runner -config config.toml # Force color even in non-interact
 
 ### Hash Management
 ```bash
-# Record file hash
-./record -file /path/to/executable -hash-dir /etc/hashes
+# Record file hash (uses default hash directory: /usr/local/etc/go-safe-cmd-runner/hashes)
+./record -file /path/to/executable
 
 # Force overwrite existing hash
 ./record -file /path/to/file -force
 
-# Verify file integrity
-./verify -file /path/to/file -hash-dir /etc/hashes
+# Verify file integrity (uses default hash directory: /usr/local/etc/go-safe-cmd-runner/hashes)
+./verify -file /path/to/file
+
+# Note: -hash-dir option still available for testing and special cases
+./record -file /path/to/file -hash-dir /custom/test/hashes
 ```
 
 ## Configuration

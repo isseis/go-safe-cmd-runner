@@ -124,8 +124,6 @@ internal/              # コア実装
 # カスタム環境ファイルを使用
 ./runner -config config.toml -env-file .env.production
 
-# カスタムハッシュディレクトリ
-./runner -config config.toml -hash-directory /custom/hash/dir
 
 # カスタムログディレクトリとレベル
 ./runner -config config.toml -log-dir /var/log/go-safe-cmd-runner -log-level debug
@@ -139,14 +137,17 @@ internal/              # コア実装
 
 ### ハッシュ管理
 ```bash
-# ファイルハッシュの記録
-./record -file /path/to/executable -hash-dir /etc/hashes
+# ファイルハッシュの記録（デフォルトハッシュディレクトリ使用: /usr/local/etc/go-safe-cmd-runner/hashes）
+./record -file /path/to/executable
 
 # 既存ハッシュの強制上書き
 ./record -file /path/to/file -force
 
-# ファイル整合性の検証
-./verify -file /path/to/file -hash-dir /etc/hashes
+# ファイル整合性の検証（デフォルトハッシュディレクトリ使用: /usr/local/etc/go-safe-cmd-runner/hashes）
+./verify -file /path/to/file
+
+# 注記: -hash-dirオプションはテストや特別な場合に引き続き利用可能
+./record -file /path/to/file -hash-dir /custom/test/hashes
 ```
 
 ## 設定
