@@ -124,8 +124,6 @@ internal/              # コア実装
 # 設定ファイルの検証
 ./runner -config config.toml -validate
 
-
-
 # カスタムログディレクトリとレベル
 ./runner -config config.toml -log-dir /var/log/go-safe-cmd-runner -log-level debug
 

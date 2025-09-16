@@ -131,10 +131,6 @@ internal/              # Core implementation
 # Validate configuration file
 ./runner -config config.toml -validate
 
-
-# Note: --hash-directory flag completely removed for security (fixed default: /usr/local/etc/go-safe-cmd-runner/hashes)
-# Note: Secure fixed PATH prevents PATH manipulation attacks
-
 # Custom log directory and level
 ./runner -config config.toml -log-dir /var/log/go-safe-cmd-runner -log-level debug
 
