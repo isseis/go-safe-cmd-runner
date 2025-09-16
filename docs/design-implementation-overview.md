@@ -1,100 +1,100 @@
-# Go Safe Command Runner - Design and Implementation Overview
+# Go Safe Command Runner - 設計・実装概要
 
-## Executive Summary
+## 概要
 
-The Go Safe Command Runner is a security-focused command execution framework designed for privileged task delegation and automated batch processing. The system provides multiple layers of security controls to enable safe execution of privileged operations while maintaining strict security boundaries.
+Go Safe Command Runnerは、特権タスクの委譲と自動バッチ処理のために設計されたセキュリティ重視のコマンド実行フレームワークです。本システムは、厳格なセキュリティ境界を維持しながら特権操作の安全な実行を可能にする複数のセキュリティ制御層を提供します。
 
-**Key Use Cases:**
-- Scheduled backup operations with root privileges
-- Delegating specific administrative tasks to non-root users
-- Automated system maintenance with security controls
-- Batch processing with file integrity verification
+**主要なユースケース:**
+- root権限を必要とする定期バックアップ操作
+- 非rootユーザーへの特定管理タスクの委譲
+- セキュリティ制御を伴う自動システムメンテナンス
+- ファイル整合性検証を伴うバッチ処理
 
-## System Architecture
+## システムアーキテクチャ
 
-### High-Level Architecture
+### 高レベルアーキテクチャ
 
 ```mermaid
 flowchart TD
-    CLI["Command Line Interface"]
+    CLI["コマンドラインインターフェース"]
     subgraph CLI_Components[ ]
-        runner["runner (Main executor)"]
-        record["record (Hash recording)"]
-        verify["verify (File validation)"]
+        runner["runner (メイン実行器)"]
+        record["record (ハッシュ記録)"]
+        verify["verify (ファイル検証)"]
     end
     CLI --> CLI_Components
     CLI_Components --> CoreEngine
-    subgraph CoreEngine["Core Engine"]
-        config["Configuration Management"]
-        security["Security Framework"]
-        command["Command Execution"]
-        integrity["File Integrity Verification"]
-        env["Environment Management"]
-        privilege["Privilege Management"]
+    subgraph CoreEngine["コアエンジン"]
+        config["設定管理"]
+        security["セキュリティフレームワーク"]
+        command["コマンド実行"]
+        integrity["ファイル整合性検証"]
+        env["環境管理"]
+        privilege["特権管理"]
     end
     CoreEngine --> SystemInterface
-    subgraph SystemInterface["System Interface Layer"]
-        safeio["Safe File I/O (Symlink Protection)"]
-        process["Process Execution"]
+    subgraph SystemInterface["システムインターフェース層"]
+        safeio["安全なファイルI/O (シンボリックリンク保護)"]
+        process["プロセス実行"]
     end
 ```
 
-### Core Components
+### コアコンポーネント
 
-#### 1. Configuration Management (`internal/runner/config/`)
-- **Purpose**: TOML-based configuration loading and validation
-- **Key Features**:
-  - Schema validation with required field checking
-  - Path security validation (absolute paths, no relative components)
-  - Default value assignment
-  - Cross-reference validation between sections
-  - Risk-based command control configuration
-  - User/group execution specification support
+#### 1. 設定管理 (`internal/runner/config/`)
+- **目的**: TOMLベースの設定読み込みと検証
+- **主要機能**:
+  - 必須フィールドチェックを伴うスキーマ検証
+  - パスセキュリティ検証（絶対パス、相対コンポーネントなし）
+  - デフォルト値の割り当て
+  - セクション間のクロスリファレンス検証
+  - リスクベースコマンド制御設定
+  - ユーザー・グループ実行指定サポート
 
-**Implementation Highlights:**
+**実装のハイライト:**
 ```go
-// Safe configuration loading with validation
+// 検証を伴う安全な設定読み込み
 func (l *Loader) LoadConfig(path string) (*runnertypes.Config, error) {
-    data, err := safefileio.SafeReadFile(path)  // Secure file reading
+    data, err := safefileio.SafeReadFile(path)  // 安全なファイル読み込み
     if err := toml.Unmarshal(data, &cfg); err != nil {
         return nil, fmt.Errorf("failed to parse config: %w", err)
     }
-    // Path validation and default assignment
+    // パス検証とデフォルト割り当て
 }
 ```
 
-#### 2. Command Execution Engine (`internal/runner/executor/`)
-- **Purpose**: Safe command execution with output capture and timeout control
-- **Key Features**:
-  - Process isolation and resource management
-  - Configurable timeouts at global and command level
-  - Structured output capture with size limits
-  - Background process support with signal handling
+#### 2. コマンド実行エンジン (`internal/runner/executor/`)
+- **目的**: 出力キャプチャとタイムアウト制御を伴う安全なコマンド実行
+- **主要機能**:
+  - プロセス分離とリソース管理
+  - グローバルレベルとコマンドレベルでの設定可能なタイムアウト
+  - サイズ制限を伴う構造化出力キャプチャ
+  - シグナルハンドリングを伴うバックグラウンドプロセスサポート
 
-#### 3. File Integrity System (`internal/filevalidator/`)
-- **Purpose**: SHA-256 based file verification to prevent tampered binary execution
-- **Key Features**:
-  - Hash recording and verification workflow
-  - Privileged file access with controlled escalation
-  - Atomic operations to prevent race conditions
-  - Integration with privilege management
-  - Environment file verification - integrity validation of `.env` files before execution
+#### 3. ファイル整合性システム (`internal/filevalidator/`)
+- **目的**: 改ざんされたバイナリの実行を防ぐためのSHA-256ベースファイル検証
+- **主要機能**:
+  - ハッシュ記録と検証ワークフロー
+  - 制御された昇格を伴う特権ファイルアクセス
+  - 競合状態を防ぐアトミック操作
+  - 特権管理との統合
+  - 環境ファイル検証 - 実行前の`.env`ファイル整合性検証
 
-**Security Flow:**
+**セキュリティフロー:**
 ```
-File Access Request → Permission Check → Privilege Escalation (if needed)
-→ File Open → Privilege Restoration → Hash Calculation → Verification
+ファイルアクセス要求 → 権限チェック → 特権昇格（必要時）
+→ ファイルオープン → 特権復元 → ハッシュ計算 → 検証
 ```
 
-#### 4. Privilege Management (`internal/runner/privilege/`)
-- **Purpose**: Controlled privilege escalation with comprehensive audit trails
-- **Key Features**:
-  - Thread-safe privilege operations with global mutex
-  - Automatic privilege restoration with panic protection
-  - Support for both native root and setuid binary execution
-  - Emergency shutdown protocol on security failures
+#### 4. 特権管理 (`internal/runner/privilege/`)
+- **目的**: 包括的な監査証跡を伴う制御された特権昇格
+- **主要機能**:
+  - グローバルミューテックスを使用したスレッドセーフな特権操作
+  - パニック保護を伴う自動特権復元
+  - ネイティブrootとsetuidバイナリ実行の両方をサポート
+  - セキュリティ失敗時の緊急シャットダウンプロトコル
 
-**Privilege Escalation Pattern:**
+**特権昇格パターン:**
 ```go
 // WithPrivileges: Proper responsibility separation using Template Method pattern
 func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
@@ -115,199 +115,239 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
 }
 ```
 
-#### 5. Environment Security (`internal/runner/environment/`)
-- **Purpose**: Zero-trust environment variable filtering
-- **Key Features**:
-  - Allowlist-based filtering at global and group levels
-  - Dangerous pattern detection (passwords, tokens, etc.)
-  - Inheritance control (inherit/explicit/reject modes)
-  - Variable name and value validation
+#### 5. 環境セキュリティ (`internal/runner/environment/`)
+- **目的**: ゼロトラスト環境変数フィルタリング
+- **主要機能**:
+  - グローバルレベルとグループレベルでの許可リストベースフィルタリング
+  - 危険パターン検出（パスワード、トークンなど）
+  - 継承制御（継承/明示的/拒否モード）
+  - 変数名と値の検証
 
-#### 6. Safe File Operations (`internal/safefileio/`)
-- **Purpose**: Symlink-safe file operations using modern Linux security primitives
-- **Key Features**:
-  - openat2 with RESOLVE_NO_SYMLINKS for symlink attack prevention
-  - Step-by-step path validation
-  - Atomic file operations
-  - Cross-platform compatibility with fallback mechanisms
+#### 6. 安全なファイル操作 (`internal/safefileio/`)
+- **目的**: 現代的なLinuxセキュリティプリミティブを使用したシンボリックリンクセーフなファイル操作
+- **主要機能**:
+  - シンボリックリンク攻撃防止のためのopenat2とRESOLVE_NO_SYMLINKS
+  - ステップバイステップパス検証
+  - アトミックファイル操作
+  - フォールバックメカニズムを伴うクロスプラットフォーム互換性
 
-#### 7. Security Framework (`internal/runner/security/`)
-- **Purpose**: Centralized security validation and policy enforcement
-- **Key Features**:
-  - Command path allowlist validation
-  - Dangerous command detection
-  - File permission validation
-  - Path traversal attack prevention
-  - Risk-based command analysis and blocking
-  - Sensitive data redaction in logs
+#### 7. セキュリティフレームワーク (`internal/runner/security/`)
+- **目的**: 一元化されたセキュリティ検証とポリシー執行
+- **主要機能**:
+  - コマンドパス許可リスト検証
+  - 危険コマンド検出
+  - ファイル権限検証
+  - パストラバーサル攻撃防止
+  - リスクベースコマンド分析とブロック
+  - ログ内機密データの編集
 
-#### 8. Resource Management (`internal/runner/resource/`)
-- **Purpose**: Unified management of side effects for both normal execution and dry-run modes
-- **Key Features**:
-  - Command execution abstraction
-  - Temporary directory lifecycle management
-  - Privilege escalation coordination
-  - Dry-run simulation with realistic analysis
-  - Network operations (Slack notifications)
+#### 8. リソース管理 (`internal/runner/resource/`)
+- **目的**: 通常実行とdry-runモードの両方における副作用の統一管理
+- **主要機能**:
+  - コマンド実行の抽象化
+  - 一時ディレクトリのライフサイクル管理
+  - 特権昇格の協調
+  - 現実的な分析を伴うdry-runシミュレーション
+  - ネットワーク操作（Slack通知）
 
-#### 9. Verification Management (`internal/verification/`)
-- **Purpose**: Centralized management of file verification and path resolution
-- **Key Features**:
-  - Configuration and environment file verification
-  - Command path resolution with security validation
-  - Privileged file access fallback
-  - Standard system path skip functionality
+#### 9. 検証管理 (`internal/verification/`)
+- **目的**: ファイル検証とパス解決の一元管理
+- **主要機能**:
+  - 設定ファイルと環境ファイルの検証
+  - セキュリティ検証付きコマンドパス解決
+  - 特権ファイルアクセスフォールバック
+  - 標準システムパスの検証スキップ
 
-#### 10. Risk Assessment (`internal/runner/risk/`)
-- **Purpose**: Risk-based security assessment for command execution
-- **Key Features**:
-  - Command risk level analysis (low, medium, high, critical)
-  - Risk level-based security policy enforcement
-  - Command override detection and blocking
+#### 10. リスク評価 (`internal/runner/risk/`)
+- **目的**: コマンド実行のリスクベースセキュリティ評価
+- **主要機能**:
+  - コマンドリスクレベル分析（low、medium、high、critical）
+  - リスクレベルベースのセキュリティポリシー執行
+  - コマンドオーバーライド検出とブロック
 
-#### 11. Logging and Audit (`internal/logging/`, `internal/runner/audit/`)
-- **Purpose**: Secure logging with sensitive data protection
-- **Key Features**:
-  - Multi-handler logging (file, syslog, Slack notifications)
-  - Conditional text handler and interactive log handler
-  - Pre-execution error handling
-  - Structured audit trails
-  - Automatic sensitive data redaction
+#### 11. ログと監査 (`internal/logging/`, `internal/runner/audit/`)
+- **目的**: 機密データ保護を伴う安全なログ記録
+- **主要機能**:
+  - マルチハンドラログ（ファイル、syslog、Slack通知）
+  - 条件付きテキストハンドラと対話的ログハンドラ
+  - 実行前エラー処理
+  - 構造化監査証跡
+  - 機密データの自動編集機能
 
-#### 12. Data Redaction (`internal/redaction/`)
-- **Purpose**: Automatic filtering of sensitive information from logs and output
-- **Key Features**:
-  - Pattern-based detection of passwords, tokens, API keys
-  - Environment variable sanitization
-  - Configurable redaction policies
+#### 12. データ編集 (`internal/redaction/`)
+- **目的**: ログと出力からの機密情報の自動フィルタリング
+- **主要機能**:
+  - パスワード、トークン、APIキーのパターンベース検出
+  - 環境変数のサニタイズ
+  - 設定可能な編集ポリシー
 
-#### 13. Terminal Capabilities (`internal/terminal/`)
-- **Purpose**: Detection of terminal color support and interactive execution environments
-- **Key Features**:
-  - Interactive terminal environment detection (TTY/CI environment determination)
-  - Terminal color support detection and management
-  - User color preference priority control
-  - Cross-platform terminal capability determination
+#### 13. 端末機能検出 (`internal/terminal/`)
+- **目的**: 端末の色彩サポートと対話的実行環境の検出
+- **主要機能**:
+  - 対話的端末環境の検出（TTY/CI環境判定）
+  - 端末色彩サポートの検出と管理
+  - ユーザー色彩設定の優先順位制御
+  - クロスプラットフォーム端末能力判定
 
-#### 14. Group Membership Management (`internal/groupmembership/`)
-- **Purpose**: Safe management of user group memberships
-- **Key Features**:
-  - Support for both CGO and non-CGO implementations
-  - Group information parsing and validation
-  - User-group association management
+#### 14. グループメンバーシップ管理 (`internal/groupmembership/`)
+- **目的**: ユーザーグループメンバーシップの安全な管理
+- **主要機能**:
+  - CGOと非CGO実装の両方をサポート
+  - グループ情報の解析と検証
+  - ユーザー・グループの関連付け管理
 
-#### 15. Color Management (`internal/color/`)
-- **Purpose**: Console output color control
-- **Key Features**:
-  - Terminal color support detection
-  - Configurable color output control
+#### 15. カラー管理 (`internal/color/`)
+- **目的**: コンソール出力のカラー制御
+- **主要機能**:
+  - 端末カラーサポートの検出
+  - 設定可能なカラー出力制御
 
-#### 16. Common Utilities (`internal/common/`, `internal/cmdcommon/`)
-- **Purpose**: Providing basic functionality shared across packages
-- **Key Features**:
-  - File system abstraction interfaces
-  - Test support through mock implementations
-  - Command common utilities
+#### 16. ハッシュディレクトリ管理 (`internal/runner/hashdir/`)
+- **目的**: ハッシュディレクトリのセキュリティ管理と検証
+- **主要機能**:
+  - ハッシュディレクトリの検証とセキュリティチェック
+  - デフォルトハッシュディレクトリの強制使用
+  - カスタムハッシュディレクトリ攻撃の防止
+  - パス権限とアクセス制御の検証
 
-## Data Flow Architecture
+#### 17. システム初期化 (`internal/runner/bootstrap/`)
+- **目的**: システム起動時の初期化処理とブートストラップ
+- **主要機能**:
+  - ロガー初期化とコンフィギュレーション
+  - 環境変数の初期設定
+  - 設定ファイルとハッシュディレクトリの事前検証
+  - システム起動時のセキュリティチェック
 
-### Command Execution Flow
+#### 18. エラー管理 (`internal/runner/errors/`)
+- **目的**: 一元化されたエラー定義と処理
+- **主要機能**:
+  - カスタムエラータイプの定義
+  - エラーコンテキストとメタデータ管理
+  - セキュリティ対応エラーハンドリング
+  - 構造化エラーレポーティング
+
+#### 19. CLI管理 (`internal/runner/cli/`)
+- **目的**: コマンドラインインターフェースの管理
+- **主要機能**:
+  - コマンドライン引数の解析と検証
+  - フラグとオプションの管理
+  - ヘルプとUsage情報の提供
+  - インタラクティブモードサポート
+
+#### 20. テストユーティリティ (`internal/runner/executor/testing/`, `internal/runner/privilege/testing/`)
+- **目的**: 各コンポーネントのテスト専用ユーティリティ
+- **主要機能**:
+  - モック実装とテストヘルパー
+  - テスト環境でのセキュリティ機能シミュレーション
+  - テストデータ生成とクリーンアップ
+  - 分離されたテスト環境の提供
+
+#### 21. 共通ユーティリティ (`internal/common/`, `internal/cmdcommon/`)
+- **目的**: パッケージ間で共有される基本機能の提供
+- **主要機能**:
+  - ファイルシステム抽象化インターフェース
+  - モック実装によるテストサポート
+  - コマンド共通ユーティリティ
+
+## データフローアーキテクチャ
+
+### コマンド実行フロー
 
 ```
-Configuration Loading → Security Validation → Group Processing → Command Execution
+設定読み込み → セキュリティ検証 → グループ処理 → コマンド実行
 
-1. Configuration Loading:
-   ├── TOML parsing and validation
-   ├── Path security checks (hash directory absolute path validation)
-   ├── Default value assignment
-   └── Cross-reference validation
+1. 設定読み込み:
+   ├── TOML解析と検証
+   ├── パスセキュリティチェック（ハッシュディレクトリの絶対パス検証）
+   ├── デフォルト値割り当て
+   └── クロスリファレンス検証
 
-2. Security Validation:
-   ├── Configuration file integrity verification
-   ├── Environment file integrity verification (when specified)
-   ├── Environment variable filtering
-   ├── Command path validation and risk assessment
-   ├── Permission checks
-   └── User/group execution validation
+2. セキュリティ検証:
+   ├── 設定ファイル整合性検証
+   ├── 環境ファイル整合性検証（指定時）
+   ├── 環境変数フィルタリング
+   ├── コマンドパス検証とリスク評価
+   ├── 権限チェック
+   └── ユーザー・グループ実行検証
 
-3. Group Processing:
-   ├── Dependency resolution
-   ├── Priority determination
-   ├── Resource allocation (temporary directories)
-   ├── Environment preparation
-   └── Risk-based command filtering
+3. グループ処理:
+   ├── 依存関係解決
+   ├── 優先順位決定
+   ├── リソース割り当て（一時ディレクトリ）
+   ├── 環境準備
+   └── リスクベースコマンドフィルタリング
 
-4. Command Execution:
-   ├── Risk level assessment and enforcement
-   ├── Privilege escalation (if needed)
-   ├── User/group switching (if specified)
-   ├── Process spawning with isolation
-   ├── Output capture and monitoring with redaction
-   ├── Privilege restoration
-   ├── Resource cleanup
-   └── Audit logging and notifications
+4. コマンド実行:
+   ├── リスクレベル評価と執行
+   ├── 特権昇格（必要時）
+   ├── ユーザー・グループ切り替え（指定時）
+   ├── 分離を伴うプロセス生成
+   ├── 編集を伴う出力キャプチャと監視
+   ├── 特権復元
+   ├── リソースクリーンアップ
+   └── 監査ログと通知
 ```
 
-### File Verification Flow
+### ファイル検証フロー
 
 ```
-File Path Input → Security Checks → Hash Calculation → Verification → Result
+ファイルパス入力 → セキュリティチェック → ハッシュ計算 → 検証 → 結果
 
-1. Security Checks:
-   ├── Path validation (no symlinks, absolute path)
-   ├── Permission analysis
-   └── Privilege requirement determination
+1. セキュリティチェック:
+   ├── パス検証（シンボリックリンクなし、絶対パス）
+   ├── 権限分析
+   └── 特権要件判定
 
-2. File Access and Hash Calculation:
-   ├── Privilege escalation (if file requires root access)
-   ├── Secure file opening
-   ├── Privilege restoration (immediately after file open)
-   ├── Streaming SHA-256 calculation (runs with normal privileges)
-   └── Hash comparison preparation
+2. ファイルアクセスとハッシュ計算:
+   ├── 特権昇格（ファイルがrootアクセスを要求する場合）
+   ├── 安全なファイルオープン
+   ├── 特権復元（ファイルオープン直後）
+   ├── ストリーミングSHA-256計算（通常権限で実行）
+   └── ハッシュ比較準備
 
-3. Verification:
-   ├── Hash comparison with stored values
-   ├── Detailed error reporting with context
-   └── Audit log recording
+3. 検証:
+   ├── 保存されている値とのハッシュ比較
+   ├── 詳細なコンテキストを伴うエラー報告
+   └── 監査ログ記録
 ```
 
-## Security Design Principles
+## セキュリティ設計原則
 
-### 1. Defense in Depth
-Multiple security layers implemented to ensure no single point of failure compromises the entire system:
-- **Input Validation**: All inputs validated at entry points (including absolute path requirements)
-- **Path Security**: Comprehensive path validation and symlink protection
-- **File Integrity**: Hash-based verification of all critical files (configuration, environment files, executables)
-- **Privilege Control**: Minimal privilege principle with controlled escalation
-- **Environment Isolation**: Strict allowlist-based environment filtering
-- **Command Validation**: Allowlist-based command execution control with risk assessment
-- **Data Protection**: Automatic redaction of sensitive information in logs and output
+### 1. 多層防御
+単一障害点がシステム全体を危険にさらさないよう複数のセキュリティ層を実装:
+- **入力検証**: エントリポイントでのすべての入力検証（絶対パス要求を含む）
+- **パスセキュリティ**: 包括的なパス検証とシンボリックリンク保護
+- **ファイル整合性**: すべての重要ファイル（設定、環境ファイル、実行ファイル）のハッシュベース検証
+- **特権制御**: 制御された昇格による最小特権原則
+- **環境分離**: 厳格な許可リストベース環境フィルタリング
+- **コマンド検証**: リスク評価を伴う許可リストベースコマンド実行制御
+- **データ保護**: ログと出力における機密情報の自動編集
 
-### 2. Zero Trust Model
-No implicit trust in system environment:
-- All files verified before use
-- Environment variables filtered by allowlist
-- Commands validated against known-good patterns
-- Privileges granted only when necessary and immediately revoked
+### 2. ゼロトラストモデル
+システム環境への暗黙的な信頼なし:
+- 使用前のすべてのファイル検証
+- 許可リストによる環境変数フィルタリング
+- 既知の良好なパターンに対するコマンド検証
+- 必要時のみの特権付与と即座の取り消し
 
-### 3. Fail-Safe Design
-System designed to fail safely:
-- Default deny for all operations
-- Emergency shutdown on security failures
-- Comprehensive error handling and logging
-- Graceful degradation when security features unavailable
+### 3. フェイルセーフ設計
+安全に失敗するようシステムを設計:
+- すべての操作に対するデフォルト拒否
+- セキュリティ失敗時の緊急シャットダウン
+- 包括的なエラーハンドリングとログ記録
+- セキュリティ機能が利用できない場合の優雅な劣化
 
-### 4. Audit and Monitoring
-Complete visibility into security-relevant operations:
-- Structured logging with security context
-- Privilege operation metrics and tracking
-- Security event recording
-- Multi-channel critical error reporting
+### 4. 監査と監視
+セキュリティ関連操作への完全な可視性:
+- セキュリティコンテキストを伴う構造化ログ
+- 特権操作メトリクスと追跡
+- セキュリティイベント記録
+- 重要エラーのマルチチャンネル報告
 
-## Implementation Patterns
+## 実装パターン
 
-### 1. Interface-Driven Design
-Heavy use of interfaces for testability and modularity:
+### 1. インターフェース駆動設計
+テスト性とモジュール性のためのインターフェースの多用:
 ```go
 type PrivilegeManager interface {
     WithPrivileges(context ElevationContext, fn func() error) error
@@ -320,176 +360,214 @@ type FileValidator interface {
 }
 ```
 
-### 2. Composition Over Inheritance
-Component composition for feature extension:
+### 2. 継承よりコンポジション
+機能拡張のためのコンポーネントコンポジション:
 ```go
 type ValidatorWithPrivileges struct {
-    *Validator                    // Base functionality
-    privMgr      PrivilegeManager // Extended functionality
-    logger       *slog.Logger     // Observability
+    *Validator                    // 基本機能
+    privMgr      PrivilegeManager // 拡張機能
+    logger       *slog.Logger     // 可観測性
 }
 ```
 
-### 3. Context-Aware Operations
-Operations with context for security and observability:
+### 3. コンテキスト対応操作
+セキュリティと可観測性のためのコンテキストを持つ操作:
 ```go
-func (m *Manager) ExecuteWithContext(
-    ctx context.Context,
-    elevationCtx ElevationContext,
-    cmd Command,
-) (*Result, error)
+type ElevationContext struct {
+    Operation  string
+    FilePath   string
+    Reason     string
+}
 ```
 
-### 4. Resource Management Patterns
-Proper resource lifecycle management:
+### 4. 設定のためのビルダーパターン
+合理的なデフォルトを持つ柔軟な設定:
+```go
+func NewRunnerWithOptions(config *Config, opts ...Option) (*Runner, error) {
+    options := &runnerOptions{}
+    for _, opt := range opts {
+        opt(options)
+    }
+    // オプション適用とランナー作成
+}
+```
+
+### 5. リソース管理パターン
+実行モード間での副作用の統一処理:
 ```go
 type ResourceManager interface {
-    Acquire(ctx context.Context) (Resource, error)
-    Release(resource Resource) error
-}
-
-// Usage with automatic cleanup
-func (r *Runner) executeWithResources(ctx context.Context) error {
-    resource, err := r.resourceMgr.Acquire(ctx)
-    if err != nil {
-        return err
-    }
-    defer r.resourceMgr.Release(resource)
-
-    return r.performOperation(resource)
+    ExecuteCommand(ctx context.Context, cmd Command, group *CommandGroup, env map[string]string) (*ExecutionResult, error)
+    CreateTempDir(groupName string) (string, error)
+    WithPrivileges(context ElevationContext, fn func() error) error
+    SendNotification(message string, details map[string]any) error
 }
 ```
 
-## Performance Characteristics
+## テスト戦略
 
-### 1. Hash Computation
-- Efficient streaming hash calculation
-- File size limits prevent resource exhaustion
-- Parallel processing for multiple files
-- Memory-efficient implementation
+### 1. 単体テスト
+- すべてのコアコンポーネントの包括的テストカバレッジ
+- 外部依存関係のモック実装
+- カスタムエラータイプによるエラー条件テスト
+- 並行操作の競合状態テスト
 
-### 2. Environment Processing
-- O(1) allowlist lookups using map structures
-- Compiled regex patterns for pattern matching
-- Minimal string operations
-- Batch processing optimization
+### 2. 統合テスト
+- エンドツーエンドワークフローテスト
+- ファイルシステム相互作用テスト
+- 特権操作テスト
+- 設定読み込みと検証テスト
 
-### 3. Privilege Operations
-- Global mutex serializes privileged operations
-- Fast privilege escalation/restoration using system calls
-- Metrics collection for performance monitoring
-- Resource usage tracking
+### 3. セキュリティテスト
+- シンボリックリンク攻撃防止テスト
+- パストラバーサル攻撃テスト
+- 特権昇格境界テスト
+- 環境変数インジェクションテスト
 
-### 4. Risk Assessment
-- O(1) risk level lookups using pre-compiled patterns
-- Efficient command analysis using regex matching
-- Minimal overhead for risk evaluation
-- Cached results for repeated command analysis
+### 4. パフォーマンステスト
+- ハッシュ計算パフォーマンスベンチマーク
+- メモリ使用量最適化
+- 並行操作パフォーマンス
+- 大ファイル処理効率
+- リスク評価パフォーマンステスト
+- dry-runシミュレーション精度検証
 
-### 5. Data Redaction
-- Pre-compiled regex patterns for sensitive data detection
-- Streaming redaction for large outputs
-- Minimal performance impact on normal operations
-- Configurable redaction policies
+## デプロイメント考慮事項
 
-## Package Structure
+### 1. バイナリ配布
+- 特権昇格のためのsetuidビット設定
+- root所有権要件
+- デプロイメント前のバイナリ整合性検証
+- 安全なインストール手順
 
-The current package structure of the project is:
+### 2. 設定管理
+- 安全なハッシュディレクトリ権限（755以上の制限）
+- 書き込み保護された設定ファイル
+- 重要ファイルの定期整合性検証
+- 設定テンプレート管理
+- 絶対パス要求による設定の簡素化（環境変数フォールバック廃止）
+
+### 3. 監視とアラート
+- セキュリティイベントの構造化ログ
+- 一元化ログのためのsyslog統合
+- 緊急シャットダウンイベント監視
+- パフォーマンスメトリクス収集
+- 重要アラートのSlack統合
+- 全ログでの機密データ編集
+
+### 4. セキュリティ操作
+- 設定の定期セキュリティ監査
+- 特権操作監視
+- ファイル整合性検証スケジュール
+- インシデント対応手順
+- リスクベースコマンド監視とアラート
+- ユーザー・グループ実行監査証跡
+
+## パフォーマンス特性
+
+### 1. ハッシュ計算
+- 効率的なストリーミングハッシュ計算
+- リソース枯渇を防ぐファイルサイズ制限
+- 複数ファイルの並列処理
+- メモリ効率的な実装
+
+### 2. 環境処理
+- マップ構造を使用したO(1)許可リスト検索
+- パターンマッチングのためのコンパイル済み正規表現
+- 最小限の文字列操作
+- バッチ処理最適化
+
+### 3. 特権操作
+- グローバルミューテックスによる特権操作の直列化
+- システムコールを使用した高速特権昇格/復元
+- パフォーマンス監視のためのメトリクス収集
+- リソース使用量追跡
+
+### 4. リスク評価
+- 事前コンパイルパターンを使用したO(1)リスクレベル検索
+- 正規表現マッチングを使用した効率的コマンド分析
+- リスク評価の最小オーバーヘッド
+- 繰り返しコマンド分析の結果キャッシュ
+
+### 5. データ編集
+- 機密データ検出のための事前コンパイル正規表現パターン
+- 大出力のストリーミング編集
+- 通常操作への最小パフォーマンス影響
+- 設定可能な編集ポリシー
+
+## パッケージ構造
+
+プロジェクトの現在のパッケージ構造は以下の通りです：
 
 ```
 go-safe-cmd-runner/
-├── cmd/                           # Entry points
-│   ├── record/                    # Hash recording command
-│   ├── runner/                    # Main execution command
-│   └── verify/                    # File verification command
-├── internal/                      # Internal packages
-│   ├── cmdcommon/                 # Command common utilities
-│   ├── color/                     # Color management
-│   ├── common/                    # Common interfaces and utilities
-│   ├── filevalidator/             # File integrity validation
-│   ├── groupmembership/           # Group membership management
-│   ├── logging/                   # Log management
-│   ├── redaction/                 # Data redaction
-│   ├── runner/                    # Core execution engine
-│   │   ├── audit/                 # Audit functionality
-│   │   ├── config/                # Configuration management
-│   │   ├── environment/           # Environment variable management
-│   │   ├── executor/              # Command execution
-│   │   ├── privilege/             # Privilege management
-│   │   ├── resource/              # Resource management
-│   │   ├── risk/                  # Risk assessment
-│   │   ├── runnertypes/           # Type definitions
-│   │   └── security/              # Security framework
-│   ├── safefileio/                # Safe file I/O
-│   ├── terminal/                  # Terminal capabilities management
-│   └── verification/              # Verification management
-├── docs/                          # Project documentation
-└── sample/                        # Sample configuration files
+├── cmd/                           # エントリポイント
+│   ├── record/                    # ハッシュ記録コマンド
+│   ├── runner/                    # メイン実行コマンド
+│   └── verify/                    # ファイル検証コマンド
+├── internal/                      # 内部パッケージ
+│   ├── cmdcommon/                 # コマンド共通ユーティリティ
+│   ├── color/                     # カラー管理
+│   ├── common/                    # 共通インターフェースとユーティリティ
+│   ├── filevalidator/             # ファイル整合性検証
+│   ├── groupmembership/           # グループメンバーシップ管理
+│   ├── logging/                   # ログ管理
+│   ├── redaction/                 # データ編集
+│   ├── runner/                    # コア実行エンジン
+│   │   ├── audit/                 # 監査機能
+│   │   ├── bootstrap/             # システム初期化とブートストラップ
+│   │   ├── cli/                   # コマンドラインインターフェース
+│   │   ├── config/                # 設定管理
+│   │   ├── environment/           # 環境変数管理
+│   │   ├── errors/                # エラー定義と処理
+│   │   ├── executor/              # コマンド実行
+│   │   │   └── testing/           # 実行エンジンテスト用ユーティリティ
+│   │   ├── hashdir/               # ハッシュディレクトリ管理とセキュリティ
+│   │   ├── privilege/             # 特権管理
+│   │   │   └── testing/           # 特権管理テスト用ユーティリティ
+│   │   ├── resource/              # リソース管理
+│   │   ├── risk/                  # リスク評価
+│   │   ├── runnertypes/           # 型定義
+│   │   └── security/              # セキュリティフレームワーク
+│   ├── safefileio/                # 安全なファイルI/O
+│   ├── terminal/                  # 端末機能管理
+│   └── verification/              # 検証管理（事前検証、パス解決）
+├── docs/                          # プロジェクトドキュメント
+└── sample/                        # サンプル設定ファイル
 ```
 
-## Deployment Considerations
+## 将来の拡張性
 
-### 1. Binary Distribution
-- Setuid bit configuration for privilege escalation
-- Root ownership requirements
-- Binary integrity verification before deployment
-- Secure installation procedures
+### 1. プラグインアーキテクチャ
+インターフェース駆動設計により簡単な拡張が可能:
+- カスタムハッシュアルゴリズム
+- 追加の特権バックエンド
+- 拡張セキュリティバリデータ
+- カスタム出力フォーマッタ
+- プラガブルリスク評価エンジン
+- カスタム通知バックエンド
+- 拡張編集パターン
 
-### 2. Configuration Management
-- Secure hash directory permissions (755 or stricter)
-- Write-protected configuration files
-- Regular integrity verification of critical files
-- Configuration template management
-- Simplified configuration with absolute path requirements (environment variable fallback removed)
+### 2. プラットフォームサポート
+Linux/Unixへの現在の焦点と以下への拡張性:
+- Windows特権管理
+- macOSセキュリティ機能
+- コンテナランタイム統合
+- クラウドプラットフォームアダプタ
 
-### 3. Monitoring and Alerting
-- Structured logs for security events
-- Syslog integration for centralized logging
-- Emergency shutdown event monitoring
-- Performance metrics collection
-- Slack integration for critical alerts
-- Sensitive data redaction in all logs
+### 3. 統合ポイント
+以下との統合のための明確に定義されたインターフェース:
+- 設定管理システム
+- 監視とアラートプラットフォーム
+- 監査とコンプライアンスシステム
+- アイデンティティとアクセス管理
+- SIEMとセキュリティオーケストレーションプラットフォーム
+- ChatOpsとコラボレーションツール（Slack、Teams）
+- コンテナオーケストレーションプラットフォーム
 
-### 4. Security Operations
-- Regular security audits of configuration
-- Privilege operation monitoring
-- File integrity verification schedules
-- Incident response procedures
-- Risk-based command monitoring and alerting
-- User/group execution audit trails
+## まとめ
 
-## Future Extensibility
+Go Safe Command Runnerは、多層セキュリティアプローチ、包括的な入力検証、設定ファイル・環境ファイルの事前検証、セキュア固定PATH使用、ハッシュディレクトリセキュリティ強化、安全な特権管理、リスクベースコマンド制御、広範な監査機能を通じて、セキュリティエンジニアリングのベストプラクティスを実証しています。**総合セキュリティ評価A（優秀）**を獲得し、**クリティカルリスク0件**を達成したシステムは、安全に失敗し、セキュリティ関連操作への完全な可視性を提供するよう設計されており、セキュリティを重視する環境での本番使用に適しています。
 
-### 1. Plugin Architecture
-Interface-driven design enables easy extension:
-- Custom hash algorithms
-- Additional privilege backends
-- Extended security validators
-- Custom output formatters
-- Pluggable risk assessment engines
-- Custom notification backends
-- Extended redaction patterns
+実装は、インターフェース駆動設計、コンポジションベースアーキテクチャ、リソース管理パターン、包括的テスト戦略を含む現代的なGo開発パターンを示しています。システムのモジュラー設計により、厳格なセキュリティ境界を維持しながら簡単な拡張とカスタマイズが可能です。
 
-### 2. Platform Support
-Current focus on Linux/Unix with extensibility to:
-- Windows privilege management
-- macOS security features
-- Container runtime integration
-
-### 3. Integration Points
-Well-defined interfaces for integration with:
-- Configuration management systems
-- Monitoring and alerting platforms
-- Audit and compliance systems
-- Identity and access management
-- SIEM and security orchestration platforms
-- ChatOps and collaboration tools (Slack, Teams)
-- Container orchestration platforms
-
-## Conclusion
-
-The Go Safe Command Runner demonstrates security engineering best practices through its multi-layered security approach, comprehensive input validation, secure privilege management, risk-based command control, and extensive audit capabilities. **Achieving an overall security assessment rating of A (Excellent)** with **zero critical risks**, the system is designed to fail securely and provide complete visibility into security-relevant operations, making it suitable for production use in security-conscious environments.
-
-The implementation showcases modern Go development patterns including interface-driven design, composition-based architecture, resource management patterns, and comprehensive testing strategies. The system's modular design enables easy extension and customization while maintaining strict security boundaries.
-
-Key innovations include unified resource management for both normal and dry-run modes, intelligent risk assessment for command security, automatic sensitive data protection, and comprehensive audit capabilities with multi-channel notifications. The system provides enterprise-grade security controls while maintaining operational flexibility and extensibility.
+主要な革新機能には、設定ファイル・環境ファイルの事前検証システム、カスタムハッシュディレクトリ攻撃の完全防止、セキュア固定PATH実装によるPATH操作攻撃の排除、通常実行とdry-runモードの両方での統一リソース管理、コマンドセキュリティのインテリジェントリスク評価、自動機密データ保護、マルチチャンネル通知を伴う包括的監査機能が含まれます。システムは、運用の柔軟性と拡張性を維持しながら、エンタープライズグレードのセキュリティ制御を提供します。

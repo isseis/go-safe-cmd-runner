@@ -1,114 +1,120 @@
-# Software Security Risk Assessment Report
+# ソフトウェアセキュリティリスク評価レポート
 **Go Safe Command Runner Project**
 
 ---
 
-## 📋 Document Information
-- **Created**: September 8, 2025
-- **Target System**: go-safe-cmd-runner
-- **Assessment Scope**: Software security risk analysis with operational considerations
-- **Primary Focus**: Source code, architecture, and built-in security features
-- **Secondary Focus**: Deployment and operational security considerations
-- **Intended Audience**: Software Engineers, Security Specialists, Product Managers, Operations Engineers
+## 📋 文書情報
+- **作成日**: 2025年09月08日
+- **対象システム**: go-safe-cmd-runner
+- **評価範囲**: ソフトウェアセキュリティリスク分析と運用上の考慮事項
+- **主要焦点**: ソースコード、アーキテクチャ、内蔵セキュリティ機能
+- **副次焦点**: デプロイメントと運用セキュリティの考慮事項
+- **対象読者**: ソフトウェアエンジニア、セキュリティ専門家、プロダクトマネージャー、運用エンジニア
 
 ---
 
-## 🎯 Executive Summary (For All Readers)
+## 🎯 エグゼクティブサマリー（全読者向け）
 
-### Project Overview
-go-safe-cmd-runner is a security-focused, Go-based command execution system designed to safely execute complex batch processing with privilege escalation capabilities.
+### プロジェクト概要
+go-safe-cmd-runnerは、セキュリティを重視したGoベースのコマンド実行システムです。特権昇格機能を含む複雑なバッチ処理を安全に実行するために設計されています。
 
-### Overall Software Security Assessment
-✅ **Overall Rating: A (Excellent)**
-- **Zero Critical Risks**: No major security vulnerabilities identified
-- Security-first design philosophy with comprehensive built-in protections
-- Multi-layered defense architecture with proper error handling
-- Strong code quality with extensive testing coverage
-- Well-designed interfaces and separation of concerns
-- Evidence-based conservative security design decisions
+### 総合ソフトウェアセキュリティ評価
+✅ **総合評価: A (優秀)**
+- **クリティカルリスク 0件**: 重大なセキュリティ脆弱性は存在しない
+- セキュリティファーストの設計思想による包括的な内蔵保護機能
+- 多層防御アーキテクチャと適切なエラーハンドリング
+- 豊富なテストカバレッジを持つ高品質なコード
+- 適切に設計されたインターフェースと関心の分離
+- 実績に基づく保守的なセキュリティ設計判断
 
-### Key Software Security Findings
+### 主要ソフトウェアセキュリティの発見事項
 
-#### ✅ **Strong Security Features**
-1. **Path Traversal Protection** - Robust implementation using openat2 system call
-2. **Command Injection Prevention** - Robust defense through embedded static patterns
-3. **File Integrity Verification** - SHA-256 cryptographic hash validation
-4. **Privilege Management** - Controlled escalation with automatic restoration
+#### ✅ **強力なセキュリティ機能**
+1. **パストラバーサル対策** - openat2システムコールによる堅牢な実装
+2. **コマンドインジェクション対策** - 実行ファイル埋め込み静的パターンによる堅牢な防御
+3. **ファイル整合性検証** - SHA-256暗号ハッシュ検証
+4. **権限管理** - 制御された昇格と自動復元機能
 
-#### 🟡 **Enhancement Opportunities**
-1. **Security Logging Enhancement** - Detailed attack pattern analysis information
-2. **Error Message Standardization** - Consistent security-aware error reporting
+#### 🟡 **エンハンスメント機会**
+1. **セキュリティログ強化** - より詳細な攻撃パターン分析情報の提供
+2. **エラーメッセージ標準化** - 一貫性のあるセキュリティ対応エラー報告
 
-#### 📊 **Software Risk Distribution**
+#### 📊 **ソフトウェアリスク分布**
 ```
-Medium Risk:  2 items (logging enhancement, error handling standardization)
-Low Risk:     4 items (dependency updates, code quality improvements)
+中リスク:   2件 (ログ強化、エラーハンドリング標準化)
+低リスク:   4件 (依存関係更新、コード品質改善)
 ```
 
-**Note**: Previously categorized "Critical Risk" regarding service interruption from privilege restoration failure has been re-evaluated as appropriate security design based on statistical analysis (seteuid() failure rate < 0.001%).
+**注記**: 以前「クリティカルリスク」とされていた権限復帰失敗によるサービス中断は、統計的分析（seteuid()失敗率 < 0.001%）に基づき、適切なセキュリティ設計判断として再評価されました。
 
-### 💰 **Business Impact Assessment**
+### 💰 **ビジネスへの影響評価**
 
-**Software Quality Impact**:
-- **High Reliability**: Comprehensive error handling reduces system failures
-- **Security Assurance**: Built-in protections minimize attack surface
-- **Maintainability**: Clean architecture supports long-term development
+**ソフトウェア品質による影響**:
+- **高い信頼性**: 包括的なエラーハンドリングによりシステム障害を削減
+- **セキュリティ保証**: 内蔵保護機能により攻撃表面を最小化
+- **保守性**: クリーンなアーキテクチャにより長期開発をサポート
 
-**Risk Mitigation**:
-- **Attack Prevention**: Multi-layer security controls prevent common attack vectors
-- **Data Integrity**: Hash-based validation ensures file authenticity
-- **Access Control**: Privilege separation limits potential damage
+**リスク軽減**:
+- **攻撃防止**: 多層セキュリティ制御により一般的な攻撃ベクターを防止
+- **データ整合性**: ハッシュベース検証によりファイル真正性を保証
+- **アクセス制御**: 権限分離により潜在的な被害を限定
 
-### 🎯 **Recommended Software Improvements**
+### 🎯 **推奨ソフトウェア改善**
 
-#### High Priority (Software Architecture)
-- [ ] **Dynamic Pattern Updates** - Implement configurable threat detection patterns
-- [ ] **Enhanced Error Handling** - Standardize security-aware error messages
+#### 高優先度（ソフトウェアアーキテクチャ）
+- [ ] **静的パターン評価向上** - 埋め込み静的パターンの利点をさらに活用
+- [ ] **拡張エラーハンドリング** - セキュリティ対応エラーメッセージの標準化
 
-#### Medium Priority (Code Quality)
-- [ ] **Dependency Vulnerability Scanning** - Automated security updates
-- [ ] **Performance Optimization** - Resource usage monitoring and limits
-- [ ] **Test Coverage Enhancement** - Achieve 90%+ coverage for security-critical paths
+#### 中優先度（コード品質）
+- [ ] **依存関係脆弱性スキャン** - 自動化されたセキュリティ更新
+- [ ] **パフォーマンス最適化** - リソース使用量監視と制限
+- [ ] **テストカバレッジ拡張** - セキュリティクリティカルパス90%以上達成
 
 ---
 
-## 🔍 Detailed Software Security Analysis (For Specialists)
+## 🔍 詳細ソフトウェアセキュリティ分析（専門家向け）
 
-### 1. Detailed Analysis of Privilege Management System
+### 1. 特権管理システムの詳細分析
 
-#### 🟢 **Properly Controlled Privilege Escalation System**
+#### 🟢 **適切に制御された権限昇格システム**
 
-**Excellent Points of Current Implementation**:
+**現在の実装の優秀な点**:
 ```go
-// WithPrivileges: Proper responsibility separation using Template Method pattern
+// WithPrivileges: Template Method パターンによる適切な責任分離
 func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	execCtx, err := m.prepareExecution(elevationCtx) // Preparation phase
+	execCtx, err := m.prepareExecution(elevationCtx) // 準備フェーズ
 	if err != nil {
 		return err
 	}
 
-	if err := m.performElevation(execCtx); err != nil { // Execution phase
+	if err := m.performElevation(execCtx); err != nil { // 実行フェーズ
 		return err
 	}
 
-	defer m.handleCleanupAndMetrics(execCtx) // Cleanup phase
+	defer m.handleCleanupAndMetrics(execCtx) // クリーンアップフェーズ
 	return fn()
 }
 ```
 
-**Security Measures Evaluation**:
-- **Proper Design**: Good responsibility separation through Template Method pattern
-- **Comprehensive Auditing**: All privilege operations logged to syslog
-- **Emergency Response**: Proper error handling for privilege restoration failures
-- **Race Condition Prevention**: Mutex-based exclusive control implementation
+**セキュリティ対策の評価**:
+- **適切な設計**: Template Method パターンによる責任分離が良好
+- **包括的な監査**: 全ての権限操作をsyslogに記録
+- **緊急時対応**: 権限復元失敗時の適切なエラーハンドリング
+- **競合状態対策**: mutexによる排他制御の実装
 
-#### 🔧 **Emergency Shutdown Mechanism Analysis**
+**継続監視項目**:
+- setuidバイナリの定期的な整合性チェック
+- 権限昇格操作の頻度監視
+- エラー発生パターンの分析
 
-**Fail-Safe Design Implementation**:
+#### ✅ **適切なセキュリティ設計: フェイルセーフ終了**
+
+**技術的詳細**:
 ```go
+// 権限復元失敗時の緊急シャットダウン処理
 func (m *UnixPrivilegeManager) emergencyShutdown(restoreErr error, shutdownContext string) {
 	criticalMsg := fmt.Sprintf("CRITICAL SECURITY FAILURE: Privilege restoration failed during %s", shutdownContext)
 	m.logger.Error(criticalMsg,
@@ -116,70 +122,39 @@ func (m *UnixPrivilegeManager) emergencyShutdown(restoreErr error, shutdownConte
 		"original_uid", m.originalUID,
 		"current_euid", os.Geteuid(),
 	)
-	// Also log to system logger and stderr
-	os.Exit(1) // Immediate termination to prevent privilege leakage
+	// システムロガーと標準エラー出力にもログを記録
+	os.Exit(1) // 権限リーク防止のための即座終了
 }
 ```
 
-**Security Design Evaluation**: ✅ **Excellent**
-- **Conservative Approach**: Prioritizes security over service continuity
-- **Audit Compliance**: Critical failures properly logged before termination
-- **Attack Prevention**: Prevents privilege escalation attacks through state inconsistency
+**現実的リスク評価**:
+- **seteuid()失敗の統計的頻度**: < 0.001% (Linux環境)
+- **主な失敗要因**: システム全体のリソース枯渇時のみ
+- **発生タイミング**: 極端なシステム負荷状況下
 
-#### 📊 **Statistical Risk Assessment**
+**設計判断の妥当性**:
+- **セキュリティ優先**: 権限リーク防止を可用性より優先
+- **保守的アプローチ**: 極めて稀な事象に対する適切な安全策
+- **代替手段の限界**: 権限復帰失敗時に安全な継続実行は不可能
+- **監査要件**: セキュリティ違反として適切に記録・報告
 
-**Privilege Restoration Failure Analysis**:
-- **seteuid() System Call Reliability**: > 99.999% success rate in normal operations
-- **Failure Scenarios**: Primarily kernel resource exhaustion or hardware failures
-- **Business Impact**: Temporary service interruption vs. persistent security vulnerability
-- **Design Decision**: Conservative fail-safe approach justified by low probability
+**運用上の考慮事項**:
+- 権限復帰失敗は通常、より深刻なシステム問題の兆候
+- フェイルセーフ終了により、問題の早期発見と対応が可能
+- 自動復旧よりも問題の根本原因調査が重要
 
-**Continuous Monitoring Items**:
-- Regular integrity checks of setuid binaries
-- Monitoring frequency of privilege escalation operations
-- Analysis of error occurrence patterns
+### 2. 設定ファイルセキュリティの実装分析
 
-#### ✅ **Appropriate Security Design: Fail-Safe Termination**
+#### 🟢 **包括的な設定検証システム**
 
-**Technical Details**:
+**現在の実装の優秀な点**:
 ```go
-// Emergency shutdown processing for privilege restoration failure
-func (m *UnixPrivilegeManager) emergencyShutdown(restoreErr error, shutdownContext string) {
-	criticalMsg := fmt.Sprintf("CRITICAL SECURITY FAILURE: Privilege restoration failed during %s", shutdownContext)
-	m.logger.Error(criticalMsg, "error", restoreErr)
-	// Also log to system logger and stderr
-	os.Exit(1) // Immediate termination to prevent privilege leakage
-}
-```
-
-**Realistic Risk Assessment**:
-- **Statistical Frequency of seteuid() Failures**: < 0.001% (Linux environments)
-- **Primary Failure Causes**: Only during system-wide resource exhaustion
-- **Occurrence Timing**: Under extreme system load conditions
-
-**Validity of Design Decision**:
-- **Security Priority**: Privilege leak prevention prioritized over availability
-- **Conservative Approach**: Appropriate safety measure for extremely rare events
-- **Alternative Limitations**: Safe continued execution impossible when privilege restoration fails
-- **Audit Requirements**: Properly recorded and reported as security violation
-
-**Operational Considerations**:
-- Privilege restoration failure typically indicates more serious system problems
-- Fail-safe termination enables early problem detection and response
-- Root cause investigation more important than automatic recovery
-
-### 2. Configuration File Security Implementation Analysis
-
-#### 🟢 **Comprehensive Configuration Validation System**
-
-**Excellent Points of Current Implementation**:
-```go
-// Multi-layered validation system
+// 多層的な検証システム
 func (v *Validator) ValidateConfig(config *runnertypes.Config) (*ValidationResult, error) {
     result := &ValidationResult{ Valid: true }
-    // 1. Structural validation
+    // 1. 構造的検証
     v.validateGlobalConfig(&config.Global, result)
-    // 2. Security validation (delegated)
+    // 2. セキュリティ検証 (委譲)
     for _, group := range config.Groups {
         for _, cmd := range group.Commands {
             if cmd.HasUserGroupSpecification() {
@@ -187,34 +162,34 @@ func (v *Validator) ValidateConfig(config *runnertypes.Config) (*ValidationResul
             }
         }
     }
-    // 3. Dangerous pattern detection
+    // 3. 危険パターン検出
     dangerousVars := []string{"LD_LIBRARY_PATH", "LD_PRELOAD", "DYLD_LIBRARY_PATH"}
-    // ... and so on
+    // ... など
 }
 ```
 
-**Implemented Security Features**:
-- **Dangerous Environment Variable Detection**: Hazardous library paths like LD_PRELOAD
-- **Privileged Command Validation**: Strict checking of root-privilege execution commands
-- **Shell Metacharacter Detection**: Command injection attack prevention
-- **Relative Path Warnings**: PATH attack prevention
-- **Duplicate Detection**: Configuration consistency assurance
+**実装済みのセキュリティ機能**:
+- **危険な環境変数の検出**: LD_PRELOAD等の危険なライブラリパス
+- **特権コマンドの検証**: root権限での実行コマンドの厳格なチェック
+- **シェルメタキャラクター検出**: コマンドインジェクション攻撃の防止
+- **相対パス警告**: PATH攻撃の防止
+- **重複検出**: 設定の整合性確保
 
-#### 🛡️ **Command Injection Countermeasures**
-The system prevents command injection by validating command and argument strings against a set of dangerous patterns. Instead of hardcoding patterns in a single array, the logic is encapsulated in dedicated validation functions within the `internal/runner/security` package, such as `IsShellMetacharacter` and `IsDangerousPrivilegedCommand`. This improves maintainability and testability.
+#### 🛡️ **コマンドインジェクション対策**
+このシステムは、コマンドと引数の文字列を危険なパターンのセットに対して検証することで、コマンドインジェクションを防ぎます。単一の配列にパターンをハードコーディングする代わりに、ロジックは `internal/runner/security` パッケージ内の `IsShellMetacharacter` や `IsDangerousPrivilegedCommand` といった専用の検証関数にカプセル化されています。これにより、保守性とテスト性が向上しています。
 
-**Security Evaluation**: ✅ **Good with Enhancement Opportunities**
-- Comprehensive validation functions to prevent common injection vectors.
-- Whitelist-based approach for additional security.
-- **Static Pattern Advantages**:
-  - **Tamper Resistance**: Pattern modification difficult due to executable embedding.
-  - **Dependency Reduction**: No external configuration files needed, minimizing attack surface.
-  - **Consistency Guarantee**: Unified security policy across deployment environments.
-  - **TOCTOU Attack Avoidance**: Eliminates time-of-check-time-of-use attacks from external file dependencies.
+**セキュリティ評価**: ✅ **改善機会ありの良好**
+- 一般的なインジェクションベクターを防ぐ包括的検証関数
+- 追加セキュリティのためのホワイトリストベースアプローチ
+- **静的パターンの利点**:
+  - **改ざん耐性**: 実行ファイル埋め込みによりパターン改ざんが困難
+  - **依存関係削減**: 外部設定ファイル不要で攻撃表面を最小化
+  - **一貫性保証**: デプロイ環境間でのセキュリティポリシー統一
+  - **TOCTOU攻撃回避**: 外部ファイル依存による時刻競合状態攻撃を排除
 
-#### 🗂️ **File Integrity Verification**
+#### 🗂️ **ファイル整合性検証**
 ```go
-// Cryptographic integrity verification
+// 暗号整合性検証
 func (p *ProductionHashFilePathGetter) GetHashFilePath(hashAlgorithm HashAlgorithm, hashDir string, filePath common.ResolvedPath) (string, error) {
 	h := sha256.Sum256([]byte(filePath.String()))
 	hashStr := base64.URLEncoding.EncodeToString(h[:])
@@ -222,43 +197,45 @@ func (p *ProductionHashFilePathGetter) GetHashFilePath(hashAlgorithm HashAlgorit
 }
 ```
 
-**Security Evaluation**: ✅ **Excellent**
-- Strong cryptographic integrity with SHA-256
-- Base64 encoding prevents path manipulation
-- Tamper detection capability for critical files
+**セキュリティ評価**: ✅ **非常に良好**
+- SHA-256による強力な暗号整合性
+- Base64エンコーディングによりパス操作を防止
+- クリティカルファイルの改ざん検知機能
 
-#### 🔒 **Path Traversal Protection**
+#### 🔒 **パストラバーサル対策**
 ```go
-// Protection using openat2 system call
+// openat2システムコールによる保護
 func (fs *osFS) safeOpenFileInternal(filePath string, flag int, perm os.FileMode) (*os.File, error) {
     if fs.openat2Available {
         how := openHow{
             flags:   uint64(flag),
             mode:    uint64(perm),
-            resolve: ResolveNoSymlinks, // Symlink disabling
+            resolve: ResolveNoSymlinks, // シンボリックリンク無効化
         }
         fd, err := openat2(AtFdcwd, absPath, &how)
         // ...
     }
-    // ... fallback implementation
+    // ... フォールバック実装
 }
 ```
 
-### 3. New Security Features Implementation Analysis
+**評価**: ✅ 優秀 - 最新のLinuxカーネル機能を活用した堅牢な実装
 
-#### 🟢 **Enhanced Logging Security (`internal/logging/`)**
+### 3. 新規セキュリティ機能の実装分析
 
-**Implemented Features**:
-Redaction is handled by a `RedactingHandler` that wraps other log handlers. This decorator pattern allows for flexible and composable logging pipelines.
+#### 🟢 **拡張されたログセキュリティ (`internal/logging/`)**
+
+**実装された機能**:
+リダクションは、他のログハンドラをラップする `RedactingHandler` によって処理されます。このデコレータパターンにより、柔軟で構成可能なロギングパイプラインが可能になります。
 ```go
-// RedactingHandler is a decorator that redacts sensitive information
+// RedactingHandler は機密情報をリダクションするデコレータです
 type RedactingHandler struct {
 	handler slog.Handler
 	config  *redaction.Config
 }
 
 func (r *RedactingHandler) Handle(ctx context.Context, record slog.Record) error {
-    // Create a new record with redacted attributes
+    // リダクションされた属性を持つ新しいレコードを作成
     newRecord := slog.NewRecord(record.Time, record.Level, record.Message, record.PC)
     record.Attrs(func(attr slog.Attr) bool {
         redactedAttr := r.config.RedactLogAttribute(attr)
@@ -269,20 +246,20 @@ func (r *RedactingHandler) Handle(ctx context.Context, record slog.Record) error
 }
 ```
 
-**Security Evaluation**: ✅ **Excellent**
-- Improved analyzability through structured logging
-- Automatic sensitive data redaction capability
-- Redundancy through multi-channel distribution
-- Comprehensive audit trail recording
+**セキュリティ評価**: ✅ **非常に良好**
+- 構造化ログによる解析性向上
+- 機密データの自動編集機能
+- マルチチャンネル配信によるリダンダンシー
+- 監査証跡の包括的記録
 
-#### 🛡️ **Data Redaction System (`internal/redaction/`)**
+#### 🛡️ **データ編集システム (`internal/redaction/`)**
 
-**Implemented Features**:
+**実装された機能**:
 ```go
-// Sensitive data pattern detection
+// 機密データパターン検出
 func (c *Config) RedactText(text string) string {
 	result := text
-	// Apply key=value pattern redaction
+	// key=value パターンのリダクションを適用
 	for _, key := range c.KeyValuePatterns {
 		result = c.performKeyValueRedaction(result, key, c.TextPlaceholder)
 	}
@@ -290,17 +267,17 @@ func (c *Config) RedactText(text string) string {
 }
 ```
 
-**Security Evaluation**: ✅ **Excellent**
-- Comprehensive sensitive data pattern detection
-- Configurable redaction policies
-- Prevention of log information leakage
-- Automatic protection of API keys, passwords, tokens
+**セキュリティ評価**: ✅ **優秀**
+- 包括的な機密データパターン検出
+- 設定可能な編集ポリシー
+- ログ情報漏洩の防止
+- API キー、パスワード、トークンの自動保護
 
-#### 🎯 **Risk-Based Command Control (`internal/runner/risk/`)**
+#### 🎯 **リスクベースコマンド制御 (`internal/runner/risk/`)**
 
-**Implemented Features**:
+**実装された機能**:
 ```go
-// Dynamic risk assessment
+// 動的リスク評価
 type StandardEvaluator struct{}
 
 func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.Command) (runnertypes.RiskLevel, error) {
@@ -310,46 +287,46 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.Command) (runnertypes.
     if security.IsDestructiveFileOperation(cmd.Cmd, cmd.Args) {
         return runnertypes.RiskLevelHigh, nil
     }
-    // ... and so on for Medium and Low risk levels
+    // ... 中リスク、低リスクレベルについても同様
     return runnertypes.RiskLevelLow, nil
 }
 ```
 
-**Security Evaluation**: ✅ **Excellent**
-- Adaptive security through dynamic risk assessment
-- Configurable risk thresholds
-- Automatic high-risk command blocking
-- Integration with audit logging
+**セキュリティ評価**: ✅ **非常に良好**
+- 動的リスク評価による適応的セキュリティ
+- 設定可能なリスク閾値
+- 自動的な高リスクコマンドブロック
+- 監査ログとの統合
 
-#### 🔐 **Group Membership Management (`internal/groupmembership/`)**
+#### 🔐 **グループメンバーシップ管理 (`internal/groupmembership/`)**
 
-**Implemented Features**:
+**実装された機能**:
 ```go
-// Secure group verification
+// セキュアなグループ検証
 type GroupMembership struct {
-    // ... internal cache fields
+    // ... 内部キャッシュフィールド
 }
 
 func (gm *GroupMembership) IsUserInGroup(username, groupName string) (bool, error) {
-    // ... implementation
+    // ... 実装
 }
 
 func (gm *GroupMembership) GetGroupMembers(gid uint32) ([]string, error) {
-    // ... implementation
+    // ... 実装
 }
 ```
 
-**Security Evaluation**: ✅ **Good**
-- Compatibility assurance through CGO/non-CGO implementations
-- Comprehensive user/group related validation
-- Strict privilege boundary management
-- Cross-platform support
+**セキュリティ評価**: ✅ **良好**
+- CGO/非CGO実装による互換性確保
+- ユーザー・グループ関連の包括的検証
+- 権限境界の厳格な管理
+- クロスプラットフォーム対応
 
-#### 🖥️ **Terminal Security (`internal/terminal/`)**
+#### 🖥️ **端末機能検出 (`internal/terminal/`)**
 
-**Implemented Features**:
+**実装された機能**:
 ```go
-// Safe terminal operations
+// 端末能力検出
 type Capabilities interface {
     IsInteractive() bool
     SupportsColor() bool
@@ -357,13 +334,16 @@ type Capabilities interface {
 }
 ```
 
-- Cross-platform terminal security
+**セキュリティ評価**: ✅ **良好**
+- CI/CD環境の自動検出による適切な出力制御
+- 保守的なデフォルト設定（不明な端末での色彩出力無効化）
+- クロスプラットフォーム端末能力検出
 
-#### 🎨 **Color Management Security (`internal/color/`)**
+#### 🎨 **カラー管理 (`internal/color/`)**
 
-**Implemented Features**:
+**実装された機能**:
 ```go
-// Validated color control
+// 検証済みカラー制御
 type Color func(text string) string
 
 func NewColor(ansiCode string) Color {
@@ -371,388 +351,186 @@ func NewColor(ansiCode string) Color {
 		return ansiCode + text + "\033[0m" // resetCode
 	}
 }
-// Prevents terminal injection by using predefined, validated ANSI codes.
+// 事前定義された検証済みのANSIコードを使用することで、ターミナルインジェクションを防止します。
 ```
 
-**Security Evaluation**: ✅ **Good**
-- Prevention of control sequence injection
-- Safe color control based on terminal capabilities
-- Uses only validated escape sequences
+**セキュリティ評価**: ✅ **良好**
+- 保守的アプローチによる不明端末でのエスケープシーケンス出力防止
+- 既知の色彩対応端末パターンでの検証済み制御
+- 端末能力に基づく安全な出力制御
 
-### 4. Integrated Security Architecture Assessment
+### 4. 統合セキュリティアーキテクチャの評価
 
-#### 🏗️ **Multi-layered Defense Enhancement**
+#### 🏗️ **多層防御の強化**
 
-**Layer-wise Security Evaluation**:
-1. **Input Layer**: Absolute path requirements, structured validation ✅
-2. **Authentication Layer**: Enhanced user/group verification ✅
-3. **Authorization Layer**: Risk-based control ✅
-4. **Execution Layer**: Privilege management, process isolation ✅
-5. **Audit Layer**: Comprehensive logging, sensitive data protection ✅
-6. **Output Layer**: Data redaction, safe display ✅
+**レイヤー別セキュリティ評価**:
+1. **入力層**: 絶対パス要求、構造化検証 ✅
+2. **認証層**: ユーザー・グループ検証強化 ✅
+3. **認可層**: リスクベース制御 ✅
+4. **実行層**: 特権管理、プロセス分離 ✅
+5. **監査層**: 包括的ログ、機密データ保護 ✅
+6. **出力層**: データ編集、安全な表示 ✅
 
-**Security Integration Assessment**: ✅ **Excellent**
-- Clear independence and security boundaries for each layer
-- Security guarantees for inter-layer communication
-- Comprehensive audit trails and traceability
+**セキュリティ統合評価**: ✅ **優秀**
+- 各層の独立性とセキュリティ境界の明確化
+- 層間通信のセキュリティ保証
+- 包括的な監査証跡とトレーサビリティ
 
-#### 📊 **Updated Software Risk Distribution**
+#### 📊 **更新されたソフトウェアリスク分布**
 
 ```
-Critical Risk: 0 items (no change)
-High Risk:     0 items (no change)
-Medium Risk:   1 item (reduced: 2→1) - Improved through logging enhancements
-Low Risk:      3 items (reduced: 4→3) - Code quality improvement through new features
+クリティカルリスク: 0件 (変更なし)
+高リスク:           0件 (変更なし)
+中リスク:           1件 (減少: 2→1) - ログ機能強化により改善
+低リスク:           3件 (減少: 4→3) - 新機能追加によるコード品質向上
 ```
 
-**Risk Reduction Factors**:
-- Improved visibility through enhanced logging system
-- Information leakage risk mitigation through data redaction system
-- Dynamic security enhancement through risk-based control
-- Attack surface reduction through terminal security features
+**リスク削減要因**:
+- 拡張されたログシステムによる可視性向上
+- データ編集システムによる情報漏洩リスク軽減
+- リスクベース制御による動的セキュリティ強化
+- 端末能力検出による適切な出力制御
 
-### 5. System Administrator Perspective Risks
+### 3. システム管理者視点のリスク
 
-#### 🔧 **Infrastructure Level**
+#### 🔧 **インフラストラクチャレベル**
 
-**setuid Binary Management**:
-- Filesystem permissions: Requires execution permission setting with `chmod 4755`
-- Regular integrity checks: Verification with `md5sum` or `sha256sum`
-- Access auditing: setuid binary execution monitoring with `auditd`
+**setuidバイナリの管理**:
+- ファイルシステム権限: `chmod 4755` での実行権限設定が必要
+- 定期的な整合性チェック: `md5sum`や`sha256sum`による検証
+- アクセス監査: `auditd`によるsetuidバイナリの実行監視
 
-**Configuration File Security**:
-- TOML file read permission control
-- Change history management for configuration modifications
-- Backup and rollback functionality
+**設定ファイルセキュリティ**:
+- TOMLファイルの読み取り権限制御
+- 設定変更の変更履歴管理
+- バックアップとロールバック機能
 
-#### 📊 **System Resource Management**
-- File read limits: 128MB upper limit
-- Timeout settings: Default 60 seconds
-- Memory usage monitoring: Automatic management by Go GC
+#### 📊 **システムリソース管理**
+- ファイル読み込み制限: 128MB上限
+- タイムアウト設定: デフォルト60秒
+- メモリ使用量監視: Go GCによる自動管理
 
-### 6. Code Quality and Security Testing Assessment
+### 4. コード品質とセキュリティテスト評価
 
-#### 📝 **Security-focused Code Quality**
+#### 📝 **セキュリティ重視のコード品質**
 
-**Excellent Implementation Practices**:
-- **Interface-driven Design**: High testability of security components
-- **Comprehensive Error Handling**: Security-aware error propagation
-- **Race Condition Protection**: Thread-safe security state management
+**優秀な実装プラクティス**:
+- **インターフェース駆動設計**: セキュリティコンポーネントの高いテスト性
+- **包括的エラーハンドリング**: セキュリティ対応エラー伝播
+- **競合状態保護**: スレッドセーフなセキュリティ状態管理
 
-**Security Test Coverage**:
+**セキュリティテストカバレッジ**:
 ```go
-// Example security test structure
+// セキュリティテスト構造の例
 func TestPrivilegeEscalationFailure(t *testing.T) {
-    // Test emergency shutdown behavior
-    // Verify security policy enforcement
-    // Ensure no privilege leakage
+    // 緊急シャットダウン動作のテスト
+    // セキュリティポリシー強制の検証
+    // 権限リークがないことを保証
 }
 ```
 
-#### 🧪 **Security Testing Strategy Assessment**
+#### 🧪 **セキュリティテスト戦略評価**
 
-**Current Security Test Coverage**:
-- **82 test files** focusing on security scenarios
-- **Unit tests** validating individual security components
-- **Integration tests** providing end-to-end security validation
-- **Benchmark tests** for performance under security constraints
+**現在のセキュリティテストカバレッジ**:
+- **82個のテストファイル**でセキュリティシナリオに焦点
+- **ユニットテスト**で個別セキュリティコンポーネントを検証
+- **統合テスト**でエンドツーエンドセキュリティ検証
+- **ベンチマークテスト**でセキュリティ制約下のパフォーマンス
 
-### 7. Operational Recommendations and Deployment Considerations
+**セキュリティテストの強み**:
+- モック実装によるセキュリティテストの分離
+- 権限失敗のためのエラー注入テスト
+- セキュリティ境界の包括的検証
 
-#### 🚀 **Deployment and Infrastructure**
+### 5. 外部依存関係セキュリティ分析
 
-**System Administrator Perspective**:
-- **setuid Binary Management**: Careful privilege management required (`chmod 4755`)
-- **Configuration File Security**: TOML file access control and change monitoring
-- **System Integration**: Proper integration with existing logging and monitoring systems
+#### 📦 **依存関係セキュリティマトリクス**
 
-**Recommended Operational Controls**:
-```bash
-# Infrastructure security setup
-echo "auth.* /var/log/auth.log" >> /etc/rsyslog.conf
-systemctl restart rsyslog
+| パッケージ | バージョン | セキュリティリスク | 評価 | 軽減状態 |
+|-----------|------------|------------------|------|-------------|
+| go-toml/v2 | v2.0.8 | 中 | 積極的メンテナンス、重大CVEなし | ✅ 更新監視 |
+| godotenv | v1.5.1 | 低 | 安定、最小限の攻撃表面 | ✅ 現バージョン安全 |
+| testify | v1.8.3 | 低 | テストのみの依存 | ✅ 限定的暴露 |
+| ulid/v2 | v2.1.1 | 低 | 最新更新、暗号安全 | ✅ 適切なメンテナンス |
 
-# Binary integrity monitoring
-find /usr/local/bin -perm -4000 -exec ls -l {} \;
-```
+**ソフトウェアセキュリティ評価**:
+- **最小限の攻撃表面**: 限定的な外部依存でリスクを削減
+- **適切なメンテナンス**: 全ての依存関係が積極的に維持管理
+- **重大脆弱性なし**: 現在の依存バージョンに既知の重大問題なし
 
-#### 📈 **Service Level Management**
-
-**SRE Perspective - Recommended SLI/SLO**:
-```yaml
-availability: 99.9%    # Maximum 43 minutes monthly downtime
-latency_p95: 5s       # 95% of commands complete within 5 seconds
-error_rate: < 0.1%    # Error rate under 0.1%
-```
-
-**Operational Monitoring Requirements**:
-- Command execution success rate monitoring
-- Privilege escalation operation frequency tracking
-- Resource usage trend analysis
-- Security violation pattern detection
-
-#### 🚨 **Incident Response Framework**
-
-**Critical Operational Alerts**:
-- Privilege escalation failure events
-- Emergency shutdown occurrences (os.Exit(1))
-- Unexpected configuration file changes
-- Dependency vulnerability detection
-
-**Service Continuity Measures**:
-- **Graceful Shutdown**: Implementation of controlled shutdown procedures
-- **Health Check Enhancement**: Comprehensive service health validation
-- **Auto-recovery**: Self-healing capabilities for common failures
-
-### 8. Emergency Response Procedures
-
-#### Incident Classification
-
-**P0 - Critical**: Software security failures, privilege escalation incidents
-**P1 - High**: Service unavailability, configuration security violations
-**P2 - Medium**: Performance degradation, dependency vulnerabilities
-
-#### Escalation Matrix
-
-1. **P0 Events**: Immediate security team notification + operations manager
-2. **P1 Events**: Development team notification within 30 minutes
-3. **P2 Events**: Scheduled team notification during business hours
+**脆弱性管理戦略**:
+1. **自動スキャン**: 脆弱性データベースとの統合
+2. **定期更新**: 月次セキュリティ更新レビュー
+3. **緊急対応**: 迅速セキュリティパッチ展開手順
 
 ---
 
-## 📚 Related Documents and References
+## 🛠️ ソフトウェアセキュリティ強化ロードマップ
 
-### Security Documentation
-- [Japanese Security Report](./security-risk-assessment-ja.md)
-- [Code Security Guidelines](./code-security-guidelines.md) (planned)
-- [Security Testing Procedures](./security-testing.md) (planned)
+### フェーズ1: 即座のソフトウェア改善（1-2週間）
 
-### Operational Documentation
-- [Operations Manual](./operations-manual.md) (planned)
-- [Incident Response Procedures](./incident-response.md) (planned)
-- [Deployment Security Checklist](./deployment-security.md) (planned)
-
----
-
-## 📋 Document Management
-
-**Review Schedule**:
-- **Next Software Security Review**: December 8, 2025
-- **Quarterly Architecture Review**: Every 3 months
-- **Annual Comprehensive Assessment**: September 2026
-
-**Responsibilities**:
-- **Software Security**: Development Team + Security Specialists
-- **Operational Security**: SRE Team + Operations Manager
-- **Final Approval**: Product Manager + Security Officer
-
-**Update Triggers**:
-- Major software releases
-- Discovery of significant security vulnerabilities
-- Important architectural changes
-- External security audit results
-
-**Security Testing Strengths**:
-- Isolation of security tests through mock implementations
-- Error injection testing for privilege failures
-- Comprehensive validation of security boundaries
-
-#### ⚠️ **Enhancement Opportunity: Dynamic Threat Detection**
-
-**Current Implementation**:
+**静的パターン評価の強化**:
 ```go
-dangerousPatterns := []string{
-    `;`, `\|`, `&&`, `\$\(`, "`",    // Static pattern matching
-    `>`, `<`,                      // Redirection operators
-    `rm `, `exec `,                // Dangerous commands
-}
-```
-
-**Improvement Recommendation**:
-- **Dynamic Pattern Updates**: Configurable threat intelligence integration
-- **Context-Aware Detection**: Command validation based on execution context
-- **Machine Learning Integration**: Anomaly detection for unusual command patterns
-
-### 2. Security Feature Implementation Analysis
-
-#### 🔒 **Path Traversal Protection**
-```go
-// Advanced protection via openat2 system call
-func (fs *osFS) safeOpenFileInternal(filePath string, flag int, perm os.FileMode) (*os.File, error) {
-    if fs.openat2Available {
-        how := openHow{
-            flags:   uint64(flag),
-            mode:    uint64(perm),
-            resolve: ResolveNoSymlinks, // Kernel-level symlink protection
-        }
-        fd, err := openat2(AtFdcwd, absPath, &how)
-        // ...
-    }
-    // ... fallback implementation
-}
-```
-
-**Security Assessment**: ✅ **Excellent**
-- Utilizes latest Linux kernel security features
-- Prevents symlink-based directory traversal attacks
-- Zero-tolerance policy for symbolic links in critical paths
-
-#### 🛡️ **Command Injection Protection**
-The system prevents command injection by validating command and argument strings against a set of dangerous patterns. Instead of hardcoding patterns in a single array, the logic is encapsulated in dedicated validation functions within the `internal/runner/security` package, such as `IsShellMetacharacter` and `IsDangerousPrivilegedCommand`. This improves maintainability and testability.
-
-**Security Assessment**: ✅ **Good with Enhancement Opportunities**
-- Comprehensive validation functions to prevent common injection vectors.
-- Whitelist-based approach for additional security.
-- **Recommendation**: Implement dynamic pattern updates.
-
-#### 🗂️ **File Integrity Verification**
-```go
-// Cryptographic integrity validation
-func (p *ProductionHashFilePathGetter) GetHashFilePath(hashAlgorithm HashAlgorithm, hashDir string, filePath common.ResolvedPath) (string, error) {
-	h := sha256.Sum256([]byte(filePath.String()))
-	hashStr := base64.URLEncoding.EncodeToString(h[:])
-	return filepath.Join(hashDir, hashStr[:12]+".json"), nil
-}
-```
-
-**Security Assessment**: ✅ **Very Good**
-- SHA-256 provides strong cryptographic integrity
-- Base64 encoding prevents path manipulation
-- Tamper detection capabilities for critical files
-
-### 3. Software Architecture Security Assessment
-
-#### 🏗️ **Design Pattern Analysis**
-
-**Interface-Based Security**:
-- Clean separation between security controls and business logic
-- Testable security implementations through dependency injection
-- Fail-safe defaults in all security-critical interfaces
-
-**Error Handling Architecture**:
-- Comprehensive error types with security context
-- Structured logging for security audit trails
-- Graceful degradation under security policy violations
-
-#### 📊 **Resource Management and Limits**
-
-**Built-in Security Limits**:
-```go
-// Software-defined security boundaries
-const MaxFileSize = 128 * 1024 * 1024  // 128MB limit
-const DefaultTimeout = 60 * time.Second // Command timeout
-```
-
-**Security Benefits**:
-- **DoS Prevention**: Resource limits prevent abuse
-- **Memory Safety**: Go GC with bounded memory usage
-- **Timeout Protection**: Prevents hung processes
-
-### 4. Code Quality and Security Testing Assessment
-
-#### 📝 **Security-Focused Code Quality**
-
-**Excellent Implementation Practices**:
-- **Interface-Driven Design**: High testability for security components
-- **Comprehensive Error Handling**: Security-aware error propagation
-- **Race Condition Protection**: Thread-safe security state management
-
-**Security Testing Coverage**:
-```go
-// Example security test structure
-func TestPrivilegeEscalationFailure(t *testing.T) {
-    // Tests emergency shutdown behavior
-    // Validates security policy enforcement
-    // Ensures no privilege leakage
-}
-```
-
-#### 🧪 **Security Test Strategy Assessment**
-
-**Current Security Test Coverage**:
-- **82 test files** with focus on security scenarios
-- **Unit tests** for individual security components
-- **Integration tests** for end-to-end security validation
-- **Benchmark tests** for performance under security constraints
-
-**Security Testing Strengths**:
-- Mock implementations isolate security testing
-- Error injection testing for privilege failures
-- Comprehensive validation of security boundaries
-
-### 5. External Dependency Security Analysis
-
-#### 📦 **Dependency Security Matrix**
-
-| Package | Version | Security Risk | Assessment | Mitigation Status |
-|---------|---------|---------------|------------|------------------|
-| go-toml/v2 | v2.0.8 | Medium | Active maintenance, no critical CVEs | ✅ Monitor updates |
-| godotenv | v1.5.1 | Low | Stable, minimal attack surface | ✅ Current version safe |
-| testify | v1.8.3 | Low | Test-only dependency | ✅ Limited exposure |
-| ulid/v2 | v2.1.1 | Low | Recent update, crypto-secure | ✅ Well-maintained |
-
-**Software Security Assessment**:
-- **Minimal Attack Surface**: Limited external dependencies reduce risk
-- **Well-Maintained Dependencies**: All dependencies actively maintained
-- **No Critical Vulnerabilities**: Current dependency versions have no known critical issues
-
-**Vulnerability Management Strategy**:
-1. **Automated Scanning**: Integration with vulnerability databases
-2. **Regular Updates**: Monthly security update reviews
-3. **Emergency Response**: Rapid security patch deployment procedures
-
----
-
-## 🛠️ Software Security Enhancement Roadmap
-
-### Phase 1: Immediate Software Improvements (1-2 weeks)
-
-**Dynamic Pattern Detection Enhancement**:
-```go
-// Configurable threat pattern system
+// 設定可能な脅威パターンシステム
 type ThreatPatternConfig struct {
     Patterns []string `toml:"patterns"`
     UpdateInterval time.Duration `toml:"update_interval"`
 }
 
 func (v *CommandValidator) updatePatterns(config ThreatPatternConfig) {
-    // Dynamic pattern loading from configuration
-    // Real-time threat intelligence integration
+    // 設定からの動的パターン読み込み
+    // リアルタイム脅威インテリジェンス統合
 }
 ```
 
-**Enhanced Error Message Security**:
+**拡張エラーメッセージセキュリティ**:
 ```go
-// Security-aware error handling
+// セキュリティ対応エラーハンドリング
 func (e *Executor) secureError(err error, context string) error {
-    // Sanitize error messages to prevent information disclosure
-    // Structured logging for security audit
-    return fmt.Errorf("command execution failed: %s", context)
+    // 情報開示を防ぐエラーメッセージサニタイゼーション
+    // セキュリティ監査のための構造化ログ
+    return fmt.Errorf("コマンド実行失敗: %s", context)
 }
 ```
 
-### Phase 2: Software Architecture Enhancement (1-3 months)
+**設定事前検証の継続改善**:
+```go
+// 設定検証タイミングのさらなる最適化
+func (m *Manager) ValidateConfigurationChain(configPath, envPath string) error {
+    // 1. 設定ファイル事前検証
+    if err := m.VerifyConfigFile(configPath); err != nil {
+        return fmt.Errorf("config pre-verification failed: %w", err)
+    }
+    // 2. 環境ファイル事前検証
+    if err := m.VerifyEnvironmentFile(envPath); err != nil {
+        return fmt.Errorf("environment pre-verification failed: %w", err)
+    }
+    return nil
+}
+```
 
-**Automated Security Testing Integration**:
+### フェーズ2: ソフトウェアアーキテクチャ強化（1-3ヶ月）
+
+**自動化セキュリティテスト統合**:
 ```yaml
 # .github/workflows/security.yml
-name: Software Security Analysis
+name: ソフトウェアセキュリティ分析
 on: [push, pull_request]
 jobs:
   security:
     runs-on: ubuntu-latest
     steps:
-      - name: Static Analysis
+      - name: 静的分析
         run: gosec ./...
-      - name: Dependency Scan
+      - name: 依存関係スキャン
         run: nancy sleuth
-      - name: Code Quality
+      - name: コード品質
         run: golangci-lint run
 ```
 
-**Performance and Security Monitoring**:
+**パフォーマンスとセキュリティ監視**:
 ```go
-// Security-focused metrics collection
+// セキュリティ重視のメトリクス収集
 func (e *Executor) recordSecurityMetrics(cmd Command, result ExecutionResult) {
     if result.SecurityViolation {
         securityViolationCounter.WithLabelValues(cmd.Type).Inc()
@@ -761,113 +539,113 @@ func (e *Executor) recordSecurityMetrics(cmd Command, result ExecutionResult) {
 }
 ```
 
-### Phase 3: Continuous Security Improvement (Ongoing)
+### フェーズ3: 継続的セキュリティ改善（継続的）
 
-**Code Quality and Security**:
-- **Security-focused Code Reviews**: Mandatory security checklist
-- **Automated Vulnerability Scanning**: Continuous dependency monitoring
-- **Security Test Coverage**: Target 95% for security-critical paths
+**コード品質とセキュリティ**:
+- **セキュリティ重視コードレビュー**: 必須セキュリティチェックリスト
+- **自動化脆弱性スキャン**: 継続的依存関係監視
+- **セキュリティテストカバレッジ**: セキュリティクリティカルパス95%を目標
 
-**Software Architecture Evolution**:
-- **Microservice Security**: Component-based security boundaries
-- **Zero-Trust Architecture**: Enhanced verification at all levels
-- **Security Documentation**: Comprehensive security design documentation
+**ソフトウェアアーキテクチャ進化**:
+- **マイクロサービスセキュリティ**: コンポーネントベースセキュリティ境界
+- **ゼロトラストアーキテクチャ**: 全レベルでの拡張検証
+- **セキュリティドキュメント**: 包括的セキュリティ設計ドキュメンテーション
 
 ---
 
-## 📊 Operations and Deployment Considerations
+## 📊 運用・デプロイメント上の考慮事項
 
-### Operational Risk Management
+### 運用リスク管理
 
-#### 🚀 **Deployment and Infrastructure**
+#### 🚀 **デプロイメントとインフラストラクチャ**
 
-**System Administrator Perspective**:
-- **setuid Binary Management**: Requires careful permission management (`chmod 4755`)
-- **Configuration File Security**: TOML file access control and change monitoring
-- **System Integration**: Proper integration with existing logging and monitoring systems
+**システム管理者の視点**:
+- **setuidバイナリ管理**: 注意深い権限管理が必要 (`chmod 4755`)
+- **設定ファイルセキュリティ**: TOMLファイルアクセス制御と変更監視
+- **システム統合**: 既存ログと監視システムとの適切な統合
 
-**Recommended Operational Controls**:
+**推奨運用制御**:
 ```bash
-# Infrastructure security setup
+# インフラセキュリティ設定
 echo "auth.* /var/log/auth.log" >> /etc/rsyslog.conf
 systemctl restart rsyslog
 
-# Binary integrity monitoring
+# バイナリ整合性監視
 find /usr/local/bin -perm -4000 -exec ls -l {} \;
 ```
 
-#### 📈 **Service Level Management**
+#### 📈 **サービスレベル管理**
 
-**SRE Perspective - Recommended SLI/SLO**:
+**SRE視点 - 推奨SLI/SLO**:
 ```yaml
-availability: 99.9%    # Maximum 43 minutes downtime per month
-latency_p95: 5s       # 95% of commands complete within 5 seconds
-error_rate: < 0.1%    # Error rate below 0.1%
+availability: 99.9%    # 月43分以内の月間ダウンタイム
+latency_p95: 5s       # 95%のコマンドが5秒以内で完了
+error_rate: < 0.1%    # エラー率0.1%未満
 ```
 
-**Operational Monitoring Requirements**:
-- Command execution success rate monitoring
-- Privilege escalation operation frequency tracking
-- Resource usage trend analysis
-- Security violation pattern detection
+**運用監視要件**:
+- コマンド実行成功率の監視
+- 権限昇格操作頻度の追跡
+- リソース使用量トレンド分析
+- セキュリティ違反パターン検知
 
-#### 🚨 **Incident Response Framework**
+#### 🚨 **インシデント対応フレームワーク**
 
-**Critical Operational Alerts**:
-- Privilege escalation failure events
-- Emergency shutdown occurrences (os.Exit(1))
-- Unexpected configuration file modifications
-- Dependency vulnerability detection
+**重大運用アラート**:
+- 権限昇格失敗イベント
+- 緊急シャットダウン発生 (os.Exit(1))
+- 設定ファイルの予期しない変更
+- 依存関係脆弱性検知
 
-**Service Continuity Measures**:
-- **Graceful Shutdown**: Implement controlled shutdown procedures
-- **Health Check Enhancement**: Comprehensive service health validation
-- **Automatic Recovery**: Self-healing capabilities for common failures
+**サービス継続性対策**:
+- **グレースフルシャットダウン**: 制御されたシャットダウン手順の実装
+- **ヘルスチェック拡張**: 包括的サービスヘルス検証
+- **自動復旧**: 一般的障害のセルフヒーリング機能
 
-### Emergency Response Procedures
+### 緊急対応手順
 
-#### Incident Classification
+#### インシデント分類
 
-**P0 - Critical**: Software security failures, privilege escalation incidents
-**P1 - High**: Service unavailability, configuration security violations
-**P2 - Medium**: Performance degradation, dependency vulnerabilities
+**P0 - クリティカル**: ソフトウェアセキュリティ失敗、権限昇格インシデント
+**P1 - 高**: サービス不可用、設定セキュリティ違反
+**P2 - 中**: パフォーマンス低下、依存関係脆弱性
 
-#### Escalation Matrix
+#### エスカレーションマトリックス
 
-1. **P0 Events**: Immediate security team notification + operations manager
-2. **P1 Events**: Development team notification within 30 minutes
-3. **P2 Events**: Scheduled team notification during business hours
-
----
-
-## 📚 Related Documents and References
-
-### Security Documentation
-- [Japanese Security Report](./security-risk-assessment-ja.md)
-- [Code Security Guidelines](./code-security-guidelines.md) (planned)
-- [Security Testing Procedures](./security-testing.md) (planned)
-
-### Operations Documentation
-- [Operations Manual](./operations-manual.md) (planned)
-- [Incident Response Procedures](./incident-response.md) (planned)
-- [Deployment Security Checklist](./deployment-security.md) (planned)
+1. **P0事象**: 即座セキュリティチーム通知 + 運用マネージャー
+2. **P1事象**: 30分以内に開発チーム通知
+3. **P2事象**: 営業時間中にスケジュールされたチーム通知
 
 ---
 
-## 📋 Document Management
+## 📚 関連文書と参考資料
 
-**Review Schedule**:
-- **Next software security review**: December 8, 2025
-- **Quarterly architecture review**: Every 3 months
-- **Annual comprehensive assessment**: September 2026
+### セキュリティドキュメント
+- [英語版セキュリティレポート](./security-risk-assessment.md)
+- [コードセキュリティガイドライン](./code-security-guidelines.md) (作成予定)
+- [セキュリティテスト手順](./security-testing.md) (作成予定)
 
-**Responsibilities**:
-- **Software Security**: Development Team + Security Specialist
-- **Operations Security**: SRE Team + Operations Manager
-- **Final Approval**: Product Manager + Security Officer
+### 運用ドキュメント
+- [運用手順書](./operations-manual.md) (作成予定)
+- [インシデント対応手順](./incident-response.md) (作成予定)
+- [デプロイメントセキュリティチェックリスト](./deployment-security.md) (作成予定)
 
-**Update Triggers**:
-- Major software releases
-- Critical security vulnerabilities discovered
-- Significant architectural changes
-- External security audit findings
+---
+
+## 📋 文書管理
+
+**レビュースケジュール**:
+- **次回ソフトウェアセキュリティレビュー**: 2025年12月08日
+- **四半期アーキテクチャレビュー**: 3ヶ月毎
+- **年次包括評価**: 2026年9月
+
+**責任者**:
+- **ソフトウェアセキュリティ**: 開発チーム + セキュリティ専門家
+- **運用セキュリティ**: SREチーム + 運用マネージャー
+- **最終承認**: プロダクトマネージャー + セキュリティ責任者
+
+**更新トリガー**:
+- 主要ソフトウェアリリース
+- 重大セキュリティ脆弱性の発見
+- 重要なアーキテクチャ変更
+- 外部セキュリティ監査結果
