@@ -27,7 +27,6 @@ Go Safe Command Runnerは、特権操作の安全な委譲と自動化された�
 - 特殊文字を処理するためBase64 URL-safe encodingを使用してファイルパスをエンコード
 - マニフェスト形式にはファイルパス、ハッシュ値、アルゴリズム、タイムスタンプが含まれる
 - 衝突検出により、パスのハッシュが衝突した場合に、異なるファイルパスが同じハッシュマニフェストファイルにマッピングされるのを防止
-- 環境ファイル検証のサポート - `.env`ファイルの整合性を実行前に検証
 
 **検証プロセス**:
 ```go
@@ -50,22 +49,6 @@ func (v *Validator) Verify(filePath string) error {
 }
 ```
 
-**環境ファイル検証**:
-```go
-// 場所: internal/verification/manager.go:153-185
-func (m *Manager) VerifyEnvironmentFile(envFilePath string) error {
-    // ハッシュディレクトリの検証
-    if err := m.ValidateHashDirectory(); err != nil {
-        return &Error{Op: "ValidateHashDirectory", Path: m.hashDir, Err: err}
-    }
-
-    // 特権フォールバック付きファイル検証
-    if err := m.verifyFileWithFallback(envFilePath); err != nil {
-        return &Error{Op: "VerifyHash", Path: envFilePath, Err: err}
-    }
-    return nil
-}
-```
 
 **一元化検証管理**:
 - 場所: `internal/verification/manager.go`
@@ -79,11 +62,10 @@ func (m *Manager) VerifyEnvironmentFile(envFilePath string) error {
 - 場所: `internal/filevalidator/privileged_file.go`
 
 #### セキュリティ保証
-- 実行ファイル、設定ファイル、環境ファイルの不正な変更を検出
+- 実行ファイル、設定ファイルの不正な変更を検出
 - 改ざんされたバイナリの実行を防止
 - 暗号学的に強力なハッシュアルゴリズム（SHA-256）
 - 原子的ファイル操作により競合状態を防止
-- 環境ファイルの整合性検証による設定改ざん防止
 
 ### 2. 環境変数分離
 
@@ -753,7 +735,6 @@ if !filepath.IsAbs(hashDir) {
 
 **設定検証タイミングの改善**:
 - 設定ファイル読み込み前のハッシュ検証実行
-- 環境ファイル使用前のハッシュ検証実行
 - 未検証データによるシステム動作の完全排除
 - 検証失敗時の強制stderr出力（ログレベル設定に依存しない）
 
@@ -785,9 +766,9 @@ if !filepath.IsAbs(hashDir) {
 システムは複数のセキュリティレイヤを実装します：
 
 1. **入力検証**: すべての入力がエントリポイントで検証（絶対パス要求を含む）
-2. **事前検証**: 設定ファイル・環境ファイルの使用前ハッシュ検証
+2. **事前検証**: 設定ファイルの使用前ハッシュ検証
 3. **パスセキュリティ**: 包括的なパス検証とシンボリックリンク保護、セキュア固定PATH使用
-4. **ファイル整合性**: すべての重要ファイル（設定、環境ファイル、実行ファイル）のハッシュベース検証
+4. **ファイル整合性**: すべての重要ファイル（設定、実行ファイル）のハッシュベース検証
 5. **特権制御**: 制御された昇格による最小特権原則
 6. **環境分離**: 厳格な許可リストベースの環境フィルタリング、PATH継承の排除
 7. **コマンド検証**: 許可リスト検証を伴うリスクベースコマンド実行制御
@@ -834,7 +815,7 @@ if !filepath.IsAbs(hashDir) {
 - ステップバイステップパス検証
 - SHA-256ハッシュ検証
 - 原子的ファイル操作
-- 設定ファイル・環境ファイルの事前ハッシュ検証
+- 設定ファイルの事前ハッシュ検証
 - ハッシュディレクトリのデフォルト値固定（カスタム指定完全禁止）
 
 ### 特権昇格
