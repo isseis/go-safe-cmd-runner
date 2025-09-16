@@ -8,9 +8,10 @@
 
 go-safe-cmd-runner プロジェクトにおいて、ファイルの整合性検証のために各ファイルに対応するハッシュファイルを生成・管理する必要がある。現在の実装では SHA256 ハッシュの最初の 12 文字（72 ビット）を使用してハッシュファイル名を生成しているが、以下の問題が存在する：
 
-### 現在の実装の問題点
-
-1. **ハッシュ衝突の可能性**: 72 ビット名前空間では、約 687 億ファイルで 50% の衝突確率となる
+### 現在の実装の問| 条件 | 使用方式 | ファイル名形式 | 最大長 | 先頭文字 |
+|------|----------|---------------|--------|----------|
+| エンコード後 ≤ 250文字 | 換字+ダブルエスケープ | `~{encoded_path}` | 可変 | `~` |
+| エンコード後 > 250文字 | SHA256フォールバック | `{hash12文字}.json` | 17文字 | `[0-9a-zA-Z]` |1. **ハッシュ衝突の可能性**: 72 ビット名前空間では、約 687 億ファイルで 50% の衝突確率となる
 2. **可読性の欠如**: ハッシュファイル名からは元ファイルを特定できない
 3. **デバッグの困難**: ハッシュディレクトリ内でのファイル対応関係が不明
 
@@ -199,7 +200,7 @@ func (e *SubstitutionHashEscape) GetHashFilePath(
         // フォールバック: SHA256ハッシュ使用
         h := sha256.Sum256([]byte(filePath.String()))
         hashStr := base64.URLEncoding.EncodeToString(h[:])
-        encoded = "@" + hashStr[:42] // 1文字プレフィクス + 42文字ハッシュ = 43文字
+        encoded = hashStr[:12] + ".json" // 12文字ハッシュ + .json拡張子
 
         // デバッグ用ログ出力
         log.Printf("Long path detected, using SHA256 fallback for: %s",
@@ -215,7 +216,7 @@ func (e *SubstitutionHashEscape) GetHashFilePath(
 | 条件 | 使用方式 | ファイル名形式 | 最大長 | 先頭文字 |
 |------|----------|---------------|--------|----------|
 | エンコード後 ≤ 250文字 | 換字+ダブルエスケープ | `~{encoded_path}` | 可変 | `~` |
-| エンコード後 > 250文字 | SHA256フォールバック | `@{hash42文字}` | 43文字 | `@` |
+| エンコード後 > 250文字 | SHA256フォールバック | `{hash12文字}` | 4文字 | `[0-9a-zA-Z]` |
 
 **識別ロジック**: 全てのフルパスは `/` から始まるため、換字後は必ず `~` から開始。`~` 以外で始まるファイル名は全てフォールバック形式。
 
@@ -226,11 +227,11 @@ func (e *SubstitutionHashEscape) GetHashFilePath(
 ```bash
 # Node.js deep nested modules (エンコード後 ~280文字)
 /home/user/project/node_modules/@org/very-long-package/dist/esm/components/ui/forms/validation.js
-→ @AbCdEf123456789012345678901234567890123456789012
+→ AbCdEf123456.json
 
 # Docker container layers (エンコード後 ~300文字)
 /var/lib/containers/storage/overlay/abc123.../merged/usr/share/app-with-very-long-name.desktop
-→ @XyZ789AbCdEf123456789012345678901234567890123456
+→ XyZ789AbCdEf.json
 ```
 
 ### デコード機能（フォールバック対応）
@@ -321,7 +322,7 @@ func TestNameMaxFallback(t *testing.T) {
                 hashPath, _ := encoder.GetHashFilePath(nil, "/tmp", common.NewResolvedPath(tt.path))
                 filename := filepath.Base(hashPath)
                 assert.LessOrEqual(t, len(filename), MAX_FILENAME_LENGTH)
-                assert.Equal(t, '@', filename[0]) // フォールバック形式は @ で開始
+                assert.NotEqual(t, '~', filename[0]) // フォールバック形式は ~ 以外で開始
             }
         })
     }
@@ -345,7 +346,7 @@ func TestNameMaxFallback(t *testing.T) {
 | ファイルパス長 | 使用方式 | 膨張率 | 可逆性 | デバッグ性 | ファイル名形式 |
 |---------------|----------|-------|--------|-----------|---------------|
 | 短〜中（~250文字以下エンコード後） | 換字+ダブルエスケープ | 1.00x | ✅完全 | ✅高 | `~{encoded_path}` |
-| 長（250文字超エンコード後） | SHA256フォールバック | N/A | ❌不可 | ⚠️ハッシュのみ | `@{hash42文字}` |
+| 長（250文字超エンコード後） | SHA256フォールバック | N/A | ❌不可 | ⚠️ハッシュのみ | `{hash12文字}.json` |
 
 ### システム全体への影響
 
@@ -353,7 +354,7 @@ func TestNameMaxFallback(t *testing.T) {
 - **信頼性**: NAME_MAX制限による実行時エラーの完全回避
 - **保守性**: 1文字での明確なフォールバック判定とログ出力
 - **互換性**: 全てのLinux/Unix系システムで動作保証
-- **空間効率**: フォールバックでも43文字（従来45文字から2文字削減）
+- **空間効率**: フォールバックでも17文字（従来45文字から大幅削減）
 
 この決定により、ファイル整合性検証システムの効率性、信頼性、保守性がすべて向上し、実世界の長いパスにも確実に対応できる。
 
@@ -376,7 +377,7 @@ return filepath.Join(hashDir, hashStr+".json"), nil
 #### 不採用理由
 - **可読性の欠如**: ハッシュファイル名からは元ファイルを特定できない
 - **デバッグの困難**: ハッシュディレクトリ内でのファイル対応関係が不明
-- **ファイル名の長さ**: 43文字 + 拡張子と長い
+- **ファイル名の長さ**: 43文字 + 拡張子と長い（現在の実装では12文字 + .json で17文字）
 
 既存コードへの変更は最小で、衝突リスクも事実上排除できるが、運用時の可読性とデバッグ性が大きく劣るため不採用とした。
 
