@@ -17,29 +17,37 @@ Common use cases include scheduled backups, system maintenance tasks, and delega
 
 ## ⚠️ Breaking Changes (Security Enhancement)
 
-**Version 2.0.0 introduces important security improvements with breaking changes:**
+**Recent versions introduce critical security improvements with breaking changes:**
 
 ### Removed Features (Security)
-- **`--hash-directory` flag**: Removed from the runner to prevent custom hash directory specification in production
+- **`--hash-directory` flag**: Completely removed from the runner to prevent custom hash directory attacks
 - **Custom hash directory API**: Internal APIs no longer accept custom hash directories in production builds
 - **Hash directory configuration**: Configuration file hash directory specification is no longer supported
+- **PATH environment inheritance**: Environment variable PATH is no longer inherited from the parent process
 
 ### Security Enhancements
+- **Pre-Execution Verification**: Configuration and environment files are verified before use, preventing malicious configuration attacks
 - **Fixed Hash Directory**: Production builds use only the default hash directory (`/usr/local/etc/go-safe-cmd-runner/hashes`)
+- **Secure Fixed PATH**: Uses secure fixed PATH (`/sbin:/usr/sbin:/bin:/usr/bin`) eliminating PATH manipulation attacks
 - **API Separation**: Testing and production APIs are completely separated with build tags
 - **Static Analysis**: Automated detection of security violations in code and builds
 - **Enhanced Verification**: Stronger file integrity verification with centralized management
+- **Attack Vector Elimination**: Complete prevention of custom hash directory and PATH manipulation attack vectors
 
 ### Migration Guide
 - **Configuration**: Remove any `hash_directory` settings from your TOML configuration files
 - **Scripts**: Remove `--hash-directory` flag from any scripts or automation
 - **Development**: Use separate test APIs for testing with `//go:build test` tag
+- **PATH Dependencies**: Ensure all required binaries are in standard system paths (/sbin, /usr/sbin, /bin, /usr/bin)
 
 For detailed migration information, see [Verification API Documentation](docs/verification_api.md).
 
 ## Features
 
 ### Core Security Features
+- **Pre-Execution Verification**: Configuration and environment files are hash-verified before use, preventing malicious configuration attacks
+- **Hash Directory Security**: Fixed default hash directory prevents custom hash directory attacks and privilege escalation vectors
+- **Secure Fixed PATH**: Environment variable PATH inheritance completely eliminated, using secure fixed PATH (/sbin:/usr/sbin:/bin:/usr/bin)
 - **File Integrity Verification**: SHA-256 hash validation of executables and configuration files before execution
 - **Risk-Based Command Control**: Intelligent security assessment that automatically blocks high-risk operations while allowing safe commands
 - **User/Group Execution Security**: Secure user and group switching with comprehensive validation and audit trails
@@ -93,9 +101,13 @@ internal/              # Core implementation
 ├── redaction/         # Automatic sensitive data filtering
 ├── runner/            # Command execution engine
 │   ├── audit/         # Security audit logging
+│   ├── bootstrap/     # System initialization and bootstrap
+│   ├── cli/           # Command-line interface management
 │   ├── config/        # Configuration management
 │   ├── environment/   # Environment variable processing and filtering
+│   ├── errors/        # Centralized error handling
 │   ├── executor/      # Command execution logic
+│   ├── hashdir/       # Hash directory security management
 │   ├── privilege/     # Privilege management
 │   ├── resource/      # Unified resource management (normal/dry-run)
 │   ├── risk/          # Risk-based command assessment
@@ -103,7 +115,7 @@ internal/              # Core implementation
 │   └── security/      # Security validation framework
 ├── safefileio/        # Secure file operations
 ├── terminal/          # Terminal capabilities detection and interactive UI support
-└── verification/      # Centralized file verification management
+└── verification/      # Centralized file verification management (pre-execution verification, path resolution)
 ```
 
 ## Command Line Tools
@@ -122,7 +134,8 @@ internal/              # Core implementation
 # Use custom environment file
 ./runner -config config.toml -env-file .env.production
 
-# Note: --hash-directory flag removed for security (uses default: /usr/local/etc/go-safe-cmd-runner/hashes)
+# Note: --hash-directory flag completely removed for security (fixed default: /usr/local/etc/go-safe-cmd-runner/hashes)
+# Note: Secure fixed PATH prevents PATH manipulation attacks
 
 # Custom log directory and level
 ./runner -config config.toml -log-dir /var/log/go-safe-cmd-runner -log-level debug
@@ -292,11 +305,13 @@ API_KEY=your-secret-api-key
 ## Security Model
 
 ### File Integrity Verification
+- **Pre-Execution Verification**: Configuration and environment files are hash-verified before use, preventing malicious configuration attacks
 - All executables and critical files are verified against pre-recorded SHA-256 hashes
 - Configuration files and environment files are automatically verified before execution
 - Group-specific and global file verification lists
 - Centralized verification management with automatic fallback to privileged access
 - Execution is aborted if any verification fails
+- **Hash Directory Security**: Fixed default hash directory prevents custom hash directory attacks
 
 ### Risk-Based Security Control
 - **Intelligent Risk Assessment**: Commands are automatically evaluated for security risk
@@ -318,6 +333,8 @@ API_KEY=your-secret-api-key
 - Comprehensive audit logging with security context
 
 ### Environment Isolation
+- **Secure Fixed PATH**: Environment variable PATH inheritance completely eliminated
+- **PATH Attack Prevention**: Uses secure fixed PATH (/sbin:/usr/sbin:/bin:/usr/bin) eliminating PATH manipulation attacks
 - Strict allowlist-based environment variable filtering
 - Protection against environment variable injection attacks
 - Group-level and global environment control
@@ -343,7 +360,7 @@ This project explicitly does **not** provide:
 - **Cross-platform GUI** applications
 - **Package management** or software installation
 
-The focus remains on secure command execution with file integrity verification in Unix-like environments.
+The focus remains on secure command execution with comprehensive security controls including pre-execution verification, hash directory security, and PATH attack prevention in Unix-like environments.
 
 ## License
 This project is licensed under the MIT License. See the [LICENSE](./LICENSE) file for details.

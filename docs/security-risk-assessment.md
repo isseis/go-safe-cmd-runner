@@ -493,6 +493,22 @@ func (e *Executor) secureError(err error, context string) error {
 }
 ```
 
+**設定事前検証の継続改善**:
+```go
+// 設定検証タイミングのさらなる最適化
+func (m *Manager) ValidateConfigurationChain(configPath, envPath string) error {
+    // 1. 設定ファイル事前検証
+    if err := m.VerifyConfigFile(configPath); err != nil {
+        return fmt.Errorf("config pre-verification failed: %w", err)
+    }
+    // 2. 環境ファイル事前検証
+    if err := m.VerifyEnvironmentFile(envPath); err != nil {
+        return fmt.Errorf("environment pre-verification failed: %w", err)
+    }
+    return nil
+}
+```
+
 ### フェーズ2: ソフトウェアアーキテクチャ強化（1-3ヶ月）
 
 **自動化セキュリティテスト統合**:
