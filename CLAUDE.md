@@ -76,7 +76,7 @@ This is a Go-based secure command runner with the following core components:
 ## Development Notes
 
 - Uses Go modules with Go 1.23.10
-- Dependencies: go-toml/v2, godotenv, stretchr/testify
+- Dependencies: go-toml/v2, stretchr/testify
 - Security-focused codebase with extensive validation
 - Comprehensive error handling with custom error types
 - Interface-driven design for testability and modularity

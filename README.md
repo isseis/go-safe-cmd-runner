@@ -131,8 +131,6 @@ internal/              # Core implementation
 # Validate configuration file
 ./runner -config config.toml -validate
 
-# Use custom environment file
-./runner -config config.toml -env-file .env.production
 
 # Note: --hash-directory flag completely removed for security (fixed default: /usr/local/etc/go-safe-cmd-runner/hashes)
 # Note: Secure fixed PATH prevents PATH manipulation attacks
@@ -145,8 +143,8 @@ CLICOLOR=1 ./runner -config config.toml      # Enable color (default when intera
 NO_COLOR=1 ./runner -config config.toml      # Disable color completely
 CLICOLOR_FORCE=1 ./runner -config config.toml # Force color even in non-interactive environments
 
-# Execute with Slack notifications (requires GSCR_SLACK_WEBHOOK_URL in environment file)
-./runner -config config.toml -env-file .env
+# Execute with Slack notifications (requires GSCR_SLACK_WEBHOOK_URL environment variable)
+GSCR_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/... ./runner -config config.toml
 
 # Risk assessment only mode (analyze without execution)
 ./runner -config config.toml -dry-run -validate
@@ -283,27 +281,25 @@ Secure delegation of command execution to specific users and groups:
 3. **Membership Validation**: System validates user and group membership before execution
 4. **Audit Trail**: Complete audit log of all user/group context switches
 
-### Environment File Configuration
-Create a `.env` file for sensitive configuration that shouldn't be stored in the main TOML configuration:
+### Environment Variable Configuration
+Configure sensitive settings using environment variables:
 
 ```bash
-# .env file for production environment
 # Slack webhook URL for notifications
-GSCR_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK
+export GSCR_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK
 
 # Optional: Override default log settings
-LOG_LEVEL=info
-LOG_DIR=/var/log/go-safe-cmd-runner
+export LOG_LEVEL=info
+export LOG_DIR=/var/log/go-safe-cmd-runner
 
-# Application-specific variables
-DATABASE_URL=postgresql://localhost:5432/myapp
-API_KEY=your-secret-api-key
+# Example execution
+./runner -config config.toml
 ```
 
-**Security Note**: The `.env` file undergoes strict security validation:
-- File permissions are checked (should be readable only by the owner)
-- Path traversal attacks are prevented
-- Content is parsed securely using safe file I/O operations
+**Security Note**: Handle sensitive environment variables appropriately:
+- Environment variables are properly filtered when passed to child processes
+- Avoid storing sensitive information in shell history
+- Use proper secret management systems in production environments
 
 ## Security Model
 
@@ -423,7 +419,6 @@ sudo install -o root -g root -m 0755 build/verify /usr/local/bin/go-safe-cmd-ver
 
 ### Dependencies
 - `github.com/pelletier/go-toml/v2` - TOML configuration parsing
-- `github.com/joho/godotenv` - Environment file loading
 - `github.com/oklog/ulid/v2` - ULID generation for run tracking and identification
 - `github.com/stretchr/testify` - Testing framework
 - `golang.org/x/term` - Terminal capability detection for interactive features

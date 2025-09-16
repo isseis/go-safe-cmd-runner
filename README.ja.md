@@ -124,15 +124,13 @@ internal/              # コア実装
 # 設定ファイルの検証
 ./runner -config config.toml -validate
 
-# カスタム環境ファイルを使用
-./runner -config config.toml -env-file .env.production
 
 
 # カスタムログディレクトリとレベル
 ./runner -config config.toml -log-dir /var/log/go-safe-cmd-runner -log-level debug
 
-# Slack通知付きで実行（環境ファイルにGSCR_SLACK_WEBHOOK_URLが必要）
-./runner -config config.toml -env-file .env
+# Slack通知付きで実行（環境変数GSCR_SLACK_WEBHOOK_URLが必要）
+GSCR_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/... ./runner -config config.toml
 
 # リスク評価のみモード（実行せずに解析）
 ./runner -config config.toml -dry-run -validate
@@ -269,27 +267,25 @@ run_as_user = "root"
 3. **メンバーシップ検証**: システムは実行前にユーザーとグループのメンバーシップを検証
 4. **監査証跡**: すべてのユーザー・グループコンテキスト切り替えの完全な監査ログ
 
-### 環境ファイル設定
-メインのTOML設定に保存すべきでない機密設定のために`.env`ファイルを作成：
+### 環境変数設定
+機密設定は環境変数として設定します：
 
 ```bash
-# 本番環境用の.envファイル
 # Slack通知用のwebhook URL
-GSCR_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK
+export GSCR_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK
 
 # オプション: デフォルトログ設定の上書き
-LOG_LEVEL=info
-LOG_DIR=/var/log/go-safe-cmd-runner
+export LOG_LEVEL=info
+export LOG_DIR=/var/log/go-safe-cmd-runner
 
-# アプリケーション固有の変数
-DATABASE_URL=postgresql://localhost:5432/myapp
-API_KEY=your-secret-api-key
+# 実行例
+./runner -config config.toml
 ```
 
-**セキュリティ注意**: `.env`ファイルは厳格なセキュリティ検証を受けます：
-- ファイル権限のチェック（所有者のみ読み取り可能であるべき）
-- パストラバーサル攻撃の防止
-- セーフファイルI/O操作を使用したセキュアなコンテンツ解析
+**セキュリティ注意**: 機密な環境変数は適切に管理してください：
+- 環境変数は子プロセスに継承されるため、適切にフィルタリングされます
+- シェルの履歴に機密情報が残らないよう注意してください
+- プロダクション環境では適切なシークレット管理システムを使用してください
 
 ## セキュリティモデル
 
@@ -409,7 +405,6 @@ sudo install -o root -g root -m 0755 build/verify /usr/local/bin/go-safe-cmd-ver
 
 ### 依存関係
 - `github.com/pelletier/go-toml/v2` - TOML設定パーシング
-- `github.com/joho/godotenv` - 環境ファイル読み込み
 - `github.com/oklog/ulid/v2` - 実行追跡と識別のためのULID生成
 - `github.com/stretchr/testify` - テストフレームワーク
 - `golang.org/x/term` - インタラクティブ機能のためのターミナル機能検出
