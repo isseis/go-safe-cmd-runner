@@ -26,9 +26,9 @@ Common use cases include scheduled backups, system maintenance tasks, and delega
 - **PATH environment inheritance**: Environment variable PATH is no longer inherited from the parent process
 
 ### Security Enhancements
-- **Pre-Execution Verification**: Configuration and environment files are verified before use, preventing malicious configuration attacks
+- **Pre-Execution Verification**: Configuration and environment files are verified before use, preventing malicious configuration attacks (see [File Integrity Verification](#file-integrity-verification))
 - **Fixed Hash Directory**: Production builds use only the default hash directory (`/usr/local/etc/go-safe-cmd-runner/hashes`)
-- **Secure Fixed PATH**: Uses secure fixed PATH (`/sbin:/usr/sbin:/bin:/usr/bin`) eliminating PATH manipulation attacks
+- **Secure Fixed PATH**: Uses secure fixed PATH (`/sbin:/usr/sbin:/bin:/usr/bin`) eliminating PATH manipulation attacks (see [Environment Isolation](#environment-isolation))
 - **API Separation**: Testing and production APIs are completely separated with build tags
 - **Static Analysis**: Automated detection of security violations in code and builds
 - **Enhanced Verification**: Stronger file integrity verification with centralized management
@@ -45,9 +45,9 @@ For detailed migration information, see [Verification API Documentation](docs/ve
 ## Features
 
 ### Core Security Features
-- **Pre-Execution Verification**: Configuration and environment files are hash-verified before use, preventing malicious configuration attacks
-- **Hash Directory Security**: Fixed default hash directory prevents custom hash directory attacks and privilege escalation vectors
-- **Secure Fixed PATH**: Environment variable PATH inheritance completely eliminated, using secure fixed PATH (/sbin:/usr/sbin:/bin:/usr/bin)
+- **Pre-Execution Verification**: Configuration and environment files are verified before use (see [Security Enhancements](#security-enhancements))
+- **Hash Directory Security**: Fixed default hash directory prevents attacks (see [Security Enhancements](#security-enhancements))
+- **Secure Fixed PATH**: Eliminates PATH manipulation attacks (see [Security Enhancements](#security-enhancements))
 - **File Integrity Verification**: SHA-256 hash validation of executables and configuration files before execution
 - **Risk-Based Command Control**: Intelligent security assessment that automatically blocks high-risk operations while allowing safe commands
 - **User/Group Execution Security**: Secure user and group switching with comprehensive validation and audit trails
@@ -309,12 +309,12 @@ API_KEY=your-secret-api-key
 
 ### File Integrity Verification
 - **Pre-Execution Verification**: Configuration and environment files are hash-verified before use, preventing malicious configuration attacks
+- **Hash Directory Security**: Fixed default hash directory prevents custom hash directory attacks (see [Security Enhancements](#security-enhancements))
 - All executables and critical files are verified against pre-recorded SHA-256 hashes
 - Configuration files and environment files are automatically verified before execution
 - Group-specific and global file verification lists
 - Centralized verification management with automatic fallback to privileged access
 - Execution is aborted if any verification fails
-- **Hash Directory Security**: Fixed default hash directory prevents custom hash directory attacks
 
 ### Risk-Based Security Control
 - **Intelligent Risk Assessment**: Commands are automatically evaluated for security risk
@@ -336,8 +336,7 @@ API_KEY=your-secret-api-key
 - Comprehensive audit logging with security context
 
 ### Environment Isolation
-- **Secure Fixed PATH**: Environment variable PATH inheritance completely eliminated
-- **PATH Attack Prevention**: Uses secure fixed PATH (/sbin:/usr/sbin:/bin:/usr/bin) eliminating PATH manipulation attacks
+- **Secure Fixed PATH**: Environment variable PATH inheritance completely eliminated, uses secure fixed PATH (/sbin:/usr/sbin:/bin:/usr/bin) eliminating PATH manipulation attacks
 - Strict allowlist-based environment variable filtering
 - Protection against environment variable injection attacks
 - Group-level and global environment control
