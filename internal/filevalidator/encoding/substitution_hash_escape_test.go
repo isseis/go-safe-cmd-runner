@@ -3,6 +3,7 @@ package encoding
 import (
 	"fmt"
 	"math/rand/v2"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -10,6 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+const testApplicationPath = "/usr/local/bin/application/module/file.txt"
 
 func TestSubstitutionHashEscape_Encode(t *testing.T) {
 	encoder := NewSubstitutionHashEscape()
@@ -999,6 +1002,349 @@ func TestSubstitutionHashEscape_StressTest(t *testing.T) {
 					require.NoError(t, err, "Failed to decode: %s -> %s", path, result.EncodedName)
 					assert.Equal(t, path, decoded, "Round-trip failed: %s", path)
 				}
+			}
+		})
+	}
+}
+
+// Benchmark tests for performance verification
+
+func BenchmarkSubstitutionHashEscape_Encode(b *testing.B) {
+	encoder := NewSubstitutionHashEscape()
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_, err := encoder.Encode(testApplicationPath)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkSubstitutionHashEscape_Decode(b *testing.B) {
+	encoder := NewSubstitutionHashEscape()
+	encoded, err := encoder.Encode(testApplicationPath)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_, err := encoder.Decode(encoded)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkSubstitutionHashEscape_EncodeWithFallback(b *testing.B) {
+	encoder := NewSubstitutionHashEscape()
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_, err := encoder.EncodeWithFallback(testApplicationPath)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkSubstitutionHashEscape_EncodeWithSpecialChars(b *testing.B) {
+	encoder := NewSubstitutionHashEscape()
+	testPath := "/path/with#many~special#chars/and~more#special~chars/file"
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_, err := encoder.Encode(testPath)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkSubstitutionHashEscape_EncodeLongPathFallback(b *testing.B) {
+	encoder := NewSubstitutionHashEscape()
+	// Create a path that will trigger fallback
+	testPath := "/" + strings.Repeat("very-long-directory-name", 15) + "/file.txt"
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_, err := encoder.EncodeWithFallback(testPath)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkSubstitutionHashEscape_EncodeVariousLengths(b *testing.B) {
+	encoder := NewSubstitutionHashEscape()
+
+	testCases := []struct {
+		name string
+		path string
+	}{
+		{"short_path", "/usr/bin/python3"},
+		{"medium_path", "/usr/local/share/applications/software/config/file.txt"},
+		{"long_path", "/" + strings.Repeat("directory/", 20) + "file.txt"},
+		{"very_long_path", "/" + strings.Repeat("very-long-directory-name/", 10) + "file.txt"},
+	}
+
+	for _, tc := range testCases {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				_, err := encoder.EncodeWithFallback(tc.path)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkSubstitutionHashEscape_MemoryEfficiency(b *testing.B) {
+	encoder := NewSubstitutionHashEscape()
+
+	// Test memory efficiency with 1000 paths (target: <1MB per 1000 paths)
+	paths := make([]string, 1000)
+	for i := range 1000 {
+		paths[i] = fmt.Sprintf("/path/to/file%d/subdir/file.txt", i)
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		results := make([]Result, len(paths))
+		for j, path := range paths {
+			result, err := encoder.EncodeWithFallback(path)
+			if err != nil {
+				b.Fatal(err)
+			}
+			results[j] = result
+		}
+		// Prevent compiler optimization
+		_ = results
+	}
+}
+
+func BenchmarkSubstitutionHashEscape_ThroughputTest(b *testing.B) {
+	encoder := NewSubstitutionHashEscape()
+
+	// Test throughput against target: 10,000 paths/sec
+	testPaths := []string{
+		"/usr/bin/python3",
+		"/home/user/documents/project/file.txt",
+		"/path/with#special/chars~here",
+		"/opt/application/lib/module.so",
+		"/var/log/application/app.log",
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		for _, path := range testPaths {
+			_, err := encoder.EncodeWithFallback(path)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	}
+}
+
+// Performance measurement and regression detection helpers
+
+func TestSubstitutionHashEscape_MemoryUsageMeasurement(t *testing.T) {
+	encoder := NewSubstitutionHashEscape()
+
+	tests := []struct {
+		name      string
+		pathCount int
+		pathGen   func(int) string
+	}{
+		{
+			name:      "1000_normal_paths",
+			pathCount: 1000,
+			pathGen:   func(i int) string { return fmt.Sprintf("/path/to/file%d/subdir/file.txt", i) },
+		},
+		{
+			name:      "100_special_char_paths",
+			pathCount: 100,
+			pathGen:   func(i int) string { return fmt.Sprintf("/path/with#special~chars%d/file", i) },
+		},
+		{
+			name:      "50_long_paths",
+			pathCount: 50,
+			pathGen: func(i int) string {
+				return fmt.Sprintf("/%s%d/file.txt", strings.Repeat("very-long-directory-name/", 10), i)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var m1, m2 runtime.MemStats
+			runtime.GC()
+			runtime.ReadMemStats(&m1)
+
+			results := make([]Result, tt.pathCount)
+			for i := range tt.pathCount {
+				path := tt.pathGen(i)
+				result, err := encoder.EncodeWithFallback(path)
+				require.NoError(t, err)
+				results[i] = result
+			}
+
+			runtime.ReadMemStats(&m2)
+			allocatedBytes := m2.TotalAlloc - m1.TotalAlloc
+
+			// Memory efficiency targets from architecture document
+			bytesPerPath := float64(allocatedBytes) / float64(tt.pathCount)
+			totalMBForThousand := (bytesPerPath * 1000) / (1024 * 1024)
+
+			t.Logf("Test: %s", tt.name)
+			t.Logf("  Paths processed: %d", tt.pathCount)
+			t.Logf("  Total memory allocated: %d bytes", allocatedBytes)
+			t.Logf("  Memory per path: %.2f bytes", bytesPerPath)
+			t.Logf("  Projected memory for 1000 paths: %.2f MB", totalMBForThousand)
+
+			// Architecture target: <1MB per 1000 paths
+			if tt.name == "1000_normal_paths" {
+				assert.Less(t, totalMBForThousand, 1.0, "Memory usage exceeds target of 1MB per 1000 paths")
+			}
+
+			// Prevent compiler optimization
+			_ = results
+		})
+	}
+}
+
+func TestSubstitutionHashEscape_ThroughputMeasurement(t *testing.T) {
+	encoder := NewSubstitutionHashEscape()
+
+	testPaths := []string{
+		"/usr/bin/python3",
+		"/home/user/documents/project/file.txt",
+		"/path/with#special/chars~here",
+		"/opt/application/lib/module.so",
+		"/var/log/application/app.log",
+		"/very/deep/nested/directory/structure/with/many/levels/file.txt",
+		"/path/with###multiple#hash#characters/file",
+		"/path/with~~~multiple~tilde~characters/file",
+	}
+
+	// Measure throughput
+	iterations := 2000 // Test with significant number of operations
+	start := time.Now()
+
+	for i := range iterations {
+		path := testPaths[i%len(testPaths)]
+		_, err := encoder.EncodeWithFallback(path)
+		require.NoError(t, err)
+	}
+
+	duration := time.Since(start)
+	pathsPerSecond := float64(iterations) / duration.Seconds()
+
+	t.Logf("Throughput measurement:")
+	t.Logf("  Operations: %d", iterations)
+	t.Logf("  Duration: %v", duration)
+	t.Logf("  Paths per second: %.0f", pathsPerSecond)
+
+	// Architecture target: 10,000 paths/sec
+	assert.GreaterOrEqual(t, pathsPerSecond, 10000.0,
+		"Throughput below target of 10,000 paths/sec: got %.0f", pathsPerSecond)
+}
+
+func TestSubstitutionHashEscape_PerformanceRegression(t *testing.T) {
+	encoder := NewSubstitutionHashEscape()
+
+	// Baseline performance expectations (adjust based on actual measurements)
+	benchmarks := []struct {
+		name                string
+		operation           func() error
+		maxNsPerOp          int64 // Maximum nanoseconds per operation
+		maxAllocsBytesPerOp int64 // Maximum allocated bytes per operation
+	}{
+		{
+			name: "encode_simple_path",
+			operation: func() error {
+				_, err := encoder.Encode("/usr/bin/python3")
+				return err
+			},
+			maxNsPerOp:          1000, // 1μs
+			maxAllocsBytesPerOp: 100,  // 100 bytes
+		},
+		{
+			name: "encode_with_fallback_normal",
+			operation: func() error {
+				_, err := encoder.EncodeWithFallback(testApplicationPath)
+				return err
+			},
+			maxNsPerOp:          2000, // 2μs
+			maxAllocsBytesPerOp: 200,  // 200 bytes
+		},
+		{
+			name: "encode_special_chars",
+			operation: func() error {
+				_, err := encoder.Encode("/path/with#many~special#chars/file")
+				return err
+			},
+			maxNsPerOp:          1500, // 1.5μs
+			maxAllocsBytesPerOp: 150,  // 150 bytes
+		},
+		{
+			name: "decode_normal",
+			operation: func() error {
+				_, err := encoder.Decode("~usr~bin~python3")
+				return err
+			},
+			maxNsPerOp:          800, // 0.8μs
+			maxAllocsBytesPerOp: 80,  // 80 bytes
+		},
+	}
+
+	for _, bench := range benchmarks {
+		t.Run(bench.name, func(t *testing.T) {
+			// Warmup
+			for range 100 {
+				_ = bench.operation()
+			}
+
+			// Measure performance
+			iterations := 1000
+			var m1, m2 runtime.MemStats
+			runtime.GC()
+			runtime.ReadMemStats(&m1)
+
+			start := time.Now()
+			for range iterations {
+				err := bench.operation()
+				require.NoError(t, err)
+			}
+			duration := time.Since(start)
+
+			runtime.ReadMemStats(&m2)
+			allocatedBytes := m2.TotalAlloc - m1.TotalAlloc
+
+			nsPerOp := duration.Nanoseconds() / int64(iterations)
+			bytesPerOp := int64(allocatedBytes) / int64(iterations)
+
+			t.Logf("Performance regression test: %s", bench.name)
+			t.Logf("  Nanoseconds per operation: %d (max: %d)", nsPerOp, bench.maxNsPerOp)
+			t.Logf("  Bytes allocated per operation: %d (max: %d)", bytesPerOp, bench.maxAllocsBytesPerOp)
+
+			// Check against regression thresholds
+			if nsPerOp > bench.maxNsPerOp {
+				t.Errorf("Performance regression detected: %d ns/op > %d ns/op", nsPerOp, bench.maxNsPerOp)
+			}
+
+			if bytesPerOp > bench.maxAllocsBytesPerOp {
+				t.Errorf("Memory regression detected: %d bytes/op > %d bytes/op", bytesPerOp, bench.maxAllocsBytesPerOp)
 			}
 		})
 	}
