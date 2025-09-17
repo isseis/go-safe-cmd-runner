@@ -316,21 +316,14 @@ flowchart LR
     class DECODE_L resultNode
 ```
 
-### 5.3. 設定データ構造
+### 5.3. 設定定数
 
 ```go
-type EncodingConfig struct {
-    MaxFilenameLength int    `yaml:"max_filename_length"` // デフォルト: 250
-    EnableLegacyFallback bool `yaml:"enable_legacy_fallback"` // デフォルト: true
-    LogLegacyUsage       bool `yaml:"log_legacy_usage"`       // デフォルト: true
-    HashLength        int    `yaml:"hash_length"`         // デフォルト: 42
-}
-
-type MigrationConfig struct {
-    EnableMigration   bool   `yaml:"enable_migration"`    // デフォルト: true
-    AutoMigrate       bool   `yaml:"auto_migrate"`        // デフォルト: false
-    BackupOldFiles    bool   `yaml:"backup_old_files"`    // デフォルト: true
-}
+const (
+    // エンコーディング関連定数
+    DefaultMaxFilenameLength = 250  // NAME_MAX - 安全マージン
+    DefaultHashLength        = 12   // SHA256ハッシュの使用文字数
+)
 ```
 
 ## 6. セキュリティ設計 (Security Design)

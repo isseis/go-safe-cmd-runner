@@ -40,38 +40,29 @@ import (
     "strings"
 )
 
+const (
+    // エンコーディング関連定数
+    DefaultMaxFilenameLength = 250  // NAME_MAX - 安全マージン
+    DefaultHashLength        = 12   // SHA256ハッシュの使用文字数
+)
+
 // SubstitutionHashEscape implements hybrid substitution + double escape encoding
 type SubstitutionHashEscape struct {
     // MaxFilenameLength defines the maximum allowed filename length
-    // Default: 250 (NAME_MAX - safety margin)
     MaxFilenameLength int
 
-    // EnableFallback controls whether SHA256 fallback is used for long paths
-    // Default: true
-    EnableFallback bool
-
     // HashLength defines the number of characters to use from SHA256 hash
-    // Default: 12
     HashLength int
 }
 
 // NewSubstitutionHashEscape creates a new encoder with default settings
 func NewSubstitutionHashEscape() *SubstitutionHashEscape {
     return &SubstitutionHashEscape{
-        MaxFilenameLength: 250,
-        EnableFallback:    true,
-        HashLength:        12,
+        MaxFilenameLength: DefaultMaxFilenameLength,
+        HashLength:        DefaultHashLength,
     }
 }
 
-// NewSubstitutionHashEscapeWithConfig creates encoder with custom configuration
-func NewSubstitutionHashEscapeWithConfig(config EncodingConfig) *SubstitutionHashEscape {
-    return &SubstitutionHashEscape{
-        MaxFilenameLength: config.MaxFilenameLength,
-        EnableFallback:    config.EnableFallback,
-        HashLength:        config.HashLength,
-    }
-}
 ```
 
 ### 2.2. エンコーディング実装
@@ -196,17 +187,7 @@ func (e *SubstitutionHashEscape) EncodeWithFallback(path string) EncodingResult 
         }
     }
 
-    // Use SHA256 fallback for long paths
-    if !e.EnableFallback {
-        // Fallback disabled, return error-indicating result
-        return EncodingResult{
-            EncodedName:    "",
-            IsFallback:     false,
-            OriginalLength: len(path),
-            EncodedLength:  len(normalEncoded),
-            Error:          ErrPathTooLong{Path: path, EncodedLength: len(normalEncoded)},
-        }
-    }
+    // Use SHA256 fallback for long paths (always enabled)
 
     fallbackEncoded := e.generateSHA256Fallback(path)
 
@@ -301,7 +282,7 @@ func (e *SubstitutionHashEscape) IsFallbackEncoding(encoded string) bool {
         return false
     }
 
-    return !IsNormalEncoding(string)
+    return !e.IsNormalEncoding(encoded)
 }
 ```
 
@@ -339,13 +320,6 @@ type EscapeOperationCount struct {
     AddedChars   int // Total characters added by escaping
 }
 
-// EncodingConfig provides configuration for the encoder
-type EncodingConfig struct {
-    MaxFilenameLength int  `yaml:"max_filename_length"` // Default: 250
-    EnableFallback    bool `yaml:"enable_fallback"`     // Default: true
-    HashLength        int  `yaml:"hash_length"`         // Default: 12
-    LogDetails        bool `yaml:"log_details"`         // Default: false
-}
 ```
 
 ### 3.2. エラータイプ定義
@@ -410,13 +384,11 @@ func NewHybridHashFilePathGetter() *HybridHashFilePathGetter {
     }
 }
 
-// NewHybridHashFilePathGetterWithConfig creates getter with custom configuration
-func NewHybridHashFilePathGetterWithConfig(config encoding.EncodingConfig, logger Logger) *HybridHashFilePathGetter {
-    return &HybridHashFilePathGetter{
-        encoder: encoding.NewSubstitutionHashEscapeWithConfig(config),
-        logger:  logger,
-    }
+// SetLogger sets the logger for this getter
+func (h *HybridHashFilePathGetter) SetLogger(logger Logger) {
+    h.logger = logger
 }
+
 ```
 
 ### 4.2. メインAPI実装
@@ -448,7 +420,7 @@ func (h *HybridHashFilePathGetter) GetHashFilePath(
         return "", fmt.Errorf("encoding failed for path '%s': %w", filePath.String(), result.Error)
     }
 
-    // Log fallback usage if enabled
+    // Log fallback usage (always enabled)
     if result.IsFallback && h.logger != nil {
         h.logger.LogInfo("Long path detected, using SHA256 fallback", map[string]interface{}{
             "original_path":   filePath.String(),
@@ -529,9 +501,6 @@ type MigrationHashFilePathGetter struct {
     fileSystem   FileSystemInterface
     logger       Logger
 
-    // Migration configuration
-    autoMigrate    bool // Whether to automatically migrate found legacy files
-    backupOldFiles bool // Whether to backup legacy files before migration
 }
 
 // NewMigrationHashFilePathGetter creates a new migration-supporting getter
@@ -546,8 +515,6 @@ func NewMigrationHashFilePathGetter(
         legacyGetter:   legacyGetter,
         fileSystem:     fileSystem,
         logger:         logger,
-        autoMigrate:    false, // Default to manual migration
-        backupOldFiles: true,  // Default to backup for safety
     }
 }
 
@@ -593,22 +560,7 @@ func (m *MigrationHashFilePathGetter) GetHashFilePath(
             "hybrid_path": hybridPath,
         })
 
-        // Auto-migrate if configured
-        if m.autoMigrate {
-            if err := m.migrateHashFile(legacyPath, hybridPath); err != nil {
-                m.logger.LogError("Failed to auto-migrate hash file", map[string]interface{}{
-                    "legacy_path": legacyPath,
-                    "hybrid_path": hybridPath,
-                    "error":       err.Error(),
-                })
-                // Return legacy path if migration fails
-                return legacyPath, nil
-            }
-            // Migration successful, return hybrid path
-            return hybridPath, nil
-        }
-
-        // No auto-migration, return legacy path
+        // No auto-migration (always manual), return legacy path
         return legacyPath, nil
     }
 
@@ -633,17 +585,15 @@ func (m *MigrationHashFilePathGetter) migrateHashFile(legacyPath, hybridPath str
         return fmt.Errorf("failed to read legacy hash file '%s': %w", legacyPath, err)
     }
 
-    // Backup legacy file if configured
-    if m.backupOldFiles {
-        backupPath := legacyPath + ".backup"
-        if err := m.fileSystem.CopyFile(legacyPath, backupPath); err != nil {
-            m.logger.LogWarning("Failed to create backup", map[string]interface{}{
-                "legacy_path": legacyPath,
-                "backup_path": backupPath,
-                "error":       err.Error(),
-            })
-            // Continue with migration even if backup fails
-        }
+    // Backup legacy file (always enabled)
+    backupPath := legacyPath + ".backup"
+    if err := m.fileSystem.CopyFile(legacyPath, backupPath); err != nil {
+        m.logger.LogWarning("Failed to create backup", map[string]interface{}{
+            "legacy_path": legacyPath,
+            "backup_path": backupPath,
+            "error":       err.Error(),
+        })
+        // Continue with migration even if backup fails
     }
 
     // Ensure hybrid directory exists
@@ -791,7 +741,7 @@ func TestSubstitutionHashEscape_Encode(t *testing.T) {
         {
             name:     "complex path",
             input:    "/path/with#hash/and~tilde/file",
-            expected: "~path~with#1#1ash~and/tilde~file",
+            expected: "~path~with#1hash~and##tilde~file",
         },
         {
             name:     "empty path",
@@ -836,7 +786,7 @@ func TestSubstitutionHashEscape_Decode(t *testing.T) {
         },
         {
             name:     "complex encoded path",
-            input:    "~path~with#1#1ash~and/tilde~file",
+            input:    "~path~with#1hash~and##tilde~file",
             expected: "/path/with#hash/and~tilde/file",
             wantErr:  false,
         },
@@ -1190,15 +1140,11 @@ func TestMigrationHashFilePathGetter(t *testing.T) {
     require.NoError(t, err)
     assert.Equal(t, legacyHashPath, foundPath)
 
-    // Test: enable auto-migration
-    migrationGetter.autoMigrate = true
-
-    foundPath, err = migrationGetter.GetHashFilePath(algorithm, hashDir, testPath)
-    require.NoError(t, err)
-
-    // Should return hybrid path after migration
+    // Test: manual migration (auto-migration is always disabled)
+    // Manual migration must be called explicitly
     expectedHybridPath, _ := hybridGetter.GetHashFilePath(algorithm, hashDir, testPath)
-    assert.Equal(t, expectedHybridPath, foundPath)
+    err = migrationGetter.MigrateHashFile(legacyHashPath, expectedHybridPath)
+    require.NoError(t, err)
 
     // Verify migration occurred
     hybridExists, _ := mockFS.FileExists(expectedHybridPath)
@@ -1261,71 +1207,32 @@ WARN: Migration needed
 
 ## 9. 設定・デプロイメント仕様
 
-### 9.1. 設定ファイル
+### 9.1. 定数定義
 
-```yaml
-# config/encoding.yml
-encoding:
-  # Hybrid encoding settings
-  hybrid:
-    enabled: true
-    max_filename_length: 250  # NAME_MAX - safety margin
-    enable_fallback: true
-    hash_length: 42          # SHA256 hash characters to use
-    log_fallback_usage: true
-    log_details: false       # Enable detailed debug logging
+```go
+const (
+    // エンコーディング関連定数
+    DefaultMaxFilenameLength = 250  // NAME_MAX - 安全マージン
+    DefaultHashLength        = 12   // SHA256ハッシュの使用文字数
 
-  # Migration settings
-  migration:
-    enabled: true
-    auto_migrate: false      # Automatic migration (use with caution)
-    backup_old_files: true   # Backup before migration
-    migration_batch_size: 1000
-
-  # Performance settings
-  performance:
-    enable_metrics: true
-    sample_rate: 0.1         # Metrics sampling rate
-    memory_limit_mb: 100     # Memory usage limit for batch operations
-    enable_pooling: true     # Enable string builder pooling
+    // 移行関連設定
+    MigrationBatchSize = 1000 // バッチ移行のサイズ
+)
 ```
 
 ### 9.2. 初期化コード
 
 ```go
 // Initialize hybrid encoding system
-func InitializeHybridEncoding(config EncodingConfig) (*HybridHashFilePathGetter, error) {
-    // Validate configuration
-    if err := validateEncodingConfig(config); err != nil {
-        return nil, fmt.Errorf("invalid encoding configuration: %w", err)
-    }
-
+func InitializeHybridEncoding() (*HybridHashFilePathGetter, error) {
     // Create logger
     logger := NewProductionLogger()
 
-    // Create hybrid getter
-    hybridGetter := NewHybridHashFilePathGetterWithConfig(config, logger)
-
-    // Setup metrics if enabled
-    if config.Performance.EnableMetrics {
-        metrics := NewEncodingMetrics(config.Performance.SampleRate)
-        hybridGetter.SetMetrics(metrics)
-    }
+    // Create hybrid getter with default settings
+    hybridGetter := NewHybridHashFilePathGetter()
+    hybridGetter.SetLogger(logger)
 
     return hybridGetter, nil
-}
-
-// validateEncodingConfig validates the encoding configuration
-func validateEncodingConfig(config EncodingConfig) error {
-    if config.MaxFilenameLength <= 0 || config.MaxFilenameLength > 255 {
-        return fmt.Errorf("max_filename_length must be between 1 and 255, got: %d", config.MaxFilenameLength)
-    }
-
-    if config.HashLength <= 0 || config.HashLength > 64 {
-        return fmt.Errorf("hash_length must be between 1 and 64, got: %d", config.HashLength)
-    }
-
-    return nil
 }
 ```
 
