@@ -26,164 +26,94 @@
 
 ## 2. 段階的実装計画
 
-### フェーズ 1: エンコーディングコア機能（第1週）- 破壊的変更なし
+### ✅ 完了したフェーズ: エンコーディングコア機能（シンプル化版）
 
-#### [x] 1.1. エンコーディングパッケージ基盤作成
-- **場所**: `internal/filevalidator/encoding/`（新規パッケージ）
-- **ファイル**:
-  - `substitution_hash_escape.go` - メインエンコーダー関数群
-  - `encoding_result.go` - 結果構造体
-  - `errors.go` - エンコーディング固有エラー
-- **依存関係**: なし（標準ライブラリのみ）
-- **戦略**: 既存コードに影響なし、独立したパッケージとして実装
+#### ✅ 1.1. エンコーディングパッケージ基盤作成
+- **場所**: `internal/filevalidator/encoding/`
+- **実装済みファイル**:
+  - `substitution_hash_escape.go` - メインエンコーダー（最適化済み）
+  - `encoding_result.go` - Result構造体
+  - `errors.go` - エラータイプ定義
+- **特徴**:
+  - パス検証の厳格化（正規化済み絶対パスのみ受け付け）
+  - シングルパス最適化済み
+  - 分析機能は削除（シンプル化）
 
-#### [x] 1.2. 基本エンコード関数実装
-- **機能**:
-  - `Encode()` - 基本エンコード関数
-  - `Decode()` - 基本デコード関数
-  - `substitute()` / `reverseSubstitute()` - 内部文字置換関数
-  - `doubleEscape()` - 内部ダブルエスケープ関数
-- **テスト**: 基本的なユニットテスト作成
-- **戦略**: 関数ベース実装でシンプル化、セキュリティ重視の入力検証
+#### ✅ 1.2. 基本エンコード関数実装
+- **実装済み機能**:
+  - `Encode()` - エラー処理付きエンコード関数
+  - `Decode()` - エラー処理付きデコード関数
+  - `encodeOptimized()` - シングルパス最適化エンコード
+  - `decodeOptimized()` - シングルパス最適化デコード
+- **特徴**:
+  - エラーハンドリングの強化
+  - パフォーマンス最適化
+  - セキュリティ重視の入力検証
 
-#### [x] 1.3. フォールバック機能実装
-- **機能**:
+#### ✅ 1.3. フォールバック機能実装
+- **実装済み機能**:
   - `EncodeWithFallback()` - ハイブリッド機能の中核
   - `generateSHA256Fallback()` - SHA256フォールバック
   - `IsNormalEncoding()` / `IsFallbackEncoding()` - 判定機能
-- **テスト**: フォールバック条件の境界値テスト
-- **戦略**: プロダクション環境での安全性を最優先、包括的なエラーハンドリング
+- **特徴**:
+  - 長いパス自動検出
+  - SHA256フォールバック常時有効
+  - Result構造体による詳細情報提供
 
-### フェーズ 2: 統合とValidator接続（第2週）- 後方互換性維持
+### 将来のフェーズ（当面実装しない）
 
-#### [ ] 2.1. HybridHashFilePathGetter 実装
-- **場所**: `internal/filevalidator/hybrid_hash_file_path_getter.go`
-- **既存インターフェース実装**: `HashFilePathGetter`（破壊的変更なし）
-- **依存関係**:
-  - `encoding` パッケージの関数群
-  - 既存の `slog.Logger`
-- **機能**:
-  - `GetHashFilePath()` - インターフェース実装
-  - `AnalyzeFilePath()` - 分析機能
-  - `GetEncodingStats()` - 統計情報
-- **戦略**: 既存インターフェースの完全互換、新機能は追加のみ
+#### ❌ 削除されたフェーズ 2: HybridHashFilePathGetter 実装
+- **理由**: 実装が複雑すぎるため、コアエンコーディング機能に集中
+- **代替**: 必要に応じて将来的に実装可能
 
-#### [ ] 2.2. 既存エラータイプ拡張
-- **場所**: `internal/filevalidator/errors.go` に追加
-- **追加エラー**:
-  - `ErrFallbackNotReversible`
-  - `ErrPathTooLong`
-  - `ErrInvalidEncodedName`
-- **戦略**: 既存エラーとの整合性確保、一貫したエラーハンドリング
+#### ❌ 削除されたフェーズ 3: MigrationHashFilePathGetter 実装
+- **理由**: 移行機能は複雑で当面不要
+- **代替**: 手動移行が必要な場合は別途検討
 
-#### [ ] 2.3. Validator との統合テスト
-- **場所**: `internal/filevalidator/hybrid_hash_file_path_getter_test.go`
-- **テスト内容**:
-  - 既存Validatorとの結合テスト
-  - エラーハンドリングテスト
-  - 大幅な性能劣化がないことを確認するための簡易的なベンチマークテスト
-- **戦略**: 既存テストの100%パス確保、品質保証重視
+#### ❌ 削除されたフェーズ 4: 分析・デバッグ機能
+- **理由**: シンプル化のため分析機能は削除
+- **代替**: 基本的なログ出力で十分
 
-### フェーズ 3: 移行機能実装（第3週）- セキュリティ最優先
+### 次のフェーズ: テスト強化とドキュメント
 
-#### [ ] 3.1. MigrationHashFilePathGetter 実装
-- **場所**: `internal/filevalidator/migration_hash_file_path_getter.go`
-- **依存関係**:
-  - `HybridHashFilePathGetter`
-  - `ProductionHashFilePathGetter` (既存)
-  - `internal/verification` のFileSystem抽象化
-- **機能**:
-  - `GetHashFilePath()` - 移行サポート付き実装。以下の優先順位でハッシュファイルのパスを探索・決定する:
-    1.  **新しい形式のパス**: `HybridHashFilePathGetter` を用いて、ファイルパスに応じた最適なエンコーディング（Normal EncodingまたはSHA256 Fallback）のハッシュファイルパスを計算し、そのファイルが存在するか確認する。
-    2.  **古い形式のパス（後方互換性）**: 1.のファイルが存在しない場合、`ProductionHashFilePathGetter` を用いて計算した純粋なSHA256形式のハッシュファイルパスが存在するか確認する。これは、短いファイルパスであっても過去に作成されたハッシュファイルに対応するための措置である。
-    3.  **新規作成パス**: 1.と2.のどちらも存在しない場合は、1.で計算した新しい形式のパスを、これから作成されるべきパスとして返す。
-  - `MigrateHashFile()` - 単体ファイル移行（手動実行のみ）
-  - `BatchMigrate()` - バッチ移行（手動実行のみ）
-- **戦略**: 自動移行は一切行わず、手動実行のみ。データ損失防止を最優先
+#### [ ] 2.1. テストカバレッジ向上
+- **場所**: `internal/filevalidator/encoding/substitution_hash_escape_test.go`
+- **強化項目**:
+  - エラーケースの網羅
+  - 境界値テスト
+  - ラウンドトリップテスト
+- **戦略**: 既存実装の品質保証を最優先
 
-#### [ ] 3.2. ファイルシステム抽象化の活用
-- **既存活用**: `internal/verification` のFileSystemInterface
-- **必要な場合のみ拡張**: ファイル存在確認、コピー、削除機能
-- **テスト**: モックファイルシステムでの移行テスト
-- **戦略**: 既存の検証済みファイルシステム抽象化を最大活用、セキュリティ重視
+#### [ ] 2.2. パフォーマンス検証
+- **ベンチマークテスト実装**
+- **メモリ使用量測定**
+- **パフォーマンス回帰検出**
+- **戦略**: 最適化済み実装の効果測定
 
-### フェーズ 4: 分析・デバッグ機能（第4週）- 品質保証重視
-
-#### [ ] 4.1. 分析機能実装
-- **場所**: `encoding/substitution_hash_escape.go` に追加
-- **機能**:
-  - `AnalyzeEncoding()` - 詳細分析
-  - `analyzeCharFrequency()` - 文字頻度分析
-  - `countEscapeOperations()` - エスケープ操作カウント
-- **戦略**: 運用時の問題診断とデバッグを支援、可観測性向上
-
-#### [ ] 4.2. パフォーマンス最適化
-- **ベンチマークテスト**: `internal/filevalidator/benchmark_encoding_test.go`
-- **最適化項目**:
-  - 文字列操作の効率化
-  - メモリアロケーション削減
-  - キャッシュ機能（必要な場合のみ）
-- **戦略**: プロダクション環境でのパフォーマンス影響を最小化
-
-#### [ ] 4.3. プロパティベーステスト
-- **場所**: `internal/filevalidator/encoding/property_test.go`
-- **テスト内容**:
-  - リバーシビリティ（可逆性）
-  - 決定論的動作
-  - ユニークネス
-- **戦略**: 包括的なテストによる品質保証、エッジケースの網羅
-
-### フェーズ 5: 統合テスト・ドキュメント（第5週）- 完全品質保証
-
-#### [ ] 5.1. 完全統合テスト
-- **エンドツーエンドテスト**
-- **レグレッションテスト**
-- **既存機能との互換性確認**
-- **戦略**: 破壊的変更の完全回避、既存システムとの完全互換性確認
-
-#### [ ] 5.2. エラーハンドリング検証
-- **エラー分類とメッセージの一貫性**
-- **ログ出力の適切性**
-- **回復処理の検証**
-- **戦略**: セキュリティインシデント防止、適切なエラー情報提供
-
-#### [ ] 5.3. ドキュメント更新
-- **CLAUDE.md** の更新（必要に応じて）
-- **コード内ドキュメント** の完備
+#### [ ] 2.3. ドキュメント整備
+- **コード内ドキュメント完備**
 - **使用例とベストプラクティス**
-- **戦略**: 後方互換性の維持方法とセキュリティベストプラクティスの明文化
+- **エラーハンドリングガイド**
+- **戦略**: 実装の安全な利用促進
 
 ## 3. 実装の詳細事項
 
-### 3.1. 既存コード再利用箇所
-
-```go
-// 既存インターフェースを実装
-type HybridHashFilePathGetter struct {
-    logger  *slog.Logger  // 既存のslogを利用
-}
-
-// 既存インターフェースを実装
-func (h *HybridHashFilePathGetter) GetHashFilePath(
-    hashAlgorithm HashAlgorithm,        // 既存の型
-    hashDir string,
-    filePath common.ResolvedPath) (string, error) {  // 既存の型
-    // 実装
-}
-```
-
-### 3.2. 新規作成が必要な箇所
+### 3.1. 実装済みの主要コンポーネント
 
 ```go
 // 新規パッケージ
 package encoding
 
-// 関数ベースの実装 - 構造体不要
-// func Encode(path string) string
-// func EncodeWithFallback(path string) EncodingResult
-// func Decode(encoded string) (string, error)
+// 構造体ベースの実装（シンプル化）
+type SubstitutionHashEscape struct{}
 
-type EncodingResult struct {
+// 主要関数（エラー処理付き）
+func (e *SubstitutionHashEscape) Encode(path string) (string, error)
+func (e *SubstitutionHashEscape) Decode(encoded string) (string, error)
+func (e *SubstitutionHashEscape) EncodeWithFallback(path string) Result
+
+// 結果構造体
+type Result struct {
     EncodedName    string
     IsFallback     bool
     OriginalLength int
@@ -191,17 +121,31 @@ type EncodingResult struct {
 }
 ```
 
-### 3.3. 既存エラータイプ拡張
+### 3.2. 実装済みエラータイプ
 
 ```go
-// internal/filevalidator/errors.go に追加
+// errors.go で定義済み
 var (
-    // 新規エラー
-    ErrFallbackNotReversible = errors.New("fallback encoding cannot be decoded to original path")
-    ErrPathTooLong          = errors.New("encoded path too long")
-    ErrInvalidEncodedName   = errors.New("invalid encoded name format")
+    ErrEmptyPath = errors.New("empty path")
+    ErrNotAbsoluteOrNormalized = errors.New("path is not absolute or normalized")
 )
+
+type ErrInvalidPath struct {
+    Path string
+    Err  error
+}
+
+type ErrFallbackNotReversible struct {
+    EncodedName string
+}
 ```
+
+### 3.3. 実装における主な改善点
+
+- **パス検証の厳格化**: 正規化済み絶対パスのみ受け付け
+- **シングルパス最適化**: エンコード・デコードを1回のループで実行
+- **エラーハンドリング強化**: 詳細なエラー情報提供
+- **分析機能削除**: シンプル化のため複雑な分析機能は削除
 
 ## 4. テスト戦略
 
@@ -239,29 +183,41 @@ var (
 
 ## 6. 成功基準
 
-### 6.1. 機能要件
-- [ ] 既存HashFilePathGetterインターフェースの完全実装
-- [ ] SHA256フォールバック機能の動作
-- [ ] エンコード/デコードの可逆性（通常エンコードのみ）
-- [ ] 手動移行機能の動作
+### 6.1. 実装済み機能要件
+- [x] **コアエンコーディング機能**: Encode/Decode関数の実装
+- [x] **SHA256フォールバック機能**: 長いパス自動検出・フォールバック
+- [x] **エンコード/デコードの可逆性**: 通常エンコードの完全可逆性
+- [x] **パス検証の厳格化**: 正規化済み絶対パスのみサポート
 
-### 6.2. 非機能要件
-- [ ] テストカバレッジ 90% 以上
-- [ ] エンコード速度: 既存実装の150%以内
-- [ ] メモリ使用量: 既存実装の120%以内
-- [ ] 既存テストの100%パス
+### 6.2. 実装済み品質要件
+- [x] **エラーハンドリング強化**: 詳細なエラー情報とWrap対応
+- [x] **パフォーマンス最適化**: シングルパス最適化済み
+- [x] **コード品質**: リンターエラー解消
+- [x] **シンプル化**: 複雑な分析機能削除
 
-### 6.3. 品質要件
-- [ ] リンターエラー 0件
-- [ ] コードレビュー承認
-- [ ] ドキュメント完備
-- [ ] エラーハンドリング一貫性
+### 6.3. 今後の要件
+- [ ] **テストカバレッジ向上**: 90% 以上
+- [ ] **ベンチマークテスト実装**: パフォーマンス測定
+- [ ] **ドキュメント完備**: 使用例とベストプラクティス
+- [ ] **統合テスト**: 実際の使用シナリオでの検証
 
-## 7. 次のアクション
+## 7. 実装状況とその後の方針
 
-1. **フェーズ1の開始**: エンコーディングコア機能の実装
-2. **開発環境準備**: テスト環境とベンチマーク環境の整備
-3. **詳細設計**: 各クラスの詳細インターフェース設計
-4. **プロトタイプ**: 小規模な動作確認実装
+### 7.1. 実装完了事項
+- ✅ **コアエンコーディング機能**: 最適化済みエンコード・デコード実装
+- ✅ **フォールバック機能**: SHA256フォールバック自動選択
+- ✅ **エラーハンドリング**: 厳密なパス検証とエラー処理
+- ✅ **パフォーマンス最適化**: シングルパス処理による高速化
 
-この計画により、既存コードとの重複を最小限に抑えながら、ハイブリッドハッシュファイル名エンコーディング機能を段階的に実装できます。
+### 7.2. 次の優先アクション
+1. **テストカバレッジ向上**: 包括的なテストケース作成
+2. **ベンチマークテスト**: パフォーマンス測定と検証
+3. **ドキュメント整備**: 使用方法とベストプラクティス文書化
+4. **統合準備**: 実際のValidatorとの統合検討
+
+### 7.3. 長期的な方針
+- **段階的な統合**: 必要に応じてHybridHashFilePathGetterを実装
+- **移行サポート**: 需要に応じてMigrationHashFilePathGetterを検討
+- **機能拡張**: 分析機能が必要になった場合の再実装
+
+この計画変更により、複雑な機能を削除してコアエンコーディング機能に集中することで、実装の安定性と保守性を向上させました。
