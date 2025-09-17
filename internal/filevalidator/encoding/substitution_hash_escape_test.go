@@ -331,58 +331,6 @@ func TestSubstitutionHashEscape_NameMaxFallback(t *testing.T) {
 	}
 }
 
-func TestSubstitutionHashEscape_AnalyzeEncoding(t *testing.T) {
-	encoder := NewSubstitutionHashEscape()
-
-	tests := []struct {
-		name              string
-		input             string
-		expectFallback    bool
-		expectNonZeroFreq bool
-	}{
-		{
-			name:              "simple path analysis",
-			input:             "/usr/bin/python3",
-			expectFallback:    false,
-			expectNonZeroFreq: true,
-		},
-		{
-			name:              "empty path analysis",
-			input:             "",
-			expectFallback:    false,
-			expectNonZeroFreq: false,
-		},
-		{
-			name:              "long path fallback analysis",
-			input:             "/" + strings.Repeat("very-long-directory-name", 15) + "/file.txt",
-			expectFallback:    true,
-			expectNonZeroFreq: false, // No frequency analysis for fallback
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			analysis := encoder.AnalyzeEncoding(tt.input)
-
-			assert.Equal(t, tt.input, analysis.OriginalPath)
-			assert.Equal(t, tt.expectFallback, analysis.IsFallback)
-			assert.Equal(t, len(tt.input), analysis.OriginalLength)
-			assert.Equal(t, len(analysis.EncodedName), analysis.EncodedLength)
-
-			if tt.input != "" {
-				assert.GreaterOrEqual(t, analysis.ExpansionRatio, 0.0)
-			} else {
-				assert.Equal(t, 0.0, analysis.ExpansionRatio)
-			}
-
-			if tt.expectNonZeroFreq {
-				assert.NotNil(t, analysis.CharFrequency)
-				assert.Greater(t, len(analysis.CharFrequency), 0)
-			}
-		})
-	}
-}
-
 func TestSubstitutionHashEscape_IsNormalEncoding(t *testing.T) {
 	encoder := NewSubstitutionHashEscape()
 

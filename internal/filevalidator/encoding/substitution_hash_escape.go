@@ -229,69 +229,6 @@ func (e *SubstitutionHashEscape) generateSHA256Fallback(path string) string {
 	return hashStr[:hashLength] + ".json"
 }
 
-// AnalyzeEncoding provides detailed analysis of encoding process
-func (e *SubstitutionHashEscape) AnalyzeEncoding(path string) Analysis {
-	result := e.EncodeWithFallback(path)
-
-	// Calculate expansion ratio safely (avoid division by zero)
-	var expansionRatio float64
-	if result.OriginalLength > 0 {
-		expansionRatio = float64(result.EncodedLength) / float64(result.OriginalLength)
-	} else {
-		expansionRatio = 0.0 // or 1.0 depending on desired semantics
-	}
-
-	analysis := Analysis{
-		OriginalPath:   path,
-		EncodedName:    result.EncodedName,
-		IsFallback:     result.IsFallback,
-		OriginalLength: result.OriginalLength,
-		EncodedLength:  result.EncodedLength,
-		ExpansionRatio: expansionRatio,
-	}
-
-	if !result.IsFallback {
-		// Analyze character frequency for normal encoding
-		analysis.CharFrequency = e.analyzeCharFrequency(path)
-		analysis.EscapeCount = e.countEscapeOperations(path)
-	}
-
-	return analysis
-}
-
-// analyzeCharFrequency counts character frequency in original path
-func (e *SubstitutionHashEscape) analyzeCharFrequency(path string) map[rune]int {
-	frequency := make(map[rune]int)
-
-	for _, char := range path {
-		frequency[char]++
-	}
-
-	return frequency
-}
-
-// countEscapeOperations counts the number of escape operations needed
-func (e *SubstitutionHashEscape) countEscapeOperations(path string) OperationCount {
-	var hashCount, tildeCount int
-
-	// Single pass count - count original characters that need escaping
-	for _, char := range path {
-		switch char {
-		case '#':
-			hashCount++ // # → #1
-		case '~':
-			tildeCount++ // ~ → ## (after substitution ~ becomes /)
-		}
-	}
-
-	return OperationCount{
-		HashEscapes:  hashCount,              // # → #1
-		SlashEscapes: tildeCount,             // ~ → ## (substituted ~ becomes /)
-		TotalEscapes: hashCount + tildeCount, // Total escape operations
-		AddedChars:   hashCount + tildeCount, // Each escape adds 1 character
-	}
-}
-
 // IsNormalEncoding determines if an encoded filename uses normal encoding
 func (e *SubstitutionHashEscape) IsNormalEncoding(encoded string) bool {
 	if len(encoded) == 0 {
