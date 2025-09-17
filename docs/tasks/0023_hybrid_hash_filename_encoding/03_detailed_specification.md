@@ -222,13 +222,21 @@ func (e *SubstitutionHashEscape) generateSHA256Fallback(path string) string {
 func (e *SubstitutionHashEscape) AnalyzeEncoding(path string) EncodingAnalysis {
     result := e.EncodeWithFallback(path)
 
+    // Calculate expansion ratio safely (avoid division by zero)
+    var expansionRatio float64
+    if result.OriginalLength > 0 {
+        expansionRatio = float64(result.EncodedLength) / float64(result.OriginalLength)
+    } else {
+        expansionRatio = 0.0 // or 1.0 depending on desired semantics
+    }
+
     analysis := EncodingAnalysis{
         OriginalPath:     path,
         EncodedName:      result.EncodedName,
         IsFallback:       result.IsFallback,
         OriginalLength:   result.OriginalLength,
         EncodedLength:    result.EncodedLength,
-        ExpansionRatio:   float64(result.EncodedLength) / float64(result.OriginalLength),
+        ExpansionRatio:   expansionRatio,
     }
 
     if !result.IsFallback {
@@ -470,9 +478,15 @@ func (h *HybridHashFilePathGetter) GetEncodingStats(filePaths []common.ResolvedP
 
     if stats.TotalChars > 0 {
         stats.OverallExpansionRatio = float64(stats.EncodedChars) / float64(stats.TotalChars)
+    } else {
+        stats.OverallExpansionRatio = 0.0
     }
 
-    stats.FallbackRate = float64(stats.FallbackUsed) / float64(stats.TotalFiles)
+    if stats.TotalFiles > 0 {
+        stats.FallbackRate = float64(stats.FallbackUsed) / float64(stats.TotalFiles)
+    } else {
+        stats.FallbackRate = 0.0
+    }
 
     return stats
 }
