@@ -22,18 +22,6 @@ func (e ErrFallbackNotReversible) Error() string {
 	return fmt.Sprintf("fallback encoding '%s' cannot be decoded to original path", e.EncodedName)
 }
 
-// ErrPathTooLong indicates the encoded path exceeds maximum length
-type ErrPathTooLong struct {
-	Path          string
-	EncodedLength int
-	MaxLength     int
-}
-
-func (e ErrPathTooLong) Error() string {
-	return fmt.Sprintf("encoded path too long: %d characters (max: %d) for path: %s",
-		e.EncodedLength, e.MaxLength, e.Path)
-}
-
 // ErrInvalidPath represents an error for invalid file paths during encoding operations
 type ErrInvalidPath struct {
 	Path string // The invalid path
@@ -46,14 +34,4 @@ func (e ErrInvalidPath) Error() string {
 
 func (e *ErrInvalidPath) Unwrap() error {
 	return e.Err
-}
-
-// ErrInvalidEncodedName indicates the encoded name format is invalid
-type ErrInvalidEncodedName struct {
-	EncodedName string
-	Reason      string
-}
-
-func (e ErrInvalidEncodedName) Error() string {
-	return fmt.Sprintf("invalid encoded name '%s': %s", e.EncodedName, e.Reason)
 }
