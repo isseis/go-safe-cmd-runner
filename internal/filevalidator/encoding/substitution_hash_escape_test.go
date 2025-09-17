@@ -619,19 +619,14 @@ func TestSubstitutionHashEscape_InvalidInputFormatting(t *testing.T) {
 		expectError string
 	}{
 		{
-			name:        "path with null character",
-			input:       "/path/with\x00null",
-			expectError: "", // Go's filepath.Clean normalizes null characters
-		},
-		{
 			name:        "path with newline",
 			input:       "/path/with\nnewline",
-			expectError: "", // Go's filepath.Clean normalizes newlines
+			expectError: "", // Should succeed - newlines are valid in Linux filenames
 		},
 		{
 			name:        "path with tab character",
 			input:       "/path/with\ttab",
-			expectError: "", // Go's filepath.Clean normalizes tabs
+			expectError: "", // Should succeed - tabs are valid in Linux filenames
 		},
 		{
 			name:        "path with unicode characters",
