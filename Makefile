@@ -98,7 +98,7 @@ HASH_TARGETS := \
 	./sample/slack-notify.toml \
 	./sample/slack-group-notification-test.toml
 
-.PHONY: all lint build run clean test benchmark coverage coverage-internal hash integration-test integration-test-success slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check
+.PHONY: all lint build run clean test benchmark coverage coverage-internal hash integration-test integration-test-success slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check performance-test
 
 all: security-check
 
@@ -243,3 +243,6 @@ slack-group-notification-test: $(BINARY_RUNNER)
 	echo ""; \
 	echo "Slack group notification test completed with exit code: $$EXIT_CODE"; \
 	exit $$EXIT_CODE
+
+performance-test:
+	$(ENVSET) $(GOTEST) -tags performance -v ./internal/filevalidator/encoding/
