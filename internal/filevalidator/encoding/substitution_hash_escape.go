@@ -54,42 +54,40 @@ func (e *SubstitutionHashEscape) Encode(path string) (string, error) {
 		return "", ErrInvalidPath{Path: path, Err: ErrNotAbsoluteOrNormalized}
 	}
 
-	// Step 1: Substitution (/ ↔ ~)
-	substituted := e.substitute(absPath)
+	// Single-pass encoding optimization
+	encoded := e.encodeOptimized(absPath)
 
-	// Step 2: Double escape (# → #1, / → ##)
-	escaped := e.doubleEscape(substituted)
-
-	return escaped, nil
+	return encoded, nil
 }
 
-// substitute performs character substitution (/ ↔ ~)
-func (e *SubstitutionHashEscape) substitute(path string) string {
+// encodeOptimized performs single-pass encoding combining substitution and double escape
+func (e *SubstitutionHashEscape) encodeOptimized(path string) string {
 	var builder strings.Builder
-	builder.Grow(len(path))
+	// Pre-allocate: typical expansion is minimal, but allow for some escaping
+	// Most characters (especially /) don't expand, only ~ and # expand to 2 chars
+	builder.Grow(len(path) + len(path)/10) // +10% buffer for typical cases
 
 	for _, char := range path {
 		switch char {
 		case '/':
+			// Substitution: / → ~, then double escape: ~ → (unchanged), then / would be ##
+			// Combined: / → ~ (substitution step result has no / to double escape)
 			builder.WriteRune('~')
 		case '~':
-			builder.WriteRune('/')
+			// Substitution: ~ → /, then double escape: / → ##
+			// Combined: ~ → ##
+			builder.WriteString("##")
+		case '#':
+			// No substitution: # → #, then double escape: # → #1
+			// Combined: # → #1
+			builder.WriteString("#1")
 		default:
+			// No substitution or escaping needed
 			builder.WriteRune(char)
 		}
 	}
 
 	return builder.String()
-}
-
-// doubleEscape performs meta-character double escaping
-func (e *SubstitutionHashEscape) doubleEscape(substituted string) string {
-	// Replace # → #1 first to avoid interference
-	escaped := strings.ReplaceAll(substituted, "#", "#1")
-	// Replace / → ##
-	escaped = strings.ReplaceAll(escaped, "/", "##")
-
-	return escaped
 }
 
 // Decode decodes an encoded filename back to original absolute file path.
@@ -104,15 +102,60 @@ func (e *SubstitutionHashEscape) Decode(encoded string) (string, error) {
 		return "", ErrFallbackNotReversible{EncodedName: encoded}
 	}
 
-	// Step 1: Reverse double escape (## → /, #1 → #)
-	decoded := strings.ReplaceAll(encoded, "##", "/")
-	decoded = strings.ReplaceAll(decoded, "#1", "#")
-
-	// Step 2: Reverse substitution (/ ↔ ~)
-	// substitution is symmetric, so reuse substitute to reverse the mapping
-	result := e.substitute(decoded)
+	// Single-pass decoding optimization
+	result := e.decodeOptimized(encoded)
 
 	return result, nil
+}
+
+// decodeOptimized performs single-pass decoding combining reverse double escape and substitution
+func (e *SubstitutionHashEscape) decodeOptimized(encoded string) string {
+	var builder strings.Builder
+	// Pre-allocate: decoded result is always <= encoded length
+	// (## → ~, #1 → #, ~ → /, / → ~, others unchanged)
+	builder.Grow(len(encoded))
+
+	runes := []rune(encoded)
+	for i := 0; i < len(runes); i++ {
+		char := runes[i]
+
+		switch char {
+		case '#':
+			// Check for escape sequences: ## → / or #1 → #
+			if i+1 < len(runes) {
+				next := runes[i+1]
+				switch next {
+				case '#':
+					// ## → / (reverse double escape), then / → ~ (reverse substitution)
+					// Combined: ## → ~
+					builder.WriteRune('~')
+					i++ // Skip next character
+				case '1':
+					// #1 → # (reverse double escape), then # → # (no substitution)
+					// Combined: #1 → #
+					builder.WriteRune('#')
+					i++ // Skip next character
+				default:
+					// Single # without escape sequence (shouldn't happen in valid encoding)
+					builder.WriteRune(char)
+				}
+			} else {
+				// Single # at end (shouldn't happen in valid encoding)
+				builder.WriteRune(char)
+			}
+		case '~':
+			// ~ → / (reverse substitution)
+			builder.WriteRune('/')
+		case '/':
+			// / → ~ (reverse substitution)
+			builder.WriteRune('~')
+		default:
+			// No decoding needed
+			builder.WriteRune(char)
+		}
+	}
+
+	return builder.String()
 }
 
 // EncodeWithFallback encodes a path with automatic fallback to SHA256 for long paths.
@@ -229,16 +272,23 @@ func (e *SubstitutionHashEscape) analyzeCharFrequency(path string) map[rune]int 
 
 // countEscapeOperations counts the number of escape operations needed
 func (e *SubstitutionHashEscape) countEscapeOperations(path string) OperationCount {
-	substituted := e.substitute(path)
+	var hashCount, tildeCount int
 
-	hashCount := strings.Count(substituted, "#")
-	slashCount := strings.Count(substituted, "/")
+	// Single pass count - count original characters that need escaping
+	for _, char := range path {
+		switch char {
+		case '#':
+			hashCount++ // # → #1
+		case '~':
+			tildeCount++ // ~ → ## (after substitution ~ becomes /)
+		}
+	}
 
 	return OperationCount{
 		HashEscapes:  hashCount,              // # → #1
-		SlashEscapes: slashCount,             // / → ##
-		TotalEscapes: hashCount + slashCount, // Total escape operations
-		AddedChars:   hashCount + slashCount, // Each escape adds 1 character
+		SlashEscapes: tildeCount,             // ~ → ## (substituted ~ becomes /)
+		TotalEscapes: hashCount + tildeCount, // Total escape operations
+		AddedChars:   hashCount + tildeCount, // Each escape adds 1 character
 	}
 }
 
