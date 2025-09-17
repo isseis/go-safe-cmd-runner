@@ -12,9 +12,10 @@ func TestSubstitutionHashEscape_Encode(t *testing.T) {
 	encoder := NewSubstitutionHashEscape()
 
 	tests := []struct {
-		name     string
-		input    string
-		expected string
+		name        string
+		input       string
+		expected    string
+		expectedErr bool
 	}{
 		{
 			name:     "simple path",
@@ -37,9 +38,9 @@ func TestSubstitutionHashEscape_Encode(t *testing.T) {
 			expected: "~path~with#1hash~and##tilde~file",
 		},
 		{
-			name:     "empty path",
-			input:    "",
-			expected: "",
+			name:        "empty path",
+			input:       "",
+			expectedErr: true,
 		},
 		{
 			name:     "root path",
@@ -50,8 +51,156 @@ func TestSubstitutionHashEscape_Encode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := encoder.Encode(tt.input)
-			assert.Equal(t, tt.expected, result)
+			result, err := encoder.Encode(tt.input)
+			if tt.expectedErr {
+				assert.Error(t, err)
+				assert.Empty(t, result)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestSubstitutionHashEscape_Encode_RelativePathError(t *testing.T) {
+	encoder := NewSubstitutionHashEscape()
+
+	tests := []struct {
+		name        string
+		input       string
+		expectError bool
+	}{
+		{
+			name:        "absolute path should succeed",
+			input:       "/usr/bin/python3",
+			expectError: false,
+		},
+		{
+			name:        "relative path should fail",
+			input:       "usr/bin/python3",
+			expectError: true,
+		},
+		{
+			name:        "relative path with dot should fail",
+			input:       "./local/file",
+			expectError: true,
+		},
+		{
+			name:        "relative path with double dot should fail",
+			input:       "../parent/file",
+			expectError: true,
+		},
+		{
+			name:        "empty path should fail",
+			input:       "",
+			expectError: true,
+		},
+		{
+			name:        "root path should succeed",
+			input:       "/",
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := encoder.Encode(tt.input)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Empty(t, result)
+				var relativePathErr ErrInvalidPath
+				assert.ErrorAs(t, err, &relativePathErr)
+				assert.Equal(t, tt.input, relativePathErr.Path)
+			} else {
+				assert.NoError(t, err)
+				// For empty input, result should also be empty
+				if tt.input == "" {
+					assert.Empty(t, result)
+				} else {
+					assert.NotEmpty(t, result)
+				}
+			}
+		})
+	}
+}
+
+func TestSubstitutionHashEscape_Encode_PathNormalizationError(t *testing.T) {
+	encoder := NewSubstitutionHashEscape()
+
+	tests := []struct {
+		name          string
+		input         string
+		expectError   bool
+		expectedClean string
+	}{
+		{
+			name:        "clean absolute path should succeed",
+			input:       "/usr/bin/python3",
+			expectError: false,
+		},
+		{
+			name:          "path with .. should fail",
+			input:         "/foo/bar/../baz",
+			expectError:   true,
+			expectedClean: "/foo/baz",
+		},
+		{
+			name:          "path with double slash should fail",
+			input:         "/foo//bar",
+			expectError:   true,
+			expectedClean: "/foo/bar",
+		},
+		{
+			name:          "path with . should fail",
+			input:         "/foo/./bar",
+			expectError:   true,
+			expectedClean: "/foo/bar",
+		},
+		{
+			name:          "path with multiple .. should fail",
+			input:         "/foo/bar/../../baz",
+			expectError:   true,
+			expectedClean: "/baz",
+		},
+		{
+			name:          "path resolving to root should fail",
+			input:         "/foo/../..",
+			expectError:   true,
+			expectedClean: "/",
+		},
+		{
+			name:        "root path should succeed",
+			input:       "/",
+			expectError: false,
+		},
+		{
+			name:        "clean nested path should succeed",
+			input:       "/foo/bar/baz",
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := encoder.Encode(tt.input)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Empty(t, result)
+				var pathNotCleanErr ErrInvalidPath
+				assert.ErrorAs(t, err, &pathNotCleanErr)
+				assert.Equal(t, tt.input, pathNotCleanErr.Path)
+			} else {
+				assert.NoError(t, err)
+				// For root path, result should be "~"
+				if tt.input == "/" {
+					assert.Equal(t, "~", result)
+				} else {
+					assert.NotEmpty(t, result)
+				}
+			}
 		})
 	}
 }
@@ -121,7 +270,8 @@ func TestSubstitutionHashEscape_RoundTrip(t *testing.T) {
 	for _, originalPath := range testPaths {
 		t.Run(originalPath, func(t *testing.T) {
 			// Encode
-			encoded := encoder.Encode(originalPath)
+			encoded, err := encoder.Encode(originalPath)
+			require.NoError(t, err)
 
 			// Decode
 			decoded, err := encoder.Decode(encoded)

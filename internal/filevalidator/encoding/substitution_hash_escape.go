@@ -3,6 +3,8 @@ package encoding
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"fmt"
+	"path/filepath"
 	"strings"
 )
 
@@ -13,6 +15,20 @@ const (
 	HashLength = 12
 )
 
+// ErrInvalidPath represents an error for invalid file paths during encoding operations
+type ErrInvalidPath struct {
+	Path string // The invalid path
+	Err  error  // The underlying error, if any
+}
+
+func (e ErrInvalidPath) Error() string {
+	return fmt.Sprintf("invalid path: %s (error: %v)", e.Path, e.Err)
+}
+
+func (e *ErrInvalidPath) Unwrap() error {
+	return e.Err
+}
+
 // SubstitutionHashEscape implements hybrid substitution + double escape encoding
 type SubstitutionHashEscape struct{}
 
@@ -21,20 +37,30 @@ func NewSubstitutionHashEscape() *SubstitutionHashEscape {
 	return &SubstitutionHashEscape{}
 }
 
-// Encode encodes a file path using substitution + double escape method
-// Returns the encoded filename (without directory path)
-func (e *SubstitutionHashEscape) Encode(path string) string {
+// Encode encodes a file path using substitution + double escape method.
+// The path will be converted to an absolute, normalized path.
+// Returns the encoded filename (without directory path).
+func (e *SubstitutionHashEscape) Encode(path string) (string, error) {
 	if path == "" {
-		return ""
+		return "", ErrInvalidPath{Path: path, Err: ErrEmptyPath}
+	}
+
+	// Convert to absolute and normalized path
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", ErrInvalidPath{Path: path, Err: err}
+	}
+	if absPath != path {
+		return "", ErrInvalidPath{Path: path, Err: ErrNotAbsoluteOrNormalized}
 	}
 
 	// Step 1: Substitution (/ ↔ ~)
-	substituted := e.substitute(path)
+	substituted := e.substitute(absPath)
 
 	// Step 2: Double escape (# → #1, / → ##)
 	escaped := e.doubleEscape(substituted)
 
-	return escaped
+	return escaped, nil
 }
 
 // substitute performs character substitution (/ ↔ ~)
@@ -66,7 +92,8 @@ func (e *SubstitutionHashEscape) doubleEscape(substituted string) string {
 	return escaped
 }
 
-// Decode decodes an encoded filename back to original file path
+// Decode decodes an encoded filename back to original absolute file path.
+// Only absolute paths are supported as inputs during encoding.
 func (e *SubstitutionHashEscape) Decode(encoded string) (string, error) {
 	if encoded == "" {
 		return "", nil
@@ -106,7 +133,8 @@ func (e *SubstitutionHashEscape) reverseSubstitute(decoded string) string {
 	return builder.String()
 }
 
-// EncodeWithFallback encodes with automatic fallback to SHA256 for long paths
+// EncodeWithFallback encodes a path with automatic fallback to SHA256 for long paths.
+// The path will be converted to an absolute, normalized path.
 func (e *SubstitutionHashEscape) EncodeWithFallback(path string) Result {
 	if path == "" {
 		return Result{
@@ -117,26 +145,49 @@ func (e *SubstitutionHashEscape) EncodeWithFallback(path string) Result {
 		}
 	}
 
-	// Try normal encoding first
-	normalEncoded := e.Encode(path)
+	// Convert to absolute path first for consistent path handling
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		// If path conversion fails, use SHA256 fallback
+		fallbackEncoded := e.generateSHA256Fallback(path)
+		return Result{
+			EncodedName:    fallbackEncoded,
+			IsFallback:     true,
+			OriginalLength: len(path),
+			EncodedLength:  len(fallbackEncoded),
+		}
+	}
+
+	// Try normal encoding
+	normalEncoded, err := e.Encode(absPath)
+	if err != nil {
+		// If encoding fails, use SHA256 fallback
+		fallbackEncoded := e.generateSHA256Fallback(absPath)
+		return Result{
+			EncodedName:    fallbackEncoded,
+			IsFallback:     true,
+			OriginalLength: len(absPath),
+			EncodedLength:  len(fallbackEncoded),
+		}
+	}
 
 	// Check length constraint
 	if len(normalEncoded) <= MaxFilenameLength {
 		return Result{
 			EncodedName:    normalEncoded,
 			IsFallback:     false,
-			OriginalLength: len(path),
+			OriginalLength: len(absPath),
 			EncodedLength:  len(normalEncoded),
 		}
 	}
 
 	// Use SHA256 fallback for long paths (always enabled)
-	fallbackEncoded := e.generateSHA256Fallback(path)
+	fallbackEncoded := e.generateSHA256Fallback(absPath)
 
 	return Result{
 		EncodedName:    fallbackEncoded,
 		IsFallback:     true,
-		OriginalLength: len(path),
+		OriginalLength: len(absPath),
 		EncodedLength:  len(fallbackEncoded),
 	}
 }

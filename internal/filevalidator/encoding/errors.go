@@ -1,6 +1,17 @@
 package encoding
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
+
+// Static errors for common invalid path cases
+var (
+	// ErrEmptyPath indicates an empty path was provided
+	ErrEmptyPath = errors.New("empty path")
+	// ErrNotAbsoluteOrNormalized indicates the path is not absolute or normalized
+	ErrNotAbsoluteOrNormalized = errors.New("path is not absolute or normalized")
+)
 
 // ErrFallbackNotReversible indicates a fallback encoding cannot be decoded
 type ErrFallbackNotReversible struct {
