@@ -2,6 +2,7 @@ package encoding
 
 import (
 	"fmt"
+	"math/rand"
 	"strings"
 	"testing"
 
@@ -943,10 +944,10 @@ func TestSubstitutionHashEscape_StressTest(t *testing.T) {
 		{
 			name: "random_normal_paths",
 			generator: func() string {
-				depth := 3 + (len("test") % 5) // 3-7 levels deep
+				depth := 3 + rand.Intn(5) // 3-7 levels deep
 				path := ""
-				for i := range depth {
-					path += "/dir" + fmt.Sprintf("%d", i%10)
+				for range depth {
+					path += "/dir" + fmt.Sprintf("%d", rand.Intn(100))
 				}
 				return path + "/file.txt"
 			},
@@ -956,14 +957,13 @@ func TestSubstitutionHashEscape_StressTest(t *testing.T) {
 			name: "random_special_character_paths",
 			generator: func() string {
 				base := "/path/with"
-				for i := range 20 {
-					switch i % 3 {
-					case 0:
-						base += "#"
-					case 1:
-						base += "~"
-					default:
-						base += "a"
+				length := 10 + rand.Intn(20) // 10-29 characters
+				specialChars := []string{"#", "~", "@", "&", "%", "!", "*"}
+				for range length {
+					if rand.Float32() < 0.3 { // 30% chance of special character
+						base += specialChars[rand.Intn(len(specialChars))]
+					} else {
+						base += string(rune('a' + rand.Intn(26))) // random lowercase letter
 					}
 				}
 				return base + "/file"
