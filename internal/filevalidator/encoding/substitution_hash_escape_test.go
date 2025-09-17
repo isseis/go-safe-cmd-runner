@@ -115,12 +115,7 @@ func TestSubstitutionHashEscape_Encode_RelativePathError(t *testing.T) {
 				assert.Equal(t, tt.input, relativePathErr.Path)
 			} else {
 				assert.NoError(t, err)
-				// For empty input, result should also be empty
-				if tt.input == "" {
-					assert.Empty(t, result)
-				} else {
-					assert.NotEmpty(t, result)
-				}
+				assert.NotEmpty(t, result)
 			}
 		})
 	}
