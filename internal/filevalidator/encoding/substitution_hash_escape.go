@@ -109,28 +109,10 @@ func (e *SubstitutionHashEscape) Decode(encoded string) (string, error) {
 	decoded = strings.ReplaceAll(decoded, "#1", "#")
 
 	// Step 2: Reverse substitution (/ ↔ ~)
-	result := e.reverseSubstitute(decoded)
+	// substitution is symmetric, so reuse substitute to reverse the mapping
+	result := e.substitute(decoded)
 
 	return result, nil
-}
-
-// reverseSubstitute reverses the character substitution
-func (e *SubstitutionHashEscape) reverseSubstitute(decoded string) string {
-	var builder strings.Builder
-	builder.Grow(len(decoded))
-
-	for _, char := range decoded {
-		switch char {
-		case '/':
-			builder.WriteRune('~')
-		case '~':
-			builder.WriteRune('/')
-		default:
-			builder.WriteRune(char)
-		}
-	}
-
-	return builder.String()
 }
 
 // EncodeWithFallback encodes a path with automatic fallback to SHA256 for long paths.
