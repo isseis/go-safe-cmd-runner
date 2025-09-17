@@ -168,7 +168,7 @@ func TestSubstitutionHashEscape_NameMaxFallback(t *testing.T) {
 				// Fallback should not start with `~`
 				assert.NotEqual(t, byte('~'), result.EncodedName[0])
 				// Fallback should be within length limits
-				assert.LessOrEqual(t, len(result.EncodedName), encoder.MaxFilenameLength)
+				assert.LessOrEqual(t, len(result.EncodedName), MaxFilenameLength)
 			} else {
 				// Normal encoding should start with `~` (for full paths)
 				assert.Equal(t, byte('~'), result.EncodedName[0])

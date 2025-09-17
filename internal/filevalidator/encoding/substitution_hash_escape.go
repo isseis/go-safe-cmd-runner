@@ -7,27 +7,18 @@ import (
 )
 
 const (
-	// DefaultMaxFilenameLength defines the maximum allowed filename length (NAME_MAX - safety margin)
-	DefaultMaxFilenameLength = 250
-	// DefaultHashLength defines the number of characters to use from SHA256 hash
-	DefaultHashLength = 12
+	// MaxFilenameLength defines the maximum allowed filename length (NAME_MAX - safety margin)
+	MaxFilenameLength = 250
+	// HashLength defines the number of characters to use from SHA256 hash
+	HashLength = 12
 )
 
 // SubstitutionHashEscape implements hybrid substitution + double escape encoding
-type SubstitutionHashEscape struct {
-	// MaxFilenameLength defines the maximum allowed filename length
-	MaxFilenameLength int
+type SubstitutionHashEscape struct{}
 
-	// HashLength defines the number of characters to use from SHA256 hash
-	HashLength int
-}
-
-// NewSubstitutionHashEscape creates a new encoder with default settings
+// NewSubstitutionHashEscape creates a new encoder
 func NewSubstitutionHashEscape() *SubstitutionHashEscape {
-	return &SubstitutionHashEscape{
-		MaxFilenameLength: DefaultMaxFilenameLength,
-		HashLength:        DefaultHashLength,
-	}
+	return &SubstitutionHashEscape{}
 }
 
 // Encode encodes a file path using substitution + double escape method
@@ -130,7 +121,7 @@ func (e *SubstitutionHashEscape) EncodeWithFallback(path string) Result {
 	normalEncoded := e.Encode(path)
 
 	// Check length constraint
-	if len(normalEncoded) <= e.MaxFilenameLength {
+	if len(normalEncoded) <= MaxFilenameLength {
 		return Result{
 			EncodedName:    normalEncoded,
 			IsFallback:     false,
@@ -155,11 +146,8 @@ func (e *SubstitutionHashEscape) generateSHA256Fallback(path string) string {
 	hash := sha256.Sum256([]byte(path))
 	hashStr := base64.URLEncoding.EncodeToString(hash[:])
 
-	// Use configured hash length, ensure it fits within limits
-	hashLength := e.HashLength
-	if hashLength > len(hashStr) {
-		hashLength = len(hashStr)
-	}
+	// Use default hash length, ensure it fits within limits
+	hashLength := min(HashLength, len(hashStr))
 
 	// Format: {hash}.json (hashLength + 5 characters)
 	return hashStr[:hashLength] + ".json"
