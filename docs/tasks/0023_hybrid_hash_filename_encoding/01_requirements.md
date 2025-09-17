@@ -55,8 +55,8 @@
 - **入力:** 元ファイルパス（string）
 - **出力:** エンコード済みファイル名（string）
 - **処理:**
-  1. `/` と `~` を入れ替え（換字）
-  2. `#` を `#1` に、`/` を `##` に置換（ダブルエスケープ）
+  1. `/` を `~` に、`~` を `/` に入れ替える（換字）
+  2. 換字後の文字列に対し、`#` を `#1` に、`/` を `##` に置換する（ダブルエスケープ）
 
 #### 3.1.2 基本デコーディング機能
 
@@ -121,7 +121,7 @@ type SubstitutionHashEscape struct{}
 func (e *SubstitutionHashEscape) Encode(path string) string
 
 // Decode decodes an encoded filename back to original file path
-func (e *SubstitutionHashEscape) Decode(encoded string) string
+func (e *SubstitutionHashEscape) Decode(encoded string) (string, error)
 
 // GetHashFilePath generates hash file path with hybrid approach
 func (e *SubstitutionHashEscape) GetHashFilePath(
@@ -155,7 +155,7 @@ func (h *HybridHashFilePathGetter) GetHashFilePath(
 - **エンコード処理速度**: 10,000パス/秒以上の処理性能を維持する
 - **メモリ使用量**: エンコード・デコード処理でのメモリ使用量を最小化する
 - **空間効率**: 通常ケースで1.00x膨張率を実現する（99%以上のファイルで達成）
-- **フォールバック効率**: フォールバック時でもFILE_MAX文字以内に収める
+- **フォールバック効率**: フォールバック時でもNAME_MAX文字以内に収める
 
 ### 4.2. セキュリティ (Security)
 

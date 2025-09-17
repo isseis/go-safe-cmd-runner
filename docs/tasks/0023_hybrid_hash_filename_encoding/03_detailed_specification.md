@@ -962,8 +962,6 @@ func TestProperty_Encode_UniqueOutput(t *testing.T) {
 
     // Property: Different paths should produce different encoded names
     // (except when fallback is used)
-    seenEncodings := make(map[string]string)
-
     property := func(path1, path2 string) bool {
         if !utf8.ValidString(path1) || !utf8.ValidString(path2) {
             return true

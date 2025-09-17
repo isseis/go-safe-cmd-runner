@@ -308,11 +308,8 @@ flowchart LR
 
     class FILE inputNode
     class CHECK decisionNode
-    class NORMAL formatNode
-    class LEGACY formatNode
-    class DECODE_N resultNode
-    class DECODE_F resultNode
-    class DECODE_L resultNode
+    class NORMAL,SHA256_FORMAT formatNode
+    class DECODE_N,DECODE_S resultNode
 ```
 
 ### 5.3. 設定定数
@@ -380,7 +377,7 @@ func (s *SecurityValidator) ValidateInput(path string) error {
 // strings.Builderを使用した効率的な文字列構築
 func (e *SubstitutionHashEscape) encodeOptimized(path string) string {
     var builder strings.Builder
-    builder.Grow(len(path) * 2) // 予想される容量で事前確保
+    builder.Grow(len(path) +32) // 予想される容量で事前確保 (エスケープ文字用のバッファ)
 
     // 効率的な一回走査でエンコーディング実行
 }
@@ -615,7 +612,7 @@ type FileSystemSupport interface {
 
 ### 11.2. 将来的な改善案
 
-- **压缩アルゴリズムの追加**: より効率的な圧縮方式の実装
+- **圧縮アルゴリズムの追加**: より効率的な圧縮方式の実装
 - **暗号化サポート**: ハッシュファイル名の暗号化機能
 - **分散ストレージ対応**: クラウドストレージでの動作最適化
 - **機械学習による最適化**: パスパターン学習による動的最適化
