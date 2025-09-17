@@ -494,10 +494,10 @@ type EncodingStats struct {
 ### 5.1. 移行サポート実装
 
 ```go
-// MigrationHashFilePathGetter supports gradual migration from legacy to hybrid encoding
+// MigrationHashFilePathGetter supports gradual migration from SHA256 to hybrid encoding
 type MigrationHashFilePathGetter struct {
     hybridGetter HashFilePathGetter // New hybrid implementation
-    legacyGetter HashFilePathGetter // Existing SHA256 implementation
+    SHA256Getter HashFilePathGetter // Existing SHA256 implementation
     fileSystem   FileSystemInterface
     logger       Logger
 
@@ -506,13 +506,13 @@ type MigrationHashFilePathGetter struct {
 // NewMigrationHashFilePathGetter creates a new migration-supporting getter
 func NewMigrationHashFilePathGetter(
     hybridGetter HashFilePathGetter,
-    legacyGetter HashFilePathGetter,
+    SHA256Getter HashFilePathGetter,
     fileSystem FileSystemInterface,
     logger Logger) *MigrationHashFilePathGetter {
 
     return &MigrationHashFilePathGetter{
         hybridGetter:   hybridGetter,
-        legacyGetter:   legacyGetter,
+        SHA256Getter:   SHA256Getter,
         fileSystem:     fileSystem,
         logger:         logger,
     }
@@ -538,11 +538,11 @@ func (m *MigrationHashFilePathGetter) GetHashFilePath(
         return hybridPath, nil
     }
 
-    // Check for legacy hash file
-    legacyPath, err := m.legacyGetter.GetHashFilePath(hashAlgorithm, hashDir, filePath)
+    // Check for SHA256 hash file
+    SHA256Path, err := m.SHA256Getter.GetHashFilePath(hashAlgorithm, hashDir, filePath)
     if err != nil {
-        // Legacy getter failed, but we can still use hybrid path for new files
-        m.logger.LogWarning("Legacy getter failed, using hybrid path for new file", map[string]interface{}{
+        // sha256Getter failed, but we can still use hybrid path for new files
+        m.logger.LogWarning("sha256Getter failed, using hybrid path for new file", map[string]interface{}{
             "file_path":   filePath.String(),
             "hybrid_path": hybridPath,
             "error":       err.Error(),
@@ -550,21 +550,21 @@ func (m *MigrationHashFilePathGetter) GetHashFilePath(
         return hybridPath, nil
     }
 
-    if exists, err := m.fileSystem.FileExists(legacyPath); err != nil {
-        return "", fmt.Errorf("failed to check legacy hash file existence: %w", err)
+    if exists, err := m.fileSystem.FileExists(SHA256Path); err != nil {
+        return "", fmt.Errorf("failed to check SHA256 hash file existence: %w", err)
     } else if exists {
-        // Legacy file exists
-        m.logger.LogInfo("Legacy hash file found", map[string]interface{}{
+        // sha256 file exists
+        m.logger.LogInfo("SHA256 hash file found", map[string]interface{}{
             "file_path":   filePath.String(),
-            "legacy_path": legacyPath,
+            "SHA256_path": SHA256Path,
             "hybrid_path": hybridPath,
         })
 
-        // No auto-migration (always manual), return legacy path
-        return legacyPath, nil
+        // No auto-migration (always manual), return sha256Path
+        return SHA256Path, nil
     }
 
-    // Neither hybrid nor legacy file exists, create new hybrid file
+    // Neither hybrid nor sha256 file exists, create new hybrid file
     return hybridPath, nil
 }
 ```
@@ -572,24 +572,24 @@ func (m *MigrationHashFilePathGetter) GetHashFilePath(
 ### 5.2. 手動移行機能
 
 ```go
-// MigrateHashFile migrates a single hash file from legacy to hybrid format
-func (m *MigrationHashFilePathGetter) MigrateHashFile(legacyPath, hybridPath string) error {
-    return m.migrateHashFile(legacyPath, hybridPath)
+// MigrateHashFile migrates a single hash file from SHA256 to hybrid format
+func (m *MigrationHashFilePathGetter) MigrateHashFile(SHA256Path, hybridPath string) error {
+    return m.migrateHashFile(SHA256Path, hybridPath)
 }
 
 // migrateHashFile performs the actual migration
-func (m *MigrationHashFilePathGetter) migrateHashFile(legacyPath, hybridPath string) error {
-    // Read legacy hash file content
-    content, err := m.fileSystem.ReadFile(legacyPath)
+func (m *MigrationHashFilePathGetter) migrateHashFile(SHA256Path, hybridPath string) error {
+    // Read SHA256 hash file content
+    content, err := m.fileSystem.ReadFile(SHA256Path)
     if err != nil {
-        return fmt.Errorf("failed to read legacy hash file '%s': %w", legacyPath, err)
+        return fmt.Errorf("failed to read SHA256 hash file '%s': %w", SHA256Path, err)
     }
 
-    // Backup legacy file (always enabled)
-    backupPath := legacyPath + ".backup"
-    if err := m.fileSystem.CopyFile(legacyPath, backupPath); err != nil {
+    // Backup sha256 file (always enabled)
+    backupPath := SHA256Path + ".backup"
+    if err := m.fileSystem.CopyFile(SHA256Path, backupPath); err != nil {
         m.logger.LogWarning("Failed to create backup", map[string]interface{}{
-            "legacy_path": legacyPath,
+            "SHA256_path": SHA256Path,
             "backup_path": backupPath,
             "error":       err.Error(),
         })
@@ -607,17 +607,17 @@ func (m *MigrationHashFilePathGetter) migrateHashFile(legacyPath, hybridPath str
         return fmt.Errorf("failed to write hybrid hash file '%s': %w", hybridPath, err)
     }
 
-    // Remove legacy file after successful migration
-    if err := m.fileSystem.RemoveFile(legacyPath); err != nil {
-        m.logger.LogWarning("Failed to remove legacy file after migration", map[string]interface{}{
-            "legacy_path": legacyPath,
+    // Remove sha256 file after successful migration
+    if err := m.fileSystem.RemoveFile(SHA256Path); err != nil {
+        m.logger.LogWarning("Failed to remove sha256 file after migration", map[string]interface{}{
+            "SHA256_path": SHA256Path,
             "error":       err.Error(),
         })
         // Don't fail migration if cleanup fails
     }
 
     m.logger.LogInfo("Successfully migrated hash file", map[string]interface{}{
-        "legacy_path": legacyPath,
+        "SHA256_path": SHA256Path,
         "hybrid_path": hybridPath,
     })
 
@@ -653,22 +653,22 @@ func (m *MigrationHashFilePathGetter) BatchMigrate(
 
         result.ProcessedFiles++
 
-        // Get paths for both legacy and hybrid
-        legacyPath, legacyErr := m.legacyGetter.GetHashFilePath(hashAlgorithm, hashDir, filePath)
+        // Get paths for both SHA256 and hybrid
+        SHA256Path, SHA256Err := m.SHA256Getter.GetHashFilePath(hashAlgorithm, hashDir, filePath)
         hybridPath, hybridErr := m.hybridGetter.GetHashFilePath(hashAlgorithm, hashDir, filePath)
 
-        if legacyErr != nil || hybridErr != nil {
+        if SHA256Err != nil || hybridErr != nil {
             result.FailedFiles++
             result.Errors = append(result.Errors, fmt.Errorf("path generation failed for %s", filePath.String()))
             continue
         }
 
         // Check if migration is needed
-        legacyExists, _ := m.fileSystem.FileExists(legacyPath)
+        SHA256Exists, _ := m.fileSystem.FileExists(SHA256Path)
         hybridExists, _ := m.fileSystem.FileExists(hybridPath)
 
-        if !legacyExists {
-            result.SkippedFiles++ // No legacy file to migrate
+        if !SHA256Exists {
+            result.SkippedFiles++ // No sha256 file to migrate
             continue
         }
 
@@ -678,7 +678,7 @@ func (m *MigrationHashFilePathGetter) BatchMigrate(
         }
 
         // Perform migration
-        if err := m.migrateHashFile(legacyPath, hybridPath); err != nil {
+        if err := m.migrateHashFile(SHA256Path, hybridPath); err != nil {
             result.FailedFiles++
             result.Errors = append(result.Errors, fmt.Errorf("migration failed for %s: %w", filePath.String(), err))
         } else {
@@ -1120,38 +1120,38 @@ func TestMigrationHashFilePathGetter(t *testing.T) {
     mockFS := NewMockFileSystem()
     logger := NewTestLogger()
 
-    // Create legacy and hybrid getters
-    legacyGetter := NewLegacyHashFilePathGetter() // Existing implementation
+    // Create SHA256 and hybrid getters
+    SHA256Getter := NewSHA256HashFilePathGetter() // Existing implementation
     hybridGetter := NewHybridHashFilePathGetter()
-    migrationGetter := NewMigrationHashFilePathGetter(hybridGetter, legacyGetter, mockFS, logger)
+    migrationGetter := NewMigrationHashFilePathGetter(hybridGetter, SHA256Getter, mockFS, logger)
 
     testPath := common.NewResolvedPath("/usr/bin/python3")
     algorithm := NewSHA256Algorithm()
 
-    // Setup: create legacy hash file
-    legacyHashPath, err := legacyGetter.GetHashFilePath(algorithm, hashDir, testPath)
+    // Setup: create SHA256 hash file
+    SHA256HashPath, err := SHA256Getter.GetHashFilePath(algorithm, hashDir, testPath)
     require.NoError(t, err)
 
-    legacyContent := []byte(`{"hash": "abc123", "algorithm": "SHA256"}`)
-    mockFS.WriteFile(legacyHashPath, legacyContent, 0644)
+    SHA256Content := []byte(`{"hash": "abc123", "algorithm": "SHA256"}`)
+    mockFS.WriteFile(SHA256HashPath, SHA256Content, 0644)
 
-    // Test: migration getter should find legacy file
+    // Test: migration getter should find sha256 file
     foundPath, err := migrationGetter.GetHashFilePath(algorithm, hashDir, testPath)
     require.NoError(t, err)
-    assert.Equal(t, legacyHashPath, foundPath)
+    assert.Equal(t, SHA256HashPath, foundPath)
 
     // Test: manual migration (auto-migration is always disabled)
     // Manual migration must be called explicitly
     expectedHybridPath, _ := hybridGetter.GetHashFilePath(algorithm, hashDir, testPath)
-    err = migrationGetter.MigrateHashFile(legacyHashPath, expectedHybridPath)
+    err = migrationGetter.MigrateHashFile(SHA256HashPath, expectedHybridPath)
     require.NoError(t, err)
 
     // Verify migration occurred
     hybridExists, _ := mockFS.FileExists(expectedHybridPath)
     assert.True(t, hybridExists)
 
-    legacyExists, _ := mockFS.FileExists(legacyHashPath)
-    assert.False(t, legacyExists) // Should be removed after migration
+    SHA256Exists, _ := mockFS.FileExists(SHA256HashPath)
+    assert.False(t, SHA256Exists) // Should be removed after migration
 }
 ```
 
@@ -1197,9 +1197,9 @@ WARN: Migration needed
   "timestamp": "2025-09-16T10:01:00Z",
   "level": "WARN",
   "component": "MigrationHashFilePathGetter",
-  "message": "Legacy hash file found, consider migration",
+  "message": "SHA256 hash file found, consider migration",
   "file_path": "/usr/bin/python3",
-  "legacy_path": "/hashes/abc123def456.json",
+  "SHA256_path": "/hashes/abc123def456.json",
   "hybrid_path": "/hashes/~usr~bin~python3"
 }
 */

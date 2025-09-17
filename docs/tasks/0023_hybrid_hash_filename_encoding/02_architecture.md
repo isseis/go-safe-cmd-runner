@@ -28,7 +28,7 @@ graph TB
     subgraph "Hash File Path Generation Layer"
         HFG[HashFilePathGetter Interface]
         HYBRID[HybridHashFilePathGetter]
-        LEGACY[LegacyHashFilePathGetter]
+        SHA256[SHA256HashFilePathGetter]
     end
 
     subgraph "Encoding Layer"
@@ -43,17 +43,16 @@ graph TB
 
     APP --> VAL
     VAL --> HFG
+    VAL --> FS
     HFG --> HYBRID
-    HFG --> LEGACY
+    HFG --> SHA256
     HYBRID --> ENC
     ENC --> NORMAL
-    HYBRID --> FS
-    LEGACY --> FS
     FS --> HASHDIR
 
-    note1["SHA256 Fallback reuses Legacy logic"]
-    HYBRID -.-> LEGACY
-    LEGACY -.-> note1
+    note1["SHA256 Fallback reuses SHA256 logic"]
+    HYBRID -.-> SHA256
+    SHA256 -.-> note1
 
     classDef interfaceNode fill:#e1f5fe,stroke:#0277bd,stroke-width:2px
     classDef implementationNode fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
@@ -62,7 +61,7 @@ graph TB
     classDef noteNode fill:#fffde7,stroke:#f57f17,stroke-dasharray: 5 5
 
     class HFG interfaceNode
-    class HYBRID,LEGACY,VAL implementationNode
+    class HYBRID,SHA256,VAL implementationNode
     class ENC,NORMAL encodingNode
     class APP,FS,HASHDIR systemNode
     class note1 noteNode
@@ -99,7 +98,7 @@ sequenceDiagram
         Note over Enc,Hybrid: Normal encoding used
     else Length > 250 characters
         Enc-->>Hybrid: SHA256 hash (hash12chars.json)
-        Note over Enc,Hybrid: Legacy logic reused
+        Note over Enc,Hybrid: SHA256 logic reused
     end
 
     Hybrid-->>Val: hashFilePath
@@ -116,7 +115,7 @@ sequenceDiagram
 
 - ファイルパスの換字+ダブルエスケープエンコーディング
 - エンコード済みファイル名のデコーディング
-- NAME_MAX制限チェックとlegacy方式フォールバック
+- NAME_MAX制限チェックとSHA256方式フォールバック
 
 #### 3.1.2 実装構造
 
@@ -127,7 +126,7 @@ type SubstitutionHashEscape struct {
 
 type EncodingResult struct {
     EncodedName string
-    UsedLegacy  bool
+    UsedSHA256  bool
     OriginalLength int
     EncodedLength  int
 }
@@ -142,7 +141,7 @@ flowchart TD
     ESC --> CHECK{Length <= 250?}
 
     CHECK -->|Yes| NORMAL[Use Normal Encoding]
-    CHECK -->|No| FALLBACK[SHA256 Legacy]
+    CHECK -->|No| FALLBACK[SHA256 Fallback]
 
     NORMAL --> RESULT_N[Output: `~encoded_path`]
     FALLBACK --> HASH[Generate SHA256]
@@ -168,7 +167,7 @@ flowchart TD
 
 - HashFilePathGetterインターフェースの実装
 - SubstitutionHashEscapeとの連携
-- 長いパス名に対するlegacy方式の再利用
+- 長いパス名に対するSHA256方式の再利用
 - エラーハンドリングとログ出力
 
 #### 3.2.2 実装構造
@@ -192,7 +191,7 @@ func (h *HybridHashFilePathGetter) GetHashFilePath(
 ```go
 type MigrationHashFilePathGetter struct {
     newGetter    HashFilePathGetter // HybridHashFilePathGetter
-    legacyGetter HashFilePathGetter // 既存のSHA256短縮方式
+    sha256Getter HashFilePathGetter // SHA256ハッシュ方式
     fileSystem   FileSystemInterface
 }
 
@@ -281,7 +280,7 @@ type HashFilePathError struct {
 | 1. 換字 | `/` ↔ `~` | `/home/user` → `~home~user` |
 | 2. エスケープ | `#` → `#1`, `/` → `##` | `~home~user` → `~home~user` |
 
-#### 5.1.2 Legacy方式エンコーディング（フォールバック）
+#### 5.1.2 SHA256方式エンコーディング（フォールバック）
 
 | 形式 | 構造 | 例 |
 |------|------|-----|
@@ -297,10 +296,10 @@ flowchart LR
     FILE[Hash Filename] --> CHECK{First Char}
 
     CHECK -->|"`~`"| NORMAL[Normal Encoding]
-    CHECK -->|Other| LEGACY[Legacy Format]
+    CHECK -->|Other| SHA256_FORMAT[SHA256 Format]
 
     NORMAL --> DECODE_N[Decode Available]
-    LEGACY --> DECODE_L[Legacy Processing]
+    SHA256_FORMAT --> DECODE_S[SHA256 Processing]
 
     classDef inputNode fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
     classDef decisionNode fill:#fff3e0,stroke:#f57c00,stroke-width:2px
@@ -371,7 +370,7 @@ func (s *SecurityValidator) ValidateInput(path string) error {
 | エンコード速度 | 10,000 paths/sec | ベンチマークテスト |
 | メモリ使用量 | < 1MB per 1000 paths | メモリプロファイリング |
 | 空間効率 | 1.00x (99%+ files) | 実世界データ測定 |
-| Legacy方式時間 | < 1ms per path | 単体測定 |
+| SHA256方式時間 | < 1ms per path | 単体測定 |
 
 ### 7.2. 最適化戦略
 
@@ -416,7 +415,7 @@ type PerformanceMetrics struct {
     EncodingDuration    time.Duration
     DecodingDuration    time.Duration
     ExpansionRatio      float64
-    LegacyUsageCount    int64
+    SHA256UsageCount    int64
     MemoryUsage         int64
 }
 
@@ -436,8 +435,8 @@ type PerformanceMonitor struct {
 | レベル | 内容 | 例 |
 |--------|------|-----|
 | DEBUG | エンコーディング詳細 | `Encoding path: /long/path -> ~long~path` |
-| INFO | Legacy方式使用 | `Long path detected, using legacy SHA256 encoding` |
-| WARN | 移行関連警告 | `Legacy hash file found, consider migration` |
+| INFO | SHA256方式使用 | `Long path detected, using SHA256 fallback encoding` |
+| WARN | 移行関連警告 | `SHA256 hash file found, consider migration` |
 | ERROR | エラー状況 | `Failed to encode path: invalid characters` |
 
 #### 8.1.2 構造化ログ
@@ -450,7 +449,7 @@ type LogEntry struct {
     Operation    string    `json:"operation"`
     FilePath     string    `json:"file_path,omitempty"`
     EncodedName  string    `json:"encoded_name,omitempty"`
-    UsedLegacy   bool      `json:"used_legacy,omitempty"`
+    UsedSHA256   bool      `json:"used_sha256,omitempty"`
     Duration     string    `json:"duration,omitempty"`
     Error        string    `json:"error,omitempty"`
 }
@@ -460,7 +459,7 @@ type LogEntry struct {
 
 #### 8.2.1 運用メトリクス
 
-- **Legacy方式使用率**: legacy SHA256方式の使用頻度
+- **SHA256方式使用率**: SHA256方式の使用頻度
 - **エンコーディング成功率**: エンコード・デコード処理の成功率
 - **平均膨張率**: ファイル名の空間効率測定
 - **処理時間分布**: エンコード処理時間のヒストグラム
@@ -469,7 +468,7 @@ type LogEntry struct {
 
 ```go
 type AlertThresholds struct {
-    LegacyUsagePercent      float64 // Legacy方式使用率 > 5%
+    SHA256UsagePercent      float64 // SHA256方式使用率 > 5%
     EncodingFailurePercent  float64 // エンコード失敗率 > 1%
     AverageExpansionRatio   float64 // 平均膨張率 > 1.1
     ProcessingTimeMS        int64   // 処理時間 > 10ms
