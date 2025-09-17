@@ -95,7 +95,7 @@ sequenceDiagram
     Hybrid->>Enc: Encode(filePath.String())
 
     alt Length <= 250 characters
-        Enc-->>Hybrid: encoded path (~path)
+        Enc-->>Hybrid: encoded path (`~path`)
         Note over Enc,Hybrid: Normal encoding used
     else Length > 250 characters
         Enc-->>Hybrid: SHA256 hash (hash12chars.json)
@@ -137,14 +137,14 @@ type EncodingResult struct {
 
 ```mermaid
 flowchart TD
-    START([Input: Original Path]) --> SUB[Substitution: / ↔ ~]
+    START([Input: Original Path]) --> SUB[Substitution: `/` ↔ `~`]
     SUB --> ESC[Double Escape: # → #1, / → ##]
     ESC --> CHECK{Length <= 250?}
 
     CHECK -->|Yes| NORMAL[Use Normal Encoding]
     CHECK -->|No| FALLBACK[SHA256 Legacy]
 
-    NORMAL --> RESULT_N[Output: ~encoded_path]
+    NORMAL --> RESULT_N[Output: `~encoded_path`]
     FALLBACK --> HASH[Generate SHA256]
     HASH --> RESULT_F[Output: hash12chars.json]
 
@@ -296,7 +296,7 @@ type HashFilePathError struct {
 flowchart LR
     FILE[Hash Filename] --> CHECK{First Char}
 
-    CHECK -->|"~"| NORMAL[Normal Encoding]
+    CHECK -->|"`~`"| NORMAL[Normal Encoding]
     CHECK -->|Other| LEGACY[Legacy Format]
 
     NORMAL --> DECODE_N[Decode Available]

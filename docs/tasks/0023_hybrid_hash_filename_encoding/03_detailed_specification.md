@@ -872,12 +872,12 @@ func TestSubstitutionHashEscape_NameMaxFallback(t *testing.T) {
             assert.Equal(t, tt.wantFallback, result.IsFallback)
 
             if result.IsFallback {
-                // Fallback should not start with ~
+                // Fallback should not start with `~`
                 assert.NotEqual(t, '~', result.EncodedName[0])
                 // Fallback should be within length limits
                 assert.LessOrEqual(t, len(result.EncodedName), encoder.MaxFilenameLength)
             } else {
-                // Normal encoding should start with ~ (for full paths)
+                // Normal encoding should start with `~` (for full paths)
                 assert.Equal(t, '~', result.EncodedName[0])
                 // Should be reversible
                 decoded, err := encoder.Decode(result.EncodedName)
@@ -1098,7 +1098,7 @@ func TestValidator_WithHybridEncoding(t *testing.T) {
     // Check that hash file exists and uses expected encoding
     assert.FileExists(t, hashFilePath)
 
-    // Hash file name should start with ~ for normal encoding (assuming short path)
+    // Hash file name should start with `~` for normal encoding (assuming short path)
     hashFileName := filepath.Base(hashFilePath)
     assert.Equal(t, '~', hashFileName[0])
 

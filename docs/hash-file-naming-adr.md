@@ -128,9 +128,9 @@ flowchart TD
 
 | 方式 (強調は選択) | 変換ルール | 合計文字数 (比率) |
 |---|---|---:|
-| **#メタ版 (換字 + #エスケープ)** ← 選択 | / ↔ ~（換字）<br># → #1（ダブルエスケープ）, / → ##（エスケープ） | 224文字 (1.00x) |
-| _メタ版 (換字 + _エスケープ) | / ↔ ~（換字）<br>_ → _1（ダブルエスケープ）, / → __（エスケープ） | 231文字 (1.04x) |
-| 純粋ダブルエスケープ | 換字なし<br>_ → _1（ダブルエスケープ）, / → __（エスケープ） | 257文字 (1.15x) |
+| **#メタ版 (換字 + #エスケープ)** ← 選択 | `/` ↔ `~`（換字）<br>`#` → `#1`（ダブルエスケープ）, `/` → `##`（エスケープ） | 224文字 (1.00x) |
+| _メタ版 (換字 + _エスケープ) | `/` ↔ `~`（換字）<br>`_` → `_1`（ダブルエスケープ）, `/` → `__`（エスケープ） | 231文字 (1.04x) |
+| 純粋ダブルエスケープ | 換字なし<br>`_` → `_1`（ダブルエスケープ）, `/` → `__`（エスケープ） | 257文字 (1.15x) |
 
 改善効果: 純粋ダブルエスケープより 12.8% 効率向上
 
@@ -140,8 +140,8 @@ flowchart TD
 
 | 文字 | 出現回数 | #メタ版（換字+#エスケープ） | _メタ版（換字+_エスケープ） | 純粋ダブル |
 |---|---:|---|---|---|
-| _ (アンダースコア) | 8 | _ はそのまま（ただし / ↔ ~ の換字は適用） | _ → _1（エスケープ） | _ → _1（エスケープ） |
-| # (ハッシュ) | 1 | # → #1（エスケープ） | # はそのまま | # はそのまま |
+| `_` (アンダースコア) | 8 | `_` はそのまま（ただし `/` ↔ `~` の換字は適用） | `_` → `_1`（エスケープ） | `_` → `_1`（エスケープ） |
+| `#` (ハッシュ) | 1 | `#` → `#1`（エスケープ） | `#` はそのまま | `#` はそのまま |
 
 頻度比: 8.0:1
 
@@ -153,9 +153,9 @@ flowchart TD
 
 | 元パス | エンコード結果 | 膨張率 |
 |---|---|---:|
-| /usr/bin/python3 | ~usr~bin~python3 | 1.00x |
-| /home/user_name/project_files | ~home~user_name~project_files | 1.00x |
-| /normal/path/without/special | ~normal~path~without~special | 1.00x |
+| /usr/bin/python3 | `~usr~bin~python3` | 1.00x |
+| /home/user_name/project_files | `~home~user_name~project_files` | 1.00x |
+| /normal/path/without/special | `~normal~path~without~special` | 1.00x |
 
 #### 4. 完全な技術的信頼性
 
@@ -226,11 +226,11 @@ func (e *SubstitutionHashEscape) GetHashFilePath(
 以下のような場合にフォールバックが動作する：
 
 ```bash
-# Node.js deep nested modules (エンコード後 ~280文字)
+# Node.js deep nested modules (エンコード後 280文字程度)
 /home/user/project/node_modules/@org/very-long-package/dist/esm/components/ui/forms/validation.js
 → AbCdEf123456.json
 
-# Docker container layers (エンコード後 ~300文字)
+# Docker container layers (エンコード後 300文字程度)
 /var/lib/containers/storage/overlay/abc123.../merged/usr/share/app-with-very-long-name.desktop
 → XyZ789AbCdEf.json
 ```
@@ -241,7 +241,7 @@ func (e *SubstitutionHashEscape) GetHashFilePath(
 
 ```go
 func (e *SubstitutionHashEscape) DecodeHashFileName(hashFileName string) (originalPath string, isFallback bool, err error) {
-    // フォールバック形式の判定（換字後のファイル名は必ず ~ で開始）
+    // フォールバック形式の判定（換字後のファイル名は必ず `~` で開始）
     if len(hashFileName) == 0 || hashFileName[0] != '~' {
         return "", true, fmt.Errorf("SHA256 fallback file: original path cannot be recovered")
     }
@@ -323,7 +323,7 @@ func TestNameMaxFallback(t *testing.T) {
                 hashPath, _ := encoder.GetHashFilePath(nil, "/tmp", common.NewResolvedPath(tt.path))
                 filename := filepath.Base(hashPath)
                 assert.LessOrEqual(t, len(filename), MAX_FILENAME_LENGTH)
-                assert.NotEqual(t, '~', filename[0]) // フォールバック形式は ~ 以外で開始
+                assert.NotEqual(t, '~', filename[0]) // フォールバック形式は `~` 以外で開始
             }
         })
     }
@@ -346,7 +346,7 @@ func TestNameMaxFallback(t *testing.T) {
 
 | ファイルパス長 | 使用方式 | 膨張率 | 可逆性 | デバッグ性 | ファイル名形式 |
 |---------------|----------|-------|--------|-----------|---------------|
-| 短〜中（~250文字以下エンコード後） | 換字+ダブルエスケープ | 1.00x | ✅完全 | ✅高 | `~{encoded_path}` |
+| 短〜中（250文字以下エンコード後） | 換字+ダブルエスケープ | 1.00x | ✅完全 | ✅高 | `~{encoded_path}` |
 | 長（250文字超エンコード後） | SHA256フォールバック | N/A | ❌不可 | ⚠️ハッシュのみ | `{hash12文字}.json` |
 
 ### システム全体への影響
@@ -404,7 +404,7 @@ return hashFilePath, nil
 ### 3. 単一特殊文字エスケープ方式
 
 #### 概要
-稀少な特殊文字（@, ~, #, | など）を使用した 1:1 エスケープ方式。
+稀少な特殊文字（`@`, `~`, `#`, `|` など）を使用した 1:1 エスケープ方式。
 
 #### 実装例
 ```go
