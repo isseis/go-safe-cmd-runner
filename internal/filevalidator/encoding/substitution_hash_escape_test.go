@@ -2,9 +2,10 @@ package encoding
 
 import (
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -923,10 +924,8 @@ func TestSubstitutionHashEscape_ConsistencyTests(t *testing.T) {
 			}
 
 			// Verify all results are identical
-			for i := range len(results) {
-				if i > 0 {
-					assert.Equal(t, results[0], results[i], "Encoding not consistent for path: %s", path)
-				}
+			for i := 1; i < len(results); i++ {
+				assert.Equal(t, results[0], results[i], "Encoding not consistent for path: %s", path)
 			}
 		})
 	}
@@ -934,6 +933,10 @@ func TestSubstitutionHashEscape_ConsistencyTests(t *testing.T) {
 
 func TestSubstitutionHashEscape_StressTest(t *testing.T) {
 	encoder := NewSubstitutionHashEscape()
+
+	// Create a seeded random source for reproducible tests
+	source := rand.NewPCG(uint64(time.Now().UnixNano()), uint64(time.Now().UnixNano()))
+	rng := rand.New(source)
 
 	// Generate many paths with random characteristics
 	testCases := []struct {
@@ -944,10 +947,10 @@ func TestSubstitutionHashEscape_StressTest(t *testing.T) {
 		{
 			name: "random_normal_paths",
 			generator: func() string {
-				depth := 3 + rand.Intn(5) // 3-7 levels deep
+				depth := 3 + rng.IntN(5) // 3-7 levels deep
 				path := ""
 				for range depth {
-					path += "/dir" + fmt.Sprintf("%d", rand.Intn(100))
+					path += "/dir" + fmt.Sprintf("%d", rng.IntN(100))
 				}
 				return path + "/file.txt"
 			},
@@ -957,13 +960,13 @@ func TestSubstitutionHashEscape_StressTest(t *testing.T) {
 			name: "random_special_character_paths",
 			generator: func() string {
 				base := "/path/with"
-				length := 10 + rand.Intn(20) // 10-29 characters
+				length := 10 + rng.IntN(20) // 10-29 characters
 				specialChars := []string{"#", "~", "@", "&", "%", "!", "*"}
 				for range length {
-					if rand.Float32() < 0.3 { // 30% chance of special character
-						base += specialChars[rand.Intn(len(specialChars))]
+					if rng.Float32() < 0.3 { // 30% chance of special character
+						base += specialChars[rng.IntN(len(specialChars))]
 					} else {
-						base += string(rune('a' + rand.Intn(26))) // random lowercase letter
+						base += string(rune('a' + rng.IntN(26))) // random lowercase letter
 					}
 				}
 				return base + "/file"
