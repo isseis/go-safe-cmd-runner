@@ -500,7 +500,6 @@ type MigrationHashFilePathGetter struct {
     SHA256Getter HashFilePathGetter // Existing SHA256 implementation
     fileSystem   FileSystemInterface
     logger       Logger
-
 }
 
 // NewMigrationHashFilePathGetter creates a new migration-supporting getter
