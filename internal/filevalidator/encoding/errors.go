@@ -34,6 +34,20 @@ func (e ErrPathTooLong) Error() string {
 		e.EncodedLength, e.MaxLength, e.Path)
 }
 
+// ErrInvalidPath represents an error for invalid file paths during encoding operations
+type ErrInvalidPath struct {
+	Path string // The invalid path
+	Err  error  // The underlying error, if any
+}
+
+func (e ErrInvalidPath) Error() string {
+	return fmt.Sprintf("invalid path: %s (error: %v)", e.Path, e.Err)
+}
+
+func (e *ErrInvalidPath) Unwrap() error {
+	return e.Err
+}
+
 // ErrInvalidEncodedName indicates the encoded name format is invalid
 type ErrInvalidEncodedName struct {
 	EncodedName string

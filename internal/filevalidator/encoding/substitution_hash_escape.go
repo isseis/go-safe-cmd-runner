@@ -3,7 +3,6 @@ package encoding
 import (
 	"crypto/sha256"
 	"encoding/base64"
-	"fmt"
 	"path/filepath"
 	"strings"
 )
@@ -14,20 +13,6 @@ const (
 	// HashLength defines the number of characters to use from SHA256 hash
 	HashLength = 12
 )
-
-// ErrInvalidPath represents an error for invalid file paths during encoding operations
-type ErrInvalidPath struct {
-	Path string // The invalid path
-	Err  error  // The underlying error, if any
-}
-
-func (e ErrInvalidPath) Error() string {
-	return fmt.Sprintf("invalid path: %s (error: %v)", e.Path, e.Err)
-}
-
-func (e *ErrInvalidPath) Unwrap() error {
-	return e.Err
-}
 
 // SubstitutionHashEscape implements hybrid substitution + double escape encoding
 type SubstitutionHashEscape struct{}
@@ -45,19 +30,15 @@ func (e *SubstitutionHashEscape) Encode(path string) (string, error) {
 		return "", ErrInvalidPath{Path: path, Err: ErrEmptyPath}
 	}
 
-	// Convert to absolute and normalized path
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return "", ErrInvalidPath{Path: path, Err: err}
-	}
-	if absPath != path {
+	// Ensure path is absolute and canonical
+	if !filepath.IsAbs(path) {
 		return "", ErrInvalidPath{Path: path, Err: ErrNotAbsoluteOrNormalized}
 	}
-
+	if filepath.Clean(path) != path {
+		return "", ErrInvalidPath{Path: path, Err: ErrNotAbsoluteOrNormalized}
+	}
 	// Single-pass encoding optimization
-	encoded := e.encodeOptimized(absPath)
-
-	return encoded, nil
+	return e.encodeOptimized(path), nil
 }
 
 // encodeOptimized performs single-pass encoding combining substitution and double escape
@@ -146,9 +127,6 @@ func (e *SubstitutionHashEscape) decodeOptimized(encoded string) string {
 		case '~':
 			// ~ → / (reverse substitution)
 			builder.WriteRune('/')
-		case '/':
-			// / → ~ (reverse substitution)
-			builder.WriteRune('~')
 		default:
 			// No decoding needed
 			builder.WriteRune(char)
@@ -160,14 +138,21 @@ func (e *SubstitutionHashEscape) decodeOptimized(encoded string) string {
 
 // EncodeWithFallback encodes a path with automatic fallback to SHA256 for long paths.
 // The path will be converted to an absolute, normalized path.
-func (e *SubstitutionHashEscape) EncodeWithFallback(path string) Result {
+func (e *SubstitutionHashEscape) EncodeWithFallback(path string) (Result, error) {
 	if path == "" {
 		return Result{
 			EncodedName:    "",
 			IsFallback:     false,
 			OriginalLength: 0,
 			EncodedLength:  0,
-		}
+		}, ErrInvalidPath{Path: path, Err: ErrEmptyPath}
+	}
+	// Ensure path is absolute and canonical
+	if !filepath.IsAbs(path) {
+		return Result{}, ErrInvalidPath{Path: path, Err: ErrNotAbsoluteOrNormalized}
+	}
+	if filepath.Clean(path) != path {
+		return Result{}, ErrInvalidPath{Path: path, Err: ErrNotAbsoluteOrNormalized}
 	}
 
 	// Convert to absolute path first for consistent path handling
@@ -180,7 +165,7 @@ func (e *SubstitutionHashEscape) EncodeWithFallback(path string) Result {
 			IsFallback:     true,
 			OriginalLength: len(path),
 			EncodedLength:  len(fallbackEncoded),
-		}
+		}, err
 	}
 
 	// Try normal encoding
@@ -193,7 +178,7 @@ func (e *SubstitutionHashEscape) EncodeWithFallback(path string) Result {
 			IsFallback:     true,
 			OriginalLength: len(absPath),
 			EncodedLength:  len(fallbackEncoded),
-		}
+		}, err
 	}
 
 	// Check length constraint
@@ -203,7 +188,7 @@ func (e *SubstitutionHashEscape) EncodeWithFallback(path string) Result {
 			IsFallback:     false,
 			OriginalLength: len(absPath),
 			EncodedLength:  len(normalEncoded),
-		}
+		}, err
 	}
 
 	// Use SHA256 fallback for long paths (always enabled)
@@ -214,7 +199,7 @@ func (e *SubstitutionHashEscape) EncodeWithFallback(path string) Result {
 		IsFallback:     true,
 		OriginalLength: len(absPath),
 		EncodedLength:  len(fallbackEncoded),
-	}
+	}, nil
 }
 
 // generateSHA256Fallback generates SHA256-based filename for long paths

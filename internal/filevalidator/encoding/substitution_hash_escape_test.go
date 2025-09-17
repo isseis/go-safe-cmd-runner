@@ -310,8 +310,9 @@ func TestSubstitutionHashEscape_NameMaxFallback(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := encoder.EncodeWithFallback(tt.path)
+			result, err := encoder.EncodeWithFallback(tt.path)
 
+			assert.NoError(t, err)
 			assert.Equal(t, tt.wantFallback, result.IsFallback)
 
 			if result.IsFallback {
@@ -326,6 +327,110 @@ func TestSubstitutionHashEscape_NameMaxFallback(t *testing.T) {
 				decoded, err := encoder.Decode(result.EncodedName)
 				assert.NoError(t, err)
 				assert.Equal(t, tt.path, decoded)
+			}
+		})
+	}
+}
+
+func TestSubstitutionHashEscape_EncodeWithFallback_ErrorCases(t *testing.T) {
+	encoder := NewSubstitutionHashEscape()
+
+	tests := []struct {
+		name        string
+		input       string
+		expectError bool
+		errorType   error
+	}{
+		{
+			name:        "empty path should fail",
+			input:       "",
+			expectError: true,
+			errorType:   ErrEmptyPath,
+		},
+		{
+			name:        "relative path should fail",
+			input:       "usr/bin/python3",
+			expectError: true,
+			errorType:   ErrNotAbsoluteOrNormalized,
+		},
+		{
+			name:        "relative path with dot should fail",
+			input:       "./local/file",
+			expectError: true,
+			errorType:   ErrNotAbsoluteOrNormalized,
+		},
+		{
+			name:        "relative path with double dot should fail",
+			input:       "../parent/file",
+			expectError: true,
+			errorType:   ErrNotAbsoluteOrNormalized,
+		},
+		{
+			name:        "path with double slash should fail",
+			input:       "/foo//bar",
+			expectError: true,
+			errorType:   ErrNotAbsoluteOrNormalized,
+		},
+		{
+			name:        "path with . should fail",
+			input:       "/foo/./bar",
+			expectError: true,
+			errorType:   ErrNotAbsoluteOrNormalized,
+		},
+		{
+			name:        "path with .. should fail",
+			input:       "/foo/bar/../baz",
+			expectError: true,
+			errorType:   ErrNotAbsoluteOrNormalized,
+		},
+		{
+			name:        "absolute clean path should succeed",
+			input:       "/usr/bin/python3",
+			expectError: false,
+		},
+		{
+			name:        "root path should succeed",
+			input:       "/",
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := encoder.EncodeWithFallback(tt.input)
+
+			if tt.expectError {
+				assert.Error(t, err)
+
+				// Check that error is wrapped in ErrInvalidPath
+				var invalidPathErr ErrInvalidPath
+				assert.ErrorAs(t, err, &invalidPathErr)
+				assert.Equal(t, tt.input, invalidPathErr.Path)
+
+				// Check the underlying error type
+				assert.ErrorIs(t, invalidPathErr.Err, tt.errorType)
+
+				// For empty path, check the result structure
+				if tt.input == "" {
+					assert.Equal(t, "", result.EncodedName)
+					assert.False(t, result.IsFallback)
+					assert.Equal(t, 0, result.OriginalLength)
+					assert.Equal(t, 0, result.EncodedLength)
+				} else {
+					// For other error cases, result should be empty
+					assert.Equal(t, Result{}, result)
+				}
+			} else {
+				assert.NoError(t, err)
+				assert.NotEmpty(t, result.EncodedName)
+				assert.Equal(t, len(tt.input), result.OriginalLength)
+				assert.Equal(t, len(result.EncodedName), result.EncodedLength)
+
+				// For short paths, should use normal encoding
+				if len(result.EncodedName) <= MaxFilenameLength {
+					assert.False(t, result.IsFallback)
+					assert.Equal(t, byte('~'), result.EncodedName[0]) // Should start with ~
+				}
 			}
 		})
 	}
