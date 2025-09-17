@@ -45,4 +45,4 @@ repos:
     rev: 53239641ec106cda9a7acf9150c98be8d5ffa1ec
     hooks:
     -   id: gofumpt
-    -   id: gci
+    # -   id: gci  # Temporarily disabled due to conflict with gofumpt
