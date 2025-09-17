@@ -305,7 +305,6 @@ type EncodingResult struct {
     IsFallback     bool   // Whether SHA256 fallback was used
     OriginalLength int    // Length of original path
     EncodedLength  int    // Length of encoded filename
-    Error          error  // Any error that occurred during encoding
 }
 
 // EncodingAnalysis provides detailed analysis of encoding process
@@ -423,10 +422,6 @@ func (h *HybridHashFilePathGetter) GetHashFilePath(
 
     // Encode the file path
     result := h.encoder.EncodeWithFallback(filePath.String())
-
-    if result.Error != nil {
-        return "", fmt.Errorf("encoding failed for path '%s': %w", filePath.String(), result.Error)
-    }
 
     // Log fallback usage (always enabled)
     if result.IsFallback && h.logger != nil {
