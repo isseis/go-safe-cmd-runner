@@ -137,27 +137,10 @@ func (e *SubstitutionHashEscape) decodeOptimized(encoded string) string {
 }
 
 // EncodeWithFallback encodes a path with automatic fallback to SHA256 for long paths.
-// The path will be converted to an absolute, normalized path.
+// The path must be converted to an absolute, normalized path in advance.
 func (e *SubstitutionHashEscape) EncodeWithFallback(path string) (Result, error) {
-	if path == "" {
-		return Result{}, ErrInvalidPath{Path: path, Err: ErrEmptyPath}
-	}
-	// Ensure path is absolute and canonical
-	if !filepath.IsAbs(path) {
-		return Result{}, ErrInvalidPath{Path: path, Err: ErrNotAbsoluteOrNormalized}
-	}
-	if filepath.Clean(path) != path {
-		return Result{}, ErrInvalidPath{Path: path, Err: ErrNotAbsoluteOrNormalized}
-	}
-
-	// Convert to absolute path first for consistent path handling
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return Result{}, err
-	}
-
-	// Try normal encoding
-	normalEncoded, err := e.Encode(absPath)
+	// Try normal encoding (includes all path validation)
+	normalEncoded, err := e.Encode(path)
 	if err != nil {
 		return Result{}, err
 	}
@@ -167,18 +150,18 @@ func (e *SubstitutionHashEscape) EncodeWithFallback(path string) (Result, error)
 		return Result{
 			EncodedName:    normalEncoded,
 			IsFallback:     false,
-			OriginalLength: len(absPath),
+			OriginalLength: len(path),
 			EncodedLength:  len(normalEncoded),
 		}, nil
 	}
 
 	// Use SHA256 fallback for long paths (always enabled)
-	fallbackEncoded := e.generateSHA256Fallback(absPath)
+	fallbackEncoded := e.generateSHA256Fallback(path)
 
 	return Result{
 		EncodedName:    fallbackEncoded,
 		IsFallback:     true,
-		OriginalLength: len(absPath),
+		OriginalLength: len(path),
 		EncodedLength:  len(fallbackEncoded),
 	}, nil
 }

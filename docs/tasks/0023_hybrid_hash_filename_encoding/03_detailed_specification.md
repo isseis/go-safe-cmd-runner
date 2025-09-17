@@ -67,19 +67,15 @@ func (e *SubstitutionHashEscape) Encode(path string) (string, error) {
         return "", ErrInvalidPath{Path: path, Err: ErrEmptyPath}
     }
 
-    // Convert to absolute and normalized path
-    absPath, err := filepath.Abs(path)
-    if err != nil {
-        return "", ErrInvalidPath{Path: path, Err: err}
-    }
-    if absPath != path {
+    // Ensure path is absolute and canonical
+    if !filepath.IsAbs(path) {
         return "", ErrInvalidPath{Path: path, Err: ErrNotAbsoluteOrNormalized}
     }
-
+    if filepath.Clean(path) != path {
+        return "", ErrInvalidPath{Path: path, Err: ErrNotAbsoluteOrNormalized}
+    }
     // Single-pass encoding optimization
-    encoded := e.encodeOptimized(absPath)
-
-    return encoded, nil
+    return e.encodeOptimized(path), nil
 }
 
 // encodeOptimized performs single-pass encoding combining substitution and double escape
@@ -166,9 +162,6 @@ func (e *SubstitutionHashEscape) decodeOptimized(encoded string) string {
         case '~':
             // ~ → / (reverse substitution)
             builder.WriteRune('/')
-        case '/':
-            // / → ~ (reverse substitution)
-            builder.WriteRune('~')
         default:
             // No decoding needed
             builder.WriteRune(char)
@@ -184,40 +177,28 @@ func (e *SubstitutionHashEscape) decodeOptimized(encoded string) string {
 ```go
 // EncodeWithFallback encodes a path with automatic fallback to SHA256 for long paths.
 // The path will be converted to an absolute, normalized path.
-func (e *SubstitutionHashEscape) EncodeWithFallback(path string) Result {
+func (e *SubstitutionHashEscape) EncodeWithFallback(path string) (Result, error) {
     if path == "" {
-        return Result{
-            EncodedName:    "",
-            IsFallback:     false,
-            OriginalLength: 0,
-            EncodedLength:  0,
-        }
+        return Result{}, ErrInvalidPath{Path: path, Err: ErrEmptyPath}
+    }
+    // Ensure path is absolute and canonical
+    if !filepath.IsAbs(path) {
+        return Result{}, ErrInvalidPath{Path: path, Err: ErrNotAbsoluteOrNormalized}
+    }
+    if filepath.Clean(path) != path {
+        return Result{}, ErrInvalidPath{Path: path, Err: ErrNotAbsoluteOrNormalized}
     }
 
     // Convert to absolute path first for consistent path handling
     absPath, err := filepath.Abs(path)
     if err != nil {
-        // If path conversion fails, use SHA256 fallback
-        fallbackEncoded := e.generateSHA256Fallback(path)
-        return Result{
-            EncodedName:    fallbackEncoded,
-            IsFallback:     true,
-            OriginalLength: len(path),
-            EncodedLength:  len(fallbackEncoded),
-        }
+        return Result{}, err
     }
 
     // Try normal encoding
     normalEncoded, err := e.Encode(absPath)
     if err != nil {
-        // If encoding fails, use SHA256 fallback
-        fallbackEncoded := e.generateSHA256Fallback(absPath)
-        return Result{
-            EncodedName:    fallbackEncoded,
-            IsFallback:     true,
-            OriginalLength: len(absPath),
-            EncodedLength:  len(fallbackEncoded),
-        }
+        return Result{}, err
     }
 
     // Check length constraint
@@ -227,7 +208,7 @@ func (e *SubstitutionHashEscape) EncodeWithFallback(path string) Result {
             IsFallback:     false,
             OriginalLength: len(absPath),
             EncodedLength:  len(normalEncoded),
-        }
+        }, nil
     }
 
     // Use SHA256 fallback for long paths (always enabled)
@@ -238,7 +219,7 @@ func (e *SubstitutionHashEscape) EncodeWithFallback(path string) Result {
         IsFallback:     true,
         OriginalLength: len(absPath),
         EncodedLength:  len(fallbackEncoded),
-    }
+    }, nil
 }
 
 // generateSHA256Fallback generates SHA256-based filename for long paths
@@ -515,7 +496,8 @@ func TestSubstitutionHashEscape_NameMaxFallback(t *testing.T) {
 
     for _, tt := range tests {
         t.Run(tt.name, func(t *testing.T) {
-            result := encoder.EncodeWithFallback(tt.path)
+            result, err := encoder.EncodeWithFallback(tt.path)
+            assert.NoError(t, err)
 
             assert.Equal(t, tt.wantFallback, result.IsFallback)
 
@@ -523,7 +505,7 @@ func TestSubstitutionHashEscape_NameMaxFallback(t *testing.T) {
                 // Fallback should not start with `~`
                 assert.NotEqual(t, '~', result.EncodedName[0])
                 // Fallback should be within length limits
-                assert.LessOrEqual(t, len(result.EncodedName), encoder.MaxFilenameLength)
+                assert.LessOrEqual(t, len(result.EncodedName), MaxFilenameLength)
             } else {
                 // Normal encoding should start with `~` (for full paths)
                 assert.Equal(t, '~', result.EncodedName[0])
@@ -564,9 +546,9 @@ func TestProperty_EncodeDecode_Reversibility(t *testing.T) {
         }
 
         // Skip paths that would use fallback
-        result := encoder.EncodeWithFallback(path)
-        if result.IsFallback {
-            return true // Skip fallback cases for this test
+        result, err := encoder.EncodeWithFallback(path)
+        if err != nil || result.IsFallback {
+            return true // Skip error and fallback cases for this test
         }
 
         // Test reversibility
@@ -587,8 +569,12 @@ func TestProperty_Encode_Deterministic(t *testing.T) {
             return true
         }
 
-        encoded1 := encoder.Encode(path)
-        encoded2 := encoder.Encode(path)
+        encoded1, err1 := encoder.Encode(path)
+        encoded2, err2 := encoder.Encode(path)
+
+        if err1 != nil || err2 != nil {
+            return true // Skip error cases
+        }
 
         return encoded1 == encoded2
     }
@@ -611,8 +597,12 @@ func TestProperty_Encode_UniqueOutput(t *testing.T) {
             return true // Same input, same output is expected
         }
 
-        result1 := encoder.EncodeWithFallback(path1)
-        result2 := encoder.EncodeWithFallback(path2)
+        result1, err1 := encoder.EncodeWithFallback(path1)
+        result2, err2 := encoder.EncodeWithFallback(path2)
+
+        if err1 != nil || err2 != nil {
+            return true // Skip error cases
+        }
 
         // If both use normal encoding, they should be different
         if !result1.IsFallback && !result2.IsFallback {
@@ -644,14 +634,14 @@ func BenchmarkSubstitutionHashEscape_Encode(b *testing.B) {
 
     b.ResetTimer()
     for i := 0; i < b.N; i++ {
-        _ = encoder.Encode(testPath)
+        _, _ = encoder.Encode(testPath)
     }
 }
 
 func BenchmarkSubstitutionHashEscape_Decode(b *testing.B) {
     encoder := NewSubstitutionHashEscape()
     testPath := "/home/user/project/src/main/java/com/example/service/impl/UserServiceImpl.java"
-    encoded := encoder.Encode(testPath)
+    encoded, _ := encoder.Encode(testPath)
 
     b.ResetTimer()
     for i := 0; i < b.N; i++ {
@@ -684,7 +674,7 @@ func BenchmarkSubstitutionHashEscape_EncodeWithFallback(b *testing.B) {
         b.Run(bm.name, func(b *testing.B) {
             b.ResetTimer()
             for i := 0; i < b.N; i++ {
-                _ = encoder.EncodeWithFallback(bm.path)
+                _, _ = encoder.EncodeWithFallback(bm.path)
             }
         })
     }
@@ -704,7 +694,7 @@ func BenchmarkMemoryUsage(b *testing.B) {
 
     for i := 0; i < b.N; i++ {
         for _, path := range paths {
-            _ = encoder.EncodeWithFallback(path)
+            _, _ = encoder.EncodeWithFallback(path)
         }
     }
 }
