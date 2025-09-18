@@ -388,12 +388,13 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 		skipHashDirectoryValidation: opts.skipHashDirectoryValidation,
 	}
 
-	// Initialize file validator with SHA256 algorithm
+	// Initialize file validator with hybrid hash path getter
 	if opts.fileValidatorEnabled {
 		var err error
 
-		// Use standard validator
-		manager.fileValidator, err = filevalidator.New(&filevalidator.SHA256{}, hashDir)
+		// Use hybrid hash path getter for better filename handling
+		hybridGetter := filevalidator.NewHybridHashFilePathGetter()
+		manager.fileValidator, err = filevalidator.NewWithHashFilePathGetter(&filevalidator.SHA256{}, hashDir, hybridGetter)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize file validator: %w", err)
 		}
