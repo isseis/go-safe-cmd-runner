@@ -8,7 +8,11 @@
 
 ### 2.1 開発アプローチ
 
-- **テスト駆動開発（TDD）**: 全ての実装において先にテストを作成し、その後実装を行う
+- **テスト駆動開発（TDD）**: 全ての実装において先にテストを作成し、そ**セキュリティテストの网羅的実施**
+- [ ] パストラバーサル攻撃のテスト（PathValidatorでの".."検出）
+- [ ] シンボリックリンク攻撃の統合テスト（既存SecurityValidator + 出力キャプチャ連携）
+- [ ] 権限昇格攻撃のテスト（不正なファイル権限設定への対策）
+- [ ] ディスク容量果渇攻撃のテスト（出力サイズ制限機能）行う
 - **段階的実装**: 機能を4つのフェーズに分けて段階的に実装する
 - **既存アーキテクチャとの統合**: 現在のResourceManager/Executor パターンを拡張する
 - **セキュリティファースト**: 各段階でセキュリティテストを実装・検証する
@@ -76,17 +80,18 @@
 #### 3.2.2 実装項目
 
 **パス処理機能**
-- [ ] `DefaultPathValidator`の実装
+- [ ] `DefaultPathValidator`の実装（基本的なパス検証のみ）
 - [ ] 絶対パス検証機能
 - [ ] 相対パス検証機能（WorkDir基準）
-- [ ] パストラバーサル防止機能
-- [ ] シンボリックリンク検証機能
+- [ ] パストラバーサル防止機能（".."の検出）
+- [ ] 注意: 包括的なシンボリックリンク検証は既存SecurityValidator.ValidateDirectoryPermissionsで実施
 
 **権限確認機能（既存SecurityValidator拡張）**
 - [ ] `security.Validator`のValidateOutputWritePermission実装
-- [ ] ディレクトリ書き込み権限確認
-- [ ] ファイル書き込み権限確認
-- [ ] グループメンバーシップ確認（`groupmembership`パッケージ利用）
+- [ ] 既存ValidateDirectoryPermissions活用によるシンボリックリンク攻撃防止
+- [ ] ディレクトリ書き込み権限確認（UID/GID固有）
+- [ ] ファイル書き込み権限確認（Lstat使用）
+- [ ] グループメンバーシップ確認（`groupmembership`パッケージ利用、エラーハンドリング改善）
 
 **セキュリティ機能**
 - [ ] セキュリティリスク評価機能
@@ -98,27 +103,27 @@
 **パス処理テスト**
 - [ ] `internal/runner/output/path_test.go` - パス検証のテスト
   - 有効な絶対パス・相対パスのテスト
-  - パストラバーサル攻撃のテスト
-  - シンボリックリンク攻撃のテスト
+  - パストラバーサル攻撃のテスト（".."含有パス）
   - エラーケースのテスト
-
-**権限確認テスト**
-- [ ] `internal/runner/output/permission_test.go` - 権限確認のテスト
-  - 所有者権限のテスト
-  - グループ権限のテスト
-  - その他権限のテスト
-  - 権限不足のテスト
+  - 注意: シンボリックリンク攻撃のテストは既存SecurityValidator側で実施済み**権限確認テスト**
+- [ ] `internal/runner/security/file_validation_test.go` - ValidateOutputWritePermission追加テスト
+  - 既存ValidateDirectoryPermissions統合テスト
+  - 出力ファイル固有の権限テスト（所有者・グループ・その他）
+  - UID固有の権限確認テスト
+  - エラーハンドリング改善テスト（isUserInGroup等）
 
 **セキュリティテスト**
 - [ ] `internal/runner/output/security_test.go` - セキュリティのテスト
-  - リスク評価のテスト
-  - 危険パターン検出のテスト
+  - リスク評価のテスト（evaluateSecurityRisk機能）
+  - 危険パターン検出のテスト（ConfigValidator）
   - システムファイル保護のテスト
+  - 注意: シンボリックリンク攻撃テストは既存SecurityValidatorで包括的に実施済み
 
 #### 3.2.4 実装
-- [ ] `DefaultPathValidator`の実装
-- [ ] `security.Validator`の出力キャプチャ用メソッド群の実装
-- [ ] セキュリティリスク評価の実装
+- [ ] `DefaultPathValidator`の実装（基本的なパス検証・正規化のみ）
+- [ ] `security.Validator`の`ValidateOutputWritePermission`メソッド実装
+- [ ] 既存`ValidateDirectoryPermissions`との統合確認
+- [ ] セキュリティリスク評価の実装（`evaluateSecurityRisk`）
 - [ ] 全テストが通過することを確認
 
 #### 3.2.5 検証
@@ -277,9 +282,10 @@
   - 並行実行のテスト
 
 **セキュリティテスト**
-- [ ] `test/security/output_security_test.go` - セキュリティテスト
-  - 各種攻撃シナリオのテスト
-  - セキュリティ要件の検証
+- [ ] `test/security/output_security_test.go` - 出力キャプチャ固有のセキュリティテスト
+  - 出力ファイル攻撃シナリオのテスト
+  - SecurityValidatorとの統合セキュリティ検証
+  - サイズ制限等の出力キャプチャ固有のセキュリティ要件検証
 
 **設定検証テスト**
 - [ ] `internal/runner/output/validation_test.go` - 設定検証のテスト
@@ -288,7 +294,8 @@
 
 #### 3.5.4 実装
 - [ ] パフォーマンステストの実装
-- [ ] セキュリティテストの実装
+- [ ] 出力キャプチャ固有のセキュリティテスト実装
+- [ ] 既存SecurityValidatorとの統合セキュリティテスト
 - [ ] `ConfigValidator`の実装
 - [ ] 全テストが通過することを確認
 
@@ -329,7 +336,7 @@ internal/runner/output/
 └── writer.go            # TeeOutputWriter
 
 internal/runner/security/  # 既存ディレクトリに追加
-└── file_validation.go   # 出力キャプチャ用権限チェック機能追加
+└── file_validation.go   # ValidateOutputWritePermission追加（既存ValidateDirectoryPermissionsでシンボリックリンク検証済み）
 
 internal/runner/output/
 ├── constants_test.go
@@ -338,11 +345,13 @@ internal/runner/output/
 ├── integration_test.go
 ├── manager_test.go
 ├── path_test.go
-├── permission_test.go
-├── security_test.go
+├── security_test.go      # evaluateSecurityRisk等の出力キャプチャ固有のセキュリティ機能
 ├── types_test.go
 ├── validation_test.go
 └── writer_test.go
+
+internal/runner/security/   # 既存ディレクトリに追加
+└── file_validation_test.go # ValidateOutputWritePermissionの追加テスト
 
 test/performance/
 └── output_capture_test.go
@@ -382,6 +391,7 @@ internal/runner/executor/executor_test.go
 - 既存のResourceManager/Executor パターン
 - 既存の設定システム（TOML）
 - 既存のLogger実装
+- **重要**: 既存`security.Validator.ValidateDirectoryPermissions`（包括的シンボリックリンク検証機能を提供）
 
 ### 5.3 実装順序の制約
 1. Phase 1のデータ構造が完了してからPhase 2以降に進む
@@ -406,9 +416,12 @@ internal/runner/executor/executor_test.go
 
 ### 6.2 セキュリティリスク
 
-**R4: パストラバーサル攻撃**
+**R4: パストラバーサル攻撃とシンボリックリンク攻撃**
 - リスク: 設定ファイル経由での不正ファイルアクセス
-- 対策: safefileioによるTOCTOU攻撃防止、厳密なパス検証
+- 対策:
+  - パストラバーサル: PathValidatorでの".."検出
+  - シンボリックリンク攻撃: 既存SecurityValidator.ValidateDirectoryPermissionsによる包括的防止
+  - safefileioによるTOCTOU攻撃防止
 
 **R5: 権限昇格**
 - リスク: ファイル権限設定の不備
