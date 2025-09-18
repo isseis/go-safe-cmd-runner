@@ -25,7 +25,7 @@ graph TD
     B --> C[ResourceManager<br/>internal/runner/resource/manager.go]
     C --> C1[NormalResource<br/>Manager]
     C --> C2[DryRunResource<br/>Manager]
-    C --> C3[OutputCapture<br/>Manager ← 新規]
+    C --> C3[Capture<br/>Manager ← 新規]
     C --> D[Executor<br/>internal/runner/executor/]
     D --> D1[executeNormal]
     D --> D2[executeWithUser...]
@@ -38,7 +38,7 @@ graph TD
 graph LR
     A[Configuration<br/>TOML Parse] --> B[Runner]
     B --> C[ResourceManager<br/>Command Execution]
-    C --> D[OutputCaptureManager<br/>File Validation]
+    C --> D[CaptureManager<br/>File Validation]
     D --> E[File System<br/>Permission Control]
 
     C --> F[Stdout Stream]
@@ -51,7 +51,7 @@ graph LR
 
 ## 3. 新規コンポーネント設計
 
-### 3.1 OutputCaptureManager
+### 3.1 CaptureManager
 新たに導入するコアコンポーネントで、出力キャプチャのライフサイクル全体を管理する。
 
 #### 3.1.1 責任範囲
@@ -64,29 +64,29 @@ graph LR
 
 #### 3.1.2 インターフェース
 ```go
-type OutputCaptureManager interface {
+type CaptureManager interface {
     // 出力キャプチャの準備（事前検証）
-    PrepareOutput(outputPath string, workDir string, maxSize int64) (*OutputCapture, error)
+    PrepareOutput(outputPath string, workDir string, maxSize int64) (*Capture, error)
 
     // ストリーミング出力書き込み
-    WriteOutput(capture *OutputCapture, data []byte) error
+    WriteOutput(capture *Capture, data []byte) error
 
     // 出力完了と最終化
-    FinalizeOutput(capture *OutputCapture) error
+    FinalizeOutput(capture *Capture) error
 
     // エラー時のクリーンアップ
-    CleanupOutput(capture *OutputCapture) error
+    CleanupOutput(capture *Capture) error
 
     // Dry-Run用の分析
-    AnalyzeOutput(outputPath string, workDir string) (*OutputAnalysis, error)
+    AnalyzeOutput(outputPath string, workDir string) (*Analysis, error)
 }
 ```
 
-### 3.2 OutputCapture 構造体
+### 3.2 Capture 構造体
 個別の出力キャプチャセッションを管理する。
 
 ```go
-type OutputCapture struct {
+type Capture struct {
     OutputPath   string    // 最終出力先パス
     TempPath     string    // 一時ファイルパス
     TempFile     *os.File  // 一時ファイルハンドル
@@ -96,9 +96,9 @@ type OutputCapture struct {
 }
 ```
 
-### 3.3 OutputAnalysis 構造体 (Dry-Run用)
+### 3.3 Analysis 構造体 (Dry-Run用)
 ```go
-type OutputAnalysis struct {
+type Analysis struct {
     OutputPath      string        // 出力先パス
     ResolvedPath    string        // 解決済み絶対パス
     DirectoryExists bool          // ディレクトリ存在確認
@@ -122,8 +122,8 @@ type NormalResourceManager struct {
     privilegeManager runnertypes.PrivilegeManager
 
     // 新規追加フィールド
-    outputManager    OutputCaptureManager  // 出力キャプチャ管理
-    maxOutputSize    int64                // デフォルト出力サイズ制限
+    outputManager    CaptureManager  // 出力キャプチャ管理
+    maxOutputSize    int64          // デフォルト出力サイズ制限
 }
 ```
 
@@ -135,7 +135,7 @@ type DryRunResourceManager struct {
     pathResolver     PathResolver
 
     // 新規追加フィールド
-    outputManager    OutputCaptureManager  // 出力分析用
+    outputManager    CaptureManager  // 出力分析用
 }
 ```
 
@@ -286,7 +286,7 @@ graph TB
 
 ### 7.1 エラー分類と対応
 ```go
-type OutputCaptureError struct {
+type CaptureError struct {
     Type    ErrorType
     Path    string
     Phase   ExecutionPhase
@@ -392,7 +392,7 @@ type OutputProcessor interface {
 
 // 設定可能な出力ハンドラー（将来拡張）
 type OutputHandler interface {
-    HandleOutput(capture *OutputCapture, data []byte) error
+    HandleOutput(capture *Capture, data []byte) error
     SupportedSchemes() []string  // file://, s3://, http:// etc.
 }
 ```
@@ -405,7 +405,7 @@ type OutputHandler interface {
 graph TB
     subgraph "テスト階層"
         A[Unit Tests]
-        A --> A1[OutputCaptureManager]
+        A --> A1[CaptureManager]
         A --> A2[Path validation]
         A --> A3[Security checks]
         A --> A4[File operations]
@@ -430,11 +430,11 @@ graph TB
 ### 10.2 モック戦略
 ```go
 // テスト用モックインターフェース
-type MockOutputCaptureManager struct {
-    PrepareOutputFunc    func(string, string, int64) (*OutputCapture, error)
-    WriteOutputFunc      func(*OutputCapture, []byte) error
-    FinalizeOutputFunc   func(*OutputCapture) error
-    CleanupOutputFunc    func(*OutputCapture) error
+type MockCaptureManager struct {
+    PrepareOutputFunc    func(string, string, int64) (*Capture, error)
+    WriteOutputFunc      func(*Capture, []byte) error
+    FinalizeOutputFunc   func(*Capture) error
+    CleanupOutputFunc    func(*Capture) error
 }
 
 // ExtendedFileSystemのモック
@@ -458,7 +458,7 @@ type MockExtendedFileSystem struct {
 ### 11.1 監視・ログ戦略
 ```go
 // ログ出力項目
-type OutputCaptureMetrics struct {
+type CaptureMetrics struct {
     CommandName     string        `json:"command_name"`
     OutputPath      string        `json:"output_path"`
     OutputSize      int64         `json:"output_size"`
