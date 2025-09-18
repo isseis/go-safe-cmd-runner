@@ -18,7 +18,6 @@ func TestNewProductionHashFilePathGetter(t *testing.T) {
 
 func TestProductionHashFilePathGetter_GetHashFilePath(t *testing.T) {
 	getter := NewProductionHashFilePathGetter()
-	algorithm := &MockHashAlgorithm{}
 	hashDir := "/tmp/hash"
 
 	tests := []struct {
@@ -53,7 +52,7 @@ func TestProductionHashFilePathGetter_GetHashFilePath(t *testing.T) {
 			resolvedPath, err := common.NewResolvedPath(tt.filePath)
 			require.NoError(t, err)
 
-			result, err := getter.GetHashFilePath(algorithm, hashDir, resolvedPath)
+			result, err := getter.GetHashFilePath(hashDir, resolvedPath)
 
 			if tt.shouldError {
 				assert.Error(t, err)
@@ -86,17 +85,15 @@ func TestProductionHashFilePathGetter_GetHashFilePath_ErrorCases(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		algorithm   HashAlgorithm
 		hashDir     string
 		filePath    string
-		expectedErr error
+		shouldError bool
 	}{
 		{
-			name:        "nil_algorithm",
-			algorithm:   nil,
-			hashDir:     "/tmp/hash",
+			name:        "empty_hash_directory",
+			hashDir:     "",
 			filePath:    "/home/user/file.txt",
-			expectedErr: ErrNilAlgorithm,
+			shouldError: false, // ProductionHashFilePathGetter doesn't validate hashDir
 		},
 	}
 
@@ -105,18 +102,22 @@ func TestProductionHashFilePathGetter_GetHashFilePath_ErrorCases(t *testing.T) {
 			resolvedPath, err := common.NewResolvedPath(tt.filePath)
 			require.NoError(t, err)
 
-			result, err := getter.GetHashFilePath(tt.algorithm, tt.hashDir, resolvedPath)
+			result, err := getter.GetHashFilePath(tt.hashDir, resolvedPath)
 
-			assert.Error(t, err)
-			assert.Empty(t, result)
-			assert.ErrorIs(t, err, tt.expectedErr)
+			if tt.shouldError {
+				assert.Error(t, err)
+				assert.Empty(t, result)
+			} else {
+				assert.NoError(t, err)
+				// Even with empty hashDir, should return a relative path
+				assert.NotEmpty(t, result)
+			}
 		})
 	}
 }
 
 func TestProductionHashFilePathGetter_GetHashFilePath_Consistency(t *testing.T) {
 	getter := NewProductionHashFilePathGetter()
-	algorithm := &MockHashAlgorithm{}
 	hashDir := "/tmp/hash"
 	filePath := "/home/user/consistent.txt"
 
@@ -126,7 +127,7 @@ func TestProductionHashFilePathGetter_GetHashFilePath_Consistency(t *testing.T) 
 	// Call the function multiple times with the same input
 	results := make([]string, 5)
 	for i := range results {
-		result, err := getter.GetHashFilePath(algorithm, hashDir, resolvedPath)
+		result, err := getter.GetHashFilePath(hashDir, resolvedPath)
 		require.NoError(t, err)
 		results[i] = result
 	}
@@ -139,7 +140,6 @@ func TestProductionHashFilePathGetter_GetHashFilePath_Consistency(t *testing.T) 
 
 func TestProductionHashFilePathGetter_GetHashFilePath_DifferentHashDirs(t *testing.T) {
 	getter := NewProductionHashFilePathGetter()
-	algorithm := &MockHashAlgorithm{}
 	filePath := "/home/user/file.txt"
 
 	resolvedPath, err := common.NewResolvedPath(filePath)
@@ -154,7 +154,7 @@ func TestProductionHashFilePathGetter_GetHashFilePath_DifferentHashDirs(t *testi
 
 	results := make([]string, len(hashDirs))
 	for i, hashDir := range hashDirs {
-		result, err := getter.GetHashFilePath(algorithm, hashDir, resolvedPath)
+		result, err := getter.GetHashFilePath(hashDir, resolvedPath)
 		require.NoError(t, err)
 		results[i] = result
 

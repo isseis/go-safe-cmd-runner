@@ -21,7 +21,6 @@ func TestNewHybridHashFilePathGetter(t *testing.T) {
 
 func TestHybridHashFilePathGetter_GetHashFilePath(t *testing.T) {
 	getter := NewHybridHashFilePathGetter()
-	algorithm := &MockHashAlgorithm{}
 	hashDir := testHashDir
 
 	tests := []struct {
@@ -61,7 +60,7 @@ func TestHybridHashFilePathGetter_GetHashFilePath(t *testing.T) {
 			resolvedPath, err := common.NewResolvedPath(tt.filePath)
 			require.NoError(t, err)
 
-			result, err := getter.GetHashFilePath(algorithm, hashDir, resolvedPath)
+			result, err := getter.GetHashFilePath(hashDir, resolvedPath)
 
 			if tt.shouldError {
 				assert.Error(t, err)
@@ -95,21 +94,12 @@ func TestHybridHashFilePathGetter_GetHashFilePath_ErrorCases(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		algorithm   HashAlgorithm
 		hashDir     string
 		filePath    string
 		expectedErr error
 	}{
 		{
-			name:        "nil_algorithm",
-			algorithm:   nil,
-			hashDir:     testHashDir,
-			filePath:    "/home/user/file.txt",
-			expectedErr: ErrNilAlgorithm,
-		},
-		{
 			name:        "empty_hash_directory",
-			algorithm:   &MockHashAlgorithm{},
 			hashDir:     "",
 			filePath:    "/home/user/file.txt",
 			expectedErr: ErrEmptyHashDir,
@@ -121,7 +111,7 @@ func TestHybridHashFilePathGetter_GetHashFilePath_ErrorCases(t *testing.T) {
 			resolvedPath, err := common.NewResolvedPath(tt.filePath)
 			require.NoError(t, err)
 
-			result, err := getter.GetHashFilePath(tt.algorithm, tt.hashDir, resolvedPath)
+			result, err := getter.GetHashFilePath(tt.hashDir, resolvedPath)
 
 			assert.Error(t, err)
 			assert.Empty(t, result)
@@ -132,7 +122,6 @@ func TestHybridHashFilePathGetter_GetHashFilePath_ErrorCases(t *testing.T) {
 
 func TestHybridHashFilePathGetter_GetHashFilePath_EncodingFallback(t *testing.T) {
 	getter := NewHybridHashFilePathGetter()
-	algorithm := &MockHashAlgorithm{}
 	hashDir := testHashDir
 
 	tests := []struct {
@@ -160,7 +149,7 @@ func TestHybridHashFilePathGetter_GetHashFilePath_EncodingFallback(t *testing.T)
 			resolvedPath, err := common.NewResolvedPath(tt.filePath)
 			require.NoError(t, err)
 
-			result, err := getter.GetHashFilePath(algorithm, hashDir, resolvedPath)
+			result, err := getter.GetHashFilePath(hashDir, resolvedPath)
 			assert.NoError(t, err)
 
 			filename := filepath.Base(result)
@@ -192,7 +181,6 @@ func TestHybridHashFilePathGetter_GetHashFilePath_EncodingFallback(t *testing.T)
 
 func TestHybridHashFilePathGetter_GetHashFilePath_InvalidPath(t *testing.T) {
 	getter := NewHybridHashFilePathGetter()
-	algorithm := &MockHashAlgorithm{}
 	hashDir := testHashDir
 
 	// Test with various invalid paths that should cause encoding errors
@@ -212,7 +200,7 @@ func TestHybridHashFilePathGetter_GetHashFilePath_InvalidPath(t *testing.T) {
 				return
 			}
 
-			result, err := getter.GetHashFilePath(algorithm, hashDir, resolvedPath)
+			result, err := getter.GetHashFilePath(hashDir, resolvedPath)
 
 			// Should either fail at ResolvedPath creation or at encoding
 			assert.Error(t, err)
@@ -223,7 +211,6 @@ func TestHybridHashFilePathGetter_GetHashFilePath_InvalidPath(t *testing.T) {
 
 func TestHybridHashFilePathGetter_GetHashFilePath_Consistency(t *testing.T) {
 	getter := NewHybridHashFilePathGetter()
-	algorithm := &MockHashAlgorithm{}
 	hashDir := testHashDir
 	filePath := "/home/user/consistent.txt"
 
@@ -233,7 +220,7 @@ func TestHybridHashFilePathGetter_GetHashFilePath_Consistency(t *testing.T) {
 	// Call the function multiple times with the same input
 	results := make([]string, 5)
 	for i := range results {
-		result, err := getter.GetHashFilePath(algorithm, hashDir, resolvedPath)
+		result, err := getter.GetHashFilePath(hashDir, resolvedPath)
 		require.NoError(t, err)
 		results[i] = result
 	}
@@ -246,7 +233,6 @@ func TestHybridHashFilePathGetter_GetHashFilePath_Consistency(t *testing.T) {
 
 func TestHybridHashFilePathGetter_GetHashFilePath_DifferentHashDirs(t *testing.T) {
 	getter := NewHybridHashFilePathGetter()
-	algorithm := &MockHashAlgorithm{}
 	filePath := "/home/user/file.txt"
 
 	resolvedPath, err := common.NewResolvedPath(filePath)
@@ -261,7 +247,7 @@ func TestHybridHashFilePathGetter_GetHashFilePath_DifferentHashDirs(t *testing.T
 
 	results := make([]string, len(hashDirs))
 	for i, hashDir := range hashDirs {
-		result, err := getter.GetHashFilePath(algorithm, hashDir, resolvedPath)
+		result, err := getter.GetHashFilePath(hashDir, resolvedPath)
 		require.NoError(t, err)
 		results[i] = result
 

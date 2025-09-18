@@ -45,21 +45,16 @@ func NewProductionHashFilePathGetter() *ProductionHashFilePathGetter {
 //  4. Combine with hash directory to create full path
 //
 // Parameters:
-//   - hashAlgorithm: The hash algorithm (required, used for validation)
 //   - hashDir: Directory where hash files are stored
 //   - filePath: The file path to generate hash file path for
 //
 // Returns:
 //   - Full path to the hash file
-//   - Error if algorithm is nil or path generation fails
+//   - Error if path generation fails
 //
 // Note: This implementation always produces .json files regardless of the
 // original file type, for consistency with the hash storage format.
-func (p *ProductionHashFilePathGetter) GetHashFilePath(hashAlgorithm HashAlgorithm, hashDir string, filePath common.ResolvedPath) (string, error) {
-	if hashAlgorithm == nil {
-		return "", ErrNilAlgorithm
-	}
-
+func (p *ProductionHashFilePathGetter) GetHashFilePath(hashDir string, filePath common.ResolvedPath) (string, error) {
 	h := sha256.Sum256([]byte(filePath.String()))
 	hashStr := base64.URLEncoding.EncodeToString(h[:])
 

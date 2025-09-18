@@ -39,12 +39,12 @@ type FileValidator interface {
 // This is used to test file validation logic for handling hash collisions.
 type HashFilePathGetter interface {
 	// GetHashFilePath returns the path where the given file's hash would be stored.
-	GetHashFilePath(hashAlgorithm HashAlgorithm, hashDir string, filePath common.ResolvedPath) (string, error)
+	GetHashFilePath(hashDir string, filePath common.ResolvedPath) (string, error)
 }
 
 // GetHashFilePath returns the path where the hash for the given file would be stored.
 func (v *Validator) GetHashFilePath(filePath common.ResolvedPath) (string, error) {
-	return v.hashFilePathGetter.GetHashFilePath(v.algorithm, v.hashDir, filePath)
+	return v.hashFilePathGetter.GetHashFilePath(v.hashDir, filePath)
 }
 
 // Validator provides functionality to record and verify file hashes.

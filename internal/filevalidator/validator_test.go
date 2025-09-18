@@ -202,7 +202,7 @@ func TestValidator_Verify_Symlink(t *testing.T) {
 type CollidingHashFilePathGetter struct{}
 
 // GetHashFilePath always returns the same path, so it simulates a hash collision.
-func (t *CollidingHashFilePathGetter) GetHashFilePath(_ HashAlgorithm, hashDir string, _ common.ResolvedPath) (string, error) {
+func (t *CollidingHashFilePathGetter) GetHashFilePath(hashDir string, _ common.ResolvedPath) (string, error) {
 	return filepath.Join(hashDir, "test.json"), nil
 }
 
@@ -534,7 +534,7 @@ type MockHashFilePathGetter struct {
 	filePath string
 }
 
-func (m *MockHashFilePathGetter) GetHashFilePath(_ HashAlgorithm, _ string, _ common.ResolvedPath) (string, error) {
+func (m *MockHashFilePathGetter) GetHashFilePath(_ string, _ common.ResolvedPath) (string, error) {
 	return m.filePath, nil
 }
 

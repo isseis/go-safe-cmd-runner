@@ -42,23 +42,13 @@ func NewHybridHashFilePathGetter() *HybridHashFilePathGetter {
 //  3. Combine with hash directory
 //
 // Parameters:
-//   - hashAlgorithm: The hash algorithm (required, used for validation)
 //   - hashDir: Directory where hash files are stored
 //   - filePath: The file path to generate hash file path for
 //
 // Returns:
 //   - Full path to the hash file
 //   - Error if encoding fails or parameters are invalid
-func (h *HybridHashFilePathGetter) GetHashFilePath(
-	hashAlgorithm HashAlgorithm,
-	hashDir string,
-	filePath common.ResolvedPath,
-) (string, error) {
-	// Validate required parameters
-	if hashAlgorithm == nil {
-		return "", ErrNilAlgorithm
-	}
-
+func (h *HybridHashFilePathGetter) GetHashFilePath(hashDir string, filePath common.ResolvedPath) (string, error) {
 	if hashDir == "" {
 		return "", ErrEmptyHashDir
 	}
