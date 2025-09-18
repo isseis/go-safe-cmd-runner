@@ -4,7 +4,33 @@
 
 本文書は、go-safe-cmd-runnerにおけるコマンド出力キャプチャ機能の詳細な技術仕様を定義する。要件定義書とアーキテクチャ設計書に基づき、実装レベルでの具体的な仕様を記述する。
 
-## 2. データ構造仕様 (Data Structure Specifications)
+## 2. セキュリティ設計 (Security Design)
+
+### 2.1 シンボリックリンク攻撃対策
+
+出力キャプチャ機能では、ファイル操作時のシンボリックリンク攻撃を防ぐため、以下の安全な実装パターンを採用する：
+
+#### 2.1.1 Lstat使用の徹底
+- 全てのファイル・ディレクトリアクセスで`os.Lstat`を使用し、`os.Stat`の使用を避ける
+- `os.Stat`はシンボリックリンクを辿るため、攻撃者が`/tmp/allowed -> /etc`のようなシンボリックリンクを作成した場合に脆弱性となる
+- `os.Lstat`はシンボリックリンク自体の情報を返すため、攻撃を検出できる
+
+#### 2.1.2 既存セキュリティインフラストラクチャの活用
+- `internal/runner/security/file_validation.go`の`ValidateDirectoryPermissions`と`validateCompletePath`メソッドを活用
+- これらのメソッドは既にシンボリックリンク検出とパス全体の安全性検証を実装済み
+- パスの各コンポーネントを`Lstat`で検証し、シンボリックリンクが存在する場合は`ErrInsecurePathComponent`エラーを返す
+
+#### 2.1.3 権限チェックの分離
+- セキュリティ検証（`ValidateDirectoryPermissions`）と権限チェック（UID/GID固有の書き込み権限）を分離
+- セキュリティ検証で全体の安全性を確保した後、個別のUID権限をチェックする階層化されたアプローチ
+
+### 2.2 パストラバーサル対策
+
+- `filepath.Clean`による正規化とパス検証
+- 相対パス使用時のワーキングディレクトリ境界チェック
+- `..`を含むパスの明示的な拒否
+
+## 3. データ構造仕様 (Data Structure Specifications)
 
 ### 2.1 既存構造体の拡張
 
@@ -346,9 +372,9 @@ func (m *DefaultOutputCaptureManager) AnalyzeOutput(config *OutputConfig) (*Outp
     }
     analysis.ResolvedPath = resolvedPath
 
-    // 2. ディレクトリ存在確認
+    // 2. ディレクトリ存在確認（Lstatを使用してシンボリックリンクを追跡しない）
     dir := filepath.Dir(resolvedPath)
-    if stat, err := os.Stat(dir); err == nil && stat.IsDir() {
+    if stat, err := os.Lstat(dir); err == nil && stat.IsDir() && stat.Mode()&os.ModeSymlink == 0 {
         analysis.DirectoryExists = true
     } else {
         analysis.DirectoryExists = false
@@ -437,6 +463,7 @@ func (v *DefaultPathValidator) validateRelativePath(path, workDir string) (strin
 
 // ValidateOutputWritePermission validates write permission for output file creation
 // This method is specifically designed for output capture functionality
+// It leverages the existing secure path validation infrastructure to prevent symlink attacks
 func (v *Validator) ValidateOutputWritePermission(outputPath string, realUID int) error {
     if outputPath == "" {
         return fmt.Errorf("%w: empty output path", ErrInvalidPath)
@@ -450,13 +477,26 @@ func (v *Validator) ValidateOutputWritePermission(outputPath string, realUID int
     cleanPath := filepath.Clean(outputPath)
     dir := filepath.Dir(cleanPath)
 
-    // Validate directory write permission
-    if err := v.validateOutputDirectoryWritePermission(dir, realUID); err != nil {
+    // SECURITY: Use existing secure directory validation that includes complete path validation
+    // This prevents symlink attacks by validating the entire path hierarchy
+    if err := v.ValidateDirectoryPermissions(dir); err != nil {
+        // If directory validation fails, try to validate parent recursively
+        if os.IsNotExist(errors.Unwrap(err)) {
+            parent := filepath.Dir(dir)
+            if parent != dir {
+                return v.ValidateOutputWritePermission(filepath.Join(parent, "placeholder"), realUID)
+            }
+        }
+        return fmt.Errorf("directory security validation failed: %w", err)
+    }
+
+    // Additional write permission check for the specific UID
+    if err := v.validateOutputDirectoryWritePermissionForUID(dir, realUID); err != nil {
         return fmt.Errorf("directory write permission check failed: %w", err)
     }
 
-    // If file exists, validate file write permission
-    if fileInfo, err := v.fs.Stat(cleanPath); err == nil {
+    // If file exists, validate file write permission using secure Lstat
+    if fileInfo, err := v.fs.Lstat(cleanPath); err == nil {
         if err := v.validateOutputFileWritePermission(cleanPath, fileInfo, realUID); err != nil {
             return fmt.Errorf("file write permission check failed: %w", err)
         }
@@ -467,18 +507,26 @@ func (v *Validator) ValidateOutputWritePermission(outputPath string, realUID int
     return nil
 }
 
-// validateOutputDirectoryWritePermission checks if the user can write to the directory
-func (v *Validator) validateOutputDirectoryWritePermission(dirPath string, realUID int) error {
-    stat, err := v.fs.Stat(dirPath)
+// validateOutputDirectoryWritePermissionForUID checks if the specific UID can write to the directory
+// This function assumes the directory has already been validated for security (no symlinks, etc.)
+// by ValidateDirectoryPermissions
+func (v *Validator) validateOutputDirectoryWritePermissionForUID(dirPath string, realUID int) error {
+    // Use Lstat instead of Stat to prevent following symlinks
+    stat, err := v.fs.Lstat(dirPath)
     if err != nil {
         if os.IsNotExist(err) {
             // Directory doesn't exist, check parent recursively
             parent := filepath.Dir(dirPath)
             if parent != dirPath {
-                return v.validateOutputDirectoryWritePermission(parent, realUID)
+                return v.validateOutputDirectoryWritePermissionForUID(parent, realUID)
             }
         }
-        return fmt.Errorf("failed to stat directory %s: %w", dirPath, err)
+        return fmt.Errorf("failed to lstat directory %s: %w", dirPath, err)
+    }
+
+    // Additional symlink check (should not happen if ValidateDirectoryPermissions was called)
+    if stat.Mode()&os.ModeSymlink != 0 {
+        return fmt.Errorf("%w: directory %s is a symlink", ErrInsecurePathComponent, dirPath)
     }
 
     if !stat.IsDir() {
@@ -489,7 +537,13 @@ func (v *Validator) validateOutputDirectoryWritePermission(dirPath string, realU
 }
 
 // validateOutputFileWritePermission checks if the user can write to the existing file
+// This function receives fileInfo from Lstat to ensure symlink safety
 func (v *Validator) validateOutputFileWritePermission(filePath string, fileInfo os.FileInfo, realUID int) error {
+    // Additional symlink check (fileInfo should be from Lstat)
+    if fileInfo.Mode()&os.ModeSymlink != 0 {
+        return fmt.Errorf("%w: output file %s is a symlink", ErrInvalidFilePermissions, filePath)
+    }
+
     if !fileInfo.Mode().IsRegular() {
         return fmt.Errorf("%w: %s is not a regular file", ErrInvalidFilePermissions, filePath)
     }
@@ -592,7 +646,8 @@ func (c *DefaultPermissionChecker) CheckWritePermission(path string, uid int) er
         return err
     }
 
-    if stat, err := os.Stat(path); err == nil {
+    // Use Lstat instead of Stat to prevent following symlinks
+    if stat, err := os.Lstat(path); err == nil {
         return c.checkFileWritePermission(path, stat, uid)
     }
 
@@ -600,7 +655,8 @@ func (c *DefaultPermissionChecker) CheckWritePermission(path string, uid int) er
 }
 
 func (c *DefaultPermissionChecker) checkDirectoryWritePermission(dir string, uid int) error {
-    stat, err := os.Stat(dir)
+    // Use Lstat instead of Stat to prevent following symlinks
+    stat, err := os.Lstat(dir)
     if err != nil {
         if os.IsNotExist(err) {
             parent := filepath.Dir(dir)
@@ -608,7 +664,12 @@ func (c *DefaultPermissionChecker) checkDirectoryWritePermission(dir string, uid
                 return c.checkDirectoryWritePermission(parent, uid)
             }
         }
-        return fmt.Errorf("failed to stat directory %s: %w", dir, err)
+        return fmt.Errorf("failed to lstat directory %s: %w", dir, err)
+    }
+
+    // Additional symlink check
+    if stat.Mode()&os.ModeSymlink != 0 {
+        return fmt.Errorf("directory %s is a symlink", dir)
     }
 
     sysstat := stat.Sys().(*syscall.Stat_t)
@@ -637,6 +698,11 @@ func (c *DefaultPermissionChecker) checkDirectoryWritePermission(dir string, uid
 }
 
 func (c *DefaultPermissionChecker) checkFileWritePermission(path string, stat os.FileInfo, uid int) error {
+    // Additional symlink check (stat should be from Lstat)
+    if stat.Mode()&os.ModeSymlink != 0 {
+        return fmt.Errorf("file %s is a symlink", path)
+    }
+
     sysstat := stat.Sys().(*syscall.Stat_t)
 
     // Check owner permissions
