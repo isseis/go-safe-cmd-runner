@@ -26,36 +26,6 @@ type Manager struct {
 	skipHashDirectoryValidation bool
 }
 
-// VerifyConfigFile verifies the integrity of a configuration file
-func (m *Manager) VerifyConfigFile(configPath string) error {
-	slog.Debug("Starting config file verification",
-		"config_path", configPath,
-		"hash_directory", m.hashDir)
-
-	// Ensure hash directory is validated
-	if err := m.ensureHashDirectoryValidated(); err != nil {
-		return err
-	}
-
-	// Verify file hash using filevalidator (with privilege fallback)
-	if err := m.verifyFileWithFallback(configPath); err != nil {
-		slog.Error("Config file verification failed",
-			"config_path", configPath,
-			"error", err)
-		return &Error{
-			Op:   "VerifyHash",
-			Path: configPath,
-			Err:  err,
-		}
-	}
-
-	slog.Info("Config file verification completed successfully",
-		"config_path", configPath,
-		"hash_directory", m.hashDir)
-
-	return nil
-}
-
 // VerifyAndReadConfigFile performs atomic verification and reading of a configuration file
 // This prevents TOCTOU attacks by reading the file content once and verifying it against the hash
 func (m *Manager) VerifyAndReadConfigFile(configPath string) ([]byte, error) {

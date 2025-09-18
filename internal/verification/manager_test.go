@@ -171,25 +171,6 @@ func TestManager_VerifyConfigFile_Integration(t *testing.T) {
 	t.Skip("Integration test requires complex mocking setup")
 }
 
-// Test error wrapping in VerifyConfigFile
-func TestManager_VerifyConfigFile_ErrorWrapping(t *testing.T) {
-	// Create manager with mocked components that will fail
-	mockFS := common.NewMockFileSystem()
-	manager := &Manager{
-		hashDir: testHashDir,
-		fs:      mockFS,
-		// Leave validator and security nil to trigger errors
-	}
-
-	err := manager.VerifyConfigFile("/path/to/config.toml")
-	assert.Error(t, err)
-
-	// Check that error is properly wrapped
-	var verificationErr *Error
-	assert.True(t, errors.As(err, &verificationErr))
-	assert.Equal(t, "ValidateHashDirectory", verificationErr.Op)
-}
-
 // Test new production API
 func TestNewManagerProduction(t *testing.T) {
 	t.Run("creates manager with default hash directory", func(t *testing.T) {
