@@ -10,9 +10,42 @@ permissions:
   actions: read
 
 jobs:
+  # Check if changes include only markdown files
+  check-changes:
+    name: Check for non-markdown changes
+    runs-on: ubuntu-latest
+    outputs:
+      has-non-md-changes: ${{ steps.check.outputs.has-non-md-changes }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for non-markdown changes
+        id: check
+        run: |
+          # Get list of changed files
+          changed_files=$(git diff --name-only origin/main...HEAD)
+          echo "Changed files:"
+          echo "$changed_files"
+
+          # Check if any non-markdown files were changed
+          non_md_files=$(echo "$changed_files" | grep -v '\.md$' || true)
+
+          if [ -z "$non_md_files" ]; then
+            echo "has-non-md-changes=false" >> $GITHUB_OUTPUT
+            echo "Only markdown files changed, skipping tests"
+          else
+            echo "has-non-md-changes=true" >> $GITHUB_OUTPUT
+            echo "Non-markdown files changed, running tests"
+          fi
+
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
+    needs: check-changes
+    if: needs.check-changes.outputs.has-non-md-changes == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -56,7 +89,8 @@ jobs:
   build-security-validation:
     name: Build & Security Validation
     runs-on: ubuntu-latest
-    needs: security-scan
+    needs: [check-changes, security-scan]
+    if: needs.check-changes.outputs.has-non-md-changes == 'true'
     strategy:
       matrix:
         cgo: [0, 1]
@@ -111,7 +145,8 @@ jobs:
   test-comprehensive:
     name: Comprehensive Testing
     runs-on: ubuntu-latest
-    needs: build-security-validation
+    needs: [check-changes, build-security-validation]
+    if: needs.check-changes.outputs.has-non-md-changes == 'true'
     strategy:
       matrix:
         cgo: [0, 1]
@@ -157,6 +192,8 @@ jobs:
   lint:
     name: Code Quality & Lint
     runs-on: ubuntu-latest
+    needs: check-changes
+    if: needs.check-changes.outputs.has-non-md-changes == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -186,8 +223,8 @@ jobs:
   deployment-validation:
     name: Deployment Validation
     runs-on: ubuntu-latest
-    needs: [build-security-validation, test-comprehensive, lint]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [check-changes, build-security-validation, test-comprehensive, lint]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.check-changes.outputs.has-non-md-changes == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -241,3 +278,15 @@ jobs:
           name: security-validation-report
           path: security-report.md
           retention-days: 90
+
+  markdown-only-notification:
+    name: Markdown-only changes detected
+    runs-on: ubuntu-latest
+    needs: check-changes
+    if: needs.check-changes.outputs.has-non-md-changes == 'false'
+    steps:
+      - name: Notify markdown-only changes
+        run: |
+          echo "✅ This pull request contains only markdown file changes."
+          echo "Skipping security scans, build, and test processes to save CI resources."
+          echo "The PR can be reviewed for documentation content only."
