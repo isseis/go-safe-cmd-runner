@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Documents
+- Documents should be placed under docs
+- Default language is Japanese (except README.md)
+- Default format is markdown
+- Use mermaid syntax for drawing
+
 ## Commands
 
 ### Build Commands
@@ -11,8 +17,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Test Commands
 - `make test` - Run all tests with verbose output
-- `go test -v ./...` - Run all tests directly
-- `go test -v ./internal/specific/package` - Run tests for specific package
+- `go test -tags test -v ./...` - Run all tests directly
+- `go test -tags test -v ./internal/specific/package` - Run tests for specific package
 
 ### Code Quality
 - `make lint` - Run linter with golangci-lint
