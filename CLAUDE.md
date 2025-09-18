@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Documents
 - Documents should be placed under docs
-- Default language is Japanese (except README.md)
+- Default language is Japanese (exceptions: README.md, CLAUDE.md)
 - Default format is markdown
 - Use mermaid syntax for drawing
 
