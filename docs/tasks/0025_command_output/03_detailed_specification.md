@@ -217,9 +217,10 @@ type DefaultOutputCaptureManager struct {
 }
 
 func NewDefaultOutputCaptureManager(logger Logger) *DefaultOutputCaptureManager {
+    fs := NewDefaultExtendedFileSystem()
     return &DefaultOutputCaptureManager{
         pathValidator:    NewDefaultPathValidator(),
-        fileManager:      NewDefaultFileManager(),
+        fileManager:      NewDefaultFileManager(fs),
         permissionChecker: NewDefaultPermissionChecker(),
         logger:           logger,
     }
@@ -265,18 +266,18 @@ func (m *DefaultOutputCaptureManager) PrepareOutput(config *OutputConfig) (*Outp
         }
     }
 
-    // 4. 一時ファイル作成
-    tempPath := resolvedPath + ".tmp." + generateRandomSuffix()
-    tempFile, err := m.fileManager.CreateTempFile(tempPath, config.RealUID, config.RealGID)
+    // 4. 一時ファイル作成（os.CreateTempを使用して安全に作成）
+    tempFile, err := m.fileManager.CreateTempFile(filepath.Dir(resolvedPath), filepath.Base(resolvedPath), config.RealUID, config.RealGID)
     if err != nil {
         return nil, &OutputCaptureError{
             Type:    ErrorTypeFileSystem,
             Phase:   PhasePreparation,
-            Path:    tempPath,
+            Path:    resolvedPath,
             Cause:   err,
             Command: config.CommandName,
         }
     }
+    tempPath := tempFile.Name()
 
     // 5. OutputCapture構造体作成
     capture := &OutputCapture{
@@ -381,18 +382,7 @@ func (m *DefaultOutputCaptureManager) FinalizeOutput(capture *OutputCapture) err
         }
     }
 
-    // 4. ファイル権限設定（0600）
-    if err := os.Chmod(capture.OutputPath, 0600); err != nil {
-        return &OutputCaptureError{
-            Type:    ErrorTypePermission,
-            Phase:   PhaseFinalization,
-            Path:    capture.OutputPath,
-            Cause:   err,
-            Command: capture.Config.CommandName,
-        }
-    }
-
-    // 5. ログ記録
+    // 4. ログ記録
     duration := time.Since(capture.StartTime)
     m.logger.Info("Output capture completed",
         "command", capture.Config.CommandName,
@@ -500,30 +490,24 @@ func NewDefaultPathValidator() *DefaultPathValidator {
 }
 
 func (v *DefaultPathValidator) ValidateAndResolvePath(outputPath, workDir string) (string, error) {
-    // 1. 空パスチェック
     if outputPath == "" {
         return "", fmt.Errorf("output path is empty")
     }
 
-    // 2. 絶対パス処理
     if filepath.IsAbs(outputPath) {
         return v.validateAbsolutePath(outputPath)
     }
 
-    // 3. 相対パス処理
     return v.validateRelativePath(outputPath, workDir)
 }
 
 func (v *DefaultPathValidator) validateAbsolutePath(path string) (string, error) {
-    // パストラバーサル検出
     if strings.Contains(path, "..") {
         return "", fmt.Errorf("path traversal detected in absolute path: %s", path)
     }
 
-    // パス正規化
     cleanPath := filepath.Clean(path)
 
-    // シンボリックリンク解決とセキュリティチェック
     evalPath, err := filepath.EvalSymlinks(filepath.Dir(cleanPath))
     if err != nil && !os.IsNotExist(err) {
         return "", fmt.Errorf("failed to evaluate symlinks: %w", err)
@@ -537,21 +521,17 @@ func (v *DefaultPathValidator) validateAbsolutePath(path string) (string, error)
 }
 
 func (v *DefaultPathValidator) validateRelativePath(path, workDir string) (string, error) {
-    // パストラバーサル検出
     if strings.Contains(path, "..") {
         return "", fmt.Errorf("path traversal detected in relative path: %s", path)
     }
 
-    // WorkDir検証
     if workDir == "" {
         return "", fmt.Errorf("work directory is required for relative path")
     }
 
-    // パス結合と正規化
     fullPath := filepath.Join(workDir, path)
     cleanPath := filepath.Clean(fullPath)
 
-    // WorkDir境界チェック
     cleanWorkDir := filepath.Clean(workDir)
     if !strings.HasPrefix(cleanPath, cleanWorkDir) {
         return "", fmt.Errorf("relative path escapes work directory: %s", path)
@@ -577,12 +557,10 @@ func NewDefaultPermissionChecker() *DefaultPermissionChecker {
 func (c *DefaultPermissionChecker) CheckWritePermission(path string, uid int) error {
     dir := filepath.Dir(path)
 
-    // ディレクトリの書き込み権限確認
     if err := c.checkDirectoryWritePermission(dir, uid); err != nil {
         return err
     }
 
-    // ファイルが既に存在する場合は上書き権限確認
     if stat, err := os.Stat(path); err == nil {
         return c.checkFileWritePermission(path, stat, uid)
     }
@@ -594,7 +572,6 @@ func (c *DefaultPermissionChecker) checkDirectoryWritePermission(dir string, uid
     stat, err := os.Stat(dir)
     if err != nil {
         if os.IsNotExist(err) {
-            // ディレクトリが存在しない場合は親ディレクトリをチェック
             parent := filepath.Dir(dir)
             if parent != dir {
                 return c.checkDirectoryWritePermission(parent, uid)
@@ -603,19 +580,16 @@ func (c *DefaultPermissionChecker) checkDirectoryWritePermission(dir string, uid
         return fmt.Errorf("failed to stat directory %s: %w", dir, err)
     }
 
-    // 権限ビットチェック
     sysstat := stat.Sys().(*syscall.Stat_t)
 
-    // オーナー権限チェック
     if int(sysstat.Uid) == uid {
-        if stat.Mode()&0200 != 0 { // Owner write permission
+        if stat.Mode()&0200 != 0 {
             return nil
         }
         return fmt.Errorf("owner write permission denied for directory: %s", dir)
     }
 
-    // グループ・その他の権限チェック（実装簡略化）
-    if stat.Mode()&0022 != 0 { // Group or other write permission
+    if stat.Mode()&0022 != 0 {
         return nil
     }
 
@@ -625,11 +599,8 @@ func (c *DefaultPermissionChecker) checkDirectoryWritePermission(dir string, uid
 func (c *DefaultPermissionChecker) checkFileWritePermission(path string, stat os.FileInfo, uid int) error {
     sysstat := stat.Sys().(*syscall.Stat_t)
 
-    if int(sysstat.Uid) == uid {
-        if stat.Mode()&0200 != 0 {
-            return nil
-        }
-        return fmt.Errorf("owner write permission denied for file: %s", path)
+    if int(sysstat.Uid) == uid && stat.Mode()&0200 != 0 {
+        return nil
     }
 
     if stat.Mode()&0022 != 0 {
@@ -640,62 +611,144 @@ func (c *DefaultPermissionChecker) checkFileWritePermission(path string, stat os
 }
 ```
 
-#### 3.2.3 FileManager
+#### 3.2.3 ExtendedFileSystem（common.FileSystemの拡張）
 ```go
 // internal/runner/output/file.go
+import (
+    "github.com/isseis/go-safe-cmd-runner/internal/common"
+)
+
+// ExtendedFileSystem extends common.FileSystem with additional functionality needed for output capture
+type ExtendedFileSystem interface {
+    common.FileSystem
+
+    // CreateTempFile creates a temporary file with the given pattern
+    CreateTempFile(dir, pattern string) (*os.File, error)
+
+    // Stat returns file information
+    Stat(path string) (os.FileInfo, error)
+
+    // Chown changes the ownership of the file
+    Chown(path string, uid, gid int) error
+
+    // Chmod changes the permissions of the file
+    Chmod(path string, mode os.FileMode) error
+
+    // Rename renames (moves) oldpath to newpath
+    Rename(oldpath, newpath string) error
+
+    // Open opens a file for reading
+    Open(name string) (*os.File, error)
+
+    // OpenFile opens a file with specified flags and permissions
+    OpenFile(name string, flag int, perm os.FileMode) (*os.File, error)
+
+    // MkdirAll creates directories recursively
+    MkdirAll(path string, perm os.FileMode) error
+}
+
+// DefaultExtendedFileSystem implements ExtendedFileSystem
+type DefaultExtendedFileSystem struct {
+    *common.DefaultFileSystem
+}
+
+func NewDefaultExtendedFileSystem() *DefaultExtendedFileSystem {
+    return &DefaultExtendedFileSystem{
+        DefaultFileSystem: common.NewDefaultFileSystem(),
+    }
+}
+
+func (fs *DefaultExtendedFileSystem) CreateTempFile(dir, pattern string) (*os.File, error) {
+    return os.CreateTemp(dir, pattern)
+}
+
+func (fs *DefaultExtendedFileSystem) Stat(path string) (os.FileInfo, error) {
+    return os.Stat(path)
+}
+
+func (fs *DefaultExtendedFileSystem) Chown(path string, uid, gid int) error {
+    return os.Chown(path, uid, gid)
+}
+
+func (fs *DefaultExtendedFileSystem) Chmod(path string, mode os.FileMode) error {
+    return os.Chmod(path, mode)
+}
+
+func (fs *DefaultExtendedFileSystem) Rename(oldpath, newpath string) error {
+    return os.Rename(oldpath, newpath)
+}
+
+func (fs *DefaultExtendedFileSystem) Open(name string) (*os.File, error) {
+    return os.Open(name)
+}
+
+func (fs *DefaultExtendedFileSystem) OpenFile(name string, flag int, perm os.FileMode) (*os.File, error) {
+    return os.OpenFile(name, flag, perm)
+}
+
+func (fs *DefaultExtendedFileSystem) MkdirAll(path string, perm os.FileMode) error {
+    return os.MkdirAll(path, perm)
+}
+
+#### 3.2.4 FileManager
 type FileManager interface {
     EnsureDirectory(path string, uid, gid int) error
-    CreateTempFile(path string, uid, gid int) (*os.File, error)
+    CreateTempFile(dir, prefix string, uid, gid int) (*os.File, error)
     AtomicMove(src, dst string) error
 }
 
-type DefaultFileManager struct{}
+type DefaultFileManager struct {
+    fs ExtendedFileSystem
+}
 
-func NewDefaultFileManager() *DefaultFileManager {
-    return &DefaultFileManager{}
+func NewDefaultFileManager(fs ExtendedFileSystem) *DefaultFileManager {
+    return &DefaultFileManager{
+        fs: fs,
+    }
 }
 
 func (f *DefaultFileManager) EnsureDirectory(path string, uid, gid int) error {
-    if stat, err := os.Stat(path); err == nil {
-        if !stat.IsDir() {
-            return fmt.Errorf("path exists but is not a directory: %s", path)
-        }
+    isDir, err := f.fs.IsDir(path)
+    if err == nil && isDir {
         return nil
     }
 
-    // ディレクトリ作成
-    if err := os.MkdirAll(path, 0755); err != nil {
+    exists, err := f.fs.FileExists(path)
+    if err == nil && exists && !isDir {
+        return fmt.Errorf("path exists but is not a directory: %s", path)
+    }
+
+    if err := f.fs.MkdirAll(path, 0755); err != nil {
         return fmt.Errorf("failed to create directory %s: %w", path, err)
     }
 
-    // 所有者設定
-    if err := os.Chown(path, uid, gid); err != nil {
+    if err := f.fs.Chown(path, uid, gid); err != nil {
         return fmt.Errorf("failed to set ownership for directory %s: %w", path, err)
     }
 
     return nil
 }
 
-func (f *DefaultFileManager) CreateTempFile(path string, uid, gid int) (*os.File, error) {
-    file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+func (f *DefaultFileManager) CreateTempFile(dir, prefix string, uid, gid int) (*os.File, error) {
+    pattern := prefix + "_*.tmp"
+    file, err := f.fs.CreateTempFile(dir, pattern)
     if err != nil {
-        return nil, fmt.Errorf("failed to create temp file %s: %w", path, err)
+        return nil, fmt.Errorf("failed to create temp file in %s with pattern %s: %w", dir, pattern, err)
     }
 
-    // 所有者設定
-    if err := os.Chown(path, uid, gid); err != nil {
+    tempPath := file.Name()
+
+    if err := f.fs.Chown(tempPath, uid, gid); err != nil {
         file.Close()
-        os.Remove(path)
-        return nil, fmt.Errorf("failed to set ownership for temp file %s: %w", path, err)
+        f.fs.Remove(tempPath)
+        return nil, fmt.Errorf("failed to set ownership for temp file %s: %w", tempPath, err)
     }
 
     return file, nil
 }
 
 func (f *DefaultFileManager) AtomicMove(src, dst string) error {
-    // 同じファイルシステム上での原子的移動
-    if err := os.Rename(src, dst); err != nil {
-        // 異なるファイルシステム間の場合はコピー&削除
+    if err := f.fs.Rename(src, dst); err != nil {
         if errors.Is(err, syscall.EXDEV) {
             return f.copyAndRemove(src, dst)
         }
@@ -706,34 +759,40 @@ func (f *DefaultFileManager) AtomicMove(src, dst string) error {
 }
 
 func (f *DefaultFileManager) copyAndRemove(src, dst string) error {
-    // ソースファイルオープン
-    srcFile, err := os.Open(src)
+    srcStat, err := f.fs.Stat(src)
+    if err != nil {
+        return err
+    }
+
+    srcFile, err := f.fs.Open(src)
     if err != nil {
         return err
     }
     defer srcFile.Close()
 
-    // デスティネーションファイル作成
-    dstFile, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+    dstFile, err := f.fs.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, srcStat.Mode().Perm())
     if err != nil {
         return err
     }
     defer dstFile.Close()
 
-    // コピー実行
+    srcSysStat := srcStat.Sys().(*syscall.Stat_t)
+    if err := f.fs.Chown(dst, int(srcSysStat.Uid), int(srcSysStat.Gid)); err != nil {
+        f.fs.Remove(dst)
+        return err
+    }
+
     if _, err := io.Copy(dstFile, srcFile); err != nil {
-        os.Remove(dst)
+        f.fs.Remove(dst)
         return err
     }
 
-    // 同期
     if err := dstFile.Sync(); err != nil {
-        os.Remove(dst)
+        f.fs.Remove(dst)
         return err
     }
 
-    // ソースファイル削除
-    return os.Remove(src)
+    return f.fs.Remove(src)
 }
 ```
 
@@ -752,14 +811,14 @@ const (
     DefaultMaxOutputSize = 10 * 1024 * 1024   // 10MB デフォルト制限
     AbsoluteMaxSize      = 100 * 1024 * 1024  // 100MB 絶対制限
 
-    // ファイル権限
-    TempFileMode   = 0600   // 一時ファイル権限
-    OutputFileMode = 0600   // 出力ファイル権限
-    DirectoryMode  = 0755   // ディレクトリ権限
+    // File permissions
+    TempFileMode   = 0600   // Temporary file permissions
+    OutputFileMode = 0600   // Output file permissions
+    DirectoryMode  = 0755   // Directory permissions
 
-    // 一時ファイル
+    // Temporary file patterns
     TempSuffix     = ".tmp"
-    RandomSuffixLength = 8
+    TempPattern    = "_*.tmp"
 )
 ```
 
@@ -1134,21 +1193,22 @@ func (m *DefaultOutputCaptureManager) evaluateSecurityRisk(path string) Security
 }
 ```
 
-### 7.2 ランダムサフィックス生成
+### 7.2 一時ファイル命名規則
+
+一時ファイルの命名は`os.CreateTemp`に委譲する：
 
 ```go
-// internal/runner/output/utils.go
-func generateRandomSuffix() string {
-    const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-    b := make([]byte, RandomSuffixLength)
-
-    for i := range b {
-        b[i] = charset[rand.Intn(len(charset))]
-    }
-
-    return string(b)
-}
+// パターン例: "output_file_20241215_120345_123456.tmp"
+pattern := prefix + "_*.tmp"
+file, err := os.CreateTemp(dir, pattern)
+// os.CreateTempが自動的にランダムな文字列を生成して安全なファイル名を作成
 ```
+
+このアプローチにより：
+- 一意性が保証される
+- セキュリティが確保される（0600権限で作成）
+- レースコンディションが回避される
+- システム標準の実装を利用できる
 
 ## 8. テスト仕様
 
@@ -1250,10 +1310,15 @@ func TestOutputCaptureManager_Integration(t *testing.T) {
         CommandName: "test_command",
     }
 
-    // Prepare
+    // Prepare（os.CreateTempを使用した一時ファイル作成）
     capture, err := manager.PrepareOutput(config)
     require.NoError(t, err)
     require.NotNil(t, capture)
+
+    // 一時ファイルが適切な権限で作成されていることを確認
+    tempStat, err := os.Stat(capture.TempPath)
+    require.NoError(t, err)
+    assert.Equal(t, os.FileMode(0600), tempStat.Mode().Perm())
 
     // Write
     testData := []byte("test output data\n")
@@ -1269,10 +1334,14 @@ func TestOutputCaptureManager_Integration(t *testing.T) {
     require.NoError(t, err)
     assert.Equal(t, testData, content)
 
-    // Check permissions
+    // Check permissions（一時ファイルの権限が継承されている）
     stat, err := os.Stat(outputPath)
     require.NoError(t, err)
     assert.Equal(t, os.FileMode(0600), stat.Mode().Perm())
+
+    // 一時ファイルが削除されていることを確認
+    _, err = os.Stat(capture.TempPath)
+    assert.True(t, os.IsNotExist(err), "temporary file should be cleaned up")
 }
 ```
 

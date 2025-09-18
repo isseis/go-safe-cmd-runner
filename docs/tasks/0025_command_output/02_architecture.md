@@ -45,7 +45,6 @@ graph LR
     F --> G[Runner Stdout<br/>常に出力]
     F --> H{Output指定あり?}
     H -->|Yes| I[Tee to File<br/>Buffer Management]
-    H -->|No| G
     I --> J[Atomic File Write]
     J --> E
 ```
@@ -194,8 +193,8 @@ graph TD
     I1 --> I2[stdout → Runner標準出力 + ファイル]
     I2 --> I3[サイズ制限監視]
     I3 --> J[OutputManager.FinalizeOutput]
-    J --> J1[一時ファイル → 最終ファイル移動]
-    J1 --> J2[ファイル権限設定 0600]
+    J --> J1[一時ファイル → 最終ファイル移動<br/>権限0600は移動時に継承]
+    J1 --> J2[権限確認・必要に応じて修正]
     F --> K[実行結果返却<br/>Runner標準出力のみ]
     J2 --> K
     K --> L{次のコマンドあり?}
@@ -432,13 +431,19 @@ type MockOutputCaptureManager struct {
     CleanupOutputFunc    func(*OutputCapture) error
 }
 
-// ファイルシステムモック
-type MockFileSystem struct {
-    CreateFunc   func(string) (*os.File, error)
-    WriteFunc    func(*os.File, []byte) (int, error)
-    RenameFunc   func(string, string) error
-    RemoveFunc   func(string) error
-    ChmodFunc    func(string, os.FileMode) error
+// ExtendedFileSystemのモック
+type MockExtendedFileSystem struct {
+    // common.FileSystemの埋め込み
+    *common.DefaultFileSystem
+
+    // 拡張機能のモック関数
+    CreateTempFileFunc  func(dir, pattern string) (*os.File, error)
+    StatFunc           func(path string) (os.FileInfo, error)
+    ChownFunc          func(path string, uid, gid int) error
+    ChmodFunc          func(path string, mode os.FileMode) error
+    RenameFunc         func(oldpath, newpath string) error
+    OpenFunc           func(name string) (*os.File, error)
+    OpenFileFunc       func(name string, flag int, perm os.FileMode) (*os.File, error)
 }
 ```
 
