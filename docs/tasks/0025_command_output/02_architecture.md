@@ -320,9 +320,8 @@ const (
 ```go
 // ストリーミング書き込み設定
 const (
-    DefaultBufferSize = 64 * 1024    // 64KB バッファ
+    DefaultBufferSize = 64 * 1024    // 64KB バッファ（bufio.Writerが自動管理）
     MaxBufferSize     = 1024 * 1024  // 1MB 最大バッファ
-    FlushInterval     = 100          // 100ms毎のフラッシュ
 )
 
 // サイズ制限
@@ -338,7 +337,7 @@ const (
 graph TB
     subgraph "書き込みパターン"
         A[1. バッファリング書き込み]
-        A --> A1[小刻みな書き込みを避ける]
+        A --> A1[bufio.Writerによる自動バッファ管理]
         A --> A2[適切なバッファサイズ設定]
 
         B[2. 原子的ファイル操作]

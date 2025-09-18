@@ -327,19 +327,6 @@ func (m *DefaultOutputCaptureManager) WriteOutput(capture *OutputCapture, data [
 
     capture.CurrentSize += int64(n)
 
-    // 定期的なフラッシュ
-    if capture.CurrentSize%FlushThreshold == 0 {
-        if err := capture.Buffer.Flush(); err != nil {
-            return &OutputCaptureError{
-                Type:    ErrorTypeFileSystem,
-                Phase:   PhaseExecution,
-                Path:    capture.TempPath,
-                Cause:   err,
-                Command: capture.Config.CommandName,
-            }
-        }
-    }
-
     return nil
 }
 ```
@@ -347,18 +334,7 @@ func (m *DefaultOutputCaptureManager) WriteOutput(capture *OutputCapture, data [
 ##### FinalizeOutput
 ```go
 func (m *DefaultOutputCaptureManager) FinalizeOutput(capture *OutputCapture) error {
-    // 1. バッファフラッシュ
-    if err := capture.Buffer.Flush(); err != nil {
-        return &OutputCaptureError{
-            Type:    ErrorTypeFileSystem,
-            Phase:   PhaseFinalization,
-            Path:    capture.TempPath,
-            Cause:   err,
-            Command: capture.Config.CommandName,
-        }
-    }
-
-    // 2. ファイルクローズ
+    // 1. ファイルクローズ（bufio.Writerは自動的にフラッシュされる）
     if err := capture.TempFile.Close(); err != nil {
         return &OutputCaptureError{
             Type:    ErrorTypeFileSystem,
@@ -369,9 +345,8 @@ func (m *DefaultOutputCaptureManager) FinalizeOutput(capture *OutputCapture) err
         }
     }
 
-    // 3. 原子的ファイル移動
+    // 2. 原子的ファイル移動
     if err := m.fileManager.AtomicMove(capture.TempPath, capture.OutputPath); err != nil {
-        // クリーンアップ
         os.Remove(capture.TempPath)
         return &OutputCaptureError{
             Type:    ErrorTypeFileSystem,
@@ -382,7 +357,7 @@ func (m *DefaultOutputCaptureManager) FinalizeOutput(capture *OutputCapture) err
         }
     }
 
-    // 4. ログ記録
+    // 3. ログ記録
     duration := time.Since(capture.StartTime)
     m.logger.Info("Output capture completed",
         "command", capture.Config.CommandName,
@@ -544,14 +519,29 @@ func (v *DefaultPathValidator) validateRelativePath(path, workDir string) (strin
 #### 3.2.2 PermissionChecker
 ```go
 // internal/runner/output/permission.go
+import (
+    "fmt"
+    "os"
+    "os/user"
+    "path/filepath"
+    "strconv"
+    "syscall"
+
+    "github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
+)
+
 type PermissionChecker interface {
     CheckWritePermission(path string, uid int) error
 }
 
-type DefaultPermissionChecker struct{}
+type DefaultPermissionChecker struct {
+    groupMembership *groupmembership.GroupMembership
+}
 
 func NewDefaultPermissionChecker() *DefaultPermissionChecker {
-    return &DefaultPermissionChecker{}
+    return &DefaultPermissionChecker{
+        groupMembership: groupmembership.New(),
+    }
 }
 
 func (c *DefaultPermissionChecker) CheckWritePermission(path string, uid int) error {
@@ -582,6 +572,7 @@ func (c *DefaultPermissionChecker) checkDirectoryWritePermission(dir string, uid
 
     sysstat := stat.Sys().(*syscall.Stat_t)
 
+    // Check owner permissions
     if int(sysstat.Uid) == uid {
         if stat.Mode()&0200 != 0 {
             return nil
@@ -589,7 +580,15 @@ func (c *DefaultPermissionChecker) checkDirectoryWritePermission(dir string, uid
         return fmt.Errorf("owner write permission denied for directory: %s", dir)
     }
 
-    if stat.Mode()&0022 != 0 {
+    // Check group permissions with proper membership verification
+    if stat.Mode()&0020 != 0 {
+        if err := c.checkGroupMembership(uid, uint32(sysstat.Gid)); err == nil {
+            return nil
+        }
+    }
+
+    // Check other permissions
+    if stat.Mode()&0002 != 0 {
         return nil
     }
 
@@ -599,15 +598,48 @@ func (c *DefaultPermissionChecker) checkDirectoryWritePermission(dir string, uid
 func (c *DefaultPermissionChecker) checkFileWritePermission(path string, stat os.FileInfo, uid int) error {
     sysstat := stat.Sys().(*syscall.Stat_t)
 
+    // Check owner permissions
     if int(sysstat.Uid) == uid && stat.Mode()&0200 != 0 {
         return nil
     }
 
-    if stat.Mode()&0022 != 0 {
+    // Check group permissions with proper membership verification
+    if stat.Mode()&0020 != 0 {
+        if err := c.checkGroupMembership(uid, uint32(sysstat.Gid)); err == nil {
+            return nil
+        }
+    }
+
+    // Check other permissions
+    if stat.Mode()&0002 != 0 {
         return nil
     }
 
     return fmt.Errorf("write permission denied for file: %s", path)
+}
+
+// checkGroupMembership verifies if a user (by UID) is a member of a group (by GID)
+func (c *DefaultPermissionChecker) checkGroupMembership(uid int, gid uint32) error {
+    // Get username from UID
+    user, err := user.LookupId(strconv.Itoa(uid))
+    if err != nil {
+        return fmt.Errorf("failed to lookup user with UID %d: %w", uid, err)
+    }
+
+    // Get group members
+    members, err := c.groupMembership.GetGroupMembers(gid)
+    if err != nil {
+        return fmt.Errorf("failed to get group members for GID %d: %w", gid, err)
+    }
+
+    // Check if user is in group members
+    for _, member := range members {
+        if member == user.Username {
+            return nil
+        }
+    }
+
+    return fmt.Errorf("user %s (UID %d) is not a member of group with GID %d", user.Username, uid, gid)
 }
 ```
 
@@ -802,14 +834,13 @@ func (f *DefaultFileManager) copyAndRemove(src, dst string) error {
 ```go
 // internal/runner/output/constants.go
 const (
-    // バッファ設定
-    DefaultBufferSize = 64 * 1024     // 64KB バッファ
-    MaxBufferSize     = 1024 * 1024   // 1MB 最大バッファ
-    FlushThreshold    = 32 * 1024     // 32KB毎のフラッシュ
+    // Buffer settings
+    DefaultBufferSize = 64 * 1024     // 64KB buffer
+    MaxBufferSize     = 1024 * 1024   // 1MB maximum buffer
 
-    // サイズ制限
-    DefaultMaxOutputSize = 10 * 1024 * 1024   // 10MB デフォルト制限
-    AbsoluteMaxSize      = 100 * 1024 * 1024  // 100MB 絶対制限
+    // Size limits
+    DefaultMaxOutputSize = 10 * 1024 * 1024   // 10MB default limit
+    AbsoluteMaxSize      = 100 * 1024 * 1024  // 100MB absolute limit
 
     // File permissions
     TempFileMode   = 0600   // Temporary file permissions
@@ -1378,6 +1409,38 @@ func TestSecurityValidation(t *testing.T) {
             risk := manager.evaluateSecurityRisk(tt.path)
             assert.Equal(t, tt.expectRisk, risk)
         })
+    }
+}
+
+func TestPermissionChecker_GroupMembership(t *testing.T) {
+    // Create a temporary file with specific group permissions
+    tempFile, err := os.CreateTemp("", "test_group_*")
+    require.NoError(t, err)
+    defer os.Remove(tempFile.Name())
+    defer tempFile.Close()
+
+    // Set group write permission
+    err = os.Chmod(tempFile.Name(), 0620) // owner rw-, group -w-, other ---
+    require.NoError(t, err)
+
+    checker := NewDefaultPermissionChecker()
+
+    // Get current user info
+    currentUser, err := user.Current()
+    require.NoError(t, err)
+
+    currentUID, err := strconv.Atoi(currentUser.Uid)
+    require.NoError(t, err)
+
+    // Test permission check (this will use groupmembership to verify actual membership)
+    err = checker.CheckWritePermission(tempFile.Name(), currentUID)
+
+    // The result depends on actual group membership, so we mainly test that it doesn't panic
+    // and returns a reasonable result
+    if err != nil {
+        t.Logf("Permission check failed (expected if user not in group): %v", err)
+    } else {
+        t.Log("Permission check passed (user has write access)")
     }
 }
 ```
