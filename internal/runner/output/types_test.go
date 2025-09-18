@@ -116,7 +116,7 @@ func TestCapture(t *testing.T) {
 	}
 }
 
-// Test for Analysis struct (Dry-Run用)
+// Test for Analysis struct (for Dry-Run)
 func TestAnalysis(t *testing.T) {
 	tests := []struct {
 		name     string
