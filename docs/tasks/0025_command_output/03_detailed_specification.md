@@ -440,7 +440,7 @@ func (m *DefaultOutputCaptureManager) AnalyzeOutput(config *OutputConfig) (*Outp
     }
 
     // 4. セキュリティリスク評価
-    analysis.SecurityRisk = m.evaluateSecurityRisk(resolvedPath)
+    analysis.SecurityRisk = m.evaluateSecurityRisk(resolvedPath, config.WorkDir)
 
     // 5. 推定サイズ設定
     analysis.EstimatedSize = "Unknown"
@@ -1186,7 +1186,13 @@ func (e *DefaultCommandExecutor) Execute(ctx context.Context, config *ExecuteCon
 
 ```go
 // internal/runner/output/security.go
-func (m *DefaultOutputCaptureManager) evaluateSecurityRisk(path string) SecurityLevel {
+import (
+    "os/user"
+    "path/filepath"
+    "strings"
+)
+
+func (m *DefaultOutputCaptureManager) evaluateSecurityRisk(path, workDir string) SecurityLevel {
     pathLower := strings.ToLower(path)
 
     // Critical: システム重要ファイル
@@ -1214,13 +1220,27 @@ func (m *DefaultOutputCaptureManager) evaluateSecurityRisk(path string) Security
         }
     }
 
-    // Medium: ホームディレクトリ外
-    if !strings.HasPrefix(path, os.Getenv("HOME")) {
-        return SecurityLevelMedium
+    // Low: WorkDir内のファイル
+    if workDir != "" {
+        cleanWorkDir := filepath.Clean(workDir)
+        cleanPath := filepath.Clean(path)
+        if strings.HasPrefix(cleanPath, cleanWorkDir) {
+            return SecurityLevelLow
+        }
     }
 
-    // Low: ホームディレクトリ内の通常ファイル
-    return SecurityLevelLow
+    // Low: 現在ユーザーのホームディレクトリ内
+    if currentUser, err := user.Current(); err == nil {
+        homeDir := currentUser.HomeDir
+        cleanHomePath := filepath.Clean(homeDir)
+        cleanPath := filepath.Clean(path)
+        if strings.HasPrefix(cleanPath, cleanHomePath) {
+            return SecurityLevelLow
+        }
+    }
+
+    // Medium: その他の場所
+    return SecurityLevelMedium
 }
 ```
 
