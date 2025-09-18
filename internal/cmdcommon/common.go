@@ -73,8 +73,7 @@ func ParseFlags() (*Config, error) {
 
 // CreateValidator creates a new file validator with the hybrid hash path getter.
 func CreateValidator(hashDir string) (filevalidator.FileValidator, error) {
-	hybridGetter := filevalidator.NewHybridHashFilePathGetter()
-	return filevalidator.NewWithHashFilePathGetter(&filevalidator.SHA256{}, hashDir, hybridGetter)
+	return filevalidator.New(&filevalidator.SHA256{}, hashDir)
 }
 
 // PrintUsage prints the usage message for the command.
