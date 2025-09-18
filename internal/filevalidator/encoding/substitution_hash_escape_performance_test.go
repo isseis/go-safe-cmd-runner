@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testApplicationPath = "/usr/local/bin/application/module/file.txt"
+
 func TestSubstitutionHashEscape_PerformanceRegression(t *testing.T) {
 	encoder := NewSubstitutionHashEscape()
 
@@ -31,9 +33,9 @@ func TestSubstitutionHashEscape_PerformanceRegression(t *testing.T) {
 			maxAllocsBytesPerOp: 200,  // 200 bytes
 		},
 		{
-			name: "encode_with_fallback_normal",
+			name: "encode_application_path",
 			operation: func() error {
-				_, err := encoder.EncodeWithFallback(testApplicationPath)
+				_, err := encoder.Encode(testApplicationPath)
 				return err
 			},
 			maxNsPerOp:          8000, // 8μs (adjusted for CI environment)
@@ -56,6 +58,15 @@ func TestSubstitutionHashEscape_PerformanceRegression(t *testing.T) {
 			},
 			maxNsPerOp:          4000, // 4μs (adjusted for CI environment)
 			maxAllocsBytesPerOp: 150,  // 150 bytes
+		},
+		{
+			name: "decode_complex",
+			operation: func() error {
+				_, err := encoder.Decode("~path~with#1many##special#1chars~file")
+				return err
+			},
+			maxNsPerOp:          5000, // 5μs (adjusted for CI environment)
+			maxAllocsBytesPerOp: 200,  // 200 bytes
 		},
 	}
 
@@ -96,6 +107,111 @@ func TestSubstitutionHashEscape_PerformanceRegression(t *testing.T) {
 
 			if bytesPerOp > bench.maxAllocsBytesPerOp {
 				t.Errorf("Memory regression detected: %d bytes/op > %d bytes/op", bytesPerOp, bench.maxAllocsBytesPerOp)
+			}
+		})
+	}
+}
+
+// BenchmarkSubstitutionHashEscape_Encode benchmarks the Encode method.
+func BenchmarkSubstitutionHashEscape_Encode(b *testing.B) {
+	encoder := NewSubstitutionHashEscape()
+
+	benchmarks := []struct {
+		name string
+		path string
+	}{
+		{"simple_path", "/usr/bin/python3"},
+		{"application_path", testApplicationPath},
+		{"special_chars", "/path/with#hash~tilde/chars"},
+		{"long_path", "/very/long/path/with/many/components/and/directories/file.extension"},
+	}
+
+	for _, bench := range benchmarks {
+		b.Run(bench.name, func(b *testing.B) {
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_, err := encoder.Encode(bench.path)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkSubstitutionHashEscape_Decode benchmarks the Decode method.
+func BenchmarkSubstitutionHashEscape_Decode(b *testing.B) {
+	encoder := NewSubstitutionHashEscape()
+
+	// Pre-encode test paths
+	testPaths := []string{
+		"/usr/bin/python3",
+		testApplicationPath,
+		"/path/with#hash~tilde/chars",
+		"/very/long/path/with/many/components/and/directories/file.extension",
+	}
+
+	encodedPaths := make([]string, len(testPaths))
+	for i, path := range testPaths {
+		encoded, err := encoder.Encode(path)
+		if err != nil {
+			b.Fatal(err)
+		}
+		encodedPaths[i] = encoded
+	}
+
+	benchmarks := []struct {
+		name    string
+		encoded string
+	}{
+		{"simple_path", encodedPaths[0]},
+		{"application_path", encodedPaths[1]},
+		{"special_chars", encodedPaths[2]},
+		{"long_path", encodedPaths[3]},
+	}
+
+	for _, bench := range benchmarks {
+		b.Run(bench.name, func(b *testing.B) {
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_, err := encoder.Decode(bench.encoded)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkSubstitutionHashEscape_RoundTrip benchmarks encode + decode operations.
+func BenchmarkSubstitutionHashEscape_RoundTrip(b *testing.B) {
+	encoder := NewSubstitutionHashEscape()
+
+	benchmarks := []struct {
+		name string
+		path string
+	}{
+		{"simple_path", "/usr/bin/python3"},
+		{"application_path", testApplicationPath},
+		{"special_chars", "/path/with#hash~tilde/chars"},
+		{"long_path", "/very/long/path/with/many/components/and/directories/file.extension"},
+	}
+
+	for _, bench := range benchmarks {
+		b.Run(bench.name, func(b *testing.B) {
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				encoded, err := encoder.Encode(bench.path)
+				if err != nil {
+					b.Fatal(err)
+				}
+				decoded, err := encoder.Decode(encoded)
+				if err != nil {
+					b.Fatal(err)
+				}
+				if decoded != bench.path {
+					b.Fatalf("Round trip failed: expected %s, got %s", bench.path, decoded)
+				}
 			}
 		})
 	}

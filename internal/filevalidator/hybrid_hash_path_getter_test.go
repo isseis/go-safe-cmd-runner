@@ -17,6 +17,7 @@ func TestNewHybridHashFilePathGetter(t *testing.T) {
 
 	assert.NotNil(t, getter)
 	assert.NotNil(t, getter.encoder)
+	assert.NotNil(t, getter.fallbackGetter)
 }
 
 func TestHybridHashFilePathGetter_GetHashFilePath(t *testing.T) {

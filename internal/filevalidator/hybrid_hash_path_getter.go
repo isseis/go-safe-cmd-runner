@@ -8,6 +8,13 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator/encoding"
 )
 
+const (
+	// MaxFilenameLength defines the maximum allowed filename length.
+	// This value is set to 250 characters, which provides a safety margin below
+	// the typical NAME_MAX limit of 255 characters on most filesystems.
+	MaxFilenameLength = 250
+)
+
 // HybridHashFilePathGetter implements HashFilePathGetter using hybrid encoding strategy.
 //
 // This implementation provides:
@@ -18,19 +25,21 @@ import (
 //
 // Encoding strategy:
 //  1. Primary: Use SubstitutionHashEscape with ~path format
-//  2. Fallback: Use SHA256 hash when encoded length exceeds limits
+//  2. Fallback: Use ProductionHashFilePathGetter when encoded length exceeds limits
 //
 // Examples:
 //   - "/home/user/file.txt" → "~home~user~file.txt" (normal encoding, no extension)
 //   - "/very/long/path/..." → "AbCdEf123456.json" (SHA256 fallback with .json extension)
 type HybridHashFilePathGetter struct {
-	encoder *encoding.SubstitutionHashEscape
+	encoder        *encoding.SubstitutionHashEscape
+	fallbackGetter *ProductionHashFilePathGetter
 }
 
 // NewHybridHashFilePathGetter creates a new HybridHashFilePathGetter instance.
 func NewHybridHashFilePathGetter() *HybridHashFilePathGetter {
 	return &HybridHashFilePathGetter{
-		encoder: &encoding.SubstitutionHashEscape{},
+		encoder:        &encoding.SubstitutionHashEscape{},
+		fallbackGetter: NewProductionHashFilePathGetter(),
 	}
 }
 
@@ -38,7 +47,7 @@ func NewHybridHashFilePathGetter() *HybridHashFilePathGetter {
 //
 // This implementation uses hybrid encoding:
 //  1. Attempt normal substitution+escape encoding (no extension)
-//  2. If result exceeds NAME_MAX limits, use SHA256 fallback (.json extension included)
+//  2. If result exceeds NAME_MAX limits, delegate to ProductionHashFilePathGetter
 //  3. Combine with hash directory
 //
 // Parameters:
@@ -53,11 +62,18 @@ func (h *HybridHashFilePathGetter) GetHashFilePath(hashDir string, filePath comm
 		return "", ErrEmptyHashDir
 	}
 
-	// Encode the file path using hybrid strategy
-	result, err := h.encoder.EncodeWithFallback(filePath.String())
+	// Try normal encoding first
+	encodedName, err := h.encoder.Encode(filePath.String())
 	if err != nil {
 		return "", fmt.Errorf("failed to encode path %q: %w", filePath.String(), err)
 	}
 
-	return filepath.Join(hashDir, result.EncodedName), nil
+	// Check if encoded name exceeds length limit
+	if len(encodedName) <= MaxFilenameLength {
+		// Use normal encoding
+		return filepath.Join(hashDir, encodedName), nil
+	}
+
+	// Use SHA256 fallback via ProductionHashFilePathGetter
+	return h.fallbackGetter.GetHashFilePath(hashDir, filePath)
 }

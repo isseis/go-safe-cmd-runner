@@ -1,56 +1,25 @@
 package encoding
 
 import (
-	"crypto/sha256"
-	"encoding/base64"
 	"path/filepath"
 	"strings"
 )
 
-const (
-	// MaxFilenameLength defines the maximum allowed filename length.
-	//
-	// This value is set to 250 characters, which provides a safety margin below
-	// the typical NAME_MAX limit of 255 characters on most filesystems.
-	// The margin accounts for potential filesystem variations and future extensions.
-	//
-	// Paths that encode to filenames longer than this limit will automatically
-	// use SHA256 fallback encoding.
-	MaxFilenameLength = 250
-
-	// HashLength defines the number of characters to use from SHA256 hash.
-	//
-	// This value determines the length of the hash prefix used in SHA256 fallback
-	// encoding. 12 characters provides excellent collision resistance while
-	// keeping the total filename length short (17 chars: 12 + ".json").
-	//
-	// With base64url encoding, 12 characters provide approximately 2^72 unique
-	// values, which is sufficient for practical collision avoidance.
-	HashLength = 12
-)
-
-// SubstitutionHashEscape implements hybrid substitution + double escape encoding for file paths.
+// SubstitutionHashEscape implements substitution + double escape encoding for file paths.
 //
 // This encoder provides:
 //   - Space-efficient encoding: 1.00x expansion for typical paths
-//   - Reversible encoding: mathematical guarantee for normal encoding
-//   - Automatic fallback: SHA256 fallback for paths exceeding NAME_MAX limits
+//   - Reversible encoding: mathematical guarantee
 //   - Performance optimization: single-pass encoding and decoding
 //
 // Encoding Algorithm:
 //  1. Substitution: '/' ↔ '~' character mapping
 //  2. Double Escape: Escape '#' → '#1' and handle '~' → '##'
-//  3. Length Check: Use SHA256 fallback if result exceeds MaxFilenameLength
 //
 // Example:
 //
 //	Input:  "/home/user/file.txt"
 //	Output: "~home~user~file.txt"
-//
-// Long Path Example:
-//
-//	Input:  "/very/long/path/that/exceeds/filename/length/limits/..."
-//	Output: "AbCdEf123456.json" (SHA256 fallback)
 type SubstitutionHashEscape struct{}
 
 // NewSubstitutionHashEscape creates a new SubstitutionHashEscape encoder.
@@ -70,6 +39,8 @@ func NewSubstitutionHashEscape() *SubstitutionHashEscape {
 //
 // The input path must be an absolute, normalized path (filepath.Clean applied).
 // This function validates the input and applies the core encoding algorithm.
+// This method always uses normal encoding and does not apply length limits
+// or fallback strategies.
 //
 // Encoding Process:
 //  1. Input validation: checks for empty path, absolute path, normalized path
@@ -93,9 +64,6 @@ func NewSubstitutionHashEscape() *SubstitutionHashEscape {
 //
 //	encoded, err := encoder.Encode("/home/user/file.txt")
 //	// Result: "~home~user~file.txt"
-//
-// Note: This function does not apply length limits. Use EncodeWithFallback()
-// for automatic SHA256 fallback on long paths.
 func (e *SubstitutionHashEscape) Encode(path string) (string, error) {
 	if path == "" {
 		return "", ErrInvalidPath{Path: path, Err: ErrEmptyPath}
@@ -263,102 +231,6 @@ func (e *SubstitutionHashEscape) decodeOptimized(encoded string) string {
 	}
 
 	return builder.String()
-}
-
-// EncodeWithFallback encodes a path with automatic fallback to SHA256 for long paths.
-//
-// This is the recommended encoding method that provides hybrid functionality:
-// normal encoding for typical paths and SHA256 fallback for paths that would
-// exceed filesystem filename length limits.
-//
-// Process:
-//  1. Apply normal encoding with full path validation
-//  2. Check encoded length against MaxFilenameLength (250 chars)
-//  3. Use SHA256 fallback if length exceeds limit
-//  4. Return detailed Result with encoding metadata
-//
-// Fallback Strategy:
-//   - Threshold: 250 characters (NAME_MAX - safety margin)
-//   - Format: "{12-char-hash}.json" (17 chars total)
-//   - Hash: SHA256 with base64url encoding
-//   - Always reversible detection via Result.IsFallback
-//
-// Parameters:
-//
-//	path: Absolute, normalized file path to encode
-//
-// Returns:
-//
-//	Result: Detailed encoding result with metadata
-//	error: ErrInvalidPath if path validation fails
-//
-// Example:
-//
-//	result, err := encoder.EncodeWithFallback("/home/user/file.txt")
-//	if result.IsFallback {
-//	    // SHA256 fallback was used
-//	}
-func (e *SubstitutionHashEscape) EncodeWithFallback(path string) (Result, error) {
-	// Try normal encoding (includes all path validation)
-	normalEncoded, err := e.Encode(path)
-	if err != nil {
-		return Result{}, err
-	}
-
-	// Check length constraint
-	if len(normalEncoded) <= MaxFilenameLength {
-		return Result{
-			EncodedName:    normalEncoded,
-			IsFallback:     false,
-			OriginalLength: len(path),
-			EncodedLength:  len(normalEncoded),
-		}, nil
-	}
-
-	// Use SHA256 fallback for long paths (always enabled)
-	fallbackEncoded := e.generateSHA256Fallback(path)
-
-	return Result{
-		EncodedName:    fallbackEncoded,
-		IsFallback:     true,
-		OriginalLength: len(path),
-		EncodedLength:  len(fallbackEncoded),
-	}, nil
-}
-
-// generateSHA256Fallback generates SHA256-based filename for long paths.
-//
-// This fallback mechanism ensures that any path, regardless of length,
-// can be represented as a valid filename within filesystem constraints.
-//
-// Algorithm:
-//  1. Generate SHA256 hash of full path string
-//  2. Encode hash using base64url (filesystem-safe)
-//  3. Truncate to HashLength characters (12 chars)
-//  4. Add ".json" extension
-//
-// Output Format:
-//   - Pattern: "{hash}.json"
-//   - Hash length: 12 characters
-//   - Total length: 17 characters
-//   - Character set: [A-Za-z0-9_-] (base64url)
-//
-// Properties:
-//   - Deterministic: same path always produces same hash
-//   - Collision-resistant: SHA256 provides cryptographic strength
-//   - Filesystem-safe: no special characters, reasonable length
-//   - Not reversible: original path cannot be recovered
-//
-// Performance: ~1ms per path for typical usage
-func (e *SubstitutionHashEscape) generateSHA256Fallback(path string) string {
-	hash := sha256.Sum256([]byte(path))
-	hashStr := base64.URLEncoding.EncodeToString(hash[:])
-
-	// Use default hash length, ensure it fits within limits
-	hashLength := min(HashLength, len(hashStr))
-
-	// Format: {hash}.json (hashLength + 5 characters)
-	return hashStr[:hashLength] + ".json"
 }
 
 // IsNormalEncoding determines if an encoded filename uses normal encoding.
