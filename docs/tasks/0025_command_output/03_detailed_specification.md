@@ -4,7 +4,33 @@
 
 本文書は、go-safe-cmd-runnerにおけるコマンド出力キャプチャ機能の詳細な技術仕様を定義する。要件定義書とアーキテクチャ設計書に基づき、実装レベルでの具体的な仕様を記述する。
 
-## 2. データ構造仕様 (Data Structure Specifications)
+## 2. セキュリティ設計 (Security Design)
+
+### 2.1 シンボリックリンク攻撃対策
+
+出力キャプチャ機能では、ファイル操作時のシンボリックリンク攻撃を防ぐため、以下の安全な実装パターンを採用する：
+
+#### 2.1.1 Lstat使用の徹底
+- 全てのファイル・ディレクトリアクセスで`os.Lstat`を使用し、`os.Stat`の使用を避ける
+- `os.Stat`はシンボリックリンクを辿るため、攻撃者が`/tmp/allowed -> /etc`のようなシンボリックリンクを作成した場合に脆弱性となる
+- `os.Lstat`はシンボリックリンク自体の情報を返すため、攻撃を検出できる
+
+#### 2.1.2 既存セキュリティインフラストラクチャの活用
+- `internal/runner/security/file_validation.go`の`ValidateDirectoryPermissions`と`validateCompletePath`メソッドを活用
+- これらのメソッドは既にシンボリックリンク検出とパス全体の安全性検証を実装済み
+- パスの各コンポーネントを`Lstat`で検証し、シンボリックリンクが存在する場合は`ErrInsecurePathComponent`エラーを返す
+
+#### 2.1.3 権限チェックの分離
+- セキュリティ検証（`ValidateDirectoryPermissions`）と権限チェック（UID/GID固有の書き込み権限）を分離
+- セキュリティ検証で全体の安全性を確保した後、個別のUID権限をチェックする階層化されたアプローチ
+
+### 2.2 パストラバーサル対策
+
+- `filepath.Clean`による正規化とパス検証
+- 相対パス使用時のワーキングディレクトリ境界チェック
+- `..`を含むパスの明示的な拒否
+
+## 3. データ構造仕様 (Data Structure Specifications)
 
 ### 2.1 既存構造体の拡張
 
@@ -83,9 +109,7 @@ type OutputConfig struct {
 type OutputCapture struct {
     Config       *OutputConfig  // 設定情報
     OutputPath   string         // 最終出力先パス（絶対パス）
-    TempPath     string         // 一時ファイルパス
-    TempFile     *os.File       // 一時ファイルハンドル
-    Buffer       *bufio.Writer  // バッファライター
+    Buffer       *bytes.Buffer  // メモリバッファ（一時ファイル不要）
     CurrentSize  int64          // 現在の書き込みサイズ
     StartTime    time.Time      // 開始時刻
     mutex        sync.Mutex     // 並行アクセス制御
@@ -100,34 +124,11 @@ type OutputAnalysis struct {
     ResolvedPath    string        // 解決済み絶対パス
     DirectoryExists bool          // ディレクトリ存在確認
     WritePermission bool          // 書き込み権限確認
-    EstimatedSize   string        // 推定サイズ（"Unknown"等）
-    SecurityRisk    SecurityLevel // セキュリティリスク評価
+    SecurityRisk    runnertypes.RiskLevel // セキュリティリスク評価
     MaxSizeLimit    int64         // サイズ制限値
     ErrorMessage    string        // エラーメッセージ（問題がある場合）
 }
 
-type SecurityLevel int
-const (
-    SecurityLevelLow SecurityLevel = iota
-    SecurityLevelMedium
-    SecurityLevelHigh
-    SecurityLevelCritical
-)
-
-func (s SecurityLevel) String() string {
-    switch s {
-    case SecurityLevelLow:
-        return "LOW"
-    case SecurityLevelMedium:
-        return "MEDIUM"
-    case SecurityLevelHigh:
-        return "HIGH"
-    case SecurityLevelCritical:
-        return "CRITICAL"
-    default:
-        return "UNKNOWN"
-    }
-}
 ```
 
 ### 2.3 エラー型定義
@@ -212,16 +213,16 @@ func (p ExecutionPhase) String() string {
 type DefaultOutputCaptureManager struct {
     pathValidator    PathValidator
     fileManager      FileManager
-    permissionChecker PermissionChecker
+    securityValidator *security.Validator
     logger           Logger
 }
 
-func NewDefaultOutputCaptureManager(logger Logger) *DefaultOutputCaptureManager {
+func NewDefaultOutputCaptureManager(securityValidator *security.Validator, logger Logger) *DefaultOutputCaptureManager {
     fs := NewDefaultExtendedFileSystem()
     return &DefaultOutputCaptureManager{
         pathValidator:    NewDefaultPathValidator(),
-        fileManager:      NewDefaultFileManager(fs),
-        permissionChecker: NewDefaultPermissionChecker(),
+        fileManager:      NewSafeFileManager(fs),
+        securityValidator: securityValidator,
         logger:           logger,
     }
 }
@@ -245,7 +246,7 @@ func (m *DefaultOutputCaptureManager) PrepareOutput(config *OutputConfig) (*Outp
     }
 
     // 2. 権限確認
-    if err := m.permissionChecker.CheckWritePermission(resolvedPath, config.RealUID); err != nil {
+    if err := m.securityValidator.ValidateOutputWritePermission(resolvedPath, config.RealUID); err != nil {
         return nil, &OutputCaptureError{
             Type:    ErrorTypePermission,
             Phase:   PhasePreparation,
@@ -256,7 +257,7 @@ func (m *DefaultOutputCaptureManager) PrepareOutput(config *OutputConfig) (*Outp
     }
 
     // 3. ディレクトリ作成
-    if err := m.fileManager.EnsureDirectory(filepath.Dir(resolvedPath), config.RealUID, config.RealGID); err != nil {
+    if err := m.fileManager.EnsureDirectory(filepath.Dir(resolvedPath)); err != nil {
         return nil, &OutputCaptureError{
             Type:    ErrorTypeFileSystem,
             Phase:   PhasePreparation,
@@ -266,26 +267,11 @@ func (m *DefaultOutputCaptureManager) PrepareOutput(config *OutputConfig) (*Outp
         }
     }
 
-    // 4. 一時ファイル作成（os.CreateTempを使用して安全に作成）
-    tempFile, err := m.fileManager.CreateTempFile(filepath.Dir(resolvedPath), filepath.Base(resolvedPath), config.RealUID, config.RealGID)
-    if err != nil {
-        return nil, &OutputCaptureError{
-            Type:    ErrorTypeFileSystem,
-            Phase:   PhasePreparation,
-            Path:    resolvedPath,
-            Cause:   err,
-            Command: config.CommandName,
-        }
-    }
-    tempPath := tempFile.Name()
-
-    // 5. OutputCapture構造体作成
+    // 4. OutputCapture構造体作成（メモリバッファ使用）
     capture := &OutputCapture{
         Config:      config,
         OutputPath:  resolvedPath,
-        TempPath:    tempPath,
-        TempFile:    tempFile,
-        Buffer:      bufio.NewWriterSize(tempFile, DefaultBufferSize),
+        Buffer:      &bytes.Buffer{},
         CurrentSize: 0,
         StartTime:   time.Now(),
     }
@@ -313,13 +299,13 @@ func (m *DefaultOutputCaptureManager) WriteOutput(capture *OutputCapture, data [
         }
     }
 
-    // データ書き込み
+    // メモリバッファに書き込み
     n, err := capture.Buffer.Write(data)
     if err != nil {
         return &OutputCaptureError{
             Type:    ErrorTypeFileSystem,
             Phase:   PhaseExecution,
-            Path:    capture.TempPath,
+            Path:    capture.OutputPath,
             Cause:   err,
             Command: capture.Config.CommandName,
         }
@@ -334,20 +320,8 @@ func (m *DefaultOutputCaptureManager) WriteOutput(capture *OutputCapture, data [
 ##### FinalizeOutput
 ```go
 func (m *DefaultOutputCaptureManager) FinalizeOutput(capture *OutputCapture) error {
-    // 1. ファイルクローズ（bufio.Writerは自動的にフラッシュされる）
-    if err := capture.TempFile.Close(); err != nil {
-        return &OutputCaptureError{
-            Type:    ErrorTypeFileSystem,
-            Phase:   PhaseFinalization,
-            Path:    capture.TempPath,
-            Cause:   err,
-            Command: capture.Config.CommandName,
-        }
-    }
-
-    // 2. 原子的ファイル移動
-    if err := m.fileManager.AtomicMove(capture.TempPath, capture.OutputPath); err != nil {
-        os.Remove(capture.TempPath)
+    // 1. safefileioを使ってバッファ内容をファイルに安全に書き込み
+    if err := m.fileManager.WriteToFile(capture.OutputPath, capture.Buffer.Bytes()); err != nil {
         return &OutputCaptureError{
             Type:    ErrorTypeFileSystem,
             Phase:   PhaseFinalization,
@@ -357,7 +331,7 @@ func (m *DefaultOutputCaptureManager) FinalizeOutput(capture *OutputCapture) err
         }
     }
 
-    // 3. ログ記録
+    // 2. ログ記録
     duration := time.Since(capture.StartTime)
     m.logger.Info("Output capture completed",
         "command", capture.Config.CommandName,
@@ -373,32 +347,9 @@ func (m *DefaultOutputCaptureManager) FinalizeOutput(capture *OutputCapture) err
 ##### CleanupOutput
 ```go
 func (m *DefaultOutputCaptureManager) CleanupOutput(capture *OutputCapture) error {
-    var errs []error
-
-    // 1. ファイルクローズ（既にクローズされている場合もある）
-    if capture.TempFile != nil {
-        if err := capture.TempFile.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
-            errs = append(errs, err)
-        }
-    }
-
-    // 2. 一時ファイル削除
-    if capture.TempPath != "" {
-        if err := os.Remove(capture.TempPath); err != nil && !os.IsNotExist(err) {
-            errs = append(errs, err)
-        }
-    }
-
-    // エラーがあればまとめて返す
-    if len(errs) > 0 {
-        return &OutputCaptureError{
-            Type:    ErrorTypeCleanup,
-            Phase:   PhaseCleanup,
-            Path:    capture.TempPath,
-            Cause:   fmt.Errorf("cleanup errors: %v", errs),
-            Command: capture.Config.CommandName,
-        }
-    }
+    // メモリバッファのクリア（ガベージコレクションに任せる）
+    capture.Buffer.Reset()
+    capture.CurrentSize = 0
 
     return nil
 }
@@ -416,21 +367,21 @@ func (m *DefaultOutputCaptureManager) AnalyzeOutput(config *OutputConfig) (*Outp
     resolvedPath, err := m.pathValidator.ValidateAndResolvePath(config.OutputPath, config.WorkDir)
     if err != nil {
         analysis.ErrorMessage = fmt.Sprintf("Path validation failed: %v", err)
-        analysis.SecurityRisk = SecurityLevelCritical
+        analysis.SecurityRisk = runnertypes.RiskLevelCritical
         return analysis, nil
     }
     analysis.ResolvedPath = resolvedPath
 
-    // 2. ディレクトリ存在確認
+    // 2. ディレクトリ存在確認（Lstatを使用してシンボリックリンクを追跡しない）
     dir := filepath.Dir(resolvedPath)
-    if stat, err := os.Stat(dir); err == nil && stat.IsDir() {
+    if stat, err := os.Lstat(dir); err == nil && stat.IsDir() && stat.Mode()&os.ModeSymlink == 0 {
         analysis.DirectoryExists = true
     } else {
         analysis.DirectoryExists = false
     }
 
     // 3. 権限確認
-    if err := m.permissionChecker.CheckWritePermission(resolvedPath, config.RealUID); err != nil {
+    if err := m.securityValidator.ValidateOutputWritePermission(resolvedPath, config.RealUID); err != nil {
         analysis.WritePermission = false
         if analysis.ErrorMessage == "" {
             analysis.ErrorMessage = fmt.Sprintf("Permission check failed: %v", err)
@@ -441,9 +392,6 @@ func (m *DefaultOutputCaptureManager) AnalyzeOutput(config *OutputConfig) (*Outp
 
     // 4. セキュリティリスク評価
     analysis.SecurityRisk = m.evaluateSecurityRisk(resolvedPath, config.WorkDir)
-
-    // 5. 推定サイズ設定
-    analysis.EstimatedSize = "Unknown"
 
     return analysis, nil
 }
@@ -482,16 +430,6 @@ func (v *DefaultPathValidator) validateAbsolutePath(path string) (string, error)
     }
 
     cleanPath := filepath.Clean(path)
-
-    evalPath, err := filepath.EvalSymlinks(filepath.Dir(cleanPath))
-    if err != nil && !os.IsNotExist(err) {
-        return "", fmt.Errorf("failed to evaluate symlinks: %w", err)
-    }
-
-    if evalPath != "" {
-        cleanPath = filepath.Join(evalPath, filepath.Base(cleanPath))
-    }
-
     return cleanPath, nil
 }
 
@@ -516,7 +454,172 @@ func (v *DefaultPathValidator) validateRelativePath(path, workDir string) (strin
 }
 ```
 
-#### 3.2.2 PermissionChecker
+#### 3.2.2 SecurityValidator拡張（出力ファイル書き込み権限チェック）
+
+既存の `internal/runner/security/file_validation.go` を拡張して、出力キャプチャ用の書き込み権限チェック機能を追加します：
+
+```go
+// internal/runner/security/file_validation.go (拡張)
+
+// ValidateOutputWritePermission validates write permission for output file creation
+// This method is specifically designed for output capture functionality
+// It leverages the existing secure path validation infrastructure to prevent symlink attacks
+func (v *Validator) ValidateOutputWritePermission(outputPath string, realUID int) error {
+    if outputPath == "" {
+        return fmt.Errorf("%w: empty output path", ErrInvalidPath)
+    }
+
+    // Ensure absolute path
+    if !filepath.IsAbs(outputPath) {
+        return fmt.Errorf("%w: output path must be absolute, got: %s", ErrInvalidPath, outputPath)
+    }
+
+    cleanPath := filepath.Clean(outputPath)
+    dir := filepath.Dir(cleanPath)
+
+    // SECURITY: Use existing secure directory validation that includes complete path validation
+    // This prevents symlink attacks by validating the entire path hierarchy
+    if err := v.ValidateDirectoryPermissions(dir); err != nil {
+        // If directory validation fails, try to validate parent recursively
+        if os.IsNotExist(errors.Unwrap(err)) {
+            parent := filepath.Dir(dir)
+            if parent != dir {
+                return v.ValidateOutputWritePermission(filepath.Join(parent, "placeholder"), realUID)
+            }
+        }
+        return fmt.Errorf("directory security validation failed: %w", err)
+    }
+
+    // Additional write permission check for the specific UID
+    if err := v.validateOutputDirectoryWritePermissionForUID(dir, realUID); err != nil {
+        return fmt.Errorf("directory write permission check failed: %w", err)
+    }
+
+    // If file exists, validate file write permission using secure Lstat
+    if fileInfo, err := v.fs.Lstat(cleanPath); err == nil {
+        if err := v.validateOutputFileWritePermission(cleanPath, fileInfo, realUID); err != nil {
+            return fmt.Errorf("file write permission check failed: %w", err)
+        }
+    } else if !os.IsNotExist(err) {
+        return fmt.Errorf("failed to stat output file %s: %w", cleanPath, err)
+    }
+
+    return nil
+}
+
+// validateOutputDirectoryWritePermissionForUID checks if the specific UID can write to the directory
+// This function assumes the directory has already been validated for security (no symlinks, etc.)
+// by ValidateDirectoryPermissions
+func (v *Validator) validateOutputDirectoryWritePermissionForUID(dirPath string, realUID int) error {
+    // Use Lstat instead of Stat to prevent following symlinks
+    stat, err := v.fs.Lstat(dirPath)
+    if err != nil {
+        if os.IsNotExist(err) {
+            // Directory doesn't exist, check parent recursively
+            parent := filepath.Dir(dirPath)
+            if parent != dirPath {
+                return v.validateOutputDirectoryWritePermissionForUID(parent, realUID)
+            }
+        }
+        return fmt.Errorf("failed to lstat directory %s: %w", dirPath, err)
+    }
+
+    // Additional symlink check (should not happen if ValidateDirectoryPermissions was called)
+    if stat.Mode()&os.ModeSymlink != 0 {
+        return fmt.Errorf("%w: directory %s is a symlink", ErrInsecurePathComponent, dirPath)
+    }
+
+    if !stat.IsDir() {
+        return fmt.Errorf("%w: %s is not a directory", ErrInvalidDirPermissions, dirPath)
+    }
+
+    return v.checkWritePermission(dirPath, stat, realUID)
+}
+
+// validateOutputFileWritePermission checks if the user can write to the existing file
+// This function receives fileInfo from Lstat to ensure symlink safety
+func (v *Validator) validateOutputFileWritePermission(filePath string, fileInfo os.FileInfo, realUID int) error {
+    // Additional symlink check (fileInfo should be from Lstat)
+    if fileInfo.Mode()&os.ModeSymlink != 0 {
+        return fmt.Errorf("%w: output file %s is a symlink", ErrInvalidFilePermissions, filePath)
+    }
+
+    if !fileInfo.Mode().IsRegular() {
+        return fmt.Errorf("%w: %s is not a regular file", ErrInvalidFilePermissions, filePath)
+    }
+
+    return v.checkWritePermission(filePath, fileInfo, realUID)
+}
+
+// checkWritePermission performs the actual permission check for a given UID
+func (v *Validator) checkWritePermission(path string, stat os.FileInfo, realUID int) error {
+    sysstat, ok := stat.Sys().(*syscall.Stat_t)
+    if !ok {
+        return fmt.Errorf("%w: failed to get system info for %s", ErrInvalidFilePermissions, path)
+    }
+
+    // Check owner permissions
+    if int(sysstat.Uid) == realUID {
+        if stat.Mode()&0200 != 0 {
+            return nil // Owner has write permission
+        }
+        return fmt.Errorf("%w: owner write permission denied for %s", ErrInvalidFilePermissions, path)
+    }
+
+    // Check group permissions
+    if stat.Mode()&0020 != 0 {
+        inGroup, err := v.isUserInGroup(realUID, sysstat.Gid)
+        if err != nil {
+            return fmt.Errorf("failed to check group membership: %w", err)
+        }
+        if inGroup {
+            return nil // User is in group and group has write permission
+        }
+    }
+
+    // Check other permissions
+    if stat.Mode()&0002 != 0 {
+        return nil // Others have write permission
+    }
+
+    return fmt.Errorf("%w: write permission denied for %s", ErrInvalidFilePermissions, path)
+}
+
+// isUserInGroup checks if a user (by UID) is a member of a group (by GID)
+// This is a simplified version that checks primary group and supplementary groups
+// Returns (inGroup, error) where error indicates system-level failures
+func (v *Validator) isUserInGroup(uid int, gid uint32) (bool, error) {
+    // Get user information
+    user, err := user.LookupId(strconv.Itoa(uid))
+    if err != nil {
+        return false, fmt.Errorf("failed to lookup user %d: %w", uid, err)
+    }
+
+    // Check primary group
+    userGid, err := strconv.Atoi(user.Gid)
+    if err != nil {
+        return false, fmt.Errorf("failed to parse user's primary GID %s: %w", user.Gid, err)
+    }
+    if uint32(userGid) == gid {
+        return true, nil
+    }
+
+    // Check supplementary groups using groupmembership
+    if v.groupMembership != nil {
+        members, err := v.groupMembership.GetGroupMembers(gid)
+        if err != nil {
+            return false, fmt.Errorf("failed to get group members for GID %d: %w", gid, err)
+        }
+        for _, member := range members {
+            if member == user.Username {
+                return true, nil
+            }
+        }
+    }
+
+    return false, nil
+}
+```
 ```go
 // internal/runner/output/permission.go
 import (
@@ -551,7 +654,8 @@ func (c *DefaultPermissionChecker) CheckWritePermission(path string, uid int) er
         return err
     }
 
-    if stat, err := os.Stat(path); err == nil {
+    // Use Lstat instead of Stat to prevent following symlinks
+    if stat, err := os.Lstat(path); err == nil {
         return c.checkFileWritePermission(path, stat, uid)
     }
 
@@ -559,7 +663,8 @@ func (c *DefaultPermissionChecker) CheckWritePermission(path string, uid int) er
 }
 
 func (c *DefaultPermissionChecker) checkDirectoryWritePermission(dir string, uid int) error {
-    stat, err := os.Stat(dir)
+    // Use Lstat instead of Stat to prevent following symlinks
+    stat, err := os.Lstat(dir)
     if err != nil {
         if os.IsNotExist(err) {
             parent := filepath.Dir(dir)
@@ -567,7 +672,12 @@ func (c *DefaultPermissionChecker) checkDirectoryWritePermission(dir string, uid
                 return c.checkDirectoryWritePermission(parent, uid)
             }
         }
-        return fmt.Errorf("failed to stat directory %s: %w", dir, err)
+        return fmt.Errorf("failed to lstat directory %s: %w", dir, err)
+    }
+
+    // Additional symlink check
+    if stat.Mode()&os.ModeSymlink != 0 {
+        return fmt.Errorf("directory %s is a symlink", dir)
     }
 
     sysstat := stat.Sys().(*syscall.Stat_t)
@@ -582,6 +692,9 @@ func (c *DefaultPermissionChecker) checkDirectoryWritePermission(dir string, uid
 
     // Check group permissions with proper membership verification
     if stat.Mode()&0020 != 0 {
+        // TODO: Implement proper group membership check with error handling
+        // This should return (bool, error) and handle system-level failures
+        // similar to the isUserInGroup function above
         if err := c.checkGroupMembership(uid, uint32(sysstat.Gid)); err == nil {
             return nil
         }
@@ -596,6 +709,11 @@ func (c *DefaultPermissionChecker) checkDirectoryWritePermission(dir string, uid
 }
 
 func (c *DefaultPermissionChecker) checkFileWritePermission(path string, stat os.FileInfo, uid int) error {
+    // Additional symlink check (stat should be from Lstat)
+    if stat.Mode()&os.ModeSymlink != 0 {
+        return fmt.Errorf("file %s is a symlink", path)
+    }
+
     sysstat := stat.Sys().(*syscall.Stat_t)
 
     // Check owner permissions
@@ -605,6 +723,9 @@ func (c *DefaultPermissionChecker) checkFileWritePermission(path string, stat os
 
     // Check group permissions with proper membership verification
     if stat.Mode()&0020 != 0 {
+        // TODO: Implement proper group membership check with error handling
+        // This should return (bool, error) and handle system-level failures
+        // similar to the isUserInGroup function above
         if err := c.checkGroupMembership(uid, uint32(sysstat.Gid)); err == nil {
             return nil
         }
@@ -618,213 +739,80 @@ func (c *DefaultPermissionChecker) checkFileWritePermission(path string, stat os
     return fmt.Errorf("write permission denied for file: %s", path)
 }
 
-// checkGroupMembership verifies if a user (by UID) is a member of a group (by GID)
 func (c *DefaultPermissionChecker) checkGroupMembership(uid int, gid uint32) error {
-    // Get username from UID
+    // Get user information
     user, err := user.LookupId(strconv.Itoa(uid))
     if err != nil {
-        return fmt.Errorf("failed to lookup user with UID %d: %w", uid, err)
+        return fmt.Errorf("failed to lookup user %d: %w", uid, err)
     }
 
-    // Get group members
-    members, err := c.groupMembership.GetGroupMembers(gid)
+    // Check primary group
+    userGid, err := strconv.Atoi(user.Gid)
     if err != nil {
-        return fmt.Errorf("failed to get group members for GID %d: %w", gid, err)
+        return fmt.Errorf("failed to parse user's primary GID %s: %w", user.Gid, err)
+    }
+    if uint32(userGid) == gid {
+        return nil // User's primary group matches
     }
 
-    // Check if user is in group members
-    for _, member := range members {
-        if member == user.Username {
-            return nil
+    // Check supplementary groups using groupmembership
+    if c.groupMembership != nil {
+        members, err := c.groupMembership.GetGroupMembers(gid)
+        if err != nil {
+            return fmt.Errorf("failed to get group members for GID %d: %w", gid, err)
+        }
+        for _, member := range members {
+            if member == user.Username {
+                return nil // User is in the group
+            }
         }
     }
 
-    return fmt.Errorf("user %s (UID %d) is not a member of group with GID %d", user.Username, uid, gid)
+    return fmt.Errorf("user %d is not a member of group %d", uid, gid)
 }
-```
 
-#### 3.2.3 ExtendedFileSystem（common.FileSystemの拡張）
+#### 3.2.3 safefileio.FileSystemの活用
+出力キャプチャ機能では、既存の`safefileio.FileSystem`を活用してセキュリティを確保します：
+
 ```go
 // internal/runner/output/file.go
 import (
-    "github.com/isseis/go-safe-cmd-runner/internal/common"
+    "github.com/isseis/go-safe-cmd-runner/internal/safefileio"
 )
 
-// ExtendedFileSystem extends common.FileSystem with additional functionality needed for output capture
-type ExtendedFileSystem interface {
-    common.FileSystem
-
-    // CreateTempFile creates a temporary file with the given pattern
-    CreateTempFile(dir, pattern string) (*os.File, error)
-
-    // Stat returns file information
-    Stat(path string) (os.FileInfo, error)
-
-    // Chown changes the ownership of the file
-    Chown(path string, uid, gid int) error
-
-    // Chmod changes the permissions of the file
-    Chmod(path string, mode os.FileMode) error
-
-    // Rename renames (moves) oldpath to newpath
-    Rename(oldpath, newpath string) error
-
-    // Open opens a file for reading
-    Open(name string) (*os.File, error)
-
-    // OpenFile opens a file with specified flags and permissions
-    OpenFile(name string, flag int, perm os.FileMode) (*os.File, error)
-
-    // MkdirAll creates directories recursively
-    MkdirAll(path string, perm os.FileMode) error
+#### 3.2.4 FileManager（safefileio活用版）
+```go
+type FileManager interface {
+    EnsureDirectory(path string) error
+    CreateSecureTempFile(dir, prefix string) (*os.File, error)
+    WriteToFile(path string, content []byte) error
 }
 
-// DefaultExtendedFileSystem implements ExtendedFileSystem
-type DefaultExtendedFileSystem struct {
-    *common.DefaultFileSystem
+type SafeFileManager struct {
+    fs safefileio.FileSystem
 }
 
-func NewDefaultExtendedFileSystem() *DefaultExtendedFileSystem {
-    return &DefaultExtendedFileSystem{
-        DefaultFileSystem: common.NewDefaultFileSystem(),
+func NewSafeFileManager() *SafeFileManager {
+    return &SafeFileManager{
+        fs: safefileio.NewFileSystem(safefileio.FileSystemConfig{}),
     }
 }
 
-func (fs *DefaultExtendedFileSystem) CreateTempFile(dir, pattern string) (*os.File, error) {
+func (f *SafeFileManager) EnsureDirectory(path string) error {
+    if err := os.MkdirAll(path, 0755); err != nil {
+        return fmt.Errorf("failed to create directory %s: %w", path, err)
+    }
+    return nil
+}
+
+func (f *SafeFileManager) CreateSecureTempFile(dir, prefix string) (*os.File, error) {
+    pattern := prefix + "_*.tmp"
     return os.CreateTemp(dir, pattern)
 }
 
-func (fs *DefaultExtendedFileSystem) Stat(path string) (os.FileInfo, error) {
-    return os.Stat(path)
-}
-
-func (fs *DefaultExtendedFileSystem) Chown(path string, uid, gid int) error {
-    return os.Chown(path, uid, gid)
-}
-
-func (fs *DefaultExtendedFileSystem) Chmod(path string, mode os.FileMode) error {
-    return os.Chmod(path, mode)
-}
-
-func (fs *DefaultExtendedFileSystem) Rename(oldpath, newpath string) error {
-    return os.Rename(oldpath, newpath)
-}
-
-func (fs *DefaultExtendedFileSystem) Open(name string) (*os.File, error) {
-    return os.Open(name)
-}
-
-func (fs *DefaultExtendedFileSystem) OpenFile(name string, flag int, perm os.FileMode) (*os.File, error) {
-    return os.OpenFile(name, flag, perm)
-}
-
-func (fs *DefaultExtendedFileSystem) MkdirAll(path string, perm os.FileMode) error {
-    return os.MkdirAll(path, perm)
-}
-
-#### 3.2.4 FileManager
-type FileManager interface {
-    EnsureDirectory(path string, uid, gid int) error
-    CreateTempFile(dir, prefix string, uid, gid int) (*os.File, error)
-    AtomicMove(src, dst string) error
-}
-
-type DefaultFileManager struct {
-    fs ExtendedFileSystem
-}
-
-func NewDefaultFileManager(fs ExtendedFileSystem) *DefaultFileManager {
-    return &DefaultFileManager{
-        fs: fs,
-    }
-}
-
-func (f *DefaultFileManager) EnsureDirectory(path string, uid, gid int) error {
-    isDir, err := f.fs.IsDir(path)
-    if err == nil && isDir {
-        return nil
-    }
-
-    exists, err := f.fs.FileExists(path)
-    if err == nil && exists && !isDir {
-        return fmt.Errorf("path exists but is not a directory: %s", path)
-    }
-
-    if err := f.fs.MkdirAll(path, 0755); err != nil {
-        return fmt.Errorf("failed to create directory %s: %w", path, err)
-    }
-
-    if err := f.fs.Chown(path, uid, gid); err != nil {
-        return fmt.Errorf("failed to set ownership for directory %s: %w", path, err)
-    }
-
-    return nil
-}
-
-func (f *DefaultFileManager) CreateTempFile(dir, prefix string, uid, gid int) (*os.File, error) {
-    pattern := prefix + "_*.tmp"
-    file, err := f.fs.CreateTempFile(dir, pattern)
-    if err != nil {
-        return nil, fmt.Errorf("failed to create temp file in %s with pattern %s: %w", dir, pattern, err)
-    }
-
-    tempPath := file.Name()
-
-    if err := f.fs.Chown(tempPath, uid, gid); err != nil {
-        file.Close()
-        f.fs.Remove(tempPath)
-        return nil, fmt.Errorf("failed to set ownership for temp file %s: %w", tempPath, err)
-    }
-
-    return file, nil
-}
-
-func (f *DefaultFileManager) AtomicMove(src, dst string) error {
-    if err := f.fs.Rename(src, dst); err != nil {
-        if errors.Is(err, syscall.EXDEV) {
-            return f.copyAndRemove(src, dst)
-        }
-        return fmt.Errorf("failed to move file from %s to %s: %w", src, dst, err)
-    }
-
-    return nil
-}
-
-func (f *DefaultFileManager) copyAndRemove(src, dst string) error {
-    srcStat, err := f.fs.Stat(src)
-    if err != nil {
-        return err
-    }
-
-    srcFile, err := f.fs.Open(src)
-    if err != nil {
-        return err
-    }
-    defer srcFile.Close()
-
-    dstFile, err := f.fs.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, srcStat.Mode().Perm())
-    if err != nil {
-        return err
-    }
-    defer dstFile.Close()
-
-    srcSysStat := srcStat.Sys().(*syscall.Stat_t)
-    if err := f.fs.Chown(dst, int(srcSysStat.Uid), int(srcSysStat.Gid)); err != nil {
-        f.fs.Remove(dst)
-        return err
-    }
-
-    if _, err := io.Copy(dstFile, srcFile); err != nil {
-        f.fs.Remove(dst)
-        return err
-    }
-
-    if err := dstFile.Sync(); err != nil {
-        f.fs.Remove(dst)
-        return err
-    }
-
-    return f.fs.Remove(src)
+func (f *SafeFileManager) WriteToFile(path string, content []byte) error {
+    // safefileio.SafeWriteFileOverwriteを使用して安全にファイル書き込み
+    return safefileio.SafeWriteFileOverwrite(path, content, 0600)
 }
 ```
 
@@ -1192,7 +1180,7 @@ import (
     "strings"
 )
 
-func (m *DefaultOutputCaptureManager) evaluateSecurityRisk(path, workDir string) SecurityLevel {
+func (m *DefaultOutputCaptureManager) evaluateSecurityRisk(path, workDir string) runnertypes.RiskLevel {
     pathLower := strings.ToLower(path)
 
     // Critical: システム重要ファイル
@@ -1204,7 +1192,7 @@ func (m *DefaultOutputCaptureManager) evaluateSecurityRisk(path, workDir string)
 
     for _, pattern := range criticalPatterns {
         if strings.Contains(pathLower, pattern) {
-            return SecurityLevelCritical
+            return runnertypes.RiskLevelCritical
         }
     }
 
@@ -1216,7 +1204,7 @@ func (m *DefaultOutputCaptureManager) evaluateSecurityRisk(path, workDir string)
 
     for _, pattern := range highPatterns {
         if strings.Contains(pathLower, pattern) {
-            return SecurityLevelHigh
+            return runnertypes.RiskLevelHigh
         }
     }
 
@@ -1225,7 +1213,7 @@ func (m *DefaultOutputCaptureManager) evaluateSecurityRisk(path, workDir string)
         cleanWorkDir := filepath.Clean(workDir)
         cleanPath := filepath.Clean(path)
         if strings.HasPrefix(cleanPath, cleanWorkDir) {
-            return SecurityLevelLow
+            return runnertypes.RiskLevelLow
         }
     }
 
@@ -1235,12 +1223,12 @@ func (m *DefaultOutputCaptureManager) evaluateSecurityRisk(path, workDir string)
         cleanHomePath := filepath.Clean(homeDir)
         cleanPath := filepath.Clean(path)
         if strings.HasPrefix(cleanPath, cleanHomePath) {
-            return SecurityLevelLow
+            return runnertypes.RiskLevelLow
         }
     }
 
     // Medium: その他の場所
-    return SecurityLevelMedium
+    return runnertypes.RiskLevelMedium
 }
 ```
 
@@ -1403,22 +1391,22 @@ func TestSecurityValidation(t *testing.T) {
     tests := []struct {
         name         string
         path         string
-        expectRisk   SecurityLevel
+        expectRisk   runnertypes.RiskLevel
     }{
         {
             name:       "critical_passwd_file",
             path:       "/etc/passwd",
-            expectRisk: SecurityLevelCritical,
+            expectRisk: runnertypes.RiskLevelCritical,
         },
         {
             name:       "high_etc_directory",
             path:       "/etc/myconfig.conf",
-            expectRisk: SecurityLevelHigh,
+            expectRisk: runnertypes.RiskLevelHigh,
         },
         {
             name:       "low_home_directory",
             path:       "/home/user/output.txt",
-            expectRisk: SecurityLevelLow,
+            expectRisk: runnertypes.RiskLevelLow,
         },
     }
 
@@ -1432,18 +1420,20 @@ func TestSecurityValidation(t *testing.T) {
     }
 }
 
-func TestPermissionChecker_GroupMembership(t *testing.T) {
-    // Create a temporary file with specific group permissions
-    tempFile, err := os.CreateTemp("", "test_group_*")
+func TestSecurityValidator_OutputWritePermission(t *testing.T) {
+    // Create a temporary file with specific permissions
+    tempFile, err := os.CreateTemp("", "test_output_*")
     require.NoError(t, err)
     defer os.Remove(tempFile.Name())
     defer tempFile.Close()
 
-    // Set group write permission
-    err = os.Chmod(tempFile.Name(), 0620) // owner rw-, group -w-, other ---
+    // Set up security validator
+    config := &ValidationConfig{
+        MaxPathLength: 4096,
+        RequiredFilePermissions: 0600,
+    }
+    validator, err := NewSecurityValidator(config, nil)
     require.NoError(t, err)
-
-    checker := NewDefaultPermissionChecker()
 
     // Get current user info
     currentUser, err := user.Current()
@@ -1452,8 +1442,8 @@ func TestPermissionChecker_GroupMembership(t *testing.T) {
     currentUID, err := strconv.Atoi(currentUser.Uid)
     require.NoError(t, err)
 
-    // Test permission check (this will use groupmembership to verify actual membership)
-    err = checker.CheckWritePermission(tempFile.Name(), currentUID)
+    // Test permission check for output file writing
+    err = validator.ValidateOutputWritePermission(tempFile.Name(), currentUID)
 
     // The result depends on actual group membership, so we mainly test that it doesn't panic
     // and returns a reasonable result

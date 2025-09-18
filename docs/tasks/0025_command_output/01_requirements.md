@@ -234,9 +234,8 @@ cmd = "/usr/bin/uptime"
 
 #### 4.3.2 Dry-Runフロー
 1. 出力ファイルパスの表示
-2. 出力予定サイズの推定値ならびに上限値表示（不可能な場合は"不明"）
-3. 書き込み権限の確認結果表示
-4. 実際のファイル作成は行わない
+2. 書き込み権限の確認結果表示
+3. 実際のファイル作成は行わない
 
 ### 4.4. エラーハンドリング仕様
 
@@ -329,14 +328,12 @@ Resource Operations:
 1. File Creation [FileOperation]
    Path: /home/user/project/reports/disk_usage.txt
    Command: system_report (df -h)
-   Estimated Size: Unknown
    Permissions: Write access confirmed
    Security Risk: LOW
 
 2. File Creation [FileOperation]
    Path: /backups/mydb_backup.sql
    Command: db_backup (pg_dump --no-password mydb)
-   Estimated Size: Unknown
    Permissions: Write access confirmed
    Security Risk: MEDIUM
 ```
