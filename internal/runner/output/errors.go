@@ -80,11 +80,18 @@ type CaptureError struct {
 
 // Error implements the error interface
 func (e CaptureError) Error() string {
-	return fmt.Sprintf("output capture error during %s: %s for '%s': %s",
+	if e.Cause == nil {
+		return fmt.Sprintf("output capture error during %s: %s for '%s'",
+			e.Phase.String(),
+			e.Type.String(),
+			e.Path)
+	}
+
+	return fmt.Sprintf("output capture error during %s: %s for '%s': %v",
 		e.Phase.String(),
 		e.Type.String(),
 		e.Path,
-		e.Cause.Error())
+		e.Cause)
 }
 
 // Unwrap implements the error unwrapping interface
