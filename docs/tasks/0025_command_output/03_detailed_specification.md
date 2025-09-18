@@ -568,7 +568,11 @@ func (v *Validator) checkWritePermission(path string, stat os.FileInfo, realUID 
 
     // Check group permissions
     if stat.Mode()&0020 != 0 {
-        if v.isUserInGroup(realUID, sysstat.Gid) {
+        inGroup, err := v.isUserInGroup(realUID, sysstat.Gid)
+        if err != nil {
+            return fmt.Errorf("failed to check group membership: %w", err)
+        }
+        if inGroup {
             return nil // User is in group and group has write permission
         }
     }
@@ -583,33 +587,37 @@ func (v *Validator) checkWritePermission(path string, stat os.FileInfo, realUID 
 
 // isUserInGroup checks if a user (by UID) is a member of a group (by GID)
 // This is a simplified version that checks primary group and supplementary groups
-func (v *Validator) isUserInGroup(uid int, gid uint32) bool {
+// Returns (inGroup, error) where error indicates system-level failures
+func (v *Validator) isUserInGroup(uid int, gid uint32) (bool, error) {
     // Get user information
     user, err := user.LookupId(strconv.Itoa(uid))
     if err != nil {
-        slog.Error("Failed to lookup user", "uid", uid, "error", err)
-        return false
+        return false, fmt.Errorf("failed to lookup user %d: %w", uid, err)
     }
 
     // Check primary group
     userGid, err := strconv.Atoi(user.Gid)
-    if err == nil && uint32(userGid) == gid {
-        return true
+    if err != nil {
+        return false, fmt.Errorf("failed to parse user's primary GID %s: %w", user.Gid, err)
+    }
+    if uint32(userGid) == gid {
+        return true, nil
     }
 
     // Check supplementary groups using groupmembership
     if v.groupMembership != nil {
         members, err := v.groupMembership.GetGroupMembers(gid)
-        if err == nil {
-            for _, member := range members {
-                if member == user.Username {
-                    return true
-                }
+        if err != nil {
+            return false, fmt.Errorf("failed to get group members for GID %d: %w", gid, err)
+        }
+        for _, member := range members {
+            if member == user.Username {
+                return true, nil
             }
         }
     }
 
-    return false
+    return false, nil
 }
 ```
 ```go
@@ -684,6 +692,9 @@ func (c *DefaultPermissionChecker) checkDirectoryWritePermission(dir string, uid
 
     // Check group permissions with proper membership verification
     if stat.Mode()&0020 != 0 {
+        // TODO: Implement proper group membership check with error handling
+        // This should return (bool, error) and handle system-level failures
+        // similar to the isUserInGroup function above
         if err := c.checkGroupMembership(uid, uint32(sysstat.Gid)); err == nil {
             return nil
         }
@@ -712,6 +723,9 @@ func (c *DefaultPermissionChecker) checkFileWritePermission(path string, stat os
 
     // Check group permissions with proper membership verification
     if stat.Mode()&0020 != 0 {
+        // TODO: Implement proper group membership check with error handling
+        // This should return (bool, error) and handle system-level failures
+        // similar to the isUserInGroup function above
         if err := c.checkGroupMembership(uid, uint32(sysstat.Gid)); err == nil {
             return nil
         }
@@ -723,6 +737,38 @@ func (c *DefaultPermissionChecker) checkFileWritePermission(path string, stat os
     }
 
     return fmt.Errorf("write permission denied for file: %s", path)
+}
+
+func (c *DefaultPermissionChecker) checkGroupMembership(uid int, gid uint32) error {
+    // Get user information
+    user, err := user.LookupId(strconv.Itoa(uid))
+    if err != nil {
+        return fmt.Errorf("failed to lookup user %d: %w", uid, err)
+    }
+
+    // Check primary group
+    userGid, err := strconv.Atoi(user.Gid)
+    if err != nil {
+        return fmt.Errorf("failed to parse user's primary GID %s: %w", user.Gid, err)
+    }
+    if uint32(userGid) == gid {
+        return nil // User's primary group matches
+    }
+
+    // Check supplementary groups using groupmembership
+    if c.groupMembership != nil {
+        members, err := c.groupMembership.GetGroupMembers(gid)
+        if err != nil {
+            return fmt.Errorf("failed to get group members for GID %d: %w", gid, err)
+        }
+        for _, member := range members {
+            if member == user.Username {
+                return nil // User is in the group
+            }
+        }
+    }
+
+    return fmt.Errorf("user %d is not a member of group %d", uid, gid)
 }
 
 #### 3.2.3 safefileio.FileSystemの活用
