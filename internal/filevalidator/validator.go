@@ -2,8 +2,6 @@ package filevalidator
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -41,28 +39,12 @@ type FileValidator interface {
 // This is used to test file validation logic for handling hash collisions.
 type HashFilePathGetter interface {
 	// GetHashFilePath returns the path where the given file's hash would be stored.
-	GetHashFilePath(hashAlgorithm HashAlgorithm, hashDir string, filePath common.ResolvedPath) (string, error)
-}
-
-// ProductionHashFilePathGetter is a concrete implementation of HashFilePathGetter.
-type ProductionHashFilePathGetter struct{}
-
-// GetHashFilePath returns the path where the given file's hash would be stored.
-// This implementation uses a simple hash function to generate a hash file path.
-func (p *ProductionHashFilePathGetter) GetHashFilePath(hashAlgorithm HashAlgorithm, hashDir string, filePath common.ResolvedPath) (string, error) {
-	if hashAlgorithm == nil {
-		return "", ErrNilAlgorithm
-	}
-
-	h := sha256.Sum256([]byte(filePath.String()))
-	hashStr := base64.URLEncoding.EncodeToString(h[:])
-
-	return filepath.Join(hashDir, hashStr[:12]+".json"), nil
+	GetHashFilePath(hashDir string, filePath common.ResolvedPath) (string, error)
 }
 
 // GetHashFilePath returns the path where the hash for the given file would be stored.
 func (v *Validator) GetHashFilePath(filePath common.ResolvedPath) (string, error) {
-	return v.hashFilePathGetter.GetHashFilePath(v.algorithm, v.hashDir, filePath)
+	return v.hashFilePathGetter.GetHashFilePath(v.hashDir, filePath)
 }
 
 // Validator provides functionality to record and verify file hashes.
@@ -76,7 +58,7 @@ type Validator struct {
 // New initializes and returns a new Validator with the specified hash algorithm and hash directory.
 // Returns an error if the algorithm is nil or if the hash directory cannot be accessed.
 func New(algorithm HashAlgorithm, hashDir string) (*Validator, error) {
-	return newValidator(algorithm, hashDir, &ProductionHashFilePathGetter{})
+	return newValidator(algorithm, hashDir, NewProductionHashFilePathGetter())
 }
 
 // newValidator initializes and returns a new Validator with the specified hash algorithm and hash directory.
