@@ -103,8 +103,7 @@ type OutputAnalysis struct {
     ResolvedPath    string        // 解決済み絶対パス
     DirectoryExists bool          // ディレクトリ存在確認
     WritePermission bool          // 書き込み権限確認
-    EstimatedSize   string        // 推定サイズ ("Unknown"等)
-    SecurityRisk    SecurityLevel // セキュリティリスク評価
+    SecurityRisk    runnertypes.RiskLevel // セキュリティリスク評価
     MaxSizeLimit    int64         // サイズ制限
 }
 ```
@@ -243,6 +242,8 @@ graph TB
 
 ### 6.2 セキュリティ検証フロー
 
+出力キャプチャ機能では、既存の `internal/runner/security/Validator` を拡張して権限チェックを実装します。
+
 ```mermaid
 graph TD
     A[セキュリティ検証開始] --> B[Path Validation]
@@ -250,7 +251,7 @@ graph TD
     B1 --> B2[パストラバーサル検出<br/>../ 等]
     B2 --> B3[シンボリックリンク検証]
 
-    B3 --> C[Permission Check]
+    B3 --> C[Permission Check<br/>SecurityValidator.ValidateOutputWritePermission]
     C --> C1[実UID権限での書き込み可能性確認]
     C1 --> C2[ディレクトリ作成権限確認]
     C2 --> C3[既存ファイル上書き権限確認]
@@ -262,6 +263,12 @@ graph TD
 
     D3 --> E[検証完了]
 ```
+
+#### 6.2.1 既存SecurityValidatorの活用
+
+- **統一されたセキュリティポリシー**: 既存のファイル検証ロジックと同じセキュリティ基準を適用
+- **実績あるコードベース**: 既にテスト済みで安定したセキュリティ検証機能を再利用
+- **保守性の向上**: 新しいPermissionCheckerを作るより、既存コンポーネントの拡張により複雑性を抑制
 
 ### 6.3 ファイル権限管理
 
