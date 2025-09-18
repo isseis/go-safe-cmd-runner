@@ -58,7 +58,7 @@ type Validator struct {
 // New initializes and returns a new Validator with the specified hash algorithm and hash directory.
 // Returns an error if the algorithm is nil or if the hash directory cannot be accessed.
 func New(algorithm HashAlgorithm, hashDir string) (*Validator, error) {
-	return newValidator(algorithm, hashDir, NewProductionHashFilePathGetter())
+	return newValidator(algorithm, hashDir, NewHybridHashFilePathGetter())
 }
 
 // newValidator initializes and returns a new Validator with the specified hash algorithm and hash directory.

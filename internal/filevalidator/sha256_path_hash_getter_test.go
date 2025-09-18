@@ -10,14 +10,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewProductionHashFilePathGetter(t *testing.T) {
-	getter := NewProductionHashFilePathGetter()
+func TestNewSHA256PathHashGetter(t *testing.T) {
+	getter := NewSHA256PathHashGetter()
 
 	assert.NotNil(t, getter)
 }
 
-func TestProductionHashFilePathGetter_GetHashFilePath(t *testing.T) {
-	getter := NewProductionHashFilePathGetter()
+func TestSHA256PathHashGetter_GetHashFilePath(t *testing.T) {
+	getter := NewSHA256PathHashGetter()
 	hashDir := "/tmp/hash"
 
 	tests := []struct {
@@ -80,8 +80,8 @@ func TestProductionHashFilePathGetter_GetHashFilePath(t *testing.T) {
 	}
 }
 
-func TestProductionHashFilePathGetter_GetHashFilePath_ErrorCases(t *testing.T) {
-	getter := NewProductionHashFilePathGetter()
+func TestSHA256PathHashGetter_GetHashFilePath_ErrorCases(t *testing.T) {
+	getter := NewSHA256PathHashGetter()
 	// Single explicit test case (previously was a single-entry table-driven test)
 	hashDir := ""
 	filePath := "/home/user/file.txt"
@@ -96,8 +96,8 @@ func TestProductionHashFilePathGetter_GetHashFilePath_ErrorCases(t *testing.T) {
 	assert.Empty(t, result)
 }
 
-func TestProductionHashFilePathGetter_GetHashFilePath_Consistency(t *testing.T) {
-	getter := NewProductionHashFilePathGetter()
+func TestSHA256PathHashGetter_GetHashFilePath_Consistency(t *testing.T) {
+	getter := NewSHA256PathHashGetter()
 	hashDir := "/tmp/hash"
 	filePath := "/home/user/consistent.txt"
 
@@ -118,8 +118,8 @@ func TestProductionHashFilePathGetter_GetHashFilePath_Consistency(t *testing.T) 
 	}
 }
 
-func TestProductionHashFilePathGetter_GetHashFilePath_DifferentHashDirs(t *testing.T) {
-	getter := NewProductionHashFilePathGetter()
+func TestSHA256PathHashGetter_GetHashFilePath_DifferentHashDirs(t *testing.T) {
+	getter := NewSHA256PathHashGetter()
 	filePath := "/home/user/file.txt"
 
 	resolvedPath, err := common.NewResolvedPath(filePath)

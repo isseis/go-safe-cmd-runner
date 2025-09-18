@@ -8,7 +8,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
 
-// ProductionHashFilePathGetter is a concrete implementation of HashFilePathGetter.
+// SHA256PathHashGetter is a concrete implementation of HashFilePathGetter.
 //
 // This implementation uses SHA256 hash-based file naming for compatibility with
 // existing hash file storage. It generates deterministic file paths using:
@@ -22,17 +22,17 @@ import (
 //
 // This is the legacy implementation maintained for backward compatibility
 // with existing hash files and systems expecting this format.
-type ProductionHashFilePathGetter struct{}
+type SHA256PathHashGetter struct{}
 
-// NewProductionHashFilePathGetter creates a new ProductionHashFilePathGetter instance.
+// NewSHA256PathHashGetter creates a new SHA256PathHashGetter instance.
 //
 // This constructor ensures consistent initialization and provides a clear
 // creation pattern matching other HashFilePathGetter implementations.
 //
 // Returns:
-//   - *ProductionHashFilePathGetter: Ready-to-use instance
-func NewProductionHashFilePathGetter() *ProductionHashFilePathGetter {
-	return &ProductionHashFilePathGetter{}
+//   - *SHA256PathHashGetter: Ready-to-use instance
+func NewSHA256PathHashGetter() *SHA256PathHashGetter {
+	return &SHA256PathHashGetter{}
 }
 
 // GetHashFilePath returns the path where the given file's hash would be stored.
@@ -54,7 +54,7 @@ func NewProductionHashFilePathGetter() *ProductionHashFilePathGetter {
 //
 // Note: This implementation always produces .json files regardless of the
 // original file type, for consistency with the hash storage format.
-func (p *ProductionHashFilePathGetter) GetHashFilePath(hashDir string, filePath common.ResolvedPath) (string, error) {
+func (p *SHA256PathHashGetter) GetHashFilePath(hashDir string, filePath common.ResolvedPath) (string, error) {
 	if hashDir == "" {
 		return "", ErrEmptyHashDir
 	}
