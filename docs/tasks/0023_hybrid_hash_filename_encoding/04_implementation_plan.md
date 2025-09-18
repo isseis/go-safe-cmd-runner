@@ -5,7 +5,7 @@
 ### 1.1. 既存コードベース分析結果
 
 - **HashFilePathGetter インターフェース**: `internal/filevalidator/validator.go:42-45` で既に定義済み
-- **ProductionHashFilePathGetter**: `internal/filevalidator/validator.go:47-61` で既存実装済み（SHA256ベース）
+- **SHA256PathHashGetter**: `internal/filevalidator/validator.go:47-61` で既存実装済み（SHA256ベース）
 - **Hash関連エラー**: `internal/filevalidator/errors.go` で定義済み
 - **ロガー**: `internal/runner/audit/logger.go` で slog ベースのロガーが存在
 - **FileSystem**: `internal/verification/types.go` および関連ファイルで抽象化済み
@@ -93,7 +93,7 @@
   - `SubstitutionHashEscape` エンコーディングの統合
   - 従来SHA256方式との互換性維持
   - エラーハンドリングとロギング
-- **戦略**: 既存の `ProductionHashFilePathGetter` を段階的に置換
+- **戦略**: 既存の `SHA256PathHashGetter` を段階的に置換
 
 #### [ ] 3.2. record, verify, runner コマンドでの統合
 - **record コマンド**:
