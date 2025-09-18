@@ -94,8 +94,10 @@ cmd/                    # Command-line entry points
 
 internal/              # Core implementation
 ├── cmdcommon/         # Shared command utilities
+├── color/             # Terminal color support and control
 ├── common/            # Common utilities and filesystem abstraction
 ├── filevalidator/     # File integrity validation
+│   └── encoding/      # Filename encoding for hash storage
 ├── groupmembership/   # User/group membership validation
 ├── logging/           # Advanced logging system with interactive UI and Slack integration
 ├── redaction/         # Automatic sensitive data filtering
