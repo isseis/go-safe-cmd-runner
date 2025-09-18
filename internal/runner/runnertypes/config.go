@@ -23,6 +23,7 @@ type GlobalConfig struct {
 	VerifyFiles       []string `toml:"verify_files"`        // Files to verify at global level
 	SkipStandardPaths bool     `toml:"skip_standard_paths"` // Skip verification for standard system paths
 	EnvAllowlist      []string `toml:"env_allowlist"`       // Global environment variable allowlist
+	MaxOutputSize     int64    `toml:"max_output_size"`     // Default output size limit in bytes
 }
 
 // CommandGroup represents a group of related commands with a name
@@ -52,6 +53,7 @@ type Command struct {
 	RunAsUser    string   `toml:"run_as_user"`    // User to execute command as (using seteuid)
 	RunAsGroup   string   `toml:"run_as_group"`   // Group to execute command as (using setegid)
 	MaxRiskLevel string   `toml:"max_risk_level"` // Maximum allowed risk level (low, medium, high)
+	Output       string   `toml:"output"`         // Standard output file path for capture
 }
 
 // GetMaxRiskLevel returns the parsed maximum risk level for this command

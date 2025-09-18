@@ -34,43 +34,43 @@
 #### 3.1.2 実装項目
 
 **データ構造拡張**
-- [ ] `Command`構造体にoutputフィールドを追加
-- [ ] `GlobalConfig`構造体にmax_output_sizeフィールドを追加
-- [ ] TOML設定の解析機能拡張
+- [x] `Command`構造体にoutputフィールドを追加
+- [x] `GlobalConfig`構造体にmax_output_sizeフィールドを追加
+- [x] TOML設定の解析機能拡張
 
 **新規データ構造作成**
-- [ ] `OutputConfig`構造体の実装
-- [ ] `OutputCapture`構造体の実装
-- [ ] `OutputAnalysis`構造体の実装
-- [ ] `OutputCaptureError`エラー型の実装
+- [x] `Config`構造体の実装（旧`OutputConfig`、lintエラー修正）
+- [x] `Capture`構造体の実装（旧`OutputCapture`、lintエラー修正）
+- [x] `Analysis`構造体の実装（旧`OutputAnalysis`、lintエラー修正）
+- [x] `CaptureError`エラー型の実装（旧`OutputCaptureError`、lintエラー修正）
 
 **基本インターフェース定義**
-- [ ] `OutputCaptureManager`インターフェースの定義
-- [ ] `PathValidator`インターフェースの定義（簡素化版）
+- [x] `CaptureManager`インターフェースの定義（旧`OutputCaptureManager`、lintエラー修正）
+- [x] `PathValidator`インターフェースの定義（簡素化版）
 - [ ] 既存`security.Validator`の拡張（出力ファイル書き込み権限チェック機能追加）
-- [ ] `FileManager`インターフェース（safefileio活用版）の定義
+- [x] `FileManager`インターフェース（safefileio活用版）の定義
 
 #### 3.1.3 テスト作成（TDD）
 
 **単体テスト作成**
-- [ ] `internal/runner/output/types_test.go` - データ構造のテスト
-- [ ] `internal/runner/output/errors_test.go` - エラー型のテスト
-- [ ] `internal/runner/config/config_test.go` - 設定解析のテスト
+- [x] `internal/runner/output/types_test.go` - データ構造のテスト
+- [x] `internal/runner/output/errors_test.go` - エラー型のテスト
+- [x] `internal/runner/config/config_test.go` - 設定解析のテスト
 
 **テスト実行と確認**
-- [ ] テストを実行して期待通りに失敗することを確認
-- [ ] 基本構造のテストコミット
+- [x] テストを実行して期待通りに失敗することを確認
+- [x] 基本構造のテストコミット
 
 #### 3.1.4 実装
-- [ ] データ構造の実装
-- [ ] エラー型の実装
-- [ ] 設定解析機能の実装
-- [ ] 全テストが通過することを確認
+- [x] データ構造の実装
+- [x] エラー型の実装
+- [x] 設定解析機能の実装
+- [x] 全テストが通過することを確認
 
 #### 3.1.5 検証
-- [ ] `make test`実行とパス確認
-- [ ] `make lint`実行と問題修正
-- [ ] Phase 1完了コミット
+- [x] `make test`実行とパス確認
+- [x] `make lint`実行と問題修正（stuttering issues完全修正）
+- [x] Phase 1完了コミット
 
 ### Phase 2: パス処理とセキュリティ機能の実装
 
