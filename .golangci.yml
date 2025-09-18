@@ -101,3 +101,4 @@ linters:
           - errcheck
           - dupl
           - gosec
+          - goconst

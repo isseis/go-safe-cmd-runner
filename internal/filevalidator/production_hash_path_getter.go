@@ -55,6 +55,9 @@ func NewProductionHashFilePathGetter() *ProductionHashFilePathGetter {
 // Note: This implementation always produces .json files regardless of the
 // original file type, for consistency with the hash storage format.
 func (p *ProductionHashFilePathGetter) GetHashFilePath(hashDir string, filePath common.ResolvedPath) (string, error) {
+	if hashDir == "" {
+		return "", ErrEmptyHashDir
+	}
 	h := sha256.Sum256([]byte(filePath.String()))
 	hashStr := base64.URLEncoding.EncodeToString(h[:])
 

@@ -38,7 +38,7 @@ type HybridHashFilePathGetter struct {
 // NewHybridHashFilePathGetter creates a new HybridHashFilePathGetter instance.
 func NewHybridHashFilePathGetter() *HybridHashFilePathGetter {
 	return &HybridHashFilePathGetter{
-		encoder:        &encoding.SubstitutionHashEscape{},
+		encoder:        encoding.NewSubstitutionHashEscape(),
 		fallbackGetter: NewProductionHashFilePathGetter(),
 	}
 }

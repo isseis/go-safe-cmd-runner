@@ -82,38 +82,18 @@ func TestProductionHashFilePathGetter_GetHashFilePath(t *testing.T) {
 
 func TestProductionHashFilePathGetter_GetHashFilePath_ErrorCases(t *testing.T) {
 	getter := NewProductionHashFilePathGetter()
+	// Single explicit test case (previously was a single-entry table-driven test)
+	hashDir := ""
+	filePath := "/home/user/file.txt"
 
-	tests := []struct {
-		name        string
-		hashDir     string
-		filePath    string
-		shouldError bool
-	}{
-		{
-			name:        "empty_hash_directory",
-			hashDir:     "",
-			filePath:    "/home/user/file.txt",
-			shouldError: false, // ProductionHashFilePathGetter doesn't validate hashDir
-		},
-	}
+	resolvedPath, err := common.NewResolvedPath(filePath)
+	require.NoError(t, err)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			resolvedPath, err := common.NewResolvedPath(tt.filePath)
-			require.NoError(t, err)
+	result, err := getter.GetHashFilePath(hashDir, resolvedPath)
 
-			result, err := getter.GetHashFilePath(tt.hashDir, resolvedPath)
-
-			if tt.shouldError {
-				assert.Error(t, err)
-				assert.Empty(t, result)
-			} else {
-				assert.NoError(t, err)
-				// Even with empty hashDir, should return a relative path
-				assert.NotEmpty(t, result)
-			}
-		})
-	}
+	// Expect an error and empty result when hashDir is empty
+	assert.Error(t, err)
+	assert.Empty(t, result)
 }
 
 func TestProductionHashFilePathGetter_GetHashFilePath_Consistency(t *testing.T) {
