@@ -86,7 +86,7 @@
 
 ### 最終フェーズ: プロダクション統合とハイブリッド方式移行
 
-#### [ ] 3.1. HybridHashFilePathGetter 実装
+#### [x] 3.1. HybridHashFilePathGetter 実装
 - **場所**: `internal/filevalidator/hybrid_hash_path_getter.go`
 - **機能**:
   - `HashFilePathGetter` インターフェースの実装

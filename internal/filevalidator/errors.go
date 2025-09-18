@@ -45,4 +45,7 @@ var (
 
 	// ErrHashFileExists indicates that the hash file already exists.
 	ErrHashFileExists = errors.New("hash file already exists")
+
+	// ErrEmptyHashDir indicates that the hash directory path is empty.
+	ErrEmptyHashDir = errors.New("hash directory cannot be empty")
 )
