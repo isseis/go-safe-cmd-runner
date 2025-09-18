@@ -21,8 +21,8 @@ import (
 //  2. Fallback: Use SHA256 hash when encoded length exceeds limits
 //
 // Examples:
-//   - "/home/user/file.txt" → "~home~user~file.txt.json"
-//   - "/very/long/path/..." → "AbCdEf123456.json" (SHA256 fallback)
+//   - "/home/user/file.txt" → "~home~user~file.txt" (normal encoding, no extension)
+//   - "/very/long/path/..." → "AbCdEf123456.json" (SHA256 fallback with .json extension)
 type HybridHashFilePathGetter struct {
 	encoder *encoding.SubstitutionHashEscape
 }
@@ -37,9 +37,9 @@ func NewHybridHashFilePathGetter() *HybridHashFilePathGetter {
 // GetHashFilePath returns the path where the given file's hash would be stored.
 //
 // This implementation uses hybrid encoding:
-//  1. Attempt normal substitution+escape encoding
-//  2. If result exceeds NAME_MAX limits, use SHA256 fallback
-//  3. Add .json extension and combine with hash directory
+//  1. Attempt normal substitution+escape encoding (no extension)
+//  2. If result exceeds NAME_MAX limits, use SHA256 fallback (.json extension included)
+//  3. Combine with hash directory
 //
 // Parameters:
 //   - hashAlgorithm: The hash algorithm (required, used for validation)
@@ -69,11 +69,5 @@ func (h *HybridHashFilePathGetter) GetHashFilePath(
 		return "", fmt.Errorf("failed to encode path %q: %w", filePath.String(), err)
 	}
 
-	// Create the hash filename with .json extension
-	hashFilename := result.EncodedName + ".json"
-
-	// Combine with hash directory
-	fullPath := filepath.Join(hashDir, hashFilename)
-
-	return fullPath, nil
+	return filepath.Join(hashDir, result.EncodedName), nil
 }

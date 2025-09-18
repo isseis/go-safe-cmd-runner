@@ -25,34 +25,34 @@ func TestHybridHashFilePathGetter_GetHashFilePath(t *testing.T) {
 	hashDir := testHashDir
 
 	tests := []struct {
-		name        string
-		filePath    string
-		expectedExt string
-		shouldError bool
+		name            string
+		filePath        string
+		expectExtension bool
+		shouldError     bool
 	}{
 		{
-			name:        "simple_absolute_path",
-			filePath:    "/home/user/file.txt",
-			expectedExt: ".json",
-			shouldError: false,
+			name:            "simple_absolute_path",
+			filePath:        "/home/user/file.txt",
+			expectExtension: false, // Normal encoding has no extension
+			shouldError:     false,
 		},
 		{
-			name:        "root_path",
-			filePath:    "/",
-			expectedExt: ".json",
-			shouldError: false,
+			name:            "root_path",
+			filePath:        "/",
+			expectExtension: false, // Normal encoding has no extension
+			shouldError:     false,
 		},
 		{
-			name:        "nested_path",
-			filePath:    "/very/deep/nested/directory/structure/file.txt",
-			expectedExt: ".json",
-			shouldError: false,
+			name:            "nested_path",
+			filePath:        "/very/deep/nested/directory/structure/file.txt",
+			expectExtension: false, // Normal encoding has no extension
+			shouldError:     false,
 		},
 		{
-			name:        "path_with_special_chars",
-			filePath:    "/path/with#hash/and~tilde/chars.txt",
-			expectedExt: ".json",
-			shouldError: false,
+			name:            "path_with_special_chars",
+			filePath:        "/path/with#hash/and~tilde/chars.txt",
+			expectExtension: false, // Normal encoding has no extension
+			shouldError:     false,
 		},
 	}
 
@@ -70,7 +70,6 @@ func TestHybridHashFilePathGetter_GetHashFilePath(t *testing.T) {
 
 			assert.NoError(t, err)
 			assert.True(t, strings.HasPrefix(result, hashDir))
-			assert.True(t, strings.HasSuffix(result, tt.expectedExt))
 
 			// Verify the result is a valid file path
 			assert.True(t, filepath.IsAbs(result))
@@ -80,6 +79,13 @@ func TestHybridHashFilePathGetter_GetHashFilePath(t *testing.T) {
 			assert.NotEmpty(t, filename)
 			assert.NotEqual(t, ".", filename)
 			assert.NotEqual(t, "/", filename)
+
+			// Check extension expectation
+			if tt.expectExtension {
+				assert.True(t, strings.HasSuffix(filename, ".json"), "Should have .json extension")
+			} else {
+				assert.False(t, strings.HasSuffix(filename, ".json"), "Should not have .json extension")
+			}
 		})
 	}
 }
@@ -162,6 +168,8 @@ func TestHybridHashFilePathGetter_GetHashFilePath_EncodingFallback(t *testing.T)
 			if tt.expectNormalPath {
 				// Normal encoding should start with ~ and be based on the path
 				assert.True(t, strings.HasPrefix(filename, "~"), "Normal encoding should start with ~")
+				// Normal encoding should NOT have .json extension
+				assert.False(t, strings.HasSuffix(filename, ".json"), "Normal encoding should not have .json extension")
 			}
 
 			if tt.expectFallback {
@@ -173,10 +181,11 @@ func TestHybridHashFilePathGetter_GetHashFilePath_EncodingFallback(t *testing.T)
 				// Should contain only alphanumeric chars and .json extension
 				withoutExt := strings.TrimSuffix(filename, ".json")
 				assert.True(t, len(withoutExt) > 0, "Should have content before .json")
+				// Verify no double .json extension
+				assert.False(t, strings.Contains(filename, ".json.json"), "Should not have double .json extension")
+				// Fallback encoding SHOULD have .json extension
+				assert.True(t, strings.HasSuffix(filename, ".json"), "Fallback encoding should have .json extension")
 			}
-
-			// All results should end with .json
-			assert.True(t, strings.HasSuffix(filename, ".json"))
 		})
 	}
 }
