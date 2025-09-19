@@ -35,13 +35,10 @@ func TestDefaultConfig(t *testing.T) {
 
 func TestNewValidator(t *testing.T) {
 	t.Run("with config", func(t *testing.T) {
-		config := &Config{
-			AllowedCommands:              []string{"^echo$"},
-			RequiredFilePermissions:      0o644,
-			RequiredDirectoryPermissions: 0o755,
-			SensitiveEnvVars:             []string{".*PASSWORD.*"},
-			MaxPathLength:                4096,
-		}
+		config := DefaultConfig()
+		// Override for this specific test
+		config.AllowedCommands = []string{"^echo$"}
+		config.SensitiveEnvVars = []string{".*PASSWORD.*"}
 		validator, err := NewValidator(config)
 
 		assert.NoError(t, err)
@@ -64,12 +61,10 @@ func TestNewValidator(t *testing.T) {
 	})
 
 	t.Run("with invalid command pattern", func(t *testing.T) {
-		config := &Config{
-			AllowedCommands:         []string{"[invalid"},
-			RequiredFilePermissions: 0o644,
-			SensitiveEnvVars:        []string{},
-			MaxPathLength:           4096,
-		}
+		config := DefaultConfig()
+		// Set invalid pattern to test error handling
+		config.AllowedCommands = []string{"[invalid"}
+		config.SensitiveEnvVars = []string{}
 		validator, err := NewValidator(config)
 
 		assert.Error(t, err)
@@ -78,12 +73,10 @@ func TestNewValidator(t *testing.T) {
 	})
 
 	t.Run("with invalid sensitive env pattern", func(t *testing.T) {
-		config := &Config{
-			AllowedCommands:         []string{".*"},
-			RequiredFilePermissions: 0o644,
-			SensitiveEnvVars:        []string{"[invalid"},
-			MaxPathLength:           4096,
-		}
+		config := DefaultConfig()
+		// Set invalid pattern to test error handling
+		config.AllowedCommands = []string{".*"}
+		config.SensitiveEnvVars = []string{"[invalid"}
 		validator, err := NewValidator(config)
 
 		assert.Error(t, err)
@@ -94,12 +87,10 @@ func TestNewValidator(t *testing.T) {
 
 func TestNewValidatorWithFS(t *testing.T) {
 	mockFS := common.NewMockFileSystem()
-	config := &Config{
-		AllowedCommands:         []string{"^echo$"},
-		RequiredFilePermissions: 0o644,
-		SensitiveEnvVars:        []string{".*PASSWORD.*"},
-		MaxPathLength:           4096,
-	}
+	config := DefaultConfig()
+	// Override for this specific test
+	config.AllowedCommands = []string{"^echo$"}
+	config.SensitiveEnvVars = []string{".*PASSWORD.*"}
 	validator, err := NewValidatorWithFS(config, mockFS)
 
 	assert.NoError(t, err)
@@ -187,12 +178,12 @@ func TestValidator_ValidateFilePermissions(t *testing.T) {
 	t.Run("path too long", func(t *testing.T) {
 		// Test with a path that's too long
 		mockFS2 := common.NewMockFileSystem()
-		validator2, err := NewValidatorWithFS(&Config{
-			AllowedCommands:         []string{".*"},
-			RequiredFilePermissions: 0o644,
-			SensitiveEnvVars:        []string{},
-			MaxPathLength:           10, // Very short for testing
-		}, mockFS2)
+		config2 := DefaultConfig()
+		// Override for path length testing
+		config2.AllowedCommands = []string{".*"}
+		config2.SensitiveEnvVars = []string{}
+		config2.MaxPathLength = 10 // Very short for testing
+		validator2, err := NewValidatorWithFS(config2, mockFS2)
 		require.NoError(t, err)
 
 		longPath := "/very/long/path/that/exceeds/limit"
@@ -238,6 +229,7 @@ func TestValidator_ValidateDirectoryPermissions(t *testing.T) {
 		mockFS.AddDir("/test-excessive-dir", 0o777)
 
 		err := validator.ValidateDirectoryPermissions("/test-excessive-dir")
+		// This test should fail with strict security validation
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, ErrInvalidDirPermissions)
 	})
@@ -270,13 +262,12 @@ func TestValidator_ValidateDirectoryPermissions(t *testing.T) {
 	t.Run("path too long", func(t *testing.T) {
 		// Test with a path that's too long
 		mockFS2 := common.NewMockFileSystem()
-		validator2, err := NewValidatorWithFS(&Config{
-			AllowedCommands:              []string{".*"},
-			RequiredFilePermissions:      0o644,
-			RequiredDirectoryPermissions: 0o755,
-			SensitiveEnvVars:             []string{},
-			MaxPathLength:                10, // Very short for testing
-		}, mockFS2)
+		config2 := DefaultConfig()
+		// Override for path length testing
+		config2.AllowedCommands = []string{".*"}
+		config2.SensitiveEnvVars = []string{}
+		config2.MaxPathLength = 10 // Very short for testing
+		validator2, err := NewValidatorWithFS(config2, mockFS2)
 		require.NoError(t, err)
 
 		longPath := "/very/long/path/that/exceeds/limit"

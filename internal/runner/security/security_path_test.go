@@ -137,6 +137,7 @@ func TestValidator_ValidateDirectoryPermissions_CompletePath(t *testing.T) {
 			// Run the test
 			err = testValidator.ValidateDirectoryPermissions(tt.dirPath)
 
+			// These tests use mock filesystem, so they should work with strict validation
 			if tt.shouldFail {
 				assert.Error(t, err)
 				assert.ErrorIs(t, err, tt.expectedErr)

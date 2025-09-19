@@ -80,58 +80,58 @@
 #### 3.2.2 実装項目
 
 **パス処理機能**
-- [ ] `DefaultPathValidator`の実装（基本的なパス検証のみ）
-- [ ] 絶対パス検証機能
-- [ ] 相対パス検証機能（WorkDir基準）
-- [ ] パストラバーサル防止機能（".."の検出）
-- [ ] 注意: 包括的なシンボリックリンク検証は既存SecurityValidator.ValidateDirectoryPermissionsで実施
+- [x] `DefaultPathValidator`の実装（基本的なパス検証のみ）
+- [x] 絶対パス検証機能
+- [x] 相対パス検証機能（WorkDir基準）
+- [x] パストラバーサル防止機能（".."の検出）
+- [x] 注意: 包括的なシンボリックリンク検証は既存SecurityValidator.ValidateDirectoryPermissionsで実施
 
 **権限確認機能（既存SecurityValidator拡張）**
-- [ ] `security.Validator`のValidateOutputWritePermission実装
-- [ ] 既存ValidateDirectoryPermissions活用によるシンボリックリンク攻撃防止
-- [ ] ディレクトリ書き込み権限確認（UID/GID固有）
-- [ ] ファイル書き込み権限確認（Lstat使用）
-- [ ] グループメンバーシップ確認（`groupmembership`パッケージ利用、エラーハンドリング改善）
+- [x] `security.Validator`のValidateOutputWritePermission実装
+- [x] 既存ValidateDirectoryPermissions活用によるシンボリックリンク攻撃防止
+- [x] ディレクトリ書き込み権限確認（UID/GID固有）
+- [x] ファイル書き込み権限確認（Lstat使用）
+- [x] グループメンバーシップ確認（`groupmembership`パッケージ利用、エラーハンドリング改善）
 
 **セキュリティ機能**
-- [ ] セキュリティリスク評価機能
-- [ ] 危険なパスパターンの検出
-- [ ] システム重要ファイル保護
+- [x] セキュリティリスク評価機能
+- [x] 危険なパスパターンの検出
+- [x] システム重要ファイル保護
 
 #### 3.2.3 テスト作成（TDD）
 
 **パス処理テスト**
-- [ ] `internal/runner/output/path_test.go` - パス検証のテスト
+- [x] `internal/runner/output/path_test.go` - パス検証のテスト
   - 有効な絶対パス・相対パスのテスト
   - パストラバーサル攻撃のテスト（".."含有パス）
   - エラーケースのテスト
   - 注意: シンボリックリンク攻撃のテストは既存SecurityValidator側で実施済み
 
 **権限確認テスト**
-- [ ] `internal/runner/security/file_validation_test.go` - ValidateOutputWritePermission追加テスト
+- [x] `internal/runner/security/file_validation_test.go` - ValidateOutputWritePermission追加テスト
   - 既存ValidateDirectoryPermissions統合テスト
   - 出力ファイル固有の権限テスト（所有者・グループ・その他）
   - UID固有の権限確認テスト
   - エラーハンドリング改善テスト（isUserInGroup等）
 
 **セキュリティテスト**
-- [ ] `internal/runner/output/security_test.go` - セキュリティのテスト
+- [x] `internal/runner/output/security_test.go` - セキュリティのテスト
   - リスク評価のテスト（evaluateSecurityRisk機能）
   - 危険パターン検出のテスト（ConfigValidator）
   - システムファイル保護のテスト
   - 注意: シンボリックリンク攻撃テストは既存SecurityValidatorで包括的に実施済み
 
 #### 3.2.4 実装
-- [ ] `DefaultPathValidator`の実装（基本的なパス検証・正規化のみ）
-- [ ] `security.Validator`の`ValidateOutputWritePermission`メソッド実装
-- [ ] 既存`ValidateDirectoryPermissions`との統合確認
-- [ ] セキュリティリスク評価の実装（`evaluateSecurityRisk`）
-- [ ] 全テストが通過することを確認
+- [x] `DefaultPathValidator`の実装（基本的なパス検証・正規化のみ）
+- [x] `security.Validator`の`ValidateOutputWritePermission`メソッド実装
+- [x] 既存`ValidateDirectoryPermissions`との統合確認
+- [x] セキュリティリスク評価の実装（`evaluateSecurityRisk`）
+- [x] 全テストが通過することを確認
 
 #### 3.2.5 検証
-- [ ] セキュリティテストの実行と検証
-- [ ] `make test`実行とパス確認
-- [ ] `make lint`実行と問題修正
+- [x] セキュリティテストの実行と検証
+- [x] `make test`実行とパス確認
+- [x] `make lint`実行と問題修正
 - [ ] Phase 2完了コミット
 
 ### Phase 3: ファイル操作とOutput管理機能の実装

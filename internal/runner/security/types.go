@@ -132,6 +132,12 @@ type Config struct {
 	SystemCriticalPaths []string
 	// LoggingOptions controls sensitive information handling in logs
 	LoggingOptions LoggingOptions
+	// outputCriticalPathPatterns defines critical system paths that pose maximum security risk
+	OutputCriticalPathPatterns []string
+	// outputHighRiskPathPatterns defines high-risk system paths that require extra caution
+	OutputHighRiskPathPatterns []string
+	// testPermissiveMode is only available in test builds and allows relaxed directory permissions
+	testPermissiveMode bool
 }
 
 // DangerousCommandPattern represents a dangerous command pattern with its risk level
@@ -217,6 +223,20 @@ func DefaultConfig() *Config {
 		},
 		SystemCriticalPaths: []string{
 			"/", "/bin", "/sbin", "/usr", "/etc", "/var", "/boot", "/sys", "/proc", "/dev",
+		},
+		OutputCriticalPathPatterns: []string{
+			"/etc/passwd", "/etc/shadow", "/etc/sudoers",
+			"/boot/", "/sys/", "/proc/",
+			"authorized_keys", "id_rsa", "id_ed25519",
+			".ssh/", "private_key", "secret_key",
+			".bashrc", ".zshrc", ".login", ".profile",
+		},
+		OutputHighRiskPathPatterns: []string{
+			"/etc/", "/var/log/", "/usr/bin/", "/usr/sbin/",
+			"/bin/", "/sbin/", "/lib/", "/lib64/",
+			".gnupg/", "wallet.dat", "keystore",
+			".git/", ".env", ".aws/credentials",
+			".kube/config", ".docker/config.json",
 		},
 	}
 }
