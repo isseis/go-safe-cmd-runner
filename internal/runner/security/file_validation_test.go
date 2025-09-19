@@ -562,7 +562,8 @@ func TestValidator_EvaluateOutputSecurityRisk(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			risk := validator.EvaluateOutputSecurityRisk(tt.path, tt.workDir)
+			risk, err := validator.EvaluateOutputSecurityRisk(tt.path, tt.workDir)
+			require.NoError(t, err)
 			assert.Equal(t, tt.expectRisk, risk, "Risk level mismatch for path: %s", tt.path)
 		})
 	}
@@ -597,7 +598,8 @@ func TestValidator_EvaluateOutputSecurityRisk_CaseInsensitive(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			risk := validator.EvaluateOutputSecurityRisk(tt.path, "/tmp")
+			risk, err := validator.EvaluateOutputSecurityRisk(tt.path, "/tmp")
+			require.NoError(t, err)
 			assert.Equal(t, tt.expectRisk, risk, "Case-insensitive risk evaluation failed for: %s", tt.path)
 		})
 	}
@@ -609,24 +611,29 @@ func TestValidator_EvaluateOutputSecurityRisk_EdgeCases(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("empty_path", func(t *testing.T) {
-		risk := validator.EvaluateOutputSecurityRisk("", "/home/user")
-		assert.Equal(t, runnertypes.RiskLevelMedium, risk)
+		risk, err := validator.EvaluateOutputSecurityRisk("", "/home/user")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "empty path")
+		assert.Equal(t, runnertypes.RiskLevelUnknown, risk)
 	})
 
 	t.Run("empty_workdir", func(t *testing.T) {
-		risk := validator.EvaluateOutputSecurityRisk("/tmp/output.txt", "")
+		risk, err := validator.EvaluateOutputSecurityRisk("/tmp/output.txt", "")
+		require.NoError(t, err)
 		assert.Equal(t, runnertypes.RiskLevelMedium, risk)
 	})
 
 	t.Run("path_equals_workdir", func(t *testing.T) {
 		workDir := "/home/user/project"
-		risk := validator.EvaluateOutputSecurityRisk(workDir+"/output.txt", workDir)
+		risk, err := validator.EvaluateOutputSecurityRisk(workDir+"/output.txt", workDir)
+		require.NoError(t, err)
 		assert.Equal(t, runnertypes.RiskLevelLow, risk)
 	})
 
 	t.Run("invalid_home_directory", func(t *testing.T) {
 		// This test assumes the path doesn't match user's actual home
-		risk := validator.EvaluateOutputSecurityRisk("/nonexistent/home/output.txt", "/tmp")
+		risk, err := validator.EvaluateOutputSecurityRisk("/nonexistent/home/output.txt", "/tmp")
+		require.NoError(t, err)
 		assert.Equal(t, runnertypes.RiskLevelMedium, risk)
 	})
 }
@@ -670,8 +677,114 @@ func TestValidator_EvaluateOutputSecurityRisk_SpecialPatterns(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			risk := validator.EvaluateOutputSecurityRisk(tt.path, "/tmp")
+			risk, err := validator.EvaluateOutputSecurityRisk(tt.path, "/tmp")
+			require.NoError(t, err)
 			assert.Equal(t, tt.expectRisk, risk, "Special pattern risk evaluation failed for: %s", tt.path)
+		})
+	}
+}
+
+// TestValidator_EvaluateOutputSecurityRisk_WorkDirRequirements tests the workDir validation requirements
+func TestValidator_EvaluateOutputSecurityRisk_WorkDirRequirements(t *testing.T) {
+	config := DefaultConfig()
+	validator, err := NewValidatorWithGroupMembership(config, nil)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name        string
+		path        string
+		workDir     string
+		expectRisk  runnertypes.RiskLevel
+		expectError bool
+		errorText   string
+		desc        string
+	}{
+		{
+			name:        "non_absolute_workdir_error",
+			path:        "output.txt",
+			workDir:     "relative/path", // Non-absolute workDir
+			expectRisk:  runnertypes.RiskLevelUnknown,
+			expectError: true,
+			errorText:   "workDir must be absolute",
+			desc:        "Non-absolute workDir should return error",
+		},
+		{
+			name:        "non_clean_workdir_error",
+			path:        "output.txt",
+			workDir:     "/home/user/../user/project", // Non-clean workDir
+			expectRisk:  runnertypes.RiskLevelUnknown,
+			expectError: true,
+			errorText:   "workDir must be pre-cleaned",
+			desc:        "Non-clean workDir should return error",
+		},
+		{
+			name:        "non_clean_workdir_with_dot_error",
+			path:        "output.txt",
+			workDir:     "/home/user/./project", // Non-clean workDir with dot
+			expectRisk:  runnertypes.RiskLevelUnknown,
+			expectError: true,
+			errorText:   "workDir must be pre-cleaned",
+			desc:        "Non-clean workDir with dot should return error",
+		},
+		{
+			name:        "non_clean_workdir_trailing_slash_error",
+			path:        "output.txt",
+			workDir:     "/home/user/project/", // Non-clean workDir with trailing slash
+			expectRisk:  runnertypes.RiskLevelUnknown,
+			expectError: true,
+			errorText:   "workDir must be pre-cleaned",
+			desc:        "Non-clean workDir with trailing slash should return error",
+		},
+		{
+			name:        "absolute_and_clean_workdir_valid",
+			path:        "output.txt",
+			workDir:     "/home/user/project", // Absolute and clean workDir
+			expectRisk:  runnertypes.RiskLevelLow,
+			expectError: false,
+			desc:        "Absolute and clean workDir should work normally",
+		},
+		{
+			name:        "empty_workdir_valid",
+			path:        "/tmp/output.txt",
+			workDir:     "", // Empty workDir is allowed
+			expectRisk:  runnertypes.RiskLevelMedium,
+			expectError: false,
+			desc:        "Empty workDir should be allowed",
+		},
+		{
+			name:        "relative_path_with_non_absolute_workdir_error",
+			path:        "../output.txt",
+			workDir:     "not/absolute", // Non-absolute workDir with relative path
+			expectRisk:  runnertypes.RiskLevelUnknown,
+			expectError: true,
+			errorText:   "workDir must be absolute",
+			desc:        "Relative path with non-absolute workDir should return error",
+		},
+		{
+			name:        "absolute_path_with_non_absolute_workdir_error",
+			path:        "/tmp/output.txt",
+			workDir:     "relative", // Non-absolute workDir with absolute path
+			expectRisk:  runnertypes.RiskLevelUnknown,
+			expectError: true,
+			errorText:   "workDir must be absolute",
+			desc:        "Absolute path with non-absolute workDir should return error due to programming error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			risk, err := validator.EvaluateOutputSecurityRisk(tt.path, tt.workDir)
+			if tt.expectError {
+				assert.Error(t, err, "Test failed: %s. Expected error but got none for path=%q, workDir=%q", tt.desc, tt.path, tt.workDir)
+				if tt.errorText != "" {
+					assert.Contains(t, err.Error(), tt.errorText, "Error message mismatch for %s", tt.desc)
+				}
+				assert.Equal(t, tt.expectRisk, risk, "Risk level mismatch when error expected for %s", tt.desc)
+			} else {
+				require.NoError(t, err, "Test failed: %s. Unexpected error for path=%q, workDir=%q: %v", tt.desc, tt.path, tt.workDir, err)
+				assert.Equal(t, tt.expectRisk, risk, "Test failed: %s. Expected %v but got %v for path=%q, workDir=%q",
+					tt.desc, tt.expectRisk, risk, tt.path, tt.workDir)
+			}
 		})
 	}
 }

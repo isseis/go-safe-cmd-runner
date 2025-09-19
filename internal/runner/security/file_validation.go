@@ -361,42 +361,77 @@ func (v *Validator) isUserInGroup(uid int, gid uint32) (bool, error) {
 
 // EvaluateOutputSecurityRisk evaluates the security risk level for an output path
 // This method provides centralized security risk assessment for output capture functionality
-func (v *Validator) EvaluateOutputSecurityRisk(path, workDir string) runnertypes.RiskLevel {
-	pathLower := strings.ToLower(path)
+//
+// Requirements:
+// - workDir must be absolute and cleaned (filepath.Clean) when provided
+// - Passing non-absolute or non-clean workDir indicates a programming error and returns an error
+// - Passing empty path indicates a programming error and returns an error
+func (v *Validator) EvaluateOutputSecurityRisk(path, workDir string) (runnertypes.RiskLevel, error) {
+	// Validate workDir requirements - programming error if violated
+	if workDir != "" {
+		if !filepath.IsAbs(workDir) {
+			// Programming error: workDir must be absolute
+			return runnertypes.RiskLevelUnknown, fmt.Errorf("%w: workDir must be absolute, got: %s", ErrInvalidPath, workDir)
+		}
+		if filepath.Clean(workDir) != workDir {
+			// Programming error: workDir must be pre-cleaned
+			return runnertypes.RiskLevelUnknown, fmt.Errorf("%w: workDir must be pre-cleaned, got: %s", ErrInvalidPath, workDir)
+		}
+	}
+
+	// Handle empty path as a programming error
+	if path == "" {
+		return runnertypes.RiskLevelUnknown, fmt.Errorf("%w: empty path provided", ErrInvalidPath)
+	}
+
+	var cleanPath string
+
+	// Handle relative paths by resolving them against workDir
+	if !filepath.IsAbs(path) {
+		if workDir == "" {
+			// Cannot resolve relative path without workDir
+			return runnertypes.RiskLevelHigh, nil
+		}
+		cleanPath = filepath.Clean(filepath.Join(workDir, path))
+	} else {
+		cleanPath = filepath.Clean(path)
+	}
+
+	pathLower := strings.ToLower(cleanPath)
 
 	// Critical: System important files and patterns (hardcoded for robustness)
 	for _, pattern := range v.config.OutputCriticalPathPatterns {
 		if strings.Contains(pathLower, strings.ToLower(pattern)) {
-			return runnertypes.RiskLevelCritical
+			return runnertypes.RiskLevelCritical, nil
 		}
 	}
 
 	// High: System directories and high-risk patterns (hardcoded for robustness)
 	for _, pattern := range v.config.OutputHighRiskPathPatterns {
 		if strings.Contains(pathLower, strings.ToLower(pattern)) {
-			return runnertypes.RiskLevelHigh
+			return runnertypes.RiskLevelHigh, nil
 		}
 	}
 
 	// Low: WorkDir internal files
-	if workDir != "" {
+	if workDir != "" && filepath.IsAbs(workDir) {
 		cleanWorkDir := filepath.Clean(workDir)
-		cleanPath := filepath.Clean(path)
 		if strings.HasPrefix(cleanPath, cleanWorkDir) {
-			return runnertypes.RiskLevelLow
+			return runnertypes.RiskLevelLow, nil
 		}
 	}
 
 	// Low: Current user's home directory
 	if currentUser, err := user.Current(); err == nil {
 		homeDir := currentUser.HomeDir
-		cleanHomePath := filepath.Clean(homeDir)
-		cleanPath := filepath.Clean(path)
-		if strings.HasPrefix(cleanPath, cleanHomePath) {
-			return runnertypes.RiskLevelLow
+		if homeDir != "" && filepath.IsAbs(homeDir) {
+			cleanHomePath := filepath.Clean(homeDir)
+			if strings.HasPrefix(cleanPath, cleanHomePath) {
+				return runnertypes.RiskLevelLow, nil
+			}
 		}
 	}
 
 	// Medium: Other locations
-	return runnertypes.RiskLevelMedium
+	return runnertypes.RiskLevelMedium, nil
 }
