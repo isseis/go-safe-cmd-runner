@@ -92,13 +92,6 @@ func TestDefaultPathValidator_ValidateAndResolvePath(t *testing.T) {
 			workDir:    "/home/user",
 			wantErr:    false,
 		},
-		{
-			name:        "whitespace_only_path",
-			outputPath:  "   ",
-			workDir:     "/home/user",
-			wantErr:     true,
-			errContains: "output path is empty",
-		},
 	}
 
 	validator := NewDefaultPathValidator()

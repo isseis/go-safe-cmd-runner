@@ -30,16 +30,15 @@ func NewDefaultPathValidator() *DefaultPathValidator {
 // Additional security checks (symlink detection, etc.) are performed by SecurityValidator
 func (v *DefaultPathValidator) ValidateAndResolvePath(outputPath, workDir string) (string, error) {
 	// Trim whitespace and check for empty path
-	trimmedPath := strings.TrimSpace(outputPath)
-	if trimmedPath == "" {
+	if outputPath == "" {
 		return "", ErrEmptyPath
 	}
 
-	if filepath.IsAbs(trimmedPath) {
-		return v.validateAbsolutePath(trimmedPath)
+	if filepath.IsAbs(outputPath) {
+		return v.validateAbsolutePath(outputPath)
 	}
 
-	return v.validateRelativePath(trimmedPath, workDir)
+	return v.validateRelativePath(outputPath, workDir)
 }
 
 // validateAbsolutePath validates and cleans an absolute path
