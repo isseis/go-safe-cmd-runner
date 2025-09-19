@@ -218,7 +218,7 @@ func (v *Validator) ValidateOutputWritePermission(outputPath string, realUID int
 
 	// Use unified validation that combines security validation and write permission checks
 	// This efficiently validates the directory hierarchy in a single traversal
-	if err := v.validateOutputDirectoryAccesss(dir, realUID); err != nil {
+	if err := v.validateOutputDirectoryAccess(dir, realUID); err != nil {
 		return fmt.Errorf("directory validation failed: %w", err)
 	}
 
@@ -234,11 +234,11 @@ func (v *Validator) ValidateOutputWritePermission(outputPath string, realUID int
 	return nil
 }
 
-// validateOutputDirectoryAccesss validates both security and write permissions
+// validateOutputDirectoryAccess validates both security and write permissions
 // for an output directory path in a single efficient traversal up the directory hierarchy.
 // This method combines the functionality of ValidateDirectoryPermissions and write permission checks
 // to avoid redundant directory traversals.
-func (v *Validator) validateOutputDirectoryAccesss(dirPath string, realUID int) error {
+func (v *Validator) validateOutputDirectoryAccess(dirPath string, realUID int) error {
 	// Find the first existing directory in the hierarchy
 	currentPath := dirPath
 
@@ -412,8 +412,7 @@ func (v *Validator) EvaluateOutputSecurityRisk(path, workDir string) (runnertype
 
 	// Low: WorkDir internal files
 	if workDir != "" && filepath.IsAbs(workDir) {
-		cleanWorkDir := filepath.Clean(workDir)
-		if strings.HasPrefix(cleanPath, cleanWorkDir) {
+		if strings.HasPrefix(cleanPath, workDir) {
 			return runnertypes.RiskLevelLow, nil
 		}
 	}

@@ -191,7 +191,7 @@ func TestValidator_validateOutputDirectoryAccess(t *testing.T) {
 
 			dirPath := tt.setupFunc(t)
 
-			err = validator.validateOutputDirectoryAccesss(dirPath, tt.uid)
+			err = validator.validateOutputDirectoryAccess(dirPath, tt.uid)
 
 			if tt.wantErr {
 				assert.Error(t, err)

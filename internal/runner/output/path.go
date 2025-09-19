@@ -103,6 +103,5 @@ func escapesWorkDirectory(relPath string) bool {
 
 	// Check if the path starts with a ".." segment followed by separator
 	// This correctly identifies "../file" but not "..hidden-file"
-	segments := strings.Split(relPath, string(filepath.Separator))
-	return len(segments) > 0 && segments[0] == ".."
+	return strings.HasPrefix(relPath, ".."+string(filepath.Separator))
 }
