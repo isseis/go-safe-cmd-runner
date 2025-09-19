@@ -58,6 +58,13 @@ var (
 
 	// ErrVariableNameInvalidChar is returned when a variable name contains an invalid character
 	ErrVariableNameInvalidChar = errors.New("variable name contains invalid character")
+
+	// ErrNoExistingDirectoryInPathHierarchy is returned when traversing up the
+	// directory hierarchy to find an existing directory reaches the filesystem
+	// root without finding any existing directory. Use this static error so
+	// callers can compare with errors.Is instead of relying on dynamic error
+	// strings.
+	ErrNoExistingDirectoryInPathHierarchy = errors.New("no existing directory found in path hierarchy")
 )
 
 // Constants for security configuration

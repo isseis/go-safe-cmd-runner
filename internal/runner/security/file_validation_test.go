@@ -130,7 +130,7 @@ func TestValidator_ValidateOutputWritePermission(t *testing.T) {
 	}
 }
 
-func TestValidator_validateOutputDirectoryWritePermissionForUID(t *testing.T) {
+func TestValidator_validateOutputDirectoryAccess(t *testing.T) {
 	currentUser, err := user.Current()
 	require.NoError(t, err)
 
@@ -145,7 +145,7 @@ func TestValidator_validateOutputDirectoryWritePermissionForUID(t *testing.T) {
 		errContains string
 	}{
 		{
-			name: "writable_directory_by_owner",
+			name: "writable_directory_by_owner_with_permissive_config",
 			setupFunc: func(t *testing.T) string {
 				tempDir := t.TempDir()
 				// Ensure directory is writable by owner
@@ -157,7 +157,7 @@ func TestValidator_validateOutputDirectoryWritePermissionForUID(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "non_existent_directory",
+			name: "non_existent_directory_with_permissive_config",
 			setupFunc: func(t *testing.T) string {
 				tempDir := t.TempDir()
 				nonExistentDir := filepath.Join(tempDir, "non_existent")
@@ -167,7 +167,7 @@ func TestValidator_validateOutputDirectoryWritePermissionForUID(t *testing.T) {
 			wantErr: false, // Should check parent directory
 		},
 		{
-			name: "directory_without_write_permission",
+			name: "directory_without_write_permission_with_permissive_config",
 			setupFunc: func(t *testing.T) string {
 				tempDir := t.TempDir()
 				// Remove write permissions for all
@@ -183,13 +183,15 @@ func TestValidator_validateOutputDirectoryWritePermissionForUID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config := DefaultConfig()
+			// Use permissive config for all tests since this is testing the internal helper
+			// and we want to focus on write permission logic, not directory security
+			config := NewPermissiveTestConfig()
 			validator, err := NewValidatorWithGroupMembership(config, nil)
 			require.NoError(t, err)
 
 			dirPath := tt.setupFunc(t)
 
-			err = validator.validateOutputDirectoryWritePermissionForUID(dirPath, tt.uid)
+			err = validator.validateOutputDirectoryAccesss(dirPath, tt.uid)
 
 			if tt.wantErr {
 				assert.Error(t, err)

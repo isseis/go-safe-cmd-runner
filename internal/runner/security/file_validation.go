@@ -216,22 +216,10 @@ func (v *Validator) ValidateOutputWritePermission(outputPath string, realUID int
 	cleanPath := filepath.Clean(outputPath)
 	dir := filepath.Dir(cleanPath)
 
-	// SECURITY: Use existing secure directory validation that includes complete path validation
-	// This prevents symlink attacks by validating the entire path hierarchy
-	if err := v.ValidateDirectoryPermissions(dir); err != nil {
-		// If directory validation fails, try to validate parent recursively
-		if os.IsNotExist(err) {
-			parent := filepath.Dir(dir)
-			if parent != dir {
-				return v.ValidateOutputWritePermission(filepath.Join(parent, "placeholder"), realUID)
-			}
-		}
-		return fmt.Errorf("directory security validation failed: %w", err)
-	}
-
-	// Additional write permission check for the specific UID
-	if err := v.validateOutputDirectoryWritePermissionForUID(dir, realUID); err != nil {
-		return fmt.Errorf("directory write permission check failed: %w", err)
+	// Use unified validation that combines security validation and write permission checks
+	// This efficiently validates the directory hierarchy in a single traversal
+	if err := v.validateOutputDirectoryAccesss(dir, realUID); err != nil {
+		return fmt.Errorf("directory validation failed: %w", err)
 	}
 
 	// If file exists, validate file write permission using secure Lstat
@@ -246,33 +234,42 @@ func (v *Validator) ValidateOutputWritePermission(outputPath string, realUID int
 	return nil
 }
 
-// validateOutputDirectoryWritePermissionForUID checks if the specific UID can write to the directory
-// This function assumes the directory has already been validated for security (no symlinks, etc.)
-// by ValidateDirectoryPermissions
-func (v *Validator) validateOutputDirectoryWritePermissionForUID(dirPath string, realUID int) error {
-	// Use Lstat instead of Stat to prevent following symlinks
-	stat, err := v.fs.Lstat(dirPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			// Directory doesn't exist, check parent recursively
-			parent := filepath.Dir(dirPath)
-			if parent != dirPath {
-				return v.validateOutputDirectoryWritePermissionForUID(parent, realUID)
+// validateOutputDirectoryAccesss validates both security and write permissions
+// for an output directory path in a single efficient traversal up the directory hierarchy.
+// This method combines the functionality of ValidateDirectoryPermissions and write permission checks
+// to avoid redundant directory traversals.
+func (v *Validator) validateOutputDirectoryAccesss(dirPath string, realUID int) error {
+	// Find the first existing directory in the hierarchy
+	currentPath := dirPath
+
+	// Walk up the directory tree until we find an existing directory
+	for {
+		if info, err := v.fs.Lstat(currentPath); err == nil {
+			// Directory exists, validate security for complete path
+			if err := v.ValidateDirectoryPermissions(currentPath); err != nil {
+				return fmt.Errorf("directory security validation failed for %s: %w", currentPath, err)
 			}
+
+			// Check write permission for the existing directory (where files will be created)
+			if err := v.checkWritePermission(currentPath, info, realUID); err != nil {
+				return fmt.Errorf("write permission check failed for %s: %w", currentPath, err)
+			}
+
+			return nil
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("failed to lstat directory %s: %w", currentPath, err)
 		}
-		return fmt.Errorf("failed to lstat directory %s: %w", dirPath, err)
-	}
 
-	// Additional symlink check (should not happen if ValidateDirectoryPermissions was called)
-	if stat.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("%w: directory %s is a symlink", ErrInsecurePathComponent, dirPath)
+		// Directory doesn't exist, move to parent
+		parent := filepath.Dir(currentPath)
+		if parent == currentPath {
+			// Reached filesystem root without finding existing directory
+			// Use a wrapped static error instead of a dynamically formatted one
+			// so callers can reliably use errors.Is to compare.
+			return fmt.Errorf("%w: %s", ErrNoExistingDirectoryInPathHierarchy, dirPath)
+		}
+		currentPath = parent
 	}
-
-	if !stat.IsDir() {
-		return fmt.Errorf("%w: %s is not a directory", ErrInvalidDirPermissions, dirPath)
-	}
-
-	return v.checkWritePermission(dirPath, stat, realUID)
 }
 
 // validateOutputFileWritePermission checks if the user can write to the existing file
