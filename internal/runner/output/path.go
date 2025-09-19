@@ -44,8 +44,8 @@ func (v *DefaultPathValidator) ValidateAndResolvePath(outputPath, workDir string
 
 // validateAbsolutePath validates and cleans an absolute path
 func (v *DefaultPathValidator) validateAbsolutePath(path string) (string, error) {
-	// Check for path traversal patterns
-	if strings.Contains(path, "..") {
+	// Check for path traversal patterns by examining path segments
+	if containsPathTraversalSegment(path) {
 		return "", fmt.Errorf("%w: %s", ErrPathTraversalAbsolute, path)
 	}
 
@@ -60,8 +60,8 @@ func (v *DefaultPathValidator) validateRelativePath(path, workDir string) (strin
 		return "", ErrWorkDirRequired
 	}
 
-	// First check for explicit ".." in the path before any processing
-	if strings.Contains(path, "..") {
+	// Check for path traversal patterns by examining path segments
+	if containsPathTraversalSegment(path) {
 		return "", fmt.Errorf("%w: %s", ErrPathTraversalRelative, path)
 	}
 
@@ -74,9 +74,35 @@ func (v *DefaultPathValidator) validateRelativePath(path, workDir string) (strin
 
 	// Use filepath.Rel to check if the path escapes the work directory
 	relPath, err := filepath.Rel(cleanWorkDir, cleanPath)
-	if err != nil || strings.HasPrefix(relPath, "..") || relPath == ".." {
+	if err != nil || escapesWorkDirectory(relPath) {
 		return "", fmt.Errorf("%w: %s", ErrPathEscapesWorkDirectory, path)
 	}
 
 	return cleanPath, nil
+}
+
+// containsPathTraversalSegment checks if a path contains ".." as a distinct path segment
+// This avoids false positives for legitimate filenames that contain ".." (e.g., "archive..zip")
+func containsPathTraversalSegment(path string) bool {
+	// Split the path into segments and check each one
+	for _, segment := range strings.Split(path, string(filepath.Separator)) {
+		if segment == ".." {
+			return true
+		}
+	}
+	return false
+}
+
+// escapesWorkDirectory checks if a relative path escapes the work directory
+// This checks for path segments that would escape, avoiding false positives
+// for filenames that start with ".." (e.g., "..hidden-file")
+func escapesWorkDirectory(relPath string) bool {
+	if relPath == ".." {
+		return true
+	}
+
+	// Check if the path starts with a ".." segment followed by separator
+	// This correctly identifies "../file" but not "..hidden-file"
+	segments := strings.Split(relPath, string(filepath.Separator))
+	return len(segments) > 0 && segments[0] == ".."
 }
