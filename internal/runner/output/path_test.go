@@ -208,24 +208,6 @@ func TestDefaultPathValidator_validateAbsolutePath(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:        "path_with_double_dot",
-			path:        "/tmp/../etc/passwd",
-			wantErr:     true,
-			errContains: "path traversal detected",
-		},
-		{
-			name:        "path_with_double_dot_at_end",
-			path:        "/tmp/..",
-			wantErr:     true,
-			errContains: "path traversal detected",
-		},
-		{
-			name:        "path_with_double_dot_at_start",
-			path:        "/../tmp/file",
-			wantErr:     true,
-			errContains: "path traversal detected",
-		},
-		{
 			name:    "path_with_single_dot",
 			path:    "/tmp/./output.txt",
 			wantErr: false,
@@ -272,20 +254,6 @@ func TestDefaultPathValidator_validateRelativePath(t *testing.T) {
 			path:    "logs/output.txt",
 			workDir: "/home/user/project",
 			wantErr: false,
-		},
-		{
-			name:        "relative_path_with_double_dot",
-			path:        "../output.txt",
-			workDir:     "/home/user/project",
-			wantErr:     true,
-			errContains: "path traversal detected",
-		},
-		{
-			name:        "relative_path_escapes_workdir",
-			path:        "../../../../etc/passwd",
-			workDir:     "/home/user/project",
-			wantErr:     true,
-			errContains: "path traversal detected",
 		},
 		{
 			name:        "empty_workdir",

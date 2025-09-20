@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 )
@@ -13,8 +14,7 @@ import (
 var (
 	ErrEmptyPath                 = errors.New("output path is empty")
 	ErrWorkDirRequired           = errors.New("work directory is required for relative path")
-	ErrPathTraversalAbsolute     = errors.New("path traversal detected in absolute path")
-	ErrPathTraversalRelative     = errors.New("path traversal detected in relative path")
+	ErrPathTraversal             = errors.New("path traversal detected")
 	ErrPathEscapesWorkDirectory  = errors.New("relative path escapes work directory")
 	ErrDangerousCharactersInPath = errors.New("dangerous characters detected in path")
 )
@@ -37,6 +37,11 @@ func (v *DefaultPathValidator) ValidateAndResolvePath(outputPath, workDir string
 		return "", ErrEmptyPath
 	}
 
+	// Perform common security validation
+	if err := validatePathSecurity(outputPath); err != nil {
+		return "", err
+	}
+
 	if filepath.IsAbs(outputPath) {
 		return v.validateAbsolutePath(outputPath)
 	}
@@ -44,18 +49,23 @@ func (v *DefaultPathValidator) ValidateAndResolvePath(outputPath, workDir string
 	return v.validateRelativePath(outputPath, workDir)
 }
 
-// validateAbsolutePath validates and cleans an absolute path
-func (v *DefaultPathValidator) validateAbsolutePath(path string) (string, error) {
+// validatePathSecurity performs common security validation for both absolute and relative paths
+func validatePathSecurity(path string) error {
 	// Check for path traversal patterns by examining path segments
 	if containsPathTraversalSegment(path) {
-		return "", fmt.Errorf("%w: %s", ErrPathTraversalAbsolute, path)
+		return fmt.Errorf("%w: %s", ErrPathTraversal, path)
 	}
 
 	// Check for dangerous characters in the path
 	if chars := containsDangerousCharacters(path); len(chars) > 0 {
-		return "", fmt.Errorf("%w: %s (found: %v)", ErrDangerousCharactersInPath, path, chars)
+		return fmt.Errorf("%w: %s (found: %v)", ErrDangerousCharactersInPath, path, chars)
 	}
 
+	return nil
+}
+
+// validateAbsolutePath validates and cleans an absolute path
+func (v *DefaultPathValidator) validateAbsolutePath(path string) (string, error) {
 	// Clean the path to remove redundant separators and resolve . components
 	cleanPath := filepath.Clean(path)
 	return cleanPath, nil
@@ -65,16 +75,6 @@ func (v *DefaultPathValidator) validateAbsolutePath(path string) (string, error)
 func (v *DefaultPathValidator) validateRelativePath(path, workDir string) (string, error) {
 	if workDir == "" {
 		return "", ErrWorkDirRequired
-	}
-
-	// Check for path traversal patterns by examining path segments
-	if containsPathTraversalSegment(path) {
-		return "", fmt.Errorf("%w: %s", ErrPathTraversalRelative, path)
-	}
-
-	// Check for dangerous characters in the path
-	if chars := containsDangerousCharacters(path); len(chars) > 0 {
-		return "", fmt.Errorf("%w: %s (found: %v)", ErrDangerousCharactersInPath, path, chars)
 	}
 
 	// Join with work directory and clean
@@ -96,13 +96,9 @@ func (v *DefaultPathValidator) validateRelativePath(path, workDir string) (strin
 // containsPathTraversalSegment checks if a path contains ".." as a distinct path segment
 // This avoids false positives for legitimate filenames that contain ".." (e.g., "archive..zip")
 func containsPathTraversalSegment(path string) bool {
-	// Split the path into segments and check each one
-	for _, segment := range strings.Split(path, string(filepath.Separator)) {
-		if segment == ".." {
-			return true
-		}
-	}
-	return false
+	// Split the path into segments and check if any segment is ".."
+	segments := strings.Split(path, string(filepath.Separator))
+	return slices.Contains(segments, "..")
 }
 
 // escapesWorkDirectory checks if a relative path escapes the work directory
