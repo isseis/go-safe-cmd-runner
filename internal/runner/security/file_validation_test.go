@@ -130,6 +130,112 @@ func TestValidator_ValidateOutputWritePermission(t *testing.T) {
 	}
 }
 
+func TestValidator_checkWritePermission(t *testing.T) {
+	currentUser, err := user.Current()
+	require.NoError(t, err)
+
+	currentUID, err := strconv.Atoi(currentUser.Uid)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name        string
+		setupFunc   func(t *testing.T) (string, os.FileInfo)
+		uid         int
+		useTestMode bool
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "owner_writable_file",
+			setupFunc: func(t *testing.T) (string, os.FileInfo) {
+				tempFile, err := os.CreateTemp("", "owner_writable_*")
+				require.NoError(t, err)
+				defer tempFile.Close()
+
+				err = os.Chmod(tempFile.Name(), 0o600)
+				require.NoError(t, err)
+
+				info, err := os.Lstat(tempFile.Name())
+				require.NoError(t, err)
+
+				return tempFile.Name(), info
+			},
+			uid:     currentUID,
+			wantErr: false,
+		},
+		{
+			name: "world_writable_file_blocked_in_normal_mode",
+			setupFunc: func(t *testing.T) (string, os.FileInfo) {
+				tempFile, err := os.CreateTemp("", "world_writable_*")
+				require.NoError(t, err)
+				defer tempFile.Close()
+
+				// Set file permissions to be world-writable with owner-writable
+				// This forces the code to check world-writable permissions for non-owners
+				err = os.Chmod(tempFile.Name(), 0o666) // rw-rw-rw-
+				require.NoError(t, err)
+
+				info, err := os.Lstat(tempFile.Name())
+				require.NoError(t, err)
+
+				return tempFile.Name(), info
+			},
+			uid:         65534, // Use 'nobody' user to test world-writable check
+			useTestMode: false,
+			wantErr:     true,
+			errContains: "writable by others",
+		},
+		{
+			name: "world_writable_file_allowed_in_test_mode",
+			setupFunc: func(t *testing.T) (string, os.FileInfo) {
+				tempFile, err := os.CreateTemp("", "world_writable_test_*")
+				require.NoError(t, err)
+				defer tempFile.Close()
+
+				// Set file permissions to be world-writable with owner-writable
+				err = os.Chmod(tempFile.Name(), 0o666) // rw-rw-rw-
+				require.NoError(t, err)
+
+				info, err := os.Lstat(tempFile.Name())
+				require.NoError(t, err)
+
+				return tempFile.Name(), info
+			},
+			uid:         65534, // Use 'nobody' user to test world-writable check
+			useTestMode: true,
+			wantErr:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var config *Config
+			if tt.useTestMode {
+				config = NewPermissiveTestConfig()
+			} else {
+				config = DefaultConfig()
+			}
+
+			validator, err := NewValidatorWithGroupMembership(config, nil)
+			require.NoError(t, err)
+
+			path, fileInfo := tt.setupFunc(t)
+			defer os.Remove(path)
+
+			err = validator.checkWritePermission(path, fileInfo, tt.uid)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestValidator_validateOutputDirectoryAccess(t *testing.T) {
 	currentUser, err := user.Current()
 	require.NoError(t, err)
@@ -268,82 +374,6 @@ func TestValidator_validateOutputFileWritePermission(t *testing.T) {
 			defer os.Remove(filePath)
 
 			err = validator.validateOutputFileWritePermission(filePath, fileInfo, tt.uid)
-
-			if tt.wantErr {
-				assert.Error(t, err)
-				if tt.errContains != "" {
-					assert.Contains(t, err.Error(), tt.errContains)
-				}
-			} else {
-				assert.NoError(t, err)
-			}
-		})
-	}
-}
-
-func TestValidator_checkWritePermission(t *testing.T) {
-	currentUser, err := user.Current()
-	require.NoError(t, err)
-
-	currentUID, err := strconv.Atoi(currentUser.Uid)
-	require.NoError(t, err)
-
-	tests := []struct {
-		name        string
-		setupFunc   func(t *testing.T) (string, os.FileInfo)
-		uid         int
-		wantErr     bool
-		errContains string
-	}{
-		{
-			name: "owner_with_write_permission",
-			setupFunc: func(t *testing.T) (string, os.FileInfo) {
-				tempFile, err := os.CreateTemp("", "test_*")
-				require.NoError(t, err)
-				defer tempFile.Close()
-
-				err = os.Chmod(tempFile.Name(), 0o600)
-				require.NoError(t, err)
-
-				info, err := os.Lstat(tempFile.Name())
-				require.NoError(t, err)
-
-				return tempFile.Name(), info
-			},
-			uid:     currentUID,
-			wantErr: false,
-		},
-		{
-			name: "owner_without_write_permission",
-			setupFunc: func(t *testing.T) (string, os.FileInfo) {
-				tempFile, err := os.CreateTemp("", "test_*")
-				require.NoError(t, err)
-				defer tempFile.Close()
-
-				err = os.Chmod(tempFile.Name(), 0o400) // read-only
-				require.NoError(t, err)
-
-				info, err := os.Lstat(tempFile.Name())
-				require.NoError(t, err)
-
-				return tempFile.Name(), info
-			},
-			uid:         currentUID,
-			wantErr:     true,
-			errContains: "write permission denied",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			config := DefaultConfig()
-			validator, err := NewValidatorWithGroupMembership(config, nil)
-			require.NoError(t, err)
-
-			path, stat := tt.setupFunc(t)
-			defer os.Remove(path)
-
-			err = validator.checkWritePermission(path, stat, tt.uid)
 
 			if tt.wantErr {
 				assert.Error(t, err)

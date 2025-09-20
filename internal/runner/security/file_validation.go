@@ -313,9 +313,23 @@ func (v *Validator) checkWritePermission(path string, stat os.FileInfo, realUID 
 		}
 	}
 
-	// Check other permissions
+	// Check other permissions (world-writable check)
+	// Only allow world-writable access in permissive test mode for security
 	if stat.Mode()&0o002 != 0 {
-		return nil // Others have write permission
+		if !v.config.testPermissiveMode {
+			slog.Error("File writable by others detected",
+				"path", path,
+				"permissions", fmt.Sprintf("%04o", stat.Mode().Perm()),
+				"uid", realUID)
+			return fmt.Errorf("%w: file %s is writable by others (%04o), which poses security risks",
+				ErrInvalidFilePermissions, path, stat.Mode().Perm())
+		}
+		// In permissive test mode, allow world-writable access
+		slog.Warn("Allowing world-writable file access in test mode",
+			"path", path,
+			"permissions", fmt.Sprintf("%04o", stat.Mode().Perm()),
+			"uid", realUID)
+		return nil
 	}
 
 	return fmt.Errorf("%w: write permission denied for %s", ErrInvalidFilePermissions, path)
