@@ -32,7 +32,7 @@ func NewDefaultPathValidator() *DefaultPathValidator {
 // This performs basic path validation and path traversal prevention
 // Additional security checks (symlink detection, etc.) are performed by SecurityValidator
 func (v *DefaultPathValidator) ValidateAndResolvePath(outputPath, workDir string) (string, error) {
-	// Trim whitespace and check for empty path
+	// Check for empty path
 	if outputPath == "" {
 		return "", ErrEmptyPath
 	}
