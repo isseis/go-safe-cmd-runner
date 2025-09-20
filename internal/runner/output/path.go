@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"slices"
+	"regexp"
 	"strings"
 	"unicode"
 )
@@ -118,32 +118,32 @@ func escapesWorkDirectory(relPath string) bool {
 	return strings.HasPrefix(relPath, ".."+string(filepath.Separator))
 }
 
+// dangerousCharLookup contains all single dangerous characters for fast lookup
+var dangerousCharLookup = map[rune]bool{
+	// Shell metacharacters
+	';': true, '&': true, '|': true, '$': true, '`': true,
+	'>': true, '<': true,
+	// Glob/expansion characters
+	'*': true, '?': true, '[': true, ']': true, '~': true, '!': true,
+	// Control characters
+	'\n': true, '\r': true, '\f': true, '\v': true, '\b': true, '\a': true, '\\': true,
+}
+
+// dangerousSymbolLookup contains high-risk currency symbols
+var dangerousSymbolLookup = map[rune]bool{
+	'€': true, '¥': true, '£': true, '¢': true, '₹': true, '₽': true, '₩': true,
+}
+
+// multiCharPatternRegex is a pre-compiled regex for detecting multi-character dangerous patterns
+var multiCharPatternRegex = regexp.MustCompile(`&&|\|\||\$\(|\$\{|>>|<<`)
+
 // containsDangerousCharacters checks if a path contains characters that could be
 // problematic when processing the path in shell scripts or command-line tools
 // Returns a slice of the dangerous characters found (empty if none)
+// Optimized version that scans the path only once with efficient lookups
 func containsDangerousCharacters(path string) []string {
 	var found []string
 	foundMap := make(map[string]bool) // To avoid duplicates
-
-	// Define dangerous character patterns
-	// High-risk: Shell metacharacters that can cause command injection
-	highRiskChars := []string{
-		";", "&", "|", "$", "`", ">", "<", "&&", "||", "$(", "${", ">>", "<<",
-	}
-
-	// Medium-risk: Characters that can cause unintended shell expansion
-	// Note: Space and tab are handled separately with unicode.IsSpace
-	mediumRiskChars := []string{
-		"*", "?", "[", "]", "~", "!",
-	}
-
-	// Low-risk: Control characters and other potentially problematic characters
-	lowRiskChars := []string{
-		"\n", "\r", "\f", "\v", "\b", "\a", "\\",
-	}
-
-	// High-risk currency symbols that might be confused with shell variables
-	highRiskSymbols := []rune{'€', '¥', '£', '¢', '₹', '₽', '₩'}
 
 	// Helper function to add unique dangerous characters
 	addDangerous := func(char string) {
@@ -153,33 +153,24 @@ func containsDangerousCharacters(path string) []string {
 		}
 	}
 
-	// Check for multi-character patterns first
-	for _, char := range highRiskChars {
-		if strings.Contains(path, char) {
-			addDangerous(char)
-		}
+	// Check for multi-character patterns using pre-compiled regex
+	matches := multiCharPatternRegex.FindAllString(path, -1)
+	for _, match := range matches {
+		addDangerous(match)
 	}
 
-	// Check for single-character patterns
-	for _, char := range mediumRiskChars {
-		if strings.Contains(path, char) {
-			addDangerous(char)
-		}
-	}
-
-	// Check for control characters and other low-risk patterns
-	for _, char := range lowRiskChars {
-		if strings.Contains(path, char) {
-			addDangerous(char)
-		}
-	}
-
-	// Check each rune for various dangerous categories
+	// Single-pass scan through all runes for single-character patterns
 	for _, r := range path {
 		runeStr := string(r)
 
 		// Skip if already found
 		if foundMap[runeStr] {
+			continue
+		}
+
+		// Check single-character lookup table first (most common case)
+		if dangerousCharLookup[r] {
+			addDangerous(runeStr)
 			continue
 		}
 
@@ -190,13 +181,13 @@ func containsDangerousCharacters(path string) []string {
 		}
 
 		// Check for high-risk symbol characters
-		if unicode.IsSymbol(r) && slices.Contains(highRiskSymbols, r) {
+		if unicode.IsSymbol(r) && dangerousSymbolLookup[r] {
 			addDangerous(runeStr)
 			continue
 		}
 
-		// Check for other control characters not in lowRiskChars
-		if unicode.IsControl(r) && !slices.Contains(lowRiskChars, runeStr) {
+		// Check for other control characters not in lookup table
+		if unicode.IsControl(r) {
 			addDangerous(runeStr)
 		}
 	}
