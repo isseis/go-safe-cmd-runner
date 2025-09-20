@@ -137,12 +137,10 @@ func TestNewRunner(t *testing.T) {
 	})
 
 	t.Run("with custom security config", func(t *testing.T) {
-		securityConfig := &security.Config{
-			AllowedCommands:         []string{"^echo$", "^cat$"},
-			RequiredFilePermissions: 0o644,
-			SensitiveEnvVars:        []string{".*PASSWORD.*", ".*TOKEN.*"},
-			MaxPathLength:           4096,
-		}
+		securityConfig := security.DefaultConfig()
+		// Override for this specific test
+		securityConfig.AllowedCommands = []string{"^echo$", "^cat$"}
+		securityConfig.SensitiveEnvVars = []string{".*PASSWORD.*", ".*TOKEN.*"}
 
 		runner, err := NewRunner(config, WithSecurity(securityConfig), WithRunID("test-run-123"))
 		assert.NoError(t, err)
@@ -152,12 +150,10 @@ func TestNewRunner(t *testing.T) {
 	})
 
 	t.Run("with multiple options", func(t *testing.T) {
-		securityConfig := &security.Config{
-			AllowedCommands:         []string{"^echo$"},
-			RequiredFilePermissions: 0o644,
-			SensitiveEnvVars:        []string{".*PASSWORD.*"},
-			MaxPathLength:           4096,
-		}
+		securityConfig := security.DefaultConfig()
+		// Override for this specific test
+		securityConfig.AllowedCommands = []string{"^echo$"}
+		securityConfig.SensitiveEnvVars = []string{".*PASSWORD.*"}
 
 		runner, err := NewRunner(config,
 			WithSecurity(securityConfig),
@@ -167,12 +163,10 @@ func TestNewRunner(t *testing.T) {
 	})
 
 	t.Run("with invalid security config", func(t *testing.T) {
-		invalidSecurityConfig := &security.Config{
-			AllowedCommands:         []string{"[invalid regex"}, // Invalid regex
-			RequiredFilePermissions: 0o644,
-			SensitiveEnvVars:        []string{".*PASSWORD.*"},
-			MaxPathLength:           4096,
-		}
+		invalidSecurityConfig := security.DefaultConfig()
+		// Set invalid pattern to test error handling
+		invalidSecurityConfig.AllowedCommands = []string{"[invalid regex"} // Invalid regex
+		invalidSecurityConfig.SensitiveEnvVars = []string{".*PASSWORD.*"}
 
 		runner, err := NewRunner(config, WithSecurity(invalidSecurityConfig), WithRunID("test-run-123"))
 		assert.Error(t, err)
@@ -191,12 +185,10 @@ func TestNewRunnerWithSecurity(t *testing.T) {
 	}
 
 	t.Run("with valid security config", func(t *testing.T) {
-		securityConfig := &security.Config{
-			AllowedCommands:         []string{"^echo$", "^cat$"},
-			RequiredFilePermissions: 0o644,
-			SensitiveEnvVars:        []string{".*PASSWORD.*", ".*TOKEN.*"},
-			MaxPathLength:           4096,
-		}
+		securityConfig := security.DefaultConfig()
+		// Override for this specific test
+		securityConfig.AllowedCommands = []string{"^echo$", "^cat$"}
+		securityConfig.SensitiveEnvVars = []string{".*PASSWORD.*", ".*TOKEN.*"}
 
 		runner, err := NewRunner(config, WithSecurity(securityConfig), WithRunID("test-run-123"))
 		assert.NoError(t, err)
@@ -208,12 +200,10 @@ func TestNewRunnerWithSecurity(t *testing.T) {
 	})
 
 	t.Run("with invalid security config", func(t *testing.T) {
-		invalidSecurityConfig := &security.Config{
-			AllowedCommands:         []string{"[invalid regex"}, // Invalid regex
-			RequiredFilePermissions: 0o644,
-			SensitiveEnvVars:        []string{".*PASSWORD.*"},
-			MaxPathLength:           4096,
-		}
+		invalidSecurityConfig := security.DefaultConfig()
+		// Set invalid pattern to test error handling
+		invalidSecurityConfig.AllowedCommands = []string{"[invalid regex"} // Invalid regex
+		invalidSecurityConfig.SensitiveEnvVars = []string{".*PASSWORD.*"}
 
 		runner, err := NewRunner(config, WithSecurity(invalidSecurityConfig), WithRunID("test-run-123"))
 		assert.Error(t, err)

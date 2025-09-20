@@ -4,8 +4,13 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/user"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
 // validatePathAndGetInfo validates and cleans a path, then returns its file info
@@ -161,7 +166,8 @@ func (v *Validator) validateDirectoryComponentPermissions(dirPath string, info o
 	perm := info.Mode().Perm()
 
 	// Check that other users cannot write (world-writable check)
-	if perm&0o002 != 0 {
+	// Only bypass this check if explicitly configured for permissive testing
+	if perm&0o002 != 0 && !v.config.testPermissiveMode {
 		slog.Error("Directory writable by others detected",
 			"path", dirPath,
 			"permissions", fmt.Sprintf("%04o", perm))
@@ -177,17 +183,265 @@ func (v *Validator) validateDirectoryComponentPermissions(dirPath string, info o
 			"owner_uid", stat.Uid,
 			"owner_gid", stat.Gid)
 		// Only allow group write if owned by root (uid=0) and group (gid=0)
-		if stat.Uid != UIDRoot || stat.Gid != GIDRoot {
+		// Only bypass this check if explicitly configured for permissive testing
+		if !v.config.testPermissiveMode && (stat.Uid != UIDRoot || stat.Gid != GIDRoot) {
 			return fmt.Errorf("%w: directory %s has group write permissions (%04o) but is not owned by root (uid=%d, gid=%d)",
 				ErrInvalidDirPermissions, dirPath, perm, stat.Uid, stat.Gid)
 		}
 	}
 
 	// Check that only root can write to the directory
-	if perm&0o200 != 0 && stat.Uid != UIDRoot {
+	// Only bypass this check if explicitly configured for permissive testing
+	if perm&0o200 != 0 && stat.Uid != UIDRoot && !v.config.testPermissiveMode {
 		return fmt.Errorf("%w: directory %s is writable by non-root user (uid=%d)",
 			ErrInvalidDirPermissions, dirPath, stat.Uid)
 	}
 
 	return nil
+}
+
+// ValidateOutputWritePermission validates write permission for output file creation
+// This method is specifically designed for output capture functionality
+// It leverages the existing secure path validation infrastructure to prevent symlink attacks
+func (v *Validator) ValidateOutputWritePermission(outputPath string, realUID int) error {
+	if outputPath == "" {
+		return fmt.Errorf("%w: empty output path", ErrInvalidPath)
+	}
+
+	// Ensure absolute path
+	if !filepath.IsAbs(outputPath) {
+		return fmt.Errorf("%w: output path must be absolute, got: %s", ErrInvalidPath, outputPath)
+	}
+
+	cleanPath := filepath.Clean(outputPath)
+	dir := filepath.Dir(cleanPath)
+
+	// Use unified validation that combines security validation and write permission checks
+	// This efficiently validates the directory hierarchy in a single traversal
+	if err := v.validateOutputDirectoryAccess(dir, realUID); err != nil {
+		return fmt.Errorf("directory validation failed: %w", err)
+	}
+
+	// If file exists, validate file write permission using secure Lstat
+	if fileInfo, err := v.fs.Lstat(cleanPath); err == nil {
+		if err := v.validateOutputFileWritePermission(cleanPath, fileInfo, realUID); err != nil {
+			return fmt.Errorf("file write permission check failed: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("failed to stat output file %s: %w", cleanPath, err)
+	}
+
+	return nil
+}
+
+// validateOutputDirectoryAccess validates both security and write permissions
+// for an output directory path in a single efficient traversal up the directory hierarchy.
+// This method combines the functionality of ValidateDirectoryPermissions and write permission checks
+// to avoid redundant directory traversals.
+func (v *Validator) validateOutputDirectoryAccess(dirPath string, realUID int) error {
+	// Find the first existing directory in the hierarchy
+	currentPath := dirPath
+
+	// Walk up the directory tree until we find an existing directory
+	for {
+		if info, err := v.fs.Lstat(currentPath); err == nil {
+			// Directory exists, validate security for complete path
+			if err := v.ValidateDirectoryPermissions(currentPath); err != nil {
+				return fmt.Errorf("directory security validation failed for %s: %w", currentPath, err)
+			}
+
+			// Check write permission for the existing directory (where files will be created)
+			if err := v.checkWritePermission(currentPath, info, realUID); err != nil {
+				return fmt.Errorf("write permission check failed for %s: %w", currentPath, err)
+			}
+
+			return nil
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("failed to lstat directory %s: %w", currentPath, err)
+		}
+
+		// Directory doesn't exist, move to parent
+		parent := filepath.Dir(currentPath)
+		if parent == currentPath {
+			// Reached filesystem root without finding existing directory
+			// Use a wrapped static error instead of a dynamically formatted one
+			// so callers can reliably use errors.Is to compare.
+			return fmt.Errorf("%w: %s", ErrNoExistingDirectoryInPathHierarchy, dirPath)
+		}
+		currentPath = parent
+	}
+}
+
+// validateOutputFileWritePermission checks if the user can write to the existing file
+// This function receives fileInfo from Lstat to ensure symlink safety
+func (v *Validator) validateOutputFileWritePermission(filePath string, fileInfo os.FileInfo, realUID int) error {
+	// Additional symlink check (fileInfo should be from Lstat)
+	if fileInfo.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%w: output file %s is a symlink", ErrInvalidFilePermissions, filePath)
+	}
+
+	if !fileInfo.Mode().IsRegular() {
+		return fmt.Errorf("%w: %s is not a regular file", ErrInvalidFilePermissions, filePath)
+	}
+
+	return v.checkWritePermission(filePath, fileInfo, realUID)
+}
+
+// checkWritePermission performs the actual permission check for a given UID
+func (v *Validator) checkWritePermission(path string, stat os.FileInfo, realUID int) error {
+	sysstat, ok := stat.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fmt.Errorf("%w: failed to get system info for %s", ErrInvalidFilePermissions, path)
+	}
+
+	// Check owner permissions
+	if int(sysstat.Uid) == realUID {
+		if stat.Mode()&0o200 != 0 {
+			return nil // Owner has write permission
+		}
+		return fmt.Errorf("%w: owner write permission denied for %s", ErrInvalidFilePermissions, path)
+	}
+
+	// Check group permissions
+	if stat.Mode()&0o020 != 0 {
+		inGroup, err := v.isUserInGroup(realUID, sysstat.Gid)
+		if err != nil {
+			return fmt.Errorf("failed to check group membership: %w", err)
+		}
+		if inGroup {
+			return nil // User is in group and group has write permission
+		}
+	}
+
+	// Check other permissions (world-writable check)
+	// Only allow world-writable access in permissive test mode for security
+	if stat.Mode()&0o002 != 0 {
+		if !v.config.testPermissiveMode {
+			slog.Error("File writable by others detected",
+				"path", path,
+				"permissions", fmt.Sprintf("%04o", stat.Mode().Perm()),
+				"uid", realUID)
+			return fmt.Errorf("%w: file %s is writable by others (%04o), which poses security risks",
+				ErrInvalidFilePermissions, path, stat.Mode().Perm())
+		}
+		// In permissive test mode, allow world-writable access
+		slog.Warn("Allowing world-writable file access in test mode",
+			"path", path,
+			"permissions", fmt.Sprintf("%04o", stat.Mode().Perm()),
+			"uid", realUID)
+		return nil
+	}
+
+	return fmt.Errorf("%w: write permission denied for %s", ErrInvalidFilePermissions, path)
+}
+
+// isUserInGroup checks if a user (by UID) is a member of a group (by GID)
+// This is a simplified version that checks primary group and supplementary groups
+// Returns (inGroup, error) where error indicates system-level failures
+func (v *Validator) isUserInGroup(uid int, gid uint32) (bool, error) {
+	// Get user information
+	user, err := user.LookupId(strconv.Itoa(uid))
+	if err != nil {
+		return false, fmt.Errorf("failed to lookup user %d: %w", uid, err)
+	}
+
+	// Check primary group
+	userGid, err := strconv.ParseUint(user.Gid, 10, 32)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse user's primary GID %s: %w", user.Gid, err)
+	}
+	if uint32(userGid) == gid {
+		return true, nil
+	}
+
+	// Check supplementary groups using groupmembership
+	if v.groupMembership != nil {
+		members, err := v.groupMembership.GetGroupMembers(gid)
+		if err != nil {
+			return false, fmt.Errorf("failed to get group members for GID %d: %w", gid, err)
+		}
+		for _, member := range members {
+			if member == user.Username {
+				return true, nil
+			}
+		}
+	}
+
+	return false, nil
+}
+
+// EvaluateOutputSecurityRisk evaluates the security risk level for an output path
+// This method provides centralized security risk assessment for output capture functionality
+//
+// Requirements:
+// - workDir must be absolute and cleaned (filepath.Clean) when provided
+// - Passing non-absolute or non-clean workDir indicates a programming error and returns an error
+// - Passing empty path indicates a programming error and returns an error
+func (v *Validator) EvaluateOutputSecurityRisk(path, workDir string) (runnertypes.RiskLevel, error) {
+	// Validate workDir requirements - programming error if violated
+	if workDir != "" {
+		if !filepath.IsAbs(workDir) {
+			// Programming error: workDir must be absolute
+			return runnertypes.RiskLevelUnknown, fmt.Errorf("%w: workDir must be absolute, got: %s", ErrInvalidPath, workDir)
+		}
+		if filepath.Clean(workDir) != workDir {
+			// Programming error: workDir must be pre-cleaned
+			return runnertypes.RiskLevelUnknown, fmt.Errorf("%w: workDir must be pre-cleaned, got: %s", ErrInvalidPath, workDir)
+		}
+	}
+
+	// Handle empty path as a programming error
+	if path == "" {
+		return runnertypes.RiskLevelUnknown, fmt.Errorf("%w: empty path provided", ErrInvalidPath)
+	}
+
+	var cleanPath string
+
+	// Handle relative paths by resolving them against workDir
+	if !filepath.IsAbs(path) {
+		if workDir == "" {
+			// Cannot resolve relative path without workDir
+			return runnertypes.RiskLevelHigh, nil
+		}
+		cleanPath = filepath.Clean(filepath.Join(workDir, path))
+	} else {
+		cleanPath = filepath.Clean(path)
+	}
+
+	pathLower := strings.ToLower(cleanPath)
+
+	// Critical: System important files and patterns (hardcoded for robustness)
+	for _, pattern := range v.config.OutputCriticalPathPatterns {
+		if strings.Contains(pathLower, strings.ToLower(pattern)) {
+			return runnertypes.RiskLevelCritical, nil
+		}
+	}
+
+	// High: System directories and high-risk patterns (hardcoded for robustness)
+	for _, pattern := range v.config.OutputHighRiskPathPatterns {
+		if strings.Contains(pathLower, strings.ToLower(pattern)) {
+			return runnertypes.RiskLevelHigh, nil
+		}
+	}
+
+	// Low: WorkDir internal files
+	if workDir != "" && filepath.IsAbs(workDir) {
+		if strings.HasPrefix(cleanPath, workDir) {
+			return runnertypes.RiskLevelLow, nil
+		}
+	}
+
+	// Low: Current user's home directory
+	if currentUser, err := user.Current(); err == nil {
+		homeDir := currentUser.HomeDir
+		if homeDir != "" && filepath.IsAbs(homeDir) {
+			cleanHomePath := filepath.Clean(homeDir)
+			if strings.HasPrefix(cleanPath, cleanHomePath) {
+				return runnertypes.RiskLevelLow, nil
+			}
+		}
+	}
+
+	// Medium: Other locations
+	return runnertypes.RiskLevelMedium, nil
 }

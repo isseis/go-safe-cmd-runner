@@ -5,6 +5,7 @@ import (
 	"regexp"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 )
 
@@ -17,6 +18,8 @@ type Validator struct {
 	dangerousEnvRegexps         []*regexp.Regexp
 	dangerousPrivilegedCommands map[string]struct{}
 	shellCommands               map[string]struct{}
+	// Group membership checker for permission validation
+	groupMembership *groupmembership.GroupMembership
 	// Common redaction functionality
 	redactionConfig   *redaction.Config
 	sensitivePatterns *redaction.SensitivePatterns
@@ -29,10 +32,23 @@ func NewValidator(config *Config) (*Validator, error) {
 	return NewValidatorWithFS(config, common.NewDefaultFileSystem())
 }
 
+// NewValidatorWithGroupMembership creates a new security validator with group membership support.
+// This constructor is specifically for output capture functionality that needs UID/GID permission checks.
+func NewValidatorWithGroupMembership(config *Config, groupMembership *groupmembership.GroupMembership) (*Validator, error) {
+	return NewValidatorWithFSAndGroupMembership(config, common.NewDefaultFileSystem(), groupMembership)
+}
+
 // NewValidatorWithFS creates a new security validator with the given configuration and FileSystem.
 // If config is nil, DefaultConfig() will be used.
 // Returns an error if any regex patterns in the config are invalid.
 func NewValidatorWithFS(config *Config, fs common.FileSystem) (*Validator, error) {
+	return NewValidatorWithFSAndGroupMembership(config, fs, nil)
+}
+
+// NewValidatorWithFSAndGroupMembership creates a new security validator with all options.
+// If config is nil, DefaultConfig() will be used.
+// Returns an error if any regex patterns in the config are invalid.
+func NewValidatorWithFSAndGroupMembership(config *Config, fs common.FileSystem, groupMembership *groupmembership.GroupMembership) (*Validator, error) {
 	if config == nil {
 		config = DefaultConfig()
 	}
@@ -44,6 +60,7 @@ func NewValidatorWithFS(config *Config, fs common.FileSystem) (*Validator, error
 	v := &Validator{
 		config:            config,
 		fs:                fs,
+		groupMembership:   groupMembership,
 		sensitivePatterns: sensitivePatterns,
 		redactionConfig:   redactionConfig,
 	}

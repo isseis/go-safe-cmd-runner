@@ -155,11 +155,11 @@ func TestValidator_HasShellMetacharacters(t *testing.T) {
 }
 
 func TestValidator_CustomConfig(t *testing.T) {
-	config := &Config{
-		DangerousPrivilegedCommands: []string{"/custom/dangerous"},
-		ShellCommands:               []string{"/custom/shell"},
-		ShellMetacharacters:         []string{"@", "#"},
-	}
+	config := DefaultConfig()
+	// Override with custom values for testing
+	config.DangerousPrivilegedCommands = []string{"/custom/dangerous"}
+	config.ShellCommands = []string{"/custom/shell"}
+	config.ShellMetacharacters = []string{"@", "#"}
 
 	validator, err := NewValidator(config)
 	require.NoError(t, err)
