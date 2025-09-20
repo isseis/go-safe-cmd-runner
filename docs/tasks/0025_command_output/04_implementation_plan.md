@@ -142,27 +142,27 @@
 #### 3.3.2 実装項目
 
 **safefileio活用FileManager実装**
-- [ ] `SafeFileManager`の実装
-- [ ] ディレクトリ自動作成機能
-- [ ] `safefileio.SafeWriteFileOverwrite`を活用した安全なファイル書き込み
+- [x] `SafeFileManager`の実装
+- [x] ディレクトリ自動作成機能
+- [x] `safefileio.SafeWriteFileOverwrite`を活用した安全なファイル書き込み
 
 **OutputCaptureManager実装**
-- [ ] `DefaultOutputCaptureManager`の実装
-- [ ] `PrepareOutput`メソッドの実装（メモリバッファ版）
-- [ ] `WriteOutput`メソッドの実装（メモリバッファ + サイズ制限）
-- [ ] `FinalizeOutput`メソッドの実装（safefileio活用版）
-- [ ] `CleanupOutput`メソッドの実装（簡素化版）
-- [ ] `AnalyzeOutput`メソッドの実装（Dry-Run用）
+- [x] `DefaultOutputCaptureManager`の実装
+- [x] `PrepareOutput`メソッドの実装（メモリバッファ版）
+- [x] `WriteOutput`メソッドの実装（メモリバッファ + サイズ制限）
+- [x] `FinalizeOutput`メソッドの実装（safefileio活用版）
+- [x] `CleanupOutput`メソッドの実装（簡素化版）
+- [x] `AnalyzeOutput`メソッドの実装（Dry-Run用）
 
 #### 3.3.3 テスト作成（TDD）
 
 **SafeFileManagerテスト**
-- [ ] `internal/runner/output/file_test.go` - ファイル操作のテスト
+- [x] `internal/runner/output/file_test.go` - ファイル操作のテスト
   - ディレクトリ作成のテスト
   - safefileio活用の書き込みテスト
 
 **OutputCaptureManagerテスト**
-- [ ] `internal/runner/output/manager_test.go` - 管理機能のテスト
+- [x] `internal/runner/output/manager_test.go` - 管理機能のテスト
   - PrepareOutputのテスト（メモリバッファ版）
   - WriteOutputのテスト（サイズ制限含む）
   - FinalizeOutputのテスト（safefileio活用版）
@@ -170,22 +170,22 @@
   - AnalyzeOutputのテスト
 
 **統合テスト**
-- [ ] `internal/runner/output/integration_test.go` - 統合テスト
+- [x] `internal/runner/output/integration_test.go` - 統合テスト
   - 完全な出力キャプチャフローのテスト
   - エラー時のクリーンアップテスト
   - safefileioセキュリティ機能のテスト
 
 #### 3.3.4 実装
-- [ ] `SafeFileManager`の実装
-- [ ] `DefaultOutputCaptureManager`の実装
-- [ ] 全テストが通過することを確認
+- [x] `SafeFileManager`の実装
+- [x] `DefaultOutputCaptureManager`の実装
+- [x] 全テストが通過することを確認
 
 #### 3.3.5 検証
-- [ ] 統合テストの実行と検証
-- [ ] エラーハンドリングテストの実行
-- [ ] `make test`実行とパス確認
-- [ ] `make lint`実行と問題修正
-- [ ] Phase 3完了コミット
+- [x] 統合テストの実行と検証
+- [x] エラーハンドリングテストの実行
+- [x] `make test`実行とパス確認
+- [x] `make lint`実行と問題修正
+- [x] Phase 3完了コミット
 
 ### Phase 4: ResourceManager統合とExecutor拡張
 

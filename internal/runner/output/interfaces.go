@@ -22,16 +22,11 @@ type CaptureManager interface {
 	AnalyzeOutput(outputPath string, workDir string) (*Analysis, error)
 }
 
-// PathValidator validates and normalizes file paths for security
+// PathValidator validates and resolves file paths for security
 type PathValidator interface {
-	// ValidatePath performs basic path validation and normalization
-	ValidatePath(path string, workDir string) (string, error)
-
-	// IsPathTraversal detects path traversal attempts
-	IsPathTraversal(path string) bool
-
-	// NormalizePath normalizes a path to canonical form
-	NormalizePath(path string, workDir string) (string, error)
+	// ValidateAndResolvePath validates and resolves an output path
+	// This performs basic path validation and path traversal prevention
+	ValidateAndResolvePath(outputPath, workDir string) (string, error)
 }
 
 // FileManager handles safe file system operations using safefileio
