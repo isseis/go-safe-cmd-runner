@@ -97,15 +97,23 @@ func (m *DefaultOutputCaptureManager) FinalizeOutput(capture *Capture) error {
 	if err != nil {
 		return err
 	}
-	defer m.cleanupTempFile(tempFile, tempPath)
+
+	// Track whether the file has been explicitly closed
+	var fileClosed bool
+	defer func() {
+		m.cleanupTempFile(tempFile, tempPath, fileClosed)
+	}()
 
 	if err := m.writeBufferToTempFile(tempFile, capture.Buffer.Bytes()); err != nil {
 		return err
 	}
 
-	if err := m.closeTempFile(tempFile); err != nil {
-		return err
+	// Close the file before moving it to the final location
+	// We handle the error here since this is the success path
+	if err := tempFile.Close(); err != nil {
+		return fmt.Errorf("failed to close temporary file: %w", err)
 	}
+	fileClosed = true
 
 	return m.moveToFinalLocation(tempPath, capture.OutputPath)
 }
@@ -128,14 +136,6 @@ func (m *DefaultOutputCaptureManager) writeBufferToTempFile(tempFile *os.File, c
 	return nil
 }
 
-// closeTempFile closes the temporary file
-func (m *DefaultOutputCaptureManager) closeTempFile(tempFile *os.File) error {
-	if err := tempFile.Close(); err != nil {
-		return fmt.Errorf("failed to close temporary file: %w", err)
-	}
-	return nil
-}
-
 // moveToFinalLocation moves the temporary file to the final output location
 func (m *DefaultOutputCaptureManager) moveToFinalLocation(tempPath, outputPath string) error {
 	if err := m.fileManager.MoveToFinal(tempPath, outputPath); err != nil {
@@ -147,12 +147,13 @@ func (m *DefaultOutputCaptureManager) moveToFinalLocation(tempPath, outputPath s
 // cleanupTempFile handles cleanup of temporary files with proper error logging
 // This function is called in defer, so it may run in error conditions where
 // the main processing has already failed with an unrecoverable error.
-func (m *DefaultOutputCaptureManager) cleanupTempFile(tempFile *os.File, tempPath string) {
-	// Try to close file if it's still open. We treat Close as best-effort
-	// and log a warning if it fails. This makes the intent explicit so
-	// linters (errcheck) do not report an unchecked error.
-	if err := tempFile.Close(); err != nil {
-		slog.Warn("failed to close temporary file", "path", tempPath, "error", err)
+// The fileClosed parameter indicates whether the file was already explicitly closed.
+func (m *DefaultOutputCaptureManager) cleanupTempFile(tempFile *os.File, tempPath string, fileClosed bool) {
+	// Try to close file if it hasn't been explicitly closed yet
+	if !fileClosed {
+		if err := tempFile.Close(); err != nil {
+			slog.Warn("failed to close temporary file", "path", tempPath, "error", err)
+		}
 	}
 
 	// Remove temporary file if it still exists
