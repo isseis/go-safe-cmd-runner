@@ -320,12 +320,12 @@ func TestSafeFileManager_MoveToFinal(t *testing.T) {
 				assert.Equal(t, originalContent, finalContent)
 
 				// Verify final file has secure permissions
-				// Note: safefileio restricts write operations to max 0644 permissions
+				// Note: SafeAtomicMoveFile enforces 0600 permissions for maximum security
 				stat, err := os.Stat(finalPath)
 				require.NoError(t, err)
 				actualPerm := stat.Mode().Perm()
-				// safefileio enforces max 0644 for write operations for security
-				expectedPerm := os.FileMode(0o644)
+				// SafeAtomicMoveFile enforces 0600 for write operations for security
+				expectedPerm := os.FileMode(0o600)
 				assert.Equal(t, expectedPerm, actualPerm)
 			}
 		})
@@ -434,6 +434,6 @@ func TestSafeFileManager_Integration(t *testing.T) {
 	// Verify final file permissions
 	stat, err := os.Stat(finalPath)
 	require.NoError(t, err)
-	// safefileio enforces max 0644 for write operations for security
-	assert.Equal(t, os.FileMode(0o644), stat.Mode().Perm())
+	// SafeAtomicMoveFile enforces 0600 for write operations for security
+	assert.Equal(t, os.FileMode(0o600), stat.Mode().Perm())
 }

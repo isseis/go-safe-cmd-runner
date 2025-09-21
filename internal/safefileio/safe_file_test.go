@@ -553,3 +553,93 @@ func TestValidateFileOperationDifferences(t *testing.T) {
 	assert.Error(t, err, "Creating a file with setuid permissions should fail")
 	assert.ErrorIs(t, err, ErrInvalidFilePermissions, "Should fail with permission error")
 }
+
+func TestSafeAtomicMoveFile(t *testing.T) {
+	t.Run("successful atomic move with permission setting", func(t *testing.T) {
+		tempDir := safeTempDir(t)
+		srcPath := filepath.Join(tempDir, "source.txt")
+		dstPath := filepath.Join(tempDir, "destination.txt")
+		content := []byte("test content for atomic move")
+
+		// Create source file with loose permissions
+		require.NoError(t, os.WriteFile(srcPath, content, 0o644))
+
+		// Move with secure permissions
+		err := SafeAtomicMoveFile(srcPath, dstPath, 0o600)
+		assert.NoError(t, err, "SafeAtomicMoveFile should succeed")
+
+		// Verify source file is gone
+		_, err = os.Stat(srcPath)
+		assert.True(t, os.IsNotExist(err), "Source file should not exist after move")
+
+		// Verify destination file exists with correct content and permissions
+		stat, err := os.Stat(dstPath)
+		require.NoError(t, err, "Destination file should exist")
+		assert.Equal(t, os.FileMode(0o600), stat.Mode().Perm(), "Destination should have 0600 permissions")
+
+		gotContent, err := os.ReadFile(dstPath)
+		require.NoError(t, err, "Should be able to read destination file")
+		assert.Equal(t, content, gotContent, "Content should match")
+	})
+
+	t.Run("move to existing file overwrites", func(t *testing.T) {
+		tempDir := safeTempDir(t)
+		srcPath := filepath.Join(tempDir, "source.txt")
+		dstPath := filepath.Join(tempDir, "destination.txt")
+		srcContent := []byte("new content")
+		oldContent := []byte("old content")
+
+		// Create source and destination files
+		require.NoError(t, os.WriteFile(srcPath, srcContent, 0o600))
+		require.NoError(t, os.WriteFile(dstPath, oldContent, 0o600))
+
+		// Move should overwrite destination
+		err := SafeAtomicMoveFile(srcPath, dstPath, 0o600)
+		assert.NoError(t, err, "SafeAtomicMoveFile should succeed with overwrite")
+
+		// Verify content was overwritten
+		gotContent, err := os.ReadFile(dstPath)
+		require.NoError(t, err, "Should be able to read destination file")
+		assert.Equal(t, srcContent, gotContent, "Content should be from source file")
+	})
+
+	t.Run("fails with invalid permissions", func(t *testing.T) {
+		tempDir := safeTempDir(t)
+		srcPath := filepath.Join(tempDir, "source.txt")
+		dstPath := filepath.Join(tempDir, "destination.txt")
+
+		require.NoError(t, os.WriteFile(srcPath, []byte("test"), 0o600))
+
+		// Try to move with invalid permissions (too permissive for write operation)
+		err := SafeAtomicMoveFile(srcPath, dstPath, 0o755)
+		assert.Error(t, err, "Should fail with overly permissive permissions")
+		assert.ErrorIs(t, err, ErrInvalidFilePermissions)
+	})
+
+	t.Run("fails when source does not exist", func(t *testing.T) {
+		tempDir := safeTempDir(t)
+		srcPath := filepath.Join(tempDir, "nonexistent.txt")
+		dstPath := filepath.Join(tempDir, "destination.txt")
+
+		err := SafeAtomicMoveFile(srcPath, dstPath, 0o600)
+		assert.Error(t, err, "Should fail when source file does not exist")
+	})
+
+	t.Run("creates destination directory structure", func(t *testing.T) {
+		tempDir := safeTempDir(t)
+		srcPath := filepath.Join(tempDir, "source.txt")
+		dstPath := filepath.Join(tempDir, "subdir", "destination.txt")
+		content := []byte("test content")
+
+		require.NoError(t, os.WriteFile(srcPath, content, 0o600))
+		require.NoError(t, os.MkdirAll(filepath.Dir(dstPath), 0o750))
+
+		err := SafeAtomicMoveFile(srcPath, dstPath, 0o600)
+		assert.NoError(t, err, "Should succeed when destination directory exists")
+
+		// Verify move was successful
+		gotContent, err := os.ReadFile(dstPath)
+		require.NoError(t, err, "Should be able to read destination file")
+		assert.Equal(t, content, gotContent, "Content should match")
+	})
+}

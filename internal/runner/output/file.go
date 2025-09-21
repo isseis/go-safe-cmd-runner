@@ -52,32 +52,17 @@ func (f *SafeFileManager) WriteToTemp(file *os.File, data []byte) (int, error) {
 
 // MoveToFinal atomically moves temp file to final location using safefileio
 func (f *SafeFileManager) MoveToFinal(tempPath, finalPath string) error {
-	// Read the content from the temporary file
-	// #nosec G304 - tempPath is validated and controlled by the application
-	tempContent, err := os.ReadFile(tempPath)
-	if err != nil {
-		return fmt.Errorf("failed to read temporary file %s: %w", tempPath, err)
-	}
-
 	// Ensure the directory exists for the final path
 	finalDir := filepath.Dir(finalPath)
 	if err := f.EnsureDirectory(finalDir); err != nil {
 		return fmt.Errorf("failed to ensure directory for final path: %w", err)
 	}
 
-	// Use safefileio.SafeWriteFileOverwrite for atomic and secure file writing
-	// This provides protection against TOCTOU attacks
-	// Note: safefileio enforces max 0644 permissions for write operations
-	const secureFilePermission = 0o644
-	if err := safefileio.SafeWriteFileOverwrite(finalPath, tempContent, secureFilePermission); err != nil {
-		return fmt.Errorf("failed to write to final path %s: %w", finalPath, err)
-	}
-
-	// Remove the temporary file after successful write
-	if err := os.Remove(tempPath); err != nil {
-		// Log warning but don't fail - the important operation (writing final file) succeeded
-		// This is a cleanup operation and should not affect the main workflow
-		fmt.Printf("Warning: failed to remove temporary file %s: %v\n", tempPath, err)
+	// Use safefileio.SafeAtomicMoveFile for secure atomic file moving
+	// This provides protection against TOCTOU attacks and ensures 0600 permissions
+	const secureFilePermission = 0o600
+	if err := safefileio.SafeAtomicMoveFile(tempPath, finalPath, secureFilePermission); err != nil {
+		return fmt.Errorf("failed to move to final path %s: %w", finalPath, err)
 	}
 
 	return nil

@@ -70,10 +70,10 @@ func TestOutputCaptureIntegration_CompleteWorkflow(t *testing.T) {
 	expectedContent := bytes.Join(testChunks, nil)
 	assert.Equal(t, expectedContent, finalContent)
 
-	// Verify file permissions (should be 0644 as enforced by safefileio)
+	// Verify file permissions (should be 0600 as enforced by SafeAtomicMoveFile)
 	stat, err := os.Stat(outputPath)
 	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(0o644), stat.Mode().Perm())
+	assert.Equal(t, os.FileMode(0o600), stat.Mode().Perm())
 
 	// 5. Cleanup
 	err = manager.CleanupOutput(capture)
