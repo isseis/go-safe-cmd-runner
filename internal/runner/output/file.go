@@ -3,7 +3,6 @@ package output
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -60,35 +59,6 @@ func (f *SafeFileManager) WriteToTemp(file *os.File, data []byte) (int, error) {
 	}
 
 	return n, nil
-}
-
-// WriteToFile writes data directly to a file using the FileSystem interface
-func (f *SafeFileManager) WriteToFile(path string, data []byte) error {
-	// Ensure the directory exists for the file path
-	fileDir := filepath.Dir(path)
-	if err := f.EnsureDirectory(fileDir); err != nil {
-		return fmt.Errorf("failed to ensure directory for file path: %w", err)
-	}
-
-	// Use the safeFS interface for secure file operations
-	const secureFilePermission = 0o600
-	file, err := f.safeFS.SafeOpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, secureFilePermission)
-	if err != nil {
-		return fmt.Errorf("failed to open file for writing: %w", err)
-	}
-	defer func() {
-		if closeErr := file.Close(); closeErr != nil {
-			// Log the error but don't override the main error
-			slog.Warn("failed to close file during cleanup", "path", path, "error", closeErr)
-		}
-	}()
-
-	// Write data to file
-	if _, err := file.Write(data); err != nil {
-		return fmt.Errorf("failed to write data to file: %w", err)
-	}
-
-	return nil
 }
 
 // MoveToFinal atomically moves temp file to final location using safefileio
