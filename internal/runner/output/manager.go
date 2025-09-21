@@ -129,19 +129,18 @@ func (m *DefaultOutputCaptureManager) moveToFinalLocation(tempPath, outputPath s
 // cleanupTempFile handles cleanup of temporary files with proper error logging
 // This function is called when an error occurs during processing
 func (m *DefaultOutputCaptureManager) cleanupTempFile(tempFile *os.File, tempPath string) {
-	// Try to close file if it's still open and not nil
-	if tempFile != nil {
-		if err := tempFile.Close(); err != nil {
-			slog.Warn("failed to close temporary file during cleanup", "path", tempPath, "error", err)
-		}
+	if tempFile == nil {
+		return
+	}
+	// Try to close file if it's still open
+	if err := tempFile.Close(); err != nil {
+		slog.Warn("failed to close temporary file during cleanup", "path", tempPath, "error", err)
 	}
 
 	// Remove temporary file if it still exists
 	// Log removal errors as warnings since they don't affect the main operation
-	if tempPath != "" && m.fileManager != nil {
-		if removeErr := m.fileManager.RemoveTemp(tempPath); removeErr != nil {
-			slog.Warn("failed to remove temporary file", "path", tempPath, "error", removeErr)
-		}
+	if removeErr := m.fileManager.RemoveTemp(tempPath); removeErr != nil {
+		slog.Warn("failed to remove temporary file", "path", tempPath, "error", removeErr)
 	}
 }
 

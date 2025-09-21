@@ -435,7 +435,10 @@ func TestDefaultOutputCaptureManager_FinalizeOutput(t *testing.T) {
 }
 
 func TestDefaultOutputCaptureManager_CleanupOutput(t *testing.T) {
-	manager := &DefaultOutputCaptureManager{}
+	// Create manager with proper fileManager initialization
+	manager := &DefaultOutputCaptureManager{
+		fileManager: NewSafeFileManager(),
+	}
 
 	// Create temporary file with some data
 	tempFile, tempPath := createRealTempFile(t)
