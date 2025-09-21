@@ -12,9 +12,8 @@ import (
 
 // File operation errors
 var (
-	ErrNotDirectory            = errors.New("path exists but is not a directory")
-	ErrNotFile                 = errors.New("path is a directory, not a file")
-	ErrDirectoryPermissionMode = errors.New("directory permission mode exceeds security requirement")
+	ErrNotDirectory = errors.New("path exists but is not a directory")
+	ErrNotFile      = errors.New("path is a directory, not a file")
 )
 
 // SafeFileManager implements FileManager interface using both safefileio and common FileSystem interfaces
