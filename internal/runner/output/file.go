@@ -3,6 +3,7 @@ package output
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -79,8 +80,7 @@ func (f *SafeFileManager) WriteToFile(path string, data []byte) error {
 	defer func() {
 		if closeErr := file.Close(); closeErr != nil {
 			// Log the error but don't override the main error
-			// In a real application, this would use proper logging
-			_ = closeErr // Acknowledge the error to satisfy linter
+			slog.Warn("failed to close file during cleanup", "path", path, "error", closeErr)
 		}
 	}()
 
