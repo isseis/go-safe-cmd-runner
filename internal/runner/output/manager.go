@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -151,13 +152,13 @@ func (m *DefaultOutputCaptureManager) cleanupTempFile(tempFile *os.File, tempPat
 	// and log a warning if it fails. This makes the intent explicit so
 	// linters (errcheck) do not report an unchecked error.
 	if err := tempFile.Close(); err != nil {
-		fmt.Printf("Warning: failed to close temporary file %s: %v\n", tempPath, err)
+		slog.Warn("failed to close temporary file", "path", tempPath, "error", err)
 	}
 
 	// Remove temporary file if it still exists
 	// Log removal errors as warnings since they don't affect the main operation
 	if removeErr := m.fileManager.RemoveTemp(tempPath); removeErr != nil {
-		fmt.Printf("Warning: failed to remove temporary file %s: %v\n", tempPath, removeErr)
+		slog.Warn("failed to remove temporary file", "path", tempPath, "error", removeErr)
 	}
 }
 
