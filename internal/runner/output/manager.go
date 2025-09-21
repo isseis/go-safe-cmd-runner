@@ -219,6 +219,25 @@ func (m *DefaultOutputCaptureManager) AnalyzeOutput(outputPath string, workDir s
 	return analysis, nil
 }
 
+// isPathWithinDirectory checks if a path is within a given directory
+// using proper path boundary checking to prevent false positives
+func isPathWithinDirectory(targetPath, dirPath string) bool {
+	if dirPath == "" {
+		return false
+	}
+
+	cleanTarget := filepath.Clean(targetPath)
+	cleanDir := filepath.Clean(dirPath)
+
+	// Ensure directory path ends with separator for proper boundary checking
+	if !strings.HasSuffix(cleanDir, string(filepath.Separator)) {
+		cleanDir += string(filepath.Separator)
+	}
+
+	// Check if target starts with directory and is not equal to directory
+	return strings.HasPrefix(cleanTarget+string(filepath.Separator), cleanDir) && cleanTarget != strings.TrimSuffix(cleanDir, string(filepath.Separator))
+}
+
 // evaluateSecurityRisk assesses the security risk of writing to the given path
 func (m *DefaultOutputCaptureManager) evaluateSecurityRisk(path, workDir string) runnertypes.RiskLevel {
 	cleanPath := filepath.Clean(path)
@@ -250,17 +269,13 @@ func (m *DefaultOutputCaptureManager) evaluateSecurityRisk(path, workDir string)
 	}
 
 	// Low: Work directory or user home
-	if workDir != "" {
-		cleanWorkDir := filepath.Clean(workDir)
-		if strings.HasPrefix(cleanPath, cleanWorkDir) {
-			return runnertypes.RiskLevelLow
-		}
+	if workDir != "" && isPathWithinDirectory(cleanPath, workDir) {
+		return runnertypes.RiskLevelLow
 	}
 
 	// Check if in user's home directory
 	if homeDir, err := os.UserHomeDir(); err == nil {
-		cleanHomePath := filepath.Clean(homeDir)
-		if strings.HasPrefix(cleanPath, cleanHomePath) {
+		if isPathWithinDirectory(cleanPath, homeDir) {
 			return runnertypes.RiskLevelLow
 		}
 	}

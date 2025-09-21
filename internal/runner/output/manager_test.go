@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
@@ -638,4 +639,176 @@ func TestDefaultOutputCaptureManager_Integration(t *testing.T) {
 	// Verify mock expectations
 	mockPathValidator.AssertExpectations(t)
 	mockSecurityValidator.AssertExpectations(t)
+}
+
+func TestIsPathWithinDirectory(t *testing.T) {
+	tests := []struct {
+		name       string
+		targetPath string
+		dirPath    string
+		expected   bool
+	}{
+		// Valid cases - path within directory
+		{
+			name:       "file_in_directory",
+			targetPath: "/home/user/app/file.txt",
+			dirPath:    "/home/user/app",
+			expected:   true,
+		},
+		{
+			name:       "nested_path_in_directory",
+			targetPath: "/home/user/app/subdir/file.txt",
+			dirPath:    "/home/user/app",
+			expected:   true,
+		},
+		{
+			name:       "directory_with_trailing_slash",
+			targetPath: "/home/user/app/file.txt",
+			dirPath:    "/home/user/app/",
+			expected:   true,
+		},
+		{
+			name:       "relative_paths_within",
+			targetPath: "app/subdir/file.txt",
+			dirPath:    "app",
+			expected:   true,
+		},
+
+		// Security vulnerability cases - false positives with old logic
+		{
+			name:       "similar_prefix_different_directory",
+			targetPath: "/home/user/application/file.txt",
+			dirPath:    "/home/user/app",
+			expected:   false, // This would be true with strings.HasPrefix, but should be false
+		},
+		{
+			name:       "longer_path_with_same_prefix",
+			targetPath: "/home/user/app_backup/sensitive.txt",
+			dirPath:    "/home/user/app",
+			expected:   false, // This would be true with strings.HasPrefix, but should be false
+		},
+		{
+			name:       "completely_different_path_same_start",
+			targetPath: "/home/user/app2/config/secret.txt",
+			dirPath:    "/home/user/app",
+			expected:   false, // This would be true with strings.HasPrefix, but should be false
+		},
+
+		// Edge cases
+		{
+			name:       "exact_same_path",
+			targetPath: "/home/user/app",
+			dirPath:    "/home/user/app",
+			expected:   false, // Directory itself is not "within" the directory
+		},
+		{
+			name:       "empty_directory_path",
+			targetPath: "/home/user/app/file.txt",
+			dirPath:    "",
+			expected:   false,
+		},
+		{
+			name:       "root_directory",
+			targetPath: "/home/user/app/file.txt",
+			dirPath:    "/",
+			expected:   true,
+		},
+		{
+			name:       "path_with_dots",
+			targetPath: "/home/user/app/../app/file.txt",
+			dirPath:    "/home/user/app",
+			expected:   true, // filepath.Clean will resolve the dots
+		},
+
+		// Invalid cases - path outside directory
+		{
+			name:       "parent_directory",
+			targetPath: "/home/user/file.txt",
+			dirPath:    "/home/user/app",
+			expected:   false,
+		},
+		{
+			name:       "sibling_directory",
+			targetPath: "/home/user/other/file.txt",
+			dirPath:    "/home/user/app",
+			expected:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isPathWithinDirectory(tt.targetPath, tt.dirPath)
+			assert.Equal(t, tt.expected, result,
+				"isPathWithinDirectory(%q, %q) = %v, want %v",
+				tt.targetPath, tt.dirPath, result, tt.expected)
+		})
+	}
+}
+
+func TestEvaluateSecurityRisk_PathBoundarySecurityFix(t *testing.T) {
+	// This test specifically validates the security fix for path boundary checking
+	manager := &DefaultOutputCaptureManager{}
+
+	tests := []struct {
+		name        string
+		path        string
+		workDir     string
+		expected    runnertypes.RiskLevel
+		description string
+	}{
+		{
+			name:        "legitimate_path_within_workdir",
+			path:        "/home/user/app/output.txt",
+			workDir:     "/home/user/app",
+			expected:    runnertypes.RiskLevelLow,
+			description: "Legitimate file within working directory should be low risk",
+		},
+		{
+			name:        "security_vulnerability_similar_prefix",
+			path:        "/home/user/application/sensitive.txt",
+			workDir:     "/home/user/app",
+			expected:    runnertypes.RiskLevelMedium, // NOT low risk - this is the security fix
+			description: "Path with similar prefix but outside workdir should NOT be low risk",
+		},
+		{
+			name:        "security_vulnerability_prefix_with_suffix",
+			path:        "/home/user/app_backup/config.txt",
+			workDir:     "/home/user/app",
+			expected:    runnertypes.RiskLevelMedium, // NOT low risk - this is the security fix
+			description: "Path starting with workdir name + suffix should NOT be low risk",
+		},
+		{
+			name:        "security_vulnerability_numeric_suffix",
+			path:        "/home/user/app2/secrets.txt",
+			workDir:     "/home/user/app",
+			expected:    runnertypes.RiskLevelMedium, // NOT low risk - this is the security fix
+			description: "Path with numeric suffix should NOT be low risk",
+		},
+		{
+			name:        "nested_legitimate_path",
+			path:        "/home/user/app/subdir/deep/file.txt",
+			workDir:     "/home/user/app",
+			expected:    runnertypes.RiskLevelLow,
+			description: "Deeply nested legitimate path should be low risk",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := manager.evaluateSecurityRisk(tt.path, tt.workDir)
+			assert.Equal(t, tt.expected, result,
+				"evaluateSecurityRisk(%q, %q) = %v, want %v: %s",
+				tt.path, tt.workDir, result, tt.expected, tt.description)
+
+			// Additional validation for security-critical test cases
+			if tt.name == "security_vulnerability_similar_prefix" ||
+				tt.name == "security_vulnerability_prefix_with_suffix" ||
+				tt.name == "security_vulnerability_numeric_suffix" {
+				assert.NotEqual(t, runnertypes.RiskLevelLow, result,
+					"SECURITY CRITICAL: Path %q should NOT be classified as low risk when workDir is %q. "+
+						"This would be a false positive with vulnerable string prefix checking.",
+					tt.path, tt.workDir)
+			}
+		})
+	}
 }
