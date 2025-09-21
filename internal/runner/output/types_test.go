@@ -58,7 +58,7 @@ func TestConfig(t *testing.T) {
 
 // Test for Capture struct
 func TestCapture(t *testing.T) {
-	tests := []struct {
+	tests := []*struct {
 		name     string
 		capture  Capture
 		testFunc func(t *testing.T, capture *Capture)
@@ -106,8 +106,7 @@ func TestCapture(t *testing.T) {
 		},
 	}
 
-	for i := range tests {
-		tt := &tests[i]
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.testFunc != nil {
 				tt.testFunc(t, &tt.capture)
