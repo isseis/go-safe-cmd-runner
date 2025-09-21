@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"sync"
 	"time"
 
@@ -136,7 +135,7 @@ func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, cm
 
 	// Create TeeOutputWriter for both console and file output
 	// Use console writer for standard output display
-	consoleWriter := &consoleOutputWriter{}
+	consoleWriter := output.NewConsoleOutputWriter()
 	teeWriter := output.NewTeeOutputWriter(capture, consoleWriter)
 	defer func() {
 		if closeErr := teeWriter.Close(); closeErr != nil {
@@ -176,28 +175,6 @@ func (n *NormalResourceManager) executeCommandInternal(ctx context.Context, cmd 
 		Duration: time.Since(start).Milliseconds(),
 		DryRun:   false,
 	}, nil
-}
-
-// consoleOutputWriter implements executor.OutputWriter for console output
-type consoleOutputWriter struct {
-	mu sync.Mutex
-}
-
-func (c *consoleOutputWriter) Write(stream string, data []byte) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	// Write to the appropriate standard stream
-	if stream == executor.StderrStream {
-		_, err := os.Stderr.Write(data)
-		return err
-	}
-	_, err := os.Stdout.Write(data)
-	return err
-}
-
-func (c *consoleOutputWriter) Close() error {
-	return nil
 }
 
 // CreateTempDir creates a temporary directory in normal mode
