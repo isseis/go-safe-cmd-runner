@@ -1,7 +1,7 @@
 package output
 
 import (
-	"bytes"
+	"os"
 	"sync"
 	"time"
 
@@ -14,14 +14,15 @@ type Config struct {
 	MaxSize int64  // Maximum output size in bytes
 }
 
-// Capture represents an active output capture session using memory buffer
+// Capture represents an active output capture session using temporary file
 type Capture struct {
-	OutputPath  string        // Final output file path
-	Buffer      *bytes.Buffer // Memory buffer for temporary storage
-	MaxSize     int64         // Maximum allowed output size
-	CurrentSize int64         // Current accumulated output size
-	StartTime   time.Time     // Start time of capture session
-	mutex       sync.Mutex    // Protects concurrent access to buffer and size
+	OutputPath   string     // Final output file path
+	TempFilePath string     // Temporary file path
+	FileHandle   *os.File   // File handle for temporary file
+	MaxSize      int64      // Maximum allowed output size
+	CurrentSize  int64      // Current accumulated output size
+	StartTime    time.Time  // Start time of capture session
+	mutex        sync.Mutex // Protects concurrent access to file and size
 }
 
 // Analysis represents the analysis result for Dry-Run mode

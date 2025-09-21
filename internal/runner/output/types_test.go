@@ -1,7 +1,6 @@
 package output
 
 import (
-	"bytes"
 	"testing"
 	"time"
 )
@@ -68,7 +67,7 @@ func TestCapture(t *testing.T) {
 			name: "new output capture with memory buffer",
 			capture: Capture{
 				OutputPath:  "/tmp/final-output.txt",
-				Buffer:      &bytes.Buffer{},
+				FileHandle:  nil,              // Will be set by PrepareOutput in real usage
 				MaxSize:     10 * 1024 * 1024, // 10MB
 				CurrentSize: 0,
 				StartTime:   time.Now(),
@@ -77,9 +76,8 @@ func TestCapture(t *testing.T) {
 				if capture.OutputPath != "/tmp/final-output.txt" {
 					t.Errorf("Expected OutputPath '/tmp/final-output.txt', got '%s'", capture.OutputPath)
 				}
-				if capture.Buffer == nil {
-					t.Error("Expected Buffer to be non-nil")
-				}
+				// FileHandle will be set by PrepareOutput in real usage
+				// In this test context, nil is acceptable
 				if capture.MaxSize != 10*1024*1024 {
 					t.Errorf("Expected MaxSize 10485760, got %d", capture.MaxSize)
 				}
@@ -92,7 +90,7 @@ func TestCapture(t *testing.T) {
 			name: "capture with accumulated size",
 			capture: Capture{
 				OutputPath:  "/var/log/command.log",
-				Buffer:      &bytes.Buffer{},
+				FileHandle:  nil,         // Will be set by PrepareOutput in real usage
 				MaxSize:     1024 * 1024, // 1MB
 				CurrentSize: 512 * 1024,  // 512KB
 				StartTime:   time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC),

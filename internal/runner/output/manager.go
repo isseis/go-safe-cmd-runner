@@ -1,7 +1,6 @@
 package output
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -39,7 +38,7 @@ func NewDefaultOutputCaptureManager(securityValidator SecurityValidator) *Defaul
 	}
 }
 
-// PrepareOutput validates paths and prepares for output capture using memory buffer
+// PrepareOutput validates paths and prepares for output capture using temporary file
 func (m *DefaultOutputCaptureManager) PrepareOutput(outputPath string, workDir string, maxSize int64) (*Capture, error) {
 	// 1. Path validation and resolution
 	resolvedPath, err := m.pathValidator.ValidateAndResolvePath(outputPath, workDir)
@@ -58,19 +57,26 @@ func (m *DefaultOutputCaptureManager) PrepareOutput(outputPath string, workDir s
 		return nil, fmt.Errorf("failed to ensure directory: %w", err)
 	}
 
-	// 4. Create capture session with memory buffer
+	// 4. Create temporary file
+	tempFile, tempPath, err := m.createTempFile(resolvedPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// 5. Create capture session with temporary file
 	capture := &Capture{
-		OutputPath:  resolvedPath,
-		Buffer:      &bytes.Buffer{},
-		MaxSize:     maxSize,
-		CurrentSize: 0,
-		StartTime:   time.Now(),
+		OutputPath:   resolvedPath,
+		TempFilePath: tempPath,
+		FileHandle:   tempFile,
+		MaxSize:      maxSize,
+		CurrentSize:  0,
+		StartTime:    time.Now(),
 	}
 
 	return capture, nil
 }
 
-// WriteOutput writes data to the memory buffer with size limit checking
+// WriteOutput writes data to the temporary file with size limit checking
 func (m *DefaultOutputCaptureManager) WriteOutput(capture *Capture, data []byte) error {
 	capture.mutex.Lock()
 	defer capture.mutex.Unlock()
@@ -81,41 +87,25 @@ func (m *DefaultOutputCaptureManager) WriteOutput(capture *Capture, data []byte)
 		return fmt.Errorf("%w: %d bytes (limit: %d)", ErrOutputSizeLimitExceeded, newSize, capture.MaxSize)
 	}
 
-	// Write to memory buffer
-	n, err := capture.Buffer.Write(data)
+	// Write to temporary file
+	n, err := capture.FileHandle.Write(data)
 	if err != nil {
-		return fmt.Errorf("failed to write to buffer: %w", err)
+		return fmt.Errorf("failed to write to temporary file: %w", err)
 	}
 
 	capture.CurrentSize += int64(n)
 	return nil
 }
 
-// FinalizeOutput writes the buffer content to the final file location
+// FinalizeOutput closes the temporary file and moves it to the final location
 func (m *DefaultOutputCaptureManager) FinalizeOutput(capture *Capture) error {
-	tempFile, tempPath, err := m.createTempFile(capture.OutputPath)
-	if err != nil {
-		return err
-	}
-
-	// Track whether the file has been explicitly closed
-	var fileClosed bool
-	defer func() {
-		m.cleanupTempFile(tempFile, tempPath, fileClosed)
-	}()
-
-	if err := m.writeBufferToTempFile(tempFile, capture.Buffer.Bytes()); err != nil {
-		return err
-	}
-
-	// Close the file before moving it to the final location
-	// We handle the error here since this is the success path
-	if err := tempFile.Close(); err != nil {
+	// Close the temporary file before moving it to the final location
+	if err := capture.FileHandle.Close(); err != nil {
 		return fmt.Errorf("failed to close temporary file: %w", err)
 	}
-	fileClosed = true
 
-	return m.moveToFinalLocation(tempPath, capture.OutputPath)
+	// Move the temporary file to the final output location
+	return m.moveToFinalLocation(capture.TempFilePath, capture.OutputPath)
 }
 
 // createTempFile creates a temporary file in the same directory as the output
@@ -128,14 +118,6 @@ func (m *DefaultOutputCaptureManager) createTempFile(outputPath string) (*os.Fil
 	return tempFile, tempFile.Name(), nil
 }
 
-// writeBufferToTempFile writes the buffer content to the temporary file
-func (m *DefaultOutputCaptureManager) writeBufferToTempFile(tempFile *os.File, content []byte) error {
-	if _, err := m.fileManager.WriteToTemp(tempFile, content); err != nil {
-		return fmt.Errorf("failed to write buffer to temp file: %w", err)
-	}
-	return nil
-}
-
 // moveToFinalLocation moves the temporary file to the final output location
 func (m *DefaultOutputCaptureManager) moveToFinalLocation(tempPath, outputPath string) error {
 	if err := m.fileManager.MoveToFinal(tempPath, outputPath); err != nil {
@@ -145,31 +127,37 @@ func (m *DefaultOutputCaptureManager) moveToFinalLocation(tempPath, outputPath s
 }
 
 // cleanupTempFile handles cleanup of temporary files with proper error logging
-// This function is called in defer, so it may run in error conditions where
-// the main processing has already failed with an unrecoverable error.
-// The fileClosed parameter indicates whether the file was already explicitly closed.
-func (m *DefaultOutputCaptureManager) cleanupTempFile(tempFile *os.File, tempPath string, fileClosed bool) {
-	// Try to close file if it hasn't been explicitly closed yet
-	if !fileClosed {
+// This function is called when an error occurs during processing
+func (m *DefaultOutputCaptureManager) cleanupTempFile(tempFile *os.File, tempPath string) {
+	// Try to close file if it's still open and not nil
+	if tempFile != nil {
 		if err := tempFile.Close(); err != nil {
-			slog.Warn("failed to close temporary file", "path", tempPath, "error", err)
+			slog.Warn("failed to close temporary file during cleanup", "path", tempPath, "error", err)
 		}
 	}
 
 	// Remove temporary file if it still exists
 	// Log removal errors as warnings since they don't affect the main operation
-	if removeErr := m.fileManager.RemoveTemp(tempPath); removeErr != nil {
-		slog.Warn("failed to remove temporary file", "path", tempPath, "error", removeErr)
+	if tempPath != "" && m.fileManager != nil {
+		if removeErr := m.fileManager.RemoveTemp(tempPath); removeErr != nil {
+			slog.Warn("failed to remove temporary file", "path", tempPath, "error", removeErr)
+		}
 	}
 }
 
-// CleanupOutput cleans up the memory buffer
+// CleanupOutput cleans up the temporary file and resets capture state
 func (m *DefaultOutputCaptureManager) CleanupOutput(capture *Capture) error {
 	capture.mutex.Lock()
 	defer capture.mutex.Unlock()
 
-	// Reset buffer and size
-	capture.Buffer.Reset()
+	// Close and remove temporary file if it exists
+	if capture.FileHandle != nil {
+		m.cleanupTempFile(capture.FileHandle, capture.TempFilePath)
+		capture.FileHandle = nil
+		capture.TempFilePath = ""
+	}
+
+	// Reset size
 	capture.CurrentSize = 0
 
 	return nil

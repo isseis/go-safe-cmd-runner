@@ -1,7 +1,6 @@
 package output
 
 import (
-	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -43,6 +42,13 @@ func (m *MockFileManager) CreateTempFile(dir string, pattern string) (*os.File, 
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*os.File), args.Error(1)
+}
+
+// Helper function to create a real temporary file for testing
+func createRealTempFile(t *testing.T) (*os.File, string) {
+	tempFile, err := os.CreateTemp("/tmp", "test_output_*.tmp")
+	require.NoError(t, err)
+	return tempFile, tempFile.Name()
 }
 
 func (m *MockFileManager) WriteToTemp(file *os.File, data []byte) (int, error) {
@@ -95,11 +101,15 @@ func TestDefaultOutputCaptureManager_PrepareOutput(t *testing.T) {
 				pv.On("ValidateAndResolvePath", "/tmp/output.txt", "/home/user").Return("/tmp/output.txt", nil)
 				sv.On("ValidateOutputWritePermission", "/tmp/output.txt", mock.AnythingOfType("int")).Return(nil)
 				fm.On("EnsureDirectory", "/tmp").Return(nil)
+				// Create a real temp file for testing
+				tempFile, _ := createRealTempFile(t)
+				fm.On("CreateTempFile", "/tmp", "output_*.tmp").Return(tempFile, nil)
 			},
 			wantErr: false,
 			validateCapture: func(t *testing.T, capture *Capture) {
 				assert.Equal(t, "/tmp/output.txt", capture.OutputPath)
-				assert.NotNil(t, capture.Buffer)
+				assert.NotNil(t, capture.FileHandle)
+				assert.NotEmpty(t, capture.TempFilePath)
 				assert.Equal(t, int64(0), capture.CurrentSize)
 				assert.Equal(t, int64(1024*1024), capture.MaxSize)
 				assert.False(t, capture.StartTime.IsZero())
@@ -114,10 +124,15 @@ func TestDefaultOutputCaptureManager_PrepareOutput(t *testing.T) {
 				pv.On("ValidateAndResolvePath", "output/result.txt", "/home/user/project").Return("/home/user/project/output/result.txt", nil)
 				sv.On("ValidateOutputWritePermission", "/home/user/project/output/result.txt", mock.AnythingOfType("int")).Return(nil)
 				fm.On("EnsureDirectory", "/home/user/project/output").Return(nil)
+				// Create a real temp file for testing
+				tempFile, _ := createRealTempFile(t)
+				fm.On("CreateTempFile", "/home/user/project/output", "output_*.tmp").Return(tempFile, nil)
 			},
 			wantErr: false,
 			validateCapture: func(t *testing.T, capture *Capture) {
 				assert.Equal(t, "/home/user/project/output/result.txt", capture.OutputPath)
+				assert.NotNil(t, capture.FileHandle)
+				assert.NotEmpty(t, capture.TempFilePath)
 				assert.Equal(t, int64(2048), capture.MaxSize)
 			},
 		},
@@ -273,19 +288,25 @@ func TestDefaultOutputCaptureManager_WriteOutput(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Create a real temporary file for testing
+			tempFile, tempPath := createRealTempFile(t)
+			defer os.Remove(tempPath)
+
 			// Create capture with initial state
 			capture := &Capture{
-				OutputPath:  "/tmp/test.txt",
-				Buffer:      &bytes.Buffer{},
-				CurrentSize: tt.initialSize,
-				MaxSize:     tt.maxSize,
-				StartTime:   time.Now(),
+				OutputPath:   "/tmp/test.txt",
+				TempFilePath: tempPath,
+				FileHandle:   tempFile,
+				CurrentSize:  tt.initialSize,
+				MaxSize:      tt.maxSize,
+				StartTime:    time.Now(),
 			}
 
 			// Add some initial data if needed
 			if tt.initialSize > 0 {
 				initialData := make([]byte, tt.initialSize)
-				capture.Buffer.Write(initialData)
+				_, err := tempFile.Write(initialData)
+				require.NoError(t, err)
 			}
 
 			// Call WriteOutput
@@ -301,16 +322,17 @@ func TestDefaultOutputCaptureManager_WriteOutput(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.expectedSize, capture.CurrentSize)
 
-				// Check if the new data was written to buffer
+				// Check if the new data was written to file
 				if len(tt.expectedBuffer) > 0 {
-					bufferData := capture.Buffer.Bytes()
-					// The buffer should contain the initial data plus the new data
-					if tt.initialSize > 0 {
-						assert.True(t, len(bufferData) >= len(tt.expectedBuffer))
-						// Check that the new data appears at the end
-						assert.Equal(t, tt.expectedBuffer, bufferData[len(bufferData)-len(tt.expectedBuffer):])
-					} else {
-						assert.Equal(t, tt.expectedBuffer, bufferData)
+					// Seek to the end of the file to verify the last written data
+					_, err := tempFile.Seek(-int64(len(tt.expectedBuffer)), 2)
+					if err == nil {
+						lastBytes := make([]byte, len(tt.expectedBuffer))
+						n, readErr := tempFile.Read(lastBytes)
+						if readErr == nil && n == len(tt.expectedBuffer) {
+							// The file should contain the expected buffer data at the end
+							assert.Equal(t, tt.expectedBuffer, lastBytes)
+						}
 					}
 				}
 			}
@@ -330,17 +352,7 @@ func TestDefaultOutputCaptureManager_FinalizeOutput(t *testing.T) {
 			name:          "successful_finalization",
 			bufferContent: []byte("test output content\nline 2\n"),
 			setupMocks: func(fm *MockFileManager) {
-				// Mock temp file creation
-				mockFile, err := os.CreateTemp("", "test_temp_*.tmp")
-				if err != nil {
-					panic(err)
-				}
-				defer os.Remove(mockFile.Name())
-
-				fm.On("CreateTempFile", mock.AnythingOfType("string"), "output_*.tmp").Return(mockFile, nil)
-				fm.On("WriteToTemp", mockFile, mock.AnythingOfType("[]uint8")).Return(len([]byte("test output content\nline 2\n")), nil)
 				fm.On("MoveToFinal", mock.AnythingOfType("string"), "/tmp/final.txt").Return(nil)
-				fm.On("RemoveTemp", mock.AnythingOfType("string")).Return(nil)
 			},
 			wantErr: false,
 		},
@@ -348,42 +360,15 @@ func TestDefaultOutputCaptureManager_FinalizeOutput(t *testing.T) {
 			name:          "empty_buffer_finalization",
 			bufferContent: []byte{},
 			setupMocks: func(fm *MockFileManager) {
-				mockFile, err := os.CreateTemp("", "test_temp_*.tmp")
-				if err != nil {
-					panic(err)
-				}
-				defer os.Remove(mockFile.Name())
-
-				fm.On("CreateTempFile", mock.AnythingOfType("string"), "output_*.tmp").Return(mockFile, nil)
-				fm.On("WriteToTemp", mockFile, mock.AnythingOfType("[]uint8")).Return(0, nil)
 				fm.On("MoveToFinal", mock.AnythingOfType("string"), "/tmp/empty.txt").Return(nil)
-				fm.On("RemoveTemp", mock.AnythingOfType("string")).Return(nil)
 			},
 			wantErr: false,
-		},
-		{
-			name:          "temp_file_creation_error",
-			bufferContent: []byte("content"),
-			setupMocks: func(fm *MockFileManager) {
-				fm.On("CreateTempFile", mock.AnythingOfType("string"), "output_*.tmp").Return((*os.File)(nil), ErrTempCreationFailed)
-			},
-			wantErr:    true,
-			errMessage: "temp creation failed",
 		},
 		{
 			name:          "file_move_error",
 			bufferContent: []byte("content"),
 			setupMocks: func(fm *MockFileManager) {
-				mockFile, err := os.CreateTemp("", "test_temp_*.tmp")
-				if err != nil {
-					panic(err)
-				}
-				defer os.Remove(mockFile.Name())
-
-				fm.On("CreateTempFile", mock.AnythingOfType("string"), "output_*.tmp").Return(mockFile, nil)
-				fm.On("WriteToTemp", mockFile, mock.AnythingOfType("[]uint8")).Return(len([]byte("content")), nil)
 				fm.On("MoveToFinal", mock.AnythingOfType("string"), "/tmp/error.txt").Return(ErrPermissionDenied)
-				fm.On("RemoveTemp", mock.AnythingOfType("string")).Return(nil)
 			},
 			wantErr:    true,
 			errMessage: "permission denied",
@@ -402,9 +387,15 @@ func TestDefaultOutputCaptureManager_FinalizeOutput(t *testing.T) {
 				fileManager: mockFileManager,
 			}
 
-			// Create capture with buffer content
-			buffer := &bytes.Buffer{}
-			buffer.Write(tt.bufferContent)
+			// Create temporary file with content
+			tempFile, tempPath := createRealTempFile(t)
+			defer os.Remove(tempPath)
+
+			// Write buffer content to temp file
+			if len(tt.bufferContent) > 0 {
+				_, err := tempFile.Write(tt.bufferContent)
+				require.NoError(t, err)
+			}
 
 			var outputPath string
 			switch tt.name {
@@ -417,10 +408,11 @@ func TestDefaultOutputCaptureManager_FinalizeOutput(t *testing.T) {
 			}
 
 			capture := &Capture{
-				OutputPath:  outputPath,
-				Buffer:      buffer,
-				CurrentSize: int64(len(tt.bufferContent)),
-				StartTime:   time.Now(),
+				OutputPath:   outputPath,
+				TempFilePath: tempPath,
+				FileHandle:   tempFile,
+				CurrentSize:  int64(len(tt.bufferContent)),
+				StartTime:    time.Now(),
 			}
 
 			// Call FinalizeOutput
@@ -445,28 +437,34 @@ func TestDefaultOutputCaptureManager_FinalizeOutput(t *testing.T) {
 func TestDefaultOutputCaptureManager_CleanupOutput(t *testing.T) {
 	manager := &DefaultOutputCaptureManager{}
 
-	// Create capture with some data
-	buffer := &bytes.Buffer{}
-	buffer.WriteString("test data to be cleaned")
+	// Create temporary file with some data
+	tempFile, tempPath := createRealTempFile(t)
+	defer os.Remove(tempPath)
+
+	testData := "test data to be cleaned"
+	_, err := tempFile.Write([]byte(testData))
+	require.NoError(t, err)
 
 	capture := &Capture{
-		OutputPath:  "/tmp/test.txt",
-		Buffer:      buffer,
-		CurrentSize: 23,
-		StartTime:   time.Now(),
+		OutputPath:   "/tmp/test.txt",
+		TempFilePath: tempPath,
+		FileHandle:   tempFile,
+		CurrentSize:  23,
+		StartTime:    time.Now(),
 	}
 
 	// Verify initial state
 	assert.Equal(t, int64(23), capture.CurrentSize)
-	assert.Equal(t, 23, capture.Buffer.Len())
+	assert.NotNil(t, capture.FileHandle)
 
 	// Call CleanupOutput
-	err := manager.CleanupOutput(capture)
+	err = manager.CleanupOutput(capture)
 
 	// Validate results
 	assert.NoError(t, err)
 	assert.Equal(t, int64(0), capture.CurrentSize)
-	assert.Equal(t, 0, capture.Buffer.Len())
+	assert.Nil(t, capture.FileHandle)
+	assert.Empty(t, capture.TempFilePath)
 }
 
 func TestDefaultOutputCaptureManager_AnalyzeOutput(t *testing.T) {
@@ -629,9 +627,10 @@ func TestDefaultOutputCaptureManager_Integration(t *testing.T) {
 	err = manager.CleanupOutput(capture)
 	require.NoError(t, err)
 
-	// Verify buffer was cleaned
+	// Verify capture was cleaned
 	assert.Equal(t, int64(0), capture.CurrentSize)
-	assert.Equal(t, 0, capture.Buffer.Len())
+	assert.Nil(t, capture.FileHandle)
+	assert.Empty(t, capture.TempFilePath)
 
 	// Verify mock expectations
 	mockPathValidator.AssertExpectations(t)

@@ -34,7 +34,8 @@ func TestOutputCaptureIntegration_CompleteWorkflow(t *testing.T) {
 
 	// Verify initial state
 	assert.Equal(t, outputPath, capture.OutputPath)
-	assert.NotNil(t, capture.Buffer)
+	assert.NotNil(t, capture.FileHandle)
+	assert.NotEmpty(t, capture.TempFilePath)
 	assert.Equal(t, int64(0), capture.CurrentSize)
 	assert.Equal(t, maxSize, capture.MaxSize)
 	assert.False(t, capture.StartTime.IsZero())
@@ -56,8 +57,8 @@ func TestOutputCaptureIntegration_CompleteWorkflow(t *testing.T) {
 		assert.Equal(t, expectedTotalSize, capture.CurrentSize)
 	}
 
-	// Verify buffer contains all data
-	assert.Equal(t, expectedTotalSize, int64(capture.Buffer.Len()))
+	// Verify size tracking
+	assert.Equal(t, expectedTotalSize, capture.CurrentSize)
 
 	// 3. Finalize output (write to file)
 	err = manager.FinalizeOutput(capture)
@@ -79,9 +80,10 @@ func TestOutputCaptureIntegration_CompleteWorkflow(t *testing.T) {
 	err = manager.CleanupOutput(capture)
 	require.NoError(t, err)
 
-	// Verify buffer was cleaned
+	// Verify capture was cleaned
 	assert.Equal(t, int64(0), capture.CurrentSize)
-	assert.Equal(t, 0, capture.Buffer.Len())
+	assert.Nil(t, capture.FileHandle)
+	assert.Empty(t, capture.TempFilePath)
 }
 
 func TestOutputCaptureIntegration_SizeLimitEnforcement(t *testing.T) {
