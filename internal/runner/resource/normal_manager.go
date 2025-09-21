@@ -138,6 +138,11 @@ func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, cm
 	// Use console writer for standard output display
 	consoleWriter := &consoleOutputWriter{}
 	teeWriter := output.NewTeeOutputWriter(capture, consoleWriter)
+	defer func() {
+		if closeErr := teeWriter.Close(); closeErr != nil {
+			n.logger.Error("Failed to close tee writer", "error", closeErr)
+		}
+	}()
 
 	// Execute the command using the shared execution logic with output writer
 	result, err := n.executeCommandInternal(ctx, cmd, env, start, teeWriter)
