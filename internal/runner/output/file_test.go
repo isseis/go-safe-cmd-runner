@@ -1,6 +1,7 @@
 package output
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -392,6 +393,72 @@ func TestSafeFileManager_RemoveTemp(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSafeFileManager_FileDescriptorLeakagePrevention(t *testing.T) {
+	manager := NewSafeFileManager()
+	tempDir := t.TempDir()
+
+	// 1. Create target file with potentially vulnerable permissions
+	finalPath := filepath.Join(tempDir, "output.txt")
+	oldContent := []byte("sensitive old output")
+	require.NoError(t, os.WriteFile(finalPath, oldContent, 0o644))
+
+	// 2. Simulate attacker opening the file
+	attackerFd, err := os.Open(finalPath)
+	require.NoError(t, err, "Attacker should be able to open the file")
+	defer attackerFd.Close()
+
+	// Verify attacker can read original content
+	attackerContent := make([]byte, len(oldContent))
+	n, err := attackerFd.Read(attackerContent)
+	require.NoError(t, err, "Attacker should be able to read original content")
+	assert.Equal(t, oldContent, attackerContent[:n], "Attacker should see original content")
+
+	// 3. Create temp file with new sensitive content
+	tempFile, err := manager.CreateTempFile(tempDir, "safe-*.tmp")
+	require.NoError(t, err)
+	tempPath := tempFile.Name()
+
+	newContent := []byte("new sensitive output that should not leak")
+	_, err = manager.WriteToTemp(tempFile, newContent)
+	require.NoError(t, err)
+	require.NoError(t, tempFile.Close())
+
+	// 4. Use SafeFileManager to move temp to final
+	err = manager.MoveToFinal(tempPath, finalPath)
+	assert.NoError(t, err, "MoveToFinal should succeed")
+
+	// 5. Verify file was overwritten
+	finalContent, err := os.ReadFile(finalPath)
+	require.NoError(t, err, "Should be able to read final file")
+	assert.Equal(t, newContent, finalContent, "File should contain new content")
+
+	// 6. Critical security check: Old file descriptor should not leak new content
+	_, err = attackerFd.Seek(0, 0)
+	require.NoError(t, err, "Should be able to seek to beginning")
+
+	attackerNewRead := make([]byte, len(newContent))
+	n, readErr := attackerFd.Read(attackerNewRead)
+
+	switch {
+	case readErr != nil:
+		t.Logf("Attacker's file descriptor became invalid after move: %v", readErr)
+	case n == 0:
+		t.Logf("Attacker's file descriptor returned no content")
+	default:
+		attackerReadContent := attackerNewRead[:n]
+		if bytes.Equal(attackerReadContent, newContent) {
+			t.Errorf("SECURITY ISSUE: Attacker can read new content through old file descriptor")
+		} else {
+			t.Logf("Attacker sees different content (safe): %q", attackerReadContent)
+		}
+	}
+
+	// 7. Verify secure permissions
+	stat, err := os.Stat(finalPath)
+	require.NoError(t, err, "Should be able to stat final file")
+	assert.Equal(t, os.FileMode(0o600), stat.Mode().Perm(), "Final file should have secure permissions")
 }
 
 func TestSafeFileManager_Integration(t *testing.T) {
