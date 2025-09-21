@@ -23,8 +23,8 @@ const (
 
 // CommandExecutor defines the interface for executing commands
 type CommandExecutor interface {
-	// Execute executes a command with the given environment variables
-	Execute(ctx context.Context, cmd runnertypes.Command, env map[string]string) (*Result, error)
+	// Execute executes a command with custom output writer
+	Execute(ctx context.Context, cmd runnertypes.Command, env map[string]string, outputWriter OutputWriter) (*Result, error)
 	// Validate validates a command without executing it
 	Validate(cmd runnertypes.Command) error
 }

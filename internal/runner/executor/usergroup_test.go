@@ -21,7 +21,6 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 	t.Run("user_group_execution_success", func(t *testing.T) {
 		mockPriv := privilegetesting.NewMockPrivilegeManager(true)
 		exec := executor.NewDefaultExecutor(
-			executor.WithOutputWriter(&executor.MockOutputWriter{}),
 			executor.WithPrivilegeManager(mockPriv),
 			executor.WithFileSystem(&executor.MockFileSystem{}),
 		)
@@ -34,7 +33,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 			RunAsGroup: "testgroup",
 		}
 
-		result, err := exec.Execute(context.Background(), cmd, map[string]string{})
+		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
@@ -47,7 +46,6 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 	t.Run("user_group_no_privilege_manager", func(t *testing.T) {
 		// Create executor without privilege manager
 		exec := executor.NewDefaultExecutor(
-			executor.WithOutputWriter(&executor.MockOutputWriter{}),
 			executor.WithFileSystem(&executor.MockFileSystem{}),
 		)
 
@@ -59,7 +57,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 			RunAsGroup: "testgroup",
 		}
 
-		result, err := exec.Execute(context.Background(), cmd, map[string]string{})
+		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
 		assert.Error(t, err)
 		assert.Nil(t, result)
@@ -69,7 +67,6 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 	t.Run("user_group_not_supported", func(t *testing.T) {
 		mockPriv := privilegetesting.NewMockPrivilegeManager(false) // Not supported
 		exec := executor.NewDefaultExecutor(
-			executor.WithOutputWriter(&executor.MockOutputWriter{}),
 			executor.WithPrivilegeManager(mockPriv),
 			executor.WithFileSystem(&executor.MockFileSystem{}),
 		)
@@ -82,7 +79,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 			RunAsGroup: "testgroup",
 		}
 
-		result, err := exec.Execute(context.Background(), cmd, map[string]string{})
+		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
 		assert.Error(t, err)
 		assert.Nil(t, result)
@@ -92,7 +89,6 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 	t.Run("user_group_privilege_execution_fails", func(t *testing.T) {
 		mockPriv := privilegetesting.NewFailingMockPrivilegeManager(true)
 		exec := executor.NewDefaultExecutor(
-			executor.WithOutputWriter(&executor.MockOutputWriter{}),
 			executor.WithPrivilegeManager(mockPriv),
 			executor.WithFileSystem(&executor.MockFileSystem{}),
 		)
@@ -105,7 +101,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 			RunAsGroup: "invalidgroup",
 		}
 
-		result, err := exec.Execute(context.Background(), cmd, map[string]string{})
+		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
 		assert.Error(t, err)
 		assert.Nil(t, result)
@@ -115,7 +111,6 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 	t.Run("only_user_specified", func(t *testing.T) {
 		mockPriv := privilegetesting.NewMockPrivilegeManager(true)
 		exec := executor.NewDefaultExecutor(
-			executor.WithOutputWriter(&executor.MockOutputWriter{}),
 			executor.WithPrivilegeManager(mockPriv),
 			executor.WithFileSystem(&executor.MockFileSystem{}),
 		)
@@ -128,7 +123,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 			// RunAsGroup is empty
 		}
 
-		result, err := exec.Execute(context.Background(), cmd, map[string]string{})
+		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
@@ -141,7 +136,6 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 	t.Run("only_group_specified", func(t *testing.T) {
 		mockPriv := privilegetesting.NewMockPrivilegeManager(true)
 		exec := executor.NewDefaultExecutor(
-			executor.WithOutputWriter(&executor.MockOutputWriter{}),
 			executor.WithPrivilegeManager(mockPriv),
 			executor.WithFileSystem(&executor.MockFileSystem{}),
 		)
@@ -154,7 +148,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 			// RunAsUser is empty
 		}
 
-		result, err := exec.Execute(context.Background(), cmd, map[string]string{})
+		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
@@ -170,7 +164,6 @@ func TestDefaultExecutor_Execute_Integration(t *testing.T) {
 		// Test case where user/group are specified
 		mockPriv := privilegetesting.NewMockPrivilegeManager(true)
 		exec := executor.NewDefaultExecutor(
-			executor.WithOutputWriter(&executor.MockOutputWriter{}),
 			executor.WithPrivilegeManager(mockPriv),
 			executor.WithFileSystem(&executor.MockFileSystem{}),
 		)
@@ -183,7 +176,7 @@ func TestDefaultExecutor_Execute_Integration(t *testing.T) {
 			RunAsGroup: "testgroup",
 		}
 
-		result, err := exec.Execute(context.Background(), cmd, map[string]string{})
+		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
@@ -197,7 +190,6 @@ func TestDefaultExecutor_Execute_Integration(t *testing.T) {
 		// Test case where user/group are not specified
 		mockPriv := privilegetesting.NewMockPrivilegeManager(true)
 		exec := executor.NewDefaultExecutor(
-			executor.WithOutputWriter(&executor.MockOutputWriter{}),
 			executor.WithPrivilegeManager(mockPriv),
 			executor.WithFileSystem(&executor.MockFileSystem{}),
 		)
@@ -209,7 +201,7 @@ func TestDefaultExecutor_Execute_Integration(t *testing.T) {
 			// No privileged, no user/group
 		}
 
-		result, err := exec.Execute(context.Background(), cmd, map[string]string{})
+		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
@@ -289,7 +281,6 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 			mockPrivMgr := privilegetesting.NewMockPrivilegeManager(true)
 
 			exec := executor.NewDefaultExecutor(
-				executor.WithOutputWriter(&executor.MockOutputWriter{}),
 				executor.WithPrivilegeManager(mockPrivMgr),
 				executor.WithFileSystem(mockFS),
 			)
@@ -297,7 +288,7 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 			ctx := context.Background()
 			envVars := map[string]string{"PATH": "/usr/bin"}
 
-			_, err := exec.Execute(ctx, tt.cmd, envVars)
+			_, err := exec.Execute(ctx, tt.cmd, envVars, nil)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -322,7 +313,6 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging(t *testing.T) {
 		auditLogger := audit.NewAuditLoggerWithCustom(logger)
 
 		exec := executor.NewDefaultExecutor(
-			executor.WithOutputWriter(&executor.MockOutputWriter{}),
 			executor.WithPrivilegeManager(mockPriv),
 			executor.WithFileSystem(&executor.MockFileSystem{}),
 			executor.WithAuditLogger(auditLogger),
@@ -336,7 +326,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging(t *testing.T) {
 			RunAsGroup: "testgroup",
 		}
 
-		result, err := exec.Execute(context.Background(), cmd, map[string]string{})
+		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
@@ -354,7 +344,6 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging(t *testing.T) {
 		mockPriv := privilegetesting.NewMockPrivilegeManager(true)
 
 		exec := executor.NewDefaultExecutor(
-			executor.WithOutputWriter(&executor.MockOutputWriter{}),
 			executor.WithPrivilegeManager(mockPriv),
 			executor.WithFileSystem(&executor.MockFileSystem{}),
 			// No audit logger provided
@@ -368,7 +357,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging(t *testing.T) {
 			RunAsGroup: "testgroup",
 		}
 
-		result, err := exec.Execute(context.Background(), cmd, map[string]string{})
+		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
@@ -383,7 +372,6 @@ func TestDefaultExecutor_UserGroupPrivilegeElevationFailure(t *testing.T) {
 	mockPrivMgr := privilegetesting.NewFailingMockPrivilegeManager(true)
 
 	exec := executor.NewDefaultExecutor(
-		executor.WithOutputWriter(&executor.MockOutputWriter{}),
 		executor.WithPrivilegeManager(mockPrivMgr),
 		executor.WithFileSystem(&executor.MockFileSystem{}),
 	)
@@ -399,7 +387,7 @@ func TestDefaultExecutor_UserGroupPrivilegeElevationFailure(t *testing.T) {
 	ctx := context.Background()
 	envVars := map[string]string{"PATH": "/usr/bin"}
 
-	result, err := exec.Execute(ctx, cmd, envVars)
+	result, err := exec.Execute(ctx, cmd, envVars, nil)
 
 	assert.Error(t, err)
 	assert.Nil(t, result)
@@ -411,7 +399,6 @@ func TestDefaultExecutor_UserGroupPrivilegeElevationFailure(t *testing.T) {
 func TestDefaultExecutor_UserGroupBackwardCompatibility(t *testing.T) {
 	// Test that existing code without privilege manager still works for normal commands
 	exec := executor.NewDefaultExecutor(
-		executor.WithOutputWriter(&executor.MockOutputWriter{}),
 		executor.WithFileSystem(&executor.MockFileSystem{}),
 	)
 
@@ -425,7 +412,7 @@ func TestDefaultExecutor_UserGroupBackwardCompatibility(t *testing.T) {
 	ctx := context.Background()
 	envVars := map[string]string{"PATH": "/usr/bin"}
 
-	result, err := exec.Execute(ctx, cmd, envVars)
+	result, err := exec.Execute(ctx, cmd, envVars, nil)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
@@ -510,12 +497,10 @@ func TestDefaultExecutor_UserGroupRootExecution(t *testing.T) {
 			if tt.noPrivilegeManager {
 				// Create executor without privilege manager
 				exec = executor.NewDefaultExecutor(
-					executor.WithOutputWriter(&executor.MockOutputWriter{}),
 					executor.WithFileSystem(&executor.MockFileSystem{}),
 				)
 			} else {
 				exec = executor.NewDefaultExecutor(
-					executor.WithOutputWriter(&executor.MockOutputWriter{}),
 					executor.WithPrivilegeManager(mockPrivMgr),
 					executor.WithFileSystem(&executor.MockFileSystem{}),
 				)
@@ -524,7 +509,7 @@ func TestDefaultExecutor_UserGroupRootExecution(t *testing.T) {
 			ctx := context.Background()
 			envVars := map[string]string{"PATH": "/usr/bin"}
 
-			result, err := exec.Execute(ctx, tt.cmd, envVars)
+			result, err := exec.Execute(ctx, tt.cmd, envVars, nil)
 
 			if tt.expectError {
 				assert.Error(t, err)

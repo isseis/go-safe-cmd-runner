@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
@@ -33,6 +34,9 @@ type DryRunResourceManager struct {
 	privilegeManager runnertypes.PrivilegeManager
 	pathResolver     PathResolver
 
+	// Output capture dependencies
+	outputManager output.CaptureManager
+
 	// Dry-run specific
 	dryRunOptions    *DryRunOptions
 	dryRunResult     *DryRunResult
@@ -44,6 +48,12 @@ type DryRunResourceManager struct {
 
 // NewDryRunResourceManager creates a new DryRunResourceManager for dry-run mode
 func NewDryRunResourceManager(exec executor.CommandExecutor, privMgr runnertypes.PrivilegeManager, pathResolver PathResolver, opts *DryRunOptions) (*DryRunResourceManager, error) {
+	// Delegate to NewDryRunResourceManagerWithOutput with nil outputManager
+	return NewDryRunResourceManagerWithOutput(exec, privMgr, pathResolver, nil, opts)
+}
+
+// NewDryRunResourceManagerWithOutput creates a new DryRunResourceManager with output capture support
+func NewDryRunResourceManagerWithOutput(exec executor.CommandExecutor, privMgr runnertypes.PrivilegeManager, pathResolver PathResolver, outputMgr output.CaptureManager, opts *DryRunOptions) (*DryRunResourceManager, error) {
 	if pathResolver == nil {
 		return nil, ErrPathResolverRequired
 	}
@@ -56,6 +66,7 @@ func NewDryRunResourceManager(exec executor.CommandExecutor, privMgr runnertypes
 		executor:         exec,
 		privilegeManager: privMgr,
 		pathResolver:     pathResolver,
+		outputManager:    outputMgr,
 
 		dryRunOptions: opts,
 		dryRunResult: &DryRunResult{
@@ -99,6 +110,12 @@ func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd runnerty
 		return nil, fmt.Errorf("command analysis failed: %w", err)
 	}
 
+	// Check if output capture is requested and analyze it
+	if cmd.Output != "" && d.outputManager != nil {
+		outputAnalysis := d.analyzeOutput(cmd, group)
+		d.RecordAnalysis(&outputAnalysis)
+	}
+
 	// Record the analysis
 	d.RecordAnalysis(&analysis)
 
@@ -106,6 +123,9 @@ func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd runnerty
 	stdout := fmt.Sprintf("[DRY-RUN] Would execute: %s", cmd.Cmd)
 	if cmd.Dir != "" {
 		stdout += fmt.Sprintf(" (in directory: %s)", cmd.Dir)
+	}
+	if cmd.Output != "" {
+		stdout += fmt.Sprintf(" (output would be captured to: %s)", cmd.Output)
 	}
 
 	return &ExecutionResult{
@@ -315,6 +335,57 @@ func (d *DryRunResourceManager) SendNotification(message string, details map[str
 
 	d.RecordAnalysis(&analysis)
 	return nil
+}
+
+// analyzeOutput analyzes output capture configuration for dry-run
+func (d *DryRunResourceManager) analyzeOutput(cmd runnertypes.Command, group *runnertypes.CommandGroup) ResourceAnalysis {
+	analysis := ResourceAnalysis{
+		Type:      ResourceTypeFilesystem,
+		Operation: OperationCreate,
+		Target:    cmd.Output,
+		Parameters: map[string]any{
+			"output_path":       cmd.Output,
+			"command":           cmd.Cmd,
+			"working_directory": group.WorkDir,
+		},
+		Impact: ResourceImpact{
+			Reversible:  false, // Output files are persistent
+			Persistent:  true,
+			Description: fmt.Sprintf("Capture command output to file: %s", cmd.Output),
+		},
+		Timestamp: time.Now(),
+	}
+
+	// Use the output manager to analyze the output path
+	outputAnalysis, err := d.outputManager.AnalyzeOutput(cmd.Output, group.WorkDir)
+	if err != nil {
+		analysis.Impact.Description += fmt.Sprintf(" [ERROR: %v]", err)
+		analysis.Impact.SecurityRisk = riskLevelHigh
+		return analysis // Return analysis with error info, but don't fail
+	}
+
+	// Add analysis results to parameters
+	analysis.Parameters["resolved_path"] = outputAnalysis.ResolvedPath
+	analysis.Parameters["directory_exists"] = outputAnalysis.DirectoryExists
+	analysis.Parameters["write_permission"] = outputAnalysis.WritePermission
+	analysis.Parameters["security_risk"] = outputAnalysis.SecurityRisk.String()
+	analysis.Parameters["max_size_limit"] = outputAnalysis.MaxSizeLimit
+
+	// Set security risk based on analysis
+	analysis.Impact.SecurityRisk = outputAnalysis.SecurityRisk.String()
+
+	// Update description based on analysis
+	if !outputAnalysis.WritePermission {
+		analysis.Impact.Description += " [WARNING: No write permission]"
+	}
+	if !outputAnalysis.DirectoryExists {
+		analysis.Impact.Description += " [INFO: Directory will be created]"
+	}
+	if outputAnalysis.ErrorMessage != "" {
+		analysis.Impact.Description += fmt.Sprintf(" [ERROR: %s]", outputAnalysis.ErrorMessage)
+	}
+
+	return analysis
 }
 
 // GetDryRunResults returns the dry-run results

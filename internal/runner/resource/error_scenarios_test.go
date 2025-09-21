@@ -17,7 +17,7 @@ import (
 // Mock implementations for testing
 type mockCommandExecutor struct{}
 
-func (m *mockCommandExecutor) Execute(_ context.Context, cmd runnertypes.Command, _ map[string]string) (*executor.Result, error) {
+func (m *mockCommandExecutor) Execute(_ context.Context, cmd runnertypes.Command, _ map[string]string, _ executor.OutputWriter) (*executor.Result, error) {
 	// Normal mode test implementation
 	return &executor.Result{
 		ExitCode: 0,
