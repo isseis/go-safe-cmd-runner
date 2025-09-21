@@ -154,6 +154,12 @@ func TestTeeOutputWriter_Close(t *testing.T) {
 			writerError:  errMockWriterClose,
 			wantError:    true,
 		},
+		{
+			name:         "both close errors",
+			captureError: errMockCaptureClose,
+			writerError:  errMockWriterClose,
+			wantError:    true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -177,6 +183,17 @@ func TestTeeOutputWriter_Close(t *testing.T) {
 			// Check error
 			if tt.wantError {
 				assert.Error(t, err)
+
+				// Special handling for both close errors test case
+				if tt.name == "both close errors" {
+					// Verify that errors.Join properly combines both errors
+					assert.Contains(t, err.Error(), errMockCaptureClose.Error())
+					assert.Contains(t, err.Error(), errMockWriterClose.Error())
+
+					// Verify that errors.Is works correctly with joined errors
+					assert.True(t, errors.Is(err, errMockCaptureClose))
+					assert.True(t, errors.Is(err, errMockWriterClose))
+				}
 			} else {
 				assert.NoError(t, err)
 			}

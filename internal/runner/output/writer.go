@@ -1,6 +1,8 @@
 package output
 
 import (
+	"errors"
+
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 )
 
@@ -51,21 +53,21 @@ func (t *TeeOutputWriter) Write(stream string, data []byte) error {
 // Close implements executor.OutputWriter.Close
 // It closes both the capture writer and the output writer
 func (t *TeeOutputWriter) Close() error {
-	var firstErr error
+	var errs []error
 
 	// Close capture first
 	if t.capture != nil {
 		if err := t.capture.Close(); err != nil {
-			firstErr = err
+			errs = append(errs, err)
 		}
 	}
 
 	// Close output writer
 	if t.writer != nil {
-		if err := t.writer.Close(); err != nil && firstErr == nil {
-			firstErr = err
+		if err := t.writer.Close(); err != nil {
+			errs = append(errs, err)
 		}
 	}
 
-	return firstErr
+	return errors.Join(errs...)
 }
