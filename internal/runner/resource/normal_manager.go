@@ -174,9 +174,14 @@ func (n *NormalResourceManager) executeCommandInternal(ctx context.Context, cmd 
 }
 
 // consoleOutputWriter implements executor.OutputWriter for console output
-type consoleOutputWriter struct{}
+type consoleOutputWriter struct {
+	mu sync.Mutex
+}
 
 func (c *consoleOutputWriter) Write(stream string, data []byte) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	// Write to the appropriate standard stream
 	if stream == executor.StderrStream {
 		_, err := os.Stderr.Write(data)
