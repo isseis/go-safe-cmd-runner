@@ -114,7 +114,7 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd runnerty
 }
 
 // executeCommandWithOutput executes a command with output capture
-func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string, start time.Time) (*ExecutionResult, error) {
+func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string, start time.Time) (result *ExecutionResult, err error) {
 	// Prepare output capture
 	maxSize := n.maxOutputSize
 	if maxSize <= 0 {
@@ -126,10 +126,12 @@ func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, cm
 		return nil, fmt.Errorf("output capture preparation failed: %w", err)
 	}
 
-	// Ensure cleanup on any error
+	// Ensure cleanup only on error paths
 	defer func() {
-		if err := n.outputManager.CleanupOutput(capture); err != nil {
-			n.logger.Error("Failed to cleanup output capture", "error", err, "path", cmd.Output)
+		if err != nil {
+			if cleanupErr := n.outputManager.CleanupOutput(capture); cleanupErr != nil {
+				n.logger.Error("Failed to cleanup output capture", "error", cleanupErr, "path", cmd.Output)
+			}
 		}
 	}()
 
@@ -144,13 +146,13 @@ func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, cm
 	}()
 
 	// Execute the command using the shared execution logic with output writer
-	result, err := n.executeCommandInternal(ctx, cmd, env, start, teeWriter)
+	result, err = n.executeCommandInternal(ctx, cmd, env, start, teeWriter)
 	if err != nil {
 		return nil, err
 	}
 
 	// Finalize output capture
-	if err := n.outputManager.FinalizeOutput(capture); err != nil {
+	if err = n.outputManager.FinalizeOutput(capture); err != nil {
 		return nil, fmt.Errorf("output capture finalization failed: %w", err)
 	}
 
