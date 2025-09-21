@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -15,6 +16,24 @@ import (
 // Manager operation errors
 var (
 	ErrOutputSizeLimitExceeded = errors.New("output size limit exceeded")
+)
+
+// Pre-compiled regular expressions for security risk evaluation
+var (
+	// Critical: Exact system critical files (case-insensitive)
+	criticalFilesRegex = regexp.MustCompile(`^(?i)(/etc/passwd|/etc/shadow|/etc/sudoers)$`)
+
+	// Critical: System critical directories (case-insensitive)
+	criticalDirsRegex = regexp.MustCompile(`^(?i)(/boot/|/sys/|/proc/)`)
+
+	// Critical: Sensitive key files (basename only, case-insensitive)
+	criticalKeyFilesRegex = regexp.MustCompile(`^(?i)(authorized_keys|id_rsa|id_ed25519|id_ecdsa|id_dsa)$`)
+
+	// High: System directories (case-insensitive)
+	highDirsRegex = regexp.MustCompile(`^(?i)(/etc/|/var/log/|/usr/bin/|/usr/sbin/)`)
+
+	// High: Sensitive config directories (case-insensitive, can be anywhere in path)
+	highConfigDirsRegex = regexp.MustCompile(`(?i)(^|/)\.ssh/|(?i)(^|/)\.gnupg/`)
 )
 
 // SecurityValidator defines the interface for security validation
@@ -202,37 +221,37 @@ func (m *DefaultOutputCaptureManager) AnalyzeOutput(outputPath string, workDir s
 
 // evaluateSecurityRisk assesses the security risk of writing to the given path
 func (m *DefaultOutputCaptureManager) evaluateSecurityRisk(path, workDir string) runnertypes.RiskLevel {
-	pathLower := strings.ToLower(path)
+	cleanPath := filepath.Clean(path)
+	baseName := filepath.Base(cleanPath)
 
-	// Critical: System critical files
-	criticalPatterns := []string{
-		"/etc/passwd", "/etc/shadow", "/etc/sudoers",
-		"/boot/", "/sys/", "/proc/",
-		"authorized_keys", "id_rsa", "id_ed25519",
+	// Critical: Exact system critical files
+	if criticalFilesRegex.MatchString(cleanPath) {
+		return runnertypes.RiskLevelCritical
 	}
 
-	for _, pattern := range criticalPatterns {
-		if strings.Contains(pathLower, pattern) {
-			return runnertypes.RiskLevelCritical
-		}
+	// Critical: System critical directories
+	if criticalDirsRegex.MatchString(cleanPath) {
+		return runnertypes.RiskLevelCritical
+	}
+
+	// Critical: Sensitive key files (check basename)
+	if criticalKeyFilesRegex.MatchString(baseName) {
+		return runnertypes.RiskLevelCritical
 	}
 
 	// High: System directories
-	highPatterns := []string{
-		"/etc/", "/var/log/", "/usr/bin/", "/usr/sbin/",
-		".ssh/", ".gnupg/",
+	if highDirsRegex.MatchString(cleanPath) {
+		return runnertypes.RiskLevelHigh
 	}
 
-	for _, pattern := range highPatterns {
-		if strings.Contains(pathLower, pattern) {
-			return runnertypes.RiskLevelHigh
-		}
+	// High: Sensitive config directories
+	if highConfigDirsRegex.MatchString(cleanPath) {
+		return runnertypes.RiskLevelHigh
 	}
 
 	// Low: Work directory or user home
 	if workDir != "" {
 		cleanWorkDir := filepath.Clean(workDir)
-		cleanPath := filepath.Clean(path)
 		if strings.HasPrefix(cleanPath, cleanWorkDir) {
 			return runnertypes.RiskLevelLow
 		}
@@ -241,7 +260,6 @@ func (m *DefaultOutputCaptureManager) evaluateSecurityRisk(path, workDir string)
 	// Check if in user's home directory
 	if homeDir, err := os.UserHomeDir(); err == nil {
 		cleanHomePath := filepath.Clean(homeDir)
-		cleanPath := filepath.Clean(path)
 		if strings.HasPrefix(cleanPath, cleanHomePath) {
 			return runnertypes.RiskLevelLow
 		}
