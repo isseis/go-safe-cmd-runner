@@ -74,6 +74,10 @@ func NewDefaultExecutor(opts ...Option) CommandExecutor {
 
 // Execute implements the CommandExecutor interface
 func (e *DefaultExecutor) Execute(ctx context.Context, cmd runnertypes.Command, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
+	// Note: outputWriter lifecycle is managed by the caller.
+	// The caller is responsible for calling Close() when done.
+	// This executor will NOT close the outputWriter.
+
 	if cmd.HasUserGroupSpecification() {
 		return e.executeWithUserGroup(ctx, cmd, envVars, outputWriter)
 	}
