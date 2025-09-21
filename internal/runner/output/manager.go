@@ -92,43 +92,73 @@ func (m *DefaultOutputCaptureManager) WriteOutput(capture *Capture, data []byte)
 
 // FinalizeOutput writes the buffer content to the final file location
 func (m *DefaultOutputCaptureManager) FinalizeOutput(capture *Capture) error {
-	// Create a temporary file with the buffer content
-	tempDir := filepath.Dir(capture.OutputPath)
+	tempFile, tempPath, err := m.createTempFile(capture.OutputPath)
+	if err != nil {
+		return err
+	}
+	defer m.cleanupTempFile(tempFile, tempPath)
+
+	if err := m.writeBufferToTempFile(tempFile, capture.Buffer.Bytes()); err != nil {
+		return err
+	}
+
+	if err := m.closeTempFile(tempFile); err != nil {
+		return err
+	}
+
+	return m.moveToFinalLocation(tempPath, capture.OutputPath)
+}
+
+// createTempFile creates a temporary file in the same directory as the output
+func (m *DefaultOutputCaptureManager) createTempFile(outputPath string) (*os.File, string, error) {
+	tempDir := filepath.Dir(outputPath)
 	tempFile, err := m.fileManager.CreateTempFile(tempDir, "output_*.tmp")
 	if err != nil {
-		return fmt.Errorf("failed to create temporary file: %w", err)
+		return nil, "", fmt.Errorf("failed to create temporary file: %w", err)
 	}
+	return tempFile, tempFile.Name(), nil
+}
 
-	tempPath := tempFile.Name()
-	defer func() {
-		if closeErr := tempFile.Close(); closeErr != nil {
-			// Log the error but don't override the main error
-			fmt.Printf("Warning: failed to close temporary file %s: %v\n", tempPath, closeErr)
-		}
-		// Clean up temp file if it still exists (in case of error)
-		if removeErr := m.fileManager.RemoveTemp(tempPath); removeErr != nil {
-			// Log the error but don't override the main error
-			fmt.Printf("Warning: failed to remove temporary file %s: %v\n", tempPath, removeErr)
-		}
-	}()
-
-	// Write buffer content to temp file
-	bufferContent := capture.Buffer.Bytes()
-	if _, err := m.fileManager.WriteToTemp(tempFile, bufferContent); err != nil {
+// writeBufferToTempFile writes the buffer content to the temporary file
+func (m *DefaultOutputCaptureManager) writeBufferToTempFile(tempFile *os.File, content []byte) error {
+	if _, err := m.fileManager.WriteToTemp(tempFile, content); err != nil {
 		return fmt.Errorf("failed to write buffer to temp file: %w", err)
 	}
+	return nil
+}
 
-	// Close temp file before moving
+// closeTempFile closes the temporary file
+func (m *DefaultOutputCaptureManager) closeTempFile(tempFile *os.File) error {
 	if err := tempFile.Close(); err != nil {
 		return fmt.Errorf("failed to close temporary file: %w", err)
 	}
+	return nil
+}
 
-	// Move temp file to final location
-	if err := m.fileManager.MoveToFinal(tempPath, capture.OutputPath); err != nil {
+// moveToFinalLocation moves the temporary file to the final output location
+func (m *DefaultOutputCaptureManager) moveToFinalLocation(tempPath, outputPath string) error {
+	if err := m.fileManager.MoveToFinal(tempPath, outputPath); err != nil {
 		return fmt.Errorf("failed to move temp file to final location: %w", err)
 	}
-
 	return nil
+}
+
+// cleanupTempFile handles cleanup of temporary files with proper error logging
+// This function is called in defer, so it may run in error conditions where
+// the main processing has already failed with an unrecoverable error.
+func (m *DefaultOutputCaptureManager) cleanupTempFile(tempFile *os.File, tempPath string) {
+	// Try to close file if it's still open. We treat Close as best-effort
+	// and log a warning if it fails. This makes the intent explicit so
+	// linters (errcheck) do not report an unchecked error.
+	if err := tempFile.Close(); err != nil {
+		fmt.Printf("Warning: failed to close temporary file %s: %v\n", tempPath, err)
+	}
+
+	// Remove temporary file if it still exists
+	// Log removal errors as warnings since they don't affect the main operation
+	if removeErr := m.fileManager.RemoveTemp(tempPath); removeErr != nil {
+		fmt.Printf("Warning: failed to remove temporary file %s: %v\n", tempPath, removeErr)
+	}
 }
 
 // CleanupOutput cleans up the memory buffer
