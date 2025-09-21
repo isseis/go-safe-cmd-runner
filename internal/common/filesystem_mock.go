@@ -302,10 +302,13 @@ func (m *MockFileSystem) AddSymlink(linkPath, targetPath string) error {
 
 // CreateTemp creates a temporary file with the given prefix in the specified directory
 func (m *MockFileSystem) CreateTemp(dir string, pattern string) (*os.File, error) {
-	// For mock implementation, we'll use a simplified approach
-	// In real testing, you might want to create actual temp files or use a more sophisticated mock
-	tempName := fmt.Sprintf("%s/%s%d", dir, pattern, m.tempDirCounter)
+	if dir == "" {
+		dir = m.TempDir()
+	}
+
+	// Generate unique temp file name
 	m.tempDirCounter++
+	tempName := filepath.Join(dir, fmt.Sprintf("%s%d", pattern, m.tempDirCounter))
 
 	// Create the temporary file in the mock filesystem
 	m.files[tempName] = &MockFileInfo{
@@ -316,8 +319,16 @@ func (m *MockFileSystem) CreateTemp(dir string, pattern string) (*os.File, error
 		gid:   DefaultGID,
 	}
 
-	// Return a mock file - in real testing you might want to return a mock file implementation
-	return os.CreateTemp(dir, pattern) // Fallback to real implementation for now
+	// Create an in-memory pipe for testing
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		return nil, err
+	}
+
+	// Close the reader immediately since we only need the writer
+	_ = reader.Close()
+
+	return writer, nil
 }
 
 // MkdirAll creates a directory and all necessary parents with the specified permissions
