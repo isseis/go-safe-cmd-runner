@@ -42,10 +42,9 @@ func NewSafeFileManagerWithFS(safeFS safefileio.FileSystem, commonFS common.File
 
 // CreateTempFile creates a temporary file for output capture with secure permissions (0600)
 func (f *SafeFileManager) CreateTempFile(dir string, pattern string) (*os.File, error) {
-	// Use os.CreateTemp directly as common.FileSystem doesn't provide temporary file creation.
-	// This is acceptable since os.CreateTemp automatically creates files with 0600 permissions
-	// and provides race-condition-free temporary file creation.
-	tempFile, err := os.CreateTemp(dir, pattern)
+	// Use commonFS.CreateTemp for consistent file system operations and testability
+	// This automatically creates files with 0600 permissions and provides race-condition-free temporary file creation
+	tempFile, err := f.commonFS.CreateTemp(dir, pattern)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temporary file: %w", err)
 	}
@@ -133,10 +132,9 @@ func (f *SafeFileManager) EnsureDirectory(path string) error {
 		return nil
 	}
 
-	// Directory doesn't exist, create it using os.MkdirAll
-	// Note: common.FileSystem doesn't provide MkdirAll functionality
+	// Directory doesn't exist, create it using commonFS.MkdirAll
 	const secureDirPermission = 0o750 // More restrictive than 0755 for security
-	if err := os.MkdirAll(path, secureDirPermission); err != nil {
+	if err := f.commonFS.MkdirAll(path, secureDirPermission); err != nil {
 		return fmt.Errorf("failed to create directory %s: %w", path, err)
 	}
 

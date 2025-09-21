@@ -20,6 +20,14 @@ const (
 	// In real system, permission of symlink is never used, but permission of
 	// target file/directory is used for permission check on system calls.
 	SymlinkPerm = 0o777
+
+	// TempFilePermission represents default temp file permissions (rw-------)
+	TempFilePermission = 0o600
+
+	// DefaultUID represents default user ID for mock files
+	DefaultUID = 1000
+	// DefaultGID represents default group ID for mock files
+	DefaultGID = 1000
 )
 
 // MockFileSystem implements FileSystem for testing
@@ -287,6 +295,61 @@ func (m *MockFileSystem) AddSymlink(linkPath, targetPath string) error {
 		isSymlink: true,
 		uid:       0,
 		gid:       0,
+	}
+
+	return nil
+}
+
+// CreateTemp creates a temporary file with the given prefix in the specified directory
+func (m *MockFileSystem) CreateTemp(dir string, pattern string) (*os.File, error) {
+	// For mock implementation, we'll use a simplified approach
+	// In real testing, you might want to create actual temp files or use a more sophisticated mock
+	tempName := fmt.Sprintf("%s/%s%d", dir, pattern, m.tempDirCounter)
+	m.tempDirCounter++
+
+	// Create the temporary file in the mock filesystem
+	m.files[tempName] = &MockFileInfo{
+		name:  filepath.Base(tempName),
+		mode:  TempFilePermission,
+		isDir: false,
+		uid:   DefaultUID,
+		gid:   DefaultGID,
+	}
+
+	// Return a mock file - in real testing you might want to return a mock file implementation
+	return os.CreateTemp(dir, pattern) // Fallback to real implementation for now
+}
+
+// MkdirAll creates a directory and all necessary parents with the specified permissions
+func (m *MockFileSystem) MkdirAll(path string, perm os.FileMode) error {
+	path = filepath.Clean(path)
+
+	// Create all parent directories
+	parts := strings.Split(path, string(filepath.Separator))
+	currentPath := ""
+
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+
+		if currentPath == "" {
+			currentPath = part
+		} else {
+			currentPath = filepath.Join(currentPath, part)
+		}
+
+		// Add directory if it doesn't exist
+		if _, exists := m.files[currentPath]; !exists {
+			m.files[currentPath] = &MockFileInfo{
+				name:  filepath.Base(currentPath),
+				mode:  perm | os.ModeDir,
+				isDir: true,
+				uid:   DefaultUID,
+				gid:   DefaultGID,
+			}
+			m.dirs[currentPath] = true
+		}
 	}
 
 	return nil

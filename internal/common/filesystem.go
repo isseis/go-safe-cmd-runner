@@ -38,6 +38,12 @@ type FileSystem interface {
 
 	// IsDir checks if the path is a directory
 	IsDir(path string) (bool, error)
+
+	// CreateTemp creates a temporary file with the given prefix in the specified directory
+	CreateTemp(dir string, pattern string) (*os.File, error)
+
+	// MkdirAll creates a directory and all necessary parents with the specified permissions
+	MkdirAll(path string, perm os.FileMode) error
 }
 
 // DefaultFileSystem implements FileSystem using standard os package functions
@@ -89,6 +95,16 @@ func (fs *DefaultFileSystem) IsDir(path string) (bool, error) {
 		return false, err
 	}
 	return info.IsDir(), nil
+}
+
+// CreateTemp creates a temporary file with the given prefix in the specified directory
+func (fs *DefaultFileSystem) CreateTemp(dir string, pattern string) (*os.File, error) {
+	return os.CreateTemp(dir, pattern)
+}
+
+// MkdirAll creates a directory and all necessary parents with the specified permissions
+func (fs *DefaultFileSystem) MkdirAll(path string, perm os.FileMode) error {
+	return os.MkdirAll(path, perm)
 }
 
 // ResolvedPath is a type that represents a file path that has been resolved
