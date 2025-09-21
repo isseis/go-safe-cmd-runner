@@ -1,6 +1,7 @@
 package safefileio
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -552,4 +553,166 @@ func TestValidateFileOperationDifferences(t *testing.T) {
 	err = SafeWriteFile(newSetuidFilePath, []byte("new content"), 0o4644)
 	assert.Error(t, err, "Creating a file with setuid permissions should fail")
 	assert.ErrorIs(t, err, ErrInvalidFilePermissions, "Should fail with permission error")
+}
+
+func TestSafeAtomicMoveFile(t *testing.T) {
+	t.Run("successful atomic move with permission setting", func(t *testing.T) {
+		tempDir := safeTempDir(t)
+		srcPath := filepath.Join(tempDir, "source.txt")
+		dstPath := filepath.Join(tempDir, "destination.txt")
+		content := []byte("test content for atomic move")
+
+		// Create source file with loose permissions
+		require.NoError(t, os.WriteFile(srcPath, content, 0o644))
+
+		// Move with secure permissions
+		err := SafeAtomicMoveFile(srcPath, dstPath, 0o600)
+		assert.NoError(t, err, "SafeAtomicMoveFile should succeed")
+
+		// Verify source file is gone
+		_, err = os.Stat(srcPath)
+		assert.True(t, os.IsNotExist(err), "Source file should not exist after move")
+
+		// Verify destination file exists with correct content and permissions
+		stat, err := os.Stat(dstPath)
+		require.NoError(t, err, "Destination file should exist")
+		assert.Equal(t, os.FileMode(0o600), stat.Mode().Perm(), "Destination should have 0600 permissions")
+
+		gotContent, err := os.ReadFile(dstPath)
+		require.NoError(t, err, "Should be able to read destination file")
+		assert.Equal(t, content, gotContent, "Content should match")
+	})
+
+	t.Run("move to existing file overwrites", func(t *testing.T) {
+		tempDir := safeTempDir(t)
+		srcPath := filepath.Join(tempDir, "source.txt")
+		dstPath := filepath.Join(tempDir, "destination.txt")
+		srcContent := []byte("new content")
+		oldContent := []byte("old content")
+
+		// Create source and destination files
+		require.NoError(t, os.WriteFile(srcPath, srcContent, 0o600))
+		require.NoError(t, os.WriteFile(dstPath, oldContent, 0o600))
+
+		// Move should overwrite destination
+		err := SafeAtomicMoveFile(srcPath, dstPath, 0o600)
+		assert.NoError(t, err, "SafeAtomicMoveFile should succeed with overwrite")
+
+		// Verify content was overwritten
+		gotContent, err := os.ReadFile(dstPath)
+		require.NoError(t, err, "Should be able to read destination file")
+		assert.Equal(t, srcContent, gotContent, "Content should be from source file")
+	})
+
+	t.Run("fails with invalid permissions", func(t *testing.T) {
+		tempDir := safeTempDir(t)
+		srcPath := filepath.Join(tempDir, "source.txt")
+		dstPath := filepath.Join(tempDir, "destination.txt")
+
+		require.NoError(t, os.WriteFile(srcPath, []byte("test"), 0o600))
+
+		// Try to move with invalid permissions (too permissive for write operation)
+		err := SafeAtomicMoveFile(srcPath, dstPath, 0o755)
+		assert.Error(t, err, "Should fail with overly permissive permissions")
+		assert.ErrorIs(t, err, ErrInvalidFilePermissions)
+	})
+
+	t.Run("fails when source does not exist", func(t *testing.T) {
+		tempDir := safeTempDir(t)
+		srcPath := filepath.Join(tempDir, "nonexistent.txt")
+		dstPath := filepath.Join(tempDir, "destination.txt")
+
+		err := SafeAtomicMoveFile(srcPath, dstPath, 0o600)
+		assert.Error(t, err, "Should fail when source file does not exist")
+	})
+
+	t.Run("creates destination directory structure", func(t *testing.T) {
+		tempDir := safeTempDir(t)
+		srcPath := filepath.Join(tempDir, "source.txt")
+		dstPath := filepath.Join(tempDir, "subdir", "destination.txt")
+		content := []byte("test content")
+
+		require.NoError(t, os.WriteFile(srcPath, content, 0o600))
+		require.NoError(t, os.MkdirAll(filepath.Dir(dstPath), 0o750))
+
+		err := SafeAtomicMoveFile(srcPath, dstPath, 0o600)
+		assert.NoError(t, err, "Should succeed when destination directory exists")
+
+		// Verify move was successful
+		gotContent, err := os.ReadFile(dstPath)
+		require.NoError(t, err, "Should be able to read destination file")
+		assert.Equal(t, content, gotContent, "Content should match")
+	})
+
+	t.Run("prevents file descriptor leakage attack", func(t *testing.T) {
+		tempDir := safeTempDir(t)
+		srcPath := filepath.Join(tempDir, "source.txt")
+		dstPath := filepath.Join(tempDir, "destination.txt")
+
+		// 1. Create initial target file with 0o644 permissions (potentially vulnerable)
+		oldContent := []byte("sensitive old content")
+		require.NoError(t, os.WriteFile(dstPath, oldContent, 0o644))
+
+		// 2. Simulate attacker opening the file and keeping the descriptor
+		attackerFd, err := os.Open(dstPath)
+		require.NoError(t, err, "Attacker should be able to open the file")
+		defer attackerFd.Close()
+
+		// Verify attacker can read original content
+		attackerContent := make([]byte, len(oldContent))
+		n, err := attackerFd.Read(attackerContent)
+		require.NoError(t, err, "Attacker should be able to read original content")
+		assert.Equal(t, oldContent, attackerContent[:n], "Attacker should see original content")
+
+		// 3. Create source file with new sensitive content
+		newContent := []byte("new sensitive content that should not leak")
+		require.NoError(t, os.WriteFile(srcPath, newContent, 0o600))
+
+		// 4. Use SafeAtomicMoveFile to overwrite the target
+		err = SafeAtomicMoveFile(srcPath, dstPath, 0o600)
+		assert.NoError(t, err, "SafeAtomicMoveFile should succeed")
+
+		// 5. Verify the file was overwritten with new content
+		finalContent, err := os.ReadFile(dstPath)
+		require.NoError(t, err, "Should be able to read final file")
+		assert.Equal(t, newContent, finalContent, "File should contain new content")
+
+		// 6. Critical security check: Attacker's old file descriptor should NOT see new content
+		// Reset file descriptor position and try to read
+		_, err = attackerFd.Seek(0, 0)
+		require.NoError(t, err, "Should be able to seek to beginning")
+
+		// Try to read new content through old descriptor
+		attackerNewRead := make([]byte, len(newContent))
+		n, readErr := attackerFd.Read(attackerNewRead)
+
+		// The behavior depends on the filesystem and OS, but we expect one of these outcomes:
+		// 1. Read error (file descriptor becomes invalid)
+		// 2. Read returns old content or empty (not new content)
+		// 3. Read returns fewer bytes than expected
+
+		switch {
+		case readErr != nil:
+			// Good: File descriptor became invalid (best case)
+			t.Logf("Attacker's file descriptor became invalid after atomic move: %v", readErr)
+		case n == 0:
+			// Good: No content readable
+			t.Logf("Attacker's file descriptor returned no content")
+		default:
+			// Check if attacker can see new content (this would be a security issue)
+			attackerReadContent := attackerNewRead[:n]
+			if bytes.Equal(attackerReadContent, newContent) {
+				t.Errorf("SECURITY ISSUE: Attacker can read new content through old file descriptor")
+				t.Errorf("Expected: old content or error, Got: new content")
+			} else {
+				// Good: Attacker sees old content or garbage, not new content
+				t.Logf("Attacker's file descriptor sees different content (safe): %q", attackerReadContent)
+			}
+		}
+
+		// 7. Verify file permissions are secure (0o600)
+		stat, err := os.Stat(dstPath)
+		require.NoError(t, err, "Should be able to stat final file")
+		assert.Equal(t, os.FileMode(0o600), stat.Mode().Perm(), "Final file should have secure permissions")
+	})
 }

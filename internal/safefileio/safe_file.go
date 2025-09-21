@@ -200,6 +200,17 @@ func SafeWriteFileOverwrite(filePath string, content []byte, perm os.FileMode) (
 	return safeWriteFileOverwriteWithFS(filePath, content, perm, defaultFS)
 }
 
+// SafeAtomicMoveFile atomically moves a file from source to destination with secure permissions.
+// It uses rename(2) system call for atomic operation and validates both source and destination
+// files using safefileio security checks. The source file permissions are set to requiredPerm
+// before the move operation.
+//
+// This function provides protection against symlink attacks, TOCTOU race conditions, and
+// ensures the destination file has the required permissions and security properties.
+func SafeAtomicMoveFile(srcPath, dstPath string, requiredPerm os.FileMode) error {
+	return safeAtomicMoveFileWithFS(srcPath, dstPath, requiredPerm, defaultFS)
+}
+
 // safeWriteFileOverwriteWithFS is the internal implementation that accepts a FileSystem for testing
 func safeWriteFileOverwriteWithFS(filePath string, content []byte, perm os.FileMode, fs FileSystem) (err error) {
 	return safeWriteFileCommon(filePath, content, perm, fs, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
@@ -208,6 +219,73 @@ func safeWriteFileOverwriteWithFS(filePath string, content []byte, perm os.FileM
 // safeWriteFileWithFS is the internal implementation that accepts a FileSystem for testing
 func safeWriteFileWithFS(filePath string, content []byte, perm os.FileMode, fs FileSystem) (err error) {
 	return safeWriteFileCommon(filePath, content, perm, fs, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
+}
+
+// safeAtomicMoveFileWithFS is the internal implementation that accepts a FileSystem for testing
+func safeAtomicMoveFileWithFS(srcPath, dstPath string, requiredPerm os.FileMode, fs FileSystem) error {
+	absSrc, err := filepath.Abs(srcPath)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidFilePath, err)
+	}
+
+	absDst, err := filepath.Abs(dstPath)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidFilePath, err)
+	}
+
+	// Pre-validate requested permissions
+	if err := validateRequestedPermissions(requiredPerm, FileOpWrite); err != nil {
+		return err
+	}
+
+	// Set secure permissions on source file before move
+	if err := os.Chmod(absSrc, requiredPerm); err != nil {
+		return fmt.Errorf("failed to set secure permissions on source: %w", err)
+	}
+
+	// Validate source file through safefileio
+	srcFile, err := fs.SafeOpenFile(absSrc, os.O_RDONLY, 0)
+	if err != nil {
+		return fmt.Errorf("failed to open source file safely: %w", err)
+	}
+	defer func() {
+		if closeErr := srcFile.Close(); closeErr != nil {
+			slog.Warn("error closing source file", "error", closeErr)
+		}
+	}()
+
+	// Validate source file properties
+	if _, err := validateFile(srcFile, absSrc, FileOpRead, fs.GetGroupMembership()); err != nil {
+		return fmt.Errorf("source file validation failed: %w", err)
+	}
+
+	// Ensure destination parent directories are safe
+	if err := ensureParentDirsNoSymlinks(absDst); err != nil {
+		return fmt.Errorf("destination parent directory unsafe: %w", err)
+	}
+
+	// Perform atomic rename
+	if err := os.Rename(absSrc, absDst); err != nil {
+		return fmt.Errorf("atomic move failed: %w", err)
+	}
+
+	// Validate destination file after move
+	dstFile, err := fs.SafeOpenFile(absDst, os.O_RDONLY, 0)
+	if err != nil {
+		return fmt.Errorf("failed to open destination file safely: %w", err)
+	}
+	defer func() {
+		if closeErr := dstFile.Close(); closeErr != nil {
+			slog.Warn("error closing destination file", "error", closeErr)
+		}
+	}()
+
+	// Final validation of destination file
+	if _, err := validateFile(dstFile, absDst, FileOpWrite, fs.GetGroupMembership()); err != nil {
+		return fmt.Errorf("destination file validation failed: %w", err)
+	}
+
+	return nil
 }
 
 // safeWriteFileCommon contains the common logic for safe file writing operations
