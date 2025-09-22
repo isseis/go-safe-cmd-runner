@@ -230,14 +230,14 @@ func TestCanCurrentUserSafelyReadFile(t *testing.T) {
 
 	t.Run("current user can safely read from own file", func(t *testing.T) {
 		// Test with the file we just created (should be owned by current user)
-		canRead, err := gm.CanCurrentUserSafelyReadFile(uid, gid, 0o644)
+		canRead, err := gm.CanCurrentUserSafelyReadFile(gid, 0o644)
 		assert.NoError(t, err, "CanCurrentUserSafelyReadFile should not return an error")
 		assert.True(t, canRead, "Current user should be able to safely read from own file")
 	})
 
 	t.Run("current user can read group writable file if in group", func(t *testing.T) {
 		// Test with group writable permissions - new spec: deny only if current user is NOT in the group
-		canRead, err := gm.CanCurrentUserSafelyReadFile(uid, gid, 0o664)
+		canRead, err := gm.CanCurrentUserSafelyReadFile(gid, 0o664)
 		// Since we created the file, current user should be in the group and read should be allowed
 		assert.NoError(t, err, "CanCurrentUserSafelyReadFile should not return an error for group writable")
 		assert.True(t, canRead, "Current user should be able to read group writable file since they're in the group")
@@ -245,14 +245,14 @@ func TestCanCurrentUserSafelyReadFile(t *testing.T) {
 	})
 
 	t.Run("world writable file denied", func(t *testing.T) {
-		canRead, err := gm.CanCurrentUserSafelyReadFile(uid, gid, 0o666) // world writable
+		canRead, err := gm.CanCurrentUserSafelyReadFile(gid, 0o666) // world writable
 		assert.Error(t, err, "World writable files should be denied for read")
 		assert.False(t, canRead, "Should return false for world writable files")
 		assert.True(t, errors.Is(err, ErrFileWorldWritable), "Error should be ErrFileWorldWritable")
 	})
 
 	t.Run("setuid file allowed for read", func(t *testing.T) {
-		canRead, err := gm.CanCurrentUserSafelyReadFile(uid, gid, 0o4755) // setuid
+		canRead, err := gm.CanCurrentUserSafelyReadFile(gid, 0o4755) // setuid
 		assert.NoError(t, err, "Setuid files should be allowed for read operations")
 		assert.True(t, canRead, "Should allow reading setuid files")
 	})
@@ -260,7 +260,7 @@ func TestCanCurrentUserSafelyReadFile(t *testing.T) {
 	t.Run("consistency with write function - read should be more permissive", func(t *testing.T) {
 		// Test that read function is more permissive than write function
 		writeResult, writeErr := gm.CanCurrentUserSafelyWriteFile(uid, gid, 0o664)
-		readResult, readErr := gm.CanCurrentUserSafelyReadFile(uid, gid, 0o664)
+		readResult, readErr := gm.CanCurrentUserSafelyReadFile(gid, 0o664)
 
 		assert.NoError(t, readErr, "CanCurrentUserSafelyReadFile should not return an error")
 

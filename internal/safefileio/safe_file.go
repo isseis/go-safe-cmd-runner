@@ -523,7 +523,7 @@ func CanSafelyWriteToFile(file File, filePath string, operation FileOperation, g
 //   - Verifies the file is a regular file
 //   - Prevents world-writable files (security risk)
 //   - For group-writable files, uses more relaxed group membership checks
-//   - Allows broader permission range (up to 0o4755 including setuid)
+//   - Allows broader permission range (up to 0o4755 including setuid/setgid)
 //
 // Parameters:
 //   - file: The opened file to validate
@@ -550,7 +550,7 @@ func CanSafelyReadFromFile(file File, filePath string, groupMembership *groupmem
 	}
 
 	// Use read-specific permission check
-	canSafelyRead, err := groupMembership.CanCurrentUserSafelyReadFile(stat.Uid, stat.Gid, fileInfo.Mode())
+	canSafelyRead, err := groupMembership.CanCurrentUserSafelyReadFile(stat.Gid, fileInfo.Mode())
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s - %w", ErrInvalidFilePermissions, filePath, err)
 	}

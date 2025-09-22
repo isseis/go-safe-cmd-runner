@@ -284,14 +284,13 @@ func (gm *GroupMembership) CanCurrentUserSafelyWriteFile(fileUID, fileGID uint32
 // This is more permissive than write operations, as reading generally poses lower security risks.
 //
 // Parameters:
-//   - fileUID: The file owner's user ID (as uint32)
 //   - fileGID: The file's group ID (as uint32)
 //   - filePerm: The file permissions (as os.FileMode)
 //
 // Returns:
 //   - bool: true if the current user can safely read from the file, false otherwise
 //   - error: non-nil if there was an error checking user or group information
-func (gm *GroupMembership) CanCurrentUserSafelyReadFile(_ /* fileUID */, fileGID uint32, filePerm os.FileMode) (bool, error) {
+func (gm *GroupMembership) CanCurrentUserSafelyReadFile(fileGID uint32, filePerm os.FileMode) (bool, error) {
 	currentUser, err := user.Current()
 	if err != nil {
 		return false, fmt.Errorf("failed to get current user: %w", err)
