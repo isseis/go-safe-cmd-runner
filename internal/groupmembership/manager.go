@@ -332,7 +332,7 @@ func (gm *GroupMembership) CanCurrentUserSafelyReadFile(fileGID uint32, filePerm
 		// If user is in group, allow read access
 	}
 
-	// 3. Allow reading with broader permissions (up to 0o4755 including setuid)
+	// 3. Allow reading with broader permissions (up to 0o6755 including setuid)
 	// This is more permissive than write operations
 	return true, nil
 }

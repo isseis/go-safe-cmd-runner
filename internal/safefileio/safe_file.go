@@ -255,7 +255,7 @@ func safeAtomicMoveFileWithFS(srcPath, dstPath string, requiredPerm os.FileMode,
 	}()
 
 	// Validate source file properties
-	if _, err := CanSafelyWriteToFile(srcFile, absSrc, FileOpRead, fs.GetGroupMembership()); err != nil {
+	if err := canSafelyWriteToFile(srcFile, absSrc, FileOpRead, fs.GetGroupMembership()); err != nil {
 		return fmt.Errorf("source file validation failed: %w", err)
 	}
 
@@ -281,7 +281,7 @@ func safeAtomicMoveFileWithFS(srcPath, dstPath string, requiredPerm os.FileMode,
 	}()
 
 	// Final validation of destination file
-	if _, err := CanSafelyWriteToFile(dstFile, absDst, FileOpWrite, fs.GetGroupMembership()); err != nil {
+	if err := canSafelyWriteToFile(dstFile, absDst, FileOpWrite, fs.GetGroupMembership()); err != nil {
 		return fmt.Errorf("destination file validation failed: %w", err)
 	}
 
@@ -314,7 +314,7 @@ func safeWriteFileCommon(filePath string, content []byte, perm os.FileMode, fs F
 	}()
 
 	// Validate the file is a regular file (not a device, pipe, etc.)
-	if _, err := CanSafelyWriteToFile(file, absPath, FileOpWrite, fs.GetGroupMembership()); err != nil {
+	if err := canSafelyWriteToFile(file, absPath, FileOpWrite, fs.GetGroupMembership()); err != nil {
 		return err
 	}
 
@@ -427,7 +427,7 @@ func SafeReadFileWithFS(filePath string, fs FileSystem) ([]byte, error) {
 
 // readFileContent reads and validates the content of an already opened file
 func readFileContent(file File, filePath string, fs FileSystem) ([]byte, error) {
-	fileInfo, err := CanSafelyReadFromFile(file, filePath, fs.GetGroupMembership())
+	fileInfo, err := canSafelyReadFromFile(file, filePath, fs.GetGroupMembership())
 	if err != nil {
 		return nil, err
 	}
@@ -449,7 +449,7 @@ func readFileContent(file File, filePath string, fs FileSystem) ([]byte, error) 
 	return content, nil
 }
 
-// CanSafelyWriteToFile checks if the current user can safely write to a file by validating
+// canSafelyWriteToFile checks if the current user can safely write to a file by validating
 // file permissions, ownership, and group membership in a unified security check.
 //
 // This function performs comprehensive security validation:
@@ -465,31 +465,30 @@ func readFileContent(file File, filePath string, fs FileSystem) ([]byte, error) 
 //   - groupMembership: Group membership checker for security validation
 //
 // Returns:
-//   - os.FileInfo: File information if validation passes
 //   - error: Validation error if the file cannot be safely written to
-func CanSafelyWriteToFile(file File, filePath string, operation FileOperation, groupMembership *groupmembership.GroupMembership) (os.FileInfo, error) {
+func canSafelyWriteToFile(file File, filePath string, operation FileOperation, groupMembership *groupmembership.GroupMembership) error {
 	fileInfo, err := file.Stat()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get file info: %w", err)
+		return fmt.Errorf("failed to get file info: %w", err)
 	}
 
 	if !fileInfo.Mode().IsRegular() {
-		return nil, fmt.Errorf("%w: not a regular file: %s", ErrInvalidFilePath, filePath)
+		return fmt.Errorf("%w: not a regular file: %s", ErrInvalidFilePath, filePath)
 	}
 
 	// Get file stat info for UID/GID
 	stat, ok := fileInfo.Sys().(*syscall.Stat_t)
 	if !ok {
-		return nil, fmt.Errorf("%w: failed to get file stat info", ErrInvalidFilePath)
+		return fmt.Errorf("%w: failed to get file stat info", ErrInvalidFilePath)
 	}
 
 	// Use unified permission and ownership check
 	canSafelyWrite, err := groupMembership.CanCurrentUserSafelyWriteFile(stat.Uid, stat.Gid, fileInfo.Mode())
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s - %w", ErrInvalidFilePermissions, filePath, err)
+		return fmt.Errorf("%w: %s - %w", ErrInvalidFilePermissions, filePath, err)
 	}
 	if !canSafelyWrite {
-		return nil, fmt.Errorf("%w: %s - current user cannot safely write to this file",
+		return fmt.Errorf("%w: %s - current user cannot safely write to this file",
 			ErrInvalidFilePermissions, filePath)
 	}
 
@@ -503,20 +502,20 @@ func CanSafelyWriteToFile(file File, filePath string, operation FileOperation, g
 	case FileOpWrite:
 		maxAllowedPerms = maxAllowedPermsWrite
 	default:
-		return nil, fmt.Errorf("%w: unknown operation type", ErrInvalidFileOperation)
+		return fmt.Errorf("%w: unknown operation type", ErrInvalidFileOperation)
 	}
 
 	// Check other disallowed bits (excluding group writable which we handled above)
 	disallowedBits := perm &^ (maxAllowedPerms | groupWritePermission)
 	if disallowedBits != 0 {
-		return nil, fmt.Errorf("%w: file %s has permissions %o with disallowed bits %o, maximum allowed is %o (plus group writable under conditions)",
+		return fmt.Errorf("%w: file %s has permissions %o with disallowed bits %o, maximum allowed is %o (plus group writable under conditions)",
 			ErrInvalidFilePermissions, filePath, perm, disallowedBits, maxAllowedPerms)
 	}
 
-	return fileInfo, nil
+	return nil
 }
 
-// CanSafelyReadFromFile checks if the current user can safely read from a file with
+// canSafelyReadFromFile checks if the current user can safely read from a file with
 // more relaxed permissions compared to write operations.
 //
 // This function performs read-specific security validation:
@@ -533,7 +532,7 @@ func CanSafelyWriteToFile(file File, filePath string, operation FileOperation, g
 // Returns:
 //   - os.FileInfo: File information if validation passes
 //   - error: Validation error if the file cannot be safely read from
-func CanSafelyReadFromFile(file File, filePath string, groupMembership *groupmembership.GroupMembership) (os.FileInfo, error) {
+func canSafelyReadFromFile(file File, filePath string, groupMembership *groupmembership.GroupMembership) (os.FileInfo, error) {
 	fileInfo, err := file.Stat()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get file info: %w", err)
@@ -549,7 +548,8 @@ func CanSafelyReadFromFile(file File, filePath string, groupMembership *groupmem
 		return nil, fmt.Errorf("%w: failed to get file stat info", ErrInvalidFilePath)
 	}
 
-	// Use read-specific permission check
+	// Use comprehensive read-specific permission check from groupmembership
+	// This covers world-writable checks, group membership validation, and permission validation
 	canSafelyRead, err := groupMembership.CanCurrentUserSafelyReadFile(stat.Gid, fileInfo.Mode())
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s - %w", ErrInvalidFilePermissions, filePath, err)
@@ -559,17 +559,7 @@ func CanSafelyReadFromFile(file File, filePath string, groupMembership *groupmem
 			ErrInvalidFilePermissions, filePath)
 	}
 
-	perm := fileInfo.Mode().Perm()
-
-	// For read operations, allow broader permissions up to 0o6775 (including setuid, setgid, but not world writable)
-	const maxAllowedPermsRead = 0o6775
-
-	// Check other disallowed bits beyond maxAllowedPermsRead (world writable is already checked above)
-	disallowedBits := perm &^ maxAllowedPermsRead
-	if disallowedBits != 0 {
-		return nil, fmt.Errorf("%w: file %s has permissions %o with disallowed bits %o, maximum allowed for read is %o",
-			ErrInvalidFilePermissions, filePath, perm, disallowedBits, maxAllowedPermsRead)
-	}
+	// No additional permission checks needed - CanCurrentUserSafelyReadFile handles all validation
 
 	return fileInfo, nil
 }

@@ -873,7 +873,7 @@ func TestCanSafelyReadFromFile(t *testing.T) {
 			}()
 
 			// Test CanSafelyReadFromFile directly
-			_, err = CanSafelyReadFromFile(file, filePath, fs.GetGroupMembership())
+			_, err = canSafelyReadFromFile(file, filePath, fs.GetGroupMembership())
 
 			if tt.expectError {
 				assert.Error(t, err, "Expected error for permissions %o", tt.permissions)
