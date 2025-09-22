@@ -142,6 +142,10 @@ func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, cm
 	defer func() {
 		if closeErr := teeWriter.Close(); closeErr != nil {
 			n.logger.Error("Failed to close tee writer", "error", closeErr)
+			// Update the error to propagate close errors
+			if err == nil {
+				err = fmt.Errorf("failed to close output writer: %w", closeErr)
+			}
 		}
 	}()
 
@@ -156,7 +160,7 @@ func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, cm
 		return nil, fmt.Errorf("output capture finalization failed: %w", err)
 	}
 
-	return result, nil
+	return result, err
 }
 
 // executeCommandInternal contains the shared command execution logic
