@@ -1,7 +1,9 @@
 package groupmembership
 
 import (
+	"errors"
 	"fmt"
+	"math"
 	"os/user"
 	"slices"
 	"strconv"
@@ -15,6 +17,9 @@ const (
 	// CleanupInterval defines how often to perform full cache cleanup (every N cache misses)
 	CleanupInterval = 10
 )
+
+// ErrUIDOutOfBounds is returned when a UID value is out of bounds for uint32
+var ErrUIDOutOfBounds = errors.New("UID is out of bounds for uint32")
 
 // GroupMembership provides group membership checking functionality with explicit cache management
 type GroupMembership struct {
@@ -244,6 +249,10 @@ func (gm *GroupMembership) CanCurrentUserSafelyWriteFile(fileUID, fileGID uint32
 	currentUID, err := strconv.Atoi(currentUser.Uid)
 	if err != nil {
 		return false, fmt.Errorf("failed to parse current user UID: %w", err)
+	}
+
+	if currentUID < 0 || currentUID > math.MaxUint32 {
+		return false, fmt.Errorf("%w: %d", ErrUIDOutOfBounds, currentUID)
 	}
 
 	return gm.CanUserSafelyWriteFile(currentUID, fileUID, fileGID)
