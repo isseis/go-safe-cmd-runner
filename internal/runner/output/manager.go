@@ -57,37 +57,50 @@ func NewDefaultOutputCaptureManager(securityValidator SecurityValidator) *Defaul
 	}
 }
 
-// ValidateOutputPath validates an output path without preparing capture
-func (m *DefaultOutputCaptureManager) ValidateOutputPath(outputPath string, workDir string) error {
+// validateAndResolvePath performs path validation and resolution with security checks
+func (m *DefaultOutputCaptureManager) validateAndResolvePath(outputPath string, workDir string) (string, error) {
 	if outputPath == "" {
-		return nil // No output path to validate
+		return "", nil // No output path to validate
 	}
 
 	// 1. Path validation and resolution
 	resolvedPath, err := m.pathValidator.ValidateAndResolvePath(outputPath, workDir)
 	if err != nil {
-		return fmt.Errorf("path validation failed: %w", err)
+		return "", fmt.Errorf("path validation failed: %w", err)
 	}
 
 	// 2. Security permission check
 	if err := m.securityValidator.ValidateOutputWritePermission(resolvedPath, os.Getuid()); err != nil {
-		return fmt.Errorf("security validation failed: %w", err)
+		return "", fmt.Errorf("security validation failed: %w", err)
 	}
 
-	return nil
+	return resolvedPath, nil
+}
+
+// ValidateOutputPath validates an output path without preparing capture
+func (m *DefaultOutputCaptureManager) ValidateOutputPath(outputPath string, workDir string) error {
+	_, err := m.validateAndResolvePath(outputPath, workDir)
+	return err
 }
 
 // PrepareOutput validates paths and prepares for output capture using temporary file
 func (m *DefaultOutputCaptureManager) PrepareOutput(outputPath string, workDir string, maxSize int64) (*Capture, error) {
-	// 1. Path validation and resolution (reuse validation logic)
-	if err := m.ValidateOutputPath(outputPath, workDir); err != nil {
+	// 1. Path validation and resolution (uses shared validation logic)
+	resolvedPath, err := m.validateAndResolvePath(outputPath, workDir)
+	if err != nil {
 		return nil, err
 	}
 
-	// Re-resolve the path since ValidateOutputPath only validates
-	resolvedPath, err := m.pathValidator.ValidateAndResolvePath(outputPath, workDir)
-	if err != nil {
-		return nil, fmt.Errorf("path validation failed: %w", err)
+	// Handle empty output path case
+	if outputPath == "" {
+		return &Capture{
+			OutputPath:   "",
+			TempFilePath: "",
+			FileHandle:   nil,
+			MaxSize:      maxSize,
+			CurrentSize:  0,
+			StartTime:    time.Now(),
+		}, nil
 	}
 
 	// 3. Ensure directory exists
