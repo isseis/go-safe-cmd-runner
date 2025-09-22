@@ -28,6 +28,12 @@ var ErrFileWorldWritable = errors.New("file is world-writable")
 // ErrFileNotWritable is returned when a file has no writable permissions for the user
 var ErrFileNotWritable = errors.New("file has no writable permissions for user")
 
+// ErrFileNotOwner is returned when a user does not own the file
+var ErrFileNotOwner = errors.New("user does not own the file")
+
+// ErrGroupWritableNonMember is returned when accessing group writable file with non-member user
+var ErrGroupWritableNonMember = errors.New("group writable file with non-member user access")
+
 // GroupMembership provides group membership checking functionality with explicit cache management
 type GroupMembership struct {
 	// cache for group membership data with thread safety
@@ -93,26 +99,41 @@ func (gm *GroupMembership) GetGroupMembers(gid uint32) ([]string, error) {
 }
 
 // IsUserInGroup checks if a user is a member of a group
-func (gm *GroupMembership) IsUserInGroup(username, groupName string) (bool, error) {
-	// Look up the group by name to get its GID
-	group, err := user.LookupGroup(groupName)
+func (gm *GroupMembership) IsUserInGroup(uid, gid uint32) (bool, error) {
+	// Look up user by UID to get username and primary group
+	userInfo, err := user.LookupId(strconv.FormatUint(uint64(uid), 10))
 	if err != nil {
-		return false, fmt.Errorf("failed to lookup group %s: %w", groupName, err)
+		return false, fmt.Errorf("failed to lookup user for UID %d: %w", uid, err)
 	}
 
-	gid, err := strconv.ParseUint(group.Gid, 10, 32)
+	// Check if this is the user's primary group
+	userPrimaryGID, err := strconv.ParseUint(userInfo.Gid, 10, 32)
 	if err != nil {
-		return false, fmt.Errorf("invalid GID %s for group %s: %w", group.Gid, groupName, err)
+		return false, fmt.Errorf("failed to parse user's primary GID %s: %w", userInfo.Gid, err)
+	}
+	if uint32(userPrimaryGID) == gid {
+		return true, nil
 	}
 
-	// Get all members of the group
-	members, err := gm.GetGroupMembers(uint32(gid))
+	// Check secondary group memberships
+	groupIDs, err := userInfo.GroupIds()
 	if err != nil {
-		return false, fmt.Errorf("failed to get members of group %s: %w", groupName, err)
+		return false, fmt.Errorf("failed to get user group memberships: %w", err)
+	}
+
+	targetGIDStr := strconv.FormatUint(uint64(gid), 10)
+	if slices.Contains(groupIDs, targetGIDStr) {
+		return true, nil
+	}
+
+	// Also check explicit group members (for completeness)
+	members, err := gm.GetGroupMembers(gid)
+	if err != nil {
+		return false, fmt.Errorf("failed to get members of group GID %d: %w", gid, err)
 	}
 
 	// Check if the user is in the members list
-	return slices.Contains(members, username), nil
+	return slices.Contains(members, userInfo.Username), nil
 }
 
 // isUserOnlyGroupMember checks if the specified user is the only member of a group
@@ -125,77 +146,33 @@ func (gm *GroupMembership) isUserOnlyGroupMember(userUID int, groupGID uint32) (
 		return false, fmt.Errorf("failed to lookup user for UID %d: %w", userUID, err)
 	}
 
-	// Get all members of the group
+	// Check if this is the user's primary group
+	userPrimaryGID, err := strconv.ParseUint(user.Gid, 10, 32)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse user's primary GID %s: %w", user.Gid, err)
+	}
+
+	// Get all explicit members of the group
 	members, err := gm.GetGroupMembers(groupGID)
 	if err != nil {
 		return false, fmt.Errorf("failed to get group members for GID %d: %w", groupGID, err)
 	}
 
-	// Check if there's exactly one member and it's the specified user
+	if uint32(userPrimaryGID) == groupGID {
+		// This is the user's primary group
+		// User is the only member if there are no explicit members
+		return len(members) == 0, nil
+	}
+	// This is not the user's primary group
+	// Check if there's exactly one explicit member and it's the specified user
 	return len(members) == 1 && members[0] == user.Username, nil
-}
-
-// IsCurrentUserOnlyGroupMember checks if:
-// 1. Current user is the file owner
-// 2. Current user is a member of the file's group
-// 3. Current user is the ONLY member of the file's group
-func (gm *GroupMembership) IsCurrentUserOnlyGroupMember(fileUID, fileGID uint32) (bool, error) {
-	// Get current user
-	currentUser, err := user.Current()
-	if err != nil {
-		return false, fmt.Errorf("failed to get current user: %w", err)
-	}
-
-	// Check if current user is the file owner
-	currentUID, err := strconv.ParseUint(currentUser.Uid, 10, 32)
-	if err != nil {
-		return false, fmt.Errorf("failed to parse current user UID: %w", err)
-	}
-
-	if uint32(currentUID) != fileUID {
-		return false, nil // Not the file owner
-	}
-
-	// Get user's group memberships
-	groupIDs, err := currentUser.GroupIds()
-	if err != nil {
-		return false, fmt.Errorf("failed to get user group memberships: %w", err)
-	}
-
-	// Check if user is member of the file's group
-	fileGidStr := strconv.FormatUint(uint64(fileGID), 10)
-	isUserInGroup := slices.Contains(groupIDs, fileGidStr) || currentUser.Gid == fileGidStr
-
-	if !isUserInGroup {
-		return false, nil // User is not in the file's group
-	}
-
-	// Get all members of the file's group
-	groupMembers, err := gm.GetGroupMembers(fileGID)
-	if err != nil {
-		return false, fmt.Errorf("failed to get group members: %w", err)
-	}
-
-	// Check if current user is the only member
-	if len(groupMembers) == 0 {
-		// Group has no explicit members, only primary group users
-		// For simplicity, we'll allow this case if it's the user's primary group
-		return currentUser.Gid == fileGidStr, nil
-	}
-
-	if len(groupMembers) == 1 && groupMembers[0] == currentUser.Username {
-		return true, nil
-	}
-
-	// More than one member or the only member is not the current user
-	return false, nil
 }
 
 // CanUserSafelyWriteFile checks if a user can safely write to a file based on file permissions, ownership and group membership.
 //
 // This function implements the comprehensive security policy:
 // 1. Deny if file has other writable permissions (world writable)
-// 2. If file has group writable permissions: allow only if user owns file OR user is the only member of file's group
+// 2. If file has group writable permissions: allow only if user owns file AND user is the only member of file's group
 // 3. If file has owner writable permissions: allow only if user owns the file
 //
 // This prevents potential security issues where files could be modified by unintended users.
@@ -229,9 +206,9 @@ func (gm *GroupMembership) CanUserSafelyWriteFile(userUID int, fileUID, fileGID 
 
 	// 2. Check group writable permissions
 	if perm&0o020 != 0 {
-		// Group writable: allow only if user owns file OR user is the only member of the group
-		if userUID32 == fileUID {
-			return true, nil // User owns the file, safe to write
+		// Group writable: allow only if user owns file AND user is the only member of the group
+		if userUID32 != fileUID {
+			return false, fmt.Errorf("%w with permissions %o", ErrFileNotOwner, perm) // User doesn't own the file, dangerous to write
 		}
 		// Check if user is the only member of the file's group
 		return gm.isUserOnlyGroupMember(userUID, fileGID)
@@ -250,8 +227,7 @@ func (gm *GroupMembership) CanUserSafelyWriteFile(userUID int, fileUID, fileGID 
 // CanCurrentUserSafelyWriteFile is a convenience wrapper for the current user.
 //
 // This function checks if the current user can safely write to a file, using the same
-// security policy as CanUserSafelyWriteFile. It's a simpler alternative to IsCurrentUserOnlyGroupMember
-// with more intuitive semantics.
+// security policy as CanUserSafelyWriteFile.
 //
 // Parameters:
 //   - fileUID: The file owner's user ID (as uint32)
@@ -287,6 +263,71 @@ func (gm *GroupMembership) CanCurrentUserSafelyWriteFile(fileUID, fileGID uint32
 	}
 
 	return gm.CanUserSafelyWriteFile(currentUID, fileUID, fileGID, filePerm)
+}
+
+// CanCurrentUserSafelyReadFile checks if the current user can safely read from a file
+// with more relaxed permissions compared to write operations.
+//
+// This function implements the read-specific security policy:
+//  1. Deny if file has world writable permissions (security risk)
+//  2. If file has group writable permissions: deny only if current user is NOT in the file's group
+//  3. Allow reading for files with standard read permissions (up to 0o4755)
+//
+// This is more permissive than write operations, as reading generally poses lower security risks.
+//
+// Parameters:
+//   - fileUID: The file owner's user ID (as uint32)
+//   - fileGID: The file's group ID (as uint32)
+//   - filePerm: The file permissions (as os.FileMode)
+//
+// Returns:
+//   - bool: true if the current user can safely read from the file, false otherwise
+//   - error: non-nil if there was an error checking user or group information
+func (gm *GroupMembership) CanCurrentUserSafelyReadFile(_ /* fileUID */, fileGID uint32, filePerm os.FileMode) (bool, error) {
+	currentUser, err := user.Current()
+	if err != nil {
+		return false, fmt.Errorf("failed to get current user: %w", err)
+	}
+
+	currentUID, err := strconv.Atoi(currentUser.Uid)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse current user UID: %w", err)
+	}
+
+	if currentUID < 0 || currentUID > math.MaxUint32 {
+		return false, fmt.Errorf("%w: %d", ErrUIDOutOfBounds, currentUID)
+	}
+
+	perm := filePerm.Perm()
+
+	// 1. Always forbid world writable (other writable) - same as write policy
+	if perm&0o002 != 0 {
+		return false, fmt.Errorf("%w with permissions %o", ErrFileWorldWritable, perm)
+	}
+
+	// 2. Check group writable permissions - more relaxed than write policy
+	if perm&0o020 != 0 {
+		// For reads: deny only if current user is NOT in the group
+		// Convert userUID to uint32 for IsUserInGroup call
+		// #nosec G115 -- safe: `currentUID` represents a system user ID (UID), which is
+		// non-negative and constrained by the operating system to fit within a 32-bit
+		// unsigned value on supported platforms.
+		currentUID32 := uint32(currentUID) // #nosec G115
+
+		isUserInGroup, err := gm.IsUserInGroup(currentUID32, fileGID)
+		if err != nil {
+			return false, fmt.Errorf("failed to check group membership: %w", err)
+		}
+
+		if !isUserInGroup {
+			return false, fmt.Errorf("%w: current user not in file's group", ErrGroupWritableNonMember)
+		}
+		// If user is in group, allow read access
+	}
+
+	// 3. Allow reading with broader permissions (up to 0o4755 including setuid)
+	// This is more permissive than write operations
+	return true, nil
 }
 
 // ClearCache manually clears all cached group membership data

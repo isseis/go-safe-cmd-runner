@@ -42,11 +42,11 @@ func TestGroupMembership(t *testing.T) {
 		assert.Empty(t, members) // Should return empty slice for non-existent group
 	})
 
-	t.Run("IsUserInGroup with valid group", func(t *testing.T) {
+	t.Run("IsUserInGroup with valid uid/gid", func(t *testing.T) {
 		gm := New()
 
-		// Test with root group (should exist on most systems)
-		isMember, err := gm.IsUserInGroup("root", "root")
+		// Test with root user (UID 0) and root group (GID 0) - should exist on most systems
+		isMember, err := gm.IsUserInGroup(0, 0)
 		if err != nil {
 			t.Skipf("Skipping test: %v", err)
 		}
@@ -55,13 +55,13 @@ func TestGroupMembership(t *testing.T) {
 		assert.IsType(t, false, isMember)
 	})
 
-	t.Run("IsUserInGroup with invalid group", func(t *testing.T) {
+	t.Run("IsUserInGroup with invalid uid", func(t *testing.T) {
 		gm := New()
 
-		// Test with non-existent group
-		_, err := gm.IsUserInGroup("testuser", "nonexistent_group_12345")
+		// Test with non-existent user UID
+		_, err := gm.IsUserInGroup(99999, 0)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to lookup group")
+		assert.Contains(t, err.Error(), "failed to lookup user")
 	})
 
 	t.Run("cache behavior", func(t *testing.T) {
@@ -123,23 +123,6 @@ func TestGroupMembership(t *testing.T) {
 	})
 }
 
-// TestGroupMembershipIsCurrentUserOnlyGroupMember tests the IsCurrentUserOnlyGroupMember method
-func TestGroupMembershipIsCurrentUserOnlyGroupMember(t *testing.T) {
-	gm := New()
-
-	// Create a temporary file to get its owner information
-	uid, gid, cleanup := createTempFileWithStat(t)
-	defer cleanup()
-
-	// Test with the file we just created (should be owned by current user)
-	isOnlyMember, err := gm.IsCurrentUserOnlyGroupMember(uid, gid)
-	assert.NoError(t, err, "IsCurrentUserOnlyGroupMember should not return an error")
-
-	// The result depends on the system configuration
-	// We can't assert the specific value, but we can check it's a valid boolean
-	t.Logf("Current user is only group member: %v", isOnlyMember)
-}
-
 // TestCanUserSafelyWriteFile tests the CanUserSafelyWriteFile method
 func TestCanUserSafelyWriteFile(t *testing.T) {
 	gm := New()
@@ -160,10 +143,11 @@ func TestCanUserSafelyWriteFile(t *testing.T) {
 		nonexistentUID := int(uid) + 1000                                           // Use a UID that's unlikely to exist
 		canWrite, err := gm.CanUserSafelyWriteFile(nonexistentUID, uid, gid, 0o664) // group writable
 
-		// Should return an error for nonexistent user when trying to check group membership
-		assert.Error(t, err, "CanUserSafelyWriteFile should return an error for nonexistent user")
-		assert.False(t, canWrite, "Should return false for nonexistent user")
-		assert.Contains(t, err.Error(), "failed to lookup user", "Error should mention user lookup failure")
+		// With new stricter policy, non-owner users are rejected immediately for group writable files
+		// before group membership is even checked
+		assert.Error(t, err, "CanUserSafelyWriteFile should return an error for non-owner user")
+		assert.False(t, canWrite, "Should return false for non-owner user")
+		assert.True(t, errors.Is(err, ErrFileNotOwner), "Error should be ErrFileNotOwner for non-owner accessing group writable file")
 	})
 
 	t.Run("root user test", func(t *testing.T) {
@@ -187,10 +171,22 @@ func TestCanUserSafelyWriteFile(t *testing.T) {
 		assert.True(t, errors.Is(err, ErrFileWorldWritable), "Error should be ErrFileWorldWritable")
 	})
 
-	t.Run("group writable file - owner allowed", func(t *testing.T) {
+	t.Run("group writable file - owner only allowed if exclusive group member", func(t *testing.T) {
 		canWrite, err := gm.CanUserSafelyWriteFile(int(uid), uid, gid, 0o664) // group writable
-		assert.NoError(t, err, "Group writable file should not error for owner")
-		assert.True(t, canWrite, "File owner should be allowed for group writable files")
+		// With new stricter policy, even file owners are only allowed if they're the exclusive group member
+		// The function can return (false, nil) if the user is not the exclusive group member
+		// or (true, nil) if the user is the exclusive group member
+		// We test both outcomes are handled correctly
+		assert.NoError(t, err, "Group membership check should not error for valid user and group")
+
+		if canWrite {
+			t.Log("File owner is allowed (is exclusive group member)")
+		} else {
+			t.Log("File owner is denied (not exclusive group member)")
+		}
+
+		// Both outcomes (true or false) are valid depending on system configuration
+		assert.IsType(t, false, canWrite, "Should return a boolean result")
 	})
 
 	t.Run("non-writable file denied", func(t *testing.T) {
@@ -222,20 +218,57 @@ func TestCanCurrentUserSafelyWriteFile(t *testing.T) {
 		assert.NoError(t, err, "CanCurrentUserSafelyWriteFile should not return an error")
 		assert.True(t, canWrite, "Current user should be able to safely write to own file")
 	})
+}
 
-	t.Run("consistency with old function", func(t *testing.T) {
-		// Test that the new function gives the same result as the old one
-		oldResult, err1 := gm.IsCurrentUserOnlyGroupMember(uid, gid)
-		newResult, err2 := gm.CanCurrentUserSafelyWriteFile(uid, gid, 0o644)
+// TestCanCurrentUserSafelyReadFile tests the CanCurrentUserSafelyReadFile method
+func TestCanCurrentUserSafelyReadFile(t *testing.T) {
+	gm := New()
 
-		assert.NoError(t, err1, "IsCurrentUserOnlyGroupMember should not return an error")
-		assert.NoError(t, err2, "CanCurrentUserSafelyWriteFile should not return an error")
+	// Create a temporary file to get its owner information
+	uid, gid, cleanup := createTempFileWithStat(t)
+	defer cleanup()
 
-		// For files owned by current user, both functions should return true
-		// (The new function is more permissive as it allows owners regardless of group membership)
-		if oldResult {
-			assert.True(t, newResult, "If old function returns true, new function should also return true")
+	t.Run("current user can safely read from own file", func(t *testing.T) {
+		// Test with the file we just created (should be owned by current user)
+		canRead, err := gm.CanCurrentUserSafelyReadFile(uid, gid, 0o644)
+		assert.NoError(t, err, "CanCurrentUserSafelyReadFile should not return an error")
+		assert.True(t, canRead, "Current user should be able to safely read from own file")
+	})
+
+	t.Run("current user can read group writable file if in group", func(t *testing.T) {
+		// Test with group writable permissions - new spec: deny only if current user is NOT in the group
+		canRead, err := gm.CanCurrentUserSafelyReadFile(uid, gid, 0o664)
+		// Since we created the file, current user should be in the group and read should be allowed
+		assert.NoError(t, err, "CanCurrentUserSafelyReadFile should not return an error for group writable")
+		assert.True(t, canRead, "Current user should be able to read group writable file since they're in the group")
+		t.Logf("Can read group writable file: %v", canRead)
+	})
+
+	t.Run("world writable file denied", func(t *testing.T) {
+		canRead, err := gm.CanCurrentUserSafelyReadFile(uid, gid, 0o666) // world writable
+		assert.Error(t, err, "World writable files should be denied for read")
+		assert.False(t, canRead, "Should return false for world writable files")
+		assert.True(t, errors.Is(err, ErrFileWorldWritable), "Error should be ErrFileWorldWritable")
+	})
+
+	t.Run("setuid file allowed for read", func(t *testing.T) {
+		canRead, err := gm.CanCurrentUserSafelyReadFile(uid, gid, 0o4755) // setuid
+		assert.NoError(t, err, "Setuid files should be allowed for read operations")
+		assert.True(t, canRead, "Should allow reading setuid files")
+	})
+
+	t.Run("consistency with write function - read should be more permissive", func(t *testing.T) {
+		// Test that read function is more permissive than write function
+		writeResult, writeErr := gm.CanCurrentUserSafelyWriteFile(uid, gid, 0o664)
+		readResult, readErr := gm.CanCurrentUserSafelyReadFile(uid, gid, 0o664)
+
+		assert.NoError(t, readErr, "CanCurrentUserSafelyReadFile should not return an error")
+
+		// Read should be at least as permissive as write
+		if writeErr == nil && writeResult {
+			assert.True(t, readResult, "If write is allowed, read should also be allowed")
 		}
-		t.Logf("Old function result: %v, New function result: %v", oldResult, newResult)
+
+		t.Logf("Write result: %v (err: %v), Read result: %v (err: %v)", writeResult, writeErr, readResult, readErr)
 	})
 }

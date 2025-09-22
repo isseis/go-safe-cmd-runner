@@ -427,7 +427,7 @@ func SafeReadFileWithFS(filePath string, fs FileSystem) ([]byte, error) {
 
 // readFileContent reads and validates the content of an already opened file
 func readFileContent(file File, filePath string, fs FileSystem) ([]byte, error) {
-	fileInfo, err := CanSafelyWriteToFile(file, filePath, FileOpRead, fs.GetGroupMembership())
+	fileInfo, err := CanSafelyReadFromFile(file, filePath, fs.GetGroupMembership())
 	if err != nil {
 		return nil, err
 	}
@@ -511,6 +511,64 @@ func CanSafelyWriteToFile(file File, filePath string, operation FileOperation, g
 	if disallowedBits != 0 {
 		return nil, fmt.Errorf("%w: file %s has permissions %o with disallowed bits %o, maximum allowed is %o (plus group writable under conditions)",
 			ErrInvalidFilePermissions, filePath, perm, disallowedBits, maxAllowedPerms)
+	}
+
+	return fileInfo, nil
+}
+
+// CanSafelyReadFromFile checks if the current user can safely read from a file with
+// more relaxed permissions compared to write operations.
+//
+// This function performs read-specific security validation:
+//   - Verifies the file is a regular file
+//   - Prevents world-writable files (security risk)
+//   - For group-writable files, uses more relaxed group membership checks
+//   - Allows broader permission range (up to 0o4755 including setuid)
+//
+// Parameters:
+//   - file: The opened file to validate
+//   - filePath: The file path (for error messages)
+//   - groupMembership: Group membership checker for security validation
+//
+// Returns:
+//   - os.FileInfo: File information if validation passes
+//   - error: Validation error if the file cannot be safely read from
+func CanSafelyReadFromFile(file File, filePath string, groupMembership *groupmembership.GroupMembership) (os.FileInfo, error) {
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get file info: %w", err)
+	}
+
+	if !fileInfo.Mode().IsRegular() {
+		return nil, fmt.Errorf("%w: not a regular file: %s", ErrInvalidFilePath, filePath)
+	}
+
+	// Get file stat info for UID/GID
+	stat, ok := fileInfo.Sys().(*syscall.Stat_t)
+	if !ok {
+		return nil, fmt.Errorf("%w: failed to get file stat info", ErrInvalidFilePath)
+	}
+
+	// Use read-specific permission check
+	canSafelyRead, err := groupMembership.CanCurrentUserSafelyReadFile(stat.Uid, stat.Gid, fileInfo.Mode())
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s - %w", ErrInvalidFilePermissions, filePath, err)
+	}
+	if !canSafelyRead {
+		return nil, fmt.Errorf("%w: %s - current user cannot safely read from this file",
+			ErrInvalidFilePermissions, filePath)
+	}
+
+	perm := fileInfo.Mode().Perm()
+
+	// For read operations, allow broader permissions up to 0o6775 (including setuid, setgid, but not world writable)
+	const maxAllowedPermsRead = 0o6775
+
+	// Check other disallowed bits beyond maxAllowedPermsRead (world writable is already checked above)
+	disallowedBits := perm &^ maxAllowedPermsRead
+	if disallowedBits != 0 {
+		return nil, fmt.Errorf("%w: file %s has permissions %o with disallowed bits %o, maximum allowed for read is %o",
+			ErrInvalidFilePermissions, filePath, perm, disallowedBits, maxAllowedPermsRead)
 	}
 
 	return fileInfo, nil

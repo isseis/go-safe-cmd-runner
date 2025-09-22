@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -383,13 +384,13 @@ func TestValidateFilePermissions(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name:        "group writable (664) should succeed for owner in both operations",
+			name:        "group writable (664) should succeed for read when user is in group",
 			permissions: 0o664,
 			operation:   FileOpRead,
 			expectError: false,
 		},
 		{
-			name:        "group writable (664) for write should succeed for owner",
+			name:        "group writable (664) for write should succeed if user is only group member",
 			permissions: 0o664,
 			operation:   FileOpWrite,
 			expectError: false,
@@ -802,4 +803,119 @@ func TestCanSafelyWriteToFile(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCanSafelyReadFromFile(t *testing.T) {
+	tests := []struct {
+		name        string
+		permissions os.FileMode
+		expectError bool
+		errorType   error
+	}{
+		{
+			name:        "normal permissions (644) for read",
+			permissions: 0o644,
+			expectError: false,
+		},
+		{
+			name:        "group writable (664) should succeed for read - more permissive than write",
+			permissions: 0o664,
+			expectError: false,
+		},
+		{
+			name:        "world writable (666) should fail for read",
+			permissions: 0o666,
+			expectError: true,
+			errorType:   ErrInvalidFilePermissions,
+		},
+		{
+			name:        "setuid permissions (4755) should succeed for read",
+			permissions: 0o4755,
+			expectError: false,
+		},
+		{
+			name:        "setuid with group writable (4775) should succeed for read",
+			permissions: 0o4775,
+			expectError: false,
+		},
+		{
+			name:        "executable permissions (755) should succeed for read",
+			permissions: 0o755,
+			expectError: false,
+		},
+		{
+			name:        "owner only (600) should succeed for read",
+			permissions: 0o600,
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create temporary file
+			tmpDir := t.TempDir()
+			filePath := filepath.Join(tmpDir, "test_file")
+
+			// Create test file with specified permissions
+			require.NoError(t, os.WriteFile(filePath, []byte("test content"), tt.permissions), "Failed to create test file")
+
+			if tt.permissions&0o002 != 0 {
+				// For world writable test, need to explicitly chmod after creation
+				require.NoError(t, os.Chmod(filePath, tt.permissions), "Failed to set world writable permissions")
+			}
+
+			// Test the read-specific security validation function
+			fs := &osFS{groupMembership: groupmembership.New()}
+			file, err := fs.SafeOpenFile(filePath, os.O_RDONLY, 0)
+			require.NoError(t, err, "Failed to open file for testing")
+			defer func() {
+				assert.NoError(t, file.Close(), "Failed to close file")
+			}()
+
+			// Test CanSafelyReadFromFile directly
+			_, err = CanSafelyReadFromFile(file, filePath, fs.GetGroupMembership())
+
+			if tt.expectError {
+				assert.Error(t, err, "Expected error for permissions %o", tt.permissions)
+				if tt.errorType != nil {
+					assert.True(t, errors.Is(err, tt.errorType), "Expected error type %T, got %v", tt.errorType, err)
+				}
+			} else {
+				assert.NoError(t, err, "Expected no error for permissions %o", tt.permissions)
+			}
+		})
+	}
+}
+
+func TestSafeReadFileWithRelaxedPermissions(t *testing.T) {
+	t.Run("SafeReadFile should succeed with group writable file using new read permissions", func(t *testing.T) {
+		// Create temporary file with group writable permissions
+		tmpDir := t.TempDir()
+		filePath := filepath.Join(tmpDir, "group_writable_file")
+		content := []byte("test content for group writable file")
+
+		// Create test file with group writable permissions (0o664)
+		require.NoError(t, os.WriteFile(filePath, content, 0o664), "Failed to create test file")
+
+		// Test that SafeReadFile now succeeds with the new read-specific validation
+		result, err := SafeReadFile(filePath)
+		assert.NoError(t, err, "SafeReadFile should succeed with group writable file using new read permissions")
+		assert.Equal(t, content, result, "File content should match")
+	})
+
+	t.Run("SafeReadFile should still fail with world writable file", func(t *testing.T) {
+		// Create temporary file with world writable permissions
+		tmpDir := t.TempDir()
+		filePath := filepath.Join(tmpDir, "world_writable_file")
+		content := []byte("test content for world writable file")
+
+		// Create test file with world writable permissions (0o666)
+		require.NoError(t, os.WriteFile(filePath, content, 0o666), "Failed to create test file")
+		require.NoError(t, os.Chmod(filePath, 0o666), "Failed to set world writable permissions")
+
+		// Test that SafeReadFile still fails with world writable files
+		_, err := SafeReadFile(filePath)
+		assert.Error(t, err, "SafeReadFile should fail with world writable file")
+		assert.True(t, errors.Is(err, ErrInvalidFilePermissions), "Error should be ErrInvalidFilePermissions")
+	})
 }
