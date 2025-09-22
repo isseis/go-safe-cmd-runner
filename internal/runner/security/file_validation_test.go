@@ -216,7 +216,8 @@ func TestValidator_checkWritePermission(t *testing.T) {
 				config = DefaultConfig()
 			}
 
-			validator, err := NewValidatorWithGroupMembership(config, nil)
+			groupMembership := groupmembership.New()
+			validator, err := NewValidatorWithGroupMembership(config, groupMembership)
 			require.NoError(t, err)
 
 			path, fileInfo := tt.setupFunc(t)

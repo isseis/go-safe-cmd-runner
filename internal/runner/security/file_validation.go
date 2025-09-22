@@ -410,15 +410,13 @@ func (v *Validator) isUserInGroup(uid int, gid uint32) (bool, error) {
 	}
 
 	// Check supplementary groups using groupmembership
-	if v.groupMembership != nil {
-		members, err := v.groupMembership.GetGroupMembers(gid)
-		if err != nil {
-			return false, fmt.Errorf("failed to get group members for GID %d: %w", gid, err)
-		}
-		for _, member := range members {
-			if member == user.Username {
-				return true, nil
-			}
+	members, err := v.groupMembership.GetGroupMembers(gid)
+	if err != nil {
+		return false, fmt.Errorf("failed to get group members for GID %d: %w", gid, err)
+	}
+	for _, member := range members {
+		if member == user.Username {
+			return true, nil
 		}
 	}
 
