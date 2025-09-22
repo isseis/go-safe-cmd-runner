@@ -86,11 +86,28 @@ func TestValidateFileHash(t *testing.T) {
 
 	t.Run("non-existent file should fail", func(t *testing.T) {
 		nonExistentFile := filepath.Join(tmpDir, "non_existent")
+		config := DefaultConfig()
 
-		err := validateFileHash(nonExistentFile, tmpDir)
+		err := validateFileHash(nonExistentFile, tmpDir, config)
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, ErrHashValidationFailed)
 		// The error message will include "no such file or directory" for file system errors
 		assert.Contains(t, err.Error(), "no such file or directory")
+	})
+
+	t.Run("testSkipHashValidation should skip validation", func(t *testing.T) {
+		nonExistentFile := filepath.Join(tmpDir, "non_existent")
+		config := NewTestConfigWithSkipHashValidation()
+
+		err := validateFileHash(nonExistentFile, tmpDir, config)
+		assert.NoError(t, err, "hash validation should be skipped when testSkipHashValidation is true")
+	})
+
+	t.Run("nil config should perform validation", func(t *testing.T) {
+		nonExistentFile := filepath.Join(tmpDir, "non_existent")
+
+		err := validateFileHash(nonExistentFile, tmpDir, nil)
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, ErrHashValidationFailed)
 	})
 }

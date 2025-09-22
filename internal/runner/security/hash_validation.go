@@ -17,7 +17,12 @@ func shouldSkipHashValidation(cmdPath string, skipStandardPaths bool) bool {
 }
 
 // validateFileHash performs file hash validation using provided validator
-func validateFileHash(cmdPath string, hashDir string) error {
+func validateFileHash(cmdPath string, hashDir string, config *Config) error {
+	// Skip hash validation if testSkipHashValidation is enabled (test builds only)
+	if config != nil && config.testSkipHashValidation {
+		return nil
+	}
+
 	// Fallback to creating validator (for backward compatibility)
 	validator, err := filevalidator.New(&filevalidator.SHA256{}, hashDir)
 	if err != nil {
