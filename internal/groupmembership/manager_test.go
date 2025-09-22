@@ -138,3 +138,75 @@ func TestGroupMembershipIsCurrentUserOnlyGroupMember(t *testing.T) {
 	// We can't assert the specific value, but we can check it's a valid boolean
 	t.Logf("Current user is only group member: %v", isOnlyMember)
 }
+
+// TestCanUserSafelyWriteFile tests the CanUserSafelyWriteFile method
+func TestCanUserSafelyWriteFile(t *testing.T) {
+	gm := New()
+
+	// Create a temporary file to get its owner information
+	uid, gid, cleanup := createTempFileWithStat(t)
+	defer cleanup()
+
+	t.Run("owner can safely write", func(t *testing.T) {
+		// Test with the file owner (current user)
+		canWrite, err := gm.CanUserSafelyWriteFile(int(uid), uid, gid)
+		assert.NoError(t, err, "CanUserSafelyWriteFile should not return an error for file owner")
+		assert.True(t, canWrite, "File owner should be able to safely write")
+	})
+
+	t.Run("nonexistent user returns error", func(t *testing.T) {
+		// Test with a user ID that doesn't exist
+		nonexistentUID := int(uid) + 1000 // Use a UID that's unlikely to exist
+		canWrite, err := gm.CanUserSafelyWriteFile(nonexistentUID, uid, gid)
+
+		// Should return an error for nonexistent user
+		assert.Error(t, err, "CanUserSafelyWriteFile should return an error for nonexistent user")
+		assert.False(t, canWrite, "Should return false for nonexistent user")
+		assert.Contains(t, err.Error(), "failed to lookup user", "Error should mention user lookup failure")
+	})
+
+	t.Run("root user test", func(t *testing.T) {
+		// Test with root user (UID 0) - this should work if running with appropriate permissions
+		canWrite, err := gm.CanUserSafelyWriteFile(0, uid, gid)
+
+		if err != nil {
+			// If we can't test with root, skip this test
+			t.Skipf("Cannot test with root user: %v", err)
+		} else {
+			// Root typically can write to any file they own or if they're the only group member
+			t.Logf("Root user (UID 0) can safely write: %v", canWrite)
+		}
+	})
+}
+
+// TestCanCurrentUserSafelyWriteFile tests the CanCurrentUserSafelyWriteFile method
+func TestCanCurrentUserSafelyWriteFile(t *testing.T) {
+	gm := New()
+
+	// Create a temporary file to get its owner information
+	uid, gid, cleanup := createTempFileWithStat(t)
+	defer cleanup()
+
+	t.Run("current user can safely write to own file", func(t *testing.T) {
+		// Test with the file we just created (should be owned by current user)
+		canWrite, err := gm.CanCurrentUserSafelyWriteFile(uid, gid)
+		assert.NoError(t, err, "CanCurrentUserSafelyWriteFile should not return an error")
+		assert.True(t, canWrite, "Current user should be able to safely write to own file")
+	})
+
+	t.Run("consistency with old function", func(t *testing.T) {
+		// Test that the new function gives the same result as the old one
+		oldResult, err1 := gm.IsCurrentUserOnlyGroupMember(uid, gid)
+		newResult, err2 := gm.CanCurrentUserSafelyWriteFile(uid, gid)
+
+		assert.NoError(t, err1, "IsCurrentUserOnlyGroupMember should not return an error")
+		assert.NoError(t, err2, "CanCurrentUserSafelyWriteFile should not return an error")
+
+		// For files owned by current user, both functions should return true
+		// (The new function is more permissive as it allows owners regardless of group membership)
+		if oldResult {
+			assert.True(t, newResult, "If old function returns true, new function should also return true")
+		}
+		t.Logf("Old function result: %v, New function result: %v", oldResult, newResult)
+	})
+}

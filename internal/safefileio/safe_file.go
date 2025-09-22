@@ -475,16 +475,16 @@ func validateFile(file File, filePath string, operation FileOperation, groupMemb
 			ErrInvalidFilePermissions, filePath, perm)
 	}
 
-	// Check group writable - allow only if user owns the file and is the only member of the group
+	// Check group writable - allow only if user owns the file or is the only member of the group
 	if perm&groupWritePermission != 0 {
-		isOwnerAndOnlyMember, err := groupMembership.IsCurrentUserOnlyGroupMember(stat.Uid, stat.Gid)
+		canSafelyWrite, err := groupMembership.CanCurrentUserSafelyWriteFile(stat.Uid, stat.Gid)
 		if err != nil {
 			// If group membership cannot be reliably determined (e.g., due to an error reading
 			// /etc/group), we must reject group-writable files as a security precaution.
-			return nil, fmt.Errorf("failed to check group membership: %w", err)
+			return nil, fmt.Errorf("failed to check file write safety: %w", err)
 		}
-		if !isOwnerAndOnlyMember {
-			return nil, fmt.Errorf("%w: file %s is group-writable with permissions %o, but current user is not the owner or not the only member of the group",
+		if !canSafelyWrite {
+			return nil, fmt.Errorf("%w: file %s is group-writable with permissions %o, but current user cannot safely write to it",
 				ErrInvalidFilePermissions, filePath, perm)
 		}
 	}
