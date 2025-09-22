@@ -3,6 +3,7 @@
 package output
 
 import (
+	"errors"
 	"fmt"
 )
 
@@ -98,3 +99,13 @@ func (e CaptureError) Error() string {
 func (e CaptureError) Unwrap() error {
 	return e.Cause
 }
+
+// Standard error values
+var (
+	// ErrOutputSizeExceeded is returned when output size exceeds the maximum limit
+	ErrOutputSizeExceeded = errors.New("output size limit exceeded")
+	// ErrOutputPathRequired is returned when output path is required but not provided
+	ErrOutputPathRequired = errors.New("output path is required")
+	// ErrInvalidMaxSize is returned when maximum size is invalid
+	ErrInvalidMaxSize = errors.New("invalid maximum size")
+)

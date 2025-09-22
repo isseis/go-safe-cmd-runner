@@ -23,8 +23,16 @@ const (
 
 // CommandExecutor defines the interface for executing commands
 type CommandExecutor interface {
-	// Execute executes a command with the given environment variables
-	Execute(ctx context.Context, cmd runnertypes.Command, env map[string]string) (*Result, error)
+	// Execute executes a command with custom output writer.
+	//
+	// OutputWriter lifecycle and ownership:
+	// - outputWriter may be nil, in which case output is handled internally
+	// - If provided, the caller owns the outputWriter and is responsible for calling Close()
+	// - Execute will NOT call Close() on the outputWriter
+	// - Write() calls are made during command execution as output is generated (streamed)
+	// - The outputWriter must remain valid for the entire duration of command execution
+	// - Multiple concurrent Write() calls may occur, so implementations must be thread-safe
+	Execute(ctx context.Context, cmd runnertypes.Command, env map[string]string, outputWriter OutputWriter) (*Result, error)
 	// Validate validates a command without executing it
 	Validate(cmd runnertypes.Command) error
 }
@@ -36,12 +44,26 @@ type Result struct {
 	Stderr   string
 }
 
-// OutputWriter defines the interface for writing command output
+// OutputWriter defines the interface for writing command output.
+//
+// Implementations must be thread-safe as Write() may be called concurrently
+// from multiple goroutines handling stdout and stderr streams.
+//
+// Lifecycle contract:
+// - Write() calls occur during command execution as output is generated
+// - Close() must be called by the owner when output writing is complete
+// - Close() should be idempotent (safe to call multiple times)
+// - After Close() is called, Write() should return an error
 type OutputWriter interface {
-	// Write writes the output of a command
+	// Write writes output data from the specified stream.
+	// stream will be either StdoutStream or StderrStream.
+	// data contains the raw output bytes and may include partial lines.
+	// Returns an error if writing fails or if the writer has been closed.
 	Write(stream string, data []byte) error
 
-	// Close closes the output writer
+	// Close closes the output writer and releases any resources.
+	// Must be idempotent and thread-safe.
+	// After Close() is called, subsequent Write() calls should return an error.
 	Close() error
 }
 

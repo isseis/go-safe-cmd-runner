@@ -74,11 +74,10 @@ func TestExecute_Success(t *testing.T) {
 			outputWriter := &executor.MockOutputWriter{}
 
 			e := &executor.DefaultExecutor{
-				FS:  fileSystem,
-				Out: outputWriter,
+				FS: fileSystem,
 			}
 
-			result, err := e.Execute(context.Background(), tt.cmd, tt.env)
+			result, err := e.Execute(context.Background(), tt.cmd, tt.env, outputWriter)
 			if tt.wantErr {
 				assert.Error(t, err, "Expected error but got none")
 			} else {
@@ -164,8 +163,7 @@ func TestExecute_Failure(t *testing.T) {
 			outputWriter := &executor.MockOutputWriter{}
 
 			e := &executor.DefaultExecutor{
-				FS:  fileSystem,
-				Out: outputWriter,
+				FS: fileSystem,
 			}
 
 			ctx := context.Background()
@@ -175,7 +173,7 @@ func TestExecute_Failure(t *testing.T) {
 				defer cancel()
 			}
 
-			result, err := e.Execute(ctx, tt.cmd, tt.env)
+			result, err := e.Execute(ctx, tt.cmd, tt.env, outputWriter)
 
 			if tt.wantErr {
 				assert.Error(t, err, "Expected error but got none")
@@ -201,8 +199,7 @@ func TestExecute_ContextCancellation(t *testing.T) {
 	}
 
 	e := &executor.DefaultExecutor{
-		FS:  fileSystem,
-		Out: &executor.MockOutputWriter{},
+		FS: fileSystem,
 	}
 
 	// Create a context that we'll cancel
@@ -217,7 +214,7 @@ func TestExecute_ContextCancellation(t *testing.T) {
 	// Cancel the context immediately
 	cancel()
 
-	result, err := e.Execute(ctx, cmd, map[string]string{})
+	result, err := e.Execute(ctx, cmd, map[string]string{}, &executor.MockOutputWriter{})
 
 	// Should get an error due to context cancellation
 	assert.Error(t, err, "Expected error due to context cancellation")
@@ -233,8 +230,7 @@ func TestExecute_EnvironmentVariables(t *testing.T) {
 	}
 
 	e := &executor.DefaultExecutor{
-		FS:  fileSystem,
-		Out: &executor.MockOutputWriter{},
+		FS: fileSystem,
 	}
 
 	// Set a test environment variable in the runner process
@@ -252,7 +248,7 @@ func TestExecute_EnvironmentVariables(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	result, err := e.Execute(ctx, cmd, envVars)
+	result, err := e.Execute(ctx, cmd, envVars, &executor.MockOutputWriter{})
 
 	require.NoError(t, err, "Execute should not return an error")
 	require.NotNil(t, result, "Result should not be nil")
@@ -307,8 +303,7 @@ func TestValidate(t *testing.T) {
 			}
 
 			e := &executor.DefaultExecutor{
-				FS:  fileSystem,
-				Out: &executor.MockOutputWriter{},
+				FS: fileSystem,
 			}
 
 			err := e.Validate(tt.cmd)

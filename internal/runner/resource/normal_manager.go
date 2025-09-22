@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/risk"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
@@ -19,6 +20,10 @@ type NormalResourceManager struct {
 	fileSystem       executor.FileSystem
 	privilegeManager runnertypes.PrivilegeManager
 	riskEvaluator    risk.Evaluator
+
+	// Output capture dependencies
+	outputManager output.CaptureManager
+	maxOutputSize int64
 
 	// Logging
 	logger *slog.Logger
@@ -35,11 +40,26 @@ func NewNormalResourceManager(
 	privMgr runnertypes.PrivilegeManager,
 	logger *slog.Logger,
 ) *NormalResourceManager {
+	// Delegate to NewNormalResourceManagerWithOutput with nil outputManager and 0 maxOutputSize
+	return NewNormalResourceManagerWithOutput(exec, fs, privMgr, nil, 0, logger)
+}
+
+// NewNormalResourceManagerWithOutput creates a new NormalResourceManager with output capture support
+func NewNormalResourceManagerWithOutput(
+	exec executor.CommandExecutor,
+	fs executor.FileSystem,
+	privMgr runnertypes.PrivilegeManager,
+	outputMgr output.CaptureManager,
+	maxOutputSize int64,
+	logger *slog.Logger,
+) *NormalResourceManager {
 	return &NormalResourceManager{
 		executor:         exec,
 		fileSystem:       fs,
 		privilegeManager: privMgr,
 		riskEvaluator:    risk.NewStandardEvaluator(),
+		outputManager:    outputMgr,
+		maxOutputSize:    maxOutputSize,
 		logger:           logger,
 		tempDirs:         make([]string, 0),
 	}
@@ -84,7 +104,72 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd runnerty
 			runnertypes.ErrCommandSecurityViolation, cmd.Cmd, effectiveRisk.String(), maxAllowedRisk.String())
 	}
 
-	result, err := n.executor.Execute(ctx, cmd, env)
+	// Check if output capture is requested and delegate to executeCommandWithOutput
+	if cmd.Output != "" && n.outputManager != nil {
+		return n.executeCommandWithOutput(ctx, cmd, group, env, start)
+	}
+
+	// Execute the command using the shared execution logic
+	return n.executeCommandInternal(ctx, cmd, env, start, nil)
+}
+
+// executeCommandWithOutput executes a command with output capture
+func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string, start time.Time) (result *ExecutionResult, err error) {
+	// Prepare output capture
+	maxSize := n.maxOutputSize
+	if maxSize <= 0 {
+		maxSize = output.DefaultMaxOutputSize // Use default from output package
+	}
+
+	capture, err := n.outputManager.PrepareOutput(cmd.Output, group.WorkDir, maxSize)
+	if err != nil {
+		return nil, fmt.Errorf("output capture preparation failed: %w", err)
+	}
+
+	// Ensure cleanup only on error paths
+	defer func() {
+		if err != nil {
+			if cleanupErr := n.outputManager.CleanupOutput(capture); cleanupErr != nil {
+				n.logger.Error("Failed to cleanup output capture", "error", cleanupErr, "path", cmd.Output)
+			}
+		}
+	}()
+
+	// Create TeeOutputWriter for both console and file output
+	// Use console writer for standard output display
+	consoleWriter := output.NewConsoleOutputWriter()
+	teeWriter := output.NewTeeOutputWriter(capture, consoleWriter)
+	defer func() {
+		if closeErr := teeWriter.Close(); closeErr != nil {
+			n.logger.Error("Failed to close tee writer", "error", closeErr)
+			// Update the error to propagate close errors
+			if err == nil {
+				err = fmt.Errorf("failed to close output writer: %w", closeErr)
+			}
+		}
+	}()
+
+	// Execute the command using the shared execution logic with output writer
+	result, err = n.executeCommandInternal(ctx, cmd, env, start, teeWriter)
+	if err != nil {
+		return nil, err
+	}
+
+	// Finalize output capture
+	if err = n.outputManager.FinalizeOutput(capture); err != nil {
+		return nil, fmt.Errorf("output capture finalization failed: %w", err)
+	}
+
+	return result, err
+}
+
+// executeCommandInternal contains the shared command execution logic
+func (n *NormalResourceManager) executeCommandInternal(ctx context.Context, cmd runnertypes.Command, env map[string]string, start time.Time, outputWriter executor.OutputWriter) (*ExecutionResult, error) {
+	var result *executor.Result
+	var err error
+
+	// Execute command with the provided output writer
+	result, err = n.executor.Execute(ctx, cmd, env, outputWriter)
 	if err != nil {
 		return nil, fmt.Errorf("command execution failed: %w", err)
 	}

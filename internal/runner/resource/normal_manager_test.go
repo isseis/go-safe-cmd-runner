@@ -143,7 +143,7 @@ func TestNormalResourceManager_ExecuteCommand(t *testing.T) {
 		Stderr:   "",
 	}
 
-	mockExec.On("Execute", ctx, cmd, env).Return(expectedResult, nil)
+	mockExec.On("Execute", ctx, cmd, env, mock.Anything).Return(expectedResult, nil)
 
 	result, err := manager.ExecuteCommand(ctx, cmd, group, env)
 
@@ -295,7 +295,7 @@ func TestNormalResourceManager_ExecuteCommand_MaxRiskLevelControl(t *testing.T) 
 					Stdout:   "success",
 					Stderr:   "",
 				}
-				mockExec.On("Execute", ctx, cmd, env).Return(expectedResult, nil).Once()
+				mockExec.On("Execute", ctx, cmd, env, mock.Anything).Return(expectedResult, nil).Once()
 			}
 
 			result, err := manager.ExecuteCommand(ctx, cmd, group, env)

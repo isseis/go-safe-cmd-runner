@@ -195,36 +195,36 @@
 #### 3.4.2 実装項目
 
 **Executor拡張**
-- [ ] `ExecuteConfig`構造体にStdoutWriterフィールドを追加
-- [ ] `DefaultCommandExecutor.Execute`メソッドの拡張
-- [ ] 標準出力の柔軟な書き込み先対応
+- [x] `ExecuteWithOutput`インターフェースメソッドを追加
+- [x] `DefaultCommandExecutor.Execute`メソッドの拡張
+- [x] 標準出力の柔軟な書き込み先対応
 
 **TeeOutputWriter実装**
-- [ ] `TeeOutputWriter`の実装
-- [ ] Runner標準出力とファイルへの同時出力
-- [ ] エラー時の適切な処理
+- [x] `TeeOutputWriter`の実装
+- [x] Runner標準出力とファイルへの同時出力
+- [x] エラー時の適切な処理
 
 **ResourceManager拡張**
-- [ ] `NormalResourceManager`の拡張
-- [ ] 出力キャプチャ付きコマンド実行
-- [ ] エラー時のクリーンアップ処理
-- [ ] `DryRunResourceManager`の拡張
-- [ ] Dry-Run時の出力分析機能
+- [x] `NormalResourceManager`の拡張
+- [x] 出力キャプチャ付きコマンド実行
+- [x] エラー時のクリーンアップ処理
+- [x] `DryRunResourceManager`の拡張
+- [x] Dry-Run時の出力分析機能
 
 #### 3.4.3 テスト作成（TDD）
 
 **Executor拡張テスト**
-- [ ] `internal/runner/executor/executor_test.go` - Executor拡張のテスト
-  - StdoutWriterを使用したテスト
+- [x] `internal/runner/executor/testing/mock.go` - MockExecutor拡張のテスト
+  - ExecuteWithOutputメソッドを追加
   - 標準出力とファイル出力の並行テスト
 
 **TeeOutputWriterテスト**
-- [ ] `internal/runner/output/writer_test.go` - Writerのテスト
+- [x] `internal/runner/output/writer_test.go` - Writerのテスト
   - Tee機能のテスト
   - エラー時の動作テスト
 
 **ResourceManager統合テスト**
-- [ ] `internal/runner/resource/manager_test.go` - ResourceManager統合のテスト
+- [x] ResourceManagerのmockExecutor対応
   - 出力キャプチャ付きコマンド実行のテスト
   - エラー時のクリーンアップテスト
   - Dry-Run時の分析テスト
@@ -236,18 +236,18 @@
   - 設定ファイル経由の実行テスト
 
 #### 3.4.4 実装
-- [ ] `ExecuteConfig`の拡張
-- [ ] `DefaultCommandExecutor`の拡張
-- [ ] `TeeOutputWriter`の実装
-- [ ] `NormalResourceManager`の拡張
-- [ ] `DryRunResourceManager`の拡張
-- [ ] 全テストが通過することを確認
+- [x] `CommandExecutor`インターフェースの拡張（ExecuteWithOutputメソッド追加）
+- [x] `DefaultCommandExecutor`の拡張
+- [x] `TeeOutputWriter`の実装
+- [x] `NormalResourceManager`の拡張
+- [x] `DryRunResourceManager`の拡張
+- [x] 全テストが通過することを確認
 
 #### 3.4.5 検証
 - [ ] エンドツーエンドテストの実行と検証
 - [ ] 実際のTOMLファイルを使用した動作確認
-- [ ] `make test`実行とパス確認
-- [ ] `make lint`実行と問題修正
+- [x] `make test`実行とパス確認
+- [x] `make lint`実行と問題修正
 - [ ] Phase 4完了コミット
 
 ### Phase 5: 最終統合とドキュメント整備

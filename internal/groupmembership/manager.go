@@ -103,6 +103,26 @@ func (gm *GroupMembership) IsUserInGroup(username, groupName string) (bool, erro
 	return slices.Contains(members, username), nil
 }
 
+// IsUserOnlyGroupMember checks if the specified user is the only member of a group
+// This is useful for security validation where group write permissions are acceptable
+// only if the group has a single member who is the specified user
+func (gm *GroupMembership) IsUserOnlyGroupMember(userUID int, groupGID uint32) (bool, error) {
+	// Get user information
+	user, err := user.LookupId(strconv.Itoa(userUID))
+	if err != nil {
+		return false, fmt.Errorf("failed to lookup user for UID %d: %w", userUID, err)
+	}
+
+	// Get all members of the group
+	members, err := gm.GetGroupMembers(groupGID)
+	if err != nil {
+		return false, fmt.Errorf("failed to get group members for GID %d: %w", groupGID, err)
+	}
+
+	// Check if there's exactly one member and it's the specified user
+	return len(members) == 1 && members[0] == user.Username, nil
+}
+
 // IsCurrentUserOnlyGroupMember checks if:
 // 1. Current user is the file owner
 // 2. Current user is a member of the file's group

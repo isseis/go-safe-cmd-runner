@@ -102,18 +102,20 @@ func (v *Validator) ValidateDirectoryPermissions(dirPath string) error {
 
 	// SECURITY: Validate complete path from root to target directory
 	// This prevents attacks through compromised intermediate directories
-	return v.validateCompletePath(cleanDir, dirPath)
+	// Use actual UID for proper permission validation
+	realUID := os.Getuid()
+	return v.validateCompletePath(cleanDir, dirPath, realUID)
 }
 
 // validateCompletePath validates the security of the complete path from root to target
-// This prevents attacks through compromised intermediate directories
+// with proper realUID context for permission checks
 // cleanDir must be absolute and cleaned.
-func (v *Validator) validateCompletePath(cleanPath string, originalPath string) error {
-	slog.Debug("Validating complete path security", "target_path", originalPath)
+func (v *Validator) validateCompletePath(cleanPath string, originalPath string, realUID int) error {
+	slog.Debug("Validating complete path security with UID context", "target_path", originalPath, "realUID", realUID)
 
 	// Validate each directory component from target to root
 	for currentPath := cleanPath; ; {
-		slog.Debug("Validating path component", "component_path", currentPath)
+		slog.Debug("Validating path component with UID context", "component_path", currentPath)
 
 		info, err := v.fs.Lstat(currentPath)
 		if err != nil {
@@ -124,7 +126,7 @@ func (v *Validator) validateCompletePath(cleanPath string, originalPath string) 
 		if err := v.validateDirectoryComponentMode(currentPath, info); err != nil {
 			return err
 		}
-		if err := v.validateDirectoryComponentPermissions(currentPath, info); err != nil {
+		if err := v.validateDirectoryComponentPermissions(currentPath, info, realUID); err != nil {
 			return err
 		}
 
@@ -136,7 +138,7 @@ func (v *Validator) validateCompletePath(cleanPath string, originalPath string) 
 		currentPath = parentPath
 	}
 
-	slog.Debug("Complete path validation successful", "original_path", originalPath, "final_path", cleanPath)
+	slog.Debug("Complete path validation with UID context successful", "original_path", originalPath, "final_path", cleanPath, "realUID", realUID)
 	return nil
 }
 
@@ -156,7 +158,8 @@ func (v *Validator) validateDirectoryComponentMode(dirPath string, info os.FileI
 
 // validateDirectoryComponentPermissions validates that a directory component has secure permissions
 // info parameter should be the FileInfo for the directory at dirPath to avoid redundant filesystem calls
-func (v *Validator) validateDirectoryComponentPermissions(dirPath string, info os.FileInfo) error {
+// realUID parameter is the real user ID of the executing user for permission checks
+func (v *Validator) validateDirectoryComponentPermissions(dirPath string, info os.FileInfo, realUID int) error {
 	// Get system-level file info for ownership checks
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
@@ -175,26 +178,78 @@ func (v *Validator) validateDirectoryComponentPermissions(dirPath string, info o
 			ErrInvalidDirPermissions, dirPath, perm)
 	}
 
-	// Check that group cannot write unless owned by root
+	// Check group write permissions
 	if perm&0o020 != 0 {
-		slog.Error("Directory has group write permissions",
-			"path", dirPath,
-			"permissions", fmt.Sprintf("%04o", perm),
-			"owner_uid", stat.Uid,
-			"owner_gid", stat.Gid)
-		// Only allow group write if owned by root (uid=0) and group (gid=0)
-		// Only bypass this check if explicitly configured for permissive testing
-		if !v.config.testPermissiveMode && (stat.Uid != UIDRoot || stat.Gid != GIDRoot) {
-			return fmt.Errorf("%w: directory %s has group write permissions (%04o) but is not owned by root (uid=%d, gid=%d)",
-				ErrInvalidDirPermissions, dirPath, perm, stat.Uid, stat.Gid)
+		if err := v.validateGroupWritePermissions(dirPath, info, realUID); err != nil {
+			return err
 		}
 	}
 
-	// Check that only root can write to the directory
-	// Only bypass this check if explicitly configured for permissive testing
-	if perm&0o200 != 0 && stat.Uid != UIDRoot && !v.config.testPermissiveMode {
-		return fmt.Errorf("%w: directory %s is writable by non-root user (uid=%d)",
-			ErrInvalidDirPermissions, dirPath, stat.Uid)
+	// Check owner write permissions
+	if perm&0o200 != 0 { // Directory has owner write permission
+		if stat.Uid != UIDRoot && !v.config.testPermissiveMode {
+			// For non-root owned directories, validate owner matches realUID
+			if int(stat.Uid) != realUID {
+				slog.Error("Directory has owner write permissions but owner is not the execution user",
+					"path", dirPath,
+					"permissions", fmt.Sprintf("%04o", perm),
+					"directory_owner_uid", stat.Uid,
+					"execution_user_uid", realUID)
+				return fmt.Errorf("%w: directory %s is owned by UID %d but execution user is UID %d",
+					ErrInvalidDirPermissions, dirPath, stat.Uid, realUID)
+			}
+		}
+	}
+
+	return nil
+}
+
+// validateGroupWritePermissions validates group write permissions for a directory component
+func (v *Validator) validateGroupWritePermissions(dirPath string, info os.FileInfo, realUID int) error {
+	// Allow group write if:
+	// 1. Owned by root (traditional safe case)
+	// 2. realUID context is provided and the user is the only member of the group
+	// 3. testPermissiveMode is enabled
+	if v.config.testPermissiveMode {
+		return nil
+	}
+
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fmt.Errorf("%w: failed to get system info for directory %s", ErrInsecurePathComponent, dirPath)
+	}
+
+	perm := info.Mode().Perm()
+
+	// Traditional safe case: root-owned directory
+	isRootOwned := stat.Uid == UIDRoot && stat.Gid == GIDRoot
+	if isRootOwned {
+		return nil
+	}
+
+	// Check if realUID is the only group member
+	if v.groupMembership == nil {
+		// No group membership checker available, fall back to strict check
+		slog.Error("Directory has group write permissions but cannot verify group membership",
+			"path", dirPath,
+			"permissions", fmt.Sprintf("%04o", perm))
+		return fmt.Errorf("%w: directory %s has group write permissions (%04o) but group membership cannot be verified",
+			ErrInvalidDirPermissions, dirPath, perm)
+	}
+
+	isOnlyMember, err := v.groupMembership.IsUserOnlyGroupMember(realUID, stat.Gid)
+	if err != nil {
+		return fmt.Errorf("failed to check if user is only group member for GID %d: %w", stat.Gid, err)
+	}
+
+	if !isOnlyMember {
+		slog.Error("Directory has group write permissions but user is not the only group member",
+			"path", dirPath,
+			"permissions", fmt.Sprintf("%04o", perm),
+			"user_uid", realUID,
+			"group_gid", stat.Gid)
+		return fmt.Errorf("%w: directory %s has group write permissions (%04o) but user is not the only group member",
+			ErrInvalidDirPermissions, dirPath, perm)
 	}
 
 	return nil
@@ -245,8 +300,8 @@ func (v *Validator) validateOutputDirectoryAccess(dirPath string, realUID int) e
 	// Walk up the directory tree until we find an existing directory
 	for {
 		if info, err := v.fs.Lstat(currentPath); err == nil {
-			// Directory exists, validate security for complete path
-			if err := v.ValidateDirectoryPermissions(currentPath); err != nil {
+			// Directory exists, validate security for complete path with realUID context
+			if err := v.validateCompletePath(currentPath, currentPath, realUID); err != nil {
 				return fmt.Errorf("directory security validation failed for %s: %w", currentPath, err)
 			}
 
@@ -355,15 +410,13 @@ func (v *Validator) isUserInGroup(uid int, gid uint32) (bool, error) {
 	}
 
 	// Check supplementary groups using groupmembership
-	if v.groupMembership != nil {
-		members, err := v.groupMembership.GetGroupMembers(gid)
-		if err != nil {
-			return false, fmt.Errorf("failed to get group members for GID %d: %w", gid, err)
-		}
-		for _, member := range members {
-			if member == user.Username {
-				return true, nil
-			}
+	members, err := v.groupMembership.GetGroupMembers(gid)
+	if err != nil {
+		return false, fmt.Errorf("failed to get group members for GID %d: %w", gid, err)
+	}
+	for _, member := range members {
+		if member == user.Username {
+			return true, nil
 		}
 	}
 

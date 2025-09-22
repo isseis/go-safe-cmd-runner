@@ -31,7 +31,6 @@ var (
 // DefaultExecutor is the default implementation of CommandExecutor
 type DefaultExecutor struct {
 	FS          FileSystem
-	Out         OutputWriter
 	PrivMgr     runnertypes.PrivilegeManager // Optional privilege manager for privileged commands
 	AuditLogger *audit.Logger                // Optional audit logger for privileged operations
 }
@@ -53,13 +52,6 @@ func WithFileSystem(fs FileSystem) Option {
 	}
 }
 
-// WithOutputWriter sets the output writer for the executor
-func WithOutputWriter(out OutputWriter) Option {
-	return func(e *DefaultExecutor) {
-		e.Out = out
-	}
-}
-
 // WithAuditLogger sets the audit logger for the executor
 func WithAuditLogger(auditLogger *audit.Logger) Option {
 	return func(e *DefaultExecutor) {
@@ -70,8 +62,7 @@ func WithAuditLogger(auditLogger *audit.Logger) Option {
 // NewDefaultExecutor creates a new default command executor
 func NewDefaultExecutor(opts ...Option) CommandExecutor {
 	e := &DefaultExecutor{
-		FS:  &osFileSystem{},
-		Out: &consoleOutputWriter{},
+		FS: &osFileSystem{},
 	}
 
 	for _, opt := range opts {
@@ -82,17 +73,19 @@ func NewDefaultExecutor(opts ...Option) CommandExecutor {
 }
 
 // Execute implements the CommandExecutor interface
-func (e *DefaultExecutor) Execute(ctx context.Context, cmd runnertypes.Command, envVars map[string]string) (*Result, error) {
-	// Check if user/group specification requires privilege management
-	if cmd.HasUserGroupSpecification() {
-		return e.executeWithUserGroup(ctx, cmd, envVars)
-	}
+func (e *DefaultExecutor) Execute(ctx context.Context, cmd runnertypes.Command, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
+	// Note: outputWriter lifecycle is managed by the caller.
+	// The caller is responsible for calling Close() when done.
+	// This executor will NOT close the outputWriter.
 
-	return e.executeNormal(ctx, cmd, envVars)
+	if cmd.HasUserGroupSpecification() {
+		return e.executeWithUserGroup(ctx, cmd, envVars, outputWriter)
+	}
+	return e.executeNormal(ctx, cmd, envVars, outputWriter)
 }
 
 // executeWithUserGroup handles command execution with user/group privilege changes with audit logging and metrics
-func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, cmd runnertypes.Command, envVars map[string]string) (*Result, error) {
+func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, cmd runnertypes.Command, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
 	startTime := time.Now()
 	var metrics audit.PrivilegeMetrics
 
@@ -129,7 +122,7 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, cmd runnerty
 	privilegeStart := time.Now()
 	err := e.PrivMgr.WithPrivileges(executionCtx, func() error {
 		var execErr error
-		result, execErr = e.executeCommandWithPath(ctx, cmd.Cmd, cmd, envVars)
+		result, execErr = e.executeCommandWithPath(ctx, cmd.Cmd, cmd, envVars, outputWriter)
 		return execErr
 	})
 	privilegeDuration := time.Since(privilegeStart)
@@ -155,7 +148,7 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, cmd runnerty
 }
 
 // executeNormal handles normal (non-privileged) command execution
-func (e *DefaultExecutor) executeNormal(ctx context.Context, cmd runnertypes.Command, envVars map[string]string) (*Result, error) {
+func (e *DefaultExecutor) executeNormal(ctx context.Context, cmd runnertypes.Command, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
 	// Validate the command before execution
 	if err := e.Validate(cmd); err != nil {
 		return nil, fmt.Errorf("command validation failed: %w", err)
@@ -167,11 +160,11 @@ func (e *DefaultExecutor) executeNormal(ctx context.Context, cmd runnertypes.Com
 		return nil, fmt.Errorf("failed to find command %q: %w", cmd.Cmd, lookErr)
 	}
 
-	return e.executeCommandWithPath(ctx, path, cmd, envVars)
+	return e.executeCommandWithPath(ctx, path, cmd, envVars, outputWriter)
 }
 
 // executeCommandWithPath executes a command with the given resolved path
-func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path string, cmd runnertypes.Command, envVars map[string]string) (*Result, error) {
+func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path string, cmd runnertypes.Command, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
 	// Create the command with the resolved path
 	// #nosec G204 - The command and arguments are validated before execution with e.Validate()
 	execCmd := exec.CommandContext(ctx, path, cmd.Args...)
@@ -193,10 +186,10 @@ func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path strin
 	var stdout, stderr []byte
 	var cmdErr error
 
-	if e.Out != nil {
+	if outputWriter != nil {
 		// Create buffered wrappers that both capture output and write to OutputWriter
-		stdoutWrapper := &outputWrapper{writer: e.Out, stream: StdoutStream}
-		stderrWrapper := &outputWrapper{writer: e.Out, stream: StderrStream}
+		stdoutWrapper := &outputWrapper{writer: outputWriter, stream: StdoutStream}
+		stderrWrapper := &outputWrapper{writer: outputWriter, stream: StderrStream}
 
 		execCmd.Stdout = stdoutWrapper
 		execCmd.Stderr = stderrWrapper
@@ -279,28 +272,6 @@ func (fs *osFileSystem) FileExists(path string) (bool, error) {
 		return false, nil
 	}
 	return err == nil, err
-}
-
-// consoleOutputWriter implements OutputWriter by writing to stdout/stderr
-type consoleOutputWriter struct {
-	mu sync.Mutex
-}
-
-func (w *consoleOutputWriter) Write(stream string, data []byte) error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	if stream == StderrStream {
-		_, err := os.Stderr.Write(data)
-		return err
-	}
-	_, err := os.Stdout.Write(data)
-	return err
-}
-
-func (w *consoleOutputWriter) Close() error {
-	// Nothing to close for console output
-	return nil
 }
 
 // outputWrapper is an io.Writer that both captures output in a buffer
