@@ -75,6 +75,11 @@ func (m *MockResourceManager) ExecuteCommand(ctx context.Context, cmd runnertype
 	return args.Get(0).(*resource.ExecutionResult), args.Error(1)
 }
 
+func (m *MockResourceManager) ValidateOutputPath(outputPath, workDir string) error {
+	args := m.Called(outputPath, workDir)
+	return args.Error(0)
+}
+
 func (m *MockResourceManager) CreateTempDir(groupName string) (string, error) {
 	args := m.Called(groupName)
 	return args.String(0), args.Error(1)
@@ -110,6 +115,44 @@ func (m *MockResourceManager) GetDryRunResults() *resource.DryRunResult {
 
 func (m *MockResourceManager) RecordAnalysis(analysis *resource.ResourceAnalysis) {
 	m.Called(analysis)
+}
+
+// SetupDefaultMockBehavior sets up common default mock expectations for basic test scenarios
+func (m *MockResourceManager) SetupDefaultMockBehavior() {
+	// Default ValidateOutputPath behavior - allows any output path
+	m.On("ValidateOutputPath", mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil).Maybe()
+
+	// Default ExecuteCommand behavior - returns successful execution
+	defaultResult := &resource.ExecutionResult{
+		ExitCode: 0,
+		Stdout:   "",
+		Stderr:   "",
+	}
+	m.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(defaultResult, nil).Maybe()
+}
+
+// SetupSuccessfulMockExecution sets up mock for successful command execution with custom output
+func (m *MockResourceManager) SetupSuccessfulMockExecution(stdout, stderr string) {
+	m.On("ValidateOutputPath", mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
+	result := &resource.ExecutionResult{
+		ExitCode: 0,
+		Stdout:   stdout,
+		Stderr:   stderr,
+	}
+	m.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(result, nil)
+}
+
+// SetupFailedMockExecution sets up mock for failed command execution with custom error
+func (m *MockResourceManager) SetupFailedMockExecution(err error) {
+	m.On("ValidateOutputPath", mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
+	m.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, err)
+}
+
+// NewMockResourceManagerWithDefaults creates a new MockResourceManager with default behavior setup
+func NewMockResourceManagerWithDefaults() *MockResourceManager {
+	mockRM := &MockResourceManager{}
+	mockRM.SetupDefaultMockBehavior()
+	return mockRM
 }
 
 func TestNewRunner(t *testing.T) {
@@ -2368,6 +2411,7 @@ func TestRunner_OutputCaptureDryRun(t *testing.T) {
 	mockResourceManager.On("SetMode", resource.ExecutionModeDryRun, (*resource.DryRunOptions)(nil)).Return()
 
 	// Set up mock expectations for dry-run mode
+	mockResourceManager.On("ValidateOutputPath", "dryrun-output.txt", mock.Anything).Return(nil)
 	mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		&resource.ExecutionResult{
 			ExitCode: 0,
@@ -2540,32 +2584,28 @@ func TestRunner_OutputCaptureErrorTypes(t *testing.T) {
 		{
 			name: "InvalidFormat",
 			setupMock: func(mockRM *MockResourceManager) {
-				mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-					Return(nil, errors.New("invalid output format"))
+				mockRM.SetupFailedMockExecution(errors.New("invalid output format"))
 			},
 			expectError: "invalid output format",
 		},
 		{
 			name: "SecurityViolation",
 			setupMock: func(mockRM *MockResourceManager) {
-				mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-					Return(nil, errors.New("security violation: path traversal detected"))
+				mockRM.SetupFailedMockExecution(errors.New("security violation: path traversal detected"))
 			},
 			expectError: "security violation",
 		},
 		{
 			name: "DiskFull",
 			setupMock: func(mockRM *MockResourceManager) {
-				mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-					Return(nil, errors.New("disk full: cannot write output"))
+				mockRM.SetupFailedMockExecution(errors.New("disk full: cannot write output"))
 			},
 			expectError: "disk full",
 		},
 		{
 			name: "Unknown",
 			setupMock: func(mockRM *MockResourceManager) {
-				mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-					Return(nil, errors.New("unknown error occurred"))
+				mockRM.SetupFailedMockExecution(errors.New("unknown error occurred"))
 			},
 			expectError: "unknown error",
 		},
@@ -2640,8 +2680,7 @@ func TestRunner_OutputCaptureExecutionPhases(t *testing.T) {
 			phase: "pre-validation",
 			setupMock: func(mockRM *MockResourceManager) {
 				// Simulate pre-validation error (before command execution)
-				mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-					Return(nil, errors.New("pre-validation failed: invalid output path"))
+				mockRM.SetupFailedMockExecution(errors.New("pre-validation failed: invalid output path"))
 			},
 			expectError:   "pre-validation failed",
 			expectedPhase: "validation",
@@ -2651,8 +2690,7 @@ func TestRunner_OutputCaptureExecutionPhases(t *testing.T) {
 			phase: "execution",
 			setupMock: func(mockRM *MockResourceManager) {
 				// Simulate execution error (during command execution)
-				mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-					Return(nil, errors.New("execution failed: command not found"))
+				mockRM.SetupFailedMockExecution(errors.New("execution failed: command not found"))
 			},
 			expectError:   "execution failed",
 			expectedPhase: "execution",
@@ -2662,8 +2700,7 @@ func TestRunner_OutputCaptureExecutionPhases(t *testing.T) {
 			phase: "post-processing",
 			setupMock: func(mockRM *MockResourceManager) {
 				// Simulate post-processing error (after command execution)
-				mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-					Return(nil, errors.New("post-processing failed: cannot write output file"))
+				mockRM.SetupFailedMockExecution(errors.New("post-processing failed: cannot write output file"))
 			},
 			expectError:   "post-processing failed",
 			expectedPhase: "processing",
@@ -2673,8 +2710,7 @@ func TestRunner_OutputCaptureExecutionPhases(t *testing.T) {
 			phase: "cleanup",
 			setupMock: func(mockRM *MockResourceManager) {
 				// Simulate cleanup error (during resource cleanup)
-				mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-					Return(nil, errors.New("cleanup failed: cannot remove temporary files"))
+				mockRM.SetupFailedMockExecution(errors.New("cleanup failed: cannot remove temporary files"))
 			},
 			expectError:   "cleanup failed",
 			expectedPhase: "cleanup",
@@ -2749,13 +2785,7 @@ func TestRunner_OutputAnalysisValidation(t *testing.T) {
 			name: "CapturedFilesValidation",
 			setupMock: func(mockRM *MockResourceManager) {
 				// Simulate successful execution with captured files
-				result := &resource.ExecutionResult{
-					ExitCode: 0,
-					Stdout:   "test output",
-					Stderr:   "",
-				}
-				mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-					Return(result, nil)
+				mockRM.SetupSuccessfulMockExecution("test output", "")
 			},
 			expectFields: map[string]interface{}{
 				"captured_files": []string{"output.txt"},
@@ -2767,13 +2797,7 @@ func TestRunner_OutputAnalysisValidation(t *testing.T) {
 			name: "ProcessingTimeValidation",
 			setupMock: func(mockRM *MockResourceManager) {
 				// Simulate execution with timing
-				result := &resource.ExecutionResult{
-					ExitCode: 0,
-					Stdout:   "timed execution",
-					Stderr:   "",
-				}
-				mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-					Return(result, nil)
+				mockRM.SetupSuccessfulMockExecution("timed execution", "")
 			},
 			expectFields: map[string]interface{}{
 				"processing_time_ms": func(v interface{}) bool {
@@ -2789,8 +2813,7 @@ func TestRunner_OutputAnalysisValidation(t *testing.T) {
 			name: "ErrorAccumulation",
 			setupMock: func(mockRM *MockResourceManager) {
 				// Simulate execution with errors
-				mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-					Return(nil, errors.New("test error for accumulation"))
+				mockRM.SetupFailedMockExecution(errors.New("test error for accumulation"))
 			},
 			expectFields: map[string]interface{}{
 				"errors": []string{"test error for accumulation"},
@@ -2927,6 +2950,7 @@ func TestRunner_OutputCaptureSecurityIntegration(t *testing.T) {
 			if !tt.expectError {
 				// Create mock resource manager for success cases
 				mockRM := &MockResourceManager{}
+				mockRM.On("ValidateOutputPath", tt.outputPath, mock.Anything).Return(nil)
 				result := &resource.ExecutionResult{
 					ExitCode: 0,
 					Stdout:   "test",
@@ -2983,6 +3007,7 @@ func TestRunner_OutputCaptureResourceManagement(t *testing.T) {
 			name: "TempDirectoryLifecycle",
 			setupMock: func(mockRM *MockResourceManager) {
 				// Simulate temp directory creation and cleanup
+				mockRM.On("ValidateOutputPath", "resource-output.txt", mock.Anything).Return(nil)
 				mockRM.On("CreateTempDir", "test-group").Return("/tmp/test-temp-dir", nil)
 				mockRM.On("CleanupTempDir", "/tmp/test-temp-dir").Return(nil)
 
@@ -3001,6 +3026,7 @@ func TestRunner_OutputCaptureResourceManagement(t *testing.T) {
 			name: "ResourceContention",
 			setupMock: func(mockRM *MockResourceManager) {
 				// Setup temp directory to satisfy TempDir requirement
+				mockRM.On("ValidateOutputPath", "resource-output.txt", mock.Anything).Return(nil)
 				mockRM.On("CreateTempDir", "test-group").Return("/tmp/test-temp-dir", nil)
 				mockRM.On("CleanupTempDir", "/tmp/test-temp-dir").Return(nil)
 				// Simulate resource contention scenario
@@ -3014,6 +3040,7 @@ func TestRunner_OutputCaptureResourceManagement(t *testing.T) {
 			name: "CleanupFailure",
 			setupMock: func(mockRM *MockResourceManager) {
 				// Simulate cleanup failure - cleanup errors are logged but don't fail the execution
+				mockRM.On("ValidateOutputPath", "resource-output.txt", mock.Anything).Return(nil)
 				mockRM.On("CreateTempDir", "test-group").Return("/tmp/test-temp-dir", nil)
 				mockRM.On("CleanupTempDir", "/tmp/test-temp-dir").Return(errCleanupFailed)
 

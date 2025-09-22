@@ -54,6 +54,9 @@ type ResourceManager interface {
 	// Command execution
 	ExecuteCommand(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) (*ExecutionResult, error)
 
+	// Output validation - validates output paths before command execution
+	ValidateOutputPath(outputPath, workDir string) error
+
 	// Filesystem operations
 	CreateTempDir(groupName string) (string, error)
 	CleanupTempDir(tempDirPath string) error

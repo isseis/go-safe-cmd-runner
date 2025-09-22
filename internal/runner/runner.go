@@ -520,6 +520,13 @@ func (r *Runner) executeCommandInGroup(ctx context.Context, cmd runnertypes.Comm
 		cmd.Dir = r.config.Global.WorkDir
 	}
 
+	// Validate output path before command execution if output capture is requested
+	if cmd.Output != "" {
+		if err := r.resourceManager.ValidateOutputPath(cmd.Output, group.WorkDir); err != nil {
+			return nil, fmt.Errorf("output path validation failed: %w", err)
+		}
+	}
+
 	// Execute the command using ResourceManager
 	result, err := r.resourceManager.ExecuteCommand(ctx, cmd, group, envVars)
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,7 +16,8 @@ import (
 
 // Static errors
 var (
-	ErrPathResolverRequired = errors.New("PathResolver is required for DryRunResourceManager")
+	ErrPathResolverRequired  = errors.New("PathResolver is required for DryRunResourceManager")
+	ErrPathTraversalDetected = errors.New("path validation failed: path traversal detected")
 )
 
 // PathResolver interface for resolving command paths
@@ -89,6 +91,25 @@ func NewDryRunResourceManagerWithOutput(exec executor.CommandExecutor, privMgr r
 		},
 		resourceAnalyses: make([]ResourceAnalysis, 0),
 	}, nil
+}
+
+// ValidateOutputPath validates an output path in dry-run mode
+func (d *DryRunResourceManager) ValidateOutputPath(outputPath, workDir string) error {
+	if outputPath == "" {
+		return nil // No output path to validate
+	}
+
+	if d.outputManager == nil {
+		// In dry-run mode, we can still perform basic validation without an output manager
+		// Just check for obvious path traversal attempts
+		if strings.Contains(outputPath, "..") {
+			return fmt.Errorf("%w: %s", ErrPathTraversalDetected, outputPath)
+		}
+		return nil
+	}
+
+	// Use output manager's validation if available
+	return d.outputManager.ValidateOutputPath(outputPath, workDir)
 }
 
 // ExecuteCommand simulates command execution in dry-run mode

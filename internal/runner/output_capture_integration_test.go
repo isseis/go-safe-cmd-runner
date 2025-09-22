@@ -1,4 +1,4 @@
-//go:build test
+// This file contains integration tests for output capture functionality
 
 package runner
 
@@ -27,6 +27,7 @@ func TestRunner_OutputCaptureIntegration(t *testing.T) {
 		{
 			name: "BasicOutputCapture",
 			setupMock: func(mockRM *MockResourceManager) {
+				mockRM.On("ValidateOutputPath", "output.txt", mock.Anything).Return(nil)
 				result := &resource.ExecutionResult{
 					ExitCode: 0,
 					Stdout:   "test output",
@@ -41,6 +42,7 @@ func TestRunner_OutputCaptureIntegration(t *testing.T) {
 		{
 			name: "OutputCaptureError",
 			setupMock: func(mockRM *MockResourceManager) {
+				mockRM.On("ValidateOutputPath", "output.txt", mock.Anything).Return(nil)
 				mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 					Return(nil, fmt.Errorf("output capture failed"))
 			},
@@ -106,7 +108,13 @@ func TestRunner_OutputCaptureIntegration(t *testing.T) {
 	}
 }
 
-// TestRunner_OutputCaptureSecurityValidation tests various security scenarios
+// TestRunner_OutputCaptureSecurityValidation tests that security validation
+// occurs BEFORE command execution, creating a proper security boundary.
+//
+// This test verifies that:
+// 1. Invalid output paths are rejected during validation phase
+// 2. ExecuteCommand is never called for invalid paths
+// 3. Only valid paths proceed to command execution
 func TestRunner_OutputCaptureSecurityValidation(t *testing.T) {
 	setupSafeTestEnv(t)
 
@@ -120,19 +128,19 @@ func TestRunner_OutputCaptureSecurityValidation(t *testing.T) {
 			name:        "PathTraversalAttempt",
 			outputPath:  "../../../etc/passwd",
 			expectError: "security validation failed",
-			description: "Path traversal attempts should be blocked",
+			description: "Path traversal attempts should fail validation before command execution",
 		},
 		{
 			name:        "AbsolutePathBlocked",
 			outputPath:  "/etc/shadow",
 			expectError: "security validation failed",
-			description: "Absolute paths should be blocked for security",
+			description: "Absolute paths should fail validation before command execution",
 		},
 		{
 			name:        "ValidOutputPath",
 			outputPath:  "valid-output.txt",
 			expectError: "",
-			description: "Valid output path should be accepted",
+			description: "Valid output paths should pass validation and execute commands",
 		},
 	}
 
@@ -164,8 +172,13 @@ func TestRunner_OutputCaptureSecurityValidation(t *testing.T) {
 
 			// Create mock resource manager
 			mockRM := &MockResourceManager{}
+
+			// Setup mock expectations: validation always occurs first
 			if tt.expectError == "" {
-				// Only expect successful execution for valid paths
+				// Success case: validation passes, then command executes
+				mockRM.On("ValidateOutputPath", tt.outputPath, mock.Anything).Return(nil)
+
+				// Only after successful validation should ExecuteCommand be called
 				result := &resource.ExecutionResult{
 					ExitCode: 0,
 					Stdout:   "test",
@@ -174,9 +187,12 @@ func TestRunner_OutputCaptureSecurityValidation(t *testing.T) {
 				mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 					Return(result, nil)
 			} else {
-				// For error cases, also setup mock to return error
-				mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-					Return(nil, fmt.Errorf("security validation failed"))
+				// Failure case: validation fails, ExecuteCommand never gets called
+				mockRM.On("ValidateOutputPath", tt.outputPath, mock.Anything).
+					Return(fmt.Errorf("path validation failed: %s", tt.expectError))
+
+				// Note: No ExecuteCommand expectation set - it should never be called
+				// The mock will panic if ExecuteCommand is unexpectedly invoked
 			}
 
 			// Create runner with proper options
@@ -193,18 +209,19 @@ func TestRunner_OutputCaptureSecurityValidation(t *testing.T) {
 			err = runner.ExecuteGroup(ctx, cfg.Groups[0])
 
 			if tt.expectError != "" {
-				require.Error(t, err, "Should return error for %s", tt.description)
+				require.Error(t, err, "Security validation should prevent execution for %s", tt.description)
 				assert.Contains(t, err.Error(), tt.expectError)
+				assert.Contains(t, err.Error(), "output path validation failed",
+					"Error should indicate validation occurred before command execution")
 			} else {
-				// Note: May still fail due to actual implementation details
-				// This test focuses on security validation configuration
-				t.Logf("Test completed: %s", tt.description)
+				require.NoError(t, err, "Valid paths should pass validation and execute successfully: %s", tt.description)
+				t.Logf("Test completed successfully: %s", tt.description)
 			}
 
-			// Verify mock expectations (only if called)
-			if tt.expectError == "" {
-				mockRM.AssertExpectations(t)
-			}
+			// Critical verification: ensure the security boundary works as expected
+			// - ValidateOutputPath should always be called first
+			// - ExecuteCommand should only be called after successful validation
+			mockRM.AssertExpectations(t)
 		})
 	}
 }

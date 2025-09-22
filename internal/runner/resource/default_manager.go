@@ -70,6 +70,11 @@ func (d *DefaultResourceManager) ExecuteCommand(ctx context.Context, cmd runnert
 	return d.activeManager().ExecuteCommand(ctx, cmd, group, env)
 }
 
+// ValidateOutputPath delegates to the active manager.
+func (d *DefaultResourceManager) ValidateOutputPath(outputPath, workDir string) error {
+	return d.activeManager().ValidateOutputPath(outputPath, workDir)
+}
+
 // CreateTempDir delegates to the active manager.
 func (d *DefaultResourceManager) CreateTempDir(groupName string) (string, error) {
 	return d.activeManager().CreateTempDir(groupName)
