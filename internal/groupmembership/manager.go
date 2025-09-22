@@ -160,8 +160,12 @@ func (gm *GroupMembership) isUserOnlyGroupMember(userUID int, groupGID uint32) (
 
 	if uint32(userPrimaryGID) == groupGID {
 		// This is the user's primary group
-		// User is the only member if there are no explicit members
-		return len(members) == 0, nil
+		// User is the only member if there's exactly one member (the user themselves)
+		// or if there are no explicit members (depends on implementation)
+		if len(members) == 0 {
+			return true, nil // No explicit members, user is the only primary group member
+		}
+		return len(members) == 1 && members[0] == user.Username, nil
 	}
 	// This is not the user's primary group
 	// Check if there's exactly one explicit member and it's the specified user

@@ -237,12 +237,6 @@ func (v *Validator) validateGroupWritePermissions(dirPath string, info os.FileIn
 			ErrInvalidDirPermissions, dirPath, perm)
 	}
 
-	// Extract file stat info for direct validation
-	stat, ok = info.Sys().(*syscall.Stat_t)
-	if !ok {
-		return fmt.Errorf("%w: failed to get file stat info for %s", ErrInvalidDirPermissions, dirPath)
-	}
-
 	// Use unified security validation from groupmembership package
 	canSafelyWrite, err := v.groupMembership.CanUserSafelyWriteFile(realUID, stat.Uid, stat.Gid, info.Mode())
 	if err != nil {
