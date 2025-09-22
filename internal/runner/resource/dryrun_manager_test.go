@@ -371,3 +371,142 @@ func TestDryRunResourceManager_PathResolutionFailure(t *testing.T) {
 	assert.Contains(t, err.Error(), "command analysis failed")
 	assert.Contains(t, err.Error(), "failed to resolve command path")
 }
+
+func TestDryRunResourceManager_ValidateOutputPath(t *testing.T) {
+	manager := createTestDryRunResourceManager()
+
+	tests := []struct {
+		name        string
+		outputPath  string
+		workDir     string
+		expectError bool
+		errorType   error
+	}{
+		{
+			name:        "empty path",
+			outputPath:  "",
+			workDir:     "/tmp",
+			expectError: false,
+		},
+		{
+			name:        "valid path",
+			outputPath:  "/tmp/output.log",
+			workDir:     "/tmp",
+			expectError: false,
+		},
+		{
+			name:        "path traversal with ..",
+			outputPath:  "../../../etc/passwd",
+			workDir:     "/tmp",
+			expectError: true,
+			errorType:   ErrPathTraversalDetected,
+		},
+		{
+			name:        "path traversal in middle",
+			outputPath:  "/tmp/../etc/passwd",
+			workDir:     "/tmp",
+			expectError: true,
+			errorType:   ErrPathTraversalDetected,
+		},
+		{
+			name:        "relative path with traversal",
+			outputPath:  "subdir/../../../etc/passwd",
+			workDir:     "/tmp",
+			expectError: true,
+			errorType:   ErrPathTraversalDetected,
+		},
+		{
+			name:        "file with .. in name (should not trigger)",
+			outputPath:  "/tmp/backup..2023.log",
+			workDir:     "/tmp",
+			expectError: false,
+		},
+		{
+			name:        "directory with .. in name (should not trigger)",
+			outputPath:  "/tmp/app..backup/output.log",
+			workDir:     "/tmp",
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := manager.ValidateOutputPath(tt.outputPath, tt.workDir)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorType != nil {
+					assert.ErrorIs(t, err, tt.errorType)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func Test_containsPathTraversal(t *testing.T) {
+	tests := []struct {
+		name     string
+		path     string
+		expected bool
+	}{
+		{
+			name:     "simple traversal",
+			path:     "../passwd",
+			expected: true,
+		},
+		{
+			name:     "multiple traversal",
+			path:     "../../etc/passwd",
+			expected: true,
+		},
+		{
+			name:     "traversal in middle",
+			path:     "/tmp/../etc/passwd",
+			expected: true,
+		},
+		{
+			name:     "absolute path with traversal",
+			path:     "/home/user/../../../etc/passwd",
+			expected: true,
+		},
+		{
+			name:     "valid filename with .. in name",
+			path:     "/tmp/backup..2023.log",
+			expected: false,
+		},
+		{
+			name:     "valid directory with .. in name",
+			path:     "/tmp/app..backup/output.log",
+			expected: false,
+		},
+		{
+			name:     "normal path",
+			path:     "/tmp/output.log",
+			expected: false,
+		},
+		{
+			name:     "relative path without traversal",
+			path:     "subdir/output.log",
+			expected: false,
+		},
+		{
+			name:     "complex traversal pattern",
+			path:     "subdir/../../../root/.ssh/id_rsa",
+			expected: true,
+		},
+		{
+			name:     "cleaned path should still detect traversal",
+			path:     "/tmp/./subdir/../../../etc/passwd",
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := containsPathTraversal(tt.path)
+			assert.Equal(t, tt.expected, result, "containsPathTraversal(%q) = %v, want %v", tt.path, result, tt.expected)
+		})
+	}
+}
