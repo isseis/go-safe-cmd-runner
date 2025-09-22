@@ -4,9 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
-	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -104,7 +101,7 @@ func (d *DryRunResourceManager) ValidateOutputPath(outputPath, workDir string) e
 	if d.outputManager == nil {
 		// In dry-run mode, we can still perform basic validation without an output manager
 		// Check for path traversal by analyzing path components
-		if containsPathTraversal(outputPath) {
+		if output.ContainsPathTraversalSegment(outputPath) {
 			return fmt.Errorf("%w: %s", ErrPathTraversalDetected, outputPath)
 		}
 		return nil
@@ -433,13 +430,4 @@ func (d *DryRunResourceManager) RecordAnalysis(analysis *ResourceAnalysis) {
 	defer d.mu.Unlock()
 
 	d.resourceAnalyses = append(d.resourceAnalyses, *analysis)
-}
-
-// containsPathTraversal checks if a path contains path traversal sequences
-// by analyzing individual path components before path normalization
-func containsPathTraversal(path string) bool {
-	// Split the path into components and check for ".." BEFORE cleaning
-	// because filepath.Clean will resolve traversal sequences
-	components := strings.Split(path, string(filepath.Separator))
-	return slices.Contains(components, "..")
 }
