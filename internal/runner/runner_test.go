@@ -11,6 +11,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
@@ -115,6 +116,16 @@ func (m *MockResourceManager) GetDryRunResults() *resource.DryRunResult {
 
 func (m *MockResourceManager) RecordAnalysis(analysis *resource.ResourceAnalysis) {
 	m.Called(analysis)
+}
+
+// MockSecurityValidator for output testing
+type MockSecurityValidator struct {
+	mock.Mock
+}
+
+func (m *MockSecurityValidator) ValidateOutputWritePermission(outputPath string, realUID int) error {
+	args := m.Called(outputPath, realUID)
+	return args.Error(0)
 }
 
 // SetupDefaultMockBehavior sets up common default mock expectations for basic test scenarios
@@ -2774,108 +2785,99 @@ func TestRunner_OutputCaptureExecutionPhases(t *testing.T) {
 	}
 }
 
-// TestRunner_OutputAnalysisValidation tests OutputAnalysis structure validation
+// TestRunner_OutputAnalysisValidation tests output.Analysis through actual implementation
 func TestRunner_OutputAnalysisValidation(t *testing.T) {
 	setupSafeTestEnv(t)
 
 	tests := []struct {
 		name         string
-		setupMock    func(*MockResourceManager)
-		expectFields map[string]interface{}
+		outputPath   string
+		setupWorkDir func(string) string // Returns workDir path
+		expectCheck  func(*testing.T, *output.Analysis)
 		description  string
 	}{
 		{
-			name: "CapturedFilesValidation",
-			setupMock: func(mockRM *MockResourceManager) {
-				// Simulate successful execution with captured files
-				mockRM.SetupSuccessfulMockExecution("test output", "")
+			name:       "ValidOutputPath",
+			outputPath: "output.txt",
+			setupWorkDir: func(baseDir string) string {
+				// Create a valid directory for output
+				return baseDir
 			},
-			expectFields: map[string]interface{}{
-				"captured_files": []string{"output.txt"},
-				"total_size":     int64(11), // "test output" = 11 bytes
+			expectCheck: func(t *testing.T, analysis *output.Analysis) {
+				assert.Equal(t, "output.txt", analysis.OutputPath)
+				assert.True(t, analysis.DirectoryExists, "Directory should exist")
+				assert.True(t, analysis.WritePermission, "Should have write permission")
+				assert.Equal(t, output.RiskLevelLow, analysis.SecurityRisk)
+				assert.Empty(t, analysis.ErrorMessage, "Should have no error message")
+				assert.NotEmpty(t, analysis.ResolvedPath, "Should have resolved path")
+				// MaxSizeLimit defaults to 0 (unlimited) in current implementation
+				assert.GreaterOrEqual(t, analysis.MaxSizeLimit, int64(0), "MaxSizeLimit should be non-negative")
 			},
-			description: "Should correctly record captured files and sizes",
+			description: "Should correctly analyze valid output path",
 		},
 		{
-			name: "ProcessingTimeValidation",
-			setupMock: func(mockRM *MockResourceManager) {
-				// Simulate execution with timing
-				mockRM.SetupSuccessfulMockExecution("timed execution", "")
+			name:       "PathTraversalAttempt",
+			outputPath: "../../../etc/passwd",
+			setupWorkDir: func(baseDir string) string {
+				return baseDir
 			},
-			expectFields: map[string]interface{}{
-				"processing_time_ms": func(v interface{}) bool {
-					if duration, ok := v.(time.Duration); ok {
-						return duration >= 0 // Should be non-negative
-					}
-					return false
-				},
+			expectCheck: func(t *testing.T, analysis *output.Analysis) {
+				assert.Equal(t, "../../../etc/passwd", analysis.OutputPath)
+				// Path traversal should be detected as critical risk (consistent with manager_test.go)
+				assert.Equal(t, output.RiskLevelCritical, analysis.SecurityRisk,
+					"Path traversal should be critical risk, got: %v", analysis.SecurityRisk)
+				// ResolvedPath should be empty if path validation fails
+				assert.Empty(t, analysis.ResolvedPath, "ResolvedPath should be empty for invalid paths")
+				// Should have error message indicating the problem
+				assert.Contains(t, analysis.ErrorMessage, "path traversal", "Should contain error message about path traversal")
+				// Write permission should be false for failed validation
+				assert.False(t, analysis.WritePermission, "WritePermission should be false for invalid paths")
+				// MaxSizeLimit defaults to 0 (unlimited) in current implementation
+				assert.GreaterOrEqual(t, analysis.MaxSizeLimit, int64(0), "MaxSizeLimit should be non-negative")
 			},
-			description: "Should correctly measure processing time",
+			description: "Should correctly identify path traversal security risks",
 		},
 		{
-			name: "ErrorAccumulation",
-			setupMock: func(mockRM *MockResourceManager) {
-				// Simulate execution with errors
-				mockRM.SetupFailedMockExecution(errors.New("test error for accumulation"))
+			name:       "NonExistentDirectory",
+			outputPath: "nonexistent/output.txt",
+			setupWorkDir: func(baseDir string) string {
+				// Don't create the 'nonexistent' directory
+				return baseDir
 			},
-			expectFields: map[string]interface{}{
-				"errors": []string{"test error for accumulation"},
+			expectCheck: func(t *testing.T, analysis *output.Analysis) {
+				assert.Equal(t, "nonexistent/output.txt", analysis.OutputPath)
+				assert.False(t, analysis.DirectoryExists, "Directory should not exist")
+				// WritePermission behavior depends on implementation - might check parent directory permissions
+				// Let's check what the actual implementation returns
+				assert.NotEmpty(t, analysis.ResolvedPath, "Should have resolved path")
+				// SecurityRisk should be reasonable for valid path structure
+				assert.True(t, analysis.SecurityRisk <= output.RiskLevelMedium, "Should not be high risk for valid path structure")
+				// MaxSizeLimit defaults to 0 (unlimited) in current implementation
+				assert.GreaterOrEqual(t, analysis.MaxSizeLimit, int64(0), "MaxSizeLimit should be non-negative")
 			},
-			description: "Should correctly accumulate errors during execution",
+			description: "Should correctly handle non-existent directories",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tempDir := t.TempDir()
+			workDir := tt.setupWorkDir(tempDir)
 
-			// Create basic configuration with output capture
-			cfg := &runnertypes.Config{
-				Global: runnertypes.GlobalConfig{
-					Timeout:       30,
-					WorkDir:       tempDir,
-					MaxOutputSize: 1024,
-				},
-				Groups: []runnertypes.CommandGroup{
-					{
-						Name: "test-group",
-						Commands: []runnertypes.Command{
-							{
-								Name:   "test-cmd",
-								Cmd:    "echo",
-								Args:   []string{"test output"},
-								Output: "output.txt",
-							},
-						},
-					},
-				},
-			}
+			// Create actual output manager to test real implementation
+			// Need to create a mock security validator for testing
+			mockSecurityValidator := &MockSecurityValidator{}
+			mockSecurityValidator.On("ValidateOutputWritePermission", mock.Anything, mock.Anything).Return(nil).Maybe()
 
-			// Create mock resource manager
-			mockRM := &MockResourceManager{}
-			tt.setupMock(mockRM)
+			manager := output.NewDefaultOutputCaptureManager(mockSecurityValidator)
 
-			// Create runner with proper options
-			options := []Option{
-				WithResourceManager(mockRM),
-				WithRunID("test-run-output-capture"),
-			}
+			// Call the actual AnalyzeOutput method
+			analysis, err := manager.AnalyzeOutput(tt.outputPath, workDir)
+			require.NoError(t, err, "AnalyzeOutput should not return error")
+			require.NotNil(t, analysis, "Analysis should not be nil")
 
-			runner, err := NewRunner(cfg, options...)
-			require.NoError(t, err)
-
-			// Execute the group
-			ctx := context.Background()
-			err = runner.ExecuteGroup(ctx, cfg.Groups[0])
-
-			// For error cases, we expect errors
-			if _, hasErrors := tt.expectFields["errors"]; hasErrors {
-				require.Error(t, err, "Should return error for error accumulation test")
-			}
-
-			// Note: In a real implementation, we would verify the OutputAnalysis structure
-			// For now, we verify that the mock was called correctly
-			mockRM.AssertExpectations(t)
+			// Run the expectation checks
+			tt.expectCheck(t, analysis)
 
 			t.Logf("Test %s: %s", tt.name, tt.description)
 		})
