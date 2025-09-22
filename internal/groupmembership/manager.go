@@ -193,12 +193,16 @@ func (gm *GroupMembership) isUserOnlyGroupMember(userUID int, groupGID uint32) (
 //
 // This is the core security policy for determining write permissions in a multi-user environment.
 func (gm *GroupMembership) CanUserSafelyWriteFile(userUID int, fileUID, fileGID uint32, filePerm os.FileMode) (bool, error) {
+	// Validate userUID is within bounds for uint32 before conversion.
+	// Reject negative UIDs to avoid underflow when converting to uint32.
+	if userUID < 0 || userUID > math.MaxUint32 {
+		return false, fmt.Errorf("%w: %d", ErrUIDOutOfBounds, userUID)
+	}
+
 	// Convert userUID to uint32 for comparison
 	// #nosec G115 -- safe: `userUID` represents a system user ID (UID), which is
-	// non-negative and constrained by the operating system to fit within a 32-bit
-	// unsigned value on supported platforms. We only use this value for equality
-	// comparison against `fileUID`, so this conversion does not lead to unsafe
-	// arithmetic or influence memory sizes.
+	// constrained by the operating system to fit within a 32-bit unsigned value on
+	// supported platforms. We already validated bounds above.
 	userUID32 := uint32(userUID) // #nosec G115
 
 	perm := filePerm.Perm()
