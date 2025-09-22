@@ -2664,56 +2664,59 @@ func TestRunner_OutputCaptureErrorTypes(t *testing.T) {
 	}
 }
 
+// Test error variables for robust error checking
+var (
+	ErrPreValidationTest  = errors.New("pre-validation failed: invalid output path")
+	ErrExecutionTest      = errors.New("execution failed: command not found")
+	ErrPostProcessingTest = errors.New("post-processing failed: cannot write output file")
+	ErrCleanupTest        = errors.New("cleanup failed: cannot remove temporary files")
+)
+
 // TestRunner_OutputCaptureExecutionPhases tests error handling in different execution phases
 func TestRunner_OutputCaptureExecutionPhases(t *testing.T) {
 	setupSafeTestEnv(t)
 
 	tests := []struct {
-		name          string
-		phase         string
-		setupMock     func(*MockResourceManager)
-		expectError   string
-		expectedPhase string
+		name        string
+		phase       string
+		setupMock   func(*MockResourceManager)
+		expectError error
 	}{
 		{
 			name:  "PreValidationError",
 			phase: "pre-validation",
 			setupMock: func(mockRM *MockResourceManager) {
 				// Simulate pre-validation error (before command execution)
-				mockRM.SetupFailedMockExecution(errors.New("pre-validation failed: invalid output path"))
+				mockRM.SetupFailedMockExecution(ErrPreValidationTest)
 			},
-			expectError:   "pre-validation failed",
-			expectedPhase: "validation",
+			expectError: ErrPreValidationTest,
 		},
 		{
 			name:  "ExecutionError",
 			phase: "execution",
 			setupMock: func(mockRM *MockResourceManager) {
 				// Simulate execution error (during command execution)
-				mockRM.SetupFailedMockExecution(errors.New("execution failed: command not found"))
+				mockRM.SetupFailedMockExecution(ErrExecutionTest)
 			},
-			expectError:   "execution failed",
-			expectedPhase: "execution",
+			expectError: ErrExecutionTest,
 		},
 		{
 			name:  "PostProcessingError",
 			phase: "post-processing",
 			setupMock: func(mockRM *MockResourceManager) {
 				// Simulate post-processing error (after command execution)
-				mockRM.SetupFailedMockExecution(errors.New("post-processing failed: cannot write output file"))
+				mockRM.SetupFailedMockExecution(ErrPostProcessingTest)
 			},
-			expectError:   "post-processing failed",
-			expectedPhase: "processing",
+			expectError: ErrPostProcessingTest,
 		},
 		{
 			name:  "CleanupError",
 			phase: "cleanup",
 			setupMock: func(mockRM *MockResourceManager) {
 				// Simulate cleanup error (during resource cleanup)
-				mockRM.SetupFailedMockExecution(errors.New("cleanup failed: cannot remove temporary files"))
+				mockRM.SetupFailedMockExecution(ErrCleanupTest)
 			},
-			expectError:   "cleanup failed",
-			expectedPhase: "cleanup",
+			expectError: ErrCleanupTest,
 		},
 	}
 
@@ -2760,10 +2763,10 @@ func TestRunner_OutputCaptureExecutionPhases(t *testing.T) {
 			ctx := context.Background()
 			err = runner.ExecuteGroup(ctx, cfg.Groups[0])
 
-			// Verify error contains expected message and phase
+			// Verify error matches expected type using errors.Is()
 			require.Error(t, err, "Should return error for %s phase", tt.phase)
-			assert.Contains(t, err.Error(), tt.expectError)
-			assert.Contains(t, err.Error(), tt.expectedPhase)
+			assert.True(t, errors.Is(err, tt.expectError),
+				"Expected error type %v, got %v", tt.expectError, err)
 
 			// Verify mock expectations
 			mockRM.AssertExpectations(t)
