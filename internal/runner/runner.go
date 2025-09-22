@@ -239,7 +239,13 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 				// Create a default PathResolver when verification manager is not provided
 				pathResolver = verification.NewPathResolver("", validator, false)
 			}
-			resourceManager, err := resource.NewDefaultResourceManager(
+			// Get max output size from config (use default if not specified)
+			maxOutputSize := config.Global.MaxOutputSize
+			if maxOutputSize <= 0 {
+				maxOutputSize = 0 // Will use default from output package
+			}
+
+			resourceManager, err := resource.NewDefaultResourceManagerWithOutput(
 				opts.executor,
 				fs,
 				opts.privilegeManager,
@@ -247,6 +253,8 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 				slog.Default(), // Logger for Phase 1 implementation
 				resource.ExecutionModeNormal,
 				&resource.DryRunOptions{}, // Empty dry-run options for normal mode
+				nil,                       // Use default output manager
+				maxOutputSize,             // Max output size from config
 			)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create default resource manager: %w", err)

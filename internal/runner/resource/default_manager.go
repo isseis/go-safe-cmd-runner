@@ -6,7 +6,9 @@ import (
 	"log/slog"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
 // DefaultResourceManager provides a mode-aware facade that delegates to
@@ -22,9 +24,25 @@ type DefaultResourceManager struct {
 // NewDefaultResourceManager creates a new DefaultResourceManager.
 // If mode is ExecutionModeDryRun, opts may be used to configure the dry-run behavior.
 func NewDefaultResourceManager(exec executor.CommandExecutor, fs executor.FileSystem, privMgr runnertypes.PrivilegeManager, pathResolver PathResolver, logger *slog.Logger, mode ExecutionMode, dryRunOpts *DryRunOptions) (*DefaultResourceManager, error) {
+	return NewDefaultResourceManagerWithOutput(exec, fs, privMgr, pathResolver, logger, mode, dryRunOpts, nil, 0)
+}
+
+// NewDefaultResourceManagerWithOutput creates a new DefaultResourceManager with output capture support.
+// If mode is ExecutionModeDryRun, opts may be used to configure the dry-run behavior.
+func NewDefaultResourceManagerWithOutput(exec executor.CommandExecutor, fs executor.FileSystem, privMgr runnertypes.PrivilegeManager, pathResolver PathResolver, logger *slog.Logger, mode ExecutionMode, dryRunOpts *DryRunOptions, outputMgr output.CaptureManager, maxOutputSize int64) (*DefaultResourceManager, error) {
+	// Create output manager if not provided
+	if outputMgr == nil {
+		// Create a security validator for output validation
+		securityValidator, err := security.NewValidator(nil) // Use default config
+		if err != nil {
+			return nil, fmt.Errorf("failed to create security validator: %w", err)
+		}
+		outputMgr = output.NewDefaultOutputCaptureManager(securityValidator)
+	}
+
 	mgr := &DefaultResourceManager{
 		mode:   mode,
-		normal: NewNormalResourceManager(exec, fs, privMgr, logger),
+		normal: NewNormalResourceManagerWithOutput(exec, fs, privMgr, outputMgr, maxOutputSize, logger),
 	}
 	// Create dry-run manager eagerly to keep state like analyses across mode flips
 	// and to simplify switching without re-wiring dependencies.

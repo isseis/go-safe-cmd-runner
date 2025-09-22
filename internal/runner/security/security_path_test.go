@@ -85,10 +85,20 @@ func TestValidator_ValidateDirectoryPermissions_CompletePath(t *testing.T) {
 			expectedErr: ErrInvalidDirPermissions,
 		},
 		{
-			name: "directory owned by non-root user",
+			name: "directory owned by current user",
 			setupFunc: func(fs *common.MockFileSystem) {
 				fs.AddDir("/home", 0o755)
-				fs.AddDirWithOwner("/home/user", 0o755, 1000, 1000) // Owned by non-root user
+				fs.AddDirWithOwner("/home/user", 0o755, uint32(os.Getuid()), uint32(os.Getgid())) // Owned by current user
+				fs.AddDir("/home/user/config", 0o755)
+			},
+			dirPath:    "/home/user/config",
+			shouldFail: false, // Should pass since current user owns the directory
+		},
+		{
+			name: "directory owned by different non-root user",
+			setupFunc: func(fs *common.MockFileSystem) {
+				fs.AddDir("/home", 0o755)
+				fs.AddDirWithOwner("/home/user", 0o755, 2000, 2000) // Owned by different non-root user (UID 2000)
 				fs.AddDir("/home/user/config", 0o755)
 			},
 			dirPath:     "/home/user/config",
@@ -240,7 +250,8 @@ func TestValidator_ValidateCompletePath_SymlinkProtection(t *testing.T) {
 
 			// Run the validation
 			originalPath, cleanPath := tt.path, filepath.Clean(tt.path)
-			err = testValidator.validateCompletePath(cleanPath, originalPath)
+			realUID := os.Getuid()
+			err = testValidator.validateCompletePath(cleanPath, originalPath, realUID)
 
 			if tt.shouldFail {
 				assert.Error(t, err)
@@ -312,7 +323,8 @@ func TestValidator_ValidatePathComponents_EdgeCases(t *testing.T) {
 
 			// Run the validation
 			originalPath, cleanPath := tt.path, filepath.Clean(tt.path)
-			err = testValidator.validateCompletePath(cleanPath, originalPath)
+			realUID := os.Getuid()
+			err = testValidator.validateCompletePath(cleanPath, originalPath, realUID)
 
 			if tt.shouldFail {
 				assert.Error(t, err)
