@@ -3,6 +3,7 @@ package safefileio
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -715,4 +716,90 @@ func TestSafeAtomicMoveFile(t *testing.T) {
 		require.NoError(t, err, "Should be able to stat final file")
 		assert.Equal(t, os.FileMode(0o600), stat.Mode().Perm(), "Final file should have secure permissions")
 	})
+}
+
+// TestCanSafelyWriteToFile tests the new unified security validation function
+func TestCanSafelyWriteToFile(t *testing.T) {
+	tests := []struct {
+		name        string
+		permissions os.FileMode
+		operation   FileOperation
+		expectError bool
+		errorType   error
+	}{
+		{
+			name:        "read regular file with 0o644 should succeed",
+			permissions: 0o644,
+			operation:   FileOpRead,
+			expectError: false,
+		},
+		{
+			name:        "write regular file with 0o644 should succeed",
+			permissions: 0o644,
+			operation:   FileOpWrite,
+			expectError: false,
+		},
+		{
+			name:        "read file with world writable permissions should fail",
+			permissions: 0o666,
+			operation:   FileOpRead,
+			expectError: true,
+			errorType:   ErrInvalidFilePermissions,
+		},
+		{
+			name:        "write file with world writable permissions should fail",
+			permissions: 0o666,
+			operation:   FileOpWrite,
+			expectError: true,
+			errorType:   ErrInvalidFilePermissions,
+		},
+		{
+			name:        "read file with excessive permissions should fail",
+			permissions: 0o777,
+			operation:   FileOpRead,
+			expectError: true,
+			errorType:   ErrInvalidFilePermissions,
+		},
+		{
+			name:        "write file with excessive permissions should fail",
+			permissions: 0o777,
+			operation:   FileOpWrite,
+			expectError: true,
+			errorType:   ErrInvalidFilePermissions,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tempDir := safeTempDir(t)
+			filePath := filepath.Join(tempDir, fmt.Sprintf("test_%s.txt", tt.name))
+
+			// Create test file with specified permissions
+			require.NoError(t, os.WriteFile(filePath, []byte("test content"), tt.permissions), "Failed to create test file")
+
+			if tt.permissions&0o002 != 0 {
+				// For world writable test, need to explicitly chmod after creation
+				require.NoError(t, os.Chmod(filePath, tt.permissions), "Failed to set world writable permissions")
+			}
+
+			// Test the unified security validation function through the high-level API
+			// This will internally use the CanSafelyWriteToFile function via validateFile
+			var err error
+			switch tt.operation {
+			case FileOpRead:
+				_, err = SafeReadFile(filePath)
+			case FileOpWrite:
+				err = SafeWriteFileOverwrite(filePath, []byte("new content"), tt.permissions)
+			}
+
+			if tt.expectError {
+				assert.Error(t, err, "Expected error for permissions %o with operation %v", tt.permissions, tt.operation)
+				if tt.errorType != nil {
+					assert.ErrorIs(t, err, tt.errorType, "Expected specific error type for permissions %o with operation %v", tt.permissions, tt.operation)
+				}
+			} else {
+				assert.NoError(t, err, "Expected no error for permissions %o with operation %v", tt.permissions, tt.operation)
+			}
+		})
+	}
 }

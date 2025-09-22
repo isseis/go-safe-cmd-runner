@@ -19,4 +19,7 @@ var (
 
 	// ErrInvalidFilePermissions indicates that the file has inappropriate permissions.
 	ErrInvalidFilePermissions = errors.New("invalid file permissions")
+
+	// ErrInvalidFileOperation indicates that an invalid file operation type was specified.
+	ErrInvalidFileOperation = errors.New("invalid file operation")
 )

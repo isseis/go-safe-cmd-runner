@@ -1,6 +1,7 @@
 package groupmembership
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -148,18 +149,18 @@ func TestCanUserSafelyWriteFile(t *testing.T) {
 	defer cleanup()
 
 	t.Run("owner can safely write", func(t *testing.T) {
-		// Test with the file owner (current user)
-		canWrite, err := gm.CanUserSafelyWriteFile(int(uid), uid, gid)
+		// Test with the file owner (current user) and owner-writable permissions
+		canWrite, err := gm.CanUserSafelyWriteFile(int(uid), uid, gid, 0o644)
 		assert.NoError(t, err, "CanUserSafelyWriteFile should not return an error for file owner")
 		assert.True(t, canWrite, "File owner should be able to safely write")
 	})
 
-	t.Run("nonexistent user returns error", func(t *testing.T) {
-		// Test with a user ID that doesn't exist
-		nonexistentUID := int(uid) + 1000 // Use a UID that's unlikely to exist
-		canWrite, err := gm.CanUserSafelyWriteFile(nonexistentUID, uid, gid)
+	t.Run("nonexistent user with group writable permissions", func(t *testing.T) {
+		// Test with a user ID that doesn't exist trying to access group-writable file
+		nonexistentUID := int(uid) + 1000                                           // Use a UID that's unlikely to exist
+		canWrite, err := gm.CanUserSafelyWriteFile(nonexistentUID, uid, gid, 0o664) // group writable
 
-		// Should return an error for nonexistent user
+		// Should return an error for nonexistent user when trying to check group membership
 		assert.Error(t, err, "CanUserSafelyWriteFile should return an error for nonexistent user")
 		assert.False(t, canWrite, "Should return false for nonexistent user")
 		assert.Contains(t, err.Error(), "failed to lookup user", "Error should mention user lookup failure")
@@ -167,7 +168,7 @@ func TestCanUserSafelyWriteFile(t *testing.T) {
 
 	t.Run("root user test", func(t *testing.T) {
 		// Test with root user (UID 0) - this should work if running with appropriate permissions
-		canWrite, err := gm.CanUserSafelyWriteFile(0, uid, gid)
+		canWrite, err := gm.CanUserSafelyWriteFile(0, uid, gid, 0o644)
 
 		if err != nil {
 			// If we can't test with root, skip this test
@@ -176,6 +177,34 @@ func TestCanUserSafelyWriteFile(t *testing.T) {
 			// Root typically can write to any file they own or if they're the only group member
 			t.Logf("Root user (UID 0) can safely write: %v", canWrite)
 		}
+	})
+
+	// Add comprehensive permission tests
+	t.Run("world writable file denied", func(t *testing.T) {
+		canWrite, err := gm.CanUserSafelyWriteFile(int(uid), uid, gid, 0o666) // world writable
+		assert.Error(t, err, "World writable files should be denied")
+		assert.False(t, canWrite, "Should return false for world writable files")
+		assert.True(t, errors.Is(err, ErrFileWorldWritable), "Error should be ErrFileWorldWritable")
+	})
+
+	t.Run("group writable file - owner allowed", func(t *testing.T) {
+		canWrite, err := gm.CanUserSafelyWriteFile(int(uid), uid, gid, 0o664) // group writable
+		assert.NoError(t, err, "Group writable file should not error for owner")
+		assert.True(t, canWrite, "File owner should be allowed for group writable files")
+	})
+
+	t.Run("non-writable file denied", func(t *testing.T) {
+		canWrite, err := gm.CanUserSafelyWriteFile(int(uid), uid, gid, 0o444) // read-only
+		assert.Error(t, err, "Non-writable files should be denied")
+		assert.False(t, canWrite, "Should return false for non-writable files")
+		assert.True(t, errors.Is(err, ErrFileNotWritable), "Error should be ErrFileNotWritable")
+	})
+
+	t.Run("owner writable only - non-owner denied", func(t *testing.T) {
+		otherUID := int(uid) + 1
+		canWrite, err := gm.CanUserSafelyWriteFile(otherUID, uid, gid, 0o644) // owner writable only
+		assert.NoError(t, err, "Should not error for valid UID check")
+		assert.False(t, canWrite, "Non-owner should be denied for owner-only writable files")
 	})
 }
 
@@ -189,7 +218,7 @@ func TestCanCurrentUserSafelyWriteFile(t *testing.T) {
 
 	t.Run("current user can safely write to own file", func(t *testing.T) {
 		// Test with the file we just created (should be owned by current user)
-		canWrite, err := gm.CanCurrentUserSafelyWriteFile(uid, gid)
+		canWrite, err := gm.CanCurrentUserSafelyWriteFile(uid, gid, 0o644)
 		assert.NoError(t, err, "CanCurrentUserSafelyWriteFile should not return an error")
 		assert.True(t, canWrite, "Current user should be able to safely write to own file")
 	})
@@ -197,7 +226,7 @@ func TestCanCurrentUserSafelyWriteFile(t *testing.T) {
 	t.Run("consistency with old function", func(t *testing.T) {
 		// Test that the new function gives the same result as the old one
 		oldResult, err1 := gm.IsCurrentUserOnlyGroupMember(uid, gid)
-		newResult, err2 := gm.CanCurrentUserSafelyWriteFile(uid, gid)
+		newResult, err2 := gm.CanCurrentUserSafelyWriteFile(uid, gid, 0o644)
 
 		assert.NoError(t, err1, "IsCurrentUserOnlyGroupMember should not return an error")
 		assert.NoError(t, err2, "CanCurrentUserSafelyWriteFile should not return an error")

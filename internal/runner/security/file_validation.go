@@ -237,19 +237,31 @@ func (v *Validator) validateGroupWritePermissions(dirPath string, info os.FileIn
 			ErrInvalidDirPermissions, dirPath, perm)
 	}
 
-	isOnlyMember, err := v.groupMembership.IsUserOnlyGroupMember(realUID, stat.Gid)
-	if err != nil {
-		return fmt.Errorf("failed to check if user is only group member for GID %d: %w", stat.Gid, err)
+	// Extract file stat info for direct validation
+	stat, ok = info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fmt.Errorf("%w: failed to get file stat info for %s", ErrInvalidDirPermissions, dirPath)
 	}
 
-	if !isOnlyMember {
-		slog.Error("Directory has group write permissions but user is not the only group member",
+	// Use unified security validation from groupmembership package
+	canSafelyWrite, err := v.groupMembership.CanUserSafelyWriteFile(realUID, stat.Uid, stat.Gid, info.Mode())
+	if err != nil {
+		// Convert groupmembership errors to security context errors
+		slog.Error("Directory security validation failed",
 			"path", dirPath,
 			"permissions", fmt.Sprintf("%04o", perm),
 			"user_uid", realUID,
-			"group_gid", stat.Gid)
-		return fmt.Errorf("%w: directory %s has group write permissions (%04o) but user is not the only group member",
-			ErrInvalidDirPermissions, dirPath, perm)
+			"error", err)
+		return fmt.Errorf("%w: directory %s failed security validation: %v",
+			ErrInvalidDirPermissions, dirPath, err)
+	}
+	if !canSafelyWrite {
+		slog.Error("Directory security validation failed - write not safe",
+			"path", dirPath,
+			"permissions", fmt.Sprintf("%04o", perm),
+			"user_uid", realUID)
+		return fmt.Errorf("%w: directory %s - user UID %d cannot safely write to this directory",
+			ErrInvalidDirPermissions, dirPath, realUID)
 	}
 
 	return nil

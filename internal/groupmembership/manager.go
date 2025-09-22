@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"os/user"
 	"slices"
 	"strconv"
@@ -20,6 +21,12 @@ const (
 
 // ErrUIDOutOfBounds is returned when a UID value is out of bounds for uint32
 var ErrUIDOutOfBounds = errors.New("UID is out of bounds for uint32")
+
+// ErrFileWorldWritable is returned when a file has world-writable permissions
+var ErrFileWorldWritable = errors.New("file is world-writable")
+
+// ErrFileNotWritable is returned when a file has no writable permissions for the user
+var ErrFileNotWritable = errors.New("file has no writable permissions for user")
 
 // GroupMembership provides group membership checking functionality with explicit cache management
 type GroupMembership struct {
@@ -108,10 +115,10 @@ func (gm *GroupMembership) IsUserInGroup(username, groupName string) (bool, erro
 	return slices.Contains(members, username), nil
 }
 
-// IsUserOnlyGroupMember checks if the specified user is the only member of a group
+// isUserOnlyGroupMember checks if the specified user is the only member of a group
 // This is useful for security validation where group write permissions are acceptable
 // only if the group has a single member who is the specified user
-func (gm *GroupMembership) IsUserOnlyGroupMember(userUID int, groupGID uint32) (bool, error) {
+func (gm *GroupMembership) isUserOnlyGroupMember(userUID int, groupGID uint32) (bool, error) {
 	// Get user information
 	user, err := user.LookupId(strconv.Itoa(userUID))
 	if err != nil {
@@ -184,22 +191,27 @@ func (gm *GroupMembership) IsCurrentUserOnlyGroupMember(fileUID, fileGID uint32)
 	return false, nil
 }
 
-// CanUserSafelyWriteFile checks if a user can safely write to a file based on ownership and group membership.
+// CanUserSafelyWriteFile checks if a user can safely write to a file based on file permissions, ownership and group membership.
 //
-// This function implements the security policy: "user owns file OR user is the only member of file's group"
-// This prevents potential security issues where group-writable files could be modified by unintended users.
+// This function implements the comprehensive security policy:
+// 1. Deny if file has other writable permissions (world writable)
+// 2. If file has group writable permissions: allow only if user owns file OR user is the only member of file's group
+// 3. If file has owner writable permissions: allow only if user owns the file
+//
+// This prevents potential security issues where files could be modified by unintended users.
 //
 // Parameters:
 //   - userUID: The user ID to check (as int)
 //   - fileUID: The file owner's user ID (as uint32)
 //   - fileGID: The file's group ID (as uint32)
+//   - filePerm: The file permissions (as os.FileMode)
 //
 // Returns:
 //   - bool: true if the user can safely write to the file, false otherwise
-//   - error: non-nil if there was an error checking user or group information
+//   - error: non-nil if there was an error checking user or group information, or if write is not safe
 //
 // This is the core security policy for determining write permissions in a multi-user environment.
-func (gm *GroupMembership) CanUserSafelyWriteFile(userUID int, fileUID, fileGID uint32) (bool, error) {
+func (gm *GroupMembership) CanUserSafelyWriteFile(userUID int, fileUID, fileGID uint32, filePerm os.FileMode) (bool, error) {
 	// Convert userUID to uint32 for comparison
 	// #nosec G115 -- safe: `userUID` represents a system user ID (UID), which is
 	// non-negative and constrained by the operating system to fit within a 32-bit
@@ -208,13 +220,31 @@ func (gm *GroupMembership) CanUserSafelyWriteFile(userUID int, fileUID, fileGID 
 	// arithmetic or influence memory sizes.
 	userUID32 := uint32(userUID) // #nosec G115
 
-	// Check if user owns the file - if so, they can safely write
-	if userUID32 == fileUID {
-		return true, nil
+	perm := filePerm.Perm()
+
+	// 1. Always forbid world writable (other writable)
+	if perm&0o002 != 0 {
+		return false, fmt.Errorf("%w with permissions %o", ErrFileWorldWritable, perm)
 	}
 
-	// If not the owner, check if user is the only member of the file's group
-	return gm.IsUserOnlyGroupMember(userUID, fileGID)
+	// 2. Check group writable permissions
+	if perm&0o020 != 0 {
+		// Group writable: allow only if user owns file OR user is the only member of the group
+		if userUID32 == fileUID {
+			return true, nil // User owns the file, safe to write
+		}
+		// Check if user is the only member of the file's group
+		return gm.isUserOnlyGroupMember(userUID, fileGID)
+	}
+
+	// 3. Check owner writable permissions
+	if perm&0o200 != 0 {
+		// Owner writable: allow only if user owns the file
+		return userUID32 == fileUID, nil
+	}
+
+	// File is not writable by user, group, or others
+	return false, fmt.Errorf("%w UID %d", ErrFileNotWritable, userUID)
 }
 
 // CanCurrentUserSafelyWriteFile is a convenience wrapper for the current user.
@@ -226,6 +256,7 @@ func (gm *GroupMembership) CanUserSafelyWriteFile(userUID int, fileUID, fileGID 
 // Parameters:
 //   - fileUID: The file owner's user ID (as uint32)
 //   - fileGID: The file's group ID (as uint32)
+//   - filePerm: The file permissions (as os.FileMode)
 //
 // Returns:
 //   - bool: true if the current user can safely write to the file, false otherwise
@@ -233,14 +264,14 @@ func (gm *GroupMembership) CanUserSafelyWriteFile(userUID int, fileUID, fileGID 
 //
 // Example usage:
 //
-//	canWrite, err := gm.CanCurrentUserSafelyWriteFile(stat.Uid, stat.Gid)
+//	canWrite, err := gm.CanCurrentUserSafelyWriteFile(stat.Uid, stat.Gid, fileInfo.Mode())
 //	if err != nil {
 //	    return fmt.Errorf("failed to check write safety: %w", err)
 //	}
 //	if !canWrite {
 //	    return fmt.Errorf("current user cannot safely write to file")
 //	}
-func (gm *GroupMembership) CanCurrentUserSafelyWriteFile(fileUID, fileGID uint32) (bool, error) {
+func (gm *GroupMembership) CanCurrentUserSafelyWriteFile(fileUID, fileGID uint32, filePerm os.FileMode) (bool, error) {
 	currentUser, err := user.Current()
 	if err != nil {
 		return false, fmt.Errorf("failed to get current user: %w", err)
@@ -255,7 +286,7 @@ func (gm *GroupMembership) CanCurrentUserSafelyWriteFile(fileUID, fileGID uint32
 		return false, fmt.Errorf("%w: %d", ErrUIDOutOfBounds, currentUID)
 	}
 
-	return gm.CanUserSafelyWriteFile(currentUID, fileUID, fileGID)
+	return gm.CanUserSafelyWriteFile(currentUID, fileUID, fileGID, filePerm)
 }
 
 // ClearCache manually clears all cached group membership data
