@@ -153,6 +153,28 @@ func (v *ConfigValidator) ValidateConfigFile(cfg *runnertypes.Config) error {
 	return nil
 }
 
+// checkPatternMatch checks if a path matches any of the given patterns using case-insensitive comparison
+// Returns the matching pattern if found, empty string if no match
+func (v *ConfigValidator) checkPatternMatch(path string, patterns []string) string {
+	lowerPath := strings.ToLower(path)
+
+	for _, pattern := range patterns {
+		patternLower := strings.ToLower(pattern)
+		// Only check directory patterns (ending with /) using prefix matching
+		if strings.HasSuffix(patternLower, "/") {
+			if strings.HasPrefix(lowerPath, patternLower) {
+				return pattern
+			}
+		} else {
+			// For file patterns, use contains matching
+			if strings.Contains(lowerPath, patternLower) {
+				return pattern
+			}
+		}
+	}
+	return ""
+}
+
 // validateOutputPath performs basic validation on output paths
 func (v *ConfigValidator) validateOutputPath(outputPath string) error {
 	if outputPath == "" {
@@ -168,49 +190,22 @@ func (v *ConfigValidator) validateOutputPath(outputPath string) error {
 	criticalPatterns := v.securityConfig.GetPathPatternsByRisk(runnertypes.RiskLevelCritical)
 	highRiskPatterns := v.securityConfig.GetPathPatternsByRisk(runnertypes.RiskLevelHigh)
 
+	// Check critical directory patterns
+	if matchedPattern := v.checkPatternMatch(outputPath, criticalPatterns); matchedPattern != "" {
+		return fmt.Errorf("%w: %s", ErrSensitiveSystemDirectory, matchedPattern)
+	}
+
+	// Check high-risk directory patterns
+	if matchedPattern := v.checkPatternMatch(outputPath, highRiskPatterns); matchedPattern != "" {
+		return fmt.Errorf("%w: %s", ErrSensitiveSystemDirectory, matchedPattern)
+	}
+
+	// Check for suspicious file extensions using security config
+	suspiciousExtensions := v.securityConfig.GetSuspiciousExtensions()
+
 	lowerPath := strings.ToLower(outputPath)
-
-	// Check critical directory patterns - only use prefix matching to avoid false positives
-	for _, pattern := range criticalPatterns {
-		patternLower := strings.ToLower(pattern)
-		// Only check directory patterns (ending with /) using prefix matching
-		if strings.HasSuffix(patternLower, "/") {
-			if strings.HasPrefix(lowerPath, patternLower) {
-				return fmt.Errorf("%w: %s", ErrSensitiveSystemDirectory, pattern)
-			}
-		} else {
-			// For file patterns, use contains matching
-			if strings.Contains(lowerPath, patternLower) {
-				return fmt.Errorf("%w: %s", ErrSensitiveSystemDirectory, pattern)
-			}
-		}
-	}
-
-	// Check high-risk directory patterns - only use prefix matching to avoid false positives
-	for _, pattern := range highRiskPatterns {
-		patternLower := strings.ToLower(pattern)
-		// Only check directory patterns (ending with /) using prefix matching
-		if strings.HasSuffix(patternLower, "/") {
-			if strings.HasPrefix(lowerPath, patternLower) {
-				return fmt.Errorf("%w: %s", ErrSensitiveSystemDirectory, pattern)
-			}
-		} else {
-			// For file patterns, use contains matching
-			if strings.Contains(lowerPath, patternLower) {
-				return fmt.Errorf("%w: %s", ErrSensitiveSystemDirectory, pattern)
-			}
-		}
-	}
-
-	// Check for suspicious file extensions
-	suspiciousExtensions := []string{
-		".exe", ".bat", ".cmd", ".com", ".scr", ".vbs", ".js", ".jar",
-		".sh", ".py", ".pl", ".rb", ".php", ".asp", ".jsp",
-	}
-
-	lowerPath = strings.ToLower(outputPath)
 	for _, ext := range suspiciousExtensions {
-		if strings.HasSuffix(lowerPath, ext) {
+		if strings.HasSuffix(lowerPath, strings.ToLower(ext)) {
 			return fmt.Errorf("%w: %s", ErrSuspiciousExecutableExt, ext)
 		}
 	}
@@ -238,34 +233,14 @@ func (v *ConfigValidator) AssessSecurityRisk(outputPath string, _ string) runner
 		criticalPatterns := v.securityConfig.GetPathPatternsByRisk(runnertypes.RiskLevelCritical)
 		highRiskPatterns := v.securityConfig.GetPathPatternsByRisk(runnertypes.RiskLevelHigh)
 
-		// Check critical patterns first - distinguish between directory and file patterns
-		for _, pattern := range criticalPatterns {
-			// Only check directory patterns (ending with /) using prefix matching to avoid false positives
-			if strings.HasSuffix(pattern, "/") {
-				if strings.HasPrefix(outputPath, pattern) {
-					return runnertypes.RiskLevelCritical
-				}
-			} else {
-				// For file patterns, use contains matching
-				if strings.Contains(strings.ToLower(outputPath), strings.ToLower(pattern)) {
-					return runnertypes.RiskLevelCritical
-				}
-			}
+		// Check critical patterns first
+		if v.checkPatternMatch(outputPath, criticalPatterns) != "" {
+			return runnertypes.RiskLevelCritical
 		}
 
-		// Check high-risk patterns - distinguish between directory and file patterns
-		for _, pattern := range highRiskPatterns {
-			// Only check directory patterns (ending with /) using prefix matching to avoid false positives
-			if strings.HasSuffix(pattern, "/") {
-				if strings.HasPrefix(outputPath, pattern) {
-					return runnertypes.RiskLevelCritical // System directories are always critical
-				}
-			} else {
-				// For file patterns, use contains matching
-				if strings.Contains(strings.ToLower(outputPath), strings.ToLower(pattern)) {
-					return runnertypes.RiskLevelCritical
-				}
-			}
+		// Check high-risk patterns - system directories are always critical
+		if v.checkPatternMatch(outputPath, highRiskPatterns) != "" {
+			return runnertypes.RiskLevelCritical
 		}
 
 		// /tmp and /var/tmp are medium risk

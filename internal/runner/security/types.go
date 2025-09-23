@@ -143,6 +143,8 @@ type Config struct {
 	OutputCriticalPathPatterns []string
 	// outputHighRiskPathPatterns defines high-risk system paths that require extra caution
 	OutputHighRiskPathPatterns []string
+	// SuspiciousExtensions defines file extensions that pose security risks for output files
+	SuspiciousExtensions []string
 	// testPermissiveMode is only available in test builds and allows relaxed directory permissions
 	testPermissiveMode bool
 	// testSkipHashValidation is only available in test builds and allows skipping hash validation
@@ -247,6 +249,10 @@ func DefaultConfig() *Config {
 			".git/", ".env", ".aws/credentials",
 			".kube/config", ".docker/config.json",
 		},
+		SuspiciousExtensions: []string{
+			".exe", ".bat", ".cmd", ".com", ".scr", ".vbs", ".js", ".jar",
+			".sh", ".py", ".pl", ".rb", ".php", ".asp", ".jsp",
+		},
 	}
 }
 
@@ -282,6 +288,11 @@ func (c *Config) GetSuspiciousFilePatterns() []string {
 		".docker/config.json",
 	}
 	return suspiciousFiles
+}
+
+// GetSuspiciousExtensions returns file extensions that pose security risks for output files
+func (c *Config) GetSuspiciousExtensions() []string {
+	return c.SuspiciousExtensions
 }
 
 // DefaultLoggingOptions returns secure default logging options
