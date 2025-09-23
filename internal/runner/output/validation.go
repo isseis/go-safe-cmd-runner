@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
@@ -143,7 +144,7 @@ func (v *ConfigValidator) validateOutputPath(outputPath string) error {
 	}
 
 	// Check for path traversal attempts
-	if strings.Contains(outputPath, "..") {
+	if common.ContainsPathTraversalSegment(outputPath) {
 		return ErrPathTraversalDetected
 	}
 
@@ -218,7 +219,7 @@ func (v *ConfigValidator) AssessSecurityRisk(outputPath string, _ string) runner
 	}
 
 	// Relative paths with traversal are high risk
-	if strings.Contains(outputPath, "..") {
+	if common.ContainsPathTraversalSegment(outputPath) {
 		return runnertypes.RiskLevelHigh
 	}
 

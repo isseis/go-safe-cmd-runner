@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -101,7 +102,7 @@ func (d *DryRunResourceManager) ValidateOutputPath(outputPath, workDir string) e
 	if d.outputManager == nil {
 		// In dry-run mode, we can still perform basic validation without an output manager
 		// Check for path traversal by analyzing path components
-		if output.ContainsPathTraversalSegment(outputPath) {
+		if common.ContainsPathTraversalSegment(outputPath) {
 			return fmt.Errorf("%w: %s", ErrPathTraversalDetected, outputPath)
 		}
 		return nil

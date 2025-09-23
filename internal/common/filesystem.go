@@ -7,6 +7,9 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"path/filepath"
+	"slices"
+	"strings"
 )
 
 // Error definitions for static error handling
@@ -122,4 +125,12 @@ func NewResolvedPath(path string) (ResolvedPath, error) {
 
 func (p ResolvedPath) String() string {
 	return string(p)
+}
+
+// ContainsPathTraversalSegment checks if a path contains ".." as a distinct path segment
+// This avoids false positives for legitimate filenames that contain ".." (e.g., "archive..zip")
+func ContainsPathTraversalSegment(path string) bool {
+	// Split the path into segments and check if any segment is ".."
+	segments := strings.Split(path, string(filepath.Separator))
+	return slices.Contains(segments, "..")
 }
