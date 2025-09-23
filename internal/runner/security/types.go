@@ -136,6 +136,8 @@ type Config struct {
 	// DangerousRootArgPatterns is a list of potentially destructive argument patterns when running as root
 	DangerousRootArgPatterns []string
 	// SystemCriticalPaths is a list of system-critical paths that require extra caution
+	// Used for both command argument validation and general path security checks
+	// These paths are checked without trailing slashes for flexible matching
 	SystemCriticalPaths []string
 	// LoggingOptions controls sensitive information handling in logs
 	LoggingOptions LoggingOptions
@@ -233,7 +235,8 @@ func DefaultConfig() *Config {
 			"rf", "force", "recursive", "all",
 		},
 		SystemCriticalPaths: []string{
-			"/", "/bin", "/sbin", "/usr", "/etc", "/var", "/boot", "/sys", "/proc", "/dev",
+			"/", "/bin", "/sbin", "/usr", "/usr/bin", "/usr/sbin", "/etc", "/var",
+			"/var/log", "/boot", "/sys", "/proc", "/dev", "/lib", "/lib64", "/root",
 		},
 		OutputCriticalPathPatterns: []string{
 			"/etc/passwd", "/etc/shadow", "/etc/sudoers",
@@ -268,16 +271,6 @@ func (c *Config) GetPathPatternsByRisk(level runnertypes.RiskLevel) []string {
 	}
 }
 
-// GetSystemDirectoryPatterns returns critical system directory patterns for validation
-func (c *Config) GetSystemDirectoryPatterns() []string {
-	// Combine critical and high-risk path patterns that are directories
-	systemDirs := []string{
-		"/etc/", "/root/", "/bin/", "/sbin/", "/usr/bin/", "/usr/sbin/",
-		"/boot/", "/dev/", "/proc/", "/sys/", "/var/log/", "/lib/", "/lib64/",
-	}
-	return systemDirs
-}
-
 // GetSuspiciousFilePatterns returns patterns for suspicious files that should be flagged
 func (c *Config) GetSuspiciousFilePatterns() []string {
 	// File-specific patterns from critical paths
@@ -293,6 +286,11 @@ func (c *Config) GetSuspiciousFilePatterns() []string {
 // GetSuspiciousExtensions returns file extensions that pose security risks for output files
 func (c *Config) GetSuspiciousExtensions() []string {
 	return c.SuspiciousExtensions
+}
+
+// GetSystemCriticalPaths returns system-critical paths for command argument validation
+func (c *Config) GetSystemCriticalPaths() []string {
+	return c.SystemCriticalPaths
 }
 
 // DefaultLoggingOptions returns secure default logging options

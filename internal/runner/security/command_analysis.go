@@ -164,7 +164,7 @@ func (v *Validator) HasSystemCriticalPaths(args []string) []int {
 	var criticalIndices []int
 
 	for i, arg := range args {
-		for _, criticalPath := range v.config.SystemCriticalPaths {
+		for _, criticalPath := range v.config.GetSystemCriticalPaths() {
 			if strings.HasPrefix(arg, criticalPath) &&
 				(len(arg) == len(criticalPath) || arg[len(criticalPath)] == '/') {
 				criticalIndices = append(criticalIndices, i)
