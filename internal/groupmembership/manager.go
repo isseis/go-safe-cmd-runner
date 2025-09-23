@@ -17,6 +17,12 @@ const (
 	DefaultCacheTimeout = 30 * time.Second
 	// CleanupInterval defines how often to perform full cache cleanup (every N cache misses)
 	CleanupInterval = 10
+	// AllPermissionBits represents all possible permission and special bits
+	AllPermissionBits = 0o7777
+	// MaxAllowedReadPerms defines the maximum allowed file permissions for read operations
+	MaxAllowedReadPerms = 0o6775 // rwsrwsr-x with setuid and setgid
+	// MaxAllowedWritePerms defines the maximum allowed file permissions for write operations
+	MaxAllowedWritePerms = 0o664 // rw-rw-r-- with group write allowed for write operations
 )
 
 // ErrUIDOutOfBounds is returned when a UID value is out of bounds for uint32
@@ -33,6 +39,22 @@ var ErrFileNotOwner = errors.New("user does not own the file")
 
 // ErrGroupWritableNonMember is returned when accessing group writable file with non-member user
 var ErrGroupWritableNonMember = errors.New("group writable file with non-member user access")
+
+// ErrPermissionsExceedMaximum is returned when file permissions exceed the maximum allowed for the operation
+var ErrPermissionsExceedMaximum = errors.New("file permissions exceed maximum allowed for operation")
+
+// ErrInvalidFileOperation is returned when an unknown file operation is specified
+var ErrInvalidFileOperation = errors.New("invalid file operation")
+
+// FileOperation represents the type of file operation being performed
+type FileOperation int
+
+const (
+	// FileOpRead indicates a read operation
+	FileOpRead FileOperation = iota
+	// FileOpWrite indicates a write operation
+	FileOpWrite
+)
 
 // GroupMembership provides group membership checking functionality with explicit cache management
 type GroupMembership struct {
@@ -279,7 +301,7 @@ func (gm *GroupMembership) CanCurrentUserSafelyWriteFile(fileUID, fileGID uint32
 // This function implements the read-specific security policy:
 //  1. Deny if file has world writable permissions (security risk)
 //  2. If file has group writable permissions: deny only if current user is NOT in the file's group
-//  3. Allow reading for files with standard read permissions (up to 0o4755)
+//  3. Allow reading for files with standard read permissions (up to 0o6755)
 //
 // This is more permissive than write operations, as reading generally poses lower security risks.
 //
@@ -332,9 +354,51 @@ func (gm *GroupMembership) CanCurrentUserSafelyReadFile(fileGID uint32, filePerm
 		// If user is in group, allow read access
 	}
 
-	// 3. Allow reading with broader permissions (up to 0o6755 including setuid)
+	// 3. Allow reading with broader permissions
 	// This is more permissive than write operations
+
+	permMask := filePerm & AllPermissionBits
+	disallowedBits := permMask &^ MaxAllowedReadPerms // Find bits that are set but not allowed
+	if disallowedBits != 0 {
+		return false, fmt.Errorf("%w: file permissions %o have disallowed bits %o, maximum allowed %o",
+			ErrPermissionsExceedMaximum, permMask, disallowedBits, MaxAllowedReadPerms)
+	}
+
 	return true, nil
+}
+
+// ValidateRequestedPermissions validates the requested permissions before file creation/modification
+// This performs permission validation to ensure requested permissions don't exceed security limits
+// for the specified operation type.
+//
+// Parameters:
+//   - perm: The requested file permissions
+//   - operation: The intended file operation (read/write)
+//
+// Returns:
+//   - error: Validation error if permissions exceed maximum allowed for the operation
+func (gm *GroupMembership) ValidateRequestedPermissions(perm os.FileMode, operation FileOperation) error {
+	// Select maximum allowed permissions based on operation type
+	var maxAllowedPerms os.FileMode
+	switch operation {
+	case FileOpRead:
+		maxAllowedPerms = MaxAllowedReadPerms
+	case FileOpWrite:
+		maxAllowedPerms = MaxAllowedWritePerms
+	default:
+		return fmt.Errorf("%w: unknown file operation", ErrInvalidFileOperation)
+	}
+
+	// Check if requested permissions exceed the maximum allowed
+	// Use full mode to include setuid/setgid/sticky bits, not just Perm()
+	fullMode := perm & AllPermissionBits // Include all permission and special bits
+	disallowedBits := fullMode &^ maxAllowedPerms
+	if disallowedBits != 0 {
+		return fmt.Errorf("%w: requested permissions %o exceed maximum allowed %o for %v operation",
+			ErrPermissionsExceedMaximum, fullMode, maxAllowedPerms, operation)
+	}
+
+	return nil
 }
 
 // ClearCache manually clears all cached group membership data
