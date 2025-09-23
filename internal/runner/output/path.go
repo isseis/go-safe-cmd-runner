@@ -52,7 +52,7 @@ func (v *DefaultPathValidator) ValidateAndResolvePath(outputPath, workDir string
 // validatePathSecurity performs common security validation for both absolute and relative paths
 func validatePathSecurity(path string) error {
 	// Check for path traversal patterns by examining path segments
-	if containsPathTraversalSegment(path) {
+	if ContainsPathTraversalSegment(path) {
 		return fmt.Errorf("%w: %s", ErrPathTraversal, path)
 	}
 
@@ -93,9 +93,9 @@ func (v *DefaultPathValidator) validateRelativePath(path, workDir string) (strin
 	return cleanPath, nil
 }
 
-// containsPathTraversalSegment checks if a path contains ".." as a distinct path segment
+// ContainsPathTraversalSegment checks if a path contains ".." as a distinct path segment
 // This avoids false positives for legitimate filenames that contain ".." (e.g., "archive..zip")
-func containsPathTraversalSegment(path string) bool {
+func ContainsPathTraversalSegment(path string) bool {
 	// Split the path into segments and check if any segment is ".."
 	segments := strings.Split(path, string(filepath.Separator))
 	return slices.Contains(segments, "..")

@@ -3,10 +3,12 @@ package safefileio
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -229,7 +231,7 @@ func TestSafeReadFile(t *testing.T) {
 				return filePath
 			},
 			wantErr: true,
-			errType: ErrInvalidFilePermissions,
+			errType: groupmembership.ErrFileWorldWritable,
 		},
 		{
 			name: "group writable file owned by current user should succeed",
@@ -327,99 +329,99 @@ func TestValidateFilePermissions(t *testing.T) {
 	tests := []struct {
 		name        string
 		permissions os.FileMode
-		operation   FileOperation
+		operation   groupmembership.FileOperation
 		expectError bool
 		errorType   error
 	}{
 		{
 			name:        "normal permissions (644) for read",
 			permissions: 0o644,
-			operation:   FileOpRead,
+			operation:   groupmembership.FileOpRead,
 			expectError: false,
 		},
 		{
 			name:        "normal permissions (644) for write",
 			permissions: 0o644,
-			operation:   FileOpWrite,
+			operation:   groupmembership.FileOpWrite,
 			expectError: false,
 		},
 		{
 			name:        "executable permissions (755) for read",
 			permissions: 0o755,
-			operation:   FileOpRead,
+			operation:   groupmembership.FileOpRead,
 			expectError: false,
 		},
 		{
 			name:        "executable permissions (755) for write - should fail",
 			permissions: 0o755,
-			operation:   FileOpWrite,
+			operation:   groupmembership.FileOpWrite,
 			expectError: true,
-			errorType:   ErrInvalidFilePermissions,
+			errorType:   groupmembership.ErrPermissionsExceedMaximum,
 		},
 		{
 			name:        "setuid permissions (4755) for read",
 			permissions: 0o4755,
-			operation:   FileOpRead,
+			operation:   groupmembership.FileOpRead,
 			expectError: false,
 		},
 		{
 			name:        "setuid permissions (4755) for write - should fail",
 			permissions: 0o4755,
-			operation:   FileOpWrite,
+			operation:   groupmembership.FileOpWrite,
 			expectError: true,
-			errorType:   ErrInvalidFilePermissions,
+			errorType:   groupmembership.ErrPermissionsExceedMaximum,
 		},
 		{
 			name:        "normal permissions (600) for read",
 			permissions: 0o600,
-			operation:   FileOpRead,
+			operation:   groupmembership.FileOpRead,
 			expectError: false,
 		},
 		{
 			name:        "normal permissions (600) for write",
 			permissions: 0o600,
-			operation:   FileOpWrite,
+			operation:   groupmembership.FileOpWrite,
 			expectError: false,
 		},
 		{
-			name:        "group writable (664) should succeed for owner in both operations",
+			name:        "group writable (664) should succeed for read when user is in group",
 			permissions: 0o664,
-			operation:   FileOpRead,
+			operation:   groupmembership.FileOpRead,
 			expectError: false,
 		},
 		{
-			name:        "group writable (664) for write should succeed for owner",
+			name:        "group writable (664) for write should succeed if user is only group member",
 			permissions: 0o664,
-			operation:   FileOpWrite,
+			operation:   groupmembership.FileOpWrite,
 			expectError: false,
 		},
 		{
 			name:        "world writable (666) should fail for read",
 			permissions: 0o666,
-			operation:   FileOpRead,
+			operation:   groupmembership.FileOpRead,
 			expectError: true,
-			errorType:   ErrInvalidFilePermissions,
+			errorType:   groupmembership.ErrFileWorldWritable,
 		},
 		{
 			name:        "world writable (666) should fail for write",
 			permissions: 0o666,
-			operation:   FileOpWrite,
+			operation:   groupmembership.FileOpWrite,
 			expectError: true,
-			errorType:   ErrInvalidFilePermissions,
+			errorType:   groupmembership.ErrPermissionsExceedMaximum,
 		},
 		{
 			name:        "world writable and executable (777) should fail for read",
 			permissions: 0o777,
-			operation:   FileOpRead,
+			operation:   groupmembership.FileOpRead,
 			expectError: true,
-			errorType:   ErrInvalidFilePermissions,
+			errorType:   groupmembership.ErrFileWorldWritable,
 		},
 		{
 			name:        "world writable and executable (777) should fail for write",
 			permissions: 0o777,
-			operation:   FileOpWrite,
+			operation:   groupmembership.FileOpWrite,
 			expectError: true,
-			errorType:   ErrInvalidFilePermissions,
+			errorType:   groupmembership.ErrPermissionsExceedMaximum,
 		},
 	}
 
@@ -441,9 +443,9 @@ func TestValidateFilePermissions(t *testing.T) {
 			// Try to test the operation based on the test case
 			var err error
 			switch tt.operation {
-			case FileOpRead:
+			case groupmembership.FileOpRead:
 				_, err = SafeReadFile(filePath)
-			case FileOpWrite:
+			case groupmembership.FileOpWrite:
 				err = SafeWriteFileOverwrite(filePath, []byte("new content"), tt.permissions)
 			}
 
@@ -511,7 +513,7 @@ func TestSetuidSetgidBehavior(t *testing.T) {
 		// Try to create a new file with setuid/setgid bits in requested perm
 		err := SafeWriteFile(filePath, []byte("deny"), 0o6755)
 		assert.Error(t, err, "SafeWriteFile should reject setuid/setgid perms on creation")
-		assert.ErrorIs(t, err, ErrInvalidFilePermissions)
+		assert.ErrorIs(t, err, groupmembership.ErrPermissionsExceedMaximum)
 		// Note: depending on the kernel/filesystem, the file may have been created
 		// before validation failed. We don't assert non-existence to avoid flakiness.
 		// Cleanup if it exists.
@@ -536,7 +538,7 @@ func TestValidateFileOperationDifferences(t *testing.T) {
 	// Write should fail
 	err = SafeWriteFileOverwrite(execFilePath, []byte("new content"), 0o755)
 	assert.Error(t, err, "Writing to executable file should fail")
-	assert.ErrorIs(t, err, ErrInvalidFilePermissions, "Should fail with permission error")
+	assert.ErrorIs(t, err, groupmembership.ErrPermissionsExceedMaximum, "Should fail with permission error")
 
 	// Test setuid file - should be allowed for read but not for write
 	setuidFilePath := filepath.Join(tempDir, "setuid_file.txt")
@@ -552,7 +554,7 @@ func TestValidateFileOperationDifferences(t *testing.T) {
 	newSetuidFilePath := filepath.Join(tempDir, "new_setuid_file.txt")
 	err = SafeWriteFile(newSetuidFilePath, []byte("new content"), 0o4644)
 	assert.Error(t, err, "Creating a file with setuid permissions should fail")
-	assert.ErrorIs(t, err, ErrInvalidFilePermissions, "Should fail with permission error")
+	assert.ErrorIs(t, err, groupmembership.ErrPermissionsExceedMaximum, "Should fail with permission error")
 }
 
 func TestSafeAtomicMoveFile(t *testing.T) {
@@ -614,7 +616,7 @@ func TestSafeAtomicMoveFile(t *testing.T) {
 		// Try to move with invalid permissions (too permissive for write operation)
 		err := SafeAtomicMoveFile(srcPath, dstPath, 0o755)
 		assert.Error(t, err, "Should fail with overly permissive permissions")
-		assert.ErrorIs(t, err, ErrInvalidFilePermissions)
+		assert.ErrorIs(t, err, groupmembership.ErrPermissionsExceedMaximum)
 	})
 
 	t.Run("fails when source does not exist", func(t *testing.T) {
@@ -714,5 +716,206 @@ func TestSafeAtomicMoveFile(t *testing.T) {
 		stat, err := os.Stat(dstPath)
 		require.NoError(t, err, "Should be able to stat final file")
 		assert.Equal(t, os.FileMode(0o600), stat.Mode().Perm(), "Final file should have secure permissions")
+	})
+}
+
+// TestCanSafelyWriteToFile tests the new unified security validation function
+func TestCanSafelyWriteToFile(t *testing.T) {
+	tests := []struct {
+		name        string
+		permissions os.FileMode
+		operation   groupmembership.FileOperation
+		expectError bool
+		errorType   error
+	}{
+		{
+			name:        "read regular file with 0o644 should succeed",
+			permissions: 0o644,
+			operation:   groupmembership.FileOpRead,
+			expectError: false,
+		},
+		{
+			name:        "write regular file with 0o644 should succeed",
+			permissions: 0o644,
+			operation:   groupmembership.FileOpWrite,
+			expectError: false,
+		},
+		{
+			name:        "read file with world writable permissions should fail",
+			permissions: 0o666,
+			operation:   groupmembership.FileOpRead,
+			expectError: true,
+			errorType:   groupmembership.ErrFileWorldWritable,
+		},
+		{
+			name:        "write file with world writable permissions should fail",
+			permissions: 0o666,
+			operation:   groupmembership.FileOpWrite,
+			expectError: true,
+			errorType:   groupmembership.ErrPermissionsExceedMaximum,
+		},
+		{
+			name:        "read file with excessive permissions should fail",
+			permissions: 0o777,
+			operation:   groupmembership.FileOpRead,
+			expectError: true,
+			errorType:   groupmembership.ErrFileWorldWritable,
+		},
+		{
+			name:        "write file with excessive permissions should fail",
+			permissions: 0o777,
+			operation:   groupmembership.FileOpWrite,
+			expectError: true,
+			errorType:   groupmembership.ErrPermissionsExceedMaximum,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tempDir := safeTempDir(t)
+			filePath := filepath.Join(tempDir, fmt.Sprintf("test_%s.txt", tt.name))
+
+			// Create test file with specified permissions
+			require.NoError(t, os.WriteFile(filePath, []byte("test content"), tt.permissions), "Failed to create test file")
+
+			if tt.permissions&0o002 != 0 {
+				// For world writable test, need to explicitly chmod after creation
+				require.NoError(t, os.Chmod(filePath, tt.permissions), "Failed to set world writable permissions")
+			}
+
+			// Test the unified security validation function through the high-level API
+			// This will internally use the CanSafelyWriteToFile function via validateFile
+			var err error
+			switch tt.operation {
+			case groupmembership.FileOpRead:
+				_, err = SafeReadFile(filePath)
+			case groupmembership.FileOpWrite:
+				err = SafeWriteFileOverwrite(filePath, []byte("new content"), tt.permissions)
+			}
+
+			if tt.expectError {
+				assert.Error(t, err, "Expected error for permissions %o with operation %v", tt.permissions, tt.operation)
+				if tt.errorType != nil {
+					assert.ErrorIs(t, err, tt.errorType, "Expected specific error type for permissions %o with operation %v", tt.permissions, tt.operation)
+				}
+			} else {
+				assert.NoError(t, err, "Expected no error for permissions %o with operation %v", tt.permissions, tt.operation)
+			}
+		})
+	}
+}
+
+func TestCanSafelyReadFromFile(t *testing.T) {
+	tests := []struct {
+		name        string
+		permissions os.FileMode
+		expectError bool
+		errorType   error
+	}{
+		{
+			name:        "normal permissions (644) for read",
+			permissions: 0o644,
+			expectError: false,
+		},
+		{
+			name:        "group writable (664) should succeed for read - more permissive than write",
+			permissions: 0o664,
+			expectError: false,
+		},
+		{
+			name:        "world writable (666) should fail for read",
+			permissions: 0o666,
+			expectError: true,
+			errorType:   groupmembership.ErrFileWorldWritable,
+		},
+		{
+			name:        "setuid permissions (4755) should succeed for read",
+			permissions: 0o4755,
+			expectError: false,
+		},
+		{
+			name:        "setuid with group writable (4775) should succeed for read",
+			permissions: 0o4775,
+			expectError: false,
+		},
+		{
+			name:        "executable permissions (755) should succeed for read",
+			permissions: 0o755,
+			expectError: false,
+		},
+		{
+			name:        "owner only (600) should succeed for read",
+			permissions: 0o600,
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create temporary file
+			tmpDir := t.TempDir()
+			filePath := filepath.Join(tmpDir, "test_file")
+
+			// Create test file with specified permissions
+			require.NoError(t, os.WriteFile(filePath, []byte("test content"), tt.permissions), "Failed to create test file")
+
+			if tt.permissions&0o002 != 0 {
+				// For world writable test, need to explicitly chmod after creation
+				require.NoError(t, os.Chmod(filePath, tt.permissions), "Failed to set world writable permissions")
+			}
+
+			// Test the read-specific security validation function
+			fs := &osFS{groupMembership: groupmembership.New()}
+			file, err := fs.SafeOpenFile(filePath, os.O_RDONLY, 0)
+			require.NoError(t, err, "Failed to open file for testing")
+			defer func() {
+				assert.NoError(t, file.Close(), "Failed to close file")
+			}()
+
+			// Test CanSafelyReadFromFile directly
+			_, err = canSafelyReadFromFile(file, filePath, fs.GetGroupMembership())
+
+			if tt.expectError {
+				assert.Error(t, err, "Expected error for permissions %o", tt.permissions)
+				if tt.errorType != nil {
+					assert.True(t, errors.Is(err, tt.errorType), "Expected error type %T, got %v", tt.errorType, err)
+				}
+			} else {
+				assert.NoError(t, err, "Expected no error for permissions %o", tt.permissions)
+			}
+		})
+	}
+}
+
+func TestSafeReadFileWithRelaxedPermissions(t *testing.T) {
+	t.Run("SafeReadFile should succeed with group writable file using new read permissions", func(t *testing.T) {
+		// Create temporary file with group writable permissions
+		tmpDir := t.TempDir()
+		filePath := filepath.Join(tmpDir, "group_writable_file")
+		content := []byte("test content for group writable file")
+
+		// Create test file with group writable permissions (0o664)
+		require.NoError(t, os.WriteFile(filePath, content, 0o664), "Failed to create test file")
+
+		// Test that SafeReadFile now succeeds with the new read-specific validation
+		result, err := SafeReadFile(filePath)
+		assert.NoError(t, err, "SafeReadFile should succeed with group writable file using new read permissions")
+		assert.Equal(t, content, result, "File content should match")
+	})
+
+	t.Run("SafeReadFile should still fail with world writable file", func(t *testing.T) {
+		// Create temporary file with world writable permissions
+		tmpDir := t.TempDir()
+		filePath := filepath.Join(tmpDir, "world_writable_file")
+		content := []byte("test content for world writable file")
+
+		// Create test file with world writable permissions (0o666)
+		require.NoError(t, os.WriteFile(filePath, content, 0o666), "Failed to create test file")
+		require.NoError(t, os.Chmod(filePath, 0o666), "Failed to set world writable permissions")
+
+		// Test that SafeReadFile still fails with world writable files
+		_, err := SafeReadFile(filePath)
+		assert.Error(t, err, "SafeReadFile should fail with world writable file")
+		assert.True(t, errors.Is(err, groupmembership.ErrFileWorldWritable), "Error should be ErrFileWorldWritable")
 	})
 }

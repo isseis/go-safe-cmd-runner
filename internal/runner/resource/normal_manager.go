@@ -2,6 +2,7 @@ package resource
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -11,6 +12,11 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/risk"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+)
+
+// Static errors
+var (
+	ErrOutputManagerUnavailable = errors.New("output manager not available for validation")
 )
 
 // NormalResourceManager implements ResourceManager for normal execution mode
@@ -63,6 +69,20 @@ func NewNormalResourceManagerWithOutput(
 		logger:           logger,
 		tempDirs:         make([]string, 0),
 	}
+}
+
+// ValidateOutputPath validates an output path before command execution
+func (n *NormalResourceManager) ValidateOutputPath(outputPath, workDir string) error {
+	if outputPath == "" {
+		return nil // No output path to validate
+	}
+
+	if n.outputManager == nil {
+		return ErrOutputManagerUnavailable
+	}
+
+	// Use the output manager's validation-only method
+	return n.outputManager.ValidateOutputPath(outputPath, workDir)
 }
 
 // ExecuteCommand executes a command in normal mode

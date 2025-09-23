@@ -9,6 +9,10 @@ type CaptureManager interface {
 	// PrepareOutput validates paths and prepares for output capture
 	PrepareOutput(outputPath string, workDir string, maxSize int64) (*Capture, error)
 
+	// ValidateOutputPath validates an output path without preparing capture
+	// This allows early validation before command execution
+	ValidateOutputPath(outputPath string, workDir string) error
+
 	// WriteOutput writes data to the output capture session
 	WriteOutput(capture *Capture, data []byte) error
 

@@ -45,6 +45,7 @@ This is a Go-based secure command runner with the following core components:
 - **Interface-based Design**: Heavy use of interfaces for testability (e.g., `CommandExecutor`, `FileSystem`, `OutputWriter`)
 - **Security First**: Path validation, command injection prevention, privilege separation
 - **Error Handling**: Comprehensive error types and validation
+- **YAGNI**: Use simple and clear approach to satisfy the requirement. Don't take complex approach for not-yet-planned features.
 
 ### Security Features
 - Command path validation and sanitization
@@ -68,14 +69,37 @@ This is a Go-based secure command runner with the following core components:
 
 ## Package Structure
 
-- `cmd/`: Entry points for different executables
-- `internal/cmdcommon/`: Common utilities shared across commands
-- `internal/filevalidator/`: File integrity validation with hash algorithms
-- `internal/safefileio/`: Secure file I/O operations
-- `internal/runner/`: Core command execution engine
-  - `config/`: Configuration loading and validation
-  - `executor/`: Command execution with security controls
-  - `runnertypes/`: Type definitions and interfaces
+- `cmd/`: Command-line entry points
+  - `runner/`: Main command runner application
+  - `record/`: Hash recording utility
+  - `verify/`: File verification utility
+- `internal/`: Core implementation
+  - `cmdcommon/`: Shared command utilities
+  - `color/`: Terminal color support and control
+  - `common/`: Common utilities and filesystem abstraction
+  - `filevalidator/`: File integrity validation
+    - `encoding/`: Filename encoding for hash storage
+  - `groupmembership/`: User/group membership validation
+  - `logging/`: Advanced logging system with interactive UI and Slack integration
+  - `redaction/`: Automatic sensitive data filtering
+  - `runner/`: Command execution engine
+    - `audit/`: Security audit logging
+    - `bootstrap/`: System initialization and bootstrap
+    - `cli/`: Command-line interface management
+    - `config/`: Configuration management
+    - `environment/`: Environment variable processing and filtering
+    - `errors/`: Centralized error handling
+    - `executor/`: Command execution logic
+    - `hashdir/`: Hash directory security management
+    - `output/`: Output path validation and security
+    - `privilege/`: Privilege management
+    - `resource/`: Unified resource management (normal/dry-run)
+    - `risk/`: Risk-based command assessment
+    - `runnertypes/`: Type definitions and interfaces
+    - `security/`: Security validation framework
+  - `safefileio/`: Secure file operations
+  - `terminal/`: Terminal capabilities detection and interactive UI support
+  - `verification/`: Centralized file verification management (pre-execution verification, path resolution)
 - `pkg/cmdutil/`: Public utilities for command-line tools
 - `docs/`: Project documentation with requirements and architecture
 

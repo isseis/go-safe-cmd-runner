@@ -371,3 +371,76 @@ func TestDryRunResourceManager_PathResolutionFailure(t *testing.T) {
 	assert.Contains(t, err.Error(), "command analysis failed")
 	assert.Contains(t, err.Error(), "failed to resolve command path")
 }
+
+func TestDryRunResourceManager_ValidateOutputPath(t *testing.T) {
+	manager := createTestDryRunResourceManager()
+
+	tests := []struct {
+		name        string
+		outputPath  string
+		workDir     string
+		expectError bool
+		errorType   error
+	}{
+		{
+			name:        "empty path",
+			outputPath:  "",
+			workDir:     "/tmp",
+			expectError: false,
+		},
+		{
+			name:        "valid path",
+			outputPath:  "/tmp/output.log",
+			workDir:     "/tmp",
+			expectError: false,
+		},
+		{
+			name:        "path traversal with ..",
+			outputPath:  "../../../etc/passwd",
+			workDir:     "/tmp",
+			expectError: true,
+			errorType:   ErrPathTraversalDetected,
+		},
+		{
+			name:        "path traversal in middle",
+			outputPath:  "/tmp/../etc/passwd",
+			workDir:     "/tmp",
+			expectError: true,
+			errorType:   ErrPathTraversalDetected,
+		},
+		{
+			name:        "relative path with traversal",
+			outputPath:  "subdir/../../../etc/passwd",
+			workDir:     "/tmp",
+			expectError: true,
+			errorType:   ErrPathTraversalDetected,
+		},
+		{
+			name:        "file with .. in name (should not trigger)",
+			outputPath:  "/tmp/backup..2023.log",
+			workDir:     "/tmp",
+			expectError: false,
+		},
+		{
+			name:        "directory with .. in name (should not trigger)",
+			outputPath:  "/tmp/app..backup/output.log",
+			workDir:     "/tmp",
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := manager.ValidateOutputPath(tt.outputPath, tt.workDir)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorType != nil {
+					assert.ErrorIs(t, err, tt.errorType)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}

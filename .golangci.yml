@@ -99,6 +99,7 @@ linters:
         linters:
           - gocyclo
           - errcheck
+          - err113
           - dupl
           - gosec
           - goconst
