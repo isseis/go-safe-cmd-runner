@@ -33,9 +33,7 @@ var (
 
 // NewConfigValidator creates a new ConfigValidator instance
 func NewConfigValidator() *ConfigValidator {
-	return &ConfigValidator{
-		securityConfig: security.DefaultConfig(),
-	}
+	return NewConfigValidatorWithSecurity(nil)
 }
 
 // NewConfigValidatorWithSecurity creates a new ConfigValidator with custom security config
