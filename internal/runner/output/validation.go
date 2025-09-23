@@ -108,7 +108,7 @@ func (v *ConfigValidator) ValidateCommands(commands []runnertypes.Command, globa
 				return fmt.Errorf("%w: commands '%s' and '%s' both write to '%s'",
 					ErrOutputPathConflict, existingCmd.Name, cmd.Name, resolvedPath)
 			}
-			outputPaths[resolvedPath] = &cmd
+			outputPaths[resolvedPath] = &commands[i]
 		}
 	}
 

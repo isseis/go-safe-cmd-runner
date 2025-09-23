@@ -199,6 +199,71 @@ func TestConfigValidator_ValidateCommands(t *testing.T) {
 	}
 }
 
+// TestConfigValidator_ValidateCommands_LoopVariablePointerFix tests that the fix for the loop variable pointer issue
+// works correctly. Previously, all entries in outputPaths map pointed to the last command due to storing &cmd.
+// This test verifies that conflict detection reports the correct command names.
+func TestConfigValidator_ValidateCommands_LoopVariablePointerFix(t *testing.T) {
+	validator := NewConfigValidator()
+	globalConfig := &runnertypes.GlobalConfig{
+		MaxOutputSize: DefaultMaxOutputSize,
+	}
+
+	// Create commands where multiple commands have the same output path
+	// This tests that the error message correctly identifies which commands conflict
+	commands := []runnertypes.Command{
+		{Name: "first_command", Cmd: "echo", Output: "different_output1.txt"},
+		{Name: "second_command", Cmd: "echo", Output: "different_output2.txt"},
+		{Name: "third_command", Cmd: "echo", Output: "conflicting_output.txt"}, // First to use this path
+		{Name: "fourth_command", Cmd: "echo", Output: "different_output3.txt"},
+		{Name: "fifth_command", Cmd: "echo", Output: "conflicting_output.txt"}, // Conflicts with third_command
+	}
+
+	err := validator.ValidateCommands(commands, globalConfig)
+
+	// Should get an error about path conflict
+	require.Error(t, err)
+
+	// The error message should mention the correct command names: "third_command" and "fifth_command"
+	// Before the fix, it would incorrectly report "fifth_command" and "fifth_command" because
+	// all pointers pointed to the last command in the loop
+	require.Contains(t, err.Error(), "third_command")
+	require.Contains(t, err.Error(), "fifth_command")
+	require.Contains(t, err.Error(), "conflicting_output.txt")
+	require.Contains(t, err.Error(), "output path conflict")
+
+	// Make sure it doesn't contain other command names that shouldn't be in the conflict
+	require.NotContains(t, err.Error(), "first_command")
+	require.NotContains(t, err.Error(), "second_command")
+	require.NotContains(t, err.Error(), "fourth_command")
+}
+
+// TestConfigValidator_ValidateCommands_MultipleConflictDetection tests that we can detect
+// multiple different path conflicts correctly, ensuring each conflict reports the right commands.
+func TestConfigValidator_ValidateCommands_MultipleConflictDetection(t *testing.T) {
+	validator := NewConfigValidator()
+	globalConfig := &runnertypes.GlobalConfig{
+		MaxOutputSize: DefaultMaxOutputSize,
+	}
+
+	// Test with multiple conflicting output paths to ensure the fix works in complex scenarios
+	commands := []runnertypes.Command{
+		{Name: "cmd_a", Cmd: "echo", Output: "output_1.txt"},
+		{Name: "cmd_b", Cmd: "echo", Output: "output_2.txt"},
+		{Name: "cmd_c", Cmd: "echo", Output: "output_1.txt"}, // Conflicts with cmd_a
+	}
+
+	err := validator.ValidateCommands(commands, globalConfig)
+
+	// Should detect the conflict between cmd_a and cmd_c
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cmd_a")
+	require.Contains(t, err.Error(), "cmd_c")
+	require.Contains(t, err.Error(), "output_1.txt")
+
+	// Should not mention cmd_b as it has a unique output path
+	require.NotContains(t, err.Error(), "cmd_b")
+}
+
 func TestConfigValidator_ValidateConfigFile(t *testing.T) {
 	validator := NewConfigValidator()
 
