@@ -106,9 +106,10 @@ func (v *ConfigValidator) ValidateCommands(commands []runnertypes.Command, globa
 	// Track output paths to detect conflicts
 	outputPaths := make(map[string]*runnertypes.Command)
 
-	for i, cmd := range commands {
+	for i := range commands {
+		cmd := &commands[i]
 		// Validate individual command
-		if err := v.ValidateCommand(&cmd, globalConfig); err != nil {
+		if err := v.ValidateCommand(cmd, globalConfig); err != nil {
 			return fmt.Errorf("command '%s' at index %d: %w", cmd.Name, i, err)
 		}
 
@@ -124,7 +125,7 @@ func (v *ConfigValidator) ValidateCommands(commands []runnertypes.Command, globa
 				return fmt.Errorf("%w: commands '%s' and '%s' both write to '%s'",
 					ErrOutputPathConflict, existingCmd.Name, cmd.Name, resolvedPath)
 			}
-			outputPaths[resolvedPath] = &commands[i]
+			outputPaths[resolvedPath] = cmd
 		}
 	}
 
