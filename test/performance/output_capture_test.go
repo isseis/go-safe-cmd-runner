@@ -13,6 +13,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -90,6 +91,13 @@ func TestLargeOutputMemoryUsage(t *testing.T) {
 	}
 }
 
+// MockSecurityValidator for testing
+type MockSecurityValidator struct{}
+
+func (m *MockSecurityValidator) ValidateOutputWritePermission(_ string, _ int) error {
+	return nil // Allow all writes for testing
+}
+
 // TestOutputSizeLimit tests that output size limits are enforced
 func TestOutputSizeLimit(t *testing.T) {
 	if testing.Short() {
@@ -108,7 +116,8 @@ func TestOutputSizeLimit(t *testing.T) {
 	}
 
 	group := &runnertypes.CommandGroup{
-		Name: "test_group",
+		Name:    "test_group",
+		WorkDir: tempDir,
 	}
 
 	// Create necessary components for ResourceManager with output capture
@@ -117,19 +126,28 @@ func TestOutputSizeLimit(t *testing.T) {
 	privMgr := privilege.NewManager(slog.Default())
 	logger := slog.Default()
 
+	// Create output capture manager with size limit (1KB limit for 2KB data)
+	securityValidator := &MockSecurityValidator{}
+	outputMgr := output.NewDefaultOutputCaptureManager(securityValidator)
+	maxOutputSize := int64(1024) // 1KB limit
+
 	// Create resource manager with output capture support
-	manager := resource.NewNormalResourceManager(exec, fs, privMgr, logger)
+	manager := resource.NewNormalResourceManagerWithOutput(exec, fs, privMgr, outputMgr, maxOutputSize, logger)
 	ctx := context.Background()
 	result, err := manager.ExecuteCommand(ctx, cmd, group, map[string]string{})
 
-	// For this basic test, we'll just check that the command ran without crashing
-	// Size limit enforcement would require proper output capture manager integration
-	if err != nil {
-		t.Logf("Command failed as expected (size limit or other reason): %v", err)
-	} else {
-		require.NotNil(t, result)
-		t.Logf("Command completed with exit code: %d", result.ExitCode)
-	}
+	// Should get an error due to size limit being exceeded
+	require.Error(t, err, "Expected error when output size limit is exceeded")
+	require.Contains(t, err.Error(), "output size limit exceeded",
+		"Expected error message to contain 'output size limit exceeded', got: %v", err)
+
+	// Result should be nil when command fails
+	require.Nil(t, result)
+
+	// Verify output file was cleaned up and does not exist
+	_, statErr := os.Stat(outputPath)
+	require.True(t, os.IsNotExist(statErr),
+		"Output file should be cleaned up after error, but it exists")
 }
 
 // TestConcurrentExecution tests parallel command execution with output capture
