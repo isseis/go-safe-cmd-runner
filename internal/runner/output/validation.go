@@ -76,11 +76,6 @@ func (v *ConfigValidator) ValidateCommand(cmd *runnertypes.Command, globalConfig
 		return ErrCommandNil
 	}
 
-	// If no output is specified, no validation needed
-	if cmd.Output == "" {
-		return nil
-	}
-
 	// Validate output path
 	if err := v.validateOutputPath(cmd.Output); err != nil {
 		return fmt.Errorf("invalid output path '%s': %w", cmd.Output, err)
@@ -175,8 +170,9 @@ func (v *ConfigValidator) checkPatternMatch(path string, patterns []string) stri
 
 // validateOutputPath performs basic validation on output paths
 func (v *ConfigValidator) validateOutputPath(outputPath string) error {
+	// If no output is specified, no validation needed
 	if outputPath == "" {
-		return ErrOutputPathEmpty
+		return nil
 	}
 
 	// Check for path traversal attempts

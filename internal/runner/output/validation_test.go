@@ -329,7 +329,7 @@ func TestConfigValidator_validateOutputPath(t *testing.T) {
 		{
 			name:        "empty path",
 			path:        "",
-			expectError: true,
+			expectError: false,
 		},
 		{
 			name:        "valid relative path",
