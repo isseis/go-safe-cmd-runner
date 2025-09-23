@@ -8,10 +8,13 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
 // ConfigValidator validates output capture configuration
-type ConfigValidator struct{}
+type ConfigValidator struct {
+	securityConfig *security.Config
+}
 
 // Predefined validation errors
 var (
@@ -30,7 +33,19 @@ var (
 
 // NewConfigValidator creates a new ConfigValidator instance
 func NewConfigValidator() *ConfigValidator {
-	return &ConfigValidator{}
+	return &ConfigValidator{
+		securityConfig: security.DefaultConfig(),
+	}
+}
+
+// NewConfigValidatorWithSecurity creates a new ConfigValidator with custom security config
+func NewConfigValidatorWithSecurity(secConfig *security.Config) *ConfigValidator {
+	if secConfig == nil {
+		secConfig = security.DefaultConfig()
+	}
+	return &ConfigValidator{
+		securityConfig: secConfig,
+	}
 }
 
 // ValidateGlobalConfig validates the global configuration for output capture
@@ -148,24 +163,41 @@ func (v *ConfigValidator) validateOutputPath(outputPath string) error {
 		return ErrPathTraversalDetected
 	}
 
-	// Check for dangerous patterns
-	dangerousPatterns := []string{
-		"/etc/",
-		"/root/",
-		"/bin/",
-		"/sbin/",
-		"/usr/bin/",
-		"/usr/sbin/",
-		"/boot/",
-		"/dev/",
-		"/proc/",
-		"/sys/",
-	}
+	// Check for critical and high-risk directory patterns using security config
+	criticalPatterns := v.securityConfig.GetPathPatternsByRisk(runnertypes.RiskLevelCritical)
+	highRiskPatterns := v.securityConfig.GetPathPatternsByRisk(runnertypes.RiskLevelHigh)
 
 	lowerPath := strings.ToLower(outputPath)
-	for _, pattern := range dangerousPatterns {
-		if strings.HasPrefix(lowerPath, pattern) || strings.Contains(lowerPath, pattern) {
-			return fmt.Errorf("%w: %s", ErrSensitiveSystemDirectory, pattern)
+
+	// Check critical directory patterns - only use prefix matching to avoid false positives
+	for _, pattern := range criticalPatterns {
+		patternLower := strings.ToLower(pattern)
+		// Only check directory patterns (ending with /) using prefix matching
+		if strings.HasSuffix(patternLower, "/") {
+			if strings.HasPrefix(lowerPath, patternLower) {
+				return fmt.Errorf("%w: %s", ErrSensitiveSystemDirectory, pattern)
+			}
+		} else {
+			// For file patterns, use contains matching
+			if strings.Contains(lowerPath, patternLower) {
+				return fmt.Errorf("%w: %s", ErrSensitiveSystemDirectory, pattern)
+			}
+		}
+	}
+
+	// Check high-risk directory patterns - only use prefix matching to avoid false positives
+	for _, pattern := range highRiskPatterns {
+		patternLower := strings.ToLower(pattern)
+		// Only check directory patterns (ending with /) using prefix matching
+		if strings.HasSuffix(patternLower, "/") {
+			if strings.HasPrefix(lowerPath, patternLower) {
+				return fmt.Errorf("%w: %s", ErrSensitiveSystemDirectory, pattern)
+			}
+		} else {
+			// For file patterns, use contains matching
+			if strings.Contains(lowerPath, patternLower) {
+				return fmt.Errorf("%w: %s", ErrSensitiveSystemDirectory, pattern)
+			}
 		}
 	}
 
@@ -201,11 +233,37 @@ func (v *ConfigValidator) AssessSecurityRisk(outputPath string, _ string) runner
 
 	// Check for absolute paths outside safe directories
 	if filepath.IsAbs(outputPath) {
-		// System directories are high risk
-		systemDirs := []string{"/etc", "/root", "/bin", "/sbin", "/usr/bin", "/usr/sbin", "/boot"}
-		for _, sysDir := range systemDirs {
-			if strings.HasPrefix(outputPath, sysDir) {
-				return runnertypes.RiskLevelCritical
+		// System directories are high risk - use security config patterns
+		criticalPatterns := v.securityConfig.GetPathPatternsByRisk(runnertypes.RiskLevelCritical)
+		highRiskPatterns := v.securityConfig.GetPathPatternsByRisk(runnertypes.RiskLevelHigh)
+
+		// Check critical patterns first - distinguish between directory and file patterns
+		for _, pattern := range criticalPatterns {
+			// Only check directory patterns (ending with /) using prefix matching to avoid false positives
+			if strings.HasSuffix(pattern, "/") {
+				if strings.HasPrefix(outputPath, pattern) {
+					return runnertypes.RiskLevelCritical
+				}
+			} else {
+				// For file patterns, use contains matching
+				if strings.Contains(strings.ToLower(outputPath), strings.ToLower(pattern)) {
+					return runnertypes.RiskLevelCritical
+				}
+			}
+		}
+
+		// Check high-risk patterns - distinguish between directory and file patterns
+		for _, pattern := range highRiskPatterns {
+			// Only check directory patterns (ending with /) using prefix matching to avoid false positives
+			if strings.HasSuffix(pattern, "/") {
+				if strings.HasPrefix(outputPath, pattern) {
+					return runnertypes.RiskLevelCritical // System directories are always critical
+				}
+			} else {
+				// For file patterns, use contains matching
+				if strings.Contains(strings.ToLower(outputPath), strings.ToLower(pattern)) {
+					return runnertypes.RiskLevelCritical
+				}
 			}
 		}
 
@@ -223,15 +281,12 @@ func (v *ConfigValidator) AssessSecurityRisk(outputPath string, _ string) runner
 		return runnertypes.RiskLevelHigh
 	}
 
-	// Check for suspicious patterns in relative paths
-	suspiciousPatterns := []string{
-		"passwd", "shadow", "sudoers", "authorized_keys", "id_rsa", "id_dsa",
-		".ssh", ".gnupg", "crontab", "hosts", "resolv.conf",
-	}
+	// Check for suspicious patterns in relative paths using security config
+	suspiciousPatterns := v.securityConfig.GetSuspiciousFilePatterns()
 
 	lowerPath := strings.ToLower(outputPath)
 	for _, pattern := range suspiciousPatterns {
-		if strings.Contains(lowerPath, pattern) {
+		if strings.Contains(lowerPath, strings.ToLower(pattern)) {
 			return runnertypes.RiskLevelHigh
 		}
 	}

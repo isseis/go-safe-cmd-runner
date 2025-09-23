@@ -235,7 +235,7 @@ func DefaultConfig() *Config {
 		},
 		OutputCriticalPathPatterns: []string{
 			"/etc/passwd", "/etc/shadow", "/etc/sudoers",
-			"/boot/", "/sys/", "/proc/",
+			"/boot/", "/sys/", "/proc/", "/root/",
 			"authorized_keys", "id_rsa", "id_ed25519",
 			".ssh/", "private_key", "secret_key",
 			".bashrc", ".zshrc", ".login", ".profile",
@@ -248,6 +248,40 @@ func DefaultConfig() *Config {
 			".kube/config", ".docker/config.json",
 		},
 	}
+}
+
+// GetPathPatternsByRisk returns path patterns based on risk level
+func (c *Config) GetPathPatternsByRisk(level runnertypes.RiskLevel) []string {
+	switch level {
+	case runnertypes.RiskLevelCritical:
+		return c.OutputCriticalPathPatterns
+	case runnertypes.RiskLevelHigh:
+		return c.OutputHighRiskPathPatterns
+	default:
+		return []string{}
+	}
+}
+
+// GetSystemDirectoryPatterns returns critical system directory patterns for validation
+func (c *Config) GetSystemDirectoryPatterns() []string {
+	// Combine critical and high-risk path patterns that are directories
+	systemDirs := []string{
+		"/etc/", "/root/", "/bin/", "/sbin/", "/usr/bin/", "/usr/sbin/",
+		"/boot/", "/dev/", "/proc/", "/sys/", "/var/log/", "/lib/", "/lib64/",
+	}
+	return systemDirs
+}
+
+// GetSuspiciousFilePatterns returns patterns for suspicious files that should be flagged
+func (c *Config) GetSuspiciousFilePatterns() []string {
+	// File-specific patterns from critical paths
+	suspiciousFiles := []string{
+		"passwd", "shadow", "sudoers", "authorized_keys", "id_rsa", "id_ed25519",
+		"private_key", "secret_key", ".bashrc", ".zshrc", ".login", ".profile",
+		"wallet.dat", "keystore", ".env", ".aws/credentials", ".kube/config",
+		".docker/config.json",
+	}
+	return suspiciousFiles
 }
 
 // DefaultLoggingOptions returns secure default logging options

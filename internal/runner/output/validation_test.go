@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/stretchr/testify/require"
 )
 
@@ -562,6 +563,191 @@ func TestConfigValidator_getEffectiveMaxSize(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			size := validator.getEffectiveMaxSize(tt.config)
 			require.Equal(t, tt.expectedSize, size)
+		})
+	}
+}
+
+func TestConfigValidator_IntegratedPatternDetection(t *testing.T) {
+	// Test that the integrated patterns from security config work correctly
+	validator := NewConfigValidator()
+
+	tests := []struct {
+		name        string
+		path        string
+		expectError bool
+		description string
+	}{
+		{
+			name:        "critical system directory from security config",
+			path:        "/etc/passwd",
+			expectError: true,
+			description: "Should detect /etc/passwd from OutputCriticalPathPatterns",
+		},
+		{
+			name:        "high risk directory from security config",
+			path:        "/var/log/system.log",
+			expectError: true,
+			description: "Should detect /var/log/ from OutputHighRiskPathPatterns",
+		},
+		{
+			name:        "suspicious file pattern",
+			path:        "id_rsa_backup",
+			expectError: true,
+			description: "Should detect id_rsa pattern from GetSuspiciousFilePatterns",
+		},
+		{
+			name:        "authorized_keys pattern",
+			path:        "home/user/.ssh/authorized_keys",
+			expectError: true,
+			description: "Should detect authorized_keys pattern",
+		},
+		{
+			name:        "docker config pattern",
+			path:        ".docker/config.json",
+			expectError: true,
+			description: "Should detect docker config pattern",
+		},
+		{
+			name:        "safe relative path",
+			path:        "logs/application.log",
+			expectError: false,
+			description: "Should allow safe relative paths",
+		},
+		{
+			name:        "safe tmp path",
+			path:        "/tmp/safe_output.txt",
+			expectError: false,
+			description: "Should allow /tmp paths",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validator.validateOutputPath(tt.path)
+
+			if tt.expectError {
+				require.Error(t, err, tt.description)
+			} else {
+				require.NoError(t, err, tt.description)
+			}
+		})
+	}
+}
+
+func TestConfigValidator_CustomSecurityConfig(t *testing.T) {
+	// Test that custom security config is used correctly
+	customConfig := security.DefaultConfig()
+	customConfig.OutputCriticalPathPatterns = append(customConfig.OutputCriticalPathPatterns, "/custom/critical/")
+
+	validator := NewConfigValidatorWithSecurity(customConfig)
+
+	// Test that the custom pattern is detected
+	err := validator.validateOutputPath("/custom/critical/file.txt")
+	require.Error(t, err, "Should detect custom critical path pattern")
+}
+
+func TestConfigValidator_FalsePositivePrevention(t *testing.T) {
+	// Test that string contains matching doesn't create false positives
+	validator := NewConfigValidator()
+
+	tests := []struct {
+		name        string
+		path        string
+		expectError bool
+		description string
+	}{
+		{
+			name:        "false_positive_etc_in_path",
+			path:        "/home/user/project-etc/file.txt",
+			expectError: false,
+			description: "Should not flag paths containing 'etc' in directory names",
+		},
+		{
+			name:        "false_positive_root_in_path",
+			path:        "/home/user/project-root/file.txt",
+			expectError: false,
+			description: "Should not flag paths containing 'root' in directory names",
+		},
+		{
+			name:        "false_positive_bin_in_path",
+			path:        "/home/user/my-bin/file.txt",
+			expectError: false,
+			description: "Should not flag paths containing 'bin' in directory names",
+		},
+		{
+			name:        "true_positive_actual_etc",
+			path:        "/etc/passwd",
+			expectError: true,
+			description: "Should correctly flag actual /etc paths",
+		},
+		{
+			name:        "true_positive_actual_root",
+			path:        "/root/sensitive.txt",
+			expectError: true,
+			description: "Should correctly flag actual /root paths",
+		},
+		{
+			name:        "false_positive_etc_in_filename",
+			path:        "/home/user/etc-backup.txt",
+			expectError: false,
+			description: "Should not flag files with 'etc' in filename when not in /etc directory",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validator.validateOutputPath(tt.path)
+
+			if tt.expectError {
+				require.Error(t, err, tt.description)
+			} else {
+				require.NoError(t, err, tt.description)
+			}
+		})
+	}
+}
+
+func TestConfigValidator_RiskAssessmentFalsePositivePrevention(t *testing.T) {
+	// Test that risk assessment doesn't create false positives
+	validator := NewConfigValidator()
+	workDir := "/tmp"
+
+	tests := []struct {
+		name         string
+		path         string
+		expectedRisk runnertypes.RiskLevel
+		description  string
+	}{
+		{
+			name:         "false_positive_etc_in_path",
+			path:         "/home/user/project-etc/file.txt",
+			expectedRisk: runnertypes.RiskLevelHigh, // Absolute path outside /tmp is high risk
+			description:  "Should not elevate to critical due to 'etc' in path",
+		},
+		{
+			name:         "true_positive_actual_etc",
+			path:         "/etc/config.txt",
+			expectedRisk: runnertypes.RiskLevelCritical,
+			description:  "Should correctly assess actual /etc as critical",
+		},
+		{
+			name:         "false_positive_root_in_path",
+			path:         "/home/user/project-root/file.txt",
+			expectedRisk: runnertypes.RiskLevelHigh, // Absolute path outside /tmp is high risk
+			description:  "Should not elevate to critical due to 'root' in path",
+		},
+		{
+			name:         "true_positive_actual_root",
+			path:         "/root/file.txt",
+			expectedRisk: runnertypes.RiskLevelCritical,
+			description:  "Should correctly assess actual /root as critical",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			risk := validator.AssessSecurityRisk(tt.path, workDir)
+			require.Equal(t, tt.expectedRisk, risk, tt.description)
 		})
 	}
 }
