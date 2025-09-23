@@ -114,7 +114,7 @@ max_output_size = 10485760
 [global]
 workdir = "/tmp"
 `,
-			wantMaxSize: 0, // Default value
+			wantMaxSize: 10485760, // Default value (10MB)
 			wantErr:     false,
 		},
 		{
@@ -124,7 +124,7 @@ workdir = "/tmp"
 workdir = "/tmp"
 max_output_size = 0
 `,
-			wantMaxSize: 0,
+			wantMaxSize: 10485760, // Default value should be applied
 			wantErr:     false,
 		},
 	}

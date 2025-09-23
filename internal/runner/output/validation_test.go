@@ -29,12 +29,11 @@ func TestConfigValidator_ValidateGlobalConfig(t *testing.T) {
 			expectError: true,
 		},
 		{
-			name: "zero max output size (should set default)",
+			name: "zero max output size (should be invalid)",
 			config: &runnertypes.GlobalConfig{
 				MaxOutputSize: 0,
 			},
-			expectError: false,
-			expectedMax: DefaultMaxOutputSize,
+			expectError: true,
 		},
 		{
 			name: "exceeds absolute maximum",
