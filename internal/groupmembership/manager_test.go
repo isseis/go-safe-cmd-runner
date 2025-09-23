@@ -198,9 +198,8 @@ func TestCanUserSafelyWriteFile(t *testing.T) {
 
 	t.Run("owner writable only - non-owner denied", func(t *testing.T) {
 		otherUID := int(uid) + 1
-		canWrite, err := gm.CanUserSafelyWriteFile(otherUID, uid, gid, 0o644) // owner writable only
-		assert.NoError(t, err, "Should not error for valid UID check")
-		assert.False(t, canWrite, "Non-owner should be denied for owner-only writable files")
+		_, err := gm.CanUserSafelyWriteFile(otherUID, uid, gid, 0o644) // owner writable only
+		assert.Error(t, err, "Non-owner should be denied for owner-only writable files")
 	})
 }
 

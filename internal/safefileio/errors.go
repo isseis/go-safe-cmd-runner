@@ -2,7 +2,11 @@
 // common security vulnerabilities like symlink attacks and TOCTOU race conditions.
 package safefileio
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
+)
 
 var (
 	// ErrInvalidFilePath indicates that the specified file path is invalid.
@@ -21,5 +25,6 @@ var (
 	ErrInvalidFilePermissions = errors.New("invalid file permissions")
 
 	// ErrInvalidFileOperation indicates that an invalid file operation type was specified.
-	ErrInvalidFileOperation = errors.New("invalid file operation")
+	// This is an alias to the common error definition to maintain API compatibility.
+	ErrInvalidFileOperation = common.ErrInvalidFileOperation
 )

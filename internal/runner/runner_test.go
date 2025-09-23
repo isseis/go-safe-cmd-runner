@@ -2675,16 +2675,14 @@ func TestRunner_OutputCaptureErrorTypes(t *testing.T) {
 	}
 }
 
-// Test error variables for robust error checking
-var (
-	ErrPreValidationTest  = errors.New("pre-validation failed: invalid output path")
-	ErrExecutionTest      = errors.New("execution failed: command not found")
-	ErrPostProcessingTest = errors.New("post-processing failed: cannot write output file")
-	ErrCleanupTest        = errors.New("cleanup failed: cannot remove temporary files")
-)
-
 // TestRunner_OutputCaptureExecutionPhases tests error handling in different execution phases
 func TestRunner_OutputCaptureExecutionPhases(t *testing.T) {
+	// Test error variables for robust error checking
+	ErrPreValidationTest := errors.New("pre-validation failed: invalid output path")
+	ErrExecutionTest := errors.New("execution failed: command not found")
+	ErrPostProcessingTest := errors.New("post-processing failed: cannot write output file")
+	ErrCleanupTest := errors.New("cleanup failed: cannot remove temporary files")
+
 	setupSafeTestEnv(t)
 
 	tests := []struct {

@@ -82,9 +82,7 @@ func TestRunner_OutputCaptureIntegration(t *testing.T) {
 			tt.setupMock(mockRM)
 
 			// Create runner with proper options (using existing pattern)
-			var options []Option
-			options = append(options, WithResourceManager(mockRM))
-			options = append(options, WithRunID("test-run-output-capture"))
+			options := []Option{WithResourceManager(mockRM), WithRunID("test-run-output-capture")}
 
 			// Create runner
 			runner, err := NewRunner(cfg, options...)

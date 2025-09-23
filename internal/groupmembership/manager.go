@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
 
 const (
@@ -42,9 +44,6 @@ var ErrGroupWritableNonMember = errors.New("group writable file with non-member 
 
 // ErrPermissionsExceedMaximum is returned when file permissions exceed the maximum allowed for the operation
 var ErrPermissionsExceedMaximum = errors.New("file permissions exceed maximum allowed for operation")
-
-// ErrInvalidFileOperation is returned when an unknown file operation is specified
-var ErrInvalidFileOperation = errors.New("invalid file operation")
 
 // FileOperation represents the type of file operation being performed
 type FileOperation int
@@ -247,7 +246,9 @@ func (gm *GroupMembership) CanUserSafelyWriteFile(userUID int, fileUID, fileGID 
 	// 3. Check owner writable permissions
 	if perm&0o200 != 0 {
 		// Owner writable: allow only if user owns the file
-		return userUID32 == fileUID, nil
+		if userUID32 == fileUID {
+			return true, nil
+		}
 	}
 
 	// File is not writable by user, group, or others
@@ -327,6 +328,13 @@ func (gm *GroupMembership) CanCurrentUserSafelyReadFile(fileGID uint32, filePerm
 		return false, fmt.Errorf("%w: %d", ErrUIDOutOfBounds, currentUID)
 	}
 
+	// For reads: deny only if current user is NOT in the group
+	// Convert userUID to uint32 for IsUserInGroup call
+	// #nosec G115 -- safe: `currentUID` represents a system user ID (UID), which is
+	// non-negative and constrained by the operating system to fit within a 32-bit
+	// unsigned value on supported platforms.
+	currentUID32 := uint32(currentUID) // #nosec G115
+
 	perm := filePerm.Perm()
 
 	// 1. Always forbid world writable (other writable) - same as write policy
@@ -336,12 +344,6 @@ func (gm *GroupMembership) CanCurrentUserSafelyReadFile(fileGID uint32, filePerm
 
 	// 2. Check group writable permissions - more relaxed than write policy
 	if perm&0o020 != 0 {
-		// For reads: deny only if current user is NOT in the group
-		// Convert userUID to uint32 for IsUserInGroup call
-		// #nosec G115 -- safe: `currentUID` represents a system user ID (UID), which is
-		// non-negative and constrained by the operating system to fit within a 32-bit
-		// unsigned value on supported platforms.
-		currentUID32 := uint32(currentUID) // #nosec G115
 
 		isUserInGroup, err := gm.IsUserInGroup(currentUID32, fileGID)
 		if err != nil {
@@ -386,7 +388,7 @@ func (gm *GroupMembership) ValidateRequestedPermissions(perm os.FileMode, operat
 	case FileOpWrite:
 		maxAllowedPerms = MaxAllowedWritePerms
 	default:
-		return fmt.Errorf("%w: unknown file operation", ErrInvalidFileOperation)
+		return fmt.Errorf("%w: unknown file operation", common.ErrInvalidFileOperation)
 	}
 
 	// Check if requested permissions exceed the maximum allowed

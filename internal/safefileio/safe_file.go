@@ -232,7 +232,7 @@ func safeAtomicMoveFileWithFS(srcPath, dstPath string, requiredPerm os.FileMode,
 	}()
 
 	// Validate source file properties
-	if err := canSafelyWriteToFile(srcFile, absSrc, groupmembership.FileOpRead, fs.GetGroupMembership()); err != nil {
+	if err := canSafelyAccessFile(srcFile, absSrc, groupmembership.FileOpRead, fs.GetGroupMembership()); err != nil {
 		return fmt.Errorf("source file validation failed: %w", err)
 	}
 
@@ -258,7 +258,7 @@ func safeAtomicMoveFileWithFS(srcPath, dstPath string, requiredPerm os.FileMode,
 	}()
 
 	// Final validation of destination file
-	if err := canSafelyWriteToFile(dstFile, absDst, groupmembership.FileOpWrite, fs.GetGroupMembership()); err != nil {
+	if err := canSafelyAccessFile(dstFile, absDst, groupmembership.FileOpWrite, fs.GetGroupMembership()); err != nil {
 		return fmt.Errorf("destination file validation failed: %w", err)
 	}
 
@@ -291,7 +291,7 @@ func safeWriteFileCommon(filePath string, content []byte, perm os.FileMode, fs F
 	}()
 
 	// Validate the file is a regular file (not a device, pipe, etc.)
-	if err := canSafelyWriteToFile(file, absPath, groupmembership.FileOpWrite, fs.GetGroupMembership()); err != nil {
+	if err := canSafelyAccessFile(file, absPath, groupmembership.FileOpWrite, fs.GetGroupMembership()); err != nil {
 		return err
 	}
 
@@ -426,7 +426,37 @@ func readFileContent(file File, filePath string, fs FileSystem) ([]byte, error) 
 	return content, nil
 }
 
-// canSafelyWriteToFile checks if the current user can safely write to a file by validating
+// getFileStatInfo retrieves file statistics and validates that the file is a regular file.
+// This helper function performs common validation steps used by multiple functions.
+//
+// Parameters:
+//   - file: The file to examine
+//   - filePath: The file path for error reporting
+//
+// Returns:
+//   - os.FileInfo: File information if validation passes
+//   - *syscall.Stat_t: System-specific file statistics
+//   - error: Validation error if the file is invalid
+func getFileStatInfo(file File, filePath string) (os.FileInfo, *syscall.Stat_t, error) {
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get file info: %w", err)
+	}
+
+	if !fileInfo.Mode().IsRegular() {
+		return nil, nil, fmt.Errorf("%w: not a regular file: %s", ErrInvalidFilePath, filePath)
+	}
+
+	// Get file stat info for UID/GID
+	stat, ok := fileInfo.Sys().(*syscall.Stat_t)
+	if !ok {
+		return nil, nil, fmt.Errorf("%w: failed to get file stat info", ErrInvalidFilePath)
+	}
+
+	return fileInfo, stat, nil
+}
+
+// canSafelyAccessFile checks if the current user can safely access a file by validating
 // file permissions, ownership, and group membership in a unified security check.
 //
 // This function performs comprehensive security validation:
@@ -440,21 +470,11 @@ func readFileContent(file File, filePath string, fs FileSystem) ([]byte, error) 
 //   - groupMembership: Group membership checker for security validation
 //
 // Returns:
-//   - error: Validation error if the file cannot be safely written to
-func canSafelyWriteToFile(file File, filePath string, operation groupmembership.FileOperation, groupMembership *groupmembership.GroupMembership) error {
-	fileInfo, err := file.Stat()
+//   - error: Validation error if the file cannot be safely accessed
+func canSafelyAccessFile(file File, filePath string, operation groupmembership.FileOperation, groupMembership *groupmembership.GroupMembership) error {
+	fileInfo, stat, err := getFileStatInfo(file, filePath)
 	if err != nil {
-		return fmt.Errorf("failed to get file info: %w", err)
-	}
-
-	if !fileInfo.Mode().IsRegular() {
-		return fmt.Errorf("%w: not a regular file: %s", ErrInvalidFilePath, filePath)
-	}
-
-	// Get file stat info for UID/GID
-	stat, ok := fileInfo.Sys().(*syscall.Stat_t)
-	if !ok {
-		return fmt.Errorf("%w: failed to get file stat info", ErrInvalidFilePath)
+		return err
 	}
 
 	// Use unified permission and ownership check based on operation type
@@ -500,19 +520,9 @@ func canSafelyWriteToFile(file File, filePath string, operation groupmembership.
 //   - os.FileInfo: File information if validation passes
 //   - error: Validation error if the file cannot be safely read from
 func canSafelyReadFromFile(file File, filePath string, groupMembership *groupmembership.GroupMembership) (os.FileInfo, error) {
-	fileInfo, err := file.Stat()
+	fileInfo, stat, err := getFileStatInfo(file, filePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get file info: %w", err)
-	}
-
-	if !fileInfo.Mode().IsRegular() {
-		return nil, fmt.Errorf("%w: not a regular file: %s", ErrInvalidFilePath, filePath)
-	}
-
-	// Get file stat info for UID/GID
-	stat, ok := fileInfo.Sys().(*syscall.Stat_t)
-	if !ok {
-		return nil, fmt.Errorf("%w: failed to get file stat info", ErrInvalidFilePath)
+		return nil, err
 	}
 
 	// Use comprehensive read-specific permission check from groupmembership
