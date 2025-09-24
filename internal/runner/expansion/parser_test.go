@@ -100,6 +100,18 @@ func TestVariableParser_ReplaceVariables(t *testing.T) {
 			env:      map[string]string{"A": "${B}/final", "B": "base"},
 			expected: "base/final",
 		},
+		{
+			name:     "literal dollar character should not cause false circular reference",
+			input:    "$PRICE",
+			env:      map[string]string{"PRICE": "Cost: $100.50"},
+			expected: "Cost: $100.50",
+		},
+		{
+			name:     "multiple literal dollars should not cause false circular reference",
+			input:    "$MESSAGE",
+			env:      map[string]string{"MESSAGE": "Price $5 and tax $1.50 = $6.50"},
+			expected: "Price $5 and tax $1.50 = $6.50",
+		},
 	}
 
 	// Test resolver implementation

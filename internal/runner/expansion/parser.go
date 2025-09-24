@@ -78,8 +78,8 @@ func (p *variableParser) ReplaceVariables(text string, resolver VariableResolver
 		return "", resolutionError
 	}
 
-	// Circular reference check (simplified with unified pattern)
-	if strings.Contains(result, "$") && unifiedVariablePattern.MatchString(result) {
+	// Circular reference check - only check for valid variable patterns, not literal $ characters
+	if unifiedVariablePattern.MatchString(result) {
 		return "", environment.ErrCircularReference
 	}
 
