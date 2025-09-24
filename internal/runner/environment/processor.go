@@ -267,11 +267,6 @@ func (p *CommandEnvProcessor) replaceSimpleVariables(
 	return simpleVariableRegex.ReplaceAllStringFunc(text, func(match string) string {
 		varName := match[1:] // Remove $
 
-		// Prevent overlap with braced format: skip if this $VAR is likely inside ${...}
-		if p.isLikelyInsideBraces(text, match) {
-			return match
-		}
-
 		resolvedValue, err := p.resolveVariableWithSecurityPolicy(varName, envVars, group)
 		if err != nil {
 			if *resolutionError == nil {
@@ -282,11 +277,4 @@ func (p *CommandEnvProcessor) replaceSimpleVariables(
 
 		return resolvedValue
 	})
-}
-
-// isLikelyInsideBraces provides simple heuristic to prevent $VAR inside ${VAR} from being processed twice
-func (p *CommandEnvProcessor) isLikelyInsideBraces(_, _ string) bool {
-	// This is a simple heuristic - in practice, the unified pattern approach would be better
-	// For now, we rely on the processing order (${VAR} first, then $VAR) to handle most cases
-	return false
 }
