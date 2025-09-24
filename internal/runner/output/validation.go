@@ -157,7 +157,7 @@ func (v *ConfigValidator) validateOutputPath(outputPath string) error {
 	}
 
 	// Use the unified risk evaluator with default (strict) risk level
-	evaluation := v.riskEvaluator.EvaluateWithMaxRiskLevel(outputPath, "", runnertypes.RiskLevelLow)
+	evaluation := v.riskEvaluator.EvaluateWithMaxRiskLevel(outputPath, runnertypes.RiskLevelLow)
 
 	if evaluation.IsBlocking {
 		return v.riskEvaluator.CreateValidationError(evaluation, runnertypes.RiskLevelLow)
@@ -181,7 +181,7 @@ func (v *ConfigValidator) validateOutputPathWithRiskLevel(outputPath string, cmd
 	}
 
 	// Use the unified risk evaluator
-	evaluation := v.riskEvaluator.EvaluateWithMaxRiskLevel(outputPath, "", maxAllowedRisk)
+	evaluation := v.riskEvaluator.EvaluateWithMaxRiskLevel(outputPath, maxAllowedRisk)
 
 	// If the risk is blocking, create appropriate error
 	if evaluation.IsBlocking {
@@ -200,8 +200,8 @@ func (v *ConfigValidator) getEffectiveMaxSize(globalConfig *runnertypes.GlobalCo
 }
 
 // AssessSecurityRisk assesses the security risk of an output path
-func (v *ConfigValidator) AssessSecurityRisk(outputPath string, workDir string) runnertypes.RiskLevel {
-	evaluation := v.riskEvaluator.EvaluateOutputRisk(outputPath, workDir)
+func (v *ConfigValidator) AssessSecurityRisk(outputPath string) runnertypes.RiskLevel {
+	evaluation := v.riskEvaluator.EvaluateOutputRisk(outputPath)
 	return evaluation.Level
 }
 
@@ -255,7 +255,7 @@ func (v *ConfigValidator) GenerateValidationReport(cfg *runnertypes.Config) *Val
 					maxAllowedRisk = runnertypes.RiskLevelLow
 				}
 
-				evaluation := v.riskEvaluator.EvaluateWithMaxRiskLevel(cmd.Output, cfg.Global.WorkDir, maxAllowedRisk)
+				evaluation := v.riskEvaluator.EvaluateWithMaxRiskLevel(cmd.Output, maxAllowedRisk)
 
 				if evaluation.IsBlocking {
 					// This would cause execution failure

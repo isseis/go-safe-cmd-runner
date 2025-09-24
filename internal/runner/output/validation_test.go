@@ -393,7 +393,6 @@ func TestConfigValidator_validateOutputPath(t *testing.T) {
 
 func TestConfigValidator_AssessSecurityRisk(t *testing.T) {
 	validator := NewConfigValidator()
-	workDir := "/tmp"
 
 	tests := []struct {
 		name         string
@@ -449,7 +448,7 @@ func TestConfigValidator_AssessSecurityRisk(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			risk := validator.AssessSecurityRisk(tt.outputPath, workDir)
+			risk := validator.AssessSecurityRisk(tt.outputPath)
 			require.Equal(t, tt.expectedRisk, risk)
 		})
 	}
@@ -623,7 +622,7 @@ func TestConfigValidator_IntegratedPatternDetection(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			risk := validator.AssessSecurityRisk(tt.path, "/tmp")
+			risk := validator.AssessSecurityRisk(tt.path)
 
 			require.Equal(t, tt.expectedRisk, risk, tt.description)
 		})
@@ -638,7 +637,7 @@ func TestConfigValidator_CustomSecurityConfig(t *testing.T) {
 	validator := NewConfigValidatorWithSecurity(customConfig)
 
 	// Test that the custom pattern is detected with critical risk level
-	risk := validator.AssessSecurityRisk("/custom/critical/file.txt", "/tmp")
+	risk := validator.AssessSecurityRisk("/custom/critical/file.txt")
 	require.Equal(t, runnertypes.RiskLevelCritical, risk, "Should detect custom critical path pattern")
 }
 
@@ -739,7 +738,6 @@ func TestConfigValidator_FalsePositivePrevention(t *testing.T) {
 func TestConfigValidator_RiskAssessmentFalsePositivePrevention(t *testing.T) {
 	// Test that risk assessment doesn't create false positives
 	validator := NewConfigValidator()
-	workDir := "/tmp"
 
 	tests := []struct {
 		name         string
@@ -775,7 +773,7 @@ func TestConfigValidator_RiskAssessmentFalsePositivePrevention(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			risk := validator.AssessSecurityRisk(tt.path, workDir)
+			risk := validator.AssessSecurityRisk(tt.path)
 			require.Equal(t, tt.expectedRisk, risk, tt.description)
 		})
 	}

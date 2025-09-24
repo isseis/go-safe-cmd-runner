@@ -95,7 +95,7 @@ func TestRiskEvaluator_EvaluateOutputRisk(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			evaluation := evaluator.EvaluateOutputRisk(tt.outputPath, tt.workDir)
+			evaluation := evaluator.EvaluateOutputRisk(tt.outputPath)
 
 			require.Equal(t, tt.expectedRisk, evaluation.Level, tt.description)
 			require.Equal(t, tt.expectedCategory, evaluation.Category, "Category should match expected")
@@ -151,7 +151,7 @@ func TestRiskEvaluator_EvaluateWithMaxRiskLevel(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			evaluation := evaluator.EvaluateWithMaxRiskLevel(tt.outputPath, tt.workDir, tt.maxAllowedRisk)
+			evaluation := evaluator.EvaluateWithMaxRiskLevel(tt.outputPath, tt.maxAllowedRisk)
 
 			require.Equal(t, tt.expectBlocking, evaluation.IsBlocking, tt.description)
 		})
@@ -251,7 +251,7 @@ func TestRiskEvaluator_WithCustomSecurityConfig(t *testing.T) {
 	evaluator := NewRiskEvaluator(customConfig)
 
 	t.Run("custom critical pattern", func(t *testing.T) {
-		evaluation := evaluator.EvaluateOutputRisk("/custom/critical/file.txt", "/tmp")
+		evaluation := evaluator.EvaluateOutputRisk("/custom/critical/file.txt")
 
 		require.Equal(t, runnertypes.RiskLevelCritical, evaluation.Level)
 		require.Equal(t, "critical_system_directory", evaluation.Category)
@@ -259,7 +259,7 @@ func TestRiskEvaluator_WithCustomSecurityConfig(t *testing.T) {
 	})
 
 	t.Run("custom suspicious extension", func(t *testing.T) {
-		evaluation := evaluator.EvaluateOutputRisk("file.custom", "/tmp")
+		evaluation := evaluator.EvaluateOutputRisk("file.custom")
 
 		require.Equal(t, runnertypes.RiskLevelHigh, evaluation.Level)
 		require.Equal(t, "suspicious_extension", evaluation.Category)

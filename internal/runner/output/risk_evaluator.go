@@ -36,7 +36,7 @@ func NewRiskEvaluator(secConfig *security.Config) *RiskEvaluator {
 }
 
 // EvaluateOutputRisk performs comprehensive risk assessment of an output path
-func (e *RiskEvaluator) EvaluateOutputRisk(outputPath, _ string) *RiskEvaluation {
+func (e *RiskEvaluator) EvaluateOutputRisk(outputPath string) *RiskEvaluation {
 	// Empty path is high risk (stdout/stderr redirection without explicit file)
 	if outputPath == "" {
 		return &RiskEvaluation{
@@ -66,8 +66,8 @@ func (e *RiskEvaluator) EvaluateOutputRisk(outputPath, _ string) *RiskEvaluation
 }
 
 // EvaluateWithMaxRiskLevel evaluates risk and determines if it should block execution
-func (e *RiskEvaluator) EvaluateWithMaxRiskLevel(outputPath, workDir string, maxAllowedRisk runnertypes.RiskLevel) *RiskEvaluation {
-	eval := e.EvaluateOutputRisk(outputPath, workDir)
+func (e *RiskEvaluator) EvaluateWithMaxRiskLevel(outputPath string, maxAllowedRisk runnertypes.RiskLevel) *RiskEvaluation {
+	eval := e.EvaluateOutputRisk(outputPath)
 	eval.IsBlocking = eval.Level > maxAllowedRisk
 	return eval
 }
