@@ -18,6 +18,10 @@ var (
 	// - braced: ${VAR_NAME} format VAR_NAME part
 	// - simple: $VAR_NAME format VAR_NAME part
 
+	// Pre-computed subexpression indices for performance
+	bracedGroupIndex = unifiedVariablePattern.SubexpIndex("braced")
+	simpleGroupIndex = unifiedVariablePattern.SubexpIndex("simple")
+
 	// Legacy pattern removed as unified pattern handles all cases
 )
 
@@ -47,20 +51,15 @@ func (p *variableParser) ReplaceVariables(text string, resolver VariableResolver
 		// Unified pattern processes both formats simultaneously (resolves overlap issues fundamentally)
 		result = unifiedVariablePattern.ReplaceAllStringFunc(result, func(match string) string {
 			submatches := unifiedVariablePattern.FindStringSubmatch(match)
-			names := unifiedVariablePattern.SubexpNames()
 
-			// Get variable name from named groups
+			// Get variable name using pre-computed indices
 			var varName string
-			for i, name := range names {
-				if name == "braced" && i < len(submatches) && submatches[i] != "" {
-					// ${VAR} format: variable name from braced group
-					varName = submatches[i]
-					break
-				} else if name == "simple" && i < len(submatches) && submatches[i] != "" {
-					// $VAR format: variable name from simple group
-					varName = submatches[i]
-					break
-				}
+			if bracedGroupIndex != -1 && bracedGroupIndex < len(submatches) && submatches[bracedGroupIndex] != "" {
+				// ${VAR} format: variable name from braced group
+				varName = submatches[bracedGroupIndex]
+			} else if simpleGroupIndex != -1 && simpleGroupIndex < len(submatches) && submatches[simpleGroupIndex] != "" {
+				// $VAR format: variable name from simple group
+				varName = submatches[simpleGroupIndex]
 			}
 
 			if varName == "" {
