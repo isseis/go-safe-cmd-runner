@@ -304,14 +304,14 @@
 #### 3.5.5 サンプルと使用例の作成
 
 **設定ファイルサンプル**
-- [ ] `sample/output_capture_basic.toml` - 基本的な使用例
-- [ ] `sample/output_capture_advanced.toml` - 高度な設定例
-- [ ] `sample/output_capture_security.toml` - セキュリティ重視の設定例
+- [x] `sample/output_capture_basic.toml` - 基本的な使用例
+- [x] `sample/output_capture_advanced.toml` - 高度な設定例
+- [x] `sample/output_capture_security.toml` - セキュリティ重視の設定例
 
 **実行サンプル**
-- [ ] 基本的な出力キャプチャの動作確認
-- [ ] Dry-Run機能の動作確認
-- [ ] エラーケースの動作確認
+- [x] 基本的な出力キャプチャの動作確認
+- [x] Dry-Run機能の動作確認
+- [x] エラーケースの動作確認
 
 #### 3.5.6 最終検証
 - [x] 全機能の動作確認（基本機能実装完了）
@@ -319,7 +319,7 @@
 - [x] セキュリティ要件の全項目の検証（基本テスト実装完了）
 - [x] `make test`でのテスト完全パス（出力キャプチャ以外のテスト）
 - [x] `make lint`での問題ゼロ確認（出力キャプチャ関連修正完了）
-- [ ] Phase 5完了コミット（次の段階で実施予定）
+- [x] Phase 5完了コミット（サンプルファイルと動作確認完了）
 
 ## 4. ファイル構成計画
 

@@ -1,0 +1,43 @@
+# Error Case Testing Configuration
+# This file tests various error scenarios for output capture
+version = "1.0"
+
+[global]
+timeout = 30
+workdir = "/tmp/error-test"
+log_level = "debug"
+max_output_size = 1024
+env_allowlist = ["PATH"]
+
+# Test various error scenarios
+[[groups]]
+name = "error_scenarios"
+description = "Test error handling in output capture"
+
+[[groups.commands]]
+name = "path_traversal_attempt"
+description = "Attempt path traversal (should fail)"
+cmd = "echo"
+args = ["Attempting path traversal"]
+output = "../../etc/passwd"
+
+[[groups.commands]]
+name = "system_directory_attempt"
+description = "Attempt to write to system directory (should fail)"
+cmd = "echo"
+args = ["Attempting system write"]
+output = "/etc/malicious_output.txt"
+
+[[groups.commands]]
+name = "dangerous_characters"
+description = "Attempt dangerous characters in path (should fail)"
+cmd = "echo"
+args = ["Dangerous path"]
+output = "output; rm -rf /"
+
+[[groups.commands]]
+name = "empty_output_path"
+description = "Empty output path (should fail)"
+cmd = "echo"
+args = ["Empty path test"]
+output = ""

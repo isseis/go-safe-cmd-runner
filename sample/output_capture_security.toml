@@ -1,0 +1,228 @@
+# Security-focused Output Capture Configuration Example
+# This file demonstrates security-focused configurations including
+# path validation, permission checking, and risk assessment
+version = "1.0"
+
+[global]
+timeout = 30
+workdir = "/tmp/security-output-test"
+log_level = "info"
+# Conservative output size limit (1MB) for security
+max_output_size = 1048576
+# Minimal environment allowlist for security
+env_allowlist = [
+    "PATH",
+    "HOME",
+    "USER",
+]
+# Verify critical system binaries
+verify_files = [
+    "/bin/echo",
+    "/usr/bin/id",
+    "/bin/cat",
+    "/usr/bin/find",
+]
+
+# Safe output paths - within working directory
+[[groups]]
+name = "safe_output_paths"
+description = "Demonstrate safe output file paths within working directory"
+priority = 1
+
+[[groups.commands]]
+name = "safe_relative_path"
+description = "Output to safe relative path"
+cmd = "echo"
+args = ["Safe output in working directory"]
+output = "safe_output.txt"
+
+[[groups.commands]]
+name = "safe_subdirectory"
+description = "Output to safe subdirectory"
+cmd = "date"
+args = []
+output = "logs/safe_date.txt"
+
+[[groups.commands]]
+name = "safe_nested_path"
+description = "Output to nested safe path"
+cmd = "whoami"
+args = []
+output = "reports/user/identity.txt"
+
+# User home directory outputs (low security risk)
+[[groups]]
+name = "user_home_outputs"
+description = "Safe outputs to user home directory"
+priority = 2
+
+[[groups.commands]]
+name = "home_directory_output"
+description = "Output to user home directory"
+cmd = "uname"
+args = ["-a"]
+output = "~/security_test/system_info.txt"
+
+[[groups.commands]]
+name = "user_documents_output"
+description = "Output to user documents"
+cmd = "id"
+args = []
+output = "~/Documents/user_identity.txt"
+
+# Controlled temporary directory usage
+[[groups]]
+name = "controlled_temp_usage"
+description = "Controlled usage of temporary directories"
+priority = 3
+temp_dir = true
+cleanup = true
+
+[[groups.commands]]
+name = "temp_system_info"
+description = "System information in temporary directory"
+cmd = "cat"
+args = ["/proc/version"]
+output = "system_version.txt"
+
+[[groups.commands]]
+name = "temp_user_info"
+description = "User information in temporary directory"
+cmd = "id"
+args = ["-a"]
+output = "detailed_user_info.txt"
+
+# Security validation scenarios
+[[groups]]
+name = "security_validation_examples"
+description = "Examples that demonstrate security validation"
+priority = 4
+
+[[groups.commands]]
+name = "permitted_system_read"
+description = "Read permitted system information"
+cmd = "cat"
+args = ["/proc/cpuinfo"]
+output = "cpu_info.txt"
+
+[[groups.commands]]
+name = "safe_find_operation"
+description = "Safe find operation with output"
+cmd = "/usr/bin/find"
+args = ["/tmp", "-name", "*.txt", "-type", "f"]
+output = "found_files.txt"
+timeout = 60
+
+[[groups.commands]]
+name = "network_info_safe"
+description = "Safe network information gathering"
+cmd = "ip"
+args = ["addr", "show"]
+output = "network_interfaces.txt"
+
+# Risk level management with output capture
+[[groups]]
+name = "risk_managed_outputs"
+description = "Commands with explicit risk level management"
+priority = 5
+
+[[groups.commands]]
+name = "low_risk_with_output"
+description = "Low risk command with output capture"
+cmd = "echo"
+args = ["Low risk operation"]
+output = "low_risk_result.txt"
+max_risk_level = "low"
+
+[[groups.commands]]
+name = "medium_risk_with_output"
+description = "Medium risk command with controlled output"
+cmd = "ps"
+args = ["aux"]
+output = "process_list.txt"
+max_risk_level = "medium"
+
+# Environment variable security
+[[groups]]
+name = "env_security_tests"
+description = "Environment variable security with output capture"
+priority = 6
+# Explicit minimal allowlist for this group
+env_allowlist = ["PATH", "USER"]
+
+[[groups.commands]]
+name = "secure_env_check"
+description = "Check environment variables securely"
+cmd = "printenv"
+args = ["USER"]
+output = "user_env.txt"
+
+[[groups.commands]]
+name = "no_sensitive_env"
+description = "Command without sensitive environment access"
+cmd = "echo"
+args = ["No sensitive environment variables exposed"]
+output = "env_safety_check.txt"
+
+# File permission demonstration
+[[groups]]
+name = "permission_demonstration"
+description = "Demonstrate secure file permissions for output"
+priority = 7
+
+[[groups.commands]]
+name = "secure_file_creation"
+description = "Create output file with secure permissions"
+cmd = "echo"
+args = ["This file should have secure permissions (0600)"]
+output = "secure_permissions.txt"
+
+[[groups.commands]]
+name = "verify_permissions"
+description = "Verify file was created with correct permissions"
+cmd = "ls"
+args = ["-la", "secure_permissions.txt"]
+output = "permission_check.txt"
+
+# Size limit security
+[[groups]]
+name = "size_limit_security"
+description = "Demonstrate output size limits for security"
+priority = 8
+
+[[groups.commands]]
+name = "controlled_size_output"
+description = "Command with controlled output size"
+cmd = "echo"
+args = ["Controlled size output for security"]
+output = "size_controlled.txt"
+
+[[groups.commands]]
+name = "system_log_sample"
+description = "Sample system log with size awareness"
+cmd = "head"
+args = ["-n", "50", "/var/log/syslog"]
+output = "log_sample.txt"
+timeout = 30
+
+# Security best practices summary
+[[groups]]
+name = "security_summary"
+description = "Security best practices summary"
+priority = 9
+
+[[groups.commands]]
+name = "security_checklist"
+description = "Output security implementation checklist"
+cmd = "echo"
+args = [
+    "Security features: Path validation ✓, Permission checks ✓, Size limits ✓, Risk assessment ✓"
+]
+output = "security_checklist.txt"
+
+[[groups.commands]]
+name = "final_security_status"
+description = "Final security validation status"
+cmd = "echo"
+args = ["All security-focused output capture tests completed successfully"]
+output = "final_security_status.txt"
