@@ -22,50 +22,50 @@
 ### Phase 1: 基盤実装 (Week 1-2)
 
 #### 1.1 既存コード分析と拡張点特定
-- [ ] `internal/runner/environment/processor.go` の現行実装分析
-- [ ] 変数展開ロジックの循環参照検出アルゴリズム理解
-- [ ] `variableReferenceRegex` の動作確認
-- [ ] Command.Env処理フローの詳細調査
-- [ ] allowlist検証処理の仕組み理解
+- [x] `internal/runner/environment/processor.go` の現行実装分析
+- [x] 変数展開ロジックの循環参照検出アルゴリズム理解
+- [x] `variableReferenceRegex` の動作確認
+- [x] Command.Env処理フローの詳細調査
+- [x] allowlist検証処理の仕組み理解
 
 #### 1.2 型定義とインターフェース設計
-- [ ] `internal/runner/expansion/types.go` 作成
-  - [ ] `VariableExpander` インターフェース定義
-  - [ ] `VariableParser` インターフェース定義
-  - [ ] `VariableResolver` インターフェース定義
-  - [ ] `ExpansionMetrics` 構造体定義
-  - [ ] エラー型の統一定義
-- [ ] 既存エラー型との統合確認
-  - [ ] `ErrCircularReference` の流用
-  - [ ] `ErrVariableNotAllowed` の流用
-  - [ ] `ErrVariableNotFound` の流用
+- [x] `internal/runner/expansion/types.go` 作成
+  - [x] `VariableExpander` インターフェース定義
+  - [x] `VariableParser` インターフェース定義
+  - [x] `VariableResolver` インターフェース定義
+  - [x] `Metrics` 構造体定義
+  - [x] エラー型の統一定義
+- [x] 既存エラー型との統合確認
+  - [x] `ErrCircularReference` の流用
+  - [x] `ErrVariableNotAllowed` の流用
+  - [x] `ErrVariableNotFound` の流用
 
 #### 1.3 両形式対応パーサー実装
-- [ ] `internal/runner/expansion/parser.go` 作成
-  - [ ] 既存 `bracedPattern` の流用確認
-  - [ ] 新規 `simplePattern` の正規表現実装
-  - [ ] `ReplaceVariables` メソッド実装
-  - [ ] `replaceSimpleVars` メソッド実装
-  - [ ] `isLikelyInsideBraces` ヒューリスティック実装
-- [ ] パーサー単体テスト作成
-  - [ ] `$VAR` 形式の基本テスト
-  - [ ] `${VAR}` 形式の基本テスト
-  - [ ] 両形式混在テスト
-  - [ ] 重複防止機能のテスト
-  - [ ] エラーケーステスト
+- [x] `internal/runner/expansion/parser.go` 作成
+  - [x] 統一正規表現パターンの実装（`unifiedVariablePattern`）
+  - [x] 名前付きキャプチャグループによる両形式対応
+  - [x] `ReplaceVariables` メソッド実装
+  - [x] `resolveVariableWithErrorHandling` メソッド実装
+  - [x] 循環参照検出機能の統合
+- [x] パーサー単体テスト作成
+  - [x] `$VAR` 形式の基本テスト
+  - [x] `${VAR}` 形式の基本テスト
+  - [x] 両形式混在テスト
+  - [x] 循環参照検出のテスト
+  - [x] エラーケーステスト
 
 #### 1.4 既存Environment Processor拡張
-- [ ] `internal/runner/environment/processor.go` 拡張
-  - [ ] `simpleVariableRegex` 正規表現追加
-  - [ ] `ResolveVariableReferencesUnified` メソッド追加
-  - [ ] `replaceSimpleVariables` メソッド追加
-  - [ ] 反復上限を 10 → 15 に拡張（実用的なネスト深度に対し十分なマージンを確保するため）
-  - [ ] 両形式統一処理の実装
-- [ ] 拡張されたプロセッサーのテスト作成
-  - [ ] 既存テストケースの動作確認
-  - [ ] `$VAR` 形式のテストケース追加
-  - [ ] 混在形式のテストケース追加
-  - [ ] 循環参照検出のテスト拡張
+- [x] `internal/runner/environment/processor.go` 拡張
+  - [x] `simpleVariableRegex` 正規表現追加
+  - [x] `ResolveVariableReferencesUnified` メソッド追加
+  - [x] `replaceSimpleVariables` メソッド追加
+  - [x] 反復上限を 10 → 15 に拡張（実用的なネスト深度に対し十分なマージンを確保するため）
+  - [x] 両形式統一処理の実装
+- [x] 拡張されたプロセッサーのテスト作成
+  - [x] 既存テストケースの動作確認
+  - [x] `$VAR` 形式のテストケース追加
+  - [x] 混在形式のテストケース追加
+  - [x] 循環参照検出のテスト拡張
 
 ### Phase 2: 統合展開エンジン実装 (Week 3)
 

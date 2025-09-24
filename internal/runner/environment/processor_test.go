@@ -479,3 +479,129 @@ func TestCommandEnvProcessor_InheritanceModeIntegration(t *testing.T) {
 		})
 	}
 }
+
+func TestCommandEnvProcessor_ResolveVariableReferencesUnified(t *testing.T) {
+	config := &runnertypes.Config{
+		Global: runnertypes.GlobalConfig{
+			EnvAllowlist: []string{"PATH", "HOME", "USER"},
+		},
+	}
+	filter := NewFilter(config)
+	processor := NewCommandEnvProcessor(filter)
+
+	// Set up test environment variables
+	t.Setenv("PATH", "/usr/bin:/bin")
+	t.Setenv("HOME", "/home/testuser")
+	t.Setenv("USER", "testuser")
+
+	tests := []struct {
+		name        string
+		value       string
+		envVars     map[string]string
+		group       *runnertypes.CommandGroup
+		expected    string
+		expectError bool
+		expectedErr error
+	}{
+		{
+			name:    "simple $VAR format",
+			value:   "$HOME/bin",
+			envVars: map[string]string{},
+			group: &runnertypes.CommandGroup{
+				Name:         "test_group",
+				EnvAllowlist: []string{"PATH", "HOME"},
+			},
+			expected: "/home/testuser/bin",
+		},
+		{
+			name:    "simple ${VAR} format",
+			value:   "${HOME}/bin",
+			envVars: map[string]string{},
+			group: &runnertypes.CommandGroup{
+				Name:         "test_group",
+				EnvAllowlist: []string{"PATH", "HOME"},
+			},
+			expected: "/home/testuser/bin",
+		},
+		{
+			name:    "mixed formats",
+			value:   "$HOME/${USER}_config",
+			envVars: map[string]string{},
+			group: &runnertypes.CommandGroup{
+				Name:         "test_group",
+				EnvAllowlist: []string{"PATH", "HOME", "USER"},
+			},
+			expected: "/home/testuser/testuser_config",
+		},
+		{
+			name:    "resolve from trusted source (envVars) - mixed formats",
+			value:   "$FOO/${BAR}",
+			envVars: map[string]string{"FOO": "/custom", "BAR": "path"},
+			group: &runnertypes.CommandGroup{
+				Name:         "test_group",
+				EnvAllowlist: []string{},
+			},
+			expected: "/custom/path",
+		},
+		{
+			name:    "$VAR format - variable not allowed",
+			value:   "$USER/bin",
+			envVars: map[string]string{},
+			group: &runnertypes.CommandGroup{
+				Name:         "test_group",
+				EnvAllowlist: []string{"PATH", "HOME"}, // USER not in allowlist
+			},
+			expectError: true,
+			expectedErr: ErrVariableNotAllowed,
+		},
+		{
+			name:    "$VAR format - variable not found",
+			value:   "$NONEXISTENT/bin",
+			envVars: map[string]string{},
+			group: &runnertypes.CommandGroup{
+				Name:         "test_group",
+				EnvAllowlist: []string{"PATH", "HOME"},
+			},
+			expectError: true,
+			expectedErr: ErrVariableNotFound,
+		},
+		{
+			name:    "circular reference - mixed formats",
+			value:   "$A",
+			envVars: map[string]string{"A": "${B}", "B": "$A"},
+			group: &runnertypes.CommandGroup{
+				Name:         "test_group",
+				EnvAllowlist: []string{},
+			},
+			expectError: true,
+			expectedErr: ErrCircularReference,
+		},
+		{
+			name:    "no variable references",
+			value:   "/usr/bin/command",
+			envVars: map[string]string{},
+			group: &runnertypes.CommandGroup{
+				Name:         "test_group",
+				EnvAllowlist: []string{},
+			},
+			expected: "/usr/bin/command",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := processor.ResolveVariableReferencesUnified(tt.value, tt.envVars, tt.group)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.expectedErr != nil {
+					assert.ErrorIs(t, err, tt.expectedErr, "Expected error type %v, got %v", tt.expectedErr, err)
+				}
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}

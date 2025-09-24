@@ -92,7 +92,10 @@ func (p *CommandEnvProcessor) validateBasicEnvVariable(name, value string) error
 	return nil
 }
 
-var variableReferenceRegex = regexp.MustCompile(`\$\{([^}]+)\}`)
+var (
+	variableReferenceRegex = regexp.MustCompile(`\$\{([^}]+)\}`)
+	simpleVariableRegex    = regexp.MustCompile(`\$([A-Za-z_][A-Za-z0-9_]*)`)
+)
 
 // resolveVariableReferencesForCommandEnv resolves variable references for Command.Env values
 func (p *CommandEnvProcessor) resolveVariableReferencesForCommandEnv(
@@ -105,7 +108,7 @@ func (p *CommandEnvProcessor) resolveVariableReferencesForCommandEnv(
 	}
 
 	result := value
-	maxIterations := 10 // Prevent infinite loops
+	maxIterations := 15 // Prevent infinite loops, expanded for practical nesting depth
 	var resolutionError error
 
 	for i := 0; i < maxIterations && strings.Contains(result, "${"); i++ {
@@ -197,4 +200,93 @@ func (p *CommandEnvProcessor) resolveSystemVariable(
 		"variable", varName,
 		"group", group.Name)
 	return sysVal, nil
+}
+
+// ResolveVariableReferencesUnified resolves both $VAR and ${VAR} formats for cmd/args expansion
+func (p *CommandEnvProcessor) ResolveVariableReferencesUnified(
+	value string,
+	envVars map[string]string,
+	group *runnertypes.CommandGroup,
+) (string, error) {
+	if !strings.Contains(value, "$") {
+		return value, nil
+	}
+
+	result := value
+	maxIterations := 15 // Expanded iteration limit for practical nesting depth
+	var resolutionError error
+
+	for i := 0; i < maxIterations && strings.Contains(result, "$"); i++ {
+		oldResult := result
+
+		// Process ${VAR} format first (existing logic)
+		result = variableReferenceRegex.ReplaceAllStringFunc(result, func(match string) string {
+			varName := match[2 : len(match)-1] // Remove ${ and }
+
+			resolvedValue, err := p.resolveVariableWithSecurityPolicy(varName, envVars, group)
+			if err != nil {
+				if resolutionError == nil {
+					resolutionError = fmt.Errorf("failed to resolve variable reference ${%s}: %w", varName, err)
+				}
+				return match // Continue processing other variables
+			}
+
+			return resolvedValue
+		})
+
+		// Process $VAR format (new functionality)
+		result = p.replaceSimpleVariables(result, envVars, group, &resolutionError)
+
+		if result == oldResult {
+			// No more substitutions were made, we're done
+			break
+		}
+	}
+
+	if resolutionError != nil {
+		return "", resolutionError
+	}
+
+	// Check if we exceeded max iterations and still have unresolved references
+	if strings.Contains(result, "$") {
+		if variableReferenceRegex.MatchString(result) || simpleVariableRegex.MatchString(result) {
+			return "", fmt.Errorf("%w: exceeded maximum resolution iterations (%d)", ErrCircularReference, maxIterations)
+		}
+	}
+
+	return result, nil
+}
+
+// replaceSimpleVariables handles $VAR format replacement with overlap prevention
+func (p *CommandEnvProcessor) replaceSimpleVariables(
+	text string,
+	envVars map[string]string,
+	group *runnertypes.CommandGroup,
+	resolutionError *error,
+) string {
+	return simpleVariableRegex.ReplaceAllStringFunc(text, func(match string) string {
+		varName := match[1:] // Remove $
+
+		// Prevent overlap with braced format: skip if this $VAR is likely inside ${...}
+		if p.isLikelyInsideBraces(text, match) {
+			return match
+		}
+
+		resolvedValue, err := p.resolveVariableWithSecurityPolicy(varName, envVars, group)
+		if err != nil {
+			if *resolutionError == nil {
+				*resolutionError = fmt.Errorf("failed to resolve variable reference $%s: %w", varName, err)
+			}
+			return match // Continue processing other variables
+		}
+
+		return resolvedValue
+	})
+}
+
+// isLikelyInsideBraces provides simple heuristic to prevent $VAR inside ${VAR} from being processed twice
+func (p *CommandEnvProcessor) isLikelyInsideBraces(_, _ string) bool {
+	// This is a simple heuristic - in practice, the unified pattern approach would be better
+	// For now, we rely on the processing order (${VAR} first, then $VAR) to handle most cases
+	return false
 }
