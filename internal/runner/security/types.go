@@ -6,6 +6,8 @@ package security
 import (
 	"errors"
 	"os"
+	"sort"
+	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
@@ -281,15 +283,38 @@ func (c *Config) GetPathPatternsByRisk(level runnertypes.RiskLevel) []string {
 }
 
 // GetSuspiciousFilePatterns returns patterns for suspicious files that should be flagged
+// This is derived dynamically from OutputCriticalPathPatterns to maintain consistency
 func (c *Config) GetSuspiciousFilePatterns() []string {
-	// File-specific patterns from critical paths
-	suspiciousFiles := []string{
-		"passwd", "shadow", "sudoers", "authorized_keys", "id_rsa", "id_ed25519",
-		"private_key", "secret_key", ".bashrc", ".zshrc", ".login", ".profile",
-		"wallet.dat", "keystore", ".env", ".aws/credentials", ".kube/config",
-		".docker/config.json",
+	patterns := make(map[string]bool)
+
+	// Extract file names from OutputCriticalPathPatterns
+	for _, pattern := range c.OutputCriticalPathPatterns {
+		// Handle absolute paths like "/etc/passwd" -> "passwd"
+		if strings.HasPrefix(pattern, "/") && !strings.HasSuffix(pattern, "/") {
+			// Extract basename from absolute paths
+			parts := strings.Split(pattern, "/")
+			if len(parts) > 0 {
+				basename := parts[len(parts)-1]
+				if basename != "" {
+					patterns[basename] = true
+				}
+			}
+		} else if !strings.HasSuffix(pattern, "/") {
+			// Pattern is already a filename or relative path (not ending with "/")
+			patterns[pattern] = true
+		}
+		// Skip directory patterns ending with "/"
 	}
-	return suspiciousFiles
+
+	// Convert map to sorted slice for consistent results
+	var result []string
+	for pattern := range patterns {
+		result = append(result, pattern)
+	}
+
+	// Sort for consistent ordering in tests
+	sort.Strings(result)
+	return result
 }
 
 // GetSuspiciousExtensions returns file extensions that pose security risks for output files
