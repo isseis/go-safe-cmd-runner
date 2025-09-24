@@ -198,11 +198,11 @@ args = ["Controlled size output for security"]
 output = "size_controlled.txt"
 
 [[groups.commands]]
-name = "system_log_sample"
-description = "Sample system log with size awareness"
+name = "system_info_sample"
+description = "Sample system information with size awareness"
 cmd = "head"
-args = ["-n", "50", "/var/log/syslog"]
-output = "log_sample.txt"
+args = ["-n", "50", "/proc/cpuinfo"]
+output = "system_info_sample.txt"
 timeout = 30
 
 # Security best practices summary
