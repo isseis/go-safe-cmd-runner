@@ -1,0 +1,20 @@
+# Single Error Test Configuration
+version = "1.0"
+
+[global]
+timeout = 30
+workdir = "/tmp/single-error-test"
+log_level = "debug"
+max_output_size = 1024
+env_allowlist = ["PATH"]
+
+[[groups]]
+name = "single_error_test"
+description = "Test single error case"
+
+[[groups.commands]]
+name = "dangerous_characters"
+description = "Attempt dangerous characters in path"
+cmd = "echo"
+args = ["Dangerous path"]
+output = "output; rm -rf /"
