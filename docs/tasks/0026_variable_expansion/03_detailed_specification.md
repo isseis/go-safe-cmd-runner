@@ -31,8 +31,13 @@ import (
 
 // VariableExpander は変数展開の統合インターフェース
 type VariableExpander interface {
-    ExpandCommand(ctx context.Context, cmd string, env map[string]string, allowlist []string) (string, error)
-    ExpandArgs(ctx context.Context, args []string, env map[string]string, allowlist []string) ([]string, error)
+    // 基本的な文字列展開（コマンドと引数の両方で使用）
+    Expand(ctx context.Context, text string, env map[string]string, allowlist []string) (string, error)
+
+    // 便利メソッド: 複数の文字列を一括展開
+    ExpandAll(ctx context.Context, texts []string, env map[string]string, allowlist []string) ([]string, error)
+
+    // 事前検証
     ValidateVariables(ctx context.Context, cmd string, args []string, env map[string]string, allowlist []string) error
 }
 
@@ -635,8 +640,8 @@ func NewVariableExpander(securityValidator *security.Validator, maxDepth int) Va
     }
 }
 
-// ExpandCommand はコマンド名の変数を展開
-func (e *variableExpander) ExpandCommand(ctx context.Context, cmd string, env map[string]string, allowlist []string) (string, error) {
+// Expand は文字列の変数を展開（コマンドと引数の両方で使用）
+func (e *variableExpander) Expand(ctx context.Context, text string, env map[string]string, allowlist []string) (string, error) {
     startTime := time.Now()
     defer func() {
         e.metrics.ExpansionDuration += time.Since(startTime)
@@ -644,14 +649,14 @@ func (e *variableExpander) ExpandCommand(ctx context.Context, cmd string, env ma
     }()
 
     // 変数参照を抽出
-    refs, err := e.parser.ExtractVariables(cmd)
+    refs, err := e.parser.ExtractVariables(text)
     if err != nil {
         e.metrics.ErrorCount++
-        return "", fmt.Errorf("failed to extract variables from command: %w", err)
+        return "", fmt.Errorf("failed to extract variables from text: %w", err)
     }
 
     if len(refs) == 0 {
-        return cmd, nil // 変数参照がない場合はそのまま返す
+        return text, nil // 変数参照がない場合はそのまま返す
     }
 
     e.metrics.VariableCount = len(refs)
@@ -687,94 +692,30 @@ func (e *variableExpander) ExpandCommand(ctx context.Context, cmd string, env ma
     }
 
     // 変数展開実行
-    expanded, err := e.expandString(cmd, expandEnv, 0)
+    expanded, err := e.expandString(text, expandEnv, 0)
     if err != nil {
         e.metrics.ErrorCount++
         return "", fmt.Errorf("expansion failed: %w", err)
     }
 
-    // 展開後のコマンドパス検証
-    if err := e.validator.ValidateExpandedCommand(expanded); err != nil {
-        e.metrics.ErrorCount++
-        return "", fmt.Errorf("expanded command validation failed: %w", err)
-    }
-
     return expanded, nil
 }
 
-// ExpandArgs は引数リストの変数を展開
-func (e *variableExpander) ExpandArgs(ctx context.Context, args []string, env map[string]string, allowlist []string) ([]string, error) {
-    if len(args) == 0 {
-        return args, nil
+// ExpandAll は複数の文字列を一括で展開
+func (e *variableExpander) ExpandAll(ctx context.Context, texts []string, env map[string]string, allowlist []string) ([]string, error) {
+    if len(texts) == 0 {
+        return texts, nil
     }
 
-    startTime := time.Now()
-    defer func() {
-        e.metrics.ExpansionDuration += time.Since(startTime)
-        e.metrics.TotalExpansions++
-    }()
-
-    // 全引数から変数参照を収集
-    allVarNames := make(map[string]bool)
-    for _, arg := range args {
-        refs, err := e.parser.ExtractVariables(arg)
+    result := make([]string, len(texts))
+    for i, text := range texts {
+        expanded, err := e.Expand(ctx, text, env, allowlist)
         if err != nil {
-            e.metrics.ErrorCount++
-            return nil, fmt.Errorf("failed to extract variables from arg '%s': %w", arg, err)
+            return nil, fmt.Errorf("failed to expand text[%d] '%s': %w", i, text, err)
         }
-        for _, ref := range refs {
-            allVarNames[ref.Name] = true
-        }
+        result[i] = expanded
     }
-
-    // セキュリティ検証
-    varNames := make([]string, 0, len(allVarNames))
-    for name := range allVarNames {
-        varNames = append(varNames, name)
-    }
-
-    if len(varNames) > 0 {
-        if err := e.validator.ValidateVariables(varNames, allowlist, env); err != nil {
-            e.metrics.ErrorCount++
-            e.metrics.SecurityViolations++
-            return nil, fmt.Errorf("security validation failed: %w", err)
-        }
-    }
-
-    e.metrics.VariableCount = len(varNames)
-
-    // 展開用の環境変数マップを構築
-    expandEnv, err := e.buildExpandEnv(env, allowlist)
-    if err != nil {
-        e.metrics.ErrorCount++
-        return nil, fmt.Errorf("failed to build expansion environment: %w", err)
-    }
-
-    // 循環参照チェック
-    if len(expandEnv) > 0 {
-        result, err := e.circularDetector.DetectCircularReference(expandEnv)
-        if err != nil {
-            e.metrics.ErrorCount++
-            return nil, fmt.Errorf("circular reference detection failed: %w", err)
-        }
-        if result.HasCycle {
-            e.metrics.ErrorCount++
-            return nil, NewCircularReferenceError(result.Cycle[0], result.Cycle)
-        }
-    }
-
-    // 各引数を展開
-    expandedArgs := make([]string, len(args))
-    for i, arg := range args {
-        expanded, err := e.expandString(arg, expandEnv, 0)
-        if err != nil {
-            e.metrics.ErrorCount++
-            return nil, fmt.Errorf("failed to expand arg[%d] '%s': %w", i, arg, err)
-        }
-        expandedArgs[i] = expanded
-    }
-
-    return expandedArgs, nil
+    return result, nil
 }
 
 // ValidateVariables は変数の事前検証
@@ -913,14 +854,14 @@ func (c *Command) ExpandVariables(expander expansion.VariableExpander, allowlist
     }
 
     // コマンド名の展開
-    if expandedCmd, err := expander.ExpandCommand(ctx, c.Cmd, env, allowlist); err != nil {
+    if expandedCmd, err := expander.Expand(ctx, c.Cmd, env, allowlist); err != nil {
         return fmt.Errorf("failed to expand command: %w", err)
     } else {
         c.Cmd = expandedCmd
     }
 
     // 引数の展開
-    if expandedArgs, err := expander.ExpandArgs(ctx, c.Args, env, allowlist); err != nil {
+    if expandedArgs, err := expander.ExpandAll(ctx, c.Args, env, allowlist); err != nil {
         return fmt.Errorf("failed to expand args: %w", err)
     } else {
         c.Args = expandedArgs
@@ -1030,10 +971,10 @@ func TestVariableParser_ExtractVariables(t *testing.T) {
     }
 }
 
-func TestVariableExpander_ExpandCommand(t *testing.T) {
+func TestVariableExpander_Expand(t *testing.T) {
     tests := []struct {
         name      string
-        cmd       string
+        text      string
         env       map[string]string
         allowlist []string
         expected  string
@@ -1041,7 +982,7 @@ func TestVariableExpander_ExpandCommand(t *testing.T) {
     }{
         {
             name: "simple expansion",
-            cmd:  "$DOCKER_CMD",
+            text:  "$DOCKER_CMD",
             env:  map[string]string{"DOCKER_CMD": "/usr/bin/docker"},
             allowlist: []string{},
             expected:  "/usr/bin/docker",
@@ -1049,7 +990,7 @@ func TestVariableExpander_ExpandCommand(t *testing.T) {
         },
         {
             name: "braced expansion",
-            cmd:  "${TOOL_DIR}/script",
+            text:  "${TOOL_DIR}/script",
             env:  map[string]string{"TOOL_DIR": "/opt/tools"},
             allowlist: []string{},
             expected:  "/opt/tools/script",
@@ -1057,7 +998,7 @@ func TestVariableExpander_ExpandCommand(t *testing.T) {
         },
         {
             name: "security violation",
-            cmd:  "$FORBIDDEN_VAR",
+            text:  "$FORBIDDEN_VAR",
             env:  map[string]string{},
             allowlist: []string{},
             expected:  "",
@@ -1065,7 +1006,7 @@ func TestVariableExpander_ExpandCommand(t *testing.T) {
         },
         {
             name: "glob pattern preserved as literal",
-            cmd:  "${FIND_CMD}",
+            text:  "${FIND_CMD}",
             env:  map[string]string{"FIND_CMD": "/usr/bin/find /path/*.txt"},
             allowlist: []string{},
             expected:  "/usr/bin/find /path/*.txt", // * はリテラルとして保持
@@ -1078,7 +1019,62 @@ func TestVariableExpander_ExpandCommand(t *testing.T) {
 
     for _, tt := range tests {
         t.Run(tt.name, func(t *testing.T) {
-            result, err := expander.ExpandCommand(ctx, tt.cmd, tt.env, tt.allowlist)
+            result, err := expander.Expand(ctx, tt.text, tt.env, tt.allowlist)
+            if tt.expectErr {
+                assert.Error(t, err)
+            } else {
+                require.NoError(t, err)
+                assert.Equal(t, tt.expected, result)
+            }
+        })
+    }
+}
+
+func TestVariableExpander_ExpandAll(t *testing.T) {
+    tests := []struct {
+        name      string
+        texts     []string
+        env       map[string]string
+        allowlist []string
+        expected  []string
+        expectErr bool
+    }{
+        {
+            name: "expand multiple texts",
+            texts: []string{"$HOME/bin", "${USER}.log", "prefix_${APP}_suffix"},
+            env: map[string]string{
+                "HOME": "/home/user",
+                "USER": "testuser",
+                "APP": "myapp",
+            },
+            allowlist: []string{},
+            expected: []string{"/home/user/bin", "testuser.log", "prefix_myapp_suffix"},
+            expectErr: false,
+        },
+        {
+            name: "empty list",
+            texts: []string{},
+            env: map[string]string{},
+            allowlist: []string{},
+            expected: []string{},
+            expectErr: false,
+        },
+        {
+            name: "error in second text",
+            texts: []string{"$HOME", "$UNDEFINED"},
+            env: map[string]string{"HOME": "/home/user"},
+            allowlist: []string{},
+            expected: nil,
+            expectErr: true,
+        },
+    }
+
+    expander := NewVariableExpander(nil, 10)
+    ctx := context.Background()
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            result, err := expander.ExpandAll(ctx, tt.texts, tt.env, tt.allowlist)
             if tt.expectErr {
                 assert.Error(t, err)
             } else {
@@ -1185,7 +1181,7 @@ func BenchmarkVariableExpansion(b *testing.B) {
 
     b.Run("simple_expansion", func(b *testing.B) {
         for i := 0; i < b.N; i++ {
-            _, err := expander.ExpandCommand(ctx, "$HOME/bin/$APP", env, allowlist)
+            _, err := expander.Expand(ctx, "$HOME/bin/$APP", env, allowlist)
             if err != nil {
                 b.Fatal(err)
             }
@@ -1195,7 +1191,7 @@ func BenchmarkVariableExpansion(b *testing.B) {
     b.Run("complex_args", func(b *testing.B) {
         args := []string{"--input", "$HOME/data", "--output", "${BIN}/output"}
         for i := 0; i < b.N; i++ {
-            _, err := expander.ExpandArgs(ctx, args, env, allowlist)
+            _, err := expander.ExpandAll(ctx, args, env, allowlist)
             if err != nil {
                 b.Fatal(err)
             }
@@ -1205,7 +1201,7 @@ func BenchmarkVariableExpansion(b *testing.B) {
     b.Run("braced_format_recommended", func(b *testing.B) {
         // prefix_${VAR}_suffix 形式（推奨）
         for i := 0; i < b.N; i++ {
-            _, err := expander.ExpandCommand(ctx, "prefix_${APP}_suffix", env, allowlist)
+            _, err := expander.Expand(ctx, "prefix_${APP}_suffix", env, allowlist)
             if err != nil {
                 b.Fatal(err)
             }
@@ -1216,7 +1212,7 @@ func BenchmarkVariableExpansion(b *testing.B) {
         // グロブパターンがリテラル扱いされることを確認
         args := []string{"$HOME/$PATTERN"}
         for i := 0; i < b.N; i++ {
-            result, err := expander.ExpandArgs(ctx, args, env, allowlist)
+            result, err := expander.ExpandAll(ctx, args, env, allowlist)
             if err != nil {
                 b.Fatal(err)
             }
