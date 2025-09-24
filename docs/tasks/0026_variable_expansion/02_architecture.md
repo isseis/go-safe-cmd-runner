@@ -29,8 +29,10 @@ flowchart TD
     C --> D[Security Validator]
     D --> E[Command Executor]
 
-    F[Environment Variables] --> C
-    G[Allowlist] --> D
+    F[System Environment] --> K[Environment Processor]
+    A --> K
+    K --> L[Environment Filter]
+    L --> C
 
     subgraph "New Components"
         C
@@ -44,16 +46,16 @@ flowchart TD
         D
         E
         K[Environment Processor]
+        L[Environment Filter]
     end
 
     C --> H
     H --> I
     H --> J
-    K --> C
 
     %% Assign classes: data nodes vs process nodes
-    class A,F,G data;
-    class B,C,H,I,J,D,E,K process;
+    class A,F data;
+    class B,C,H,I,J,D,E,K,L process;
 
 ```
 
@@ -94,6 +96,7 @@ graph TB
 
         subgraph "internal/runner/environment"
             F[processor.go - 既存環境変数処理]
+            L[filter.go - 既存環境変数フィルタ]
         end
 
         subgraph "internal/runner/security"
@@ -109,12 +112,13 @@ graph TB
     A --> C
     A --> D
     E --> A
-    F --> A
+    F --> L
+    L --> A
     A --> G
 
     %% Assign classes: treat files that are primarily data as data, others as process
     class E data;
-    class A,B,D,F,C,G process;
+    class A,B,D,F,L,C,G process;
 
 ```
 
@@ -222,9 +226,10 @@ type CircularReferenceDetector interface {
 
 #### 3.2.3 Environment Processor連携
 **連携方法**:
-- 既存のCommand.Env処理結果を利用
-- 優先順位制御の実装
-- 変数マップの統合処理
+- Environment ProcessorがEnvironment Filterを活用
+- System Environment → Environment Filter → Variable Expander の処理フロー
+- Command.Env処理結果を最優先として利用
+- Allowlist継承モード（Inherit/Explicit/Reject）の活用
 
 ## 4. セキュリティアーキテクチャ
 
@@ -232,16 +237,18 @@ type CircularReferenceDetector interface {
 
 ```mermaid
 flowchart TD
-    A[Variable Reference Detection] --> B{In Allowlist?}
-    B -->|No| C{In Command.Env?}
-    B -->|Yes| D[Mark as Allowed]
-    C -->|No| E[Security Error]
-    C -->|Yes| D
-    D --> F[Variable Expansion]
-    F --> G[Command Path Validation]
-    G --> H{Path Valid?}
-    H -->|No| I[Path Error]
-    H -->|Yes| J[Execute Command]
+    A[Variable Reference Detection] --> B[Environment Filter Processing]
+    B --> C{In Command.Env?}
+    C -->|Yes| D[Mark as Allowed - Skip Allowlist Check]
+    C -->|No| E{In Allowlist?}
+    E -->|Yes| F[Mark as Allowed]
+    E -->|No| G[Security Error]
+    D --> H[Variable Expansion]
+    F --> H
+    H --> I[Command Path Validation]
+    I --> J{Path Valid?}
+    J -->|No| K[Path Error]
+    J -->|Yes| L[Execute Command]
 ```
 
 ### 4.2 セキュリティレイヤー
