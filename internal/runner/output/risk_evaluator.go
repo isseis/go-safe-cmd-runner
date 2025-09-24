@@ -73,6 +73,13 @@ func (e *RiskEvaluator) EvaluateWithMaxRiskLevel(outputPath string, maxAllowedRi
 }
 
 // evaluateAbsolutePath evaluates risks for absolute paths
+//
+// Security Design Rationale:
+// For absolute paths, the primary security concern is "WHERE" the output is written.
+// Writing to system directories poses immediate system-wide security risks regardless
+// of file content or extension. Therefore, this function focuses exclusively on path
+// location validation and does not check file extensions or suspicious patterns.
+// The location-based risk assessment takes precedence over content-based concerns.
 func (e *RiskEvaluator) evaluateAbsolutePath(outputPath string) *RiskEvaluation {
 	// Check critical patterns first
 	criticalPatterns := e.securityConfig.GetPathPatternsByRisk(runnertypes.RiskLevelCritical)
@@ -114,6 +121,14 @@ func (e *RiskEvaluator) evaluateAbsolutePath(outputPath string) *RiskEvaluation 
 }
 
 // evaluateRelativePath evaluates risks for relative paths
+//
+// Security Design Rationale:
+// For relative paths, the location is considered safe (within working directory),
+// but the primary security concern is "WHAT TYPE OF FILE" is being created.
+// Malicious actors could create executable files, configuration files, or other
+// dangerous file types that could be exploited later. Therefore, this function
+// focuses on content-based validation (file extensions and suspicious patterns)
+// rather than location-based validation, which is the inverse of absolute path evaluation.
 func (e *RiskEvaluator) evaluateRelativePath(outputPath string) *RiskEvaluation {
 	lowerPath := strings.ToLower(outputPath)
 
