@@ -586,6 +586,26 @@ func TestCommandEnvProcessor_ResolveVariableReferencesUnified(t *testing.T) {
 			},
 			expected: "/usr/bin/command",
 		},
+		{
+			name:    "literal dollar character should not cause false circular reference",
+			value:   "$PRICE",
+			envVars: map[string]string{"PRICE": "Cost: $100.50"},
+			group: &runnertypes.CommandGroup{
+				Name:         "test_group",
+				EnvAllowlist: []string{"PRICE"},
+			},
+			expected: "Cost: $100.50",
+		},
+		{
+			name:    "multiple literal dollars should not cause false circular reference",
+			value:   "$MESSAGE",
+			envVars: map[string]string{"MESSAGE": "Price $5 and tax $1.50 = $6.50"},
+			group: &runnertypes.CommandGroup{
+				Name:         "test_group",
+				EnvAllowlist: []string{"MESSAGE"},
+			},
+			expected: "Price $5 and tax $1.50 = $6.50",
+		},
 	}
 
 	for _, tt := range tests {
