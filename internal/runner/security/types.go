@@ -6,6 +6,7 @@ package security
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -292,12 +293,9 @@ func (c *Config) GetSuspiciousFilePatterns() []string {
 		// Handle absolute paths like "/etc/passwd" -> "passwd"
 		if strings.HasPrefix(pattern, "/") && !strings.HasSuffix(pattern, "/") {
 			// Extract basename from absolute paths
-			parts := strings.Split(pattern, "/")
-			if len(parts) > 0 {
-				basename := parts[len(parts)-1]
-				if basename != "" {
-					patterns[basename] = true
-				}
+			basename := filepath.Base(pattern)
+			if basename != "" && basename != "." && basename != "/" {
+				patterns[basename] = true
 			}
 		} else if !strings.HasSuffix(pattern, "/") {
 			// Pattern is already a filename or relative path (not ending with "/")
