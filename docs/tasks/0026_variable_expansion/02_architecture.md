@@ -19,7 +19,11 @@
 ### 2.1 全体アーキテクチャ
 
 ```mermaid
+%% Color nodes: data vs process
 flowchart TD
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+
     A[TOML Configuration] --> B[Config Parser]
     B --> C[Variable Expander]
     C --> D[Security Validator]
@@ -46,12 +50,37 @@ flowchart TD
     H --> I
     H --> J
     K --> C
+
+    %% Assign classes: data nodes vs process nodes
+    class A,F,G data;
+    class B,C,H,I,J,D,E,K process;
+
+```
+
+<!-- Legend for colored nodes -->
+**凡例（Legend）**
+
+以下の図は、ダイアグラムで使用している色の意味を示します。青系はデータ（configuration / environment）、オレンジ系は処理（プロセス）を表します。
+
+```mermaid
+%% Legend: data (blue) vs process (orange)
+flowchart LR
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+
+    D1[TOML Configuration] --> P1[Variable Expander]
+    class D1 data
+    class P1 process
 ```
 
 ### 2.2 コンポーネント配置
 
 ```mermaid
+%% Component graph with data/process coloring
 graph TB
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+
     subgraph "内部パッケージ構成"
         subgraph "internal/runner/expansion"
             A[expander.go - 展開エンジン]
@@ -82,6 +111,11 @@ graph TB
     E --> A
     F --> A
     A --> G
+
+    %% Assign classes: treat files that are primarily data as data, others as process
+    class E data;
+    class A,B,D,F,C,G process;
+
 ```
 
 ### 2.3 データフロー
