@@ -6,6 +6,9 @@ package security
 import (
 	"errors"
 	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
@@ -136,6 +139,8 @@ type Config struct {
 	// DangerousRootArgPatterns is a list of potentially destructive argument patterns when running as root
 	DangerousRootArgPatterns []string
 	// SystemCriticalPaths is a list of system-critical paths that require extra caution
+	// Used for both command argument validation and general path security checks
+	// These paths are checked without trailing slashes for flexible matching
 	SystemCriticalPaths []string
 	// LoggingOptions controls sensitive information handling in logs
 	LoggingOptions LoggingOptions
@@ -143,6 +148,8 @@ type Config struct {
 	OutputCriticalPathPatterns []string
 	// outputHighRiskPathPatterns defines high-risk system paths that require extra caution
 	OutputHighRiskPathPatterns []string
+	// SuspiciousExtensions defines file extensions that pose security risks for output files
+	SuspiciousExtensions []string
 	// testPermissiveMode is only available in test builds and allows relaxed directory permissions
 	testPermissiveMode bool
 	// testSkipHashValidation is only available in test builds and allows skipping hash validation
@@ -231,23 +238,91 @@ func DefaultConfig() *Config {
 			"rf", "force", "recursive", "all",
 		},
 		SystemCriticalPaths: []string{
-			"/", "/bin", "/sbin", "/usr", "/etc", "/var", "/boot", "/sys", "/proc", "/dev",
+			"/", "/bin", "/sbin", "/usr", "/usr/bin", "/usr/sbin", "/etc", "/var",
+			"/var/log", "/boot", "/sys", "/proc", "/dev", "/lib", "/lib64", "/root",
 		},
 		OutputCriticalPathPatterns: []string{
+			// Specific critical system files
 			"/etc/passwd", "/etc/shadow", "/etc/sudoers",
-			"/boot/", "/sys/", "/proc/",
+			// Critical system directories
+			"/boot/", "/sys/", "/proc/", "/root/",
+			"/etc/", "/usr/bin/", "/usr/sbin/",
+			"/bin/", "/sbin/", "/lib/", "/lib64/",
+			// SSH and authentication files
 			"authorized_keys", "id_rsa", "id_ed25519",
 			".ssh/", "private_key", "secret_key",
+			// Shell configuration files
 			".bashrc", ".zshrc", ".login", ".profile",
+			// Security-sensitive application configs
+			".gnupg/", ".aws/credentials", ".kube/config", ".docker/config.json",
+			// Cryptocurrency and keystore files
+			"wallet.dat", "keystore",
 		},
 		OutputHighRiskPathPatterns: []string{
-			"/etc/", "/var/log/", "/usr/bin/", "/usr/sbin/",
-			"/bin/", "/sbin/", "/lib/", "/lib64/",
-			".gnupg/", "wallet.dat", "keystore",
-			".git/", ".env", ".aws/credentials",
-			".kube/config", ".docker/config.json",
+			// System log directory (less critical than system binaries)
+			"/var/log/",
+			// Version control and environment files (sensitive but not system-critical)
+			".git/", ".env",
+		},
+		SuspiciousExtensions: []string{
+			".exe", ".bat", ".cmd", ".com", ".scr", ".vbs", ".js", ".jar",
+			".sh", ".py", ".pl", ".rb", ".php", ".asp", ".jsp",
 		},
 	}
+}
+
+// GetPathPatternsByRisk returns path patterns based on risk level
+func (c *Config) GetPathPatternsByRisk(level runnertypes.RiskLevel) []string {
+	switch level {
+	case runnertypes.RiskLevelCritical:
+		return c.OutputCriticalPathPatterns
+	case runnertypes.RiskLevelHigh:
+		return c.OutputHighRiskPathPatterns
+	default:
+		return []string{}
+	}
+}
+
+// GetSuspiciousFilePatterns returns patterns for suspicious files that should be flagged
+// This is derived dynamically from OutputCriticalPathPatterns to maintain consistency
+func (c *Config) GetSuspiciousFilePatterns() []string {
+	patterns := make(map[string]bool)
+
+	// Extract file names from OutputCriticalPathPatterns
+	for _, pattern := range c.OutputCriticalPathPatterns {
+		// Handle absolute paths like "/etc/passwd" -> "passwd"
+		if strings.HasPrefix(pattern, "/") && !strings.HasSuffix(pattern, "/") {
+			// Extract basename from absolute paths
+			basename := filepath.Base(pattern)
+			if basename != "" && basename != "." && basename != "/" {
+				patterns[basename] = true
+			}
+		} else if !strings.HasSuffix(pattern, "/") {
+			// Pattern is already a filename or relative path (not ending with "/")
+			patterns[pattern] = true
+		}
+		// Skip directory patterns ending with "/"
+	}
+
+	// Convert map to sorted slice for consistent results
+	var result []string
+	for pattern := range patterns {
+		result = append(result, pattern)
+	}
+
+	// Sort for consistent ordering in tests
+	sort.Strings(result)
+	return result
+}
+
+// GetSuspiciousExtensions returns file extensions that pose security risks for output files
+func (c *Config) GetSuspiciousExtensions() []string {
+	return c.SuspiciousExtensions
+}
+
+// GetSystemCriticalPaths returns system-critical paths for command argument validation
+func (c *Config) GetSystemCriticalPaths() []string {
+	return c.SystemCriticalPaths
 }
 
 // DefaultLoggingOptions returns secure default logging options

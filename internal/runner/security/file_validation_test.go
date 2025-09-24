@@ -532,10 +532,10 @@ func TestValidator_EvaluateOutputSecurityRisk(t *testing.T) {
 			expectRisk: runnertypes.RiskLevelCritical,
 		},
 		{
-			name:       "high_etc_directory",
+			name:       "critical_etc_directory",
 			path:       "/etc/myconfig.conf",
 			workDir:    "/home/user",
-			expectRisk: runnertypes.RiskLevelHigh,
+			expectRisk: runnertypes.RiskLevelCritical,
 		},
 		{
 			name:       "high_var_log_directory",
@@ -544,10 +544,10 @@ func TestValidator_EvaluateOutputSecurityRisk(t *testing.T) {
 			expectRisk: runnertypes.RiskLevelHigh,
 		},
 		{
-			name:       "high_usr_bin_directory",
+			name:       "critical_usr_bin_directory",
 			path:       "/usr/bin/myapp",
 			workDir:    "/home/user",
-			expectRisk: runnertypes.RiskLevelHigh,
+			expectRisk: runnertypes.RiskLevelCritical,
 		},
 		{
 			name:       "low_workdir_file",
@@ -623,9 +623,9 @@ func TestValidator_EvaluateOutputSecurityRisk_CaseInsensitive(t *testing.T) {
 			expectRisk: runnertypes.RiskLevelCritical,
 		},
 		{
-			name:       "high_uppercase_etc",
+			name:       "critical_uppercase_etc",
 			path:       "/ETC/config.conf",
-			expectRisk: runnertypes.RiskLevelHigh,
+			expectRisk: runnertypes.RiskLevelCritical,
 		},
 	}
 
@@ -682,19 +682,19 @@ func TestValidator_EvaluateOutputSecurityRisk_SpecialPatterns(t *testing.T) {
 		expectRisk runnertypes.RiskLevel
 	}{
 		{
-			name:       "wallet_file",
+			name:       "critical_wallet_file",
 			path:       "/home/user/wallet.dat",
-			expectRisk: runnertypes.RiskLevelHigh,
+			expectRisk: runnertypes.RiskLevelCritical,
 		},
 		{
-			name:       "keystore_file",
+			name:       "critical_keystore_file",
 			path:       "/home/user/keystore",
-			expectRisk: runnertypes.RiskLevelHigh,
+			expectRisk: runnertypes.RiskLevelCritical,
 		},
 		{
-			name:       "gnupg_directory",
+			name:       "critical_gnupg_directory",
 			path:       "/home/user/.gnupg/secring.gpg",
-			expectRisk: runnertypes.RiskLevelHigh,
+			expectRisk: runnertypes.RiskLevelCritical,
 		},
 		{
 			name:       "proc_directory",

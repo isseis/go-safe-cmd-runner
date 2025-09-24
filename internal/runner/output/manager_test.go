@@ -17,9 +17,9 @@ import (
 
 // Test errors for manager_test
 var (
-	ErrPathTraversalDetected = errors.New("path traversal detected")
-	ErrPermissionDenied      = errors.New("permission denied")
-	ErrTempCreationFailed    = errors.New("temp creation failed")
+	ErrTestPathTraversalDetected = errors.New("path traversal detected")
+	ErrTestPermissionDenied      = errors.New("permission denied")
+	ErrTestTempCreationFailed    = errors.New("temp creation failed")
 )
 
 // MockPathValidator for testing
@@ -143,7 +143,7 @@ func TestDefaultOutputCaptureManager_PrepareOutput(t *testing.T) {
 			workDir:    "/home/user",
 			maxSize:    1024,
 			setupMocks: func(pv *MockPathValidator, _ *MockFileManager, _ *MockSecurityValidator) {
-				pv.On("ValidateAndResolvePath", "../../../etc/passwd", "/home/user").Return("", ErrPathTraversalDetected)
+				pv.On("ValidateAndResolvePath", "../../../etc/passwd", "/home/user").Return("", ErrTestPathTraversalDetected)
 			},
 			wantErr:    true,
 			errMessage: "path traversal detected",
@@ -168,7 +168,7 @@ func TestDefaultOutputCaptureManager_PrepareOutput(t *testing.T) {
 			setupMocks: func(pv *MockPathValidator, fm *MockFileManager, sv *MockSecurityValidator) {
 				pv.On("ValidateAndResolvePath", "/tmp/nonexistent/deeply/nested/output.txt", "/home/user").Return("/tmp/nonexistent/deeply/nested/output.txt", nil)
 				sv.On("ValidateOutputWritePermission", "/tmp/nonexistent/deeply/nested/output.txt", mock.AnythingOfType("int")).Return(nil)
-				fm.On("EnsureDirectory", "/tmp/nonexistent/deeply/nested").Return(ErrPermissionDenied)
+				fm.On("EnsureDirectory", "/tmp/nonexistent/deeply/nested").Return(ErrTestPermissionDenied)
 			},
 			wantErr:    true,
 			errMessage: "permission denied",
@@ -369,7 +369,7 @@ func TestDefaultOutputCaptureManager_FinalizeOutput(t *testing.T) {
 			name:          "file_move_error",
 			bufferContent: []byte("content"),
 			setupMocks: func(fm *MockFileManager) {
-				fm.On("MoveToFinal", mock.AnythingOfType("string"), "/tmp/error.txt").Return(ErrPermissionDenied)
+				fm.On("MoveToFinal", mock.AnythingOfType("string"), "/tmp/error.txt").Return(ErrTestPermissionDenied)
 			},
 			wantErr:    true,
 			errMessage: "permission denied",
@@ -502,7 +502,7 @@ func TestDefaultOutputCaptureManager_AnalyzeOutput(t *testing.T) {
 			outputPath: "../../../etc/passwd",
 			workDir:    "/home/user",
 			setupMocks: func(pv *MockPathValidator, _ *MockSecurityValidator) {
-				pv.On("ValidateAndResolvePath", "../../../etc/passwd", "/home/user").Return("", ErrPathTraversalDetected)
+				pv.On("ValidateAndResolvePath", "../../../etc/passwd", "/home/user").Return("", ErrTestPathTraversalDetected)
 			},
 			wantErr: false, // AnalyzeOutput doesn't fail, it reports the problem
 			validateAnalysis: func(t *testing.T, analysis *Analysis) {
@@ -519,7 +519,7 @@ func TestDefaultOutputCaptureManager_AnalyzeOutput(t *testing.T) {
 			workDir:    "/home/user",
 			setupMocks: func(pv *MockPathValidator, sv *MockSecurityValidator) {
 				pv.On("ValidateAndResolvePath", "/etc/sensitive", "/home/user").Return("/etc/sensitive", nil)
-				sv.On("ValidateOutputWritePermission", "/etc/sensitive", mock.AnythingOfType("int")).Return(ErrPermissionDenied)
+				sv.On("ValidateOutputWritePermission", "/etc/sensitive", mock.AnythingOfType("int")).Return(ErrTestPermissionDenied)
 			},
 			wantErr: false,
 			validateAnalysis: func(t *testing.T, analysis *Analysis) {

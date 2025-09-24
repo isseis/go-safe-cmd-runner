@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 	"unicode"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
 
 // Path validation errors
@@ -52,7 +53,7 @@ func (v *DefaultPathValidator) ValidateAndResolvePath(outputPath, workDir string
 // validatePathSecurity performs common security validation for both absolute and relative paths
 func validatePathSecurity(path string) error {
 	// Check for path traversal patterns by examining path segments
-	if ContainsPathTraversalSegment(path) {
+	if common.ContainsPathTraversalSegment(path) {
 		return fmt.Errorf("%w: %s", ErrPathTraversal, path)
 	}
 
@@ -91,14 +92,6 @@ func (v *DefaultPathValidator) validateRelativePath(path, workDir string) (strin
 	}
 
 	return cleanPath, nil
-}
-
-// ContainsPathTraversalSegment checks if a path contains ".." as a distinct path segment
-// This avoids false positives for legitimate filenames that contain ".." (e.g., "archive..zip")
-func ContainsPathTraversalSegment(path string) bool {
-	// Split the path into segments and check if any segment is ".."
-	segments := strings.Split(path, string(filepath.Separator))
-	return slices.Contains(segments, "..")
 }
 
 // escapesWorkDirectory checks if a relative path escapes the work directory
