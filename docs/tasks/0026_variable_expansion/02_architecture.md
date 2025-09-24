@@ -5,14 +5,14 @@
 ### 1.1 アーキテクチャ目標
 - 既存システムへの影響最小化
 - セキュリティの堅牢性確保
-- 高性能な変数展開処理
-- モジュラー設計による保守性向上
+- 実績のある反復制限方式を活用したシンプルな実装
+- 直感的な設計による保守性向上
 
 ### 1.2 設計原則
 - **セキュリティファースト**: allowlist検証を展開前に実施
-- **関心の分離**: 変数展開ロジックを独立モジュール化
+- **既存活用**: 実績のある反復制限方式の循環参照検出を拡張
 - **既存互換性**: 既存設定ファイルの無変更動作
-- **段階的処理**: 検証→展開→実行の明確な分離
+- **直感的実装**: 複雑なDFSではなく理解しやすいアルゴリズム
 
 ## 2. システム構成
 
@@ -34,24 +34,20 @@ flowchart TD
     K --> L[Environment Filter]
     L --> C
 
-    subgraph "New Components"
-        C
-        H[Expansion Engine]
-        I[Variable Parser]
-        J[Circular Reference Detector]
+    subgraph "Enhanced Components"
+        C[Enhanced Variable Expander]
+        K[Enhanced Environment Processor]
     end
 
-    subgraph "Existing Components"
+    subgraph "Existing Components (Reused)"
         B
         D
         E
-        K[Environment Processor]
         L[Environment Filter]
     end
 
-    C --> H
-    H --> I
-    H --> J
+    C --> K
+    K --> L
 
     %% Assign classes: data nodes vs process nodes
     class A,F data;
@@ -85,9 +81,8 @@ graph TB
 
     subgraph "内部パッケージ構成"
         subgraph "internal/runner/expansion"
-            A[expander.go - 展開エンジン]
-            B[parser.go - 変数パーサー]
-            D[detector.go - 循環参照検出]
+            A[expander.go - 統合展開エンジン]
+            B[parser.go - 両形式対応パーサー]
         end
 
         subgraph "internal/runner/config"
@@ -95,7 +90,7 @@ graph TB
         end
 
         subgraph "internal/runner/environment"
-            F[processor.go - 既存環境変数処理]
+            F[processor.go - 拡張された環境変数処理]
             L[filter.go - 既存環境変数フィルタ]
         end
 
@@ -109,8 +104,7 @@ graph TB
     end
 
     A --> B
-    A --> C
-    A --> D
+    A --> F
     E --> A
     F --> L
     L --> A
@@ -118,7 +112,7 @@ graph TB
 
     %% Assign classes: treat files that are primarily data as data, others as process
     class E data;
-    class A,B,D,F,L,C,G process;
+    class A,B,F,L,C,G process;
 
 ```
 
@@ -149,87 +143,71 @@ sequenceDiagram
 
 ## 3. 詳細設計
 
-### 3.1 新規コンポーネント設計
+### 3.1 コンポーネント設計方針
 
-#### 3.1.1 Variable Expander (internal/runner/expansion/expander.go)
-**責務**: 変数展開の統合制御
+#### 3.1.1 既存実装を活用したシンプルなアプローチ
+**既存の反復制限方式を基盤として使用**:
+- `internal/runner/environment/processor.go` の `resolveVariableReferencesForCommandEnv`
+- 最大15回の反復制限で循環参照を検出
+- 実績のあるアルゴリズムを両変数形式に拡張
+
+#### 3.1.2 Variable Expander (internal/runner/expansion/expander.go)
+**責務**: cmd/args 展開の統合制御
 
 **主要インターフェース**:
 ```go
 type VariableExpander interface {
-    ExpandCommand(cmd string, env map[string]string, allowlist []string) (string, error)
-    ExpandArgs(args []string, env map[string]string, allowlist []string) ([]string, error)
+    // 既存の反復制限方式を使用したシンプルな展開
+    Expand(text string, env map[string]string, allowlist []string) (string, error)
+    ExpandAll(texts []string, env map[string]string, allowlist []string) ([]string, error)
 }
 ```
 
 **主要機能**:
-- cmdとargsの変数展開統合制御
-- セキュリティ検証との連携
-- エラーハンドリングと詳細エラーメッセージ
+- 既存の理解しやすいアルゴリズムを活用
+- セキュリティ検証とのシンプルな連携
+- 最小限のエラーハンドリング
 
-#### 3.1.2 Variable Parser (internal/runner/expansion/parser.go)
-**責務**: 変数参照の解析と抽出
+#### 3.1.3 Variable Parser (internal/runner/expansion/parser.go)
+**責務**: 両変数形式の解析と抽出
 
 **主要インターフェース**:
 ```go
 type VariableParser interface {
-    ExtractVariables(text string) ([]VariableRef, error)
-    ReplaceVariables(text string, variables map[string]string) (string, error)
-}
-
-type VariableRef struct {
-    Name       string
-    StartPos   int
-    EndPos     int
-    Format     VariableFormat
-    FullMatch  string
+    // 既存の正規表現を拡張して両形式をサポート
+    ReplaceVariables(text string, resolver VariableResolver) (string, error)
 }
 ```
 
 **主要機能**:
-- `$VAR`と`${VAR}`形式の検出
-- 複数変数参照の処理
-- パース結果のメタデータ提供
-- 変数形式の妥当性検証（prefix_$VAR_suffix形式は推奨されない）
-
-#### 3.1.3 Circular Reference Detector (internal/runner/expansion/detector.go)
-**責務**: 循環参照の検出
-
-**主要インターフェース**:
-```go
-type CircularReferenceDetector interface {
-    DetectCircularReference(env map[string]string) error
-}
-```
-
-**主要機能**:
-- 依存グラフの構築
-- 循環参照の検出アルゴリズム
-- 詳細なエラー報告
+- `$VAR` と `${VAR}` 両形式の統合処理
+- 既存の `variableReferenceRegex` を拡張
+- 重複検出の防止（`${VAR}` を優先）
 
 ### 3.2 既存コンポーネントとの統合
 
-#### 3.2.1 Security Validator連携 (internal/runner/security/validator.go)
-**既存機能活用**:
-- `ValidateVariableValue(value string) error` - 変数値の安全性検証
-- `ValidateAllEnvironmentVars(envVars map[string]string) error` - allowlist検証への統合
+#### 3.2.1 Environment Processor 拡張 (internal/runner/environment/processor.go)
+**既存機能の統合拡張**:
+- 既存の `resolveVariableReferencesForCommandEnv` を拡張
+- `$VAR` 形式のサポートを追加
+- 反復上限を 10 → 15 に拡張
 
 **拡張点**:
-- 変数展開前の変数名検証
-- 展開後のコマンドパス検証
-- Command.Env変数の優先処理ロジック
+- Command.Env での `$VAR` 形式サポート
+- cmd/args での両形式サポート
+- 統一されたエラーハンドリング
 
-#### 3.2.2 Config Parser拡張
-**変更点**:
-- Command構造体の処理時にVariable Expanderを呼び出し
-- 展開処理の挿入ポイント設計
+#### 3.2.2 Security Validator 連携
+**既存機能をそのまま活用**:
+- `ValidateAllEnvironmentVars` - allowlist 検証
+- Command.Env 優先ポリシーの継続
+- 既存のセキュリティポリシーを保持
 
-#### 3.2.3 Environment Processor連携
-**連携方法**:
-- Environment ProcessorがEnvironment Filterを活用
-- System Environment → Environment Filter → Variable Expander の処理フロー
-- Command.Env処理結果を最優先として利用
-- Allowlist継承モード（Inherit/Explicit/Reject）の活用
+#### 3.2.3 Config Parser 統合
+**シンプルな統合方式**:
+- Command 構造体処理時に展開処理を挿入
+- 既存の処理フローへの影響を最小限に抑制
+- エラーハンドリングの一貫性を維持
 
 ## 4. セキュリティアーキテクチャ
 
@@ -272,10 +250,10 @@ flowchart TD
 
 ### 5.1 性能最適化戦略
 
-- **遅延評価**: 実際に使用される変数のみ展開
-- **キャッシング**: 同一変数の重複展開防止
-- **パイプライン処理**: 検証と展開の並列化
-- **メモリ効率**: インプレース文字列操作
+- **既存アルゴリズムの活用**: 実績のある高速な反復制限方式
+- **シンプルな実装**: 複雑なDFSアルゴリズムを回避
+- **最小限のメモリ使用**: 既存コードの効率的な文字列操作を活用
+- **予測可能な性能**: 反復上限による明確な処理時間の上限
 
 ### 5.2 パフォーマンス監視ポイント
 
@@ -293,8 +271,8 @@ type ExpansionMetrics struct {
 
 - **引数数制限**: 最大1000個の引数
 - **変数数制限**: 要素あたり最大50個の変数
-- **ネスト深度**: 最大10レベル
-- **メモリ使用量**: 展開前の2倍以下
+- **反復深度**: 最大15回の反復制限（実用ネスト深度5段階+安全マージン）
+- **メモリ使用量**: 既存アルゴリズムの効率的なメモリ使用を維持
 
 ## 6. エラーハンドリング設計
 
@@ -411,23 +389,23 @@ flowchart TB
 
 ## 9. 段階的実装計画
 
-### 9.1 Phase 1: 基盤実装
-- [ ] Variable Parser実装
-- [ ] Security Validator実装
-- [ ] 基本的なVariable Expander実装
-- [ ] 単体テスト実装
+### 9.1 Phase 1: 既存コードの拡張
+- [ ] Environment Processor での `$VAR` 形式サポート追加
+- [ ] 反復上限を 10 → 15 に拡張
+- [ ] 既存テストケースの拡張
+- [ ] 基本的な単体テスト
 
-### 9.2 Phase 2: 統合実装
-- [ ] Config Parserとの統合
-- [ ] Circular Reference Detector実装
-- [ ] エラーハンドリング強化
-- [ ] 統合テスト実装
+### 9.2 Phase 2: cmd/args 統合
+- [ ] 拡張された Variable Expander の実装
+- [ ] Config Parser での cmd/args 展開統合
+- [ ] セキュリティ検証の統合
+- [ ] 統合テストの実装
 
-### 9.3 Phase 3: 最適化
-- [ ] パフォーマンス最適化
-- [ ] 監視機能実装
-- [ ] 包括的テスト
-- [ ] ドキュメント整備
+### 9.3 Phase 3: 最終化
+- [ ] パフォーマンス検証と最適化
+- [ ] 包括的テストケース
+- [ ] ドキュメント更新
+- [ ] パフォーマンスベンチマーク
 
 ## 10. 依存関係とリスク
 
