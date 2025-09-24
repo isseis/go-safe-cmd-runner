@@ -31,7 +31,8 @@ TOML設定ファイルのコマンド名（`cmd`）およびコマンド引数�
 - `$VAR_NAME` - POSIX標準形式
 - `${VAR_NAME}` - ブレース形式
 - `$HOME/bin/cmd` - パス結合での使用
-- `prefix_$VAR_suffix` - 前後にテキストを含む形式
+- `prefix_${VAR}_suffix` - 前後にテキストを含む形式
+    - prefix_$VAR_suffix は $VAR_suffix までを変数と見なして展開されるが、この記述形式は推奨されない
 
 **例**:
 ```toml
@@ -65,10 +66,12 @@ args: ["--input", "/data/input.txt"]
 **概要**: 引数（`args`）内の環境変数参照を実行時に展開する
 
 **形式サポート**:
+F001と完全互換
 - `$VAR_NAME` - POSIX標準形式
 - `${VAR_NAME}` - ブレース形式
 - `$HOME/path` - パス結合での使用
-- `prefix_$VAR_suffix` - 前後にテキストを含む形式
+- `prefix_${VAR}_suffix` - 前後にテキストを含む形式
+    - prefix_$VAR_suffix は $VAR_suffix までを変数と見なして展開されるが、この記述形式は推奨されない
 
 **例**:
 ```toml

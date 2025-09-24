@@ -229,6 +229,8 @@ type variableParser struct {
 func NewVariableParser() VariableParser {
     return &variableParser{
         // $VAR形式: $で始まり、英数字とアンダースコアの組み合わせ
+        // 注意: prefix_$VAR_suffix形式では $VAR_suffix までが変数名と認識されるため
+        // 推奨されない。代わりに prefix_${VAR}_suffix 形式を使用すること
         simplePattern: regexp.MustCompile(`\$([A-Za-z_][A-Za-z0-9_]*)`),
         // ${VAR}形式: ${で始まり}で終わる
         bracedPattern: regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`),
@@ -457,6 +459,9 @@ func ValidateVariableValue(name, value string) error {
             }
         }
     }
+
+    // 注意: グロブパターン (*, ?) はリテラル文字として扱い、展開しない
+    // エスケープ機能は提供されない（セキュリティ上の制約）
 
     return nil
 }
@@ -1017,6 +1022,30 @@ func TestVariableParser_ExtractVariables(t *testing.T) {
             },
         },
         {
+            name:  "prefix_$VAR_suffix problem case",
+            input: "prefix_$HOME_suffix",
+            expected: []VariableRef{
+                // 注意: $HOME_suffix 全体が変数名と認識されてしまう問題
+                // このため prefix_${HOME}_suffix 形式が推奨される
+                {Name: "HOME_suffix", StartPos: 7, EndPos: 19, Format: FormatSimple, FullMatch: "$HOME_suffix"},
+            },
+        },
+        {
+            name:  "recommended braced format",
+            input: "prefix_${HOME}_suffix",
+            expected: []VariableRef{
+                {Name: "HOME", StartPos: 7, EndPos: 14, Format: FormatBraced, FullMatch: "${HOME}"},
+            },
+        },
+        {
+            name:  "glob patterns as literals",
+            input: "$HOME/*.txt",
+            expected: []VariableRef{
+                // * はリテラル文字として扱われる
+                {Name: "HOME", StartPos: 0, EndPos: 5, Format: FormatSimple, FullMatch: "$HOME"},
+            },
+        },
+        {
             name:     "no variables",
             input:    "/usr/bin/ls",
             expected: []VariableRef{},
@@ -1065,6 +1094,14 @@ func TestVariableExpander_ExpandCommand(t *testing.T) {
             allowlist: []string{},
             expected:  "",
             expectErr: true,
+        },
+        {
+            name: "glob pattern preserved as literal",
+            cmd:  "${FIND_CMD}",
+            env:  map[string]string{"FIND_CMD": "/usr/bin/find /path/*.txt"},
+            allowlist: []string{},
+            expected:  "/usr/bin/find /path/*.txt", // * はリテラルとして保持
+            expectErr: false,
         },
     }
 
@@ -1146,6 +1183,7 @@ func BenchmarkVariableExpansion(b *testing.B) {
         "HOME": "/home/user",
         "BIN":  "/usr/bin",
         "APP":  "myapp",
+        "PATTERN": "*.txt", // グロブパターンはリテラル扱い
     }
     allowlist := []string{}
 
@@ -1164,6 +1202,31 @@ func BenchmarkVariableExpansion(b *testing.B) {
             _, err := expander.ExpandArgs(ctx, args, env, allowlist)
             if err != nil {
                 b.Fatal(err)
+            }
+        }
+    })
+
+    b.Run("braced_format_recommended", func(b *testing.B) {
+        // prefix_${VAR}_suffix 形式（推奨）
+        for i := 0; i < b.N; i++ {
+            _, err := expander.ExpandCommand(ctx, "prefix_${APP}_suffix", env, allowlist)
+            if err != nil {
+                b.Fatal(err)
+            }
+        }
+    })
+
+    b.Run("glob_pattern_literal", func(b *testing.B) {
+        // グロブパターンがリテラル扱いされることを確認
+        args := []string{"$HOME/$PATTERN"}
+        for i := 0; i < b.N; i++ {
+            result, err := expander.ExpandArgs(ctx, args, env, allowlist)
+            if err != nil {
+                b.Fatal(err)
+            }
+            // 結果は "/home/user/*.txt" となる（* は展開されない）
+            if result[0] != "/home/user/*.txt" {
+                b.Fatalf("Expected '/home/user/*.txt', got '%s'", result[0])
             }
         }
     })
