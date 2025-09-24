@@ -399,19 +399,14 @@ func (c *Command) ExpandVariables(expander expansion.VariableExpander, allowlist
         return fmt.Errorf("failed to build environment map: %w", err)
     }
 
-    // 事前検証
-    if err := expander.ValidateVariables(ctx, c.Cmd, c.Args, env, allowlist); err != nil {
-        return fmt.Errorf("variable validation failed: %w", err)
-    }
-
-    // コマンド名の展開
+    // コマンド名の展開（展開処理中にバリデーションも実行される）
     if expandedCmd, err := expander.Expand(ctx, c.Cmd, env, allowlist); err != nil {
         return fmt.Errorf("failed to expand command: %w", err)
     } else {
         c.Cmd = expandedCmd
     }
 
-    // 引数の展開
+    // 引数の展開（展開処理中にバリデーションも実行される）
     if expandedArgs, err := expander.ExpandAll(ctx, c.Args, env, allowlist); err != nil {
         return fmt.Errorf("failed to expand args: %w", err)
     } else {
@@ -453,73 +448,99 @@ import (
     "github.com/stretchr/testify/require"
 )
 
-func TestVariableParser_ExtractVariables(t *testing.T) {
+func TestVariableParser_ReplaceVariables(t *testing.T) {
     tests := []struct {
-        name     string
-        input    string
-        expected []VariableRef
+        name      string
+        input     string
+        env       map[string]string
+        expected  string
+        expectErr bool
     }{
         {
-            name:  "simple variable",
-            input: "$HOME",
-            expected: []VariableRef{
-                {Name: "HOME", StartPos: 0, EndPos: 5, Format: FormatSimple, FullMatch: "$HOME"},
-            },
+            name:     "simple variable",
+            input:    "$HOME",
+            env:      map[string]string{"HOME": "/home/user"},
+            expected: "/home/user",
+            expectErr: false,
         },
         {
-            name:  "braced variable",
-            input: "${USER}",
-            expected: []VariableRef{
-                {Name: "USER", StartPos: 0, EndPos: 7, Format: FormatBraced, FullMatch: "${USER}"},
-            },
+            name:     "braced variable",
+            input:    "${USER}",
+            env:      map[string]string{"USER": "testuser"},
+            expected: "testuser",
+            expectErr: false,
         },
         {
-            name:  "mixed variables",
-            input: "$HOME/bin/${APP_NAME}",
-            expected: []VariableRef{
-                {Name: "HOME", StartPos: 0, EndPos: 5, Format: FormatSimple, FullMatch: "$HOME"},
-                {Name: "APP_NAME", StartPos: 10, EndPos: 21, Format: FormatBraced, FullMatch: "${APP_NAME}"},
-            },
+            name:     "mixed variables",
+            input:    "$HOME/bin/${APP_NAME}",
+            env:      map[string]string{"HOME": "/home/user", "APP_NAME": "myapp"},
+            expected: "/home/user/bin/myapp",
+            expectErr: false,
         },
         {
-            name:  "prefix_$VAR_suffix problem case",
-            input: "prefix_$HOME_suffix",
-            expected: []VariableRef{
-                // 注意: $HOME_suffix 全体が変数名と認識されてしまう問題
-                // このため prefix_${HOME}_suffix 形式が推奨される
-                {Name: "HOME_suffix", StartPos: 7, EndPos: 19, Format: FormatSimple, FullMatch: "$HOME_suffix"},
-            },
+            name:     "prefix_$VAR_suffix problem case",
+            input:    "prefix_$HOME_suffix",
+            env:      map[string]string{"HOME": "user", "HOME_suffix": "fallback"},
+            expected: "prefix_fallback", // $HOME_suffix 全体が変数名と認識される
+            expectErr: false,
         },
         {
-            name:  "recommended braced format",
-            input: "prefix_${HOME}_suffix",
-            expected: []VariableRef{
-                {Name: "HOME", StartPos: 7, EndPos: 14, Format: FormatBraced, FullMatch: "${HOME}"},
-            },
+            name:     "recommended braced format",
+            input:    "prefix_${HOME}_suffix",
+            env:      map[string]string{"HOME": "user"},
+            expected: "prefix_user_suffix",
+            expectErr: false,
         },
         {
-            name:  "glob patterns as literals",
-            input: "$HOME/*.txt",
-            expected: []VariableRef{
-                // * はリテラル文字として扱われる
-                {Name: "HOME", StartPos: 0, EndPos: 5, Format: FormatSimple, FullMatch: "$HOME"},
-            },
+            name:     "glob patterns as literals",
+            input:    "$HOME/*.txt",
+            env:      map[string]string{"HOME": "/home/user"},
+            expected: "/home/user/*.txt", // * はリテラル文字として扱われる
+            expectErr: false,
         },
         {
             name:     "no variables",
             input:    "/usr/bin/ls",
-            expected: []VariableRef{},
+            env:      map[string]string{},
+            expected: "/usr/bin/ls",
+            expectErr: false,
+        },
+        {
+            name:     "undefined variable",
+            input:    "$UNDEFINED",
+            env:      map[string]string{},
+            expected: "",
+            expectErr: true,
         },
     }
 
+    // テスト用のResolver実装
     parser := NewVariableParser()
     for _, tt := range tests {
         t.Run(tt.name, func(t *testing.T) {
-            result, err := parser.ExtractVariables(tt.input)
-            require.NoError(t, err)
-            assert.Equal(t, tt.expected, result)
+            resolver := &testVariableResolver{env: tt.env}
+            result, err := parser.ReplaceVariables(tt.input, resolver)
+
+            if tt.expectErr {
+                assert.Error(t, err)
+            } else {
+                require.NoError(t, err)
+                assert.Equal(t, tt.expected, result)
+            }
         })
     }
+}
+
+// testVariableResolver はテスト用のVariableResolver実装
+type testVariableResolver struct {
+    env map[string]string
+}
+
+func (r *testVariableResolver) ResolveVariable(name string) (string, error) {
+    if value, exists := r.env[name]; exists {
+        return value, nil
+    }
+    return "", fmt.Errorf("variable not found: %s", name)
 }
 
 func TestVariableExpander_Expand(t *testing.T) {
@@ -630,7 +651,9 @@ func TestVariableExpander_ExpandAll(t *testing.T) {
         },
     }
 
-    expander := NewVariableExpander(nil, 10)
+    // 既存の CommandEnvProcessor を使用したエンジンを作成
+    envProcessor := environment.NewCommandEnvProcessor(nil) // 実際のテストでは適切なfilterを渡す
+    expander := NewVariableExpander(envProcessor)
     ctx := context.Background()
 
     for _, tt := range tests {
@@ -728,7 +751,9 @@ func TestCircularReferenceDetection_IterativeBased(t *testing.T) {
 
 ```go
 func BenchmarkVariableExpansion(b *testing.B) {
-    expander := NewVariableExpander(nil, 10)
+    // 既存の CommandEnvProcessor を使用したエンジンを作成
+    envProcessor := environment.NewCommandEnvProcessor(nil) // 実際のテストでは適切なfilterを渡す
+    expander := NewVariableExpander(envProcessor)
     ctx := context.Background()
     env := map[string]string{
         "HOME": "/home/user",

@@ -51,7 +51,7 @@ flowchart TD
 
     %% Assign classes: data nodes vs process nodes
     class A,F data;
-    class B,C,H,I,J,D,E,K,L process;
+    class B,C,D,E,K,L process;
 
 ```
 
