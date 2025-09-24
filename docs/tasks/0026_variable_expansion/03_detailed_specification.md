@@ -51,8 +51,14 @@ type VariableParser interface {
 
 // CircularReferenceDetector は循環参照検出インターフェース
 type CircularReferenceDetector interface {
-    DetectCircularReference(env map[string]string) error
+    DetectCircularReference(env map[string]string) (*CircularReferenceResult, error)
     BuildDependencyGraph(env map[string]string) (*DependencyGraph, error)
+}
+
+// CircularReferenceResult は循環参照検出結果
+type CircularReferenceResult struct {
+    HasCycle bool
+    Cycle    []string // 循環参照のチェーン（検出された場合）
 }
 
 // VariableRef は変数参照の詳細情報
@@ -78,13 +84,21 @@ type DependencyGraph struct {
     Edges map[string][]string
 }
 
-// GraphNode はグラフのノード
+// GraphNode はグラフのノード（3色DFS用）
 type GraphNode struct {
     Name         string
     Dependencies []string
-    Visited      bool
-    InStack      bool
+    Color        NodeColor  // 3色DFSのための色情報
 }
+
+// NodeColor は3色DFSアルゴリズムのノード状態
+type NodeColor int
+
+const (
+    White NodeColor = iota // 未訪問
+    Gray                  // 訪問中（スタックに含まれる）
+    Black                 // 訪問完了
+)
 
 // ExpansionContext は展開処理のコンテキスト
 type ExpansionContext struct {
@@ -479,21 +493,31 @@ func NewCircularReferenceDetector(maxDepth int) CircularReferenceDetector {
     }
 }
 
-// DetectCircularReference は循環参照を検出
-func (d *circularReferenceDetector) DetectCircularReference(env map[string]string) error {
+// DetectCircularReference は循環参照を検出し、結果を返す
+func (d *circularReferenceDetector) DetectCircularReference(env map[string]string) (*CircularReferenceResult, error) {
     graph, err := d.BuildDependencyGraph(env)
     if err != nil {
-        return err
+        return nil, err
     }
 
-    // DFS で循環参照を検出
+    // 全ノードを白色で初期化
+    for _, node := range graph.Nodes {
+        node.Color = White
+    }
+
+    // 各白色ノードに対してDFSを実行
     for nodeName := range graph.Nodes {
-        if err := d.dfsDetectCycle(graph, nodeName, []string{}); err != nil {
-            return err
+        if graph.Nodes[nodeName].Color == White {
+            if cycle := d.dfsDetectCycle(graph, nodeName, []string{}); cycle != nil {
+                return &CircularReferenceResult{
+                    HasCycle: true,
+                    Cycle:    cycle,
+                }, nil
+            }
         }
     }
 
-    return nil
+    return &CircularReferenceResult{HasCycle: false}, nil
 }
 
 // BuildDependencyGraph は依存関係グラフを構築
@@ -510,8 +534,7 @@ func (d *circularReferenceDetector) BuildDependencyGraph(env map[string]string) 
         node := &GraphNode{
             Name:         name,
             Dependencies: []string{},
-            Visited:      false,
-            InStack:      false,
+            Color:        White,
         }
         graph.Nodes[name] = node
 
@@ -531,99 +554,58 @@ func (d *circularReferenceDetector) BuildDependencyGraph(env map[string]string) 
     return graph, nil
 }
 
-// dfsDetectCycle は深度優先探索で循環参照を検出
-func (d *circularReferenceDetector) dfsDetectCycle(graph *DependencyGraph, nodeName string, path []string) error {
+// dfsDetectCycle は3色DFSで循環参照を検出し、循環チェーンを返す
+func (d *circularReferenceDetector) dfsDetectCycle(graph *DependencyGraph, nodeName string, path []string) []string {
     node, exists := graph.Nodes[nodeName]
     if !exists {
         // 存在しない変数は循環参照の対象外
         return nil
     }
 
-    // 既に処理済みの場合はスキップ
-    if node.Visited {
+    // 最大深度チェック
+    if len(path) >= d.maxDepth {
+        // 最大深度エラーは上位レイヤーで処理
+        return []string{fmt.Sprintf("MAX_DEPTH_EXCEEDED:%s", nodeName)}
+    }
+
+    // グレー色のノードに到達した場合は循環参照を検出
+    if node.Color == Gray {
+        // 循環の開始点を見つける
+        cycleStart := -1
+        for i, pathNode := range path {
+            if pathNode == nodeName {
+                cycleStart = i
+                break
+            }
+        }
+        if cycleStart >= 0 {
+            cycle := make([]string, len(path[cycleStart:])+1)
+            copy(cycle, path[cycleStart:])
+            cycle[len(cycle)-1] = nodeName
+            return cycle
+        }
+        return []string{nodeName} // 単一ノードの自己参照
+    }
+
+    // 黒色のノードは既に処理済み
+    if node.Color == Black {
         return nil
     }
 
-    // 現在のパスに含まれている場合は循環参照
-    for _, pathNode := range path {
-        if pathNode == nodeName {
-            cycle := append(path, nodeName)
-            return NewCircularReferenceError(nodeName, cycle)
-        }
-    }
-
-    // 最大深度チェック
-    if len(path) >= d.maxDepth {
-        return &ExpansionError{
-            Type:    ErrorTypeMaxDepthExceeded,
-            Message: fmt.Sprintf("maximum nesting depth %d exceeded at variable '%s'", d.maxDepth, nodeName),
-            Context: ErrorContext{Variable: nodeName},
-        }
-    }
-
-    // 現在のノードをパスに追加して依存関係を探索
+    // ノードを灰色に変更（訪問中）
+    node.Color = Gray
     newPath := append(path, nodeName)
+
+    // 依存関係を探索
     for _, dependency := range node.Dependencies {
-        if err := d.dfsDetectCycle(graph, dependency, newPath); err != nil {
-            return err
+        if cycle := d.dfsDetectCycle(graph, dependency, newPath); cycle != nil {
+            return cycle
         }
     }
 
-    // 処理済みとしてマーク
-    node.Visited = true
+    // ノードを黒色に変更（訪問完了）
+    node.Color = Black
     return nil
-}
-
-// GetCircularReferenceChain は循環参照のチェーンを取得
-func (d *circularReferenceDetector) GetCircularReferenceChain(env map[string]string, startVar string) ([]string, error) {
-    visited := make(map[string]bool)
-    stack := []string{}
-
-    return d.findCycle(env, startVar, visited, stack)
-}
-
-// findCycle は循環参照のチェーンを再帰的に探索
-func (d *circularReferenceDetector) findCycle(env map[string]string, current string, visited map[string]bool, stack []string) ([]string, error) {
-    // 既にスタックに含まれている場合は循環参照
-    for i, stackVar := range stack {
-        if stackVar == current {
-            return stack[i:], nil
-        }
-    }
-
-    // 既に訪問済みの場合は終了
-    if visited[current] {
-        return nil, nil
-    }
-
-    visited[current] = true
-    stack = append(stack, current)
-
-    // 環境変数値を取得
-    value, exists := env[current]
-    if !exists {
-        return nil, nil
-    }
-
-    // 値に含まれる変数参照を解析
-    parser := NewVariableParser()
-    refs, err := parser.ExtractVariables(value)
-    if err != nil {
-        return nil, err
-    }
-
-    // 各依存変数について再帰的に探索
-    for _, ref := range refs {
-        cycle, err := d.findCycle(env, ref.Name, visited, stack)
-        if err != nil {
-            return nil, err
-        }
-        if cycle != nil {
-            return cycle, nil
-        }
-    }
-
-    return nil, nil
 }
 ```
 
@@ -702,9 +684,14 @@ func (e *variableExpander) ExpandCommand(ctx context.Context, cmd string, env ma
     }
 
     // 循環参照チェック
-    if err := e.circularDetector.DetectCircularReference(expandEnv); err != nil {
+    result, err := e.circularDetector.DetectCircularReference(expandEnv)
+    if err != nil {
         e.metrics.ErrorCount++
-        return "", fmt.Errorf("circular reference detected: %w", err)
+        return "", fmt.Errorf("circular reference detection failed: %w", err)
+    }
+    if result.HasCycle {
+        e.metrics.ErrorCount++
+        return "", NewCircularReferenceError(result.Cycle[0], result.Cycle)
     }
 
     // 変数展開実行
@@ -773,9 +760,14 @@ func (e *variableExpander) ExpandArgs(ctx context.Context, args []string, env ma
 
     // 循環参照チェック
     if len(expandEnv) > 0 {
-        if err := e.circularDetector.DetectCircularReference(expandEnv); err != nil {
+        result, err := e.circularDetector.DetectCircularReference(expandEnv)
+        if err != nil {
             e.metrics.ErrorCount++
-            return nil, fmt.Errorf("circular reference detected: %w", err)
+            return nil, fmt.Errorf("circular reference detection failed: %w", err)
+        }
+        if result.HasCycle {
+            e.metrics.ErrorCount++
+            return nil, NewCircularReferenceError(result.Cycle[0], result.Cycle)
         }
     }
 
@@ -1107,9 +1099,10 @@ func TestVariableExpander_ExpandCommand(t *testing.T) {
 
 func TestCircularReferenceDetector(t *testing.T) {
     tests := []struct {
-        name      string
-        env       map[string]string
-        expectErr bool
+        name          string
+        env           map[string]string
+        expectCycle   bool
+        expectedCycle []string
     }{
         {
             name: "no circular reference",
@@ -1118,7 +1111,7 @@ func TestCircularReferenceDetector(t *testing.T) {
                 "B": "$A",
                 "C": "$B",
             },
-            expectErr: false,
+            expectCycle: false,
         },
         {
             name: "direct circular reference",
@@ -1126,7 +1119,8 @@ func TestCircularReferenceDetector(t *testing.T) {
                 "A": "$B",
                 "B": "$A",
             },
-            expectErr: true,
+            expectCycle:   true,
+            expectedCycle: []string{"A", "B", "A"},
         },
         {
             name: "indirect circular reference",
@@ -1135,7 +1129,16 @@ func TestCircularReferenceDetector(t *testing.T) {
                 "B": "$C",
                 "C": "$A",
             },
-            expectErr: true,
+            expectCycle:   true,
+            expectedCycle: []string{"A", "B", "C", "A"},
+        },
+        {
+            name: "self reference",
+            env: map[string]string{
+                "A": "$A",
+            },
+            expectCycle:   true,
+            expectedCycle: []string{"A"},
         },
     }
 
@@ -1143,12 +1146,29 @@ func TestCircularReferenceDetector(t *testing.T) {
 
     for _, tt := range tests {
         t.Run(tt.name, func(t *testing.T) {
-            err := detector.DetectCircularReference(tt.env)
-            if tt.expectErr {
-                assert.Error(t, err)
-                assert.True(t, IsCircularReferenceError(err))
+            result, err := detector.DetectCircularReference(tt.env)
+            require.NoError(t, err)
+
+            assert.Equal(t, tt.expectCycle, result.HasCycle)
+
+            if tt.expectCycle {
+                assert.NotEmpty(t, result.Cycle)
+                // 循環の一部が期待されるサイクルに含まれることを確認
+                cycleFound := false
+                for _, expectedVar := range tt.expectedCycle {
+                    for _, actualVar := range result.Cycle {
+                        if expectedVar == actualVar {
+                            cycleFound = true
+                            break
+                        }
+                    }
+                    if cycleFound {
+                        break
+                    }
+                }
+                assert.True(t, cycleFound, "Expected cycle variables not found in result")
             } else {
-                assert.NoError(t, err)
+                assert.Empty(t, result.Cycle)
             }
         })
     }
