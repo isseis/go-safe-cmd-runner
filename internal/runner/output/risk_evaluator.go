@@ -4,6 +4,7 @@ package output
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -202,12 +203,10 @@ func (e *RiskEvaluator) checkPatternMatch(path string, patterns []string) string
 
 		// For basename, use prefix matching to catch legitimate variations
 		// This catches "passwd_backup.txt" and "id_rsa_backup" but not "user-id_rsa-backup.txt"
-		if strings.HasPrefix(lowerBasename, patternLower) {
-			// Additional check: ensure pattern is followed by separator or end of string
-			if len(lowerBasename) == len(patternLower) ||
-				(lowerBasename[len(patternLower)] == '_' || lowerBasename[len(patternLower)] == '.' || lowerBasename[len(patternLower)] == '-') {
-				return pattern
-			}
+		// Pattern: match if basename starts with pattern and is followed by separator or end of string
+		regexPattern := "^" + regexp.QuoteMeta(patternLower) + "($|[._-])"
+		if matched, _ := regexp.MatchString(regexPattern, lowerBasename); matched {
+			return pattern
 		}
 	}
 	return ""
