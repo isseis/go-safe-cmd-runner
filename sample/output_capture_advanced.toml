@@ -129,7 +129,7 @@ output = "custom_env_output.txt"
 name = "build_script_simulation"
 description = "Simulate build script with output capture"
 cmd = "echo"
-args = ["Build completed successfully in $BUILD_ENV environment"]
+args = ["Build completed successfully in ${BUILD_ENV} environment"] # Note: variable expansion is not yet implemented
 env = ["BUILD_ENV=staging"]
 output = "build_results.txt"
 
