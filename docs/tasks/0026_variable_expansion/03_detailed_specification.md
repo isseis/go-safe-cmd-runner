@@ -117,15 +117,7 @@ type ExpansionMetrics struct {
     ErrorCount          int64
     SecurityViolations  int64
 }
-type ExpansionMetrics struct {
-    TotalExpansions    int64
-    ExpansionDuration  time.Duration
-    VariableCount      int
-    MaxNestingDepth    int
-    CacheHitRatio      float64
-    ErrorCount         int64
-    SecurityViolations int64
-}
+
 ```
 
 #### 1.2.2 エラー型定義 (errors.go)
