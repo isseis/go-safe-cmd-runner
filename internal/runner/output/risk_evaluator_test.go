@@ -47,9 +47,9 @@ func TestRiskEvaluator_EvaluateOutputRisk(t *testing.T) {
 			name:             "high risk system directory",
 			outputPath:       "/var/log/system.log",
 			workDir:          "/tmp",
-			expectedRisk:     runnertypes.RiskLevelCritical,
-			expectedCategory: "sensitive_system_directory",
-			description:      "High risk system directory should be treated as critical",
+			expectedRisk:     runnertypes.RiskLevelHigh,
+			expectedCategory: "high_risk_system_directory",
+			description:      "High risk system directory should be high risk",
 		},
 		{
 			name:             "tmp directory",

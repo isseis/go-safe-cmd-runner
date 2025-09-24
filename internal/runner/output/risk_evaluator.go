@@ -96,10 +96,10 @@ func (e *RiskEvaluator) evaluateAbsolutePath(outputPath string) *RiskEvaluation 
 	highRiskPatterns := e.securityConfig.GetPathPatternsByRisk(runnertypes.RiskLevelHigh)
 	if matchedPattern := e.checkPatternMatch(outputPath, highRiskPatterns); matchedPattern != "" {
 		return &RiskEvaluation{
-			Level:    runnertypes.RiskLevelCritical, // Treat high-risk system directories as critical
-			Reason:   "Output path points to sensitive system directory",
+			Level:    runnertypes.RiskLevelHigh,
+			Reason:   "Output path points to high-risk system directory",
 			Pattern:  matchedPattern,
-			Category: "sensitive_system_directory",
+			Category: "high_risk_system_directory",
 		}
 	}
 
@@ -197,7 +197,7 @@ func (e *RiskEvaluator) CreateValidationError(eval *RiskEvaluation, maxAllowedRi
 	switch eval.Category {
 	case "path_traversal":
 		return ErrPathTraversalDetected
-	case "critical_system_directory", "sensitive_system_directory":
+	case "critical_system_directory", "high_risk_system_directory":
 		return fmt.Errorf("%w: %s (risk level: %s, max allowed: %s)",
 			ErrSensitiveSystemDirectory, eval.Pattern, eval.Level.String(), maxAllowedRisk.String())
 	case "suspicious_extension":

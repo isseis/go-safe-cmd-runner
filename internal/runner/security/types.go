@@ -239,18 +239,27 @@ func DefaultConfig() *Config {
 			"/var/log", "/boot", "/sys", "/proc", "/dev", "/lib", "/lib64", "/root",
 		},
 		OutputCriticalPathPatterns: []string{
+			// Specific critical system files
 			"/etc/passwd", "/etc/shadow", "/etc/sudoers",
+			// Critical system directories
 			"/boot/", "/sys/", "/proc/", "/root/",
+			"/etc/", "/usr/bin/", "/usr/sbin/",
+			"/bin/", "/sbin/", "/lib/", "/lib64/",
+			// SSH and authentication files
 			"authorized_keys", "id_rsa", "id_ed25519",
 			".ssh/", "private_key", "secret_key",
+			// Shell configuration files
 			".bashrc", ".zshrc", ".login", ".profile",
+			// Security-sensitive application configs
+			".gnupg/", ".aws/credentials", ".kube/config", ".docker/config.json",
+			// Cryptocurrency and keystore files
+			"wallet.dat", "keystore",
 		},
 		OutputHighRiskPathPatterns: []string{
-			"/etc/", "/var/log/", "/usr/bin/", "/usr/sbin/",
-			"/bin/", "/sbin/", "/lib/", "/lib64/",
-			".gnupg/", "wallet.dat", "keystore",
-			".git/", ".env", ".aws/credentials",
-			".kube/config", ".docker/config.json",
+			// System log directory (less critical than system binaries)
+			"/var/log/",
+			// Version control and environment files (sensitive but not system-critical)
+			".git/", ".env",
 		},
 		SuspiciousExtensions: []string{
 			".exe", ".bat", ".cmd", ".com", ".scr", ".vbs", ".js", ".jar",

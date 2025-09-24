@@ -372,9 +372,9 @@ func TestConfigValidator_validateOutputPath(t *testing.T) {
 			expectError: true,
 		},
 		{
-			name:        "tmp path (medium risk, blocked by strict validation)",
+			name:        "tmp path (medium risk, blocked by default low risk limit)",
 			path:        "/tmp/output.txt",
-			expectError: true, // Changed: /tmp is medium risk, blocked by low risk limit
+			expectError: true, // /tmp is medium risk, blocked by default low risk limit
 		},
 	}
 
@@ -585,7 +585,7 @@ func TestConfigValidator_IntegratedPatternDetection(t *testing.T) {
 		{
 			name:         "high risk directory from security config",
 			path:         "/var/log/system.log",
-			expectedRisk: runnertypes.RiskLevelCritical, // Treated as critical for system directories
+			expectedRisk: runnertypes.RiskLevelHigh,
 			description:  "Should detect /var/log/ from OutputHighRiskPathPatterns",
 		},
 		{

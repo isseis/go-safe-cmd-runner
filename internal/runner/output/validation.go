@@ -103,6 +103,8 @@ func (v *ConfigValidator) ValidateCommands(commands []runnertypes.Command, globa
 	outputPaths := make(map[string]*runnertypes.Command)
 
 	for i := range commands {
+		// Intentionally take the address of the slice element to avoid the loop variable capture issue.
+		// Do NOT use 'for _, cmd := range commands' and then take '&cmd', as that would be incorrect.
 		cmd := &commands[i]
 		// Validate individual command
 		if err := v.ValidateCommand(cmd, globalConfig); err != nil {
