@@ -143,8 +143,8 @@ type ErrorContext struct {
 }
 
 func (e *ExpansionError) Error() string {
-    return fmt.Sprintf("variable expansion error: %s (type: %d, variable: %s)",
-                      e.Message, e.Type, e.Context.Variable)
+    return fmt.Sprintf("variable expansion error: %s (type: %s, variable: %s)",
+                      e.Message, e.Type.String(), e.Context.Variable)
 }
 
 func (e *ExpansionError) Unwrap() error {
@@ -216,6 +216,7 @@ package expansion
 
 import (
     "regexp"
+    "sort"
     "strings"
 )
 
