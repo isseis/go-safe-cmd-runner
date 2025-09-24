@@ -137,10 +137,11 @@ type VariableParser interface {
 }
 
 type VariableRef struct {
-    Name     string
-    Position int
-    Length   int
-    Format   VariableFormat // $VAR or ${VAR}
+    Name       string
+    StartPos   int
+    EndPos     int
+    Format     VariableFormat
+    FullMatch  string
 }
 ```
 
