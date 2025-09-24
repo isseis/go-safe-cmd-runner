@@ -9,6 +9,9 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
 )
 
+// MaxIterations defines the maximum number of expansion iterations to prevent infinite loops
+const MaxIterations = 15
+
 // Unified regular expression approach: handle both formats simultaneously using named groups
 var (
 	// Both formats unified pattern: $VAR or ${VAR}
@@ -42,7 +45,7 @@ func (p *variableParser) ReplaceVariables(text string, resolver VariableResolver
 	}
 
 	result := text
-	maxIterations := 15 // Extended from existing 10 to 15
+	maxIterations := MaxIterations
 	var resolutionError error
 
 	for i := 0; i < maxIterations && strings.Contains(result, "$"); i++ {

@@ -15,6 +15,9 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
+// MaxVariableExpansionIterations defines the maximum number of expansion iterations to prevent infinite loops
+const MaxVariableExpansionIterations = 15
+
 // ErrCircularReference is returned when a circular variable reference is detected.
 var ErrCircularReference = errors.New("circular variable reference detected")
 
@@ -108,7 +111,7 @@ func (p *CommandEnvProcessor) resolveVariableReferencesForCommandEnv(
 	}
 
 	result := value
-	maxIterations := 15 // Prevent infinite loops, expanded for practical nesting depth
+	maxIterations := MaxVariableExpansionIterations
 	var resolutionError error
 
 	for i := 0; i < maxIterations && strings.Contains(result, "${"); i++ {
@@ -213,7 +216,7 @@ func (p *CommandEnvProcessor) ResolveVariableReferencesUnified(
 	}
 
 	result := value
-	maxIterations := 15 // Expanded iteration limit for practical nesting depth
+	maxIterations := MaxVariableExpansionIterations
 	var resolutionError error
 
 	for i := 0; i < maxIterations && strings.Contains(result, "$"); i++ {
