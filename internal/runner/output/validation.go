@@ -60,10 +60,8 @@ func (v *ConfigValidator) ValidateGlobalConfig(globalConfig *runnertypes.GlobalC
 		return fmt.Errorf("%w: %d", ErrNegativeMaxOutputSize, globalConfig.MaxOutputSize)
 	}
 
-	// MaxOutputSize should be positive (default should be set during config loading)
-	if globalConfig.MaxOutputSize == 0 {
-		return fmt.Errorf("%w: max_output_size must be positive", ErrNegativeMaxOutputSize)
-	}
+	// MaxOutputSize 0 is valid (will use default), but negative values are not allowed
+	// Note: MaxOutputSize 0 is handled by setting default in config loader
 
 	if globalConfig.MaxOutputSize > AbsoluteMaxOutputSize {
 		return fmt.Errorf("%w (%d): %d", ErrMaxOutputSizeExceeded,

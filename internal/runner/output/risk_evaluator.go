@@ -130,22 +130,19 @@ func (e *RiskEvaluator) evaluateAbsolutePath(outputPath string) *RiskEvaluation 
 // focuses on content-based validation (file extensions and suspicious patterns)
 // rather than location-based validation, which is the inverse of absolute path evaluation.
 func (e *RiskEvaluator) evaluateRelativePath(outputPath string) *RiskEvaluation {
-	lowerPath := strings.ToLower(outputPath)
-
-	// Check for suspicious file patterns
+	// Check for suspicious file patterns using improved matching logic
 	suspiciousPatterns := e.securityConfig.GetSuspiciousFilePatterns()
-	for _, pattern := range suspiciousPatterns {
-		if strings.Contains(lowerPath, strings.ToLower(pattern)) {
-			return &RiskEvaluation{
-				Level:    runnertypes.RiskLevelHigh,
-				Reason:   "Output path contains suspicious file pattern",
-				Pattern:  pattern,
-				Category: "suspicious_file_pattern",
-			}
+	if matchedPattern := e.checkPatternMatch(outputPath, suspiciousPatterns); matchedPattern != "" {
+		return &RiskEvaluation{
+			Level:    runnertypes.RiskLevelHigh,
+			Reason:   "Output path contains suspicious file pattern",
+			Pattern:  matchedPattern,
+			Category: "suspicious_file_pattern",
 		}
 	}
 
 	// Check for suspicious file extensions
+	lowerPath := strings.ToLower(outputPath)
 	suspiciousExtensions := e.securityConfig.GetSuspiciousExtensions()
 	for _, ext := range suspiciousExtensions {
 		if strings.HasSuffix(lowerPath, strings.ToLower(ext)) {
@@ -168,19 +165,47 @@ func (e *RiskEvaluator) evaluateRelativePath(outputPath string) *RiskEvaluation 
 
 // checkPatternMatch checks if a path matches any of the given patterns using case-insensitive comparison
 // Returns the matching pattern if found, empty string if no match
+//
+// Matching Logic:
+// 1. Directory patterns (ending with "/"): Use prefix matching
+// 2. Absolute file paths (starting with "/"): Use exact path matching
+// 3. Relative file patterns: Match against the base filename
 func (e *RiskEvaluator) checkPatternMatch(path string, patterns []string) string {
 	lowerPath := strings.ToLower(path)
+	lowerBasename := strings.ToLower(filepath.Base(path))
 
 	for _, pattern := range patterns {
 		patternLower := strings.ToLower(pattern)
-		// Only check directory patterns (ending with /) using prefix matching
+
+		// Directory patterns (ending with "/") - use prefix matching
 		if strings.HasSuffix(patternLower, "/") {
 			if strings.HasPrefix(lowerPath, patternLower) {
 				return pattern
 			}
-		} else {
-			// For file patterns, use contains matching
-			if strings.Contains(lowerPath, patternLower) {
+			continue
+		}
+
+		// Absolute file path patterns (starting with "/") - use exact path matching
+		if strings.HasPrefix(patternLower, "/") {
+			if lowerPath == patternLower {
+				return pattern
+			}
+			continue
+		}
+
+		// Relative file patterns - match against both full path and basename
+		// This handles cases like "id_rsa", "authorized_keys", ".docker/config.json", etc.
+		// Use exact matching for full path, and word-boundary aware matching for basename
+		if lowerPath == patternLower {
+			return pattern
+		}
+
+		// For basename, use prefix matching to catch legitimate variations
+		// This catches "passwd_backup.txt" and "id_rsa_backup" but not "user-id_rsa-backup.txt"
+		if strings.HasPrefix(lowerBasename, patternLower) {
+			// Additional check: ensure pattern is followed by separator or end of string
+			if len(lowerBasename) == len(patternLower) ||
+				(lowerBasename[len(patternLower)] == '_' || lowerBasename[len(patternLower)] == '.' || lowerBasename[len(patternLower)] == '-') {
 				return pattern
 			}
 		}

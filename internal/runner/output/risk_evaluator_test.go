@@ -69,7 +69,7 @@ func TestRiskEvaluator_EvaluateOutputRisk(t *testing.T) {
 		},
 		{
 			name:             "suspicious file pattern",
-			outputPath:       "id_rsa_backup",
+			outputPath:       "id_rsa",
 			workDir:          "/tmp",
 			expectedRisk:     runnertypes.RiskLevelHigh,
 			expectedCategory: "suspicious_file_pattern",
@@ -265,4 +265,116 @@ func TestRiskEvaluator_WithCustomSecurityConfig(t *testing.T) {
 		require.Equal(t, "suspicious_extension", evaluation.Category)
 		require.Equal(t, ".custom", evaluation.Pattern)
 	})
+}
+
+func TestRiskEvaluator_ImprovedPatternMatching(t *testing.T) {
+	evaluator := NewRiskEvaluator(nil)
+
+	tests := []struct {
+		name             string
+		outputPath       string
+		expectedRisk     runnertypes.RiskLevel
+		expectedCategory string
+		expectedPattern  string
+		description      string
+	}{
+		// Test cases that should be detected (true positives)
+		{
+			name:             "exact absolute file match",
+			outputPath:       "/etc/passwd",
+			expectedRisk:     runnertypes.RiskLevelCritical,
+			expectedCategory: "critical_system_directory",
+			expectedPattern:  "/etc/passwd",
+			description:      "Exact match for /etc/passwd should be detected",
+		},
+		{
+			name:             "directory prefix match",
+			outputPath:       "/etc/some-config.conf",
+			expectedRisk:     runnertypes.RiskLevelCritical,
+			expectedCategory: "critical_system_directory",
+			expectedPattern:  "/etc/",
+			description:      "Files in /etc/ directory should be detected",
+		},
+		{
+			name:             "relative file basename match",
+			outputPath:       "backup/id_rsa",
+			expectedRisk:     runnertypes.RiskLevelHigh,
+			expectedCategory: "suspicious_file_pattern",
+			expectedPattern:  "id_rsa",
+			description:      "SSH key files should be detected by basename",
+		},
+		{
+			name:             "nested relative file match",
+			outputPath:       "project/.ssh/authorized_keys",
+			expectedRisk:     runnertypes.RiskLevelHigh,
+			expectedCategory: "suspicious_file_pattern",
+			expectedPattern:  "authorized_keys",
+			description:      "SSH authorized_keys should be detected by basename",
+		},
+
+		// Test cases that should NOT be detected (avoid false positives)
+		{
+			name:             "false positive - passwd in path",
+			outputPath:       "/home/user/project-etc-passwd/file.txt",
+			expectedRisk:     runnertypes.RiskLevelHigh,
+			expectedCategory: "absolute_path",
+			expectedPattern:  "",
+			description:      "Path containing 'passwd' substring should not match /etc/passwd pattern",
+		},
+		{
+			name:             "false positive - id_rsa in path",
+			outputPath:       "backup/user-id_rsa-backup.txt",
+			expectedRisk:     runnertypes.RiskLevelLow,
+			expectedCategory: "safe_relative_path",
+			expectedPattern:  "",
+			description:      "File containing 'id_rsa' substring should not match unless it's the exact basename",
+		},
+		{
+			name:             "false positive - etc in path component",
+			outputPath:       "/home/user/project/etc-configs/settings.conf",
+			expectedRisk:     runnertypes.RiskLevelHigh,
+			expectedCategory: "absolute_path",
+			expectedPattern:  "",
+			description:      "Path containing 'etc' in directory name should not match /etc/ pattern",
+		},
+		{
+			name:             "false positive - bashrc in filename",
+			outputPath:       "my-bashrc-backup.txt",
+			expectedRisk:     runnertypes.RiskLevelLow,
+			expectedCategory: "safe_relative_path",
+			expectedPattern:  "",
+			description:      "File containing 'bashrc' substring should not match unless it's exactly '.bashrc'",
+		},
+
+		// Edge cases
+		{
+			name:             "case insensitive exact match",
+			outputPath:       "/ETC/PASSWD",
+			expectedRisk:     runnertypes.RiskLevelCritical,
+			expectedCategory: "critical_system_directory",
+			expectedPattern:  "/etc/passwd",
+			description:      "Case insensitive matching should work for exact paths",
+		},
+		{
+			name:             "case insensitive basename match",
+			outputPath:       "backup/ID_RSA",
+			expectedRisk:     runnertypes.RiskLevelHigh,
+			expectedCategory: "suspicious_file_pattern",
+			expectedPattern:  "id_rsa",
+			description:      "Case insensitive matching should work for basenames",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			evaluation := evaluator.EvaluateOutputRisk(tt.outputPath)
+
+			require.Equal(t, tt.expectedRisk, evaluation.Level, tt.description)
+			require.Equal(t, tt.expectedCategory, evaluation.Category, "Category should match expected")
+
+			if tt.expectedPattern != "" {
+				require.Equal(t, tt.expectedPattern, evaluation.Pattern, "Pattern should match expected")
+			}
+		})
+	}
 }
