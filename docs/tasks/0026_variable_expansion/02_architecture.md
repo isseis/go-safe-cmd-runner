@@ -56,7 +56,6 @@ graph TB
         subgraph "internal/runner/expansion"
             A[expander.go - 展開エンジン]
             B[parser.go - 変数パーサー]
-            C[validator.go - セキュリティ検証]
             D[detector.go - 循環参照検出]
         end
 
@@ -66,6 +65,10 @@ graph TB
 
         subgraph "internal/runner/environment"
             F[processor.go - 既存環境変数処理]
+        end
+
+        subgraph "internal/runner/security"
+            C[validator.go - 既存セキュリティ検証]
         end
 
         subgraph "internal/runner/executor"
@@ -151,23 +154,7 @@ type VariableRef struct {
 - パース結果のメタデータ提供
 - 変数形式の妥当性検証（prefix_$VAR_suffix形式は推奨されない）
 
-#### 3.1.3 Security Validator (internal/runner/expansion/validator.go)
-**責務**: セキュリティ検証
-
-**主要インターフェース**:
-```go
-type SecurityValidator interface {
-    ValidateVariables(variables []string, allowlist []string, commandEnv map[string]string) error
-    ValidateExpandedCommand(cmd string) error
-}
-```
-
-**主要機能**:
-- allowlist検証
-- Command.Env変数の優先処理
-- 展開後のコマンドパス検証
-
-#### 3.1.4 Circular Reference Detector (internal/runner/expansion/detector.go)
+#### 3.1.3 Circular Reference Detector (internal/runner/expansion/detector.go)
 **責務**: 循環参照の検出
 
 **主要インターフェース**:
@@ -184,12 +171,22 @@ type CircularReferenceDetector interface {
 
 ### 3.2 既存コンポーネントとの統合
 
-#### 3.2.1 Config Parser拡張
+#### 3.2.1 Security Validator連携 (internal/runner/security/validator.go)
+**既存機能活用**:
+- `ValidateVariableValue(value string) error` - 変数値の安全性検証
+- `ValidateAllEnvironmentVars(envVars map[string]string) error` - allowlist検証への統合
+
+**拡張点**:
+- 変数展開前の変数名検証
+- 展開後のコマンドパス検証
+- Command.Env変数の優先処理ロジック
+
+#### 3.2.2 Config Parser拡張
 **変更点**:
 - Command構造体の処理時にVariable Expanderを呼び出し
 - 展開処理の挿入ポイント設計
 
-#### 3.2.2 Environment Processor連携
+#### 3.2.3 Environment Processor連携
 **連携方法**:
 - 既存のCommand.Env処理結果を利用
 - 優先順位制御の実装

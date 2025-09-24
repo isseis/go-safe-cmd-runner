@@ -8,11 +8,13 @@
 internal/runner/expansion/
 ├── expander.go          # 変数展開エンジンのメイン実装
 ├── parser.go           # 変数パーサー実装
-├── validator.go        # セキュリティ検証実装
 ├── detector.go         # 循環参照検出実装
 ├── types.go           # 型定義とインターフェース
 ├── errors.go          # エラー型定義
 └── expansion_test.go  # 統合テスト
+
+# 既存コンポーネント活用
+internal/runner/security/validator.go  # 既存のセキュリティ検証を拡張
 ```
 
 ### 1.2 型定義とインターフェース
@@ -40,11 +42,12 @@ type VariableParser interface {
     ReplaceVariables(text string, variables map[string]string) (string, error)
 }
 
-// SecurityValidator はセキュリティ検証インターフェース
-type SecurityValidator interface {
-    ValidateVariables(variables []string, allowlist []string, commandEnv map[string]string) error
-    ValidateExpandedCommand(cmd string) error
-}
+// 既存のSecurity Validatorを活用
+// internal/runner/security パッケージの Validator 型を使用
+// 変数展開機能に必要なメソッド:
+// - ValidateVariableValue(value string) error
+// - ValidateAllEnvironmentVars(envVars map[string]string) error
+// 必要に応じて拡張メソッドを追加
 
 // CircularReferenceDetector は循環参照検出インターフェース
 type CircularReferenceDetector interface {
@@ -91,6 +94,15 @@ type ExpansionContext struct {
 }
 
 // ExpansionMetrics は性能メトリクス
+type ExpansionMetrics struct {
+    TotalExpansions     int64
+    ExpansionDuration   time.Duration
+    VariableCount       int
+    MaxNestingDepth     int
+    CacheHitRatio       float64
+    ErrorCount          int64
+    SecurityViolations  int64
+}
 type ExpansionMetrics struct {
     TotalExpansions    int64
     ExpansionDuration  time.Duration
@@ -349,33 +361,33 @@ func ValidateVariableName(name string) error {
 }
 ```
 
-### 1.4 セキュリティ検証仕様 (validator.go)
+### 1.4 既存セキュリティ検証との統合 (security/validator.go)
 
-#### 1.4.1 検証ロジック実装
+#### 1.4.1 既存コンポーネント活用
 
 ```go
 package expansion
 
 import (
-    "os"
-    "path/filepath"
-    "strings"
+    "fmt"
+    "github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
-// securityValidator はセキュリティ検証の実装
-type securityValidator struct {
-    pathValidator PathValidator // 既存のパス検証器
+// 既存の security.Validator を活用して変数検証を実行
+type SecurityValidationAdapter struct {
+    validator *security.Validator
 }
 
-// NewSecurityValidator は新しいセキュリティ検証器を作成
-func NewSecurityValidator(pathValidator PathValidator) SecurityValidator {
-    return &securityValidator{
-        pathValidator: pathValidator,
+// NewSecurityValidationAdapter は既存の Validator をラップ
+func NewSecurityValidationAdapter(validator *security.Validator) *SecurityValidationAdapter {
+    return &SecurityValidationAdapter{
+        validator: validator,
     }
 }
 
 // ValidateVariables は変数のセキュリティ検証
-func (v *securityValidator) ValidateVariables(variables []string, allowlist []string, commandEnv map[string]string) error {
+func (a *SecurityValidationAdapter) ValidateVariables(variables []string, allowlist []string, commandEnv map[string]string) error {
+    // allowlist 検証ロジック
     allowlistMap := make(map[string]bool)
     for _, allowed := range allowlist {
         allowlistMap[allowed] = true
@@ -393,51 +405,22 @@ func (v *securityValidator) ValidateVariables(variables []string, allowlist []st
         }
 
         // どちらにも含まれていない場合はエラー
-        return NewSecurityViolationError(variable,
-            "variable not in allowlist and not defined in command environment")
+        return fmt.Errorf("variable '%s' not in allowlist and not defined in command environment", variable)
     }
 
     return nil
 }
 
+// ValidateVariableValues は変数値の安全性を検証
+func (a *SecurityValidationAdapter) ValidateVariableValues(envVars map[string]string) error {
+    // 既存の ValidateAllEnvironmentVars を使用
+    return a.validator.ValidateAllEnvironmentVars(envVars)
+}
+
 // ValidateExpandedCommand は展開後のコマンドパスを検証
-func (v *securityValidator) ValidateExpandedCommand(cmd string) error {
-    if cmd == "" {
-        return &ExpansionError{
-            Type:    ErrorTypePathValidation,
-            Message: "expanded command path is empty",
-        }
-    }
-
-    // 絶対パスでない場合はエラー
-    if !filepath.IsAbs(cmd) {
-        return &ExpansionError{
-            Type:    ErrorTypePathValidation,
-            Message: fmt.Sprintf("expanded command path '%s' is not absolute", cmd),
-        }
-    }
-
-    // ファイル存在チェック
-    if _, err := os.Stat(cmd); err != nil {
-        return &ExpansionError{
-            Type:    ErrorTypePathValidation,
-            Message: fmt.Sprintf("expanded command path '%s' does not exist", cmd),
-            Cause:   err,
-        }
-    }
-
-    // 既存のパス検証器による検証
-    if v.pathValidator != nil {
-        if err := v.pathValidator.ValidateCommandPath(cmd); err != nil {
-            return &ExpansionError{
-                Type:    ErrorTypePathValidation,
-                Message: fmt.Sprintf("expanded command path '%s' failed security validation", cmd),
-                Cause:   err,
-            }
-        }
-    }
-
-    return nil
+func (a *SecurityValidationAdapter) ValidateExpandedCommand(cmd string) error {
+    // 既存の ValidateCommand を使用
+    return a.validator.ValidateCommand(cmd)
 }
 
 // ValidateVariableValue は変数値の安全性をチェック
@@ -661,17 +644,17 @@ import (
 // variableExpander は変数展開エンジンの実装
 type variableExpander struct {
     parser            VariableParser
-    validator         SecurityValidator
+    validator         *SecurityValidationAdapter  // 既存Validatorのアダプター
     circularDetector  CircularReferenceDetector
     metrics           *ExpansionMetrics
     maxDepth          int
 }
 
 // NewVariableExpander は新しい変数展開エンジンを作成
-func NewVariableExpander(pathValidator PathValidator, maxDepth int) VariableExpander {
+func NewVariableExpander(securityValidator *security.Validator, maxDepth int) VariableExpander {
     return &variableExpander{
         parser:           NewVariableParser(),
-        validator:        NewSecurityValidator(pathValidator),
+        validator:        NewSecurityValidationAdapter(securityValidator),
         circularDetector: NewCircularReferenceDetector(maxDepth),
         metrics:          &ExpansionMetrics{},
         maxDepth:         maxDepth,
