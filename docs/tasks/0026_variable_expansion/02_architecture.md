@@ -368,11 +368,16 @@ flowchart TD
 ### 8.1 テスト階層
 
 ```mermaid
-pyramid
-    title テストピラミッド
-    tier1 : 統合テスト
-    tier2 : コンポーネントテスト
-    tier3 : 単体テスト
+flowchart TB
+    classDef tier1 fill:#ffb86b,stroke:#333,color:#000;
+    classDef tier2 fill:#ffd59a,stroke:#333,color:#000;
+    classDef tier3 fill:#c3f08a,stroke:#333,color:#000;
+
+    Tier1["統合テスト"]:::tier1
+    Tier2["コンポーネントテスト"]:::tier2
+    Tier3["単体テスト"]:::tier3
+
+    Tier3 --> Tier2 --> Tier1
 ```
 
 ### 8.2 テストカテゴリ
