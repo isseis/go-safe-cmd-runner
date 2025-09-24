@@ -59,7 +59,7 @@
   - [ ] `simpleVariableRegex` 正規表現追加
   - [ ] `ResolveVariableReferencesUnified` メソッド追加
   - [ ] `replaceSimpleVariables` メソッド追加
-  - [ ] 反復上限を 10 → 15 に拡張
+  - [ ] 反復上限を 10 → 15 に拡張（実用的なネスト深度に対し十分なマージンを確保するため）
   - [ ] 両形式統一処理の実装
 - [ ] 拡張されたプロセッサーのテスト作成
   - [ ] 既存テストケースの動作確認
