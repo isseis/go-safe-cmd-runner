@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -254,7 +255,7 @@ func TestDiskSpaceExhaustionAttack(t *testing.T) {
 	cmd := runnertypes.Command{
 		Name:   "disk_exhaustion_test",
 		Cmd:    "sh",
-		Args:   []string{"-c", "yes 'A' | head -c " + string(rune(largeSize))},
+		Args:   []string{"-c", "yes 'A' | head -c " + strconv.Itoa(largeSize)},
 		Output: outputPath,
 	}
 
