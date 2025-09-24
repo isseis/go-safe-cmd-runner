@@ -372,9 +372,9 @@ func TestConfigValidator_validateOutputPath(t *testing.T) {
 			expectError: true,
 		},
 		{
-			name:        "safe /tmp path",
+			name:        "tmp path (medium risk, blocked by strict validation)",
 			path:        "/tmp/output.txt",
-			expectError: false,
+			expectError: true, // Changed: /tmp is medium risk, blocked by low risk limit
 		},
 	}
 
@@ -572,64 +572,60 @@ func TestConfigValidator_IntegratedPatternDetection(t *testing.T) {
 	validator := NewConfigValidator()
 
 	tests := []struct {
-		name        string
-		path        string
-		expectError bool
-		description string
+		name         string
+		path         string
+		expectedRisk runnertypes.RiskLevel
+		description  string
 	}{
 		{
-			name:        "critical system directory from security config",
-			path:        "/etc/passwd",
-			expectError: true,
-			description: "Should detect /etc/passwd from OutputCriticalPathPatterns",
+			name:         "critical system directory from security config",
+			path:         "/etc/passwd",
+			expectedRisk: runnertypes.RiskLevelCritical,
+			description:  "Should detect /etc/passwd from OutputCriticalPathPatterns",
 		},
 		{
-			name:        "high risk directory from security config",
-			path:        "/var/log/system.log",
-			expectError: true,
-			description: "Should detect /var/log/ from OutputHighRiskPathPatterns",
+			name:         "high risk directory from security config",
+			path:         "/var/log/system.log",
+			expectedRisk: runnertypes.RiskLevelCritical, // Treated as critical for system directories
+			description:  "Should detect /var/log/ from OutputHighRiskPathPatterns",
 		},
 		{
-			name:        "suspicious file pattern",
-			path:        "id_rsa_backup",
-			expectError: true,
-			description: "Should detect id_rsa pattern from GetSuspiciousFilePatterns",
+			name:         "suspicious file pattern",
+			path:         "id_rsa_backup",
+			expectedRisk: runnertypes.RiskLevelHigh,
+			description:  "Should detect id_rsa pattern from GetSuspiciousFilePatterns",
 		},
 		{
-			name:        "authorized_keys pattern",
-			path:        "home/user/.ssh/authorized_keys",
-			expectError: true,
-			description: "Should detect authorized_keys pattern",
+			name:         "authorized_keys pattern",
+			path:         "home/user/.ssh/authorized_keys",
+			expectedRisk: runnertypes.RiskLevelHigh,
+			description:  "Should detect authorized_keys pattern",
 		},
 		{
-			name:        "docker config pattern",
-			path:        ".docker/config.json",
-			expectError: true,
-			description: "Should detect docker config pattern",
+			name:         "docker config pattern",
+			path:         ".docker/config.json",
+			expectedRisk: runnertypes.RiskLevelHigh,
+			description:  "Should detect docker config pattern",
 		},
 		{
-			name:        "safe relative path",
-			path:        "logs/application.log",
-			expectError: false,
-			description: "Should allow safe relative paths",
+			name:         "safe relative path",
+			path:         "logs/application.log",
+			expectedRisk: runnertypes.RiskLevelLow,
+			description:  "Should assess safe relative paths as low risk",
 		},
 		{
-			name:        "safe tmp path",
-			path:        "/tmp/safe_output.txt",
-			expectError: false,
-			description: "Should allow /tmp paths",
+			name:         "safe tmp path",
+			path:         "/tmp/safe_output.txt",
+			expectedRisk: runnertypes.RiskLevelMedium,
+			description:  "Should assess /tmp paths as medium risk",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validator.validateOutputPath(tt.path)
+			risk := validator.AssessSecurityRisk(tt.path, "/tmp")
 
-			if tt.expectError {
-				require.Error(t, err, tt.description)
-			} else {
-				require.NoError(t, err, tt.description)
-			}
+			require.Equal(t, tt.expectedRisk, risk, tt.description)
 		})
 	}
 }
@@ -641,62 +637,95 @@ func TestConfigValidator_CustomSecurityConfig(t *testing.T) {
 
 	validator := NewConfigValidatorWithSecurity(customConfig)
 
-	// Test that the custom pattern is detected
-	err := validator.validateOutputPath("/custom/critical/file.txt")
-	require.Error(t, err, "Should detect custom critical path pattern")
+	// Test that the custom pattern is detected with critical risk level
+	risk := validator.AssessSecurityRisk("/custom/critical/file.txt", "/tmp")
+	require.Equal(t, runnertypes.RiskLevelCritical, risk, "Should detect custom critical path pattern")
 }
 
 func TestConfigValidator_FalsePositivePrevention(t *testing.T) {
 	// Test that string contains matching doesn't create false positives
 	validator := NewConfigValidator()
+	globalConfig := &runnertypes.GlobalConfig{
+		MaxOutputSize: DefaultMaxOutputSize,
+	}
 
 	tests := []struct {
 		name        string
-		path        string
+		command     *runnertypes.Command
 		expectError bool
 		description string
 	}{
 		{
-			name:        "false_positive_etc_in_path",
-			path:        "/home/user/project-etc/file.txt",
+			name: "false_positive_etc_in_path",
+			command: &runnertypes.Command{
+				Name:         "test",
+				Cmd:          "echo",
+				Output:       "/home/user/project-etc/file.txt",
+				MaxRiskLevel: "high", // Allow high risk (absolute paths outside working dir)
+			},
 			expectError: false,
-			description: "Should not flag paths containing 'etc' in directory names",
+			description: "Should not flag paths containing 'etc' in directory names when max_risk_level allows it",
 		},
 		{
-			name:        "false_positive_root_in_path",
-			path:        "/home/user/project-root/file.txt",
+			name: "false_positive_root_in_path",
+			command: &runnertypes.Command{
+				Name:         "test",
+				Cmd:          "echo",
+				Output:       "/home/user/project-root/file.txt",
+				MaxRiskLevel: "high", // Allow high risk
+			},
 			expectError: false,
-			description: "Should not flag paths containing 'root' in directory names",
+			description: "Should not flag paths containing 'root' in directory names when max_risk_level allows it",
 		},
 		{
-			name:        "false_positive_bin_in_path",
-			path:        "/home/user/my-bin/file.txt",
+			name: "false_positive_bin_in_path",
+			command: &runnertypes.Command{
+				Name:         "test",
+				Cmd:          "echo",
+				Output:       "/home/user/my-bin/file.txt",
+				MaxRiskLevel: "high", // Allow high risk
+			},
 			expectError: false,
-			description: "Should not flag paths containing 'bin' in directory names",
+			description: "Should not flag paths containing 'bin' in directory names when max_risk_level allows it",
 		},
 		{
-			name:        "true_positive_actual_etc",
-			path:        "/etc/passwd",
+			name: "true_positive_actual_etc",
+			command: &runnertypes.Command{
+				Name:         "test",
+				Cmd:          "echo",
+				Output:       "/etc/passwd",
+				MaxRiskLevel: "high", // Even high risk should not allow critical system directories
+			},
 			expectError: true,
-			description: "Should correctly flag actual /etc paths",
+			description: "Should correctly flag actual /etc paths even with high max_risk_level",
 		},
 		{
-			name:        "true_positive_actual_root",
-			path:        "/root/sensitive.txt",
+			name: "true_positive_actual_root",
+			command: &runnertypes.Command{
+				Name:         "test",
+				Cmd:          "echo",
+				Output:       "/root/sensitive.txt",
+				MaxRiskLevel: "high", // Even high risk should not allow critical system directories
+			},
 			expectError: true,
-			description: "Should correctly flag actual /root paths",
+			description: "Should correctly flag actual /root paths even with high max_risk_level",
 		},
 		{
-			name:        "false_positive_etc_in_filename",
-			path:        "/home/user/etc-backup.txt",
+			name: "false_positive_etc_in_filename",
+			command: &runnertypes.Command{
+				Name:         "test",
+				Cmd:          "echo",
+				Output:       "/home/user/etc-backup.txt",
+				MaxRiskLevel: "high", // Allow high risk
+			},
 			expectError: false,
-			description: "Should not flag files with 'etc' in filename when not in /etc directory",
+			description: "Should not flag files with 'etc' in filename when not in /etc directory and max_risk_level allows it",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validator.validateOutputPath(tt.path)
+			err := validator.ValidateCommand(tt.command, globalConfig)
 
 			if tt.expectError {
 				require.Error(t, err, tt.description)
@@ -748,6 +777,99 @@ func TestConfigValidator_RiskAssessmentFalsePositivePrevention(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			risk := validator.AssessSecurityRisk(tt.path, workDir)
 			require.Equal(t, tt.expectedRisk, risk, tt.description)
+		})
+	}
+}
+
+func TestConfigValidator_MaxRiskLevel(t *testing.T) {
+	validator := NewConfigValidator()
+	globalConfig := &runnertypes.GlobalConfig{
+		MaxOutputSize: DefaultMaxOutputSize,
+	}
+
+	tests := []struct {
+		name        string
+		command     *runnertypes.Command
+		expectError bool
+		description string
+	}{
+		{
+			name: "high risk path with max_risk_level high (should pass)",
+			command: &runnertypes.Command{
+				Name:         "test",
+				Cmd:          "echo",
+				Output:       "malicious.sh", // High risk due to .sh extension
+				MaxRiskLevel: "high",         // Allow high risk
+			},
+			expectError: false,
+			description: "High risk .sh file should be allowed when max_risk_level is high",
+		},
+		{
+			name: "high risk path with max_risk_level low (should fail)",
+			command: &runnertypes.Command{
+				Name:         "test",
+				Cmd:          "echo",
+				Output:       "malicious.sh", // High risk due to .sh extension
+				MaxRiskLevel: "low",          // Only allow low risk
+			},
+			expectError: true,
+			description: "High risk .sh file should be rejected when max_risk_level is low",
+		},
+		{
+			name: "critical risk path with max_risk_level high (should fail)",
+			command: &runnertypes.Command{
+				Name:         "test",
+				Cmd:          "echo",
+				Output:       "/etc/passwd", // Critical risk
+				MaxRiskLevel: "high",        // Allow high but not critical
+			},
+			expectError: true,
+			description: "Critical risk /etc/passwd should be rejected even when max_risk_level is high",
+		},
+		{
+			name: "medium risk path with max_risk_level medium (should pass)",
+			command: &runnertypes.Command{
+				Name:         "test",
+				Cmd:          "echo",
+				Output:       "/tmp/output.txt", // Medium risk (tmp directory)
+				MaxRiskLevel: "medium",          // Allow medium risk
+			},
+			expectError: false,
+			description: "Medium risk /tmp path should be allowed when max_risk_level is medium",
+		},
+		{
+			name: "low risk path always passes",
+			command: &runnertypes.Command{
+				Name:         "test",
+				Cmd:          "echo",
+				Output:       "output.txt", // Low risk (relative path)
+				MaxRiskLevel: "low",        // Most restrictive
+			},
+			expectError: false,
+			description: "Low risk relative path should always be allowed",
+		},
+		{
+			name: "default max_risk_level behavior (empty string defaults to low)",
+			command: &runnertypes.Command{
+				Name:         "test",
+				Cmd:          "echo",
+				Output:       "malicious.sh", // High risk due to .sh extension
+				MaxRiskLevel: "",             // Default (should be low)
+			},
+			expectError: true,
+			description: "High risk .sh file should be rejected when max_risk_level is default (low)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validator.ValidateCommand(tt.command, globalConfig)
+
+			if tt.expectError {
+				require.Error(t, err, tt.description)
+			} else {
+				require.NoError(t, err, tt.description)
+			}
 		})
 	}
 }

@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
@@ -14,6 +13,7 @@ import (
 // ConfigValidator validates output capture configuration
 type ConfigValidator struct {
 	securityConfig *security.Config
+	riskEvaluator  *RiskEvaluator
 }
 
 // Predefined validation errors
@@ -29,6 +29,7 @@ var (
 	ErrSensitiveSystemDirectory = errors.New("output path points to sensitive system directory")
 	ErrSuspiciousExecutableExt  = errors.New("output path has suspicious executable extension")
 	ErrOutputPathConflict       = errors.New("output path conflict")
+	ErrRiskLevelExceeded        = errors.New("output path risk level exceeds maximum allowed")
 )
 
 // NewConfigValidator creates a new ConfigValidator instance
@@ -41,8 +42,10 @@ func NewConfigValidatorWithSecurity(secConfig *security.Config) *ConfigValidator
 	if secConfig == nil {
 		secConfig = security.DefaultConfig()
 	}
+	riskEvaluator := NewRiskEvaluator(secConfig)
 	return &ConfigValidator{
 		securityConfig: secConfig,
+		riskEvaluator:  riskEvaluator,
 	}
 }
 
@@ -76,8 +79,8 @@ func (v *ConfigValidator) ValidateCommand(cmd *runnertypes.Command, globalConfig
 		return ErrCommandNil
 	}
 
-	// Validate output path
-	if err := v.validateOutputPath(cmd.Output); err != nil {
+	// Validate output path, considering max_risk_level
+	if err := v.validateOutputPathWithRiskLevel(cmd.Output, cmd); err != nil {
 		return fmt.Errorf("invalid output path '%s': %w", cmd.Output, err)
 	}
 
@@ -146,28 +149,6 @@ func (v *ConfigValidator) ValidateConfigFile(cfg *runnertypes.Config) error {
 	return nil
 }
 
-// checkPatternMatch checks if a path matches any of the given patterns using case-insensitive comparison
-// Returns the matching pattern if found, empty string if no match
-func (v *ConfigValidator) checkPatternMatch(path string, patterns []string) string {
-	lowerPath := strings.ToLower(path)
-
-	for _, pattern := range patterns {
-		patternLower := strings.ToLower(pattern)
-		// Only check directory patterns (ending with /) using prefix matching
-		if strings.HasSuffix(patternLower, "/") {
-			if strings.HasPrefix(lowerPath, patternLower) {
-				return pattern
-			}
-		} else {
-			// For file patterns, use contains matching
-			if strings.Contains(lowerPath, patternLower) {
-				return pattern
-			}
-		}
-	}
-	return ""
-}
-
 // validateOutputPath performs basic validation on output paths
 func (v *ConfigValidator) validateOutputPath(outputPath string) error {
 	// If no output is specified, no validation needed
@@ -175,33 +156,36 @@ func (v *ConfigValidator) validateOutputPath(outputPath string) error {
 		return nil
 	}
 
-	// Check for path traversal attempts
-	if common.ContainsPathTraversalSegment(outputPath) {
-		return ErrPathTraversalDetected
+	// Use the unified risk evaluator with default (strict) risk level
+	evaluation := v.riskEvaluator.EvaluateWithMaxRiskLevel(outputPath, "", runnertypes.RiskLevelLow)
+
+	if evaluation.IsBlocking {
+		return v.riskEvaluator.CreateValidationError(evaluation, runnertypes.RiskLevelLow)
 	}
 
-	// Check for critical and high-risk directory patterns using security config
-	criticalPatterns := v.securityConfig.GetPathPatternsByRisk(runnertypes.RiskLevelCritical)
-	highRiskPatterns := v.securityConfig.GetPathPatternsByRisk(runnertypes.RiskLevelHigh)
+	return nil
+}
 
-	// Check critical directory patterns
-	if matchedPattern := v.checkPatternMatch(outputPath, criticalPatterns); matchedPattern != "" {
-		return fmt.Errorf("%w: %s", ErrSensitiveSystemDirectory, matchedPattern)
+// validateOutputPathWithRiskLevel performs validation on output paths considering max_risk_level
+func (v *ConfigValidator) validateOutputPathWithRiskLevel(outputPath string, cmd *runnertypes.Command) error {
+	// If no output is specified, no validation needed
+	if outputPath == "" {
+		return nil
 	}
 
-	// Check high-risk directory patterns
-	if matchedPattern := v.checkPatternMatch(outputPath, highRiskPatterns); matchedPattern != "" {
-		return fmt.Errorf("%w: %s", ErrSensitiveSystemDirectory, matchedPattern)
+	// Get the maximum allowed risk level for this command
+	maxAllowedRisk, err := cmd.GetMaxRiskLevel()
+	if err != nil {
+		// If max_risk_level is invalid, default to low risk (most restrictive)
+		maxAllowedRisk = runnertypes.RiskLevelLow
 	}
 
-	// Check for suspicious file extensions using security config
-	suspiciousExtensions := v.securityConfig.GetSuspiciousExtensions()
+	// Use the unified risk evaluator
+	evaluation := v.riskEvaluator.EvaluateWithMaxRiskLevel(outputPath, "", maxAllowedRisk)
 
-	lowerPath := strings.ToLower(outputPath)
-	for _, ext := range suspiciousExtensions {
-		if strings.HasSuffix(lowerPath, strings.ToLower(ext)) {
-			return fmt.Errorf("%w: %s", ErrSuspiciousExecutableExt, ext)
-		}
+	// If the risk is blocking, create appropriate error
+	if evaluation.IsBlocking {
+		return v.riskEvaluator.CreateValidationError(evaluation, maxAllowedRisk)
 	}
 
 	return nil
@@ -216,53 +200,9 @@ func (v *ConfigValidator) getEffectiveMaxSize(globalConfig *runnertypes.GlobalCo
 }
 
 // AssessSecurityRisk assesses the security risk of an output path
-func (v *ConfigValidator) AssessSecurityRisk(outputPath string, _ string) runnertypes.RiskLevel {
-	if outputPath == "" {
-		return runnertypes.RiskLevelHigh
-	}
-
-	// Check for absolute paths outside safe directories
-	if filepath.IsAbs(outputPath) {
-		// System directories are high risk - use security config patterns
-		criticalPatterns := v.securityConfig.GetPathPatternsByRisk(runnertypes.RiskLevelCritical)
-		highRiskPatterns := v.securityConfig.GetPathPatternsByRisk(runnertypes.RiskLevelHigh)
-
-		// Check critical patterns first
-		if v.checkPatternMatch(outputPath, criticalPatterns) != "" {
-			return runnertypes.RiskLevelCritical
-		}
-
-		// Check high-risk patterns - system directories are always critical
-		if v.checkPatternMatch(outputPath, highRiskPatterns) != "" {
-			return runnertypes.RiskLevelCritical
-		}
-
-		// /tmp and /var/tmp are medium risk
-		if strings.HasPrefix(outputPath, "/tmp") || strings.HasPrefix(outputPath, "/var/tmp") {
-			return runnertypes.RiskLevelMedium
-		}
-
-		// Other absolute paths are high risk
-		return runnertypes.RiskLevelHigh
-	}
-
-	// Relative paths with traversal are high risk
-	if common.ContainsPathTraversalSegment(outputPath) {
-		return runnertypes.RiskLevelHigh
-	}
-
-	// Check for suspicious patterns in relative paths using security config
-	suspiciousPatterns := v.securityConfig.GetSuspiciousFilePatterns()
-
-	lowerPath := strings.ToLower(outputPath)
-	for _, pattern := range suspiciousPatterns {
-		if strings.Contains(lowerPath, strings.ToLower(pattern)) {
-			return runnertypes.RiskLevelHigh
-		}
-	}
-
-	// Relative paths within working directory are low risk
-	return runnertypes.RiskLevelLow
+func (v *ConfigValidator) AssessSecurityRisk(outputPath string, workDir string) runnertypes.RiskLevel {
+	evaluation := v.riskEvaluator.EvaluateOutputRisk(outputPath, workDir)
+	return evaluation.Level
 }
 
 // GenerateValidationReport generates a comprehensive validation report
@@ -308,12 +248,25 @@ func (v *ConfigValidator) GenerateValidationReport(cfg *runnertypes.Config) *Val
 						fmt.Sprintf("Command '%s' in group '%s': %v", cmd.Name, group.Name, err))
 				}
 
-				// Assess security risk
-				risk := v.AssessSecurityRisk(cmd.Output, cfg.Global.WorkDir)
-				if risk == runnertypes.RiskLevelHigh || risk == runnertypes.RiskLevelCritical {
+				// Assess security risk and compare with max_risk_level
+				maxAllowedRisk, err := cmd.GetMaxRiskLevel()
+				if err != nil {
+					// If max_risk_level is invalid, default to low risk (most restrictive)
+					maxAllowedRisk = runnertypes.RiskLevelLow
+				}
+
+				evaluation := v.riskEvaluator.EvaluateWithMaxRiskLevel(cmd.Output, cfg.Global.WorkDir, maxAllowedRisk)
+
+				if evaluation.IsBlocking {
+					// This would cause execution failure
 					report.Warnings = append(report.Warnings,
-						fmt.Sprintf("Command '%s' has %s risk output path: %s",
-							cmd.Name, risk.String(), cmd.Output))
+						fmt.Sprintf("Command '%s' output path risk (%s) exceeds max_risk_level (%s): %s (%s)",
+							cmd.Name, evaluation.Level.String(), maxAllowedRisk.String(), cmd.Output, evaluation.Reason))
+				} else if evaluation.Level == runnertypes.RiskLevelHigh || evaluation.Level == runnertypes.RiskLevelCritical {
+					// High/critical risk but within allowed range
+					report.Warnings = append(report.Warnings,
+						fmt.Sprintf("Command '%s' has %s risk output path (allowed by max_risk_level %s): %s (%s)",
+							cmd.Name, evaluation.Level.String(), maxAllowedRisk.String(), cmd.Output, evaluation.Reason))
 				}
 			}
 		}
