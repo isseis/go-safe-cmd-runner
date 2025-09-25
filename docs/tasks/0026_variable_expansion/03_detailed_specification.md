@@ -113,7 +113,7 @@ func IsVariableNotFoundError(err error) bool {
    - 次の文字がそれ以外、または文字列の終端である場合は、`ErrInvalidEscapeSequence` エラーを返す
 3. `$` が見つかった場合（ただし、`\` でエスケープされていない）:
    - 既存の正規表現を使用して変数パターンをマッチング
-   - マッチした場合は変数を展開、マッチしない場合は `$` をリテラルとして追加
+   - マッチした場合は変数を展開、未定義変数は空文字列として展開
 4. その他の文字はそのまま結果に追加
 
 **新しいエラー型**:
@@ -143,8 +143,9 @@ var ErrInvalidEscapeSequence = errors.New("invalid escape sequence")
 展開時のエラーは以下の優先順位で決定される:
 1. エスケープ/構文エラー (`ErrInvalidEscapeSequence`, `ErrUnclosedVariable`)
 2. 循環参照検出 (`ErrCircularReference`)
-3. 未定義変数 (`ErrVariableNotFound`) ※ ローカル/システムいずれにも存在しない
-4. アクセス不許可 (`ErrVariableNotAllowed`) ※ システム環境に存在するが allowlist 外
+3. アクセス不許可 (`ErrVariableNotAllowed`) ※ システム環境に存在するが allowlist 外
+
+※ 未定義変数（ローカル/システムいずれにも存在しない）は空文字列として展開され、エラーとして扱わない
 
 循環参照は「自身または親階層で訪問済みの変数を再び解決しようとした」タイミングで即時判定し、未定義より優先する。これにより無限再帰防止の反復上限 (以前は MaxIteration) を不要化した。
 
@@ -587,7 +588,7 @@ func TestVariableParser_ReplaceVariables(t *testing.T) {
             input:    "$UNDEFINED",
             env:      map[string]string{},
             expected: "",
-            expectErr: true,
+            expectErr: false,
         },
         // エスケープシーケンステスト
         {
@@ -681,7 +682,7 @@ func (r *testVariableResolver) ResolveVariable(name string) (string, error) {
     if value, exists := r.env[name]; exists {
         return value, nil
     }
-    return "", fmt.Errorf("variable not found: %s", name)
+    return "", nil // 未定義変数は空文字列として扱う
 }
 
 func TestVariableExpander_Expand(t *testing.T) {
@@ -783,12 +784,12 @@ func TestVariableExpander_ExpandAll(t *testing.T) {
             expectErr: false,
         },
         {
-            name: "error in second text",
+            name: "undefined variable in second text",
             texts: []string{"$HOME", "$UNDEFINED"},
             env: map[string]string{"HOME": "/home/user"},
             allowlist: []string{},
-            expected: nil,
-            expectErr: true,
+            expected: []string{"/home/user", ""},
+            expectErr: false,
         },
     }
 
