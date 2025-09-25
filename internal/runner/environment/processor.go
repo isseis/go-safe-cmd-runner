@@ -84,15 +84,20 @@ func (p *CommandEnvProcessor) ProcessCommandEnvironment(cmd runnertypes.Command,
 
 // validateBasicEnvVariable validates the name and optionally the value of an environment variable.
 func validateBasicEnvVariable(varName, varValue string) error {
-	if !ValidateVariableName(varName) {
+	// Validate name using security package which returns detailed errors.
+	if err := security.ValidateVariableName(varName); err != nil {
 		if varName == "" {
 			return ErrVariableNameEmpty
 		}
-		return fmt.Errorf("%w: %s", ErrInvalidVariableName, varName)
+		// Preserve and return the detailed error from security
+		return fmt.Errorf("%w: %s", ErrInvalidVariableName, err.Error())
 	}
-	if varValue != "" { // only validate non-empty values post expansion
+
+	// Only validate non-empty values post expansion. Use security.IsVariableValueSafe
+	// which provides detailed errors about unsafe patterns.
+	if varValue != "" {
 		if err := security.IsVariableValueSafe(varValue); err != nil {
-			return fmt.Errorf("%w: %s", security.ErrUnsafeEnvironmentVar, varValue)
+			return fmt.Errorf("%w: %s", security.ErrUnsafeEnvironmentVar, err.Error())
 		}
 	}
 	return nil
@@ -185,12 +190,7 @@ func (p *CommandEnvProcessor) expand(value string, envVars map[string]string, gr
 
 // ValidateVariableName checks if a variable name is valid.
 // It must start with a letter or underscore, followed by letters, numbers, or underscores.
-func ValidateVariableName(name string) bool { // keep bool helper for existing callers
-	return security.ValidateVariableName(name) == nil
-}
-
-// ValidateVariableValue checks if a variable value contains any dangerous patterns.
-// ValidateVariableValue deprecated in favor of security.IsVariableValueSafe (kept for tests already migrated to bool helper)
-func ValidateVariableValue(value string) bool { //nolint:revive // compatibility shim
-	return security.IsVariableValueSafe(value) == nil
-}
+// NOTE: ValidateVariableName and ValidateVariableValue were thin wrappers around
+// security package functions. They have been removed; callers should use
+// security.ValidateVariableName(name) and security.IsVariableValueSafe(value)
+// directly to preserve detailed error information.
