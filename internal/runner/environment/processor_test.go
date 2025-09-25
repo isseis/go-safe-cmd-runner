@@ -212,14 +212,15 @@ func TestCommandEnvProcessor_ResolveVariableReferences(t *testing.T) {
 			expectedErr: ErrVariableNotAllowed,
 		},
 		{
-			name:    "variable not found - treat as empty string",
+			name:    "variable not found - return error",
 			value:   "${NONEXISTENT}/bin",
 			envVars: map[string]string{},
 			group: &runnertypes.CommandGroup{
 				Name:         "test_group",
 				EnvAllowlist: []string{"PATH", "HOME"},
 			},
-			expected: "/bin",
+			expectError: true,
+			expectedErr: ErrVariableNotFound,
 		},
 		{
 			name:    "multiple variable references",

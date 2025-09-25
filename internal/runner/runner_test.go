@@ -504,7 +504,7 @@ func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
 		mockResourceManager.AssertExpectations(t)
 	})
 
-	t.Run("undefined environment variable treated as empty string", func(t *testing.T) {
+	t.Run("undefined environment variable treated as an error", func(t *testing.T) {
 		group := runnertypes.CommandGroup{
 			Name:         "test-env-undefined",
 			EnvAllowlist: []string{"VALID_VAR"},
@@ -532,16 +532,12 @@ func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
 		mockResourceManager.On("ExecuteCommand", mock.Anything, runnertypes.Command{Name: "cmd-1", Cmd: "echo", Args: []string{"first"}, Dir: "/tmp"}, &group, mock.Anything).
 			Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "first\n", Stderr: ""}, nil)
 
-		// Second command should succeed with resolved environment (UNDEFINED_VAR becomes empty)
-		expectedCmd2 := runnertypes.Command{Name: "cmd-2", Cmd: "echo", Args: []string{"test"}, Env: []string{"UNDEFINED_VAR=${NONEXISTENT_VAR}"}, Dir: "/tmp"}
-		mockResourceManager.On("ExecuteCommand", mock.Anything, expectedCmd2, &group, map[string]string{"UNDEFINED_VAR": ""}).
-			Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "test\n", Stderr: ""}, nil)
-
+		// Second command should fail during environment variable resolution, so ExecuteCommand won't be called
 		ctx := context.Background()
 		err = runner.ExecuteGroup(ctx, group)
 
-		// Should succeed - undefined variables are treated as empty strings
-		assert.NoError(t, err)
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, environment.ErrVariableNotFound)
 		mockResourceManager.AssertExpectations(t)
 	})
 }
@@ -1708,7 +1704,7 @@ func TestRunner_EnvironmentVariablePriority_EdgeCases(t *testing.T) {
 		assert.ErrorIs(t, err, environment.ErrMalformedEnvVariable)
 	})
 
-	t.Run("variable reference to undefined variable treated as empty string", func(t *testing.T) {
+	t.Run("variable reference to undefined variable returns error", func(t *testing.T) {
 		testGroup := config.Groups[0]
 
 		testCmd := runnertypes.Command{
@@ -1718,10 +1714,10 @@ func TestRunner_EnvironmentVariablePriority_EdgeCases(t *testing.T) {
 			Env:  []string{"UNDEFINED_REF=${NONEXISTENT_VAR}"},
 		}
 
-		envVars, err := runner.resolveEnvironmentVars(testCmd, &testGroup)
-		// Should succeed with undefined variable treated as empty string
-		assert.NoError(t, err)
-		assert.Equal(t, "", envVars["UNDEFINED_REF"])
+		_, err := runner.resolveEnvironmentVars(testCmd, &testGroup)
+		// Should fail when referencing undefined variable
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, environment.ErrVariableNotFound)
 	})
 
 	t.Run("circular reference in command variables", func(t *testing.T) {

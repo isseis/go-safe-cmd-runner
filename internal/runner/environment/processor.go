@@ -174,8 +174,8 @@ func (p *CommandEnvProcessor) Expand(value string, envVars map[string]string, gr
 					valStr, found = sysVal, true
 				}
 			}
-			if !found { // truly not found anywhere - treat as empty string per shell behavior
-				valStr = ""
+			if !found { // variable not found anywhere - return error
+				return "", fmt.Errorf("%w: %s", ErrVariableNotFound, varName)
 			}
 			expanded, err := p.Expand(valStr, envVars, group, visited)
 			if err != nil {

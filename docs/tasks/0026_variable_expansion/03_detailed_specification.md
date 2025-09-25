@@ -125,7 +125,7 @@ func IsInvalidVariableFormatError(err error) bool {
    - 次の文字がそれ以外、または文字列の終端である場合は、`ErrInvalidEscapeSequence` エラーを返す
 3. `$` が見つかった場合（ただし、`\` でエスケープされていない）:
    - 既存の正規表現を使用して変数パターンをマッチング
-   - マッチした場合は変数を展開、未定義変数は空文字列として展開
+   - マッチした場合は変数を展開、未定義変数はエラー
    - 正規表現にマッチしない、たとえば `$` の次が `{` ではない、もしくは対応する `}` がない場合にはエラーを返す
 4. その他の文字はそのまま結果に追加
 
@@ -156,8 +156,7 @@ var ErrInvalidVariableFormat = errors.New("invalid variable format")
 1. エスケープ/構文エラー (`ErrInvalidEscapeSequence`, `ErrInvalidVariableFormat`)
 2. 循環参照検出 (`ErrCircularReference`)
 3. アクセス不許可 (`ErrVariableNotAllowed`) ※ システム環境に存在するが allowlist 外
-
-※ 未定義変数（ローカル/システムいずれにも存在しない）は空文字列として展開され、エラーとして扱わない
+4. 未定義 (`ErrVariableNotFound`)
 
 循環参照は「自身または親階層で訪問済みの変数を再び解決しようとした」タイミングで即時判定し、未定義より優先する。これにより無限再帰防止の反復上限 (以前は MaxIteration) を不要化した。
 
@@ -809,7 +808,7 @@ func (r *testVariableResolver) ResolveVariable(name string) (string, error) {
     if value, exists := r.env[name]; exists {
         return value, nil
     }
-    return "", nil // 未定義変数は空文字列として扱う
+    return "", fmt.Errorf("%w: %s", ErrVariableNotAllowed, varName) // 未定義変数はエラーとして扱う
 }
 
 func TestVariableExpander_Expand(t *testing.T) {
