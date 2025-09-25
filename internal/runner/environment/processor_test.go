@@ -242,6 +242,51 @@ func TestCommandEnvProcessor_ResolveVariableReferences(t *testing.T) {
 			expectError: true,
 			expectedErr: ErrUnclosedVariable,
 		},
+		// Invalid variable format tests
+		{
+			name:    "dollar without braces",
+			value:   "$HOME",
+			envVars: map[string]string{"HOME": "/home/user"},
+			group: &runnertypes.CommandGroup{
+				Name:         "test_group",
+				EnvAllowlist: []string{"HOME"},
+			},
+			expectError: true,
+			expectedErr: ErrInvalidVariableFormat,
+		},
+		{
+			name:    "dollar at end",
+			value:   "path$",
+			envVars: map[string]string{},
+			group: &runnertypes.CommandGroup{
+				Name:         "test_group",
+				EnvAllowlist: []string{},
+			},
+			expectError: true,
+			expectedErr: ErrInvalidVariableFormat,
+		},
+		{
+			name:    "dollar with invalid character",
+			value:   "$@INVALID",
+			envVars: map[string]string{},
+			group: &runnertypes.CommandGroup{
+				Name:         "test_group",
+				EnvAllowlist: []string{},
+			},
+			expectError: true,
+			expectedErr: ErrInvalidVariableFormat,
+		},
+		{
+			name:    "mixed valid and invalid formats",
+			value:   "${HOME} and $USER",
+			envVars: map[string]string{"HOME": "/home/user", "USER": "testuser"},
+			group: &runnertypes.CommandGroup{
+				Name:         "test_group",
+				EnvAllowlist: []string{"HOME", "USER"},
+			},
+			expectError: true,
+			expectedErr: ErrInvalidVariableFormat,
+		},
 	}
 
 	for _, tt := range tests {

@@ -21,6 +21,8 @@ var (
 	ErrInvalidEscapeSequence = errors.New("invalid escape sequence")
 	// ErrUnclosedVariable is returned when a variable expansion is not properly closed.
 	ErrUnclosedVariable = errors.New("unclosed variable")
+	// ErrInvalidVariableFormat is returned when $ is found but not followed by valid variable syntax.
+	ErrInvalidVariableFormat = errors.New("invalid variable format")
 
 	// precompiled regex for variable names (kept package private for potential reuse)
 	variableNameRegex = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
@@ -125,59 +127,58 @@ func (p *CommandEnvProcessor) expand(value string, envVars map[string]string, gr
 				return "", fmt.Errorf("%w: \\%c", ErrInvalidEscapeSequence, nextChar)
 			}
 		case '$':
-			// Only ${VAR} supported (pre-release decision) – treat solitary '$' as literal
-			if i+1 < len(runes) && runes[i+1] == '{' {
-				start := i + 2 //nolint:mnd // position after ${
-				end := -1
-				for j := start; j < len(runes); j++ {
-					if runes[j] == '}' {
-						end = j
-						break
-					}
-				}
-				if end == -1 {
-					return "", ErrUnclosedVariable
-				}
-				varName := string(runes[start:end])
-				if visited[varName] {
-					return "", fmt.Errorf("%w: %s", ErrCircularReference, varName)
-				}
-				// Mark visited (depth-first). We'll remove manually after expansion.
-				visited[varName] = true
-
-				// 1. existence check (local then system) – differentiate not found
-				val, foundLocal := envVars[varName]
-				var ( // track where value came from
-					valStr string
-					found  bool
-				)
-				if foundLocal {
-					valStr, found = val, true
-				} else {
-					sysVal, foundSys := os.LookupEnv(varName)
-					if foundSys {
-						// 2. allowlist check only after confirming existence
-						if !p.filter.IsVariableAccessAllowed(varName, group) {
-							p.logger.Warn("system variable access not allowed", "variable", varName, "group", group.Name)
-							return "", fmt.Errorf("%w: %s", ErrVariableNotAllowed, varName)
-						}
-						valStr, found = sysVal, true
-					}
-				}
-				if !found { // truly not found anywhere - treat as empty string per shell behavior
-					valStr = ""
-				}
-				expanded, err := p.expand(valStr, envVars, group, visited)
-				if err != nil {
-					return "", fmt.Errorf("failed to expand nested variable ${%s}: %w", varName, err)
-				}
-				result.WriteString(expanded)
-				delete(visited, varName)
-				i = end + 1
-			} else {
-				result.WriteRune(runes[i])
-				i++
+			// Strict validation: $ must be followed by {VAR} format
+			if i+1 >= len(runes) || runes[i+1] != '{' {
+				return "", ErrInvalidVariableFormat
 			}
+
+			start := i + 2 //nolint:mnd // position after ${
+			end := -1
+			for j := start; j < len(runes); j++ {
+				if runes[j] == '}' {
+					end = j
+					break
+				}
+			}
+			if end == -1 {
+				return "", ErrUnclosedVariable
+			}
+			varName := string(runes[start:end])
+			if visited[varName] {
+				return "", fmt.Errorf("%w: %s", ErrCircularReference, varName)
+			}
+			// Mark visited (depth-first). We'll remove manually after expansion.
+			visited[varName] = true
+
+			// 1. existence check (local then system) – differentiate not found
+			val, foundLocal := envVars[varName]
+			var ( // track where value came from
+				valStr string
+				found  bool
+			)
+			if foundLocal {
+				valStr, found = val, true
+			} else {
+				sysVal, foundSys := os.LookupEnv(varName)
+				if foundSys {
+					// 2. allowlist check only after confirming existence
+					if !p.filter.IsVariableAccessAllowed(varName, group) {
+						p.logger.Warn("system variable access not allowed", "variable", varName, "group", group.Name)
+						return "", fmt.Errorf("%w: %s", ErrVariableNotAllowed, varName)
+					}
+					valStr, found = sysVal, true
+				}
+			}
+			if !found { // truly not found anywhere - treat as empty string per shell behavior
+				valStr = ""
+			}
+			expanded, err := p.expand(valStr, envVars, group, visited)
+			if err != nil {
+				return "", fmt.Errorf("failed to expand nested variable ${%s}: %w", varName, err)
+			}
+			result.WriteString(expanded)
+			delete(visited, varName)
+			i = end + 1
 		default:
 			result.WriteRune(runes[i])
 			i++

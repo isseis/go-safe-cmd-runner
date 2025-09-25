@@ -70,6 +70,10 @@ var (
     // 既存の Security エラーを活用
     ErrVariableNotAllowed = environment.ErrVariableNotAllowed
     ErrVariableNotFound   = environment.ErrVariableNotFound
+
+    // 新しいエラー型
+    ErrInvalidEscapeSequence = errors.New("invalid escape sequence")
+    ErrInvalidVariableFormat = errors.New("invalid variable format")
 )
 
 // シンプルなエラーファクトリ
@@ -91,6 +95,14 @@ func IsSecurityViolationError(err error) bool {
 
 func IsVariableNotFoundError(err error) bool {
     return errors.Is(err, ErrVariableNotFound)
+}
+
+func IsInvalidEscapeSequenceError(err error) bool {
+    return errors.Is(err, ErrInvalidEscapeSequence)
+}
+
+func IsInvalidVariableFormatError(err error) bool {
+    return errors.Is(err, ErrInvalidVariableFormat)
 }
 ```
 
@@ -114,12 +126,16 @@ func IsVariableNotFoundError(err error) bool {
 3. `$` が見つかった場合（ただし、`\` でエスケープされていない）:
    - 既存の正規表現を使用して変数パターンをマッチング
    - マッチした場合は変数を展開、未定義変数は空文字列として展開
+   - 正規表現にマッチしない、たとえば `$` の次が `{` ではない、もしくは対応する `}` がない場合にはエラーを返す
 4. その他の文字はそのまま結果に追加
 
 **新しいエラー型**:
 ```go
 // ErrInvalidEscapeSequence is returned when an invalid escape sequence is detected
 var ErrInvalidEscapeSequence = errors.New("invalid escape sequence")
+
+// ErrInvalidVariableFormat is returned when $ is found but not followed by valid variable syntax
+var ErrInvalidVariableFormat = errors.New("invalid variable format")
 ```
 
 ### 1.4 パーサー仕様 (${VAR} 形式のみ)
@@ -137,7 +153,7 @@ var ErrInvalidEscapeSequence = errors.New("invalid escape sequence")
 #### 1.4.2 エラー優先順位
 
 展開時のエラーは以下の優先順位で決定される:
-1. エスケープ/構文エラー (`ErrInvalidEscapeSequence`, `ErrUnclosedVariable`)
+1. エスケープ/構文エラー (`ErrInvalidEscapeSequence`, `ErrInvalidVariableFormat`)
 2. 循環参照検出 (`ErrCircularReference`)
 3. アクセス不許可 (`ErrVariableNotAllowed`) ※ システム環境に存在するが allowlist 外
 
@@ -178,42 +194,33 @@ func NewVariableParser() VariableParser {
     return &variableParser{}
 }
 
-// ReplaceVariables は統一正規表現を使ったシンプルな実装
+// ReplaceVariables は文字ベースのスキャンによるエスケープ処理と変数展開
 func (p *variableParser) ReplaceVariables(text string, resolver VariableResolver) (string, error) {
     if !strings.Contains(text, "$") {
         return text, nil
     }
 
-    result := text
+    // エスケープ処理を含む1文字ずつのスキャン処理
+    processed, err := p.processEscapesAndValidateVariables(text)
+    if err != nil {
+        return "", err
+    }
+
+    result := processed
     maxIterations := 15 // 既存の 10 から 15 に拡張
     var resolutionError error
 
     for i := 0; i < maxIterations && strings.Contains(result, "$"); i++ {
         oldResult := result
 
-        // ${VAR}形式で両形式を同時処理（重複問題が根本的に解決）
-        result = unifiedVariablePattern.ReplaceAllStringFunc(result, func(match string) string {
-            submatches := unifiedVariablePattern.FindStringSubmatch(match)
-            names := unifiedVariablePattern.SubexpNames()
-
-            // 名前付きグループから変数名を取得
-            var varName string
-            for i, name := range names {
-                if name == "braced" && i < len(submatches) && submatches[i] != "" {
-                    // ${VAR} 形式: braced グループから変数名
-                    varName = submatches[i]
-                    break
-                } else if name == "simple" && i < len(submatches) && submatches[i] != "" {
-                    // $VAR 形式: simple グループから変数名
-                    varName = submatches[i]
-                    break
-                }
-            }
-
-            if varName == "" {
+        // ${VAR}形式のみをサポート
+        result = bracedVariablePattern.ReplaceAllStringFunc(result, func(match string) string {
+            submatches := bracedVariablePattern.FindStringSubmatch(match)
+            if len(submatches) < 2 {
                 return match // 不正なマッチ
             }
 
+            varName := submatches[1]
             return p.resolveVariableWithErrorHandling(varName, resolver, &resolutionError, match)
         })
 
@@ -226,12 +233,62 @@ func (p *variableParser) ReplaceVariables(text string, resolver VariableResolver
         return "", resolutionError
     }
 
-    // 循環参照チェック（${VAR}形式でシンプル化）
-    if strings.Contains(result, "$") && unifiedVariablePattern.MatchString(result) {
+    // 循環参照チェック
+    if strings.Contains(result, "$") && bracedVariablePattern.MatchString(result) {
         return "", environment.ErrCircularReference
     }
 
     return result, nil
+}
+
+// processEscapesAndValidateVariables は文字列を1文字ずつスキャンしてエスケープ処理と変数形式検証を行う
+func (p *variableParser) processEscapesAndValidateVariables(text string) (string, error) {
+    var result strings.Builder
+    i := 0
+
+    for i < len(text) {
+        ch := text[i]
+
+        switch ch {
+        case '\\':
+            // エスケープシーケンス処理
+            if i+1 >= len(text) {
+                return "", ErrInvalidEscapeSequence // 文字列末尾の \
+            }
+
+            next := text[i+1]
+            switch next {
+            case '$', '\\':
+                result.WriteByte(next) // エスケープされた文字をリテラルとして追加
+                i += 2 // 2文字消費
+            default:
+                return "", ErrInvalidEscapeSequence // 無効なエスケープ
+            }
+
+        case '$':
+            // 変数形式の検証
+            if i+1 >= len(text) || text[i+1] != '{' {
+                return "", ErrInvalidVariableFormat // $ の後に { がない
+            }
+
+            // 対応する } を探す
+            closeIndex := strings.IndexByte(text[i:], '}')
+            if closeIndex == -1 {
+                return "", ErrInvalidVariableFormat // 対応する } がない
+            }
+
+            // ${...} 全体を結果に追加
+            varRef := text[i : i+closeIndex+1]
+            result.WriteString(varRef)
+            i += closeIndex + 1
+
+        default:
+            result.WriteByte(ch)
+            i++
+        }
+    }
+
+    return result.String(), nil
 }
 
 // resolveVariableWithErrorHandling は変数を解決し、エラーを統一的に処理
@@ -296,8 +353,8 @@ func (sv *SecurityValidator) ValidateAndExpand(
 // 既存の processor.go の resolveVariableReferencesForCommandEnv を拡張
 // 主な変更点:
 // 1. maxIterations: 10 → 15 に拡張
-// 2. $VAR 形式のサポート追加
-// 3. 両形式の統一処理
+// 2. エスケープ処理の追加
+// 3. 変数形式の厳格な検証
 
 func (p *CommandEnvProcessor) ResolveVariableReferencesUnified(
     value string,
@@ -308,18 +365,21 @@ func (p *CommandEnvProcessor) ResolveVariableReferencesUnified(
         return value, nil
     }
 
-    result := value
+    // エスケープ処理と変数形式の検証を先に実行
+    processed, err := p.processEscapesAndValidateVariables(value)
+    if err != nil {
+        return "", err
+    }
+
+    result := processed
     maxIterations := 15 // 既存の 10 から 15 に拡張
     var resolutionError error
 
     for i := 0; i < maxIterations && strings.Contains(result, "$"); i++ {
         oldResult := result
 
-        // ${VAR} 形式を先に処理（既存ロジック）
+        // ${VAR} 形式のみを処理（$VAR サポートは削除）
         result = variableReferenceRegex.ReplaceAllStringFunc(result, p.resolveVariableFunc)
-
-        // $VAR 形式を処理（新規追加）
-        result = p.replaceSimpleVariables(result, envVars, group, &resolutionError)
 
         if result == oldResult {
             break // 変化なし = 処理完了
@@ -330,26 +390,65 @@ func (p *CommandEnvProcessor) ResolveVariableReferencesUnified(
         return "", resolutionError
     }
 
-    // 循環参照チェック（既存ロジックを流用）
-    if strings.Contains(result, "$") {
-        if variableReferenceRegex.MatchString(result) || simpleVariableRegex.MatchString(result) {
-            return "", fmt.Errorf("%w: exceeded maximum resolution iterations (%d)", ErrCircularReference, maxIterations)
-        }
+    // 循環参照チェック
+    if strings.Contains(result, "$") && variableReferenceRegex.MatchString(result) {
+        return "", fmt.Errorf("%w: exceeded maximum resolution iterations (%d)", ErrCircularReference, maxIterations)
     }
 
     return result, nil
 }
 
-// 新規追加: $VAR 形式用の正規表現
-var simpleVariableRegex = regexp.MustCompile(`\$([A-Za-z_][A-Za-z0-9_]*)`)
+// processEscapesAndValidateVariables はCommandEnvProcessor用のエスケープ処理と変数形式検証
+func (p *CommandEnvProcessor) processEscapesAndValidateVariables(text string) (string, error) {
+    var result strings.Builder
+    i := 0
 
-// 新規追加: $VAR 形式を処理するメソッド
-func (p *CommandEnvProcessor) replaceSimpleVariables(text string, envVars map[string]string, group *runnertypes.CommandGroup, resolutionError *error) string {
-    // 既存の resolveVariableWithSecurityPolicy を流用
-    // 重複防止のためのシンプルなヒューリスティックを含む
+    for i < len(text) {
+        ch := text[i]
+
+        switch ch {
+        case '\\':
+            // エスケープシーケンス処理
+            if i+1 >= len(text) {
+                return "", ErrInvalidEscapeSequence
+            }
+
+            next := text[i+1]
+            switch next {
+            case '$', '\\':
+                result.WriteByte(next)
+                i += 2
+            default:
+                return "", ErrInvalidEscapeSequence
+            }
+
+        case '$':
+            // 変数形式の検証 - ${VAR} 形式のみ許可
+            if i+1 >= len(text) || text[i+1] != '{' {
+                return "", ErrInvalidVariableFormat
+            }
+
+            // 対応する } を探す
+            closeIndex := strings.IndexByte(text[i:], '}')
+            if closeIndex == -1 {
+                return "", ErrInvalidVariableFormat
+            }
+
+            // ${...} 全体を結果に追加
+            varRef := text[i : i+closeIndex+1]
+            result.WriteString(varRef)
+            i += closeIndex + 1
+
+        default:
+            result.WriteByte(ch)
+            i++
+        }
+    }
+
+    return result.String(), nil
 }
 
-// 既存のテストケースを拡張して $VAR 形式もカバー
+// 既存のテストケースを拡張してエラーケースもカバー
 // 既存の実績あるアルゴリズムを活用し、複雑なDFSは使用しない
 ```
 
@@ -643,6 +742,42 @@ func TestVariableParser_ReplaceVariables(t *testing.T) {
             name:     "trailing backslash",
             input:    `FOO\`,
             env:      map[string]string{},
+            expected: "",
+            expectErr: true,
+        },
+        // 無効な変数形式のテストケース
+        {
+            name:     "dollar without braces",
+            input:    "$HOME",
+            env:      map[string]string{"HOME": "/home/user"},
+            expected: "",
+            expectErr: true,
+        },
+        {
+            name:     "dollar at end",
+            input:    "path$",
+            env:      map[string]string{},
+            expected: "",
+            expectErr: true,
+        },
+        {
+            name:     "unclosed brace",
+            input:    "${HOME",
+            env:      map[string]string{"HOME": "/home/user"},
+            expected: "",
+            expectErr: true,
+        },
+        {
+            name:     "dollar with invalid character",
+            input:    "$@INVALID",
+            env:      map[string]string{},
+            expected: "",
+            expectErr: true,
+        },
+        {
+            name:     "mixed valid and invalid formats",
+            input:    "${HOME} and $USER",
+            env:      map[string]string{"HOME": "/home/user", "USER": "testuser"},
             expected: "",
             expectErr: true,
         },
