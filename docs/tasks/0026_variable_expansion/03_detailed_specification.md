@@ -705,7 +705,7 @@ func TestVariableParser_ReplaceVariables(t *testing.T) {
         },
         {
             name:     "backslash before variable",
-            input:    `\\$FOO`,
+            input:    `\\${FOO}`,
             env:      map[string]string{"FOO": "value"},
             expected: `\value`,
             expectErr: false,
