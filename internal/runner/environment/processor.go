@@ -151,6 +151,9 @@ func (p *CommandEnvProcessor) expand(value string, envVars map[string]string, gr
 				return "", ErrUnclosedVariable
 			}
 			varName := string(runes[start:end])
+			if err := security.ValidateVariableName(varName); err != nil {
+				return "", fmt.Errorf("%w: %s: %w", ErrInvalidVariableName, varName, err)
+			}
 			if visited[varName] {
 				return "", fmt.Errorf("%w: %s", ErrCircularReference, varName)
 			}

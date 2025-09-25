@@ -242,6 +242,28 @@ func TestCommandEnvProcessor_ResolveVariableReferences(t *testing.T) {
 			expectError: true,
 			expectedErr: ErrUnclosedVariable,
 		},
+		{
+			name:    "empty variable name",
+			value:   "${}",
+			envVars: map[string]string{},
+			group: &runnertypes.CommandGroup{
+				Name:         "test_group",
+				EnvAllowlist: []string{},
+			},
+			expectError: true,
+			expectedErr: ErrInvalidVariableName,
+		},
+		{
+			name:    "invalid variable name",
+			value:   "${3}",
+			envVars: map[string]string{},
+			group: &runnertypes.CommandGroup{
+				Name:         "test_group",
+				EnvAllowlist: []string{},
+			},
+			expectError: true,
+			expectedErr: ErrInvalidVariableName,
+		},
 		// Invalid variable format tests
 		{
 			name:    "dollar without braces",
