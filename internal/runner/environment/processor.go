@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"regexp"
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -23,9 +22,6 @@ var (
 	ErrUnclosedVariable = errors.New("unclosed variable")
 	// ErrInvalidVariableFormat is returned when $ is found but not followed by valid variable syntax.
 	ErrInvalidVariableFormat = errors.New("invalid variable format")
-
-	// precompiled regex for variable names (kept package private for potential reuse)
-	variableNameRegex = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 )
 
 // CommandEnvProcessor handles the processing of environment variables for a command.
@@ -190,10 +186,7 @@ func (p *CommandEnvProcessor) expand(value string, envVars map[string]string, gr
 // ValidateVariableName checks if a variable name is valid.
 // It must start with a letter or underscore, followed by letters, numbers, or underscores.
 func ValidateVariableName(name string) bool { // keep bool helper for existing callers
-	if name == "" {
-		return false
-	}
-	return variableNameRegex.MatchString(name)
+	return security.ValidateVariableName(name) == nil
 }
 
 // ValidateVariableValue checks if a variable value contains any dangerous patterns.

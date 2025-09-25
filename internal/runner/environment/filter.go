@@ -249,15 +249,12 @@ func (f *Filter) IsVariableAccessAllowed(variable string, group *runnertypes.Com
 
 // ValidateEnvironmentVariable validates both name and value of an environment variable
 func (f *Filter) ValidateEnvironmentVariable(name, value string) error {
-	if !ValidateVariableName(name) {
-		if name == "" {
-			return ErrVariableNameEmpty
-		}
-		return fmt.Errorf("%w: %s", ErrInvalidVariableName, name)
+	if err := security.ValidateVariableName(name); err != nil {
+		return err
 	}
 
-	if !ValidateVariableValue(value) {
-		return fmt.Errorf("%w: %s", security.ErrUnsafeEnvironmentVar, value)
+	if err := security.IsVariableValueSafe(value); err != nil {
+		return err
 	}
 
 	return nil
