@@ -169,32 +169,32 @@ type VariableExpander interface {
 - 最小限のエラーハンドリング
 
 #### 3.1.3 Variable Parser (internal/runner/expansion/parser.go)
-**責務**: 両変数形式の解析と抽出
+**責務**: `${VAR}`形式の解析と抽出
 
 **主要インターフェース**:
 ```go
 type VariableParser interface {
-    // 既存の正規表現を拡張して両形式をサポート
+    // ${VAR}形式のみをサポート
     ReplaceVariables(text string, resolver VariableResolver) (string, error)
 }
 ```
 
 **主要機能**:
-- `$VAR` と `${VAR}` 両形式の統合処理
-- 既存の `variableReferenceRegex` を拡張
-- 重複検出の防止（`${VAR}` を優先）
+- `${VAR}` 形式の明示的な処理
+- 既存の `variableReferenceRegex` との一貫性
+- 曖昧さのない明確な変数境界
 
 ### 3.2 既存コンポーネントとの統合
 
 #### 3.2.1 Environment Processor 拡張 (internal/runner/environment/processor.go)
 **既存機能の統合拡張**:
 - 既存の `resolveVariableReferencesForCommandEnv` を拡張
-- `$VAR` 形式のサポートを追加
+- `${VAR}` 形式の一貫したサポート
 - 反復上限を 10 → 15 に拡張
 
 **拡張点**:
-- Command.Env での `$VAR` 形式サポート
-- cmd/args での両形式サポート
+- Command.Env での一貫した `${VAR}` 形式
+- cmd/args での `${VAR}` 形式サポート
 - 統一されたエラーハンドリング
 
 #### 3.2.2 Security Validator 連携
@@ -390,7 +390,7 @@ flowchart TB
 ## 9. 段階的実装計画
 
 ### 9.1 Phase 1: 既存コードの拡張
-- [ ] Environment Processor での `$VAR` 形式サポート追加
+- [ ] Environment Processor での `${VAR}` 形式一貫性確保
 - [ ] 反復上限を 10 → 15 に拡張
 - [ ] 既存テストケースの拡張
 - [ ] 基本的な単体テスト
@@ -428,7 +428,7 @@ flowchart TB
 **変数展開の複雑性**:
 - ネスト展開の処理順序
 - 循環参照検出のアルゴリズム効率性
-- prefix_$VAR_suffix形式の曖昧性（$VAR_suffixまでが変数名として認識される問題）
+- `${VAR}` 形式のみによる明確な変数境界の確保
 
 **セキュリティとパフォーマンスの両立**:
 - 検証処理のオーバーヘッド

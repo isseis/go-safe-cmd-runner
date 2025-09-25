@@ -7,7 +7,7 @@
 ```
 internal/runner/expansion/
 ├── expander.go          # 統合展開エンジン（cmd/args 用）
-├── parser.go           # 両形式対応パーサー（$VAR, ${VAR}）
+├── parser.go           # ${VAR}形式パーサー
 ├── types.go           # シンプルな型定義
 └── expansion_test.go  # 統合テスト
 
@@ -34,9 +34,9 @@ type VariableExpander interface {
     ExpandAll(ctx context.Context, texts []string, env map[string]string, allowlist []string) ([]string, error)
 }
 
-// VariableParser は両形式対応パーサー
+// VariableParser は${VAR}形式パーサー
 type VariableParser interface {
-    // 既存の正規表現を拡張して両形式をサポート
+    // ${VAR}形式のみをサポート
     ReplaceVariables(text string, resolver VariableResolver) (string, error)
 }
 
@@ -126,17 +126,13 @@ var ErrInvalidEscapeSequence = errors.New("invalid escape sequence")
 
 #### 1.4.1 採用形式
 
-本機能はまだ正式リリース前の段階であるため、変数参照形式は安全で明示的な `${VAR}` のみをサポートし、従来シェル的な `$VAR` 省略形式は実装・互換性コストを抑える目的で未サポートとする。
+変数参照形式は安全で明示的な `${VAR}` のみをサポートする。
 
 理由:
 - `${...}` はトークン境界が明確で曖昧さがない
 - エスケープ仕様 (`\$` → `$`) と衝突しにくい
-- 早期段階で仕様を極力シンプルに保ち、監査容易性を優先
-
-今後 `$VAR` 形式を導入する場合は、以下の追加リスク評価を行う:
-- 連結語句中 (e.g. `PREFIX$VAR_SUFFIX`) の境界判定
-- エスケープ構文との相互作用 (例: `\$VAR`)
-- パフォーマンス最適化（逐次スキャン中の lookahead コスト）
+- 既存のCommand.Envとの一貫性を保持
+- 実装の複雑性とメンテナンスコストを最小化
 
 #### 1.4.2 エラー優先順位
 
@@ -163,16 +159,12 @@ import (
     "github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
 )
 
-// 統一正規表現アプローチ: 両形式を同時に処理（名前付きグループ使用）
+// ${VAR}形式のみのシンプルなアプローチ
 var (
-    // 両形式を統一したパターン: $VAR または ${VAR}
-    unifiedVariablePattern = regexp.MustCompile(`\$(\{(?P<braced>[a-zA-Z_][0-9a-zA-Z_]*)\}|(?P<simple>[a-zA-Z_][0-9a-zA-Z_]*))`)
+    // ${VAR}形式のパターンのみ
+    bracedVariablePattern = regexp.MustCompile(`\$\{([a-zA-Z_][0-9a-zA-Z_]*)\}`)
 
-    // 名前付きキャプチャグループ構成:
-    // - braced: ${VAR_NAME} 形式の VAR_NAME 部分
-    // - simple: $VAR_NAME 形式の VAR_NAME 部分
-
-    // 既存コードとの互換性のためのパターン（必要に応じて）
+    // 既存コードとの完全互換性のためのパターン
     legacyBracedPattern = regexp.MustCompile(`\$\{([^}]+)\}`)
 )
 
@@ -199,7 +191,7 @@ func (p *variableParser) ReplaceVariables(text string, resolver VariableResolver
     for i := 0; i < maxIterations && strings.Contains(result, "$"); i++ {
         oldResult := result
 
-        // 統一パターンで両形式を同時処理（重複問題が根本的に解決）
+        // ${VAR}形式で両形式を同時処理（重複問題が根本的に解決）
         result = unifiedVariablePattern.ReplaceAllStringFunc(result, func(match string) string {
             submatches := unifiedVariablePattern.FindStringSubmatch(match)
             names := unifiedVariablePattern.SubexpNames()
@@ -234,7 +226,7 @@ func (p *variableParser) ReplaceVariables(text string, resolver VariableResolver
         return "", resolutionError
     }
 
-    // 循環参照チェック（統一パターンでシンプル化）
+    // 循環参照チェック（${VAR}形式でシンプル化）
     if strings.Contains(result, "$") && unifiedVariablePattern.MatchString(result) {
         return "", environment.ErrCircularReference
     }
@@ -288,7 +280,7 @@ func (sv *SecurityValidator) ValidateAndExpand(
     group *runnertypes.CommandGroup,
 ) (string, error) {
     // 既存の resolveVariableReferencesForCommandEnv を拡張したメソッドを使用
-    // ここで $VAR 形式もサポートされる
+    // ここで ${VAR} 形式が一貫してサポートされる
     return sv.envProcessor.ResolveVariableReferencesUnified(text, envVars, group)
 }
 
@@ -508,62 +500,62 @@ func TestVariableParser_ReplaceVariables(t *testing.T) {
     }{
         {
             name:     "simple variable",
-            input:    "$HOME",
+            input:    "${{HOME}",
             env:      map[string]string{"HOME": "/home/user"},
             expected: "/home/user",
             expectErr: false,
         },
         {
             name:     "braced variable",
-            input:    "${USER}",
+            input:    "${{USER}",
             env:      map[string]string{"USER": "testuser"},
             expected: "testuser",
             expectErr: false,
         },
         {
-            name:     "mixed variables",
-            input:    "$HOME/bin/${APP_NAME}",
+            name:     "multiple variables",
+            input:    "${HOME}/bin/${APP_NAME}",
             env:      map[string]string{"HOME": "/home/user", "APP_NAME": "myapp"},
             expected: "/home/user/bin/myapp",
             expectErr: false,
         },
         {
-            name:     "prefix_$VAR_suffix problem case",
-            input:    "prefix_$HOME_suffix",
-            env:      map[string]string{"HOME": "user", "HOME_suffix": "fallback"},
-            expected: "prefix_fallback", // $HOME_suffix 全体が変数名と認識される
+            name:     "prefix_${VAR}_suffix clear case",
+            input:    "prefix_${HOME}_suffix",
+            env:      map[string]string{"HOME": "user"},
+            expected: "prefix_user_suffix", // 明確な変数境界
             expectErr: false,
         },
         {
-            name:     "JSON with variable - unified pattern processing",
-            input:    `{"key": "$VALUE"}`,
+            name:     "JSON with variable - braced format processing",
+            input:    `{"key": "${VALUE}"}`,
             env:      map[string]string{"VALUE": "test"},
-            expected: `{"key": "test"}`, // 統一パターンでJSON内の$VALUEが正しく展開
+            expected: `{"key": "test"}`, // ${VAR}形式でJSON内の${VALUE}が正しく展開
             expectErr: false,
         },
         {
-            name:     "mixed braced and simple - no overlap issues",
-            input:    `{"user": "$USER", "home": "${HOME}"}`,
+            name:     "multiple braced variables in JSON",
+            input:    `{"user": "${USER}", "home": "${HOME}"}`,
             env:      map[string]string{"USER": "testuser", "HOME": "/home/testuser"},
-            expected: `{"user": "testuser", "home": "/home/testuser"}`, // 重複問題なし
+            expected: `{"user": "testuser", "home": "/home/testuser"}`, // 複数の${VAR}変数
             expectErr: false,
         },
         {
-            name:     "unified pattern handles complex cases",
-            input:    "before_${VAR}_middle_$VAR2_after",
+            name:     "braced pattern handles complex cases",
+            input:    "before_${VAR}_middle_${VAR2}_after",
             env:      map[string]string{"VAR": "value1", "VAR2": "value2"},
-            expected: "before_value1_middle_value2_after", // 両形式が統一処理される
+            expected: "before_value1_middle_value2_after", // 複数の${VAR}変数処理
             expectErr: false,
         },
         {
-            name:     "edge case with similar variable names",
-            input:    "$HOME and ${HOME_DIR} and $HOME_suffix",
-            env:      map[string]string{"HOME": "user", "HOME_DIR": "/home/user", "HOME_suffix": "fallback"},
-            expected: "user and /home/user and fallback", // 統一パターンが適切に分離
+            name:     "similar variable names with clear boundaries",
+            input:    "${HOME} and ${HOME_DIR} and ${HOME_SUFFIX}",
+            env:      map[string]string{"HOME": "user", "HOME_DIR": "/home/user", "HOME_SUFFIX": "fallback"},
+            expected: "user and /home/user and fallback", // 明確な変数境界
             expectErr: false,
         },
         {
-            name:     "recommended braced format",
+            name:     "standard braced format",
             input:    "prefix_${HOME}_suffix",
             env:      map[string]string{"HOME": "user"},
             expected: "prefix_user_suffix",
@@ -571,7 +563,7 @@ func TestVariableParser_ReplaceVariables(t *testing.T) {
         },
         {
             name:     "glob patterns as literals",
-            input:    "$HOME/*.txt",
+            input:    "${{HOME}/*.txt",
             env:      map[string]string{"HOME": "/home/user"},
             expected: "/home/user/*.txt", // * はリテラル文字として扱われる
             expectErr: false,
@@ -585,7 +577,7 @@ func TestVariableParser_ReplaceVariables(t *testing.T) {
         },
         {
             name:     "undefined variable",
-            input:    "$UNDEFINED",
+            input:    "${UNDEFINED",
             env:      map[string]string{},
             expected: "",
             expectErr: false,
@@ -696,7 +688,7 @@ func TestVariableExpander_Expand(t *testing.T) {
     }{
         {
             name: "simple $VAR expansion",
-            text:  "$DOCKER_CMD",
+            text:  "${DOCKER_CMD",
             env:  map[string]string{"DOCKER_CMD": "/usr/bin/docker"},
             allowlist: []string{},
             expected:  "/usr/bin/docker",
@@ -704,15 +696,15 @@ func TestVariableExpander_Expand(t *testing.T) {
         },
         {
             name: "braced ${VAR} expansion",
-            text:  "${TOOL_DIR}/script",
+            text:  "${{TOOL_DIR}/script",
             env:  map[string]string{"TOOL_DIR": "/opt/tools"},
             allowlist: []string{},
             expected:  "/opt/tools/script",
             expectErr: false,
         },
         {
-            name: "mixed format expansion",
-            text:  "$HOME/${USER}_config",
+            name: "multiple braced format expansion",
+            text:  "${HOME}/${USER}_config",
             env:  map[string]string{"HOME": "/home/user", "USER": "testuser"},
             allowlist: []string{},
             expected:  "/home/user/testuser_config",
@@ -720,15 +712,15 @@ func TestVariableExpander_Expand(t *testing.T) {
         },
         {
             name: "circular reference detection",
-            text:  "$A",
-            env:  map[string]string{"A": "$B", "B": "$A"},
+            text:  "${A",
+            env:  map[string]string{"A": "${B}", "B": "${A}"},
             allowlist: []string{},
             expected:  "",
             expectErr: true,
         },
         {
             name: "glob pattern preserved as literal",
-            text:  "${FIND_CMD}",
+            text:  "${{FIND_CMD}",
             env:  map[string]string{"FIND_CMD": "/usr/bin/find /path/*.txt"},
             allowlist: []string{},
             expected:  "/usr/bin/find /path/*.txt", // * はリテラルとして保持
@@ -765,7 +757,7 @@ func TestVariableExpander_ExpandAll(t *testing.T) {
     }{
         {
             name: "expand multiple texts",
-            texts: []string{"$HOME/bin", "${USER}.log", "prefix_${APP}_suffix"},
+            texts: []string{"${HOME}/bin", "${USER}.log", "prefix_${APP}_suffix"},
             env: map[string]string{
                 "HOME": "/home/user",
                 "USER": "testuser",
@@ -785,7 +777,7 @@ func TestVariableExpander_ExpandAll(t *testing.T) {
         },
         {
             name: "undefined variable in second text",
-            texts: []string{"$HOME", "$UNDEFINED"},
+            texts: []string{"${HOME}", "${UNDEFINED}"},
             env: map[string]string{"HOME": "/home/user"},
             allowlist: []string{},
             expected: []string{"/home/user", ""},
@@ -822,23 +814,23 @@ func TestCircularReferenceDetection_IterativeBased(t *testing.T) {
             name: "no circular reference - both formats",
             env: map[string]string{
                 "A": "value_a",
-                "B": "$A",
+                "B": "${A}",
                 "C": "${B}/suffix",
             },
             testValue: "${C}",
             expectErr: false,
         },
         {
-            name: "direct circular reference - $VAR format",
+            name: "direct circular reference",
             env: map[string]string{
-                "A": "$B",
-                "B": "$A",
+                "A": "${B}",
+                "B": "${A}",
             },
-            testValue: "$A",
+            testValue: "${A}",
             expectErr: true, // 既存の反復制限で検出
         },
         {
-            name: "indirect circular reference - ${VAR} format",
+            name: "indirect circular reference",
             env: map[string]string{
                 "A": "${B}",
                 "B": "${C}",
@@ -848,20 +840,11 @@ func TestCircularReferenceDetection_IterativeBased(t *testing.T) {
             expectErr: true, // 既存の反復制限で検出
         },
         {
-            name: "mixed format circular reference",
-            env: map[string]string{
-                "A": "$B",
-                "B": "${A}",
-            },
-            testValue: "$A",
-            expectErr: true, // 両形式の循環参照も検出
-        },
-        {
             name: "self reference",
             env: map[string]string{
-                "A": "$A",
+                "A": "${A}",
             },
-            testValue: "$A",
+            testValue: "${A}",
             expectErr: true,
         },
         {
@@ -913,28 +896,17 @@ func BenchmarkVariableExpansion(b *testing.B) {
         },
     }
 
-    b.Run("unified_pattern_simple", func(b *testing.B) {
+    b.Run("braced_pattern_simple", func(b *testing.B) {
         for i := 0; i < b.N; i++ {
-            _, err := parser.ReplaceVariables("$HOME/bin/$APP", resolver)
+            _, err := parser.ReplaceVariables("${HOME}/bin/${APP}", resolver)
             if err != nil {
                 b.Fatal(err)
             }
         }
     })
 
-    b.Run("unified_pattern_mixed_format", func(b *testing.B) {
-        testString := "--input $HOME/data --output ${BIN}/output"
-        for i := 0; i < b.N; i++ {
-            _, err := parser.ReplaceVariables(testString, resolver)
-            if err != nil {
-                b.Fatal(err)
-            }
-        }
-    })
-
-    b.Run("unified_pattern_complex", func(b *testing.B) {
-        // 統一パターンで複雑なケースを処理
-        testString := "prefix_${APP}_suffix and $HOME/*.txt"
+    b.Run("braced_pattern_multiple", func(b *testing.B) {
+        testString := "--input ${HOME}/data --output ${BIN}/output"
         for i := 0; i < b.N; i++ {
             _, err := parser.ReplaceVariables(testString, resolver)
             if err != nil {
@@ -943,9 +915,20 @@ func BenchmarkVariableExpansion(b *testing.B) {
         }
     })
 
-    b.Run("unified_pattern_json_case", func(b *testing.B) {
+    b.Run("braced_pattern_complex", func(b *testing.B) {
+        // ${VAR}形式で複雑なケースを処理
+        testString := "prefix_${APP}_suffix and ${HOME}/*.txt"
+        for i := 0; i < b.N; i++ {
+            _, err := parser.ReplaceVariables(testString, resolver)
+            if err != nil {
+                b.Fatal(err)
+            }
+        }
+    })
+
+    b.Run("braced_pattern_json_case", func(b *testing.B) {
         // JSONケースでのパフォーマンス確認
-        jsonString := `{"user": "$USER", "home": "${HOME}", "pattern": "$PATTERN"}`
+        jsonString := `{"user": "${USER}", "home": "${HOME}", "pattern": "${PATTERN}"}`
         resolver.env["USER"] = "testuser" // テスト用に追加
         for i := 0; i < b.N; i++ {
             result, err := parser.ReplaceVariables(jsonString, resolver)
