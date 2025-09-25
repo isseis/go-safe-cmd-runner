@@ -201,9 +201,6 @@ func TestIsVariableAccessAllowedWithInheritance(t *testing.T) {
 }
 
 func TestValidateVariableName(t *testing.T) {
-	config := &runnertypes.Config{}
-	filter := NewFilter(config)
-
 	tests := []struct {
 		name     string
 		varName  string
@@ -248,20 +245,17 @@ func TestValidateVariableName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := filter.ValidateVariableName(tt.varName)
+			isValid := ValidateVariableName(tt.varName)
 			if tt.expected {
-				assert.NoError(t, err, "ValidateVariableName(%s): expected no error", tt.varName)
+				assert.True(t, isValid, "ValidateVariableName(%s): expected true", tt.varName)
 			} else {
-				assert.Error(t, err, "ValidateVariableName(%s): expected error", tt.varName)
+				assert.False(t, isValid, "ValidateVariableName(%s): expected false", tt.varName)
 			}
 		})
 	}
 }
 
 func TestValidateVariableValue(t *testing.T) {
-	config := &runnertypes.Config{}
-	filter := NewFilter(config)
-
 	tests := []struct {
 		name     string
 		value    string
@@ -403,11 +397,11 @@ func TestValidateVariableValue(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := filter.ValidateVariableValue(tt.value)
+			isValid := ValidateVariableValue(tt.value)
 			if tt.expected {
-				assert.NoError(t, err, "ValidateVariableValue(%s): expected no error", tt.value)
+				assert.True(t, isValid, "ValidateVariableValue(%s): expected true", tt.value)
 			} else {
-				assert.Error(t, err, "ValidateVariableValue(%s): expected error", tt.value)
+				assert.False(t, isValid, "ValidateVariableValue(%s): expected false", tt.value)
 			}
 		})
 	}

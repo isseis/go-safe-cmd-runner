@@ -1733,10 +1733,9 @@ func TestRunner_EnvironmentVariablePriority_EdgeCases(t *testing.T) {
 		}
 
 		_, err := runner.resolveEnvironmentVars(testCmd, &testGroup)
-		// Should detect and fail on circular references
-		// Note: Current implementation detects this as undefined variable rather than circular reference
+		// New implementation explicitly detects circular reference
 		assert.Error(t, err)
-		assert.ErrorIs(t, err, environment.ErrVariableNotFound)
+		assert.ErrorIs(t, err, environment.ErrCircularReference)
 	})
 }
 

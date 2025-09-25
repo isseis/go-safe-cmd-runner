@@ -247,39 +247,17 @@ func (f *Filter) IsVariableAccessAllowed(variable string, group *runnertypes.Com
 	return allowed
 }
 
-// ValidateVariableName validates that a variable name is safe and well-formed using centralized security validation
-func (f *Filter) ValidateVariableName(name string) error {
-	if name == "" {
-		return ErrVariableNameEmpty
-	}
-
-	if err := security.ValidateVariableName(name); err != nil {
-		// Wrap the security error with our local error type for consistency
-		return fmt.Errorf("%w: %s", ErrInvalidVariableName, err.Error())
-	}
-
-	return nil
-}
-
-// ValidateVariableValue validates that a variable value is safe
-func (f *Filter) ValidateVariableValue(value string) error {
-	// Use centralized security validation
-	if err := security.IsVariableValueSafe(value); err != nil {
-		// Wrap the security error with our local error type for consistency
-		return fmt.Errorf("%w: %s", ErrDangerousVariableValue, err.Error())
-	}
-
-	return nil
-}
-
 // ValidateEnvironmentVariable validates both name and value of an environment variable
 func (f *Filter) ValidateEnvironmentVariable(name, value string) error {
-	if err := f.ValidateVariableName(name); err != nil {
-		return err
+	if !ValidateVariableName(name) {
+		if name == "" {
+			return ErrVariableNameEmpty
+		}
+		return fmt.Errorf("%w: %s", ErrInvalidVariableName, name)
 	}
 
-	if err := f.ValidateVariableValue(value); err != nil {
-		return err
+	if !ValidateVariableValue(value) {
+		return fmt.Errorf("%w: %s", security.ErrUnsafeEnvironmentVar, value)
 	}
 
 	return nil

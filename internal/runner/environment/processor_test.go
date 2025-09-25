@@ -240,13 +240,14 @@ func TestCommandEnvProcessor_ResolveVariableReferences(t *testing.T) {
 				Name:         "test_group",
 				EnvAllowlist: []string{"PATH", "HOME"},
 			},
-			expected: "${UNCLOSED", // The current implementation leaves malformed references as-is
+			expectError: true,
+			expectedErr: ErrUnclosedVariable,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := processor.resolveVariableReferencesForCommandEnv(tt.value, tt.envVars, tt.group)
+			result, err := processor.ExpandVariablesWithEscaping(tt.value, tt.envVars, tt.group)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -331,7 +332,7 @@ func TestCommandEnvProcessor_ResolveVariableReferences_CircularReferences(t *tes
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := processor.resolveVariableReferencesForCommandEnv(tt.value, tt.envVars, tt.group)
+			result, err := processor.ExpandVariablesWithEscaping(tt.value, tt.envVars, tt.group)
 
 			if tt.expectError {
 				assert.Error(t, err, "Expected error for case: %s", tt.description)
@@ -345,14 +346,6 @@ func TestCommandEnvProcessor_ResolveVariableReferences_CircularReferences(t *tes
 }
 
 func TestCommandEnvProcessor_ValidateBasicEnvVariable(t *testing.T) {
-	config := &runnertypes.Config{
-		Global: runnertypes.GlobalConfig{
-			EnvAllowlist: []string{"PATH"},
-		},
-	}
-	filter := NewFilter(config)
-	processor := NewCommandEnvProcessor(filter)
-
 	tests := []struct {
 		name        string
 		varName     string
@@ -390,7 +383,7 @@ func TestCommandEnvProcessor_ValidateBasicEnvVariable(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := processor.validateBasicEnvVariable(tt.varName, tt.varValue)
+			err := validateBasicEnvVariable(tt.varName, tt.varValue)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -402,6 +395,7 @@ func TestCommandEnvProcessor_ValidateBasicEnvVariable(t *testing.T) {
 	}
 }
 
+// TestCommandEnvProcessor_InheritanceModeIntegration(t *testing.T) {
 func TestCommandEnvProcessor_InheritanceModeIntegration(t *testing.T) {
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
@@ -480,19 +474,148 @@ func TestCommandEnvProcessor_InheritanceModeIntegration(t *testing.T) {
 	}
 }
 
-func TestCommandEnvProcessor_ResolveVariableReferencesUnified(t *testing.T) {
+// TestCommandEnvProcessor_EscapeSequences tests escape sequence handling
+func TestCommandEnvProcessor_EscapeSequences(t *testing.T) {
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
-			EnvAllowlist: []string{"PATH", "HOME", "USER"},
+			EnvAllowlist: []string{"FOO", "BAR", "ESCAPED_VAR"},
 		},
 	}
 	filter := NewFilter(config)
 	processor := NewCommandEnvProcessor(filter)
 
-	// Set up test environment variables
-	t.Setenv("PATH", "/usr/bin:/bin")
-	t.Setenv("HOME", "/home/testuser")
-	t.Setenv("USER", "testuser")
+	tests := []struct {
+		name        string
+		value       string
+		envVars     map[string]string
+		group       *runnertypes.CommandGroup
+		expected    string
+		expectError bool
+		expectedErr error
+	}{
+		// Basic escape tests
+		{
+			name:    "escape dollar sign",
+			value:   `\${FOO}`,
+			envVars: map[string]string{"FOO": "value"},
+			group: &runnertypes.CommandGroup{
+				Name:         "test_group",
+				EnvAllowlist: []string{"FOO"},
+			},
+			expected: "${FOO}",
+		},
+		{
+			name:    "escape backslash",
+			value:   `\\FOO`,
+			envVars: map[string]string{},
+			group: &runnertypes.CommandGroup{
+				Name:         "test_group",
+				EnvAllowlist: []string{},
+			},
+			expected: `\FOO`,
+		},
+		{
+			name:    "escaped dollar with variable expansion",
+			value:   `\${FOO} and ${BAR}`,
+			envVars: map[string]string{"FOO": "foo", "BAR": "bar"},
+			group: &runnertypes.CommandGroup{
+				Name:         "test_group",
+				EnvAllowlist: []string{"FOO", "BAR"},
+			},
+			expected: "${FOO} and bar",
+		},
+		{
+			name:    "backslash before variable",
+			value:   `\\${FOO}`,
+			envVars: map[string]string{"FOO": "value"},
+			group: &runnertypes.CommandGroup{
+				Name:         "test_group",
+				EnvAllowlist: []string{"FOO"},
+			},
+			expected: `\value`,
+		},
+		{
+			name:    "multiple escapes",
+			value:   `\${FOO} \${BAR} \\baz`,
+			envVars: map[string]string{"FOO": "f", "BAR": "b"},
+			group: &runnertypes.CommandGroup{
+				Name:         "test_group",
+				EnvAllowlist: []string{"FOO", "BAR"},
+			},
+			expected: "${FOO} ${BAR} \\baz",
+		},
+		{
+			name:    "escaped in braces context",
+			value:   `\${FOO} ${BAR}`,
+			envVars: map[string]string{"FOO": "foo", "BAR": "bar"},
+			group: &runnertypes.CommandGroup{
+				Name:         "test_group",
+				EnvAllowlist: []string{"FOO", "BAR"},
+			},
+			expected: "${FOO} bar",
+		},
+		// Error tests
+		{
+			name:        "invalid escape sequence - letter",
+			value:       `\U`,
+			envVars:     map[string]string{},
+			group:       &runnertypes.CommandGroup{Name: "test_group"},
+			expectError: true,
+			expectedErr: ErrInvalidEscapeSequence,
+		},
+		{
+			name:        "invalid escape sequence - number",
+			value:       `\1`,
+			envVars:     map[string]string{},
+			group:       &runnertypes.CommandGroup{Name: "test_group"},
+			expectError: true,
+			expectedErr: ErrInvalidEscapeSequence,
+		},
+		{
+			name:        "trailing backslash",
+			value:       `FOO\`,
+			envVars:     map[string]string{},
+			group:       &runnertypes.CommandGroup{Name: "test_group"},
+			expectError: true,
+			expectedErr: ErrInvalidEscapeSequence,
+		},
+		{
+			name:        "invalid escape at the start",
+			value:       `\@invalid`,
+			envVars:     map[string]string{},
+			group:       &runnertypes.CommandGroup{Name: "test_group"},
+			expectError: true,
+			expectedErr: ErrInvalidEscapeSequence,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := processor.ExpandVariablesWithEscaping(tt.value, tt.envVars, tt.group)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.expectedErr != nil {
+					assert.ErrorIs(t, err, tt.expectedErr, "Expected error type %v, got %v", tt.expectedErr, err)
+				}
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+// TestCommandEnvProcessor_EscapeSequences_CommandEnv tests escape sequences in Command.Env context
+func TestCommandEnvProcessor_EscapeSequences_CommandEnv(t *testing.T) {
+	config := &runnertypes.Config{
+		Global: runnertypes.GlobalConfig{
+			EnvAllowlist: []string{"BAR"},
+		},
+	}
+	filter := NewFilter(config)
+	processor := NewCommandEnvProcessor(filter)
 
 	tests := []struct {
 		name        string
@@ -504,113 +627,40 @@ func TestCommandEnvProcessor_ResolveVariableReferencesUnified(t *testing.T) {
 		expectedErr error
 	}{
 		{
-			name:    "simple $VAR format",
-			value:   "$HOME/bin",
-			envVars: map[string]string{},
+			name:    "escape dollar in command env (braces only)",
+			value:   `\${FOO}`,
+			envVars: map[string]string{"FOO": "value"},
 			group: &runnertypes.CommandGroup{
 				Name:         "test_group",
-				EnvAllowlist: []string{"PATH", "HOME"},
+				EnvAllowlist: []string{"FOO"},
 			},
-			expected: "/home/testuser/bin",
+			expected: "${FOO}",
 		},
 		{
-			name:    "simple ${VAR} format",
-			value:   "${HOME}/bin",
-			envVars: map[string]string{},
-			group: &runnertypes.CommandGroup{
-				Name:         "test_group",
-				EnvAllowlist: []string{"PATH", "HOME"},
-			},
-			expected: "/home/testuser/bin",
-		},
-		{
-			name:    "mixed formats",
-			value:   "$HOME/${USER}_config",
-			envVars: map[string]string{},
-			group: &runnertypes.CommandGroup{
-				Name:         "test_group",
-				EnvAllowlist: []string{"PATH", "HOME", "USER"},
-			},
-			expected: "/home/testuser/testuser_config",
-		},
-		{
-			name:    "resolve from trusted source (envVars) - mixed formats",
-			value:   "$FOO/${BAR}",
-			envVars: map[string]string{"FOO": "/custom", "BAR": "path"},
-			group: &runnertypes.CommandGroup{
-				Name:         "test_group",
-				EnvAllowlist: []string{},
-			},
-			expected: "/custom/path",
-		},
-		{
-			name:    "$VAR format - variable not allowed",
-			value:   "$USER/bin",
-			envVars: map[string]string{},
-			group: &runnertypes.CommandGroup{
-				Name:         "test_group",
-				EnvAllowlist: []string{"PATH", "HOME"}, // USER not in allowlist
-			},
-			expectError: true,
-			expectedErr: ErrVariableNotAllowed,
-		},
-		{
-			name:    "$VAR format - variable not found",
-			value:   "$NONEXISTENT/bin",
-			envVars: map[string]string{},
-			group: &runnertypes.CommandGroup{
-				Name:         "test_group",
-				EnvAllowlist: []string{"PATH", "HOME"},
-			},
-			expectError: true,
-			expectedErr: ErrVariableNotFound,
-		},
-		{
-			name:    "circular reference - mixed formats",
-			value:   "$A",
-			envVars: map[string]string{"A": "${B}", "B": "$A"},
-			group: &runnertypes.CommandGroup{
-				Name:         "test_group",
-				EnvAllowlist: []string{},
-			},
-			expectError: true,
-			expectedErr: ErrCircularReference,
-		},
-		{
-			name:    "no variable references",
-			value:   "/usr/bin/command",
+			name:    "escape backslash in command env",
+			value:   `\\path`,
 			envVars: map[string]string{},
 			group: &runnertypes.CommandGroup{
 				Name:         "test_group",
 				EnvAllowlist: []string{},
 			},
-			expected: "/usr/bin/command",
+			expected: `\path`,
 		},
 		{
-			name:    "literal dollar character should not cause false circular reference",
-			value:   "$PRICE",
-			envVars: map[string]string{"PRICE": "Cost: $100.50"},
+			name:    "mixed escape and expansion in command env",
+			value:   `prefix \${FOO} ${BAR} suffix`,
+			envVars: map[string]string{"FOO": "foo", "BAR": "bar"},
 			group: &runnertypes.CommandGroup{
 				Name:         "test_group",
-				EnvAllowlist: []string{"PRICE"},
+				EnvAllowlist: []string{"FOO", "BAR"},
 			},
-			expected: "Cost: $100.50",
-		},
-		{
-			name:    "multiple literal dollars should not cause false circular reference",
-			value:   "$MESSAGE",
-			envVars: map[string]string{"MESSAGE": "Price $5 and tax $1.50 = $6.50"},
-			group: &runnertypes.CommandGroup{
-				Name:         "test_group",
-				EnvAllowlist: []string{"MESSAGE"},
-			},
-			expected: "Price $5 and tax $1.50 = $6.50",
+			expected: "prefix ${FOO} bar suffix",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := processor.ResolveVariableReferencesUnified(tt.value, tt.envVars, tt.group)
+			result, err := processor.ExpandVariablesWithEscaping(tt.value, tt.envVars, tt.group)
 
 			if tt.expectError {
 				assert.Error(t, err)

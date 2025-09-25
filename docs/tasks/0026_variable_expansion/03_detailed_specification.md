@@ -94,9 +94,64 @@ func IsVariableNotFoundError(err error) bool {
 }
 ```
 
-### 1.3 両形式対応パーサー仕様 (parser.go)
+### 1.3 エスケープシーケンス仕様
 
-#### 1.3.1 既存コードを拡張したシンプルな実装
+#### 1.3.1 エスケープ機能の設計
+
+**エスケープ仕様**:
+- `\$` → `$` (リテラル) - 変数展開を抑制
+- `\\` → `\` (リテラル) - バックスラッシュのエスケープ
+- `\` + (その他の文字) → `ErrInvalidEscapeSequence` エラー
+- 文字列末尾の `\` → `ErrInvalidEscapeSequence` エラー
+
+**実装アルゴリズム**:
+文字列を1文字ずつスキャンし、エスケープ状態を追跡する方式を採用：
+
+1. 入力文字列を左から右へ1文字ずつスキャン
+2. `\` が見つかった場合:
+   - 次の文字が `$` または `\` であれば、次の文字をリテラルとして結果に追加
+   - 次の文字がそれ以外、または文字列の終端である場合は、`ErrInvalidEscapeSequence` エラーを返す
+3. `$` が見つかった場合（ただし、`\` でエスケープされていない）:
+   - 既存の正規表現を使用して変数パターンをマッチング
+   - マッチした場合は変数を展開、マッチしない場合は `$` をリテラルとして追加
+4. その他の文字はそのまま結果に追加
+
+**新しいエラー型**:
+```go
+// ErrInvalidEscapeSequence is returned when an invalid escape sequence is detected
+var ErrInvalidEscapeSequence = errors.New("invalid escape sequence")
+```
+
+### 1.4 パーサー仕様 (${VAR} 形式のみ)
+
+#### 1.4.1 採用形式
+
+本機能はまだ正式リリース前の段階であるため、変数参照形式は安全で明示的な `${VAR}` のみをサポートし、従来シェル的な `$VAR` 省略形式は実装・互換性コストを抑える目的で未サポートとする。
+
+理由:
+- `${...}` はトークン境界が明確で曖昧さがない
+- エスケープ仕様 (`\$` → `$`) と衝突しにくい
+- 早期段階で仕様を極力シンプルに保ち、監査容易性を優先
+
+今後 `$VAR` 形式を導入する場合は、以下の追加リスク評価を行う:
+- 連結語句中 (e.g. `PREFIX$VAR_SUFFIX`) の境界判定
+- エスケープ構文との相互作用 (例: `\$VAR`)
+- パフォーマンス最適化（逐次スキャン中の lookahead コスト）
+
+#### 1.4.2 エラー優先順位
+
+展開時のエラーは以下の優先順位で決定される:
+1. エスケープ/構文エラー (`ErrInvalidEscapeSequence`, `ErrUnclosedVariable`)
+2. 循環参照検出 (`ErrCircularReference`)
+3. 未定義変数 (`ErrVariableNotFound`) ※ ローカル/システムいずれにも存在しない
+4. アクセス不許可 (`ErrVariableNotAllowed`) ※ システム環境に存在するが allowlist 外
+
+循環参照は「自身または親階層で訪問済みの変数を再び解決しようとした」タイミングで即時判定し、未定義より優先する。これにより無限再帰防止の反復上限 (以前は MaxIteration) を不要化した。
+
+#### 1.4.3 実装メモ
+- 再帰中の訪問集合は map を再利用し、深さ展開後に delete することで追加割当を削減
+- `${VAR}` のネスト展開結果は都度再帰呼び出しで構築し、逐次的に `strings.Builder` へ書き込む
+- コマンド定義内の変数相互参照を許容するため 2 パス処理 (先に未展開値投入→後段で展開) を採用
 
 ```go
 package expansion
@@ -530,6 +585,70 @@ func TestVariableParser_ReplaceVariables(t *testing.T) {
         {
             name:     "undefined variable",
             input:    "$UNDEFINED",
+            env:      map[string]string{},
+            expected: "",
+            expectErr: true,
+        },
+        // エスケープシーケンステスト
+        {
+            name:     "escape dollar sign",
+            input:    `\$FOO`,
+            env:      map[string]string{"FOO": "value"},
+            expected: "$FOO",
+            expectErr: false,
+        },
+        {
+            name:     "escape backslash",
+            input:    `\\FOO`,
+            env:      map[string]string{},
+            expected: `\FOO`,
+            expectErr: false,
+        },
+        {
+            name:     "escaped dollar with variable expansion",
+            input:    `\$FOO and ${BAR}`,
+            env:      map[string]string{"FOO": "foo", "BAR": "bar"},
+            expected: "$FOO and bar",
+            expectErr: false,
+        },
+        {
+            name:     "backslash before variable",
+            input:    `\\$FOO`,
+            env:      map[string]string{"FOO": "value"},
+            expected: `\value`,
+            expectErr: false,
+        },
+        {
+            name:     "multiple escapes",
+            input:    `\$FOO \$BAR \\baz`,
+            env:      map[string]string{"FOO": "f", "BAR": "b"},
+            expected: "$FOO $BAR \\baz",
+            expectErr: false,
+        },
+        {
+            name:     "escaped in braces context",
+            input:    `\${FOO} ${BAR}`,
+            env:      map[string]string{"FOO": "foo", "BAR": "bar"},
+            expected: "${FOO} bar",
+            expectErr: false,
+        },
+        {
+            name:     "invalid escape sequence - letter",
+            input:    `\U`,
+            env:      map[string]string{},
+            expected: "",
+            expectErr: true,
+        },
+        {
+            name:     "invalid escape sequence - number",
+            input:    `\1`,
+            env:      map[string]string{},
+            expected: "",
+            expectErr: true,
+        },
+        {
+            name:     "trailing backslash",
+            input:    `FOO\`,
             env:      map[string]string{},
             expected: "",
             expectErr: true,
