@@ -313,7 +313,7 @@ func TestCommandEnvProcessor_ResolveVariableReferences(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := processor.ExpandVariablesWithEscaping(tt.value, tt.envVars, tt.group)
+			result, err := processor.Expand(tt.value, tt.envVars, tt.group, make(map[string]bool))
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -398,7 +398,7 @@ func TestCommandEnvProcessor_ResolveVariableReferences_CircularReferences(t *tes
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := processor.ExpandVariablesWithEscaping(tt.value, tt.envVars, tt.group)
+			result, err := processor.Expand(tt.value, tt.envVars, tt.group, make(map[string]bool))
 
 			if tt.expectError {
 				assert.Error(t, err, "Expected error for case: %s", tt.description)
@@ -656,7 +656,7 @@ func TestCommandEnvProcessor_EscapeSequences(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := processor.ExpandVariablesWithEscaping(tt.value, tt.envVars, tt.group)
+			result, err := processor.Expand(tt.value, tt.envVars, tt.group, make(map[string]bool))
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -725,7 +725,7 @@ func TestCommandEnvProcessor_EscapeSequences_CommandEnv(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := processor.ExpandVariablesWithEscaping(tt.value, tt.envVars, tt.group)
+			result, err := processor.Expand(tt.value, tt.envVars, tt.group, make(map[string]bool))
 
 			if tt.expectError {
 				assert.Error(t, err)

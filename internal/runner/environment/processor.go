@@ -71,7 +71,7 @@ func (p *CommandEnvProcessor) ProcessCommandEnvironment(cmd runnertypes.Command,
 	// Second pass: Expand all variables.
 	for name := range finalEnv {
 		value := finalEnv[name]
-		expandedValue, err := p.ExpandVariablesWithEscaping(value, finalEnv, group)
+		expandedValue, err := p.Expand(value, finalEnv, group, make(map[string]bool))
 		if err != nil {
 			return nil, fmt.Errorf("failed to expand variable %s: %w", name, err)
 		}
@@ -109,14 +109,9 @@ func validateBasicEnvVariable(varName, varValue string) error {
 	return nil
 }
 
-// ExpandVariablesWithEscaping expands variables in a string, handling escape sequences.
-// It's the entry point for the recursive expansion logic.
-func (p *CommandEnvProcessor) ExpandVariablesWithEscaping(value string, envVars map[string]string, group *runnertypes.CommandGroup) (string, error) {
-	return p.expand(value, envVars, group, make(map[string]bool))
-}
-
-// expand is the internal recursive function that performs the variable expansion.
-func (p *CommandEnvProcessor) expand(value string, envVars map[string]string, group *runnertypes.CommandGroup, visited map[string]bool) (string, error) {
+// Expand expands variables in a string, handling escape sequences.
+// It performs recursive variable expansion with circular reference detection.
+func (p *CommandEnvProcessor) Expand(value string, envVars map[string]string, group *runnertypes.CommandGroup, visited map[string]bool) (string, error) {
 	var result strings.Builder
 	runes := []rune(value)
 	i := 0
@@ -182,7 +177,7 @@ func (p *CommandEnvProcessor) expand(value string, envVars map[string]string, gr
 			if !found { // truly not found anywhere - treat as empty string per shell behavior
 				valStr = ""
 			}
-			expanded, err := p.expand(valStr, envVars, group, visited)
+			expanded, err := p.Expand(valStr, envVars, group, visited)
 			if err != nil {
 				return "", fmt.Errorf("failed to expand nested variable ${%s}: %w", varName, err)
 			}
