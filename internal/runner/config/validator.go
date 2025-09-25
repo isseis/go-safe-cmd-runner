@@ -302,7 +302,7 @@ func (v *Validator) validateCommandEnv(env []string, location string, result *Va
 		seenVars[varName] = i
 
 		// Check for dangerous patterns in values
-		if err := v.validateVariableValue(varValue); err != nil {
+		if err := v.validateVariableValue(varName, varValue); err != nil {
 			result.Warnings = append(result.Warnings, ValidationWarning{
 				Type:       "dangerous_command_env_value",
 				Message:    fmt.Sprintf("Command environment variable '%s' contains potentially dangerous value: %s", varName, err.Error()),
@@ -314,9 +314,9 @@ func (v *Validator) validateCommandEnv(env []string, location string, result *Va
 }
 
 // validateVariableValue validates an environment variable value for dangerous patterns
-func (v *Validator) validateVariableValue(value string) error {
+func (v *Validator) validateVariableValue(name, value string) error {
 	// Use centralized security validation
-	if err := security.IsVariableValueSafe(value); err != nil {
+	if err := security.IsVariableValueSafe(name, value); err != nil {
 		// Wrap the security error with our validation error type for consistency
 		return fmt.Errorf("%w: %s", ErrDangerousPattern, err.Error())
 	}

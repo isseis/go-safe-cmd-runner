@@ -66,13 +66,6 @@ func (v *Validator) ValidateAllEnvironmentVars(envVars map[string]string) error 
 	return nil
 }
 
-// ValidateVariableValue validates that a variable value contains no dangerous patterns
-// This is a convenience function that wraps ValidateEnvironmentValue for use by other packages
-func (v *Validator) ValidateVariableValue(value string) error {
-	// Use a dummy key name for the validation since we only care about the value
-	return v.ValidateEnvironmentValue("VAR", value)
-}
-
 // ValidateVariableName validates that a variable name is safe and well-formed
 // This is a global convenience function for validating environment variable names
 func ValidateVariableName(name string) error {
@@ -109,10 +102,10 @@ func isLetterOrUnderscoreOrDigit(char byte) bool {
 
 // IsVariableValueSafe validates that a variable value contains no dangerous patterns
 // This is a global convenience function that creates a default validator to check variable values
-func IsVariableValueSafe(value string) error {
+func IsVariableValueSafe(name, value string) error {
 	validator, err := NewValidator(nil) // Use default config
 	if err != nil {
 		return fmt.Errorf("failed to create validator: %w", err)
 	}
-	return validator.ValidateVariableValue(value)
+	return validator.ValidateEnvironmentValue(name, value)
 }

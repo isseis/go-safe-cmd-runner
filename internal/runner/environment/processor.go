@@ -50,16 +50,22 @@ func (p *CommandEnvProcessor) ProcessCommandEnvironment(cmd runnertypes.Command,
 	}
 
 	// First pass: Populate the environment with unexpanded values from the command.
-	for _, envStr := range cmd.Env {
+	for i, envStr := range cmd.Env {
 		varName, varValue, ok := strings.Cut(envStr, "=")
 		if !ok {
-			return nil, fmt.Errorf("%w: %s", ErrMalformedEnvVariable, envStr)
+			return nil, fmt.Errorf("invalid environment variable format in Command.Env in command %s, env_index: %d, env_entry: %s: %w", cmd.Name, i, envStr, ErrMalformedEnvVariable)
 		}
 		// Validate only the name at this stage.
 		if err := validateBasicEnvVariable(varName, ""); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("malformed command environment variable %s in command %s: %w",
+				varName, cmd.Name, err)
 		}
 		finalEnv[varName] = varValue
+
+		p.logger.Debug("Processed command environment variable",
+			"command", cmd.Name,
+			"variable", varName,
+			"value_length", len(varValue))
 	}
 
 	// Second pass: Expand all variables.
@@ -96,8 +102,8 @@ func validateBasicEnvVariable(varName, varValue string) error {
 	// Only validate non-empty values post expansion. Use security.IsVariableValueSafe
 	// which provides detailed errors about unsafe patterns.
 	if varValue != "" {
-		if err := security.IsVariableValueSafe(varValue); err != nil {
-			return fmt.Errorf("%w: %s", security.ErrUnsafeEnvironmentVar, err.Error())
+		if err := security.IsVariableValueSafe(varName, varValue); err != nil {
+			return fmt.Errorf("%w: command environment variable %s: %s", security.ErrUnsafeEnvironmentVar, varName, err.Error())
 		}
 	}
 	return nil
@@ -187,10 +193,3 @@ func (p *CommandEnvProcessor) expand(value string, envVars map[string]string, gr
 	}
 	return result.String(), nil
 }
-
-// ValidateVariableName checks if a variable name is valid.
-// It must start with a letter or underscore, followed by letters, numbers, or underscores.
-// NOTE: ValidateVariableName and ValidateVariableValue were thin wrappers around
-// security package functions. They have been removed; callers should use
-// security.ValidateVariableName(name) and security.IsVariableValueSafe(value)
-// directly to preserve detailed error information.

@@ -253,7 +253,7 @@ func (f *Filter) ValidateEnvironmentVariable(name, value string) error {
 		return err
 	}
 
-	if err := security.IsVariableValueSafe(value); err != nil {
+	if err := security.IsVariableValueSafe(name, value); err != nil {
 		return err
 	}
 
