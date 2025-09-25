@@ -5,57 +5,40 @@
 ### 1.1 パッケージ構成詳細
 
 ```
-internal/runner/expansion/
-├── expander.go          # 統合展開エンジン（cmd/args 用）
-├── parser.go           # ${VAR}形式パーサー
-├── types.go           # シンプルな型定義
-└── expansion_test.go  # 統合テスト
-
 # 既存コンポーネント拡張
-internal/runner/environment/processor.go  # 両形式サポートと反復上限拡張
+internal/runner/environment/processor.go  # CommandEnvProcessor.Expand による変数展開
 internal/runner/security/validator.go    # 既存のセキュリティ検証を活用
+internal/runner/config/validator.go      # コマンド設定の検証
 ```
 
 ### 1.2 型定義とインターフェース
 
-#### 1.2.1 シンプルなコア型定義 (types.go)
+#### 1.2.1 CommandEnvProcessor の直接使用
 
 ```go
-package expansion
+package environment
 
-import (
-    "context"
-)
-
-// VariableExpander は cmd/args 用のシンプルな展開インターフェース
-type VariableExpander interface {
-    // 既存の反復制限方式を使用したシンプルな展開
-    Expand(ctx context.Context, text string, env map[string]string, allowlist []string) (string, error)
-    ExpandAll(ctx context.Context, texts []string, env map[string]string, allowlist []string) ([]string, error)
+// CommandEnvProcessor は環境変数処理を担当し、cmd/args の変数展開を直接実行する
+type CommandEnvProcessor struct {
+    filter *Filter
+    logger *slog.Logger
 }
 
-// VariableParser は${VAR}形式パーサー
-type VariableParser interface {
-    // ${VAR}形式のみをサポート
-    ReplaceVariables(text string, resolver VariableResolver) (string, error)
-}
+// Expand は変数を展開し、エスケープ処理と循環参照検出を含む
+func (p *CommandEnvProcessor) Expand(
+    value string,
+    envVars map[string]string,
+    allowlist []string,
+    groupName string,
+    visited map[string]bool,
+) (string, error)
 
-// VariableResolver は変数解決インターフェース
-type VariableResolver interface {
-    ResolveVariable(name string) (string, error)
-}
-
-// 既存のSecurity Validatorをそのまま活用
-// - ValidateAllEnvironmentVars(envVars map[string]string) error
-// - 既存の allowlist 検証ロジックを流用
-
-// ExpansionMetrics は最小限のメトリクス
-type ExpansionMetrics struct {
-    TotalExpansions   int64
-    VariableCount     int
-    ErrorCount        int64
-    MaxIterations     int  // 反復制限方式の最大反復数
-}
+// ProcessCommandEnvironment はコマンド環境の処理を行う
+func (p *CommandEnvProcessor) ProcessCommandEnvironment(
+    cmd runnertypes.Command,
+    baseEnvVars map[string]string,
+    group *runnertypes.CommandGroup,
+) (map[string]string, error)
 
 ```
 
@@ -138,7 +121,7 @@ var ErrInvalidEscapeSequence = errors.New("invalid escape sequence")
 var ErrInvalidVariableFormat = errors.New("invalid variable format")
 ```
 
-### 1.4 パーサー仕様 (${VAR} 形式のみ)
+### 1.4 変数展開仕様 (${VAR} 形式のみ)
 
 #### 1.4.1 採用形式
 
@@ -154,158 +137,19 @@ var ErrInvalidVariableFormat = errors.New("invalid variable format")
 
 展開時のエラーは以下の優先順位で決定される:
 1. エスケープ/構文エラー (`ErrInvalidEscapeSequence`, `ErrInvalidVariableFormat`)
-2. 循環参照検出 (`ErrCircularReference`)
-3. アクセス不許可 (`ErrVariableNotAllowed`) ※ システム環境に存在するが allowlist 外
-4. 未定義 (`ErrVariableNotFound`)
-
-循環参照は「自身または親階層で訪問済みの変数を再び解決しようとした」タイミングで即時判定し、未定義より優先する。これにより無限再帰防止の反復上限 (以前は MaxIteration) を不要化した。
+2. 変数名エラー (`ErrInvalidVariableName`)
+3. 循環参照検出 (`ErrCircularReference`)
+4. アクセス不許可 (`ErrVariableNotAllowed`) ※ システム環境に存在するが allowlist 外
+5. 未定義 (`ErrVariableNotFound`)
 
 #### 1.4.3 実装メモ
 - 再帰中の訪問集合は map を再利用し、深さ展開後に delete することで追加割当を削減
 - `${VAR}` のネスト展開結果は都度再帰呼び出しで構築し、逐次的に `strings.Builder` へ書き込む
 - コマンド定義内の変数相互参照を許容するため 2 パス処理 (先に未展開値投入→後段で展開) を採用
 
-```go
-package expansion
+### 1.5 既存セキュリティ検証とのシンプルな統合
 
-import (
-    "regexp"
-    "strings"
-    "github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
-)
-
-// ${VAR}形式のみのシンプルなアプローチ
-var (
-    // ${VAR}形式のパターンのみ
-    bracedVariablePattern = regexp.MustCompile(`\$\{([a-zA-Z_][0-9a-zA-Z_]*)\}`)
-
-    // 既存コードとの完全互換性のためのパターン
-    legacyBracedPattern = regexp.MustCompile(`\$\{([^}]+)\}`)
-)
-
-// variableParser は両形式対応パーサー
-type variableParser struct {
-    // シンプルな実装で正規表現のみ使用
-}
-
-// NewVariableParser は新しいパーサーを作成
-func NewVariableParser() VariableParser {
-    return &variableParser{}
-}
-
-// ReplaceVariables は文字ベースのスキャンによるエスケープ処理と変数展開
-func (p *variableParser) ReplaceVariables(text string, resolver VariableResolver) (string, error) {
-    if !strings.Contains(text, "$") {
-        return text, nil
-    }
-
-    // エスケープ処理を含む1文字ずつのスキャン処理
-    processed, err := p.processEscapesAndValidateVariables(text)
-    if err != nil {
-        return "", err
-    }
-
-    result := processed
-    maxIterations := 15 // 既存の 10 から 15 に拡張
-    var resolutionError error
-
-    for i := 0; i < maxIterations && strings.Contains(result, "$"); i++ {
-        oldResult := result
-
-        // ${VAR}形式のみをサポート
-        result = bracedVariablePattern.ReplaceAllStringFunc(result, func(match string) string {
-            submatches := bracedVariablePattern.FindStringSubmatch(match)
-            if len(submatches) < 2 {
-                return match // 不正なマッチ
-            }
-
-            varName := submatches[1]
-            return p.resolveVariableWithErrorHandling(varName, resolver, &resolutionError, match)
-        })
-
-        if result == oldResult {
-            break // 変化なし = 処理完了
-        }
-    }
-
-    if resolutionError != nil {
-        return "", resolutionError
-    }
-
-    // 循環参照チェック
-    if strings.Contains(result, "$") && bracedVariablePattern.MatchString(result) {
-        return "", environment.ErrCircularReference
-    }
-
-    return result, nil
-}
-
-// processEscapesAndValidateVariables は文字列を1文字ずつスキャンしてエスケープ処理と変数形式検証を行う
-func (p *variableParser) processEscapesAndValidateVariables(text string) (string, error) {
-    var result strings.Builder
-    i := 0
-
-    for i < len(text) {
-        ch := text[i]
-
-        switch ch {
-        case '\\':
-            // エスケープシーケンス処理
-            if i+1 >= len(text) {
-                return "", ErrInvalidEscapeSequence // 文字列末尾の \
-            }
-
-            next := text[i+1]
-            switch next {
-            case '$', '\\':
-                result.WriteByte(next) // エスケープされた文字をリテラルとして追加
-                i += 2 // 2文字消費
-            default:
-                return "", ErrInvalidEscapeSequence // 無効なエスケープ
-            }
-
-        case '$':
-            // 変数形式の検証
-            if i+1 >= len(text) || text[i+1] != '{' {
-                return "", ErrInvalidVariableFormat // $ の後に { がない
-            }
-
-            // 対応する } を探す
-            closeIndex := strings.IndexByte(text[i:], '}')
-            if closeIndex == -1 {
-                return "", ErrInvalidVariableFormat // 対応する } がない
-            }
-
-            // ${...} 全体を結果に追加
-            varRef := text[i : i+closeIndex+1]
-            result.WriteString(varRef)
-            i += closeIndex + 1
-
-        default:
-            result.WriteByte(ch)
-            i++
-        }
-    }
-
-    return result.String(), nil
-}
-
-// resolveVariableWithErrorHandling は変数を解決し、エラーを統一的に処理
-func (p *variableParser) resolveVariableWithErrorHandling(varName string, resolver VariableResolver, resolutionError *error, originalMatch string) string {
-    resolvedValue, err := resolver.ResolveVariable(varName)
-    if err != nil {
-        if *resolutionError == nil {
-            *resolutionError = err
-        }
-        return originalMatch // エラー時は元の文字列を維持
-    }
-    return resolvedValue
-}
-```
-
-### 1.4 既存セキュリティ検証とのシンプルな統合
-
-#### 1.4.1 既存 Security Validator をそのまま活用
+#### 1.5.1 既存 Security Validator をそのまま活用
 
 ```go
 package expansion
@@ -335,9 +179,9 @@ func (sv *SecurityValidator) ValidateAndExpand(
     envVars map[string]string,
     group *runnertypes.CommandGroup,
 ) (string, error) {
-    // 既存の resolveVariableReferencesForCommandEnv を拡張したメソッドを使用
+    // Expand メソッドを使用して ${VAR} 形式の変数展開を実行
     // ここで ${VAR} 形式が一貫してサポートされる
-    return sv.envProcessor.ResolveVariableReferencesUnified(text, envVars, group)
+    return sv.envProcessor.Expand(text, envVars, group, make(map[string]bool))
 }
 
 // 既存の allowlist 検証、Command.Env 優先ポリシーはそのまま使用
@@ -349,179 +193,150 @@ func (sv *SecurityValidator) ValidateAndExpand(
 #### 1.5.1 既存の反復制限方式を拡張
 
 ```go
-// 既存の processor.go の resolveVariableReferencesForCommandEnv を拡張
-// 主な変更点:
-// 1. maxIterations: 10 → 15 に拡張
-// 2. エスケープ処理の追加
-// 3. 変数形式の厳格な検証
-
-func (p *CommandEnvProcessor) ResolveVariableReferencesUnified(
+// Expand は変数を展開し、エスケープ処理を含む1文字スキャン方式で実装
+func (p *CommandEnvProcessor) Expand(
     value string,
     envVars map[string]string,
-    group *runnertypes.CommandGroup,
+    allowlist []string,
+    groupName string,
+    visited map[string]bool,
 ) (string, error) {
-    if !strings.Contains(value, "$") {
-        return value, nil
-    }
-
-    // エスケープ処理と変数形式の検証を先に実行
-    processed, err := p.processEscapesAndValidateVariables(value)
-    if err != nil {
-        return "", err
-    }
-
-    result := processed
-    maxIterations := 15 // 既存の 10 から 15 に拡張
-    var resolutionError error
-
-    for i := 0; i < maxIterations && strings.Contains(result, "$"); i++ {
-        oldResult := result
-
-        // ${VAR} 形式のみを処理（$VAR サポートは削除）
-        result = variableReferenceRegex.ReplaceAllStringFunc(result, p.resolveVariableFunc)
-
-        if result == oldResult {
-            break // 変化なし = 処理完了
-        }
-    }
-
-    if resolutionError != nil {
-        return "", resolutionError
-    }
-
-    // 循環参照チェック
-    if strings.Contains(result, "$") && variableReferenceRegex.MatchString(result) {
-        return "", fmt.Errorf("%w: exceeded maximum resolution iterations (%d)", ErrCircularReference, maxIterations)
-    }
-
-    return result, nil
-}
-
-// processEscapesAndValidateVariables はCommandEnvProcessor用のエスケープ処理と変数形式検証
-func (p *CommandEnvProcessor) processEscapesAndValidateVariables(text string) (string, error) {
     var result strings.Builder
+    runes := []rune(value)
     i := 0
 
-    for i < len(text) {
-        ch := text[i]
-
-        switch ch {
+    for i < len(runes) {
+        switch runes[i] {
         case '\\':
             // エスケープシーケンス処理
-            if i+1 >= len(text) {
+            if i+1 >= len(runes) {
                 return "", ErrInvalidEscapeSequence
             }
-
-            next := text[i+1]
-            switch next {
-            case '$', '\\':
-                result.WriteByte(next)
+            nextChar := runes[i+1]
+            if nextChar == '$' || nextChar == '\\' {
+                result.WriteRune(nextChar)
                 i += 2
-            default:
-                return "", ErrInvalidEscapeSequence
+            } else {
+                return "", fmt.Errorf("%w: \\%c", ErrInvalidEscapeSequence, nextChar)
             }
 
         case '$':
-            // 変数形式の検証 - ${VAR} 形式のみ許可
-            if i+1 >= len(text) || text[i+1] != '{' {
+            // ${VAR}形式のみをサポート
+            if i+1 >= len(runes) || runes[i+1] != '{' {
                 return "", ErrInvalidVariableFormat
             }
 
-            // 対応する } を探す
-            closeIndex := strings.IndexByte(text[i:], '}')
-            if closeIndex == -1 {
-                return "", ErrInvalidVariableFormat
+            start := i + 2
+            end := -1
+            for j := start; j < len(runes); j++ {
+                if runes[j] == '}' {
+                    end = j
+                    break
+                }
+            }
+            if end == -1 {
+                return "", ErrUnclosedVariable
             }
 
-            // ${...} 全体を結果に追加
-            varRef := text[i : i+closeIndex+1]
-            result.WriteString(varRef)
-            i += closeIndex + 1
+            varName := string(runes[start:end])
+            if err := security.ValidateVariableName(varName); err != nil {
+                return "", fmt.Errorf("%w: %s: %w", ErrInvalidVariableName, varName, err)
+            }
+
+            if visited[varName] {
+                return "", fmt.Errorf("%w: %s", ErrCircularReference, varName)
+            }
+
+            visited[varName] = true
+
+            // 変数の値を取得（local -> system の順）
+            val, foundLocal := envVars[varName]
+            var valStr string
+            var found bool
+
+            if foundLocal {
+                valStr, found = val, true
+            } else {
+                sysVal, foundSys := os.LookupEnv(varName)
+                if foundSys {
+                    // Create temporary CommandGroup for filter compatibility
+                    tempGroup := &runnertypes.CommandGroup{
+                        EnvAllowlist: allowlist,
+                        Name:         groupName,
+                    }
+                    if !p.filter.IsVariableAccessAllowed(varName, tempGroup) {
+                        return "", fmt.Errorf("%w: %s", ErrVariableNotAllowed, varName)
+                    }
+                    valStr, found = sysVal, true
+                }
+            }
+
+            if !found {
+                return "", fmt.Errorf("%w: %s", ErrVariableNotFound, varName)
+            }
+
+            // 再帰的に展開
+            expanded, err := p.Expand(valStr, envVars, allowlist, groupName, visited)
+            if err != nil {
+                return "", fmt.Errorf("failed to expand nested variable ${%s}: %w", varName, err)
+            }
+
+            result.WriteString(expanded)
+            delete(visited, varName)
+            i = end + 1
 
         default:
-            result.WriteByte(ch)
+            result.WriteRune(runes[i])
             i++
         }
     }
 
     return result.String(), nil
 }
-
-// 既存のテストケースを拡張してエラーケースもカバー
-// 既存の実績あるアルゴリズムを活用し、複雑なDFSは使用しない
 ```
 
-### 1.6 cmd/args 用統合展開エンジン仕様 (expander.go)
+### 1.6 cmd/args 用変数展開の実装
 
-#### 1.6.1 既存コードを活用したシンプルな実装
+#### 1.6.1 CommandEnvProcessor の直接使用
+
+cmd/args の変数展開には `CommandEnvProcessor.Expand` メソッドを直接使用する。
+
+主な特徴:
+- 既存の実績あるコードを最大限活用
+- thin wrapper を避けたシンプルな設計
+- 直接的で理解しやすい実装
 
 ```go
-package expansion
+package config
 
 import (
-    "context"
     "fmt"
     "github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
     "github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
-// variableExpander は cmd/args 用のシンプルな展開エンジン
-type variableExpander struct {
-    envProcessor *environment.CommandEnvProcessor  // 既存の拡張されたプロセッサー
-    metrics      *ExpansionMetrics
+// CommandEnvProcessor を直接使用した変数展開
+func expandVariables(processor *environment.CommandEnvProcessor, text string, envVars map[string]string, allowlist []string, groupName string) (string, error) {
+    // CommandEnvProcessor.Expand を直接使用（シンプルなAPI）
+    return processor.Expand(text, envVars, allowlist, groupName, make(map[string]bool))
 }
 
-// NewVariableExpander は既存コンポーネントを活用したエンジンを作成
-func NewVariableExpander(envProcessor *environment.CommandEnvProcessor) VariableExpander {
-    return &variableExpander{
-        envProcessor: envProcessor,
-        metrics:      &ExpansionMetrics{MaxIterations: 15},
-    }
-}
-
-// Expand は既存の反復制限アルゴリズムを使用して展開
-func (e *variableExpander) Expand(ctx context.Context, text string, env map[string]string, allowlist []string) (string, error) {
-    e.metrics.TotalExpansions++
-
-    // 仮の CommandGroup を作成（allowlist 情報を含む）
-    group := &runnertypes.CommandGroup{
-        EnvAllowlist: allowlist,
-    }
-
-    // 既存の拡張されたメソッドを使用（$VAR と ${VAR} 両形式対応）
-    result, err := e.envProcessor.ResolveVariableReferencesUnified(text, env, group)
-    if err != nil {
-        e.metrics.ErrorCount++
-        return "", fmt.Errorf("failed to expand variables: %w", err)
-    }
-
-    return result, nil
-}
-
-// ExpandAll は複数の文字列を一括で展開
-func (e *variableExpander) ExpandAll(ctx context.Context, texts []string, env map[string]string, allowlist []string) ([]string, error) {
+// 複数文字列の一括展開（ユーティリティ関数）
+func expandAll(processor *environment.CommandEnvProcessor, texts []string, envVars map[string]string, allowlist []string, groupName string) ([]string, error) {
     if len(texts) == 0 {
         return texts, nil
     }
 
     result := make([]string, len(texts))
     for i, text := range texts {
-        expanded, err := e.Expand(ctx, text, env, allowlist)
+        expanded, err := expandVariables(processor, text, envVars, allowlist, groupName)
         if err != nil {
-            return nil, fmt.Errorf("failed to expand text[%d] '%s': %w", i, text, err)
+            return nil, fmt.Errorf("failed to expand text[%d]: %w", i, err)
         }
         result[i] = expanded
     }
     return result, nil
 }
-
-// GetMetrics はシンプルなメトリクスを取得
-func (e *variableExpander) GetMetrics() ExpansionMetrics {
-    return *e.metrics
-}
-
-// 既存の実績あるコードを最大限活用し、新しい複雑な実装を回避
-// 直感的で理解しやすいコードを保持
 ```
 
 ### 1.7 設定統合仕様
@@ -530,28 +345,26 @@ func (e *variableExpander) GetMetrics() ExpansionMetrics {
 
 ```go
 // Command構造体への変数展開統合
-func (c *Command) ExpandVariables(expander expansion.VariableExpander, allowlist []string) error {
-    ctx := context.Background()
-
+func (c *Command) ExpandVariables(processor *environment.CommandEnvProcessor, allowlist []string, groupName string) error {
     // 環境変数マップを構築
     env, err := c.BuildEnvironmentMap()
     if err != nil {
         return fmt.Errorf("failed to build environment map: %w", err)
     }
 
-    // コマンド名の展開（展開処理中にバリデーションも実行される）
-    if expandedCmd, err := expander.Expand(ctx, c.Cmd, env, allowlist); err != nil {
+    // コマンド名の展開（シンプルなAPI）
+    expandedCmd, err := processor.Expand(c.Cmd, env, allowlist, groupName, make(map[string]bool))
+    if err != nil {
         return fmt.Errorf("failed to expand command: %w", err)
-    } else {
-        c.Cmd = expandedCmd
     }
+    c.Cmd = expandedCmd
 
-    // 引数の展開（展開処理中にバリデーションも実行される）
-    if expandedArgs, err := expander.ExpandAll(ctx, c.Args, env, allowlist); err != nil {
+    // 引数の展開
+    expandedArgs, err := expandAll(processor, c.Args, env, allowlist, groupName)
+    if err != nil {
         return fmt.Errorf("failed to expand args: %w", err)
-    } else {
-        c.Args = expandedArgs
     }
+    c.Args = expandedArgs
 
     return nil
 }
@@ -821,7 +634,7 @@ func TestVariableExpander_Expand(t *testing.T) {
         expectErr bool
     }{
         {
-            name: "simple $VAR expansion",
+            name: "simple ${VAR} expansion",
             text:  "${DOCKER_CMD",
             env:  map[string]string{"DOCKER_CMD": "/usr/bin/docker"},
             allowlist: []string{},
@@ -945,7 +758,7 @@ func TestCircularReferenceDetection_IterativeBased(t *testing.T) {
         expectErr bool
     }{
         {
-            name: "no circular reference - both formats",
+            name: "no circular reference - ${VAR} format",
             env: map[string]string{
                 "A": "value_a",
                 "B": "${A}",
@@ -987,7 +800,7 @@ func TestCircularReferenceDetection_IterativeBased(t *testing.T) {
                 "USER": "testuser",
                 "HOME": "/home/testuser",
             },
-            testValue: `{"user": "$USER", "home": "${HOME}"}`,
+            testValue: `{"user": "${USER}", "home": "${HOME}"}`,
             expectErr: false, // JSON内の変数が正しく処理される
         },
     }
@@ -1019,7 +832,7 @@ func TestCircularReferenceDetection_IterativeBased(t *testing.T) {
 
 ```go
 func BenchmarkVariableExpansion(b *testing.B) {
-    // 統一正規表現アプローチのパフォーマンステスト
+    // ${VAR}形式専用のパフォーマンステスト
     parser := NewVariableParser()
     resolver := &testVariableResolver{
         env: map[string]string{

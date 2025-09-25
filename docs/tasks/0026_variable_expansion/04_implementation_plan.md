@@ -30,7 +30,7 @@
 
 #### 1.2 型定義とインターフェース設計
 - [x] `internal/runner/expansion/types.go` 作成
-  - [x] `VariableExpander` インターフェース定義
+  - [x] CommandEnvProcessor による直接実装
   - [x] `VariableParser` インターフェース定義
   - [x] `VariableResolver` インターフェース定義
   - [x] `Metrics` 構造体定義
@@ -66,7 +66,7 @@
   - [x] 不正エスケープシーケンスの検出とエラー処理
   - [x] 既存の正規表現を活用した変数パターンマッチング
   - [x] プレースホルダー方式によるエスケープ文字の保護
-- [x] `ResolveVariableReferencesUnified` への同様の実装
+- [x] `Expand` への同様の実装
 - [x] エスケープ機能のテスト作成
   - [x] `\$FOO` → `$FOO` のテスト
   - [x] `\\$FOO` → `\value` のテスト
@@ -76,12 +76,10 @@
 ### Phase 2: 統合展開エンジン実装 (Week 3)
 
 #### 2.1 cmd/args用展開エンジン実装
-- [ ] `internal/runner/expansion/expander.go` 作成
-  - [ ] `variableExpander` 構造体実装
-  - [ ] `NewVariableExpander` コンストラクタ実装
-  - [ ] `Expand` メソッド実装
-  - [ ] `ExpandAll` メソッド実装
-  - [ ] `GetMetrics` メソッド実装
+- [x] CommandEnvProcessor による直接実装（expander.go は作成しない）
+  - [x] `Expand` メソッド実装（既存）
+  - [ ] `expandAll` ユーティリティ関数実装
+  - [ ] メトリクス機能（必要に応じて）
 - [ ] セキュリティ検証との統合
   - [ ] 既存 `SecurityValidator` の活用
   - [ ] allowlist検証の統合
@@ -102,8 +100,8 @@
 #### 2.3 統合テスト実装
 - [ ] `internal/runner/expansion/expansion_test.go` 作成
   - [ ] `TestVariableParser_ReplaceVariables` 実装
-  - [ ] `TestVariableExpander_Expand` 実装
-  - [ ] `TestVariableExpander_ExpandAll` 実装
+  - [ ] CommandEnvProcessor.Expand のテスト拡張
+  - [ ] expandAll ユーティリティ関数のテスト実装
   - [ ] `TestCircularReferenceDetection_IterativeBased` 実装
   - [ ] セキュリティテストケース追加
 - [ ] 統合テストシナリオ実装

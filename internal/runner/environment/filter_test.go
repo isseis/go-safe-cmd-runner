@@ -58,14 +58,21 @@ func TestDetermineInheritanceMode(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			filter := NewFilter(&runnertypes.Config{})
-			mode, err := filter.determineInheritanceMode(tt.group)
+			var allowlist []string
+			if tt.group != nil {
+				allowlist = tt.group.EnvAllowlist
+			}
+			mode := filter.determineInheritanceMode(allowlist)
 
 			if tt.expectError {
-				assert.Error(t, err)
+				// Since determineInheritanceMode no longer returns errors,
+				// we need to handle nil group case differently
+				if tt.group == nil && tt.expectedMode != runnertypes.InheritanceModeInherit {
+					t.Errorf("Expected error for nil group, but got mode: %v", mode)
+				}
 				return
 			}
 
-			assert.NoError(t, err)
 			assert.Equal(t, tt.expectedMode, mode)
 		})
 	}
@@ -190,10 +197,15 @@ func TestIsVariableAccessAllowedWithInheritance(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := filter.IsVariableAccessAllowed(tt.variable, tt.group)
-			groupName := "nil"
+			var allowlist []string
+			var groupName string
 			if tt.group != nil {
+				allowlist = tt.group.EnvAllowlist
 				groupName = tt.group.Name
+			}
+			result := filter.IsVariableAccessAllowed(tt.variable, allowlist, groupName)
+			if tt.group == nil {
+				groupName = "nil"
 			}
 			assert.Equal(t, tt.expected, result, "IsVariableAccessAllowed(%s, %s)", tt.variable, groupName)
 		})

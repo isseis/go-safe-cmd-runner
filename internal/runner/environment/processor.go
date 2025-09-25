@@ -71,7 +71,7 @@ func (p *CommandEnvProcessor) ProcessCommandEnvironment(cmd runnertypes.Command,
 	// Second pass: Expand all variables.
 	for name := range finalEnv {
 		value := finalEnv[name]
-		expandedValue, err := p.Expand(value, finalEnv, group, make(map[string]bool))
+		expandedValue, err := p.Expand(value, finalEnv, group.EnvAllowlist, group.Name, make(map[string]bool))
 		if err != nil {
 			return nil, fmt.Errorf("failed to expand variable %s: %w", name, err)
 		}
@@ -111,7 +111,7 @@ func validateBasicEnvVariable(varName, varValue string) error {
 
 // Expand expands variables in a string, handling escape sequences.
 // It performs recursive variable expansion with circular reference detection.
-func (p *CommandEnvProcessor) Expand(value string, envVars map[string]string, group *runnertypes.CommandGroup, visited map[string]bool) (string, error) {
+func (p *CommandEnvProcessor) Expand(value string, envVars map[string]string, allowlist []string, groupName string, visited map[string]bool) (string, error) {
 	var result strings.Builder
 	runes := []rune(value)
 	i := 0
@@ -167,8 +167,8 @@ func (p *CommandEnvProcessor) Expand(value string, envVars map[string]string, gr
 				sysVal, foundSys := os.LookupEnv(varName)
 				if foundSys {
 					// 2. allowlist check only after confirming existence
-					if !p.filter.IsVariableAccessAllowed(varName, group) {
-						p.logger.Warn("system variable access not allowed", "variable", varName, "group", group.Name)
+					if !p.filter.IsVariableAccessAllowed(varName, allowlist, groupName) {
+						p.logger.Warn("system variable access not allowed", "variable", varName, "group", groupName)
 						return "", fmt.Errorf("%w: %s", ErrVariableNotAllowed, varName)
 					}
 					valStr, found = sysVal, true
@@ -177,7 +177,7 @@ func (p *CommandEnvProcessor) Expand(value string, envVars map[string]string, gr
 			if !found { // variable not found anywhere - return error
 				return "", fmt.Errorf("%w: %s", ErrVariableNotFound, varName)
 			}
-			expanded, err := p.Expand(valStr, envVars, group, visited)
+			expanded, err := p.Expand(valStr, envVars, allowlist, groupName, visited)
 			if err != nil {
 				return "", fmt.Errorf("failed to expand nested variable ${%s}: %w", varName, err)
 			}
