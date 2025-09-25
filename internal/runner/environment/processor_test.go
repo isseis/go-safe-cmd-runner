@@ -439,7 +439,6 @@ func TestCommandEnvProcessor_ValidateBasicEnvVariable(t *testing.T) {
 	}
 }
 
-// TestCommandEnvProcessor_InheritanceModeIntegration(t *testing.T) {
 func TestCommandEnvProcessor_InheritanceModeIntegration(t *testing.T) {
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
