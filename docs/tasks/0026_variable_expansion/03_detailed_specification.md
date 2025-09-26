@@ -188,9 +188,9 @@ func (sv *SecurityValidator) ValidateAndExpand(
 // 新しいコードを書かずに既存の実績あるコードを活用
 ```
 
-### 1.5 循環参照検出仕様（既存アルゴリズムを活用）
+### 1.5 循環参照検出仕様（visited mapアルゴリズムを採用）
 
-#### 1.5.1 既存の反復制限方式を拡張
+#### 1.5.1 visited mapによる循環参照検出
 
 ```go
 // Expand は変数を展開し、エスケープ処理を含む1文字スキャン方式で実装
@@ -774,7 +774,7 @@ func TestCircularReferenceDetection_IterativeBased(t *testing.T) {
                 "B": "${A}",
             },
             testValue: "${A}",
-            expectErr: true, // 既存の反復制限で検出
+            expectErr: true, // visited mapで循環参照を検出
         },
         {
             name: "indirect circular reference",
@@ -784,7 +784,7 @@ func TestCircularReferenceDetection_IterativeBased(t *testing.T) {
                 "C": "${A}",
             },
             testValue: "${A}",
-            expectErr: true, // 既存の反復制限で検出
+            expectErr: true, // visited mapで循環参照を検出
         },
         {
             name: "self reference",
@@ -896,7 +896,7 @@ func BenchmarkVariableExpansion(b *testing.B) {
 
 #### 1.10.1 既存コードを活用した統合ポイント
 
-1. **Environment Processor 拡張**: 既存の `processor.go` に $VAR サポートと反復上限拡張
+1. **Environment Processor 拡張**: 既存の `processor.go` に visited mapによる循環参照検出を実装
 2. **Config Parser 統合**: シンプルな cmd/args 展開処理を追加
 3. **Security Validator 活用**: 既存の allowlist 検証と Command.Env 優先ポリシーをそのまま使用
 4. **Error Handling 一元化**: 既存のエラー型を流用して統一性を維持
@@ -905,7 +905,7 @@ func BenchmarkVariableExpansion(b *testing.B) {
 
 - **完全互換性**: 環境変数参照のない設定ファイルは無変更で動作
 - **既存コード維持**: Command.Env 処理は実績ある既存コードを拡張のみ
-- **直感的な実装**: 複雑なDFSではなく理解しやすい反復制限方式
+- **直感的な実装**: 複雑なDFSではなく理解しやすいvisited mapによる循環参照検出
 - **保守性重視**: 新しい開発者でも簡単に理解・修正可能なコード
 
 このシンプルなアプローチにより、既存の実績あるコードを最大限活用しつつ、要件を満たす堅牢で高性能な変数展開機能を実現できます。
