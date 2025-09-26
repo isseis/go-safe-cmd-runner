@@ -504,13 +504,13 @@ func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
 		mockResourceManager.AssertExpectations(t)
 	})
 
-	t.Run("environment variable access denied causes error", func(t *testing.T) {
+	t.Run("undefined environment variable treated as an error", func(t *testing.T) {
 		group := runnertypes.CommandGroup{
-			Name:         "test-env-error",
-			EnvAllowlist: []string{"VALID_VAR"}, // Note: INVALID_VAR is not in allowlist
+			Name:         "test-env-undefined",
+			EnvAllowlist: []string{"VALID_VAR"},
 			Commands: []runnertypes.Command{
 				{Name: "cmd-1", Cmd: "echo", Args: []string{"first"}},
-				{Name: "cmd-2", Cmd: "echo", Args: []string{"test"}, Env: []string{"INVALID_VAR=${NONEXISTENT_VAR}"}},
+				{Name: "cmd-2", Cmd: "echo", Args: []string{"test"}, Env: []string{"UNDEFINED_VAR=${NONEXISTENT_VAR}"}},
 			},
 		}
 
@@ -532,14 +532,12 @@ func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
 		mockResourceManager.On("ExecuteCommand", mock.Anything, runnertypes.Command{Name: "cmd-1", Cmd: "echo", Args: []string{"first"}, Dir: "/tmp"}, &group, mock.Anything).
 			Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "first\n", Stderr: ""}, nil)
 
-		// Second command should not be executed due to environment variable access denial
-
+		// Second command should fail during environment variable resolution, so ExecuteCommand won't be called
 		ctx := context.Background()
 		err = runner.ExecuteGroup(ctx, group)
 
-		// Should fail due to environment variable access denied
 		assert.Error(t, err)
-		assert.ErrorIs(t, err, environment.ErrVariableNotFound, "expected error to wrap ErrVariableNotFound")
+		assert.ErrorIs(t, err, environment.ErrVariableNotFound)
 		mockResourceManager.AssertExpectations(t)
 	})
 }
@@ -1706,7 +1704,7 @@ func TestRunner_EnvironmentVariablePriority_EdgeCases(t *testing.T) {
 		assert.ErrorIs(t, err, environment.ErrMalformedEnvVariable)
 	})
 
-	t.Run("variable reference to undefined variable", func(t *testing.T) {
+	t.Run("variable reference to undefined variable returns error", func(t *testing.T) {
 		testGroup := config.Groups[0]
 
 		testCmd := runnertypes.Command{
@@ -1733,10 +1731,9 @@ func TestRunner_EnvironmentVariablePriority_EdgeCases(t *testing.T) {
 		}
 
 		_, err := runner.resolveEnvironmentVars(testCmd, &testGroup)
-		// Should detect and fail on circular references
-		// Note: Current implementation detects this as undefined variable rather than circular reference
+		// New implementation explicitly detects circular reference
 		assert.Error(t, err)
-		assert.ErrorIs(t, err, environment.ErrVariableNotFound)
+		assert.ErrorIs(t, err, environment.ErrCircularReference)
 	})
 }
 

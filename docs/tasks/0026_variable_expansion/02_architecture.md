@@ -19,56 +19,45 @@
 ### 2.1 全体アーキテクチャ
 
 ```mermaid
-%% Color nodes: data vs process
+%% Color nodes: data vs process vs enhanced
 flowchart TD
     classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
 
-    A[TOML Configuration] --> B[Config Parser]
-    B --> C[Variable Expander]
+    A[(TOML Configuration)] -->|cmd/args| B[Config Parser]
+    B --> C[CommandEnvProcessor]
     C --> D[Security Validator]
     D --> E[Command Executor]
 
-    F[System Environment] --> K[Environment Processor]
-    A --> K
-    K --> L[Environment Filter]
-    L --> C
+    F[(Runtime Environment)] -->|system env vars| K[Environment Variables Processor]
+    A -->|local env vars| K
+    K --> L[Environment Variables Filter]
+    L -.->|allowlist check| C
 
-    subgraph "Enhanced Components"
-        C[Enhanced Variable Expander]
-        K[Enhanced Environment Processor]
-    end
-
-    subgraph "Existing Components (Reused)"
-        B
-        D
-        E
-        L[Environment Filter]
-    end
-
-    C --> K
-    K --> L
-
-    %% Assign classes: data nodes vs process nodes
+    %% Assign classes: data vs process vs enhanced nodes
     class A,F data;
-    class B,C,D,E,K,L process;
+    class B,D,E,L process;
+    class C,K enhanced;
 
 ```
 
 <!-- Legend for colored nodes -->
 **凡例（Legend）**
 
-以下の図は、ダイアグラムで使用している色の意味を示します。青系はデータ（configuration / environment）、オレンジ系は処理（プロセス）を表します。
+以下の図は、ダイアグラムで使用している形状と色の意味を示します。円柱形（青系）はデータ（configuration / environment）、長方形（オレンジ系）は既存処理（プロセス）、長方形（緑系）は拡張された処理を表します。
 
 ```mermaid
-%% Legend: data (blue) vs process (orange)
+%% Legend: data (blue) vs process (orange) vs enhanced (green)
 flowchart LR
     classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
 
-    D1[TOML Configuration] --> P1[Variable Expander]
+    D1[(Configuration Data)] --> P1[Existing Component] --> E1[Enhanced Component]
     class D1 data
     class P1 process
+    class E1 enhanced
 ```
 
 ### 2.2 コンポーネント配置
@@ -80,39 +69,32 @@ graph TB
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
 
     subgraph "内部パッケージ構成"
-        subgraph "internal/runner/expansion"
-            A[expander.go - 統合展開エンジン]
-            B[parser.go - 両形式対応パーサー]
-        end
 
         subgraph "internal/runner/config"
-            E[command.go - Command構造体拡張]
+            E[command.go<br>Command構造体拡張]
         end
 
         subgraph "internal/runner/environment"
-            F[processor.go - 拡張された環境変数処理]
-            L[filter.go - 既存環境変数フィルタ]
+            F["processor.go<br>CommandEnvProcessor (拡張)"]
+            L[filter.go<br>既存環境変数フィルタ]
         end
 
         subgraph "internal/runner/security"
-            C[validator.go - 既存セキュリティ検証]
+            C[validator.go<br>既存セキュリティ検証]
         end
 
         subgraph "internal/runner/executor"
-            G[executor.go - コマンド実行]
+            G[executor.go<br.コマンド実行]
         end
     end
 
-    A --> B
-    A --> F
-    E --> A
+    E --> F
     F --> L
-    L --> A
-    A --> G
+    F --> G
 
     %% Assign classes: treat files that are primarily data as data, others as process
     class E data;
-    class A,B,F,L,C,G process;
+    class F,L,C,G process;
 
 ```
 
@@ -122,7 +104,7 @@ graph TB
 sequenceDiagram
     participant CF as Config File
     participant CP as Config Parser
-    participant VE as Variable Expander
+    participant VE as CommandEnvProcessor
     participant SV as Security Validator
     participant CE as Command Executor
 
@@ -146,55 +128,41 @@ sequenceDiagram
 ### 3.1 コンポーネント設計方針
 
 #### 3.1.1 既存実装を活用したシンプルなアプローチ
-**既存の反復制限方式を基盤として使用**:
+**visited mapによる循環参照検出方式を採用**:
 - `internal/runner/environment/processor.go` の `resolveVariableReferencesForCommandEnv`
-- 最大15回の反復制限で循環参照を検出
-- 実績のあるアルゴリズムを両変数形式に拡張
+- 既存の反復制限方式から visited map による循環参照検出に変更し、上限を撤廃
 
-#### 3.1.2 Variable Expander (internal/runner/expansion/expander.go)
-**責務**: cmd/args 展開の統合制御
+#### 3.1.2 CommandEnvProcessor の直接使用
+**責務**: 環境変数展開の統合制御
 
-**主要インターフェース**:
+**主要メソッド**:
 ```go
-type VariableExpander interface {
-    // 既存の反復制限方式を使用したシンプルな展開
-    Expand(text string, env map[string]string, allowlist []string) (string, error)
-    ExpandAll(texts []string, env map[string]string, allowlist []string) ([]string, error)
-}
+func (p *CommandEnvProcessor) Expand(
+    value string,
+    envVars map[string]string,
+    group *runnertypes.CommandGroup,
+    visited map[string]bool,
+) (string, error)
 ```
 
 **主要機能**:
-- 既存の理解しやすいアルゴリズムを活用
-- セキュリティ検証とのシンプルな連携
-- 最小限のエラーハンドリング
+- `${VAR}` 形式の変数展開
+- 循環参照検出 (visited map による)
+- セキュリティ検証との統合
+- エスケープシーケンス処理
 
-#### 3.1.3 Variable Parser (internal/runner/expansion/parser.go)
-**責務**: 両変数形式の解析と抽出
-
-**主要インターフェース**:
-```go
-type VariableParser interface {
-    // 既存の正規表現を拡張して両形式をサポート
-    ReplaceVariables(text string, resolver VariableResolver) (string, error)
-}
-```
-
-**主要機能**:
-- `$VAR` と `${VAR}` 両形式の統合処理
-- 既存の `variableReferenceRegex` を拡張
-- 重複検出の防止（`${VAR}` を優先）
 
 ### 3.2 既存コンポーネントとの統合
 
-#### 3.2.1 Environment Processor 拡張 (internal/runner/environment/processor.go)
-**既存機能の統合拡張**:
-- 既存の `resolveVariableReferencesForCommandEnv` を拡張
-- `$VAR` 形式のサポートを追加
-- 反復上限を 10 → 15 に拡張
+#### 3.2.1 CommandEnvProcessor の機能拡張
+**機能拡張点**:
+- `${VAR}` 形式の一貫したサポート
+- エスケープシーケンス処理 (`\$`, `\\`)
+- 循環参照検出 (visited map による再帰的チェック)
 
-**拡張点**:
-- Command.Env での `$VAR` 形式サポート
-- cmd/args での両形式サポート
+**統合機能**:
+- Command.Env での `${VAR}` 形式
+- cmd/args での `${VAR}` 形式サポート
 - 統一されたエラーハンドリング
 
 #### 3.2.2 Security Validator 連携
@@ -244,16 +212,15 @@ flowchart TD
 | 情報漏洩 | 変数アクセス監査、ログマスキング |
 | インジェクション | シェル実行禁止、特殊文字エスケープなし |
 | 循環参照DoS | 循環参照検出、最大深度制限 |
-| パス展開攻撃 | グロブパターンをリテラル扱い、エスケープ機能なし |
+| パス展開攻撃 | グロブパターンをリテラル扱い、エスケープ機能でリテラル文字列制御 |
 
 ## 5. パフォーマンス設計
 
 ### 5.1 性能最適化戦略
 
-- **既存アルゴリズムの活用**: 実績のある高速な反復制限方式
-- **シンプルな実装**: 複雑なDFSアルゴリズムを回避
-- **最小限のメモリ使用**: 既存コードの効率的な文字列操作を活用
-- **予測可能な性能**: 反復上限による明確な処理時間の上限
+- **visited mapによる効率的な循環参照検出**: O(1)時間でのアクセスと循環検出
+- **シンプルな実装**: 複雑なDFSアルゴリズムを回避し、直感的なvisited map方式を採用
+- **最小限のメモリ使用**: visited map + 効率的な文字列操作でメモリ使用量を抑制
 
 ### 5.2 パフォーマンス監視ポイント
 
@@ -271,8 +238,8 @@ type ExpansionMetrics struct {
 
 - **引数数制限**: 最大1000個の引数
 - **変数数制限**: 要素あたり最大50個の変数
-- **反復深度**: 最大15回の反復制限（実用ネスト深度5段階+安全マージン）
-- **メモリ使用量**: 既存アルゴリズムの効率的なメモリ使用を維持
+- **展開深度**: 制限なし（visited mapによる循環参照検出で安全性を保証）
+- **メモリ使用量**: visited map + 文字列処理でO(n)のメモリ使用量を維持
 
 ## 6. エラーハンドリング設計
 
@@ -390,8 +357,8 @@ flowchart TB
 ## 9. 段階的実装計画
 
 ### 9.1 Phase 1: 既存コードの拡張
-- [ ] Environment Processor での `$VAR` 形式サポート追加
-- [ ] 反復上限を 10 → 15 に拡張
+- [ ] Environment Processor での `${VAR}` 形式一貫性確保
+- [ ] 反復制限を visited map による循環参照検出に変更
 - [ ] 既存テストケースの拡張
 - [ ] 基本的な単体テスト
 
@@ -428,7 +395,7 @@ flowchart TB
 **変数展開の複雑性**:
 - ネスト展開の処理順序
 - 循環参照検出のアルゴリズム効率性
-- prefix_$VAR_suffix形式の曖昧性（$VAR_suffixまでが変数名として認識される問題）
+- `${VAR}` 形式のみによる明確な変数境界の確保
 
 **セキュリティとパフォーマンスの両立**:
 - 検証処理のオーバーヘッド

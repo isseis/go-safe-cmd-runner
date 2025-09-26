@@ -6,195 +6,188 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"maps"
 	"os"
-	"regexp"
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
-// ErrCircularReference is returned when a circular variable reference is detected.
-var ErrCircularReference = errors.New("circular variable reference detected")
+var (
+	// ErrCircularReference is returned when a circular variable reference is detected.
+	ErrCircularReference = errors.New("circular variable reference")
+	// ErrInvalidEscapeSequence is returned when an invalid escape sequence is detected.
+	ErrInvalidEscapeSequence = errors.New("invalid escape sequence")
+	// ErrUnclosedVariable is returned when a variable expansion is not properly closed.
+	ErrUnclosedVariable = errors.New("unclosed variable")
+	// ErrInvalidVariableFormat is returned when $ is found but not followed by valid variable syntax.
+	ErrInvalidVariableFormat = errors.New("invalid variable format")
+)
 
-// CommandEnvProcessor handles command-specific environment variable processing
+// CommandEnvProcessor handles the processing of environment variables for a command.
 type CommandEnvProcessor struct {
 	filter *Filter
 	logger *slog.Logger
 }
 
-// NewCommandEnvProcessor creates a new processor for command environment variables
+// NewCommandEnvProcessor creates a new CommandEnvProcessor.
 func NewCommandEnvProcessor(filter *Filter) *CommandEnvProcessor {
 	return &CommandEnvProcessor{
 		filter: filter,
-		logger: slog.Default(),
+		logger: slog.Default().With("component", "CommandEnvProcessor"),
 	}
 }
 
-// ProcessCommandEnvironment processes Command.Env variables without allowlist checks
-func (p *CommandEnvProcessor) ProcessCommandEnvironment(
-	cmd runnertypes.Command,
-	baseEnvVars map[string]string,
-	group *runnertypes.CommandGroup,
-) (map[string]string, error) {
-	// Create a copy of base environment variables
-	envVars := make(map[string]string, len(baseEnvVars))
-	maps.Copy(envVars, baseEnvVars)
+// Process processes and prepares the environment variables for a command.
+// It uses a two-pass approach:
+//  1. First pass: Add all variables from the command's `Env` block to the environment map.
+//     This allows for self-references and inter-references within the `Env` block.
+//  2. Second pass: Iterate over the map and expand any variables in the values.
+func (p *CommandEnvProcessor) Process(cmd runnertypes.Command, baseEnvVars map[string]string, group *runnertypes.CommandGroup) (map[string]string, error) {
+	finalEnv := make(map[string]string)
+	for k, v := range baseEnvVars {
+		finalEnv[k] = v
+	}
 
-	// Process each Command.Env entry
-	for i, env := range cmd.Env {
-		variable, value, ok := ParseEnvVariable(env)
+	// First pass: Populate the environment with unexpanded values from the command.
+	for i, envStr := range cmd.Env {
+		varName, varValue, ok := ParseEnvVariable(envStr)
 		if !ok {
-			return nil, fmt.Errorf("invalid environment variable format in Command.Env in command %s, env_index: %d, env_entry: %s: %w", cmd.Name, i, env, ErrMalformedEnvVariable)
+			return nil, fmt.Errorf("invalid environment variable format in Command.Env in command %s, env_index: %d, env_entry: %s: %w", cmd.Name, i, envStr, ErrMalformedEnvVariable)
 		}
-
-		// Basic validation (but no allowlist check)
-		if err := p.validateBasicEnvVariable(variable, value); err != nil {
+		// Validate only the name at this stage.
+		if err := validateBasicEnvVariable(varName, ""); err != nil {
 			return nil, fmt.Errorf("malformed command environment variable %s in command %s: %w",
-				variable, cmd.Name, err)
+				varName, cmd.Name, err)
 		}
-
-		// Resolve variable references with security policy
-		resolvedValue, err := p.resolveVariableReferencesForCommandEnv(value, envVars, group)
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve variable references in %s for command %s: %w",
-				variable, cmd.Name, err)
-		}
-
-		envVars[variable] = resolvedValue
+		finalEnv[varName] = varValue
 
 		p.logger.Debug("Processed command environment variable",
 			"command", cmd.Name,
-			"variable", variable,
-			"value_length", len(resolvedValue))
+			"variable", varName,
+			"value_length", len(varValue))
 	}
 
-	return envVars, nil
+	// Second pass: Expand all variables.
+	for name := range finalEnv {
+		value := finalEnv[name]
+		expandedValue, err := p.Expand(value, finalEnv, group.EnvAllowlist, group.Name, make(map[string]bool))
+		if err != nil {
+			return nil, fmt.Errorf("failed to expand variable %s: %w", name, err)
+		}
+		finalEnv[name] = expandedValue
+	}
+
+	// Final validation pass on the fully expanded values.
+	for name, value := range finalEnv {
+		if err := validateBasicEnvVariable(name, value); err != nil {
+			return nil, fmt.Errorf("validation failed for expanded variable %s: %w", name, err)
+		}
+	}
+
+	return finalEnv, nil
 }
 
-// validateBasicEnvVariable performs basic validation on environment variables
-// without allowlist checks (which are bypassed for Command.Env)
-func (p *CommandEnvProcessor) validateBasicEnvVariable(name, value string) error {
-	// Use the filter's existing validation methods
-	if err := p.filter.ValidateVariableName(name); err != nil {
-		return err
-	}
-
-	if err := p.filter.ValidateVariableValue(value); err != nil {
-		// Return security error for dangerous variable values
-		if errors.Is(err, ErrDangerousVariableValue) {
-			return fmt.Errorf("%w: command environment variable %s contains dangerous pattern", security.ErrUnsafeEnvironmentVar, name)
+// validateBasicEnvVariable validates the name and optionally the value of an environment variable.
+func validateBasicEnvVariable(varName, varValue string) error {
+	// Validate name using security package which returns detailed errors.
+	if err := security.ValidateVariableName(varName); err != nil {
+		if varName == "" {
+			return ErrVariableNameEmpty
 		}
-		return err
+		// Preserve and return the detailed error from security
+		return fmt.Errorf("%w: %s", ErrInvalidVariableName, err.Error())
 	}
 
+	// Only validate non-empty values post expansion. Use security.IsVariableValueSafe
+	// which provides detailed errors about unsafe patterns.
+	if varValue != "" {
+		if err := security.IsVariableValueSafe(varName, varValue); err != nil {
+			return fmt.Errorf("%w: command environment variable %s: %s", security.ErrUnsafeEnvironmentVar, varName, err.Error())
+		}
+	}
 	return nil
 }
 
-var variableReferenceRegex = regexp.MustCompile(`\$\{([^}]+)\}`)
-
-// resolveVariableReferencesForCommandEnv resolves variable references for Command.Env values
-func (p *CommandEnvProcessor) resolveVariableReferencesForCommandEnv(
-	value string,
-	envVars map[string]string,
-	group *runnertypes.CommandGroup,
-) (string, error) {
-	if !strings.Contains(value, "${") {
-		return value, nil
-	}
-
-	result := value
-	maxIterations := 10 // Prevent infinite loops
-	var resolutionError error
-
-	for i := 0; i < maxIterations && strings.Contains(result, "${"); i++ {
-		oldResult := result
-
-		result = variableReferenceRegex.ReplaceAllStringFunc(result, func(match string) string {
-			varName := match[2 : len(match)-1] // Remove ${ and }
-
-			resolvedValue, err := p.resolveVariableWithSecurityPolicy(varName, envVars, group)
-			if err != nil {
-				if resolutionError == nil {
-					resolutionError = fmt.Errorf("failed to resolve variable reference ${%s}: %w", varName, err)
-				}
-				return match // Continue processing other variables
+// Expand expands variables in a string, handling escape sequences.
+// It performs recursive variable expansion with circular reference detection.
+func (p *CommandEnvProcessor) Expand(value string, envVars map[string]string, allowlist []string, groupName string, visited map[string]bool) (string, error) {
+	var result strings.Builder
+	runes := []rune(value)
+	i := 0
+	for i < len(runes) {
+		switch runes[i] {
+		case '\\':
+			if i+1 >= len(runes) {
+				return "", ErrInvalidEscapeSequence
+			}
+			nextChar := runes[i+1]
+			if nextChar == '$' || nextChar == '\\' {
+				result.WriteRune(nextChar)
+				i += 2
+			} else {
+				return "", fmt.Errorf("%w: \\%c", ErrInvalidEscapeSequence, nextChar)
+			}
+		case '$':
+			// Strict validation: $ must be followed by {VAR} format
+			if i+1 >= len(runes) || runes[i+1] != '{' {
+				return "", ErrInvalidVariableFormat
 			}
 
-			return resolvedValue
-		})
+			start := i + 2 //nolint:mnd // Skip past the opening "${" sequence
+			end := -1
+			for j := start; j < len(runes); j++ {
+				if runes[j] == '}' {
+					end = j
+					break
+				}
+			}
+			if end == -1 {
+				return "", ErrUnclosedVariable
+			}
+			varName := string(runes[start:end])
+			if err := security.ValidateVariableName(varName); err != nil {
+				return "", fmt.Errorf("%w: %s: %w", ErrInvalidVariableName, varName, err)
+			}
+			if visited[varName] {
+				return "", fmt.Errorf("%w: %s", ErrCircularReference, varName)
+			}
+			// Mark visited (depth-first). We'll remove manually after expansion.
+			visited[varName] = true
 
-		if result == oldResult {
-			// No more substitutions were made, we're done
-			break
+			// 1. existence check (local then system) – differentiate not found
+			val, foundLocal := envVars[varName]
+			var ( // track where value came from
+				valStr string
+				found  bool
+			)
+			if foundLocal {
+				valStr, found = val, true
+			} else {
+				sysVal, foundSys := os.LookupEnv(varName)
+				if foundSys {
+					// 2. allowlist check only after confirming existence
+					if !p.filter.IsVariableAccessAllowed(varName, allowlist, groupName) {
+						p.logger.Warn("system variable access not allowed", "variable", varName, "group", groupName)
+						return "", fmt.Errorf("%w: %s", ErrVariableNotAllowed, varName)
+					}
+					valStr, found = sysVal, true
+				}
+			}
+			if !found { // variable not found anywhere - return error
+				return "", fmt.Errorf("%w: %s", ErrVariableNotFound, varName)
+			}
+			expanded, err := p.Expand(valStr, envVars, allowlist, groupName, visited)
+			if err != nil {
+				return "", fmt.Errorf("failed to expand nested variable ${%s}: %w", varName, err)
+			}
+			result.WriteString(expanded)
+			delete(visited, varName)
+			i = end + 1
+		default:
+			result.WriteRune(runes[i])
+			i++
 		}
 	}
-
-	if resolutionError != nil {
-		return "", resolutionError
-	}
-
-	// Check if we exceeded max iterations and still have unresolved references
-	// This indicates potential circular reference, but we need to be careful about malformed references
-	if strings.Contains(result, "${") {
-		// Check if the remaining references are well-formed (have closing braces)
-		if variableReferenceRegex.MatchString(result) {
-			// Well-formed references remaining after max iterations = circular reference
-			return "", fmt.Errorf("%w: exceeded maximum resolution iterations (%d)", ErrCircularReference, maxIterations)
-		}
-		// Malformed references (like ${UNCLOSED) are left as-is
-	}
-
-	return result, nil
-}
-
-// resolveVariableWithSecurityPolicy resolves a variable reference with appropriate security checks
-func (p *CommandEnvProcessor) resolveVariableWithSecurityPolicy(
-	varName string,
-	envVars map[string]string,
-	group *runnertypes.CommandGroup,
-) (string, error) {
-	// Priority 1: Check existing resolved variables (Command.Env + trusted sources)
-	if val, exists := envVars[varName]; exists {
-		p.logger.Debug("Variable resolved from trusted source",
-			"variable", varName,
-			"source", "resolved_env_vars")
-		return val, nil
-	}
-
-	// Priority 2: Check system environment with allowlist validation
-	if sysVal, exists := os.LookupEnv(varName); exists {
-		return p.resolveSystemVariable(varName, sysVal, group)
-	}
-
-	// Priority 3: Variable not found
-	return "", fmt.Errorf("%w: %s", ErrVariableNotFound, varName)
-}
-
-// resolveSystemVariable resolves a system environment variable with allowlist checks
-func (p *CommandEnvProcessor) resolveSystemVariable(
-	varName, sysVal string,
-	group *runnertypes.CommandGroup,
-) (string, error) {
-	allowed, err := p.filter.resolveAllowedVariable(varName, group)
-	if err != nil {
-		p.logger.Error("Failed to check variable allowlist",
-			"variable", varName,
-			"group", group.Name,
-			"error", err)
-		return "", fmt.Errorf("allowlist check failed for variable %s: %w", varName, err)
-	}
-
-	if !allowed {
-		p.logger.Warn("Command.Env references disallowed system variable",
-			"variable", varName,
-			"group", group.Name)
-		return "", fmt.Errorf("%w: variable '%s' is not allowed in group '%s'", ErrVariableNotAllowed, varName, group.Name)
-	}
-
-	p.logger.Debug("System variable resolved for Command.Env",
-		"variable", varName,
-		"group", group.Name)
-	return sysVal, nil
+	return result.String(), nil
 }

@@ -11,8 +11,8 @@ TOML設定ファイルのコマンド名（`cmd`）およびコマンド引数�
 ### 1.3 背景と課題
 現在のgo-safe-cmd-runnerでは以下の制限がある：
 
-- **コマンド名での環境変数未サポート**: `cmd = "$DOCKER_CMD"` のような記述が環境変数として展開されない
-- **引数での環境変数未サポート**: `args = ["$HOME/bin"]` のような記述が環境変数として展開されない
+- **コマンド名での環境変数未サポート**: `cmd = "${DOCKER_CMD}"` のような記述が環境変数として展開されない
+- **引数での環境変数未サポート**: `args = ["${HOME}/bin"]` のような記述が環境変数として展開されない
 - **設定の静的性**: 環境ごとに異なるコマンドパスやオプションを動的に指定できない
 - **保守性の問題**: 環境ごとに別々の設定ファイルを管理する必要がある
 - **変数形式の制限**: Command.Envでは `${VAR}` 形式のみサポート、`$VAR` 形式は未対応
@@ -29,18 +29,16 @@ TOML設定ファイルのコマンド名（`cmd`）およびコマンド引数�
 **概要**: コマンド名（`cmd`）内の環境変数参照を実行時に展開する
 
 **形式サポート**:
-- `$VAR_NAME` - POSIX標準形式
 - `${VAR_NAME}` - ブレース形式
-- `$HOME/bin/cmd` - パス結合での使用
+- `${HOME}/bin/cmd` - パス結合での使用
 - `prefix_${VAR}_suffix` - 前後にテキストを含む形式（推奨）
-- `prefix_$VAR_suffix` - `$VAR_suffix`全体が変数名として認識されるため非推奨
 
 **循環参照検出**: 既存の反復制限方式（最大15回）を拡張して使用
 
 **例**:
 ```toml
 [[groups.commands]]
-cmd = "$DOCKER_CMD"
+cmd = "${DOCKER_CMD}"
 args = ["run", "-it", "ubuntu"]
 env = ["DOCKER_CMD=/usr/bin/docker"]
 ```
@@ -55,7 +53,7 @@ args: ["run", "-it", "ubuntu"]
 ```toml
 [[groups.commands]]
 cmd = "${TOOL_DIR}/custom-script"
-args = ["--input", "$INPUT_FILE"]
+args = ["--input", "${INPUT_FILE}"]
 env = ["TOOL_DIR=/opt/tools", "INPUT_FILE=/data/input.txt"]
 ```
 
@@ -70,11 +68,9 @@ args: ["--input", "/data/input.txt"]
 
 **形式サポート**:
 F001と完全互換
-- `$VAR_NAME` - POSIX標準形式
 - `${VAR_NAME}` - ブレース形式
-- `$HOME/path` - パス結合での使用
+- `${HOME}/path` - パス結合での使用
 - `prefix_${VAR}_suffix` - 前後にテキストを含む形式（推奨）
-- `prefix_$VAR_suffix` - `$VAR_suffix`全体が変数名として認識されるため非推奨
 
 **循環参照検出**: 既存の反復制限方式（最大15回）を拡張して使用
 
@@ -82,7 +78,7 @@ F001と完全互換
 ```toml
 [[groups.commands]]
 cmd = "cp"
-args = ["$HOME/source.txt", "${BACKUP_DIR}/backup.txt"]
+args = ["${HOME}/source.txt", "${BACKUP_DIR}/backup.txt"]
 env = ["HOME=/home/user", "BACKUP_DIR=/opt/backups"]
 ```
 
@@ -113,34 +109,6 @@ env = ["USER=admin", "HOSTNAME=server01", "PORT=22"]
 ```
 cmd: "/usr/local/bin/myapp"
 args: ["admin@server01:22"]
-```
-
-#### F004: ネスト変数参照サポート
-**概要**: 環境変数値内で他の環境変数を参照する（既存のCommand.Env機能を両変数形式に拡張）
-
-**Command.Env での拡張対応**:
-- 既存: `env = ["PATH=${PATH}:/usr/local/bin"]`
-- 拡張: `env = ["PATH=$PATH:/usr/local/bin"]`
-- 混在: `env = ["FULL_PATH=${BASE_DIR}/$SUB_DIR"]`
-
-**例**:
-```toml
-[[groups.commands]]
-cmd = "$FULL_CMD_PATH"
-args = ["$FULL_DATA_PATH"]
-env = [
-    "BASE_DIR=/opt",
-    "BIN_DIR=${BASE_DIR}/bin",
-    "DATA_DIR=${BASE_DIR}/data",
-    "FULL_CMD_PATH=${BIN_DIR}/myapp",
-    "FULL_DATA_PATH=${DATA_DIR}/input.txt"
-]
-```
-
-**展開後**:
-```
-cmd: "/opt/bin/myapp"
-args: ["/opt/data/input.txt"]
 ```
 
 ### 2.2 セキュリティ要件
@@ -179,8 +147,6 @@ args: ["/opt/data/input.txt"]
 **例（エラーケース）**:
 ```toml
 env = ["A=${B}", "B=${A}"]    # ${VAR}形式
-env = ["A=$B", "B=$A"]        # $VAR形式
-env = ["A=${B}", "B=$A"]      # 混在形式
 ```
 
 #### S003: 展開制限
@@ -262,8 +228,8 @@ env = ["A=${B}", "B=$A"]      # 混在形式
 ## 5. 成功基準
 
 ### 5.1 機能的成功基準
-- [ ] cmdでの `$VAR` と `${VAR}` 両形式の正常展開
-- [ ] argsでの `$VAR` と `${VAR}` 両形式の正常展開
+- [ ] cmdでの `${VAR}` 形式の正常展開
+- [ ] argsでの `${VAR}` 形式の正常展開
 - [ ] cmdとargs両方での複数環境変数の同時展開
 - [ ] ネスト変数参照の正常処理
 - [ ] allowlist連携の完全動作
@@ -309,7 +275,7 @@ env = ["A=${B}", "B=$A"]      # 混在形式
 
 ### 7.1 Phase 1 - 基本実装
 - cmdとargsでの基本的な環境変数展開機能
-- `$VAR` と `${VAR}` 形式のサポート
+- `${VAR}` 形式のサポート
 - allowlist連携
 - 基本的なエラーハンドリング
 - 展開後のコマンドパス検証

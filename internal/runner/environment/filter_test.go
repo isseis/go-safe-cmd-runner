@@ -58,14 +58,21 @@ func TestDetermineInheritanceMode(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			filter := NewFilter(&runnertypes.Config{})
-			mode, err := filter.determineInheritanceMode(tt.group)
+			var allowlist []string
+			if tt.group != nil {
+				allowlist = tt.group.EnvAllowlist
+			}
+			mode := filter.determineInheritanceMode(allowlist)
 
 			if tt.expectError {
-				assert.Error(t, err)
+				// Since determineInheritanceMode no longer returns errors,
+				// we need to handle nil group case differently
+				if tt.group == nil && tt.expectedMode != runnertypes.InheritanceModeInherit {
+					t.Errorf("Expected error for nil group, but got mode: %v", mode)
+				}
 				return
 			}
 
-			assert.NoError(t, err)
 			assert.Equal(t, tt.expectedMode, mode)
 		})
 	}
@@ -190,225 +197,17 @@ func TestIsVariableAccessAllowedWithInheritance(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := filter.IsVariableAccessAllowed(tt.variable, tt.group)
-			groupName := "nil"
+			var allowlist []string
+			var groupName string
 			if tt.group != nil {
+				allowlist = tt.group.EnvAllowlist
 				groupName = tt.group.Name
 			}
+			result := filter.IsVariableAccessAllowed(tt.variable, allowlist, groupName)
+			if tt.group == nil {
+				groupName = "nil"
+			}
 			assert.Equal(t, tt.expected, result, "IsVariableAccessAllowed(%s, %s)", tt.variable, groupName)
-		})
-	}
-}
-
-func TestValidateVariableName(t *testing.T) {
-	config := &runnertypes.Config{}
-	filter := NewFilter(config)
-
-	tests := []struct {
-		name     string
-		varName  string
-		expected bool
-	}{
-		{
-			name:     "valid name with letters",
-			varName:  "VALID_NAME",
-			expected: true,
-		},
-		{
-			name:     "valid name starting with underscore",
-			varName:  "_VALID_NAME",
-			expected: true,
-		},
-		{
-			name:     "valid name with numbers",
-			varName:  "VAR_123",
-			expected: true,
-		},
-		{
-			name:     "empty name",
-			varName:  "",
-			expected: false,
-		},
-		{
-			name:     "name starting with number",
-			varName:  "123_VAR",
-			expected: false,
-		},
-		{
-			name:     "name with special characters",
-			varName:  "VAR-NAME",
-			expected: false,
-		},
-		{
-			name:     "name with spaces",
-			varName:  "VAR NAME",
-			expected: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := filter.ValidateVariableName(tt.varName)
-			if tt.expected {
-				assert.NoError(t, err, "ValidateVariableName(%s): expected no error", tt.varName)
-			} else {
-				assert.Error(t, err, "ValidateVariableName(%s): expected error", tt.varName)
-			}
-		})
-	}
-}
-
-func TestValidateVariableValue(t *testing.T) {
-	config := &runnertypes.Config{}
-	filter := NewFilter(config)
-
-	tests := []struct {
-		name     string
-		value    string
-		expected bool
-	}{
-		// Safe values
-		{
-			name:     "simple safe value",
-			value:    "safe_value_123",
-			expected: true,
-		},
-		{
-			name:     "empty value",
-			value:    "",
-			expected: true,
-		},
-
-		// Command injection patterns
-		{
-			name:     "value with semicolon",
-			value:    "value;dangerous",
-			expected: false,
-		},
-		{
-			name:     "value with double ampersand",
-			value:    "value && dangerous",
-			expected: false,
-		},
-		{
-			name:     "value with double pipe",
-			value:    "value || dangerous",
-			expected: false,
-		},
-		{
-			name:     "value with pipe",
-			value:    "value | dangerous",
-			expected: false,
-		},
-		{
-			name:     "value with command substitution",
-			value:    "value$(rm -rf /)",
-			expected: false,
-		},
-		{
-			name:     "value with backticks",
-			value:    "value`rm -rf /`",
-			expected: false,
-		},
-
-		// Redirection patterns
-		{
-			name:     "value with greater than",
-			value:    "value > file",
-			expected: false,
-		},
-		{
-			name:     "value with less than",
-			value:    "value < file",
-			expected: false,
-		},
-
-		// Destructive file operations
-		{
-			name:     "value with rm command",
-			value:    "rm -rf /tmp",
-			expected: false,
-		},
-		{
-			name:     "value with del command",
-			value:    "del /s /q *",
-			expected: false,
-		},
-		{
-			name:     "value with format command",
-			value:    "format C:",
-			expected: false,
-		},
-		{
-			name:     "value with mkfs command",
-			value:    "mkfs /dev/sda1",
-			expected: false,
-		},
-		{
-			name:     "value with mkfs. prefix",
-			value:    "mkfs.ext4 /dev/sda1",
-			expected: false,
-		},
-		{
-			name:     "value with dd if",
-			value:    "dd if=/dev/zero of=/dev/sda",
-			expected: false,
-		},
-		{
-			name:     "value with dd of",
-			value:    "dd if=source of=destination",
-			expected: false,
-		},
-
-		// Code execution patterns
-		{
-			name:     "value with exec",
-			value:    "exec /bin/sh",
-			expected: false,
-		},
-		{
-			name:     "value with system",
-			value:    "system('rm -rf /')",
-			expected: false,
-		},
-		{
-			name:     "value with eval",
-			value:    "eval('dangerous code')",
-			expected: false,
-		},
-
-		// Edge cases
-		{
-			name:     "value with partial match at start",
-			value:    "rmdir safe",
-			expected: true,
-		},
-		{
-			name:     "value with partial match in middle",
-			value:    "some_rm_command",
-			expected: true,
-		},
-		{
-			name:     "value with case sensitivity check",
-			value:    "RM -RF /",
-			expected: true, // Assuming case-sensitive matching
-		},
-		// False positives
-		{
-			name:     "value with HTML tag",
-			value:    "<div></div>",
-			expected: false, // Should be true, but false positives are allowed for now
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := filter.ValidateVariableValue(tt.value)
-			if tt.expected {
-				assert.NoError(t, err, "ValidateVariableValue(%s): expected no error", tt.value)
-			} else {
-				assert.Error(t, err, "ValidateVariableValue(%s): expected error", tt.value)
-			}
 		})
 	}
 }

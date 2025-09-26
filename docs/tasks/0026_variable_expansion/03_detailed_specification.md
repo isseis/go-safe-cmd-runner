@@ -5,57 +5,40 @@
 ### 1.1 パッケージ構成詳細
 
 ```
-internal/runner/expansion/
-├── expander.go          # 統合展開エンジン（cmd/args 用）
-├── parser.go           # 両形式対応パーサー（$VAR, ${VAR}）
-├── types.go           # シンプルな型定義
-└── expansion_test.go  # 統合テスト
-
 # 既存コンポーネント拡張
-internal/runner/environment/processor.go  # 両形式サポートと反復上限拡張
+internal/runner/environment/processor.go  # CommandEnvProcessor.Expand による変数展開
 internal/runner/security/validator.go    # 既存のセキュリティ検証を活用
+internal/runner/config/validator.go      # コマンド設定の検証
 ```
 
 ### 1.2 型定義とインターフェース
 
-#### 1.2.1 シンプルなコア型定義 (types.go)
+#### 1.2.1 CommandEnvProcessor の直接使用
 
 ```go
-package expansion
+package environment
 
-import (
-    "context"
-)
-
-// VariableExpander は cmd/args 用のシンプルな展開インターフェース
-type VariableExpander interface {
-    // 既存の反復制限方式を使用したシンプルな展開
-    Expand(ctx context.Context, text string, env map[string]string, allowlist []string) (string, error)
-    ExpandAll(ctx context.Context, texts []string, env map[string]string, allowlist []string) ([]string, error)
+// CommandEnvProcessor は環境変数処理を担当し、cmd/args の変数展開を直接実行する
+type CommandEnvProcessor struct {
+    filter *Filter
+    logger *slog.Logger
 }
 
-// VariableParser は両形式対応パーサー
-type VariableParser interface {
-    // 既存の正規表現を拡張して両形式をサポート
-    ReplaceVariables(text string, resolver VariableResolver) (string, error)
-}
+// Expand は変数を展開し、エスケープ処理と循環参照検出を含む
+func (p *CommandEnvProcessor) Expand(
+    value string,
+    envVars map[string]string,
+    allowlist []string,
+    groupName string,
+    visited map[string]bool,
+) (string, error)
 
-// VariableResolver は変数解決インターフェース
-type VariableResolver interface {
-    ResolveVariable(name string) (string, error)
-}
-
-// 既存のSecurity Validatorをそのまま活用
-// - ValidateAllEnvironmentVars(envVars map[string]string) error
-// - 既存の allowlist 検証ロジックを流用
-
-// ExpansionMetrics は最小限のメトリクス
-type ExpansionMetrics struct {
-    TotalExpansions   int64
-    VariableCount     int
-    ErrorCount        int64
-    MaxIterations     int  // 反復制限方式の最大反復数
-}
+// ProcessCommandEnvironment はコマンド環境の処理を行う
+func (p *CommandEnvProcessor) ProcessCommandEnvironment(
+    cmd runnertypes.Command,
+    baseEnvVars map[string]string,
+    group *runnertypes.CommandGroup,
+) (map[string]string, error)
 
 ```
 
@@ -70,6 +53,10 @@ var (
     // 既存の Security エラーを活用
     ErrVariableNotAllowed = environment.ErrVariableNotAllowed
     ErrVariableNotFound   = environment.ErrVariableNotFound
+
+    // 新しいエラー型
+    ErrInvalidEscapeSequence = errors.New("invalid escape sequence")
+    ErrInvalidVariableFormat = errors.New("invalid variable format")
 )
 
 // シンプルなエラーファクトリ
@@ -92,116 +79,77 @@ func IsSecurityViolationError(err error) bool {
 func IsVariableNotFoundError(err error) bool {
     return errors.Is(err, ErrVariableNotFound)
 }
+
+func IsInvalidEscapeSequenceError(err error) bool {
+    return errors.Is(err, ErrInvalidEscapeSequence)
+}
+
+func IsInvalidVariableFormatError(err error) bool {
+    return errors.Is(err, ErrInvalidVariableFormat)
+}
 ```
 
-### 1.3 両形式対応パーサー仕様 (parser.go)
+### 1.3 エスケープシーケンス仕様
 
-#### 1.3.1 既存コードを拡張したシンプルな実装
+#### 1.3.1 エスケープ機能の設計
 
+**エスケープ仕様**:
+- `\$` → `$` (リテラル) - 変数展開を抑制
+- `\\` → `\` (リテラル) - バックスラッシュのエスケープ
+- `\` + (その他の文字) → `ErrInvalidEscapeSequence` エラー
+- 文字列末尾の `\` → `ErrInvalidEscapeSequence` エラー
+
+**実装アルゴリズム**:
+文字列を1文字ずつスキャンし、エスケープ状態を追跡する方式を採用：
+
+1. 入力文字列を左から右へ1文字ずつスキャン
+2. `\` が見つかった場合:
+   - 次の文字が `$` または `\` であれば、次の文字をリテラルとして結果に追加
+   - 次の文字がそれ以外、または文字列の終端である場合は、`ErrInvalidEscapeSequence` エラーを返す
+3. `$` が見つかった場合（ただし、`\` でエスケープされていない）:
+   - 既存の正規表現を使用して変数パターンをマッチング
+   - マッチした場合は変数を展開、未定義変数はエラー
+   - 正規表現にマッチしない、たとえば `$` の次が `{` ではない、もしくは対応する `}` がない場合にはエラーを返す
+4. その他の文字はそのまま結果に追加
+
+**新しいエラー型**:
 ```go
-package expansion
+// ErrInvalidEscapeSequence is returned when an invalid escape sequence is detected
+var ErrInvalidEscapeSequence = errors.New("invalid escape sequence")
 
-import (
-    "regexp"
-    "strings"
-    "github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
-)
-
-// 統一正規表現アプローチ: 両形式を同時に処理（名前付きグループ使用）
-var (
-    // 両形式を統一したパターン: $VAR または ${VAR}
-    unifiedVariablePattern = regexp.MustCompile(`\$(\{(?P<braced>[a-zA-Z_][0-9a-zA-Z_]*)\}|(?P<simple>[a-zA-Z_][0-9a-zA-Z_]*))`)
-
-    // 名前付きキャプチャグループ構成:
-    // - braced: ${VAR_NAME} 形式の VAR_NAME 部分
-    // - simple: $VAR_NAME 形式の VAR_NAME 部分
-
-    // 既存コードとの互換性のためのパターン（必要に応じて）
-    legacyBracedPattern = regexp.MustCompile(`\$\{([^}]+)\}`)
-)
-
-// variableParser は両形式対応パーサー
-type variableParser struct {
-    // シンプルな実装で正規表現のみ使用
-}
-
-// NewVariableParser は新しいパーサーを作成
-func NewVariableParser() VariableParser {
-    return &variableParser{}
-}
-
-// ReplaceVariables は統一正規表現を使ったシンプルな実装
-func (p *variableParser) ReplaceVariables(text string, resolver VariableResolver) (string, error) {
-    if !strings.Contains(text, "$") {
-        return text, nil
-    }
-
-    result := text
-    maxIterations := 15 // 既存の 10 から 15 に拡張
-    var resolutionError error
-
-    for i := 0; i < maxIterations && strings.Contains(result, "$"); i++ {
-        oldResult := result
-
-        // 統一パターンで両形式を同時処理（重複問題が根本的に解決）
-        result = unifiedVariablePattern.ReplaceAllStringFunc(result, func(match string) string {
-            submatches := unifiedVariablePattern.FindStringSubmatch(match)
-            names := unifiedVariablePattern.SubexpNames()
-
-            // 名前付きグループから変数名を取得
-            var varName string
-            for i, name := range names {
-                if name == "braced" && i < len(submatches) && submatches[i] != "" {
-                    // ${VAR} 形式: braced グループから変数名
-                    varName = submatches[i]
-                    break
-                } else if name == "simple" && i < len(submatches) && submatches[i] != "" {
-                    // $VAR 形式: simple グループから変数名
-                    varName = submatches[i]
-                    break
-                }
-            }
-
-            if varName == "" {
-                return match // 不正なマッチ
-            }
-
-            return p.resolveVariableWithErrorHandling(varName, resolver, &resolutionError, match)
-        })
-
-        if result == oldResult {
-            break // 変化なし = 処理完了
-        }
-    }
-
-    if resolutionError != nil {
-        return "", resolutionError
-    }
-
-    // 循環参照チェック（統一パターンでシンプル化）
-    if strings.Contains(result, "$") && unifiedVariablePattern.MatchString(result) {
-        return "", environment.ErrCircularReference
-    }
-
-    return result, nil
-}
-
-// resolveVariableWithErrorHandling は変数を解決し、エラーを統一的に処理
-func (p *variableParser) resolveVariableWithErrorHandling(varName string, resolver VariableResolver, resolutionError *error, originalMatch string) string {
-    resolvedValue, err := resolver.ResolveVariable(varName)
-    if err != nil {
-        if *resolutionError == nil {
-            *resolutionError = err
-        }
-        return originalMatch // エラー時は元の文字列を維持
-    }
-    return resolvedValue
-}
+// ErrInvalidVariableFormat is returned when $ is found but not followed by valid variable syntax
+var ErrInvalidVariableFormat = errors.New("invalid variable format")
 ```
 
-### 1.4 既存セキュリティ検証とのシンプルな統合
+### 1.4 変数展開仕様 (${VAR} 形式のみ)
 
-#### 1.4.1 既存 Security Validator をそのまま活用
+#### 1.4.1 採用形式
+
+変数参照形式は安全で明示的な `${VAR}` のみをサポートする。
+
+理由:
+- `${...}` はトークン境界が明確で曖昧さがない
+- エスケープ仕様 (`\$` → `$`) と衝突しにくい
+- 既存のCommand.Envとの一貫性を保持
+- 実装の複雑性とメンテナンスコストを最小化
+
+#### 1.4.2 エラー優先順位
+
+展開時のエラーは以下の優先順位で決定される:
+1. エスケープ/構文エラー (`ErrInvalidEscapeSequence`, `ErrInvalidVariableFormat`)
+2. 変数名エラー (`ErrInvalidVariableName`)
+3. 循環参照検出 (`ErrCircularReference`)
+4. アクセス不許可 (`ErrVariableNotAllowed`) ※ システム環境に存在するが allowlist 外
+5. 未定義 (`ErrVariableNotFound`)
+
+#### 1.4.3 実装メモ
+- 再帰中の訪問集合は map を再利用し、深さ展開後に delete することで追加割当を削減
+- `${VAR}` のネスト展開結果は都度再帰呼び出しで構築し、逐次的に `strings.Builder` へ書き込む
+- コマンド定義内の変数相互参照を許容するため 2 パス処理 (先に未展開値投入→後段で展開) を採用
+
+### 1.5 既存セキュリティ検証とのシンプルな統合
+
+#### 1.5.1 既存 Security Validator をそのまま活用
 
 ```go
 package expansion
@@ -231,151 +179,164 @@ func (sv *SecurityValidator) ValidateAndExpand(
     envVars map[string]string,
     group *runnertypes.CommandGroup,
 ) (string, error) {
-    // 既存の resolveVariableReferencesForCommandEnv を拡張したメソッドを使用
-    // ここで $VAR 形式もサポートされる
-    return sv.envProcessor.ResolveVariableReferencesUnified(text, envVars, group)
+    // Expand メソッドを使用して ${VAR} 形式の変数展開を実行
+    // ここで ${VAR} 形式が一貫してサポートされる
+    return sv.envProcessor.Expand(text, envVars, group, make(map[string]bool))
 }
 
 // 既存の allowlist 検証、Command.Env 優先ポリシーはそのまま使用
 // 新しいコードを書かずに既存の実績あるコードを活用
 ```
 
-### 1.5 循環参照検出仕様（既存アルゴリズムを活用）
+### 1.5 循環参照検出仕様（visited mapアルゴリズムを採用）
 
-#### 1.5.1 既存の反復制限方式を拡張
+#### 1.5.1 visited mapによる循環参照検出
 
 ```go
-// 既存の processor.go の resolveVariableReferencesForCommandEnv を拡張
-// 主な変更点:
-// 1. maxIterations: 10 → 15 に拡張
-// 2. $VAR 形式のサポート追加
-// 3. 両形式の統一処理
-
-func (p *CommandEnvProcessor) ResolveVariableReferencesUnified(
+// Expand は変数を展開し、エスケープ処理を含む1文字スキャン方式で実装
+func (p *CommandEnvProcessor) Expand(
     value string,
     envVars map[string]string,
-    group *runnertypes.CommandGroup,
+    allowlist []string,
+    groupName string,
+    visited map[string]bool,
 ) (string, error) {
-    if !strings.Contains(value, "$") {
-        return value, nil
-    }
+    var result strings.Builder
+    runes := []rune(value)
+    i := 0
 
-    result := value
-    maxIterations := 15 // 既存の 10 から 15 に拡張
-    var resolutionError error
+    for i < len(runes) {
+        switch runes[i] {
+        case '\\':
+            // エスケープシーケンス処理
+            if i+1 >= len(runes) {
+                return "", ErrInvalidEscapeSequence
+            }
+            nextChar := runes[i+1]
+            if nextChar == '$' || nextChar == '\\' {
+                result.WriteRune(nextChar)
+                i += 2
+            } else {
+                return "", fmt.Errorf("%w: \\%c", ErrInvalidEscapeSequence, nextChar)
+            }
 
-    for i := 0; i < maxIterations && strings.Contains(result, "$"); i++ {
-        oldResult := result
+        case '$':
+            // ${VAR}形式のみをサポート
+            if i+1 >= len(runes) || runes[i+1] != '{' {
+                return "", ErrInvalidVariableFormat
+            }
 
-        // ${VAR} 形式を先に処理（既存ロジック）
-        result = variableReferenceRegex.ReplaceAllStringFunc(result, p.resolveVariableFunc)
+            start := i + 2
+            end := -1
+            for j := start; j < len(runes); j++ {
+                if runes[j] == '}' {
+                    end = j
+                    break
+                }
+            }
+            if end == -1 {
+                return "", ErrUnclosedVariable
+            }
 
-        // $VAR 形式を処理（新規追加）
-        result = p.replaceSimpleVariables(result, envVars, group, &resolutionError)
+            varName := string(runes[start:end])
+            if err := security.ValidateVariableName(varName); err != nil {
+                return "", fmt.Errorf("%w: %s: %w", ErrInvalidVariableName, varName, err)
+            }
 
-        if result == oldResult {
-            break // 変化なし = 処理完了
+            if visited[varName] {
+                return "", fmt.Errorf("%w: %s", ErrCircularReference, varName)
+            }
+
+            visited[varName] = true
+
+            // 変数の値を取得（local -> system の順）
+            val, foundLocal := envVars[varName]
+            var valStr string
+            var found bool
+
+            if foundLocal {
+                valStr, found = val, true
+            } else {
+                sysVal, foundSys := os.LookupEnv(varName)
+                if foundSys {
+                    // Create temporary CommandGroup for filter compatibility
+                    tempGroup := &runnertypes.CommandGroup{
+                        EnvAllowlist: allowlist,
+                        Name:         groupName,
+                    }
+                    if !p.filter.IsVariableAccessAllowed(varName, tempGroup) {
+                        return "", fmt.Errorf("%w: %s", ErrVariableNotAllowed, varName)
+                    }
+                    valStr, found = sysVal, true
+                }
+            }
+
+            if !found {
+                return "", fmt.Errorf("%w: %s", ErrVariableNotFound, varName)
+            }
+
+            // 再帰的に展開
+            expanded, err := p.Expand(valStr, envVars, allowlist, groupName, visited)
+            if err != nil {
+                return "", fmt.Errorf("failed to expand nested variable ${%s}: %w", varName, err)
+            }
+
+            result.WriteString(expanded)
+            delete(visited, varName)
+            i = end + 1
+
+        default:
+            result.WriteRune(runes[i])
+            i++
         }
     }
 
-    if resolutionError != nil {
-        return "", resolutionError
-    }
-
-    // 循環参照チェック（既存ロジックを流用）
-    if strings.Contains(result, "$") {
-        if variableReferenceRegex.MatchString(result) || simpleVariableRegex.MatchString(result) {
-            return "", fmt.Errorf("%w: exceeded maximum resolution iterations (%d)", ErrCircularReference, maxIterations)
-        }
-    }
-
-    return result, nil
+    return result.String(), nil
 }
-
-// 新規追加: $VAR 形式用の正規表現
-var simpleVariableRegex = regexp.MustCompile(`\$([A-Za-z_][A-Za-z0-9_]*)`)
-
-// 新規追加: $VAR 形式を処理するメソッド
-func (p *CommandEnvProcessor) replaceSimpleVariables(text string, envVars map[string]string, group *runnertypes.CommandGroup, resolutionError *error) string {
-    // 既存の resolveVariableWithSecurityPolicy を流用
-    // 重複防止のためのシンプルなヒューリスティックを含む
-}
-
-// 既存のテストケースを拡張して $VAR 形式もカバー
-// 既存の実績あるアルゴリズムを活用し、複雑なDFSは使用しない
 ```
 
-### 1.6 cmd/args 用統合展開エンジン仕様 (expander.go)
+### 1.6 cmd/args 用変数展開の実装
 
-#### 1.6.1 既存コードを活用したシンプルな実装
+#### 1.6.1 CommandEnvProcessor の直接使用
+
+cmd/args の変数展開には `CommandEnvProcessor.Expand` メソッドを直接使用する。
+
+主な特徴:
+- 既存の実績あるコードを最大限活用
+- thin wrapper を避けたシンプルな設計
+- 直接的で理解しやすい実装
 
 ```go
-package expansion
+package config
 
 import (
-    "context"
     "fmt"
     "github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
     "github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
-// variableExpander は cmd/args 用のシンプルな展開エンジン
-type variableExpander struct {
-    envProcessor *environment.CommandEnvProcessor  // 既存の拡張されたプロセッサー
-    metrics      *ExpansionMetrics
+// CommandEnvProcessor を直接使用した変数展開
+func expandVariables(processor *environment.CommandEnvProcessor, text string, envVars map[string]string, allowlist []string, groupName string) (string, error) {
+    // CommandEnvProcessor.Expand を直接使用（シンプルなAPI）
+    return processor.Expand(text, envVars, allowlist, groupName, make(map[string]bool))
 }
 
-// NewVariableExpander は既存コンポーネントを活用したエンジンを作成
-func NewVariableExpander(envProcessor *environment.CommandEnvProcessor) VariableExpander {
-    return &variableExpander{
-        envProcessor: envProcessor,
-        metrics:      &ExpansionMetrics{MaxIterations: 15},
-    }
-}
-
-// Expand は既存の反復制限アルゴリズムを使用して展開
-func (e *variableExpander) Expand(ctx context.Context, text string, env map[string]string, allowlist []string) (string, error) {
-    e.metrics.TotalExpansions++
-
-    // 仮の CommandGroup を作成（allowlist 情報を含む）
-    group := &runnertypes.CommandGroup{
-        EnvAllowlist: allowlist,
-    }
-
-    // 既存の拡張されたメソッドを使用（$VAR と ${VAR} 両形式対応）
-    result, err := e.envProcessor.ResolveVariableReferencesUnified(text, env, group)
-    if err != nil {
-        e.metrics.ErrorCount++
-        return "", fmt.Errorf("failed to expand variables: %w", err)
-    }
-
-    return result, nil
-}
-
-// ExpandAll は複数の文字列を一括で展開
-func (e *variableExpander) ExpandAll(ctx context.Context, texts []string, env map[string]string, allowlist []string) ([]string, error) {
+// 複数文字列の一括展開（ユーティリティ関数）
+func expandAll(processor *environment.CommandEnvProcessor, texts []string, envVars map[string]string, allowlist []string, groupName string) ([]string, error) {
     if len(texts) == 0 {
         return texts, nil
     }
 
     result := make([]string, len(texts))
     for i, text := range texts {
-        expanded, err := e.Expand(ctx, text, env, allowlist)
+        expanded, err := expandVariables(processor, text, envVars, allowlist, groupName)
         if err != nil {
-            return nil, fmt.Errorf("failed to expand text[%d] '%s': %w", i, text, err)
+            return nil, fmt.Errorf("failed to expand text[%d]: %w", i, err)
         }
         result[i] = expanded
     }
     return result, nil
 }
-
-// GetMetrics はシンプルなメトリクスを取得
-func (e *variableExpander) GetMetrics() ExpansionMetrics {
-    return *e.metrics
-}
-
-// 既存の実績あるコードを最大限活用し、新しい複雑な実装を回避
-// 直感的で理解しやすいコードを保持
 ```
 
 ### 1.7 設定統合仕様
@@ -384,28 +345,26 @@ func (e *variableExpander) GetMetrics() ExpansionMetrics {
 
 ```go
 // Command構造体への変数展開統合
-func (c *Command) ExpandVariables(expander expansion.VariableExpander, allowlist []string) error {
-    ctx := context.Background()
-
+func (c *Command) ExpandVariables(processor *environment.CommandEnvProcessor, allowlist []string, groupName string) error {
     // 環境変数マップを構築
     env, err := c.BuildEnvironmentMap()
     if err != nil {
         return fmt.Errorf("failed to build environment map: %w", err)
     }
 
-    // コマンド名の展開（展開処理中にバリデーションも実行される）
-    if expandedCmd, err := expander.Expand(ctx, c.Cmd, env, allowlist); err != nil {
+    // コマンド名の展開（シンプルなAPI）
+    expandedCmd, err := processor.Expand(c.Cmd, env, allowlist, groupName, make(map[string]bool))
+    if err != nil {
         return fmt.Errorf("failed to expand command: %w", err)
-    } else {
-        c.Cmd = expandedCmd
     }
+    c.Cmd = expandedCmd
 
-    // 引数の展開（展開処理中にバリデーションも実行される）
-    if expandedArgs, err := expander.ExpandAll(ctx, c.Args, env, allowlist); err != nil {
+    // 引数の展開
+    expandedArgs, err := expandAll(processor, c.Args, env, allowlist, groupName)
+    if err != nil {
         return fmt.Errorf("failed to expand args: %w", err)
-    } else {
-        c.Args = expandedArgs
     }
+    c.Args = expandedArgs
 
     return nil
 }
@@ -452,62 +411,62 @@ func TestVariableParser_ReplaceVariables(t *testing.T) {
     }{
         {
             name:     "simple variable",
-            input:    "$HOME",
+            input:    "${HOME}",
             env:      map[string]string{"HOME": "/home/user"},
             expected: "/home/user",
             expectErr: false,
         },
         {
             name:     "braced variable",
-            input:    "${USER}",
+            input:    "${{USER}",
             env:      map[string]string{"USER": "testuser"},
             expected: "testuser",
             expectErr: false,
         },
         {
-            name:     "mixed variables",
-            input:    "$HOME/bin/${APP_NAME}",
+            name:     "multiple variables",
+            input:    "${HOME}/bin/${APP_NAME}",
             env:      map[string]string{"HOME": "/home/user", "APP_NAME": "myapp"},
             expected: "/home/user/bin/myapp",
             expectErr: false,
         },
         {
-            name:     "prefix_$VAR_suffix problem case",
-            input:    "prefix_$HOME_suffix",
-            env:      map[string]string{"HOME": "user", "HOME_suffix": "fallback"},
-            expected: "prefix_fallback", // $HOME_suffix 全体が変数名と認識される
+            name:     "prefix_${VAR}_suffix clear case",
+            input:    "prefix_${HOME}_suffix",
+            env:      map[string]string{"HOME": "user"},
+            expected: "prefix_user_suffix", // 明確な変数境界
             expectErr: false,
         },
         {
-            name:     "JSON with variable - unified pattern processing",
-            input:    `{"key": "$VALUE"}`,
+            name:     "JSON with variable - braced format processing",
+            input:    `{"key": "${VALUE}"}`,
             env:      map[string]string{"VALUE": "test"},
-            expected: `{"key": "test"}`, // 統一パターンでJSON内の$VALUEが正しく展開
+            expected: `{"key": "test"}`, // ${VAR}形式でJSON内の${VALUE}が正しく展開
             expectErr: false,
         },
         {
-            name:     "mixed braced and simple - no overlap issues",
-            input:    `{"user": "$USER", "home": "${HOME}"}`,
+            name:     "multiple braced variables in JSON",
+            input:    `{"user": "${USER}", "home": "${HOME}"}`,
             env:      map[string]string{"USER": "testuser", "HOME": "/home/testuser"},
-            expected: `{"user": "testuser", "home": "/home/testuser"}`, // 重複問題なし
+            expected: `{"user": "testuser", "home": "/home/testuser"}`, // 複数の${VAR}変数
             expectErr: false,
         },
         {
-            name:     "unified pattern handles complex cases",
-            input:    "before_${VAR}_middle_$VAR2_after",
+            name:     "braced pattern handles complex cases",
+            input:    "before_${VAR}_middle_${VAR2}_after",
             env:      map[string]string{"VAR": "value1", "VAR2": "value2"},
-            expected: "before_value1_middle_value2_after", // 両形式が統一処理される
+            expected: "before_value1_middle_value2_after", // 複数の${VAR}変数処理
             expectErr: false,
         },
         {
-            name:     "edge case with similar variable names",
-            input:    "$HOME and ${HOME_DIR} and $HOME_suffix",
-            env:      map[string]string{"HOME": "user", "HOME_DIR": "/home/user", "HOME_suffix": "fallback"},
-            expected: "user and /home/user and fallback", // 統一パターンが適切に分離
+            name:     "similar variable names with clear boundaries",
+            input:    "${HOME} and ${HOME_DIR} and ${HOME_SUFFIX}",
+            env:      map[string]string{"HOME": "user", "HOME_DIR": "/home/user", "HOME_SUFFIX": "fallback"},
+            expected: "user and /home/user and fallback", // 明確な変数境界
             expectErr: false,
         },
         {
-            name:     "recommended braced format",
+            name:     "standard braced format",
             input:    "prefix_${HOME}_suffix",
             env:      map[string]string{"HOME": "user"},
             expected: "prefix_user_suffix",
@@ -515,7 +474,7 @@ func TestVariableParser_ReplaceVariables(t *testing.T) {
         },
         {
             name:     "glob patterns as literals",
-            input:    "$HOME/*.txt",
+            input:    "${{HOME}/*.txt",
             env:      map[string]string{"HOME": "/home/user"},
             expected: "/home/user/*.txt", // * はリテラル文字として扱われる
             expectErr: false,
@@ -529,8 +488,108 @@ func TestVariableParser_ReplaceVariables(t *testing.T) {
         },
         {
             name:     "undefined variable",
-            input:    "$UNDEFINED",
+            input:    "${UNDEFINED}",
             env:      map[string]string{},
+            expected: "",
+            expectErr: true,
+        },
+        // エスケープシーケンステスト
+        {
+            name:     "escape dollar sign",
+            input:    `\$FOO`,
+            env:      map[string]string{"FOO": "value"},
+            expected: "$FOO",
+            expectErr: false,
+        },
+        {
+            name:     "escape backslash",
+            input:    `\\FOO`,
+            env:      map[string]string{},
+            expected: `\FOO`,
+            expectErr: false,
+        },
+        {
+            name:     "escaped dollar with variable expansion",
+            input:    `\$FOO and ${BAR}`,
+            env:      map[string]string{"FOO": "foo", "BAR": "bar"},
+            expected: "$FOO and bar",
+            expectErr: false,
+        },
+        {
+            name:     "backslash before variable",
+            input:    `\\${FOO}`,
+            env:      map[string]string{"FOO": "value"},
+            expected: `\value`,
+            expectErr: false,
+        },
+        {
+            name:     "multiple escapes",
+            input:    `\$FOO \$BAR \\baz`,
+            env:      map[string]string{"FOO": "f", "BAR": "b"},
+            expected: "$FOO $BAR \\baz",
+            expectErr: false,
+        },
+        {
+            name:     "escaped in braces context",
+            input:    `\${FOO} ${BAR}`,
+            env:      map[string]string{"FOO": "foo", "BAR": "bar"},
+            expected: "${FOO} bar",
+            expectErr: false,
+        },
+        {
+            name:     "invalid escape sequence - letter",
+            input:    `\U`,
+            env:      map[string]string{},
+            expected: "",
+            expectErr: true,
+        },
+        {
+            name:     "invalid escape sequence - number",
+            input:    `\1`,
+            env:      map[string]string{},
+            expected: "",
+            expectErr: true,
+        },
+        {
+            name:     "trailing backslash",
+            input:    `FOO\`,
+            env:      map[string]string{},
+            expected: "",
+            expectErr: true,
+        },
+        // 無効な変数形式のテストケース
+        {
+            name:     "dollar without braces",
+            input:    "$HOME",
+            env:      map[string]string{"HOME": "/home/user"},
+            expected: "",
+            expectErr: true,
+        },
+        {
+            name:     "dollar at end",
+            input:    "path$",
+            env:      map[string]string{},
+            expected: "",
+            expectErr: true,
+        },
+        {
+            name:     "unclosed brace",
+            input:    "${HOME",
+            env:      map[string]string{"HOME": "/home/user"},
+            expected: "",
+            expectErr: true,
+        },
+        {
+            name:     "dollar with invalid character",
+            input:    "$@INVALID",
+            env:      map[string]string{},
+            expected: "",
+            expectErr: true,
+        },
+        {
+            name:     "mixed valid and invalid formats",
+            input:    "${HOME} and $USER",
+            env:      map[string]string{"HOME": "/home/user", "USER": "testuser"},
             expected: "",
             expectErr: true,
         },
@@ -562,7 +621,7 @@ func (r *testVariableResolver) ResolveVariable(name string) (string, error) {
     if value, exists := r.env[name]; exists {
         return value, nil
     }
-    return "", fmt.Errorf("variable not found: %s", name)
+    return "", fmt.Errorf("%w: %s", ErrVariableNotFound, varName) // 未定義変数はエラーとして扱う
 }
 
 func TestVariableExpander_Expand(t *testing.T) {
@@ -575,8 +634,8 @@ func TestVariableExpander_Expand(t *testing.T) {
         expectErr bool
     }{
         {
-            name: "simple $VAR expansion",
-            text:  "$DOCKER_CMD",
+            name: "simple ${VAR} expansion",
+            text:  "${DOCKER_CMD}",
             env:  map[string]string{"DOCKER_CMD": "/usr/bin/docker"},
             allowlist: []string{},
             expected:  "/usr/bin/docker",
@@ -584,15 +643,15 @@ func TestVariableExpander_Expand(t *testing.T) {
         },
         {
             name: "braced ${VAR} expansion",
-            text:  "${TOOL_DIR}/script",
+            text:  "${{TOOL_DIR}/script",
             env:  map[string]string{"TOOL_DIR": "/opt/tools"},
             allowlist: []string{},
             expected:  "/opt/tools/script",
             expectErr: false,
         },
         {
-            name: "mixed format expansion",
-            text:  "$HOME/${USER}_config",
+            name: "multiple braced format expansion",
+            text:  "${HOME}/${USER}_config",
             env:  map[string]string{"HOME": "/home/user", "USER": "testuser"},
             allowlist: []string{},
             expected:  "/home/user/testuser_config",
@@ -600,15 +659,15 @@ func TestVariableExpander_Expand(t *testing.T) {
         },
         {
             name: "circular reference detection",
-            text:  "$A",
-            env:  map[string]string{"A": "$B", "B": "$A"},
+            text:  "${A}",
+            env:  map[string]string{"A": "${B}", "B": "${A}"},
             allowlist: []string{},
             expected:  "",
             expectErr: true,
         },
         {
             name: "glob pattern preserved as literal",
-            text:  "${FIND_CMD}",
+            text:  "${{FIND_CMD}",
             env:  map[string]string{"FIND_CMD": "/usr/bin/find /path/*.txt"},
             allowlist: []string{},
             expected:  "/usr/bin/find /path/*.txt", // * はリテラルとして保持
@@ -645,7 +704,7 @@ func TestVariableExpander_ExpandAll(t *testing.T) {
     }{
         {
             name: "expand multiple texts",
-            texts: []string{"$HOME/bin", "${USER}.log", "prefix_${APP}_suffix"},
+            texts: []string{"${HOME}/bin", "${USER}.log", "prefix_${APP}_suffix"},
             env: map[string]string{
                 "HOME": "/home/user",
                 "USER": "testuser",
@@ -664,8 +723,8 @@ func TestVariableExpander_ExpandAll(t *testing.T) {
             expectErr: false,
         },
         {
-            name: "error in second text",
-            texts: []string{"$HOME", "$UNDEFINED"},
+            name: "undefined variable in second text",
+            texts: []string{"${HOME}", "${UNDEFINED}"},
             env: map[string]string{"HOME": "/home/user"},
             allowlist: []string{},
             expected: nil,
@@ -699,49 +758,40 @@ func TestCircularReferenceDetection_IterativeBased(t *testing.T) {
         expectErr bool
     }{
         {
-            name: "no circular reference - both formats",
+            name: "no circular reference - ${VAR} format",
             env: map[string]string{
                 "A": "value_a",
-                "B": "$A",
+                "B": "${A}",
                 "C": "${B}/suffix",
             },
             testValue: "${C}",
             expectErr: false,
         },
         {
-            name: "direct circular reference - $VAR format",
+            name: "direct circular reference",
             env: map[string]string{
-                "A": "$B",
-                "B": "$A",
+                "A": "${B}",
+                "B": "${A}",
             },
-            testValue: "$A",
-            expectErr: true, // 既存の反復制限で検出
+            testValue: "${A}",
+            expectErr: true, // visited mapで循環参照を検出
         },
         {
-            name: "indirect circular reference - ${VAR} format",
+            name: "indirect circular reference",
             env: map[string]string{
                 "A": "${B}",
                 "B": "${C}",
                 "C": "${A}",
             },
             testValue: "${A}",
-            expectErr: true, // 既存の反復制限で検出
-        },
-        {
-            name: "mixed format circular reference",
-            env: map[string]string{
-                "A": "$B",
-                "B": "${A}",
-            },
-            testValue: "$A",
-            expectErr: true, // 両形式の循環参照も検出
+            expectErr: true, // visited mapで循環参照を検出
         },
         {
             name: "self reference",
             env: map[string]string{
-                "A": "$A",
+                "A": "${A}",
             },
-            testValue: "$A",
+            testValue: "${A}",
             expectErr: true,
         },
         {
@@ -750,7 +800,7 @@ func TestCircularReferenceDetection_IterativeBased(t *testing.T) {
                 "USER": "testuser",
                 "HOME": "/home/testuser",
             },
-            testValue: `{"user": "$USER", "home": "${HOME}"}`,
+            testValue: `{"user": "${USER}", "home": "${HOME}"}`,
             expectErr: false, // JSON内の変数が正しく処理される
         },
     }
@@ -782,7 +832,7 @@ func TestCircularReferenceDetection_IterativeBased(t *testing.T) {
 
 ```go
 func BenchmarkVariableExpansion(b *testing.B) {
-    // 統一正規表現アプローチのパフォーマンステスト
+    // ${VAR}形式専用のパフォーマンステスト
     parser := NewVariableParser()
     resolver := &testVariableResolver{
         env: map[string]string{
@@ -793,28 +843,17 @@ func BenchmarkVariableExpansion(b *testing.B) {
         },
     }
 
-    b.Run("unified_pattern_simple", func(b *testing.B) {
+    b.Run("braced_pattern_simple", func(b *testing.B) {
         for i := 0; i < b.N; i++ {
-            _, err := parser.ReplaceVariables("$HOME/bin/$APP", resolver)
+            _, err := parser.ReplaceVariables("${HOME}/bin/${APP}", resolver)
             if err != nil {
                 b.Fatal(err)
             }
         }
     })
 
-    b.Run("unified_pattern_mixed_format", func(b *testing.B) {
-        testString := "--input $HOME/data --output ${BIN}/output"
-        for i := 0; i < b.N; i++ {
-            _, err := parser.ReplaceVariables(testString, resolver)
-            if err != nil {
-                b.Fatal(err)
-            }
-        }
-    })
-
-    b.Run("unified_pattern_complex", func(b *testing.B) {
-        // 統一パターンで複雑なケースを処理
-        testString := "prefix_${APP}_suffix and $HOME/*.txt"
+    b.Run("braced_pattern_multiple", func(b *testing.B) {
+        testString := "--input ${HOME}/data --output ${BIN}/output"
         for i := 0; i < b.N; i++ {
             _, err := parser.ReplaceVariables(testString, resolver)
             if err != nil {
@@ -823,9 +862,20 @@ func BenchmarkVariableExpansion(b *testing.B) {
         }
     })
 
-    b.Run("unified_pattern_json_case", func(b *testing.B) {
+    b.Run("braced_pattern_complex", func(b *testing.B) {
+        // ${VAR}形式で複雑なケースを処理
+        testString := "prefix_${APP}_suffix and ${HOME}/*.txt"
+        for i := 0; i < b.N; i++ {
+            _, err := parser.ReplaceVariables(testString, resolver)
+            if err != nil {
+                b.Fatal(err)
+            }
+        }
+    })
+
+    b.Run("braced_pattern_json_case", func(b *testing.B) {
         // JSONケースでのパフォーマンス確認
-        jsonString := `{"user": "$USER", "home": "${HOME}", "pattern": "$PATTERN"}`
+        jsonString := `{"user": "${USER}", "home": "${HOME}", "pattern": "${PATTERN}"}`
         resolver.env["USER"] = "testuser" // テスト用に追加
         for i := 0; i < b.N; i++ {
             result, err := parser.ReplaceVariables(jsonString, resolver)
@@ -846,7 +896,7 @@ func BenchmarkVariableExpansion(b *testing.B) {
 
 #### 1.10.1 既存コードを活用した統合ポイント
 
-1. **Environment Processor 拡張**: 既存の `processor.go` に $VAR サポートと反復上限拡張
+1. **Environment Processor 拡張**: 既存の `processor.go` に visited mapによる循環参照検出を実装
 2. **Config Parser 統合**: シンプルな cmd/args 展開処理を追加
 3. **Security Validator 活用**: 既存の allowlist 検証と Command.Env 優先ポリシーをそのまま使用
 4. **Error Handling 一元化**: 既存のエラー型を流用して統一性を維持
@@ -855,7 +905,7 @@ func BenchmarkVariableExpansion(b *testing.B) {
 
 - **完全互換性**: 環境変数参照のない設定ファイルは無変更で動作
 - **既存コード維持**: Command.Env 処理は実績ある既存コードを拡張のみ
-- **直感的な実装**: 複雑なDFSではなく理解しやすい反復制限方式
+- **直感的な実装**: 複雑なDFSではなく理解しやすいvisited mapによる循環参照検出
 - **保守性重視**: 新しい開発者でも簡単に理解・修正可能なコード
 
 このシンプルなアプローチにより、既存の実績あるコードを最大限活用しつつ、要件を満たす堅牢で高性能な変数展開機能を実現できます。

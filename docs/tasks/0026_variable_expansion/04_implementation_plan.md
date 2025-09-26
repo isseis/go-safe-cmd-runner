@@ -3,15 +3,15 @@
 ## 1. プロジェクト概要
 
 ### 1.1 実装目標
-- TOML設定ファイルのコマンド名（`cmd`）および引数（`args`）内の環境変数参照（`$VAR`、`${VAR}`）を実行時に自動展開
-- 既存の反復制限方式を活用したシンプルで堅牢な実装
+- TOML設定ファイルのコマンド名（`cmd`）および引数（`args`）内の環境変数参照（`${VAR}`）を実行時に自動展開
+- visited mapを活用したシンプルで堅牢な循環参照検出実装
 - セキュリティ要件（allowlist連携、循環参照検出）の完全遵守
 - 既存機能との完全互換性維持
 
 ### 1.2 実装スコープ
 | 機能カテゴリ | 内容 | 優先度 |
 |-------------|------|--------|
-| 基本機能 | cmd/args での `$VAR`, `${VAR}` 展開 | 高 |
+| 基本機能 | cmd/args での `${VAR}` 展開 | 高 |
 | セキュリティ | allowlist連携、循環参照検出 | 高 |
 | 互換性 | 既存設定ファイルとの完全互換 | 高 |
 | 性能 | 既存性能への影響最小化 | 中 |
@@ -22,60 +22,64 @@
 ### Phase 1: 基盤実装 (Week 1-2)
 
 #### 1.1 既存コード分析と拡張点特定
-- [ ] `internal/runner/environment/processor.go` の現行実装分析
-- [ ] 変数展開ロジックの循環参照検出アルゴリズム理解
-- [ ] `variableReferenceRegex` の動作確認
-- [ ] Command.Env処理フローの詳細調査
-- [ ] allowlist検証処理の仕組み理解
+- [x] `internal/runner/environment/processor.go` の現行実装分析
+- [x] 変数展開ロジックの循環参照検出アルゴリズム理解
+- [x] `variableReferenceRegex` の動作確認
+- [x] Command.Env処理フローの詳細調査
+- [x] allowlist検証処理の仕組み理解
 
 #### 1.2 型定義とインターフェース設計
-- [ ] `internal/runner/expansion/types.go` 作成
-  - [ ] `VariableExpander` インターフェース定義
-  - [ ] `VariableParser` インターフェース定義
-  - [ ] `VariableResolver` インターフェース定義
-  - [ ] `ExpansionMetrics` 構造体定義
-  - [ ] エラー型の統一定義
-- [ ] 既存エラー型との統合確認
-  - [ ] `ErrCircularReference` の流用
-  - [ ] `ErrVariableNotAllowed` の流用
-  - [ ] `ErrVariableNotFound` の流用
+- [x] `internal/runner/expansion/types.go` 作成
+  - [x] CommandEnvProcessor による直接実装
+  - [x] `VariableParser` インターフェース定義
+  - [x] `VariableResolver` インターフェース定義
+  - [x] `Metrics` 構造体定義
+  - [x] エラー型の統一定義
+- [x] 既存エラー型との統合確認
+  - [x] `ErrCircularReference` の流用
+  - [x] `ErrVariableNotAllowed` の流用
+  - [x] `ErrVariableNotFound` の流用
 
 #### 1.3 両形式対応パーサー実装
-- [ ] `internal/runner/expansion/parser.go` 作成
-  - [ ] 既存 `bracedPattern` の流用確認
-  - [ ] 新規 `simplePattern` の正規表現実装
-  - [ ] `ReplaceVariables` メソッド実装
-  - [ ] `replaceSimpleVars` メソッド実装
-  - [ ] `isLikelyInsideBraces` ヒューリスティック実装
-- [ ] パーサー単体テスト作成
-  - [ ] `$VAR` 形式の基本テスト
-  - [ ] `${VAR}` 形式の基本テスト
-  - [ ] 両形式混在テスト
-  - [ ] 重複防止機能のテスト
-  - [ ] エラーケーステスト
+- [x] `internal/runner/expansion/parser.go` 作成
+  - [x] 統一正規表現パターンの実装（`unifiedVariablePattern`）
+  - [x] 名前付きキャプチャグループによる両形式対応
+  - [x] `ReplaceVariables` メソッド実装
+  - [x] `resolveVariableWithErrorHandling` メソッド実装
+  - [x] 循環参照検出機能の統合
+- [x] パーサー単体テスト作成
+  - [x] `${VAR}` 形式の基本テスト
+  - [x] 循環参照検出のテスト
+  - [x] エラーケーステスト
 
 #### 1.4 既存Environment Processor拡張
-- [ ] `internal/runner/environment/processor.go` 拡張
-  - [ ] `simpleVariableRegex` 正規表現追加
-  - [ ] `ResolveVariableReferencesUnified` メソッド追加
-  - [ ] `replaceSimpleVariables` メソッド追加
-  - [ ] 反復上限を 10 → 15 に拡張（実用的なネスト深度に対し十分なマージンを確保するため）
-  - [ ] 両形式統一処理の実装
-- [ ] 拡張されたプロセッサーのテスト作成
-  - [ ] 既存テストケースの動作確認
-  - [ ] `$VAR` 形式のテストケース追加
-  - [ ] 混在形式のテストケース追加
-  - [ ] 循環参照検出のテスト拡張
+- [x] `internal/runner/environment/processor.go` 拡張
+  - [x] 反復制限をvisited mapによる循環参照検出に変更（展開深度制限を撤廃）
+- [x] 拡張されたプロセッサーのテスト作成
+  - [x] 既存テストケースの動作確認
+  - [x] 循環参照検出のテスト拡張
+
+#### 1.5 エスケープ機能実装
+- [x] `ErrInvalidEscapeSequence` エラー型の追加
+- [x] `resolveVariableReferencesForCommandEnv` への1文字スキャンアルゴリズム実装
+  - [x] バックスラッシュエスケープ処理の追加（`\$`, `\\`）
+  - [x] 不正エスケープシーケンスの検出とエラー処理
+  - [x] 既存の正規表現を活用した変数パターンマッチング
+  - [x] プレースホルダー方式によるエスケープ文字の保護
+- [x] `Expand` への同様の実装
+- [x] エスケープ機能のテスト作成
+  - [x] `\$FOO` → `$FOO` のテスト
+  - [x] `\\$FOO` → `\value` のテスト
+  - [x] 不正エスケープ（`\U`, `\1`, 末尾`\`）のエラーテスト
+  - [x] 全テストケースの合格確認
 
 ### Phase 2: 統合展開エンジン実装 (Week 3)
 
 #### 2.1 cmd/args用展開エンジン実装
-- [ ] `internal/runner/expansion/expander.go` 作成
-  - [ ] `variableExpander` 構造体実装
-  - [ ] `NewVariableExpander` コンストラクタ実装
-  - [ ] `Expand` メソッド実装
-  - [ ] `ExpandAll` メソッド実装
-  - [ ] `GetMetrics` メソッド実装
+- [x] CommandEnvProcessor による直接実装（expander.go は作成しない）
+  - [x] `Expand` メソッド実装（既存）
+  - [ ] `expandAll` ユーティリティ関数実装
+  - [ ] メトリクス機能（必要に応じて）
 - [ ] セキュリティ検証との統合
   - [ ] 既存 `SecurityValidator` の活用
   - [ ] allowlist検証の統合
@@ -96,8 +100,8 @@
 #### 2.3 統合テスト実装
 - [ ] `internal/runner/expansion/expansion_test.go` 作成
   - [ ] `TestVariableParser_ReplaceVariables` 実装
-  - [ ] `TestVariableExpander_Expand` 実装
-  - [ ] `TestVariableExpander_ExpandAll` 実装
+  - [ ] CommandEnvProcessor.Expand のテスト拡張
+  - [ ] expandAll ユーティリティ関数のテスト実装
   - [ ] `TestCircularReferenceDetection_IterativeBased` 実装
   - [ ] セキュリティテストケース追加
 - [ ] 統合テストシナリオ実装
@@ -194,13 +198,11 @@
 #### 5.2 サンプル設定ファイル作成
 - [ ] 基本的な使用例
   - [ ] `sample/variable_expansion_basic.toml` 作成
-  - [ ] シンプルな `$VAR` 形式の例
   - [ ] シンプルな `${VAR}` 形式の例
 - [ ] 高度な使用例
   - [ ] `sample/variable_expansion_advanced.toml` 作成
   - [ ] 複数変数の展開例
   - [ ] ネスト変数の展開例
-  - [ ] 混在形式の例
 - [ ] セキュリティ設定例
   - [ ] `sample/variable_expansion_security.toml` 作成
   - [ ] allowlist設定の例
@@ -219,8 +221,8 @@
 ## 3. 品質基準・完了条件
 
 ### 3.1 機能的完了基準
-- [ ] cmdでの `$VAR` と `${VAR}` 両形式の正常展開
-- [ ] argsでの `$VAR` と `${VAR}` 両形式の正常展開
+- [ ] cmdでの `${VAR}` 形式の正常展開
+- [ ] argsでの `${VAR}` 形式の正常展開
 - [ ] cmdとargs両方での複数環境変数の同時展開
 - [ ] ネスト変数参照の正常処理
 - [ ] allowlist連携の完全動作

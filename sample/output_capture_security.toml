@@ -61,14 +61,14 @@ name = "home_directory_output"
 description = "Output to user home directory"
 cmd = "uname"
 args = ["-a"]
-output = "$HOME/security_test/system_info.txt" # Note: variable expansion is not yet implemented
+output = "${HOME}/security_test/system_info.txt" # Note: variable expansion is not yet implemented
 
 [[groups.commands]]
 name = "user_documents_output"
 description = "Output to user documents"
 cmd = "id"
 args = []
-output = "$HOME/Documents/user_identity.txt" # Note: variable expansion is not yet implemented
+output = "${HOME}/Documents/user_identity.txt" # Note: variable expansion is not yet implemented
 
 # Controlled temporary directory usage
 [[groups]]
