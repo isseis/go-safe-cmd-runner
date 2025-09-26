@@ -29,24 +29,24 @@
 - [x] allowlist検証処理の仕組み理解
 
 #### 1.2 型定義とインターフェース設計
-- [x] `internal/runner/expansion/types.go` 作成
+- [x] ~~`internal/runner/expansion/types.go` 作成~~（CommandEnvProcessor による直接実装に変更）
   - [x] CommandEnvProcessor による直接実装
-  - [x] `VariableParser` インターフェース定義
-  - [x] `VariableResolver` インターフェース定義
-  - [x] `Metrics` 構造体定義
-  - [x] エラー型の統一定義
+  - [x] ~~`VariableParser` インターフェース定義~~（直接実装のため不要）
+  - [x] ~~`VariableResolver` インターフェース定義~~（直接実装のため不要）
+  - [x] ~~`Metrics` 構造体定義~~（必要に応じて後で実装）
+  - [x] エラー型の統一定義（processor.go内で実装）
 - [x] 既存エラー型との統合確認
   - [x] `ErrCircularReference` の流用
   - [x] `ErrVariableNotAllowed` の流用
   - [x] `ErrVariableNotFound` の流用
 
 #### 1.3 両形式対応パーサー実装
-- [x] `internal/runner/expansion/parser.go` 作成
-  - [x] 統一正規表現パターンの実装（`unifiedVariablePattern`）
-  - [x] 名前付きキャプチャグループによる両形式対応
-  - [x] `ReplaceVariables` メソッド実装
-  - [x] `resolveVariableWithErrorHandling` メソッド実装
-  - [x] 循環参照検出機能の統合
+- [x] ~~`internal/runner/expansion/parser.go` 作成~~（CommandEnvProcessor内で直接実装）
+  - [x] ~~統一正規表現パターンの実装（`unifiedVariablePattern`）~~（文字レベル解析に変更）
+  - [x] ~~名前付きキャプチャグループによる両形式対応~~（`${VAR}` 形式のみ対応）
+  - [x] `ReplaceVariables` メソッド実装（Expandメソッドとして実装）
+  - [x] `resolveVariableWithErrorHandling` メソッド実装（Expand内で実装）
+  - [x] 循環参照検出機能の統合（visited map使用）
 - [x] パーサー単体テスト作成
   - [x] `${VAR}` 形式の基本テスト
   - [x] 循環参照検出のテスト
@@ -61,11 +61,11 @@
 
 #### 1.5 エスケープ機能実装
 - [x] `ErrInvalidEscapeSequence` エラー型の追加
-- [x] `resolveVariableReferencesForCommandEnv` への1文字スキャンアルゴリズム実装
+- [x] ~~`resolveVariableReferencesForCommandEnv`~~ `Expand` メソッドへの1文字スキャンアルゴリズム実装
   - [x] バックスラッシュエスケープ処理の追加（`\$`, `\\`）
   - [x] 不正エスケープシーケンスの検出とエラー処理
-  - [x] 既存の正規表現を活用した変数パターンマッチング
-  - [x] プレースホルダー方式によるエスケープ文字の保護
+  - [x] ~~既存の正規表現を活用した変数パターンマッチング~~（文字レベル解析に変更）
+  - [x] ~~プレースホルダー方式によるエスケープ文字の保護~~（直接文字処理に変更）
 - [x] `Expand` への同様の実装
 - [x] エスケープ機能のテスト作成
   - [x] `\$FOO` → `$FOO` のテスト
@@ -80,10 +80,10 @@
   - [x] `Expand` メソッド実装（既存）
   - [ ] `expandAll` ユーティリティ関数実装
   - [ ] メトリクス機能（必要に応じて）
-- [ ] セキュリティ検証との統合
-  - [ ] 既存 `SecurityValidator` の活用
-  - [ ] allowlist検証の統合
-  - [ ] Command.Env優先ポリシーの実装
+- [x] セキュリティ検証との統合
+  - [x] 既存 `SecurityValidator` の活用
+  - [x] allowlist検証の統合
+  - [x] Command.Env優先ポリシーの実装
 
 #### 2.2 Config Parser統合
 - [ ] `internal/runner/config/command.go` 拡張
