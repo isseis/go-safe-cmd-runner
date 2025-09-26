@@ -214,16 +214,16 @@ func TestExpandVariablesInGroup(t *testing.T) {
 				assert.Error(t, err)
 			} else {
 				require.NoError(t, err)
-				// Check that variables were expanded in first command
-				if len(tt.group.Commands) > 0 {
-					cmd := tt.group.Commands[0]
-					if cmd.Cmd == "${BIN_PATH}/ls" {
-						assert.Equal(t, "/usr/bin/ls", cmd.Cmd, "Command should be expanded")
-					}
-					if len(cmd.Args) > 1 && cmd.Args[1] == "${HOME}" {
-						assert.Contains(t, cmd.Args[1], "/home/", "Argument should be expanded")
-					}
-				}
+				// Verify expansion for first command
+				require.Len(t, tt.group.Commands, 2, "Should have two commands")
+
+				cmd1 := tt.group.Commands[0]
+				assert.Equal(t, "/usr/bin/ls", cmd1.Cmd, "First command should be expanded")
+				assert.Equal(t, []string{"-la", "/home/user"}, cmd1.Args, "First command args should be expanded")
+
+				cmd2 := tt.group.Commands[1]
+				assert.Equal(t, "echo", cmd2.Cmd, "Second command should remain unchanged")
+				assert.Equal(t, []string{"/home/test"}, cmd2.Args, "Second command args should be expanded")
 			}
 		})
 	}
