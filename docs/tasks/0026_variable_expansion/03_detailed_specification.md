@@ -411,7 +411,7 @@ func TestVariableParser_ReplaceVariables(t *testing.T) {
     }{
         {
             name:     "simple variable",
-            input:    "${{HOME}",
+            input:    "${HOME}",
             env:      map[string]string{"HOME": "/home/user"},
             expected: "/home/user",
             expectErr: false,
@@ -488,10 +488,10 @@ func TestVariableParser_ReplaceVariables(t *testing.T) {
         },
         {
             name:     "undefined variable",
-            input:    "${UNDEFINED",
+            input:    "${UNDEFINED}",
             env:      map[string]string{},
             expected: "",
-            expectErr: false,
+            expectErr: true,
         },
         // エスケープシーケンステスト
         {
@@ -621,7 +621,7 @@ func (r *testVariableResolver) ResolveVariable(name string) (string, error) {
     if value, exists := r.env[name]; exists {
         return value, nil
     }
-    return "", fmt.Errorf("%w: %s", ErrVariableNotAllowed, varName) // 未定義変数はエラーとして扱う
+    return "", fmt.Errorf("%w: %s", ErrVariableNotFound, varName) // 未定義変数はエラーとして扱う
 }
 
 func TestVariableExpander_Expand(t *testing.T) {
@@ -635,7 +635,7 @@ func TestVariableExpander_Expand(t *testing.T) {
     }{
         {
             name: "simple ${VAR} expansion",
-            text:  "${DOCKER_CMD",
+            text:  "${DOCKER_CMD}",
             env:  map[string]string{"DOCKER_CMD": "/usr/bin/docker"},
             allowlist: []string{},
             expected:  "/usr/bin/docker",
@@ -659,7 +659,7 @@ func TestVariableExpander_Expand(t *testing.T) {
         },
         {
             name: "circular reference detection",
-            text:  "${A",
+            text:  "${A}",
             env:  map[string]string{"A": "${B}", "B": "${A}"},
             allowlist: []string{},
             expected:  "",
@@ -727,8 +727,8 @@ func TestVariableExpander_ExpandAll(t *testing.T) {
             texts: []string{"${HOME}", "${UNDEFINED}"},
             env: map[string]string{"HOME": "/home/user"},
             allowlist: []string{},
-            expected: []string{"/home/user", ""},
-            expectErr: false,
+            expected: nil,
+            expectErr: true,
         },
     }
 
