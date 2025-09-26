@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 )
 
 // Config represents the root configuration structure
@@ -64,6 +65,23 @@ func (c *Command) GetMaxRiskLevel() (RiskLevel, error) {
 // HasUserGroupSpecification returns true if either run_as_user or run_as_group is specified
 func (c *Command) HasUserGroupSpecification() bool {
 	return c.RunAsUser != "" || c.RunAsGroup != ""
+}
+
+// BuildEnvironmentMap builds a map of environment variables from the command's Env slice.
+// This is used for variable expansion processing.
+func (c *Command) BuildEnvironmentMap() (map[string]string, error) {
+	env := make(map[string]string)
+
+	const expectedParts = 2
+	for _, envVar := range c.Env {
+		parts := strings.SplitN(envVar, "=", expectedParts)
+		if len(parts) != expectedParts {
+			return nil, fmt.Errorf("%w: %s", ErrInvalidEnvironmentVariableFormat, envVar)
+		}
+		env[parts[0]] = parts[1]
+	}
+
+	return env, nil
 }
 
 // InheritanceMode represents how environment allowlist inheritance works
@@ -221,11 +239,12 @@ type ElevationContext struct {
 
 // Standard privilege errors
 var (
-	ErrPrivilegedExecutionNotAvailable = fmt.Errorf("privileged execution not available: binary lacks required SUID bit or running as non-root user")
-	ErrInvalidRiskLevel                = errors.New("invalid risk level")
-	ErrPrivilegeEscalationBlocked      = errors.New("privilege escalation command blocked for security")
-	ErrCriticalRiskBlocked             = errors.New("critical risk command execution blocked")
-	ErrCommandSecurityViolation        = errors.New("command security violation: risk level too high")
+	ErrPrivilegedExecutionNotAvailable  = fmt.Errorf("privileged execution not available: binary lacks required SUID bit or running as non-root user")
+	ErrInvalidRiskLevel                 = errors.New("invalid risk level")
+	ErrPrivilegeEscalationBlocked       = errors.New("privilege escalation command blocked for security")
+	ErrCriticalRiskBlocked              = errors.New("critical risk command execution blocked")
+	ErrCommandSecurityViolation         = errors.New("command security violation: risk level too high")
+	ErrInvalidEnvironmentVariableFormat = errors.New("invalid environment variable format")
 )
 
 // PrivilegeManager interface defines methods for privilege management

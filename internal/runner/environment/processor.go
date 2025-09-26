@@ -191,3 +191,21 @@ func (p *CommandEnvProcessor) Expand(value string, envVars map[string]string, al
 	}
 	return result.String(), nil
 }
+
+// ExpandAll expands variables in multiple strings, handling them as a batch.
+// This is a utility function for expanding command arguments and other string arrays.
+func (p *CommandEnvProcessor) ExpandAll(texts []string, envVars map[string]string, allowlist []string, groupName string) ([]string, error) {
+	if len(texts) == 0 {
+		return texts, nil
+	}
+
+	result := make([]string, len(texts))
+	for i, text := range texts {
+		expanded, err := p.Expand(text, envVars, allowlist, groupName, make(map[string]bool))
+		if err != nil {
+			return nil, fmt.Errorf("failed to expand text[%d]: %w", i, err)
+		}
+		result[i] = expanded
+	}
+	return result, nil
+}
