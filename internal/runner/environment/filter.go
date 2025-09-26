@@ -214,11 +214,11 @@ func (f *Filter) IsVariableAccessAllowed(variable string, allowlist []string, gr
 // ValidateEnvironmentVariable validates both name and value of an environment variable
 func (f *Filter) ValidateEnvironmentVariable(name, value string) error {
 	if err := security.ValidateVariableName(name); err != nil {
-		return err
+		return fmt.Errorf("invalid name for variable %q: %w", name, err)
 	}
 
 	if err := security.IsVariableValueSafe(name, value); err != nil {
-		return err
+		return fmt.Errorf("unsafe value for variable %q: %w", name, err)
 	}
 
 	return nil

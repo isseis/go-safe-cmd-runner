@@ -134,7 +134,7 @@ func (p *CommandEnvProcessor) Expand(value string, envVars map[string]string, al
 				return "", ErrInvalidVariableFormat
 			}
 
-			start := i + 2 //nolint:mnd // position after ${
+			start := i + 2 //nolint:mnd // Skip past the opening "${" sequence
 			end := -1
 			for j := start; j < len(runes); j++ {
 				if runes[j] == '}' {
