@@ -6,7 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
 
 // Config represents the root configuration structure
@@ -72,13 +73,12 @@ func (c *Command) HasUserGroupSpecification() bool {
 func (c *Command) BuildEnvironmentMap() (map[string]string, error) {
 	env := make(map[string]string)
 
-	const expectedParts = 2
 	for _, envVar := range c.Env {
-		parts := strings.SplitN(envVar, "=", expectedParts)
-		if len(parts) != expectedParts {
+		key, value, ok := common.ParseEnvVariable(envVar)
+		if !ok {
 			return nil, fmt.Errorf("%w: %s", ErrInvalidEnvironmentVariableFormat, envVar)
 		}
-		env[parts[0]] = parts[1]
+		env[key] = value
 	}
 
 	return env, nil
