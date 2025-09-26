@@ -23,11 +23,6 @@ var (
 	ErrMalformedEnvVariable   = errors.New("malformed environment variable")
 )
 
-// Constants
-const (
-	envSeparatorParts = 2
-)
-
 // Filter provides environment variable filtering functionality with allowlist-based security
 type Filter struct {
 	config          *runnertypes.Config

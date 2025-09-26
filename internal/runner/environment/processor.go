@@ -51,7 +51,7 @@ func (p *CommandEnvProcessor) Process(cmd runnertypes.Command, baseEnvVars map[s
 
 	// First pass: Populate the environment with unexpanded values from the command.
 	for i, envStr := range cmd.Env {
-		varName, varValue, ok := strings.Cut(envStr, "=")
+		varName, varValue, ok := ParseEnvVariable(envStr)
 		if !ok {
 			return nil, fmt.Errorf("invalid environment variable format in Command.Env in command %s, env_index: %d, env_entry: %s: %w", cmd.Name, i, envStr, ErrMalformedEnvVariable)
 		}
