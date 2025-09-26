@@ -36,7 +36,7 @@ func TestParseEnvVariable(t *testing.T) {
 		{
 			name:        "missing equals sign",
 			env:         "INVALID",
-			expectedKey: "INVALID",
+			expectedKey: "",
 			expectedVal: "",
 			expectedOk:  false,
 		},
@@ -52,7 +52,14 @@ func TestParseEnvVariable(t *testing.T) {
 			env:         "=",
 			expectedKey: "",
 			expectedVal: "",
-			expectedOk:  true,
+			expectedOk:  false,
+		},
+		{
+			name:        "equals sign with value but empty key",
+			env:         "=somevalue",
+			expectedKey: "",
+			expectedVal: "",
+			expectedOk:  false,
 		},
 		{
 			name:        "multiple equals signs",

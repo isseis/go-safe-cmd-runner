@@ -6,6 +6,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 )
@@ -43,6 +44,21 @@ func LoadConfig(verificationManager *verification.Manager, configPath, runID str
 			Message:   fmt.Sprintf("Failed to parse config from verified content: %v", err),
 			Component: "config",
 			RunID:     runID,
+		}
+	}
+
+	// Expand environment variables in cmd and args fields
+	filter := environment.NewFilter(cfg)
+	processor := environment.NewCommandEnvProcessor(filter)
+	for i := range cfg.Groups {
+		err := config.ExpandVariablesInGroup(&cfg.Groups[i], processor)
+		if err != nil {
+			return nil, &logging.PreExecutionError{
+				Type:      logging.ErrorTypeConfigParsing,
+				Message:   fmt.Sprintf("Failed to expand environment variables: %v", err),
+				Component: "config",
+				RunID:     runID,
+			}
 		}
 	}
 

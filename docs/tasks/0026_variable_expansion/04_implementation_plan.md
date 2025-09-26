@@ -78,7 +78,7 @@
 #### 2.1 cmd/args用展開エンジン実装
 - [x] CommandEnvProcessor による直接実装（expander.go は作成しない）
   - [x] `Expand` メソッド実装（既存）
-  - [ ] `expandAll` ユーティリティ関数実装
+  - [x] `ExpandAll` ユーティリティ関数実装
   - [ ] メトリクス機能（必要に応じて）
 - [x] セキュリティ検証との統合
   - [x] 既存 `SecurityValidator` の活用
@@ -86,28 +86,28 @@
   - [x] Command.Env優先ポリシーの実装
 
 #### 2.2 Config Parser統合
-- [ ] `internal/runner/config/command.go` 拡張
-  - [ ] `ExpandVariables` メソッド追加
-  - [ ] `BuildEnvironmentMap` メソッド追加
-  - [ ] コマンド名展開処理の統合
-  - [ ] 引数展開処理の統合
-  - [ ] エラーハンドリングの実装
-- [ ] 設定ファイル処理フローへの統合
-  - [ ] TOML読み込み処理での展開タイミング決定
-  - [ ] 既存処理フローへの影響最小化
-  - [ ] バックワード互換性の確保
+- [x] ~~`internal/runner/config/command.go` 拡張~~（`expansion.go`として分離実装）
+  - [x] `ExpandVariables` メソッド追加（`config.ExpandVariables`関数として実装）
+  - [x] `BuildEnvironmentMap` メソッド追加（Command構造体に追加）
+  - [x] コマンド名展開処理の統合
+  - [x] 引数展開処理の統合
+  - [x] エラーハンドリングの実装
+- [x] 設定ファイル処理フローへの統合
+  - [x] TOML読み込み処理での展開タイミング決定
+  - [x] 既存処理フローへの影響最小化
+  - [x] バックワード互換性の確保
 
 #### 2.3 統合テスト実装
-- [ ] `internal/runner/expansion/expansion_test.go` 作成
-  - [ ] `TestVariableParser_ReplaceVariables` 実装
-  - [ ] CommandEnvProcessor.Expand のテスト拡張
-  - [ ] expandAll ユーティリティ関数のテスト実装
-  - [ ] `TestCircularReferenceDetection_IterativeBased` 実装
-  - [ ] セキュリティテストケース追加
-- [ ] 統合テストシナリオ実装
-  - [ ] 実際のTOML設定ファイルでのテスト
-  - [ ] 既存機能との互換性テスト
-  - [ ] エラーケースの網羅的テスト
+- [x] `internal/runner/config/expansion_test.go` 作成
+  - [x] `TestExpandVariables` 実装
+  - [x] `TestExpandVariablesInGroup` 実装
+  - [x] `TestCircularReferenceDetection` 実装
+  - [x] `TestSecurityIntegration` 実装
+  - [x] セキュリティテストケース追加
+- [x] 統合テストシナリオ実装
+  - [x] 基本的な変数展開テスト
+  - [x] 既存機能との互換性テスト
+  - [x] エラーケースの網羅的テスト
 
 ### Phase 3: 性能・品質最適化 (Week 4)
 
