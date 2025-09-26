@@ -194,9 +194,9 @@ func (f *Filter) resolveAllowlistConfiguration(allowlist []string, groupName str
 	return resolution
 }
 
-// resolveAllowedVariable checks if a variable is allowed based on the inheritance configuration
+// IsVariableAccessAllowed checks if a variable is allowed based on the inheritance configuration
 // This replaces the old isVariableAllowed function with clearer logic
-func (f *Filter) resolveAllowedVariable(variable string, allowlist []string, groupName string) bool {
+func (f *Filter) IsVariableAccessAllowed(variable string, allowlist []string, groupName string) bool {
 	resolution := f.resolveAllowlistConfiguration(allowlist, groupName)
 	allowed := resolution.IsAllowed(variable)
 
@@ -214,12 +214,6 @@ func (f *Filter) resolveAllowedVariable(variable string, allowlist []string, gro
 	}
 
 	return allowed
-}
-
-// IsVariableAccessAllowed checks if a variable can be accessed in the given group context
-// This function now uses the improved inheritance logic
-func (f *Filter) IsVariableAccessAllowed(variable string, allowlist []string, groupName string) bool {
-	return f.resolveAllowedVariable(variable, allowlist, groupName)
 }
 
 // ValidateEnvironmentVariable validates both name and value of an environment variable
