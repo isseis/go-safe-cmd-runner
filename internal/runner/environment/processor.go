@@ -38,12 +38,12 @@ func NewCommandEnvProcessor(filter *Filter) *CommandEnvProcessor {
 	}
 }
 
-// ProcessCommandEnvironment processes and prepares the environment variables for a command.
+// Process processes and prepares the environment variables for a command.
 // It uses a two-pass approach:
 //  1. First pass: Add all variables from the command's `Env` block to the environment map.
 //     This allows for self-references and inter-references within the `Env` block.
 //  2. Second pass: Iterate over the map and expand any variables in the values.
-func (p *CommandEnvProcessor) ProcessCommandEnvironment(cmd runnertypes.Command, baseEnvVars map[string]string, group *runnertypes.CommandGroup) (map[string]string, error) {
+func (p *CommandEnvProcessor) Process(cmd runnertypes.Command, baseEnvVars map[string]string, group *runnertypes.CommandGroup) (map[string]string, error) {
 	finalEnv := make(map[string]string)
 	for k, v := range baseEnvVars {
 		finalEnv[k] = v

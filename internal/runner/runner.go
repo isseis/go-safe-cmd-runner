@@ -555,7 +555,7 @@ func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, group *runnerty
 
 	// Step 2: Process Command.Env variables without allowlist checks
 	processor := environment.NewCommandEnvProcessor(r.envFilter)
-	finalEnvVars, err := processor.ProcessCommandEnvironment(cmd, systemEnvVars, group)
+	finalEnvVars, err := processor.Process(cmd, systemEnvVars, group)
 	if err != nil {
 		return nil, fmt.Errorf("failed to process command environment variables: %w", err)
 	}

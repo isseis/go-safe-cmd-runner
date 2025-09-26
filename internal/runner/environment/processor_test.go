@@ -23,7 +23,7 @@ func TestNewCommandEnvProcessor(t *testing.T) {
 	assert.NotNil(t, processor.logger)
 }
 
-func TestCommandEnvProcessor_ProcessCommandEnvironment(t *testing.T) {
+func TestCommandEnvProcessor_Process(t *testing.T) {
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
 			EnvAllowlist: []string{"PATH", "HOME", "USER"},
@@ -134,7 +134,7 @@ func TestCommandEnvProcessor_ProcessCommandEnvironment(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := processor.ProcessCommandEnvironment(tt.cmd, tt.baseEnvVars, tt.group)
+			result, err := processor.Process(tt.cmd, tt.baseEnvVars, tt.group)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -529,7 +529,7 @@ func TestCommandEnvProcessor_InheritanceModeIntegration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := processor.ProcessCommandEnvironment(tt.cmd, tt.baseEnvVars, tt.group)
+			_, err := processor.Process(tt.cmd, tt.baseEnvVars, tt.group)
 
 			if tt.expectError {
 				assert.Error(t, err, tt.description)
