@@ -620,6 +620,16 @@ func TestCommandEnvProcessor_EscapeSequences(t *testing.T) {
 			},
 			expected: "${FOO} bar",
 		},
+		{
+			name:    "mixed escape and expansion with prefix/suffix",
+			value:   `prefix \${FOO} ${BAR} suffix`,
+			envVars: map[string]string{"FOO": "foo", "BAR": "bar"},
+			group: &runnertypes.CommandGroup{
+				Name:         "test_group",
+				EnvAllowlist: []string{"FOO", "BAR"},
+			},
+			expected: "prefix ${FOO} bar suffix",
+		},
 		// Error tests
 		{
 			name:        "invalid escape sequence - letter",
@@ -652,75 +662,6 @@ func TestCommandEnvProcessor_EscapeSequences(t *testing.T) {
 			group:       &runnertypes.CommandGroup{Name: "test_group"},
 			expectError: true,
 			expectedErr: ErrInvalidEscapeSequence,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := processor.Expand(tt.value, tt.envVars, tt.group.EnvAllowlist, tt.group.Name, make(map[string]bool))
-
-			if tt.expectError {
-				assert.Error(t, err)
-				if tt.expectedErr != nil {
-					assert.ErrorIs(t, err, tt.expectedErr, "Expected error type %v, got %v", tt.expectedErr, err)
-				}
-				return
-			}
-
-			require.NoError(t, err)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
-// TestCommandEnvProcessor_EscapeSequences_CommandEnv tests escape sequences in Command.Env context
-func TestCommandEnvProcessor_EscapeSequences_CommandEnv(t *testing.T) {
-	config := &runnertypes.Config{
-		Global: runnertypes.GlobalConfig{
-			EnvAllowlist: []string{"BAR"},
-		},
-	}
-	filter := NewFilter(config)
-	processor := NewCommandEnvProcessor(filter)
-
-	tests := []struct {
-		name        string
-		value       string
-		envVars     map[string]string
-		group       *runnertypes.CommandGroup
-		expected    string
-		expectError bool
-		expectedErr error
-	}{
-		{
-			name:    "escape dollar in command env (braces only)",
-			value:   `\${FOO}`,
-			envVars: map[string]string{"FOO": "value"},
-			group: &runnertypes.CommandGroup{
-				Name:         "test_group",
-				EnvAllowlist: []string{"FOO"},
-			},
-			expected: "${FOO}",
-		},
-		{
-			name:    "escape backslash in command env",
-			value:   `\\path`,
-			envVars: map[string]string{},
-			group: &runnertypes.CommandGroup{
-				Name:         "test_group",
-				EnvAllowlist: []string{},
-			},
-			expected: `\path`,
-		},
-		{
-			name:    "mixed escape and expansion in command env",
-			value:   `prefix \${FOO} ${BAR} suffix`,
-			envVars: map[string]string{"FOO": "foo", "BAR": "bar"},
-			group: &runnertypes.CommandGroup{
-				Name:         "test_group",
-				EnvAllowlist: []string{"FOO", "BAR"},
-			},
-			expected: "prefix ${FOO} bar suffix",
 		},
 	}
 
