@@ -140,14 +140,8 @@ func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd runnerty
 	// Record the analysis
 	d.RecordAnalysis(&analysis)
 
-	// Use ExpandedCmd if available, fallback to original Cmd
-	cmdToExecute := cmd.ExpandedCmd
-	if cmdToExecute == "" {
-		cmdToExecute = cmd.Cmd
-	}
-
 	// Generate simulated output
-	stdout := fmt.Sprintf("[DRY-RUN] Would execute: %s", cmdToExecute)
+	stdout := fmt.Sprintf("[DRY-RUN] Would execute: %s", cmd.ExpandedCmd)
 	if cmd.Dir != "" {
 		stdout += fmt.Sprintf(" (in directory: %s)", cmd.Dir)
 	}

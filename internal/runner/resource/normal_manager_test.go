@@ -9,6 +9,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/testhelpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -107,7 +108,7 @@ func createTestNormalResourceManager() (*NormalResourceManager, *executortesting
 }
 
 func createTestCommand() runnertypes.Command {
-	return runnertypes.Command{
+	cmd := runnertypes.Command{
 		Name:        "test-command",
 		Description: "Test command description",
 		Cmd:         "echo",
@@ -115,6 +116,8 @@ func createTestCommand() runnertypes.Command {
 		Dir:         "/tmp",
 		Timeout:     30,
 	}
+	testhelpers.PrepareCommand(&cmd)
+	return cmd
 }
 
 func createTestCommandGroup() *runnertypes.CommandGroup {
