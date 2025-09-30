@@ -197,10 +197,13 @@ func (p *VariableExpander) ExpandString(value string, envVars map[string]string,
 // ExpandStrings expands variables in multiple strings, handling them as a batch.
 // This is a utility function for expanding command arguments and other string arrays.
 func (p *VariableExpander) ExpandStrings(texts []string, envVars map[string]string, allowlist []string, groupName string) ([]string, error) {
-	if len(texts) == 0 {
-		return texts, nil
+	if texts == nil {
+		return nil, nil
 	}
 
+	// Always allocate a new slice for the result even when len(texts)==0.
+	// This ensures we don't return the caller's underlying slice and
+	// keeps behavior consistent between empty and non-empty inputs.
 	result := make([]string, len(texts))
 	for i, text := range texts {
 		expanded, err := p.ExpandString(text, envVars, allowlist, groupName, make(map[string]bool))
