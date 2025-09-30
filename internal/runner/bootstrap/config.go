@@ -17,9 +17,11 @@ import (
 //  1. Verifies the configuration file's hash (TOCTOU protection)
 //  2. Reads and parses the TOML configuration
 //  3. Expands variables in command strings (${VAR} syntax in cmd/args fields)
+//     and expands per-command environment variables (Command.Env -> Command.ExpandedEnv).
 //
 // The returned Config is ready for execution with all command strings expanded.
-// Variable expansion is immutable - original config data is not modified.
+// The loader sets Command.ExpandedCmd, Command.ExpandedArgs and Command.ExpandedEnv
+// while leaving the original source values available on the command for auditing/debugging.
 //
 // Parameters:
 //   - verificationManager: Manager for secure file verification
@@ -64,40 +66,41 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 		}
 	}
 
-	// Expand variables in command strings (cmd and args fields) and Command.Env
-	// This creates new CommandGroups with expanded ${VAR} references, leaving originals unchanged
+	// Expand variables in Cmd, Args and Env fields and fills them into ExpandedCmd, ExpandedArgs and ExpandedEnv
+	// in-place on cfg.Groups.
 	filter := environment.NewFilter(cfg)
 	expander := environment.NewVariableExpander(filter)
-	expandedGroups := make([]runnertypes.CommandGroup, len(cfg.Groups))
 	for i := range cfg.Groups {
-		// 1. Expand cmd/args fields
-		expandedGroup, err := config.ExpandCommandStrings(&cfg.Groups[i], expander)
-		if err != nil {
-			return nil, &logging.PreExecutionError{
-				Type:      logging.ErrorTypeConfigParsing,
-				Message:   fmt.Sprintf("Failed to expand command strings: %v", err),
-				Component: "config",
-				RunID:     runID,
-			}
-		}
+		group := &cfg.Groups[i]
+		for j := range group.Commands {
+			cmd := &group.Commands[j]
 
-		// 2. Pre-expand Command.Env for each command
-		for j := range expandedGroup.Commands {
-			expandedEnv, err := expander.ExpandCommandEnv(&expandedGroup.Commands[j], &cfg.Groups[i])
+			// Expand Command.Cmd and Args for each command and store in ExpandedCmd and ExpandedArgs
+			expandedCmd, expandedArgs, err := config.ExpandCommand(cmd, expander, group.EnvAllowlist, group.Name)
 			if err != nil {
 				return nil, &logging.PreExecutionError{
 					Type:      logging.ErrorTypeConfigParsing,
-					Message:   fmt.Sprintf("Failed to expand command environment for command %s: %v", expandedGroup.Commands[j].Name, err),
+					Message:   fmt.Sprintf("Failed to expand command strings for command %s: %v", cmd.Name, err),
 					Component: "config",
 					RunID:     runID,
 				}
 			}
-			expandedGroup.Commands[j].ExpandedEnv = expandedEnv
-		}
+			cmd.ExpandedCmd = expandedCmd
+			cmd.ExpandedArgs = expandedArgs
 
-		expandedGroups[i] = *expandedGroup
+			// Expand Command.Env for each command and store in ExpandedEnv
+			expandedEnv, err := expander.ExpandCommandEnv(cmd, group)
+			if err != nil {
+				return nil, &logging.PreExecutionError{
+					Type:      logging.ErrorTypeConfigParsing,
+					Message:   fmt.Sprintf("Failed to expand command environment for command %s: %v", cmd.Name, err),
+					Component: "config",
+					RunID:     runID,
+				}
+			}
+			cmd.ExpandedEnv = expandedEnv
+		}
 	}
-	cfg.Groups = expandedGroups
 
 	return cfg, nil
 }

@@ -135,13 +135,36 @@ func TestExpandCommandStrings_SingleCommand(t *testing.T) {
 			originalArgs := make([]string, len(group.Commands[0].Args))
 			copy(originalArgs, group.Commands[0].Args)
 
-			// Test the expansion
-			expandedGroup, err := config.ExpandCommandStrings(group, expander)
+			// Test the expansion using per-command ExpandCommand (group-level helper
+			// was removed in favor of caller-controlled iteration).
+			var expandedGroup *runnertypes.CommandGroup
+			{
+				// create shallow copy and populate commands slice
+				tmp := *group
+				tmp.Commands = make([]runnertypes.Command, len(group.Commands))
 
-			if tt.expectError {
-				assert.Error(t, err)
-			} else {
-				require.NoError(t, err)
+				var err error
+				for i := range group.Commands {
+					expandedCmd, expandedArgs, e := config.ExpandCommand(&group.Commands[i], expander, group.EnvAllowlist, group.Name)
+					if e != nil {
+						err = e
+						break
+					}
+					tmp.Commands[i] = group.Commands[i]
+					tmp.Commands[i].ExpandedCmd = expandedCmd
+					tmp.Commands[i].ExpandedArgs = expandedArgs
+				}
+
+				if tt.expectError {
+					require.Error(t, err)
+				} else {
+					require.NoError(t, err)
+				}
+
+				expandedGroup = &tmp
+			}
+
+			if !tt.expectError {
 				// Check expanded values in new fields
 				assert.Equal(t, tt.expectedCmd, expandedGroup.Commands[0].ExpandedCmd)
 				assert.Equal(t, tt.expectedArgs, expandedGroup.Commands[0].ExpandedArgs)
@@ -229,21 +252,37 @@ func TestExpandCommandStrings(t *testing.T) {
 			originalGroupName := tt.group.Name
 			originalCmd1 := tt.group.Commands[0].Cmd
 
-			// Test group expansion
-			expandedGroup, err := config.ExpandCommandStrings(&tt.group, expander)
+			// Test group expansion by iterating commands
+			{
+				tmp := tt.group
+				tmp.Commands = make([]runnertypes.Command, len(tt.group.Commands))
 
-			if tt.expectError {
-				assert.Error(t, err)
-			} else {
+				var err error
+				for i := range tt.group.Commands {
+					expandedCmd, expandedArgs, e := config.ExpandCommand(&tt.group.Commands[i], expander, tt.group.EnvAllowlist, tt.group.Name)
+					if e != nil {
+						err = e
+						break
+					}
+					tmp.Commands[i] = tt.group.Commands[i]
+					tmp.Commands[i].ExpandedCmd = expandedCmd
+					tmp.Commands[i].ExpandedArgs = expandedArgs
+				}
+
+				if tt.expectError {
+					assert.Error(t, err)
+					return
+				}
 				require.NoError(t, err)
-				// Verify expansion for first command
-				require.Len(t, expandedGroup.Commands, 2, "Should have two commands")
 
-				cmd1 := expandedGroup.Commands[0]
+				// Verify expansion for first command
+				require.Len(t, tmp.Commands, 2, "Should have two commands")
+
+				cmd1 := tmp.Commands[0]
 				assert.Equal(t, "/usr/bin/ls", cmd1.ExpandedCmd, "First command should be expanded")
 				assert.Equal(t, []string{"-la", "/home/user"}, cmd1.ExpandedArgs, "First command args should be expanded")
 
-				cmd2 := expandedGroup.Commands[1]
+				cmd2 := tmp.Commands[1]
 				assert.Equal(t, "echo", cmd2.ExpandedCmd, "Second command should remain unchanged")
 				assert.Equal(t, []string{"/home/test"}, cmd2.ExpandedArgs, "Second command args should be expanded")
 
@@ -316,16 +355,25 @@ func TestCircularReferenceDetection(t *testing.T) {
 				Commands:     []runnertypes.Command{tt.cmd},
 			}
 
-			// Test circular reference detection
-			_, err := config.ExpandCommandStrings(group, expander)
-
-			if tt.expectError {
-				require.Error(t, err)
-				if tt.errorMsg != "" {
-					assert.Contains(t, err.Error(), tt.errorMsg)
+			// Test circular reference detection by executing expansion per-command
+			{
+				var err error
+				for i := range group.Commands {
+					_, _, e := config.ExpandCommand(&group.Commands[i], expander, group.EnvAllowlist, group.Name)
+					if e != nil {
+						err = e
+						break
+					}
 				}
-			} else {
-				require.NoError(t, err)
+
+				if tt.expectError {
+					require.Error(t, err)
+					if tt.errorMsg != "" {
+						assert.Contains(t, err.Error(), tt.errorMsg)
+					}
+				} else {
+					require.NoError(t, err)
+				}
 			}
 		})
 	}
@@ -425,16 +473,25 @@ func TestSecurityIntegration(t *testing.T) {
 				Commands:     []runnertypes.Command{tt.cmd},
 			}
 
-			// Test security integration
-			_, err := config.ExpandCommandStrings(group, expander)
-
-			if tt.expectError {
-				require.Error(t, err)
-				if tt.errorMsg != "" {
-					assert.Contains(t, err.Error(), tt.errorMsg)
+			// Test security integration by expanding per-command
+			{
+				var err error
+				for i := range group.Commands {
+					_, _, e := config.ExpandCommand(&group.Commands[i], expander, group.EnvAllowlist, group.Name)
+					if e != nil {
+						err = e
+						break
+					}
 				}
-			} else {
-				require.NoError(t, err)
+
+				if tt.expectError {
+					require.Error(t, err)
+					if tt.errorMsg != "" {
+						assert.Contains(t, err.Error(), tt.errorMsg)
+					}
+				} else {
+					require.NoError(t, err)
+				}
 			}
 		})
 	}
