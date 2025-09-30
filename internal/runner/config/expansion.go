@@ -33,9 +33,3 @@ func ExpandCommand(cmd *runnertypes.Command, expander *environment.VariableExpan
 
 	return expandedCmd, expandedArgs, nil
 }
-
-// NOTE: The previous group-level helper ExpandCommandStrings has been removed
-// in favor of calling ExpandCommand per-command from the bootstrap code. Tests
-// or other call-sites that previously relied on the group-level helper should
-// perform the same iteration themselves so they can control immutability and
-// how Command.Env is pre-expanded.
