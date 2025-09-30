@@ -23,7 +23,7 @@ func TestNewVariableExpander(t *testing.T) {
 	assert.NotNil(t, expander.logger)
 }
 
-func TestVariableExpander_BuildEnvironmentMap(t *testing.T) {
+func TestVariableExpander_ExpandCommandEnv(t *testing.T) {
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
 			EnvAllowlist: []string{"PATH", "HOME", "USER"},
@@ -35,7 +35,6 @@ func TestVariableExpander_BuildEnvironmentMap(t *testing.T) {
 	tests := []struct {
 		name         string
 		cmd          runnertypes.Command
-		baseEnvVars  map[string]string
 		group        *runnertypes.CommandGroup
 		expectedVars map[string]string
 		expectError  bool
@@ -47,30 +46,20 @@ func TestVariableExpander_BuildEnvironmentMap(t *testing.T) {
 				Name: "test_cmd",
 				Env:  []string{"FOO=bar", "BAZ=qux"},
 			},
-			baseEnvVars: map[string]string{
-				"PATH": "/usr/bin",
-				"HOME": "/home/user",
-			},
 			group: &runnertypes.CommandGroup{
 				Name:         "test_group",
 				EnvAllowlist: []string{"PATH", "HOME"},
 			},
 			expectedVars: map[string]string{
-				"PATH": "/usr/bin",
-				"HOME": "/home/user",
-				"FOO":  "bar",
-				"BAZ":  "qux",
+				"FOO": "bar",
+				"BAZ": "qux",
 			},
 		},
 		{
-			name: "override base environment variables",
+			name: "process command env variables with expansion",
 			cmd: runnertypes.Command{
 				Name: "test_cmd",
 				Env:  []string{"PATH=/custom/path", "NEW_VAR=value"},
-			},
-			baseEnvVars: map[string]string{
-				"PATH": "/usr/bin",
-				"HOME": "/home/user",
 			},
 			group: &runnertypes.CommandGroup{
 				Name:         "test_group",
@@ -78,18 +67,14 @@ func TestVariableExpander_BuildEnvironmentMap(t *testing.T) {
 			},
 			expectedVars: map[string]string{
 				"PATH":    "/custom/path",
-				"HOME":    "/home/user",
 				"NEW_VAR": "value",
 			},
 		},
 		{
-			name: "skip invalid environment variable format",
+			name: "reject invalid environment variable format",
 			cmd: runnertypes.Command{
 				Name: "test_cmd",
 				Env:  []string{"VALID=value", "INVALID_NO_EQUALS", "ANOTHER=valid"},
-			},
-			baseEnvVars: map[string]string{
-				"PATH": "/usr/bin",
 			},
 			group: &runnertypes.CommandGroup{
 				Name:         "test_group",
@@ -104,9 +89,6 @@ func TestVariableExpander_BuildEnvironmentMap(t *testing.T) {
 				Name: "test_cmd",
 				Env:  []string{"DANGEROUS=value; rm -rf /"},
 			},
-			baseEnvVars: map[string]string{
-				"PATH": "/usr/bin",
-			},
 			group: &runnertypes.CommandGroup{
 				Name:         "test_group",
 				EnvAllowlist: []string{"PATH"},
@@ -120,9 +102,6 @@ func TestVariableExpander_BuildEnvironmentMap(t *testing.T) {
 				Name: "test_cmd",
 				Env:  []string{"123INVALID=value"},
 			},
-			baseEnvVars: map[string]string{
-				"PATH": "/usr/bin",
-			},
 			group: &runnertypes.CommandGroup{
 				Name:         "test_group",
 				EnvAllowlist: []string{"PATH"},
@@ -134,7 +113,7 @@ func TestVariableExpander_BuildEnvironmentMap(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := expander.BuildEnvironmentMap(tt.cmd, tt.baseEnvVars, tt.group)
+			result, err := expander.ExpandCommandEnv(&tt.cmd, tt.group)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -479,7 +458,6 @@ func TestVariableExpander_InheritanceModeIntegration(t *testing.T) {
 		name        string
 		group       *runnertypes.CommandGroup
 		cmd         runnertypes.Command
-		baseEnvVars map[string]string
 		expectError bool
 		description string
 	}{
@@ -493,7 +471,6 @@ func TestVariableExpander_InheritanceModeIntegration(t *testing.T) {
 				Name: "test_cmd",
 				Env:  []string{"TEST_VAR=${GLOBAL_VAR}"},
 			},
-			baseEnvVars: map[string]string{},
 			expectError: false,
 			description: "Should be able to reference GLOBAL_VAR in inherit mode",
 		},
@@ -507,7 +484,6 @@ func TestVariableExpander_InheritanceModeIntegration(t *testing.T) {
 				Name: "test_cmd",
 				Env:  []string{"TEST_VAR=${GLOBAL_VAR}"},
 			},
-			baseEnvVars: map[string]string{},
 			expectError: true,
 			description: "Should not be able to reference GLOBAL_VAR in explicit mode",
 		},
@@ -521,7 +497,6 @@ func TestVariableExpander_InheritanceModeIntegration(t *testing.T) {
 				Name: "test_cmd",
 				Env:  []string{"TEST_VAR=${GLOBAL_VAR}"},
 			},
-			baseEnvVars: map[string]string{},
 			expectError: true,
 			description: "Should not be able to reference any system variables in reject mode",
 		},
@@ -529,7 +504,7 @@ func TestVariableExpander_InheritanceModeIntegration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := expander.BuildEnvironmentMap(tt.cmd, tt.baseEnvVars, tt.group)
+			_, err := expander.ExpandCommandEnv(&tt.cmd, tt.group)
 
 			if tt.expectError {
 				assert.Error(t, err, tt.description)

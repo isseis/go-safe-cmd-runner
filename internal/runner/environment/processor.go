@@ -40,16 +40,15 @@ func NewVariableExpander(filter *Filter) *VariableExpander {
 	}
 }
 
-// BuildEnvironmentMap builds the final environment variable map for command execution.
+// ExpandCommandEnv expands Command.Env variables without base environment.
+// This is used during configuration loading (Phase 1) to pre-expand Command.Env.
+// Returns a map of expanded environment variables ready to merge with system environment.
 // It uses a two-pass approach:
 //  1. First pass: Add all variables from the command's `Env` block to the environment map.
 //     This allows for self-references and inter-references within the `Env` block.
 //  2. Second pass: Iterate over the map and expand any variables in the values.
-func (p *VariableExpander) BuildEnvironmentMap(cmd runnertypes.Command, baseEnvVars map[string]string, group *runnertypes.CommandGroup) (map[string]string, error) {
+func (p *VariableExpander) ExpandCommandEnv(cmd *runnertypes.Command, group *runnertypes.CommandGroup) (map[string]string, error) {
 	finalEnv := make(map[string]string)
-	for k, v := range baseEnvVars {
-		finalEnv[k] = v
-	}
 
 	// First pass: Populate the environment with unexpanded values from the command.
 	for i, envStr := range cmd.Env {
@@ -88,15 +87,6 @@ func (p *VariableExpander) BuildEnvironmentMap(cmd runnertypes.Command, baseEnvV
 	}
 
 	return finalEnv, nil
-}
-
-// ExpandCommandEnv expands Command.Env variables without base environment.
-// This is used during configuration loading (Phase 1) to pre-expand Command.Env.
-// Returns a map of expanded environment variables ready to merge with system environment.
-func (p *VariableExpander) ExpandCommandEnv(cmd *runnertypes.Command, group *runnertypes.CommandGroup) (map[string]string, error) {
-	// Build environment map from Command.Env only (no base environment)
-	emptyBase := make(map[string]string)
-	return p.BuildEnvironmentMap(*cmd, emptyBase, group)
 }
 
 // validateBasicEnvVariable validates the name and optionally the value of an environment variable.
