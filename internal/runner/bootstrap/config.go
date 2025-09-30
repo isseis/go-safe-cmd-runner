@@ -68,7 +68,7 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 
 	// Expand variables in Cmd, Args and Env fields and fills them into ExpandedCmd, ExpandedArgs and ExpandedEnv
 	// in-place on cfg.Groups.
-	filter := environment.NewFilter(cfg)
+	filter := environment.NewFilter(cfg.Global.EnvAllowlist)
 	expander := environment.NewVariableExpander(filter)
 	for i := range cfg.Groups {
 		group := &cfg.Groups[i]

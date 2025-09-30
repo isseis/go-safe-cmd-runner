@@ -25,19 +25,19 @@ var (
 
 // Filter provides environment variable filtering functionality with allowlist-based security
 type Filter struct {
-	config          *runnertypes.Config
 	globalAllowlist map[string]bool // Map for O(1) lookups of allowed variables (always non-nil)
 }
 
-// NewFilter creates a new environment variable filter with the provided configuration
-func NewFilter(config *runnertypes.Config) *Filter {
+// NewFilter creates a new environment variable filter with the provided global allowlist
+// The function intentionally accepts only the global allowlist (slice of variable names)
+// to keep the Filter small and focused; callers should pass cfg.Global.EnvAllowlist.
+func NewFilter(allowList []string) *Filter {
 	f := &Filter{
-		config:          config,
 		globalAllowlist: make(map[string]bool), // Initialize with empty map
 	}
 
-	// Initialize the allowlist map with global allowlist if it exists
-	for _, v := range config.Global.EnvAllowlist {
+	// Initialize the allowlist map with provided global allowlist if it exists
+	for _, v := range allowList {
 		f.globalAllowlist[v] = true
 	}
 

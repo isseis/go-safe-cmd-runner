@@ -10,11 +10,9 @@ import (
 
 func TestNewFilter(t *testing.T) {
 	config := &runnertypes.Config{}
-	filter := NewFilter(config)
+	filter := NewFilter(config.Global.EnvAllowlist)
 
 	require.NotNil(t, filter, "NewFilter returned nil")
-
-	assert.Equal(t, config, filter.config, "Filter config not set correctly")
 }
 
 func TestDetermineInheritanceMode(t *testing.T) {
@@ -57,7 +55,7 @@ func TestDetermineInheritanceMode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			filter := NewFilter(&runnertypes.Config{})
+			filter := NewFilter((&runnertypes.Config{}).Global.EnvAllowlist)
 			var allowlist []string
 			if tt.group != nil {
 				allowlist = tt.group.EnvAllowlist
@@ -100,7 +98,7 @@ func TestIsVariableAccessAllowedWithInheritance(t *testing.T) {
 	}
 	groupNil := (*runnertypes.CommandGroup)(nil)
 
-	filter := NewFilter(config)
+	filter := NewFilter(config.Global.EnvAllowlist)
 
 	tests := []struct {
 		name     string

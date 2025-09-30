@@ -15,7 +15,7 @@ func TestNewVariableExpander(t *testing.T) {
 			EnvAllowlist: []string{"PATH", "HOME"},
 		},
 	}
-	filter := NewFilter(config)
+	filter := NewFilter(config.Global.EnvAllowlist)
 	expander := NewVariableExpander(filter)
 
 	assert.NotNil(t, expander)
@@ -29,7 +29,7 @@ func TestVariableExpander_BuildEnvironmentMap(t *testing.T) {
 			EnvAllowlist: []string{"PATH", "HOME", "USER"},
 		},
 	}
-	filter := NewFilter(config)
+	filter := NewFilter(config.Global.EnvAllowlist)
 	expander := NewVariableExpander(filter)
 
 	tests := []struct {
@@ -154,7 +154,7 @@ func TestVariableExpander_ResolveVariableReferences(t *testing.T) {
 			EnvAllowlist: []string{"PATH", "HOME", "USER"},
 		},
 	}
-	filter := NewFilter(config)
+	filter := NewFilter(config.Global.EnvAllowlist)
 	expander := NewVariableExpander(filter)
 
 	// Set up test environment variables
@@ -334,7 +334,7 @@ func TestVariableExpander_ResolveVariableReferences_CircularReferences(t *testin
 			EnvAllowlist: []string{"CIRCULAR_VAR", "VAR1", "VAR2", "VAR3"},
 		},
 	}
-	filter := NewFilter(config)
+	filter := NewFilter(config.Global.EnvAllowlist)
 	expander := NewVariableExpander(filter)
 
 	tests := []struct {
@@ -468,7 +468,7 @@ func TestVariableExpander_InheritanceModeIntegration(t *testing.T) {
 			EnvAllowlist: []string{"GLOBAL_VAR"},
 		},
 	}
-	filter := NewFilter(config)
+	filter := NewFilter(config.Global.EnvAllowlist)
 	expander := NewVariableExpander(filter)
 
 	// Set up system environment
@@ -547,7 +547,7 @@ func TestVariableExpander_EscapeSequences(t *testing.T) {
 			EnvAllowlist: []string{"FOO", "BAR", "ESCAPED_VAR"},
 		},
 	}
-	filter := NewFilter(config)
+	filter := NewFilter(config.Global.EnvAllowlist)
 	expander := NewVariableExpander(filter)
 
 	tests := []struct {

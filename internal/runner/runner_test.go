@@ -57,7 +57,7 @@ func setupSafeTestEnv(t *testing.T) {
 func prepareCommandWithExpandedEnv(t *testing.T, cmd *runnertypes.Command, group *runnertypes.CommandGroup, cfg *runnertypes.Config) {
 	t.Helper()
 
-	filter := environment.NewFilter(cfg)
+	filter := environment.NewFilter(cfg.Global.EnvAllowlist)
 	expander := environment.NewVariableExpander(filter)
 	expandedEnv, err := expander.ExpandCommandEnv(cmd, group)
 	require.NoError(t, err, "failed to expand Command.Env in test helper")
@@ -69,7 +69,7 @@ func prepareCommandWithExpandedEnv(t *testing.T, cmd *runnertypes.Command, group
 func prepareConfigWithExpandedEnv(t *testing.T, cfg *runnertypes.Config) {
 	t.Helper()
 
-	filter := environment.NewFilter(cfg)
+	filter := environment.NewFilter(cfg.Global.EnvAllowlist)
 	expander := environment.NewVariableExpander(filter)
 
 	for i := range cfg.Groups {
@@ -559,7 +559,7 @@ func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
 		}
 
 		// Try to prepare config - should fail during Phase 1 (config preparation)
-		filter := environment.NewFilter(config)
+		filter := environment.NewFilter(config.Global.EnvAllowlist)
 		expander := environment.NewVariableExpander(filter)
 		_, err := expander.ExpandCommandEnv(&config.Groups[0].Commands[1], &config.Groups[0])
 
@@ -1166,7 +1166,7 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 		}
 
 		// Try to prepare command - should fail with unsafe environment variable error
-		filter := environment.NewFilter(config)
+		filter := environment.NewFilter(config.Global.EnvAllowlist)
 		expander := environment.NewVariableExpander(filter)
 		_, err = expander.ExpandCommandEnv(&unsafeCmd, testGroup)
 		assert.Error(t, err)
@@ -1749,7 +1749,7 @@ func TestRunner_EnvironmentVariablePriority_EdgeCases(t *testing.T) {
 		}
 
 		// Prepare command should fail with malformed environment variable
-		filter := environment.NewFilter(config)
+		filter := environment.NewFilter(config.Global.EnvAllowlist)
 		expander := environment.NewVariableExpander(filter)
 		_, err := expander.ExpandCommandEnv(&testCmd, &testGroup)
 		// Should fail when an environment variable is malformed
@@ -1768,7 +1768,7 @@ func TestRunner_EnvironmentVariablePriority_EdgeCases(t *testing.T) {
 		}
 
 		// Prepare command should fail with undefined variable
-		filter := environment.NewFilter(config)
+		filter := environment.NewFilter(config.Global.EnvAllowlist)
 		expander := environment.NewVariableExpander(filter)
 		_, err := expander.ExpandCommandEnv(&testCmd, &testGroup)
 		// Should fail when referencing undefined variable
@@ -1787,7 +1787,7 @@ func TestRunner_EnvironmentVariablePriority_EdgeCases(t *testing.T) {
 		}
 
 		// Prepare command should fail with circular reference
-		filter := environment.NewFilter(config)
+		filter := environment.NewFilter(config.Global.EnvAllowlist)
 		expander := environment.NewVariableExpander(filter)
 		_, err := expander.ExpandCommandEnv(&testCmd, &testGroup)
 		// New implementation explicitly detects circular reference

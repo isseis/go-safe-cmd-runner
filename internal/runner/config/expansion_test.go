@@ -114,7 +114,7 @@ func TestExpandCommandStrings_SingleCommand(t *testing.T) {
 			}
 
 			// Create filter and expander
-			filter := environment.NewFilter(cfg)
+			filter := environment.NewFilter(cfg.Global.EnvAllowlist)
 			expander := environment.NewVariableExpander(filter)
 
 			// Set up allowlist (use group allowlist if specified, otherwise global)
@@ -245,7 +245,7 @@ func TestExpandCommandStrings(t *testing.T) {
 			}
 
 			// Create filter and expander
-			filter := environment.NewFilter(cfg)
+			filter := environment.NewFilter(cfg.Global.EnvAllowlist)
 			expander := environment.NewVariableExpander(filter)
 
 			// Store original for immutability check
@@ -345,7 +345,7 @@ func TestCircularReferenceDetection(t *testing.T) {
 			}
 
 			// Create filter and expander
-			filter := environment.NewFilter(cfg)
+			filter := environment.NewFilter(cfg.Global.EnvAllowlist)
 			expander := environment.NewVariableExpander(filter)
 
 			// Create a group with single command to test
@@ -457,7 +457,7 @@ func TestSecurityIntegration(t *testing.T) {
 			}
 
 			// Create filter and expander
-			filter := environment.NewFilter(cfg)
+			filter := environment.NewFilter(cfg.Global.EnvAllowlist)
 			expander := environment.NewVariableExpander(filter)
 
 			// Use group allowlist if specified, otherwise global

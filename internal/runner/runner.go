@@ -197,7 +197,7 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 	}
 
 	// Create environment filter
-	envFilter := environment.NewFilter(config)
+	envFilter := environment.NewFilter(config.Global.EnvAllowlist)
 
 	// Create default ResourceManager if not provided
 	if opts.resourceManager == nil {
