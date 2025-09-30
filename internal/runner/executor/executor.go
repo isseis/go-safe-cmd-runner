@@ -173,11 +173,9 @@ func (e *DefaultExecutor) executeNormal(ctx context.Context, cmd runnertypes.Com
 
 // executeCommandWithPath executes a command with the given resolved path
 func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path string, cmd runnertypes.Command, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
-	argsToExecute := cmd.ExpandedArgs
-
 	// Create the command with the resolved path
 	// #nosec G204 - The command and arguments are validated before execution with e.Validate()
-	execCmd := exec.CommandContext(ctx, path, argsToExecute...)
+	execCmd := exec.CommandContext(ctx, path, cmd.ExpandedArgs...)
 
 	// Set up working directory
 	if cmd.Dir != "" {
