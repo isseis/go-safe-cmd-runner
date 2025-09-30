@@ -22,20 +22,8 @@ func NewStandardEvaluator() Evaluator {
 
 // EvaluateRisk analyzes a command and returns its risk level
 func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.Command) (runnertypes.RiskLevel, error) {
-	// Use ExpandedCmd if available, fallback to original Cmd
-	cmdToEvaluate := cmd.ExpandedCmd
-	if cmdToEvaluate == "" {
-		cmdToEvaluate = cmd.Cmd
-	}
-
-	// Use ExpandedArgs if available, fallback to original Args
-	argsToEvaluate := cmd.ExpandedArgs
-	if len(argsToEvaluate) == 0 {
-		argsToEvaluate = cmd.Args
-	}
-
 	// Check for privilege escalation commands (critical risk - should be blocked)
-	isPrivEsc, err := security.IsPrivilegeEscalationCommand(cmdToEvaluate)
+	isPrivEsc, err := security.IsPrivilegeEscalationCommand(cmd.ExpandedCmd)
 	if err != nil {
 		return runnertypes.RiskLevelUnknown, err
 	}
@@ -44,12 +32,12 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.Command) (runnertypes.
 	}
 
 	// Check for destructive file operations
-	if security.IsDestructiveFileOperation(cmdToEvaluate, argsToEvaluate) {
+	if security.IsDestructiveFileOperation(cmd.ExpandedCmd, cmd.ExpandedArgs) {
 		return runnertypes.RiskLevelHigh, nil
 	}
 
 	// Check for network operations
-	isNetwork, isHighRisk := security.IsNetworkOperation(cmdToEvaluate, argsToEvaluate)
+	isNetwork, isHighRisk := security.IsNetworkOperation(cmd.ExpandedCmd, cmd.ExpandedArgs)
 	if isHighRisk {
 		return runnertypes.RiskLevelHigh, nil
 	}
@@ -58,7 +46,7 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.Command) (runnertypes.
 	}
 
 	// Check for system modification commands
-	if security.IsSystemModification(cmdToEvaluate, argsToEvaluate) {
+	if security.IsSystemModification(cmd.ExpandedCmd, cmd.ExpandedArgs) {
 		return runnertypes.RiskLevelMedium, nil
 	}
 

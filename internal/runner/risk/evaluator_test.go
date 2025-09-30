@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/testhelpers"
 )
 
 func TestStandardEvaluator_EvaluateRisk(t *testing.T) {
@@ -122,6 +123,7 @@ func TestStandardEvaluator_EvaluateRisk(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			testhelpers.PrepareCommand(tt.cmd)
 			result, err := evaluator.EvaluateRisk(tt.cmd)
 			if err != nil {
 				t.Errorf("unexpected error: %v", err)
@@ -184,6 +186,7 @@ func TestStandardEvaluator_RiskLevelHierarchy(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			testhelpers.PrepareCommand(tt.cmd)
 			result, err := evaluator.EvaluateRisk(tt.cmd)
 			if err != nil {
 				t.Errorf("unexpected error: %v", err)
@@ -229,6 +232,7 @@ func TestStandardEvaluator_ErrorHandling(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			testhelpers.PrepareCommand(tt.cmd)
 			result, err := evaluator.EvaluateRisk(tt.cmd)
 
 			if tt.expectError && err == nil {
