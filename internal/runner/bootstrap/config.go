@@ -47,15 +47,15 @@ func LoadConfig(verificationManager *verification.Manager, configPath, runID str
 		}
 	}
 
-	// Expand environment variables in cmd and args fields
+	// Expand variables in command strings (cmd and args fields)
 	filter := environment.NewFilter(cfg)
-	processor := environment.NewCommandEnvProcessor(filter)
+	expander := environment.NewVariableExpander(filter)
 	for i := range cfg.Groups {
-		err := config.ExpandVariablesInGroup(&cfg.Groups[i], processor)
+		err := config.ExpandCommandStrings(&cfg.Groups[i], expander)
 		if err != nil {
 			return nil, &logging.PreExecutionError{
 				Type:      logging.ErrorTypeConfigParsing,
-				Message:   fmt.Sprintf("Failed to expand environment variables: %v", err),
+				Message:   fmt.Sprintf("Failed to expand command strings: %v", err),
 				Component: "config",
 				RunID:     runID,
 			}

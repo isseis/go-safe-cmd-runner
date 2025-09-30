@@ -553,14 +553,14 @@ func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, group *runnerty
 		"group", group.Name,
 		"system_vars_count", len(systemEnvVars))
 
-	// Step 2: Process Command.Env variables without allowlist checks
-	processor := environment.NewCommandEnvProcessor(r.envFilter)
-	finalEnvVars, err := processor.Process(cmd, systemEnvVars, group)
+	// Step 2: Build environment map from Command.Env variables without allowlist checks
+	expander := environment.NewVariableExpander(r.envFilter)
+	finalEnvVars, err := expander.BuildEnvironmentMap(cmd, systemEnvVars, group)
 	if err != nil {
-		return nil, fmt.Errorf("failed to process command environment variables: %w", err)
+		return nil, fmt.Errorf("failed to build environment map: %w", err)
 	}
 
-	slog.Debug("Processed command environment variables",
+	slog.Debug("Built final environment map",
 		"command", cmd.Name,
 		"group", group.Name,
 		"final_vars_count", len(finalEnvVars))

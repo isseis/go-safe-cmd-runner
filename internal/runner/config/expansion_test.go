@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestExpandVariables(t *testing.T) {
+func TestExpandCommandStrings_SingleCommand(t *testing.T) {
 	tests := []struct {
 		name            string
 		cmd             runnertypes.Command
@@ -113,9 +113,9 @@ func TestExpandVariables(t *testing.T) {
 				},
 			}
 
-			// Create filter and processor
+			// Create filter and expander
 			filter := environment.NewFilter(cfg)
-			processor := environment.NewCommandEnvProcessor(filter)
+			expander := environment.NewVariableExpander(filter)
 
 			// Set up allowlist (use group allowlist if specified, otherwise global)
 			allowlist := tt.globalAllowlist
@@ -123,21 +123,28 @@ func TestExpandVariables(t *testing.T) {
 				allowlist = tt.groupAllowlist
 			}
 
+			// Create a group with single command to test
+			group := &runnertypes.CommandGroup{
+				Name:         "test-group",
+				EnvAllowlist: allowlist,
+				Commands:     []runnertypes.Command{tt.cmd},
+			}
+
 			// Test the expansion
-			err := config.ExpandVariables(&tt.cmd, processor, allowlist, "test-group")
+			err := config.ExpandCommandStrings(group, expander)
 
 			if tt.expectError {
 				assert.Error(t, err)
 			} else {
 				require.NoError(t, err)
-				assert.Equal(t, tt.expectedCmd, tt.cmd.Cmd)
-				assert.Equal(t, tt.expectedArgs, tt.cmd.Args)
+				assert.Equal(t, tt.expectedCmd, group.Commands[0].Cmd)
+				assert.Equal(t, tt.expectedArgs, group.Commands[0].Args)
 			}
 		})
 	}
 }
 
-func TestExpandVariablesInGroup(t *testing.T) {
+func TestExpandCommandStrings(t *testing.T) {
 	tests := []struct {
 		name        string
 		group       runnertypes.CommandGroup
@@ -203,12 +210,12 @@ func TestExpandVariablesInGroup(t *testing.T) {
 				},
 			}
 
-			// Create filter and processor
+			// Create filter and expander
 			filter := environment.NewFilter(cfg)
-			processor := environment.NewCommandEnvProcessor(filter)
+			expander := environment.NewVariableExpander(filter)
 
 			// Test group expansion
-			err := config.ExpandVariablesInGroup(&tt.group, processor)
+			err := config.ExpandCommandStrings(&tt.group, expander)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -279,12 +286,19 @@ func TestCircularReferenceDetection(t *testing.T) {
 				},
 			}
 
-			// Create filter and processor
+			// Create filter and expander
 			filter := environment.NewFilter(cfg)
-			processor := environment.NewCommandEnvProcessor(filter)
+			expander := environment.NewVariableExpander(filter)
+
+			// Create a group with single command to test
+			group := &runnertypes.CommandGroup{
+				Name:         "test-group",
+				EnvAllowlist: []string{"VAR1", "VAR2", "VAR3"},
+				Commands:     []runnertypes.Command{tt.cmd},
+			}
 
 			// Test circular reference detection
-			err := config.ExpandVariables(&tt.cmd, processor, []string{"VAR1", "VAR2", "VAR3"}, "test-group")
+			err := config.ExpandCommandStrings(group, expander)
 
 			if tt.expectError {
 				require.Error(t, err)
@@ -375,9 +389,9 @@ func TestSecurityIntegration(t *testing.T) {
 				},
 			}
 
-			// Create filter and processor
+			// Create filter and expander
 			filter := environment.NewFilter(cfg)
-			processor := environment.NewCommandEnvProcessor(filter)
+			expander := environment.NewVariableExpander(filter)
 
 			// Use group allowlist if specified, otherwise global
 			allowlist := tt.globalAllowlist
@@ -385,8 +399,15 @@ func TestSecurityIntegration(t *testing.T) {
 				allowlist = tt.groupAllowlist
 			}
 
+			// Create a group with single command to test
+			group := &runnertypes.CommandGroup{
+				Name:         "test-group",
+				EnvAllowlist: allowlist,
+				Commands:     []runnertypes.Command{tt.cmd},
+			}
+
 			// Test security integration
-			err := config.ExpandVariables(&tt.cmd, processor, allowlist, "test-group")
+			err := config.ExpandCommandStrings(group, expander)
 
 			if tt.expectError {
 				require.Error(t, err)

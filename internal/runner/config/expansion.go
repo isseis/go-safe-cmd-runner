@@ -8,9 +8,9 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
-// ExpandVariables expands environment variables in command cmd and args fields.
-// This function integrates with the CommandEnvProcessor to provide ${VAR} expansion.
-func ExpandVariables(cmd *runnertypes.Command, processor *environment.CommandEnvProcessor, allowlist []string, groupName string) error {
+// expandCommand expands variables in a single command's cmd and args fields.
+// This is an internal helper function called by ExpandCommandStrings.
+func expandCommand(cmd *runnertypes.Command, expander *environment.VariableExpander, allowlist []string, groupName string) error {
 	// Build environment map from the command's Env block
 	env, err := cmd.BuildEnvironmentMap()
 	if err != nil {
@@ -18,14 +18,14 @@ func ExpandVariables(cmd *runnertypes.Command, processor *environment.CommandEnv
 	}
 
 	// Expand command name
-	expandedCmd, err := processor.Expand(cmd.Cmd, env, allowlist, groupName, make(map[string]bool))
+	expandedCmd, err := expander.ExpandString(cmd.Cmd, env, allowlist, groupName, make(map[string]bool))
 	if err != nil {
 		return fmt.Errorf("failed to expand command: %w", err)
 	}
 	cmd.Cmd = expandedCmd
 
 	// Expand command arguments
-	expandedArgs, err := processor.ExpandAll(cmd.Args, env, allowlist, groupName)
+	expandedArgs, err := expander.ExpandStrings(cmd.Args, env, allowlist, groupName)
 	if err != nil {
 		return fmt.Errorf("failed to expand args: %w", err)
 	}
@@ -34,13 +34,14 @@ func ExpandVariables(cmd *runnertypes.Command, processor *environment.CommandEnv
 	return nil
 }
 
-// ExpandVariablesInGroup expands environment variables for all commands in a command group.
-// This is a convenience function to expand variables for all commands at once.
-func ExpandVariablesInGroup(group *runnertypes.CommandGroup, processor *environment.CommandEnvProcessor) error {
+// ExpandCommandStrings expands command strings for all commands in a command group.
+// This function is called during configuration loading to expand cmd and args fields
+// before execution. It uses the VariableExpander to provide ${VAR} expansion.
+func ExpandCommandStrings(group *runnertypes.CommandGroup, expander *environment.VariableExpander) error {
 	for i := range group.Commands {
-		err := ExpandVariables(&group.Commands[i], processor, group.EnvAllowlist, group.Name)
+		err := expandCommand(&group.Commands[i], expander, group.EnvAllowlist, group.Name)
 		if err != nil {
-			return fmt.Errorf("failed to expand variables for command %s: %w", group.Commands[i].Name, err)
+			return fmt.Errorf("failed to expand command strings for command %s: %w", group.Commands[i].Name, err)
 		}
 	}
 	return nil

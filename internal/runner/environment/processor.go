@@ -24,26 +24,28 @@ var (
 	ErrInvalidVariableFormat = errors.New("invalid variable format")
 )
 
-// CommandEnvProcessor handles the processing of environment variables for a command.
-type CommandEnvProcessor struct {
+// VariableExpander handles variable expansion for command strings and environment maps.
+// It provides core functionality for expanding ${VAR} syntax in both command-line strings
+// (cmd/args) and environment variable values.
+type VariableExpander struct {
 	filter *Filter
 	logger *slog.Logger
 }
 
-// NewCommandEnvProcessor creates a new CommandEnvProcessor.
-func NewCommandEnvProcessor(filter *Filter) *CommandEnvProcessor {
-	return &CommandEnvProcessor{
+// NewVariableExpander creates a new VariableExpander.
+func NewVariableExpander(filter *Filter) *VariableExpander {
+	return &VariableExpander{
 		filter: filter,
-		logger: slog.Default().With("component", "CommandEnvProcessor"),
+		logger: slog.Default().With("component", "VariableExpander"),
 	}
 }
 
-// Process processes and prepares the environment variables for a command.
+// BuildEnvironmentMap builds the final environment variable map for command execution.
 // It uses a two-pass approach:
 //  1. First pass: Add all variables from the command's `Env` block to the environment map.
 //     This allows for self-references and inter-references within the `Env` block.
 //  2. Second pass: Iterate over the map and expand any variables in the values.
-func (p *CommandEnvProcessor) Process(cmd runnertypes.Command, baseEnvVars map[string]string, group *runnertypes.CommandGroup) (map[string]string, error) {
+func (p *VariableExpander) BuildEnvironmentMap(cmd runnertypes.Command, baseEnvVars map[string]string, group *runnertypes.CommandGroup) (map[string]string, error) {
 	finalEnv := make(map[string]string)
 	for k, v := range baseEnvVars {
 		finalEnv[k] = v
@@ -71,7 +73,7 @@ func (p *CommandEnvProcessor) Process(cmd runnertypes.Command, baseEnvVars map[s
 	// Second pass: Expand all variables.
 	for name := range finalEnv {
 		value := finalEnv[name]
-		expandedValue, err := p.Expand(value, finalEnv, group.EnvAllowlist, group.Name, make(map[string]bool))
+		expandedValue, err := p.ExpandString(value, finalEnv, group.EnvAllowlist, group.Name, make(map[string]bool))
 		if err != nil {
 			return nil, fmt.Errorf("failed to expand variable %s: %w", name, err)
 		}
@@ -109,9 +111,10 @@ func validateBasicEnvVariable(varName, varValue string) error {
 	return nil
 }
 
-// Expand expands variables in a string, handling escape sequences.
+// ExpandString expands variables in a single string, handling escape sequences.
 // It performs recursive variable expansion with circular reference detection.
-func (p *CommandEnvProcessor) Expand(value string, envVars map[string]string, allowlist []string, groupName string, visited map[string]bool) (string, error) {
+// This method is used for expanding both command-line strings and environment variable values.
+func (p *VariableExpander) ExpandString(value string, envVars map[string]string, allowlist []string, groupName string, visited map[string]bool) (string, error) {
 	var result strings.Builder
 	runes := []rune(value)
 	i := 0
@@ -177,7 +180,7 @@ func (p *CommandEnvProcessor) Expand(value string, envVars map[string]string, al
 			if !found { // variable not found anywhere - return error
 				return "", fmt.Errorf("%w: %s", ErrVariableNotFound, varName)
 			}
-			expanded, err := p.Expand(valStr, envVars, allowlist, groupName, visited)
+			expanded, err := p.ExpandString(valStr, envVars, allowlist, groupName, visited)
 			if err != nil {
 				return "", fmt.Errorf("failed to expand nested variable ${%s}: %w", varName, err)
 			}
@@ -192,16 +195,16 @@ func (p *CommandEnvProcessor) Expand(value string, envVars map[string]string, al
 	return result.String(), nil
 }
 
-// ExpandAll expands variables in multiple strings, handling them as a batch.
+// ExpandStrings expands variables in multiple strings, handling them as a batch.
 // This is a utility function for expanding command arguments and other string arrays.
-func (p *CommandEnvProcessor) ExpandAll(texts []string, envVars map[string]string, allowlist []string, groupName string) ([]string, error) {
+func (p *VariableExpander) ExpandStrings(texts []string, envVars map[string]string, allowlist []string, groupName string) ([]string, error) {
 	if len(texts) == 0 {
 		return texts, nil
 	}
 
 	result := make([]string, len(texts))
 	for i, text := range texts {
-		expanded, err := p.Expand(text, envVars, allowlist, groupName, make(map[string]bool))
+		expanded, err := p.ExpandString(text, envVars, allowlist, groupName, make(map[string]bool))
 		if err != nil {
 			return nil, fmt.Errorf("failed to expand text[%d]: %w", i, err)
 		}
