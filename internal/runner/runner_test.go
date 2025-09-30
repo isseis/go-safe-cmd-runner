@@ -921,7 +921,6 @@ func TestRunner_createCommandContext(t *testing.T) {
 
 func TestRunner_CommandTimeoutBehavior(t *testing.T) {
 	sleepCmd := runnertypes.Command{
-		Name: "sleep-command",
 		Cmd:  "sleep",
 		Args: []string{"5"}, // Sleep for 5 seconds, longer than timeout
 	}
@@ -966,7 +965,6 @@ func TestRunner_CommandTimeoutBehavior(t *testing.T) {
 	t.Run("command-specific timeout overrides global timeout", func(t *testing.T) {
 		// Create config with command-specific shorter timeout
 		shortTimeoutCmd := runnertypes.Command{
-			Name:    "sleep-command-short-timeout",
 			Cmd:     "sleep",
 			Args:    []string{"5"}, // Sleep for 5 seconds
 			Timeout: 1,             // But timeout after 1 second

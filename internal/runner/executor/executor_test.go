@@ -25,7 +25,6 @@ func TestExecute_Success(t *testing.T) {
 		{
 			name: "simple command",
 			cmd: runnertypes.Command{
-				Name: "test-cmd",
 				Cmd:  "echo",
 				Args: []string{"hello"},
 			},
@@ -38,7 +37,6 @@ func TestExecute_Success(t *testing.T) {
 		{
 			name: "command with working directory",
 			cmd: runnertypes.Command{
-				Name: "test-cmd",
 				Cmd:  "pwd",
 				Args: []string{},
 				Dir:  ".",
@@ -52,7 +50,6 @@ func TestExecute_Success(t *testing.T) {
 		{
 			name: "command with multiple arguments",
 			cmd: runnertypes.Command{
-				Name: "test-cmd",
 				Cmd:  "echo",
 				Args: []string{"-n", "test"},
 			},
@@ -115,7 +112,6 @@ func TestExecute_Failure(t *testing.T) {
 		{
 			name: "non-existent command",
 			cmd: runnertypes.Command{
-				Name: "test-cmd",
 				Cmd:  "nonexistentcommand12345",
 				Args: []string{},
 			},
@@ -126,7 +122,6 @@ func TestExecute_Failure(t *testing.T) {
 		{
 			name: "command with non-zero exit status",
 			cmd: runnertypes.Command{
-				Name: "test-cmd",
 				Cmd:  "sh",
 				Args: []string{"-c", "exit 1"},
 			},
@@ -137,7 +132,6 @@ func TestExecute_Failure(t *testing.T) {
 		{
 			name: "command writing to stderr",
 			cmd: runnertypes.Command{
-				Name: "test-cmd",
 				Cmd:  "sh",
 				Args: []string{"-c", "echo 'error message' >&2; exit 0"},
 			},
@@ -147,7 +141,6 @@ func TestExecute_Failure(t *testing.T) {
 		{
 			name: "command that takes time (for timeout test)",
 			cmd: runnertypes.Command{
-				Name: "test-cmd",
 				Cmd:  "sleep",
 				Args: []string{"2"},
 			},
@@ -217,7 +210,6 @@ func TestExecute_ContextCancellation(t *testing.T) {
 
 	// Start a long-running command
 	cmd := runnertypes.Command{
-		Name: "test-cmd",
 		Cmd:  "sleep",
 		Args: []string{"10"},
 	}
@@ -249,7 +241,6 @@ func TestExecute_EnvironmentVariables(t *testing.T) {
 	t.Setenv("LEAKED_VAR", "should_not_appear")
 
 	cmd := runnertypes.Command{
-		Name: "test-cmd",
 		Cmd:  "printenv",
 		Args: []string{},
 	}
@@ -282,7 +273,6 @@ func TestValidate(t *testing.T) {
 		{
 			name: "empty command",
 			cmd: runnertypes.Command{
-				Name: "empty-cmd",
 				Cmd:  "",
 				Args: []string{},
 			},
@@ -291,7 +281,6 @@ func TestValidate(t *testing.T) {
 		{
 			name: "valid command",
 			cmd: runnertypes.Command{
-				Name: "test-cmd",
 				Cmd:  "echo",
 				Args: []string{"hello"},
 			},
@@ -300,7 +289,6 @@ func TestValidate(t *testing.T) {
 		{
 			name: "invalid directory",
 			cmd: runnertypes.Command{
-				Name: "test-cmd",
 				Cmd:  "ls",
 				Args: []string{},
 				Dir:  "/nonexistent/directory",
