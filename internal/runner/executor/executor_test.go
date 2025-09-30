@@ -7,7 +7,6 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
-	"github.com/isseis/go-safe-cmd-runner/internal/testhelpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -23,8 +22,14 @@ func TestExecute_Success(t *testing.T) {
 		expectedExitCode int
 	}{
 		{
-			name:             "simple command",
-			cmd:              testhelpers.NewCommand("test-cmd", "echo", []string{"hello"}),
+			name: "simple command",
+			cmd: runnertypes.Command{
+				Name:         "test-cmd",
+				Cmd:          "echo",
+				ExpandedCmd:  "echo",
+				Args:         []string{"hello"},
+				ExpandedArgs: []string{"hello"},
+			},
 			env:              map[string]string{"TEST": "value"},
 			wantErr:          false,
 			expectedStdout:   "hello\n",
@@ -32,8 +37,15 @@ func TestExecute_Success(t *testing.T) {
 			expectedExitCode: 0,
 		},
 		{
-			name:             "command with working directory",
-			cmd:              testhelpers.NewCommandWithDir("test-cmd", "pwd", []string{}, "."),
+			name: "command with working directory",
+			cmd: runnertypes.Command{
+				Name:         "test-cmd",
+				Cmd:          "pwd",
+				ExpandedCmd:  "pwd",
+				Args:         []string{},
+				ExpandedArgs: []string{},
+				Dir:          ".",
+			},
 			env:              nil,
 			wantErr:          false,
 			expectedStdout:   "", // pwd output varies, so we'll just check it's not empty
@@ -41,8 +53,14 @@ func TestExecute_Success(t *testing.T) {
 			expectedExitCode: 0,
 		},
 		{
-			name:             "command with multiple arguments",
-			cmd:              testhelpers.NewCommand("test-cmd", "echo", []string{"-n", "test"}),
+			name: "command with multiple arguments",
+			cmd: runnertypes.Command{
+				Name:         "test-cmd",
+				Cmd:          "echo",
+				ExpandedCmd:  "echo",
+				Args:         []string{"-n", "test"},
+				ExpandedArgs: []string{"-n", "test"},
+			},
 			env:              map[string]string{},
 			wantErr:          false,
 			expectedStdout:   "test",
@@ -99,28 +117,52 @@ func TestExecute_Failure(t *testing.T) {
 		errMsg  string
 	}{
 		{
-			name:    "non-existent command",
-			cmd:     testhelpers.NewCommand("test-cmd", "nonexistentcommand12345", []string{}),
+			name: "non-existent command",
+			cmd: runnertypes.Command{
+				Name:         "test-cmd",
+				Cmd:          "nonexistentcommand12345",
+				ExpandedCmd:  "nonexistentcommand12345",
+				Args:         []string{},
+				ExpandedArgs: []string{},
+			},
 			env:     map[string]string{},
 			wantErr: true,
 			errMsg:  "failed to find command",
 		},
 		{
-			name:    "command with non-zero exit status",
-			cmd:     testhelpers.NewCommand("test-cmd", "sh", []string{"-c", "exit 1"}),
+			name: "command with non-zero exit status",
+			cmd: runnertypes.Command{
+				Name:         "test-cmd",
+				Cmd:          "sh",
+				ExpandedCmd:  "sh",
+				Args:         []string{"-c", "exit 1"},
+				ExpandedArgs: []string{"-c", "exit 1"},
+			},
 			env:     map[string]string{},
 			wantErr: true,
 			errMsg:  "command execution failed",
 		},
 		{
-			name:    "command writing to stderr",
-			cmd:     testhelpers.NewCommand("test-cmd", "sh", []string{"-c", "echo 'error message' >&2; exit 0"}),
+			name: "command writing to stderr",
+			cmd: runnertypes.Command{
+				Name:         "test-cmd",
+				Cmd:          "sh",
+				ExpandedCmd:  "sh",
+				Args:         []string{"-c", "echo 'error message' >&2; exit 0"},
+				ExpandedArgs: []string{"-c", "echo 'error message' >&2; exit 0"},
+			},
 			env:     map[string]string{},
 			wantErr: false, // This should succeed but capture stderr
 		},
 		{
-			name:    "command that takes time (for timeout test)",
-			cmd:     testhelpers.NewCommand("test-cmd", "sleep", []string{"2"}),
+			name: "command that takes time (for timeout test)",
+			cmd: runnertypes.Command{
+				Name:         "test-cmd",
+				Cmd:          "sleep",
+				ExpandedCmd:  "sleep",
+				Args:         []string{"2"},
+				ExpandedArgs: []string{"2"},
+			},
 			env:     map[string]string{},
 			timeout: 100 * time.Millisecond,
 			wantErr: true,
@@ -185,7 +227,13 @@ func TestExecute_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Start a long-running command
-	cmd := testhelpers.NewCommand("test-cmd", "sleep", []string{"10"})
+	cmd := runnertypes.Command{
+		Name:         "test-cmd",
+		Cmd:          "sleep",
+		ExpandedCmd:  "sleep",
+		Args:         []string{"10"},
+		ExpandedArgs: []string{"10"},
+	}
 
 	// Cancel the context immediately
 	cancel()
@@ -212,7 +260,13 @@ func TestExecute_EnvironmentVariables(t *testing.T) {
 	// Set a test environment variable in the runner process
 	t.Setenv("LEAKED_VAR", "should_not_appear")
 
-	cmd := testhelpers.NewCommand("test-cmd", "printenv", []string{})
+	cmd := runnertypes.Command{
+		Name:         "test-cmd",
+		Cmd:          "printenv",
+		ExpandedCmd:  "printenv",
+		Args:         []string{},
+		ExpandedArgs: []string{},
+	}
 
 	// Only provide filtered variables through envVars parameter
 	envVars := map[string]string{
@@ -250,13 +304,26 @@ func TestValidate(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "valid command",
-			cmd:     testhelpers.NewCommand("test-cmd", "echo", []string{"hello"}),
+			name: "valid command",
+			cmd: runnertypes.Command{
+				Name:         "test-cmd",
+				Cmd:          "echo",
+				ExpandedCmd:  "echo",
+				Args:         []string{"hello"},
+				ExpandedArgs: []string{"hello"},
+			},
 			wantErr: false,
 		},
 		{
-			name:    "invalid directory",
-			cmd:     testhelpers.NewCommandWithDir("test-cmd", "ls", []string{}, "/nonexistent/directory"),
+			name: "invalid directory",
+			cmd: runnertypes.Command{
+				Name:         "test-cmd",
+				Cmd:          "ls",
+				ExpandedCmd:  "ls",
+				Args:         []string{},
+				ExpandedArgs: []string{},
+				Dir:          "/nonexistent/directory",
+			},
 			wantErr: true,
 		},
 	}
