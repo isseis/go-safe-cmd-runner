@@ -506,13 +506,19 @@ func (r *Runner) executeCommandInGroup(ctx context.Context, cmd runnertypes.Comm
 
 	// Resolve and validate command path if verification manager is available
 	if r.verificationManager != nil {
-		resolvedPath, err := r.verificationManager.ResolvePath(cmd.Cmd)
+		// Use ExpandedCmd if available, fallback to original Cmd
+		cmdToResolve := cmd.ExpandedCmd
+		if cmdToResolve == "" {
+			cmdToResolve = cmd.Cmd
+		}
+
+		resolvedPath, err := r.verificationManager.ResolvePath(cmdToResolve)
 		if err != nil {
 			return nil, fmt.Errorf("command path resolution failed: %w", err)
 		}
 
-		// Update the command path
-		cmd.Cmd = resolvedPath
+		// Update the expanded command path (don't modify original)
+		cmd.ExpandedCmd = resolvedPath
 	}
 
 	// Set working directory from global config if not specified

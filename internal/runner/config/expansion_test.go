@@ -142,12 +142,14 @@ func TestExpandCommandStrings_SingleCommand(t *testing.T) {
 				assert.Error(t, err)
 			} else {
 				require.NoError(t, err)
-				// Check expanded values
-				assert.Equal(t, tt.expectedCmd, expandedGroup.Commands[0].Cmd)
-				assert.Equal(t, tt.expectedArgs, expandedGroup.Commands[0].Args)
-				// Verify original is unchanged (immutability)
+				// Check expanded values in new fields
+				assert.Equal(t, tt.expectedCmd, expandedGroup.Commands[0].ExpandedCmd)
+				assert.Equal(t, tt.expectedArgs, expandedGroup.Commands[0].ExpandedArgs)
+				// Verify original fields are unchanged (immutability)
 				assert.Equal(t, originalCmd, group.Commands[0].Cmd, "Original command should not be modified")
 				assert.Equal(t, originalArgs, group.Commands[0].Args, "Original args should not be modified")
+				assert.Equal(t, originalCmd, expandedGroup.Commands[0].Cmd, "Expanded group original command should not be modified")
+				assert.Equal(t, originalArgs, expandedGroup.Commands[0].Args, "Expanded group original args should not be modified")
 			}
 		})
 	}
@@ -238,12 +240,12 @@ func TestExpandCommandStrings(t *testing.T) {
 				require.Len(t, expandedGroup.Commands, 2, "Should have two commands")
 
 				cmd1 := expandedGroup.Commands[0]
-				assert.Equal(t, "/usr/bin/ls", cmd1.Cmd, "First command should be expanded")
-				assert.Equal(t, []string{"-la", "/home/user"}, cmd1.Args, "First command args should be expanded")
+				assert.Equal(t, "/usr/bin/ls", cmd1.ExpandedCmd, "First command should be expanded")
+				assert.Equal(t, []string{"-la", "/home/user"}, cmd1.ExpandedArgs, "First command args should be expanded")
 
 				cmd2 := expandedGroup.Commands[1]
-				assert.Equal(t, "echo", cmd2.Cmd, "Second command should remain unchanged")
-				assert.Equal(t, []string{"/home/test"}, cmd2.Args, "Second command args should be expanded")
+				assert.Equal(t, "echo", cmd2.ExpandedCmd, "Second command should remain unchanged")
+				assert.Equal(t, []string{"/home/test"}, cmd2.ExpandedArgs, "Second command args should be expanded")
 
 				// Verify original is unchanged (immutability)
 				assert.Equal(t, originalGroupName, tt.group.Name, "Original group name should not be modified")

@@ -10,32 +10,27 @@ import (
 
 // expandCommand expands variables in a single command's cmd and args fields.
 // This is an internal helper function called by ExpandCommandStrings.
-// It returns a new Command with expanded values, leaving the original unchanged.
-func expandCommand(cmd *runnertypes.Command, expander *environment.VariableExpander, allowlist []string, groupName string) (*runnertypes.Command, error) {
+// It returns the expanded cmd string and args slice.
+func expandCommand(cmd *runnertypes.Command, expander *environment.VariableExpander, allowlist []string, groupName string) (string, []string, error) {
 	// Build environment map from the command's Env block
 	env, err := cmd.BuildEnvironmentMap()
 	if err != nil {
-		return nil, fmt.Errorf("failed to build environment map: %w", err)
+		return "", nil, fmt.Errorf("failed to build environment map: %w", err)
 	}
 
 	// Expand command name
 	expandedCmd, err := expander.ExpandString(cmd.Cmd, env, allowlist, groupName, make(map[string]bool))
 	if err != nil {
-		return nil, fmt.Errorf("failed to expand command: %w", err)
+		return "", nil, fmt.Errorf("failed to expand command: %w", err)
 	}
 
 	// Expand command arguments
 	expandedArgs, err := expander.ExpandStrings(cmd.Args, env, allowlist, groupName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to expand args: %w", err)
+		return "", nil, fmt.Errorf("failed to expand args: %w", err)
 	}
 
-	// Create a new command with expanded values (shallow copy of original, then replace expanded fields)
-	expandedCommand := *cmd
-	expandedCommand.Cmd = expandedCmd
-	expandedCommand.Args = expandedArgs
-
-	return &expandedCommand, nil
+	return expandedCmd, expandedArgs, nil
 }
 
 // ExpandCommandStrings expands command strings for all commands in a command group.
@@ -51,11 +46,15 @@ func ExpandCommandStrings(group *runnertypes.CommandGroup, expander *environment
 
 	// Expand each command
 	for i := range group.Commands {
-		expandedCmd, err := expandCommand(&group.Commands[i], expander, group.EnvAllowlist, group.Name)
+		expandedCmd, expandedArgs, err := expandCommand(&group.Commands[i], expander, group.EnvAllowlist, group.Name)
 		if err != nil {
 			return nil, fmt.Errorf("failed to expand command strings for command %s: %w", group.Commands[i].Name, err)
 		}
-		expandedGroup.Commands[i] = *expandedCmd
+		// Copy the original command and set expanded values in new fields
+		// Original Cmd and Args fields are preserved unchanged for immutability
+		expandedGroup.Commands[i] = group.Commands[i]
+		expandedGroup.Commands[i].ExpandedCmd = expandedCmd
+		expandedGroup.Commands[i].ExpandedArgs = expandedArgs
 	}
 
 	return &expandedGroup, nil

@@ -109,11 +109,17 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, cmd runnerty
 		return nil, fmt.Errorf("privileged command security validation failed: %w", err)
 	}
 
+	// Use ExpandedCmd if available, fallback to original Cmd
+	cmdToExecute := cmd.ExpandedCmd
+	if cmdToExecute == "" {
+		cmdToExecute = cmd.Cmd
+	}
+
 	// Create elevation context for user/group execution
 	executionCtx := runnertypes.ElevationContext{
 		Operation:   runnertypes.OperationUserGroupExecution,
 		CommandName: cmd.Name,
-		FilePath:    cmd.Cmd,
+		FilePath:    cmdToExecute,
 		RunAsUser:   cmd.RunAsUser,
 		RunAsGroup:  cmd.RunAsGroup,
 	}
@@ -122,7 +128,7 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, cmd runnerty
 	privilegeStart := time.Now()
 	err := e.PrivMgr.WithPrivileges(executionCtx, func() error {
 		var execErr error
-		result, execErr = e.executeCommandWithPath(ctx, cmd.Cmd, cmd, envVars, outputWriter)
+		result, execErr = e.executeCommandWithPath(ctx, cmdToExecute, cmd, envVars, outputWriter)
 		return execErr
 	})
 	privilegeDuration := time.Since(privilegeStart)
@@ -154,10 +160,16 @@ func (e *DefaultExecutor) executeNormal(ctx context.Context, cmd runnertypes.Com
 		return nil, fmt.Errorf("command validation failed: %w", err)
 	}
 
+	// Use ExpandedCmd if available, fallback to original Cmd
+	cmdToExecute := cmd.ExpandedCmd
+	if cmdToExecute == "" {
+		cmdToExecute = cmd.Cmd
+	}
+
 	// Resolve the command path
-	path, lookErr := exec.LookPath(cmd.Cmd)
+	path, lookErr := exec.LookPath(cmdToExecute)
 	if lookErr != nil {
-		return nil, fmt.Errorf("failed to find command %q: %w", cmd.Cmd, lookErr)
+		return nil, fmt.Errorf("failed to find command %q: %w", cmdToExecute, lookErr)
 	}
 
 	return e.executeCommandWithPath(ctx, path, cmd, envVars, outputWriter)
@@ -165,9 +177,15 @@ func (e *DefaultExecutor) executeNormal(ctx context.Context, cmd runnertypes.Com
 
 // executeCommandWithPath executes a command with the given resolved path
 func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path string, cmd runnertypes.Command, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
+	// Use ExpandedArgs if available, fallback to original Args
+	argsToExecute := cmd.ExpandedArgs
+	if len(argsToExecute) == 0 {
+		argsToExecute = cmd.Args
+	}
+
 	// Create the command with the resolved path
 	// #nosec G204 - The command and arguments are validated before execution with e.Validate()
-	execCmd := exec.CommandContext(ctx, path, cmd.Args...)
+	execCmd := exec.CommandContext(ctx, path, argsToExecute...)
 
 	// Set up working directory
 	if cmd.Dir != "" {
@@ -228,17 +246,23 @@ func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path strin
 
 // Validate implements the CommandExecutor interface
 func (e *DefaultExecutor) Validate(cmd runnertypes.Command) error {
+	// Use ExpandedCmd if available, fallback to original Cmd
+	cmdToValidate := cmd.ExpandedCmd
+	if cmdToValidate == "" {
+		cmdToValidate = cmd.Cmd
+	}
+
 	// Check if command is empty
-	if cmd.Cmd == "" {
+	if cmdToValidate == "" {
 		return ErrEmptyCommand
 	}
 
 	// Validate command path to prevent command injection and ensure proper format
-	if !filepath.IsLocal(cmd.Cmd) && !filepath.IsAbs(cmd.Cmd) {
-		return fmt.Errorf("%w: command path must be local or absolute: %s", ErrInvalidPath, cmd.Cmd)
+	if !filepath.IsLocal(cmdToValidate) && !filepath.IsAbs(cmdToValidate) {
+		return fmt.Errorf("%w: command path must be local or absolute: %s", ErrInvalidPath, cmdToValidate)
 	}
-	if filepath.Clean(cmd.Cmd) != cmd.Cmd {
-		return fmt.Errorf("%w: command path contains relative path components ('.' or '..'): %s", ErrInvalidPath, cmd.Cmd)
+	if filepath.Clean(cmdToValidate) != cmdToValidate {
+		return fmt.Errorf("%w: command path contains relative path components ('.' or '..'): %s", ErrInvalidPath, cmdToValidate)
 	}
 
 	// Check if working directory exists and is accessible
@@ -309,9 +333,15 @@ func (w *outputWrapper) GetBuffer() []byte {
 // validatePrivilegedCommand performs additional security checks specifically for privileged commands
 // This adds an extra layer of security validation beyond the basic validation
 func (e *DefaultExecutor) validatePrivilegedCommand(cmd runnertypes.Command) error {
+	// Use ExpandedCmd if available, fallback to original Cmd
+	cmdToValidate := cmd.ExpandedCmd
+	if cmdToValidate == "" {
+		cmdToValidate = cmd.Cmd
+	}
+
 	// Enforce absolute paths for privileged commands
-	if !filepath.IsAbs(cmd.Cmd) {
-		return fmt.Errorf("%w: privileged commands must use absolute paths: %s", ErrPrivilegedCmdSecurity, cmd.Cmd)
+	if !filepath.IsAbs(cmdToValidate) {
+		return fmt.Errorf("%w: privileged commands must use absolute paths: %s", ErrPrivilegedCmdSecurity, cmdToValidate)
 	}
 
 	// Ensure working directory is also absolute for privileged commands
