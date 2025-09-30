@@ -7,6 +7,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/testhelpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -24,11 +25,9 @@ func TestExecute_Success(t *testing.T) {
 		{
 			name: "simple command",
 			cmd: runnertypes.Command{
-				Name:         "test-cmd",
-				Cmd:          "echo",
-				ExpandedCmd:  "echo",
-				Args:         []string{"hello"},
-				ExpandedArgs: []string{"hello"},
+				Name: "test-cmd",
+				Cmd:  "echo",
+				Args: []string{"hello"},
 			},
 			env:              map[string]string{"TEST": "value"},
 			wantErr:          false,
@@ -39,12 +38,10 @@ func TestExecute_Success(t *testing.T) {
 		{
 			name: "command with working directory",
 			cmd: runnertypes.Command{
-				Name:         "test-cmd",
-				Cmd:          "pwd",
-				ExpandedCmd:  "pwd",
-				Args:         []string{},
-				ExpandedArgs: []string{},
-				Dir:          ".",
+				Name: "test-cmd",
+				Cmd:  "pwd",
+				Args: []string{},
+				Dir:  ".",
 			},
 			env:              nil,
 			wantErr:          false,
@@ -55,11 +52,9 @@ func TestExecute_Success(t *testing.T) {
 		{
 			name: "command with multiple arguments",
 			cmd: runnertypes.Command{
-				Name:         "test-cmd",
-				Cmd:          "echo",
-				ExpandedCmd:  "echo",
-				Args:         []string{"-n", "test"},
-				ExpandedArgs: []string{"-n", "test"},
+				Name: "test-cmd",
+				Cmd:  "echo",
+				Args: []string{"-n", "test"},
 			},
 			env:              map[string]string{},
 			wantErr:          false,
@@ -75,6 +70,7 @@ func TestExecute_Success(t *testing.T) {
 				ExistingPaths: make(map[string]bool),
 			}
 
+			testhelpers.PrepareCommand(&tt.cmd)
 			// Set up directory existence for working directory tests
 			if tt.cmd.Dir != "" {
 				fileSystem.ExistingPaths[tt.cmd.Dir] = true
@@ -119,11 +115,9 @@ func TestExecute_Failure(t *testing.T) {
 		{
 			name: "non-existent command",
 			cmd: runnertypes.Command{
-				Name:         "test-cmd",
-				Cmd:          "nonexistentcommand12345",
-				ExpandedCmd:  "nonexistentcommand12345",
-				Args:         []string{},
-				ExpandedArgs: []string{},
+				Name: "test-cmd",
+				Cmd:  "nonexistentcommand12345",
+				Args: []string{},
 			},
 			env:     map[string]string{},
 			wantErr: true,
@@ -132,11 +126,9 @@ func TestExecute_Failure(t *testing.T) {
 		{
 			name: "command with non-zero exit status",
 			cmd: runnertypes.Command{
-				Name:         "test-cmd",
-				Cmd:          "sh",
-				ExpandedCmd:  "sh",
-				Args:         []string{"-c", "exit 1"},
-				ExpandedArgs: []string{"-c", "exit 1"},
+				Name: "test-cmd",
+				Cmd:  "sh",
+				Args: []string{"-c", "exit 1"},
 			},
 			env:     map[string]string{},
 			wantErr: true,
@@ -145,11 +137,9 @@ func TestExecute_Failure(t *testing.T) {
 		{
 			name: "command writing to stderr",
 			cmd: runnertypes.Command{
-				Name:         "test-cmd",
-				Cmd:          "sh",
-				ExpandedCmd:  "sh",
-				Args:         []string{"-c", "echo 'error message' >&2; exit 0"},
-				ExpandedArgs: []string{"-c", "echo 'error message' >&2; exit 0"},
+				Name: "test-cmd",
+				Cmd:  "sh",
+				Args: []string{"-c", "echo 'error message' >&2; exit 0"},
 			},
 			env:     map[string]string{},
 			wantErr: false, // This should succeed but capture stderr
@@ -157,11 +147,9 @@ func TestExecute_Failure(t *testing.T) {
 		{
 			name: "command that takes time (for timeout test)",
 			cmd: runnertypes.Command{
-				Name:         "test-cmd",
-				Cmd:          "sleep",
-				ExpandedCmd:  "sleep",
-				Args:         []string{"2"},
-				ExpandedArgs: []string{"2"},
+				Name: "test-cmd",
+				Cmd:  "sleep",
+				Args: []string{"2"},
 			},
 			env:     map[string]string{},
 			timeout: 100 * time.Millisecond,
@@ -176,6 +164,7 @@ func TestExecute_Failure(t *testing.T) {
 				ExistingPaths: make(map[string]bool),
 			}
 
+			testhelpers.PrepareCommand(&tt.cmd)
 			// Set up directory existence for working directory tests
 			if tt.cmd.Dir != "" {
 				fileSystem.ExistingPaths[tt.cmd.Dir] = true
@@ -228,16 +217,15 @@ func TestExecute_ContextCancellation(t *testing.T) {
 
 	// Start a long-running command
 	cmd := runnertypes.Command{
-		Name:         "test-cmd",
-		Cmd:          "sleep",
-		ExpandedCmd:  "sleep",
-		Args:         []string{"10"},
-		ExpandedArgs: []string{"10"},
+		Name: "test-cmd",
+		Cmd:  "sleep",
+		Args: []string{"10"},
 	}
 
 	// Cancel the context immediately
 	cancel()
 
+	testhelpers.PrepareCommand(&cmd)
 	result, err := e.Execute(ctx, cmd, map[string]string{}, &executor.MockOutputWriter{})
 
 	// Should get an error due to context cancellation
@@ -261,12 +249,11 @@ func TestExecute_EnvironmentVariables(t *testing.T) {
 	t.Setenv("LEAKED_VAR", "should_not_appear")
 
 	cmd := runnertypes.Command{
-		Name:         "test-cmd",
-		Cmd:          "printenv",
-		ExpandedCmd:  "printenv",
-		Args:         []string{},
-		ExpandedArgs: []string{},
+		Name: "test-cmd",
+		Cmd:  "printenv",
+		Args: []string{},
 	}
+	testhelpers.PrepareCommand(&cmd)
 
 	// Only provide filtered variables through envVars parameter
 	envVars := map[string]string{
@@ -295,34 +282,28 @@ func TestValidate(t *testing.T) {
 		{
 			name: "empty command",
 			cmd: runnertypes.Command{
-				Name:         "empty-cmd",
-				Cmd:          "",
-				Args:         []string{},
-				ExpandedCmd:  "",
-				ExpandedArgs: []string{},
+				Name: "empty-cmd",
+				Cmd:  "",
+				Args: []string{},
 			},
 			wantErr: true,
 		},
 		{
 			name: "valid command",
 			cmd: runnertypes.Command{
-				Name:         "test-cmd",
-				Cmd:          "echo",
-				ExpandedCmd:  "echo",
-				Args:         []string{"hello"},
-				ExpandedArgs: []string{"hello"},
+				Name: "test-cmd",
+				Cmd:  "echo",
+				Args: []string{"hello"},
 			},
 			wantErr: false,
 		},
 		{
 			name: "invalid directory",
 			cmd: runnertypes.Command{
-				Name:         "test-cmd",
-				Cmd:          "ls",
-				ExpandedCmd:  "ls",
-				Args:         []string{},
-				ExpandedArgs: []string{},
-				Dir:          "/nonexistent/directory",
+				Name: "test-cmd",
+				Cmd:  "ls",
+				Args: []string{},
+				Dir:  "/nonexistent/directory",
 			},
 			wantErr: true,
 		},
@@ -334,6 +315,7 @@ func TestValidate(t *testing.T) {
 				ExistingPaths: make(map[string]bool),
 			}
 
+			testhelpers.PrepareCommand(&tt.cmd)
 			// Set up directory existence based on test case
 			if tt.cmd.Dir != "" {
 				// For non-empty Dir, configure whether it exists
