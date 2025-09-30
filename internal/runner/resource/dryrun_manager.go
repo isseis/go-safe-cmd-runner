@@ -231,12 +231,6 @@ func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd runnertype
 // analyzeCommandSecurity resolves the command path and performs security analysis
 // using the configuration stored in the DryRunResourceManager.
 func (d *DryRunResourceManager) analyzeCommandSecurity(cmd runnertypes.Command, analysis *ResourceAnalysis) error {
-	// Use ExpandedArgs if available, fallback to original Args
-	argsToExecute := cmd.ExpandedArgs
-	if len(argsToExecute) == 0 {
-		argsToExecute = cmd.Args
-	}
-
 	// PathResolver is guaranteed to be non-nil due to constructor validation
 	resolvedPath, err := d.pathResolver.ResolvePath(cmd.ExpandedCmd)
 	if err != nil {
@@ -248,7 +242,7 @@ func (d *DryRunResourceManager) analyzeCommandSecurity(cmd runnertypes.Command, 
 		SkipStandardPaths: d.dryRunOptions.SkipStandardPaths,
 		HashDir:           d.dryRunOptions.HashDir,
 	}
-	riskLevel, pattern, reason, err := security.AnalyzeCommandSecurity(resolvedPath, argsToExecute, opts)
+	riskLevel, pattern, reason, err := security.AnalyzeCommandSecurity(resolvedPath, cmd.ExpandedArgs, opts)
 	if err != nil {
 		return fmt.Errorf("security analysis failed for command '%s': %w", cmd.ExpandedCmd, err)
 	}
