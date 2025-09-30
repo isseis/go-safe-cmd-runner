@@ -346,3 +346,12 @@ func VerboseLoggingOptions() LoggingOptions {
 		MaxStdoutLength:       VerboseStdoutLength,       // More stdout for debugging
 	}
 }
+
+// NewTestConfigWithSkipHashValidation creates a config that skips hash validation for tests
+// This function is only available in test builds and should be used when hash validation
+// would prevent test execution
+func NewTestConfigWithSkipHashValidation() *Config {
+	config := DefaultConfig()
+	config.testSkipHashValidation = true
+	return config
+}

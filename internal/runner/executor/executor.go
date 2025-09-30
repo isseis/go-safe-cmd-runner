@@ -109,10 +109,9 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, cmd runnerty
 		return nil, fmt.Errorf("privileged command security validation failed: %w", err)
 	}
 
-	// Use ExpandedCmd if available, fallback to original Cmd
 	cmdToExecute := cmd.ExpandedCmd
 	if cmdToExecute == "" {
-		cmdToExecute = cmd.Cmd
+		return nil, ErrEmptyCommand
 	}
 
 	// Create elevation context for user/group execution
@@ -160,10 +159,9 @@ func (e *DefaultExecutor) executeNormal(ctx context.Context, cmd runnertypes.Com
 		return nil, fmt.Errorf("command validation failed: %w", err)
 	}
 
-	// Use ExpandedCmd if available, fallback to original Cmd
 	cmdToExecute := cmd.ExpandedCmd
 	if cmdToExecute == "" {
-		cmdToExecute = cmd.Cmd
+		return nil, ErrEmptyCommand
 	}
 
 	// Resolve the command path
@@ -177,11 +175,7 @@ func (e *DefaultExecutor) executeNormal(ctx context.Context, cmd runnertypes.Com
 
 // executeCommandWithPath executes a command with the given resolved path
 func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path string, cmd runnertypes.Command, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
-	// Use ExpandedArgs if available, fallback to original Args
 	argsToExecute := cmd.ExpandedArgs
-	if len(argsToExecute) == 0 {
-		argsToExecute = cmd.Args
-	}
 
 	// Create the command with the resolved path
 	// #nosec G204 - The command and arguments are validated before execution with e.Validate()
@@ -246,13 +240,7 @@ func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path strin
 
 // Validate implements the CommandExecutor interface
 func (e *DefaultExecutor) Validate(cmd runnertypes.Command) error {
-	// Use ExpandedCmd if available, fallback to original Cmd
 	cmdToValidate := cmd.ExpandedCmd
-	if cmdToValidate == "" {
-		cmdToValidate = cmd.Cmd
-	}
-
-	// Check if command is empty
 	if cmdToValidate == "" {
 		return ErrEmptyCommand
 	}
@@ -333,10 +321,9 @@ func (w *outputWrapper) GetBuffer() []byte {
 // validatePrivilegedCommand performs additional security checks specifically for privileged commands
 // This adds an extra layer of security validation beyond the basic validation
 func (e *DefaultExecutor) validatePrivilegedCommand(cmd runnertypes.Command) error {
-	// Use ExpandedCmd if available, fallback to original Cmd
 	cmdToValidate := cmd.ExpandedCmd
 	if cmdToValidate == "" {
-		cmdToValidate = cmd.Cmd
+		return ErrEmptyCommand
 	}
 
 	// Enforce absolute paths for privileged commands

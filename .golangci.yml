@@ -53,6 +53,7 @@ linters:
             - github.com/isseis/go-safe-cmd-runner/internal/runner
             - github.com/isseis/go-safe-cmd-runner/internal/safefileio
             - github.com/isseis/go-safe-cmd-runner/internal/terminal
+            - github.com/isseis/go-safe-cmd-runner/internal/testhelpers
             - github.com/isseis/go-safe-cmd-runner/internal/verification
             - github.com/oklog/ulid/v2
             - github.com/joho/godotenv

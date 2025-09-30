@@ -15,6 +15,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
+	"github.com/isseis/go-safe-cmd-runner/internal/testhelpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -919,6 +920,13 @@ func TestRunner_createCommandContext(t *testing.T) {
 }
 
 func TestRunner_CommandTimeoutBehavior(t *testing.T) {
+	sleepCmd := runnertypes.Command{
+		Name: "sleep-command",
+		Cmd:  "sleep",
+		Args: []string{"5"}, // Sleep for 5 seconds, longer than timeout
+	}
+	testhelpers.PrepareCommand(&sleepCmd)
+
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
 			Timeout: 1, // 1 second timeout
@@ -926,14 +934,8 @@ func TestRunner_CommandTimeoutBehavior(t *testing.T) {
 		},
 		Groups: []runnertypes.CommandGroup{
 			{
-				Name: "timeout-test-group",
-				Commands: []runnertypes.Command{
-					{
-						Name: "sleep-command",
-						Cmd:  "sleep",
-						Args: []string{"5"}, // Sleep for 5 seconds, longer than timeout
-					},
-				},
+				Name:     "timeout-test-group",
+				Commands: []runnertypes.Command{sleepCmd},
 			},
 		},
 	}
@@ -963,6 +965,14 @@ func TestRunner_CommandTimeoutBehavior(t *testing.T) {
 
 	t.Run("command-specific timeout overrides global timeout", func(t *testing.T) {
 		// Create config with command-specific shorter timeout
+		shortTimeoutCmd := runnertypes.Command{
+			Name:    "sleep-command-short-timeout",
+			Cmd:     "sleep",
+			Args:    []string{"5"}, // Sleep for 5 seconds
+			Timeout: 1,             // But timeout after 1 second
+		}
+		testhelpers.PrepareCommand(&shortTimeoutCmd)
+
 		configWithCmdTimeout := &runnertypes.Config{
 			Global: runnertypes.GlobalConfig{
 				Timeout: 10, // 10 seconds global timeout
@@ -970,15 +980,8 @@ func TestRunner_CommandTimeoutBehavior(t *testing.T) {
 			},
 			Groups: []runnertypes.CommandGroup{
 				{
-					Name: "cmd-timeout-test-group",
-					Commands: []runnertypes.Command{
-						{
-							Name:    "sleep-command-short-timeout",
-							Cmd:     "sleep",
-							Args:    []string{"5"}, // Sleep for 5 seconds
-							Timeout: 1,             // But timeout after 1 second
-						},
-					},
+					Name:     "cmd-timeout-test-group",
+					Commands: []runnertypes.Command{shortTimeoutCmd},
 				},
 			},
 		}
