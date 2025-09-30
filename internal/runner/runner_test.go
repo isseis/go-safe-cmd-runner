@@ -52,6 +52,37 @@ func setupSafeTestEnv(t *testing.T) {
 	setupTestEnv(t, safeEnv)
 }
 
+// prepareCommandWithExpandedEnv prepares a Command with ExpandedEnv populated from its Env field.
+// This is a test helper that simulates what LoadAndPrepareConfig does in Phase 1.
+func prepareCommandWithExpandedEnv(t *testing.T, cmd *runnertypes.Command, group *runnertypes.CommandGroup, cfg *runnertypes.Config) {
+	t.Helper()
+
+	filter := environment.NewFilter(cfg)
+	expander := environment.NewVariableExpander(filter)
+	expandedEnv, err := expander.ExpandCommandEnv(cmd, group)
+	require.NoError(t, err, "failed to expand Command.Env in test helper")
+	cmd.ExpandedEnv = expandedEnv
+}
+
+// prepareConfigWithExpandedEnv prepares all commands in a Config with ExpandedEnv populated.
+// This is a test helper that simulates what LoadAndPrepareConfig does in Phase 1.
+func prepareConfigWithExpandedEnv(t *testing.T, cfg *runnertypes.Config) {
+	t.Helper()
+
+	filter := environment.NewFilter(cfg)
+	expander := environment.NewVariableExpander(filter)
+
+	for i := range cfg.Groups {
+		group := &cfg.Groups[i]
+		for j := range group.Commands {
+			cmd := &group.Commands[j]
+			expandedEnv, err := expander.ExpandCommandEnv(cmd, group)
+			require.NoError(t, err, "failed to expand Command.Env in test helper for command %s", cmd.Name)
+			cmd.ExpandedEnv = expandedEnv
+		}
+	}
+}
+
 var ErrExecutionFailed = errors.New("execution failed")
 
 // MockResourceManager is a mock implementation of ResourceManager
@@ -354,22 +385,25 @@ func TestRunner_ExecuteGroup(t *testing.T) {
 				Groups: []runnertypes.CommandGroup{tt.group},
 			}
 
+			// Prepare all commands with ExpandedEnv (simulates Phase 1)
+			prepareConfigWithExpandedEnv(t, config)
+
 			mockResourceManager := new(MockResourceManager)
 			runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
 			require.NoError(t, err, "NewRunner should not return an error with valid config")
 
 			// Setup mock expectations
-			for i, cmd := range tt.group.Commands {
+			for i, cmd := range config.Groups[0].Commands {
 				// Create expected command with WorkDir set
 				expectedCmd := cmd
 				if expectedCmd.Dir == "" {
 					expectedCmd.Dir = config.Global.WorkDir
 				}
-				mockResourceManager.On("ExecuteCommand", mock.Anything, expectedCmd, &tt.group, mock.Anything).Return(tt.mockResults[i], tt.mockErrors[i])
+				mockResourceManager.On("ExecuteCommand", mock.Anything, expectedCmd, &config.Groups[0], mock.Anything).Return(tt.mockResults[i], tt.mockErrors[i])
 			}
 
 			ctx := context.Background()
-			err = runner.ExecuteGroup(ctx, tt.group)
+			err = runner.ExecuteGroup(ctx, config.Groups[0])
 
 			if tt.expectedErr != nil {
 				assert.Error(t, err)
@@ -524,21 +558,14 @@ func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
 			Groups: []runnertypes.CommandGroup{group},
 		}
 
-		mockResourceManager := new(MockResourceManager)
-		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
-		require.NoError(t, err)
+		// Try to prepare config - should fail during Phase 1 (config preparation)
+		filter := environment.NewFilter(config)
+		expander := environment.NewVariableExpander(filter)
+		_, err := expander.ExpandCommandEnv(&config.Groups[0].Commands[1], &config.Groups[0])
 
-		// First command should succeed
-		mockResourceManager.On("ExecuteCommand", mock.Anything, runnertypes.Command{Name: "cmd-1", Cmd: "echo", Args: []string{"first"}, Dir: "/tmp"}, &group, mock.Anything).
-			Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "first\n", Stderr: ""}, nil)
-
-		// Second command should fail during environment variable resolution, so ExecuteCommand won't be called
-		ctx := context.Background()
-		err = runner.ExecuteGroup(ctx, group)
-
+		// Should fail with undefined variable error during Phase 1
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, environment.ErrVariableNotFound)
-		mockResourceManager.AssertExpectations(t)
 	})
 }
 
@@ -1037,23 +1064,28 @@ func TestRunner_resolveEnvironmentVars(t *testing.T) {
 		"PATH":       "/custom/path", // This should override system PATH
 	}
 
+	// Test Command.Env with self-reference and cross-reference
 	cmd := runnertypes.Command{
 		Env: []string{
 			"CMD_VAR=command_value",
-			"REFERENCE_VAR=${LOADED_VAR}",
+			"REFERENCE_VAR=${CMD_VAR}_referenced", // Reference another Command.Env variable
 		},
 	}
 
+	// Prepare command with expanded environment (simulates Phase 1)
+	prepareCommandWithExpandedEnv(t, &cmd, &config.Groups[0], config)
+
+	// Resolve environment variables (merges system env + pre-expanded Command.Env)
 	envVars, err := runner.resolveEnvironmentVars(cmd, &config.Groups[0])
 	assert.NoError(t, err)
 
-	// Check that loaded vars are present
+	// Check that system vars are present
 	assert.Equal(t, "from_env_file", envVars["LOADED_VAR"])
 	assert.Equal(t, "/custom/path", envVars["PATH"])
 
-	// Check that command vars are present
+	// Check that command vars are present and correctly expanded
 	assert.Equal(t, "command_value", envVars["CMD_VAR"])
-	assert.Equal(t, "from_env_file", envVars["REFERENCE_VAR"])
+	assert.Equal(t, "command_value_referenced", envVars["REFERENCE_VAR"])
 }
 
 func TestRunner_SecurityIntegration(t *testing.T) {
@@ -1104,6 +1136,8 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
 		require.NoError(t, err)
 
+		testGroup := &config.Groups[0] // Get reference to the test group
+
 		// Test with safe environment variables
 		safeCmd := runnertypes.Command{
 			Name: "test-env",
@@ -1113,14 +1147,16 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 			Env:  []string{"TEST_VAR=safe-value", "PATH=/usr/bin:/bin"},
 		}
 
+		// Prepare command with expanded environment (simulates Phase 1)
+		prepareCommandWithExpandedEnv(t, &safeCmd, testGroup, config)
+
 		mockResourceManager.On("ExecuteCommand", mock.Anything, safeCmd, mock.Anything, mock.Anything).
 			Return(&resource.ExecutionResult{ExitCode: 0}, nil)
 
-		testGroup := &config.Groups[0] // Get reference to the test group
 		_, err = runner.executeCommandInGroup(context.Background(), safeCmd, testGroup)
 		assert.NoError(t, err)
 
-		// Test with unsafe environment variable value
+		// Test with unsafe environment variable value - should fail during Phase 1 (config preparation)
 		unsafeCmd := runnertypes.Command{
 			Name: "test-unsafe-env",
 			Cmd:  "echo",
@@ -1129,7 +1165,10 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 			Env:  []string{"DANGEROUS=value; rm -rf /"},
 		}
 
-		_, err = runner.executeCommandInGroup(context.Background(), unsafeCmd, testGroup)
+		// Try to prepare command - should fail with unsafe environment variable error
+		filter := environment.NewFilter(config)
+		expander := environment.NewVariableExpander(filter)
+		_, err = expander.ExpandCommandEnv(&unsafeCmd, testGroup)
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, security.ErrUnsafeEnvironmentVar, "expected error to wrap security.ErrUnsafeEnvironmentVar")
 	})
@@ -1479,12 +1518,13 @@ func TestRunner_EnvironmentVariablePriority(t *testing.T) {
 		},
 		{
 			name:           "variable references with command priority",
-			commandEnvVars: []string{"REFERENCE_VAR=${GLOBAL_VAR}_referenced"},
+			commandEnvVars: []string{"BASE_VAR=base_value", "REFERENCE_VAR=${BASE_VAR}_referenced"},
 			expectedValues: map[string]string{
-				"GLOBAL_VAR":    "global_value",
-				"REFERENCE_VAR": "global_value_referenced", // Should resolve to global variable value
+				"GLOBAL_VAR":    "global_value",          // From system environment
+				"BASE_VAR":      "base_value",            // From Command.Env
+				"REFERENCE_VAR": "base_value_referenced", // Should resolve to Command.Env variable value
 			},
-			description: "Variable references should resolve using available variables",
+			description: "Variable references should resolve using Command.Env variables",
 		},
 		{
 			name:           "command variable references other command variables",
@@ -1517,8 +1557,11 @@ func TestRunner_EnvironmentVariablePriority(t *testing.T) {
 				testCmd.Env = tt.commandEnvVars
 			}
 
-			// Resolve environment variables using the runner
+			// Prepare command with expanded environment (simulates Phase 1)
 			testGroup := &config.Groups[0]
+			prepareCommandWithExpandedEnv(t, &testCmd, testGroup, config)
+
+			// Resolve environment variables using the runner
 			resolvedEnv, err := runner.resolveEnvironmentVars(testCmd, testGroup)
 			require.NoError(t, err, tt.description)
 
@@ -1588,12 +1631,13 @@ func TestRunner_EnvironmentVariablePriority_CurrentImplementation(t *testing.T) 
 		},
 		{
 			name:           "command variable references global",
-			commandEnvVars: []string{"REFERENCE_VAR=${GLOBAL_VAR}_referenced"},
+			commandEnvVars: []string{"BASE_VAR=base_value", "REFERENCE_VAR=${BASE_VAR}_referenced"},
 			expectedValues: map[string]string{
-				"GLOBAL_VAR":    "global_value",
-				"REFERENCE_VAR": "global_value_referenced", // Should resolve to global variable value
+				"GLOBAL_VAR":    "global_value",          // From system environment
+				"BASE_VAR":      "base_value",            // From Command.Env
+				"REFERENCE_VAR": "base_value_referenced", // Should resolve to Command.Env variable value
 			},
-			description: "Command variables should be able to reference global variables",
+			description: "Command variables should be able to reference other Command.Env variables",
 		},
 		{
 			name:           "command variable references other command variables",
@@ -1618,8 +1662,11 @@ func TestRunner_EnvironmentVariablePriority_CurrentImplementation(t *testing.T) 
 				testCmd.Env = tt.commandEnvVars
 			}
 
-			// Resolve environment variables using the runner
+			// Prepare command with expanded environment (simulates Phase 1)
 			testGroup := &config.Groups[0]
+			prepareCommandWithExpandedEnv(t, &testCmd, testGroup, config)
+
+			// Resolve environment variables using the runner
 			resolvedEnv, err := runner.resolveEnvironmentVars(testCmd, testGroup)
 			require.NoError(t, err, tt.description)
 
@@ -1681,6 +1728,9 @@ func TestRunner_EnvironmentVariablePriority_EdgeCases(t *testing.T) {
 			Env:  []string{"EDGE_VAR="}, // Empty value at command level
 		}
 
+		// Prepare command with expanded environment (simulates Phase 1)
+		prepareCommandWithExpandedEnv(t, &testCmd, &testGroup, config)
+
 		resolvedEnv, err := runner.resolveEnvironmentVars(testCmd, &testGroup)
 		require.NoError(t, err)
 
@@ -1698,7 +1748,10 @@ func TestRunner_EnvironmentVariablePriority_EdgeCases(t *testing.T) {
 			Env:  []string{"MALFORMED_VAR"}, // No equals sign
 		}
 
-		_, err := runner.resolveEnvironmentVars(testCmd, &testGroup)
+		// Prepare command should fail with malformed environment variable
+		filter := environment.NewFilter(config)
+		expander := environment.NewVariableExpander(filter)
+		_, err := expander.ExpandCommandEnv(&testCmd, &testGroup)
 		// Should fail when an environment variable is malformed
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, environment.ErrMalformedEnvVariable)
@@ -1714,7 +1767,10 @@ func TestRunner_EnvironmentVariablePriority_EdgeCases(t *testing.T) {
 			Env:  []string{"UNDEFINED_REF=${NONEXISTENT_VAR}"},
 		}
 
-		_, err := runner.resolveEnvironmentVars(testCmd, &testGroup)
+		// Prepare command should fail with undefined variable
+		filter := environment.NewFilter(config)
+		expander := environment.NewVariableExpander(filter)
+		_, err := expander.ExpandCommandEnv(&testCmd, &testGroup)
 		// Should fail when referencing undefined variable
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, environment.ErrVariableNotFound)
@@ -1730,7 +1786,10 @@ func TestRunner_EnvironmentVariablePriority_EdgeCases(t *testing.T) {
 			Env:  []string{"CIRCULAR_VAR=${CIRCULAR_VAR}"},
 		}
 
-		_, err := runner.resolveEnvironmentVars(testCmd, &testGroup)
+		// Prepare command should fail with circular reference
+		filter := environment.NewFilter(config)
+		expander := environment.NewVariableExpander(filter)
+		_, err := expander.ExpandCommandEnv(&testCmd, &testGroup)
 		// New implementation explicitly detects circular reference
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, environment.ErrCircularReference)

@@ -64,12 +64,13 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 		}
 	}
 
-	// Expand variables in command strings (cmd and args fields)
+	// Expand variables in command strings (cmd and args fields) and Command.Env
 	// This creates new CommandGroups with expanded ${VAR} references, leaving originals unchanged
 	filter := environment.NewFilter(cfg)
 	expander := environment.NewVariableExpander(filter)
 	expandedGroups := make([]runnertypes.CommandGroup, len(cfg.Groups))
 	for i := range cfg.Groups {
+		// 1. Expand cmd/args fields
 		expandedGroup, err := config.ExpandCommandStrings(&cfg.Groups[i], expander)
 		if err != nil {
 			return nil, &logging.PreExecutionError{
@@ -79,6 +80,21 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 				RunID:     runID,
 			}
 		}
+
+		// 2. Pre-expand Command.Env for each command
+		for j := range expandedGroup.Commands {
+			expandedEnv, err := expander.ExpandCommandEnv(&expandedGroup.Commands[j], &cfg.Groups[i])
+			if err != nil {
+				return nil, &logging.PreExecutionError{
+					Type:      logging.ErrorTypeConfigParsing,
+					Message:   fmt.Sprintf("Failed to expand command environment for command %s: %v", expandedGroup.Commands[j].Name, err),
+					Component: "config",
+					RunID:     runID,
+				}
+			}
+			expandedGroup.Commands[j].ExpandedEnv = expandedEnv
+		}
+
 		expandedGroups[i] = *expandedGroup
 	}
 	cfg.Groups = expandedGroups

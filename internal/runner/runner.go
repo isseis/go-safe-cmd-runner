@@ -541,9 +541,10 @@ func (r *Runner) executeCommandInGroup(ctx context.Context, cmd runnertypes.Comm
 	}, nil
 }
 
-// resolveEnvironmentVars resolves environment variables for a command with group context
+// resolveEnvironmentVars resolves environment variables for a command with group context.
+// This merges system environment variables (filtered by allowlist) with pre-expanded Command.Env.
 func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, group *runnertypes.CommandGroup) (map[string]string, error) {
-	// Step 1: Resolve system and .env file variables with allowlist filtering
+	// Step 1: Filter system environment variables with allowlist
 	systemEnvVars, err := r.envFilter.ResolveGroupEnvironmentVars(group, r.envVars)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve group environment variables: %w", err)
@@ -553,16 +554,21 @@ func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, group *runnerty
 		"group", group.Name,
 		"system_vars_count", len(systemEnvVars))
 
-	// Step 2: Build environment map from Command.Env variables without allowlist checks
-	expander := environment.NewVariableExpander(r.envFilter)
-	finalEnvVars, err := expander.BuildEnvironmentMap(cmd, systemEnvVars, group)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build environment map: %w", err)
+	// Step 2: Merge system environment with pre-expanded Command.Env
+	// Command.Env should be pre-expanded during config loading (Phase 1)
+	finalEnvVars := make(map[string]string)
+	for k, v := range systemEnvVars {
+		finalEnvVars[k] = v
+	}
+	for k, v := range cmd.ExpandedEnv {
+		finalEnvVars[k] = v
 	}
 
-	slog.Debug("Built final environment map",
+	slog.Debug("Merged environment variables",
 		"command", cmd.Name,
 		"group", group.Name,
+		"system_vars_count", len(systemEnvVars),
+		"command_env_count", len(cmd.ExpandedEnv),
 		"final_vars_count", len(finalEnvVars))
 
 	return finalEnvVars, nil

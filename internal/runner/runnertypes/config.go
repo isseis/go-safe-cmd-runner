@@ -56,6 +56,12 @@ type Command struct {
 	RunAsGroup   string   `toml:"run_as_group"`   // Group to execute command as (using setegid)
 	MaxRiskLevel string   `toml:"max_risk_level"` // Maximum allowed risk level (low, medium, high)
 	Output       string   `toml:"output"`         // Standard output file path for capture
+
+	// ExpandedEnv contains pre-expanded environment variables from the Env field.
+	// This is populated during configuration loading (Phase 1) and used during
+	// command execution (Phase 2) to avoid re-expanding Command.Env for each execution.
+	// The toml:"-" tag prevents this field from being set via TOML configuration.
+	ExpandedEnv map[string]string `toml:"-"`
 }
 
 // GetMaxRiskLevel returns the parsed maximum risk level for this command

@@ -90,6 +90,15 @@ func (p *VariableExpander) BuildEnvironmentMap(cmd runnertypes.Command, baseEnvV
 	return finalEnv, nil
 }
 
+// ExpandCommandEnv expands Command.Env variables without base environment.
+// This is used during configuration loading (Phase 1) to pre-expand Command.Env.
+// Returns a map of expanded environment variables ready to merge with system environment.
+func (p *VariableExpander) ExpandCommandEnv(cmd *runnertypes.Command, group *runnertypes.CommandGroup) (map[string]string, error) {
+	// Build environment map from Command.Env only (no base environment)
+	emptyBase := make(map[string]string)
+	return p.BuildEnvironmentMap(*cmd, emptyBase, group)
+}
+
 // validateBasicEnvVariable validates the name and optionally the value of an environment variable.
 func validateBasicEnvVariable(varName, varValue string) error {
 	// Validate name using security package which returns detailed errors.
