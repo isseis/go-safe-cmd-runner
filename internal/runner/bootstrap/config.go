@@ -11,8 +11,25 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 )
 
-// LoadConfig performs atomic verification and loading to prevent TOCTOU attacks
-func LoadConfig(verificationManager *verification.Manager, configPath, runID string) (*runnertypes.Config, error) {
+// LoadAndPrepareConfig loads a configuration file and prepares it for execution.
+//
+// This function performs the following steps:
+//  1. Verifies the configuration file's hash (TOCTOU protection)
+//  2. Reads and parses the TOML configuration
+//  3. Expands variables in command strings (${VAR} syntax in cmd/args fields)
+//
+// The returned Config is ready for execution with all command strings expanded.
+// Variable expansion is immutable - original config data is not modified.
+//
+// Parameters:
+//   - verificationManager: Manager for secure file verification
+//   - configPath: Path to the configuration file
+//   - runID: Unique identifier for this execution run
+//
+// Returns:
+//   - *Config: Prepared configuration ready for command execution
+//   - error: Any error during verification, loading, parsing, or expansion
+func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath, runID string) (*runnertypes.Config, error) {
 	if configPath == "" {
 		return nil, &logging.PreExecutionError{
 			Type:      logging.ErrorTypeRequiredArgumentMissing,
@@ -48,10 +65,12 @@ func LoadConfig(verificationManager *verification.Manager, configPath, runID str
 	}
 
 	// Expand variables in command strings (cmd and args fields)
+	// This creates new CommandGroups with expanded ${VAR} references, leaving originals unchanged
 	filter := environment.NewFilter(cfg)
 	expander := environment.NewVariableExpander(filter)
+	expandedGroups := make([]runnertypes.CommandGroup, len(cfg.Groups))
 	for i := range cfg.Groups {
-		err := config.ExpandCommandStrings(&cfg.Groups[i], expander)
+		expandedGroup, err := config.ExpandCommandStrings(&cfg.Groups[i], expander)
 		if err != nil {
 			return nil, &logging.PreExecutionError{
 				Type:      logging.ErrorTypeConfigParsing,
@@ -60,7 +79,9 @@ func LoadConfig(verificationManager *verification.Manager, configPath, runID str
 				RunID:     runID,
 			}
 		}
+		expandedGroups[i] = *expandedGroup
 	}
+	cfg.Groups = expandedGroups
 
 	return cfg, nil
 }
