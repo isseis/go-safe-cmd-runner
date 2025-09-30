@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/testhelpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -92,6 +93,7 @@ func TestDryRunExecutionPath(t *testing.T) {
 			require.NotNil(t, dryRunManager) // Execute commands in dry-run mode
 			for _, cmd := range tt.commands {
 				group := tt.groups[0] // Use first group for simplicity
+				testhelpers.PrepareCommand(&cmd)
 				result, err := dryRunManager.ExecuteCommand(ctx, cmd, group, tt.envVars)
 
 				// Verify that dry-run execution doesn't produce errors
