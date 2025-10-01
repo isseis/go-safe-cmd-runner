@@ -182,7 +182,7 @@ fmt-all:
 	@$(call format_files_from_list,find . -name '*.go' -not -path './vendor/*')
 
 benchmark:
-	$(GOTEST) -bench=. -benchmem ./internal/runner/resource/
+	$(GOTEST) -tags test -bench=. -benchmem ./internal/runner/resource/ ./internal/runner/config
 
 coverage:
 	$(ENVSET) $(GOTEST) -tags test -coverprofile=coverage.out $$(go list ./internal/... | grep -v '/testing$$')
