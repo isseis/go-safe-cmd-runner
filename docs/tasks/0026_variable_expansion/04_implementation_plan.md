@@ -112,12 +112,12 @@
 ### Phase 3: 性能・品質最適化 (Week 4)
 
 #### 3.1 性能測定と最適化
-- [ ] ベンチマークテスト実装
-  - [ ] `BenchmarkVariableExpansion` 実装
-  - [ ] `simple_expansion` ベンチマーク
-  - [ ] `complex_args` ベンチマーク
-  - [ ] `braced_format_recommended` ベンチマーク
-  - [ ] `glob_pattern_literal` ベンチマーク
+- [x] ベンチマークテスト実装
+  - [x] `BenchmarkVariableExpansion` 実装
+  - [x] `simple_expansion` ベンチマーク
+  - [x] `complex_args` ベンチマーク
+  - [x] `braced_format_recommended` ベンチマーク
+  - [x] `glob_pattern_literal` ベンチマーク
 - [ ] 性能分析と最適化
   - [ ] CPU使用率測定
   - [ ] メモリ使用量測定

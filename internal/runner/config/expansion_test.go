@@ -509,3 +509,83 @@ func TestSecurityIntegration(t *testing.T) {
 		})
 	}
 }
+
+// BenchmarkVariableExpansion benchmarks the variable expansion performance
+// for different scenarios to ensure performance requirements are met.
+func BenchmarkVariableExpansion(b *testing.B) {
+	benchmarks := []struct {
+		name string
+		cmd  runnertypes.Command
+	}{
+		{
+			name: "simple_expansion",
+			cmd: runnertypes.Command{
+				Name: "test",
+				Cmd:  "${BIN_PATH}/ls",
+				Args: []string{"-la"},
+				Env:  []string{"BIN_PATH=/usr/bin"},
+			},
+		},
+		{
+			name: "complex_args",
+			cmd: runnertypes.Command{
+				Name: "test",
+				Cmd:  "${BIN_PATH}/echo",
+				Args: []string{"${VAR1}", "${VAR2}", "${VAR3}", "${VAR4}", "${VAR5}"},
+				Env: []string{
+					"BIN_PATH=/usr/bin",
+					"VAR1=value1",
+					"VAR2=value2",
+					"VAR3=value3",
+					"VAR4=value4",
+					"VAR5=value5",
+				},
+			},
+		},
+		{
+			name: "braced_format_recommended",
+			cmd: runnertypes.Command{
+				Name: "test",
+				Cmd:  "${HOME}/bin/script",
+				Args: []string{"${CONFIG_DIR}/config.toml", "${DATA_DIR}/data.txt"},
+				Env: []string{
+					"HOME=/home/user",
+					"CONFIG_DIR=/etc/myapp",
+					"DATA_DIR=/var/lib/myapp",
+				},
+			},
+		},
+		{
+			name: "glob_pattern_literal",
+			cmd: runnertypes.Command{
+				Name: "test",
+				Cmd:  "find",
+				Args: []string{"${SEARCH_DIR}", "-name", "*.txt"},
+				Env:  []string{"SEARCH_DIR=/home/user/documents"},
+			},
+		},
+	}
+
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			// Create test configuration
+			cfg := &runnertypes.Config{
+				Global: runnertypes.GlobalConfig{
+					EnvAllowlist: []string{"BIN_PATH", "HOME", "CONFIG_DIR", "DATA_DIR", "SEARCH_DIR", "VAR1", "VAR2", "VAR3", "VAR4", "VAR5"},
+				},
+			}
+
+			// Create filter and expander
+			filter := environment.NewFilter(cfg.Global.EnvAllowlist)
+			expander := environment.NewVariableExpander(filter)
+
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_, _, _, err := config.ExpandCommand(&bm.cmd, expander, cfg.Global.EnvAllowlist, "benchmark-group")
+				if err != nil {
+					b.Fatalf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
