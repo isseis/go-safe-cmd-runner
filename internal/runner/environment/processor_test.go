@@ -660,3 +660,143 @@ func TestVariableExpander_EscapeSequences(t *testing.T) {
 		})
 	}
 }
+
+func TestVariableExpander_ExpandStrings(t *testing.T) {
+	filter := NewFilter(nil)
+	expander := NewVariableExpander(filter)
+
+	tests := []struct {
+		name        string
+		texts       []string
+		envVars     map[string]string
+		allowlist   []string
+		groupName   string
+		expected    []string
+		expectError bool
+	}{
+		{
+			name:      "nil input returns nil",
+			texts:     nil,
+			envVars:   map[string]string{},
+			allowlist: []string{"PATH"},
+			groupName: "test_group",
+			expected:  nil,
+		},
+		{
+			name:      "empty slice returns empty slice",
+			texts:     []string{},
+			envVars:   map[string]string{},
+			allowlist: []string{"PATH"},
+			groupName: "test_group",
+			expected:  []string{},
+		},
+		{
+			name:      "expand single string",
+			texts:     []string{"Hello, ${USER}!"},
+			envVars:   map[string]string{"USER": "testuser"},
+			allowlist: []string{"USER"},
+			groupName: "test_group",
+			expected:  []string{"Hello, testuser!"},
+		},
+		{
+			name: "expand multiple strings",
+			texts: []string{
+				"Path: ${PATH}",
+				"Home: ${HOME}",
+				"User: ${USER}",
+			},
+			envVars: map[string]string{
+				"PATH": "/usr/bin",
+				"HOME": "/home/test",
+				"USER": "testuser",
+			},
+			allowlist: []string{"PATH", "HOME", "USER"},
+			groupName: "test_group",
+			expected: []string{
+				"Path: /usr/bin",
+				"Home: /home/test",
+				"User: testuser",
+			},
+		},
+		{
+			name: "mixed expanded and literal strings",
+			texts: []string{
+				"Literal text",
+				"Variable: ${USER}",
+				"Another literal",
+			},
+			envVars:   map[string]string{"USER": "testuser"},
+			allowlist: []string{"USER"},
+			groupName: "test_group",
+			expected: []string{
+				"Literal text",
+				"Variable: testuser",
+				"Another literal",
+			},
+		},
+		{
+			name:        "error in one string fails entire batch",
+			texts:       []string{"Good: ${USER}", "Bad: ${INVALID}"},
+			envVars:     map[string]string{"USER": "testuser"},
+			allowlist:   []string{"USER"},
+			groupName:   "test_group",
+			expectError: true,
+		},
+		{
+			name: "escape sequences in batch",
+			texts: []string{
+				"Escaped: \\${USER}",
+				"Normal: ${USER}",
+			},
+			envVars:   map[string]string{"USER": "testuser"},
+			allowlist: []string{"USER"},
+			groupName: "test_group",
+			expected: []string{
+				"Escaped: ${USER}",
+				"Normal: testuser",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := expander.ExpandStrings(tt.texts, tt.envVars, tt.allowlist, tt.groupName)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+
+	// Additional test for disallowed system environment variable
+	t.Run("disallowed system environment variable", func(t *testing.T) {
+		// Set a temporary environment variable
+		t.Setenv("DISALLOWED_VAR", "system_value")
+
+		// Try to expand it with an allowlist that doesn't include it
+		texts := []string{"Value: ${DISALLOWED_VAR}"}
+		result, err := expander.ExpandStrings(texts, map[string]string{}, []string{"USER"}, "test_group")
+
+		// Should fail because DISALLOWED_VAR is in system environment but not in allowlist
+		assert.Error(t, err)
+		assert.Nil(t, result)
+	})
+
+	// Additional test for allowed system environment variable
+	t.Run("allowed system environment variable", func(t *testing.T) {
+		// Set a temporary environment variable
+		t.Setenv("ALLOWED_VAR", "system_value")
+
+		// Try to expand it with an allowlist that includes it
+		texts := []string{"Value: ${ALLOWED_VAR}"}
+		result, err := expander.ExpandStrings(texts, map[string]string{}, []string{"ALLOWED_VAR"}, "test_group")
+
+		// Should succeed because ALLOWED_VAR is in both system environment and allowlist
+		require.NoError(t, err)
+		assert.Equal(t, []string{"Value: system_value"}, result)
+	})
+}
