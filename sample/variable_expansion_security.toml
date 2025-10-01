@@ -68,18 +68,19 @@ args = ["--version"]
 # Must use absolute path to pass security validation
 env = ["SECURE_BIN=/usr/local/bin/mytool"]
 
-# Example 4: Preventing command injection
+# Example 4: No shell interpretation - literal argument passing
 [[groups]]
-name = "injection_prevention"
-description = "Shell metacharacters are treated as literals"
+name = "no_shell_interpretation"
+description = "Arguments are passed literally without shell interpretation"
 
 [[groups.commands]]
-name = "safe_string_handling"
-description = "Special characters are safely handled"
+name = "literal_glob_pattern"
+description = "Glob patterns are passed as literal strings, not expanded by shell"
 cmd = "/bin/echo"
-args = ["Safe string: ${SAFE_DATA}"]
-# Semicolons and pipes are treated as literal strings, not shell commands
-env = ["SAFE_DATA=data; ls /tmp | grep test"]
+args = ["Files matching pattern: ${PATTERN}"]
+# The *.txt pattern is passed as a literal string to echo,
+# not expanded by a shell (which would list all .txt files)
+env = ["PATTERN=*.txt"]
 
 # Example 5: Combining allowlist and Command.Env
 [[groups]]
