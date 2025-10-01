@@ -15,13 +15,13 @@ import (
 
 var (
 	// ErrCircularReference is returned when a circular variable reference is detected.
-	ErrCircularReference = errors.New("circular variable reference")
+	ErrCircularReference = errors.New("circular variable reference detected")
 	// ErrInvalidEscapeSequence is returned when an invalid escape sequence is detected.
-	ErrInvalidEscapeSequence = errors.New("invalid escape sequence")
+	ErrInvalidEscapeSequence = errors.New("invalid escape sequence (only \\$ and \\\\ are allowed)")
 	// ErrUnclosedVariable is returned when a variable expansion is not properly closed.
-	ErrUnclosedVariable = errors.New("unclosed variable")
+	ErrUnclosedVariable = errors.New("unclosed variable reference (missing closing '}')")
 	// ErrInvalidVariableFormat is returned when $ is found but not followed by valid variable syntax.
-	ErrInvalidVariableFormat = errors.New("invalid variable format")
+	ErrInvalidVariableFormat = errors.New("invalid variable format (use ${VAR} syntax)")
 )
 
 // VariableExpander handles variable expansion for command strings and environment maps.
@@ -62,6 +62,11 @@ func NewVariableExpander(filter *Filter) *VariableExpander {
 //     This allows for self-references and inter-references within the `Env` block.
 //  2. Second pass: Iterate over the map and expand any variables in the values.
 func (p *VariableExpander) ExpandCommandEnv(cmd *runnertypes.Command, groupName string, groupEnvAllowList []string) (map[string]string, error) {
+	p.logger.Debug("Starting command environment expansion",
+		"command", cmd.Name,
+		"group", groupName,
+		"env_count", len(cmd.Env))
+
 	finalEnv := make(map[string]string)
 
 	// First pass: Populate the environment with unexpanded values from the command.
@@ -94,7 +99,7 @@ func (p *VariableExpander) ExpandCommandEnv(cmd *runnertypes.Command, groupName 
 		visited := map[string]bool{name: true}
 		expandedValue, err := p.ExpandString(value, finalEnv, groupEnvAllowList, groupName, visited)
 		if err != nil {
-			return nil, fmt.Errorf("failed to expand variable %s: %w", name, err)
+			return nil, fmt.Errorf("failed to expand variable %s in command %s: %w", name, cmd.Name, err)
 		}
 		finalEnv[name] = expandedValue
 	}
@@ -102,9 +107,14 @@ func (p *VariableExpander) ExpandCommandEnv(cmd *runnertypes.Command, groupName 
 	// Final validation pass on the fully expanded values.
 	for name, value := range finalEnv {
 		if err := p.validateBasicEnvVariable(name, value); err != nil {
-			return nil, fmt.Errorf("validation failed for expanded variable %s: %w", name, err)
+			return nil, fmt.Errorf("validation failed for expanded variable %s in command %s: %w", name, cmd.Name, err)
 		}
 	}
+
+	p.logger.Debug("Command environment expansion completed",
+		"command", cmd.Name,
+		"group", groupName,
+		"variables_expanded", len(finalEnv))
 
 	return finalEnv, nil
 }
@@ -135,6 +145,11 @@ func (p *VariableExpander) validateBasicEnvVariable(varName, varValue string) er
 // It performs recursive variable expansion with circular reference detection.
 // This method is used for expanding both command-line strings and environment variable values.
 func (p *VariableExpander) ExpandString(value string, envVars map[string]string, allowlist []string, groupName string, visited map[string]bool) (string, error) {
+	p.logger.Debug("Starting variable expansion",
+		"value", value,
+		"group", groupName,
+		"visited_count", len(visited))
+
 	var result strings.Builder
 	runes := []rune(value)
 	i := 0
@@ -143,12 +158,18 @@ func (p *VariableExpander) ExpandString(value string, envVars map[string]string,
 		case '\\':
 			nextIdx, err := p.handleEscapeSequence(runes, i, &result)
 			if err != nil {
+				p.logger.Error("Escape sequence processing failed",
+					"position", i,
+					"error", err)
 				return "", err
 			}
 			i = nextIdx
 		case '$':
 			nextIdx, err := p.handleVariableExpansion(runes, i, envVars, allowlist, groupName, visited, &result)
 			if err != nil {
+				p.logger.Error("Variable expansion failed",
+					"position", i,
+					"error", err)
 				return "", err
 			}
 			i = nextIdx
@@ -157,28 +178,37 @@ func (p *VariableExpander) ExpandString(value string, envVars map[string]string,
 			i++
 		}
 	}
-	return result.String(), nil
+	expandedValue := result.String()
+	p.logger.Debug("Variable expansion completed",
+		"original", value,
+		"expanded", expandedValue,
+		"group", groupName)
+	return expandedValue, nil
 }
 
 // handleEscapeSequence processes escape sequences like \$ and \\
 func (p *VariableExpander) handleEscapeSequence(runes []rune, i int, result *strings.Builder) (int, error) {
 	if i+1 >= len(runes) {
-		return 0, ErrInvalidEscapeSequence
+		return 0, fmt.Errorf("%w at position %d (trailing backslash)", ErrInvalidEscapeSequence, i)
 	}
 	nextChar := runes[i+1]
 	if nextChar == '$' || nextChar == '\\' {
+		p.logger.Debug("Processed escape sequence",
+			"position", i,
+			"sequence", fmt.Sprintf("\\%c", nextChar),
+			"result", string(nextChar))
 		result.WriteRune(nextChar)
 		return i + 2, nil //nolint:mnd // Skip escape sequences like \$ and \\
 
 	}
-	return 0, fmt.Errorf("%w: \\%c", ErrInvalidEscapeSequence, nextChar)
+	return 0, fmt.Errorf("%w at position %d: \\%c", ErrInvalidEscapeSequence, i, nextChar)
 }
 
 // handleVariableExpansion processes variable expansion like ${VAR}
 func (p *VariableExpander) handleVariableExpansion(runes []rune, i int, envVars map[string]string, allowlist []string, groupName string, visited map[string]bool, result *strings.Builder) (int, error) {
 	// Strict validation: $ must be followed by {VAR} format
 	if i+1 >= len(runes) || runes[i+1] != '{' {
-		return 0, ErrInvalidVariableFormat
+		return 0, fmt.Errorf("%w at position %d", ErrInvalidVariableFormat, i)
 	}
 
 	// Find the closing brace
@@ -191,25 +221,39 @@ func (p *VariableExpander) handleVariableExpansion(runes []rune, i int, envVars 
 		}
 	}
 	if end == -1 {
-		return 0, ErrUnclosedVariable
+		varNamePrefix := string(runes[start:min(start+20, len(runes))]) //nolint:mnd // Show first 20 chars for context
+		if len(runes)-start > 20 {                                      //nolint:mnd // Truncate if too long
+			varNamePrefix += "..."
+		}
+		return 0, fmt.Errorf("%w at position %d: ${%s", ErrUnclosedVariable, i, varNamePrefix)
 	}
 
 	// Extract and validate variable name
 	varName := string(runes[start:end])
 	if err := security.ValidateVariableName(varName); err != nil {
-		return 0, fmt.Errorf("%w: %s: %w", ErrInvalidVariableName, varName, err)
+		return 0, fmt.Errorf("%w at position %d: %s: %w", ErrInvalidVariableName, i, varName, err)
 	}
+
+	p.logger.Debug("Found variable reference",
+		"variable", varName,
+		"position", i,
+		"group", groupName)
 
 	// Resolve variable value
 	valStr, err := p.resolveVariable(varName, envVars, allowlist, groupName, visited)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("failed to resolve variable ${%s} at position %d: %w", varName, i, err)
 	}
+
+	p.logger.Debug("Resolved variable value",
+		"variable", varName,
+		"value", valStr,
+		"value_length", len(valStr))
 
 	// Recursively expand the value
 	expanded, err := p.ExpandString(valStr, envVars, allowlist, groupName, visited)
 	if err != nil {
-		return 0, fmt.Errorf("failed to expand nested variable ${%s}: %w", varName, err)
+		return 0, fmt.Errorf("failed to expand nested variable ${%s} at position %d: %w", varName, i, err)
 	}
 	result.WriteString(expanded)
 	delete(visited, varName)
@@ -230,11 +274,18 @@ func (p *VariableExpander) resolveVariable(varName string, envVars map[string]st
 	val, foundLocal := envVars[varName]
 	if wasVisited && foundLocal {
 		// Variable was pre-marked as visited - skip local lookup to enable self-reference
+		p.logger.Debug("Skipping local lookup for self-reference",
+			"variable", varName,
+			"group", groupName)
 		foundLocal = false
 	}
 
 	if foundLocal {
 		// Found in local env and not pre-visited - mark as visited and use it
+		p.logger.Debug("Resolved variable from command env",
+			"variable", varName,
+			"value_length", len(val),
+			"group", groupName)
 		visited[varName] = true
 		return val, nil
 	}
@@ -244,19 +295,32 @@ func (p *VariableExpander) resolveVariable(varName string, envVars map[string]st
 	if foundSys {
 		// allowlist check only for system variables
 		if !p.filter.IsVariableAccessAllowed(varName, allowlist, groupName) {
-			p.logger.Warn("system variable access not allowed", "variable", varName, "group", groupName)
-			return "", fmt.Errorf("%w: %s", ErrVariableNotAllowed, varName)
+			p.logger.Warn("system variable access blocked by allowlist",
+				"variable", varName,
+				"group", groupName,
+				"allowlist", allowlist)
+			return "", fmt.Errorf("%w: %s (not in allowlist for group %s)", ErrVariableNotAllowed, varName, groupName)
 		}
+		p.logger.Debug("Resolved variable from system environment",
+			"variable", varName,
+			"value_length", len(sysVal),
+			"group", groupName)
 		return sysVal, nil
 	}
 
 	if wasVisited {
 		// Variable was pre-visited but not found in system - this is circular reference
-		return "", fmt.Errorf("%w: %s", ErrCircularReference, varName)
+		p.logger.Error("Circular reference detected",
+			"variable", varName,
+			"group", groupName)
+		return "", fmt.Errorf("%w: %s (self-reference without system fallback)", ErrCircularReference, varName)
 	}
 
 	// variable not found anywhere - return error
-	return "", fmt.Errorf("%w: %s", ErrVariableNotFound, varName)
+	p.logger.Error("Variable not found",
+		"variable", varName,
+		"group", groupName)
+	return "", fmt.Errorf("%w: %s (not found in command env or system environment)", ErrVariableNotFound, varName)
 }
 
 // ExpandStrings expands variables in multiple strings, handling them as a batch.
@@ -266,6 +330,10 @@ func (p *VariableExpander) ExpandStrings(texts []string, envVars map[string]stri
 		return nil, nil
 	}
 
+	p.logger.Debug("Starting batch string expansion",
+		"count", len(texts),
+		"group", groupName)
+
 	// Always allocate a new slice for the result even when len(texts)==0.
 	// This ensures we don't return the caller's underlying slice and
 	// keeps behavior consistent between empty and non-empty inputs.
@@ -273,9 +341,18 @@ func (p *VariableExpander) ExpandStrings(texts []string, envVars map[string]stri
 	for i, text := range texts {
 		expanded, err := p.ExpandString(text, envVars, allowlist, groupName, make(map[string]bool))
 		if err != nil {
-			return nil, fmt.Errorf("failed to expand text[%d]: %w", i, err)
+			p.logger.Error("Batch string expansion failed",
+				"index", i,
+				"text", text,
+				"error", err)
+			return nil, fmt.Errorf("failed to expand argument at index %d (%q): %w", i, text, err)
 		}
 		result[i] = expanded
 	}
+
+	p.logger.Debug("Batch string expansion completed",
+		"count", len(texts),
+		"group", groupName)
+
 	return result, nil
 }
