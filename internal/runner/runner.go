@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"sort"
 	"time"
 
@@ -563,12 +564,8 @@ func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, group *runnerty
 	// Step 2: Merge system environment with pre-expanded Command.Env
 	// Command.Env should be pre-expanded during config loading (Phase 1)
 	finalEnvVars := make(map[string]string)
-	for k, v := range systemEnvVars {
-		finalEnvVars[k] = v
-	}
-	for k, v := range cmd.ExpandedEnv {
-		finalEnvVars[k] = v
-	}
+	maps.Copy(finalEnvVars, systemEnvVars)
+	maps.Copy(finalEnvVars, cmd.ExpandedEnv)
 
 	slog.Debug("Merged environment variables",
 		"command", cmd.Name,
