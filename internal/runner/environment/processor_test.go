@@ -662,12 +662,7 @@ func TestVariableExpander_EscapeSequences(t *testing.T) {
 }
 
 func TestVariableExpander_ExpandStrings(t *testing.T) {
-	config := &runnertypes.Config{
-		Global: runnertypes.GlobalConfig{
-			EnvAllowlist: []string{"PATH", "HOME", "USER"},
-		},
-	}
-	filter := NewFilter(config.Global.EnvAllowlist)
+	filter := NewFilter(nil)
 	expander := NewVariableExpander(filter)
 
 	tests := []struct {
@@ -776,4 +771,32 @@ func TestVariableExpander_ExpandStrings(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 		})
 	}
+
+	// Additional test for disallowed system environment variable
+	t.Run("disallowed system environment variable", func(t *testing.T) {
+		// Set a temporary environment variable
+		t.Setenv("DISALLOWED_VAR", "system_value")
+
+		// Try to expand it with an allowlist that doesn't include it
+		texts := []string{"Value: ${DISALLOWED_VAR}"}
+		result, err := expander.ExpandStrings(texts, map[string]string{}, []string{"USER"}, "test_group")
+
+		// Should fail because DISALLOWED_VAR is in system environment but not in allowlist
+		assert.Error(t, err)
+		assert.Nil(t, result)
+	})
+
+	// Additional test for allowed system environment variable
+	t.Run("allowed system environment variable", func(t *testing.T) {
+		// Set a temporary environment variable
+		t.Setenv("ALLOWED_VAR", "system_value")
+
+		// Try to expand it with an allowlist that includes it
+		texts := []string{"Value: ${ALLOWED_VAR}"}
+		result, err := expander.ExpandStrings(texts, map[string]string{}, []string{"ALLOWED_VAR"}, "test_group")
+
+		// Should succeed because ALLOWED_VAR is in both system environment and allowlist
+		require.NoError(t, err)
+		assert.Equal(t, []string{"Value: system_value"}, result)
+	})
 }
