@@ -198,17 +198,17 @@
   - [x] メンテナンスガイドの作成
 
 #### 5.2 サンプル設定ファイル作成
-- [ ] 基本的な使用例
-  - [ ] `sample/variable_expansion_basic.toml` 作成
-  - [ ] シンプルな `${VAR}` 形式の例
-- [ ] 高度な使用例
-  - [ ] `sample/variable_expansion_advanced.toml` 作成
-  - [ ] 複数変数の展開例
-  - [ ] ネスト変数の展開例
-- [ ] セキュリティ設定例
-  - [ ] `sample/variable_expansion_security.toml` 作成
-  - [ ] allowlist設定の例
-  - [ ] Command.Env優先の例
+- [x] 基本的な使用例
+  - [x] `sample/variable_expansion_basic.toml` 作成
+  - [x] シンプルな `${VAR}` 形式の例
+- [x] 高度な使用例
+  - [x] `sample/variable_expansion_advanced.toml` 作成
+  - [x] 複数変数の展開例
+  - [x] ネスト変数の展開例
+- [x] セキュリティ設定例
+  - [x] `sample/variable_expansion_security.toml` 作成
+  - [x] allowlist設定の例
+  - [x] Command.Env優先の例
 
 #### 5.3 運用準備
 - [ ] 監視機能の実装

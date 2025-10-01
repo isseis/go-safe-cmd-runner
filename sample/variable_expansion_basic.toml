@@ -1,0 +1,82 @@
+# Basic Variable Expansion Examples
+# This file demonstrates simple variable expansion patterns using ${VAR} format
+version = "1.0"
+
+[global]
+timeout = 30
+workdir = "/tmp"
+log_level = "info"
+skip_standard_paths = true
+env_allowlist = [
+    "PATH",
+    "HOME",
+    "USER",
+]
+
+# Example 1: Variable expansion in command name
+[[groups]]
+name = "cmd_expansion"
+description = "Expand variables in command name"
+
+[[groups.commands]]
+name = "docker_command"
+description = "Use Docker command with variable path"
+cmd = "${DOCKER_CMD}"
+args = ["version"]
+env = ["DOCKER_CMD=/usr/bin/docker"]
+
+# Example 2: Variable expansion in arguments
+[[groups]]
+name = "args_expansion"
+description = "Expand variables in command arguments"
+
+[[groups.commands]]
+name = "copy_file"
+description = "Copy file using variables in args"
+cmd = "/bin/cp"
+args = ["${HOME}/source.txt", "${BACKUP_DIR}/backup.txt"]
+env = ["HOME=/home/user", "BACKUP_DIR=/opt/backups"]
+
+# Example 3: Multiple variables in one string
+[[groups]]
+name = "multiple_vars"
+description = "Use multiple variables in a single argument"
+
+[[groups.commands]]
+name = "ssh_connection"
+description = "Build SSH connection string from variables"
+cmd = "/usr/bin/ssh"
+args = ["${USER}@${HOSTNAME}:${PORT}"]
+env = ["USER=admin", "HOSTNAME=server01", "PORT=22"]
+
+# Example 4: Path construction with variables
+[[groups]]
+name = "path_construction"
+description = "Build file paths dynamically"
+
+[[groups.commands]]
+name = "custom_tool"
+description = "Execute tool from variable directory"
+cmd = "${TOOL_DIR}/my-script"
+args = ["--input", "${INPUT_FILE}", "--output", "${OUTPUT_FILE}"]
+env = [
+    "TOOL_DIR=/opt/tools",
+    "INPUT_FILE=/data/input.txt",
+    "OUTPUT_FILE=/data/output.txt"
+]
+
+# Example 5: Environment-specific configuration
+[[groups]]
+name = "env_switching"
+description = "Switch behavior based on environment type"
+
+[[groups.commands]]
+name = "deploy_script"
+description = "Run deployment with environment-specific settings"
+cmd = "${APP_DIR}/deploy.sh"
+args = ["--env", "${ENV_TYPE}", "--region", "${REGION}"]
+env = [
+    "APP_DIR=/opt/myapp",
+    "ENV_TYPE=production",
+    "REGION=us-west-2"
+]
