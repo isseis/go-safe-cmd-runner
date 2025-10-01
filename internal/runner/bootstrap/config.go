@@ -89,7 +89,7 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 			cmd.ExpandedArgs = expandedArgs
 
 			// Expand Command.Env for each command and store in ExpandedEnv
-			expandedEnv, err := expander.ExpandCommandEnv(cmd, group)
+			expandedEnv, err := expander.ExpandCommandEnv(cmd, group.Name, group.EnvAllowlist)
 			if err != nil {
 				return nil, &logging.PreExecutionError{
 					Type:      logging.ErrorTypeConfigParsing,

@@ -47,7 +47,7 @@ func NewVariableExpander(filter *Filter) *VariableExpander {
 //  1. First pass: Add all variables from the command's `Env` block to the environment map.
 //     This allows for self-references and inter-references within the `Env` block.
 //  2. Second pass: Iterate over the map and expand any variables in the values.
-func (p *VariableExpander) ExpandCommandEnv(cmd *runnertypes.Command, group *runnertypes.CommandGroup) (map[string]string, error) {
+func (p *VariableExpander) ExpandCommandEnv(cmd *runnertypes.Command, groupName string, groupEnvAllowList []string) (map[string]string, error) {
 	finalEnv := make(map[string]string)
 
 	// First pass: Populate the environment with unexpanded values from the command.
@@ -78,7 +78,7 @@ func (p *VariableExpander) ExpandCommandEnv(cmd *runnertypes.Command, group *run
 		// By marking the current variable as visited, ExpandString will skip it in finalEnv and
 		// fall back to system environment lookup.
 		visited := map[string]bool{name: true}
-		expandedValue, err := p.ExpandString(value, finalEnv, group.EnvAllowlist, group.Name, visited)
+		expandedValue, err := p.ExpandString(value, finalEnv, groupEnvAllowList, groupName, visited)
 		if err != nil {
 			return nil, fmt.Errorf("failed to expand variable %s: %w", name, err)
 		}

@@ -113,7 +113,7 @@ func TestVariableExpander_ExpandCommandEnv(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := expander.ExpandCommandEnv(&tt.cmd, tt.group)
+			result, err := expander.ExpandCommandEnv(&tt.cmd, tt.group.Name, tt.group.EnvAllowlist)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -504,7 +504,7 @@ func TestVariableExpander_InheritanceModeIntegration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := expander.ExpandCommandEnv(&tt.cmd, tt.group)
+			_, err := expander.ExpandCommandEnv(&tt.cmd, tt.group.Name, tt.group.EnvAllowlist)
 
 			if tt.expectError {
 				assert.Error(t, err, tt.description)
