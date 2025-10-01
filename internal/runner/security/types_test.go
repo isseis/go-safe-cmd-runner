@@ -15,11 +15,11 @@ func NewPermissiveTestConfig() *Config {
 	return config
 }
 
-// NewFullyPermissiveTestConfig creates a config with both relaxed permissions and skipped hash validation
-// This function is only available in test builds and should be used very sparingly
-func NewFullyPermissiveTestConfig() *Config {
+// NewSkipHashValidationTestConfig creates a config that skips hash validation for tests
+// This function is only available in test builds and should be used when hash validation
+// would prevent test execution
+func NewSkipHashValidationTestConfig() *Config {
 	config := DefaultConfig()
-	config.testPermissiveMode = true
 	config.testSkipHashValidation = true
 	return config
 }
