@@ -622,10 +622,71 @@ func TestSecurityAttackPrevention(t *testing.T) {
 			expectError:     false,
 			description:     "Nested variable expansion should work correctly",
 		},
+		{
+			name: "Group allowlist overrides global allowlist",
+			cmd: runnertypes.Command{
+				Name: "test",
+				Cmd:  "echo",
+				Args: []string{"${GROUP_VAR}"},
+				Env:  []string{},
+			},
+			globalAllowlist: []string{"GLOBAL_VAR"},
+			groupAllowlist:  []string{"GROUP_VAR"},
+			expectError:     false,
+			description:     "Group allowlist should override global allowlist",
+		},
+		{
+			name: "Empty group allowlist rejects all system variables",
+			cmd: runnertypes.Command{
+				Name: "test",
+				Cmd:  "echo",
+				Args: []string{"${SYSTEM_VAR}"},
+				Env:  []string{},
+			},
+			globalAllowlist: []string{"SYSTEM_VAR"},
+			groupAllowlist:  []string{},
+			expectError:     true,
+			errorContains:   "not allowed",
+			description:     "Empty group allowlist should reject all system variables",
+		},
+		{
+			name: "Nested expansion resulting in dangerous value",
+			cmd: runnertypes.Command{
+				Name: "test",
+				Cmd:  "echo",
+				Args: []string{"${OUTER}"},
+				Env:  []string{"OUTER=${INNER}", "INNER=value; rm -rf /"},
+			},
+			globalAllowlist: []string{},
+			expectError:     true,
+			errorContains:   "unsafe",
+			description:     "Nested expansion should detect dangerous values after expansion",
+		},
+		{
+			name: "Command.Env variables work with group allowlist",
+			cmd: runnertypes.Command{
+				Name: "test",
+				Cmd:  "echo",
+				Args: []string{"${CMD_VAR}"},
+				Env:  []string{"CMD_VAR=safe_value"},
+			},
+			globalAllowlist: []string{},
+			groupAllowlist:  []string{},
+			expectError:     false,
+			description:     "Command.Env variables should be implicitly allowed regardless of group allowlist",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Explicitly set environment variables for tests that need them
+			if tt.name == "Group allowlist overrides global allowlist" {
+				t.Setenv("GROUP_VAR", "group_value")
+			}
+			if tt.name == "Empty group allowlist rejects all system variables" {
+				t.Setenv("SYSTEM_VAR", "system_value")
+			}
+
 			// Create test configuration
 			cfg := &runnertypes.Config{
 				Global: runnertypes.GlobalConfig{
@@ -637,10 +698,14 @@ func TestSecurityAttackPrevention(t *testing.T) {
 			filter := environment.NewFilter(cfg.Global.EnvAllowlist)
 			expander := environment.NewVariableExpander(filter)
 
-			// Use group allowlist if specified, otherwise global
-			allowlist := tt.globalAllowlist
-			if len(tt.groupAllowlist) > 0 {
+			// Determine which allowlist to use
+			// IMPORTANT: Use groupAllowlist if it's explicitly provided (even if empty)
+			// Only fall back to globalAllowlist if groupAllowlist is nil
+			var allowlist []string
+			if tt.groupAllowlist != nil {
 				allowlist = tt.groupAllowlist
+			} else {
+				allowlist = tt.globalAllowlist
 			}
 
 			// Test expansion
