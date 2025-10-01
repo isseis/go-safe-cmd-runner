@@ -566,21 +566,43 @@ func BenchmarkVariableExpansion(b *testing.B) {
 		},
 	}
 
+	// Extract all variable names from benchmark data for allowlist
+	allowlistMap := make(map[string]bool)
+	for _, bm := range benchmarks {
+		for _, envVar := range bm.cmd.Env {
+			// Extract variable name from "NAME=value" format
+			if idx := len(envVar); idx > 0 {
+				for i := range idx {
+					if envVar[i] == '=' {
+						allowlistMap[envVar[:i]] = true
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// Convert map to slice for allowlist
+	allowlist := make([]string, 0, len(allowlistMap))
+	for varName := range allowlistMap {
+		allowlist = append(allowlist, varName)
+	}
+
+	// Create test configuration once
+	cfg := &runnertypes.Config{
+		Global: runnertypes.GlobalConfig{
+			EnvAllowlist: allowlist,
+		},
+	}
+
+	// Create filter and expander once
+	filter := environment.NewFilter(cfg.Global.EnvAllowlist)
+	expander := environment.NewVariableExpander(filter)
+
 	for _, bm := range benchmarks {
 		b.Run(bm.name, func(b *testing.B) {
-			// Create test configuration
-			cfg := &runnertypes.Config{
-				Global: runnertypes.GlobalConfig{
-					EnvAllowlist: []string{"BIN_PATH", "HOME", "CONFIG_DIR", "DATA_DIR", "SEARCH_DIR", "VAR1", "VAR2", "VAR3", "VAR4", "VAR5"},
-				},
-			}
-
-			// Create filter and expander
-			filter := environment.NewFilter(cfg.Global.EnvAllowlist)
-			expander := environment.NewVariableExpander(filter)
-
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				_, _, _, err := config.ExpandCommand(&bm.cmd, expander, cfg.Global.EnvAllowlist, "benchmark-group")
 				if err != nil {
 					b.Fatalf("unexpected error: %v", err)
