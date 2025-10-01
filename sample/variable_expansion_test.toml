@@ -1,0 +1,96 @@
+# Variable expansion test configuration
+# Tests cmd and args variable expansion with ${VAR} format
+version = "1.0"
+
+[global]
+timeout = 30
+workdir = "/tmp/var-expansion-test"
+log_level = "debug"
+skip_standard_paths = true
+env_allowlist = [
+    "PATH",
+    "HOME",
+    "USER",
+    "TEST_VAR",
+    "BASE_PATH",
+    "FILENAME",
+    "EXTENSION",
+]
+
+# Group 1: Basic variable expansion in cmd
+[[groups]]
+name = "cmd_expansion_basic"
+description = "Test basic variable expansion in cmd field"
+priority = 1
+
+[[groups.commands]]
+name = "echo_with_var_cmd"
+description = "Use echo command via PATH variable"
+cmd = "${PATH}"
+args = ["Command path from PATH"]
+env = ["PATH=/bin/echo"]
+
+# Group 2: Basic variable expansion in args
+[[groups]]
+name = "args_expansion_basic"
+description = "Test basic variable expansion in args field"
+priority = 2
+
+[[groups.commands]]
+name = "echo_with_var_args"
+description = "Echo message with variable in args"
+cmd = "echo"
+args = ["Hello, ${USER}!"]
+env = ["USER=TestUser"]
+
+[[groups.commands]]
+name = "echo_multiple_vars"
+description = "Echo with multiple variables in args"
+cmd = "echo"
+args = ["Base: ${BASE_PATH}", "File: ${FILENAME}.${EXTENSION}"]
+env = ["BASE_PATH=/home/test", "FILENAME=data", "EXTENSION=txt"]
+
+# Group 3: Combined cmd and args expansion
+[[groups]]
+name = "combined_expansion"
+description = "Test variable expansion in both cmd and args"
+priority = 3
+
+[[groups.commands]]
+name = "full_expansion_test"
+description = "Expand variables in both cmd and args"
+cmd = "${PATH}"
+args = ["Variable test: ${TEST_VAR}"]
+env = ["PATH=/bin/echo", "TEST_VAR=success"]
+
+# Group 4: Nested variable expansion
+[[groups]]
+name = "nested_expansion"
+description = "Test nested variable references"
+priority = 4
+
+[[groups.commands]]
+name = "nested_vars"
+description = "Use nested variable expansion"
+cmd = "echo"
+args = ["Nested: ${TEST_VAR}"]
+env = ["TEST_VAR=${USER}_nested", "USER=testuser"]
+
+# Group 5: Escape sequence test
+[[groups]]
+name = "escape_test"
+description = "Test backslash escape sequences"
+priority = 5
+
+[[groups.commands]]
+name = "escaped_dollar"
+description = "Test escaped dollar sign"
+cmd = "echo"
+args = ["Literal \\$HOME should not expand"]
+
+[[groups.commands]]
+name = "escaped_backslash"
+description = "Test escaped backslash before variable"
+cmd = "echo"
+args = ["Path: \\\\${HOME}"]
+env = ["HOME=/home/testuser"]
