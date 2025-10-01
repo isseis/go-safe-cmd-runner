@@ -9,33 +9,32 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewCommandEnvProcessor(t *testing.T) {
+func TestNewVariableExpander(t *testing.T) {
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
 			EnvAllowlist: []string{"PATH", "HOME"},
 		},
 	}
-	filter := NewFilter(config)
-	processor := NewCommandEnvProcessor(filter)
+	filter := NewFilter(config.Global.EnvAllowlist)
+	expander := NewVariableExpander(filter)
 
-	assert.NotNil(t, processor)
-	assert.Equal(t, filter, processor.filter)
-	assert.NotNil(t, processor.logger)
+	assert.NotNil(t, expander)
+	assert.Equal(t, filter, expander.filter)
+	assert.NotNil(t, expander.logger)
 }
 
-func TestCommandEnvProcessor_Process(t *testing.T) {
+func TestVariableExpander_ExpandCommandEnv(t *testing.T) {
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
 			EnvAllowlist: []string{"PATH", "HOME", "USER"},
 		},
 	}
-	filter := NewFilter(config)
-	processor := NewCommandEnvProcessor(filter)
+	filter := NewFilter(config.Global.EnvAllowlist)
+	expander := NewVariableExpander(filter)
 
 	tests := []struct {
 		name         string
 		cmd          runnertypes.Command
-		baseEnvVars  map[string]string
 		group        *runnertypes.CommandGroup
 		expectedVars map[string]string
 		expectError  bool
@@ -47,30 +46,20 @@ func TestCommandEnvProcessor_Process(t *testing.T) {
 				Name: "test_cmd",
 				Env:  []string{"FOO=bar", "BAZ=qux"},
 			},
-			baseEnvVars: map[string]string{
-				"PATH": "/usr/bin",
-				"HOME": "/home/user",
-			},
 			group: &runnertypes.CommandGroup{
 				Name:         "test_group",
 				EnvAllowlist: []string{"PATH", "HOME"},
 			},
 			expectedVars: map[string]string{
-				"PATH": "/usr/bin",
-				"HOME": "/home/user",
-				"FOO":  "bar",
-				"BAZ":  "qux",
+				"FOO": "bar",
+				"BAZ": "qux",
 			},
 		},
 		{
-			name: "override base environment variables",
+			name: "process command env variables with expansion",
 			cmd: runnertypes.Command{
 				Name: "test_cmd",
 				Env:  []string{"PATH=/custom/path", "NEW_VAR=value"},
-			},
-			baseEnvVars: map[string]string{
-				"PATH": "/usr/bin",
-				"HOME": "/home/user",
 			},
 			group: &runnertypes.CommandGroup{
 				Name:         "test_group",
@@ -78,18 +67,14 @@ func TestCommandEnvProcessor_Process(t *testing.T) {
 			},
 			expectedVars: map[string]string{
 				"PATH":    "/custom/path",
-				"HOME":    "/home/user",
 				"NEW_VAR": "value",
 			},
 		},
 		{
-			name: "skip invalid environment variable format",
+			name: "reject invalid environment variable format",
 			cmd: runnertypes.Command{
 				Name: "test_cmd",
 				Env:  []string{"VALID=value", "INVALID_NO_EQUALS", "ANOTHER=valid"},
-			},
-			baseEnvVars: map[string]string{
-				"PATH": "/usr/bin",
 			},
 			group: &runnertypes.CommandGroup{
 				Name:         "test_group",
@@ -104,9 +89,6 @@ func TestCommandEnvProcessor_Process(t *testing.T) {
 				Name: "test_cmd",
 				Env:  []string{"DANGEROUS=value; rm -rf /"},
 			},
-			baseEnvVars: map[string]string{
-				"PATH": "/usr/bin",
-			},
 			group: &runnertypes.CommandGroup{
 				Name:         "test_group",
 				EnvAllowlist: []string{"PATH"},
@@ -120,9 +102,6 @@ func TestCommandEnvProcessor_Process(t *testing.T) {
 				Name: "test_cmd",
 				Env:  []string{"123INVALID=value"},
 			},
-			baseEnvVars: map[string]string{
-				"PATH": "/usr/bin",
-			},
 			group: &runnertypes.CommandGroup{
 				Name:         "test_group",
 				EnvAllowlist: []string{"PATH"},
@@ -134,7 +113,7 @@ func TestCommandEnvProcessor_Process(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := processor.Process(tt.cmd, tt.baseEnvVars, tt.group)
+			result, err := expander.ExpandCommandEnv(&tt.cmd, tt.group.Name, tt.group.EnvAllowlist)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -148,14 +127,14 @@ func TestCommandEnvProcessor_Process(t *testing.T) {
 	}
 }
 
-func TestCommandEnvProcessor_ResolveVariableReferences(t *testing.T) {
+func TestVariableExpander_ResolveVariableReferences(t *testing.T) {
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
 			EnvAllowlist: []string{"PATH", "HOME", "USER"},
 		},
 	}
-	filter := NewFilter(config)
-	processor := NewCommandEnvProcessor(filter)
+	filter := NewFilter(config.Global.EnvAllowlist)
+	expander := NewVariableExpander(filter)
 
 	// Set up test environment variables
 	t.Setenv("PATH", "/usr/bin:/bin")
@@ -314,7 +293,7 @@ func TestCommandEnvProcessor_ResolveVariableReferences(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := processor.Expand(tt.value, tt.envVars, tt.group.EnvAllowlist, tt.group.Name, make(map[string]bool))
+			result, err := expander.ExpandString(tt.value, tt.envVars, tt.group.EnvAllowlist, tt.group.Name, make(map[string]bool))
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -328,14 +307,14 @@ func TestCommandEnvProcessor_ResolveVariableReferences(t *testing.T) {
 	}
 }
 
-func TestCommandEnvProcessor_ResolveVariableReferences_CircularReferences(t *testing.T) {
+func TestVariableExpander_ResolveVariableReferences_CircularReferences(t *testing.T) {
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
 			EnvAllowlist: []string{"CIRCULAR_VAR", "VAR1", "VAR2", "VAR3"},
 		},
 	}
-	filter := NewFilter(config)
-	processor := NewCommandEnvProcessor(filter)
+	filter := NewFilter(config.Global.EnvAllowlist)
+	expander := NewVariableExpander(filter)
 
 	tests := []struct {
 		name           string
@@ -399,7 +378,7 @@ func TestCommandEnvProcessor_ResolveVariableReferences_CircularReferences(t *tes
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := processor.Expand(tt.value, tt.envVars, tt.group.EnvAllowlist, tt.group.Name, make(map[string]bool))
+			result, err := expander.ExpandString(tt.value, tt.envVars, tt.group.EnvAllowlist, tt.group.Name, make(map[string]bool))
 
 			if tt.expectError {
 				assert.Error(t, err, "Expected error for case: %s", tt.description)
@@ -412,7 +391,7 @@ func TestCommandEnvProcessor_ResolveVariableReferences_CircularReferences(t *tes
 	}
 }
 
-func TestCommandEnvProcessor_ValidateBasicEnvVariable(t *testing.T) {
+func TestVariableExpander_ValidateBasicEnvVariable(t *testing.T) {
 	tests := []struct {
 		name        string
 		varName     string
@@ -462,14 +441,14 @@ func TestCommandEnvProcessor_ValidateBasicEnvVariable(t *testing.T) {
 	}
 }
 
-func TestCommandEnvProcessor_InheritanceModeIntegration(t *testing.T) {
+func TestVariableExpander_InheritanceModeIntegration(t *testing.T) {
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
 			EnvAllowlist: []string{"GLOBAL_VAR"},
 		},
 	}
-	filter := NewFilter(config)
-	processor := NewCommandEnvProcessor(filter)
+	filter := NewFilter(config.Global.EnvAllowlist)
+	expander := NewVariableExpander(filter)
 
 	// Set up system environment
 	t.Setenv("GLOBAL_VAR", "global_value")
@@ -479,7 +458,6 @@ func TestCommandEnvProcessor_InheritanceModeIntegration(t *testing.T) {
 		name        string
 		group       *runnertypes.CommandGroup
 		cmd         runnertypes.Command
-		baseEnvVars map[string]string
 		expectError bool
 		description string
 	}{
@@ -493,7 +471,6 @@ func TestCommandEnvProcessor_InheritanceModeIntegration(t *testing.T) {
 				Name: "test_cmd",
 				Env:  []string{"TEST_VAR=${GLOBAL_VAR}"},
 			},
-			baseEnvVars: map[string]string{},
 			expectError: false,
 			description: "Should be able to reference GLOBAL_VAR in inherit mode",
 		},
@@ -507,7 +484,6 @@ func TestCommandEnvProcessor_InheritanceModeIntegration(t *testing.T) {
 				Name: "test_cmd",
 				Env:  []string{"TEST_VAR=${GLOBAL_VAR}"},
 			},
-			baseEnvVars: map[string]string{},
 			expectError: true,
 			description: "Should not be able to reference GLOBAL_VAR in explicit mode",
 		},
@@ -521,7 +497,6 @@ func TestCommandEnvProcessor_InheritanceModeIntegration(t *testing.T) {
 				Name: "test_cmd",
 				Env:  []string{"TEST_VAR=${GLOBAL_VAR}"},
 			},
-			baseEnvVars: map[string]string{},
 			expectError: true,
 			description: "Should not be able to reference any system variables in reject mode",
 		},
@@ -529,7 +504,7 @@ func TestCommandEnvProcessor_InheritanceModeIntegration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := processor.Process(tt.cmd, tt.baseEnvVars, tt.group)
+			_, err := expander.ExpandCommandEnv(&tt.cmd, tt.group.Name, tt.group.EnvAllowlist)
 
 			if tt.expectError {
 				assert.Error(t, err, tt.description)
@@ -540,15 +515,15 @@ func TestCommandEnvProcessor_InheritanceModeIntegration(t *testing.T) {
 	}
 }
 
-// TestCommandEnvProcessor_EscapeSequences tests escape sequence handling
-func TestCommandEnvProcessor_EscapeSequences(t *testing.T) {
+// TestVariableExpander_EscapeSequences tests escape sequence handling
+func TestVariableExpander_EscapeSequences(t *testing.T) {
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
 			EnvAllowlist: []string{"FOO", "BAR", "ESCAPED_VAR"},
 		},
 	}
-	filter := NewFilter(config)
-	processor := NewCommandEnvProcessor(filter)
+	filter := NewFilter(config.Global.EnvAllowlist)
+	expander := NewVariableExpander(filter)
 
 	tests := []struct {
 		name        string
@@ -667,7 +642,7 @@ func TestCommandEnvProcessor_EscapeSequences(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := processor.Expand(tt.value, tt.envVars, tt.group.EnvAllowlist, tt.group.Name, make(map[string]bool))
+			result, err := expander.ExpandString(tt.value, tt.envVars, tt.group.EnvAllowlist, tt.group.Name, make(map[string]bool))
 
 			if tt.expectError {
 				assert.Error(t, err)

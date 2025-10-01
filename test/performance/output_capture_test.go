@@ -17,6 +17,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -36,10 +37,9 @@ func TestLargeOutputMemoryUsage(t *testing.T) {
 		Args:   []string{"-c", "yes 'A' | head -c 10240"}, // 10KB of data
 		Output: outputPath,
 	}
+	runnertypes.PrepareCommand(&cmd)
 
-	group := &runnertypes.CommandGroup{
-		Name: "test_group",
-	}
+	group := &runnertypes.CommandGroup{Name: "test_group"}
 
 	// Create necessary components for ResourceManager
 	fs := common.NewDefaultFileSystem()
@@ -114,11 +114,9 @@ func TestOutputSizeLimit(t *testing.T) {
 		Args:   []string{"-c", "yes 'A' | head -c 2048"}, // 2KB of data
 		Output: outputPath,
 	}
+	runnertypes.PrepareCommand(&cmd)
 
-	group := &runnertypes.CommandGroup{
-		Name:    "test_group",
-		WorkDir: tempDir,
-	}
+	group := &runnertypes.CommandGroup{Name: "test_group", WorkDir: tempDir}
 
 	// Create necessary components for ResourceManager with output capture
 	fs := common.NewDefaultFileSystem()
@@ -182,10 +180,9 @@ func TestConcurrentExecution(t *testing.T) {
 				Args:   []string{fmt.Sprintf("Output from command %d", index)},
 				Output: filepath.Join(tempDir, fmt.Sprintf("output_%d.txt", index)),
 			}
+			runnertypes.PrepareCommand(&cmd)
 
-			group := &runnertypes.CommandGroup{
-				Name: "test_group",
-			}
+			group := &runnertypes.CommandGroup{Name: "test_group"}
 
 			ctx := context.Background()
 			_, err := manager.ExecuteCommand(ctx, cmd, group, map[string]string{})
@@ -235,12 +232,11 @@ func TestLongRunningStability(t *testing.T) {
 		Cmd:     "sh",
 		Args:    []string{"-c", "for i in $(seq 1 10); do echo \"Line $i\"; sleep 0.1; done"},
 		Output:  outputPath,
-		Timeout: 30, // 30 seconds timeout
+		Timeout: 30,
 	}
+	runnertypes.PrepareCommand(&cmd)
 
-	group := &runnertypes.CommandGroup{
-		Name: "test_group",
-	}
+	group := &runnertypes.CommandGroup{Name: "test_group"}
 
 	// Create necessary components for ResourceManager
 	fs := common.NewDefaultFileSystem()
@@ -304,6 +300,7 @@ func BenchmarkOutputCapture(b *testing.B) {
 				Args:   []string{"small output"},
 				Output: outputPath,
 			}
+			runnertypes.PrepareCommand(&cmd)
 
 			group := &runnertypes.CommandGroup{
 				Name: "bench_group",
@@ -328,6 +325,7 @@ func BenchmarkOutputCapture(b *testing.B) {
 				Args:   []string{largeData},
 				Output: outputPath,
 			}
+			runnertypes.PrepareCommand(&cmd)
 
 			group := &runnertypes.CommandGroup{
 				Name: "bench_group",
@@ -373,6 +371,7 @@ func TestMemoryLeakDetection(t *testing.T) {
 			Args:   []string{fmt.Sprintf("Test output %d", i)},
 			Output: outputPath,
 		}
+		runnertypes.PrepareCommand(&cmd)
 
 		group := &runnertypes.CommandGroup{
 			Name: "leak_test_group",

@@ -97,7 +97,7 @@ func TestValidateFileHash(t *testing.T) {
 
 	t.Run("testSkipHashValidation should skip validation", func(t *testing.T) {
 		nonExistentFile := filepath.Join(tmpDir, "non_existent")
-		config := NewTestConfigWithSkipHashValidation()
+		config := NewSkipHashValidationTestConfig()
 
 		err := validateFileHash(nonExistentFile, tmpDir, config)
 		assert.NoError(t, err, "hash validation should be skipped when testSkipHashValidation is true")

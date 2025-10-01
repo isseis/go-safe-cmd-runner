@@ -26,12 +26,12 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 		)
 
 		cmd := runnertypes.Command{
-			Name:       "test_user_group",
 			Cmd:        "/bin/echo",
 			Args:       []string{"test"},
 			RunAsUser:  "testuser",
 			RunAsGroup: "testgroup",
 		}
+		runnertypes.PrepareCommand(&cmd)
 
 		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
@@ -50,7 +50,6 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 		)
 
 		cmd := runnertypes.Command{
-			Name:       "test_user_group",
 			Cmd:        "/bin/echo",
 			Args:       []string{"test"},
 			RunAsUser:  "testuser",
@@ -72,7 +71,6 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 		)
 
 		cmd := runnertypes.Command{
-			Name:       "test_user_group",
 			Cmd:        "echo",
 			Args:       []string{"test"},
 			RunAsUser:  "testuser",
@@ -94,12 +92,12 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 		)
 
 		cmd := runnertypes.Command{
-			Name:       "test_user_group",
 			Cmd:        "/bin/echo",
 			Args:       []string{"test"},
 			RunAsUser:  "invaliduser",
 			RunAsGroup: "invalidgroup",
 		}
+		runnertypes.PrepareCommand(&cmd)
 
 		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
@@ -116,12 +114,12 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 		)
 
 		cmd := runnertypes.Command{
-			Name:      "test_user_only",
 			Cmd:       "/bin/echo",
 			Args:      []string{"test"},
 			RunAsUser: "testuser",
 			// RunAsGroup is empty
 		}
+		runnertypes.PrepareCommand(&cmd)
 
 		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
@@ -141,12 +139,12 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 		)
 
 		cmd := runnertypes.Command{
-			Name:       "test_group_only",
 			Cmd:        "/bin/echo",
 			Args:       []string{"test"},
 			RunAsGroup: "testgroup",
 			// RunAsUser is empty
 		}
+		runnertypes.PrepareCommand(&cmd)
 
 		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
@@ -169,12 +167,12 @@ func TestDefaultExecutor_Execute_Integration(t *testing.T) {
 		)
 
 		cmd := runnertypes.Command{
-			Name:       "test_both",
 			Cmd:        "/bin/echo",
 			Args:       []string{"test"},
 			RunAsUser:  "testuser", // But user/group specified
 			RunAsGroup: "testgroup",
 		}
+		runnertypes.PrepareCommand(&cmd)
 
 		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
@@ -195,11 +193,11 @@ func TestDefaultExecutor_Execute_Integration(t *testing.T) {
 		)
 
 		cmd := runnertypes.Command{
-			Name: "test_normal",
 			Cmd:  "echo",
 			Args: []string{"test"},
 			// No privileged, no user/group
 		}
+		runnertypes.PrepareCommand(&cmd)
 
 		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
@@ -223,7 +221,6 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 		{
 			name: "valid absolute path works for user/group command",
 			cmd: runnertypes.Command{
-				Name:       "test_absolute_path",
 				Cmd:        "/bin/echo", // Absolute path
 				Args:       []string{"test"},
 				RunAsUser:  "testuser",
@@ -234,7 +231,6 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 		{
 			name: "relative working directory fails for user/group command",
 			cmd: runnertypes.Command{
-				Name:       "test_relative_dir",
 				Cmd:        "/bin/echo",
 				Args:       []string{"test"},
 				Dir:        "tmp", // Relative working directory
@@ -247,7 +243,6 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 		{
 			name: "absolute working directory works for user/group command",
 			cmd: runnertypes.Command{
-				Name:       "test_absolute_dir",
 				Cmd:        "/bin/echo",
 				Args:       []string{"test"},
 				Dir:        "/tmp", // Absolute working directory
@@ -259,7 +254,6 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 		{
 			name: "path with relative components fails in standard validation",
 			cmd: runnertypes.Command{
-				Name:       "test_path_with_dots",
 				Cmd:        "/bin/../bin/echo", // Absolute path but contains relative path components
 				Args:       []string{"test"},
 				RunAsUser:  "testuser",
@@ -287,6 +281,9 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 
 			ctx := context.Background()
 			envVars := map[string]string{"PATH": "/usr/bin"}
+
+			// Prepare command to set ExpandedCmd and ExpandedArgs
+			runnertypes.PrepareCommand(&tt.cmd)
 
 			_, err := exec.Execute(ctx, tt.cmd, envVars, nil)
 
@@ -325,6 +322,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging(t *testing.T) {
 			RunAsUser:  "testuser",
 			RunAsGroup: "testgroup",
 		}
+		runnertypes.PrepareCommand(&cmd)
 
 		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
@@ -356,6 +354,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging(t *testing.T) {
 			RunAsUser:  "testuser",
 			RunAsGroup: "testgroup",
 		}
+		runnertypes.PrepareCommand(&cmd)
 
 		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
@@ -377,12 +376,12 @@ func TestDefaultExecutor_UserGroupPrivilegeElevationFailure(t *testing.T) {
 	)
 
 	cmd := runnertypes.Command{
-		Name:       "test_fail",
 		Cmd:        "/bin/echo", // Use absolute path to pass validation
 		Args:       []string{"test"},
 		RunAsUser:  "root", // Use run_as_user instead of privileged=true
 		RunAsGroup: "wheel",
 	}
+	runnertypes.PrepareCommand(&cmd)
 
 	ctx := context.Background()
 	envVars := map[string]string{"PATH": "/usr/bin"}
@@ -403,11 +402,11 @@ func TestDefaultExecutor_UserGroupBackwardCompatibility(t *testing.T) {
 	)
 
 	cmd := runnertypes.Command{
-		Name: "test_normal",
 		Cmd:  "echo",
 		Args: []string{"normal"},
 		// No run_as_user/run_as_group specified - normal command
 	}
+	runnertypes.PrepareCommand(&cmd)
 
 	ctx := context.Background()
 	envVars := map[string]string{"PATH": "/usr/bin"}
@@ -436,7 +435,6 @@ func TestDefaultExecutor_UserGroupRootExecution(t *testing.T) {
 		{
 			name: "root user command executes with elevation",
 			cmd: runnertypes.Command{
-				Name:      "test_root",
 				Cmd:       "/usr/bin/whoami",
 				Args:      []string{},
 				RunAsUser: "root",
@@ -449,7 +447,6 @@ func TestDefaultExecutor_UserGroupRootExecution(t *testing.T) {
 		{
 			name: "root user command fails when not supported",
 			cmd: runnertypes.Command{
-				Name:      "test_root_unsupported",
 				Cmd:       "/usr/bin/whoami",
 				Args:      []string{},
 				RunAsUser: "root",
@@ -463,7 +460,6 @@ func TestDefaultExecutor_UserGroupRootExecution(t *testing.T) {
 		{
 			name: "root user command fails with no manager",
 			cmd: runnertypes.Command{
-				Name:      "test_root_no_manager",
 				Cmd:       "/usr/bin/whoami",
 				Args:      []string{},
 				RunAsUser: "root",
@@ -477,7 +473,6 @@ func TestDefaultExecutor_UserGroupRootExecution(t *testing.T) {
 		{
 			name: "normal command bypasses privilege manager",
 			cmd: runnertypes.Command{
-				Name: "test_normal",
 				Cmd:  "/bin/echo",
 				Args: []string{"test"},
 				// No run_as_user specified
@@ -508,6 +503,9 @@ func TestDefaultExecutor_UserGroupRootExecution(t *testing.T) {
 
 			ctx := context.Background()
 			envVars := map[string]string{"PATH": "/usr/bin"}
+
+			// Prepare command to set ExpandedCmd and ExpandedArgs
+			runnertypes.PrepareCommand(&tt.cmd)
 
 			result, err := exec.Execute(ctx, tt.cmd, envVars, nil)
 

@@ -97,7 +97,7 @@ func TestAnalyzeCommandSecurity_Integration(t *testing.T) {
 			opts := &AnalysisOptions{
 				SkipStandardPaths: skipStandardPaths,
 				HashDir:           "",
-				Config:            NewTestConfigWithSkipHashValidation(),
+				Config:            NewSkipHashValidationTestConfig(),
 			}
 			risk, pattern, reason, err := AnalyzeCommandSecurity(cmdPath, tc.args, opts)
 

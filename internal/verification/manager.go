@@ -272,11 +272,11 @@ func (m *Manager) collectVerificationFiles(groupConfig *runnertypes.CommandGroup
 	// Add command files
 	if m.pathResolver != nil {
 		for _, command := range groupConfig.Commands {
-			resolvedPath, err := m.pathResolver.ResolvePath(command.Cmd)
+			resolvedPath, err := m.pathResolver.ResolvePath(command.ExpandedCmd)
 			if err != nil {
 				slog.Warn("Failed to resolve command path",
 					"group", groupConfig.Name,
-					"command", command.Cmd,
+					"command", command.ExpandedCmd,
 					"error", err.Error())
 				continue
 			}

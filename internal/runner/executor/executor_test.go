@@ -37,8 +37,8 @@ func TestExecute_Success(t *testing.T) {
 			name: "command with working directory",
 			cmd: runnertypes.Command{
 				Cmd:  "pwd",
-				Dir:  ".",
 				Args: []string{},
+				Dir:  ".",
 			},
 			env:              nil,
 			wantErr:          false,
@@ -66,6 +66,7 @@ func TestExecute_Success(t *testing.T) {
 				ExistingPaths: make(map[string]bool),
 			}
 
+			runnertypes.PrepareCommand(&tt.cmd)
 			// Set up directory existence for working directory tests
 			if tt.cmd.Dir != "" {
 				fileSystem.ExistingPaths[tt.cmd.Dir] = true
@@ -155,6 +156,7 @@ func TestExecute_Failure(t *testing.T) {
 				ExistingPaths: make(map[string]bool),
 			}
 
+			runnertypes.PrepareCommand(&tt.cmd)
 			// Set up directory existence for working directory tests
 			if tt.cmd.Dir != "" {
 				fileSystem.ExistingPaths[tt.cmd.Dir] = true
@@ -214,6 +216,7 @@ func TestExecute_ContextCancellation(t *testing.T) {
 	// Cancel the context immediately
 	cancel()
 
+	runnertypes.PrepareCommand(&cmd)
 	result, err := e.Execute(ctx, cmd, map[string]string{}, &executor.MockOutputWriter{})
 
 	// Should get an error due to context cancellation
@@ -240,6 +243,7 @@ func TestExecute_EnvironmentVariables(t *testing.T) {
 		Cmd:  "printenv",
 		Args: []string{},
 	}
+	runnertypes.PrepareCommand(&cmd)
 
 	// Only provide filtered variables through envVars parameter
 	envVars := map[string]string{
@@ -268,7 +272,8 @@ func TestValidate(t *testing.T) {
 		{
 			name: "empty command",
 			cmd: runnertypes.Command{
-				Cmd: "",
+				Cmd:  "",
+				Args: []string{},
 			},
 			wantErr: true,
 		},
@@ -283,8 +288,9 @@ func TestValidate(t *testing.T) {
 		{
 			name: "invalid directory",
 			cmd: runnertypes.Command{
-				Cmd: "ls",
-				Dir: "/nonexistent/directory",
+				Cmd:  "ls",
+				Args: []string{},
+				Dir:  "/nonexistent/directory",
 			},
 			wantErr: true,
 		},
@@ -296,6 +302,7 @@ func TestValidate(t *testing.T) {
 				ExistingPaths: make(map[string]bool),
 			}
 
+			runnertypes.PrepareCommand(&tt.cmd)
 			// Set up directory existence based on test case
 			if tt.cmd.Dir != "" {
 				// For non-empty Dir, configure whether it exists

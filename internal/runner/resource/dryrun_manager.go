@@ -141,7 +141,7 @@ func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd runnerty
 	d.RecordAnalysis(&analysis)
 
 	// Generate simulated output
-	stdout := fmt.Sprintf("[DRY-RUN] Would execute: %s", cmd.Cmd)
+	stdout := fmt.Sprintf("[DRY-RUN] Would execute: %s", cmd.ExpandedCmd)
 	if cmd.Dir != "" {
 		stdout += fmt.Sprintf(" (in directory: %s)", cmd.Dir)
 	}
@@ -164,16 +164,16 @@ func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd runnertype
 	analysis := ResourceAnalysis{
 		Type:      ResourceTypeCommand,
 		Operation: OperationExecute,
-		Target:    cmd.Cmd,
+		Target:    cmd.ExpandedCmd,
 		Parameters: map[string]any{
-			"command":           cmd.Cmd,
+			"command":           cmd.ExpandedCmd,
 			"working_directory": cmd.Dir,
 			"timeout":           cmd.Timeout,
 		},
 		Impact: ResourceImpact{
 			Reversible:  false, // Commands are generally not reversible
 			Persistent:  true,  // Command effects are generally persistent
-			Description: fmt.Sprintf("Execute command: %s", cmd.Cmd),
+			Description: fmt.Sprintf("Execute command: %s", cmd.ExpandedCmd),
 		},
 		Timestamp: time.Now(),
 	}
@@ -205,7 +205,7 @@ func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd runnertype
 			executionCtx := runnertypes.ElevationContext{
 				Operation:   runnertypes.OperationUserGroupDryRun,
 				CommandName: cmd.Name,
-				FilePath:    cmd.Cmd,
+				FilePath:    cmd.ExpandedCmd,
 				RunAsUser:   cmd.RunAsUser,
 				RunAsGroup:  cmd.RunAsGroup,
 			}
@@ -232,9 +232,9 @@ func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd runnertype
 // using the configuration stored in the DryRunResourceManager.
 func (d *DryRunResourceManager) analyzeCommandSecurity(cmd runnertypes.Command, analysis *ResourceAnalysis) error {
 	// PathResolver is guaranteed to be non-nil due to constructor validation
-	resolvedPath, err := d.pathResolver.ResolvePath(cmd.Cmd)
+	resolvedPath, err := d.pathResolver.ResolvePath(cmd.ExpandedCmd)
 	if err != nil {
-		return fmt.Errorf("failed to resolve command path '%s': %w. This typically occurs if the command is not found in the system PATH or there are permission issues preventing access", cmd.Cmd, err)
+		return fmt.Errorf("failed to resolve command path '%s': %w. This typically occurs if the command is not found in the system PATH or there are permission issues preventing access", cmd.ExpandedCmd, err)
 	}
 
 	// Analyze security with resolved path using cached validator
@@ -242,9 +242,9 @@ func (d *DryRunResourceManager) analyzeCommandSecurity(cmd runnertypes.Command, 
 		SkipStandardPaths: d.dryRunOptions.SkipStandardPaths,
 		HashDir:           d.dryRunOptions.HashDir,
 	}
-	riskLevel, pattern, reason, err := security.AnalyzeCommandSecurity(resolvedPath, cmd.Args, opts)
+	riskLevel, pattern, reason, err := security.AnalyzeCommandSecurity(resolvedPath, cmd.ExpandedArgs, opts)
 	if err != nil {
-		return fmt.Errorf("security analysis failed for command '%s': %w", cmd.Cmd, err)
+		return fmt.Errorf("security analysis failed for command '%s': %w", cmd.ExpandedCmd, err)
 	}
 	if riskLevel != runnertypes.RiskLevelUnknown {
 		analysis.Impact.SecurityRisk = riskLevel.String()
@@ -366,7 +366,7 @@ func (d *DryRunResourceManager) analyzeOutput(cmd runnertypes.Command, group *ru
 		Target:    cmd.Output,
 		Parameters: map[string]any{
 			"output_path":       cmd.Output,
-			"command":           cmd.Cmd,
+			"command":           cmd.ExpandedCmd,
 			"working_directory": group.WorkDir,
 		},
 		Impact: ResourceImpact{

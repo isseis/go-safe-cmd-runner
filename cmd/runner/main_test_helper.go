@@ -56,8 +56,8 @@ func runForTestWithTempHashDir(runID string) error {
 		}
 	}
 
-	// Phase 2: Verify and load configuration atomically (to prevent TOCTOU attacks)
-	cfg, err := bootstrap.LoadConfig(verificationManager, *configPath, runID)
+	// Phase 2: Load and prepare configuration (verify, parse, and expand variables)
+	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, *configPath, runID)
 	if err != nil {
 		return err
 	}
@@ -103,7 +103,7 @@ func runForTestWithCustomHashDir(hashDir string) (error, error) {
 		return nil, err
 	}
 
-	// Try to load config (will fail without config file, but tests manager creation)
-	_, configErr := bootstrap.LoadConfig(verificationManager, *configPath, "test-run-id")
+	// Try to load and prepare config (will fail without config file, but tests manager creation)
+	_, configErr := bootstrap.LoadAndPrepareConfig(verificationManager, *configPath, "test-run-id")
 	return configErr, nil
 }

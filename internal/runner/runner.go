@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"sort"
 	"time"
 
@@ -197,7 +198,7 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 	}
 
 	// Create environment filter
-	envFilter := environment.NewFilter(config)
+	envFilter := environment.NewFilter(config.Global.EnvAllowlist)
 
 	// Create default ResourceManager if not provided
 	if opts.resourceManager == nil {
@@ -506,13 +507,19 @@ func (r *Runner) executeCommandInGroup(ctx context.Context, cmd runnertypes.Comm
 
 	// Resolve and validate command path if verification manager is available
 	if r.verificationManager != nil {
-		resolvedPath, err := r.verificationManager.ResolvePath(cmd.Cmd)
+		// Use ExpandedCmd if available, fallback to original Cmd
+		cmdToResolve := cmd.ExpandedCmd
+		if cmdToResolve == "" {
+			cmdToResolve = cmd.Cmd
+		}
+
+		resolvedPath, err := r.verificationManager.ResolvePath(cmdToResolve)
 		if err != nil {
 			return nil, fmt.Errorf("command path resolution failed: %w", err)
 		}
 
-		// Update the command path
-		cmd.Cmd = resolvedPath
+		// Update the expanded command path (don't modify original)
+		cmd.ExpandedCmd = resolvedPath
 	}
 
 	// Set working directory from global config if not specified
@@ -541,9 +548,10 @@ func (r *Runner) executeCommandInGroup(ctx context.Context, cmd runnertypes.Comm
 	}, nil
 }
 
-// resolveEnvironmentVars resolves environment variables for a command with group context
+// resolveEnvironmentVars resolves environment variables for a command with group context.
+// This merges system environment variables (filtered by allowlist) with pre-expanded Command.Env.
 func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, group *runnertypes.CommandGroup) (map[string]string, error) {
-	// Step 1: Resolve system and .env file variables with allowlist filtering
+	// Step 1: Filter system environment variables with allowlist
 	systemEnvVars, err := r.envFilter.ResolveGroupEnvironmentVars(group, r.envVars)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve group environment variables: %w", err)
@@ -553,16 +561,17 @@ func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, group *runnerty
 		"group", group.Name,
 		"system_vars_count", len(systemEnvVars))
 
-	// Step 2: Process Command.Env variables without allowlist checks
-	processor := environment.NewCommandEnvProcessor(r.envFilter)
-	finalEnvVars, err := processor.Process(cmd, systemEnvVars, group)
-	if err != nil {
-		return nil, fmt.Errorf("failed to process command environment variables: %w", err)
-	}
+	// Step 2: Merge system environment with pre-expanded Command.Env
+	// Command.Env should be pre-expanded during config loading (Phase 1)
+	finalEnvVars := make(map[string]string)
+	maps.Copy(finalEnvVars, systemEnvVars)
+	maps.Copy(finalEnvVars, cmd.ExpandedEnv)
 
-	slog.Debug("Processed command environment variables",
+	slog.Debug("Merged environment variables",
 		"command", cmd.Name,
 		"group", group.Name,
+		"system_vars_count", len(systemEnvVars),
+		"command_env_count", len(cmd.ExpandedEnv),
 		"final_vars_count", len(finalEnvVars))
 
 	return finalEnvVars, nil

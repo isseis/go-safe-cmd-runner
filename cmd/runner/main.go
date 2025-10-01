@@ -109,8 +109,8 @@ func run(runID string) error {
 		}
 	}
 
-	// Phase 3: Verify and load configuration atomically (to prevent TOCTOU attacks)
-	cfg, err := bootstrap.LoadConfig(verificationManager, *configPath, runID)
+	// Phase 3: Load and prepare configuration (verify, parse, and expand variables)
+	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, *configPath, runID)
 	if err != nil {
 		return err
 	}

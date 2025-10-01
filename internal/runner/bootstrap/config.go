@@ -6,12 +6,32 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 )
 
-// LoadConfig performs atomic verification and loading to prevent TOCTOU attacks
-func LoadConfig(verificationManager *verification.Manager, configPath, runID string) (*runnertypes.Config, error) {
+// LoadAndPrepareConfig loads a configuration file and prepares it for execution.
+//
+// This function performs the following steps:
+//  1. Verifies the configuration file's hash (TOCTOU protection)
+//  2. Reads and parses the TOML configuration
+//  3. Expands variables in command strings (${VAR} syntax in cmd/args fields)
+//     and expands per-command environment variables (Command.Env -> Command.ExpandedEnv).
+//
+// The returned Config is ready for execution with all command strings expanded.
+// The loader sets Command.ExpandedCmd, Command.ExpandedArgs and Command.ExpandedEnv
+// while leaving the original source values available on the command for auditing/debugging.
+//
+// Parameters:
+//   - verificationManager: Manager for secure file verification
+//   - configPath: Path to the configuration file
+//   - runID: Unique identifier for this execution run
+//
+// Returns:
+//   - *Config: Prepared configuration ready for command execution
+//   - error: Any error during verification, loading, parsing, or expansion
+func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath, runID string) (*runnertypes.Config, error) {
 	if configPath == "" {
 		return nil, &logging.PreExecutionError{
 			Type:      logging.ErrorTypeRequiredArgumentMissing,
@@ -43,6 +63,31 @@ func LoadConfig(verificationManager *verification.Manager, configPath, runID str
 			Message:   fmt.Sprintf("Failed to parse config from verified content: %v", err),
 			Component: "config",
 			RunID:     runID,
+		}
+	}
+
+	// Expand variables in Cmd, Args and Env fields and fills them into ExpandedCmd, ExpandedArgs and ExpandedEnv
+	// in-place on cfg.Groups.
+	filter := environment.NewFilter(cfg.Global.EnvAllowlist)
+	expander := environment.NewVariableExpander(filter)
+	for i := range cfg.Groups {
+		group := &cfg.Groups[i]
+		for j := range group.Commands {
+			cmd := &group.Commands[j]
+
+			// Expand Command.Cmd, Args, and Env for each command and store in ExpandedCmd, ExpandedArgs, and ExpandedEnv
+			expandedCmd, expandedArgs, expandedEnv, err := config.ExpandCommand(cmd, expander, group.EnvAllowlist, group.Name)
+			if err != nil {
+				return nil, &logging.PreExecutionError{
+					Type:      logging.ErrorTypeConfigParsing,
+					Message:   fmt.Sprintf("Failed to expand command strings for command %s: %v", cmd.Name, err),
+					Component: "config",
+					RunID:     runID,
+				}
+			}
+			cmd.ExpandedCmd = expandedCmd
+			cmd.ExpandedArgs = expandedArgs
+			cmd.ExpandedEnv = expandedEnv
 		}
 	}
 

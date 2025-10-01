@@ -115,13 +115,13 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd runnerty
 	if effectiveRisk > maxAllowedRisk {
 		n.logger.Error("Command execution rejected due to risk level violation",
 			"command", cmd.Name,
-			"cmd_binary", cmd.Cmd,
+			"cmd_binary", cmd.ExpandedCmd,
 			"effective_risk", effectiveRisk.String(),
 			"max_allowed_risk", maxAllowedRisk.String(),
 			"command_path", group.Name,
 		)
 		return nil, fmt.Errorf("%w: command %s (effective risk: %s) exceeds maximum allowed risk level (%s)",
-			runnertypes.ErrCommandSecurityViolation, cmd.Cmd, effectiveRisk.String(), maxAllowedRisk.String())
+			runnertypes.ErrCommandSecurityViolation, cmd.ExpandedCmd, effectiveRisk.String(), maxAllowedRisk.String())
 	}
 
 	// Check if output capture is requested and delegate to executeCommandWithOutput

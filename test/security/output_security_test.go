@@ -15,6 +15,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -74,6 +75,7 @@ func TestPathTraversalAttack(t *testing.T) {
 				Args:   []string{"test output"},
 				Output: tc.outputPath,
 			}
+			runnertypes.PrepareCommand(&cmd)
 
 			group := &runnertypes.CommandGroup{
 				Name: "security_test_group",
@@ -130,6 +132,7 @@ func TestSymlinkAttack(t *testing.T) {
 		Args:   []string{"malicious content"},
 		Output: symlinkPath,
 	}
+	runnertypes.PrepareCommand(&cmd)
 
 	group := &runnertypes.CommandGroup{
 		Name: "security_test_group",
@@ -205,6 +208,7 @@ func TestPrivilegeEscalationAttack(t *testing.T) {
 				Args:   []string{"test output"},
 				Output: tc.outputPath,
 			}
+			runnertypes.PrepareCommand(&cmd)
 
 			group := &runnertypes.CommandGroup{
 				Name: "security_test_group",
@@ -258,6 +262,7 @@ func TestDiskSpaceExhaustionAttack(t *testing.T) {
 		Args:   []string{"-c", "yes 'A' | head -c " + strconv.Itoa(largeSize)},
 		Output: outputPath,
 	}
+	runnertypes.PrepareCommand(&cmd)
 
 	group := &runnertypes.CommandGroup{
 		Name: "security_test_group",
@@ -303,6 +308,7 @@ func TestFilePermissionValidation(t *testing.T) {
 		Args:   []string{"test output"},
 		Output: outputPath,
 	}
+	runnertypes.PrepareCommand(&cmd)
 
 	group := &runnertypes.CommandGroup{
 		Name: "security_test_group",
@@ -365,6 +371,7 @@ func TestConcurrentSecurityValidation(t *testing.T) {
 				Args:   []string{"concurrent test output"},
 				Output: outputPath,
 			}
+			runnertypes.PrepareCommand(&cmd)
 
 			group := &runnertypes.CommandGroup{
 				Name: "security_test_group",
@@ -428,6 +435,7 @@ func TestSecurityValidatorIntegration(t *testing.T) {
 				Args:   []string{"test output"},
 				Output: tc.outputPath,
 			}
+			runnertypes.PrepareCommand(&cmd)
 
 			group := &runnertypes.CommandGroup{
 				Name: "security_test_group",
@@ -488,6 +496,7 @@ func TestRaceConditionPrevention(t *testing.T) {
 				Args:   []string{fmt.Sprintf("content from goroutine %d", index)},
 				Output: outputPath,
 			}
+			runnertypes.PrepareCommand(&cmd)
 
 			group := &runnertypes.CommandGroup{
 				Name: "security_test_group",

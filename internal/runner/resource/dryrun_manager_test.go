@@ -294,6 +294,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 			Cmd:  "setuid-chmod",
 			Args: []string{"777", "/tmp/test"}, // This would normally be medium risk
 		}
+		runnertypes.PrepareCommand(&cmd)
 
 		ctx := context.Background()
 		group := createTestCommandGroup()
@@ -312,6 +313,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 			ctx := context.Background()
 			group := createTestCommandGroup()
 			env := map[string]string{}
+			runnertypes.PrepareCommand(&tt.cmd)
 
 			result, err := manager.ExecuteCommand(ctx, tt.cmd, group, env)
 
@@ -360,6 +362,7 @@ func TestDryRunResourceManager_PathResolutionFailure(t *testing.T) {
 		Cmd:  "nonexistent-cmd",
 		Args: []string{"arg1"},
 	}
+	runnertypes.PrepareCommand(&cmd)
 	group := createTestCommandGroup()
 	env := map[string]string{}
 	ctx := context.Background()

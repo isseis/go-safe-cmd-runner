@@ -107,7 +107,7 @@ func createTestNormalResourceManager() (*NormalResourceManager, *executortesting
 }
 
 func createTestCommand() runnertypes.Command {
-	return runnertypes.Command{
+	cmd := runnertypes.Command{
 		Name:        "test-command",
 		Description: "Test command description",
 		Cmd:         "echo",
@@ -115,6 +115,8 @@ func createTestCommand() runnertypes.Command {
 		Dir:         "/tmp",
 		Timeout:     30,
 	}
+	runnertypes.PrepareCommand(&cmd)
+	return cmd
 }
 
 func createTestCommandGroup() *runnertypes.CommandGroup {
@@ -195,6 +197,7 @@ func TestNormalResourceManager_ExecuteCommand_PrivilegeEscalationBlocked(t *test
 				Timeout:      30,
 				MaxRiskLevel: "low", // Default max risk level to ensure Critical risk is blocked
 			}
+			runnertypes.PrepareCommand(&cmd)
 			group := createTestCommandGroup()
 			env := map[string]string{"TEST": "value"}
 			ctx := context.Background()
@@ -288,6 +291,7 @@ func TestNormalResourceManager_ExecuteCommand_MaxRiskLevelControl(t *testing.T) 
 				Dir:          "/tmp",
 				Timeout:      30,
 			}
+			runnertypes.PrepareCommand(&cmd)
 
 			if tc.shouldExecute {
 				expectedResult := &executor.Result{

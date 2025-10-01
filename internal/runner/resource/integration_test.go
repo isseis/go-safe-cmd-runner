@@ -92,6 +92,7 @@ func TestDryRunExecutionPath(t *testing.T) {
 			require.NotNil(t, dryRunManager) // Execute commands in dry-run mode
 			for _, cmd := range tt.commands {
 				group := tt.groups[0] // Use first group for simplicity
+				runnertypes.PrepareCommand(&cmd)
 				result, err := dryRunManager.ExecuteCommand(ctx, cmd, group, tt.envVars)
 
 				// Verify that dry-run execution doesn't produce errors

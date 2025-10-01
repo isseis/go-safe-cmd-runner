@@ -36,6 +36,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 			RunAsUser:  "testuser",
 			RunAsGroup: "testgroup",
 		}
+		runnertypes.PrepareCommand(&cmd)
 
 		group := &runnertypes.CommandGroup{
 			Name:        "test_group",

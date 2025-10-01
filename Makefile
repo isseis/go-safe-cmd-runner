@@ -245,4 +245,7 @@ slack-group-notification-test: $(BINARY_RUNNER)
 	exit $$EXIT_CODE
 
 performance-test:
-	$(ENVSET) $(GOTEST) -tags performance -v ./internal/filevalidator/encoding/
+	$(ENVSET) $(GOTEST) -tags performance -v ./test/performance/
+
+security-test:
+	$(ENVTEST) $(GOTEST) -tags test -v ./test/security/

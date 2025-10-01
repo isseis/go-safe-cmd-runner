@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
 
 // Config represents the root configuration structure
@@ -54,6 +56,24 @@ type Command struct {
 	RunAsGroup   string   `toml:"run_as_group"`   // Group to execute command as (using setegid)
 	MaxRiskLevel string   `toml:"max_risk_level"` // Maximum allowed risk level (low, medium, high)
 	Output       string   `toml:"output"`         // Standard output file path for capture
+
+	// ExpandedCmd contains the command path with environment variable substitutions applied.
+	// It is the expanded version of the Cmd field, populated during configuration loading
+	// (Phase 1) and used during command execution (Phase 2) to avoid re-expanding Command.Cmd
+	// for each execution. The toml:"-" tag prevents this field from being set via TOML configuration.
+	ExpandedCmd string `toml:"-"`
+
+	// ExpandedArgs contains the command arguments with environment variable substitutions applied.
+	// It is the expanded version of the Args field, populated during configuration loading
+	// (Phase 1) and used during command execution (Phase 2) to avoid re-expanding Command.Args
+	// for each execution. The toml:"-" tag prevents this field from being set via TOML configuration.
+	ExpandedArgs []string `toml:"-"`
+
+	// ExpandedEnv contains the environment variables with all variable substitutions applied.
+	// It is the expanded version of the Env field, populated during configuration loading
+	// (Phase 1) and used during command execution (Phase 2) to avoid re-expanding Command.Env
+	// for each execution. The toml:"-" tag prevents this field from being set via TOML configuration.
+	ExpandedEnv map[string]string `toml:"-"`
 }
 
 // GetMaxRiskLevel returns the parsed maximum risk level for this command
@@ -64,6 +84,25 @@ func (c *Command) GetMaxRiskLevel() (RiskLevel, error) {
 // HasUserGroupSpecification returns true if either run_as_user or run_as_group is specified
 func (c *Command) HasUserGroupSpecification() bool {
 	return c.RunAsUser != "" || c.RunAsGroup != ""
+}
+
+// BuildEnvironmentMap builds a map of environment variables from the command's Env slice.
+// This is used for variable expansion processing.
+func (c *Command) BuildEnvironmentMap() (map[string]string, error) {
+	env := make(map[string]string)
+
+	for _, envVar := range c.Env {
+		key, value, ok := common.ParseEnvVariable(envVar)
+		if !ok {
+			return nil, fmt.Errorf("%w: %s", ErrInvalidEnvironmentVariableFormat, envVar)
+		}
+		if _, exists := env[key]; exists {
+			return nil, fmt.Errorf("%w: %s", ErrDuplicateEnvironmentVariable, key)
+		}
+		env[key] = value
+	}
+
+	return env, nil
 }
 
 // InheritanceMode represents how environment allowlist inheritance works
@@ -221,11 +260,13 @@ type ElevationContext struct {
 
 // Standard privilege errors
 var (
-	ErrPrivilegedExecutionNotAvailable = fmt.Errorf("privileged execution not available: binary lacks required SUID bit or running as non-root user")
-	ErrInvalidRiskLevel                = errors.New("invalid risk level")
-	ErrPrivilegeEscalationBlocked      = errors.New("privilege escalation command blocked for security")
-	ErrCriticalRiskBlocked             = errors.New("critical risk command execution blocked")
-	ErrCommandSecurityViolation        = errors.New("command security violation: risk level too high")
+	ErrPrivilegedExecutionNotAvailable  = fmt.Errorf("privileged execution not available: binary lacks required SUID bit or running as non-root user")
+	ErrInvalidRiskLevel                 = errors.New("invalid risk level")
+	ErrPrivilegeEscalationBlocked       = errors.New("privilege escalation command blocked for security")
+	ErrCriticalRiskBlocked              = errors.New("critical risk command execution blocked")
+	ErrCommandSecurityViolation         = errors.New("command security violation: risk level too high")
+	ErrInvalidEnvironmentVariableFormat = errors.New("invalid environment variable format")
+	ErrDuplicateEnvironmentVariable     = errors.New("duplicate environment variable")
 )
 
 // PrivilegeManager interface defines methods for privilege management

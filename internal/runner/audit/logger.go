@@ -57,6 +57,8 @@ func (l *Logger) LogUserGroupExecution(
 		slog.String("command_name", cmd.Name),
 		slog.String("command_path", cmd.Cmd),
 		slog.String("command_args", strings.Join(cmd.Args, " ")),
+		slog.String("expanded_command_path", cmd.ExpandedCmd),
+		slog.String("expanded_command_args", strings.Join(cmd.ExpandedArgs, " ")),
 		slog.Int("exit_code", result.ExitCode),
 		slog.Int64("execution_duration_ms", duration.Milliseconds()),
 		slog.Int("user_id", os.Getuid()),
