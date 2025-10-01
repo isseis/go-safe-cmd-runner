@@ -13,6 +13,12 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
+const (
+	// maxVarNamePrefixLength is the maximum length of variable name prefix shown in error messages
+	// for unclosed variable references. Longer names are truncated with "..." suffix.
+	maxVarNamePrefixLength = 20
+)
+
 var (
 	// ErrCircularReference is returned when a circular variable reference is detected.
 	ErrCircularReference = errors.New("circular variable reference detected")
@@ -151,12 +157,12 @@ func (p *VariableExpander) ExpandString(value string, envVars map[string]string,
 		"visited_count", len(visited))
 
 	var result strings.Builder
-	runes := []rune(value)
+	inputChars := []rune(value)
 	i := 0
-	for i < len(runes) {
-		switch runes[i] {
+	for i < len(inputChars) {
+		switch inputChars[i] {
 		case '\\':
-			nextIdx, err := p.handleEscapeSequence(runes, i, &result)
+			nextIdx, err := p.handleEscapeSequence(inputChars, i, &result)
 			if err != nil {
 				p.logger.Error("Escape sequence processing failed",
 					"position", i,
@@ -165,7 +171,7 @@ func (p *VariableExpander) ExpandString(value string, envVars map[string]string,
 			}
 			i = nextIdx
 		case '$':
-			nextIdx, err := p.handleVariableExpansion(runes, i, envVars, allowlist, groupName, visited, &result)
+			nextIdx, err := p.handleVariableExpansion(inputChars, i, envVars, allowlist, groupName, visited, &result)
 			if err != nil {
 				p.logger.Error("Variable expansion failed",
 					"position", i,
@@ -174,7 +180,7 @@ func (p *VariableExpander) ExpandString(value string, envVars map[string]string,
 			}
 			i = nextIdx
 		default:
-			result.WriteRune(runes[i])
+			result.WriteRune(inputChars[i])
 			i++
 		}
 	}
@@ -187,11 +193,11 @@ func (p *VariableExpander) ExpandString(value string, envVars map[string]string,
 }
 
 // handleEscapeSequence processes escape sequences like \$ and \\
-func (p *VariableExpander) handleEscapeSequence(runes []rune, i int, result *strings.Builder) (int, error) {
-	if i+1 >= len(runes) {
+func (p *VariableExpander) handleEscapeSequence(inputChars []rune, i int, result *strings.Builder) (int, error) {
+	if i+1 >= len(inputChars) {
 		return 0, fmt.Errorf("%w at position %d (trailing backslash)", ErrInvalidEscapeSequence, i)
 	}
-	nextChar := runes[i+1]
+	nextChar := inputChars[i+1]
 	if nextChar == '$' || nextChar == '\\' {
 		p.logger.Debug("Processed escape sequence",
 			"position", i,
@@ -205,31 +211,33 @@ func (p *VariableExpander) handleEscapeSequence(runes []rune, i int, result *str
 }
 
 // handleVariableExpansion processes variable expansion like ${VAR}
-func (p *VariableExpander) handleVariableExpansion(runes []rune, i int, envVars map[string]string, allowlist []string, groupName string, visited map[string]bool, result *strings.Builder) (int, error) {
+func (p *VariableExpander) handleVariableExpansion(inputChars []rune, i int, envVars map[string]string, allowlist []string, groupName string, visited map[string]bool, result *strings.Builder) (int, error) {
 	// Strict validation: $ must be followed by {VAR} format
-	if i+1 >= len(runes) || runes[i+1] != '{' {
+	if i+1 >= len(inputChars) || inputChars[i+1] != '{' {
 		return 0, fmt.Errorf("%w at position %d", ErrInvalidVariableFormat, i)
 	}
 
 	// Find the closing brace
 	start := i + 2 //nolint:mnd // Skip past the opening "${" sequence
 	end := -1
-	for j := start; j < len(runes); j++ {
-		if runes[j] == '}' {
+	for j := start; j < len(inputChars); j++ {
+		if inputChars[j] == '}' {
 			end = j
 			break
 		}
 	}
 	if end == -1 {
-		varNamePrefix := string(runes[start:min(start+20, len(runes))]) //nolint:mnd // Show first 20 chars for context
-		if len(runes)-start > 20 {                                      //nolint:mnd // Truncate if too long
-			varNamePrefix += "..."
+		var varNamePrefix string
+		if len(inputChars)-start > maxVarNamePrefixLength {
+			varNamePrefix = string(inputChars[start:start+maxVarNamePrefixLength]) + "..."
+		} else {
+			varNamePrefix = string(inputChars[start:])
 		}
 		return 0, fmt.Errorf("%w at position %d: ${%s", ErrUnclosedVariable, i, varNamePrefix)
 	}
 
 	// Extract and validate variable name
-	varName := string(runes[start:end])
+	varName := string(inputChars[start:end])
 	if err := security.ValidateVariableName(varName); err != nil {
 		return 0, fmt.Errorf("%w at position %d: %s: %w", ErrInvalidVariableName, i, varName, err)
 	}
