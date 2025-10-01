@@ -7,7 +7,6 @@ import (
 
 	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
-	"github.com/isseis/go-safe-cmd-runner/internal/testhelpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -295,7 +294,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 			Cmd:  "setuid-chmod",
 			Args: []string{"777", "/tmp/test"}, // This would normally be medium risk
 		}
-		testhelpers.PrepareCommand(&cmd)
+		runnertypes.PrepareCommand(&cmd)
 
 		ctx := context.Background()
 		group := createTestCommandGroup()
@@ -314,7 +313,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 			ctx := context.Background()
 			group := createTestCommandGroup()
 			env := map[string]string{}
-			testhelpers.PrepareCommand(&tt.cmd)
+			runnertypes.PrepareCommand(&tt.cmd)
 
 			result, err := manager.ExecuteCommand(ctx, tt.cmd, group, env)
 
@@ -363,7 +362,7 @@ func TestDryRunResourceManager_PathResolutionFailure(t *testing.T) {
 		Cmd:  "nonexistent-cmd",
 		Args: []string{"arg1"},
 	}
-	testhelpers.PrepareCommand(&cmd)
+	runnertypes.PrepareCommand(&cmd)
 	group := createTestCommandGroup()
 	env := map[string]string{}
 	ctx := context.Background()

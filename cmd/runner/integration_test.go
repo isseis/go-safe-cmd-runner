@@ -17,7 +17,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/terminal"
-	"github.com/isseis/go-safe-cmd-runner/internal/testhelpers"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -705,7 +704,7 @@ func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			testhelpers.PrepareCommand(&tc.cmd)
+			runnertypes.PrepareCommand(&tc.cmd)
 
 			// Import required packages for mocks
 			// Note: Using the same mock setup pattern as existing tests

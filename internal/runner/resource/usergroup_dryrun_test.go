@@ -9,7 +9,6 @@ import (
 	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testing"
 	privilegetesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
-	"github.com/isseis/go-safe-cmd-runner/internal/testhelpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -37,7 +36,7 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 			RunAsUser:  "testuser",
 			RunAsGroup: "testgroup",
 		}
-		testhelpers.PrepareCommand(&cmd)
+		runnertypes.PrepareCommand(&cmd)
 
 		group := &runnertypes.CommandGroup{
 			Name:        "test_group",

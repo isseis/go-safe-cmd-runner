@@ -15,7 +15,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
-	"github.com/isseis/go-safe-cmd-runner/internal/testhelpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -924,7 +923,7 @@ func TestRunner_CommandTimeoutBehavior(t *testing.T) {
 		Cmd:  "sleep",
 		Args: []string{"5"}, // Sleep for 5 seconds, longer than timeout
 	}
-	testhelpers.PrepareCommand(&sleepCmd)
+	runnertypes.PrepareCommand(&sleepCmd)
 
 	config := &runnertypes.Config{
 		Global: runnertypes.GlobalConfig{
@@ -969,7 +968,7 @@ func TestRunner_CommandTimeoutBehavior(t *testing.T) {
 			Args:    []string{"5"}, // Sleep for 5 seconds
 			Timeout: 1,             // But timeout after 1 second
 		}
-		testhelpers.PrepareCommand(&shortTimeoutCmd)
+		runnertypes.PrepareCommand(&shortTimeoutCmd)
 
 		configWithCmdTimeout := &runnertypes.Config{
 			Global: runnertypes.GlobalConfig{

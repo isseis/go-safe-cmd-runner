@@ -12,7 +12,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	privilegetesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
-	"github.com/isseis/go-safe-cmd-runner/internal/testhelpers"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -32,7 +31,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 			RunAsUser:  "testuser",
 			RunAsGroup: "testgroup",
 		}
-		testhelpers.PrepareCommand(&cmd)
+		runnertypes.PrepareCommand(&cmd)
 
 		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
@@ -98,7 +97,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 			RunAsUser:  "invaliduser",
 			RunAsGroup: "invalidgroup",
 		}
-		testhelpers.PrepareCommand(&cmd)
+		runnertypes.PrepareCommand(&cmd)
 
 		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
@@ -120,7 +119,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 			RunAsUser: "testuser",
 			// RunAsGroup is empty
 		}
-		testhelpers.PrepareCommand(&cmd)
+		runnertypes.PrepareCommand(&cmd)
 
 		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
@@ -145,7 +144,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 			RunAsGroup: "testgroup",
 			// RunAsUser is empty
 		}
-		testhelpers.PrepareCommand(&cmd)
+		runnertypes.PrepareCommand(&cmd)
 
 		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
@@ -173,7 +172,7 @@ func TestDefaultExecutor_Execute_Integration(t *testing.T) {
 			RunAsUser:  "testuser", // But user/group specified
 			RunAsGroup: "testgroup",
 		}
-		testhelpers.PrepareCommand(&cmd)
+		runnertypes.PrepareCommand(&cmd)
 
 		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
@@ -198,7 +197,7 @@ func TestDefaultExecutor_Execute_Integration(t *testing.T) {
 			Args: []string{"test"},
 			// No privileged, no user/group
 		}
-		testhelpers.PrepareCommand(&cmd)
+		runnertypes.PrepareCommand(&cmd)
 
 		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
@@ -284,7 +283,7 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 			envVars := map[string]string{"PATH": "/usr/bin"}
 
 			// Prepare command to set ExpandedCmd and ExpandedArgs
-			testhelpers.PrepareCommand(&tt.cmd)
+			runnertypes.PrepareCommand(&tt.cmd)
 
 			_, err := exec.Execute(ctx, tt.cmd, envVars, nil)
 
@@ -323,7 +322,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging(t *testing.T) {
 			RunAsUser:  "testuser",
 			RunAsGroup: "testgroup",
 		}
-		testhelpers.PrepareCommand(&cmd)
+		runnertypes.PrepareCommand(&cmd)
 
 		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
@@ -355,7 +354,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging(t *testing.T) {
 			RunAsUser:  "testuser",
 			RunAsGroup: "testgroup",
 		}
-		testhelpers.PrepareCommand(&cmd)
+		runnertypes.PrepareCommand(&cmd)
 
 		result, err := exec.Execute(context.Background(), cmd, map[string]string{}, nil)
 
@@ -382,7 +381,7 @@ func TestDefaultExecutor_UserGroupPrivilegeElevationFailure(t *testing.T) {
 		RunAsUser:  "root", // Use run_as_user instead of privileged=true
 		RunAsGroup: "wheel",
 	}
-	testhelpers.PrepareCommand(&cmd)
+	runnertypes.PrepareCommand(&cmd)
 
 	ctx := context.Background()
 	envVars := map[string]string{"PATH": "/usr/bin"}
@@ -407,7 +406,7 @@ func TestDefaultExecutor_UserGroupBackwardCompatibility(t *testing.T) {
 		Args: []string{"normal"},
 		// No run_as_user/run_as_group specified - normal command
 	}
-	testhelpers.PrepareCommand(&cmd)
+	runnertypes.PrepareCommand(&cmd)
 
 	ctx := context.Background()
 	envVars := map[string]string{"PATH": "/usr/bin"}
@@ -506,7 +505,7 @@ func TestDefaultExecutor_UserGroupRootExecution(t *testing.T) {
 			envVars := map[string]string{"PATH": "/usr/bin"}
 
 			// Prepare command to set ExpandedCmd and ExpandedArgs
-			testhelpers.PrepareCommand(&tt.cmd)
+			runnertypes.PrepareCommand(&tt.cmd)
 
 			result, err := exec.Execute(ctx, tt.cmd, envVars, nil)
 

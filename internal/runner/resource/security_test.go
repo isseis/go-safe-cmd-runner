@@ -6,7 +6,6 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
-	"github.com/isseis/go-safe-cmd-runner/internal/testhelpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -97,7 +96,7 @@ func TestSecurityAnalysis(t *testing.T) {
 			}
 
 			// Execute the command
-			testhelpers.PrepareCommand(&tt.command)
+			runnertypes.PrepareCommand(&tt.command)
 			result, err := manager.ExecuteCommand(ctx, tt.command, group, envVars)
 			assert.NoError(t, err)
 			assert.NotNil(t, result)
@@ -193,7 +192,7 @@ func TestPrivilegeEscalationDetection(t *testing.T) {
 			}
 
 			// Execute the command
-			testhelpers.PrepareCommand(&tt.command)
+			runnertypes.PrepareCommand(&tt.command)
 			_, err = manager.ExecuteCommand(ctx, tt.command, group, envVars)
 			assert.NoError(t, err)
 
@@ -329,7 +328,7 @@ func TestSecurityAnalysisIntegration(t *testing.T) {
 
 	var analyses []ResourceAnalysis
 	for _, cmd := range commands {
-		testhelpers.PrepareCommand(&cmd)
+		runnertypes.PrepareCommand(&cmd)
 		_, err := manager.ExecuteCommand(ctx, cmd, group, map[string]string{})
 		assert.NoError(t, err)
 

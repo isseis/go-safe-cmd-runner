@@ -7,7 +7,6 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
-	"github.com/isseis/go-safe-cmd-runner/internal/testhelpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -67,7 +66,7 @@ func TestExecute_Success(t *testing.T) {
 				ExistingPaths: make(map[string]bool),
 			}
 
-			testhelpers.PrepareCommand(&tt.cmd)
+			runnertypes.PrepareCommand(&tt.cmd)
 			// Set up directory existence for working directory tests
 			if tt.cmd.Dir != "" {
 				fileSystem.ExistingPaths[tt.cmd.Dir] = true
@@ -157,7 +156,7 @@ func TestExecute_Failure(t *testing.T) {
 				ExistingPaths: make(map[string]bool),
 			}
 
-			testhelpers.PrepareCommand(&tt.cmd)
+			runnertypes.PrepareCommand(&tt.cmd)
 			// Set up directory existence for working directory tests
 			if tt.cmd.Dir != "" {
 				fileSystem.ExistingPaths[tt.cmd.Dir] = true
@@ -217,7 +216,7 @@ func TestExecute_ContextCancellation(t *testing.T) {
 	// Cancel the context immediately
 	cancel()
 
-	testhelpers.PrepareCommand(&cmd)
+	runnertypes.PrepareCommand(&cmd)
 	result, err := e.Execute(ctx, cmd, map[string]string{}, &executor.MockOutputWriter{})
 
 	// Should get an error due to context cancellation
@@ -244,7 +243,7 @@ func TestExecute_EnvironmentVariables(t *testing.T) {
 		Cmd:  "printenv",
 		Args: []string{},
 	}
-	testhelpers.PrepareCommand(&cmd)
+	runnertypes.PrepareCommand(&cmd)
 
 	// Only provide filtered variables through envVars parameter
 	envVars := map[string]string{
@@ -303,7 +302,7 @@ func TestValidate(t *testing.T) {
 				ExistingPaths: make(map[string]bool),
 			}
 
-			testhelpers.PrepareCommand(&tt.cmd)
+			runnertypes.PrepareCommand(&tt.cmd)
 			// Set up directory existence based on test case
 			if tt.cmd.Dir != "" {
 				// For non-empty Dir, configure whether it exists

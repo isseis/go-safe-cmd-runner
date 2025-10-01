@@ -1,12 +1,11 @@
-// Package testhelpers provides common helper functions for tests
-package testhelpers
+//go:build test
 
-import "github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+package runnertypes
 
 // PrepareCommand takes an existing Command and ensures ExpandedCmd and ExpandedArgs
 // are set from Cmd and Args. This is useful when you need to set other fields
 // manually but still want the expanded fields populated.
-func PrepareCommand(cmd *runnertypes.Command) {
+func PrepareCommand(cmd *Command) {
 	if cmd.Name == "" {
 		cmd.Name = "test-cmd"
 	}
