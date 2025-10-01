@@ -57,22 +57,22 @@ type Command struct {
 	MaxRiskLevel string   `toml:"max_risk_level"` // Maximum allowed risk level (low, medium, high)
 	Output       string   `toml:"output"`         // Standard output file path for capture
 
-	// ExpandedCmd contains pre-expanded command from the Cmd field.
-	// This is populated during configuration loading (Phase 1) and used during
-	// command execution (Phase 2) to avoid re-expanding Command.Cmd for each execution.
-	// The toml:"-" tag prevents this field from being set via TOML configuration.
+	// ExpandedCmd contains the command path with environment variable substitutions applied.
+	// It is the expanded version of the Cmd field, populated during configuration loading
+	// (Phase 1) and used during command execution (Phase 2) to avoid re-expanding Command.Cmd
+	// for each execution. The toml:"-" tag prevents this field from being set via TOML configuration.
 	ExpandedCmd string `toml:"-"`
 
-	// ExpandedArgs contains pre-expanded arguments from the Args field.
-	// This is populated during configuration loading (Phase 1) and used during
-	// command execution (Phase 2) to avoid re-expanding Command.Args for each execution.
-	// The toml:"-" tag prevents this field from being set via TOML configuration.
+	// ExpandedArgs contains the command arguments with environment variable substitutions applied.
+	// It is the expanded version of the Args field, populated during configuration loading
+	// (Phase 1) and used during command execution (Phase 2) to avoid re-expanding Command.Args
+	// for each execution. The toml:"-" tag prevents this field from being set via TOML configuration.
 	ExpandedArgs []string `toml:"-"`
 
-	// ExpandedEnv contains pre-expanded environment variables from the Env field.
-	// This is populated during configuration loading (Phase 1) and used during
-	// command execution (Phase 2) to avoid re-expanding Command.Env for each execution.
-	// The toml:"-" tag prevents this field from being set via TOML configuration.
+	// ExpandedEnv contains the environment variables with all variable substitutions applied.
+	// It is the expanded version of the Env field, populated during configuration loading
+	// (Phase 1) and used during command execution (Phase 2) to avoid re-expanding Command.Env
+	// for each execution. The toml:"-" tag prevents this field from being set via TOML configuration.
 	ExpandedEnv map[string]string `toml:"-"`
 }
 
