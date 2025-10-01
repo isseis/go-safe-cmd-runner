@@ -70,13 +70,12 @@ func TestPathTraversalAttack(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			cmd := runnertypes.Command{
-				Name:         "path_traversal_test",
-				Cmd:          "echo",
-				ExpandedCmd:  "echo",
-				Args:         []string{"test output"},
-				ExpandedArgs: []string{"test output"},
-				Output:       tc.outputPath,
+				Name:   "path_traversal_test",
+				Cmd:    "echo",
+				Args:   []string{"test output"},
+				Output: tc.outputPath,
 			}
+			runnertypes.PrepareCommand(&cmd)
 
 			group := &runnertypes.CommandGroup{
 				Name: "security_test_group",
@@ -128,13 +127,12 @@ func TestSymlinkAttack(t *testing.T) {
 	require.NoError(t, err)
 
 	cmd := runnertypes.Command{
-		Name:         "symlink_attack_test",
-		Cmd:          "echo",
-		ExpandedCmd:  "echo",
-		Args:         []string{"malicious content"},
-		ExpandedArgs: []string{"malicious content"},
-		Output:       symlinkPath,
+		Name:   "symlink_attack_test",
+		Cmd:    "echo",
+		Args:   []string{"malicious content"},
+		Output: symlinkPath,
 	}
+	runnertypes.PrepareCommand(&cmd)
 
 	group := &runnertypes.CommandGroup{
 		Name: "security_test_group",
@@ -205,13 +203,12 @@ func TestPrivilegeEscalationAttack(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			cmd := runnertypes.Command{
-				Name:         "privilege_escalation_test",
-				Cmd:          "echo",
-				ExpandedCmd:  "echo",
-				Args:         []string{"test output"},
-				ExpandedArgs: []string{"test output"},
-				Output:       tc.outputPath,
+				Name:   "privilege_escalation_test",
+				Cmd:    "echo",
+				Args:   []string{"test output"},
+				Output: tc.outputPath,
 			}
+			runnertypes.PrepareCommand(&cmd)
 
 			group := &runnertypes.CommandGroup{
 				Name: "security_test_group",
@@ -260,13 +257,12 @@ func TestDiskSpaceExhaustionAttack(t *testing.T) {
 	// Create command that attempts to generate very large output
 	largeSize := 100 * 1024 * 1024 // 100MB
 	cmd := runnertypes.Command{
-		Name:         "disk_exhaustion_test",
-		Cmd:          "sh",
-		ExpandedCmd:  "sh",
-		Args:         []string{"-c", "yes 'A' | head -c " + strconv.Itoa(largeSize)},
-		ExpandedArgs: []string{"-c", "yes 'A' | head -c " + strconv.Itoa(largeSize)},
-		Output:       outputPath,
+		Name:   "disk_exhaustion_test",
+		Cmd:    "sh",
+		Args:   []string{"-c", "yes 'A' | head -c " + strconv.Itoa(largeSize)},
+		Output: outputPath,
 	}
+	runnertypes.PrepareCommand(&cmd)
 
 	group := &runnertypes.CommandGroup{
 		Name: "security_test_group",
@@ -307,13 +303,12 @@ func TestFilePermissionValidation(t *testing.T) {
 	outputPath := filepath.Join(tempDir, "permission_test.txt")
 
 	cmd := runnertypes.Command{
-		Name:         "permission_test",
-		Cmd:          "echo",
-		ExpandedCmd:  "echo",
-		Args:         []string{"test output"},
-		ExpandedArgs: []string{"test output"},
-		Output:       outputPath,
+		Name:   "permission_test",
+		Cmd:    "echo",
+		Args:   []string{"test output"},
+		Output: outputPath,
 	}
+	runnertypes.PrepareCommand(&cmd)
 
 	group := &runnertypes.CommandGroup{
 		Name: "security_test_group",
@@ -371,13 +366,12 @@ func TestConcurrentSecurityValidation(t *testing.T) {
 			outputPath := filepath.Join(tempDir, fmt.Sprintf("concurrent_test_%d.txt", index))
 
 			cmd := runnertypes.Command{
-				Name:         "concurrent_security_test",
-				Cmd:          "echo",
-				ExpandedCmd:  "echo",
-				Args:         []string{"concurrent test output"},
-				ExpandedArgs: []string{"concurrent test output"},
-				Output:       outputPath,
+				Name:   "concurrent_security_test",
+				Cmd:    "echo",
+				Args:   []string{"concurrent test output"},
+				Output: outputPath,
 			}
+			runnertypes.PrepareCommand(&cmd)
 
 			group := &runnertypes.CommandGroup{
 				Name: "security_test_group",
@@ -436,13 +430,12 @@ func TestSecurityValidatorIntegration(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			cmd := runnertypes.Command{
-				Name:         "security_integration_test",
-				Cmd:          "echo",
-				ExpandedCmd:  "echo",
-				Args:         []string{"test output"},
-				ExpandedArgs: []string{"test output"},
-				Output:       tc.outputPath,
+				Name:   "security_integration_test",
+				Cmd:    "echo",
+				Args:   []string{"test output"},
+				Output: tc.outputPath,
 			}
+			runnertypes.PrepareCommand(&cmd)
 
 			group := &runnertypes.CommandGroup{
 				Name: "security_test_group",
@@ -498,13 +491,12 @@ func TestRaceConditionPrevention(t *testing.T) {
 	for i := 0; i < numGoroutines; i++ {
 		go func(index int) {
 			cmd := runnertypes.Command{
-				Name:         "race_condition_test",
-				Cmd:          "echo",
-				ExpandedCmd:  "echo",
-				Args:         []string{fmt.Sprintf("content from goroutine %d", index)},
-				ExpandedArgs: []string{fmt.Sprintf("content from goroutine %d", index)},
-				Output:       outputPath,
+				Name:   "race_condition_test",
+				Cmd:    "echo",
+				Args:   []string{fmt.Sprintf("content from goroutine %d", index)},
+				Output: outputPath,
 			}
+			runnertypes.PrepareCommand(&cmd)
 
 			group := &runnertypes.CommandGroup{
 				Name: "security_test_group",
