@@ -510,6 +510,155 @@ func TestSecurityIntegration(t *testing.T) {
 	}
 }
 
+// TestSecurityAttackPrevention tests various security attack scenarios
+// to ensure the variable expansion feature is resistant to common attacks.
+func TestSecurityAttackPrevention(t *testing.T) {
+	tests := []struct {
+		name            string
+		cmd             runnertypes.Command
+		globalAllowlist []string
+		groupAllowlist  []string
+		expectError     bool
+		errorContains   string
+		description     string
+	}{
+		{
+			name: "Command injection via variable expansion",
+			cmd: runnertypes.Command{
+				Name: "test",
+				Cmd:  "echo",
+				Args: []string{"${MALICIOUS}"},
+				Env:  []string{"MALICIOUS=foo; rm -rf /"},
+			},
+			globalAllowlist: []string{},
+			expectError:     true,
+			errorContains:   "unsafe",
+			description:     "Variables containing shell metacharacters should be rejected",
+		},
+		{
+			name: "Path traversal attack via variable",
+			cmd: runnertypes.Command{
+				Name: "test",
+				Cmd:  "${TRAVERSAL_PATH}/cat",
+				Args: []string{"/etc/passwd"},
+				Env:  []string{"TRAVERSAL_PATH=../../bin"},
+			},
+			globalAllowlist: []string{},
+			expectError:     false,
+			description:     "Path traversal is validated at command execution, not during expansion",
+		},
+		{
+			name: "Multiple variable with dangerous content",
+			cmd: runnertypes.Command{
+				Name: "test",
+				Cmd:  "${BIN}",
+				Args: []string{"${ARG1}", "${ARG2}"},
+				Env:  []string{"BIN=/bin/sh", "ARG1=-c", "ARG2=rm -rf /"},
+			},
+			globalAllowlist: []string{},
+			expectError:     true,
+			errorContains:   "unsafe",
+			description:     "Variables with dangerous content should be rejected during validation",
+		},
+		{
+			name: "Environment variable with suspicious patterns",
+			cmd: runnertypes.Command{
+				Name: "test",
+				Cmd:  "echo",
+				Args: []string{"${SUSPICIOUS}"},
+				Env:  []string{"SUSPICIOUS=`whoami`"},
+			},
+			globalAllowlist: []string{},
+			expectError:     true,
+			errorContains:   "unsafe",
+			description:     "Command substitution patterns should be rejected",
+		},
+		{
+			name: "Null byte in variable value",
+			cmd: runnertypes.Command{
+				Name: "test",
+				Cmd:  "echo",
+				Args: []string{"${NULL_BYTE}"},
+				Env:  []string{"NULL_BYTE=safe\x00malicious"},
+			},
+			globalAllowlist: []string{},
+			expectError:     false,
+			description:     "Null bytes are handled by Go strings, not explicitly rejected",
+		},
+		{
+			name: "Allowlist bypass attempt using similar variable names",
+			cmd: runnertypes.Command{
+				Name: "test",
+				Cmd:  "echo",
+				Args: []string{"${SAFE_VAR1}"},
+				Env:  []string{},
+			},
+			globalAllowlist: []string{"SAFE_VAR"},
+			expectError:     true,
+			errorContains:   "not found",
+			description:     "Non-matching variable names are rejected as not found",
+		},
+		{
+			name: "Safe variable with special characters in value",
+			cmd: runnertypes.Command{
+				Name: "test",
+				Cmd:  "echo",
+				Args: []string{"${SAFE}"},
+				Env:  []string{"SAFE=/path/to/file-v1.0.txt"},
+			},
+			globalAllowlist: []string{},
+			expectError:     false,
+			description:     "Legitimate special characters in paths should be allowed",
+		},
+		{
+			name: "Double expansion attempt",
+			cmd: runnertypes.Command{
+				Name: "test",
+				Cmd:  "echo",
+				Args: []string{"${DOUBLE}"},
+				Env:  []string{"DOUBLE=${INNER}", "INNER=safe_value"},
+			},
+			globalAllowlist: []string{},
+			expectError:     false,
+			description:     "Nested variable expansion should work correctly",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create test configuration
+			cfg := &runnertypes.Config{
+				Global: runnertypes.GlobalConfig{
+					EnvAllowlist: tt.globalAllowlist,
+				},
+			}
+
+			// Create filter and expander
+			filter := environment.NewFilter(cfg.Global.EnvAllowlist)
+			expander := environment.NewVariableExpander(filter)
+
+			// Use group allowlist if specified, otherwise global
+			allowlist := tt.globalAllowlist
+			if len(tt.groupAllowlist) > 0 {
+				allowlist = tt.groupAllowlist
+			}
+
+			// Test expansion
+			_, _, _, err := config.ExpandCommand(&tt.cmd, expander, allowlist, "test-group")
+
+			if tt.expectError {
+				require.Error(t, err, "Expected error for: %s", tt.description)
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains,
+						"Error should contain '%s' for: %s", tt.errorContains, tt.description)
+				}
+			} else {
+				require.NoError(t, err, "Should not error for: %s", tt.description)
+			}
+		})
+	}
+}
+
 // BenchmarkVariableExpansion benchmarks the variable expansion performance
 // for different scenarios to ensure performance requirements are met.
 func BenchmarkVariableExpansion(b *testing.B) {
