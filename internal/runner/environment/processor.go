@@ -35,18 +35,21 @@ type VariableExpander struct {
 
 // NewVariableExpander creates a new VariableExpander.
 func NewVariableExpander(filter *Filter) *VariableExpander {
+	// Create logger first to ensure consistent context for all logs
+	logger := slog.Default().With("component", "VariableExpander")
+
 	// Create a cached security validator with default config
 	// This avoids creating a new validator (and compiling regexes) on every validation call
 	validator, err := security.NewValidator(nil)
 	if err != nil {
 		// Fall back to nil validator - validation will be skipped
 		// This should not happen with default config, but handle gracefully
-		slog.Default().Warn("Failed to create security validator, validation will be limited", "error", err)
+		logger.Warn("Failed to create security validator, validation will be limited", "error", err)
 	}
 
 	return &VariableExpander{
 		filter:    filter,
-		logger:    slog.Default().With("component", "VariableExpander"),
+		logger:    logger,
 		validator: validator,
 	}
 }
@@ -122,7 +125,7 @@ func (p *VariableExpander) validateBasicEnvVariable(varName, varValue string) er
 	// Use the cached validator to avoid creating a new one on each call.
 	if varValue != "" && p.validator != nil {
 		if err := p.validator.ValidateEnvironmentValue(varName, varValue); err != nil {
-			return fmt.Errorf("%w: command environment variable %s: %s", security.ErrUnsafeEnvironmentVar, varName, err.Error())
+			return err
 		}
 	}
 	return nil
