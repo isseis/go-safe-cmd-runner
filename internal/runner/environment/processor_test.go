@@ -429,7 +429,10 @@ func TestVariableExpander_ValidateBasicEnvVariable(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateBasicEnvVariable(tt.varName, tt.varValue)
+			// Create a VariableExpander to test the validation method
+			filter := NewFilter([]string{})
+			expander := NewVariableExpander(filter)
+			err := expander.validateBasicEnvVariable(tt.varName, tt.varValue)
 
 			if tt.expectError {
 				assert.Error(t, err)
