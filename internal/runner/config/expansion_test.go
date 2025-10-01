@@ -434,6 +434,17 @@ func TestSecurityIntegration(t *testing.T) {
 			expectError:     true,
 			errorMsg:        "not allowed",
 		},
+		{
+			name: "PATH extension with system variable reference should work",
+			cmd: runnertypes.Command{
+				Name: "test",
+				Cmd:  "echo",
+				Args: []string{"${PATH}"},
+				Env:  []string{"PATH=/custom/bin:${PATH}"},
+			},
+			globalAllowlist: []string{"PATH"},
+			expectError:     false,
+		},
 	}
 
 	for _, tt := range tests {

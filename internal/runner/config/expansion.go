@@ -13,10 +13,17 @@ import (
 // This function is exported so callers in other packages (for example bootstrap)
 // can expand commands individually instead of relying on a group-level helper.
 func ExpandCommand(cmd *runnertypes.Command, expander *environment.VariableExpander, allowlist []string, groupName string) (string, []string, error) {
-	// Build environment map from the command's Env block
-	env, err := cmd.BuildEnvironmentMap()
+	// Create a temporary CommandGroup to use ExpandCommandEnv
+	// This ensures Command.Env variables are properly expanded before being used
+	tmpGroup := &runnertypes.CommandGroup{
+		Name:         groupName,
+		EnvAllowlist: allowlist,
+	}
+
+	// Expand Command.Env variables (this handles cases like PATH=/custom/bin:${PATH})
+	env, err := expander.ExpandCommandEnv(cmd, tmpGroup)
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to build environment map: %w", err)
+		return "", nil, fmt.Errorf("failed to expand command environment: %w", err)
 	}
 
 	// Expand command name

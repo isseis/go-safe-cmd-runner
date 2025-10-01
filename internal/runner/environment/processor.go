@@ -72,7 +72,13 @@ func (p *VariableExpander) ExpandCommandEnv(cmd *runnertypes.Command, group *run
 	// Second pass: Expand all variables.
 	for name := range finalEnv {
 		value := finalEnv[name]
-		expandedValue, err := p.ExpandString(value, finalEnv, group.EnvAllowlist, group.Name, make(map[string]bool))
+		// Create a new visited map for each variable expansion to prevent false circular reference detection.
+		// The key insight: when expanding "PATH=/custom/bin:${PATH}", we want ${PATH} to resolve to
+		// the system PATH, not the partially-expanded value in finalEnv["PATH"].
+		// By marking the current variable as visited, ExpandString will skip it in finalEnv and
+		// fall back to system environment lookup.
+		visited := map[string]bool{name: true}
+		expandedValue, err := p.ExpandString(value, finalEnv, group.EnvAllowlist, group.Name, visited)
 		if err != nil {
 			return nil, fmt.Errorf("failed to expand variable %s: %w", name, err)
 		}
@@ -120,78 +126,122 @@ func (p *VariableExpander) ExpandString(value string, envVars map[string]string,
 	for i < len(runes) {
 		switch runes[i] {
 		case '\\':
-			if i+1 >= len(runes) {
-				return "", ErrInvalidEscapeSequence
-			}
-			nextChar := runes[i+1]
-			if nextChar == '$' || nextChar == '\\' {
-				result.WriteRune(nextChar)
-				i += 2
-			} else {
-				return "", fmt.Errorf("%w: \\%c", ErrInvalidEscapeSequence, nextChar)
-			}
-		case '$':
-			// Strict validation: $ must be followed by {VAR} format
-			if i+1 >= len(runes) || runes[i+1] != '{' {
-				return "", ErrInvalidVariableFormat
-			}
-
-			start := i + 2 //nolint:mnd // Skip past the opening "${" sequence
-			end := -1
-			for j := start; j < len(runes); j++ {
-				if runes[j] == '}' {
-					end = j
-					break
-				}
-			}
-			if end == -1 {
-				return "", ErrUnclosedVariable
-			}
-			varName := string(runes[start:end])
-			if err := security.ValidateVariableName(varName); err != nil {
-				return "", fmt.Errorf("%w: %s: %w", ErrInvalidVariableName, varName, err)
-			}
-			if visited[varName] {
-				return "", fmt.Errorf("%w: %s", ErrCircularReference, varName)
-			}
-			// Mark visited (depth-first). We'll remove manually after expansion.
-			visited[varName] = true
-
-			// 1. existence check (local then system) – differentiate not found
-			val, foundLocal := envVars[varName]
-			var ( // track where value came from
-				valStr string
-				found  bool
-			)
-			if foundLocal {
-				valStr, found = val, true
-			} else {
-				sysVal, foundSys := os.LookupEnv(varName)
-				if foundSys {
-					// 2. allowlist check only after confirming existence
-					if !p.filter.IsVariableAccessAllowed(varName, allowlist, groupName) {
-						p.logger.Warn("system variable access not allowed", "variable", varName, "group", groupName)
-						return "", fmt.Errorf("%w: %s", ErrVariableNotAllowed, varName)
-					}
-					valStr, found = sysVal, true
-				}
-			}
-			if !found { // variable not found anywhere - return error
-				return "", fmt.Errorf("%w: %s", ErrVariableNotFound, varName)
-			}
-			expanded, err := p.ExpandString(valStr, envVars, allowlist, groupName, visited)
+			nextIdx, err := p.handleEscapeSequence(runes, i, &result)
 			if err != nil {
-				return "", fmt.Errorf("failed to expand nested variable ${%s}: %w", varName, err)
+				return "", err
 			}
-			result.WriteString(expanded)
-			delete(visited, varName)
-			i = end + 1
+			i = nextIdx
+		case '$':
+			nextIdx, err := p.handleVariableExpansion(runes, i, envVars, allowlist, groupName, visited, &result)
+			if err != nil {
+				return "", err
+			}
+			i = nextIdx
 		default:
 			result.WriteRune(runes[i])
 			i++
 		}
 	}
 	return result.String(), nil
+}
+
+// handleEscapeSequence processes escape sequences like \$ and \\
+func (p *VariableExpander) handleEscapeSequence(runes []rune, i int, result *strings.Builder) (int, error) {
+	if i+1 >= len(runes) {
+		return 0, ErrInvalidEscapeSequence
+	}
+	nextChar := runes[i+1]
+	if nextChar == '$' || nextChar == '\\' {
+		result.WriteRune(nextChar)
+		return i + 2, nil //nolint:mnd // Skip escape sequences like \$ and \\
+
+	}
+	return 0, fmt.Errorf("%w: \\%c", ErrInvalidEscapeSequence, nextChar)
+}
+
+// handleVariableExpansion processes variable expansion like ${VAR}
+func (p *VariableExpander) handleVariableExpansion(runes []rune, i int, envVars map[string]string, allowlist []string, groupName string, visited map[string]bool, result *strings.Builder) (int, error) {
+	// Strict validation: $ must be followed by {VAR} format
+	if i+1 >= len(runes) || runes[i+1] != '{' {
+		return 0, ErrInvalidVariableFormat
+	}
+
+	// Find the closing brace
+	start := i + 2 //nolint:mnd // Skip past the opening "${" sequence
+	end := -1
+	for j := start; j < len(runes); j++ {
+		if runes[j] == '}' {
+			end = j
+			break
+		}
+	}
+	if end == -1 {
+		return 0, ErrUnclosedVariable
+	}
+
+	// Extract and validate variable name
+	varName := string(runes[start:end])
+	if err := security.ValidateVariableName(varName); err != nil {
+		return 0, fmt.Errorf("%w: %s: %w", ErrInvalidVariableName, varName, err)
+	}
+
+	// Resolve variable value
+	valStr, err := p.resolveVariable(varName, envVars, allowlist, groupName, visited)
+	if err != nil {
+		return 0, err
+	}
+
+	// Recursively expand the value
+	expanded, err := p.ExpandString(valStr, envVars, allowlist, groupName, visited)
+	if err != nil {
+		return 0, fmt.Errorf("failed to expand nested variable ${%s}: %w", varName, err)
+	}
+	result.WriteString(expanded)
+	delete(visited, varName)
+	return end + 1, nil
+}
+
+// resolveVariable resolves a variable value from local env or system environment
+// Strategy for handling self-references (e.g., PATH=/custom/bin:${PATH}):
+//   - If the variable was pre-marked as visited by ExpandCommandEnv, skip local lookup
+//     and go directly to system environment. This allows ${PATH} to refer to system PATH.
+//   - If not pre-marked but found in envVars during recursive expansion, this is a true
+//     circular reference and should be rejected.
+func (p *VariableExpander) resolveVariable(varName string, envVars map[string]string, allowlist []string, groupName string, visited map[string]bool) (string, error) {
+	// Check if variable is already being expanded (circular reference detection)
+	wasVisited := visited[varName]
+
+	// Look up variable value
+	val, foundLocal := envVars[varName]
+	if wasVisited && foundLocal {
+		// Variable was pre-marked as visited - skip local lookup to enable self-reference
+		foundLocal = false
+	}
+
+	if foundLocal {
+		// Found in local env and not pre-visited - mark as visited and use it
+		visited[varName] = true
+		return val, nil
+	}
+
+	// Not found locally (or was pre-visited) - try system environment
+	sysVal, foundSys := os.LookupEnv(varName)
+	if foundSys {
+		// allowlist check only for system variables
+		if !p.filter.IsVariableAccessAllowed(varName, allowlist, groupName) {
+			p.logger.Warn("system variable access not allowed", "variable", varName, "group", groupName)
+			return "", fmt.Errorf("%w: %s", ErrVariableNotAllowed, varName)
+		}
+		return sysVal, nil
+	}
+
+	if wasVisited {
+		// Variable was pre-visited but not found in system - this is circular reference
+		return "", fmt.Errorf("%w: %s", ErrCircularReference, varName)
+	}
+
+	// variable not found anywhere - return error
+	return "", fmt.Errorf("%w: %s", ErrVariableNotFound, varName)
 }
 
 // ExpandStrings expands variables in multiple strings, handling them as a batch.
