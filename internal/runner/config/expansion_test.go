@@ -145,7 +145,7 @@ func TestExpandCommandStrings_SingleCommand(t *testing.T) {
 
 				var err error
 				for i := range group.Commands {
-					expandedCmd, expandedArgs, e := config.ExpandCommand(&group.Commands[i], expander, group.EnvAllowlist, group.Name)
+					expandedCmd, expandedArgs, expandedEnv, e := config.ExpandCommand(&group.Commands[i], expander, group.EnvAllowlist, group.Name)
 					if e != nil {
 						err = e
 						break
@@ -153,6 +153,7 @@ func TestExpandCommandStrings_SingleCommand(t *testing.T) {
 					tmp.Commands[i] = group.Commands[i]
 					tmp.Commands[i].ExpandedCmd = expandedCmd
 					tmp.Commands[i].ExpandedArgs = expandedArgs
+					tmp.Commands[i].ExpandedEnv = expandedEnv
 				}
 
 				if tt.expectError {
@@ -259,7 +260,7 @@ func TestExpandCommandStrings(t *testing.T) {
 
 				var err error
 				for i := range tt.group.Commands {
-					expandedCmd, expandedArgs, e := config.ExpandCommand(&tt.group.Commands[i], expander, tt.group.EnvAllowlist, tt.group.Name)
+					expandedCmd, expandedArgs, expandedEnv, e := config.ExpandCommand(&tt.group.Commands[i], expander, tt.group.EnvAllowlist, tt.group.Name)
 					if e != nil {
 						err = e
 						break
@@ -267,6 +268,7 @@ func TestExpandCommandStrings(t *testing.T) {
 					tmp.Commands[i] = tt.group.Commands[i]
 					tmp.Commands[i].ExpandedCmd = expandedCmd
 					tmp.Commands[i].ExpandedArgs = expandedArgs
+					tmp.Commands[i].ExpandedEnv = expandedEnv
 				}
 
 				if tt.expectError {
@@ -359,7 +361,7 @@ func TestCircularReferenceDetection(t *testing.T) {
 			{
 				var err error
 				for i := range group.Commands {
-					_, _, e := config.ExpandCommand(&group.Commands[i], expander, group.EnvAllowlist, group.Name)
+					_, _, _, e := config.ExpandCommand(&group.Commands[i], expander, group.EnvAllowlist, group.Name)
 					if e != nil {
 						err = e
 						break
@@ -488,7 +490,7 @@ func TestSecurityIntegration(t *testing.T) {
 			{
 				var err error
 				for i := range group.Commands {
-					_, _, e := config.ExpandCommand(&group.Commands[i], expander, group.EnvAllowlist, group.Name)
+					_, _, _, e := config.ExpandCommand(&group.Commands[i], expander, group.EnvAllowlist, group.Name)
 					if e != nil {
 						err = e
 						break

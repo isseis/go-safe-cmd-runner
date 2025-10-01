@@ -75,8 +75,8 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 		for j := range group.Commands {
 			cmd := &group.Commands[j]
 
-			// Expand Command.Cmd and Args for each command and store in ExpandedCmd and ExpandedArgs
-			expandedCmd, expandedArgs, err := config.ExpandCommand(cmd, expander, group.EnvAllowlist, group.Name)
+			// Expand Command.Cmd, Args, and Env for each command and store in ExpandedCmd, ExpandedArgs, and ExpandedEnv
+			expandedCmd, expandedArgs, expandedEnv, err := config.ExpandCommand(cmd, expander, group.EnvAllowlist, group.Name)
 			if err != nil {
 				return nil, &logging.PreExecutionError{
 					Type:      logging.ErrorTypeConfigParsing,
@@ -87,17 +87,6 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 			}
 			cmd.ExpandedCmd = expandedCmd
 			cmd.ExpandedArgs = expandedArgs
-
-			// Expand Command.Env for each command and store in ExpandedEnv
-			expandedEnv, err := expander.ExpandCommandEnv(cmd, group.Name, group.EnvAllowlist)
-			if err != nil {
-				return nil, &logging.PreExecutionError{
-					Type:      logging.ErrorTypeConfigParsing,
-					Message:   fmt.Sprintf("Failed to expand command environment for command %s: %v", cmd.Name, err),
-					Component: "config",
-					RunID:     runID,
-				}
-			}
 			cmd.ExpandedEnv = expandedEnv
 		}
 	}
