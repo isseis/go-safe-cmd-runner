@@ -96,6 +96,9 @@ func (c *Command) BuildEnvironmentMap() (map[string]string, error) {
 		if !ok {
 			return nil, fmt.Errorf("%w: %s", ErrInvalidEnvironmentVariableFormat, envVar)
 		}
+		if _, exists := env[key]; exists {
+			return nil, fmt.Errorf("%w: %s", ErrDuplicateEnvironmentVariable, key)
+		}
 		env[key] = value
 	}
 
@@ -263,6 +266,7 @@ var (
 	ErrCriticalRiskBlocked              = errors.New("critical risk command execution blocked")
 	ErrCommandSecurityViolation         = errors.New("command security violation: risk level too high")
 	ErrInvalidEnvironmentVariableFormat = errors.New("invalid environment variable format")
+	ErrDuplicateEnvironmentVariable     = errors.New("duplicate environment variable")
 )
 
 // PrivilegeManager interface defines methods for privilege management
