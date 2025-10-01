@@ -28,15 +28,29 @@ var (
 // It provides core functionality for expanding ${VAR} syntax in both command-line strings
 // (cmd/args) and environment variable values.
 type VariableExpander struct {
-	filter *Filter
-	logger *slog.Logger
+	filter    *Filter
+	logger    *slog.Logger
+	validator *security.Validator // Cached security validator to avoid repeated creation
 }
 
 // NewVariableExpander creates a new VariableExpander.
 func NewVariableExpander(filter *Filter) *VariableExpander {
+	// Create logger first to ensure consistent context for all logs
+	logger := slog.Default().With("component", "VariableExpander")
+
+	// Create a cached security validator with default config
+	// This avoids creating a new validator (and compiling regexes) on every validation call
+	validator, err := security.NewValidator(nil)
+	if err != nil {
+		// Fall back to nil validator - validation will be skipped
+		// This should not happen with default config, but handle gracefully
+		logger.Warn("Failed to create security validator, validation will be limited", "error", err)
+	}
+
 	return &VariableExpander{
-		filter: filter,
-		logger: slog.Default().With("component", "VariableExpander"),
+		filter:    filter,
+		logger:    logger,
+		validator: validator,
 	}
 }
 
@@ -57,7 +71,7 @@ func (p *VariableExpander) ExpandCommandEnv(cmd *runnertypes.Command, groupName 
 			return nil, fmt.Errorf("invalid environment variable format in Command.Env in command %s, env_index: %d, env_entry: %s: %w", cmd.Name, i, envStr, ErrMalformedEnvVariable)
 		}
 		// Validate only the name at this stage.
-		if err := validateBasicEnvVariable(varName, ""); err != nil {
+		if err := p.validateBasicEnvVariable(varName, ""); err != nil {
 			return nil, fmt.Errorf("malformed command environment variable %s in command %s: %w",
 				varName, cmd.Name, err)
 		}
@@ -87,7 +101,7 @@ func (p *VariableExpander) ExpandCommandEnv(cmd *runnertypes.Command, groupName 
 
 	// Final validation pass on the fully expanded values.
 	for name, value := range finalEnv {
-		if err := validateBasicEnvVariable(name, value); err != nil {
+		if err := p.validateBasicEnvVariable(name, value); err != nil {
 			return nil, fmt.Errorf("validation failed for expanded variable %s: %w", name, err)
 		}
 	}
@@ -96,7 +110,8 @@ func (p *VariableExpander) ExpandCommandEnv(cmd *runnertypes.Command, groupName 
 }
 
 // validateBasicEnvVariable validates the name and optionally the value of an environment variable.
-func validateBasicEnvVariable(varName, varValue string) error {
+// This method uses the cached security validator to avoid repeated validator creation.
+func (p *VariableExpander) validateBasicEnvVariable(varName, varValue string) error {
 	// Validate name using security package which returns detailed errors.
 	if err := security.ValidateVariableName(varName); err != nil {
 		if varName == "" {
@@ -106,11 +121,11 @@ func validateBasicEnvVariable(varName, varValue string) error {
 		return fmt.Errorf("%w: %s", ErrInvalidVariableName, err.Error())
 	}
 
-	// Only validate non-empty values post expansion. Use security.IsVariableValueSafe
-	// which provides detailed errors about unsafe patterns.
-	if varValue != "" {
-		if err := security.IsVariableValueSafe(varName, varValue); err != nil {
-			return fmt.Errorf("%w: command environment variable %s: %s", security.ErrUnsafeEnvironmentVar, varName, err.Error())
+	// Only validate non-empty values post expansion.
+	// Use the cached validator to avoid creating a new one on each call.
+	if varValue != "" && p.validator != nil {
+		if err := p.validator.ValidateEnvironmentValue(varName, varValue); err != nil {
+			return err
 		}
 	}
 	return nil
