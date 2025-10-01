@@ -1,0 +1,168 @@
+# Advanced Variable Expansion Examples
+# This file demonstrates complex variable expansion patterns including nested references and escape sequences
+version = "1.0"
+
+[global]
+timeout = 60
+workdir = "/tmp"
+log_level = "debug"
+skip_standard_paths = true
+env_allowlist = [
+    "PATH",
+    "HOME",
+    "USER",
+]
+
+# Example 1: Nested variable references
+[[groups]]
+name = "nested_expansion"
+description = "Use nested variable references"
+
+[[groups.commands]]
+name = "nested_vars_simple"
+description = "Simple nested variable expansion"
+cmd = "/bin/echo"
+args = ["Message: ${FULL_MSG}"]
+env = ["FULL_MSG=Hello, ${USER}!", "USER=Alice"]
+
+[[groups.commands]]
+name = "nested_vars_complex"
+description = "Multiple levels of nested variables"
+cmd = "/bin/echo"
+args = ["Config path: ${CONFIG_PATH}"]
+env = [
+    "CONFIG_PATH=${BASE_DIR}/${ENV_TYPE}/config.yml",
+    "BASE_DIR=/opt/myapp",
+    "ENV_TYPE=production"
+]
+
+# Example 2: Escape sequences
+[[groups]]
+name = "escape_sequences"
+description = "Use escape sequences for literal characters"
+
+[[groups.commands]]
+name = "escape_dollar"
+description = "Literal dollar sign with \\$"
+cmd = "/bin/echo"
+args = ["Price: \\$100 USD"]
+
+[[groups.commands]]
+name = "escape_backslash"
+description = "Literal backslash with \\\\"
+cmd = "/bin/echo"
+args = ["Windows path: C:\\\\Users\\\\${USER}"]
+env = ["USER=JohnDoe"]
+
+[[groups.commands]]
+name = "mixed_escape"
+description = "Mixed literal and expanded variables"
+cmd = "/bin/echo"
+args = ["Literal \\$HOME is different from ${HOME}"]
+env = ["HOME=/home/user"]
+
+# Example 3: Complex path construction
+[[groups]]
+name = "complex_paths"
+description = "Build complex file paths with multiple variables"
+
+[[groups.commands]]
+name = "backup_with_timestamp"
+description = "Create backup path with date and user"
+cmd = "/bin/mkdir"
+args = ["-p", "${BACKUP_ROOT}/${DATE}/${USER}/data"]
+env = [
+    "BACKUP_ROOT=/var/backups",
+    "DATE=2025-10-01",
+    "USER=admin"
+]
+
+# Example 4: Multi-variable string construction
+[[groups]]
+name = "string_building"
+description = "Build complex strings from multiple variables"
+
+[[groups.commands]]
+name = "connection_string"
+description = "Database connection string from components"
+cmd = "/bin/echo"
+args = ["Connecting to: ${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}"]
+env = [
+    "DB_USER=appuser",
+    "DB_PASS=secret123",
+    "DB_HOST=localhost",
+    "DB_PORT=5432",
+    "DB_NAME=myapp_db"
+]
+
+# Example 5: Toolchain version management
+[[groups]]
+name = "toolchain_version"
+description = "Manage different tool versions with variables"
+
+[[groups.commands]]
+name = "gcc_versioned"
+description = "Use specific GCC version"
+cmd = "${TOOLCHAIN_DIR}/gcc-${VERSION}/bin/gcc"
+args = ["--version"]
+env = [
+    "TOOLCHAIN_DIR=/opt/toolchains",
+    "VERSION=11.2.0"
+]
+
+[[groups.commands]]
+name = "python_versioned"
+description = "Use specific Python version"
+cmd = "${PYTHON_ROOT}/python${PY_VERSION}/bin/python"
+args = ["-V"]
+env = [
+    "PYTHON_ROOT=/usr/local",
+    "PY_VERSION=3.11"
+]
+
+# Example 6: Conditional-like behavior with variables
+[[groups]]
+name = "env_dependent"
+description = "Different behavior based on ENV_TYPE variable"
+
+[[groups.commands]]
+name = "run_with_env_config"
+description = "Load environment-specific configuration"
+cmd = "${APP_BIN}"
+args = ["--config", "${CONFIG_DIR}/${ENV_TYPE}.yml", "--log-level", "${LOG_LEVEL}"]
+env = [
+    "APP_BIN=/opt/myapp/bin/myapp",
+    "CONFIG_DIR=/etc/myapp/configs",
+    "ENV_TYPE=development",
+    "LOG_LEVEL=debug"
+]
+
+# Example 7: Complex Docker command with variables
+[[groups]]
+name = "docker_advanced"
+description = "Advanced Docker commands with multiple variables"
+
+[[groups.commands]]
+name = "docker_run_complex"
+description = "Run container with many variable-based options"
+cmd = "${DOCKER_BIN}"
+args = [
+    "run",
+    "-d",
+    "--name", "${CONTAINER_NAME}",
+    "-v", "${HOST_PATH}:${CONTAINER_PATH}",
+    "-e", "APP_ENV=${APP_ENV}",
+    "-p", "${HOST_PORT}:${CONTAINER_PORT}",
+    "${IMAGE_NAME}:${IMAGE_TAG}"
+]
+env = [
+    "DOCKER_BIN=/usr/bin/docker",
+    "CONTAINER_NAME=myapp-prod",
+    "HOST_PATH=/opt/myapp/data",
+    "CONTAINER_PATH=/app/data",
+    "APP_ENV=production",
+    "HOST_PORT=8080",
+    "CONTAINER_PORT=80",
+    "IMAGE_NAME=myapp",
+    "IMAGE_TAG=v1.2.3"
+]
