@@ -1,5 +1,3 @@
-//go:build test
-
 package executor_test
 
 import (
@@ -11,6 +9,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/audit"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
+	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testing"
 	privilegetesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
@@ -68,7 +67,7 @@ func TestExecute_Success(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fileSystem := &executor.MockFileSystem{
+			fileSystem := &executortesting.MockFileSystem{
 				ExistingPaths: make(map[string]bool),
 			}
 
@@ -78,7 +77,7 @@ func TestExecute_Success(t *testing.T) {
 				fileSystem.ExistingPaths[tt.cmd.Dir] = true
 			}
 
-			outputWriter := &executor.MockOutputWriter{}
+			outputWriter := &executortesting.MockOutputWriter{}
 
 			e := &executor.DefaultExecutor{
 				FS: fileSystem,
@@ -158,7 +157,7 @@ func TestExecute_Failure(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fileSystem := &executor.MockFileSystem{
+			fileSystem := &executortesting.MockFileSystem{
 				ExistingPaths: make(map[string]bool),
 			}
 
@@ -168,7 +167,7 @@ func TestExecute_Failure(t *testing.T) {
 				fileSystem.ExistingPaths[tt.cmd.Dir] = true
 			}
 
-			outputWriter := &executor.MockOutputWriter{}
+			outputWriter := &executortesting.MockOutputWriter{}
 
 			e := &executor.DefaultExecutor{
 				FS: fileSystem,
@@ -202,7 +201,7 @@ func TestExecute_Failure(t *testing.T) {
 }
 
 func TestExecute_ContextCancellation(t *testing.T) {
-	fileSystem := &executor.MockFileSystem{
+	fileSystem := &executortesting.MockFileSystem{
 		ExistingPaths: make(map[string]bool),
 	}
 
@@ -223,7 +222,7 @@ func TestExecute_ContextCancellation(t *testing.T) {
 	cancel()
 
 	runnertypes.PrepareCommand(&cmd)
-	result, err := e.Execute(ctx, cmd, map[string]string{}, &executor.MockOutputWriter{})
+	result, err := e.Execute(ctx, cmd, map[string]string{}, &executortesting.MockOutputWriter{})
 
 	// Should get an error due to context cancellation
 	assert.Error(t, err, "Expected error due to context cancellation")
@@ -234,7 +233,7 @@ func TestExecute_ContextCancellation(t *testing.T) {
 func TestExecute_EnvironmentVariables(t *testing.T) {
 	// Test that only filtered environment variables are passed to executed commands
 	// and os.Environ() variables are not leaked through
-	fileSystem := &executor.MockFileSystem{
+	fileSystem := &executortesting.MockFileSystem{
 		ExistingPaths: make(map[string]bool),
 	}
 
@@ -258,7 +257,7 @@ func TestExecute_EnvironmentVariables(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	result, err := e.Execute(ctx, cmd, envVars, &executor.MockOutputWriter{})
+	result, err := e.Execute(ctx, cmd, envVars, &executortesting.MockOutputWriter{})
 
 	require.NoError(t, err, "Execute should not return an error")
 	require.NotNil(t, result, "Result should not be nil")
@@ -304,7 +303,7 @@ func TestValidate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fileSystem := &executor.MockFileSystem{
+			fileSystem := &executortesting.MockFileSystem{
 				ExistingPaths: make(map[string]bool),
 			}
 
@@ -337,7 +336,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 		mockPriv := privilegetesting.NewMockPrivilegeManager(true)
 		exec := executor.NewDefaultExecutor(
 			executor.WithPrivilegeManager(mockPriv),
-			executor.WithFileSystem(&executor.MockFileSystem{}),
+			executor.WithFileSystem(&executortesting.MockFileSystem{}),
 		)
 
 		cmd := runnertypes.Command{
@@ -361,7 +360,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 	t.Run("user_group_no_privilege_manager", func(t *testing.T) {
 		// Create executor without privilege manager
 		exec := executor.NewDefaultExecutor(
-			executor.WithFileSystem(&executor.MockFileSystem{}),
+			executor.WithFileSystem(&executortesting.MockFileSystem{}),
 		)
 
 		cmd := runnertypes.Command{
@@ -382,7 +381,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 		mockPriv := privilegetesting.NewMockPrivilegeManager(false) // Not supported
 		exec := executor.NewDefaultExecutor(
 			executor.WithPrivilegeManager(mockPriv),
-			executor.WithFileSystem(&executor.MockFileSystem{}),
+			executor.WithFileSystem(&executortesting.MockFileSystem{}),
 		)
 
 		cmd := runnertypes.Command{
@@ -403,7 +402,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 		mockPriv := privilegetesting.NewFailingMockPrivilegeManager(true)
 		exec := executor.NewDefaultExecutor(
 			executor.WithPrivilegeManager(mockPriv),
-			executor.WithFileSystem(&executor.MockFileSystem{}),
+			executor.WithFileSystem(&executortesting.MockFileSystem{}),
 		)
 
 		cmd := runnertypes.Command{
@@ -425,7 +424,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 		mockPriv := privilegetesting.NewMockPrivilegeManager(true)
 		exec := executor.NewDefaultExecutor(
 			executor.WithPrivilegeManager(mockPriv),
-			executor.WithFileSystem(&executor.MockFileSystem{}),
+			executor.WithFileSystem(&executortesting.MockFileSystem{}),
 		)
 
 		cmd := runnertypes.Command{
@@ -450,7 +449,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges(t *testing.T) {
 		mockPriv := privilegetesting.NewMockPrivilegeManager(true)
 		exec := executor.NewDefaultExecutor(
 			executor.WithPrivilegeManager(mockPriv),
-			executor.WithFileSystem(&executor.MockFileSystem{}),
+			executor.WithFileSystem(&executortesting.MockFileSystem{}),
 		)
 
 		cmd := runnertypes.Command{
@@ -478,7 +477,7 @@ func TestDefaultExecutor_Execute_Integration(t *testing.T) {
 		mockPriv := privilegetesting.NewMockPrivilegeManager(true)
 		exec := executor.NewDefaultExecutor(
 			executor.WithPrivilegeManager(mockPriv),
-			executor.WithFileSystem(&executor.MockFileSystem{}),
+			executor.WithFileSystem(&executortesting.MockFileSystem{}),
 		)
 
 		cmd := runnertypes.Command{
@@ -504,7 +503,7 @@ func TestDefaultExecutor_Execute_Integration(t *testing.T) {
 		mockPriv := privilegetesting.NewMockPrivilegeManager(true)
 		exec := executor.NewDefaultExecutor(
 			executor.WithPrivilegeManager(mockPriv),
-			executor.WithFileSystem(&executor.MockFileSystem{}),
+			executor.WithFileSystem(&executortesting.MockFileSystem{}),
 		)
 
 		cmd := runnertypes.Command{
@@ -582,7 +581,7 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a mock filesystem for directory validation
-			mockFS := &executor.MockFileSystem{
+			mockFS := &executortesting.MockFileSystem{
 				ExistingPaths: map[string]bool{
 					"/tmp": true,
 				},
@@ -626,7 +625,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging(t *testing.T) {
 
 		exec := executor.NewDefaultExecutor(
 			executor.WithPrivilegeManager(mockPriv),
-			executor.WithFileSystem(&executor.MockFileSystem{}),
+			executor.WithFileSystem(&executortesting.MockFileSystem{}),
 			executor.WithAuditLogger(auditLogger),
 		)
 
@@ -658,7 +657,7 @@ func TestDefaultExecutor_ExecuteUserGroupPrivileges_AuditLogging(t *testing.T) {
 
 		exec := executor.NewDefaultExecutor(
 			executor.WithPrivilegeManager(mockPriv),
-			executor.WithFileSystem(&executor.MockFileSystem{}),
+			executor.WithFileSystem(&executortesting.MockFileSystem{}),
 			// No audit logger provided
 		)
 
@@ -687,7 +686,7 @@ func TestDefaultExecutor_UserGroupPrivilegeElevationFailure(t *testing.T) {
 
 	exec := executor.NewDefaultExecutor(
 		executor.WithPrivilegeManager(mockPrivMgr),
-		executor.WithFileSystem(&executor.MockFileSystem{}),
+		executor.WithFileSystem(&executortesting.MockFileSystem{}),
 	)
 
 	cmd := runnertypes.Command{
@@ -713,7 +712,7 @@ func TestDefaultExecutor_UserGroupPrivilegeElevationFailure(t *testing.T) {
 func TestDefaultExecutor_UserGroupBackwardCompatibility(t *testing.T) {
 	// Test that existing code without privilege manager still works for normal commands
 	exec := executor.NewDefaultExecutor(
-		executor.WithFileSystem(&executor.MockFileSystem{}),
+		executor.WithFileSystem(&executortesting.MockFileSystem{}),
 	)
 
 	cmd := runnertypes.Command{
@@ -807,12 +806,12 @@ func TestDefaultExecutor_UserGroupRootExecution(t *testing.T) {
 			if tt.noPrivilegeManager {
 				// Create executor without privilege manager
 				exec = executor.NewDefaultExecutor(
-					executor.WithFileSystem(&executor.MockFileSystem{}),
+					executor.WithFileSystem(&executortesting.MockFileSystem{}),
 				)
 			} else {
 				exec = executor.NewDefaultExecutor(
 					executor.WithPrivilegeManager(mockPrivMgr),
-					executor.WithFileSystem(&executor.MockFileSystem{}),
+					executor.WithFileSystem(&executortesting.MockFileSystem{}),
 				)
 			}
 

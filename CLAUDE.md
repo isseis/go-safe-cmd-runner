@@ -67,6 +67,30 @@ This is a Go-based secure command runner with the following core components:
 - Output capture and verification
 - **Error Testing**: Use `errors.Is()` to validate error types, not string matching on error messages
 
+### Mock File Organization
+All mock implementations should follow this standardized directory and file naming convention:
+
+```
+<package>/
+├── <implementation>.go
+├── <implementation>_test.go
+└── testing/
+    ├── mocks.go              # Lightweight mocks (no external dependencies)
+    ├── testify_mocks.go      # testify-based mocks (for complex scenarios)
+    ├── mocks_test.go         # Tests for mock implementations
+    └── helpers.go            # Test utility functions
+```
+
+**File Naming Rules:**
+- **`testing/mocks.go`**: Simple mock implementations without external library dependencies
+- **`testing/testify_mocks.go`**: Advanced mocks using stretchr/testify framework
+- **`testing/mocks_test.go`**: Unit tests for mock implementations
+- **`testing/helpers.go`**: Common test utility functions and setup helpers
+
+**Package Naming:**
+- All testing utilities use `package testing` within the `testing/` subdirectory
+- Import as: `<module>/internal/<package>/testing`
+
 ## Package Structure
 
 - `cmd/`: Command-line entry points
