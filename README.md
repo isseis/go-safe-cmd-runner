@@ -4,6 +4,22 @@ A secure command execution framework for Go designed for privileged task delegat
 
 Project page: https://github.com/isseis/go-safe-cmd-runner/
 
+## Table of Contents
+
+- [Background](#background)
+- [Key Security Features](#key-security-features)
+- [Recent Security Enhancements](#recent-security-enhancements)
+- [Core Features](#core-features)
+- [Architecture](#architecture)
+- [Quick Start](#quick-start)
+- [Configuration](#configuration)
+- [Security Model](#security-model)
+- [Command Line Tools](#command-line-tools)
+- [Building and Installation](#building-and-installation)
+- [Development](#development)
+- [Contributing](#contributing)
+- [License](#license)
+
 ## Background
 
 Go Safe Command Runner addresses the critical need for secure command execution in environments where:
@@ -15,72 +31,112 @@ Go Safe Command Runner addresses the critical need for secure command execution 
 
 Common use cases include scheduled backups, system maintenance tasks, and delegating specific administrative operations to non-root users while maintaining security controls.
 
-## ⚠️ Breaking Changes (Security Enhancement)
+## Key Security Features
 
-**Recent versions introduce critical security improvements with breaking changes:**
+### Multi-Layer Defense Architecture
+- **Pre-Execution Verification**: Configuration and environment files are hash-verified before use, preventing malicious configuration attacks
+- **Fixed Hash Directory**: Production builds use only the default hash directory, eliminating custom hash directory attack vectors
+- **Secure Fixed PATH**: Uses hardcoded secure PATH (`/sbin:/usr/sbin:/bin:/usr/bin`), completely eliminating PATH manipulation attacks
+- **Risk-Based Command Control**: Intelligent security assessment that automatically blocks high-risk operations
+- **Environment Variable Isolation**: Strict allowlist-based filtering with zero-trust approach
+- **Hybrid Hash Encoding**: Space-efficient file integrity verification with automatic fallback
+- **Sensitive Data Protection**: Automatic detection and redaction of passwords, tokens, and API keys
 
-### Removed Features (Security)
+### Command Execution Security
+- **User/Group Execution Control**: Secure user and group switching with comprehensive validation
+- **Privilege Management**: Controlled privilege escalation with automatic privilege dropping
+- **Path Validation**: Command path resolution with symlink attack prevention
+- **Output Capture Security**: Secure file permissions (0600) for output files
+- **Timeout Control**: Prevents resource exhaustion attacks
+
+### Audit and Monitoring
+- **ULID Run Tracking**: Time-ordered execution tracking with unique identifiers
+- **Multi-Handler Logging**: Console, file, and Slack integration with sensitive data redaction
+- **Interactive Terminal Support**: Color-coded output with smart terminal detection
+- **Comprehensive Audit Trail**: Complete logging of privileged operations and security events
+
+## Recent Security Enhancements
+
+### ⚠️ Breaking Changes (Critical Security Improvements)
+
+Recent versions introduce critical security improvements with breaking changes:
+
+#### Removed Features (Security)
 - **`--hash-directory` flag**: Completely removed from the runner to prevent custom hash directory attacks
 - **Custom hash directory API**: Internal APIs no longer accept custom hash directories in production builds
 - **Hash directory configuration**: Configuration file hash directory specification is no longer supported
 - **PATH environment inheritance**: Environment variable PATH is no longer inherited from the parent process
 
-### Security Enhancements
-- **Pre-Execution Verification**: Configuration and environment files are verified before use, preventing malicious configuration attacks (see [File Integrity Verification](#file-integrity-verification))
-- **Fixed Hash Directory**: Production builds use only the default hash directory (`/usr/local/etc/go-safe-cmd-runner/hashes`)
-- **Secure Fixed PATH**: Uses secure fixed PATH (`/sbin:/usr/sbin:/bin:/usr/bin`) eliminating PATH manipulation attacks (see [Environment Isolation](#environment-isolation))
-- **API Separation**: Testing and production APIs are completely separated with build tags
-- **Static Analysis**: Automated detection of security violations in code and builds
-- **Enhanced Verification**: Stronger file integrity verification with centralized management
-- **Attack Vector Elimination**: Complete prevention of custom hash directory and PATH manipulation attack vectors
+#### Enhanced Security Features
+1. **Pre-Execution Verification** (Task 0021)
+   - Configuration files verified before reading
+   - Environment files verified before use
+   - Prevents malicious configuration attacks
+   - Force stderr output for verification failures
 
-### Migration Guide
-- **Configuration**: Remove any `hash_directory` settings from your TOML configuration files
-- **Scripts**: Remove `--hash-directory` flag from any scripts or automation
-- **Development**: Use separate test APIs for testing with `//go:build test` tag
-- **PATH Dependencies**: Ensure all required binaries are in standard system paths (/sbin, /usr/sbin, /bin, /usr/bin)
+2. **Hash Directory Security** (Task 0022)
+   - Fixed default hash directory: `/usr/local/etc/go-safe-cmd-runner/hashes`
+   - Production/test API separation with build tags
+   - Static analysis detection of security violations
+   - Complete prevention of custom hash directory attacks
+
+3. **Hybrid Hash Encoding** (Task 0023)
+   - Space-efficient substitution + double escape encoding
+   - 1.00x expansion ratio for common paths
+   - Automatic SHA256 fallback for long paths
+   - Human-readable hash file names for debugging
+
+4. **Output Capture Security** (Task 0025)
+   - Secure file permissions (0600) for output files
+   - Tee functionality (screen + file output)
+   - Privilege separation (output files use real UID)
+   - Automatic directory creation with secure permissions
+
+5. **Variable Expansion** (Task 0026)
+   - `${VAR}` format variable expansion in cmd and args
+   - Circular reference detection with visited map
+   - Allowlist integration for security
+   - Command.Env priority over OS environment
+
+#### Migration Guide
+- **Configuration**: Remove any `hash_directory` settings from TOML files
+- **Scripts**: Remove `--hash-directory` flag from scripts or automation
+- **Development**: Use test APIs with `//go:build test` tag for testing
+- **PATH Dependencies**: Ensure all required binaries are in standard system paths
+- **Environment Variables**: Review and update environment variable allowlists
 
 For detailed migration information, see [Verification API Documentation](docs/verification_api.md).
 
-## Features
+## Core Features
 
-### Core Security Features
-- **Pre-Execution Verification**: Configuration and environment files are verified before use (see [Security Enhancements](#security-enhancements))
-- **Hash Directory Security**: Fixed default hash directory prevents attacks (see [Security Enhancements](#security-enhancements))
-- **Secure Fixed PATH**: Eliminates PATH manipulation attacks (see [Security Enhancements](#security-enhancements))
-- **File Integrity Verification**: SHA-256 hash validation of executables and configuration files before execution
-- **Risk-Based Command Control**: Intelligent security assessment that automatically blocks high-risk operations while allowing safe commands
-- **User/Group Execution Security**: Secure user and group switching with comprehensive validation and audit trails
-- **Environment Variable Isolation**: Allowlist-based environment variable filtering at global and group levels
-- **Privilege Management**: Controlled privilege escalation and automatic privilege dropping
-- **Path Validation**: Command path resolution with symlink attack prevention
-- **Configuration Validation**: Comprehensive TOML configuration file validation
-- **Sensitive Data Protection**: Automatic detection and redaction of passwords, tokens, and API keys in all outputs
+### File Integrity and Verification
+- **SHA-256 Hash Validation**: All executables and critical files verified before execution
+- **Pre-Execution Verification**: Configuration and environment files verified before use
+- **Hybrid Hash Encoding**: Space-efficient encoding with human-readable fallback
+- **Centralized Verification**: Unified verification management with automatic privilege handling
+- **Group and Global Verification**: Flexible file verification at multiple levels
 
 ### Command Execution
 - **Batch Processing**: Execute commands in organized groups with dependency management
-- **Background Execution**: Support for long-running processes with proper signal handling
-- **Output Capture**: Structured logging and output management with automatic sensitive data redaction
-- **Enhanced Dry Run Mode**: Realistic simulation with comprehensive security analysis and risk assessment
+- **Variable Expansion**: `${VAR}` format expansion in command names and arguments
+- **Output Capture**: Save command output to files with secure permissions
+- **Background Execution**: Support for long-running processes with signal handling
+- **Enhanced Dry Run**: Realistic simulation with comprehensive security analysis
 - **Timeout Control**: Configurable timeouts for command execution
-- **User/Group Context**: Execute commands as specific users or groups with proper validation
-- **Risk Assessment**: Automatic evaluation of command security risk levels with configurable thresholds
+- **User/Group Context**: Execute commands as specific users with validation
 
 ### Logging and Monitoring
-- **Multi-Handler Logging**: Route logs to multiple destinations simultaneously (console, file, Slack)
-- **Interactive Terminal Support**: Color-coded output with enhanced visibility for interactive environments
-- **Smart Terminal Detection**: Automatic detection of terminal capabilities and CI environments
-- **Color Control**: Support for CLICOLOR, NO_COLOR, and CLICOLOR_FORCE environment variables
-- **Slack Integration**: Real-time notifications for security events and failures
-- **Audit Logging**: Comprehensive audit trail for privileged operations and security events
-- **Sensitive Data Redaction**: Automatic filtering of sensitive information from logs
-- **Structured Logging**: JSON-formatted logs with rich contextual information
-- **ULID Run Tracking**: Universally Unique Lexicographically Sortable Identifiers for time-ordered execution tracking
+- **Multi-Handler Logging**: Route logs to multiple destinations (console, file, Slack)
+- **Interactive Terminal Support**: Color-coded output with enhanced visibility
+- **Smart Terminal Detection**: Automatic detection of terminal capabilities
+- **Slack Integration**: Real-time notifications for security events
+- **Sensitive Data Redaction**: Automatic filtering of sensitive information
+- **ULID Run Tracking**: Time-ordered execution tracking
 
 ### File Operations
 - **Safe File I/O**: Symlink-aware file operations with security checks
-- **Hash Recording**: Record SHA-256 hashes of critical files for later verification
-- **Verification Tools**: Standalone utilities for file integrity verification
+- **Hash Recording**: Record SHA-256 hashes for integrity verification
+- **Verification Tools**: Standalone utilities for file verification
 
 ## Architecture
 
@@ -94,35 +150,37 @@ cmd/                    # Command-line entry points
 
 internal/              # Core implementation
 ├── cmdcommon/         # Shared command utilities
-├── color/             # Terminal color support and control
+├── color/             # Terminal color support
 ├── common/            # Common utilities and filesystem abstraction
 ├── filevalidator/     # File integrity validation
-│   └── encoding/      # Filename encoding for hash storage
+│   └── encoding/      # Hybrid hash filename encoding
 ├── groupmembership/   # User/group membership validation
-├── logging/           # Advanced logging system with interactive UI and Slack integration
+├── logging/           # Advanced logging with Slack integration
 ├── redaction/         # Automatic sensitive data filtering
 ├── runner/            # Command execution engine
 │   ├── audit/         # Security audit logging
-│   ├── bootstrap/     # System initialization and bootstrap
-│   ├── cli/           # Command-line interface management
+│   ├── bootstrap/     # System initialization
+│   ├── cli/           # Command-line interface
 │   ├── config/        # Configuration management
-│   ├── environment/   # Environment variable processing and filtering
+│   ├── environment/   # Environment variable processing
 │   ├── errors/        # Centralized error handling
 │   ├── executor/      # Command execution logic
-│   ├── hashdir/       # Hash directory security management
+│   ├── hashdir/       # Hash directory security
+│   ├── output/        # Output capture management
 │   ├── privilege/     # Privilege management
-│   ├── resource/      # Unified resource management (normal/dry-run)
+│   ├── resource/      # Resource management (normal/dry-run)
 │   ├── risk/          # Risk-based command assessment
 │   ├── runnertypes/   # Type definitions and interfaces
 │   └── security/      # Security validation framework
 ├── safefileio/        # Secure file operations
-├── terminal/          # Terminal capabilities detection and interactive UI support
-└── verification/      # Centralized file verification management (pre-execution verification, path resolution)
+├── terminal/          # Terminal capabilities detection
+└── verification/      # Centralized verification management
 ```
 
-## Command Line Tools
+## Quick Start
 
-### Main Runner
+### Basic Usage
+
 ```bash
 # Execute commands from configuration file
 ./runner -config config.toml
@@ -132,40 +190,36 @@ internal/              # Core implementation
 
 # Validate configuration file
 ./runner -config config.toml -validate
-
-# Custom log directory and level
-./runner -config config.toml -log-dir /var/log/go-safe-cmd-runner -log-level debug
-
-# Control color output for interactive terminals
-CLICOLOR=1 ./runner -config config.toml      # Enable color (default when interactive)
-NO_COLOR=1 ./runner -config config.toml      # Disable color completely
-CLICOLOR_FORCE=1 ./runner -config config.toml # Force color even in non-interactive environments
-
-# Execute with Slack notifications (requires GSCR_SLACK_WEBHOOK_URL environment variable)
-GSCR_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/... ./runner -config config.toml
-
-# Risk assessment only mode (analyze without execution)
-./runner -config config.toml -dry-run -validate
 ```
 
-### Hash Management
-```bash
-# Record file hash (uses default hash directory: /usr/local/etc/go-safe-cmd-runner/hashes)
-./record -file /path/to/executable
+### Simple Configuration Example
 
-# Force overwrite existing hash
-./record -file /path/to/file -force
+```toml
+version = "1.0"
 
-# Verify file integrity (uses default hash directory: /usr/local/etc/go-safe-cmd-runner/hashes)
-./verify -file /path/to/file
+[global]
+timeout = 3600
+log_level = "info"
+env_allowlist = ["PATH", "HOME", "USER"]
 
-# Note: -hash-dir option still available for testing and special cases
-./record -file /path/to/file -hash-dir /custom/test/hashes
+[[groups]]
+name = "backup"
+description = "System backup operations"
+
+[[groups.commands]]
+name = "database_backup"
+description = "Backup database"
+cmd = "/usr/bin/mysqldump"
+args = ["--all-databases"]
+output = "backup.sql"  # Save output to file
+run_as_user = "mysql"
+max_risk_level = "medium"
 ```
 
 ## Configuration
 
-### Basic Configuration Example
+### Basic Configuration Structure
+
 ```toml
 version = "1.0"
 
@@ -173,202 +227,215 @@ version = "1.0"
 timeout = 3600
 workdir = "/tmp"
 log_level = "info"
-# Skip verification for standard system paths
-skip_standard_paths = true
-# Environment variable allowlist for security
-env_allowlist = [
-    "PATH",
-    "HOME",
-    "USER",
-    "LANG"
-]
-# Files to verify before execution
+skip_standard_paths = true  # Skip verification for system paths
+env_allowlist = ["PATH", "HOME", "USER", "LANG"]
 verify_files = ["/etc/passwd", "/bin/bash"]
 
 [[groups]]
-name = "backup"
-description = "System backup operations"
+name = "maintenance"
+description = "System maintenance tasks"
 priority = 1
-# Group-specific environment variables (overrides global)
-env_allowlist = ["PATH", "HOME", "BACKUP_DIR"]
+env_allowlist = ["PATH", "HOME"]  # Override global allowlist
 
 [[groups.commands]]
-name = "database_backup"
-description = "Backup database"
-cmd = "mysqldump"
-args = ["--all-databases", "--single-transaction"]
-env = ["BACKUP_DIR=/backups"]
-# Execute as specific user for security
-run_as_user = "mysql"
-run_as_group = "mysql"
-# Allow medium-risk commands for database operations
+name = "system_check"
+cmd = "/usr/bin/systemctl"
+args = ["status"]
 max_risk_level = "medium"
-
-[[groups.commands]]
-name = "system_backup"
-description = "Backup system files"
-cmd = "rsync"
-args = ["-av", "/etc/", "/backups/etc/"]
-# High-risk operations require explicit authorization
-max_risk_level = "high"
 ```
 
-### Advanced Configuration Features
+### Variable Expansion
+
+Use `${VAR}` format for dynamic configuration:
+
 ```toml
-[global]
-# Skip verification of standard system paths for better performance
-skip_standard_paths = true
-# Global file verification list
-verify_files = ["/usr/bin/rsync", "/etc/rsync.conf"]
+[[groups.commands]]
+name = "deploy"
+cmd = "${TOOL_DIR}/deploy.sh"
+args = ["--config", "${CONFIG_FILE}"]
+env = ["TOOL_DIR=/opt/tools", "CONFIG_FILE=/etc/app.conf"]
+```
 
-[[groups]]
-name = "web_deployment"
-description = "Web application deployment"
-priority = 2
-# Strict environment control (empty list = no environment variables)
-env_allowlist = []
-# Group-specific file verification
-verify_files = ["/usr/local/bin/deploy.sh"]
+### Output Capture
+
+Save command output to files:
+
+```toml
+[[groups.commands]]
+name = "generate_report"
+cmd = "/usr/bin/df"
+args = ["-h"]
+output = "reports/disk_usage.txt"  # Tee output to file (0600 permissions)
+```
+
+### Risk-Based Control
+
+Configure security risk thresholds:
+
+```toml
+[[groups.commands]]
+name = "file_operation"
+cmd = "/bin/cp"
+args = ["source.txt", "dest.txt"]
+max_risk_level = "low"  # Only allow low-risk commands
 
 [[groups.commands]]
-name = "deploy_app"
-cmd = "/usr/local/bin/deploy.sh"
-args = ["production"]
-# Execute as deployment user with specific group
-run_as_user = "deployer"
-run_as_group = "www-data"
-# Only allow low-risk deployment commands
-max_risk_level = "low"
-# No environment variables available due to empty env_allowlist
+name = "system_admin"
+cmd = "/usr/bin/systemctl"
+args = ["restart", "nginx"]
+max_risk_level = "high"  # Allow high-risk operations
+```
 
+### User and Group Execution
+
+Execute commands with specific user/group context:
+
+```toml
 [[groups.commands]]
-name = "package_update"
-cmd = "/usr/bin/apt"
-args = ["update"]
-# Package management operations are medium-risk
-max_risk_level = "medium"
-# Execute with elevated privileges when needed
-run_as_user = "root"
+name = "db_backup"
+cmd = "/usr/bin/pg_dump"
+args = ["mydb"]
+run_as_user = "postgres"
+run_as_group = "postgres"
+output = "/backups/db.sql"
 ```
 
 ### Environment Variable Security
-The system implements a strict allowlist-based approach for environment variables:
 
-1. **Global Allowlist**: Defines base environment variables available to all groups
-2. **Group Override**: Groups can define their own allowlist, completely overriding global settings
-3. **Inheritance**: Groups without an explicit allowlist inherit from global settings
-4. **Zero Trust**: Undefined allowlists result in no environment variables being passed
+Strict allowlist-based control:
 
-### Risk-Based Command Control
-The system automatically assesses and controls command execution based on security risk levels:
+```toml
+[global]
+# Global allowlist (default for all groups)
+env_allowlist = ["PATH", "HOME"]
 
-1. **Risk Level Assessment**: Commands are automatically classified as low, medium, high, or critical risk
-2. **Configurable Thresholds**: Each command can specify its maximum allowed risk level using `max_risk_level`
-3. **Automatic Blocking**: Commands exceeding their risk threshold are automatically blocked
-4. **Risk Categories**:
-   - **Low Risk**: Basic file operations (ls, cat, grep)
-   - **Medium Risk**: File modifications (cp, mv, chmod), package management (apt, yum)
-   - **High Risk**: System administration (mount, systemctl), destructive operations (rm -rf)
-   - **Critical Risk**: Privilege escalation commands (sudo, su) - always blocked
+[[groups]]
+name = "secure_group"
+# Override with empty list = no environment variables
+env_allowlist = []
 
-### User and Group Execution
-Secure delegation of command execution to specific users and groups:
-
-1. **User Context**: Commands can be executed as specific users using `run_as_user`
-2. **Group Context**: Set specific group context using `run_as_group`
-3. **Membership Validation**: System validates user and group membership before execution
-4. **Audit Trail**: Complete audit log of all user/group context switches
-
-### Environment Variable Configuration
-Configure sensitive settings using environment variables:
-
-```bash
-# Slack webhook URL for notifications
-export GSCR_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK
-
-# Optional: Override default log settings
-export LOG_LEVEL=info
-export LOG_DIR=/var/log/go-safe-cmd-runner
-
-# Example execution
-./runner -config config.toml
+[[groups]]
+name = "web_group"
+# Override with custom list
+env_allowlist = ["PATH", "HOME", "WEB_ROOT"]
 ```
-
-**Security Note**: Handle sensitive environment variables appropriately:
-- Environment variables are properly filtered when passed to child processes
-- Avoid storing sensitive information in shell history
-- Use proper secret management systems in production environments
 
 ## Security Model
 
 ### File Integrity Verification
-- **Pre-Execution Verification**: Configuration and environment files are hash-verified before use, preventing malicious configuration attacks
-- **Hash Directory Security**: Fixed default hash directory prevents custom hash directory attacks (see [Security Enhancements](#security-enhancements))
-- All executables and critical files are verified against pre-recorded SHA-256 hashes
-- Configuration files and environment files are automatically verified before execution
-- Group-specific and global file verification lists
-- Centralized verification management with automatic fallback to privileged access
-- Execution is aborted if any verification fails
+
+1. **Pre-Execution Verification**
+   - Configuration files verified before reading
+   - Environment files verified before use
+   - Prevents malicious configuration attacks
+
+2. **Hash Directory Security**
+   - Fixed default: `/usr/local/etc/go-safe-cmd-runner/hashes`
+   - No custom directories in production
+   - Test API separated with build tags
+
+3. **Hybrid Hash Encoding**
+   - Space-efficient encoding (1.00x expansion)
+   - Human-readable for debugging
+   - Automatic SHA256 fallback
+
+4. **Verification Management**
+   - Centralized verification
+   - Automatic privilege handling
+   - Group and global verification lists
 
 ### Risk-Based Security Control
-- **Intelligent Risk Assessment**: Commands are automatically evaluated for security risk
-- **Configurable Risk Thresholds**: Each command can define acceptable risk levels
-- **Automatic Threat Blocking**: High-risk and privilege escalation commands are blocked
-- **Risk-Based Audit Logging**: Enhanced logging based on command risk levels
 
-### User and Group Security
-- **Secure User Switching**: Commands can execute as specific users with proper validation
-- **Group Membership Validation**: System verifies group membership before execution
-- **Privilege Boundary Enforcement**: Strict controls on user/group privilege escalation
-- **Complete Audit Trail**: Full logging of all user/group context changes
-
-### Privilege Management
-- Automatic privilege dropping after initialization
-- Controlled privilege escalation for specific commands
-- Minimal privilege principle enforcement
-- Risk-aware privilege management
-- Comprehensive audit logging with security context
+- **Automatic Risk Assessment**: Commands classified by risk level
+- **Configurable Thresholds**: Per-command risk level limits
+- **Automatic Blocking**: High-risk commands blocked automatically
+- **Risk Categories**:
+  - **Low**: Basic operations (ls, cat, grep)
+  - **Medium**: File modifications (cp, mv), package management
+  - **High**: System administration (systemctl), destructive operations
+  - **Critical**: Privilege escalation (sudo, su) - always blocked
 
 ### Environment Isolation
-- **Secure Fixed PATH**: Environment variable PATH inheritance completely eliminated, uses secure fixed PATH (/sbin:/usr/sbin:/bin:/usr/bin) eliminating PATH manipulation attacks
-- Strict allowlist-based environment variable filtering
-- Protection against environment variable injection attacks
-- Group-level and global environment control
-- Secure variable reference resolution
-- Automatic sensitive data detection in environment variables
+
+- **Secure Fixed PATH**: Hardcoded `/sbin:/usr/sbin:/bin:/usr/bin`
+- **No PATH Inheritance**: Eliminates PATH manipulation attacks
+- **Allowlist Filtering**: Strict zero-trust environment control
+- **Variable Expansion**: Secure `${VAR}` expansion with allowlist
+- **Command.Env Priority**: Configuration overrides OS environment
+
+### Privilege Management
+
+- **Automatic Dropping**: Privileges dropped after initialization
+- **Controlled Escalation**: Risk-aware privilege management
+- **User/Group Switching**: Secure context switching with validation
+- **Audit Trail**: Complete logging of privilege changes
+
+### Output Capture Security
+
+- **Secure Permissions**: Output files created with 0600 permissions
+- **Privilege Separation**: Output files use real UID (not run_as_user)
+- **Directory Security**: Automatic directory creation with secure permissions
+- **Path Validation**: Prevention of path traversal attacks
 
 ### Logging Security
-- **Sensitive Data Redaction**: Automatic detection and redaction of secrets, tokens, API keys, and sensitive patterns
-- **Multi-Channel Secure Notifications**: Encrypted Slack webhook communications with data protection
-- **Audit Trail Protection**: Tamper-resistant logging with structured format and risk context
-- **Access Control**: Log file permissions and secure storage practices
-- **Real-Time Security Alerts**: Immediate notification of security violations and high-risk operations
 
-## Out of Scope
+- **Sensitive Data Redaction**: Automatic detection of secrets, tokens, API keys
+- **Multi-Channel Notifications**: Encrypted Slack communications
+- **Audit Trail Protection**: Tamper-resistant structured logging
+- **Real-Time Alerts**: Immediate notification of security violations
 
-This project explicitly does **not** provide:
-- **Container orchestration** or Docker integration
-- **Network security** features (firewall, VPN, etc.)
-- **User authentication** or authorization systems
-- **Web interface** or REST API
-- **Database management** capabilities
-- **Real-time monitoring** or alerting systems
-- **Cross-platform GUI** applications
-- **Package management** or software installation
+## Command Line Tools
 
-The focus remains on secure command execution with comprehensive security controls including pre-execution verification, hash directory security, and PATH attack prevention in Unix-like environments.
+### Main Runner
 
-## License
-This project is licensed under the MIT License. See the [LICENSE](./LICENSE) file for details.
+```bash
+# Basic execution
+./runner -config config.toml
+
+# Dry run with security analysis
+./runner -config config.toml -dry-run
+
+# Validate configuration
+./runner -config config.toml -validate
+
+# Custom log settings
+./runner -config config.toml -log-dir /var/log/runner -log-level debug
+
+# Color control
+CLICOLOR=1 ./runner -config config.toml       # Enable color
+NO_COLOR=1 ./runner -config config.toml       # Disable color
+CLICOLOR_FORCE=1 ./runner -config config.toml # Force color
+
+# Slack notifications (requires GSCR_SLACK_WEBHOOK_URL)
+GSCR_SLACK_WEBHOOK_URL=https://hooks.slack.com/... ./runner -config config.toml
+```
+
+### Hash Management
+
+```bash
+# Record file hash (uses default hash directory)
+./record -file /path/to/executable
+
+# Force overwrite existing hash
+./record -file /path/to/file -force
+
+# Verify file integrity (uses default hash directory)
+./verify -file /path/to/file
+
+# Note: -hash-dir option available for testing only
+./record -file /path/to/file -hash-dir /custom/test/hashes
+```
 
 ## Building and Installation
 
 ### Prerequisites
-- Go 1.23 or later (required for slices package support, range over count)
+
+- Go 1.23 or later (required for slices package, range over count)
 - golangci-lint (for development)
 - gofumpt (for code formatting)
 
 ### Build Commands
+
 ```bash
 # Build all binaries
 make build
@@ -384,11 +451,8 @@ make test
 # Run linter
 make lint
 
-# Format code (changed files only)
+# Format code
 make fmt
-
-# Format all Go files
-make fmt-all
 
 # Clean build artifacts
 make clean
@@ -401,6 +465,7 @@ make coverage
 ```
 
 ### Installation
+
 ```bash
 # Install from source
 git clone https://github.com/isseis/go-safe-cmd-runner.git
@@ -411,17 +476,24 @@ make build
 sudo install -o root -g root -m 4755 build/runner /usr/local/bin/go-safe-cmd-runner
 sudo install -o root -g root -m 0755 build/record /usr/local/bin/go-safe-cmd-record
 sudo install -o root -g root -m 0755 build/verify /usr/local/bin/go-safe-cmd-verify
+
+# Create default hash directory
+sudo mkdir -p /usr/local/etc/go-safe-cmd-runner/hashes
+sudo chown root:root /usr/local/etc/go-safe-cmd-runner/hashes
+sudo chmod 755 /usr/local/etc/go-safe-cmd-runner/hashes
 ```
 
 ## Development
 
 ### Dependencies
+
 - `github.com/pelletier/go-toml/v2` - TOML configuration parsing
-- `github.com/oklog/ulid/v2` - ULID generation for run tracking and identification
+- `github.com/oklog/ulid/v2` - ULID generation for run tracking
 - `github.com/stretchr/testify` - Testing framework
-- `golang.org/x/term` - Terminal capability detection for interactive features
+- `golang.org/x/term` - Terminal capability detection
 
 ### Testing
+
 ```bash
 # Run all tests
 go test -v ./...
@@ -438,26 +510,49 @@ make slack-group-notification-test
 ```
 
 ### Project Structure
-The codebase follows Go best practices with:
-- Interface-driven design for testability
-- Comprehensive error handling with custom error types
-- Security-first approach with extensive validation
-- Modular architecture with clear boundaries
+
+The codebase follows Go best practices:
+- **Interface-driven design** for testability
+- **Comprehensive error handling** with custom error types
+- **Security-first approach** with extensive validation
+- **Modular architecture** with clear boundaries
+- **Build tag separation** for production/test code
 
 ### Run Identification with ULID
-The system uses ULID (Universally Unique Lexicographically Sortable Identifier) for run tracking:
-- **Chronologically sortable**: ULIDs are naturally ordered by creation time
-- **URL-safe**: No special characters, making them suitable for filenames and URLs
-- **Compact**: 26-character fixed length (shorter than UUID's 36 characters)
-- **Collision-resistant**: Monotonic entropy ensures uniqueness even within the same millisecond
+
+The system uses ULID (Universally Unique Lexicographically Sortable Identifier):
+- **Chronologically sortable**: Naturally ordered by creation time
+- **URL-safe**: No special characters, suitable for filenames
+- **Compact**: 26-character fixed length
+- **Collision-resistant**: Monotonic entropy ensures uniqueness
 - **Example**: `01K2YK812JA735M4TWZ6BK0JH9`
+
+## Out of Scope
+
+This project explicitly does **not** provide:
+- Container orchestration or Docker integration
+- Network security features (firewall, VPN, etc.)
+- User authentication or authorization systems
+- Web interface or REST API
+- Database management capabilities
+- Real-time monitoring or alerting systems
+- Cross-platform GUI applications
+- Package management or software installation
+
+The focus remains on secure command execution with comprehensive security controls in Unix-like environments.
 
 ## Contributing
 
 This project emphasizes security and reliability. When contributing:
-- Follow the security-first design principles
+- Follow security-first design principles
 - Add comprehensive tests for new features
-- Update documentation for any configuration changes
-- Ensure all security validations are properly tested
+- Update documentation for configuration changes
+- Ensure all security validations are tested
+- Use static analysis tools (golangci-lint)
+- Follow Go coding standards and best practices
 
-For questions or contributions, please refer to the project's issue tracker or contact the maintainers.
+For questions or contributions, please refer to the project's issue tracker.
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](./LICENSE) file for details.
