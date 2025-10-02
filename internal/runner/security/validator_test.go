@@ -8,6 +8,7 @@ import (
 
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestDefaultConfig(t *testing.T) {
@@ -85,4 +86,28 @@ func TestNewValidatorWithFS(t *testing.T) {
 	assert.NotNil(t, validator)
 	assert.Equal(t, config, validator.config)
 	assert.Equal(t, mockFS, validator.fs)
+}
+
+func TestValidator_CustomConfig(t *testing.T) {
+	config := DefaultConfig()
+	// Override with custom values for testing
+	config.DangerousPrivilegedCommands = []string{"/custom/dangerous"}
+	config.ShellCommands = []string{"/custom/shell"}
+	config.ShellMetacharacters = []string{"@", "#"}
+
+	validator, err := NewValidator(config)
+	require.NoError(t, err)
+
+	// Test custom dangerous command
+	assert.True(t, validator.IsDangerousPrivilegedCommand("/custom/dangerous"))
+	assert.False(t, validator.IsDangerousPrivilegedCommand("/bin/bash")) // Not in custom list
+
+	// Test custom shell command
+	assert.True(t, validator.IsShellCommand("/custom/shell"))
+	assert.False(t, validator.IsShellCommand("/bin/bash")) // Not in custom list
+
+	// Test custom metacharacters
+	assert.True(t, validator.HasShellMetacharacters([]string{"test@example"}))
+	assert.True(t, validator.HasShellMetacharacters([]string{"test#hash"}))
+	assert.False(t, validator.HasShellMetacharacters([]string{"test;semicolon"})) // Not in custom list
 }
