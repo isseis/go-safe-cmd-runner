@@ -129,6 +129,7 @@ For detailed migration information, see [Verification API Documentation](docs/ve
 - **Multi-Handler Logging**: Route logs to multiple destinations (console, file, Slack)
 - **Interactive Terminal Support**: Color-coded output with enhanced visibility
 - **Smart Terminal Detection**: Automatic detection of terminal capabilities
+- **Color Control**: Support for CLICOLOR, NO_COLOR, and CLICOLOR_FORCE environment variables
 - **Slack Integration**: Real-time notifications for security events
 - **Sensitive Data Redaction**: Automatic filtering of sensitive information
 - **ULID Run Tracking**: Time-ordered execution tracking
