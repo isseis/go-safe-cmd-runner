@@ -92,10 +92,8 @@ const (
 	MaxSymlinkDepth = 40
 
 	// Logging configuration constants
-	DefaultErrorMessageLength = 200  // Reasonable limit for error messages
-	DefaultStdoutLength       = 100  // Very limited stdout in logs
-	VerboseErrorMessageLength = 1000 // Longer error messages for debugging
-	VerboseStdoutLength       = 500  // More stdout for debugging
+	DefaultErrorMessageLength = 200 // Reasonable limit for error messages
+	DefaultStdoutLength       = 100 // Very limited stdout in logs
 )
 
 // LoggingOptions controls how sensitive information is handled in logs
@@ -333,16 +331,5 @@ func DefaultLoggingOptions() LoggingOptions {
 		RedactSensitiveInfo:   true,                      // Enable automatic redaction
 		TruncateStdout:        true,                      // Truncate stdout for security
 		MaxStdoutLength:       DefaultStdoutLength,       // Very limited stdout in logs
-	}
-}
-
-// VerboseLoggingOptions returns options suitable for debugging (less secure)
-func VerboseLoggingOptions() LoggingOptions {
-	return LoggingOptions{
-		IncludeErrorDetails:   true,                      // Include full error details for debugging
-		MaxErrorMessageLength: VerboseErrorMessageLength, // Longer error messages
-		RedactSensitiveInfo:   true,                      // Still redact sensitive patterns
-		TruncateStdout:        true,                      // Still truncate stdout
-		MaxStdoutLength:       VerboseStdoutLength,       // More stdout for debugging
 	}
 }
