@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -86,7 +86,7 @@ func TestNewValidator(t *testing.T) {
 }
 
 func TestNewValidatorWithFS(t *testing.T) {
-	mockFS := common.NewMockFileSystem()
+	mockFS := commontesting.NewMockFileSystem()
 	config := DefaultConfig()
 	// Override for this specific test
 	config.AllowedCommands = []string{"^echo$"}
@@ -100,7 +100,7 @@ func TestNewValidatorWithFS(t *testing.T) {
 }
 
 func TestValidator_ValidateFilePermissions(t *testing.T) {
-	mockFS := common.NewMockFileSystem()
+	mockFS := commontesting.NewMockFileSystem()
 	validator, err := NewValidatorWithFS(DefaultConfig(), mockFS)
 	require.NoError(t, err)
 
@@ -177,7 +177,7 @@ func TestValidator_ValidateFilePermissions(t *testing.T) {
 
 	t.Run("path too long", func(t *testing.T) {
 		// Test with a path that's too long
-		mockFS2 := common.NewMockFileSystem()
+		mockFS2 := commontesting.NewMockFileSystem()
 		config2 := DefaultConfig()
 		// Override for path length testing
 		config2.AllowedCommands = []string{".*"}
@@ -194,7 +194,7 @@ func TestValidator_ValidateFilePermissions(t *testing.T) {
 }
 
 func TestValidator_ValidateDirectoryPermissions(t *testing.T) {
-	mockFS := common.NewMockFileSystem()
+	mockFS := commontesting.NewMockFileSystem()
 	validator, err := NewValidatorWithFS(DefaultConfig(), mockFS)
 	require.NoError(t, err)
 
@@ -261,7 +261,7 @@ func TestValidator_ValidateDirectoryPermissions(t *testing.T) {
 
 	t.Run("path too long", func(t *testing.T) {
 		// Test with a path that's too long
-		mockFS2 := common.NewMockFileSystem()
+		mockFS2 := commontesting.NewMockFileSystem()
 		config2 := DefaultConfig()
 		// Override for path length testing
 		config2.AllowedCommands = []string{".*"}

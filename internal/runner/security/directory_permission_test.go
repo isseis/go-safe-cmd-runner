@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 )
 
@@ -28,14 +28,14 @@ func TestValidator_validateDirectoryComponentPermissions_WithRealUID(t *testing.
 
 	tests := []struct {
 		name        string
-		setupFunc   func(mockFS *common.MockFileSystem)
+		setupFunc   func(mockFS *commontesting.MockFileSystem)
 		realUID     int
 		wantErr     bool
 		errContains string
 	}{
 		{
 			name: "owner_write_permission_with_matching_uid",
-			setupFunc: func(mockFS *common.MockFileSystem) {
+			setupFunc: func(mockFS *commontesting.MockFileSystem) {
 				// Directory with owner write permission, owned by current user
 				currentGid, err := strconv.ParseUint(currentUser.Gid, 10, 32)
 				require.NoError(t, err)
@@ -47,7 +47,7 @@ func TestValidator_validateDirectoryComponentPermissions_WithRealUID(t *testing.
 		},
 		{
 			name: "owner_write_permission_with_non_matching_uid",
-			setupFunc: func(mockFS *common.MockFileSystem) {
+			setupFunc: func(mockFS *commontesting.MockFileSystem) {
 				// Directory with owner write permission, owned by different user
 				currentGid, err := strconv.ParseUint(currentUser.Gid, 10, 32)
 				require.NoError(t, err)
@@ -60,7 +60,7 @@ func TestValidator_validateDirectoryComponentPermissions_WithRealUID(t *testing.
 		},
 		{
 			name: "root_owned_directory_always_allowed",
-			setupFunc: func(mockFS *common.MockFileSystem) {
+			setupFunc: func(mockFS *commontesting.MockFileSystem) {
 				// Root-owned directory should always be allowed
 				err := mockFS.AddDirWithOwner("/test-dir", 0o755, UIDRoot, GIDRoot)
 				require.NoError(t, err)
@@ -70,7 +70,7 @@ func TestValidator_validateDirectoryComponentPermissions_WithRealUID(t *testing.
 		},
 		{
 			name: "group_write_permission_with_single_group_member",
-			setupFunc: func(mockFS *common.MockFileSystem) {
+			setupFunc: func(mockFS *commontesting.MockFileSystem) {
 				// Directory with group write permission using current user's group
 				// Use permissive mode for this test to avoid environmental complexities
 				currentGid, err := strconv.ParseUint(currentUser.Gid, 10, 32)
@@ -84,7 +84,7 @@ func TestValidator_validateDirectoryComponentPermissions_WithRealUID(t *testing.
 		},
 		{
 			name: "world_writable_directory_rejected",
-			setupFunc: func(mockFS *common.MockFileSystem) {
+			setupFunc: func(mockFS *commontesting.MockFileSystem) {
 				// World-writable directory should be rejected
 				currentGid, err := strconv.ParseUint(currentUser.Gid, 10, 32)
 				require.NoError(t, err)
@@ -100,7 +100,7 @@ func TestValidator_validateDirectoryComponentPermissions_WithRealUID(t *testing.
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create mock filesystem and validator
-			mockFS := common.NewMockFileSystem()
+			mockFS := commontesting.NewMockFileSystem()
 			tt.setupFunc(mockFS)
 
 			// Create actual group membership (will be used for real group checking)
@@ -141,14 +141,14 @@ func TestValidator_validateCompletePath(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		setupFunc func(mockFS *common.MockFileSystem)
+		setupFunc func(mockFS *commontesting.MockFileSystem)
 		path      string
 		realUID   int
 		wantErr   bool
 	}{
 		{
 			name: "complete_path_validation_with_uid_context",
-			setupFunc: func(mockFS *common.MockFileSystem) {
+			setupFunc: func(mockFS *commontesting.MockFileSystem) {
 				// Create a complete directory hierarchy owned by current user
 				err := mockFS.AddDirWithOwner("/home", 0o755, UIDRoot, GIDRoot)
 				require.NoError(t, err)
@@ -165,7 +165,7 @@ func TestValidator_validateCompletePath(t *testing.T) {
 		},
 		{
 			name: "complete_path_validation_with_ownership_mismatch",
-			setupFunc: func(mockFS *common.MockFileSystem) {
+			setupFunc: func(mockFS *commontesting.MockFileSystem) {
 				// Create hierarchy with ownership mismatch
 				err := mockFS.AddDirWithOwner("/tmp", 0o755, UIDRoot, GIDRoot)
 				require.NoError(t, err)
@@ -181,7 +181,7 @@ func TestValidator_validateCompletePath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockFS := common.NewMockFileSystem()
+			mockFS := commontesting.NewMockFileSystem()
 			tt.setupFunc(mockFS)
 
 			groupMembership := groupmembership.New()
