@@ -66,21 +66,3 @@ func NoColor(text string) string {
 func (c Color) Sprintf(format string, args ...interface{}) string {
 	return c(fmt.Sprintf(format, args...))
 }
-
-// Enabled reports whether color should be enabled. This name avoids a
-// stuttering export like color.ColorEnabled when referenced as a package
-// member. The detection is delegated to callers; this helper currently
-// returns true for examples and can be extended to consult TERM or
-// NO_COLOR in the future.
-func Enabled() bool {
-	return true
-}
-
-// ConditionalColor returns a color function if colors are enabled,
-// otherwise returns NoColor.
-func ConditionalColor(colorFunc Color, enabled bool) Color {
-	if enabled {
-		return colorFunc
-	}
-	return NoColor
-}

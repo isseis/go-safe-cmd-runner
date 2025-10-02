@@ -59,36 +59,6 @@ func TestColorSprintf(t *testing.T) {
 	}
 }
 
-func TestConditionalColor(t *testing.T) {
-	tests := []struct {
-		name     string
-		enabled  bool
-		input    string
-		hasColor bool
-	}{
-		{"Color enabled", true, "TEST", true},
-		{"Color disabled", false, "TEST", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			colorFunc := ConditionalColor(Red, tt.enabled)
-			result := colorFunc(tt.input)
-
-			hasAnsiCodes := strings.Contains(result, "\033[")
-			if hasAnsiCodes != tt.hasColor {
-				t.Errorf("ConditionalColor(enabled=%v) result contains ANSI codes: %v, want %v",
-					tt.enabled, hasAnsiCodes, tt.hasColor)
-			}
-
-			// Check that the original text is still present
-			if !strings.Contains(result, tt.input) {
-				t.Errorf("ConditionalColor() result %q does not contain input %q", result, tt.input)
-			}
-		})
-	}
-}
-
 func TestColorResetHandling(t *testing.T) {
 	// Test that colors properly reset and don't interfere with each other
 	redText := Red("ERROR")
