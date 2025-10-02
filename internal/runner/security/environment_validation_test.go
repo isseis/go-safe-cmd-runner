@@ -163,3 +163,193 @@ func TestValidator_isSensitiveEnvVar(t *testing.T) {
 		}
 	})
 }
+
+func TestValidateVariableName(t *testing.T) {
+	t.Run("valid variable names", func(t *testing.T) {
+		validNames := []string{
+			"PATH",
+			"HOME",
+			"USER",
+			"_",
+			"_VAR",
+			"VAR_",
+			"VAR123",
+			"a",
+			"A",
+			"_123",
+			"MY_VAR_123",
+			"lowercase_var",
+			"UPPERCASE_VAR",
+			"Mixed_Case_Var",
+			"var1",
+			"var_1_2_3",
+		}
+
+		for _, name := range validNames {
+			err := ValidateVariableName(name)
+			assert.NoError(t, err, "Variable name %s should be valid", name)
+		}
+	})
+
+	t.Run("empty variable name", func(t *testing.T) {
+		err := ValidateVariableName("")
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, ErrVariableNameEmpty)
+	})
+
+	t.Run("invalid start character", func(t *testing.T) {
+		invalidStartNames := []string{
+			"1VAR",
+			"2test",
+			"9abc",
+			"-var",
+			"+var",
+			"=var",
+			"@var",
+			"#var",
+			"$var",
+			"%var",
+			"&var",
+			"*var",
+			"(var",
+			")var",
+			"{var",
+			"}var",
+			"[var",
+			"]var",
+			"|var",
+			"\\var",
+			"/var",
+			"?var",
+			".var",
+			",var",
+			"<var",
+			">var",
+			";var",
+			":var",
+			"'var",
+			"\"var",
+			"`var",
+			"~var",
+			"!var",
+		}
+
+		for _, name := range invalidStartNames {
+			err := ValidateVariableName(name)
+			assert.Error(t, err, "Variable name %s should be invalid (bad start)", name)
+			assert.ErrorIs(t, err, ErrVariableNameInvalidStart)
+		}
+	})
+
+	t.Run("invalid characters in name", func(t *testing.T) {
+		invalidCharNames := []string{
+			"VAR-NAME",
+			"VAR+NAME",
+			"VAR=NAME",
+			"VAR@NAME",
+			"VAR#NAME",
+			"VAR$NAME",
+			"VAR%NAME",
+			"VAR&NAME",
+			"VAR*NAME",
+			"VAR(NAME",
+			"VAR)NAME",
+			"VAR{NAME",
+			"VAR}NAME",
+			"VAR[NAME",
+			"VAR]NAME",
+			"VAR|NAME",
+			"VAR\\NAME",
+			"VAR/NAME",
+			"VAR?NAME",
+			"VAR.NAME",
+			"VAR,NAME",
+			"VAR<NAME",
+			"VAR>NAME",
+			"VAR;NAME",
+			"VAR:NAME",
+			"VAR'NAME",
+			"VAR\"NAME",
+			"VAR`NAME",
+			"VAR~NAME",
+			"VAR!NAME",
+			"VAR NAME",  // space
+			"VAR\tNAME", // tab
+			"VAR\nNAME", // newline
+		}
+
+		for _, name := range invalidCharNames {
+			err := ValidateVariableName(name)
+			assert.Error(t, err, "Variable name %s should be invalid (bad char)", name)
+			assert.ErrorIs(t, err, ErrVariableNameInvalidChar)
+		}
+	})
+
+	t.Run("edge cases", func(t *testing.T) {
+		// Single character valid names
+		singleCharValid := []string{"a", "A", "z", "Z", "_"}
+		for _, name := range singleCharValid {
+			err := ValidateVariableName(name)
+			assert.NoError(t, err, "Single character %s should be valid", name)
+		}
+
+		// Very long but valid name
+		longName := "VERY_LONG_VARIABLE_NAME_WITH_MANY_CHARACTERS_123_456_789"
+		err := ValidateVariableName(longName)
+		assert.NoError(t, err, "Long variable name should be valid")
+
+		// Name with all valid character types
+		mixedName := "aB_123_cD_456"
+		err = ValidateVariableName(mixedName)
+		assert.NoError(t, err, "Mixed character name should be valid")
+	})
+}
+
+func TestIsVariableValueSafe(t *testing.T) {
+	t.Run("safe values", func(t *testing.T) {
+		safeValues := []struct {
+			name  string
+			value string
+		}{
+			{"PATH", "/usr/bin:/bin"},
+			{"HOME", "/home/user"},
+			{"USER", "testuser"},
+			{"EMAIL", "user@example.com"},
+			{"NUMBER", "123456"},
+			{"TEXT", "simple_text_value"},
+			{"MIXED", "value-with_various.characters"},
+		}
+
+		for _, test := range safeValues {
+			err := IsVariableValueSafe(test.name, test.value)
+			assert.NoError(t, err, "Value %s for variable %s should be safe", test.value, test.name)
+		}
+	})
+
+	t.Run("unsafe values", func(t *testing.T) {
+		unsafeValues := []struct {
+			name  string
+			value string
+		}{
+			{"DANGEROUS", "value; rm -rf /"},
+			{"INJECTION", "value | cat /etc/passwd"},
+			{"COMMAND", "value && malicious_command"},
+			{"FALLBACK", "value || backup_command"},
+			{"SUBSHELL", "value $(malicious_command)"},
+			{"BACKTICK", "value `malicious_command`"},
+			{"REDIRECT_OUT", "value > /tmp/output"},
+			{"REDIRECT_IN", "value < /etc/passwd"},
+		}
+
+		for _, test := range unsafeValues {
+			err := IsVariableValueSafe(test.name, test.value)
+			assert.Error(t, err, "Value %s for variable %s should be unsafe", test.value, test.name)
+			assert.ErrorIs(t, err, ErrUnsafeEnvironmentVar)
+		}
+	})
+
+	t.Run("empty values", func(t *testing.T) {
+		err := IsVariableValueSafe("TEST_VAR", "")
+		assert.NoError(t, err, "Empty value should be safe")
+	})
+}
