@@ -40,34 +40,6 @@ func (e *SecurityViolationError) Error() string {
 	return fmt.Sprintf("security violation in %s: %s (at %s)", e.Op, e.Context, e.Time.Format(time.RFC3339))
 }
 
-// ProductionAPIViolationError is returned when testing APIs are used in production builds
-type ProductionAPIViolationError struct {
-	SecurityViolationError
-	APIName    string // name of the API that was misused
-	CallerFile string // file that made the invalid call
-	CallerLine int    // line number that made the invalid call
-}
-
-// NewProductionAPIViolationError creates a new ProductionAPIViolationError
-func NewProductionAPIViolationError(apiName, callerFile string, callerLine int) *ProductionAPIViolationError {
-	return &ProductionAPIViolationError{
-		SecurityViolationError: SecurityViolationError{
-			Op:      "APIViolation",
-			Context: fmt.Sprintf("testing API %s called from production code", apiName),
-			Time:    time.Now(),
-		},
-		APIName:    apiName,
-		CallerFile: callerFile,
-		CallerLine: callerLine,
-	}
-}
-
-// Error returns the error message
-func (e *ProductionAPIViolationError) Error() string {
-	return fmt.Sprintf("production API violation: testing API %s called from %s:%d (at %s)",
-		e.APIName, e.CallerFile, e.CallerLine, e.Time.Format(time.RFC3339))
-}
-
 // HashDirectorySecurityError is returned when hash directory security constraints are violated
 type HashDirectorySecurityError struct {
 	SecurityViolationError

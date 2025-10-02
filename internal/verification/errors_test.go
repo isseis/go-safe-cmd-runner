@@ -106,20 +106,6 @@ func TestSecurityViolationError(t *testing.T) {
 	assert.Contains(t, err.Error(), "at")
 }
 
-// Test ProductionAPIViolationError
-func TestProductionAPIViolationError(t *testing.T) {
-	err := NewProductionAPIViolationError("NewManagerForTest", "/path/to/test.go", 42)
-
-	assert.Equal(t, "NewManagerForTest", err.APIName)
-	assert.Equal(t, "/path/to/test.go", err.CallerFile)
-	assert.Equal(t, 42, err.CallerLine)
-
-	errorMsg := err.Error()
-	assert.Contains(t, errorMsg, "production API violation")
-	assert.Contains(t, errorMsg, "testing API NewManagerForTest")
-	assert.Contains(t, errorMsg, "/path/to/test.go:42")
-}
-
 // Test HashDirectorySecurityError
 func TestHashDirectorySecurityError(t *testing.T) {
 	err := NewHashDirectorySecurityError(
@@ -203,35 +189,6 @@ func TestSecurityViolationErrorAdvanced(t *testing.T) {
 
 		expectedMessage := "security violation in TestOperation: test security violation (at 2025-09-15T12:00:00Z)"
 		assert.Equal(t, expectedMessage, err.Error())
-	})
-}
-
-// TestProductionAPIViolationErrorAdvanced tests additional ProductionAPIViolationError functionality
-func TestProductionAPIViolationErrorAdvanced(t *testing.T) {
-	t.Run("creation_and_error_message", func(t *testing.T) {
-		err := NewProductionAPIViolationError("NewManagerForTest", "/path/to/file.go", 42)
-
-		// Verify fields are set correctly
-		assert.Equal(t, "APIViolation", err.Op)
-		assert.Equal(t, "NewManagerForTest", err.APIName)
-		assert.Equal(t, "/path/to/file.go", err.CallerFile)
-		assert.Equal(t, 42, err.CallerLine)
-		assert.Contains(t, err.Context, "testing API NewManagerForTest called from production code")
-		assert.False(t, err.Time.IsZero())
-
-		// Verify error message format
-		errorMsg := err.Error()
-		assert.Contains(t, errorMsg, "production API violation")
-		assert.Contains(t, errorMsg, "NewManagerForTest")
-		assert.Contains(t, errorMsg, "/path/to/file.go:42")
-	})
-
-	t.Run("error_interface_compliance", func(t *testing.T) {
-		err := NewProductionAPIViolationError("TestAPI", "test.go", 1)
-
-		// Should implement error interface
-		var _ error = err
-		assert.NotEmpty(t, err.Error())
 	})
 }
 
@@ -502,16 +459,5 @@ func TestErrorWrappingBehavior(t *testing.T) {
 		// Test direct unwrapping
 		assert.Equal(t, verifyErr, verificationErr.Unwrap())
 		assert.Equal(t, rootErr, verifyErr.Unwrap())
-	})
-
-	t.Run("security_error_isolation", func(t *testing.T) {
-		// Security errors should not wrap other errors (they are root causes)
-		secErr := NewProductionAPIViolationError("TestAPI", "file.go", 1)
-		hashErr := NewHashDirectorySecurityError("/custom", "/default", "reason")
-
-		// Security errors should not have Unwrap methods or should return nil
-		// (they are designed to be root security violations)
-		assert.IsType(t, &ProductionAPIViolationError{}, secErr)
-		assert.IsType(t, &HashDirectorySecurityError{}, hashErr)
 	})
 }
