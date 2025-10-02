@@ -460,7 +460,7 @@ for file in "${FILES[@]}"; do
         # エラー詳細を記録
         {
             echo "  Current hash: $(sha256sum "$file" | cut -d' ' -f1)"
-            HASH_FILE="${HASH_DIR}/$(echo "$file" | sed 's|/|_|g')"
+            HASH_FILE="${HASH_DIR}/$(echo "$file" | sed 's|/|~|g')"
             if [[ -f "$HASH_FILE" ]]; then
                 echo "  Recorded hash: $(cat "$HASH_FILE")"
             else
