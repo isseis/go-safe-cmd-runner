@@ -606,6 +606,157 @@ func TestValidator_CreateSafeLogFields(t *testing.T) {
 	assert.Equal(t, "30s", result["timeout"])
 }
 
+func TestValidator_LogFieldsWithError(t *testing.T) {
+	tests := []struct {
+		name           string
+		opts           LoggingOptions
+		baseFields     map[string]any
+		err            error
+		expectedFields map[string]any
+		description    string
+	}{
+		{
+			name: "error field added when error is not nil",
+			opts: LoggingOptions{
+				IncludeErrorDetails: true,
+				RedactSensitiveInfo: false,
+			},
+			baseFields: map[string]any{
+				"command": "test",
+			},
+			err: errors.New("test error"),
+			expectedFields: map[string]any{
+				"command": "test",
+				"error":   "test error",
+			},
+			description: "error field should be added with sanitized error message",
+		},
+		{
+			name: "error field not added when error is nil",
+			opts: LoggingOptions{
+				IncludeErrorDetails: true,
+			},
+			baseFields: map[string]any{
+				"command": "test",
+			},
+			err: nil,
+			expectedFields: map[string]any{
+				"command": "test",
+			},
+			description: "error field should not be added when error is nil",
+		},
+		{
+			name: "base string fields are sanitized with redaction",
+			opts: LoggingOptions{
+				IncludeErrorDetails: true,
+				RedactSensitiveInfo: true,
+			},
+			baseFields: map[string]any{
+				"output": "login password=admin123",
+			},
+			err: errors.New("failed password=wrongpass"),
+			expectedFields: map[string]any{
+				"output": "login password=[REDACTED]",
+				"error":  "failed password=[REDACTED]",
+			},
+			description: "both base fields and error should be sanitized",
+		},
+		{
+			name: "base error fields are sanitized",
+			opts: LoggingOptions{
+				IncludeErrorDetails:   true,
+				RedactSensitiveInfo:   true,
+				MaxErrorMessageLength: 0,
+			},
+			baseFields: map[string]any{
+				"cause": errors.New("initial password=xyz"),
+			},
+			err: errors.New("final password=abc"),
+			expectedFields: map[string]any{
+				"cause": "initial password=[REDACTED]",
+				"error": "final password=[REDACTED]",
+			},
+			description: "error in base fields should be sanitized separately from main error",
+		},
+		{
+			name: "non-string, non-error fields preserved",
+			opts: LoggingOptions{
+				IncludeErrorDetails: true,
+				RedactSensitiveInfo: true,
+			},
+			baseFields: map[string]any{
+				"count":   42,
+				"enabled": true,
+				"ratio":   0.75,
+			},
+			err: errors.New("operation failed"),
+			expectedFields: map[string]any{
+				"count":   42,
+				"enabled": true,
+				"ratio":   0.75,
+				"error":   "operation failed",
+			},
+			description: "non-string, non-error types should be preserved as-is",
+		},
+		{
+			name: "error details redacted when IncludeErrorDetails is false",
+			opts: LoggingOptions{
+				IncludeErrorDetails: false,
+			},
+			baseFields: map[string]any{
+				"command": "test",
+			},
+			err: errors.New("sensitive error information"),
+			expectedFields: map[string]any{
+				"command": "test",
+				"error":   "[error details redacted for security]",
+			},
+			description: "error should be redacted when IncludeErrorDetails is false",
+		},
+		{
+			name: "empty base fields with error",
+			opts: LoggingOptions{
+				IncludeErrorDetails: true,
+			},
+			baseFields: map[string]any{},
+			err:        errors.New("test error"),
+			expectedFields: map[string]any{
+				"error": "test error",
+			},
+			description: "should work with empty base fields",
+		},
+		{
+			name: "combined redaction and truncation",
+			opts: LoggingOptions{
+				IncludeErrorDetails:   true,
+				RedactSensitiveInfo:   true,
+				MaxErrorMessageLength: 25,
+			},
+			baseFields: map[string]any{
+				"output": "Authorization: Bearer secret123",
+			},
+			err: errors.New("Authentication failed: token=verylongtokenstring1234567890"),
+			expectedFields: map[string]any{
+				"output": "Authorization: Bearer [REDACTED]",
+				"error":  "Authentication failed: to...[truncated]",
+			},
+			description: "redaction and truncation should both be applied",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := DefaultConfig()
+			config.LoggingOptions = tt.opts
+			validator, err := NewValidator(config)
+			require.NoError(t, err)
+
+			result := validator.LogFieldsWithError(tt.baseFields, tt.err)
+			assert.Equal(t, tt.expectedFields, result, tt.description)
+		})
+	}
+}
+
 func TestMatchesPattern(t *testing.T) {
 	tests := []struct {
 		name     string
