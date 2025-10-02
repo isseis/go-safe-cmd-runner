@@ -1,3 +1,5 @@
+//go:build test
+
 // Package testing provides shared test utilities for privilege management.
 package testing
 

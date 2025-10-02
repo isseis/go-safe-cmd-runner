@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
@@ -77,7 +78,7 @@ func (p *VariableExpander) ExpandCommandEnv(cmd *runnertypes.Command, groupName 
 
 	// First pass: Populate the environment with unexpanded values from the command.
 	for i, envStr := range cmd.Env {
-		varName, varValue, ok := ParseEnvVariable(envStr)
+		varName, varValue, ok := common.ParseEnvVariable(envStr)
 		if !ok {
 			return nil, fmt.Errorf("invalid environment variable format in Command.Env in command %s, env_index: %d, env_entry: %s: %w", cmd.Name, i, envStr, ErrMalformedEnvVariable)
 		}

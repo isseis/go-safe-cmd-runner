@@ -1,17 +1,20 @@
 //go:build test || !prod
 
-package executor
+package testing
 
-import "os"
+import (
+	"os"
+)
 
-// Common mock implementations for testing across executor package
+// Mock implementations for executor interfaces used in testing.
+// This file contains lightweight mocks that don't depend on external libraries.
 
-// MockOutputWriter implements OutputWriter for testing
+// MockOutputWriter implements executor.OutputWriter for testing
 type MockOutputWriter struct {
 	Outputs []string
 }
 
-// Write implements the OutputWriter interface for testing
+// Write implements the executor.OutputWriter interface for testing
 func (m *MockOutputWriter) Write(_ string, data []byte) error {
 	if m.Outputs == nil {
 		m.Outputs = make([]string, 0)
@@ -20,12 +23,12 @@ func (m *MockOutputWriter) Write(_ string, data []byte) error {
 	return nil
 }
 
-// Close implements the OutputWriter interface for testing
+// Close implements the executor.OutputWriter interface for testing
 func (m *MockOutputWriter) Close() error {
 	return nil
 }
 
-// MockFileSystem implements FileSystem for testing
+// MockFileSystem implements executor.FileSystem for testing
 type MockFileSystem struct {
 	// A map to configure which paths exist for advanced testing scenarios
 	ExistingPaths map[string]bool
@@ -33,7 +36,7 @@ type MockFileSystem struct {
 	Err error
 }
 
-// CreateTempDir implements the FileSystem interface for testing
+// CreateTempDir implements the executor.FileSystem interface for testing
 func (m *MockFileSystem) CreateTempDir(dir, prefix string) (string, error) {
 	if m.Err != nil {
 		return "", m.Err
@@ -41,7 +44,7 @@ func (m *MockFileSystem) CreateTempDir(dir, prefix string) (string, error) {
 	return os.MkdirTemp(dir, prefix)
 }
 
-// RemoveAll implements the FileSystem interface for testing
+// RemoveAll implements the executor.FileSystem interface for testing
 func (m *MockFileSystem) RemoveAll(path string) error {
 	if m.Err != nil {
 		return m.Err
@@ -49,7 +52,7 @@ func (m *MockFileSystem) RemoveAll(path string) error {
 	return os.RemoveAll(path)
 }
 
-// FileExists implements the FileSystem interface for testing
+// FileExists implements the executor.FileSystem interface for testing
 func (m *MockFileSystem) FileExists(path string) (bool, error) {
 	if m.Err != nil {
 		return false, m.Err

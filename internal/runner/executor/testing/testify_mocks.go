@@ -1,10 +1,10 @@
-// Package testing provides mock implementations for executor interfaces used in testing.
+// Package testing provides testify-based mock implementations for executor interfaces.
 package testing
 
 import (
 	"context"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
+	executor "github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/mock"
 )

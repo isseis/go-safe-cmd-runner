@@ -396,7 +396,7 @@ func (p *CommandEnvProcessor) ProcessCommandEnvironment(
 
     // Process each Command.Env entry
     for i, env := range cmd.Env {
-        variable, value, ok := environment.ParseEnvVariable(env)
+        variable, value, ok := common.ParseEnvVariable(env)
         if !ok {
             p.logger.Warn("Invalid environment variable format in Command.Env",
                 "command", cmd.Name,
@@ -996,7 +996,7 @@ func (v *ConfigValidator) validateCommand(cmd *runnertypes.Command, location str
 
 // validateCommandEnvEntry validates a single command environment variable entry
 func (v *ConfigValidator) validateCommandEnvEntry(env, location string, result *ValidationResult) error {
-    variable, value, ok := environment.ParseEnvVariable(env)
+    variable, value, ok := common.ParseEnvVariable(env)
     if !ok {
         result.Errors = append(result.Errors, ValidationError{
             Type:     "invalid_env_format",

@@ -1,4 +1,5 @@
-package common
+// Package testing provides mock implementations for testing common interfaces.
+package testing
 
 import (
 	"errors"

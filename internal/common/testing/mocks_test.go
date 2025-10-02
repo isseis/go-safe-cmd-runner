@@ -1,5 +1,4 @@
-// nolint:revive // common is an appropriate package name for shared internal utilities
-package common
+package testing
 
 import (
 	"os"

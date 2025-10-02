@@ -15,6 +15,27 @@ var (
 	mediumRiskPatterns []DangerousCommandPattern
 )
 
+// dangerousCommandPatterns contains the static list of dangerous command patterns
+var dangerousCommandPatterns = []DangerousCommandPattern{
+	// File system destruction
+	{[]string{"rm", "-rf"}, runnertypes.RiskLevelHigh, "Recursive file removal"},
+	{[]string{"sudo", "rm"}, runnertypes.RiskLevelHigh, "Privileged file removal"},
+	{[]string{"format"}, runnertypes.RiskLevelHigh, "Disk formatting"},
+	{[]string{"mkfs"}, runnertypes.RiskLevelHigh, "File system creation"},
+	{[]string{"fdisk"}, runnertypes.RiskLevelHigh, "Disk partitioning"},
+
+	// Data manipulation
+	{[]string{"dd", "if="}, runnertypes.RiskLevelHigh, "Low-level disk operations"},
+	{[]string{"chmod", "777"}, runnertypes.RiskLevelMedium, "Overly permissive file permissions"},
+	{[]string{"chown", "root"}, runnertypes.RiskLevelMedium, "Ownership change to root"},
+
+	// Network operations
+	{[]string{"wget"}, runnertypes.RiskLevelMedium, "File download"},
+	{[]string{"curl"}, runnertypes.RiskLevelMedium, "Network request"},
+	{[]string{"nc", "-"}, runnertypes.RiskLevelMedium, "Network connection"},
+	{[]string{"netcat"}, runnertypes.RiskLevelMedium, "Network connection"},
+}
+
 // privilegeCommands is a pre-defined list of privilege escalation commands.
 var privilegeCommands = []string{"sudo", "su", "doas"}
 
@@ -38,8 +59,7 @@ var (
 
 // init initializes the pre-sorted pattern lists for efficient lookup
 func init() {
-	patterns := GetDangerousCommandPatterns()
-	for _, p := range patterns {
+	for _, p := range dangerousCommandPatterns {
 		switch p.RiskLevel {
 		case runnertypes.RiskLevelHigh:
 			highRiskPatterns = append(highRiskPatterns, p)
@@ -52,29 +72,6 @@ func init() {
 			// Skip invalid risk levels
 			continue
 		}
-	}
-}
-
-// GetDangerousCommandPatterns returns a list of dangerous command patterns for security analysis
-func GetDangerousCommandPatterns() []DangerousCommandPattern {
-	return []DangerousCommandPattern{
-		// File system destruction
-		{[]string{"rm", "-rf"}, runnertypes.RiskLevelHigh, "Recursive file removal"},
-		{[]string{"sudo", "rm"}, runnertypes.RiskLevelHigh, "Privileged file removal"},
-		{[]string{"format"}, runnertypes.RiskLevelHigh, "Disk formatting"},
-		{[]string{"mkfs"}, runnertypes.RiskLevelHigh, "File system creation"},
-		{[]string{"fdisk"}, runnertypes.RiskLevelHigh, "Disk partitioning"},
-
-		// Data manipulation
-		{[]string{"dd", "if="}, runnertypes.RiskLevelHigh, "Low-level disk operations"},
-		{[]string{"chmod", "777"}, runnertypes.RiskLevelMedium, "Overly permissive file permissions"},
-		{[]string{"chown", "root"}, runnertypes.RiskLevelMedium, "Ownership change to root"},
-
-		// Network operations
-		{[]string{"wget"}, runnertypes.RiskLevelMedium, "File download"},
-		{[]string{"curl"}, runnertypes.RiskLevelMedium, "Network request"},
-		{[]string{"nc", "-"}, runnertypes.RiskLevelMedium, "Network connection"},
-		{[]string{"netcat"}, runnertypes.RiskLevelMedium, "Network connection"},
 	}
 }
 
