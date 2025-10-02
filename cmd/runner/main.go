@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/cmdcommon"
@@ -18,7 +19,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/cli"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/hashdir"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -58,8 +58,8 @@ func main() {
 
 	// Validate DefaultHashDirectory early - this should never fail in production
 	// but helps catch build-time configuration errors
-	if err := hashdir.ValidateDefaultHashDirectory(cmdcommon.DefaultHashDirectory); err != nil {
-		logging.HandlePreExecutionError(logging.ErrorTypeBuildConfig, fmt.Sprintf("Invalid default hash directory: %v", err), "main", *runID)
+	if !filepath.IsAbs(cmdcommon.DefaultHashDirectory) {
+		logging.HandlePreExecutionError(logging.ErrorTypeBuildConfig, fmt.Sprintf("Invalid default hash directory: must be absolute path, got: %s", cmdcommon.DefaultHashDirectory), "main", *runID)
 		os.Exit(1)
 	}
 

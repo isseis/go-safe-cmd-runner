@@ -6,13 +6,10 @@ import (
 	"errors"
 	"flag"
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/hashdir"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // setupTestFlags initializes the command-line flags for testing and returns a cleanup function
@@ -87,23 +84,6 @@ func TestNewManagerProduction(t *testing.T) {
 	})
 }
 
-// Define a static error for testing
-var errTestUnderlying = errors.New("underlying error")
-
-// TestHashDirectoryError tests the hashdir.HashDirectoryError type
-func TestHashDirectoryError(t *testing.T) {
-	t.Run("error creation and behavior", func(t *testing.T) {
-		err := &hashdir.HashDirectoryError{
-			Type:  hashdir.HashDirectoryErrorTypeRelativePath,
-			Path:  "relative/path",
-			Cause: errTestUnderlying,
-		}
-
-		assert.Contains(t, err.Error(), "relative/path")
-		assert.True(t, errors.Is(err, errTestUnderlying))
-	})
-}
-
 // TestNewManagerForTestValidation tests the testing API validation
 func TestNewManagerForTestValidation(t *testing.T) {
 	t.Run("valid custom hash directory", func(t *testing.T) {
@@ -127,69 +107,5 @@ func TestNewManagerForTestValidation(t *testing.T) {
 		// This will fail due to directory not existing, but not due to relative path restriction
 		// We expect either a config error or manager error (directory doesn't exist)
 		assert.True(t, configErr != nil || managerErr != nil, "expected an error for non-existent directory")
-	})
-}
-
-// TestValidateHashDirectorySecurely tests security validation of hash directories
-func TestValidateHashDirectorySecurely(t *testing.T) {
-	t.Run("valid absolute path", func(t *testing.T) {
-		tempDir := t.TempDir()
-		result, err := hashdir.ValidateSecurely(tempDir)
-		assert.NoError(t, err)
-		assert.Equal(t, tempDir, result)
-	})
-
-	t.Run("relative path should fail", func(t *testing.T) {
-		result, err := hashdir.ValidateSecurely("relative/path")
-		assert.Error(t, err)
-		assert.Empty(t, result)
-
-		var hashDirErr *hashdir.HashDirectoryError
-		require.True(t, errors.As(err, &hashDirErr))
-		assert.Equal(t, hashdir.HashDirectoryErrorTypeRelativePath, hashDirErr.Type)
-	})
-
-	t.Run("non-existent directory should fail", func(t *testing.T) {
-		nonExistentPath := "/non/existent/directory"
-		result, err := hashdir.ValidateSecurely(nonExistentPath)
-		assert.Error(t, err)
-		assert.Empty(t, result)
-
-		var hashDirErr *hashdir.HashDirectoryError
-		require.True(t, errors.As(err, &hashDirErr))
-		assert.Equal(t, hashdir.HashDirectoryErrorTypeNotFound, hashDirErr.Type)
-	})
-
-	t.Run("file instead of directory should fail", func(t *testing.T) {
-		tempFile, err := os.CreateTemp("", "test_file")
-		require.NoError(t, err)
-		defer os.Remove(tempFile.Name())
-		tempFile.Close()
-
-		result, err := hashdir.ValidateSecurely(tempFile.Name())
-		assert.Error(t, err)
-		assert.Empty(t, result)
-
-		var hashDirErr *hashdir.HashDirectoryError
-		require.True(t, errors.As(err, &hashDirErr))
-		assert.Equal(t, hashdir.HashDirectoryErrorTypeNotDirectory, hashDirErr.Type)
-	})
-
-	t.Run("symlink attack prevention", func(t *testing.T) {
-		// Create a target directory
-		targetDir := t.TempDir()
-
-		// Create a symlink pointing to the target
-		symlinkPath := filepath.Join(t.TempDir(), "symlink")
-		err := os.Symlink(targetDir, symlinkPath)
-		require.NoError(t, err)
-
-		result, err := hashdir.ValidateSecurely(symlinkPath)
-		assert.Error(t, err)
-		assert.Empty(t, result)
-
-		var hashDirErr *hashdir.HashDirectoryError
-		require.True(t, errors.As(err, &hashDirErr))
-		assert.Equal(t, hashdir.HashDirectoryErrorTypeSymlinkAttack, hashDirErr.Type)
 	})
 }
