@@ -1,0 +1,756 @@
+# 第8章: 実践的な設定例
+
+本章では、実際のユースケースに基づいた実践的な設定例を紹介します。これらの例を参考に、自分の環境に合わせた設定ファイルを作成してください。
+
+## 8.1 基本的な設定例
+
+### シンプルなバックアップタスク
+
+日次でファイルをバックアップする基本的な設定:
+
+```toml
+version = "1.0"
+
+[global]
+timeout = 300
+workdir = "/tmp"
+log_level = "info"
+env_allowlist = ["PATH", "HOME"]
+
+[[groups]]
+name = "daily_backup"
+description = "日次ファイルバックアップ"
+workdir = "/var/backups"
+
+[[groups.commands]]
+name = "backup_configs"
+description = "設定ファイルのバックアップ"
+cmd = "/bin/tar"
+args = [
+    "-czf",
+    "config-backup.tar.gz",
+    "/etc/myapp",
+]
+timeout = 600
+
+[[groups.commands]]
+name = "backup_logs"
+description = "ログファイルのバックアップ"
+cmd = "/bin/tar"
+args = [
+    "-czf",
+    "logs-backup.tar.gz",
+    "/var/log/myapp",
+]
+timeout = 600
+
+[[groups.commands]]
+name = "list_backups"
+description = "バックアップファイルの一覧表示"
+cmd = "/bin/ls"
+args = ["-lh", "*.tar.gz"]
+output = "backup-list.txt"
+```
+
+## 8.2 セキュリティを重視した設定例
+
+### ファイル検証とアクセス制御
+
+セキュリティ要件が高い環境向けの設定:
+
+```toml
+version = "1.0"
+
+[global]
+timeout = 300
+workdir = "/opt/secure"
+log_level = "info"
+skip_standard_paths = false  # 全てのファイルを検証
+env_allowlist = ["PATH"]      # 最小限の環境変数
+verify_files = [
+    "/bin/sh",
+    "/bin/tar",
+    "/usr/bin/gpg",
+]
+
+[[groups]]
+name = "secure_backup"
+description = "セキュアなバックアップ処理"
+workdir = "/var/secure/backups"
+env_allowlist = ["PATH", "GPG_KEY_ID"]
+verify_files = [
+    "/opt/secure/bin/backup-tool",
+]
+
+[[groups.commands]]
+name = "create_backup"
+description = "バックアップアーカイブの作成"
+cmd = "/bin/tar"
+args = [
+    "-czf",
+    "data-backup.tar.gz",
+    "/opt/secure/data",
+]
+max_risk_level = "medium"
+timeout = 1800
+
+[[groups.commands]]
+name = "encrypt_backup"
+description = "バックアップの暗号化"
+cmd = "/usr/bin/gpg"
+args = [
+    "--encrypt",
+    "--recipient", "${GPG_KEY_ID}",
+    "data-backup.tar.gz",
+]
+env = ["GPG_KEY_ID=admin@example.com"]
+max_risk_level = "medium"
+
+[[groups.commands]]
+name = "verify_encrypted"
+description = "暗号化ファイルの検証"
+cmd = "/usr/bin/gpg"
+args = [
+    "--verify",
+    "data-backup.tar.gz.gpg",
+]
+max_risk_level = "low"
+output = "verification-result.txt"
+```
+
+## 8.3 リソース管理を含む設定例
+
+### 一時ディレクトリと自動クリーンアップ
+
+一時的な作業スペースを使用し、処理後に自動削除:
+
+```toml
+version = "1.0"
+
+[global]
+timeout = 300
+log_level = "info"
+env_allowlist = ["PATH", "HOME"]
+
+[[groups]]
+name = "temp_processing"
+description = "一時ディレクトリでのデータ処理"
+temp_dir = true   # 一時ディレクトリを自動作成
+cleanup = true    # 処理完了後に自動削除
+
+[[groups.commands]]
+name = "download_data"
+description = "データのダウンロード"
+cmd = "/usr/bin/curl"
+args = [
+    "-o", "data.csv",
+    "https://example.com/data/export.csv",
+]
+timeout = 600
+
+[[groups.commands]]
+name = "process_data"
+description = "データの加工"
+cmd = "/opt/tools/process"
+args = [
+    "--input", "data.csv",
+    "--output", "processed.csv",
+]
+timeout = 900
+
+[[groups.commands]]
+name = "upload_result"
+description = "処理結果のアップロード"
+cmd = "/usr/bin/curl"
+args = [
+    "-X", "POST",
+    "-F", "file=@processed.csv",
+    "https://example.com/api/upload",
+]
+timeout = 600
+output = "upload-response.txt"
+
+# 一時ディレクトリは自動的に削除される
+```
+
+## 8.4 権限昇格を伴う設定例
+
+### システム管理タスク
+
+root 権限が必要なシステムメンテナンス:
+
+```toml
+version = "1.0"
+
+[global]
+timeout = 600
+workdir = "/tmp"
+log_level = "info"
+env_allowlist = ["PATH", "HOME"]
+verify_files = [
+    "/usr/bin/apt-get",
+    "/usr/bin/systemctl",
+]
+
+[[groups]]
+name = "system_maintenance"
+description = "システムメンテナンスタスク"
+priority = 1
+
+# 非特権タスク: システム状態の確認
+[[groups.commands]]
+name = "check_disk_space"
+description = "ディスク使用量の確認"
+cmd = "/bin/df"
+args = ["-h"]
+max_risk_level = "low"
+output = "disk-usage.txt"
+
+# 特権タスク: パッケージの更新
+[[groups.commands]]
+name = "update_packages"
+description = "パッケージリストの更新"
+cmd = "/usr/bin/apt-get"
+args = ["update"]
+run_as_user = "root"
+max_risk_level = "high"
+timeout = 900
+
+# 特権タスク: サービスの再起動
+[[groups.commands]]
+name = "restart_service"
+description = "アプリケーションサービスの再起動"
+cmd = "/usr/bin/systemctl"
+args = ["restart", "myapp.service"]
+run_as_user = "root"
+max_risk_level = "high"
+
+# 非特権タスク: サービス状態の確認
+[[groups.commands]]
+name = "check_service_status"
+description = "サービス状態の確認"
+cmd = "/usr/bin/systemctl"
+args = ["status", "myapp.service"]
+max_risk_level = "low"
+output = "service-status.txt"
+```
+
+## 8.5 出力キャプチャを使用した設定例
+
+### ログ収集とレポート生成
+
+複数のコマンド出力を収集してレポートを作成:
+
+```toml
+version = "1.0"
+
+[global]
+timeout = 300
+workdir = "/var/reports"
+log_level = "info"
+env_allowlist = ["PATH", "HOME"]
+max_output_size = 10485760  # 10MB
+
+[[groups]]
+name = "system_report"
+description = "システム状態レポートの生成"
+
+[[groups.commands]]
+name = "disk_usage_report"
+description = "ディスク使用量レポート"
+cmd = "/bin/df"
+args = ["-h"]
+output = "reports/disk-usage.txt"
+
+[[groups.commands]]
+name = "memory_report"
+description = "メモリ使用状況レポート"
+cmd = "/usr/bin/free"
+args = ["-h"]
+output = "reports/memory-usage.txt"
+
+[[groups.commands]]
+name = "process_report"
+description = "プロセス一覧レポート"
+cmd = "/bin/ps"
+args = ["aux"]
+output = "reports/processes.txt"
+
+[[groups.commands]]
+name = "network_report"
+description = "ネットワーク接続状況レポート"
+cmd = "/bin/netstat"
+args = ["-tuln"]
+output = "reports/network-connections.txt"
+
+[[groups.commands]]
+name = "service_report"
+description = "サービス状態レポート"
+cmd = "/usr/bin/systemctl"
+args = ["list-units", "--type=service", "--state=running"]
+output = "reports/services.txt"
+
+# レポートファイルのアーカイブ
+[[groups.commands]]
+name = "archive_reports"
+description = "レポートの圧縮"
+cmd = "/bin/tar"
+args = [
+    "-czf",
+    "system-report-${DATE}.tar.gz",
+    "reports/",
+]
+env = ["DATE=2025-10-02"]
+```
+
+## 8.6 変数展開を活用した設定例
+
+### 環境別デプロイメント
+
+開発・ステージング・本番環境で異なる設定を使用:
+
+```toml
+version = "1.0"
+
+[global]
+timeout = 600
+log_level = "info"
+env_allowlist = [
+    "PATH",
+    "HOME",
+    "APP_BIN",
+    "CONFIG_DIR",
+    "ENV_TYPE",
+    "LOG_LEVEL",
+    "DB_URL",
+    "API_PORT",
+]
+
+# 開発環境
+[[groups]]
+name = "deploy_development"
+description = "開発環境へのデプロイ"
+priority = 1
+
+[[groups.commands]]
+name = "deploy_dev_config"
+cmd = "/bin/cp"
+args = [
+    "${CONFIG_DIR}/${ENV_TYPE}/app.yml",
+    "/etc/myapp/app.yml",
+]
+env = [
+    "CONFIG_DIR=/opt/configs",
+    "ENV_TYPE=development",
+]
+
+[[groups.commands]]
+name = "start_dev_server"
+cmd = "${APP_BIN}"
+args = [
+    "--config", "/etc/myapp/app.yml",
+    "--log-level", "${LOG_LEVEL}",
+    "--port", "${API_PORT}",
+    "--database", "${DB_URL}",
+]
+env = [
+    "APP_BIN=/opt/myapp/bin/server",
+    "LOG_LEVEL=debug",
+    "API_PORT=8080",
+    "DB_URL=postgresql://localhost/dev_db",
+]
+
+# ステージング環境
+[[groups]]
+name = "deploy_staging"
+description = "ステージング環境へのデプロイ"
+priority = 2
+
+[[groups.commands]]
+name = "deploy_staging_config"
+cmd = "/bin/cp"
+args = [
+    "${CONFIG_DIR}/${ENV_TYPE}/app.yml",
+    "/etc/myapp/app.yml",
+]
+env = [
+    "CONFIG_DIR=/opt/configs",
+    "ENV_TYPE=staging",
+]
+
+[[groups.commands]]
+name = "start_staging_server"
+cmd = "${APP_BIN}"
+args = [
+    "--config", "/etc/myapp/app.yml",
+    "--log-level", "${LOG_LEVEL}",
+    "--port", "${API_PORT}",
+    "--database", "${DB_URL}",
+]
+env = [
+    "APP_BIN=/opt/myapp/bin/server",
+    "LOG_LEVEL=info",
+    "API_PORT=8081",
+    "DB_URL=postgresql://staging-db/staging_db",
+]
+
+# 本番環境
+[[groups]]
+name = "deploy_production"
+description = "本番環境へのデプロイ"
+priority = 3
+
+[[groups.commands]]
+name = "deploy_prod_config"
+cmd = "/bin/cp"
+args = [
+    "${CONFIG_DIR}/${ENV_TYPE}/app.yml",
+    "/etc/myapp/app.yml",
+]
+env = [
+    "CONFIG_DIR=/opt/configs",
+    "ENV_TYPE=production",
+]
+
+[[groups.commands]]
+name = "start_prod_server"
+cmd = "${APP_BIN}"
+args = [
+    "--config", "/etc/myapp/app.yml",
+    "--log-level", "${LOG_LEVEL}",
+    "--port", "${API_PORT}",
+    "--database", "${DB_URL}",
+]
+env = [
+    "APP_BIN=/opt/myapp/bin/server",
+    "LOG_LEVEL=warn",
+    "API_PORT=8082",
+    "DB_URL=postgresql://prod-db/prod_db",
+]
+run_as_user = "appuser"
+max_risk_level = "high"
+```
+
+## 8.7 複合的な設定例
+
+### フルスタックアプリケーションのデプロイ
+
+データベース、アプリケーション、Webサーバーの統合デプロイ:
+
+```toml
+version = "1.0"
+
+[global]
+timeout = 900
+workdir = "/opt/deploy"
+log_level = "info"
+skip_standard_paths = true
+env_allowlist = [
+    "PATH",
+    "HOME",
+    "DB_USER",
+    "DB_NAME",
+    "APP_DIR",
+    "WEB_ROOT",
+    "BACKUP_DIR",
+]
+max_output_size = 52428800  # 50MB
+
+# フェーズ1: 事前準備
+[[groups]]
+name = "preparation"
+description = "デプロイ前の準備作業"
+priority = 1
+workdir = "/opt/deploy/prep"
+temp_dir = true
+cleanup = true
+
+[[groups.commands]]
+name = "backup_current_version"
+description = "現在のバージョンをバックアップ"
+cmd = "/bin/tar"
+args = [
+    "-czf",
+    "${BACKUP_DIR}/app-backup-${TIMESTAMP}.tar.gz",
+    "${APP_DIR}",
+]
+env = [
+    "BACKUP_DIR=/var/backups/app",
+    "APP_DIR=/opt/myapp",
+    "TIMESTAMP=2025-10-02-120000",
+]
+timeout = 1800
+
+[[groups.commands]]
+name = "check_dependencies"
+description = "依存関係の確認"
+cmd = "/usr/bin/dpkg"
+args = ["-l"]
+output = "installed-packages.txt"
+
+# フェーズ2: データベース更新
+[[groups]]
+name = "database_migration"
+description = "データベーススキーマの更新"
+priority = 2
+env_allowlist = ["PATH", "DB_USER", "DB_NAME", "PGPASSWORD"]
+verify_files = ["/usr/bin/psql", "/usr/bin/pg_dump"]
+
+[[groups.commands]]
+name = "backup_database"
+description = "データベースのバックアップ"
+cmd = "/usr/bin/pg_dump"
+args = [
+    "-U", "${DB_USER}",
+    "-d", "${DB_NAME}",
+    "-F", "c",
+    "-f", "/var/backups/db/backup-${TIMESTAMP}.dump",
+]
+env = [
+    "DB_USER=appuser",
+    "DB_NAME=myapp_db",
+    "TIMESTAMP=2025-10-02-120000",
+    "PGPASSWORD=secret123",
+]
+timeout = 1800
+output = "db-backup-log.txt"
+
+[[groups.commands]]
+name = "run_migrations"
+description = "データベースマイグレーションの実行"
+cmd = "/opt/myapp/bin/migrate"
+args = [
+    "--database", "postgresql://${DB_USER}@localhost/${DB_NAME}",
+    "--migrations", "/opt/myapp/migrations",
+]
+env = [
+    "DB_USER=appuser",
+    "DB_NAME=myapp_db",
+]
+timeout = 600
+
+# フェーズ3: アプリケーションデプロイ
+[[groups]]
+name = "application_deployment"
+description = "アプリケーションのデプロイ"
+priority = 3
+workdir = "/opt/myapp"
+
+[[groups.commands]]
+name = "stop_application"
+description = "アプリケーションの停止"
+cmd = "/usr/bin/systemctl"
+args = ["stop", "myapp.service"]
+run_as_user = "root"
+max_risk_level = "high"
+
+[[groups.commands]]
+name = "deploy_new_version"
+description = "新バージョンのデプロイ"
+cmd = "/bin/tar"
+args = [
+    "-xzf",
+    "/opt/deploy/releases/myapp-v2.0.0.tar.gz",
+    "-C", "/opt/myapp",
+]
+
+[[groups.commands]]
+name = "install_dependencies"
+description = "依存パッケージのインストール"
+cmd = "/usr/bin/pip3"
+args = [
+    "install",
+    "-r", "/opt/myapp/requirements.txt",
+]
+timeout = 600
+
+[[groups.commands]]
+name = "start_application"
+description = "アプリケーションの起動"
+cmd = "/usr/bin/systemctl"
+args = ["start", "myapp.service"]
+run_as_user = "root"
+max_risk_level = "high"
+
+# フェーズ4: Webサーバー設定更新
+[[groups]]
+name = "web_server_update"
+description = "Webサーバーの設定更新"
+priority = 4
+
+[[groups.commands]]
+name = "update_nginx_config"
+description = "Nginx設定の更新"
+cmd = "/bin/cp"
+args = [
+    "/opt/deploy/configs/nginx/myapp.conf",
+    "/etc/nginx/sites-available/myapp.conf",
+]
+run_as_user = "root"
+
+[[groups.commands]]
+name = "test_nginx_config"
+description = "Nginx設定の検証"
+cmd = "/usr/bin/nginx"
+args = ["-t"]
+run_as_user = "root"
+output = "nginx-config-test.txt"
+
+[[groups.commands]]
+name = "reload_nginx"
+description = "Nginxの再読み込み"
+cmd = "/usr/bin/systemctl"
+args = ["reload", "nginx"]
+run_as_user = "root"
+max_risk_level = "high"
+
+# フェーズ5: デプロイ検証
+[[groups]]
+name = "deployment_verification"
+description = "デプロイの検証"
+priority = 5
+
+[[groups.commands]]
+name = "health_check"
+description = "アプリケーションのヘルスチェック"
+cmd = "/usr/bin/curl"
+args = [
+    "-f",
+    "-s",
+    "http://localhost:8080/health",
+]
+timeout = 30
+output = "health-check-result.txt"
+
+[[groups.commands]]
+name = "smoke_test"
+description = "基本機能の動作確認"
+cmd = "/usr/bin/curl"
+args = [
+    "-f",
+    "-s",
+    "http://localhost:8080/api/status",
+]
+output = "smoke-test-result.txt"
+
+[[groups.commands]]
+name = "verify_database_connection"
+description = "データベース接続の確認"
+cmd = "/usr/bin/psql"
+args = [
+    "-U", "${DB_USER}",
+    "-d", "${DB_NAME}",
+    "-c", "SELECT version();",
+]
+env = [
+    "DB_USER=appuser",
+    "DB_NAME=myapp_db",
+]
+output = "db-connection-test.txt"
+
+# フェーズ6: 後処理とレポート
+[[groups]]
+name = "post_deployment"
+description = "デプロイ後の処理"
+priority = 6
+workdir = "/var/reports/deployment"
+
+[[groups.commands]]
+name = "generate_deployment_report"
+description = "デプロイレポートの生成"
+cmd = "/opt/tools/generate-report"
+args = [
+    "--deployment-log", "/var/log/deploy.log",
+    "--output", "deployment-report-${TIMESTAMP}.html",
+]
+env = ["TIMESTAMP=2025-10-02-120000"]
+
+[[groups.commands]]
+name = "cleanup_temp_files"
+description = "一時ファイルの削除"
+cmd = "/bin/rm"
+args = ["-rf", "/opt/deploy/temp"]
+max_risk_level = "medium"
+
+[[groups.commands]]
+name = "send_notification"
+description = "デプロイ完了通知"
+cmd = "/usr/bin/curl"
+args = [
+    "-X", "POST",
+    "-H", "Content-Type: application/json",
+    "-d", '{"message":"Deployment completed successfully"}',
+    "https://slack.example.com/webhook",
+]
+```
+
+## 8.8 リスクベースの制御例
+
+### リスクレベルに応じたコマンド実行
+
+```toml
+version = "1.0"
+
+[global]
+timeout = 300
+log_level = "info"
+env_allowlist = ["PATH", "HOME"]
+
+[[groups]]
+name = "risk_controlled_operations"
+description = "リスクレベルに基づく操作制御"
+
+# 低リスク: 読み取り専用操作
+[[groups.commands]]
+name = "read_config"
+description = "設定ファイルの読み取り"
+cmd = "/bin/cat"
+args = ["/etc/myapp/config.yml"]
+max_risk_level = "low"
+output = "config-content.txt"
+
+# 中リスク: ファイル作成・変更
+[[groups.commands]]
+name = "update_cache"
+description = "キャッシュファイルの更新"
+cmd = "/opt/myapp/update-cache"
+args = ["--refresh"]
+max_risk_level = "medium"
+
+# 高リスク: システム変更
+[[groups.commands]]
+name = "system_update"
+description = "システムパッケージの更新"
+cmd = "/usr/bin/apt-get"
+args = ["upgrade", "-y"]
+run_as_user = "root"
+max_risk_level = "high"
+timeout = 1800
+
+# リスクレベル超過で実行拒否される例
+[[groups.commands]]
+name = "dangerous_deletion"
+description = "大量削除(低リスクレベルでは実行不可)"
+cmd = "/bin/rm"
+args = ["-rf", "/tmp/old-data"]
+max_risk_level = "low"  # rm -rf は中リスク以上 → 実行拒否
+```
+
+## まとめ
+
+本章では、以下の実践的な設定例を紹介しました:
+
+1. **基本的な設定**: シンプルなバックアップタスク
+2. **セキュリティ重視**: ファイル検証とアクセス制御
+3. **リソース管理**: 一時ディレクトリと自動クリーンアップ
+4. **権限昇格**: システム管理タスク
+5. **出力キャプチャ**: ログ収集とレポート生成
+6. **変数展開**: 環境別デプロイメント
+7. **複合設定**: フルスタックアプリケーションのデプロイ
+8. **リスクベース制御**: リスクレベルに応じた実行制御
+
+これらの例を参考に、自分の環境やユースケースに合わせた設定ファイルを作成してください。
+
+## 次のステップ
+
+次章では、設定ファイル作成時のベストプラクティスを学びます。セキュリティ、保守性、パフォーマンスの観点から、より良い設定ファイルを作成するための指針を提供します。
