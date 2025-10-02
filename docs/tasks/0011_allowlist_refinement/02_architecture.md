@@ -108,7 +108,7 @@ if !allowed {
 // Command.Env の変数はallowlistチェックを除外
 func (r *Runner) processCommandEnvironment(cmd runnertypes.Command, envVars map[string]string, group *runnertypes.CommandGroup) error {
     for _, env := range cmd.Env {
-        variable, value, ok := environment.ParseEnvVariable(env)
+        variable, value, ok := common.ParseEnvVariable(env)
         if !ok {
             continue
         }

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
@@ -50,7 +51,7 @@ func (f *Filter) parseSystemEnvironment(predicate func(string) bool) map[string]
 	result := make(map[string]string)
 
 	for _, env := range os.Environ() {
-		variable, value, ok := ParseEnvVariable(env)
+		variable, value, ok := common.ParseEnvVariable(env)
 		if !ok {
 			continue
 		}

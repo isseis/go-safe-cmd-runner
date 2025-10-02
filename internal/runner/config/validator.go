@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
@@ -269,7 +269,7 @@ func (v *Validator) validateCommandEnv(env []string, location string, result *Va
 		itemLocation := fmt.Sprintf("%s[%d]", location, i)
 
 		// Parse environment variable
-		varName, varValue, ok := environment.ParseEnvVariable(envVar)
+		varName, varValue, ok := common.ParseEnvVariable(envVar)
 		if !ok {
 			result.Errors = append(result.Errors, ValidationError{
 				Type:     "invalid_env_format",
