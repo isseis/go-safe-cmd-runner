@@ -359,7 +359,9 @@ In addition to the above:
 ### Community
 
 - [GitHub Issues](https://github.com/isseis/go-safe-cmd-runner/issues) - Bug reports, feature requests
-- [GitHub Discussions](https://github.com/isseis/go-safe-cmd-runner/discussions) - Questions, idea sharing
+- [GitHub Discussions](https://github.com/isseis/go-safe-cmd-runner/issues) - Questions, idea sharing
+- [GitHub Issues](https://github.com/isseis/go-safe-cmd-runner/issues) - Bug reports, feature requests
+- [GitHub Discussions](https://github.com/isseis/go-safe-cmd-runner/issues) - Questions, idea sharing
 
 ---
 

@@ -359,7 +359,7 @@ A: 主な注意点：
 ### コミュニティ
 
 - [GitHub Issues](https://github.com/isseis/go-safe-cmd-runner/issues) - バグ報告、機能要望
-- [GitHub Discussions](https://github.com/isseis/go-safe-cmd-runner/discussions) - 質問、アイデア共有
+- [GitHub Discussions](https://github.com/isseis/go-safe-cmd-runner/issues) - 質問、アイデア共有
 
 ---
 
@@ -371,7 +371,7 @@ A: 主な注意点：
 2. **Pull Requestを送信**: ドキュメントの修正や追加
 3. **フィードバック**: 使いにくい点や不明瞭な説明を報告
 
-ドキュメント作成ガイドラインは [CLAUDE.ja.md](../../CLAUDE.ja.md) を参照してください。
+ ドキュメント作成ガイドラインは [CLAUDE.md](../../CLAUDE.md) を参照してください。
 
 ---
 

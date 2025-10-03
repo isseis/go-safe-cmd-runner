@@ -8,7 +8,6 @@ Project page: https://github.com/isseis/go-safe-cmd-runner/
 
 - [Background](#background)
 - [Key Security Features](#key-security-features)
-- [Recent Security Enhancements](#recent-security-enhancements)
 - [Core Features](#core-features)
 - [Architecture](#architecture)
 - [Quick Start](#quick-start)
