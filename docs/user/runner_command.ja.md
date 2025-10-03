@@ -73,13 +73,13 @@ record -file config.toml -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
 record -file /usr/local/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
 ```
 
-詳細は [record コマンドガイド](record_command.md) を参照してください。
+詳細は [record コマンドガイド](record_command.ja.md) を参照してください。
 
 ### 2.3 設定ファイルについて
 
 TOML設定ファイルの詳細な記述方法については、以下のドキュメントを参照してください：
 
-- [TOML設定ファイル ユーザーガイド](toml_config/README.md)
+- [TOML設定ファイル ユーザーガイド](toml_config/README.ja.md)
 
 ## 3. コマンドラインフラグ詳解
 
@@ -1259,7 +1259,7 @@ runner -config config.toml -validate
 runner -config config.toml -validate -log-level debug
 ```
 
-詳細な設定方法は [TOML設定ファイルガイド](toml_config/README.md) を参照してください。
+詳細な設定方法は [TOML設定ファイルガイド](toml_config/README.ja.md) を参照してください。
 
 ### 6.2 実行時エラー
 
@@ -1305,7 +1305,7 @@ record -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hash
 verify -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
 ```
 
-詳細は [verify コマンドガイド](verify_command.md) を参照してください。
+詳細は [verify コマンドガイド](verify_command.ja.md) を参照してください。
 
 #### タイムアウトエラー
 
@@ -1385,30 +1385,30 @@ unset NO_COLOR  # 設定されている場合は解除
 
 ### コマンドラインツール
 
-- [record コマンドガイド](record_command.md) - ハッシュファイルの作成（管理者向け）
-- [verify コマンドガイド](verify_command.md) - ファイル整合性の検証（デバッグ用）
+- [record コマンドガイド](record_command.ja.md) - ハッシュファイルの作成（管理者向け）
+- [verify コマンドガイド](verify_command.ja.md) - ファイル整合性の検証（デバッグ用）
 
 ### 設定ファイル
 
-- [TOML設定ファイル ユーザーガイド](toml_config/README.md) - 設定ファイルの詳細な記述方法
-  - [はじめに](toml_config/01_introduction.md)
-  - [設定ファイルの階層構造](toml_config/02_hierarchy.md)
-  - [ルートレベル設定](toml_config/03_root_level.md)
-  - [グローバルレベル設定](toml_config/04_global_level.md)
-  - [グループレベル設定](toml_config/05_group_level.md)
-  - [コマンドレベル設定](toml_config/06_command_level.md)
-  - [変数展開機能](toml_config/07_variable_expansion.md)
-  - [実践的な設定例](toml_config/08_practical_examples.md)
-  - [ベストプラクティス](toml_config/09_best_practices.md)
-  - [トラブルシューティング](toml_config/10_troubleshooting.md)
+- [TOML設定ファイル ユーザーガイド](toml_config/README.ja.md) - 設定ファイルの詳細な記述方法
+  - [はじめに](toml_config/01_introduction.ja.md)
+  - [設定ファイルの階層構造](toml_config/02_hierarchy.ja.md)
+  - [ルートレベル設定](toml_config/03_root_level.ja.md)
+  - [グローバルレベル設定](toml_config/04_global_level.ja.md)
+  - [グループレベル設定](toml_config/05_group_level.ja.md)
+  - [コマンドレベル設定](toml_config/06_command_level.ja.md)
+  - [変数展開機能](toml_config/07_variable_expansion.ja.md)
+  - [実践的な設定例](toml_config/08_practical_examples.ja.md)
+  - [ベストプラクティス](toml_config/09_best_practices.ja.md)
+  - [トラブルシューティング](toml_config/10_troubleshooting.ja.md)
 
 ### セキュリティ
 
-- [セキュリティリスク評価](security-risk-assessment.md) - リスクレベルの詳細
+- [セキュリティリスク評価](security-risk-assessment.ja.md) - リスクレベルの詳細
 
 ### プロジェクト情報
 
-- [README.md](../../README.md) - プロジェクト概要
+- [README.ja.md](../../README.ja.md) - プロジェクト概要
 - [開発者向けドキュメント](../dev/) - アーキテクチャとセキュリティ設計
 
 ---

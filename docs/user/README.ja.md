@@ -8,7 +8,7 @@ go-safe-cmd-runner のユーザー向けドキュメントへようこそ。こ�
 
 初めて go-safe-cmd-runner を使用する場合は、以下の順序でドキュメントを読むことをお勧めします：
 
-1. [プロジェクトREADME](../../README.md) - 概要とセキュリティ機能
+1. [プロジェクトREADME](../../README.ja.md) - 概要とセキュリティ機能
 2. [runner コマンドガイド](#コマンドラインツール) - メインの実行コマンド
 3. [TOML設定ファイルガイド](#設定ファイル) - 設定ファイルの記述方法
 4. [record コマンドガイド](#コマンドラインツール) - ハッシュファイルの作成
@@ -19,7 +19,7 @@ go-safe-cmd-runner のユーザー向けドキュメントへようこそ。こ�
 
 go-safe-cmd-runner は3つのコマンドラインツールを提供します。
 
-### [runner コマンド](runner_command.md) ⭐ 必読
+### [runner コマンド](runner_command.ja.md) ⭐ 必読
 
 メインの実行コマンド。TOML設定ファイルに基づいてコマンドを安全に実行します。
 
@@ -47,11 +47,11 @@ runner -config config.toml -validate
 - 設定ファイルを検証したい
 - 実行前に動作を確認したい
 
-[詳細はこちら →](runner_command.md)
+[詳細はこちら →](runner_command.ja.md)
 
 ---
 
-### [record コマンド](record_command.md)
+### [record コマンド](record_command.ja.md)
 
 ファイルのSHA-256ハッシュ値を記録するコマンド。管理者向け。
 
@@ -77,11 +77,11 @@ record -file /usr/bin/backup.sh \
 - ファイルを更新した後
 - システムパッケージ更新後
 
-[詳細はこちら →](record_command.md)
+[詳細はこちら →](record_command.ja.md)
 
 ---
 
-### [verify コマンド](verify_command.md)
+### [verify コマンド](verify_command.ja.md)
 
 ファイルの整合性を検証するコマンド。デバッグ・トラブルシューティング用。
 
@@ -107,52 +107,52 @@ done
 - runner 実行前の事前確認
 - 定期的な整合性チェック
 
-[詳細はこちら →](verify_command.md)
+[詳細はこちら →](verify_command.ja.md)
 
 ---
 
 ## 設定ファイル
 
-### [TOML設定ファイル ユーザーガイド](toml_config/README.md) ⭐ 必読
+### [TOML設定ファイル ユーザーガイド](toml_config/README.ja.md) ⭐ 必読
 
 runner コマンドで使用する設定ファイルの詳細な記述方法を解説します。
 
 **章立て:**
 
-1. **[はじめに](toml_config/01_introduction.md)**
+1. **[はじめに](toml_config/01_introduction.ja.md)**
    - TOML設定ファイルの概要
    - 基本構造
 
-2. **[設定ファイルの階層構造](toml_config/02_hierarchy.md)**
+2. **[設定ファイルの階層構造](toml_config/02_hierarchy.ja.md)**
    - ルート・グローバル・グループ・コマンドレベル
    - 継承とオーバーライド
 
-3. **[ルートレベル設定](toml_config/03_root_level.md)**
+3. **[ルートレベル設定](toml_config/03_root_level.ja.md)**
    - `version` パラメータ
 
-4. **[グローバルレベル設定](toml_config/04_global_level.md)**
+4. **[グローバルレベル設定](toml_config/04_global_level.ja.md)**
    - タイムアウト、ログレベル、環境変数許可リストなど
    - 全グループに適用されるデフォルト設定
 
-5. **[グループレベル設定](toml_config/05_group_level.md)**
+5. **[グループレベル設定](toml_config/05_group_level.ja.md)**
    - グループ単位でのコマンド管理
    - リソース管理とセキュリティ設定
 
-6. **[コマンドレベル設定](toml_config/06_command_level.md)**
+6. **[コマンドレベル設定](toml_config/06_command_level.ja.md)**
    - 個別コマンドの詳細設定
    - 実行ユーザー、リスクレベル、出力管理
 
-7. **[変数展開機能](toml_config/07_variable_expansion.md)**
+7. **[変数展開機能](toml_config/07_variable_expansion.ja.md)**
    - `${VAR}` 形式の変数展開
    - 動的な設定構築
 
-8. **[実践的な設定例](toml_config/08_practical_examples.md)**
+8. **[実践的な設定例](toml_config/08_practical_examples.ja.md)**
    - バックアップ、デプロイ、メンテナンスなどの実例
 
-9. **[ベストプラクティス](toml_config/09_best_practices.md)**
+9. **[ベストプラクティス](toml_config/09_best_practices.ja.md)**
    - セキュリティ、保守性、パフォーマンスの向上
 
-10. **[トラブルシューティング](toml_config/10_troubleshooting.md)**
+10. **[トラブルシューティング](toml_config/10_troubleshooting.ja.md)**
     - よくあるエラーと対処法
 
 **クイックスタート:**
@@ -177,13 +177,13 @@ run_as_user = "postgres"
 max_risk_level = "medium"
 ```
 
-[詳細はこちら →](toml_config/README.md)
+[詳細はこちら →](toml_config/README.ja.md)
 
 ---
 
 ## セキュリティ
 
-### [セキュリティリスク評価](security-risk-assessment.md)
+### [セキュリティリスク評価](security-risk-assessment.ja.md)
 
 コマンドのリスクレベルと評価基準について解説します。
 
@@ -198,7 +198,7 @@ max_risk_level = "medium"
 - **High**: システム管理、破壊的操作（systemctl, rm -rf）
 - **Critical**: 権限昇格（sudo, su）- 常にブロック
 
-[詳細はこちら →](security-risk-assessment.md)
+[詳細はこちら →](security-risk-assessment.ja.md)
 
 ---
 
@@ -275,7 +275,7 @@ runner -config /etc/go-safe-cmd-runner/backup.toml
 
 ### Q: どのコマンドから使い始めればいいですか？
 
-A: まず [runner コマンド](runner_command.md) と [TOML設定ファイルガイド](toml_config/README.md) を読むことをお勧めします。この2つでほとんどの使用ケースをカバーできます。
+A: まず [runner コマンド](runner_command.ja.md) と [TOML設定ファイルガイド](toml_config/README.ja.md) を読むことをお勧めします。この2つでほとんどの使用ケースをカバーできます。
 
 ### Q: 設定ファイルのサンプルはありますか？
 
@@ -284,7 +284,7 @@ A: はい、プロジェクトの `sample/` ディレクトリに多数のサン
 - `sample/variable_expansion_basic.toml` - 変数展開の基本
 - `sample/output_capture_basic.toml` - 出力キャプチャの基本
 
-詳細は [TOML設定ファイルガイド](toml_config/README.md) を参照してください。
+詳細は [TOML設定ファイルガイド](toml_config/README.ja.md) を参照してください。
 
 ### Q: エラーが発生した場合はどうすればいいですか？
 
@@ -294,13 +294,13 @@ A: 以下の順序で確認してください：
 2. **ファイル検証**: `verify -file <path> -hash-dir <hash-dir>`
 3. **デバッグログ**: `runner -config config.toml -log-level debug`
 4. **トラブルシューティングガイド**:
-   - [runner のトラブルシューティング](runner_command.md#6-トラブルシューティング)
-   - [TOML設定のトラブルシューティング](toml_config/10_troubleshooting.md)
+   - [runner のトラブルシューティング](runner_command.ja.md#6-トラブルシューティング)
+   - [TOML設定のトラブルシューティング](toml_config/10_troubleshooting.ja.md)
 
 ### Q: CI/CD環境で使用できますか？
 
 A: はい、CI/CD環境に最適化されています。詳細は以下を参照：
-- [runner コマンド - CI/CD環境での使用](runner_command.md#55-cicd環境での使用)
+- [runner コマンド - CI/CD環境での使用](runner_command.ja.md#55-cicd環境での使用)
 - 環境変数による自動検出（CI, GITHUB_ACTIONS, JENKINS_URL など）
 - `-quiet` フラグによる非インタラクティブモード
 
@@ -310,7 +310,7 @@ A: 主な注意点：
 - 設定ファイルと実行バイナリは必ずハッシュ値を記録してください
 - 環境変数は必要最小限のみ許可リストに追加してください
 - リスクレベルを適切に設定してください
-- 詳細は [セキュリティリスク評価](security-risk-assessment.md) を参照
+- 詳細は [セキュリティリスク評価](security-risk-assessment.ja.md) を参照
 
 ---
 
@@ -318,28 +318,28 @@ A: 主な注意点：
 
 ### 🎯 初心者向け（1-2時間）
 
-1. [プロジェクトREADME](../../README.md) - 全体概要（15分）
-2. [runner コマンド - 概要とクイックスタート](runner_command.md#1-概要) - 基本操作（30分）
-3. [TOML設定 - はじめに](toml_config/01_introduction.md) - 設定の基本（15分）
-4. [TOML設定 - 実践例](toml_config/08_practical_examples.md) - サンプルで学習（30分）
+1. [プロジェクトREADME](../../README.ja.md) - 全体概要（15分）
+2. [runner コマンド - 概要とクイックスタート](runner_command.ja.md#1-概要) - 基本操作（30分）
+3. [TOML設定 - はじめに](toml_config/01_introduction.ja.md) - 設定の基本（15分）
+4. [TOML設定 - 実践例](toml_config/08_practical_examples.ja.md) - サンプルで学習（30分）
 
 ### 🎓 中級者向け（3-4時間）
 
 上記に加えて：
 
-5. [runner コマンド - 全フラグ詳解](runner_command.md#3-コマンドラインフラグ詳解) - 詳細オプション（1時間）
-6. [TOML設定 - グローバル/グループ/コマンドレベル](toml_config/04_global_level.md) - 階層的設定（1時間）
-7. [TOML設定 - 変数展開](toml_config/07_variable_expansion.md) - 高度な機能（30分）
-8. [record/verify コマンド](record_command.md) - ハッシュ管理（30分）
+5. [runner コマンド - 全フラグ詳解](runner_command.ja.md#3-コマンドラインフラグ詳解) - 詳細オプション（1時間）
+6. [TOML設定 - グローバル/グループ/コマンドレベル](toml_config/04_global_level.ja.md) - 階層的設定（1時間）
+7. [TOML設定 - 変数展開](toml_config/07_variable_expansion.ja.md) - 高度な機能（30分）
+8. [record/verify コマンド](record_command.ja.md) - ハッシュ管理（30分）
 
 ### 🚀 上級者向け（フル習得）
 
 上記に加えて：
 
-9. [TOML設定 - ベストプラクティス](toml_config/09_best_practices.md) - 設計パターン
-10. [セキュリティリスク評価](security-risk-assessment.md) - セキュリティモデル
+9. [TOML設定 - ベストプラクティス](toml_config/09_best_practices.ja.md) - 設計パターン
+10. [セキュリティリスク評価](security-risk-assessment.ja.md) - セキュリティモデル
 11. [開発者向けドキュメント](../dev/) - アーキテクチャとセキュリティ設計
-12. [トラブルシューティング](toml_config/10_troubleshooting.md) - 問題解決スキル
+12. [トラブルシューティング](toml_config/10_troubleshooting.ja.md) - 問題解決スキル
 
 ---
 
@@ -347,7 +347,7 @@ A: 主な注意点：
 
 ### プロジェクト情報
 
-- [プロジェクトREADME](../../README.md) - 概要、セキュリティ機能、インストール方法
+- [プロジェクトREADME](../../README.ja.md) - 概要、セキュリティ機能、インストール方法
 - [GitHub リポジトリ](https://github.com/isseis/go-safe-cmd-runner/) - ソースコード、Issue、PR
 - [LICENSE](../../LICENSE) - ライセンス情報
 
@@ -371,7 +371,7 @@ A: 主な注意点：
 2. **Pull Requestを送信**: ドキュメントの修正や追加
 3. **フィードバック**: 使いにくい点や不明瞭な説明を報告
 
-ドキュメント作成ガイドラインは [CLAUDE.md](../../CLAUDE.md) を参照してください。
+ドキュメント作成ガイドラインは [CLAUDE.ja.md](../../CLAUDE.ja.md) を参照してください。
 
 ---
 

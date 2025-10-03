@@ -193,6 +193,8 @@ internal/              # コア実装
 ./runner -config config.toml -validate
 ```
 
+詳細な使用方法については、[runner コマンドガイド](docs/user/runner_command.ja.md)を参照してください。
+
 ### シンプルな設定例
 
 ```toml
@@ -219,24 +221,27 @@ max_risk_level = "medium"
 
 ## 設定
 
-### 基本設定構造
+TOML形式の設定ファイルでコマンドの実行方法を定義します。設定ファイルは以下の階層構造を持ちます：
+
+- **ルートレベル**: バージョン情報
+- **グローバルレベル**: 全グループに適用されるデフォルト設定
+- **グループレベル**: 関連するコマンドのグループ化
+- **コマンドレベル**: 個別のコマンド設定
+
+### 基本設定例
 
 ```toml
 version = "1.0"
 
 [global]
 timeout = 3600
-workdir = "/tmp"
 log_level = "info"
-skip_standard_paths = true  # システムパスの検証をスキップ
 env_allowlist = ["PATH", "HOME", "USER", "LANG"]
-verify_files = ["/etc/passwd", "/bin/bash"]
 
 [[groups]]
 name = "maintenance"
 description = "システム保守タスク"
 priority = 1
-env_allowlist = ["PATH", "HOME"]  # グローバル許可リストを上書き
 
 [[groups.commands]]
 name = "system_check"
@@ -245,81 +250,17 @@ args = ["status"]
 max_risk_level = "medium"
 ```
 
-### 変数展開
+### 詳細な設定方法
 
-動的設定に`${VAR}`形式を使用：
+設定ファイルの詳細な記述方法については、以下のドキュメントを参照してください：
 
-```toml
-[[groups.commands]]
-name = "deploy"
-cmd = "${TOOL_DIR}/deploy.sh"
-args = ["--config", "${CONFIG_FILE}"]
-env = ["TOOL_DIR=/opt/tools", "CONFIG_FILE=/etc/app.conf"]
-```
-
-### 出力キャプチャ
-
-コマンド出力をファイルに保存：
-
-```toml
-[[groups.commands]]
-name = "generate_report"
-cmd = "/usr/bin/df"
-args = ["-h"]
-output = "reports/disk_usage.txt"  # ファイルに出力をTee（0600権限）
-```
-
-### リスクベース制御
-
-セキュリティリスク閾値を設定：
-
-```toml
-[[groups.commands]]
-name = "file_operation"
-cmd = "/bin/cp"
-args = ["source.txt", "dest.txt"]
-max_risk_level = "low"  # 低リスクコマンドのみ許可
-
-[[groups.commands]]
-name = "system_admin"
-cmd = "/usr/bin/systemctl"
-args = ["restart", "nginx"]
-max_risk_level = "high"  # 高リスク操作を許可
-```
-
-### ユーザーとグループ実行
-
-特定のユーザー/グループコンテキストでコマンドを実行：
-
-```toml
-[[groups.commands]]
-name = "db_backup"
-cmd = "/usr/bin/pg_dump"
-args = ["mydb"]
-run_as_user = "postgres"
-run_as_group = "postgres"
-output = "/backups/db.sql"
-```
-
-### 環境変数セキュリティ
-
-厳格な許可リストベースの制御：
-
-```toml
-[global]
-# グローバル許可リスト（全グループのデフォルト）
-env_allowlist = ["PATH", "HOME"]
-
-[[groups]]
-name = "secure_group"
-# 空リストで上書き = 環境変数なし
-env_allowlist = []
-
-[[groups]]
-name = "web_group"
-# カスタムリストで上書き
-env_allowlist = ["PATH", "HOME", "WEB_ROOT"]
-```
+- [TOML設定ファイル ユーザーガイド](docs/user/toml_config/README.ja.md) - 包括的な設定ガイド
+  - [設定ファイルの階層構造](docs/user/toml_config/02_hierarchy.ja.md)
+  - [グローバルレベル設定](docs/user/toml_config/04_global_level.ja.md)
+  - [グループレベル設定](docs/user/toml_config/05_group_level.ja.md)
+  - [コマンドレベル設定](docs/user/toml_config/06_command_level.ja.md)
+  - [変数展開機能](docs/user/toml_config/07_variable_expansion.ja.md)
+  - [実践的な設定例](docs/user/toml_config/08_practical_examples.ja.md)
 
 ## セキュリティモデル
 
@@ -387,45 +328,47 @@ env_allowlist = ["PATH", "HOME", "WEB_ROOT"]
 
 ## コマンドラインツール
 
-### メインランナー
+go-safe-cmd-runnerは3つのコマンドラインツールを提供します：
+
+### runner - メイン実行コマンド
 
 ```bash
 # 基本実行
 ./runner -config config.toml
 
-# セキュリティ分析付きドライラン
+# ドライラン（実行内容の確認）
 ./runner -config config.toml -dry-run
 
 # 設定検証
 ./runner -config config.toml -validate
-
-# カスタムログ設定
-./runner -config config.toml -log-dir /var/log/runner -log-level debug
-
-# カラー制御
-CLICOLOR=1 ./runner -config config.toml       # カラー有効
-NO_COLOR=1 ./runner -config config.toml       # カラー無効
-CLICOLOR_FORCE=1 ./runner -config config.toml # カラー強制
-
-# Slack通知（GSCR_SLACK_WEBHOOK_URLが必要）
-GSCR_SLACK_WEBHOOK_URL=https://hooks.slack.com/... ./runner -config config.toml
 ```
 
-### ハッシュ管理
+詳細は [runner コマンドガイド](docs/user/runner_command.ja.md) を参照してください。
+
+### record - ハッシュ記録コマンド
 
 ```bash
-# ファイルハッシュの記録（デフォルトハッシュディレクトリ使用）
+# ファイルハッシュの記録
 ./record -file /path/to/executable
 
 # 既存ハッシュの強制上書き
 ./record -file /path/to/file -force
-
-# ファイル整合性の検証（デフォルトハッシュディレクトリ使用）
-./verify -file /path/to/file
-
-# 注記: -hash-dirオプションはテスト用のみ利用可能
-./record -file /path/to/file -hash-dir /custom/test/hashes
 ```
+
+詳細は [record コマンドガイド](docs/user/record_command.ja.md) を参照してください。
+
+### verify - ファイル検証コマンド
+
+```bash
+# ファイル整合性の検証
+./verify -file /path/to/file
+```
+
+詳細は [verify コマンドガイド](docs/user/verify_command.ja.md) を参照してください。
+
+### 包括的なユーザーガイド
+
+詳細な使用方法、設定例、トラブルシューティングについては、[ユーザーガイド](docs/user/README.ja.md) を参照してください。
 
 ## ビルドとインストール
 

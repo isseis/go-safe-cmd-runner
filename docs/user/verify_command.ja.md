@@ -697,19 +697,19 @@ fi
 
 ### コマンドラインツール
 
-- [runner コマンドガイド](runner_command.md) - メインの実行コマンド
-- [record コマンドガイド](record_command.md) - ハッシュファイルの作成（管理者向け）
+- [runner コマンドガイド](runner_command.ja.md) - メインの実行コマンド
+- [record コマンドガイド](record_command.ja.md) - ハッシュファイルの作成（管理者向け）
 
 ### 設定ファイル
 
-- [TOML設定ファイル ユーザーガイド](toml_config/README.md)
-  - [グローバルレベル設定](toml_config/04_global_level.md) - `verify_files` パラメータ
-  - [グループレベル設定](toml_config/05_group_level.md) - グループごとのファイル検証
-  - [トラブルシューティング](toml_config/10_troubleshooting.md) - 検証エラーの対処法
+- [TOML設定ファイル ユーザーガイド](toml_config/README.ja.md)
+  - [グローバルレベル設定](toml_config/04_global_level.ja.md) - `verify_files` パラメータ
+  - [グループレベル設定](toml_config/05_group_level.ja.md) - グループごとのファイル検証
+  - [トラブルシューティング](toml_config/10_troubleshooting.ja.md) - 検証エラーの対処法
 
 ### プロジェクト情報
 
-- [README.md](../../README.md) - プロジェクト概要
+- [README.ja.md](../../README.ja.md) - プロジェクト概要
 - [開発者向けドキュメント](../dev/) - ファイル検証アーキテクチャの詳細
 
 ---

@@ -603,18 +603,18 @@ done
 
 ### コマンドラインツール
 
-- [runner コマンドガイド](runner_command.md) - メインの実行コマンド
-- [verify コマンドガイド](verify_command.md) - ファイル整合性の検証（デバッグ用）
+- [runner コマンドガイド](runner_command.ja.md) - メインの実行コマンド
+- [verify コマンドガイド](verify_command.ja.md) - ファイル整合性の検証（デバッグ用）
 
 ### 設定ファイル
 
-- [TOML設定ファイル ユーザーガイド](toml_config/README.md)
-  - [グローバルレベル設定](toml_config/04_global_level.md) - `verify_files` パラメータ
-  - [グループレベル設定](toml_config/05_group_level.md) - グループごとのファイル検証
+- [TOML設定ファイル ユーザーガイド](toml_config/README.ja.md)
+  - [グローバルレベル設定](toml_config/04_global_level.ja.md) - `verify_files` パラメータ
+  - [グループレベル設定](toml_config/05_group_level.ja.md) - グループごとのファイル検証
 
 ### プロジェクト情報
 
-- [README.md](../../README.md) - プロジェクト概要
+- [README.ja.md](../../README.ja.md) - プロジェクト概要
 - [開発者向けドキュメント](../dev/) - ハッシュファイル命名規則の詳細
 
 ---

@@ -474,9 +474,9 @@ security_violations: 0   # セキュリティ違反ゼロ
 ## 📚 関連文書
 
 ### セキュリティドキュメント
-- [設計実装概要](../dev/design-implementation-overview.md)
-- [セキュリティアーキテクチャ](../dev/security-architecture.md)
-- [ハッシュファイル命名規則](../adr/hash-file-naming-adr.md)
+- [設計実装概要](../dev/design-implementation-overview.ja.md)
+- [セキュリティアーキテクチャ](../dev/security-architecture.ja.md)
+- [ハッシュファイル命名規則](../dev/hash-file-naming-adr.ja.md)
 
 ### タスクドキュメント
 - [設定検証タイミング修正](../tasks/0021_config_verification_timing/)
