@@ -1,4 +1,4 @@
 build/
-.claude/
+.claude/settings.local.json
 .envrc
 .env
