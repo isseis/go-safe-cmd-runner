@@ -206,7 +206,7 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
 - **Key Features**:
   - Hash directory validation and security checks
   - Enforcement of default hash directory usage
-  - Prevention of custom hash directory attack vector
+  - Prevention of custom hash directory attack vectors
   - Path permission and access control validation
 
 #### 17. System Initialization (`internal/runner/bootstrap/`)

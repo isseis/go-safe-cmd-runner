@@ -35,7 +35,7 @@ Common use cases include scheduled backups, system maintenance tasks, and delega
 
 ### Defense-in-Depth Architecture
 - **Pre-execution Verification**: Hash validation of configuration and environment files before use prevents malicious configuration attacks
-- **Fixed Hash Directory**: Production builds use only default hash directory, eliminating custom hash directory attack vector
+- **Fixed Hash Directory**: Production builds use only default hash directory, eliminating custom hash directory attack vectors
 - **Secure Fixed PATH**: Uses hardcoded secure PATH (`/sbin:/usr/sbin:/bin:/usr/bin`), completely eliminating PATH manipulation attacks
 - **Risk-Based Command Control**: Intelligent security assessment that automatically blocks high-risk operations
 - **Environment Variable Isolation**: Strict allowlist-based filtering with zero-trust approach
