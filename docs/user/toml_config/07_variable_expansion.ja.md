@@ -1,29 +1,29 @@
-# Chapter 7: Variable Expansion
+# 第7章: 変数展開機能
 
-## 7.1 Overview of Variable Expansion
+## 7.1 変数展開の概要
 
-Variable expansion is a feature that allows you to embed variables in commands and their arguments, which are then replaced with actual values at runtime. This enables dynamic command construction and easy switching between environment-specific configurations.
+変数展開機能は、コマンドやその引数に変数を埋め込み、実行時に実際の値に置き換える機能です。これにより、動的なコマンド構築や、環境に応じた設定の切り替えが可能になります。
 
-### Key Benefits
+### 主な利点
 
-1. **Dynamic Command Construction**: Values can be determined at runtime
-2. **Configuration Reuse**: The same variable can be used in multiple places
-3. **Environment Switching**: Easy switching between development/production environments
-4. **Improved Maintainability**: Changes can be centralized in one location
+1. **動的なコマンド構築**: 実行時に値を決定できる
+2. **設定の再利用**: 同じ変数を複数の場所で使用
+3. **環境の切り替え**: 開発/本番環境などの切り替えが容易
+4. **保守性の向上**: 変更箇所を一箇所に集約
 
-### Locations Where Variables Can Be Used
+### 使用可能な場所
 
-Variable expansion can be used in the following locations:
+変数展開は以下の場所で使用できます:
 
-- **cmd**: Path to the command to execute
-- **args**: Command arguments
-- **env**: Environment variable values (VALUE portion)
+- **cmd**: 実行するコマンドのパス
+- **args**: コマンドの引数
+- **env**: 環境変数の値(VALUE 部分)
 
-## 7.2 Variable Expansion Syntax
+## 7.2 変数展開の文法
 
-### Basic Syntax
+### 基本文法
 
-Variables are written in the format `${VARIABLE_NAME}`:
+変数は `${変数名}` の形式で記述します:
 
 ```toml
 cmd = "${VARIABLE_NAME}"
@@ -31,32 +31,32 @@ args = ["${ARG1}", "${ARG2}"]
 env = ["VAR=${VALUE}"]
 ```
 
-### Variable Naming Rules
+### 変数名のルール
 
-- Uppercase letters, numbers, and underscores (`_`) are allowed
-- Uppercase is used by convention (e.g., `MY_VARIABLE`)
-- Must start with a letter or underscore
+- 英大文字、数字、アンダースコア(`_`)が使用可能
+- 慣例として大文字を使用(例: `MY_VARIABLE`)
+- 先頭は英字またはアンダースコアで開始
 
 ```toml
-# Valid variable names
+# 有効な変数名
 "${PATH}"
 "${MY_TOOL}"
 "${_PRIVATE_VAR}"
 "${VAR123}"
 
-# Invalid variable names
-"${123VAR}"      # Starts with a number
-"${my-var}"      # Hyphens not allowed
-"${my.var}"      # Dots not allowed
+# 無効な変数名
+"${123VAR}"      # 数字で開始
+"${my-var}"      # ハイフンは使用不可
+"${my.var}"      # ドットは使用不可
 ```
 
-## 7.3 Locations Where Variables Can Be Used
+## 7.3 使用可能な場所
 
-### 7.3.1 Variable Expansion in cmd
+### 7.3.1 cmd での変数展開
 
-Command paths can be specified using variables.
+コマンドパスを変数で指定できます。
 
-#### Example 1: Basic Command Path Expansion
+#### 例1: 基本的なコマンドパス展開
 
 ```toml
 [[groups.commands]]
@@ -66,11 +66,11 @@ args = ["version"]
 env = ["DOCKER_CMD=/usr/bin/docker"]
 ```
 
-At runtime:
-- `${DOCKER_CMD}` → expands to `/usr/bin/docker`
-- Actual execution: `/usr/bin/docker version`
+実行時:
+- `${DOCKER_CMD}` → `/usr/bin/docker` に展開
+- 実際の実行: `/usr/bin/docker version`
 
-#### Example 2: Version-Managed Tools
+#### 例2: バージョン管理されたツール
 
 ```toml
 [[groups.commands]]
@@ -83,16 +83,16 @@ env = [
 ]
 ```
 
-At runtime:
-- `${TOOLCHAIN_DIR}` → expands to `/opt/toolchains`
-- `${VERSION}` → expands to `11.2.0`
-- Actual execution: `/opt/toolchains/gcc-11.2.0/bin/gcc -o output main.c`
+実行時:
+- `${TOOLCHAIN_DIR}` → `/opt/toolchains` に展開
+- `${VERSION}` → `11.2.0` に展開
+- 実際の実行: `/opt/toolchains/gcc-11.2.0/bin/gcc -o output main.c`
 
-### 7.3.2 Variable Expansion in args
+### 7.3.2 args での変数展開
 
-Variables can be used in command arguments.
+コマンド引数に変数を使用できます。
 
-#### Example 1: File Path Construction
+#### 例1: ファイルパスの構築
 
 ```toml
 [[groups.commands]]
@@ -105,7 +105,7 @@ env = [
 ]
 ```
 
-#### Example 2: Multiple Variables in One Argument
+#### 例2: 複数の変数を1つの引数に含める
 
 ```toml
 [[groups.commands]]
@@ -119,10 +119,10 @@ env = [
 ]
 ```
 
-At runtime:
-- `${USER}@${HOST}:${PORT}` → expands to `admin@server01.example.com:22`
+実行時:
+- `${USER}@${HOST}:${PORT}` → `admin@server01.example.com:22` に展開
 
-#### Example 3: Configuration File Switching
+#### 例3: 設定ファイルの切り替え
 
 ```toml
 [[groups.commands]]
@@ -135,14 +135,14 @@ env = [
 ]
 ```
 
-At runtime:
-- `${CONFIG_DIR}/${ENV_TYPE}.yml` → expands to `/etc/myapp/configs/production.yml`
+実行時:
+- `${CONFIG_DIR}/${ENV_TYPE}.yml` → `/etc/myapp/configs/production.yml` に展開
 
-### 7.3.3 Combining Multiple Variables
+### 7.3.3 複数変数の組み合わせ
 
-Multiple variables can be combined to construct complex paths and strings.
+複数の変数を組み合わせて、複雑なパスや文字列を構築できます。
 
-#### Example 1: Backup Path with Timestamp
+#### 例1: タイムスタンプ付きバックアップパス
 
 ```toml
 [[groups.commands]]
@@ -156,10 +156,10 @@ env = [
 ]
 ```
 
-At runtime:
-- `${BACKUP_ROOT}/${DATE}/${USER}/data` → expands to `/var/backups/2025-10-02/admin/data`
+実行時:
+- `${BACKUP_ROOT}/${DATE}/${USER}/data` → `/var/backups/2025-10-02/admin/data` に展開
 
-#### Example 2: Database Connection String
+#### 例2: データベース接続文字列
 
 ```toml
 [[groups.commands]]
@@ -175,15 +175,15 @@ env = [
 ]
 ```
 
-At runtime:
-- Connection string is fully expanded
+実行時:
+- 接続文字列が完全に展開される
 - `postgresql://appuser:secret123@localhost:5432/myapp_db`
 
-## 7.4 Practical Examples
+## 7.4 実践例
 
-### 7.4.1 Dynamic Command Path Construction
+### 7.4.1 コマンドパスの動的構築
 
-Example of switching command paths based on environment:
+環境に応じてコマンドパスを切り替える例:
 
 ```toml
 version = "1.0"
@@ -194,7 +194,7 @@ env_allowlist = ["PATH", "HOME", "PYTHON_ROOT", "PY_VERSION"]
 [[groups]]
 name = "python_tasks"
 
-# Using Python 3.10
+# Python 3.10 を使用
 [[groups.commands]]
 name = "run_with_py310"
 cmd = "${PYTHON_ROOT}/python${PY_VERSION}/bin/python"
@@ -204,7 +204,7 @@ env = [
     "PY_VERSION=3.10",
 ]
 
-# Using Python 3.11
+# Python 3.11 を使用
 [[groups.commands]]
 name = "run_with_py311"
 cmd = "${PYTHON_ROOT}/python${PY_VERSION}/bin/python"
@@ -215,9 +215,9 @@ env = [
 ]
 ```
 
-### 7.4.2 Dynamic Argument Generation
+### 7.4.2 引数の動的生成
 
-Dynamically constructing Docker container startup parameters:
+Docker コンテナの起動パラメータを動的に構築:
 
 ```toml
 version = "1.0"
@@ -253,7 +253,7 @@ env = [
 ]
 ```
 
-Executed command:
+実行されるコマンド:
 ```bash
 /usr/bin/docker run -d \
   --name myapp-prod \
@@ -263,9 +263,9 @@ Executed command:
   myapp:v1.2.3
 ```
 
-### 7.4.3 Environment-Specific Configuration Switching
+### 7.4.3 環境別設定の切り替え
 
-Using different configurations for development and production environments:
+開発環境と本番環境で異なる設定を使用:
 
 ```toml
 version = "1.0"
@@ -273,7 +273,7 @@ version = "1.0"
 [global]
 env_allowlist = ["PATH", "APP_BIN", "CONFIG_DIR", "ENV_TYPE", "LOG_LEVEL", "DB_URL"]
 
-# Development environment group
+# 開発環境グループ
 [[groups]]
 name = "development"
 
@@ -293,7 +293,7 @@ env = [
     "DB_URL=postgresql://localhost/dev_db",
 ]
 
-# Production environment group
+# 本番環境グループ
 [[groups]]
 name = "production"
 
@@ -314,11 +314,11 @@ env = [
 ]
 ```
 
-## 7.5 Nested Variables
+## 7.5 ネスト(入れ子)変数
 
-Variable values can contain other variables.
+変数の値に別の変数を含めることができます。
 
-### Basic Example
+### 基本例
 
 ```toml
 [[groups.commands]]
@@ -331,12 +331,12 @@ env = [
 ]
 ```
 
-Expansion order:
-1. `${USER}` → expands to `Alice`
-2. `${FULL_MSG}` → expands to `Hello, Alice!`
-3. Final argument: `Message: Hello, Alice!`
+展開順序:
+1. `${USER}` → `Alice` に展開
+2. `${FULL_MSG}` → `Hello, Alice!` に展開
+3. 最終的な引数: `Message: Hello, Alice!`
 
-### Complex Path Construction
+### 複雑なパス構築
 
 ```toml
 [[groups.commands]]
@@ -350,18 +350,18 @@ env = [
 ]
 ```
 
-Expansion order:
-1. `${BASE_DIR}` → expands to `/opt/myapp`
-2. `${ENV_TYPE}` → expands to `production`
-3. `${CONFIG_PATH}` → expands to `/opt/myapp/production/config.yml`
+展開順序:
+1. `${BASE_DIR}` → `/opt/myapp` に展開
+2. `${ENV_TYPE}` → `production` に展開
+3. `${CONFIG_PATH}` → `/opt/myapp/production/config.yml` に展開
 
-## 7.6 Escape Sequences
+## 7.6 エスケープシーケンス
 
-When you want to use literal `$` or `\` characters, escaping is required.
+リテラル(文字通りの)`$`や`\`を使用したい場合、エスケープが必要です。
 
-### Escaping Dollar Signs
+### ドル記号のエスケープ
 
-Use `\$` to represent a literal dollar sign:
+`\$` でリテラルのドル記号を表現:
 
 ```toml
 [[groups.commands]]
@@ -370,11 +370,11 @@ cmd = "/bin/echo"
 args = ["Price: \\$100 USD"]
 ```
 
-Output: `Price: $100 USD`
+出力: `Price: $100 USD`
 
-### Escaping Backslashes
+### バックスラッシュのエスケープ
 
-Use `\\` to represent a literal backslash:
+`\\` でリテラルのバックスラッシュを表現:
 
 ```toml
 [[groups.commands]]
@@ -384,9 +384,9 @@ args = ["Path: C:\\\\Users\\\\${USER}"]
 env = ["USER=JohnDoe"]
 ```
 
-Output: `Path: C:\Users\JohnDoe`
+出力: `Path: C:\Users\JohnDoe`
 
-### Mixed Example
+### 混在した例
 
 ```toml
 [[groups.commands]]
@@ -396,13 +396,13 @@ args = ["Literal \\$HOME is different from ${HOME}"]
 env = ["HOME=/home/user"]
 ```
 
-Output: `Literal $HOME is different from /home/user`
+出力: `Literal $HOME is different from /home/user`
 
-## 7.7 Security Considerations
+## 7.7 セキュリティ考慮事項
 
-### 7.7.1 Command.Env Priority
+### 7.7.1 Command.Env の優先度
 
-Variables defined in `Command.Env` take priority over system environment variables:
+`Command.Env` で定義された変数は、システム環境変数よりも優先されます:
 
 ```toml
 [global]
@@ -413,47 +413,47 @@ name = "override_home"
 cmd = "/bin/echo"
 args = ["Home: ${HOME}"]
 env = ["HOME=/opt/custom-home"]
-# The HOME from Command.Env is used, not the system $HOME
+# システムの $HOME ではなく、Command.Env の HOME が使用される
 ```
 
-### 7.7.2 Relationship with env_allowlist
+### 7.7.2 env_allowlist との関係
 
-**Important**: Variables defined in `Command.Env` are not subject to `env_allowlist` checks.
+**重要**: `Command.Env` で定義された変数は `env_allowlist` のチェックを受けません。
 
 ```toml
 [global]
 env_allowlist = ["PATH", "HOME"]
-# CUSTOM_VAR is not in allowlist
+# CUSTOM_VAR は allowlist にない
 
 [[groups.commands]]
 name = "custom_var"
 cmd = "${CUSTOM_TOOL}"
 args = []
 env = ["CUSTOM_TOOL=/opt/tools/mytool"]
-# CUSTOM_TOOL is not in allowlist, but can be used because it's defined in Command.Env
+# CUSTOM_TOOL は allowlist にないが、Command.Env で定義されているので使用可能
 ```
 
-### 7.7.3 Absolute Path Requirements
+### 7.7.3 絶対パスの要件
 
-Command paths after expansion must be absolute paths:
+展開後のコマンドパスは絶対パスである必要があります:
 
 ```toml
-# Correct: expands to absolute path
+# 正しい: 絶対パスに展開される
 [[groups.commands]]
 name = "valid"
 cmd = "${TOOL_DIR}/mytool"
-env = ["TOOL_DIR=/opt/tools"]  # Absolute path
+env = ["TOOL_DIR=/opt/tools"]  # 絶対パス
 
-# Incorrect: expands to relative path
+# 誤り: 相対パスに展開される
 [[groups.commands]]
 name = "invalid"
 cmd = "${TOOL_DIR}/mytool"
-env = ["TOOL_DIR=./tools"]  # Relative path - error
+env = ["TOOL_DIR=./tools"]  # 相対パス - エラー
 ```
 
-### 7.7.4 Handling Sensitive Information
+### 7.7.4 機密情報の扱い
 
-Define sensitive information (API keys, passwords, etc.) in `Command.Env` to isolate from system environment variables:
+機密情報(APIキー、パスワードなど)は `Command.Env` で定義し、システム環境変数から隔離:
 
 ```toml
 [[groups.commands]]
@@ -463,16 +463,16 @@ args = [
     "-H", "Authorization: Bearer ${API_TOKEN}",
     "${API_ENDPOINT}/data",
 ]
-# Sensitive information is defined in Command.Env and isolated from system environment
+# 機密情報は Command.Env に記述し、システム環境から隔離
 env = [
     "API_TOKEN=sk-1234567890abcdef",
     "API_ENDPOINT=https://api.example.com",
 ]
 ```
 
-### 7.7.5 Isolation Between Commands
+### 7.7.5 コマンド間の隔離
 
-Each command's `env` is independent and does not affect other commands:
+各コマンドの `env` は独立しており、他のコマンドに影響を与えません:
 
 ```toml
 [[groups.commands]]
@@ -486,28 +486,28 @@ name = "cmd2"
 cmd = "/bin/echo"
 args = ["DB: ${DB_HOST}"]
 env = ["DB_HOST=db2.example.com"]
-# Independent from cmd1's DB_HOST
+# cmd1 の DB_HOST とは独立
 ```
 
-## 7.8 Troubleshooting
+## 7.8 トラブルシューティング
 
-### Undefined Variables
+### 未定義変数
 
-If a variable is not defined, an error occurs:
+変数が定義されていない場合、エラーになります:
 
 ```toml
 [[groups.commands]]
 name = "undefined_var"
 cmd = "/bin/echo"
 args = ["Value: ${UNDEFINED}"]
-# UNDEFINED is not defined in env → error
+# UNDEFINED が env に定義されていない → エラー
 ```
 
-**Solution**: Define all required variables in `env`
+**解決方法**: 必要な変数を全て `env` で定義する
 
-### Circular References
+### 循環参照
 
-If variables reference each other, an error occurs:
+変数が互いに参照し合う場合、エラーになります:
 
 ```toml
 [[groups.commands]]
@@ -516,29 +516,29 @@ cmd = "/bin/echo"
 args = ["${VAR1}"]
 env = [
     "VAR1=${VAR2}",
-    "VAR2=${VAR1}",  # Circular reference → error
+    "VAR2=${VAR1}",  # 循環参照 → エラー
 ]
 ```
 
-**Solution**: Organize variable dependencies
+**解決方法**: 変数の依存関係を整理する
 
-### Path Validation Errors After Expansion
+### 展開後のパス検証エラー
 
-If the path after expansion is invalid, an error occurs:
+展開後のパスが不正な場合、エラーになります:
 
 ```toml
 [[groups.commands]]
 name = "invalid_path"
 cmd = "${TOOL}"
 args = []
-env = ["TOOL=../tool"]  # Relative path → error
+env = ["TOOL=../tool"]  # 相対パス → エラー
 ```
 
-**Solution**: Use absolute paths
+**解決方法**: 絶対パスを使用する
 
-## Comprehensive Practical Example
+## 実践的な総合例
 
-The following is a practical configuration example utilizing variable expansion:
+以下は、変数展開機能を活用した実践的な設定例です:
 
 ```toml
 version = "1.0"
@@ -550,12 +550,12 @@ env_allowlist = ["PATH", "HOME", "USER"]
 
 [[groups]]
 name = "application_deployment"
-description = "Application deployment process"
+description = "アプリケーションのデプロイメント処理"
 
-# Step 1: Deploy configuration file
+# ステップ1: 設定ファイルの配置
 [[groups.commands]]
 name = "deploy_config"
-description = "Deploy environment-specific configuration file"
+description = "環境別設定ファイルの配置"
 cmd = "/bin/cp"
 args = [
     "${CONFIG_SOURCE}/${ENV_TYPE}/app.yml",
@@ -567,10 +567,10 @@ env = [
     "ENV_TYPE=production",
 ]
 
-# Step 2: Database migration
+# ステップ2: データベースマイグレーション
 [[groups.commands]]
 name = "db_migration"
-description = "Database schema migration"
+description = "データベーススキーマのマイグレーション"
 cmd = "${APP_BIN}/migrate"
 args = [
     "--database", "${DB_URL}",
@@ -588,10 +588,10 @@ env = [
 ]
 timeout = 600
 
-# Step 3: Start application
+# ステップ3: アプリケーションの起動
 [[groups.commands]]
 name = "start_application"
-description = "Start application server"
+description = "アプリケーションサーバーの起動"
 cmd = "${APP_BIN}/server"
 args = [
     "--config", "${CONFIG_DEST}/app.yml",
@@ -605,10 +605,10 @@ env = [
     "WORKER_COUNT=4",
 ]
 
-# Step 4: Health check
+# ステップ4: ヘルスチェック
 [[groups.commands]]
 name = "health_check"
-description = "Application health check"
+description = "アプリケーションのヘルスチェック"
 cmd = "/usr/bin/curl"
 args = [
     "-f",
@@ -620,6 +620,6 @@ env = [
 timeout = 30
 ```
 
-## Next Steps
+## 次のステップ
 
-In the next chapter, we will introduce practical examples that combine the configurations we have learned so far. You will learn how to create configuration files based on actual use cases.
+次章では、これまで学んだ設定を組み合わせた実践的な例を紹介します。実際のユースケースに基づいた設定ファイルの作成方法を学びます。

@@ -1,124 +1,124 @@
-# go-safe-cmd-runner TOML設定ファイル ユーザーガイド
+# go-safe-cmd-runner TOML Configuration File User Guide
 
-go-safe-cmd-runner の TOML 設定ファイルの記述方法を解説する包括的なユーザーガイドです。
+A comprehensive user guide explaining how to write TOML configuration files for go-safe-cmd-runner.
 
-## 目次
+## Table of Contents
 
-### 第1章: [はじめに](01_introduction.md)
-- 本ドキュメントの目的
-- TOML設定ファイルの概要
-- 設定ファイルの基本構造
+### Chapter 1: [Introduction](01_introduction.md)
+- Purpose of this document
+- Overview of TOML configuration files
+- Basic structure of configuration files
 
-### 第2章: [設定ファイルの階層構造](02_hierarchy.md)
-- 階層の概要図
-- 三層構造の説明
-  - ルートレベル
-  - グローバルレベル
-  - グループレベル
-  - コマンドレベル
-- 設定の継承とオーバーライドの仕組み
+### Chapter 2: [Configuration File Hierarchy](02_hierarchy.md)
+- Hierarchy overview diagram
+- Three-tier structure explanation
+  - Root level
+  - Global level
+  - Group level
+  - Command level
+- Configuration inheritance and override mechanism
 
-### 第3章: [ルートレベル設定](03_root_level.md)
-- version パラメータ
-  - 概要と役割
-  - 設定例
-  - 注意事項
+### Chapter 3: [Root Level Configuration](03_root_level.md)
+- version parameter
+  - Overview and purpose
+  - Configuration examples
+  - Notes and considerations
 
-### 第4章: [グローバルレベル設定](04_global_level.md)
-- timeout - タイムアウト設定
-- workdir - 作業ディレクトリ
-- log_level - ログレベル
-- skip_standard_paths - 標準パス検証のスキップ
-- env_allowlist - 環境変数許可リスト
-- verify_files - ファイル検証リスト
-- max_output_size - 出力サイズ上限
+### Chapter 4: [Global Level Configuration](04_global_level.md)
+- timeout - Timeout configuration
+- workdir - Working directory
+- log_level - Log level
+- skip_standard_paths - Skip standard path validation
+- env_allowlist - Environment variable allowlist
+- verify_files - File verification list
+- max_output_size - Maximum output size
 
-### 第5章: [グループレベル設定](05_group_level.md)
-- グループの基本設定
-  - name - グループ名
-  - description - 説明
-  - priority - 優先度
-- リソース管理設定
-  - temp_dir - 一時ディレクトリ
-  - workdir - 作業ディレクトリ
-- セキュリティ設定
-  - verify_files - ファイル検証
-  - env_allowlist - 環境変数許可リスト
-- 環境変数継承モード
-  - 継承モード (inherit)
-  - 明示モード (explicit)
-  - 拒否モード (reject)
+### Chapter 5: [Group Level Configuration](05_group_level.md)
+- Group basic configuration
+  - name - Group name
+  - description - Description
+  - priority - Priority
+- Resource management configuration
+  - temp_dir - Temporary directory
+  - workdir - Working directory
+- Security configuration
+  - verify_files - File verification
+  - env_allowlist - Environment variable allowlist
+- Environment variable inheritance modes
+  - Inherit mode (inherit)
+  - Explicit mode (explicit)
+  - Reject mode (reject)
 
-### 第6章: [コマンドレベル設定](06_command_level.md)
-- コマンドの基本設定
-  - name - コマンド名
-  - description - 説明
-  - cmd - 実行コマンド
-  - args - 引数
-- 環境設定
-  - env - 環境変数
-- タイムアウト設定
-  - timeout - コマンド固有タイムアウト
-- 権限管理
-  - run_as_user - 実行ユーザー
-  - run_as_group - 実行グループ
-- リスク管理
-  - max_risk_level - 最大リスクレベル
-- 出力管理
-  - output - 標準出力キャプチャ
+### Chapter 6: [Command Level Configuration](06_command_level.md)
+- Command basic configuration
+  - name - Command name
+  - description - Description
+  - cmd - Execution command
+  - args - Arguments
+- Environment configuration
+  - env - Environment variables
+- Timeout configuration
+  - timeout - Command-specific timeout
+- Privilege Management
+  - run_as_user - Execution user
+  - run_as_group - Execution group
+- Risk management
+  - max_risk_level - Maximum risk level
+- Output management
+  - output - Standard output capture
 
-### 第7章: [変数展開機能](07_variable_expansion.md)
-- 変数展開の概要
-- 変数展開の文法
-- 使用可能な場所
-  - cmd での変数展開
-  - args での変数展開
-  - 複数変数の組み合わせ
-- 実践例
-  - コマンドパスの動的構築
-  - 引数の動的生成
-  - 環境別設定の切り替え
-- ネスト変数
-- エスケープシーケンス
-- セキュリティ考慮事項
+### Chapter 7: [Variable Expansion](07_variable_expansion.md)
+- Overview of variable expansion
+- Variable expansion syntax
+- Available locations
+  - Variable expansion in cmd
+  - Variable expansion in args
+  - Combining multiple variables
+- Practical examples
+  - Dynamic command path construction
+  - Dynamic argument generation
+  - Environment-specific configuration switching
+- Nested variables
+- Escape sequences
+- Security considerations
 
-### 第8章: [実践的な設定例](08_practical_examples.md)
-- 基本的な設定例
-- セキュリティを重視した設定例
-- リソース管理を含む設定例
-- 権限昇格を伴う設定例
-- 出力キャプチャを使用した設定例
-- 変数展開を活用した設定例
-- 複合的な設定例
-- リスクベースの制御例
+### Chapter 8: [Practical Examples](08_practical_examples.md)
+- Basic configuration examples
+- Security-focused configuration examples
+- Configuration examples with resource management
+- Configuration examples with privilege escalation
+- Configuration examples using output capture
+- Configuration examples utilizing variable expansion
+- Complex configuration examples
+- Risk-based control examples
 
-### 第9章: [ベストプラクティス](09_best_practices.md)
-- セキュリティのベストプラクティス
-- 環境変数管理のベストプラクティス
-- グループ構成のベストプラクティス
-- エラーハンドリングのベストプラクティス
-- 保守性のベストプラクティス
-- パフォーマンスのベストプラクティス
-- テストとバリデーション
-- ドキュメント化
+### Chapter 9: [Best Practices](09_best_practices.md)
+- Security best practices
+- Environment variable management best practices
+- Group configuration best practices
+- Error handling best practices
+- Maintainability best practices
+- Performance best practices
+- Testing and validation
+- Documentation
 
-### 第10章: [トラブルシューティング](10_troubleshooting.md)
-- よくあるエラーと対処法
-- 設定検証方法
-- デバッグ手法
-- パフォーマンス問題
-- よくある質問 (FAQ)
+### Chapter 10: [Troubleshooting](10_troubleshooting.md)
+- Common errors and solutions
+- Configuration validation methods
+- Debugging techniques
+- Performance issues
+- Frequently Asked Questions (FAQ)
 
-### [付録](appendix.md)
-- 付録A: パラメータ一覧表
-- 付録B: サンプル設定ファイル集
-- 付録C: 用語集
-- 付録D: 設定ファイルテンプレート
-- 付録E: 参考リンク
+### [Appendix](appendix.md)
+- Appendix A: Parameter Reference Table
+- Appendix B: Sample Configuration File Collection
+- Appendix C: Glossary
+- Appendix D: Configuration File Templates
+- Appendix E: Reference Links
 
-## クイックスタート
+## Quick Start
 
-### 最小構成の例
+### Minimal Configuration Example
 
 ```toml
 version = "1.0"
@@ -132,44 +132,44 @@ cmd = "/bin/echo"
 args = ["Hello, World!"]
 ```
 
-### 基本的な使い方
+### Basic Usage
 
-1. **設定ファイルの作成**: `config.toml` ファイルを作成
-2. **ハッシュファイルの作成** (必要な場合):
+1. **Create configuration file**: Create a `config.toml` file
+2. **Create hash file** (if needed):
    ```bash
    go-safe-cmd-runner record config.toml
    ```
-3. **実行**:
+3. **Execute**:
    ```bash
    go-safe-cmd-runner run config.toml
    ```
 
-## 推奨される学習順序
+## Recommended Learning Order
 
-1. **初心者**: 第1章〜第3章で基本を理解
-2. **中級者**: 第4章〜第6章でパラメータを学習
-3. **上級者**: 第7章〜第9章で高度な機能とベストプラクティスを習得
-4. **トラブル発生時**: 第10章で問題を解決
-5. **リファレンス**: 付録を参照
+1. **Beginners**: Understand the basics with Chapters 1-3
+2. **Intermediate**: Learn parameters with Chapters 4-6
+3. **Advanced**: Master advanced features and best practices with Chapters 7-9
+4. **Troubleshooting**: Resolve issues with Chapter 10
+5. **Reference**: Consult the appendix
 
-## サンプルファイル
+## Sample Files
 
-プロジェクトの `sample/` ディレクトリには、様々なユースケースに対応したサンプル設定ファイルが用意されています:
+The project's `sample/` directory contains sample configuration files for various use cases:
 
-- `sample/comprehensive.toml` - 全機能を網羅した総合例
-- `sample/variable_expansion_basic.toml` - 変数展開の基本例
-- `sample/output_capture_basic.toml` - 出力キャプチャの基本例
-- その他多数のサンプルファイル
+- `sample/comprehensive.toml` - Comprehensive example covering all features
+- `sample/variable_expansion_basic.toml` - Basic variable expansion example
+- `sample/output_capture_basic.toml` - Basic output capture example
+- Many other sample files
 
-## コントリビューション
+## Contributing
 
-ドキュメントの改善提案や誤りの指摘は、GitHub Issues または Pull Request でお願いします。
+For documentation improvement suggestions or error reports, please use GitHub Issues or Pull Requests.
 
-## ライセンス
+## License
 
-本ドキュメントは go-safe-cmd-runner プロジェクトの一部として、同じライセンスの下で提供されています。
+This document is provided under the same license as the go-safe-cmd-runner project.
 
 ---
 
-**最終更新**: 2025-10-02
-**バージョン**: 1.0
+**Last Updated**: 2025-10-02
+**Version**: 1.0

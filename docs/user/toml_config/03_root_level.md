@@ -1,36 +1,36 @@
-# 第3章: ルートレベル設定
+# Chapter 3: Root Level Configuration
 
 ## 3.1 version
 
-### 概要
+### Overview
 
-`version` は設定ファイルのフォーマットバージョンを指定する必須パラメータです。設定ファイルの最上位(ルートレベル)に記述します。
+`version` is a required parameter that specifies the format version of the configuration file. It is written at the top level (root level) of the configuration file.
 
-### 文法
+### Syntax
 
 ```toml
-version = "バージョン文字列"
+version = "version string"
 ```
 
-### パラメータの詳細
+### Parameter Details
 
-| 項目 | 内容 |
+| Item | Content |
 |-----|------|
-| **型** | 文字列 (string) |
-| **必須/オプション** | 必須 |
-| **設定可能な階層** | ルートレベルのみ |
-| **デフォルト値** | なし(必ず指定が必要) |
-| **有効な値** | "1.0" (現在サポートされているバージョン) |
+| **Type** | String |
+| **Required/Optional** | Required |
+| **Configurable Level** | Root level only |
+| **Default Value** | None (must be specified) |
+| **Valid Values** | "1.0" (currently supported version) |
 
-### 役割
+### Role
 
-- **互換性の保証**: 将来の設定ファイルフォーマットの変更に対応するため、バージョン情報を記録
-- **検証**: 実行時に設定ファイルのバージョンをチェックし、互換性のない設定を検出
-- **ドキュメント化**: 設定ファイルがどのバージョンの仕様に従っているかを明示
+- **Compatibility Guarantee**: Records version information to accommodate future changes to the configuration file format
+- **Validation**: Checks the configuration file version at runtime and detects incompatible configurations
+- **Documentation**: Clearly indicates which version of the specification the configuration file follows
 
-### 設定例
+### Configuration Examples
 
-#### 基本的な設定
+#### Basic Configuration
 
 ```toml
 version = "1.0"
@@ -47,16 +47,16 @@ cmd = "echo"
 args = ["Hello"]
 ```
 
-この例では、設定ファイルのバージョンを "1.0" と指定しています。
+In this example, the configuration file version is specified as "1.0".
 
-### 注意事項
+### Important Notes
 
-#### 1. 必ず最初に記述
+#### 1. Always Write First
 
-`version` は設定ファイルの最初に記述することを推奨します。他のセクションより前に配置することで、可読性が向上します。
+It is recommended to write `version` at the beginning of the configuration file. Placing it before other sections improves readability.
 
 ```toml
-# 推奨: バージョンを最初に記述
+# Recommended: Write version first
 version = "1.0"
 
 [global]
@@ -64,65 +64,65 @@ timeout = 60
 ```
 
 ```toml
-# 非推奨: バージョンが後に記述されている
+# Not recommended: Version written later
 [global]
 timeout = 60
 
-version = "1.0"  # 動作はするが、可読性が低い
+version = "1.0"  # Works but has poor readability
 ```
 
-#### 2. バージョン文字列の形式
+#### 2. Version String Format
 
-現在サポートされているバージョンは "1.0" のみです。将来的に新しいバージョンがリリースされた場合、互換性のない変更が含まれる可能性があります。
+The currently supported version is "1.0" only. If new versions are released in the future, they may include incompatible changes.
 
 ```toml
-# 正しい
+# Correct
 version = "1.0"
 
-# 誤り: サポートされていないバージョン
-version = "2.0"  # エラーになる可能性があります
+# Incorrect: Unsupported version
+version = "2.0"  # May result in an error
 ```
 
-#### 3. バージョンの省略は不可
+#### 3. Version Cannot Be Omitted
 
-`version` パラメータは必須です。省略するとエラーになります。
+The `version` parameter is required. Omitting it will result in an error.
 
 ```toml
-# 誤り: バージョンが省略されている
+# Incorrect: Version is omitted
 [global]
 timeout = 60
 
 [[groups]]
 name = "example"
-# ... (エラー: version が指定されていません)
+# ... (Error: version is not specified)
 ```
 
-### よくある質問
+### Frequently Asked Questions
 
-#### Q1: なぜバージョン指定が必須なのですか?
+#### Q1: Why is version specification required?
 
-A: 将来の設定ファイル形式の変更に対応するためです。バージョン情報により、古い設定ファイルと新しい設定ファイルを区別し、適切に処理できます。
+A: It is to accommodate future changes to the configuration file format. Version information allows distinguishing between old and new configuration files and processing them appropriately.
 
-#### Q2: バージョン番号を間違えるとどうなりますか?
+#### Q2: What happens if I specify the wrong version number?
 
-A: サポートされていないバージョンを指定すると、go-safe-cmd-runner が設定ファイルの読み込みを拒否し、エラーメッセージを表示します。
+A: If you specify an unsupported version, go-safe-cmd-runner will refuse to load the configuration file and display an error message.
 
-#### Q3: バージョン "1.0" では何がサポートされていますか?
+#### Q3: What is supported in version "1.0"?
 
-A: 本ドキュメントで説明する全ての機能がバージョン "1.0" でサポートされています:
-- グローバル設定
-- グループとコマンドの定義
-- 環境変数管理
-- ファイル検証
-- 権限管理
-- 変数展開
-- 出力キャプチャ
+A: All features explained in this document are supported in version "1.0":
+- Global configuration
+- Group and command definitions
+- Environment variable management
+- File verification
+- Privilege management
+- Variable expansion
+- Output capture
 
-### ベストプラクティス
+### Best Practices
 
-1. **常に現在の最新バージョンを使用**: 新しい機能を利用するため、最新のバージョン番号を指定
-2. **設定ファイルの先頭に配置**: 可読性とメンテナンス性の向上
-3. **コメントで記録**: 設定ファイル作成日やバージョンの理由をコメントで記録
+1. **Always Use the Current Latest Version**: Specify the latest version number to utilize new features
+2. **Place at the Top of the Configuration File**: Improves readability and maintainability
+3. **Record with Comments**: Document the configuration file creation date and reason for version in comments
 
 ```toml
 # Configuration file for go-safe-cmd-runner
@@ -131,9 +131,9 @@ A: 本ドキュメントで説明する全ての機能がバージョン "1.0" �
 version = "1.0"
 
 [global]
-# ... 以下、設定が続く
+# ... configuration continues below
 ```
 
-## 次のステップ
+## Next Steps
 
-次章では、グローバルレベルの設定(`[global]`)について詳しく解説します。タイムアウト、作業ディレクトリ、環境変数管理など、全体に影響する重要な設定を学びます。
+The next chapter will explain global level configuration (`[global]`) in detail. You will learn important settings that affect the entire system, such as timeout, working directory, and environment variable management.

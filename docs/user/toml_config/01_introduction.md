@@ -1,67 +1,67 @@
-# 第1章: はじめに
+# Chapter 1: Introduction
 
-## 1.1 本ドキュメントの目的
+## 1.1 Purpose of This Document
 
-本ドキュメントは、go-safe-cmd-runner の TOML 設定ファイルの記述方法を解説するユーザーガイドです。設定ファイルの構造、各パラメータの詳細、実践的な使用例を通じて、安全かつ効率的なコマンド実行環境の構築方法を学ぶことができます。
+This document is a user guide that explains how to write TOML configuration files for go-safe-cmd-runner. Through the configuration file structure, detailed parameters, and practical usage examples, you will learn how to build a secure and efficient command execution environment.
 
-### 対象読者
+### Target Audience
 
-- go-safe-cmd-runner を使用してバッチ処理やコマンド実行を行うシステム管理者
-- セキュアなコマンド実行環境を構築したい開発者
-- TOML 設定ファイルの記述方法を習得したいユーザー
+- System administrators who use go-safe-cmd-runner for batch processing and command execution
+- Developers who want to build secure command execution environments
+- Users who want to master how to write TOML configuration files
 
-## 1.2 TOML設定ファイルの概要
+## 1.2 TOML Configuration File Overview
 
-go-safe-cmd-runner は、TOML (Tom's Obvious, Minimal Language) 形式の設定ファイルを使用してコマンドの実行を管理します。TOML は人間が読み書きしやすく、明確な意味を持つ設定ファイル形式です。
+go-safe-cmd-runner uses TOML (Tom's Obvious, Minimal Language) format configuration files to manage command execution. TOML is a configuration file format that is easy for humans to read and write, with clear semantics.
 
-### 主な特徴
+### Key Features
 
-1. **階層的な構造**: グローバル設定、グループ設定、コマンド設定の3層構造
-2. **セキュリティ重視**: ファイル検証、環境変数制御、権限管理などのセキュリティ機能
-3. **柔軟な設定**: タイムアウト、作業ディレクトリ、環境変数などの細かな制御
-4. **変数展開**: 動的なコマンド構築のための変数展開機能
-5. **出力管理**: コマンド出力のキャプチャとファイル保存
+1. **Hierarchical Structure**: Three-layer structure of global configuration, group configuration, and command configuration
+2. **Security Focus**: Security features including file verification, environment variable control, and privilege management
+3. **Flexible Configuration**: Fine-grained control of timeout, working directory, environment variables, etc.
+4. **Variable Expansion**: Variable expansion functionality for dynamic command construction
+5. **Output Management**: Command output capture and file storage
 
-## 1.3 設定ファイルの基本構造
+## 1.3 Basic Configuration File Structure
 
-TOML 設定ファイルは以下の基本構造を持ちます:
+TOML configuration files have the following basic structure:
 
 ```toml
-# バージョン指定(必須)
+# Version specification (required)
 version = "1.0"
 
-# グローバル設定(オプション)
+# Global configuration (optional)
 [global]
 timeout = 60
 workdir = "/tmp/workspace"
 log_level = "info"
 env_allowlist = ["PATH", "HOME", "USER"]
 
-# コマンドグループ(1つ以上必須)
+# Command group (one or more required)
 [[groups]]
 name = "example_group"
-description = "サンプルグループの説明"
+description = "Description of sample group"
 
-# グループ内のコマンド(1つ以上必須)
+# Commands within group (one or more required)
 [[groups.commands]]
 name = "hello_world"
-description = "Hello World を出力"
+description = "Output Hello World"
 cmd = "echo"
 args = ["Hello, World!"]
 ```
 
-### 設定の構成要素
+### Configuration Components
 
-1. **ルートレベル**: バージョン情報
-2. **グローバルレベル** (`[global]`): 全グループに適用される共通設定
-3. **グループレベル** (`[[groups]]`): 関連するコマンドをまとめる単位
-4. **コマンドレベル** (`[[groups.commands]]`): 実際に実行するコマンドの定義
+1. **Root Level**: Version information
+2. **Global Level** (`[global]`): Common configuration applied to all groups
+3. **Group Level** (`[[groups]]`): Unit for grouping related commands
+4. **Command Level** (`[[groups.commands]]`): Definition of commands to actually execute
 
-各レベルの詳細については、後続の章で説明します。
+Details of each level will be explained in subsequent chapters.
 
-### 最小構成の例
+### Minimal Configuration Example
 
-最もシンプルな設定ファイルは以下のようになります:
+The simplest configuration file looks like this:
 
 ```toml
 version = "1.0"
@@ -75,8 +75,8 @@ cmd = "echo"
 args = ["test"]
 ```
 
-この例では、バージョン情報、1つのグループ、1つのコマンドのみを定義しています。
+This example defines only version information, one group, and one command.
 
-## 次のステップ
+## Next Steps
 
-次章では、設定ファイルの階層構造について詳しく解説し、各レベルがどのように連携するかを学びます。
+The next chapter will explain the hierarchical structure of the configuration file in detail, and you will learn how each level interacts with each other.

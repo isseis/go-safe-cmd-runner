@@ -55,58 +55,6 @@ Go Safe Command Runnerは、以下のような環境における安全なコマ�
 - **インタラクティブターミナルサポート**: スマートなターミナル検出を伴うカラーコード化された出力
 - **包括的監査証跡**: 特権操作とセキュリティイベントの完全なログ記録
 
-## 最近のセキュリティ強化
-
-### ⚠️ 破壊的変更（重要なセキュリティ改善）
-
-最近のバージョンでは、破壊的変更を伴う重要なセキュリティ改善が導入されています：
-
-#### 削除された機能（セキュリティ）
-- **`--hash-directory`フラグ**: カスタムハッシュディレクトリ攻撃を防ぐため、runnerから完全に削除
-- **カスタムハッシュディレクトリAPI**: 内部APIはプロダクションビルドでカスタムハッシュディレクトリを受け付けない
-- **ハッシュディレクトリ設定**: 設定ファイルでのハッシュディレクトリ指定はサポートされない
-- **PATH環境変数継承**: 環境変数PATHは親プロセスから継承されない
-
-#### セキュリティ強化機能
-1. **事前実行検証**（タスク0021）
-   - 読み込み前の設定ファイル検証
-   - 使用前の環境ファイル検証
-   - 悪意のある設定攻撃の防止
-   - 検証失敗時の強制stderr出力
-
-2. **ハッシュディレクトリセキュリティ**（タスク0022）
-   - 固定デフォルトハッシュディレクトリ: `/usr/local/etc/go-safe-cmd-runner/hashes`
-   - ビルドタグによるプロダクション/テストAPI分離
-   - セキュリティ違反の静的解析検出
-   - カスタムハッシュディレクトリ攻撃の完全防止
-
-3. **ハイブリッドハッシュエンコーディング**（タスク0023）
-   - 空間効率の高い置換+ダブルエスケープエンコーディング
-   - 一般的なパスで1.00x膨張率
-   - 長いパスに対する自動SHA256フォールバック
-   - デバッグ用の人間が読めるハッシュファイル名
-
-4. **出力キャプチャセキュリティ**（タスク0025）
-   - 出力ファイルのセキュアなファイル権限（0600）
-   - Tee機能（画面+ファイル出力）
-   - 権限分離（出力ファイルは実UIDを使用）
-   - セキュアな権限でのディレクトリ自動作成
-
-5. **変数展開**（タスク0026）
-   - cmdとargsでの`${VAR}`形式の変数展開
-   - visited mapによる循環参照検出
-   - セキュリティのための許可リスト統合
-   - OS環境よりCommand.Envを優先
-
-#### 移行ガイド
-- **設定**: TOMLファイルから`hash_directory`設定を削除
-- **スクリプト**: スクリプトや自動化から`--hash-directory`フラグを削除
-- **開発**: テスト用に`//go:build test`タグでテストAPIを使用
-- **PATH依存関係**: 必要な全バイナリが標準システムパス（/sbin、/usr/sbin、/bin、/usr/bin）にあることを確認
-- **環境変数**: 環境変数の許可リストを見直して更新
-
-詳細な移行情報については、[検証API文書](docs/verification_api.md)を参照してください。
-
 ## コア機能
 
 ### ファイル整合性と検証
@@ -193,6 +141,8 @@ internal/              # コア実装
 ./runner -config config.toml -validate
 ```
 
+詳細な使用方法については、[runner コマンドガイド](docs/user/runner_command.ja.md)を参照してください。
+
 ### シンプルな設定例
 
 ```toml
@@ -219,24 +169,27 @@ max_risk_level = "medium"
 
 ## 設定
 
-### 基本設定構造
+TOML形式の設定ファイルでコマンドの実行方法を定義します。設定ファイルは以下の階層構造を持ちます：
+
+- **ルートレベル**: バージョン情報
+- **グローバルレベル**: 全グループに適用されるデフォルト設定
+- **グループレベル**: 関連するコマンドのグループ化
+- **コマンドレベル**: 個別のコマンド設定
+
+### 基本設定例
 
 ```toml
 version = "1.0"
 
 [global]
 timeout = 3600
-workdir = "/tmp"
 log_level = "info"
-skip_standard_paths = true  # システムパスの検証をスキップ
 env_allowlist = ["PATH", "HOME", "USER", "LANG"]
-verify_files = ["/etc/passwd", "/bin/bash"]
 
 [[groups]]
 name = "maintenance"
 description = "システム保守タスク"
 priority = 1
-env_allowlist = ["PATH", "HOME"]  # グローバル許可リストを上書き
 
 [[groups.commands]]
 name = "system_check"
@@ -245,81 +198,17 @@ args = ["status"]
 max_risk_level = "medium"
 ```
 
-### 変数展開
+### 詳細な設定方法
 
-動的設定に`${VAR}`形式を使用：
+設定ファイルの詳細な記述方法については、以下のドキュメントを参照してください：
 
-```toml
-[[groups.commands]]
-name = "deploy"
-cmd = "${TOOL_DIR}/deploy.sh"
-args = ["--config", "${CONFIG_FILE}"]
-env = ["TOOL_DIR=/opt/tools", "CONFIG_FILE=/etc/app.conf"]
-```
-
-### 出力キャプチャ
-
-コマンド出力をファイルに保存：
-
-```toml
-[[groups.commands]]
-name = "generate_report"
-cmd = "/usr/bin/df"
-args = ["-h"]
-output = "reports/disk_usage.txt"  # ファイルに出力をTee（0600権限）
-```
-
-### リスクベース制御
-
-セキュリティリスク閾値を設定：
-
-```toml
-[[groups.commands]]
-name = "file_operation"
-cmd = "/bin/cp"
-args = ["source.txt", "dest.txt"]
-max_risk_level = "low"  # 低リスクコマンドのみ許可
-
-[[groups.commands]]
-name = "system_admin"
-cmd = "/usr/bin/systemctl"
-args = ["restart", "nginx"]
-max_risk_level = "high"  # 高リスク操作を許可
-```
-
-### ユーザーとグループ実行
-
-特定のユーザー/グループコンテキストでコマンドを実行：
-
-```toml
-[[groups.commands]]
-name = "db_backup"
-cmd = "/usr/bin/pg_dump"
-args = ["mydb"]
-run_as_user = "postgres"
-run_as_group = "postgres"
-output = "/backups/db.sql"
-```
-
-### 環境変数セキュリティ
-
-厳格な許可リストベースの制御：
-
-```toml
-[global]
-# グローバル許可リスト（全グループのデフォルト）
-env_allowlist = ["PATH", "HOME"]
-
-[[groups]]
-name = "secure_group"
-# 空リストで上書き = 環境変数なし
-env_allowlist = []
-
-[[groups]]
-name = "web_group"
-# カスタムリストで上書き
-env_allowlist = ["PATH", "HOME", "WEB_ROOT"]
-```
+- [TOML設定ファイル ユーザーガイド](docs/user/toml_config/README.ja.md) - 包括的な設定ガイド
+  - [設定ファイルの階層構造](docs/user/toml_config/02_hierarchy.ja.md)
+  - [グローバルレベル設定](docs/user/toml_config/04_global_level.ja.md)
+  - [グループレベル設定](docs/user/toml_config/05_group_level.ja.md)
+  - [コマンドレベル設定](docs/user/toml_config/06_command_level.ja.md)
+  - [変数展開機能](docs/user/toml_config/07_variable_expansion.ja.md)
+  - [実践的な設定例](docs/user/toml_config/08_practical_examples.ja.md)
 
 ## セキュリティモデル
 
@@ -387,45 +276,47 @@ env_allowlist = ["PATH", "HOME", "WEB_ROOT"]
 
 ## コマンドラインツール
 
-### メインランナー
+go-safe-cmd-runnerは3つのコマンドラインツールを提供します：
+
+### runner - メイン実行コマンド
 
 ```bash
 # 基本実行
 ./runner -config config.toml
 
-# セキュリティ分析付きドライラン
+# ドライラン（実行内容の確認）
 ./runner -config config.toml -dry-run
 
 # 設定検証
 ./runner -config config.toml -validate
-
-# カスタムログ設定
-./runner -config config.toml -log-dir /var/log/runner -log-level debug
-
-# カラー制御
-CLICOLOR=1 ./runner -config config.toml       # カラー有効
-NO_COLOR=1 ./runner -config config.toml       # カラー無効
-CLICOLOR_FORCE=1 ./runner -config config.toml # カラー強制
-
-# Slack通知（GSCR_SLACK_WEBHOOK_URLが必要）
-GSCR_SLACK_WEBHOOK_URL=https://hooks.slack.com/... ./runner -config config.toml
 ```
 
-### ハッシュ管理
+詳細は [runner コマンドガイド](docs/user/runner_command.ja.md) を参照してください。
+
+### record - ハッシュ記録コマンド
 
 ```bash
-# ファイルハッシュの記録（デフォルトハッシュディレクトリ使用）
+# ファイルハッシュの記録
 ./record -file /path/to/executable
 
 # 既存ハッシュの強制上書き
 ./record -file /path/to/file -force
-
-# ファイル整合性の検証（デフォルトハッシュディレクトリ使用）
-./verify -file /path/to/file
-
-# 注記: -hash-dirオプションはテスト用のみ利用可能
-./record -file /path/to/file -hash-dir /custom/test/hashes
 ```
+
+詳細は [record コマンドガイド](docs/user/record_command.ja.md) を参照してください。
+
+### verify - ファイル検証コマンド
+
+```bash
+# ファイル整合性の検証
+./verify -file /path/to/file
+```
+
+詳細は [verify コマンドガイド](docs/user/verify_command.ja.md) を参照してください。
+
+### 包括的なユーザーガイド
+
+詳細な使用方法、設定例、トラブルシューティングについては、[ユーザーガイド](docs/user/README.ja.md) を参照してください。
 
 ## ビルドとインストール
 

@@ -1,48 +1,48 @@
-# 第4章: グローバルレベル設定 [global]
+# Chapter 4: Global Level Configuration [global]
 
-## 概要
+## Overview
 
-`[global]` セクションには、全てのグループとコマンドに適用される共通設定を定義します。このセクションはオプションですが、デフォルト値を一元管理するために使用することを推奨します。
+The `[global]` section defines common settings that apply to all groups and commands. While this section is optional, it is recommended to use it for centralized management of default values.
 
-## 4.1 timeout - タイムアウト設定
+## 4.1 timeout - Timeout Setting
 
-### 概要
+### Overview
 
-コマンド実行の最大待機時間を秒単位で指定します。
+Specifies the maximum wait time for command execution in seconds.
 
-### 文法
+### Syntax
 
 ```toml
 [global]
-timeout = 秒数
+timeout = seconds
 ```
 
-### パラメータの詳細
+### Parameter Details
 
-| 項目 | 内容 |
-|-----|------|
-| **型** | 整数 (int) |
-| **必須/オプション** | オプション |
-| **設定可能な階層** | グローバル、コマンド |
-| **デフォルト値** | システムデフォルト(通常は制限なし) |
-| **有効な値** | 正の整数(秒単位) |
-| **オーバーライド** | コマンドレベルでオーバーライド可能 |
+| Item | Description |
+|------|-------------|
+| **Type** | Integer (int) |
+| **Required/Optional** | Optional |
+| **Configurable Level** | Global, Command |
+| **Default Value** | System default (typically no limit) |
+| **Valid Values** | Positive integer (in seconds) |
+| **Override** | Can be overridden at command level |
 
-### 役割
+### Role
 
-- **無限ループ防止**: コマンドがハングした場合に自動的に終了
-- **リソース管理**: システムリソースの過度な占有を防止
-- **予測可能な実行時間**: バッチ処理の完了時間を予測可能に
+- **Prevent Infinite Loops**: Automatically terminates commands that hang
+- **Resource Management**: Prevents excessive system resource occupation
+- **Predictable Execution Time**: Makes batch processing completion time predictable
 
-### 設定例
+### Configuration Examples
 
-#### 例1: グローバルタイムアウトの設定
+#### Example 1: Setting Global Timeout
 
 ```toml
 version = "1.0"
 
 [global]
-timeout = 60  # 全てのコマンドのデフォルトタイムアウトを60秒に設定
+timeout = 60  # Set default timeout for all commands to 60 seconds
 
 [[groups]]
 name = "quick_tasks"
@@ -50,17 +50,17 @@ name = "quick_tasks"
 [[groups.commands]]
 name = "fast_command"
 cmd = "echo"
-args = ["完了"]
-# timeout 未指定 → グローバルの 60秒 を使用
+args = ["Complete"]
+# timeout not specified → uses global 60 seconds
 ```
 
-#### 例2: コマンドレベルでのオーバーライド
+#### Example 2: Override at Command Level
 
 ```toml
 version = "1.0"
 
 [global]
-timeout = 60  # デフォルト: 60秒
+timeout = 60  # Default: 60 seconds
 
 [[groups]]
 name = "mixed_tasks"
@@ -69,80 +69,80 @@ name = "mixed_tasks"
 name = "quick_check"
 cmd = "ping"
 args = ["-c", "3", "localhost"]
-# timeout 未指定 → グローバルの 60秒 を使用
+# timeout not specified → uses global 60 seconds
 
 [[groups.commands]]
 name = "long_backup"
 cmd = "/usr/bin/backup.sh"
 args = []
-timeout = 300  # このコマンドのみ 300秒 に設定
+timeout = 300  # Set to 300 seconds only for this command
 ```
 
-### 動作の詳細
+### Behavior Details
 
-タイムアウトが発生すると:
-1. 実行中のコマンドに終了シグナル(SIGTERM)を送信
-2. 一定時間待機後、強制終了シグナル(SIGKILL)を送信
-3. エラーとして記録し、次のコマンドに進む
+When a timeout occurs:
+1. Sends termination signal (SIGTERM) to the running command
+2. After waiting for a certain period, sends forced termination signal (SIGKILL)
+3. Records as error and proceeds to the next command
 
-### 注意事項
+### Notes
 
-#### 1. タイムアウト値の選定
+#### 1. Selecting Timeout Values
 
-コマンドの実行時間を考慮して適切な値を設定してください:
+Set appropriate values considering the command execution time:
 
 ```toml
 [global]
-timeout = 10  # 短すぎる: 通常のコマンドも失敗する可能性
+timeout = 10  # Too short: normal commands may fail
 
 [[groups.commands]]
 name = "database_dump"
 cmd = "/usr/bin/pg_dump"
 args = ["large_database"]
-# 10秒では完了しない可能性が高い → タイムアウトエラー
+# Likely won't complete in 10 seconds → timeout error
 ```
 
-#### 2. 0 や負の値は無効
+#### 2. 0 or Negative Values Are Invalid
 
 ```toml
 [global]
-timeout = 0   # 無効な設定
-timeout = -1  # 無効な設定
+timeout = 0   # Invalid setting
+timeout = -1  # Invalid setting
 ```
 
-## 4.2 workdir - 作業ディレクトリ
+## 4.2 workdir - Working Directory
 
-### 概要
+### Overview
 
-コマンドを実行する作業ディレクトリ(カレントディレクトリ)を指定します。
+Specifies the working directory (current directory) where commands are executed.
 
-### 文法
+### Syntax
 
 ```toml
 [global]
-workdir = "ディレクトリパス"
+workdir = "directory_path"
 ```
 
-### パラメータの詳細
+### Parameter Details
 
-| 項目 | 内容 |
-|-----|------|
-| **型** | 文字列 (string) |
-| **必須/オプション** | オプション |
-| **設定可能な階層** | グローバル、グループ |
-| **デフォルト値** | go-safe-cmd-runner の実行ディレクトリ |
-| **有効な値** | 絶対パス |
-| **オーバーライド** | グループレベルでオーバーライド可能 |
+| Item | Description |
+|------|-------------|
+| **Type** | String (string) |
+| **Required/Optional** | Optional |
+| **Configurable Level** | Global, Group |
+| **Default Value** | Execution directory of go-safe-cmd-runner |
+| **Valid Values** | Absolute path |
+| **Override** | Can be overridden at group level |
 
-### 役割
+### Role
 
-- **実行環境の統一**: 全てのコマンドが同じディレクトリで実行されることを保証
-- **相対パス参照の基準**: 相対パスを使用するコマンドの基準ディレクトリを設定
-- **セキュリティ**: 予期しないディレクトリでのコマンド実行を防止
+- **Unified Execution Environment**: Ensures all commands run in the same directory
+- **Base for Relative Paths**: Sets the base directory for commands using relative paths
+- **Security**: Prevents command execution in unexpected directories
 
-### 設定例
+### Configuration Examples
 
-#### 例1: グローバル作業ディレクトリの設定
+#### Example 1: Setting Global Working Directory
 
 ```toml
 version = "1.0"
@@ -157,10 +157,10 @@ name = "file_operations"
 name = "create_file"
 cmd = "touch"
 args = ["test.txt"]
-# /var/app/workspace/test.txt が作成される
+# /var/app/workspace/test.txt will be created
 ```
 
-#### 例2: グループレベルでのオーバーライド
+#### Example 2: Override at Group Level
 
 ```toml
 version = "1.0"
@@ -170,82 +170,82 @@ workdir = "/tmp"
 
 [[groups]]
 name = "log_processing"
-workdir = "/var/log/app"  # グループ専用の作業ディレクトリ
+workdir = "/var/log/app"  # Group-specific working directory
 
 [[groups.commands]]
 name = "grep_errors"
 cmd = "grep"
 args = ["ERROR", "app.log"]
-# /var/log/app ディレクトリで実行される
+# Executed in /var/log/app directory
 ```
 
-### 注意事項
+### Notes
 
-#### 1. 絶対パスを使用
+#### 1. Use Absolute Paths
 
-相対パスは使用できません:
+Relative paths cannot be used:
 
 ```toml
 [global]
-workdir = "./workspace"  # エラー: 相対パスは使用不可
-workdir = "/tmp/workspace"  # 正しい: 絶対パス
+workdir = "./workspace"  # Error: relative paths not allowed
+workdir = "/tmp/workspace"  # Correct: absolute path
 ```
 
-#### 2. ディレクトリの存在確認
+#### 2. Directory Existence Check
 
-指定されたディレクトリが存在しない場合、エラーになります:
+If the specified directory does not exist, an error occurs:
 
 ```toml
 [global]
-workdir = "/nonexistent/directory"  # ディレクトリが存在しない場合エラー
+workdir = "/nonexistent/directory"  # Error if directory doesn't exist
 ```
 
-#### 3. 権限の確認
+#### 3. Permission Check
 
-指定したディレクトリに対する読み書き権限が必要です。
+Read and write permissions are required for the specified directory.
 
-## 4.3 log_level - ログレベル
+## 4.3 log_level - Log Level
 
-### 概要
+### Overview
 
-ログ出力の詳細度を制御します。
+Controls the verbosity of log output.
 
-### 文法
+### Syntax
 
 ```toml
 [global]
-log_level = "ログレベル"
+log_level = "log_level"
 ```
 
-### パラメータの詳細
+### Parameter Details
 
-| 項目 | 内容 |
-|-----|------|
-| **型** | 文字列 (string) |
-| **必須/オプション** | オプション |
-| **設定可能な階層** | グローバルのみ |
-| **デフォルト値** | "info" |
-| **有効な値** | "debug", "info", "warn", "error" |
-| **オーバーライド** | 不可(グローバルレベルのみ) |
+| Item | Description |
+|------|-------------|
+| **Type** | String (string) |
+| **Required/Optional** | Optional |
+| **Configurable Level** | Global only |
+| **Default Value** | "info" |
+| **Valid Values** | "debug", "info", "warn", "error" |
+| **Override** | Not possible (global level only) |
 
-### ログレベルの詳細
+### Log Level Details
 
-| レベル | 用途 | 出力される情報 |
-|--------|------|--------------|
-| **debug** | 開発・デバッグ | 全ての詳細情報(変数値、内部状態など) |
-| **info** | 通常運用 | 実行状況、完了通知など |
-| **warn** | 警告の監視 | 警告と重要な情報のみ |
-| **error** | エラーのみ | エラーメッセージのみ |
+| Level | Use Case | Output Information |
+|-------|----------|-------------------|
+| **debug** | Development/debugging | All detailed information (variable values, internal states, etc.) |
+| **info** | Normal operation | Execution status, completion notifications, etc. |
+| **warn** | Warning monitoring | Warnings and important information only |
+| **error** | Errors only | Error messages only |
 
-### 設定例
+### Configuration Examples
 
-#### 例1: デバッグモード
+#### Example 1: Debug Mode
 
 ```toml
 version = "1.0"
 
 [global]
-log_level = "debug"  # 詳細なデバッグ情報を出力
+log_level = "debug"  # Output detailed debug information
 
 [[groups]]
 name = "troubleshooting"
@@ -256,7 +256,7 @@ cmd = "echo"
 args = ["test"]
 ```
 
-出力例:
+Output example:
 ```
 [DEBUG] Configuration loaded: version=1.0
 [DEBUG] Global settings: timeout=default, workdir=default
@@ -267,13 +267,13 @@ args = ["test"]
 [INFO] Command completed successfully
 ```
 
-#### 例2: 本番環境(info レベル)
+#### Example 2: Production Environment (info level)
 
 ```toml
 version = "1.0"
 
 [global]
-log_level = "info"  # 標準的な情報のみ出力
+log_level = "info"  # Output standard information only
 
 [[groups]]
 name = "production"
@@ -284,20 +284,20 @@ cmd = "/usr/bin/backup.sh"
 args = []
 ```
 
-出力例:
+Output example:
 ```
 [INFO] Starting command group: production
 [INFO] Executing command: backup
 [INFO] Command completed successfully
 ```
 
-#### 例3: エラーのみ(error レベル)
+#### Example 3: Errors Only (error level)
 
 ```toml
 version = "1.0"
 
 [global]
-log_level = "error"  # エラーのみ出力
+log_level = "error"  # Output errors only
 
 [[groups]]
 name = "silent_operation"
@@ -308,70 +308,70 @@ cmd = "test"
 args = ["-f", "/tmp/check.txt"]
 ```
 
-正常時は何も出力されず、エラー時のみメッセージが表示されます。
+No output during normal operation; messages are displayed only when errors occur.
 
-### ベストプラクティス
+### Best Practices
 
-- **開発時**: `debug` レベルを使用して詳細を確認
-- **テスト時**: `info` レベルで実行状況を確認
-- **本番環境**: `info` または `warn` レベルを使用
-- **静かな運用**: `error` レベルでエラーのみを記録
+- **During Development**: Use `debug` level to check details
+- **During Testing**: Use `info` level to verify execution status
+- **Production Environment**: Use `info` or `warn` level
+- **Silent Operation**: Use `error` level to record errors only
 
-## 4.4 skip_standard_paths - 標準パス検証のスキップ
+## 4.4 skip_standard_paths - Skip Standard Path Verification
 
-### 概要
+### Overview
 
-標準的なシステムパス(`/bin`, `/usr/bin` など)に対するファイル検証をスキップします。
+Skips file verification for standard system paths (`/bin`, `/usr/bin`, etc.).
 
-### 文法
+### Syntax
 
 ```toml
 [global]
 skip_standard_paths = true/false
 ```
 
-### パラメータの詳細
+### Parameter Details
 
-| 項目 | 内容 |
-|-----|------|
-| **型** | 真偽値 (boolean) |
-| **必須/オプション** | オプション |
-| **設定可能な階層** | グローバルのみ |
-| **デフォルト値** | false |
-| **有効な値** | true, false |
+| Item | Description |
+|------|-------------|
+| **Type** | Boolean (boolean) |
+| **Required/Optional** | Optional |
+| **Configurable Level** | Global only |
+| **Default Value** | false |
+| **Valid Values** | true, false |
 
-### 役割
+### Role
 
-- **パフォーマンス向上**: 標準コマンドの検証をスキップして起動時間を短縮
-- **利便性**: 標準的なシステムコマンドのハッシュファイル作成を不要に
+- **Performance Improvement**: Reduces startup time by skipping verification of standard commands
+- **Convenience**: Eliminates the need to create hash files for standard system commands
 
-### 設定例
+### Configuration Examples
 
-#### 例1: 標準パスの検証をスキップ
+#### Example 1: Skip Verification of Standard Paths
 
 ```toml
 version = "1.0"
 
 [global]
-skip_standard_paths = true  # /bin, /usr/bin などの検証をスキップ
+skip_standard_paths = true  # Skip verification of /bin, /usr/bin, etc.
 
 [[groups]]
 name = "system_commands"
 
 [[groups.commands]]
 name = "list_files"
-cmd = "/bin/ls"  # 検証なしで実行可能
+cmd = "/bin/ls"  # Can execute without verification
 args = ["-la"]
 ```
 
-#### 例2: 全てのコマンドを検証(デフォルト)
+#### Example 2: Verify All Commands (Default)
 
 ```toml
 version = "1.0"
 
 [global]
-skip_standard_paths = false  # または省略
-verify_files = ["/bin/ls", "/usr/bin/grep"]  # 明示的にハッシュ指定が必要
+skip_standard_paths = false  # Or omit
+verify_files = ["/bin/ls", "/usr/bin/grep"]  # Explicit hash specification required
 
 [[groups]]
 name = "verified_commands"
@@ -382,53 +382,53 @@ cmd = "/usr/bin/grep"
 args = ["pattern", "file.txt"]
 ```
 
-### セキュリティ上の注意
+### Security Notice
 
-`skip_standard_paths = true` を設定すると、標準パスのコマンドが改ざんされていても検出できません。セキュリティ要件が高い環境では `false` (デフォルト)のままにすることを推奨します。
+Setting `skip_standard_paths = true` will not detect tampering of commands in standard paths. For environments with high security requirements, it is recommended to keep it as `false` (default).
 
-## 4.5 env_allowlist - 環境変数許可リスト
+## 4.5 env_allowlist - Environment Variable Allowlist
 
-### 概要
+### Overview
 
-コマンド実行時に使用を許可する環境変数を指定します。リストにない環境変数は全て除外されます。
+Specifies environment variables allowed to be used during command execution. All environment variables not in the list are excluded.
 
-### 文法
+### Syntax
 
 ```toml
 [global]
-env_allowlist = ["変数1", "変数2", ...]
+env_allowlist = ["variable1", "variable2", ...]
 ```
 
-### パラメータの詳細
+### Parameter Details
 
-| 項目 | 内容 |
-|-----|------|
-| **型** | 文字列配列 (array of strings) |
-| **必須/オプション** | オプション |
-| **設定可能な階層** | グローバル、グループ |
-| **デフォルト値** | [] (全ての環境変数を拒否) |
-| **有効な値** | 環境変数名のリスト |
-| **オーバーライド** | グループレベルで継承/オーバーライド可能(詳細は第5章) |
+| Item | Description |
+|------|-------------|
+| **Type** | Array of strings (array of strings) |
+| **Required/Optional** | Optional |
+| **Configurable Level** | Global, Group |
+| **Default Value** | [] (deny all environment variables) |
+| **Valid Values** | List of environment variable names |
+| **Override** | Can be inherited/overridden at group level (see Chapter 5) |
 
-### 役割
+### Role
 
-- **セキュリティ**: 不要な環境変数の漏洩を防止
-- **環境の統一**: コマンド実行環境を予測可能にする
-- **最小権限の原則**: 必要な環境変数のみを許可
+- **Security**: Prevents leakage of unnecessary environment variables
+- **Environment Uniformity**: Makes command execution environment predictable
+- **Principle of Least Privilege**: Allows only necessary environment variables
 
-### 設定例
+### Configuration Examples
 
-#### 例1: 基本的な環境変数の許可
+#### Example 1: Allowing Basic Environment Variables
 
 ```toml
 version = "1.0"
 
 [global]
 env_allowlist = [
-    "PATH",    # コマンド検索パス
-    "HOME",    # ホームディレクトリ
-    "USER",    # ユーザー名
-    "LANG",    # 言語設定
+    "PATH",    # Command search path
+    "HOME",    # Home directory
+    "USER",    # Username
+    "LANG",    # Language settings
 ]
 
 [[groups]]
@@ -438,10 +438,10 @@ name = "basic_commands"
 name = "show_env"
 cmd = "printenv"
 args = []
-# PATH, HOME, USER, LANG のみが利用可能
+# Only PATH, HOME, USER, LANG are available
 ```
 
-#### 例2: アプリケーション固有の環境変数
+#### Example 2: Application-Specific Environment Variables
 
 ```toml
 version = "1.0"
@@ -450,9 +450,9 @@ version = "1.0"
 env_allowlist = [
     "PATH",
     "HOME",
-    "APP_CONFIG_DIR",   # アプリ設定ディレクトリ
-    "APP_LOG_LEVEL",    # ログレベル
-    "DATABASE_URL",     # データベース接続文字列
+    "APP_CONFIG_DIR",   # App configuration directory
+    "APP_LOG_LEVEL",    # Log level
+    "DATABASE_URL",     # Database connection string
 ]
 
 [[groups]]
@@ -465,13 +465,13 @@ args = ["--config", "${APP_CONFIG_DIR}/config.yaml"]
 env = ["APP_CONFIG_DIR=/etc/myapp"]
 ```
 
-#### 例3: 空のリスト(全て拒否)
+#### Example 3: Empty List (Deny All)
 
 ```toml
 version = "1.0"
 
 [global]
-env_allowlist = []  # 全ての環境変数を拒否
+env_allowlist = []  # Deny all environment variables
 
 [[groups]]
 name = "isolated_tasks"
@@ -480,73 +480,73 @@ name = "isolated_tasks"
 name = "pure_command"
 cmd = "/bin/echo"
 args = ["Hello"]
-# 環境変数なしで実行される
+# Executed without environment variables
 ```
 
-### よく使用される環境変数
+### Commonly Used Environment Variables
 
-| 変数名 | 用途 | 推奨度 |
-|--------|------|--------|
-| PATH | コマンド検索パス | 高(ほぼ必須) |
-| HOME | ホームディレクトリ | 高 |
-| USER | ユーザー名 | 中 |
-| LANG, LC_ALL | 言語・ロケール設定 | 中 |
-| TZ | タイムゾーン | 低 |
-| TERM | 端末タイプ | 低 |
+| Variable Name | Purpose | Recommendation |
+|---------------|---------|----------------|
+| PATH | Command search path | High (almost essential) |
+| HOME | Home directory | High |
+| USER | Username | Medium |
+| LANG, LC_ALL | Language/locale settings | Medium |
+| TZ | Timezone | Low |
+| TERM | Terminal type | Low |
 
-### セキュリティのベストプラクティス
+### Security Best Practices
 
-1. **最小限の許可**: 必要な変数のみを許可
-2. **機密情報の除外**: パスワードやトークンを含む変数は許可しない
-3. **定期的な見直し**: 不要になった変数を削除
+1. **Minimal Allowance**: Allow only necessary variables
+2. **Exclude Sensitive Information**: Do not allow variables containing passwords or tokens
+3. **Regular Review**: Remove variables that are no longer needed
 
 ```toml
-# 推奨しない: 過度に寛容
+# Not recommended: overly permissive
 [global]
 env_allowlist = [
     "PATH", "HOME", "USER", "SHELL", "EDITOR", "PAGER",
     "MAIL", "LOGNAME", "HOSTNAME", "DISPLAY", "XAUTHORITY",
-    # ... 多すぎる
+    # ... too many
 ]
 
-# 推奨: 必要最小限
+# Recommended: minimal necessary
 [global]
 env_allowlist = ["PATH", "HOME", "USER"]
 ```
 
-## 4.6 verify_files - ファイル検証リスト
+## 4.6 verify_files - File Verification List
 
-### 概要
+### Overview
 
-実行前に整合性を検証するファイルのリストを指定します。指定されたファイルはハッシュ値と照合され、改ざんが検出されると実行が中止されます。
+Specifies a list of files to verify for integrity before execution. The specified files are checked against hash values, and execution is aborted if tampering is detected.
 
-### 文法
+### Syntax
 
 ```toml
 [global]
-verify_files = ["ファイルパス1", "ファイルパス2", ...]
+verify_files = ["file_path1", "file_path2", ...]
 ```
 
-### パラメータの詳細
+### Parameter Details
 
-| 項目 | 内容 |
-|-----|------|
-| **型** | 文字列配列 (array of strings) |
-| **必須/オプション** | オプション |
-| **設定可能な階層** | グローバル、グループ |
-| **デフォルト値** | [] (検証なし) |
-| **有効な値** | 絶対パスのリスト |
-| **マージ動作** | グループレベルの設定とマージされる |
+| Item | Description |
+|------|-------------|
+| **Type** | Array of strings (array of strings) |
+| **Required/Optional** | Optional |
+| **Configurable Level** | Global, Group |
+| **Default Value** | [] (no verification) |
+| **Valid Values** | List of absolute paths |
+| **Merge Behavior** | Merged with group-level settings |
 
-### 役割
+### Role
 
-- **改ざん検出**: ファイルが変更されていないことを確認
-- **セキュリティ**: 悪意のあるコードの実行を防止
-- **整合性保証**: 意図したバージョンのファイルが使用されることを保証
+- **Tampering Detection**: Verifies that files have not been modified
+- **Security**: Prevents execution of malicious code
+- **Integrity Assurance**: Ensures the intended version of files is used
 
-### 設定例
+### Configuration Examples
 
-#### 例1: 基本的なファイル検証
+#### Example 1: Basic File Verification
 
 ```toml
 version = "1.0"
@@ -565,101 +565,101 @@ name = "scripts"
 name = "run_script"
 cmd = "/usr/bin/python3"
 args = ["script.py"]
-# 実行前に /usr/bin/python3 のハッシュを検証
+# Verifies hash of /usr/bin/python3 before execution
 ```
 
-#### 例2: グループレベルでの追加
+#### Example 2: Additional Verification at Group Level
 
 ```toml
 version = "1.0"
 
 [global]
-verify_files = ["/bin/sh"]  # 全グループで検証
+verify_files = ["/bin/sh"]  # Verified across all groups
 
 [[groups]]
 name = "database_group"
-verify_files = ["/usr/bin/psql", "/usr/bin/pg_dump"]  # グループ固有の検証
+verify_files = ["/usr/bin/psql", "/usr/bin/pg_dump"]  # Group-specific verification
 
 [[groups.commands]]
 name = "db_backup"
 cmd = "/usr/bin/pg_dump"
 args = ["mydb"]
-# /bin/sh, /usr/bin/psql, /usr/bin/pg_dump が検証される(マージ)
+# /bin/sh, /usr/bin/psql, /usr/bin/pg_dump are verified (merged)
 ```
 
-### 検証の仕組み
+### Verification Mechanism
 
-1. **ハッシュファイルの事前作成**: `record` コマンドでファイルのハッシュを記録
-2. **実行時の検証**: 設定ファイルに指定されたファイルのハッシュを照合
-3. **不一致時の動作**: ハッシュが一致しない場合、実行を中止しエラーを報告
+1. **Pre-create Hash Files**: Record file hashes using the `record` command
+2. **Execution-time Verification**: Verify hashes of files specified in configuration
+3. **Behavior on Mismatch**: Abort execution and report error if hashes don't match
 
-### ハッシュファイルの作成方法
+### How to Create Hash Files
 
 ```bash
-# record コマンドで検証対象ファイルのハッシュを記録
+# Record hashes of verification target files using record command
 $ go-safe-cmd-runner record config.toml
 
-# または個別にファイルを指定
+# Or specify files individually
 $ go-safe-cmd-runner record /bin/sh /usr/bin/python3
 ```
 
-### 注意事項
+### Notes
 
-#### 1. 絶対パスが必要
-
-```toml
-[global]
-verify_files = ["./script.sh"]  # エラー: 相対パスは使用不可
-verify_files = ["/opt/app/script.sh"]  # 正しい
-```
-
-#### 2. ハッシュファイルの管理
-
-指定したファイルのハッシュが事前に記録されていない場合、検証エラーになります。
-
-#### 3. パフォーマンスへの影響
-
-多数のファイルを検証すると起動時間が増加します。必要なファイルのみを指定してください。
-
-## 4.7 max_output_size - 出力サイズ上限
-
-### 概要
-
-コマンドの標準出力をキャプチャする際の最大サイズをバイト単位で指定します。
-
-### 文法
+#### 1. Absolute Paths Required
 
 ```toml
 [global]
-max_output_size = バイト数
+verify_files = ["./script.sh"]  # Error: relative paths not allowed
+verify_files = ["/opt/app/script.sh"]  # Correct
 ```
 
-### パラメータの詳細
+#### 2. Hash File Management
 
-| 項目 | 内容 |
-|-----|------|
-| **型** | 整数 (int64) |
-| **必須/オプション** | オプション |
-| **設定可能な階層** | グローバルのみ |
-| **デフォルト値** | 10485760 (10MB) |
-| **有効な値** | 正の整数(バイト単位) |
-| **オーバーライド** | 不可(グローバルレベルのみ) |
+If the hash of a specified file has not been recorded in advance, a verification error occurs.
 
-### 役割
+#### 3. Performance Impact
 
-- **リソース保護**: 過大な出力によるディスク使用量の増加を防止
-- **メモリ管理**: メモリ不足を防ぐ
-- **予測可能な動作**: 出力サイズの上限を明確化
+Verifying many files increases startup time. Specify only necessary files.
 
-### 設定例
+## 4.7 max_output_size - Maximum Output Size
 
-#### 例1: 1MB の制限
+### Overview
+
+Specifies the maximum size in bytes when capturing command standard output.
+
+### Syntax
+
+```toml
+[global]
+max_output_size = bytes
+```
+
+### Parameter Details
+
+| Item | Description |
+|------|-------------|
+| **Type** | Integer (int64) |
+| **Required/Optional** | Optional |
+| **Configurable Level** | Global only |
+| **Default Value** | 10485760 (10MB) |
+| **Valid Values** | Positive integer (in bytes) |
+| **Override** | Not possible (global level only) |
+
+### Role
+
+- **Resource Protection**: Prevents increased disk usage from excessive output
+- **Memory Management**: Prevents memory exhaustion
+- **Predictable Behavior**: Clarifies the upper limit on output size
+
+### Configuration Examples
+
+#### Example 1: 1MB Limit
 
 ```toml
 version = "1.0"
 
 [global]
-max_output_size = 1048576  # 1MB = 1024 * 1024 バイト
+max_output_size = 1048576  # 1MB = 1024 * 1024 bytes
 
 [[groups]]
 name = "log_analysis"
@@ -669,16 +669,16 @@ name = "grep_logs"
 cmd = "grep"
 args = ["ERROR", "/var/log/app.log"]
 output = "errors.txt"
-# 出力が 1MB を超えるとエラー
+# Error if output exceeds 1MB
 ```
 
-#### 例2: 大きなファイルの処理
+#### Example 2: Processing Large Files
 
 ```toml
 version = "1.0"
 
 [global]
-max_output_size = 104857600  # 100MB = 100 * 1024 * 1024 バイト
+max_output_size = 104857600  # 100MB = 100 * 1024 * 1024 bytes
 
 [[groups]]
 name = "data_export"
@@ -688,64 +688,64 @@ name = "export_database"
 cmd = "/usr/bin/pg_dump"
 args = ["large_db"]
 output = "database_dump.sql"
-# 大きなデータベースダンプを許可
+# Allow large database dumps
 ```
 
-#### 例3: サイズ制限の目安
+#### Example 3: Size Limit Guidelines
 
 ```toml
 [global]
-# 一般的な用途に応じた推奨値
-max_output_size = 1048576      # 1MB  - ログ分析、小規模データ
-max_output_size = 10485760     # 10MB - デフォルト、中規模データ
-max_output_size = 104857600    # 100MB - 大規模データ、データベースダンプ
-max_output_size = 1073741824   # 1GB  - 非常に大きなデータ(注意が必要)
+# Recommended values based on common use cases
+max_output_size = 1048576      # 1MB  - log analysis, small-scale data
+max_output_size = 10485760     # 10MB - default, medium-scale data
+max_output_size = 104857600    # 100MB - large-scale data, database dumps
+max_output_size = 1073741824   # 1GB  - very large data (caution required)
 ```
 
-### 制限超過時の動作
+### Behavior When Limit is Exceeded
 
-出力サイズが制限を超えた場合:
-1. コマンドの実行を継続(出力のみ制限)
-2. 超過を警告するエラーメッセージを記録
-3. それまでの出力は保存される
+When output size exceeds the limit:
+1. Command execution continues (only output is limited)
+2. Error message warning of excess is recorded
+3. Output up to that point is saved
 
-### ベストプラクティス
+### Best Practices
 
-1. **用途に応じた設定**: 処理するデータサイズを考慮
-2. **余裕を持った設定**: 想定サイズの1.5〜2倍程度を設定
-3. **監視**: 制限に達したケースを定期的に確認
+1. **Configure Based on Use Case**: Consider the size of data to be processed
+2. **Set with Margin**: Configure to 1.5-2 times the expected size
+3. **Monitoring**: Regularly check cases where the limit was reached
 
 ```toml
-# 推奨しない: 小さすぎる制限
+# Not recommended: limit too small
 [global]
-max_output_size = 1024  # 1KB - ほとんどのコマンドで不足
+max_output_size = 1024  # 1KB - insufficient for most commands
 
-# 推奨: 適切な制限
+# Recommended: appropriate limit
 [global]
-max_output_size = 10485760  # 10MB - 一般的な用途に適切
+max_output_size = 10485760  # 10MB - appropriate for general use
 ```
 
-## 全体的な設定例
+## Overall Configuration Example
 
-以下は、グローバルレベルの設定を組み合わせた実践的な例です:
+Below is a practical example combining global-level settings:
 
 ```toml
 version = "1.0"
 
 [global]
-# タイムアウト設定
-timeout = 300  # デフォルト5分
+# Timeout setting
+timeout = 300  # Default 5 minutes
 
-# 作業ディレクトリ
+# Working directory
 workdir = "/var/app/workspace"
 
-# ログレベル
+# Log level
 log_level = "info"
 
-# 標準パスの検証スキップ
+# Skip standard path verification
 skip_standard_paths = true
 
-# 環境変数許可リスト
+# Environment variable allowlist
 env_allowlist = [
     "PATH",
     "HOME",
@@ -755,20 +755,20 @@ env_allowlist = [
     "DATABASE_URL",
 ]
 
-# ファイル検証リスト
+# File verification list
 verify_files = [
     "/opt/app/bin/main",
     "/opt/app/scripts/backup.sh",
 ]
 
-# 出力サイズ制限
+# Output size limit
 max_output_size = 10485760  # 10MB
 
 [[groups]]
 name = "application_tasks"
-# ... グループ設定が続く
+# ... group configuration continues
 ```
 
-## 次のステップ
+## Next Steps
 
-次章では、グループレベルの設定(`[[groups]]`)について詳しく解説します。コマンドをグループ化し、グループ固有の設定を行う方法を学びます。
+The next chapter will provide detailed explanations of group-level configuration (`[[groups]]`). You will learn how to group commands and configure group-specific settings.

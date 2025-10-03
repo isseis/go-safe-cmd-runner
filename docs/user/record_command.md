@@ -1,284 +1,284 @@
-# record コマンド ユーザーガイド
+# record Command User Guide
 
-ファイルのSHA-256ハッシュ値を記録するための `record` コマンドの使用方法を解説します。
+This guide explains how to use the `record` command to record SHA-256 hash values of files.
 
-## 目次
+## Table of Contents
 
-- [1. 概要](#1-概要)
-- [2. 基本的な使い方](#2-基本的な使い方)
-- [3. コマンドラインフラグ詳解](#3-コマンドラインフラグ詳解)
-- [4. 実践例](#4-実践例)
-- [5. トラブルシューティング](#5-トラブルシューティング)
-- [6. 関連ドキュメント](#6-関連ドキュメント)
+- [1. Overview](#1-overview)
+- [2. Basic Usage](#2-basic-usage)
+- [3. Command-Line Flags](#3-command-line-flags)
+- [4. Practical Examples](#4-practical-examples)
+- [5. Troubleshooting](#5-troubleshooting)
+- [6. Related Documentation](#6-related-documentation)
 
-## 1. 概要
+## 1. Overview
 
-### 1.1 record コマンドとは
+### 1.1 What is the record Command
 
-`record` コマンドは、ファイルのSHA-256ハッシュ値を計算し、ハッシュディレクトリに保存します。このハッシュ値は、後で `runner` コマンドや `verify` コマンドによってファイルの整合性を検証するために使用されます。
+The `record` command calculates the SHA-256 hash value of a file and saves it to the hash directory. This hash value is later used by the `runner` command or `verify` command to verify file integrity.
 
-### 1.2 主な用途
+### 1.2 Main Use Cases
 
-- **セキュリティ**: 実行バイナリやスクリプトの改ざん検出
-- **整合性保証**: 設定ファイルや環境ファイルの変更検出
-- **監査**: ファイルのバージョン管理と追跡
+- **Security**: Tampering detection for executable binaries and scripts
+- **Integrity Assurance**: Change detection for configuration files and environment files
+- **Auditing**: File version management and tracking
 
-### 1.3 動作の仕組み
+### 1.3 How It Works
 
 ```
-1. ファイルのSHA-256ハッシュ値を計算
+1. Calculate SHA-256 hash value of the file
    ↓
-2. ファイルパスをエンコードしてハッシュファイル名を生成
+2. Encode the file path to generate a hash file name
    ↓
-3. ハッシュ値をハッシュディレクトリに保存
+3. Save the hash value to the hash directory
    ↓
-4. 保存されたハッシュファイル名を表示
+4. Display the saved hash file name
 ```
 
-### 1.4 ハッシュファイルの命名規則
+### 1.4 Hash File Naming Convention
 
-record コマンドは、ハイブリッドエンコーディング方式を使用してハッシュファイル名を生成します：
+The record command uses a hybrid encoding scheme to generate hash file names:
 
-**短いパスの場合（置換エンコーディング）**
+**For Short Paths (Replacement Encoding)**
 
 ```
 /usr/bin/backup.sh → ~usr~bin~backup.sh
 /etc/config.toml   → ~etc~config.toml
 ```
 
-**長いパスの場合（SHA-256フォールバック）**
+**For Long Paths (SHA-256 Fallback)**
 
 ```
 /very/long/path/to/file.sh → AbCdEf123456.json
 ```
 
-この方式により、ハッシュファイル名が人間に読みやすく、かつファイル名の長さ制限にも対応しています。
+This approach makes hash file names human-readable while also handling file name length limitations.
 
-### 1.5 使用場面
+### 1.5 Usage Scenarios
 
-- **初期セットアップ**: システム導入時に実行ファイルのハッシュを記録
-- **ファイル更新後**: スクリプトや設定ファイルを更新した後にハッシュを再記録
-- **定期更新**: システムパッケージ更新後にハッシュを更新
+- **Initial Setup**: Record hashes of executable files during system deployment
+- **After File Updates**: Re-record hashes after updating scripts or configuration files
+- **Regular Updates**: Update hashes after system package updates
 
-## 2. 基本的な使い方
+## 2. Basic Usage
 
-### 2.1 最もシンプルな使用例
+### 2.1 Simplest Usage Example
 
 ```bash
-# カレントディレクトリにハッシュを記録
+# Record hash to current directory
 record -file /usr/bin/backup.sh
 ```
 
-実行結果：
+Output:
 ```
 Recorded hash for /usr/bin/backup.sh in /home/user/~usr~bin~backup.sh
 ```
 
-### 2.2 ハッシュディレクトリを指定
+### 2.2 Specify Hash Directory
 
 ```bash
-# 特定のディレクトリにハッシュを記録
+# Record hash to a specific directory
 record -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
 ```
 
-実行結果：
+Output:
 ```
 Recorded hash for /usr/bin/backup.sh in /usr/local/etc/go-safe-cmd-runner/hashes/~usr~bin~backup.sh
 ```
 
-### 2.3 既存のハッシュを上書き
+### 2.3 Overwrite Existing Hash
 
 ```bash
-# 既存のハッシュファイルを強制的に上書き
+# Forcefully overwrite existing hash file
 record -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes -force
 ```
 
-### 2.4 複数ファイルの一括記録
+### 2.4 Batch Recording of Multiple Files
 
 ```bash
-# スクリプトで複数ファイルを記録
+# Record multiple files with a script
 for file in /usr/local/bin/*.sh; do
     record -file "$file" -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
 done
 ```
 
-## 3. コマンドラインフラグ詳解
+## 3. Command-Line Flags
 
-### 3.1 `-file <path>` (必須)
+### 3.1 `-file <path>` (Required)
 
-**概要**
+**Overview**
 
-ハッシュ値を記録するファイルのパスを指定します。
+Specifies the path to the file whose hash value should be recorded.
 
-**文法**
+**Syntax**
 
 ```bash
 record -file <path>
 ```
 
-**パラメータ**
+**Parameters**
 
-- `<path>`: ハッシュを記録したいファイルへの絶対パスまたは相対パス（必須）
+- `<path>`: Absolute or relative path to the file for which to record the hash (required)
 
-**使用例**
+**Usage Examples**
 
 ```bash
-# 絶対パスで指定
+# Specify with absolute path
 record -file /usr/bin/backup.sh
 
-# 相対パスで指定
+# Specify with relative path
 record -file ./scripts/deploy.sh
 
-# ホームディレクトリのファイル
+# File in home directory
 record -file ~/bin/custom-script.sh
 ```
 
-**注意事項**
+**Notes**
 
-- ファイルが存在しない場合はエラーになります
-- シンボリックリンクの場合、リンク先のファイルのハッシュが記録されます
-- ディレクトリは指定できません（ファイルのみ）
+- An error occurs if the file does not exist
+- For symbolic links, the hash of the target file is recorded
+- Directories cannot be specified (files only)
 
-### 3.2 `-hash-dir <directory>` (オプション)
+### 3.2 `-hash-dir <directory>` (Optional)
 
-**概要**
+**Overview**
 
-ハッシュファイルを保存するディレクトリを指定します。指定しない場合はカレントディレクトリが使用されます。
+Specifies the directory where the hash file should be saved. If not specified, the current directory is used.
 
-**文法**
+**Syntax**
 
 ```bash
 record -file <path> -hash-dir <directory>
 ```
 
-**パラメータ**
+**Parameters**
 
-- `<directory>`: ハッシュファイルを保存するディレクトリパス（省略可能）
-- デフォルト: カレントディレクトリ
+- `<directory>`: Directory path where the hash file will be saved (optional)
+- Default: Current directory
 
-**使用例**
+**Usage Examples**
 
 ```bash
-# 標準のハッシュディレクトリに保存
+# Save to standard hash directory
 record -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
 
-# カスタムディレクトリに保存（テスト用）
+# Save to custom directory (for testing)
 record -file ./test.sh -hash-dir ./test-hashes
 
-# 相対パスで指定
+# Specify with relative path
 record -file /etc/config.toml -hash-dir ../hashes
 ```
 
-**ディレクトリの自動作成**
+**Automatic Directory Creation**
 
-指定したディレクトリが存在しない場合、自動的に作成されます（権限: 0750）。
+If the specified directory does not exist, it will be created automatically (permissions: 0750).
 
 ```bash
-# ディレクトリが存在しない場合でもOK
+# Works even if directory doesn't exist
 record -file /usr/bin/backup.sh -hash-dir /new/hash/directory
-# /new/hash/directory が自動的に作成されます
+# /new/hash/directory will be created automatically
 ```
 
-**権限について**
+**About Permissions**
 
-- ハッシュディレクトリは 0750 権限で作成されます（所有者: rwx, グループ: r-x, その他: ---）
-- ハッシュファイルは 0640 権限で作成されます（所有者: rw-, グループ: r--, その他: ---）
+- Hash directories are created with 0750 permissions (owner: rwx, group: r-x, others: ---)
+- Hash files are created with 0640 permissions (owner: rw-, group: r--, others: ---)
 
-**本番環境での推奨設定**
+**Recommended Settings for Production Environment**
 
 ```bash
-# 本番環境では標準ディレクトリを使用
+# Use standard directory in production environment
 sudo mkdir -p /usr/local/etc/go-safe-cmd-runner/hashes
 sudo chown root:root /usr/local/etc/go-safe-cmd-runner/hashes
 sudo chmod 755 /usr/local/etc/go-safe-cmd-runner/hashes
 
-# ハッシュを記録
+# Record hash
 sudo record -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
 ```
 
-### 3.3 `-force` (オプション)
+### 3.3 `-force` (Optional)
 
-**概要**
+**Overview**
 
-既存のハッシュファイルを強制的に上書きします。指定しない場合、既存のハッシュファイルが存在するとエラーになります。
+Forcefully overwrites an existing hash file. If not specified, an error occurs if an existing hash file is present.
 
-**文法**
+**Syntax**
 
 ```bash
 record -file <path> -hash-dir <directory> -force
 ```
 
-**使用例**
+**Usage Examples**
 
-**通常の動作（既存ファイルがあるとエラー）**
+**Normal Behavior (Error if Existing File Exists)**
 
 ```bash
-# 1回目は成功
+# First time succeeds
 record -file /usr/bin/backup.sh -hash-dir ./hashes
 
-# 2回目はエラー
+# Second time fails
 record -file /usr/bin/backup.sh -hash-dir ./hashes
 # Error: hash file already exists: ./hashes/~usr~bin~backup.sh
 ```
 
-**-force フラグを使用**
+**Using -force Flag**
 
 ```bash
-# 既存のハッシュファイルを上書き
+# Overwrite existing hash file
 record -file /usr/bin/backup.sh -hash-dir ./hashes -force
 # Recorded hash for /usr/bin/backup.sh in ./hashes/~usr~bin~backup.sh
 ```
 
-**ユースケース**
+**Use Cases**
 
-- **ファイル更新後**: スクリプトやバイナリを更新した後、ハッシュを再記録
-- **強制再同期**: ハッシュファイルが破損または誤って削除された場合の復旧
-- **バッチ更新**: 複数ファイルのハッシュを一括更新するスクリプト
+- **After File Updates**: Re-record hashes after updating scripts or binaries
+- **Forced Re-sync**: Recovery when hash files are corrupted or accidentally deleted
+- **Batch Updates**: Scripts that update hashes of multiple files at once
 
-**使用例：バッチ更新**
+**Usage Example: Batch Update**
 
 ```bash
-# 全スクリプトのハッシュを強制的に再記録
+# Forcefully re-record hashes of all scripts
 for file in /usr/local/bin/*.sh; do
     record -file "$file" -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes -force
 done
 ```
 
-**注意事項**
+**Notes**
 
-- `-force` フラグは既存のハッシュファイルを警告なしで上書きします
-- 誤って重要なハッシュファイルを上書きしないよう注意してください
-- 本番環境では、バックアップを取ってから使用することを推奨します
+- The `-force` flag overwrites existing hash files without warning
+- Be careful not to accidentally overwrite important hash files
+- In production environments, it is recommended to take backups before use
 
-## 4. 実践例
+## 4. Practical Examples
 
-### 4.1 初期セットアップ
+### 4.1 Initial Setup
 
-**システム導入時のハッシュ記録**
+**Hash Recording During System Deployment**
 
 ```bash
 #!/bin/bash
-# setup-hashes.sh - 初期ハッシュ記録スクリプト
+# setup-hashes.sh - Initial hash recording script
 
 HASH_DIR="/usr/local/etc/go-safe-cmd-runner/hashes"
 
-# ハッシュディレクトリの作成
+# Create hash directory
 sudo mkdir -p "$HASH_DIR"
 sudo chown root:root "$HASH_DIR"
 sudo chmod 755 "$HASH_DIR"
 
-# 設定ファイルのハッシュを記録
+# Record hashes of configuration files
 echo "Recording configuration files..."
 sudo record -file /etc/go-safe-cmd-runner/backup.toml -hash-dir "$HASH_DIR"
 sudo record -file /etc/go-safe-cmd-runner/deploy.toml -hash-dir "$HASH_DIR"
 
-# 実行スクリプトのハッシュを記録
+# Record hashes of executable scripts
 echo "Recording executable scripts..."
 sudo record -file /usr/local/bin/backup.sh -hash-dir "$HASH_DIR"
 sudo record -file /usr/local/bin/deploy.sh -hash-dir "$HASH_DIR"
 sudo record -file /usr/local/bin/cleanup.sh -hash-dir "$HASH_DIR"
 
-# システムバイナリのハッシュを記録
+# Record hashes of system binaries
 echo "Recording system binaries..."
 sudo record -file /usr/bin/rsync -hash-dir "$HASH_DIR"
 sudo record -file /usr/bin/pg_dump -hash-dir "$HASH_DIR"
@@ -286,29 +286,29 @@ sudo record -file /usr/bin/pg_dump -hash-dir "$HASH_DIR"
 echo "Hash recording completed successfully!"
 ```
 
-### 4.2 ファイル更新後のハッシュ再記録
+### 4.2 Re-recording Hash After File Updates
 
-**スクリプト更新時の手順**
+**Procedure When Updating Scripts**
 
 ```bash
-# 1. バックアップを作成
+# 1. Create backup
 sudo cp /usr/local/bin/backup.sh /usr/local/bin/backup.sh.bak
 
-# 2. スクリプトを編集
+# 2. Edit script
 sudo vim /usr/local/bin/backup.sh
 
-# 3. ハッシュを再記録
+# 3. Re-record hash
 sudo record -file /usr/local/bin/backup.sh \
     -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes \
     -force
 
-# 4. 動作確認
+# 4. Verify operation
 runner -config /etc/go-safe-cmd-runner/backup.toml -validate
 ```
 
-### 4.3 複数ファイルの一括記録
+### 4.3 Batch Recording of Multiple Files
 
-**ディレクトリ内の全スクリプトを記録**
+**Record All Scripts in a Directory**
 
 ```bash
 #!/bin/bash
@@ -317,7 +317,7 @@ runner -config /etc/go-safe-cmd-runner/backup.toml -validate
 HASH_DIR="/usr/local/etc/go-safe-cmd-runner/hashes"
 SCRIPT_DIR="/usr/local/bin"
 
-# .sh ファイルを全て記録
+# Record all .sh files
 for script in "$SCRIPT_DIR"/*.sh; do
     echo "Recording: $script"
     sudo record -file "$script" -hash-dir "$HASH_DIR" -force
@@ -326,7 +326,7 @@ done
 echo "All scripts recorded successfully!"
 ```
 
-**設定ファイルのリストから記録**
+**Record from Configuration File List**
 
 ```bash
 #!/bin/bash
@@ -335,13 +335,13 @@ echo "All scripts recorded successfully!"
 HASH_DIR="/usr/local/etc/go-safe-cmd-runner/hashes"
 FILE_LIST="files-to-record.txt"
 
-# ファイルリストの内容例:
+# Example contents of file list:
 # /usr/local/bin/backup.sh
 # /usr/local/bin/deploy.sh
 # /etc/config.toml
 
 while IFS= read -r file; do
-    # コメント行と空行をスキップ
+    # Skip comment lines and empty lines
     [[ "$file" =~ ^#.*$ ]] && continue
     [[ -z "$file" ]] && continue
 
@@ -355,9 +355,9 @@ done < "$FILE_LIST"
 echo "All files recorded successfully!"
 ```
 
-### 4.4 自動化とCI/CD統合
+### 4.4 Automation and CI/CD Integration
 
-**GitHub Actionsでのハッシュ記録**
+**Hash Recording in GitHub Actions**
 
 ```yaml
 name: Record File Hashes
@@ -411,17 +411,17 @@ jobs:
           git push
 ```
 
-### 4.5 パッケージ更新後のハッシュ更新
+### 4.5 Hash Updates After Package Updates
 
-**システムパッケージ更新時の手順**
+**Procedure After System Package Updates**
 
 ```bash
 #!/bin/bash
-# update-system-hashes.sh - システム更新後のハッシュ再記録
+# update-system-hashes.sh - Re-record hashes after system updates
 
 HASH_DIR="/usr/local/etc/go-safe-cmd-runner/hashes"
 
-# システムバイナリのリスト
+# List of system binaries
 BINARIES=(
     "/usr/bin/rsync"
     "/usr/bin/pg_dump"
@@ -444,17 +444,17 @@ done
 echo "Hash update completed!"
 ```
 
-**cronで定期実行**
+**Periodic Execution with cron**
 
 ```bash
 # crontab -e
-# 毎週日曜日の深夜2時にシステムバイナリのハッシュを更新
+# Update hashes of system binaries every Sunday at 2:00 AM
 0 2 * * 0 /usr/local/sbin/update-system-hashes.sh >> /var/log/hash-update.log 2>&1
 ```
 
-### 4.6 テスト環境でのハッシュ管理
+### 4.6 Hash Management in Test Environment
 
-**テスト用の独立したハッシュディレクトリ**
+**Independent Hash Directory for Testing**
 
 ```bash
 #!/bin/bash
@@ -462,72 +462,72 @@ echo "Hash update completed!"
 
 TEST_HASH_DIR="./test-hashes"
 
-# テスト用ハッシュディレクトリを作成
+# Create test hash directory
 mkdir -p "$TEST_HASH_DIR"
 
-# テストスクリプトのハッシュを記録
+# Record hashes of test scripts
 record -file ./test/test-script.sh -hash-dir "$TEST_HASH_DIR"
 record -file ./test/test-config.toml -hash-dir "$TEST_HASH_DIR"
 
-# テスト実行
+# Run tests
 runner -config ./test/test-config.toml -dry-run
 
 echo "Test setup completed!"
 ```
 
-## 5. トラブルシューティング
+## 5. Troubleshooting
 
-### 5.1 ファイルが見つからない
+### 5.1 File Not Found
 
-**エラーメッセージ**
+**Error Message**
 ```
 Error: file not found: /usr/bin/backup.sh
 ```
 
-**対処法**
+**Solution**
 
 ```bash
-# ファイルの存在確認
+# Check file existence
 ls -l /usr/bin/backup.sh
 
-# パスのタイプミスを確認
+# Check for typos in path
 which backup.sh
 
-# 相対パスの場合はカレントディレクトリを確認
+# For relative paths, check current directory
 pwd
 ```
 
-### 5.2 権限エラー
+### 5.2 Permission Error
 
-**エラーメッセージ**
+**Error Message**
 ```
 Error: permission denied: /usr/local/etc/go-safe-cmd-runner/hashes
 ```
 
-**対処法**
+**Solution**
 
 ```bash
-# ディレクトリの権限確認
+# Check directory permissions
 ls -ld /usr/local/etc/go-safe-cmd-runner/hashes
 
-# 権限を修正（管理者権限が必要）
+# Fix permissions (requires administrator privileges)
 sudo chmod 755 /usr/local/etc/go-safe-cmd-runner/hashes
 
-# または sudo で record を実行
+# Or run record with sudo
 sudo record -file /usr/bin/backup.sh \
     -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
 ```
 
-### 5.3 既存のハッシュファイルが存在
+### 5.3 Existing Hash File Present
 
-**エラーメッセージ**
+**Error Message**
 ```
 Error: hash file already exists: /usr/local/etc/go-safe-cmd-runner/hashes/~usr~bin~backup.sh
 ```
 
-**対処法**
+**Solution**
 
-**方法1: -force フラグを使用**
+**Method 1: Use -force Flag**
 
 ```bash
 record -file /usr/bin/backup.sh \
@@ -535,62 +535,62 @@ record -file /usr/bin/backup.sh \
     -force
 ```
 
-**方法2: 既存のハッシュファイルを削除**
+**Method 2: Delete Existing Hash File**
 
 ```bash
-# ハッシュファイルを削除してから再記録
+# Delete hash file and re-record
 sudo rm /usr/local/etc/go-safe-cmd-runner/hashes/~usr~bin~backup.sh
 sudo record -file /usr/bin/backup.sh \
     -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
 ```
 
-**方法3: バックアップを取ってから上書き**
+**Method 3: Back Up Before Overwriting**
 
 ```bash
-# 既存のハッシュをバックアップ
+# Back up existing hash
 sudo cp /usr/local/etc/go-safe-cmd-runner/hashes/~usr~bin~backup.sh \
        /usr/local/etc/go-safe-cmd-runner/hashes/~usr~bin~backup.sh.bak
 
-# 強制的に上書き
+# Forcefully overwrite
 sudo record -file /usr/bin/backup.sh \
     -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes \
     -force
 ```
 
-### 5.4 シンボリックリンクのハッシュ記録
+### 5.4 Recording Hash of Symbolic Links
 
-**動作**
+**Behavior**
 
-シンボリックリンクを指定した場合、リンク先のファイルのハッシュが記録されます。
+When a symbolic link is specified, the hash of the target file is recorded.
 
 ```bash
-# シンボリックリンクを作成
+# Create symbolic link
 ln -s /usr/local/bin/backup-v2.sh /usr/local/bin/backup.sh
 
-# ハッシュを記録（リンク先のファイルのハッシュが記録される）
+# Record hash (hash of target file is recorded)
 record -file /usr/local/bin/backup.sh \
     -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
 ```
 
-**注意事項**
+**Notes**
 
-- ハッシュファイル名はシンボリックリンクのパスに基づいて生成されます
-- リンク先のファイルが変更されても、ハッシュファイル名は変わりません
-- リンク先が変更された場合、ハッシュを再記録する必要があります
+- The hash file name is generated based on the symbolic link path
+- Even if the target file changes, the hash file name remains unchanged
+- If the link target is changed, the hash needs to be re-recorded
 
-### 5.5 ディレクトリを指定した場合
+### 5.5 Directory Specified
 
-**エラーメッセージ**
+**Error Message**
 ```
 Error: cannot record hash for directory: /usr/local/bin
 ```
 
-**対処法**
+**Solution**
 
-ディレクトリ内の全ファイルのハッシュを記録したい場合は、ループを使用します：
+To record hashes of all files in a directory, use a loop:
 
 ```bash
-# ディレクトリ内の全ファイルのハッシュを記録
+# Record hashes of all files in directory
 for file in /usr/local/bin/*; do
     if [[ -f "$file" ]]; then
         record -file "$file" \
@@ -599,24 +599,24 @@ for file in /usr/local/bin/*; do
 done
 ```
 
-## 6. 関連ドキュメント
+## 6. Related Documentation
 
-### コマンドラインツール
+### Command-Line Tools
 
-- [runner コマンドガイド](runner_command.md) - メインの実行コマンド
-- [verify コマンドガイド](verify_command.md) - ファイル整合性の検証（デバッグ用）
+- [runner Command Guide](runner_command.md) - Main execution command
+- [verify Command Guide](verify_command.md) - File integrity verification (for debugging)
 
-### 設定ファイル
+### Configuration Files
 
-- [TOML設定ファイル ユーザーガイド](toml_config/README.md)
-  - [グローバルレベル設定](toml_config/04_global_level.md) - `verify_files` パラメータ
-  - [グループレベル設定](toml_config/05_group_level.md) - グループごとのファイル検証
+- [TOML Configuration File User Guide](toml_config/README.md)
+  - [Global Level Configuration](toml_config/04_global_level.md) - `verify_files` parameter
+  - [Group Level Configuration](toml_config/05_group_level.md) - Per-group file verification
 
-### プロジェクト情報
+### Project Information
 
-- [README.md](../../README.md) - プロジェクト概要
-- [開発者向けドキュメント](../dev/) - ハッシュファイル命名規則の詳細
+- [README.md](../../README.md) - Project overview
+- [Developer Documentation](../dev/) - Details of hash file naming conventions
 
 ---
 
-**最終更新**: 2025-10-02
+**Last Updated**: 2025-10-02

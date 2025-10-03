@@ -1,71 +1,71 @@
-# 付録
+# Appendix
 
-## 付録A: パラメータ一覧表
+## Appendix A: Parameter Reference
 
-### A.1 ルートレベルパラメータ
+### A.1 Root Level Parameters
 
-| パラメータ | 型 | 必須 | デフォルト値 | 説明 |
-|-----------|-----|------|------------|------|
-| version | string | ✓ | なし | 設定ファイルのバージョン(現在: "1.0") |
+| Parameter | Type | Required | Default Value | Description |
+|-----------|------|----------|---------------|-------------|
+| version | string | ✓ | none | Configuration file version (current: "1.0") |
 
-### A.2 グローバルレベルパラメータ ([global])
+### A.2 Global Level Parameters ([global])
 
-| パラメータ | 型 | 必須 | デフォルト値 | 説明 |
-|-----------|-----|------|------------|------|
-| timeout | int | - | システムデフォルト | コマンド実行のタイムアウト(秒) |
-| workdir | string | - | 実行ディレクトリ | 作業ディレクトリの絶対パス |
-| log_level | string | - | "info" | ログレベル(debug/info/warn/error) |
-| skip_standard_paths | bool | - | false | 標準パスの検証スキップ |
-| env_allowlist | []string | - | [] | 環境変数の許可リスト |
-| verify_files | []string | - | [] | 検証対象ファイルのリスト |
-| max_output_size | int64 | - | 10485760 | 出力サイズ上限(バイト) |
+| Parameter | Type | Required | Default Value | Description |
+|-----------|------|----------|---------------|-------------|
+| timeout | int | - | System default | Command execution timeout (seconds) |
+| workdir | string | - | Execution directory | Absolute path of working directory |
+| log_level | string | - | "info" | Log level (debug/info/warn/error) |
+| skip_standard_paths | bool | - | false | Skip standard path validation |
+| env_allowlist | []string | - | [] | Environment variable allowlist |
+| verify_files | []string | - | [] | List of files to verify |
+| max_output_size | int64 | - | 10485760 | Maximum output size (bytes) |
 
-### A.3 グループレベルパラメータ ([[groups]])
+### A.3 Group Level Parameters ([[groups]])
 
-| パラメータ | 型 | 必須 | デフォルト値 | 説明 |
-|-----------|-----|------|------------|------|
-| name | string | ✓ | なし | グループ名(一意) |
-| description | string | - | "" | グループの説明 |
-| priority | int | - | 0 | 実行優先度(小さいほど優先) |
-| temp_dir | bool | - | false | 一時ディレクトリの自動作成 |
-| workdir | string | - | グローバル設定 | 作業ディレクトリ(グローバルをオーバーライド) |
-| verify_files | []string | - | [] | 検証対象ファイル(グローバルに追加) |
-| env_allowlist | []string | - | nil(継承) | 環境変数許可リスト(継承モード参照) |
+| Parameter | Type | Required | Default Value | Description |
+|-----------|------|----------|---------------|-------------|
+| name | string | ✓ | none | Group name (unique) |
+| description | string | - | "" | Group description |
+| priority | int | - | 0 | Execution priority (lower runs first) |
+| temp_dir | bool | - | false | Automatic temporary directory creation |
+| workdir | string | - | Global setting | Working directory (overrides global) |
+| verify_files | []string | - | [] | Files to verify (added to global) |
+| env_allowlist | []string | - | nil (inherit) | Environment variable allowlist (see inheritance mode) |
 
-### A.4 コマンドレベルパラメータ ([[groups.commands]])
+### A.4 Command Level Parameters ([[groups.commands]])
 
-| パラメータ | 型 | 必須 | デフォルト値 | 説明 |
-|-----------|-----|------|------------|------|
-| name | string | ✓ | なし | コマンド名(グループ内で一意) |
-| description | string | - | "" | コマンドの説明 |
-| cmd | string | ✓ | なし | 実行するコマンド(絶対パスまたはPATH上) |
-| args | []string | - | [] | コマンドの引数 |
-| env | []string | - | [] | 環境変数("KEY=VALUE"形式) |
-| timeout | int | - | グローバル設定 | タイムアウト(グローバルをオーバーライド) |
-| run_as_user | string | - | "" | 実行ユーザー |
-| run_as_group | string | - | "" | 実行グループ |
-| max_risk_level | string | - | "low" | 最大リスクレベル(low/medium/high) |
-| output | string | - | "" | 標準出力の保存先ファイルパス |
+| Parameter | Type | Required | Default Value | Description |
+|-----------|------|----------|---------------|-------------|
+| name | string | ✓ | none | Command name (unique within group) |
+| description | string | - | "" | Command description |
+| cmd | string | ✓ | none | Command to execute (absolute path or in PATH) |
+| args | []string | - | [] | Command arguments |
+| env | []string | - | [] | Environment variables ("KEY=VALUE" format) |
+| timeout | int | - | Global setting | Timeout (overrides global) |
+| run_as_user | string | - | "" | User to run as |
+| run_as_group | string | - | "" | Group to run as |
+| max_risk_level | string | - | "low" | Maximum risk level (low/medium/high) |
+| output | string | - | "" | File path to save standard output |
 
-### A.5 環境変数継承モード
+### A.5 Environment Variable Inheritance Modes
 
-| モード | 条件 | 動作 |
-|--------|------|------|
-| 継承 (inherit) | env_allowlist が未定義(nil) | グローバル設定を継承 |
-| 明示 (explicit) | env_allowlist に値が設定 | 設定値のみを使用(グローバル無視) |
-| 拒否 (reject) | env_allowlist = [] (空配列) | 全ての環境変数を拒否 |
+| Mode | Condition | Behavior |
+|------|-----------|----------|
+| Inherit | env_allowlist is undefined (nil) | Inherit global settings |
+| Explicit | env_allowlist has value set | Use only configured values (ignore global) |
+| Reject | env_allowlist = [] (empty array) | Reject all environment variables |
 
-### A.6 リスクレベル
+### A.6 Risk Levels
 
-| レベル | 値 | 説明 | 例 |
-|--------|-----|------|-----|
-| 低リスク | "low" | 読み取り専用操作 | cat, ls, grep, echo |
-| 中リスク | "medium" | ファイル作成・変更 | tar, cp, mkdir, wget |
-| 高リスク | "high" | システム変更・権限昇格 | apt-get, systemctl, rm -rf |
+| Level | Value | Description | Examples |
+|-------|-------|-------------|----------|
+| Low Risk | "low" | Read-only operations | cat, ls, grep, echo |
+| Medium Risk | "medium" | File creation/modification | tar, cp, mkdir, wget |
+| High Risk | "high" | System changes/privilege escalation | apt-get, systemctl, rm -rf |
 
-## 付録B: サンプル設定ファイル集
+## Appendix B: Sample Configuration Files
 
-### B.1 最小構成
+### B.1 Minimal Configuration
 
 ```toml
 version = "1.0"
@@ -79,7 +79,7 @@ cmd = "/bin/echo"
 args = ["Hello, World!"]
 ```
 
-### B.2 基本的なバックアップ
+### B.2 Basic Backup
 
 ```toml
 version = "1.0"
@@ -104,7 +104,7 @@ cmd = "/bin/tar"
 args = ["-czf", "config-backup.tar.gz", "/etc/myapp"]
 ```
 
-### B.3 セキュアな設定
+### B.3 Secure Configuration
 
 ```toml
 version = "1.0"
@@ -128,7 +128,7 @@ args = ["--encrypt", "--output", "backup.enc"]
 max_risk_level = "medium"
 ```
 
-### B.4 変数展開の活用
+### B.4 Variable Expansion
 
 ```toml
 version = "1.0"
@@ -149,7 +149,7 @@ env = [
 ]
 ```
 
-### B.5 権限管理
+### B.5 Privilege Management
 
 ```toml
 version = "1.0"
@@ -176,7 +176,7 @@ run_as_user = "root"
 max_risk_level = "high"
 ```
 
-### B.6 出力キャプチャ
+### B.6 Output Capture
 
 ```toml
 version = "1.0"
@@ -201,7 +201,7 @@ args = ["-h"]
 output = "memory-usage.txt"
 ```
 
-### B.7 複数環境対応
+### B.7 Multi-Environment Support
 
 ```toml
 version = "1.0"
@@ -209,7 +209,7 @@ version = "1.0"
 [global]
 env_allowlist = ["PATH", "APP_BIN", "CONFIG_DIR", "ENV_TYPE", "DB_URL"]
 
-# 開発環境
+# Development environment
 [[groups]]
 name = "dev_deploy"
 priority = 1
@@ -225,7 +225,7 @@ env = [
     "DB_URL=postgresql://localhost/dev_db",
 ]
 
-# 本番環境
+# Production environment
 [[groups]]
 name = "prod_deploy"
 priority = 2
@@ -244,107 +244,107 @@ run_as_user = "appuser"
 max_risk_level = "high"
 ```
 
-## 付録C: 用語集
+## Appendix C: Glossary
 
-### C.1 一般用語
+### C.1 General Terms
 
 **TOML (Tom's Obvious, Minimal Language)**
-: 人間が読み書きしやすい設定ファイル形式。明確な構文とデータ型を持つ。
+: A human-readable configuration file format with clear syntax and data types.
 
-**絶対パス (Absolute Path)**
-: ルートディレクトリ(`/`)から始まる完全なファイルパス。例: `/usr/bin/tool`
+**Absolute Path**
+: A complete file path starting from the root directory (`/`). Example: `/usr/bin/tool`
 
-**相対パス (Relative Path)**
-: 現在のディレクトリからの相対的なファイルパス。例: `./tool`, `../bin/tool`
+**Relative Path**
+: A file path relative to the current directory. Example: `./tool`, `../bin/tool`
 
-**環境変数 (Environment Variable)**
-: オペレーティングシステムが提供する動的な値のペア(KEY=VALUE)。
+**Environment Variable**
+: A dynamic key-value pair (KEY=VALUE) provided by the operating system.
 
-**タイムアウト (Timeout)**
-: コマンドの最大実行時間。この時間を超えるとコマンドは強制終了される。
+**Timeout**
+: The maximum execution time for a command. Commands are forcibly terminated when this time is exceeded.
 
-### C.2 設定関連用語
+### C.2 Configuration Terms
 
-**グローバル設定 (Global Configuration)**
-: 全てのグループとコマンドに適用される共通設定。`[global]` セクションで定義。
+**Global Configuration**
+: Common settings applied to all groups and commands. Defined in the `[global]` section.
 
-**グループ (Group)**
-: 関連するコマンドをまとめる論理的な単位。`[[groups]]` で定義。
+**Group**
+: A logical unit that organizes related commands. Defined with `[[groups]]`.
 
-**コマンド (Command)**
-: 実際に実行するコマンドの定義。`[[groups.commands]]` で定義。
+**Command**
+: The definition of a command to actually execute. Defined with `[[groups.commands]]`.
 
-**優先度 (Priority)**
-: グループの実行順序を制御する数値。小さい数値ほど先に実行される。
+**Priority**
+: A numeric value that controls the execution order of groups. Lower values execute first.
 
-### C.3 セキュリティ関連用語
+### C.3 Security Terms
 
-**ファイル検証 (File Verification)**
-: ファイルのハッシュ値を照合して改ざんを検出する機能。
+**File Verification**
+: A feature that detects tampering by comparing file hash values.
 
-**環境変数許可リスト (Environment Variable Allowlist)**
-: 使用を許可する環境変数のリスト。リストにない変数は除外される。
+**Environment Variable Allowlist**
+: A list of environment variables permitted for use. Variables not in the list are excluded.
 
-**最小権限の原則 (Principle of Least Privilege)**
-: 必要最小限の権限のみを付与するセキュリティの原則。
+**Principle of Least Privilege**
+: A security principle of granting only the minimum necessary permissions.
 
-**権限昇格 (Privilege Escalation)**
-: より高い権限(root など)でコマンドを実行すること。
+**Privilege Escalation**
+: Executing a command with higher privileges (such as root).
 
-**リスクレベル (Risk Level)**
-: コマンドのセキュリティリスクを表す指標(low/medium/high)。
+**Risk Level**
+: An indicator of a command's security risk (low/medium/high).
 
-### C.4 変数展開関連用語
+### C.4 Variable Expansion Terms
 
-**変数展開 (Variable Expansion)**
-: `${VAR}` 形式の変数を実際の値に置き換える処理。
+**Variable Expansion**
+: The process of replacing variables in `${VAR}` format with actual values.
 
 **Command.Env**
-: コマンドレベルで定義される環境変数。`env` パラメータで設定。
+: Environment variables defined at the command level. Set with the `env` parameter.
 
-**継承モード (Inheritance Mode)**
-: グループレベルで環境変数許可リストをどのように扱うかを決定するモード。
+**Inheritance Mode**
+: A mode that determines how environment variable allowlists are handled at the group level.
 
-**ネスト変数 (Nested Variable)**
-: 変数の値に別の変数を含める入れ子構造。例: `VAR1=${VAR2}/path`
+**Nested Variable**
+: A nested structure where a variable's value contains another variable. Example: `VAR1=${VAR2}/path`
 
-**エスケープシーケンス (Escape Sequence)**
-: 特殊文字をリテラル(文字通り)として扱うための記法。例: `\$`, `\\`
+**Escape Sequence**
+: A notation for treating special characters literally. Example: `\$`, `\\`
 
-### C.5 実行関連用語
+### C.5 Execution Terms
 
-**ドライラン (Dry Run)**
-: 実際には実行せず、実行計画のみを表示するモード。
+**Dry Run**
+: A mode that displays the execution plan without actually executing.
 
-**作業ディレクトリ (Working Directory)**
-: コマンドが実行される現在のディレクトリ。`workdir` で設定。
+**Working Directory**
+: The current directory where commands are executed. Set with `workdir`.
 
-**一時ディレクトリ (Temporary Directory)**
-: 一時的な作業用に自動作成されるディレクトリ。`temp_dir = true` で有効化。
+**Temporary Directory**
+: A directory automatically created for temporary work. Enabled with `temp_dir = true`.
 
-**出力キャプチャ (Output Capture)**
-: コマンドの標準出力をファイルに保存する機能。`output` パラメータで設定。
+**Output Capture**
+: A feature that saves command standard output to a file. Set with the `output` parameter.
 
-**標準出力 (Standard Output / stdout)**
-: コマンドが通常の出力を送信するストリーム。
+**Standard Output (stdout)**
+: The stream to which commands send normal output.
 
-**標準エラー出力 (Standard Error / stderr)**
-: コマンドがエラーメッセージを送信するストリーム。
+**Standard Error (stderr)**
+: The stream to which commands send error messages.
 
-### C.6 オーバーライドと継承
+### C.6 Override and Inheritance
 
-**オーバーライド (Override)**
-: 下位レベルの設定が上位レベルの設定を置き換えること。
+**Override**
+: When lower-level settings replace higher-level settings.
 
-**マージ (Merge)**
-: 複数の設定を統合すること。例: グローバルとグループの `verify_files` を結合。
+**Merge**
+: Combining multiple settings. Example: Combining global and group `verify_files`.
 
-**継承 (Inheritance)**
-: 下位レベルが上位レベルの設定を引き継ぐこと。
+**Inheritance**
+: When lower levels inherit higher-level settings.
 
-## 付録D: 設定ファイルテンプレート
+## Appendix D: Configuration File Templates
 
-### D.1 基本テンプレート
+### D.1 Basic Template
 
 ```toml
 version = "1.0"
@@ -357,16 +357,16 @@ env_allowlist = ["PATH", "HOME"]
 
 [[groups]]
 name = "group_name"
-description = "グループの説明"
+description = "Group description"
 
 [[groups.commands]]
 name = "command_name"
-description = "コマンドの説明"
+description = "Command description"
 cmd = "/path/to/command"
 args = ["arg1", "arg2"]
 ```
 
-### D.2 セキュア設定テンプレート
+### D.2 Secure Configuration Template
 
 ```toml
 version = "1.0"
@@ -379,25 +379,25 @@ skip_standard_paths = false
 env_allowlist = ["PATH"]
 verify_files = [
     "/bin/sh",
-    # 追加の検証ファイル
+    # Additional verification files
 ]
 
 [[groups]]
 name = "secure_group"
-description = "セキュアな操作グループ"
+description = "Secure operations group"
 verify_files = [
-    # グループ固有の検証ファイル
+    # Group-specific verification files
 ]
 
 [[groups.commands]]
 name = "secure_command"
-description = "セキュアなコマンド"
+description = "Secure command"
 cmd = "/path/to/verified/command"
 args = []
 max_risk_level = "medium"
 ```
 
-### D.3 変数展開テンプレート
+### D.3 Variable Expansion Template
 
 ```toml
 version = "1.0"
@@ -406,7 +406,7 @@ version = "1.0"
 env_allowlist = [
     "PATH",
     "HOME",
-    # 追加の許可変数
+    # Additional allowed variables
 ]
 
 [[groups]]
@@ -426,7 +426,7 @@ env = [
 ]
 ```
 
-### D.4 多環境対応テンプレート
+### D.4 Multi-Environment Template
 
 ```toml
 version = "1.0"
@@ -439,7 +439,7 @@ env_allowlist = [
     "CONFIG_DIR",
 ]
 
-# 開発環境
+# Development environment
 [[groups]]
 name = "dev_environment"
 priority = 1
@@ -454,7 +454,7 @@ env = [
     "CONFIG_DIR=/etc/app/configs",
 ]
 
-# 本番環境
+# Production environment
 [[groups]]
 name = "prod_environment"
 priority = 2
@@ -472,43 +472,43 @@ run_as_user = "appuser"
 max_risk_level = "high"
 ```
 
-## 付録E: 参考リンク
+## Appendix E: Reference Links
 
-### E.1 公式リソース
+### E.1 Official Resources
 
-- **プロジェクトリポジトリ**: `github.com/isseis/go-safe-cmd-runner`
-- **サンプル設定**: `sample/` ディレクトリ
-- **開発者向けドキュメント**: `docs/dev/` ディレクトリ
+- **Project Repository**: `github.com/isseis/go-safe-cmd-runner`
+- **Sample Configurations**: `sample/` directory
+- **Developer Documentation**: `docs/dev/` directory
 
-### E.2 関連技術
+### E.2 Related Technologies
 
-- **TOML 仕様**: https://toml.io/
-- **Go 言語**: https://golang.org/
-- **セキュリティベストプラクティス**: OWASP Secure Coding Practices
+- **TOML Specification**: https://toml.io/
+- **Go Language**: https://golang.org/
+- **Security Best Practices**: OWASP Secure Coding Practices
 
-### E.3 コミュニティ
+### E.3 Community
 
-- **Issue トラッカー**: GitHub Issues でバグ報告・機能要望
-- **プルリクエスト**: 改善提案や貢献を歓迎
+- **Issue Tracker**: Bug reports and feature requests via GitHub Issues
+- **Pull Requests**: Improvement proposals and contributions are welcome
 
-## おわりに
+## Conclusion
 
-本ドキュメントは、go-safe-cmd-runner の TOML 設定ファイルの完全なガイドです。基本的な概念から高度な使い方まで、段階的に学べるように構成されています。
+This document is a complete guide to TOML configuration files for go-safe-cmd-runner. It is structured to provide progressive learning from basic concepts to advanced usage.
 
-### 推奨される学習順序
+### Recommended Learning Path
 
-1. **第1章〜第3章**: 基本概念と構造を理解
-2. **第4章〜第6章**: 各レベルのパラメータを詳細に学習
-3. **第7章**: 変数展開機能をマスター
-4. **第8章〜第9章**: 実践例とベストプラクティスを習得
-5. **第10章**: トラブルシューティング手法を身につける
-6. **付録**: リファレンスとして活用
+1. **Chapters 1-3**: Understand basic concepts and structure
+2. **Chapters 4-6**: Learn parameters at each level in detail
+3. **Chapter 7**: Master variable expansion features
+4. **Chapters 8-9**: Acquire practical examples and best practices
+5. **Chapter 10**: Learn troubleshooting techniques
+6. **Appendix**: Use as a reference
 
-### さらなる学習
+### Further Learning
 
-- `sample/` ディレクトリの実例を参照
-- 実際の環境で小さな設定から始める
-- ドライランで動作を確認しながら段階的に複雑化
-- コミュニティに質問や改善提案を投稿
+- Refer to examples in the `sample/` directory
+- Start with small configurations in actual environments
+- Progressively add complexity while checking behavior with dry runs
+- Post questions and improvement suggestions to the community
 
-安全で効率的なコマンド実行環境の構築に、本ドキュメントが役立つことを願っています。
+We hope this document helps you build a safe and efficient command execution environment.

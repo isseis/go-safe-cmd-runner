@@ -1,47 +1,47 @@
-# Go Safe Command Runner - セキュリティアーキテクチャ技術文書
+# Go Safe Command Runner - Security Architecture Technical Document
 
-## 概要
+## Overview
 
-本文書は、Go Safe Command Runnerプロジェクトに実装されたセキュリティ対策の包括的な技術解析を提供します。システムの設計原則、実装詳細、およびセキュリティ保証について理解が必要なソフトウェアエンジニアやセキュリティ専門家を対象としています。
+This document provides a comprehensive technical analysis of the security measures implemented in the Go Safe Command Runner project. It is intended for software engineers and security professionals who need to understand the design principles, implementation details, and security guarantees of the system.
 
-## 要約
+## Executive Summary
 
-Go Safe Command Runnerは、特権操作の安全な委譲と自動化されたバッチ処理を可能にするため、複数層のセキュリティ制御を実装しています。セキュリティモデルは多層防御の原則に基づいて構築され、ファイル整合性検証、環境変数分離、特権管理、および安全なファイル操作を組み合わせています。
+Go Safe Command Runner implements multiple layers of security controls to enable secure delegation of privileged operations and automated batch processing. The security model is built on defense-in-depth principles, combining file integrity verification, environment variable isolation, privilege management, and secure file operations.
 
-## 主要なセキュリティ機能
+## Key Security Features
 
-### 1. ファイル整合性検証
+### 1. File Integrity Verification
 
-#### 目的
-実行前に実行ファイルや重要なファイルが改ざんされていないことを確認し、侵害されたバイナリの実行を防止します。システムは現在、`internal/verification/` パッケージによる一元化された検証管理を提供します。
+#### Purpose
+Verify that executables and critical files have not been tampered with before execution, preventing the execution of compromised binaries. The system now provides centralized verification management via the `internal/verification/` package.
 
-#### 実装詳細
+#### Implementation Details
 
-**ハッシュアルゴリズム**: SHA-256暗号化ハッシュ
-- 場所: `internal/filevalidator/hash_algo.go`
-- Go標準の`crypto/sha256`ライブラリを使用
-- 強力な衝突耐性のための256ビットハッシュ値を提供
+**Hash Algorithm**: SHA-256 cryptographic hash
+- Location: `internal/filevalidator/hash_algo.go`
+- Uses Go's standard `crypto/sha256` library
+- Provides 256-bit hash values for strong collision resistance
 
-**ハッシュストレージシステム**:
-- ハッシュファイルは専用ディレクトリにJSONマニフェストとして保存
-- 特殊文字を処理するためBase64 URL-safe encodingを使用してファイルパスをエンコード
-- マニフェスト形式にはファイルパス、ハッシュ値、アルゴリズム、タイムスタンプが含まれる
-- 衝突検出により、パスのハッシュが衝突した場合に、異なるファイルパスが同じハッシュマニフェストファイルにマッピングされるのを防止
+**Hash Storage System**:
+- Hash files are stored as JSON manifests in a dedicated directory
+- File paths are encoded using Base64 URL-safe encoding to handle special characters
+- Manifest format includes file path, hash value, algorithm, and timestamp
+- Collision detection prevents different file paths from mapping to the same hash manifest file when path hashes collide
 
-**検証プロセス**:
+**Verification Process**:
 ```go
-// 場所: internal/filevalidator/validator.go:169-197
+// Location: internal/filevalidator/validator.go:169-197
 func (v *Validator) Verify(filePath string) error {
-    // 1. ファイルパスの検証と解決
+    // 1. Validate and resolve file path
     targetPath, err := validatePath(filePath)
 
-    // 2. 現在のファイルハッシュを計算
+    // 2. Calculate current file hash
     actualHash, err := v.calculateHash(targetPath.String())
 
-    // 3. マニフェストから保存されたハッシュを読み取り
+    // 3. Read stored hash from manifest
     _, expectedHash, err := v.readAndParseHashFile(targetPath)
 
-    // 4. ハッシュを比較
+    // 4. Compare hashes
     if expectedHash != actualHash {
         return ErrMismatch
     }
@@ -50,100 +50,100 @@ func (v *Validator) Verify(filePath string) error {
 ```
 
 
-**一元化検証管理**:
-- 場所: `internal/verification/manager.go`
-- すべてのファイル検証操作のための統一インターフェース
-- 権限制限ファイルに対する自動特権昇格フォールバック
-- 標準システムパススキップ機能
+**Centralized Verification Management**:
+- Location: `internal/verification/manager.go`
+- Unified interface for all file verification operations
+- Automatic privilege escalation fallback for permission-restricted files
+- Standard system path skipping capability
 
-**特権ファイルアクセス**:
-- 権限により通常の検証が失敗した場合、特権昇格にフォールバック
-- 安全な特権管理を使用（特権管理セクション参照）
-- 場所: `internal/filevalidator/privileged_file.go`
+**Privileged File Access**:
+- Falls back to privilege escalation if normal verification fails due to permissions
+- Uses secure privilege management (see Privilege Management section)
+- Location: `internal/filevalidator/privileged_file.go`
 
-#### セキュリティ保証
-- 実行ファイル、設定ファイルの不正な変更を検出
-- 改ざんされたバイナリの実行を防止
-- 暗号学的に強力なハッシュアルゴリズム（SHA-256）
-- 原子的ファイル操作により競合状態を防止
+#### Security Guarantees
+- Detects unauthorized modifications to executables and configuration files
+- Prevents execution of tampered binaries
+- Cryptographically strong hash algorithm (SHA-256)
+- Atomic file operations to prevent race conditions
 
-### 2. 環境変数分離
+### 2. Environment Variable Isolation
 
-#### 目的
-環境変数の厳格な許可リストベースのフィルタリングを実装し、環境操作による情報漏洩やコマンドインジェクション攻撃を防止します。
+#### Purpose
+Implements strict allowlist-based filtering of environment variables to prevent information leakage and command injection attacks via environment manipulation.
 
-#### 実装詳細
+#### Implementation Details
 
-**許可リストアーキテクチャ**:
+**Allowlist Architecture**:
 ```go
-// 場所: internal/runner/environment/filter.go:31-50
+// Location: internal/runner/environment/filter.go:31-50
 type Filter struct {
     config          *runnertypes.Config
-    globalAllowlist map[string]bool // O(1)検索パフォーマンス
+    globalAllowlist map[string]bool // O(1) lookup performance
 }
 ```
 
-**3レベル継承モデル**:
+**3-Level Inheritance Model**:
 
-1. **グローバル許可リスト**: すべてのグループで利用可能な基本環境変数
-2. **グループオーバーライド**: グループが独自の許可リストを定義し、グローバル設定を完全にオーバーライド
-3. **継承制御**: 明示的な許可リストを持たないグループはグローバル設定を継承
+1. **Global Allowlist**: Base environment variables available to all groups
+2. **Group Override**: Groups can define their own allowlist, completely overriding global settings
+3. **Inheritance Control**: Groups without explicit allowlist inherit global settings
 
-**継承モード**:
-- `InheritanceModeInherit`: グローバル許可リストを使用
-- `InheritanceModeExplicit`: グループ固有の許可リストのみを使用
-- `InheritanceModeReject`: 環境変数を許可しない（空の許可リスト）
+**Inheritance Modes**:
+- `InheritanceModeInherit`: Use global allowlist
+- `InheritanceModeExplicit`: Use only group-specific allowlist
+- `InheritanceModeReject`: Allow no environment variables (empty allowlist)
 
-**変数検証**:
+**Variable Validation**:
 ```go
-// 場所: internal/runner/config/validator.go
+// Location: internal/runner/config/validator.go
 func (v *Validator) validateVariableValue(value string) error {
-    // 一元化されたセキュリティ検証を使用
+    // Use centralized security validation
     if err := security.IsVariableValueSafe(value); err != nil {
-        // 一貫性のため検証エラー型でセキュリティエラーをラップ
+        // Wrap security error with validation error type for consistency
         return fmt.Errorf("%w: %s", ErrDangerousPattern, err.Error())
     }
     return nil
 }
 ```
 
-**危険パターン検出**:
-- コマンド区切り文字: `;`, `|`, `&&`, `||`
-- コマンド置換: `$(...)`, バッククォート
-- ファイル操作: `>`, `<`, `rm `, `dd if=`, `dd of=`
-- コード実行: `exec `, `system `, `eval `
+**Dangerous Pattern Detection**:
+- Command separators: `;`, `|`, `&&`, `||`
+- Command substitution: `$(...)`, backticks
+- File operations: `>`, `<`, `rm `, `dd if=`, `dd of=`
+- Code execution: `exec `, `system `, `eval `
 
-#### セキュリティ保証
-- ゼロトラスト環境変数モデル（許可リストのみ）
-- 環境ベースのコマンドインジェクションを防止
-- 機密変数のグループレベル分離
-- 危険なパターンに対する変数名と値の検証
+#### Security Guarantees
+- Zero-trust environment variable model (allowlist only)
+- Prevents environment-based command injection
+- Group-level isolation of sensitive variables
+- Validation of variable names and values against dangerous patterns
 
-### 3. 安全なファイル操作
+### 3. Secure File Operations
 
-#### 目的
-シンボリックリンク攻撃、TOCTOU（Time-of-Check-Time-of-Use）競合状態、パストラバーサル攻撃を防ぐため、シンボリックリンク安全なファイルI/O操作を提供します。
+#### Purpose
+Provides symlink-safe file I/O operations to prevent symlink attacks, TOCTOU (Time-of-Check-Time-of-Use) race conditions, and path traversal attacks.
 
-#### 実装詳細
+#### Implementation Details
 
-**最新Linuxセキュリティ（openat2）**:
+**Modern Linux Security (openat2)**:
 ```go
-// 場所: internal/safefileio/safe_file.go:99-122
+// Location: internal/safefileio/safe_file.go:99-122
 func openat2(dirfd int, pathname string, how *openHow) (int, error) {
-    // RESOLVE_NO_SYMLINKSフラグを使用してシンボリックリンクの追跡を原子的に防止
+    // Atomically prevent symlink following with RESOLVE_NO_SYMLINKS flag
     pathBytes, err := syscall.BytePtrFromString(pathname)
     fd, _, errno := syscall.Syscall6(SysOpenat2, ...)
     return int(fd), nil
 }
 ```
 
-**フォールバックセキュリティ（従来システム）**:
+**Fallback Security (Legacy Systems)**:
 ```go
-// 場所: internal/safefileio/safe_file.go:409-433
+// Location: internal/safefileio/safe_file.go:409-433
 func ensureParentDirsNoSymlinks(absPath string) error {
-    // ルートからターゲットまでのステップバイステップパス検証
+    // Step-by-step path validation from root to target
     for _, component := range components {
-        fi, err := os.Lstat(currentPath) // シンボリックリンクを追跡しない
+        fi, err := os.Lstat(currentPath) // Does not follow symlinks
         if fi.Mode()&os.ModeSymlink != 0 {
             return fmt.Errorf("%w: %s", ErrIsSymlink, currentPath)
         }
@@ -152,59 +152,59 @@ func ensureParentDirsNoSymlinks(absPath string) error {
 }
 ```
 
-**ファイルサイズ保護**:
-- 最大ファイルサイズ制限: 128 MB
-- メモリ枯渇攻撃を防止
-- 一貫した動作のため`io.LimitReader`を使用
+**File Size Protection**:
+- Maximum file size limit: 128 MB
+- Prevents memory exhaustion attacks
+- Uses `io.LimitReader` for consistent behavior
 
-**パス検証**:
-- 絶対パス要求
-- パス長制限（設定可能、デフォルト4096文字）
-- 通常ファイルタイプの検証
-- デバイスファイル、パイプ、特殊ファイルは許可しない
+**Path Validation**:
+- Absolute path requirement
+- Path length limits (configurable, default 4096 characters)
+- Regular file type validation
+- Disallows device files, pipes, and special files
 
-#### セキュリティ保証
-- 最新Linux上での原子的シンボリックリンク安全操作（openat2）
-- 包括的パストラバーサル保護
-- TOCTOU競合状態の排除
-- メモリ枯渇攻撃に対する保護
-- 安全なファイルタイプ検証
+#### Security Guarantees
+- Atomic symlink-safe operations on modern Linux (openat2)
+- Comprehensive path traversal protection
+- Elimination of TOCTOU race conditions
+- Protection against memory exhaustion attacks
+- Safe file type validation
 
-### 4. 特権管理
+### 4. Privilege Management
 
-#### 目的
-最小特権の原則を維持しながら特定の操作に対する制御された特権昇格を可能にし、包括的な監査証跡を提供します。
+#### Purpose
+Enables controlled privilege escalation for specific operations while maintaining the principle of least privilege, with comprehensive audit trail.
 
-#### 実装詳細
+#### Implementation Details
 
-**Unix特権アーキテクチャ**:
+**Unix Privilege Architecture**:
 ```go
-// 場所: internal/runner/privilege/unix.go:18-25
+// Location: internal/runner/privilege/unix.go:18-25
 type UnixPrivilegeManager struct {
     logger             *slog.Logger
     originalUID        int
     privilegeSupported bool
     metrics            Metrics
-    mu                 sync.Mutex  // 競合状態を防止
+    mu                 sync.Mutex  // Prevent race conditions
 }
 ```
 
-**特権昇格プロセス**:
+**Privilege Escalation Process**:
 ```go
-// 場所: internal/runner/privilege/unix.go:36-87
+// Location: internal/runner/privilege/unix.go:36-87
 func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.ElevationContext, fn func() error) (err error) {
-    m.mu.Lock()  // スレッドセーフティのためのグローバルロック
+    m.mu.Lock()  // Global lock for thread safety
     defer m.mu.Unlock()
 
-    // 1. 特権を昇格
+    // 1. Escalate privileges
     if err := m.escalatePrivileges(elevationCtx); err != nil {
         return err
     }
 
-    // 2. deferベースのクリーンアップで操作を実行
+    // 2. Execute operation with defer-based cleanup
     defer func() {
         if err := m.restorePrivileges(); err != nil {
-            m.emergencyShutdown(err, shutdownContext) // 失敗時に終了
+            m.emergencyShutdown(err, shutdownContext) // Exit on failure
         }
     }()
 
@@ -212,81 +212,81 @@ func (m *UnixPrivilegeManager) WithPrivileges(elevationCtx runnertypes.Elevation
 }
 ```
 
-**実行モード**:
+**Execution Modes**:
 
-1. **ネイティブルート実行**: ルートユーザー（UID 0）として実行
-   - 特権昇格は不要
-   - 完全な特権での直接実行
+1. **Native Root Execution**: Running as root user (UID 0)
+   - No privilege escalation needed
+   - Direct execution with full privileges
 
-2. **setuidバイナリ実行**: setuidビット設定とルート所有権を持つバイナリ
-   - 特権昇格に`syscall.Seteuid(0)`を使用
-   - 操作後の自動特権復元
+2. **Setuid Binary Execution**: Binary with setuid bit set and root ownership
+   - Uses `syscall.Seteuid(0)` for privilege escalation
+   - Automatic privilege restoration after operation
 
-**セキュリティ検証**:
+**Security Validation**:
 ```go
-// 場所: internal/runner/privilege/unix.go:232-294
+// Location: internal/runner/privilege/unix.go:232-294
 func isRootOwnedSetuidBinary(logger *slog.Logger) bool {
-    // setuidビットが設定されていることを検証
+    // Validate setuid bit is set
     hasSetuidBit := fileInfo.Mode()&os.ModeSetuid != 0
 
-    // ルート所有権を検証（setuidが動作するために不可欠）
+    // Validate root ownership (essential for setuid to work)
     isOwnedByRoot := stat.Uid == 0
 
-    // 非ルート実UID を検証（真のsetuidシナリオ）
+    // Validate non-root real UID (true setuid scenario)
     isValidSetuid := hasSetuidBit && isOwnedByRoot && originalUID != 0
 
     return isValidSetuid
 }
 ```
 
-**緊急シャットダウンプロトコル**:
-- 特権復元失敗時の即座のプロセス終了
-- マルチチャンネルログ（構造化ログ、syslog、stderr）
-- 完全なコンテキストでのセキュリティイベント記録
-- 侵害された状態での継続実行防止
+**Emergency Shutdown Protocol**:
+- Immediate process termination on privilege restoration failure
+- Multi-channel logging (structured logs, syslog, stderr)
+- Security event recording with full context
+- Prevents continued execution in compromised state
 
-#### セキュリティ保証
-- グローバルmutexによるスレッドセーフな特権操作
-- パニック保護付きの自動特権復元
-- すべての特権操作の包括的監査ログ
-- セキュリティ障害時の緊急シャットダウン
-- ネイティブルートとsetuidバイナリ実行モデルの両方をサポート
+#### Security Guarantees
+- Thread-safe privilege operations with global mutex
+- Automatic privilege restoration with panic protection
+- Comprehensive audit logging of all privilege operations
+- Emergency shutdown on security failures
+- Support for both native root and setuid binary execution models
 
-### 5. コマンドパス検証
+### 5. Command Path Validation
 
-#### 目的
-設定可能な許可リストに対してコマンドパスを検証し、危険なバイナリの実行を防ぐことで、認可されたコマンドのみが実行できることを確保します。環境変数の継承を停止し、セキュアな固定PATHを使用します。
+#### Purpose
+Validate command paths against configurable allowlists to ensure only authorized commands can be executed, preventing the execution of dangerous binaries. Stops environment variable inheritance and uses a secure fixed PATH.
 
-#### 実装詳細
+#### Implementation Details
 
-**セキュアPATH環境の強制**:
+**Secure PATH Environment Enforcement**:
 ```go
-// 場所: internal/verification/manager.go
+// Location: internal/verification/manager.go
 const securePathEnv = "/sbin:/usr/sbin:/bin:/usr/bin"
 
-// 環境変数PATHを継承せず、セキュアな固定PATHを使用
+// Do not inherit environment variable PATH, use secure fixed PATH
 pathResolver := NewPathResolver(securePathEnv, securityValidator, false)
 ```
 
-**パス解決**:
+**Path Resolution**:
 ```go
-// 場所: internal/verification/path_resolver.go
+// Location: internal/verification/path_resolver.go
 type PathResolver struct {
-    pathEnv            string    // セキュア固定PATH使用
+    pathEnv            string    // Use secure fixed PATH
     securityValidator  *security.Validator
     skipStandardPaths  bool
 }
 ```
 
-**コマンド検証プロセス**:
-1. PATH環境変数を使用してコマンドを完全なパスに解決
-2. 許可リストパターン（正規表現ベース）に対して検証
-3. 危険な特権コマンドをチェック
-4. ハッシュが利用可能な場合はファイル整合性を検証
+**Command Validation Process**:
+1. Resolve command to full path using PATH environment variable
+2. Validate against allowlist patterns (regex-based)
+3. Check for dangerous privileged commands
+4. Verify file integrity if hash is available
 
-**デフォルト許可パターン**:
+**Default Allow Patterns**:
 ```go
-// 場所: internal/runner/security/types.go:147-154
+// Location: internal/runner/security/types.go:147-154
 AllowedCommands: []string{
     "^/bin/.*",
     "^/usr/bin/.*",
@@ -295,35 +295,35 @@ AllowedCommands: []string{
 },
 ```
 
-**危険コマンド検出**:
-- シェル実行ファイル: `/bin/bash`, `/bin/sh`
-- 特権昇格ツール: `sudo`, `su`, `doas`
-- システム管理: `rm`, `dd`, `mount`, `umount`
-- パッケージ管理: `apt`, `yum`, `dnf`
-- サービス管理: `systemctl`, `service`
+**Dangerous Command Detection**:
+- Shell executables: `/bin/bash`, `/bin/sh`
+- Privilege escalation tools: `sudo`, `su`, `doas`
+- System administration: `rm`, `dd`, `mount`, `umount`
+- Package management: `apt`, `yum`, `dnf`
+- Service management: `systemctl`, `service`
 
-#### セキュリティ保証
-- 許可リストベースのコマンド実行
-- 任意のコマンド実行の防止
-- 危険な特権操作の検出
-- パス解決セキュリティ検証
-- 環境変数PATH継承の完全排除
-- セキュアな固定PATH（/sbin:/usr/sbin:/bin:/usr/bin）の強制使用
+#### Security Guarantees
+- Allowlist-based command execution
+- Prevention of arbitrary command execution
+- Detection of dangerous privileged operations
+- Path resolution security validation
+- Complete elimination of environment variable PATH inheritance
+- Enforced use of secure fixed PATH (/sbin:/usr/sbin:/bin:/usr/bin)
 
-### 6. リスクベースコマンド制御
+### 6. Risk-Based Command Control
 
-#### 目的
-コマンドリスク評価に基づくインテリジェントなセキュリティ制御を実装し、高リスク操作を自動的にブロックしながら安全なコマンドの正常実行を可能にします。
+#### Purpose
+Implements intelligent security controls based on command risk assessment, automatically blocking high-risk operations while allowing safe commands to execute normally.
 
-#### 実装詳細
+#### Implementation Details
 
-**リスク評価エンジン**:
+**Risk Assessment Engine**:
 ```go
-// 場所: internal/runner/risk/evaluator.go
+// Location: internal/runner/risk/evaluator.go
 type StandardEvaluator struct{}
 
 func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.Command) (runnertypes.RiskLevel, error) {
-    // 特権昇格コマンドをチェック（クリティカルリスク - ブロックされるべき）
+    // Check for privilege escalation commands (critical risk - should be blocked)
     isPrivEsc, err := security.IsPrivilegeEscalationCommand(cmd.Cmd)
     if err != nil {
         return runnertypes.RiskLevelUnknown, err
@@ -331,40 +331,40 @@ func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.Command) (runnertypes.
     if isPrivEsc {
         return runnertypes.RiskLevelCritical, nil
     }
-    // ... 追加のリスク評価ロジック
+    // ... additional risk assessment logic
 }
 ```
 
-**コマンドリスク分析**:
-- 低リスク: 標準システムユーティリティ（ls、cat、grep）
-- 中リスク: ファイル変更コマンド（cp、mv、chmod）、パッケージ管理（apt、yum）
-- 高リスク: システム管理コマンド（mount、systemctl）、破壊的操作（rm -rf）
-- クリティカルリスク: 特権昇格コマンド（sudo、su）- 自動的にブロック
+**Command Risk Analysis**:
+- Low Risk: Standard system utilities (ls, cat, grep)
+- Medium Risk: File modification commands (cp, mv, chmod), package management (apt, yum)
+- High Risk: System administration commands (mount, systemctl), destructive operations (rm -rf)
+- Critical Risk: Privilege escalation commands (sudo, su) - automatically blocked
 
-**リスクレベル設定**:
+**Risk Level Configuration**:
 ```go
-// 場所: internal/runner/runnertypes/config.go
+// Location: internal/runner/runnertypes/config.go
 type Command struct {
-    MaxRiskLevel string `toml:"max_risk_level"` // 許可される最大リスクレベル
+    MaxRiskLevel string `toml:"max_risk_level"` // Maximum allowed risk level
 }
 ```
 
-#### セキュリティ保証
-- 特権昇格試行の自動ブロック
-- コマンド毎の設定可能リスク閾値
-- 包括的コマンドパターンマッチング
-- リスクベース監査ログ
+#### Security Guarantees
+- Automatic blocking of privilege escalation attempts
+- Configurable risk thresholds per command
+- Comprehensive command pattern matching
+- Risk-based audit logging
 
-### 7. リソース管理セキュリティ
+### 7. Resource Management Security
 
-#### 目的
-通常実行とdry-runモードの両方でセキュリティ境界を維持する安全なリソース管理を提供します。
+#### Purpose
+Provides secure resource management that maintains security boundaries in both normal execution and dry-run modes.
 
-#### 実装詳細
+#### Implementation Details
 
-**統一リソースインターフェース**:
+**Unified Resource Interface**:
 ```go
-// 場所: internal/runner/resource/manager.go
+// Location: internal/runner/resource/manager.go
 type ResourceManager interface {
     ExecuteCommand(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) (*ExecutionResult, error)
     WithPrivileges(ctx context.Context, fn func() error) error
@@ -372,89 +372,89 @@ type ResourceManager interface {
 }
 ```
 
-**実行モードセキュリティ**:
-- 通常モード: 完全な特権管理とコマンド実行
-- dry-runモード: 実際の実行なしでのセキュリティ分析
-- 両モード間での一貫したセキュリティ検証
+**Execution Mode Security**:
+- Normal Mode: Full privilege management and command execution
+- Dry-run Mode: Security analysis without actual execution
+- Consistent security validation across both modes
 
-#### セキュリティ保証
-- モードに依存しないセキュリティ検証
-- 特権境界執行
-- 安全な通知処理
-- リソースライフサイクル管理
+#### Security Guarantees
+- Mode-independent security validation
+- Privilege boundary enforcement
+- Safe notification handling
+- Resource lifecycle management
 
-### 8. セキュアログと機密データ保護
+### 8. Secure Logging and Sensitive Data Protection
 
-#### 目的
-パスワード、APIキー、トークンなどの機密情報がログファイルに露出することを防ぎ、機密データを侵害することなく安全な監査証跡を提供します。専用の編集サービスで強化されています。
+#### Purpose
+Prevents sensitive information such as passwords, API keys, and tokens from being exposed in log files, providing a safe audit trail without compromising sensitive data. Enhanced by dedicated redaction service.
 
-#### 実装詳細
+#### Implementation Details
 
-**一元化データ編集**:
+**Centralized Data Redaction**:
 ```go
-// 場所: internal/redaction/redactor.go
+// Location: internal/redaction/redactor.go
 type Redactor struct {
     patterns []SensitivePattern
 }
 
 func (r *Redactor) RedactText(text string) string {
-    // 設定されたすべての編集パターンを適用
+    // Apply all configured redaction patterns
 }
 ```
 
-**ログセキュリティ設定**:
+**Log Security Configuration**:
 ```go
-// 場所: internal/runner/security/types.go:92-107
+// Location: internal/runner/security/types.go:92-107
 type LoggingOptions struct {
-    // IncludeErrorDetails は完全なエラーメッセージをログに含めるかを制御
+    // IncludeErrorDetails controls whether to include full error messages in logs
     IncludeErrorDetails bool `json:"include_error_details"`
 
-    // MaxErrorMessageLength はログ内のエラーメッセージの長さを制限
+    // MaxErrorMessageLength limits the length of error messages in logs
     MaxErrorMessageLength int `json:"max_error_message_length"`
 
-    // RedactSensitiveInfo は機密パターンの自動編集を有効化
+    // RedactSensitiveInfo enables automatic redaction of sensitive patterns
     RedactSensitiveInfo bool `json:"redact_sensitive_info"`
 
-    // TruncateStdout はエラーログでstdoutを切り詰めるかを制御
+    // TruncateStdout controls whether to truncate stdout in error logs
     TruncateStdout bool `json:"truncate_stdout"`
 
-    // MaxStdoutLength はエラーログ内のstdoutの長さを制限
+    // MaxStdoutLength limits the length of stdout in error logs
     MaxStdoutLength int `json:"max_stdout_length"`
 }
 ```
 
-**機密パターン検出と編集**:
+**Sensitive Pattern Detection and Redaction**:
 ```go
-// 場所: internal/runner/security/logging_security.go:49-52
+// Location: internal/runner/security/logging_security.go:49-52
 func (v *Validator) redactSensitivePatterns(text string) string {
     sensitivePatterns := []struct {
         pattern     string
         replacement string
     }{
-        // APIキー、トークン、パスワード（一般的なパターン）
+        // API keys, tokens, passwords (common patterns)
         {"password=", "password=[REDACTED]"},
         {"token=", "token=[REDACTED]"},
         {"key=", "key=[REDACTED]"},
         {"secret=", "secret=[REDACTED]"},
         {"api_key=", "api_key=[REDACTED]"},
 
-        // 機密を含む可能性のある環境変数代入
+        // Environment variable assignments that might contain secrets
         {"_PASSWORD=", "_PASSWORD=[REDACTED]"},
         {"_TOKEN=", "_TOKEN=[REDACTED]"},
         {"_KEY=", "_KEY=[REDACTED]"},
         {"_SECRET=", "_SECRET=[REDACTED]"},
 
-        // 一般的な認証情報パターン
+        // Common credential patterns
         {"Bearer ", "Bearer [REDACTED]"},
         {"Basic ", "Basic [REDACTED]"},
     }
-    // パターンマッチングと置換ロジック
+    // Pattern matching and replacement logic
 }
 ```
 
-**エラーメッセージのサニタイズ**:
+**Error Message Sanitization**:
 ```go
-// 場所: internal/runner/security/logging_security.go:4-26
+// Location: internal/runner/security/logging_security.go:4-26
 func (v *Validator) SanitizeErrorForLogging(err error) string {
     if err == nil {
         return ""
@@ -462,17 +462,17 @@ func (v *Validator) SanitizeErrorForLogging(err error) string {
 
     errMsg := err.Error()
 
-    // エラー詳細を含めるべきでない場合、汎用メッセージを返す
+    // If we shouldn't include error details, return a generic message
     if !v.config.LoggingOptions.IncludeErrorDetails {
         return "[error details redacted for security]"
     }
 
-    // 有効化されている場合、機密情報を編集
+    // Redact sensitive information if enabled
     if v.config.LoggingOptions.RedactSensitiveInfo {
         errMsg = v.redactSensitivePatterns(errMsg)
     }
 
-    // 長すぎる場合は切り詰め
+    // Truncate if too long
     if len(errMsg) > v.config.LoggingOptions.MaxErrorMessageLength {
         errMsg = errMsg[:v.config.LoggingOptions.MaxErrorMessageLength] + "...[truncated]"
     }
@@ -481,34 +481,34 @@ func (v *Validator) SanitizeErrorForLogging(err error) string {
 }
 ```
 
-**出力のサニタイズ**:
-- 認証情報漏洩を防ぐコマンド出力のサニタイズ
-- 設定可能な出力長の切り詰め
-- 機密情報の自動パターンベース編集
-- key=value形式と認証ヘッダーパターンの両方をサポート
+**Output Sanitization**:
+- Sanitizes command output to prevent credential leakage
+- Configurable output length truncation
+- Automatic pattern-based redaction of sensitive information
+- Supports both key=value format and authentication header patterns
 
-**セーフログ関数**:
-- `CreateSafeLogFields()`: サニタイズされたログフィールドマップを作成
-- `LogFieldsWithError()`: ベースフィールドとサニタイズされたエラー情報を結合
-- 構造化ログでの機密パターンの自動検出と編集
+**Safe Logging Functions**:
+- `CreateSafeLogFields()`: Creates sanitized log field maps
+- `LogFieldsWithError()`: Combines base fields with sanitized error information
+- Automatic detection and redaction of sensitive patterns in structured logs
 
-#### セキュリティ保証
-- 一般的な機密パターン（パスワード、トークン、APIキー）の自動編集
-- 異なるセキュリティ環境に対応する設定可能なログ詳細レベル
-- エラーメッセージとコマンド出力による認証情報露出からの保護
-- ログファイルの肥大化と潜在的DoSを防ぐ長さベースの切り詰め
-- 環境変数パターンの検出とサニタイズ
+#### Security Guarante
+- Automatic redaction of common sensitive patterns (passwords, tokens, API keys)
+- Configurable log detail levels for different security environments
+- Protection from credential exposure via error messages and command output
+- Length-based truncation to prevent log file bloat and potential DoS
+- Environment variable pattern detection and sanitization
 
-### 9. 端末能力検出 (`internal/terminal/`)
+### 9. Terminal Capability Detection (`internal/terminal/`)
 
-#### 目的
-端末の色彩サポートと対話的実行環境を検出し、適切な出力形式を選択するための端末能力判定機能を提供します。
+#### Purpose
+Provides terminal capability detection functionality to identify terminal color support and interactive execution environments, enabling appropriate output format selection.
 
-#### 実装詳細
+#### Implementation Details
 
-**端末能力検出インターフェース**:
+**Terminal Capability Detection Interface**:
 ```go
-// 場所: internal/terminal/capabilities.go
+// Location: internal/terminal/capabilities.go
 type Capabilities interface {
     IsInteractive() bool
     SupportsColor() bool
@@ -516,73 +516,73 @@ type Capabilities interface {
 }
 ```
 
-**対話的環境検出**:
+**Interactive Environment Detection**:
 ```go
-// 場所: internal/terminal/detector.go
+// Location: internal/terminal/detector.go
 type InteractiveDetector interface {
     IsInteractive() bool
-    IsTerminal() bool // TTY環境または端末類似環境をチェック
+    IsTerminal() bool // Check for TTY environment or terminal-like environment
     IsCIEnvironment() bool
 }
 ```
 
-**実装機能**:
-- **CI/CD環境検出**: GitHub Actions、Travis CI、Jenkins等の自動判定
-- **TTY検出**: stdout/stderrのTTY接続状況確認
-- **端末環境ヒューリスティック**: TERM環境変数による端末類似環境判定
-- **色彩サポート検出**: TERM値に基づく色彩対応端末識別
-- **ユーザー設定優先順位**: コマンドライン引数、環境変数の優先順位制御
+**Implementation Features**:
+- **CI/CD Environment Detection**: Automatic detection of GitHub Actions, Travis CI, Jenkins, etc.
+- **TTY Detection**: Verifies TTY connection status of stdout/stderr
+- **Terminal Environment Heuristics**: Identifies terminal-like environments based on TERM environment variable
+- **Color Support Detection**: Identifies color-capable terminals based on TERM value
+- **User Preference Priority**: Controls priority of command-line arguments and environment variables
 
-#### セキュリティ特性
-- **保守的なデフォルト**: 不明な端末では色彩出力を無効化
-- **環境変数検証**: CI環境変数の適切な解析
-- **設定の優先順位制御**: セキュリティに配慮した設定継承
+#### Security Characteristics
+- **Conservative Defaults**: Disables color output for unknown terminals
+- **Environment Variable Validation**: Proper parsing of CI environment variables
+- **Configuration Priority Control**: Security-conscious configuration inheritance
 
-### 10. 色彩管理 (`internal/color/`)
+### 10. Color Management (`internal/color/`)
 
-#### 目的
-端末の色彩サポート能力に基づいて安全な色付き出力を提供し、色彩制御シーケンスの適切な管理を行います。
+#### Purpose
+Provides safe colored output based on terminal color support capabilities and manages color control sequences appropriately.
 
-#### 実装詳細
+#### Implementation Details
 
-**色彩管理インターフェース**:
+**Color Management Interface**:
 ```go
-// 場所: internal/color/color.go
+// Location: internal/color/color.go
 type ColorManager interface {
     Enable() bool
     Colorize(text string, color ColorCode) string
 }
 ```
 
-**色彩サポート検出**:
+**Color Support Detection**:
 ```go
-// 場所: internal/terminal/color.go
+// Location: internal/terminal/color.go
 type ColorDetector interface {
     SupportsColor() bool
 }
 ```
 
-**実装機能**:
-- **既知端末パターンマッチング**: xterm、screen、tmux等の色彩対応端末識別
-- **保守的なフォールバック**: 不明な端末での色彩出力無効化
-- **TERM環境変数解析**: 端末タイプに基づく色彩サポート判定
-- **ユーザー設定統合**: 端末能力とユーザー設定の優先順位制御
+**Implementation Features**:
+- **Known Terminal Pattern Matching**: Identifies color-capable terminals like xterm, screen, tmux, etc.
+- **Conservative Fallback**: Disables color output for unknown terminals
+- **TERM Environment Variable Parsing**: Determines color support based on terminal type
+- **User Configuration Integration**: Controls priority of terminal capabilities and user settings
 
-#### セキュリティ特性
-- **保守的なアプローチ**: 不明な端末では色彩出力を無効化してエスケープシーケンス出力を防止
-- **検証済みパターン**: 既知の色彩対応端末のみでの色彩有効化
-- **安全なデフォルト**: 色彩サポートが不明な場合の安全な動作保証
+#### Security Characteristics
+- **Conservative Approach**: Disables color output for unknown terminals to prevent escape sequence output
+- **Validated Patterns**: Enables color only for known color-capable terminals
+- **Safe Defaults**: Ensures safe behavior when color support is unknown
 
-### 11. 共通ユーティリティ (`internal/common/`, `internal/cmdcommon/`)
+### 11. Common Utilities (`internal/common/`, `internal/cmdcommon/`)
 
-#### 目的
-パッケージ横断の基盤機能を提供し、テスト可能で再現性のある安全な実装を保証します。
+#### Purpose
+Provides cross-package foundational functionality, ensuring testable and reproducible safe implementations.
 
-#### 実装詳細
+#### Implementation Details
 
-**ファイルシステム抽象**:
+**Filesystem Abstraction**:
 ```go
-// 場所: internal/common/filesystem.go
+// Location: internal/common/filesystem.go
 type FileSystem interface {
     CreateTempDir(dir string, prefix string) (string, error)
     FileExists(path string) (bool, error)
@@ -591,95 +591,95 @@ type FileSystem interface {
 }
 ```
 
-**モック実装**:
-- テスト用のモックファイルシステムを提供し、本番と同等のセキュリティ特性でテスト可能にする
-- エラー条件や境界ケースのテストをサポート
+**Mock Implementations**:
+- Provides mock filesystem for testing, enabling testing with production-equivalent security characteristics
+- Supports testing of error conditions and boundary cases
 
-#### セキュリティ保証
-- 実装間での一貫したセキュリティ挙動
-- セキュリティパスの包括的なテストカバレッジ
-- 型安全なインターフェース契約
-- モック実装はセキュリティプロパティを保持
+#### Security Guarantees
+- Consistent security behavior across implementations
+- Comprehensive test coverage of security paths
+- Type-safe interface contracts
+- Mock implementations preserve security properties
 
-### 12. ユーザーとグループ実行セキュリティ
+### 12. User and Group Execution Security
 
-#### 目的
-厳格なセキュリティ境界と包括的な監査証跡を維持しながら、安全なユーザーとグループ切り替え機能を提供します。
+#### Purpose
+Provides safe user and group switching capabilities while maintaining strict security boundaries and comprehensive audit trail.
 
-#### 実装詳細
+#### Implementation Details
 
-**ユーザー・グループ設定**:
+**User/Group Configuration**:
 ```go
-// 場所: internal/runner/runnertypes/config.go
+// Location: internal/runner/runnertypes/config.go
 type Command struct {
-    RunAsUser    string `toml:"run_as_user"`    // コマンドを実行するユーザー
-    RunAsGroup   string `toml:"run_as_group"`   // コマンドを実行するグループ
-    MaxRiskLevel string `toml:"max_risk_level"` // 許可される最大リスクレベル
+    RunAsUser    string `toml:"run_as_user"`    // User to execute command as
+    RunAsGroup   string `toml:"run_as_group"`   // Group to execute command as
+    MaxRiskLevel string `toml:"max_risk_level"` // Maximum allowed risk level
 }
 ```
 
-**グループメンバーシップ検証**:
+**Group Membership Validation**:
 ```go
-// 場所: internal/groupmembership/membership.go
+// Location: internal/groupmembership/membership.go
 type GroupMembershipChecker interface {
     IsUserInGroup(username, groupname string) (bool, error)
     GetGroupMembers(groupname string) ([]string, error)
 }
 ```
 
-**セキュリティ検証フロー**:
-1. ユーザー存在と権限の検証
-2. グループが指定されている場合のグループメンバーシップ確認
-3. 特権昇格要件のチェック
-4. リスクベース制限の適用
-5. 適切な特権でのコマンド実行
+**Security Validation Flow**:
+1. Validate user existence and permissions
+2. Verify group membership if group is specified
+3. Check privilege escalation requirements
+4. Apply risk-based restrictions
+5. Execute command with appropriate privileges
 
-#### セキュリティ保証
-- 包括的ユーザーとグループ検証
-- 特権昇格境界執行
-- グループメンバーシップ確認
-- ユーザー・グループ切り替えの完全監査証跡
+#### Security Guarantees
+- Comprehensive user and group validation
+- Privilege escalation boundary enforcement
+- Group membership verification
+- Complete audit trail of user/group switching
 
-### 13. マルチチャンネル通知セキュリティ
+### 13. Multi-Channel Notification Security
 
-#### 目的
-外部通信で機密情報を保護しながら、重要なセキュリティイベントに対する安全な通知機能を提供します。
+#### Purpose
+Provides safe notification capabilities for critical security events while protecting sensitive information in external communications.
 
-#### 実装詳細
+#### Implementation Details
 
-**Slack統合**:
+**Slack Integration**:
 ```go
-// 場所: internal/logging/slack_handler.go
+// Location: internal/logging/slack_handler.go
 type SlackHandler struct {
     webhookURL string
     redactor   *redaction.Redactor
 }
 ```
 
-**安全な通知処理**:
-- 送信前の機密データ自動編集
-- 設定可能な通知チャンネル
-- レート制限とエラー処理
-- 安全なWebhook URL管理
+**Safe Notification Handling**:
+- Automatic redaction of sensitive data before sending
+- Configurable notification channels
+- Rate limiting and error handling
+- Secure webhook URL management
 
-#### セキュリティ保証
-- 外部通知での機密データ保護
-- 安全な通信チャンネル管理
-- 悪用を防ぐレート制限
-- 包括的エラー処理
+#### Security Guarantees
+- Sensitive data protection in external notifications
+- Secure communication channel management
+- Rate limiting to prevent abuse
+- Comprehensive error handling
 
-### 14. 設定セキュリティ
+### 14. Configuration Security
 
-#### 目的
-設定ファイルと全体的なシステム設定が改ざんされないことを確保し、セキュリティのベストプラクティスに従います。
+#### Purpose
+Ensures configuration files and overall system configuration are not tampered with and follows security best practices.
 
-#### 実装詳細
+#### Implementation Details
 
-**ファイル権限検証**:
+**File Permission Validation**:
 ```go
-// 場所: internal/runner/security/file_validation.go:44-75
+// Location: internal/runner/security/file_validation.go:44-75
 func (v *Validator) ValidateFilePermissions(filePath string) error {
-    // ワールド書き込み可能ファイルをチェック
+    // Check for world-writable files
     disallowedBits := perm &^ requiredPerms
     if disallowedBits != 0 {
         return ErrInvalidFilePermissions
@@ -688,22 +688,22 @@ func (v *Validator) ValidateFilePermissions(filePath string) error {
 }
 ```
 
-**ハッシュディレクトリセキュリティ強化（コマンドライン引数削除）**:
+**Hash Directory Security Enhancement (Command-Line Argument Removal)**:
 ```go
-// 場所: cmd/runner/main.go (変更後)
+// Location: cmd/runner/main.go (after modification)
 func getHashDir() string {
-    // プロダクション環境では常にデフォルトディレクトリのみ使用
-    // --hash-directoryフラグは完全削除（セキュリティ脆弱性対策）
+    // Always use only default directory in production environment
+    // --hash-directory flag completely removed (security vulnerability countermeasure)
     return cmdcommon.DefaultHashDirectory
 }
 ```
 
-**設定ファイル事前検証**:
+**Configuration File Pre-Verification**:
 ```go
-// 場所: cmd/runner/main.go (変更後)
-// 設定ファイル読み込み前にハッシュ検証を実行
+// Location: cmd/runner/main.go (after modification)
+// Execute hash verification before loading configuration file
 if err := verificationManager.VerifyConfigFile(configPath); err != nil {
-    // 未検証データによるシステム動作を完全排除
+    // Completely eliminate system operation with unverified data
     return &logging.PreExecutionError{
         Type:      logging.ErrorTypeConfigValidation,
         Message:   fmt.Sprintf("Configuration file verification failed: %s", err),
@@ -713,9 +713,9 @@ if err := verificationManager.VerifyConfigFile(configPath); err != nil {
 }
 ```
 
-**早期パス検証**:
+**Early Path Validation**:
 ```go
-// 場所: cmd/runner/main.go:188-199
+// Location: cmd/runner/main.go:188-199
 hashDir := getHashDir()
 if !filepath.IsAbs(hashDir) {
     return &logging.PreExecutionError{
@@ -727,193 +727,193 @@ if !filepath.IsAbs(hashDir) {
 }
 ```
 
-**ディレクトリセキュリティ検証**:
-- ルートからターゲットまでの完全パストラバーサル
-- パスコンポーネントでのシンボリックリンク検出
-- ワールド書き込み可能ディレクトリ検出
-- グループ書き込み制限（ルート所有権が必要）
+**Directory Security Validation**:
+- Complete path traversal from root to target
+- Symlink detection in path components
+- World-writable directory detection
+- Group write restrictions (root ownership required)
 
-**設定検証タイミングの改善**:
-- 設定ファイル読み込み前のハッシュ検証実行
-- 未検証データによるシステム動作の完全排除
-- 検証失敗時の強制stderr出力（ログレベル設定に依存しない）
+**Configuration Validation Timing Improvements**:
+- Execute hash verification before loading configuration file
+- Completely eliminate system operation with unverified data
+- Forced stderr output on verification failure (independent of log level settings)
 
-**ハッシュディレクトリ設定のセキュリティ強化**:
-- `--hash-directory`コマンドライン引数の完全削除
-- プロダクション環境では常にデフォルトディレクトリのみ使用
-- カスタムハッシュディレクトリによる攻撃経路の完全排除
-- テスト環境専用APIによるテスタビリティ維持
+**Hash Directory Configuration Security Enhancement**:
+- Complete removal of `--hash-directory` command-line argument
+- Always use only default directory in production environment
+- Complete elimination of custom hash directory attack vector
+- Maintained testability through test-only API
 
-**設定整合性**:
-- TOML形式検証
-- 必須フィールド検証
-- 型安全性の強制
-- 重複グループ名検出と環境変数継承分析
+**Configuration Integrity**:
+- TOML format validation
+- Required field validation
+- Type safety enforcement
+- Duplicate group name detection and environment variable inheritance analysis
 
-#### セキュリティ保証
-- 設定改ざんの防止
-- 安全なファイルとディレクトリ権限
-- パストラバーサル攻撃の防止
-- 設定形式検証
-- 設定ファイル事前検証による改ざん検出
-- ハッシュディレクトリ攻撃経路の完全排除
-- 絶対パス要求による早期検証強化
+#### Security Guarantees
+- Prevention of configuration tampering
+- Safe file and directory permissions
+- Prevention of path traversal attacks
+- Configuration format validation
+- Tampering detection through configuration file pre-verification
+- Complete elimination of hash directory attack vector
+- Enhanced early validation through absolute path requirements
 
-## セキュリティアーキテクチャパターン
+## Security Architecture Patterns
 
-### 多層防御
+### Defense-in-Depth
 
-システムは複数のセキュリティレイヤを実装します：
+The system implements multiple security layers:
 
-1. **入力検証**: すべての入力がエントリポイントで検証（絶対パス要求を含む）
-2. **事前検証**: 設定ファイルの使用前ハッシュ検証
-3. **パスセキュリティ**: 包括的なパス検証とシンボリックリンク保護、セキュア固定PATH使用
-4. **ファイル整合性**: すべての重要ファイル（設定、実行ファイル）のハッシュベース検証
-5. **特権制御**: 制御された昇格による最小特権原則
-6. **環境分離**: 厳格な許可リストベースの環境フィルタリング、PATH継承の排除
-7. **コマンド検証**: 許可リスト検証を伴うリスクベースコマンド実行制御
-8. **データ保護**: 全出力における機密情報の自動編集
-9. **ユーザー・グループセキュリティ**: メンバーシップ検証を伴う安全なユーザー・グループ切り替え
-10. **ハッシュディレクトリセキュリティ**: カスタムハッシュディレクトリ攻撃の完全防止
+1. **Input Validation**: All inputs validated at entry points (including absolute path requirements)
+2. **Pre-Verification**: Hash verification of configuration files before use
+3. **Path Security**: Comprehensive path validation and symlink protection, use of secure fixed PATH
+4. **File Integrity**: Hash-based verification of all critical files (configuration, executables)
+5. **Privilege Control**: Least privilege principle with controlled escalation
+6. **Environment Isolation**: Strict allowlist-based environment filtering, elimination of PATH inheritance
+7. **Command Validation**: Risk-based command execution control with allowlist validation
+8. **Data Protection**: Automatic redaction of sensitive information in all outputs
+9. **User/Group Security**: Safe user/group switching with membership validation
+10. **Hash Directory Security**: Complete prevention of custom hash directory attacks
 
-### ゼロトラストモデル
+### Zero-Trust Model
 
-- システム環境への暗黙の信頼なし
-- すべてのファイルは使用前に検証
-- 環境変数は許可リストでフィルタリング
-- コマンドは既知の良好なパターンに対して検証
-- 特権は必要時のみ付与され、即座に取り消し
+- No implicit trust in system environment
+- All files verified before use
+- Environment variables filtered through allowlist
+- Commands validated against known-good patterns
+- Privileges granted only when needed and immediately revoked
 
-### フェイルセーフ設計
+### Fail-Safe Design
 
-- すべての操作でデフォルト拒否
-- セキュリティ障害時の緊急シャットダウン
-- 包括的エラー処理とログ
-- セキュリティ機能が利用できない場合の優雅な劣化
+- Default deny on all operations
+- Emergency shutdown on security failures
+- Comprehensive error handling and logging
+- Graceful degradation when security features unavailable
 
-### 監査と監視
+### Auditing and Monitoring
 
-- セキュリティコンテキストでの構造化ログ
-- 特権操作メトリクスと追跡
-- セキュリティイベント記録
-- 重大エラーのマルチチャンネル報告
+- Structured logging with security context
+- Privilege operation metrics and tracking
+- Security event recording
+- Multi-channel reporting of critical errors
 
-## 脅威モデルと対策
+## Threat Model and Mitigations
 
-### ファイルシステム攻撃
+### Filesystem Attacks
 
-**脅威**:
-- シンボリックリンク攻撃
-- パストラバーサル
-- TOCTOU競合状態
-- ファイル改ざん
-- 悪意のある設定ファイルによるシステム動作操作
-- カスタムハッシュディレクトリによる検証迂回
+**Threats**:
+- Symlink attacks
+- Path traversal
+- TOCTOU race conditions
+- File tampering
+- System operation manipulation via malicious configuration files
+- Verification bypass through custom hash directory
 
-**対策**:
-- RESOLVE_NO_SYMLINKSでのopenat2
-- ステップバイステップパス検証
-- SHA-256ハッシュ検証
-- 原子的ファイル操作
-- 設定ファイルの事前ハッシュ検証
-- ハッシュディレクトリのデフォルト値固定（カスタム指定完全禁止）
+**Mitigations**:
+- openat2 with RESOLVE_NO_SYMLINKS
+- Step-by-step path validation
+- SHA-256 hash validation
+- Atomic file operations
+- Pre-hash verification of configuration files
+- Fixed hash directory default (custom specification completely prohibited)
 
-### 特権昇格
+### Privilege Escalation
 
-**脅威**:
-- 不正な特権取得
-- 特権の永続化
-- 特権処理での競合状態
+**Threats**:
+- Unauthorized privilege acquisition
+- Privilege persistence
+- Race conditions in privilege handling
 
-**対策**:
-- 制御された特権昇格
-- 自動特権復元
-- スレッドセーフ操作
-- 失敗時の緊急シャットダウン
+**Mitigations**:
+- Controlled privilege escalation
+- Automatic privilege restoration
+- Thread-safe operations
+- Emergency shutdown on failure
 
-### 環境操作
+### Environment Manipulation
 
-**脅威**:
-- 環境変数によるコマンドインジェクション
-- 環境による情報漏洩
-- LD_PRELOADなどによる特権昇格
+**Threats**:
+- Command injection via environment variables
+- Information leakage through environment
+- Privilege escalation via LD_PRELOAD, etc.
 
-**対策**:
-- 厳格な許可リストベースフィルタリング
-- 危険パターン検出
-- グループレベル環境分離
-- 変数名と値の検証
+**Mitigations**:
+- Strict allowlist-based filtering
+- Dangerous pattern detection
+- Group-level environment isolation
+- Variable name and value validation
 
-### コマンドインジェクション
+### Command Injection
 
-**脅威**:
-- 任意のコマンド実行
-- シェルメタ文字の悪用
-- PATH操作
-- コマンド操作による特権昇格
-- 環境変数PATHを通じた悪意のあるバイナリ実行
+**Threats**:
+- Arbitrary command execution
+- Shell metacharacter exploitation
+- PATH manipulation
+- Privilege escalation via command manipulation
+- Malicious binary execution through environment variable PATH
 
-**対策**:
-- 許可リスト執行を伴うリスクベースコマンド検証
-- セキュリティ検証を伴う完全パス解決
-- シェルメタ文字検出
-- コマンドパス検証
-- リスクレベル執行とブロック
-- ユーザー・グループ実行検証
-- 環境変数PATH継承の完全排除
-- セキュア固定PATH（/sbin:/usr/sbin:/bin:/usr/bin）の強制使用
+**Mitigations**:
+- Risk-based command validation with allowlist enforcement
+- Full path resolution with security validation
+- Shell metacharacter detection
+- Command path validation
+- Risk level enforcement and blocking
+- User/group execution validation
+- Complete elimination of environment variable PATH inheritance
+- Enforced use of secure fixed PATH (/sbin:/usr/sbin:/bin:/usr/bin)
 
-## パフォーマンス考慮事項
+## Performance Considerations
 
-### ハッシュ計算
-- 効率的なストリーミングハッシュ計算
-- リソース枯渇を防ぐファイルサイズ制限
+### Hash Calculation
+- Efficient streaming hash computation
+- File size limits to prevent resource exhaustion
 
-### 環境処理
-- マップ構造を使用したO(1)許可リスト検索
-- パターンマッチングのためのコンパイル済み正規表現
-- 最小限の文字列操作
+### Environment Processing
+- O(1) allowlist lookup using map structures
+- Compiled regular expressions for pattern matching
+- Minimal string manipulation
 
-### 特権操作
-- グローバルmutexが競合状態を防ぐが特権操作を直列化
-- システムコールを使用した高速特権昇格/復元
-- パフォーマンス監視のためのメトリクス収集
+### Privilege Operations
+- Global mutex prevents race conditions but serializes privilege operations
+- Fast privilege escalation/restoration using system calls
+- Metrics collection for performance monitoring
 
-### リスク評価
-- 効率的コマンド分析のための事前コンパイル正規表現パターン
-- 事前コンパイルパターンを使用したO(1)リスクレベル検索
-- リスク評価の最小オーバーヘッド
-- 繰り返しコマンド分析の結果キャッシュ
+### Risk Assessment
+- Pre-compiled regex patterns for efficient command analysis
+- O(1) risk level lookup using pre-compiled patterns
+- Minimal overhead for risk evaluation
+- Result caching for repeated command analysis
 
-### データ編集
-- 大出力のストリーミング編集
-- 機密データの事前コンパイルパターン
-- 通常操作への最小パフォーマンス影響
-- 設定可能な編集ポリシー
+### Data Redaction
+- Streaming redaction for large outputs
+- Pre-compiled patterns for sensitive data
+- Minimal performance impact on normal operations
+- Configurable redaction policies
 
-## デプロイメントセキュリティ
+## Deployment Security
 
-### バイナリ配布
-- 特権昇格のためにバイナリにsetuidビットを設定する必要
-- setuid機能にはルート所有権が必要
-- デプロイメント前にバイナリ整合性を検証すべき
+### Binary Distribution
+- Binaries must have setuid bit set for privilege escalation
+- Root ownership required for setuid functionality
+- Verify binary integrity before deployment
 
-### 設定管理
-- ハッシュディレクトリは安全な権限（755以下）を持つ必要
-- 設定ファイルは書き込み保護すべき
-- 重要ファイルの定期的整合性検証
+### Configuration Management
+- Hash directory must have secure permissions (755 or less)
+- Configuration files should be write-protected
+- Regular integrity verification of critical files
 
-### 監視とアラート
-- セキュリティイベントの構造化ログ
-- 集中ログのためのsyslog統合
-- 緊急シャットダウンイベントは即座の注意が必要
-- リアルタイムセキュリティアラートのSlack統合
-- 全監視チャンネルでの自動機密データ編集
+### Monitoring and Alerting
+- Structured logging of security events
+- Syslog integration for centralized logging
+- Emergency shutdown events require immediate attention
+- Slack integration for real-time security alerts
+- Automatic sensitive data redaction across all monitoring channels
 
-## 結論
+## Conclusion
 
-Go Safe Command Runnerは、特権委譲による安全なコマンド実行のための包括的なセキュリティフレームワークを提供します。多層アプローチは、最新のセキュリティプリミティブ（openat2）と実証済みのセキュリティ原則（多層防御、ゼロトラスト、フェイルセーフ設計）を組み合わせて、セキュリティを重視する環境での本番使用に適した堅牢なシステムを作成します。
+Go Safe Command Runner provides a comprehensive security framework for safe command execution with privilege delegation. The multi-layered approach combines modern security primitives (openat2) with proven security principles (defense-in-depth, zero-trust, fail-safe design) to create a robust system suitable for production use in security-conscious environments.
 
-実装は、包括的な入力検証、リスクベースコマンド制御、安全な特権管理、自動機密データ保護、広範な監査機能を含むセキュリティエンジニアリングのベストプラクティスを実証しています。システムは安全に失敗し、セキュリティ関連操作への完全な可視性を提供するよう設計されています。
+The implementation demonstrates security engineering best practices including comprehensive input validation, risk-based command control, secure privilege management, automatic sensitive data protection, and extensive auditing capabilities. The system is designed to fail safely and provide complete visibility into security-related operations.
 
-主要なセキュリティ革新機能には、コマンド実行のためのインテリジェントリスク評価、一貫したセキュリティ境界を持つ統一リソース管理、全チャンネルでの自動機密データ編集、安全なユーザー・グループ実行機能、セキュリティ対応メッセージングを伴う包括的マルチチャンネル通知が含まれます。システムは、運用の柔軟性と透明性を維持しながら、エンタープライズグレードのセキュリティ制御を提供します。
+Key security innovations include intelligent risk assessment for command execution, unified resource management with consistent security boundaries, automatic sensitive data redaction across all channels, secure user/group execution capabilities, and comprehensive multi-channel notifications with security-aware messaging. The system provides enterprise-grade security controls while maintaining operational flexibility and transparency.

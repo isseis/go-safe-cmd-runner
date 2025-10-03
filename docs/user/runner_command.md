@@ -1,50 +1,50 @@
-# runner コマンド ユーザーガイド
+# runner Command User Guide
 
-go-safe-cmd-runner のメイン実行コマンド `runner` の使用方法を解説します。
+User guide for the main execution command `runner` of go-safe-cmd-runner.
 
-## 目次
+## Table of Contents
 
-- [1. 概要](#1-概要)
-- [2. クイックスタート](#2-クイックスタート)
-- [3. コマンドラインフラグ詳解](#3-コマンドラインフラグ詳解)
-- [4. 環境変数](#4-環境変数)
-- [5. 実践例](#5-実践例)
-- [6. トラブルシューティング](#6-トラブルシューティング)
-- [7. 関連ドキュメント](#7-関連ドキュメント)
+- [1. Overview](#1-overview)
+- [2. Quick Start](#2-quick-start)
+- [3. Command-Line Flags Details](#3-command-line-flags-details)
+- [4. Environment Variables](#4-environment-variables)
+- [5. Practical Examples](#5-practical-examples)
+- [6. Troubleshooting](#6-troubleshooting)
+- [7. Related Documentation](#7-related-documentation)
 
-## 1. 概要
+## 1. Overview
 
-### 1.1 runner コマンドとは
+### 1.1 What is the runner Command
 
-`runner` は go-safe-cmd-runner のメインコマンドで、TOML設定ファイルに基づいてコマンドを安全に実行します。
+`runner` is the main command of go-safe-cmd-runner that safely executes commands based on TOML configuration files.
 
-### 1.2 主な用途
+### 1.2 Main Use Cases
 
-- **セキュアなバッチ処理**: 複数のコマンドをグループ化して順次実行
-- **権限委譲**: 一般ユーザーに特定の管理タスクを安全に委譲
-- **自動化タスク**: バックアップ、デプロイ、システムメンテナンスの自動化
-- **監査とロギング**: 実行履歴の記録と追跡
+- **Secure Batch Processing**: Group multiple commands and execute them sequentially
+- **Privilege Delegation**: Safely delegate specific administrative tasks to regular users
+- **Automation Tasks**: Automate backups, deployments, and system maintenance
+- **Auditing and Logging**: Record and track execution history
 
-### 1.3 基本的な使用フロー
+### 1.3 Basic Usage Flow
 
 ```
-1. TOML設定ファイルを作成
+1. Create TOML configuration file
    ↓
-2. 実行バイナリのハッシュ値を記録（record コマンド）
+2. Record hash values of executable binaries (record command)
    ↓
-3. 設定ファイルを検証（-validate フラグ）
+3. Validate configuration file (-validate flag)
    ↓
-4. ドライランで動作確認（-dry-run フラグ）
+4. Verify operation with dry run (-dry-run flag)
    ↓
-5. 本番実行（runner コマンド）
+5. Production execution (runner command)
 ```
 
-## 2. クイックスタート
+## 2. Quick Start
 
-### 2.1 最小構成での実行
+### 2.1 Execution with Minimal Configuration
 
 ```bash
-# 1. 設定ファイルを作成（config.toml）
+# 1. Create configuration file (config.toml)
 cat > config.toml << 'EOF'
 version = "1.0"
 
@@ -57,133 +57,133 @@ cmd = "/bin/echo"
 args = ["Hello, World!"]
 EOF
 
-# 2. 実行
+# 2. Execute
 runner -config config.toml
 ```
 
-### 2.2 事前準備：ハッシュファイルの作成
+### 2.2 Preparation: Creating Hash Files
 
-セキュリティのため、実行前に設定ファイルやバイナリのハッシュ値を記録する必要があります。
+For security purposes, you need to record hash values of configuration files and binaries before execution.
 
 ```bash
-# 設定ファイルのハッシュを記録
+# Record hash of configuration file
 record -file config.toml -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
 
-# 実行バイナリのハッシュを記録
+# Record hash of executable binary
 record -file /usr/local/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
 ```
 
-詳細は [record コマンドガイド](record_command.md) を参照してください。
+For details, see [record Command Guide](record_command.md).
 
-### 2.3 設定ファイルについて
+### 2.3 About Configuration Files
 
-TOML設定ファイルの詳細な記述方法については、以下のドキュメントを参照してください：
+For detailed information on how to write TOML configuration files, see the following documentation:
 
-- [TOML設定ファイル ユーザーガイド](toml_config/README.md)
+- [TOML Configuration File User Guide](toml_config/README.md)
 
-## 3. コマンドラインフラグ詳解
+## 3. Command-Line Flags Details
 
-### 3.1 必須フラグ
+### 3.1 Required Flags
 
 #### `-config <path>`
 
-**概要**
+**Overview**
 
-TOML形式の設定ファイルのパスを指定します。
+Specifies the path to the TOML format configuration file.
 
-**文法**
+**Syntax**
 
 ```bash
 runner -config <path>
 ```
 
-**パラメータ**
+**Parameters**
 
-- `<path>`: 設定ファイルへの絶対パスまたは相対パス（必須）
+- `<path>`: Absolute or relative path to the configuration file (required)
 
-**使用例**
+**Usage Examples**
 
 ```bash
-# 相対パスで指定
+# Specify with relative path
 runner -config config.toml
 
-# 絶対パスで指定
+# Specify with absolute path
 runner -config /etc/go-safe-cmd-runner/production.toml
 
-# ホームディレクトリからの指定
+# Specify from home directory
 runner -config ~/configs/backup.toml
 ```
 
-**注意事項**
+**Notes**
 
-- 設定ファイルは事前にハッシュ値を記録しておく必要があります
-- ファイルが存在しない場合はエラーになります
-- 設定ファイルの検証に失敗した場合、実行は中断されます
+- The configuration file must have its hash value recorded in advance
+- An error occurs if the file does not exist
+- Execution is aborted if configuration file validation fails
 
-### 3.2 実行モード制御
+### 3.2 Execution Mode Control
 
 #### `-dry-run`
 
-**概要**
+**Overview**
 
-コマンドを実際には実行せず、実行内容をシミュレーションして表示します。
+Simulates and displays the execution content without actually running commands.
 
-**文法**
+**Syntax**
 
 ```bash
 runner -config <path> -dry-run
 ```
 
-**使用例**
+**Usage Examples**
 
 ```bash
-# 基本的なドライラン
+# Basic dry run
 runner -config config.toml -dry-run
 
-# 詳細レベルとフォーマットを指定
+# Specify detail level and format
 runner -config config.toml -dry-run -dry-run-detail full -dry-run-format json
 ```
 
-**ユースケース**
+**Use Cases**
 
-- **設定変更後の確認**: 設定ファイルを変更した後、意図通りに動作するか確認
-- **影響範囲の把握**: どのコマンドが実行されるか事前に確認
-- **セキュリティチェック**: リスク評価結果を確認
-- **デバッグ**: 変数展開や環境変数の状態を確認
+- **Confirmation after configuration changes**: Verify that changes work as intended
+- **Understanding impact scope**: Preview which commands will be executed
+- **Security check**: Review risk assessment results
+- **Debugging**: Verify variable expansion and environment variable states
 
-**ドライランの特徴**
+**Dry Run Characteristics**
 
-- ファイル検証は実行されます（ハッシュ値のチェック）
-- 実際のコマンドは実行されません
-- 環境変数の展開結果を確認できます
-- リスク評価結果が表示されます
+- File verification is performed (hash value checking)
+- Actual commands are not executed
+- Environment variable expansion results can be confirmed
+- Risk assessment results are displayed
 
 #### `-dry-run-format <format>`
 
-**概要**
+**Overview**
 
-ドライラン実行時の出力フォーマットを指定します。
+Specifies the output format for dry run execution.
 
-**文法**
+**Syntax**
 
 ```bash
 runner -config <path> -dry-run -dry-run-format <format>
 ```
 
-**選択肢**
+**Options**
 
-- `text`: 人間が読みやすいテキスト形式（デフォルト）
-- `json`: 機械処理しやすいJSON形式
+- `text`: Human-readable text format (default)
+- `json`: Machine-processable JSON format
 
-**使用例**
+**Usage Examples**
 
-**テキスト形式（デフォルト）**
+**Text Format (Default)**
 
 ```bash
 runner -config config.toml -dry-run -dry-run-format text
 ```
 
-出力例：
+Output example:
 ```
 === Dry Run Analysis ===
 
@@ -202,13 +202,13 @@ Group: backup (Priority: 1)
       HOME=/root
 ```
 
-**JSON形式**
+**JSON Format**
 
 ```bash
 runner -config config.toml -dry-run -dry-run-format json
 ```
 
-出力例：
+Output example:
 ```json
 {
   "groups": [
@@ -236,43 +236,43 @@ runner -config config.toml -dry-run -dry-run-format json
 }
 ```
 
-**JSON形式の活用**
+**Using JSON Format**
 
 ```bash
-# jqでフィルタリング
+# Filter with jq
 runner -config config.toml -dry-run -dry-run-format json | jq '.groups[0].commands[0].cmd'
 
-# ファイルに保存して解析
+# Save to file and analyze
 runner -config config.toml -dry-run -dry-run-format json > dryrun.json
 ```
 
 #### `-dry-run-detail <level>`
 
-**概要**
+**Overview**
 
-ドライラン実行時の出力の詳細レベルを指定します。
+Specifies the detail level of output during dry run execution.
 
-**文法**
+**Syntax**
 
 ```bash
 runner -config <path> -dry-run -dry-run-detail <level>
 ```
 
-**選択肢**
+**Options**
 
-- `summary`: サマリー情報のみ表示
-- `detailed`: 詳細情報を表示（デフォルト）
-- `full`: 全情報を表示（環境変数、検証ファイルなど全て）
+- `summary`: Display summary information only
+- `detailed`: Display detailed information (default)
+- `full`: Display all information (environment variables, verified files, etc.)
 
-**使用例と出力例**
+**Usage Examples and Output Examples**
 
-**summary レベル**
+**summary Level**
 
 ```bash
 runner -config config.toml -dry-run -dry-run-detail summary
 ```
 
-出力例：
+Output example:
 ```
 === Dry Run Summary ===
 Total Groups: 2
@@ -280,13 +280,13 @@ Total Commands: 5
 Estimated Duration: ~180s
 ```
 
-**detailed レベル（デフォルト）**
+**detailed Level (Default)**
 
 ```bash
 runner -config config.toml -dry-run -dry-run-detail detailed
 ```
 
-出力例：
+Output example:
 ```
 === Dry Run Analysis ===
 
@@ -299,13 +299,13 @@ Group: backup (Priority: 1)
     Risk: medium
 ```
 
-**full レベル**
+**full Level**
 
 ```bash
 runner -config config.toml -dry-run -dry-run-detail full
 ```
 
-出力例：
+Output example:
 ```
 === Dry Run Analysis (Full Detail) ===
 
@@ -337,32 +337,32 @@ Group: backup (Priority: 1)
       PGPASSWORD=[REDACTED]
 ```
 
-**詳細レベルの使い分け**
+**Using Detail Levels**
 
-- `summary`: CI/CDでの概要確認、大量の設定の一覧表示
-- `detailed`: 通常の確認作業、設定変更後のチェック
-- `full`: デバッグ、トラブルシューティング、環境変数の確認
+- `summary`: Overview verification in CI/CD, listing large configurations
+- `detailed`: Regular verification, checking after configuration changes
+- `full`: Debugging, troubleshooting, environment variable verification
 
 #### `-validate`
 
-**概要**
+**Overview**
 
-設定ファイルの文法と整合性を検証し、結果を表示して終了します。コマンドは実行されません。
+Validates the syntax and consistency of the configuration file, displays results, and exits. Commands are not executed.
 
-**文法**
+**Syntax**
 
 ```bash
 runner -config <path> -validate
 ```
 
-**使用例**
+**Usage Examples**
 
 ```bash
-# 設定ファイルの検証
+# Validate configuration file
 runner -config config.toml -validate
 ```
 
-成功時の出力：
+Success output:
 ```
 Configuration validation successful
   Version: 1.0
@@ -371,7 +371,7 @@ Configuration validation successful
   Verified Files: 5
 ```
 
-エラー時の出力：
+Error output:
 ```
 Configuration validation failed:
   - Group 'backup': command 'db_backup' has invalid timeout: -1
@@ -379,13 +379,13 @@ Configuration validation failed:
   - Global: invalid log level 'trace' (must be: debug, info, warn, error)
 ```
 
-**ユースケース**
+**Use Cases**
 
-- **CI/CDパイプライン**: 設定ファイルのコミット前に自動検証
-- **設定変更後の確認**: 本番実行前に設定の妥当性を確認
-- **開発中のテスト**: 設定ファイルを編集しながら即座に検証
+- **CI/CD Pipeline**: Automatically validate configuration files before commit
+- **Confirmation after configuration changes**: Verify configuration validity before production execution
+- **Development Testing**: Validate immediately while editing configuration files
 
-**CI/CDでの活用例**
+**CI/CD Usage Example**
 
 ```yaml
 # .github/workflows/validate-config.yml
@@ -403,43 +403,43 @@ jobs:
           runner -config config.toml -validate
 ```
 
-### 3.3 ログ設定
+### 3.3 Log Configuration
 
 #### `-log-level <level>`
 
-**概要**
+**Overview**
 
-ログ出力のレベルを指定します。指定したレベル以上のログが出力されます。
+Specifies the log output level. Logs at or above the specified level are output.
 
-**文法**
+**Syntax**
 
 ```bash
 runner -config <path> -log-level <level>
 ```
 
-**選択肢**
+**Options**
 
-- `debug`: デバッグ情報を含む全てのログ
-- `info`: 通常の情報ログ以上（デフォルト）
-- `warn`: 警告以上のログのみ
-- `error`: エラーログのみ
+- `debug`: All logs including debug information
+- `info`: Normal information logs and above (default)
+- `warn`: Warning and above logs only
+- `error`: Error logs only
 
-**使用例**
+**Usage Examples**
 
 ```bash
-# デバッグモードで実行
+# Execute in debug mode
 runner -config config.toml -log-level debug
 
-# 警告とエラーのみ表示
+# Show warnings and errors only
 runner -config config.toml -log-level warn
 
-# エラーのみ表示
+# Show errors only
 runner -config config.toml -log-level error
 ```
 
-**各レベルで出力される情報**
+**Information Output at Each Level**
 
-**debug レベル**
+**debug Level**
 ```
 2025-10-02T10:30:00Z DEBUG Loading configuration file path=/etc/runner/config.toml
 2025-10-02T10:30:00Z DEBUG Verifying file hash file=/usr/bin/backup.sh hash=abc123...
@@ -448,72 +448,72 @@ runner -config config.toml -log-level error
 2025-10-02T10:30:05Z INFO  Command completed successfully group=backup command=db_backup duration=5.2s
 ```
 
-**info レベル（デフォルト）**
+**info Level (Default)**
 ```
 2025-10-02T10:30:00Z INFO  Starting command group=backup command=db_backup
 2025-10-02T10:30:05Z INFO  Command completed successfully group=backup command=db_backup duration=5.2s
 ```
 
-**warn レベル**
+**warn Level**
 ```
 2025-10-02T10:30:10Z WARN  Command execution slow group=backup command=full_backup duration=125s timeout=120s
 ```
 
-**error レベル**
+**error Level**
 ```
 2025-10-02T10:30:15Z ERROR Command failed group=backup command=db_backup error="exit status 1"
 ```
 
-**ログレベルの使い分け**
+**Using Log Levels**
 
-- `debug`: 開発時、トラブルシューティング時
-- `info`: 通常運用時（デフォルト）
-- `warn`: 本番環境で問題の兆候のみ記録
-- `error`: 監視システムと連携してエラーのみ記録
+- `debug`: During development and troubleshooting
+- `info`: Normal operation (default)
+- `warn`: Record only warning signs in production environment
+- `error`: Record only errors in integration with monitoring systems
 
-**注意事項**
+**Notes**
 
-- コマンドラインフラグは TOML設定ファイルの `global.log_level` より優先されます
-- センシティブな情報は自動的にマスクされます（パスワード、トークンなど）
+- Command-line flags take precedence over `global.log_level` in TOML configuration files
+- Sensitive information is automatically masked (passwords, tokens, etc.)
 
 #### `-log-dir <directory>`
 
-**概要**
+**Overview**
 
-実行ログを保存するディレクトリを指定します。各実行ごとにULID付きのJSONログファイルが作成されます。
+Specifies the directory to save execution logs. A JSON log file with ULID is created for each execution.
 
-**文法**
+**Syntax**
 
 ```bash
 runner -config <path> -log-dir <directory>
 ```
 
-**パラメータ**
+**Parameters**
 
-- `<directory>`: ログファイルを保存するディレクトリパス（絶対パスまたは相対パス）
+- `<directory>`: Directory path to save log files (absolute or relative path)
 
-**使用例**
+**Usage Examples**
 
 ```bash
-# ログディレクトリを指定して実行
+# Execute with log directory specified
 runner -config config.toml -log-dir /var/log/go-safe-cmd-runner
 
-# 相対パスで指定
+# Specify with relative path
 runner -config config.toml -log-dir ./logs
 ```
 
-**ログファイルの命名規則**
+**Log File Naming Convention**
 
 ```
 <log-dir>/runner-<run-id>.json
 ```
 
-例：
+Example:
 ```
 /var/log/go-safe-cmd-runner/runner-01K2YK812JA735M4TWZ6BK0JH9.json
 ```
 
-**ログファイルの内容（JSON形式）**
+**Log File Content (JSON Format)**
 
 ```json
 {
@@ -528,123 +528,123 @@ runner -config config.toml -log-dir ./logs
 }
 ```
 
-**ユースケース**
+**Use Cases**
 
-- **監査ログの保存**: 全実行履歴を記録
-- **トラブルシューティング**: 過去の実行ログを解析
-- **統計分析**: 実行時間、エラー率などの分析
-- **コンプライアンス**: 実行証跡の保存
+- **Audit Log Storage**: Record all execution history
+- **Troubleshooting**: Analyze past execution logs
+- **Statistical Analysis**: Analyze execution time, error rates, etc.
+- **Compliance**: Save execution trail
 
-**ログローテーション**
+**Log Rotation**
 
-ログファイルは自動的にローテーションされません。定期的なクリーンアップが必要です。
+Log files are not automatically rotated. Regular cleanup is required.
 
 ```bash
-# 30日以上前のログを削除
+# Delete logs older than 30 days
 find /var/log/go-safe-cmd-runner -name "runner-*.json" -mtime +30 -delete
 ```
 
-**注意事項**
+**Notes**
 
-- コマンドラインフラグは TOML設定や環境変数より優先されます
-- ディレクトリが存在しない場合は自動的に作成されます
-- ログファイルは 0600 権限で作成されます（所有者のみ読み書き可能）
+- Command-line flags take precedence over TOML configuration and environment variables
+- The directory is created automatically if it does not exist
+- Log files are created with 0600 permissions (readable/writable by owner only)
 
 #### `-run-id <id>`
 
-**概要**
+**Overview**
 
-実行を識別するための一意なIDを明示的に指定します。指定しない場合はULIDが自動生成されます。
+Explicitly specifies a unique ID to identify the execution. If not specified, a ULID is automatically generated.
 
-**文法**
+**Syntax**
 
 ```bash
 runner -config <path> -run-id <id>
 ```
 
-**パラメータ**
+**Parameters**
 
-- `<id>`: 実行を識別する一意な文字列（推奨：ULID形式）
+- `<id>`: Unique string to identify execution (recommended: ULID format)
 
-**使用例**
+**Usage Examples**
 
 ```bash
-# カスタムRun IDを指定
+# Specify custom Run ID
 runner -config config.toml -run-id my-custom-run-001
 
-# ULID形式で指定
+# Specify in ULID format
 runner -config config.toml -run-id 01K2YK812JA735M4TWZ6BK0JH9
 
-# 自動生成（デフォルト）
+# Auto-generated (default)
 runner -config config.toml
 ```
 
-**ULID形式について**
+**About ULID Format**
 
-ULID (Universally Unique Lexicographically Sortable Identifier) は以下の特徴を持ちます：
+ULID (Universally Unique Lexicographically Sortable Identifier) has the following characteristics:
 
-- **時系列順**: 生成時刻順にソート可能
-- **一意性**: 衝突の可能性が極めて低い
-- **URL安全**: 特殊文字を含まない
-- **固定長**: 26文字
-- **例**: `01K2YK812JA735M4TWZ6BK0JH9`
+- **Chronological Order**: Sortable by generation time
+- **Uniqueness**: Extremely low possibility of collision
+- **URL Safe**: Does not contain special characters
+- **Fixed Length**: 26 characters
+- **Example**: `01K2YK812JA735M4TWZ6BK0JH9`
 
-**ユースケース**
+**Use Cases**
 
-- **外部システムとの連携**: CI/CDのビルドIDと紐付け
-- **分散実行の追跡**: 複数サーバーでの実行を統一IDで管理
-- **デバッグ**: 特定の実行を再現
+- **External System Integration**: Link with CI/CD build IDs
+- **Distributed Execution Tracking**: Manage executions across multiple servers with unified ID
+- **Debugging**: Reproduce specific executions
 
-**外部システム連携の例**
+**External System Integration Examples**
 
 ```bash
-# GitHub ActionsのRun IDを使用
+# Use GitHub Actions Run ID
 runner -config config.toml -run-id "gh-${GITHUB_RUN_ID}"
 
-# Jenkinsのビルド番号を使用
+# Use Jenkins build number
 runner -config config.toml -run-id "jenkins-${BUILD_NUMBER}"
 
-# タイムスタンプベースのID
+# Timestamp-based ID
 runner -config config.toml -run-id "backup-$(date +%Y%m%d-%H%M%S)"
 ```
 
-**注意事項**
+**Notes**
 
-- Run IDはログファイル名やログエントリに含まれます
-- 同じRun IDを複数回使用すると、ログファイルが上書きされる可能性があります
-- ULID以外の形式も使用可能ですが、時系列順ソートができない場合があります
+- Run ID is included in log file names and log entries
+- Using the same Run ID multiple times may overwrite log files
+- Formats other than ULID can be used, but chronological sorting may not be possible
 
-### 3.4 出力制御
+### 3.4 Output Control
 
 #### `-interactive`
 
-**概要**
+**Overview**
 
-インタラクティブモードを強制的に有効化します。カラー出力と進捗表示が有効になります。
+Forcibly enables interactive mode. Color output and progress display are enabled.
 
-**文法**
+**Syntax**
 
 ```bash
 runner -config <path> -interactive
 ```
 
-**使用例**
+**Usage Examples**
 
 ```bash
-# インタラクティブモードで実行
+# Execute in interactive mode
 runner -config config.toml -interactive
 
-# パイプ経由でもカラー出力を有効化
+# Enable color output even via pipe
 runner -config config.toml -interactive | tee output.log
 ```
 
-**インタラクティブモードの特徴**
+**Interactive Mode Features**
 
-- **カラー出力**: エラーは赤、警告は黄、成功は緑で表示
-- **進捗表示**: コマンド実行中の状態を視覚的に表示
-- **対話的な体験**: 人間が読みやすい形式で情報を表示
+- **Color Output**: Errors in red, warnings in yellow, success in green
+- **Progress Display**: Visually display command execution status
+- **Interactive Experience**: Display information in human-readable format
 
-**出力例**
+**Output Example**
 
 ```
 ✓ Configuration loaded successfully
@@ -661,57 +661,57 @@ runner -config config.toml -interactive | tee output.log
   Total duration: 20.1s
 ```
 
-**ユースケース**
+**Use Cases**
 
-- **対話的な実行**: コマンドラインから手動実行する場合
-- **デバッグ**: 問題を視覚的に確認したい場合
-- **デモ**: 実行状況をプレゼンテーションする場合
-- **パイプ経由での確認**: `less -R` などでカラー出力を保持
+- **Interactive Execution**: Manual execution from command line
+- **Debugging**: Visual confirmation of issues
+- **Demo**: Presenting execution status
+- **Verification via Pipe**: Preserve color output with `less -R`
 
-**環境変数との関係**
+**Relationship with Environment Variables**
 
-`-interactive` フラグは環境変数より優先されます：
+The `-interactive` flag takes precedence over environment variables:
 
 ```bash
-# NO_COLORが設定されていてもカラー出力される
+# Color output occurs even if NO_COLOR is set
 NO_COLOR=1 runner -config config.toml -interactive
 ```
 
-**注意事項**
+**Notes**
 
-- CI/CD環境では通常使用しません（`-quiet` を推奨）
-- ログファイルにはANSIエスケープシーケンスが含まれません
-- `-quiet` フラグと同時に指定した場合は `-quiet` が優先されます
+- Not typically used in CI/CD environments (`-quiet` recommended)
+- Log files do not contain ANSI escape sequences
+- If specified with `-quiet` flag, `-quiet` takes precedence
 
 #### `-quiet`
 
-**概要**
+**Overview**
 
-非インタラクティブモードを強制します。カラー出力と進捗表示が無効になります。
+Forces non-interactive mode. Color output and progress display are disabled.
 
-**文法**
+**Syntax**
 
 ```bash
 runner -config <path> -quiet
 ```
 
-**使用例**
+**Usage Examples**
 
 ```bash
-# 非インタラクティブモードで実行
+# Execute in non-interactive mode
 runner -config config.toml -quiet
 
-# ログファイルへのリダイレクト
+# Redirect to log file
 runner -config config.toml -quiet > output.log 2>&1
 ```
 
-**非インタラクティブモードの特徴**
+**Non-Interactive Mode Features**
 
-- **プレーンテキスト**: カラーコードなし
-- **簡潔な出力**: 必要最小限の情報のみ
-- **機械処理向け**: スクリプトやパイプラインで処理しやすい
+- **Plain Text**: No color codes
+- **Concise Output**: Minimum necessary information only
+- **Machine Processing Oriented**: Easy to process in scripts and pipelines
 
-**出力例**
+**Output Example**
 
 ```
 2025-10-02T10:30:00Z INFO Configuration loaded
@@ -722,14 +722,14 @@ runner -config config.toml -quiet > output.log 2>&1
 2025-10-02T10:30:20Z INFO All commands completed duration=20.1s
 ```
 
-**ユースケース**
+**Use Cases**
 
-- **CI/CD環境**: 自動化されたビルド・デプロイパイプライン
-- **cronジョブ**: 定期実行スクリプト
-- **ログ解析**: ログを後から解析する場合
-- **スクリプト統合**: 他のスクリプトから呼び出す場合
+- **CI/CD Environment**: Automated build and deployment pipelines
+- **Cron Jobs**: Periodic execution scripts
+- **Log Analysis**: Analyzing logs later
+- **Script Integration**: Called from other scripts
 
-**CI/CDでの使用例**
+**CI/CD Usage Example**
 
 ```yaml
 # .github/workflows/deploy.yml
@@ -746,134 +746,134 @@ jobs:
           runner -config deploy.toml -quiet -log-dir ./logs
 ```
 
-**cronでの使用例**
+**Cron Usage Example**
 
 ```bash
 # crontab
 0 2 * * * /usr/local/bin/runner -config /etc/runner/backup.toml -quiet -log-dir /var/log/runner
 ```
 
-**注意事項**
+**Notes**
 
-- `-interactive` と `-quiet` を同時に指定した場合は `-quiet` が優先されます
-- エラーメッセージは stderr に出力されます
-- ログレベルの設定は引き続き有効です
+- If specified with `-interactive` and `-quiet` flags simultaneously, `-quiet` takes precedence
+- Error messages are output to stderr
+- Log level settings remain effective
 
-## 4. 環境変数
+## 4. Environment Variables
 
-### 4.1 カラー出力制御
+### 4.1 Color Output Control
 
-runner コマンドは標準的なカラー制御環境変数をサポートしています。
+The runner command supports standard color control environment variables.
 
 #### `CLICOLOR`
 
-カラー出力の有効/無効を制御します。
+Controls enabling/disabling of color output.
 
-**値**
+**Values**
 
-- `0`: カラー出力を無効化
-- `1` または設定済み: カラー出力を有効化（ターミナルがサポートしている場合）
+- `0`: Disable color output
+- `1` or set: Enable color output (if terminal supports it)
 
-**使用例**
+**Usage Examples**
 
 ```bash
-# カラー出力を有効化
+# Enable color output
 CLICOLOR=1 runner -config config.toml
 
-# カラー出力を無効化
+# Disable color output
 CLICOLOR=0 runner -config config.toml
 ```
 
 #### `NO_COLOR`
 
-カラー出力を無効化します（[NO_COLOR標準仕様](https://no-color.org/)に準拠）。
+Disables color output (compliant with [NO_COLOR standard specification](https://no-color.org/)).
 
-**値**
+**Values**
 
-- 設定済み（任意の値）: カラー出力を無効化
-- 未設定: デフォルトの動作
+- Set (any value): Disable color output
+- Unset: Default behavior
 
-**使用例**
+**Usage Examples**
 
 ```bash
-# カラー出力を無効化
+# Disable color output
 NO_COLOR=1 runner -config config.toml
 
-# 環境変数として設定
+# Set as environment variable
 export NO_COLOR=1
 runner -config config.toml
 ```
 
 #### `CLICOLOR_FORCE`
 
-ターミナルの自動検出を無視してカラー出力を強制します。
+Forces color output, ignoring terminal auto-detection.
 
-**値**
+**Values**
 
-- `0` または `false`: 強制しない
-- その他の値: カラー出力を強制
+- `0` or `false`: Do not force
+- Other values: Force color output
 
-**使用例**
+**Usage Examples**
 
 ```bash
-# パイプ経由でもカラー出力
+# Color output even via pipe
 CLICOLOR_FORCE=1 runner -config config.toml | less -R
 
-# リダイレクトしてもカラー出力（ANSIエスケープシーケンスがファイルに保存される）
+# Color output even with redirect (ANSI escape sequences saved to file)
 CLICOLOR_FORCE=1 runner -config config.toml > output-with-colors.log
 ```
 
-#### 優先順位
+#### Priority Order
 
-カラー出力の判定は以下の優先順位で行われます：
+Color output determination is made in the following priority order:
 
 ```
-1. コマンドラインフラグ（-interactive, -quiet）
+1. Command-line flags (-interactive, -quiet)
    ↓
-2. CLICOLOR_FORCE 環境変数
+2. CLICOLOR_FORCE environment variable
    ↓
-3. NO_COLOR 環境変数
+3. NO_COLOR environment variable
    ↓
-4. CLICOLOR 環境変数
+4. CLICOLOR environment variable
    ↓
-5. ターミナルの自動検出
+5. Terminal auto-detection
 ```
 
-**優先順位の例**
+**Priority Examples**
 
 ```bash
-# -quiet が最優先（カラー出力されない）
+# -quiet has highest priority (no color output)
 CLICOLOR_FORCE=1 runner -config config.toml -quiet
 
-# CLICOLOR_FORCE がターミナル検出より優先（カラー出力される）
+# CLICOLOR_FORCE takes precedence over terminal detection (color output)
 CLICOLOR_FORCE=1 runner -config config.toml > output.log
 
-# NO_COLOR が CLICOLOR より優先（カラー出力されない）
+# NO_COLOR takes precedence over CLICOLOR (no color output)
 CLICOLOR=1 NO_COLOR=1 runner -config config.toml
 ```
 
-### 4.2 通知設定
+### 4.2 Notification Configuration
 
 #### `GSCR_SLACK_WEBHOOK_URL`
 
-Slack通知用のWebhook URLを指定します。設定すると、エラーや重要なイベントがSlackに通知されます。
+Specifies the Webhook URL for Slack notifications. When set, errors and important events are notified to Slack.
 
-**使用例**
+**Usage Examples**
 
 ```bash
-# Slack通知を有効化
+# Enable Slack notifications
 export GSCR_SLACK_WEBHOOK_URL="https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXX"
 runner -config config.toml
 ```
 
-**通知されるイベント**
+**Events to be Notified**
 
-- コマンド実行の開始
-- コマンドの成功/失敗
-- セキュリティ関連のイベント（権限昇格、ファイル検証失敗など）
-- エラーや警告
+- Start of command execution
+- Command success/failure
+- Security-related events (privilege escalation, file verification failure, etc.)
+- Errors and warnings
 
-**通知例**
+**Notification Example**
 
 ```
 🤖 go-safe-cmd-runner
@@ -885,22 +885,22 @@ Duration: 5.2s
 Run ID: 01K2YK812JA735M4TWZ6BK0JH9
 ```
 
-**セキュリティ上の注意**
+**Security Notes**
 
-- Webhook URLは機密情報として扱ってください
-- 環境変数やシークレット管理ツールで管理することを推奨します
-- ログやエラーメッセージには含まれません
+- Treat Webhook URL as sensitive information
+- Recommended to manage with environment variables or secret management tools
+- Not included in logs or error messages
 
-### 4.3 CI環境の自動検出
+### 4.3 CI Environment Auto-Detection
 
-以下の環境変数が設定されている場合、自動的にCI環境として認識され、非インタラクティブモードで動作します。
+When the following environment variables are set, they are automatically recognized as CI environment and operate in non-interactive mode.
 
-**検出される環境変数**
+**Detected Environment Variables**
 
-| 環境変数 | CI/CDシステム |
+| Environment Variable | CI/CD System |
 |---------|-------------|
-| `CI` | 汎用CI環境 |
-| `CONTINUOUS_INTEGRATION` | 汎用CI環境 |
+| `CI` | Generic CI environment |
+| `CONTINUOUS_INTEGRATION` | Generic CI environment |
 | `GITHUB_ACTIONS` | GitHub Actions |
 | `TRAVIS` | Travis CI |
 | `CIRCLECI` | CircleCI |
@@ -911,132 +911,132 @@ Run ID: 01K2YK812JA735M4TWZ6BK0JH9
 | `DRONE` | Drone CI |
 | `TF_BUILD` | Azure Pipelines |
 
-**CI環境での動作**
+**CI Environment Behavior**
 
-- カラー出力が自動的に無効化されます
-- 進捗表示が簡潔になります
-- タイムスタンプ付きのログ形式になります
+- Color output is automatically disabled
+- Progress display becomes concise
+- Log format with timestamps
 
-**CI環境でカラー出力を有効にする**
+**Enabling Color Output in CI Environment**
 
 ```bash
-# GitHub Actionsでカラー出力
+# Color output in GitHub Actions
 runner -config config.toml -interactive
 
-# または環境変数で強制
+# Or force with environment variable
 CLICOLOR_FORCE=1 runner -config config.toml
 ```
 
-## 5. 実践例
+## 5. Practical Examples
 
-### 5.1 基本的な実行
+### 5.1 Basic Execution
 
-**シンプルな実行**
+**Simple Execution**
 
 ```bash
 runner -config config.toml
 ```
 
-**ログレベルを指定して実行**
+**Execute with Log Level Specified**
 
 ```bash
 runner -config config.toml -log-level debug
 ```
 
-**ログファイルを保存して実行**
+**Execute with Log File Saved**
 
 ```bash
 runner -config config.toml -log-dir /var/log/runner -log-level info
 ```
 
-### 5.2 ドライランの活用
+### 5.2 Using Dry Run
 
-**設定変更前の確認**
+**Verification Before Configuration Changes**
 
 ```bash
-# 設定ファイルを編集
+# Edit configuration file
 vim config.toml
 
-# ドライランで確認
+# Verify with dry run
 runner -config config.toml -dry-run
 
-# 問題なければ実行
+# Execute if no issues
 runner -config config.toml
 ```
 
-**詳細レベルの使い分け**
+**Using Detail Levels**
 
 ```bash
-# サマリーのみ表示（全体像の把握）
+# Display summary only (overall picture)
 runner -config config.toml -dry-run -dry-run-detail summary
 
-# 詳細表示（通常の確認）
+# Detailed display (regular verification)
 runner -config config.toml -dry-run -dry-run-detail detailed
 
-# 完全な情報表示（デバッグ）
+# Full information display (debugging)
 runner -config config.toml -dry-run -dry-run-detail full
 ```
 
-**JSON出力での解析**
+**Analysis with JSON Output**
 
 ```bash
-# JSON形式で出力してjqで解析
+# Output in JSON format and analyze with jq
 runner -config config.toml -dry-run -dry-run-format json | jq '.'
 
-# 特定のコマンドのリスクレベルを確認
+# Check risk level of specific commands
 runner -config config.toml -dry-run -dry-run-format json | \
   jq '.groups[].commands[] | select(.risk_level == "high")'
 
-# 実行時間の長いコマンドを確認
+# Check long-running commands
 runner -config config.toml -dry-run -dry-run-format json | \
   jq '.groups[].commands[] | select(.timeout > 3600)'
 ```
 
-### 5.3 ログ管理
+### 5.3 Log Management
 
-**ログをファイルに保存**
+**Save Logs to File**
 
 ```bash
-# ログディレクトリを指定
+# Specify log directory
 runner -config config.toml -log-dir /var/log/runner
 
-# デバッグログを保存
+# Save debug logs
 runner -config config.toml -log-dir /var/log/runner -log-level debug
 ```
 
-**ログローテーション**
+**Log Rotation**
 
 ```bash
-# 古いログを削除（30日以上前）
+# Delete old logs (older than 30 days)
 find /var/log/runner -name "runner-*.json" -mtime +30 -delete
 
-# ログをアーカイブ（7日以上前）
+# Archive logs (older than 7 days)
 find /var/log/runner -name "runner-*.json" -mtime +7 -exec gzip {} \;
 ```
 
-**ログ解析**
+**Log Analysis**
 
 ```bash
-# 最新のログを表示
+# Display latest log
 ls -t /var/log/runner/runner-*.json | head -1 | xargs cat | jq '.'
 
-# エラーログのみ抽出
+# Extract error logs only
 cat /var/log/runner/runner-*.json | jq 'select(.level == "ERROR")'
 
-# 特定のRun IDのログを表示
+# Display log of specific Run ID
 cat /var/log/runner/runner-01K2YK812JA735M4TWZ6BK0JH9.json | jq '.'
 ```
 
-### 5.4 設定ファイルの検証
+### 5.4 Configuration File Validation
 
-**基本的な検証**
+**Basic Validation**
 
 ```bash
-# 設定ファイルを検証
+# Validate configuration file
 runner -config config.toml -validate
 ```
 
-**CI/CDパイプラインでの検証**
+**Validation in CI/CD Pipeline**
 
 **GitHub Actions**
 
@@ -1053,7 +1053,7 @@ jobs:
 
       - name: Install runner
         run: |
-          # ビルド済みバイナリをダウンロードまたはビルド
+          # Download or build pre-built binary
           make build
 
       - name: Validate configuration
@@ -1085,16 +1085,16 @@ if git diff --cached --name-only | grep -q "config.toml"; then
 fi
 ```
 
-### 5.5 CI/CD環境での使用
+### 5.5 Usage in CI/CD Environment
 
-**非インタラクティブモードでの実行**
+**Execution in Non-Interactive Mode**
 
 ```bash
-# CI環境では明示的に-quietを指定
+# Explicitly specify -quiet in CI environment
 runner -config config.toml -quiet -log-dir ./logs
 ```
 
-**GitHub Actionsでの実行例**
+**GitHub Actions Execution Example**
 
 ```yaml
 name: Deployment
@@ -1143,7 +1143,7 @@ jobs:
           path: logs/
 ```
 
-**Jenkins Pipelineでの実行例**
+**Jenkins Pipeline Execution Example**
 
 ```groovy
 pipeline {
@@ -1182,235 +1182,235 @@ pipeline {
 }
 ```
 
-### 5.6 カラー出力の制御
+### 5.6 Color Output Control
 
-**環境に応じた出力調整**
+**Output Adjustment According to Environment**
 
 ```bash
-# 対話的な実行（カラー出力あり）
+# Interactive execution (with color output)
 runner -config config.toml
 
-# ログファイルへのリダイレクト（カラー出力なし）
+# Redirect to log file (without color output)
 runner -config config.toml -quiet > output.log
 
-# パイプ経由でカラー出力を保持
+# Preserve color output via pipe
 runner -config config.toml -interactive | less -R
 ```
 
-**強制カラー出力（パイプ経由での確認時）**
+**Force Color Output (when verifying via pipe)**
 
 ```bash
-# パイプ経由でもカラー表示
+# Color display even via pipe
 CLICOLOR_FORCE=1 runner -config config.toml | less -R
 
-# tmuxセッション内でカラー表示
+# Color display in tmux session
 CLICOLOR_FORCE=1 runner -config config.toml
 ```
 
-**カラー出力を完全に無効化**
+**Completely Disable Color Output**
 
 ```bash
-# 環境変数で無効化
+# Disable with environment variable
 NO_COLOR=1 runner -config config.toml
 
-# フラグで無効化
+# Disable with flag
 runner -config config.toml -quiet
 ```
 
-## 6. トラブルシューティング
+## 6. Troubleshooting
 
-### 6.1 設定ファイル関連
+### 6.1 Configuration File Related
 
-#### 設定ファイルが見つからない
+#### Configuration File Not Found
 
-**エラーメッセージ**
+**Error Message**
 ```
 Error: Configuration file not found: config.toml
 ```
 
-**対処法**
+**Solutions**
 
 ```bash
-# ファイルの存在確認
+# Check file existence
 ls -l config.toml
 
-# 絶対パスで指定
+# Specify with absolute path
 runner -config /path/to/config.toml
 
-# カレントディレクトリの確認
+# Check current directory
 pwd
 ```
 
-#### 設定検証エラー
+#### Configuration Validation Error
 
-**エラーメッセージ**
+**Error Message**
 ```
 Configuration validation failed:
   - Group 'backup': command 'db_backup' has invalid timeout: -1
 ```
 
-**対処法**
+**Solutions**
 
 ```bash
-# 設定ファイルを検証
+# Validate configuration file
 runner -config config.toml -validate
 
-# 詳細なエラーメッセージを確認
+# Check detailed error messages
 runner -config config.toml -validate -log-level debug
 ```
 
-詳細な設定方法は [TOML設定ファイルガイド](toml_config/README.md) を参照してください。
+For detailed configuration methods, see [TOML Configuration File Guide](toml_config/README.md).
 
-### 6.2 実行時エラー
+### 6.2 Runtime Errors
 
-#### 権限エラー
+#### Permission Error
 
-**エラーメッセージ**
+**Error Message**
 ```
 Error: Permission denied: /usr/local/etc/go-safe-cmd-runner/hashes
 ```
 
-**対処法**
+**Solutions**
 
 ```bash
-# ディレクトリの権限確認
+# Check directory permissions
 ls -ld /usr/local/etc/go-safe-cmd-runner/hashes
 
-# 権限の修正（管理者権限が必要）
+# Fix permissions (administrator privileges required)
 sudo chmod 755 /usr/local/etc/go-safe-cmd-runner/hashes
 
-# runner実行ファイルの権限確認（setuid bitが必要）
+# Check runner executable permissions (setuid bit required)
 ls -l /usr/local/bin/runner
-# -rwsr-xr-x (4755) であることを確認
+# Confirm -rwsr-xr-x (4755)
 ```
 
-#### ファイル検証エラー
+#### File Verification Error
 
-**エラーメッセージ**
+**Error Message**
 ```
 Error: File verification failed: /usr/bin/backup.sh
 Hash mismatch: expected abc123..., got def456...
 ```
 
-**対処法**
+**Solutions**
 
 ```bash
-# ファイルが変更されていないか確認
+# Check if file has changed
 ls -l /usr/bin/backup.sh
 
-# ハッシュを再記録
+# Re-record hash
 record -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes -force
 
-# 個別に検証
+# Verify individually
 verify -file /usr/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
 ```
 
-詳細は [verify コマンドガイド](verify_command.md) を参照してください。
+For details, see [verify Command Guide](verify_command.md).
 
-#### タイムアウトエラー
+#### Timeout Error
 
-**エラーメッセージ**
+**Error Message**
 ```
 Error: Command timed out after 3600s
 Group: backup
 Command: full_backup
 ```
 
-**対処法**
+**Solutions**
 
 ```bash
-# タイムアウト値を確認
+# Check timeout value
 runner -config config.toml -dry-run | grep -A 5 "full_backup"
 
-# 設定ファイルでタイムアウトを延長
+# Extend timeout in configuration file
 # config.toml
 [[groups.commands]]
 name = "full_backup"
-timeout = 7200  # 2時間に延長
+timeout = 7200  # Extend to 2 hours
 ```
 
-### 6.3 ログ・出力関連
+### 6.3 Log and Output Related
 
-#### ログが出力されない
+#### No Logs Output
 
-**症状**
+**Symptom**
 
-ログファイルが作成されない、またはログが空
+Log file is not created or log is empty
 
-**対処法**
+**Solutions**
 
 ```bash
-# ログディレクトリの確認
+# Check log directory
 ls -ld /var/log/runner
 
-# ディレクトリが存在しない場合は作成
+# Create directory if it doesn't exist
 sudo mkdir -p /var/log/runner
 sudo chmod 755 /var/log/runner
 
-# ログレベルを上げて詳細確認
+# Increase log level for detailed verification
 runner -config config.toml -log-dir /var/log/runner -log-level debug
 
-# 権限エラーの確認
-runner -config config.toml -log-dir ./logs  # カレントディレクトリで試す
+# Check permission errors
+runner -config config.toml -log-dir ./logs  # Try in current directory
 ```
 
-#### カラー出力が表示されない
+#### Color Output Not Displayed
 
-**症状**
+**Symptom**
 
-カラー出力が期待通りに表示されない
+Color output is not displayed as expected
 
-**対処法**
+**Solutions**
 
 ```bash
-# ターミナルのカラーサポート確認
+# Check terminal color support
 echo $TERM
-# xterm-256color, screen-256color などであることを確認
+# Confirm xterm-256color, screen-256color, etc.
 
-# TERM環境変数が正しく設定されていない場合
+# If TERM environment variable is not set correctly
 export TERM=xterm-256color
 
-# カラー出力を強制
+# Force color output
 runner -config config.toml -interactive
 
-# または環境変数で強制
+# Or force with environment variable
 CLICOLOR_FORCE=1 runner -config config.toml
 
-# NO_COLORが設定されていないか確認
+# Check if NO_COLOR is set
 env | grep NO_COLOR
-unset NO_COLOR  # 設定されている場合は解除
+unset NO_COLOR  # Unset if set
 ```
 
-## 7. 関連ドキュメント
+## 7. Related Documentation
 
-### コマンドラインツール
+### Command-Line Tools
 
-- [record コマンドガイド](record_command.md) - ハッシュファイルの作成（管理者向け）
-- [verify コマンドガイド](verify_command.md) - ファイル整合性の検証（デバッグ用）
+- [record Command Guide](record_command.md) - Creating hash files (for administrators)
+- [verify Command Guide](verify_command.md) - File integrity verification (for debugging)
 
-### 設定ファイル
+### Configuration Files
 
-- [TOML設定ファイル ユーザーガイド](toml_config/README.md) - 設定ファイルの詳細な記述方法
-  - [はじめに](toml_config/01_introduction.md)
-  - [設定ファイルの階層構造](toml_config/02_hierarchy.md)
-  - [ルートレベル設定](toml_config/03_root_level.md)
-  - [グローバルレベル設定](toml_config/04_global_level.md)
-  - [グループレベル設定](toml_config/05_group_level.md)
-  - [コマンドレベル設定](toml_config/06_command_level.md)
-  - [変数展開機能](toml_config/07_variable_expansion.md)
-  - [実践的な設定例](toml_config/08_practical_examples.md)
-  - [ベストプラクティス](toml_config/09_best_practices.md)
-  - [トラブルシューティング](toml_config/10_troubleshooting.md)
+- [TOML Configuration File User Guide](toml_config/README.md) - Detailed configuration file writing
+  - [Introduction](toml_config/01_introduction.md)
+  - [Configuration File Hierarchy](toml_config/02_hierarchy.md)
+  - [Root Level Configuration](toml_config/03_root_level.md)
+  - [Global Level Configuration](toml_config/04_global_level.md)
+  - [Group Level Configuration](toml_config/05_group_level.md)
+  - [Command Level Configuration](toml_config/06_command_level.md)
+  - [Variable Expansion](toml_config/07_variable_expansion.md)
+  - [Practical Examples](toml_config/08_practical_examples.md)
+  - [Best Practices](toml_config/09_best_practices.md)
+  - [Troubleshooting](toml_config/10_troubleshooting.md)
 
-### セキュリティ
+### Security
 
-- [セキュリティリスク評価](security-risk-assessment.md) - リスクレベルの詳細
+- [Security Risk Assessment](security-risk-assessment.md) - Risk level details
 
-### プロジェクト情報
+### Project Information
 
-- [README.md](../../README.md) - プロジェクト概要
-- [開発者向けドキュメント](../dev/) - アーキテクチャとセキュリティ設計
+- [README.md](../../README.md) - Project overview
+- [Developer Documentation](../dev/) - Architecture and security design
 
 ---
 
-**最終更新**: 2025-10-02
+**Last Updated**: 2025-10-02

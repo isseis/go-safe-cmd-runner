@@ -1,41 +1,41 @@
-# 第5章: グループレベル設定 [[groups]]
+# Chapter 5: Group Level Configuration [[groups]]
 
-## 概要
+## Overview
 
-`[[groups]]` セクションは、関連するコマンドをまとめる論理的な単位です。各グループには名前、説明、および共通の設定を持たせることができます。設定ファイルには1つ以上のグループが必要です。
+The `[[groups]]` section is a logical unit that groups related commands. Each group can have a name, description, and common settings. The configuration file requires one or more groups.
 
-## 5.1 グループの基本設定
+## 5.1 Basic Group Settings
 
-### 5.1.1 name - グループ名
+### 5.1.1 name - Group Name
 
-#### 概要
+#### Overview
 
-グループを識別するための一意な名前を指定します。
+Specifies a unique name to identify the group.
 
-#### 文法
+#### Syntax
 
 ```toml
 [[groups]]
-name = "グループ名"
+name = "group_name"
 ```
 
-#### パラメータの詳細
+#### Parameter Details
 
-| 項目 | 内容 |
-|-----|------|
-| **型** | 文字列 (string) |
-| **必須/オプション** | 必須 |
-| **設定可能な階層** | グループのみ |
-| **有効な値** | 英数字、アンダースコア、ハイフン |
-| **一意性** | 設定ファイル内で一意である必要がある |
+| Item | Description |
+|------|-------------|
+| **Type** | String (string) |
+| **Required/Optional** | Required |
+| **Configurable Level** | Group only |
+| **Valid Values** | Alphanumeric characters, underscores, hyphens |
+| **Uniqueness** | Must be unique within the configuration file |
 
-#### 役割
+#### Role
 
-- **識別**: グループを一意に識別
-- **ログ出力**: 実行ログでどのグループが実行されているかを表示
-- **エラー報告**: エラー発生時にどのグループで問題が起きたかを特定
+- **Identification**: Uniquely identifies the group
+- **Log Output**: Displays which group is being executed in execution logs
+- **Error Reporting**: Identifies which group had issues when errors occur
 
-#### 設定例
+#### Configuration Example
 
 ```toml
 version = "1.0"
@@ -53,17 +53,17 @@ name = "system_maintenance"
 # ...
 ```
 
-#### 命名のベストプラクティス
+#### Naming Best Practices
 
 ```toml
-# 推奨: 明確で説明的な名前
+# Recommended: clear, descriptive names
 [[groups]]
 name = "daily_database_backup"
 
 [[groups]]
 name = "weekly_log_cleanup"
 
-# 推奨しない: 不明瞭な名前
+# Not recommended: unclear names
 [[groups]]
 name = "group1"
 
@@ -71,97 +71,97 @@ name = "group1"
 name = "temp"
 ```
 
-### 5.1.2 description - 説明
+### 5.1.2 description - Description
 
-#### 概要
+#### Overview
 
-グループの目的や役割を説明する人間が読むためのテキストです。
+Human-readable text describing the purpose or role of the group.
 
-#### 文法
+#### Syntax
 
 ```toml
 [[groups]]
 name = "example"
-description = "グループの説明"
+description = "Group description"
 ```
 
-#### パラメータの詳細
+#### Parameter Details
 
-| 項目 | 内容 |
-|-----|------|
-| **型** | 文字列 (string) |
-| **必須/オプション** | オプション(推奨) |
-| **設定可能な階層** | グループのみ |
-| **有効な値** | 任意の文字列 |
+| Item | Description |
+|------|-------------|
+| **Type** | String (string) |
+| **Required/Optional** | Optional (recommended) |
+| **Configurable Level** | Group only |
+| **Valid Values** | Any string |
 
-#### 役割
+#### Role
 
-- **ドキュメント化**: グループの目的を明確化
-- **保守性向上**: 他の開発者が設定を理解しやすくする
-- **ログ出力**: 実行時に表示され、何が実行されているかを理解しやすくする
+- **Documentation**: Clarifies the purpose of the group
+- **Maintainability**: Makes configuration easier to understand for other developers
+- **Log Output**: Displayed during execution to help understand what's being executed
 
-#### 設定例
+#### Configuration Example
 
 ```toml
 version = "1.0"
 
 [[groups]]
 name = "database_maintenance"
-description = "データベースのバックアップと最適化を実行"
+description = "Execute database backup and optimization"
 
 [[groups.commands]]
 name = "backup"
-description = "PostgreSQL データベースの完全バックアップ"
+description = "Full PostgreSQL database backup"
 cmd = "/usr/bin/pg_dump"
 args = ["mydb"]
 
 [[groups.commands]]
 name = "vacuum"
-description = "データベースの最適化(VACUUM ANALYZE)"
+description = "Database optimization (VACUUM ANALYZE)"
 cmd = "/usr/bin/psql"
 args = ["-c", "VACUUM ANALYZE"]
 ```
 
-### 5.1.3 priority - 優先度
+### 5.1.3 priority - Priority
 
-#### 概要
+#### Overview
 
-グループの実行優先度を指定します。小さい数字ほど優先度が高く、先に実行されます。
+Specifies the execution priority of the group. Smaller numbers have higher priority and are executed first.
 
-#### 文法
+#### Syntax
 
 ```toml
 [[groups]]
 name = "example"
-priority = 数値
+priority = number
 ```
 
-#### パラメータの詳細
+#### Parameter Details
 
-| 項目 | 内容 |
-|-----|------|
-| **型** | 整数 (int) |
-| **必須/オプション** | オプション |
-| **設定可能な階層** | グループのみ |
-| **デフォルト値** | 0 |
-| **有効な値** | 整数(負の値も可) |
+| Item | Description |
+|------|-------------|
+| **Type** | Integer (int) |
+| **Required/Optional** | Optional |
+| **Configurable Level** | Group only |
+| **Default Value** | 0 |
+| **Valid Values** | Integer (negative values allowed) |
 
-#### 役割
+#### Role
 
-- **実行順序の制御**: 依存関係のあるグループを適切な順序で実行
-- **重要度の表現**: 重要なタスクを先に実行
+- **Execution Order Control**: Execute dependent groups in appropriate order
+- **Express Importance**: Execute important tasks first
 
-#### 設定例
+#### Configuration Examples
 
-#### 例1: 優先度による実行順序の制御
+#### Example 1: Execution Order Control with Priority
 
 ```toml
 version = "1.0"
 
 [[groups]]
 name = "preparation"
-description = "事前準備タスク"
-priority = 1  # 最初に実行
+description = "Preparation tasks"
+priority = 1  # Execute first
 
 [[groups.commands]]
 name = "create_directory"
@@ -170,8 +170,8 @@ args = ["-p", "/tmp/workspace"]
 
 [[groups]]
 name = "main_tasks"
-description = "メインタスク"
-priority = 2  # 2番目に実行
+description = "Main tasks"
+priority = 2  # Execute second
 
 [[groups.commands]]
 name = "process_data"
@@ -180,8 +180,8 @@ args = []
 
 [[groups]]
 name = "cleanup"
-description = "後処理"
-priority = 3  # 最後に実行
+description = "Post-processing"
+priority = 3  # Execute last
 
 [[groups.commands]]
 name = "remove_temp"
@@ -189,17 +189,17 @@ cmd = "rm"
 args = ["-rf", "/tmp/workspace"]
 ```
 
-実行順序: `preparation` → `main_tasks` → `cleanup`
+Execution order: `preparation` → `main_tasks` → `cleanup`
 
-#### 例2: 重要度に応じた優先度設定
+#### Example 2: Priority Setting Based on Importance
 
 ```toml
 version = "1.0"
 
 [[groups]]
 name = "critical_backup"
-description = "重要データのバックアップ"
-priority = 10  # 高優先度
+description = "Backup of critical data"
+priority = 10  # High priority
 
 [[groups.commands]]
 name = "backup_database"
@@ -208,8 +208,8 @@ args = []
 
 [[groups]]
 name = "routine_maintenance"
-description = "日常的なメンテナンス"
-priority = 50  # 中優先度
+description = "Routine maintenance"
+priority = 50  # Medium priority
 
 [[groups.commands]]
 name = "clean_logs"
@@ -218,8 +218,8 @@ args = []
 
 [[groups]]
 name = "optional_optimization"
-description = "オプションの最適化タスク"
-priority = 100  # 低優先度
+description = "Optional optimization tasks"
+priority = 100  # Low priority
 
 [[groups.commands]]
 name = "optimize"
@@ -227,21 +227,21 @@ cmd = "/usr/bin/optimize.sh"
 args = []
 ```
 
-#### 注意事項
+#### Notes
 
-1. **同じ優先度**: 同じ優先度のグループは定義された順序で実行されます
-2. **負の優先度**: 負の値も使用可能(より高い優先度を表現)
-3. **省略時**: priority を指定しない場合は 0 として扱われます
+1. **Same Priority**: Groups with the same priority are executed in the order they are defined
+2. **Negative Priority**: Negative values are also allowed (represent higher priority)
+3. **When Omitted**: If priority is not specified, it is treated as 0
 
-## 5.2 リソース管理設定
+## 5.2 Resource Management Settings
 
-### 5.2.1 temp_dir - 一時ディレクトリ
+### 5.2.1 temp_dir - Temporary Directory
 
-#### 概要
+#### Overview
 
-グループ実行時に一時ディレクトリを自動作成します。作成されたディレクトリはグループ内の全コマンドの作業ディレクトリになります。
+Automatically creates a temporary directory when the group executes. The created directory becomes the working directory for all commands in the group.
 
-#### 文法
+#### Syntax
 
 ```toml
 [[groups]]
@@ -249,61 +249,61 @@ name = "example"
 temp_dir = true/false
 ```
 
-#### パラメータの詳細
+#### Parameter Details
 
-| 項目 | 内容 |
-|-----|------|
-| **型** | 真偽値 (boolean) |
-| **必須/オプション** | オプション |
-| **設定可能な階層** | グループのみ |
-| **デフォルト値** | false |
-| **有効な値** | true, false |
+| Item | Description |
+|------|-------------|
+| **Type** | Boolean (boolean) |
+| **Required/Optional** | Optional |
+| **Configurable Level** | Group only |
+| **Default Value** | false |
+| **Valid Values** | true, false |
 
-#### 役割
+#### Role
 
-- **隔離された作業環境**: グループごとに独立した作業スペースを提供
-- **衝突回避**: 複数のグループが同時実行されても競合しない
-- **自動クリーンアップ**: cleanup オプションと組み合わせて自動削除
+- **Isolated Work Environment**: Provides independent workspace for each group
+- **Avoid Conflicts**: No conflicts even when multiple groups execute simultaneously
+- **Automatic Cleanup**: Automatic deletion when combined with cleanup option
 
-#### 設定例
+#### Configuration Examples
 
-#### 例1: 一時ディレクトリの使用
+#### Example 1: Using Temporary Directory
 
 ```toml
 version = "1.0"
 
 [[groups]]
 name = "data_processing"
-temp_dir = true  # 一時ディレクトリを自動作成
+temp_dir = true  # Automatically create temporary directory
 
 [[groups.commands]]
 name = "download_data"
 cmd = "wget"
 args = ["https://example.com/data.csv", "-O", "data.csv"]
-# 一時ディレクトリに data.csv がダウンロードされる
+# data.csv is downloaded to the temporary directory
 
 [[groups.commands]]
 name = "process_data"
 cmd = "/opt/app/process"
 args = ["data.csv", "output.txt"]
-# 同じ一時ディレクトリで処理
+# Process in the same temporary directory
 
 [[groups.commands]]
 name = "list_results"
 cmd = "ls"
 args = ["-la"]
-# 一時ディレクトリの内容を表示
+# Display contents of temporary directory
 ```
 
-#### 例2: cleanup との組み合わせ
+#### Example 2: Combination with cleanup
 
 ```toml
 version = "1.0"
 
 [[groups]]
 name = "temporary_work"
-temp_dir = true   # 一時ディレクトリを作成
-cleanup = true    # グループ終了後に自動削除
+temp_dir = true   # Create temporary directory
+cleanup = true    # Automatically delete after group completion
 
 [[groups.commands]]
 name = "create_temp_files"
@@ -314,43 +314,43 @@ args = ["temp1.txt", "temp2.txt"]
 name = "process_files"
 cmd = "cat"
 args = ["temp1.txt", "temp2.txt"]
-# グループ終了後、一時ディレクトリごと削除される
+# Temporary directory is deleted after group completion
 ```
 
-#### 一時ディレクトリの場所
+#### Temporary Directory Location
 
-一時ディレクトリは以下の場所に作成されます:
-- システムの一時ディレクトリ(`$TMPDIR` または `/tmp`)配下
-- ディレクトリ名: `go-safe-cmd-runner-<ランダム文字列>`
+Temporary directories are created in the following location:
+- Under the system temporary directory (`$TMPDIR` or `/tmp`)
+- Directory name: `go-safe-cmd-runner-<random_string>`
 
-### 5.2.2 workdir - 作業ディレクトリ
+### 5.2.2 workdir - Working Directory
 
-#### 概要
+#### Overview
 
-グループ内の全コマンドが実行される作業ディレクトリを指定します。グローバルレベルの `workdir` をオーバーライドします。
+Specifies the working directory where all commands in the group are executed. Overrides the global-level `workdir`.
 
-#### 文法
+#### Syntax
 
 ```toml
 [[groups]]
 name = "example"
-workdir = "ディレクトリパス"
+workdir = "directory_path"
 ```
 
-#### パラメータの詳細
+#### Parameter Details
 
-| 項目 | 内容 |
-|-----|------|
-| **型** | 文字列 (string) |
-| **必須/オプション** | オプション |
-| **設定可能な階層** | グローバル、グループ |
-| **デフォルト値** | グローバルの workdir、または実行ディレクトリ |
-| **有効な値** | 絶対パス |
-| **オーバーライド** | グローバル設定をオーバーライド |
+| Item | Description |
+|------|-------------|
+| **Type** | String (string) |
+| **Required/Optional** | Optional |
+| **Configurable Level** | Global, Group |
+| **Default Value** | Global workdir, or execution directory |
+| **Valid Values** | Absolute path |
+| **Override** | Overrides global setting |
 
-#### 設定例
+#### Configuration Examples
 
-#### 例1: グループ固有の作業ディレクトリ
+#### Example 1: Group-Specific Working Directory
 
 ```toml
 version = "1.0"
@@ -360,77 +360,77 @@ workdir = "/tmp"
 
 [[groups]]
 name = "log_analysis"
-workdir = "/var/log"  # このグループは /var/log で実行
+workdir = "/var/log"  # This group executes in /var/log
 
 [[groups.commands]]
 name = "grep_errors"
 cmd = "grep"
 args = ["ERROR", "app.log"]
-# /var/log/app.log から検索
+# Search from /var/log/app.log
 
 [[groups]]
 name = "backup"
-workdir = "/var/backups"  # このグループは /var/backups で実行
+workdir = "/var/backups"  # This group executes in /var/backups
 
 [[groups.commands]]
 name = "create_backup"
 cmd = "tar"
 args = ["-czf", "backup.tar.gz", "/etc"]
-# /var/backups/backup.tar.gz を作成
+# Creates /var/backups/backup.tar.gz
 ```
 
-#### 例2: temp_dir との関係
+#### Example 2: Relationship with temp_dir
 
-`temp_dir = true` が指定されている場合、`workdir` は無視され、自動生成された一時ディレクトリが使用されます。
+When `temp_dir = true` is specified, `workdir` is ignored and the automatically generated temporary directory is used.
 
 ```toml
 [[groups]]
 name = "temp_work"
-workdir = "/var/data"  # この設定は無視される
-temp_dir = true        # 一時ディレクトリが優先
+workdir = "/var/data"  # This setting is ignored
+temp_dir = true        # Temporary directory takes priority
 ```
 
-## 5.3 セキュリティ設定
+## 5.3 Security Settings
 
-### 5.3.1 verify_files - ファイル検証(グループレベル)
+### 5.3.1 verify_files - File Verification (Group Level)
 
-#### 概要
+#### Overview
 
-グループ固有のファイル検証リストを指定します。グローバルレベルの `verify_files` に追加されます(マージ)。
+Specifies a group-specific file verification list. Added to the global-level `verify_files` (merged).
 
-#### 文法
+#### Syntax
 
 ```toml
 [[groups]]
 name = "example"
-verify_files = ["ファイルパス1", "ファイルパス2", ...]
+verify_files = ["file_path1", "file_path2", ...]
 ```
 
-#### パラメータの詳細
+#### Parameter Details
 
-| 項目 | 内容 |
-|-----|------|
-| **型** | 文字列配列 (array of strings) |
-| **必須/オプション** | オプション |
-| **設定可能な階層** | グローバル、グループ |
-| **デフォルト値** | [] |
-| **有効な値** | 絶対パスのリスト |
-| **マージ動作** | グローバル設定とマージされる |
+| Item | Description |
+|------|-------------|
+| **Type** | Array of strings (array of strings) |
+| **Required/Optional** | Optional |
+| **Configurable Level** | Global, Group |
+| **Default Value** | [] |
+| **Valid Values** | List of absolute paths |
+| **Merge Behavior** | Merged with global settings |
 
-#### 設定例
+#### Configuration Example
 
 ```toml
 version = "1.0"
 
 [global]
-verify_files = ["/bin/sh"]  # 全グループで検証
+verify_files = ["/bin/sh"]  # Verified across all groups
 
 [[groups]]
 name = "database_tasks"
 verify_files = [
     "/usr/bin/psql",
     "/usr/bin/pg_dump",
-]  # このグループでは /bin/sh, /usr/bin/psql, /usr/bin/pg_dump を検証
+]  # In this group, /bin/sh, /usr/bin/psql, /usr/bin/pg_dump are verified
 
 [[groups.commands]]
 name = "backup"
@@ -442,7 +442,7 @@ name = "web_tasks"
 verify_files = [
     "/usr/bin/curl",
     "/usr/bin/wget",
-]  # このグループでは /bin/sh, /usr/bin/curl, /usr/bin/wget を検証
+]  # In this group, /bin/sh, /usr/bin/curl, /usr/bin/wget are verified
 
 [[groups.commands]]
 name = "fetch_data"
@@ -450,47 +450,47 @@ cmd = "/usr/bin/curl"
 args = ["https://example.com/data"]
 ```
 
-### 5.3.2 env_allowlist - 環境変数許可リスト(グループレベル)
+### 5.3.2 env_allowlist - Environment Variable Allowlist (Group Level)
 
-#### 概要
+#### Overview
 
-グループレベルで環境変数の許可リストを指定します。3つの継承モードがあります。
+Specifies environment variable allowlist at group level. There are three inheritance modes.
 
-#### 文法
+#### Syntax
 
 ```toml
 [[groups]]
 name = "example"
-env_allowlist = ["変数1", "変数2", ...]
+env_allowlist = ["variable1", "variable2", ...]
 ```
 
-#### パラメータの詳細
+#### Parameter Details
 
-| 項目 | 内容 |
-|-----|------|
-| **型** | 文字列配列 (array of strings) |
-| **必須/オプション** | オプション |
-| **設定可能な階層** | グローバル、グループ |
-| **デフォルト値** | なし(継承モード) |
-| **有効な値** | 環境変数名のリスト、または空配列 |
-| **継承動作** | 3つのモード(後述) |
+| Item | Description |
+|------|-------------|
+| **Type** | Array of strings (array of strings) |
+| **Required/Optional** | Optional |
+| **Configurable Level** | Global, Group |
+| **Default Value** | None (inheritance mode) |
+| **Valid Values** | List of environment variable names, or empty array |
+| **Inheritance Behavior** | Three modes (described below) |
 
-## 5.4 環境変数継承モード
+## 5.4 Environment Variable Inheritance Modes
 
-環境変数の許可リスト(`env_allowlist`)には、3つの継承モードがあります。これは go-safe-cmd-runner の重要な機能の一つです。
+The environment variable allowlist (`env_allowlist`) has three inheritance modes. This is one of the important features of go-safe-cmd-runner.
 
-### 5.4.1 継承モード (inherit)
+### 5.4.1 Inherit Mode (inherit)
 
-#### 動作
+#### Behavior
 
-グループレベルで `env_allowlist` を**指定しない**場合、グローバルの設定を継承します。
+When `env_allowlist` is **not specified** at group level, inherits the global setting.
 
-#### 使用シーン
+#### Use Case
 
-- グローバル設定で十分な場合
-- 複数のグループで同じ環境変数を使用する場合
+- When global configuration is sufficient
+- When multiple groups use the same environment variables
 
-#### 設定例
+#### Configuration Example
 
 ```toml
 version = "1.0"
@@ -500,27 +500,27 @@ env_allowlist = ["PATH", "HOME", "USER"]
 
 [[groups]]
 name = "inherit_group"
-# env_allowlist を指定しない → グローバルを継承
+# env_allowlist not specified → inherits global
 
 [[groups.commands]]
 name = "show_env"
 cmd = "printenv"
 args = []
-# PATH, HOME, USER が利用可能
+# PATH, HOME, USER are available
 ```
 
-### 5.4.2 明示モード (explicit)
+### 5.4.2 Explicit Mode (explicit)
 
-#### 動作
+#### Behavior
 
-グループレベルで `env_allowlist` に**具体的な値**を指定した場合、グローバル設定を無視し、指定された値のみを使用します。
+When `env_allowlist` has **specific values** at group level, ignores global settings and uses only the specified values.
 
-#### 使用シーン
+#### Use Case
 
-- グループ固有の環境変数セットが必要な場合
-- グローバル設定とは異なる制限を設けたい場合
+- When a group-specific set of environment variables is needed
+- When different restrictions from global settings are desired
 
-#### 設定例
+#### Configuration Example
 
 ```toml
 version = "1.0"
@@ -530,7 +530,7 @@ env_allowlist = ["PATH", "HOME", "USER"]
 
 [[groups]]
 name = "explicit_group"
-env_allowlist = ["PATH", "DATABASE_URL", "API_KEY"]  # グローバルを無視
+env_allowlist = ["PATH", "DATABASE_URL", "API_KEY"]  # Ignores global
 
 [[groups.commands]]
 name = "run_app"
@@ -540,22 +540,22 @@ env = [
     "DATABASE_URL=postgresql://localhost/mydb",
     "API_KEY=secret123",
 ]
-# PATH, DATABASE_URL, API_KEY のみが利用可能
-# HOME, USER は利用不可
+# Only PATH, DATABASE_URL, API_KEY are available
+# HOME, USER are not available
 ```
 
-### 5.4.3 拒否モード (reject)
+### 5.4.3 Reject Mode (reject)
 
-#### 動作
+#### Behavior
 
-グループレベルで `env_allowlist = []` と**空の配列**を明示的に指定した場合、全ての環境変数を拒否します。
+When `env_allowlist = []` (an **empty array**) is explicitly specified at group level, all environment variables are rejected.
 
-#### 使用シーン
+#### Use Case
 
-- 完全に隔離された環境でコマンドを実行したい場合
-- セキュリティ要件が非常に高い場合
+- When executing commands in a completely isolated environment
+- When security requirements are very high
 
-#### 設定例
+#### Configuration Example
 
 ```toml
 version = "1.0"
@@ -565,37 +565,37 @@ env_allowlist = ["PATH", "HOME", "USER"]
 
 [[groups]]
 name = "reject_group"
-env_allowlist = []  # 全ての環境変数を拒否
+env_allowlist = []  # Reject all environment variables
 
 [[groups.commands]]
 name = "isolated_command"
 cmd = "/bin/echo"
-args = ["完全に隔離された実行"]
-# 環境変数なしで実行される
+args = ["Completely isolated execution"]
+# Executed without environment variables
 ```
 
-### 5.4.4 継承モードの判定ルール
+### 5.4.4 Inheritance Mode Determination Rules
 
-モードの判定は以下のロジックで行われます:
+Mode determination follows this logic:
 
 ```mermaid
 flowchart TD
-    A[env_allowlist の確認] --> B{グループレベルで<br/>env_allowlist が<br/>定義されているか?}
-    B -->|No| C[継承モード<br/>inherit]
-    B -->|Yes| D{値は空配列<br/>[] か?}
-    D -->|Yes| E[拒否モード<br/>reject]
-    D -->|No| F[明示モード<br/>explicit]
+    A[Check env_allowlist] --> B{Is env_allowlist<br/>defined at<br/>group level?}
+    B -->|No| C[Inherit Mode<br/>inherit]
+    B -->|Yes| D{Is value<br/>empty array<br/>[]?}
+    D -->|Yes| E[Reject Mode<br/>reject]
+    D -->|No| F[Explicit Mode<br/>explicit]
 
-    C --> G[グローバルの<br/>env_allowlist を使用]
-    E --> H[全ての環境変数を拒否]
-    F --> I[グループの<br/>env_allowlist を使用]
+    C --> G[Use global<br/>env_allowlist]
+    E --> H[Reject all<br/>environment variables]
+    F --> I[Use group's<br/>env_allowlist]
 
     style C fill:#e8f5e9
     style E fill:#ffebee
     style F fill:#e3f2fd
 ```
 
-#### 例: 3つのモードの比較
+#### Example: Comparison of Three Modes
 
 ```toml
 version = "1.0"
@@ -603,49 +603,49 @@ version = "1.0"
 [global]
 env_allowlist = ["PATH", "HOME", "USER"]
 
-# モード1: 継承モード
+# Mode 1: Inherit Mode
 [[groups]]
 name = "group_inherit"
-# env_allowlist 未指定
-# 結果: PATH, HOME, USER が利用可能
+# env_allowlist not specified
+# Result: PATH, HOME, USER are available
 
 [[groups.commands]]
 name = "test1"
 cmd = "printenv"
-args = ["HOME"]  # HOME が出力される
+args = ["HOME"]  # HOME is output
 
-# モード2: 明示モード
+# Mode 2: Explicit Mode
 [[groups]]
 name = "group_explicit"
 env_allowlist = ["PATH", "CUSTOM_VAR"]
-# 結果: PATH, CUSTOM_VAR のみが利用可能(HOME, USER は不可)
+# Result: Only PATH, CUSTOM_VAR are available (HOME, USER are not)
 
 [[groups.commands]]
 name = "test2"
 cmd = "printenv"
-args = ["HOME"]  # エラー: HOME は許可されていない
+args = ["HOME"]  # Error: HOME is not allowed
 
 [[groups.commands]]
 name = "test3"
 cmd = "printenv"
 args = ["CUSTOM_VAR"]
-env = ["CUSTOM_VAR=value"]  # CUSTOM_VAR が出力される
+env = ["CUSTOM_VAR=value"]  # CUSTOM_VAR is output
 
-# モード3: 拒否モード
+# Mode 3: Reject Mode
 [[groups]]
 name = "group_reject"
 env_allowlist = []
-# 結果: 全ての環境変数が拒否される
+# Result: All environment variables are rejected
 
 [[groups.commands]]
 name = "test4"
 cmd = "printenv"
-args = ["PATH"]  # エラー: PATH も許可されていない
+args = ["PATH"]  # Error: PATH is also not allowed
 ```
 
-### 実践的な使用例
+### Practical Usage Examples
 
-#### 例1: セキュリティレベルに応じた設定
+#### Example 1: Configuration Based on Security Level
 
 ```toml
 version = "1.0"
@@ -653,38 +653,38 @@ version = "1.0"
 [global]
 env_allowlist = ["PATH", "HOME", "USER"]
 
-# 通常のタスク: グローバルを継承
+# Normal tasks: Inherit global
 [[groups]]
 name = "normal_tasks"
-# env_allowlist 未指定 → 継承モード
+# env_allowlist not specified → Inherit mode
 
 [[groups.commands]]
 name = "backup"
 cmd = "/usr/bin/backup.sh"
 args = []
 
-# 機密データ処理: 最小限の環境変数
+# Sensitive data processing: Minimal environment variables
 [[groups]]
 name = "sensitive_data"
-env_allowlist = ["PATH"]  # PATH のみ許可 → 明示モード
+env_allowlist = ["PATH"]  # Allow only PATH → Explicit mode
 
 [[groups.commands]]
 name = "process_sensitive"
 cmd = "/opt/secure/process"
 args = []
 
-# 完全隔離タスク: 環境変数なし
+# Completely isolated tasks: No environment variables
 [[groups]]
 name = "isolated_tasks"
-env_allowlist = []  # 全て拒否 → 拒否モード
+env_allowlist = []  # Reject all → Reject mode
 
 [[groups.commands]]
 name = "isolated_check"
 cmd = "/bin/echo"
-args = ["完全隔離"]
+args = ["Completely isolated"]
 ```
 
-#### 例2: 環境ごとの設定
+#### Example 2: Configuration by Environment
 
 ```toml
 version = "1.0"
@@ -692,7 +692,7 @@ version = "1.0"
 [global]
 env_allowlist = ["PATH", "HOME"]
 
-# 開発環境グループ
+# Development environment group
 [[groups]]
 name = "development"
 env_allowlist = [
@@ -700,7 +700,7 @@ env_allowlist = [
     "HOME",
     "DEBUG_MODE",
     "DEV_DATABASE_URL",
-]  # 明示モード: 開発用変数を追加
+]  # Explicit mode: Add development variables
 
 [[groups.commands]]
 name = "dev_server"
@@ -708,13 +708,13 @@ cmd = "/opt/app/server"
 args = []
 env = ["DEBUG_MODE=true", "DEV_DATABASE_URL=postgresql://localhost/dev"]
 
-# 本番環境グループ
+# Production environment group
 [[groups]]
 name = "production"
 env_allowlist = [
     "PATH",
     "PROD_DATABASE_URL",
-]  # 明示モード: 本番用変数のみ
+]  # Explicit mode: Only production variables
 
 [[groups.commands]]
 name = "prod_server"
@@ -723,9 +723,9 @@ args = []
 env = ["PROD_DATABASE_URL=postgresql://prod-server/prod"]
 ```
 
-## グループ設定の全体例
+## Overall Group Configuration Example
 
-以下は、グループレベルの設定を組み合わせた実践的な例です:
+Below is a practical example combining group-level settings:
 
 ```toml
 version = "1.0"
@@ -736,10 +736,10 @@ workdir = "/tmp"
 env_allowlist = ["PATH", "HOME", "USER"]
 verify_files = ["/bin/sh"]
 
-# グループ1: データベースバックアップ
+# Group 1: Database backup
 [[groups]]
 name = "database_backup"
-description = "PostgreSQL データベースの日次バックアップ"
+description = "Daily PostgreSQL database backup"
 priority = 10
 workdir = "/var/backups/db"
 verify_files = ["/usr/bin/pg_dump", "/usr/bin/psql"]
@@ -747,19 +747,19 @@ env_allowlist = ["PATH", "PGDATA", "PGHOST"]
 
 [[groups.commands]]
 name = "backup_main_db"
-description = "メインデータベースのバックアップ"
+description = "Backup of main database"
 cmd = "/usr/bin/pg_dump"
 args = ["-U", "postgres", "maindb"]
 output = "maindb_backup.sql"
 timeout = 600
 
-# グループ2: ログローテーション
+# Group 2: Log rotation
 [[groups]]
 name = "log_rotation"
-description = "古いログファイルの圧縮と削除"
+description = "Compression and deletion of old log files"
 priority = 20
 workdir = "/var/log/app"
-env_allowlist = ["PATH"]  # 明示モード: PATH のみ
+env_allowlist = ["PATH"]  # Explicit mode: PATH only
 
 [[groups.commands]]
 name = "compress_old_logs"
@@ -771,13 +771,13 @@ name = "delete_ancient_logs"
 cmd = "find"
 args = [".", "-name", "*.log.gz", "-mtime", "+30", "-delete"]
 
-# グループ3: 一時ファイル処理
+# Group 3: Temporary file processing
 [[groups]]
 name = "temp_processing"
-description = "一時ディレクトリでのデータ処理"
+description = "Data processing in temporary directory"
 priority = 30
-temp_dir = true   # 一時ディレクトリを自動作成
-env_allowlist = []  # 拒否モード: 環境変数なし
+temp_dir = true   # Automatically create temporary directory
+env_allowlist = []  # Reject mode: No environment variables
 
 [[groups.commands]]
 name = "create_temp_data"
@@ -791,6 +791,6 @@ cmd = "cat"
 args = ["temp_data.txt"]
 ```
 
-## 次のステップ
+## Next Steps
 
-次章では、コマンドレベルの設定(`[[groups.commands]]`)について詳しく解説します。実際に実行するコマンドの詳細な設定方法を学びます。
+The next chapter will provide detailed explanations of command-level configuration (`[[groups.commands]]`). You will learn how to configure the commands that are actually executed in detail.

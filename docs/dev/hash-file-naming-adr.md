@@ -1,39 +1,39 @@
-# ADR: ハッシュファイル命名方式の決定
+# ADR: Hash File Naming Convention Decision
 
-## ステータス
+## Status
 
-採用（未実装）
+Accepted (Not Yet Implemented)
 
-## コンテキスト
+## Context
 
-go-safe-cmd-runner プロジェクトにおいて、ファイルの整合性検証のために各ファイルに対応するハッシュファイルを生成・管理する必要がある。現在の実装では SHA256 ハッシュの最初の 12 文字（72 ビット）を使用してハッシュファイル名を生成しているが、以下の問題が存在する：
+In the go-safe-cmd-runner project, we need to generate and manage hash files corresponding to each file for file integrity verification. The current implementation generates hash file names using the first 12 characters (72 bits) of the SHA256 hash, but the following issues exist:
 
-### 現在の実装の問題点
-1. **可読性の欠如**: ハッシュファイル名からは元ファイルを特定できない
-2. **デバッグの困難**: ハッシュディレクトリ内でのファイル対応関係が不明
-3. **ハッシュ衝突の可能性**: 可能性は低いが、起きた場合に回避策がない（72 ビット名前空間では、約 687 億ファイルで 50% の衝突確率となる）
+### Issues with Current Implementation
+1. **Lack of Readability**: Cannot identify the original file from the hash file name
+2. **Difficult Debugging**: File correspondence relationships within the hash directory are unclear
+3. **Possibility of Hash Collisions**: While unlikely, there is no workaround if they occur (in a 72-bit namespace, approximately 68.7 billion files result in a 50% collision probability)
 
 ```go
-// 現在の実装
+// Current implementation
 h := sha256.Sum256([]byte(filePath.String()))
 hashStr := base64.URLEncoding.EncodeToString(h[:])
 return filepath.Join(hashDir, hashStr[:12]+".json"), nil
 ```
 
-## 採用した案
+## Adopted Solution
 
-**ハイブリッド換字 + ダブルエスケープ方式（#メタ文字版 + SHA256フォールバック）**
+**Hybrid Substitution + Double-Escape Method (#-metachar version + SHA256 Fallback)**
 
-### 基本方式：換字 + ダブルエスケープ（#メタ文字版）
+### Basic Method: Substitution + Double-Escape (#-metachar version)
 
-#### 概要
+#### Overview
 
-換字による頻出文字の稀少化 + 稀少文字をメタ文字としたダブルエスケープ。Linux の NAME_MAX 制限対応のため、長いパス時は自動的に SHA256 フォールバックに切り替える。
+Rarification of frequent characters through substitution + double-escape using rare characters as metacharacters. To handle Linux's NAME_MAX limitation, automatically switches to SHA256 fallback for long paths.
 
-#### 基本実装
+#### Basic Implementation
 ```go
 func Encode(path string) string {
-    // ステップ1: 換字 (/ ↔ ~)
+    // Step 1: Substitution (/ ↔ ~)
     substituted := ""
     for _, char := range path {
         switch char {
@@ -46,7 +46,7 @@ func Encode(path string) string {
         }
     }
 
-    // ステップ2: #をメタ文字とするダブルエスケープ
+    // Step 2: Double-escape using # as metachar
     // '#' → '#1', '/' → '##'
     encoded := strings.ReplaceAll(substituted, "#", "#1")
     encoded = strings.ReplaceAll(encoded, "/", "##")
@@ -55,11 +55,11 @@ func Encode(path string) string {
 }
 
 func Decode(encoded string) string {
-    // ダブルエスケープを復元
+    // Reverse double-escape
     decoded := strings.ReplaceAll(encoded, "##", "/")
     decoded = strings.ReplaceAll(decoded, "#1", "#")
 
-    // 換字を復元
+    // Reverse substitution
     result := ""
     for _, char := range decoded {
         switch char {
@@ -76,7 +76,7 @@ func Decode(encoded string) string {
 }
 ```
 
-#### エンコード / デコードの要約フロー
+#### Encode/Decode Summary Flow
 
 ```mermaid
 flowchart TD
@@ -111,75 +111,75 @@ flowchart TD
     class B,D,F,H procNode;
 ```
 
-**簡潔手順**:
-1. 元パスの文字列を走査して `/` と `~` を入れ替える（換字）
-2. 換字後の文字列で `#` を `#1` に、`/` を `##` に置換してエスケープ
-3. 生成した文字列をハッシュファイル名とする
-4. デコードでは上記を逆順で行い、可逆性を保証する
+**Concise Steps**:
+1. Scan the original path string and swap `/` and `~` (substitution)
+2. In the substituted string, replace `#` with `#1` and `/` with `##` to escape
+3. Use the generated string as the hash file name
+4. Decoding reverses these steps, ensuring reversibility
 
-## 決定の根拠
+## Decision Rationale
 
-#### 1. 圧倒的な空間効率
+#### 1. Overwhelming Space Efficiency
 
-実世界ファイル名での性能測定結果：
+Performance measurement results with real-world file names:
 
-| 方式 (強調は選択) | 変換ルール | 合計文字数 (比率) |
+| Method (emphasis on selected) | Conversion Rules | Total Characters (Ratio) |
 |---|---|---:|
-| **#メタ版 (換字 + #エスケープ)** ← 選択 | `/` ↔ `~`（換字）<br>`#` → `#1`（ダブルエスケープ）, `/` → `##`（エスケープ） | 224文字 (1.00x) |
-| _メタ版 (換字 + _エスケープ) | `/` ↔ `~`（換字）<br>`_` → `_1`（ダブルエスケープ）, `/` → `__`（エスケープ） | 231文字 (1.04x) |
-| 純粋ダブルエスケープ | 換字なし<br>`_` → `_1`（ダブルエスケープ）, `/` → `__`（エスケープ） | 257文字 (1.15x) |
+| **#-metachar version (substitution + # escape)** ← Selected | `/` ↔ `~` (substitution)<br>`#` → `#1` (double-escape), `/` → `##` (escape) | 224 chars (1.00x) |
+| _-metachar version (substitution + _ escape) | `/` ↔ `~` (substitution)<br>`_` → `_1` (double-escape), `/` → `__` (escape) | 231 chars (1.04x) |
+| Pure double-escape | No substitution<br>`_` → `_1` (double-escape), `/` → `__` (escape) | 257 chars (1.15x) |
 
-改善効果: 純粋ダブルエスケープより 12.8% 効率向上
+Improvement effect: 12.8% more efficient than pure double-escape
 
-#### 2. 文字使用頻度の最適化
+#### 2. Character Usage Frequency Optimization
 
-実世界ファイル名での文字出現頻度分析：
+Character frequency analysis in real-world file names:
 
-| 文字 | 出現回数 | #メタ版（換字+#エスケープ） | _メタ版（換字+_エスケープ） | 純粋ダブル |
+| Character | Occurrences | #-metachar (substitution+# escape) | _-metachar (substitution+_ escape) | Pure double |
 |---|---:|---|---|---|
-| `_` (アンダースコア) | 8 | `_` はそのまま（ただし `/` ↔ `~` の換字は適用） | `_` → `_1`（エスケープ） | `_` → `_1`（エスケープ） |
-| `#` (ハッシュ) | 1 | `#` → `#1`（エスケープ） | `#` はそのまま | `#` はそのまま |
+| `_` (underscore) | 8 | `_` remains unchanged (but `/` ↔ `~` substitution is applied) | `_` → `_1` (escape) | `_` → `_1` (escape) |
+| `#` (hash) | 1 | `#` → `#1` (escape) | `#` remains unchanged | `#` remains unchanged |
 
-頻度比: 8.0:1
+Frequency ratio: 8.0:1
 
-`#` をメタ文字として選択することで、実際にエスケープされる回数を抑え、全体の膨張を減らす効果がある。
+Selecting `#` as the metacharacter reduces the actual number of escapes, minimizing overall expansion.
 
-#### 3. 実世界での完璧性
+#### 3. Perfection in Real-World Use
 
-テストした8ケース中7ケースで **完璧な 1.00x 膨張率** を実現：
+Achieved **perfect 1.00x expansion rate** in 7 out of 8 tested cases:
 
-| 元パス | エンコード結果 | 膨張率 |
+| Original Path | Encoded Result | Expansion Rate |
 |---|---|---:|
 | /usr/bin/python3 | `~usr~bin~python3` | 1.00x |
 | /home/user_name/project_files | `~home~user_name~project_files` | 1.00x |
 | /normal/path/without/special | `~normal~path~without~special` | 1.00x |
 
-#### 4. 完全な技術的信頼性
+#### 4. Complete Technical Reliability
 
-- ✅ **100% の可逆性保証**（数学的に証明可能）
-- ✅ **完全な衝突回避**（異なるパスは必ず異なるハッシュファイル名）
-- ✅ **クロスプラットフォーム互換性**
-- ✅ **高い可読性とデバッグ性**
-- ✅ **効率的フォールバック識別**（1文字で通常/フォールバックを判定）
+- ✅ **100% reversibility guarantee** (mathematically provable)
+- ✅ **Complete collision avoidance** (different paths always result in different hash file names)
+- ✅ **Cross-platform compatibility**
+- ✅ **High readability and debuggability**
+- ✅ **Efficient fallback identification** (single character distinguishes normal/fallback)
 
-#### 5. 実装バランスの最適性
+#### 5. Optimal Implementation Balance
 
-| 要素 | 評価 | 説明 |
+| Element | Rating | Description |
 |------|------|------|
-| 空間効率 | ★★★ | 1.00x（理論上最適） |
-| 実装複雑度 | ★★☆ | 適度（メンテナンス可能） |
-| 可読性 | ★★★ | 非常に高い |
-| 信頼性 | ★★★ | 完璧 |
-| パフォーマンス | ★★★ | 文字列処理のみ |
+| Space Efficiency | ★★★ | 1.00x (theoretically optimal) |
+| Implementation Complexity | ★★☆ | Moderate (maintainable) |
+| Readability | ★★★ | Very high |
+| Reliability | ★★★ | Perfect |
+| Performance | ★★★ | String processing only |
 
-## 実装詳細
+## Implementation Details
 
-### ハイブリッド実装（NAME_MAX制限対応）
+### Hybrid Implementation (NAME_MAX Limitation Support)
 
-Linux環境での `NAME_MAX`（通常255文字）制限に対応するため、ハイブリッド方式を採用する。
+To handle the `NAME_MAX` limitation (typically 255 characters) in Linux environments, a hybrid approach is adopted.
 
 ```go
-const MAX_FILENAME_LENGTH = 250 // NAME_MAXより余裕を持った制限
+const MAX_FILENAME_LENGTH = 250 // Conservative limit below NAME_MAX
 
 func (e *SubstitutionHashEscape) GetHashFilePath(
     hashAlgorithm HashAlgorithm,
@@ -190,17 +190,17 @@ func (e *SubstitutionHashEscape) GetHashFilePath(
         return "", ErrNilAlgorithm
     }
 
-    // 換字+ダブルエスケープを試行
+    // Try substitution + double-escape
     encoded := e.Encode(filePath.String())
 
-    // NAME_MAX制限チェック
+    // Check NAME_MAX limit
     if len(encoded) > MAX_FILENAME_LENGTH {
-        // フォールバック: SHA256ハッシュ使用
+        // Fallback: Use SHA256 hash
         h := sha256.Sum256([]byte(filePath.String()))
         hashStr := base64.URLEncoding.EncodeToString(h[:])
-        encoded = hashStr[:12] + ".json" // 12文字ハッシュ + .json拡張子
+        encoded = hashStr[:12] + ".json" // 12-char hash + .json extension
 
-        // デバッグ用ログ出力
+        // Debug log output
         log.Printf("Long path detected, using SHA256 fallback for: %s",
                   filePath.String())
     }
@@ -209,80 +209,80 @@ func (e *SubstitutionHashEscape) GetHashFilePath(
 }
 ```
 
-#### フォールバック判定の詳細
+#### Fallback Determination Details
 
-| 条件 | 使用方式 | ファイル名形式 | 最大長 | 先頭文字 |
+| Condition | Method Used | Filename Format | Max Length | First Character |
 |------|----------|---------------|--------|----------|
-| エンコード後 ≤ 250文字 | 換字+ダブルエスケープ | `~{encoded_path}` | 可変 | `~` |
-| エンコード後 > 250文字 | SHA256フォールバック | `{hash12文字}.json` | 17文字 | `[0-9a-zA-Z]` |
+| Encoded ≤ 250 chars | Substitution+Double-escape | `~{encoded_path}` | Variable | `~` |
+| Encoded > 250 chars | SHA256 Fallback | `{hash12chars}.json` | 17 chars | `[0-9a-zA-Z]` |
 
-**識別ロジック**: 全てのフルパスは `/` から始まるため、換字後は必ず `~` から開始。`~` 以外で始まるファイル名は全てフォールバック形式。
+**Identification Logic**: All full paths start with `/`, so after substitution they always start with `~`. Any file name not starting with `~` is in fallback format.
 
-#### 長いパスの現実的なケース
+#### Realistic Cases for Long Paths
 
-以下のような場合にフォールバックが動作する：
+Fallback activates in cases like:
 
 ```bash
-# Node.js deep nested modules (エンコード後 280文字程度)
+# Node.js deep nested modules (approx. 280 chars after encoding)
 /home/user/project/node_modules/@org/very-long-package/dist/esm/components/ui/forms/validation.js
 → AbCdEf123456.json
 
-# Docker container layers (エンコード後 300文字程度)
+# Docker container layers (approx. 300 chars after encoding)
 /var/lib/containers/storage/overlay/abc123.../merged/usr/share/app-with-very-long-name.desktop
 → XyZ789AbCdEf.json
 ```
 
-### デコード機能（フォールバック対応）
+### Decode Function (Fallback Support)
 
-フォールバック方式で生成されたハッシュファイルからの逆引きサポート。
+Reverse lookup support for hash files generated with fallback method.
 
 ```go
 func (e *SubstitutionHashEscape) DecodeHashFileName(hashFileName string) (originalPath string, isFallback bool, err error) {
-    // フォールバック形式の判定（換字後のファイル名は必ず `~` で開始）
+    // Fallback format detection (substituted filenames always start with `~`)
     if len(hashFileName) == 0 || hashFileName[0] != '~' {
         return "", true, fmt.Errorf("SHA256 fallback file: original path cannot be recovered")
     }
 
-    // 通常の換字+ダブルエスケープのデコード
+    // Normal substitution + double-escape decode
     decoded := e.Decode(hashFileName)
     return decoded, false, nil
 }
 ```
 
-### 既存システムとの移行
+### Migration from Existing System
 
 ```go
-// 段階的移行サポート（フォールバック含む）
+// Gradual migration support (including fallback)
 func (v *Validator) GetHashFilePathWithMigration(filePath common.ResolvedPath) (string, error) {
-    // 新ハイブリッド方式を試行
+    // Try new hybrid method
     newPath, _ := v.hybridHashFilePathGetter.GetHashFilePath(v.algorithm, v.hashDir, filePath)
     if _, err := os.Stat(newPath); err == nil {
         return newPath, nil
     }
 
-    // 旧SHA256短縮方式にフォールバック
+    // Fallback to legacy SHA256 truncated method
     legacyPath, _ := v.legacyHashFilePathGetter.GetHashFilePath(v.algorithm, v.hashDir, filePath)
     if _, err := os.Stat(legacyPath); err == nil {
         return legacyPath, nil
     }
 
-    // どちらも存在しない場合は新方式で作成
+    // Create using new method if neither exists
     return newPath, nil
 }
 ```
 
-## テスト戦略
+## Testing Strategy
 
-### テスト要件
+### Test Requirements
 
-- **ユニットテスト**: すべてのエッジケース（フォールバック含む）
-- **プロパティベーステスト**: エンコード→デコードの完全可逆性
-- **パフォーマンステスト**: 大量ファイルでの膨張率測定
-- **互換性テスト**: 各OS・ファイルシステムでの動作確認
-- **制限テスト**: NAME_MAX境界での動作確認
-- **フォールバックテスト**: 長いパスでのSHA256切り替え動作確認
+- **Unit tests**: All edge cases (including fallback)
+- **Property-based tests**: Complete reversibility of encode→decode
+- **Performance tests**: Expansion rate measurement with large file sets
+- **Compatibility tests**: Verification on various OS and filesystems
+- **Limit tests**: Behavior verification at NAME_MAX boundary
+- **Fallback tests**: SHA256 switching behavior verification for long paths
 
-### 重要テストケース
+### Important Test Cases
 
 ```go
 func TestNameMaxFallback(t *testing.T) {
@@ -316,118 +316,118 @@ func TestNameMaxFallback(t *testing.T) {
 
             assert.Equal(t, tt.wantFallback, isFallback)
             if isFallback {
-                // フォールバック時のファイル名長確認
+                // Verify filename length in fallback mode
                 hashPath, _ := encoder.GetHashFilePath(nil, "/tmp", common.NewResolvedPath(tt.path))
                 filename := filepath.Base(hashPath)
                 assert.LessOrEqual(t, len(filename), MAX_FILENAME_LENGTH)
-                assert.NotEqual(t, '~', filename[0]) // フォールバック形式は `~` 以外で開始
+                assert.NotEqual(t, '~', filename[0]) // Fallback format doesn't start with `~`
             }
         })
     }
 }
 ```
 
-## 結論
+## Conclusion
 
-**ハイブリッド換字 + ダブルエスケープ方式（#メタ文字版 + SHA256フォールバック）** を最適解として採用する：
+**Hybrid Substitution + Double-Escape Method (#-metachar version + SHA256 Fallback)** is adopted as the optimal solution:
 
-### 主要な利点
+### Key Advantages
 
-1. **理論的最適性**: 通常ケースで 1.00x 膨張率を実現
-2. **完全な信頼性**: 数学的に保証された可逆性
-3. **実用性**: 既存システムとの適切なバランス
-4. **堅牢性**: NAME_MAX制限への自動対応
-5. **将来性**: 拡張可能な設計
+1. **Theoretical Optimality**: Achieves 1.00x expansion rate in normal cases
+2. **Complete Reliability**: Mathematically guaranteed reversibility
+3. **Practicality**: Appropriate balance with existing systems
+4. **Robustness**: Automatic handling of NAME_MAX limitation
+5. **Future-proofing**: Extensible design
 
-### 動作特性
+### Operational Characteristics
 
-| ファイルパス長 | 使用方式 | 膨張率 | 可逆性 | デバッグ性 | ファイル名形式 |
+| File Path Length | Method Used | Expansion Rate | Reversibility | Debuggability | Filename Format |
 |---------------|----------|-------|--------|-----------|---------------|
-| 短〜中（250文字以下エンコード後） | 換字+ダブルエスケープ | 1.00x | ✅完全 | ✅高 | `~{encoded_path}` |
-| 長（250文字超エンコード後） | SHA256フォールバック | N/A | ❌不可 | ⚠️ハッシュのみ | `{hash12文字}.json` |
+| Short~Medium (≤250 chars after encoding) | Substitution+Double-escape | 1.00x | ✅Complete | ✅High | `~{encoded_path}` |
+| Long (>250 chars after encoding) | SHA256 Fallback | N/A | ❌Impossible | ⚠️Hash only | `{hash12chars}.json` |
 
-### システム全体への影響
+### Impact on Overall System
 
-- **効率性**: 99%以上のファイルで最適な1.00x膨張率
-- **信頼性**: NAME_MAX制限による実行時エラーの完全回避
-- **保守性**: 1文字での明確なフォールバック判定とログ出力
-- **互換性**: 全てのLinux/Unix系システムで動作保証
-- **空間効率**: フォールバックでも17文字（従来45文字から大幅削減）
+- **Efficiency**: Optimal 1.00x expansion rate for 99%+ of files
+- **Reliability**: Complete avoidance of runtime errors due to NAME_MAX limitation
+- **Maintainability**: Clear fallback determination with single character and log output
+- **Compatibility**: Guaranteed operation on all Linux/Unix systems
+- **Space Efficiency**: Even in fallback, only 17 characters (significantly reduced from previous 45 characters)
 
-この決定により、ファイル整合性検証システムの効率性、信頼性、保守性がすべて向上し、実世界の長いパスにも確実に対応できる。
+This decision improves the efficiency, reliability, and maintainability of the file integrity verification system, while ensuring reliable handling of real-world long paths.
 
-## その他、検討した案
+## Other Alternatives Considered
 
-以下の案についても検討したが、それぞれの理由により採用しなかった。
+The following alternatives were also considered but not adopted for the reasons stated.
 
-### 1. SHA256 完全長利用
+### 1. Full-Length SHA256 Usage
 
-#### 概要
-SHA256 ハッシュの全 256 ビットを使用してファイル名を生成する方式。
+#### Overview
+A method that generates file names using the full 256 bits of the SHA256 hash.
 
-#### 実装
+#### Implementation
 ```go
 h := sha256.Sum256([]byte(filePath.String()))
 hashStr := base64.URLEncoding.EncodeToString(h[:])
 return filepath.Join(hashDir, hashStr+".json"), nil
 ```
 
-#### 不採用理由
-- **可読性の欠如**: ハッシュファイル名からは元ファイルを特定できない
-- **デバッグの困難**: ハッシュディレクトリ内でのファイル対応関係が不明
-- **ファイル名の長さ**: 43文字 + 拡張子と長い（現在の実装では12文字 + .json で17文字）
+#### Reasons for Rejection
+- **Lack of Readability**: Cannot identify the original file from the hash file name
+- **Difficult Debugging**: File correspondence relationships within the hash directory are unclear
+- **File Name Length**: 43 characters + extension is long (current implementation is 12 characters + .json for 17 characters)
 
-既存コードへの変更は最小で、衝突リスクも事実上排除できるが、運用時の可読性とデバッグ性が大きく劣るため不採用とした。
+While changes to existing code are minimal and collision risk is virtually eliminated, it was rejected due to significantly inferior operational readability and debuggability.
 
-### 2. フルパス + 拡張子方式
+### 2. Full Path + Extension Method
 
-#### 概要
-ハッシュディレクトリ + フルパス + ".hash" をファイル名として使用する方式。
+#### Overview
+A method using hash directory + full path + ".hash" as the file name.
 
-#### 実装
+#### Implementation
 ```go
 hashFilePath := filepath.Join(hashDir, filePath.String()) + ".hash"
 return hashFilePath, nil
 ```
 
-#### 不採用理由
-- **Windows 互換性の問題**: 260文字制限、禁止文字の存在
-- **ディスク使用量の増加**: ディレクトリ構造の複製により大幅な増加
-- **inode 使用量の増加**: 深いディレクトリ階層により大量のinode消費
-- **権限管理の複雑化**: ディレクトリごとの権限設定が必要
+#### Reasons for Rejection
+- **Windows Compatibility Issues**: 260-character limit, existence of forbidden characters
+- **Increased Disk Usage**: Significant increase due to directory structure duplication
+- **Increased Inode Usage**: Massive inode consumption due to deep directory hierarchies
+- **Complex Permission Management**: Permission settings needed for each directory
 
-可読性と直感性は非常に高いが、クロスプラットフォーム互換性とリソース効率の問題が深刻であるため不採用とした。
+While readability and intuitiveness are very high, it was rejected due to serious cross-platform compatibility and resource efficiency issues.
 
-### 3. 単一特殊文字エスケープ方式
+### 3. Single Special Character Escape Method
 
-#### 概要
-稀少な特殊文字（`@`, `~`, `#`, `|` など）を使用した 1:1 エスケープ方式。
+#### Overview
+A 1:1 escape method using rare special characters (`@`, `~`, `#`, `|`, etc.).
 
-#### 実装例
+#### Example Implementation
 ```go
 // '/' → '@', '@' → '@@'
 encoded := strings.ReplaceAll(path, "@", "@@")
 encoded = strings.ReplaceAll(encoded, "/", "@")
 ```
 
-#### 不採用理由
-- **数学的な根本欠陥**: 連続する特殊文字での曖昧性により情報損失が発生
-- **完全な可逆性の保証不可能**: デコード時に複数の解釈が可能
+#### Reasons for Rejection
+- **Fundamental Mathematical Flaw**: Information loss occurs due to ambiguity with consecutive special characters
+- **Cannot Guarantee Complete Reversibility**: Multiple interpretations possible during decoding
 
-以下の失敗例のように、理論上膨張率 1.00x を目指したが、可逆性が保証できない致命的欠陥があるため不採用とした：
+As shown in the following failure example, while theoretically aiming for 1.00x expansion rate, it was rejected due to the fatal flaw of unreliable reversibility:
 
 ```
-元パス: /@test/
-エンコード: @@@test@
-デコード時の曖昧性: @@ + @ か @ + @@ か判定不能
+Original path: /@test/
+Encoded: @@@test@
+Ambiguity during decoding: Cannot determine if @@ + @ or @ + @@
 ```
 
-### 4. ハイブリッドエスケープ方式
+### 4. Hybrid Escape Method
 
-#### 概要
-異なる文字ペアを使った階層エスケープ方式。
+#### Overview
+A hierarchical escape method using different character pairs.
 
-#### 実装
+#### Implementation
 ```go
 // '/' → '~', '~' → '~+', '+' → '+-', '-' → '--'
 encoded := strings.ReplaceAll(path, "-", "--")
@@ -436,19 +436,19 @@ encoded = strings.ReplaceAll(encoded, "~", "~+")
 encoded = strings.ReplaceAll(encoded, "/", "~")
 ```
 
-#### 不採用理由
-- **実装複雑度の高さ**: 4段階の変換処理が必要で保守性が低い
-- **予測困難な動作**: 複雑な文字組み合わせでの動作が予測しにくい
-- **エッジケースでの復元失敗**: 極端な文字組み合わせで復元に失敗するリスク
+#### Reasons for Rejection
+- **High Implementation Complexity**: Requires 4-stage conversion process with low maintainability
+- **Unpredictable Behavior**: Behavior with complex character combinations is difficult to predict
+- **Recovery Failure in Edge Cases**: Risk of recovery failure with extreme character combinations
 
-膨張率は優秀（1.009x）で理論上は完全可逆性があるが、実装の複雑さとエッジケースでの不安定性のため不採用とした。
+While the expansion rate is excellent (1.009x) and theoretically completely reversible, it was rejected due to implementation complexity and instability in edge cases.
 
-### 5. SQLite データベース方式
+### 5. SQLite Database Method
 
-#### 概要
-ファイルパスとハッシュ値をSQLiteデータベースで管理する方式。
+#### Overview
+A method managing file paths and hash values in a SQLite database.
 
-#### 実装
+#### Implementation
 ```sql
 CREATE TABLE file_hashes (
     file_path TEXT PRIMARY KEY,
@@ -457,20 +457,20 @@ CREATE TABLE file_hashes (
 );
 ```
 
-#### 不採用理由
-- **アーキテクチャの大幅変更**: 既存のファイルベースアーキテクチャから大きく逸脱
-- **CGO 依存性**: sqlite3 パッケージによるクロスコンパイル複雑化
-- **運用複雑度の増加**: データベースファイルの管理、バックアップ、復旧が必要
-- **単純性の喪失**: 単一ファイルベースのシンプルさが失われる
+#### Reasons for Rejection
+- **Major Architecture Change**: Significant deviation from existing file-based architecture
+- **CGO Dependency**: Cross-compilation complexity with sqlite3 package
+- **Increased Operational Complexity**: Requires database file management, backup, recovery
+- **Loss of Simplicity**: Loses the simplicity of single-file-based approach
 
-技術的には優れた解決策だが、プロジェクトの設計思想である「シンプルな単一バイナリ」から大きく逸脱するため不採用とした。
+While technically an excellent solution, it was rejected as it significantly deviates from the project's design philosophy of "simple single binary".
 
-### 6. 純粋ダブルエスケープ方式
+### 6. Pure Double-Escape Method
 
-#### 概要
-異なる文字を使った双方向エスケープ方式（採用案のベース）。
+#### Overview
+A bidirectional escape method using different characters (base of the adopted solution).
 
-#### 実装
+#### Implementation
 ```go
 // '/' → '__', '_' → '_1'
 encoded := strings.ReplaceAll(path, "_", "_1")
@@ -478,15 +478,15 @@ encoded = strings.ReplaceAll(encoded, "/", "__")
 return filepath.Join(hashDir, encoded+".hash"), nil
 ```
 
-#### 不採用理由
-- **膨張率の非効率性**: 1.15x（約15%の容量増加）で採用案の1.00xより劣る
-- **実世界での性能劣化**: 実際のファイル名で測定した結果、採用案（換字+#エスケープ）より 12.8% 効率が悪い
-- **頻出文字の直接エスケープ**: `/` と `_` を直接エスケープするため、`_` の多いファイル名で膨張が大きい
+#### Reasons for Rejection
+- **Inefficient Expansion Rate**: 1.15x (approximately 15% capacity increase) is worse than the adopted solution's 1.00x
+- **Performance Degradation in Real World**: Measurement with actual file names showed 12.8% worse efficiency than the adopted solution (substitution + # escape)
+- **Direct Escape of Frequent Characters**: Directly escaping `/` and `_` causes large expansion with underscore-heavy file names
 
-完全な可逆性と高い可読性は持つが、採用案の前身として空間効率で劣るため、より最適化された換字版を採用した。
+While it has complete reversibility and high readability, as the predecessor to the adopted solution, it was inferior in space efficiency, so the more optimized substitution version was adopted.
 
-## 更新履歴
+## Revision History
 
-- 2025-09-16: 初版作成
-- 2025-09-16: 各方式の詳細分析追加
-- 2025-09-16: 最終決定と実装指針確定
+- 2025-09-16: Initial version created
+- 2025-09-16: Added detailed analysis of each method
+- 2025-09-16: Finalized decision and implementation guidelines

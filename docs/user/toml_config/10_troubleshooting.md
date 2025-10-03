@@ -1,154 +1,154 @@
-# 第10章: トラブルシューティング
+# Chapter 10: Troubleshooting
 
-本章では、設定ファイル作成時によくある問題とその解決方法を紹介します。エラーメッセージの読み方や、デバッグのテクニックを学びましょう。
+This chapter introduces common problems when creating configuration files and their solutions. Let's learn how to read error messages and debugging techniques.
 
-## 10.1 よくあるエラーと対処法
+## 10.1 Common Errors and Solutions
 
-### 10.1.1 設定ファイルの読み込みエラー
+### 10.1.1 Configuration File Loading Errors
 
-#### エラー例
+#### Error Example
 
 ```
 Error: failed to load configuration: toml: line 15: expected key, but got '=' instead
 ```
 
-#### 原因
+#### Cause
 
-TOML ファイルの文法エラー。キーが指定されていない、または不正な形式。
+TOML file syntax error. Key not specified or invalid format.
 
-#### 解決方法
+#### Solution
 
 ```toml
-# 誤り: キーがない
+# Wrong: No key
 = "value"
 
-# 正しい
+# Correct
 key = "value"
 
-# 誤り: クォートが閉じていない
+# Wrong: Unclosed quote
 name = "unclosed string
 
-# 正しい
+# Correct
 name = "closed string"
 ```
 
-### 10.1.2 バージョン指定エラー
+### 10.1.2 Version Specification Error
 
-#### エラー例
+#### Error Example
 
 ```
 Error: unsupported configuration version: 2.0
 ```
 
-#### 原因
+#### Cause
 
-サポートされていないバージョンが指定されている。
+Unsupported version specified.
 
-#### 解決方法
+#### Solution
 
 ```toml
-# 誤り: サポートされていないバージョン
+# Wrong: Unsupported version
 version = "2.0"
 
-# 正しい: サポートされているバージョンを使用
+# Correct: Use supported version
 version = "1.0"
 ```
 
-### 10.1.3 必須フィールドの欠落
+### 10.1.3 Missing Required Fields
 
-#### エラー例
+#### Error Example
 
 ```
 Error: group 'backup_tasks' is missing required field 'name'
 Error: command is missing required field 'cmd'
 ```
 
-#### 原因
+#### Cause
 
-必須フィールド(`name`, `cmd` など)が設定されていない。
+Required fields (`name`, `cmd`, etc.) are not set.
 
-#### 解決方法
+#### Solution
 
 ```toml
-# 誤り: name がない
+# Wrong: No name
 [[groups]]
 description = "Backup tasks"
 
-# 正しい: name を追加
+# Correct: Add name
 [[groups]]
 name = "backup_tasks"
 description = "Backup tasks"
 
-# 誤り: cmd がない
+# Wrong: No cmd
 [[groups.commands]]
 name = "backup"
 args = ["/data"]
 
-# 正しい: cmd を追加
+# Correct: Add cmd
 [[groups.commands]]
 name = "backup"
 cmd = "/usr/bin/tar"
 args = ["-czf", "backup.tar.gz", "/data"]
 ```
 
-### 10.1.4 環境変数の許可エラー
+### 10.1.4 Environment Variable Permission Error
 
-#### エラー例
+#### Error Example
 
 ```
 Error: environment variable 'CUSTOM_VAR' is not allowed by env_allowlist
 ```
 
-#### 原因
+#### Cause
 
-使用している環境変数が `env_allowlist` に含まれていない。
+The environment variable being used is not included in `env_allowlist`.
 
-#### 解決方法
+#### Solution
 
-**方法1**: グローバルまたはグループの `env_allowlist` に追加
+**Method 1**: Add to global or group's `env_allowlist`
 
 ```toml
 [global]
-env_allowlist = ["PATH", "HOME", "CUSTOM_VAR"]  # CUSTOM_VAR を追加
+env_allowlist = ["PATH", "HOME", "CUSTOM_VAR"]  # Add CUSTOM_VAR
 ```
 
-**方法2**: Command.Env で定義(推奨)
+**Method 2**: Define in Command.Env (recommended)
 
 ```toml
-# env_allowlist に追加不要
+# No need to add to env_allowlist
 [[groups.commands]]
 name = "custom_command"
 cmd = "${CUSTOM_TOOL}"
 args = []
-env = ["CUSTOM_TOOL=/opt/tools/mytool"]  # Command.Env で定義
+env = ["CUSTOM_TOOL=/opt/tools/mytool"]  # Define in Command.Env
 ```
 
-### 10.1.5 変数展開エラー
+### 10.1.5 Variable Expansion Error
 
-#### エラー例
+#### Error Example
 
 ```
 Error: undefined variable: UNDEFINED_VAR
 Error: circular variable reference detected: VAR1 -> VAR2 -> VAR1
 ```
 
-#### 原因
+#### Cause
 
-- 変数が定義されていない
-- 変数の循環参照
+- Variable is not defined
+- Circular variable reference
 
-#### 解決方法
+#### Solution
 
-**未定義変数の場合**:
+**For undefined variables**:
 
 ```toml
-# 誤り: TOOL_DIR が定義されていない
+# Wrong: TOOL_DIR is not defined
 [[groups.commands]]
 name = "run_tool"
 cmd = "${TOOL_DIR}/mytool"
 args = []
 
-# 正しい: env で定義
+# Correct: Define in env
 [[groups.commands]]
 name = "run_tool"
 cmd = "${TOOL_DIR}/mytool"
@@ -156,210 +156,210 @@ args = []
 env = ["TOOL_DIR=/opt/tools"]
 ```
 
-**循環参照の場合**:
+**For circular references**:
 
 ```toml
-# 誤り: 循環参照
+# Wrong: Circular reference
 env = [
     "VAR1=${VAR2}",
     "VAR2=${VAR1}",
 ]
 
-# 正しい: 循環を解消
+# Correct: Resolve the circular reference
 env = [
     "VAR1=/path/to/dir",
     "VAR2=${VAR1}/subdir",
 ]
 ```
 
-### 10.1.6 ファイル検証エラー
+### 10.1.6 File Verification Error
 
-#### エラー例
+#### Error Example
 
 ```
 Error: file verification failed: /usr/bin/tool: hash mismatch
 Error: file verification failed: /opt/app/script.sh: hash file not found
 ```
 
-#### 原因
+#### Cause
 
-- ファイルが改ざんされている
-- ハッシュファイルが作成されていない
+- File has been tampered with
+- Hash file has not been created
 
-#### 解決方法
+#### Solution
 
-**ハッシュファイルの作成**:
+**Creating hash files**:
 
 ```bash
-# record コマンドでハッシュを記録
+# Record hashes with record command
 go-safe-cmd-runner record /usr/bin/tool
 go-safe-cmd-runner record /opt/app/script.sh
 
-# または設定ファイル全体を指定
+# Or specify entire configuration file
 go-safe-cmd-runner record config.toml
 ```
 
-**ファイルが正当に変更された場合**:
+**If file was legitimately changed**:
 
 ```bash
-# ハッシュを再記録
+# Re-record hash
 go-safe-cmd-runner record /usr/bin/tool
 ```
 
-### 10.1.7 コマンドパスのエラー
+### 10.1.7 Command Path Errors
 
-#### エラー例
+#### Error Example
 
 ```
 Error: command path must be absolute: ./tool
 Error: command not found: mytool
 ```
 
-#### 原因
+#### Cause
 
-- 相対パスが使用されている
-- コマンドが存在しない
+- Relative path is being used
+- Command does not exist
 
-#### 解決方法
+#### Solution
 
 ```toml
-# 誤り: 相対パス
+# Wrong: Relative path
 [[groups.commands]]
 name = "run"
 cmd = "./mytool"
 
-# 正しい: 絶対パス
+# Correct: Absolute path
 [[groups.commands]]
 name = "run"
 cmd = "/opt/tools/mytool"
 
-# 誤り: PATH 依存だが存在しない
+# Wrong: PATH-dependent but doesn't exist
 [[groups.commands]]
 name = "run"
 cmd = "nonexistent-command"
 
-# 正しい: 存在するコマンドの絶対パス
+# Correct: Absolute path to existing command
 [[groups.commands]]
 name = "run"
 cmd = "/usr/bin/existing-command"
 ```
 
-### 10.1.8 タイムアウトエラー
+### 10.1.8 Timeout Errors
 
-#### エラー例
+#### Error Example
 
 ```
 Error: command timeout: exceeded 60 seconds
 ```
 
-#### 原因
+#### Cause
 
-コマンドの実行時間がタイムアウト値を超えた。
+Command execution time exceeded timeout value.
 
-#### 解決方法
+#### Solution
 
 ```toml
-# 方法1: グローバルタイムアウトを延長
+# Method 1: Extend global timeout
 [global]
-timeout = 600  # 60秒 → 600秒
+timeout = 600  # 60s → 600s
 
-# 方法2: 特定のコマンドのみ延長
+# Method 2: Extend only specific command
 [[groups.commands]]
 name = "long_running"
 cmd = "/usr/bin/long-process"
 args = []
-timeout = 3600  # このコマンドのみ 1時間
+timeout = 3600  # 1 hour for this command only
 ```
 
-### 10.1.9 権限エラー
+### 10.1.9 Permission Errors
 
-#### エラー例
+#### Error Example
 
 ```
 Error: permission denied: /var/secure/data
 Error: failed to change user: operation not permitted
 ```
 
-#### 原因
+#### Cause
 
-- ファイルやディレクトリへのアクセス権限がない
-- ユーザー変更が許可されていない
+- No access permission to file or directory
+- User change not permitted
 
-#### 解決方法
+#### Solution
 
-**ファイル権限の場合**:
+**For file permissions**:
 
 ```bash
-# ファイル権限を確認
+# Check file permissions
 ls -la /var/secure/data
 
-# 適切な権限を設定
+# Set appropriate permissions
 sudo chmod 644 /var/secure/data
 sudo chown user:group /var/secure/data
 ```
 
-**ユーザー変更の場合**:
+**For user change**:
 
 ```toml
-# run_as_user を使用するには root 権限が必要
-# go-safe-cmd-runner を root または適切な権限で実行
+# Using run_as_user requires root privileges
+# Execute go-safe-cmd-runner as root or with appropriate privileges
 ```
 
 ```bash
-# root 権限で実行
+# Execute with root privileges
 sudo go-safe-cmd-runner run config.toml
 ```
 
-### 10.1.10 リスクレベル超過エラー
+### 10.1.10 Risk Level Exceeded Error
 
-#### エラー例
+#### Error Example
 
 ```
 Error: command risk level exceeds maximum: command risk=medium, max_risk_level=low
 ```
 
-#### 原因
+#### Cause
 
-コマンドのリスクレベルが `max_risk_level` を超えている。
+Command risk level exceeds `max_risk_level`.
 
-#### 解決方法
+#### Solution
 
 ```toml
-# 方法1: max_risk_level を引き上げ
+# Method 1: Increase max_risk_level
 [[groups.commands]]
 name = "risky_command"
 cmd = "/bin/rm"
 args = ["-rf", "/tmp/data"]
-max_risk_level = "medium"  # low → medium に変更
+max_risk_level = "medium"  # Change low → medium
 
-# 方法2: より安全なコマンドに変更
+# Method 2: Change to safer command
 [[groups.commands]]
 name = "safer_command"
 cmd = "/bin/rm"
-args = ["/tmp/data/specific-file.txt"]  # -rf を削除
+args = ["/tmp/data/specific-file.txt"]  # Remove -rf
 max_risk_level = "low"
 ```
 
-## 10.2 設定検証方法
+## 10.2 Configuration Validation Methods
 
-### 10.2.1 文法チェック
+### 10.2.1 Syntax Checking
 
-設定ファイルの文法を検証:
+Validate configuration file syntax:
 
 ```bash
-# 設定ファイルの読み込みテスト
+# Test configuration file loading
 go-safe-cmd-runner validate config.toml
 
-# ドライランで実行前検証
+# Pre-execution validation with dry run
 go-safe-cmd-runner run --dry-run config.toml
 ```
 
-### 10.2.2 段階的な検証
+### 10.2.2 Incremental Validation
 
-複雑な設定は段階的に検証:
+Validate complex configurations incrementally:
 
 ```toml
-# ステップ1: 最小構成
+# Step 1: Minimal configuration
 version = "1.0"
 
 [[groups]]
@@ -372,12 +372,12 @@ args = ["test"]
 ```
 
 ```bash
-# 実行して基本動作を確認
+# Execute to confirm basic operation
 go-safe-cmd-runner run minimal.toml
 ```
 
 ```toml
-# ステップ2: 変数展開を追加
+# Step 2: Add variable expansion
 [[groups.commands]]
 name = "with_variables"
 cmd = "/bin/echo"
@@ -386,20 +386,20 @@ env = ["VAR=hello"]
 ```
 
 ```bash
-# 変数展開の動作を確認
+# Confirm variable expansion behavior
 go-safe-cmd-runner run with-vars.toml
 ```
 
-### 10.2.3 ログレベルの活用
+### 10.2.3 Utilizing Log Levels
 
-デバッグ時は詳細なログを有効化:
+Enable detailed logs when debugging:
 
 ```toml
 [global]
-log_level = "debug"  # 詳細なデバッグ情報を出力
+log_level = "debug"  # Output detailed debug information
 ```
 
-出力例:
+Output example:
 ```
 [DEBUG] Loading configuration from: config.toml
 [DEBUG] Parsed version: 1.0
@@ -411,14 +411,14 @@ log_level = "debug"  # 詳細なデバッグ情報を出力
 [INFO] Command completed successfully
 ```
 
-## 10.3 デバッグ手法
+## 10.3 Debugging Techniques
 
-### 10.3.1 エコーコマンドでの変数確認
+### 10.3.1 Verifying Variables with Echo Command
 
-変数が正しく展開されているか確認:
+Confirm variables are expanded correctly:
 
 ```toml
-# デバッグ用コマンド
+# Debug command
 [[groups.commands]]
 name = "debug_variables"
 cmd = "/bin/echo"
@@ -435,14 +435,14 @@ env = [
 output = "debug-vars.txt"
 ```
 
-実行後、`debug-vars.txt` を確認:
+After execution, check `debug-vars.txt`:
 ```
 TOOL_DIR=/opt/tools CONFIG=/etc/app/config.yml ENV=production
 ```
 
-### 10.3.2 出力キャプチャでの診断
+### 10.3.2 Diagnosis with Output Capture
 
-コマンド出力を保存して詳細を確認:
+Save command output to examine details:
 
 ```toml
 [[groups.commands]]
@@ -452,17 +452,17 @@ args = ["status", "myapp.service"]
 output = "service-status.txt"
 ```
 
-実行後、出力ファイルを確認:
+After execution, check output file:
 ```bash
 cat service-status.txt
 ```
 
-### 10.3.3 個別コマンドのテスト
+### 10.3.3 Testing Individual Commands
 
-問題のあるコマンドを個別にテスト:
+Test problematic commands individually:
 
 ```toml
-# 問題のあるコマンドのみを含むテスト設定
+# Test configuration with only problematic command
 version = "1.0"
 
 [[groups]]
@@ -475,16 +475,16 @@ args = ["--option", "value"]
 env = ["CUSTOM_VAR=test"]
 ```
 
-### 10.3.4 ドライランの活用
+### 10.3.4 Utilizing Dry Run
 
-実際に実行せずに動作を確認:
+Confirm behavior without actual execution:
 
 ```bash
-# ドライランで実行計画を表示
+# Display execution plan with dry run
 go-safe-cmd-runner run --dry-run config.toml
 ```
 
-出力例:
+Output example:
 ```
 [DRY RUN] Would execute: /usr/bin/pg_dump --all-databases
 [DRY RUN] Working directory: /var/backups
@@ -492,12 +492,12 @@ go-safe-cmd-runner run --dry-run config.toml
 [DRY RUN] Environment variables: PATH=/usr/bin, DB_USER=postgres
 ```
 
-### 10.3.5 権限の確認
+### 10.3.5 Checking Permissions
 
-権限関連の問題を診断:
+Diagnose permission-related issues:
 
 ```toml
-# 権限確認用コマンド
+# Permission check commands
 [[groups.commands]]
 name = "check_permissions"
 cmd = "/usr/bin/id"
@@ -511,9 +511,9 @@ args = ["-la", "/path/to/file"]
 output = "file-permissions.txt"
 ```
 
-### 10.3.6 環境変数の確認
+### 10.3.6 Checking Environment Variables
 
-環境変数の状態を診断:
+Diagnose environment variable state:
 
 ```toml
 [[groups.commands]]
@@ -523,67 +523,67 @@ args = []
 output = "environment.txt"
 ```
 
-## 10.4 パフォーマンス問題
+## 10.4 Performance Issues
 
-### 10.4.1 起動が遅い
+### 10.4.1 Slow Startup
 
-#### 原因
+#### Cause
 
-- 大量のファイル検証
-- 重い初期化処理
+- Large number of file verifications
+- Heavy initialization processing
 
-#### 解決方法
+#### Solution
 
 ```toml
-# 標準パスの検証をスキップ
+# Skip standard path verification
 [global]
 skip_standard_paths = true
 
-# 必要最小限のファイルのみ検証
+# Verify only minimum necessary files
 verify_files = [
     "/opt/app/bin/critical-tool",
 ]
 ```
 
-### 10.4.2 実行が遅い
+### 10.4.2 Slow Execution
 
-#### 原因
+#### Cause
 
-- タイムアウトが長すぎる
-- 不要な出力キャプチャ
+- Timeout too long
+- Unnecessary output capture
 
-#### 解決方法
+#### Solution
 
 ```toml
-# 適切なタイムアウトを設定
+# Set appropriate timeout
 [[groups.commands]]
 name = "quick_command"
 cmd = "/bin/echo"
 args = ["test"]
-timeout = 10  # 短いコマンドには短いタイムアウト
+timeout = 10  # Short timeout for quick commands
 
-# 不要な出力キャプチャを削除
+# Remove unnecessary output capture
 [[groups.commands]]
 name = "simple_command"
 cmd = "/bin/echo"
 args = ["Processing..."]
-# output を指定しない
+# Don't specify output
 ```
 
-## 10.5 よくある質問 (FAQ)
+## 10.5 Frequently Asked Questions (FAQ)
 
-### Q1: 環境変数が展開されない
+### Q1: Environment variables are not expanded
 
-**Q**: `${HOME}` が展開されず、そのまま文字列として扱われる。
+**Q**: `${HOME}` is not expanded and is treated as a literal string.
 
-**A**: 環境変数は `env_allowlist` に含めるか、`Command.Env` で定義してください。
+**A**: Environment variables must be included in `env_allowlist` or defined in `Command.Env`.
 
 ```toml
-# 方法1: env_allowlist に追加
+# Method 1: Add to env_allowlist
 [global]
 env_allowlist = ["PATH", "HOME"]
 
-# 方法2: Command.Env で定義(推奨)
+# Method 2: Define in Command.Env (recommended)
 [[groups.commands]]
 name = "test"
 cmd = "/bin/echo"
@@ -591,64 +591,64 @@ args = ["${MY_HOME}"]
 env = ["MY_HOME=/home/user"]
 ```
 
-### Q2: コマンドが見つからない
+### Q2: Command not found
 
-**Q**: `command not found` エラーが発生する。
+**Q**: `command not found` error occurs.
 
-**A**: 絶対パスを使用するか、PATH が正しく設定されているか確認してください。
+**A**: Use absolute paths or verify PATH is set correctly.
 
 ```toml
-# 推奨: 絶対パス
+# Recommended: Absolute path
 cmd = "/usr/bin/tool"
 
-# または: PATH を確認
+# Or: Check PATH
 [global]
 env_allowlist = ["PATH"]
 ```
 
-### Q3: ファイル検証が失敗する
+### Q3: File verification fails
 
-**Q**: ハッシュ検証でエラーが発生する。
+**Q**: Hash validation error occurs.
 
-**A**: ハッシュファイルを作成または更新してください。
+**A**: Create or update hash files.
 
 ```bash
-# ハッシュファイルの作成
+# Create hash files
 go-safe-cmd-runner record config.toml
 
-# 個別のファイルを記録
+# Record individual files
 go-safe-cmd-runner record /usr/bin/tool
 ```
 
-### Q4: タイムアウトエラーが頻発する
+### Q4: Frequent timeout errors
 
-**Q**: 多くのコマンドでタイムアウトが発生する。
+**Q**: Many commands timeout.
 
-**A**: タイムアウト値を延長するか、コマンドを見直してください。
+**A**: Extend timeout value or review commands.
 
 ```toml
-# グローバルタイムアウトを延長
+# Extend global timeout
 [global]
-timeout = 1800  # 30分
+timeout = 1800  # 30 minutes
 
-# または特定のコマンドのみ延長
+# Or extend only specific commands
 [[groups.commands]]
 name = "long_process"
 cmd = "/usr/bin/process"
-timeout = 3600  # 1時間
+timeout = 3600  # 1 hour
 ```
 
-### Q5: 権限エラーが発生する
+### Q5: Permission errors occur
 
-**Q**: `permission denied` エラーが発生する。
+**Q**: `permission denied` error occurs.
 
-**A**: 適切な権限で go-safe-cmd-runner を実行してください。
+**A**: Execute go-safe-cmd-runner with appropriate privileges.
 
 ```bash
-# root 権限が必要な場合
+# When root privileges are needed
 sudo go-safe-cmd-runner run config.toml
 
-# または設定で run_as_user を使用
+# Or use run_as_user in configuration
 ```
 
 ```toml
@@ -659,41 +659,41 @@ args = []
 run_as_user = "root"
 ```
 
-## 10.6 サポートとヘルプ
+## 10.6 Support and Help
 
-### コミュニティリソース
+### Community Resources
 
-- **ドキュメント**: 公式ドキュメントを参照
-- **Issue トラッカー**: GitHub Issues でバグ報告や質問
-- **サンプル設定**: `sample/` ディレクトリの設定例を参照
+- **Documentation**: Refer to official documentation
+- **Issue Tracker**: Bug reports and questions on GitHub Issues
+- **Sample Configurations**: Refer to configuration examples in `sample/` directory
 
-### デバッグ情報の収集
+### Collecting Debug Information
 
-問題報告時には以下の情報を含めてください:
+Include the following information when reporting issues:
 
 ```bash
-# バージョン情報
+# Version information
 go-safe-cmd-runner --version
 
-# 設定ファイル(機密情報を除く)
+# Configuration file (excluding sensitive information)
 cat config.toml
 
-# エラーログ(デバッグレベル)
+# Error logs (debug level)
 go-safe-cmd-runner run --log-level=debug config.toml 2>&1 | tee debug.log
 ```
 
-## まとめ
+## Summary
 
-本章では以下のトラブルシューティング手法を学びました:
+This chapter covered the following troubleshooting techniques:
 
-1. **よくあるエラー**: 設定ファイル、環境変数、変数展開、ファイル検証などのエラーと対処法
-2. **設定検証**: 文法チェック、段階的検証、ログレベル活用
-3. **デバッグ手法**: エコーコマンド、出力キャプチャ、ドライラン、権限確認
-4. **パフォーマンス**: 起動・実行速度の改善
-5. **FAQ**: よくある質問と回答
+1. **Common Errors**: Configuration files, environment variables, variable expansion, file verification errors and solutions
+2. **Configuration Validation**: Syntax checking, incremental validation, log level utilization
+3. **Debugging Techniques**: Echo commands, output capture, dry run, permission checking
+4. **Performance**: Improving startup and execution speed
+5. **FAQ**: Common questions and answers
 
-これらの知識を活用して、問題を迅速に診断・解決できるようになります。
+Using this knowledge, you can quickly diagnose and resolve problems.
 
-## 次のステップ
+## Next Steps
 
-付録では、パラメータ一覧表、サンプル設定ファイル集、用語集を提供します。リファレンスとして活用してください。
+The appendix provides parameter reference tables, sample configuration collections, and a glossary. Use them as references.

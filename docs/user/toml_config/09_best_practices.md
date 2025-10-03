@@ -1,64 +1,64 @@
-# 第9章: ベストプラクティス
+# Chapter 9: Best Practices
 
-本章では、go-safe-cmd-runner の設定ファイルを作成する際のベストプラクティスを紹介します。セキュリティ、保守性、パフォーマンスの観点から、より良い設定ファイルを作成するための指針を提供します。
+This chapter introduces best practices for creating go-safe-cmd-runner configuration files. It provides guidance for creating better configuration files from the perspectives of security, maintainability, and performance.
 
-## 9.1 セキュリティのベストプラクティス
+## 9.1 Security Best Practices
 
-### 9.1.1 最小権限の原則
+### 9.1.1 Principle of Least Privilege
 
-必要最小限の権限でコマンドを実行してください。
+Execute commands with the minimum necessary privileges.
 
-#### 推奨される実装
+#### Recommended Implementation
 
 ```toml
-# 良い例: 必要な権限のみを使用
+# Good example: Use only necessary privileges
 [[groups.commands]]
 name = "read_log"
 cmd = "/bin/cat"
 args = ["/var/log/app/app.log"]
-run_as_group = "loggroup"  # ログ読み取りに必要な権限のみ
+run_as_group = "loggroup"  # Only privileges needed for log reading
 max_risk_level = "low"
 
-# 避けるべき例: 過剰な権限
+# Example to avoid: Excessive privileges
 [[groups.commands]]
 name = "read_log"
 cmd = "/bin/cat"
 args = ["/var/log/app/app.log"]
-run_as_user = "root"  # 不必要に root 権限を使用
+run_as_user = "root"  # Unnecessarily using root privileges
 ```
 
-### 9.1.2 環境変数の厳格な管理
+### 9.1.2 Strict Management of Environment Variables
 
-環境変数の許可リストは必要最小限に設定してください。
+Set the environment variable allowlist to the minimum necessary.
 
-#### 推奨される実装
+#### Recommended Implementation
 
 ```toml
-# 良い例: 必要な変数のみを許可
+# Good example: Allow only necessary variables
 [global]
 env_allowlist = [
-    "PATH",           # コマンド検索に必須
-    "HOME",           # 設定ファイル検索に使用
-    "APP_CONFIG_DIR", # アプリ固有の設定
+    "PATH",           # Required for command search
+    "HOME",           # Used for config file search
+    "APP_CONFIG_DIR", # App-specific configuration
 ]
 
-# 避けるべき例: 過度に寛容な設定
+# Example to avoid: Overly permissive configuration
 [global]
 env_allowlist = [
     "PATH", "HOME", "USER", "SHELL", "EDITOR", "PAGER",
     "MAIL", "LOGNAME", "HOSTNAME", "DISPLAY", "XAUTHORITY",
-    # ... 多すぎる
+    # ... too many
 ]
 ```
 
-### 9.1.3 ファイル検証の活用
+### 9.1.3 Utilizing File Verification
 
-重要なコマンドや設定ファイルは必ず検証してください。
+Always verify important commands and configuration files.
 
-#### 推奨される実装
+#### Recommended Implementation
 
 ```toml
-# 良い例: 重要なファイルを検証
+# Good example: Verify important files
 [global]
 skip_standard_paths = false
 verify_files = [
@@ -74,36 +74,36 @@ verify_files = [
 ]
 ```
 
-### 9.1.4 絶対パスの使用
+### 9.1.4 Using Absolute Paths
 
-コマンドは絶対パスで指定してください。
+Specify commands with absolute paths.
 
-#### 推奨される実装
+#### Recommended Implementation
 
 ```toml
-# 良い例: 絶対パス
+# Good example: Absolute path
 [[groups.commands]]
 name = "backup"
 cmd = "/usr/bin/tar"
 args = ["-czf", "backup.tar.gz", "/data"]
 
-# 避けるべき例: PATH 依存
+# Example to avoid: PATH dependency
 [[groups.commands]]
 name = "backup"
-cmd = "tar"  # どの tar が実行されるか不明確
+cmd = "tar"  # Unclear which tar will be executed
 args = ["-czf", "backup.tar.gz", "/data"]
 ```
 
-### 9.1.5 機密情報の取り扱い
+### 9.1.5 Handling Sensitive Information
 
-機密情報は Command.Env で管理し、システム環境から隔離してください。
+Manage sensitive information with Command.Env and isolate it from the system environment.
 
-#### 推奨される実装
+#### Recommended Implementation
 
 ```toml
-# 良い例: Command.Env で機密情報を管理
+# Good example: Manage sensitive information with Command.Env
 [global]
-env_allowlist = ["PATH", "HOME"]  # 機密情報は含めない
+env_allowlist = ["PATH", "HOME"]  # Don't include sensitive information
 
 [[groups.commands]]
 name = "api_call"
@@ -113,37 +113,37 @@ args = [
     "${API_ENDPOINT}",
 ]
 env = [
-    "API_TOKEN=sk-secret123",      # Command.Env で定義
+    "API_TOKEN=sk-secret123",      # Defined in Command.Env
     "API_ENDPOINT=https://api.example.com",
 ]
 
-# 避けるべき例: グローバルに機密情報を許可
+# Example to avoid: Allowing sensitive information globally
 [global]
-env_allowlist = ["PATH", "HOME", "API_TOKEN"]  # システム環境変数に依存
+env_allowlist = ["PATH", "HOME", "API_TOKEN"]  # Dependent on system env vars
 ```
 
-### 9.1.6 リスクレベルの適切な設定
+### 9.1.6 Appropriate Risk Level Settings
 
-コマンドの性質に応じて適切なリスクレベルを設定してください。
+Set appropriate risk levels according to the nature of the command.
 
-#### 推奨される実装
+#### Recommended Implementation
 
 ```toml
-# 読み取り専用: low
+# Read-only: low
 [[groups.commands]]
 name = "read_config"
 cmd = "/bin/cat"
 args = ["/etc/app/config.yml"]
 max_risk_level = "low"
 
-# ファイル作成・変更: medium
+# File creation/modification: medium
 [[groups.commands]]
 name = "create_backup"
 cmd = "/bin/tar"
 args = ["-czf", "backup.tar.gz", "/data"]
 max_risk_level = "medium"
 
-# システム変更・権限昇格: high
+# System changes/privilege escalation: high
 [[groups.commands]]
 name = "install_package"
 cmd = "/usr/bin/apt-get"
@@ -152,70 +152,70 @@ run_as_user = "root"
 max_risk_level = "high"
 ```
 
-## 9.2 環境変数管理のベストプラクティス
+## 9.2 Environment Variable Management Best Practices
 
-### 9.2.1 継承モードの適切な使用
+### 9.2.1 Appropriate Use of Inheritance Modes
 
-環境変数の継承モードを目的に応じて使い分けてください。
+Use environment variable inheritance modes according to purpose.
 
-#### 使い分けの指針
+#### Usage Guidelines
 
 ```toml
 [global]
 env_allowlist = ["PATH", "HOME", "USER"]
 
-# パターン1: 継承モード - グローバル設定で十分な場合
+# Pattern 1: Inheritance mode - When global settings are sufficient
 [[groups]]
 name = "standard_group"
-# env_allowlist 未指定 → グローバルを継承
+# env_allowlist unspecified → Inherits from global
 
-# パターン2: 明示モード - グループ固有の変数が必要な場合
+# Pattern 2: Explicit mode - When group-specific variables are needed
 [[groups]]
 name = "database_group"
-env_allowlist = ["PATH", "DB_HOST", "DB_USER"]  # グローバルとは異なる設定
+env_allowlist = ["PATH", "DB_HOST", "DB_USER"]  # Different from global
 
-# パターン3: 拒否モード - 完全隔離が必要な場合
+# Pattern 3: Deny mode - When complete isolation is needed
 [[groups]]
 name = "isolated_group"
-env_allowlist = []  # 全ての環境変数を拒否
+env_allowlist = []  # Deny all environment variables
 ```
 
-### 9.2.2 変数の命名規則
+### 9.2.2 Variable Naming Conventions
 
-一貫した命名規則を使用してください。
+Use consistent naming conventions.
 
-#### 推奨される命名規則
+#### Recommended Naming Conventions
 
 ```toml
-# 良い例: 一貫した命名規則
+# Good example: Consistent naming conventions
 env = [
-    "APP_DIR=/opt/myapp",           # アプリ関連は APP_ プレフィックス
+    "APP_DIR=/opt/myapp",           # APP_ prefix for app-related
     "APP_CONFIG=/etc/myapp/config.yml",
     "APP_LOG_DIR=/var/log/myapp",
-    "DB_HOST=localhost",            # データベース関連は DB_ プレフィックス
+    "DB_HOST=localhost",            # DB_ prefix for database-related
     "DB_PORT=5432",
     "DB_NAME=myapp_db",
-    "BACKUP_DIR=/var/backups",      # バックアップ関連は BACKUP_ プレフィックス
+    "BACKUP_DIR=/var/backups",      # BACKUP_ prefix for backup-related
     "BACKUP_RETENTION_DAYS=30",
 ]
 
-# 避けるべき例: 不統一な命名
+# Example to avoid: Inconsistent naming
 env = [
-    "app_directory=/opt/myapp",     # 小文字とアンダースコア
-    "APPCONFIG=/etc/myapp/config.yml",  # プレフィックスなし
-    "log-dir=/var/log/myapp",       # ハイフン使用
-    "DatabaseHost=localhost",       # キャメルケース
+    "app_directory=/opt/myapp",     # Lowercase with underscore
+    "APPCONFIG=/etc/myapp/config.yml",  # No prefix
+    "log-dir=/var/log/myapp",       # Using hyphens
+    "DatabaseHost=localhost",       # CamelCase
 ]
 ```
 
-### 9.2.3 変数の再利用
+### 9.2.3 Variable Reuse
 
-共通の値は変数として定義し、再利用してください。
+Define common values as variables and reuse them.
 
-#### 推奨される実装
+#### Recommended Implementation
 
 ```toml
-# 良い例: 変数の再利用
+# Good example: Variable reuse
 [[groups.commands]]
 name = "deploy_config"
 cmd = "/bin/cp"
@@ -230,182 +230,182 @@ name = "backup_config"
 cmd = "/bin/cp"
 args = ["${CONFIG_DEST}/app.yml", "${BACKUP_DIR}/app.yml"]
 env = [
-    "CONFIG_DEST=/etc/myapp",       # 前のコマンドと同じ値を再利用
+    "CONFIG_DEST=/etc/myapp",       # Reuse same value from previous command
     "BACKUP_DIR=/var/backups",
 ]
 ```
 
-## 9.3 グループ構成のベストプラクティス
+## 9.3 Group Organization Best Practices
 
-### 9.3.1 論理的なグループ化
+### 9.3.1 Logical Grouping
 
-関連するコマンドを論理的にグループ化してください。
+Logically group related commands.
 
-#### 推奨される構成
+#### Recommended Structure
 
 ```toml
-# 良い例: 論理的なグループ分け
+# Good example: Logical grouping
 [[groups]]
 name = "database_operations"
-description = "データベース関連の全操作"
-# ... データベース関連のコマンド
+description = "All database-related operations"
+# ... database-related commands
 
 [[groups]]
 name = "file_operations"
-description = "ファイル操作関連の全タスク"
-# ... ファイル操作関連のコマンド
+description = "All file operation tasks"
+# ... file operation-related commands
 
 [[groups]]
 name = "network_operations"
-description = "ネットワーク通信関連の全タスク"
-# ... ネットワーク関連のコマンド
+description = "All network communication tasks"
+# ... network-related commands
 
-# 避けるべき例: 無秩序なグループ分け
+# Example to avoid: Disorganized grouping
 [[groups]]
 name = "group1"
-# データベース、ファイル、ネットワークが混在
+# Mixed database, file, and network operations
 ```
 
-### 9.3.2 優先度の効果的な使用
+### 9.3.2 Effective Use of Priority
 
-依存関係や重要度に基づいて優先度を設定してください。
+Set priorities based on dependencies and importance.
 
-#### 推奨される実装
+#### Recommended Implementation
 
 ```toml
-# 良い例: 明確な優先度設定
+# Good example: Clear priority settings
 [[groups]]
 name = "prerequisites"
-description = "前提条件の確認"
-priority = 1  # 最初に実行
+description = "Verify prerequisites"
+priority = 1  # Execute first
 
 [[groups]]
 name = "main_operations"
-description = "メイン処理"
-priority = 10  # 前提条件の後に実行
+description = "Main processing"
+priority = 10  # Execute after prerequisites
 
 [[groups]]
 name = "cleanup"
-description = "後処理とクリーンアップ"
-priority = 100  # 最後に実行
+description = "Post-processing and cleanup"
+priority = 100  # Execute last
 ```
 
-### 9.3.3 説明の充実
+### 9.3.3 Comprehensive Descriptions
 
-各グループとコマンドに明確な説明を記述してください。
+Write clear descriptions for each group and command.
 
-#### 推奨される実装
+#### Recommended Implementation
 
 ```toml
-# 良い例: 詳細な説明
+# Good example: Detailed descriptions
 [[groups]]
 name = "database_backup"
-description = "PostgreSQL データベースの日次バックアップ処理。全データベースをダンプし、圧縮・暗号化して保存。"
+description = "PostgreSQL database daily backup process. Dumps all databases, then compresses and encrypts for storage."
 
 [[groups.commands]]
 name = "full_backup"
-description = "全データベースの完全バックアップ(pg_dump --all-databases)"
+description = "Full backup of all databases (pg_dump --all-databases)"
 cmd = "/usr/bin/pg_dump"
 args = ["--all-databases"]
 
-# 避けるべき例: 不十分な説明
+# Example to avoid: Insufficient descriptions
 [[groups]]
 name = "db_backup"
-description = "Backup"  # 何をバックアップするか不明
+description = "Backup"  # Unclear what is being backed up
 
 [[groups.commands]]
 name = "backup"
-description = "Run backup"  # 具体性がない
+description = "Run backup"  # Lacks specificity
 ```
 
-## 9.4 エラーハンドリングのベストプラクティス
+## 9.4 Error Handling Best Practices
 
-### 9.4.1 適切なタイムアウト設定
+### 9.4.1 Appropriate Timeout Settings
 
-コマンドの性質に応じて適切なタイムアウトを設定してください。
+Set appropriate timeouts according to the nature of the command.
 
-#### 推奨される実装
+#### Recommended Implementation
 
 ```toml
 [global]
-timeout = 300  # デフォルト: 5分
+timeout = 300  # Default: 5 minutes
 
 [[groups.commands]]
 name = "quick_check"
 cmd = "/bin/ping"
 args = ["-c", "3", "localhost"]
-timeout = 10  # 短いコマンドには短いタイムアウト
+timeout = 10  # Short timeout for quick commands
 
 [[groups.commands]]
 name = "database_dump"
 cmd = "/usr/bin/pg_dump"
 args = ["large_database"]
-timeout = 3600  # 大きなデータベースには長めのタイムアウト
+timeout = 3600  # Longer timeout for large databases
 
 [[groups.commands]]
 name = "file_sync"
 cmd = "/usr/bin/rsync"
 args = ["-av", "/source", "/dest"]
-timeout = 7200  # ネットワーク転送には十分な時間を確保
+timeout = 7200  # Sufficient time for network transfers
 ```
 
-### 9.4.2 出力サイズの適切な制限
+### 9.4.2 Appropriate Output Size Limits
 
-処理するデータ量に応じて出力サイズ制限を設定してください。
+Set output size limits according to the amount of data being processed.
 
-#### 推奨される実装
+#### Recommended Implementation
 
 ```toml
-# ログファイル解析など、出力が多い場合
+# For log file analysis with large output
 [global]
 max_output_size = 104857600  # 100MB
 
-# 小規模な出力のみの場合
+# For small output only
 [global]
 max_output_size = 1048576  # 1MB
 ```
 
-## 9.5 保守性のベストプラクティス
+## 9.5 Maintainability Best Practices
 
-### 9.5.1 コメントの活用
+### 9.5.1 Using Comments
 
-設定の意図や注意点をコメントで記述してください。
+Document the intent and precautions in comments.
 
-#### 推奨される実装
+#### Recommended Implementation
 
 ```toml
-# 本番環境デプロイ設定
-# 最終更新: 2025-10-02
-# 担当者: DevOps Team
+# Production environment deployment configuration
+# Last updated: 2025-10-02
+# Owner: DevOps Team
 version = "1.0"
 
 [global]
-# タイムアウトは最長実行時間の1.5倍に設定
+# Timeout set to 1.5x the longest execution time
 timeout = 900
 
-# 本番環境では情報レベルのログのみ
+# Information-level logs only in production
 log_level = "info"
 
-# セキュリティ要件により、システムパスも検証
+# Due to security requirements, verify system paths as well
 skip_standard_paths = false
 
 [[groups]]
 name = "production_deployment"
-# 注意: このグループは本番環境でのみ実行すること
-# ステージング環境では deploy_staging グループを使用
+# Warning: Execute this group only in production environment
+# Use deploy_staging group for staging environment
 ```
 
-### 9.5.2 設定の構造化
+### 9.5.2 Configuration Structuring
 
-設定を論理的に構造化し、可読性を向上させてください。
+Structure the configuration logically to improve readability.
 
-#### 推奨される実装
+#### Recommended Implementation
 
 ```toml
 version = "1.0"
 
 # ========================================
-# グローバル設定
+# Global Settings
 # ========================================
 [global]
 timeout = 600
@@ -414,154 +414,154 @@ log_level = "info"
 env_allowlist = ["PATH", "HOME"]
 
 # ========================================
-# フェーズ1: 事前準備
+# Phase 1: Preparation
 # ========================================
 [[groups]]
 name = "preparation"
 priority = 1
-# ... コマンド定義
+# ... command definitions
 
 # ========================================
-# フェーズ2: デプロイ
+# Phase 2: Deployment
 # ========================================
 [[groups]]
 name = "deployment"
 priority = 2
-# ... コマンド定義
+# ... command definitions
 
 # ========================================
-# フェーズ3: 検証
+# Phase 3: Verification
 # ========================================
 [[groups]]
 name = "verification"
 priority = 3
-# ... コマンド定義
+# ... command definitions
 ```
 
-### 9.5.3 設定ファイルの分割
+### 9.5.3 Splitting Configuration Files
 
-大規模な設定は複数のファイルに分割することを検討してください。
+Consider splitting large configurations into multiple files.
 
-#### 推奨される構成
+#### Recommended Structure
 
 ```
 configs/
-├── base.toml              # 共通設定
-├── development.toml       # 開発環境固有の設定
-├── staging.toml           # ステージング環境固有の設定
-└── production.toml        # 本番環境固有の設定
+├── base.toml              # Common settings
+├── development.toml       # Development environment-specific settings
+├── staging.toml           # Staging environment-specific settings
+└── production.toml        # Production environment-specific settings
 ```
 
-各環境で適切な設定ファイルを使用:
+Use appropriate configuration files for each environment:
 ```bash
-# 開発環境
+# Development environment
 go-safe-cmd-runner run configs/development.toml
 
-# 本番環境
+# Production environment
 go-safe-cmd-runner run configs/production.toml
 ```
 
-## 9.6 パフォーマンスのベストプラクティス
+## 9.6 Performance Best Practices
 
-### 9.6.1 並列実行の検討
+### 9.6.1 Considering Parallel Execution
 
-独立したグループは並列実行できるように設計してください。
+Design independent groups to enable parallel execution.
 
-#### 推奨される実装
+#### Recommended Implementation
 
 ```toml
-# 良い例: 独立したグループ(並列実行可能)
+# Good example: Independent groups (parallel execution possible)
 [[groups]]
 name = "backup_database"
 priority = 10
-# データベースバックアップ
+# Database backup
 
 [[groups]]
 name = "backup_files"
-priority = 10  # 同じ優先度 → 並列実行可能
-# ファイルバックアップ
+priority = 10  # Same priority → Parallel execution possible
+# File backup
 
-# 避けるべき例: 不必要な依存関係
+# Example to avoid: Unnecessary dependencies
 [[groups]]
 name = "backup_database"
 priority = 10
 
 [[groups]]
 name = "backup_files"
-priority = 11  # 不必要に依存関係を作っている
+priority = 11  # Unnecessarily creating dependencies
 ```
 
-### 9.6.2 ファイル検証の最適化
+### 9.6.2 Optimizing File Verification
 
-検証が必要なファイルのみを指定してください。
+Specify only files that need verification.
 
-#### 推奨される実装
+#### Recommended Implementation
 
 ```toml
-# 良い例: 必要なファイルのみ検証
+# Good example: Verify only necessary files
 [global]
-skip_standard_paths = true  # 標準パスはスキップ
+skip_standard_paths = true  # Skip standard paths
 verify_files = [
-    "/opt/app/bin/critical-tool",  # アプリ固有のツールのみ検証
+    "/opt/app/bin/critical-tool",  # Verify only app-specific tools
 ]
 
-# 避けるべき例: 過度な検証
+# Example to avoid: Excessive verification
 [global]
 skip_standard_paths = false
 verify_files = [
     "/bin/ls", "/bin/cat", "/bin/grep", "/bin/sed",
-    # ... 多数の標準コマンド(パフォーマンス低下)
+    # ... Many standard commands (performance degradation)
 ]
 ```
 
-### 9.6.3 出力キャプチャの適切な使用
+### 9.6.3 Appropriate Use of Output Capture
 
-必要な場合のみ出力をキャプチャしてください。
+Capture output only when necessary.
 
-#### 推奨される実装
+#### Recommended Implementation
 
 ```toml
-# 良い例: 必要な出力のみキャプチャ
+# Good example: Capture only necessary output
 [[groups.commands]]
 name = "system_info"
 cmd = "/bin/df"
 args = ["-h"]
-output = "disk-usage.txt"  # レポート生成に必要
+output = "disk-usage.txt"  # Needed for report generation
 
 [[groups.commands]]
 name = "simple_echo"
 cmd = "/bin/echo"
 args = ["Processing..."]
-# output 未指定 → キャプチャしない(標準出力に表示)
+# output unspecified → No capture (display on stdout)
 
-# 避けるべき例: 不要な出力キャプチャ
+# Example to avoid: Unnecessary output capture
 [[groups.commands]]
 name = "simple_echo"
 cmd = "/bin/echo"
 args = ["Processing..."]
-output = "echo-output.txt"  # 不要なキャプチャ(リソースの無駄)
+output = "echo-output.txt"  # Unnecessary capture (waste of resources)
 ```
 
-## 9.7 テストとバリデーション
+## 9.7 Testing and Validation
 
-### 9.7.1 段階的なテスト
+### 9.7.1 Incremental Testing
 
-設定ファイルは段階的にテストしてください。
+Test configuration files incrementally.
 
-#### 推奨される手順
+#### Recommended Procedure
 
-1. **基本的なコマンドから開始**
+1. **Start with basic commands**
 ```toml
-# ステップ1: 最小構成でテスト
+# Step 1: Test with minimal configuration
 [[groups.commands]]
 name = "test_basic"
 cmd = "/bin/echo"
 args = ["test"]
 ```
 
-2. **徐々に複雑化**
+2. **Gradually increase complexity**
 ```toml
-# ステップ2: 変数展開を追加
+# Step 2: Add variable expansion
 [[groups.commands]]
 name = "test_variables"
 cmd = "/bin/echo"
@@ -569,9 +569,9 @@ args = ["Value: ${TEST_VAR}"]
 env = ["TEST_VAR=hello"]
 ```
 
-3. **本番相当の設定**
+3. **Production-equivalent configuration**
 ```toml
-# ステップ3: 完全な設定でテスト
+# Step 3: Test with full configuration
 [[groups.commands]]
 name = "production_command"
 cmd = "/opt/app/bin/tool"
@@ -581,82 +581,82 @@ run_as_user = "appuser"
 max_risk_level = "high"
 ```
 
-### 9.7.2 ドライラン機能の活用
+### 9.7.2 Utilizing Dry Run Feature
 
-本番実行前にドライランで動作を確認してください。
+Verify behavior with dry run before production execution.
 
 ```bash
-# ドライランで設定を検証
+# Validate configuration with dry run
 go-safe-cmd-runner run --dry-run config.toml
 
-# 問題なければ本番実行
+# Execute in production if no issues
 go-safe-cmd-runner run config.toml
 ```
 
-## 9.8 ドキュメント化
+## 9.8 Documentation
 
-### 9.8.1 設定ファイルのドキュメント化
+### 9.8.1 Documenting Configuration Files
 
-設定ファイルと合わせて README を作成してください。
+Create a README along with the configuration file.
 
-#### README.md の例
+#### README.md Example
 
 ```markdown
-# アプリケーションデプロイ設定
+# Application Deployment Configuration
 
-## 概要
-本番環境へのアプリケーションデプロイを自動化する設定ファイル。
+## Overview
+Configuration file to automate application deployment to production environment.
 
-## 前提条件
-- PostgreSQL がインストールされていること
-- /opt/app ディレクトリが存在すること
-- appuser ユーザーが存在すること
+## Prerequisites
+- PostgreSQL must be installed
+- /opt/app directory must exist
+- appuser user must exist
 
-## 実行方法
+## Execution
 ```bash
 go-safe-cmd-runner run production-deploy.toml
 ```
 
-## 環境変数
-以下の環境変数を設定してください:
-- `DB_PASSWORD`: データベースパスワード
-- `API_KEY`: 外部APIキー
+## Environment Variables
+Set the following environment variables:
+- `DB_PASSWORD`: Database password
+- `API_KEY`: External API key
 
-## トラブルシューティング
-### データベース接続エラー
-- PostgreSQL サービスが起動しているか確認
-- 認証情報が正しいか確認
+## Troubleshooting
+### Database Connection Error
+- Check if PostgreSQL service is running
+- Verify authentication credentials are correct
 ```
 
-### 9.8.2 変更履歴の記録
+### 9.8.2 Recording Change History
 
-設定ファイルの変更履歴をコメントで記録してください。
+Record configuration file change history in comments.
 
 ```toml
-# 変更履歴:
-# 2025-10-02: タイムアウトを 300秒 → 600秒 に延長 (大規模DBに対応)
-# 2025-09-15: 暗号化処理を追加
-# 2025-09-01: 初版作成
+# Change history:
+# 2025-10-02: Extended timeout from 300s → 600s (to support large DBs)
+# 2025-09-15: Added encryption processing
+# 2025-09-01: Initial version created
 
 version = "1.0"
 # ...
 ```
 
-## まとめ
+## Summary
 
-本章で紹介したベストプラクティス:
+Best practices introduced in this chapter:
 
-1. **セキュリティ**: 最小権限、環境変数の厳格管理、ファイル検証、絶対パス使用
-2. **環境変数管理**: 適切な継承モード、一貫した命名規則、変数の再利用
-3. **グループ構成**: 論理的なグループ化、優先度の効果的な使用、充実した説明
-4. **エラーハンドリング**: 適切なタイムアウト、出力サイズ制限
-5. **保守性**: コメントの活用、構造化、設定の分割
-6. **パフォーマンス**: 並列実行、検証の最適化、適切な出力キャプチャ
-7. **テスト**: 段階的なテスト、ドライラン活用
-8. **ドキュメント化**: README 作成、変更履歴の記録
+1. **Security**: Least privilege, strict environment variable management, file verification, absolute path usage
+2. **Environment Variable Management**: Appropriate inheritance modes, consistent naming conventions, variable reuse
+3. **Group Organization**: Logical grouping, effective use of priority, comprehensive descriptions
+4. **Error Handling**: Appropriate timeouts, output size limits
+5. **Maintainability**: Using comments, structuring, splitting configurations
+6. **Performance**: Parallel execution, verification optimization, appropriate output capture
+7. **Testing**: Incremental testing, dry run utilization
+8. **Documentation**: README creation, change history recording
 
-これらのプラクティスに従うことで、安全で保守性の高い設定ファイルを作成できます。
+By following these practices, you can create safe and maintainable configuration files.
 
-## 次のステップ
+## Next Steps
 
-次章では、設定ファイル作成時によくある問題とその解決方法を学びます。トラブルシューティングのテクニックを習得しましょう。
+The next chapter will cover common problems when creating configuration files and their solutions. Let's master troubleshooting techniques.
