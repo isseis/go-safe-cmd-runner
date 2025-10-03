@@ -358,8 +358,7 @@ A: 主な注意点：
 
 ### コミュニティ
 
-- [GitHub Issues](https://github.com/isseis/go-safe-cmd-runner/issues) - バグ報告、機能要望
-- [GitHub Discussions](https://github.com/isseis/go-safe-cmd-runner/issues) - 質問、アイデア共有
+- [GitHub Issues](https://github.com/isseis/go-safe-cmd-runner/issues) - バグ報告、機能要望、質問、アイデア共有
 
 ---
 
