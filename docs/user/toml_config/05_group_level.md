@@ -580,15 +580,15 @@ Mode determination follows this logic:
 
 ```mermaid
 flowchart TD
-    A[Check env_allowlist] --> B{Is env_allowlist<br/>defined at<br/>group level?}
-    B -->|No| C[Inherit Mode<br/>inherit]
-    B -->|Yes| D{Is value<br/>empty array<br/>[]?}
-    D -->|Yes| E[Reject Mode<br/>reject]
-    D -->|No| F[Explicit Mode<br/>explicit]
+    A[Check env_allowlist] --> B{"Is env_allowlist<br/>defined at<br/>group level?"}
+    B -->|No| C["Inherit Mode<br/>inherit"]
+    B -->|Yes| D{"Is value<br/>empty array<br/>[]?"}
+    D -->|Yes| E["Reject Mode<br/>reject"]
+    D -->|No| F["Explicit Mode<br/>explicit"]
 
-    C --> G[Use global<br/>env_allowlist]
-    E --> H[Reject all<br/>environment variables]
-    F --> I[Use group's<br/>env_allowlist]
+    C --> G["Use global<br/>env_allowlist"]
+    E --> H["Reject all<br/>environment variables"]
+    F --> I["Use group's<br/>env_allowlist"]
 
     style C fill:#e8f5e9
     style E fill:#ffebee
