@@ -580,7 +580,7 @@ args = ["完全に隔離された実行"]
 
 ```mermaid
 flowchart TD
-    A[env_allowlist の確認] --> B{"グループレベルで<br/>env_allowlist が<br/>定義されているか?"}
+    A["env_allowlist の確認"] --> B{"グループレベルで<br/>env_allowlist が<br/>定義されているか?"}
     B -->|No| C["継承モード<br/>inherit"]
     B -->|Yes| D{"値は空配列<br/>[] か?"}
     D -->|Yes| E["拒否モード<br/>reject"]
