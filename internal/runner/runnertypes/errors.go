@@ -95,3 +95,38 @@ func AsSecurityViolationError(err error) (*SecurityViolationError, bool) {
 	}
 	return nil, false
 }
+
+// ReservedEnvPrefixError represents an error when user tries to use reserved env prefix
+type ReservedEnvPrefixError struct {
+	VarName string
+	Prefix  string
+}
+
+// NewReservedEnvPrefixError creates a new ReservedEnvPrefixError
+func NewReservedEnvPrefixError(varName, prefix string) *ReservedEnvPrefixError {
+	return &ReservedEnvPrefixError{
+		VarName: varName,
+		Prefix:  prefix,
+	}
+}
+
+// Error implements the error interface
+func (e *ReservedEnvPrefixError) Error() string {
+	return fmt.Sprintf(
+		"environment variable %q uses reserved prefix %q; "+
+			"this prefix is reserved for automatically generated variables",
+		e.VarName,
+		e.Prefix,
+	)
+}
+
+// Is implements the error comparison interface
+func (e *ReservedEnvPrefixError) Is(target error) bool {
+	var rpe *ReservedEnvPrefixError
+	return errors.As(target, &rpe)
+}
+
+// Unwrap returns the underlying error (if any)
+func (e *ReservedEnvPrefixError) Unwrap() error {
+	return nil
+}

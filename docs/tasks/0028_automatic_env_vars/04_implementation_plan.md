@@ -8,8 +8,8 @@
 
 ### Phase 1: エラー型定義
 
-- [ ] **1.1 エラー型定義**
-  - ファイル: `internal/runner/errors/errors.go`
+- [x] **1.1 エラー型定義**
+  - ファイル: `internal/runner/runnertypes/errors.go` (実際の実装場所)
   - タスク: `ReservedEnvPrefixError` 構造体とコンストラクタを追加
   - テスト: エラーメッセージのフォーマット確認
   - 注: エラー型は `AutoEnvPrefix` 定数を参照する
