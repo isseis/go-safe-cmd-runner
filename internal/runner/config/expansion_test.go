@@ -145,7 +145,13 @@ func TestExpandCommandStrings_SingleCommand(t *testing.T) {
 
 				var err error
 				for i := range group.Commands {
-					expandedCmd, expandedArgs, expandedEnv, e := config.ExpandCommand(&group.Commands[i], expander, group.EnvAllowlist, group.Name)
+					expandedCmd, expandedArgs, expandedEnv, e := config.ExpandCommand(&config.ExpansionContext{
+						Command:      &group.Commands[i],
+						Expander:     expander,
+						AutoEnv:      nil,
+						EnvAllowlist: group.EnvAllowlist,
+						GroupName:    group.Name,
+					})
 					if e != nil {
 						err = e
 						break
@@ -177,6 +183,47 @@ func TestExpandCommandStrings_SingleCommand(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestExpandCommandStrings_AutoEnv tests that automatic environment variables
+// take precedence over command environment variables
+func TestExpandCommandStrings_AutoEnv(t *testing.T) {
+	cmd := runnertypes.Command{
+		Name: "test",
+		Cmd:  "echo ${MESSAGE} ${__RUNNER_DATETIME}",
+		Args: []string{"${MESSAGE}"},
+		Env:  []string{"MESSAGE=from_command"}, // This should be overridden
+	}
+
+	autoEnv := map[string]string{
+		"MESSAGE":           "from_auto", // Takes precedence
+		"__RUNNER_DATETIME": "2025-10-06T12:34:56Z",
+	}
+
+	// Create test configuration
+	cfg := &runnertypes.Config{
+		Global: runnertypes.GlobalConfig{
+			EnvAllowlist: []string{"MESSAGE", "__RUNNER_DATETIME"},
+		},
+	}
+
+	// Create filter and expander
+	filter := environment.NewFilter(cfg.Global.EnvAllowlist)
+	expander := environment.NewVariableExpander(filter)
+
+	// Test expansion with autoEnv
+	expandedCmd, expandedArgs, _, err := config.ExpandCommand(&config.ExpansionContext{
+		Command:      &cmd,
+		Expander:     expander,
+		AutoEnv:      autoEnv,
+		EnvAllowlist: cfg.Global.EnvAllowlist,
+		GroupName:    "test-group",
+	})
+	require.NoError(t, err)
+
+	// Auto env should take precedence over command env
+	assert.Equal(t, "echo from_auto 2025-10-06T12:34:56Z", expandedCmd)
+	assert.Equal(t, []string{"from_auto"}, expandedArgs)
 }
 
 func TestExpandCommandStrings(t *testing.T) {
@@ -260,7 +307,13 @@ func TestExpandCommandStrings(t *testing.T) {
 
 				var err error
 				for i := range tt.group.Commands {
-					expandedCmd, expandedArgs, expandedEnv, e := config.ExpandCommand(&tt.group.Commands[i], expander, tt.group.EnvAllowlist, tt.group.Name)
+					expandedCmd, expandedArgs, expandedEnv, e := config.ExpandCommand(&config.ExpansionContext{
+						Command:      &tt.group.Commands[i],
+						Expander:     expander,
+						AutoEnv:      nil,
+						EnvAllowlist: tt.group.EnvAllowlist,
+						GroupName:    tt.group.Name,
+					})
 					if e != nil {
 						err = e
 						break
@@ -361,7 +414,13 @@ func TestCircularReferenceDetection(t *testing.T) {
 			{
 				var err error
 				for i := range group.Commands {
-					_, _, _, e := config.ExpandCommand(&group.Commands[i], expander, group.EnvAllowlist, group.Name)
+					_, _, _, e := config.ExpandCommand(&config.ExpansionContext{
+						Command:      &group.Commands[i],
+						Expander:     expander,
+						AutoEnv:      nil,
+						EnvAllowlist: group.EnvAllowlist,
+						GroupName:    group.Name,
+					})
 					if e != nil {
 						err = e
 						break
@@ -490,7 +549,13 @@ func TestSecurityIntegration(t *testing.T) {
 			{
 				var err error
 				for i := range group.Commands {
-					_, _, _, e := config.ExpandCommand(&group.Commands[i], expander, group.EnvAllowlist, group.Name)
+					_, _, _, e := config.ExpandCommand(&config.ExpansionContext{
+						Command:      &group.Commands[i],
+						Expander:     expander,
+						AutoEnv:      nil,
+						EnvAllowlist: group.EnvAllowlist,
+						GroupName:    group.Name,
+					})
 					if e != nil {
 						err = e
 						break
@@ -709,7 +774,13 @@ func TestSecurityAttackPrevention(t *testing.T) {
 			}
 
 			// Test expansion
-			_, _, _, err := config.ExpandCommand(&tt.cmd, expander, allowlist, "test-group")
+			_, _, _, err := config.ExpandCommand(&config.ExpansionContext{
+				Command:      &tt.cmd,
+				Expander:     expander,
+				AutoEnv:      nil,
+				EnvAllowlist: allowlist,
+				GroupName:    "test-group",
+			})
 
 			if tt.expectError {
 				require.Error(t, err, "Expected error for: %s", tt.description)
@@ -817,11 +888,119 @@ func BenchmarkVariableExpansion(b *testing.B) {
 		b.Run(bm.name, func(b *testing.B) {
 			b.ResetTimer()
 			for range b.N {
-				_, _, _, err := config.ExpandCommand(&bm.cmd, expander, cfg.Global.EnvAllowlist, "benchmark-group")
+				_, _, _, err := config.ExpandCommand(&config.ExpansionContext{
+					Command:      &bm.cmd,
+					Expander:     expander,
+					AutoEnv:      nil,
+					EnvAllowlist: cfg.Global.EnvAllowlist,
+					GroupName:    "benchmark-group",
+				})
 				if err != nil {
 					b.Fatalf("unexpected error: %v", err)
 				}
 			}
+		})
+	}
+}
+
+// TestExpandCommand_AutoEnvInCommandEnv verifies that automatic environment variables
+// can be referenced within a command's env block.
+func TestExpandCommand_AutoEnvInCommandEnv(t *testing.T) {
+	cfg := &runnertypes.Config{
+		Global: runnertypes.GlobalConfig{
+			EnvAllowlist: []string{"__RUNNER_DATETIME", "__RUNNER_PID", "OUTPUT_FILE"},
+		},
+	}
+	filter := environment.NewFilter(cfg.Global.EnvAllowlist)
+	expander := environment.NewVariableExpander(filter)
+
+	// Create automatic environment variables
+	autoEnv := map[string]string{
+		"__RUNNER_DATETIME": "2024-01-15T10:30:00Z",
+		"__RUNNER_PID":      "12345",
+	}
+
+	tests := []struct {
+		name           string
+		cmd            runnertypes.Command
+		expectedEnv    map[string]string
+		expectError    bool
+		groupAllowlist []string
+	}{
+		{
+			name: "reference automatic variable in command env",
+			cmd: runnertypes.Command{
+				Name: "test_auto_env",
+				Cmd:  "echo",
+				Args: []string{"test"},
+				Env:  []string{"OUTPUT_FILE=/tmp/output_${__RUNNER_DATETIME}.txt"},
+			},
+			expectedEnv: map[string]string{
+				"__RUNNER_DATETIME": "2024-01-15T10:30:00Z",
+				"__RUNNER_PID":      "12345",
+				"OUTPUT_FILE":       "/tmp/output_2024-01-15T10:30:00Z.txt",
+			},
+			expectError:    false,
+			groupAllowlist: []string{"__RUNNER_DATETIME", "__RUNNER_PID"},
+		},
+		{
+			name: "reference multiple automatic variables in command env",
+			cmd: runnertypes.Command{
+				Name: "test_multi_auto_env",
+				Cmd:  "echo",
+				Args: []string{"test"},
+				Env: []string{
+					"OUTPUT_FILE=/tmp/output_${__RUNNER_DATETIME}_${__RUNNER_PID}.txt",
+					"LOG_FILE=/var/log/runner_${__RUNNER_PID}.log",
+				},
+			},
+			expectedEnv: map[string]string{
+				"__RUNNER_DATETIME": "2024-01-15T10:30:00Z",
+				"__RUNNER_PID":      "12345",
+				"OUTPUT_FILE":       "/tmp/output_2024-01-15T10:30:00Z_12345.txt",
+				"LOG_FILE":          "/var/log/runner_12345.log",
+			},
+			expectError:    false,
+			groupAllowlist: []string{"__RUNNER_DATETIME", "__RUNNER_PID"},
+		},
+		{
+			name: "automatic variables take precedence over command env",
+			cmd: runnertypes.Command{
+				Name: "test_precedence",
+				Cmd:  "echo",
+				Args: []string{"test"},
+				Env: []string{
+					"__RUNNER_DATETIME=should_be_overridden",
+					"OUTPUT_FILE=/tmp/output_${__RUNNER_DATETIME}.txt",
+				},
+			},
+			expectedEnv: map[string]string{
+				"__RUNNER_DATETIME": "2024-01-15T10:30:00Z", // autoEnv takes precedence
+				"__RUNNER_PID":      "12345",
+				"OUTPUT_FILE":       "/tmp/output_2024-01-15T10:30:00Z.txt",
+			},
+			expectError:    false,
+			groupAllowlist: []string{"__RUNNER_DATETIME", "__RUNNER_PID"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, env, err := config.ExpandCommand(&config.ExpansionContext{
+				Command:      &tt.cmd,
+				Expander:     expander,
+				AutoEnv:      autoEnv,
+				EnvAllowlist: tt.groupAllowlist,
+				GroupName:    "test_group",
+			})
+
+			if tt.expectError {
+				assert.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedEnv, env)
 		})
 	}
 }

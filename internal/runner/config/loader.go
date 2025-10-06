@@ -17,8 +17,7 @@ import (
 
 // Loader handles loading and validating configurations
 type Loader struct {
-	fs         common.FileSystem
-	envManager environment.Manager
+	fs common.FileSystem
 }
 
 // Error definitions for the config package
@@ -43,14 +42,8 @@ func NewLoader() *Loader {
 
 // NewLoaderWithFS creates a new config loader with a custom FileSystem
 func NewLoaderWithFS(fs common.FileSystem) *Loader {
-	return NewLoaderWithOptions(fs, environment.NewManager(nil))
-}
-
-// NewLoaderWithOptions creates a new config loader with custom FileSystem and EnvironmentManager
-func NewLoaderWithOptions(fs common.FileSystem, envManager environment.Manager) *Loader {
 	return &Loader{
-		fs:         fs,
-		envManager: envManager,
+		fs: fs,
 	}
 }
 
@@ -107,8 +100,8 @@ func (l *Loader) validateEnvironmentVariables(cfg *runnertypes.Config) error {
 				return fmt.Errorf("failed to build environment map for command %q: %w", cmd.Name, err)
 			}
 
-			// Validate using EnvironmentManager
-			if err := l.envManager.ValidateUserEnvNames(envMap); err != nil {
+			// Validate environment variable names
+			if err := environment.ValidateUserEnvNames(envMap); err != nil {
 				return fmt.Errorf("invalid environment variable in command %q: %w", cmd.Name, err)
 			}
 		}

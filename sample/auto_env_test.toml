@@ -1,0 +1,95 @@
+# Automatic environment variables test configuration
+# Tests __RUNNER_DATETIME and __RUNNER_PID auto-generated variables
+version = "1.0"
+
+[global]
+timeout = 30
+workdir = "/tmp/auto-env-test"
+log_level = "debug"
+skip_standard_paths = true
+env_allowlist = [
+    "PATH",
+    "HOME",
+    "USER",
+]
+
+# Group 1: Basic runner variable expansion with auto env
+[[groups]]
+name = "basic_auto_env"
+description = "Test basic automatic environment variable expansion"
+priority = 1
+
+[[groups.commands]]
+name = "expand_datetime"
+description = "Expand __RUNNER_DATETIME in args"
+cmd = "echo"
+args = ["DateTime: ${__RUNNER_DATETIME}"]
+
+[[groups.commands]]
+name = "expand_pid"
+description = "Expand __RUNNER_PID in args"
+cmd = "echo"
+args = ["PID: ${__RUNNER_PID}"]
+
+[[groups.commands]]
+name = "expand_both"
+description = "Expand both auto variables"
+cmd = "echo"
+args = ["DateTime=${__RUNNER_DATETIME}", "PID=${__RUNNER_PID}"]
+
+# Group 2: Variable expansion with auto env and user env
+[[groups]]
+name = "combined_expansion"
+description = "Test variable expansion combining auto env with user env"
+priority = 2
+
+[[groups.commands]]
+name = "user_and_auto"
+description = "Combine auto env with user env in expansion"
+cmd = "echo"
+args = ["User=${USER}, DateTime=${__RUNNER_DATETIME}, PID=${__RUNNER_PID}"]
+env = ["USER=testuser"]
+
+[[groups.commands]]
+name = "multiple_vars"
+description = "Multiple variables in single argument"
+cmd = "echo"
+args = ["Base: ${BASE_PATH}/log-${__RUNNER_DATETIME}.txt"]
+env = ["BASE_PATH=/var/log"]
+
+# Group 3: File operations with auto env
+[[groups]]
+name = "file_operations"
+description = "Test file operations using auto env variables"
+priority = 3
+
+[[groups.commands]]
+name = "timestamp_filename"
+description = "Create filename with timestamp"
+cmd = "sh"
+args = ["-c", "echo test > /tmp/auto-env-test/file-${__RUNNER_DATETIME}.txt && ls -la /tmp/auto-env-test/file-*.txt"]
+
+[[groups.commands]]
+name = "pid_filename"
+description = "Create filename with PID"
+cmd = "sh"
+args = ["-c", "echo test > /tmp/auto-env-test/pid-${__RUNNER_PID}.txt && cat /tmp/auto-env-test/pid-${__RUNNER_PID}.txt"]
+
+# Group 4: Complex scenarios
+[[groups]]
+name = "complex_usage"
+description = "Test complex usage patterns"
+priority = 4
+
+[[groups.commands]]
+name = "backup_simulation"
+description = "Simulate backup with timestamp"
+cmd = "echo"
+args = ["tar czf /backup/data-${__RUNNER_DATETIME}.tar.gz /data"]
+
+[[groups.commands]]
+name = "log_with_metadata"
+description = "Log file with multiple variables"
+cmd = "echo"
+args = ["Log: ${USER}@${HOST}-${__RUNNER_DATETIME}-${__RUNNER_PID}.log"]
+env = ["USER=admin", "HOST=server01"]

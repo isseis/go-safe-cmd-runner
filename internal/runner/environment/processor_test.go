@@ -113,7 +113,7 @@ func TestVariableExpander_ExpandCommandEnv(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := expander.ExpandCommandEnv(&tt.cmd, tt.group.Name, tt.group.EnvAllowlist)
+			result, err := expander.ExpandCommandEnv(&tt.cmd, tt.group.Name, tt.group.EnvAllowlist, nil)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -507,7 +507,7 @@ func TestVariableExpander_InheritanceModeIntegration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := expander.ExpandCommandEnv(&tt.cmd, tt.group.Name, tt.group.EnvAllowlist)
+			_, err := expander.ExpandCommandEnv(&tt.cmd, tt.group.Name, tt.group.EnvAllowlist, nil)
 
 			if tt.expectError {
 				assert.Error(t, err, tt.description)
@@ -799,4 +799,84 @@ func TestVariableExpander_ExpandStrings(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, []string{"Value: system_value"}, result)
 	})
+}
+
+// TestVariableExpander_ExpandCommandEnv_BaseEnvConflict tests that cmd.Env variables
+// are ignored when they conflict with baseEnv variables, and a warning is logged.
+func TestVariableExpander_ExpandCommandEnv_BaseEnvConflict(t *testing.T) {
+	config := &runnertypes.Config{
+		Global: runnertypes.GlobalConfig{
+			EnvAllowlist: []string{"PATH", "HOME"},
+		},
+	}
+	filter := NewFilter(config.Global.EnvAllowlist)
+	expander := NewVariableExpander(filter)
+
+	tests := []struct {
+		name         string
+		cmd          runnertypes.Command
+		baseEnv      map[string]string
+		expectedVars map[string]string
+	}{
+		{
+			name: "cmd.Env variable ignored due to baseEnv conflict",
+			cmd: runnertypes.Command{
+				Name: "test_cmd",
+				Env: []string{
+					"__RUNNER_DATETIME=user_override", // This should be ignored
+					"CUSTOM_VAR=user_value",           // This should be accepted
+				},
+			},
+			baseEnv: map[string]string{
+				"__RUNNER_DATETIME": "202510051430.123", // Auto-generated value
+				"__RUNNER_PID":      "12345",
+			},
+			expectedVars: map[string]string{
+				"CUSTOM_VAR": "user_value", // Only user's non-conflicting variable
+			},
+		},
+		{
+			name: "multiple cmd.Env conflicts with baseEnv",
+			cmd: runnertypes.Command{
+				Name: "test_cmd",
+				Env: []string{
+					"__RUNNER_DATETIME=override1", // Should be ignored
+					"__RUNNER_PID=override2",      // Should be ignored
+					"VALID_VAR=accepted",          // Should be accepted
+				},
+			},
+			baseEnv: map[string]string{
+				"__RUNNER_DATETIME": "202510051430.123",
+				"__RUNNER_PID":      "12345",
+			},
+			expectedVars: map[string]string{
+				"VALID_VAR": "accepted",
+			},
+		},
+		{
+			name: "no conflicts - all cmd.Env accepted",
+			cmd: runnertypes.Command{
+				Name: "test_cmd",
+				Env: []string{
+					"VAR1=value1",
+					"VAR2=value2",
+				},
+			},
+			baseEnv: map[string]string{
+				"__RUNNER_DATETIME": "202510051430.123",
+			},
+			expectedVars: map[string]string{
+				"VAR1": "value1",
+				"VAR2": "value2",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := expander.ExpandCommandEnv(&tt.cmd, "test_group", []string{}, tt.baseEnv)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedVars, result)
+		})
+	}
 }

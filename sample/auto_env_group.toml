@@ -1,0 +1,63 @@
+# Automatic environment variables group execution test
+# Tests that all commands in a group share the same __RUNNER_DATETIME value
+version = "1.0"
+
+[global]
+timeout = 30
+workdir = "/tmp/auto-env-group-test"
+log_level = "debug"
+skip_standard_paths = true
+
+# Group with multiple commands - all should use same DATETIME
+[[groups]]
+name = "timestamped_operations"
+description = "Multiple operations with consistent timestamp"
+priority = 1
+
+[[groups.commands]]
+name = "step1_create"
+description = "Create directory with timestamp"
+cmd = "echo"
+args = ["mkdir /backup/run-${__RUNNER_DATETIME}"]
+
+[[groups.commands]]
+name = "step2_backup"
+description = "Create backup with same timestamp"
+cmd = "echo"
+args = ["tar czf /backup/run-${__RUNNER_DATETIME}/data.tar.gz /data"]
+
+[[groups.commands]]
+name = "step3_log"
+description = "Log completion with same timestamp"
+cmd = "echo"
+args = ["echo Completed at ${__RUNNER_DATETIME} >> /backup/run-${__RUNNER_DATETIME}/backup.log"]
+
+[[groups.commands]]
+name = "step4_verify"
+description = "Verify all used same timestamp"
+cmd = "echo"
+args = ["ls -la /backup/run-${__RUNNER_DATETIME}/"]
+
+# Second group to verify different execution context
+[[groups]]
+name = "pid_tracking"
+description = "Track runner PID across commands"
+priority = 2
+
+[[groups.commands]]
+name = "show_runner_info"
+description = "Display runner information"
+cmd = "echo"
+args = ["Runner PID: ${__RUNNER_PID}, DateTime: ${__RUNNER_DATETIME}"]
+
+[[groups.commands]]
+name = "create_pid_file"
+description = "Create PID tracking file"
+cmd = "echo"
+args = ["echo ${__RUNNER_PID} > /tmp/runner-${__RUNNER_PID}.pid"]
+
+[[groups.commands]]
+name = "verify_pid_file"
+description = "Verify PID file was created"
+cmd = "echo"
+args = ["cat /tmp/runner-${__RUNNER_PID}.pid"]
