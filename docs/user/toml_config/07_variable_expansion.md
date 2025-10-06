@@ -461,7 +461,7 @@ args = [
 
 Example output:
 ```
-Executed at 202510051430.123 by PID 12345
+Executed at 20251005143022.123 by PID 12345
 ```
 
 #### Combining Multiple Automatic Variables
@@ -478,8 +478,8 @@ args = [
 ```
 
 Example execution:
-- Output file: `/reports/202510051430.123-12345.html`
-- Report title: `Report 202510051430.123`
+- Output file: `/reports/20251005143022.123-12345.html`
+- Report title: `Report 20251005143022.123`
 
 ### 7.7.3 DateTime Format
 
