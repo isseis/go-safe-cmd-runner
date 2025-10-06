@@ -860,3 +860,99 @@ func BenchmarkVariableExpansion(b *testing.B) {
 		})
 	}
 }
+
+// TestExpandCommand_AutoEnvInCommandEnv verifies that automatic environment variables
+// can be referenced within a command's env block.
+func TestExpandCommand_AutoEnvInCommandEnv(t *testing.T) {
+	cfg := &runnertypes.Config{
+		Global: runnertypes.GlobalConfig{
+			EnvAllowlist: []string{"__RUNNER_DATETIME", "__RUNNER_PID", "OUTPUT_FILE"},
+		},
+	}
+	filter := environment.NewFilter(cfg.Global.EnvAllowlist)
+	expander := environment.NewVariableExpander(filter)
+
+	// Create automatic environment variables
+	autoEnv := map[string]string{
+		"__RUNNER_DATETIME": "2024-01-15T10:30:00Z",
+		"__RUNNER_PID":      "12345",
+	}
+
+	tests := []struct {
+		name           string
+		cmd            runnertypes.Command
+		expectedEnv    map[string]string
+		expectError    bool
+		groupAllowlist []string
+	}{
+		{
+			name: "reference automatic variable in command env",
+			cmd: runnertypes.Command{
+				Name: "test_auto_env",
+				Cmd:  "echo",
+				Args: []string{"test"},
+				Env:  []string{"OUTPUT_FILE=/tmp/output_${__RUNNER_DATETIME}.txt"},
+			},
+			expectedEnv: map[string]string{
+				"__RUNNER_DATETIME": "2024-01-15T10:30:00Z",
+				"__RUNNER_PID":      "12345",
+				"OUTPUT_FILE":       "/tmp/output_2024-01-15T10:30:00Z.txt",
+			},
+			expectError:    false,
+			groupAllowlist: []string{"__RUNNER_DATETIME", "__RUNNER_PID"},
+		},
+		{
+			name: "reference multiple automatic variables in command env",
+			cmd: runnertypes.Command{
+				Name: "test_multi_auto_env",
+				Cmd:  "echo",
+				Args: []string{"test"},
+				Env: []string{
+					"OUTPUT_FILE=/tmp/output_${__RUNNER_DATETIME}_${__RUNNER_PID}.txt",
+					"LOG_FILE=/var/log/runner_${__RUNNER_PID}.log",
+				},
+			},
+			expectedEnv: map[string]string{
+				"__RUNNER_DATETIME": "2024-01-15T10:30:00Z",
+				"__RUNNER_PID":      "12345",
+				"OUTPUT_FILE":       "/tmp/output_2024-01-15T10:30:00Z_12345.txt",
+				"LOG_FILE":          "/var/log/runner_12345.log",
+			},
+			expectError:    false,
+			groupAllowlist: []string{"__RUNNER_DATETIME", "__RUNNER_PID"},
+		},
+		{
+			name: "automatic variables take precedence over command env",
+			cmd: runnertypes.Command{
+				Name: "test_precedence",
+				Cmd:  "echo",
+				Args: []string{"test"},
+				Env: []string{
+					"__RUNNER_DATETIME=should_be_overridden",
+					"OUTPUT_FILE=/tmp/output_${__RUNNER_DATETIME}.txt",
+				},
+			},
+			expectedEnv: map[string]string{
+				"__RUNNER_DATETIME": "2024-01-15T10:30:00Z", // autoEnv takes precedence
+				"__RUNNER_PID":      "12345",
+				"OUTPUT_FILE":       "/tmp/output_2024-01-15T10:30:00Z.txt",
+			},
+			expectError:    false,
+			groupAllowlist: []string{"__RUNNER_DATETIME", "__RUNNER_PID"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, env, err := config.ExpandCommand(&tt.cmd, expander, autoEnv, tt.groupAllowlist, "test_group")
+
+			if tt.expectError {
+				assert.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedEnv, env)
+		})
+	}
+}

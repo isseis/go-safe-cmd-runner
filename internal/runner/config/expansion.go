@@ -21,7 +21,9 @@ func ExpandCommand(cmd *runnertypes.Command, expander *environment.VariableExpan
 	}
 
 	// Expand Command.Env variables (this handles cases like PATH=/custom/bin:${PATH})
-	commandEnv, err := expander.ExpandCommandEnv(cmd, groupName, allowlist)
+	// Pass autoEnv as baseEnv so that automatic variables like __RUNNER_DATETIME can be
+	// referenced within the command's env block
+	commandEnv, err := expander.ExpandCommandEnv(cmd, groupName, allowlist, autoEnv)
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("failed to expand command environment: %w", err)
 	}
