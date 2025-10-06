@@ -52,26 +52,26 @@
 
 ### Phase 3: EnvironmentManager実装
 
-- [ ] **3.1 EnvironmentManagerインターフェース定義**
+- [x] **3.1 EnvironmentManagerインターフェース定義**
   - ファイル: `internal/runner/environment/manager.go`（新規作成）
   - タスク: インターフェースを定義
-    - `EnvironmentManager` インターフェース
+    - `Manager` インターフェース (lint対応のため`EnvironmentManager`から変更)
     - `ValidateUserEnv(userEnv map[string]string) error` メソッド
     - `BuildEnv(userEnv map[string]string) (map[string]string, error)` メソッド
 
-- [ ] **3.2 EnvironmentManager実装（テスト作成）**
+- [x] **3.2 EnvironmentManager実装（テスト作成）**
   - ファイル: `internal/runner/environment/manager_test.go`（新規作成）
-  - タスク: `EnvironmentManager` のテストケース作成
+  - タスク: `Manager` のテストケース作成
     - `ValidateUserEnv` のテスト（予約プレフィックス `AutoEnvPrefix` を使用した検証）
     - `BuildEnv` のテスト（自動環境変数とユーザー環境変数のマージ）
     - Clock関数を注入したテスト
   - 状態: テスト失敗を確認（実装前）
 
-- [ ] **3.3 EnvironmentManager実装**
+- [x] **3.3 EnvironmentManager実装**
   - ファイル: `internal/runner/environment/manager.go`
-  - タスク: `environmentManager` 構造体と実装
-    - `environmentManager struct` 定義（autoProvider フィールド）
-    - `NewEnvironmentManager(clock Clock)` コンストラクタ（clockがnilの場合は内部で `time.Now` を使用）
+  - タスク: `manager` 構造体と実装
+    - `manager struct` 定義（autoProvider フィールド）
+    - `NewManager(clock Clock)` コンストラクタ（clockがnilの場合は内部で `time.Now` を使用）
     - `ValidateUserEnv` メソッド実装（`AutoEnvPrefix` を使用した予約プレフィックスチェック、`manager.go` 内に実装）
     - `BuildEnv` メソッド実装（`autoProvider.Generate()` 呼び出しとマージ）
   - 状態: テスト成功を確認
