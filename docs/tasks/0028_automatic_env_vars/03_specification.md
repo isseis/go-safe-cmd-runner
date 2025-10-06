@@ -33,8 +33,8 @@ pidVarName := AutoEnvPrefix + AutoEnvKeyPID            // "__RUNNER_PID"
 ```go
 const (
     // DatetimeLayout is the Go time format for __RUNNER_DATETIME
-    // Format: YYYYMMDDHHMM.msec (e.g., "20251005143032.123")
-    DatetimeLayout = "20060102150405"  // Go time format for YYYYMMDDHHMMSS
+    // Format: YYYYMMDDHHmmSS.msec (e.g., "20251005143032.123")
+    DatetimeLayout = "20060102150405"  // Go time format for YYYYMMDDHHmmSS
 )
 ```
 
@@ -97,16 +97,16 @@ func (p *autoEnvProvider) generatePID() string {
 ### 4.1 フォーマット関数
 
 ```go
-// formatDatetime formats time.Time to YYYYMMDDHHMM.msec format
+// formatDatetime formats time.Time to YYYYMMDDHHmmSS.msec format
 // Example: 2025-10-05 14:30:22.123456789 UTC -> "202510051430.123"
 func formatDatetime(t time.Time) string {
     // Extract milliseconds (0-999)
     ms := t.Nanosecond() / 1000000
 
-    // Format: YYYYMMDDHHMM
+    // Format: YYYYMMDDHHmmSS
     dateTimePart := t.Format(DatetimeLayout)
 
-    // Format: YYYYMMDDHHMM.msec (msec is 3 digits with zero padding)
+    // Format: YYYYMMDDHHmmSS.msec (msec is 3 digits with zero padding)
     return fmt.Sprintf("%s.%03d", dateTimePart, ms)
 }
 ```
@@ -595,7 +595,7 @@ args = [
 - [ ] Clock関数型の定義
 - [ ] AutoEnvProviderインターフェースの実装
 - [ ] NewAutoEnvProviderでのClock関数のデフォルト処理（nilの場合は `time.Now`）
-- [ ] 日時フォーマットが仕様通り（`YYYYMMDDHHMMSS.msec`）
+- [ ] 日時フォーマットが仕様通り（`YYYYMMDDHHmmSS.msec`）
 - [ ] ミリ秒が3桁フォーマット（`%03d`）
 - [ ] UTCタイムゾーンの使用（`p.clock().UTC()`）
 - [ ] 予約プレフィックス検証の実装（`manager.go` の `ValidateUserEnv` メソッド内）

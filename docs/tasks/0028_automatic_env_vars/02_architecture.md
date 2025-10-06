@@ -320,14 +320,14 @@ sequenceDiagram
 
 #### 5.1.1 時刻フォーマット生成
 
-**要件**: `YYYYMMDDHHMMSS.msec` 形式（UTC、ミリ秒3桁）
+**要件**: `YYYYMMDDHHmmSS.msec` 形式（UTC、ミリ秒3桁）
 
 **実装例**:
 ```go
 func (p *autoEnvProvider) generateDateTime() string {
     now := p.clock().UTC()
 
-    // YYYYMMDDHHMMSS部分
+    // YYYYMMDDHHmmSS部分
     dateTimePart := now.Format("20060102150405")
 
     // ミリ秒部分（3桁ゼロパディング）

@@ -20,8 +20,8 @@ const (
 	AutoEnvKeyPID = "PID"
 
 	// DatetimeLayout is the Go time format for __RUNNER_DATETIME
-	// Format: YYYYMMDDHHMMSS.msec (e.g., "20251005143025.123")
-	DatetimeLayout = "20060102150405.000" // Go time format for YYYYMMDDHHMM.msec
+	// Format: YYYYMMDDHHmmSS.msec (e.g., "20251005143025.123")
+	DatetimeLayout = "20060102150405.000" // Go time format for YYYYMMDDHHmmSS.msec
 )
 
 // AutoEnvProvider provides automatic environment variables
@@ -55,7 +55,7 @@ func (p *autoEnvProvider) Generate() map[string]string {
 	}
 }
 
-// generateDateTime generates the datetime string in YYYYMMDDHHMMSS.msec format (UTC)
+// generateDateTime generates the datetime string in YYYYMMDDHHmmSS.msec format (UTC)
 func (p *autoEnvProvider) generateDateTime() string {
 	return p.clock().UTC().Format(DatetimeLayout)
 }

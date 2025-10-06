@@ -155,14 +155,14 @@ func TestIntegration_ManagerAndExpander_RealTimeClock(t *testing.T) {
 	// Build environment with auto-generated variables
 	env := provider.Generate()
 
-	// Verify __RUNNER_DATETIME matches expected format (YYYYMMDDHHMMSS.mmm)
+	// Verify __RUNNER_DATETIME matches expected format (YYYYMMDDHHmmSS.mmm)
 	datetime := env["__RUNNER_DATETIME"]
 	assert.NotEmpty(t, datetime)
 
 	// Verify format using regex
 	datetimePattern := regexp.MustCompile(`^\d{14}\.\d{3}$`)
 	assert.Truef(t, datetimePattern.MatchString(datetime),
-		"__RUNNER_DATETIME format should be YYYYMMDDHHMMSS.mmm, got: %s", datetime)
+		"__RUNNER_DATETIME format should be YYYYMMDDHHmmSS.mmm, got: %s", datetime)
 
 	// Create VariableExpander
 	filter := NewFilter([]string{})

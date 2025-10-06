@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// datetimePattern matches the datetime format YYYYMMDDHHMMSS.msec
+// datetimePattern matches the datetime format YYYYMMDDHHmmSS.msec
 var datetimePattern = regexp.MustCompile(`^\d{14}\.\d{3}$`)
 
 func TestAutoEnvProvider_Generate(t *testing.T) {
@@ -27,8 +27,8 @@ func TestAutoEnvProvider_Generate(t *testing.T) {
 		result := provider.Generate()
 
 		datetime := result[AutoEnvPrefix+AutoEnvKeyDatetime]
-		// Format: YYYYMMDDHHMMSS.msec (e.g., "20251005143025.123")
-		assert.True(t, datetimePattern.MatchString(datetime), "DATETIME should match pattern YYYYMMDDHHMMSS.msec, got: %s", datetime)
+		// Format: YYYYMMDDHHmmSS.msec (e.g., "20251005143025.123")
+		assert.True(t, datetimePattern.MatchString(datetime), "DATETIME should match pattern YYYYMMDDHHmmSS.msec, got: %s", datetime)
 	})
 
 	t.Run("PID is valid", func(t *testing.T) {

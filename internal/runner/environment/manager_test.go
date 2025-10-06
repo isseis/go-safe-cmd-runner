@@ -265,7 +265,7 @@ func TestAutoEnvProviderGenerateWithDefaultClock(t *testing.T) {
 	// Check that auto env variables are present with valid formats
 	datetime, ok := result["__RUNNER_DATETIME"]
 	assert.True(t, ok, "__RUNNER_DATETIME should be present")
-	assert.Regexp(t, `^\d{14}\.\d{3}$`, datetime, "__RUNNER_DATETIME should match format YYYYMMDDHHMMSS.mmm")
+	assert.Regexp(t, `^\d{14}\.\d{3}$`, datetime, "__RUNNER_DATETIME should match format YYYYMMDDHHmmSS.mmm")
 
 	pid, ok := result["__RUNNER_PID"]
 	assert.True(t, ok, "__RUNNER_PID should be present")
