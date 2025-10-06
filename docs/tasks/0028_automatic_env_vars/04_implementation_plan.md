@@ -16,7 +16,7 @@
 
 ### Phase 2: 自動環境変数生成（AutoEnvProvider）
 
-- [ ] **2.1 定数とClock関数型定義**
+- [x] **2.1 定数とClock関数型定義**
   - ファイル: `internal/runner/environment/autoenv.go`（新規作成）
   - タスク: 型定義と定数を追加
     - `Clock` 関数型定義（`type Clock func() time.Time`）
@@ -25,13 +25,13 @@
     - 定数 `AutoEnvKeyPID = "PID"`
     - 定数 `DatetimeLayout = "200601021504"`
 
-- [ ] **2.2 AutoEnvProviderインターフェース定義**
+- [x] **2.2 AutoEnvProviderインターフェース定義**
   - ファイル: `internal/runner/environment/autoenv.go`
   - タスク: インターフェースを定義
     - `AutoEnvProvider` インターフェース
     - `Generate() map[string]string` メソッド
 
-- [ ] **2.3 AutoEnvProvider実装（テスト作成）**
+- [x] **2.3 AutoEnvProvider実装（テスト作成）**
   - ファイル: `internal/runner/environment/autoenv_test.go`（新規作成）
   - タスク: `AutoEnvProvider` のテストケース作成
     - `Generate()` のテスト（DATETIME, PID が含まれることを確認）
@@ -40,7 +40,7 @@
     - エッジケース: 年末年始、ナノ秒精度
   - 状態: テスト失敗を確認（実装前）
 
-- [ ] **2.4 AutoEnvProvider実装**
+- [x] **2.4 AutoEnvProvider実装**
   - ファイル: `internal/runner/environment/autoenv.go`
   - タスク: `autoEnvProvider` 構造体と実装
     - `autoEnvProvider struct` 定義（logger, clock フィールド）
