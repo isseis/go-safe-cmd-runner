@@ -2,6 +2,7 @@ package environment
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"regexp"
 	"strconv"
@@ -85,9 +86,7 @@ func TestIntegration_ManagerAndExpander_MultipleAutoVars(t *testing.T) {
 
 	// Add user-defined variables (simulating what happens in ExpandCommand)
 	env := make(map[string]string)
-	for k, v := range autoEnv {
-		env[k] = v
-	}
+	maps.Copy(env, autoEnv)
 	env["HOST"] = "server01"
 
 	// Create VariableExpander
@@ -120,9 +119,7 @@ func TestIntegration_ManagerAndExpander_ExpandStrings(t *testing.T) {
 
 	// Add user-defined variables (simulating what happens in ExpandCommand)
 	env := make(map[string]string)
-	for k, v := range autoEnv {
-		env[k] = v
-	}
+	maps.Copy(env, autoEnv)
 	env["DATA_DIR"] = "/data"
 
 	// Create VariableExpander
@@ -228,9 +225,7 @@ func TestIntegration_ManagerAndExpander_MixedWithSystemEnv(t *testing.T) {
 
 	// Add user-defined variables (simulating what happens in ExpandCommand)
 	env := make(map[string]string)
-	for k, v := range autoEnv {
-		env[k] = v
-	}
+	maps.Copy(env, autoEnv)
 	env["PATH"] = "/usr/bin:/bin"
 	env["HOME"] = "/home/user"
 	env["CUSTOM"] = "value"
