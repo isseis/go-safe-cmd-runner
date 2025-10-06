@@ -1,8 +1,6 @@
 package environment
 
 import (
-	"fmt"
-	"log/slog"
 	"os"
 	"strconv"
 	"time"
@@ -23,10 +21,7 @@ const (
 
 	// DatetimeLayout is the Go time format for __RUNNER_DATETIME
 	// Format: YYYYMMDDHHMM.msec (e.g., "202510051430.123")
-	DatetimeLayout = "200601021504" // Go time format for YYYYMMDDHHMM
-
-	// nanosToMillis is the conversion factor from nanoseconds to milliseconds
-	nanosToMillis = 1_000_000
+	DatetimeLayout = "200601021504.000" // Go time format for YYYYMMDDHHMM.msec
 )
 
 // AutoEnvProvider provides automatic environment variables
@@ -38,8 +33,7 @@ type AutoEnvProvider interface {
 
 // autoEnvProvider implements AutoEnvProvider
 type autoEnvProvider struct {
-	logger *slog.Logger
-	clock  Clock
+	clock Clock
 }
 
 // NewAutoEnvProvider creates a new AutoEnvProvider.
@@ -49,8 +43,7 @@ func NewAutoEnvProvider(clock Clock) AutoEnvProvider {
 		clock = time.Now
 	}
 	return &autoEnvProvider{
-		logger: slog.Default().With("component", "AutoEnvProvider"),
-		clock:  clock,
+		clock: clock,
 	}
 }
 
@@ -64,10 +57,7 @@ func (p *autoEnvProvider) Generate() map[string]string {
 
 // generateDateTime generates the datetime string in YYYYMMDDHHMM.msec format (UTC)
 func (p *autoEnvProvider) generateDateTime() string {
-	now := p.clock().UTC()
-	dateTimePart := now.Format(DatetimeLayout)
-	msec := now.Nanosecond() / nanosToMillis
-	return fmt.Sprintf("%s.%03d", dateTimePart, msec)
+	return p.clock().UTC().Format(DatetimeLayout)
 }
 
 // generatePID generates the PID string
