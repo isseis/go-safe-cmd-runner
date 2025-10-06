@@ -98,7 +98,7 @@ func (p *autoEnvProvider) generatePID() string {
 
 ```go
 // formatDatetime formats time.Time to YYYYMMDDHHmmSS.msec format
-// Example: 2025-10-05 14:30:22.123456789 UTC -> "202510051430.123"
+// Example: 2025-10-05 14:30:22.123456789 UTC -> "20251005143022.123"
 func formatDatetime(t time.Time) string {
     // Extract milliseconds (0-999)
     ms := t.Nanosecond() / 1000000
