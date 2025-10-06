@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/pelletier/go-toml/v2"
@@ -16,7 +17,8 @@ import (
 
 // Loader handles loading and validating configurations
 type Loader struct {
-	fs common.FileSystem
+	fs         common.FileSystem
+	envManager environment.Manager
 }
 
 // Error definitions for the config package
@@ -41,8 +43,14 @@ func NewLoader() *Loader {
 
 // NewLoaderWithFS creates a new config loader with a custom FileSystem
 func NewLoaderWithFS(fs common.FileSystem) *Loader {
+	return NewLoaderWithOptions(fs, environment.NewManager(nil))
+}
+
+// NewLoaderWithOptions creates a new config loader with custom FileSystem and EnvironmentManager
+func NewLoaderWithOptions(fs common.FileSystem, envManager environment.Manager) *Loader {
 	return &Loader{
-		fs: fs,
+		fs:         fs,
+		envManager: envManager,
 	}
 }
 
@@ -79,5 +87,38 @@ func (l *Loader) LoadConfig(content []byte) (*runnertypes.Config, error) {
 		return nil, fmt.Errorf("%w: %s", ErrWorkdirHasRelativeComponents, workDir)
 	}
 	cfg.Global.WorkDir = workDir
+
+	// Validate that user-defined environment variables do not use reserved prefix
+	if err := l.validateEnvironmentVariables(&cfg); err != nil {
+		return nil, fmt.Errorf("environment variable validation failed: %w", err)
+	}
+
 	return &cfg, nil
+}
+
+// validateEnvironmentVariables validates all environment variables in the config
+func (l *Loader) validateEnvironmentVariables(cfg *runnertypes.Config) error {
+	// Validate environment variables for each command in each group
+	for _, group := range cfg.Groups {
+		for _, cmd := range group.Commands {
+			// Build environment map from command's Env slice
+			envMap, err := cmd.BuildEnvironmentMap()
+			if err != nil {
+				return fmt.Errorf("failed to build environment map for command %q: %w", cmd.Name, err)
+			}
+
+			// Extract environment variable names
+			envNames := make([]string, 0, len(envMap))
+			for key := range envMap {
+				envNames = append(envNames, key)
+			}
+
+			// Validate using EnvironmentManager
+			if err := l.envManager.ValidateUserEnvNames(envNames); err != nil {
+				return fmt.Errorf("invalid environment variable in command %q: %w", cmd.Name, err)
+			}
+		}
+	}
+
+	return nil
 }

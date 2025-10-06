@@ -92,28 +92,28 @@
 
 ### Phase 5: 設定ロード時の検証統合
 
-- [ ] **5.1 Config検証統合（テスト作成）**
+- [x] **5.1 Config検証統合（テスト作成）**
   - ファイル: `internal/runner/config/loader_test.go`
   - タスク: 設定ロード時の予約プレフィックス検証テスト
     - コマンドレベル環境変数の検証
     - グループレベル環境変数の検証（存在する場合）
     - エラーケース: 予約プレフィックス使用
-  - 状態: テスト失敗を確認（実装前）
+  - 状態: テスト作成完了、検証ロジック動作確認
 
-- [ ] **5.2 Config検証統合（実装）**
+- [x] **5.2 Config検証統合（実装）**
   - ファイル: `internal/runner/config/loader.go`
   - タスク: 設定ロード時に環境変数を検証
     - EnvironmentManagerを使用して各コマンドの環境変数を検証
     - エラー時は設定ロードを中止
   - 状態: テスト成功を確認
 
-- [ ] **5.3 依存性注入の更新（実装）**
+- [x] **5.3 依存性注入の更新（実装）**
   - ファイル: `cmd/runner/main.go`
   - タスク: EnvironmentManagerを各コンポーネントに注入
     - EnvironmentManagerの生成（`NewEnvironmentManager(nil)` - clockはnilでデフォルトの `time.Now` を使用）
     - VariableExpanderへの注入
     - Config Loaderへの注入
-  - 状態: ビルド成功を確認
+  - 状態: ビルド成功を確認（注: bootstrap/config.goを通じて既に統合済み）
 
 ### Phase 6: 統合テストとサンプル
 
