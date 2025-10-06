@@ -154,7 +154,7 @@ flowchart TB
     ParseTOML --> ValidateCommands{For each command}
 
     ValidateCommands --> CheckEnv[Extract env vars]
-    CheckEnv --> Validate{Has reserved\nprefix?}
+    CheckEnv --> Validate{"Has reserved<br>prefix?"}
 
     Validate -->|Yes| Error[Return Error]
     Validate -->|No| Next{More commands?}
@@ -234,13 +234,13 @@ environment variable "__RUNNER_CUSTOM" uses reserved prefix "__RUNNER_"; this pr
 
 ```mermaid
 flowchart LR
-    Auto[Auto Env\nGenerated] --> Merge{Merge}
-    User[User-defined Env\nfrom TOML] --> Merge
+    Auto["Auto Env<br>Generated"] --> Merge{Merge}
+    User["User-defined Env<br>from TOML"] --> Merge
 
     Merge --> Combined[Combined Env Map]
 
-    Note1[Auto env is\nadded first]
-    Note2[User env cannot\noverride auto env\ndue to validation]
+    Note1["Auto env is<br>added first"]
+    Note2["User env cannot<br>override auto env<br>due to validation"]
 
     style Auto fill:#e1f5fe
     style User fill:#fff3e0
