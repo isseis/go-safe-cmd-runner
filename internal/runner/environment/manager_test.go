@@ -62,7 +62,7 @@ func assertAllErrorVarsFound(t *testing.T, errs []*runnertypes.ReservedEnvPrefix
 	}
 }
 
-func TestManagerValidateUserEnvNames(t *testing.T) {
+func TestValidateUserEnvNames(t *testing.T) {
 	tests := []struct {
 		name         string
 		envMap       map[string]string
@@ -130,8 +130,7 @@ func TestManagerValidateUserEnvNames(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			manager := NewManager(nil)
-			err := manager.ValidateUserEnvNames(tt.envMap)
+			err := ValidateUserEnvNames(tt.envMap)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -160,7 +159,7 @@ func TestManagerValidateUserEnvNames(t *testing.T) {
 	}
 }
 
-func TestManagerValidateUserEnvNames_MultipleErrors(t *testing.T) {
+func TestValidateUserEnvNames_MultipleErrors(t *testing.T) {
 	tests := []struct {
 		name              string
 		envMap            map[string]string
@@ -198,8 +197,7 @@ func TestManagerValidateUserEnvNames_MultipleErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			manager := NewManager(nil)
-			err := manager.ValidateUserEnvNames(tt.envMap)
+			err := ValidateUserEnvNames(tt.envMap)
 
 			require.Error(t, err)
 
@@ -212,7 +210,7 @@ func TestManagerValidateUserEnvNames_MultipleErrors(t *testing.T) {
 	}
 }
 
-func TestManagerBuildEnv(t *testing.T) {
+func TestAutoEnvProviderGenerate(t *testing.T) {
 	// Fixed time for testing: 2025-10-05 14:30:22.123456789 UTC
 	fixedTime := time.Date(2025, 10, 5, 14, 30, 22, 123456789, time.UTC)
 	fixedClock := func() time.Time { return fixedTime }
@@ -221,7 +219,6 @@ func TestManagerBuildEnv(t *testing.T) {
 		name        string
 		clock       Clock
 		wantAutoEnv map[string]string
-		wantErr     bool
 	}{
 		{
 			name:  "generate auto env with fixed clock",
@@ -230,21 +227,14 @@ func TestManagerBuildEnv(t *testing.T) {
 				"__RUNNER_DATETIME": "202510051430.123",
 				// PID is dynamic, checked separately
 			},
-			wantErr: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			manager := NewManager(tt.clock)
-			result, err := manager.BuildEnv()
+			provider := NewAutoEnvProvider(tt.clock)
+			result := provider.Generate()
 
-			if tt.wantErr {
-				require.Error(t, err)
-				return
-			}
-
-			require.NoError(t, err)
 			require.NotNil(t, result)
 
 			// Check that all auto env variables are present
@@ -266,11 +256,10 @@ func TestManagerBuildEnv(t *testing.T) {
 	}
 }
 
-func TestManagerBuildEnvWithDefaultClock(t *testing.T) {
-	manager := NewManager(nil)
+func TestAutoEnvProviderGenerateWithDefaultClock(t *testing.T) {
+	provider := NewAutoEnvProvider(nil)
 
-	result, err := manager.BuildEnv()
-	require.NoError(t, err)
+	result := provider.Generate()
 	require.NotNil(t, result)
 
 	// Check that auto env variables are present with valid formats
@@ -286,16 +275,15 @@ func TestManagerBuildEnvWithDefaultClock(t *testing.T) {
 	assert.Equal(t, 2, len(result), "should contain only __RUNNER_DATETIME and __RUNNER_PID")
 }
 
-func TestManagerBuildEnvNoConflict(t *testing.T) {
-	// This test verifies that BuildEnv generates only auto env variables
+func TestAutoEnvProviderGenerateConsistency(t *testing.T) {
+	// This test verifies that AutoEnvProvider generates consistent values
 
 	fixedTime := time.Date(2025, 10, 5, 14, 30, 22, 123456789, time.UTC)
 	fixedClock := func() time.Time { return fixedTime }
 
-	manager := NewManager(fixedClock)
+	provider := NewAutoEnvProvider(fixedClock)
 
-	result, err := manager.BuildEnv()
-	require.NoError(t, err)
+	result := provider.Generate()
 
 	// Auto env should always be present with correct values
 	assert.Equal(t, "202510051430.123", result["__RUNNER_DATETIME"])

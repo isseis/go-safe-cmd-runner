@@ -12,19 +12,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestIntegration_ManagerAndExpander_AutoDateTime tests integration between
-// EnvironmentManager and VariableExpander for __RUNNER_DATETIME expansion
-func TestIntegration_ManagerAndExpander_AutoDateTime(t *testing.T) {
+// TestIntegration_AutoEnvProviderAndExpander_AutoDateTime tests integration between
+// AutoEnvProvider and VariableExpander for __RUNNER_DATETIME expansion
+func TestIntegration_AutoEnvProviderAndExpander_AutoDateTime(t *testing.T) {
 	// Fixed time for testing
 	fixedTime := time.Date(2025, 10, 5, 14, 30, 22, 123456789, time.UTC)
 	clock := func() time.Time { return fixedTime }
 
-	// Create EnvironmentManager with fixed clock
-	manager := NewManager(clock)
+	// Create AutoEnvProvider with fixed clock
+	provider := NewAutoEnvProvider(clock)
 
-	// Build environment with auto-generated variables
-	env, err := manager.BuildEnv()
-	require.NoError(t, err)
+	// Generate auto environment variables
+	env := provider.Generate()
 
 	// Verify auto-generated variables are present
 	assert.Equal(t, "202510051430.123", env["__RUNNER_DATETIME"])
@@ -44,15 +43,14 @@ func TestIntegration_ManagerAndExpander_AutoDateTime(t *testing.T) {
 	assert.Equal(t, expected, expanded)
 }
 
-// TestIntegration_ManagerAndExpander_AutoPID tests integration between
-// EnvironmentManager and VariableExpander for __RUNNER_PID expansion
-func TestIntegration_ManagerAndExpander_AutoPID(t *testing.T) {
-	// Create EnvironmentManager with default clock
-	manager := NewManager(nil)
+// TestIntegration_AutoEnvProviderAndExpander_AutoPID tests integration between
+// AutoEnvProvider and VariableExpander for __RUNNER_PID expansion
+func TestIntegration_AutoEnvProviderAndExpander_AutoPID(t *testing.T) {
+	// Create AutoEnvProvider with default clock
+	provider := NewAutoEnvProvider(nil)
 
-	// Build environment with auto-generated variables
-	env, err := manager.BuildEnv()
-	require.NoError(t, err)
+	// Generate auto environment variables
+	env := provider.Generate()
 
 	// Verify __RUNNER_PID is present and equals current PID
 	expectedPID := strconv.Itoa(os.Getpid())
@@ -80,11 +78,10 @@ func TestIntegration_ManagerAndExpander_MultipleAutoVars(t *testing.T) {
 	clock := func() time.Time { return fixedTime }
 
 	// Create EnvironmentManager with fixed clock
-	manager := NewManager(clock)
+	provider := NewAutoEnvProvider(clock)
 
 	// Build environment with auto-generated variables
-	autoEnv, err := manager.BuildEnv()
-	require.NoError(t, err)
+	autoEnv := provider.Generate()
 
 	// Add user-defined variables (simulating what happens in ExpandCommand)
 	env := make(map[string]string)
@@ -116,11 +113,10 @@ func TestIntegration_ManagerAndExpander_ExpandStrings(t *testing.T) {
 	clock := func() time.Time { return fixedTime }
 
 	// Create EnvironmentManager with fixed clock
-	manager := NewManager(clock)
+	provider := NewAutoEnvProvider(clock)
 
 	// Build environment with auto-generated variables
-	autoEnv, err := manager.BuildEnv()
-	require.NoError(t, err)
+	autoEnv := provider.Generate()
 
 	// Add user-defined variables (simulating what happens in ExpandCommand)
 	env := make(map[string]string)
@@ -157,11 +153,10 @@ func TestIntegration_ManagerAndExpander_ExpandStrings(t *testing.T) {
 // real-time clock (not fixed) to ensure datetime format is correct
 func TestIntegration_ManagerAndExpander_RealTimeClock(t *testing.T) {
 	// Create EnvironmentManager with nil clock (uses time.Now)
-	manager := NewManager(nil)
+	provider := NewAutoEnvProvider(nil)
 
 	// Build environment with auto-generated variables
-	env, err := manager.BuildEnv()
-	require.NoError(t, err)
+	env := provider.Generate()
 
 	// Verify __RUNNER_DATETIME matches expected format (YYYYMMDDHHMM.mmm)
 	datetime := env["__RUNNER_DATETIME"]
@@ -195,11 +190,10 @@ func TestIntegration_ManagerAndExpander_NoUserEnv(t *testing.T) {
 	clock := func() time.Time { return fixedTime }
 
 	// Create EnvironmentManager with fixed clock
-	manager := NewManager(clock)
+	provider := NewAutoEnvProvider(clock)
 
 	// Build environment with auto-generated variables only
-	env, err := manager.BuildEnv()
-	require.NoError(t, err)
+	env := provider.Generate()
 
 	// Verify only auto-generated variables are present
 	assert.Len(t, env, 2) // Only __RUNNER_DATETIME and __RUNNER_PID
@@ -227,11 +221,10 @@ func TestIntegration_ManagerAndExpander_MixedWithSystemEnv(t *testing.T) {
 	clock := func() time.Time { return fixedTime }
 
 	// Create EnvironmentManager with fixed clock
-	manager := NewManager(clock)
+	provider := NewAutoEnvProvider(clock)
 
 	// Build environment with auto-generated variables
-	autoEnv, err := manager.BuildEnv()
-	require.NoError(t, err)
+	autoEnv := provider.Generate()
 
 	// Add user-defined variables (simulating what happens in ExpandCommand)
 	env := make(map[string]string)
