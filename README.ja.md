@@ -202,7 +202,7 @@ max_risk_level = "medium"
 
 システムは各コマンド実行時に自動的に環境変数を提供します：
 
-- `__RUNNER_DATETIME`: 実行タイムスタンプ（UTC）を`YYYYMMDDHHMM.msec`形式で表現
+- `__RUNNER_DATETIME`: 実行タイムスタンプ（UTC）を`YYYYMMDDHHmmSS.msec`形式で表現
 - `__RUNNER_PID`: runnerのプロセスID
 
 これらの変数はコマンドパス、引数、環境変数の値で使用できます：

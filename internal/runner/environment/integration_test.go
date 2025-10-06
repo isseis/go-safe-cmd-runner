@@ -27,7 +27,7 @@ func TestIntegration_AutoEnvProviderAndExpander_AutoDateTime(t *testing.T) {
 	env := provider.Generate()
 
 	// Verify auto-generated variables are present
-	assert.Equal(t, "202510051430.123", env["__RUNNER_DATETIME"])
+	assert.Equal(t, "20251005143022.123", env["__RUNNER_DATETIME"])
 	assert.NotEmpty(t, env["__RUNNER_PID"])
 
 	// Create VariableExpander with empty filter (allow all)
@@ -40,7 +40,7 @@ func TestIntegration_AutoEnvProviderAndExpander_AutoDateTime(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify expansion
-	expected := "backup-202510051430.123.tar.gz"
+	expected := "backup-20251005143022.123.tar.gz"
 	assert.Equal(t, expected, expanded)
 }
 
@@ -100,7 +100,7 @@ func TestIntegration_ManagerAndExpander_MultipleAutoVars(t *testing.T) {
 
 	// Verify expansion pattern
 	expectedPID := strconv.Itoa(os.Getpid())
-	expected := fmt.Sprintf("server01-202512312359.999-%s.log", expectedPID)
+	expected := fmt.Sprintf("server01-20251231235959.999-%s.log", expectedPID)
 	assert.Equal(t, expected, expanded)
 }
 
@@ -140,7 +140,7 @@ func TestIntegration_ManagerAndExpander_ExpandStrings(t *testing.T) {
 	expected := []string{
 		"tar",
 		"czf",
-		"/data/backup-202501010000.001.tar.gz",
+		"/data/backup-20250101000000.001.tar.gz",
 		"/data/files",
 	}
 	assert.Equal(t, expected, expanded)
@@ -155,14 +155,14 @@ func TestIntegration_ManagerAndExpander_RealTimeClock(t *testing.T) {
 	// Build environment with auto-generated variables
 	env := provider.Generate()
 
-	// Verify __RUNNER_DATETIME matches expected format (YYYYMMDDHHMM.mmm)
+	// Verify __RUNNER_DATETIME matches expected format (YYYYMMDDHHMMSS.mmm)
 	datetime := env["__RUNNER_DATETIME"]
 	assert.NotEmpty(t, datetime)
 
 	// Verify format using regex
-	datetimePattern := regexp.MustCompile(`^\d{12}\.\d{3}$`)
+	datetimePattern := regexp.MustCompile(`^\d{14}\.\d{3}$`)
 	assert.Truef(t, datetimePattern.MatchString(datetime),
-		"__RUNNER_DATETIME format should be YYYYMMDDHHMM.mmm, got: %s", datetime)
+		"__RUNNER_DATETIME format should be YYYYMMDDHHMMSS.mmm, got: %s", datetime)
 
 	// Create VariableExpander
 	filter := NewFilter([]string{})
@@ -174,7 +174,7 @@ func TestIntegration_ManagerAndExpander_RealTimeClock(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify expansion pattern
-	expectedPattern := regexp.MustCompile(`^log-\d{12}\.\d{3}\.txt$`)
+	expectedPattern := regexp.MustCompile(`^log-\d{14}\.\d{3}\.txt$`)
 	assert.Truef(t, expectedPattern.MatchString(expanded),
 		"Expanded string should match pattern, got: %s", expanded)
 }
@@ -194,7 +194,7 @@ func TestIntegration_ManagerAndExpander_NoUserEnv(t *testing.T) {
 
 	// Verify only auto-generated variables are present
 	assert.Len(t, env, 2) // Only __RUNNER_DATETIME and __RUNNER_PID
-	assert.Equal(t, "202506151200.500", env["__RUNNER_DATETIME"])
+	assert.Equal(t, "20250615120000.500", env["__RUNNER_DATETIME"])
 	assert.NotEmpty(t, env["__RUNNER_PID"])
 
 	// Create VariableExpander
@@ -207,7 +207,7 @@ func TestIntegration_ManagerAndExpander_NoUserEnv(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify expansion
-	assert.Equal(t, "202506151200.500", expanded)
+	assert.Equal(t, "20250615120000.500", expanded)
 }
 
 // TestIntegration_ManagerAndExpander_MixedWithSystemEnv tests that
@@ -232,7 +232,7 @@ func TestIntegration_ManagerAndExpander_MixedWithSystemEnv(t *testing.T) {
 	env["LOG_PATH"] = "/var/log/${__RUNNER_DATETIME}"
 
 	// Verify both auto and user variables are present
-	assert.Equal(t, "202503200830.100", env["__RUNNER_DATETIME"])
+	assert.Equal(t, "20250320083045.100", env["__RUNNER_DATETIME"])
 	assert.NotEmpty(t, env["__RUNNER_PID"])
 	assert.Equal(t, "/usr/bin:/bin", env["PATH"])
 	assert.Equal(t, "/home/user", env["HOME"])
@@ -248,5 +248,5 @@ func TestIntegration_ManagerAndExpander_MixedWithSystemEnv(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify expansion
-	assert.Equal(t, "/var/log/202503200830.100", expanded)
+	assert.Equal(t, "/var/log/20250320083045.100", expanded)
 }

@@ -224,7 +224,7 @@ func TestAutoEnvProviderGenerate(t *testing.T) {
 			name:  "generate auto env with fixed clock",
 			clock: fixedClock,
 			wantAutoEnv: map[string]string{
-				"__RUNNER_DATETIME": "202510051430.123",
+				"__RUNNER_DATETIME": "20251005143022.123",
 				// PID is dynamic, checked separately
 			},
 		},
@@ -265,7 +265,7 @@ func TestAutoEnvProviderGenerateWithDefaultClock(t *testing.T) {
 	// Check that auto env variables are present with valid formats
 	datetime, ok := result["__RUNNER_DATETIME"]
 	assert.True(t, ok, "__RUNNER_DATETIME should be present")
-	assert.Regexp(t, `^\d{12}\.\d{3}$`, datetime, "__RUNNER_DATETIME should match format YYYYMMDDHHMM.mmm")
+	assert.Regexp(t, `^\d{14}\.\d{3}$`, datetime, "__RUNNER_DATETIME should match format YYYYMMDDHHMMSS.mmm")
 
 	pid, ok := result["__RUNNER_PID"]
 	assert.True(t, ok, "__RUNNER_PID should be present")
@@ -286,7 +286,7 @@ func TestAutoEnvProviderGenerateConsistency(t *testing.T) {
 	result := provider.Generate()
 
 	// Auto env should always be present with correct values
-	assert.Equal(t, "202510051430.123", result["__RUNNER_DATETIME"])
+	assert.Equal(t, "20251005143022.123", result["__RUNNER_DATETIME"])
 	assert.Regexp(t, `^\d+$`, result["__RUNNER_PID"])
 
 	// Only auto env variables should be present
