@@ -2,6 +2,7 @@ package environment
 
 import (
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -10,35 +11,86 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Helper function to extract all ReservedEnvPrefixError from a joined error
+func extractReservedEnvPrefixErrors(err error) []*runnertypes.ReservedEnvPrefixError {
+	var result []*runnertypes.ReservedEnvPrefixError
+
+	type unwrapper interface {
+		Unwrap() []error
+	}
+
+	var collect func(error)
+	collect = func(e error) {
+		if e == nil {
+			return
+		}
+
+		// Check if this error is a ReservedEnvPrefixError
+		var rpe *runnertypes.ReservedEnvPrefixError
+		if errors.As(e, &rpe) {
+			result = append(result, rpe)
+		}
+
+		// Check if this error wraps multiple errors (from errors.Join)
+		if u, ok := e.(unwrapper); ok {
+			for _, unwrappedErr := range u.Unwrap() {
+				collect(unwrappedErr)
+			}
+		}
+	}
+
+	collect(err)
+	return result
+}
+
+// Helper function to assert that all expected error variables are found
+func assertAllErrorVarsFound(t *testing.T, errs []*runnertypes.ReservedEnvPrefixError, expectedVars []string) {
+	t.Helper()
+
+	foundVars := make(map[string]bool)
+	for _, rpe := range errs {
+		assert.Equal(t, AutoEnvPrefix, rpe.Prefix)
+		foundVars[rpe.VarName] = true
+	}
+
+	assert.Equal(t, len(expectedVars), len(foundVars),
+		"Expected %d errors but found %d", len(expectedVars), len(foundVars))
+
+	for _, expectedVar := range expectedVars {
+		assert.True(t, foundVars[expectedVar],
+			"Expected error for variable %q but it was not found", expectedVar)
+	}
+}
+
 func TestManagerValidateUserEnvNames(t *testing.T) {
 	tests := []struct {
 		name         string
-		envNames     []string
+		envMap       map[string]string
 		wantErr      bool
 		errType      error
 		invalidNames []string // Expected invalid names in error
 	}{
 		{
 			name: "valid environment variable names",
-			envNames: []string{
-				"PATH",
-				"HOME",
-				"CUSTOM",
-				"GO_PATH",
-				"__CUSTOM", // Not using the reserved prefix
+			envMap: map[string]string{
+				"PATH":     "/usr/bin",
+				"HOME":     "/home/user",
+				"CUSTOM":   "value",
+				"GO_PATH":  "/go",
+				"__CUSTOM": "value", // Not using the reserved prefix
 			},
 			wantErr: false,
 		},
 		{
-			name:     "empty environment names",
-			envNames: []string{},
-			wantErr:  false,
+			name:    "empty environment names",
+			envMap:  map[string]string{},
+			wantErr: false,
 		},
 		{
 			name: "reserved prefix DATETIME",
-			envNames: []string{
-				"PATH",
-				"__RUNNER_DATETIME",
+			envMap: map[string]string{
+				"PATH":              "/usr/bin",
+				"__RUNNER_DATETIME": "value",
 			},
 			wantErr:      true,
 			errType:      &runnertypes.ReservedEnvPrefixError{},
@@ -46,9 +98,9 @@ func TestManagerValidateUserEnvNames(t *testing.T) {
 		},
 		{
 			name: "reserved prefix PID",
-			envNames: []string{
-				"PATH",
-				"__RUNNER_PID",
+			envMap: map[string]string{
+				"PATH":         "/usr/bin",
+				"__RUNNER_PID": "value",
 			},
 			wantErr:      true,
 			errType:      &runnertypes.ReservedEnvPrefixError{},
@@ -56,9 +108,9 @@ func TestManagerValidateUserEnvNames(t *testing.T) {
 		},
 		{
 			name: "reserved prefix custom variable",
-			envNames: []string{
-				"PATH",
-				"__RUNNER_CUSTOM",
+			envMap: map[string]string{
+				"PATH":            "/usr/bin",
+				"__RUNNER_CUSTOM": "value",
 			},
 			wantErr:      true,
 			errType:      &runnertypes.ReservedEnvPrefixError{},
@@ -66,9 +118,9 @@ func TestManagerValidateUserEnvNames(t *testing.T) {
 		},
 		{
 			name: "multiple reserved prefix violations",
-			envNames: []string{
-				"__RUNNER_VAR1",
-				"__RUNNER_VAR2",
+			envMap: map[string]string{
+				"__RUNNER_VAR1": "value1",
+				"__RUNNER_VAR2": "value2",
 			},
 			wantErr:      true,
 			errType:      &runnertypes.ReservedEnvPrefixError{},
@@ -79,29 +131,83 @@ func TestManagerValidateUserEnvNames(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			manager := NewManager(nil)
-			err := manager.ValidateUserEnvNames(tt.envNames)
+			err := manager.ValidateUserEnvNames(tt.envMap)
 
 			if tt.wantErr {
 				require.Error(t, err)
 				assert.True(t, errors.Is(err, tt.errType), "error type mismatch")
 
-				// Check that the error contains the reserved prefix
-				var rpe *runnertypes.ReservedEnvPrefixError
-				if errors.As(err, &rpe) {
+				// Extract and validate all errors
+				errs := extractReservedEnvPrefixErrors(err)
+				require.NotEmpty(t, errs, "should have at least one ReservedEnvPrefixError")
+
+				// Verify at least one error matches the expected invalid names
+				foundVars := make([]string, 0, len(errs))
+				for _, rpe := range errs {
 					assert.Equal(t, AutoEnvPrefix, rpe.Prefix)
-					// Check that the error references one of the invalid names
-					found := false
-					for _, invalidName := range tt.invalidNames {
-						if rpe.VarName == invalidName {
-							found = true
-							break
-						}
-					}
-					assert.True(t, found, "error should reference one of the invalid variables: %v, got: %s", tt.invalidNames, rpe.VarName)
+					foundVars = append(foundVars, rpe.VarName)
+				}
+
+				// Check that all found vars are in the expected list
+				for _, foundVar := range foundVars {
+					assert.True(t, slices.Contains(tt.invalidNames, foundVar),
+						"found unexpected error variable %q, expected one of: %v", foundVar, tt.invalidNames)
 				}
 			} else {
 				assert.NoError(t, err)
 			}
+		})
+	}
+}
+
+func TestManagerValidateUserEnvNames_MultipleErrors(t *testing.T) {
+	tests := []struct {
+		name              string
+		envMap            map[string]string
+		expectedErrorVars []string // All expected variable names in errors
+	}{
+		{
+			name: "two reserved prefix violations",
+			envMap: map[string]string{
+				"PATH":          "/usr/bin",
+				"__RUNNER_VAR1": "value1",
+				"__RUNNER_VAR2": "value2",
+			},
+			expectedErrorVars: []string{"__RUNNER_VAR1", "__RUNNER_VAR2"},
+		},
+		{
+			name: "three reserved prefix violations",
+			envMap: map[string]string{
+				"__RUNNER_VAR1": "value1",
+				"__RUNNER_VAR2": "value2",
+				"__RUNNER_VAR3": "value3",
+				"VALID_VAR":     "valid",
+			},
+			expectedErrorVars: []string{"__RUNNER_VAR1", "__RUNNER_VAR2", "__RUNNER_VAR3"},
+		},
+		{
+			name: "all reserved prefix violations",
+			envMap: map[string]string{
+				"__RUNNER_DATETIME": "value1",
+				"__RUNNER_PID":      "value2",
+				"__RUNNER_CUSTOM":   "value3",
+			},
+			expectedErrorVars: []string{"__RUNNER_DATETIME", "__RUNNER_PID", "__RUNNER_CUSTOM"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manager := NewManager(nil)
+			err := manager.ValidateUserEnvNames(tt.envMap)
+
+			require.Error(t, err)
+
+			// Use helper function to extract all errors
+			errs := extractReservedEnvPrefixErrors(err)
+
+			// Use helper function to assert all expected errors are found
+			assertAllErrorVarsFound(t, errs, tt.expectedErrorVars)
 		})
 	}
 }

@@ -1,6 +1,7 @@
 package environment
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -9,7 +10,7 @@ import (
 // Manager manages environment variables for command execution
 type Manager interface {
 	// ValidateUserEnvNames validates that user-defined env variable names do not use reserved prefixes.
-	ValidateUserEnvNames(envNames []string) error
+	ValidateUserEnvNames(userEnv map[string]string) error
 
 	// BuildEnv builds the final environment for a command, merging auto-generated
 	// and user-defined variables. The returned map includes all auto env variables
@@ -31,13 +32,14 @@ func NewManager(clock Clock) Manager {
 }
 
 // ValidateUserEnvNames validates that user-defined env variable names do not use the reserved prefix
-func (m *manager) ValidateUserEnvNames(envNames []string) error {
-	for _, name := range envNames {
+func (m *manager) ValidateUserEnvNames(userEnv map[string]string) error {
+	var errs []error
+	for name := range userEnv {
 		if strings.HasPrefix(name, AutoEnvPrefix) {
-			return runnertypes.NewReservedEnvPrefixError(name, AutoEnvPrefix)
+			errs = append(errs, runnertypes.NewReservedEnvPrefixError(name, AutoEnvPrefix))
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // BuildEnv builds the final environment map by merging auto-generated and user-defined variables
