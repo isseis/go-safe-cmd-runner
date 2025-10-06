@@ -106,13 +106,18 @@ func (p *VariableExpander) ExpandCommandEnv(cmd *runnertypes.Command, groupName 
 		if !existsInBase {
 			expansionEnv[varName] = varValue
 			cmdEnvVars[varName] = true
+			p.logger.Debug("Added command environment variable",
+				"command", cmd.Name,
+				"variable", varName,
+				"value_length", len(varValue))
+		} else {
+			// Warn when cmd.Env variable is ignored due to baseEnv conflict
+			p.logger.Warn("Command environment variable ignored due to conflict with base environment",
+				"command", cmd.Name,
+				"variable", varName,
+				"cmd_value", varValue,
+				"base_value", baseEnv[varName])
 		}
-
-		p.logger.Debug("Processed command environment variable",
-			"command", cmd.Name,
-			"variable", varName,
-			"value_length", len(varValue),
-			"skipped_due_to_baseenv", existsInBase)
 	}
 
 	// Second pass: Expand all variables (both baseEnv and cmd.Env).
