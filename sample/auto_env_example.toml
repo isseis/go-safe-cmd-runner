@@ -25,7 +25,7 @@ args = [
     "/tmp/backup/data-${__RUNNER_DATETIME}.tar.gz",
     "/tmp/data"
 ]
-# Output example: /tmp/backup/data-202510051430.123.tar.gz
+# Output example: /tmp/backup/data-20251005143022.123.tar.gz
 
 # Example 2: Database dump with timestamp
 [[groups.commands]]
@@ -36,7 +36,7 @@ args = [
     "-c",
     "echo 'Database dump at ${__RUNNER_DATETIME}' > /tmp/backup/db-${__RUNNER_DATETIME}.sql"
 ]
-# Output example: /tmp/backup/db-202510051430.123.sql
+# Output example: /tmp/backup/db-20251005143022.123.sql
 
 [[groups]]
 name = "logging_operations"
@@ -105,9 +105,9 @@ args = [
 ]
 env = [
     "BACKUP_NAME=database",
-    "BACKUP_PATH=/backup/${BACKUP_NAME}-${__RUNNER_DATETIME}.tar.gz"
+    "BACKUP_PATH=/tmp/backup/${BACKUP_NAME}-${__RUNNER_DATETIME}.tar.gz"
 ]
-# Output example: Backup database created at /backup/database-202510051430.123.tar.gz
+# Output example: Backup database created at /tmp/backup/database-20251005143022.123.tar.gz
 
 [[groups]]
 name = "group_consistency"
@@ -120,7 +120,7 @@ description = "Database backup (group consistency example)"
 cmd = "/bin/sh"
 args = [
     "-c",
-    "echo 'DB backup: /backup/db-${__RUNNER_DATETIME}.sql'"
+    "echo 'DB backup: /tmp/backup/db-${__RUNNER_DATETIME}.sql'"
 ]
 
 [[groups.commands]]
@@ -129,6 +129,6 @@ description = "File backup (group consistency example)"
 cmd = "/bin/sh"
 args = [
     "-c",
-    "echo 'Files backup: /backup/files-${__RUNNER_DATETIME}.tar.gz'"
+    "echo 'Files backup: /tmp/backup/files-${__RUNNER_DATETIME}.tar.gz'"
 ]
 # Both commands will show the same timestamp

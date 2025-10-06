@@ -420,14 +420,14 @@ description = "Create backup with timestamp"
 cmd = "/usr/bin/tar"
 args = [
     "czf",
-    "/backup/data-${__RUNNER_DATETIME}.tar.gz",
+    "/tmp/backup/data-${__RUNNER_DATETIME}.tar.gz",
     "/data"
 ]
 ```
 
 Example execution:
 - If execution time is 2025-10-05 14:30:22.123 UTC
-- Backup filename: `/backup/data-202510051430.123.tar.gz`
+- Backup filename: `/tmp/backup/data-20251005143022.123.tar.gz`
 
 #### PID-based Lock Files
 
@@ -540,17 +540,17 @@ name = "backup_group"
 [[groups.commands]]
 name = "backup_db"
 cmd = "/usr/bin/pg_dump"
-args = ["-f", "/backup/db-${__RUNNER_DATETIME}.sql", "mydb"]
+args = ["-f", "/tmp/backup/db-${__RUNNER_DATETIME}.sql", "mydb"]
 
 [[groups.commands]]
 name = "backup_files"
 cmd = "/usr/bin/tar"
-args = ["czf", "/backup/files-${__RUNNER_DATETIME}.tar.gz", "/data"]
+args = ["czf", "/tmp/backup/files-${__RUNNER_DATETIME}.tar.gz", "/data"]
 ```
 
 **Key Point**: Both commands use the exact same timestamp because `__RUNNER_DATETIME` is sampled at config load time, not at execution time:
-- `/backup/db-202510051430.123.sql`
-- `/backup/files-202510051430.123.tar.gz`
+- `/tmp/backup/db-20251005143022.123.sql`
+- `/tmp/backup/files-20251005143022.123.tar.gz`
 
 This ensures consistency across all commands in a single runner execution, even if commands are executed at different times or in different groups.
 

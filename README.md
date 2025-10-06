@@ -213,7 +213,7 @@ These variables can be used in command paths, arguments, and environment variabl
 [[groups.commands]]
 name = "backup_with_timestamp"
 cmd = "/usr/bin/tar"
-args = ["czf", "/backup/data-${__RUNNER_DATETIME}.tar.gz", "/data"]
+args = ["czf", "/tmp/backup/data-${__RUNNER_DATETIME}.tar.gz", "/data"]
 
 [[groups.commands]]
 name = "log_execution"

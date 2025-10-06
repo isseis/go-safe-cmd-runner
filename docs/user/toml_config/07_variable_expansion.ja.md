@@ -420,14 +420,14 @@ description = "タイムスタンプ付きバックアップの作成"
 cmd = "/usr/bin/tar"
 args = [
     "czf",
-    "/backup/data-${__RUNNER_DATETIME}.tar.gz",
+    "/tmp/backup/data-${__RUNNER_DATETIME}.tar.gz",
     "/data"
 ]
 ```
 
 実行例:
 - 実行時刻が 2025-10-05 14:30:22.123 UTC の場合
-- バックアップファイル名: `/backup/data-202510051430.123.tar.gz`
+- バックアップファイル名: `/tmp/backup/data-20251005143022.123.tar.gz`
 
 #### PIDを使用したロックファイル
 
@@ -540,17 +540,17 @@ name = "backup_group"
 [[groups.commands]]
 name = "backup_db"
 cmd = "/usr/bin/pg_dump"
-args = ["-f", "/backup/db-${__RUNNER_DATETIME}.sql", "mydb"]
+args = ["-f", "/tmp/backup/db-${__RUNNER_DATETIME}.sql", "mydb"]
 
 [[groups.commands]]
 name = "backup_files"
 cmd = "/usr/bin/tar"
-args = ["czf", "/backup/files-${__RUNNER_DATETIME}.tar.gz", "/data"]
+args = ["czf", "/tmp/backup/files-${__RUNNER_DATETIME}.tar.gz", "/data"]
 ```
 
 **重要なポイント**: 両コマンドは完全に同じタイムスタンプを使用します。これは`__RUNNER_DATETIME`が実行時ではなく、設定ロード時にサンプリングされるためです:
-- `/backup/db-202510051430.123.sql`
-- `/backup/files-202510051430.123.tar.gz`
+- `/tmp/backup/db-20251005143022.123.sql`
+- `/tmp/backup/files-20251005143022.123.tar.gz`
 
 これにより、コマンドが異なる時刻に実行される場合や、異なるグループに属している場合でも、単一のrunner実行内のすべてのコマンド間で一貫性が保証されます。
 
