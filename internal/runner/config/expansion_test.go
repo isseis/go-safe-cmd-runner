@@ -179,6 +179,41 @@ func TestExpandCommandStrings_SingleCommand(t *testing.T) {
 	}
 }
 
+// TestExpandCommandStrings_AutoEnv tests that automatic environment variables
+// take precedence over command environment variables
+func TestExpandCommandStrings_AutoEnv(t *testing.T) {
+	cmd := runnertypes.Command{
+		Name: "test",
+		Cmd:  "echo ${MESSAGE} ${__RUNNER_DATETIME}",
+		Args: []string{"${MESSAGE}"},
+		Env:  []string{"MESSAGE=from_command"}, // This should be overridden
+	}
+
+	autoEnv := map[string]string{
+		"MESSAGE":           "from_auto", // Takes precedence
+		"__RUNNER_DATETIME": "2025-10-06T12:34:56Z",
+	}
+
+	// Create test configuration
+	cfg := &runnertypes.Config{
+		Global: runnertypes.GlobalConfig{
+			EnvAllowlist: []string{"MESSAGE", "__RUNNER_DATETIME"},
+		},
+	}
+
+	// Create filter and expander
+	filter := environment.NewFilter(cfg.Global.EnvAllowlist)
+	expander := environment.NewVariableExpander(filter)
+
+	// Test expansion with autoEnv
+	expandedCmd, expandedArgs, _, err := config.ExpandCommand(&cmd, expander, autoEnv, cfg.Global.EnvAllowlist, "test-group")
+	require.NoError(t, err)
+
+	// Auto env should take precedence over command env
+	assert.Equal(t, "echo from_auto 2025-10-06T12:34:56Z", expandedCmd)
+	assert.Equal(t, []string{"from_auto"}, expandedArgs)
+}
+
 func TestExpandCommandStrings(t *testing.T) {
 	tests := []struct {
 		name        string
