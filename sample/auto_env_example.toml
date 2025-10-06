@@ -51,7 +51,7 @@ args = [
     "-c",
     "echo 'Executed at ${__RUNNER_DATETIME} by PID ${__RUNNER_PID}' >> /tmp/executions.log"
 ]
-# Output example: Executed at 202510051430.123 by PID 12345
+# Output example: Executed at 20251005143022.123 by PID 12345
 
 # Example 4: Combined timestamp and PID in filename
 [[groups.commands]]
@@ -62,7 +62,7 @@ args = [
     "-c",
     "echo 'Report content' > /tmp/reports/report-${__RUNNER_DATETIME}-${__RUNNER_PID}.txt"
 ]
-# Output example: /tmp/reports/report-202510051430.123-12345.txt
+# Output example: /tmp/reports/report-20251005143022.123-12345.txt
 
 [[groups]]
 name = "lock_file_operations"
