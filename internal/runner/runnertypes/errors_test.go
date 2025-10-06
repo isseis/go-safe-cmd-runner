@@ -51,14 +51,19 @@ func TestReservedEnvPrefixError(t *testing.T) {
 func TestReservedEnvPrefixError_Is(t *testing.T) {
 	err1 := NewReservedEnvPrefixError("__RUNNER_CUSTOM", "__RUNNER_")
 	err2 := NewReservedEnvPrefixError("__RUNNER_OTHER", "__RUNNER_")
-
-	// Test Is() with same error type
-	assert.True(t, err1.Is(err1))
-	assert.True(t, err1.Is(err2))
-
-	// Test Is() with different error types
 	otherErr := errors.New("different error")
-	assert.False(t, err1.Is(otherErr))
+
+	// Test with errors.Is for type checking
+	var target *ReservedEnvPrefixError
+	assert.True(t, errors.Is(err1, target))
+	assert.True(t, errors.Is(err2, target))
+	assert.False(t, errors.Is(otherErr, target))
+
+	// Test with errors.As for extracting the error
+	var gotErr *ReservedEnvPrefixError
+	assert.True(t, errors.As(err1, &gotErr))
+	assert.Equal(t, err1, gotErr)
+	assert.False(t, errors.As(otherErr, &gotErr))
 }
 
 func TestReservedEnvPrefixError_Unwrap(t *testing.T) {
