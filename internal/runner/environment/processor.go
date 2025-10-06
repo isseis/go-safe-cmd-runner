@@ -62,15 +62,21 @@ func NewVariableExpander(filter *Filter) *VariableExpander {
 	}
 }
 
-// ExpandCommandEnv expands Command.Env variables with optional base environment.
+// ExpandCommandEnv expands Command.Env variables with priority environment variables.
 // This is used during configuration loading (Phase 1) to pre-expand Command.Env.
 // Returns a map of expanded environment variables ready to merge with system environment.
-// The baseEnv parameter provides additional variables (e.g., automatic variables like __RUNNER_DATETIME)
-// that can be referenced within the command's env block. If nil, an empty map is used.
+//
+// The baseEnv parameter provides high-priority variables that take precedence over Command.Env:
+//   - In production: Contains automatic variables (__RUNNER_DATETIME, __RUNNER_PID) that
+//     Command.Env CANNOT override
+//   - In testing: Usually nil or empty map for simple test scenarios
+//   - Variables from Command.Env that conflict with baseEnv are silently ignored with a
+//     warning log to prevent accidental override of automatic variables
+//
 // It uses a two-pass approach:
-//  1. First pass: Add all variables from baseEnv, then add variables from the command's `Env` block.
-//     This allows for self-references and inter-references within the `Env` block,
-//     as well as references to baseEnv variables.
+//  1. First pass: Add all variables from baseEnv, then add non-conflicting variables from
+//     the command's `Env` block. This allows Command.Env to reference baseEnv variables
+//     (e.g., OUTPUT_FILE=output-${__RUNNER_DATETIME}.txt) while preventing override.
 //  2. Second pass: Iterate over the map and expand any variables in the values.
 func (p *VariableExpander) ExpandCommandEnv(cmd *runnertypes.Command, groupName string, groupEnvAllowList []string, baseEnv map[string]string) (map[string]string, error) {
 	p.logger.Debug("Starting command environment expansion",

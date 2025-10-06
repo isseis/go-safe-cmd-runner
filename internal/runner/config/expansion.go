@@ -11,9 +11,12 @@ import (
 
 // ExpandCommand expands variables in a single command's Cmd, Args, and Env fields,
 // including automatic environment variables provided in autoEnv.
+//
 // The autoEnv map contains automatic environment variables (e.g., __RUNNER_DATETIME, __RUNNER_PID)
-// that are available for expansion in cmd and args fields.
-// If autoEnv is nil, an empty map is used (no automatic environment variables).
+// that take precedence over Command.Env and are available for expansion:
+//   - Command.Env can REFERENCE automatic variables (e.g., OUTPUT=${__RUNNER_DATETIME}.log)
+//   - Command.Env CANNOT OVERRIDE automatic variables (conflicts are ignored with warning)
+//   - If autoEnv is nil, an empty map is used (no automatic environment variables)
 func ExpandCommand(cmd *runnertypes.Command, expander *environment.VariableExpander, autoEnv map[string]string, allowlist []string, groupName string) (string, []string, map[string]string, error) {
 	// Use empty map if autoEnv is nil
 	if autoEnv == nil {
@@ -21,8 +24,9 @@ func ExpandCommand(cmd *runnertypes.Command, expander *environment.VariableExpan
 	}
 
 	// Expand Command.Env variables (this handles cases like PATH=/custom/bin:${PATH})
-	// Pass autoEnv as baseEnv so that automatic variables like __RUNNER_DATETIME can be
-	// referenced within the command's env block
+	// Pass autoEnv as baseEnv to:
+	// 1. Allow Command.Env to reference automatic variables (e.g., OUTPUT=${__RUNNER_DATETIME}.log)
+	// 2. Prevent Command.Env from overriding automatic variables (silently ignored with warning)
 	commandEnv, err := expander.ExpandCommandEnv(cmd, groupName, allowlist, autoEnv)
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("failed to expand command environment: %w", err)
