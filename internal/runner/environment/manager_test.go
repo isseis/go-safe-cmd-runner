@@ -106,6 +106,94 @@ func TestManagerValidateUserEnvNames(t *testing.T) {
 	}
 }
 
+func TestManagerValidateUserEnvNames_MultipleErrors(t *testing.T) {
+	tests := []struct {
+		name              string
+		envMap            map[string]string
+		expectedErrorVars []string // All expected variable names in errors
+	}{
+		{
+			name: "two reserved prefix violations",
+			envMap: map[string]string{
+				"PATH":          "/usr/bin",
+				"__RUNNER_VAR1": "value1",
+				"__RUNNER_VAR2": "value2",
+			},
+			expectedErrorVars: []string{"__RUNNER_VAR1", "__RUNNER_VAR2"},
+		},
+		{
+			name: "three reserved prefix violations",
+			envMap: map[string]string{
+				"__RUNNER_VAR1": "value1",
+				"__RUNNER_VAR2": "value2",
+				"__RUNNER_VAR3": "value3",
+				"VALID_VAR":     "valid",
+			},
+			expectedErrorVars: []string{"__RUNNER_VAR1", "__RUNNER_VAR2", "__RUNNER_VAR3"},
+		},
+		{
+			name: "all reserved prefix violations",
+			envMap: map[string]string{
+				"__RUNNER_DATETIME": "value1",
+				"__RUNNER_PID":      "value2",
+				"__RUNNER_CUSTOM":   "value3",
+			},
+			expectedErrorVars: []string{"__RUNNER_DATETIME", "__RUNNER_PID", "__RUNNER_CUSTOM"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manager := NewManager(nil)
+			err := manager.ValidateUserEnvNames(tt.envMap)
+
+			require.Error(t, err)
+
+			// Extract all wrapped errors by checking the error string
+			// Since errors.Join creates a multi-error, we need to iterate through all errors
+			foundVars := make(map[string]bool)
+
+			// Try to extract all ReservedEnvPrefixError instances
+			// errors.Join returns an error that can be unwrapped multiple times
+			type unwrapper interface {
+				Unwrap() []error
+			}
+
+			var collectErrors func(error)
+			collectErrors = func(e error) {
+				if e == nil {
+					return
+				}
+
+				// Check if this error is a ReservedEnvPrefixError
+				var rpe *runnertypes.ReservedEnvPrefixError
+				if errors.As(e, &rpe) {
+					assert.Equal(t, AutoEnvPrefix, rpe.Prefix)
+					foundVars[rpe.VarName] = true
+				}
+
+				// Check if this error wraps multiple errors (from errors.Join)
+				if u, ok := e.(unwrapper); ok {
+					for _, unwrappedErr := range u.Unwrap() {
+						collectErrors(unwrappedErr)
+					}
+				}
+			}
+
+			collectErrors(err)
+
+			// Verify all expected variables were found in errors
+			assert.Equal(t, len(tt.expectedErrorVars), len(foundVars),
+				"Expected %d errors but found %d", len(tt.expectedErrorVars), len(foundVars))
+
+			for _, expectedVar := range tt.expectedErrorVars {
+				assert.True(t, foundVars[expectedVar],
+					"Expected error for variable %q but it was not found", expectedVar)
+			}
+		})
+	}
+}
+
 func TestManagerBuildEnv(t *testing.T) {
 	// Fixed time for testing: 2025-10-05 14:30:22.123456789 UTC
 	fixedTime := time.Date(2025, 10, 5, 14, 30, 22, 123456789, time.UTC)
