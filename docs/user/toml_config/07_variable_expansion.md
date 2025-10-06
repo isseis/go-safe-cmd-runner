@@ -492,7 +492,7 @@ Format specification for `__RUNNER_DATETIME`:
 | DD | 2-digit day (01-31) | 05 |
 | HH | 2-digit hour (00-23, UTC) | 14 |
 | mm | 2-digit minute (00-59) | 30 |
-| SS | 2-digit minute (00-59) | 45 |
+| SS | 2-digit second (00-59) | 45 |
 | .msec | 3-digit milliseconds (000-999) | .123 |
 
 Complete example: `20251005143045.123` = October 5, 2025 14:30:45.123 (UTC)
