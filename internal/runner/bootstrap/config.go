@@ -81,7 +81,13 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 
 			// Expand Command.Cmd, Args, and Env for each command and store in ExpandedCmd, ExpandedArgs, and ExpandedEnv
 			// Include automatic environment variables in the expansion context
-			expandedCmd, expandedArgs, expandedEnv, err := config.ExpandCommand(cmd, expander, autoEnv, group.EnvAllowlist, group.Name)
+			expandedCmd, expandedArgs, expandedEnv, err := config.ExpandCommand(&config.ExpansionContext{
+				Command:      cmd,
+				Expander:     expander,
+				AutoEnv:      autoEnv,
+				EnvAllowlist: group.EnvAllowlist,
+				GroupName:    group.Name,
+			})
 			if err != nil {
 				return nil, &logging.PreExecutionError{
 					Type:      logging.ErrorTypeConfigParsing,

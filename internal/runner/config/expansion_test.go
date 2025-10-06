@@ -145,7 +145,13 @@ func TestExpandCommandStrings_SingleCommand(t *testing.T) {
 
 				var err error
 				for i := range group.Commands {
-					expandedCmd, expandedArgs, expandedEnv, e := config.ExpandCommand(&group.Commands[i], expander, nil, group.EnvAllowlist, group.Name)
+					expandedCmd, expandedArgs, expandedEnv, e := config.ExpandCommand(&config.ExpansionContext{
+						Command:      &group.Commands[i],
+						Expander:     expander,
+						AutoEnv:      nil,
+						EnvAllowlist: group.EnvAllowlist,
+						GroupName:    group.Name,
+					})
 					if e != nil {
 						err = e
 						break
@@ -206,7 +212,13 @@ func TestExpandCommandStrings_AutoEnv(t *testing.T) {
 	expander := environment.NewVariableExpander(filter)
 
 	// Test expansion with autoEnv
-	expandedCmd, expandedArgs, _, err := config.ExpandCommand(&cmd, expander, autoEnv, cfg.Global.EnvAllowlist, "test-group")
+	expandedCmd, expandedArgs, _, err := config.ExpandCommand(&config.ExpansionContext{
+		Command:      &cmd,
+		Expander:     expander,
+		AutoEnv:      autoEnv,
+		EnvAllowlist: cfg.Global.EnvAllowlist,
+		GroupName:    "test-group",
+	})
 	require.NoError(t, err)
 
 	// Auto env should take precedence over command env
@@ -295,7 +307,13 @@ func TestExpandCommandStrings(t *testing.T) {
 
 				var err error
 				for i := range tt.group.Commands {
-					expandedCmd, expandedArgs, expandedEnv, e := config.ExpandCommand(&tt.group.Commands[i], expander, nil, tt.group.EnvAllowlist, tt.group.Name)
+					expandedCmd, expandedArgs, expandedEnv, e := config.ExpandCommand(&config.ExpansionContext{
+						Command:      &tt.group.Commands[i],
+						Expander:     expander,
+						AutoEnv:      nil,
+						EnvAllowlist: tt.group.EnvAllowlist,
+						GroupName:    tt.group.Name,
+					})
 					if e != nil {
 						err = e
 						break
@@ -396,7 +414,13 @@ func TestCircularReferenceDetection(t *testing.T) {
 			{
 				var err error
 				for i := range group.Commands {
-					_, _, _, e := config.ExpandCommand(&group.Commands[i], expander, nil, group.EnvAllowlist, group.Name)
+					_, _, _, e := config.ExpandCommand(&config.ExpansionContext{
+						Command:      &group.Commands[i],
+						Expander:     expander,
+						AutoEnv:      nil,
+						EnvAllowlist: group.EnvAllowlist,
+						GroupName:    group.Name,
+					})
 					if e != nil {
 						err = e
 						break
@@ -525,7 +549,13 @@ func TestSecurityIntegration(t *testing.T) {
 			{
 				var err error
 				for i := range group.Commands {
-					_, _, _, e := config.ExpandCommand(&group.Commands[i], expander, nil, group.EnvAllowlist, group.Name)
+					_, _, _, e := config.ExpandCommand(&config.ExpansionContext{
+						Command:      &group.Commands[i],
+						Expander:     expander,
+						AutoEnv:      nil,
+						EnvAllowlist: group.EnvAllowlist,
+						GroupName:    group.Name,
+					})
 					if e != nil {
 						err = e
 						break
@@ -744,7 +774,13 @@ func TestSecurityAttackPrevention(t *testing.T) {
 			}
 
 			// Test expansion
-			_, _, _, err := config.ExpandCommand(&tt.cmd, expander, nil, allowlist, "test-group")
+			_, _, _, err := config.ExpandCommand(&config.ExpansionContext{
+				Command:      &tt.cmd,
+				Expander:     expander,
+				AutoEnv:      nil,
+				EnvAllowlist: allowlist,
+				GroupName:    "test-group",
+			})
 
 			if tt.expectError {
 				require.Error(t, err, "Expected error for: %s", tt.description)
@@ -852,7 +888,13 @@ func BenchmarkVariableExpansion(b *testing.B) {
 		b.Run(bm.name, func(b *testing.B) {
 			b.ResetTimer()
 			for range b.N {
-				_, _, _, err := config.ExpandCommand(&bm.cmd, expander, nil, cfg.Global.EnvAllowlist, "benchmark-group")
+				_, _, _, err := config.ExpandCommand(&config.ExpansionContext{
+					Command:      &bm.cmd,
+					Expander:     expander,
+					AutoEnv:      nil,
+					EnvAllowlist: cfg.Global.EnvAllowlist,
+					GroupName:    "benchmark-group",
+				})
 				if err != nil {
 					b.Fatalf("unexpected error: %v", err)
 				}
@@ -944,7 +986,13 @@ func TestExpandCommand_AutoEnvInCommandEnv(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, env, err := config.ExpandCommand(&tt.cmd, expander, autoEnv, tt.groupAllowlist, "test_group")
+			_, _, env, err := config.ExpandCommand(&config.ExpansionContext{
+				Command:      &tt.cmd,
+				Expander:     expander,
+				AutoEnv:      autoEnv,
+				EnvAllowlist: tt.groupAllowlist,
+				GroupName:    "test_group",
+			})
 
 			if tt.expectError {
 				assert.Error(t, err)
