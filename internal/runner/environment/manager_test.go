@@ -2,6 +2,7 @@ package environment
 
 import (
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -9,6 +10,57 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// Helper function to extract all ReservedEnvPrefixError from a joined error
+func extractReservedEnvPrefixErrors(err error) []*runnertypes.ReservedEnvPrefixError {
+	var result []*runnertypes.ReservedEnvPrefixError
+
+	type unwrapper interface {
+		Unwrap() []error
+	}
+
+	var collect func(error)
+	collect = func(e error) {
+		if e == nil {
+			return
+		}
+
+		// Check if this error is a ReservedEnvPrefixError
+		var rpe *runnertypes.ReservedEnvPrefixError
+		if errors.As(e, &rpe) {
+			result = append(result, rpe)
+		}
+
+		// Check if this error wraps multiple errors (from errors.Join)
+		if u, ok := e.(unwrapper); ok {
+			for _, unwrappedErr := range u.Unwrap() {
+				collect(unwrappedErr)
+			}
+		}
+	}
+
+	collect(err)
+	return result
+}
+
+// Helper function to assert that all expected error variables are found
+func assertAllErrorVarsFound(t *testing.T, errs []*runnertypes.ReservedEnvPrefixError, expectedVars []string) {
+	t.Helper()
+
+	foundVars := make(map[string]bool)
+	for _, rpe := range errs {
+		assert.Equal(t, AutoEnvPrefix, rpe.Prefix)
+		foundVars[rpe.VarName] = true
+	}
+
+	assert.Equal(t, len(expectedVars), len(foundVars),
+		"Expected %d errors but found %d", len(expectedVars), len(foundVars))
+
+	for _, expectedVar := range expectedVars {
+		assert.True(t, foundVars[expectedVar],
+			"Expected error for variable %q but it was not found", expectedVar)
+	}
+}
 
 func TestManagerValidateUserEnvNames(t *testing.T) {
 	tests := []struct {
@@ -85,19 +137,21 @@ func TestManagerValidateUserEnvNames(t *testing.T) {
 				require.Error(t, err)
 				assert.True(t, errors.Is(err, tt.errType), "error type mismatch")
 
-				// Check that the error contains the reserved prefix
-				var rpe *runnertypes.ReservedEnvPrefixError
-				if errors.As(err, &rpe) {
+				// Extract and validate all errors
+				errs := extractReservedEnvPrefixErrors(err)
+				require.NotEmpty(t, errs, "should have at least one ReservedEnvPrefixError")
+
+				// Verify at least one error matches the expected invalid names
+				foundVars := make([]string, 0, len(errs))
+				for _, rpe := range errs {
 					assert.Equal(t, AutoEnvPrefix, rpe.Prefix)
-					// Check that the error references one of the invalid names
-					found := false
-					for _, invalidName := range tt.invalidNames {
-						if rpe.VarName == invalidName {
-							found = true
-							break
-						}
-					}
-					assert.True(t, found, "error should reference one of the invalid variables: %v, got: %s", tt.invalidNames, rpe.VarName)
+					foundVars = append(foundVars, rpe.VarName)
+				}
+
+				// Check that all found vars are in the expected list
+				for _, foundVar := range foundVars {
+					assert.True(t, slices.Contains(tt.invalidNames, foundVar),
+						"found unexpected error variable %q, expected one of: %v", foundVar, tt.invalidNames)
 				}
 			} else {
 				assert.NoError(t, err)
@@ -149,47 +203,11 @@ func TestManagerValidateUserEnvNames_MultipleErrors(t *testing.T) {
 
 			require.Error(t, err)
 
-			// Extract all wrapped errors by checking the error string
-			// Since errors.Join creates a multi-error, we need to iterate through all errors
-			foundVars := make(map[string]bool)
+			// Use helper function to extract all errors
+			errs := extractReservedEnvPrefixErrors(err)
 
-			// Try to extract all ReservedEnvPrefixError instances
-			// errors.Join returns an error that can be unwrapped multiple times
-			type unwrapper interface {
-				Unwrap() []error
-			}
-
-			var collectErrors func(error)
-			collectErrors = func(e error) {
-				if e == nil {
-					return
-				}
-
-				// Check if this error is a ReservedEnvPrefixError
-				var rpe *runnertypes.ReservedEnvPrefixError
-				if errors.As(e, &rpe) {
-					assert.Equal(t, AutoEnvPrefix, rpe.Prefix)
-					foundVars[rpe.VarName] = true
-				}
-
-				// Check if this error wraps multiple errors (from errors.Join)
-				if u, ok := e.(unwrapper); ok {
-					for _, unwrappedErr := range u.Unwrap() {
-						collectErrors(unwrappedErr)
-					}
-				}
-			}
-
-			collectErrors(err)
-
-			// Verify all expected variables were found in errors
-			assert.Equal(t, len(tt.expectedErrorVars), len(foundVars),
-				"Expected %d errors but found %d", len(tt.expectedErrorVars), len(foundVars))
-
-			for _, expectedVar := range tt.expectedErrorVars {
-				assert.True(t, foundVars[expectedVar],
-					"Expected error for variable %q but it was not found", expectedVar)
-			}
+			// Use helper function to assert all expected errors are found
+			assertAllErrorVarsFound(t, errs, tt.expectedErrorVars)
 		})
 	}
 }
