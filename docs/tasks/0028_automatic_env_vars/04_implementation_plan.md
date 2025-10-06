@@ -78,17 +78,17 @@
 
 ### Phase 4: 統合テスト
 
-- [ ] **4.1 環境変数統合テスト（テスト作成）**
+- [x] **4.1 環境変数統合テスト（テスト作成）**
   - ファイル: `internal/runner/environment/integration_test.go`（新規作成）
   - タスク: EnvironmentManager と VariableExpander の統合テスト
     - `BuildEnv()` で構築した環境変数マップを使って `VariableExpander` が `${__RUNNER_DATETIME}` を展開できることを確認
     - `${__RUNNER_PID}` の展開テスト
-  - 状態: テスト失敗を確認（統合前）
+  - 状態: テスト成功を確認
 
-- [ ] **4.2 統合確認**
+- [x] **4.2 統合確認**
   - タスク: 既存の `VariableExpander` が `EnvironmentManager.BuildEnv()` の結果を使用できることを確認
     - 変更不要であることを確認
-  - 状態: テスト成功を確認
+  - 状態: テスト成功を確認（7つの統合テストすべてPASS）
 
 ### Phase 5: 設定ロード時の検証統合
 
