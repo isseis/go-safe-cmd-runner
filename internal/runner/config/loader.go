@@ -107,14 +107,8 @@ func (l *Loader) validateEnvironmentVariables(cfg *runnertypes.Config) error {
 				return fmt.Errorf("failed to build environment map for command %q: %w", cmd.Name, err)
 			}
 
-			// Extract environment variable names
-			envNames := make([]string, 0, len(envMap))
-			for key := range envMap {
-				envNames = append(envNames, key)
-			}
-
 			// Validate using EnvironmentManager
-			if err := l.envManager.ValidateUserEnvNames(envNames); err != nil {
+			if err := l.envManager.ValidateUserEnvNames(envMap); err != nil {
 				return fmt.Errorf("invalid environment variable in command %q: %w", cmd.Name, err)
 			}
 		}

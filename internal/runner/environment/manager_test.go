@@ -13,32 +13,32 @@ import (
 func TestManagerValidateUserEnvNames(t *testing.T) {
 	tests := []struct {
 		name         string
-		envNames     []string
+		envMap       map[string]string
 		wantErr      bool
 		errType      error
 		invalidNames []string // Expected invalid names in error
 	}{
 		{
 			name: "valid environment variable names",
-			envNames: []string{
-				"PATH",
-				"HOME",
-				"CUSTOM",
-				"GO_PATH",
-				"__CUSTOM", // Not using the reserved prefix
+			envMap: map[string]string{
+				"PATH":     "/usr/bin",
+				"HOME":     "/home/user",
+				"CUSTOM":   "value",
+				"GO_PATH":  "/go",
+				"__CUSTOM": "value", // Not using the reserved prefix
 			},
 			wantErr: false,
 		},
 		{
-			name:     "empty environment names",
-			envNames: []string{},
-			wantErr:  false,
+			name:    "empty environment names",
+			envMap:  map[string]string{},
+			wantErr: false,
 		},
 		{
 			name: "reserved prefix DATETIME",
-			envNames: []string{
-				"PATH",
-				"__RUNNER_DATETIME",
+			envMap: map[string]string{
+				"PATH":              "/usr/bin",
+				"__RUNNER_DATETIME": "value",
 			},
 			wantErr:      true,
 			errType:      &runnertypes.ReservedEnvPrefixError{},
@@ -46,9 +46,9 @@ func TestManagerValidateUserEnvNames(t *testing.T) {
 		},
 		{
 			name: "reserved prefix PID",
-			envNames: []string{
-				"PATH",
-				"__RUNNER_PID",
+			envMap: map[string]string{
+				"PATH":         "/usr/bin",
+				"__RUNNER_PID": "value",
 			},
 			wantErr:      true,
 			errType:      &runnertypes.ReservedEnvPrefixError{},
@@ -56,9 +56,9 @@ func TestManagerValidateUserEnvNames(t *testing.T) {
 		},
 		{
 			name: "reserved prefix custom variable",
-			envNames: []string{
-				"PATH",
-				"__RUNNER_CUSTOM",
+			envMap: map[string]string{
+				"PATH":            "/usr/bin",
+				"__RUNNER_CUSTOM": "value",
 			},
 			wantErr:      true,
 			errType:      &runnertypes.ReservedEnvPrefixError{},
@@ -66,9 +66,9 @@ func TestManagerValidateUserEnvNames(t *testing.T) {
 		},
 		{
 			name: "multiple reserved prefix violations",
-			envNames: []string{
-				"__RUNNER_VAR1",
-				"__RUNNER_VAR2",
+			envMap: map[string]string{
+				"__RUNNER_VAR1": "value1",
+				"__RUNNER_VAR2": "value2",
 			},
 			wantErr:      true,
 			errType:      &runnertypes.ReservedEnvPrefixError{},
@@ -79,7 +79,7 @@ func TestManagerValidateUserEnvNames(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			manager := NewManager(nil)
-			err := manager.ValidateUserEnvNames(tt.envNames)
+			err := manager.ValidateUserEnvNames(tt.envMap)
 
 			if tt.wantErr {
 				require.Error(t, err)
