@@ -12,10 +12,9 @@ type Manager interface {
 	// ValidateUserEnvNames validates that user-defined env variable names do not use reserved prefixes.
 	ValidateUserEnvNames(userEnv map[string]string) error
 
-	// BuildEnv builds the final environment for a command, merging auto-generated
-	// and user-defined variables. The returned map includes all auto env variables
-	// and can be used directly by VariableExpander.
-	BuildEnv(userEnv map[string]string) (map[string]string, error)
+	// BuildEnv builds the environment with auto-generated variables.
+	// The returned map includes all auto env variables and can be used directly by VariableExpander.
+	BuildEnv() (map[string]string, error)
 }
 
 // manager implements Manager
@@ -42,22 +41,16 @@ func (m *manager) ValidateUserEnvNames(userEnv map[string]string) error {
 	return errors.Join(errs...)
 }
 
-// BuildEnv builds the final environment map by merging auto-generated and user-defined variables
-func (m *manager) BuildEnv(userEnv map[string]string) (map[string]string, error) {
+// BuildEnv builds the environment map with auto-generated variables only
+func (m *manager) BuildEnv() (map[string]string, error) {
 	// Generate auto environment variables
 	autoEnv := m.autoProvider.Generate()
 
-	// Create result map with capacity for both auto and user env
-	result := make(map[string]string, len(autoEnv)+len(userEnv))
+	// Create result map with auto env variables
+	result := make(map[string]string, len(autoEnv))
 
-	// Add auto-generated variables first
+	// Add auto-generated variables
 	for k, v := range autoEnv {
-		result[k] = v
-	}
-
-	// Add user-defined variables
-	// Note: No conflicts possible due to ValidateUserEnv being called earlier
-	for k, v := range userEnv {
 		result[k] = v
 	}
 

@@ -23,16 +23,12 @@ func TestIntegration_ManagerAndExpander_AutoDateTime(t *testing.T) {
 	manager := NewManager(clock)
 
 	// Build environment with auto-generated variables
-	userEnv := map[string]string{
-		"USER_VAR": "user_value",
-	}
-	env, err := manager.BuildEnv(userEnv)
+	env, err := manager.BuildEnv()
 	require.NoError(t, err)
 
 	// Verify auto-generated variables are present
 	assert.Equal(t, "202510051430.123", env["__RUNNER_DATETIME"])
 	assert.NotEmpty(t, env["__RUNNER_PID"])
-	assert.Equal(t, "user_value", env["USER_VAR"])
 
 	// Create VariableExpander with empty filter (allow all)
 	filter := NewFilter([]string{})
@@ -55,8 +51,7 @@ func TestIntegration_ManagerAndExpander_AutoPID(t *testing.T) {
 	manager := NewManager(nil)
 
 	// Build environment with auto-generated variables
-	userEnv := map[string]string{}
-	env, err := manager.BuildEnv(userEnv)
+	env, err := manager.BuildEnv()
 	require.NoError(t, err)
 
 	// Verify __RUNNER_PID is present and equals current PID
@@ -87,12 +82,16 @@ func TestIntegration_ManagerAndExpander_MultipleAutoVars(t *testing.T) {
 	// Create EnvironmentManager with fixed clock
 	manager := NewManager(clock)
 
-	// Build environment
-	userEnv := map[string]string{
-		"HOST": "server01",
-	}
-	env, err := manager.BuildEnv(userEnv)
+	// Build environment with auto-generated variables
+	autoEnv, err := manager.BuildEnv()
 	require.NoError(t, err)
+
+	// Add user-defined variables (simulating what happens in ExpandCommand)
+	env := make(map[string]string)
+	for k, v := range autoEnv {
+		env[k] = v
+	}
+	env["HOST"] = "server01"
 
 	// Create VariableExpander
 	filter := NewFilter([]string{})
@@ -119,12 +118,16 @@ func TestIntegration_ManagerAndExpander_ExpandStrings(t *testing.T) {
 	// Create EnvironmentManager with fixed clock
 	manager := NewManager(clock)
 
-	// Build environment
-	userEnv := map[string]string{
-		"DATA_DIR": "/data",
-	}
-	env, err := manager.BuildEnv(userEnv)
+	// Build environment with auto-generated variables
+	autoEnv, err := manager.BuildEnv()
 	require.NoError(t, err)
+
+	// Add user-defined variables (simulating what happens in ExpandCommand)
+	env := make(map[string]string)
+	for k, v := range autoEnv {
+		env[k] = v
+	}
+	env["DATA_DIR"] = "/data"
 
 	// Create VariableExpander
 	filter := NewFilter([]string{})
@@ -156,9 +159,8 @@ func TestIntegration_ManagerAndExpander_RealTimeClock(t *testing.T) {
 	// Create EnvironmentManager with nil clock (uses time.Now)
 	manager := NewManager(nil)
 
-	// Build environment
-	userEnv := map[string]string{}
-	env, err := manager.BuildEnv(userEnv)
+	// Build environment with auto-generated variables
+	env, err := manager.BuildEnv()
 	require.NoError(t, err)
 
 	// Verify __RUNNER_DATETIME matches expected format (YYYYMMDDHHMM.mmm)
@@ -195,8 +197,8 @@ func TestIntegration_ManagerAndExpander_NoUserEnv(t *testing.T) {
 	// Create EnvironmentManager with fixed clock
 	manager := NewManager(clock)
 
-	// Build environment with no user variables
-	env, err := manager.BuildEnv(map[string]string{})
+	// Build environment with auto-generated variables only
+	env, err := manager.BuildEnv()
 	require.NoError(t, err)
 
 	// Verify only auto-generated variables are present
@@ -227,15 +229,19 @@ func TestIntegration_ManagerAndExpander_MixedWithSystemEnv(t *testing.T) {
 	// Create EnvironmentManager with fixed clock
 	manager := NewManager(clock)
 
-	// Build environment with user variables (simulating system env)
-	userEnv := map[string]string{
-		"PATH":     "/usr/bin:/bin",
-		"HOME":     "/home/user",
-		"CUSTOM":   "value",
-		"LOG_PATH": "/var/log/${__RUNNER_DATETIME}",
-	}
-	env, err := manager.BuildEnv(userEnv)
+	// Build environment with auto-generated variables
+	autoEnv, err := manager.BuildEnv()
 	require.NoError(t, err)
+
+	// Add user-defined variables (simulating what happens in ExpandCommand)
+	env := make(map[string]string)
+	for k, v := range autoEnv {
+		env[k] = v
+	}
+	env["PATH"] = "/usr/bin:/bin"
+	env["HOME"] = "/home/user"
+	env["CUSTOM"] = "value"
+	env["LOG_PATH"] = "/var/log/${__RUNNER_DATETIME}"
 
 	// Verify both auto and user variables are present
 	assert.Equal(t, "202503200830.100", env["__RUNNER_DATETIME"])

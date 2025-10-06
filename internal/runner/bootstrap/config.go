@@ -68,7 +68,7 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 
 	// Generate automatic environment variables (fixed at config load time)
 	envManager := environment.NewManager(nil)
-	autoEnv, err := envManager.BuildEnv(map[string]string{})
+	autoEnv, err := envManager.BuildEnv()
 	if err != nil {
 		return nil, &logging.PreExecutionError{
 			Type:      logging.ErrorTypeConfigParsing,
