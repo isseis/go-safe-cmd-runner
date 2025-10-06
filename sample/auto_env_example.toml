@@ -1,0 +1,134 @@
+# Automatic Environment Variables Example Configuration
+#
+# This configuration demonstrates the use of automatically generated
+# environment variables (__RUNNER_DATETIME and __RUNNER_PID) for
+# practical use cases like timestamped backups and PID-based locking.
+
+version = "1.0"
+
+[global]
+timeout = 3600
+log_level = "info"
+env_allowlist = ["PATH", "HOME", "USER"]
+
+[[groups]]
+name = "backup_operations"
+description = "Backup operations with automatic timestamping"
+
+# Example 1: Timestamp-based backup file naming
+[[groups.commands]]
+name = "timestamp_backup"
+description = "Create a backup file with timestamp"
+cmd = "/usr/bin/tar"
+args = [
+    "czf",
+    "/tmp/backup/data-${__RUNNER_DATETIME}.tar.gz",
+    "/tmp/data"
+]
+# Output example: /tmp/backup/data-202510051430.123.tar.gz
+
+# Example 2: Database dump with timestamp
+[[groups.commands]]
+name = "db_backup"
+description = "Database backup with timestamp"
+cmd = "/bin/sh"
+args = [
+    "-c",
+    "echo 'Database dump at ${__RUNNER_DATETIME}' > /tmp/backup/db-${__RUNNER_DATETIME}.sql"
+]
+# Output example: /tmp/backup/db-202510051430.123.sql
+
+[[groups]]
+name = "logging_operations"
+description = "Logging with execution metadata"
+
+# Example 3: Execution logging with timestamp and PID
+[[groups.commands]]
+name = "log_execution"
+description = "Log execution time and PID"
+cmd = "/bin/sh"
+args = [
+    "-c",
+    "echo 'Executed at ${__RUNNER_DATETIME} by PID ${__RUNNER_PID}' >> /tmp/executions.log"
+]
+# Output example: Executed at 202510051430.123 by PID 12345
+
+# Example 4: Combined timestamp and PID in filename
+[[groups.commands]]
+name = "combined_metadata"
+description = "Use both timestamp and PID in filename"
+cmd = "/bin/sh"
+args = [
+    "-c",
+    "echo 'Report content' > /tmp/reports/report-${__RUNNER_DATETIME}-${__RUNNER_PID}.txt"
+]
+# Output example: /tmp/reports/report-202510051430.123-12345.txt
+
+[[groups]]
+name = "lock_file_operations"
+description = "PID-based lock file management"
+
+# Example 5: Create PID-based lock file
+[[groups.commands]]
+name = "create_lock"
+description = "Create a PID-based lock file"
+cmd = "/bin/sh"
+args = [
+    "-c",
+    "echo ${__RUNNER_PID} > /tmp/locks/myapp-${__RUNNER_PID}.lock"
+]
+# Output example: /tmp/locks/myapp-12345.lock (contains: 12345)
+
+# Example 6: Check lock file existence
+[[groups.commands]]
+name = "check_lock"
+description = "Display lock file path"
+cmd = "/bin/sh"
+args = [
+    "-c",
+    "echo 'Lock file: /tmp/locks/myapp-${__RUNNER_PID}.lock'"
+]
+# Output example: Lock file: /tmp/locks/myapp-12345.lock
+
+[[groups]]
+name = "nested_variables"
+description = "Using auto variables with user-defined variables"
+
+# Example 7: Combining auto and user-defined variables
+[[groups.commands]]
+name = "nested_auto_vars"
+description = "Combine automatic and custom environment variables"
+cmd = "/bin/sh"
+args = [
+    "-c",
+    "echo 'Backup ${BACKUP_NAME} created at ${BACKUP_PATH}'"
+]
+env = [
+    "BACKUP_NAME=database",
+    "BACKUP_PATH=/backup/${BACKUP_NAME}-${__RUNNER_DATETIME}.tar.gz"
+]
+# Output example: Backup database created at /backup/database-202510051430.123.tar.gz
+
+[[groups]]
+name = "group_consistency"
+description = "Demonstrating consistent auto variables across group commands"
+
+# Both commands in this group will use the same __RUNNER_DATETIME and __RUNNER_PID
+[[groups.commands]]
+name = "backup_db_consistent"
+description = "Database backup (group consistency example)"
+cmd = "/bin/sh"
+args = [
+    "-c",
+    "echo 'DB backup: /backup/db-${__RUNNER_DATETIME}.sql'"
+]
+
+[[groups.commands]]
+name = "backup_files_consistent"
+description = "File backup (group consistency example)"
+cmd = "/bin/sh"
+args = [
+    "-c",
+    "echo 'Files backup: /backup/files-${__RUNNER_DATETIME}.tar.gz'"
+]
+# Both commands will show the same timestamp

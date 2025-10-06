@@ -398,9 +398,164 @@ env = ["HOME=/home/user"]
 
 出力: `Literal $HOME is different from /home/user`
 
-## 7.7 セキュリティ考慮事項
+## 7.7 自動環境変数
 
-### 7.7.1 Command.Env の優先度
+### 7.7.1 概要
+
+システムは各コマンド実行時に以下の環境変数を自動的に設定します:
+
+- **`__RUNNER_DATETIME`**: 実行時刻（UTC）をYYYYMMDDHHMM.msec形式で表現
+- **`__RUNNER_PID`**: runnerプロセスのプロセスID
+
+これらの変数は、コマンドパス、引数、環境変数の値で通常の変数と同様に使用できます。
+
+### 7.7.2 使用例
+
+#### タイムスタンプ付きバックアップ
+
+```toml
+[[groups.commands]]
+name = "backup_with_timestamp"
+description = "タイムスタンプ付きバックアップの作成"
+cmd = "/usr/bin/tar"
+args = [
+    "czf",
+    "/backup/data-${__RUNNER_DATETIME}.tar.gz",
+    "/data"
+]
+```
+
+実行例:
+- 実行時刻が 2025-10-05 14:30:22.123 UTC の場合
+- バックアップファイル名: `/backup/data-202510051430.123.tar.gz`
+
+#### PIDを使用したロックファイル
+
+```toml
+[[groups.commands]]
+name = "create_lock_file"
+description = "PIDを含むロックファイルの作成"
+cmd = "/bin/sh"
+args = [
+    "-c",
+    "echo ${__RUNNER_PID} > /var/run/myapp-${__RUNNER_PID}.lock"
+]
+```
+
+実行例:
+- PIDが 12345 の場合
+- ロックファイル: `/var/run/myapp-12345.lock`（内容: 12345）
+
+#### 実行ログの記録
+
+```toml
+[[groups.commands]]
+name = "log_execution"
+description = "実行時刻とPIDをログに記録"
+cmd = "/bin/sh"
+args = [
+    "-c",
+    "echo 'Executed at ${__RUNNER_DATETIME} by PID ${__RUNNER_PID}' >> /var/log/executions.log"
+]
+```
+
+出力例:
+```
+Executed at 202510051430.123 by PID 12345
+```
+
+#### 複数の自動変数の組み合わせ
+
+```toml
+[[groups.commands]]
+name = "timestamped_report"
+description = "タイムスタンプとPID付きレポート"
+cmd = "/opt/myapp/bin/report"
+args = [
+    "--output", "/reports/${__RUNNER_DATETIME}-${__RUNNER_PID}.html",
+    "--title", "Report ${__RUNNER_DATETIME}",
+]
+```
+
+実行例:
+- 出力ファイル: `/reports/202510051430.123-12345.html`
+- レポートタイトル: `Report 202510051430.123`
+
+### 7.7.3 日時フォーマット
+
+`__RUNNER_DATETIME` のフォーマット仕様:
+
+| 部分 | 説明 | 例 |
+|-----|------|-----|
+| YYYY | 西暦4桁 | 2025 |
+| MM | 月2桁（01-12） | 10 |
+| DD | 日2桁（01-31） | 05 |
+| HH | 時2桁（00-23、UTC） | 14 |
+| MM | 分2桁（00-59） | 30 |
+| .msec | ミリ秒3桁（000-999） | .123 |
+
+完全な例: `202510051430.123` = 2025年10月5日 14時30分00秒.123（UTC）
+
+**注意**: タイムゾーンは常にUTCです。ローカルタイムゾーンではありません。
+
+### 7.7.4 予約プレフィックス
+
+プレフィックス `__RUNNER_` は自動環境変数用に予約されており、ユーザー定義の環境変数では使用できません。
+
+#### エラーになる例
+
+```toml
+[[groups.commands]]
+name = "invalid_env"
+cmd = "/bin/echo"
+args = ["${__RUNNER_CUSTOM}"]
+env = ["__RUNNER_CUSTOM=value"]  # エラー: 予約プレフィックスの使用
+```
+
+エラーメッセージ:
+```
+environment variable "__RUNNER_CUSTOM" uses reserved prefix "__RUNNER_";
+this prefix is reserved for automatically generated variables
+```
+
+#### 正しい例
+
+```toml
+[[groups.commands]]
+name = "valid_env"
+cmd = "/bin/echo"
+args = ["${MY_CUSTOM_VAR}"]
+env = ["MY_CUSTOM_VAR=value"]  # OK: 予約プレフィックスを使用していない
+```
+
+### 7.7.5 変数生成のタイミング
+
+自動環境変数（`__RUNNER_DATETIME`と`__RUNNER_PID`）は、設定ファイルのロード時に一度だけ生成され、各コマンドの実行時には生成されません。すべてのグループのすべてのコマンドは、runner実行全体を通じて完全に同じ値を共有します。
+
+```toml
+[[groups]]
+name = "backup_group"
+
+[[groups.commands]]
+name = "backup_db"
+cmd = "/usr/bin/pg_dump"
+args = ["-f", "/backup/db-${__RUNNER_DATETIME}.sql", "mydb"]
+
+[[groups.commands]]
+name = "backup_files"
+cmd = "/usr/bin/tar"
+args = ["czf", "/backup/files-${__RUNNER_DATETIME}.tar.gz", "/data"]
+```
+
+**重要なポイント**: 両コマンドは完全に同じタイムスタンプを使用します。これは`__RUNNER_DATETIME`が実行時ではなく、設定ロード時にサンプリングされるためです:
+- `/backup/db-202510051430.123.sql`
+- `/backup/files-202510051430.123.tar.gz`
+
+これにより、コマンドが異なる時刻に実行される場合や、異なるグループに属している場合でも、単一のrunner実行内のすべてのコマンド間で一貫性が保証されます。
+
+## 7.8 セキュリティ考慮事項
+
+### 7.8.1 Command.Env の優先度
 
 `Command.Env` で定義された変数は、システム環境変数よりも優先されます:
 
@@ -416,7 +571,7 @@ env = ["HOME=/opt/custom-home"]
 # システムの $HOME ではなく、Command.Env の HOME が使用される
 ```
 
-### 7.7.2 env_allowlist との関係
+### 7.8.2 env_allowlist との関係
 
 **重要**: `Command.Env` で定義された変数は `env_allowlist` のチェックを受けません。
 
@@ -433,7 +588,7 @@ env = ["CUSTOM_TOOL=/opt/tools/mytool"]
 # CUSTOM_TOOL は allowlist にないが、Command.Env で定義されているので使用可能
 ```
 
-### 7.7.3 絶対パスの要件
+### 7.8.3 絶対パスの要件
 
 展開後のコマンドパスは絶対パスである必要があります:
 
@@ -451,7 +606,7 @@ cmd = "${TOOL_DIR}/mytool"
 env = ["TOOL_DIR=./tools"]  # 相対パス - エラー
 ```
 
-### 7.7.4 機密情報の扱い
+### 7.8.4 機密情報の扱い
 
 機密情報(APIキー、パスワードなど)は `Command.Env` で定義し、システム環境変数から隔離:
 
@@ -470,7 +625,7 @@ env = [
 ]
 ```
 
-### 7.7.5 コマンド間の隔離
+### 7.8.5 コマンド間の隔離
 
 各コマンドの `env` は独立しており、他のコマンドに影響を与えません:
 
@@ -489,7 +644,7 @@ env = ["DB_HOST=db2.example.com"]
 # cmd1 の DB_HOST とは独立
 ```
 
-## 7.8 トラブルシューティング
+## 7.9 トラブルシューティング
 
 ### 未定義変数
 

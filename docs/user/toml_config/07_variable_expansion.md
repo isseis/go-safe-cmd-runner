@@ -398,9 +398,164 @@ env = ["HOME=/home/user"]
 
 Output: `Literal $HOME is different from /home/user`
 
-## 7.7 Security Considerations
+## 7.7 Automatic Environment Variables
 
-### 7.7.1 Command.Env Priority
+### 7.7.1 Overview
+
+The system automatically sets the following environment variables for each command execution:
+
+- **`__RUNNER_DATETIME`**: Execution time (UTC) in YYYYMMDDHHMM.msec format
+- **`__RUNNER_PID`**: Process ID of the runner process
+
+These variables can be used in command paths, arguments, and environment variable values just like regular variables.
+
+### 7.7.2 Usage Examples
+
+#### Timestamped Backups
+
+```toml
+[[groups.commands]]
+name = "backup_with_timestamp"
+description = "Create backup with timestamp"
+cmd = "/usr/bin/tar"
+args = [
+    "czf",
+    "/backup/data-${__RUNNER_DATETIME}.tar.gz",
+    "/data"
+]
+```
+
+Example execution:
+- If execution time is 2025-10-05 14:30:22.123 UTC
+- Backup filename: `/backup/data-202510051430.123.tar.gz`
+
+#### PID-based Lock Files
+
+```toml
+[[groups.commands]]
+name = "create_lock_file"
+description = "Create lock file with PID"
+cmd = "/bin/sh"
+args = [
+    "-c",
+    "echo ${__RUNNER_PID} > /var/run/myapp-${__RUNNER_PID}.lock"
+]
+```
+
+Example execution:
+- If PID is 12345
+- Lock file: `/var/run/myapp-12345.lock` (content: 12345)
+
+#### Execution Logging
+
+```toml
+[[groups.commands]]
+name = "log_execution"
+description = "Log execution time and PID"
+cmd = "/bin/sh"
+args = [
+    "-c",
+    "echo 'Executed at ${__RUNNER_DATETIME} by PID ${__RUNNER_PID}' >> /var/log/executions.log"
+]
+```
+
+Example output:
+```
+Executed at 202510051430.123 by PID 12345
+```
+
+#### Combining Multiple Automatic Variables
+
+```toml
+[[groups.commands]]
+name = "timestamped_report"
+description = "Report with timestamp and PID"
+cmd = "/opt/myapp/bin/report"
+args = [
+    "--output", "/reports/${__RUNNER_DATETIME}-${__RUNNER_PID}.html",
+    "--title", "Report ${__RUNNER_DATETIME}",
+]
+```
+
+Example execution:
+- Output file: `/reports/202510051430.123-12345.html`
+- Report title: `Report 202510051430.123`
+
+### 7.7.3 DateTime Format
+
+Format specification for `__RUNNER_DATETIME`:
+
+| Part | Description | Example |
+|------|-------------|---------|
+| YYYY | 4-digit year | 2025 |
+| MM | 2-digit month (01-12) | 10 |
+| DD | 2-digit day (01-31) | 05 |
+| HH | 2-digit hour (00-23, UTC) | 14 |
+| MM | 2-digit minute (00-59) | 30 |
+| .msec | 3-digit milliseconds (000-999) | .123 |
+
+Complete example: `202510051430.123` = October 5, 2025 14:30:00.123 (UTC)
+
+**Note**: The timezone is always UTC, not local timezone.
+
+### 7.7.4 Reserved Prefix
+
+The prefix `__RUNNER_` is reserved for automatic environment variables and cannot be used for user-defined environment variables.
+
+#### Error Example
+
+```toml
+[[groups.commands]]
+name = "invalid_env"
+cmd = "/bin/echo"
+args = ["${__RUNNER_CUSTOM}"]
+env = ["__RUNNER_CUSTOM=value"]  # Error: Using reserved prefix
+```
+
+Error message:
+```
+environment variable "__RUNNER_CUSTOM" uses reserved prefix "__RUNNER_";
+this prefix is reserved for automatically generated variables
+```
+
+#### Correct Example
+
+```toml
+[[groups.commands]]
+name = "valid_env"
+cmd = "/bin/echo"
+args = ["${MY_CUSTOM_VAR}"]
+env = ["MY_CUSTOM_VAR=value"]  # OK: Not using reserved prefix
+```
+
+### 7.7.5 Timing of Variable Generation
+
+Automatic environment variables (`__RUNNER_DATETIME` and `__RUNNER_PID`) are generated once when the configuration file is loaded, not at each command execution time. All commands in all groups share the exact same values throughout the entire runner execution.
+
+```toml
+[[groups]]
+name = "backup_group"
+
+[[groups.commands]]
+name = "backup_db"
+cmd = "/usr/bin/pg_dump"
+args = ["-f", "/backup/db-${__RUNNER_DATETIME}.sql", "mydb"]
+
+[[groups.commands]]
+name = "backup_files"
+cmd = "/usr/bin/tar"
+args = ["czf", "/backup/files-${__RUNNER_DATETIME}.tar.gz", "/data"]
+```
+
+**Key Point**: Both commands use the exact same timestamp because `__RUNNER_DATETIME` is sampled at config load time, not at execution time:
+- `/backup/db-202510051430.123.sql`
+- `/backup/files-202510051430.123.tar.gz`
+
+This ensures consistency across all commands in a single runner execution, even if commands are executed at different times or in different groups.
+
+## 7.8 Security Considerations
+
+### 7.8.1 Command.Env Priority
 
 Variables defined in `Command.Env` take priority over system environment variables:
 
@@ -416,7 +571,7 @@ env = ["HOME=/opt/custom-home"]
 # The HOME from Command.Env is used, not the system $HOME
 ```
 
-### 7.7.2 Relationship with env_allowlist
+### 7.8.2 Relationship with env_allowlist
 
 **Important**: Variables defined in `Command.Env` are not subject to `env_allowlist` checks.
 
@@ -433,7 +588,7 @@ env = ["CUSTOM_TOOL=/opt/tools/mytool"]
 # CUSTOM_TOOL is not in allowlist, but can be used because it's defined in Command.Env
 ```
 
-### 7.7.3 Absolute Path Requirements
+### 7.8.3 Absolute Path Requirements
 
 Command paths after expansion must be absolute paths:
 
@@ -451,7 +606,7 @@ cmd = "${TOOL_DIR}/mytool"
 env = ["TOOL_DIR=./tools"]  # Relative path - error
 ```
 
-### 7.7.4 Handling Sensitive Information
+### 7.8.4 Handling Sensitive Information
 
 Define sensitive information (API keys, passwords, etc.) in `Command.Env` to isolate from system environment variables:
 
@@ -470,7 +625,7 @@ env = [
 ]
 ```
 
-### 7.7.5 Isolation Between Commands
+### 7.8.5 Isolation Between Commands
 
 Each command's `env` is independent and does not affect other commands:
 
@@ -489,7 +644,7 @@ env = ["DB_HOST=db2.example.com"]
 # Independent from cmd1's DB_HOST
 ```
 
-## 7.8 Troubleshooting
+## 7.9 Troubleshooting
 
 ### Undefined Variables
 

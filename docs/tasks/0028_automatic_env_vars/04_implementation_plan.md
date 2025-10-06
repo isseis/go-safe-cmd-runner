@@ -145,21 +145,21 @@
 
 ### Phase 7: ドキュメント整備
 
-- [ ] **7.1 README.md更新**
-  - ファイル: `README.md`
+- [x] **7.1 README.md更新**
+  - ファイル: `README.md`, `README.ja.md`
   - タスク: 自動環境変数機能の説明追加
     - 機能概要
     - 使用例
     - 予約プレフィックスの説明
 
-- [ ] **7.2 TOMLドキュメント更新**
-  - ファイル: `docs/toml_config_*.md`（該当ファイル）
+- [x] **7.2 TOMLドキュメント更新**
+  - ファイル: `docs/user/toml_config/07_variable_expansion.ja.md`, `docs/user/toml_config/07_variable_expansion.md`
   - タスク: 設定ファイルガイドの更新
     - 自動環境変数のリスト
     - 予約プレフィックスの制約
     - サンプルコード
 
-- [ ] **7.3 サンプルファイル作成**
+- [x] **7.3 サンプルファイル作成**
   - ファイル: `sample/auto_env_example.toml`
   - タスク: 実用的なサンプルの作成
     - タイムスタンプ付きバックアップ
