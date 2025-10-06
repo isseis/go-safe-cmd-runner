@@ -1,0 +1,36 @@
+# Automatic environment variables error test configuration
+# Tests that using reserved prefix __RUNNER_ in user-defined variables causes an error
+version = "1.0"
+
+[global]
+timeout = 30
+workdir = "/tmp/auto-env-error-test"
+log_level = "debug"
+skip_standard_paths = true
+
+# This should fail: using reserved prefix __RUNNER_ in user-defined environment variable
+[[groups]]
+name = "reserved_prefix_error"
+description = "Test error when using reserved prefix"
+priority = 1
+
+[[groups.commands]]
+name = "invalid_datetime"
+description = "Attempt to override __RUNNER_DATETIME (should fail)"
+cmd = "echo"
+args = ["This should not execute"]
+env = ["__RUNNER_DATETIME=invalid"]
+
+[[groups.commands]]
+name = "invalid_pid"
+description = "Attempt to override __RUNNER_PID (should fail)"
+cmd = "echo"
+args = ["This should not execute"]
+env = ["__RUNNER_PID=12345"]
+
+[[groups.commands]]
+name = "invalid_custom"
+description = "Use custom variable with reserved prefix (should fail)"
+cmd = "echo"
+args = ["This should not execute"]
+env = ["__RUNNER_CUSTOM=value"]

@@ -145,7 +145,7 @@ func TestExpandCommandStrings_SingleCommand(t *testing.T) {
 
 				var err error
 				for i := range group.Commands {
-					expandedCmd, expandedArgs, expandedEnv, e := config.ExpandCommand(&group.Commands[i], expander, group.EnvAllowlist, group.Name)
+					expandedCmd, expandedArgs, expandedEnv, e := config.ExpandCommand(&group.Commands[i], expander, nil, group.EnvAllowlist, group.Name)
 					if e != nil {
 						err = e
 						break
@@ -260,7 +260,7 @@ func TestExpandCommandStrings(t *testing.T) {
 
 				var err error
 				for i := range tt.group.Commands {
-					expandedCmd, expandedArgs, expandedEnv, e := config.ExpandCommand(&tt.group.Commands[i], expander, tt.group.EnvAllowlist, tt.group.Name)
+					expandedCmd, expandedArgs, expandedEnv, e := config.ExpandCommand(&tt.group.Commands[i], expander, nil, tt.group.EnvAllowlist, tt.group.Name)
 					if e != nil {
 						err = e
 						break
@@ -361,7 +361,7 @@ func TestCircularReferenceDetection(t *testing.T) {
 			{
 				var err error
 				for i := range group.Commands {
-					_, _, _, e := config.ExpandCommand(&group.Commands[i], expander, group.EnvAllowlist, group.Name)
+					_, _, _, e := config.ExpandCommand(&group.Commands[i], expander, nil, group.EnvAllowlist, group.Name)
 					if e != nil {
 						err = e
 						break
@@ -490,7 +490,7 @@ func TestSecurityIntegration(t *testing.T) {
 			{
 				var err error
 				for i := range group.Commands {
-					_, _, _, e := config.ExpandCommand(&group.Commands[i], expander, group.EnvAllowlist, group.Name)
+					_, _, _, e := config.ExpandCommand(&group.Commands[i], expander, nil, group.EnvAllowlist, group.Name)
 					if e != nil {
 						err = e
 						break
@@ -709,7 +709,7 @@ func TestSecurityAttackPrevention(t *testing.T) {
 			}
 
 			// Test expansion
-			_, _, _, err := config.ExpandCommand(&tt.cmd, expander, allowlist, "test-group")
+			_, _, _, err := config.ExpandCommand(&tt.cmd, expander, nil, allowlist, "test-group")
 
 			if tt.expectError {
 				require.Error(t, err, "Expected error for: %s", tt.description)
@@ -817,7 +817,7 @@ func BenchmarkVariableExpansion(b *testing.B) {
 		b.Run(bm.name, func(b *testing.B) {
 			b.ResetTimer()
 			for range b.N {
-				_, _, _, err := config.ExpandCommand(&bm.cmd, expander, cfg.Global.EnvAllowlist, "benchmark-group")
+				_, _, _, err := config.ExpandCommand(&bm.cmd, expander, nil, cfg.Global.EnvAllowlist, "benchmark-group")
 				if err != nil {
 					b.Fatalf("unexpected error: %v", err)
 				}

@@ -3,21 +3,34 @@ package config
 
 import (
 	"fmt"
+	"maps"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
-// ExpandCommand expands variables in a single command's Cmd, Args, and Env fields.
-// It returns the expanded cmd string, expanded args slice, and expanded environment map.
-// This function is exported so callers in other packages (for example bootstrap)
-// can expand commands individually instead of relying on a group-level helper.
-func ExpandCommand(cmd *runnertypes.Command, expander *environment.VariableExpander, allowlist []string, groupName string) (string, []string, map[string]string, error) {
+// ExpandCommand expands variables in a single command's Cmd, Args, and Env fields,
+// including automatic environment variables provided in autoEnv.
+// The autoEnv map contains automatic environment variables (e.g., __RUNNER_DATETIME, __RUNNER_PID)
+// that are available for expansion in cmd and args fields.
+// If autoEnv is nil, an empty map is used (no automatic environment variables).
+func ExpandCommand(cmd *runnertypes.Command, expander *environment.VariableExpander, autoEnv map[string]string, allowlist []string, groupName string) (string, []string, map[string]string, error) {
+	// Use empty map if autoEnv is nil
+	if autoEnv == nil {
+		autoEnv = map[string]string{}
+	}
+
 	// Expand Command.Env variables (this handles cases like PATH=/custom/bin:${PATH})
-	env, err := expander.ExpandCommandEnv(cmd, groupName, allowlist)
+	commandEnv, err := expander.ExpandCommandEnv(cmd, groupName, allowlist)
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("failed to expand command environment: %w", err)
 	}
+
+	// Merge automatic environment variables with command environment
+	// Auto env variables are added first, command env takes precedence for same keys
+	env := make(map[string]string, len(autoEnv)+len(commandEnv))
+	maps.Copy(env, autoEnv)
+	maps.Copy(env, commandEnv)
 
 	// Expand command name
 	expandedCmd, err := expander.ExpandString(cmd.Cmd, env, allowlist, groupName, make(map[string]bool))

@@ -66,6 +66,18 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 		}
 	}
 
+	// Generate automatic environment variables (fixed at config load time)
+	envManager := environment.NewManager(nil)
+	autoEnv, err := envManager.BuildEnv(map[string]string{})
+	if err != nil {
+		return nil, &logging.PreExecutionError{
+			Type:      logging.ErrorTypeConfigParsing,
+			Message:   fmt.Sprintf("Failed to generate automatic environment variables: %v", err),
+			Component: "config",
+			RunID:     runID,
+		}
+	}
+
 	// Expand variables in Cmd, Args and Env fields and fills them into ExpandedCmd, ExpandedArgs and ExpandedEnv
 	// in-place on cfg.Groups.
 	filter := environment.NewFilter(cfg.Global.EnvAllowlist)
@@ -76,7 +88,8 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 			cmd := &group.Commands[j]
 
 			// Expand Command.Cmd, Args, and Env for each command and store in ExpandedCmd, ExpandedArgs, and ExpandedEnv
-			expandedCmd, expandedArgs, expandedEnv, err := config.ExpandCommand(cmd, expander, group.EnvAllowlist, group.Name)
+			// Include automatic environment variables in the expansion context
+			expandedCmd, expandedArgs, expandedEnv, err := config.ExpandCommand(cmd, expander, autoEnv, group.EnvAllowlist, group.Name)
 			if err != nil {
 				return nil, &logging.PreExecutionError{
 					Type:      logging.ErrorTypeConfigParsing,
