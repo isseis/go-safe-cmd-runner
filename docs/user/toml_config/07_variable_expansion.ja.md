@@ -404,7 +404,7 @@ env = ["HOME=/home/user"]
 
 システムは各コマンド実行時に以下の環境変数を自動的に設定します:
 
-- **`__RUNNER_DATETIME`**: 実行時刻（UTC）をYYYYMMDDHHmm.msec形式で表現
+- **`__RUNNER_DATETIME`**: 実行時刻（UTC）をYYYYMMDDHHmmSS.msec形式で表現
 - **`__RUNNER_PID`**: runnerプロセスのプロセスID
 
 これらの変数は、コマンドパス、引数、環境変数の値で通常の変数と同様に使用できます。

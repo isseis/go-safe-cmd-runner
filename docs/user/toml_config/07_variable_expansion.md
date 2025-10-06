@@ -404,7 +404,7 @@ Output: `Literal $HOME is different from /home/user`
 
 The system automatically sets the following environment variables for each command execution:
 
-- **`__RUNNER_DATETIME`**: Execution time (UTC) in YYYYMMDDHHmm.msec format
+- **`__RUNNER_DATETIME`**: Execution time (UTC) in YYYYMMDDHHmmSS.msec format
 - **`__RUNNER_PID`**: Process ID of the runner process
 
 These variables can be used in command paths, arguments, and environment variable values just like regular variables.
