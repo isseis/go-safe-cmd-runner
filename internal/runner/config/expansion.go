@@ -26,11 +26,11 @@ func ExpandCommand(cmd *runnertypes.Command, expander *environment.VariableExpan
 		return "", nil, nil, fmt.Errorf("failed to expand command environment: %w", err)
 	}
 
-	// Merge automatic environment variables with command environment
-	// Auto env variables are added first, command env takes precedence for same keys
-	env := make(map[string]string, len(autoEnv)+len(commandEnv))
-	maps.Copy(env, autoEnv)
+	// Merge command environment with automatic environment variables
+	// Auto env variables are added last, taking precedence over command env for same keys
+	env := make(map[string]string, len(commandEnv)+len(autoEnv))
 	maps.Copy(env, commandEnv)
+	maps.Copy(env, autoEnv)
 
 	// Expand command name
 	expandedCmd, err := expander.ExpandString(cmd.Cmd, env, allowlist, groupName, make(map[string]bool))
