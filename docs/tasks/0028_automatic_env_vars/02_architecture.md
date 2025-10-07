@@ -303,7 +303,7 @@ sequenceDiagram
 
     Executor->>EnvManager: BuildEnv(userEnv)
     EnvManager->>AutoProvider: Generate()
-    AutoProvider-->>EnvManager: {"__RUNNER_DATETIME": "202501011230.123", ...}
+    AutoProvider-->>EnvManager: {"__RUNNER_DATETIME": "20250101123045.123", ...}
     EnvManager->>EnvManager: Merge auto-env and user-env
     EnvManager-->>Executor: Complete environment map
 
