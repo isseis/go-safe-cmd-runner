@@ -18,25 +18,25 @@ priority = 1
 name = "step1_create"
 description = "Create directory with timestamp"
 cmd = "echo"
-args = ["mkdir /backup/run-${__RUNNER_DATETIME}"]
+args = ["mkdir /tmp/backup/run-${__RUNNER_DATETIME}"]
 
 [[groups.commands]]
 name = "step2_backup"
 description = "Create backup with same timestamp"
 cmd = "echo"
-args = ["tar czf /backup/run-${__RUNNER_DATETIME}/data.tar.gz /data"]
+args = ["tar czf /tmp/backup/run-${__RUNNER_DATETIME}/data.tar.gz /data"]
 
 [[groups.commands]]
 name = "step3_log"
 description = "Log completion with same timestamp"
 cmd = "echo"
-args = ["echo Completed at ${__RUNNER_DATETIME} >> /backup/run-${__RUNNER_DATETIME}/backup.log"]
+args = ["echo Completed at ${__RUNNER_DATETIME} >> /tmp/backup/run-${__RUNNER_DATETIME}/backup.log"]
 
 [[groups.commands]]
 name = "step4_verify"
 description = "Verify all used same timestamp"
 cmd = "echo"
-args = ["ls -la /backup/run-${__RUNNER_DATETIME}/"]
+args = ["ls -la /tmp/backup/run-${__RUNNER_DATETIME}/"]
 
 # Second group to verify different execution context
 [[groups]]

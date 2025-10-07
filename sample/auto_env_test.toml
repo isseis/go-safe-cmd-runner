@@ -85,7 +85,7 @@ priority = 4
 name = "backup_simulation"
 description = "Simulate backup with timestamp"
 cmd = "echo"
-args = ["tar czf /backup/data-${__RUNNER_DATETIME}.tar.gz /data"]
+args = ["tar czf /tmp/backup/data-${__RUNNER_DATETIME}.tar.gz /data"]
 
 [[groups.commands]]
 name = "log_with_metadata"

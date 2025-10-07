@@ -303,7 +303,7 @@ sequenceDiagram
 
     Executor->>EnvManager: BuildEnv(userEnv)
     EnvManager->>AutoProvider: Generate()
-    AutoProvider-->>EnvManager: {"__RUNNER_DATETIME": "202501011230.123", ...}
+    AutoProvider-->>EnvManager: {"__RUNNER_DATETIME": "20250101123045.123", ...}
     EnvManager->>EnvManager: Merge auto-env and user-env
     EnvManager-->>Executor: Complete environment map
 
@@ -320,15 +320,15 @@ sequenceDiagram
 
 #### 5.1.1 時刻フォーマット生成
 
-**要件**: `YYYYMMDDHHMM.msec` 形式（UTC、ミリ秒3桁）
+**要件**: `YYYYMMDDHHmmSS.msec` 形式（UTC、ミリ秒3桁）
 
 **実装例**:
 ```go
 func (p *autoEnvProvider) generateDateTime() string {
     now := p.clock().UTC()
 
-    // YYYYMMDDHHMM部分
-    dateTimePart := now.Format("200601021504")
+    // YYYYMMDDHHmmSS部分
+    dateTimePart := now.Format("20060102150405")
 
     // ミリ秒部分（3桁ゼロパディング）
     msec := now.Nanosecond() / 1_000_000

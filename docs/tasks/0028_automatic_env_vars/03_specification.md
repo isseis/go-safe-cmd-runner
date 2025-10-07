@@ -33,8 +33,8 @@ pidVarName := AutoEnvPrefix + AutoEnvKeyPID            // "__RUNNER_PID"
 ```go
 const (
     // DatetimeLayout is the Go time format for __RUNNER_DATETIME
-    // Format: YYYYMMDDHHMM.msec (e.g., "202510051430.123")
-    DatetimeLayout = "200601021504"  // Go time format for YYYYMMDDHHMM
+    // Format: YYYYMMDDHHmmSS.msec (e.g., "20251005143032.123")
+    DatetimeLayout = "20060102150405"  // Go time format for YYYYMMDDHHmmSS
 )
 ```
 
@@ -97,16 +97,16 @@ func (p *autoEnvProvider) generatePID() string {
 ### 4.1 フォーマット関数
 
 ```go
-// formatDatetime formats time.Time to YYYYMMDDHHMM.msec format
-// Example: 2025-10-05 14:30:22.123456789 UTC -> "202510051430.123"
+// formatDatetime formats time.Time to YYYYMMDDHHmmSS.msec format
+// Example: 2025-10-05 14:30:22.123456789 UTC -> "20251005143022.123"
 func formatDatetime(t time.Time) string {
     // Extract milliseconds (0-999)
     ms := t.Nanosecond() / 1000000
 
-    // Format: YYYYMMDDHHMM
+    // Format: YYYYMMDDHHmmSS
     dateTimePart := t.Format(DatetimeLayout)
 
-    // Format: YYYYMMDDHHMM.msec (msec is 3 digits with zero padding)
+    // Format: YYYYMMDDHHmmSS.msec (msec is 3 digits with zero padding)
     return fmt.Sprintf("%s.%03d", dateTimePart, ms)
 }
 ```
@@ -115,11 +115,11 @@ func formatDatetime(t time.Time) string {
 
 | 入力時刻 (UTC) | 出力文字列 |
 |---------------|-----------|
-| 2025-10-05 14:30:22.000000000 | `202510051430.000` |
-| 2025-10-05 14:30:22.123000000 | `202510051430.123` |
-| 2025-10-05 14:30:22.999000000 | `202510051430.999` |
-| 2025-10-05 14:30:22.001234567 | `202510051430.001` |
-| 2025-12-31 23:59:59.999999999 | `202512312359.999` |
+| 2025-10-05 14:30:22.000000000 | `20251005143022.000` |
+| 2025-10-05 14:30:22.123000000 | `20251005143022.123` |
+| 2025-10-05 14:30:22.999000000 | `20251005143022.999` |
+| 2025-10-05 14:30:22.001234567 | `20251005143022.001` |
+| 2025-12-31 23:59:59.999999999 | `20251231235959.999` |
 
 ### 4.3 ミリ秒の精度
 
@@ -403,11 +403,11 @@ sequenceDiagram
 
 | テストケース | 入力時刻 (UTC) | 期待出力 |
 |------------|---------------|---------|
-| 正常系: ミリ秒0 | 2025-10-05 14:30:22.000000000 | `202510051430.000` |
-| 正常系: ミリ秒あり | 2025-10-05 14:30:22.123000000 | `202510051430.123` |
-| 境界値: 年末 | 2025-12-31 23:59:59.999000000 | `202512312359.999` |
-| 境界値: 年始 | 2025-01-01 00:00:00.001000000 | `202501010000.001` |
-| エッジケース: ナノ秒精度 | 2025-10-05 14:30:22.123456789 | `202510051430.123` |
+| 正常系: ミリ秒0 | 2025-10-05 14:30:22.000000000 | `20251005143022.000` |
+| 正常系: ミリ秒あり | 2025-10-05 14:30:22.123000000 | `20251005143022.123` |
+| 境界値: 年末 | 2025-12-31 23:59:59.999000000 | `20251231235959.999` |
+| 境界値: 年始 | 2025-01-01 00:00:00.001000000 | `20250101000000.001` |
+| エッジケース: ナノ秒精度 | 2025-10-05 14:30:22.123456789 | `20251005143022.123` |
 
 #### 10.1.2 予約プレフィックス検証テスト
 
@@ -440,7 +440,7 @@ func TestAutoEnvProviderWithFixedTime(t *testing.T) {
     provider := NewAutoEnvProvider(clock)
 
     result := provider.Generate()
-    assert.Equal(t, "202510051430.123", result["__RUNNER_DATETIME"])
+    assert.Equal(t, "20251005143022.123", result["__RUNNER_DATETIME"])
     assert.NotEmpty(t, result["__RUNNER_PID"])
 }
 ```
@@ -595,7 +595,7 @@ args = [
 - [ ] Clock関数型の定義
 - [ ] AutoEnvProviderインターフェースの実装
 - [ ] NewAutoEnvProviderでのClock関数のデフォルト処理（nilの場合は `time.Now`）
-- [ ] 日時フォーマットが仕様通り（`YYYYMMDDHHMM.msec`）
+- [ ] 日時フォーマットが仕様通り（`YYYYMMDDHHmmSS.msec`）
 - [ ] ミリ秒が3桁フォーマット（`%03d`）
 - [ ] UTCタイムゾーンの使用（`p.clock().UTC()`）
 - [ ] 予約プレフィックス検証の実装（`manager.go` の `ValidateUserEnv` メソッド内）

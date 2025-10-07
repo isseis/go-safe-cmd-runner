@@ -66,6 +66,7 @@ Go Safe Command Runnerは、以下のような環境における安全なコマ�
 ### コマンド実行
 - **バッチ処理**: 依存関係管理を備えた組織化されたグループでのコマンド実行
 - **変数展開**: コマンド名と引数での`${VAR}`形式の展開
+- **自動環境変数**: タイムスタンプとプロセス追跡のための自動生成変数
 - **出力キャプチャ**: セキュアな権限でのファイルへのコマンド出力保存
 - **バックグラウンド実行**: シグナル処理を伴う長時間実行プロセスのサポート
 - **拡張ドライラン**: 包括的なセキュリティ分析を伴う現実的なシミュレーション
@@ -196,6 +197,29 @@ cmd = "/usr/bin/systemctl"
 args = ["status"]
 max_risk_level = "medium"
 ```
+
+### 自動環境変数
+
+システムは各コマンド実行時に自動的に環境変数を提供します：
+
+- `__RUNNER_DATETIME`: 実行タイムスタンプ（UTC）を`YYYYMMDDHHmmSS.msec`形式で表現
+- `__RUNNER_PID`: runnerのプロセスID
+
+これらの変数はコマンドパス、引数、環境変数の値で使用できます：
+
+```toml
+[[groups.commands]]
+name = "backup_with_timestamp"
+cmd = "/usr/bin/tar"
+args = ["czf", "/tmp/backup/data-${__RUNNER_DATETIME}.tar.gz", "/data"]
+
+[[groups.commands]]
+name = "log_execution"
+cmd = "/bin/sh"
+args = ["-c", "echo 'PID: ${__RUNNER_PID}, Time: ${__RUNNER_DATETIME}' >> /var/log/executions.log"]
+```
+
+**注意**: プレフィックス `__RUNNER_` は予約されており、ユーザー定義の環境変数では使用できません。
 
 ### 詳細な設定方法
 

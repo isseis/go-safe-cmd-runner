@@ -66,6 +66,7 @@ Common use cases include scheduled backups, system maintenance tasks, and delega
 ### Command Execution
 - **Batch Processing**: Command execution in organized groups with dependency management
 - **Variable Expansion**: `${VAR}` format expansion in command names and arguments
+- **Automatic Environment Variables**: Automatically generated variables for timestamps and process tracking
 - **Output Capture**: Save command output to files with secure permissions
 - **Background Execution**: Support for long-running processes with signal handling
 - **Extended Dry Run**: Realistic simulation with comprehensive security analysis
@@ -198,6 +199,29 @@ max_risk_level = "medium"
 ```
 
 ### Detailed Configuration Guide
+
+### Automatic Environment Variables
+
+The system automatically provides environment variables for each command execution:
+
+- `__RUNNER_DATETIME`: Execution timestamp in `YYYYMMDDHHmmSS.msec` format (UTC)
+- `__RUNNER_PID`: Process ID of the runner
+
+These variables can be used in command paths, arguments, and environment variable values:
+
+```toml
+[[groups.commands]]
+name = "backup_with_timestamp"
+cmd = "/usr/bin/tar"
+args = ["czf", "/tmp/backup/data-${__RUNNER_DATETIME}.tar.gz", "/data"]
+
+[[groups.commands]]
+name = "log_execution"
+cmd = "/bin/sh"
+args = ["-c", "echo 'PID: ${__RUNNER_PID}, Time: ${__RUNNER_DATETIME}' >> /var/log/executions.log"]
+```
+
+**Note**: The prefix `__RUNNER_` is reserved and cannot be used for user-defined environment variables.
 
 For detailed configuration file documentation, refer to the following documents:
 
