@@ -15,6 +15,16 @@ var (
 	mediumRiskPatterns []DangerousCommandPattern
 )
 
+// commandRiskOverrides defines individual command risk level overrides
+var commandRiskOverrides = map[string]runnertypes.RiskLevel{
+	"/usr/bin/sudo":       runnertypes.RiskLevelCritical, // Privilege escalation
+	"/bin/su":             runnertypes.RiskLevelCritical, // Privilege escalation
+	"/usr/sbin/systemctl": runnertypes.RiskLevelHigh,     // System control
+	"/usr/sbin/service":   runnertypes.RiskLevelHigh,     // System control
+	"/bin/rm":             runnertypes.RiskLevelHigh,     // Destructive operations
+	"/usr/bin/dd":         runnertypes.RiskLevelHigh,     // Destructive operations
+}
+
 // dangerousCommandPatterns contains the static list of dangerous command patterns
 var dangerousCommandPatterns = []DangerousCommandPattern{
 	// File system destruction
@@ -170,6 +180,12 @@ func (v *Validator) HasSystemCriticalPaths(args []string) []int {
 		}
 	}
 	return criticalIndices
+}
+
+// getCommandRiskOverride retrieves the risk override for a specific command
+func getCommandRiskOverride(cmdPath string) (runnertypes.RiskLevel, bool) {
+	risk, exists := commandRiskOverrides[cmdPath]
+	return risk, exists
 }
 
 // checkCommandPatterns checks if a command matches any patterns in the given list
