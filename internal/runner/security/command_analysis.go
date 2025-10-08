@@ -1,7 +1,6 @@
 package security
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,13 +8,6 @@ import (
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
-)
-
-// Validation errors for CommandRiskProfile
-var (
-	ErrNetworkAlwaysRequiresMediumRisk      = errors.New("NetworkTypeAlways commands must have BaseRiskLevel >= Medium")
-	ErrPrivilegeRequiresHighRisk            = errors.New("privilege escalation commands must have BaseRiskLevel >= High")
-	ErrNetworkSubcommandsOnlyForConditional = errors.New("NetworkSubcommands should only be set for NetworkTypeConditional")
 )
 
 // NetworkOperationType indicates the type of network operation a command performs
@@ -27,66 +19,6 @@ const (
 	NetworkTypeAlways                                  // Always performs network operations
 	NetworkTypeConditional                             // Conditional based on arguments
 )
-
-// CommandRiskProfile defines comprehensive risk information for a command
-//
-// Risk Level Determination:
-// The BaseRiskLevel represents the inherent risk level of the command itself,
-// independent of its arguments. The actual risk level used during execution
-// may be elevated based on:
-//   - Dangerous command patterns (e.g., "rm -rf")
-//   - setuid/setgid bits on the executable
-//   - Directory-based default risk (e.g., /tmp has higher risk than /usr/bin)
-//   - Hash validation failures
-//
-// Network Operation Detection:
-// NetworkType determines how network operations are detected for this command:
-//   - NetworkTypeNone (0): Command never performs network operations
-//   - NetworkTypeAlways (1): Command always performs network operations
-//     (e.g., curl, wget, ssh). Network detection returns true regardless of arguments.
-//   - NetworkTypeConditional (2): Command may perform network operations depending
-//     on subcommands or arguments (e.g., git, rsync).
-//
-// For NetworkTypeConditional commands:
-//   - If NetworkSubcommands is non-empty: The first argument (subcommand) is checked
-//     against this list. If matched, the command is considered a network operation.
-//     Example: git with NetworkSubcommands=["fetch","pull","push"] will detect
-//     "git fetch" as a network operation even without a URL argument.
-//   - If NetworkSubcommands is empty or no match: Falls back to argument-based
-//     detection (checking for URLs "://" or SSH-style addresses "user@host:path").
-//
-// This design allows precise control over network operation detection while
-// maintaining extensibility for commands with complex subcommand structures.
-type CommandRiskProfile struct {
-	BaseRiskLevel      runnertypes.RiskLevel // Base risk level for the command
-	Reason             string                // Reason for the risk level
-	IsPrivilege        bool                  // Is privilege escalation command
-	NetworkType        NetworkOperationType  // Network operation type
-	NetworkSubcommands []string              // Network operation subcommands (for conditional network commands)
-}
-
-// Validate checks the consistency of the CommandRiskProfile configuration
-func (p CommandRiskProfile) Validate() error {
-	// Rule 1: NetworkTypeAlways commands must have BaseRiskLevel >= Medium
-	// Rationale: Any command that always performs network operations poses at least medium risk
-	// due to potential data exfiltration, network attacks, or credential exposure
-	if p.NetworkType == NetworkTypeAlways && p.BaseRiskLevel < runnertypes.RiskLevelMedium {
-		return fmt.Errorf("%w (got %v)", ErrNetworkAlwaysRequiresMediumRisk, p.BaseRiskLevel)
-	}
-
-	// Rule 2: Privilege escalation commands must have BaseRiskLevel >= High
-	// Rationale: Privilege escalation commands can compromise the entire system
-	if p.IsPrivilege && p.BaseRiskLevel < runnertypes.RiskLevelHigh {
-		return fmt.Errorf("%w (got %v)", ErrPrivilegeRequiresHighRisk, p.BaseRiskLevel)
-	}
-
-	// Rule 3: NetworkSubcommands should only be set for NetworkTypeConditional
-	if len(p.NetworkSubcommands) > 0 && p.NetworkType != NetworkTypeConditional {
-		return fmt.Errorf("%w (got NetworkType=%v)", ErrNetworkSubcommandsOnlyForConditional, p.NetworkType)
-	}
-
-	return nil
-}
 
 // commandProfileDefinitions defines command risk profiles using the new builder pattern
 // This uses CommandRiskProfileNew with explicit risk factor separation
@@ -156,38 +88,6 @@ func buildCommandRiskProfilesNew() map[string]CommandRiskProfileNew {
 			profiles[cmd] = def.Profile()
 		}
 	}
-	return profiles
-}
-
-// convertNewProfileToOld converts CommandRiskProfileNew to CommandRiskProfile for backward compatibility
-func convertNewProfileToOld(newProfile CommandRiskProfileNew) CommandRiskProfile {
-	// Get the base risk level (max of all risk factors)
-	baseRisk := newProfile.BaseRiskLevel()
-
-	// Join all risk reasons for backward compatibility to avoid losing information.
-	reason := strings.Join(newProfile.GetRiskReasons(), "; ")
-
-	return CommandRiskProfile{
-		BaseRiskLevel:      baseRisk,
-		Reason:             reason,
-		IsPrivilege:        newProfile.IsPrivilege(),
-		NetworkType:        newProfile.NetworkType,
-		NetworkSubcommands: newProfile.NetworkSubcommands,
-	}
-}
-
-// commandRiskProfiles is built from commandGroupDefinitions (old structure)
-// This is kept for backward compatibility during migration
-var commandRiskProfiles = buildCommandRiskProfiles()
-
-func buildCommandRiskProfiles() map[string]CommandRiskProfile {
-	profiles := make(map[string]CommandRiskProfile)
-
-	// Use new profiles and convert to old structure
-	for cmd, newProfile := range commandRiskProfilesNew {
-		profiles[cmd] = convertNewProfileToOld(newProfile)
-	}
-
 	return profiles
 }
 
@@ -339,9 +239,9 @@ func getCommandRiskOverride(cmdPath string) (runnertypes.RiskLevel, bool) {
 	// Extract command name from path
 	cmdName := filepath.Base(cmdPath)
 
-	// Look up in new unified profiles
-	if profile, exists := commandRiskProfiles[cmdName]; exists {
-		return profile.BaseRiskLevel, true
+	// Look up in unified profiles
+	if profile, exists := commandRiskProfilesNew[cmdName]; exists {
+		return profile.BaseRiskLevel(), true
 	}
 
 	return runnertypes.RiskLevelUnknown, false
@@ -376,7 +276,7 @@ func IsPrivilegeEscalationCommand(cmdName string) (bool, error) {
 
 	// Check for any privilege escalation commands using unified profiles
 	for cmdName := range commandNames {
-		if profile, exists := commandRiskProfiles[cmdName]; exists && profile.IsPrivilege {
+		if profile, exists := commandRiskProfilesNew[cmdName]; exists && profile.IsPrivilege() {
 			return true, nil
 		}
 	}
@@ -397,9 +297,9 @@ func IsNetworkOperation(cmdName string, args []string) (bool, bool) {
 	}
 
 	// Check command profiles for network type using unified profiles
-	var conditionalProfile *CommandRiskProfile
+	var conditionalProfile *CommandRiskProfileNew
 	for name := range commandNames {
-		if profile, exists := commandRiskProfiles[name]; exists {
+		if profile, exists := commandRiskProfilesNew[name]; exists {
 			switch profile.NetworkType {
 			case NetworkTypeAlways:
 				return true, false
