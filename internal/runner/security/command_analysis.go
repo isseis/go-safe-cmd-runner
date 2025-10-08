@@ -443,7 +443,8 @@ func IsNetworkOperation(cmdName string, args []string) (bool, bool) {
 
 	// Check for network-related arguments in any command
 	allArgs := strings.Join(args, " ")
-	if strings.Contains(allArgs, "://") { // URLs
+	if strings.Contains(allArgs, "://") || // URLs
+		containsSSHStyleAddress(args) { // SSH-style user@host:path addresses
 		return true, false
 	}
 
