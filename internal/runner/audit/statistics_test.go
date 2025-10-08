@@ -74,4 +74,51 @@ func TestRiskStatistics(t *testing.T) {
 		assert.Contains(t, commands, "sudo")
 		assert.Equal(t, 1, len(commands))
 	})
+
+	t.Run("deterministic sort with same count", func(t *testing.T) {
+		stats := audit.NewRiskStatistics()
+
+		// Add multiple factors with the same count
+		stats.RecordCommand("cmd1", runnertypes.RiskLevelMedium, []string{"Zebra risk"})
+		stats.RecordCommand("cmd2", runnertypes.RiskLevelMedium, []string{"Alpha risk"})
+		stats.RecordCommand("cmd3", runnertypes.RiskLevelMedium, []string{"Beta risk"})
+
+		topFactors := stats.GetTopRiskFactors(10)
+		assert.Equal(t, 3, len(topFactors))
+
+		// All factors have count 1, so they should be sorted alphabetically
+		assert.Equal(t, "Alpha risk", topFactors[0].Factor)
+		assert.Equal(t, 1, topFactors[0].Count)
+		assert.Equal(t, "Beta risk", topFactors[1].Factor)
+		assert.Equal(t, 1, topFactors[1].Count)
+		assert.Equal(t, "Zebra risk", topFactors[2].Factor)
+		assert.Equal(t, 1, topFactors[2].Count)
+	})
+
+	t.Run("deterministic sort with mixed counts", func(t *testing.T) {
+		stats := audit.NewRiskStatistics()
+
+		// Add factors with different counts
+		stats.RecordCommand("cmd1", runnertypes.RiskLevelHigh, []string{"High frequency"})
+		stats.RecordCommand("cmd2", runnertypes.RiskLevelHigh, []string{"High frequency"})
+		stats.RecordCommand("cmd3", runnertypes.RiskLevelHigh, []string{"High frequency"})
+		stats.RecordCommand("cmd4", runnertypes.RiskLevelMedium, []string{"Zebra medium"})
+		stats.RecordCommand("cmd5", runnertypes.RiskLevelMedium, []string{"Zebra medium"})
+		stats.RecordCommand("cmd6", runnertypes.RiskLevelMedium, []string{"Alpha medium"})
+		stats.RecordCommand("cmd7", runnertypes.RiskLevelMedium, []string{"Alpha medium"})
+		stats.RecordCommand("cmd8", runnertypes.RiskLevelLow, []string{"Low frequency"})
+
+		topFactors := stats.GetTopRiskFactors(10)
+		assert.Equal(t, 4, len(topFactors))
+
+		// Should be sorted by count first, then alphabetically for same count
+		assert.Equal(t, "High frequency", topFactors[0].Factor)
+		assert.Equal(t, 3, topFactors[0].Count)
+		assert.Equal(t, "Alpha medium", topFactors[1].Factor)
+		assert.Equal(t, 2, topFactors[1].Count)
+		assert.Equal(t, "Zebra medium", topFactors[2].Factor)
+		assert.Equal(t, 2, topFactors[2].Count)
+		assert.Equal(t, "Low frequency", topFactors[3].Factor)
+		assert.Equal(t, 1, topFactors[3].Count)
+	})
 }

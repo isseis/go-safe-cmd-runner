@@ -87,9 +87,12 @@ func (s *RiskStatistics) GetTopRiskFactors(limit int) []RiskFactorCount {
 		})
 	}
 
-	// Sort by count (descending)
+	// Sort by count (descending), then by factor name (ascending) for deterministic order
 	sort.Slice(factors, func(i, j int) bool {
-		return factors[i].Count > factors[j].Count
+		if factors[i].Count != factors[j].Count {
+			return factors[i].Count > factors[j].Count
+		}
+		return factors[i].Factor < factors[j].Factor
 	})
 
 	// Apply limit
