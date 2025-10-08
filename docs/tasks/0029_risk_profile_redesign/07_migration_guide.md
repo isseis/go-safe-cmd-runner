@@ -232,12 +232,11 @@ NewProfile("git").
 
 **誤った使い方:**
 ```go
-// これはpanicを引き起こす
-NewProfile("test").
-    NetworkRisk(runnertypes.RiskLevelMedium, "test").
-    // NetworkTypeはデフォルトでNone
-    ConditionalNetwork("subcommand").  // これによりNetworkTypeがConditionalに設定される
-    Build()  // OK（この例は実際には問題ない）
+// これはpanicを引き起こす - AlwaysNetworkなのにNetworkRiskがLow
+NewProfile("curl").
+    NetworkRisk(runnertypes.RiskLevelLow, "test").  // Lowは不十分
+    AlwaysNetwork().  // AlwaysNetworkはMedium以上が必要
+    Build()  // panic: NetworkTypeAlways requires NetworkRisk >= Medium
 ```
 
 ## 5. よくある質問
