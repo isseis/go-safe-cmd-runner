@@ -1037,16 +1037,7 @@ func TestAllProfilesHaveReasons(t *testing.T) {
 - [x] 全ユニットテストがパス
 - [x] `make lint`でエラーなし
 - [x] リスクレベル一致確認完了
-- [ ] コミット作成（"feat: migrate all command profiles to new risk factor structure"）
-
-## 5. フェーズ3: 機能拡張### 4.4 Phase 2 完了チェック
-
-- [ ] 全既存コマンドの移行完了
-- [ ] 全ユニットテストがパス
-- [ ] 全統合テストがパス
-- [ ] `make lint`でエラーなし
-- [ ] リスクレベル一致確認完了
-- [ ] コミット作成（"feat: migrate all command profiles to new risk factor structure"）
+- [x] コミット作成（"feat: migrate all command profiles to new risk factor structure"）
 
 ## 5. フェーズ3: 機能拡張
 
