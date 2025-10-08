@@ -16,9 +16,9 @@ import (
 //	    Build()
 //
 //	// Network command with data exfiltration risk
-//	NewProfile("curl", "wget").
-//	    NetworkRisk(runnertypes.RiskLevelMedium, "Downloads data from network").
-//	    DataExfilRisk(runnertypes.RiskLevelLow, "Can send data to external servers").
+//	NewProfile("some-uploader-tool").
+//	    NetworkRisk(runnertypes.RiskLevelMedium, "Connects to external servers").
+//	    DataExfilRisk(runnertypes.RiskLevelLow, "Can potentially send local data to external servers").
 //	    AlwaysNetwork().
 //	    Build()
 //
