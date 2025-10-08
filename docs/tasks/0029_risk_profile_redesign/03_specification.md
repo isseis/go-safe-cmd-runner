@@ -785,9 +785,9 @@ NewProfile("git").
 ### 9.2 バリデーション要件
 
 **必須バリデーション:**
-- [ ] NetworkTypeAlways → NetworkRisk >= Medium
-- [ ] IsPrivilege → PrivilegeRisk >= High
-- [ ] NetworkSubcommands → NetworkType == Conditional
+- [x] NetworkTypeAlways → NetworkRisk >= Medium
+- [x] IsPrivilege → PrivilegeRisk >= High
+- [x] NetworkSubcommands → NetworkType == Conditional
 
 **推奨バリデーション（将来追加）:**
 - [ ] DestructionRisk >= High → 理由が明確
@@ -813,16 +813,16 @@ NewProfile("git").
 ### 11.1 コードドキュメント
 
 **必須:**
-- [ ] 全公開型にGoDocコメント
-- [ ] 各バリデーションルールにコメント
-- [ ] 使用例をコメントに含める
+- [x] 全公開型にGoDocコメント
+- [x] 各バリデーションルールにコメント
+- [x] 使用例をコメントに含める
 
 ### 11.2 移行ガイド
 
 **必須:**
-- [ ] 既存プロファイルから新プロファイルへの移行手順
-- [ ] 典型的なコマンドの移行例
-- [ ] トラブルシューティングガイド
+- [x] 既存プロファイルから新プロファイルへの移行手順
+- [x] 典型的なコマンドの移行例
+- [x] トラブルシューティングガイド
 
 ## 12. 付録
 
@@ -855,3 +855,40 @@ NewProfile("git").
 | ビルダーパターン | オブジェクトの構築を段階的に行う設計パターン |
 | DSL (Domain-Specific Language) | 特定の目的に特化した言語 |
 | Fluent Interface | メソッドチェーンによる流暢なAPI |
+
+## 13. 実装完了記録
+
+### 実装日: 2025-10-08
+
+### 実装された仕様
+
+すべての計画された仕様が実装完了：
+
+1. **データ構造**
+   - RiskFactor型（Level + Reason）
+   - CommandRiskProfileNew型（5つのリスク要因）
+   - CommandProfileDef型（コマンドとプロファイルの関連付け）
+
+2. **メソッド仕様**
+   - `BaseRiskLevel()`: 全リスク要因の最大値を計算
+   - `GetRiskReasons()`: 非空の理由を収集
+   - `IsPrivilege()`: 権限昇格判定
+   - `Validate()`: 整合性検証
+
+3. **ビルダーAPI**
+   - `NewProfile()`: ビルダー初期化
+   - `PrivilegeRisk()`, `NetworkRisk()`, etc.: リスク要因設定
+   - `AlwaysNetwork()`, `ConditionalNetwork()`: ネットワーク設定
+   - `Build()`: バリデーション付き構築
+
+4. **バリデーションルール**
+   - NetworkTypeAlways時のNetworkRiskレベル検証
+   - NetworkSubcommandsの使用制限
+
+### 実装結果
+
+- 全ユニットテスト: パス
+- 全統合テスト: パス
+- Lintチェック: エラーなし
+- 既存コマンド移行: 完了
+- 監査ログ拡張: 完了

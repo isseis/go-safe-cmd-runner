@@ -16,8 +16,18 @@ var (
 	ErrNetworkSubcommandsOnlyForConditionalNew = errors.New("NetworkSubcommands should only be set for NetworkTypeConditional")
 )
 
-// CommandRiskProfileNew defines comprehensive risk information for a command
+// CommandRiskProfileNew defines comprehensive risk information for a command.
 // This is the new structure that will replace CommandRiskProfile after migration.
+//
+// The profile separates risk into distinct factors:
+//   - PrivilegeRisk: Privilege escalation (sudo, su, doas)
+//   - NetworkRisk: Network operations (curl, wget, ssh)
+//   - DestructionRisk: Destructive operations (rm, dd, format)
+//   - DataExfilRisk: Data exfiltration to external services
+//   - SystemModRisk: System modifications (systemctl, apt)
+//
+// The overall risk level is computed as the maximum of all risk factors.
+// Use ProfileBuilder and NewProfile() to create instances with validation.
 type CommandRiskProfileNew struct {
 	// Individual risk factors (explicit separation)
 	PrivilegeRisk   RiskFactor // Risk from privilege escalation (sudo, su, doas)
