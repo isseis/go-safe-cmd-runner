@@ -570,6 +570,46 @@ func TestIsNetworkOperation(t *testing.T) {
 			expectedRisk: false,
 			description:  "git local operation should not be detected as network",
 		},
+		{
+			name:         "git fetch without URL",
+			cmdName:      "git",
+			args:         []string{"fetch"},
+			expectedNet:  true,
+			expectedRisk: false,
+			description:  "git fetch should be detected as network even without URL",
+		},
+		{
+			name:         "git pull without URL",
+			cmdName:      "git",
+			args:         []string{"pull"},
+			expectedNet:  true,
+			expectedRisk: false,
+			description:  "git pull should be detected as network even without URL",
+		},
+		{
+			name:         "git push without URL",
+			cmdName:      "git",
+			args:         []string{"push"},
+			expectedNet:  true,
+			expectedRisk: false,
+			description:  "git push should be detected as network even without URL",
+		},
+		{
+			name:         "git clone with https URL",
+			cmdName:      "git",
+			args:         []string{"clone", "https://github.com/user/repo.git"},
+			expectedNet:  true,
+			expectedRisk: false,
+			description:  "git clone with URL should be detected as network",
+		},
+		{
+			name:         "git remote update",
+			cmdName:      "git",
+			args:         []string{"remote", "update"},
+			expectedNet:  true,
+			expectedRisk: false,
+			description:  "git remote update should be detected as network",
+		},
 
 		// Non-network commands
 		{

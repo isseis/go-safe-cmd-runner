@@ -304,6 +304,18 @@ func IsPrivilegeEscalationCommand(cmdName string) (bool, error) {
 	return false, nil
 }
 
+// isGitNetworkSubcommand checks if a git subcommand performs network operations
+func isGitNetworkSubcommand(subcommand string) bool {
+	networkSubcommands := map[string]bool{
+		"clone":  true,
+		"fetch":  true,
+		"pull":   true,
+		"push":   true,
+		"remote": true, // git remote update, git remote add, etc.
+	}
+	return networkSubcommands[subcommand]
+}
+
 // IsNetworkOperation checks if the command performs network operations
 // This function considers symbolic links to detect network commands properly
 // Returns (isNetwork, isHighRisk) where isHighRisk indicates symlink depth exceeded
@@ -330,6 +342,13 @@ func IsNetworkOperation(cmdName string, args []string) (bool, bool) {
 	}
 
 	if hasConditionalNetwork {
+		// Check for git-specific network subcommands
+		if _, exists := commandNames["git"]; exists && len(args) > 0 {
+			if isGitNetworkSubcommand(args[0]) {
+				return true, false
+			}
+		}
+
 		// Check for network-related arguments
 		allArgs := strings.Join(args, " ")
 		if strings.Contains(allArgs, "://") || // URLs
