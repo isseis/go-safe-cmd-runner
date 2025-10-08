@@ -164,12 +164,8 @@ func convertNewProfileToOld(newProfile CommandRiskProfileNew) CommandRiskProfile
 	// Get the base risk level (max of all risk factors)
 	baseRisk := newProfile.BaseRiskLevel()
 
-	// Get the first risk reason (for backward compatibility)
-	var reason string
-	reasons := newProfile.GetRiskReasons()
-	if len(reasons) > 0 {
-		reason = reasons[0]
-	}
+	// Join all risk reasons for backward compatibility to avoid losing information.
+	reason := strings.Join(newProfile.GetRiskReasons(), "; ")
 
 	return CommandRiskProfile{
 		BaseRiskLevel:      baseRisk,
