@@ -43,10 +43,10 @@ type RiskFactor struct {
 ```
 
 **チェックリスト:**
-- [ ] ファイル作成
-- [ ] 構造体定義
-- [ ] GoDocコメント追加
-- [ ] `make fmt`実行
+- [x] ファイル作成
+- [x] 構造体定義
+- [x] GoDocコメント追加
+- [x] `make fmt`実行
 
 #### タスク1.1.2: RiskFactorのテスト作成
 
@@ -103,10 +103,10 @@ func TestRiskFactor(t *testing.T) {
 ```
 
 **チェックリスト:**
-- [ ] テストファイル作成
-- [ ] テストケース実装
-- [ ] `make test`実行（失敗を確認）
-- [ ] RiskFactor実装後に`make test`実行（成功を確認）
+- [x] テストファイル作成
+- [x] テストケース実装
+- [x] `make test`実行（失敗を確認）
+- [x] RiskFactor実装後に`make test`実行（成功を確認）
 
 ### 3.2 Phase 1.2: CommandRiskProfile構造体の実装
 
@@ -135,10 +135,10 @@ type CommandRiskProfile struct {
 ```
 
 **チェックリスト:**
-- [ ] ファイル作成（または既存ファイルに追加）
-- [ ] 構造体定義
-- [ ] GoDocコメント追加
-- [ ] `make fmt`実行
+- [x] ファイル作成（または既存ファイルに追加）
+- [x] 構造体定義
+- [x] GoDocコメント追加
+- [x] `make fmt`実行
 
 #### タスク1.2.2: BaseRiskLevel()メソッドのテスト作成
 
@@ -197,9 +197,9 @@ func TestCommandRiskProfile_BaseRiskLevel(t *testing.T) {
 ```
 
 **チェックリスト:**
-- [ ] テストケース実装
-- [ ] `make test`実行（失敗を確認）
-- [ ] BaseRiskLevel()実装後に`make test`実行（成功を確認）
+- [x] テストケース実装
+- [x] `make test`実行（失敗を確認）
+- [x] BaseRiskLevel()実装後に`make test`実行（成功を確認）
 
 #### タスク1.2.3: BaseRiskLevel()メソッドの実装
 
@@ -220,10 +220,10 @@ func (p CommandRiskProfile) BaseRiskLevel() runnertypes.RiskLevel {
 ```
 
 **チェックリスト:**
-- [ ] メソッド実装
-- [ ] GoDocコメント追加
-- [ ] `make test`実行（成功を確認）
-- [ ] `make fmt`実行
+- [x] メソッド実装
+- [x] GoDocコメント追加
+- [x] `make test`実行（成功を確認）
+- [x] `make fmt`実行
 
 #### タスク1.2.4: GetRiskReasons()メソッドのテスト作成
 
@@ -306,9 +306,9 @@ func TestCommandRiskProfile_GetRiskReasons(t *testing.T) {
 ```
 
 **チェックリスト:**
-- [ ] テストケース実装
-- [ ] `make test`実行（失敗を確認）
-- [ ] GetRiskReasons()実装後に`make test`実行（成功を確認）
+- [x] テストケース実装
+- [x] `make test`実行（失敗を確認）
+- [x] GetRiskReasons()実装後に`make test`実行（成功を確認）
 
 #### タスク1.2.5: GetRiskReasons()メソッドの実装
 
@@ -344,10 +344,10 @@ func (p CommandRiskProfile) GetRiskReasons() []string {
 - 将来的にリスク要因が増えた場合も、`addReason()`呼び出しを追加するだけで対応可能
 
 **チェックリスト:**
-- [ ] メソッド実装
-- [ ] GoDocコメント追加
-- [ ] `make test`実行（成功を確認）
-- [ ] `make fmt`実行
+- [x] メソッド実装
+- [x] GoDocコメント追加
+- [x] `make test`実行（成功を確認）
+- [x] `make fmt`実行
 
 ### 3.3 Phase 1.3: バリデーション機能の実装
 
@@ -378,10 +378,10 @@ var (
 - `errors.Is()`による型判別を可能にし、将来的な動的バリデーションでのエラーハンドリングを容易化
 
 **チェックリスト:**
-- [ ] ファイル作成（または既存ファイルに追加）
-- [ ] 3つのエラー定義
-- [ ] GoDocコメント追加
-- [ ] `make fmt`実行
+- [x] ファイル作成（または既存ファイルに追加）
+- [x] 3つのエラー定義
+- [x] GoDocコメント追加
+- [x] `make fmt`実行
 
 #### タスク1.3.2: Validate()メソッドのテスト作成
 
@@ -469,9 +469,9 @@ func TestCommandRiskProfile_Validate(t *testing.T) {
 ```
 
 **チェックリスト:**
-- [ ] テストケース実装
-- [ ] `make test`実行（失敗を確認）
-- [ ] Validate()実装後に`make test`実行（成功を確認）
+- [x] テストケース実装
+- [x] `make test`実行（失敗を確認）
+- [x] Validate()実装後に`make test`実行（成功を確認）
 
 #### タスク1.3.3: Validate()メソッドの実装
 
@@ -506,10 +506,10 @@ func (p CommandRiskProfile) Validate() error {
 - Rule 3は条件のみのチェックなので、エラー型をそのまま返却
 
 **チェックリスト:**
-- [ ] メソッド実装
-- [ ] GoDocコメント追加
-- [ ] `make test`実行（成功を確認）
-- [ ] `make fmt`実行
+- [x] メソッド実装
+- [x] GoDocコメント追加
+- [x] `make test`実行（成功を確認）
+- [x] `make fmt`実行
 
 ### 3.4 Phase 1.4: ProfileBuilderの実装
 
@@ -549,11 +549,11 @@ func NewProfile(commands ...string) *ProfileBuilder {
 ```
 
 **チェックリスト:**
-- [ ] ファイル作成
-- [ ] 構造体定義
-- [ ] NewProfile()実装
-- [ ] GoDocコメント追加
-- [ ] `make fmt`実行
+- [x] ファイル作成
+- [x] 構造体定義
+- [x] NewProfile()実装
+- [x] GoDocコメント追加
+- [x] `make fmt`実行
 
 #### タスク1.4.2: リスク設定メソッドの実装
 
@@ -593,9 +593,9 @@ func (b *ProfileBuilder) SystemModRisk(level runnertypes.RiskLevel, reason strin
 ```
 
 **チェックリスト:**
-- [ ] 各メソッド実装
-- [ ] GoDocコメント追加
-- [ ] `make fmt`実行
+- [x] 各メソッド実装
+- [x] GoDocコメント追加
+- [x] `make fmt`実行
 
 #### タスク1.4.3: ネットワーク設定メソッドの実装
 
@@ -618,9 +618,9 @@ func (b *ProfileBuilder) ConditionalNetwork(subcommands ...string) *ProfileBuild
 ```
 
 **チェックリスト:**
-- [ ] 各メソッド実装
-- [ ] GoDocコメント追加
-- [ ] `make fmt`実装
+- [x] 各メソッド実装
+- [x] GoDocコメント追加
+- [x] `make fmt`実行
 
 #### タスク1.4.4: CommandProfileDef構造体の定義
 
@@ -648,11 +648,11 @@ func (d CommandProfileDef) Profile() CommandRiskProfile {
 ```
 
 **チェックリスト:**
-- [ ] ファイル作成
-- [ ] 構造体定義
-- [ ] アクセサメソッド実装
-- [ ] GoDocコメント追加
-- [ ] `make fmt`実行
+- [x] ファイル作成
+- [x] 構造体定義
+- [x] アクセサメソッド実装
+- [x] GoDocコメント追加
+- [x] `make fmt`実行
 
 #### タスク1.4.5: Build()メソッドのテスト作成
 
@@ -729,9 +729,9 @@ func TestProfileBuilder_Build(t *testing.T) {
 ```
 
 **チェックリスト:**
-- [ ] テストケース実装
-- [ ] `make test`実行（失敗を確認）
-- [ ] Build()実装後に`make test`実行（成功を確認）
+- [x] テストケース実装
+- [x] `make test`実行（失敗を確認）
+- [x] Build()実装後に`make test`実行（成功を確認）
 
 #### タスク1.4.6: Build()メソッドの実装
 
@@ -772,18 +772,18 @@ func (b *ProfileBuilder) getOrDefault(risk *RiskFactor) RiskFactor {
 ```
 
 **チェックリスト:**
-- [ ] Build()メソッド実装
-- [ ] getOrDefault()ヘルパー実装
-- [ ] GoDocコメント追加
-- [ ] `make test`実行（成功を確認）
-- [ ] `make fmt`実行
+- [x] Build()メソッド実装
+- [x] getOrDefault()ヘルパー実装
+- [x] GoDocコメント追加
+- [x] `make test`実行（成功を確認）
+- [x] `make fmt`実行
 
 ### 3.5 Phase 1 完了チェック
 
-- [ ] 全ユニットテストがパス
-- [ ] `make lint`でエラーなし
-- [ ] `make fmt`実行済み
-- [ ] コードカバレッジ確認
+- [x] 全ユニットテストがパス
+- [x] `make lint`でエラーなし
+- [x] `make fmt`実行済み
+- [x] コードカバレッジ確認
 - [ ] コミット作成（"feat: add RiskFactor and new CommandRiskProfile with builder pattern"）
 
 ## 4. フェーズ2: プロファイル定義の移行
