@@ -1,6 +1,7 @@
 package security
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,14 +11,21 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
+// Validation errors for CommandRiskProfile
+var (
+	ErrNetworkAlwaysRequiresMediumRisk      = errors.New("NetworkTypeAlways commands must have BaseRiskLevel >= Medium")
+	ErrPrivilegeRequiresHighRisk            = errors.New("privilege escalation commands must have BaseRiskLevel >= High")
+	ErrNetworkSubcommandsOnlyForConditional = errors.New("NetworkSubcommands should only be set for NetworkTypeConditional")
+)
+
 // NetworkOperationType indicates the type of network operation a command performs
 type NetworkOperationType int
 
 // Network operation type constants
 const (
-	NetworkTypeNone        NetworkOperationType = 0 // Not a network command
-	NetworkTypeAlways      NetworkOperationType = 1 // Always performs network operations
-	NetworkTypeConditional NetworkOperationType = 2 // Conditional based on arguments
+	NetworkTypeNone        NetworkOperationType = iota // Not a network command
+	NetworkTypeAlways                                  // Always performs network operations
+	NetworkTypeConditional                             // Conditional based on arguments
 )
 
 // CommandRiskProfile defines comprehensive risk information for a command
@@ -57,6 +65,29 @@ type CommandRiskProfile struct {
 	NetworkSubcommands []string              // Network operation subcommands (for conditional network commands)
 }
 
+// Validate checks the consistency of the CommandRiskProfile configuration
+func (p CommandRiskProfile) Validate() error {
+	// Rule 1: NetworkTypeAlways commands must have BaseRiskLevel >= Medium
+	// Rationale: Any command that always performs network operations poses at least medium risk
+	// due to potential data exfiltration, network attacks, or credential exposure
+	if p.NetworkType == NetworkTypeAlways && p.BaseRiskLevel < runnertypes.RiskLevelMedium {
+		return fmt.Errorf("%w (got %v)", ErrNetworkAlwaysRequiresMediumRisk, p.BaseRiskLevel)
+	}
+
+	// Rule 2: Privilege escalation commands must have BaseRiskLevel >= High
+	// Rationale: Privilege escalation commands can compromise the entire system
+	if p.IsPrivilege && p.BaseRiskLevel < runnertypes.RiskLevelHigh {
+		return fmt.Errorf("%w (got %v)", ErrPrivilegeRequiresHighRisk, p.BaseRiskLevel)
+	}
+
+	// Rule 3: NetworkSubcommands should only be set for NetworkTypeConditional
+	if len(p.NetworkSubcommands) > 0 && p.NetworkType != NetworkTypeConditional {
+		return fmt.Errorf("%w (got NetworkType=%v)", ErrNetworkSubcommandsOnlyForConditional, p.NetworkType)
+	}
+
+	return nil
+}
+
 // commandGroupDefinitions defines command groups with their shared risk profiles
 // This structure ensures commands and their profiles are always defined together
 var commandGroupDefinitions = []struct {
@@ -88,6 +119,15 @@ var commandGroupDefinitions = []struct {
 			Reason:        "Destructive operations",
 			IsPrivilege:   false,
 			NetworkType:   NetworkTypeNone,
+		},
+	},
+	{
+		commands: []string{"claude", "gemini", "chatgpt", "gpt", "openai", "anthropic"},
+		profile: CommandRiskProfile{
+			BaseRiskLevel: runnertypes.RiskLevelHigh,
+			Reason:        "AI service with potential data exfiltration",
+			IsPrivilege:   false,
+			NetworkType:   NetworkTypeAlways,
 		},
 	},
 	{
@@ -136,6 +176,15 @@ var commandGroupDefinitions = []struct {
 			NetworkType:   NetworkTypeConditional,
 		},
 	},
+	{
+		commands: []string{"aws"},
+		profile: CommandRiskProfile{
+			BaseRiskLevel: runnertypes.RiskLevelMedium,
+			Reason:        "Cloud service operations",
+			IsPrivilege:   false,
+			NetworkType:   NetworkTypeAlways,
+		},
+	},
 }
 
 // commandRiskProfiles is built from commandGroupDefinitions
@@ -144,6 +193,10 @@ var commandRiskProfiles = buildCommandRiskProfiles()
 func buildCommandRiskProfiles() map[string]CommandRiskProfile {
 	profiles := make(map[string]CommandRiskProfile)
 	for _, group := range commandGroupDefinitions {
+		// Validate the profile for consistency
+		if err := group.profile.Validate(); err != nil {
+			panic(fmt.Sprintf("invalid CommandRiskProfile for commands %v: %v", group.commands, err))
+		}
 		for _, cmd := range group.commands {
 			profiles[cmd] = group.profile
 		}
