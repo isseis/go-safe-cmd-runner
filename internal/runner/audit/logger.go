@@ -178,3 +178,44 @@ func (l *Logger) LogSecurityEvent(
 		l.logger.LogAttrs(ctx, slog.LevelInfo, "Security event", attrs...)
 	}
 }
+
+// LogRiskProfile logs command risk profile information with detailed risk factors
+func (l *Logger) LogRiskProfile(
+	ctx context.Context,
+	commandName string,
+	baseRiskLevel runnertypes.RiskLevel,
+	riskReasons []string,
+	networkType string,
+) {
+	attrs := []slog.Attr{
+		slog.String("audit_type", "command_risk_profile"),
+		slog.Bool("audit", true), // Mark as audit event
+		slog.Int64("timestamp", time.Now().Unix()),
+		slog.String("command_name", commandName),
+		slog.String("risk_level", baseRiskLevel.String()),
+		slog.String("network_type", networkType),
+		slog.Int("user_id", os.Getuid()),
+		slog.Int("effective_user_id", os.Geteuid()),
+		slog.Int("process_id", os.Getpid()),
+	}
+
+	// Add risk reasons as an array
+	if len(riskReasons) > 0 {
+		attrs = append(attrs, slog.Any("risk_factors", riskReasons))
+	}
+
+	// Determine log level based on risk level
+	var logLevel slog.Level
+	switch baseRiskLevel {
+	case runnertypes.RiskLevelCritical:
+		logLevel = slog.LevelError
+	case runnertypes.RiskLevelHigh:
+		logLevel = slog.LevelWarn
+	case runnertypes.RiskLevelMedium:
+		logLevel = slog.LevelInfo
+	default:
+		logLevel = slog.LevelDebug
+	}
+
+	l.logger.LogAttrs(ctx, logLevel, "Command risk profile", attrs...)
+}
