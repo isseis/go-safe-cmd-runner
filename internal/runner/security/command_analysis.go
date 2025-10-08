@@ -20,11 +20,40 @@ const (
 )
 
 // CommandRiskProfile defines comprehensive risk information for a command
+//
+// Risk Level Determination:
+// The BaseRiskLevel represents the inherent risk level of the command itself,
+// independent of its arguments. The actual risk level used during execution
+// may be elevated based on:
+//   - Dangerous command patterns (e.g., "rm -rf")
+//   - setuid/setgid bits on the executable
+//   - Directory-based default risk (e.g., /tmp has higher risk than /usr/bin)
+//   - Hash validation failures
+//
+// Network Operation Detection:
+// NetworkType determines how network operations are detected for this command:
+//   - NetworkTypeNone (0): Command never performs network operations
+//   - NetworkTypeAlways (1): Command always performs network operations
+//     (e.g., curl, wget, ssh). Network detection returns true regardless of arguments.
+//   - NetworkTypeConditional (2): Command may perform network operations depending
+//     on subcommands or arguments (e.g., git, rsync).
+//
+// For NetworkTypeConditional commands:
+//   - If NetworkSubcommands is non-empty: The first argument (subcommand) is checked
+//     against this list. If matched, the command is considered a network operation.
+//     Example: git with NetworkSubcommands=["fetch","pull","push"] will detect
+//     "git fetch" as a network operation even without a URL argument.
+//   - If NetworkSubcommands is empty or no match: Falls back to argument-based
+//     detection (checking for URLs "://" or SSH-style addresses "user@host:path").
+//
+// This design allows precise control over network operation detection while
+// maintaining extensibility for commands with complex subcommand structures.
 type CommandRiskProfile struct {
-	BaseRiskLevel runnertypes.RiskLevel // Base risk level for the command
-	Reason        string                // Reason for the risk level
-	IsPrivilege   bool                  // Is privilege escalation command
-	NetworkType   NetworkOperationType  // Network operation type
+	BaseRiskLevel      runnertypes.RiskLevel // Base risk level for the command
+	Reason             string                // Reason for the risk level
+	IsPrivilege        bool                  // Is privilege escalation command
+	NetworkType        NetworkOperationType  // Network operation type
+	NetworkSubcommands []string              // Network operation subcommands (for conditional network commands)
 }
 
 // commandGroupDefinitions defines command groups with their shared risk profiles
@@ -88,7 +117,17 @@ var commandGroupDefinitions = []struct {
 		},
 	},
 	{
-		commands: []string{"rsync", "git"},
+		commands: []string{"git"},
+		profile: CommandRiskProfile{
+			BaseRiskLevel:      runnertypes.RiskLevelLow,
+			Reason:             "Conditional network operations",
+			IsPrivilege:        false,
+			NetworkType:        NetworkTypeConditional,
+			NetworkSubcommands: []string{"clone", "fetch", "pull", "push", "remote"},
+		},
+	},
+	{
+		commands: []string{"rsync"},
 		profile: CommandRiskProfile{
 			BaseRiskLevel: runnertypes.RiskLevelLow,
 			Reason:        "Conditional network operations",
@@ -304,18 +343,6 @@ func IsPrivilegeEscalationCommand(cmdName string) (bool, error) {
 	return false, nil
 }
 
-// isGitNetworkSubcommand checks if a git subcommand performs network operations
-func isGitNetworkSubcommand(subcommand string) bool {
-	networkSubcommands := map[string]bool{
-		"clone":  true,
-		"fetch":  true,
-		"pull":   true,
-		"push":   true,
-		"remote": true, // git remote update, git remote add, etc.
-	}
-	return networkSubcommands[subcommand]
-}
-
 // IsNetworkOperation checks if the command performs network operations
 // This function considers symbolic links to detect network commands properly
 // Returns (isNetwork, isHighRisk) where isHighRisk indicates symlink depth exceeded
@@ -329,23 +356,26 @@ func IsNetworkOperation(cmdName string, args []string) (bool, bool) {
 	}
 
 	// Check command profiles for network type using unified profiles
-	var hasConditionalNetwork bool
+	var conditionalProfile *CommandRiskProfile
 	for name := range commandNames {
 		if profile, exists := commandRiskProfiles[name]; exists {
 			switch profile.NetworkType {
 			case NetworkTypeAlways:
 				return true, false
 			case NetworkTypeConditional:
-				hasConditionalNetwork = true
+				conditionalProfile = &profile
 			}
 		}
 	}
 
-	if hasConditionalNetwork {
-		// Check for git-specific network subcommands
-		if _, exists := commandNames["git"]; exists && len(args) > 0 {
-			if isGitNetworkSubcommand(args[0]) {
-				return true, false
+	if conditionalProfile != nil {
+		// Check for network subcommands (e.g., git fetch, git push)
+		if len(args) > 0 && len(conditionalProfile.NetworkSubcommands) > 0 {
+			subcommand := args[0]
+			for _, netSubcmd := range conditionalProfile.NetworkSubcommands {
+				if subcommand == netSubcmd {
+					return true, false
+				}
 			}
 		}
 
