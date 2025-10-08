@@ -106,7 +106,7 @@ var commandProfileDefinitions = []CommandProfileDef{
 		DestructionRisk(runnertypes.RiskLevelHigh, "Can delete files and directories").
 		Build(),
 	NewProfile("dd").
-		DestructionRisk(runnertypes.RiskLevelCritical, "Can overwrite entire disks, potential data loss").
+		DestructionRisk(runnertypes.RiskLevelHigh, "Can overwrite entire disks, potential data loss").
 		Build(),
 
 	// Phase 2.2.5: AI service commands with multiple risk factors

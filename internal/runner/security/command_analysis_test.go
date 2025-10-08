@@ -1969,9 +1969,9 @@ func TestGetCommandRiskOverride(t *testing.T) {
 			expectedFound: true,
 		},
 		{
-			name:          "dd command should have critical risk",
+			name:          "dd command should have high risk",
 			cmdPath:       "/usr/bin/dd",
-			expectedRisk:  runnertypes.RiskLevelCritical,
+			expectedRisk:  runnertypes.RiskLevelHigh,
 			expectedFound: true,
 		},
 		{
@@ -2127,7 +2127,6 @@ func TestMigration_RiskLevelConsistency(t *testing.T) {
 
 		// Destructive operations
 		{"rm", runnertypes.RiskLevelHigh},
-		{"dd", runnertypes.RiskLevelCritical}, // Changed from High to Critical
 
 		// AI services - High
 		{"claude", runnertypes.RiskLevelHigh},
