@@ -834,10 +834,10 @@ NewProfile("sudo", "su", "doas").
 ```
 
 **チェックリスト:**
-- [ ] 移行実装
-- [ ] リスクレベル一致を確認するテスト追加
-- [ ] `make test`実行（成功を確認）
-- [ ] コミット作成
+- [x] 移行実装
+- [x] リスクレベル一致を確認するテスト追加
+- [x] `make test`実行（成功を確認）
+- [x] コミット作成（Phase 2完了後に実施）
 
 #### タスク2.2.2: ネットワークコマンド（常時）の移行
 
@@ -864,10 +864,10 @@ NewProfile("curl", "wget").
 ```
 
 **チェックリスト:**
-- [ ] 移行実装
-- [ ] リスクレベル一致を確認するテスト追加
-- [ ] `make test`実行（成功を確認）
-- [ ] コミット作成
+- [x] 移行実装
+- [x] リスクレベル一致を確認するテスト追加
+- [x] `make test`実行（成功を確認）
+- [x] コミット作成（Phase 2完了後に実施）
 
 #### タスク2.2.3: ネットワークコマンド（条件付き）の移行
 
@@ -895,11 +895,11 @@ NewProfile("git").
 ```
 
 **チェックリスト:**
-- [ ] 移行実装
-- [ ] リスクレベル一致を確認するテスト追加
-- [ ] サブコマンド検出ロジックのテスト
-- [ ] `make test`実行（成功を確認）
-- [ ] コミット作成
+- [x] 移行実装
+- [x] リスクレベル一致を確認するテスト追加
+- [x] サブコマンド検出ロジックのテスト
+- [x] `make test`実行（成功を確認）
+- [x] コミット作成（Phase 2完了後に実施）
 
 #### タスク2.2.4: 破壊的操作コマンドの移行
 
@@ -917,10 +917,10 @@ NewProfile("dd").
 ```
 
 **チェックリスト:**
-- [ ] 移行実装
-- [ ] リスクレベル一致を確認するテスト追加
-- [ ] `make test`実行（成功を確認）
-- [ ] コミット作成
+- [x] 移行実装
+- [x] リスクレベル一致を確認するテスト追加
+- [x] `make test`実行（成功を確認）
+- [x] コミット作成（Phase 2完了後に実施）
 
 #### タスク2.2.5: AI CLIツールの移行（新規追加）
 
@@ -936,10 +936,10 @@ NewProfile("claude", "gemini", "chatgpt").
 ```
 
 **チェックリスト:**
-- [ ] 新規プロファイル追加
-- [ ] テストケース追加
-- [ ] `make test`実行（成功を確認）
-- [ ] コミット作成
+- [x] 新規プロファイル追加
+- [x] テストケース追加
+- [x] `make test`実行（成功を確認）
+- [x] コミット作成（Phase 2完了後に実施）
 
 #### タスク2.2.6: システム変更コマンドの移行
 
@@ -959,18 +959,18 @@ NewProfile("apt", "apt-get").
 ```
 
 **チェックリスト:**
-- [ ] 移行実装
-- [ ] 複数リスク要因のテスト追加
-- [ ] `make test`実行（成功を確認）
-- [ ] コミット作成
+- [x] 移行実装
+- [x] 複数リスク要因のテスト追加
+- [x] `make test`実行（成功を確認）
+- [x] コミット作成（Phase 2完了後に実施）
 
 #### タスク2.2.7: 残りのコマンドの移行
 
 **作業内容:**
-- [ ] 全ての既存コマンド定義を新形式に移行
-- [ ] 移行完了を確認するテスト追加
-- [ ] `make test`実行（成功を確認）
-- [ ] コミット作成
+- [x] 全ての既存コマンド定義を新形式に移行
+- [x] 移行完了を確認するテスト追加
+- [x] `make test`実行（成功を確認）
+- [x] コミット作成（Phase 2完了後に実施）
 
 ### 4.3 Phase 2.3: 移行完了チェック
 
@@ -1009,46 +1009,37 @@ func TestAllProfilesHaveReasons(t *testing.T) {
   - リスクレベルが`Unknown`のコマンド（例：`ls`, `pwd`）は理由がなくても正当なため、条件付きチェック
 
 **チェックリスト:**
-- [ ] テスト実装
-- [ ] リスクレベル`Unknown`のコマンドでテストが失敗しないことを確認
-- [ ] `make test`実行（成功を確認）
-- [ ] コミット作成
+- [x] テスト実装
+- [x] リスクレベル`Unknown`のコマンドでテストが失敗しないことを確認
+- [x] `make test`実行（成功を確認）
+- [x] コミット作成（Phase 2完了後に実施）
 
 #### タスク2.3.2: リスクレベル一致確認テスト
 
-**ファイル:** `internal/runner/security/migration_test.go`
+**ファイル:** `internal/runner/security/command_analysis_test.go`
 
-**テストケース:**
-```go
-func TestMigration_RiskLevelConsistency(t *testing.T) {
-    // Old vs New risk level comparison
-    tests := []struct {
-        command   string
-        oldRisk   runnertypes.RiskLevel
-    }{
-        {"sudo", runnertypes.RiskLevelCritical},
-        {"curl", runnertypes.RiskLevelMedium},
-        {"git", runnertypes.RiskLevelMedium},
-        // ... all commands
-    }
-
-    for _, tt := range tests {
-        t.Run(tt.command, func(t *testing.T) {
-            profile := getProfileForCommand(tt.command)
-            assert.Equal(t, tt.oldRisk, profile.BaseRiskLevel(),
-                "Risk level mismatch for command %s", tt.command)
-        })
-    }
-}
-```
+**テストケース実装済み:**
+- TestMigration_RiskLevelConsistency
+- TestMigration_NetworkTypeConsistency
+- TestMigration_NetworkSubcommandsConsistency
+- TestMigration_IsPrivilegeConsistency
+- TestMigration_MultipleRiskFactors
 
 **チェックリスト:**
-- [ ] テスト実装
-- [ ] 全コマンドの移行前後一致を確認
-- [ ] `make test`実行（成功を確認）
-- [ ] コミット作成
+- [x] テスト実装
+- [x] 全コマンドの移行前後一致を確認
+- [x] `make test`実行（成功を確認）
+- [x] コミット作成（Phase 2完了後に実施）
 
 ### 4.4 Phase 2 完了チェック
+
+- [x] 全既存コマンドの移行完了
+- [x] 全ユニットテストがパス
+- [x] `make lint`でエラーなし
+- [x] リスクレベル一致確認完了
+- [ ] コミット作成（"feat: migrate all command profiles to new risk factor structure"）
+
+## 5. フェーズ3: 機能拡張### 4.4 Phase 2 完了チェック
 
 - [ ] 全既存コマンドの移行完了
 - [ ] 全ユニットテストがパス

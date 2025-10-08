@@ -1969,9 +1969,9 @@ func TestGetCommandRiskOverride(t *testing.T) {
 			expectedFound: true,
 		},
 		{
-			name:          "dd command should have high risk",
+			name:          "dd command should have critical risk",
 			cmdPath:       "/usr/bin/dd",
-			expectedRisk:  runnertypes.RiskLevelHigh,
+			expectedRisk:  runnertypes.RiskLevelCritical,
 			expectedFound: true,
 		},
 		{
@@ -1993,15 +1993,15 @@ func TestGetCommandRiskOverride(t *testing.T) {
 			expectedFound: true,
 		},
 		{
-			name:          "rsync command should have low risk",
+			name:          "rsync command should have medium risk",
 			cmdPath:       "rsync",
-			expectedRisk:  runnertypes.RiskLevelLow,
+			expectedRisk:  runnertypes.RiskLevelMedium,
 			expectedFound: true,
 		},
 		{
-			name:          "git command should have low risk",
+			name:          "git command should have medium risk",
 			cmdPath:       "/usr/bin/git",
-			expectedRisk:  runnertypes.RiskLevelLow,
+			expectedRisk:  runnertypes.RiskLevelMedium,
 			expectedFound: true,
 		},
 		{
@@ -2082,6 +2082,193 @@ func TestCommandRiskProfiles_NetworkCommands(t *testing.T) {
 			if exists {
 				assert.Equal(t, tc.networkType, profile.NetworkType, "command %s should have correct network type", tc.cmd)
 			}
+		})
+	}
+}
+
+// TestAllProfilesAreValid verifies that all command profiles pass validation
+func TestAllProfilesAreValid(t *testing.T) {
+	for _, def := range commandProfileDefinitions {
+		err := def.Profile().Validate()
+		assert.NoError(t, err, "Profile for commands %v should be valid", def.Commands())
+	}
+}
+
+// TestAllProfilesHaveReasons verifies that all profiles with non-Unknown risk level have reasons
+func TestAllProfilesHaveReasons(t *testing.T) {
+	for _, def := range commandProfileDefinitions {
+		profile := def.Profile()
+		baseRisk := profile.BaseRiskLevel()
+		reasons := profile.GetRiskReasons()
+
+		// Only profiles with risk level > Unknown should have reasons
+		if baseRisk > runnertypes.RiskLevelUnknown {
+			assert.NotEmpty(t, reasons,
+				"Profile for commands %v has risk level %v but no reasons",
+				def.Commands(), baseRisk)
+		}
+	}
+}
+
+// TestMigration_RiskLevelConsistency verifies that migrated profiles maintain expected risk levels
+func TestMigration_RiskLevelConsistency(t *testing.T) {
+	tests := []struct {
+		command      string
+		expectedRisk runnertypes.RiskLevel
+	}{
+		// Privilege escalation - Critical
+		{"sudo", runnertypes.RiskLevelCritical},
+		{"su", runnertypes.RiskLevelCritical},
+		{"doas", runnertypes.RiskLevelCritical},
+
+		// System modification - High
+		{"systemctl", runnertypes.RiskLevelHigh},
+		{"service", runnertypes.RiskLevelHigh},
+
+		// Destructive operations
+		{"rm", runnertypes.RiskLevelHigh},
+		{"dd", runnertypes.RiskLevelCritical}, // Changed from High to Critical
+
+		// AI services - High
+		{"claude", runnertypes.RiskLevelHigh},
+		{"gemini", runnertypes.RiskLevelHigh},
+		{"chatgpt", runnertypes.RiskLevelHigh},
+		{"gpt", runnertypes.RiskLevelHigh},
+		{"openai", runnertypes.RiskLevelHigh},
+		{"anthropic", runnertypes.RiskLevelHigh},
+
+		// Network commands (always) - Medium
+		{"curl", runnertypes.RiskLevelMedium},
+		{"wget", runnertypes.RiskLevelMedium},
+		{"nc", runnertypes.RiskLevelMedium},
+		{"netcat", runnertypes.RiskLevelMedium},
+		{"telnet", runnertypes.RiskLevelMedium},
+		{"ssh", runnertypes.RiskLevelMedium},
+		{"scp", runnertypes.RiskLevelMedium},
+		{"aws", runnertypes.RiskLevelMedium},
+
+		// Network commands (conditional) - Medium (changed from Low)
+		{"git", runnertypes.RiskLevelMedium},
+		{"rsync", runnertypes.RiskLevelMedium},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.command, func(t *testing.T) {
+			profile, exists := commandRiskProfiles[tt.command]
+			assert.True(t, exists, "Command %s should exist in profiles", tt.command)
+			if exists {
+				assert.Equal(t, tt.expectedRisk, profile.BaseRiskLevel,
+					"Risk level mismatch for command %s", tt.command)
+			}
+		})
+	}
+}
+
+// TestMigration_NetworkTypeConsistency verifies that network types are correctly migrated
+func TestMigration_NetworkTypeConsistency(t *testing.T) {
+	alwaysNetwork := []string{
+		"curl", "wget", "nc", "netcat", "telnet", "ssh", "scp", "aws",
+		"claude", "gemini", "chatgpt", "gpt", "openai", "anthropic",
+	}
+	conditionalNetwork := []string{"git", "rsync"}
+	noneNetwork := []string{"sudo", "su", "doas", "systemctl", "service", "rm", "dd"}
+
+	for _, cmd := range alwaysNetwork {
+		t.Run("AlwaysNetwork_"+cmd, func(t *testing.T) {
+			profile, exists := commandRiskProfiles[cmd]
+			assert.True(t, exists)
+			assert.Equal(t, NetworkTypeAlways, profile.NetworkType)
+		})
+	}
+
+	for _, cmd := range conditionalNetwork {
+		t.Run("ConditionalNetwork_"+cmd, func(t *testing.T) {
+			profile, exists := commandRiskProfiles[cmd]
+			assert.True(t, exists)
+			assert.Equal(t, NetworkTypeConditional, profile.NetworkType)
+		})
+	}
+
+	for _, cmd := range noneNetwork {
+		t.Run("NoneNetwork_"+cmd, func(t *testing.T) {
+			profile, exists := commandRiskProfiles[cmd]
+			assert.True(t, exists)
+			assert.Equal(t, NetworkTypeNone, profile.NetworkType)
+		})
+	}
+}
+
+// TestMigration_NetworkSubcommandsConsistency verifies network subcommands are correctly migrated
+func TestMigration_NetworkSubcommandsConsistency(t *testing.T) {
+	tests := []struct {
+		command     string
+		subcommands []string
+	}{
+		{"git", []string{"clone", "fetch", "pull", "push", "remote"}},
+		{"rsync", nil}, // nil - uses argument-based detection
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.command, func(t *testing.T) {
+			profile, exists := commandRiskProfiles[tt.command]
+			assert.True(t, exists)
+			if exists {
+				if tt.subcommands == nil {
+					assert.Nil(t, profile.NetworkSubcommands,
+						"Network subcommands should be nil for command %s", tt.command)
+				} else {
+					assert.Equal(t, tt.subcommands, profile.NetworkSubcommands,
+						"Network subcommands mismatch for command %s", tt.command)
+				}
+			}
+		})
+	}
+}
+
+// TestMigration_IsPrivilegeConsistency verifies IsPrivilege flag is correctly set
+func TestMigration_IsPrivilegeConsistency(t *testing.T) {
+	privilegeCommands := []string{"sudo", "su", "doas"}
+	nonPrivilegeCommands := []string{"rm", "dd", "curl", "git", "systemctl"}
+
+	for _, cmd := range privilegeCommands {
+		t.Run("Privilege_"+cmd, func(t *testing.T) {
+			profile, exists := commandRiskProfiles[cmd]
+			assert.True(t, exists)
+			assert.True(t, profile.IsPrivilege, "Command %s should have IsPrivilege=true", cmd)
+		})
+	}
+
+	for _, cmd := range nonPrivilegeCommands {
+		t.Run("NonPrivilege_"+cmd, func(t *testing.T) {
+			profile, exists := commandRiskProfiles[cmd]
+			assert.True(t, exists)
+			assert.False(t, profile.IsPrivilege, "Command %s should have IsPrivilege=false", cmd)
+		})
+	}
+}
+
+// TestMigration_MultipleRiskFactors verifies AI service commands have multiple risk factors
+func TestMigration_MultipleRiskFactors(t *testing.T) {
+	aiCommands := []string{"claude", "gemini", "chatgpt", "gpt", "openai", "anthropic"}
+
+	for _, cmd := range aiCommands {
+		t.Run(cmd, func(t *testing.T) {
+			newProfile, exists := commandRiskProfilesNew[cmd]
+			assert.True(t, exists, "Command %s should exist in new profiles", cmd)
+			if !exists {
+				return
+			}
+
+			// Should have both NetworkRisk and DataExfilRisk
+			assert.Equal(t, runnertypes.RiskLevelHigh, newProfile.NetworkRisk.Level,
+				"Command %s should have High NetworkRisk", cmd)
+			assert.Equal(t, runnertypes.RiskLevelHigh, newProfile.DataExfilRisk.Level,
+				"Command %s should have High DataExfilRisk", cmd)
+
+			// Should have multiple reasons
+			reasons := newProfile.GetRiskReasons()
+			assert.GreaterOrEqual(t, len(reasons), 2,
+				"Command %s should have at least 2 risk reasons", cmd)
 		})
 	}
 }

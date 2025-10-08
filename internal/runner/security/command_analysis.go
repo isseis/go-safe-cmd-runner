@@ -88,119 +88,110 @@ func (p CommandRiskProfile) Validate() error {
 	return nil
 }
 
-// commandGroupDefinitions defines command groups with their shared risk profiles
-// This structure ensures commands and their profiles are always defined together
-var commandGroupDefinitions = []struct {
-	commands []string
-	profile  CommandRiskProfile
-}{
-	{
-		commands: []string{"sudo", "su", "doas"},
-		profile: CommandRiskProfile{
-			BaseRiskLevel: runnertypes.RiskLevelCritical,
-			Reason:        "Privilege escalation",
-			IsPrivilege:   true,
-			NetworkType:   NetworkTypeNone,
-		},
-	},
-	{
-		commands: []string{"systemctl", "service"},
-		profile: CommandRiskProfile{
-			BaseRiskLevel: runnertypes.RiskLevelHigh,
-			Reason:        "System control",
-			IsPrivilege:   false,
-			NetworkType:   NetworkTypeNone,
-		},
-	},
-	{
-		commands: []string{"rm", "dd"},
-		profile: CommandRiskProfile{
-			BaseRiskLevel: runnertypes.RiskLevelHigh,
-			Reason:        "Destructive operations",
-			IsPrivilege:   false,
-			NetworkType:   NetworkTypeNone,
-		},
-	},
-	{
-		commands: []string{"claude", "gemini", "chatgpt", "gpt", "openai", "anthropic"},
-		profile: CommandRiskProfile{
-			BaseRiskLevel: runnertypes.RiskLevelHigh,
-			Reason:        "AI service with potential data exfiltration",
-			IsPrivilege:   false,
-			NetworkType:   NetworkTypeAlways,
-		},
-	},
-	{
-		commands: []string{"curl", "wget"},
-		profile: CommandRiskProfile{
-			BaseRiskLevel: runnertypes.RiskLevelMedium,
-			Reason:        "Network request",
-			IsPrivilege:   false,
-			NetworkType:   NetworkTypeAlways,
-		},
-	},
-	{
-		commands: []string{"nc", "netcat", "telnet"},
-		profile: CommandRiskProfile{
-			BaseRiskLevel: runnertypes.RiskLevelMedium,
-			Reason:        "Network connection",
-			IsPrivilege:   false,
-			NetworkType:   NetworkTypeAlways,
-		},
-	},
-	{
-		commands: []string{"ssh", "scp"},
-		profile: CommandRiskProfile{
-			BaseRiskLevel: runnertypes.RiskLevelMedium,
-			Reason:        "Remote operations",
-			IsPrivilege:   false,
-			NetworkType:   NetworkTypeAlways,
-		},
-	},
-	{
-		commands: []string{"git"},
-		profile: CommandRiskProfile{
-			BaseRiskLevel:      runnertypes.RiskLevelLow,
-			Reason:             "Conditional network operations",
-			IsPrivilege:        false,
-			NetworkType:        NetworkTypeConditional,
-			NetworkSubcommands: []string{"clone", "fetch", "pull", "push", "remote"},
-		},
-	},
-	{
-		commands: []string{"rsync"},
-		profile: CommandRiskProfile{
-			BaseRiskLevel: runnertypes.RiskLevelLow,
-			Reason:        "Conditional network operations",
-			IsPrivilege:   false,
-			NetworkType:   NetworkTypeConditional,
-		},
-	},
-	{
-		commands: []string{"aws"},
-		profile: CommandRiskProfile{
-			BaseRiskLevel: runnertypes.RiskLevelMedium,
-			Reason:        "Cloud service operations",
-			IsPrivilege:   false,
-			NetworkType:   NetworkTypeAlways,
-		},
-	},
+// commandProfileDefinitions defines command risk profiles using the new builder pattern
+// This uses CommandRiskProfileNew with explicit risk factor separation
+var commandProfileDefinitions = []CommandProfileDef{
+	// Phase 2.2.1: Privilege escalation commands
+	NewProfile("sudo", "su", "doas").
+		PrivilegeRisk(runnertypes.RiskLevelCritical, "Allows execution with elevated privileges, can compromise entire system").
+		Build(),
+
+	// Phase 2.2.6: System modification commands
+	NewProfile("systemctl", "service").
+		SystemModRisk(runnertypes.RiskLevelHigh, "Can modify system services and configuration").
+		Build(),
+
+	// Phase 2.2.4: Destructive operations - separate definitions for different risk levels
+	NewProfile("rm").
+		DestructionRisk(runnertypes.RiskLevelHigh, "Can delete files and directories").
+		Build(),
+	NewProfile("dd").
+		DestructionRisk(runnertypes.RiskLevelCritical, "Can overwrite entire disks, potential data loss").
+		Build(),
+
+	// Phase 2.2.5: AI service commands with multiple risk factors
+	NewProfile("claude", "gemini", "chatgpt", "gpt", "openai", "anthropic").
+		NetworkRisk(runnertypes.RiskLevelHigh, "Always communicates with external AI API").
+		DataExfilRisk(runnertypes.RiskLevelHigh, "May send sensitive data to external service").
+		AlwaysNetwork().
+		Build(),
+
+	// Phase 2.2.2: Network commands (always)
+	NewProfile("curl", "wget").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Always performs network operations").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("nc", "netcat", "telnet").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Establishes network connections").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("ssh", "scp").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Remote operations via network").
+		AlwaysNetwork().
+		Build(),
+	NewProfile("aws").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Cloud service operations via network").
+		AlwaysNetwork().
+		Build(),
+
+	// Phase 2.2.3: Network commands (conditional)
+	NewProfile("git").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Network operations for clone/fetch/pull/push/remote").
+		ConditionalNetwork("clone", "fetch", "pull", "push", "remote").
+		Build(),
+	NewProfile("rsync").
+		NetworkRisk(runnertypes.RiskLevelMedium, "Network operations when using remote sources/destinations").
+		ConditionalNetwork().
+		Build(),
 }
 
-// commandRiskProfiles is built from commandGroupDefinitions
+// commandRiskProfilesNew is built from commandProfileDefinitions (new structure)
+var commandRiskProfilesNew = buildCommandRiskProfilesNew()
+
+func buildCommandRiskProfilesNew() map[string]CommandRiskProfileNew {
+	profiles := make(map[string]CommandRiskProfileNew)
+	for _, def := range commandProfileDefinitions {
+		// Profile is already validated in Build()
+		for _, cmd := range def.Commands() {
+			profiles[cmd] = def.Profile()
+		}
+	}
+	return profiles
+}
+
+// convertNewProfileToOld converts CommandRiskProfileNew to CommandRiskProfile for backward compatibility
+func convertNewProfileToOld(newProfile CommandRiskProfileNew) CommandRiskProfile {
+	// Get the base risk level (max of all risk factors)
+	baseRisk := newProfile.BaseRiskLevel()
+
+	// Get the first risk reason (for backward compatibility)
+	var reason string
+	reasons := newProfile.GetRiskReasons()
+	if len(reasons) > 0 {
+		reason = reasons[0]
+	}
+
+	return CommandRiskProfile{
+		BaseRiskLevel:      baseRisk,
+		Reason:             reason,
+		IsPrivilege:        newProfile.IsPrivilege(),
+		NetworkType:        newProfile.NetworkType,
+		NetworkSubcommands: newProfile.NetworkSubcommands,
+	}
+}
+
+// commandRiskProfiles is built from commandGroupDefinitions (old structure)
+// This is kept for backward compatibility during migration
 var commandRiskProfiles = buildCommandRiskProfiles()
 
 func buildCommandRiskProfiles() map[string]CommandRiskProfile {
 	profiles := make(map[string]CommandRiskProfile)
-	for _, group := range commandGroupDefinitions {
-		// Validate the profile for consistency
-		if err := group.profile.Validate(); err != nil {
-			panic(fmt.Sprintf("invalid CommandRiskProfile for commands %v: %v", group.commands, err))
-		}
-		for _, cmd := range group.commands {
-			profiles[cmd] = group.profile
-		}
+
+	// Use new profiles and convert to old structure
+	for cmd, newProfile := range commandRiskProfilesNew {
+		profiles[cmd] = convertNewProfileToOld(newProfile)
 	}
+
 	return profiles
 }
 
