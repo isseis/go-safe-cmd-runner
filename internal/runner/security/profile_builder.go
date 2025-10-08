@@ -6,7 +6,27 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
-// ProfileBuilder provides a fluent API for building CommandRiskProfileNew
+// ProfileBuilder provides a fluent API for building CommandRiskProfileNew.
+//
+// Example usage:
+//
+//	// Simple privilege escalation command
+//	NewProfile("sudo", "su").
+//	    PrivilegeRisk(runnertypes.RiskLevelCritical, "Allows execution with elevated privileges").
+//	    Build()
+//
+//	// Network command with data exfiltration risk
+//	NewProfile("some-uploader-tool").
+//	    NetworkRisk(runnertypes.RiskLevelMedium, "Connects to external servers").
+//	    DataExfilRisk(runnertypes.RiskLevelLow, "Can potentially send local data to external servers").
+//	    AlwaysNetwork().
+//	    Build()
+//
+//	// Conditional network command
+//	NewProfile("git").
+//	    NetworkRisk(runnertypes.RiskLevelMedium, "Network operations for specific subcommands").
+//	    ConditionalNetwork("clone", "fetch", "pull", "push").
+//	    Build()
 type ProfileBuilder struct {
 	commands           []string
 	privilegeRisk      *RiskFactor
