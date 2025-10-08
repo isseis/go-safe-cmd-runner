@@ -8,7 +8,7 @@ import "github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 //   - Level: The severity of this specific risk (Unknown, Low, Medium, High, Critical)
 //   - Reason: A human-readable explanation of why this risk exists
 //
-// Risk factors are combined in CommandRiskProfileNew to provide a comprehensive
+// Risk factors are combined in CommandRiskProfile to provide a comprehensive
 // risk assessment. The overall risk level is the maximum of all factor levels.
 type RiskFactor struct {
 	Level  runnertypes.RiskLevel // Risk level for this specific factor

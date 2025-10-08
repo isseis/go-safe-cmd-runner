@@ -7,16 +7,16 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
-// Validation errors for CommandRiskProfileNew
+// Validation errors for CommandRiskProfile
 var (
-	// ErrNetworkAlwaysRequiresMediumRiskNew is returned when NetworkTypeAlways has NetworkRisk < Medium
-	ErrNetworkAlwaysRequiresMediumRiskNew = errors.New("NetworkTypeAlways commands must have NetworkRisk >= Medium")
+	// ErrNetworkAlwaysRequiresMediumRisk is returned when NetworkTypeAlways has NetworkRisk < Medium
+	ErrNetworkAlwaysRequiresMediumRisk = errors.New("NetworkTypeAlways commands must have NetworkRisk >= Medium")
 
-	// ErrNetworkSubcommandsOnlyForConditionalNew is returned when NetworkSubcommands is set for non-conditional network type
-	ErrNetworkSubcommandsOnlyForConditionalNew = errors.New("NetworkSubcommands should only be set for NetworkTypeConditional")
+	// ErrNetworkSubcommandsOnlyForConditional is returned when NetworkSubcommands is set for non-conditional network type
+	ErrNetworkSubcommandsOnlyForConditional = errors.New("NetworkSubcommands should only be set for NetworkTypeConditional")
 )
 
-// CommandRiskProfileNew defines comprehensive risk information for a command.
+// CommandRiskProfile defines comprehensive risk information for a command.
 // This is the new structure that will replace CommandRiskProfile after migration.
 //
 // The profile separates risk into distinct factors:
@@ -28,7 +28,7 @@ var (
 //
 // The overall risk level is computed as the maximum of all risk factors.
 // Use ProfileBuilder and NewProfile() to create instances with validation.
-type CommandRiskProfileNew struct {
+type CommandRiskProfile struct {
 	// Individual risk factors (explicit separation)
 	PrivilegeRisk   RiskFactor // Risk from privilege escalation (sudo, su, doas)
 	NetworkRisk     RiskFactor // Risk from network operations
@@ -45,12 +45,12 @@ type CommandRiskProfileNew struct {
 const defaultRiskReasonsCap = 5
 
 // IsPrivilege returns true if the command involves privilege escalation
-func (p CommandRiskProfileNew) IsPrivilege() bool {
+func (p CommandRiskProfile) IsPrivilege() bool {
 	return p.PrivilegeRisk.Level >= runnertypes.RiskLevelHigh
 }
 
 // BaseRiskLevel computes the overall risk level as the maximum of all risk factors
-func (p CommandRiskProfileNew) BaseRiskLevel() runnertypes.RiskLevel {
+func (p CommandRiskProfile) BaseRiskLevel() runnertypes.RiskLevel {
 	return max(
 		p.PrivilegeRisk.Level,
 		p.NetworkRisk.Level,
@@ -61,7 +61,7 @@ func (p CommandRiskProfileNew) BaseRiskLevel() runnertypes.RiskLevel {
 }
 
 // GetRiskReasons returns all non-empty reasons contributing to the risk level
-func (p CommandRiskProfileNew) GetRiskReasons() []string {
+func (p CommandRiskProfile) GetRiskReasons() []string {
 	reasons := make([]string, 0, defaultRiskReasonsCap)
 
 	// Helper function to add non-empty reasons
@@ -82,15 +82,15 @@ func (p CommandRiskProfileNew) GetRiskReasons() []string {
 }
 
 // Validate ensures consistency between risk factors and configuration
-func (p CommandRiskProfileNew) Validate() error {
+func (p CommandRiskProfile) Validate() error {
 	// Rule 1: NetworkTypeAlways implies NetworkRisk >= Medium
 	if p.NetworkType == NetworkTypeAlways && p.NetworkRisk.Level < runnertypes.RiskLevelMedium {
-		return fmt.Errorf("%w (got %v)", ErrNetworkAlwaysRequiresMediumRiskNew, p.NetworkRisk.Level)
+		return fmt.Errorf("%w (got %v)", ErrNetworkAlwaysRequiresMediumRisk, p.NetworkRisk.Level)
 	}
 
 	// Rule 2: NetworkSubcommands only for NetworkTypeConditional
 	if len(p.NetworkSubcommands) > 0 && p.NetworkType != NetworkTypeConditional {
-		return ErrNetworkSubcommandsOnlyForConditionalNew
+		return ErrNetworkSubcommandsOnlyForConditional
 	}
 
 	return nil

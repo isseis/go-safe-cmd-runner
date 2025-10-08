@@ -31,7 +31,7 @@ func TestCommandProfileDef_Commands_NilSlice(t *testing.T) {
 	// Create a profile with empty commands (shouldn't normally happen, but test the nil case)
 	def := CommandProfileDef{
 		commands: nil,
-		profile: CommandRiskProfileNew{
+		profile: CommandRiskProfile{
 			NetworkRisk: RiskFactor{Level: runnertypes.RiskLevelLow},
 		},
 	}
@@ -44,7 +44,7 @@ func TestCommandProfileDef_Commands_EmptySlice(t *testing.T) {
 	// Create a profile with empty commands slice
 	def := CommandProfileDef{
 		commands: []string{},
-		profile: CommandRiskProfileNew{
+		profile: CommandRiskProfile{
 			NetworkRisk: RiskFactor{Level: runnertypes.RiskLevelLow},
 		},
 	}

@@ -2034,9 +2034,9 @@ func TestCommandRiskProfiles_Completeness(t *testing.T) {
 	for cmdName, profile := range commandRiskProfiles {
 		t.Run("validate_"+cmdName, func(t *testing.T) {
 			assert.NotEmpty(t, cmdName, "command name should not be empty")
-			assert.True(t, profile.BaseRiskLevel > runnertypes.RiskLevelUnknown && profile.BaseRiskLevel <= runnertypes.RiskLevelCritical,
-				"risk level should be valid: %d", profile.BaseRiskLevel)
-			assert.NotEmpty(t, profile.Reason, "reason should not be empty")
+			assert.True(t, profile.BaseRiskLevel() > runnertypes.RiskLevelUnknown && profile.BaseRiskLevel() <= runnertypes.RiskLevelCritical,
+				"risk level should be valid: %d", profile.BaseRiskLevel())
+			assert.NotEmpty(t, profile.GetRiskReasons(), "reasons should not be empty")
 			assert.True(t, profile.NetworkType >= NetworkTypeNone && profile.NetworkType <= NetworkTypeConditional,
 				"network type should be valid: %d", profile.NetworkType)
 		})
@@ -2051,8 +2051,8 @@ func TestCommandRiskProfiles_PrivilegeEscalation(t *testing.T) {
 			profile, exists := commandRiskProfiles[cmd]
 			assert.True(t, exists, "privilege command %s should exist in profiles", cmd)
 			if exists {
-				assert.True(t, profile.IsPrivilege, "command %s should be marked as privilege escalation", cmd)
-				assert.Equal(t, runnertypes.RiskLevelCritical, profile.BaseRiskLevel, "privilege command %s should have critical risk", cmd)
+				assert.True(t, profile.IsPrivilege(), "command %s should be marked as privilege escalation", cmd)
+				assert.Equal(t, runnertypes.RiskLevelCritical, profile.BaseRiskLevel(), "privilege command %s should have critical risk", cmd)
 			}
 		})
 	}
@@ -2157,7 +2157,7 @@ func TestMigration_RiskLevelConsistency(t *testing.T) {
 			profile, exists := commandRiskProfiles[tt.command]
 			assert.True(t, exists, "Command %s should exist in profiles", tt.command)
 			if exists {
-				assert.Equal(t, tt.expectedRisk, profile.BaseRiskLevel,
+				assert.Equal(t, tt.expectedRisk, profile.BaseRiskLevel(),
 					"Risk level mismatch for command %s", tt.command)
 			}
 		})
@@ -2234,7 +2234,7 @@ func TestMigration_IsPrivilegeConsistency(t *testing.T) {
 		t.Run("Privilege_"+cmd, func(t *testing.T) {
 			profile, exists := commandRiskProfiles[cmd]
 			assert.True(t, exists)
-			assert.True(t, profile.IsPrivilege, "Command %s should have IsPrivilege=true", cmd)
+			assert.True(t, profile.IsPrivilege(), "Command %s should have IsPrivilege=true", cmd)
 		})
 	}
 
@@ -2242,7 +2242,7 @@ func TestMigration_IsPrivilegeConsistency(t *testing.T) {
 		t.Run("NonPrivilege_"+cmd, func(t *testing.T) {
 			profile, exists := commandRiskProfiles[cmd]
 			assert.True(t, exists)
-			assert.False(t, profile.IsPrivilege, "Command %s should have IsPrivilege=false", cmd)
+			assert.False(t, profile.IsPrivilege(), "Command %s should have IsPrivilege=false", cmd)
 		})
 	}
 }
@@ -2253,7 +2253,7 @@ func TestMigration_MultipleRiskFactors(t *testing.T) {
 
 	for _, cmd := range aiCommands {
 		t.Run(cmd, func(t *testing.T) {
-			newProfile, exists := commandRiskProfilesNew[cmd]
+			newProfile, exists := commandRiskProfiles[cmd]
 			assert.True(t, exists, "Command %s should exist in new profiles", cmd)
 			if !exists {
 				return
