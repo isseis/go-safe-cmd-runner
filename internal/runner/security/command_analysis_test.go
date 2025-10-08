@@ -2127,6 +2127,7 @@ func TestMigration_RiskLevelConsistency(t *testing.T) {
 
 		// Destructive operations
 		{"rm", runnertypes.RiskLevelHigh},
+		{"dd", runnertypes.RiskLevelHigh},
 
 		// AI services - High
 		{"claude", runnertypes.RiskLevelHigh},
