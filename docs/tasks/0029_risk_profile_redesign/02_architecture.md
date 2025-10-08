@@ -52,8 +52,8 @@ graph TB
 
     subgraph "Profile Management Layer"
         E[("commandRisk<br>Profiles")]
-        F[CommandRiskProfile]
-        G[RiskFactor]
+        F[("CommandRisk<br>Profile")]
+        G[("RiskFactor")]
     end
 
     subgraph "Profile Definition Layer (DSL)"
@@ -73,8 +73,8 @@ graph TB
     class A process;
     class B,C,D process;
     class E enhanced;
-    class F enhanced;
-    class G,H new;
+    class F,G newData;
+    class H new;
     class I newData;
 ```
 
