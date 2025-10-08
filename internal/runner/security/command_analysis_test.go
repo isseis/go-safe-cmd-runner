@@ -2214,8 +2214,8 @@ func TestMigration_NetworkSubcommandsConsistency(t *testing.T) {
 			assert.True(t, exists)
 			if exists {
 				if tt.subcommands == nil {
-					assert.Nil(t, profile.NetworkSubcommands,
-						"Network subcommands should be nil for command %s", tt.command)
+					assert.Empty(t, profile.NetworkSubcommands,
+						"Network subcommands should be empty for command %s", tt.command)
 				} else {
 					assert.Equal(t, tt.subcommands, profile.NetworkSubcommands,
 						"Network subcommands mismatch for command %s", tt.command)
