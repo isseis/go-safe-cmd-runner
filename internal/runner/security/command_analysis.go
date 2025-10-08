@@ -78,9 +78,9 @@ var commandProfileDefinitions = []CommandProfileDef{
 }
 
 // commandRiskProfiles is built from commandProfileDefinitions (new structure)
-var commandRiskProfiles = buildCommandRiskProfilesNew()
+var commandRiskProfiles = buildCommandRiskProfiles()
 
-func buildCommandRiskProfilesNew() map[string]CommandRiskProfile {
+func buildCommandRiskProfiles() map[string]CommandRiskProfile {
 	profiles := make(map[string]CommandRiskProfile)
 	for _, def := range commandProfileDefinitions {
 		// Profile is already validated in Build()
