@@ -9,11 +9,11 @@ import (
 
 // Validation errors for CommandRiskProfile
 var (
-	// ErrNetworkAlwaysRequiresMediumRiskNew is returned when NetworkTypeAlways has NetworkRisk < Medium
-	ErrNetworkAlwaysRequiresMediumRiskNew = errors.New("NetworkTypeAlways commands must have NetworkRisk >= Medium")
+	// ErrNetworkAlwaysRequiresMediumRisk is returned when NetworkTypeAlways has NetworkRisk < Medium
+	ErrNetworkAlwaysRequiresMediumRisk = errors.New("NetworkTypeAlways commands must have NetworkRisk >= Medium")
 
-	// ErrNetworkSubcommandsOnlyForConditionalNew is returned when NetworkSubcommands is set for non-conditional network type
-	ErrNetworkSubcommandsOnlyForConditionalNew = errors.New("NetworkSubcommands should only be set for NetworkTypeConditional")
+	// ErrNetworkSubcommandsOnlyForConditional is returned when NetworkSubcommands is set for non-conditional network type
+	ErrNetworkSubcommandsOnlyForConditional = errors.New("NetworkSubcommands should only be set for NetworkTypeConditional")
 )
 
 // CommandRiskProfile defines comprehensive risk information for a command.
@@ -85,12 +85,12 @@ func (p CommandRiskProfile) GetRiskReasons() []string {
 func (p CommandRiskProfile) Validate() error {
 	// Rule 1: NetworkTypeAlways implies NetworkRisk >= Medium
 	if p.NetworkType == NetworkTypeAlways && p.NetworkRisk.Level < runnertypes.RiskLevelMedium {
-		return fmt.Errorf("%w (got %v)", ErrNetworkAlwaysRequiresMediumRiskNew, p.NetworkRisk.Level)
+		return fmt.Errorf("%w (got %v)", ErrNetworkAlwaysRequiresMediumRisk, p.NetworkRisk.Level)
 	}
 
 	// Rule 2: NetworkSubcommands only for NetworkTypeConditional
 	if len(p.NetworkSubcommands) > 0 && p.NetworkType != NetworkTypeConditional {
-		return ErrNetworkSubcommandsOnlyForConditionalNew
+		return ErrNetworkSubcommandsOnlyForConditional
 	}
 
 	return nil

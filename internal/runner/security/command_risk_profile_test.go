@@ -223,7 +223,7 @@ func TestCommandRiskProfile_Validate(t *testing.T) {
 				NetworkRisk: RiskFactor{Level: runnertypes.RiskLevelLow},
 				NetworkType: NetworkTypeAlways,
 			},
-			wantErr: ErrNetworkAlwaysRequiresMediumRiskNew,
+			wantErr: ErrNetworkAlwaysRequiresMediumRisk,
 		},
 		{
 			name: "invalid - NetworkSubcommands without Conditional",
@@ -231,7 +231,7 @@ func TestCommandRiskProfile_Validate(t *testing.T) {
 				NetworkType:        NetworkTypeNone,
 				NetworkSubcommands: []string{"clone"},
 			},
-			wantErr: ErrNetworkSubcommandsOnlyForConditionalNew,
+			wantErr: ErrNetworkSubcommandsOnlyForConditional,
 		},
 	}
 
