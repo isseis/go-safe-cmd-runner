@@ -1121,7 +1121,7 @@ func (l *AuditLogger) logRiskProfile(profile CommandRiskProfile) {
 - [x] 全ユニットテストがパス
 - [x] 全統合テストがパス
 - [x] `make lint`でエラーなし
-- [ ] コミット作成（"feat: enhance audit logging with risk factor details"）
+- [x] コミット作成（"feat: enhance audit logging with risk factor details"）
 
 ## 6. 最終検証
 
