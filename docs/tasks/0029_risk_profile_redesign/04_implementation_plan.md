@@ -1072,7 +1072,7 @@ func (l *AuditLogger) logRiskProfile(profile CommandRiskProfile) {
 - [x] テストケース追加
 - [x] ログフォーマットの確認
 - [x] `make test`実行（成功を確認）
-- [ ] コミット作成
+- [x] コミット作成
 
 #### タスク3.1.2: リスク要因別の統計情報
 
@@ -1086,7 +1086,7 @@ func (l *AuditLogger) logRiskProfile(profile CommandRiskProfile) {
 - [x] 統計機能実装
 - [x] テストケース追加
 - [x] `make test`実行（成功を確認）
-- [ ] コミット作成
+- [x] コミット作成
 
 ### 5.2 Phase 3.2: ドキュメント整備
 
