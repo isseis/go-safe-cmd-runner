@@ -3,6 +3,7 @@ package audit_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"log/slog"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/audit"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewAuditLogger(t *testing.T) {
@@ -193,26 +195,24 @@ func TestLogger_LogSecurityEvent(t *testing.T) {
 
 func TestLogger_LogRiskProfile(t *testing.T) {
 	tests := []struct {
-		name           string
-		commandName    string
-		baseRiskLevel  runnertypes.RiskLevel
-		riskReasons    []string
-		networkType    string
-		expectContains []string
+		name              string
+		commandName       string
+		baseRiskLevel     runnertypes.RiskLevel
+		riskReasons       []string
+		networkType       string
+		expectedAuditType string
+		expectedRiskLevel string
+		expectedLogLevel  string
 	}{
 		{
-			name:          "single risk factor",
-			commandName:   "curl",
-			baseRiskLevel: runnertypes.RiskLevelMedium,
-			riskReasons:   []string{"Always performs network operations"},
-			networkType:   "Always",
-			expectContains: []string{
-				"command_risk_profile",
-				"curl",
-				"medium",
-				"Always performs network operations",
-				"Always",
-			},
+			name:              "single risk factor",
+			commandName:       "curl",
+			baseRiskLevel:     runnertypes.RiskLevelMedium,
+			riskReasons:       []string{"Always performs network operations"},
+			networkType:       "Always",
+			expectedAuditType: "command_risk_profile",
+			expectedRiskLevel: "medium",
+			expectedLogLevel:  "INFO",
 		},
 		{
 			name:          "multiple risk factors",
@@ -222,43 +222,74 @@ func TestLogger_LogRiskProfile(t *testing.T) {
 				"Always communicates with external AI API",
 				"May send sensitive data to external service",
 			},
-			networkType: "Always",
-			expectContains: []string{
-				"command_risk_profile",
-				"claude",
-				"high",
-				"Always communicates with external AI API",
-				"May send sensitive data to external service",
-			},
+			networkType:       "Always",
+			expectedAuditType: "command_risk_profile",
+			expectedRiskLevel: "high",
+			expectedLogLevel:  "WARN",
 		},
 		{
-			name:          "privilege escalation",
-			commandName:   "sudo",
-			baseRiskLevel: runnertypes.RiskLevelCritical,
-			riskReasons:   []string{"Allows execution with elevated privileges, can compromise entire system"},
-			networkType:   "None",
-			expectContains: []string{
-				"command_risk_profile",
-				"sudo",
-				"critical",
-				"Allows execution with elevated privileges, can compromise entire system",
-			},
+			name:              "privilege escalation",
+			commandName:       "sudo",
+			baseRiskLevel:     runnertypes.RiskLevelCritical,
+			riskReasons:       []string{"Allows execution with elevated privileges, can compromise entire system"},
+			networkType:       "None",
+			expectedAuditType: "command_risk_profile",
+			expectedRiskLevel: "critical",
+			expectedLogLevel:  "ERROR",
+		},
+		{
+			name:              "unknown risk level",
+			commandName:       "ls",
+			baseRiskLevel:     runnertypes.RiskLevelUnknown,
+			riskReasons:       []string{},
+			networkType:       "None",
+			expectedAuditType: "command_risk_profile",
+			expectedRiskLevel: "unknown",
+			expectedLogLevel:  "DEBUG",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			logger := slog.New(slog.NewJSONHandler(&buf, nil))
+			// Use DEBUG level to capture all log levels including DEBUG
+			logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 			auditLogger := audit.NewAuditLoggerWithCustom(logger)
 
 			ctx := context.Background()
 			auditLogger.LogRiskProfile(ctx, tt.commandName, tt.baseRiskLevel, tt.riskReasons, tt.networkType)
 
-			logOutput := buf.String()
-			for _, expected := range tt.expectContains {
-				assert.Contains(t, logOutput, expected, "Expected log to contain: %s", expected)
+			// Parse JSON log output
+			var logEntry map[string]any
+			err := json.Unmarshal(buf.Bytes(), &logEntry)
+			require.NoError(t, err, "Failed to parse JSON log output")
+
+			// Validate structured fields
+			assert.Equal(t, tt.expectedAuditType, logEntry["audit_type"])
+			assert.Equal(t, true, logEntry["audit"])
+			assert.Equal(t, tt.commandName, logEntry["command_name"])
+			assert.Equal(t, tt.expectedRiskLevel, logEntry["risk_level"])
+			assert.Equal(t, tt.networkType, logEntry["network_type"])
+			assert.Equal(t, tt.expectedLogLevel, logEntry["level"])
+
+			// Validate risk_factors array if present
+			if len(tt.riskReasons) > 0 {
+				require.Contains(t, logEntry, "risk_factors")
+				riskFactors, ok := logEntry["risk_factors"].([]any)
+				require.True(t, ok, "risk_factors should be an array")
+				require.Equal(t, len(tt.riskReasons), len(riskFactors))
+				for i, expectedReason := range tt.riskReasons {
+					assert.Equal(t, expectedReason, riskFactors[i])
+				}
+			} else {
+				assert.NotContains(t, logEntry, "risk_factors")
 			}
+
+			// Validate that standard fields are present
+			assert.Contains(t, logEntry, "timestamp")
+			assert.Contains(t, logEntry, "user_id")
+			assert.Contains(t, logEntry, "effective_user_id")
+			assert.Contains(t, logEntry, "process_id")
 		})
 	}
 }
