@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -370,12 +371,11 @@ func IsNetworkOperation(cmdName string, args []string) (bool, bool) {
 
 	if conditionalProfile != nil {
 		// Check for network subcommands (e.g., git fetch, git push)
-		if len(args) > 0 && len(conditionalProfile.NetworkSubcommands) > 0 {
-			subcommand := args[0]
-			for _, netSubcmd := range conditionalProfile.NetworkSubcommands {
-				if subcommand == netSubcmd {
-					return true, false
-				}
+		// Skip command-line options to find the actual subcommand
+		if len(conditionalProfile.NetworkSubcommands) > 0 {
+			subcommand := findFirstSubcommand(args)
+			if subcommand != "" && slices.Contains(conditionalProfile.NetworkSubcommands, subcommand) {
+				return true, false
 			}
 		}
 
@@ -395,6 +395,45 @@ func IsNetworkOperation(cmdName string, args []string) (bool, bool) {
 	}
 
 	return false, false
+}
+
+// findFirstSubcommand returns the first non-option argument from args.
+// It skips arguments starting with "-" or "--" to find the actual subcommand.
+// Also skips option arguments (e.g., for "-c value", skip both "-c" and "value").
+// Returns empty string if no subcommand is found.
+func findFirstSubcommand(args []string) string {
+	// Common git options that take a value (not exhaustive, but covers common cases)
+	optionsWithValue := map[string]bool{
+		"-c": true, "-C": true, "--work-tree": true, "--git-dir": true,
+		"--config": true, "--namespace": true,
+	}
+
+	skipNext := false
+	for _, arg := range args {
+		// If previous argument was an option that takes a value, skip this arg
+		if skipNext {
+			skipNext = false
+			continue
+		}
+
+		// Skip options (starting with - or --)
+		if strings.HasPrefix(arg, "-") {
+			// Check if it's an option with embedded value (e.g., --config=value)
+			if strings.Contains(arg, "=") {
+				continue
+			}
+
+			// Check if this option takes a value
+			if optionsWithValue[arg] {
+				skipNext = true
+			}
+			continue
+		}
+
+		// Found the first non-option argument
+		return arg
+	}
+	return ""
 }
 
 // containsSSHStyleAddress checks if any argument contains SSH-style addresses (user@host:path)

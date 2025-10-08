@@ -610,6 +610,38 @@ func TestIsNetworkOperation(t *testing.T) {
 			expectedRisk: false,
 			description:  "git remote update should be detected as network",
 		},
+		{
+			name:         "git fetch with options before subcommand",
+			cmdName:      "git",
+			args:         []string{"--no-pager", "fetch"},
+			expectedNet:  true,
+			expectedRisk: false,
+			description:  "git fetch with options should be detected as network",
+		},
+		{
+			name:         "git pull with multiple options",
+			cmdName:      "git",
+			args:         []string{"--no-pager", "-c", "color.ui=false", "pull"},
+			expectedNet:  true,
+			expectedRisk: false,
+			description:  "git pull with multiple options should be detected as network",
+		},
+		{
+			name:         "git push with options",
+			cmdName:      "git",
+			args:         []string{"-v", "push", "origin", "main"},
+			expectedNet:  true,
+			expectedRisk: false,
+			description:  "git push with options should be detected as network",
+		},
+		{
+			name:         "git status with options (local operation)",
+			cmdName:      "git",
+			args:         []string{"--no-pager", "status"},
+			expectedNet:  false,
+			expectedRisk: false,
+			description:  "git status with options should not be detected as network",
+		},
 
 		// Non-network commands
 		{
