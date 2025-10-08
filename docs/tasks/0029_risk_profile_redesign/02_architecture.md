@@ -65,8 +65,8 @@ graph TB
     B --> E
     C --> E
     D --> E
-    E --> F
-    F --> G
+    E --o F
+    F --o G
     I --> H
     H --> E
 
