@@ -989,14 +989,28 @@ func TestAllProfilesAreValid(t *testing.T) {
 
 func TestAllProfilesHaveReasons(t *testing.T) {
     for _, def := range commandProfileDefinitions {
-        reasons := def.Profile().GetRiskReasons()
-        assert.NotEmpty(t, reasons, "Profile for commands %v should have at least one reason", def.Commands())
+        profile := def.Profile()
+        baseRisk := profile.BaseRiskLevel()
+        reasons := profile.GetRiskReasons()
+
+        // Only profiles with risk level > Unknown should have reasons
+        if baseRisk > runnertypes.RiskLevelUnknown {
+            assert.NotEmpty(t, reasons,
+                "Profile for commands %v has risk level %v but no reasons",
+                def.Commands(), baseRisk)
+        }
     }
 }
 ```
 
+**テスト設計のポイント:**
+- `TestAllProfilesAreValid`: 全プロファイルがバリデーションをパスすることを確認
+- `TestAllProfilesHaveReasons`: リスクレベルが`Unknown`より高いプロファイルは必ず理由を持つことを確認
+  - リスクレベルが`Unknown`のコマンド（例：`ls`, `pwd`）は理由がなくても正当なため、条件付きチェック
+
 **チェックリスト:**
 - [ ] テスト実装
+- [ ] リスクレベル`Unknown`のコマンドでテストが失敗しないことを確認
 - [ ] `make test`実行（成功を確認）
 - [ ] コミット作成
 

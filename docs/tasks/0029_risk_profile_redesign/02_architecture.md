@@ -555,9 +555,55 @@ func TestCommandRiskProfile_GetRiskReasons(t *testing.T) {
     assert.Contains(t, reasons, "Network access")
     assert.Contains(t, reasons, "Data exfiltration")
 }
+
+func TestCommandRiskProfile_GetRiskReasons_EmptyReason(t *testing.T) {
+    profile := CommandRiskProfile{
+        NetworkRisk:   RiskFactor{Level: runnertypes.RiskLevelMedium, Reason: ""},
+        DataExfilRisk: RiskFactor{Level: runnertypes.RiskLevelHigh, Reason: "Data exfiltration"},
+    }
+
+    reasons := profile.GetRiskReasons()
+    // Empty reasons should be excluded
+    assert.NotContains(t, reasons, "")
+    assert.Contains(t, reasons, "Data exfiltration")
+    assert.Len(t, reasons, 1)
+}
 ```
 
 ### 8.2 統合テスト
+
+#### 全プロファイル定義の品質保証
+
+```go
+func TestAllProfilesAreValid(t *testing.T) {
+    for _, def := range commandProfileDefinitions {
+        err := def.Profile().Validate()
+        assert.NoError(t, err, "Profile for commands %v should be valid", def.Commands())
+    }
+}
+
+func TestAllProfilesHaveReasons(t *testing.T) {
+    for _, def := range commandProfileDefinitions {
+        profile := def.Profile()
+        baseRisk := profile.BaseRiskLevel()
+        reasons := profile.GetRiskReasons()
+
+        // Only profiles with risk level > Unknown should have reasons
+        if baseRisk > runnertypes.RiskLevelUnknown {
+            assert.NotEmpty(t, reasons,
+                "Profile for commands %v has risk level %v but no reasons",
+                def.Commands(), baseRisk)
+        }
+    }
+}
+```
+
+**テスト設計のポイント:**
+- リスクレベルが`Unknown`のコマンド（例：`ls`, `pwd`）は理由がなくても正当
+- リスクレベルが`Unknown`より高い場合のみ、理由の存在をチェック
+- これにより、安全なコマンドでもテストが通過する
+
+#### 既存機能との統合テスト
 
 既存の`AnalyzeCommandSecurity`との統合をテスト。
 
