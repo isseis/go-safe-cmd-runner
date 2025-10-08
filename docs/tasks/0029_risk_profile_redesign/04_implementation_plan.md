@@ -1068,10 +1068,10 @@ func (l *AuditLogger) logRiskProfile(profile CommandRiskProfile) {
 ```
 
 **チェックリスト:**
-- [ ] ログ出力メソッド実装
-- [ ] テストケース追加
-- [ ] ログフォーマットの確認
-- [ ] `make test`実行（成功を確認）
+- [x] ログ出力メソッド実装
+- [x] テストケース追加
+- [x] ログフォーマットの確認
+- [x] `make test`実行（成功を確認）
 - [ ] コミット作成
 
 #### タスク3.1.2: リスク要因別の統計情報
@@ -1083,9 +1083,9 @@ func (l *AuditLogger) logRiskProfile(profile CommandRiskProfile) {
 - レポート生成機能（オプション）
 
 **チェックリスト:**
-- [ ] 統計機能実装
-- [ ] テストケース追加
-- [ ] `make test`実行（成功を確認）
+- [x] 統計機能実装
+- [x] テストケース追加
+- [x] `make test`実行（成功を確認）
 - [ ] コミット作成
 
 ### 5.2 Phase 3.2: ドキュメント整備
@@ -1116,11 +1116,11 @@ func (l *AuditLogger) logRiskProfile(profile CommandRiskProfile) {
 
 ### 5.3 Phase 3 完了チェック
 
-- [ ] 監査ログ拡張完了
+- [x] 監査ログ拡張完了
 - [ ] 全ドキュメント整備完了
-- [ ] 全ユニットテストがパス
-- [ ] 全統合テストがパス
-- [ ] `make lint`でエラーなし
+- [x] 全ユニットテストがパス
+- [x] 全統合テストがパス
+- [x] `make lint`でエラーなし
 - [ ] コミット作成（"feat: enhance audit logging with risk factor details"）
 
 ## 6. 最終検証

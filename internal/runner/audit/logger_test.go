@@ -190,3 +190,75 @@ func TestLogger_LogSecurityEvent(t *testing.T) {
 		})
 	}
 }
+
+func TestLogger_LogRiskProfile(t *testing.T) {
+	tests := []struct {
+		name           string
+		commandName    string
+		baseRiskLevel  runnertypes.RiskLevel
+		riskReasons    []string
+		networkType    string
+		expectContains []string
+	}{
+		{
+			name:          "single risk factor",
+			commandName:   "curl",
+			baseRiskLevel: runnertypes.RiskLevelMedium,
+			riskReasons:   []string{"Always performs network operations"},
+			networkType:   "Always",
+			expectContains: []string{
+				"command_risk_profile",
+				"curl",
+				"medium",
+				"Always performs network operations",
+				"Always",
+			},
+		},
+		{
+			name:          "multiple risk factors",
+			commandName:   "claude",
+			baseRiskLevel: runnertypes.RiskLevelHigh,
+			riskReasons: []string{
+				"Always communicates with external AI API",
+				"May send sensitive data to external service",
+			},
+			networkType: "Always",
+			expectContains: []string{
+				"command_risk_profile",
+				"claude",
+				"high",
+				"Always communicates with external AI API",
+				"May send sensitive data to external service",
+			},
+		},
+		{
+			name:          "privilege escalation",
+			commandName:   "sudo",
+			baseRiskLevel: runnertypes.RiskLevelCritical,
+			riskReasons:   []string{"Allows execution with elevated privileges, can compromise entire system"},
+			networkType:   "None",
+			expectContains: []string{
+				"command_risk_profile",
+				"sudo",
+				"critical",
+				"Allows execution with elevated privileges, can compromise entire system",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			logger := slog.New(slog.NewJSONHandler(&buf, nil))
+			auditLogger := audit.NewAuditLoggerWithCustom(logger)
+
+			ctx := context.Background()
+			auditLogger.LogRiskProfile(ctx, tt.commandName, tt.baseRiskLevel, tt.riskReasons, tt.networkType)
+
+			logOutput := buf.String()
+			for _, expected := range tt.expectContains {
+				assert.Contains(t, logOutput, expected, "Expected log to contain: %s", expected)
+			}
+		})
+	}
+}
