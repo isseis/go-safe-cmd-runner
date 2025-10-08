@@ -266,29 +266,34 @@ func (p CommandRiskProfile) BaseRiskLevel() runnertypes.RiskLevel {
 
 ### 5.2 GetRiskReasons()
 
-リスクレベルが`Unknown`でない全要因の理由を返す。
+リスクレベルが`Unknown`でない全要因の理由を返す。空文字列の理由は除外する。
 
 ```go
 func (p CommandRiskProfile) GetRiskReasons() []string {
     var reasons []string
-    if p.PrivilegeRisk.Level > runnertypes.RiskLevelUnknown {
-        reasons = append(reasons, p.PrivilegeRisk.Reason)
+
+    // Helper function to add non-empty reasons
+    addReason := func(risk RiskFactor) {
+        if risk.Level > runnertypes.RiskLevelUnknown && risk.Reason != "" {
+            reasons = append(reasons, risk.Reason)
+        }
     }
-    if p.NetworkRisk.Level > runnertypes.RiskLevelUnknown {
-        reasons = append(reasons, p.NetworkRisk.Reason)
-    }
-    if p.DestructionRisk.Level > runnertypes.RiskLevelUnknown {
-        reasons = append(reasons, p.DestructionRisk.Reason)
-    }
-    if p.DataExfilRisk.Level > runnertypes.RiskLevelUnknown {
-        reasons = append(reasons, p.DataExfilRisk.Reason)
-    }
-    if p.SystemModRisk.Level > runnertypes.RiskLevelUnknown {
-        reasons = append(reasons, p.SystemModRisk.Reason)
-    }
+
+    // Collect all risk factors in order
+    addReason(p.PrivilegeRisk)
+    addReason(p.NetworkRisk)
+    addReason(p.DestructionRisk)
+    addReason(p.DataExfilRisk)
+    addReason(p.SystemModRisk)
+
     return reasons
 }
 ```
+
+**設計上の改善点:**
+- 空文字列の理由を除外することで、有意義な情報のみを返す
+- ヘルパー関数により重複コードを削減
+- 将来的にリスク要因が増えた場合も、`addReason()`呼び出しを追加するだけで対応可能
 
 **使用目的:**
 - 監査ログへの詳細なリスク情報の記録

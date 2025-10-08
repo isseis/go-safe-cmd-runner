@@ -27,7 +27,7 @@ type RiskFactor struct {
 
 **制約:**
 - `Level`が`Unknown`の場合、`Reason`は空文字列を推奨（ただし強制ではない）
-- `Level`が`Unknown`以外の場合、`Reason`は非空文字列を推奨（バリデーションでは強制しない）
+- `Level`が`Unknown`以外の場合、`Reason`は非空文字列を強く推奨（バリデーションでは強制しないが、`GetRiskReasons()`で空文字列は除外される）
 
 ### 2.2 CommandRiskProfile
 
@@ -160,7 +160,7 @@ profile := CommandRiskProfile{
 
 ### 3.2 CommandRiskProfile.GetRiskReasons()
 
-リスクレベルが`Unknown`でない全要因の理由を返す。
+リスクレベルが`Unknown`でない全要因の理由を返す。空文字列の理由は除外される。
 
 ```go
 func (p CommandRiskProfile) GetRiskReasons() []string
@@ -169,11 +169,15 @@ func (p CommandRiskProfile) GetRiskReasons() []string
 **動作:**
 1. 空のスライスを初期化
 2. 各リスク要因について：
-   - `Level > RiskLevelUnknown` の場合、`Reason`を追加
+   - `Level > RiskLevelUnknown` かつ `Reason != ""` の場合、`Reason`を追加
 3. 理由のリストを返す
 
+**実装方針:**
+- ヘルパー関数（クロージャ）を使用して重複コードを削減
+- 将来的にリスク要因が増えた場合も、関数呼び出しを追加するだけで対応可能
+
 **戻り値:**
-- リスク要因の説明文字列のスライス
+- リスク要因の説明文字列のスライス（非空文字列のみ）
 - リスク要因がない場合は空スライス（nilではない）
 
 **順序:**
@@ -186,6 +190,13 @@ profile := CommandRiskProfile{
     DataExfilRisk: RiskFactor{Level: High, Reason: "Data exfiltration"},
 }
 // GetRiskReasons() returns ["Network access", "Data exfiltration"]
+
+// 空文字列の理由は除外される
+profile2 := CommandRiskProfile{
+    NetworkRisk:   RiskFactor{Level: Medium, Reason: ""},
+    DataExfilRisk: RiskFactor{Level: High, Reason: "Data exfiltration"},
+}
+// GetRiskReasons() returns ["Data exfiltration"]
 ```
 
 ### 3.3 CommandRiskProfile.Validate()

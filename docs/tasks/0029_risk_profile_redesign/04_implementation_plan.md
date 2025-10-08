@@ -276,6 +276,24 @@ func TestCommandRiskProfile_GetRiskReasons(t *testing.T) {
                 "System modification",
             },
         },
+        {
+            name: "empty reason is excluded",
+            profile: CommandRiskProfile{
+                NetworkRisk:   RiskFactor{Level: runnertypes.RiskLevelMedium, Reason: ""},
+                DataExfilRisk: RiskFactor{Level: runnertypes.RiskLevelHigh, Reason: "Data exfiltration"},
+            },
+            want: []string{"Data exfiltration"},
+        },
+        {
+            name: "mixed empty and non-empty reasons",
+            profile: CommandRiskProfile{
+                PrivilegeRisk:   RiskFactor{Level: runnertypes.RiskLevelHigh, Reason: ""},
+                NetworkRisk:     RiskFactor{Level: runnertypes.RiskLevelMedium, Reason: "Network access"},
+                DestructionRisk: RiskFactor{Level: runnertypes.RiskLevelHigh, Reason: ""},
+                DataExfilRisk:   RiskFactor{Level: runnertypes.RiskLevelHigh, Reason: "Data exfiltration"},
+            },
+            want: []string{"Network access", "Data exfiltration"},
+        },
     }
 
     for _, tt := range tests {
@@ -298,27 +316,32 @@ func TestCommandRiskProfile_GetRiskReasons(t *testing.T) {
 
 **実装内容:**
 ```go
-// GetRiskReasons returns all reasons contributing to the risk level
+// GetRiskReasons returns all non-empty reasons contributing to the risk level
 func (p CommandRiskProfile) GetRiskReasons() []string {
     var reasons []string
-    if p.PrivilegeRisk.Level > runnertypes.RiskLevelUnknown {
-        reasons = append(reasons, p.PrivilegeRisk.Reason)
+
+    // Helper function to add non-empty reasons
+    addReason := func(risk RiskFactor) {
+        if risk.Level > runnertypes.RiskLevelUnknown && risk.Reason != "" {
+            reasons = append(reasons, risk.Reason)
+        }
     }
-    if p.NetworkRisk.Level > runnertypes.RiskLevelUnknown {
-        reasons = append(reasons, p.NetworkRisk.Reason)
-    }
-    if p.DestructionRisk.Level > runnertypes.RiskLevelUnknown {
-        reasons = append(reasons, p.DestructionRisk.Reason)
-    }
-    if p.DataExfilRisk.Level > runnertypes.RiskLevelUnknown {
-        reasons = append(reasons, p.DataExfilRisk.Reason)
-    }
-    if p.SystemModRisk.Level > runnertypes.RiskLevelUnknown {
-        reasons = append(reasons, p.SystemModRisk.Reason)
-    }
+
+    // Collect all risk factors in order
+    addReason(p.PrivilegeRisk)
+    addReason(p.NetworkRisk)
+    addReason(p.DestructionRisk)
+    addReason(p.DataExfilRisk)
+    addReason(p.SystemModRisk)
+
     return reasons
 }
 ```
+
+**実装上の改善点:**
+- ヘルパー関数（クロージャ）により重複コードを削減
+- 空文字列の理由を除外し、有意義な情報のみを返す
+- 将来的にリスク要因が増えた場合も、`addReason()`呼び出しを追加するだけで対応可能
 
 **チェックリスト:**
 - [ ] メソッド実装
