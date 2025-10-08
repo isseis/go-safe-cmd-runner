@@ -1855,14 +1855,26 @@ func TestGetCommandRiskOverride(t *testing.T) {
 		expectedFound bool
 	}{
 		{
-			name:          "sudo command should have critical risk",
+			name:          "sudo command with full path should have critical risk",
 			cmdPath:       "/usr/bin/sudo",
+			expectedRisk:  runnertypes.RiskLevelCritical,
+			expectedFound: true,
+		},
+		{
+			name:          "sudo command with just name should have critical risk",
+			cmdPath:       "sudo",
 			expectedRisk:  runnertypes.RiskLevelCritical,
 			expectedFound: true,
 		},
 		{
 			name:          "su command should have critical risk",
 			cmdPath:       "/bin/su",
+			expectedRisk:  runnertypes.RiskLevelCritical,
+			expectedFound: true,
+		},
+		{
+			name:          "doas command should have critical risk",
+			cmdPath:       "doas",
 			expectedRisk:  runnertypes.RiskLevelCritical,
 			expectedFound: true,
 		},
@@ -1891,6 +1903,36 @@ func TestGetCommandRiskOverride(t *testing.T) {
 			expectedFound: true,
 		},
 		{
+			name:          "curl command should have medium risk",
+			cmdPath:       "/usr/bin/curl",
+			expectedRisk:  runnertypes.RiskLevelMedium,
+			expectedFound: true,
+		},
+		{
+			name:          "wget command should have medium risk",
+			cmdPath:       "wget",
+			expectedRisk:  runnertypes.RiskLevelMedium,
+			expectedFound: true,
+		},
+		{
+			name:          "ssh command should have medium risk",
+			cmdPath:       "/usr/bin/ssh",
+			expectedRisk:  runnertypes.RiskLevelMedium,
+			expectedFound: true,
+		},
+		{
+			name:          "rsync command should have low risk",
+			cmdPath:       "rsync",
+			expectedRisk:  runnertypes.RiskLevelLow,
+			expectedFound: true,
+		},
+		{
+			name:          "git command should have low risk",
+			cmdPath:       "/usr/bin/git",
+			expectedRisk:  runnertypes.RiskLevelLow,
+			expectedFound: true,
+		},
+		{
 			name:          "ls command should not have override",
 			cmdPath:       "/bin/ls",
 			expectedRisk:  runnertypes.RiskLevelUnknown,
@@ -1902,32 +1944,72 @@ func TestGetCommandRiskOverride(t *testing.T) {
 			expectedRisk:  runnertypes.RiskLevelUnknown,
 			expectedFound: false,
 		},
-		{
-			name:          "relative path should not match",
-			cmdPath:       "sudo",
-			expectedRisk:  runnertypes.RiskLevelUnknown,
-			expectedFound: false,
-		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			risk, found := getCommandRiskOverride(tc.cmdPath)
-			assert.Equal(t, tc.expectedFound, found)
+			assert.Equal(t, tc.expectedFound, found, "found mismatch for %s", tc.cmdPath)
 			if found {
-				assert.Equal(t, tc.expectedRisk, risk)
+				assert.Equal(t, tc.expectedRisk, risk, "risk level mismatch for %s", tc.cmdPath)
 			}
 		})
 	}
 }
 
-func TestCommandRiskOverrides_Completeness(t *testing.T) {
-	// Ensure all defined overrides are valid risk levels
-	for cmdPath, risk := range commandRiskOverrides {
-		t.Run("validate_"+cmdPath, func(t *testing.T) {
-			assert.NotEmpty(t, cmdPath, "command path should not be empty")
-			assert.True(t, risk > runnertypes.RiskLevelUnknown && risk <= runnertypes.RiskLevelCritical,
-				"risk level should be valid: %d", risk)
+func TestCommandRiskProfiles_Completeness(t *testing.T) {
+	// Ensure all defined profiles are valid
+	for cmdName, profile := range commandRiskProfiles {
+		t.Run("validate_"+cmdName, func(t *testing.T) {
+			assert.NotEmpty(t, cmdName, "command name should not be empty")
+			assert.True(t, profile.BaseRiskLevel > runnertypes.RiskLevelUnknown && profile.BaseRiskLevel <= runnertypes.RiskLevelCritical,
+				"risk level should be valid: %d", profile.BaseRiskLevel)
+			assert.NotEmpty(t, profile.Reason, "reason should not be empty")
+			assert.True(t, profile.NetworkType >= NetworkTypeNone && profile.NetworkType <= NetworkTypeConditional,
+				"network type should be valid: %d", profile.NetworkType)
+		})
+	}
+}
+
+func TestCommandRiskProfiles_PrivilegeEscalation(t *testing.T) {
+	// Test that all privilege escalation commands are properly flagged
+	privilegeCommands := []string{"sudo", "su", "doas"}
+	for _, cmd := range privilegeCommands {
+		t.Run(cmd, func(t *testing.T) {
+			profile, exists := commandRiskProfiles[cmd]
+			assert.True(t, exists, "privilege command %s should exist in profiles", cmd)
+			if exists {
+				assert.True(t, profile.IsPrivilege, "command %s should be marked as privilege escalation", cmd)
+				assert.Equal(t, runnertypes.RiskLevelCritical, profile.BaseRiskLevel, "privilege command %s should have critical risk", cmd)
+			}
+		})
+	}
+}
+
+func TestCommandRiskProfiles_NetworkCommands(t *testing.T) {
+	testCases := []struct {
+		name        string
+		cmd         string
+		networkType NetworkOperationType
+	}{
+		{"curl is always network", "curl", NetworkTypeAlways},
+		{"wget is always network", "wget", NetworkTypeAlways},
+		{"ssh is always network", "ssh", NetworkTypeAlways},
+		{"scp is always network", "scp", NetworkTypeAlways},
+		{"nc is always network", "nc", NetworkTypeAlways},
+		{"netcat is always network", "netcat", NetworkTypeAlways},
+		{"telnet is always network", "telnet", NetworkTypeAlways},
+		{"rsync is conditional network", "rsync", NetworkTypeConditional},
+		{"git is conditional network", "git", NetworkTypeConditional},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			profile, exists := commandRiskProfiles[tc.cmd]
+			assert.True(t, exists, "network command %s should exist in profiles", tc.cmd)
+			if exists {
+				assert.Equal(t, tc.networkType, profile.NetworkType, "command %s should have correct network type", tc.cmd)
+			}
 		})
 	}
 }

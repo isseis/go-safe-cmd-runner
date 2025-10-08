@@ -9,21 +9,113 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
+// NetworkOperationType indicates the type of network operation a command performs
+type NetworkOperationType int
+
+// Network operation type constants
+const (
+	NetworkTypeNone        NetworkOperationType = 0 // Not a network command
+	NetworkTypeAlways      NetworkOperationType = 1 // Always performs network operations
+	NetworkTypeConditional NetworkOperationType = 2 // Conditional based on arguments
+)
+
+// CommandRiskProfile defines comprehensive risk information for a command
+type CommandRiskProfile struct {
+	BaseRiskLevel runnertypes.RiskLevel // Base risk level for the command
+	Reason        string                // Reason for the risk level
+	IsPrivilege   bool                  // Is privilege escalation command
+	NetworkType   NetworkOperationType  // Network operation type
+}
+
+// commandGroupDefinitions defines command groups with their shared risk profiles
+// This structure ensures commands and their profiles are always defined together
+var commandGroupDefinitions = []struct {
+	commands []string
+	profile  CommandRiskProfile
+}{
+	{
+		commands: []string{"sudo", "su", "doas"},
+		profile: CommandRiskProfile{
+			BaseRiskLevel: runnertypes.RiskLevelCritical,
+			Reason:        "Privilege escalation",
+			IsPrivilege:   true,
+			NetworkType:   NetworkTypeNone,
+		},
+	},
+	{
+		commands: []string{"systemctl", "service"},
+		profile: CommandRiskProfile{
+			BaseRiskLevel: runnertypes.RiskLevelHigh,
+			Reason:        "System control",
+			IsPrivilege:   false,
+			NetworkType:   NetworkTypeNone,
+		},
+	},
+	{
+		commands: []string{"rm", "dd"},
+		profile: CommandRiskProfile{
+			BaseRiskLevel: runnertypes.RiskLevelHigh,
+			Reason:        "Destructive operations",
+			IsPrivilege:   false,
+			NetworkType:   NetworkTypeNone,
+		},
+	},
+	{
+		commands: []string{"curl", "wget"},
+		profile: CommandRiskProfile{
+			BaseRiskLevel: runnertypes.RiskLevelMedium,
+			Reason:        "Network request",
+			IsPrivilege:   false,
+			NetworkType:   NetworkTypeAlways,
+		},
+	},
+	{
+		commands: []string{"nc", "netcat", "telnet"},
+		profile: CommandRiskProfile{
+			BaseRiskLevel: runnertypes.RiskLevelMedium,
+			Reason:        "Network connection",
+			IsPrivilege:   false,
+			NetworkType:   NetworkTypeAlways,
+		},
+	},
+	{
+		commands: []string{"ssh", "scp"},
+		profile: CommandRiskProfile{
+			BaseRiskLevel: runnertypes.RiskLevelMedium,
+			Reason:        "Remote operations",
+			IsPrivilege:   false,
+			NetworkType:   NetworkTypeAlways,
+		},
+	},
+	{
+		commands: []string{"rsync", "git"},
+		profile: CommandRiskProfile{
+			BaseRiskLevel: runnertypes.RiskLevelLow,
+			Reason:        "Conditional network operations",
+			IsPrivilege:   false,
+			NetworkType:   NetworkTypeConditional,
+		},
+	},
+}
+
+// commandRiskProfiles is built from commandGroupDefinitions
+var commandRiskProfiles = buildCommandRiskProfiles()
+
+func buildCommandRiskProfiles() map[string]CommandRiskProfile {
+	profiles := make(map[string]CommandRiskProfile)
+	for _, group := range commandGroupDefinitions {
+		for _, cmd := range group.commands {
+			profiles[cmd] = group.profile
+		}
+	}
+	return profiles
+}
+
 // Pre-sorted patterns by risk level for efficient lookup
 var (
 	highRiskPatterns   []DangerousCommandPattern
 	mediumRiskPatterns []DangerousCommandPattern
 )
-
-// commandRiskOverrides defines individual command risk level overrides
-var commandRiskOverrides = map[string]runnertypes.RiskLevel{
-	"/usr/bin/sudo":       runnertypes.RiskLevelCritical, // Privilege escalation
-	"/bin/su":             runnertypes.RiskLevelCritical, // Privilege escalation
-	"/usr/sbin/systemctl": runnertypes.RiskLevelHigh,     // System control
-	"/usr/sbin/service":   runnertypes.RiskLevelHigh,     // System control
-	"/bin/rm":             runnertypes.RiskLevelHigh,     // Destructive operations
-	"/usr/bin/dd":         runnertypes.RiskLevelHigh,     // Destructive operations
-}
 
 // dangerousCommandPatterns contains the static list of dangerous command patterns
 var dangerousCommandPatterns = []DangerousCommandPattern{
@@ -45,27 +137,6 @@ var dangerousCommandPatterns = []DangerousCommandPattern{
 	{[]string{"nc", "-"}, runnertypes.RiskLevelMedium, "Network connection"},
 	{[]string{"netcat"}, runnertypes.RiskLevelMedium, "Network connection"},
 }
-
-// privilegeCommands is a pre-defined list of privilege escalation commands.
-var privilegeCommands = []string{"sudo", "su", "doas"}
-
-// Network command sets for efficient lookup
-var (
-	alwaysNetworkCommands = map[string]struct{}{
-		"curl":   {},
-		"wget":   {},
-		"nc":     {},
-		"netcat": {},
-		"telnet": {},
-		"ssh":    {},
-		"scp":    {},
-	}
-
-	conditionalNetworkCommands = map[string]struct{}{
-		"rsync": {},
-		"git":   {},
-	}
-)
 
 // init initializes the pre-sorted pattern lists for efficient lookup
 func init() {
@@ -183,9 +254,17 @@ func (v *Validator) HasSystemCriticalPaths(args []string) []int {
 }
 
 // getCommandRiskOverride retrieves the risk override for a specific command
+// It now uses command name (basename) instead of full path
 func getCommandRiskOverride(cmdPath string) (runnertypes.RiskLevel, bool) {
-	risk, exists := commandRiskOverrides[cmdPath]
-	return risk, exists
+	// Extract command name from path
+	cmdName := filepath.Base(cmdPath)
+
+	// Look up in new unified profiles
+	if profile, exists := commandRiskProfiles[cmdName]; exists {
+		return profile.BaseRiskLevel, true
+	}
+
+	return runnertypes.RiskLevelUnknown, false
 }
 
 // checkCommandPatterns checks if a command matches any patterns in the given list
@@ -215,9 +294,9 @@ func IsPrivilegeEscalationCommand(cmdName string) (bool, error) {
 		return false, ErrSymlinkDepthExceeded
 	}
 
-	// Check for any privilege escalation commands
-	for _, cmd := range privilegeCommands {
-		if _, exists := commandNames[cmd]; exists {
+	// Check for any privilege escalation commands using unified profiles
+	for cmdName := range commandNames {
+		if profile, exists := commandRiskProfiles[cmdName]; exists && profile.IsPrivilege {
 			return true, nil
 		}
 	}
@@ -237,23 +316,20 @@ func IsNetworkOperation(cmdName string, args []string) (bool, bool) {
 		return false, true
 	}
 
-	// Check if any of the command names match always-network commands
+	// Check command profiles for network type using unified profiles
+	var hasConditionalNetwork bool
 	for name := range commandNames {
-		if _, exists := alwaysNetworkCommands[name]; exists {
-			return true, false
+		if profile, exists := commandRiskProfiles[name]; exists {
+			switch profile.NetworkType {
+			case NetworkTypeAlways:
+				return true, false
+			case NetworkTypeConditional:
+				hasConditionalNetwork = true
+			}
 		}
 	}
 
-	// Check if any command name matches conditional network commands
-	hasConditionalNetworkCommand := false
-	for name := range commandNames {
-		if _, exists := conditionalNetworkCommands[name]; exists {
-			hasConditionalNetworkCommand = true
-			break
-		}
-	}
-
-	if hasConditionalNetworkCommand {
+	if hasConditionalNetwork {
 		// Check for network-related arguments
 		allArgs := strings.Join(args, " ")
 		if strings.Contains(allArgs, "://") || // URLs
