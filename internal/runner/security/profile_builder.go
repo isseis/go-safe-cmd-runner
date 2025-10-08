@@ -79,7 +79,6 @@ func (b *ProfileBuilder) Build() CommandProfileDef {
 		SystemModRisk:      b.getOrDefault(b.systemModRisk),
 		NetworkType:        b.networkType,
 		NetworkSubcommands: b.networkSubcommands,
-		IsPrivilege:        b.privilegeRisk != nil && b.privilegeRisk.Level >= runnertypes.RiskLevelHigh,
 	}
 
 	// Validate at build time

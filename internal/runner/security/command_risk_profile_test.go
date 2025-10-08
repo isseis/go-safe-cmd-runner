@@ -67,7 +67,7 @@ func TestCommandRiskProfileNew_GetRiskReasons(t *testing.T) {
 			profile: CommandRiskProfileNew{
 				PrivilegeRisk: RiskFactor{Level: runnertypes.RiskLevelUnknown},
 			},
-			want: nil,
+			want: []string{},
 		},
 		{
 			name: "single risk",
@@ -129,6 +129,56 @@ func TestCommandRiskProfileNew_GetRiskReasons(t *testing.T) {
 	}
 }
 
+func TestCommandRiskProfileNew_IsPrivilege(t *testing.T) {
+	tests := []struct {
+		name    string
+		profile CommandRiskProfileNew
+		want    bool
+	}{
+		{
+			name: "critical privilege risk is privilege",
+			profile: CommandRiskProfileNew{
+				PrivilegeRisk: RiskFactor{Level: runnertypes.RiskLevelCritical},
+			},
+			want: true,
+		},
+		{
+			name: "high privilege risk is privilege",
+			profile: CommandRiskProfileNew{
+				PrivilegeRisk: RiskFactor{Level: runnertypes.RiskLevelHigh},
+			},
+			want: true,
+		},
+		{
+			name: "medium privilege risk is not privilege",
+			profile: CommandRiskProfileNew{
+				PrivilegeRisk: RiskFactor{Level: runnertypes.RiskLevelMedium},
+			},
+			want: false,
+		},
+		{
+			name: "low privilege risk is not privilege",
+			profile: CommandRiskProfileNew{
+				PrivilegeRisk: RiskFactor{Level: runnertypes.RiskLevelLow},
+			},
+			want: false,
+		},
+		{
+			name: "unknown privilege risk is not privilege",
+			profile: CommandRiskProfileNew{
+				PrivilegeRisk: RiskFactor{Level: runnertypes.RiskLevelUnknown},
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.profile.IsPrivilege())
+		})
+	}
+}
+
 func TestCommandRiskProfileNew_Validate(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -146,7 +196,6 @@ func TestCommandRiskProfileNew_Validate(t *testing.T) {
 			name: "valid profile - privilege escalation",
 			profile: CommandRiskProfileNew{
 				PrivilegeRisk: RiskFactor{Level: runnertypes.RiskLevelCritical},
-				IsPrivilege:   true,
 				NetworkType:   NetworkTypeNone,
 			},
 			wantErr: nil,
@@ -175,14 +224,6 @@ func TestCommandRiskProfileNew_Validate(t *testing.T) {
 				NetworkType: NetworkTypeAlways,
 			},
 			wantErr: ErrNetworkAlwaysRequiresMediumRiskNew,
-		},
-		{
-			name: "invalid - IsPrivilege with medium PrivilegeRisk",
-			profile: CommandRiskProfileNew{
-				PrivilegeRisk: RiskFactor{Level: runnertypes.RiskLevelMedium},
-				IsPrivilege:   true,
-			},
-			wantErr: ErrPrivilegeRequiresHighRiskNew,
 		},
 		{
 			name: "invalid - NetworkSubcommands without Conditional",

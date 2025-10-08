@@ -15,7 +15,7 @@ func TestProfileBuilder_Build(t *testing.T) {
 
 		assert.Equal(t, []string{"sudo"}, def.Commands())
 		assert.Equal(t, runnertypes.RiskLevelCritical, def.Profile().BaseRiskLevel())
-		assert.True(t, def.Profile().IsPrivilege)
+		assert.True(t, def.Profile().IsPrivilege())
 	})
 
 	t.Run("valid network profile", func(t *testing.T) {

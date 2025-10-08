@@ -12,9 +12,6 @@ var (
 	// ErrNetworkAlwaysRequiresMediumRiskNew is returned when NetworkTypeAlways has NetworkRisk < Medium
 	ErrNetworkAlwaysRequiresMediumRiskNew = errors.New("NetworkTypeAlways commands must have NetworkRisk >= Medium")
 
-	// ErrPrivilegeRequiresHighRiskNew is returned when IsPrivilege is true but PrivilegeRisk < High
-	ErrPrivilegeRequiresHighRiskNew = errors.New("privilege escalation commands must have PrivilegeRisk >= High")
-
 	// ErrNetworkSubcommandsOnlyForConditionalNew is returned when NetworkSubcommands is set for non-conditional network type
 	ErrNetworkSubcommandsOnlyForConditionalNew = errors.New("NetworkSubcommands should only be set for NetworkTypeConditional")
 )
@@ -32,9 +29,14 @@ type CommandRiskProfileNew struct {
 	// Network behavior configuration
 	NetworkType        NetworkOperationType // How network operations are determined
 	NetworkSubcommands []string             // Subcommands that trigger network operations
+}
 
-	// Derived properties
-	IsPrivilege bool // True if PrivilegeRisk.Level >= High
+// defaultRiskReasonsCap is the initial capacity used when collecting risk reasons.
+const defaultRiskReasonsCap = 5
+
+// IsPrivilege returns true if the command involves privilege escalation
+func (p CommandRiskProfileNew) IsPrivilege() bool {
+	return p.PrivilegeRisk.Level >= runnertypes.RiskLevelHigh
 }
 
 // BaseRiskLevel computes the overall risk level as the maximum of all risk factors
@@ -50,7 +52,7 @@ func (p CommandRiskProfileNew) BaseRiskLevel() runnertypes.RiskLevel {
 
 // GetRiskReasons returns all non-empty reasons contributing to the risk level
 func (p CommandRiskProfileNew) GetRiskReasons() []string {
-	var reasons []string
+	reasons := make([]string, 0, defaultRiskReasonsCap)
 
 	// Helper function to add non-empty reasons
 	addReason := func(risk RiskFactor) {
@@ -76,12 +78,7 @@ func (p CommandRiskProfileNew) Validate() error {
 		return fmt.Errorf("%w (got %v)", ErrNetworkAlwaysRequiresMediumRiskNew, p.NetworkRisk.Level)
 	}
 
-	// Rule 2: IsPrivilege implies PrivilegeRisk >= High
-	if p.IsPrivilege && p.PrivilegeRisk.Level < runnertypes.RiskLevelHigh {
-		return fmt.Errorf("%w (got %v)", ErrPrivilegeRequiresHighRiskNew, p.PrivilegeRisk.Level)
-	}
-
-	// Rule 3: NetworkSubcommands only for NetworkTypeConditional
+	// Rule 2: NetworkSubcommands only for NetworkTypeConditional
 	if len(p.NetworkSubcommands) > 0 && p.NetworkType != NetworkTypeConditional {
 		return ErrNetworkSubcommandsOnlyForConditionalNew
 	}
