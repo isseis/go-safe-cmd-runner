@@ -362,14 +362,24 @@ package security
 import "errors"
 
 var (
-    // ErrInconsistentRiskProfile indicates inconsistent risk profile configuration
-    ErrInconsistentRiskProfile = errors.New("inconsistent risk profile")
+    // ErrNetworkAlwaysRequiresMediumRisk is returned when NetworkTypeAlways has NetworkRisk < Medium
+    ErrNetworkAlwaysRequiresMediumRisk = errors.New("NetworkTypeAlways commands must have NetworkRisk >= Medium")
+
+    // ErrPrivilegeRequiresHighRisk is returned when IsPrivilege is true but PrivilegeRisk < High
+    ErrPrivilegeRequiresHighRisk = errors.New("privilege escalation commands must have PrivilegeRisk >= High")
+
+    // ErrNetworkSubcommandsOnlyForConditional is returned when NetworkSubcommands is set for non-conditional network type
+    ErrNetworkSubcommandsOnlyForConditional = errors.New("NetworkSubcommands should only be set for NetworkTypeConditional")
 )
 ```
 
+**設計上のポイント:**
+- 各バリデーションルールに対応する具体的なエラー型を定義
+- `errors.Is()`による型判別を可能にし、将来的な動的バリデーションでのエラーハンドリングを容易化
+
 **チェックリスト:**
 - [ ] ファイル作成（または既存ファイルに追加）
-- [ ] エラー定義
+- [ ] 3つのエラー定義
 - [ ] GoDocコメント追加
 - [ ] `make fmt`実行
 
@@ -424,7 +434,7 @@ func TestCommandRiskProfile_Validate(t *testing.T) {
                 NetworkRisk: RiskFactor{Level: runnertypes.RiskLevelLow},
                 NetworkType: NetworkTypeAlways,
             },
-            wantErr: ErrInconsistentRiskProfile,
+            wantErr: ErrNetworkAlwaysRequiresMediumRisk,
         },
         {
             name: "invalid - IsPrivilege with medium PrivilegeRisk",
@@ -432,7 +442,7 @@ func TestCommandRiskProfile_Validate(t *testing.T) {
                 PrivilegeRisk: RiskFactor{Level: runnertypes.RiskLevelMedium},
                 IsPrivilege:   true,
             },
-            wantErr: ErrInconsistentRiskProfile,
+            wantErr: ErrPrivilegeRequiresHighRisk,
         },
         {
             name: "invalid - NetworkSubcommands without Conditional",
@@ -440,7 +450,7 @@ func TestCommandRiskProfile_Validate(t *testing.T) {
                 NetworkType:        NetworkTypeNone,
                 NetworkSubcommands: []string{"clone"},
             },
-            wantErr: ErrInconsistentRiskProfile,
+            wantErr: ErrNetworkSubcommandsOnlyForConditional,
         },
     }
 
@@ -473,25 +483,27 @@ func TestCommandRiskProfile_Validate(t *testing.T) {
 func (p CommandRiskProfile) Validate() error {
     // Rule 1: NetworkTypeAlways implies NetworkRisk >= Medium
     if p.NetworkType == NetworkTypeAlways && p.NetworkRisk.Level < runnertypes.RiskLevelMedium {
-        return fmt.Errorf("%w: NetworkTypeAlways requires NetworkRisk >= Medium (got %v)",
-            ErrInconsistentRiskProfile, p.NetworkRisk.Level)
+        return fmt.Errorf("%w (got %v)", ErrNetworkAlwaysRequiresMediumRisk, p.NetworkRisk.Level)
     }
 
     // Rule 2: IsPrivilege implies PrivilegeRisk >= High
     if p.IsPrivilege && p.PrivilegeRisk.Level < runnertypes.RiskLevelHigh {
-        return fmt.Errorf("%w: IsPrivilege requires PrivilegeRisk >= High (got %v)",
-            ErrInconsistentRiskProfile, p.PrivilegeRisk.Level)
+        return fmt.Errorf("%w (got %v)", ErrPrivilegeRequiresHighRisk, p.PrivilegeRisk.Level)
     }
 
     // Rule 3: NetworkSubcommands only for NetworkTypeConditional
     if len(p.NetworkSubcommands) > 0 && p.NetworkType != NetworkTypeConditional {
-        return fmt.Errorf("%w: NetworkSubcommands only for NetworkTypeConditional",
-            ErrInconsistentRiskProfile)
+        return ErrNetworkSubcommandsOnlyForConditional
     }
 
     return nil
 }
 ```
+
+**設計上のポイント:**
+- 各バリデーションルールで具体的なエラー型を返すことで、`errors.Is()`による型判別が可能
+- Rule 1, 2では実際のリスクレベル値を`fmt.Errorf()`でラップして詳細情報を提供
+- Rule 3は条件のみのチェックなので、エラー型をそのまま返却
 
 **チェックリスト:**
 - [ ] メソッド実装

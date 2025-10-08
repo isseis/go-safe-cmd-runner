@@ -212,36 +212,53 @@ func (p CommandRiskProfile) Validate() error
 #### Rule 1: NetworkTypeAlways requires NetworkRisk >= Medium
 ```go
 if p.NetworkType == NetworkTypeAlways && p.NetworkRisk.Level < runnertypes.RiskLevelMedium {
-    return fmt.Errorf("%w: NetworkTypeAlways requires NetworkRisk >= Medium (got %v)",
-        ErrInconsistentRiskProfile, p.NetworkRisk.Level)
+    return fmt.Errorf("%w (got %v)", ErrNetworkAlwaysRequiresMediumRisk, p.NetworkRisk.Level)
 }
 ```
 
 **理由:** 常にネットワーク操作を行うコマンドは最低でもMediumリスク
 
+**返却されるエラー:** `ErrNetworkAlwaysRequiresMediumRisk`
+
 #### Rule 2: IsPrivilege requires PrivilegeRisk >= High
 ```go
 if p.IsPrivilege && p.PrivilegeRisk.Level < runnertypes.RiskLevelHigh {
-    return fmt.Errorf("%w: IsPrivilege requires PrivilegeRisk >= High (got %v)",
-        ErrInconsistentRiskProfile, p.PrivilegeRisk.Level)
+    return fmt.Errorf("%w (got %v)", ErrPrivilegeRequiresHighRisk, p.PrivilegeRisk.Level)
 }
 ```
 
 **理由:** 権限昇格コマンドは最低でもHighリスク
 
+**返却されるエラー:** `ErrPrivilegeRequiresHighRisk`
+
 #### Rule 3: NetworkSubcommands only for NetworkTypeConditional
 ```go
 if len(p.NetworkSubcommands) > 0 && p.NetworkType != NetworkTypeConditional {
-    return fmt.Errorf("%w: NetworkSubcommands only for NetworkTypeConditional",
-        ErrInconsistentRiskProfile)
+    return ErrNetworkSubcommandsOnlyForConditional
 }
 ```
 
 **理由:** サブコマンドベースのネットワーク判定はConditionalのみで有効
 
+**返却されるエラー:** `ErrNetworkSubcommandsOnlyForConditional`
+
 **戻り値:**
 - バリデーション成功時: `nil`
-- バリデーション失敗時: エラー（`ErrInconsistentRiskProfile`をラップ）
+- バリデーション失敗時: 具体的なエラー型（`ErrNetworkAlwaysRequiresMediumRisk`, `ErrPrivilegeRequiresHighRisk`, `ErrNetworkSubcommandsOnlyForConditional`）
+
+**エラーハンドリングの例:**
+```go
+err := profile.Validate()
+if err != nil {
+    if errors.Is(err, ErrNetworkAlwaysRequiresMediumRisk) {
+        // NetworkTypeAlways固有の処理
+    } else if errors.Is(err, ErrPrivilegeRequiresHighRisk) {
+        // IsPrivilege固有の処理
+    } else if errors.Is(err, ErrNetworkSubcommandsOnlyForConditional) {
+        // NetworkSubcommands固有の処理
+    }
+}
+```
 
 ### 3.4 ProfileBuilder コンストラクタとメソッド
 
@@ -421,18 +438,54 @@ func (b *ProfileBuilder) getOrDefault(risk *RiskFactor) RiskFactor
 
 ```go
 var (
-    // ErrInconsistentRiskProfile indicates inconsistent risk profile configuration
-    ErrInconsistentRiskProfile = errors.New("inconsistent risk profile")
+    // ErrNetworkAlwaysRequiresMediumRisk is returned when NetworkTypeAlways has NetworkRisk < Medium
+    ErrNetworkAlwaysRequiresMediumRisk = errors.New("NetworkTypeAlways commands must have NetworkRisk >= Medium")
+
+    // ErrPrivilegeRequiresHighRisk is returned when IsPrivilege is true but PrivilegeRisk < High
+    ErrPrivilegeRequiresHighRisk = errors.New("privilege escalation commands must have PrivilegeRisk >= High")
+
+    // ErrNetworkSubcommandsOnlyForConditional is returned when NetworkSubcommands is set for non-conditional network type
+    ErrNetworkSubcommandsOnlyForConditional = errors.New("NetworkSubcommands should only be set for NetworkTypeConditional")
 )
 ```
 
+**エラー型の設計:**
+
+| エラー型 | 返却条件 | 使用目的 |
+|---------|---------|---------|
+| `ErrNetworkAlwaysRequiresMediumRisk` | `NetworkTypeAlways` かつ `NetworkRisk < Medium` | ネットワーク操作コマンドのリスク不足を検出 |
+| `ErrPrivilegeRequiresHighRisk` | `IsPrivilege` かつ `PrivilegeRisk < High` | 権限昇格コマンドのリスク不足を検出 |
+| `ErrNetworkSubcommandsOnlyForConditional` | `NetworkSubcommands`が設定されているが`NetworkType != Conditional` | 設定ミスを検出 |
+
 **使用箇所:**
 - `CommandRiskProfile.Validate()`
+- `ProfileBuilder.Build()` (panicメッセージに含まれる)
 
 **ラップ例:**
 ```go
-fmt.Errorf("%w: NetworkTypeAlways requires NetworkRisk >= Medium (got %v)",
-    ErrInconsistentRiskProfile, p.NetworkRisk.Level)
+// Rule 1: NetworkTypeAlways requires NetworkRisk >= Medium
+if p.NetworkType == NetworkTypeAlways && p.NetworkRisk.Level < runnertypes.RiskLevelMedium {
+    return fmt.Errorf("%w (got %v)", ErrNetworkAlwaysRequiresMediumRisk, p.NetworkRisk.Level)
+}
+
+// Rule 2: IsPrivilege requires PrivilegeRisk >= High
+if p.IsPrivilege && p.PrivilegeRisk.Level < runnertypes.RiskLevelHigh {
+    return fmt.Errorf("%w (got %v)", ErrPrivilegeRequiresHighRisk, p.PrivilegeRisk.Level)
+}
+
+// Rule 3: NetworkSubcommands only for NetworkTypeConditional
+if len(p.NetworkSubcommands) > 0 && p.NetworkType != NetworkTypeConditional {
+    return ErrNetworkSubcommandsOnlyForConditional
+}
+```
+
+**エラー判別の例:**
+```go
+err := profile.Validate()
+if errors.Is(err, ErrNetworkAlwaysRequiresMediumRisk) {
+    // NetworkTypeAlways固有の処理
+    log.Printf("Network risk level is too low for always-network command")
+}
 ```
 
 ### 4.2 エラー処理戦略

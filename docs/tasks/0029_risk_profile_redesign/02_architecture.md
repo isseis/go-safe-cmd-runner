@@ -308,20 +308,17 @@ func (p CommandRiskProfile) GetRiskReasons() []string {
 func (p CommandRiskProfile) Validate() error {
     // Rule 1: NetworkTypeAlways implies NetworkRisk >= Medium
     if p.NetworkType == NetworkTypeAlways && p.NetworkRisk.Level < runnertypes.RiskLevelMedium {
-        return fmt.Errorf("%w: NetworkTypeAlways requires NetworkRisk >= Medium (got %v)",
-            ErrInconsistentRiskProfile, p.NetworkRisk.Level)
+        return fmt.Errorf("%w (got %v)", ErrNetworkAlwaysRequiresMediumRisk, p.NetworkRisk.Level)
     }
 
     // Rule 2: IsPrivilege implies PrivilegeRisk >= High
     if p.IsPrivilege && p.PrivilegeRisk.Level < runnertypes.RiskLevelHigh {
-        return fmt.Errorf("%w: IsPrivilege requires PrivilegeRisk >= High (got %v)",
-            ErrInconsistentRiskProfile, p.PrivilegeRisk.Level)
+        return fmt.Errorf("%w (got %v)", ErrPrivilegeRequiresHighRisk, p.PrivilegeRisk.Level)
     }
 
     // Rule 3: NetworkSubcommands only for NetworkTypeConditional
     if len(p.NetworkSubcommands) > 0 && p.NetworkType != NetworkTypeConditional {
-        return fmt.Errorf("%w: NetworkSubcommands only for NetworkTypeConditional",
-            ErrInconsistentRiskProfile)
+        return ErrNetworkSubcommandsOnlyForConditional
     }
 
     return nil
@@ -330,11 +327,16 @@ func (p CommandRiskProfile) Validate() error {
 
 **バリデーションルール:**
 
-| ルール | 内容 | 根拠 |
-|--------|------|------|
-| Rule 1 | `NetworkTypeAlways` → `NetworkRisk ≥ Medium` | 常にネットワーク操作を行うコマンドは最低でもMediumリスク |
-| Rule 2 | `IsPrivilege` → `PrivilegeRisk ≥ High` | 権限昇格コマンドは最低でもHighリスク |
-| Rule 3 | `NetworkSubcommands`は`NetworkTypeConditional`のみ | 設定ミスの防止 |
+| ルール | 内容 | 根拠 | エラー型 |
+|--------|------|------|---------|
+| Rule 1 | `NetworkTypeAlways` → `NetworkRisk ≥ Medium` | 常にネットワーク操作を行うコマンドは最低でもMediumリスク | `ErrNetworkAlwaysRequiresMediumRisk` |
+| Rule 2 | `IsPrivilege` → `PrivilegeRisk ≥ High` | 権限昇格コマンドは最低でもHighリスク | `ErrPrivilegeRequiresHighRisk` |
+| Rule 3 | `NetworkSubcommands`は`NetworkTypeConditional`のみ | 設定ミスの防止 | `ErrNetworkSubcommandsOnlyForConditional` |
+
+**エラーハンドリングの利点:**
+- 各ルール違反に対応する具体的なエラー型を返すことで、`errors.Is()`による型判別が可能
+- 将来的に`Validate()`を`Build()`以外で使用する場合、エラーの種類に応じた処理分岐が容易
+- デバッグ時に問題の特定が迅速化
 
 ### 5.4 ProfileBuilder.Build()
 
