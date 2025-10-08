@@ -7,15 +7,15 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestCommandRiskProfileNew_BaseRiskLevel(t *testing.T) {
+func TestCommandRiskProfile_BaseRiskLevel(t *testing.T) {
 	tests := []struct {
 		name    string
-		profile CommandRiskProfileNew
+		profile CommandRiskProfile
 		want    runnertypes.RiskLevel
 	}{
 		{
 			name: "all unknown",
-			profile: CommandRiskProfileNew{
+			profile: CommandRiskProfile{
 				PrivilegeRisk:   RiskFactor{Level: runnertypes.RiskLevelUnknown},
 				NetworkRisk:     RiskFactor{Level: runnertypes.RiskLevelUnknown},
 				DestructionRisk: RiskFactor{Level: runnertypes.RiskLevelUnknown},
@@ -26,14 +26,14 @@ func TestCommandRiskProfileNew_BaseRiskLevel(t *testing.T) {
 		},
 		{
 			name: "single medium risk",
-			profile: CommandRiskProfileNew{
+			profile: CommandRiskProfile{
 				NetworkRisk: RiskFactor{Level: runnertypes.RiskLevelMedium},
 			},
 			want: runnertypes.RiskLevelMedium,
 		},
 		{
 			name: "multiple risks - max is high",
-			profile: CommandRiskProfileNew{
+			profile: CommandRiskProfile{
 				NetworkRisk:   RiskFactor{Level: runnertypes.RiskLevelMedium},
 				DataExfilRisk: RiskFactor{Level: runnertypes.RiskLevelHigh},
 			},
@@ -41,7 +41,7 @@ func TestCommandRiskProfileNew_BaseRiskLevel(t *testing.T) {
 		},
 		{
 			name: "critical privilege risk",
-			profile: CommandRiskProfileNew{
+			profile: CommandRiskProfile{
 				PrivilegeRisk: RiskFactor{Level: runnertypes.RiskLevelCritical},
 				NetworkRisk:   RiskFactor{Level: runnertypes.RiskLevelMedium},
 			},
@@ -56,29 +56,29 @@ func TestCommandRiskProfileNew_BaseRiskLevel(t *testing.T) {
 	}
 }
 
-func TestCommandRiskProfileNew_GetRiskReasons(t *testing.T) {
+func TestCommandRiskProfile_GetRiskReasons(t *testing.T) {
 	tests := []struct {
 		name    string
-		profile CommandRiskProfileNew
+		profile CommandRiskProfile
 		want    []string
 	}{
 		{
 			name: "no risks",
-			profile: CommandRiskProfileNew{
+			profile: CommandRiskProfile{
 				PrivilegeRisk: RiskFactor{Level: runnertypes.RiskLevelUnknown},
 			},
 			want: []string{},
 		},
 		{
 			name: "single risk",
-			profile: CommandRiskProfileNew{
+			profile: CommandRiskProfile{
 				NetworkRisk: RiskFactor{Level: runnertypes.RiskLevelMedium, Reason: "Network access"},
 			},
 			want: []string{"Network access"},
 		},
 		{
 			name: "multiple risks",
-			profile: CommandRiskProfileNew{
+			profile: CommandRiskProfile{
 				NetworkRisk:   RiskFactor{Level: runnertypes.RiskLevelMedium, Reason: "Network access"},
 				DataExfilRisk: RiskFactor{Level: runnertypes.RiskLevelHigh, Reason: "Data exfiltration"},
 			},
@@ -86,7 +86,7 @@ func TestCommandRiskProfileNew_GetRiskReasons(t *testing.T) {
 		},
 		{
 			name: "all risk types",
-			profile: CommandRiskProfileNew{
+			profile: CommandRiskProfile{
 				PrivilegeRisk:   RiskFactor{Level: runnertypes.RiskLevelCritical, Reason: "Privilege escalation"},
 				NetworkRisk:     RiskFactor{Level: runnertypes.RiskLevelMedium, Reason: "Network access"},
 				DestructionRisk: RiskFactor{Level: runnertypes.RiskLevelHigh, Reason: "File deletion"},
@@ -103,7 +103,7 @@ func TestCommandRiskProfileNew_GetRiskReasons(t *testing.T) {
 		},
 		{
 			name: "empty reason is excluded",
-			profile: CommandRiskProfileNew{
+			profile: CommandRiskProfile{
 				NetworkRisk:   RiskFactor{Level: runnertypes.RiskLevelMedium, Reason: ""},
 				DataExfilRisk: RiskFactor{Level: runnertypes.RiskLevelHigh, Reason: "Data exfiltration"},
 			},
@@ -111,7 +111,7 @@ func TestCommandRiskProfileNew_GetRiskReasons(t *testing.T) {
 		},
 		{
 			name: "mixed empty and non-empty reasons",
-			profile: CommandRiskProfileNew{
+			profile: CommandRiskProfile{
 				PrivilegeRisk:   RiskFactor{Level: runnertypes.RiskLevelHigh, Reason: ""},
 				NetworkRisk:     RiskFactor{Level: runnertypes.RiskLevelMedium, Reason: "Network access"},
 				DestructionRisk: RiskFactor{Level: runnertypes.RiskLevelHigh, Reason: ""},
@@ -129,43 +129,43 @@ func TestCommandRiskProfileNew_GetRiskReasons(t *testing.T) {
 	}
 }
 
-func TestCommandRiskProfileNew_IsPrivilege(t *testing.T) {
+func TestCommandRiskProfile_IsPrivilege(t *testing.T) {
 	tests := []struct {
 		name    string
-		profile CommandRiskProfileNew
+		profile CommandRiskProfile
 		want    bool
 	}{
 		{
 			name: "critical privilege risk is privilege",
-			profile: CommandRiskProfileNew{
+			profile: CommandRiskProfile{
 				PrivilegeRisk: RiskFactor{Level: runnertypes.RiskLevelCritical},
 			},
 			want: true,
 		},
 		{
 			name: "high privilege risk is privilege",
-			profile: CommandRiskProfileNew{
+			profile: CommandRiskProfile{
 				PrivilegeRisk: RiskFactor{Level: runnertypes.RiskLevelHigh},
 			},
 			want: true,
 		},
 		{
 			name: "medium privilege risk is not privilege",
-			profile: CommandRiskProfileNew{
+			profile: CommandRiskProfile{
 				PrivilegeRisk: RiskFactor{Level: runnertypes.RiskLevelMedium},
 			},
 			want: false,
 		},
 		{
 			name: "low privilege risk is not privilege",
-			profile: CommandRiskProfileNew{
+			profile: CommandRiskProfile{
 				PrivilegeRisk: RiskFactor{Level: runnertypes.RiskLevelLow},
 			},
 			want: false,
 		},
 		{
 			name: "unknown privilege risk is not privilege",
-			profile: CommandRiskProfileNew{
+			profile: CommandRiskProfile{
 				PrivilegeRisk: RiskFactor{Level: runnertypes.RiskLevelUnknown},
 			},
 			want: false,
@@ -179,22 +179,22 @@ func TestCommandRiskProfileNew_IsPrivilege(t *testing.T) {
 	}
 }
 
-func TestCommandRiskProfileNew_Validate(t *testing.T) {
+func TestCommandRiskProfile_Validate(t *testing.T) {
 	tests := []struct {
 		name    string
-		profile CommandRiskProfileNew
+		profile CommandRiskProfile
 		wantErr error
 	}{
 		{
 			name: "valid profile - all unknown",
-			profile: CommandRiskProfileNew{
+			profile: CommandRiskProfile{
 				NetworkType: NetworkTypeNone,
 			},
 			wantErr: nil,
 		},
 		{
 			name: "valid profile - privilege escalation",
-			profile: CommandRiskProfileNew{
+			profile: CommandRiskProfile{
 				PrivilegeRisk: RiskFactor{Level: runnertypes.RiskLevelCritical},
 				NetworkType:   NetworkTypeNone,
 			},
@@ -202,7 +202,7 @@ func TestCommandRiskProfileNew_Validate(t *testing.T) {
 		},
 		{
 			name: "valid profile - always network",
-			profile: CommandRiskProfileNew{
+			profile: CommandRiskProfile{
 				NetworkRisk: RiskFactor{Level: runnertypes.RiskLevelMedium},
 				NetworkType: NetworkTypeAlways,
 			},
@@ -210,7 +210,7 @@ func TestCommandRiskProfileNew_Validate(t *testing.T) {
 		},
 		{
 			name: "valid profile - conditional network",
-			profile: CommandRiskProfileNew{
+			profile: CommandRiskProfile{
 				NetworkRisk:        RiskFactor{Level: runnertypes.RiskLevelMedium},
 				NetworkType:        NetworkTypeConditional,
 				NetworkSubcommands: []string{"clone", "fetch"},
@@ -219,7 +219,7 @@ func TestCommandRiskProfileNew_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid - NetworkTypeAlways with low NetworkRisk",
-			profile: CommandRiskProfileNew{
+			profile: CommandRiskProfile{
 				NetworkRisk: RiskFactor{Level: runnertypes.RiskLevelLow},
 				NetworkType: NetworkTypeAlways,
 			},
@@ -227,7 +227,7 @@ func TestCommandRiskProfileNew_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid - NetworkSubcommands without Conditional",
-			profile: CommandRiskProfileNew{
+			profile: CommandRiskProfile{
 				NetworkType:        NetworkTypeNone,
 				NetworkSubcommands: []string{"clone"},
 			},

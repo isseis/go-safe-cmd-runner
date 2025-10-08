@@ -3,7 +3,7 @@ package security
 // CommandProfileDef associates a list of commands with their risk profile
 type CommandProfileDef struct {
 	commands []string
-	profile  CommandRiskProfileNew
+	profile  CommandRiskProfile
 }
 
 // Commands returns a copy of the list of commands for this profile
@@ -17,6 +17,6 @@ func (d CommandProfileDef) Commands() []string {
 }
 
 // Profile returns the risk profile
-func (d CommandProfileDef) Profile() CommandRiskProfileNew {
+func (d CommandProfileDef) Profile() CommandRiskProfile {
 	return d.profile
 }

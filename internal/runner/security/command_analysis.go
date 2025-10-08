@@ -21,7 +21,7 @@ const (
 )
 
 // commandProfileDefinitions defines command risk profiles using the new builder pattern
-// This uses CommandRiskProfileNew with explicit risk factor separation
+// This uses CommandRiskProfile with explicit risk factor separation
 var commandProfileDefinitions = []CommandProfileDef{
 	// Phase 2.2.1: Privilege escalation commands
 	NewProfile("sudo", "su", "doas").
@@ -80,8 +80,8 @@ var commandProfileDefinitions = []CommandProfileDef{
 // commandRiskProfilesNew is built from commandProfileDefinitions (new structure)
 var commandRiskProfilesNew = buildCommandRiskProfilesNew()
 
-func buildCommandRiskProfilesNew() map[string]CommandRiskProfileNew {
-	profiles := make(map[string]CommandRiskProfileNew)
+func buildCommandRiskProfilesNew() map[string]CommandRiskProfile {
+	profiles := make(map[string]CommandRiskProfile)
 	for _, def := range commandProfileDefinitions {
 		// Profile is already validated in Build()
 		for _, cmd := range def.Commands() {
@@ -297,7 +297,7 @@ func IsNetworkOperation(cmdName string, args []string) (bool, bool) {
 	}
 
 	// Check command profiles for network type using unified profiles
-	var conditionalProfile *CommandRiskProfileNew
+	var conditionalProfile *CommandRiskProfile
 	for name := range commandNames {
 		if profile, exists := commandRiskProfilesNew[name]; exists {
 			switch profile.NetworkType {

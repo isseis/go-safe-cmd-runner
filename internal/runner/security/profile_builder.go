@@ -6,7 +6,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
-// ProfileBuilder provides a fluent API for building CommandRiskProfileNew.
+// ProfileBuilder provides a fluent API for building CommandRiskProfile.
 //
 // Example usage:
 //
@@ -91,7 +91,7 @@ func (b *ProfileBuilder) ConditionalNetwork(subcommands ...string) *ProfileBuild
 
 // Build creates the final CommandProfileDef with validation
 func (b *ProfileBuilder) Build() CommandProfileDef {
-	profile := CommandRiskProfileNew{
+	profile := CommandRiskProfile{
 		PrivilegeRisk:      b.getOrDefault(b.privilegeRisk),
 		NetworkRisk:        b.getOrDefault(b.networkRisk),
 		DestructionRisk:    b.getOrDefault(b.destructionRisk),
