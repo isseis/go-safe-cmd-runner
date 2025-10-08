@@ -795,18 +795,18 @@ func (b *ProfileBuilder) getOrDefault(risk *RiskFactor) RiskFactor {
 **ファイル:** `internal/runner/security/command_analysis.go`
 
 **作業内容:**
-- [ ] 現在の`commandProfileDefinitions`を確認
-- [ ] 各プロファイルのリスク要因を分類
-- [ ] 移行マッピング表を作成（ドキュメント）
+- [x] 現在の`commandProfileDefinitions`を確認
+- [x] 各プロファイルのリスク要因を分類
+- [x] 移行マッピング表を作成（ドキュメント）
 
 #### タスク2.1.2: 移行対象リストの作成
 
-**ドキュメント:** `docs/tasks/0029_risk_profile_redesign/05_migration_checklist.md`
+**ドキュメント:** `docs/tasks/0029_risk_profile_redesign/06_migration_checklist.md`
 
 **内容:**
-- [ ] 全コマンドのリスト
-- [ ] 各コマンドの移行前後の定義
-- [ ] 移行優先順位（高リスクコマンドから）
+- [x] 全コマンドのリスト
+- [x] 各コマンドの移行前後の定義
+- [x] 移行優先順位（高リスクコマンドから）
 
 ### 4.2 Phase 2.2: 段階的移行
 
