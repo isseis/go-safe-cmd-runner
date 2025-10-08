@@ -94,7 +94,7 @@ type CommandRiskProfile struct {
     NetworkSubcommands []string
 
     // Computed properties (derived from risk factors)
-    IsPrivilege bool  // Convenience flag (true if PrivilegeRisk > None)
+    IsPrivilege bool  // Convenience flag (true if PrivilegeRisk.Level >= runnertypes.RiskLevelHigh)
 }
 
 // BaseRiskLevel computes the overall risk level as the maximum of all risk factors
