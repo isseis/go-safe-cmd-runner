@@ -2031,7 +2031,7 @@ func TestGetCommandRiskOverride(t *testing.T) {
 
 func TestCommandRiskProfiles_Completeness(t *testing.T) {
 	// Ensure all defined profiles are valid
-	for cmdName, profile := range commandRiskProfilesNew {
+	for cmdName, profile := range commandRiskProfiles {
 		t.Run("validate_"+cmdName, func(t *testing.T) {
 			assert.NotEmpty(t, cmdName, "command name should not be empty")
 			assert.True(t, profile.BaseRiskLevel() > runnertypes.RiskLevelUnknown && profile.BaseRiskLevel() <= runnertypes.RiskLevelCritical,
@@ -2048,7 +2048,7 @@ func TestCommandRiskProfiles_PrivilegeEscalation(t *testing.T) {
 	privilegeCommands := []string{"sudo", "su", "doas"}
 	for _, cmd := range privilegeCommands {
 		t.Run(cmd, func(t *testing.T) {
-			profile, exists := commandRiskProfilesNew[cmd]
+			profile, exists := commandRiskProfiles[cmd]
 			assert.True(t, exists, "privilege command %s should exist in profiles", cmd)
 			if exists {
 				assert.True(t, profile.IsPrivilege(), "command %s should be marked as privilege escalation", cmd)
@@ -2077,7 +2077,7 @@ func TestCommandRiskProfiles_NetworkCommands(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			profile, exists := commandRiskProfilesNew[tc.cmd]
+			profile, exists := commandRiskProfiles[tc.cmd]
 			assert.True(t, exists, "network command %s should exist in profiles", tc.cmd)
 			if exists {
 				assert.Equal(t, tc.networkType, profile.NetworkType, "command %s should have correct network type", tc.cmd)
@@ -2154,7 +2154,7 @@ func TestMigration_RiskLevelConsistency(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.command, func(t *testing.T) {
-			profile, exists := commandRiskProfilesNew[tt.command]
+			profile, exists := commandRiskProfiles[tt.command]
 			assert.True(t, exists, "Command %s should exist in profiles", tt.command)
 			if exists {
 				assert.Equal(t, tt.expectedRisk, profile.BaseRiskLevel(),
@@ -2175,7 +2175,7 @@ func TestMigration_NetworkTypeConsistency(t *testing.T) {
 
 	for _, cmd := range alwaysNetwork {
 		t.Run("AlwaysNetwork_"+cmd, func(t *testing.T) {
-			profile, exists := commandRiskProfilesNew[cmd]
+			profile, exists := commandRiskProfiles[cmd]
 			assert.True(t, exists)
 			assert.Equal(t, NetworkTypeAlways, profile.NetworkType)
 		})
@@ -2183,7 +2183,7 @@ func TestMigration_NetworkTypeConsistency(t *testing.T) {
 
 	for _, cmd := range conditionalNetwork {
 		t.Run("ConditionalNetwork_"+cmd, func(t *testing.T) {
-			profile, exists := commandRiskProfilesNew[cmd]
+			profile, exists := commandRiskProfiles[cmd]
 			assert.True(t, exists)
 			assert.Equal(t, NetworkTypeConditional, profile.NetworkType)
 		})
@@ -2191,7 +2191,7 @@ func TestMigration_NetworkTypeConsistency(t *testing.T) {
 
 	for _, cmd := range noneNetwork {
 		t.Run("NoneNetwork_"+cmd, func(t *testing.T) {
-			profile, exists := commandRiskProfilesNew[cmd]
+			profile, exists := commandRiskProfiles[cmd]
 			assert.True(t, exists)
 			assert.Equal(t, NetworkTypeNone, profile.NetworkType)
 		})
@@ -2210,7 +2210,7 @@ func TestMigration_NetworkSubcommandsConsistency(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.command, func(t *testing.T) {
-			profile, exists := commandRiskProfilesNew[tt.command]
+			profile, exists := commandRiskProfiles[tt.command]
 			assert.True(t, exists)
 			if exists {
 				if tt.subcommands == nil {
@@ -2232,7 +2232,7 @@ func TestMigration_IsPrivilegeConsistency(t *testing.T) {
 
 	for _, cmd := range privilegeCommands {
 		t.Run("Privilege_"+cmd, func(t *testing.T) {
-			profile, exists := commandRiskProfilesNew[cmd]
+			profile, exists := commandRiskProfiles[cmd]
 			assert.True(t, exists)
 			assert.True(t, profile.IsPrivilege(), "Command %s should have IsPrivilege=true", cmd)
 		})
@@ -2240,7 +2240,7 @@ func TestMigration_IsPrivilegeConsistency(t *testing.T) {
 
 	for _, cmd := range nonPrivilegeCommands {
 		t.Run("NonPrivilege_"+cmd, func(t *testing.T) {
-			profile, exists := commandRiskProfilesNew[cmd]
+			profile, exists := commandRiskProfiles[cmd]
 			assert.True(t, exists)
 			assert.False(t, profile.IsPrivilege(), "Command %s should have IsPrivilege=false", cmd)
 		})
@@ -2253,7 +2253,7 @@ func TestMigration_MultipleRiskFactors(t *testing.T) {
 
 	for _, cmd := range aiCommands {
 		t.Run(cmd, func(t *testing.T) {
-			newProfile, exists := commandRiskProfilesNew[cmd]
+			newProfile, exists := commandRiskProfiles[cmd]
 			assert.True(t, exists, "Command %s should exist in new profiles", cmd)
 			if !exists {
 				return

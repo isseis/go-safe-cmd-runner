@@ -77,8 +77,8 @@ var commandProfileDefinitions = []CommandProfileDef{
 		Build(),
 }
 
-// commandRiskProfilesNew is built from commandProfileDefinitions (new structure)
-var commandRiskProfilesNew = buildCommandRiskProfilesNew()
+// commandRiskProfiles is built from commandProfileDefinitions (new structure)
+var commandRiskProfiles = buildCommandRiskProfilesNew()
 
 func buildCommandRiskProfilesNew() map[string]CommandRiskProfile {
 	profiles := make(map[string]CommandRiskProfile)
@@ -240,7 +240,7 @@ func getCommandRiskOverride(cmdPath string) (runnertypes.RiskLevel, bool) {
 	cmdName := filepath.Base(cmdPath)
 
 	// Look up in unified profiles
-	if profile, exists := commandRiskProfilesNew[cmdName]; exists {
+	if profile, exists := commandRiskProfiles[cmdName]; exists {
 		return profile.BaseRiskLevel(), true
 	}
 
@@ -276,7 +276,7 @@ func IsPrivilegeEscalationCommand(cmdName string) (bool, error) {
 
 	// Check for any privilege escalation commands using unified profiles
 	for cmdName := range commandNames {
-		if profile, exists := commandRiskProfilesNew[cmdName]; exists && profile.IsPrivilege() {
+		if profile, exists := commandRiskProfiles[cmdName]; exists && profile.IsPrivilege() {
 			return true, nil
 		}
 	}
@@ -299,7 +299,7 @@ func IsNetworkOperation(cmdName string, args []string) (bool, bool) {
 	// Check command profiles for network type using unified profiles
 	var conditionalProfile *CommandRiskProfile
 	for name := range commandNames {
-		if profile, exists := commandRiskProfilesNew[name]; exists {
+		if profile, exists := commandRiskProfiles[name]; exists {
 			switch profile.NetworkType {
 			case NetworkTypeAlways:
 				return true, false
