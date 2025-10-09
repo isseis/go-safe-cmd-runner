@@ -254,6 +254,12 @@ func LoadConfig(configPath string, processor *environment.CommandEnvProcessor) (
         return nil, err
     }
 
+    return processConfig(config, processor)
+}
+
+// processConfig processes the configuration by expanding variables.
+// This function is extracted to allow reuse in both production and test code.
+func processConfig(config *runnertypes.Config, processor *environment.CommandEnvProcessor) (*runnertypes.Config, error) {
     // Expand global verify_files
     if err := ExpandGlobalVerifyFiles(&config.Global, processor); err != nil {
         return nil, fmt.Errorf("failed to expand global verify_files: %w", err)
@@ -278,6 +284,43 @@ func LoadConfig(configPath string, processor *environment.CommandEnvProcessor) (
     }
 
     return config, nil
+}
+```
+
+```go
+// internal/runner/config/loader_test.go (テスト専用ファイル、build tag "test" 付き)
+
+//go:build test
+
+package config
+
+import (
+    "github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
+    "github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+)
+
+// LoadConfigFromString loads and validates configuration from a TOML string.
+// This function is available only in test builds and is intended for testing purposes.
+func LoadConfigFromString(tomlContent string, processor *environment.CommandEnvProcessor) (*runnertypes.Config, error) {
+    // Parse TOML content
+    config, err := parseTOMLContent(tomlContent)
+    if err != nil {
+        return nil, err
+    }
+
+    return processConfig(config, processor)
+}
+
+// parseTOMLContent parses TOML content string into Config struct.
+// This function is available only in test builds.
+func parseTOMLContent(tomlContent string) (*runnertypes.Config, error) {
+    // Implementation uses toml.Unmarshal to parse the content
+    // (similar to loadTOMLFile but from string instead of file)
+    var config runnertypes.Config
+    if err := toml.Unmarshal([]byte(tomlContent), &config); err != nil {
+        return nil, fmt.Errorf("failed to parse TOML content: %w", err)
+    }
+    return &config, nil
 }
 ```
 
@@ -820,7 +863,7 @@ func TestExpandGroupVerifyFiles(t *testing.T) {
 
 ```go
 func TestVerifyFilesExpansionIntegration(t *testing.T) {
-    // Create test TOML file
+    // Create test TOML content
     tomlContent := `
 version = "1.0"
 
@@ -838,15 +881,19 @@ name = "test-cmd"
 cmd = "/bin/echo"
 `
 
-    // Load and expand
-    config, err := LoadConfig(tomlContent, processor)
+    // Set up system environment for testing
+    t.Setenv("HOME", "/home/user")
+    t.Setenv("TOOLS_DIR", "/opt/tools")
+
+    // Load and expand using test-only function
+    processor := environment.NewCommandEnvProcessor()
+    config, err := LoadConfigFromString(tomlContent, processor)
     require.NoError(t, err)
 
     // Verify global expansion
     assert.Equal(t, []string{"/home/user/bin/tool.sh"}, config.Global.ExpandedVerifyFiles)
 
     // Verify group expansion
-    // Note: TOOLS_DIR must be set in system environment for this test
     assert.Equal(t, []string{
         "/opt/tools/verify.sh",
         "/home/user/config.conf",
