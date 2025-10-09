@@ -355,7 +355,94 @@ Expansion order:
 2. `${ENV_TYPE}` → expands to `production`
 3. `${CONFIG_PATH}` → expands to `/opt/myapp/production/config.yml`
 
-## 7.6 Escape Sequences
+## 7.6 Variable Self-Reference
+
+Variable self-reference is an important feature commonly used when extending environment variables. It is particularly useful for environment variables like `PATH`, where you want to add new values to existing ones.
+
+### How Self-Reference Works
+
+In expressions like `PATH=/custom/bin:${PATH}`, the `${PATH}` refers to the **original value of the system environment variable**. This is not a circular reference but an intentionally supported feature.
+
+### Basic Example: PATH Extension
+
+```toml
+[[groups.commands]]
+name = "extend_path"
+cmd = "/bin/echo"
+args = ["PATH is: ${PATH}"]
+env = ["PATH=/opt/mytools/bin:${PATH}"]
+```
+
+Expansion process:
+1. Retrieve the value of the system environment variable `PATH` (e.g., `/usr/bin:/bin`)
+2. `${PATH}` → expands to `/usr/bin:/bin`
+3. Final value: `/opt/mytools/bin:/usr/bin:/bin`
+
+### Practical Example: Adding Custom Tool Directory
+
+```toml
+[[groups.commands]]
+name = "use_custom_tools"
+cmd = "${CUSTOM_TOOL}"
+args = ["--version"]
+env = [
+    "PATH=${TOOL_DIR}/bin:${PATH}",
+    "TOOL_DIR=/opt/custom-tools",
+    "CUSTOM_TOOL=mytool",
+]
+```
+
+With this configuration:
+- `CUSTOM_TOOL` can be found from the extended `PATH` even when specified as just a command name (not a full path)
+- The existing system `PATH` is preserved
+
+### Self-Reference with Other Environment Variables
+
+`PATH` is not the only environment variable that supports self-reference:
+
+```toml
+[[groups.commands]]
+name = "extend_lib_path"
+cmd = "/opt/myapp/bin/app"
+args = []
+env = [
+    "LD_LIBRARY_PATH=/opt/myapp/lib:${LD_LIBRARY_PATH}",
+    "PYTHONPATH=/opt/myapp/python:${PYTHONPATH}",
+]
+```
+
+### Difference Between Self-Reference and Circular Reference
+
+**Self-Reference (Normal)**: A variable defined in Command.Env references the **system environment variable** with the same name
+```toml
+env = ["PATH=/custom/bin:${PATH}"]  # ${PATH} refers to system environment variable
+```
+
+**Circular Reference (Error)**: Variables within Command.Env reference each other
+```toml
+env = [
+    "VAR1=${VAR2}",
+    "VAR2=${VAR1}",  # Error: Circular reference within Command.Env
+]
+```
+
+### Important Notes
+
+1. **When system environment variable doesn't exist**: If `PATH` doesn't exist in the system when referencing `${PATH}`, an error will occur
+2. **Relationship with allowlist**: When referencing system environment variables, those variables must be included in `env_allowlist`
+
+```toml
+[global]
+env_allowlist = ["PATH", "HOME"]  # Allow PATH self-reference
+
+[[groups.commands]]
+name = "extend_path"
+cmd = "/bin/echo"
+args = ["${PATH}"]
+env = ["PATH=/custom:${PATH}"]  # OK: PATH is included in allowlist
+```
+
+## 7.7 Escape Sequences
 
 When you want to use literal `$` or `\` characters, escaping is required.
 
@@ -398,9 +485,9 @@ env = ["HOME=/home/user"]
 
 Output: `Literal $HOME is different from /home/user`
 
-## 7.7 Automatic Environment Variables
+## 7.8 Automatic Environment Variables
 
-### 7.7.1 Overview
+### 7.8.1 Overview
 
 The system automatically sets the following environment variables for each command execution:
 
@@ -409,7 +496,7 @@ The system automatically sets the following environment variables for each comma
 
 These variables can be used in command paths, arguments, and environment variable values just like regular variables.
 
-### 7.7.2 Usage Examples
+### 7.8.2 Usage Examples
 
 #### Timestamped Backups
 
@@ -481,7 +568,7 @@ Example execution:
 - Output file: `/reports/20251005143022.123-12345.html`
 - Report title: `Report 20251005143022.123`
 
-### 7.7.3 DateTime Format
+### 7.8.3 DateTime Format
 
 Format specification for `__RUNNER_DATETIME`:
 
@@ -499,7 +586,7 @@ Complete example: `20251005143045.123` = October 5, 2025 14:30:45.123 (UTC)
 
 **Note**: The timezone is always UTC, not local timezone.
 
-### 7.7.4 Reserved Prefix
+### 7.8.4 Reserved Prefix
 
 The prefix `__RUNNER_` is reserved for automatic environment variables and cannot be used for user-defined environment variables.
 
@@ -529,7 +616,7 @@ args = ["${MY_CUSTOM_VAR}"]
 env = ["MY_CUSTOM_VAR=value"]  # OK: Not using reserved prefix
 ```
 
-### 7.7.5 Timing of Variable Generation
+### 7.8.5 Timing of Variable Generation
 
 Automatic environment variables (`__RUNNER_DATETIME` and `__RUNNER_PID`) are generated once when the configuration file is loaded, not at each command execution time. All commands in all groups share the exact same values throughout the entire runner execution.
 
@@ -554,9 +641,9 @@ args = ["czf", "/tmp/backup/files-${__RUNNER_DATETIME}.tar.gz", "/data"]
 
 This ensures consistency across all commands in a single runner execution, even if commands are executed at different times or in different groups.
 
-## 7.8 Security Considerations
+## 7.9 Security Considerations
 
-### 7.8.1 Command.Env Priority
+### 7.9.1 Command.Env Priority
 
 Variables defined in `Command.Env` take priority over system environment variables:
 
@@ -572,7 +659,7 @@ env = ["HOME=/opt/custom-home"]
 # The HOME from Command.Env is used, not the system $HOME
 ```
 
-### 7.8.2 Relationship with env_allowlist
+### 7.9.2 Relationship with env_allowlist
 
 **Important**: Variables defined in `Command.Env` are not subject to `env_allowlist` checks.
 
@@ -589,7 +676,7 @@ env = ["CUSTOM_TOOL=/opt/tools/mytool"]
 # CUSTOM_TOOL is not in allowlist, but can be used because it's defined in Command.Env
 ```
 
-### 7.8.3 Absolute Path Requirements
+### 7.9.3 Absolute Path Requirements
 
 Command paths after expansion must be absolute paths:
 
@@ -607,7 +694,7 @@ cmd = "${TOOL_DIR}/mytool"
 env = ["TOOL_DIR=./tools"]  # Relative path - error
 ```
 
-### 7.8.4 Handling Sensitive Information
+### 7.9.4 Handling Sensitive Information
 
 Define sensitive information (API keys, passwords, etc.) in `Command.Env` to isolate from system environment variables:
 
@@ -626,7 +713,7 @@ env = [
 ]
 ```
 
-### 7.8.5 Isolation Between Commands
+### 7.9.5 Isolation Between Commands
 
 Each command's `env` is independent and does not affect other commands:
 
@@ -645,7 +732,7 @@ env = ["DB_HOST=db2.example.com"]
 # Independent from cmd1's DB_HOST
 ```
 
-## 7.9 Troubleshooting
+## 7.10 Troubleshooting
 
 ### Undefined Variables
 
@@ -677,6 +764,8 @@ env = [
 ```
 
 **Solution**: Organize variable dependencies
+
+**Note**: Self-references like `PATH=/custom:${PATH}` are not circular references. See "7.6 Variable Self-Reference" for details.
 
 ### Path Validation Errors After Expansion
 
