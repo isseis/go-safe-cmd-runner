@@ -138,8 +138,8 @@ func buildSystemEnvironmentMap() map[string]string {
 // internal/runner/config/expansion.go
 
 // ExpandGroupVerifyFiles expands environment variables in group verify_files.
-// It uses system environment variables and group environment variables,
-// and applies group.env_allowlist (or global.env_allowlist if inherited).
+// It uses only system environment variables and applies group.env_allowlist
+// (or global.env_allowlist if inherited).
 // Returns VerifyFilesExpansionError on failure, which wraps the underlying cause.
 func ExpandGroupVerifyFiles(
     group *runnertypes.CommandGroup,

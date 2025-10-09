@@ -348,7 +348,6 @@ flowchart TB
 **単体テスト**:
 - ExpandGlobalVerifyFiles: グローバルレベルの展開
 - ExpandGroupVerifyFiles: グループレベルの展開
-- ExpandCommandVerifyFiles: コマンドレベルの展開
 - エラーハンドリング: 各種エラーケース
 
 **統合テスト**:
@@ -359,8 +358,8 @@ flowchart TB
 **E2Eテスト**:
 - 実際の TOML ファイルを使用した検証
 - システム環境変数を使用したテスト
-- システム環境変数を使用したテスト
-- コマンド環境変数を使用したテスト
+- allowlist違反や未定義変数などの異常系のテスト
+- 既存機能（変数なしパス）との互換性テスト
 
 ### 8.3 テストデータ設計
 
