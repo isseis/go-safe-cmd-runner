@@ -681,8 +681,8 @@ func TestCollectVerificationFiles(t *testing.T) {
 
 		// Test group config with empty files
 		groupConfig := &runnertypes.CommandGroup{
-			Name:        "test-group",
-			VerifyFiles: []string{},
+			Name:                "test-group",
+			ExpandedVerifyFiles: []string{},
 		}
 
 		// Collect files
