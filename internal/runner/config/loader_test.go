@@ -182,6 +182,7 @@ func TestVerifyFilesExpansionIntegration(t *testing.T) {
 		setupEnv               func(*testing.T)
 		expectedGlobalExpanded []string
 		expectedGroup1Expanded []string
+		expectedGroup2Expanded []string
 		expectError            bool
 		errorContains          string
 	}{
@@ -241,6 +242,7 @@ version = "1.0"
 			},
 			expectedGlobalExpanded: []string{"/opt/global.txt"},
 			expectedGroup1Expanded: []string{"/opt/group1.txt"},
+			expectedGroup2Expanded: []string{"/opt/group2.txt"},
 		},
 		{
 			name: "global and group combination",
@@ -347,6 +349,11 @@ version = "1.0"
 			// Verify group1 expanded verify_files
 			if tt.expectedGroup1Expanded != nil && len(cfg.Groups) > 0 {
 				assert.Equal(t, tt.expectedGroup1Expanded, cfg.Groups[0].ExpandedVerifyFiles)
+			}
+
+			// Verify group2 expanded verify_files
+			if tt.expectedGroup2Expanded != nil && len(cfg.Groups) > 1 {
+				assert.Equal(t, tt.expectedGroup2Expanded, cfg.Groups[1].ExpandedVerifyFiles)
 			}
 		})
 	}

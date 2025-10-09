@@ -1012,7 +1012,6 @@ func TestExpandGlobalVerifyFiles(t *testing.T) {
 		name          string
 		verifyFiles   []string
 		envAllowlist  []string
-		envVars       map[string]string // System environment variables to set
 		expectedFiles []string
 		expectError   bool
 		errorSentinel error
