@@ -662,15 +662,15 @@ func TestCollectVerificationFiles(t *testing.T) {
 
 		// Test group config with files
 		groupConfig := &runnertypes.CommandGroup{
-			Name:        "test-group",
-			VerifyFiles: []string{"file1.txt", "file2.txt", "file3.txt"},
+			Name:                "test-group",
+			ExpandedVerifyFiles: []string{"file1.txt", "file2.txt", "file3.txt"},
 		}
 
 		// Collect files
 		collectedFiles := manager.collectVerificationFiles(groupConfig)
 
 		// Should return the same files
-		assert.Equal(t, groupConfig.VerifyFiles, collectedFiles)
+		assert.Equal(t, groupConfig.ExpandedVerifyFiles, collectedFiles)
 	})
 
 	t.Run("collect_empty_files", func(t *testing.T) {
@@ -681,8 +681,8 @@ func TestCollectVerificationFiles(t *testing.T) {
 
 		// Test group config with empty files
 		groupConfig := &runnertypes.CommandGroup{
-			Name:        "test-group",
-			VerifyFiles: []string{},
+			Name:                "test-group",
+			ExpandedVerifyFiles: []string{},
 		}
 
 		// Collect files
