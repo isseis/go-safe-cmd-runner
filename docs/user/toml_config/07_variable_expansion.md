@@ -393,7 +393,7 @@ env = [
 ```
 
 With this configuration:
-- `CUSTOM_TOOL` can be found from the extended `PATH` even with relative path specification
+- `CUSTOM_TOOL` can be found from the extended `PATH` even when specified as just a command name (not a full path)
 - The existing system `PATH` is preserved
 
 ### Self-Reference with Other Environment Variables
