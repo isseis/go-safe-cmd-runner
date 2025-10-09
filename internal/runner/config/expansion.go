@@ -139,6 +139,48 @@ func (e *VerifyFilesExpansionError) Is(target error) bool {
 	return ok
 }
 
+// expandVerifyFiles is a helper function that expands environment variables in verify_files paths.
+// It encapsulates the common logic shared by ExpandGlobalVerifyFiles and ExpandGroupVerifyFiles.
+func expandVerifyFiles(
+	paths []string,
+	allowlist []string,
+	level string,
+	filter *environment.Filter,
+	expander *environment.VariableExpander,
+) ([]string, error) {
+	// Handle empty verify_files
+	if len(paths) == 0 {
+		return []string{}, nil
+	}
+
+	// Use existing Filter.ParseSystemEnvironment() for system environment map
+	systemEnv := filter.ParseSystemEnvironment(nil) // nil predicate = get all variables
+
+	// Expand all paths using existing VariableExpander.ExpandString()
+	expanded := make([]string, 0, len(paths))
+	for i, path := range paths {
+		expandedPath, err := expander.ExpandString(
+			path,
+			systemEnv,
+			allowlist,
+			level,
+			make(map[string]bool),
+		)
+		if err != nil {
+			return nil, &VerifyFilesExpansionError{
+				Level:     level,
+				Index:     i,
+				Path:      path,
+				Cause:     err,
+				Allowlist: allowlist,
+			}
+		}
+		expanded = append(expanded, expandedPath)
+	}
+
+	return expanded, nil
+}
+
 // ExpandGlobalVerifyFiles expands environment variables in global verify_files.
 // Uses existing Filter.ParseSystemEnvironment() and VariableExpander.ExpandString().
 // Returns VerifyFilesExpansionError on failure, which wraps the underlying cause.
@@ -151,35 +193,15 @@ func ExpandGlobalVerifyFiles(
 		return ErrNilConfig
 	}
 
-	// Handle empty verify_files
-	if len(global.VerifyFiles) == 0 {
-		global.ExpandedVerifyFiles = []string{}
-		return nil
-	}
-
-	// Use existing Filter.ParseSystemEnvironment() for system environment map
-	systemEnv := filter.ParseSystemEnvironment(nil) // nil predicate = get all variables
-
-	// Expand all paths using existing VariableExpander.ExpandString()
-	expanded := make([]string, 0, len(global.VerifyFiles))
-	for i, path := range global.VerifyFiles {
-		expandedPath, err := expander.ExpandString(
-			path,
-			systemEnv,
-			global.EnvAllowlist,
-			"global",
-			make(map[string]bool),
-		)
-		if err != nil {
-			return &VerifyFilesExpansionError{
-				Level:     "global",
-				Index:     i,
-				Path:      path,
-				Cause:     err,
-				Allowlist: global.EnvAllowlist,
-			}
-		}
-		expanded = append(expanded, expandedPath)
+	expanded, err := expandVerifyFiles(
+		global.VerifyFiles,
+		global.EnvAllowlist,
+		"global",
+		filter,
+		expander,
+	)
+	if err != nil {
+		return err
 	}
 
 	global.ExpandedVerifyFiles = expanded
@@ -198,39 +220,19 @@ func ExpandGroupVerifyFiles(
 		return ErrNilConfig
 	}
 
-	// Handle empty verify_files
-	if len(group.VerifyFiles) == 0 {
-		group.ExpandedVerifyFiles = []string{}
-		return nil
-	}
-
-	// Use existing Filter.ParseSystemEnvironment() for system environment
-	systemEnv := filter.ParseSystemEnvironment(nil) // nil predicate = get all variables
-
 	// Use existing Filter.ResolveAllowlistConfiguration() for allowlist determination
 	resolution := filter.ResolveAllowlistConfiguration(group.EnvAllowlist, group.Name)
 	allowlist := resolution.EffectiveList
 
-	// Expand all paths using existing VariableExpander.ExpandString()
-	expanded := make([]string, 0, len(group.VerifyFiles))
-	for i, path := range group.VerifyFiles {
-		expandedPath, err := expander.ExpandString(
-			path,
-			systemEnv,
-			allowlist,
-			group.Name,
-			make(map[string]bool),
-		)
-		if err != nil {
-			return &VerifyFilesExpansionError{
-				Level:     group.Name,
-				Index:     i,
-				Path:      path,
-				Cause:     err,
-				Allowlist: allowlist,
-			}
-		}
-		expanded = append(expanded, expandedPath)
+	expanded, err := expandVerifyFiles(
+		group.VerifyFiles,
+		allowlist,
+		group.Name,
+		filter,
+		expander,
+	)
+	if err != nil {
+		return err
 	}
 
 	group.ExpandedVerifyFiles = expanded
