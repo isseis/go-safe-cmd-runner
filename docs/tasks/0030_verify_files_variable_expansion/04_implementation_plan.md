@@ -50,17 +50,22 @@ internal/runner/config/expansion.go (拡張)
 既存の環境変数展開機能を最大限再利用し、重複実装を回避：
 
 **再利用する既存機能**:
-- `Filter.parseSystemEnvironment()` - システム環境変数マップ構築
-- `Filter.ResolveGroupEnvironmentVars()` - グループレベル環境変数マップ構築
-- `Filter.resolveAllowlistConfiguration()` - allowlist決定と継承モード対応
-- `Filter.determineInheritanceMode()` - 継承モード判定
-- `VariableExpander.ExpandString()` - 環境変数展開エンジン
+- `Filter.ParseSystemEnvironment()` - システム環境変数マップ構築（エクスポート済み）
+- `Filter.ResolveGroupEnvironmentVars()` - グループレベル環境変数マップ構築（エクスポート済み）
+- `Filter.ResolveAllowlistConfiguration()` - allowlist決定と継承モード対応（**エクスポートが必要**）
+- `Filter.determineInheritanceMode()` - 継承モード判定（内部で使用）
+- `VariableExpander.ExpandString()` - 環境変数展開エンジン（エクスポート済み）
+
+**必要な変更**:
+- `internal/runner/environment/filter.go` で `resolveAllowlistConfiguration` メソッドを `ResolveAllowlistConfiguration` にリネーム（エクスポート）
+- environment パッケージ内の既存呼び出し元も更新
 
 ##### 2.2.2 メイン展開関数（既存機能ベース）
 ```go
-// グローバルverify_files展開（既存のVariableExpanderを活用）
+// グローバルverify_files展開（既存のFilterとVariableExpanderを活用）
 func ExpandGlobalVerifyFiles(
     global *runnertypes.GlobalConfig,
+    filter *environment.Filter,
     expander *environment.VariableExpander,
 ) error
 
@@ -74,6 +79,8 @@ func ExpandGroupVerifyFiles(
 ```
 
 #### 完了条件
+- [ ] `Filter.ResolveAllowlistConfiguration()` メソッドのエクスポート完了
+- [ ] environment パッケージ内の既存呼び出し元の更新完了
 - [ ] 既存機能（Filter, VariableExpander）の統合完了
 - [ ] グローバルレベル展開機能の実装完了（既存APIベース）
 - [ ] グループレベル展開機能の実装完了（既存APIベース）
@@ -450,6 +457,7 @@ graph TD
 ## 8. 実装チェックリスト
 
 ### 8.1 必須実装項目
+- [ ] `Filter.ResolveAllowlistConfiguration()` メソッドのエクスポート
 - [ ] `GlobalConfig.ExpandedVerifyFiles` フィールド追加
 - [ ] `CommandGroup.ExpandedVerifyFiles` フィールド追加
 - [ ] `ExpandGlobalVerifyFiles` 関数実装
