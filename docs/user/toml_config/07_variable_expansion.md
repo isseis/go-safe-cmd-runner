@@ -865,6 +865,342 @@ env = [
 timeout = 30
 ```
 
+## 7.11 Variable Expansion in verify_files
+
+### 7.11.1 Overview
+
+The `verify_files` field also supports environment variable expansion. This allows you to dynamically construct file verification paths and provides flexible verification configuration depending on the environment.
+
+### 7.11.2 Target Fields
+
+Variable expansion can be used in the following `verify_files` fields:
+
+- **Global level**: `verify_files` in the `[global]` section
+- **Group level**: `verify_files` in the `[[groups]]` section
+
+### 7.11.3 Basic Examples
+
+#### Global Level Expansion
+
+```toml
+version = "1.0"
+
+[global]
+env_allowlist = ["HOME"]
+verify_files = [
+    "${HOME}/config.toml",
+    "${HOME}/data.txt",
+]
+
+[[groups]]
+name = "example"
+
+[[groups.commands]]
+name = "test"
+cmd = "/bin/echo"
+args = ["hello"]
+```
+
+Expansion result (when `HOME=/home/user`):
+- `${HOME}/config.toml` → `/home/user/config.toml`
+- `${HOME}/data.txt` → `/home/user/data.txt`
+
+#### Group Level Expansion
+
+```toml
+version = "1.0"
+
+[global]
+env_allowlist = ["APP_ROOT"]
+
+[[groups]]
+name = "app_group"
+env_allowlist = ["APP_ROOT"]
+verify_files = [
+    "${APP_ROOT}/config/app.yml",
+    "${APP_ROOT}/bin/server",
+]
+
+[[groups.commands]]
+name = "start"
+cmd = "/bin/echo"
+args = ["starting"]
+```
+
+When system environment variable `APP_ROOT=/opt/myapp`, expansion result:
+- `${APP_ROOT}/config/app.yml` → `/opt/myapp/config/app.yml`
+- `${APP_ROOT}/bin/server` → `/opt/myapp/bin/server`
+
+### 7.11.4 Using Multiple Variables
+
+By combining multiple environment variables, you can construct more flexible paths.
+
+```toml
+version = "1.0"
+
+[global]
+env_allowlist = ["BASE_DIR", "APP_NAME"]
+verify_files = [
+    "${BASE_DIR}/${APP_NAME}/config.toml",
+    "${BASE_DIR}/${APP_NAME}/data/db.sqlite",
+]
+
+[[groups]]
+name = "app_tasks"
+
+[[groups.commands]]
+name = "run"
+cmd = "/bin/echo"
+args = ["running"]
+```
+
+Expansion result (when `BASE_DIR=/opt`, `APP_NAME=myapp`):
+- `${BASE_DIR}/${APP_NAME}/config.toml` → `/opt/myapp/config.toml`
+- `${BASE_DIR}/${APP_NAME}/data/db.sqlite` → `/opt/myapp/data/db.sqlite`
+
+### 7.11.5 Environment-Specific Configuration Example
+
+Example of verifying different files for development and production environments:
+
+```toml
+version = "1.0"
+
+[global]
+env_allowlist = ["ENV_TYPE", "CONFIG_ROOT"]
+verify_files = ["${CONFIG_ROOT}/${ENV_TYPE}/global.toml"]
+
+[[groups]]
+name = "development"
+env_allowlist = ["ENV_TYPE", "CONFIG_ROOT"]
+verify_files = [
+    "${CONFIG_ROOT}/${ENV_TYPE}/dev.toml",
+    "${CONFIG_ROOT}/${ENV_TYPE}/dev_db.sqlite",
+]
+
+[[groups.commands]]
+name = "dev_task"
+cmd = "/bin/echo"
+args = ["dev mode"]
+
+[[groups]]
+name = "production"
+env_allowlist = ["ENV_TYPE", "CONFIG_ROOT"]
+verify_files = [
+    "${CONFIG_ROOT}/${ENV_TYPE}/prod.toml",
+    "${CONFIG_ROOT}/${ENV_TYPE}/prod_db.sqlite",
+]
+
+[[groups.commands]]
+name = "prod_task"
+cmd = "/bin/echo"
+args = ["prod mode"]
+```
+
+For development environment (`ENV_TYPE=dev`, `CONFIG_ROOT=/etc/myapp`):
+- Global: `/etc/myapp/dev/global.toml`
+- development group: `/etc/myapp/dev/dev.toml`, `/etc/myapp/dev/dev_db.sqlite`
+
+For production environment (`ENV_TYPE=prod`, `CONFIG_ROOT=/etc/myapp`):
+- Global: `/etc/myapp/prod/global.toml`
+- production group: `/etc/myapp/prod/prod.toml`, `/etc/myapp/prod/prod_db.sqlite`
+
+### 7.11.6 Relationship with allowlist
+
+Security controls through `env_allowlist` are also applied to variable expansion in `verify_files`.
+
+#### Global Level allowlist
+
+Global `verify_files` uses the global `env_allowlist`:
+
+```toml
+[global]
+env_allowlist = ["HOME", "USER"]
+verify_files = [
+    "${HOME}/config.toml",    # OK: HOME is in allowlist
+    "${USER}/data.txt",       # OK: USER is in allowlist
+]
+```
+
+#### Group Level allowlist Inheritance
+
+Group `verify_files` uses the group's `env_allowlist`. If the group doesn't have an `env_allowlist` defined, it inherits the global configuration:
+
+```toml
+[global]
+env_allowlist = ["GLOBAL_VAR"]
+
+[[groups]]
+name = "group_with_inheritance"
+# env_allowlist not defined → inherits global configuration
+verify_files = ["${GLOBAL_VAR}/file.txt"]  # OK: inherits global allowlist
+
+[[groups]]
+name = "group_with_explicit"
+env_allowlist = ["GROUP_VAR"]  # explicitly defined
+verify_files = ["${GROUP_VAR}/file.txt"]   # OK: uses group allowlist
+```
+
+#### allowlist Violation Errors
+
+An error occurs when using variables not in the allowlist:
+
+```toml
+[global]
+env_allowlist = ["SAFE_VAR"]
+verify_files = ["${FORBIDDEN_VAR}/file.txt"]  # Error: not in allowlist
+```
+
+Example error message:
+```
+failed to expand global verify_files[0]: variable not allowed by group allowlist: FORBIDDEN_VAR
+```
+
+### 7.11.7 Escape Sequences
+
+Escape sequences can also be used in verify_files:
+
+```toml
+[global]
+env_allowlist = ["HOME"]
+verify_files = [
+    "${HOME}/config.toml",     # Variable will be expanded
+    "\\${HOME}/literal.txt",   # Literal string "${HOME}/literal.txt"
+]
+```
+
+Expansion result (when `HOME=/home/user`):
+- `/home/user/config.toml`
+- `${HOME}/literal.txt` (not expanded)
+
+### 7.11.8 Runtime Behavior
+
+Variable expansion in verify_files is automatically executed when the configuration file is loaded:
+
+1. **Configuration file loading**: Parse TOML file
+2. **Variable expansion execution**: Expand variables in verify_files
+3. **Save expansion results**: Save expanded paths to internal fields
+4. **Execute verification**: Use expanded paths for file verification
+
+### 7.11.9 Troubleshooting
+
+#### Undefined Variable Errors
+
+An error occurs if a variable doesn't exist in the environment:
+
+```toml
+[global]
+env_allowlist = ["UNDEFINED_VAR"]
+verify_files = ["${UNDEFINED_VAR}/file.txt"]
+```
+
+Example error message:
+```
+failed to expand global verify_files[0]: variable not found in environment: UNDEFINED_VAR
+```
+
+**Solution**: Set the required environment variables in the system
+
+#### allowlist Errors
+
+An error occurs if a variable is not in the allowlist:
+
+```toml
+[global]
+env_allowlist = ["ALLOWED_VAR"]
+verify_files = ["${FORBIDDEN_VAR}/file.txt"]
+```
+
+Example error message:
+```
+failed to expand global verify_files[0]: variable not allowed by group allowlist: FORBIDDEN_VAR
+```
+
+**Solution**: Add the required variables to `env_allowlist`
+
+#### Circular Reference Errors
+
+An error occurs if variables reference each other (although circular references in system environment variables are extremely rare):
+
+```bash
+# Circular reference in system environment variables (unlikely in practice)
+export VAR1="${VAR2}"
+export VAR2="${VAR1}"
+```
+
+**Solution**: Fix the environment variable definitions
+
+### 7.11.10 Practical Example: Multi-Environment Deployment
+
+A practical example of using verify_files in multi-environment deployment:
+
+```toml
+version = "1.0"
+
+[global]
+env_allowlist = ["DEPLOY_ENV", "APP_ROOT", "CONFIG_ROOT"]
+verify_files = [
+    "${CONFIG_ROOT}/${DEPLOY_ENV}/global.yml",
+    "${CONFIG_ROOT}/${DEPLOY_ENV}/secrets.enc",
+]
+
+[[groups]]
+name = "web_servers"
+env_allowlist = ["DEPLOY_ENV", "APP_ROOT"]
+verify_files = [
+    "${APP_ROOT}/web/nginx.conf",
+    "${APP_ROOT}/web/ssl/cert.pem",
+    "${APP_ROOT}/web/ssl/key.pem",
+]
+
+[[groups.commands]]
+name = "deploy_web"
+cmd = "${APP_ROOT}/scripts/deploy.sh"
+args = ["web", "${DEPLOY_ENV}"]
+env = [
+    "APP_ROOT=/opt/myapp",
+    "DEPLOY_ENV=production",
+]
+
+[[groups]]
+name = "database"
+env_allowlist = ["DEPLOY_ENV", "APP_ROOT"]
+verify_files = [
+    "${APP_ROOT}/db/schema.sql",
+    "${APP_ROOT}/db/migrations/${DEPLOY_ENV}/",
+]
+
+[[groups.commands]]
+name = "migrate_db"
+cmd = "${APP_ROOT}/scripts/migrate.sh"
+args = ["${DEPLOY_ENV}"]
+env = [
+    "APP_ROOT=/opt/myapp",
+    "DEPLOY_ENV=production",
+]
+```
+
+Environment variable setup example (production environment):
+```bash
+export DEPLOY_ENV=production
+export APP_ROOT=/opt/myapp
+export CONFIG_ROOT=/etc/myapp/config
+```
+
+This configuration verifies the following files:
+- `/etc/myapp/config/production/global.yml`
+- `/etc/myapp/config/production/secrets.enc`
+- `/opt/myapp/web/nginx.conf`
+- `/opt/myapp/web/ssl/cert.pem`
+- `/opt/myapp/web/ssl/key.pem`
+- `/opt/myapp/db/schema.sql`
+- `/opt/myapp/db/migrations/production/`
+
+### 7.11.11 Limitations
+
+1. **Absolute path requirement**: Expanded paths must be absolute paths
+2. **System environment variables only**: Command.Env variables cannot be used in verify_files
+3. **Expansion timing**: Variables are expanded once at configuration load time (not at execution time)
+
 ## Next Steps
 
 In the next chapter, we will introduce practical examples that combine the configurations we have learned so far. You will learn how to create configuration files based on actual use cases.

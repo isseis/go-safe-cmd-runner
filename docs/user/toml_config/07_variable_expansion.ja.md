@@ -865,6 +865,342 @@ env = [
 timeout = 30
 ```
 
+## 7.11 verify_files での変数展開
+
+### 7.11.1 概要
+
+`verify_files` フィールドでも環境変数展開を使用できます。これにより、ファイル検証パスを動的に構築し、環境に応じた柔軟な検証設定が可能になります。
+
+### 7.11.2 対象フィールド
+
+変数展開は以下の `verify_files` フィールドで使用できます:
+
+- **グローバルレベル**: `[global]` セクションの `verify_files`
+- **グループレベル**: `[[groups]]` セクションの `verify_files`
+
+### 7.11.3 基本例
+
+#### グローバルレベルでの展開
+
+```toml
+version = "1.0"
+
+[global]
+env_allowlist = ["HOME"]
+verify_files = [
+    "${HOME}/config.toml",
+    "${HOME}/data.txt",
+]
+
+[[groups]]
+name = "example"
+
+[[groups.commands]]
+name = "test"
+cmd = "/bin/echo"
+args = ["hello"]
+```
+
+展開結果（`HOME=/home/user` の場合）:
+- `${HOME}/config.toml` → `/home/user/config.toml`
+- `${HOME}/data.txt` → `/home/user/data.txt`
+
+#### グループレベルでの展開
+
+```toml
+version = "1.0"
+
+[global]
+env_allowlist = ["APP_ROOT"]
+
+[[groups]]
+name = "app_group"
+env_allowlist = ["APP_ROOT"]
+verify_files = [
+    "${APP_ROOT}/config/app.yml",
+    "${APP_ROOT}/bin/server",
+]
+
+[[groups.commands]]
+name = "start"
+cmd = "/bin/echo"
+args = ["starting"]
+```
+
+システム環境変数 `APP_ROOT=/opt/myapp` の場合、展開結果:
+- `${APP_ROOT}/config/app.yml` → `/opt/myapp/config/app.yml`
+- `${APP_ROOT}/bin/server` → `/opt/myapp/bin/server`
+
+### 7.11.4 複数変数の使用
+
+複数の環境変数を組み合わせることで、より柔軟なパス構築が可能です。
+
+```toml
+version = "1.0"
+
+[global]
+env_allowlist = ["BASE_DIR", "APP_NAME"]
+verify_files = [
+    "${BASE_DIR}/${APP_NAME}/config.toml",
+    "${BASE_DIR}/${APP_NAME}/data/db.sqlite",
+]
+
+[[groups]]
+name = "app_tasks"
+
+[[groups.commands]]
+name = "run"
+cmd = "/bin/echo"
+args = ["running"]
+```
+
+展開結果（`BASE_DIR=/opt`, `APP_NAME=myapp` の場合）:
+- `${BASE_DIR}/${APP_NAME}/config.toml` → `/opt/myapp/config.toml`
+- `${BASE_DIR}/${APP_NAME}/data/db.sqlite` → `/opt/myapp/data/db.sqlite`
+
+### 7.11.5 環境別設定の例
+
+開発環境と本番環境で異なるファイルを検証する例:
+
+```toml
+version = "1.0"
+
+[global]
+env_allowlist = ["ENV_TYPE", "CONFIG_ROOT"]
+verify_files = ["${CONFIG_ROOT}/${ENV_TYPE}/global.toml"]
+
+[[groups]]
+name = "development"
+env_allowlist = ["ENV_TYPE", "CONFIG_ROOT"]
+verify_files = [
+    "${CONFIG_ROOT}/${ENV_TYPE}/dev.toml",
+    "${CONFIG_ROOT}/${ENV_TYPE}/dev_db.sqlite",
+]
+
+[[groups.commands]]
+name = "dev_task"
+cmd = "/bin/echo"
+args = ["dev mode"]
+
+[[groups]]
+name = "production"
+env_allowlist = ["ENV_TYPE", "CONFIG_ROOT"]
+verify_files = [
+    "${CONFIG_ROOT}/${ENV_TYPE}/prod.toml",
+    "${CONFIG_ROOT}/${ENV_TYPE}/prod_db.sqlite",
+]
+
+[[groups.commands]]
+name = "prod_task"
+cmd = "/bin/echo"
+args = ["prod mode"]
+```
+
+開発環境（`ENV_TYPE=dev`, `CONFIG_ROOT=/etc/myapp`）の場合:
+- グローバル: `/etc/myapp/dev/global.toml`
+- development グループ: `/etc/myapp/dev/dev.toml`, `/etc/myapp/dev/dev_db.sqlite`
+
+本番環境（`ENV_TYPE=prod`, `CONFIG_ROOT=/etc/myapp`）の場合:
+- グローバル: `/etc/myapp/prod/global.toml`
+- production グループ: `/etc/myapp/prod/prod.toml`, `/etc/myapp/prod/prod_db.sqlite`
+
+### 7.11.6 allowlist との関係
+
+`verify_files` での変数展開でも、`env_allowlist` によるセキュリティ制御が適用されます。
+
+#### グローバルレベルの allowlist
+
+グローバル `verify_files` では、グローバル `env_allowlist` が使用されます:
+
+```toml
+[global]
+env_allowlist = ["HOME", "USER"]
+verify_files = [
+    "${HOME}/config.toml",    # OK: HOME は allowlist に含まれる
+    "${USER}/data.txt",       # OK: USER は allowlist に含まれる
+]
+```
+
+#### グループレベルの allowlist 継承
+
+グループ `verify_files` では、グループの `env_allowlist` が使用されます。グループに `env_allowlist` が定義されていない場合は、グローバル設定を継承します:
+
+```toml
+[global]
+env_allowlist = ["GLOBAL_VAR"]
+
+[[groups]]
+name = "group_with_inheritance"
+# env_allowlist が未定義 → グローバル設定を継承
+verify_files = ["${GLOBAL_VAR}/file.txt"]  # OK: グローバル allowlist を継承
+
+[[groups]]
+name = "group_with_explicit"
+env_allowlist = ["GROUP_VAR"]  # 明示的に定義
+verify_files = ["${GROUP_VAR}/file.txt"]   # OK: グループ allowlist を使用
+```
+
+#### allowlist 違反のエラー
+
+allowlist に含まれない変数を使用するとエラーになります:
+
+```toml
+[global]
+env_allowlist = ["SAFE_VAR"]
+verify_files = ["${FORBIDDEN_VAR}/file.txt"]  # エラー: allowlist に含まれない
+```
+
+エラーメッセージ例:
+```
+failed to expand global verify_files[0]: variable not allowed by group allowlist: FORBIDDEN_VAR
+```
+
+### 7.11.7 エスケープシーケンス
+
+verify_files でもエスケープシーケンスを使用できます:
+
+```toml
+[global]
+env_allowlist = ["HOME"]
+verify_files = [
+    "${HOME}/config.toml",     # 変数展開される
+    "\\${HOME}/literal.txt",   # リテラル文字列 "${HOME}/literal.txt"
+]
+```
+
+展開結果（`HOME=/home/user` の場合）:
+- `/home/user/config.toml`
+- `${HOME}/literal.txt` （展開されない）
+
+### 7.11.8 実行時の動作
+
+verify_files の変数展開は、設定ファイルのロード時に自動的に実行されます:
+
+1. **設定ファイル読み込み**: TOML ファイルをパース
+2. **変数展開実行**: verify_files 内の変数を展開
+3. **展開結果保存**: 展開後のパスを内部フィールドに保存
+4. **検証実行**: 展開後のパスを使用してファイル検証
+
+### 7.11.9 トラブルシューティング
+
+#### 未定義変数のエラー
+
+変数が環境に存在しない場合、エラーになります:
+
+```toml
+[global]
+env_allowlist = ["UNDEFINED_VAR"]
+verify_files = ["${UNDEFINED_VAR}/file.txt"]
+```
+
+エラーメッセージ例:
+```
+failed to expand global verify_files[0]: variable not found in environment: UNDEFINED_VAR
+```
+
+**解決方法**: 必要な環境変数をシステムに設定する
+
+#### allowlist エラー
+
+変数が allowlist に含まれていない場合、エラーになります:
+
+```toml
+[global]
+env_allowlist = ["ALLOWED_VAR"]
+verify_files = ["${FORBIDDEN_VAR}/file.txt"]
+```
+
+エラーメッセージ例:
+```
+failed to expand global verify_files[0]: variable not allowed by group allowlist: FORBIDDEN_VAR
+```
+
+**解決方法**: 必要な変数を `env_allowlist` に追加する
+
+#### 循環参照のエラー
+
+変数が互いに参照し合う場合、エラーになります（ただし、システム環境変数での循環参照は極めて稀です）:
+
+```bash
+# システム環境変数での循環参照（実際には発生しにくい）
+export VAR1="${VAR2}"
+export VAR2="${VAR1}"
+```
+
+**解決方法**: 環境変数の定義を修正する
+
+### 7.11.10 実践例: マルチ環境デプロイ
+
+実践的な例として、マルチ環境デプロイメントでの verify_files 使用例を示します:
+
+```toml
+version = "1.0"
+
+[global]
+env_allowlist = ["DEPLOY_ENV", "APP_ROOT", "CONFIG_ROOT"]
+verify_files = [
+    "${CONFIG_ROOT}/${DEPLOY_ENV}/global.yml",
+    "${CONFIG_ROOT}/${DEPLOY_ENV}/secrets.enc",
+]
+
+[[groups]]
+name = "web_servers"
+env_allowlist = ["DEPLOY_ENV", "APP_ROOT"]
+verify_files = [
+    "${APP_ROOT}/web/nginx.conf",
+    "${APP_ROOT}/web/ssl/cert.pem",
+    "${APP_ROOT}/web/ssl/key.pem",
+]
+
+[[groups.commands]]
+name = "deploy_web"
+cmd = "${APP_ROOT}/scripts/deploy.sh"
+args = ["web", "${DEPLOY_ENV}"]
+env = [
+    "APP_ROOT=/opt/myapp",
+    "DEPLOY_ENV=production",
+]
+
+[[groups]]
+name = "database"
+env_allowlist = ["DEPLOY_ENV", "APP_ROOT"]
+verify_files = [
+    "${APP_ROOT}/db/schema.sql",
+    "${APP_ROOT}/db/migrations/${DEPLOY_ENV}/",
+]
+
+[[groups.commands]]
+name = "migrate_db"
+cmd = "${APP_ROOT}/scripts/migrate.sh"
+args = ["${DEPLOY_ENV}"]
+env = [
+    "APP_ROOT=/opt/myapp",
+    "DEPLOY_ENV=production",
+]
+```
+
+環境変数設定例（本番環境）:
+```bash
+export DEPLOY_ENV=production
+export APP_ROOT=/opt/myapp
+export CONFIG_ROOT=/etc/myapp/config
+```
+
+この設定により、以下のファイルが検証されます:
+- `/etc/myapp/config/production/global.yml`
+- `/etc/myapp/config/production/secrets.enc`
+- `/opt/myapp/web/nginx.conf`
+- `/opt/myapp/web/ssl/cert.pem`
+- `/opt/myapp/web/ssl/key.pem`
+- `/opt/myapp/db/schema.sql`
+- `/opt/myapp/db/migrations/production/`
+
+### 7.11.11 制限事項
+
+1. **絶対パスの要件**: 展開後のパスは絶対パスである必要があります
+2. **システム環境変数のみ**: verify_files では Command.Env の変数は使用できません
+3. **展開タイミング**: 設定ロード時に1度だけ展開されます（実行時ではありません）
+
 ## 次のステップ
 
 次章では、これまで学んだ設定を組み合わせた実践的な例を紹介します。実際のユースケースに基づいた設定ファイルの作成方法を学びます。

@@ -250,9 +250,9 @@ CHANGELOG.md (更新)
 - CHANGELOGエントリの追加
 
 #### 完了条件
-- [ ] ユーザーガイド作成完了
-- [ ] サンプルTOMLファイル作成完了
-- [ ] CHANGELOG更新完了
+- [x] ユーザーガイド作成完了
+- [x] サンプルTOMLファイル作成完了
+- [x] CHANGELOG更新完了
 
 ## 3. タスク依存関係
 
@@ -422,50 +422,50 @@ graph TD
 ## 7. 成功基準
 
 ### 7.1 機能要件
-- [ ] グローバル verify_files での環境変数展開動作
-- [ ] グループ verify_files での環境変数展開動作
-- [ ] allowlist による適切なフィルタリング
-- [ ] 循環参照の検出と防止
-- [ ] 既存絶対パス指定の継続サポート
+- [x] グローバル verify_files での環境変数展開動作
+- [x] グループ verify_files での環境変数展開動作
+- [x] allowlist による適切なフィルタリング
+- [x] 循環参照の検出と防止
+- [x] 既存絶対パス指定の継続サポート
 
 ### 7.2 非機能要件
-- [ ] パフォーマンス劣化 5% 以内
-- [ ] テストカバレッジ 95% 以上
-- [ ] セキュリティ脆弱性 0件
-- [ ] 後方互換性の維持
-- [ ] 包括的なドキュメント提供
+- [x] パフォーマンス劣化 5% 以内
+- [x] テストカバレッジ 95% 以上
+- [x] セキュリティ脆弱性 0件
+- [x] 後方互換性の維持
+- [x] 包括的なドキュメント提供
 
 ### 7.3 ユーザビリティ要件
-- [ ] 直感的な設定記法
-- [ ] 明確なエラーメッセージ
-- [ ] 十分なサンプルとドキュメント
-- [ ] 既存ユーザーの学習コスト最小化
+- [x] 直感的な設定記法
+- [x] 明確なエラーメッセージ
+- [x] 十分なサンプルとドキュメント
+- [x] 既存ユーザーの学習コスト最小化
 
 ## 8. 実装チェックリスト
 
 ### 8.1 必須実装項目
-- [ ] `Filter.ResolveAllowlistConfiguration()` メソッドのエクスポート
-- [ ] `GlobalConfig.ExpandedVerifyFiles` フィールド追加
-- [ ] `CommandGroup.ExpandedVerifyFiles` フィールド追加
-- [ ] `ExpandGlobalVerifyFiles` 関数実装
-- [ ] `ExpandGroupVerifyFiles` 関数実装
-- [ ] `VerifyFilesExpansionError` カスタムエラー型実装
-- [ ] `LoadConfig` への展開処理統合
-- [ ] `VerifyGlobalFiles` の更新
-- [ ] `collectVerificationFiles` の更新
+- [x] `Filter.ResolveAllowlistConfiguration()` メソッドのエクスポート
+- [x] `GlobalConfig.ExpandedVerifyFiles` フィールド追加
+- [x] `CommandGroup.ExpandedVerifyFiles` フィールド追加
+- [x] `ExpandGlobalVerifyFiles` 関数実装
+- [x] `ExpandGroupVerifyFiles` 関数実装
+- [x] `VerifyFilesExpansionError` カスタムエラー型実装
+- [x] `LoadConfig` への展開処理統合
+- [x] `VerifyGlobalFiles` の更新
+- [x] `collectVerificationFiles` の更新
 
 ### 8.2 テスト項目
-- [ ] 単体テスト 20ケース実装
-- [ ] 統合テスト 5ケース実装
-- [ ] ベンチマークテスト 3ケース実装
-- [ ] エラーケースの網羅テスト
-- [ ] セキュリティテストの実施
+- [x] 単体テスト 20ケース実装
+- [x] 統合テスト 5ケース実装
+- [x] ベンチマークテスト 3ケース実装
+- [x] エラーケースの網羅テスト
+- [x] セキュリティテストの実施
 
 ### 8.3 ドキュメント項目
-- [ ] ユーザーガイドの作成
-- [ ] サンプル設定ファイルの作成
-- [ ] CHANGELOG の更新
-- [ ] 移行ガイドの作成
+- [x] ユーザーガイドの作成
+- [x] サンプル設定ファイルの作成
+- [x] CHANGELOG の更新
+- [ ] 移行ガイドの作成（注: 既存機能の拡張のため不要と判断）
 
 ## 9. 予想工数
 
