@@ -15,9 +15,8 @@ verify_files = [
 
 [[groups]]
 name = "example"
-env = ["TOOLS_DIR=/opt/tools"]
 verify_files = [
-    "${TOOLS_DIR}/verify.sh"      # グループ環境変数（現在展開されない）
+    "${HOME}/verify.sh"      # システム環境変数（現在展開されない）
 ]
 ```
 
@@ -30,8 +29,8 @@ verify_files = [
 ### 1.3 スコープ
 
 - **対象**: グローバルレベルおよびグループレベルの `verify_files` フィールド
-- **対象外**: コマンドレベルの `verify_files` フィールド（新規追加しない）
 - **実装範囲**: 環境変数展開、allowlist によるフィルタリング、エラーハンドリング
+- **注**: コマンドレベルには `verify_files` フィールドが存在しないため、対象外
 
 ## 2. 機能要件
 
@@ -60,19 +59,20 @@ verify_files = [
 
 #### 2.2.2 グループレベルの verify_files
 
-- **使用可能な環境変数**: システム環境変数 + グループの `env` フィールドで定義された変数
+- **使用可能な環境変数**: システム環境変数のみ
 - **allowlist**: グループの `env_allowlist` を適用（継承モードに従う）
+- **注**: グループレベルには `env` フィールドが存在しないため、グループ固有の環境変数は定義できない
 - **例**:
   ```toml
   [[groups]]
   name = "tools"
-  env = ["TOOLS_DIR=/opt/tools", "VERSION=1.0"]
-  env_allowlist = ["HOME", "TOOLS_DIR", "VERSION"]
+  env_allowlist = ["HOME", "USER"]
   verify_files = [
       "${HOME}/.config/app.conf",     # OK: システム環境変数
-      "${TOOLS_DIR}/verify-${VERSION}.sh"  # OK: グループ環境変数
+      "${USER}/data/verify.sh"        # OK: システム環境変数
   ]
   ```
+
 
 ### 2.3 既存機能との互換性
 
@@ -136,17 +136,9 @@ Error: failed to expand verify_files at global level: undefined variable: UNDEFI
 
 #### 2.4.2 循環参照
 
-変数の循環参照が検出された場合はエラーで停止する（タスク 0026 と同じ動作）。
+システム環境変数の循環参照が検出された場合はエラーで停止する（タスク 0026 と同じ動作）。
 
-```toml
-[[groups]]
-name = "test"
-env = [
-    "VAR1=${VAR2}/path",
-    "VAR2=${VAR1}/path"
-]
-verify_files = ["${VAR1}/file"]     # エラー: 循環参照
-```
+**注**: `verify_files` で使用できるのはシステム環境変数のみであるため、TOML設定ファイル内で循環参照を作成することはできない。この検証はシステム環境変数自体に循環参照がある場合のみ適用される。
 
 #### 2.4.3 allowlist フィルタリング
 
@@ -211,7 +203,7 @@ Error: failed to expand verify_files at global level: variable not in allowlist:
 
 - [ ] グローバルレベルの verify_files で環境変数展開が動作する
 - [ ] グループレベルの verify_files で環境変数展開が動作する
-- [ ] システム環境変数とグループ環境変数の両方が使用できる
+- [ ] システム環境変数が使用できる
 - [ ] allowlist によるフィルタリングが正しく機能する
 - [ ] 未定義変数、循環参照、allowlist 違反で適切にエラーが発生する
 
@@ -237,34 +229,31 @@ env_allowlist = ["HOME"]
 verify_files = ["${HOME}/bin/custom_tool.sh"]
 ```
 
-### 6.2 グループ固有のツールディレクトリ
+### 6.2 グループレベルでのシステム環境変数使用
 
 ```toml
 [[groups]]
 name = "development"
-env = ["DEV_TOOLS=/opt/dev-tools"]
-env_allowlist = ["DEV_TOOLS"]
+env_allowlist = ["HOME", "USER"]
 verify_files = [
-    "${DEV_TOOLS}/linter",
-    "${DEV_TOOLS}/formatter"
+    "${HOME}/.config/linter.conf",
+    "${HOME}/.config/formatter.conf"
 ]
 ```
 
-### 6.3 バージョン管理されたツール
+### 6.3 複数の環境変数を使用したパス構成
 
 ```toml
-[[groups]]
-name = "versioned"
-env = ["TOOL_VERSION=2.1.0", "TOOL_BASE=/opt/tools"]
-env_allowlist = ["TOOL_VERSION", "TOOL_BASE"]
-verify_files = ["${TOOL_BASE}/tool-${TOOL_VERSION}/bin/execute"]
+[global]
+env_allowlist = ["HOME", "USER"]
+verify_files = ["${HOME}/${USER}/tools/deploy.sh"]
 ```
 
 ## 7. 今後の拡張可能性
 
 ### 7.1 将来的な機能追加
 
-- コマンドレベルの verify_files フィールド（必要に応じて）
+- コマンドレベルでの `verify_files` サポート（構造体拡張が必要）
 - より高度なパス解決機能（glob パターンなど）
 
 ### 7.2 パフォーマンス最適化

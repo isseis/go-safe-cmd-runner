@@ -156,9 +156,11 @@ type CommandGroup struct {
   - 展開結果を `GlobalConfig.ExpandedVerifyFiles` に設定
 
 - `ExpandGroupVerifyFiles()`: グループ verify_files の展開
-  - システム環境変数 + グループ環境変数を使用
+  - システム環境変数のみを使用
   - group.env_allowlist を適用（継承モードに従う）
   - 展開結果を `CommandGroup.ExpandedVerifyFiles` に設定
+
+
 
 **既存コンポーネントの再利用**:
 - `CommandEnvProcessor.Expand()` を使用して実際の展開処理を実行
@@ -178,8 +180,6 @@ type CommandGroup struct {
 2. **collectVerificationFiles()**:
    - 変更前: `group.VerifyFiles` を使用
    - 変更後: `group.ExpandedVerifyFiles` を使用
-   - コマンドパスの収集ロジックは既存のまま維持
-   - コマンドレベルの verify_files は既存のまま（今回のスコープ外）
 
 **影響範囲**:
 - 検証ロジック自体は変更なし
@@ -348,6 +348,7 @@ flowchart TB
 **単体テスト**:
 - ExpandGlobalVerifyFiles: グローバルレベルの展開
 - ExpandGroupVerifyFiles: グループレベルの展開
+- ExpandCommandVerifyFiles: コマンドレベルの展開
 - エラーハンドリング: 各種エラーケース
 
 **統合テスト**:
@@ -358,7 +359,8 @@ flowchart TB
 **E2Eテスト**:
 - 実際の TOML ファイルを使用した検証
 - システム環境変数を使用したテスト
-- グループ環境変数を使用したテスト
+- システム環境変数を使用したテスト
+- コマンド環境変数を使用したテスト
 
 ### 8.3 テストデータ設計
 
@@ -372,9 +374,12 @@ verify_files = ["${HOME}/bin/tool.sh"]
 # グループレベル
 [[groups]]
 name = "test"
-env = ["TOOLS_DIR=/opt/tools"]
 env_allowlist = ["TOOLS_DIR"]
 verify_files = ["${TOOLS_DIR}/verify.sh"]
+
+[[groups.commands]]
+name = "deploy"
+env = ["DEPLOY_DIR=/opt/deploy"]
 ```
 
 **異常系**:
@@ -388,10 +393,11 @@ verify_files = ["${UNDEFINED}/path"]
 env_allowlist = ["HOME"]
 verify_files = ["${PATH}/tool"]
 
-# 循環参照
+# 循環参照（システム環境変数での設定を想定）
+# システム環境変数で A="${B}" と B="${A}" が設定されている場合
 [[groups]]
 name = "test"
-env = ["A=${B}", "B=${A}"]
+env_allowlist = ["A", "B"]
 verify_files = ["${A}/file"]
 ```
 
