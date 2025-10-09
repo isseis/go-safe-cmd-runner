@@ -252,45 +252,23 @@ func processConfig(config *runnertypes.Config, filter *environment.Filter, expan
 }
 ```
 
+**注**: テスト専用ヘルパー関数（LoadConfigFromString）は不要です。既存の `Loader.LoadConfig([]byte)` メソッドが十分な機能を提供しており、以下の利点があります：
+
+- デフォルト値の自動設定（timeout, workdir, log_level, max_output_size）
+- workdir の厳密な検証（絶対パス、相対パス成分のチェック）
+- 環境変数の予約プレフィックス検証
+- verify_files の自動展開（processConfig による）
+
+テストでは以下のように使用します：
+
 ```go
-// internal/runner/config/loader_test.go (テスト専用ファイル、build tag "test" 付き)
+// テストでの使用例
+loader := config.NewLoader()
+cfg, err := loader.LoadConfig([]byte(tomlContent))
+require.NoError(t, err)
 
-//go:build test
-
-package config
-
-import (
-    "github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
-    "github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
-)
-
-// LoadConfigFromString loads and validates configuration from a TOML string.
-// This function is available only in test builds and is intended for testing purposes.
-func LoadConfigFromString(tomlContent string) (*runnertypes.Config, error) {
-    // Parse TOML content
-    config, err := parseTOMLContent(tomlContent)
-    if err != nil {
-        return nil, err
-    }
-
-    // Create Filter and VariableExpander using existing infrastructure
-    filter := environment.NewFilter(config.Global.EnvAllowlist)
-    expander := environment.NewVariableExpander(filter)
-
-    return processConfig(config, filter, expander)
-}
-
-// parseTOMLContent parses TOML content string into Config struct.
-// This function is available only in test builds.
-func parseTOMLContent(tomlContent string) (*runnertypes.Config, error) {
-    // Implementation uses toml.Unmarshal to parse the content
-    // (similar to loadTOMLFile but from string instead of file)
-    var config runnertypes.Config
-    if err := toml.Unmarshal([]byte(tomlContent), &config); err != nil {
-        return nil, fmt.Errorf("failed to parse TOML content: %w", err)
-    }
-    return &config, nil
-}
+// cfg.Global.ExpandedVerifyFiles と cfg.Groups[i].ExpandedVerifyFiles が
+// 自動的に展開されている
 ```
 
 ### 1.4 Verification Manager の更新
@@ -854,19 +832,19 @@ cmd = "/bin/echo"
     t.Setenv("HOME", "/home/user")
     t.Setenv("TOOLS_DIR", "/opt/tools")
 
-    // Load and expand using test-only function
-    processor := environment.NewCommandEnvProcessor()
-    config, err := LoadConfigFromString(tomlContent, processor)
+    // Load and expand using Loader.LoadConfig
+    loader := config.NewLoader()
+    cfg, err := loader.LoadConfig([]byte(tomlContent))
     require.NoError(t, err)
 
     // Verify global expansion
-    assert.Equal(t, []string{"/home/user/bin/tool.sh"}, config.Global.ExpandedVerifyFiles)
+    assert.Equal(t, []string{"/home/user/bin/tool.sh"}, cfg.Global.ExpandedVerifyFiles)
 
     // Verify group expansion
     assert.Equal(t, []string{
         "/opt/tools/verify.sh",
         "/home/user/config.conf",
-    }, config.Groups[0].ExpandedVerifyFiles)
+    }, cfg.Groups[0].ExpandedVerifyFiles)
 }
 ```
 

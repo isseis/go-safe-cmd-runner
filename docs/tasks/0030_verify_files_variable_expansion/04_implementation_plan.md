@@ -134,7 +134,6 @@ func (e *VerifyFilesExpansionError) Is(target error) bool
 #### 実装対象
 ```
 internal/runner/config/loader.go (変更)
-internal/runner/config/loader_test.go (新規作成、build tag "test")
 ```
 
 #### 実装内容
@@ -142,28 +141,17 @@ internal/runner/config/loader_test.go (新規作成、build tag "test")
 ##### 2.4.1 Config Loader の変更（既存環境変数エンジンを活用）
 ```go
 // 既存のLoadConfig関数を修正（Filter, VariableExpanderを使用）
-func LoadConfig(configPath string) (*runnertypes.Config, error)
+func (l *Loader) LoadConfig(content []byte) (*runnertypes.Config, error)
 
 // 処理ロジックを分離（既存環境変数エンジンを活用）
-func processConfig(config *runnertypes.Config, filter *environment.Filter, expander *environment.VariableExpander) (*runnertypes.Config, error)
+func processConfig(config *runnertypes.Config, filter *environment.Filter, expander *environment.VariableExpander) error
 ```
 
-##### 2.4.2 テスト専用ヘルパー（build tag "test"）
-```go
-//go:build test
-
-// テスト用の文字列からの設定読み込み
-func LoadConfigFromString(tomlContent string, processor *environment.CommandEnvProcessor) (*runnertypes.Config, error)
-
-// TOML文字列のパース
-func parseTOMLContent(tomlContent string) (*runnertypes.Config, error)
-```
+**注**: テスト専用ヘルパー関数は不要と判断しました。既存の `LoadConfig([]byte)` が十分な機能を提供しており、テストでは `loader.LoadConfig([]byte(tomlContent))` の形式で直接使用できます。
 
 #### 完了条件
 - [x] `LoadConfig` 関数への展開処理統合完了
 - [x] `processConfig` 関数の分離完了
-- [x] テスト専用ヘルパー関数の実装完了
-- [x] build tag による分離の確認完了
 
 ### 2.5 Phase 5: Verification Manager更新 (0.5日)
 **目標**: 検証処理で展開後のファイルパスを使用するよう変更
