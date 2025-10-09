@@ -117,7 +117,7 @@ runner の設定は以下の4階層に分かれています：
 
 verify_files の検証は以下の順序で実行されます：
 
-1. **Global 検証** ([main.go:129-133](../../cmd/runner/main.go#L129-L133))
+1. **Global 検証** ([main.go:137-145](../../cmd/runner/main.go#L137-L145))
    - プログラム開始時に Global.VerifyFiles の全ファイルを検証
    - **検証失敗 → プログラム全体が終了**
 
