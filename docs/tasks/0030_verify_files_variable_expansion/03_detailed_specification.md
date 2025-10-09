@@ -74,12 +74,13 @@ type CommandGroup struct {
 
 // ExpandGlobalVerifyFiles expands environment variables in global verify_files.
 // It uses only system environment variables and applies global.env_allowlist.
+// Returns VerifyFilesExpansionError on failure, which wraps the underlying cause.
 func ExpandGlobalVerifyFiles(
     global *runnertypes.GlobalConfig,
     processor *environment.CommandEnvProcessor,
 ) error {
     if global == nil {
-        return fmt.Errorf("global config is nil")
+        return ErrNilConfig
     }
 
     // Handle empty verify_files
@@ -102,7 +103,13 @@ func ExpandGlobalVerifyFiles(
             make(map[string]bool),
         )
         if err != nil {
-            return fmt.Errorf("failed to expand global verify_files[%d] (%s): %w", i, path, err)
+            return &VerifyFilesExpansionError{
+                Level:     "global",
+                Index:     i,
+                Path:      path,
+                Cause:     err,
+                Allowlist: global.EnvAllowlist,
+            }
         }
         expanded = append(expanded, expandedPath)
     }
@@ -133,13 +140,14 @@ func buildSystemEnvironmentMap() map[string]string {
 // ExpandGroupVerifyFiles expands environment variables in group verify_files.
 // It uses system environment variables and group environment variables,
 // and applies group.env_allowlist (or global.env_allowlist if inherited).
+// Returns VerifyFilesExpansionError on failure, which wraps the underlying cause.
 func ExpandGroupVerifyFiles(
     group *runnertypes.CommandGroup,
     global *runnertypes.GlobalConfig,
     processor *environment.CommandEnvProcessor,
 ) error {
     if group == nil {
-        return fmt.Errorf("group config is nil")
+        return ErrNilConfig
     }
 
     // Handle empty verify_files
@@ -171,7 +179,13 @@ func ExpandGroupVerifyFiles(
             make(map[string]bool),
         )
         if err != nil {
-            return fmt.Errorf("failed to expand verify_files[%d] (%s) for group %s: %w", i, path, group.Name, err)
+            return &VerifyFilesExpansionError{
+                Level:     group.Name,
+                Index:     i,
+                Path:      path,
+                Cause:     err,
+                Allowlist: allowlist,
+            }
         }
         expanded = append(expanded, expandedPath)
     }
@@ -413,15 +427,17 @@ var (
 #### 1.5.2 エラーコンテキスト
 
 ```go
-// 展開エラーには以下の情報を含める
+// VerifyFilesExpansionError represents an error that occurred during verify_files expansion.
+// It wraps the underlying error while preserving the error chain for errors.Is() and errors.As().
 type VerifyFilesExpansionError struct {
-    Level     string // "global" or group name
-    Index     int    // verify_files 配列のインデックス
-    Path      string // 展開対象のパス
-    Cause     error  // 根本原因
-    Allowlist []string // 適用された allowlist
+    Level     string   // "global" or group name
+    Index     int      // verify_files array index
+    Path      string   // path being expanded
+    Cause     error    // root cause error
+    Allowlist []string // applied allowlist
 }
 
+// Error returns the error message with full context information
 func (e *VerifyFilesExpansionError) Error() string {
     return fmt.Sprintf(
         "failed to expand verify_files[%d] (%s) at %s level: %v (allowlist: %v)",
@@ -433,8 +449,65 @@ func (e *VerifyFilesExpansionError) Error() string {
     )
 }
 
+// Unwrap returns the underlying cause error, enabling errors.Is() and errors.As() to work correctly
 func (e *VerifyFilesExpansionError) Unwrap() error {
     return e.Cause
+}
+
+// Is enables comparison with sentinel errors like ErrGlobalVerifyFilesExpansionFailed
+func (e *VerifyFilesExpansionError) Is(target error) bool {
+    if e.Level == "global" && target == ErrGlobalVerifyFilesExpansionFailed {
+        return true
+    }
+    if e.Level != "global" && target == ErrGroupVerifyFilesExpansionFailed {
+        return true
+    }
+    return false
+}
+```
+
+#### 1.5.3 エラー使用例
+
+```go
+// エラー生成例
+func ExpandGlobalVerifyFiles(...) error {
+    for i, path := range global.VerifyFiles {
+        expandedPath, err := processor.Expand(...)
+        if err != nil {
+            return &VerifyFilesExpansionError{
+                Level:     "global",
+                Index:     i,
+                Path:      path,
+                Cause:     err,
+                Allowlist: global.EnvAllowlist,
+            }
+        }
+    }
+    return nil
+}
+
+// エラー判定例（errors.Is を使用）
+if err := ExpandGlobalVerifyFiles(...); err != nil {
+    // sentinel error との比較
+    if errors.Is(err, ErrGlobalVerifyFilesExpansionFailed) {
+        // グローバルレベルの展開エラーとして処理
+    }
+
+    // 元のエラー型との比較（例: allowlist エラー）
+    if errors.Is(err, environment.ErrVariableNotAllowed) {
+        // allowlist 違反として処理
+    }
+
+    // カスタムエラー型の取得（errors.As を使用）
+    var expansionErr *VerifyFilesExpansionError
+    if errors.As(err, &expansionErr) {
+        // エラーの詳細情報にアクセス
+        log.Error("Expansion failed",
+            "level", expansionErr.Level,
+            "index", expansionErr.Index,
+            "path", expansionErr.Path,
+            "allowlist", expansionErr.Allowlist)
+    }
 }
 ```
 
@@ -530,12 +603,13 @@ func expandWithCircularCheck(
 ```go
 func TestExpandGlobalVerifyFiles(t *testing.T) {
     tests := []struct {
-        name          string
-        global        *runnertypes.GlobalConfig
-        systemEnv     map[string]string
-        expected      []string
-        expectError   bool
-        errorContains string
+        name                  string
+        global                *runnertypes.GlobalConfig
+        systemEnv             map[string]string
+        expected              []string
+        expectError           bool
+        expectedSentinelError error  // errors.Is でチェック
+        expectedCauseError    error  // Unwrap 後の元のエラーを errors.Is でチェック
     }{
         {
             name: "basic expansion with single variable",
@@ -561,9 +635,12 @@ func TestExpandGlobalVerifyFiles(t *testing.T) {
                 VerifyFiles:  []string{"${PATH}/bin/tool"},
                 EnvAllowlist: []string{"HOME"},
             },
-            systemEnv:     map[string]string{"PATH": "/usr/bin"},
-            expectError:   true,
-            errorContains: "not in allowlist",
+            systemEnv:   map[string]string{"PATH": "/usr/bin"},
+            expectError: true,
+            // errors.Is でのチェック
+            expectedSentinelError: ErrGlobalVerifyFilesExpansionFailed,
+            // 元のエラー型のチェック
+            expectedCauseError: environment.ErrVariableNotAllowed,
         },
         {
             name: "undefined variable",
@@ -571,9 +648,10 @@ func TestExpandGlobalVerifyFiles(t *testing.T) {
                 VerifyFiles:  []string{"${UNDEFINED}/tool"},
                 EnvAllowlist: []string{"UNDEFINED"},
             },
-            systemEnv:     map[string]string{},
-            expectError:   true,
-            errorContains: "undefined variable",
+            systemEnv:             map[string]string{},
+            expectError:           true,
+            expectedSentinelError: ErrGlobalVerifyFilesExpansionFailed,
+            expectedCauseError:    environment.ErrUndefinedVariable,
         },
         {
             name: "no expansion needed",
@@ -593,12 +671,28 @@ func TestExpandGlobalVerifyFiles(t *testing.T) {
             err := ExpandGlobalVerifyFiles(tt.global, processor)
 
             if tt.expectError {
-                assert.Error(t, err)
-                if tt.errorContains != "" {
-                    assert.Contains(t, err.Error(), tt.errorContains)
+                require.Error(t, err)
+
+                // sentinel error のチェック
+                if tt.expectedSentinelError != nil {
+                    assert.ErrorIs(t, err, tt.expectedSentinelError,
+                        "error should match sentinel error")
+                }
+
+                // 元のエラー型のチェック
+                if tt.expectedCauseError != nil {
+                    assert.ErrorIs(t, err, tt.expectedCauseError,
+                        "error chain should contain expected cause error")
+                }
+
+                // カスタムエラー型のチェック
+                var expansionErr *VerifyFilesExpansionError
+                if assert.ErrorAs(t, err, &expansionErr) {
+                    assert.Equal(t, "global", expansionErr.Level)
+                    assert.NotEmpty(t, expansionErr.Path)
                 }
             } else {
-                assert.NoError(t, err)
+                require.NoError(t, err)
                 assert.Equal(t, tt.expected, tt.global.ExpandedVerifyFiles)
             }
         })
@@ -611,13 +705,14 @@ func TestExpandGlobalVerifyFiles(t *testing.T) {
 ```go
 func TestExpandGroupVerifyFiles(t *testing.T) {
     tests := []struct {
-        name          string
-        group         *runnertypes.CommandGroup
-        global        *runnertypes.GlobalConfig
-        systemEnv     map[string]string
-        expected      []string
-        expectError   bool
-        errorContains string
+        name                  string
+        group                 *runnertypes.CommandGroup
+        global                *runnertypes.GlobalConfig
+        systemEnv             map[string]string
+        expected              []string
+        expectError           bool
+        expectedSentinelError error // errors.Is でチェック
+        expectedCauseError    error // Unwrap 後の元のエラーを errors.Is でチェック
     }{
         {
             name: "group env variable expansion",
@@ -654,9 +749,10 @@ func TestExpandGroupVerifyFiles(t *testing.T) {
                 EnvAllowlist: []string{}, // Explicit empty - reject all
                 Commands:     []runnertypes.Command{},
             },
-            systemEnv:     map[string]string{"HOME": "/home/user"},
-            expectError:   true,
-            errorContains: "not in allowlist",
+            systemEnv:             map[string]string{"HOME": "/home/user"},
+            expectError:           true,
+            expectedSentinelError: ErrGroupVerifyFilesExpansionFailed,
+            expectedCauseError:    environment.ErrVariableNotAllowed,
         },
         {
             name: "circular reference",
@@ -668,8 +764,9 @@ func TestExpandGroupVerifyFiles(t *testing.T) {
                     {Env: []string{"VAR1=${VAR2}", "VAR2=${VAR1}"}},
                 },
             },
-            expectError:   true,
-            errorContains: "circular reference",
+            expectError:           true,
+            expectedSentinelError: ErrGroupVerifyFilesExpansionFailed,
+            expectedCauseError:    environment.ErrCircularReference,
         },
     }
 
@@ -680,12 +777,28 @@ func TestExpandGroupVerifyFiles(t *testing.T) {
             err := ExpandGroupVerifyFiles(tt.group, tt.global, processor)
 
             if tt.expectError {
-                assert.Error(t, err)
-                if tt.errorContains != "" {
-                    assert.Contains(t, err.Error(), tt.errorContains)
+                require.Error(t, err)
+
+                // sentinel error のチェック
+                if tt.expectedSentinelError != nil {
+                    assert.ErrorIs(t, err, tt.expectedSentinelError,
+                        "error should match sentinel error")
+                }
+
+                // 元のエラー型のチェック
+                if tt.expectedCauseError != nil {
+                    assert.ErrorIs(t, err, tt.expectedCauseError,
+                        "error chain should contain expected cause error")
+                }
+
+                // カスタムエラー型のチェック
+                var expansionErr *VerifyFilesExpansionError
+                if assert.ErrorAs(t, err, &expansionErr) {
+                    assert.Equal(t, tt.group.Name, expansionErr.Level)
+                    assert.NotEmpty(t, expansionErr.Path)
                 }
             } else {
-                assert.NoError(t, err)
+                require.NoError(t, err)
                 assert.Equal(t, tt.expected, tt.group.ExpandedVerifyFiles)
             }
         })
@@ -799,7 +912,59 @@ func BenchmarkExpandGlobalVerifyFiles(b *testing.B) {
 - [ ] サンプル TOML ファイルの作成
 - [ ] CHANGELOG の更新
 
-## 3. 参照
+## 3. エラーハンドリング設計の改善点
+
+### 3.1 改善の背景
+
+従来の `fmt.Errorf` による単純なエラーラッピングでは、以下の問題がありました：
+
+- `errors.Is()` で元のエラー型を判定できない
+- `errors.As()` でカスタムエラー型を取得できない
+- エラーチェーンが途切れてしまう
+
+### 3.2 実装した改善策
+
+#### 3.2.1 カスタムエラー型の導入
+
+`VerifyFilesExpansionError` 型を導入し、以下を実現：
+
+1. **Unwrap() メソッド**: エラーチェーンを保持
+2. **Is() メソッド**: sentinel error との比較をサポート
+3. **詳細なコンテキスト**: Level, Index, Path, Allowlist を保持
+
+#### 3.2.2 エラー判定の堅牢性
+
+```go
+// 複数のレベルでのエラー判定が可能
+if errors.Is(err, ErrGlobalVerifyFilesExpansionFailed) {
+    // グローバルレベルのエラー処理
+}
+
+if errors.Is(err, environment.ErrVariableNotAllowed) {
+    // allowlist 違反の処理（元のエラー型を直接判定）
+}
+
+var expansionErr *VerifyFilesExpansionError
+if errors.As(err, &expansionErr) {
+    // 詳細情報へのアクセス
+    log.Error("details", "path", expansionErr.Path, "index", expansionErr.Index)
+}
+```
+
+#### 3.2.3 テスト戦略の強化
+
+- `assert.ErrorIs()`: sentinel error の検証
+- `assert.ErrorAs()`: カスタムエラー型の検証
+- エラーチェーン全体の検証が可能
+
+### 3.3 利点
+
+1. **型安全性**: エラー文字列ではなく型で判定
+2. **保守性**: エラーメッセージ変更の影響を受けない
+3. **デバッグ性**: エラーの詳細情報にアクセス可能
+4. **拡張性**: 将来的なエラー処理の拡張が容易
+
+## 4. 参照
 
 - タスク 0026: Variable Expansion Implementation（環境変数展開の基盤実装）
 - タスク 0007: verify_hash_all（ファイル検証機能）

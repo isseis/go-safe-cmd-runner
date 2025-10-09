@@ -75,7 +75,7 @@ graph TB
         end
 
         subgraph "internal/verification"
-            D["manager.go<br>Verification Manager<br>（既存・変更なし）"]
+            D["manager.go<br>Verification Manager<br>（変更あり）<br>ExpandedVerifyFiles使用"]
         end
     end
 
@@ -246,11 +246,54 @@ func (m *Manager) VerifyGlobalFiles(globalConfig *runnertypes.GlobalConfig) (*Re
 
 // VerifyGroupFiles の変更: ExpandedVerifyFiles を使用
 func (m *Manager) VerifyGroupFiles(groupConfig *runnertypes.CommandGroup) (*Result, error) {
-    // collectVerificationFiles 内で ExpandedVerifyFiles を使用
-    allFiles := append([]string{}, groupConfig.ExpandedVerifyFiles...)
-    // 既存の検証ロジックはそのまま
+    // collectVerificationFiles を使用してファイルリストを収集
+    allFiles, err := m.collectVerificationFiles(groupConfig)
+    if err != nil {
+        return nil, err
+    }
+
+    // 収集したファイルを検証
+    for _, filePath := range allFiles {
+        if err := m.verifyFileWithFallback(filePath); err != nil {
+            // エラーハンドリング
+        }
+    }
+}
+
+// collectVerificationFiles の変更: ExpandedVerifyFiles を使用
+func (m *Manager) collectVerificationFiles(group *runnertypes.CommandGroup) ([]string, error) {
+    var allFiles []string
+
+    // 1. グループレベルの verify_files を追加（変更点: ExpandedVerifyFiles を使用）
+    // 変更前: allFiles = append(allFiles, group.VerifyFiles...)
+    // 変更後: 展開済みのパスを使用
+    allFiles = append(allFiles, group.ExpandedVerifyFiles...)
+
+    // 2. 各コマンドのパスを収集（既存のロジックを維持）
+    for _, cmd := range group.Commands {
+        // コマンド自体のパスを PathResolver で解決
+        resolvedPath, err := m.pathResolver.ResolvePath(cmd.Cmd, cmd.WorkDir)
+        if err != nil {
+            return nil, fmt.Errorf("failed to resolve command path: %w", err)
+        }
+        allFiles = append(allFiles, resolvedPath)
+
+        // コマンドレベルの verify_files を追加（既存のロジックを維持）
+        allFiles = append(allFiles, cmd.VerifyFiles...)
+    }
+
+    return allFiles, nil
 }
 ```
+
+**変更のポイント**:
+
+1. **VerifyGlobalFiles**: `VerifyFiles` → `ExpandedVerifyFiles` に変更
+2. **VerifyGroupFiles**: 既存のフローを維持、`collectVerificationFiles` を呼び出し
+3. **collectVerificationFiles**:
+   - グループレベルの `ExpandedVerifyFiles` を使用
+   - コマンドパスの収集ロジックは既存のまま維持
+   - コマンドレベルの `verify_files` は既存のまま（今回のスコープ外）
 
 ## 4. セキュリティアーキテクチャ
 
