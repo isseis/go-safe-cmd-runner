@@ -26,6 +26,12 @@ type GlobalConfig struct {
 	SkipStandardPaths bool     `toml:"skip_standard_paths"` // Skip verification for standard system paths
 	EnvAllowlist      []string `toml:"env_allowlist"`       // Global environment variable allowlist
 	MaxOutputSize     int64    `toml:"max_output_size"`     // Default output size limit in bytes
+
+	// ExpandedVerifyFiles contains the verify_files paths with environment variable substitutions applied.
+	// It is the expanded version of the VerifyFiles field, populated during configuration loading
+	// and used during file verification to avoid re-expanding for each verification.
+	// The toml:"-" tag prevents this field from being set via TOML configuration.
+	ExpandedVerifyFiles []string `toml:"-"`
 }
 
 // CommandGroup represents a group of related commands with a name
@@ -41,6 +47,12 @@ type CommandGroup struct {
 	Commands     []Command `toml:"commands"`
 	VerifyFiles  []string  `toml:"verify_files"`  // Files to verify for this group
 	EnvAllowlist []string  `toml:"env_allowlist"` // Group-level environment variable allowlist
+
+	// ExpandedVerifyFiles contains the verify_files paths with environment variable substitutions applied.
+	// It is the expanded version of the VerifyFiles field, populated during configuration loading
+	// and used during file verification to avoid re-expanding for each verification.
+	// The toml:"-" tag prevents this field from being set via TOML configuration.
+	ExpandedVerifyFiles []string `toml:"-"`
 }
 
 // Command represents a single command to be executed
