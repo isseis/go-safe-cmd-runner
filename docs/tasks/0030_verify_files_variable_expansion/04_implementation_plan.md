@@ -31,10 +31,10 @@ internal/runner/runnertypes/config.go
 - フィールドドキュメントコメントの追加
 
 #### 完了条件
-- [ ] `GlobalConfig` 構造体拡張完了
-- [ ] `CommandGroup` 構造体拡張完了
-- [ ] 構造体フィールドのドキュメント作成完了
-- [ ] 既存テストが全て成功
+- [x] `GlobalConfig` 構造体拡張完了
+- [x] `CommandGroup` 構造体拡張完了
+- [x] 構造体フィールドのドキュメント作成完了
+- [x] 既存テストが全て成功
 
 ### 2.2 Phase 2: 環境変数展開機能の実装 (2日)
 **目標**: verify_files専用の環境変数展開ロジックを実装
