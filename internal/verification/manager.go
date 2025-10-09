@@ -137,7 +137,7 @@ func (m *Manager) VerifyGlobalFiles(globalConfig *runnertypes.GlobalConfig) (*Re
 	}
 
 	result := &Result{
-		TotalFiles:   len(globalConfig.VerifyFiles),
+		TotalFiles:   len(globalConfig.ExpandedVerifyFiles),
 		FailedFiles:  []string{},
 		SkippedFiles: []string{},
 	}
@@ -152,7 +152,7 @@ func (m *Manager) VerifyGlobalFiles(globalConfig *runnertypes.GlobalConfig) (*Re
 		m.pathResolver.skipStandardPaths = globalConfig.SkipStandardPaths
 	}
 
-	for _, filePath := range globalConfig.VerifyFiles {
+	for _, filePath := range globalConfig.ExpandedVerifyFiles {
 		// Check if file should be skipped
 		if m.shouldSkipVerification(filePath) {
 			result.SkippedFiles = append(result.SkippedFiles, filePath)
@@ -264,10 +264,10 @@ func (m *Manager) collectVerificationFiles(groupConfig *runnertypes.CommandGroup
 		return []string{}
 	}
 
-	allFiles := make([]string, 0, len(groupConfig.VerifyFiles)+len(groupConfig.Commands))
+	allFiles := make([]string, 0, len(groupConfig.ExpandedVerifyFiles)+len(groupConfig.Commands))
 
 	// Add explicit files
-	allFiles = append(allFiles, groupConfig.VerifyFiles...)
+	allFiles = append(allFiles, groupConfig.ExpandedVerifyFiles...)
 
 	// Add command files
 	if m.pathResolver != nil {
