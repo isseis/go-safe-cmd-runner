@@ -355,7 +355,94 @@ env = [
 2. `${ENV_TYPE}` → `production` に展開
 3. `${CONFIG_PATH}` → `/opt/myapp/production/config.yml` に展開
 
-## 7.6 エスケープシーケンス
+## 7.6 変数の自己参照
+
+変数の自己参照は、環境変数を拡張する際によく使用される重要な機能です。特に `PATH` 環境変数のように、既存の値に新しい値を追加する場合に有用です。
+
+### 自己参照の仕組み
+
+`PATH=/custom/bin:${PATH}` のような記述では、`${PATH}` は **システム環境変数の元の値** を参照します。これは循環参照ではなく、意図的にサポートされた機能です。
+
+### 基本例: PATH の拡張
+
+```toml
+[[groups.commands]]
+name = "extend_path"
+cmd = "/bin/echo"
+args = ["PATH is: ${PATH}"]
+env = ["PATH=/opt/mytools/bin:${PATH}"]
+```
+
+展開過程:
+1. システム環境変数 `PATH` の値を取得（例: `/usr/bin:/bin`）
+2. `${PATH}` → `/usr/bin:/bin` に展開
+3. 最終的な値: `/opt/mytools/bin:/usr/bin:/bin`
+
+### 実用例: カスタムツールディレクトリの追加
+
+```toml
+[[groups.commands]]
+name = "use_custom_tools"
+cmd = "${CUSTOM_TOOL}"
+args = ["--version"]
+env = [
+    "PATH=${TOOL_DIR}/bin:${PATH}",
+    "TOOL_DIR=/opt/custom-tools",
+    "CUSTOM_TOOL=mytool",
+]
+```
+
+この設定では:
+- `CUSTOM_TOOL` が相対パス指定でも、拡張された `PATH` から見つけられる
+- システムの既存 `PATH` も保持される
+
+### 他の環境変数での自己参照
+
+`PATH` 以外の環境変数でも同様の自己参照が可能です:
+
+```toml
+[[groups.commands]]
+name = "extend_lib_path"
+cmd = "/opt/myapp/bin/app"
+args = []
+env = [
+    "LD_LIBRARY_PATH=/opt/myapp/lib:${LD_LIBRARY_PATH}",
+    "PYTHONPATH=/opt/myapp/python:${PYTHONPATH}",
+]
+```
+
+### 自己参照と循環参照の違い
+
+**自己参照（正常）**: Command.Env で定義された変数が **システム環境変数** の同名変数を参照
+```toml
+env = ["PATH=/custom/bin:${PATH}"]  # ${PATH} はシステム環境変数を参照
+```
+
+**循環参照（エラー）**: Command.Env 内の変数同士が互いに参照し合う
+```toml
+env = [
+    "VAR1=${VAR2}",
+    "VAR2=${VAR1}",  # エラー: Command.Env 内での循環参照
+]
+```
+
+### 注意点
+
+1. **システム環境変数が存在しない場合**: `${PATH}` 参照時にシステムに `PATH` が存在しない場合、エラーになります
+2. **allowlist との関係**: システム環境変数を参照する場合、その変数が `env_allowlist` に含まれている必要があります
+
+```toml
+[global]
+env_allowlist = ["PATH", "HOME"]  # PATH の自己参照を許可
+
+[[groups.commands]]
+name = "extend_path"
+cmd = "/bin/echo"
+args = ["${PATH}"]
+env = ["PATH=/custom:${PATH}"]  # OK: PATH は allowlist に含まれている
+```
+
+## 7.7 エスケープシーケンス
 
 リテラル(文字通りの)`$`や`\`を使用したい場合、エスケープが必要です。
 
@@ -398,9 +485,9 @@ env = ["HOME=/home/user"]
 
 出力: `Literal $HOME is different from /home/user`
 
-## 7.7 自動環境変数
+## 7.8 自動環境変数
 
-### 7.7.1 概要
+### 7.8.1 概要
 
 システムは各コマンド実行時に以下の環境変数を自動的に設定します:
 
@@ -409,7 +496,7 @@ env = ["HOME=/home/user"]
 
 これらの変数は、コマンドパス、引数、環境変数の値で通常の変数と同様に使用できます。
 
-### 7.7.2 使用例
+### 7.8.2 使用例
 
 #### タイムスタンプ付きバックアップ
 
@@ -481,7 +568,7 @@ args = [
 - 出力ファイル: `/reports/20251005143022.123-12345.html`
 - レポートタイトル: `Report 20251005143022.123`
 
-### 7.7.3 日時フォーマット
+### 7.8.3 日時フォーマット
 
 `__RUNNER_DATETIME` のフォーマット仕様:
 
@@ -499,7 +586,7 @@ args = [
 
 **注意**: タイムゾーンは常にUTCです。ローカルタイムゾーンではありません。
 
-### 7.7.4 予約プレフィックス
+### 7.8.4 予約プレフィックス
 
 プレフィックス `__RUNNER_` は自動環境変数用に予約されており、ユーザー定義の環境変数では使用できません。
 
@@ -529,7 +616,7 @@ args = ["${MY_CUSTOM_VAR}"]
 env = ["MY_CUSTOM_VAR=value"]  # OK: 予約プレフィックスを使用していない
 ```
 
-### 7.7.5 変数生成のタイミング
+### 7.8.5 変数生成のタイミング
 
 自動環境変数（`__RUNNER_DATETIME`と`__RUNNER_PID`）は、設定ファイルのロード時に一度だけ生成され、各コマンドの実行時には生成されません。すべてのグループのすべてのコマンドは、runner実行全体を通じて完全に同じ値を共有します。
 
@@ -554,9 +641,9 @@ args = ["czf", "/tmp/backup/files-${__RUNNER_DATETIME}.tar.gz", "/data"]
 
 これにより、コマンドが異なる時刻に実行される場合や、異なるグループに属している場合でも、単一のrunner実行内のすべてのコマンド間で一貫性が保証されます。
 
-## 7.8 セキュリティ考慮事項
+## 7.9 セキュリティ考慮事項
 
-### 7.8.1 Command.Env の優先度
+### 7.9.1 Command.Env の優先度
 
 `Command.Env` で定義された変数は、システム環境変数よりも優先されます:
 
@@ -572,7 +659,7 @@ env = ["HOME=/opt/custom-home"]
 # システムの $HOME ではなく、Command.Env の HOME が使用される
 ```
 
-### 7.8.2 env_allowlist との関係
+### 7.9.2 env_allowlist との関係
 
 **重要**: `Command.Env` で定義された変数は `env_allowlist` のチェックを受けません。
 
@@ -589,7 +676,7 @@ env = ["CUSTOM_TOOL=/opt/tools/mytool"]
 # CUSTOM_TOOL は allowlist にないが、Command.Env で定義されているので使用可能
 ```
 
-### 7.8.3 絶対パスの要件
+### 7.9.3 絶対パスの要件
 
 展開後のコマンドパスは絶対パスである必要があります:
 
@@ -607,7 +694,7 @@ cmd = "${TOOL_DIR}/mytool"
 env = ["TOOL_DIR=./tools"]  # 相対パス - エラー
 ```
 
-### 7.8.4 機密情報の扱い
+### 7.9.4 機密情報の扱い
 
 機密情報(APIキー、パスワードなど)は `Command.Env` で定義し、システム環境変数から隔離:
 
@@ -626,7 +713,7 @@ env = [
 ]
 ```
 
-### 7.8.5 コマンド間の隔離
+### 7.9.5 コマンド間の隔離
 
 各コマンドの `env` は独立しており、他のコマンドに影響を与えません:
 
@@ -645,7 +732,7 @@ env = ["DB_HOST=db2.example.com"]
 # cmd1 の DB_HOST とは独立
 ```
 
-## 7.9 トラブルシューティング
+## 7.10 トラブルシューティング
 
 ### 未定義変数
 
@@ -677,6 +764,8 @@ env = [
 ```
 
 **解決方法**: 変数の依存関係を整理する
+
+**注意**: `PATH=/custom:${PATH}` のような自己参照は循環参照ではありません。詳細は「7.6 変数の自己参照」を参照してください。
 
 ### 展開後のパス検証エラー
 
