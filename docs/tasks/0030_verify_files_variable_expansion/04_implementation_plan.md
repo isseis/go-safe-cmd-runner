@@ -160,10 +160,10 @@ func parseTOMLContent(tomlContent string) (*runnertypes.Config, error)
 ```
 
 #### 完了条件
-- [ ] `LoadConfig` 関数への展開処理統合完了
-- [ ] `processConfig` 関数の分離完了
-- [ ] テスト専用ヘルパー関数の実装完了
-- [ ] build tag による分離の確認完了
+- [x] `LoadConfig` 関数への展開処理統合完了
+- [x] `processConfig` 関数の分離完了
+- [x] テスト専用ヘルパー関数の実装完了
+- [x] build tag による分離の確認完了
 
 ### 2.5 Phase 5: Verification Manager更新 (0.5日)
 **目標**: 検証処理で展開後のファイルパスを使用するよう変更
