@@ -86,7 +86,33 @@ func (l *Loader) LoadConfig(content []byte) (*runnertypes.Config, error) {
 		return nil, fmt.Errorf("environment variable validation failed: %w", err)
 	}
 
+	// Create Filter and VariableExpander for verify_files expansion
+	filter := environment.NewFilter(cfg.Global.EnvAllowlist)
+	expander := environment.NewVariableExpander(filter)
+
+	// Process config (expand verify_files)
+	if err := processConfig(&cfg, filter, expander); err != nil {
+		return nil, fmt.Errorf("failed to process config: %w", err)
+	}
+
 	return &cfg, nil
+}
+
+// processConfig processes the configuration by expanding verify_files fields
+func processConfig(cfg *runnertypes.Config, filter *environment.Filter, expander *environment.VariableExpander) error {
+	// Expand global verify_files
+	if err := ExpandGlobalVerifyFiles(&cfg.Global, filter, expander); err != nil {
+		return fmt.Errorf("failed to expand global verify_files: %w", err)
+	}
+
+	// Expand group verify_files
+	for i := range cfg.Groups {
+		if err := ExpandGroupVerifyFiles(&cfg.Groups[i], filter, expander); err != nil {
+			return fmt.Errorf("failed to expand verify_files for group %q: %w", cfg.Groups[i].Name, err)
+		}
+	}
+
+	return nil
 }
 
 // validateEnvironmentVariables validates all environment variables in the config

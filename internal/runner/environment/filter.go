@@ -45,9 +45,9 @@ func NewFilter(allowList []string) *Filter {
 	return f
 }
 
-// parseSystemEnvironment parses os.Environ() and filters variables based on the provided predicate
+// ParseSystemEnvironment parses os.Environ() and filters variables based on the provided predicate
 // predicate takes a single string argument (variable name) and returns true if the variable is allowed.
-func (f *Filter) parseSystemEnvironment(predicate func(string) bool) map[string]string {
+func (f *Filter) ParseSystemEnvironment(predicate func(string) bool) map[string]string {
 	result := make(map[string]string)
 
 	for _, env := range os.Environ() {
@@ -81,7 +81,7 @@ const (
 // It returns a map of filtered variables.
 func (f *Filter) FilterSystemEnvironment() (map[string]string, error) {
 	// Get all system environment variables (validation deferred to execution time)
-	sysEnv := f.parseSystemEnvironment(nil)
+	sysEnv := f.ParseSystemEnvironment(nil)
 	return f.FilterGlobalVariables(sysEnv, SourceSystem)
 }
 
@@ -122,7 +122,7 @@ func (f *Filter) ResolveGroupEnvironmentVars(group *runnertypes.CommandGroup, lo
 
 	// Add system environment variables using the common parsing logic
 	// Note: Validation deferred to execution time - only variables actually used are validated
-	result := f.parseSystemEnvironment(func(variable string) bool {
+	result := f.ParseSystemEnvironment(func(variable string) bool {
 		return f.IsVariableAccessAllowed(variable, group.EnvAllowlist, group.Name)
 	})
 
@@ -152,8 +152,8 @@ func (f *Filter) determineInheritanceMode(allowlist []string) runnertypes.Inheri
 	return runnertypes.InheritanceModeExplicit
 }
 
-// resolveAllowlistConfiguration resolves the effective allowlist configuration for a group
-func (f *Filter) resolveAllowlistConfiguration(allowlist []string, groupName string) *runnertypes.AllowlistResolution {
+// ResolveAllowlistConfiguration resolves the effective allowlist configuration for a group
+func (f *Filter) ResolveAllowlistConfiguration(allowlist []string, groupName string) *runnertypes.AllowlistResolution {
 	mode := f.determineInheritanceMode(allowlist)
 
 	resolution := &runnertypes.AllowlistResolution{
@@ -193,7 +193,7 @@ func (f *Filter) resolveAllowlistConfiguration(allowlist []string, groupName str
 // IsVariableAccessAllowed checks if a variable is allowed based on the inheritance configuration
 // This replaces the old isVariableAllowed function with clearer logic
 func (f *Filter) IsVariableAccessAllowed(variable string, allowlist []string, groupName string) bool {
-	resolution := f.resolveAllowlistConfiguration(allowlist, groupName)
+	resolution := f.ResolveAllowlistConfiguration(allowlist, groupName)
 	allowed := resolution.IsAllowed(variable)
 
 	if !allowed {
