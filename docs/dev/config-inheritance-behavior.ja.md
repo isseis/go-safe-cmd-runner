@@ -219,7 +219,7 @@ if cmd.Dir == "" {
 2. **Independent パターン** (env): 各レベルで独立して管理（層間でのマージなし）
 3. **Effective Union パターン** (verify_files): 設定は独立管理だが、実行時には両方の検証成功が必要
 4. **Inherit/Override/Prohibit パターン** (env_allowlist): 3つの継承モードで柔軟に制御
-4. **Single-level パターン** (log_level, max_output_size など): 特定のレベルでのみ定義可能
+5. **Single-level パターン** (log_level, max_output_size など): 特定のレベルでのみ定義可能
 
 ### 設計思想
 
