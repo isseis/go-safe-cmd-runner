@@ -2,6 +2,7 @@
 package config_test
 
 import (
+	"os"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
@@ -1002,5 +1003,431 @@ func TestExpandCommand_AutoEnvInCommandEnv(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tt.expectedEnv, env)
 		})
+	}
+}
+
+// TestExpandGlobalVerifyFiles tests the expansion of environment variables in global verify_files
+func TestExpandGlobalVerifyFiles(t *testing.T) {
+	tests := []struct {
+		name          string
+		verifyFiles   []string
+		envAllowlist  []string
+		expectedFiles []string
+		expectError   bool
+		errorSentinel error
+		errorContains string
+		setupEnv      func(*testing.T)
+	}{
+		{
+			name:          "basic variable expansion",
+			verifyFiles:   []string{"${HOME}/config.toml", "${HOME}/data.txt"},
+			envAllowlist:  []string{"HOME"},
+			expectedFiles: []string{"/home/user/config.toml", "/home/user/data.txt"},
+			setupEnv: func(t *testing.T) {
+				t.Setenv("HOME", "/home/user")
+			},
+		},
+		{
+			name:          "multiple variables in single path",
+			verifyFiles:   []string{"${BASE_DIR}/${APP_NAME}/config.toml"},
+			envAllowlist:  []string{"BASE_DIR", "APP_NAME"},
+			expectedFiles: []string{"/opt/myapp/config.toml"},
+			setupEnv: func(t *testing.T) {
+				t.Setenv("BASE_DIR", "/opt")
+				t.Setenv("APP_NAME", "myapp")
+			},
+		},
+		{
+			name:          "allowlist violation error",
+			verifyFiles:   []string{"${FORBIDDEN_VAR}/config.toml"},
+			envAllowlist:  []string{"SAFE_VAR"},
+			expectError:   true,
+			errorSentinel: config.ErrGlobalVerifyFilesExpansionFailed,
+			errorContains: "not allowed",
+			setupEnv: func(t *testing.T) {
+				t.Setenv("FORBIDDEN_VAR", "/forbidden")
+			},
+		},
+		{
+			name:          "undefined variable error",
+			verifyFiles:   []string{"${UNDEFINED_VAR}/config.toml"},
+			envAllowlist:  []string{"UNDEFINED_VAR"},
+			expectError:   true,
+			errorSentinel: config.ErrGlobalVerifyFilesExpansionFailed,
+			errorContains: "not found",
+		},
+		// NOTE: Circular reference in system environment variables is extremely rare
+		// because shell expands variables before setting them. This test case is
+		// commented out as it's not a realistic scenario for verify_files expansion.
+		// Circular reference detection is still tested in Command.Env expansion tests.
+		// {
+		// 	name:          "circular reference error",
+		// 	verifyFiles:   []string{"${VAR1}/config.toml"},
+		// 	envAllowlist:  []string{"VAR1", "VAR2"},
+		// 	expectError:   true,
+		// 	errorSentinel: config.ErrGlobalVerifyFilesExpansionFailed,
+		// 	errorContains: "circular",
+		// 	setupEnv: func(t *testing.T) {
+		// 		t.Setenv("VAR1", "${VAR2}")
+		// 		t.Setenv("VAR2", "${VAR1}")
+		// 	},
+		// },
+		{
+			name:          "nil config error",
+			verifyFiles:   nil,
+			expectError:   true,
+			errorSentinel: config.ErrNilConfig,
+			errorContains: "cannot be nil",
+		},
+		{
+			name:          "empty array processing",
+			verifyFiles:   []string{},
+			envAllowlist:  []string{},
+			expectedFiles: []string{},
+		},
+		{
+			name:          "escape sequence handling",
+			verifyFiles:   []string{"\\${HOME}/config.toml", "${DATA}/file.txt"},
+			envAllowlist:  []string{"DATA"},
+			expectedFiles: []string{"${HOME}/config.toml", "/var/data/file.txt"},
+			setupEnv: func(t *testing.T) {
+				t.Setenv("DATA", "/var/data")
+			},
+		},
+		{
+			name:          "complex variable nesting",
+			verifyFiles:   []string{"${BASE}/${SUB1}/${SUB2}/config.toml"},
+			envAllowlist:  []string{"BASE", "SUB1", "SUB2"},
+			expectedFiles: []string{"/opt/app/subdir/config.toml"},
+			setupEnv: func(t *testing.T) {
+				t.Setenv("BASE", "/opt")
+				t.Setenv("SUB1", "app")
+				t.Setenv("SUB2", "subdir")
+			},
+		},
+		{
+			name:          "error chain verification",
+			verifyFiles:   []string{"${ALLOWED_VAR}/file1.txt", "${FORBIDDEN_VAR}/file2.txt"},
+			envAllowlist:  []string{"ALLOWED_VAR"},
+			expectError:   true,
+			errorSentinel: config.ErrGlobalVerifyFilesExpansionFailed,
+			errorContains: "verify_files[1]",
+			setupEnv: func(t *testing.T) {
+				t.Setenv("ALLOWED_VAR", "/allowed")
+				t.Setenv("FORBIDDEN_VAR", "/forbidden")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Setup environment variables
+			if tt.setupEnv != nil {
+				tt.setupEnv(t)
+			}
+
+			// Create global config
+			var global *runnertypes.GlobalConfig
+			if tt.name == "nil config error" {
+				global = nil
+			} else {
+				global = &runnertypes.GlobalConfig{
+					VerifyFiles:  tt.verifyFiles,
+					EnvAllowlist: tt.envAllowlist,
+				}
+			}
+
+			// Create filter and expander
+			filter := environment.NewFilter(tt.envAllowlist)
+			expander := environment.NewVariableExpander(filter)
+
+			// Execute expansion
+			err := config.ExpandGlobalVerifyFiles(global, filter, expander)
+
+			// Verify results
+			if tt.expectError {
+				require.Error(t, err)
+				if tt.errorSentinel != nil {
+					assert.ErrorIs(t, err, tt.errorSentinel)
+				}
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains)
+				}
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tt.expectedFiles, global.ExpandedVerifyFiles)
+			}
+		})
+	}
+}
+
+// TestExpandGroupVerifyFiles tests the expansion of environment variables in group verify_files
+func TestExpandGroupVerifyFiles(t *testing.T) {
+	tests := []struct {
+		name               string
+		verifyFiles        []string
+		groupEnvAllowlist  []string
+		globalEnvAllowlist []string
+		expectedFiles      []string
+		expectError        bool
+		errorSentinel      error
+		errorContains      string
+		setupEnv           func(*testing.T)
+		groupName          string
+	}{
+		{
+			name:              "system environment variable expansion",
+			verifyFiles:       []string{"${HOME}/group/config.toml"},
+			groupEnvAllowlist: []string{"HOME"},
+			expectedFiles:     []string{"/home/user/group/config.toml"},
+			groupName:         "test-group",
+			setupEnv: func(t *testing.T) {
+				t.Setenv("HOME", "/home/user")
+			},
+		},
+		{
+			name:               "allowlist inheritance - inherit mode",
+			verifyFiles:        []string{"${GLOBAL_VAR}/config.toml"},
+			groupEnvAllowlist:  nil, // nil means inherit from global
+			globalEnvAllowlist: []string{"GLOBAL_VAR"},
+			expectedFiles:      []string{"/global/config.toml"},
+			groupName:          "test-group",
+			setupEnv: func(t *testing.T) {
+				t.Setenv("GLOBAL_VAR", "/global")
+			},
+		},
+		{
+			name:              "allowlist inheritance - explicit mode",
+			verifyFiles:       []string{"${GROUP_VAR}/config.toml"},
+			groupEnvAllowlist: []string{"GROUP_VAR"},
+			expectedFiles:     []string{"/group/config.toml"},
+			groupName:         "test-group",
+			setupEnv: func(t *testing.T) {
+				t.Setenv("GROUP_VAR", "/group")
+			},
+		},
+		{
+			name:               "allowlist inheritance - reject mode",
+			verifyFiles:        []string{"${GLOBAL_VAR}/config.toml"},
+			groupEnvAllowlist:  []string{}, // empty slice means reject all
+			globalEnvAllowlist: []string{"GLOBAL_VAR"},
+			expectError:        true,
+			errorSentinel:      config.ErrGroupVerifyFilesExpansionFailed,
+			errorContains:      "not allowed", // empty allowlist blocks all variables
+			groupName:          "test-group",
+			setupEnv: func(t *testing.T) {
+				t.Setenv("GLOBAL_VAR", "/global")
+			},
+		},
+		{
+			name:              "group name in error",
+			verifyFiles:       []string{"${FORBIDDEN}/config.toml"},
+			groupEnvAllowlist: []string{"SAFE"},
+			expectError:       true,
+			errorSentinel:     config.ErrGroupVerifyFilesExpansionFailed,
+			errorContains:     "my-group",
+			groupName:         "my-group",
+			setupEnv: func(t *testing.T) {
+				t.Setenv("FORBIDDEN", "/forbidden")
+			},
+		},
+		{
+			name:          "nil config error",
+			verifyFiles:   nil,
+			expectError:   true,
+			errorSentinel: config.ErrNilConfig,
+			errorContains: "cannot be nil",
+			groupName:     "test-group",
+		},
+		{
+			name:               "inheritance mode determination",
+			verifyFiles:        []string{"${INHERITED}/config.toml"},
+			groupEnvAllowlist:  nil, // nil means inherit from global
+			globalEnvAllowlist: []string{"INHERITED"},
+			expectedFiles:      []string{"/inherited/config.toml"},
+			groupName:          "test-group",
+			setupEnv: func(t *testing.T) {
+				t.Setenv("INHERITED", "/inherited")
+			},
+		},
+		{
+			name:              "environment variable priority",
+			verifyFiles:       []string{"${VAR1}/file.txt", "${VAR2}/file.txt"},
+			groupEnvAllowlist: []string{"VAR1", "VAR2"},
+			expectedFiles:     []string{"/path1/file.txt", "/path2/file.txt"},
+			groupName:         "test-group",
+			setupEnv: func(t *testing.T) {
+				t.Setenv("VAR1", "/path1")
+				t.Setenv("VAR2", "/path2")
+			},
+		},
+		// NOTE: Circular reference in system environment variables is extremely rare
+		// because shell expands variables before setting them. This test case is
+		// commented out as it's not a realistic scenario for verify_files expansion.
+		// Circular reference detection is still tested in Command.Env expansion tests.
+		// {
+		// 	name:              "circular reference error in group",
+		// 	verifyFiles:       []string{"${VAR1}/config.toml"},
+		// 	groupEnvAllowlist: []string{"VAR1", "VAR2"},
+		// 	expectError:       true,
+		// 	errorSentinel:     config.ErrGroupVerifyFilesExpansionFailed,
+		// 	errorContains:     "circular",
+		// 	groupName:         "test-group",
+		// 	setupEnv: func(t *testing.T) {
+		// 		t.Setenv("VAR1", "${VAR2}")
+		// 		t.Setenv("VAR2", "${VAR1}")
+		// 	},
+		// },
+		{
+			name:              "error context verification",
+			verifyFiles:       []string{"${ALLOWED}/file1.txt", "${FORBIDDEN}/file2.txt"},
+			groupEnvAllowlist: []string{"ALLOWED"},
+			expectError:       true,
+			errorSentinel:     config.ErrGroupVerifyFilesExpansionFailed,
+			errorContains:     "verify_files[1]",
+			groupName:         "test-group",
+			setupEnv: func(t *testing.T) {
+				t.Setenv("ALLOWED", "/allowed")
+				t.Setenv("FORBIDDEN", "/forbidden")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Setup environment variables
+			if tt.setupEnv != nil {
+				tt.setupEnv(t)
+			}
+
+			// Create group config
+			var group *runnertypes.CommandGroup
+			if tt.name == "nil config error" {
+				group = nil
+			} else {
+				group = &runnertypes.CommandGroup{
+					Name:         tt.groupName,
+					VerifyFiles:  tt.verifyFiles,
+					EnvAllowlist: tt.groupEnvAllowlist,
+				}
+			}
+
+			// Create filter with global allowlist
+			filter := environment.NewFilter(tt.globalEnvAllowlist)
+			expander := environment.NewVariableExpander(filter)
+
+			// Execute expansion
+			err := config.ExpandGroupVerifyFiles(group, filter, expander)
+
+			// Verify results
+			if tt.expectError {
+				require.Error(t, err)
+				if tt.errorSentinel != nil {
+					assert.ErrorIs(t, err, tt.errorSentinel)
+				}
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains)
+				}
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tt.expectedFiles, group.ExpandedVerifyFiles)
+			}
+		})
+	}
+}
+
+// BenchmarkExpandGlobalVerifyFiles benchmarks the performance of global verify_files expansion
+func BenchmarkExpandGlobalVerifyFiles(b *testing.B) {
+	// Setup environment
+	if err := os.Setenv("HOME", "/home/testuser"); err != nil {
+		b.Fatalf("failed to set environment variable: %v", err)
+	}
+	if err := os.Setenv("BASE", "/opt"); err != nil {
+		b.Fatalf("failed to set environment variable: %v", err)
+	}
+	if err := os.Setenv("APP", "myapp"); err != nil {
+		b.Fatalf("failed to set environment variable: %v", err)
+	}
+
+	global := &runnertypes.GlobalConfig{
+		VerifyFiles: []string{
+			"${HOME}/config.toml",
+			"${HOME}/data.txt",
+			"${BASE}/${APP}/file.txt",
+		},
+		EnvAllowlist: []string{"HOME", "BASE", "APP"},
+	}
+
+	filter := environment.NewFilter(global.EnvAllowlist)
+	expander := environment.NewVariableExpander(filter)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		err := config.ExpandGlobalVerifyFiles(global, filter, expander)
+		if err != nil {
+			b.Fatalf("unexpected error: %v", err)
+		}
+	}
+}
+
+// BenchmarkExpandGroupVerifyFiles benchmarks the performance of group verify_files expansion
+func BenchmarkExpandGroupVerifyFiles(b *testing.B) {
+	// Setup environment
+	if err := os.Setenv("HOME", "/home/testuser"); err != nil {
+		b.Fatalf("failed to set environment variable: %v", err)
+	}
+	if err := os.Setenv("DATA", "/var/data"); err != nil {
+		b.Fatalf("failed to set environment variable: %v", err)
+	}
+
+	group := &runnertypes.CommandGroup{
+		Name: "test-group",
+		VerifyFiles: []string{
+			"${HOME}/group/config.toml",
+			"${DATA}/file.txt",
+		},
+		EnvAllowlist: []string{"HOME", "DATA"},
+	}
+
+	globalAllowlist := []string{"HOME", "DATA"}
+	filter := environment.NewFilter(globalAllowlist)
+	expander := environment.NewVariableExpander(filter)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		err := config.ExpandGroupVerifyFiles(group, filter, expander)
+		if err != nil {
+			b.Fatalf("unexpected error: %v", err)
+		}
+	}
+}
+
+// BenchmarkExpandLargeVerifyFiles benchmarks performance with many verify_files
+func BenchmarkExpandLargeVerifyFiles(b *testing.B) {
+	// Setup environment
+	if err := os.Setenv("BASE", "/opt/app"); err != nil {
+		b.Fatalf("failed to set environment variable: %v", err)
+	}
+
+	// Create config with 100 verify_files
+	verifyFiles := make([]string, 100)
+	for i := 0; i < 100; i++ {
+		verifyFiles[i] = "${BASE}/file" + string(rune('0'+i%10)) + ".txt"
+	}
+
+	global := &runnertypes.GlobalConfig{
+		VerifyFiles:  verifyFiles,
+		EnvAllowlist: []string{"BASE"},
+	}
+
+	filter := environment.NewFilter(global.EnvAllowlist)
+	expander := environment.NewVariableExpander(filter)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		err := config.ExpandGlobalVerifyFiles(global, filter, expander)
+		if err != nil {
+			b.Fatalf("unexpected error: %v", err)
+		}
 	}
 }

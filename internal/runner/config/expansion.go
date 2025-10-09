@@ -153,8 +153,15 @@ func expandVerifyFiles(
 		return []string{}, nil
 	}
 
-	// Use existing Filter.ParseSystemEnvironment() for system environment map
-	systemEnv := filter.ParseSystemEnvironment(nil) // nil predicate = get all variables
+	// Use existing Filter.ParseSystemEnvironment() with allowlist predicate
+	// Only include environment variables that are in the allowlist
+	allowlistSet := make(map[string]bool, len(allowlist))
+	for _, varName := range allowlist {
+		allowlistSet[varName] = true
+	}
+	systemEnv := filter.ParseSystemEnvironment(func(varName string) bool {
+		return allowlistSet[varName]
+	})
 
 	// Expand all paths using existing VariableExpander.ExpandString()
 	expanded := make([]string, 0, len(paths))
