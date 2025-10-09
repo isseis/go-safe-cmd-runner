@@ -265,32 +265,79 @@ args = ["${VAR_A}"]  # エラー: VAR_Aは未定義（VAR_Bのみ参照可能）
 #### S001: allowlistとの統合
 **概要**: 既存のallowlist機能と完全統合
 
-**動作**:
-1. **Global.Env**: `global.env_allowlist` でチェック（未定義の場合はチェックなし）
-2. **Group.Env**: グループの有効なallowlist（global継承または明示的定義）でチェック
-3. **Command.Env**: コマンドで参照可能なallowlist（global + group）でチェック
+**allowlist継承ルール（既存仕様）**:
+- グループが `env_allowlist` を定義していない（nil）: globalのallowlistを**継承**
+- グループが `env_allowlist` を明示的に定義: そのリストのみを使用（globalは継承しない = **上書き**）
+- グループが `env_allowlist = []` を定義: すべての環境変数を**拒否**
 
-**allowlist継承ルール**:
-- グループが `env_allowlist` を定義していない（nil）: globalのallowlistを継承
-- グループが `env_allowlist` を明示的に定義: そのリストのみを使用（globalは継承しない）
-- グループが `env_allowlist = []` を定義: すべての環境変数を拒否
+**各レベルでのallowlistチェック**:
+1. **Global.Envの展開時**:
+   - チェック対象: `global.env_allowlist`
+   - 未定義の場合: チェックなし（すべての環境変数を許可）
+   - システム環境変数参照時のみチェック（Global.Env内の変数定義自体はチェック対象外）
 
-**例**:
+2. **Group.Envの展開時**:
+   - チェック対象: グループの**有効なallowlist**
+   - 有効なallowlistの決定:
+     - `group.env_allowlist` が未定義（nil）→ `global.env_allowlist` を継承
+     - `group.env_allowlist` が定義済み → そのリストを使用（globalは無視）
+     - `group.env_allowlist = []` → 空リスト（すべて拒否）
+   - システム環境変数参照時のみチェック（Group.Env内の変数定義自体はチェック対象外）
+
+3. **Command.Envの展開時**:
+   - チェック対象: そのコマンドが所属するグループの**有効なallowlist**
+   - Group.Envと同じルールでallowlistを決定
+   - システム環境変数参照時のみチェック（Command.Env内の変数定義自体はチェック対象外）
+
+**重要な注意点**:
+- allowlistは「Union（結合）」ではなく「Override（上書き）」方式
+- グループが独自のallowlistを定義すると、globalのallowlistは完全に無視される
+- この仕様は既存のTask 0011で確立されており、本タスクでも維持
+
+**例1: allowlist継承（group.env_allowlist未定義）**:
 ```toml
 [global]
-env_allowlist = ["ALLOWED_VAR"]
-env = ["ALLOWED_VAR=ok", "OTHER_VAR=ng"]  # エラー: OTHER_VARはallowlistにない
+env_allowlist = ["GLOBAL_VAR", "COMMON_VAR"]
+env = ["GLOBAL_VAR=global_value"]  # OK: global.env_allowlistでチェック
 
 [[groups]]
-name = "group1"
-# env_allowlistが未定義なのでglobalを継承
-env = ["ALLOWED_VAR=value"]  # OK
+name = "inherit_group"
+# env_allowlist未定義 → globalを継承
+env = ["COMMON_VAR=${GLOBAL_VAR}"]  # OK: 両方とも有効なallowlistに含まれる
+
+[[groups.commands]]
+name = "cmd1"
+env = ["CMD_VAR=${COMMON_VAR}"]  # OK: COMMON_VARは有効なallowlist（継承したglobal）に含まれる
+```
+
+**例2: allowlist上書き（group.env_allowlist定義済み）**:
+```toml
+[global]
+env_allowlist = ["GLOBAL_VAR"]
+env = ["GLOBAL_VAR=value"]  # OK: global.env_allowlistでチェック
 
 [[groups]]
-name = "group2"
-env_allowlist = ["GROUP_VAR"]  # 明示的定義（globalは継承しない）
-env = ["GROUP_VAR=value"]     # OK
-env = ["ALLOWED_VAR=value"]   # エラー: GROUP_VARのみ許可
+name = "override_group"
+env_allowlist = ["GROUP_VAR"]  # 明示的定義 → globalは無視
+env = ["GROUP_VAR=value"]      # OK: 有効なallowlist（GROUP_VARのみ）に含まれる
+env = ["INVALID=${GLOBAL_VAR}"]  # エラー: GLOBAL_VARは有効なallowlistに含まれない
+
+[[groups.commands]]
+name = "cmd2"
+env = ["CMD_VAR=${GROUP_VAR}"]   # OK: GROUP_VARは有効なallowlist（明示的定義）に含まれる
+env = ["BAD=${GLOBAL_VAR}"]      # エラー: GLOBAL_VARは有効なallowlistに含まれない
+```
+
+**例3: allowlist完全拒否（group.env_allowlist = []）**:
+```toml
+[global]
+env_allowlist = ["GLOBAL_VAR"]
+
+[[groups]]
+name = "reject_group"
+env_allowlist = []  # すべて拒否
+env = ["ANY_VAR=value"]  # エラー: システム環境変数を参照する場合は拒否される
+                         # （定数値のみの定義は可能）
 ```
 
 #### S002: 循環参照検出
