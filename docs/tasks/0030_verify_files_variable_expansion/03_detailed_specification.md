@@ -5,8 +5,17 @@
 この実装では、重複開発を避け既存の環境変数展開インフラを最大限活用します：
 
 - **Filter クラス**: システム環境変数の取得、allowlist 決定、継承モード判定
+  - `ParseSystemEnvironment()`: システム環境変数をマップとして取得（エクスポート済み）
+  - `ResolveAllowlistConfiguration()`: グループの allowlist 設定を解決（**エクスポートが必要**）
 - **VariableExpander クラス**: 環境変数展開エンジン、循環参照検出、セキュリティ検証
+  - `ExpandString()`: 文字列中の環境変数を展開（エクスポート済み）
 - **既存エラー型**: 環境変数関連エラー（ErrVariableNotAllowed、ErrCircularReference 等）
+
+**アーキテクチャ上の決定**:
+- `filter.parseSystemEnvironment` は既に `Filter.ParseSystemEnvironment()` として公開されています
+- `filter.resolveAllowlistConfiguration` は現在プライベートです。config パッケージから使用するため、`Filter.ResolveAllowlistConfiguration()` として公開する必要があります
+  - この変更は environment パッケージ内で行い、メソッド名を大文字で始めるだけの簡単な作業です
+  - 既存の呼び出し元（environment パッケージ内）も更新が必要です
 
 これにより**実装工数を1日削減**し、**実証済みセキュリティ機能を継承**できます。
 
@@ -17,6 +26,7 @@
 ```
 # 既存コンポーネント（再利用）
 internal/runner/environment/filter.go       # Filter を再利用
+                                             # ResolveAllowlistConfiguration のエクスポートが必要
 internal/runner/environment/processor.go    # VariableExpander を再利用
 
 # 拡張対象コンポーネント
@@ -84,10 +94,11 @@ type CommandGroup struct {
 // internal/runner/config/expansion.go
 
 // ExpandGlobalVerifyFiles expands environment variables in global verify_files.
-// Uses existing Filter.parseSystemEnvironment() and VariableExpander.ExpandString().
+// Uses existing Filter.ParseSystemEnvironment() and VariableExpander.ExpandString().
 // Returns VerifyFilesExpansionError on failure, which wraps the underlying cause.
 func ExpandGlobalVerifyFiles(
     global *runnertypes.GlobalConfig,
+    filter *environment.Filter,
     expander *environment.VariableExpander,
 ) error {
     if global == nil {
@@ -100,10 +111,9 @@ func ExpandGlobalVerifyFiles(
         return nil
     }
 
-    // Use existing Filter.parseSystemEnvironment() for system environment map
+    // Use existing Filter.ParseSystemEnvironment() for system environment map
     // This is equivalent to buildSystemEnvironmentMap() but reuses proven logic
-    filter := environment.NewFilter(global.EnvAllowlist)
-    systemEnv := filter.parseSystemEnvironment(nil) // nil predicate = get all variables
+    systemEnv := filter.ParseSystemEnvironment(nil) // nil predicate = get all variables
 
     // Expand all paths using existing VariableExpander.ExpandString()
     expanded := make([]string, 0, len(global.VerifyFiles))
@@ -138,7 +148,7 @@ func ExpandGlobalVerifyFiles(
 // internal/runner/config/expansion.go
 
 // ExpandGroupVerifyFiles expands environment variables in group verify_files.
-// Uses existing Filter.resolveAllowlistConfiguration() and VariableExpander.ExpandString().
+// Uses existing Filter.ResolveAllowlistConfiguration() and VariableExpander.ExpandString().
 // Returns VerifyFilesExpansionError on failure, which wraps the underlying cause.
 func ExpandGroupVerifyFiles(
     group *runnertypes.CommandGroup,
@@ -156,12 +166,12 @@ func ExpandGroupVerifyFiles(
         return nil
     }
 
-    // Use existing Filter.parseSystemEnvironment() for system environment
+    // Use existing Filter.ParseSystemEnvironment() for system environment
     // verify_files expansion only uses system environment variables
-    systemEnv := filter.parseSystemEnvironment(nil) // nil predicate = get all variables
+    systemEnv := filter.ParseSystemEnvironment(nil) // nil predicate = get all variables
 
-    // Use existing Filter.resolveAllowlistConfiguration() for allowlist determination
-    resolution := filter.resolveAllowlistConfiguration(group.EnvAllowlist, group.Name)
+    // Use existing Filter.ResolveAllowlistConfiguration() for allowlist determination
+    resolution := filter.ResolveAllowlistConfiguration(group.EnvAllowlist, group.Name)
     allowlist := resolution.EffectiveList
 
     // Expand all paths using existing VariableExpander.ExpandString()
@@ -216,7 +226,7 @@ func LoadConfig(configPath string) (*runnertypes.Config, error) {
 // Uses existing Filter and VariableExpander for consistency with command variable expansion.
 func processConfig(config *runnertypes.Config, filter *environment.Filter, expander *environment.VariableExpander) (*runnertypes.Config, error) {
     // Expand global verify_files using existing infrastructure
-    if err := ExpandGlobalVerifyFiles(&config.Global, expander); err != nil {
+    if err := ExpandGlobalVerifyFiles(&config.Global, filter, expander); err != nil {
         return nil, fmt.Errorf("failed to expand global verify_files: %w", err)
     }
 
@@ -901,8 +911,9 @@ func BenchmarkExpandGlobalVerifyFiles(b *testing.B) {
 
 ### 2.2 Phase 2: 環境変数展開の実装（既存機能活用）
 - [ ] Filter と VariableExpander の既存機能確認
-- [ ] ExpandGlobalVerifyFiles 関数の実装（Filter.parseSystemEnvironment 使用）
-- [ ] ExpandGroupVerifyFiles 関数の実装（Filter.resolveAllowlistConfiguration 使用）
+- [ ] Filter.ResolveAllowlistConfiguration メソッドのエクスポート（小文字 → 大文字化）
+- [ ] ExpandGlobalVerifyFiles 関数の実装（Filter.ParseSystemEnvironment 使用）
+- [ ] ExpandGroupVerifyFiles 関数の実装（Filter.ResolveAllowlistConfiguration 使用）
 - [ ] 既存機能との統合テスト
 
 ### 2.3 Phase 3: Config Parser の統合（既存機能活用）
