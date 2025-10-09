@@ -406,12 +406,35 @@ func (m *Manager) collectVerificationFiles(groupConfig *runnertypes.CommandGroup
 
 ### 1.5 エラーハンドリング
 
-#### 1.5.1 エラー種別
+#### 1.5.1 設計判断（ADR）
+
+**背景**: 環境変数展開時のエラーには複数のレイヤーが存在します：
+
+1. 最上位: グローバル/グループレベルでの展開失敗
+2. 中位: 個別パスの展開失敗（インデックス、パス、allowlist の情報）
+3. 下位: 根本原因（allowlist 違反、未定義変数、循環参照など）
+
+**決定**: カスタムエラー型 `VerifyFilesExpansionError` を導入し、エラーチェーンを保持する設計を採用します。
+
+**根拠**:
+
+- `fmt.Errorf` による単純なラッピングでは、`errors.Is()` / `errors.As()` で元のエラー型を判定できない
+- エラーメッセージ文字列マッチングは脆弱で保守性が低い
+- デバッグ時に詳細なコンテキスト情報（インデックス、パス、allowlist）が必要
+
+**利点**:
+
+1. **型安全性**: エラー文字列ではなく型で判定
+2. **保守性**: エラーメッセージ変更の影響を受けない
+3. **デバッグ性**: エラーの詳細情報にアクセス可能
+4. **拡張性**: 将来的なエラー処理の拡張が容易
+
+#### 1.5.2 エラー種別
 
 ```go
 // internal/runner/config/expansion.go
 
-// verify_files 展開に関連するエラー
+// Sentinel errors for verify_files expansion
 var (
     // ErrGlobalVerifyFilesExpansionFailed indicates global verify_files expansion failed
     ErrGlobalVerifyFilesExpansionFailed = errors.New("global verify_files expansion failed")
@@ -424,7 +447,7 @@ var (
 )
 ```
 
-#### 1.5.2 エラーコンテキスト
+#### 1.5.3 エラーコンテキスト
 
 ```go
 // VerifyFilesExpansionError represents an error that occurred during verify_files expansion.
@@ -466,7 +489,7 @@ func (e *VerifyFilesExpansionError) Is(target error) bool {
 }
 ```
 
-#### 1.5.3 エラー使用例
+#### 1.5.4 エラー使用例
 
 ```go
 // エラー生成例
@@ -912,59 +935,7 @@ func BenchmarkExpandGlobalVerifyFiles(b *testing.B) {
 - [ ] サンプル TOML ファイルの作成
 - [ ] CHANGELOG の更新
 
-## 3. エラーハンドリング設計の改善点
-
-### 3.1 改善の背景
-
-従来の `fmt.Errorf` による単純なエラーラッピングでは、以下の問題がありました：
-
-- `errors.Is()` で元のエラー型を判定できない
-- `errors.As()` でカスタムエラー型を取得できない
-- エラーチェーンが途切れてしまう
-
-### 3.2 実装した改善策
-
-#### 3.2.1 カスタムエラー型の導入
-
-`VerifyFilesExpansionError` 型を導入し、以下を実現：
-
-1. **Unwrap() メソッド**: エラーチェーンを保持
-2. **Is() メソッド**: sentinel error との比較をサポート
-3. **詳細なコンテキスト**: Level, Index, Path, Allowlist を保持
-
-#### 3.2.2 エラー判定の堅牢性
-
-```go
-// 複数のレベルでのエラー判定が可能
-if errors.Is(err, ErrGlobalVerifyFilesExpansionFailed) {
-    // グローバルレベルのエラー処理
-}
-
-if errors.Is(err, environment.ErrVariableNotAllowed) {
-    // allowlist 違反の処理（元のエラー型を直接判定）
-}
-
-var expansionErr *VerifyFilesExpansionError
-if errors.As(err, &expansionErr) {
-    // 詳細情報へのアクセス
-    log.Error("details", "path", expansionErr.Path, "index", expansionErr.Index)
-}
-```
-
-#### 3.2.3 テスト戦略の強化
-
-- `assert.ErrorIs()`: sentinel error の検証
-- `assert.ErrorAs()`: カスタムエラー型の検証
-- エラーチェーン全体の検証が可能
-
-### 3.3 利点
-
-1. **型安全性**: エラー文字列ではなく型で判定
-2. **保守性**: エラーメッセージ変更の影響を受けない
-3. **デバッグ性**: エラーの詳細情報にアクセス可能
-4. **拡張性**: 将来的なエラー処理の拡張が容易
-
-## 4. 参照
+## 3. 参照
 
 - タスク 0026: Variable Expansion Implementation（環境変数展開の基盤実装）
 - タスク 0007: verify_hash_all（ファイル検証機能）
