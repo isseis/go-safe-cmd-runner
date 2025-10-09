@@ -107,7 +107,7 @@ func processConfig(cfg *runnertypes.Config, filter *environment.Filter, expander
 
 	// Expand group verify_files
 	for i := range cfg.Groups {
-		if err := ExpandGroupVerifyFiles(&cfg.Groups[i], &cfg.Global, filter, expander); err != nil {
+		if err := ExpandGroupVerifyFiles(&cfg.Groups[i], filter, expander); err != nil {
 			return fmt.Errorf("failed to expand verify_files for group %q: %w", cfg.Groups[i].Name, err)
 		}
 	}

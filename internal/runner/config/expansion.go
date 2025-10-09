@@ -191,7 +191,6 @@ func ExpandGlobalVerifyFiles(
 // Returns VerifyFilesExpansionError on failure, which wraps the underlying cause.
 func ExpandGroupVerifyFiles(
 	group *runnertypes.CommandGroup,
-	_ *runnertypes.GlobalConfig,
 	filter *environment.Filter,
 	expander *environment.VariableExpander,
 ) error {
