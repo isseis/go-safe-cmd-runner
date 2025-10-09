@@ -194,27 +194,13 @@ func ExpandGroupVerifyFiles(
     return nil
 }
 
-// buildGroupEnvironmentMap builds a map of group environment variables
-// by merging system environment variables and group-defined variables.
+// buildGroupEnvironmentMap builds a map of environment variables for group-level expansion.
+// For verify_files expansion at the group level, only system environment variables are used.
+// Command-level env variables are NOT used for verify_files expansion.
 func buildGroupEnvironmentMap(group *runnertypes.CommandGroup) (map[string]string, error) {
-    // Start with system environment
-    env := buildSystemEnvironmentMap()
-
-    // If group has commands, use the first command's env as representative
-    if len(group.Commands) > 0 {
-        firstCmd := group.Commands[0]
-        cmdEnv, err := firstCmd.BuildEnvironmentMap()
-        if err != nil {
-            return nil, fmt.Errorf("failed to build environment map from first command: %w", err)
-        }
-
-        // Merge command env (group env takes precedence over system env)
-        for key, value := range cmdEnv {
-            env[key] = value
-        }
-    }
-
-    return env, nil
+    // Use only system environment variables for verify_files expansion
+    // Command-level env is irrelevant for verify_files at group level
+    return buildSystemEnvironmentMap(), nil
 }
 
 // determineGroupAllowlist determines the allowlist for a group based on inheritance mode
@@ -552,7 +538,7 @@ verify_files の変数展開は、タスク 0026 と同じ仕様を使用:
    - システム環境変数のみ使用
    - global.env_allowlist を適用
 3. 各グループの verify_files の展開
-   - システム環境変数 + グループ env 変数を使用
+   - システム環境変数のみ使用
    - group.env_allowlist を適用（継承モードに従う）
 4. 各コマンドの cmd/args の展開（既存ロジック）
 ```
@@ -562,8 +548,8 @@ verify_files の変数展開は、タスク 0026 と同じ仕様を使用:
 グループ verify_files の展開時:
 
 ```
-1. グループの env フィールドで定義された変数（最優先）
-2. システム環境変数
+1. システム環境変数のみ使用
+   （注: Command レベルの env フィールドは verify_files 展開には使用しない）
 ```
 
 ### 1.7 セキュリティ検証
@@ -738,17 +724,16 @@ func TestExpandGroupVerifyFiles(t *testing.T) {
         expectedCauseError    error // Unwrap 後の元のエラーを errors.Is でチェック
     }{
         {
-            name: "group env variable expansion",
+            name: "system env variable expansion",
             group: &runnertypes.CommandGroup{
                 Name:         "test",
                 VerifyFiles:  []string{"${TOOLS_DIR}/verify.sh"},
                 EnvAllowlist: []string{"TOOLS_DIR"},
-                Commands: []runnertypes.Command{
-                    {Env: []string{"TOOLS_DIR=/opt/tools"}},
-                },
+                Commands:     []runnertypes.Command{},
             },
-            global:   &runnertypes.GlobalConfig{},
-            expected: []string{"/opt/tools/verify.sh"},
+            global:    &runnertypes.GlobalConfig{},
+            systemEnv: map[string]string{"TOOLS_DIR": "/opt/tools"},
+            expected:  []string{"/opt/tools/verify.sh"},
         },
         {
             name: "inherit global allowlist",
@@ -778,14 +763,16 @@ func TestExpandGroupVerifyFiles(t *testing.T) {
             expectedCauseError:    environment.ErrVariableNotAllowed,
         },
         {
-            name: "circular reference",
+            name: "circular reference in system environment",
             group: &runnertypes.CommandGroup{
                 Name:         "test",
                 VerifyFiles:  []string{"${VAR1}/file"},
                 EnvAllowlist: []string{"VAR1", "VAR2"},
-                Commands: []runnertypes.Command{
-                    {Env: []string{"VAR1=${VAR2}", "VAR2=${VAR1}"}},
-                },
+                Commands:     []runnertypes.Command{},
+            },
+            systemEnv: map[string]string{
+                "VAR1": "${VAR2}/path",
+                "VAR2": "${VAR1}/path",
             },
             expectError:           true,
             expectedSentinelError: ErrGroupVerifyFilesExpansionFailed,
@@ -844,12 +831,11 @@ verify_files = ["${HOME}/bin/tool.sh"]
 [[groups]]
 name = "test"
 env_allowlist = ["TOOLS_DIR", "HOME"]
-verify_files = ["${TOOLS_DIR}/verify-${VERSION}.sh", "${HOME}/config.conf"]
+verify_files = ["${TOOLS_DIR}/verify.sh", "${HOME}/config.conf"]
 
 [[groups.commands]]
 name = "test-cmd"
 cmd = "/bin/echo"
-env = ["TOOLS_DIR=/opt/tools", "VERSION=1.0"]
 `
 
     // Load and expand
@@ -860,8 +846,9 @@ env = ["TOOLS_DIR=/opt/tools", "VERSION=1.0"]
     assert.Equal(t, []string{"/home/user/bin/tool.sh"}, config.Global.ExpandedVerifyFiles)
 
     // Verify group expansion
+    // Note: TOOLS_DIR must be set in system environment for this test
     assert.Equal(t, []string{
-        "/opt/tools/verify-1.0.sh",
+        "/opt/tools/verify.sh",
         "/home/user/config.conf",
     }, config.Groups[0].ExpandedVerifyFiles)
 }
