@@ -1,0 +1,806 @@
+# 詳細仕様書: verify_files フィールド環境変数展開機能
+
+## 1. 実装詳細仕様
+
+### 1.1 パッケージ構成詳細
+
+```
+# 既存コンポーネント（変更なし）
+internal/runner/environment/processor.go  # CommandEnvProcessor を再利用
+
+# 拡張対象コンポーネント
+internal/runner/runnertypes/config.go     # GlobalConfig/CommandGroup 拡張
+internal/runner/config/expansion.go       # verify_files 展開ロジック追加
+
+# 更新対象コンポーネント
+internal/verification/manager.go          # ExpandedVerifyFiles の使用
+```
+
+### 1.2 型定義とインターフェース
+
+#### 1.2.1 GlobalConfig 構造体の拡張
+
+```go
+// internal/runner/runnertypes/config.go
+
+type GlobalConfig struct {
+    Timeout           int      `toml:"timeout"`
+    WorkDir           string   `toml:"workdir"`
+    LogLevel          string   `toml:"log_level"`
+    VerifyFiles       []string `toml:"verify_files"`        // 既存フィールド
+    SkipStandardPaths bool     `toml:"skip_standard_paths"`
+    EnvAllowlist      []string `toml:"env_allowlist"`
+    MaxOutputSize     int64    `toml:"max_output_size"`
+
+    // ExpandedVerifyFiles contains verify_files with environment variables expanded.
+    // It is populated during configuration loading (Phase 1) and used during
+    // verification (Phase 2) to avoid re-expanding VerifyFiles for each verification.
+    // The toml:"-" tag prevents this field from being set via TOML configuration.
+    ExpandedVerifyFiles []string `toml:"-"`
+}
+```
+
+#### 1.2.2 CommandGroup 構造体の拡張
+
+```go
+// internal/runner/runnertypes/config.go
+
+type CommandGroup struct {
+    Name        string `toml:"name"`
+    Description string `toml:"description"`
+    Priority    int    `toml:"priority"`
+
+    TempDir bool   `toml:"temp_dir"`
+    WorkDir string `toml:"workdir"`
+
+    Commands     []Command `toml:"commands"`
+    VerifyFiles  []string  `toml:"verify_files"`  // 既存フィールド
+    EnvAllowlist []string  `toml:"env_allowlist"`
+
+    // ExpandedVerifyFiles contains verify_files with environment variables expanded.
+    // It is populated during configuration loading (Phase 1) and used during
+    // verification (Phase 2) to avoid re-expanding VerifyFiles for each verification.
+    // The toml:"-" tag prevents this field from being set via TOML configuration.
+    ExpandedVerifyFiles []string `toml:"-"`
+}
+```
+
+### 1.3 環境変数展開の実装
+
+#### 1.3.1 グローバル verify_files の展開
+
+```go
+// internal/runner/config/expansion.go
+
+// ExpandGlobalVerifyFiles expands environment variables in global verify_files.
+// It uses only system environment variables and applies global.env_allowlist.
+func ExpandGlobalVerifyFiles(
+    global *runnertypes.GlobalConfig,
+    processor *environment.CommandEnvProcessor,
+) error {
+    if global == nil {
+        return fmt.Errorf("global config is nil")
+    }
+
+    // Handle empty verify_files
+    if len(global.VerifyFiles) == 0 {
+        global.ExpandedVerifyFiles = []string{}
+        return nil
+    }
+
+    // Build system environment map from os.Environ()
+    systemEnv := buildSystemEnvironmentMap()
+
+    // Expand all paths
+    expanded := make([]string, 0, len(global.VerifyFiles))
+    for i, path := range global.VerifyFiles {
+        expandedPath, err := processor.Expand(
+            path,
+            systemEnv,
+            global.EnvAllowlist,
+            "global",
+            make(map[string]bool),
+        )
+        if err != nil {
+            return fmt.Errorf("failed to expand global verify_files[%d] (%s): %w", i, path, err)
+        }
+        expanded = append(expanded, expandedPath)
+    }
+
+    global.ExpandedVerifyFiles = expanded
+    return nil
+}
+
+// buildSystemEnvironmentMap builds a map of system environment variables
+func buildSystemEnvironmentMap() map[string]string {
+    env := make(map[string]string)
+    for _, envVar := range os.Environ() {
+        key, value, ok := common.ParseEnvVariable(envVar)
+        if !ok {
+            continue
+        }
+        env[key] = value
+    }
+    return env
+}
+```
+
+#### 1.3.2 グループ verify_files の展開
+
+```go
+// internal/runner/config/expansion.go
+
+// ExpandGroupVerifyFiles expands environment variables in group verify_files.
+// It uses system environment variables and group environment variables,
+// and applies group.env_allowlist (or global.env_allowlist if inherited).
+func ExpandGroupVerifyFiles(
+    group *runnertypes.CommandGroup,
+    global *runnertypes.GlobalConfig,
+    processor *environment.CommandEnvProcessor,
+) error {
+    if group == nil {
+        return fmt.Errorf("group config is nil")
+    }
+
+    // Handle empty verify_files
+    if len(group.VerifyFiles) == 0 {
+        group.ExpandedVerifyFiles = []string{}
+        return nil
+    }
+
+    // Build group environment map
+    groupEnv, err := buildGroupEnvironmentMap(group)
+    if err != nil {
+        return fmt.Errorf("failed to build group environment map for group %s: %w", group.Name, err)
+    }
+
+    // Determine allowlist based on inheritance mode
+    allowlist, err := determineGroupAllowlist(group, global)
+    if err != nil {
+        return fmt.Errorf("failed to determine allowlist for group %s: %w", group.Name, err)
+    }
+
+    // Expand all paths
+    expanded := make([]string, 0, len(group.VerifyFiles))
+    for i, path := range group.VerifyFiles {
+        expandedPath, err := processor.Expand(
+            path,
+            groupEnv,
+            allowlist,
+            group.Name,
+            make(map[string]bool),
+        )
+        if err != nil {
+            return fmt.Errorf("failed to expand verify_files[%d] (%s) for group %s: %w", i, path, group.Name, err)
+        }
+        expanded = append(expanded, expandedPath)
+    }
+
+    group.ExpandedVerifyFiles = expanded
+    return nil
+}
+
+// buildGroupEnvironmentMap builds a map of group environment variables
+// by merging system environment variables and group-defined variables.
+func buildGroupEnvironmentMap(group *runnertypes.CommandGroup) (map[string]string, error) {
+    // Start with system environment
+    env := buildSystemEnvironmentMap()
+
+    // If group has commands, use the first command's env as representative
+    if len(group.Commands) > 0 {
+        firstCmd := group.Commands[0]
+        cmdEnv, err := firstCmd.BuildEnvironmentMap()
+        if err != nil {
+            return nil, fmt.Errorf("failed to build environment map from first command: %w", err)
+        }
+
+        // Merge command env (group env takes precedence over system env)
+        for key, value := range cmdEnv {
+            env[key] = value
+        }
+    }
+
+    return env, nil
+}
+
+// determineGroupAllowlist determines the allowlist for a group based on inheritance mode
+func determineGroupAllowlist(group *runnertypes.CommandGroup, global *runnertypes.GlobalConfig) ([]string, error) {
+    // Determine inheritance mode
+    mode := determineInheritanceMode(group)
+
+    switch mode {
+    case runnertypes.InheritanceModeReject:
+        // Empty allowlist explicitly set - reject all variables
+        return []string{}, nil
+
+    case runnertypes.InheritanceModeExplicit:
+        // Use group's explicit allowlist
+        return group.EnvAllowlist, nil
+
+    case runnertypes.InheritanceModeInherit:
+        // Inherit from global allowlist
+        if global == nil {
+            return []string{}, nil
+        }
+        return global.EnvAllowlist, nil
+
+    default:
+        return nil, fmt.Errorf("unknown inheritance mode: %v", mode)
+    }
+}
+
+// determineInheritanceMode determines how the group inherits allowlist
+func determineInheritanceMode(group *runnertypes.CommandGroup) runnertypes.InheritanceMode {
+    if group.EnvAllowlist == nil {
+        return runnertypes.InheritanceModeInherit
+    }
+    if len(group.EnvAllowlist) == 0 {
+        return runnertypes.InheritanceModeReject
+    }
+    return runnertypes.InheritanceModeExplicit
+}
+```
+
+#### 1.3.3 Config Parser への統合
+
+```go
+// internal/runner/config/loader.go (既存ファイル)
+
+// LoadConfig loads and validates configuration from a TOML file
+func LoadConfig(configPath string, processor *environment.CommandEnvProcessor) (*runnertypes.Config, error) {
+    // Load TOML file
+    config, err := loadTOMLFile(configPath)
+    if err != nil {
+        return nil, err
+    }
+
+    // Expand global verify_files
+    if err := ExpandGlobalVerifyFiles(&config.Global, processor); err != nil {
+        return nil, fmt.Errorf("failed to expand global verify_files: %w", err)
+    }
+
+    // Expand group verify_files and command variables
+    for i := range config.Groups {
+        group := &config.Groups[i]
+
+        // Expand verify_files for this group
+        if err := ExpandGroupVerifyFiles(group, &config.Global, processor); err != nil {
+            return nil, fmt.Errorf("failed to expand verify_files for group %s: %w", group.Name, err)
+        }
+
+        // Expand command variables (existing logic)
+        for j := range group.Commands {
+            cmd := &group.Commands[j]
+            if err := ExpandCommandVariables(cmd, group, &config.Global, processor); err != nil {
+                return nil, fmt.Errorf("failed to expand variables for command %s in group %s: %w", cmd.Name, group.Name, err)
+            }
+        }
+    }
+
+    return config, nil
+}
+```
+
+### 1.4 Verification Manager の更新
+
+#### 1.4.1 VerifyGlobalFiles の更新
+
+```go
+// internal/verification/manager.go
+
+// VerifyGlobalFiles verifies the integrity of global files
+func (m *Manager) VerifyGlobalFiles(globalConfig *runnertypes.GlobalConfig) (*Result, error) {
+    if globalConfig == nil {
+        return nil, ErrConfigNil
+    }
+
+    // Ensure hash directory is validated
+    if err := m.ensureHashDirectoryValidated(); err != nil {
+        return nil, err
+    }
+
+    result := &Result{
+        // 変更: ExpandedVerifyFiles を使用
+        TotalFiles:   len(globalConfig.ExpandedVerifyFiles),
+        FailedFiles:  []string{},
+        SkippedFiles: []string{},
+    }
+
+    start := time.Now()
+    defer func() {
+        result.Duration = time.Since(start)
+    }()
+
+    // Update PathResolver with skip_standard_paths setting
+    if m.pathResolver != nil {
+        m.pathResolver.skipStandardPaths = globalConfig.SkipStandardPaths
+    }
+
+    // 変更: ExpandedVerifyFiles を使用
+    for _, filePath := range globalConfig.ExpandedVerifyFiles {
+        // Check if file should be skipped
+        if m.shouldSkipVerification(filePath) {
+            result.SkippedFiles = append(result.SkippedFiles, filePath)
+            slog.Info("Skipping global file verification for standard system path",
+                "file", filePath)
+            continue
+        }
+
+        // Verify file hash (try normal verification first, then with privileges if needed)
+        if err := m.verifyFileWithFallback(filePath); err != nil {
+            result.FailedFiles = append(result.FailedFiles, filePath)
+            slog.Error("Global file verification failed",
+                "file", filePath,
+                "error", err)
+        } else {
+            result.VerifiedFiles++
+        }
+    }
+
+    if len(result.FailedFiles) > 0 {
+        slog.Error("CRITICAL: Global file verification failed - program will terminate",
+            "failed_files", result.FailedFiles,
+            "verified_files", result.VerifiedFiles,
+            "total_files", result.TotalFiles)
+        return result, &VerificationError{
+            Op:      "global",
+            Details: result.FailedFiles,
+            Err:     ErrGlobalVerificationFailed,
+        }
+    }
+
+    return result, nil
+}
+```
+
+#### 1.4.2 collectVerificationFiles の更新
+
+```go
+// internal/verification/manager.go
+
+// collectVerificationFiles collects all files to verify for a group
+func (m *Manager) collectVerificationFiles(groupConfig *runnertypes.CommandGroup) []string {
+    if groupConfig == nil {
+        return []string{}
+    }
+
+    // 変更: ExpandedVerifyFiles を使用
+    allFiles := make([]string, 0, len(groupConfig.ExpandedVerifyFiles)+len(groupConfig.Commands))
+
+    // Add explicit files (変更: ExpandedVerifyFiles を使用)
+    allFiles = append(allFiles, groupConfig.ExpandedVerifyFiles...)
+
+    // Add command files
+    if m.pathResolver != nil {
+        for _, command := range groupConfig.Commands {
+            resolvedPath, err := m.pathResolver.ResolvePath(command.ExpandedCmd)
+            if err != nil {
+                slog.Warn("Failed to resolve command path",
+                    "group", groupConfig.Name,
+                    "command", command.ExpandedCmd,
+                    "error", err.Error())
+                continue
+            }
+            allFiles = append(allFiles, resolvedPath)
+        }
+    }
+
+    // Remove duplicates
+    return removeDuplicates(allFiles)
+}
+```
+
+### 1.5 エラーハンドリング
+
+#### 1.5.1 エラー種別
+
+```go
+// internal/runner/config/expansion.go
+
+// verify_files 展開に関連するエラー
+var (
+    // ErrGlobalVerifyFilesExpansionFailed indicates global verify_files expansion failed
+    ErrGlobalVerifyFilesExpansionFailed = errors.New("global verify_files expansion failed")
+
+    // ErrGroupVerifyFilesExpansionFailed indicates group verify_files expansion failed
+    ErrGroupVerifyFilesExpansionFailed = errors.New("group verify_files expansion failed")
+
+    // ErrNilConfig indicates a nil config was provided
+    ErrNilConfig = errors.New("config is nil")
+)
+```
+
+#### 1.5.2 エラーコンテキスト
+
+```go
+// 展開エラーには以下の情報を含める
+type VerifyFilesExpansionError struct {
+    Level     string // "global" or group name
+    Index     int    // verify_files 配列のインデックス
+    Path      string // 展開対象のパス
+    Cause     error  // 根本原因
+    Allowlist []string // 適用された allowlist
+}
+
+func (e *VerifyFilesExpansionError) Error() string {
+    return fmt.Sprintf(
+        "failed to expand verify_files[%d] (%s) at %s level: %v (allowlist: %v)",
+        e.Index,
+        e.Path,
+        e.Level,
+        e.Cause,
+        e.Allowlist,
+    )
+}
+
+func (e *VerifyFilesExpansionError) Unwrap() error {
+    return e.Cause
+}
+```
+
+### 1.6 変数展開仕様
+
+#### 1.6.1 変数形式
+
+verify_files の変数展開は、タスク 0026 と同じ仕様を使用:
+
+- **サポート形式**: `${VAR}` のみ
+- **エスケープ**: `\$` → `$` (リテラル)、`\\` → `\` (リテラル)
+- **循環参照検出**: visited map による検出
+
+#### 1.6.2 展開順序
+
+```
+1. TOML ファイルの読み込み
+2. グローバル verify_files の展開
+   - システム環境変数のみ使用
+   - global.env_allowlist を適用
+3. 各グループの verify_files の展開
+   - システム環境変数 + グループ env 変数を使用
+   - group.env_allowlist を適用（継承モードに従う）
+4. 各コマンドの cmd/args の展開（既存ロジック）
+```
+
+#### 1.6.3 環境変数の優先順位
+
+グループ verify_files の展開時:
+
+```
+1. グループの env フィールドで定義された変数（最優先）
+2. システム環境変数
+```
+
+### 1.7 セキュリティ検証
+
+#### 1.7.1 allowlist 検証
+
+```go
+// CommandEnvProcessor.Expand 内で実行される
+// グローバルレベル: global.env_allowlist を使用
+// グループレベル: 継承モードに応じて allowlist を決定
+
+func (p *CommandEnvProcessor) Expand(
+    value string,
+    envVars map[string]string,
+    allowlist []string,
+    groupName string,
+    visited map[string]bool,
+) (string, error) {
+    // 変数参照を抽出
+    vars := extractVariableReferences(value)
+
+    // allowlist 検証
+    for _, varName := range vars {
+        if !isInAllowlist(varName, allowlist) {
+            return "", fmt.Errorf("%w: %s not in allowlist for %s",
+                ErrVariableNotAllowed, varName, groupName)
+        }
+    }
+
+    // 変数展開（循環参照検出を含む）
+    return expandWithCircularCheck(value, envVars, allowlist, groupName, visited)
+}
+```
+
+#### 1.7.2 循環参照検出
+
+タスク 0026 と同じ visited map 方式を使用:
+
+```go
+// 展開時に visited map で循環参照を検出
+func expandWithCircularCheck(
+    value string,
+    envVars map[string]string,
+    allowlist []string,
+    groupName string,
+    visited map[string]bool,
+) (string, error) {
+    // 変数を展開する際、visited map に記録
+    // 既に visited に存在する変数を再度展開しようとした場合、循環参照エラー
+    // ...
+}
+```
+
+### 1.8 テストケース仕様
+
+#### 1.8.1 単体テスト
+
+**ExpandGlobalVerifyFiles のテスト**:
+
+```go
+func TestExpandGlobalVerifyFiles(t *testing.T) {
+    tests := []struct {
+        name          string
+        global        *runnertypes.GlobalConfig
+        systemEnv     map[string]string
+        expected      []string
+        expectError   bool
+        errorContains string
+    }{
+        {
+            name: "basic expansion with single variable",
+            global: &runnertypes.GlobalConfig{
+                VerifyFiles:  []string{"${HOME}/bin/tool.sh"},
+                EnvAllowlist: []string{"HOME"},
+            },
+            systemEnv: map[string]string{"HOME": "/home/user"},
+            expected:  []string{"/home/user/bin/tool.sh"},
+        },
+        {
+            name: "multiple variables in single path",
+            global: &runnertypes.GlobalConfig{
+                VerifyFiles:  []string{"${BASE}/${VERSION}/tool"},
+                EnvAllowlist: []string{"BASE", "VERSION"},
+            },
+            systemEnv: map[string]string{"BASE": "/opt", "VERSION": "1.0"},
+            expected:  []string{"/opt/1.0/tool"},
+        },
+        {
+            name: "variable not in allowlist",
+            global: &runnertypes.GlobalConfig{
+                VerifyFiles:  []string{"${PATH}/bin/tool"},
+                EnvAllowlist: []string{"HOME"},
+            },
+            systemEnv:     map[string]string{"PATH": "/usr/bin"},
+            expectError:   true,
+            errorContains: "not in allowlist",
+        },
+        {
+            name: "undefined variable",
+            global: &runnertypes.GlobalConfig{
+                VerifyFiles:  []string{"${UNDEFINED}/tool"},
+                EnvAllowlist: []string{"UNDEFINED"},
+            },
+            systemEnv:     map[string]string{},
+            expectError:   true,
+            errorContains: "undefined variable",
+        },
+        {
+            name: "no expansion needed",
+            global: &runnertypes.GlobalConfig{
+                VerifyFiles:  []string{"/usr/bin/python3"},
+                EnvAllowlist: []string{},
+            },
+            expected: []string{"/usr/bin/python3"},
+        },
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            // Setup processor with mocked system environment
+            processor := setupProcessorWithEnv(tt.systemEnv)
+
+            err := ExpandGlobalVerifyFiles(tt.global, processor)
+
+            if tt.expectError {
+                assert.Error(t, err)
+                if tt.errorContains != "" {
+                    assert.Contains(t, err.Error(), tt.errorContains)
+                }
+            } else {
+                assert.NoError(t, err)
+                assert.Equal(t, tt.expected, tt.global.ExpandedVerifyFiles)
+            }
+        })
+    }
+}
+```
+
+**ExpandGroupVerifyFiles のテスト**:
+
+```go
+func TestExpandGroupVerifyFiles(t *testing.T) {
+    tests := []struct {
+        name          string
+        group         *runnertypes.CommandGroup
+        global        *runnertypes.GlobalConfig
+        systemEnv     map[string]string
+        expected      []string
+        expectError   bool
+        errorContains string
+    }{
+        {
+            name: "group env variable expansion",
+            group: &runnertypes.CommandGroup{
+                Name:         "test",
+                VerifyFiles:  []string{"${TOOLS_DIR}/verify.sh"},
+                EnvAllowlist: []string{"TOOLS_DIR"},
+                Commands: []runnertypes.Command{
+                    {Env: []string{"TOOLS_DIR=/opt/tools"}},
+                },
+            },
+            global:   &runnertypes.GlobalConfig{},
+            expected: []string{"/opt/tools/verify.sh"},
+        },
+        {
+            name: "inherit global allowlist",
+            group: &runnertypes.CommandGroup{
+                Name:         "test",
+                VerifyFiles:  []string{"${HOME}/config.conf"},
+                EnvAllowlist: nil, // Inherit from global
+                Commands:     []runnertypes.Command{},
+            },
+            global: &runnertypes.GlobalConfig{
+                EnvAllowlist: []string{"HOME"},
+            },
+            systemEnv: map[string]string{"HOME": "/home/user"},
+            expected:  []string{"/home/user/config.conf"},
+        },
+        {
+            name: "reject all variables with empty allowlist",
+            group: &runnertypes.CommandGroup{
+                Name:         "test",
+                VerifyFiles:  []string{"${HOME}/file"},
+                EnvAllowlist: []string{}, // Explicit empty - reject all
+                Commands:     []runnertypes.Command{},
+            },
+            systemEnv:     map[string]string{"HOME": "/home/user"},
+            expectError:   true,
+            errorContains: "not in allowlist",
+        },
+        {
+            name: "circular reference",
+            group: &runnertypes.CommandGroup{
+                Name:         "test",
+                VerifyFiles:  []string{"${VAR1}/file"},
+                EnvAllowlist: []string{"VAR1", "VAR2"},
+                Commands: []runnertypes.Command{
+                    {Env: []string{"VAR1=${VAR2}", "VAR2=${VAR1}"}},
+                },
+            },
+            expectError:   true,
+            errorContains: "circular reference",
+        },
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            processor := setupProcessorWithEnv(tt.systemEnv)
+
+            err := ExpandGroupVerifyFiles(tt.group, tt.global, processor)
+
+            if tt.expectError {
+                assert.Error(t, err)
+                if tt.errorContains != "" {
+                    assert.Contains(t, err.Error(), tt.errorContains)
+                }
+            } else {
+                assert.NoError(t, err)
+                assert.Equal(t, tt.expected, tt.group.ExpandedVerifyFiles)
+            }
+        })
+    }
+}
+```
+
+#### 1.8.2 統合テスト
+
+```go
+func TestVerifyFilesExpansionIntegration(t *testing.T) {
+    // Create test TOML file
+    tomlContent := `
+version = "1.0"
+
+[global]
+env_allowlist = ["HOME"]
+verify_files = ["${HOME}/bin/tool.sh"]
+
+[[groups]]
+name = "test"
+env_allowlist = ["TOOLS_DIR", "HOME"]
+verify_files = ["${TOOLS_DIR}/verify-${VERSION}.sh", "${HOME}/config.conf"]
+
+[[groups.commands]]
+name = "test-cmd"
+cmd = "/bin/echo"
+env = ["TOOLS_DIR=/opt/tools", "VERSION=1.0"]
+`
+
+    // Load and expand
+    config, err := LoadConfig(tomlContent, processor)
+    require.NoError(t, err)
+
+    // Verify global expansion
+    assert.Equal(t, []string{"/home/user/bin/tool.sh"}, config.Global.ExpandedVerifyFiles)
+
+    // Verify group expansion
+    assert.Equal(t, []string{
+        "/opt/tools/verify-1.0.sh",
+        "/home/user/config.conf",
+    }, config.Groups[0].ExpandedVerifyFiles)
+}
+```
+
+### 1.9 パフォーマンス要件
+
+#### 1.9.1 性能目標
+
+| メトリクス | 目標値 | 測定方法 |
+|----------|-------|---------|
+| 展開処理時間（パスあたり） | < 1ms | ベンチマークテスト |
+| メモリ増加量 | < 10% | メモリプロファイリング |
+| 全体処理時間への影響 | < 5% | 統合テストでの測定 |
+
+#### 1.9.2 ベンチマークテスト
+
+```go
+func BenchmarkExpandGlobalVerifyFiles(b *testing.B) {
+    global := &runnertypes.GlobalConfig{
+        VerifyFiles: []string{
+            "${HOME}/bin/tool1.sh",
+            "${HOME}/bin/tool2.sh",
+            "${HOME}/bin/tool3.sh",
+        },
+        EnvAllowlist: []string{"HOME"},
+    }
+
+    processor := setupProcessor()
+
+    b.ResetTimer()
+    for i := 0; i < b.N; i++ {
+        _ = ExpandGlobalVerifyFiles(global, processor)
+    }
+}
+```
+
+## 2. 実装チェックリスト
+
+### 2.1 Phase 1: データ構造の拡張
+- [ ] GlobalConfig に ExpandedVerifyFiles フィールドを追加
+- [ ] CommandGroup に ExpandedVerifyFiles フィールドを追加
+- [ ] フィールドのドキュメントコメントを追加
+
+### 2.2 Phase 2: 環境変数展開の実装
+- [ ] buildSystemEnvironmentMap 関数の実装
+- [ ] buildGroupEnvironmentMap 関数の実装
+- [ ] determineGroupAllowlist 関数の実装
+- [ ] ExpandGlobalVerifyFiles 関数の実装
+- [ ] ExpandGroupVerifyFiles 関数の実装
+
+### 2.3 Phase 3: Config Parser の統合
+- [ ] LoadConfig に ExpandGlobalVerifyFiles の呼び出しを追加
+- [ ] LoadConfig に ExpandGroupVerifyFiles の呼び出しを追加
+- [ ] エラーハンドリングの実装
+
+### 2.4 Phase 4: Verification Manager の更新
+- [ ] VerifyGlobalFiles を ExpandedVerifyFiles 使用に変更
+- [ ] collectVerificationFiles を ExpandedVerifyFiles 使用に変更
+- [ ] 既存のテストの更新
+
+### 2.5 Phase 5: テストの実装
+- [ ] ExpandGlobalVerifyFiles の単体テスト
+- [ ] ExpandGroupVerifyFiles の単体テスト
+- [ ] 統合テストの実装
+- [ ] エラーケースのテスト
+- [ ] ベンチマークテストの実装
+
+### 2.6 Phase 6: ドキュメント
+- [ ] ユーザーガイドの更新
+- [ ] サンプル TOML ファイルの作成
+- [ ] CHANGELOG の更新
+
+## 3. 参照
+
+- タスク 0026: Variable Expansion Implementation（環境変数展開の基盤実装）
+- タスク 0007: verify_hash_all（ファイル検証機能）
+- タスク 0008: env_allowlist（環境変数 allowlist 機能）
