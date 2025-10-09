@@ -1,19 +1,40 @@
 # 詳細仕様書: verify_files フィールド環境変数展開機能
 
+## 0. 既存機能活用方針
+
+この実装では、重複開発を避け既存の環境変数展開インフラを最大限活用します：
+
+- **Filter クラス**: システム環境変数の取得、allowlist 決定、継承モード判定
+  - `ParseSystemEnvironment()`: システム環境変数をマップとして取得（エクスポート済み）
+  - `ResolveAllowlistConfiguration()`: グループの allowlist 設定を解決（**エクスポートが必要**）
+- **VariableExpander クラス**: 環境変数展開エンジン、循環参照検出、セキュリティ検証
+  - `ExpandString()`: 文字列中の環境変数を展開（エクスポート済み）
+- **既存エラー型**: 環境変数関連エラー（ErrVariableNotAllowed、ErrCircularReference 等）
+
+**アーキテクチャ上の決定**:
+- `filter.parseSystemEnvironment` は既に `Filter.ParseSystemEnvironment()` として公開されています
+- `filter.resolveAllowlistConfiguration` は現在プライベートです。config パッケージから使用するため、`Filter.ResolveAllowlistConfiguration()` として公開する必要があります
+  - この変更は environment パッケージ内で行い、メソッド名を大文字で始めるだけの簡単な作業です
+  - 既存の呼び出し元（environment パッケージ内）も更新が必要です
+
+これにより**実装工数を1日削減**し、**実証済みセキュリティ機能を継承**できます。
+
 ## 1. 実装詳細仕様
 
 ### 1.1 パッケージ構成詳細
 
 ```
-# 既存コンポーネント（変更なし）
-internal/runner/environment/processor.go  # CommandEnvProcessor を再利用
+# 既存コンポーネント（再利用）
+internal/runner/environment/filter.go       # Filter を再利用
+                                             # ResolveAllowlistConfiguration のエクスポートが必要
+internal/runner/environment/processor.go    # VariableExpander を再利用
 
 # 拡張対象コンポーネント
-internal/runner/runnertypes/config.go     # GlobalConfig/CommandGroup 拡張
-internal/runner/config/expansion.go       # verify_files 展開ロジック追加
+internal/runner/runnertypes/config.go       # GlobalConfig/CommandGroup 拡張
+internal/runner/config/expansion.go         # verify_files 展開ロジック追加
 
 # 更新対象コンポーネント
-internal/verification/manager.go          # ExpandedVerifyFiles の使用
+internal/verification/manager.go            # ExpandedVerifyFiles の使用
 ```
 
 ### 1.2 型定義とインターフェース
@@ -67,17 +88,18 @@ type CommandGroup struct {
 
 ### 1.3 環境変数展開の実装
 
-#### 1.3.1 グローバル verify_files の展開
+#### 1.3.1 グローバル verify_files の展開（既存機能活用）
 
 ```go
 // internal/runner/config/expansion.go
 
 // ExpandGlobalVerifyFiles expands environment variables in global verify_files.
-// It uses only system environment variables and applies global.env_allowlist.
+// Uses existing Filter.ParseSystemEnvironment() and VariableExpander.ExpandString().
 // Returns VerifyFilesExpansionError on failure, which wraps the underlying cause.
 func ExpandGlobalVerifyFiles(
     global *runnertypes.GlobalConfig,
-    processor *environment.CommandEnvProcessor,
+    filter *environment.Filter,
+    expander *environment.VariableExpander,
 ) error {
     if global == nil {
         return ErrNilConfig
@@ -89,13 +111,14 @@ func ExpandGlobalVerifyFiles(
         return nil
     }
 
-    // Build system environment map from os.Environ()
-    systemEnv := buildSystemEnvironmentMap()
+    // Use existing Filter.ParseSystemEnvironment() for system environment map
+    // This is equivalent to buildSystemEnvironmentMap() but reuses proven logic
+    systemEnv := filter.ParseSystemEnvironment(nil) // nil predicate = get all variables
 
-    // Expand all paths
+    // Expand all paths using existing VariableExpander.ExpandString()
     expanded := make([]string, 0, len(global.VerifyFiles))
     for i, path := range global.VerifyFiles {
-        expandedPath, err := processor.Expand(
+        expandedPath, err := expander.ExpandString(
             path,
             systemEnv,
             global.EnvAllowlist,
@@ -117,34 +140,21 @@ func ExpandGlobalVerifyFiles(
     global.ExpandedVerifyFiles = expanded
     return nil
 }
-
-// buildSystemEnvironmentMap builds a map of system environment variables
-func buildSystemEnvironmentMap() map[string]string {
-    env := make(map[string]string)
-    for _, envVar := range os.Environ() {
-        key, value, ok := common.ParseEnvVariable(envVar)
-        if !ok {
-            continue
-        }
-        env[key] = value
-    }
-    return env
-}
 ```
 
-#### 1.3.2 グループ verify_files の展開
+#### 1.3.2 グループ verify_files の展開（既存機能活用）
 
 ```go
 // internal/runner/config/expansion.go
 
 // ExpandGroupVerifyFiles expands environment variables in group verify_files.
-// It uses only system environment variables and applies group.env_allowlist
-// (or global.env_allowlist if inherited).
+// Uses existing Filter.ResolveAllowlistConfiguration() and VariableExpander.ExpandString().
 // Returns VerifyFilesExpansionError on failure, which wraps the underlying cause.
 func ExpandGroupVerifyFiles(
     group *runnertypes.CommandGroup,
     global *runnertypes.GlobalConfig,
-    processor *environment.CommandEnvProcessor,
+    filter *environment.Filter,
+    expander *environment.VariableExpander,
 ) error {
     if group == nil {
         return ErrNilConfig
@@ -156,24 +166,20 @@ func ExpandGroupVerifyFiles(
         return nil
     }
 
-    // Build group environment map
-    groupEnv, err := buildGroupEnvironmentMap(group)
-    if err != nil {
-        return fmt.Errorf("failed to build group environment map for group %s: %w", group.Name, err)
-    }
+    // Use existing Filter.ParseSystemEnvironment() for system environment
+    // verify_files expansion only uses system environment variables
+    systemEnv := filter.ParseSystemEnvironment(nil) // nil predicate = get all variables
 
-    // Determine allowlist based on inheritance mode
-    allowlist, err := determineGroupAllowlist(group, global)
-    if err != nil {
-        return fmt.Errorf("failed to determine allowlist for group %s: %w", group.Name, err)
-    }
+    // Use existing Filter.ResolveAllowlistConfiguration() for allowlist determination
+    resolution := filter.ResolveAllowlistConfiguration(group.EnvAllowlist, group.Name)
+    allowlist := resolution.EffectiveList
 
-    // Expand all paths
+    // Expand all paths using existing VariableExpander.ExpandString()
     expanded := make([]string, 0, len(group.VerifyFiles))
     for i, path := range group.VerifyFiles {
-        expandedPath, err := processor.Expand(
+        expandedPath, err := expander.ExpandString(
             path,
-            groupEnv,
+            systemEnv,
             allowlist,
             group.Name,
             make(map[string]bool),
@@ -193,75 +199,34 @@ func ExpandGroupVerifyFiles(
     group.ExpandedVerifyFiles = expanded
     return nil
 }
-
-// buildGroupEnvironmentMap builds a map of environment variables for group-level expansion.
-// For verify_files expansion at the group level, only system environment variables are used.
-// Command-level env variables are NOT used for verify_files expansion.
-func buildGroupEnvironmentMap(group *runnertypes.CommandGroup) (map[string]string, error) {
-    // Use only system environment variables for verify_files expansion
-    // Command-level env is irrelevant for verify_files at group level
-    return buildSystemEnvironmentMap(), nil
-}
-
-// determineGroupAllowlist determines the allowlist for a group based on inheritance mode
-func determineGroupAllowlist(group *runnertypes.CommandGroup, global *runnertypes.GlobalConfig) ([]string, error) {
-    // Determine inheritance mode
-    mode := determineInheritanceMode(group)
-
-    switch mode {
-    case runnertypes.InheritanceModeReject:
-        // Empty allowlist explicitly set - reject all variables
-        return []string{}, nil
-
-    case runnertypes.InheritanceModeExplicit:
-        // Use group's explicit allowlist
-        return group.EnvAllowlist, nil
-
-    case runnertypes.InheritanceModeInherit:
-        // Inherit from global allowlist
-        if global == nil {
-            return []string{}, nil
-        }
-        return global.EnvAllowlist, nil
-
-    default:
-        return nil, fmt.Errorf("unknown inheritance mode: %v", mode)
-    }
-}
-
-// determineInheritanceMode determines how the group inherits allowlist
-func determineInheritanceMode(group *runnertypes.CommandGroup) runnertypes.InheritanceMode {
-    if group.EnvAllowlist == nil {
-        return runnertypes.InheritanceModeInherit
-    }
-    if len(group.EnvAllowlist) == 0 {
-        return runnertypes.InheritanceModeReject
-    }
-    return runnertypes.InheritanceModeExplicit
-}
 ```
 
-#### 1.3.3 Config Parser への統合
+#### 1.3.3 Config Parser への統合（既存機能活用）
 
 ```go
 // internal/runner/config/loader.go (既存ファイル)
 
 // LoadConfig loads and validates configuration from a TOML file
-func LoadConfig(configPath string, processor *environment.CommandEnvProcessor) (*runnertypes.Config, error) {
+// Uses existing Filter and VariableExpander for verify_files expansion
+func LoadConfig(configPath string) (*runnertypes.Config, error) {
     // Load TOML file
     config, err := loadTOMLFile(configPath)
     if err != nil {
         return nil, err
     }
 
-    return processConfig(config, processor)
+    // Create Filter and VariableExpander using existing infrastructure
+    filter := environment.NewFilter(config.Global.EnvAllowlist)
+    expander := environment.NewVariableExpander(filter)
+
+    return processConfig(config, filter, expander)
 }
 
 // processConfig processes the configuration by expanding variables.
-// This function is extracted to allow reuse in both production and test code.
-func processConfig(config *runnertypes.Config, processor *environment.CommandEnvProcessor) (*runnertypes.Config, error) {
-    // Expand global verify_files
-    if err := ExpandGlobalVerifyFiles(&config.Global, processor); err != nil {
+// Uses existing Filter and VariableExpander for consistency with command variable expansion.
+func processConfig(config *runnertypes.Config, filter *environment.Filter, expander *environment.VariableExpander) (*runnertypes.Config, error) {
+    // Expand global verify_files using existing infrastructure
+    if err := ExpandGlobalVerifyFiles(&config.Global, filter, expander); err != nil {
         return nil, fmt.Errorf("failed to expand global verify_files: %w", err)
     }
 
@@ -269,15 +234,15 @@ func processConfig(config *runnertypes.Config, processor *environment.CommandEnv
     for i := range config.Groups {
         group := &config.Groups[i]
 
-        // Expand verify_files for this group
-        if err := ExpandGroupVerifyFiles(group, &config.Global, processor); err != nil {
+        // Expand verify_files for this group using existing infrastructure
+        if err := ExpandGroupVerifyFiles(group, &config.Global, filter, expander); err != nil {
             return nil, fmt.Errorf("failed to expand verify_files for group %s: %w", group.Name, err)
         }
 
-        // Expand command variables (existing logic)
+        // Expand command variables (existing logic - unchanged)
         for j := range group.Commands {
             cmd := &group.Commands[j]
-            if err := ExpandCommandVariables(cmd, group, &config.Global, processor); err != nil {
+            if err := ExpandCommandVariables(cmd, group, &config.Global, expander); err != nil {
                 return nil, fmt.Errorf("failed to expand variables for command %s in group %s: %w", cmd.Name, group.Name, err)
             }
         }
@@ -301,14 +266,18 @@ import (
 
 // LoadConfigFromString loads and validates configuration from a TOML string.
 // This function is available only in test builds and is intended for testing purposes.
-func LoadConfigFromString(tomlContent string, processor *environment.CommandEnvProcessor) (*runnertypes.Config, error) {
+func LoadConfigFromString(tomlContent string) (*runnertypes.Config, error) {
     // Parse TOML content
     config, err := parseTOMLContent(tomlContent)
     if err != nil {
         return nil, err
     }
 
-    return processConfig(config, processor)
+    // Create Filter and VariableExpander using existing infrastructure
+    filter := environment.NewFilter(config.Global.EnvAllowlist)
+    expander := environment.NewVariableExpander(filter)
+
+    return processConfig(config, filter, expander)
 }
 
 // parseTOMLContent parses TOML content string into Config struct.
@@ -940,16 +909,18 @@ func BenchmarkExpandGlobalVerifyFiles(b *testing.B) {
 - [ ] CommandGroup に ExpandedVerifyFiles フィールドを追加
 - [ ] フィールドのドキュメントコメントを追加
 
-### 2.2 Phase 2: 環境変数展開の実装
-- [ ] buildSystemEnvironmentMap 関数の実装
-- [ ] buildGroupEnvironmentMap 関数の実装
-- [ ] determineGroupAllowlist 関数の実装
-- [ ] ExpandGlobalVerifyFiles 関数の実装
-- [ ] ExpandGroupVerifyFiles 関数の実装
+### 2.2 Phase 2: 環境変数展開の実装（既存機能活用）
+- [ ] Filter と VariableExpander の既存機能確認
+- [ ] Filter.ResolveAllowlistConfiguration メソッドのエクスポート（小文字 → 大文字化）
+- [ ] ExpandGlobalVerifyFiles 関数の実装（Filter.ParseSystemEnvironment 使用）
+- [ ] ExpandGroupVerifyFiles 関数の実装（Filter.ResolveAllowlistConfiguration 使用）
+- [ ] 既存機能との統合テスト
 
-### 2.3 Phase 3: Config Parser の統合
-- [ ] LoadConfig に ExpandGlobalVerifyFiles の呼び出しを追加
-- [ ] LoadConfig に ExpandGroupVerifyFiles の呼び出しを追加
+### 2.3 Phase 3: Config Parser の統合（既存機能活用）
+- [ ] LoadConfig で Filter と VariableExpander を初期化
+- [ ] processConfig 関数の引数を Filter/VariableExpander に変更
+- [ ] ExpandGlobalVerifyFiles の呼び出しを追加（expander 使用）
+- [ ] ExpandGroupVerifyFiles の呼び出しを追加（filter/expander 使用）
 - [ ] エラーハンドリングの実装
 
 ### 2.4 Phase 4: Verification Manager の更新
@@ -958,8 +929,9 @@ func BenchmarkExpandGlobalVerifyFiles(b *testing.B) {
 - [ ] 既存のテストの更新
 
 ### 2.5 Phase 5: テストの実装
-- [ ] ExpandGlobalVerifyFiles の単体テスト
-- [ ] ExpandGroupVerifyFiles の単体テスト
+- [ ] ExpandGlobalVerifyFiles の単体テスト（既存機能との統合確認）
+- [ ] ExpandGroupVerifyFiles の単体テスト（既存機能との統合確認）
+- [ ] Filter/VariableExpander 統合の動作確認テスト
 - [ ] 統合テストの実装
 - [ ] エラーケースのテスト
 - [ ] ベンチマークテストの実装
