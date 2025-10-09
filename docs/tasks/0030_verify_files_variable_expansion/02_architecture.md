@@ -146,154 +146,45 @@ type CommandGroup struct {
 
 ### 3.2 環境変数展開の統合
 
-#### 3.2.1 Config Parser での展開処理
+#### 3.2.1 展開処理の責務
 
-```go
-// internal/runner/config/expansion.go
+**internal/runner/config/expansion.go** に以下の関数を追加:
 
-// ExpandGlobalVerifyFiles expands environment variables in global verify_files
-func ExpandGlobalVerifyFiles(
-    global *runnertypes.GlobalConfig,
-    processor *environment.CommandEnvProcessor,
-) error {
-    if len(global.VerifyFiles) == 0 {
-        global.ExpandedVerifyFiles = []string{}
-        return nil
-    }
+- `ExpandGlobalVerifyFiles()`: グローバル verify_files の展開
+  - システム環境変数のみを使用
+  - global.env_allowlist を適用
+  - 展開結果を `GlobalConfig.ExpandedVerifyFiles` に設定
 
-    // システム環境変数のみを使用
-    systemEnv := make(map[string]string)
+- `ExpandGroupVerifyFiles()`: グループ verify_files の展開
+  - システム環境変数 + グループ環境変数を使用
+  - group.env_allowlist を適用（継承モードに従う）
+  - 展開結果を `CommandGroup.ExpandedVerifyFiles` に設定
 
-    // 全てのパスを展開
-    expanded := make([]string, 0, len(global.VerifyFiles))
-    for _, path := range global.VerifyFiles {
-        expandedPath, err := processor.Expand(
-            path,
-            systemEnv,
-            global.EnvAllowlist,
-            "global",
-            make(map[string]bool),
-        )
-        if err != nil {
-            return fmt.Errorf("failed to expand global verify_files: %w", err)
-        }
-        expanded = append(expanded, expandedPath)
-    }
-
-    global.ExpandedVerifyFiles = expanded
-    return nil
-}
-
-// ExpandGroupVerifyFiles expands environment variables in group verify_files
-func ExpandGroupVerifyFiles(
-    group *runnertypes.CommandGroup,
-    global *runnertypes.GlobalConfig,
-    processor *environment.CommandEnvProcessor,
-) error {
-    if len(group.VerifyFiles) == 0 {
-        group.ExpandedVerifyFiles = []string{}
-        return nil
-    }
-
-    // グループ環境変数マップを構築
-    groupEnv, err := buildGroupEnvironmentMap(group.Commands)
-    if err != nil {
-        return fmt.Errorf("failed to build group environment map: %w", err)
-    }
-
-    // allowlist の決定（継承モードに従う）
-    allowlist := determineAllowlist(group, global)
-
-    // 全てのパスを展開
-    expanded := make([]string, 0, len(group.VerifyFiles))
-    for _, path := range group.VerifyFiles {
-        expandedPath, err := processor.Expand(
-            path,
-            groupEnv,
-            allowlist,
-            group.Name,
-            make(map[string]bool),
-        )
-        if err != nil {
-            return fmt.Errorf("failed to expand verify_files for group %s: %w", group.Name, err)
-        }
-        expanded = append(expanded, expandedPath)
-    }
-
-    group.ExpandedVerifyFiles = expanded
-    return nil
-}
-```
+**既存コンポーネントの再利用**:
+- `CommandEnvProcessor.Expand()` を使用して実際の展開処理を実行
+- allowlist 検証、循環参照検出などのセキュリティ機能を継承
 
 ### 3.3 Verification Manager との統合
 
-#### 3.3.1 既存コードの変更
+#### 3.3.1 既存コードの変更点
 
-```go
-// internal/verification/manager.go
+**internal/verification/manager.go** の以下のメソッドを変更:
 
-// VerifyGlobalFiles の変更: ExpandedVerifyFiles を使用
-func (m *Manager) VerifyGlobalFiles(globalConfig *runnertypes.GlobalConfig) (*Result, error) {
-    // 変更前: globalConfig.VerifyFiles を使用
-    // 変更後: globalConfig.ExpandedVerifyFiles を使用
-    for _, filePath := range globalConfig.ExpandedVerifyFiles {
-        // 既存の検証ロジックはそのまま
-        if err := m.verifyFileWithFallback(filePath); err != nil {
-            // エラーハンドリング
-        }
-    }
-}
+1. **VerifyGlobalFiles()**:
+   - 変更前: `globalConfig.VerifyFiles` を使用
+   - 変更後: `globalConfig.ExpandedVerifyFiles` を使用
+   - その他のロジックは変更なし
 
-// VerifyGroupFiles の変更: ExpandedVerifyFiles を使用
-func (m *Manager) VerifyGroupFiles(groupConfig *runnertypes.CommandGroup) (*Result, error) {
-    // collectVerificationFiles を使用してファイルリストを収集
-    allFiles, err := m.collectVerificationFiles(groupConfig)
-    if err != nil {
-        return nil, err
-    }
-
-    // 収集したファイルを検証
-    for _, filePath := range allFiles {
-        if err := m.verifyFileWithFallback(filePath); err != nil {
-            // エラーハンドリング
-        }
-    }
-}
-
-// collectVerificationFiles の変更: ExpandedVerifyFiles を使用
-func (m *Manager) collectVerificationFiles(group *runnertypes.CommandGroup) ([]string, error) {
-    var allFiles []string
-
-    // 1. グループレベルの verify_files を追加（変更点: ExpandedVerifyFiles を使用）
-    // 変更前: allFiles = append(allFiles, group.VerifyFiles...)
-    // 変更後: 展開済みのパスを使用
-    allFiles = append(allFiles, group.ExpandedVerifyFiles...)
-
-    // 2. 各コマンドのパスを収集（既存のロジックを維持）
-    for _, cmd := range group.Commands {
-        // コマンド自体のパスを PathResolver で解決
-        resolvedPath, err := m.pathResolver.ResolvePath(cmd.Cmd, cmd.WorkDir)
-        if err != nil {
-            return nil, fmt.Errorf("failed to resolve command path: %w", err)
-        }
-        allFiles = append(allFiles, resolvedPath)
-
-        // コマンドレベルの verify_files を追加（既存のロジックを維持）
-        allFiles = append(allFiles, cmd.VerifyFiles...)
-    }
-
-    return allFiles, nil
-}
-```
-
-**変更のポイント**:
-
-1. **VerifyGlobalFiles**: `VerifyFiles` → `ExpandedVerifyFiles` に変更
-2. **VerifyGroupFiles**: 既存のフローを維持、`collectVerificationFiles` を呼び出し
-3. **collectVerificationFiles**:
-   - グループレベルの `ExpandedVerifyFiles` を使用
+2. **collectVerificationFiles()**:
+   - 変更前: `group.VerifyFiles` を使用
+   - 変更後: `group.ExpandedVerifyFiles` を使用
    - コマンドパスの収集ロジックは既存のまま維持
-   - コマンドレベルの `verify_files` は既存のまま（今回のスコープ外）
+   - コマンドレベルの verify_files は既存のまま（今回のスコープ外）
+
+**影響範囲**:
+- 検証ロジック自体は変更なし
+- ファイルパスの取得元のみを変更
+- 既存のエラーハンドリング、ログ出力は維持
 
 ## 4. セキュリティアーキテクチャ
 
@@ -358,23 +249,18 @@ flowchart TD
 
 ## 6. エラーハンドリング設計
 
-### 6.1 エラー種別
+### 6.1 エラー階層構造
 
-```go
-// 既存の environment パッケージのエラーを再利用
-var (
-    ErrVariableNotFound     error // 未定義変数
-    ErrCircularReference    error // 循環参照
-    ErrNotInAllowlist       error // allowlist 違反
-    ErrInvalidVariableFormat error // 不正な変数形式
-)
+**既存エラーの再利用** (internal/runner/environment):
+- `ErrVariableNotFound`: 未定義変数
+- `ErrCircularReference`: 循環参照
+- `ErrNotInAllowlist`: allowlist 違反
+- `ErrInvalidVariableFormat`: 不正な変数形式
 
-// verify_files 固有のエラー
-var (
-    ErrGlobalVerifyFilesExpansion error // グローバル verify_files 展開エラー
-    ErrGroupVerifyFilesExpansion  error // グループ verify_files 展開エラー
-)
-```
+**verify_files 固有のエラー** (internal/runner/config):
+- `ErrGlobalVerifyFilesExpansionFailed`: グローバル verify_files 展開エラー
+- `ErrGroupVerifyFilesExpansionFailed`: グループ verify_files 展開エラー
+- `VerifyFilesExpansionError`: エラーコンテキスト情報を保持するカスタムエラー型
 
 ### 6.2 エラー処理フロー
 
