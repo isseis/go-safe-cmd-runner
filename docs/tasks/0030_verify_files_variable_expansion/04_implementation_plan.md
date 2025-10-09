@@ -97,7 +97,7 @@ internal/runner/config/expansion.go (拡張)
 
 #### 実装内容
 
-##### 3.3.1 エラー型定義
+##### 2.3.1 エラー型定義
 ```go
 // カスタムエラー型
 type VerifyFilesExpansionError struct {
@@ -116,7 +116,7 @@ var (
 )
 ```
 
-##### 3.3.2 エラー処理メソッド
+##### 2.3.2 エラー処理メソッド
 ```go
 func (e *VerifyFilesExpansionError) Error() string
 func (e *VerifyFilesExpansionError) Unwrap() error
@@ -140,7 +140,7 @@ internal/runner/config/loader_test.go (新規作成、build tag "test")
 
 #### 実装内容
 
-##### 4.4.1 Config Loader の変更（既存環境変数エンジンを活用）
+##### 2.4.1 Config Loader の変更（既存環境変数エンジンを活用）
 ```go
 // 既存のLoadConfig関数を修正（Filter, VariableExpanderを使用）
 func LoadConfig(configPath string) (*runnertypes.Config, error)
@@ -149,7 +149,7 @@ func LoadConfig(configPath string) (*runnertypes.Config, error)
 func processConfig(config *runnertypes.Config, filter *environment.Filter, expander *environment.VariableExpander) (*runnertypes.Config, error)
 ```
 
-##### 4.4.2 テスト専用ヘルパー（build tag "test"）
+##### 2.4.2 テスト専用ヘルパー（build tag "test"）
 ```go
 //go:build test
 
@@ -176,7 +176,7 @@ internal/verification/manager.go (変更)
 
 #### 実装内容
 
-##### 5.5.1 検証メソッドの更新
+##### 2.5.1 検証メソッドの更新
 ```go
 // 変更: ExpandedVerifyFiles を使用
 func (m *Manager) VerifyGlobalFiles(globalConfig *runnertypes.GlobalConfig) (*Result, error)
@@ -203,7 +203,7 @@ internal/verification/manager_test.go (更新)
 
 #### 実装内容
 
-##### 6.6.1 単体テスト (20ケース)
+##### 2.6.1 単体テスト (20ケース)
 **ExpandGlobalVerifyFiles テスト (10ケース)**:
 - 基本的な変数展開
 - 複数変数の展開
@@ -228,14 +228,14 @@ internal/verification/manager_test.go (更新)
 - 循環参照エラー
 - エラーコンテキスト検証
 
-##### 6.6.2 統合テスト (5ケース)
+##### 2.6.2 統合テスト (5ケース)
 - E2Eでの設定読み込み〜展開
 - 複数グループでの展開
 - グローバル+グループの組み合わせ
 - エラー時の設定読み込み停止
 - 実際のファイル検証まで
 
-##### 6.6.3 ベンチマークテスト (3ケース)
+##### 2.6.3 ベンチマークテスト (3ケース)
 - グローバル展開のパフォーマンス
 - グループ展開のパフォーマンス
 - 大量ファイルでの展開パフォーマンス
