@@ -79,13 +79,13 @@ func ExpandGroupVerifyFiles(
 ```
 
 #### 完了条件
-- [ ] `Filter.ResolveAllowlistConfiguration()` メソッドのエクスポート完了
-- [ ] environment パッケージ内の既存呼び出し元の更新完了
-- [ ] 既存機能（Filter, VariableExpander）の統合完了
-- [ ] グローバルレベル展開機能の実装完了（既存APIベース）
-- [ ] グループレベル展開機能の実装完了（既存APIベース）
-- [ ] allowlist継承ロジックの活用確認（既存機能使用）
-- [ ] 循環参照検出機能の活用確認（既存機能使用）
+- [x] `Filter.ResolveAllowlistConfiguration()` メソッドのエクスポート完了
+- [x] environment パッケージ内の既存呼び出し元の更新完了
+- [x] 既存機能（Filter, VariableExpander）の統合完了
+- [x] グローバルレベル展開機能の実装完了（既存APIベース）
+- [x] グループレベル展開機能の実装完了（既存APIベース）
+- [x] allowlist継承ロジックの活用確認（既存機能使用）
+- [x] 循環参照検出機能の活用確認（既存機能使用）
 
 ### 2.3 Phase 3: エラーハンドリング実装 (1日)
 **目標**: 詳細なエラー情報を提供するカスタムエラー型の実装
@@ -124,9 +124,9 @@ func (e *VerifyFilesExpansionError) Is(target error) bool
 ```
 
 #### 完了条件
-- [ ] カスタムエラー型の実装完了
-- [ ] エラーチェーン対応の実装完了
-- [ ] センチネルエラーの定義完了
+- [x] カスタムエラー型の実装完了
+- [x] エラーチェーン対応の実装完了
+- [x] センチネルエラーの定義完了
 
 ### 2.4 Phase 4: Config Parser統合 (1日)
 **目標**: 設定読み込み時に自動的に環境変数展開を実行
