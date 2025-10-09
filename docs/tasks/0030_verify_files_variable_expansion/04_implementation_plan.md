@@ -127,7 +127,6 @@ func (e *VerifyFilesExpansionError) Is(target error) bool
 - [ ] カスタムエラー型の実装完了
 - [ ] エラーチェーン対応の実装完了
 - [ ] センチネルエラーの定義完了
-- [ ] エラーメッセージの多言語対応完了
 
 ### 2.4 Phase 4: Config Parser統合 (1日)
 **目標**: 設定読み込み時に自動的に環境変数展開を実行
