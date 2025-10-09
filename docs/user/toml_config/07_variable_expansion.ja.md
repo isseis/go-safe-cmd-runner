@@ -1166,7 +1166,7 @@ name = "database"
 env_allowlist = ["DEPLOY_ENV", "APP_ROOT"]
 verify_files = [
     "${APP_ROOT}/db/schema.sql",
-    "${APP_ROOT}/db/migrations/${DEPLOY_ENV}/",
+    "${APP_ROOT}/db/migrations/${DEPLOY_ENV}",
 ]
 
 [[groups.commands]]
