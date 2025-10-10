@@ -346,6 +346,10 @@ func (p *VariableExpander) resolveVariable(varName string, envVars map[string]st
 				"variable", varName,
 				"group", groupName,
 				"allowlist", allowlist)
+			// Generate context-specific error message
+			if groupName == "" {
+				return "", fmt.Errorf("%w: %s", ErrVariableNotAllowed, varName)
+			}
 			return "", fmt.Errorf("%w: %s (not in allowlist for group %s)", ErrVariableNotAllowed, varName, groupName)
 		}
 		p.logger.Debug("Resolved variable from system environment",

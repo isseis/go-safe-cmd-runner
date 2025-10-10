@@ -20,7 +20,7 @@ var (
 	ErrInvalidVariableName    = errors.New("invalid variable name")
 	ErrDangerousVariableValue = errors.New("variable value contains dangerous pattern")
 	ErrVariableNotFound       = errors.New("variable reference not found")
-	ErrVariableNotAllowed     = errors.New("variable not allowed by group allowlist")
+	ErrVariableNotAllowed     = errors.New("variable not allowed by allowlist")
 	ErrMalformedEnvVariable   = errors.New("malformed environment variable")
 )
 

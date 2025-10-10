@@ -883,41 +883,41 @@ func BenchmarkExpandGlobalVerifyFiles(b *testing.B) {
 ## 2. 実装チェックリスト
 
 ### 2.1 Phase 1: データ構造の拡張
-- [ ] GlobalConfig に ExpandedVerifyFiles フィールドを追加
-- [ ] CommandGroup に ExpandedVerifyFiles フィールドを追加
-- [ ] フィールドのドキュメントコメントを追加
+- [x] GlobalConfig に ExpandedVerifyFiles フィールドを追加
+- [x] CommandGroup に ExpandedVerifyFiles フィールドを追加
+- [x] フィールドのドキュメントコメントを追加
 
 ### 2.2 Phase 2: 環境変数展開の実装（既存機能活用）
-- [ ] Filter と VariableExpander の既存機能確認
-- [ ] Filter.ResolveAllowlistConfiguration メソッドのエクスポート（小文字 → 大文字化）
-- [ ] ExpandGlobalVerifyFiles 関数の実装（Filter.ParseSystemEnvironment 使用）
-- [ ] ExpandGroupVerifyFiles 関数の実装（Filter.ResolveAllowlistConfiguration 使用）
-- [ ] 既存機能との統合テスト
+- [x] Filter と VariableExpander の既存機能確認
+- [x] Filter.ResolveAllowlistConfiguration メソッドのエクスポート（小文字 → 大文字化）
+- [x] ExpandGlobalVerifyFiles 関数の実装（Filter.ParseSystemEnvironment 使用）
+- [x] ExpandGroupVerifyFiles 関数の実装（Filter.ResolveAllowlistConfiguration 使用）
+- [x] 既存機能との統合テスト
 
 ### 2.3 Phase 3: Config Parser の統合（既存機能活用）
-- [ ] LoadConfig で Filter と VariableExpander を初期化
-- [ ] processConfig 関数の引数を Filter/VariableExpander に変更
-- [ ] ExpandGlobalVerifyFiles の呼び出しを追加（expander 使用）
-- [ ] ExpandGroupVerifyFiles の呼び出しを追加（filter/expander 使用）
-- [ ] エラーハンドリングの実装
+- [x] LoadConfig で Filter と VariableExpander を初期化
+- [x] processConfig 関数の引数を Filter/VariableExpander に変更
+- [x] ExpandGlobalVerifyFiles の呼び出しを追加（expander 使用）
+- [x] ExpandGroupVerifyFiles の呼び出しを追加（filter/expander 使用）
+- [x] エラーハンドリングの実装
 
 ### 2.4 Phase 4: Verification Manager の更新
-- [ ] VerifyGlobalFiles を ExpandedVerifyFiles 使用に変更
-- [ ] collectVerificationFiles を ExpandedVerifyFiles 使用に変更
-- [ ] 既存のテストの更新
+- [x] VerifyGlobalFiles を ExpandedVerifyFiles 使用に変更
+- [x] collectVerificationFiles を ExpandedVerifyFiles 使用に変更
+- [x] 既存のテストの更新
 
 ### 2.5 Phase 5: テストの実装
-- [ ] ExpandGlobalVerifyFiles の単体テスト（既存機能との統合確認）
-- [ ] ExpandGroupVerifyFiles の単体テスト（既存機能との統合確認）
-- [ ] Filter/VariableExpander 統合の動作確認テスト
-- [ ] 統合テストの実装
-- [ ] エラーケースのテスト
-- [ ] ベンチマークテストの実装
+- [x] ExpandGlobalVerifyFiles の単体テスト（既存機能との統合確認）
+- [x] ExpandGroupVerifyFiles の単体テスト（既存機能との統合確認）
+- [x] Filter/VariableExpander 統合の動作確認テスト
+- [x] 統合テストの実装
+- [x] エラーケースのテスト
+- [x] ベンチマークテストの実装
 
 ### 2.6 Phase 6: ドキュメント
-- [ ] ユーザーガイドの更新
-- [ ] サンプル TOML ファイルの作成
-- [ ] CHANGELOG の更新
+- [x] ユーザーガイドの更新
+- [x] サンプル TOML ファイルの作成
+- [x] CHANGELOG の更新
 
 ## 3. 参照
 

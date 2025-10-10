@@ -119,7 +119,11 @@ type VerifyFilesExpansionError struct {
 
 // Error implements the error interface
 func (e *VerifyFilesExpansionError) Error() string {
-	return fmt.Sprintf("failed to expand verify_files[%d] (%q) at %s level: %v", e.Index, e.Path, e.Level, e.Cause)
+	level := e.Level
+	if level == "" {
+		level = "global"
+	}
+	return fmt.Sprintf("failed to expand verify_files[%d] (%q) at %s level: %v", e.Index, e.Path, level, e.Cause)
 }
 
 // Unwrap returns the underlying cause error
@@ -129,10 +133,10 @@ func (e *VerifyFilesExpansionError) Unwrap() error {
 
 // Is checks if the target error matches this error or the sentinel errors
 func (e *VerifyFilesExpansionError) Is(target error) bool {
-	if errors.Is(target, ErrGlobalVerifyFilesExpansionFailed) && e.Level == "global" {
+	if errors.Is(target, ErrGlobalVerifyFilesExpansionFailed) && e.Level == "" {
 		return true
 	}
-	if errors.Is(target, ErrGroupVerifyFilesExpansionFailed) && e.Level != "global" {
+	if errors.Is(target, ErrGroupVerifyFilesExpansionFailed) && e.Level != "" {
 		return true
 	}
 	_, ok := target.(*VerifyFilesExpansionError)
@@ -203,7 +207,7 @@ func ExpandGlobalVerifyFiles(
 	expanded, err := expandVerifyFiles(
 		global.VerifyFiles,
 		global.EnvAllowlist,
-		"global",
+		"", // Empty string indicates global level (not a group name)
 		filter,
 		expander,
 	)
