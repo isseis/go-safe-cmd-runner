@@ -83,7 +83,7 @@ func ExpandCommand(expCxt *ExpansionContext) (string, []string, map[string]strin
 	}
 
 	// Expand Command.Env variables (this handles cases like PATH=/custom/bin:${PATH})
-	// Pass autoEnv as baseEnv to:
+	// Pass autoEnv to:
 	// 1. Allow Command.Env to reference automatic variables (e.g., OUTPUT=${__RUNNER_DATETIME}.log)
 	// 2. Prevent Command.Env from overriding automatic variables (silently ignored with warning)
 	commandEnv, err := ExpandCommandEnv(cmd, groupName, allowlist, expander, autoEnv)
@@ -576,35 +576,35 @@ func ExpandGroupEnv(
 	return nil
 }
 
-// ExpandCommandEnv expands Command.Env variables with priority environment variables.
+// ExpandCommandEnv expands Command.Env variables with automatic environment variables.
 // This is used during configuration loading (Phase 1) to pre-expand Command.Env.
 // Returns a map of expanded environment variables ready to merge with system environment.
 //
-// The baseEnv parameter provides high-priority variables that take precedence over Command.Env:
+// The autoEnv parameter provides high-priority automatic variables that take precedence over Command.Env:
 //   - In production: Contains automatic variables (__RUNNER_DATETIME, __RUNNER_PID) that
 //     Command.Env CANNOT override
-//   - In testing: Usually nil or empty map for simple test scenarios
-//   - Variables from Command.Env that conflict with baseEnv are silently ignored with a
+//   - In testing: Can be nil or empty map for simple test scenarios
+//   - Variables from Command.Env that conflict with autoEnv are silently ignored with a
 //     warning log to prevent accidental override of automatic variables
 //
-// Variable priority for expansion: baseEnv > Command.Env > System Environment
+// Variable priority for expansion: autoEnv > Command.Env > System Environment
 //
 // Parameters:
 //   - cmd: The command containing environment variables to expand
 //   - groupName: The name of the command group (for logging and error messages)
 //   - allowlist: The environment variable allowlist
 //   - expander: The variable expander for performing secure expansion
-//   - baseEnv: High-priority environment variables (e.g., automatic variables)
+//   - autoEnv: Automatic environment variables (__RUNNER_DATETIME, __RUNNER_PID); can be nil or empty in tests
 //
 // Returns:
-//   - map[string]string: Expanded environment variables (only Command.Env variables, not baseEnv)
+//   - map[string]string: Expanded environment variables (only Command.Env variables, not autoEnv)
 //   - error: Any error that occurred during expansion
 func ExpandCommandEnv(
 	cmd *runnertypes.Command,
 	groupName string,
 	allowlist []string,
 	expander *environment.VariableExpander,
-	baseEnv map[string]string,
+	autoEnv map[string]string,
 ) (map[string]string, error) {
 	// Input validation
 	if cmd == nil {
@@ -621,14 +621,14 @@ func ExpandCommandEnv(
 	})
 
 	// Set up parameters for the generic expansion function
-	// Reference environment: baseEnv > systemEnv
-	// High-priority environment: baseEnv (overrides command.env)
+	// Reference environment: autoEnv > systemEnv
+	// High-priority environment: autoEnv (overrides command.env)
 	params := expansionParameters{
 		envList:             cmd.Env,
 		contextName:         fmt.Sprintf("command.env:%s (group:%s)", cmd.Name, groupName),
 		allowlist:           allowlist,
-		referenceEnvs:       []map[string]string{systemEnv, baseEnv},
-		highPriorityBaseEnv: baseEnv,
+		referenceEnvs:       []map[string]string{systemEnv, autoEnv},
+		highPriorityBaseEnv: autoEnv,
 		expander:            expander,
 		failureErr:          ErrCommandEnvExpansionFailed,
 	}
