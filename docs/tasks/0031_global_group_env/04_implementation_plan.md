@@ -525,6 +525,7 @@ Global・Groupレベル環境変数設定機能を段階的に実装し、要件
   - [ ] `BenchmarkExpandGlobalEnv`: Global.Env展開の性能
   - [ ] `BenchmarkExpandGroupEnv`: Group.Env展開の性能
   - [ ] `BenchmarkExpandCommandEnv`: Command.Env展開の性能
+  - [ ] `BenchmarkLoadConfigWithEnvs`: `global.env`と`group.env`を含む複雑な設定ファイルの読み込み性能を測定
 - [ ] 性能要件の確認
   - [ ] 環境変数1個あたりの展開時間 < 1ms
   - [ ] 設定読み込み時間の増加 < 10%
