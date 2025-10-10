@@ -214,17 +214,11 @@ func ExpandGlobalVerifyFiles(
 		return ErrNilConfig
 	}
 
-	// Use Global.ExpandedEnv if available, otherwise empty map
-	envVars := global.ExpandedEnv
-	if envVars == nil {
-		envVars = make(map[string]string)
-	}
-
 	expanded, err := expandVerifyFiles(
 		global.VerifyFiles,
 		global.EnvAllowlist,
-		"",      // Empty string indicates global level (not a group name)
-		envVars, // Global.ExpandedEnv variables
+		"",                 // Empty string indicates global level (not a group name)
+		global.ExpandedEnv, // Global.ExpandedEnv variables
 		filter,
 		expander,
 	)
