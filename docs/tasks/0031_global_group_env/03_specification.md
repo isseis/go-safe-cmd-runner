@@ -98,11 +98,20 @@ func ExpandGlobalEnv(
 1. 入力検証:
    - cfg.Env が nil または空 → ExpandedEnv = nil, return nil
 
-2. 環境変数マップの構築:
+2. 環境変数マップの構築と重複チェック:
    envMap := make(map[string]string)
    for _, entry := range cfg.Env:
-       key, value := parseKeyValue(entry)  // 最初の'='で分割
-       validate(key)  // KEY形式の検証
+       key, value, err := parseKeyValue(entry)  // 最初の'='で分割
+       if err != nil:
+           return err
+
+       if err := validateKey(key); err != nil:  // KEY形式の検証
+           return err
+
+       // 重複キーのチェック
+       if _, exists := envMap[key]; exists:
+           return fmt.Errorf("duplicate environment variable %q in global.env", key)
+
        envMap[key] = value
 
 3. 各変数の展開:
@@ -153,11 +162,20 @@ func ExpandGroupEnv(
 2. 入力検証:
    - group.Env が nil または空 → ExpandedEnv = nil, return nil
 
-3. 環境変数マップの構築:
+3. 環境変数マップの構築と重複チェック:
    envMap := make(map[string]string)
    for _, entry := range group.Env:
-       key, value := parseKeyValue(entry)
-       validate(key)
+       key, value, err := parseKeyValue(entry)
+       if err != nil:
+           return err
+
+       if err := validateKey(key); err != nil:
+           return err
+
+       // 重複キーのチェック
+       if _, exists := envMap[key]; exists:
+           return fmt.Errorf("duplicate environment variable %q in group %q", key, group.Name)
+
        envMap[key] = value
 
 4. 各変数の展開:
@@ -348,6 +366,8 @@ env_allowlist = []
 
 - `ErrGlobalEnvExpansionFailed`: Global.Env展開エラー
 - `ErrGroupEnvExpansionFailed`: Group.Env展開エラー
+- `ErrDuplicateEnvVariable`: 重複する環境変数定義
+- `ErrInvalidEnvFormat`: 不正な環境変数フォーマット（`=`が無い）
 
 **エラーラッピング**:
 ```go
@@ -375,6 +395,20 @@ Referenced in: group.env:production
 ```
 Error: Circular reference detected in global.env
 Variable 'VAR_A' references itself through a chain of dependencies
+```
+
+**重複変数定義エラー**:
+```
+Error: duplicate environment variable "BASE" in global.env
+```
+
+```
+Error: duplicate environment variable "APP_DIR" in group "production"
+```
+
+**不正なフォーマットエラー**:
+```
+Error: invalid env format (missing '='): INVALID_ENTRY
 ```
 
 ## 6. 実装の詳細
@@ -512,6 +546,18 @@ input := []string{"A=${B}", "B=${A}"}
 expectedError := ErrCircularReference
 ```
 
+**TC-G-005: 重複キーエラー**:
+```go
+input := []string{"BASE=/opt", "BASE=/usr"}
+expectedError := ErrDuplicateEnvVariable
+```
+
+**TC-G-006: 不正なフォーマットエラー**:
+```go
+input := []string{"INVALID_ENTRY"}  // '='が無い
+expectedError := ErrInvalidEnvFormat
+```
+
 #### 7.1.2 Group.Env展開テスト
 
 **TC-GR-001: Global.Env参照**:
@@ -533,6 +579,12 @@ groupAllowlist := nil  // 継承
 globalAllowlist := []string{"PATH"}
 groupAllowlist := []string{"HOME"}
 // PATHの参照は不可、HOMEのみ可能
+```
+
+**TC-GR-004: 重複キーエラー**:
+```go
+input := []string{"APP=/opt/app1", "APP=/opt/app2"}
+expectedError := ErrDuplicateEnvVariable
 ```
 
 #### 7.1.3 Command.Env展開テスト
