@@ -345,84 +345,161 @@ func ExpandGroupVerifyFiles(
 	return nil
 }
 
+// expandEnvironment is a generic helper function to expand environment variables
+// for global, group, and command levels. It centralizes the logic for parsing,
+// validating, and expanding environment variables, while allowing for level-specific
+// configurations through the expansionParameters struct.
+//
+// The function performs the following steps:
+// 1. Parses and validates the input environment variable list (e.g., ["KEY=VALUE"]).
+// 2. Filters out variables that conflict with a high-priority base environment (if provided).
+// 3. Validates variable names against reserved prefixes.
+// 4. Constructs a combined environment for expansion, respecting priority order:
+//   - High-priority base environment (e.g., auto-env)
+//   - Current level's environment variables
+//   - Reference environments (e.g., global.env, system env)
+//
+// 5. Expands variables using the expandEnvMap helper, which supports self-references.
+// 6. Performs a final validation on the expanded values for security.
+func expandEnvironment(params expansionParameters) (map[string]string, error) {
+	// 1. Handle nil or empty env list
+	if len(params.envList) == 0 {
+		return nil, nil
+	}
+
+	// 2. Parse environment variables (without full validation yet)
+	envMap := make(map[string]string)
+	for _, envVar := range params.envList {
+		key, value, ok := common.ParseEnvVariable(envVar)
+		if !ok {
+			return nil, fmt.Errorf("%w: %w: %q in %s", params.failureErr, ErrMalformedEnvVariable, envVar, params.contextName)
+		}
+		if _, exists := envMap[key]; exists {
+			return nil, fmt.Errorf("%w: %w: duplicate key %q in %s", params.failureErr, ErrDuplicateEnvVariable, key, params.contextName)
+		}
+		envMap[key] = value
+	}
+
+	// 3. Filter out variables that conflict with the high-priority base environment
+	// This is primarily for command.env to prevent overriding auto-env variables.
+	if params.highPriorityBaseEnv != nil {
+		for key := range envMap {
+			if _, exists := params.highPriorityBaseEnv[key]; exists {
+				// Log the conflict if a logger is provided (optional)
+				// Note: Conflicting variables are silently ignored as a security measure.
+				delete(envMap, key)
+			}
+		}
+	}
+
+	// 4. Validate variable names against reserved prefixes (e.g., "__RUNNER_") now that
+	// conflicting auto-env vars have been removed.
+	if err := environment.ValidateUserEnvNames(envMap); err != nil {
+		return nil, fmt.Errorf("%w: %w in %s: %w", params.failureErr, ErrReservedEnvPrefix, params.contextName, err)
+	}
+	for key := range envMap {
+		if err := security.ValidateVariableName(key); err != nil {
+			return nil, fmt.Errorf("%w: %w in %s: %w", params.failureErr, ErrInvalidEnvKey, params.contextName, err)
+		}
+	}
+
+	// 5. Construct the environment for expansion
+	// The reference environment is used for resolving variables (e.g., ${PATH}).
+	// It includes system env, global env, etc., but NOT the current level's envMap
+	// to correctly handle self-references like PATH=/custom:${PATH}.
+	referenceEnv := make(map[string]string)
+	for _, ref := range params.referenceEnvs {
+		if ref != nil {
+			maps.Copy(referenceEnv, ref)
+		}
+	}
+
+	// The combined environment includes everything and is used for expansion context.
+	// Priority: highPriorityBaseEnv > envMap > referenceEnvs
+	combinedEnv := make(map[string]string)
+	maps.Copy(combinedEnv, referenceEnv)
+	maps.Copy(combinedEnv, envMap)
+	if params.highPriorityBaseEnv != nil {
+		maps.Copy(combinedEnv, params.highPriorityBaseEnv)
+	}
+
+	// 6. Expand variables using the common helper
+	if err := expandEnvMap(
+		envMap,
+		combinedEnv,
+		referenceEnv,
+		params.allowlist,
+		params.contextName,
+		params.expander,
+		params.failureErr,
+	); err != nil {
+		return nil, err
+	}
+
+	// 7. Final validation on expanded values
+	validator, err := security.NewValidator(nil)
+	if err != nil {
+		return nil, fmt.Errorf("%w: failed to create validator: %v", params.failureErr, err)
+	}
+	for name, value := range envMap {
+		if err := validator.ValidateEnvironmentValue(name, value); err != nil {
+			return nil, fmt.Errorf("%w: validation failed for expanded variable %s in %s: %w", params.failureErr, name, params.contextName, err)
+		}
+	}
+
+	return envMap, nil
+}
+
+// expansionParameters holds all the necessary information for the expandEnvironment function.
+type expansionParameters struct {
+	envList             []string
+	contextName         string
+	allowlist           []string
+	referenceEnvs       []map[string]string
+	highPriorityBaseEnv map[string]string
+	expander            *environment.VariableExpander
+	failureErr          error
+}
+
 // ExpandGlobalEnv expands environment variables in Global.Env.
-// This function validates the environment variable format, checks for duplicates,
-// and expands variables using the existing VariableExpander.
-//
-// The function follows these steps:
-// 1. Input validation: returns nil if cfg.Env is nil or empty
-// 2. Parse and validate each KEY=VALUE entry
-// 3. Check for duplicate keys
-// 4. Validate KEY names using existing security validators
-// 5. Expand variables using VariableExpander.ExpandString()
-// 6. Store results in cfg.ExpandedEnv
-//
-// Variable resolution order within Global.Env:
-// - Automatic environment variables (__RUNNER_PID, __RUNNER_DATETIME)
-// - Global.Env variables (same level references)
-// - System environment variables (filtered by allowlist)
-//
-// Self-reference (e.g., PATH=/custom:${PATH}) is supported by referencing
-// the system environment variable, not the partially expanded value.
 func ExpandGlobalEnv(
 	cfg *runnertypes.GlobalConfig,
 	expander *environment.VariableExpander,
 	autoEnv map[string]string,
 ) error {
-	// Input validation: nil or empty env list
+	// Input validation
 	if cfg == nil {
 		return ErrNilConfig
 	}
-	if len(cfg.Env) == 0 {
-		cfg.ExpandedEnv = nil
-		return nil
+	if expander == nil {
+		return ErrNilExpander
 	}
 
-	// Validate and parse environment variables in a single pass
-	envMap, err := validateAndParseEnvList(cfg.Env, "global.env")
-	if err != nil {
-		return fmt.Errorf("%w: %v", ErrGlobalEnvExpansionFailed, err)
-	}
-
-	// Create combined environment for variable resolution
-	// Priority: Automatic environment variables > Global.Env variables > System environment variables
-
-	// Start with system environment variables (filtered by allowlist)
+	// Filter system environment based on the global allowlist
 	filter := environment.NewFilter(cfg.EnvAllowlist)
 	systemEnv := filter.ParseSystemEnvironment(func(varName string) bool {
 		return slices.Contains(cfg.EnvAllowlist, varName)
 	})
 
-	combinedEnv := make(map[string]string, len(systemEnv)+len(envMap)+len(autoEnv))
-	maps.Copy(combinedEnv, systemEnv) // System environment variables as base
-
-	// Save reference environment before adding global variables (for self-reference resolution)
-	referenceEnv := make(map[string]string)
-	maps.Copy(referenceEnv, combinedEnv)
-	if autoEnv != nil {
-		maps.Copy(referenceEnv, autoEnv) // Include automatic environment variables in reference
+	// Set up parameters for the generic expansion function
+	params := expansionParameters{
+		envList:             cfg.Env,
+		contextName:         "global.env",
+		allowlist:           cfg.EnvAllowlist,
+		referenceEnvs:       []map[string]string{systemEnv, autoEnv},
+		highPriorityBaseEnv: autoEnv, // autoEnv takes precedence over global.env
+		expander:            expander,
+		failureErr:          ErrGlobalEnvExpansionFailed,
 	}
 
-	maps.Copy(combinedEnv, envMap) // Global.Env variables (higher priority)
-	if autoEnv != nil {
-		maps.Copy(combinedEnv, autoEnv) // Automatic environment variables (highest priority)
-	}
-
-	// Expand variables using common helper with reference environment
-	if err := expandEnvMap(
-		envMap,
-		combinedEnv,      // combinedEnv: Combined environment (Global.Env + Automatic)
-		referenceEnv,     // referenceEnv: System + Automatic environment (for self-reference)
-		cfg.EnvAllowlist, // allowlist: Global allowlist
-		"global.env",     // contextName: Context for error messages
-		expander,
-		ErrGlobalEnvExpansionFailed,
-	); err != nil {
+	// Call the generic expansion function
+	expandedEnv, err := expandEnvironment(params)
+	if err != nil {
 		return err
 	}
 
-	// Store expanded environment variables
-	cfg.ExpandedEnv = envMap
+	// Store the expanded environment
+	cfg.ExpandedEnv = expandedEnv
 	return nil
 }
 
@@ -460,66 +537,42 @@ func ExpandGroupEnv(
 		return ErrNilExpander
 	}
 
-	// Handle nil or empty group env
-	if len(group.Env) == 0 {
-		group.ExpandedEnv = map[string]string{}
-		return nil
-	}
-
-	// Determine effective allowlist using allowlist inheritance rules
+	// Determine the effective allowlist for the group
 	effectiveAllowlist := determineEffectiveAllowlist(group, &runnertypes.GlobalConfig{EnvAllowlist: globalAllowlist})
 
-	// Validate and parse environment variables in a single pass
-	envMap, err := validateAndParseEnvList(group.Env, fmt.Sprintf("group.env:%s", group.Name))
-	if err != nil {
-		return fmt.Errorf("%w: %v", ErrGroupEnvExpansionFailed, err)
-	}
-
-	// Create combined environment for variable resolution
-	// Priority: Group.Env (envMap) > Automatic Environment > Global.ExpandedEnv > System Environment
-
-	// Start with system environment variables (filtered by effective allowlist)
+	// Filter system environment based on the effective allowlist
 	filter := environment.NewFilter(effectiveAllowlist)
 	systemEnv := filter.ParseSystemEnvironment(func(varName string) bool {
 		return slices.Contains(effectiveAllowlist, varName)
 	})
 
-	combinedEnv := make(map[string]string)
-	maps.Copy(combinedEnv, systemEnv) // System environment variables as base
-
-	// Add global environment variables (higher priority than system)
-	if globalEnv != nil {
-		maps.Copy(combinedEnv, globalEnv)
+	// Set up parameters for the generic expansion function
+	// Reference environment priority: globalEnv > systemEnv
+	// High-priority environment: autoEnv (overrides group.env)
+	params := expansionParameters{
+		envList:             group.Env,
+		contextName:         fmt.Sprintf("group.env:%s", group.Name),
+		allowlist:           effectiveAllowlist,
+		referenceEnvs:       []map[string]string{systemEnv, globalEnv, autoEnv},
+		highPriorityBaseEnv: autoEnv,
+		expander:            expander,
+		failureErr:          ErrGroupEnvExpansionFailed,
 	}
 
-	// Add automatic environment variables (higher priority than global)
-	if autoEnv != nil {
-		maps.Copy(combinedEnv, autoEnv)
-	}
-
-	// Save reference environment before adding group variables (for self-reference resolution)
-	referenceEnv := make(map[string]string)
-	maps.Copy(referenceEnv, combinedEnv)
-
-	// Add group environment variables (highest priority)
-	maps.Copy(combinedEnv, envMap)
-
-	// Expand variables using common helper
-	contextName := fmt.Sprintf("group.env:%s", group.Name)
-	if err := expandEnvMap(
-		envMap,
-		combinedEnv,        // combinedEnv: Combined environment (Group + Global)
-		referenceEnv,       // referenceEnv: Environment without group variables (for self-reference)
-		effectiveAllowlist, // allowlist: Effective allowlist (inherited or overridden)
-		contextName,        // contextName: Context for error messages
-		expander,
-		ErrGroupEnvExpansionFailed,
-	); err != nil {
+	// Call the generic expansion function
+	expandedEnv, err := expandEnvironment(params)
+	if err != nil {
 		return err
 	}
 
-	// Store expanded environment variables (only Group-level variables)
-	group.ExpandedEnv = envMap
+	// If the expanded environment is nil (e.g., for an empty input list),
+	// return an empty map to fulfill the contract for group environments.
+	if expandedEnv == nil {
+		expandedEnv = make(map[string]string)
+	}
+
+	// Store the expanded environment in the group
+	group.ExpandedEnv = expandedEnv
 	return nil
 }
 
@@ -561,102 +614,25 @@ func ExpandCommandEnv(
 		return nil, ErrNilExpander
 	}
 
-	// Handle nil or empty command env
-	if len(cmd.Env) == 0 {
-		return map[string]string{}, nil
-	}
-
-	// Parse environment variables first, but skip reserved prefix validation
-	// We need to filter out baseEnv conflicts before validation
-	envMap := make(map[string]string)
-	for _, envVar := range cmd.Env {
-		key, value, ok := common.ParseEnvVariable(envVar)
-		if !ok {
-			return nil, fmt.Errorf("%w: %w: %q in %s", ErrCommandEnvExpansionFailed, ErrMalformedEnvVariable, envVar, fmt.Sprintf("command.env:%s", cmd.Name))
-		}
-
-		// Check for duplicate key
-		if firstValue, exists := envMap[key]; exists {
-			return nil, fmt.Errorf("%w: %w: %q in %s\n  First definition: %s=%s\n  Duplicate definition: %s=%s",
-				ErrCommandEnvExpansionFailed, ErrDuplicateEnvVariable, key, fmt.Sprintf("command.env:%s", cmd.Name), key, firstValue, key, value)
-		}
-
-		// Validate variable name using security.ValidateVariableName
-		if err := security.ValidateVariableName(key); err != nil {
-			return nil, fmt.Errorf("%w: %w in %s: %w", ErrCommandEnvExpansionFailed, ErrInvalidEnvKey, fmt.Sprintf("command.env:%s", cmd.Name), err)
-		}
-
-		envMap[key] = value
-	}
-
-	// Create combined environment for variable resolution
-	// Priority: baseEnv > Command.Env > System Environment
-
-	// Start with system environment variables (filtered by allowlist)
+	// Filter system environment based on the allowlist
 	filter := environment.NewFilter(allowlist)
 	systemEnv := filter.ParseSystemEnvironment(func(varName string) bool {
 		return slices.Contains(allowlist, varName)
 	})
 
-	combinedEnv := make(map[string]string)
-	maps.Copy(combinedEnv, systemEnv) // System environment variables as base
-
-	// Save reference environment before adding command variables (for self-reference resolution)
-	referenceEnv := make(map[string]string)
-	maps.Copy(referenceEnv, combinedEnv)
-
-	// Add base environment variables (higher priority than system)
-	if baseEnv != nil {
-		maps.Copy(combinedEnv, baseEnv)
-		maps.Copy(referenceEnv, baseEnv) // Include baseEnv in reference environment
+	// Set up parameters for the generic expansion function
+	// Reference environment: baseEnv > systemEnv
+	// High-priority environment: baseEnv (overrides command.env)
+	params := expansionParameters{
+		envList:             cmd.Env,
+		contextName:         fmt.Sprintf("command.env:%s (group:%s)", cmd.Name, groupName),
+		allowlist:           allowlist,
+		referenceEnvs:       []map[string]string{systemEnv, baseEnv},
+		highPriorityBaseEnv: baseEnv,
+		expander:            expander,
+		failureErr:          ErrCommandEnvExpansionFailed,
 	}
 
-	// Filter out variables from envMap that conflict with baseEnv
-	// These will be excluded from the result
-	filteredEnvMap := make(map[string]string)
-	for key, value := range envMap {
-		if _, existsInBase := baseEnv[key]; !existsInBase {
-			filteredEnvMap[key] = value
-		}
-		// Note: Conflicting variables are silently ignored
-		// Logging will be handled by the caller if needed
-	}
-
-	// Check for reserved prefix using environment.ValidateUserEnvNames
-	// This is done AFTER filtering to allow baseEnv variables to override
-	if err := environment.ValidateUserEnvNames(filteredEnvMap); err != nil {
-		return nil, fmt.Errorf("%w: %w in %s: %w", ErrCommandEnvExpansionFailed, ErrReservedEnvPrefix, fmt.Sprintf("command.env:%s", cmd.Name), err)
-	}
-
-	// Add command environment variables (highest priority)
-	maps.Copy(combinedEnv, filteredEnvMap)
-
-	// Expand variables using common helper
-	contextName := fmt.Sprintf("command.env:%s (group:%s)", cmd.Name, groupName)
-	if err := expandEnvMap(
-		filteredEnvMap,
-		combinedEnv,  // combinedEnv: Combined environment (Command + baseEnv)
-		referenceEnv, // referenceEnv: Environment without command variables (for self-reference)
-		allowlist,    // allowlist: Allowlist
-		contextName,  // contextName: Context for error messages
-		expander,
-		ErrCommandEnvExpansionFailed,
-	); err != nil {
-		return nil, err
-	}
-
-	// Final validation pass on the expanded values
-	// This checks for dangerous patterns in the expanded values
-	validator, err := security.NewValidator(nil)
-	if err != nil {
-		return nil, fmt.Errorf("%w: failed to create validator: %v", ErrCommandEnvExpansionFailed, err)
-	}
-	for name, value := range filteredEnvMap {
-		if err := validator.ValidateEnvironmentValue(name, value); err != nil {
-			return nil, fmt.Errorf("%w: validation failed for expanded variable %s in %s: %w", ErrCommandEnvExpansionFailed, name, contextName, err)
-		}
-	}
-
-	// Return expanded environment variables (only Command.Env variables, not baseEnv)
-	return filteredEnvMap, nil
+	// Call the generic expansion function and return the result
+	return expandEnvironment(params)
 }
