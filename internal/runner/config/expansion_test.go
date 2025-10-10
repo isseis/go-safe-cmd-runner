@@ -2528,3 +2528,158 @@ func TestExpandGroupVerifyFiles_Priority(t *testing.T) {
 	expected := []string{"group_value/verify.sh"}
 	assert.Equal(t, expected, group.ExpandedVerifyFiles)
 }
+
+func TestExpandCommandEnv(t *testing.T) {
+	filter := environment.NewFilter([]string{"PATH", "HOME", "USER"})
+	expander := environment.NewVariableExpander(filter)
+
+	tests := []struct {
+		name         string
+		cmd          runnertypes.Command
+		groupName    string
+		allowlist    []string
+		baseEnv      map[string]string
+		expectedVars map[string]string
+		expectError  bool
+		expectedErr  error
+	}{
+		{
+			name: "process simple command env variables",
+			cmd: runnertypes.Command{
+				Name: "test_cmd",
+				Env:  []string{"FOO=bar", "BAZ=qux"},
+			},
+			groupName: "test_group",
+			allowlist: []string{"PATH", "HOME"},
+			baseEnv:   nil,
+			expectedVars: map[string]string{
+				"FOO": "bar",
+				"BAZ": "qux",
+			},
+		},
+		{
+			name: "process command env variables with expansion",
+			cmd: runnertypes.Command{
+				Name: "test_cmd",
+				Env:  []string{"PATH=/custom/path", "NEW_VAR=value"},
+			},
+			groupName: "test_group",
+			allowlist: []string{"PATH", "HOME"},
+			baseEnv:   nil,
+			expectedVars: map[string]string{
+				"PATH":    "/custom/path",
+				"NEW_VAR": "value",
+			},
+		},
+		{
+			name: "reject invalid environment variable format",
+			cmd: runnertypes.Command{
+				Name: "test_cmd",
+				Env:  []string{"VALID=value", "INVALID_NO_EQUALS", "ANOTHER=valid"},
+			},
+			groupName:   "test_group",
+			allowlist:   []string{"PATH"},
+			baseEnv:     nil,
+			expectError: true,
+			expectedErr: config.ErrMalformedEnvVariable,
+		},
+		{
+			name: "reject dangerous variable value",
+			cmd: runnertypes.Command{
+				Name: "test_cmd",
+				Env:  []string{"DANGEROUS=value; rm -rf /"},
+			},
+			groupName:   "test_group",
+			allowlist:   []string{"PATH"},
+			baseEnv:     nil,
+			expectError: true,
+		},
+		{
+			name: "reject invalid variable name",
+			cmd: runnertypes.Command{
+				Name: "test_cmd",
+				Env:  []string{"123INVALID=value"},
+			},
+			groupName:   "test_group",
+			allowlist:   []string{"PATH"},
+			baseEnv:     nil,
+			expectError: true,
+			expectedErr: config.ErrInvalidEnvKey,
+		},
+		{
+			name: "cmd.Env variable ignored due to baseEnv conflict",
+			cmd: runnertypes.Command{
+				Name: "test_cmd",
+				Env: []string{
+					"__RUNNER_DATETIME=user_override", // This should be ignored
+					"CUSTOM_VAR=user_value",           // This should be accepted
+				},
+			},
+			groupName: "test_group",
+			allowlist: []string{},
+			baseEnv: map[string]string{
+				"__RUNNER_DATETIME": "202510051430.123", // Auto-generated value
+				"__RUNNER_PID":      "12345",
+			},
+			expectedVars: map[string]string{
+				"CUSTOM_VAR": "user_value", // Only user's non-conflicting variable
+			},
+		},
+		{
+			name: "multiple cmd.Env conflicts with baseEnv",
+			cmd: runnertypes.Command{
+				Name: "test_cmd",
+				Env: []string{
+					"__RUNNER_DATETIME=override1", // Should be ignored
+					"__RUNNER_PID=override2",      // Should be ignored
+					"VALID_VAR=accepted",          // Should be accepted
+				},
+			},
+			groupName: "test_group",
+			allowlist: []string{},
+			baseEnv: map[string]string{
+				"__RUNNER_DATETIME": "202510051430.123",
+				"__RUNNER_PID":      "12345",
+			},
+			expectedVars: map[string]string{
+				"VALID_VAR": "accepted",
+			},
+		},
+		{
+			name: "no conflicts - all cmd.Env accepted",
+			cmd: runnertypes.Command{
+				Name: "test_cmd",
+				Env: []string{
+					"VAR1=value1",
+					"VAR2=value2",
+				},
+			},
+			groupName: "test_group",
+			allowlist: []string{},
+			baseEnv: map[string]string{
+				"__RUNNER_DATETIME": "202510051430.123",
+			},
+			expectedVars: map[string]string{
+				"VAR1": "value1",
+				"VAR2": "value2",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := config.ExpandCommandEnv(&tt.cmd, tt.groupName, tt.allowlist, expander, tt.baseEnv)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.expectedErr != nil {
+					assert.ErrorIs(t, err, tt.expectedErr, "Expected error type %v, got %v", tt.expectedErr, err)
+				}
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedVars, result)
+		})
+	}
+}

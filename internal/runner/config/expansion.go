@@ -5,10 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
 var (
@@ -83,7 +86,7 @@ func ExpandCommand(expCxt *ExpansionContext) (string, []string, map[string]strin
 	// Pass autoEnv as baseEnv to:
 	// 1. Allow Command.Env to reference automatic variables (e.g., OUTPUT=${__RUNNER_DATETIME}.log)
 	// 2. Prevent Command.Env from overriding automatic variables (silently ignored with warning)
-	commandEnv, err := expander.ExpandCommandEnv(cmd, groupName, allowlist, autoEnv)
+	commandEnv, err := ExpandCommandEnv(cmd, groupName, allowlist, expander, autoEnv)
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("%w: %v", ErrCommandEnvExpansionFailed, err)
 	}
@@ -249,7 +252,7 @@ func expandEnvMap(
 				}
 
 				if err != nil {
-					return fmt.Errorf("%w: failed to expand variable %q in %s: %v",
+					return fmt.Errorf("%w: failed to expand variable %q in %s: %w",
 						failureErr, key, contextName, err)
 				}
 			}
@@ -387,12 +390,7 @@ func ExpandGlobalEnv(
 	// Start with system environment variables (filtered by allowlist)
 	filter := environment.NewFilter(cfg.EnvAllowlist)
 	systemEnv := filter.ParseSystemEnvironment(func(varName string) bool {
-		for _, allowed := range cfg.EnvAllowlist {
-			if varName == allowed {
-				return true
-			}
-		}
-		return false
+		return slices.Contains(cfg.EnvAllowlist, varName)
 	})
 
 	combinedEnv := make(map[string]string, len(systemEnv)+len(envMap)+len(autoEnv))
@@ -483,12 +481,7 @@ func ExpandGroupEnv(
 	// Start with system environment variables (filtered by effective allowlist)
 	filter := environment.NewFilter(effectiveAllowlist)
 	systemEnv := filter.ParseSystemEnvironment(func(varName string) bool {
-		for _, allowed := range effectiveAllowlist {
-			if varName == allowed {
-				return true
-			}
-		}
-		return false
+		return slices.Contains(effectiveAllowlist, varName)
 	})
 
 	combinedEnv := make(map[string]string)
@@ -528,4 +521,142 @@ func ExpandGroupEnv(
 	// Store expanded environment variables (only Group-level variables)
 	group.ExpandedEnv = envMap
 	return nil
+}
+
+// ExpandCommandEnv expands Command.Env variables with priority environment variables.
+// This is used during configuration loading (Phase 1) to pre-expand Command.Env.
+// Returns a map of expanded environment variables ready to merge with system environment.
+//
+// The baseEnv parameter provides high-priority variables that take precedence over Command.Env:
+//   - In production: Contains automatic variables (__RUNNER_DATETIME, __RUNNER_PID) that
+//     Command.Env CANNOT override
+//   - In testing: Usually nil or empty map for simple test scenarios
+//   - Variables from Command.Env that conflict with baseEnv are silently ignored with a
+//     warning log to prevent accidental override of automatic variables
+//
+// Variable priority for expansion: baseEnv > Command.Env > System Environment
+//
+// Parameters:
+//   - cmd: The command containing environment variables to expand
+//   - groupName: The name of the command group (for logging and error messages)
+//   - allowlist: The environment variable allowlist
+//   - expander: The variable expander for performing secure expansion
+//   - baseEnv: High-priority environment variables (e.g., automatic variables)
+//
+// Returns:
+//   - map[string]string: Expanded environment variables (only Command.Env variables, not baseEnv)
+//   - error: Any error that occurred during expansion
+func ExpandCommandEnv(
+	cmd *runnertypes.Command,
+	groupName string,
+	allowlist []string,
+	expander *environment.VariableExpander,
+	baseEnv map[string]string,
+) (map[string]string, error) {
+	// Input validation
+	if cmd == nil {
+		return nil, ErrNilCommand
+	}
+	if expander == nil {
+		return nil, ErrNilExpander
+	}
+
+	// Handle nil or empty command env
+	if len(cmd.Env) == 0 {
+		return map[string]string{}, nil
+	}
+
+	// Parse environment variables first, but skip reserved prefix validation
+	// We need to filter out baseEnv conflicts before validation
+	envMap := make(map[string]string)
+	for _, envVar := range cmd.Env {
+		key, value, ok := common.ParseEnvVariable(envVar)
+		if !ok {
+			return nil, fmt.Errorf("%w: %w: %q in %s", ErrCommandEnvExpansionFailed, ErrMalformedEnvVariable, envVar, fmt.Sprintf("command.env:%s", cmd.Name))
+		}
+
+		// Check for duplicate key
+		if firstValue, exists := envMap[key]; exists {
+			return nil, fmt.Errorf("%w: %w: %q in %s\n  First definition: %s=%s\n  Duplicate definition: %s=%s",
+				ErrCommandEnvExpansionFailed, ErrDuplicateEnvVariable, key, fmt.Sprintf("command.env:%s", cmd.Name), key, firstValue, key, value)
+		}
+
+		// Validate variable name using security.ValidateVariableName
+		if err := security.ValidateVariableName(key); err != nil {
+			return nil, fmt.Errorf("%w: %w in %s: %w", ErrCommandEnvExpansionFailed, ErrInvalidEnvKey, fmt.Sprintf("command.env:%s", cmd.Name), err)
+		}
+
+		envMap[key] = value
+	}
+
+	// Create combined environment for variable resolution
+	// Priority: baseEnv > Command.Env > System Environment
+
+	// Start with system environment variables (filtered by allowlist)
+	filter := environment.NewFilter(allowlist)
+	systemEnv := filter.ParseSystemEnvironment(func(varName string) bool {
+		return slices.Contains(allowlist, varName)
+	})
+
+	combinedEnv := make(map[string]string)
+	maps.Copy(combinedEnv, systemEnv) // System environment variables as base
+
+	// Save reference environment before adding command variables (for self-reference resolution)
+	referenceEnv := make(map[string]string)
+	maps.Copy(referenceEnv, combinedEnv)
+
+	// Add base environment variables (higher priority than system)
+	if baseEnv != nil {
+		maps.Copy(combinedEnv, baseEnv)
+		maps.Copy(referenceEnv, baseEnv) // Include baseEnv in reference environment
+	}
+
+	// Filter out variables from envMap that conflict with baseEnv
+	// These will be excluded from the result
+	filteredEnvMap := make(map[string]string)
+	for key, value := range envMap {
+		if _, existsInBase := baseEnv[key]; !existsInBase {
+			filteredEnvMap[key] = value
+		}
+		// Note: Conflicting variables are silently ignored
+		// Logging will be handled by the caller if needed
+	}
+
+	// Check for reserved prefix using environment.ValidateUserEnvNames
+	// This is done AFTER filtering to allow baseEnv variables to override
+	if err := environment.ValidateUserEnvNames(filteredEnvMap); err != nil {
+		return nil, fmt.Errorf("%w: %w in %s: %w", ErrCommandEnvExpansionFailed, ErrReservedEnvPrefix, fmt.Sprintf("command.env:%s", cmd.Name), err)
+	}
+
+	// Add command environment variables (highest priority)
+	maps.Copy(combinedEnv, filteredEnvMap)
+
+	// Expand variables using common helper
+	contextName := fmt.Sprintf("command.env:%s (group:%s)", cmd.Name, groupName)
+	if err := expandEnvMap(
+		filteredEnvMap,
+		combinedEnv,  // combinedEnv: Combined environment (Command + baseEnv)
+		referenceEnv, // referenceEnv: Environment without command variables (for self-reference)
+		allowlist,    // allowlist: Allowlist
+		contextName,  // contextName: Context for error messages
+		expander,
+		ErrCommandEnvExpansionFailed,
+	); err != nil {
+		return nil, err
+	}
+
+	// Final validation pass on the expanded values
+	// This checks for dangerous patterns in the expanded values
+	validator, err := security.NewValidator(nil)
+	if err != nil {
+		return nil, fmt.Errorf("%w: failed to create validator: %v", ErrCommandEnvExpansionFailed, err)
+	}
+	for name, value := range filteredEnvMap {
+		if err := validator.ValidateEnvironmentValue(name, value); err != nil {
+			return nil, fmt.Errorf("%w: validation failed for expanded variable %s in %s: %w", ErrCommandEnvExpansionFailed, name, contextName, err)
+		}
+	}
+
+	// Return expanded environment variables (only Command.Env variables, not baseEnv)
+	return filteredEnvMap, nil
 }
