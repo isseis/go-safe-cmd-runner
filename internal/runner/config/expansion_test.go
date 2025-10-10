@@ -1469,3 +1469,719 @@ func TestExpandCommand_CommandEnvExpansionError(t *testing.T) {
 	require.ErrorIs(t, err, config.ErrCommandEnvExpansionFailed)
 	assert.Contains(t, err.Error(), "command environment variable expansion failed")
 }
+
+// TestExpandGlobalEnv_Basic tests basic environment variable expansion
+func TestExpandGlobalEnv_Basic(t *testing.T) {
+	// Prepare test environment
+	filter := environment.NewFilter([]string{"HOME"})
+	expander := environment.NewVariableExpander(filter)
+
+	tests := []struct {
+		name        string
+		globalEnv   []string
+		allowlist   []string
+		expected    map[string]string
+		expectError bool
+	}{
+		{
+			name:        "simple variable expansion",
+			globalEnv:   []string{"VAR1=value1", "VAR2=value2"},
+			allowlist:   []string{"HOME"},
+			expected:    map[string]string{"VAR1": "value1", "VAR2": "value2"},
+			expectError: false,
+		},
+		{
+			name:        "empty env list",
+			globalEnv:   []string{},
+			allowlist:   []string{"HOME"},
+			expected:    nil,
+			expectError: false,
+		},
+		{
+			name:        "nil env list",
+			globalEnv:   nil,
+			allowlist:   []string{"HOME"},
+			expected:    nil,
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &runnertypes.GlobalConfig{
+				Env:          tt.globalEnv,
+				EnvAllowlist: tt.allowlist,
+			}
+
+			err := config.ExpandGlobalEnv(cfg, expander)
+
+			if tt.expectError {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+
+			if tt.expected == nil {
+				assert.Nil(t, cfg.ExpandedEnv)
+			} else {
+				require.NotNil(t, cfg.ExpandedEnv)
+				assert.Equal(t, tt.expected, cfg.ExpandedEnv)
+			}
+		})
+	}
+}
+
+// TestExpandGlobalEnv_VariableReference tests variable references within Global.Env
+func TestExpandGlobalEnv_VariableReference(t *testing.T) {
+	filter := environment.NewFilter([]string{"HOME"})
+	expander := environment.NewVariableExpander(filter)
+
+	tests := []struct {
+		name        string
+		globalEnv   []string
+		allowlist   []string
+		expected    map[string]string
+		expectError bool
+	}{
+		{
+			name:        "reference within global env",
+			globalEnv:   []string{"BASE_DIR=/opt/app", "CONFIG_DIR=${BASE_DIR}/config"},
+			allowlist:   []string{"HOME"},
+			expected:    map[string]string{"BASE_DIR": "/opt/app", "CONFIG_DIR": "/opt/app/config"},
+			expectError: false,
+		},
+		{
+			name:        "multiple variable references",
+			globalEnv:   []string{"A=1", "B=${A}2", "C=${A}${B}3"},
+			allowlist:   []string{"HOME"},
+			expected:    map[string]string{"A": "1", "B": "12", "C": "1123"},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &runnertypes.GlobalConfig{
+				Env:          tt.globalEnv,
+				EnvAllowlist: tt.allowlist,
+			}
+
+			err := config.ExpandGlobalEnv(cfg, expander)
+
+			if tt.expectError {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, cfg.ExpandedEnv)
+		})
+	}
+}
+
+// TestExpandGlobalEnv_SystemEnvReference tests system environment variable references
+func TestExpandGlobalEnv_SystemEnvReference(t *testing.T) {
+	// Set up test environment variables
+	testHome := "/test/home"
+	t.Setenv("TEST_HOME", testHome)
+
+	filter := environment.NewFilter([]string{"TEST_HOME"})
+	expander := environment.NewVariableExpander(filter)
+
+	tests := []struct {
+		name        string
+		globalEnv   []string
+		allowlist   []string
+		expected    map[string]string
+		expectError bool
+	}{
+		{
+			name:        "reference system env with allowlist",
+			globalEnv:   []string{"APP_HOME=${TEST_HOME}/app"},
+			allowlist:   []string{"TEST_HOME"},
+			expected:    map[string]string{"APP_HOME": "/test/home/app"},
+			expectError: false,
+		},
+		{
+			name:        "reference system env without allowlist",
+			globalEnv:   []string{"APP_HOME=${TEST_HOME}/app"},
+			allowlist:   []string{"OTHER_VAR"},
+			expected:    nil,
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &runnertypes.GlobalConfig{
+				Env:          tt.globalEnv,
+				EnvAllowlist: tt.allowlist,
+			}
+
+			err := config.ExpandGlobalEnv(cfg, expander)
+
+			if tt.expectError {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, cfg.ExpandedEnv)
+		})
+	}
+}
+
+// TestExpandGlobalEnv_SelfReference tests self-reference (e.g., PATH=/custom:${PATH})
+func TestExpandGlobalEnv_SelfReference(t *testing.T) {
+	// Set up test environment variable
+	originalPath := "/usr/bin:/bin"
+	t.Setenv("TEST_PATH", originalPath)
+
+	filter := environment.NewFilter([]string{"TEST_PATH"})
+	expander := environment.NewVariableExpander(filter)
+
+	tests := []struct {
+		name        string
+		globalEnv   []string
+		allowlist   []string
+		expected    map[string]string
+		expectError bool
+	}{
+		{
+			name:        "self reference to system env",
+			globalEnv:   []string{"TEST_PATH=/custom:${TEST_PATH}"},
+			allowlist:   []string{"TEST_PATH"},
+			expected:    map[string]string{"TEST_PATH": "/custom:/usr/bin:/bin"},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &runnertypes.GlobalConfig{
+				Env:          tt.globalEnv,
+				EnvAllowlist: tt.allowlist,
+			}
+
+			err := config.ExpandGlobalEnv(cfg, expander)
+
+			if tt.expectError {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, cfg.ExpandedEnv)
+		})
+	}
+}
+
+// TestExpandGlobalEnv_CircularReference tests circular reference detection
+func TestExpandGlobalEnv_CircularReference(t *testing.T) {
+	filter := environment.NewFilter([]string{"HOME"})
+	expander := environment.NewVariableExpander(filter)
+
+	tests := []struct {
+		name        string
+		globalEnv   []string
+		allowlist   []string
+		expectError bool
+	}{
+		{
+			name:        "direct circular reference",
+			globalEnv:   []string{"A=${A}"},
+			allowlist:   []string{"HOME"},
+			expectError: true,
+		},
+		{
+			name:        "indirect circular reference",
+			globalEnv:   []string{"A=${B}", "B=${A}"},
+			allowlist:   []string{"HOME"},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &runnertypes.GlobalConfig{
+				Env:          tt.globalEnv,
+				EnvAllowlist: tt.allowlist,
+			}
+
+			err := config.ExpandGlobalEnv(cfg, expander)
+
+			if tt.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestExpandGlobalEnv_DuplicateKey tests duplicate key detection
+func TestExpandGlobalEnv_DuplicateKey(t *testing.T) {
+	filter := environment.NewFilter([]string{"HOME"})
+	expander := environment.NewVariableExpander(filter)
+
+	tests := []struct {
+		name        string
+		globalEnv   []string
+		allowlist   []string
+		expectError bool
+	}{
+		{
+			name:        "duplicate key",
+			globalEnv:   []string{"VAR1=value1", "VAR1=value2"},
+			allowlist:   []string{"HOME"},
+			expectError: true,
+		},
+		{
+			name:        "no duplicate key",
+			globalEnv:   []string{"VAR1=value1", "VAR2=value2"},
+			allowlist:   []string{"HOME"},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &runnertypes.GlobalConfig{
+				Env:          tt.globalEnv,
+				EnvAllowlist: tt.allowlist,
+			}
+
+			err := config.ExpandGlobalEnv(cfg, expander)
+
+			if tt.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestExpandGlobalEnv_InvalidFormat tests invalid format detection
+func TestExpandGlobalEnv_InvalidFormat(t *testing.T) {
+	filter := environment.NewFilter([]string{"HOME"})
+	expander := environment.NewVariableExpander(filter)
+
+	tests := []struct {
+		name        string
+		globalEnv   []string
+		allowlist   []string
+		expectError bool
+	}{
+		{
+			name:        "missing equals sign",
+			globalEnv:   []string{"VAR1_NO_EQUALS"},
+			allowlist:   []string{"HOME"},
+			expectError: true,
+		},
+		{
+			name:        "invalid key format",
+			globalEnv:   []string{"123VAR=value"},
+			allowlist:   []string{"HOME"},
+			expectError: true,
+		},
+		{
+			name:        "reserved prefix",
+			globalEnv:   []string{"__RUNNER_TEST=value"},
+			allowlist:   []string{"HOME"},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &runnertypes.GlobalConfig{
+				Env:          tt.globalEnv,
+				EnvAllowlist: tt.allowlist,
+			}
+
+			err := config.ExpandGlobalEnv(cfg, expander)
+
+			if tt.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestExpandGlobalEnv_AllowlistViolation tests allowlist violation errors
+func TestExpandGlobalEnv_AllowlistViolation(t *testing.T) {
+	filter := environment.NewFilter([]string{"HOME"})
+	expander := environment.NewVariableExpander(filter)
+
+	// Set up test environment variable
+	t.Setenv("FORBIDDEN_VAR", "forbidden_value")
+
+	tests := []struct {
+		name        string
+		globalEnv   []string
+		allowlist   []string
+		expectError bool
+	}{
+		{
+			name:        "reference forbidden system env",
+			globalEnv:   []string{"TEST_VAR=${FORBIDDEN_VAR}"},
+			allowlist:   []string{"HOME"}, // FORBIDDEN_VAR not in allowlist
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &runnertypes.GlobalConfig{
+				Env:          tt.globalEnv,
+				EnvAllowlist: tt.allowlist,
+			}
+
+			err := config.ExpandGlobalEnv(cfg, expander)
+
+			if tt.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestExpandGlobalEnv_Empty tests empty and nil cases
+func TestExpandGlobalEnv_Empty(t *testing.T) {
+	filter := environment.NewFilter([]string{"HOME"})
+	expander := environment.NewVariableExpander(filter)
+
+	tests := []struct {
+		name      string
+		globalEnv []string
+		allowlist []string
+		expectNil bool
+	}{
+		{
+			name:      "empty array",
+			globalEnv: []string{},
+			allowlist: []string{"HOME"},
+			expectNil: true,
+		},
+		{
+			name:      "nil array",
+			globalEnv: nil,
+			allowlist: []string{"HOME"},
+			expectNil: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &runnertypes.GlobalConfig{
+				Env:          tt.globalEnv,
+				EnvAllowlist: tt.allowlist,
+			}
+
+			err := config.ExpandGlobalEnv(cfg, expander)
+
+			require.NoError(t, err)
+
+			if tt.expectNil {
+				assert.Nil(t, cfg.ExpandedEnv)
+			}
+		})
+	}
+}
+
+// TestConfigLoader_GlobalEnvIntegration tests Config Loader integration with Global.Env
+func TestConfigLoader_GlobalEnvIntegration(t *testing.T) {
+	// Set up test environment variable
+	t.Setenv("HOME", "/test/home")
+
+	// Sample TOML content with Global.Env
+	tomlContent := `[global]
+env = ["BASE_DIR=/opt/app", "LOG_LEVEL=info"]
+env_allowlist = ["HOME"]
+verify_files = ["${BASE_DIR}/verify.sh", "${HOME}/script.sh"]
+
+[[groups]]
+name = "test_group"
+[[groups.commands]]
+name = "test_cmd"
+cmd = "echo"
+args = ["${BASE_DIR}"]`
+
+	// Load configuration
+	loader := config.NewLoader()
+	cfg, err := loader.LoadConfig([]byte(tomlContent))
+	require.NoError(t, err)
+
+	// Verify Global.ExpandedEnv was populated
+	require.NotNil(t, cfg.Global.ExpandedEnv)
+	assert.Equal(t, "/opt/app", cfg.Global.ExpandedEnv["BASE_DIR"])
+	assert.Equal(t, "info", cfg.Global.ExpandedEnv["LOG_LEVEL"])
+
+	// Verify Global.VerifyFiles was expanded correctly
+	expectedVerifyFiles := []string{"/opt/app/verify.sh", "/test/home/script.sh"}
+	assert.Equal(t, expectedVerifyFiles, cfg.Global.ExpandedVerifyFiles)
+
+	// Verify the group and command structure
+	require.Len(t, cfg.Groups, 1)
+	assert.Equal(t, "test_group", cfg.Groups[0].Name)
+	require.Len(t, cfg.Groups[0].Commands, 1)
+	assert.Equal(t, "test_cmd", cfg.Groups[0].Commands[0].Name)
+	assert.Equal(t, "echo", cfg.Groups[0].Commands[0].Cmd)
+	assert.Equal(t, []string{"${BASE_DIR}"}, cfg.Groups[0].Commands[0].Args) // Not yet expanded (Phase 4)
+}
+
+// TestConfigLoader_GlobalEnvError tests error handling in Global.Env expansion
+func TestConfigLoader_GlobalEnvError(t *testing.T) {
+	tests := []struct {
+		name        string
+		tomlContent string
+		expectError bool
+		errorText   string
+	}{
+		{
+			name: "duplicate global env key",
+			tomlContent: `[global]
+env = ["VAR1=value1", "VAR1=value2"]`,
+			expectError: true,
+			errorText:   "duplicate environment variable",
+		},
+		{
+			name: "invalid global env format",
+			tomlContent: `[global]
+env = ["INVALID_FORMAT"]`,
+			expectError: true,
+			errorText:   "malformed environment variable",
+		},
+		{
+			name: "reserved prefix in global env",
+			tomlContent: `[global]
+env = ["__RUNNER_TEST=value"]`,
+			expectError: true,
+			errorText:   "reserved prefix",
+		},
+		{
+			name: "circular reference in global env",
+			tomlContent: `[global]
+env = ["A=${B}", "B=${A}"]`,
+			expectError: true,
+			errorText:   "circular variable reference detected",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			loader := config.NewLoader()
+			_, err := loader.LoadConfig([]byte(tt.tomlContent))
+
+			if tt.expectError {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorText)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestConfigLoader_BackwardCompatibility tests backward compatibility with configs without Global.Env
+func TestConfigLoader_BackwardCompatibility(t *testing.T) {
+	// TOML content without Global.Env (existing config format)
+	tomlContent := `[global]
+env_allowlist = ["HOME", "USER"]
+verify_files = ["${HOME}/verify.sh"]
+
+[[groups]]
+name = "test_group"
+[[groups.commands]]
+name = "test_cmd"
+cmd = "echo"
+args = ["hello"]`
+
+	// Set up test environment variable
+	t.Setenv("HOME", "/test/home")
+
+	// Load configuration
+	loader := config.NewLoader()
+	cfg, err := loader.LoadConfig([]byte(tomlContent))
+	require.NoError(t, err)
+
+	// Verify Global.ExpandedEnv is nil (no Global.Env defined)
+	assert.Nil(t, cfg.Global.ExpandedEnv)
+
+	// Verify Global.VerifyFiles was expanded correctly using system env
+	expectedVerifyFiles := []string{"/test/home/verify.sh"}
+	assert.Equal(t, expectedVerifyFiles, cfg.Global.ExpandedVerifyFiles)
+
+	// Verify the group and command structure
+	require.Len(t, cfg.Groups, 1)
+	assert.Equal(t, "test_group", cfg.Groups[0].Name)
+	require.Len(t, cfg.Groups[0].Commands, 1)
+	assert.Equal(t, "test_cmd", cfg.Groups[0].Commands[0].Name)
+	assert.Equal(t, "echo", cfg.Groups[0].Commands[0].Cmd)
+	assert.Equal(t, []string{"hello"}, cfg.Groups[0].Commands[0].Args)
+}
+
+// TestExpandGlobalVerifyFiles_WithGlobalEnv tests Global.VerifyFiles expansion with Global.Env references
+func TestExpandGlobalVerifyFiles_WithGlobalEnv(t *testing.T) {
+	filter := environment.NewFilter([]string{"HOME"})
+	expander := environment.NewVariableExpander(filter)
+
+	tests := []struct {
+		name        string
+		globalEnv   []string
+		verifyFiles []string
+		allowlist   []string
+		expected    []string
+		expectError bool
+	}{
+		{
+			name:        "reference global env in verify files",
+			globalEnv:   []string{"BASE_DIR=/opt/app"},
+			verifyFiles: []string{"${BASE_DIR}/verify.sh", "${BASE_DIR}/check.py"},
+			allowlist:   []string{"HOME"},
+			expected:    []string{"/opt/app/verify.sh", "/opt/app/check.py"},
+			expectError: false,
+		},
+		{
+			name:        "mixed global env and system env",
+			globalEnv:   []string{"APP_DIR=/opt/myapp"},
+			verifyFiles: []string{"${APP_DIR}/script.sh", "${HOME}/user_script.sh"},
+			allowlist:   []string{"HOME"},
+			expected:    []string{"/opt/myapp/script.sh", os.Getenv("HOME") + "/user_script.sh"},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &runnertypes.GlobalConfig{
+				Env:          tt.globalEnv,
+				VerifyFiles:  tt.verifyFiles,
+				EnvAllowlist: tt.allowlist,
+			}
+
+			// First expand Global.Env
+			err := config.ExpandGlobalEnv(cfg, expander)
+			require.NoError(t, err)
+
+			// Then expand Global.VerifyFiles
+			err = config.ExpandGlobalVerifyFiles(cfg, filter, expander)
+
+			if tt.expectError {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, cfg.ExpandedVerifyFiles)
+		})
+	}
+}
+
+// TestExpandGlobalVerifyFiles_SystemEnv tests Global.VerifyFiles expansion with system environment variables
+func TestExpandGlobalVerifyFiles_SystemEnv(t *testing.T) {
+	t.Setenv("TEST_BASE", "/test/base")
+
+	filter := environment.NewFilter([]string{"TEST_BASE"})
+	expander := environment.NewVariableExpander(filter)
+
+	tests := []struct {
+		name        string
+		verifyFiles []string
+		allowlist   []string
+		expected    []string
+		expectError bool
+	}{
+		{
+			name:        "reference system env only",
+			verifyFiles: []string{"${TEST_BASE}/verify.sh"},
+			allowlist:   []string{"TEST_BASE"},
+			expected:    []string{"/test/base/verify.sh"},
+			expectError: false,
+		},
+		{
+			name:        "reference system env not in allowlist",
+			verifyFiles: []string{"${TEST_BASE}/verify.sh"},
+			allowlist:   []string{"OTHER_VAR"},
+			expected:    nil,
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &runnertypes.GlobalConfig{
+				VerifyFiles:  tt.verifyFiles,
+				EnvAllowlist: tt.allowlist,
+			}
+
+			err := config.ExpandGlobalVerifyFiles(cfg, filter, expander)
+
+			if tt.expectError {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, cfg.ExpandedVerifyFiles)
+		})
+	}
+}
+
+// TestExpandGlobalVerifyFiles_Priority tests priority order: Global.Env > System Env
+func TestExpandGlobalVerifyFiles_Priority(t *testing.T) {
+	// Set system environment variable
+	t.Setenv("TEST_VAR", "system_value")
+
+	filter := environment.NewFilter([]string{"TEST_VAR"})
+	expander := environment.NewVariableExpander(filter)
+
+	tests := []struct {
+		name        string
+		globalEnv   []string
+		verifyFiles []string
+		allowlist   []string
+		expected    []string
+		expectError bool
+	}{
+		{
+			name:        "global env overrides system env",
+			globalEnv:   []string{"TEST_VAR=global_value"},
+			verifyFiles: []string{"${TEST_VAR}/verify.sh"},
+			allowlist:   []string{"TEST_VAR"},
+			expected:    []string{"global_value/verify.sh"},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &runnertypes.GlobalConfig{
+				Env:          tt.globalEnv,
+				VerifyFiles:  tt.verifyFiles,
+				EnvAllowlist: tt.allowlist,
+			}
+
+			// First expand Global.Env
+			err := config.ExpandGlobalEnv(cfg, expander)
+			require.NoError(t, err)
+
+			// Then expand Global.VerifyFiles
+			err = config.ExpandGlobalVerifyFiles(cfg, filter, expander)
+
+			if tt.expectError {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, cfg.ExpandedVerifyFiles)
+		})
+	}
+}
