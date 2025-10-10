@@ -27,40 +27,40 @@ Global・Groupレベル環境変数設定機能を段階的に実装し、要件
 **目的**: 新しいフィールドを追加し、基本的なパースとバリデーションを実装
 
 #### 2.1.1 構造体定義の拡張
-- [ ] `internal/runner/runnertypes/config.go`を編集
-  - [ ] `GlobalConfig`に`Env []string`フィールドを追加
-  - [ ] `GlobalConfig`に`ExpandedEnv map[string]string`フィールドを追加（`toml:"-"`タグ付き）
-  - [ ] `CommandGroup`に`Env []string`フィールドを追加
-  - [ ] `CommandGroup`に`ExpandedEnv map[string]string`フィールドを追加（`toml:"-"`タグ付き）
+- [x] `internal/runner/runnertypes/config.go`を編集
+  - [x] `GlobalConfig`に`Env []string`フィールドを追加
+  - [x] `GlobalConfig`に`ExpandedEnv map[string]string`フィールドを追加（`toml:"-"`タグ付き）
+  - [x] `CommandGroup`に`Env []string`フィールドを追加
+  - [x] `CommandGroup`に`ExpandedEnv map[string]string`フィールドを追加（`toml:"-"`タグ付き）
 
 #### 2.1.2 KEY名バリデーション関数の実装
-- [ ] `internal/runner/config/validation.go`を作成または拡張
-  - [ ] `validateEnvKey(key string) error`関数を実装
+- [x] `internal/runner/config/validation.go`を作成または拡張
+  - [x] `validateEnvKey(key string) error`関数を実装
     - KEY形式チェック: `^[A-Za-z_][A-Za-z0-9_]*$`
     - 予約プレフィックスチェック: `__RUNNER_`で始まる名前を拒否
-  - [ ] テスト: `validation_test.go`
-    - [ ] 正常なKEY名のテスト
-    - [ ] 不正なKEY名のテスト（数字始まり、特殊文字含む等）
-    - [ ] 予約プレフィックスのテスト
+  - [x] テスト: `validation_test.go`
+    - [x] 正常なKEY名のテスト
+    - [x] 不正なKEY名のテスト（数字始まり、特殊文字含む等）
+    - [x] 予約プレフィックスのテスト
 
 #### 2.1.3 重複変数検出関数の実装
-- [ ] `internal/runner/config/validation.go`に追加
-  - [ ] `checkDuplicateKeys(envList []string, context string) error`関数を実装
+- [x] `internal/runner/config/validation.go`に追加
+  - [x] `checkDuplicateKeys(envList []string, context string) error`関数を実装
     - `common.ParseEnvVariable()`でKEY=VALUEをパース
     - 重複キーを検出してエラーを返す
-  - [ ] テスト: `validation_test.go`
-    - [ ] 重複なしのテスト
-    - [ ] 重複ありのテスト
-    - [ ] 不正フォーマット（`=`なし）のテスト
+  - [x] テスト: `validation_test.go`
+    - [x] 重複なしのテスト
+    - [x] 重複ありのテスト
+    - [x] 不正フォーマット（`=`なし）のテスト
 
 #### 2.1.4 エラー型の定義
-- [ ] `internal/runner/config/errors.go`を編集または作成
-  - [ ] `ErrGlobalEnvExpansionFailed`エラー変数を定義
-  - [ ] `ErrGroupEnvExpansionFailed`エラー変数を定義
-  - [ ] `ErrDuplicateEnvVariable`エラー変数を定義
+- [x] `internal/runner/config/errors.go`を編集または作成
+  - [x] `ErrGlobalEnvExpansionFailed`エラー変数を定義
+  - [x] `ErrGroupEnvExpansionFailed`エラー変数を定義
+  - [x] `ErrDuplicateEnvVariable`エラー変数を定義
 
 #### 2.1.5 TOMLパースのテスト
-- [ ] サンプルTOMLファイルを作成: `testdata/phase1_basic.toml`
+- [x] サンプルTOMLファイルを作成: `testdata/phase1_basic.toml`
   ```toml
   [global]
   env = ["VAR1=value1", "VAR2=value2"]
@@ -69,15 +69,15 @@ Global・Groupレベル環境変数設定機能を段階的に実装し、要件
   name = "test_group"
   env = ["GROUP_VAR=group_value"]
   ```
-- [ ] `internal/runner/config/loader_test.go`でパーステスト
-  - [ ] Global.Envが正しくパースされることを確認
-  - [ ] Group.Envが正しくパースされることを確認
-  - [ ] ExpandedEnvがnilであることを確認（まだ展開していない）
+- [x] `internal/runner/config/loader_test.go`でパーステスト
+  - [x] Global.Envが正しくパースされることを確認
+  - [x] Group.Envが正しくパースされることを確認
+  - [x] ExpandedEnvがnilであることを確認（まだ展開していない）
 
 #### 2.1.6 Phase 1の完了確認
-- [ ] すべての既存テストがPASS
-- [ ] Phase 1の新規テストがすべてPASS
-- [ ] `make lint`でエラーなし
+- [x] すべての既存テストがPASS
+- [x] Phase 1の新規テストがすべてPASS
+- [x] `make lint`でエラーなし
 - [ ] コミット: "Add Env/ExpandedEnv fields and validation for Global/Group levels"
 
 ---
