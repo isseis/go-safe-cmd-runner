@@ -470,15 +470,19 @@ flowchart TD
 
 **検出方式**: visited mapによる検出（既存実装を活用）
 
+**重複変数定義の検証**:
+同一レベル内で同一変数の定義が複数ある場合は設定エラーとして扱う：
+```
+[global]
+env = ["PATH=/custom/bin", "PATH=/other/bin"]  # エラー: PATH重複定義
+```
+
 **自己参照の扱い**:
 ```mermaid
 flowchart LR
     A["PATH=/custom:${PATH}"] --> B["${PATH}を解決"]
-    B --> C{"同レベルに定義あり?<br>(自身を除く)"}
-    C -->|"No"| D["上位レベルまたは<br>システム環境変数を参照"]
-    C -->|"Yes"| E["同レベルの値を使用"]
-    D --> F["循環参照にならない"]
-    E --> F
+    B --> C["上位レベルまたは<br>システム環境変数を参照"]
+    C --> D["循環参照にならない"]
 ```
 
 **循環参照のエラーケース**:
@@ -506,6 +510,7 @@ flowchart LR
 #### 新規エラー型
 
 **internal/runner/config**:
+- `ErrDuplicateVariable`: 同一レベルでの変数重複定義
 - `ErrGlobalEnvExpansionFailed`: Global.Env展開エラー
 - `ErrGroupEnvExpansionFailed`: Group.Env展開エラー
 
@@ -523,6 +528,14 @@ flowchart TD
 ```
 
 ### 5.3 エラーメッセージ例
+
+**重複変数定義エラー**:
+```
+Error: Duplicate environment variable definition 'PATH'
+Context: global.env
+First definition: PATH=/usr/local/bin
+Duplicate definition: PATH=/opt/bin
+```
 
 **未定義変数エラー**:
 ```
