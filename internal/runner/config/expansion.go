@@ -200,6 +200,50 @@ func expandVerifyFiles(
 	return expanded, nil
 }
 
+// expandEnvMap is a helper function that expands variables in a parsed environment map.
+// It handles the common expansion logic shared by ExpandGlobalEnv and ExpandGroupEnv.
+//
+// Parameters:
+//   - envMap: The environment map to expand (KEY=VALUE pairs)
+//   - combinedEnv: The combined environment for variable resolution
+//   - allowlist: The environment variable allowlist for security
+//   - contextName: The context name for error messages (e.g., "global", group name)
+//   - expander: The variable expander for performing secure expansion
+//   - failureErr: The sentinel error to wrap expansion failures
+//
+// Returns:
+//   - error: Any error that occurred during expansion
+func expandEnvMap(
+	envMap map[string]string,
+	combinedEnv map[string]string,
+	allowlist []string,
+	contextName string,
+	expander *environment.VariableExpander,
+	failureErr error,
+) error {
+	// Expand variables using VariableExpander
+	for key, value := range envMap {
+		if strings.Contains(value, "${") {
+			// Create a new visited map for each variable expansion
+			// This enables self-reference (e.g., PATH=/custom:${PATH})
+			visited := map[string]bool{key: true}
+			expandedValue, err := expander.ExpandString(
+				value,
+				combinedEnv, // envVars: Combined environment for resolution
+				allowlist,   // allowlist: Effective allowlist
+				contextName, // groupName: Context name for logging
+				visited,     // visited: prevents circular reference
+			)
+			if err != nil {
+				return fmt.Errorf("%w: failed to expand variable %q in %s: %v",
+					failureErr, key, contextName, err)
+			}
+			envMap[key] = expandedValue
+		}
+	}
+	return nil
+}
+
 // ExpandGlobalVerifyFiles expands environment variables in global verify_files.
 // Uses existing Filter.ParseSystemEnvironment() and VariableExpander.ExpandString().
 // Now supports Global.ExpandedEnv variables with higher priority than system variables.
@@ -229,11 +273,15 @@ func ExpandGlobalVerifyFiles(
 	return nil
 }
 
-// ExpandGroupVerifyFiles expands environment variables in group verify_files.
+// ExpandGroupVerifyFiles expands environment variables in group verify_files with Global.Env integration.
+// Combines Group.ExpandedEnv and Global.ExpandedEnv with proper priority ordering.
 // Uses existing Filter.ResolveAllowlistConfiguration() and VariableExpander.ExpandString().
 // Returns VerifyFilesExpansionError on failure, which wraps the underlying cause.
+//
+// Variable priority for expansion: Group.ExpandedEnv > Global.ExpandedEnv > System Environment
 func ExpandGroupVerifyFiles(
 	group *runnertypes.CommandGroup,
+	globalConfig *runnertypes.GlobalConfig,
 	filter *environment.Filter,
 	expander *environment.VariableExpander,
 ) error {
@@ -245,12 +293,25 @@ func ExpandGroupVerifyFiles(
 	resolution := filter.ResolveAllowlistConfiguration(group.EnvAllowlist, group.Name)
 	allowlist := resolution.EffectiveList
 
-	// Note: This function will be extended in Phase 3 to also accept Global.ExpandedEnv
+	// Merge Global.ExpandedEnv and Group.ExpandedEnv with proper priority
+	// Priority: Group.ExpandedEnv > Global.ExpandedEnv
+	combinedEnv := make(map[string]string)
+
+	// Start with global environment as base
+	if globalConfig != nil && globalConfig.ExpandedEnv != nil {
+		maps.Copy(combinedEnv, globalConfig.ExpandedEnv)
+	}
+
+	// Add group environment variables (higher priority)
+	if group.ExpandedEnv != nil {
+		maps.Copy(combinedEnv, group.ExpandedEnv)
+	}
+
 	expanded, err := expandVerifyFiles(
 		group.VerifyFiles,
 		allowlist,
 		group.Name,
-		group.ExpandedEnv, // Group.ExpandedEnv variables (will be extended with Global.Env in Phase 3)
+		combinedEnv, // Combined environment: Group.ExpandedEnv + Global.ExpandedEnv
 		filter,
 		expander,
 	)
@@ -299,28 +360,95 @@ func ExpandGlobalEnv(
 		return fmt.Errorf("%w: %v", ErrGlobalEnvExpansionFailed, err)
 	}
 
-	// Expand variables using VariableExpander
-	for key, value := range envMap {
-		if strings.Contains(value, "${") {
-			// Create a new visited map for each variable expansion
-			// This enables self-reference (e.g., PATH=/custom:${PATH})
-			// where ${PATH} resolves to system env, not the current definition
-			visited := map[string]bool{key: true}
-			expandedValue, err := expander.ExpandString(
-				value,
-				envMap,           // envVars: Global.Env variables
-				cfg.EnvAllowlist, // allowlist: Global allowlist
-				"global",         // groupName: indicates global level
-				visited,          // visited: prevents circular reference
-			)
-			if err != nil {
-				return fmt.Errorf("%w: failed to expand variable %q in global.env: %v", ErrGlobalEnvExpansionFailed, key, err)
-			}
-			envMap[key] = expandedValue
-		}
+	// Expand variables using common helper
+	if err := expandEnvMap(
+		envMap,
+		envMap,           // combinedEnv: Global.Env variables for resolution
+		cfg.EnvAllowlist, // allowlist: Global allowlist
+		"global.env",     // contextName: Context for error messages
+		expander,
+		ErrGlobalEnvExpansionFailed,
+	); err != nil {
+		return err
 	}
 
 	// Store expanded environment variables
 	cfg.ExpandedEnv = envMap
+	return nil
+}
+
+// ExpandGroupEnv expands environment variables in Group.Env with references to Global.Env and system environment.
+//
+// The expansion follows these rules:
+// 1. Group.Env variables can reference Global.ExpandedEnv variables
+// 2. Group.Env variables can reference system environment variables (subject to allowlist)
+// 3. Priority: Group.Env > Global.ExpandedEnv > System Environment
+// 4. Self-reference (e.g., PATH=/custom:${PATH}) is supported
+// 5. Allowlist inheritance: if group.EnvAllowlist == nil, inherit from globalAllowlist
+//
+// Parameters:
+//   - group: The command group containing environment variables to expand
+//   - globalEnv: The already expanded global environment variables (Global.ExpandedEnv)
+//   - globalAllowlist: The global environment variable allowlist
+//   - expander: The variable expander for performing secure expansion
+//
+// Returns:
+//   - error: Any error that occurred during expansion
+func ExpandGroupEnv(
+	group *runnertypes.CommandGroup,
+	globalEnv map[string]string,
+	globalAllowlist []string,
+	expander *environment.VariableExpander,
+) error {
+	// Input validation
+	if group == nil {
+		return ErrNilGroup
+	}
+	if expander == nil {
+		return ErrNilExpander
+	}
+
+	// Handle nil or empty group env
+	if len(group.Env) == 0 {
+		group.ExpandedEnv = map[string]string{}
+		return nil
+	}
+
+	// Determine effective allowlist using allowlist inheritance rules
+	effectiveAllowlist := determineEffectiveAllowlist(group, &runnertypes.GlobalConfig{EnvAllowlist: globalAllowlist})
+
+	// Validate and parse environment variables in a single pass
+	envMap, err := validateAndParseEnvList(group.Env, fmt.Sprintf("group.env:%s", group.Name))
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrGroupEnvExpansionFailed, err)
+	}
+
+	// Create combined environment for variable resolution
+	// Priority: Group.Env (envMap) > Global.ExpandedEnv > System Environment
+	combinedEnv := make(map[string]string)
+
+	// Start with global environment as base
+	if globalEnv != nil {
+		maps.Copy(combinedEnv, globalEnv)
+	}
+
+	// Add group environment variables (higher priority)
+	maps.Copy(combinedEnv, envMap)
+
+	// Expand variables using common helper
+	contextName := fmt.Sprintf("group.env:%s", group.Name)
+	if err := expandEnvMap(
+		envMap,
+		combinedEnv,        // combinedEnv: Combined environment (Group + Global)
+		effectiveAllowlist, // allowlist: Effective allowlist (inherited or overridden)
+		contextName,        // contextName: Context for error messages
+		expander,
+		ErrGroupEnvExpansionFailed,
+	); err != nil {
+		return err
+	}
+
+	// Store expanded environment variables (only Group-level variables)
+	group.ExpandedEnv = envMap
 	return nil
 }

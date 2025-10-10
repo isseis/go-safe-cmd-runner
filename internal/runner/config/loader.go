@@ -110,10 +110,15 @@ func processConfig(cfg *runnertypes.Config, filter *environment.Filter, expander
 		return fmt.Errorf("failed to expand global verify_files: %w", err)
 	}
 
-	// Phase 3-4: Group processing will be added in Phase 3 of implementation
-	// For now, expand group verify_files with existing logic
+	// Phase 3: Group processing
 	for i := range cfg.Groups {
-		if err := ExpandGroupVerifyFiles(&cfg.Groups[i], filter, expander); err != nil {
+		// First expand Group.Env (can reference Global.ExpandedEnv)
+		if err := ExpandGroupEnv(&cfg.Groups[i], cfg.Global.ExpandedEnv, cfg.Global.EnvAllowlist, expander); err != nil {
+			return fmt.Errorf("failed to expand group environment variables for group %q: %w", cfg.Groups[i].Name, err)
+		}
+
+		// Then expand Group.VerifyFiles (can reference Group.ExpandedEnv and Global.ExpandedEnv)
+		if err := ExpandGroupVerifyFiles(&cfg.Groups[i], &cfg.Global, filter, expander); err != nil {
 			return fmt.Errorf("failed to expand verify_files for group %q: %w", cfg.Groups[i].Name, err)
 		}
 	}

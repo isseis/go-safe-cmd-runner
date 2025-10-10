@@ -1316,8 +1316,11 @@ func TestExpandGroupVerifyFiles(t *testing.T) {
 			filter := environment.NewFilter(tt.globalEnvAllowlist)
 			expander := environment.NewVariableExpander(filter)
 
+			// Create empty global config for backward compatibility
+			global := &runnertypes.GlobalConfig{}
+
 			// Execute expansion
-			err := config.ExpandGroupVerifyFiles(group, filter, expander)
+			err := config.ExpandGroupVerifyFiles(group, global, filter, expander)
 
 			// Verify results
 			if tt.expectError {
@@ -1395,7 +1398,9 @@ func BenchmarkExpandGroupVerifyFiles(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		err := config.ExpandGroupVerifyFiles(group, filter, expander)
+		// Create empty global config for backward compatibility
+		global := &runnertypes.GlobalConfig{}
+		err := config.ExpandGroupVerifyFiles(group, global, filter, expander)
 		if err != nil {
 			b.Fatalf("unexpected error: %v", err)
 		}
@@ -2185,4 +2190,341 @@ func TestExpandGlobalVerifyFiles_Priority(t *testing.T) {
 			assert.Equal(t, tt.expected, cfg.ExpandedVerifyFiles)
 		})
 	}
+}
+
+// ===========================================
+// Group.Env Expansion Tests (Phase 3)
+// ===========================================
+
+// TestExpandGroupEnv_Basic tests basic Group.Env expansion
+func TestExpandGroupEnv_Basic(t *testing.T) {
+	filter := environment.NewFilter([]string{})
+	expander := environment.NewVariableExpander(filter)
+
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{"HOME", "USER"},
+		ExpandedEnv:  map[string]string{}, // Empty global env
+	}
+
+	group := &runnertypes.CommandGroup{
+		Name:         "test_group",
+		Env:          []string{"VAR1=value1", "VAR2=value2"},
+		EnvAllowlist: nil, // Should inherit from global
+	}
+
+	err := config.ExpandGroupEnv(group, global.ExpandedEnv, global.EnvAllowlist, expander)
+	require.NoError(t, err)
+
+	expected := map[string]string{
+		"VAR1": "value1",
+		"VAR2": "value2",
+	}
+	assert.Equal(t, expected, group.ExpandedEnv)
+}
+
+// TestExpandGroupEnv_ReferenceGlobal tests Group.Env referencing Global.ExpandedEnv
+func TestExpandGroupEnv_ReferenceGlobal(t *testing.T) {
+	filter := environment.NewFilter([]string{})
+	expander := environment.NewVariableExpander(filter)
+
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{"HOME"},
+		ExpandedEnv:  map[string]string{"BASE_DIR": "/opt/app", "LOG_LEVEL": "info"},
+	}
+
+	group := &runnertypes.CommandGroup{
+		Name:         "test_group",
+		Env:          []string{"APP_DIR=${BASE_DIR}/myapp", "CONFIG_FILE=${BASE_DIR}/config.ini"},
+		EnvAllowlist: nil, // Should inherit from global
+	}
+
+	err := config.ExpandGroupEnv(group, global.ExpandedEnv, global.EnvAllowlist, expander)
+	require.NoError(t, err)
+
+	expected := map[string]string{
+		"APP_DIR":     "/opt/app/myapp",
+		"CONFIG_FILE": "/opt/app/config.ini",
+	}
+	assert.Equal(t, expected, group.ExpandedEnv)
+}
+
+// TestExpandGroupEnv_ReferenceSystemEnv tests Group.Env referencing system environment
+func TestExpandGroupEnv_ReferenceSystemEnv(t *testing.T) {
+	// Set system environment variable
+	t.Setenv("SYSTEM_VAR", "system_value")
+
+	filter := environment.NewFilter([]string{"SYSTEM_VAR"})
+	expander := environment.NewVariableExpander(filter)
+
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{"SYSTEM_VAR"},
+		ExpandedEnv:  map[string]string{},
+	}
+
+	group := &runnertypes.CommandGroup{
+		Name:         "test_group",
+		Env:          []string{"GROUP_VAR=${SYSTEM_VAR}/suffix"},
+		EnvAllowlist: nil, // Should inherit from global allowlist
+	}
+
+	err := config.ExpandGroupEnv(group, global.ExpandedEnv, global.EnvAllowlist, expander)
+	require.NoError(t, err)
+
+	expected := map[string]string{
+		"GROUP_VAR": "system_value/suffix",
+	}
+	assert.Equal(t, expected, group.ExpandedEnv)
+}
+
+// TestExpandGroupEnv_AllowlistInherit tests allowlist inheritance
+func TestExpandGroupEnv_AllowlistInherit(t *testing.T) {
+	// Set system environment variable
+	t.Setenv("ALLOWED_VAR", "allowed_value")
+	t.Setenv("FORBIDDEN_VAR", "forbidden_value")
+
+	filter := environment.NewFilter([]string{"ALLOWED_VAR", "FORBIDDEN_VAR"})
+	expander := environment.NewVariableExpander(filter)
+
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{"ALLOWED_VAR"}, // Only allow ALLOWED_VAR
+		ExpandedEnv:  map[string]string{},
+	}
+
+	group := &runnertypes.CommandGroup{
+		Name:         "test_group",
+		Env:          []string{"GROUP_VAR=${ALLOWED_VAR}/suffix"},
+		EnvAllowlist: nil, // Should inherit global allowlist (ALLOWED_VAR only)
+	}
+
+	err := config.ExpandGroupEnv(group, global.ExpandedEnv, global.EnvAllowlist, expander)
+	require.NoError(t, err)
+
+	expected := map[string]string{
+		"GROUP_VAR": "allowed_value/suffix",
+	}
+	assert.Equal(t, expected, group.ExpandedEnv)
+
+	// Test that forbidden variable causes error
+	group.Env = []string{"GROUP_VAR=${FORBIDDEN_VAR}/suffix"}
+	err = config.ExpandGroupEnv(group, global.ExpandedEnv, global.EnvAllowlist, expander)
+	require.Error(t, err)
+}
+
+// TestExpandGroupEnv_AllowlistOverride tests allowlist override
+func TestExpandGroupEnv_AllowlistOverride(t *testing.T) {
+	// Set system environment variables
+	t.Setenv("GLOBAL_ALLOWED", "global_value")
+	t.Setenv("GROUP_ALLOWED", "group_value")
+
+	filter := environment.NewFilter([]string{"GLOBAL_ALLOWED", "GROUP_ALLOWED"})
+	expander := environment.NewVariableExpander(filter)
+
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{"GLOBAL_ALLOWED"}, // Global allows GLOBAL_ALLOWED
+		ExpandedEnv:  map[string]string{},
+	}
+
+	group := &runnertypes.CommandGroup{
+		Name:         "test_group",
+		Env:          []string{"GROUP_VAR=${GROUP_ALLOWED}/suffix"},
+		EnvAllowlist: []string{"GROUP_ALLOWED"}, // Group overrides to allow GROUP_ALLOWED
+	}
+
+	err := config.ExpandGroupEnv(group, global.ExpandedEnv, global.EnvAllowlist, expander)
+	require.NoError(t, err)
+
+	expected := map[string]string{
+		"GROUP_VAR": "group_value/suffix",
+	}
+	assert.Equal(t, expected, group.ExpandedEnv)
+
+	// Test that global allowed var is now forbidden
+	group.Env = []string{"GROUP_VAR=${GLOBAL_ALLOWED}/suffix"}
+	err = config.ExpandGroupEnv(group, global.ExpandedEnv, global.EnvAllowlist, expander)
+	require.Error(t, err)
+}
+
+// TestExpandGroupEnv_AllowlistReject tests allowlist rejection (empty slice)
+func TestExpandGroupEnv_AllowlistReject(t *testing.T) {
+	// Set system environment variable
+	t.Setenv("SYSTEM_VAR", "system_value")
+
+	filter := environment.NewFilter([]string{"SYSTEM_VAR"})
+	expander := environment.NewVariableExpander(filter)
+
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{"SYSTEM_VAR"}, // Global allows SYSTEM_VAR
+		ExpandedEnv:  map[string]string{},
+	}
+
+	group := &runnertypes.CommandGroup{
+		Name:         "test_group",
+		Env:          []string{"GROUP_VAR=${SYSTEM_VAR}/suffix"},
+		EnvAllowlist: []string{}, // Empty slice should reject all system env vars
+	}
+
+	err := config.ExpandGroupEnv(group, global.ExpandedEnv, global.EnvAllowlist, expander)
+	require.Error(t, err) // Should fail because SYSTEM_VAR is not allowed
+}
+
+// TestExpandGroupEnv_CircularReference tests circular reference detection
+func TestExpandGroupEnv_CircularReference(t *testing.T) {
+	filter := environment.NewFilter([]string{})
+	expander := environment.NewVariableExpander(filter)
+
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{},
+		ExpandedEnv:  map[string]string{},
+	}
+
+	group := &runnertypes.CommandGroup{
+		Name:         "test_group",
+		Env:          []string{"VAR1=${VAR2}/suffix", "VAR2=${VAR1}/suffix"}, // Circular reference
+		EnvAllowlist: nil,
+	}
+
+	err := config.ExpandGroupEnv(group, global.ExpandedEnv, global.EnvAllowlist, expander)
+	require.Error(t, err) // Should detect circular reference
+}
+
+// TestExpandGroupEnv_DuplicateKey tests duplicate key detection
+func TestExpandGroupEnv_DuplicateKey(t *testing.T) {
+	filter := environment.NewFilter([]string{})
+	expander := environment.NewVariableExpander(filter)
+
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{},
+		ExpandedEnv:  map[string]string{},
+	}
+
+	group := &runnertypes.CommandGroup{
+		Name:         "test_group",
+		Env:          []string{"VAR1=value1", "VAR1=value2"}, // Duplicate key
+		EnvAllowlist: nil,
+	}
+
+	err := config.ExpandGroupEnv(group, global.ExpandedEnv, global.EnvAllowlist, expander)
+	require.Error(t, err) // Should detect duplicate key
+}
+
+// TestExpandGroupEnv_Empty tests empty and nil cases
+func TestExpandGroupEnv_Empty(t *testing.T) {
+	filter := environment.NewFilter([]string{})
+	expander := environment.NewVariableExpander(filter)
+
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{},
+		ExpandedEnv:  map[string]string{},
+	}
+
+	// Test nil Env
+	group := &runnertypes.CommandGroup{
+		Name:         "test_group",
+		Env:          nil,
+		EnvAllowlist: nil,
+	}
+
+	err := config.ExpandGroupEnv(group, global.ExpandedEnv, global.EnvAllowlist, expander)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{}, group.ExpandedEnv)
+
+	// Test empty Env
+	group.Env = []string{}
+	err = config.ExpandGroupEnv(group, global.ExpandedEnv, global.EnvAllowlist, expander)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{}, group.ExpandedEnv)
+}
+
+// ===========================================
+// Group.VerifyFiles Expansion Tests (Phase 3)
+// ===========================================
+
+// TestExpandGroupVerifyFiles_WithGroupEnv tests Group.VerifyFiles expansion with Group.Env
+func TestExpandGroupVerifyFiles_WithGroupEnv(t *testing.T) {
+	filter := environment.NewFilter([]string{})
+	expander := environment.NewVariableExpander(filter)
+
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{},
+		ExpandedEnv:  map[string]string{},
+	}
+
+	group := &runnertypes.CommandGroup{
+		Name:         "test_group",
+		Env:          []string{"GROUP_DIR=/opt/group", "FILE_NAME=verify.sh"},
+		VerifyFiles:  []string{"${GROUP_DIR}/${FILE_NAME}"},
+		EnvAllowlist: nil, // Inherit from global
+	}
+
+	// First expand Group.Env
+	err := config.ExpandGroupEnv(group, global.ExpandedEnv, global.EnvAllowlist, expander)
+	require.NoError(t, err)
+
+	// Then expand Group.VerifyFiles
+	err = config.ExpandGroupVerifyFiles(group, global, filter, expander)
+	require.NoError(t, err)
+
+	expected := []string{"/opt/group/verify.sh"}
+	assert.Equal(t, expected, group.ExpandedVerifyFiles)
+}
+
+// TestExpandGroupVerifyFiles_WithGlobalEnv tests Group.VerifyFiles expansion with Global.Env
+func TestExpandGroupVerifyFiles_WithGlobalEnv(t *testing.T) {
+	filter := environment.NewFilter([]string{})
+	expander := environment.NewVariableExpander(filter)
+
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{},
+		ExpandedEnv:  map[string]string{"BASE_DIR": "/opt/app", "LOG_LEVEL": "info"},
+	}
+
+	group := &runnertypes.CommandGroup{
+		Name:         "test_group",
+		Env:          []string{},
+		VerifyFiles:  []string{"${BASE_DIR}/verify.sh", "${BASE_DIR}/logs/check.sh"},
+		EnvAllowlist: nil, // Inherit from global
+	}
+
+	// First expand Group.Env (empty in this case)
+	err := config.ExpandGroupEnv(group, global.ExpandedEnv, global.EnvAllowlist, expander)
+	require.NoError(t, err)
+
+	// Then expand Group.VerifyFiles with Global.Env
+	err = config.ExpandGroupVerifyFiles(group, global, filter, expander)
+	require.NoError(t, err)
+
+	expected := []string{"/opt/app/verify.sh", "/opt/app/logs/check.sh"}
+	assert.Equal(t, expected, group.ExpandedVerifyFiles)
+}
+
+// TestExpandGroupVerifyFiles_Priority tests priority: Group.Env > Global.Env > System Env
+func TestExpandGroupVerifyFiles_Priority(t *testing.T) {
+	// Set system environment variable
+	t.Setenv("TEST_VAR", "system_value")
+
+	filter := environment.NewFilter([]string{"TEST_VAR"})
+	expander := environment.NewVariableExpander(filter)
+
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{"TEST_VAR"},
+		ExpandedEnv:  map[string]string{"TEST_VAR": "global_value"},
+	}
+
+	group := &runnertypes.CommandGroup{
+		Name:         "test_group",
+		Env:          []string{"TEST_VAR=group_value"},
+		VerifyFiles:  []string{"${TEST_VAR}/verify.sh"},
+		EnvAllowlist: nil, // Inherit from global
+	}
+
+	// First expand Group.Env
+	err := config.ExpandGroupEnv(group, global.ExpandedEnv, global.EnvAllowlist, expander)
+	require.NoError(t, err)
+
+	// Then expand Group.VerifyFiles - should use Group.Env value (highest priority)
+	err = config.ExpandGroupVerifyFiles(group, global, filter, expander)
+	require.NoError(t, err)
+
+	expected := []string{"group_value/verify.sh"}
+	assert.Equal(t, expected, group.ExpandedVerifyFiles)
 }
