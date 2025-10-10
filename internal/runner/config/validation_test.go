@@ -111,7 +111,18 @@ func TestValidateEnvList(t *testing.T) {
 			if tt.wantErr {
 				assert.Error(t, err)
 				if tt.errType != nil {
-					assert.True(t, errors.Is(err, tt.errType))
+					// If tt.errType is a pointer to a struct error (like
+					// *runnertypes.ReservedEnvPrefixError), use errors.As to
+					// check the error chain for that concrete type. For
+					// sentinel errors (plain error values), fall back to
+					// errors.Is.
+					switch tt.errType.(type) {
+					case *runnertypes.ReservedEnvPrefixError:
+						var target *runnertypes.ReservedEnvPrefixError
+						assert.True(t, errors.As(err, &target))
+					default:
+						assert.True(t, errors.Is(err, tt.errType))
+					}
 				}
 			} else {
 				assert.NoError(t, err)
