@@ -226,7 +226,7 @@ sequenceDiagram
 | **Phase 2** | Global.VerifyFiles | Global.ExpandedEnv<br>システム環境変数 | Global.ExpandedEnv<br>→ システム環境変数 | `global.env_allowlist` |
 | **Phase 3** | Group.Env | Group.Env<br>Global.ExpandedEnv<br>システム環境変数 | Group.Env<br>→ Global.ExpandedEnv<br>→ システム環境変数 | Group有効allowlist |
 | **Phase 4** | Group.VerifyFiles | Group.ExpandedEnv<br>Global.ExpandedEnv<br>システム環境変数 | Group.ExpandedEnv<br>→ Global.ExpandedEnv<br>→ システム環境変数 | Group有効allowlist |
-| **Phase 5** | Command.Env | Group.ExpandedEnv<br>Global.ExpandedEnv<br>システム環境変数 | Group.ExpandedEnv<br>→ Global.ExpandedEnv<br>→ システム環境変数 | Group有効allowlist |
+| **Phase 5** | Command.Env | Command.Env<br>Group.ExpandedEnv<br>Global.ExpandedEnv<br>システム環境変数 | Command.Env<br>→ Group.ExpandedEnv<br>→ Global.ExpandedEnv<br>→ システム環境変数 | Group有効allowlist |
 | **Phase 6** | Cmd/Args | Command.ExpandedEnv<br>Group.ExpandedEnv<br>Global.ExpandedEnv<br>システム環境変数 | Command.ExpandedEnv<br>→ Group.ExpandedEnv<br>→ Global.ExpandedEnv<br>→ システム環境変数 | Group有効allowlist |
 
 #### 2.5.2 Group有効allowlistの決定方式
@@ -416,7 +416,7 @@ flowchart TD
 
 #### 3.3.2 変数解決の優先順位
 
-**Commandレベルでの変数解決**:
+**Phase 6: Cmd/Args展開時の変数解決**:
 ```
 ${VAR}の解決順序:
 1. Command.ExpandedEnv[VAR]
@@ -426,7 +426,17 @@ ${VAR}の解決順序:
 5. 見つからない → エラー
 ```
 
-**Groupレベルでの変数解決**:
+**Phase 5: Command.Env展開時の変数解決**:
+```
+${VAR}の解決順序:
+1. Command.Env内の他のエントリ[VAR]
+2. Group.ExpandedEnv[VAR]
+3. Global.ExpandedEnv[VAR]
+4. システム環境変数[VAR] (allowlistチェック)
+5. 見つからない → エラー
+```
+
+**Phase 3: Group.Env展開時の変数解決**:
 ```
 ${VAR}の解決順序:
 1. Group.Env内の他のエントリ[VAR]
@@ -435,7 +445,7 @@ ${VAR}の解決順序:
 4. 見つからない → エラー
 ```
 
-**Globalレベルでの変数解決**:
+**Phase 1: Global.Env展開時の変数解決**:
 ```
 ${VAR}の解決順序:
 1. Global.Env内の他のエントリ[VAR]
