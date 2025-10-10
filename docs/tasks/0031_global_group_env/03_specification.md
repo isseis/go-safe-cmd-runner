@@ -112,6 +112,7 @@ func ExpandGlobalEnv(
            // 循環参照は内部でvisited mapにより即時検出される
            expanded, err := expander.ExpandString(
                value,
+               nil,                 // baseEnv: Globalレベルではnil
                envMap,              // 同レベルの変数
                cfg.EnvAllowlist,    // allowlist
                "global",            // グループ名
@@ -161,13 +162,13 @@ func ExpandGroupEnv(
 
 4. 各変数の展開:
    // globalEnvとenvMapをマージした環境で展開
-   combinedEnv := merge(globalEnv, envMap)
    for key, value := range envMap:
        if contains(value, "${"):
            // 循環参照は内部でvisited mapにより即時検出される
            expanded, err := expander.ExpandString(
                value,
-               combinedEnv,         // Global.Env + Group.Env
+               globalEnv,           // baseEnv:上位スコープの環境変数
+               envMap,              // localEnv: 同レベルの環境変数
                effectiveAllowlist,
                "group:" + group.Name,
                make(map[string]bool) // visited（各変数展開で新規作成）
@@ -175,7 +176,7 @@ func ExpandGroupEnv(
            if err != nil:
                return err
            envMap[key] = expanded
-           combinedEnv[key] = expanded  // 後続変数の参照用に更新
+           // combinedEnv[key] = expanded  // 後続変数の参照用に更新 -> 不要。localEnvで完結
 
 5. 結果の保存:
    group.ExpandedEnv = envMap
@@ -389,7 +390,7 @@ func processConfig(cfg *Config, filter *Filter, expander *VariableExpander) erro
     }
 
     // 2. Global.VerifyFiles展開
-    if err := ExpandGlobalVerifyFiles(&cfg.Global, expander); err != nil {
+    if err := ExpandGlobalVerifyFiles(&cfg.Global, cfg.Global.ExpandedEnv, expander); err != nil {
         return err
     }
 
@@ -408,7 +409,10 @@ func processConfig(cfg *Config, filter *Filter, expander *VariableExpander) erro
         }
 
         // 4. Group.VerifyFiles展開
-        if err := ExpandGroupVerifyFiles(group, &cfg.Global, expander); err != nil {
+        baseEnvForGroupVerify := make(map[string]string)
+        maps.Copy(baseEnvForGroupVerify, cfg.Global.ExpandedEnv)
+        maps.Copy(baseEnvForGroupVerify, group.ExpandedEnv)
+        if err := ExpandGroupVerifyFiles(group, &cfg.Global, baseEnvForGroupVerify, expander); err != nil {
             return err
         }
 
@@ -418,15 +422,15 @@ func processConfig(cfg *Config, filter *Filter, expander *VariableExpander) erro
             effectiveAllowlist := determineEffectiveAllowlist(group, &cfg.Global)
 
             // 5. Command.Env展開
-            baseEnv := make(map[string]string)
-            maps.Copy(baseEnv, cfg.Global.ExpandedEnv)
-            maps.Copy(baseEnv, group.ExpandedEnv)
+            baseEnvForCmd := make(map[string]string)
+            maps.Copy(baseEnvForCmd, cfg.Global.ExpandedEnv)
+            maps.Copy(baseEnvForCmd, group.ExpandedEnv)
 
             expandedEnv, err := expander.ExpandCommandEnv(
                 cmd,
                 group.Name,
                 effectiveAllowlist,
-                baseEnv,
+                baseEnvForCmd,
             )
             if err != nil {
                 return err

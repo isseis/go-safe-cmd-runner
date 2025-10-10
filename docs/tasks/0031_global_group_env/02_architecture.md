@@ -222,12 +222,12 @@ sequenceDiagram
 
 | 展開フェーズ | 対象データ | 参照可能な変数ソース | 優先順位（高→低） | allowlistチェック |
 |------------|-----------|-------------------|-------------------|-------------------|
-| **Phase 1** | Global.Env | システム環境変数のみ | システム環境変数 | `global.env_allowlist` |
+| **Phase 1** | Global.Env | Global.Env<br>システム環境変数 | Global.Env<br>→ システム環境変数 | `global.env_allowlist` |
 | **Phase 2** | Global.VerifyFiles | Global.ExpandedEnv<br>システム環境変数 | Global.ExpandedEnv<br>→ システム環境変数 | `global.env_allowlist` |
-| **Phase 3** | Group.Env | Global.ExpandedEnv<br>システム環境変数 | Global.ExpandedEnv<br>→ システム環境変数 | Group有効allowlist |
-| **Phase 4** | Group.VerifyFiles | Global.ExpandedEnv<br>Group.ExpandedEnv<br>システム環境変数 | Group.ExpandedEnv<br>→ Global.ExpandedEnv<br>→ システム環境変数 | Group有効allowlist |
-| **Phase 5** | Command.Env | Global.ExpandedEnv<br>Group.ExpandedEnv<br>システム環境変数 | Group.ExpandedEnv<br>→ Global.ExpandedEnv<br>→ システム環境変数 | Group有効allowlist |
-| **Phase 6** | Cmd/Args | Command.ExpandedEnv<br>Global.ExpandedEnv<br>Group.ExpandedEnv<br>システム環境変数 | Command.ExpandedEnv<br>→ Group.ExpandedEnv<br>→ Global.ExpandedEnv<br>→ システム環境変数 | Group有効allowlist |
+| **Phase 3** | Group.Env | Group.Env<br>Global.ExpandedEnv<br>システム環境変数 | Group.Env<br>→ Global.ExpandedEnv<br>→ システム環境変数 | Group有効allowlist |
+| **Phase 4** | Group.VerifyFiles | Group.ExpandedEnv<br>Global.ExpandedEnv<br>システム環境変数 | Group.ExpandedEnv<br>→ Global.ExpandedEnv<br>→ システム環境変数 | Group有効allowlist |
+| **Phase 5** | Command.Env | Group.ExpandedEnv<br>Global.ExpandedEnv<br>システム環境変数 | Group.ExpandedEnv<br>→ Global.ExpandedEnv<br>→ システム環境変数 | Group有効allowlist |
+| **Phase 6** | Cmd/Args | Command.ExpandedEnv<br>Group.ExpandedEnv<br>Global.ExpandedEnv<br>システム環境変数 | Command.ExpandedEnv<br>→ Group.ExpandedEnv<br>→ Global.ExpandedEnv<br>→ システム環境変数 | Group有効allowlist |
 
 #### 2.5.2 Group有効allowlistの決定方式
 
@@ -472,7 +472,7 @@ flowchart TD
 
 **重複変数定義の検証**:
 同一レベル内で同一変数の定義が複数ある場合は設定エラーとして扱う：
-```
+```toml
 [global]
 env = ["PATH=/custom/bin", "PATH=/other/bin"]  # エラー: PATH重複定義
 ```
