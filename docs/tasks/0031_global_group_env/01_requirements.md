@@ -120,10 +120,13 @@ env = ["ENV=command"]
 **概要**: 各レベルで定義した環境変数を下位レベルで参照可能
 
 **サポートする参照パターン**:
-1. **Global → Group**: globalで定義した変数をgroupの`env`で参照
-2. **Global → Command**: globalで定義した変数をcommandの`env`で参照
-3. **Group → Command**: groupで定義した変数をcommandの`env`で参照
-4. **同レベル内参照**: 同じレベル内での変数間参照
+以下の表記で、`A → B` は「Aで定義した変数をBで参照可能」を意味する（参照の方向）：
+
+1. **Global → Group**: Globalで定義した変数をGroupの`env`で参照可能
+2. **Global → Command**: Globalで定義した変数をCommandの`env`で参照可能
+3. **Group → Command**: Groupで定義した変数をCommandの`env`で参照可能
+4. **同レベル内参照**: 同じレベル内での変数間参照（例: Global.Env内でのA→B）
+5. **自己参照（上位レベルの値を拡張）**: `PATH=/custom/bin:${PATH}` のように、上位レベル（または同レベルの他のエントリ、またはシステム環境変数）で定義された同名変数の値を参照して拡張する
 
 **変数参照の解決順序**:
 `${VAR}` 形式の変数参照を解決する際、以下の順序で変数を探索する：
@@ -146,11 +149,17 @@ env = ["ENV=command"]
    - ※ Group.Env、Command.Env は参照不可（下位レベルは上位から参照できない）
 
 **重要な制約**:
-- 上位レベルから下位レベルの変数は参照できない（Global → Command は不可）
+- **上位レベルは下位レベルの変数を参照できない**:
+  - Global.Env は Group.Env や Command.Env を参照できない
+  - Group.Env は Command.Env を参照できない
+  - 理由: 展開順序の制約（上位レベルを先に展開してから下位レベルを展開するため）
+- **下位レベルは上位レベルの変数を参照できる**:
+  - Command.Env は Group.Env と Global.Env を参照できる（例: `Command → Global`）
+  - Group.Env は Global.Env を参照できる（例: `Group → Global`）
 - 同じレベル内での変数参照は、定義順序に依存しない（展開アルゴリズムで解決）
 - 同名変数が複数レベルに存在する場合、最も下位（優先度が高い）レベルの値を使用
 
-**例1: Global → Group 参照**:
+**例1: Global → Group 参照（Groupが Globalの変数を参照）**:
 ```toml
 [global]
 env = ["BASE=/opt", "APP_DIR=${BASE}/app"]
@@ -161,7 +170,7 @@ env = ["DEPLOY_DIR=${APP_DIR}/deploy"]  # /opt/app/deploy に展開
 # 解決順序: ${APP_DIR} → Group.Env(未定義) → Global.Env(/opt/app) ✓
 ```
 
-**例2: Group → Command 参照**:
+**例2: Group → Command 参照（CommandがGroupの変数を参照）**:
 ```toml
 [[groups]]
 name = "database"
@@ -173,7 +182,7 @@ env = ["BACKUP_FILE=/backup/${DB_HOST}.sql"]  # /backup/localhost.sql に展開
 # 解決順序: ${DB_HOST} → Command.Env(未定義) → Group.Env(localhost) ✓
 ```
 
-**例3: 複数レベルの参照と優先順位**:
+**例3: 複数レベルの参照と優先順位（CommandがGroupとGlobalの変数を参照）**:
 ```toml
 [global]
 env = ["ROOT=/data", "VAR=global"]
@@ -196,6 +205,92 @@ env = ["OUTPUT_FILE=${INPUT_DIR}/result.txt", "VAR=command"]
 env = ["A=${B}", "B=value"]
 # Global.Env内で展開: A=value, B=value
 # 定義順序に関わらず正しく展開される（反復展開アルゴリズムによる）
+```
+
+**例5: 自己参照（上位レベルの値を拡張）**:
+```toml
+# システム環境変数: PATH=/usr/bin:/bin, LD_LIBRARY_PATH=/usr/lib
+
+# Globalレベルでシステム環境変数を拡張
+[global]
+env = ["PATH=/opt/tools/bin:${PATH}"]
+# ${PATH} はシステム環境変数を参照 → /usr/bin:/bin
+# 展開結果: PATH=/opt/tools/bin:/usr/bin:/bin
+
+# GroupレベルでGlobal.Env（展開済み）を拡張
+[[groups]]
+name = "custom_tools"
+env = [
+    "PATH=/opt/custom/bin:${PATH}",           # Global.Envの展開済みPATHを拡張
+    "LD_LIBRARY_PATH=/opt/myapp/lib:${LD_LIBRARY_PATH}"  # システム環境変数を拡張
+]
+# PATH の展開: ${PATH} → Global.Env(/opt/tools/bin:/usr/bin:/bin)
+# 展開結果: PATH=/opt/custom/bin:/opt/tools/bin:/usr/bin:/bin
+# LD_LIBRARY_PATH の展開: ${LD_LIBRARY_PATH} → システム環境変数(/usr/lib)
+# 展開結果: LD_LIBRARY_PATH=/opt/myapp/lib:/usr/lib
+
+# CommandレベルでGroup.Env（展開済み）を拡張
+[[groups.commands]]
+name = "use_tools"
+cmd = "/bin/echo"
+args = ["${PATH}"]
+env = ["PATH=/local/bin:${PATH}"]
+# ${PATH} はGroup.Env → Global.Env → システム環境変数 の順で解決
+# 解決: Group.Env(/opt/custom/bin:/opt/tools/bin:/usr/bin:/bin)
+# 展開結果: PATH=/local/bin:/opt/custom/bin:/opt/tools/bin:/usr/bin:/bin
+```
+
+**自己参照の仕組み**:
+- `PATH=/custom/bin:${PATH}` のような定義は **循環参照ではない**
+- `${PATH}` は以下の順序で解決される：
+  1. **同レベルの他の定義**: 同じ`env`配列内の他のエントリ（定義中のエントリ自身は除外）
+  2. **上位レベルの定義**: 上位レベルの展開済みの値
+     - Commandレベル: Group.Env → Global.Env の順
+     - Groupレベル: Global.Env
+     - Globalレベル: 上位レベルなし
+  3. **システム環境変数**: 最終的にシステム環境変数を参照
+- したがって、`PATH=/custom/bin:${PATH}` の `${PATH}` は、現在定義中の値ではなく、上位レベル（展開済み）またはシステム環境変数の値を参照する
+- これにより、各レベルで順次環境変数を拡張できる（特に `PATH` や `LD_LIBRARY_PATH` の段階的拡張に有用）
+
+**階層的な拡張の例**:
+```
+1. システム環境変数:          PATH=/usr/bin:/bin
+2. Global.Env展開後:          PATH=/opt/tools/bin:/usr/bin:/bin
+3. Group.Env展開後:           PATH=/opt/custom/bin:/opt/tools/bin:/usr/bin:/bin
+4. Command.Env展開後:         PATH=/local/bin:/opt/custom/bin:/opt/tools/bin:/usr/bin:/bin
+```
+
+**自己参照と循環参照の違い**:
+```toml
+# 自己参照（正常動作）: 上位レベルまたはシステム環境変数を拡張
+[global]
+env = ["PATH=/custom/bin:${PATH}"]  # OK: ${PATH} はシステム環境変数を参照
+
+[[groups]]
+name = "example"
+env = ["PATH=/group/bin:${PATH}"]   # OK: ${PATH} はGlobal.Env（展開済み）を参照
+
+[[groups.commands]]
+name = "cmd"
+env = ["PATH=/cmd/bin:${PATH}"]     # OK: ${PATH} はGroup.Env（展開済み）を参照
+
+# 循環参照（エラー）: 同じレベル内で互いに参照し合う
+[global]
+env = [
+    "VAR1=${VAR2}",
+    "VAR2=${VAR1}",  # エラー: Global.Env内での循環参照
+]
+```
+
+**allowlistとの関係**:
+- 自己参照でシステム環境変数を参照する場合、その変数が `env_allowlist` に含まれている必要がある
+```toml
+[global]
+env_allowlist = ["PATH", "LD_LIBRARY_PATH"]  # システム環境変数参照を許可
+env = [
+    "PATH=/custom/bin:${PATH}",               # OK: PATHはallowlistに含まれる
+    "LD_LIBRARY_PATH=/lib:${LD_LIBRARY_PATH}", # OK: LD_LIBRARY_PATHはallowlistに含まれる
+]
 ```
 
 #### F006: cmdとargsでの環境変数参照
@@ -241,6 +336,72 @@ env = ["VAR_B=valueB"]
 name = "cmdB"
 cmd = "/bin/echo"
 args = ["${VAR_A}"]  # エラー: VAR_Aは未定義（VAR_Bのみ参照可能）
+```
+
+### 2.5 VerifyFiles での環境変数参照
+
+#### F008: VerifyFiles展開時の環境変数スコープ（Task 0030の拡張）
+**概要**: Global.EnvとGroup.Envの導入により、verify_filesの展開で参照可能な環境変数が拡張される
+
+**Task 0030の既存仕様**:
+- Global.VerifyFiles: システム環境変数のみ参照可能
+- Group.VerifyFiles: システム環境変数のみ参照可能
+- 理由: 当時はGlobal.EnvとGroup.Envが存在しなかった
+
+**本タスクでの拡張**:
+1. **Global.VerifyFilesの展開時**:
+   - システム環境変数（最低優先）
+   - Global.Env（最優先）
+   - 展開タイミング: Global.Envの展開後
+
+2. **Group.VerifyFilesの展開時**:
+   - システム環境変数（最低優先）
+   - Global.Env（中優先）
+   - Group.Env（最優先）
+   - 展開タイミング: Group.Envの展開後
+
+**変数参照の解決順序**:
+- Global.VerifyFiles: Global.Env → システム環境変数
+- Group.VerifyFiles: Group.Env → Global.Env → システム環境変数
+
+**例1: Global.VerifyFilesでGlobal.Envを参照**:
+```toml
+[global]
+env = ["TOOLS_DIR=/opt/tools"]
+env_allowlist = ["TOOLS_DIR", "HOME"]
+verify_files = [
+    "${TOOLS_DIR}/verify.sh",  # /opt/tools/verify.sh に展開
+    "${HOME}/script.sh"         # システム環境変数HOMEから展開
+]
+```
+
+**例2: Group.VerifyFilesでGroup.Envを参照**:
+```toml
+[global]
+env = ["BASE_DIR=/opt"]
+env_allowlist = ["BASE_DIR", "HOME"]
+
+[[groups]]
+name = "database"
+env = ["DB_TOOLS=${BASE_DIR}/db-tools"]
+verify_files = [
+    "${DB_TOOLS}/schema.sql",   # /opt/db-tools/schema.sql に展開
+    "${BASE_DIR}/common.sh",    # /opt/common.sh に展開（Global.Envから）
+    "${HOME}/config.toml"       # システム環境変数から展開
+]
+```
+
+**allowlistチェック**:
+- Global.VerifyFiles: システム環境変数参照時のみ `global.env_allowlist` でチェック
+- Group.VerifyFiles: システム環境変数参照時のみグループの有効なallowlistでチェック
+- Global.EnvやGroup.Envで定義された変数の参照はallowlistチェック不要
+
+**Task 0030ドキュメントの更新**:
+本タスク実装後、Task 0030の要件定義書に以下の注記を追加する必要がある：
+```
+注: Task 0031 (Global/Group Level Environment Variables) の実装により、
+verify_files の展開で Global.Env および Group.Env も参照可能になった。
+詳細は Task 0031 の要件定義書を参照。
 ```
 
 ## 3. 非機能要件
@@ -386,10 +547,36 @@ env = ["GLOBAL_VAR=${SYS_VAR}"]
 **概要**: 既存のセキュリティ制約を維持
 
 **制約**:
-- シェル実行は行わない
-- グロブパターンは展開しない
-- エスケープ機能は提供しない
+- シェル実行は行わない（`$(...)`、`` `...` ``などは未サポート）
+- グロブパターンは展開しない（`*`, `?`などはリテラル扱い）
 - 展開後の値に対しても既存の検証を適用
+
+**エスケープシーケンス（既存機能）**:
+既存実装（Task 0026, 0030）のエスケープ機能を継続サポート：
+- `\$` → `$` （ドル記号をリテラルとして使用）
+- `\\` → `\` （バックスラッシュをリテラルとして使用）
+- その他の `\x` の組み合わせ（`\a`, `\n` など）はエラー
+- 文字列末尾の `\` （対になる文字がない）もエラー
+
+**エスケープの使用例**:
+```toml
+[global]
+env = [
+    "LITERAL_DOLLAR=price is \$100",     # 結果: price is $100
+    "LITERAL_BACKSLASH=path\\to\\file",  # 結果: path\to\file
+    "MIXED=\${VAR} is literal"           # 結果: ${VAR} is literal
+]
+```
+
+**エスケープのエラー例**:
+```toml
+[global]
+env = [
+    "INVALID=test\n",       # エラー: \n は無効なエスケープシーケンス
+    "TRAILING=test\",       # エラー: 文字列末尾の \ は無効
+    "UNKNOWN=test\a"        # エラー: \a は無効なエスケープシーケンス
+]
+```
 
 ### 3.3 性能要件
 
@@ -445,14 +632,16 @@ Error: Environment variable 'FORBIDDEN' not in allowlist (group: 'deploy')
 
 ### 4.1 スコープ内 (In Scope)
 
-- [ ] `GlobalConfig` に `Env []string` フィールドを追加
-- [ ] `CommandGroup` に `Env []string` フィールドを追加
+- [ ] `GlobalConfig` に `Env []string` および `ExpandedEnv map[string]string` フィールドを追加
+- [ ] `CommandGroup` に `Env []string` および `ExpandedEnv map[string]string` フィールドを追加
 - [ ] Global/Group/Commandの環境変数を階層的に展開する機能
 - [ ] 環境変数の優先順位に基づくオーバーライド機能
-- [ ] allowlistとの統合（各レベルでのチェック）
+- [ ] allowlistとの統合（各レベルでのチェック、システム環境変数参照時のみ）
 - [ ] 循環参照検出（すべてのレベル）
+- [ ] VerifyFiles展開時にGlobal.EnvとGroup.Envを参照可能にする機能（Task 0030の拡張）
+- [ ] 処理フローの実装（Global.Env → Global.VerifyFiles → Group.Env → Group.VerifyFiles → Command.Env → Cmd/Args）
 - [ ] 既存機能との統合テスト
-- [ ] ドキュメント更新（設定ファイル仕様、ユーザーガイド）
+- [ ] ドキュメント更新（設定ファイル仕様、ユーザーガイド、Task 0030への注記追加）
 
 ### 4.2 スコープ外 (Out of Scope)
 
@@ -545,27 +734,42 @@ type CommandGroup struct {
    ↓
 2. Global環境変数の展開
    - global.env の展開（システム環境変数を参照可能）
-   - allowlistチェック（global.env_allowlistに対して）
+   - allowlistチェック（global.env_allowlistに対して、システム環境変数参照時のみ）
    - 循環参照検出
+   - 結果を GlobalConfig.ExpandedEnv に保存
    ↓
-3. 各Groupの環境変数展開
-   - group.env の展開（global.ExpandedEnvを参照可能）
-   - allowlistチェック（group有効allowlistに対して）
+3. Global.VerifyFiles の展開
+   - global.verify_files の展開（Global.Env + システム環境変数を参照可能）
+   - allowlistチェック（global.env_allowlistに対して、システム環境変数参照時のみ）
+   - 結果を GlobalConfig.ExpandedVerifyFiles に保存
+   ↓
+4. 各Groupの環境変数展開（全グループに対して順次実行）
+   - group.env の展開（Global.Env + システム環境変数を参照可能）
+   - allowlistチェック（group有効allowlistに対して、システム環境変数参照時のみ）
    - 循環参照検出
+   - 結果を CommandGroup.ExpandedEnv に保存
    ↓
-4. 各Commandの環境変数展開
-   - command.env の展開（global + group の ExpandedEnvを参照可能）
-   - allowlistチェック
+5. 各GroupのVerifyFiles展開（全グループに対して順次実行）
+   - group.verify_files の展開（Group.Env + Global.Env + システム環境変数を参照可能）
+   - allowlistチェック（group有効allowlistに対して、システム環境変数参照時のみ）
+   - 結果を CommandGroup.ExpandedVerifyFiles に保存
+   ↓
+6. 各Commandの環境変数展開（全コマンドに対して順次実行）
+   - command.env の展開（所属Group.Env + Global.Env + システム環境変数を参照可能）
+   - allowlistチェック（コマンドが所属するgroup有効allowlistに対して、システム環境変数参照時のみ）
    - 循環参照検出
+   - 結果を Command.ExpandedEnv に保存
    ↓
-5. Command.Cmd と Command.Args の展開
+7. Command.Cmd と Command.Args の展開（全コマンドに対して順次実行）
    - 既存機能（Task 0026）を使用
-   - global + group + command の環境変数すべてを参照可能
-   ↓
-6. VerifyFiles パスの展開
-   - 既存機能を使用
-   - global + group + command の環境変数を参照可能
+   - Command.Env + 所属Group.Env + Global.Env + システム環境変数を参照可能
+   - 結果を Command.ExpandedCmd, Command.ExpandedArgs に保存
 ```
+
+**重要な注意点**:
+- Global.VerifyFiles は Global.Env と Command.Env を参照できない（Commandレベルはまだ展開されていない）
+- Group.VerifyFiles は Command.Env を参照できない（Commandレベルはまだ展開されていない）
+- この制約により、verify_files の展開タイミングを明確に定義できる
 
 ### 6.2 実行時の処理
 
