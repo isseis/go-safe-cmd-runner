@@ -10,6 +10,9 @@ var (
 	// ErrGroupEnvExpansionFailed is returned when group environment variable expansion fails
 	ErrGroupEnvExpansionFailed = errors.New("group environment variable expansion failed")
 
+	// ErrCommandEnvExpansionFailed is returned when command environment variable expansion fails
+	ErrCommandEnvExpansionFailed = errors.New("command environment variable expansion failed")
+
 	// ErrDuplicateEnvVariable is returned when duplicate environment variable keys are detected
 	ErrDuplicateEnvVariable = errors.New("duplicate environment variable key")
 

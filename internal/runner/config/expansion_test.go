@@ -1431,3 +1431,41 @@ func BenchmarkExpandLargeVerifyFiles(b *testing.B) {
 		}
 	}
 }
+
+// TestExpandCommand_CommandEnvExpansionError tests that command environment variable
+// expansion failures return ErrCommandEnvExpansionFailed
+func TestExpandCommand_CommandEnvExpansionError(t *testing.T) {
+	// Create test configuration
+	cfg := &runnertypes.Config{
+		Global: runnertypes.GlobalConfig{
+			EnvAllowlist: []string{"SAFE_VAR"},
+		},
+	}
+
+	// Create filter and expander
+	filter := environment.NewFilter(cfg.Global.EnvAllowlist)
+	expander := environment.NewVariableExpander(filter)
+
+	// Create a command with an invalid environment variable that should cause expansion to fail
+	cmd := runnertypes.Command{
+		Name: "test_command",
+		Cmd:  "echo",
+		Args: []string{"hello"},
+		Env:  []string{"INVALID_VAR=${FORBIDDEN_VAR}"}, // FORBIDDEN_VAR is not in allowlist
+	}
+
+	// Set up the forbidden environment variable in system env
+	t.Setenv("FORBIDDEN_VAR", "/forbidden/path")
+
+	// Attempt expansion - this should fail
+	_, _, _, err := config.ExpandCommand(&config.ExpansionContext{
+		Command:      &cmd,
+		Expander:     expander,
+		AutoEnv:      nil,
+		EnvAllowlist: cfg.Global.EnvAllowlist,
+		GroupName:    "test-group",
+	}) // Verify that we get the expected error type
+	require.Error(t, err)
+	require.ErrorIs(t, err, config.ErrCommandEnvExpansionFailed)
+	assert.Contains(t, err.Error(), "command environment variable expansion failed")
+}
