@@ -2029,6 +2029,7 @@ args = ["hello"]`
 
 // TestExpandGlobalVerifyFiles_WithGlobalEnv tests Global.VerifyFiles expansion with Global.Env references
 func TestExpandGlobalVerifyFiles_WithGlobalEnv(t *testing.T) {
+	t.Setenv("HOME", "/home/test")
 	filter := environment.NewFilter([]string{"HOME"})
 	expander := environment.NewVariableExpander(filter)
 
@@ -2053,7 +2054,7 @@ func TestExpandGlobalVerifyFiles_WithGlobalEnv(t *testing.T) {
 			globalEnv:   []string{"APP_DIR=/opt/myapp"},
 			verifyFiles: []string{"${APP_DIR}/script.sh", "${HOME}/user_script.sh"},
 			allowlist:   []string{"HOME"},
-			expected:    []string{"/opt/myapp/script.sh", os.Getenv("HOME") + "/user_script.sh"},
+			expected:    []string{"/opt/myapp/script.sh", "/home/test/user_script.sh"},
 			expectError: false,
 		},
 	}
