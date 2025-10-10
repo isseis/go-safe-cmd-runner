@@ -200,22 +200,10 @@ func expandVerifyFiles(
 	return expanded, nil
 }
 
-// expandEnvMap is a helper function that expands variables in a parsed environment map.
-// It handles the common expansion logic shared by ExpandGlobalEnv and ExpandGroupEnv.
-//
-// Parameters:
-//   - envMap: The environment map to expand (KEY=VALUE pairs)
-//   - combinedEnv: The combined environment for variable resolution
-//   - allowlist: The environment variable allowlist for security
-//   - contextName: The context name for error messages (e.g., "global", group name)
-//   - expander: The variable expander for performing secure expansion
-//   - failureErr: The sentinel error to wrap expansion failures
-//
-// Returns:
-//   - error: Any error that occurred during expansion
 func expandEnvMap(
 	envMap map[string]string,
 	combinedEnv map[string]string,
+	referenceEnv map[string]string,
 	allowlist []string,
 	contextName string,
 	expander *environment.VariableExpander,
@@ -224,21 +212,52 @@ func expandEnvMap(
 	// Expand variables using VariableExpander
 	for key, value := range envMap {
 		if strings.Contains(value, "${") {
-			// Create a new visited map for each variable expansion
-			// This enables self-reference (e.g., PATH=/custom:${PATH})
-			visited := map[string]bool{key: true}
+			// First try: Use reference environment for self-reference support
+			expansionEnv := make(map[string]string)
+
+			// Add reference environment (system + global + auto env, excluding current envMap)
+			maps.Copy(expansionEnv, referenceEnv)
+
+			// Add other envMap variables that have been expanded already
+			for k, v := range envMap {
+				if k != key { // Skip the variable currently being expanded
+					expansionEnv[k] = v
+				}
+			}
+
+			// Use empty visited map - we handle self-reference by excluding current variable
+			visited := make(map[string]bool)
 			expandedValue, err := expander.ExpandString(
 				value,
-				combinedEnv, // envVars: Combined environment for resolution
-				allowlist,   // allowlist: Effective allowlist
-				contextName, // groupName: Context name for logging
-				visited,     // visited: prevents circular reference
+				expansionEnv, // envVars: Reference environment + other expanded variables
+				allowlist,    // allowlist: Effective allowlist
+				contextName,  // groupName: Context name for logging
+				visited,      // visited: empty for clean expansion
 			)
 			if err != nil {
-				return fmt.Errorf("%w: failed to expand variable %q in %s: %v",
-					failureErr, key, contextName, err)
+				// If expansion failed with "variable reference not found", this might be circular reference
+				// Try again with the full combinedEnv and visited map for proper circular detection
+				if strings.Contains(err.Error(), "variable reference not found") {
+					visited := map[string]bool{key: true}
+					expandedValue, err = expander.ExpandString(
+						value,
+						combinedEnv, // envVars: Full combined environment
+						allowlist,   // allowlist: Effective allowlist
+						contextName, // groupName: Context name for logging
+						visited,     // visited: mark current variable to enable circular detection
+					)
+				}
+
+				if err != nil {
+					return fmt.Errorf("%w: failed to expand variable %q in %s: %v",
+						failureErr, key, contextName, err)
+				}
 			}
+
 			envMap[key] = expandedValue
+
+			// Update combinedEnv with the newly expanded value for subsequent expansions
+			combinedEnv[key] = expandedValue
 		}
 	}
 	return nil
@@ -363,17 +382,39 @@ func ExpandGlobalEnv(
 	}
 
 	// Create combined environment for variable resolution
-	// Priority: Automatic environment variables > Global.Env variables
-	combinedEnv := make(map[string]string, len(autoEnv)+len(envMap))
-	maps.Copy(combinedEnv, envMap) // Global.Env variables as base
+	// Priority: Automatic environment variables > Global.Env variables > System environment variables
+
+	// Start with system environment variables (filtered by allowlist)
+	filter := environment.NewFilter(cfg.EnvAllowlist)
+	systemEnv := filter.ParseSystemEnvironment(func(varName string) bool {
+		for _, allowed := range cfg.EnvAllowlist {
+			if varName == allowed {
+				return true
+			}
+		}
+		return false
+	})
+
+	combinedEnv := make(map[string]string, len(systemEnv)+len(envMap)+len(autoEnv))
+	maps.Copy(combinedEnv, systemEnv) // System environment variables as base
+
+	// Save reference environment before adding global variables (for self-reference resolution)
+	referenceEnv := make(map[string]string)
+	maps.Copy(referenceEnv, combinedEnv)
 	if autoEnv != nil {
-		maps.Copy(combinedEnv, autoEnv) // Automatic environment variables (higher priority)
+		maps.Copy(referenceEnv, autoEnv) // Include automatic environment variables in reference
 	}
 
-	// Expand variables using common helper
+	maps.Copy(combinedEnv, envMap) // Global.Env variables (higher priority)
+	if autoEnv != nil {
+		maps.Copy(combinedEnv, autoEnv) // Automatic environment variables (highest priority)
+	}
+
+	// Expand variables using common helper with reference environment
 	if err := expandEnvMap(
 		envMap,
 		combinedEnv,      // combinedEnv: Combined environment (Global.Env + Automatic)
+		referenceEnv,     // referenceEnv: System + Automatic environment (for self-reference)
 		cfg.EnvAllowlist, // allowlist: Global allowlist
 		"global.env",     // contextName: Context for error messages
 		expander,
@@ -438,9 +479,22 @@ func ExpandGroupEnv(
 
 	// Create combined environment for variable resolution
 	// Priority: Group.Env (envMap) > Automatic Environment > Global.ExpandedEnv > System Environment
-	combinedEnv := make(map[string]string)
 
-	// Start with global environment as base
+	// Start with system environment variables (filtered by effective allowlist)
+	filter := environment.NewFilter(effectiveAllowlist)
+	systemEnv := filter.ParseSystemEnvironment(func(varName string) bool {
+		for _, allowed := range effectiveAllowlist {
+			if varName == allowed {
+				return true
+			}
+		}
+		return false
+	})
+
+	combinedEnv := make(map[string]string)
+	maps.Copy(combinedEnv, systemEnv) // System environment variables as base
+
+	// Add global environment variables (higher priority than system)
 	if globalEnv != nil {
 		maps.Copy(combinedEnv, globalEnv)
 	}
@@ -450,6 +504,10 @@ func ExpandGroupEnv(
 		maps.Copy(combinedEnv, autoEnv)
 	}
 
+	// Save reference environment before adding group variables (for self-reference resolution)
+	referenceEnv := make(map[string]string)
+	maps.Copy(referenceEnv, combinedEnv)
+
 	// Add group environment variables (highest priority)
 	maps.Copy(combinedEnv, envMap)
 
@@ -458,6 +516,7 @@ func ExpandGroupEnv(
 	if err := expandEnvMap(
 		envMap,
 		combinedEnv,        // combinedEnv: Combined environment (Group + Global)
+		referenceEnv,       // referenceEnv: Environment without group variables (for self-reference)
 		effectiveAllowlist, // allowlist: Effective allowlist (inherited or overridden)
 		contextName,        // contextName: Context for error messages
 		expander,
