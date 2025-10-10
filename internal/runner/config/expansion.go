@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -145,10 +146,12 @@ func (e *VerifyFilesExpansionError) Is(target error) bool {
 
 // expandVerifyFiles is a helper function that expands environment variables in verify_files paths.
 // It encapsulates the common logic shared by ExpandGlobalVerifyFiles and ExpandGroupVerifyFiles.
+// The envVars parameter contains Global/Group.ExpandedEnv variables that take precedence over system env.
 func expandVerifyFiles(
 	paths []string,
 	allowlist []string,
 	level string,
+	envVars map[string]string, // Global/Group.ExpandedEnv variables (high priority)
 	filter *environment.Filter,
 	expander *environment.VariableExpander,
 ) ([]string, error) {
@@ -167,12 +170,17 @@ func expandVerifyFiles(
 		return allowlistSet[varName]
 	})
 
+	// Merge envVars (Global/Group.Env) with systemEnv (envVars takes precedence)
+	combinedEnv := make(map[string]string, len(systemEnv)+len(envVars))
+	maps.Copy(combinedEnv, systemEnv) // System environment variables
+	maps.Copy(combinedEnv, envVars)   // Global/Group environment variables (override system)
+
 	// Expand all paths using existing VariableExpander.ExpandString()
 	expanded := make([]string, 0, len(paths))
 	for i, path := range paths {
 		expandedPath, err := expander.ExpandString(
 			path,
-			systemEnv,
+			combinedEnv, // Use combined environment (Global/Group + System)
 			allowlist,
 			level,
 			make(map[string]bool),
@@ -194,6 +202,7 @@ func expandVerifyFiles(
 
 // ExpandGlobalVerifyFiles expands environment variables in global verify_files.
 // Uses existing Filter.ParseSystemEnvironment() and VariableExpander.ExpandString().
+// Now supports Global.ExpandedEnv variables with higher priority than system variables.
 // Returns VerifyFilesExpansionError on failure, which wraps the underlying cause.
 func ExpandGlobalVerifyFiles(
 	global *runnertypes.GlobalConfig,
@@ -207,7 +216,8 @@ func ExpandGlobalVerifyFiles(
 	expanded, err := expandVerifyFiles(
 		global.VerifyFiles,
 		global.EnvAllowlist,
-		"", // Empty string indicates global level (not a group name)
+		"",                 // Empty string indicates global level (not a group name)
+		global.ExpandedEnv, // Global.ExpandedEnv variables
 		filter,
 		expander,
 	)
@@ -235,10 +245,12 @@ func ExpandGroupVerifyFiles(
 	resolution := filter.ResolveAllowlistConfiguration(group.EnvAllowlist, group.Name)
 	allowlist := resolution.EffectiveList
 
+	// Note: This function will be extended in Phase 3 to also accept Global.ExpandedEnv
 	expanded, err := expandVerifyFiles(
 		group.VerifyFiles,
 		allowlist,
 		group.Name,
+		group.ExpandedEnv, // Group.ExpandedEnv variables (will be extended with Global.Env in Phase 3)
 		filter,
 		expander,
 	)
@@ -247,5 +259,68 @@ func ExpandGroupVerifyFiles(
 	}
 
 	group.ExpandedVerifyFiles = expanded
+	return nil
+}
+
+// ExpandGlobalEnv expands environment variables in Global.Env.
+// This function validates the environment variable format, checks for duplicates,
+// and expands variables using the existing VariableExpander.
+//
+// The function follows these steps:
+// 1. Input validation: returns nil if cfg.Env is nil or empty
+// 2. Parse and validate each KEY=VALUE entry
+// 3. Check for duplicate keys
+// 4. Validate KEY names using existing security validators
+// 5. Expand variables using VariableExpander.ExpandString()
+// 6. Store results in cfg.ExpandedEnv
+//
+// Variable resolution order within Global.Env:
+// - Global.Env variables (same level references)
+// - System environment variables (filtered by allowlist)
+//
+// Self-reference (e.g., PATH=/custom:${PATH}) is supported by referencing
+// the system environment variable, not the partially expanded value.
+func ExpandGlobalEnv(
+	cfg *runnertypes.GlobalConfig,
+	expander *environment.VariableExpander,
+) error {
+	// Input validation: nil or empty env list
+	if cfg == nil {
+		return ErrNilConfig
+	}
+	if len(cfg.Env) == 0 {
+		cfg.ExpandedEnv = nil
+		return nil
+	}
+
+	// Validate and parse environment variables in a single pass
+	envMap, err := validateAndParseEnvList(cfg.Env, "global.env")
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrGlobalEnvExpansionFailed, err)
+	}
+
+	// Expand variables using VariableExpander
+	for key, value := range envMap {
+		if strings.Contains(value, "${") {
+			// Create a new visited map for each variable expansion
+			// This enables self-reference (e.g., PATH=/custom:${PATH})
+			// where ${PATH} resolves to system env, not the current definition
+			visited := map[string]bool{key: true}
+			expandedValue, err := expander.ExpandString(
+				value,
+				envMap,           // envVars: Global.Env variables
+				cfg.EnvAllowlist, // allowlist: Global allowlist
+				"global",         // groupName: indicates global level
+				visited,          // visited: prevents circular reference
+			)
+			if err != nil {
+				return fmt.Errorf("%w: failed to expand variable %q in global.env: %v", ErrGlobalEnvExpansionFailed, key, err)
+			}
+			envMap[key] = expandedValue
+		}
+	}
+
+	// Store expanded environment variables
+	cfg.ExpandedEnv = envMap
 	return nil
 }

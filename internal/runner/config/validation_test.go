@@ -130,3 +130,78 @@ func TestValidateEnvList(t *testing.T) {
 		})
 	}
 }
+
+// TestValidateAndParseEnvList tests environment variable list validation and parsing
+func TestValidateAndParseEnvList(t *testing.T) {
+	tests := []struct {
+		name    string
+		envList []string
+		context string
+		wantErr bool
+		wantMap map[string]string
+		errType error
+	}{
+		{
+			name:    "valid environment variables",
+			envList: []string{"VAR1=value1", "VAR2=value2"},
+			context: "global.env",
+			wantErr: false,
+			wantMap: map[string]string{"VAR1": "value1", "VAR2": "value2"},
+		},
+		{
+			name:    "empty list returns nil map",
+			envList: []string{},
+			context: "global.env",
+			wantErr: false,
+			wantMap: nil,
+		},
+		{
+			name:    "nil list returns nil map",
+			envList: nil,
+			context: "global.env",
+			wantErr: false,
+			wantMap: nil,
+		},
+		{
+			name:    "duplicate keys return error",
+			envList: []string{"VAR1=value1", "VAR1=value2"},
+			context: "global.env",
+			wantErr: true,
+			wantMap: nil,
+			errType: ErrDuplicateEnvVariable,
+		},
+		{
+			name:    "invalid format returns error",
+			envList: []string{"INVALID_FORMAT"},
+			context: "global.env",
+			wantErr: true,
+			wantMap: nil,
+			errType: ErrMalformedEnvVariable,
+		},
+		{
+			name:    "reserved prefix returns error",
+			envList: []string{"__RUNNER_TEST=value"},
+			context: "global.env",
+			wantErr: true,
+			wantMap: nil,
+			errType: ErrReservedEnvPrefix,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := validateAndParseEnvList(tt.envList, tt.context)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.Nil(t, result)
+				if tt.errType != nil {
+					assert.True(t, errors.Is(err, tt.errType))
+				}
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.wantMap, result)
+			}
+		})
+	}
+}

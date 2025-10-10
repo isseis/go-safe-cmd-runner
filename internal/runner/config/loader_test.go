@@ -200,14 +200,16 @@ args = ["test"]
 
 	// Verify Global.Env is parsed correctly
 	assert.Equal(t, []string{"VAR1=value1", "VAR2=value2"}, cfg.Global.Env)
-	// ExpandedEnv should be nil at this point (not yet expanded)
-	assert.Nil(t, cfg.Global.ExpandedEnv, "Global.ExpandedEnv should be nil before expansion")
+	// ExpandedEnv should now be populated after Config Loader's automatic expansion
+	require.NotNil(t, cfg.Global.ExpandedEnv, "Global.ExpandedEnv should be populated after loading")
+	assert.Equal(t, "value1", cfg.Global.ExpandedEnv["VAR1"])
+	assert.Equal(t, "value2", cfg.Global.ExpandedEnv["VAR2"])
 
 	// Verify Group.Env is parsed correctly
 	require.Len(t, cfg.Groups, 1)
 	assert.Equal(t, []string{"GROUP_VAR=group_value"}, cfg.Groups[0].Env)
-	// ExpandedEnv should be nil at this point (not yet expanded)
-	assert.Nil(t, cfg.Groups[0].ExpandedEnv, "Group.ExpandedEnv should be nil before expansion")
+	// Group.ExpandedEnv is still nil because Group.Env expansion is not implemented yet (Phase 3)
+	assert.Nil(t, cfg.Groups[0].ExpandedEnv, "Group.ExpandedEnv is nil in Phase 2 (Group expansion is Phase 3)")
 }
 
 // TestVerifyFilesExpansionIntegration tests end-to-end config loading with verify_files expansion

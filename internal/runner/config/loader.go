@@ -98,14 +98,20 @@ func (l *Loader) LoadConfig(content []byte) (*runnertypes.Config, error) {
 	return &cfg, nil
 }
 
-// processConfig processes the configuration by expanding verify_files fields
+// processConfig processes the configuration by expanding environment variables and verify_files fields
 func processConfig(cfg *runnertypes.Config, filter *environment.Filter, expander *environment.VariableExpander) error {
-	// Expand global verify_files
+	// Phase 1: Expand Global.Env variables
+	if err := ExpandGlobalEnv(&cfg.Global, expander); err != nil {
+		return fmt.Errorf("failed to expand global environment variables: %w", err)
+	}
+
+	// Phase 2: Expand Global.VerifyFiles (now can reference Global.Env)
 	if err := ExpandGlobalVerifyFiles(&cfg.Global, filter, expander); err != nil {
 		return fmt.Errorf("failed to expand global verify_files: %w", err)
 	}
 
-	// Expand group verify_files
+	// Phase 3-4: Group processing will be added in Phase 3 of implementation
+	// For now, expand group verify_files with existing logic
 	for i := range cfg.Groups {
 		if err := ExpandGroupVerifyFiles(&cfg.Groups[i], filter, expander); err != nil {
 			return fmt.Errorf("failed to expand verify_files for group %q: %w", cfg.Groups[i].Name, err)
