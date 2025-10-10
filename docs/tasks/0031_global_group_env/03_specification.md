@@ -66,12 +66,12 @@ GlobalConfigと同じバリデーションルールを適用。
 
 **既存のメソッド**:
 
-| メソッド | 用途 | 本タスクでの活用 |
-|---------|------|-----------------|
-| `ExpandString()` | 文字列内の変数展開 | Global/Group.Envの展開、VerifyFilesの展開 |
-| `ExpandStrings()` | 文字列配列の展開 | VerifyFilesの展開 |
-| `ExpandCommandEnv()` | Command.Envの展開 | 既存機能（baseEnvを活用） |
-| `resolveVariable()` | 変数の解決 | 既存機能（allowlistチェック、循環参照検出） |
+| メソッド | シグネチャ | 本タスクでの活用 |
+|---------|---------|-----------------|
+| `ExpandString(value, envVars, allowlist, groupName, visited)` | 文字列内の変数を`envVars`マップから展開 | Global/Group.Envの展開、VerifyFilesの展開 |
+| `ExpandStrings(texts, envVars, allowlist, groupName)` | 文字列配列の各要素を展開 | VerifyFilesの展開 |
+| `ExpandCommandEnv(cmd, groupName, allowlist, baseEnv)` | Command.Envを展開（内部でbaseEnvとマージ） | 既存機能（Global+Group.ExpandedEnvをbaseEnvとして渡す） |
+| `resolveVariable()` | 変数の解決（内部メソッド） | 既存機能（allowlistチェック、循環参照検出） |
 
 **エスケープシーケンス処理**（既存実装）:
 - `\$` → `$`: リテラルのドル記号
@@ -118,11 +118,11 @@ func ExpandGlobalEnv(
    for key, value := range envMap:
        if contains(value, "${"):
            // VariableExpander.ExpandString()を使用
+           // Globalレベルでは envMap のみを参照（自己参照はシステム環境変数から）
            // 循環参照は内部でvisited mapにより即時検出される
            expanded, err := expander.ExpandString(
                value,
-               nil,                 // baseEnv: Globalレベルではnil
-               envMap,              // 同レベルの変数
+               envMap,              // envVars: 同レベルの変数マップ
                cfg.EnvAllowlist,    // allowlist
                "global",            // グループ名
                make(map[string]bool) // visited（各変数展開で新規作成）
@@ -180,13 +180,17 @@ func ExpandGroupEnv(
 
 4. 各変数の展開:
    // globalEnvとenvMapをマージした環境で展開
+   // ExpandString()は1つの環境変数マップしか受け取らないため、事前にマージする
+   combinedEnv := make(map[string]string)
+   maps.Copy(combinedEnv, globalEnv)  // Globalをコピー
+   maps.Copy(combinedEnv, envMap)     // Groupをコピー（上書き）
+
    for key, value := range envMap:
        if contains(value, "${"):
            // 循環参照は内部でvisited mapにより即時検出される
            expanded, err := expander.ExpandString(
                value,
-               globalEnv,           // baseEnv:上位スコープの環境変数
-               envMap,              // localEnv: 同レベルの環境変数
+               combinedEnv,         // envVars: Global + Group の変数マップ
                effectiveAllowlist,
                "group:" + group.Name,
                make(map[string]bool) // visited（各変数展開で新規作成）
@@ -194,7 +198,7 @@ func ExpandGroupEnv(
            if err != nil:
                return err
            envMap[key] = expanded
-           // combinedEnv[key] = expanded  // 後続変数の参照用に更新 -> 不要。localEnvで完結
+           combinedEnv[key] = expanded  // 後続変数の参照用に更新
 
 5. 結果の保存:
    group.ExpandedEnv = envMap
@@ -203,7 +207,8 @@ func ExpandGroupEnv(
 **重要な注意点**:
 - `globalEnv`は読み取り専用（変更しない）
 - `group.ExpandedEnv`にはGroupレベルで定義した変数のみを保存（Globalとマージしない）
-- 変数解決時は`combinedEnv`（Global + Group）を使用
+- 変数解決時は`combinedEnv`（Global + Group）をマージして使用
+- `combinedEnv`は展開中に動的に更新され、後続の変数が先に展開された変数を参照できる
 
 #### 3.2.3 ExpandCommandEnv()の拡張
 
@@ -248,21 +253,37 @@ expandedEnv, err := expander.ExpandCommandEnv(
 **既存関数の活用**（Task 0030で実装済み）:
 ```go
 func ExpandGlobalVerifyFiles(
-    cfg *GlobalConfig,
+    global *GlobalConfig,
+    filter *Filter,
     expander *VariableExpander,
 ) error
 ```
 
-**拡張内容**:
-- 既存実装を変更せず、`Global.ExpandedEnv`を環境変数として渡す
-- 呼び出し側で`Global.ExpandedEnv`を準備してから呼び出す
+**本タスクでの拡張**:
+- 内部で呼び出される`expandVerifyFiles()`の引数に`envVars map[string]string`を追加
+- `expandVerifyFiles()`内で`systemEnv`と`envVars`をマージしてから`ExpandString()`に渡す
+- `ExpandGlobalVerifyFiles()`から`global.ExpandedEnv`を渡す
 
-**処理フロー**:
+**拡張後のシグネチャ**:
+```go
+func expandVerifyFiles(
+    paths []string,
+    allowlist []string,
+    level string,
+    envVars map[string]string,  // 新規追加: Global/Group.ExpandedEnv
+    filter *Filter,
+    expander *VariableExpander,
+) ([]string, error)
 ```
-1. ExpandString()を使用してパスを展開
-2. 変数解決順序:
+
+**拡張後の処理フロー**:
+```
+1. systemEnv を allowlist でフィルタリング
+2. envVars と systemEnv をマージ（envVars が優先）
+3. マージした環境でExpandString()を呼び出す
+4. 変数解決順序（ExpandString内部）:
    - Global.ExpandedEnv[VAR]
-   - システム環境変数[VAR] (allowlistチェック)
+   - システム環境変数[VAR] (allowlistチェック済み)
 ```
 
 #### 3.3.2 Group.VerifyFiles
@@ -271,22 +292,36 @@ func ExpandGlobalVerifyFiles(
 ```go
 func ExpandGroupVerifyFiles(
     group *CommandGroup,
-    globalConfig *GlobalConfig,
+    filter *Filter,
     expander *VariableExpander,
 ) error
 ```
 
-**拡張内容**:
-- 既存実装を拡張し、`Global.ExpandedEnv + Group.ExpandedEnv`を環境変数として渡す
+**本タスクでの拡張**:
+- 拡張された`expandVerifyFiles()`に`Global.ExpandedEnv + Group.ExpandedEnv`を渡す
+- `ExpandGroupVerifyFiles()`に`globalConfig *GlobalConfig`パラメータを追加
 
-**処理フロー**:
+**拡張後のシグネチャ**:
+```go
+func ExpandGroupVerifyFiles(
+    group *CommandGroup,
+    globalConfig *GlobalConfig,  // 新規追加: Global.ExpandedEnvを取得するため
+    filter *Filter,
+    expander *VariableExpander,
+) error
+```
+
+**拡張後の処理フロー**:
 ```
 1. Global.ExpandedEnv と Group.ExpandedEnv をマージ
-2. ExpandString()を使用してパスを展開
-3. 変数解決順序:
+   combinedEnv := make(map[string]string)
+   maps.Copy(combinedEnv, globalConfig.ExpandedEnv)
+   maps.Copy(combinedEnv, group.ExpandedEnv)
+2. expandVerifyFiles()に combinedEnv を渡す
+3. 変数解決順序（expandVerifyFiles内部）:
    - Group.ExpandedEnv[VAR]
    - Global.ExpandedEnv[VAR]
-   - システム環境変数[VAR] (allowlistチェック)
+   - システム環境変数[VAR] (allowlistチェック済み)
 ```
 
 ## 4. Allowlistの詳細仕様
@@ -424,7 +459,7 @@ func processConfig(cfg *Config, filter *Filter, expander *VariableExpander) erro
     }
 
     // 2. Global.VerifyFiles展開
-    if err := ExpandGlobalVerifyFiles(&cfg.Global, cfg.Global.ExpandedEnv, expander); err != nil {
+    if err := ExpandGlobalVerifyFiles(&cfg.Global, filter, expander); err != nil {
         return err
     }
 
@@ -443,10 +478,7 @@ func processConfig(cfg *Config, filter *Filter, expander *VariableExpander) erro
         }
 
         // 4. Group.VerifyFiles展開
-        baseEnvForGroupVerify := make(map[string]string)
-        maps.Copy(baseEnvForGroupVerify, cfg.Global.ExpandedEnv)
-        maps.Copy(baseEnvForGroupVerify, group.ExpandedEnv)
-        if err := ExpandGroupVerifyFiles(group, &cfg.Global, baseEnvForGroupVerify, expander); err != nil {
+        if err := ExpandGroupVerifyFiles(group, &cfg.Global, filter, expander); err != nil {
             return err
         }
 
@@ -648,6 +680,8 @@ expected := map[string]string{"PRICE": "$100", "PATH": "C:\\Windows"}
 2. **internal/runner/config/expansion.go**:
    - `ExpandGlobalEnv()`関数を追加
    - `ExpandGroupEnv()`関数を追加
+   - `expandVerifyFiles()`関数に`envVars`パラメータを追加
+   - `ExpandGlobalVerifyFiles()`と`ExpandGroupVerifyFiles()`を拡張
 
 3. **internal/runner/config/loader.go**:
    - `processConfig()`で新規展開関数を呼び出し
