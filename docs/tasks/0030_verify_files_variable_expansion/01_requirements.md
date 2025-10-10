@@ -1,5 +1,9 @@
 # verify_files フィールドにおける環境変数展開機能 - 要件定義書
 
+> **重要**: Task 0031 (Global/Group Level Environment Variables) の実装により、本ドキュメントで規定された仕様が拡張されました。
+> - `global.env` および `groups[].env` フィールドが追加され、verify_files の展開で参照可能になりました
+> - 詳細は [Task 0031 要件定義書](../0031_global_group_env/01_requirements.md) のセクション 2.5 (F008) を参照してください
+
 ## 1. 概要
 
 ### 1.1 背景
@@ -43,10 +47,13 @@ verify_files = [
 
 ### 2.2 環境変数のスコープ
 
-#### 2.2.1 グローバルレベルの verify_files
+> **注**: Task 0031の実装により、以下の仕様が拡張されています。最新の仕様は [Task 0031 要件定義書のセクション 2.5 (F008)](../0031_global_group_env/01_requirements.md#25-verifyfiles-での環境変数参照) を参照してください。
+
+#### 2.2.1 グローバルレベルの verify_files（Task 0030時点の仕様）
 
 - **使用可能な環境変数**: システム環境変数のみ
-- **allowlist**: `global.env_allowlist` を適用
+- **Task 0031での拡張**: `global.env` で定義された環境変数も参照可能
+- **allowlist**: `global.env_allowlist` を適用（システム環境変数参照時のみ）
 - **例**:
   ```toml
   [global]
@@ -57,11 +64,13 @@ verify_files = [
   ]
   ```
 
-#### 2.2.2 グループレベルの verify_files
+#### 2.2.2 グループレベルの verify_files（Task 0030時点の仕様）
 
 - **使用可能な環境変数**: システム環境変数のみ
-- **allowlist**: グループの `env_allowlist` を適用（継承モードに従う）
-- **注**: グループレベルには `env` フィールドが存在しないため、グループ固有の環境変数は定義できない
+- **Task 0031での拡張**: `global.env` および `groups[].env` で定義された環境変数も参照可能
+- **allowlist**: グループの `env_allowlist` を適用（継承モードに従う、システム環境変数参照時のみ）
+- **注（Task 0030時点）**: グループレベルには `env` フィールドが存在しないため、グループ固有の環境変数は定義できない
+- **注（Task 0031以降）**: `groups[].env` フィールドが追加され、グループ固有の環境変数が定義可能になった
 - **例**:
   ```toml
   [[groups]]
