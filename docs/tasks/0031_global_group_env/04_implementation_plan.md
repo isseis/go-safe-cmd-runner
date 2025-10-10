@@ -414,26 +414,38 @@ Global・Groupレベル環境変数設定機能を段階的に実装し、要件
       ```
   - [ ] ラッピング時にコンテキスト情報を追加
 
-#### 2.5.2 エッジケーステスト
-- [ ] テスト作成: `internal/runner/config/expansion_edge_test.go`
-  - [ ] `TestExpansion_EmptyValue`: 空文字列の値
-  - [ ] `TestExpansion_SpecialCharacters`: 特殊文字を含む値（URL、パス等）
-  - [ ] `TestExpansion_EscapeSequence`: エスケープシーケンス（`\$`, `\\`）
-  - [ ] `TestExpansion_MultipleReferences`: 複数の変数参照
-  - [ ] `TestExpansion_NestedReferences`: ネストした変数参照
-  - [ ] `TestExpansion_LongValue`: 長い値
-  - [ ] `TestExpansion_UnicodeCharacters`: Unicode文字を含む値
-- [ ] 必要に応じて実装を修正
-- [ ] コミット: "Add edge case tests and improve error messages"
+#### 2.5.2 エッジケーステストの確認と追加
+**注記**: `internal/runner/environment/processor_test.go`に既存のエッジケーステストあり：
+- ✅ エスケープシーケンス: `TestVariableExpander_EscapeSequences`
+- ✅ 複数の変数参照: `TestVariableExpander_ResolveVariableReferences` (line 205)
+- ✅ 無効な変数形式: `TestVariableExpander_ResolveVariableReferences` (lines 249-291)
+- ✅ 循環参照: `TestVariableExpander_ResolveVariableReferences_CircularReferences`
 
-#### 2.5.3 循環参照検出の強化テスト
-- [ ] テスト作成: `internal/runner/config/expansion_circular_test.go`
-  - [ ] `TestCircularReference_DirectLoop`: 直接ループ（A→B→A）
-  - [ ] `TestCircularReference_IndirectLoop`: 間接ループ（A→B→C→A）
-  - [ ] `TestCircularReference_SelfReference`: 自己参照（A→A）はエラー
-  - [ ] `TestCircularReference_ValidSelfReference`: 有効な自己参照（`PATH=/custom:${PATH}`）
-- [ ] 既存の循環参照検出が正しく動作することを確認
-- [ ] コミット: "Add comprehensive circular reference detection tests"
+**追加が必要なテストケース**:
+- [ ] 既存テストカバレッジを確認: `internal/runner/environment/processor_test.go`
+- [ ] Global/Group.Env特有のエッジケーステストを`internal/runner/config/expansion_test.go`に追加（必要に応じて）:
+  - [ ] `TestExpandGlobalEnv_EmptyValue`: Global.Envで空文字列の値（既存で未カバーの場合）
+  - [ ] `TestExpandGlobalEnv_SpecialCharacters`: URL、パス、特殊文字を含む値（既存で未カバーの場合）
+  - [ ] `TestExpandGroupEnv_LongValue`: 長い値（既存で未カバーの場合）
+  - [ ] `TestExpandGlobalEnv_UnicodeCharacters`: Unicode文字を含む値（既存で未カバーの場合）
+- [ ] 既存の`VariableExpander`がGlobal/Group.Envで正しく動作することを確認
+- [ ] 必要に応じて実装を修正
+- [ ] コミット: "Verify edge case coverage and add Global/Group-specific tests if needed"
+
+#### 2.5.3 循環参照検出の確認
+**注記**: `internal/runner/environment/processor_test.go`に既存の循環参照テストあり：
+- ✅ 直接的自己参照: `TestVariableExpander_ResolveVariableReferences_CircularReferences` (line 329)
+- ✅ 間接的循環参照: `TestVariableExpander_ResolveVariableReferences_CircularReferences` (lines 340, 351)
+- ✅ 深いが循環しない参照チェーン: `TestVariableExpander_ResolveVariableReferences_CircularReferences` (line 362)
+
+**確認タスク**:
+- [ ] 既存の循環参照検出がGlobal.Env内で正しく動作することを確認
+- [ ] 既存の循環参照検出がGroup.Env内で正しく動作することを確認
+- [ ] 自己参照（`PATH=/custom:${PATH}`）がGlobal/Groupレベルで正しく動作することを確認
+  - Global.Env内の`PATH`がシステム環境変数の`PATH`を参照する場合
+  - Group.Env内の`PATH`がGlobal.ExpandedEnvの`PATH`を参照する場合
+- [ ] 必要に応じてGlobal/Group特有のテストケースを追加
+- [ ] コミット: "Verify circular reference detection for Global/Group.Env"
 
 #### 2.5.4 Allowlist違反のテスト強化
 - [ ] テスト作成: `internal/runner/config/allowlist_violation_test.go`
