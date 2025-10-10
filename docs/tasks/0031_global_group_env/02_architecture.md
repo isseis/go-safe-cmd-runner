@@ -457,15 +457,18 @@ ${VAR}の解決順序:
 
 ### 4.1 Allowlist検証フロー
 
+**注記**: このフローは「有効なallowlist」がすでに決定された後の検証ロジックを示します。
+Group環境変数の展開時は、Group.EnvAllowlistの継承ルール（セクション 2.1.3）に従って有効なallowlistが決定されます。
+
 ```mermaid
 flowchart TD
     A["環境変数参照: ${VAR}"] --> B{"変数の種類"}
     B -->|"Global/Group/Command.Env"| C["allowlistチェック不要<br>(設定ファイル内定義)"]
-    B -->|"システム環境変数"| D{"allowlistチェック"}
+    B -->|"システム環境変数"| D{"有効なallowlistの状態"}
 
-    D -->|"allowlist未定義"| E["すべて許可"]
-    D -->|"allowlist=[]"| F["すべて拒否"]
-    D -->|"allowlist定義済み"| G{"VARが含まれる?"}
+    D -->|"未定義<br>(global.env_allowlistも未定義)"| E["すべて許可"]
+    D -->|"空配列<br>(明示的に[]指定)"| F["すべて拒否"]
+    D -->|"定義済み<br>(継承または明示的)"| G{"VARがallowlistに含まれる?"}
 
     G -->|"Yes"| H["許可"]
     G -->|"No"| I["拒否<br>(AllowlistViolationError)"]
@@ -475,6 +478,13 @@ flowchart TD
     H --> J
     F --> I
 ```
+
+**有効なallowlistの決定方法**:
+- Globalレベル: `global.env_allowlist`（未定義なら全許可）
+- Groupレベル: セクション 2.1.3 の継承ルール参照
+  - `group.env_allowlist`が未定義 → `global.env_allowlist`を継承
+  - `group.env_allowlist = []` → すべて拒否
+  - `group.env_allowlist = [...]` → 明示的なリスト使用
 
 ### 4.2 循環参照検出
 
