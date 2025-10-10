@@ -22,7 +22,7 @@ func validateEnvList(envList []string, context string) error {
 
 	envMap := make(map[string]string)
 
-	// Parse KEY=VALUE format and check for duplicates
+	// Parse KEY=VALUE format, check for duplicates, and validate key names in a single loop
 	for _, envVar := range envList {
 		key, value, ok := common.ParseEnvVariable(envVar)
 		if !ok {
@@ -35,19 +35,17 @@ func validateEnvList(envList []string, context string) error {
 				ErrDuplicateEnvVariable, key, context, key, firstValue, key, value)
 		}
 
-		envMap[key] = value
-	}
-
-	// Validate variable names using security.ValidateVariableName
-	for key := range envMap {
+		// Validate variable name using security.ValidateVariableName
 		if err := security.ValidateVariableName(key); err != nil {
 			return fmt.Errorf("%w in %s: %w", ErrInvalidEnvKey, context, err)
 		}
+
+		envMap[key] = value
 	}
 
 	// Check for reserved prefix using environment.ValidateUserEnvNames
 	if err := environment.ValidateUserEnvNames(envMap); err != nil {
-		return fmt.Errorf("in %s: %w", context, err)
+		return fmt.Errorf("%w in %s: %w", ErrReservedEnvPrefix, context, err)
 	}
 
 	return nil
