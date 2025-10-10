@@ -246,18 +246,12 @@ func ExpandGroupVerifyFiles(
 	resolution := filter.ResolveAllowlistConfiguration(group.EnvAllowlist, group.Name)
 	allowlist := resolution.EffectiveList
 
-	// Use Group.ExpandedEnv if available, otherwise empty map
 	// Note: This function will be extended in Phase 3 to also accept Global.ExpandedEnv
-	envVars := group.ExpandedEnv
-	if envVars == nil {
-		envVars = make(map[string]string)
-	}
-
 	expanded, err := expandVerifyFiles(
 		group.VerifyFiles,
 		allowlist,
 		group.Name,
-		envVars, // Group.ExpandedEnv variables (will be extended with Global.Env in Phase 3)
+		group.ExpandedEnv, // Group.ExpandedEnv variables (will be extended with Global.Env in Phase 3)
 		filter,
 		expander,
 	)
