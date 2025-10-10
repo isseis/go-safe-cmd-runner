@@ -767,7 +767,7 @@ type CommandGroup struct {
 ```
 
 **重要な注意点**:
-- Global.VerifyFiles は Global.Env と Command.Env を参照できない（Commandレベルはまだ展開されていない）
+- Global.VerifyFiles は Group.Env と Command.Env を参照できない（GroupとCommandレベルはまだ展開されていない）
 - Group.VerifyFiles は Command.Env を参照できない（Commandレベルはまだ展開されていない）
 - この制約により、verify_files の展開タイミングを明確に定義できる
 
