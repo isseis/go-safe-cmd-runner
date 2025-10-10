@@ -174,6 +174,42 @@ version = "1.0"
 	}
 }
 
+// TestPhase1BasicTOMLParse tests Phase 1 basic TOML parsing for Global.Env and Group.Env
+func TestPhase1BasicTOMLParse(t *testing.T) {
+	configContent := `
+version = "1.0"
+
+[global]
+timeout = 300
+env = ["VAR1=value1", "VAR2=value2"]
+
+[[groups]]
+name = "test_group"
+env = ["GROUP_VAR=group_value"]
+
+[[groups.commands]]
+name = "test_command"
+cmd = "/bin/echo"
+args = ["test"]
+`
+
+	loader := NewLoader()
+	cfg, err := loader.LoadConfig([]byte(configContent))
+	require.NoError(t, err, "LoadConfig failed")
+	require.NotNil(t, cfg)
+
+	// Verify Global.Env is parsed correctly
+	assert.Equal(t, []string{"VAR1=value1", "VAR2=value2"}, cfg.Global.Env)
+	// ExpandedEnv should be nil at this point (not yet expanded)
+	assert.Nil(t, cfg.Global.ExpandedEnv, "Global.ExpandedEnv should be nil before expansion")
+
+	// Verify Group.Env is parsed correctly
+	require.Len(t, cfg.Groups, 1)
+	assert.Equal(t, []string{"GROUP_VAR=group_value"}, cfg.Groups[0].Env)
+	// ExpandedEnv should be nil at this point (not yet expanded)
+	assert.Nil(t, cfg.Groups[0].ExpandedEnv, "Group.ExpandedEnv should be nil before expansion")
+}
+
 // TestVerifyFilesExpansionIntegration tests end-to-end config loading with verify_files expansion
 func TestVerifyFilesExpansionIntegration(t *testing.T) {
 	tests := []struct {

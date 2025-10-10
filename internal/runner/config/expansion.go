@@ -84,7 +84,7 @@ func ExpandCommand(expCxt *ExpansionContext) (string, []string, map[string]strin
 	// 2. Prevent Command.Env from overriding automatic variables (silently ignored with warning)
 	commandEnv, err := expander.ExpandCommandEnv(cmd, groupName, allowlist, autoEnv)
 	if err != nil {
-		return "", nil, nil, fmt.Errorf("failed to expand command environment: %w", err)
+		return "", nil, nil, fmt.Errorf("%w: %v", ErrCommandEnvExpansionFailed, err)
 	}
 
 	// Merge command environment with automatic environment variables

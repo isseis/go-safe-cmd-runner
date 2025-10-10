@@ -134,7 +134,17 @@ func TestValidateUserEnvNames(t *testing.T) {
 
 			if tt.wantErr {
 				require.Error(t, err)
-				assert.True(t, errors.Is(err, tt.errType), "error type mismatch")
+				// If tt.errType is a pointer to a struct error (e.g.
+				// *runnertypes.ReservedEnvPrefixError), use errors.As to
+				// check the error chain for that concrete type. For
+				// sentinel errors, fall back to errors.Is.
+				switch tt.errType.(type) {
+				case *runnertypes.ReservedEnvPrefixError:
+					var target *runnertypes.ReservedEnvPrefixError
+					assert.True(t, errors.As(err, &target), "error type mismatch")
+				default:
+					assert.True(t, errors.Is(err, tt.errType), "error type mismatch")
+				}
 
 				// Extract and validate all errors
 				errs := extractReservedEnvPrefixErrors(err)
