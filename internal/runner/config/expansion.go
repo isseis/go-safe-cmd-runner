@@ -43,6 +43,14 @@ type ExpansionContext struct {
 	// If nil, an empty map is used (no automatic environment variables).
 	AutoEnv map[string]string
 
+	// GlobalEnv contains expanded global environment variables (Global.ExpandedEnv)
+	// that Command.Env can reference. If nil, an empty map is used.
+	GlobalEnv map[string]string
+
+	// GroupEnv contains expanded group environment variables (Group.ExpandedEnv)
+	// that Command.Env can reference. If nil, an empty map is used.
+	GroupEnv map[string]string
+
 	// EnvAllowlist is the list of system environment variables allowed for expansion
 	EnvAllowlist []string
 
@@ -82,11 +90,24 @@ func ExpandCommand(expCxt *ExpansionContext) (string, []string, map[string]strin
 		autoEnv = map[string]string{}
 	}
 
+	// Use empty map if GlobalEnv is nil
+	globalEnv := expCxt.GlobalEnv
+	if globalEnv == nil {
+		globalEnv = map[string]string{}
+	}
+
+	// Use empty map if GroupEnv is nil
+	groupEnv := expCxt.GroupEnv
+	if groupEnv == nil {
+		groupEnv = map[string]string{}
+	}
+
 	// Expand Command.Env variables (this handles cases like PATH=/custom/bin:${PATH})
 	// Pass autoEnv to:
 	// 1. Allow Command.Env to reference automatic variables (e.g., OUTPUT=${__RUNNER_DATETIME}.log)
 	// 2. Prevent Command.Env from overriding automatic variables (silently ignored with warning)
-	commandEnv, err := ExpandCommandEnv(cmd, groupName, allowlist, expander, autoEnv)
+	// Also pass globalEnv and groupEnv so Command.Env can reference those variables
+	commandEnv, err := ExpandCommandEnv(cmd, groupName, allowlist, expander, globalEnv, groupEnv, autoEnv)
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("%w: %v", ErrCommandEnvExpansionFailed, err)
 	}
@@ -576,34 +597,39 @@ func ExpandGroupEnv(
 	return nil
 }
 
-// ExpandCommandEnv expands Command.Env variables with automatic environment variables.
+// ExpandCommandEnv expands Command.Env variables with reference to global, group, and automatic environment variables.
 // This is used during configuration loading (Phase 1) to pre-expand Command.Env.
 // Returns a map of expanded environment variables ready to merge with system environment.
 //
-// The autoEnv parameter provides high-priority automatic variables that take precedence over Command.Env:
-//   - In production: Contains automatic variables (__RUNNER_DATETIME, __RUNNER_PID) that
-//     Command.Env CANNOT override
-//   - In testing: Can be nil or empty map for simple test scenarios
-//   - Variables from Command.Env that conflict with autoEnv are silently ignored with a
-//     warning log to prevent accidental override of automatic variables
+// Variable reference priority (what Command.Env can reference):
+//  1. Group.ExpandedEnv variables (groupEnv parameter)
+//  2. Global.ExpandedEnv variables (globalEnv parameter)
+//  3. Automatic variables (__RUNNER_DATETIME, __RUNNER_PID) (autoEnv parameter)
+//  4. System environment variables (subject to allowlist)
 //
-// Variable priority for expansion: autoEnv > Command.Env > System Environment
+// Variable override priority (what takes precedence in final result):
+//   - autoEnv > Command.Env (Command.Env CANNOT override automatic variables)
+//   - Variables from Command.Env that conflict with autoEnv are silently ignored with a warning log
 //
 // Parameters:
 //   - cmd: The command containing environment variables to expand
 //   - groupName: The name of the command group (for logging and error messages)
 //   - allowlist: The environment variable allowlist
 //   - expander: The variable expander for performing secure expansion
+//   - globalEnv: Global.ExpandedEnv variables that Command.Env can reference; can be nil or empty
+//   - groupEnv: Group.ExpandedEnv variables that Command.Env can reference; can be nil or empty
 //   - autoEnv: Automatic environment variables (__RUNNER_DATETIME, __RUNNER_PID); can be nil or empty in tests
 //
 // Returns:
-//   - map[string]string: Expanded environment variables (only Command.Env variables, not autoEnv)
+//   - map[string]string: Expanded environment variables (only Command.Env variables, not autoEnv/globalEnv/groupEnv)
 //   - error: Any error that occurred during expansion
 func ExpandCommandEnv(
 	cmd *runnertypes.Command,
 	groupName string,
 	allowlist []string,
 	expander *environment.VariableExpander,
+	globalEnv map[string]string,
+	groupEnv map[string]string,
 	autoEnv map[string]string,
 ) (map[string]string, error) {
 	// Input validation
@@ -621,13 +647,13 @@ func ExpandCommandEnv(
 	})
 
 	// Set up parameters for the generic expansion function
-	// Reference environment: autoEnv > systemEnv
+	// Reference environment priority: groupEnv > globalEnv > autoEnv > systemEnv
 	// High-priority environment: autoEnv (overrides command.env)
 	params := expansionParameters{
 		envList:             cmd.Env,
 		contextName:         fmt.Sprintf("command.env:%s (group:%s)", cmd.Name, groupName),
 		allowlist:           allowlist,
-		referenceEnvs:       []map[string]string{systemEnv, autoEnv},
+		referenceEnvs:       []map[string]string{systemEnv, autoEnv, globalEnv, groupEnv},
 		highPriorityBaseEnv: autoEnv,
 		expander:            expander,
 		failureErr:          ErrCommandEnvExpansionFailed,

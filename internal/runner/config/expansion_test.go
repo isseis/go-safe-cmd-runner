@@ -2668,7 +2668,9 @@ func TestExpandCommandEnv(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := config.ExpandCommandEnv(&tt.cmd, tt.groupName, tt.allowlist, expander, tt.baseEnv)
+			// In this test, baseEnv represents autoEnv (automatic environment variables)
+			// globalEnv and groupEnv are nil since we're testing Command.Env expansion in isolation
+			result, err := config.ExpandCommandEnv(&tt.cmd, tt.groupName, tt.allowlist, expander, nil, nil, tt.baseEnv)
 
 			if tt.expectError {
 				assert.Error(t, err)
