@@ -375,11 +375,43 @@ Global・Groupレベル環境変数設定機能を段階的に実装し、要件
 **目的**: エラーメッセージの改善とエッジケースのテストを追加
 
 #### 2.5.1 エラーメッセージの改善
+**参照**: アーキテクチャドキュメント（[02_architecture.md](02_architecture.md)）セクション 5.3 のエラーメッセージ例に準拠
+
 - [ ] `internal/runner/config/expansion.go`を編集
   - [ ] `ExpandGlobalEnv()`のエラーメッセージを詳細化
     - [ ] 変数名、コンテキスト（global.env）を含める
+    - [ ] 重複定義エラー: 最初の定義と重複した定義の両方を表示
+      ```
+      Error: Duplicate environment variable definition 'PATH'
+      Context: global.env
+      First definition: PATH=/usr/local/bin
+      Duplicate definition: PATH=/opt/bin
+      ```
+    - [ ] 未定義変数エラー: 利用可能な変数リストを表示
+      ```
+      Error: Undefined environment variable 'VAR_NAME'
+      Context: global.env
+      Available variables:
+        - Global.Env: [VAR1, VAR2]
+        - System (allowlist): [HOME, PATH, USER]
+      ```
   - [ ] `ExpandGroupEnv()`のエラーメッセージを詳細化
     - [ ] 変数名、コンテキスト（group名）を含める
+    - [ ] 未定義変数エラー: Global/Group/Systemレベルの利用可能な変数を表示
+      ```
+      Error: Undefined environment variable 'DB_HOST'
+      Context: group.env:database
+      Available variables:
+        - Global.Env: [BASE_DIR, LOG_LEVEL]
+        - Group.Env: [DB_PORT, DB_NAME]
+        - System (allowlist): [HOME, PATH, USER]
+      ```
+    - [ ] Allowlist違反エラー: 有効なallowlistと参照箇所を表示
+      ```
+      Error: Environment variable 'SECRET_KEY' not in allowlist
+      Effective allowlist: [HOME, PATH, USER]
+      Referenced in: group.env:production
+      ```
   - [ ] ラッピング時にコンテキスト情報を追加
 
 #### 2.5.2 エッジケーステスト
