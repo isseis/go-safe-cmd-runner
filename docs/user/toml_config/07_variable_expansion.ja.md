@@ -1052,7 +1052,7 @@ verify_files = ["${FORBIDDEN_VAR}/file.txt"]  # エラー: allowlist に含ま�
 
 エラーメッセージ例:
 ```
-failed to expand global verify_files[0]: variable not allowed by group allowlist: FORBIDDEN_VAR
+failed to expand global verify_files[0]: variable not allowed by allowlist: FORBIDDEN_VAR
 ```
 
 ### 7.11.7 エスケープシーケンス
@@ -1112,7 +1112,7 @@ verify_files = ["${FORBIDDEN_VAR}/file.txt"]
 
 エラーメッセージ例:
 ```
-failed to expand global verify_files[0]: variable not allowed by group allowlist: FORBIDDEN_VAR
+failed to expand global verify_files[0]: variable not allowed by allowlist: FORBIDDEN_VAR
 ```
 
 **解決方法**: 必要な変数を `env_allowlist` に追加する

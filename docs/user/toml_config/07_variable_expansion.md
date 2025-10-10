@@ -1052,7 +1052,7 @@ verify_files = ["${FORBIDDEN_VAR}/file.txt"]  # Error: not in allowlist
 
 Example error message:
 ```
-failed to expand global verify_files[0]: variable not allowed by group allowlist: FORBIDDEN_VAR
+failed to expand global verify_files[0]: variable not allowed by allowlist: FORBIDDEN_VAR
 ```
 
 ### 7.11.7 Escape Sequences
@@ -1112,7 +1112,7 @@ verify_files = ["${FORBIDDEN_VAR}/file.txt"]
 
 Example error message:
 ```
-failed to expand global verify_files[0]: variable not allowed by group allowlist: FORBIDDEN_VAR
+failed to expand global verify_files[0]: variable not allowed by allowlist: FORBIDDEN_VAR
 ```
 
 **Solution**: Add the required variables to `env_allowlist`
