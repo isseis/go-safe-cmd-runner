@@ -100,8 +100,13 @@ func (l *Loader) LoadConfig(content []byte) (*runnertypes.Config, error) {
 
 // processConfig processes the configuration by expanding environment variables and verify_files fields
 func processConfig(cfg *runnertypes.Config, filter *environment.Filter, expander *environment.VariableExpander) error {
-	// Phase 1: Expand Global.Env variables
-	if err := ExpandGlobalEnv(&cfg.Global, expander); err != nil {
+	// Generate automatic environment variables (fixed at config load time)
+	// These variables are available for expansion in Global.Env and Group.Env
+	autoEnvProvider := environment.NewAutoEnvProvider(nil)
+	autoEnv := autoEnvProvider.Generate()
+
+	// Phase 1: Expand Global.Env variables (now with automatic environment variables)
+	if err := ExpandGlobalEnv(&cfg.Global, expander, autoEnv); err != nil {
 		return fmt.Errorf("failed to expand global environment variables: %w", err)
 	}
 
@@ -112,8 +117,8 @@ func processConfig(cfg *runnertypes.Config, filter *environment.Filter, expander
 
 	// Phase 3: Group processing
 	for i := range cfg.Groups {
-		// First expand Group.Env (can reference Global.ExpandedEnv)
-		if err := ExpandGroupEnv(&cfg.Groups[i], cfg.Global.ExpandedEnv, cfg.Global.EnvAllowlist, expander); err != nil {
+		// First expand Group.Env (can reference Global.ExpandedEnv and automatic environment variables)
+		if err := ExpandGroupEnv(&cfg.Groups[i], cfg.Global.ExpandedEnv, cfg.Global.EnvAllowlist, expander, autoEnv); err != nil {
 			return fmt.Errorf("failed to expand group environment variables for group %q: %w", cfg.Groups[i].Name, err)
 		}
 

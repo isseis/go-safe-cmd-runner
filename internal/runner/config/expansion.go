@@ -336,6 +336,7 @@ func ExpandGroupVerifyFiles(
 // 6. Store results in cfg.ExpandedEnv
 //
 // Variable resolution order within Global.Env:
+// - Automatic environment variables (__RUNNER_PID, __RUNNER_DATETIME)
 // - Global.Env variables (same level references)
 // - System environment variables (filtered by allowlist)
 //
@@ -344,6 +345,7 @@ func ExpandGroupVerifyFiles(
 func ExpandGlobalEnv(
 	cfg *runnertypes.GlobalConfig,
 	expander *environment.VariableExpander,
+	autoEnv map[string]string,
 ) error {
 	// Input validation: nil or empty env list
 	if cfg == nil {
@@ -360,10 +362,18 @@ func ExpandGlobalEnv(
 		return fmt.Errorf("%w: %v", ErrGlobalEnvExpansionFailed, err)
 	}
 
+	// Create combined environment for variable resolution
+	// Priority: Automatic environment variables > Global.Env variables
+	combinedEnv := make(map[string]string, len(autoEnv)+len(envMap))
+	maps.Copy(combinedEnv, envMap) // Global.Env variables as base
+	if autoEnv != nil {
+		maps.Copy(combinedEnv, autoEnv) // Automatic environment variables (higher priority)
+	}
+
 	// Expand variables using common helper
 	if err := expandEnvMap(
 		envMap,
-		envMap,           // combinedEnv: Global.Env variables for resolution
+		combinedEnv,      // combinedEnv: Combined environment (Global.Env + Automatic)
 		cfg.EnvAllowlist, // allowlist: Global allowlist
 		"global.env",     // contextName: Context for error messages
 		expander,
@@ -380,17 +390,19 @@ func ExpandGlobalEnv(
 // ExpandGroupEnv expands environment variables in Group.Env with references to Global.Env and system environment.
 //
 // The expansion follows these rules:
-// 1. Group.Env variables can reference Global.ExpandedEnv variables
-// 2. Group.Env variables can reference system environment variables (subject to allowlist)
-// 3. Priority: Group.Env > Global.ExpandedEnv > System Environment
-// 4. Self-reference (e.g., PATH=/custom:${PATH}) is supported
-// 5. Allowlist inheritance: if group.EnvAllowlist == nil, inherit from globalAllowlist
+// 1. Group.Env variables can reference automatic environment variables (__RUNNER_PID, __RUNNER_DATETIME)
+// 2. Group.Env variables can reference Global.ExpandedEnv variables
+// 3. Group.Env variables can reference system environment variables (subject to allowlist)
+// 4. Priority: Group.Env > Automatic Environment > Global.ExpandedEnv > System Environment
+// 5. Self-reference (e.g., PATH=/custom:${PATH}) is supported
+// 6. Allowlist inheritance: if group.EnvAllowlist == nil, inherit from globalAllowlist
 //
 // Parameters:
 //   - group: The command group containing environment variables to expand
 //   - globalEnv: The already expanded global environment variables (Global.ExpandedEnv)
 //   - globalAllowlist: The global environment variable allowlist
 //   - expander: The variable expander for performing secure expansion
+//   - autoEnv: The automatic environment variables (__RUNNER_PID, __RUNNER_DATETIME)
 //
 // Returns:
 //   - error: Any error that occurred during expansion
@@ -399,6 +411,7 @@ func ExpandGroupEnv(
 	globalEnv map[string]string,
 	globalAllowlist []string,
 	expander *environment.VariableExpander,
+	autoEnv map[string]string,
 ) error {
 	// Input validation
 	if group == nil {
@@ -424,7 +437,7 @@ func ExpandGroupEnv(
 	}
 
 	// Create combined environment for variable resolution
-	// Priority: Group.Env (envMap) > Global.ExpandedEnv > System Environment
+	// Priority: Group.Env (envMap) > Automatic Environment > Global.ExpandedEnv > System Environment
 	combinedEnv := make(map[string]string)
 
 	// Start with global environment as base
@@ -432,7 +445,12 @@ func ExpandGroupEnv(
 		maps.Copy(combinedEnv, globalEnv)
 	}
 
-	// Add group environment variables (higher priority)
+	// Add automatic environment variables (higher priority than global)
+	if autoEnv != nil {
+		maps.Copy(combinedEnv, autoEnv)
+	}
+
+	// Add group environment variables (highest priority)
 	maps.Copy(combinedEnv, envMap)
 
 	// Expand variables using common helper
