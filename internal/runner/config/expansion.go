@@ -7,7 +7,6 @@ import (
 	"maps"
 	"strings"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
@@ -294,19 +293,10 @@ func ExpandGlobalEnv(
 		return nil
 	}
 
-	// Validate environment variables format and check for duplicates
-	if err := validateEnvList(cfg.Env, "global.env"); err != nil {
+	// Validate and parse environment variables in a single pass
+	envMap, err := validateAndParseEnvList(cfg.Env, "global.env")
+	if err != nil {
 		return fmt.Errorf("%w: %v", ErrGlobalEnvExpansionFailed, err)
-	}
-
-	// Parse environment variables into a map
-	envMap := make(map[string]string)
-	for _, envVar := range cfg.Env {
-		key, value, ok := common.ParseEnvVariable(envVar)
-		if !ok {
-			return fmt.Errorf("%w: invalid format %q in global.env", ErrGlobalEnvExpansionFailed, envVar)
-		}
-		envMap[key] = value
 	}
 
 	// Expand variables using VariableExpander

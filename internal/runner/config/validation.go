@@ -16,8 +16,16 @@ import (
 // - Variable names don't match the required pattern (via security.ValidateVariableName)
 // - Variable names use reserved prefix "__RUNNER_" (via environment.ValidateUserEnvNames)
 func validateEnvList(envList []string, context string) error {
+	_, err := validateAndParseEnvList(envList, context)
+	return err
+}
+
+// validateAndParseEnvList validates environment variable list and returns parsed map on success.
+// This function parses KEY=VALUE format, checks for duplicates, validates key names,
+// and checks for reserved prefixes in a single pass.
+func validateAndParseEnvList(envList []string, context string) (map[string]string, error) {
 	if len(envList) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	envMap := make(map[string]string)
@@ -26,18 +34,18 @@ func validateEnvList(envList []string, context string) error {
 	for _, envVar := range envList {
 		key, value, ok := common.ParseEnvVariable(envVar)
 		if !ok {
-			return fmt.Errorf("%w: %q in %s", ErrMalformedEnvVariable, envVar, context)
+			return nil, fmt.Errorf("%w: %q in %s", ErrMalformedEnvVariable, envVar, context)
 		}
 
 		// Check for duplicate key
 		if firstValue, exists := envMap[key]; exists {
-			return fmt.Errorf("%w: %q in %s\n  First definition: %s=%s\n  Duplicate definition: %s=%s",
+			return nil, fmt.Errorf("%w: %q in %s\n  First definition: %s=%s\n  Duplicate definition: %s=%s",
 				ErrDuplicateEnvVariable, key, context, key, firstValue, key, value)
 		}
 
 		// Validate variable name using security.ValidateVariableName
 		if err := security.ValidateVariableName(key); err != nil {
-			return fmt.Errorf("%w in %s: %w", ErrInvalidEnvKey, context, err)
+			return nil, fmt.Errorf("%w in %s: %w", ErrInvalidEnvKey, context, err)
 		}
 
 		envMap[key] = value
@@ -45,8 +53,8 @@ func validateEnvList(envList []string, context string) error {
 
 	// Check for reserved prefix using environment.ValidateUserEnvNames
 	if err := environment.ValidateUserEnvNames(envMap); err != nil {
-		return fmt.Errorf("%w in %s: %w", ErrReservedEnvPrefix, context, err)
+		return nil, fmt.Errorf("%w in %s: %w", ErrReservedEnvPrefix, context, err)
 	}
 
-	return nil
+	return envMap, nil
 }
