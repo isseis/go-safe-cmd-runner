@@ -101,9 +101,9 @@ func ExpandGlobalEnv(
 2. 環境変数マップの構築と重複チェック:
    envMap := make(map[string]string)
    for _, entry := range cfg.Env:
-       key, value, err := parseKeyValue(entry)  // 最初の'='で分割
-       if err != nil:
-           return err
+       key, value, ok := common.ParseEnvVariable(entry)  // 最初の'='で分割
+       if !ok:
+           return fmt.Errorf("invalid environment variable format: %s: %w", entry, environment.ErrMalformedEnvVariable)
 
        if err := validateKey(key); err != nil:  // KEY形式の検証
            return err
@@ -165,9 +165,9 @@ func ExpandGroupEnv(
 3. 環境変数マップの構築と重複チェック:
    envMap := make(map[string]string)
    for _, entry := range group.Env:
-       key, value, err := parseKeyValue(entry)
-       if err != nil:
-           return err
+       key, value, ok := common.ParseEnvVariable(entry)
+       if !ok:
+           return fmt.Errorf("invalid environment variable format in group %s: %s: %w", group.Name, entry, environment.ErrMalformedEnvVariable)
 
        if err := validateKey(key); err != nil:
            return err
@@ -396,13 +396,13 @@ env_allowlist = []
 - `ErrNotInAllowlist`: allowlist違反
 - `ErrInvalidVariableFormat`: 不正な変数形式
 - `ErrInvalidEscapeSequence`: 無効なエスケープシーケンス
+- `ErrMalformedEnvVariable`: 不正な環境変数フォーマット（`=`が無い、KEY部分が空）
 
 #### 5.1.2 新規エラー（internal/runner/config）
 
 - `ErrGlobalEnvExpansionFailed`: Global.Env展開エラー
 - `ErrGroupEnvExpansionFailed`: Group.Env展開エラー
 - `ErrDuplicateEnvVariable`: 重複する環境変数定義
-- `ErrInvalidEnvFormat`: 不正な環境変数フォーマット（`=`が無い）
 
 **エラーラッピング**:
 ```go
@@ -514,16 +514,17 @@ func processConfig(cfg *Config, filter *Filter, expander *VariableExpander) erro
 
 ### 6.2 KEY=VALUE形式のパース
 
-**parseKeyValue()関数**:
+**既存関数の活用**:
 ```go
-func parseKeyValue(entry string) (key, value string, err error) {
-    idx := strings.Index(entry, "=")
-    if idx == -1 {
-        return "", "", fmt.Errorf("invalid env format (missing '='): %s", entry)
-    }
-    key = entry[:idx]
-    value = entry[idx+1:]
-    return key, value, nil
+// internal/common/env.go (既存実装)
+func ParseEnvVariable(env string) (key, value string, ok bool)
+```
+
+**使用例**:
+```go
+key, value, ok := common.ParseEnvVariable(entry)
+if !ok {
+    return fmt.Errorf("invalid environment variable format: %s: %w", entry, environment.ErrMalformedEnvVariable)
 }
 ```
 
@@ -587,7 +588,7 @@ expectedError := ErrDuplicateEnvVariable
 **TC-G-006: 不正なフォーマットエラー**:
 ```go
 input := []string{"INVALID_ENTRY"}  // '='が無い
-expectedError := ErrInvalidEnvFormat
+expectedError := environment.ErrMalformedEnvVariable
 ```
 
 #### 7.1.2 Group.Env展開テスト
