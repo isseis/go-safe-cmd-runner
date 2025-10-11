@@ -231,49 +231,58 @@ func expandVerifyFiles(
 
 func expandEnvMap(
 	envMap map[string]string,
-	combinedEnv map[string]string,
 	referenceEnv map[string]string,
+	highPriorityEnv map[string]string,
 	allowlist []string,
 	contextName string,
 	expander *environment.VariableExpander,
 	failureErr error,
 ) error {
-	// Expand variables using VariableExpander
+	// Expand variables using VariableExpander with two-pass approach:
+	// 1. First pass: Try expansion with current variable excluded (for self-reference support)
+	// 2. Second pass (on "not found" error): Try with current variable marked as visited (for circular detection)
 	for key, value := range envMap {
 		if strings.Contains(value, "${") {
-			// First try: Use reference environment for self-reference support
-			expansionEnv := make(map[string]string)
-
-			// Add reference environment (system + global + auto env, excluding current envMap)
-			maps.Copy(expansionEnv, referenceEnv)
-
-			// Add other envMap variables that have been expanded already
+			// First pass: Support self-reference (e.g., PATH=${PATH}:/new)
+			// Construct environment excluding the current variable, so ${PATH} resolves
+			// to the value from reference environment (global/group/system)
+			tempEnv := make(map[string]string, len(referenceEnv)+len(envMap)+len(highPriorityEnv))
+			maps.Copy(tempEnv, referenceEnv)
 			for k, v := range envMap {
-				if k != key { // Skip the variable currently being expanded
-					expansionEnv[k] = v
+				if k != key {
+					tempEnv[k] = v
 				}
 			}
+			if highPriorityEnv != nil {
+				maps.Copy(tempEnv, highPriorityEnv)
+			}
 
-			// Use empty visited map - we handle self-reference by excluding current variable
-			visited := make(map[string]bool)
 			expandedValue, err := expander.ExpandString(
 				value,
-				expansionEnv, // envVars: Reference environment + other expanded variables
-				allowlist,    // allowlist: Effective allowlist
-				contextName,  // groupName: Context name for logging
-				visited,      // visited: empty for clean expansion
+				tempEnv,
+				allowlist,
+				contextName,
+				make(map[string]bool), // Empty visited map for first pass
 			)
 			if err != nil {
-				// If expansion failed with "variable reference not found", this might be circular reference
-				// Try again with the full combinedEnv and visited map for proper circular detection
+				// If first pass failed with "variable reference not found", this might be
+				// a circular reference (e.g., VAR1=${VAR2}, VAR2=${VAR1}).
+				// Try second pass with full environment and visited map for circular detection.
 				if strings.Contains(err.Error(), "variable reference not found") {
-					visited := map[string]bool{key: true}
+					fullEnv := make(map[string]string, len(referenceEnv)+len(envMap)+len(highPriorityEnv))
+					maps.Copy(fullEnv, referenceEnv)
+					maps.Copy(fullEnv, envMap)
+					if highPriorityEnv != nil {
+						maps.Copy(fullEnv, highPriorityEnv)
+					}
+
+					visited := map[string]bool{key: true} // Mark current variable as visited
 					expandedValue, err = expander.ExpandString(
 						value,
-						combinedEnv, // envVars: Full combined environment
-						allowlist,   // allowlist: Effective allowlist
-						contextName, // groupName: Context name for logging
-						visited,     // visited: mark current variable to enable circular detection
+						fullEnv,
+						allowlist,
+						contextName,
+						visited,
 					)
 				}
 
@@ -284,9 +293,6 @@ func expandEnvMap(
 			}
 
 			envMap[key] = expandedValue
-
-			// Update combinedEnv with the newly expanded value for subsequent expansions
-			combinedEnv[key] = expandedValue
 		}
 	}
 	return nil
@@ -381,12 +387,16 @@ func ExpandGroupVerifyFiles(
 // 2. Filters out variables that conflict with a high-priority base environment (if provided).
 // 3. Validates variable names against reserved prefixes.
 // 4. Constructs a combined environment for expansion, respecting priority order:
+//
 //   - High-priority base environment (e.g., auto-env)
+//
 //   - Current level's environment variables
+//
 //   - Reference environments (e.g., global.env, system env)
 //
-// 5. Expands variables using the expandEnvMap helper, which supports self-references.
-// 6. Performs a final validation on the expanded values for security.
+//     5. Expands variables using expandEnvMap, which handles self-references by marking
+//     the current variable as visited in the VariableExpander.
+//     6. Performs a final validation on the expanded values for security.
 func expandEnvironment(params expansionParameters) (map[string]string, error) {
 	// 1. Handle nil or empty env list
 	if len(params.envList) == 0 {
@@ -429,10 +439,9 @@ func expandEnvironment(params expansionParameters) (map[string]string, error) {
 		}
 	}
 
-	// 5. Construct the environment for expansion
-	// The reference environment is used for resolving variables (e.g., ${PATH}).
-	// It includes system env, global env, etc., but NOT the current level's envMap
-	// to correctly handle self-references like PATH=/custom:${PATH}.
+	// 5. Construct the combined environment for expansion
+	// The combined environment includes all reference environments (system, global, group, auto)
+	// plus the current level's envMap. Priority: highPriorityBaseEnv > envMap > referenceEnvs
 	referenceEnv := make(map[string]string)
 	for _, ref := range params.referenceEnvs {
 		if ref != nil {
@@ -440,8 +449,6 @@ func expandEnvironment(params expansionParameters) (map[string]string, error) {
 		}
 	}
 
-	// The combined environment includes everything and is used for expansion context.
-	// Priority: highPriorityBaseEnv > envMap > referenceEnvs
 	combinedEnv := make(map[string]string)
 	maps.Copy(combinedEnv, referenceEnv)
 	maps.Copy(combinedEnv, envMap)
@@ -449,11 +456,14 @@ func expandEnvironment(params expansionParameters) (map[string]string, error) {
 		maps.Copy(combinedEnv, params.highPriorityBaseEnv)
 	}
 
-	// 6. Expand variables using the common helper
+	// 6. Expand variables using expandEnvMap
+	// Self-references (e.g., PATH=${PATH}:/new) are handled by temporarily excluding
+	// the current variable from envMap during expansion, allowing ${PATH} to resolve
+	// to the value in the reference environment.
 	if err := expandEnvMap(
 		envMap,
-		combinedEnv,
 		referenceEnv,
+		params.highPriorityBaseEnv,
 		params.allowlist,
 		params.contextName,
 		params.expander,
