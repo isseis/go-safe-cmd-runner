@@ -115,7 +115,7 @@ func ExpandCommand(expCxt *ExpansionContext) (string, []string, map[string]strin
 	// 2. Prevent Command.Env from overriding automatic variables (silently ignored with warning)
 	// Also pass globalEnv and groupEnv so Command.Env can reference those variables
 	// Note: allowlist inheritance (groupEnvAllowlist ?? globalAllowlist) is handled internally in ExpandCommandEnv
-	if err := ExpandCommandEnv(cmd, groupName, groupEnvAllowlist, globalAllowlist, expander, globalEnv, groupEnv, autoEnv); err != nil {
+	if err := ExpandCommandEnv(cmd, expander, autoEnv, globalEnv, globalAllowlist, groupEnv, groupEnvAllowlist, groupName); err != nil {
 		return "", nil, nil, fmt.Errorf("%w: %v", ErrCommandEnvExpansionFailed, err)
 	}
 
@@ -729,13 +729,13 @@ func ExpandGroupEnv(
 //   - error: Any error that occurred during expansion
 func ExpandCommandEnv(
 	cmd *runnertypes.Command,
-	groupName string,
-	groupEnvAllowlist []string,
-	globalAllowlist []string,
 	expander *environment.VariableExpander,
-	globalEnv map[string]string,
-	groupEnv map[string]string,
 	autoEnv map[string]string,
+	globalEnv map[string]string,
+	globalAllowlist []string,
+	groupEnv map[string]string,
+	groupAllowlist []string,
+	groupName string,
 ) error {
 	// Input validation
 	if cmd == nil {
@@ -748,7 +748,7 @@ func ExpandCommandEnv(
 	return expandEnvInternal(
 		cmd.Env, // envList
 		fmt.Sprintf("command.env:%s (group:%s)", cmd.Name, groupName), // contextName
-		groupEnvAllowlist,            // localAllowlist (group's allowlist for inheritance calculation)
+		groupAllowlist,               // localAllowlist (group's allowlist for inheritance calculation)
 		globalAllowlist,              // globalAllowlist (for inheritance when groupEnvAllowlist is nil)
 		globalEnv,                    // globalEnv (Global.ExpandedEnv)
 		groupEnv,                     // groupEnv (Group.ExpandedEnv)

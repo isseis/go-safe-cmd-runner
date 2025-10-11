@@ -57,7 +57,7 @@ func TestExpandCommandEnv_WithGlobalEnv(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := tt.cmd // Create a copy to avoid modifying test data
-			err := config.ExpandCommandEnv(&cmd, tt.groupName, nil, tt.allowlist, expander, globalEnv, nil, nil)
+			err := config.ExpandCommandEnv(&cmd, expander, nil, globalEnv, tt.allowlist, nil, nil, tt.groupName)
 			require.NoError(t, err)
 			assert.Equal(t, tt.expectedVars, cmd.ExpandedEnv)
 		})
@@ -111,7 +111,7 @@ func TestExpandCommandEnv_WithGroupEnv(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := tt.cmd // Create a copy to avoid modifying test data
-			err := config.ExpandCommandEnv(&cmd, tt.groupName, nil, tt.allowlist, expander, nil, groupEnv, nil)
+			err := config.ExpandCommandEnv(&cmd, expander, nil, nil, tt.allowlist, groupEnv, nil, tt.groupName)
 			require.NoError(t, err)
 			assert.Equal(t, tt.expectedVars, cmd.ExpandedEnv)
 		})
@@ -156,7 +156,7 @@ func TestExpandCommandEnv_WithBothGlobalAndGroupEnv(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := tt.cmd // Create a copy to avoid modifying test data
-			err := config.ExpandCommandEnv(&cmd, tt.groupName, nil, tt.allowlist, expander, globalEnv, groupEnv, nil)
+			err := config.ExpandCommandEnv(&cmd, expander, nil, globalEnv, tt.allowlist, groupEnv, nil, tt.groupName)
 			require.NoError(t, err)
 			assert.Equal(t, tt.expectedVars, cmd.ExpandedEnv)
 		})
@@ -235,7 +235,7 @@ func TestExpandCommandEnv_VariableReferencePriority(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := tt.cmd // Create a copy to avoid modifying test data
-			err := config.ExpandCommandEnv(&cmd, "test_group", nil, tt.allowlist, expander, tt.globalEnv, tt.groupEnv, nil)
+			err := config.ExpandCommandEnv(&cmd, expander, nil, tt.globalEnv, tt.allowlist, tt.groupEnv, nil, "test_group")
 			require.NoError(t, err, tt.description)
 			assert.Equal(t, tt.expectedVars, cmd.ExpandedEnv, tt.description)
 		})

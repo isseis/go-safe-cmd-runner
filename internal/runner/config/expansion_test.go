@@ -2679,7 +2679,7 @@ func TestExpandCommandEnv(t *testing.T) {
 			// In this test, baseEnv represents autoEnv (automatic environment variables)
 			// globalEnv and groupEnv are nil since we're testing Command.Env expansion in isolation
 			cmd := tt.cmd // Create a copy to avoid modifying test data
-			err := config.ExpandCommandEnv(&cmd, tt.groupName, nil, tt.allowlist, expander, nil, nil, tt.baseEnv)
+			err := config.ExpandCommandEnv(&cmd, expander, tt.baseEnv, nil, tt.allowlist, nil, nil, tt.groupName)
 
 			if tt.expectError {
 				assert.Error(t, err)
