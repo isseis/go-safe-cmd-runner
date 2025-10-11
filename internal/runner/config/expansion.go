@@ -51,8 +51,9 @@ type ExpansionContext struct {
 	// that Command.Env can reference. If nil, an empty map is used.
 	GroupEnv map[string]string
 
-	// EnvAllowlist is the global allowlist of system environment variables allowed for expansion.
-	// The actual effective allowlist is determined by inheritance: group.EnvAllowlist ?? EnvAllowlist
+	// EnvAllowlist is the effective allowlist of system environment variables allowed for expansion.
+	// This field should contain the allowlist after inheritance has been resolved
+	// (e.g., via DetermineEffectiveAllowlist: group.EnvAllowlist ?? global.EnvAllowlist).
 	EnvAllowlist []string
 
 	// Group is the command group containing the command (used for logging and allowlist access)
