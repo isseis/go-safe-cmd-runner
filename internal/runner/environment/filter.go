@@ -26,7 +26,9 @@ var (
 
 // Filter provides environment variable filtering functionality with allowlist-based security
 type Filter struct {
-	globalAllowlist map[string]struct{} // Map for O(1) lookups of allowed variables (always non-nil, using struct{} for memory efficiency)
+	// Map for O(1) lookups of allowed variables (guaranteed non-nil after construction
+	// via NewFilter)
+	globalAllowlist map[string]struct{}
 }
 
 // NewFilter creates a new environment variable filter with the provided global allowlist
@@ -183,7 +185,7 @@ func (f *Filter) ResolveAllowlistConfiguration(allowlist []string, groupName str
 	// Build lookup maps for O(1) performance in IsAllowed()
 	// These are internal fields used only for fast lookups
 	resolution.SetGroupAllowlistSet(buildAllowlistSet(allowlist))
-	resolution.SetGlobalAllowlistSet(f.globalAllowlist) // Already a map
+	resolution.SetGlobalAllowlistSet(f.globalAllowlist)
 
 	// Set effective list based on mode
 	switch mode {

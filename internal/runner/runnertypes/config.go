@@ -244,7 +244,6 @@ type AllowlistResolution struct {
 
 	// groupAllowlistSet and globalAllowlistSet are internal maps for O(1) lookup performance.
 	// These are populated from GroupAllowlist and GlobalAllowlist during resolution.
-	// Using struct{} instead of bool to save memory (0 bytes vs 1 byte per entry).
 	groupAllowlistSet  map[string]struct{}
 	globalAllowlistSet map[string]struct{}
 }
