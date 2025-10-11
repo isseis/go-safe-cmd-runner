@@ -139,7 +139,7 @@ func TestExpandGroupEnv_AutomaticEnvironmentVariables(t *testing.T) {
 			filter := environment.NewFilter([]string{})
 			expander := environment.NewVariableExpander(filter)
 
-			err := ExpandGroupEnv(group, tt.globalEnv, []string{}, expander, tt.autoEnv)
+			err := ExpandGroupEnv(group, expander, tt.autoEnv, tt.globalEnv, []string{})
 			require.NoError(t, err)
 
 			require.Equal(t, tt.expected, group.ExpandedEnv)

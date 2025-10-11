@@ -118,7 +118,7 @@ func processConfig(cfg *runnertypes.Config, filter *environment.Filter, expander
 	// Phase 3: Group processing
 	for i := range cfg.Groups {
 		// First expand Group.Env (can reference Global.ExpandedEnv and automatic environment variables)
-		if err := ExpandGroupEnv(&cfg.Groups[i], cfg.Global.ExpandedEnv, cfg.Global.EnvAllowlist, expander, autoEnv); err != nil {
+		if err := ExpandGroupEnv(&cfg.Groups[i], expander, autoEnv, cfg.Global.ExpandedEnv, cfg.Global.EnvAllowlist); err != nil {
 			return fmt.Errorf("failed to expand group environment variables for group %q: %w", cfg.Groups[i].Name, err)
 		}
 

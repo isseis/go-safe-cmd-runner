@@ -122,7 +122,7 @@ func TestExpandGroupEnv_SelfReferenceToSystemEnv(t *testing.T) {
 			expander := environment.NewVariableExpander(filter)
 			autoEnv := map[string]string{} // Empty auto env for this test
 
-			err := ExpandGroupEnv(group, tt.globalEnv, tt.allowlist, expander, autoEnv)
+			err := ExpandGroupEnv(group, expander, autoEnv, tt.globalEnv, tt.allowlist)
 			require.NoError(t, err)
 
 			require.Equal(t, tt.expected, group.ExpandedEnv)

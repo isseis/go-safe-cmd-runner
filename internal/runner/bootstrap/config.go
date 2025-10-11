@@ -88,7 +88,7 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 	// Step 2: Expand each Group.Env (if present)
 	for i := range cfg.Groups {
 		group := &cfg.Groups[i]
-		if err := config.ExpandGroupEnv(group, cfg.Global.ExpandedEnv, cfg.Global.EnvAllowlist, expander, autoEnv); err != nil {
+		if err := config.ExpandGroupEnv(group, expander, autoEnv, cfg.Global.ExpandedEnv, cfg.Global.EnvAllowlist); err != nil {
 			return nil, &logging.PreExecutionError{
 				Type:      logging.ErrorTypeConfigParsing,
 				Message:   fmt.Sprintf("Failed to expand group environment variables for group %s: %v", group.Name, err),

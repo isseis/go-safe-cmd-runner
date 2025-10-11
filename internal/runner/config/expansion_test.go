@@ -2220,7 +2220,7 @@ func TestExpandGroupEnv_Basic(t *testing.T) {
 		EnvAllowlist: nil, // Should inherit from global
 	}
 
-	err := config.ExpandGroupEnv(group, global.ExpandedEnv, global.EnvAllowlist, expander, nil)
+	err := config.ExpandGroupEnv(group, expander, nil, global.ExpandedEnv, global.EnvAllowlist)
 	require.NoError(t, err)
 
 	expected := map[string]string{
@@ -2246,7 +2246,7 @@ func TestExpandGroupEnv_ReferenceGlobal(t *testing.T) {
 		EnvAllowlist: nil, // Should inherit from global
 	}
 
-	err := config.ExpandGroupEnv(group, global.ExpandedEnv, global.EnvAllowlist, expander, nil)
+	err := config.ExpandGroupEnv(group, expander, nil, global.ExpandedEnv, global.EnvAllowlist)
 	require.NoError(t, err)
 
 	expected := map[string]string{
@@ -2275,7 +2275,7 @@ func TestExpandGroupEnv_ReferenceSystemEnv(t *testing.T) {
 		EnvAllowlist: nil, // Should inherit from global allowlist
 	}
 
-	err := config.ExpandGroupEnv(group, global.ExpandedEnv, global.EnvAllowlist, expander, nil)
+	err := config.ExpandGroupEnv(group, expander, nil, global.ExpandedEnv, global.EnvAllowlist)
 	require.NoError(t, err)
 
 	expected := map[string]string{
@@ -2304,7 +2304,7 @@ func TestExpandGroupEnv_AllowlistInherit(t *testing.T) {
 		EnvAllowlist: nil, // Should inherit global allowlist (ALLOWED_VAR only)
 	}
 
-	err := config.ExpandGroupEnv(group, global.ExpandedEnv, global.EnvAllowlist, expander, nil)
+	err := config.ExpandGroupEnv(group, expander, nil, global.ExpandedEnv, global.EnvAllowlist)
 	require.NoError(t, err)
 
 	expected := map[string]string{
@@ -2314,7 +2314,7 @@ func TestExpandGroupEnv_AllowlistInherit(t *testing.T) {
 
 	// Test that forbidden variable causes error
 	group.Env = []string{"GROUP_VAR=${FORBIDDEN_VAR}/suffix"}
-	err = config.ExpandGroupEnv(group, global.ExpandedEnv, global.EnvAllowlist, expander, nil)
+	err = config.ExpandGroupEnv(group, expander, nil, global.ExpandedEnv, global.EnvAllowlist)
 	require.Error(t, err)
 }
 
@@ -2338,7 +2338,7 @@ func TestExpandGroupEnv_AllowlistOverride(t *testing.T) {
 		EnvAllowlist: []string{"GROUP_ALLOWED"}, // Group overrides to allow GROUP_ALLOWED
 	}
 
-	err := config.ExpandGroupEnv(group, global.ExpandedEnv, global.EnvAllowlist, expander, nil)
+	err := config.ExpandGroupEnv(group, expander, nil, global.ExpandedEnv, global.EnvAllowlist)
 	require.NoError(t, err)
 
 	expected := map[string]string{
@@ -2348,7 +2348,7 @@ func TestExpandGroupEnv_AllowlistOverride(t *testing.T) {
 
 	// Test that global allowed var is now forbidden
 	group.Env = []string{"GROUP_VAR=${GLOBAL_ALLOWED}/suffix"}
-	err = config.ExpandGroupEnv(group, global.ExpandedEnv, global.EnvAllowlist, expander, nil)
+	err = config.ExpandGroupEnv(group, expander, nil, global.ExpandedEnv, global.EnvAllowlist)
 	require.Error(t, err)
 }
 
@@ -2371,7 +2371,7 @@ func TestExpandGroupEnv_AllowlistReject(t *testing.T) {
 		EnvAllowlist: []string{}, // Empty slice should reject all system env vars
 	}
 
-	err := config.ExpandGroupEnv(group, global.ExpandedEnv, global.EnvAllowlist, expander, nil)
+	err := config.ExpandGroupEnv(group, expander, nil, global.ExpandedEnv, global.EnvAllowlist)
 	require.Error(t, err) // Should fail because SYSTEM_VAR is not allowed
 }
 
@@ -2391,7 +2391,7 @@ func TestExpandGroupEnv_CircularReference(t *testing.T) {
 		EnvAllowlist: nil,
 	}
 
-	err := config.ExpandGroupEnv(group, global.ExpandedEnv, global.EnvAllowlist, expander, nil)
+	err := config.ExpandGroupEnv(group, expander, nil, global.ExpandedEnv, global.EnvAllowlist)
 	require.Error(t, err) // Should detect circular reference
 }
 
@@ -2411,7 +2411,7 @@ func TestExpandGroupEnv_DuplicateKey(t *testing.T) {
 		EnvAllowlist: nil,
 	}
 
-	err := config.ExpandGroupEnv(group, global.ExpandedEnv, global.EnvAllowlist, expander, nil)
+	err := config.ExpandGroupEnv(group, expander, nil, global.ExpandedEnv, global.EnvAllowlist)
 	require.Error(t, err) // Should detect duplicate key
 }
 
@@ -2432,13 +2432,13 @@ func TestExpandGroupEnv_Empty(t *testing.T) {
 		EnvAllowlist: nil,
 	}
 
-	err := config.ExpandGroupEnv(group, global.ExpandedEnv, global.EnvAllowlist, expander, nil)
+	err := config.ExpandGroupEnv(group, expander, nil, global.ExpandedEnv, global.EnvAllowlist)
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{}, group.ExpandedEnv)
 
 	// Test empty Env
 	group.Env = []string{}
-	err = config.ExpandGroupEnv(group, global.ExpandedEnv, global.EnvAllowlist, expander, nil)
+	err = config.ExpandGroupEnv(group, expander, nil, global.ExpandedEnv, global.EnvAllowlist)
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{}, group.ExpandedEnv)
 }
@@ -2465,7 +2465,7 @@ func TestExpandGroupVerifyFiles_WithGroupEnv(t *testing.T) {
 	}
 
 	// First expand Group.Env
-	err := config.ExpandGroupEnv(group, global.ExpandedEnv, global.EnvAllowlist, expander, nil)
+	err := config.ExpandGroupEnv(group, expander, nil, global.ExpandedEnv, global.EnvAllowlist)
 	require.NoError(t, err)
 
 	// Then expand Group.VerifyFiles
@@ -2494,7 +2494,7 @@ func TestExpandGroupVerifyFiles_WithGlobalEnv(t *testing.T) {
 	}
 
 	// First expand Group.Env (empty in this case)
-	err := config.ExpandGroupEnv(group, global.ExpandedEnv, global.EnvAllowlist, expander, nil)
+	err := config.ExpandGroupEnv(group, expander, nil, global.ExpandedEnv, global.EnvAllowlist)
 	require.NoError(t, err)
 
 	// Then expand Group.VerifyFiles with Global.Env
@@ -2526,7 +2526,7 @@ func TestExpandGroupVerifyFiles_Priority(t *testing.T) {
 	}
 
 	// First expand Group.Env
-	err := config.ExpandGroupEnv(group, global.ExpandedEnv, global.EnvAllowlist, expander, nil)
+	err := config.ExpandGroupEnv(group, expander, nil, global.ExpandedEnv, global.EnvAllowlist)
 	require.NoError(t, err)
 
 	// Then expand Group.VerifyFiles - should use Group.Env value (highest priority)

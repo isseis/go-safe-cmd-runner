@@ -672,10 +672,10 @@ func ExpandGlobalEnv(
 //   - error: Any error that occurred during expansion
 func ExpandGroupEnv(
 	group *runnertypes.CommandGroup,
-	globalEnv map[string]string,
-	globalAllowlist []string,
 	expander *environment.VariableExpander,
 	autoEnv map[string]string,
+	globalEnv map[string]string,
+	globalAllowlist []string,
 ) error {
 	// Input validation
 	if group == nil {
