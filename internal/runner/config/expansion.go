@@ -265,10 +265,10 @@ func expandEnvMap(
 				make(map[string]bool), // Empty visited map for first pass
 			)
 			if err != nil {
-				// If first pass failed with "variable reference not found", this might be
+				// If first pass failed with ErrVariableNotFound, this might be
 				// a circular reference (e.g., VAR1=${VAR2}, VAR2=${VAR1}).
 				// Try second pass with full environment and visited map for circular detection.
-				if strings.Contains(err.Error(), "variable reference not found") {
+				if errors.Is(err, environment.ErrVariableNotFound) {
 					fullEnv := make(map[string]string, len(referenceEnv)+len(envMap)+len(highPriorityEnv))
 					maps.Copy(fullEnv, referenceEnv)
 					maps.Copy(fullEnv, envMap)
