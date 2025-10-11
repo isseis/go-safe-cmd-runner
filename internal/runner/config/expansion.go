@@ -585,17 +585,17 @@ func buildExpansionParams(
 func expandEnvInternal(
 	envList []string,
 	contextName string,
-	localAllowlist []string,
-	globalAllowlist []string,
-	globalEnv map[string]string,
-	groupEnv map[string]string,
-	autoEnv map[string]string,
-	expander *environment.VariableExpander,
-	failureErr error,
 	outputTarget *map[string]string,
+	expander *environment.VariableExpander,
+	autoEnv map[string]string,
+	globalEnv map[string]string,
+	globalAllowlist []string,
+	groupEnv map[string]string,
+	groupAllowlist []string,
+	failureErr error,
 ) error {
 	// Determine the effective allowlist with inheritance
-	effectiveAllowlist := localAllowlist
+	effectiveAllowlist := groupAllowlist
 	if effectiveAllowlist == nil && globalAllowlist != nil {
 		effectiveAllowlist = globalAllowlist
 	}
@@ -640,14 +640,14 @@ func ExpandGlobalEnv(
 	return expandEnvInternal(
 		cfg.Env,                     // envList
 		"global.env",                // contextName
-		cfg.EnvAllowlist,            // localAllowlist
-		nil,                         // globalAllowlist (no inheritance at global level)
-		nil,                         // globalEnv (self-expansion)
-		nil,                         // groupEnv (not applicable)
-		autoEnv,                     // autoEnv
-		expander,                    // expander
-		ErrGlobalEnvExpansionFailed, // failureErr
 		&cfg.ExpandedEnv,            // outputTarget
+		expander,                    // expander
+		autoEnv,                     // autoEnv
+		nil,                         // globalEnv (self-expansion)
+		nil,                         // globalAllowlist (no inheritance at global level)
+		nil,                         // groupEnv (not applicable)
+		cfg.EnvAllowlist,            // groupAllowlist (local allowlist)
+		ErrGlobalEnvExpansionFailed, // failureErr
 	)
 }
 
@@ -688,14 +688,14 @@ func ExpandGroupEnv(
 	return expandEnvInternal(
 		group.Env,                               // envList
 		fmt.Sprintf("group.env:%s", group.Name), // contextName
-		group.EnvAllowlist,                      // localAllowlist
-		globalAllowlist,                         // globalAllowlist (for inheritance)
-		globalEnv,                               // globalEnv (Global.ExpandedEnv)
-		nil,                                     // groupEnv (self-expansion)
-		autoEnv,                                 // autoEnv
-		expander,                                // expander
-		ErrGroupEnvExpansionFailed,              // failureErr
 		&group.ExpandedEnv,                      // outputTarget
+		expander,                                // expander
+		autoEnv,                                 // autoEnv
+		globalEnv,                               // globalEnv (Global.ExpandedEnv)
+		globalAllowlist,                         // globalAllowlist (for inheritance)
+		nil,                                     // groupEnv (self-expansion)
+		group.EnvAllowlist,                      // groupAllowlist (local allowlist)
+		ErrGroupEnvExpansionFailed,              // failureErr
 	)
 }
 
@@ -748,13 +748,13 @@ func ExpandCommandEnv(
 	return expandEnvInternal(
 		cmd.Env, // envList
 		fmt.Sprintf("command.env:%s (group:%s)", cmd.Name, groupName), // contextName
-		groupAllowlist,               // localAllowlist (group's allowlist for inheritance calculation)
-		globalAllowlist,              // globalAllowlist (for inheritance when groupEnvAllowlist is nil)
-		globalEnv,                    // globalEnv (Global.ExpandedEnv)
-		groupEnv,                     // groupEnv (Group.ExpandedEnv)
-		autoEnv,                      // autoEnv
-		expander,                     // expander
-		ErrCommandEnvExpansionFailed, // failureErr
 		&cmd.ExpandedEnv,             // outputTarget
+		expander,                     // expander
+		autoEnv,                      // autoEnv
+		globalEnv,                    // globalEnv (Global.ExpandedEnv)
+		globalAllowlist,              // globalAllowlist (for inheritance when groupEnvAllowlist is nil)
+		groupEnv,                     // groupEnv (Group.ExpandedEnv)
+		groupAllowlist,               // groupAllowlist (group's allowlist for inheritance calculation)
+		ErrCommandEnvExpansionFailed, // failureErr
 	)
 }
