@@ -5,7 +5,6 @@ package runnertypes
 import (
 	"errors"
 	"fmt"
-	"slices"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
@@ -242,20 +241,41 @@ type AllowlistResolution struct {
 	GlobalAllowlist []string
 	EffectiveList   []string // The actual allowlist being used
 	GroupName       string   // For logging context
+
+	// groupAllowlistSet and globalAllowlistSet are internal maps for O(1) lookup performance.
+	// These are populated from GroupAllowlist and GlobalAllowlist during resolution.
+	// Using struct{} instead of bool to save memory (0 bytes vs 1 byte per entry).
+	groupAllowlistSet  map[string]struct{}
+	globalAllowlistSet map[string]struct{}
 }
 
-// IsAllowed checks if a variable is allowed based on the resolved allowlist
+// IsAllowed checks if a variable is allowed based on the resolved allowlist.
+// Uses internal map structures for O(1) lookup performance.
 func (r *AllowlistResolution) IsAllowed(variable string) bool {
 	switch r.Mode {
 	case InheritanceModeReject:
 		return false
 	case InheritanceModeExplicit:
-		return slices.Contains(r.GroupAllowlist, variable)
+		_, ok := r.groupAllowlistSet[variable]
+		return ok
 	case InheritanceModeInherit:
-		return slices.Contains(r.GlobalAllowlist, variable)
+		_, ok := r.globalAllowlistSet[variable]
+		return ok
 	default:
 		return false
 	}
+}
+
+// SetGroupAllowlistSet sets the internal group allowlist map for O(1) lookups.
+// This is called during allowlist resolution to populate the lookup map.
+func (r *AllowlistResolution) SetGroupAllowlistSet(allowlistSet map[string]struct{}) {
+	r.groupAllowlistSet = allowlistSet
+}
+
+// SetGlobalAllowlistSet sets the internal global allowlist map for O(1) lookups.
+// This is called during allowlist resolution to populate the lookup map.
+func (r *AllowlistResolution) SetGlobalAllowlistSet(allowlistSet map[string]struct{}) {
+	r.globalAllowlistSet = allowlistSet
 }
 
 // Operation represents different types of privileged operations

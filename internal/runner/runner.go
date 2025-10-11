@@ -441,7 +441,7 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 		defer cancel()
 
 		// Execute the command with group context
-		result, err := r.executeCommandInGroup(cmdCtx, processedCmd, &processedGroup)
+		result, err := r.executeCommandInGroup(cmdCtx, &processedCmd, &processedGroup)
 		if err != nil {
 			fmt.Printf("    Command failed: %v\n", err)
 			// Set failure result for notification
@@ -493,7 +493,7 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 }
 
 // executeCommandInGroup executes a command within a specific group context
-func (r *Runner) executeCommandInGroup(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup) (*executor.Result, error) {
+func (r *Runner) executeCommandInGroup(ctx context.Context, cmd *runnertypes.Command, group *runnertypes.CommandGroup) (*executor.Result, error) {
 	// Resolve environment variables for the command with group context
 	envVars, err := r.resolveEnvironmentVars(cmd, group)
 	if err != nil {
@@ -535,7 +535,7 @@ func (r *Runner) executeCommandInGroup(ctx context.Context, cmd runnertypes.Comm
 	}
 
 	// Execute the command using ResourceManager
-	result, err := r.resourceManager.ExecuteCommand(ctx, cmd, group, envVars)
+	result, err := r.resourceManager.ExecuteCommand(ctx, *cmd, group, envVars)
 	if err != nil {
 		return nil, err
 	}
@@ -550,7 +550,7 @@ func (r *Runner) executeCommandInGroup(ctx context.Context, cmd runnertypes.Comm
 
 // resolveEnvironmentVars resolves environment variables for a command with group context.
 // This merges system environment variables (filtered by allowlist) with pre-expanded Command.Env.
-func (r *Runner) resolveEnvironmentVars(cmd runnertypes.Command, group *runnertypes.CommandGroup) (map[string]string, error) {
+func (r *Runner) resolveEnvironmentVars(cmd *runnertypes.Command, group *runnertypes.CommandGroup) (map[string]string, error) {
 	// Step 1: Filter system environment variables with allowlist
 	systemEnvVars, err := r.envFilter.ResolveGroupEnvironmentVars(group, r.envVars)
 	if err != nil {

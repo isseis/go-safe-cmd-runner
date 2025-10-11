@@ -24,4 +24,7 @@ var (
 
 	// ErrReservedEnvPrefix is returned when an environment variable key uses a reserved prefix
 	ErrReservedEnvPrefix = errors.New("environment variable key uses reserved prefix")
+
+	// ErrNilGroup is returned when group parameter is nil
+	ErrNilGroup = errors.New("group cannot be nil")
 )

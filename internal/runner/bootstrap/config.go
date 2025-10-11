@@ -74,19 +74,48 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 	// in-place on cfg.Groups.
 	filter := environment.NewFilter(cfg.Global.EnvAllowlist)
 	expander := environment.NewVariableExpander(filter)
+
+	// Step 1: Expand Global.Env (if present)
+	if err := config.ExpandGlobalEnv(&cfg.Global, expander, autoEnv); err != nil {
+		return nil, &logging.PreExecutionError{
+			Type:      logging.ErrorTypeConfigParsing,
+			Message:   fmt.Sprintf("Failed to expand global environment variables: %v", err),
+			Component: "config",
+			RunID:     runID,
+		}
+	}
+
+	// Step 2: Expand each Group.Env (if present)
+	for i := range cfg.Groups {
+		group := &cfg.Groups[i]
+		if err := config.ExpandGroupEnv(group, expander, autoEnv, cfg.Global.ExpandedEnv, cfg.Global.EnvAllowlist); err != nil {
+			return nil, &logging.PreExecutionError{
+				Type:      logging.ErrorTypeConfigParsing,
+				Message:   fmt.Sprintf("Failed to expand group environment variables for group %s: %v", group.Name, err),
+				Component: "config",
+				RunID:     runID,
+			}
+		}
+	}
+
+	// Step 3: Expand Command.Cmd, Args, and Env for each command
 	for i := range cfg.Groups {
 		group := &cfg.Groups[i]
 		for j := range group.Commands {
 			cmd := &group.Commands[j]
 
 			// Expand Command.Cmd, Args, and Env for each command and store in ExpandedCmd, ExpandedArgs, and ExpandedEnv
-			// Include automatic environment variables in the expansion context
+			// Include automatic environment variables, global env, and group env in the expansion context
+			// Note: allowlist inheritance (group.EnvAllowlist ?? global.EnvAllowlist) is handled internally in ExpandCommand
 			expandedCmd, expandedArgs, expandedEnv, err := config.ExpandCommand(&config.ExpansionContext{
-				Command:      cmd,
-				Expander:     expander,
-				AutoEnv:      autoEnv,
-				EnvAllowlist: group.EnvAllowlist,
-				GroupName:    group.Name,
+				Command:            cmd,
+				Expander:           expander,
+				AutoEnv:            autoEnv,
+				GlobalEnv:          cfg.Global.ExpandedEnv,
+				GroupEnv:           group.ExpandedEnv,
+				GlobalEnvAllowlist: cfg.Global.EnvAllowlist,
+				GroupName:          group.Name,
+				GroupEnvAllowlist:  group.EnvAllowlist,
 			})
 			if err != nil {
 				return nil, &logging.PreExecutionError{

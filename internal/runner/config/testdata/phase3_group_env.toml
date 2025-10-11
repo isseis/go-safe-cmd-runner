@@ -1,0 +1,41 @@
+# Phase 3 Group.Env Integration Test
+# This TOML file tests Global.Env and Group.Env functionality with allowlist inheritance
+
+version = "1.0"
+
+[global]
+env = ["BASE_DIR=/opt", "LOG_LEVEL=info"]
+env_allowlist = ["HOME", "PATH", "USER"]
+
+[[groups]]
+name = "inherit_group"
+# env_allowlist is not defined → should inherit from global allowlist
+env = ["APP_DIR=${BASE_DIR}/app"]
+verify_files = ["${APP_DIR}/verify.sh"]
+
+[[groups.commands]]
+name = "test_cmd"
+cmd = "/bin/echo"
+args = ["${APP_DIR}"]
+
+[[groups]]
+name = "override_group"
+env_allowlist = ["USER"]  # Override global allowlist
+env = ["DATA_DIR=/data"]
+verify_files = ["${DATA_DIR}/verify.sh"]
+
+[[groups.commands]]
+name = "test_cmd"
+cmd = "/bin/echo"
+args = ["${DATA_DIR}"]
+
+[[groups]]
+name = "reject_group"
+env_allowlist = []  # Empty slice should reject all system environment variables
+env = ["STATIC_DIR=/static"]
+verify_files = ["${STATIC_DIR}/verify.sh"]
+
+[[groups.commands]]
+name = "test_cmd"
+cmd = "/bin/echo"
+args = ["${STATIC_DIR}"]
