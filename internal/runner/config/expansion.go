@@ -524,21 +524,6 @@ type expansionParameters struct {
 // Allowlist inheritance rules:
 //   - If localAllowlist is nil and globalAllowlist is not nil, inherit globalAllowlist
 //   - Otherwise, use localAllowlist (which may be nil, empty slice, or populated)
-
-// determineEffectiveAllowlist applies the allowlist inheritance rule.
-// Returns localAllowlist if it's not nil, otherwise returns globalAllowlist.
-// This centralizes the inheritance logic: localAllowlist ?? globalAllowlist
-// The localAllowlist represents the context-specific allowlist (Global.EnvAllowlist,
-// Group.EnvAllowlist, or Command's group allowlist depending on the call site).
-//
-// Note: This function is kept for backward compatibility and testing purposes.
-// Internally, it delegates to filter.ResolveAllowlistConfiguration for consistency.
-func determineEffectiveAllowlist(globalAllowlist, localAllowlist []string) []string {
-	filter := environment.NewFilter(globalAllowlist)
-	resolution := filter.ResolveAllowlistConfiguration(localAllowlist, "")
-	return resolution.EffectiveList
-}
-
 func expandEnvInternal(
 	envList []string,
 	contextName string,
