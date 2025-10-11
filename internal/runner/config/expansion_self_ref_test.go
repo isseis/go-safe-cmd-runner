@@ -1,7 +1,6 @@
 package config
 
 import (
-	"os"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
@@ -14,15 +13,7 @@ func TestExpandGlobalEnv_SelfReferenceToSystemEnv(t *testing.T) {
 	// Set up test environment variable
 	testVar := "TEST_GLOBAL_PATH"
 	testValue := "/original/path"
-	originalValue := os.Getenv(testVar)
-	os.Setenv(testVar, testValue)
-	defer func() {
-		if originalValue == "" {
-			os.Unsetenv(testVar)
-		} else {
-			os.Setenv(testVar, originalValue)
-		}
-	}()
+	t.Setenv(testVar, testValue)
 
 	tests := []struct {
 		name      string
@@ -73,15 +64,7 @@ func TestExpandGroupEnv_SelfReferenceToSystemEnv(t *testing.T) {
 	// Set up test environment variable
 	testVar := "TEST_GROUP_PATH"
 	testValue := "/group/original"
-	originalValue := os.Getenv(testVar)
-	os.Setenv(testVar, testValue)
-	defer func() {
-		if originalValue == "" {
-			os.Unsetenv(testVar)
-		} else {
-			os.Setenv(testVar, originalValue)
-		}
-	}()
+	t.Setenv(testVar, testValue)
 
 	tests := []struct {
 		name      string
@@ -135,15 +118,7 @@ func TestSelfReferenceIntegration(t *testing.T) {
 	// Set up test environment variable
 	testVar := "INTEGRATION_PATH"
 	testValue := "/system/path"
-	originalValue := os.Getenv(testVar)
-	os.Setenv(testVar, testValue)
-	defer func() {
-		if originalValue == "" {
-			os.Unsetenv(testVar)
-		} else {
-			os.Setenv(testVar, originalValue)
-		}
-	}()
+	t.Setenv(testVar, testValue)
 
 	tomlContent := []byte(`[global]
 env = ["INTEGRATION_PATH=/global:${INTEGRATION_PATH}"]
@@ -186,15 +161,7 @@ func TestSelfReferenceWithAutomaticVariables(t *testing.T) {
 	// Set up test environment variable
 	testVar := "TEST_AUTO_PATH"
 	testValue := "/auto/system"
-	originalValue := os.Getenv(testVar)
-	os.Setenv(testVar, testValue)
-	defer func() {
-		if originalValue == "" {
-			os.Unsetenv(testVar)
-		} else {
-			os.Setenv(testVar, originalValue)
-		}
-	}()
+	t.Setenv(testVar, testValue)
 
 	cfg := &runnertypes.GlobalConfig{
 		Env:          []string{"TEST_AUTO_PATH=/auto:${TEST_AUTO_PATH}:${__RUNNER_PID}"},

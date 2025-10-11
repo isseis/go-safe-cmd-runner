@@ -2,7 +2,6 @@
 package config_test
 
 import (
-	"os"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
@@ -1350,15 +1349,9 @@ func TestExpandGroupVerifyFiles(t *testing.T) {
 // BenchmarkExpandGlobalVerifyFiles benchmarks the performance of global verify_files expansion
 func BenchmarkExpandGlobalVerifyFiles(b *testing.B) {
 	// Setup environment
-	if err := os.Setenv("HOME", "/home/testuser"); err != nil {
-		b.Fatalf("failed to set environment variable: %v", err)
-	}
-	if err := os.Setenv("BASE", "/opt"); err != nil {
-		b.Fatalf("failed to set environment variable: %v", err)
-	}
-	if err := os.Setenv("APP", "myapp"); err != nil {
-		b.Fatalf("failed to set environment variable: %v", err)
-	}
+	b.Setenv("HOME", "/home/testuser")
+	b.Setenv("BASE", "/opt")
+	b.Setenv("APP", "myapp")
 
 	global := &runnertypes.GlobalConfig{
 		VerifyFiles: []string{
@@ -1384,12 +1377,8 @@ func BenchmarkExpandGlobalVerifyFiles(b *testing.B) {
 // BenchmarkExpandGroupVerifyFiles benchmarks the performance of group verify_files expansion
 func BenchmarkExpandGroupVerifyFiles(b *testing.B) {
 	// Setup environment
-	if err := os.Setenv("HOME", "/home/testuser"); err != nil {
-		b.Fatalf("failed to set environment variable: %v", err)
-	}
-	if err := os.Setenv("DATA", "/var/data"); err != nil {
-		b.Fatalf("failed to set environment variable: %v", err)
-	}
+	b.Setenv("HOME", "/home/testuser")
+	b.Setenv("DATA", "/var/data")
 
 	group := &runnertypes.CommandGroup{
 		Name: "test-group",
@@ -1418,9 +1407,7 @@ func BenchmarkExpandGroupVerifyFiles(b *testing.B) {
 // BenchmarkExpandLargeVerifyFiles benchmarks performance with many verify_files
 func BenchmarkExpandLargeVerifyFiles(b *testing.B) {
 	// Setup environment
-	if err := os.Setenv("BASE", "/opt/app"); err != nil {
-		b.Fatalf("failed to set environment variable: %v", err)
-	}
+	b.Setenv("BASE", "/opt/app")
 
 	// Create config with 100 verify_files
 	verifyFiles := make([]string, 100)

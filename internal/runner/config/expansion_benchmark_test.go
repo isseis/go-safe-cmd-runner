@@ -5,7 +5,6 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
@@ -33,20 +32,13 @@ func BenchmarkAllowlistLookup(b *testing.B) {
 			allowlist[i] = fmt.Sprintf("TEST_VAR_%d", i)
 		}
 
-		// Set up environment variables
-		for i := 0; i < tc.envVarCount; i++ {
-			varName := fmt.Sprintf("TEST_VAR_%d", i%tc.allowlistSize)
-			os.Setenv(varName, fmt.Sprintf("value_%d", i))
-		}
-		defer func() {
-			for i := 0; i < tc.envVarCount; i++ {
-				varName := fmt.Sprintf("TEST_VAR_%d", i%tc.allowlistSize)
-				os.Unsetenv(varName)
-			}
-		}()
-
 		// Benchmark current implementation (slice-based)
 		b.Run(fmt.Sprintf("slice_%s", tc.name), func(b *testing.B) {
+			// Set up environment variables
+			for i := 0; i < tc.envVarCount; i++ {
+				varName := fmt.Sprintf("TEST_VAR_%d", i%tc.allowlistSize)
+				b.Setenv(varName, fmt.Sprintf("value_%d", i))
+			}
 			filter := environment.NewFilter(allowlist)
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -64,6 +56,11 @@ func BenchmarkAllowlistLookup(b *testing.B) {
 
 		// Benchmark optimized implementation (map-based)
 		b.Run(fmt.Sprintf("map_%s", tc.name), func(b *testing.B) {
+			// Set up environment variables
+			for i := 0; i < tc.envVarCount; i++ {
+				varName := fmt.Sprintf("TEST_VAR_%d", i%tc.allowlistSize)
+				b.Setenv(varName, fmt.Sprintf("value_%d", i))
+			}
 			filter := environment.NewFilter(allowlist)
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -100,22 +97,15 @@ func BenchmarkExpandEnvInternalAllowlistLookup(b *testing.B) {
 			allowlist[i] = fmt.Sprintf("ALLOWED_VAR_%d", i)
 		}
 
-		// Set up environment variables
-		for i := 0; i < tc.allowlistSize; i++ {
-			varName := fmt.Sprintf("ALLOWED_VAR_%d", i)
-			os.Setenv(varName, fmt.Sprintf("value_%d", i))
-		}
-		defer func() {
-			for i := 0; i < tc.allowlistSize; i++ {
-				varName := fmt.Sprintf("ALLOWED_VAR_%d", i)
-				os.Unsetenv(varName)
-			}
-		}()
-
 		// Create test environment list
 		envList := []string{"MY_VAR=${ALLOWED_VAR_0}"}
 
 		b.Run(tc.name, func(b *testing.B) {
+			// Set up environment variables
+			for i := 0; i < tc.allowlistSize; i++ {
+				varName := fmt.Sprintf("ALLOWED_VAR_%d", i)
+				b.Setenv(varName, fmt.Sprintf("value_%d", i))
+			}
 			filter := environment.NewFilter(allowlist)
 			expander := environment.NewVariableExpander(filter)
 			var expandedEnv map[string]string
