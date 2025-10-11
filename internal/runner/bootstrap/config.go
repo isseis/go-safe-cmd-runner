@@ -114,7 +114,8 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 				GlobalEnv:          cfg.Global.ExpandedEnv,
 				GroupEnv:           group.ExpandedEnv,
 				GlobalEnvAllowlist: cfg.Global.EnvAllowlist,
-				Group:              group,
+				GroupName:          group.Name,
+				GroupEnvAllowlist:  group.EnvAllowlist,
 			})
 			if err != nil {
 				return nil, &logging.PreExecutionError{

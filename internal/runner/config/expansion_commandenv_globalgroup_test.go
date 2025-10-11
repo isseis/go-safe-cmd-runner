@@ -56,9 +56,8 @@ func TestExpandCommandEnv_WithGlobalEnv(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cmd := tt.cmd                                          // Create a copy to avoid modifying test data
-			group := &runnertypes.CommandGroup{Name: tt.groupName} // Create minimal group for testing
-			err := config.ExpandCommandEnv(&cmd, group, tt.allowlist, expander, globalEnv, nil, nil)
+			cmd := tt.cmd // Create a copy to avoid modifying test data
+			err := config.ExpandCommandEnv(&cmd, tt.groupName, nil, tt.allowlist, expander, globalEnv, nil, nil)
 			require.NoError(t, err)
 			assert.Equal(t, tt.expectedVars, cmd.ExpandedEnv)
 		})
@@ -111,9 +110,8 @@ func TestExpandCommandEnv_WithGroupEnv(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cmd := tt.cmd                                          // Create a copy to avoid modifying test data
-			group := &runnertypes.CommandGroup{Name: tt.groupName} // Create minimal group for testing
-			err := config.ExpandCommandEnv(&cmd, group, tt.allowlist, expander, nil, groupEnv, nil)
+			cmd := tt.cmd // Create a copy to avoid modifying test data
+			err := config.ExpandCommandEnv(&cmd, tt.groupName, nil, tt.allowlist, expander, nil, groupEnv, nil)
 			require.NoError(t, err)
 			assert.Equal(t, tt.expectedVars, cmd.ExpandedEnv)
 		})
@@ -157,9 +155,8 @@ func TestExpandCommandEnv_WithBothGlobalAndGroupEnv(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cmd := tt.cmd                                          // Create a copy to avoid modifying test data
-			group := &runnertypes.CommandGroup{Name: tt.groupName} // Create minimal group for testing
-			err := config.ExpandCommandEnv(&cmd, group, tt.allowlist, expander, globalEnv, groupEnv, nil)
+			cmd := tt.cmd // Create a copy to avoid modifying test data
+			err := config.ExpandCommandEnv(&cmd, tt.groupName, nil, tt.allowlist, expander, globalEnv, groupEnv, nil)
 			require.NoError(t, err)
 			assert.Equal(t, tt.expectedVars, cmd.ExpandedEnv)
 		})
@@ -237,9 +234,8 @@ func TestExpandCommandEnv_VariableReferencePriority(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cmd := tt.cmd                                          // Create a copy to avoid modifying test data
-			group := &runnertypes.CommandGroup{Name: "test_group"} // Create minimal group for testing
-			err := config.ExpandCommandEnv(&cmd, group, tt.allowlist, expander, tt.globalEnv, tt.groupEnv, nil)
+			cmd := tt.cmd // Create a copy to avoid modifying test data
+			err := config.ExpandCommandEnv(&cmd, "test_group", nil, tt.allowlist, expander, tt.globalEnv, tt.groupEnv, nil)
 			require.NoError(t, err, tt.description)
 			assert.Equal(t, tt.expectedVars, cmd.ExpandedEnv, tt.description)
 		})

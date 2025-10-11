@@ -125,7 +125,7 @@ func TestExpandCommandEnv_AllowlistInheritance(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := tt.cmd     // Create a copy to avoid modifying test data
 			group := tt.group // Create a copy to avoid modifying test data
-			err := ExpandCommandEnv(&cmd, &group, tt.globalAllowlist, expander, nil, nil, nil)
+			err := ExpandCommandEnv(&cmd, group.Name, group.EnvAllowlist, tt.globalAllowlist, expander, nil, nil, nil)
 
 			if tt.expectError {
 				assert.Error(t, err, tt.description)
