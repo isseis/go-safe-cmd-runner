@@ -26,7 +26,7 @@ var (
 
 // Filter provides environment variable filtering functionality with allowlist-based security
 type Filter struct {
-	globalAllowlist map[string]bool // Map for O(1) lookups of allowed variables (always non-nil)
+	globalAllowlist map[string]struct{} // Map for O(1) lookups of allowed variables (always non-nil, using struct{} for memory efficiency)
 }
 
 // NewFilter creates a new environment variable filter with the provided global allowlist
@@ -34,12 +34,12 @@ type Filter struct {
 // to keep the Filter small and focused; callers should pass cfg.Global.EnvAllowlist.
 func NewFilter(allowList []string) *Filter {
 	f := &Filter{
-		globalAllowlist: make(map[string]bool), // Initialize with empty map
+		globalAllowlist: make(map[string]struct{}), // Initialize with empty map
 	}
 
 	// Initialize the allowlist map with provided global allowlist if it exists
 	for _, v := range allowList {
-		f.globalAllowlist[v] = true
+		f.globalAllowlist[v] = struct{}{}
 	}
 
 	return f
@@ -152,6 +152,17 @@ func (f *Filter) determineInheritanceMode(allowlist []string) runnertypes.Inheri
 	return runnertypes.InheritanceModeExplicit
 }
 
+// buildAllowlistSet converts a slice of allowed variable names into a map for O(1) lookups.
+// This helper function is used during allowlist resolution to create efficient lookup structures.
+// Uses struct{} for values to minimize memory usage (0 bytes vs 1 byte per entry for bool).
+func buildAllowlistSet(allowlist []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(allowlist))
+	for _, varName := range allowlist {
+		set[varName] = struct{}{}
+	}
+	return set
+}
+
 // ResolveAllowlistConfiguration resolves the effective allowlist configuration for a group
 func (f *Filter) ResolveAllowlistConfiguration(allowlist []string, groupName string) *runnertypes.AllowlistResolution {
 	mode := f.determineInheritanceMode(allowlist)
@@ -168,6 +179,11 @@ func (f *Filter) ResolveAllowlistConfiguration(allowlist []string, groupName str
 		globalList = append(globalList, variable)
 	}
 	resolution.GlobalAllowlist = globalList
+
+	// Build lookup maps for O(1) performance in IsAllowed()
+	// These are internal fields used only for fast lookups
+	resolution.SetGroupAllowlistSet(buildAllowlistSet(allowlist))
+	resolution.SetGlobalAllowlistSet(f.globalAllowlist) // Already a map
 
 	// Set effective list based on mode
 	switch mode {

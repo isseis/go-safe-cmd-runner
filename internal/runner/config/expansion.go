@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"slices"
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -547,9 +546,15 @@ func expandEnvInternal(
 	}
 
 	// Filter system environment based on the allowlist
+	// Convert allowlist to map for O(1) lookup performance
+	allowlistSet := make(map[string]bool, len(effectiveAllowlist))
+	for _, varName := range effectiveAllowlist {
+		allowlistSet[varName] = true
+	}
+
 	filter := environment.NewFilter(effectiveAllowlist)
 	systemEnv := filter.ParseSystemEnvironment(func(varName string) bool {
-		return slices.Contains(effectiveAllowlist, varName)
+		return allowlistSet[varName]
 	})
 
 	// Build reference environments in priority order (lower index = lower priority)
