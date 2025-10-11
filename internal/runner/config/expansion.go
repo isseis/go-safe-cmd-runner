@@ -229,6 +229,52 @@ func expandVerifyFiles(
 	return expanded, nil
 }
 
+// buildExpansionEnv constructs an expansion environment by merging reference, current, and high-priority environments.
+// If excludeKey is not empty, that key is excluded from envMap to support self-reference.
+func buildExpansionEnv(referenceEnv, envMap, highPriorityEnv map[string]string, excludeKey string) map[string]string {
+	result := make(map[string]string, len(referenceEnv)+len(envMap)+len(highPriorityEnv))
+	maps.Copy(result, referenceEnv)
+	for k, v := range envMap {
+		if k != excludeKey {
+			result[k] = v
+		}
+	}
+	if highPriorityEnv != nil {
+		maps.Copy(result, highPriorityEnv)
+	}
+	return result
+}
+
+// tryExpandVariable attempts to expand a variable value using a two-pass approach:
+// 1. First pass: Exclude current key to support self-reference (e.g., PATH=${PATH}:/new)
+// 2. Second pass: Include current key with visited mark to detect circular references
+func tryExpandVariable(
+	key, value string,
+	referenceEnv, envMap, highPriorityEnv map[string]string,
+	allowlist []string,
+	contextName string,
+	expander *environment.VariableExpander,
+) (string, error) {
+	// First pass: Try with current variable excluded (supports self-reference)
+	tempEnv := buildExpansionEnv(referenceEnv, envMap, highPriorityEnv, key)
+	expandedValue, err := expander.ExpandString(value, tempEnv, allowlist, contextName, make(map[string]bool))
+
+	// If first pass succeeded, return result
+	if err == nil {
+		return expandedValue, nil
+	}
+
+	// If error is not ErrVariableNotFound, return error immediately
+	if !errors.Is(err, environment.ErrVariableNotFound) {
+		return "", err
+	}
+
+	// Second pass: Try with full environment and visited map (detects circular references)
+	fullEnv := buildExpansionEnv(referenceEnv, envMap, highPriorityEnv, "")
+	visited := map[string]bool{key: true}
+	return expander.ExpandString(value, fullEnv, allowlist, contextName, visited)
+}
+
 func expandEnvMap(
 	envMap map[string]string,
 	referenceEnv map[string]string,
@@ -238,62 +284,18 @@ func expandEnvMap(
 	expander *environment.VariableExpander,
 	failureErr error,
 ) error {
-	// Expand variables using VariableExpander with two-pass approach:
-	// 1. First pass: Try expansion with current variable excluded (for self-reference support)
-	// 2. Second pass (on "not found" error): Try with current variable marked as visited (for circular detection)
 	for key, value := range envMap {
-		if strings.Contains(value, "${") {
-			// First pass: Support self-reference (e.g., PATH=${PATH}:/new)
-			// Construct environment excluding the current variable, so ${PATH} resolves
-			// to the value from reference environment (global/group/system)
-			tempEnv := make(map[string]string, len(referenceEnv)+len(envMap)+len(highPriorityEnv))
-			maps.Copy(tempEnv, referenceEnv)
-			for k, v := range envMap {
-				if k != key {
-					tempEnv[k] = v
-				}
-			}
-			if highPriorityEnv != nil {
-				maps.Copy(tempEnv, highPriorityEnv)
-			}
-
-			expandedValue, err := expander.ExpandString(
-				value,
-				tempEnv,
-				allowlist,
-				contextName,
-				make(map[string]bool), // Empty visited map for first pass
-			)
-			if err != nil {
-				// If first pass failed with ErrVariableNotFound, this might be
-				// a circular reference (e.g., VAR1=${VAR2}, VAR2=${VAR1}).
-				// Try second pass with full environment and visited map for circular detection.
-				if errors.Is(err, environment.ErrVariableNotFound) {
-					fullEnv := make(map[string]string, len(referenceEnv)+len(envMap)+len(highPriorityEnv))
-					maps.Copy(fullEnv, referenceEnv)
-					maps.Copy(fullEnv, envMap)
-					if highPriorityEnv != nil {
-						maps.Copy(fullEnv, highPriorityEnv)
-					}
-
-					visited := map[string]bool{key: true} // Mark current variable as visited
-					expandedValue, err = expander.ExpandString(
-						value,
-						fullEnv,
-						allowlist,
-						contextName,
-						visited,
-					)
-				}
-
-				if err != nil {
-					return fmt.Errorf("%w: failed to expand variable %q in %s: %w",
-						failureErr, key, contextName, err)
-				}
-			}
-
-			envMap[key] = expandedValue
+		// Skip variables without expansion syntax
+		if !strings.Contains(value, "${") {
+			continue
 		}
+
+		expandedValue, err := tryExpandVariable(key, value, referenceEnv, envMap, highPriorityEnv, allowlist, contextName, expander)
+		if err != nil {
+			return fmt.Errorf("%w: failed to expand variable %q in %s: %w", failureErr, key, contextName, err)
+		}
+
+		envMap[key] = expandedValue
 	}
 	return nil
 }
