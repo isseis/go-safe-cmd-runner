@@ -524,11 +524,13 @@ type expansionParameters struct {
 //   - Otherwise, use localAllowlist (which may be nil, empty slice, or populated)
 
 // determineEffectiveAllowlist applies the allowlist inheritance rule.
-// Returns groupAllowlist if it's not nil, otherwise returns globalAllowlist.
-// This centralizes the inheritance logic: groupAllowlist ?? globalAllowlist
-func determineEffectiveAllowlist(globalAllowlist, groupAllowlist []string) []string {
-	if groupAllowlist != nil {
-		return groupAllowlist
+// Returns localAllowlist if it's not nil, otherwise returns globalAllowlist.
+// This centralizes the inheritance logic: localAllowlist ?? globalAllowlist
+// The localAllowlist represents the context-specific allowlist (Global.EnvAllowlist,
+// Group.EnvAllowlist, or Command's group allowlist depending on the call site).
+func determineEffectiveAllowlist(globalAllowlist, localAllowlist []string) []string {
+	if localAllowlist != nil {
+		return localAllowlist
 	}
 	return globalAllowlist
 }
@@ -542,11 +544,11 @@ func expandEnvInternal(
 	globalEnv map[string]string,
 	globalAllowlist []string,
 	groupEnv map[string]string,
-	groupAllowlist []string,
+	localAllowlist []string,
 	failureErr error,
 ) error {
 	// Determine the effective allowlist with inheritance
-	effectiveAllowlist := determineEffectiveAllowlist(globalAllowlist, groupAllowlist)
+	effectiveAllowlist := determineEffectiveAllowlist(globalAllowlist, localAllowlist)
 
 	// Filter system environment based on the allowlist
 	// Convert allowlist to map for O(1) lookup performance
@@ -618,7 +620,7 @@ func ExpandGlobalEnv(
 		nil,                         // globalEnv (self-expansion)
 		nil,                         // globalAllowlist (no inheritance at global level)
 		nil,                         // groupEnv (not applicable)
-		cfg.EnvAllowlist,            // groupAllowlist (local allowlist)
+		cfg.EnvAllowlist,            // localAllowlist (Global.EnvAllowlist)
 		ErrGlobalEnvExpansionFailed, // failureErr
 	)
 }
@@ -666,7 +668,7 @@ func ExpandGroupEnv(
 		globalEnv,                               // globalEnv (Global.ExpandedEnv)
 		globalAllowlist,                         // globalAllowlist (for inheritance)
 		nil,                                     // groupEnv (self-expansion)
-		group.EnvAllowlist,                      // groupAllowlist (local allowlist)
+		group.EnvAllowlist,                      // localAllowlist (Group.EnvAllowlist)
 		ErrGroupEnvExpansionFailed,              // failureErr
 	)
 }
@@ -724,9 +726,9 @@ func ExpandCommandEnv(
 		expander,                     // expander
 		autoEnv,                      // autoEnv
 		globalEnv,                    // globalEnv (Global.ExpandedEnv)
-		globalAllowlist,              // globalAllowlist (for inheritance when groupEnvAllowlist is nil)
+		globalAllowlist,              // globalAllowlist (for inheritance when localAllowlist is nil)
 		groupEnv,                     // groupEnv (Group.ExpandedEnv)
-		groupAllowlist,               // groupAllowlist (group's allowlist for inheritance calculation)
+		groupAllowlist,               // localAllowlist (group's allowlist for command-level expansion)
 		ErrCommandEnvExpansionFailed, // failureErr
 	)
 }
