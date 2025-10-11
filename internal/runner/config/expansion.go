@@ -119,8 +119,10 @@ func ExpandCommand(expCxt *ExpansionContext) (string, []string, map[string]strin
 	}
 
 	// Determine effective allowlist for command name and args expansion
-	// Use group's allowlist if defined, otherwise inherit from global
-	effectiveAllowlist := determineEffectiveAllowlist(globalAllowlist, groupEnvAllowlist)
+	// Use filter.ResolveAllowlistConfiguration to centralize allowlist inheritance logic
+	filter := environment.NewFilter(globalAllowlist)
+	resolution := filter.ResolveAllowlistConfiguration(groupEnvAllowlist, groupName)
+	effectiveAllowlist := resolution.EffectiveList
 
 	// Merge command environment with automatic environment variables
 	// Auto env variables are added last, taking precedence over command env for same keys
@@ -528,11 +530,13 @@ type expansionParameters struct {
 // This centralizes the inheritance logic: localAllowlist ?? globalAllowlist
 // The localAllowlist represents the context-specific allowlist (Global.EnvAllowlist,
 // Group.EnvAllowlist, or Command's group allowlist depending on the call site).
+//
+// Note: This function is kept for backward compatibility and testing purposes.
+// Internally, it delegates to filter.ResolveAllowlistConfiguration for consistency.
 func determineEffectiveAllowlist(globalAllowlist, localAllowlist []string) []string {
-	if localAllowlist != nil {
-		return localAllowlist
-	}
-	return globalAllowlist
+	filter := environment.NewFilter(globalAllowlist)
+	resolution := filter.ResolveAllowlistConfiguration(localAllowlist, "")
+	return resolution.EffectiveList
 }
 
 func expandEnvInternal(
@@ -547,19 +551,18 @@ func expandEnvInternal(
 	localAllowlist []string,
 	failureErr error,
 ) error {
-	// Determine the effective allowlist with inheritance
-	effectiveAllowlist := determineEffectiveAllowlist(globalAllowlist, localAllowlist)
+	// Create filter with global allowlist for resolution
+	filter := environment.NewFilter(globalAllowlist)
 
-	// Filter system environment based on the allowlist
-	// Convert allowlist to map for O(1) lookup performance
-	allowlistSet := make(map[string]bool, len(effectiveAllowlist))
-	for _, varName := range effectiveAllowlist {
-		allowlistSet[varName] = true
-	}
+	// Use filter.ResolveAllowlistConfiguration to determine the effective allowlist
+	// This centralizes the allowlist inheritance logic
+	resolution := filter.ResolveAllowlistConfiguration(localAllowlist, contextName)
+	effectiveAllowlist := resolution.EffectiveList
 
-	filter := environment.NewFilter(effectiveAllowlist)
+	// Filter system environment based on the resolved allowlist
+	// Use the resolution's IsAllowed method for consistent filtering
 	systemEnv := filter.ParseSystemEnvironment(func(varName string) bool {
-		return allowlistSet[varName]
+		return resolution.IsAllowed(varName)
 	})
 
 	// Build reference environments in priority order (lower index = lower priority)

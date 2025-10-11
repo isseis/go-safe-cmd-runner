@@ -317,15 +317,34 @@ func TestDetermineEffectiveAllowlist(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := determineEffectiveAllowlist(tt.globalAllowlist, tt.groupAllowlist)
 
-			// Compare slices
+			// Compare slices (order-independent comparison)
 			if len(result) != len(tt.expected) {
 				t.Errorf("Expected length %d, got %d", len(tt.expected), len(result))
 				return
 			}
 
-			for i := range result {
-				if result[i] != tt.expected[i] {
-					t.Errorf("At index %d: expected %q, got %q", i, tt.expected[i], result[i])
+			// Convert to maps for order-independent comparison
+			expectedMap := make(map[string]bool)
+			for _, v := range tt.expected {
+				expectedMap[v] = true
+			}
+
+			resultMap := make(map[string]bool)
+			for _, v := range result {
+				resultMap[v] = true
+			}
+
+			// Check all expected items are in result
+			for k := range expectedMap {
+				if !resultMap[k] {
+					t.Errorf("Expected %q in result, but not found", k)
+				}
+			}
+
+			// Check no extra items in result
+			for k := range resultMap {
+				if !expectedMap[k] {
+					t.Errorf("Unexpected %q in result", k)
 				}
 			}
 		})
