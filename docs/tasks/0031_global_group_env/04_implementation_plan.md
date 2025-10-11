@@ -304,45 +304,27 @@ Global・Groupレベル環境変数設定機能を段階的に実装し、要件
 **目的**: Command.Envの展開でGlobal/Group.Envを参照できるようにし、Cmd/Args展開と統合
 
 #### 2.4.1 Command.Env展開の拡張（テスト先行）
-- [ ] テスト作成: `internal/runner/environment/processor_test.go`
-  - [ ] `TestExpandCommandEnv_WithGlobalEnv`: Global.Envを参照
-  - [ ] `TestExpandCommandEnv_WithGroupEnv`: Group.Envを参照
-  - [ ] `TestExpandCommandEnv_WithBothGlobalAndGroup`: 両方を参照
-  - [ ] `TestExpandCommandEnv_Priority`: Command.Env > Group.Env > Global.Env
-  - [ ] `TestExpandCommandEnv_SelfReference`: 自己参照
-- [ ] テスト実行（既存実装で一部PASSする可能性あり）
-- [ ] コミット: "Add tests for Command.Env with Global/Group.Env reference (TDD)"
+- [x] テスト作成: `internal/runner/config/expansion_cmdenv_test.go`
+  - [x] `TestExpandCommandEnv_WithGlobalEnv`: Global.Envを参照
+  - [x] `TestExpandCommandEnv_WithGroupEnv`: Group.Envを参照
+  - [x] `TestExpandCommandEnv_WithBothGlobalAndGroup`: 両方を参照
+  - [x] `TestExpandCommandEnv_Priority`: Command.Env > Group.Env > Global.Env
+  - [x] `TestExpandCommandEnv_SelfReference`: 自己参照
+- [x] テスト実行（既存実装で一部PASSする可能性あり）
+- [x] コミット: "Add tests for Command.Env with Global/Group.Env reference (TDD)" (既存)
 
 #### 2.4.2 Config LoaderでのCommand.Env展開呼び出し
-- [ ] `internal/runner/config/loader.go`を編集
-  - [ ] 各コマンドに対してCommand.Env展開を実行
-    ```go
-    // Global.Env + Group.Env をマージしてbaseEnvを作成
-    baseEnv := make(map[string]string)
-    maps.Copy(baseEnv, cfg.Global.ExpandedEnv)
-    maps.Copy(baseEnv, group.ExpandedEnv)
-
-    // 既存のExpandCommandEnv()を呼び出す
-    expandedEnv, err := expander.ExpandCommandEnv(
-        cmd,
-        group.Name,
-        effectiveAllowlist,
-        baseEnv,  // Global + Group
-    )
-    if err != nil {
-        return err
-    }
-    cmd.ExpandedEnv = expandedEnv
-    ```
-  - [ ] エラーハンドリング
+- [x] `internal/runner/config/loader.go`を確認
+  - [x] Command.Env展開は`bootstrap.InitConfig()`で実行されることを確認
+  - [x] Config Loaderのコメントを追加してアーキテクチャを明確化
 
 #### 2.4.3 Cmd/Args展開の統合
-- [ ] `internal/runner/config/loader.go`を編集
-  - [ ] Command.Env展開後、既存のCmd/Args展開処理を呼び出す
-  - [ ] 既存処理が`Command.ExpandedEnv`と`baseEnv`をマージして使用していることを確認
+- [x] `internal/runner/bootstrap/config.go`を確認
+  - [x] 既存の`ExpandCommand()`がCommand.Env、Cmd、Argsを統合的に展開していることを確認
+  - [x] Global.ExpandedEnvとGroup.ExpandedEnvが正しく渡されていることを確認
 
 #### 2.4.4 統合テスト
-- [ ] サンプルTOMLファイル: `testdata/phase4_command_env.toml`
+- [x] サンプルTOMLファイル: `testdata/command_env_references_global_group.toml`
   ```toml
   [global]
   env = ["BASE_DIR=/opt"]
@@ -357,16 +339,15 @@ Global・Groupレベル環境変数設定機能を段階的に実装し、要件
   args = ["--log", "${LOG_DIR}/app.log"]
   env = ["LOG_DIR=${APP_DIR}/logs"]
   ```
-- [ ] 統合テスト: `internal/runner/config/loader_test.go`
-  - [ ] Command.ExpandedEnvが正しく展開される
-  - [ ] CmdでGroup.Envを参照できる
-  - [ ] ArgsでCommand.Envを参照できる
-  - [ ] 優先順位が正しい
+- [x] 統合テスト: `internal/runner/config/loader_test.go`
+  - [x] Global.ExpandedEnvが正しく展開される
+  - [x] Group.ExpandedEnvが正しく展開される
+  - [x] Command.Env/Cmd/Args展開はbootstrapで実行されることを確認
 
 #### 2.4.5 Phase 4の完了確認
-- [ ] すべての既存テストがPASS
-- [ ] Phase 4の新規テストがすべてPASS
-- [ ] `make lint`でエラーなし
+- [x] すべての既存テストがPASS
+- [x] Phase 4の新規テストがすべてPASS
+- [x] `make lint`でエラーなし
 - [ ] コミット: "Integrate Command.Env expansion with Global/Group.Env"
 
 ---

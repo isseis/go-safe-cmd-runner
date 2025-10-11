@@ -461,6 +461,57 @@ func TestLoader_Phase3_GroupEnvIntegration(t *testing.T) {
 	assert.Equal(t, expectedRejectVerifyFiles, rejectGroup.ExpandedVerifyFiles)
 }
 
+// TestLoader_Phase4_CommandEnvIntegration tests Command.Env expansion with Global/Group.Env
+func TestLoader_Phase4_CommandEnvIntegration(t *testing.T) {
+	configPath := "testdata/command_env_references_global_group.toml"
+
+	// Read file content
+	content, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+
+	// Load configuration
+	loader := NewLoader()
+	cfg, err := loader.LoadConfig(content)
+	require.NoError(t, err)
+	require.NotNil(t, cfg)
+
+	// Verify Global.Env expansion
+	expectedGlobalEnv := map[string]string{
+		"BASE_DIR": "/opt",
+	}
+	assert.Equal(t, expectedGlobalEnv, cfg.Global.ExpandedEnv)
+
+	// Verify groups
+	require.Len(t, cfg.Groups, 1)
+
+	// Test app_group
+	appGroup := findGroupByName(cfg.Groups, "app_group")
+	require.NotNil(t, appGroup)
+
+	// Verify Group.Env expansion (references Global.Env)
+	expectedGroupEnv := map[string]string{
+		"APP_DIR": "/opt/myapp",
+	}
+	assert.Equal(t, expectedGroupEnv, appGroup.ExpandedEnv)
+
+	// Verify commands
+	require.Len(t, appGroup.Commands, 1)
+	cmd := &appGroup.Commands[0]
+	require.Equal(t, "run_app", cmd.Name)
+
+	// Note: Command.Env, Cmd, and Args expansion happens in bootstrap.InitConfig(),
+	// not in config.LoadConfig(). At this stage, we only verify that:
+	// - Global.ExpandedEnv is populated correctly
+	// - Group.ExpandedEnv is populated correctly
+	// - Command.Env field contains the raw (unexpanded) values
+	assert.Equal(t, []string{"LOG_DIR=${APP_DIR}/logs"}, cmd.Env)
+	assert.Equal(t, "${APP_DIR}/bin/server", cmd.Cmd)
+	assert.Equal(t, []string{"--log", "${LOG_DIR}/app.log"}, cmd.Args)
+
+	// Command.ExpandedEnv should be nil at this point (expanded later in bootstrap)
+	assert.Nil(t, cmd.ExpandedEnv)
+}
+
 // Helper function to find a group by name
 func findGroupByName(groups []runnertypes.CommandGroup, name string) *runnertypes.CommandGroup {
 	for i := range groups {
