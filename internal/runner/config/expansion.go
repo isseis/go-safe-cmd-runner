@@ -120,10 +120,7 @@ func ExpandCommand(expCxt *ExpansionContext) (string, []string, map[string]strin
 
 	// Determine effective allowlist for command name and args expansion
 	// Use group's allowlist if defined, otherwise inherit from global
-	effectiveAllowlist := groupEnvAllowlist
-	if effectiveAllowlist == nil {
-		effectiveAllowlist = globalAllowlist
-	}
+	effectiveAllowlist := determineEffectiveAllowlist(globalAllowlist, groupEnvAllowlist)
 
 	// Merge command environment with automatic environment variables
 	// Auto env variables are added last, taking precedence over command env for same keys
@@ -525,6 +522,17 @@ type expansionParameters struct {
 // Allowlist inheritance rules:
 //   - If localAllowlist is nil and globalAllowlist is not nil, inherit globalAllowlist
 //   - Otherwise, use localAllowlist (which may be nil, empty slice, or populated)
+
+// determineEffectiveAllowlist applies the allowlist inheritance rule.
+// Returns groupAllowlist if it's not nil, otherwise returns globalAllowlist.
+// This centralizes the inheritance logic: groupAllowlist ?? globalAllowlist
+func determineEffectiveAllowlist(globalAllowlist, groupAllowlist []string) []string {
+	if groupAllowlist != nil {
+		return groupAllowlist
+	}
+	return globalAllowlist
+}
+
 func expandEnvInternal(
 	envList []string,
 	contextName string,
@@ -538,12 +546,7 @@ func expandEnvInternal(
 	failureErr error,
 ) error {
 	// Determine the effective allowlist with inheritance
-	var effectiveAllowlist []string
-	if groupAllowlist != nil {
-		effectiveAllowlist = groupAllowlist
-	} else {
-		effectiveAllowlist = globalAllowlist
-	}
+	effectiveAllowlist := determineEffectiveAllowlist(globalAllowlist, groupAllowlist)
 
 	// Filter system environment based on the allowlist
 	// Convert allowlist to map for O(1) lookup performance

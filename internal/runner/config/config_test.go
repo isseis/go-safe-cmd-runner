@@ -272,3 +272,62 @@ max_output_size = 5242880
 		}
 	})
 }
+
+// TestDetermineEffectiveAllowlist tests the allowlist inheritance logic
+func TestDetermineEffectiveAllowlist(t *testing.T) {
+	tests := []struct {
+		name            string
+		groupAllowlist  []string
+		globalAllowlist []string
+		expected        []string
+	}{
+		{
+			name:            "group_allowlist_is_nil_inherit_global",
+			groupAllowlist:  nil,
+			globalAllowlist: []string{"VAR1", "VAR2"},
+			expected:        []string{"VAR1", "VAR2"},
+		},
+		{
+			name:            "group_allowlist_is_empty_use_empty",
+			groupAllowlist:  []string{},
+			globalAllowlist: []string{"VAR1", "VAR2"},
+			expected:        []string{},
+		},
+		{
+			name:            "group_allowlist_is_populated_use_group",
+			groupAllowlist:  []string{"GROUP_VAR"},
+			globalAllowlist: []string{"VAR1", "VAR2"},
+			expected:        []string{"GROUP_VAR"},
+		},
+		{
+			name:            "both_nil_returns_nil",
+			groupAllowlist:  nil,
+			globalAllowlist: nil,
+			expected:        nil,
+		},
+		{
+			name:            "group_nil_global_empty_returns_empty",
+			groupAllowlist:  nil,
+			globalAllowlist: []string{},
+			expected:        []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := determineEffectiveAllowlist(tt.globalAllowlist, tt.groupAllowlist)
+
+			// Compare slices
+			if len(result) != len(tt.expected) {
+				t.Errorf("Expected length %d, got %d", len(tt.expected), len(result))
+				return
+			}
+
+			for i := range result {
+				if result[i] != tt.expected[i] {
+					t.Errorf("At index %d: expected %q, got %q", i, tt.expected[i], result[i])
+				}
+			}
+		})
+	}
+}
