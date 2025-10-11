@@ -208,8 +208,9 @@ args = ["test"]
 	// Verify Group.Env is parsed correctly
 	require.Len(t, cfg.Groups, 1)
 	assert.Equal(t, []string{"GROUP_VAR=group_value"}, cfg.Groups[0].Env)
-	// Group.ExpandedEnv is still nil because Group.Env expansion is not implemented yet (Phase 3)
-	assert.Nil(t, cfg.Groups[0].ExpandedEnv, "Group.ExpandedEnv is nil in Phase 2 (Group expansion is Phase 3)")
+	// Group.ExpandedEnv should now be populated after Phase 3 implementation
+	require.NotNil(t, cfg.Groups[0].ExpandedEnv, "Group.ExpandedEnv should be populated after Phase 3")
+	assert.Equal(t, "group_value", cfg.Groups[0].ExpandedEnv["GROUP_VAR"])
 }
 
 // TestVerifyFilesExpansionIntegration tests end-to-end config loading with verify_files expansion
@@ -395,4 +396,77 @@ version = "1.0"
 			}
 		})
 	}
+}
+
+// ===========================================
+// Phase 3 Integration Tests
+// ===========================================
+
+// TestLoader_Phase3_GroupEnvIntegration tests the complete integration of Group.Env functionality
+func TestLoader_Phase3_GroupEnvIntegration(t *testing.T) {
+	configPath := "testdata/phase3_group_env.toml"
+
+	// Read file content
+	content, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+
+	// Load configuration
+	loader := NewLoader()
+	cfg, err := loader.LoadConfig(content)
+	require.NoError(t, err)
+	require.NotNil(t, cfg) // Verify Global.Env expansion
+	expectedGlobalEnv := map[string]string{
+		"BASE_DIR":  "/opt",
+		"LOG_LEVEL": "info",
+	}
+	assert.Equal(t, expectedGlobalEnv, cfg.Global.ExpandedEnv)
+
+	// Verify groups
+	require.Len(t, cfg.Groups, 3)
+
+	// Test inherit_group (inherits from global allowlist)
+	inheritGroup := findGroupByName(cfg.Groups, "inherit_group")
+	require.NotNil(t, inheritGroup)
+
+	expectedInheritEnv := map[string]string{
+		"APP_DIR": "/opt/app",
+	}
+	assert.Equal(t, expectedInheritEnv, inheritGroup.ExpandedEnv)
+
+	expectedInheritVerifyFiles := []string{"/opt/app/verify.sh"}
+	assert.Equal(t, expectedInheritVerifyFiles, inheritGroup.ExpandedVerifyFiles)
+
+	// Test override_group (overrides global allowlist)
+	overrideGroup := findGroupByName(cfg.Groups, "override_group")
+	require.NotNil(t, overrideGroup)
+
+	expectedOverrideEnv := map[string]string{
+		"DATA_DIR": "/data",
+	}
+	assert.Equal(t, expectedOverrideEnv, overrideGroup.ExpandedEnv)
+
+	expectedOverrideVerifyFiles := []string{"/data/verify.sh"}
+	assert.Equal(t, expectedOverrideVerifyFiles, overrideGroup.ExpandedVerifyFiles)
+
+	// Test reject_group (rejects all system environment variables)
+	rejectGroup := findGroupByName(cfg.Groups, "reject_group")
+	require.NotNil(t, rejectGroup)
+
+	expectedRejectEnv := map[string]string{
+		"STATIC_DIR": "/static",
+	}
+	assert.Equal(t, expectedRejectEnv, rejectGroup.ExpandedEnv)
+
+	expectedRejectVerifyFiles := []string{"/static/verify.sh"}
+	assert.Equal(t, expectedRejectVerifyFiles, rejectGroup.ExpandedVerifyFiles)
+}
+
+// Helper function to find a group by name
+func findGroupByName(groups []runnertypes.CommandGroup, name string) *runnertypes.CommandGroup {
+	for i := range groups {
+		if groups[i].Name == name {
+			return &groups[i]
+		}
+	}
+	return nil
 }

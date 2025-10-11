@@ -189,16 +189,16 @@ Global・Groupレベル環境変数設定機能を段階的に実装し、要件
 **目的**: Group環境変数の展開処理を実装し、allowlist継承を統合
 
 #### 2.3.1 Allowlist決定関数の実装（テスト先行）
-- [ ] テスト作成: `internal/runner/config/allowlist_test.go`
-  - [ ] `TestDetermineEffectiveAllowlist_Inherit`: Group.EnvAllowlist == nil
-  - [ ] `TestDetermineEffectiveAllowlist_Override`: Group.EnvAllowlist != nil
-  - [ ] `TestDetermineEffectiveAllowlist_Reject`: Group.EnvAllowlist == []
-- [ ] テスト実行で失敗を確認
-- [ ] コミット: "Add tests for allowlist inheritance (TDD)"
+- [x] テスト作成: `internal/runner/config/allowlist_test.go`
+  - [x] `TestDetermineEffectiveAllowlist_Inherit`: Group.EnvAllowlist == nil
+  - [x] `TestDetermineEffectiveAllowlist_Override`: Group.EnvAllowlist != nil
+  - [x] `TestDetermineEffectiveAllowlist_Reject`: Group.EnvAllowlist == []
+- [x] テスト実行で失敗を確認
+- [x] コミット: "Add tests for allowlist inheritance (TDD)"
 
 #### 2.3.2 Allowlist決定関数の実装
-- [ ] `internal/runner/config/allowlist.go`を作成
-  - [ ] `determineEffectiveAllowlist(group *CommandGroup, global *GlobalConfig) []string`を実装
+- [x] `internal/runner/config/allowlist.go`を作成
+  - [x] `determineEffectiveAllowlist(group *CommandGroup, global *GlobalConfig) []string`を実装
     ```go
     func determineEffectiveAllowlist(group *CommandGroup, global *GlobalConfig) []string {
         if group.EnvAllowlist == nil {
@@ -207,50 +207,50 @@ Global・Groupレベル環境変数設定機能を段階的に実装し、要件
         return group.EnvAllowlist
     }
     ```
-- [ ] テストがPASSすることを確認
-- [ ] コミット: "Implement allowlist inheritance logic"
+- [x] テストがPASSすることを確認
+- [x] コミット: "Implement allowlist inheritance logic"
 
 #### 2.3.3 ExpandGroupEnv()関数の実装（テスト先行）
-- [ ] テスト作成: `internal/runner/config/expansion_test.go`
-  - [ ] `TestExpandGroupEnv_Basic`: 基本的な展開
-  - [ ] `TestExpandGroupEnv_ReferenceGlobal`: Global.Envを参照
-  - [ ] `TestExpandGroupEnv_ReferenceSystemEnv`: システム環境変数を参照
-  - [ ] `TestExpandGroupEnv_AllowlistInherit`: allowlist継承
-  - [ ] `TestExpandGroupEnv_AllowlistOverride`: allowlist上書き
-  - [ ] `TestExpandGroupEnv_AllowlistReject`: allowlist全拒否
-  - [ ] `TestExpandGroupEnv_CircularReference`: 循環参照エラー
-  - [ ] `TestExpandGroupEnv_DuplicateKey`: 重複キーエラー
-  - [ ] `TestExpandGroupEnv_Empty`: 空配列/nilの場合
-- [ ] テスト実行で失敗を確認
-- [ ] コミット: "Add tests for ExpandGroupEnv (TDD)"
+- [x] テスト作成: `internal/runner/config/expansion_test.go`
+  - [x] `TestExpandGroupEnv_Basic`: 基本的な展開
+  - [x] `TestExpandGroupEnv_ReferenceGlobal`: Global.Envを参照
+  - [x] `TestExpandGroupEnv_ReferenceSystemEnv`: システム環境変数を参照
+  - [x] `TestExpandGroupEnv_AllowlistInherit`: allowlist継承
+  - [x] `TestExpandGroupEnv_AllowlistOverride`: allowlist上書き
+  - [x] `TestExpandGroupEnv_AllowlistReject`: allowlist全拒否
+  - [x] `TestExpandGroupEnv_CircularReference`: 循環参照エラー
+  - [x] `TestExpandGroupEnv_DuplicateKey`: 重複キーエラー
+  - [x] `TestExpandGroupEnv_Empty`: 空配列/nilの場合
+- [x] テスト実行で失敗を確認
+- [x] コミット: "Add tests for ExpandGroupEnv (TDD)"
 
 #### 2.3.4 ExpandGroupEnv()関数の実装
-- [ ] `internal/runner/config/expansion.go`を編集
-  - [ ] `ExpandGroupEnv(group *CommandGroup, globalEnv map[string]string, globalAllowlist []string, expander *VariableExpander) error`を実装
-    - [ ] 有効なallowlistの決定（`determineEffectiveAllowlist()`使用）
-    - [ ] 入力検証（nil/空チェック）
-    - [ ] 重複キーチェック
-    - [ ] KEY名バリデーション
-    - [ ] `globalEnv`と`group.Env`をマージした`combinedEnv`を作成
-    - [ ] `expander.ExpandString()`で各変数を展開
-    - [ ] 結果を`group.ExpandedEnv`に保存（Groupレベルの変数のみ）
-  - [ ] エラーハンドリング
+- [x] `internal/runner/config/expansion.go`を編集
+  - [x] `ExpandGroupEnv(group *CommandGroup, globalEnv map[string]string, globalAllowlist []string, expander *VariableExpander) error`を実装
+    - [x] 有効なallowlistの決定（`determineEffectiveAllowlist()`使用）
+    - [x] 入力検証（nil/空チェック）
+    - [x] 重複キーチェック
+    - [x] KEY名バリデーション
+    - [x] `globalEnv`と`group.Env`をマージした`combinedEnv`を作成
+    - [x] `expander.ExpandString()`で各変数を展開
+    - [x] 結果を`group.ExpandedEnv`に保存（Groupレベルの変数のみ）
+  - [x] エラーハンドリング
 
 #### 2.3.5 ExpandGroupEnv()のテスト実行
-- [ ] すべてのテストがPASS
-- [ ] コミット: "Implement ExpandGroupEnv with Global.Env reference"
+- [x] すべてのテストがPASS
+- [x] コミット: "Implement ExpandGroupEnv with Global.Env reference"
 
 #### 2.3.6 Group.VerifyFiles展開の拡張（テスト先行）
-- [ ] テスト作成: `internal/runner/config/expansion_test.go`
-  - [ ] `TestExpandGroupVerifyFiles_WithGroupEnv`: Group.Envを参照
-  - [ ] `TestExpandGroupVerifyFiles_WithGlobalEnv`: Global.Envを参照
-  - [ ] `TestExpandGroupVerifyFiles_Priority`: Group.Env > Global.Env > システム環境変数
-- [ ] テスト実行で失敗を確認
-- [ ] コミット: "Add tests for Group.VerifyFiles expansion (TDD)"
+- [x] テスト作成: `internal/runner/config/expansion_test.go`
+  - [x] `TestExpandGroupVerifyFiles_WithGroupEnv`: Group.Envを参照
+  - [x] `TestExpandGroupVerifyFiles_WithGlobalEnv`: Global.Envを参照
+  - [x] `TestExpandGroupVerifyFiles_Priority`: Group.Env > Global.Env > システム環境変数
+- [x] テスト実行で失敗を確認
+- [x] コミット: "Add tests for Group.VerifyFiles expansion (TDD)"
 
 #### 2.3.7 ExpandGroupVerifyFiles()の拡張
-- [ ] `internal/runner/config/expansion.go`を編集
-  - [ ] `ExpandGroupVerifyFiles()`のシグネチャを拡張
+- [x] `internal/runner/config/expansion.go`を編集
+  - [x] `ExpandGroupVerifyFiles()`のシグネチャを拡張
     ```go
     func ExpandGroupVerifyFiles(
         group *CommandGroup,
@@ -259,18 +259,18 @@ Global・Groupレベル環境変数設定機能を段階的に実装し、要件
         expander *VariableExpander,
     ) error
     ```
-  - [ ] 実装の拡張
-    - [ ] `Global.ExpandedEnv`と`Group.ExpandedEnv`をマージ
-    - [ ] マージした環境を`expandVerifyFiles()`に渡す
+  - [x] 実装の拡張
+    - [x] `Global.ExpandedEnv`と`Group.ExpandedEnv`をマージ
+    - [x] マージした環境を`expandVerifyFiles()`に渡す
 
 #### 2.3.8 Config Loaderの統合
-- [ ] `internal/runner/config/loader.go`を編集
-  - [ ] 各グループに対して`ExpandGroupEnv()`を呼び出す
-  - [ ] その後、`ExpandGroupVerifyFiles()`を呼び出す（`globalConfig`を渡す）
-  - [ ] エラーハンドリング
+- [x] `internal/runner/config/loader.go`を編集
+  - [x] 各グループに対して`ExpandGroupEnv()`を呼び出す
+  - [x] その後、`ExpandGroupVerifyFiles()`を呼び出す（`globalConfig`を渡す）
+  - [x] エラーハンドリング
 
 #### 2.3.9 統合テスト
-- [ ] サンプルTOMLファイル: `testdata/phase3_group_env.toml`
+- [x] サンプルTOMLファイル: `testdata/phase3_group_env.toml`
   ```toml
   [global]
   env = ["BASE_DIR=/opt"]
@@ -287,16 +287,16 @@ Global・Groupレベル環境変数設定機能を段階的に実装し、要件
   env_allowlist = ["USER"]  # 上書き
   env = ["DATA_DIR=/data"]
   ```
-- [ ] 統合テスト: `internal/runner/config/loader_test.go`
-  - [ ] Group.ExpandedEnvが正しく展開される
-  - [ ] Allowlist継承が正しく動作する
-  - [ ] Group.VerifyFilesでGroup.EnvとGlobal.Envを参照できる
+- [x] 統合テスト: `internal/runner/config/loader_test.go`
+  - [x] Group.ExpandedEnvが正しく展開される
+  - [x] Allowlist継承が正しく動作する
+  - [x] Group.VerifyFilesでGroup.EnvとGlobal.Envを参照できる
 
 #### 2.3.10 Phase 3の完了確認
-- [ ] すべての既存テストがPASS
-- [ ] Phase 3の新規テストがすべてPASS
-- [ ] `make lint`でエラーなし
-- [ ] コミット: "Implement Group.Env expansion with allowlist inheritance"
+- [x] すべての既存テストがPASS
+- [x] Phase 3の新規テストがすべてPASS
+- [x] `make lint`でエラーなし
+- [x] コミット: "Implement Group.Env expansion with allowlist inheritance"
 
 ---
 

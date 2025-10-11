@@ -6,12 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"maps"
 	"os"
 	"strings"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
@@ -60,108 +57,6 @@ func NewVariableExpander(filter *Filter) *VariableExpander {
 		logger:    logger,
 		validator: validator,
 	}
-}
-
-// ExpandCommandEnv expands Command.Env variables with priority environment variables.
-// This is used during configuration loading (Phase 1) to pre-expand Command.Env.
-// Returns a map of expanded environment variables ready to merge with system environment.
-//
-// The baseEnv parameter provides high-priority variables that take precedence over Command.Env:
-//   - In production: Contains automatic variables (__RUNNER_DATETIME, __RUNNER_PID) that
-//     Command.Env CANNOT override
-//   - In testing: Usually nil or empty map for simple test scenarios
-//   - Variables from Command.Env that conflict with baseEnv are silently ignored with a
-//     warning log to prevent accidental override of automatic variables
-//
-// It uses a two-pass approach:
-//  1. First pass: Add all variables from baseEnv, then add non-conflicting variables from
-//     the command's `Env` block. This allows Command.Env to reference baseEnv variables
-//     (e.g., OUTPUT_FILE=output-${__RUNNER_DATETIME}.txt) while preventing override.
-//  2. Second pass: Iterate over the map and expand any variables in the values.
-func (p *VariableExpander) ExpandCommandEnv(cmd *runnertypes.Command, groupName string, groupEnvAllowList []string, baseEnv map[string]string) (map[string]string, error) {
-	p.logger.Debug("Starting command environment expansion",
-		"command", cmd.Name,
-		"group", groupName,
-		"env_count", len(cmd.Env),
-		"base_env_count", len(baseEnv))
-
-	// Create expansion environment by merging baseEnv with command env
-	// This allows command env to reference baseEnv variables during expansion
-	expansionEnv := make(map[string]string, len(baseEnv)+len(cmd.Env))
-	maps.Copy(expansionEnv, baseEnv)
-
-	// Track which variables are defined in cmd.Env (not from baseEnv)
-	cmdEnvVars := make(map[string]bool, len(cmd.Env))
-
-	// First pass: Populate the environment with unexpanded values from the command.
-	// Command env variables CANNOT override baseEnv variables (e.g., automatic variables).
-	for i, envStr := range cmd.Env {
-		varName, varValue, ok := common.ParseEnvVariable(envStr)
-		if !ok {
-			return nil, fmt.Errorf("invalid environment variable format in Command.Env in command %s, env_index: %d, env_entry: %s: %w", cmd.Name, i, envStr, ErrMalformedEnvVariable)
-		}
-		// Validate only the name at this stage.
-		if err := p.validateBasicEnvVariable(varName, ""); err != nil {
-			return nil, fmt.Errorf("malformed command environment variable %s in command %s: %w",
-				varName, cmd.Name, err)
-		}
-
-		// Skip variables that are already in baseEnv (e.g., automatic variables)
-		// This ensures baseEnv variables cannot be overridden by cmd.Env
-		_, existsInBase := baseEnv[varName]
-		if !existsInBase {
-			expansionEnv[varName] = varValue
-			cmdEnvVars[varName] = true
-			p.logger.Debug("Added command environment variable",
-				"command", cmd.Name,
-				"variable", varName,
-				"value_length", len(varValue))
-		} else {
-			// Warn when cmd.Env variable is ignored due to baseEnv conflict
-			p.logger.Warn("Command environment variable ignored due to conflict with base environment",
-				"command", cmd.Name,
-				"variable", varName,
-				"cmd_value", varValue,
-				"base_value", baseEnv[varName])
-		}
-	}
-
-	// Second pass: Expand all variables (both baseEnv and cmd.Env).
-	for name := range expansionEnv {
-		value := expansionEnv[name]
-		// Create a new visited map for each variable expansion to prevent false circular reference detection.
-		// The key insight: when expanding "PATH=/custom/bin:${PATH}", we want ${PATH} to resolve to
-		// the system PATH, not the partially-expanded value in expansionEnv["PATH"].
-		// By marking the current variable as visited, ExpandString will skip it in expansionEnv and
-		// fall back to system environment lookup.
-		visited := map[string]bool{name: true}
-		expandedValue, err := p.ExpandString(value, expansionEnv, groupEnvAllowList, groupName, visited)
-		if err != nil {
-			return nil, fmt.Errorf("failed to expand variable %s in command %s: %w", name, cmd.Name, err)
-		}
-		expansionEnv[name] = expandedValue
-	}
-
-	// Build the result map containing only cmd.Env variables (not baseEnv)
-	// baseEnv variables will be merged later in the caller
-	result := make(map[string]string, len(cmdEnvVars))
-	for name := range cmdEnvVars {
-		result[name] = expansionEnv[name]
-	}
-
-	// Final validation pass on the cmd.Env variables only.
-	for name, value := range result {
-		if err := p.validateBasicEnvVariable(name, value); err != nil {
-			return nil, fmt.Errorf("validation failed for expanded variable %s in command %s: %w", name, cmd.Name, err)
-		}
-	}
-
-	p.logger.Debug("Command environment expansion completed",
-		"command", cmd.Name,
-		"group", groupName,
-		"variables_expanded", len(result))
-
-	return result, nil
 }
 
 // validateBasicEnvVariable validates the name and optionally the value of an environment variable.
