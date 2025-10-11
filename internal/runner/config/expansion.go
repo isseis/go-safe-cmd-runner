@@ -238,18 +238,18 @@ func expandVerifyFiles(
 	return expanded, nil
 }
 
-// buildExpansionEnv constructs an expansion environment by merging reference, current, and high-priority environments.
+// buildExpansionEnv constructs an expansion environment by merging reference, current, and auto generated environments.
 // If excludeKey is not empty, that key is excluded from envMap to support self-reference.
-func buildExpansionEnv(referenceEnv, envMap, highPriorityEnv map[string]string, excludeKey string) map[string]string {
-	result := make(map[string]string, len(referenceEnv)+len(envMap)+len(highPriorityEnv))
+func buildExpansionEnv(envMap, autoEnv, referenceEnv map[string]string, excludeKey string) map[string]string {
+	result := make(map[string]string, len(referenceEnv)+len(envMap)+len(autoEnv))
 	maps.Copy(result, referenceEnv)
 	for k, v := range envMap {
 		if k != excludeKey {
 			result[k] = v
 		}
 	}
-	if highPriorityEnv != nil {
-		maps.Copy(result, highPriorityEnv)
+	if autoEnv != nil {
+		maps.Copy(result, autoEnv)
 	}
 	return result
 }
@@ -259,13 +259,14 @@ func buildExpansionEnv(referenceEnv, envMap, highPriorityEnv map[string]string, 
 // 2. Second pass: Include current key with visited mark to detect circular references
 func tryExpandVariable(
 	key, value string,
-	referenceEnv, envMap, highPriorityEnv map[string]string,
-	allowlist []string,
+	envMap map[string]string,
 	contextName string,
 	expander *environment.VariableExpander,
+	autoEnv, referenceEnv map[string]string,
+	allowlist []string,
 ) (string, error) {
 	// First pass: Try with current variable excluded (supports self-reference)
-	tempEnv := buildExpansionEnv(referenceEnv, envMap, highPriorityEnv, key)
+	tempEnv := buildExpansionEnv(envMap, autoEnv, referenceEnv, key)
 	expandedValue, err := expander.ExpandString(value, tempEnv, allowlist, contextName, make(map[string]bool))
 
 	// If first pass succeeded, return result
@@ -279,18 +280,18 @@ func tryExpandVariable(
 	}
 
 	// Second pass: Try with full environment and visited map (detects circular references)
-	fullEnv := buildExpansionEnv(referenceEnv, envMap, highPriorityEnv, "")
+	fullEnv := buildExpansionEnv(envMap, autoEnv, referenceEnv, "")
 	visited := map[string]bool{key: true}
 	return expander.ExpandString(value, fullEnv, allowlist, contextName, visited)
 }
 
 func expandEnvMap(
 	envMap map[string]string,
-	referenceEnv map[string]string,
-	highPriorityEnv map[string]string,
-	allowlist []string,
 	contextName string,
 	expander *environment.VariableExpander,
+	autoEnv map[string]string,
+	referenceEnv map[string]string,
+	allowlist []string,
 	failureErr error,
 ) error {
 	for key, value := range envMap {
@@ -299,7 +300,7 @@ func expandEnvMap(
 			continue
 		}
 
-		expandedValue, err := tryExpandVariable(key, value, referenceEnv, envMap, highPriorityEnv, allowlist, contextName, expander)
+		expandedValue, err := tryExpandVariable(key, value, envMap, contextName, expander, autoEnv, referenceEnv, allowlist)
 		if err != nil {
 			return fmt.Errorf("%w: failed to expand variable %q in %s: %w", failureErr, key, contextName, err)
 		}
@@ -394,20 +395,16 @@ func ExpandGroupVerifyFiles(
 // configurations through the expansionParameters struct.
 //
 // The function performs the following steps:
-// 1. Parses and validates the input environment variable list (e.g., ["KEY=VALUE"]).
-// 2. Filters out variables that conflict with a high-priority base environment (if provided).
-// 3. Validates variable names against reserved prefixes.
-// 4. Constructs a combined environment for expansion, respecting priority order:
-//
-//   - High-priority base environment (e.g., auto-env)
-//
-//   - Current level's environment variables
-//
-//   - Reference environments (e.g., global.env, system env)
-//
-//     5. Expands variables using expandEnvMap, which handles self-references by marking
+//  1. Parses and validates the input environment variable list (e.g., ["KEY=VALUE"]).
+//  2. Filters out variables that conflict with a high-priority base environment (if provided).
+//  3. Validates variable names against reserved prefixes.
+//  4. Constructs a combined environment for expansion, respecting priority order:
+//     a. autoEnv (highest priority, cannot be overridden)
+//     b. Current level's environment variables
+//     c. Reference environments (e.g., global.env, system env)
+//  5. Expands variables using expandEnvMap, which handles self-references by marking
 //     the current variable as visited in the VariableExpander.
-//     6. Performs a final validation on the expanded values for security.
+//  6. Performs a final validation on the expanded values for security.
 func expandEnvironment(params expansionParameters) (map[string]string, error) {
 	// 1. Handle nil or empty env list
 	if len(params.envList) == 0 {
@@ -429,9 +426,9 @@ func expandEnvironment(params expansionParameters) (map[string]string, error) {
 
 	// 3. Filter out variables that conflict with the high-priority base environment
 	// This is primarily for command.env to prevent overriding auto-env variables.
-	if params.highPriorityBaseEnv != nil {
+	if params.autoEnv != nil {
 		for key := range envMap {
-			if _, exists := params.highPriorityBaseEnv[key]; exists {
+			if _, exists := params.autoEnv[key]; exists {
 				// Log the conflict if a logger is provided (optional)
 				// Note: Conflicting variables are silently ignored as a security measure.
 				delete(envMap, key)
@@ -463,8 +460,8 @@ func expandEnvironment(params expansionParameters) (map[string]string, error) {
 	combinedEnv := make(map[string]string)
 	maps.Copy(combinedEnv, referenceEnv)
 	maps.Copy(combinedEnv, envMap)
-	if params.highPriorityBaseEnv != nil {
-		maps.Copy(combinedEnv, params.highPriorityBaseEnv)
+	if params.autoEnv != nil {
+		maps.Copy(combinedEnv, params.autoEnv)
 	}
 
 	// 6. Expand variables using expandEnvMap
@@ -473,11 +470,11 @@ func expandEnvironment(params expansionParameters) (map[string]string, error) {
 	// to the value in the reference environment.
 	if err := expandEnvMap(
 		envMap,
-		referenceEnv,
-		params.highPriorityBaseEnv,
-		params.allowlist,
 		params.contextName,
 		params.expander,
+		params.autoEnv,
+		referenceEnv,
+		params.allowlist,
 		params.failureErr,
 	); err != nil {
 		return nil, err
@@ -499,66 +496,13 @@ func expandEnvironment(params expansionParameters) (map[string]string, error) {
 
 // expansionParameters holds all the necessary information for the expandEnvironment function.
 type expansionParameters struct {
-	envList             []string
-	contextName         string
-	allowlist           []string
-	referenceEnvs       []map[string]string
-	highPriorityBaseEnv map[string]string
-	expander            *environment.VariableExpander
-	failureErr          error
-}
-
-// buildExpansionParams creates expansionParameters for environment variable expansion.
-// This centralizes the common logic shared by ExpandGlobalEnv, ExpandGroupEnv, and ExpandCommandEnv.
-//
-// Parameters:
-//   - envList: The list of environment variables to expand (e.g., Global.Env, Group.Env, Command.Env)
-//   - contextName: Context name for logging (e.g., "global.env", "group.env:deploy")
-//   - allowlist: Effective allowlist for this expansion
-//   - globalEnv: Global.ExpandedEnv (nil if not applicable)
-//   - groupEnv: Group.ExpandedEnv (nil if not applicable)
-//   - autoEnv: Automatic environment variables (nil if not applicable)
-//   - expander: Variable expander instance
-//   - failureErr: Error to return on failure
-func buildExpansionParams(
-	envList []string,
-	contextName string,
-	allowlist []string,
-	globalEnv map[string]string,
-	groupEnv map[string]string,
-	autoEnv map[string]string,
-	expander *environment.VariableExpander,
-	failureErr error,
-) expansionParameters {
-	// Filter system environment based on the allowlist
-	filter := environment.NewFilter(allowlist)
-	systemEnv := filter.ParseSystemEnvironment(func(varName string) bool {
-		return slices.Contains(allowlist, varName)
-	})
-
-	// Build reference environments in priority order (lower index = lower priority)
-	// Priority: groupEnv > globalEnv > autoEnv > systemEnv
-	var referenceEnvs []map[string]string
-	referenceEnvs = append(referenceEnvs, systemEnv)
-	if autoEnv != nil {
-		referenceEnvs = append(referenceEnvs, autoEnv)
-	}
-	if globalEnv != nil {
-		referenceEnvs = append(referenceEnvs, globalEnv)
-	}
-	if groupEnv != nil {
-		referenceEnvs = append(referenceEnvs, groupEnv)
-	}
-
-	return expansionParameters{
-		envList:             envList,
-		contextName:         contextName,
-		allowlist:           allowlist,
-		referenceEnvs:       referenceEnvs,
-		highPriorityBaseEnv: autoEnv, // autoEnv always takes precedence
-		expander:            expander,
-		failureErr:          failureErr,
-	}
+	envList       []string
+	contextName   string
+	expander      *environment.VariableExpander
+	autoEnv       map[string]string
+	referenceEnvs []map[string]string
+	allowlist     []string
+	failureErr    error
 }
 
 // expandEnvInternal is an internal helper function that unifies the environment variable
@@ -595,22 +539,42 @@ func expandEnvInternal(
 	failureErr error,
 ) error {
 	// Determine the effective allowlist with inheritance
-	effectiveAllowlist := groupAllowlist
-	if effectiveAllowlist == nil && globalAllowlist != nil {
+	var effectiveAllowlist []string
+	if groupAllowlist != nil {
+		effectiveAllowlist = groupAllowlist
+	} else {
 		effectiveAllowlist = globalAllowlist
 	}
 
-	// Build expansion parameters
-	params := buildExpansionParams(
-		envList,
-		contextName,
-		effectiveAllowlist,
-		globalEnv,
-		groupEnv,
-		autoEnv,
-		expander,
-		failureErr,
-	)
+	// Filter system environment based on the allowlist
+	filter := environment.NewFilter(effectiveAllowlist)
+	systemEnv := filter.ParseSystemEnvironment(func(varName string) bool {
+		return slices.Contains(effectiveAllowlist, varName)
+	})
+
+	// Build reference environments in priority order (lower index = lower priority)
+	// Priority: groupEnv > globalEnv > autoEnv > systemEnv
+	var referenceEnvs []map[string]string
+	referenceEnvs = append(referenceEnvs, systemEnv)
+	if autoEnv != nil {
+		referenceEnvs = append(referenceEnvs, autoEnv)
+	}
+	if globalEnv != nil {
+		referenceEnvs = append(referenceEnvs, globalEnv)
+	}
+	if groupEnv != nil {
+		referenceEnvs = append(referenceEnvs, groupEnv)
+	}
+
+	params := expansionParameters{
+		envList:       envList,
+		contextName:   contextName,
+		expander:      expander,
+		autoEnv:       autoEnv, // autoEnv always takes precedence
+		referenceEnvs: referenceEnvs,
+		allowlist:     effectiveAllowlist,
+		failureErr:    failureErr,
+	}
 
 	// Call the generic expansion function
 	expandedEnv, err := expandEnvironment(params)
