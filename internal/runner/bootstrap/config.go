@@ -104,6 +104,9 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 		for j := range group.Commands {
 			cmd := &group.Commands[j]
 
+			// Determine the effective allowlist for this group (handles inheritance from global)
+			effectiveAllowlist := config.DetermineEffectiveAllowlist(group, &cfg.Global)
+
 			// Expand Command.Cmd, Args, and Env for each command and store in ExpandedCmd, ExpandedArgs, and ExpandedEnv
 			// Include automatic environment variables, global env, and group env in the expansion context
 			expandedCmd, expandedArgs, expandedEnv, err := config.ExpandCommand(&config.ExpansionContext{
@@ -112,7 +115,7 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 				AutoEnv:      autoEnv,
 				GlobalEnv:    cfg.Global.ExpandedEnv,
 				GroupEnv:     group.ExpandedEnv,
-				EnvAllowlist: group.EnvAllowlist,
+				EnvAllowlist: effectiveAllowlist,
 				GroupName:    group.Name,
 			})
 			if err != nil {

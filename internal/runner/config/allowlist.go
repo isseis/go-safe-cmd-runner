@@ -2,7 +2,7 @@ package config
 
 import "github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 
-// determineEffectiveAllowlist determines the effective environment variable allowlist for a group.
+// DetermineEffectiveAllowlist determines the effective environment variable allowlist for a group.
 //
 // Allowlist inheritance rules:
 // - If group.EnvAllowlist == nil: inherit global.EnvAllowlist
@@ -15,7 +15,7 @@ import "github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 //
 // Returns:
 //   - The effective allowlist for the group (may be nil, empty slice, or populated slice)
-func determineEffectiveAllowlist(group *runnertypes.CommandGroup, global *runnertypes.GlobalConfig) []string {
+func DetermineEffectiveAllowlist(group *runnertypes.CommandGroup, global *runnertypes.GlobalConfig) []string {
 	if group.EnvAllowlist == nil {
 		// Inherit from global allowlist
 		return global.EnvAllowlist

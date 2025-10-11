@@ -16,7 +16,7 @@ func TestDetermineEffectiveAllowlist_Inherit(t *testing.T) {
 		EnvAllowlist: nil, // Should inherit from global
 	}
 
-	result := determineEffectiveAllowlist(group, global)
+	result := DetermineEffectiveAllowlist(group, global)
 
 	expected := []string{"HOME", "PATH", "USER"}
 	if len(result) != len(expected) {
@@ -41,7 +41,7 @@ func TestDetermineEffectiveAllowlist_Override(t *testing.T) {
 		EnvAllowlist: []string{"CUSTOM_VAR", "ANOTHER_VAR"}, // Should override global
 	}
 
-	result := determineEffectiveAllowlist(group, global)
+	result := DetermineEffectiveAllowlist(group, global)
 
 	expected := []string{"CUSTOM_VAR", "ANOTHER_VAR"}
 	if len(result) != len(expected) {
@@ -66,7 +66,7 @@ func TestDetermineEffectiveAllowlist_Reject(t *testing.T) {
 		EnvAllowlist: []string{}, // Empty slice should reject all
 	}
 
-	result := determineEffectiveAllowlist(group, global)
+	result := DetermineEffectiveAllowlist(group, global)
 
 	if len(result) != 0 {
 		t.Errorf("Expected empty allowlist (all rejected), got %v", result)
@@ -83,7 +83,7 @@ func TestDetermineEffectiveAllowlist_GlobalNil(t *testing.T) {
 		EnvAllowlist: nil, // Should inherit nil from global
 	}
 
-	result := determineEffectiveAllowlist(group, global)
+	result := DetermineEffectiveAllowlist(group, global)
 
 	if result != nil {
 		t.Errorf("Expected nil allowlist (inherit nil), got %v", result)
@@ -100,7 +100,7 @@ func TestDetermineEffectiveAllowlist_GlobalEmpty(t *testing.T) {
 		EnvAllowlist: nil, // Should inherit empty slice from global
 	}
 
-	result := determineEffectiveAllowlist(group, global)
+	result := DetermineEffectiveAllowlist(group, global)
 
 	if len(result) != 0 {
 		t.Errorf("Expected empty allowlist (inherit empty), got %v", result)

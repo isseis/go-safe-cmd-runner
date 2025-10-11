@@ -534,6 +534,68 @@ func buildExpansionParams(
 	}
 }
 
+// expandEnvInternal is an internal helper function that unifies the environment variable
+// expansion logic for Global.Env, Group.Env, and Command.Env.
+//
+// This function centralizes the common expansion logic and allowlist inheritance calculation,
+// reducing code duplication and improving maintainability.
+//
+// Parameters:
+//   - envList: The list of environment variables to expand (e.g., cfg.Env, group.Env, cmd.Env)
+//   - contextName: A descriptive name for error messages (e.g., "global.env", "group.env:mygroup")
+//   - localAllowlist: The local-level allowlist (Global/Group/Command level)
+//   - globalAllowlist: The global allowlist for inheritance calculation (nil for Global level)
+//   - globalEnv: The expanded Global.Env for reference (nil for Global level)
+//   - groupEnv: The expanded Group.Env for reference (nil for Global/Group level)
+//   - autoEnv: Automatic environment variables (__RUNNER_DATETIME, __RUNNER_PID)
+//   - expander: The variable expander for performing secure expansion
+//   - failureErr: The sentinel error to wrap on failure
+//   - outputTarget: Pointer to the field where the expanded result should be stored
+//
+// Allowlist inheritance rules:
+//   - If localAllowlist is nil and globalAllowlist is not nil, inherit globalAllowlist
+//   - Otherwise, use localAllowlist (which may be nil, empty slice, or populated)
+func expandEnvInternal(
+	envList []string,
+	contextName string,
+	localAllowlist []string,
+	globalAllowlist []string,
+	globalEnv map[string]string,
+	groupEnv map[string]string,
+	autoEnv map[string]string,
+	expander *environment.VariableExpander,
+	failureErr error,
+	outputTarget *map[string]string,
+) error {
+	// Determine the effective allowlist with inheritance
+	effectiveAllowlist := localAllowlist
+	if effectiveAllowlist == nil && globalAllowlist != nil {
+		effectiveAllowlist = globalAllowlist
+	}
+
+	// Build expansion parameters
+	params := buildExpansionParams(
+		envList,
+		contextName,
+		effectiveAllowlist,
+		globalEnv,
+		groupEnv,
+		autoEnv,
+		expander,
+		failureErr,
+	)
+
+	// Call the generic expansion function
+	expandedEnv, err := expandEnvironment(params)
+	if err != nil {
+		return err
+	}
+
+	// Store the expanded environment in the target
+	*outputTarget = expandedEnv
+	return nil
+}
+
 // ExpandGlobalEnv expands environment variables in Global.Env.
 func ExpandGlobalEnv(
 	cfg *runnertypes.GlobalConfig,
@@ -548,27 +610,18 @@ func ExpandGlobalEnv(
 		return ErrNilExpander
 	}
 
-	// Build expansion parameters (globalEnv and groupEnv are nil for global level)
-	params := buildExpansionParams(
-		cfg.Env,
-		"global.env",
-		cfg.EnvAllowlist,
-		nil,     // globalEnv: not applicable at global level
-		nil,     // groupEnv: not applicable at global level
-		autoEnv, // autoEnv: automatic variables
-		expander,
-		ErrGlobalEnvExpansionFailed,
+	return expandEnvInternal(
+		cfg.Env,                     // envList
+		"global.env",                // contextName
+		cfg.EnvAllowlist,            // localAllowlist
+		nil,                         // globalAllowlist (no inheritance at global level)
+		nil,                         // globalEnv (self-expansion)
+		nil,                         // groupEnv (not applicable)
+		autoEnv,                     // autoEnv
+		expander,                    // expander
+		ErrGlobalEnvExpansionFailed, // failureErr
+		&cfg.ExpandedEnv,            // outputTarget
 	)
-
-	// Call the generic expansion function
-	expandedEnv, err := expandEnvironment(params)
-	if err != nil {
-		return err
-	}
-
-	// Store the expanded environment
-	cfg.ExpandedEnv = expandedEnv
-	return nil
 }
 
 // ExpandGroupEnv expands environment variables in Group.Env with references to Global.Env and system environment.
@@ -605,30 +658,18 @@ func ExpandGroupEnv(
 		return ErrNilExpander
 	}
 
-	// Determine the effective allowlist for the group
-	effectiveAllowlist := determineEffectiveAllowlist(group, &runnertypes.GlobalConfig{EnvAllowlist: globalAllowlist})
-
-	// Build expansion parameters (groupEnv is nil at group level)
-	params := buildExpansionParams(
-		group.Env,
-		fmt.Sprintf("group.env:%s", group.Name),
-		effectiveAllowlist,
-		globalEnv, // globalEnv: Global.ExpandedEnv
-		nil,       // groupEnv: not applicable at group level
-		autoEnv,   // autoEnv: automatic variables
-		expander,
-		ErrGroupEnvExpansionFailed,
+	return expandEnvInternal(
+		group.Env,                               // envList
+		fmt.Sprintf("group.env:%s", group.Name), // contextName
+		group.EnvAllowlist,                      // localAllowlist
+		globalAllowlist,                         // globalAllowlist (for inheritance)
+		globalEnv,                               // globalEnv (Global.ExpandedEnv)
+		nil,                                     // groupEnv (self-expansion)
+		autoEnv,                                 // autoEnv
+		expander,                                // expander
+		ErrGroupEnvExpansionFailed,              // failureErr
+		&group.ExpandedEnv,                      // outputTarget
 	)
-
-	// Call the generic expansion function
-	expandedEnv, err := expandEnvironment(params)
-	if err != nil {
-		return err
-	}
-
-	// Store the expanded environment in the group
-	group.ExpandedEnv = expandedEnv
-	return nil
 }
 
 // ExpandCommandEnv expands Command.Env variables with reference to global, group, and automatic environment variables.
@@ -672,25 +713,16 @@ func ExpandCommandEnv(
 		return ErrNilExpander
 	}
 
-	// Build expansion parameters (all reference environments are applicable at command level)
-	params := buildExpansionParams(
-		cmd.Env,
-		fmt.Sprintf("command.env:%s (group:%s)", cmd.Name, groupName),
-		allowlist,
-		globalEnv, // globalEnv: Global.ExpandedEnv
-		groupEnv,  // groupEnv: Group.ExpandedEnv
-		autoEnv,   // autoEnv: automatic variables
-		expander,
-		ErrCommandEnvExpansionFailed,
+	return expandEnvInternal(
+		cmd.Env, // envList
+		fmt.Sprintf("command.env:%s (group:%s)", cmd.Name, groupName), // contextName
+		allowlist,                    // localAllowlist (already calculated externally)
+		nil,                          // globalAllowlist (not used, allowlist is pre-calculated)
+		globalEnv,                    // globalEnv (Global.ExpandedEnv)
+		groupEnv,                     // groupEnv (Group.ExpandedEnv)
+		autoEnv,                      // autoEnv
+		expander,                     // expander
+		ErrCommandEnvExpansionFailed, // failureErr
+		&cmd.ExpandedEnv,             // outputTarget
 	)
-
-	// Call the generic expansion function
-	expandedEnv, err := expandEnvironment(params)
-	if err != nil {
-		return err
-	}
-
-	// Store the expanded environment in the command
-	cmd.ExpandedEnv = expandedEnv
-	return nil
 }
