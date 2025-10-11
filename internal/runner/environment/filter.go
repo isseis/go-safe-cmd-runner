@@ -21,7 +21,7 @@ var (
 	ErrDangerousVariableValue = errors.New("variable value contains dangerous pattern")
 	ErrVariableNotFound       = errors.New("variable reference not found")
 	ErrVariableNotAllowed     = errors.New("variable not allowed by allowlist")
-	ErrMalformedEnvVariable   = errors.New("malformed environment variable")
+	// Note: ErrMalformedEnvVariable is defined in config package as it's the primary user
 )
 
 // Filter provides environment variable filtering functionality with allowlist-based security

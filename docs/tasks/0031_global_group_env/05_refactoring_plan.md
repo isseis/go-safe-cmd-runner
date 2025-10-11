@@ -99,31 +99,34 @@ Command level: group.EnvAllowlist ?? global.EnvAllowlist
 
 ---
 
-### Phase 3: allowlist 計算の完全内部化 🔄
+### Phase 3: allowlist 計算の完全内部化 ✅ **完了**
 
 **目標**: `ExpandCommandEnv` 内部で allowlist 継承を計算
 
 **タスク**:
 
-- [ ] `ExpandCommandEnv` の引数変更
-  - [ ] `allowlist []string` → `globalAllowlist []string`
-- [ ] `expandEnvInternal` での allowlist 継承計算を活用
-  - [ ] `localAllowlist` として `group.EnvAllowlist` を渡す
-  - [ ] `globalAllowlist` として global allowlist を渡す
-- [ ] bootstrap/config.go の更新
-  - [ ] `DetermineEffectiveAllowlist` 呼び出しを削除
-  - [ ] `cfg.Global.EnvAllowlist` を直接渡す
-- [ ] `ExpandCommand` 関数の更新
-  - [ ] `ExpansionContext.EnvAllowlist` の意味を明確化（globalAllowlist）
-- [ ] テストの更新
-  - [ ] allowlist 継承のテストケースを追加
-  - [ ] 既存のテストを新しいシグネチャに合わせる
-- [ ] コードフォーマットとリント実行
+- [x] `ExpandCommandEnv` の引数変更
+  - [x] `allowlist []string` → `globalAllowlist []string`
+- [x] `expandEnvInternal` での allowlist 継承計算を活用
+  - [x] `localAllowlist` として `group.EnvAllowlist` を渡す
+  - [x] `globalAllowlist` として global allowlist を渡す
+- [x] bootstrap/config.go の更新
+  - [x] `DetermineEffectiveAllowlist` 呼び出しを削除
+  - [x] `cfg.Global.EnvAllowlist` を直接渡す
+- [x] `ExpandCommand` 関数の更新
+  - [x] `ExpansionContext.EnvAllowlist` の意味を明確化（globalAllowlist）
+- [x] テストの更新
+  - [x] allowlist 継承のテストケースを追加
+  - [x] 既存のテストを新しいシグネチャに合わせる
+- [x] コードフォーマットとリント実行
 
-**期待される効果**:
-- allowlist 計算の完全な一元化
-- 呼び出し側のコードが簡潔に
-- 3つの関数すべてで統一されたallowlist 継承パターン
+**達成された効果**:
+- ✅ allowlist 計算の完全な一元化（3つの展開関数すべてで統一）
+- ✅ 呼び出し側のコードが簡潔に（外部での allowlist 計算が不要）
+- ✅ 型安全性の向上（group オブジェクトを直接渡すことでアクセス確実）
+- ✅ allowlist 継承の正確な実装（nil 継承、空配列制限、明示的上書きすべて対応）
+- ✅ すべてのテストが通過（既存機能への影響なし）
+- ✅ 包括的なテストケースの追加（allowlist 継承の各パターンを検証）
 
 **リスク評価**: 中（内部 API の破壊的変更）
 
