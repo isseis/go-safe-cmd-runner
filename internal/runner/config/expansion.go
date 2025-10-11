@@ -107,15 +107,14 @@ func ExpandCommand(expCxt *ExpansionContext) (string, []string, map[string]strin
 	// 1. Allow Command.Env to reference automatic variables (e.g., OUTPUT=${__RUNNER_DATETIME}.log)
 	// 2. Prevent Command.Env from overriding automatic variables (silently ignored with warning)
 	// Also pass globalEnv and groupEnv so Command.Env can reference those variables
-	commandEnv, err := ExpandCommandEnv(cmd, groupName, allowlist, expander, globalEnv, groupEnv, autoEnv)
-	if err != nil {
+	if err := ExpandCommandEnv(cmd, groupName, allowlist, expander, globalEnv, groupEnv, autoEnv); err != nil {
 		return "", nil, nil, fmt.Errorf("%w: %v", ErrCommandEnvExpansionFailed, err)
 	}
 
 	// Merge command environment with automatic environment variables
 	// Auto env variables are added last, taking precedence over command env for same keys
-	env := make(map[string]string, len(commandEnv)+len(autoEnv))
-	maps.Copy(env, commandEnv)
+	env := make(map[string]string, len(cmd.ExpandedEnv)+len(autoEnv))
+	maps.Copy(env, cmd.ExpandedEnv)
 	maps.Copy(env, autoEnv)
 
 	// Expand command name
@@ -385,7 +384,7 @@ func ExpandGroupVerifyFiles(
 func expandEnvironment(params expansionParameters) (map[string]string, error) {
 	// 1. Handle nil or empty env list
 	if len(params.envList) == 0 {
-		return nil, nil
+		return make(map[string]string), nil
 	}
 
 	// 2. Parse environment variables (without full validation yet)
@@ -482,6 +481,59 @@ type expansionParameters struct {
 	failureErr          error
 }
 
+// buildExpansionParams creates expansionParameters for environment variable expansion.
+// This centralizes the common logic shared by ExpandGlobalEnv, ExpandGroupEnv, and ExpandCommandEnv.
+//
+// Parameters:
+//   - envList: The list of environment variables to expand (e.g., Global.Env, Group.Env, Command.Env)
+//   - contextName: Context name for logging (e.g., "global.env", "group.env:deploy")
+//   - allowlist: Effective allowlist for this expansion
+//   - globalEnv: Global.ExpandedEnv (nil if not applicable)
+//   - groupEnv: Group.ExpandedEnv (nil if not applicable)
+//   - autoEnv: Automatic environment variables (nil if not applicable)
+//   - expander: Variable expander instance
+//   - failureErr: Error to return on failure
+func buildExpansionParams(
+	envList []string,
+	contextName string,
+	allowlist []string,
+	globalEnv map[string]string,
+	groupEnv map[string]string,
+	autoEnv map[string]string,
+	expander *environment.VariableExpander,
+	failureErr error,
+) expansionParameters {
+	// Filter system environment based on the allowlist
+	filter := environment.NewFilter(allowlist)
+	systemEnv := filter.ParseSystemEnvironment(func(varName string) bool {
+		return slices.Contains(allowlist, varName)
+	})
+
+	// Build reference environments in priority order (lower index = lower priority)
+	// Priority: groupEnv > globalEnv > autoEnv > systemEnv
+	var referenceEnvs []map[string]string
+	referenceEnvs = append(referenceEnvs, systemEnv)
+	if autoEnv != nil {
+		referenceEnvs = append(referenceEnvs, autoEnv)
+	}
+	if globalEnv != nil {
+		referenceEnvs = append(referenceEnvs, globalEnv)
+	}
+	if groupEnv != nil {
+		referenceEnvs = append(referenceEnvs, groupEnv)
+	}
+
+	return expansionParameters{
+		envList:             envList,
+		contextName:         contextName,
+		allowlist:           allowlist,
+		referenceEnvs:       referenceEnvs,
+		highPriorityBaseEnv: autoEnv, // autoEnv always takes precedence
+		expander:            expander,
+		failureErr:          failureErr,
+	}
+}
+
 // ExpandGlobalEnv expands environment variables in Global.Env.
 func ExpandGlobalEnv(
 	cfg *runnertypes.GlobalConfig,
@@ -496,22 +548,17 @@ func ExpandGlobalEnv(
 		return ErrNilExpander
 	}
 
-	// Filter system environment based on the global allowlist
-	filter := environment.NewFilter(cfg.EnvAllowlist)
-	systemEnv := filter.ParseSystemEnvironment(func(varName string) bool {
-		return slices.Contains(cfg.EnvAllowlist, varName)
-	})
-
-	// Set up parameters for the generic expansion function
-	params := expansionParameters{
-		envList:             cfg.Env,
-		contextName:         "global.env",
-		allowlist:           cfg.EnvAllowlist,
-		referenceEnvs:       []map[string]string{systemEnv, autoEnv},
-		highPriorityBaseEnv: autoEnv, // autoEnv takes precedence over global.env
-		expander:            expander,
-		failureErr:          ErrGlobalEnvExpansionFailed,
-	}
+	// Build expansion parameters (globalEnv and groupEnv are nil for global level)
+	params := buildExpansionParams(
+		cfg.Env,
+		"global.env",
+		cfg.EnvAllowlist,
+		nil,     // globalEnv: not applicable at global level
+		nil,     // groupEnv: not applicable at global level
+		autoEnv, // autoEnv: automatic variables
+		expander,
+		ErrGlobalEnvExpansionFailed,
+	)
 
 	// Call the generic expansion function
 	expandedEnv, err := expandEnvironment(params)
@@ -561,35 +608,22 @@ func ExpandGroupEnv(
 	// Determine the effective allowlist for the group
 	effectiveAllowlist := determineEffectiveAllowlist(group, &runnertypes.GlobalConfig{EnvAllowlist: globalAllowlist})
 
-	// Filter system environment based on the effective allowlist
-	filter := environment.NewFilter(effectiveAllowlist)
-	systemEnv := filter.ParseSystemEnvironment(func(varName string) bool {
-		return slices.Contains(effectiveAllowlist, varName)
-	})
-
-	// Set up parameters for the generic expansion function
-	// Reference environment priority: globalEnv > systemEnv
-	// High-priority environment: autoEnv (overrides group.env)
-	params := expansionParameters{
-		envList:             group.Env,
-		contextName:         fmt.Sprintf("group.env:%s", group.Name),
-		allowlist:           effectiveAllowlist,
-		referenceEnvs:       []map[string]string{systemEnv, globalEnv, autoEnv},
-		highPriorityBaseEnv: autoEnv,
-		expander:            expander,
-		failureErr:          ErrGroupEnvExpansionFailed,
-	}
+	// Build expansion parameters (groupEnv is nil at group level)
+	params := buildExpansionParams(
+		group.Env,
+		fmt.Sprintf("group.env:%s", group.Name),
+		effectiveAllowlist,
+		globalEnv, // globalEnv: Global.ExpandedEnv
+		nil,       // groupEnv: not applicable at group level
+		autoEnv,   // autoEnv: automatic variables
+		expander,
+		ErrGroupEnvExpansionFailed,
+	)
 
 	// Call the generic expansion function
 	expandedEnv, err := expandEnvironment(params)
 	if err != nil {
 		return err
-	}
-
-	// If the expanded environment is nil (e.g., for an empty input list),
-	// return an empty map to fulfill the contract for group environments.
-	if expandedEnv == nil {
-		expandedEnv = make(map[string]string)
 	}
 
 	// Store the expanded environment in the group
@@ -599,7 +633,6 @@ func ExpandGroupEnv(
 
 // ExpandCommandEnv expands Command.Env variables with reference to global, group, and automatic environment variables.
 // This is used during configuration loading (Phase 1) to pre-expand Command.Env.
-// Returns a map of expanded environment variables ready to merge with system environment.
 //
 // Variable reference priority (what Command.Env can reference):
 //  1. Group.ExpandedEnv variables (groupEnv parameter)
@@ -621,7 +654,6 @@ func ExpandGroupEnv(
 //   - autoEnv: Automatic environment variables (__RUNNER_DATETIME, __RUNNER_PID); can be nil or empty in tests
 //
 // Returns:
-//   - map[string]string: Expanded environment variables (only Command.Env variables, not autoEnv/globalEnv/groupEnv)
 //   - error: Any error that occurred during expansion
 func ExpandCommandEnv(
 	cmd *runnertypes.Command,
@@ -631,34 +663,34 @@ func ExpandCommandEnv(
 	globalEnv map[string]string,
 	groupEnv map[string]string,
 	autoEnv map[string]string,
-) (map[string]string, error) {
+) error {
 	// Input validation
 	if cmd == nil {
-		return nil, ErrNilCommand
+		return ErrNilCommand
 	}
 	if expander == nil {
-		return nil, ErrNilExpander
+		return ErrNilExpander
 	}
 
-	// Filter system environment based on the allowlist
-	filter := environment.NewFilter(allowlist)
-	systemEnv := filter.ParseSystemEnvironment(func(varName string) bool {
-		return slices.Contains(allowlist, varName)
-	})
+	// Build expansion parameters (all reference environments are applicable at command level)
+	params := buildExpansionParams(
+		cmd.Env,
+		fmt.Sprintf("command.env:%s (group:%s)", cmd.Name, groupName),
+		allowlist,
+		globalEnv, // globalEnv: Global.ExpandedEnv
+		groupEnv,  // groupEnv: Group.ExpandedEnv
+		autoEnv,   // autoEnv: automatic variables
+		expander,
+		ErrCommandEnvExpansionFailed,
+	)
 
-	// Set up parameters for the generic expansion function
-	// Reference environment priority: groupEnv > globalEnv > autoEnv > systemEnv
-	// High-priority environment: autoEnv (overrides command.env)
-	params := expansionParameters{
-		envList:             cmd.Env,
-		contextName:         fmt.Sprintf("command.env:%s (group:%s)", cmd.Name, groupName),
-		allowlist:           allowlist,
-		referenceEnvs:       []map[string]string{systemEnv, autoEnv, globalEnv, groupEnv},
-		highPriorityBaseEnv: autoEnv,
-		expander:            expander,
-		failureErr:          ErrCommandEnvExpansionFailed,
+	// Call the generic expansion function
+	expandedEnv, err := expandEnvironment(params)
+	if err != nil {
+		return err
 	}
 
-	// Call the generic expansion function and return the result
-	return expandEnvironment(params)
+	// Store the expanded environment in the command
+	cmd.ExpandedEnv = expandedEnv
+	return nil
 }

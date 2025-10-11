@@ -1499,14 +1499,14 @@ func TestExpandGlobalEnv_Basic(t *testing.T) {
 			name:        "empty env list",
 			globalEnv:   []string{},
 			allowlist:   []string{"HOME"},
-			expected:    nil,
+			expected:    map[string]string{},
 			expectError: false,
 		},
 		{
 			name:        "nil env list",
 			globalEnv:   nil,
 			allowlist:   []string{"HOME"},
-			expected:    nil,
+			expected:    map[string]string{},
 			expectError: false,
 		},
 	}
@@ -1866,19 +1866,16 @@ func TestExpandGlobalEnv_Empty(t *testing.T) {
 		name      string
 		globalEnv []string
 		allowlist []string
-		expectNil bool
 	}{
 		{
 			name:      "empty array",
 			globalEnv: []string{},
 			allowlist: []string{"HOME"},
-			expectNil: true,
 		},
 		{
 			name:      "nil array",
 			globalEnv: nil,
 			allowlist: []string{"HOME"},
-			expectNil: true,
 		},
 	}
 
@@ -1893,9 +1890,9 @@ func TestExpandGlobalEnv_Empty(t *testing.T) {
 
 			require.NoError(t, err)
 
-			if tt.expectNil {
-				assert.Nil(t, cfg.ExpandedEnv)
-			}
+			// After the change, expandEnvironment always returns an empty map instead of nil
+			assert.NotNil(t, cfg.ExpandedEnv)
+			assert.Empty(t, cfg.ExpandedEnv)
 		})
 	}
 }
@@ -2016,8 +2013,10 @@ args = ["hello"]`
 	cfg, err := loader.LoadConfig([]byte(tomlContent))
 	require.NoError(t, err)
 
-	// Verify Global.ExpandedEnv is nil (no Global.Env defined)
-	assert.Nil(t, cfg.Global.ExpandedEnv)
+	// Verify Global.ExpandedEnv is empty map (no Global.Env defined)
+	// After the change, expandEnvironment always returns an empty map instead of nil
+	assert.NotNil(t, cfg.Global.ExpandedEnv)
+	assert.Empty(t, cfg.Global.ExpandedEnv)
 
 	// Verify Global.VerifyFiles was expanded correctly using system env
 	expectedVerifyFiles := []string{"/test/home/verify.sh"}
@@ -2670,7 +2669,8 @@ func TestExpandCommandEnv(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// In this test, baseEnv represents autoEnv (automatic environment variables)
 			// globalEnv and groupEnv are nil since we're testing Command.Env expansion in isolation
-			result, err := config.ExpandCommandEnv(&tt.cmd, tt.groupName, tt.allowlist, expander, nil, nil, tt.baseEnv)
+			cmd := tt.cmd // Create a copy to avoid modifying test data
+			err := config.ExpandCommandEnv(&cmd, tt.groupName, tt.allowlist, expander, nil, nil, tt.baseEnv)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -2681,7 +2681,7 @@ func TestExpandCommandEnv(t *testing.T) {
 			}
 
 			require.NoError(t, err)
-			assert.Equal(t, tt.expectedVars, result)
+			assert.Equal(t, tt.expectedVars, cmd.ExpandedEnv)
 		})
 	}
 }

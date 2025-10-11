@@ -56,9 +56,10 @@ func TestExpandCommandEnv_WithGlobalEnv(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := config.ExpandCommandEnv(&tt.cmd, tt.groupName, tt.allowlist, expander, globalEnv, nil, nil)
+			cmd := tt.cmd // Create a copy to avoid modifying test data
+			err := config.ExpandCommandEnv(&cmd, tt.groupName, tt.allowlist, expander, globalEnv, nil, nil)
 			require.NoError(t, err)
-			assert.Equal(t, tt.expectedVars, result)
+			assert.Equal(t, tt.expectedVars, cmd.ExpandedEnv)
 		})
 	}
 }
@@ -109,9 +110,10 @@ func TestExpandCommandEnv_WithGroupEnv(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := config.ExpandCommandEnv(&tt.cmd, tt.groupName, tt.allowlist, expander, nil, groupEnv, nil)
+			cmd := tt.cmd // Create a copy to avoid modifying test data
+			err := config.ExpandCommandEnv(&cmd, tt.groupName, tt.allowlist, expander, nil, groupEnv, nil)
 			require.NoError(t, err)
-			assert.Equal(t, tt.expectedVars, result)
+			assert.Equal(t, tt.expectedVars, cmd.ExpandedEnv)
 		})
 	}
 }
@@ -153,9 +155,10 @@ func TestExpandCommandEnv_WithBothGlobalAndGroupEnv(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := config.ExpandCommandEnv(&tt.cmd, tt.groupName, tt.allowlist, expander, globalEnv, groupEnv, nil)
+			cmd := tt.cmd // Create a copy to avoid modifying test data
+			err := config.ExpandCommandEnv(&cmd, tt.groupName, tt.allowlist, expander, globalEnv, groupEnv, nil)
 			require.NoError(t, err)
-			assert.Equal(t, tt.expectedVars, result)
+			assert.Equal(t, tt.expectedVars, cmd.ExpandedEnv)
 		})
 	}
 }
@@ -231,9 +234,10 @@ func TestExpandCommandEnv_VariableReferencePriority(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := config.ExpandCommandEnv(&tt.cmd, "test_group", tt.allowlist, expander, tt.globalEnv, tt.groupEnv, nil)
+			cmd := tt.cmd // Create a copy to avoid modifying test data
+			err := config.ExpandCommandEnv(&cmd, "test_group", tt.allowlist, expander, tt.globalEnv, tt.groupEnv, nil)
 			require.NoError(t, err, tt.description)
-			assert.Equal(t, tt.expectedVars, result, tt.description)
+			assert.Equal(t, tt.expectedVars, cmd.ExpandedEnv, tt.description)
 		})
 	}
 }
