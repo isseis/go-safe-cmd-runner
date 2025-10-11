@@ -54,8 +54,8 @@ type ExpansionContext struct {
 	// EnvAllowlist is the list of system environment variables allowed for expansion
 	EnvAllowlist []string
 
-	// GroupName is the name of the command group (used for logging and error messages)
-	GroupName string
+	// Group is the command group containing the command (used for logging and allowlist access)
+	Group *runnertypes.CommandGroup
 }
 
 // ExpandCommand expands variables in a single command's Cmd, Args, and Env fields,
@@ -77,12 +77,15 @@ func ExpandCommand(expCxt *ExpansionContext) (string, []string, map[string]strin
 	if expCxt.Expander == nil {
 		return "", nil, nil, ErrNilExpander
 	}
+	if expCxt.Group == nil {
+		return "", nil, nil, ErrNilGroup
+	}
 
 	// Extract context fields
 	cmd := expCxt.Command
 	expander := expCxt.Expander
 	allowlist := expCxt.EnvAllowlist
-	groupName := expCxt.GroupName
+	group := expCxt.Group
 
 	// Use empty map if AutoEnv is nil
 	autoEnv := expCxt.AutoEnv
@@ -107,7 +110,7 @@ func ExpandCommand(expCxt *ExpansionContext) (string, []string, map[string]strin
 	// 1. Allow Command.Env to reference automatic variables (e.g., OUTPUT=${__RUNNER_DATETIME}.log)
 	// 2. Prevent Command.Env from overriding automatic variables (silently ignored with warning)
 	// Also pass globalEnv and groupEnv so Command.Env can reference those variables
-	if err := ExpandCommandEnv(cmd, groupName, allowlist, expander, globalEnv, groupEnv, autoEnv); err != nil {
+	if err := ExpandCommandEnv(cmd, group, allowlist, expander, globalEnv, groupEnv, autoEnv); err != nil {
 		return "", nil, nil, fmt.Errorf("%w: %v", ErrCommandEnvExpansionFailed, err)
 	}
 
@@ -118,13 +121,13 @@ func ExpandCommand(expCxt *ExpansionContext) (string, []string, map[string]strin
 	maps.Copy(env, autoEnv)
 
 	// Expand command name
-	expandedCmd, err := expander.ExpandString(cmd.Cmd, env, allowlist, groupName, make(map[string]bool))
+	expandedCmd, err := expander.ExpandString(cmd.Cmd, env, allowlist, group.Name, make(map[string]bool))
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("failed to expand command: %w", err)
 	}
 
-	// Expand command arguments
-	expandedArgs, err := expander.ExpandStrings(cmd.Args, env, allowlist, groupName)
+	// Expand arguments
+	expandedArgs, err := expander.ExpandStrings(cmd.Args, env, allowlist, group.Name)
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("failed to expand args: %w", err)
 	}
@@ -687,7 +690,7 @@ func ExpandGroupEnv(
 //
 // Parameters:
 //   - cmd: The command containing environment variables to expand
-//   - groupName: The name of the command group (for logging and error messages)
+//   - group: The command group containing the command (for logging and error messages)
 //   - allowlist: The environment variable allowlist
 //   - expander: The variable expander for performing secure expansion
 //   - globalEnv: Global.ExpandedEnv variables that Command.Env can reference; can be nil or empty
@@ -698,7 +701,7 @@ func ExpandGroupEnv(
 //   - error: Any error that occurred during expansion
 func ExpandCommandEnv(
 	cmd *runnertypes.Command,
-	groupName string,
+	group *runnertypes.CommandGroup,
 	allowlist []string,
 	expander *environment.VariableExpander,
 	globalEnv map[string]string,
@@ -709,13 +712,16 @@ func ExpandCommandEnv(
 	if cmd == nil {
 		return ErrNilCommand
 	}
+	if group == nil {
+		return ErrNilGroup
+	}
 	if expander == nil {
 		return ErrNilExpander
 	}
 
 	return expandEnvInternal(
 		cmd.Env, // envList
-		fmt.Sprintf("command.env:%s (group:%s)", cmd.Name, groupName), // contextName
+		fmt.Sprintf("command.env:%s (group:%s)", cmd.Name, group.Name), // contextName
 		allowlist,                    // localAllowlist (already calculated externally)
 		nil,                          // globalAllowlist (not used, allowlist is pre-calculated)
 		globalEnv,                    // globalEnv (Global.ExpandedEnv)

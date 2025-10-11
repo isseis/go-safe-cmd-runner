@@ -151,7 +151,7 @@ func TestExpandCommandStrings_SingleCommand(t *testing.T) {
 						Expander:     expander,
 						AutoEnv:      nil,
 						EnvAllowlist: group.EnvAllowlist,
-						GroupName:    group.Name,
+						Group:        group,
 					})
 					if e != nil {
 						err = e
@@ -218,7 +218,7 @@ func TestExpandCommandStrings_AutoEnv(t *testing.T) {
 		Expander:     expander,
 		AutoEnv:      autoEnv,
 		EnvAllowlist: cfg.Global.EnvAllowlist,
-		GroupName:    "test-group",
+		Group:        &runnertypes.CommandGroup{Name: "test-group"},
 	})
 	require.NoError(t, err)
 
@@ -313,7 +313,7 @@ func TestExpandCommandStrings(t *testing.T) {
 						Expander:     expander,
 						AutoEnv:      nil,
 						EnvAllowlist: tt.group.EnvAllowlist,
-						GroupName:    tt.group.Name,
+						Group:        &tt.group,
 					})
 					if e != nil {
 						err = e
@@ -420,7 +420,7 @@ func TestCircularReferenceDetection(t *testing.T) {
 						Expander:     expander,
 						AutoEnv:      nil,
 						EnvAllowlist: group.EnvAllowlist,
-						GroupName:    group.Name,
+						Group:        group,
 					})
 					if e != nil {
 						err = e
@@ -555,7 +555,7 @@ func TestSecurityIntegration(t *testing.T) {
 						Expander:     expander,
 						AutoEnv:      nil,
 						EnvAllowlist: group.EnvAllowlist,
-						GroupName:    group.Name,
+						Group:        group,
 					})
 					if e != nil {
 						err = e
@@ -780,7 +780,7 @@ func TestSecurityAttackPrevention(t *testing.T) {
 				Expander:     expander,
 				AutoEnv:      nil,
 				EnvAllowlist: allowlist,
-				GroupName:    "test-group",
+				Group:        &runnertypes.CommandGroup{Name: "test-group"},
 			})
 
 			if tt.expectError {
@@ -894,7 +894,7 @@ func BenchmarkVariableExpansion(b *testing.B) {
 					Expander:     expander,
 					AutoEnv:      nil,
 					EnvAllowlist: cfg.Global.EnvAllowlist,
-					GroupName:    "benchmark-group",
+					Group:        &runnertypes.CommandGroup{Name: "benchmark-group"},
 				})
 				if err != nil {
 					b.Fatalf("unexpected error: %v", err)
@@ -992,7 +992,7 @@ func TestExpandCommand_AutoEnvInCommandEnv(t *testing.T) {
 				Expander:     expander,
 				AutoEnv:      autoEnv,
 				EnvAllowlist: tt.groupAllowlist,
-				GroupName:    "test_group",
+				Group:        &runnertypes.CommandGroup{Name: "test_group"},
 			})
 
 			if tt.expectError {
@@ -1468,7 +1468,7 @@ func TestExpandCommand_CommandEnvExpansionError(t *testing.T) {
 		Expander:     expander,
 		AutoEnv:      nil,
 		EnvAllowlist: cfg.Global.EnvAllowlist,
-		GroupName:    "test-group",
+		Group:        &runnertypes.CommandGroup{Name: "test-group"},
 	}) // Verify that we get the expected error type
 	require.Error(t, err)
 	require.ErrorIs(t, err, config.ErrCommandEnvExpansionFailed)
@@ -2669,8 +2669,9 @@ func TestExpandCommandEnv(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// In this test, baseEnv represents autoEnv (automatic environment variables)
 			// globalEnv and groupEnv are nil since we're testing Command.Env expansion in isolation
-			cmd := tt.cmd // Create a copy to avoid modifying test data
-			err := config.ExpandCommandEnv(&cmd, tt.groupName, tt.allowlist, expander, nil, nil, tt.baseEnv)
+			cmd := tt.cmd                                          // Create a copy to avoid modifying test data
+			group := &runnertypes.CommandGroup{Name: tt.groupName} // Create minimal group for testing
+			err := config.ExpandCommandEnv(&cmd, group, tt.allowlist, expander, nil, nil, tt.baseEnv)
 
 			if tt.expectError {
 				assert.Error(t, err)

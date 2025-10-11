@@ -70,28 +70,30 @@ Command level: group.EnvAllowlist ?? global.EnvAllowlist
 
 ---
 
-### Phase 2: ExpandCommandEnv のシグネチャ改善 🔄
+### Phase 2: ExpandCommandEnv のシグネチャ改善 ✅ **完了**
 
 **目標**: `ExpandCommandEnv` が group オブジェクトを受け取るように変更
 
 **タスク**:
 
-- [ ] `ExpandCommandEnv` の引数変更
-  - [ ] `groupName string` → `group *runnertypes.CommandGroup`
-- [ ] `ExpansionContext` 構造体の更新
-  - [ ] `GroupName string` → `Group *runnertypes.CommandGroup`
-- [ ] `ExpandCommand` 関数の更新
-  - [ ] 新しい `ExpandCommandEnv` シグネチャに合わせる
-  - [ ] `group.Name` を使用するように変更
-- [ ] テストの更新
-  - [ ] `ExpandCommandEnv` 直接呼び出しのテストを更新
-  - [ ] `ExpandCommand` のテストを更新
-- [ ] コードフォーマットとリント実行
+- [x] `ExpandCommandEnv` の引数変更
+  - [x] `groupName string` → `group *runnertypes.CommandGroup`
+- [x] `ExpansionContext` 構造体の更新
+  - [x] `GroupName string` → `Group *runnertypes.CommandGroup`
+- [x] `ExpandCommand` 関数の更新
+  - [x] 新しい `ExpandCommandEnv` シグネチャに合わせる
+  - [x] `group.Name` を使用するように変更
+- [x] テストの更新
+  - [x] `ExpandCommandEnv` 直接呼び出しのテストを更新
+  - [x] `ExpandCommand` のテストを更新
+- [x] コードフォーマットとリント実行
 
-**期待される効果**:
-- 型安全性の向上
-- `groupName` パラメータの削減
-- group オブジェクトへの直接アクセス
+**達成された効果**:
+- ✅ 型安全性の向上（`group *runnertypes.CommandGroup`による厳密な型チェック）
+- ✅ `groupName` パラメータの削減（`group.Name`でアクセス可能）
+- ✅ group オブジェクトへの直接アクセス（将来の拡張性向上）
+- ✅ すべてのテストが通過（後方互換性を保持）
+- ✅ リントエラーゼロ
 
 **リスク評価**: 中（内部 API の破壊的変更）
 
@@ -176,3 +178,222 @@ Phase 2 以降で問題が発生した場合：
 - このリファクタリングは機能追加ではなく、コード品質向上が目的
 - 段階的に実装することで、各フェーズでの動作確認が可能
 - Phase 1 完了後に一旦コミットし、Phase 2 は別途検討可能
+
+## 作業メモ
+
+### 完全統合版: すべての展開ロジックを1つの内部関数に集約
+```go
+// 内部ヘルパー関数（非公開）
+// すべての環境変数展開ロジックを統合
+func expandEnvInternal(
+    envList []string,                    // 展開対象の環境変数リスト
+    contextName string,                  // エラーメッセージ用のコンテキスト名
+    localAllowlist []string,             // ローカルレベルの allowlist (Global/Group/Command)
+    globalAllowlist []string,            // グローバル allowlist（継承計算用、Global level では nil）
+    globalEnv map[string]string,         // 参照する Global.ExpandedEnv（Global level では nil）
+    groupEnv map[string]string,          // 参照する Group.ExpandedEnv（Global/Group level では nil）
+    autoEnv map[string]string,           // 自動環境変数
+    expander *environment.VariableExpander,
+    failureErr error,                    // エラー時のセンチネルエラー
+    outputTarget *map[string]string,     // 結果の書き込み先
+) error {
+    // allowlist の継承計算
+    effectiveAllowlist := localAllowlist
+    if effectiveAllowlist == nil && globalAllowlist != nil {
+        effectiveAllowlist = globalAllowlist
+    }
+
+    params := buildExpansionParams(
+        envList,
+        contextName,
+        effectiveAllowlist,
+        globalEnv,
+        groupEnv,
+        autoEnv,
+        expander,
+        failureErr,
+    )
+
+    expandedEnv, err := expandEnvironment(params)
+    if err != nil {
+        return err
+    }
+
+    *outputTarget = expandedEnv
+    return nil
+}
+
+// 公開 API 1: Global.Env の展開
+func ExpandGlobalEnv(
+    cfg *runnertypes.GlobalConfig,
+    expander *environment.VariableExpander,
+    autoEnv map[string]string,
+) error {
+    if cfg == nil {
+        return ErrNilConfig
+    }
+    if expander == nil {
+        return ErrNilExpander
+    }
+
+    return expandEnvInternal(
+        cfg.Env,              // envList
+        "global.env",         // contextName
+        cfg.EnvAllowlist,     // localAllowlist
+        nil,                  // globalAllowlist (継承元がない)
+        nil,                  // globalEnv (自己展開中)
+        nil,                  // groupEnv (存在しない)
+        autoEnv,              // autoEnv
+        expander,             // expander
+        ErrGlobalEnvExpansionFailed, // failureErr
+        &cfg.ExpandedEnv,     // outputTarget
+    )
+}
+
+// 公開 API 2: Group.Env の展開
+func ExpandGroupEnv(
+    group *runnertypes.CommandGroup,
+    globalEnv map[string]string,
+    globalAllowlist []string,
+    expander *environment.VariableExpander,
+    autoEnv map[string]string,
+) error {
+    if group == nil {
+        return ErrNilGroup
+    }
+    if expander == nil {
+        return ErrNilExpander
+    }
+
+    return expandEnvInternal(
+        group.Env,                   // envList
+        fmt.Sprintf("group.env:%s", group.Name), // contextName
+        group.EnvAllowlist,          // localAllowlist
+        globalAllowlist,             // globalAllowlist (継承用)
+        globalEnv,                   // globalEnv (Global.ExpandedEnv)
+        nil,                         // groupEnv (自己展開中)
+        autoEnv,                     // autoEnv
+        expander,                    // expander
+        ErrGroupEnvExpansionFailed,  // failureErr
+        &group.ExpandedEnv,          // outputTarget
+    )
+}
+
+// 公開 API 3: Command.Env の展開
+func ExpandCommandEnv(
+    cmd *runnertypes.Command,
+    group *runnertypes.CommandGroup,
+    globalAllowlist []string,
+    expander *environment.VariableExpander,
+    globalEnv map[string]string,
+    groupEnv map[string]string,
+    autoEnv map[string]string,
+) error {
+    if cmd == nil {
+        return ErrNilCommand
+    }
+    if group == nil {
+        return ErrNilGroup
+    }
+    if expander == nil {
+        return ErrNilExpander
+    }
+
+    return expandEnvInternal(
+        cmd.Env,                     // envList
+        fmt.Sprintf("command.env:%s (group:%s)", cmd.Name, group.Name), // contextName
+        group.EnvAllowlist,          // localAllowlist (command は group の allowlist を使用)
+        globalAllowlist,             // globalAllowlist (継承用)
+        globalEnv,                   // globalEnv (Global.ExpandedEnv)
+        groupEnv,                    // groupEnv (Group.ExpandedEnv)
+        autoEnv,                     // autoEnv
+        expander,                    // expander
+        ErrCommandEnvExpansionFailed, // failureErr
+        &cmd.ExpandedEnv,            // outputTarget
+    )
+}
+```
+
+### 主要な変更点
+1. ExpandCommandEnv のシグネチャ変更
+```go
+// 変更前
+func ExpandCommandEnv(
+    cmd *runnertypes.Command,
+    groupName string,              // ← string
+    allowlist []string,            // ← 外部計算済み
+    expander *environment.VariableExpander,
+    globalEnv map[string]string,
+    groupEnv map[string]string,
+    autoEnv map[string]string,
+) error
+
+// 変更後
+func ExpandCommandEnv(
+    cmd *runnertypes.Command,
+    group *runnertypes.CommandGroup, // ← *CommandGroup オブジェクト
+    globalAllowlist []string,        // ← 内部で継承計算
+    expander *environment.VariableExpander,
+    globalEnv map[string]string,
+    groupEnv map[string]string,
+    autoEnv map[string]string,
+) error
+```
+
+メリット:
+group.Name を取得可能（groupName 引数が不要）
+group.EnvAllowlist にアクセス可能（内部で継承計算）
+group オブジェクト全体にアクセス可能（将来の拡張性）
+2. allowlist の継承計算を内部化
+```go
+// expandEnvInternal 内で統一的に処理
+effectiveAllowlist := localAllowlist
+if effectiveAllowlist == nil && globalAllowlist != nil {
+    effectiveAllowlist = globalAllowlist
+}
+```
+これにより、3つの関数すべてで同じロジックが適用されます。
+
+### 呼び出し側の変更
+bootstrap/config.go の変更
+```go
+// 変更前
+effectiveAllowlist := config.DetermineEffectiveAllowlist(group, &cfg.Global)
+
+expandedCmd, expandedArgs, expandedEnv, err := config.ExpandCommand(&config.ExpansionContext{
+    Command:      cmd,
+    Expander:     expander,
+    AutoEnv:      autoEnv,
+    GlobalEnv:    cfg.Global.ExpandedEnv,
+    GroupEnv:     group.ExpandedEnv,
+    EnvAllowlist: effectiveAllowlist,
+    GroupName:    group.Name,
+})
+
+// 変更後（effectiveAllowlist 計算が不要に）
+expandedCmd, expandedArgs, expandedEnv, err := config.ExpandCommand(&config.ExpansionContext{
+    Command:      cmd,
+    Group:        group,  // group オブジェクトを渡す
+    Expander:     expander,
+    AutoEnv:      autoEnv,
+    GlobalEnv:    cfg.Global.ExpandedEnv,
+    GroupEnv:     group.ExpandedEnv,
+    EnvAllowlist: cfg.Global.EnvAllowlist,  // global allowlist を渡す（継承は内部で計算）
+})
+```
+ExpansionContext の変更
+```go
+type ExpansionContext struct {
+    Command *runnertypes.Command
+    Group   *runnertypes.CommandGroup  // 追加（以前は GroupName だけだった）
+
+    Expander *environment.VariableExpander
+    AutoEnv  map[string]string
+    GlobalEnv map[string]string
+    GroupEnv  map[string]string
+
+    EnvAllowlist []string  // これは GlobalAllowlist として解釈される
+
+    // GroupName は削除（Group.Name から取得可能）
+}
+```
