@@ -171,9 +171,5 @@ func TestBackwardCompatibility_ExistingBehavior(t *testing.T) {
 	}
 
 	// comprehensive.toml should have at least one command with env
-	if foundCommandWithEnv {
-		t.Log("Found commands with env variables (as expected)")
-	} else {
-		t.Log("No commands with env variables in comprehensive.toml (may be expected)")
-	}
+	assert.True(t, foundCommandWithEnv, "comprehensive.toml should contain at least one command with env variables")
 }

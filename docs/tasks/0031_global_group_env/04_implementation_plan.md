@@ -501,7 +501,7 @@ Global・Groupレベル環境変数設定機能を段階的に実装し、要件
 - [x] すべての既存テストがPASS
 - [x] 性能要件を満たしている
 - [x] `make lint`でエラーなし
-- [ ] コミット: "Add E2E tests and verify backward compatibility"
+- [x] コミット: "Add E2E tests and verify backward compatibility"
 
 ---
 
