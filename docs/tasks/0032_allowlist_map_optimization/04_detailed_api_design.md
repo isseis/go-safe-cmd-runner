@@ -179,16 +179,34 @@ func (r *AllowlistResolution) GetGlobalAllowlist() []string {
 // Parameters:
 //   - variable: environment variable name to check
 // Returns: true if the variable is allowed, false otherwise
+//
+// Panics:
+//   - effectiveSet が nil の場合(不変条件違反)
 func (r *AllowlistResolution) IsAllowed(variable string) bool {
-    if r == nil || r.effectiveSet == nil {
-        return false  // defensive programming
+    // nil receiver は呼び出し側のエラー - false を返す
+    if r == nil {
+        return false
     }
+
+    // 空の変数名は入力検証エラー - false を返す
+    if variable == "" {
+        return false
+    }
+
+    // INVARIANT: effectiveSet は初期化時に設定されていなければならない
+    // これが nil の場合は不変条件違反なので panic
+    if r.effectiveSet == nil {
+        panic("AllowlistResolution: effectiveSet is nil - object not properly initialized")
+    }
+
     _, allowed := r.effectiveSet[variable]
     return allowed
 }
 ```
 
-**注意**: 現状の実装については、セクション4.2を参照してください。
+**注意**:
+- 現状の実装(Phase 1)については、セクション4.2を参照してください。
+- `effectiveSet == nil`は不変条件違反であり、panicすることを推奨します。詳細はセクション8.1を参照。
 
 #### Contains Variations（用途別最適化）
 ```go
@@ -455,7 +473,23 @@ func (r *AllowlistResolution) setToSortedSlice(set map[string]struct{}) []string
 // 現行の3モード（Inherit/Explicit/Reject）での実装例
 
 // computeEffectiveSet calculates the effective allowlist based on inheritance mode.
+//
+// この関数は不変条件を確立する責任を持つ:
+// - 呼び出し後、effectiveSet は必ず nil でない状態になる
+// - groupAllowlistSet と globalAllowlistSet が nil の場合はpanic
+//
+// Panics:
+//   - groupAllowlistSet が nil の場合
+//   - globalAllowlistSet が nil の場合
 func (r *AllowlistResolution) computeEffectiveSet() {
+    // 不変条件の前提: groupAllowlistSet と globalAllowlistSet は nil であってはならない
+    if r.groupAllowlistSet == nil {
+        panic("AllowlistResolution: groupAllowlistSet is nil - cannot compute effective set")
+    }
+    if r.globalAllowlistSet == nil {
+        panic("AllowlistResolution: globalAllowlistSet is nil - cannot compute effective set")
+    }
+
     switch r.Mode {
     case InheritanceModeInherit:
         // グローバルallowlistを直接参照（zero-copy）
@@ -466,12 +500,18 @@ func (r *AllowlistResolution) computeEffectiveSet() {
         r.effectiveSet = r.groupAllowlistSet
 
     case InheritanceModeReject:
-        // 空のset
+        // 空のset(nil ではなく空のマップ)
         r.effectiveSet = make(map[string]struct{})
 
     default:
         // デフォルトは継承モード
         r.effectiveSet = r.globalAllowlistSet
+    }
+
+    // POST-CONDITION: effectiveSet は nil であってはならない
+    // (上記のすべてのケースで設定されるはずだが、防御的にチェック)
+    if r.effectiveSet == nil {
+        panic("AllowlistResolution: internal error - effectiveSet is still nil after computeEffectiveSet()")
     }
 }
 
@@ -546,24 +586,61 @@ func (r *AllowlistResolution) EffectiveList() []string {
 ### 7.2 Migration Utilities
 
 #### 移行支援ユーティリティ
+
 ```go
 // ValidateAllowlistResolution checks the integrity of an AllowlistResolution.
 // Useful for debugging and testing during migration.
+//
+// この関数は不変条件(invariants)を検証する。不変条件違反が検出された場合、
+// エラーを返すが、これは開発/テスト時の診断用である。
+// 実際の IsAllowed() では不変条件違反は panic すべき(セクション8.1参照)。
+//
+// Phase 2 での不変条件:
+//   - groupAllowlistSet は nil であってはならない
+//   - globalAllowlistSet は nil であってはならない
+//   - effectiveSet は nil であってはならない(初期化後)
+//
+// Returns:
+//   - nil: すべての不変条件が満たされている
+//   - error: 不変条件違反が検出された
 func ValidateAllowlistResolution(r *AllowlistResolution) error {
     if r == nil {
         return errors.New("AllowlistResolution is nil")
     }
 
+    // Phase 2 での不変条件チェック
     if r.groupAllowlistSet == nil {
-        return errors.New("groupAllowlistSet is nil")
+        return fmt.Errorf("invariant violation: groupAllowlistSet is nil")
     }
 
     if r.globalAllowlistSet == nil {
-        return errors.New("globalAllowlistSet is nil")
+        return fmt.Errorf("invariant violation: globalAllowlistSet is nil")
     }
 
     if r.effectiveSet == nil {
-        return errors.New("effectiveSet is nil - call computeEffectiveSet()")
+        return fmt.Errorf("invariant violation: effectiveSet is nil - object not properly initialized (did you call computeEffectiveSet()?)")
+    }
+
+    // 整合性チェック: effective set のサイズが妥当か
+    // (これはエラーではなく警告レベルかもしれない)
+    effectiveSize := len(r.effectiveSet)
+    groupSize := len(r.groupAllowlistSet)
+    globalSize := len(r.globalAllowlistSet)
+
+    // Mode に基づく期待されるサイズの検証
+    switch r.Mode {
+    case InheritanceModeReject:
+        if effectiveSize != 0 {
+            return fmt.Errorf("invariant violation: Reject mode should have empty effectiveSet, got %d entries", effectiveSize)
+        }
+    case InheritanceModeExplicit:
+        if effectiveSize != groupSize {
+            return fmt.Errorf("invariant violation: Explicit mode should have effectiveSet == groupSet, got %d vs %d", effectiveSize, groupSize)
+        }
+    case InheritanceModeInherit:
+        if effectiveSize != globalSize {
+            return fmt.Errorf("invariant violation: Inherit mode should have effectiveSet == globalSet, got %d vs %d", effectiveSize, globalSize)
+        }
     }
 
     return nil
@@ -593,30 +670,36 @@ func CompareAllowlistResolutions(a, b *AllowlistResolution) bool {
 
 #### 防御的プログラミングの実装
 
+#### 不変条件の違反処理
+
+**重要な設計決定**: `effectiveSet == nil`の扱い
+
+`effectiveSet`がnilである状態は、不変条件違反(invariant violation)であり、
+オブジェクトが正しく初期化されなかったことを示す。この状態は以下の理由でpanicすべき:
+
+1. **プログラミングエラーの検出**: 初期化忘れや不正な構築を即座に検出
+2. **バグの隠蔽防止**: falseを返すだけでは根本原因が隠蔽される
+3. **セキュリティ**: allowlist検証の失敗は重大なセキュリティリスク
+
 **Phase 2 以降での実装例**: effectiveSet を使用する場合
 ```go
 // IsAllowed with comprehensive error handling (Phase 2 implementation)
 // Phase 2 では effectiveSet を使用するため、このエラーハンドリングが必要
 func (r *AllowlistResolution) IsAllowed(variable string) bool {
-    // Handle nil receiver
+    // Handle nil receiver - これは呼び出し側のエラーなので false を返す
     if r == nil {
-        if isDebugBuild() {
-            log.Printf("WARNING: IsAllowed called on nil AllowlistResolution")
-        }
         return false
     }
 
-    // Handle empty variable name
+    // Handle empty variable name - これは入力検証なので false を返す
     if variable == "" {
         return false
     }
 
-    // Handle nil effective set (should not happen in normal operation)
+    // INVARIANT: effectiveSet must not be nil after proper initialization
+    // これは不変条件違反なので panic する
     if r.effectiveSet == nil {
-        if isDebugBuild() {
-            log.Printf("ERROR: effectiveSet is nil in AllowlistResolution")
-        }
-        return false
+        panic("AllowlistResolution: effectiveSet is nil - object not properly initialized")
     }
 
     _, allowed := r.effectiveSet[variable]
@@ -624,9 +707,44 @@ func (r *AllowlistResolution) IsAllowed(variable string) bool {
 }
 ```
 
-**Phase 1 での実装**: Mode に基づく判定では、上記のエラーハンドリングは不要です。
-現状の実装(セクション4.2参照)は、`Mode`と`groupAllowlistSet`/`globalAllowlistSet`のnil
-チェックのみで十分です。
+**代替案: 開発時のみpanic**
+```go
+// より穏健なアプローチ: 開発時はpanic、本番環境ではログ + false
+func (r *AllowlistResolution) IsAllowed(variable string) bool {
+    if r == nil {
+        return false
+    }
+
+    if variable == "" {
+        return false
+    }
+
+    // INVARIANT: effectiveSet must not be nil
+    if r.effectiveSet == nil {
+        const errMsg = "AllowlistResolution: effectiveSet is nil - object not properly initialized"
+
+        // 開発/テスト環境では即座にpanic
+        if isDebugBuild() || isTesting() {
+            panic(errMsg)
+        }
+
+        // 本番環境ではエラーログ + メトリクス + false
+        log.Errorf(errMsg)
+        metrics.IncrementInvariantViolations()
+        return false  // fail-safe: 不正な状態ではアクセスを拒否
+    }
+
+    _, allowed := r.effectiveSet[variable]
+    return allowed
+}
+```
+
+**推奨**: 本プロジェクトではセキュリティが重要なため、不変条件違反は常にpanicすることを推奨。
+テストで確実に検出され、本番環境では適切な初期化が保証される。
+
+**Phase 1 での実装**: Mode に基づく判定では、effectiveSetを使用しないため、
+この問題は発生しない。セクション4.2の現状の実装では、`groupAllowlistSet`や
+`globalAllowlistSet`がnilの場合は単にfalseを返す(これは正常な動作)。
 
 ### 8.2 診断とデバッグ支援
 
