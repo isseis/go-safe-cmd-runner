@@ -200,12 +200,15 @@ func (s Set) ToSlice() []string {
 func (r *AllowlistResolution) computeEffectiveSet() {
     switch r.Mode {
     case InheritanceModeGlobalOnly:
+        // 参照を共有(元のマップは変更されない前提)
         r.effectiveSet = r.globalAllowlistSet
 
     case InheritanceModeGroupOnly:
+        // 参照を共有(元のマップは変更されない前提)
         r.effectiveSet = r.groupAllowlistSet
 
     case InheritanceModeMerge:
+        // 新しいマップを作成してマージ
         r.effectiveSet = make(map[string]struct{})
         // Global allowlist をコピー
         for k, v := range r.globalAllowlistSet {
@@ -217,6 +220,7 @@ func (r *AllowlistResolution) computeEffectiveSet() {
         }
 
     case InheritanceModeOverride:
+        // 参照を共有(元のマップは変更されない前提)
         if len(r.groupAllowlistSet) > 0 {
             r.effectiveSet = r.groupAllowlistSet
         } else {
@@ -228,7 +232,43 @@ func (r *AllowlistResolution) computeEffectiveSet() {
 
 ## 6. メモリ効率の最適化
 
-### 6.1 共有参照の活用
+### 6.1 マップの参照セマンティクスに関する設計決定
+
+#### 設計の選択肢
+
+以下の2つのアプローチが考えられる:
+
+**オプション1: 参照として扱う(採用)**
+- `groupSet`: 参照(呼び出し側で新規作成されたマップ)
+- `globalSet`: 参照(Filter.globalAllowlist を共有)
+- メリット: メモリ効率が良い、シンプル
+- 前提条件: 呼び出し側が渡した後にマップを変更しない
+
+**オプション2: groupSetをディープコピー(不採用)**
+- `groupSet`: ディープコピー(独立性を保証)
+- `globalSet`: 参照(Filter.globalAllowlist を共有)
+- メリット: 安全性が高い
+- デメリット: コピーのコストが発生(最適化の目的に反する)
+
+#### 採用理由
+
+オプション1を採用する理由:
+
+1. **実装パターンの分析**: `Filter.ResolveAllowlistConfiguration`では、`groupSet`は`buildAllowlistSet(allowlist)`で新規作成される
+2. **所有権の明確性**: 新規作成されたマップは`AllowlistResolution`に所有権が移譲される
+3. **パフォーマンス最適化**: 本タスクの主目的は不要なコピーの排除
+4. **現実的な使用パターン**: マップを渡した後に変更するケースは想定されていない
+
+#### リスク軽減策
+
+参照セマンティクスのリスクを軽減するため、以下の対策を講じる:
+
+1. **明示的なドキュメント**: 呼び出し契約をコメントで明記
+2. **テストでの検証**: マップの独立性をテストで確認
+3. **不変性の強制**: AllowlistResolutionは読み取り専用メソッドのみ提供
+4. **将来の拡張性**: 必要に応じてディープコピー版のコンストラクタを追加可能
+
+### 6.2 共有参照によるメモリ効率化
 
 #### グローバル Allowlist の共有
 ```go
@@ -244,20 +284,33 @@ func NewAllowlistResolution(
     mode InheritanceMode,
     groupName string,
     groupSet map[string]struct{},
-    globalSet map[string]struct{},  // 参照として受け取り
+    globalSet map[string]struct{},
 ) *AllowlistResolution {
+    // 重要: Go のマップは参照型
+    // groupSet と globalSet は両方とも参照として保持される
+    //
+    // 呼び出し契約:
+    // - 呼び出し側は渡した後にこれらのマップを変更してはならない
+    // - groupSet は通常 buildAllowlistSet() で新規作成されるため安全
+    // - globalSet は Filter.globalAllowlist への参照(複数の AllowlistResolution 間で共有)
+    //
+    // もし独立性が必要な場合は、明示的にディープコピーを行うこと:
+    //   groupSetCopy := make(map[string]struct{}, len(groupSet))
+    //   for k, v := range groupSet {
+    //       groupSetCopy[k] = v
+    //   }
     r := &AllowlistResolution{
         Mode:               mode,
         GroupName:          groupName,
-        groupAllowlistSet:  groupSet,           // コピー（グループ固有）
-        globalAllowlistSet: globalSet,          // 参照（共有）
+        groupAllowlistSet:  groupSet,           // 参照(新規作成されたマップ)
+        globalAllowlistSet: globalSet,          // 参照(Filter.globalAllowlist を共有)
     }
     r.computeEffectiveSet()
     return r
 }
 ```
 
-### 6.2 遅延評価の活用
+### 6.3 遅延評価の活用
 
 #### Getter メソッドでの遅延変換
 ```go
@@ -326,10 +379,16 @@ type Filter struct {
 // AllowlistResolution は読み取り専用として設計
 type AllowlistResolution struct {
     // すべてのフィールドは初期化後は読み取り専用
+    // マップは参照型だが、内容を変更するメソッドは提供しない
     groupAllowlistSet  map[string]struct{}
-    globalAllowlistSet map[string]struct{}
+    globalAllowlistSet map[string]struct{}  // Filter.globalAllowlist への参照
     effectiveSet       map[string]struct{}
 }
+
+// 並行安全性の前提条件:
+// 1. AllowlistResolution 作成後、元のマップを変更してはならない
+// 2. globalAllowlistSet は複数の AllowlistResolution インスタンス間で共有される
+// 3. 並行安全性は、マップの内容が不変であることに依存している
 ```
 
 ### 8.2 並行アクセスパターン
@@ -472,6 +531,12 @@ const (
 // The AllowlistResolution type uses internal map-based storage for efficient
 // O(1) lookups while providing slice-based getters for compatibility.
 //
+// Memory Management:
+// AllowlistResolution stores map references without copying. Callers must not
+// modify maps after passing them to constructors. This design optimizes for
+// performance by avoiding unnecessary allocations while maintaining safety
+// through immutability contracts.
+//
 // Performance characteristics:
 //   - IsAllowed: O(1) lookup
 //   - GetGroupAllowlist: O(n) conversion (cached)
@@ -521,6 +586,7 @@ go test -bench=. -benchmem -count=5 ./internal/runner/environment/
    - 不要な変換処理の完全排除
    - O(1) 検索性能の維持
    - メモリ使用量の大幅削減
+   - マップの参照共有によるアロケーション削減
 
 2. **互換性保証**
    - 既存 API の動作を完全保持
@@ -532,15 +598,38 @@ go test -bench=. -benchmem -count=5 ./internal/runner/environment/
    - 明確な責任分離
    - 包括的なテストカバレッジ
 
+4. **設計の明確性**
+   - マップの参照セマンティクスを明示的にドキュメント化
+   - 不変性契約による並行安全性の保証
+   - 所有権の移譲パターンを明確化
+
 ### 14.2 実装の優先順位
 
 1. **High Priority**: AllowlistResolution の内部実装変更
 2. **Medium Priority**: Filter の ResolveAllowlistConfiguration 最適化
 3. **Low Priority**: getter メソッドのキャッシュ最適化
 
-### 14.3 リスク軽減策
+### 14.3 重要な設計決定
+
+#### マップの参照セマンティクス
+
+本設計では、Goのマップの参照型としての特性を活用し、ディープコピーを避けることでパフォーマンスを最適化している。
+
+**採用した方針:**
+- `groupSet`: 参照として保持(新規作成されたマップの所有権移譲)
+- `globalSet`: 参照として保持(Filter.globalAllowlist を複数のインスタンス間で共有)
+
+**安全性の保証:**
+- 呼び出し側契約: 渡した後にマップを変更しないことを要求
+- 不変性の強制: AllowlistResolution は読み取り専用メソッドのみ提供
+- ドキュメント化: コメントと設計書で明示的に注意喚起
+
+この設計により、パフォーマンス最適化と安全性のバランスを実現している。
+
+### 14.4 リスク軽減策
 
 - 包括的な単体テスト
+- マップの独立性を検証するテストケース
 - 段階的リリース
 - パフォーマンス監視
 - 緊急時のロールバック機能
