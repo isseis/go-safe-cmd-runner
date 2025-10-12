@@ -30,7 +30,8 @@
 **目的**: 現在の動作を保証する統合テストを追加し、リグレッション防止の基盤を作る
 
 #### 2.1.1 E2Eテストの作成
-- [ ] サンプルTOMLファイル: `testdata/refactoring_e2e.toml`
+- [ ] 既存のE2Eテスト TOML ファイル（`internal/runner/config/testdata/*.toml`）を調べて、裁量できるか検討する。再利用できない場合には新規に TOML ファイルを作成する。
+- [ ] サンプルTOMLファイル: `internal/runner/config/testdata/refactoring_e2e.toml`
   ```toml
   [global]
   env = ["BASE_DIR=/opt", "LOG_LEVEL=info"]
@@ -85,7 +86,7 @@
 
 #### 2.2.1 processConfig()にCommand展開を追加
 - [ ] `internal/runner/config/loader.go`を編集
-  - [ ] `processConfig`関数内のGroup処理(Phase 3)の後に、各コマンドに対してCommand.Env/Cmd/Args展開を実行
+  - [ ] `processConfig`関数内のGroup処理(Task0031メインプロジェクト Phase 5-6)の後に、各コマンドに対してCommand.Env/Cmd/Args展開を実行
     ```go
     // Phase 4: Command processing (Command.Env, Cmd, Args expansion)
     for i := range cfg.Groups {
@@ -383,15 +384,14 @@
 
 ### 5.1 実装前の準備
 - [ ] Task 0031（Global・Groupレベル環境変数設定機能）が完了している
-- [ ] Phase 1-4がすべて正常に完了している
 - [ ] ADR（06_refactoring_adr.md）をレビューし、方針を理解
 - [ ] 本実装計画書をレビューし、手順を理解
 
 ### 5.2 各Phaseの実装
-- [ ] Phase 1: 準備と統合テスト追加（完了）
-- [ ] Phase 2: config.Loader側にCommand展開を追加（完了）
-- [ ] Phase 3: bootstrap側の展開処理を削除（完了）
-- [ ] Phase 4: クリーンアップと最適化（完了）
+- [ ] Phase 1: 準備と統合テスト追加
+- [ ] Phase 2: config.Loader側にCommand展開を追加
+- [ ] Phase 3: bootstrap側の展開処理を削除
+- [ ] Phase 4: クリーンアップと最適化
 
 ### 5.3 最終確認
 - [ ] すべての完了基準を満たしている
