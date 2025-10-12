@@ -198,7 +198,7 @@ func (f *Filter) IsVariableAccessAllowed(variable string, allowlist []string, gr
 			"variable", variable,
 			"group", groupName,
 			"inheritance_mode", resolution.Mode.String(),
-			"effective_allowlist_size", len(resolution.EffectiveList))
+			"effective_allowlist_size", resolution.GetEffectiveSize())
 	} else {
 		slog.Debug("Variable access granted",
 			"variable", variable,
