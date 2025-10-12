@@ -85,8 +85,8 @@
 **目的**: config.Loaderに完全な展開処理を実装する（この時点では重複展開が存在）
 
 #### 2.2.1 processConfig()にCommand展開を追加
-- [ ] `internal/runner/config/loader.go`を編集
-  - [ ] `processConfig`関数内のGroup処理(Task0031メインプロジェクト Phase 5-6)の後に、各コマンドに対してCommand.Env/Cmd/Args展開を実行
+- [x] `internal/runner/config/loader.go`を編集
+  - [x] `processConfig`関数内のGroup処理(Task0031メインプロジェクト Phase 5-6)の後に、各コマンドに対してCommand.Env/Cmd/Args展開を実行
     ```go
     // Phase 4: Command processing (Command.Env, Cmd, Args expansion)
     for i := range cfg.Groups {
@@ -118,11 +118,11 @@
     ```
 
 #### 2.2.2 loader_test.goのテスト更新
-- [ ] `internal/runner/config/loader_test.go`を編集
-  - [ ] 既存のPhase 4テスト（`TestLoader_Phase4_CommandEnvIntegration`）を更新
-    - [ ] Command.ExpandedEnvがnilでないことを確認
-    - [ ] Command.ExpandedCmdが展開されていることを確認
-    - [ ] Command.ExpandedArgsが展開されていることを確認
+- [x] `internal/runner/config/loader_test.go`を編集
+  - [x] 既存のPhase 4テスト（`TestLoader_Phase4_CommandEnvIntegration`）を更新
+    - [x] Command.ExpandedEnvがnilでないことを確認
+    - [x] Command.ExpandedCmdが展開されていることを確認
+    - [x] Command.ExpandedArgsが展開されていることを確認
   - [ ] 期待値の追加:
     ```go
     // Command.ExpandedEnv should be populated (Phase 2 change)
@@ -140,18 +140,18 @@
     ```
 
 #### 2.2.3 重複展開の動作確認
-- [ ] この時点では、展開が2回実行される（意図的）
+- [x] この時点では、展開が2回実行される（意図的）
   - 1回目: config.Loader.processConfig()（新規追加）
   - 2回目: bootstrap.LoadAndPrepareConfig()（既存）
-- [ ] 両方で同じ結果が得られることを確認
-- [ ] すべてのテストがPASS
+- [x] 両方で同じ結果が得られることを確認
+- [x] すべてのテストがPASS
 
 #### 2.2.4 Phase 2の完了確認
-- [ ] すべての既存テストがPASS
-- [ ] Phase 2の新規テストがすべてPASS
-- [ ] `make lint`でエラーなし
-- [ ] 重複展開が意図的に存在することをコメントに記載
-- [ ] コミット: "Add command expansion to config.Loader (duplicate expansion exists intentionally)"
+- [x] すべての既存テストがPASS
+- [x] Phase 2の新規テストがすべてPASS
+- [x] `make lint`でエラーなし
+- [x] 重複展開が意図的に存在することをコメントに記載
+- [x] コミット: "Add command expansion to config.Loader (duplicate expansion exists intentionally)"
 
 ---
 
