@@ -1893,6 +1893,45 @@ func TestExpandGlobalEnv_Empty(t *testing.T) {
 	}
 }
 
+// TestExpandGlobalEnv_EmptyValue tests that Global.Env can have empty string values
+func TestExpandGlobalEnv_EmptyValue(t *testing.T) {
+	filter := environment.NewFilter([]string{"HOME"})
+	expander := environment.NewVariableExpander(filter)
+
+	cfg := &runnertypes.GlobalConfig{
+		Env:          []string{"EMPTY_VAR=", "NORMAL_VAR=value"},
+		EnvAllowlist: []string{"HOME"},
+	}
+
+	err := config.ExpandGlobalEnv(cfg, expander, nil)
+	require.NoError(t, err)
+
+	assert.Equal(t, "", cfg.ExpandedEnv["EMPTY_VAR"])
+	assert.Equal(t, "value", cfg.ExpandedEnv["NORMAL_VAR"])
+}
+
+// TestExpandGlobalEnv_SpecialCharacters tests that Global.Env handles special characters correctly
+func TestExpandGlobalEnv_SpecialCharacters(t *testing.T) {
+	filter := environment.NewFilter([]string{"HOME"})
+	expander := environment.NewVariableExpander(filter)
+
+	cfg := &runnertypes.GlobalConfig{
+		Env: []string{
+			"URL=https://example.com:8080/path?query=value&other=123",
+			"PATH_VAR=/usr/local/bin:/usr/bin:/bin",
+			"SPECIAL=value-with_special.chars@123",
+		},
+		EnvAllowlist: []string{"HOME"},
+	}
+
+	err := config.ExpandGlobalEnv(cfg, expander, nil)
+	require.NoError(t, err)
+
+	assert.Equal(t, "https://example.com:8080/path?query=value&other=123", cfg.ExpandedEnv["URL"])
+	assert.Equal(t, "/usr/local/bin:/usr/bin:/bin", cfg.ExpandedEnv["PATH_VAR"])
+	assert.Equal(t, "value-with_special.chars@123", cfg.ExpandedEnv["SPECIAL"])
+}
+
 // TestConfigLoader_GlobalEnvIntegration tests Config Loader integration with Global.Env
 func TestConfigLoader_GlobalEnvIntegration(t *testing.T) {
 	// Set up test environment variable
