@@ -514,3 +514,340 @@ func slicesEqual(a, b []string) bool {
 	}
 	return true
 }
+
+// TestBuildAllowlistSet tests the buildAllowlistSet helper function
+func TestBuildAllowlistSet(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []string
+		expected map[string]struct{}
+	}{
+		{
+			name:     "empty slice",
+			input:    []string{},
+			expected: map[string]struct{}{},
+		},
+		{
+			name:     "single variable",
+			input:    []string{"VAR1"},
+			expected: map[string]struct{}{"VAR1": {}},
+		},
+		{
+			name:     "multiple variables",
+			input:    []string{"VAR1", "VAR2", "VAR3"},
+			expected: map[string]struct{}{"VAR1": {}, "VAR2": {}, "VAR3": {}},
+		},
+		{
+			name:     "nil slice",
+			input:    nil,
+			expected: map[string]struct{}{},
+		},
+		{
+			name:     "duplicate variables",
+			input:    []string{"VAR1", "VAR2", "VAR1"},
+			expected: map[string]struct{}{"VAR1": {}, "VAR2": {}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := buildAllowlistSet(tt.input)
+
+			if len(result) != len(tt.expected) {
+				t.Errorf("buildAllowlistSet() result size = %d, want %d", len(result), len(tt.expected))
+			}
+
+			for key := range tt.expected {
+				if _, exists := result[key]; !exists {
+					t.Errorf("buildAllowlistSet() missing key: %s", key)
+				}
+			}
+
+			for key := range result {
+				if _, exists := tt.expected[key]; !exists {
+					t.Errorf("buildAllowlistSet() unexpected key: %s", key)
+				}
+			}
+		})
+	}
+}
+
+// TestNewAllowlistResolutionBuilder tests the builder constructor
+func TestNewAllowlistResolutionBuilder(t *testing.T) {
+	builder := NewAllowlistResolutionBuilder()
+
+	if builder == nil {
+		t.Fatal("NewAllowlistResolutionBuilder() returned nil")
+	}
+
+	if builder.mode != InheritanceModeInherit {
+		t.Errorf("default mode = %v, want %v", builder.mode, InheritanceModeInherit)
+	}
+
+	if builder.groupName != "" {
+		t.Errorf("default groupName = %q, want empty string", builder.groupName)
+	}
+
+	if builder.groupVars != nil {
+		t.Errorf("default groupVars = %v, want nil", builder.groupVars)
+	}
+
+	if builder.globalVars != nil {
+		t.Errorf("default globalVars = %v, want nil", builder.globalVars)
+	}
+}
+
+// TestAllowlistResolutionBuilder_Chaining tests method chaining
+func TestAllowlistResolutionBuilder_Chaining(t *testing.T) {
+	builder := NewAllowlistResolutionBuilder()
+
+	// Test that each method returns the builder for chaining
+	result1 := builder.WithMode(InheritanceModeExplicit)
+	if result1 != builder {
+		t.Error("WithMode() did not return the same builder instance")
+	}
+
+	result2 := builder.WithGroupName("test-group")
+	if result2 != builder {
+		t.Error("WithGroupName() did not return the same builder instance")
+	}
+
+	result3 := builder.WithGroupVariables([]string{"VAR1"})
+	if result3 != builder {
+		t.Error("WithGroupVariables() did not return the same builder instance")
+	}
+
+	result4 := builder.WithGlobalVariables([]string{"VAR2"})
+	if result4 != builder {
+		t.Error("WithGlobalVariables() did not return the same builder instance")
+	}
+}
+
+// TestAllowlistResolutionBuilder_Build tests the Build method
+func TestAllowlistResolutionBuilder_Build(t *testing.T) {
+	tests := []struct {
+		name               string
+		mode               InheritanceMode
+		groupName          string
+		groupVars          []string
+		globalVars         []string
+		expectedMode       InheritanceMode
+		expectedGroupName  string
+		expectedGroupSize  int
+		expectedGlobalSize int
+	}{
+		{
+			name:               "inherit mode with variables",
+			mode:               InheritanceModeInherit,
+			groupName:          "build",
+			groupVars:          []string{"PATH", "HOME"},
+			globalVars:         []string{"USER", "SHELL", "PATH"},
+			expectedMode:       InheritanceModeInherit,
+			expectedGroupName:  "build",
+			expectedGroupSize:  2,
+			expectedGlobalSize: 3,
+		},
+		{
+			name:               "explicit mode with variables",
+			mode:               InheritanceModeExplicit,
+			groupName:          "deploy",
+			groupVars:          []string{"DEPLOY_KEY", "DEPLOY_ENV"},
+			globalVars:         []string{"USER"},
+			expectedMode:       InheritanceModeExplicit,
+			expectedGroupName:  "deploy",
+			expectedGroupSize:  2,
+			expectedGlobalSize: 1,
+		},
+		{
+			name:               "reject mode",
+			mode:               InheritanceModeReject,
+			groupName:          "restricted",
+			groupVars:          []string{"VAR1"},
+			globalVars:         []string{"VAR2"},
+			expectedMode:       InheritanceModeReject,
+			expectedGroupName:  "restricted",
+			expectedGroupSize:  1,
+			expectedGlobalSize: 1,
+		},
+		{
+			name:               "empty variables",
+			mode:               InheritanceModeInherit,
+			groupName:          "empty",
+			groupVars:          []string{},
+			globalVars:         []string{},
+			expectedMode:       InheritanceModeInherit,
+			expectedGroupName:  "empty",
+			expectedGroupSize:  0,
+			expectedGlobalSize: 0,
+		},
+		{
+			name:               "nil variables",
+			mode:               InheritanceModeInherit,
+			groupName:          "nil-vars",
+			groupVars:          nil,
+			globalVars:         nil,
+			expectedMode:       InheritanceModeInherit,
+			expectedGroupName:  "nil-vars",
+			expectedGroupSize:  0,
+			expectedGlobalSize: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resolution := NewAllowlistResolutionBuilder().
+				WithMode(tt.mode).
+				WithGroupName(tt.groupName).
+				WithGroupVariables(tt.groupVars).
+				WithGlobalVariables(tt.globalVars).
+				Build()
+
+			if resolution == nil {
+				t.Fatal("Build() returned nil")
+			}
+
+			if resolution.Mode != tt.expectedMode {
+				t.Errorf("Mode = %v, want %v", resolution.Mode, tt.expectedMode)
+			}
+
+			if resolution.GroupName != tt.expectedGroupName {
+				t.Errorf("GroupName = %q, want %q", resolution.GroupName, tt.expectedGroupName)
+			}
+
+			// Verify internal sets are properly initialized
+			if resolution.groupAllowlistSet == nil {
+				t.Error("groupAllowlistSet is nil")
+			}
+
+			if resolution.globalAllowlistSet == nil {
+				t.Error("globalAllowlistSet is nil")
+			}
+
+			if resolution.effectiveSet == nil {
+				t.Error("effectiveSet is nil")
+			}
+
+			// Verify set sizes
+			if len(resolution.groupAllowlistSet) != tt.expectedGroupSize {
+				t.Errorf("groupAllowlistSet size = %d, want %d", len(resolution.groupAllowlistSet), tt.expectedGroupSize)
+			}
+
+			if len(resolution.globalAllowlistSet) != tt.expectedGlobalSize {
+				t.Errorf("globalAllowlistSet size = %d, want %d", len(resolution.globalAllowlistSet), tt.expectedGlobalSize)
+			}
+
+			// Verify getters work correctly
+			groupList := resolution.GetGroupAllowlist()
+			if len(groupList) != tt.expectedGroupSize {
+				t.Errorf("GetGroupAllowlist() size = %d, want %d", len(groupList), tt.expectedGroupSize)
+			}
+
+			globalList := resolution.GetGlobalAllowlist()
+			if len(globalList) != tt.expectedGlobalSize {
+				t.Errorf("GetGlobalAllowlist() size = %d, want %d", len(globalList), tt.expectedGlobalSize)
+			}
+		})
+	}
+}
+
+// TestAllowlistResolutionBuilder_FluentInterface tests the full fluent interface
+func TestAllowlistResolutionBuilder_FluentInterface(t *testing.T) {
+	// Test that we can chain all methods together
+	resolution := NewAllowlistResolutionBuilder().
+		WithMode(InheritanceModeExplicit).
+		WithGroupName("test-group").
+		WithGroupVariables([]string{"VAR1", "VAR2", "VAR3"}).
+		WithGlobalVariables([]string{"GLOBAL1", "GLOBAL2"}).
+		Build()
+
+	if resolution == nil {
+		t.Fatal("Build() returned nil")
+	}
+
+	// Verify the configuration
+	if resolution.Mode != InheritanceModeExplicit {
+		t.Errorf("Mode = %v, want %v", resolution.Mode, InheritanceModeExplicit)
+	}
+
+	if resolution.GroupName != "test-group" {
+		t.Errorf("GroupName = %q, want %q", resolution.GroupName, "test-group")
+	}
+
+	// In explicit mode, effective list should match group variables
+	effectiveList := resolution.GetEffectiveList()
+	if len(effectiveList) != 3 {
+		t.Errorf("GetEffectiveList() size = %d, want 3", len(effectiveList))
+	}
+
+	// Verify variables are accessible
+	if !resolution.IsAllowed("VAR1") {
+		t.Error("VAR1 should be allowed in explicit mode")
+	}
+
+	if !resolution.IsAllowed("VAR2") {
+		t.Error("VAR2 should be allowed in explicit mode")
+	}
+
+	if resolution.IsAllowed("GLOBAL1") {
+		t.Error("GLOBAL1 should not be allowed in explicit mode")
+	}
+}
+
+// TestAllowlistResolutionBuilder_DefaultMode tests the default inheritance mode
+func TestAllowlistResolutionBuilder_DefaultMode(t *testing.T) {
+	// Build without specifying mode - should default to Inherit
+	resolution := NewAllowlistResolutionBuilder().
+		WithGroupName("default-mode").
+		WithGroupVariables([]string{"GROUP_VAR"}).
+		WithGlobalVariables([]string{"GLOBAL_VAR"}).
+		Build()
+
+	if resolution.Mode != InheritanceModeInherit {
+		t.Errorf("Default mode = %v, want %v", resolution.Mode, InheritanceModeInherit)
+	}
+
+	// In inherit mode, global variables should be accessible
+	if !resolution.IsAllowed("GLOBAL_VAR") {
+		t.Error("GLOBAL_VAR should be allowed in default (inherit) mode")
+	}
+
+	if resolution.IsAllowed("GROUP_VAR") {
+		t.Error("GROUP_VAR should not be allowed in inherit mode (only global allowed)")
+	}
+}
+
+// TestAllowlistResolutionBuilder_Comparison tests builder vs direct constructor
+func TestAllowlistResolutionBuilder_Comparison(t *testing.T) {
+	// Create using builder
+	resolutionBuilder := NewAllowlistResolutionBuilder().
+		WithMode(InheritanceModeExplicit).
+		WithGroupName("test").
+		WithGroupVariables([]string{"A", "B", "C"}).
+		WithGlobalVariables([]string{"X", "Y"}).
+		Build()
+
+	// Create using direct constructor
+	resolutionDirect := NewAllowlistResolution(
+		InheritanceModeExplicit,
+		"test",
+		map[string]struct{}{"A": {}, "B": {}, "C": {}},
+		map[string]struct{}{"X": {}, "Y": {}},
+	)
+
+	// Both should behave identically
+	testVars := []string{"A", "B", "C", "X", "Y", "Z"}
+	for _, v := range testVars {
+		builderResult := resolutionBuilder.IsAllowed(v)
+		directResult := resolutionDirect.IsAllowed(v)
+
+		if builderResult != directResult {
+			t.Errorf("IsAllowed(%q) builder=%v, direct=%v - should be equal", v, builderResult, directResult)
+		}
+	}
+
+	// Verify effective sizes match
+	if resolutionBuilder.GetEffectiveSize() != resolutionDirect.GetEffectiveSize() {
+		t.Errorf("GetEffectiveSize() builder=%d, direct=%d - should be equal",
+			resolutionBuilder.GetEffectiveSize(), resolutionDirect.GetEffectiveSize())
+	}
+}

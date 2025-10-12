@@ -523,3 +523,82 @@ type PrivilegeManager interface {
 	WithUserGroup(user, group string, fn func() error) error
 	IsUserGroupSupported() bool
 }
+
+// buildAllowlistSet converts a slice of allowed variable names into a map for O(1) lookups.
+// This helper function is used during allowlist resolution to create efficient lookup structures.
+// Uses struct{} for values to minimize memory usage (0 bytes per entry).
+func buildAllowlistSet(allowlist []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(allowlist))
+	for _, varName := range allowlist {
+		set[varName] = struct{}{}
+	}
+	return set
+}
+
+// AllowlistResolutionBuilder provides a fluent interface for creating AllowlistResolution.
+// Available in Phase 2 and later.
+//
+// Example usage:
+//
+//	resolution := NewAllowlistResolutionBuilder().
+//	    WithMode(InheritanceModeExplicit).
+//	    WithGroupName("build").
+//	    WithGroupVariables([]string{"PATH", "HOME"}).
+//	    WithGlobalVariables([]string{"USER", "SHELL"}).
+//	    Build()
+type AllowlistResolutionBuilder struct {
+	mode       InheritanceMode
+	groupName  string
+	groupVars  []string
+	globalVars []string
+}
+
+// NewAllowlistResolutionBuilder creates a new builder with default values.
+// Default mode is InheritanceModeInherit.
+func NewAllowlistResolutionBuilder() *AllowlistResolutionBuilder {
+	return &AllowlistResolutionBuilder{
+		mode: InheritanceModeInherit, // default to inherit mode
+	}
+}
+
+// WithMode sets the inheritance mode for the resolution.
+// Returns the builder for method chaining.
+func (b *AllowlistResolutionBuilder) WithMode(mode InheritanceMode) *AllowlistResolutionBuilder {
+	b.mode = mode
+	return b
+}
+
+// WithGroupName sets the group name for the resolution.
+// Returns the builder for method chaining.
+func (b *AllowlistResolutionBuilder) WithGroupName(name string) *AllowlistResolutionBuilder {
+	b.groupName = name
+	return b
+}
+
+// WithGroupVariables sets the group-specific variables for the resolution.
+// Returns the builder for method chaining.
+func (b *AllowlistResolutionBuilder) WithGroupVariables(vars []string) *AllowlistResolutionBuilder {
+	b.groupVars = vars
+	return b
+}
+
+// WithGlobalVariables sets the global variables for the resolution.
+// Returns the builder for method chaining.
+func (b *AllowlistResolutionBuilder) WithGlobalVariables(vars []string) *AllowlistResolutionBuilder {
+	b.globalVars = vars
+	return b
+}
+
+// Build creates the AllowlistResolution with the configured settings.
+// This method converts the variable slices to maps and calls NewAllowlistResolution.
+//
+// Returns:
+//   - *AllowlistResolution: newly created resolution with pre-computed effective set
+//
+// Panics:
+//   - if NewAllowlistResolution panics (should not happen with proper builder usage)
+func (b *AllowlistResolutionBuilder) Build() *AllowlistResolution {
+	groupSet := buildAllowlistSet(b.groupVars)
+	globalSet := buildAllowlistSet(b.globalVars)
+	return NewAllowlistResolution(b.mode, b.groupName, groupSet, globalSet)
+}
