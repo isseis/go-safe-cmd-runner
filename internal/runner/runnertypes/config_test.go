@@ -282,7 +282,7 @@ func TestAllowlistResolution_GetEffectiveList(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := tt.resolver.GetEffectiveList()
 			if len(result) != len(tt.expected) {
-				t.Errorf("expected length %d, got %d", len(tt.expected), len(result))
+				t.Fatalf("expected length %d, got %d. expected=%#v, got=%#v", len(tt.expected), len(result), tt.expected, result)
 			}
 			for i := range result {
 				if result[i] != tt.expected[i] {
