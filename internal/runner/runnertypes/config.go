@@ -276,13 +276,9 @@ type AllowlistResolution struct {
 // Returns: true if the variable is allowed, false otherwise
 //
 // Panics:
+//   - if receiver is nil (programming error - caller must check before calling)
 //   - if effectiveSet is nil (invariant violation - object not properly initialized)
 func (r *AllowlistResolution) IsAllowed(variable string) bool {
-	// nil receiver is a caller error - return false
-	if r == nil {
-		return false
-	}
-
 	// empty variable name is input validation error - return false
 	if variable == "" {
 		return false
@@ -314,48 +310,33 @@ func (r *AllowlistResolution) SetGlobalAllowlistSet(allowlistSet map[string]stru
 // Phase 2 implementation: Uses cached slice generated from effectiveSet on first access.
 // Thread-safe: Uses sync.Once to ensure cache is initialized only once.
 func (r *AllowlistResolution) GetEffectiveList() []string {
-	if r == nil {
-		return []string{}
+	// INVARIANT: effectiveSet must be set during initialization
+	if r.effectiveSet == nil {
+		panic("AllowlistResolution.GetEffectiveList: effectiveSet is nil - object not properly initialized via NewAllowlistResolution")
 	}
 
-	// Thread-safe lazy evaluation and caching using sync.Once
-	if r.effectiveSet != nil {
-		r.effectiveListOnce.Do(func() {
-			r.effectiveListCache = r.setToSortedSlice(r.effectiveSet)
-		})
-	}
+	r.effectiveListOnce.Do(func() {
+		r.effectiveListCache = r.setToSortedSlice(r.effectiveSet)
+	})
 
-	// Fall back to existing field if cache is still nil (backward compatibility)
-	if r.effectiveListCache != nil {
-		return r.effectiveListCache
-	}
-	return r.EffectiveList
+	return r.effectiveListCache
 }
 
 // GetEffectiveSize returns the number of effective allowlist entries.
 // Phase 2 optimization: Uses effectiveSet directly for O(1) size query.
 func (r *AllowlistResolution) GetEffectiveSize() int {
-	if r == nil {
-		return 0
+	// INVARIANT: effectiveSet must be set during initialization
+	if r.effectiveSet == nil {
+		panic("AllowlistResolution.GetEffectiveSize: effectiveSet is nil - object not properly initialized via NewAllowlistResolution")
 	}
 
-	// Phase 2: Use effectiveSet for O(1) size check
-	if r.effectiveSet != nil {
-		return len(r.effectiveSet)
-	}
-
-	// Fall back to existing field for backward compatibility
-	return len(r.EffectiveList)
+	return len(r.effectiveSet)
 }
 
 // GetGroupAllowlist returns group allowlist with lazy evaluation.
 // Phase 2 implementation: Uses cached slice generated from groupAllowlistSet on first access.
 // Thread-safe: Uses sync.Once to ensure cache is initialized only once.
 func (r *AllowlistResolution) GetGroupAllowlist() []string {
-	if r == nil {
-		return []string{}
-	}
-
 	// Thread-safe lazy evaluation and caching using sync.Once
 	if r.groupAllowlistSet != nil {
 		r.groupAllowlistOnce.Do(func() {
@@ -374,10 +355,6 @@ func (r *AllowlistResolution) GetGroupAllowlist() []string {
 // Phase 2 implementation: Uses cached slice generated from globalAllowlistSet on first access.
 // Thread-safe: Uses sync.Once to ensure cache is initialized only once.
 func (r *AllowlistResolution) GetGlobalAllowlist() []string {
-	if r == nil {
-		return []string{}
-	}
-
 	// Thread-safe lazy evaluation and caching using sync.Once
 	if r.globalAllowlistSet != nil {
 		r.globalAllowlistOnce.Do(func() {
@@ -394,17 +371,11 @@ func (r *AllowlistResolution) GetGlobalAllowlist() []string {
 
 // GetMode returns the inheritance mode used for this resolution.
 func (r *AllowlistResolution) GetMode() InheritanceMode {
-	if r == nil {
-		return InheritanceModeInherit // safe default
-	}
 	return r.Mode
 }
 
 // GetGroupName returns the name of the group this resolution is for.
 func (r *AllowlistResolution) GetGroupName() string {
-	if r == nil {
-		return ""
-	}
 	return r.GroupName
 }
 

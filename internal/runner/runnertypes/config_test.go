@@ -258,11 +258,6 @@ func TestAllowlistResolution_GetEffectiveList(t *testing.T) {
 		expected []string
 	}{
 		{
-			name:     "nil resolver returns empty slice",
-			resolver: nil,
-			expected: []string{},
-		},
-		{
 			name: "returns EffectiveList",
 			resolver: NewAllowlistResolution(
 				InheritanceModeInherit,
@@ -306,11 +301,6 @@ func TestAllowlistResolution_GetEffectiveSize(t *testing.T) {
 		expected int
 	}{
 		{
-			name:     "nil resolver returns 0",
-			resolver: nil,
-			expected: 0,
-		},
-		{
 			name: "returns correct size",
 			resolver: NewAllowlistResolution(
 				InheritanceModeInherit,
@@ -349,11 +339,6 @@ func TestAllowlistResolution_GetGroupAllowlist(t *testing.T) {
 		expected []string
 	}{
 		{
-			name:     "nil resolver returns empty slice",
-			resolver: nil,
-			expected: []string{},
-		},
-		{
 			name: "returns GroupAllowlist",
 			resolver: NewAllowlistResolution(
 				InheritanceModeExplicit, // Use explicit mode so only group allowlist is used
@@ -387,11 +372,6 @@ func TestAllowlistResolution_GetGlobalAllowlist(t *testing.T) {
 		expected []string
 	}{
 		{
-			name:     "nil resolver returns empty slice",
-			resolver: nil,
-			expected: []string{},
-		},
-		{
 			name: "returns GlobalAllowlist",
 			resolver: NewAllowlistResolution(
 				InheritanceModeInherit,
@@ -424,11 +404,6 @@ func TestAllowlistResolution_GetMode(t *testing.T) {
 		resolver *AllowlistResolution
 		expected InheritanceMode
 	}{
-		{
-			name:     "nil resolver returns default mode",
-			resolver: nil,
-			expected: InheritanceModeInherit,
-		},
 		{
 			name: "returns Inherit mode",
 			resolver: NewAllowlistResolution(
@@ -478,11 +453,6 @@ func TestAllowlistResolution_GetGroupName(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "nil resolver returns empty string",
-			resolver: nil,
-			expected: "",
-		},
-		{
 			name: "returns GroupName",
 			resolver: NewAllowlistResolution(
 				InheritanceModeInherit,
@@ -512,4 +482,72 @@ func TestAllowlistResolution_GetGroupName(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestAllowlistResolution_NilReceiverPanics tests that all getter methods panic on nil receiver
+func TestAllowlistResolution_NilReceiverPanics(t *testing.T) {
+	var nilResolver *AllowlistResolution
+
+	t.Run("GetEffectiveList_panics_on_nil_receiver", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("GetEffectiveList() did not panic with nil receiver")
+			}
+		}()
+		_ = nilResolver.GetEffectiveList()
+	})
+
+	t.Run("GetEffectiveSize_panics_on_nil_receiver", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("GetEffectiveSize() did not panic with nil receiver")
+			}
+		}()
+		_ = nilResolver.GetEffectiveSize()
+	})
+
+	t.Run("GetGroupAllowlist_panics_on_nil_receiver", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("GetGroupAllowlist() did not panic with nil receiver")
+			}
+		}()
+		_ = nilResolver.GetGroupAllowlist()
+	})
+
+	t.Run("GetGlobalAllowlist_panics_on_nil_receiver", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("GetGlobalAllowlist() did not panic with nil receiver")
+			}
+		}()
+		_ = nilResolver.GetGlobalAllowlist()
+	})
+
+	t.Run("GetMode_panics_on_nil_receiver", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("GetMode() did not panic with nil receiver")
+			}
+		}()
+		_ = nilResolver.GetMode()
+	})
+
+	t.Run("GetGroupName_panics_on_nil_receiver", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("GetGroupName() did not panic with nil receiver")
+			}
+		}()
+		_ = nilResolver.GetGroupName()
+	})
+
+	t.Run("IsAllowed_panics_on_nil_receiver", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("IsAllowed() did not panic with nil receiver")
+			}
+		}()
+		_ = nilResolver.IsAllowed("TEST_VAR")
+	})
 }
