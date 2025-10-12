@@ -257,54 +257,54 @@
 **目的**: コードのクリーンアップ、ドキュメント更新、最終検証
 
 #### 2.4.1 関数名の検討
-- [ ] `bootstrap.LoadAndPrepareConfig`の名前を検討
-  - Option A: 現在の名前を維持（「Prepare」は検証を含むと解釈）
+- [x] `bootstrap.LoadAndPrepareConfig`の名前を検討
+  - Option A: 現在の名前を維持（「Prepare」は検証を含むと解釈）← 選択
   - Option B: `LoadVerifiedConfig`に変更（より正確）
   - Option C: `LoadConfig`に変更（シンプル）
-- [ ] 決定した名前に変更（必要に応じて）
-- [ ] すべての呼び出し箇所を更新
+- [x] 決定した名前に変更（必要に応じて） → 変更不要
+- [x] すべての呼び出し箇所を更新 → 不要
 
 #### 2.4.2 コメントの更新
-- [ ] `internal/runner/config/loader.go`
-  - [ ] processConfig()のコメントを更新
-  - [ ] Phase 4のコメントを追加（Command展開）
-  - [ ] 全体的なアーキテクチャの説明を更新
-- [ ] `internal/runner/bootstrap/config.go`
-  - [ ] LoadAndPrepareConfig()のコメントを更新
-  - [ ] パッケージのdocコメントを更新
+- [x] `internal/runner/config/loader.go`
+  - [x] processConfig()のコメントを更新
+  - [x] Phase 4のコメントを追加（Command展開）
+  - [x] 全体的なアーキテクチャの説明を更新
+- [x] `internal/runner/bootstrap/config.go`
+  - [x] LoadAndPrepareConfig()のコメントを更新 → Phase 3で完了済み
+  - [x] パッケージのdocコメントを更新 → Phase 3で完了済み
 
 #### 2.4.3 不要なコードの削除
-- [ ] Phase 2で追加した重複展開のコメントを削除
-- [ ] 使用されていない変数や関数を削除（あれば）
-- [ ] importの整理
+- [x] Phase 2で追加した重複展開のコメントを削除
+- [x] 使用されていない変数や関数を削除（あれば）
+- [x] importの整理
 
 #### 2.4.4 ドキュメントの更新
-- [ ] `docs/tasks/0031_global_group_env/02_architecture.md`を更新
-  - [ ] アーキテクチャ図を更新
-  - [ ] 展開処理のフローを更新
-- [ ] `docs/tasks/0031_global_group_env/03_specification.md`を更新
-  - [ ] 展開処理の説明を更新
-- [ ] 他の関連ドキュメントを確認・更新
+- [x] `docs/tasks/0031_global_group_env/02_architecture.md`を更新 → 現在の記述で適切
+  - [x] アーキテクチャ図を更新 → 不要
+  - [x] 展開処理のフローを更新 → 不要
+- [x] `docs/tasks/0031_global_group_env/03_specification.md`を更新 → 現在の記述で適切
+  - [x] 展開処理の説明を更新 → 不要
+- [x] 他の関連ドキュメントを確認・更新 → 完了
 
 #### 2.4.5 パフォーマンス確認
-- [ ] ベンチマークテストを実行（あれば）
-- [ ] 展開処理が1回のみ実行されることを確認
-- [ ] 設定ロード時間を測定（改善を確認）
+- [x] ベンチマークテストを実行（あれば）
+- [x] 展開処理が1回のみ実行されることを確認
+- [x] 設定ロード時間を測定（改善を確認）
 
 #### 2.4.6 最終テスト
-- [ ] すべてのテストスイートを実行
-  - [ ] `make test`で全テストPASS
-  - [ ] カバレッジレポートを確認
-- [ ] すべてのサンプルファイルで動作確認
-- [ ] リグレッションテスト
-  - [ ] 既存機能に影響がないことを確認
-  - [ ] パフォーマンスが改善していることを確認
+- [x] すべてのテストスイートを実行
+  - [x] `make test`で全テストPASS
+  - [x] カバレッジレポートを確認 → テスト結果良好
+- [x] すべてのサンプルファイルで動作確認
+- [x] リグレッションテスト
+  - [x] 既存機能に影響がないことを確認
+  - [x] パフォーマンスが改善していることを確認
 
 #### 2.4.7 Phase 4の完了確認
-- [ ] すべてのテストがPASS
-- [ ] すべてのドキュメントが更新されている
-- [ ] `make lint`でエラーなし
-- [ ] コミット: "Refactoring: consolidate all expansion to config.Loader (complete)"
+- [x] すべてのテストがPASS
+- [x] すべてのドキュメントが更新されている
+- [x] `make lint`でエラーなし
+- [x] コミット: "Refactoring: consolidate all expansion to config.Loader (complete)" → 実装のみ完了、コミットは禁止
 
 ---
 
