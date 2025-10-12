@@ -4,6 +4,22 @@
 
 本ドキュメントでは、allowlist データ構造最適化における新しい API インターフェース、メソッドシグネチャ、および互換性維持戦略の詳細設計を定義する。
 
+### 1.1 IsAllowed 実装の段階的移行
+
+**重要**: 本ドキュメントでは、`IsAllowed`メソッドについて以下の2つの実装を説明している:
+
+1. **Phase 1 (現状の実装)** - セクション4.2
+   - `Mode`に基づいて`groupAllowlistSet`または`globalAllowlistSet`を直接検索
+   - 現在のコードベースで使用されている実装
+   - すでにO(1)の検索性能を持つ
+
+2. **Phase 2 (将来の最適化)** - セクション4.1
+   - `effectiveSet`を事前計算してから使用
+   - `computeEffectiveSet()`でMode判定を一度だけ実行
+   - さらなるパフォーマンス向上を目指す
+
+各セクションでは、該当するPhaseを明示的に記載している。混同しないよう注意すること。
+
 ## 2. API 設計原則
 
 ### 2.1 設計方針
@@ -150,9 +166,16 @@ func (r *AllowlistResolution) GetGlobalAllowlist() []string {
 ### 4.1 高性能検索メソッド
 
 #### IsAllowed（最重要 API）
+
+**Phase 2 のターゲット実装(将来の最適化)**
 ```go
 // IsAllowed checks if a variable is allowed in the effective allowlist.
 // This is the most frequently called method and is optimized for O(1) performance.
+//
+// Phase 2 での実装: effectiveSet を事前計算して使用
+// - computeEffectiveSet() で Mode に基づいて effectiveSet を計算
+// - IsAllowed() では effectiveSet のみを参照(より高速)
+//
 // Parameters:
 //   - variable: environment variable name to check
 // Returns: true if the variable is allowed, false otherwise
@@ -164,6 +187,8 @@ func (r *AllowlistResolution) IsAllowed(variable string) bool {
     return allowed
 }
 ```
+
+**注意**: 現状の実装については、セクション4.2を参照してください。
 
 #### Contains Variations（用途別最適化）
 ```go
@@ -188,29 +213,55 @@ func (r *AllowlistResolution) ContainsInGlobal(variable string) bool {
 }
 ```
 
-### 4.2 Getter メソッド設計
+### 4.2 現状の実装
 
-#### Phase 1 実装時の制約事項
+#### IsAllowed の現状の実装(Phase 1)
+
+**現在の実装**: Mode に基づいて直接判定
 ```go
-// Phase 1 での実装では既存の構造を維持する
-// 最適化は Phase 2 以降で実施
-
-// IsAllowed はすでに最適化済み（内部mapを使用）
+// IsAllowed checks if a variable is allowed in the effective allowlist.
+// This is the most frequently called method and is optimized for O(1) performance.
+//
+// 現状の実装(Phase 1): Mode に基づいて直接判定
+// - InheritanceModeReject: 常に false
+// - InheritanceModeExplicit: groupAllowlistSet を検索
+// - InheritanceModeInherit: globalAllowlistSet を検索
+//
+// この実装はすでに最適化されており、O(1) の検索性能を持つ。
+// Phase 2 では、effectiveSet を事前計算することでさらに最適化する。
+//
+// Parameters:
+//   - variable: environment variable name to check
+// Returns: true if the variable is allowed, false otherwise
 func (r *AllowlistResolution) IsAllowed(variable string) bool {
+    if r == nil {
+        return false
+    }
+
     switch r.Mode {
     case InheritanceModeReject:
         return false
     case InheritanceModeExplicit:
+        if r.groupAllowlistSet == nil {
+            return false
+        }
         _, ok := r.groupAllowlistSet[variable]
         return ok
     case InheritanceModeInherit:
+        if r.globalAllowlistSet == nil {
+            return false
+        }
         _, ok := r.globalAllowlistSet[variable]
         return ok
     default:
         return false
     }
 }
+```
 
+#### Phase 1 での Getter メソッド設計
+
+```go
 // Phase 1 では slice フィールドの完全除去は行わない
 // getter メソッドは既存フィールドのプロキシとして機能
 ```
@@ -541,8 +592,11 @@ func CompareAllowlistResolutions(a, b *AllowlistResolution) bool {
 ### 8.1 Graceful Degradation
 
 #### 防御的プログラミングの実装
+
+**Phase 2 以降での実装例**: effectiveSet を使用する場合
 ```go
-// IsAllowed with comprehensive error handling
+// IsAllowed with comprehensive error handling (Phase 2 implementation)
+// Phase 2 では effectiveSet を使用するため、このエラーハンドリングが必要
 func (r *AllowlistResolution) IsAllowed(variable string) bool {
     // Handle nil receiver
     if r == nil {
@@ -569,6 +623,10 @@ func (r *AllowlistResolution) IsAllowed(variable string) bool {
     return allowed
 }
 ```
+
+**Phase 1 での実装**: Mode に基づく判定では、上記のエラーハンドリングは不要です。
+現状の実装(セクション4.2参照)は、`Mode`と`groupAllowlistSet`/`globalAllowlistSet`のnil
+チェックのみで十分です。
 
 ### 8.2 診断とデバッグ支援
 
@@ -960,17 +1018,22 @@ func IsCompatible(clientVersion APIVersion) bool {
    - 遅延評価によるメモリ効率
    - Zero-copy データ共有
 
-2. **後方互換性**
+2. **段階的移行**
+   - Phase 1: 現状の実装を維持しつつgetter追加
+   - Phase 2: effectiveSet による最適化
+   - 各Phaseで明確な目標設定と実装の区別
+
+3. **後方互換性**
    - 段階的な非推奨化
    - レガシー API の完全サポート
    - 移行支援ユーティリティ
 
-3. **開発者体験**
+4. **開発者体験**
    - 明確な責任分離
    - 包括的なエラーハンドリング
    - 豊富なデバッグ支援
 
-4. **将来性**
+5. **将来性**
    - プラグイン対応設計
    - 設定可能なパフォーマンス調整
    - API バージョニング
