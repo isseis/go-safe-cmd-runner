@@ -264,16 +264,22 @@ func TestAllowlistResolution_GetEffectiveList(t *testing.T) {
 		},
 		{
 			name: "returns EffectiveList",
-			resolver: &AllowlistResolution{
-				EffectiveList: []string{"VAR1", "VAR2"},
-			},
+			resolver: NewAllowlistResolution(
+				InheritanceModeInherit,
+				"test-group",
+				map[string]struct{}{},
+				map[string]struct{}{"VAR1": {}, "VAR2": {}},
+			),
 			expected: []string{"VAR1", "VAR2"},
 		},
 		{
 			name: "empty EffectiveList",
-			resolver: &AllowlistResolution{
-				EffectiveList: []string{},
-			},
+			resolver: NewAllowlistResolution(
+				InheritanceModeInherit,
+				"test-group",
+				map[string]struct{}{},
+				map[string]struct{}{},
+			),
 			expected: []string{},
 		},
 	}
@@ -306,16 +312,22 @@ func TestAllowlistResolution_GetEffectiveSize(t *testing.T) {
 		},
 		{
 			name: "returns correct size",
-			resolver: &AllowlistResolution{
-				EffectiveList: []string{"VAR1", "VAR2", "VAR3"},
-			},
+			resolver: NewAllowlistResolution(
+				InheritanceModeInherit,
+				"test-group",
+				map[string]struct{}{},
+				map[string]struct{}{"VAR1": {}, "VAR2": {}, "VAR3": {}},
+			),
 			expected: 3,
 		},
 		{
 			name: "empty list returns 0",
-			resolver: &AllowlistResolution{
-				EffectiveList: []string{},
-			},
+			resolver: NewAllowlistResolution(
+				InheritanceModeInherit,
+				"test-group",
+				map[string]struct{}{},
+				map[string]struct{}{},
+			),
 			expected: 0,
 		},
 	}
@@ -343,9 +355,12 @@ func TestAllowlistResolution_GetGroupAllowlist(t *testing.T) {
 		},
 		{
 			name: "returns GroupAllowlist",
-			resolver: &AllowlistResolution{
-				GroupAllowlist: []string{"GROUP_VAR1", "GROUP_VAR2"},
-			},
+			resolver: NewAllowlistResolution(
+				InheritanceModeExplicit, // Use explicit mode so only group allowlist is used
+				"test-group",
+				map[string]struct{}{"GROUP_VAR1": {}, "GROUP_VAR2": {}},
+				map[string]struct{}{},
+			),
 			expected: []string{"GROUP_VAR1", "GROUP_VAR2"},
 		},
 	}
@@ -378,9 +393,12 @@ func TestAllowlistResolution_GetGlobalAllowlist(t *testing.T) {
 		},
 		{
 			name: "returns GlobalAllowlist",
-			resolver: &AllowlistResolution{
-				GlobalAllowlist: []string{"GLOBAL_VAR1", "GLOBAL_VAR2"},
-			},
+			resolver: NewAllowlistResolution(
+				InheritanceModeInherit,
+				"test-group",
+				map[string]struct{}{},
+				map[string]struct{}{"GLOBAL_VAR1": {}, "GLOBAL_VAR2": {}},
+			),
 			expected: []string{"GLOBAL_VAR1", "GLOBAL_VAR2"},
 		},
 	}
@@ -413,23 +431,32 @@ func TestAllowlistResolution_GetMode(t *testing.T) {
 		},
 		{
 			name: "returns Inherit mode",
-			resolver: &AllowlistResolution{
-				Mode: InheritanceModeInherit,
-			},
+			resolver: NewAllowlistResolution(
+				InheritanceModeInherit,
+				"test-group",
+				map[string]struct{}{},
+				map[string]struct{}{},
+			),
 			expected: InheritanceModeInherit,
 		},
 		{
 			name: "returns Explicit mode",
-			resolver: &AllowlistResolution{
-				Mode: InheritanceModeExplicit,
-			},
+			resolver: NewAllowlistResolution(
+				InheritanceModeExplicit,
+				"test-group",
+				map[string]struct{}{},
+				map[string]struct{}{},
+			),
 			expected: InheritanceModeExplicit,
 		},
 		{
 			name: "returns Reject mode",
-			resolver: &AllowlistResolution{
-				Mode: InheritanceModeReject,
-			},
+			resolver: NewAllowlistResolution(
+				InheritanceModeReject,
+				"test-group",
+				map[string]struct{}{},
+				map[string]struct{}{},
+			),
 			expected: InheritanceModeReject,
 		},
 	}
@@ -457,16 +484,22 @@ func TestAllowlistResolution_GetGroupName(t *testing.T) {
 		},
 		{
 			name: "returns GroupName",
-			resolver: &AllowlistResolution{
-				GroupName: "test-group",
-			},
+			resolver: NewAllowlistResolution(
+				InheritanceModeInherit,
+				"test-group",
+				map[string]struct{}{},
+				map[string]struct{}{},
+			),
 			expected: "test-group",
 		},
 		{
 			name: "returns empty GroupName",
-			resolver: &AllowlistResolution{
-				GroupName: "",
-			},
+			resolver: NewAllowlistResolution(
+				InheritanceModeInherit,
+				"",
+				map[string]struct{}{},
+				map[string]struct{}{},
+			),
 			expected: "",
 		},
 	}

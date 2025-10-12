@@ -552,11 +552,11 @@ func (b *AllowlistResolutionBuilder) Build() *AllowlistResolution {
 3. `computeEffectiveSet` メソッドの実装
 
 **チェックリスト**:
-- [ ] 構造体フィールド追加
-- [ ] `NewAllowlistResolution` 実装
-- [ ] `computeEffectiveSet` 実装
-- [ ] 入力検証とエラーハンドリング
-- [ ] 単体テスト作成
+- [x] 構造体フィールド追加
+- [x] `NewAllowlistResolution` 実装
+- [x] `computeEffectiveSet` 実装
+- [x] 入力検証とエラーハンドリング
+- [x] 単体テスト作成
 
 #### Step 3.3.2: IsAllowed メソッドの最適化 (0.5日)
 
@@ -566,10 +566,10 @@ func (b *AllowlistResolutionBuilder) Build() *AllowlistResolution {
 3. 既存テストとの整合性確認
 
 **チェックリスト**:
-- [ ] `IsAllowed` メソッド変更
-- [ ] パフォーマンステスト実行
-- [ ] 機能テスト完全パス
-- [ ] エラーハンドリングテスト
+- [x] `IsAllowed` メソッド変更
+- [x] パフォーマンステスト実行
+- [x] 機能テスト完全パス
+- [x] エラーハンドリングテスト
 
 #### Step 3.3.3: Getter メソッドの遅延評価実装 (1日)
 
@@ -579,11 +579,11 @@ func (b *AllowlistResolutionBuilder) Build() *AllowlistResolution {
 3. `setToSortedSlice` ヘルパーメソッドの実装
 
 **チェックリスト**:
-- [ ] `GetEffectiveList` 遅延評価実装
-- [ ] `GetGroupAllowlist` 遅延評価実装
-- [ ] `GetGlobalAllowlist` 遅延評価実装
-- [ ] キャッシュ機能テスト
-- [ ] メモリリーク検査
+- [x] `GetEffectiveList` 遅延評価実装
+- [x] `GetGroupAllowlist` 遅延評価実装
+- [x] `GetGlobalAllowlist` 遅延評価実装
+- [x] キャッシュ機能テスト
+- [x] メモリリーク検査
 
 #### Step 3.3.4: ResolveAllowlistConfiguration 最適化 (0.5日)
 
