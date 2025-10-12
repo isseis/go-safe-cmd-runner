@@ -11,7 +11,7 @@ import (
 
 // TestAllowlistViolation_Global tests allowlist violations at Global.Env level
 func TestAllowlistViolation_Global(t *testing.T) {
-	filter := environment.NewFilter([]string{"HOME", "USER"})
+	filter := environment.NewFilter(nil)
 	expander := environment.NewVariableExpander(filter)
 
 	// Set up test environment variables
@@ -66,7 +66,7 @@ func TestAllowlistViolation_Global(t *testing.T) {
 
 // TestAllowlistViolation_Group tests allowlist violations at Group.Env level
 func TestAllowlistViolation_Group(t *testing.T) {
-	filter := environment.NewFilter([]string{"HOME", "USER"})
+	filter := environment.NewFilter(nil)
 	expander := environment.NewVariableExpander(filter)
 
 	// Set up test environment variables
@@ -141,7 +141,7 @@ func TestAllowlistViolation_Group(t *testing.T) {
 
 // TestAllowlistViolation_Command tests allowlist violations at Command.Env level
 func TestAllowlistViolation_Command(t *testing.T) {
-	filter := environment.NewFilter([]string{"HOME", "USER"})
+	filter := environment.NewFilter(nil)
 	expander := environment.NewVariableExpander(filter)
 
 	// Set up test environment variables
@@ -211,7 +211,7 @@ func TestAllowlistViolation_Command(t *testing.T) {
 
 // TestAllowlistViolation_VerifyFiles tests allowlist violations in VerifyFiles expansion
 func TestAllowlistViolation_VerifyFiles(t *testing.T) {
-	filter := environment.NewFilter([]string{"HOME", "USER"})
+	filter := environment.NewFilter(nil)
 	expander := environment.NewVariableExpander(filter)
 
 	// Set up test environment variables
