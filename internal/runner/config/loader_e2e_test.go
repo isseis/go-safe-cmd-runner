@@ -14,22 +14,11 @@ import (
 // TestE2E_CompleteConfiguration tests the entire Global/Group/Command env workflow
 // with complex variable references, allowlist inheritance, and verify_files expansion.
 func TestE2E_CompleteConfiguration(t *testing.T) {
-	// Setup: Set system environment variables
-	originalPath := os.Getenv("PATH")
-	originalHome := os.Getenv("HOME")
-	originalUser := os.Getenv("USER")
-
-	os.Setenv("PATH", "/usr/bin:/bin")
-	os.Setenv("HOME", "/home/testuser")
-	os.Setenv("USER", "testuser")
-	os.Setenv("PORT", "8080") // For web group
-
-	defer func() {
-		os.Setenv("PATH", originalPath)
-		os.Setenv("HOME", originalHome)
-		os.Setenv("USER", originalUser)
-		os.Unsetenv("PORT")
-	}()
+	// Setup: Set system environment variables using t.Setenv
+	t.Setenv("PATH", "/usr/bin:/bin")
+	t.Setenv("HOME", "/home/testuser")
+	t.Setenv("USER", "testuser")
+	t.Setenv("PORT", "8080") // For web group
 
 	// Load configuration
 	configPath := filepath.Join("testdata", "e2e_complete.toml")
@@ -360,17 +349,9 @@ verify_files = ["${GROUP_DIR}/group_verify.sh"]
 // Phase 1: This test verifies baseline behavior (Command expansion not yet implemented)
 // Phase 2+: This test will verify Command expansion is performed correctly
 func TestE2E_FullExpansionPipeline(t *testing.T) {
-	// Setup: Set system environment variables
-	originalPath := os.Getenv("PATH")
-	originalHome := os.Getenv("HOME")
-
-	os.Setenv("PATH", "/usr/bin:/bin")
-	os.Setenv("HOME", "/home/testuser")
-
-	defer func() {
-		os.Setenv("PATH", originalPath)
-		os.Setenv("HOME", originalHome)
-	}()
+	// Setup: Set system environment variables using t.Setenv
+	t.Setenv("PATH", "/usr/bin:/bin")
+	t.Setenv("HOME", "/home/testuser")
 
 	// Load configuration with command_env_references_global_group.toml
 	// This config tests Command.Env/Cmd/Args referencing Global and Group env
