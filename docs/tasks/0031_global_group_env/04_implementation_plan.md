@@ -434,7 +434,7 @@ Global・Groupレベル環境変数設定機能を段階的に実装し、要件
 **目的**: 全機能の統合テストと既存機能との互換性確認
 
 #### 2.6.1 E2Eテストの作成
-- [ ] サンプルTOMLファイル: `testdata/e2e_complete.toml`
+- [x] サンプルTOMLファイル: `testdata/e2e_complete.toml`
   ```toml
   [global]
   env = [
@@ -470,37 +470,37 @@ Global・Groupレベル環境変数設定機能を段階的に実装し、要件
   cmd = "${WEB_DIR}/server"
   args = ["--port", "${PORT}"]
   ```
-- [ ] E2Eテスト: `internal/runner/config/loader_e2e_test.go`
-  - [ ] すべてのレベルで環境変数が正しく展開される
-  - [ ] 優先順位が正しく適用される
-  - [ ] Allowlist継承/上書きが正しく動作する
-  - [ ] VerifyFilesで環境変数を参照できる
-  - [ ] Cmd/Argsで環境変数を参照できる
+- [x] E2Eテスト: `internal/runner/config/loader_e2e_test.go`
+  - [x] すべてのレベルで環境変数が正しく展開される
+  - [x] 優先順位が正しく適用される
+  - [x] Allowlist継承/上書きが正しく動作する
+  - [x] VerifyFilesで環境変数を参照できる
+  - [x] Cmd/Argsで環境変数を参照できる
 
 #### 2.6.2 後方互換性テスト
-- [ ] 既存のサンプルTOMLファイルをすべて実行
-  - [ ] `sample/`ディレクトリ内のすべてのファイル
-  - [ ] Global.Env/Group.Envが未定義でも動作すること
-  - [ ] 既存の動作に変更がないこと
-- [ ] 既存のテストスイート全体を実行
-  - [ ] `make test`で全テストPASS
-  - [ ] カバレッジレポートを確認
+- [x] 既存のサンプルTOMLファイルをすべて実行
+  - [x] `sample/`ディレクトリ内のすべてのファイル
+  - [x] Global.Env/Group.Envが未定義でも動作すること
+  - [x] 既存の動作に変更がないこと
+- [x] 既存のテストスイート全体を実行
+  - [x] `make test`で全テストPASS
+  - [x] カバレッジレポートを確認
 
 #### 2.6.3 パフォーマンステスト
-- [ ] ベンチマークテスト: `internal/runner/config/expansion_bench_test.go`
-  - [ ] `BenchmarkExpandGlobalEnv`: Global.Env展開の性能
-  - [ ] `BenchmarkExpandGroupEnv`: Group.Env展開の性能
-  - [ ] `BenchmarkExpandCommandEnv`: Command.Env展開の性能
-  - [ ] `BenchmarkLoadConfigWithEnvs`: `global.env`と`group.env`を含む複雑な設定ファイルの読み込み性能を測定
-- [ ] 性能要件の確認
-  - [ ] 環境変数1個あたりの展開時間 < 1ms
-  - [ ] 設定読み込み時間の増加 < 10%
+- [x] ベンチマークテスト: `internal/runner/config/expansion_bench_test.go`
+  - [x] `BenchmarkExpandGlobalEnv`: Global.Env展開の性能
+  - [x] `BenchmarkExpandGroupEnv`: Group.Env展開の性能
+  - [x] `BenchmarkExpandCommandEnv`: Command.Env展開の性能
+  - [x] `BenchmarkLoadConfigWithEnvs`: `global.env`と`group.env`を含む複雑な設定ファイルの読み込み性能を測定
+- [x] 性能要件の確認
+  - [x] 環境変数1個あたりの展開時間 < 1ms
+  - [x] 設定読み込み時間の増加 < 10%
 
 #### 2.6.4 Phase 6の完了確認
-- [ ] すべてのE2EテストがPASS
-- [ ] すべての既存テストがPASS
-- [ ] 性能要件を満たしている
-- [ ] `make lint`でエラーなし
+- [x] すべてのE2EテストがPASS
+- [x] すべての既存テストがPASS
+- [x] 性能要件を満たしている
+- [x] `make lint`でエラーなし
 - [ ] コミット: "Add E2E tests and verify backward compatibility"
 
 ---
@@ -645,7 +645,7 @@ Global・Groupレベル環境変数設定機能を段階的に実装し、要件
 - [ ] Phase 3: Group.Env展開（完了）
 - [ ] Phase 4: Command.Env拡張（完了）
 - [ ] Phase 5: エラーハンドリング強化（完了）
-- [ ] Phase 6: 統合テストと互換性確認（完了）
+- [x] Phase 6: 統合テストと互換性確認（完了）
 - [ ] Phase 7: ドキュメント更新（完了）
 
 ### 5.3 最終確認
