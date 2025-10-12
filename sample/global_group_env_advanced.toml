@@ -1,0 +1,206 @@
+# Global and Group Environment Variables - Advanced Example
+#
+# This sample demonstrates advanced features including:
+# - Allowlist inheritance, override, and rejection modes
+# - Complex variable references within env definitions
+# - Command-level env override
+# - Multiple groups with different configurations
+
+version = "1.0"
+
+[global]
+# Global environment variables
+env = [
+    "APP_ROOT=/opt/myapp",
+    "ENV_TYPE=production",
+    "LOG_DIR=${APP_ROOT}/logs",
+    "DATA_DIR=${APP_ROOT}/data",
+    "PATH=/opt/tools/bin:${PATH}",  # Extend system PATH
+]
+
+# Global allowlist: allows PATH, HOME, and USER from system
+env_allowlist = ["PATH", "HOME", "USER"]
+
+skip_standard_paths = true
+
+# Group 1: Inherit mode (default)
+# This group inherits global.env_allowlist
+[[groups]]
+name = "inherit_example"
+description = "Demonstrates allowlist inheritance (no env_allowlist specified)"
+
+# Note: env_allowlist is not specified, so it inherits from global
+
+env = [
+    "GROUP_VAR=inherit_group",
+    "APP_DIR=${APP_ROOT}/inherit",   # References global.env
+    "CONFIG=${APP_DIR}/config.yaml", # References group.env (APP_DIR)
+]
+
+[[groups.commands]]
+name = "show_inherited"
+description = "Show inherited allowlist behavior"
+cmd = "/bin/echo"
+args = [
+    "Group: ${GROUP_VAR}",
+    "App directory: ${APP_DIR}",
+    "User: ${USER}",  # Allowed via inherited global.env_allowlist
+]
+
+# Group 2: Override mode (explicit allowlist)
+# This group overrides global.env_allowlist with its own
+[[groups]]
+name = "override_example"
+description = "Demonstrates allowlist override (explicit env_allowlist)"
+
+# Override global allowlist - only HOSTNAME and CUSTOM_VAR are allowed from system
+env_allowlist = ["HOSTNAME", "CUSTOM_VAR"]
+
+env = [
+    "GROUP_VAR=override_group",
+    "APP_DIR=${APP_ROOT}/override",  # Can still reference global.env variables
+    "LOG_FILE=${LOG_DIR}/override.log",
+]
+
+[[groups.commands]]
+name = "show_overridden"
+description = "Show overridden allowlist behavior"
+cmd = "/bin/echo"
+args = [
+    "Group: ${GROUP_VAR}",
+    "App directory: ${APP_DIR}",
+    # Note: ${USER} would cause an error here because it's not in this group's allowlist
+]
+
+# Group 3: Reject mode (empty allowlist)
+# This group rejects all system environment variables
+[[groups]]
+name = "reject_example"
+description = "Demonstrates allowlist rejection (empty env_allowlist)"
+
+# Empty allowlist - reject all system environment variables
+env_allowlist = []
+
+env = [
+    "GROUP_VAR=reject_group",
+    "APP_DIR=${APP_ROOT}/reject",    # Can still reference global.env
+    "ISOLATED=true",                 # Group-specific variable
+]
+
+[[groups.commands]]
+name = "show_rejected"
+description = "Show rejected allowlist behavior"
+cmd = "/bin/echo"
+args = [
+    "Group: ${GROUP_VAR}",
+    "App directory: ${APP_DIR}",
+    "Isolated: ${ISOLATED}",
+    # Note: Any system env variable reference would cause an error here
+]
+
+# Group 4: Complex variable references
+# Demonstrates hierarchical variable references
+[[groups]]
+name = "complex_references"
+description = "Demonstrates complex variable reference patterns"
+
+env = [
+    "SERVICE_NAME=myservice",
+    "SERVICE_DIR=${APP_ROOT}/services/${SERVICE_NAME}",
+    "BIN_DIR=${SERVICE_DIR}/bin",
+    "LIB_DIR=${SERVICE_DIR}/lib",
+    "CONF_DIR=${SERVICE_DIR}/etc",
+    "RUN_DIR=${SERVICE_DIR}/run",
+]
+
+[[groups.commands]]
+name = "show_paths"
+description = "Display all configured paths"
+cmd = "/bin/echo"
+args = [
+    "Service: ${SERVICE_NAME}",
+    "Binary directory: ${BIN_DIR}",
+    "Library directory: ${LIB_DIR}",
+    "Config directory: ${CONF_DIR}",
+    "Runtime directory: ${RUN_DIR}",
+]
+
+# Group 5: Command-level override
+# Demonstrates command.env overriding group.env and global.env
+[[groups]]
+name = "command_override"
+description = "Demonstrates command-level env override"
+
+env = [
+    "LEVEL=group",
+    "GROUP_ONLY=group_value",
+    "CONFIG_DIR=${APP_ROOT}/config",
+]
+
+[[groups.commands]]
+name = "use_group_env"
+description = "Use group-level environment variables"
+cmd = "/bin/echo"
+args = ["Level: ${LEVEL}, Config: ${CONFIG_DIR}"]
+# LEVEL will be "group"
+
+[[groups.commands]]
+name = "override_at_command"
+description = "Override group.env at command level"
+cmd = "/bin/echo"
+args = [
+    "Level: ${LEVEL}",
+    "Group only: ${GROUP_ONLY}",
+    "Command only: ${COMMAND_ONLY}",
+]
+env = [
+    "LEVEL=command",           # Overrides group.env
+    "COMMAND_ONLY=cmd_value",  # Command-specific variable
+]
+# LEVEL will be "command"
+
+# Group 6: Multi-environment setup
+# Demonstrates how different groups can represent different environments
+[[groups]]
+name = "development"
+description = "Development environment configuration"
+
+env = [
+    "ENV_TYPE=development",    # Override global.env
+    "DB_HOST=localhost",
+    "DB_PORT=5432",
+    "LOG_LEVEL=debug",         # Override global.env (if it existed)
+    "DEBUG_MODE=true",
+]
+
+[[groups.commands]]
+name = "show_dev_env"
+description = "Show development environment"
+cmd = "/bin/echo"
+args = [
+    "Environment: ${ENV_TYPE}",
+    "Database: ${DB_HOST}:${DB_PORT}",
+    "Debug: ${DEBUG_MODE}",
+]
+
+[[groups]]
+name = "production"
+description = "Production environment configuration"
+
+env = [
+    "ENV_TYPE=production",     # Keep global.env value (explicit)
+    "DB_HOST=prod-db.example.com",
+    "DB_PORT=5432",
+    "LOG_LEVEL=info",
+    "DEBUG_MODE=false",
+]
+
+[[groups.commands]]
+name = "show_prod_env"
+description = "Show production environment"
+cmd = "/bin/echo"
+args = [
+    "Environment: ${ENV_TYPE}",
+    "Database: ${DB_HOST}:${DB_PORT}",
+    "Debug: ${DEBUG_MODE}",
+]
