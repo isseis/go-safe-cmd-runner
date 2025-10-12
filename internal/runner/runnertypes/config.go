@@ -5,6 +5,8 @@ package runnertypes
 import (
 	"errors"
 	"fmt"
+	"sort"
+	"sync"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
@@ -246,23 +248,50 @@ type AllowlistResolution struct {
 	// These are populated from GroupAllowlist and GlobalAllowlist during resolution.
 	groupAllowlistSet  map[string]struct{}
 	globalAllowlistSet map[string]struct{}
+
+	// Phase 2 additions: Pre-computed effective set for optimization
+	effectiveSet map[string]struct{} // Pre-computed effective allowlist set
+
+	// Phase 2 additions: Lazy evaluation caches for getter methods
+	groupAllowlistCache  []string // Cache for GetGroupAllowlist()
+	globalAllowlistCache []string // Cache for GetGlobalAllowlist()
+	effectiveListCache   []string // Cache for GetEffectiveList()
+
+	// Thread-safe lazy initialization
+	groupAllowlistOnce  sync.Once // Ensures groupAllowlistCache is initialized only once
+	globalAllowlistOnce sync.Once // Ensures globalAllowlistCache is initialized only once
+	effectiveListOnce   sync.Once // Ensures effectiveListCache is initialized only once
 }
 
-// IsAllowed checks if a variable is allowed based on the resolved allowlist.
-// Uses internal map structures for O(1) lookup performance.
+// IsAllowed checks if a variable is allowed in the effective allowlist.
+// This is the most frequently called method and is optimized for O(1) performance.
+//
+// Phase 2 implementation: Uses pre-computed effectiveSet for optimal performance
+// - computeEffectiveSet() pre-computes Mode-based effective allowlist
+// - IsAllowed() only needs to check effectiveSet (faster than mode switching)
+//
+// Parameters:
+//   - variable: environment variable name to check
+//
+// Returns: true if the variable is allowed, false otherwise
+//
+// Panics:
+//   - if receiver is nil (programming error - caller must check before calling)
+//   - if effectiveSet is nil (invariant violation - object not properly initialized)
 func (r *AllowlistResolution) IsAllowed(variable string) bool {
-	switch r.Mode {
-	case InheritanceModeReject:
-		return false
-	case InheritanceModeExplicit:
-		_, ok := r.groupAllowlistSet[variable]
-		return ok
-	case InheritanceModeInherit:
-		_, ok := r.globalAllowlistSet[variable]
-		return ok
-	default:
+	// empty variable name is input validation error - return false
+	if variable == "" {
 		return false
 	}
+
+	// INVARIANT: effectiveSet must be set during initialization
+	// If this is nil, it's an invariant violation, so panic
+	if r.effectiveSet == nil {
+		panic("AllowlistResolution: effectiveSet is nil - object not properly initialized")
+	}
+
+	_, allowed := r.effectiveSet[variable]
+	return allowed
 }
 
 // SetGroupAllowlistSet sets the internal group allowlist map for O(1) lookups.
@@ -277,55 +306,175 @@ func (r *AllowlistResolution) SetGlobalAllowlistSet(allowlistSet map[string]stru
 	r.globalAllowlistSet = allowlistSet
 }
 
-// GetEffectiveList returns the effective allowlist as a string slice.
-// This method provides controlled access to the effective allowlist with
-// potential for future optimization.
+// GetEffectiveList returns effective allowlist with lazy evaluation for performance.
+// Phase 2 implementation: Uses cached slice generated from effectiveSet on first access.
+// Thread-safe: Uses sync.Once to ensure cache is initialized only once.
 func (r *AllowlistResolution) GetEffectiveList() []string {
-	if r == nil {
-		return []string{}
+	// INVARIANT: effectiveSet must be set during initialization
+	if r.effectiveSet == nil {
+		panic("AllowlistResolution.GetEffectiveList: effectiveSet is nil - object not properly initialized via NewAllowlistResolution")
 	}
-	return r.EffectiveList
+
+	r.effectiveListOnce.Do(func() {
+		r.effectiveListCache = r.setToSortedSlice(r.effectiveSet)
+	})
+
+	return r.effectiveListCache
 }
 
 // GetEffectiveSize returns the number of effective allowlist entries.
-// More efficient than len(GetEffectiveList()) for size-only queries.
+// Phase 2 optimization: Uses effectiveSet directly for O(1) size query.
 func (r *AllowlistResolution) GetEffectiveSize() int {
-	if r == nil {
-		return 0
+	// INVARIANT: effectiveSet must be set during initialization
+	if r.effectiveSet == nil {
+		panic("AllowlistResolution.GetEffectiveSize: effectiveSet is nil - object not properly initialized via NewAllowlistResolution")
 	}
-	return len(r.EffectiveList)
+
+	return len(r.effectiveSet)
 }
 
-// GetGroupAllowlist returns group allowlist (compatibility getter).
+// GetGroupAllowlist returns group allowlist with lazy evaluation.
+// Phase 2 implementation: Uses cached slice generated from groupAllowlistSet on first access.
 func (r *AllowlistResolution) GetGroupAllowlist() []string {
-	if r == nil {
-		return []string{}
-	}
-	return r.GroupAllowlist
+	// Thread-safe lazy evaluation and caching using sync.Once
+	r.groupAllowlistOnce.Do(func() {
+		r.groupAllowlistCache = r.setToSortedSlice(r.groupAllowlistSet)
+	})
+
+	return r.groupAllowlistCache
 }
 
-// GetGlobalAllowlist returns global allowlist (compatibility getter).
+// GetGlobalAllowlist returns global allowlist with lazy evaluation.
+// Phase 2 implementation: Uses cached slice generated from globalAllowlistSet on first access.
 func (r *AllowlistResolution) GetGlobalAllowlist() []string {
-	if r == nil {
-		return []string{}
-	}
-	return r.GlobalAllowlist
+	// Thread-safe lazy evaluation and caching using sync.Once
+	r.globalAllowlistOnce.Do(func() {
+		r.globalAllowlistCache = r.setToSortedSlice(r.globalAllowlistSet)
+	})
+
+	return r.globalAllowlistCache
 }
 
 // GetMode returns the inheritance mode used for this resolution.
 func (r *AllowlistResolution) GetMode() InheritanceMode {
-	if r == nil {
-		return InheritanceModeInherit // safe default
-	}
 	return r.Mode
 }
 
 // GetGroupName returns the name of the group this resolution is for.
 func (r *AllowlistResolution) GetGroupName() string {
-	if r == nil {
-		return ""
-	}
 	return r.GroupName
+}
+
+// NewAllowlistResolution creates a new AllowlistResolution with pre-computed effective set.
+// Phase 2 constructor that optimizes performance by pre-computing the effective allowlist.
+//
+// Parameters:
+//   - mode: inheritance mode (Inherit/Explicit/Reject)
+//   - groupName: name of the group this resolution is for
+//   - groupSet: group allowlist as a map for O(1) lookups (must not be nil)
+//   - globalSet: global allowlist as a map for O(1) lookups (must not be nil)
+//
+// Returns:
+//   - *AllowlistResolution: new instance with effectiveSet pre-computed
+//
+// Panics:
+//   - if groupSet is nil
+//   - if globalSet is nil
+func NewAllowlistResolution(
+	mode InheritanceMode,
+	groupName string,
+	groupSet map[string]struct{},
+	globalSet map[string]struct{},
+) *AllowlistResolution {
+	// Input validation
+	if groupSet == nil {
+		panic("NewAllowlistResolution: groupSet cannot be nil")
+	}
+	if globalSet == nil {
+		panic("NewAllowlistResolution: globalSet cannot be nil")
+	}
+
+	r := &AllowlistResolution{
+		Mode:               mode,
+		GroupName:          groupName,
+		groupAllowlistSet:  groupSet,
+		globalAllowlistSet: globalSet,
+
+		// Phase 2: slice fields will be lazily generated
+		GroupAllowlist:  []string{},
+		GlobalAllowlist: []string{},
+		EffectiveList:   []string{},
+	}
+
+	// Pre-compute effectiveSet for optimization
+	r.computeEffectiveSet()
+
+	return r
+}
+
+// computeEffectiveSet calculates the effective allowlist based on inheritance mode.
+// This method establishes the invariant that effectiveSet is never nil after calling.
+//
+// Invariants established:
+// - After calling, effectiveSet is guaranteed to be non-nil
+// - groupAllowlistSet and globalAllowlistSet must be non-nil (precondition)
+//
+// Panics:
+//   - if groupAllowlistSet is nil
+//   - if globalAllowlistSet is nil
+func (r *AllowlistResolution) computeEffectiveSet() {
+	// Invariant preconditions: groupAllowlistSet and globalAllowlistSet must not be nil
+	if r.groupAllowlistSet == nil {
+		panic("AllowlistResolution: groupAllowlistSet is nil - cannot compute effective set")
+	}
+	if r.globalAllowlistSet == nil {
+		panic("AllowlistResolution: globalAllowlistSet is nil - cannot compute effective set")
+	}
+
+	switch r.Mode {
+	case InheritanceModeInherit:
+		// Use global allowlist directly (zero-copy reference)
+		r.effectiveSet = r.globalAllowlistSet
+
+	case InheritanceModeExplicit:
+		// Use group allowlist directly (zero-copy reference)
+		r.effectiveSet = r.groupAllowlistSet
+
+	case InheritanceModeReject:
+		// Empty set (not nil, but empty map)
+		r.effectiveSet = make(map[string]struct{})
+
+	default:
+		// Default to inherit mode
+		r.effectiveSet = r.globalAllowlistSet
+	}
+
+	// POST-CONDITION: effectiveSet must not be nil
+	if r.effectiveSet == nil {
+		panic("AllowlistResolution: internal error - effectiveSet is still nil after computeEffectiveSet()")
+	}
+}
+
+// setToSortedSlice converts a set (map[string]struct{}) to a sorted string slice.
+// This helper method is used by getter methods for consistent ordering.
+//
+// Parameters:
+//   - set: the map to convert to a slice
+//
+// Returns:
+//   - []string: sorted slice of keys from the map
+func (r *AllowlistResolution) setToSortedSlice(set map[string]struct{}) []string {
+	if len(set) == 0 {
+		return []string{}
+	}
+
+	slice := make([]string, 0, len(set))
+	for variable := range set {
+		slice = append(slice, variable)
+	}
+
+	sort.Strings(slice)
+	return slice
 }
 
 // Operation represents different types of privileged operations

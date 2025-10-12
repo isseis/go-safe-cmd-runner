@@ -169,33 +169,12 @@ func buildAllowlistSet(allowlist []string) map[string]struct{} {
 func (f *Filter) ResolveAllowlistConfiguration(allowlist []string, groupName string) *runnertypes.AllowlistResolution {
 	mode := f.determineInheritanceMode(allowlist)
 
-	resolution := &runnertypes.AllowlistResolution{
-		Mode:           mode,
-		GroupAllowlist: allowlist,
-		GroupName:      groupName,
-	}
+	// Build group and global sets for efficient lookup
+	groupSet := buildAllowlistSet(allowlist)
+	globalSet := f.globalAllowlist // Already a map[string]struct{}
 
-	// Convert global allowlist map to slice for consistent interface
-	globalList := make([]string, 0, len(f.globalAllowlist))
-	for variable := range f.globalAllowlist {
-		globalList = append(globalList, variable)
-	}
-	resolution.GlobalAllowlist = globalList
-
-	// Build lookup maps for O(1) performance in IsAllowed()
-	// These are internal fields used only for fast lookups
-	resolution.SetGroupAllowlistSet(buildAllowlistSet(allowlist))
-	resolution.SetGlobalAllowlistSet(f.globalAllowlist)
-
-	// Set effective list based on mode
-	switch mode {
-	case runnertypes.InheritanceModeInherit:
-		resolution.EffectiveList = resolution.GlobalAllowlist
-	case runnertypes.InheritanceModeExplicit:
-		resolution.EffectiveList = resolution.GroupAllowlist
-	case runnertypes.InheritanceModeReject:
-		resolution.EffectiveList = []string{} // Explicitly empty
-	}
+	// Use the new constructor that properly initializes effectiveSet
+	resolution := runnertypes.NewAllowlistResolution(mode, groupName, groupSet, globalSet)
 
 	// Log the resolution for debugging
 	slog.Debug("Resolved allowlist configuration",
@@ -203,7 +182,7 @@ func (f *Filter) ResolveAllowlistConfiguration(allowlist []string, groupName str
 		"mode", mode.String(),
 		"group_allowlist_size", len(allowlist),
 		"global_allowlist_size", len(f.globalAllowlist),
-		"effective_allowlist_size", len(resolution.EffectiveList))
+		"effective_allowlist_size", resolution.GetEffectiveSize())
 
 	return resolution
 }
