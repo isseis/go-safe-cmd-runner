@@ -312,22 +312,136 @@ func NewAllowlistResolution(
 
 ### 6.3 遅延評価の活用
 
-#### Getter メソッドでの遅延変換
+#### 並行安全な遅延初期化
+
+**重要**: セクション8.1で述べた不変性原則との整合性
+
+遅延評価によるキャッシュは、「初期化後は読み取り専用」という不変性原則と矛盾する可能性がある。
+並行安全性を保証するため、`sync.Once`を使用した遅延初期化を採用する。
+
 ```go
+import "sync"
+
 type AllowlistResolution struct {
-    // キャッシュフィールド（遅延評価）
+    // 内部データ（効率的な検索用）
+    groupAllowlistSet  map[string]struct{}
+    globalAllowlistSet map[string]struct{}
+    effectiveSet       map[string]struct{}
+
+    // キャッシュフィールド（遅延評価） - sync.Once で保護
     groupAllowlistCache  []string
     globalAllowlistCache []string
     effectiveListCache   []string
+
+    // 遅延初期化の制御用
+    groupAllowlistOnce  sync.Once
+    globalAllowlistOnce sync.Once
+    effectiveListOnce   sync.Once
 }
 
+// GetGroupAllowlist returns the group allowlist as a sorted slice.
+// Thread-safe lazy initialization using sync.Once.
 func (r *AllowlistResolution) GetGroupAllowlist() []string {
-    if r.groupAllowlistCache == nil {
-        r.groupAllowlistCache = Set(r.groupAllowlistSet).ToSlice()
+    if r == nil {
+        return []string{}
     }
+
+    // sync.Once により、複数goroutineからの同時アクセスでも
+    // 初期化は1回だけ実行されることが保証される
+    r.groupAllowlistOnce.Do(func() {
+        r.groupAllowlistCache = setToSortedSlice(r.groupAllowlistSet)
+    })
+
     return r.groupAllowlistCache
 }
+
+// GetGlobalAllowlist returns the global allowlist as a sorted slice.
+// Thread-safe lazy initialization using sync.Once.
+func (r *AllowlistResolution) GetGlobalAllowlist() []string {
+    if r == nil {
+        return []string{}
+    }
+
+    r.globalAllowlistOnce.Do(func() {
+        r.globalAllowlistCache = setToSortedSlice(r.globalAllowlistSet)
+    })
+
+    return r.globalAllowlistCache
+}
+
+// GetEffectiveList returns the effective allowlist as a sorted slice.
+// Thread-safe lazy initialization using sync.Once.
+func (r *AllowlistResolution) GetEffectiveList() []string {
+    if r == nil {
+        return []string{}
+    }
+
+    r.effectiveListOnce.Do(func() {
+        r.effectiveListCache = setToSortedSlice(r.effectiveSet)
+    })
+
+    return r.effectiveListCache
+}
+
+// setToSortedSlice converts a set to a sorted string slice
+func setToSortedSlice(set map[string]struct{}) []string {
+    if len(set) == 0 {
+        return []string{}
+    }
+
+    slice := make([]string, 0, len(set))
+    for variable := range set {
+        slice = append(slice, variable)
+    }
+
+    sort.Strings(slice)
+    return slice
+}
 ```
+
+#### 設計の利点
+
+1. **並行安全性**: `sync.Once`により複数goroutineからの同時アクセスでも安全
+2. **効率性**: 必要なときだけ初期化、初期化は1回のみ
+3. **不変性の保証**: 初期化後、キャッシュフィールドは変更されない
+4. **パフォーマンス**: 初回アクセス後は単なるフィールド参照
+
+#### 代替案: 初期化時にすべて計算
+
+完全な不変性を求める場合、初期化時にすべてのsliceを生成する選択肢もある:
+
+```go
+func NewAllowlistResolution(
+    mode InheritanceMode,
+    groupName string,
+    groupSet map[string]struct{},
+    globalSet map[string]struct{},
+) *AllowlistResolution {
+    r := &AllowlistResolution{
+        Mode:               mode,
+        GroupName:          groupName,
+        groupAllowlistSet:  groupSet,
+        globalAllowlistSet: globalSet,
+    }
+    r.computeEffectiveSet()
+
+    // すべてのsliceを事前計算（遅延評価なし）
+    r.groupAllowlistCache = setToSortedSlice(groupSet)
+    r.globalAllowlistCache = setToSortedSlice(globalSet)
+    r.effectiveListCache = setToSortedSlice(r.effectiveSet)
+
+    return r
+}
+```
+
+**トレードオフ**:
+- 利点: 完全な不変性、sync.Once不要
+- 欠点: 使用されないsliceも生成、メモリ効率が悪化
+
+**推奨**: `sync.Once`による遅延初期化を採用。理由:
+- パフォーマンス最適化が本タスクの主目的
+- `sync.Once`は標準ライブラリで実績がある
+- 初回アクセス後のオーバーヘッドは無視できる
 
 ## 7. エラーハンドリング設計
 
@@ -378,17 +492,31 @@ type Filter struct {
 
 // AllowlistResolution は読み取り専用として設計
 type AllowlistResolution struct {
-    // すべてのフィールドは初期化後は読み取り専用
+    // マップデータ（初期化後は読み取り専用）
     // マップは参照型だが、内容を変更するメソッドは提供しない
     groupAllowlistSet  map[string]struct{}
     globalAllowlistSet map[string]struct{}  // Filter.globalAllowlist への参照
     effectiveSet       map[string]struct{}
+
+    // キャッシュフィールド（sync.Once による遅延初期化）
+    // sync.Once により、初期化は1回だけ実行されることが保証される
+    groupAllowlistCache  []string
+    globalAllowlistCache []string
+    effectiveListCache   []string
+
+    // 遅延初期化の制御用（sync.Once 自体が並行安全）
+    groupAllowlistOnce  sync.Once
+    globalAllowlistOnce sync.Once
+    effectiveListOnce   sync.Once
 }
 
 // 並行安全性の前提条件:
 // 1. AllowlistResolution 作成後、元のマップを変更してはならない
 // 2. globalAllowlistSet は複数の AllowlistResolution インスタンス間で共有される
-// 3. 並行安全性は、マップの内容が不変であることに依存している
+// 3. マップデータの並行安全性は、内容が不変であることに依存
+// 4. キャッシュの並行安全性は、sync.Once により保証される
+//    - 複数goroutineからの同時アクセスでも、初期化は1回のみ実行
+//    - 初期化後、キャッシュフィールドは変更されない
 ```
 
 ### 8.2 並行アクセスパターン
