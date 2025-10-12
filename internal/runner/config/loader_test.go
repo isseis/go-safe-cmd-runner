@@ -461,8 +461,9 @@ func TestLoader_Phase3_GroupEnvIntegration(t *testing.T) {
 	assert.Equal(t, expectedRejectVerifyFiles, rejectGroup.ExpandedVerifyFiles)
 }
 
-// TestLoader_Phase4_CommandEnvIntegration tests Command.Env expansion with Global/Group.Env
-func TestLoader_Phase4_CommandEnvIntegration(t *testing.T) {
+// TestLoader_GlobalGroupEnvExpansion verifies that Global.Env and Group.Env are expanded
+// during config loading, while Command-level expansion is deferred to bootstrap.
+func TestConfigLoaderEnvExpansionIntegration(t *testing.T) {
 	configPath := "testdata/command_env_references_global_group.toml"
 
 	// Read file content

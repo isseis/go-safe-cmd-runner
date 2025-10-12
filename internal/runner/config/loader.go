@@ -128,9 +128,9 @@ func processConfig(cfg *runnertypes.Config, filter *environment.Filter, expander
 		}
 
 		// Note: Command.Env, Cmd, and Args expansion is performed later by bootstrap.InitConfig
-		// which calls config.ExpandCommand(). This separation allows us to expand Global.Env
-		// and Group.Env early (with fixed automatic environment variables), while Command.Env
-		// expansion happens at runtime (with runtime automatic environment variables).
+		// which calls config.ExpandCommand(). This separation maintains clean architectural
+		// boundaries: config.Loader handles configuration parsing and Global/Group-level expansion,
+		// while bootstrap handles runtime initialization and Command-level expansion.
 	}
 
 	return nil
