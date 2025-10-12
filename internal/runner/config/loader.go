@@ -1,6 +1,7 @@
-// Package config provides functionality for loading and validating
-// configuration files for the command runner. It supports TOML format
-// and includes utilities for managing configuration settings.
+// Package config provides functionality for loading, validating, and expanding
+// configuration files for the command runner. It supports TOML format and
+// includes complete variable expansion for all environment variables, commands,
+// and verify_files fields. All expansion processing is consolidated in this package.
 package config
 
 import (
@@ -98,7 +99,12 @@ func (l *Loader) LoadConfig(content []byte) (*runnertypes.Config, error) {
 	return &cfg, nil
 }
 
-// processConfig processes the configuration by expanding environment variables and verify_files fields
+// processConfig processes the configuration by expanding all environment variables and verify_files fields.
+// This function performs complete variable expansion in the following phases:
+//  1. Global.Env expansion with automatic environment variables
+//  2. Global.VerifyFiles expansion
+//  3. Group.Env and Group.VerifyFiles expansion for all groups
+//  4. Command.Env, Cmd, and Args expansion for all commands
 func processConfig(cfg *runnertypes.Config, filter *environment.Filter, expander *environment.VariableExpander) error {
 	// Generate automatic environment variables (fixed at config load time)
 	// These variables are available for expansion in Global.Env and Group.Env
@@ -129,8 +135,6 @@ func processConfig(cfg *runnertypes.Config, filter *environment.Filter, expander
 	}
 
 	// Phase 4: Command processing (Command.Env, Cmd, Args expansion)
-	// NOTE: During Phase 2 refactoring, this creates intentional duplicate expansion
-	// with bootstrap.LoadAndPrepareConfig(). This will be resolved in Phase 3.
 	for i := range cfg.Groups {
 		group := &cfg.Groups[i]
 		for j := range group.Commands {
