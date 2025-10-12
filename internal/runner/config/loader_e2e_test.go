@@ -14,22 +14,11 @@ import (
 // TestE2E_CompleteConfiguration tests the entire Global/Group/Command env workflow
 // with complex variable references, allowlist inheritance, and verify_files expansion.
 func TestE2E_CompleteConfiguration(t *testing.T) {
-	// Setup: Set system environment variables
-	originalPath := os.Getenv("PATH")
-	originalHome := os.Getenv("HOME")
-	originalUser := os.Getenv("USER")
-
-	os.Setenv("PATH", "/usr/bin:/bin")
-	os.Setenv("HOME", "/home/testuser")
-	os.Setenv("USER", "testuser")
-	os.Setenv("PORT", "8080") // For web group
-
-	defer func() {
-		os.Setenv("PATH", originalPath)
-		os.Setenv("HOME", originalHome)
-		os.Setenv("USER", originalUser)
-		os.Unsetenv("PORT")
-	}()
+	// Setup: Set system environment variables using t.Setenv
+	t.Setenv("PATH", "/usr/bin:/bin")
+	t.Setenv("HOME", "/home/testuser")
+	t.Setenv("USER", "testuser")
+	t.Setenv("PORT", "8080") // For web group
 
 	// Load configuration
 	configPath := filepath.Join("testdata", "e2e_complete.toml")
@@ -93,17 +82,26 @@ func TestE2E_CompleteConfiguration(t *testing.T) {
 		migrateCmd := dbGroup.Commands[0]
 		assert.Equal(t, "migrate", migrateCmd.Name, "Command name should be 'migrate'")
 
-		// Note: Command.Env/Cmd/Args expansion happens in bootstrap.InitConfig(),
-		// so we verify the raw values here and check that they will be expanded later
+		// Phase 1 baseline: Command expansion not yet implemented in config.Loader
+		// These fields should be unexpanded at this stage
 		assert.Equal(t, "${BASE_DIR}/bin/migrate", migrateCmd.Cmd,
-			"Command.Cmd should contain unexpanded variable (expanded in bootstrap)")
+			"Command.Cmd should contain unexpanded variable (not yet expanded in config.Loader)")
 		assert.Equal(t, []string{"-h", "${DB_HOST}", "-p", "${DB_PORT}"}, migrateCmd.Args,
-			"Command.Args should contain unexpanded variables (expanded in bootstrap)")
+			"Command.Args should contain unexpanded variables (not yet expanded in config.Loader)")
 
 		// Command.Env should be set but not yet expanded
 		require.Len(t, migrateCmd.Env, 1, "Command should have 1 env variable")
 		assert.Equal(t, "MIGRATION_DIR=${DB_DATA}/migrations", migrateCmd.Env[0],
-			"Command.Env should contain unexpanded variable (expanded in bootstrap)")
+			"Command.Env should contain unexpanded variable (not yet expanded in config.Loader)")
+
+		// Phase 1 baseline: ExpandedCmd, ExpandedArgs, ExpandedEnv should be empty/nil
+		// After Phase 2 implementation, these will be populated
+		assert.Empty(t, migrateCmd.ExpandedCmd,
+			"Phase 1: ExpandedCmd should be empty (expansion not yet implemented)")
+		assert.Nil(t, migrateCmd.ExpandedArgs,
+			"Phase 1: ExpandedArgs should be nil (expansion not yet implemented)")
+		assert.Nil(t, migrateCmd.ExpandedEnv,
+			"Phase 1: ExpandedEnv should be nil (expansion not yet implemented)")
 	})
 
 	// Verify Web Group with allowlist override
@@ -130,11 +128,19 @@ func TestE2E_CompleteConfiguration(t *testing.T) {
 		startCmd := webGroup.Commands[0]
 		assert.Equal(t, "start", startCmd.Name, "Command name should be 'start'")
 
-		// Command.Cmd/Args should contain unexpanded variables
+		// Phase 1 baseline: Command expansion not yet implemented in config.Loader
 		assert.Equal(t, "${WEB_DIR}/server", startCmd.Cmd,
-			"Command.Cmd should contain unexpanded variable (expanded in bootstrap)")
+			"Command.Cmd should contain unexpanded variable (not yet expanded in config.Loader)")
 		assert.Equal(t, []string{"--port", "${PORT}"}, startCmd.Args,
-			"Command.Args should contain unexpanded variables (expanded in bootstrap)")
+			"Command.Args should contain unexpanded variables (not yet expanded in config.Loader)")
+
+		// Phase 1 baseline: ExpandedCmd, ExpandedArgs, ExpandedEnv should be empty/nil
+		assert.Empty(t, startCmd.ExpandedCmd,
+			"Phase 1: ExpandedCmd should be empty (expansion not yet implemented)")
+		assert.Nil(t, startCmd.ExpandedArgs,
+			"Phase 1: ExpandedArgs should be nil (expansion not yet implemented)")
+		assert.Nil(t, startCmd.ExpandedEnv,
+			"Phase 1: ExpandedEnv should be nil (expansion not yet implemented)")
 	})
 }
 
@@ -193,7 +199,7 @@ env = ["PRIORITY=command", "COMMAND_ONLY=command_value"]
 		assert.False(t, hasGlobalOnly, "GLOBAL_ONLY should not be in Group.ExpandedEnv")
 	})
 
-	// Command.Env expansion happens in bootstrap, so we just verify the structure here
+	// Command.Env expansion will be implemented in Phase 2
 	t.Run("CommandEnv", func(t *testing.T) {
 		testGroup := findGroup(t, cfg, "test_group")
 		require.NotNil(t, testGroup, "Test group should exist")
@@ -206,6 +212,10 @@ env = ["PRIORITY=command", "COMMAND_ONLY=command_value"]
 		require.Len(t, testCmd.Env, 2, "Command should have 2 env variables")
 		assert.Equal(t, "PRIORITY=command", testCmd.Env[0], "PRIORITY in Command.Env should be 'command'")
 		assert.Equal(t, "COMMAND_ONLY=command_value", testCmd.Env[1], "COMMAND_ONLY should be set")
+
+		// Phase 1 baseline: ExpandedEnv should be nil (expansion not yet implemented)
+		assert.Nil(t, testCmd.ExpandedEnv,
+			"Phase 1: ExpandedEnv should be nil (expansion not yet implemented)")
 	})
 }
 
@@ -330,6 +340,115 @@ verify_files = ["${GROUP_DIR}/group_verify.sh"]
 		require.Len(t, testGroup.ExpandedVerifyFiles, 1, "Group should have 1 expanded verify_files entry")
 		assert.Equal(t, "/global/group/group_verify.sh", testGroup.ExpandedVerifyFiles[0],
 			"Group.ExpandedVerifyFiles should expand GROUP_DIR which references GLOBAL_DIR")
+	})
+}
+
+// TestE2E_FullExpansionPipeline is a comprehensive test for the entire expansion pipeline
+// from Global.Env -> Group.Env -> Command.Env/Cmd/Args.
+//
+// Phase 1: This test verifies baseline behavior (Command expansion not yet implemented)
+// Phase 2+: This test will verify Command expansion is performed correctly
+func TestE2E_FullExpansionPipeline(t *testing.T) {
+	// Setup: Set system environment variables using t.Setenv
+	t.Setenv("PATH", "/usr/bin:/bin")
+	t.Setenv("HOME", "/home/testuser")
+
+	// Load configuration with command_env_references_global_group.toml
+	// This config tests Command.Env/Cmd/Args referencing Global and Group env
+	configPath := filepath.Join("testdata", "command_env_references_global_group.toml")
+	content, err := os.ReadFile(configPath)
+	require.NoError(t, err, "Failed to read test configuration file")
+
+	loader := config.NewLoader()
+	cfg, err := loader.LoadConfig(content)
+	require.NoError(t, err, "Failed to load test configuration")
+	require.NotNil(t, cfg, "Configuration should not be nil")
+
+	// Verify Global.ExpandedEnv
+	t.Run("GlobalExpandedEnv", func(t *testing.T) {
+		require.NotNil(t, cfg.Global.ExpandedEnv, "Global.ExpandedEnv should be initialized")
+		assert.Equal(t, "/opt", cfg.Global.ExpandedEnv["BASE_DIR"], "BASE_DIR should be set")
+	})
+
+	// Verify Global.ExpandedVerifyFiles (if present in config)
+	t.Run("GlobalExpandedVerifyFiles", func(t *testing.T) {
+		// command_env_references_global_group.toml doesn't have verify_files at Global level
+		// This is acceptable for this test
+		assert.Empty(t, cfg.Global.ExpandedVerifyFiles,
+			"Global.ExpandedVerifyFiles should be empty for this config")
+	})
+
+	// Verify Group.ExpandedEnv
+	t.Run("GroupExpandedEnv", func(t *testing.T) {
+		appGroup := findGroup(t, cfg, "app_group")
+		require.NotNil(t, appGroup, "app_group should exist")
+		require.NotNil(t, appGroup.ExpandedEnv, "Group.ExpandedEnv should be initialized")
+
+		// APP_DIR should reference BASE_DIR from Global.Env
+		assert.Equal(t, "/opt/myapp", appGroup.ExpandedEnv["APP_DIR"],
+			"APP_DIR should expand BASE_DIR from Global.Env")
+	})
+
+	// Verify Group.ExpandedVerifyFiles (if present in config)
+	t.Run("GroupExpandedVerifyFiles", func(t *testing.T) {
+		appGroup := findGroup(t, cfg, "app_group")
+		require.NotNil(t, appGroup, "app_group should exist")
+
+		// command_env_references_global_group.toml doesn't have verify_files at Group level
+		assert.Empty(t, appGroup.ExpandedVerifyFiles,
+			"Group.ExpandedVerifyFiles should be empty for this config")
+	})
+
+	// Verify Command.ExpandedEnv, ExpandedCmd, ExpandedArgs
+	t.Run("CommandExpansion", func(t *testing.T) {
+		appGroup := findGroup(t, cfg, "app_group")
+		require.NotNil(t, appGroup, "app_group should exist")
+		require.Len(t, appGroup.Commands, 1, "app_group should have 1 command")
+
+		runAppCmd := appGroup.Commands[0]
+		assert.Equal(t, "run_app", runAppCmd.Name, "Command name should be 'run_app'")
+
+		// Phase 1 baseline: Command expansion not yet implemented
+		// These assertions will be updated in Phase 2
+		t.Run("Phase1Baseline", func(t *testing.T) {
+			// Raw values should be unexpanded
+			assert.Equal(t, "${APP_DIR}/bin/server", runAppCmd.Cmd,
+				"Phase 1: Cmd should be unexpanded")
+			assert.Equal(t, []string{"--log", "${LOG_DIR}/app.log"}, runAppCmd.Args,
+				"Phase 1: Args should be unexpanded")
+			require.Len(t, runAppCmd.Env, 1, "Command should have 1 env variable")
+			assert.Equal(t, "LOG_DIR=${APP_DIR}/logs", runAppCmd.Env[0],
+				"Phase 1: Command.Env should be unexpanded")
+
+			// Expanded fields should be empty/nil
+			assert.Empty(t, runAppCmd.ExpandedCmd,
+				"Phase 1: ExpandedCmd should be empty")
+			assert.Nil(t, runAppCmd.ExpandedArgs,
+				"Phase 1: ExpandedArgs should be nil")
+			assert.Nil(t, runAppCmd.ExpandedEnv,
+				"Phase 1: ExpandedEnv should be nil")
+		})
+
+		// Phase 2+: This test case will be enabled to verify expansion
+		// After Phase 2 implementation, uncomment and update this section
+		/*
+			t.Run("Phase2Expansion", func(t *testing.T) {
+				// Command.ExpandedEnv should be populated with expanded variables
+				require.NotNil(t, runAppCmd.ExpandedEnv, "ExpandedEnv should be populated")
+				assert.Equal(t, "/opt/myapp/logs", runAppCmd.ExpandedEnv["LOG_DIR"],
+					"LOG_DIR should expand APP_DIR from Group.Env")
+
+				// Command.ExpandedCmd should be expanded
+				assert.Equal(t, "/opt/myapp/bin/server", runAppCmd.ExpandedCmd,
+					"ExpandedCmd should expand APP_DIR from Group.Env")
+
+				// Command.ExpandedArgs should be expanded
+				require.Len(t, runAppCmd.ExpandedArgs, 2, "ExpandedArgs should have 2 elements")
+				assert.Equal(t, "--log", runAppCmd.ExpandedArgs[0], "First arg should be unchanged")
+				assert.Equal(t, "/opt/myapp/logs/app.log", runAppCmd.ExpandedArgs[1],
+					"Second arg should expand LOG_DIR from Command.Env")
+			})
+		*/
 	})
 }
 
