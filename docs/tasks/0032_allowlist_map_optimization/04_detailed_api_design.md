@@ -877,11 +877,20 @@ func NewAllowlistSet(variables []VariableName) AllowlistSet {
 }
 ```
 
-### 10.2 Builder パターン
+### 10.2 Builder パターン (Phase 2 以降)
 
-#### 複雑な設定を簡単にする Builder
+**重要**: このBuilderパターンは**Phase 2以降**で導入されます。
+
+**理由**:
+- Phase 1では`ResolveAllowlistConfiguration`のみ使用
+- `NewAllowlistResolution`コンストラクタはPhase 2で導入
+- Builderは`NewAllowlistResolution`に依存するため、Phase 2以降が適切
+
+#### Phase 2 以降での複雑な設定を簡単にする Builder
+
 ```go
 // AllowlistResolutionBuilder provides a fluent interface for creating AllowlistResolution
+// Available in Phase 2 and later.
 type AllowlistResolutionBuilder struct {
     mode      InheritanceMode
     groupName string
@@ -890,6 +899,7 @@ type AllowlistResolutionBuilder struct {
 }
 
 // NewAllowlistResolutionBuilder creates a new builder
+// Available in Phase 2 and later.
 func NewAllowlistResolutionBuilder() *AllowlistResolutionBuilder {
     return &AllowlistResolutionBuilder{
         mode: InheritanceModeInherit, // default
@@ -921,11 +931,23 @@ func (b *AllowlistResolutionBuilder) WithGlobalVariables(vars []string) *Allowli
 }
 
 // Build creates the AllowlistResolution
+// Requires Phase 2's NewAllowlistResolution constructor
 func (b *AllowlistResolutionBuilder) Build() *AllowlistResolution {
     groupSet := buildAllowlistSet(b.groupVars)
     globalSet := buildAllowlistSet(b.globalVars)
+    // Phase 2 コンストラクタを使用
     return NewAllowlistResolution(b.mode, b.groupName, groupSet, globalSet)
 }
+```
+
+**使用例** (Phase 2以降):
+```go
+resolution := NewAllowlistResolutionBuilder().
+    WithMode(InheritanceModeInherit).
+    WithGroupName("test-group").
+    WithGlobalVariables([]string{"PATH", "HOME"}).
+    WithGroupVariables([]string{"APP_ENV"}).
+    Build()
 ```
 
 ## 11. テスト支援 API
@@ -1158,21 +1180,35 @@ func IsCompatible(clientVersion APIVersion) bool {
 
 ### 15.2 実装優先順位
 
-#### High Priority
-1. `AllowlistResolution` の内部構造変更
-2. `NewAllowlistResolution` コンストラクタ
-3. `IsAllowed` メソッドの最適化
-4. `ResolveAllowlistConfiguration` の変更
+#### Phase 1 (High Priority)
+1. Getter メソッドの追加
+   - `GetEffectiveList()`
+   - `GetEffectiveSize()`
+   - `GetGroupAllowlist()`
+   - `GetGlobalAllowlist()`
+2. `expansion.go` での直接参照の置換
+3. 後方互換性の検証
 
-#### Medium Priority
-1. Getter メソッドとキャッシュ機能
-2. レガシー互換性 API
+#### Phase 2 (High Priority)
+1. `NewAllowlistResolution` コンストラクタの導入
+2. `AllowlistResolution` の内部構造変更
+   - `effectiveSet` フィールドの追加
+   - `computeEffectiveSet()` の実装
+3. `IsAllowed` メソッドの最適化(effectiveSetベース)
+4. `ResolveAllowlistConfiguration` の最適化
+5. Builder パターンの導入
+
+#### Phase 2/3 (Medium Priority)
+1. キャッシュ機能の強化
+2. レガシー互換性 API の追加
 3. エラーハンドリングの強化
+4. 不変条件の検証強化
 
-#### Low Priority
+#### Phase 3以降 (Low Priority)
 1. パフォーマンス監視機能
-2. テスト支援 API
-3. 将来の拡張性対応
+2. 高度なテスト支援 API
+3. プラグイン対応
+4. 将来の拡張性対応(Merge/Overrideモード等)
 
 ## 16. 段階的移行戦略
 
@@ -1213,18 +1249,80 @@ func IsCompatible(clientVersion APIVersion) bool {
 
 #### 目標
 - map → slice → map の変換排除
-- ResolveAllowlistConfiguration の効率化
+- `effectiveSet` の事前計算導入
 - メモリ使用量削減
+- 新しいコンストラクタAPIの導入
 
 #### 実装内容
-1. 内部データ構造の見直し
-2. EffectiveList の遅延生成への切り替え
-3. パフォーマンステストによる検証
+
+**1. NewAllowlistResolution コンストラクタの追加**
+```go
+// NewAllowlistResolution creates a new AllowlistResolution with pre-computed effective set.
+// Phase 2 で導入される新しいコンストラクタ
+//
+// Parameters:
+//   - mode: 継承モード
+//   - groupName: グループ名
+//   - groupSet: グループallowlist (map形式)
+//   - globalSet: グローバルallowlist (map形式)
+//
+// Returns:
+//   - *AllowlistResolution: effectiveSet が事前計算された新しいインスタンス
+//
+// Panics:
+//   - groupSet が nil の場合
+//   - globalSet が nil の場合
+func NewAllowlistResolution(
+    mode InheritanceMode,
+    groupName string,
+    groupSet map[string]struct{},
+    globalSet map[string]struct{},
+) *AllowlistResolution {
+    r := &AllowlistResolution{
+        Mode:               mode,
+        GroupName:          groupName,
+        groupAllowlistSet:  groupSet,
+        globalAllowlistSet: globalSet,
+    }
+
+    // effectiveSet を事前計算
+    r.computeEffectiveSet()
+
+    // Phase 2 では slice フィールドは遅延生成に変更
+    // (後方互換性のため空のsliceで初期化)
+    r.GroupAllowlist = []string{}
+    r.GlobalAllowlist = []string{}
+    r.EffectiveList = []string{}
+
+    return r
+}
+```
+
+**2. ResolveAllowlistConfiguration の最適化**
+- Phase 1の実装から Phase 2の最適化実装へ移行
+- `NewAllowlistResolution` を内部で使用
+
+**3. 内部データ構造の変更**
+- `EffectiveList` の遅延生成への切り替え
+- `effectiveSet` フィールドの追加
+
+**4. Builder パターンの導入**
+- `AllowlistResolutionBuilder` の追加(セクション10.2参照)
+- テストコード用のファクトリメソッド
+
+**5. パフォーマンステストによる検証**
+
+#### Phase 2 で利用可能になるAPI
+- `NewAllowlistResolution()` - 新しいコンストラクタ
+- `AllowlistResolutionBuilder` - Builderパターン
+- `IsAllowed()` - effectiveSetベースの実装(セクション4.1)
+- `computeEffectiveSet()` - 内部メソッド(セクション6.2)
 
 #### 成功基準
 - `ResolveAllowlistConfiguration` の実行時間50%短縮
 - メモリアロケーション40%削減
 - 大規模 allowlist でのパフォーマンス向上
+- すべての既存テストがパス
 
 ### 16.3 Phase 3: 公開フィールドの非推奨化（将来）
 
