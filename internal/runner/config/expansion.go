@@ -303,7 +303,18 @@ func expandEnvMap(
 
 		expandedValue, err := tryExpandVariable(key, value, envMap, contextName, expander, autoEnv, referenceEnv, allowlist)
 		if err != nil {
-			return fmt.Errorf("%w: failed to expand variable %q in %s: %w", failureErr, key, contextName, err)
+			// Build context information for error message
+			availableVarsCount := len(envMap) + len(referenceEnv)
+			if autoEnv != nil {
+				availableVarsCount += len(autoEnv)
+			}
+			allowlistInfo := "none"
+			if len(allowlist) > 0 {
+				allowlistInfo = fmt.Sprintf("%d vars", len(allowlist))
+			}
+
+			return fmt.Errorf("%w: failed to expand variable %q in %s (available: %d vars, allowlist: %s): %w",
+				failureErr, key, contextName, availableVarsCount, allowlistInfo, err)
 		}
 
 		envMap[key] = expandedValue
@@ -419,8 +430,11 @@ func expandEnvironment(params expansionParameters) (map[string]string, error) {
 		if !ok {
 			return nil, fmt.Errorf("%w: %w: %q in %s", params.failureErr, ErrMalformedEnvVariable, envVar, params.contextName)
 		}
-		if _, exists := envMap[key]; exists {
-			return nil, fmt.Errorf("%w: %w: duplicate key %q in %s", params.failureErr, ErrDuplicateEnvVariable, key, params.contextName)
+		if existingValue, exists := envMap[key]; exists {
+			// Provide detailed error message with both definitions
+			return nil, fmt.Errorf("%w: %w: duplicate environment variable definition %q in %s (first: %q, duplicate: %q)",
+				params.failureErr, ErrDuplicateEnvVariable, key, params.contextName,
+				fmt.Sprintf("%s=%s", key, existingValue), fmt.Sprintf("%s=%s", key, value))
 		}
 		envMap[key] = value
 	}
