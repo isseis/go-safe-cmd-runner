@@ -277,6 +277,57 @@ func (r *AllowlistResolution) SetGlobalAllowlistSet(allowlistSet map[string]stru
 	r.globalAllowlistSet = allowlistSet
 }
 
+// GetEffectiveList returns the effective allowlist as a string slice.
+// This method provides controlled access to the effective allowlist with
+// potential for future optimization.
+func (r *AllowlistResolution) GetEffectiveList() []string {
+	if r == nil {
+		return []string{}
+	}
+	return r.EffectiveList
+}
+
+// GetEffectiveSize returns the number of effective allowlist entries.
+// More efficient than len(GetEffectiveList()) for size-only queries.
+func (r *AllowlistResolution) GetEffectiveSize() int {
+	if r == nil {
+		return 0
+	}
+	return len(r.EffectiveList)
+}
+
+// GetGroupAllowlist returns group allowlist (compatibility getter).
+func (r *AllowlistResolution) GetGroupAllowlist() []string {
+	if r == nil {
+		return []string{}
+	}
+	return r.GroupAllowlist
+}
+
+// GetGlobalAllowlist returns global allowlist (compatibility getter).
+func (r *AllowlistResolution) GetGlobalAllowlist() []string {
+	if r == nil {
+		return []string{}
+	}
+	return r.GlobalAllowlist
+}
+
+// GetMode returns the inheritance mode used for this resolution.
+func (r *AllowlistResolution) GetMode() InheritanceMode {
+	if r == nil {
+		return InheritanceModeInherit // safe default
+	}
+	return r.Mode
+}
+
+// GetGroupName returns the name of the group this resolution is for.
+func (r *AllowlistResolution) GetGroupName() string {
+	if r == nil {
+		return ""
+	}
+	return r.GroupName
+}
+
 // Operation represents different types of privileged operations
 type Operation string
 

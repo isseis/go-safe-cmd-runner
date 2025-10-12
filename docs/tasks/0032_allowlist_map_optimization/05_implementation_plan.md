@@ -138,14 +138,14 @@ func (r *AllowlistResolution) GetGroupName() string {
 3. nil安全性の確認
 
 **チェックリスト**:
-- [ ] `GetEffectiveList()` メソッドの実装
-- [ ] `GetEffectiveSize()` メソッドの実装
-- [ ] `GetGroupAllowlist()` メソッドの実装
-- [ ] `GetGlobalAllowlist()` メソッドの実装
-- [ ] `GetMode()` メソッドの実装
-- [ ] `GetGroupName()` メソッドの実装
-- [ ] 全メソッドのnil安全性テスト
-- [ ] 既存フィールドとの整合性テスト
+- [x] `GetEffectiveList()` メソッドの実装
+- [x] `GetEffectiveSize()` メソッドの実装
+- [x] `GetGroupAllowlist()` メソッドの実装
+- [x] `GetGlobalAllowlist()` メソッドの実装
+- [x] `GetMode()` メソッドの実装
+- [x] `GetGroupName()` メソッドの実装
+- [x] 全メソッドのnil安全性テスト
+- [x] 既存フィールドとの整合性テスト
 
 #### Step 2.3.2: expansion.go の参照置換 (0.5日)
 
@@ -155,12 +155,12 @@ func (r *AllowlistResolution) GetGroupName() string {
 3. リグレッションテストの実行
 
 **チェックリスト**:
-- [ ] Line 125 の置換
-- [ ] Line 372 の置換
-- [ ] Line 562 の置換
-- [ ] ログ出力の`len()`呼び出し最適化
-- [ ] 全体のビルド確認
-- [ ] 既存テストスイートのパス確認
+- [x] Line 125 の置換
+- [x] Line 372 の置換
+- [x] Line 562 の置換
+- [x] ログ出力の`len()`呼び出し最適化
+- [x] 全体のビルド確認
+- [x] 既存テストスイートのパス確認
 
 #### Step 2.3.3: テストと検証 (0.5日)
 
@@ -170,11 +170,11 @@ func (r *AllowlistResolution) GetGroupName() string {
 3. パフォーマンステストでの劣化確認
 
 **チェックリスト**:
-- [ ] 新メソッドの単体テスト完了
-- [ ] 既存テストスイート完全パス
-- [ ] パフォーマンス劣化なし確認
-- [ ] メモリリーク検査
-- [ ] 並行性テスト
+- [x] 新メソッドの単体テスト完了
+- [x] 既存テストスイート完全パス
+- [x] パフォーマンス劣化なし確認
+- [x] メモリリーク検査
+- [x] 並行性テスト
 
 ### 2.4 リスク管理
 
