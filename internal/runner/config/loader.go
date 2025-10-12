@@ -126,6 +126,11 @@ func processConfig(cfg *runnertypes.Config, filter *environment.Filter, expander
 		if err := ExpandGroupVerifyFiles(&cfg.Groups[i], &cfg.Global, filter, expander); err != nil {
 			return fmt.Errorf("failed to expand verify_files for group %q: %w", cfg.Groups[i].Name, err)
 		}
+
+		// Note: Command.Env, Cmd, and Args expansion is performed later by bootstrap.InitConfig
+		// which calls config.ExpandCommand(). This separation maintains clean architectural
+		// boundaries: config.Loader handles configuration parsing and Global/Group-level expansion,
+		// while bootstrap handles runtime initialization and Command-level expansion.
 	}
 
 	return nil

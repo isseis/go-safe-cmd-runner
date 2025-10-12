@@ -124,9 +124,12 @@ func ExpandCommand(expCxt *ExpansionContext) (string, []string, map[string]strin
 	resolution := filter.ResolveAllowlistConfiguration(groupEnvAllowlist, groupName)
 	effectiveAllowlist := resolution.EffectiveList
 
-	// Merge command environment with automatic environment variables
-	// Auto env variables are added last, taking precedence over command env for same keys
-	env := make(map[string]string, len(cmd.ExpandedEnv)+len(autoEnv))
+	// Merge command environment with global, group, and automatic environment variables
+	// Priority order: autoEnv > cmd.ExpandedEnv > groupEnv > globalEnv
+	// Auto env variables are added last, taking precedence over all other variables for same keys
+	env := make(map[string]string, len(globalEnv)+len(groupEnv)+len(cmd.ExpandedEnv)+len(autoEnv))
+	maps.Copy(env, globalEnv)
+	maps.Copy(env, groupEnv)
 	maps.Copy(env, cmd.ExpandedEnv)
 	maps.Copy(env, autoEnv)
 

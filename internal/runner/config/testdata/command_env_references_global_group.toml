@@ -1,0 +1,21 @@
+# Phase 4 integration test: Command.Env with Global/Group.Env reference
+# This test validates:
+# - Command.Env can reference Global.ExpandedEnv
+# - Command.Env can reference Group.ExpandedEnv
+# - Cmd can reference Group.ExpandedEnv
+# - Args can reference Command.ExpandedEnv
+# - Variable priority: Command.Env > Group.Env > Global.Env > System Env
+
+[global]
+env = ["BASE_DIR=/opt"]
+env_allowlist = ["HOME", "PATH"]
+
+[[groups]]
+name = "app_group"
+env = ["APP_DIR=${BASE_DIR}/myapp"]
+
+[[groups.commands]]
+name = "run_app"
+cmd = "${APP_DIR}/bin/server"
+args = ["--log", "${LOG_DIR}/app.log"]
+env = ["LOG_DIR=${APP_DIR}/logs"]
