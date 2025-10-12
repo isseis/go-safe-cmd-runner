@@ -159,17 +159,17 @@
 **目的**: bootstrap側の展開処理を削除し、重複を解消する
 
 #### 2.3.1 bootstrap/config.goの編集
-- [ ] `internal/runner/bootstrap/config.go`を編集
-  - [ ] `LoadAndPrepareConfig()`関数の実装を確認
-  - [ ] 以下の処理を削除:
-    - [ ] autoEnv生成
-    - [ ] ExpandGlobalEnv()呼び出し
-    - [ ] ExpandGroupEnv()呼び出し
-    - [ ] ExpandCommand()呼び出し（全ループ）
-  - [ ] 残す処理:
-    - [ ] verificationManager.VerifyAndReadConfigFile()
-    - [ ] config.Loader.LoadConfig()
-  - [ ] 最終的な実装:
+- [x] `internal/runner/bootstrap/config.go`を編集
+  - [x] `LoadAndPrepareConfig()`関数の実装を確認
+  - [x] 以下の処理を削除:
+    - [x] autoEnv生成
+    - [x] ExpandGlobalEnv()呼び出し
+    - [x] ExpandGroupEnv()呼び出し
+    - [x] ExpandCommand()呼び出し（全ループ）
+  - [x] 残す処理:
+    - [x] verificationManager.VerifyAndReadConfigFile()
+    - [x] config.Loader.LoadConfig()
+  - [x] 最終的な実装:
     ```go
     func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath, runID string) (*runnertypes.Config, error) {
         if configPath == "" {
@@ -211,9 +211,9 @@
     ```
 
 #### 2.3.2 bootstrap側のコメント更新
-- [ ] 関数のdocコメントを更新
-  - [ ] 展開処理がconfig.Loaderで行われることを明記
-  - [ ] この関数の役割が「検証とロード」であることを明記
+- [x] 関数のdocコメントを更新
+  - [x] 展開処理がconfig.Loaderで行われることを明記
+  - [x] この関数の役割が「検証とロード」であることを明記
     ```go
     // LoadAndPrepareConfig loads and verifies a configuration file.
     //
@@ -229,27 +229,27 @@
     ```
 
 #### 2.3.3 bootstrap側のテスト更新（存在する場合）
-- [ ] `internal/runner/bootstrap/`のテストファイルを確認
-- [ ] 展開処理のテストを削除または更新
-  - [ ] 展開結果の検証は残す（config.Loaderで展開済み）
-  - [ ] 展開処理自体のテストはbootstrap側で削除するが、テストロジック自体は
+- [x] `internal/runner/bootstrap/`のテストファイルを確認
+- [x] 展開処理のテストを削除または更新
+  - [x] 展開結果の検証は残す（config.Loaderで展開済み）
+  - [x] 展開処理自体のテストはbootstrap側で削除するが、テストロジック自体は
     `internal/runner/config/loader_test.go` に移管し、config.Loaderでの展開が期待どおり
     実行されることを明確に検証すること。これによりテストカバレッジの低下を防ぐ。
-- [ ] テストが正常にPASS
+- [x] テストが正常にPASS
 
 #### 2.3.4 統合テストの実行
-- [ ] すべての既存テストがPASS
-- [ ] E2Eテスト（Phase 1で追加）がPASS
-- [ ] 実際のサンプルTOMLファイルで動作確認
-  - [ ] `sample/`ディレクトリ内のすべてのファイル
-  - [ ] Phase 1-4のテストファイル
+- [x] すべての既存テストがPASS
+- [x] E2Eテスト（Phase 1で追加）がPASS
+- [x] 実際のサンプルTOMLファイルで動作確認
+  - [x] `sample/`ディレクトリ内のすべてのファイル
+  - [x] Phase 1-4のテストファイル
 
 #### 2.3.5 Phase 3の完了確認
-- [ ] すべての既存テストがPASS
-- [ ] Phase 3の変更がすべて完了
-- [ ] `make lint`でエラーなし
-- [ ] 重複展開が解消されたことを確認
-- [ ] コミット: "Remove expansion logic from bootstrap (consolidate to config.Loader)"
+- [x] すべての既存テストがPASS
+- [x] Phase 3の変更がすべて完了
+- [x] `make lint`でエラーなし
+- [x] 重複展開が解消されたことを確認
+- [x] コミット: "Remove expansion logic from bootstrap (consolidate to config.Loader)"
 
 ---
 
