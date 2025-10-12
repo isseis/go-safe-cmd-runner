@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
@@ -257,13 +258,8 @@ func BenchmarkLoadConfigWithoutEnvs(b *testing.B) {
 func BenchmarkExpandGlobalEnv_LargeConfig(b *testing.B) {
 	// Setup: Create a GlobalConfig with 50 env variables
 	env := make([]string, 50)
-	for i := 0; i < 50; i++ {
-		if i == 0 {
-			env[i] = "VAR_0=value_0"
-		} else {
-			// Each variable references the previous one
-			env[i] = "VAR_" + string(rune('0'+i%10)) + "=" + "value_" + string(rune('0'+i%10))
-		}
+	for i := range 50 {
+		env[i] = "VAR_" + strconv.Itoa(i) + "=value_" + strconv.Itoa(i)
 	}
 
 	cfg := &runnertypes.GlobalConfig{
