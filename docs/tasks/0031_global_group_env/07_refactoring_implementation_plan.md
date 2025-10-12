@@ -85,7 +85,7 @@
 
 #### 2.2.1 processConfig()にCommand展開を追加
 - [ ] `internal/runner/config/loader.go`を編集
-  - [ ] Phase 3の後に、各コマンドに対してCommand.Env/Cmd/Args展開を実行
+  - [ ] `processConfig`関数内のGroup処理(Phase 3)の後に、各コマンドに対してCommand.Env/Cmd/Args展開を実行
     ```go
     // Phase 4: Command processing (Command.Env, Cmd, Args expansion)
     for i := range cfg.Groups {
