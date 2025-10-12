@@ -386,7 +386,245 @@ args = ["pattern", "file.txt"]
 
 `skip_standard_paths = true` を設定すると、標準パスのコマンドが改ざんされていても検出できません。セキュリティ要件が高い環境では `false` (デフォルト)のままにすることを推奨します。
 
-## 4.5 env_allowlist - 環境変数許可リスト
+## 4.5 env - グローバル環境変数
+
+### 概要
+
+全てのグループとコマンドで共通して使用する環境変数を定義します。ここで定義した環境変数は、全てのコマンドで参照可能です。
+
+### 文法
+
+```toml
+[global]
+env = ["KEY1=value1", "KEY2=value2", ...]
+```
+
+### パラメータの詳細
+
+| 項目 | 内容 |
+|-----|------|
+| **型** | 文字列配列 (array of strings) |
+| **必須/オプション** | オプション |
+| **設定可能な階層** | グローバル、グループ、コマンド |
+| **デフォルト値** | [] (環境変数なし) |
+| **書式** | `"KEY=VALUE"` 形式 |
+| **オーバーライド** | グループ・コマンドレベルで同名変数を上書き可能 |
+
+### 役割
+
+- **設定の一元化**: 共通の環境変数を1箇所で管理
+- **再利用性の向上**: 複数のコマンドで同じ設定を共有
+- **保守性の向上**: 変更時の修正箇所を削減
+
+### 設定例
+
+#### 例1: 基本的なグローバル環境変数
+
+```toml
+version = "1.0"
+
+[global]
+env = [
+    "BASE_DIR=/opt/app",
+    "LOG_LEVEL=info",
+    "CONFIG_FILE=/etc/myapp/config.yaml",
+]
+env_allowlist = ["HOME", "PATH"]
+
+[[groups]]
+name = "app_group"
+
+[[groups.commands]]
+name = "show_config"
+cmd = "/bin/echo"
+args = ["Config: ${CONFIG_FILE}"]  # Global.env の変数を参照
+# 実際の実行: /bin/echo "Config: /etc/myapp/config.yaml"
+```
+
+#### 例2: パス構築に使用
+
+```toml
+version = "1.0"
+
+[global]
+env = [
+    "APP_ROOT=/opt/myapp",
+    "BIN_DIR=${APP_ROOT}/bin",      # Global.env 内で変数参照
+    "DATA_DIR=${APP_ROOT}/data",
+]
+env_allowlist = ["HOME"]
+
+[[groups]]
+name = "deployment"
+
+[[groups.commands]]
+name = "start_app"
+cmd = "${BIN_DIR}/server"           # Global.env の変数を参照
+args = ["--data-dir", "${DATA_DIR}"]
+```
+
+#### 例3: システム環境変数の拡張
+
+```toml
+version = "1.0"
+
+[global]
+env = [
+    "PATH=/opt/custom/bin:${PATH}",  # システム環境変数 PATH を拡張
+]
+env_allowlist = ["PATH"]
+
+[[groups]]
+name = "tools"
+
+[[groups.commands]]
+name = "run_custom_tool"
+cmd = "custom-tool"  # /opt/custom/bin から検索される
+args = ["--version"]
+```
+
+### 優先順位
+
+環境変数は以下の優先順位で解決されます（下に行くほど優先度が高い）：
+
+1. システム環境変数（最低優先）
+2. **Global.env**（グローバル環境変数）
+3. Group.env（グループ環境変数、第5章参照）
+4. Command.env（コマンド環境変数、第6章参照）（最高優先）
+
+```toml
+# システム環境変数 PATH=/usr/bin:/bin が存在する場合
+
+[global]
+env = [
+    "PATH=/opt/bin:${PATH}",        # システムのPATHを拡張
+    "COMMON_VAR=global_value",
+]
+
+[[groups]]
+name = "example"
+env = ["COMMON_VAR=group_value"]    # Global.env を上書き
+
+[[groups.commands]]
+name = "cmd1"
+env = ["COMMON_VAR=command_value"]  # Group.env を上書き
+
+# 実行時の環境変数:
+# PATH=/opt/bin:/usr/bin:/bin
+# COMMON_VAR=command_value
+```
+
+### 変数展開
+
+Global.env 内でも変数参照が可能です。
+
+#### Global.env 内での変数参照
+
+```toml
+[global]
+env = [
+    "BASE=/opt/app",
+    "BIN=${BASE}/bin",              # BASE を参照
+    "LIB=${BASE}/lib",              # BASE を参照
+    "CONFIG=${BASE}/etc/config",    # BASE を参照
+]
+```
+
+#### システム環境変数の参照
+
+```toml
+[global]
+env = [
+    "MY_HOME=${HOME}/.myapp",       # システム環境変数 HOME を参照
+    "BACKUP_DIR=${HOME}/backup",
+]
+env_allowlist = ["HOME"]  # システム環境変数を参照する場合は allowlist に追加
+```
+
+### 注意事項
+
+#### 1. KEY名の制約
+
+環境変数名（KEY部分）は以下のルールに従う必要があります：
+
+```toml
+[global]
+env = [
+    "VALID_NAME=value",      # 正しい: 英大文字、数字、アンダースコア
+    "MY_VAR_123=value",      # 正しい
+    "123INVALID=value",      # エラー: 数字で始まる
+    "MY-VAR=value",          # エラー: ハイフンは使用不可
+    "__RUNNER_VAR=value",    # エラー: 予約プレフィックス
+]
+```
+
+#### 2. 重複定義
+
+同じKEYを複数回定義するとエラーになります：
+
+```toml
+[global]
+env = [
+    "VAR=value1",
+    "VAR=value2",  # エラー: 重複定義
+]
+```
+
+#### 3. allowlist との関係
+
+Global.env で定義した変数がシステム環境変数を参照する場合、参照先の変数を `env_allowlist` に追加する必要があります：
+
+```toml
+[global]
+env = [
+    "MY_PATH=${HOME}/bin",  # HOME を参照
+]
+env_allowlist = ["HOME"]    # 必須: HOME を許可
+```
+
+#### 4. 循環参照の禁止
+
+変数間で循環参照を作成するとエラーになります：
+
+```toml
+[global]
+env = [
+    "A=${B}",
+    "B=${A}",  # エラー: 循環参照
+]
+```
+
+### ベストプラクティス
+
+1. **共通設定は Global.env に**: 全体で使用する変数はグローバルで定義
+2. **明確な命名**: 変数名は大文字とアンダースコアで明確に
+3. **階層的な定義**: ベースパスをまず定義し、派生パスはそれを参照
+4. **allowlist の適切な設定**: システム環境変数を参照する場合は必ず allowlist に追加
+
+```toml
+# 推奨される構成
+[global]
+env = [
+    # ベース設定
+    "APP_ROOT=/opt/myapp",
+    "ENV_TYPE=production",
+
+    # 派生設定（ベースを参照）
+    "BIN_DIR=${APP_ROOT}/bin",
+    "DATA_DIR=${APP_ROOT}/data",
+    "LOG_DIR=${APP_ROOT}/logs",
+    "CONFIG_FILE=${APP_ROOT}/etc/${ENV_TYPE}.yaml",
+]
+env_allowlist = ["HOME", "PATH"]
+```
+
+### 次のステップ
+
+- **Group.env**: グループレベルの環境変数については第5章を参照
+- **Command.env**: コマンドレベルの環境変数については第6章を参照
+- **変数展開の詳細**: 変数展開の仕組みについては第7章を参照
+
+## 4.6 env_allowlist - 環境変数許可リスト
 
 ### 概要
 
@@ -514,7 +752,7 @@ env_allowlist = [
 env_allowlist = ["PATH", "HOME", "USER"]
 ```
 
-## 4.6 verify_files - ファイル検証リスト
+## 4.7 verify_files - ファイル検証リスト
 
 ### 概要
 
@@ -621,7 +859,7 @@ verify_files = ["/opt/app/script.sh"]  # 正しい
 
 多数のファイルを検証すると起動時間が増加します。必要なファイルのみを指定してください。
 
-## 4.7 max_output_size - 出力サイズ上限
+## 4.8 max_output_size - 出力サイズ上限
 
 ### 概要
 

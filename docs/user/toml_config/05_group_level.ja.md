@@ -475,6 +475,257 @@ env_allowlist = ["変数1", "変数2", ...]
 | **有効な値** | 環境変数名のリスト、または空配列 |
 | **継承動作** | 3つのモード(後述) |
 
+### 5.3.3 env - グループ環境変数
+
+#### 概要
+
+そのグループ内の全てのコマンドで共通して使用する環境変数を定義します。グローバルレベルの環境変数を上書きすることができます。
+
+#### 文法
+
+```toml
+[[groups]]
+name = "example"
+env = ["KEY1=value1", "KEY2=value2", ...]
+```
+
+#### パラメータの詳細
+
+| 項目 | 内容 |
+|-----|------|
+| **型** | 文字列配列 (array of strings) |
+| **必須/オプション** | オプション |
+| **設定可能な階層** | グローバル、グループ、コマンド |
+| **デフォルト値** | [] (環境変数なし) |
+| **書式** | `"KEY=VALUE"` 形式 |
+| **オーバーライド** | コマンドレベルで同名変数を上書き可能 |
+
+#### 役割
+
+- **グループ固有の設定**: そのグループに特有の環境変数を定義
+- **グローバル設定の上書き**: グローバルレベルの環境変数を変更
+- **コマンド間の共有**: グループ内の全コマンドで設定を共有
+
+#### 設定例
+
+##### 例1: グループ固有の環境変数
+
+```toml
+version = "1.0"
+
+[global]
+env = [
+    "BASE_DIR=/opt/app",
+    "LOG_LEVEL=info",
+]
+env_allowlist = ["HOME"]
+
+[[groups]]
+name = "database_group"
+env = [
+    "DB_HOST=localhost",
+    "DB_PORT=5432",
+    "DB_DATA=${BASE_DIR}/db-data",  # Global.env の BASE_DIR を参照
+]
+
+[[groups.commands]]
+name = "connect"
+cmd = "/usr/bin/psql"
+args = ["-h", "${DB_HOST}", "-p", "${DB_PORT}"]
+# DB_HOST と DB_PORT は Group.env から取得
+```
+
+##### 例2: グローバル設定の上書き
+
+```toml
+version = "1.0"
+
+[global]
+env = [
+    "LOG_LEVEL=info",
+    "ENV_TYPE=production",
+]
+
+[[groups]]
+name = "development_group"
+env = [
+    "LOG_LEVEL=debug",      # Global.env の LOG_LEVEL を上書き
+    "ENV_TYPE=development", # Global.env の ENV_TYPE を上書き
+]
+
+[[groups.commands]]
+name = "run_dev"
+cmd = "/opt/app/bin/app"
+args = ["--log-level", "${LOG_LEVEL}"]
+# LOG_LEVEL=debug が使用される
+```
+
+##### 例3: グループ内の変数参照
+
+```toml
+version = "1.0"
+
+[global]
+env = ["APP_ROOT=/opt/myapp"]
+
+[[groups]]
+name = "web_group"
+env = [
+    "WEB_DIR=${APP_ROOT}/web",         # Global.env の APP_ROOT を参照
+    "STATIC_DIR=${WEB_DIR}/static",    # Group.env の WEB_DIR を参照
+    "UPLOAD_DIR=${WEB_DIR}/uploads",   # Group.env の WEB_DIR を参照
+]
+
+[[groups.commands]]
+name = "start_server"
+cmd = "${WEB_DIR}/server"
+args = ["--static", "${STATIC_DIR}", "--upload", "${UPLOAD_DIR}"]
+```
+
+#### 優先順位
+
+環境変数は以下の優先順位で解決されます：
+
+1. システム環境変数（最低優先）
+2. Global.env（グローバル環境変数）
+3. **Group.env**（グループ環境変数）← このセクション
+4. Command.env（コマンド環境変数）（最高優先）
+
+```toml
+[global]
+env = ["SHARED=global", "OVERRIDE=global"]
+
+[[groups]]
+name = "example"
+env = ["OVERRIDE=group", "GROUP_ONLY=group"]  # OVERRIDE を上書き
+
+[[groups.commands]]
+name = "cmd1"
+env = ["OVERRIDE=command"]  # さらに上書き
+
+# 実行時の環境変数:
+# SHARED=global
+# OVERRIDE=command
+# GROUP_ONLY=group
+```
+
+#### 変数展開
+
+Group.env 内では、Global.env で定義した変数や、同じ Group.env 内の他の変数を参照できます。
+
+##### Global.env の変数を参照
+
+```toml
+[global]
+env = ["BASE=/opt/app"]
+
+[[groups]]
+name = "services"
+env = [
+    "SERVICE_DIR=${BASE}/services",     # Global.env の BASE を参照
+    "CONFIG=${SERVICE_DIR}/config",     # Group.env の SERVICE_DIR を参照
+]
+```
+
+##### システム環境変数の参照
+
+```toml
+[global]
+env_allowlist = ["HOME", "USER"]
+
+[[groups]]
+name = "user_specific"
+env = [
+    "USER_DATA=${HOME}/${USER}/data",  # システム環境変数 HOME と USER を参照
+]
+```
+
+#### 注意事項
+
+##### 1. KEY名の制約
+
+Global.env と同じ制約が適用されます（第4章参照）。
+
+##### 2. 重複定義
+
+同じグループ内で同じKEYを複数回定義するとエラーになります。
+
+##### 3. allowlist との関係
+
+Group.env で定義した変数がシステム環境変数を参照する場合、そのグループの `env_allowlist` に参照先の変数を追加する必要があります。
+
+```toml
+[global]
+env_allowlist = ["PATH"]
+
+[[groups]]
+name = "example"
+env = ["MY_HOME=${HOME}/app"]  # HOME を参照
+env_allowlist = ["HOME"]       # 必須: HOME を許可（グローバルを上書き）
+```
+
+##### 4. グループ間の独立性
+
+Group.env で定義した変数は、そのグループ内でのみ有効です。他のグループには影響しません。
+
+```toml
+[[groups]]
+name = "group1"
+env = ["VAR=value1"]
+
+[[groups.commands]]
+name = "cmd1"
+cmd = "/bin/echo"
+args = ["${VAR}"]  # value1
+
+[[groups]]
+name = "group2"
+# env で VAR を定義していない
+
+[[groups.commands]]
+name = "cmd2"
+cmd = "/bin/echo"
+args = ["${VAR}"]  # エラー: VAR は未定義
+```
+
+#### ベストプラクティス
+
+1. **グループ固有の設定を定義**: グループに特有の環境変数は Group.env に
+2. **Global.env との連携**: ベースパスは Global.env、派生パスは Group.env
+3. **適切な allowlist 設定**: システム環境変数を参照する場合は allowlist を設定
+4. **明確な命名**: グループ固有であることがわかる変数名を使用
+
+```toml
+# 推奨される構成
+[global]
+env = [
+    "APP_ROOT=/opt/myapp",
+    "ENV_TYPE=production",
+]
+env_allowlist = ["HOME", "PATH"]
+
+[[groups]]
+name = "database"
+env = [
+    "DB_HOST=localhost",              # グループ固有
+    "DB_PORT=5432",                   # グループ固有
+    "DB_DATA=${APP_ROOT}/db-data",    # Global.env を参照
+]
+
+[[groups]]
+name = "web"
+env = [
+    "WEB_DIR=${APP_ROOT}/web",        # Global.env を参照
+    "PORT=8080",                      # グループ固有
+]
+```
+
+#### 次のステップ
+
+- **Command.env**: コマンドレベルの環境変数については第6章を参照
+- **変数展開の詳細**: 変数展開の仕組みについては第7章を参照
+- **環境変数継承モード**: allowlist の継承については5.4節を参照
+
 ## 5.4 環境変数継承モード
 
 環境変数の許可リスト(`env_allowlist`)には、3つの継承モードがあります。これは go-safe-cmd-runner の重要な機能の一つです。
