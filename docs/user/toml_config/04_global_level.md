@@ -386,7 +386,245 @@ args = ["pattern", "file.txt"]
 
 Setting `skip_standard_paths = true` will not detect tampering of commands in standard paths. For environments with high security requirements, it is recommended to keep it as `false` (default).
 
-## 4.5 env_allowlist - Environment Variable Allowlist
+## 4.5 env - Global Environment Variables
+
+### Overview
+
+Defines environment variables that are commonly used across all groups and commands. Environment variables defined here can be referenced by all commands.
+
+### Syntax
+
+```toml
+[global]
+env = ["KEY1=value1", "KEY2=value2", ...]
+```
+
+### Parameter Details
+
+| Item | Description |
+|------|-------------|
+| **Type** | Array of strings (array of strings) |
+| **Required/Optional** | Optional |
+| **Configurable Level** | Global, Group, Command |
+| **Default Value** | [] (no environment variables) |
+| **Format** | `"KEY=VALUE"` format |
+| **Override** | Same-name variables can be overridden at group/command level |
+
+### Role
+
+- **Centralized Configuration**: Manage common environment variables in one place
+- **Improved Reusability**: Share the same settings across multiple commands
+- **Enhanced Maintainability**: Reduce modification points when changes are needed
+
+### Configuration Examples
+
+#### Example 1: Basic Global Environment Variables
+
+```toml
+version = "1.0"
+
+[global]
+env = [
+    "BASE_DIR=/opt/app",
+    "LOG_LEVEL=info",
+    "CONFIG_FILE=/etc/myapp/config.yaml",
+]
+env_allowlist = ["HOME", "PATH"]
+
+[[groups]]
+name = "app_group"
+
+[[groups.commands]]
+name = "show_config"
+cmd = "/bin/echo"
+args = ["Config: ${CONFIG_FILE}"]  # References Global.env variable
+# Actual execution: /bin/echo "Config: /etc/myapp/config.yaml"
+```
+
+#### Example 2: Using for Path Construction
+
+```toml
+version = "1.0"
+
+[global]
+env = [
+    "APP_ROOT=/opt/myapp",
+    "BIN_DIR=${APP_ROOT}/bin",      # Variable reference within Global.env
+    "DATA_DIR=${APP_ROOT}/data",
+]
+env_allowlist = ["HOME"]
+
+[[groups]]
+name = "deployment"
+
+[[groups.commands]]
+name = "start_app"
+cmd = "${BIN_DIR}/server"           # References Global.env variable
+args = ["--data-dir", "${DATA_DIR}"]
+```
+
+#### Example 3: Extending System Environment Variables
+
+```toml
+version = "1.0"
+
+[global]
+env = [
+    "PATH=/opt/custom/bin:${PATH}",  # Extends system environment variable PATH
+]
+env_allowlist = ["PATH"]
+
+[[groups]]
+name = "tools"
+
+[[groups.commands]]
+name = "run_custom_tool"
+cmd = "custom-tool"  # Searched from /opt/custom/bin
+args = ["--version"]
+```
+
+### Priority Order
+
+Environment variables are resolved in the following priority order (higher priority at the bottom):
+
+1. System environment variables (lowest priority)
+2. **Global.env** (global environment variables)
+3. Group.env (group environment variables, see Chapter 5)
+4. Command.env (command environment variables, see Chapter 6) (highest priority)
+
+```toml
+# If system environment variable PATH=/usr/bin:/bin exists
+
+[global]
+env = [
+    "PATH=/opt/bin:${PATH}",        # Extends system PATH
+    "COMMON_VAR=global_value",
+]
+
+[[groups]]
+name = "example"
+env = ["COMMON_VAR=group_value"]    # Overrides Global.env
+
+[[groups.commands]]
+name = "cmd1"
+env = ["COMMON_VAR=command_value"]  # Overrides Group.env
+
+# Runtime environment variables:
+# PATH=/opt/bin:/usr/bin:/bin
+# COMMON_VAR=command_value
+```
+
+### Variable Expansion
+
+Variable references are possible within Global.env.
+
+#### Variable References Within Global.env
+
+```toml
+[global]
+env = [
+    "BASE=/opt/app",
+    "BIN=${BASE}/bin",              # References BASE
+    "LIB=${BASE}/lib",              # References BASE
+    "CONFIG=${BASE}/etc/config",    # References BASE
+]
+```
+
+#### Referencing System Environment Variables
+
+```toml
+[global]
+env = [
+    "MY_HOME=${HOME}/.myapp",       # References system environment variable HOME
+    "BACKUP_DIR=${HOME}/backup",
+]
+env_allowlist = ["HOME"]  # Must add to allowlist when referencing system environment variables
+```
+
+### Precautions
+
+#### 1. KEY Name Constraints
+
+Environment variable names (KEY part) must follow these rules:
+
+```toml
+[global]
+env = [
+    "VALID_NAME=value",      # Correct: uppercase letters, numbers, underscores
+    "MY_VAR_123=value",      # Correct
+    "123INVALID=value",      # Error: starts with number
+    "MY-VAR=value",          # Error: hyphens not allowed
+    "__RUNNER_VAR=value",    # Error: reserved prefix
+]
+```
+
+#### 2. Duplicate Definitions
+
+Defining the same KEY multiple times results in an error:
+
+```toml
+[global]
+env = [
+    "VAR=value1",
+    "VAR=value2",  # Error: duplicate definition
+]
+```
+
+#### 3. Relationship with allowlist
+
+When variables defined in Global.env reference system environment variables, the referenced variables must be added to `env_allowlist`:
+
+```toml
+[global]
+env = [
+    "MY_PATH=${HOME}/bin",  # References HOME
+]
+env_allowlist = ["HOME"]    # Required: allow HOME
+```
+
+#### 4. Prohibition of Circular References
+
+Creating circular references between variables results in an error:
+
+```toml
+[global]
+env = [
+    "A=${B}",
+    "B=${A}",  # Error: circular reference
+]
+```
+
+### Best Practices
+
+1. **Common Settings in Global.env**: Define variables used throughout in global
+2. **Clear Naming**: Use uppercase letters and underscores for clear variable names
+3. **Hierarchical Definition**: Define base paths first, then reference them for derived paths
+4. **Proper allowlist Settings**: Always add to allowlist when referencing system environment variables
+
+```toml
+# Recommended configuration
+[global]
+env = [
+    # Base settings
+    "APP_ROOT=/opt/myapp",
+    "ENV_TYPE=production",
+
+    # Derived settings (referencing base)
+    "BIN_DIR=${APP_ROOT}/bin",
+    "DATA_DIR=${APP_ROOT}/data",
+    "LOG_DIR=${APP_ROOT}/logs",
+    "CONFIG_FILE=${APP_ROOT}/etc/${ENV_TYPE}.yaml",
+]
+env_allowlist = ["HOME", "PATH"]
+```
+
+### Next Steps
+
+- **Group.env**: See Chapter 5 for group-level environment variables
+- **Command.env**: See Chapter 6 for command-level environment variables
+- **Variable Expansion Details**: See Chapter 7 for variable expansion mechanisms
+
+## 4.6 env_allowlist - Environment Variable Allowlist
 
 ### Overview
 
@@ -514,7 +752,7 @@ env_allowlist = [
 env_allowlist = ["PATH", "HOME", "USER"]
 ```
 
-## 4.6 verify_files - File Verification List
+## 4.7 verify_files - File Verification List
 
 ### Overview
 
@@ -621,7 +859,7 @@ If the hash of a specified file has not been recorded in advance, a verification
 
 Verifying many files increases startup time. Specify only necessary files.
 
-## 4.7 max_output_size - Maximum Output Size
+## 4.8 max_output_size - Maximum Output Size
 
 ### Overview
 

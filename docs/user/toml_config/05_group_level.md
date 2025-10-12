@@ -21,8 +21,260 @@ name = "group_name"
 
 #### Parameter Details
 
+| Item | Description #### Inheritance Behavior** | Three modes (described below) |
+
+### 5.3.3 env - Group Environment Variables
+
+#### Overview
+
+Defines environment variables that are commonly used by all commands within that group. Can override global-level environment variables.
+
+#### Syntax
+
+```toml
+[[groups]]
+name = "example"
+env = ["KEY1=value1", "KEY2=value2", ...]
+```
+
+#### Parameter Details
+
 | Item | Description |
 |------|-------------|
+| **Type** | Array of strings (array of strings) |
+| **Required/Optional** | Optional |
+| **Configurable Level** | Global, Group, Command |
+| **Default Value** | [] (no environment variables) |
+| **Format** | `"KEY=VALUE"` format |
+| **Override** | Same-name variables can be overridden at command level |
+
+#### Role
+
+- **Group-Specific Settings**: Define environment variables specific to that group
+- **Override Global Settings**: Change global-level environment variables
+- **Share Between Commands**: Share settings across all commands in the group
+
+#### Configuration Examples
+
+##### Example 1: Group-Specific Environment Variables
+
+```toml
+version = "1.0"
+
+[global]
+env = [
+    "BASE_DIR=/opt/app",
+    "LOG_LEVEL=info",
+]
+env_allowlist = ["HOME"]
+
+[[groups]]
+name = "database_group"
+env = [
+    "DB_HOST=localhost",
+    "DB_PORT=5432",
+    "DB_DATA=${BASE_DIR}/db-data",  # References BASE_DIR from Global.env
+]
+
+[[groups.commands]]
+name = "connect"
+cmd = "/usr/bin/psql"
+args = ["-h", "${DB_HOST}", "-p", "${DB_PORT}"]
+# DB_HOST and DB_PORT are obtained from Group.env
+```
+
+##### Example 2: Overriding Global Settings
+
+```toml
+version = "1.0"
+
+[global]
+env = [
+    "LOG_LEVEL=info",
+    "ENV_TYPE=production",
+]
+
+[[groups]]
+name = "development_group"
+env = [
+    "LOG_LEVEL=debug",      # Overrides Global.env LOG_LEVEL
+    "ENV_TYPE=development", # Overrides Global.env ENV_TYPE
+]
+
+[[groups.commands]]
+name = "run_dev"
+cmd = "/opt/app/bin/app"
+args = ["--log-level", "${LOG_LEVEL}"]
+# LOG_LEVEL=debug is used
+```
+
+##### Example 3: Variable References Within Group
+
+```toml
+version = "1.0"
+
+[global]
+env = ["APP_ROOT=/opt/myapp"]
+
+[[groups]]
+name = "web_group"
+env = [
+    "WEB_DIR=${APP_ROOT}/web",         # References APP_ROOT from Global.env
+    "STATIC_DIR=${WEB_DIR}/static",    # References WEB_DIR from Group.env
+    "UPLOAD_DIR=${WEB_DIR}/uploads",   # References WEB_DIR from Group.env
+]
+
+[[groups.commands]]
+name = "start_server"
+cmd = "${WEB_DIR}/server"
+args = ["--static", "${STATIC_DIR}", "--upload", "${UPLOAD_DIR}"]
+```
+
+#### Priority Order
+
+Environment variables are resolved in the following priority order:
+
+1. System environment variables (lowest priority)
+2. Global.env (global environment variables)
+3. **Group.env** (group environment variables) ← This section
+4. Command.env (command environment variables) (highest priority)
+
+```toml
+[global]
+env = ["SHARED=global", "OVERRIDE=global"]
+
+[[groups]]
+name = "example"
+env = ["OVERRIDE=group", "GROUP_ONLY=group"]  # Overrides OVERRIDE
+
+[[groups.commands]]
+name = "cmd1"
+env = ["OVERRIDE=command"]  # Further override
+
+# Runtime environment variables:
+# SHARED=global
+# OVERRIDE=command
+# GROUP_ONLY=group
+```
+
+#### Variable Expansion
+
+Within Group.env, you can reference variables defined in Global.env or other variables within the same Group.env.
+
+##### Referencing Global.env Variables
+
+```toml
+[global]
+env = ["BASE=/opt/app"]
+
+[[groups]]
+name = "services"
+env = [
+    "SERVICE_DIR=${BASE}/services",     # References BASE from Global.env
+    "CONFIG=${SERVICE_DIR}/config",     # References SERVICE_DIR from Group.env
+]
+```
+
+##### Referencing System Environment Variables
+
+```toml
+[global]
+env_allowlist = ["HOME", "USER"]
+
+[[groups]]
+name = "user_specific"
+env = [
+    "USER_DATA=${HOME}/${USER}/data",  # References system environment variables HOME and USER
+]
+```
+
+#### Precautions
+
+##### 1. KEY Name Constraints
+
+The same constraints as Global.env apply (see Chapter 4).
+
+##### 2. Duplicate Definitions
+
+Defining the same KEY multiple times within the same group results in an error.
+
+##### 3. Relationship with allowlist
+
+When variables defined in Group.env reference system environment variables, the referenced variables must be added to that group's `env_allowlist`.
+
+```toml
+[global]
+env_allowlist = ["PATH"]
+
+[[groups]]
+name = "example"
+env = ["MY_HOME=${HOME}/app"]  # References HOME
+env_allowlist = ["HOME"]       # Required: Allow HOME (overrides global)
+```
+
+##### 4. Independence Between Groups
+
+Variables defined in Group.env are only valid within that group. They do not affect other groups.
+
+```toml
+[[groups]]
+name = "group1"
+env = ["VAR=value1"]
+
+[[groups.commands]]
+name = "cmd1"
+cmd = "/bin/echo"
+args = ["${VAR}"]  # value1
+
+[[groups]]
+name = "group2"
+# VAR not defined in env
+
+[[groups.commands]]
+name = "cmd2"
+cmd = "/bin/echo"
+args = ["${VAR}"]  # Error: VAR is undefined
+```
+
+#### Best Practices
+
+1. **Define Group-Specific Settings**: Put group-specific environment variables in Group.env
+2. **Coordination with Global.env**: Base paths in Global.env, derived paths in Group.env
+3. **Proper allowlist Settings**: Configure allowlist when referencing system environment variables
+4. **Clear Naming**: Use variable names that indicate they are group-specific
+
+```toml
+# Recommended configuration
+[global]
+env = [
+    "APP_ROOT=/opt/myapp",
+    "ENV_TYPE=production",
+]
+env_allowlist = ["HOME", "PATH"]
+
+[[groups]]
+name = "database"
+env = [
+    "DB_HOST=localhost",              # Group-specific
+    "DB_PORT=5432",                   # Group-specific
+    "DB_DATA=${APP_ROOT}/db-data",    # References Global.env
+]
+
+[[groups]]
+name = "web"
+env = [
+    "WEB_DIR=${APP_ROOT}/web",        # References Global.env
+    "PORT=8080",                      # Group-specific
+]
+```
+
+#### Next Steps
+
+- **Command.env**: See Chapter 6 for command-level environment variables
+- **Variable Expansion Details**: See Chapter 7 for variable expansion mechanisms
+- **Environment Variable Inheritance Modes**: See section 5.4 for allowlist inheritance
+
+## 5.4 Environment Variable Inheritance Modes------|-------------|
 | **Type** | String (string) |
 | **Required/Optional** | Required |
 | **Configurable Level** | Group only |
