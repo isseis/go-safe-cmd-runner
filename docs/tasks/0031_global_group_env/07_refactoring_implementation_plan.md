@@ -30,8 +30,8 @@
 **目的**: 現在の動作を保証する統合テストを追加し、リグレッション防止の基盤を作る
 
 #### 2.1.1 E2Eテストの作成
-- [ ] 既存のE2Eテスト TOML ファイル（`internal/runner/config/testdata/*.toml`）を調べて、裁量できるか検討する。再利用できない場合には新規に TOML ファイルを作成する。
-- [ ] サンプルTOMLファイル: `internal/runner/config/testdata/refactoring_e2e.toml`
+- [x] 既存のE2Eテスト TOML ファイル（`internal/runner/config/testdata/*.toml`）を調べて、裁量できるか検討する。再利用できない場合には新規に TOML ファイルを作成する。
+- [x] サンプルTOMLファイル: `internal/runner/config/testdata/refactoring_e2e.toml`
   ```toml
   [global]
   env = ["BASE_DIR=/opt", "LOG_LEVEL=info"]
@@ -49,8 +49,8 @@
   args = ["--log", "${LOG_DIR}/app.log", "--data", "${DATA_DIR}"]
   env = ["LOG_DIR=${APP_DIR}/logs"]
   ```
-- [ ] E2Eテスト: `internal/runner/config/loader_e2e_test.go`
-  - [ ] `TestE2E_FullExpansionPipeline`: 全展開パイプラインの動作確認
+- [x] E2Eテスト: `internal/runner/config/loader_e2e_test.go`
+  - [x] `TestE2E_FullExpansionPipeline`: 全展開パイプラインの動作確認
     - Global.ExpandedEnv検証
     - Group.ExpandedEnv検証
     - Command.ExpandedEnv検証
@@ -60,24 +60,24 @@
     - Group.ExpandedVerifyFiles検証
 
 #### 2.1.2 bootstrap統合テストの作成（必要に応じて）
-- [ ] `internal/runner/bootstrap/`にテストファイルがあるか確認
-- [ ] 存在する場合、現在の動作を保証するテストを追加
-  - [ ] Global.Env展開の検証
-  - [ ] Group.Env展開の検証
-  - [ ] Command.Env/Cmd/Args展開の検証
+- [x] `internal/runner/bootstrap/`にテストファイルがあるか確認
+- [x] 存在する場合、現在の動作を保証するテストを追加
+  - [x] Global.Env展開の検証
+  - [x] Group.Env展開の検証
+  - [x] Command.Env/Cmd/Args展開の検証
 
 #### 2.1.3 影響範囲の詳細調査
-- [ ] `bootstrap.LoadAndPrepareConfig`を呼び出している箇所をすべて特定
-  - [ ] `cmd/runner/main.go`
-  - [ ] テストヘルパー関数
-  - [ ] その他の呼び出し箇所
-- [ ] 変更による影響を評価
+- [x] `bootstrap.LoadAndPrepareConfig`を呼び出している箇所をすべて特定
+  - [x] `cmd/runner/main.go`
+  - [x] テストヘルパー関数
+  - [x] その他の呼び出し箇所
+- [x] 変更による影響を評価
 
 #### 2.1.4 Phase 1の完了確認
-- [ ] すべての既存テストがPASS
-- [ ] 新規E2EテストがPASS
-- [ ] `make lint`でエラーなし
-- [ ] コミット: "Add E2E tests for expansion pipeline (preparation for refactoring)"
+- [x] すべての既存テストがPASS
+- [x] 新規E2EテストがPASS
+- [x] `make lint`でエラーなし
+- [x] コミット: "Add E2E tests for expansion pipeline (preparation for refactoring)"
 
 ---
 
