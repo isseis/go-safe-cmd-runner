@@ -33,6 +33,7 @@
 2. **現行継承モードとの整合性**
    - `Inherit/Explicit/Reject` の3モードに準拠
    - `GlobalOnly/GroupOnly/Merge/Override` は将来の拡張として留保
+   - **重要**: 本ドキュメント内のすべての実装例は、現行3モードのいずれかを使用
 
 3. **零コピー指向**
    - 可能な限りデータのコピーを避ける
@@ -960,12 +961,13 @@ resolution := NewAllowlistResolutionBuilder().
 type TestAllowlistResolutionFactory struct{}
 
 // CreateSimple creates a simple AllowlistResolution for basic testing
+// Uses InheritanceModeInherit (current implementation supports Inherit/Explicit/Reject)
 func (f TestAllowlistResolutionFactory) CreateSimple(
     globalVars []string,
     groupVars []string,
 ) *AllowlistResolution {
     return NewAllowlistResolutionBuilder().
-        WithMode(InheritanceModeMerge).
+        WithMode(InheritanceModeInherit).  // 現行の3モードのいずれかを使用
         WithGroupName("test-group").
         WithGlobalVariables(globalVars).
         WithGroupVariables(groupVars).
@@ -973,6 +975,7 @@ func (f TestAllowlistResolutionFactory) CreateSimple(
 }
 
 // CreateWithMode creates AllowlistResolution with specific inheritance mode
+// Supports the current 3 modes: Inherit, Explicit, Reject
 func (f TestAllowlistResolutionFactory) CreateWithMode(
     mode InheritanceMode,
     globalVars []string,
@@ -985,6 +988,30 @@ func (f TestAllowlistResolutionFactory) CreateWithMode(
         WithGroupVariables(groupVars).
         Build()
 }
+```
+
+**使用例: 現行3モードのテスト**
+```go
+// Inherit mode: グローバルallowlistを使用
+inheritResolution := TestAllowlistResolutionFactory{}.CreateWithMode(
+    InheritanceModeInherit,
+    []string{"PATH", "HOME"},  // global
+    []string{"APP_ENV"},       // group (無視される)
+)
+
+// Explicit mode: グループallowlistのみ使用
+explicitResolution := TestAllowlistResolutionFactory{}.CreateWithMode(
+    InheritanceModeExplicit,
+    []string{"PATH", "HOME"},  // global (無視される)
+    []string{"APP_ENV"},       // group
+)
+
+// Reject mode: すべて拒否
+rejectResolution := TestAllowlistResolutionFactory{}.CreateWithMode(
+    InheritanceModeReject,
+    []string{"PATH", "HOME"},  // global (無視される)
+    []string{"APP_ENV"},       // group (無視される)
+)
 ```
 
 ### 11.2 アサーションヘルパー
