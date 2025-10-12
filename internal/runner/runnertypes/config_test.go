@@ -390,7 +390,8 @@ func TestAllowlistResolution_GetGlobalAllowlist(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := tt.resolver.GetGlobalAllowlist()
 			if len(result) != len(tt.expected) {
-				t.Errorf("expected length %d, got %d", len(tt.expected), len(result))
+				// Using t.Fatalf prevents a potential panic in the loop below.
+				t.Fatalf("expected length %d, got %d. expected=%#v, got=%#v", len(tt.expected), len(result), tt.expected, result)
 			}
 			for i := range result {
 				if result[i] != tt.expected[i] {
