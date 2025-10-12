@@ -464,58 +464,15 @@ func TestLazyEvaluationGetters(t *testing.T) {
 	}
 }
 
-// TestLazyEvaluationBackwardCompatibility tests backward compatibility when sets are nil
-// for groupAllowlistSet and globalAllowlistSet (which may be nil in legacy code).
-// However, effectiveSet must always be initialized via NewAllowlistResolution.
-func TestLazyEvaluationBackwardCompatibility(t *testing.T) {
-	t.Run("group_and_global_allowlist_fallback", func(t *testing.T) {
-		// Create a resolution that simulates old behavior (sets are nil, only slice fields populated)
-		resolution := &AllowlistResolution{
-			Mode:               InheritanceModeInherit,
-			GroupName:          "test-group",
-			GroupAllowlist:     []string{"OLD_GROUP_VAR"},
-			GlobalAllowlist:    []string{"OLD_GLOBAL_VAR"},
-			groupAllowlistSet:  nil,                       // Legacy: may be nil
-			globalAllowlistSet: nil,                       // Legacy: may be nil
-			effectiveSet:       make(map[string]struct{}), // Must be initialized
-		}
-		// Add item to effectiveSet to prevent panic
-		resolution.effectiveSet["OLD_EFFECTIVE_VAR"] = struct{}{}
-
-		// Test that getters fall back to slice fields when sets are nil
-		groupResult := resolution.GetGroupAllowlist()
-		expectedGroup := []string{"OLD_GROUP_VAR"}
-		if !slicesEqual(groupResult, expectedGroup) {
-			t.Errorf("GetGroupAllowlist() fallback = %v, want %v", groupResult, expectedGroup)
-		}
-
-		globalResult := resolution.GetGlobalAllowlist()
-		expectedGlobal := []string{"OLD_GLOBAL_VAR"}
-		if !slicesEqual(globalResult, expectedGlobal) {
-			t.Errorf("GetGlobalAllowlist() fallback = %v, want %v", globalResult, expectedGlobal)
-		}
-
-		// effectiveSet must always be initialized, so GetEffectiveList uses it
-		effectiveResult := resolution.GetEffectiveList()
-		expectedEffective := []string{"OLD_EFFECTIVE_VAR"}
-		if !slicesEqual(effectiveResult, expectedEffective) {
-			t.Errorf("GetEffectiveList() = %v, want %v", effectiveResult, expectedEffective)
-		}
-
-		effectiveSize := resolution.GetEffectiveSize()
-		if effectiveSize != len(expectedEffective) {
-			t.Errorf("GetEffectiveSize() = %d, want %d", effectiveSize, len(expectedEffective))
-		}
-	})
-
-	t.Run("effectiveSet_nil_causes_panic", func(t *testing.T) {
+// TestEffectiveSetInvariants tests that effectiveSet invariants are enforced.
+// effectiveSet must always be initialized via NewAllowlistResolution.
+func TestEffectiveSetInvariants(t *testing.T) {
+	t.Run("effectiveSet_nil_causes_panic_in_GetEffectiveList", func(t *testing.T) {
 		// effectiveSet being nil is a bug and should panic
 		resolution := &AllowlistResolution{
-			Mode:            InheritanceModeInherit,
-			GroupName:       "test-group",
-			GroupAllowlist:  []string{"OLD_GROUP_VAR"},
-			GlobalAllowlist: []string{"OLD_GLOBAL_VAR"},
-			effectiveSet:    nil, // BUG: should never be nil
+			Mode:         InheritanceModeInherit,
+			GroupName:    "test-group",
+			effectiveSet: nil, // BUG: should never be nil
 		}
 
 		// GetEffectiveList should panic when effectiveSet is nil
@@ -527,7 +484,7 @@ func TestLazyEvaluationBackwardCompatibility(t *testing.T) {
 		_ = resolution.GetEffectiveList()
 	})
 
-	t.Run("effectiveSize_nil_causes_panic", func(t *testing.T) {
+	t.Run("effectiveSet_nil_causes_panic_in_GetEffectiveSize", func(t *testing.T) {
 		// effectiveSet being nil is a bug and should panic
 		resolution := &AllowlistResolution{
 			Mode:         InheritanceModeInherit,

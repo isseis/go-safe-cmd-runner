@@ -335,38 +335,24 @@ func (r *AllowlistResolution) GetEffectiveSize() int {
 
 // GetGroupAllowlist returns group allowlist with lazy evaluation.
 // Phase 2 implementation: Uses cached slice generated from groupAllowlistSet on first access.
-// Thread-safe: Uses sync.Once to ensure cache is initialized only once.
 func (r *AllowlistResolution) GetGroupAllowlist() []string {
 	// Thread-safe lazy evaluation and caching using sync.Once
-	if r.groupAllowlistSet != nil {
-		r.groupAllowlistOnce.Do(func() {
-			r.groupAllowlistCache = r.setToSortedSlice(r.groupAllowlistSet)
-		})
-	}
+	r.groupAllowlistOnce.Do(func() {
+		r.groupAllowlistCache = r.setToSortedSlice(r.groupAllowlistSet)
+	})
 
-	// Fall back to existing field if cache is still nil (backward compatibility)
-	if r.groupAllowlistCache != nil {
-		return r.groupAllowlistCache
-	}
-	return r.GroupAllowlist
+	return r.groupAllowlistCache
 }
 
 // GetGlobalAllowlist returns global allowlist with lazy evaluation.
 // Phase 2 implementation: Uses cached slice generated from globalAllowlistSet on first access.
-// Thread-safe: Uses sync.Once to ensure cache is initialized only once.
 func (r *AllowlistResolution) GetGlobalAllowlist() []string {
 	// Thread-safe lazy evaluation and caching using sync.Once
-	if r.globalAllowlistSet != nil {
-		r.globalAllowlistOnce.Do(func() {
-			r.globalAllowlistCache = r.setToSortedSlice(r.globalAllowlistSet)
-		})
-	}
+	r.globalAllowlistOnce.Do(func() {
+		r.globalAllowlistCache = r.setToSortedSlice(r.globalAllowlistSet)
+	})
 
-	// Fall back to existing field if cache is still nil (backward compatibility)
-	if r.globalAllowlistCache != nil {
-		return r.globalAllowlistCache
-	}
-	return r.GlobalAllowlist
+	return r.globalAllowlistCache
 }
 
 // GetMode returns the inheritance mode used for this resolution.
