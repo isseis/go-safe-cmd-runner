@@ -74,15 +74,15 @@ type CommandGroup struct {
 
 ```mermaid
 graph TD
-    A[TOML Config] -->|read| B[GlobalConfig.EnvAllowlist: slice]
-    B -->|NewFilter| C[Filter.globalAllowlist: map]
-    C -->|ResolveAllowlistConfiguration| D[AllowlistResolution.GlobalAllowlist: slice]
-    D -->|SetGlobalAllowlistSet| E[AllowlistResolution.globalAllowlistSet: map]
+   A["TOML Config"] -->|"read"| B["GlobalConfig.EnvAllowlist: slice"]
+   B -->|"NewFilter"| C["Filter.globalAllowlist: map"]
+   C -->|"ResolveAllowlistConfiguration"| D["AllowlistResolution.GlobalAllowlist: slice"]
+   D -->|"SetGlobalAllowlistSet"| E["AllowlistResolution.globalAllowlistSet: map"]
 
-    style C fill:#90EE90
-    style E fill:#90EE90
-    style D fill:#FFB6C1
-    style B fill:#87CEEB
+   style C fill:#90EE90
+   style E fill:#90EE90
+   style D fill:#FFB6C1
+   style B fill:#87CEEB
 ```
 
 **ステップ詳細:**
@@ -110,12 +110,12 @@ graph TD
 
 ```mermaid
 graph LR
-    A[IsVariableAccessAllowed] -->|call| B[ResolveAllowlistConfiguration]
-    B -->|create| C[AllowlistResolution]
-    C -->|call| D[IsAllowed]
-    D -->|lookup| E[globalAllowlistSet: map]
+   A["IsVariableAccessAllowed"] -->|"call"| B["ResolveAllowlistConfiguration"]
+   B -->|"create"| C["AllowlistResolution"]
+   C -->|"call"| D["IsAllowed"]
+   D -->|"lookup"| E["globalAllowlistSet: map"]
 
-    style E fill:#90EE90
+   style E fill:#90EE90
 ```
 
 **パフォーマンス分析:**
