@@ -122,7 +122,7 @@ func ExpandCommand(expCxt *ExpansionContext) (string, []string, map[string]strin
 	// Use filter.ResolveAllowlistConfiguration to centralize allowlist inheritance logic
 	filter := environment.NewFilter(globalAllowlist)
 	resolution := filter.ResolveAllowlistConfiguration(groupEnvAllowlist, groupName)
-	effectiveAllowlist := resolution.EffectiveList
+	effectiveAllowlist := resolution.GetEffectiveList()
 
 	// Merge command environment with global, group, and automatic environment variables
 	// Priority order: autoEnv > cmd.ExpandedEnv > groupEnv > globalEnv
@@ -369,7 +369,7 @@ func ExpandGroupVerifyFiles(
 
 	// Use existing Filter.ResolveAllowlistConfiguration() for allowlist determination
 	resolution := filter.ResolveAllowlistConfiguration(group.EnvAllowlist, group.Name)
-	allowlist := resolution.EffectiveList
+	allowlist := resolution.GetEffectiveList()
 
 	// Merge Global.ExpandedEnv and Group.ExpandedEnv with proper priority
 	// Priority: Group.ExpandedEnv > Global.ExpandedEnv
@@ -559,7 +559,7 @@ func expandEnvInternal(
 	// Use filter.ResolveAllowlistConfiguration to determine the effective allowlist
 	// This centralizes the allowlist inheritance logic
 	resolution := filter.ResolveAllowlistConfiguration(localAllowlist, contextName)
-	effectiveAllowlist := resolution.EffectiveList
+	effectiveAllowlist := resolution.GetEffectiveList()
 
 	// Filter system environment based on the resolved allowlist
 	// Use the resolution's IsAllowed method for consistent filtering

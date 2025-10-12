@@ -250,3 +250,235 @@ func TestBuildEnvironmentMap_DuplicateKey(t *testing.T) {
 		t.Fatalf("expected ErrDuplicateEnvironmentVariable, got: %v", err)
 	}
 }
+
+func TestAllowlistResolution_GetEffectiveList(t *testing.T) {
+	tests := []struct {
+		name     string
+		resolver *AllowlistResolution
+		expected []string
+	}{
+		{
+			name:     "nil resolver returns empty slice",
+			resolver: nil,
+			expected: []string{},
+		},
+		{
+			name: "returns EffectiveList",
+			resolver: &AllowlistResolution{
+				EffectiveList: []string{"VAR1", "VAR2"},
+			},
+			expected: []string{"VAR1", "VAR2"},
+		},
+		{
+			name: "empty EffectiveList",
+			resolver: &AllowlistResolution{
+				EffectiveList: []string{},
+			},
+			expected: []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.resolver.GetEffectiveList()
+			if len(result) != len(tt.expected) {
+				t.Fatalf("expected length %d, got %d. expected=%#v, got=%#v", len(tt.expected), len(result), tt.expected, result)
+			}
+			for i := range result {
+				if result[i] != tt.expected[i] {
+					t.Errorf("at index %d: expected %s, got %s", i, tt.expected[i], result[i])
+				}
+			}
+		})
+	}
+}
+
+func TestAllowlistResolution_GetEffectiveSize(t *testing.T) {
+	tests := []struct {
+		name     string
+		resolver *AllowlistResolution
+		expected int
+	}{
+		{
+			name:     "nil resolver returns 0",
+			resolver: nil,
+			expected: 0,
+		},
+		{
+			name: "returns correct size",
+			resolver: &AllowlistResolution{
+				EffectiveList: []string{"VAR1", "VAR2", "VAR3"},
+			},
+			expected: 3,
+		},
+		{
+			name: "empty list returns 0",
+			resolver: &AllowlistResolution{
+				EffectiveList: []string{},
+			},
+			expected: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.resolver.GetEffectiveSize()
+			if result != tt.expected {
+				t.Errorf("expected %d, got %d", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestAllowlistResolution_GetGroupAllowlist(t *testing.T) {
+	tests := []struct {
+		name     string
+		resolver *AllowlistResolution
+		expected []string
+	}{
+		{
+			name:     "nil resolver returns empty slice",
+			resolver: nil,
+			expected: []string{},
+		},
+		{
+			name: "returns GroupAllowlist",
+			resolver: &AllowlistResolution{
+				GroupAllowlist: []string{"GROUP_VAR1", "GROUP_VAR2"},
+			},
+			expected: []string{"GROUP_VAR1", "GROUP_VAR2"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.resolver.GetGroupAllowlist()
+			if len(result) != len(tt.expected) {
+				// Using t.Fatalf prevents a potential panic in the loop below.
+				t.Fatalf("expected length %d, got %d. expected=%#v, got=%#v", len(tt.expected), len(result), tt.expected, result)
+			}
+			for i := range result {
+				if result[i] != tt.expected[i] {
+					t.Errorf("at index %d: expected %s, got %s", i, tt.expected[i], result[i])
+				}
+			}
+		})
+	}
+}
+
+func TestAllowlistResolution_GetGlobalAllowlist(t *testing.T) {
+	tests := []struct {
+		name     string
+		resolver *AllowlistResolution
+		expected []string
+	}{
+		{
+			name:     "nil resolver returns empty slice",
+			resolver: nil,
+			expected: []string{},
+		},
+		{
+			name: "returns GlobalAllowlist",
+			resolver: &AllowlistResolution{
+				GlobalAllowlist: []string{"GLOBAL_VAR1", "GLOBAL_VAR2"},
+			},
+			expected: []string{"GLOBAL_VAR1", "GLOBAL_VAR2"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.resolver.GetGlobalAllowlist()
+			if len(result) != len(tt.expected) {
+				// Using t.Fatalf prevents a potential panic in the loop below.
+				t.Fatalf("expected length %d, got %d. expected=%#v, got=%#v", len(tt.expected), len(result), tt.expected, result)
+			}
+			for i := range result {
+				if result[i] != tt.expected[i] {
+					t.Errorf("at index %d: expected %s, got %s", i, tt.expected[i], result[i])
+				}
+			}
+		})
+	}
+}
+
+func TestAllowlistResolution_GetMode(t *testing.T) {
+	tests := []struct {
+		name     string
+		resolver *AllowlistResolution
+		expected InheritanceMode
+	}{
+		{
+			name:     "nil resolver returns default mode",
+			resolver: nil,
+			expected: InheritanceModeInherit,
+		},
+		{
+			name: "returns Inherit mode",
+			resolver: &AllowlistResolution{
+				Mode: InheritanceModeInherit,
+			},
+			expected: InheritanceModeInherit,
+		},
+		{
+			name: "returns Explicit mode",
+			resolver: &AllowlistResolution{
+				Mode: InheritanceModeExplicit,
+			},
+			expected: InheritanceModeExplicit,
+		},
+		{
+			name: "returns Reject mode",
+			resolver: &AllowlistResolution{
+				Mode: InheritanceModeReject,
+			},
+			expected: InheritanceModeReject,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.resolver.GetMode()
+			if result != tt.expected {
+				t.Errorf("expected %v, got %v", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestAllowlistResolution_GetGroupName(t *testing.T) {
+	tests := []struct {
+		name     string
+		resolver *AllowlistResolution
+		expected string
+	}{
+		{
+			name:     "nil resolver returns empty string",
+			resolver: nil,
+			expected: "",
+		},
+		{
+			name: "returns GroupName",
+			resolver: &AllowlistResolution{
+				GroupName: "test-group",
+			},
+			expected: "test-group",
+		},
+		{
+			name: "returns empty GroupName",
+			resolver: &AllowlistResolution{
+				GroupName: "",
+			},
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.resolver.GetGroupName()
+			if result != tt.expected {
+				t.Errorf("expected %s, got %s", tt.expected, result)
+			}
+		})
+	}
+}
