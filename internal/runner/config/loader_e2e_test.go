@@ -94,14 +94,13 @@ func TestE2E_CompleteConfiguration(t *testing.T) {
 		assert.Equal(t, "MIGRATION_DIR=${DB_DATA}/migrations", migrateCmd.Env[0],
 			"Command.Env should contain unexpanded variable (not yet expanded in config.Loader)")
 
-		// Phase 1 baseline: ExpandedCmd, ExpandedArgs, ExpandedEnv should be empty/nil
-		// After Phase 2 implementation, these will be populated
-		assert.Empty(t, migrateCmd.ExpandedCmd,
-			"Phase 1: ExpandedCmd should be empty (expansion not yet implemented)")
-		assert.Nil(t, migrateCmd.ExpandedArgs,
-			"Phase 1: ExpandedArgs should be nil (expansion not yet implemented)")
-		assert.Nil(t, migrateCmd.ExpandedEnv,
-			"Phase 1: ExpandedEnv should be nil (expansion not yet implemented)")
+		// Phase 2: ExpandedCmd, ExpandedArgs, ExpandedEnv should be populated
+		assert.NotEmpty(t, migrateCmd.ExpandedCmd,
+			"Phase 2: ExpandedCmd should be populated (expansion now implemented)")
+		assert.NotNil(t, migrateCmd.ExpandedArgs,
+			"Phase 2: ExpandedArgs should be populated (expansion now implemented)")
+		assert.NotNil(t, migrateCmd.ExpandedEnv,
+			"Phase 2: ExpandedEnv should be populated (expansion now implemented)")
 	})
 
 	// Verify Web Group with allowlist override
@@ -134,13 +133,13 @@ func TestE2E_CompleteConfiguration(t *testing.T) {
 		assert.Equal(t, []string{"--port", "${PORT}"}, startCmd.Args,
 			"Command.Args should contain unexpanded variables (not yet expanded in config.Loader)")
 
-		// Phase 1 baseline: ExpandedCmd, ExpandedArgs, ExpandedEnv should be empty/nil
-		assert.Empty(t, startCmd.ExpandedCmd,
-			"Phase 1: ExpandedCmd should be empty (expansion not yet implemented)")
-		assert.Nil(t, startCmd.ExpandedArgs,
-			"Phase 1: ExpandedArgs should be nil (expansion not yet implemented)")
-		assert.Nil(t, startCmd.ExpandedEnv,
-			"Phase 1: ExpandedEnv should be nil (expansion not yet implemented)")
+		// Phase 2: ExpandedCmd, ExpandedArgs, ExpandedEnv should be populated
+		assert.NotEmpty(t, startCmd.ExpandedCmd,
+			"Phase 2: ExpandedCmd should be populated (expansion now implemented)")
+		assert.NotNil(t, startCmd.ExpandedArgs,
+			"Phase 2: ExpandedArgs should be populated (expansion now implemented)")
+		assert.NotNil(t, startCmd.ExpandedEnv,
+			"Phase 2: ExpandedEnv should be populated (expansion now implemented)")
 	})
 }
 
@@ -213,9 +212,9 @@ env = ["PRIORITY=command", "COMMAND_ONLY=command_value"]
 		assert.Equal(t, "PRIORITY=command", testCmd.Env[0], "PRIORITY in Command.Env should be 'command'")
 		assert.Equal(t, "COMMAND_ONLY=command_value", testCmd.Env[1], "COMMAND_ONLY should be set")
 
-		// Phase 1 baseline: ExpandedEnv should be nil (expansion not yet implemented)
-		assert.Nil(t, testCmd.ExpandedEnv,
-			"Phase 1: ExpandedEnv should be nil (expansion not yet implemented)")
+		// Phase 2: ExpandedEnv should be populated (expansion now implemented)
+		assert.NotNil(t, testCmd.ExpandedEnv,
+			"Phase 2: ExpandedEnv should be populated (expansion now implemented)")
 	})
 }
 
@@ -420,13 +419,13 @@ func TestE2E_FullExpansionPipeline(t *testing.T) {
 			assert.Equal(t, "LOG_DIR=${APP_DIR}/logs", runAppCmd.Env[0],
 				"Phase 1: Command.Env should be unexpanded")
 
-			// Expanded fields should be empty/nil
-			assert.Empty(t, runAppCmd.ExpandedCmd,
-				"Phase 1: ExpandedCmd should be empty")
-			assert.Nil(t, runAppCmd.ExpandedArgs,
-				"Phase 1: ExpandedArgs should be nil")
-			assert.Nil(t, runAppCmd.ExpandedEnv,
-				"Phase 1: ExpandedEnv should be nil")
+			// Phase 2: Expanded fields should be populated
+			assert.NotEmpty(t, runAppCmd.ExpandedCmd,
+				"Phase 2: ExpandedCmd should be populated")
+			assert.NotNil(t, runAppCmd.ExpandedArgs,
+				"Phase 2: ExpandedArgs should be populated")
+			assert.NotNil(t, runAppCmd.ExpandedEnv,
+				"Phase 2: ExpandedEnv should be populated")
 		})
 
 		// Phase 2+: This test case will be enabled to verify expansion

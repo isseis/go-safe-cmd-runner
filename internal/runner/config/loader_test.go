@@ -500,17 +500,35 @@ func TestConfigLoaderEnvExpansionIntegration(t *testing.T) {
 	cmd := &appGroup.Commands[0]
 	require.Equal(t, "run_app", cmd.Name)
 
-	// Note: Command.Env, Cmd, and Args expansion happens in bootstrap.InitConfig(),
-	// not in config.LoadConfig(). At this stage, we only verify that:
+	// Note: Command.Env, Cmd, and Args expansion now happens in config.LoadConfig()
+	// (Phase 2 change). At this stage, we verify that:
 	// - Global.ExpandedEnv is populated correctly
 	// - Group.ExpandedEnv is populated correctly
 	// - Command.Env field contains the raw (unexpanded) values
+	// - Command.ExpandedEnv, ExpandedCmd, and ExpandedArgs are populated
 	assert.Equal(t, []string{"LOG_DIR=${APP_DIR}/logs"}, cmd.Env)
 	assert.Equal(t, "${APP_DIR}/bin/server", cmd.Cmd)
 	assert.Equal(t, []string{"--log", "${LOG_DIR}/app.log"}, cmd.Args)
 
-	// Command.ExpandedEnv should be nil at this point (expanded later in bootstrap)
-	assert.Nil(t, cmd.ExpandedEnv)
+	// Command.ExpandedEnv should be populated (Phase 2 change)
+	// It contains Command.Env + Global.ExpandedEnv + Group.ExpandedEnv + AutoEnv
+	assert.NotNil(t, cmd.ExpandedEnv)
+	assert.Contains(t, cmd.ExpandedEnv, "LOG_DIR")
+	assert.Equal(t, "/opt/myapp/logs", cmd.ExpandedEnv["LOG_DIR"])
+	assert.Contains(t, cmd.ExpandedEnv, "BASE_DIR")
+	assert.Equal(t, "/opt", cmd.ExpandedEnv["BASE_DIR"])
+	assert.Contains(t, cmd.ExpandedEnv, "APP_DIR")
+	assert.Equal(t, "/opt/myapp", cmd.ExpandedEnv["APP_DIR"])
+	// AutoEnv variables should also be present
+	assert.Contains(t, cmd.ExpandedEnv, "__RUNNER_DATETIME")
+	assert.Contains(t, cmd.ExpandedEnv, "__RUNNER_PID")
+
+	// Command.ExpandedCmd should be expanded
+	assert.Equal(t, "/opt/myapp/bin/server", cmd.ExpandedCmd)
+
+	// Command.ExpandedArgs should be expanded
+	expectedArgs := []string{"--log", "/opt/myapp/logs/app.log"}
+	assert.Equal(t, expectedArgs, cmd.ExpandedArgs)
 }
 
 // Helper function to find a group by name
