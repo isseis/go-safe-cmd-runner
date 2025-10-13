@@ -4,6 +4,21 @@ package runnertypes
 
 import "github.com/isseis/go-safe-cmd-runner/internal/common"
 
+// WithGlobalVariablesForTest is a test-only convenience method that accepts a slice
+// and converts it to a set internally. This simplifies test code by avoiding the
+// verbose map[string]struct{}{} syntax.
+//
+// This method is only available in test builds (via build tag).
+//
+// Example:
+//
+//	builder.WithGlobalVariablesForTest([]string{"VAR1", "VAR2"})
+//
+// Returns the builder for method chaining.
+func (b *AllowlistResolutionBuilder) WithGlobalVariablesForTest(vars []string) *AllowlistResolutionBuilder {
+	return b.WithGlobalVariablesSet(common.SliceToSet(vars))
+}
+
 // NewTestAllowlistResolutionSimple creates a simple AllowlistResolution for basic testing.
 // Uses InheritanceModeInherit by default with "test-group" as the group name.
 //
@@ -19,7 +34,7 @@ func NewTestAllowlistResolutionSimple(
 	return NewAllowlistResolutionBuilder().
 		WithMode(InheritanceModeInherit).
 		WithGroupName("test-group").
-		WithGlobalVariablesSet(common.SliceToSet(globalVars)).
+		WithGlobalVariablesForTest(globalVars).
 		WithGroupVariables(groupVars).
 		Build()
 }
@@ -42,7 +57,7 @@ func NewTestAllowlistResolutionWithMode(
 	return NewAllowlistResolutionBuilder().
 		WithMode(mode).
 		WithGroupName("test-group").
-		WithGlobalVariablesSet(common.SliceToSet(globalVars)).
+		WithGlobalVariablesForTest(globalVars).
 		WithGroupVariables(groupVars).
 		Build()
 }
