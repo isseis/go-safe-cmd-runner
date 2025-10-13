@@ -154,27 +154,18 @@ func (f *Filter) determineInheritanceMode(allowlist []string) runnertypes.Inheri
 	return runnertypes.InheritanceModeExplicit
 }
 
-// buildAllowlistSet converts a slice of allowed variable names into a map for O(1) lookups.
-// This helper function is used during allowlist resolution to create efficient lookup structures.
-// Uses struct{} for values to minimize memory usage (0 bytes vs 1 byte per entry for bool).
-func buildAllowlistSet(allowlist []string) map[string]struct{} {
-	set := make(map[string]struct{}, len(allowlist))
-	for _, varName := range allowlist {
-		set[varName] = struct{}{}
-	}
-	return set
-}
-
 // ResolveAllowlistConfiguration resolves the effective allowlist configuration for a group
 func (f *Filter) ResolveAllowlistConfiguration(allowlist []string, groupName string) *runnertypes.AllowlistResolution {
 	mode := f.determineInheritanceMode(allowlist)
 
-	// Build group and global sets for efficient lookup
-	groupSet := buildAllowlistSet(allowlist)
-	globalSet := f.globalAllowlist // Already a map[string]struct{}
-
-	// Use the new constructor that properly initializes effectiveSet
-	resolution := runnertypes.NewAllowlistResolution(mode, groupName, groupSet, globalSet)
+	// Use Builder pattern with set-based API for efficiency
+	// This avoids unnecessary map -> slice -> map conversions
+	resolution := runnertypes.NewAllowlistResolutionBuilder().
+		WithMode(mode).
+		WithGroupName(groupName).
+		WithGroupVariables(allowlist).
+		WithGlobalVariablesSet(f.globalAllowlist).
+		Build()
 
 	// Log the resolution for debugging
 	slog.Debug("Resolved allowlist configuration",
@@ -198,7 +189,7 @@ func (f *Filter) IsVariableAccessAllowed(variable string, allowlist []string, gr
 			"variable", variable,
 			"group", groupName,
 			"inheritance_mode", resolution.Mode.String(),
-			"effective_allowlist_size", len(resolution.EffectiveList))
+			"effective_allowlist_size", resolution.GetEffectiveSize())
 	} else {
 		slog.Debug("Variable access granted",
 			"variable", variable,

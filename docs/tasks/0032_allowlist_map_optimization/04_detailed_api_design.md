@@ -993,21 +993,21 @@ func (f TestAllowlistResolutionFactory) CreateWithMode(
 **使用例: 現行3モードのテスト**
 ```go
 // Inherit mode: グローバルallowlistを使用
-inheritResolution := TestAllowlistResolutionFactory{}.CreateWithMode(
+inheritResolution := NewTestAllowlistResolutionWithMode(
     InheritanceModeInherit,
     []string{"PATH", "HOME"},  // global
     []string{"APP_ENV"},       // group (無視される)
 )
 
 // Explicit mode: グループallowlistのみ使用
-explicitResolution := TestAllowlistResolutionFactory{}.CreateWithMode(
+explicitResolution := NewTestAllowlistResolutionWithMode(
     InheritanceModeExplicit,
     []string{"PATH", "HOME"},  // global (無視される)
     []string{"APP_ENV"},       // group
 )
 
 // Reject mode: すべて拒否
-rejectResolution := TestAllowlistResolutionFactory{}.CreateWithMode(
+rejectResolution := NewTestAllowlistResolutionWithMode(
     InheritanceModeReject,
     []string{"PATH", "HOME"},  // global (無視される)
     []string{"APP_ENV"},       // group (無視される)

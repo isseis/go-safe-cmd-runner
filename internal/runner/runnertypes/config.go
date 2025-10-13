@@ -238,11 +238,8 @@ func (m InheritanceMode) String() string {
 
 // AllowlistResolution contains resolved allowlist information for debugging and logging
 type AllowlistResolution struct {
-	Mode            InheritanceMode
-	GroupAllowlist  []string
-	GlobalAllowlist []string
-	EffectiveList   []string // The actual allowlist being used
-	GroupName       string   // For logging context
+	Mode      InheritanceMode
+	GroupName string // For logging context
 
 	// groupAllowlistSet and globalAllowlistSet are internal maps for O(1) lookup performance.
 	// These are populated from GroupAllowlist and GlobalAllowlist during resolution.
@@ -253,14 +250,14 @@ type AllowlistResolution struct {
 	effectiveSet map[string]struct{} // Pre-computed effective allowlist set
 
 	// Phase 2 additions: Lazy evaluation caches for getter methods
-	groupAllowlistCache  []string // Cache for GetGroupAllowlist()
-	globalAllowlistCache []string // Cache for GetGlobalAllowlist()
-	effectiveListCache   []string // Cache for GetEffectiveList()
-
-	// Thread-safe lazy initialization
 	groupAllowlistOnce  sync.Once // Ensures groupAllowlistCache is initialized only once
-	globalAllowlistOnce sync.Once // Ensures globalAllowlistCache is initialized only once
-	effectiveListOnce   sync.Once // Ensures effectiveListCache is initialized only once
+	groupAllowlistCache []string  // Cache for GetGroupAllowlist()
+
+	globalAllowlistOnce  sync.Once // Ensures globalAllowlistCache is initialized only once
+	globalAllowlistCache []string  // Cache for GetGlobalAllowlist()
+
+	effectiveListOnce  sync.Once // Ensures effectiveListCache is initialized only once
+	effectiveListCache []string  // Cache for GetEffectiveList()
 }
 
 // IsAllowed checks if a variable is allowed in the effective allowlist.
@@ -365,8 +362,9 @@ func (r *AllowlistResolution) GetGroupName() string {
 	return r.GroupName
 }
 
-// NewAllowlistResolution creates a new AllowlistResolution with pre-computed effective set.
+// newAllowlistResolution creates a new AllowlistResolution with pre-computed effective set.
 // Phase 2 constructor that optimizes performance by pre-computing the effective allowlist.
+// This is a private method - external callers should use NewAllowlistResolutionBuilder instead.
 //
 // Parameters:
 //   - mode: inheritance mode (Inherit/Explicit/Reject)
@@ -380,7 +378,7 @@ func (r *AllowlistResolution) GetGroupName() string {
 // Panics:
 //   - if groupSet is nil
 //   - if globalSet is nil
-func NewAllowlistResolution(
+func newAllowlistResolution(
 	mode InheritanceMode,
 	groupName string,
 	groupSet map[string]struct{},
@@ -388,10 +386,10 @@ func NewAllowlistResolution(
 ) *AllowlistResolution {
 	// Input validation
 	if groupSet == nil {
-		panic("NewAllowlistResolution: groupSet cannot be nil")
+		panic("newAllowlistResolution: groupSet cannot be nil")
 	}
 	if globalSet == nil {
-		panic("NewAllowlistResolution: globalSet cannot be nil")
+		panic("newAllowlistResolution: globalSet cannot be nil")
 	}
 
 	r := &AllowlistResolution{
@@ -399,11 +397,6 @@ func NewAllowlistResolution(
 		GroupName:          groupName,
 		groupAllowlistSet:  groupSet,
 		globalAllowlistSet: globalSet,
-
-		// Phase 2: slice fields will be lazily generated
-		GroupAllowlist:  []string{},
-		GlobalAllowlist: []string{},
-		EffectiveList:   []string{},
 	}
 
 	// Pre-compute effectiveSet for optimization
@@ -522,4 +515,87 @@ type PrivilegeManager interface {
 	// Enhanced privilege management for user/group specification
 	WithUserGroup(user, group string, fn func() error) error
 	IsUserGroupSupported() bool
+}
+
+// AllowlistResolutionBuilder provides a fluent interface for creating AllowlistResolution.
+// Available in Phase 2 and later.
+//
+// The builder supports two input formats:
+//   - Slice-based: WithGroupVariables for []string input
+//   - Set-based: WithGlobalVariablesSet for map[string]struct{} input
+//
+// Set-based methods are more efficient when the caller already has data in map form,
+// avoiding unnecessary map -> slice -> map conversions.
+//
+// Example usage:
+//
+//	resolution := NewAllowlistResolutionBuilder().
+//	    WithMode(InheritanceModeExplicit).
+//	    WithGroupName("build").
+//	    WithGroupVariables([]string{"PATH", "HOME"}).
+//	    WithGlobalVariablesSet(globalSet).
+//	    Build()
+type AllowlistResolutionBuilder struct {
+	mode      InheritanceMode
+	groupName string
+	groupVars []string
+	globalSet map[string]struct{}
+}
+
+// NewAllowlistResolutionBuilder creates a new builder with default values.
+// Default mode is InheritanceModeInherit.
+func NewAllowlistResolutionBuilder() *AllowlistResolutionBuilder {
+	return &AllowlistResolutionBuilder{
+		mode: InheritanceModeInherit, // default to inherit mode
+	}
+}
+
+// WithMode sets the inheritance mode for the resolution.
+// Returns the builder for method chaining.
+func (b *AllowlistResolutionBuilder) WithMode(mode InheritanceMode) *AllowlistResolutionBuilder {
+	b.mode = mode
+	return b
+}
+
+// WithGroupName sets the group name for the resolution.
+// Returns the builder for method chaining.
+func (b *AllowlistResolutionBuilder) WithGroupName(name string) *AllowlistResolutionBuilder {
+	b.groupName = name
+	return b
+}
+
+// WithGroupVariables sets the group-specific variables for the resolution.
+// Returns the builder for method chaining.
+func (b *AllowlistResolutionBuilder) WithGroupVariables(vars []string) *AllowlistResolutionBuilder {
+	b.groupVars = vars
+	return b
+}
+
+// WithGlobalVariablesSet sets the global variables using a pre-built set.
+// Returns the builder for method chaining.
+func (b *AllowlistResolutionBuilder) WithGlobalVariablesSet(globalSet map[string]struct{}) *AllowlistResolutionBuilder {
+	b.globalSet = globalSet
+	return b
+}
+
+// Build creates the AllowlistResolution with the configured settings.
+//
+// Returns:
+//   - *AllowlistResolution: newly created resolution with pre-computed effective set
+//
+// Panics:
+//   - if newAllowlistResolution panics (e.g., nil sets passed)
+func (b *AllowlistResolutionBuilder) Build() *AllowlistResolution {
+	// Convert group variables slice to set
+	groupSet := common.SliceToSet(b.groupVars)
+
+	// Use global set if provided, otherwise create empty set
+	var globalSet map[string]struct{}
+	if b.globalSet != nil {
+		globalSet = b.globalSet
+	} else {
+		globalSet = make(map[string]struct{})
+	}
+
+	return newAllowlistResolution(b.mode, b.groupName, groupSet, globalSet)
 }
