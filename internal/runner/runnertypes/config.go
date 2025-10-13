@@ -530,7 +530,7 @@ type PrivilegeManager interface {
 //
 // The builder supports two input formats:
 //   - Slice-based: WithGroupVariables/WithGlobalVariables for []string input
-//   - Set-based: WithGroupVariablesSet/WithGlobalVariablesSet for map[string]struct{} input
+//   - Set-based: WithGlobalVariablesSet for map[string]struct{} input
 //
 // Set-based methods are more efficient when the caller already has data in map form,
 // avoiding unnecessary map -> slice -> map conversions.
@@ -549,7 +549,7 @@ type PrivilegeManager interface {
 //	resolution := NewAllowlistResolutionBuilder().
 //	    WithMode(InheritanceModeExplicit).
 //	    WithGroupName("build").
-//	    WithGroupVariablesSet(groupSet).
+//	    WithGroupVariables([]string{"PATH", "HOME"}).
 //	    WithGlobalVariablesSet(globalSet).
 //	    Build()
 type AllowlistResolutionBuilder struct {
@@ -557,7 +557,6 @@ type AllowlistResolutionBuilder struct {
 	groupName  string
 	groupVars  []string
 	globalVars []string
-	groupSet   map[string]struct{}
 	globalSet  map[string]struct{}
 }
 
@@ -597,15 +596,6 @@ func (b *AllowlistResolutionBuilder) WithGlobalVariables(vars []string) *Allowli
 	return b
 }
 
-// WithGroupVariablesSet sets the group-specific variables using a pre-built set.
-// This is more efficient than WithGroupVariables when the caller already has a map.
-// If both WithGroupVariables and WithGroupVariablesSet are called, the set takes precedence.
-// Returns the builder for method chaining.
-func (b *AllowlistResolutionBuilder) WithGroupVariablesSet(set map[string]struct{}) *AllowlistResolutionBuilder {
-	b.groupSet = set
-	return b
-}
-
 // WithGlobalVariablesSet sets the global variables using a pre-built set.
 // This is more efficient than WithGlobalVariables when the caller already has a map.
 // If both WithGlobalVariables and WithGlobalVariablesSet are called, the set takes precedence.
@@ -623,26 +613,18 @@ func (b *AllowlistResolutionBuilder) WithGlobalVariablesSet(set map[string]struc
 //   - *AllowlistResolution: newly created resolution with pre-computed effective set
 //
 // Panics:
-//   - if both WithGroupVariables and WithGroupVariablesSet were called (programming error)
 //   - if both WithGlobalVariables and WithGlobalVariablesSet were called (programming error)
 //   - if newAllowlistResolution panics (e.g., nil sets passed)
 func (b *AllowlistResolutionBuilder) Build() *AllowlistResolution {
 	// Detect conflicting configurations (both slice and set provided for same field)
-	if b.groupVars != nil && b.groupSet != nil {
-		panic("AllowlistResolutionBuilder: both WithGroupVariables and WithGroupVariablesSet were called - use only one")
-	}
 	if b.globalVars != nil && b.globalSet != nil {
 		panic("AllowlistResolutionBuilder: both WithGlobalVariables and WithGlobalVariablesSet were called - use only one")
 	}
 
-	// Use provided set if available, otherwise convert slice to set
-	var groupSet map[string]struct{}
-	if b.groupSet != nil {
-		groupSet = b.groupSet
-	} else {
-		groupSet = common.SliceToSet(b.groupVars)
-	}
+	// Convert group variables slice to set
+	groupSet := common.SliceToSet(b.groupVars)
 
+	// Use provided set if available, otherwise convert slice to set
 	var globalSet map[string]struct{}
 	if b.globalSet != nil {
 		globalSet = b.globalSet

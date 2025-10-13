@@ -996,43 +996,43 @@ func TestAllowlistResolutionBuilder_SetBasedAPI(t *testing.T) {
 	tests := []struct {
 		name                  string
 		mode                  InheritanceMode
-		groupSet              map[string]struct{}
+		groupVars             []string
 		globalSet             map[string]struct{}
 		testVariable          string
 		expectedAllowed       bool
 		expectedEffectiveSize int
 	}{
 		{
-			name:                  "explicit mode with sets allows group variables",
+			name:                  "explicit mode allows group variables",
 			mode:                  InheritanceModeExplicit,
-			groupSet:              map[string]struct{}{"A": {}, "B": {}, "C": {}},
+			groupVars:             []string{"A", "B", "C"},
 			globalSet:             map[string]struct{}{"X": {}, "Y": {}},
 			testVariable:          "A",
 			expectedAllowed:       true,
 			expectedEffectiveSize: 3,
 		},
 		{
-			name:                  "explicit mode with sets denies global variables",
+			name:                  "explicit mode denies global variables",
 			mode:                  InheritanceModeExplicit,
-			groupSet:              map[string]struct{}{"A": {}, "B": {}, "C": {}},
+			groupVars:             []string{"A", "B", "C"},
 			globalSet:             map[string]struct{}{"X": {}, "Y": {}},
 			testVariable:          "X",
 			expectedAllowed:       false,
 			expectedEffectiveSize: 3,
 		},
 		{
-			name:                  "inherit mode with sets allows global variables",
+			name:                  "inherit mode allows global variables",
 			mode:                  InheritanceModeInherit,
-			groupSet:              map[string]struct{}{"A": {}, "B": {}, "C": {}},
+			groupVars:             []string{"A", "B", "C"},
 			globalSet:             map[string]struct{}{"X": {}, "Y": {}},
 			testVariable:          "X",
 			expectedAllowed:       true,
 			expectedEffectiveSize: 2,
 		},
 		{
-			name:                  "empty sets",
+			name:                  "empty variables",
 			mode:                  InheritanceModeInherit,
-			groupSet:              map[string]struct{}{},
+			groupVars:             []string{},
 			globalSet:             map[string]struct{}{},
 			testVariable:          "ANY",
 			expectedAllowed:       false,
@@ -1044,8 +1044,8 @@ func TestAllowlistResolutionBuilder_SetBasedAPI(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			resolution := NewAllowlistResolutionBuilder().
 				WithMode(tt.mode).
-				WithGroupName("test-set-api").
-				WithGroupVariablesSet(tt.groupSet).
+				WithGroupName("test-api").
+				WithGroupVariables(tt.groupVars).
 				WithGlobalVariablesSet(tt.globalSet).
 				Build()
 
@@ -1064,67 +1064,8 @@ func TestAllowlistResolutionBuilder_SetBasedAPI(t *testing.T) {
 	}
 }
 
-// TestAllowlistResolutionBuilder_SliceAndSetEquivalence tests that slice and set APIs produce equivalent results
-func TestAllowlistResolutionBuilder_SliceAndSetEquivalence(t *testing.T) {
-	groupVars := []string{"A", "B", "C"}
-	globalVars := []string{"X", "Y", "Z"}
-
-	groupSet := map[string]struct{}{"A": {}, "B": {}, "C": {}}
-	globalSet := map[string]struct{}{"X": {}, "Y": {}, "Z": {}}
-
-	// Create two resolutions - one with slices, one with sets
-	resolutionSlice := NewAllowlistResolutionBuilder().
-		WithMode(InheritanceModeExplicit).
-		WithGroupName("slice-test").
-		WithGroupVariables(groupVars).
-		WithGlobalVariables(globalVars).
-		Build()
-
-	resolutionSet := NewAllowlistResolutionBuilder().
-		WithMode(InheritanceModeExplicit).
-		WithGroupName("set-test").
-		WithGroupVariablesSet(groupSet).
-		WithGlobalVariablesSet(globalSet).
-		Build()
-
-	// Both should behave identically
-	testVars := []string{"A", "B", "C", "X", "Y", "Z", "UNKNOWN"}
-	for _, v := range testVars {
-		sliceResult := resolutionSlice.IsAllowed(v)
-		setResult := resolutionSet.IsAllowed(v)
-
-		if sliceResult != setResult {
-			t.Errorf("IsAllowed(%q) slice=%v, set=%v - should be equal", v, sliceResult, setResult)
-		}
-	}
-
-	// Verify effective sizes match
-	if resolutionSlice.GetEffectiveSize() != resolutionSet.GetEffectiveSize() {
-		t.Errorf("GetEffectiveSize() slice=%d, set=%d - should be equal",
-			resolutionSlice.GetEffectiveSize(), resolutionSet.GetEffectiveSize())
-	}
-}
-
 // TestAllowlistResolutionBuilder_ConflictDetection tests that Build() panics when both slice and set are provided
 func TestAllowlistResolutionBuilder_ConflictDetection(t *testing.T) {
-	t.Run("panics when both group slice and set are provided", func(t *testing.T) {
-		defer func() {
-			if r := recover(); r == nil {
-				t.Error("Build() did not panic when both WithGroupVariables and WithGroupVariablesSet were called")
-			} else {
-				expected := "AllowlistResolutionBuilder: both WithGroupVariables and WithGroupVariablesSet were called - use only one"
-				if r != expected {
-					t.Errorf("panic message = %v, want %v", r, expected)
-				}
-			}
-		}()
-
-		NewAllowlistResolutionBuilder().
-			WithGroupVariables([]string{"VAR1"}).
-			WithGroupVariablesSet(map[string]struct{}{"VAR2": {}}).
-			Build()
-	})
-
 	t.Run("panics when both global slice and set are provided", func(t *testing.T) {
 		defer func() {
 			if r := recover(); r == nil {
@@ -1143,21 +1084,6 @@ func TestAllowlistResolutionBuilder_ConflictDetection(t *testing.T) {
 			Build()
 	})
 
-	t.Run("panics when both slice and set are provided for both fields", func(t *testing.T) {
-		defer func() {
-			if r := recover(); r == nil {
-				t.Error("Build() did not panic when conflicts exist")
-			}
-		}()
-
-		NewAllowlistResolutionBuilder().
-			WithGroupVariables([]string{"G1"}).
-			WithGroupVariablesSet(map[string]struct{}{"G2": {}}).
-			WithGlobalVariables([]string{"X1"}).
-			WithGlobalVariablesSet(map[string]struct{}{"X2": {}}).
-			Build()
-	})
-
 	t.Run("does not panic when only slice is provided", func(t *testing.T) {
 		resolution := NewAllowlistResolutionBuilder().
 			WithGroupVariables([]string{"VAR1"}).
@@ -1169,18 +1095,7 @@ func TestAllowlistResolutionBuilder_ConflictDetection(t *testing.T) {
 		}
 	})
 
-	t.Run("does not panic when only set is provided", func(t *testing.T) {
-		resolution := NewAllowlistResolutionBuilder().
-			WithGroupVariablesSet(map[string]struct{}{"VAR1": {}}).
-			WithGlobalVariablesSet(map[string]struct{}{"VAR2": {}}).
-			Build()
-
-		if resolution == nil {
-			t.Error("Build() returned nil with valid configuration")
-		}
-	})
-
-	t.Run("does not panic when mixing slice and set for different fields", func(t *testing.T) {
+	t.Run("does not panic when mixing group slice and global set", func(t *testing.T) {
 		resolution := NewAllowlistResolutionBuilder().
 			WithGroupVariables([]string{"VAR1"}).
 			WithGlobalVariablesSet(map[string]struct{}{"VAR2": {}}).
