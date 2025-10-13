@@ -602,3 +602,49 @@ func (b *AllowlistResolutionBuilder) Build() *AllowlistResolution {
 	globalSet := buildAllowlistSet(b.globalVars)
 	return NewAllowlistResolution(b.mode, b.groupName, groupSet, globalSet)
 }
+
+// TestAllowlistResolutionFactory creates AllowlistResolution instances for testing purposes.
+// It provides convenient methods to create test instances with common configurations.
+type TestAllowlistResolutionFactory struct{}
+
+// CreateSimple creates a simple AllowlistResolution for basic testing.
+// Uses InheritanceModeInherit by default.
+//
+// Parameters:
+//   - globalVars: global environment variables for the allowlist
+//   - groupVars: group-specific environment variables for the allowlist
+//
+// Returns: *AllowlistResolution configured with Inherit mode and "test-group" name
+func (f TestAllowlistResolutionFactory) CreateSimple(
+	globalVars []string,
+	groupVars []string,
+) *AllowlistResolution {
+	return NewAllowlistResolutionBuilder().
+		WithMode(InheritanceModeInherit).
+		WithGroupName("test-group").
+		WithGlobalVariables(globalVars).
+		WithGroupVariables(groupVars).
+		Build()
+}
+
+// CreateWithMode creates AllowlistResolution with specific inheritance mode.
+// Supports all current inheritance modes: Inherit, Explicit, Reject.
+//
+// Parameters:
+//   - mode: the inheritance mode to use
+//   - globalVars: global environment variables for the allowlist
+//   - groupVars: group-specific environment variables for the allowlist
+//
+// Returns: *AllowlistResolution configured with the specified mode and "test-group" name
+func (f TestAllowlistResolutionFactory) CreateWithMode(
+	mode InheritanceMode,
+	globalVars []string,
+	groupVars []string,
+) *AllowlistResolution {
+	return NewAllowlistResolutionBuilder().
+		WithMode(mode).
+		WithGroupName("test-group").
+		WithGlobalVariables(globalVars).
+		WithGroupVariables(groupVars).
+		Build()
+}

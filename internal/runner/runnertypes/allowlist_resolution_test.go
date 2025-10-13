@@ -816,38 +816,240 @@ func TestAllowlistResolutionBuilder_DefaultMode(t *testing.T) {
 	}
 }
 
-// TestAllowlistResolutionBuilder_Comparison tests builder vs direct constructor
-func TestAllowlistResolutionBuilder_Comparison(t *testing.T) {
-	// Create using builder
-	resolutionBuilder := NewAllowlistResolutionBuilder().
-		WithMode(InheritanceModeExplicit).
-		WithGroupName("test").
-		WithGroupVariables([]string{"A", "B", "C"}).
-		WithGlobalVariables([]string{"X", "Y"}).
-		Build()
+// TestAllowlistResolutionBuilder_Integration tests builder-created resolution behavior
+// This is an integration-style test that verifies the builder produces properly functioning
+// AllowlistResolution instances with correct inheritance mode behavior.
+func TestAllowlistResolutionBuilder_Integration(t *testing.T) {
+	tests := []struct {
+		name                  string
+		mode                  InheritanceMode
+		groupVars             []string
+		globalVars            []string
+		testVariable          string
+		expectedAllowed       bool
+		expectedEffectiveSize int
+	}{
+		{
+			name:                  "explicit mode allows group variables",
+			mode:                  InheritanceModeExplicit,
+			groupVars:             []string{"A", "B", "C"},
+			globalVars:            []string{"X", "Y"},
+			testVariable:          "A",
+			expectedAllowed:       true,
+			expectedEffectiveSize: 3,
+		},
+		{
+			name:                  "explicit mode denies global variables",
+			mode:                  InheritanceModeExplicit,
+			groupVars:             []string{"A", "B", "C"},
+			globalVars:            []string{"X", "Y"},
+			testVariable:          "X",
+			expectedAllowed:       false,
+			expectedEffectiveSize: 3,
+		},
+		{
+			name:                  "inherit mode allows global variables",
+			mode:                  InheritanceModeInherit,
+			groupVars:             []string{"A", "B", "C"},
+			globalVars:            []string{"X", "Y"},
+			testVariable:          "X",
+			expectedAllowed:       true,
+			expectedEffectiveSize: 2,
+		},
+		{
+			name:                  "inherit mode denies group variables",
+			mode:                  InheritanceModeInherit,
+			groupVars:             []string{"A", "B", "C"},
+			globalVars:            []string{"X", "Y"},
+			testVariable:          "A",
+			expectedAllowed:       false,
+			expectedEffectiveSize: 2,
+		},
+		{
+			name:                  "reject mode denies all variables",
+			mode:                  InheritanceModeReject,
+			groupVars:             []string{"A", "B", "C"},
+			globalVars:            []string{"X", "Y"},
+			testVariable:          "A",
+			expectedAllowed:       false,
+			expectedEffectiveSize: 0,
+		},
+	}
 
-	// Create using direct constructor
-	resolutionDirect := NewAllowlistResolution(
-		InheritanceModeExplicit,
-		"test",
-		map[string]struct{}{"A": {}, "B": {}, "C": {}},
-		map[string]struct{}{"X": {}, "Y": {}},
-	)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resolution := NewAllowlistResolutionBuilder().
+				WithMode(tt.mode).
+				WithGroupName("test").
+				WithGroupVariables(tt.groupVars).
+				WithGlobalVariables(tt.globalVars).
+				Build()
 
-	// Both should behave identically
-	testVars := []string{"A", "B", "C", "X", "Y", "Z"}
-	for _, v := range testVars {
-		builderResult := resolutionBuilder.IsAllowed(v)
-		directResult := resolutionDirect.IsAllowed(v)
+			// Test IsAllowed behavior
+			allowed := resolution.IsAllowed(tt.testVariable)
+			if allowed != tt.expectedAllowed {
+				t.Errorf("IsAllowed(%q) = %v, want %v", tt.testVariable, allowed, tt.expectedAllowed)
+			}
 
-		if builderResult != directResult {
-			t.Errorf("IsAllowed(%q) builder=%v, direct=%v - should be equal", v, builderResult, directResult)
+			// Test effective size
+			size := resolution.GetEffectiveSize()
+			if size != tt.expectedEffectiveSize {
+				t.Errorf("GetEffectiveSize() = %d, want %d", size, tt.expectedEffectiveSize)
+			}
+		})
+	}
+}
+
+// TestTestAllowlistResolutionFactoryCreateSimple tests the CreateSimple method
+func TestTestAllowlistResolutionFactoryCreateSimple(t *testing.T) {
+	factory := TestAllowlistResolutionFactory{}
+	globalVars := []string{"PATH", "HOME"}
+	groupVars := []string{"APP_ENV", "DEBUG"}
+
+	resolution := factory.CreateSimple(globalVars, groupVars)
+
+	if resolution == nil {
+		t.Fatal("CreateSimple() returned nil")
+	}
+
+	// Check that it uses InheritanceModeInherit
+	if resolution.GetMode() != InheritanceModeInherit {
+		t.Errorf("Expected mode %v, got %v", InheritanceModeInherit, resolution.GetMode())
+	}
+
+	// Check group name
+	if resolution.GetGroupName() != "test-group" {
+		t.Errorf("Expected group name 'test-group', got '%s'", resolution.GetGroupName())
+	}
+
+	// Check that global variables are accessible (since mode is Inherit)
+	for _, variable := range globalVars {
+		if !resolution.IsAllowed(variable) {
+			t.Errorf("Expected variable '%s' to be allowed in Inherit mode", variable)
 		}
 	}
 
-	// Verify effective sizes match
-	if resolutionBuilder.GetEffectiveSize() != resolutionDirect.GetEffectiveSize() {
-		t.Errorf("GetEffectiveSize() builder=%d, direct=%d - should be equal",
-			resolutionBuilder.GetEffectiveSize(), resolutionDirect.GetEffectiveSize())
+	// In Inherit mode, group variables should not be in effective list
+	for _, variable := range groupVars {
+		if resolution.IsAllowed(variable) {
+			t.Errorf("Expected variable '%s' to NOT be allowed in Inherit mode", variable)
+		}
+	}
+}
+
+// TestTestAllowlistResolutionFactoryCreateWithMode tests the CreateWithMode method
+func TestTestAllowlistResolutionFactoryCreateWithMode(t *testing.T) {
+	factory := TestAllowlistResolutionFactory{}
+	globalVars := []string{"PATH", "HOME"}
+	groupVars := []string{"APP_ENV", "DEBUG"}
+
+	tests := []struct {
+		name                  string
+		mode                  InheritanceMode
+		expectedGlobalAllowed bool
+		expectedGroupAllowed  bool
+	}{
+		{
+			name:                  "inherit mode",
+			mode:                  InheritanceModeInherit,
+			expectedGlobalAllowed: true,
+			expectedGroupAllowed:  false,
+		},
+		{
+			name:                  "explicit mode",
+			mode:                  InheritanceModeExplicit,
+			expectedGlobalAllowed: false,
+			expectedGroupAllowed:  true,
+		},
+		{
+			name:                  "reject mode",
+			mode:                  InheritanceModeReject,
+			expectedGlobalAllowed: false,
+			expectedGroupAllowed:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resolution := factory.CreateWithMode(tt.mode, globalVars, groupVars)
+
+			if resolution == nil {
+				t.Fatal("CreateWithMode() returned nil")
+			}
+
+			// Check mode
+			if resolution.GetMode() != tt.mode {
+				t.Errorf("Expected mode %v, got %v", tt.mode, resolution.GetMode())
+			}
+
+			// Check group name
+			if resolution.GetGroupName() != "test-group" {
+				t.Errorf("Expected group name 'test-group', got '%s'", resolution.GetGroupName())
+			}
+
+			// Check global variables
+			for _, variable := range globalVars {
+				allowed := resolution.IsAllowed(variable)
+				if allowed != tt.expectedGlobalAllowed {
+					t.Errorf("Global variable '%s': expected allowed=%v, got %v",
+						variable, tt.expectedGlobalAllowed, allowed)
+				}
+			}
+
+			// Check group variables
+			for _, variable := range groupVars {
+				allowed := resolution.IsAllowed(variable)
+				if allowed != tt.expectedGroupAllowed {
+					t.Errorf("Group variable '%s': expected allowed=%v, got %v",
+						variable, tt.expectedGroupAllowed, allowed)
+				}
+			}
+		})
+	}
+}
+
+// TestTestAllowlistResolutionFactoryEmpty tests factory with empty variable lists
+func TestTestAllowlistResolutionFactoryEmpty(t *testing.T) {
+	factory := TestAllowlistResolutionFactory{}
+
+	resolution := factory.CreateSimple([]string{}, []string{})
+	if resolution == nil {
+		t.Fatal("CreateSimple() with empty lists returned nil")
+	}
+
+	// Should not allow any variables
+	testVars := []string{"PATH", "HOME", "APP_ENV"}
+	for _, variable := range testVars {
+		if resolution.IsAllowed(variable) {
+			t.Errorf("Expected variable '%s' to be disallowed with empty lists", variable)
+		}
+	}
+
+	// Effective size should be 0
+	if resolution.GetEffectiveSize() != 0 {
+		t.Errorf("Expected effective size 0, got %d", resolution.GetEffectiveSize())
+	}
+}
+
+// TestTestAllowlistResolutionFactoryNil tests factory with nil variable lists
+func TestTestAllowlistResolutionFactoryNil(t *testing.T) {
+	factory := TestAllowlistResolutionFactory{}
+
+	resolution := factory.CreateSimple(nil, nil)
+	if resolution == nil {
+		t.Fatal("CreateSimple() with nil lists returned nil")
+	}
+
+	// Should not allow any variables
+	testVars := []string{"PATH", "HOME", "APP_ENV"}
+	for _, variable := range testVars {
+		if resolution.IsAllowed(variable) {
+			t.Errorf("Expected variable '%s' to be disallowed with nil lists", variable)
+		}
+	}
+
+	// Effective size should be 0
+	if resolution.GetEffectiveSize() != 0 {
+		t.Errorf("Expected effective size 0, got %d", resolution.GetEffectiveSize())
 	}
 }

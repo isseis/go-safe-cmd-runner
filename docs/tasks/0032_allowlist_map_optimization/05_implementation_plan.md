@@ -621,15 +621,15 @@ func (b *AllowlistResolutionBuilder) Build() *AllowlistResolution {
 5. 最終的な統合テスト
 
 **チェックリスト**:
-- [ ] `TestAllowlistResolutionFactory` 実装
-- [ ] `CreateSimple` メソッド実装
-- [ ] `CreateWithMode` メソッド実装
-- [ ] 既存テストのBuilder パターン書き換え
-- [ ] 大規模パフォーマンステスト
-- [ ] メモリ使用量測定
-- [ ] 50%性能向上確認
-- [ ] 40%メモリ削減確認
-- [ ] 全テストスイート完全パス
+- [x] `TestAllowlistResolutionFactory` 実装
+- [x] `CreateSimple` メソッド実装
+- [x] `CreateWithMode` メソッド実装
+- [x] 既存テストのBuilder パターン書き換え
+- [x] 大規模パフォーマンステスト
+- [x] メモリ使用量測定
+- [x] 50%性能向上確認
+- [x] 40%メモリ削減確認
+- [x] 全テストスイート完全パス
 
 ### 3.4 リスク管理
 
