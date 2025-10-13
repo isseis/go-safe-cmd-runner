@@ -23,17 +23,17 @@ const (
 // commandProfileDefinitions defines command risk profiles using the new builder pattern
 // This uses CommandRiskProfile with explicit risk factor separation
 var commandProfileDefinitions = []CommandProfileDef{
-	// Phase 2.2.1: Privilege escalation commands
+	// Privilege escalation commands
 	NewProfile("sudo", "su", "doas").
 		PrivilegeRisk(runnertypes.RiskLevelCritical, "Allows execution with elevated privileges, can compromise entire system").
 		Build(),
 
-	// Phase 2.2.6: System modification commands
+	// System modification commands
 	NewProfile("systemctl", "service").
 		SystemModRisk(runnertypes.RiskLevelHigh, "Can modify system services and configuration").
 		Build(),
 
-	// Phase 2.2.4: Destructive operations - separate definitions for different risk levels
+	// Destructive operations - separate definitions for different risk levels
 	NewProfile("rm").
 		DestructionRisk(runnertypes.RiskLevelHigh, "Can delete files and directories").
 		Build(),
@@ -41,14 +41,14 @@ var commandProfileDefinitions = []CommandProfileDef{
 		DestructionRisk(runnertypes.RiskLevelHigh, "Can overwrite entire disks, potential data loss").
 		Build(),
 
-	// Phase 2.2.5: AI service commands with multiple risk factors
+	// AI service commands with multiple risk factors
 	NewProfile("claude", "gemini", "chatgpt", "gpt", "openai", "anthropic").
 		NetworkRisk(runnertypes.RiskLevelHigh, "Always communicates with external AI API").
 		DataExfilRisk(runnertypes.RiskLevelHigh, "May send sensitive data to external service").
 		AlwaysNetwork().
 		Build(),
 
-	// Phase 2.2.2: Network commands (always)
+	// Network commands (always)
 	NewProfile("curl", "wget").
 		NetworkRisk(runnertypes.RiskLevelMedium, "Always performs network operations").
 		AlwaysNetwork().
@@ -66,7 +66,7 @@ var commandProfileDefinitions = []CommandProfileDef{
 		AlwaysNetwork().
 		Build(),
 
-	// Phase 2.2.3: Network commands (conditional)
+	// Network commands (conditional)
 	NewProfile("git").
 		NetworkRisk(runnertypes.RiskLevelMedium, "Network operations for clone/fetch/pull/push/remote").
 		ConditionalNetwork("clone", "fetch", "pull", "push", "remote").

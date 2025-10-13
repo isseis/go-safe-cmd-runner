@@ -53,7 +53,7 @@ func setupSafeTestEnv(t *testing.T) {
 }
 
 // prepareCommandWithExpandedEnv prepares a Command with ExpandedEnv populated from its Env field.
-// This is a test helper that simulates what LoadAndPrepareConfig does in Phase 1.
+// This is a test helper that simulates what LoadAndPrepareConfig does during configuration loading.
 func prepareCommandWithExpandedEnv(t *testing.T, cmd *runnertypes.Command, group *runnertypes.CommandGroup, cfg *runnertypes.Config) {
 	t.Helper()
 
@@ -64,7 +64,7 @@ func prepareCommandWithExpandedEnv(t *testing.T, cmd *runnertypes.Command, group
 }
 
 // prepareConfigWithExpandedEnv prepares all commands in a Config with ExpandedEnv populated.
-// This is a test helper that simulates what LoadAndPrepareConfig does in Phase 1.
+// This is a test helper that simulates what LoadAndPrepareConfig does during configuration loading.
 func prepareConfigWithExpandedEnv(t *testing.T, cfg *runnertypes.Config) {
 	t.Helper()
 
@@ -383,7 +383,7 @@ func TestRunner_ExecuteGroup(t *testing.T) {
 				Groups: []runnertypes.CommandGroup{tt.group},
 			}
 
-			// Prepare all commands with ExpandedEnv (simulates Phase 1)
+			// Prepare all commands with ExpandedEnv (simulates configuration loading)
 			prepareConfigWithExpandedEnv(t, config)
 
 			mockResourceManager := new(MockResourceManager)
@@ -556,12 +556,12 @@ func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
 			Groups: []runnertypes.CommandGroup{group},
 		}
 
-		// Try to prepare config - should fail during Phase 1 (config preparation)
+		// Try to prepare config - should fail during configuration loading (config preparation)
 		filter := environment.NewFilter(config.Global.EnvAllowlist)
 		expander := environment.NewVariableExpander(filter)
 		err := configpkg.ExpandCommandEnv(&config.Groups[0].Commands[1], expander, nil, nil, config.Global.EnvAllowlist, nil, config.Groups[0].EnvAllowlist, config.Groups[0].Name)
 
-		// Should fail with undefined variable error during Phase 1
+		// Should fail with undefined variable error during configuration loading
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, environment.ErrVariableNotFound)
 	})
@@ -1070,7 +1070,7 @@ func TestRunner_resolveEnvironmentVars(t *testing.T) {
 		},
 	}
 
-	// Prepare command with expanded environment (simulates Phase 1)
+	// Prepare command with expanded environment (simulates configuration loading)
 	prepareCommandWithExpandedEnv(t, &cmd, &config.Groups[0], config)
 
 	// Resolve environment variables (merges system env + pre-expanded Command.Env)
@@ -1124,9 +1124,9 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 		mockResourceManager.AssertExpectations(t)
 	})
 
-	// This test is temporarily disabled during Phase 1 implementation
+	// This test is temporarily disabled
 	// t.Run("disallowed command execution should fail", func(t *testing.T) {
-	// 	// Test will be re-enabled in Phase 2 when NewManagerForTest API is available
+	// 	// Test will be re-enabled when NewManagerForTest API is available
 	// })
 
 	t.Run("command execution with environment variables", func(t *testing.T) {
@@ -1145,7 +1145,7 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 			Env:  []string{"TEST_VAR=safe-value", "PATH=/usr/bin:/bin"},
 		}
 
-		// Prepare command with expanded environment (simulates Phase 1)
+		// Prepare command with expanded environment (simulates configuration loading)
 		prepareCommandWithExpandedEnv(t, &safeCmd, testGroup, config)
 
 		mockResourceManager.On("ExecuteCommand", mock.Anything, safeCmd, mock.Anything, mock.Anything).
@@ -1154,7 +1154,7 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 		_, err = runner.executeCommandInGroup(context.Background(), &safeCmd, testGroup)
 		assert.NoError(t, err)
 
-		// Test with unsafe environment variable value - should fail during Phase 1 (config preparation)
+		// Test with unsafe environment variable value - should fail during configuration loading (config preparation)
 		unsafeCmd := runnertypes.Command{
 			Name: "test-unsafe-env",
 			Cmd:  "echo",
@@ -1555,7 +1555,7 @@ func TestRunner_EnvironmentVariablePriority(t *testing.T) {
 				testCmd.Env = tt.commandEnvVars
 			}
 
-			// Prepare command with expanded environment (simulates Phase 1)
+			// Prepare command with expanded environment (simulates configuration loading)
 			testGroup := &config.Groups[0]
 			prepareCommandWithExpandedEnv(t, &testCmd, testGroup, config)
 
@@ -1660,7 +1660,7 @@ func TestRunner_EnvironmentVariablePriority_CurrentImplementation(t *testing.T) 
 				testCmd.Env = tt.commandEnvVars
 			}
 
-			// Prepare command with expanded environment (simulates Phase 1)
+			// Prepare command with expanded environment (simulates configuration loading)
 			testGroup := &config.Groups[0]
 			prepareCommandWithExpandedEnv(t, &testCmd, testGroup, config)
 
@@ -1726,7 +1726,7 @@ func TestRunner_EnvironmentVariablePriority_EdgeCases(t *testing.T) {
 			Env:  []string{"EDGE_VAR="}, // Empty value at command level
 		}
 
-		// Prepare command with expanded environment (simulates Phase 1)
+		// Prepare command with expanded environment (simulates configuration loading)
 		prepareCommandWithExpandedEnv(t, &testCmd, &testGroup, config)
 
 		resolvedEnv, err := runner.resolveEnvironmentVars(&testCmd, &testGroup)
@@ -2729,8 +2729,8 @@ func TestRunner_OutputCaptureErrorTypes(t *testing.T) {
 	}
 }
 
-// TestRunner_OutputCaptureExecutionPhases tests error handling in different execution phases
-func TestRunner_OutputCaptureExecutionPhases(t *testing.T) {
+// TestRunner_OutputCaptureExecutionStages tests error handling in different execution stages
+func TestRunner_OutputCaptureExecutionStages(t *testing.T) {
 	// Test error variables for robust error checking
 	ErrPreValidationTest := errors.New("pre-validation failed: invalid output path")
 	ErrExecutionTest := errors.New("execution failed: command not found")
@@ -2741,13 +2741,13 @@ func TestRunner_OutputCaptureExecutionPhases(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		phase       string
+		stage       string
 		setupMock   func(*MockResourceManager)
 		expectError error
 	}{
 		{
 			name:  "PreValidationError",
-			phase: "pre-validation",
+			stage: "pre-validation",
 			setupMock: func(mockRM *MockResourceManager) {
 				// Simulate pre-validation error (before command execution)
 				mockRM.SetupFailedMockExecution(ErrPreValidationTest)
@@ -2756,7 +2756,7 @@ func TestRunner_OutputCaptureExecutionPhases(t *testing.T) {
 		},
 		{
 			name:  "ExecutionError",
-			phase: "execution",
+			stage: "execution",
 			setupMock: func(mockRM *MockResourceManager) {
 				// Simulate execution error (during command execution)
 				mockRM.SetupFailedMockExecution(ErrExecutionTest)
@@ -2765,7 +2765,7 @@ func TestRunner_OutputCaptureExecutionPhases(t *testing.T) {
 		},
 		{
 			name:  "PostProcessingError",
-			phase: "post-processing",
+			stage: "post-processing",
 			setupMock: func(mockRM *MockResourceManager) {
 				// Simulate post-processing error (after command execution)
 				mockRM.SetupFailedMockExecution(ErrPostProcessingTest)
@@ -2774,7 +2774,7 @@ func TestRunner_OutputCaptureExecutionPhases(t *testing.T) {
 		},
 		{
 			name:  "CleanupError",
-			phase: "cleanup",
+			stage: "cleanup",
 			setupMock: func(mockRM *MockResourceManager) {
 				// Simulate cleanup error (during resource cleanup)
 				mockRM.SetupFailedMockExecution(ErrCleanupTest)
@@ -2827,7 +2827,7 @@ func TestRunner_OutputCaptureExecutionPhases(t *testing.T) {
 			err = runner.ExecuteGroup(ctx, cfg.Groups[0])
 
 			// Verify error matches expected type using errors.Is()
-			require.Error(t, err, "Should return error for %s phase", tt.phase)
+			require.Error(t, err, "Should return error for %s stage", tt.stage)
 			assert.True(t, errors.Is(err, tt.expectError),
 				"Expected error type %v, got %v", tt.expectError, err)
 

@@ -1970,7 +1970,7 @@ args = ["${BASE_DIR}"]`
 	require.Len(t, cfg.Groups[0].Commands, 1)
 	assert.Equal(t, "test_cmd", cfg.Groups[0].Commands[0].Name)
 	assert.Equal(t, "echo", cfg.Groups[0].Commands[0].Cmd)
-	assert.Equal(t, []string{"${BASE_DIR}"}, cfg.Groups[0].Commands[0].Args) // Not yet expanded (Phase 4)
+	assert.Equal(t, []string{"${BASE_DIR}"}, cfg.Groups[0].Commands[0].Args)
 }
 
 // TestConfigLoader_GlobalEnvError tests error handling in Global.Env expansion
@@ -2226,10 +2226,6 @@ func TestExpandGlobalVerifyFiles_Priority(t *testing.T) {
 	}
 }
 
-// ===========================================
-// Group.Env Expansion Tests (Phase 3)
-// ===========================================
-
 // TestExpandGroupEnv_Basic tests basic Group.Env expansion
 func TestExpandGroupEnv_Basic(t *testing.T) {
 	filter := environment.NewFilter([]string{})
@@ -2468,10 +2464,6 @@ func TestExpandGroupEnv_Empty(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{}, group.ExpandedEnv)
 }
-
-// ===========================================
-// Group.VerifyFiles Expansion Tests (Phase 3)
-// ===========================================
 
 // TestExpandGroupVerifyFiles_WithGroupEnv tests Group.VerifyFiles expansion with Group.Env
 func TestExpandGroupVerifyFiles_WithGroupEnv(t *testing.T) {

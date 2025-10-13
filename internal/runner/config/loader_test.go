@@ -174,8 +174,8 @@ version = "1.0"
 	}
 }
 
-// TestPhase1BasicTOMLParse tests Phase 1 basic TOML parsing for Global.Env and Group.Env
-func TestPhase1BasicTOMLParse(t *testing.T) {
+// TestBasicTOMLParse tests basic TOML parsing for Global.Env and Group.Env
+func TestBasicTOMLParse(t *testing.T) {
 	configContent := `
 version = "1.0"
 
@@ -208,8 +208,8 @@ args = ["test"]
 	// Verify Group.Env is parsed correctly
 	require.Len(t, cfg.Groups, 1)
 	assert.Equal(t, []string{"GROUP_VAR=group_value"}, cfg.Groups[0].Env)
-	// Group.ExpandedEnv should now be populated after Phase 3 implementation
-	require.NotNil(t, cfg.Groups[0].ExpandedEnv, "Group.ExpandedEnv should be populated after Phase 3")
+	// Group.ExpandedEnv should be populated after configuration loading
+	require.NotNil(t, cfg.Groups[0].ExpandedEnv, "Group.ExpandedEnv should be populated after configuration loading")
 	assert.Equal(t, "group_value", cfg.Groups[0].ExpandedEnv["GROUP_VAR"])
 }
 
@@ -399,12 +399,12 @@ version = "1.0"
 }
 
 // ===========================================
-// Phase 3 Integration Tests
+// Integration Tests
 // ===========================================
 
-// TestLoader_Phase3_GroupEnvIntegration tests the complete integration of Group.Env functionality
-func TestLoader_Phase3_GroupEnvIntegration(t *testing.T) {
-	configPath := "testdata/phase3_group_env.toml"
+// TestLoader_GroupEnvIntegration tests the complete integration of Group.Env functionality
+func TestLoader_GroupEnvIntegration(t *testing.T) {
+	configPath := "testdata/group_env.toml"
 
 	// Read file content
 	content, err := os.ReadFile(configPath)
@@ -500,8 +500,8 @@ func TestConfigLoaderEnvExpansionIntegration(t *testing.T) {
 	cmd := &appGroup.Commands[0]
 	require.Equal(t, "run_app", cmd.Name)
 
-	// Note: Command.Env, Cmd, and Args expansion now happens in config.LoadConfig()
-	// (Phase 2 change). At this stage, we verify that:
+	// Note: Command.Env, Cmd, and Args expansion happens in config.LoadConfig().
+	// At this stage, we verify that:
 	// - Global.ExpandedEnv is populated correctly
 	// - Group.ExpandedEnv is populated correctly
 	// - Command.Env field contains the raw (unexpanded) values
@@ -510,7 +510,7 @@ func TestConfigLoaderEnvExpansionIntegration(t *testing.T) {
 	assert.Equal(t, "${APP_DIR}/bin/server", cmd.Cmd)
 	assert.Equal(t, []string{"--log", "${LOG_DIR}/app.log"}, cmd.Args)
 
-	// Command.ExpandedEnv should be populated (Phase 2 change)
+	// Command.ExpandedEnv should be populated
 	// It contains Command.Env + Global.ExpandedEnv + Group.ExpandedEnv + AutoEnv
 	assert.NotNil(t, cmd.ExpandedEnv)
 	assert.Contains(t, cmd.ExpandedEnv, "LOG_DIR")

@@ -1,4 +1,4 @@
-# Phase 3 Group.Env Integration Test
+# Group.Env Integration Test
 # This TOML file tests Global.Env and Group.Env functionality with allowlist inheritance
 
 version = "1.0"

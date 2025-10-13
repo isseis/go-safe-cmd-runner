@@ -679,7 +679,7 @@ func ExpandGroupEnv(
 }
 
 // ExpandCommandEnv expands Command.Env variables with reference to global, group, and automatic environment variables.
-// This is used during configuration loading (Phase 1) to pre-expand Command.Env.
+// This is used during configuration loading to pre-expand Command.Env.
 //
 // Variable reference priority (what Command.Env can reference):
 //  1. Group.ExpandedEnv variables (groupEnv parameter)

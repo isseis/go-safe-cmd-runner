@@ -1,4 +1,4 @@
-# Phase 4 integration test: Command.Env with Global/Group.Env reference
+# Integration test: Command.Env with Global/Group.Env reference
 # This test validates:
 # - Command.Env can reference Global.ExpandedEnv
 # - Command.Env can reference Group.ExpandedEnv

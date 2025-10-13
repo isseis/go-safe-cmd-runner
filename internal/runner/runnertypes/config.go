@@ -86,19 +86,19 @@ type Command struct {
 
 	// ExpandedCmd contains the command path with environment variable substitutions applied.
 	// It is the expanded version of the Cmd field, populated during configuration loading
-	// (Phase 1) and used during command execution (Phase 2) to avoid re-expanding Command.Cmd
+	// and used during command execution to avoid re-expanding Command.Cmd
 	// for each execution. The toml:"-" tag prevents this field from being set via TOML configuration.
 	ExpandedCmd string `toml:"-"`
 
 	// ExpandedArgs contains the command arguments with environment variable substitutions applied.
 	// It is the expanded version of the Args field, populated during configuration loading
-	// (Phase 1) and used during command execution (Phase 2) to avoid re-expanding Command.Args
+	// and used during command execution to avoid re-expanding Command.Args
 	// for each execution. The toml:"-" tag prevents this field from being set via TOML configuration.
 	ExpandedArgs []string `toml:"-"`
 
 	// ExpandedEnv contains the environment variables with all variable substitutions applied.
 	// It is the expanded version of the Env field, populated during configuration loading
-	// (Phase 1) and used during command execution (Phase 2) to avoid re-expanding Command.Env
+	// and used during command execution to avoid re-expanding Command.Env
 	// for each execution. The toml:"-" tag prevents this field from being set via TOML configuration.
 	ExpandedEnv map[string]string `toml:"-"`
 }
@@ -246,10 +246,10 @@ type AllowlistResolution struct {
 	groupAllowlistSet  map[string]struct{}
 	globalAllowlistSet map[string]struct{}
 
-	// Phase 2 additions: Pre-computed effective set for optimization
+	// Pre-computed effective set for optimization
 	effectiveSet map[string]struct{} // Pre-computed effective allowlist set
 
-	// Phase 2 additions: Lazy evaluation caches for getter methods
+	// Lazy evaluation caches for getter methods
 	groupAllowlistOnce  sync.Once // Ensures groupAllowlistCache is initialized only once
 	groupAllowlistCache []string  // Cache for GetGroupAllowlist()
 
@@ -263,7 +263,7 @@ type AllowlistResolution struct {
 // IsAllowed checks if a variable is allowed in the effective allowlist.
 // This is the most frequently called method and is optimized for O(1) performance.
 //
-// Phase 2 implementation: Uses pre-computed effectiveSet for optimal performance
+// Uses pre-computed effectiveSet for optimal performance:
 // - computeEffectiveSet() pre-computes Mode-based effective allowlist
 // - IsAllowed() only needs to check effectiveSet (faster than mode switching)
 //
@@ -304,7 +304,7 @@ func (r *AllowlistResolution) SetGlobalAllowlistSet(allowlistSet map[string]stru
 }
 
 // GetEffectiveList returns effective allowlist with lazy evaluation for performance.
-// Phase 2 implementation: Uses cached slice generated from effectiveSet on first access.
+// Uses cached slice generated from effectiveSet on first access.
 // Thread-safe: Uses sync.Once to ensure cache is initialized only once.
 func (r *AllowlistResolution) GetEffectiveList() []string {
 	// INVARIANT: effectiveSet must be set during initialization
@@ -320,7 +320,7 @@ func (r *AllowlistResolution) GetEffectiveList() []string {
 }
 
 // GetEffectiveSize returns the number of effective allowlist entries.
-// Phase 2 optimization: Uses effectiveSet directly for O(1) size query.
+// Uses effectiveSet directly for O(1) size query.
 func (r *AllowlistResolution) GetEffectiveSize() int {
 	// INVARIANT: effectiveSet must be set during initialization
 	if r.effectiveSet == nil {
@@ -331,7 +331,7 @@ func (r *AllowlistResolution) GetEffectiveSize() int {
 }
 
 // GetGroupAllowlist returns group allowlist with lazy evaluation.
-// Phase 2 implementation: Uses cached slice generated from groupAllowlistSet on first access.
+// Uses cached slice generated from groupAllowlistSet on first access.
 func (r *AllowlistResolution) GetGroupAllowlist() []string {
 	// Thread-safe lazy evaluation and caching using sync.Once
 	r.groupAllowlistOnce.Do(func() {
@@ -342,7 +342,7 @@ func (r *AllowlistResolution) GetGroupAllowlist() []string {
 }
 
 // GetGlobalAllowlist returns global allowlist with lazy evaluation.
-// Phase 2 implementation: Uses cached slice generated from globalAllowlistSet on first access.
+// Uses cached slice generated from globalAllowlistSet on first access.
 func (r *AllowlistResolution) GetGlobalAllowlist() []string {
 	// Thread-safe lazy evaluation and caching using sync.Once
 	r.globalAllowlistOnce.Do(func() {
@@ -363,7 +363,7 @@ func (r *AllowlistResolution) GetGroupName() string {
 }
 
 // newAllowlistResolution creates a new AllowlistResolution with pre-computed effective set.
-// Phase 2 constructor that optimizes performance by pre-computing the effective allowlist.
+// This constructor optimizes performance by pre-computing the effective allowlist.
 // This is a private method - external callers should use NewAllowlistResolutionBuilder instead.
 //
 // Parameters:
@@ -518,7 +518,6 @@ type PrivilegeManager interface {
 }
 
 // AllowlistResolutionBuilder provides a fluent interface for creating AllowlistResolution.
-// Available in Phase 2 and later.
 //
 // The builder supports two input formats:
 //   - Slice-based: WithGroupVariables for []string input
