@@ -48,7 +48,7 @@ func TestNewAllowlistResolution(t *testing.T) {
 			groupSet:  nil,
 			globalSet: map[string]struct{}{"GLOBAL_VAR": {}},
 			wantPanic: true,
-			panicMsg:  "NewAllowlistResolution: groupSet cannot be nil",
+			panicMsg:  "newAllowlistResolution: groupSet cannot be nil",
 		},
 		{
 			name:      "nil global set",
@@ -57,7 +57,7 @@ func TestNewAllowlistResolution(t *testing.T) {
 			groupSet:  map[string]struct{}{"GROUP_VAR": {}},
 			globalSet: nil,
 			wantPanic: true,
-			panicMsg:  "NewAllowlistResolution: globalSet cannot be nil",
+			panicMsg:  "newAllowlistResolution: globalSet cannot be nil",
 		},
 	}
 
@@ -67,20 +67,20 @@ func TestNewAllowlistResolution(t *testing.T) {
 				defer func() {
 					if r := recover(); r != nil {
 						if r != tt.panicMsg {
-							t.Errorf("NewAllowlistResolution() panic = %v, want %v", r, tt.panicMsg)
+							t.Errorf("newAllowlistResolution() panic = %v, want %v", r, tt.panicMsg)
 						}
 					} else {
-						t.Errorf("NewAllowlistResolution() did not panic, expected panic with message: %v", tt.panicMsg)
+						t.Errorf("newAllowlistResolution() did not panic, expected panic with message: %v", tt.panicMsg)
 					}
 				}()
 			}
 
-			resolution := NewAllowlistResolution(tt.mode, tt.groupName, tt.groupSet, tt.globalSet)
+			resolution := newAllowlistResolution(tt.mode, tt.groupName, tt.groupSet, tt.globalSet)
 
 			if !tt.wantPanic {
 				// Basic validation
 				if resolution == nil {
-					t.Error("NewAllowlistResolution() returned nil")
+					t.Error("newAllowlistResolution() returned nil")
 					return
 				}
 
@@ -139,7 +139,7 @@ func TestComputeEffectiveSet(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resolution := NewAllowlistResolution(tt.mode, "test-group", groupSet, globalSet)
+			resolution := newAllowlistResolution(tt.mode, "test-group", groupSet, globalSet)
 
 			// For inherit/explicit/reject modes, verify effectiveSet has correct content
 			switch tt.mode {
@@ -180,7 +180,7 @@ func TestComputeEffectiveSet(t *testing.T) {
 // TestSetToSortedSlice tests the setToSortedSlice helper method
 func TestSetToSortedSlice(t *testing.T) {
 	// Create a minimal valid resolution for testing the helper method
-	resolution := NewAllowlistResolution(
+	resolution := newAllowlistResolution(
 		InheritanceModeInherit,
 		"test",
 		map[string]struct{}{}, // empty group set
@@ -324,7 +324,7 @@ func TestIsAllowedOptimized(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resolution := NewAllowlistResolution(tt.mode, "test-group", groupSet, globalSet)
+			resolution := newAllowlistResolution(tt.mode, "test-group", groupSet, globalSet)
 			result := resolution.IsAllowed(tt.variable)
 
 			if result != tt.expected {
@@ -350,7 +350,7 @@ func TestIsAllowedEdgeCases(t *testing.T) {
 	})
 
 	t.Run("empty variable name returns false", func(t *testing.T) {
-		resolution := NewAllowlistResolution(InheritanceModeInherit, "test-group", groupSet, globalSet)
+		resolution := newAllowlistResolution(InheritanceModeInherit, "test-group", groupSet, globalSet)
 		result := resolution.IsAllowed("")
 		if result != false {
 			t.Errorf("IsAllowed(\"\") = %v, want false", result)
@@ -358,7 +358,7 @@ func TestIsAllowedEdgeCases(t *testing.T) {
 	})
 
 	t.Run("uninitialized object panics", func(t *testing.T) {
-		// Create an AllowlistResolution without using NewAllowlistResolution
+		// Create an AllowlistResolution without using newAllowlistResolution
 		resolution := &AllowlistResolution{
 			Mode:               InheritanceModeInherit,
 			GroupName:          "test-group",
@@ -419,7 +419,7 @@ func TestLazyEvaluationGetters(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resolution := NewAllowlistResolution(tt.mode, "test-group", groupSet, globalSet)
+			resolution := newAllowlistResolution(tt.mode, "test-group", groupSet, globalSet)
 
 			// Test GetGroupAllowlist
 			groupResult := resolution.GetGroupAllowlist()

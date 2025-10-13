@@ -259,7 +259,7 @@ func TestAllowlistResolution_GetEffectiveList(t *testing.T) {
 	}{
 		{
 			name: "returns EffectiveList",
-			resolver: NewAllowlistResolution(
+			resolver: newAllowlistResolution(
 				InheritanceModeInherit,
 				"test-group",
 				map[string]struct{}{},
@@ -269,7 +269,7 @@ func TestAllowlistResolution_GetEffectiveList(t *testing.T) {
 		},
 		{
 			name: "empty EffectiveList",
-			resolver: NewAllowlistResolution(
+			resolver: newAllowlistResolution(
 				InheritanceModeInherit,
 				"test-group",
 				map[string]struct{}{},
@@ -302,7 +302,7 @@ func TestAllowlistResolution_GetEffectiveSize(t *testing.T) {
 	}{
 		{
 			name: "returns correct size",
-			resolver: NewAllowlistResolution(
+			resolver: newAllowlistResolution(
 				InheritanceModeInherit,
 				"test-group",
 				map[string]struct{}{},
@@ -312,7 +312,7 @@ func TestAllowlistResolution_GetEffectiveSize(t *testing.T) {
 		},
 		{
 			name: "empty list returns 0",
-			resolver: NewAllowlistResolution(
+			resolver: newAllowlistResolution(
 				InheritanceModeInherit,
 				"test-group",
 				map[string]struct{}{},
@@ -340,7 +340,7 @@ func TestAllowlistResolution_GetGroupAllowlist(t *testing.T) {
 	}{
 		{
 			name: "returns GroupAllowlist",
-			resolver: NewAllowlistResolution(
+			resolver: newAllowlistResolution(
 				InheritanceModeExplicit, // Use explicit mode so only group allowlist is used
 				"test-group",
 				map[string]struct{}{"GROUP_VAR1": {}, "GROUP_VAR2": {}},
@@ -373,7 +373,7 @@ func TestAllowlistResolution_GetGlobalAllowlist(t *testing.T) {
 	}{
 		{
 			name: "returns GlobalAllowlist",
-			resolver: NewAllowlistResolution(
+			resolver: newAllowlistResolution(
 				InheritanceModeInherit,
 				"test-group",
 				map[string]struct{}{},
@@ -406,7 +406,7 @@ func TestAllowlistResolution_GetMode(t *testing.T) {
 	}{
 		{
 			name: "returns Inherit mode",
-			resolver: NewAllowlistResolution(
+			resolver: newAllowlistResolution(
 				InheritanceModeInherit,
 				"test-group",
 				map[string]struct{}{},
@@ -416,7 +416,7 @@ func TestAllowlistResolution_GetMode(t *testing.T) {
 		},
 		{
 			name: "returns Explicit mode",
-			resolver: NewAllowlistResolution(
+			resolver: newAllowlistResolution(
 				InheritanceModeExplicit,
 				"test-group",
 				map[string]struct{}{},
@@ -426,7 +426,7 @@ func TestAllowlistResolution_GetMode(t *testing.T) {
 		},
 		{
 			name: "returns Reject mode",
-			resolver: NewAllowlistResolution(
+			resolver: newAllowlistResolution(
 				InheritanceModeReject,
 				"test-group",
 				map[string]struct{}{},
@@ -454,7 +454,7 @@ func TestAllowlistResolution_GetGroupName(t *testing.T) {
 	}{
 		{
 			name: "returns GroupName",
-			resolver: NewAllowlistResolution(
+			resolver: newAllowlistResolution(
 				InheritanceModeInherit,
 				"test-group",
 				map[string]struct{}{},
@@ -464,7 +464,7 @@ func TestAllowlistResolution_GetGroupName(t *testing.T) {
 		},
 		{
 			name: "returns empty GroupName",
-			resolver: NewAllowlistResolution(
+			resolver: newAllowlistResolution(
 				InheritanceModeInherit,
 				"",
 				map[string]struct{}{},

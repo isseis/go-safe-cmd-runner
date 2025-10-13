@@ -365,8 +365,9 @@ func (r *AllowlistResolution) GetGroupName() string {
 	return r.GroupName
 }
 
-// NewAllowlistResolution creates a new AllowlistResolution with pre-computed effective set.
+// newAllowlistResolution creates a new AllowlistResolution with pre-computed effective set.
 // Phase 2 constructor that optimizes performance by pre-computing the effective allowlist.
+// This is a private method - external callers should use NewAllowlistResolutionBuilder instead.
 //
 // Parameters:
 //   - mode: inheritance mode (Inherit/Explicit/Reject)
@@ -380,7 +381,7 @@ func (r *AllowlistResolution) GetGroupName() string {
 // Panics:
 //   - if groupSet is nil
 //   - if globalSet is nil
-func NewAllowlistResolution(
+func newAllowlistResolution(
 	mode InheritanceMode,
 	groupName string,
 	groupSet map[string]struct{},
@@ -388,10 +389,10 @@ func NewAllowlistResolution(
 ) *AllowlistResolution {
 	// Input validation
 	if groupSet == nil {
-		panic("NewAllowlistResolution: groupSet cannot be nil")
+		panic("newAllowlistResolution: groupSet cannot be nil")
 	}
 	if globalSet == nil {
-		panic("NewAllowlistResolution: globalSet cannot be nil")
+		panic("newAllowlistResolution: globalSet cannot be nil")
 	}
 
 	r := &AllowlistResolution{
@@ -590,17 +591,17 @@ func (b *AllowlistResolutionBuilder) WithGlobalVariables(vars []string) *Allowli
 }
 
 // Build creates the AllowlistResolution with the configured settings.
-// This method converts the variable slices to maps and calls NewAllowlistResolution.
+// This method converts the variable slices to maps and calls newAllowlistResolution.
 //
 // Returns:
 //   - *AllowlistResolution: newly created resolution with pre-computed effective set
 //
 // Panics:
-//   - if NewAllowlistResolution panics (should not happen with proper builder usage)
+//   - if newAllowlistResolution panics (should not happen with proper builder usage)
 func (b *AllowlistResolutionBuilder) Build() *AllowlistResolution {
 	groupSet := buildAllowlistSet(b.groupVars)
 	globalSet := buildAllowlistSet(b.globalVars)
-	return NewAllowlistResolution(b.mode, b.groupName, groupSet, globalSet)
+	return newAllowlistResolution(b.mode, b.groupName, groupSet, globalSet)
 }
 
 // TestAllowlistResolutionFactory creates AllowlistResolution instances for testing purposes.
