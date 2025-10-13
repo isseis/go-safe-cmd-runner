@@ -5,6 +5,8 @@ package runnertypes
 import (
 	"fmt"
 	"testing"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
 
 // BenchmarkAllowlistResolutionIsAllowed benchmarks the IsAllowed method with various sizes
@@ -106,11 +108,12 @@ func BenchmarkAllowlistResolutionConstruction(b *testing.B) {
 		})
 
 		b.Run(fmt.Sprintf("builder_size_%d", size), func(b *testing.B) {
+			globalSet := common.SliceToSet(globalVars)
 			for i := 0; i < b.N; i++ {
 				_ = NewAllowlistResolutionBuilder().
 					WithMode(InheritanceModeInherit).
 					WithGroupName("benchmark-group").
-					WithGlobalVariables(globalVars).
+					WithGlobalVariablesSet(globalSet).
 					WithGroupVariables(groupVars).
 					Build()
 			}

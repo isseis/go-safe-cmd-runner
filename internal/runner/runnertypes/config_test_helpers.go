@@ -2,6 +2,8 @@
 
 package runnertypes
 
+import "github.com/isseis/go-safe-cmd-runner/internal/common"
+
 // NewTestAllowlistResolutionSimple creates a simple AllowlistResolution for basic testing.
 // Uses InheritanceModeInherit by default with "test-group" as the group name.
 //
@@ -17,7 +19,7 @@ func NewTestAllowlistResolutionSimple(
 	return NewAllowlistResolutionBuilder().
 		WithMode(InheritanceModeInherit).
 		WithGroupName("test-group").
-		WithGlobalVariables(globalVars).
+		WithGlobalVariablesSet(common.SliceToSet(globalVars)).
 		WithGroupVariables(groupVars).
 		Build()
 }
@@ -40,7 +42,7 @@ func NewTestAllowlistResolutionWithMode(
 	return NewAllowlistResolutionBuilder().
 		WithMode(mode).
 		WithGroupName("test-group").
-		WithGlobalVariables(globalVars).
+		WithGlobalVariablesSet(common.SliceToSet(globalVars)).
 		WithGroupVariables(groupVars).
 		Build()
 }

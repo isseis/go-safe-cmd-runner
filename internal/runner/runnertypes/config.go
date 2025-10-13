@@ -529,22 +529,13 @@ type PrivilegeManager interface {
 // Available in Phase 2 and later.
 //
 // The builder supports two input formats:
-//   - Slice-based: WithGroupVariables/WithGlobalVariables for []string input
+//   - Slice-based: WithGroupVariables for []string input
 //   - Set-based: WithGlobalVariablesSet for map[string]struct{} input
 //
 // Set-based methods are more efficient when the caller already has data in map form,
 // avoiding unnecessary map -> slice -> map conversions.
 //
-// Example usage with slices:
-//
-//	resolution := NewAllowlistResolutionBuilder().
-//	    WithMode(InheritanceModeExplicit).
-//	    WithGroupName("build").
-//	    WithGroupVariables([]string{"PATH", "HOME"}).
-//	    WithGlobalVariables([]string{"USER", "SHELL"}).
-//	    Build()
-//
-// Example usage with sets (more efficient):
+// Example usage:
 //
 //	resolution := NewAllowlistResolutionBuilder().
 //	    WithMode(InheritanceModeExplicit).
@@ -553,11 +544,10 @@ type PrivilegeManager interface {
 //	    WithGlobalVariablesSet(globalSet).
 //	    Build()
 type AllowlistResolutionBuilder struct {
-	mode       InheritanceMode
-	groupName  string
-	groupVars  []string
-	globalVars []string
-	globalSet  map[string]struct{}
+	mode      InheritanceMode
+	groupName string
+	groupVars []string
+	globalSet map[string]struct{}
 }
 
 // NewAllowlistResolutionBuilder creates a new builder with default values.
@@ -589,47 +579,30 @@ func (b *AllowlistResolutionBuilder) WithGroupVariables(vars []string) *Allowlis
 	return b
 }
 
-// WithGlobalVariables sets the global variables for the resolution.
-// Returns the builder for method chaining.
-func (b *AllowlistResolutionBuilder) WithGlobalVariables(vars []string) *AllowlistResolutionBuilder {
-	b.globalVars = vars
-	return b
-}
-
 // WithGlobalVariablesSet sets the global variables using a pre-built set.
-// This is more efficient than WithGlobalVariables when the caller already has a map.
-// If both WithGlobalVariables and WithGlobalVariablesSet are called, the set takes precedence.
 // Returns the builder for method chaining.
-func (b *AllowlistResolutionBuilder) WithGlobalVariablesSet(set map[string]struct{}) *AllowlistResolutionBuilder {
-	b.globalSet = set
+func (b *AllowlistResolutionBuilder) WithGlobalVariablesSet(globalSet map[string]struct{}) *AllowlistResolutionBuilder {
+	b.globalSet = globalSet
 	return b
 }
 
 // Build creates the AllowlistResolution with the configured settings.
-// The builder accepts either slice-based or set-based inputs, but not both for the same field.
-// If both are provided for the same field, this method panics to catch programming errors early.
 //
 // Returns:
 //   - *AllowlistResolution: newly created resolution with pre-computed effective set
 //
 // Panics:
-//   - if both WithGlobalVariables and WithGlobalVariablesSet were called (programming error)
 //   - if newAllowlistResolution panics (e.g., nil sets passed)
 func (b *AllowlistResolutionBuilder) Build() *AllowlistResolution {
-	// Detect conflicting configurations (both slice and set provided for same field)
-	if b.globalVars != nil && b.globalSet != nil {
-		panic("AllowlistResolutionBuilder: both WithGlobalVariables and WithGlobalVariablesSet were called - use only one")
-	}
-
 	// Convert group variables slice to set
 	groupSet := common.SliceToSet(b.groupVars)
 
-	// Use provided set if available, otherwise convert slice to set
+	// Use global set if provided, otherwise create empty set
 	var globalSet map[string]struct{}
 	if b.globalSet != nil {
 		globalSet = b.globalSet
 	} else {
-		globalSet = common.SliceToSet(b.globalVars)
+		globalSet = make(map[string]struct{})
 	}
 
 	return newAllowlistResolution(b.mode, b.groupName, groupSet, globalSet)

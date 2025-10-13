@@ -535,8 +535,8 @@ func TestNewAllowlistResolutionBuilder(t *testing.T) {
 		t.Errorf("default groupVars = %v, want nil", builder.groupVars)
 	}
 
-	if builder.globalVars != nil {
-		t.Errorf("default globalVars = %v, want nil", builder.globalVars)
+	if builder.globalSet != nil {
+		t.Errorf("default globalSet = %v, want nil", builder.globalSet)
 	}
 }
 
@@ -560,9 +560,9 @@ func TestAllowlistResolutionBuilder_Chaining(t *testing.T) {
 		t.Error("WithGroupVariables() did not return the same builder instance")
 	}
 
-	result4 := builder.WithGlobalVariables([]string{"VAR2"})
+	result4 := builder.WithGlobalVariablesSet(map[string]struct{}{"VAR2": {}})
 	if result4 != builder {
-		t.Error("WithGlobalVariables() did not return the same builder instance")
+		t.Error("WithGlobalVariablesSet() did not return the same builder instance")
 	}
 }
 
@@ -573,7 +573,7 @@ func TestAllowlistResolutionBuilder_Build(t *testing.T) {
 		mode               InheritanceMode
 		groupName          string
 		groupVars          []string
-		globalVars         []string
+		globalSet          map[string]struct{}
 		expectedMode       InheritanceMode
 		expectedGroupName  string
 		expectedGroupSize  int
@@ -584,7 +584,7 @@ func TestAllowlistResolutionBuilder_Build(t *testing.T) {
 			mode:               InheritanceModeInherit,
 			groupName:          "build",
 			groupVars:          []string{"PATH", "HOME"},
-			globalVars:         []string{"USER", "SHELL", "PATH"},
+			globalSet:          map[string]struct{}{"USER": {}, "SHELL": {}, "PATH": {}},
 			expectedMode:       InheritanceModeInherit,
 			expectedGroupName:  "build",
 			expectedGroupSize:  2,
@@ -595,7 +595,7 @@ func TestAllowlistResolutionBuilder_Build(t *testing.T) {
 			mode:               InheritanceModeExplicit,
 			groupName:          "deploy",
 			groupVars:          []string{"DEPLOY_KEY", "DEPLOY_ENV"},
-			globalVars:         []string{"USER"},
+			globalSet:          map[string]struct{}{"USER": {}},
 			expectedMode:       InheritanceModeExplicit,
 			expectedGroupName:  "deploy",
 			expectedGroupSize:  2,
@@ -606,7 +606,7 @@ func TestAllowlistResolutionBuilder_Build(t *testing.T) {
 			mode:               InheritanceModeReject,
 			groupName:          "restricted",
 			groupVars:          []string{"VAR1"},
-			globalVars:         []string{"VAR2"},
+			globalSet:          map[string]struct{}{"VAR2": {}},
 			expectedMode:       InheritanceModeReject,
 			expectedGroupName:  "restricted",
 			expectedGroupSize:  1,
@@ -617,7 +617,7 @@ func TestAllowlistResolutionBuilder_Build(t *testing.T) {
 			mode:               InheritanceModeInherit,
 			groupName:          "empty",
 			groupVars:          []string{},
-			globalVars:         []string{},
+			globalSet:          map[string]struct{}{},
 			expectedMode:       InheritanceModeInherit,
 			expectedGroupName:  "empty",
 			expectedGroupSize:  0,
@@ -628,7 +628,7 @@ func TestAllowlistResolutionBuilder_Build(t *testing.T) {
 			mode:               InheritanceModeInherit,
 			groupName:          "nil-vars",
 			groupVars:          nil,
-			globalVars:         nil,
+			globalSet:          nil,
 			expectedMode:       InheritanceModeInherit,
 			expectedGroupName:  "nil-vars",
 			expectedGroupSize:  0,
@@ -642,7 +642,7 @@ func TestAllowlistResolutionBuilder_Build(t *testing.T) {
 				WithMode(tt.mode).
 				WithGroupName(tt.groupName).
 				WithGroupVariables(tt.groupVars).
-				WithGlobalVariables(tt.globalVars).
+				WithGlobalVariablesSet(tt.globalSet).
 				Build()
 
 			if resolution == nil {
@@ -700,7 +700,7 @@ func TestAllowlistResolutionBuilder_FluentInterface(t *testing.T) {
 		WithMode(InheritanceModeExplicit).
 		WithGroupName("test-group").
 		WithGroupVariables([]string{"VAR1", "VAR2", "VAR3"}).
-		WithGlobalVariables([]string{"GLOBAL1", "GLOBAL2"}).
+		WithGlobalVariablesSet(map[string]struct{}{"GLOBAL1": {}, "GLOBAL2": {}}).
 		Build()
 
 	if resolution == nil {
@@ -742,7 +742,7 @@ func TestAllowlistResolutionBuilder_DefaultMode(t *testing.T) {
 	resolution := NewAllowlistResolutionBuilder().
 		WithGroupName("default-mode").
 		WithGroupVariables([]string{"GROUP_VAR"}).
-		WithGlobalVariables([]string{"GLOBAL_VAR"}).
+		WithGlobalVariablesSet(map[string]struct{}{"GLOBAL_VAR": {}}).
 		Build()
 
 	if resolution.Mode != InheritanceModeInherit {
@@ -767,7 +767,7 @@ func TestAllowlistResolutionBuilder_Integration(t *testing.T) {
 		name                  string
 		mode                  InheritanceMode
 		groupVars             []string
-		globalVars            []string
+		globalSet             map[string]struct{}
 		testVariable          string
 		expectedAllowed       bool
 		expectedEffectiveSize int
@@ -776,7 +776,7 @@ func TestAllowlistResolutionBuilder_Integration(t *testing.T) {
 			name:                  "explicit mode allows group variables",
 			mode:                  InheritanceModeExplicit,
 			groupVars:             []string{"A", "B", "C"},
-			globalVars:            []string{"X", "Y"},
+			globalSet:             map[string]struct{}{"X": {}, "Y": {}},
 			testVariable:          "A",
 			expectedAllowed:       true,
 			expectedEffectiveSize: 3,
@@ -785,7 +785,7 @@ func TestAllowlistResolutionBuilder_Integration(t *testing.T) {
 			name:                  "explicit mode denies global variables",
 			mode:                  InheritanceModeExplicit,
 			groupVars:             []string{"A", "B", "C"},
-			globalVars:            []string{"X", "Y"},
+			globalSet:             map[string]struct{}{"X": {}, "Y": {}},
 			testVariable:          "X",
 			expectedAllowed:       false,
 			expectedEffectiveSize: 3,
@@ -794,7 +794,7 @@ func TestAllowlistResolutionBuilder_Integration(t *testing.T) {
 			name:                  "inherit mode allows global variables",
 			mode:                  InheritanceModeInherit,
 			groupVars:             []string{"A", "B", "C"},
-			globalVars:            []string{"X", "Y"},
+			globalSet:             map[string]struct{}{"X": {}, "Y": {}},
 			testVariable:          "X",
 			expectedAllowed:       true,
 			expectedEffectiveSize: 2,
@@ -803,7 +803,7 @@ func TestAllowlistResolutionBuilder_Integration(t *testing.T) {
 			name:                  "inherit mode denies group variables",
 			mode:                  InheritanceModeInherit,
 			groupVars:             []string{"A", "B", "C"},
-			globalVars:            []string{"X", "Y"},
+			globalSet:             map[string]struct{}{"X": {}, "Y": {}},
 			testVariable:          "A",
 			expectedAllowed:       false,
 			expectedEffectiveSize: 2,
@@ -812,7 +812,7 @@ func TestAllowlistResolutionBuilder_Integration(t *testing.T) {
 			name:                  "reject mode denies all variables",
 			mode:                  InheritanceModeReject,
 			groupVars:             []string{"A", "B", "C"},
-			globalVars:            []string{"X", "Y"},
+			globalSet:             map[string]struct{}{"X": {}, "Y": {}},
 			testVariable:          "A",
 			expectedAllowed:       false,
 			expectedEffectiveSize: 0,
@@ -825,7 +825,7 @@ func TestAllowlistResolutionBuilder_Integration(t *testing.T) {
 				WithMode(tt.mode).
 				WithGroupName("test").
 				WithGroupVariables(tt.groupVars).
-				WithGlobalVariables(tt.globalVars).
+				WithGlobalVariablesSet(tt.globalSet).
 				Build()
 
 			// Test IsAllowed behavior
@@ -1064,30 +1064,12 @@ func TestAllowlistResolutionBuilder_SetBasedAPI(t *testing.T) {
 	}
 }
 
-// TestAllowlistResolutionBuilder_ConflictDetection tests that Build() panics when both slice and set are provided
-func TestAllowlistResolutionBuilder_ConflictDetection(t *testing.T) {
-	t.Run("panics when both global slice and set are provided", func(t *testing.T) {
-		defer func() {
-			if r := recover(); r == nil {
-				t.Error("Build() did not panic when both WithGlobalVariables and WithGlobalVariablesSet were called")
-			} else {
-				expected := "AllowlistResolutionBuilder: both WithGlobalVariables and WithGlobalVariablesSet were called - use only one"
-				if r != expected {
-					t.Errorf("panic message = %v, want %v", r, expected)
-				}
-			}
-		}()
-
-		NewAllowlistResolutionBuilder().
-			WithGlobalVariables([]string{"VAR1"}).
-			WithGlobalVariablesSet(map[string]struct{}{"VAR2": {}}).
-			Build()
-	})
-
-	t.Run("does not panic when only slice is provided", func(t *testing.T) {
+// TestAllowlistResolutionBuilder_ValidConfiguration tests that Build() works with valid configurations
+func TestAllowlistResolutionBuilder_ValidConfiguration(t *testing.T) {
+	t.Run("does not panic with group slice and global set", func(t *testing.T) {
 		resolution := NewAllowlistResolutionBuilder().
 			WithGroupVariables([]string{"VAR1"}).
-			WithGlobalVariables([]string{"VAR2"}).
+			WithGlobalVariablesSet(map[string]struct{}{"VAR2": {}}).
 			Build()
 
 		if resolution == nil {
@@ -1095,9 +1077,18 @@ func TestAllowlistResolutionBuilder_ConflictDetection(t *testing.T) {
 		}
 	})
 
-	t.Run("does not panic when mixing group slice and global set", func(t *testing.T) {
+	t.Run("does not panic with only group variables", func(t *testing.T) {
 		resolution := NewAllowlistResolutionBuilder().
 			WithGroupVariables([]string{"VAR1"}).
+			Build()
+
+		if resolution == nil {
+			t.Error("Build() returned nil with valid configuration")
+		}
+	})
+
+	t.Run("does not panic with only global variables", func(t *testing.T) {
+		resolution := NewAllowlistResolutionBuilder().
 			WithGlobalVariablesSet(map[string]struct{}{"VAR2": {}}).
 			Build()
 
