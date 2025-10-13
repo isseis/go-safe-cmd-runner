@@ -515,63 +515,6 @@ func slicesEqual(a, b []string) bool {
 	return true
 }
 
-// TestBuildAllowlistSet tests the buildAllowlistSet helper function
-func TestBuildAllowlistSet(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    []string
-		expected map[string]struct{}
-	}{
-		{
-			name:     "empty slice",
-			input:    []string{},
-			expected: map[string]struct{}{},
-		},
-		{
-			name:     "single variable",
-			input:    []string{"VAR1"},
-			expected: map[string]struct{}{"VAR1": {}},
-		},
-		{
-			name:     "multiple variables",
-			input:    []string{"VAR1", "VAR2", "VAR3"},
-			expected: map[string]struct{}{"VAR1": {}, "VAR2": {}, "VAR3": {}},
-		},
-		{
-			name:     "nil slice",
-			input:    nil,
-			expected: map[string]struct{}{},
-		},
-		{
-			name:     "duplicate variables",
-			input:    []string{"VAR1", "VAR2", "VAR1"},
-			expected: map[string]struct{}{"VAR1": {}, "VAR2": {}},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := buildAllowlistSet(tt.input)
-
-			if len(result) != len(tt.expected) {
-				t.Errorf("buildAllowlistSet() result size = %d, want %d", len(result), len(tt.expected))
-			}
-
-			for key := range tt.expected {
-				if _, exists := result[key]; !exists {
-					t.Errorf("buildAllowlistSet() missing key: %s", key)
-				}
-			}
-
-			for key := range result {
-				if _, exists := tt.expected[key]; !exists {
-					t.Errorf("buildAllowlistSet() unexpected key: %s", key)
-				}
-			}
-		})
-	}
-}
-
 // TestNewAllowlistResolutionBuilder tests the builder constructor
 func TestNewAllowlistResolutionBuilder(t *testing.T) {
 	builder := NewAllowlistResolutionBuilder()
@@ -1051,5 +994,160 @@ func TestTestAllowlistResolutionFactoryNil(t *testing.T) {
 	// Effective size should be 0
 	if resolution.GetEffectiveSize() != 0 {
 		t.Errorf("Expected effective size 0, got %d", resolution.GetEffectiveSize())
+	}
+}
+
+// TestAllowlistResolutionBuilder_SetBasedAPI tests the set-based builder methods
+func TestAllowlistResolutionBuilder_SetBasedAPI(t *testing.T) {
+	tests := []struct {
+		name                  string
+		mode                  InheritanceMode
+		groupSet              map[string]struct{}
+		globalSet             map[string]struct{}
+		testVariable          string
+		expectedAllowed       bool
+		expectedEffectiveSize int
+	}{
+		{
+			name:                  "explicit mode with sets allows group variables",
+			mode:                  InheritanceModeExplicit,
+			groupSet:              map[string]struct{}{"A": {}, "B": {}, "C": {}},
+			globalSet:             map[string]struct{}{"X": {}, "Y": {}},
+			testVariable:          "A",
+			expectedAllowed:       true,
+			expectedEffectiveSize: 3,
+		},
+		{
+			name:                  "explicit mode with sets denies global variables",
+			mode:                  InheritanceModeExplicit,
+			groupSet:              map[string]struct{}{"A": {}, "B": {}, "C": {}},
+			globalSet:             map[string]struct{}{"X": {}, "Y": {}},
+			testVariable:          "X",
+			expectedAllowed:       false,
+			expectedEffectiveSize: 3,
+		},
+		{
+			name:                  "inherit mode with sets allows global variables",
+			mode:                  InheritanceModeInherit,
+			groupSet:              map[string]struct{}{"A": {}, "B": {}, "C": {}},
+			globalSet:             map[string]struct{}{"X": {}, "Y": {}},
+			testVariable:          "X",
+			expectedAllowed:       true,
+			expectedEffectiveSize: 2,
+		},
+		{
+			name:                  "empty sets",
+			mode:                  InheritanceModeInherit,
+			groupSet:              map[string]struct{}{},
+			globalSet:             map[string]struct{}{},
+			testVariable:          "ANY",
+			expectedAllowed:       false,
+			expectedEffectiveSize: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resolution := NewAllowlistResolutionBuilder().
+				WithMode(tt.mode).
+				WithGroupName("test-set-api").
+				WithGroupVariablesSet(tt.groupSet).
+				WithGlobalVariablesSet(tt.globalSet).
+				Build()
+
+			// Test IsAllowed behavior
+			allowed := resolution.IsAllowed(tt.testVariable)
+			if allowed != tt.expectedAllowed {
+				t.Errorf("IsAllowed(%q) = %v, want %v", tt.testVariable, allowed, tt.expectedAllowed)
+			}
+
+			// Test effective size
+			size := resolution.GetEffectiveSize()
+			if size != tt.expectedEffectiveSize {
+				t.Errorf("GetEffectiveSize() = %d, want %d", size, tt.expectedEffectiveSize)
+			}
+		})
+	}
+}
+
+// TestAllowlistResolutionBuilder_SetPriority tests that sets take precedence over slices
+func TestAllowlistResolutionBuilder_SetPriority(t *testing.T) {
+	groupSlice := []string{"SLICE_VAR"}
+	globalSlice := []string{"GLOBAL_SLICE"}
+	groupSet := map[string]struct{}{"SET_VAR": {}}
+	globalSet := map[string]struct{}{"GLOBAL_SET": {}}
+
+	// Set both slices and sets - sets should take precedence
+	resolution := NewAllowlistResolutionBuilder().
+		WithMode(InheritanceModeExplicit).
+		WithGroupName("priority-test").
+		WithGroupVariables(groupSlice).
+		WithGlobalVariables(globalSlice).
+		WithGroupVariablesSet(groupSet).
+		WithGlobalVariablesSet(globalSet).
+		Build()
+
+	// In explicit mode, only group variables should be allowed
+	// Since set takes precedence, only SET_VAR should be allowed
+	if !resolution.IsAllowed("SET_VAR") {
+		t.Error("SET_VAR should be allowed (from set)")
+	}
+
+	if resolution.IsAllowed("SLICE_VAR") {
+		t.Error("SLICE_VAR should not be allowed (set takes precedence)")
+	}
+
+	if resolution.IsAllowed("GLOBAL_SET") {
+		t.Error("GLOBAL_SET should not be allowed in explicit mode")
+	}
+
+	if resolution.IsAllowed("GLOBAL_SLICE") {
+		t.Error("GLOBAL_SLICE should not be allowed in explicit mode")
+	}
+
+	// Effective size should be 1 (only SET_VAR)
+	if resolution.GetEffectiveSize() != 1 {
+		t.Errorf("GetEffectiveSize() = %d, want 1", resolution.GetEffectiveSize())
+	}
+}
+
+// TestAllowlistResolutionBuilder_SliceAndSetEquivalence tests that slice and set APIs produce equivalent results
+func TestAllowlistResolutionBuilder_SliceAndSetEquivalence(t *testing.T) {
+	groupVars := []string{"A", "B", "C"}
+	globalVars := []string{"X", "Y", "Z"}
+
+	groupSet := map[string]struct{}{"A": {}, "B": {}, "C": {}}
+	globalSet := map[string]struct{}{"X": {}, "Y": {}, "Z": {}}
+
+	// Create two resolutions - one with slices, one with sets
+	resolutionSlice := NewAllowlistResolutionBuilder().
+		WithMode(InheritanceModeExplicit).
+		WithGroupName("slice-test").
+		WithGroupVariables(groupVars).
+		WithGlobalVariables(globalVars).
+		Build()
+
+	resolutionSet := NewAllowlistResolutionBuilder().
+		WithMode(InheritanceModeExplicit).
+		WithGroupName("set-test").
+		WithGroupVariablesSet(groupSet).
+		WithGlobalVariablesSet(globalSet).
+		Build()
+
+	// Both should behave identically
+	testVars := []string{"A", "B", "C", "X", "Y", "Z", "UNKNOWN"}
+	for _, v := range testVars {
+		sliceResult := resolutionSlice.IsAllowed(v)
+		setResult := resolutionSet.IsAllowed(v)
+
+		if sliceResult != setResult {
+			t.Errorf("IsAllowed(%q) slice=%v, set=%v - should be equal", v, sliceResult, setResult)
+		}
+	}
+
+	// Verify effective sizes match
+	if resolutionSlice.GetEffectiveSize() != resolutionSet.GetEffectiveSize() {
+		t.Errorf("GetEffectiveSize() slice=%d, set=%d - should be equal",
+			resolutionSlice.GetEffectiveSize(), resolutionSet.GetEffectiveSize())
 	}
 }

@@ -158,18 +158,16 @@ func (f *Filter) determineInheritanceMode(allowlist []string) runnertypes.Inheri
 func (f *Filter) ResolveAllowlistConfiguration(allowlist []string, groupName string) *runnertypes.AllowlistResolution {
 	mode := f.determineInheritanceMode(allowlist)
 
-	// Convert global allowlist map to slice for builder
-	globalVars := make([]string, 0, len(f.globalAllowlist))
-	for varName := range f.globalAllowlist {
-		globalVars = append(globalVars, varName)
-	}
+	// Build group set from slice using common utility
+	groupSet := common.SliceToSet(allowlist)
 
-	// Use Builder pattern for cleaner construction
+	// Use Builder pattern with set-based API for efficiency
+	// This avoids unnecessary map -> slice -> map conversions
 	resolution := runnertypes.NewAllowlistResolutionBuilder().
 		WithMode(mode).
 		WithGroupName(groupName).
-		WithGroupVariables(allowlist).
-		WithGlobalVariables(globalVars).
+		WithGroupVariablesSet(groupSet).
+		WithGlobalVariablesSet(f.globalAllowlist).
 		Build()
 
 	// Log the resolution for debugging
