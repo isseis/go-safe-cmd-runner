@@ -1939,7 +1939,7 @@ func TestConfigLoader_GlobalEnvIntegration(t *testing.T) {
 
 	// Sample TOML content with Global.Env
 	tomlContent := `[global]
-env = ["BASE_DIR=/opt/app", "LOG_LEVEL=info"]
+env = ["BASE_DIR=/opt/app", "LOG_LEVEL=info", "ECHO_CMD=/bin/echo"]
 env_allowlist = ["HOME"]
 verify_files = ["${BASE_DIR}/verify.sh", "${HOME}/script.sh"]
 
@@ -1947,7 +1947,7 @@ verify_files = ["${BASE_DIR}/verify.sh", "${HOME}/script.sh"]
 name = "test_group"
 [[groups.commands]]
 name = "test_cmd"
-cmd = "echo"
+cmd = "${ECHO_CMD}"
 args = ["${BASE_DIR}"]`
 
 	// Load configuration
@@ -1969,8 +1969,10 @@ args = ["${BASE_DIR}"]`
 	assert.Equal(t, "test_group", cfg.Groups[0].Name)
 	require.Len(t, cfg.Groups[0].Commands, 1)
 	assert.Equal(t, "test_cmd", cfg.Groups[0].Commands[0].Name)
-	assert.Equal(t, "echo", cfg.Groups[0].Commands[0].Cmd)
-	assert.Equal(t, []string{"${BASE_DIR}"}, cfg.Groups[0].Commands[0].Args) // Not yet expanded (Phase 4)
+	assert.Equal(t, "${ECHO_CMD}", cfg.Groups[0].Commands[0].Cmd)
+	assert.Equal(t, "/bin/echo", cfg.Groups[0].Commands[0].ExpandedCmd)
+	assert.Equal(t, []string{"${BASE_DIR}"}, cfg.Groups[0].Commands[0].Args)
+	assert.Equal(t, []string{"/opt/app"}, cfg.Groups[0].Commands[0].ExpandedArgs)
 }
 
 // TestConfigLoader_GlobalEnvError tests error handling in Global.Env expansion
@@ -2226,10 +2228,6 @@ func TestExpandGlobalVerifyFiles_Priority(t *testing.T) {
 	}
 }
 
-// ===========================================
-// Group.Env Expansion Tests (Phase 3)
-// ===========================================
-
 // TestExpandGroupEnv_Basic tests basic Group.Env expansion
 func TestExpandGroupEnv_Basic(t *testing.T) {
 	filter := environment.NewFilter([]string{})
@@ -2468,10 +2466,6 @@ func TestExpandGroupEnv_Empty(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{}, group.ExpandedEnv)
 }
-
-// ===========================================
-// Group.VerifyFiles Expansion Tests (Phase 3)
-// ===========================================
 
 // TestExpandGroupVerifyFiles_WithGroupEnv tests Group.VerifyFiles expansion with Group.Env
 func TestExpandGroupVerifyFiles_WithGroupEnv(t *testing.T) {

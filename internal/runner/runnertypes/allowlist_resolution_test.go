@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// TestNewAllowlistResolution tests the new Phase 2 constructor
+// TestNewAllowlistResolution tests the allowlist resolution constructor
 func TestNewAllowlistResolution(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -232,7 +232,7 @@ func TestSetToSortedSlice(t *testing.T) {
 	}
 }
 
-// TestIsAllowedOptimized tests the optimized Phase 2 IsAllowed method
+// TestIsAllowedOptimized tests the optimized IsAllowed method
 func TestIsAllowedOptimized(t *testing.T) {
 	groupSet := map[string]struct{}{"GROUP_VAR": {}, "SHARED_VAR": {}}
 	globalSet := map[string]struct{}{"GLOBAL_VAR": {}, "SHARED_VAR": {}}
@@ -382,7 +382,7 @@ func TestIsAllowedEdgeCases(t *testing.T) {
 	})
 }
 
-// TestLazyEvaluationGetters tests the Phase 2 lazy evaluation getter methods
+// TestLazyEvaluationGetters tests the lazy evaluation getter methods
 func TestLazyEvaluationGetters(t *testing.T) {
 	groupSet := map[string]struct{}{"GROUP_B": {}, "GROUP_A": {}, "SHARED": {}}
 	globalSet := map[string]struct{}{"GLOBAL_B": {}, "GLOBAL_A": {}, "SHARED": {}}

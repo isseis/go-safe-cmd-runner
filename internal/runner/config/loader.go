@@ -100,7 +100,7 @@ func (l *Loader) LoadConfig(content []byte) (*runnertypes.Config, error) {
 }
 
 // processConfig processes the configuration by expanding all environment variables and verify_files fields.
-// This function performs complete variable expansion in the following phases:
+// This function performs complete variable expansion in the following steps:
 //  1. Global.Env expansion with automatic environment variables
 //  2. Global.VerifyFiles expansion
 //  3. Group.Env and Group.VerifyFiles expansion for all groups
@@ -111,17 +111,17 @@ func processConfig(cfg *runnertypes.Config, filter *environment.Filter, expander
 	autoEnvProvider := environment.NewAutoEnvProvider(nil)
 	autoEnv := autoEnvProvider.Generate()
 
-	// Phase 1: Expand Global.Env variables (now with automatic environment variables)
+	// Step 1: Expand Global.Env variables (now with automatic environment variables)
 	if err := ExpandGlobalEnv(&cfg.Global, expander, autoEnv); err != nil {
 		return fmt.Errorf("failed to expand global environment variables: %w", err)
 	}
 
-	// Phase 2: Expand Global.VerifyFiles (now can reference Global.Env)
+	// Step 2: Expand Global.VerifyFiles (now can reference Global.Env)
 	if err := ExpandGlobalVerifyFiles(&cfg.Global, filter, expander); err != nil {
 		return fmt.Errorf("failed to expand global verify_files: %w", err)
 	}
 
-	// Phase 3: Group processing
+	// Step 3: Group processing
 	for i := range cfg.Groups {
 		// First expand Group.Env (can reference Global.ExpandedEnv and automatic environment variables)
 		if err := ExpandGroupEnv(&cfg.Groups[i], expander, autoEnv, cfg.Global.ExpandedEnv, cfg.Global.EnvAllowlist); err != nil {
@@ -134,7 +134,7 @@ func processConfig(cfg *runnertypes.Config, filter *environment.Filter, expander
 		}
 	}
 
-	// Phase 4: Command processing (Command.Env, Cmd, Args expansion)
+	// Step 4: Command processing (Command.Env, Cmd, Args expansion)
 	for i := range cfg.Groups {
 		group := &cfg.Groups[i]
 		for j := range group.Commands {

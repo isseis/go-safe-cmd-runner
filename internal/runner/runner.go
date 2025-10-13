@@ -251,7 +251,7 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 				fs,
 				opts.privilegeManager,
 				pathResolver,
-				slog.Default(), // Logger for Phase 1 implementation
+				slog.Default(),
 				resource.ExecutionModeNormal,
 				&resource.DryRunOptions{}, // Empty dry-run options for normal mode
 				nil,                       // Use default output manager
@@ -562,7 +562,7 @@ func (r *Runner) resolveEnvironmentVars(cmd *runnertypes.Command, group *runnert
 		"system_vars_count", len(systemEnvVars))
 
 	// Step 2: Merge system environment with pre-expanded Command.Env
-	// Command.Env should be pre-expanded during config loading (Phase 1)
+	// Command.Env should be pre-expanded during config loading
 	finalEnvVars := make(map[string]string)
 	maps.Copy(finalEnvVars, systemEnvVars)
 	maps.Copy(finalEnvVars, cmd.ExpandedEnv)
