@@ -616,18 +616,26 @@ func (b *AllowlistResolutionBuilder) WithGlobalVariablesSet(set map[string]struc
 }
 
 // Build creates the AllowlistResolution with the configured settings.
-// This method prioritizes pre-built sets over slices for efficiency:
-//   - If WithGroupVariablesSet was called, uses that set directly
-//   - Otherwise, converts groupVars slice to a set
-//   - Same logic applies for global variables
+// The builder accepts either slice-based or set-based inputs, but not both for the same field.
+// If both are provided for the same field, this method panics to catch programming errors early.
 //
 // Returns:
 //   - *AllowlistResolution: newly created resolution with pre-computed effective set
 //
 // Panics:
-//   - if newAllowlistResolution panics (should not happen with proper builder usage)
+//   - if both WithGroupVariables and WithGroupVariablesSet were called (programming error)
+//   - if both WithGlobalVariables and WithGlobalVariablesSet were called (programming error)
+//   - if newAllowlistResolution panics (e.g., nil sets passed)
 func (b *AllowlistResolutionBuilder) Build() *AllowlistResolution {
-	// Prioritize pre-built sets for efficiency (avoids redundant conversions)
+	// Detect conflicting configurations (both slice and set provided for same field)
+	if b.groupVars != nil && b.groupSet != nil {
+		panic("AllowlistResolutionBuilder: both WithGroupVariables and WithGroupVariablesSet were called - use only one")
+	}
+	if b.globalVars != nil && b.globalSet != nil {
+		panic("AllowlistResolutionBuilder: both WithGlobalVariables and WithGlobalVariablesSet were called - use only one")
+	}
+
+	// Use provided set if available, otherwise convert slice to set
 	var groupSet map[string]struct{}
 	if b.groupSet != nil {
 		groupSet = b.groupSet

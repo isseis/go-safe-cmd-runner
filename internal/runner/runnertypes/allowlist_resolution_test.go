@@ -1070,47 +1070,6 @@ func TestAllowlistResolutionBuilder_SetBasedAPI(t *testing.T) {
 	}
 }
 
-// TestAllowlistResolutionBuilder_SetPriority tests that sets take precedence over slices
-func TestAllowlistResolutionBuilder_SetPriority(t *testing.T) {
-	groupSlice := []string{"SLICE_VAR"}
-	globalSlice := []string{"GLOBAL_SLICE"}
-	groupSet := map[string]struct{}{"SET_VAR": {}}
-	globalSet := map[string]struct{}{"GLOBAL_SET": {}}
-
-	// Set both slices and sets - sets should take precedence
-	resolution := NewAllowlistResolutionBuilder().
-		WithMode(InheritanceModeExplicit).
-		WithGroupName("priority-test").
-		WithGroupVariables(groupSlice).
-		WithGlobalVariables(globalSlice).
-		WithGroupVariablesSet(groupSet).
-		WithGlobalVariablesSet(globalSet).
-		Build()
-
-	// In explicit mode, only group variables should be allowed
-	// Since set takes precedence, only SET_VAR should be allowed
-	if !resolution.IsAllowed("SET_VAR") {
-		t.Error("SET_VAR should be allowed (from set)")
-	}
-
-	if resolution.IsAllowed("SLICE_VAR") {
-		t.Error("SLICE_VAR should not be allowed (set takes precedence)")
-	}
-
-	if resolution.IsAllowed("GLOBAL_SET") {
-		t.Error("GLOBAL_SET should not be allowed in explicit mode")
-	}
-
-	if resolution.IsAllowed("GLOBAL_SLICE") {
-		t.Error("GLOBAL_SLICE should not be allowed in explicit mode")
-	}
-
-	// Effective size should be 1 (only SET_VAR)
-	if resolution.GetEffectiveSize() != 1 {
-		t.Errorf("GetEffectiveSize() = %d, want 1", resolution.GetEffectiveSize())
-	}
-}
-
 // TestAllowlistResolutionBuilder_SliceAndSetEquivalence tests that slice and set APIs produce equivalent results
 func TestAllowlistResolutionBuilder_SliceAndSetEquivalence(t *testing.T) {
 	groupVars := []string{"A", "B", "C"}
@@ -1150,4 +1109,91 @@ func TestAllowlistResolutionBuilder_SliceAndSetEquivalence(t *testing.T) {
 		t.Errorf("GetEffectiveSize() slice=%d, set=%d - should be equal",
 			resolutionSlice.GetEffectiveSize(), resolutionSet.GetEffectiveSize())
 	}
+}
+
+// TestAllowlistResolutionBuilder_ConflictDetection tests that Build() panics when both slice and set are provided
+func TestAllowlistResolutionBuilder_ConflictDetection(t *testing.T) {
+	t.Run("panics when both group slice and set are provided", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Build() did not panic when both WithGroupVariables and WithGroupVariablesSet were called")
+			} else {
+				expected := "AllowlistResolutionBuilder: both WithGroupVariables and WithGroupVariablesSet were called - use only one"
+				if r != expected {
+					t.Errorf("panic message = %v, want %v", r, expected)
+				}
+			}
+		}()
+
+		NewAllowlistResolutionBuilder().
+			WithGroupVariables([]string{"VAR1"}).
+			WithGroupVariablesSet(map[string]struct{}{"VAR2": {}}).
+			Build()
+	})
+
+	t.Run("panics when both global slice and set are provided", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Build() did not panic when both WithGlobalVariables and WithGlobalVariablesSet were called")
+			} else {
+				expected := "AllowlistResolutionBuilder: both WithGlobalVariables and WithGlobalVariablesSet were called - use only one"
+				if r != expected {
+					t.Errorf("panic message = %v, want %v", r, expected)
+				}
+			}
+		}()
+
+		NewAllowlistResolutionBuilder().
+			WithGlobalVariables([]string{"VAR1"}).
+			WithGlobalVariablesSet(map[string]struct{}{"VAR2": {}}).
+			Build()
+	})
+
+	t.Run("panics when both slice and set are provided for both fields", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Build() did not panic when conflicts exist")
+			}
+		}()
+
+		NewAllowlistResolutionBuilder().
+			WithGroupVariables([]string{"G1"}).
+			WithGroupVariablesSet(map[string]struct{}{"G2": {}}).
+			WithGlobalVariables([]string{"X1"}).
+			WithGlobalVariablesSet(map[string]struct{}{"X2": {}}).
+			Build()
+	})
+
+	t.Run("does not panic when only slice is provided", func(t *testing.T) {
+		resolution := NewAllowlistResolutionBuilder().
+			WithGroupVariables([]string{"VAR1"}).
+			WithGlobalVariables([]string{"VAR2"}).
+			Build()
+
+		if resolution == nil {
+			t.Error("Build() returned nil with valid configuration")
+		}
+	})
+
+	t.Run("does not panic when only set is provided", func(t *testing.T) {
+		resolution := NewAllowlistResolutionBuilder().
+			WithGroupVariablesSet(map[string]struct{}{"VAR1": {}}).
+			WithGlobalVariablesSet(map[string]struct{}{"VAR2": {}}).
+			Build()
+
+		if resolution == nil {
+			t.Error("Build() returned nil with valid configuration")
+		}
+	})
+
+	t.Run("does not panic when mixing slice and set for different fields", func(t *testing.T) {
+		resolution := NewAllowlistResolutionBuilder().
+			WithGroupVariables([]string{"VAR1"}).
+			WithGlobalVariablesSet(map[string]struct{}{"VAR2": {}}).
+			Build()
+
+		if resolution == nil {
+			t.Error("Build() returned nil with valid configuration")
+		}
+	})
 }
