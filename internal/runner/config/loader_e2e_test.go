@@ -427,25 +427,22 @@ func TestE2E_FullExpansionPipeline(t *testing.T) {
 		})
 
 		// This test case verifies expansion functionality
-		// Expansion implementation is complete, uncomment and update this section
-		/*
-			t.Run("ExpansionTest", func(t *testing.T) {
-				// Command.ExpandedEnv should be populated with expanded variables
-				require.NotNil(t, runAppCmd.ExpandedEnv, "ExpandedEnv should be populated")
-				assert.Equal(t, "/opt/myapp/logs", runAppCmd.ExpandedEnv["LOG_DIR"],
-					"LOG_DIR should expand APP_DIR from Group.Env")
+		t.Run("ExpansionTest", func(t *testing.T) {
+			// Command.ExpandedEnv should be populated with expanded variables
+			require.NotNil(t, runAppCmd.ExpandedEnv, "ExpandedEnv should be populated")
+			assert.Equal(t, "/opt/myapp/logs", runAppCmd.ExpandedEnv["LOG_DIR"],
+				"LOG_DIR should expand APP_DIR from Group.Env")
 
-				// Command.ExpandedCmd should be expanded
-				assert.Equal(t, "/opt/myapp/bin/server", runAppCmd.ExpandedCmd,
-					"ExpandedCmd should expand APP_DIR from Group.Env")
+			// Command.ExpandedCmd should be expanded
+			assert.Equal(t, "/opt/myapp/bin/server", runAppCmd.ExpandedCmd,
+				"ExpandedCmd should expand APP_DIR from Group.Env")
 
-				// Command.ExpandedArgs should be expanded
-				require.Len(t, runAppCmd.ExpandedArgs, 2, "ExpandedArgs should have 2 elements")
-				assert.Equal(t, "--log", runAppCmd.ExpandedArgs[0], "First arg should be unchanged")
-				assert.Equal(t, "/opt/myapp/logs/app.log", runAppCmd.ExpandedArgs[1],
-					"Second arg should expand LOG_DIR from Command.Env")
-			})
-		*/
+			// Command.ExpandedArgs should be expanded
+			require.Len(t, runAppCmd.ExpandedArgs, 2, "ExpandedArgs should have 2 elements")
+			assert.Equal(t, "--log", runAppCmd.ExpandedArgs[0], "First arg should be unchanged")
+			assert.Equal(t, "/opt/myapp/logs/app.log", runAppCmd.ExpandedArgs[1],
+				"Second arg should expand LOG_DIR from Command.Env")
+		})
 	})
 }
 

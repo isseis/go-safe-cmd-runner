@@ -1970,7 +1970,7 @@ args = ["${BASE_DIR}"]`
 	require.Len(t, cfg.Groups[0].Commands, 1)
 	assert.Equal(t, "test_cmd", cfg.Groups[0].Commands[0].Name)
 	assert.Equal(t, "echo", cfg.Groups[0].Commands[0].Cmd)
-	assert.Equal(t, []string{"${BASE_DIR}"}, cfg.Groups[0].Commands[0].Args)
+	assert.Equal(t, []string{"${BASE_DIR}"}, cfg.Groups[0].Commands[0].Args) // Not yet expanded
 }
 
 // TestConfigLoader_GlobalEnvError tests error handling in Global.Env expansion
