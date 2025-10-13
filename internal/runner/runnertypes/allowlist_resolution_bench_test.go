@@ -18,8 +18,7 @@ func BenchmarkAllowlistResolutionIsAllowed(b *testing.B) {
 			globalVars[i] = fmt.Sprintf("GLOBAL_VAR_%d", i)
 		}
 
-		factory := TestAllowlistResolutionFactory{}
-		resolution := factory.CreateWithMode(InheritanceModeInherit, globalVars, []string{})
+		resolution := NewTestAllowlistResolutionWithMode(InheritanceModeInherit, globalVars, []string{})
 
 		b.Run(fmt.Sprintf("size_%d", size), func(b *testing.B) {
 			// Test variable that exists (best case)
@@ -54,8 +53,7 @@ func BenchmarkAllowlistResolutionGetters(b *testing.B) {
 		groupVars[i] = fmt.Sprintf("GROUP_VAR_%d", i)
 	}
 
-	factory := TestAllowlistResolutionFactory{}
-	resolution := factory.CreateWithMode(InheritanceModeInherit, globalVars, groupVars)
+	resolution := NewTestAllowlistResolutionWithMode(InheritanceModeInherit, globalVars, groupVars)
 
 	b.Run("GetEffectiveList", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
@@ -95,17 +93,15 @@ func BenchmarkAllowlistResolutionConstruction(b *testing.B) {
 			groupVars[i] = fmt.Sprintf("GROUP_VAR_%d", i)
 		}
 
-		factory := TestAllowlistResolutionFactory{}
-
-		b.Run(fmt.Sprintf("factory_simple_size_%d", size), func(b *testing.B) {
+		b.Run(fmt.Sprintf("simple_size_%d", size), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				_ = factory.CreateSimple(globalVars, groupVars)
+				_ = NewTestAllowlistResolutionSimple(globalVars, groupVars)
 			}
 		})
 
-		b.Run(fmt.Sprintf("factory_explicit_size_%d", size), func(b *testing.B) {
+		b.Run(fmt.Sprintf("explicit_size_%d", size), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				_ = factory.CreateWithMode(InheritanceModeExplicit, globalVars, groupVars)
+				_ = NewTestAllowlistResolutionWithMode(InheritanceModeExplicit, globalVars, groupVars)
 			}
 		})
 
@@ -133,13 +129,11 @@ func BenchmarkAllowlistResolutionMemory(b *testing.B) {
 		groupVars[i] = fmt.Sprintf("GROUP_VAR_%d", i)
 	}
 
-	factory := TestAllowlistResolutionFactory{}
-
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		resolution := factory.CreateSimple(globalVars, groupVars)
+		resolution := NewTestAllowlistResolutionSimple(globalVars, groupVars)
 
 		// Use the resolution to prevent optimization
 		_ = resolution.IsAllowed("GLOBAL_VAR_500")

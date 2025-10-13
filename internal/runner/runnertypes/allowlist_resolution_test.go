@@ -843,13 +843,12 @@ func TestAllowlistResolutionBuilder_Integration(t *testing.T) {
 	}
 }
 
-// TestTestAllowlistResolutionFactoryCreateSimple tests the CreateSimple method
-func TestTestAllowlistResolutionFactoryCreateSimple(t *testing.T) {
-	factory := TestAllowlistResolutionFactory{}
+// TestNewTestAllowlistResolutionSimple tests the NewTestAllowlistResolutionSimple function
+func TestNewTestAllowlistResolutionSimple(t *testing.T) {
 	globalVars := []string{"PATH", "HOME"}
 	groupVars := []string{"APP_ENV", "DEBUG"}
 
-	resolution := factory.CreateSimple(globalVars, groupVars)
+	resolution := NewTestAllowlistResolutionSimple(globalVars, groupVars)
 
 	if resolution == nil {
 		t.Fatal("CreateSimple() returned nil")
@@ -880,9 +879,8 @@ func TestTestAllowlistResolutionFactoryCreateSimple(t *testing.T) {
 	}
 }
 
-// TestTestAllowlistResolutionFactoryCreateWithMode tests the CreateWithMode method
-func TestTestAllowlistResolutionFactoryCreateWithMode(t *testing.T) {
-	factory := TestAllowlistResolutionFactory{}
+// TestNewTestAllowlistResolutionWithMode tests the NewTestAllowlistResolutionWithMode function
+func TestNewTestAllowlistResolutionWithMode(t *testing.T) {
 	globalVars := []string{"PATH", "HOME"}
 	groupVars := []string{"APP_ENV", "DEBUG"}
 
@@ -914,7 +912,7 @@ func TestTestAllowlistResolutionFactoryCreateWithMode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resolution := factory.CreateWithMode(tt.mode, globalVars, groupVars)
+			resolution := NewTestAllowlistResolutionWithMode(tt.mode, globalVars, groupVars)
 
 			if resolution == nil {
 				t.Fatal("CreateWithMode() returned nil")
@@ -951,11 +949,9 @@ func TestTestAllowlistResolutionFactoryCreateWithMode(t *testing.T) {
 	}
 }
 
-// TestTestAllowlistResolutionFactoryEmpty tests factory with empty variable lists
-func TestTestAllowlistResolutionFactoryEmpty(t *testing.T) {
-	factory := TestAllowlistResolutionFactory{}
-
-	resolution := factory.CreateSimple([]string{}, []string{})
+// TestNewTestAllowlistResolutionSimpleEmpty tests function with empty variable lists
+func TestNewTestAllowlistResolutionSimpleEmpty(t *testing.T) {
+	resolution := NewTestAllowlistResolutionSimple([]string{}, []string{})
 	if resolution == nil {
 		t.Fatal("CreateSimple() with empty lists returned nil")
 	}
@@ -974,11 +970,9 @@ func TestTestAllowlistResolutionFactoryEmpty(t *testing.T) {
 	}
 }
 
-// TestTestAllowlistResolutionFactoryNil tests factory with nil variable lists
-func TestTestAllowlistResolutionFactoryNil(t *testing.T) {
-	factory := TestAllowlistResolutionFactory{}
-
-	resolution := factory.CreateSimple(nil, nil)
+// TestNewTestAllowlistResolutionSimpleNil tests function with nil variable lists
+func TestNewTestAllowlistResolutionSimpleNil(t *testing.T) {
+	resolution := NewTestAllowlistResolutionSimple(nil, nil)
 	if resolution == nil {
 		t.Fatal("CreateSimple() with nil lists returned nil")
 	}
