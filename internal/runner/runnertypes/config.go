@@ -238,11 +238,8 @@ func (m InheritanceMode) String() string {
 
 // AllowlistResolution contains resolved allowlist information for debugging and logging
 type AllowlistResolution struct {
-	Mode            InheritanceMode
-	GroupAllowlist  []string
-	GlobalAllowlist []string
-	EffectiveList   []string // The actual allowlist being used
-	GroupName       string   // For logging context
+	Mode      InheritanceMode
+	GroupName string // For logging context
 
 	// groupAllowlistSet and globalAllowlistSet are internal maps for O(1) lookup performance.
 	// These are populated from GroupAllowlist and GlobalAllowlist during resolution.
@@ -253,14 +250,14 @@ type AllowlistResolution struct {
 	effectiveSet map[string]struct{} // Pre-computed effective allowlist set
 
 	// Phase 2 additions: Lazy evaluation caches for getter methods
-	groupAllowlistCache  []string // Cache for GetGroupAllowlist()
-	globalAllowlistCache []string // Cache for GetGlobalAllowlist()
-	effectiveListCache   []string // Cache for GetEffectiveList()
-
-	// Thread-safe lazy initialization
 	groupAllowlistOnce  sync.Once // Ensures groupAllowlistCache is initialized only once
-	globalAllowlistOnce sync.Once // Ensures globalAllowlistCache is initialized only once
-	effectiveListOnce   sync.Once // Ensures effectiveListCache is initialized only once
+	groupAllowlistCache []string  // Cache for GetGroupAllowlist()
+
+	globalAllowlistOnce  sync.Once // Ensures globalAllowlistCache is initialized only once
+	globalAllowlistCache []string  // Cache for GetGlobalAllowlist()
+
+	effectiveListOnce  sync.Once // Ensures effectiveListCache is initialized only once
+	effectiveListCache []string  // Cache for GetEffectiveList()
 }
 
 // IsAllowed checks if a variable is allowed in the effective allowlist.
@@ -400,11 +397,6 @@ func newAllowlistResolution(
 		GroupName:          groupName,
 		groupAllowlistSet:  groupSet,
 		globalAllowlistSet: globalSet,
-
-		// Phase 2: slice fields will be lazily generated
-		GroupAllowlist:  []string{},
-		GlobalAllowlist: []string{},
-		EffectiveList:   []string{},
 	}
 
 	// Pre-compute effectiveSet for optimization
