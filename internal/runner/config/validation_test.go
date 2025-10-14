@@ -205,3 +205,89 @@ func TestValidateAndParseEnvList(t *testing.T) {
 		})
 	}
 }
+
+// TestValidateVariableName tests internal variable name validation
+func TestValidateVariableName(t *testing.T) {
+	tests := []struct {
+		name         string
+		variableName string
+		wantErr      bool
+		errContains  string
+	}{
+		{
+			name:         "valid lowercase name",
+			variableName: "home",
+			wantErr:      false,
+		},
+		{
+			name:         "valid uppercase name",
+			variableName: "MY_VAR",
+			wantErr:      false,
+		},
+		{
+			name:         "valid mixed case name",
+			variableName: "user_path",
+			wantErr:      false,
+		},
+		{
+			name:         "valid name starting with underscore",
+			variableName: "_private",
+			wantErr:      false,
+		},
+		{
+			name:         "valid name with numbers",
+			variableName: "var123",
+			wantErr:      false,
+		},
+		{
+			name:         "invalid name starting with number",
+			variableName: "123var",
+			wantErr:      true,
+			errContains:  "variable name must start with a letter or underscore",
+		},
+		{
+			name:         "invalid name with hyphen",
+			variableName: "my-var",
+			wantErr:      true,
+			errContains:  "variable name contains invalid character",
+		},
+		{
+			name:         "invalid name with dot",
+			variableName: "my.var",
+			wantErr:      true,
+			errContains:  "variable name contains invalid character",
+		},
+		{
+			name:         "invalid name with space",
+			variableName: "my var",
+			wantErr:      true,
+			errContains:  "variable name contains invalid character",
+		},
+		{
+			name:         "reserved prefix __runner_",
+			variableName: "__runner_foo",
+			wantErr:      true,
+			errContains:  "reserved for internal use",
+		},
+		{
+			name:         "empty string",
+			variableName: "",
+			wantErr:      true,
+			errContains:  "variable name cannot be empty",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateVariableName(tt.variableName)
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}

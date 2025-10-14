@@ -37,40 +37,42 @@
 **目的**: 新しいフィールドを追加し、基本的なパースとバリデーションを実装
 
 #### 2.1.1 構造体定義の拡張
-- [ ] `internal/runner/runnertypes/config.go`を編集
-  - [ ] `GlobalConfig`に以下のフィールドを追加:
+- [x] `internal/runner/runnertypes/config.go`を編集
+  - [x] `GlobalConfig`に以下のフィールドを追加:
     ```go
     FromEnv []string `toml:"from_env"` // System env var import
     Vars    []string `toml:"vars"`     // Internal variable definitions
     ExpandedVars map[string]string `toml:"-"` // Expanded internal variables
     ```
-  - [ ] `CommandGroup`に以下のフィールドを追加:
+  - [x] `CommandGroup`に以下のフィールドを追加:
     ```go
     FromEnv []string `toml:"from_env"` // System env var import (with inheritance)
     Vars    []string `toml:"vars"`     // Group-level internal variables
     ExpandedVars map[string]string `toml:"-"` // Expanded internal variables
     ```
-  - [ ] `Command`に以下のフィールドを追加:
+  - [x] `Command`に以下のフィールドを追加:
     ```go
     Vars []string `toml:"vars"` // Command-level internal variables
     ExpandedVars map[string]string `toml:"-"` // Expanded internal variables
     ```
 
 #### 2.1.2 変数名バリデーション関数の実装
-- [ ] `internal/runner/config/validation.go`を作成または拡張
-  - [ ] `validateVariableName(name string) error`関数を実装
-    - POSIX準拠チェック: `^[A-Za-z_][A-Za-z0-9_]*$`
+- [x] `internal/runner/config/validation.go`を作成または拡張
+  - [x] `validateVariableName(name string) error`関数を実装
+    - **既存の `security.ValidateVariableName` を再利用** (POSIX準拠チェック済み)
     - 予約プレフィックスチェック: `__runner_` で始まる名前を拒否（ユーザー定義変数）
-    - 空文字列チェック
-  - [ ] テスト: `validation_test.go`
-    - [ ] 正常な変数名のテスト（`home`, `user_path`, `MY_VAR`）
-    - [ ] 不正な変数名のテスト（数字始まり、ハイフン含む等）
-    - [ ] 予約プレフィックスのテスト（`__runner_foo`）
-    - [ ] 空文字列のテスト
+    - 空文字列チェック（`security.ValidateVariableName`内で実施済み）
+  - [x] テスト: `validation_test.go`
+    - [x] 正常な変数名のテスト（`home`, `user_path`, `MY_VAR`）
+    - [x] 不正な変数名のテスト（数字始まり、ハイフン含む等）
+    - [x] 予約プレフィックスのテスト（`__runner_foo`）
+    - [x] 空文字列のテスト
+  - **注意**: `security.ValidateVariableName` は既にPOSIX準拠と空文字列チェックを実装済み。
+    `config.validateVariableName` は予約プレフィックスチェックを追加するラッパー関数として実装。
 
 #### 2.1.3 エラー型の定義
-- [ ] `internal/runner/config/errors.go`を編集または作成
-  - [ ] 以下のエラー型を定義:
+- [x] `internal/runner/config/errors.go`を編集または作成
+  - [x] 以下のエラー型を定義:
     ```go
     // ErrInvalidVariableName is returned when a variable name does not conform to POSIX naming rules.
     type ErrInvalidVariableName struct {
@@ -113,7 +115,7 @@
     }
 
     // ErrInvalidEscapeSequence is returned when an invalid escape sequence is found.
-    type ErrInvalidEscapeSequence struct {
+    type ErrInvalidEscapeSequence struct{
         Level    string
         Field    string
         Sequence string
@@ -148,11 +150,11 @@
   - [ ] ExpandedVarsがnilまたは空であることを確認（まだ展開していない）
 
 #### 2.1.5 Phase 1の完了確認
-- [ ] すべての既存テストがPASS
-- [ ] Phase 1の新規テストがすべてPASS
-- [ ] `make lint`でエラーなし
-- [ ] `make fmt`でフォーマット完了
-- [ ] コミット: "Add FromEnv/Vars/ExpandedVars fields and basic validation"
+- [x] すべての既存テストがPASS
+- [x] Phase 1の新規テストがすべてPASS
+- [x] `make lint`でエラーなし
+- [x] `make fmt`でフォーマット完了
+- [x] コミット: "Add FromEnv/Vars/ExpandedVars fields and basic validation"
 
 ---
 
