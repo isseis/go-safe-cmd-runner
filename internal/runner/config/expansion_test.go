@@ -2776,7 +2776,6 @@ func TestExpandString_Basic(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_ = slog.Default()
 			result, err := config.ExpandString(tt.input, tt.vars, "global", "test_field")
 
 			if tt.wantErr {
