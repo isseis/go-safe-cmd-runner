@@ -927,7 +927,7 @@ func ProcessFromEnv(fromEnv []string, envAllowlist []string, systemEnv map[strin
 					Level:        level,
 					Field:        "from_env",
 					VariableName: internalName,
-Prefix:       reservedVariablePrefix,
+					Prefix:       reservedVariablePrefix,
 				}
 			}
 			// Otherwise, it's a POSIX validation error from security.ValidateVariableName
@@ -970,6 +970,101 @@ Prefix:       reservedVariablePrefix,
 		}
 
 		result[internalName] = value
+	}
+
+	return result, nil
+}
+
+// ============================================================================
+// Phase 4: vars processing
+// ============================================================================
+
+// ProcessVars processes vars field and expands internal variable definitions.
+//
+// The function processes variables by first parsing and validating all definitions,
+// and then expanding them sequentially.
+//
+// Each variable is expanded in the order it appears in the `vars` array. It can
+// reference variables from `baseExpandedVars` or any other variables that have been
+// previously defined in the same `vars` array.
+//
+// NOTE: This sequential approach does not support forward references. For instance,
+// in `vars: ["A=%{B}", "B=value"]`, the expansion of `A` will fail because `B` has
+// not been processed yet. This results in an `ErrUndefinedVariable`.
+//
+// Self-extension (e.g., "path=%{path}:/custom") is supported, provided that `path`
+// is already defined in `baseExpandedVars`.
+//
+// Parameters:
+//   - vars: Array of "var_name=value" definitions (value can contain %{VAR} references)
+//   - baseExpandedVars: Base internal variables (from from_env or parent level)
+//   - level: Configuration level for error reporting (e.g., "global", "group[name]", "command[name]")
+//
+// Returns:
+//   - Map of expanded internal variables (merged with baseExpandedVars)
+//   - Error if processing fails (invalid format, invalid name, circular reference, undefined variable, etc.)
+//
+// Example:
+//
+//	vars := []string{"var1=a", "var2=%{var1}/b", "var3=%{var2}/c"}
+//	baseVars := map[string]string{"home": "/home/user"}
+//	result, err := ProcessVars(vars, baseVars, "global")
+//	// result: {"home": "/home/user", "var1": "a", "var2": "a/b", "var3": "a/b/c"}
+func ProcessVars(vars []string, baseExpandedVars map[string]string, level string) (map[string]string, error) {
+	// Start with base internal variables (copy to avoid modifying input)
+	result := make(map[string]string, len(baseExpandedVars)+len(vars))
+	maps.Copy(result, baseExpandedVars)
+
+	// First pass: Parse and validate all vars definitions, store unexpanded
+	parsedVars := make([]struct {
+		name  string
+		value string
+	}, 0, len(vars))
+
+	for _, varDef := range vars {
+		// Parse "var_name=value" format
+		varName, varValue, ok := common.ParseEnvVariable(varDef)
+		if !ok {
+			return nil, fmt.Errorf("%w in %s: '%s' (expected 'var_name=value')", ErrInvalidVarsFormat, level, varDef)
+		}
+
+		// Validate variable name
+		if err := validateVariableName(varName); err != nil {
+			// Check if it's a reserved prefix error
+			if errors.Is(err, ErrReservedVariablePrefix) {
+				return nil, &ErrReservedVariablePrefixDetail{
+					Level:        level,
+					Field:        "vars",
+					VariableName: varName,
+					Prefix:       reservedVariablePrefix,
+				}
+			}
+			// Otherwise, it's a POSIX validation error from security.ValidateVariableName
+			return nil, &ErrInvalidVariableNameDetail{
+				Level:        level,
+				Field:        "vars",
+				VariableName: varName,
+				Reason:       err.Error(),
+			}
+		}
+
+		parsedVars = append(parsedVars, struct {
+			name  string
+			value string
+		}{varName, varValue})
+	}
+
+	// Second pass: Expand each variable in order
+	// Each variable can reference: baseVars + previously defined vars in this array
+	for _, pv := range parsedVars {
+		// Expand the value using current result map as context
+		expandedValue, err := ExpandString(pv.value, result, level, "vars")
+		if err != nil {
+			return nil, err
+		}
+
+		// Update result with expanded value
+		result[pv.name] = expandedValue
 	}
 
 	return result, nil
