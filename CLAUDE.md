@@ -6,7 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Documents should be placed under docs
 - Default language is Japanese (exceptions: README.md, CLAUDE.md)
 - Default format is markdown
-- Use mermaid syntax for drawing
+ - Use Mermaid syntax for diagrams.
+  - Follow the style and legend used in `docs/tasks/0030_verify_files_variable_expansion/02_architecture.md`.
+  - Use a cylinder shape for "data" nodes instead of the default rectangle (in Mermaid flowcharts a cylinder node can be written as `[(data)]`).
 
 ## Commands
 
@@ -46,6 +48,7 @@ This is a Go-based secure command runner with the following core components:
 - **Security First**: Path validation, command injection prevention, privilege separation
 - **Error Handling**: Comprehensive error types and validation
 - **YAGNI**: Use simple and clear approach to satisfy the requirement. Don't take complex approach for not-yet-planned features.
+ - **DRY**: Don't repeat yourself. Before adding new code, check the codebase and prefer reusing existing implementations.
 
 ### Security Features
 - Command path validation and sanitization
