@@ -910,7 +910,7 @@ func ProcessFromEnv(fromEnv []string, envAllowlist []string, systemEnv map[strin
 		allowlistMap[allowedVar] = true
 	}
 
-	result := make(map[string]string, len(fromEnv))
+	result := make(map[string]string)
 
 	for _, mapping := range fromEnv {
 		// Parse "internal_name=SYSTEM_VAR" format
@@ -997,8 +997,7 @@ func ProcessFromEnv(fromEnv []string, envAllowlist []string, systemEnv map[strin
 //	// result: {"home": "/home/user", "var1": "a", "var2": "a/b", "var3": "a/b/c"}
 func ProcessVars(vars []string, baseExpandedVars map[string]string, level string) (map[string]string, error) {
 	// Start with base internal variables (copy to avoid modifying input)
-	result := make(map[string]string, len(baseExpandedVars)+len(vars))
-	maps.Copy(result, baseExpandedVars)
+	result := maps.Clone(baseExpandedVars)
 
 	// First pass: Parse and validate all vars definitions, store unexpanded
 	parsedVars := make([]struct {
@@ -1067,7 +1066,7 @@ func ProcessVars(vars []string, baseExpandedVars map[string]string, level string
 //	result, err := ProcessEnv(env, internalVars, "global")
 //	// result: {"BASE_DIR": "/opt/myapp", "LOG_DIR": "/opt/myapp/logs"}
 func ProcessEnv(env []string, expandedVars map[string]string, level string) (map[string]string, error) {
-	result := make(map[string]string, len(env))
+	result := make(map[string]string)
 
 	for _, envDef := range env {
 		// Parse "VAR=value" format
@@ -1381,10 +1380,7 @@ func ExpandCommandConfig(cmd *runnertypes.Command, group *runnertypes.CommandGro
 	level := fmt.Sprintf("command[%s]", cmd.Name)
 
 	// Step 1: Inherit Group.ExpandedVars as base (copy the map)
-	baseInternalVars := make(map[string]string, len(group.ExpandedVars))
-	for k, v := range group.ExpandedVars {
-		baseInternalVars[k] = v
-	}
+	baseInternalVars := maps.Clone(group.ExpandedVars)
 
 	// Step 2 & 3: Use common helper to expand vars and env
 	expandedVars, expandedEnv, err := expandCommonFields(cmd.Vars, cmd.Env, baseInternalVars, level)
