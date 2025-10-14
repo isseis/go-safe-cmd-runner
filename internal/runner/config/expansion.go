@@ -1131,7 +1131,7 @@ func expandConfigFields(fields configFieldsToExpand, baseInternalVars map[string
 	// Step 1: Process vars to expand internal variable definitions
 	expandedVars, err := ProcessVars(fields.vars, baseInternalVars, level)
 	if err != nil {
-		return result, fmt.Errorf("failed to process %s vars: %w", level, err)
+		return result, err
 	}
 	result.expandedVars = expandedVars
 
@@ -1185,7 +1185,7 @@ func ExpandGlobalConfig(global *runnertypes.GlobalConfig, filter *environment.Fi
 	// Step 2: Process from_env to get base internal variables
 	baseInternalVars, err := ProcessFromEnv(global.FromEnv, global.EnvAllowlist, systemEnv, "global")
 	if err != nil {
-		return fmt.Errorf("failed to process global from_env: %w", err)
+		return err
 	}
 
 	// Step 3: Expand remaining config fields using helper
@@ -1263,7 +1263,7 @@ func ResolveGroupFromEnv(
 			fmt.Sprintf("group[%s]", groupName),
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to process group[%s] from_env: %w", groupName, err)
+			return nil, err
 		}
 
 		return baseInternalVars, nil

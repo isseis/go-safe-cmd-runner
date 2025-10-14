@@ -4465,7 +4465,7 @@ func TestResolveGroupFromEnv(t *testing.T) {
 			groupEnvAllowlist: nil,
 			expectedResult:    nil,
 			expectError:       true,
-			errorContains:     "failed to process group[test_group] from_env",
+			errorContains:     "invalid from_env format in group[test_group]",
 		},
 		{
 			name:              "from_env with variable not in allowlist",
