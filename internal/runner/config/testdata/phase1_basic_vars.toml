@@ -1,0 +1,16 @@
+[global]
+env_allowlist = ["HOME", "PATH"]
+from_env = ["home=HOME", "path=PATH"]
+vars = ["app_dir=/opt/myapp"]
+env = ["BASE_DIR=%{app_dir}"]
+
+[[groups]]
+name = "test_group"
+vars = ["log_dir=%{app_dir}/logs"]
+env = ["LOG_DIR=%{log_dir}"]
+
+[[groups.commands]]
+name = "test_cmd"
+vars = ["temp_file=%{log_dir}/temp.log"]
+cmd = "/bin/echo"
+args = ["%{temp_file}"]
