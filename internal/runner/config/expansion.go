@@ -139,7 +139,7 @@ func ExpandCommand(expCxt *ExpansionContext) (string, []string, map[string]strin
 	maps.Copy(env, autoEnv)
 
 	// Expand command name
-	expandedCmd, err := expander.ExpandString(cmd.Cmd, env, effectiveAllowlist, groupName, make(map[string]bool))
+	expandedCmd, err := expander.ExpandString(cmd.Cmd, env, effectiveAllowlist, groupName, make(map[string]struct{}))
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("failed to expand command: %w", err)
 	}
@@ -206,12 +206,13 @@ func expandVerifyFiles(
 
 	// Use existing Filter.ParseSystemEnvironment() with allowlist predicate
 	// Only include environment variables that are in the allowlist
-	allowlistSet := make(map[string]bool, len(allowlist))
+	allowlistSet := common.SliceToSet(allowlist)
 	for _, varName := range allowlist {
-		allowlistSet[varName] = true
+		allowlistSet[varName] = struct{}{}
 	}
 	systemEnv := filter.ParseSystemEnvironment(func(varName string) bool {
-		return allowlistSet[varName]
+		_, ok := allowlistSet[varName]
+		return ok
 	})
 
 	// Merge envVars (Global/Group.Env) with systemEnv (envVars takes precedence)
@@ -227,7 +228,7 @@ func expandVerifyFiles(
 			combinedEnv, // Use combined environment (Global/Group + System)
 			allowlist,
 			level,
-			make(map[string]bool),
+			make(map[string]struct{}),
 		)
 		if err != nil {
 			return nil, &VerifyFilesExpansionError{
@@ -273,7 +274,7 @@ func tryExpandVariable(
 ) (string, error) {
 	// First pass: Try with current variable excluded (supports self-reference)
 	tempEnv := buildExpansionEnv(envMap, autoEnv, referenceEnv, key)
-	expandedValue, err := expander.ExpandString(value, tempEnv, allowlist, contextName, make(map[string]bool))
+	expandedValue, err := expander.ExpandString(value, tempEnv, allowlist, contextName, make(map[string]struct{}))
 
 	// If first pass succeeded, return result
 	if err == nil {
@@ -287,7 +288,7 @@ func tryExpandVariable(
 
 	// Second pass: Try with full environment and visited map (detects circular references)
 	fullEnv := buildExpansionEnv(envMap, autoEnv, referenceEnv, "")
-	visited := map[string]bool{key: true}
+	visited := map[string]struct{}{key: {}}
 	return expander.ExpandString(value, fullEnv, allowlist, contextName, visited)
 }
 
@@ -904,12 +905,7 @@ func ProcessFromEnv(fromEnv []string, envAllowlist []string, systemEnv map[strin
 		return make(map[string]string), nil
 	}
 
-	// Build allowlist map for O(1) lookup
-	allowlistMap := make(map[string]bool, len(envAllowlist))
-	for _, allowedVar := range envAllowlist {
-		allowlistMap[allowedVar] = true
-	}
-
+	allowlistMap := common.SliceToSet(envAllowlist)
 	result := make(map[string]string)
 
 	for _, mapping := range fromEnv {
@@ -936,7 +932,7 @@ func ProcessFromEnv(fromEnv []string, envAllowlist []string, systemEnv map[strin
 		}
 
 		// Check if system variable is in allowlist
-		if !allowlistMap[systemVarName] {
+		if _, ok := allowlistMap[systemVarName]; !ok {
 			return nil, &ErrVariableNotInAllowlistDetail{
 				Level:           level,
 				SystemVarName:   systemVarName,
