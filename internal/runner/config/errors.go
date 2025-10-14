@@ -45,6 +45,9 @@ var (
 
 	// ErrInvalidEscapeSequence is returned when an invalid escape sequence is found
 	ErrInvalidEscapeSequence = errors.New("invalid escape sequence")
+
+	// ErrMaxRecursionDepthExceeded is returned when variable expansion exceeds maximum recursion depth
+	ErrMaxRecursionDepthExceeded = errors.New("maximum recursion depth exceeded")
 )
 
 // ErrInvalidVariableNameDetail provides detailed information about invalid variable names
@@ -138,4 +141,20 @@ func (e *ErrInvalidEscapeSequenceDetail) Error() string {
 
 func (e *ErrInvalidEscapeSequenceDetail) Unwrap() error {
 	return ErrInvalidEscapeSequence
+}
+
+// ErrMaxRecursionDepthExceededDetail provides detailed information about recursion depth limit
+type ErrMaxRecursionDepthExceededDetail struct {
+	Level    string
+	Field    string
+	MaxDepth int
+	Context  string
+}
+
+func (e *ErrMaxRecursionDepthExceededDetail) Error() string {
+	return fmt.Sprintf("maximum recursion depth exceeded in %s.%s: limit %d (context: %s)", e.Level, e.Field, e.MaxDepth, e.Context)
+}
+
+func (e *ErrMaxRecursionDepthExceededDetail) Unwrap() error {
+	return ErrMaxRecursionDepthExceeded
 }

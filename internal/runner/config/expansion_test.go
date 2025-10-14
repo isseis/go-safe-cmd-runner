@@ -2,6 +2,7 @@
 package config_test
 
 import (
+	"fmt"
 	"log/slog"
 	"testing"
 
@@ -2988,7 +2989,7 @@ func TestExpandString_CircularReference(t *testing.T) {
 				"A": "prefix_%{B}",
 				"B": "suffix_%{A}",
 			},
-			expectedVarName: "A",
+			expectedVarName: "B",
 		},
 	}
 
@@ -3003,13 +3004,50 @@ func TestExpandString_CircularReference(t *testing.T) {
 			assert.Empty(t, result)
 
 			var circularErr *config.ErrCircularReferenceDetail
-			assert.ErrorAs(t, err, &circularErr)
+			// Use require.ErrorAs to ensure the typed error value is set for further assertions
+			require.ErrorAs(t, err, &circularErr)
+			require.NotNil(t, circularErr)
 			assert.Equal(t, "global", circularErr.Level)
 			assert.Equal(t, "vars", circularErr.Field)
 			// The error should mention the variable involved in the cycle
 			assert.Contains(t, err.Error(), "circular reference")
+			// Verify the variable name reported matches the expected one from the test case
+			if tt.expectedVarName != "" {
+				assert.Equal(t, tt.expectedVarName, circularErr.VariableName)
+			}
 		})
 	}
+}
+
+func TestExpandString_MaxRecursionDepth(t *testing.T) {
+	// Test maximum recursion depth limit to prevent stack overflow
+	logger := slog.Default()
+	expander := config.NewInternalVariableExpander(logger)
+
+	// Create a chain of variables that exceeds MaxRecursionDepth
+	// var1 -> var2 -> var3 -> ... -> var101
+	vars := make(map[string]string)
+	for i := 1; i <= config.MaxRecursionDepth+1; i++ {
+		varName := fmt.Sprintf("var%d", i)
+		if i < config.MaxRecursionDepth+1 {
+			nextVarName := fmt.Sprintf("var%d", i+1)
+			vars[varName] = fmt.Sprintf("value_%s", "%{"+nextVarName+"}")
+		} else {
+			vars[varName] = "final_value"
+		}
+	}
+
+	result, err := expander.ExpandString("%{var1}", vars, "global", "vars")
+
+	require.Error(t, err)
+	assert.Empty(t, result)
+
+	var maxDepthErr *config.ErrMaxRecursionDepthExceededDetail
+	assert.ErrorAs(t, err, &maxDepthErr)
+	assert.Equal(t, "global", maxDepthErr.Level)
+	assert.Equal(t, "vars", maxDepthErr.Field)
+	assert.Equal(t, config.MaxRecursionDepth, maxDepthErr.MaxDepth)
+	assert.Contains(t, err.Error(), "maximum recursion depth exceeded")
 }
 
 func TestExpandString_EscapeSequence(t *testing.T) {

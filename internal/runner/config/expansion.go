@@ -14,6 +14,11 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
+const (
+	// MaxRecursionDepth is the maximum depth for variable expansion to prevent stack overflow
+	MaxRecursionDepth = 100
+)
+
 var (
 	// ErrNilExpansionContext is returned when ExpansionContext is nil
 	ErrNilExpansionContext = errors.New("expansion context cannot be nil")
@@ -775,7 +780,7 @@ func (e *InternalVariableExpander) ExpandString(
 	field string,
 ) (string, error) {
 	visited := make(map[string]bool)
-	return e.expandStringRecursive(input, expandedVars, level, field, visited, nil)
+	return e.expandStringRecursive(input, expandedVars, level, field, visited, nil, 0)
 }
 
 // expandStringRecursive performs recursive expansion with circular reference detection.
@@ -786,7 +791,18 @@ func (e *InternalVariableExpander) expandStringRecursive(
 	field string,
 	visited map[string]bool,
 	expansionChain []string,
+	depth int,
 ) (string, error) {
+	// Check recursion depth to prevent stack overflow
+	if depth >= MaxRecursionDepth {
+		return "", &ErrMaxRecursionDepthExceededDetail{
+			Level:    level,
+			Field:    field,
+			MaxDepth: MaxRecursionDepth,
+			Context:  input,
+		}
+	}
+
 	var result strings.Builder
 	i := 0
 
@@ -808,7 +824,7 @@ func (e *InternalVariableExpander) expandStringRecursive(
 				return "", &ErrInvalidEscapeSequenceDetail{
 					Level:    level,
 					Field:    field,
-					Sequence: string([]byte{input[i], next}),
+					Sequence: input[i : i+2],
 					Context:  input,
 				}
 			}
@@ -874,7 +890,7 @@ func (e *InternalVariableExpander) expandStringRecursive(
 			newChain := make([]string, len(expansionChain)+1)
 			copy(newChain, expansionChain)
 			newChain[len(newChain)-1] = varName
-			expandedValue, err := e.expandStringRecursive(value, expandedVars, level, field, visited, newChain)
+			expandedValue, err := e.expandStringRecursive(value, expandedVars, level, field, visited, newChain, depth+1)
 			// Unmark after recursion completes (allow same variable in different branches)
 			delete(visited, varName)
 
