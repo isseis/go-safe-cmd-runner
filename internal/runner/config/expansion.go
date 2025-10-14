@@ -1333,3 +1333,67 @@ func ExpandGroupConfig(group *runnertypes.CommandGroup, global *runnertypes.Glob
 
 	return nil
 }
+
+// ============================================================================
+// Phase 8: Command Configuration Expansion
+// ============================================================================
+
+// ExpandCommandConfig expands Command-level configuration (vars, env, cmd, args).
+// It inherits Group.ExpandedVars as the base and processes Command.Vars.
+//
+// Parameters:
+//   - cmd: The Command to expand (modified in place)
+//   - group: The parent CommandGroup (used for inheritance)
+//
+// Returns:
+//   - error: Any error during expansion
+func ExpandCommandConfig(cmd *runnertypes.Command, group *runnertypes.CommandGroup) error {
+	if cmd == nil {
+		return ErrNilCommand
+	}
+	if group == nil {
+		return ErrNilGroup
+	}
+
+	// Step 1: Inherit Group.ExpandedVars as base (copy the map)
+	baseInternalVars := make(map[string]string, len(group.ExpandedVars))
+	for k, v := range group.ExpandedVars {
+		baseInternalVars[k] = v
+	}
+
+	// Step 2: Expand Command.Vars
+	cmdVars, err := ProcessVars(cmd.Vars, baseInternalVars, fmt.Sprintf("command[%s]", cmd.Name))
+	if err != nil {
+		return err
+	}
+
+	// Step 3: Store ExpandedVars (base + command vars)
+	cmd.ExpandedVars = cmdVars
+
+	// Step 4: Expand Command.Env
+	cmdEnv, err := ProcessEnv(cmd.Env, cmdVars, fmt.Sprintf("command[%s]", cmd.Name))
+	if err != nil {
+		return err
+	}
+	cmd.ExpandedEnv = cmdEnv
+
+	// Step 5: Expand Command.Cmd
+	expandedCmd, err := ExpandString(cmd.Cmd, cmdVars, fmt.Sprintf("command[%s]", cmd.Name), "cmd")
+	if err != nil {
+		return fmt.Errorf("failed to expand cmd: %w", err)
+	}
+	cmd.ExpandedCmd = expandedCmd
+
+	// Step 6: Expand Command.Args
+	expandedArgs := make([]string, 0, len(cmd.Args))
+	for i, arg := range cmd.Args {
+		expandedArg, err := ExpandString(arg, cmdVars, fmt.Sprintf("command[%s]", cmd.Name), fmt.Sprintf("args[%d]", i))
+		if err != nil {
+			return fmt.Errorf("failed to expand args[%d]: %w", i, err)
+		}
+		expandedArgs = append(expandedArgs, expandedArg)
+	}
+	cmd.ExpandedArgs = expandedArgs
+
+	return nil
+}

@@ -551,8 +551,8 @@
 **目的**: Command レベルでの vars, env の処理を統合
 
 #### 2.8.1 expandCommandConfig()関数の実装（テスト先行）
-- [ ] テスト作成: `internal/runner/config/expansion_test.go`
-  - [ ] `TestExpandCommandConfig_Basic`: 基本的な展開
+- [x] テスト作成: `internal/runner/config/expansion_test.go`
+  - [x] `TestExpandCommandConfig_Basic`: 基本的な展開
     ```toml
     [[groups.commands]]
     name = "test"
@@ -561,38 +561,37 @@
     cmd = "%{temp}/script.sh"
     args = ["--log", "%{log_dir}"]
     ```
-  - [ ] `TestExpandCommandConfig_InheritGroupVars`: Group.vars を参照
-  - [ ] `TestExpandCommandConfig_InheritGlobalVars`: Global.vars を参照
-  - [ ] `TestExpandCommandConfig_NoVars`: vars なし
-  - [ ] `TestExpandCommandConfig_CmdExpansion`: cmd での展開
-  - [ ] `TestExpandCommandConfig_ArgsExpansion`: args での展開
-- [ ] テスト実行で失敗を確認
-- [ ] コミット: "Add tests for expandCommandConfig (TDD)"
+  - [x] `TestExpandCommandConfig_InheritGroupVars`: Group.vars を参照
+  - [x] `TestExpandCommandConfig_InheritGlobalVars`: Global.vars を参照
+  - [x] `TestExpandCommandConfig_NoVars`: vars なし
+  - [x] `TestExpandCommandConfig_CmdExpansion`: cmd での展開
+  - [x] `TestExpandCommandConfig_ArgsExpansion`: args での展開
+- [x] テスト実行で失敗を確認
+- [x] コミット: "Add tests for expandCommandConfig (TDD)"
 
 #### 2.8.2 expandCommandConfig()関数の実装
-- [ ] `internal/runner/config/loader.go`に追加
-  - [ ] `expandCommandConfig`関数を実装:
+- [x] `internal/runner/config/expansion.go`に追加
+  - [x] `ExpandCommandConfig`関数を実装:
     ```go
-    func expandCommandConfig(
+    func ExpandCommandConfig(
         cmd *runnertypes.Command,
         group *runnertypes.CommandGroup,
-        expander *InternalVariableExpander,
     ) error
     ```
-    - [ ] Group.ExpandedVars を継承（baseInternalVars）
-    - [ ] `ProcessVars`で Command.Vars を展開
-    - [ ] `Command.ExpandedVars`に結果を保存
-    - [ ] `ProcessEnv`で Command.Env を展開
-    - [ ] `Command.ExpandedEnv`に結果を保存
-    - [ ] `ExpandString`で Command.Cmd を展開
-    - [ ] `Command.ExpandedCmd`に結果を保存
-    - [ ] 各 Command.Args を`ExpandString`で展開
-    - [ ] `Command.ExpandedArgs`に結果を保存
-    - [ ] エラーハンドリング
+    - [x] Group.ExpandedVars を継承（baseInternalVars）
+    - [x] `ProcessVars`で Command.Vars を展開
+    - [x] `Command.ExpandedVars`に結果を保存
+    - [x] `ProcessEnv`で Command.Env を展開
+    - [x] `Command.ExpandedEnv`に結果を保存
+    - [x] `ExpandString`で Command.Cmd を展開
+    - [x] `Command.ExpandedCmd`に結果を保存
+    - [x] 各 Command.Args を`ExpandString`で展開
+    - [x] `Command.ExpandedArgs`に結果を保存
+    - [x] エラーハンドリング
 
 #### 2.8.3 expandCommandConfig()のテスト実行
-- [ ] すべてのテストがPASS
-- [ ] コミット: "Implement expandCommandConfig for Command-level processing"
+- [x] すべてのテストがPASS
+- [x] コミット: "Implement expandCommandConfig for Command-level processing"
 
 ---
 
