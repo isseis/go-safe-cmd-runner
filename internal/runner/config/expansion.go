@@ -1154,7 +1154,7 @@ func ExpandGlobalConfig(global *runnertypes.GlobalConfig, filter *environment.Fi
 	for _, filePath := range global.VerifyFiles {
 		expandedPath, err := ExpandString(filePath, expandedVars, "global", "verify_files")
 		if err != nil {
-			return fmt.Errorf("failed to expand global verify_files: %w", err)
+return fmt.Errorf("failed to expand global verify_files path %q: %w", filePath, err)
 		}
 		expandedVerifyFiles = append(expandedVerifyFiles, expandedPath)
 	}
