@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
@@ -133,12 +134,12 @@ func (pr *PathResolver) ValidateCommand(resolvedPath string) error {
 
 // removeDuplicates removes duplicate strings from a slice
 func removeDuplicates(slice []string) []string {
-	keys := make(map[string]bool)
+	seen := common.SliceToSet([]string{})
 	result := []string{}
 
 	for _, item := range slice {
-		if !keys[item] {
-			keys[item] = true
+		if _, exists := seen[item]; !exists {
+			seen[item] = struct{}{}
 			result = append(result, item)
 		}
 	}
