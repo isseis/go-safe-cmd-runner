@@ -4102,3 +4102,471 @@ func TestExpandGlobalConfig_EmptyFields(t *testing.T) {
 	require.NotNil(t, global.ExpandedVerifyFiles)
 	assert.Len(t, global.ExpandedVerifyFiles, 0)
 }
+
+// ==================================================
+// Phase 7: Group Config Expansion Tests
+// ==================================================
+
+// TestExpandGroupConfig_InheritFromEnv tests from_env inheritance from Global
+func TestExpandGroupConfig_InheritFromEnv(t *testing.T) {
+	t.Setenv("HOME", "/home/testuser")
+	t.Setenv("PATH", "/usr/bin:/bin")
+
+	// Setup Global config with from_env
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{"HOME", "PATH"},
+		FromEnv:      []string{"home=HOME", "path=PATH"},
+		Vars:         []string{},
+	}
+
+	filter := environment.NewFilter(global.EnvAllowlist)
+
+	// Expand global first
+	err := config.ExpandGlobalConfig(global, filter)
+	require.NoError(t, err)
+
+	// Setup Group with NO from_env defined (should inherit)
+	group := &runnertypes.CommandGroup{
+		Name: "inherit_group",
+		// FromEnv is nil → should inherit Global.ExpandedVars
+		Vars: []string{"config=%{home}/.config"},
+	}
+
+	// Expand group
+	err = config.ExpandGroupConfig(group, global, filter)
+	require.NoError(t, err)
+
+	// Verify: group should have inherited from_env variables from global
+	require.NotNil(t, group.ExpandedVars)
+	assert.Equal(t, "/home/testuser", group.ExpandedVars["home"], "home should be inherited from global")
+	assert.Equal(t, "/usr/bin:/bin", group.ExpandedVars["path"], "path should be inherited from global")
+	assert.Equal(t, "/home/testuser/.config", group.ExpandedVars["config"], "config should reference inherited home")
+}
+
+// TestExpandGroupConfig_OverrideFromEnv tests from_env override behavior
+func TestExpandGroupConfig_OverrideFromEnv(t *testing.T) {
+	t.Setenv("HOME", "/home/testuser")
+	t.Setenv("CUSTOM_VAR", "/custom/path")
+
+	// Setup Global config
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{"HOME", "CUSTOM_VAR"},
+		FromEnv:      []string{"home=HOME"},
+	}
+
+	filter := environment.NewFilter(global.EnvAllowlist)
+
+	// Expand global first
+	err := config.ExpandGlobalConfig(global, filter)
+	require.NoError(t, err)
+
+	// Setup Group with explicit from_env (should override, not inherit)
+	group := &runnertypes.CommandGroup{
+		Name:         "override_group",
+		EnvAllowlist: []string{"CUSTOM_VAR"}, // Different allowlist
+		FromEnv:      []string{"custom=CUSTOM_VAR"},
+		Vars:         []string{"custom_path=%{custom}/data"},
+	}
+
+	// Expand group
+	err = config.ExpandGroupConfig(group, global, filter)
+	require.NoError(t, err)
+
+	// Verify: group should have its own from_env, NOT global's
+	require.NotNil(t, group.ExpandedVars)
+	assert.Equal(t, "/custom/path", group.ExpandedVars["custom"], "custom should come from group's from_env")
+	assert.Equal(t, "/custom/path/data", group.ExpandedVars["custom_path"])
+
+	// Important: 'home' from global should NOT be available
+	_, exists := group.ExpandedVars["home"]
+	assert.False(t, exists, "home from global.from_env should NOT be inherited when group defines from_env")
+}
+
+// TestExpandGroupConfig_EmptyFromEnv tests empty from_env array behavior
+func TestExpandGroupConfig_EmptyFromEnv(t *testing.T) {
+	t.Setenv("HOME", "/home/testuser")
+
+	// Setup Global config
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{"HOME"},
+		FromEnv:      []string{"home=HOME"},
+	}
+
+	filter := environment.NewFilter(global.EnvAllowlist)
+
+	// Expand global first
+	err := config.ExpandGlobalConfig(global, filter)
+	require.NoError(t, err)
+
+	// Setup Group with explicit empty from_env array (should not import anything)
+	group := &runnertypes.CommandGroup{
+		Name:    "empty_group",
+		FromEnv: []string{}, // Explicitly empty → no system env vars
+		Vars:    []string{"static_var=static_value"},
+	}
+
+	// Expand group
+	err = config.ExpandGroupConfig(group, global, filter)
+	require.NoError(t, err)
+
+	// Verify: group should have no from_env variables
+	require.NotNil(t, group.ExpandedVars)
+	assert.Equal(t, "static_value", group.ExpandedVars["static_var"])
+
+	// 'home' from global should NOT be available
+	_, exists := group.ExpandedVars["home"]
+	assert.False(t, exists, "home should not be imported when from_env is explicitly empty")
+}
+
+// TestExpandGroupConfig_VarsMerge tests vars merging with global
+func TestExpandGroupConfig_VarsMerge(t *testing.T) {
+	t.Setenv("HOME", "/home/testuser")
+
+	// Setup Global config
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{"HOME"},
+		FromEnv:      []string{"home=HOME"},
+		Vars:         []string{"app_dir=%{home}/app"},
+	}
+
+	filter := environment.NewFilter(global.EnvAllowlist)
+
+	// Expand global first
+	err := config.ExpandGlobalConfig(global, filter)
+	require.NoError(t, err)
+
+	// Setup Group with additional vars
+	group := &runnertypes.CommandGroup{
+		Name: "merge_group",
+		// FromEnv is nil → inherits global.from_env
+		Vars: []string{"log_dir=%{app_dir}/logs"},
+	}
+
+	// Expand group
+	err = config.ExpandGroupConfig(group, global, filter)
+	require.NoError(t, err)
+
+	// Verify: group should have both global and group vars
+	require.NotNil(t, group.ExpandedVars)
+	assert.Equal(t, "/home/testuser", group.ExpandedVars["home"], "home from global")
+	assert.Equal(t, "/home/testuser/app", group.ExpandedVars["app_dir"], "app_dir from global")
+	assert.Equal(t, "/home/testuser/app/logs", group.ExpandedVars["log_dir"], "log_dir from group, referencing global vars")
+}
+
+// TestExpandGroupConfig_AllowlistInherit tests allowlist inheritance
+func TestExpandGroupConfig_AllowlistInherit(t *testing.T) {
+	t.Setenv("HOME", "/home/testuser")
+	t.Setenv("USER", "testuser")
+
+	// Setup Global config
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{"HOME", "USER"},
+	}
+
+	filter := environment.NewFilter(global.EnvAllowlist)
+
+	// Expand global first
+	err := config.ExpandGlobalConfig(global, filter)
+	require.NoError(t, err)
+
+	// Setup Group without its own allowlist (should inherit global)
+	group := &runnertypes.CommandGroup{
+		Name: "inherit_allowlist_group",
+		// EnvAllowlist is nil → should inherit global
+		FromEnv: []string{"home=HOME", "user=USER"},
+	}
+
+	// Expand group
+	err = config.ExpandGroupConfig(group, global, filter)
+	require.NoError(t, err)
+
+	// Verify: should succeed because USER is in global allowlist
+	require.NotNil(t, group.ExpandedVars)
+	assert.Equal(t, "/home/testuser", group.ExpandedVars["home"])
+	assert.Equal(t, "testuser", group.ExpandedVars["user"])
+}
+
+// TestExpandGroupConfig_AllowlistOverride tests allowlist override
+func TestExpandGroupConfig_AllowlistOverride(t *testing.T) {
+	t.Setenv("HOME", "/home/testuser")
+	t.Setenv("CUSTOM_VAR", "/custom")
+
+	// Setup Global config
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{"HOME"},
+	}
+
+	filter := environment.NewFilter(global.EnvAllowlist)
+
+	// Expand global first
+	err := config.ExpandGlobalConfig(global, filter)
+	require.NoError(t, err)
+
+	// Setup Group with its own allowlist (should override global)
+	group := &runnertypes.CommandGroup{
+		Name:         "override_allowlist_group",
+		EnvAllowlist: []string{"CUSTOM_VAR"}, // Override global allowlist
+		FromEnv:      []string{"custom=CUSTOM_VAR"},
+	}
+
+	// Expand group
+	err = config.ExpandGroupConfig(group, global, filter)
+	require.NoError(t, err)
+
+	// Verify: should succeed with group's allowlist
+	require.NotNil(t, group.ExpandedVars)
+	assert.Equal(t, "/custom", group.ExpandedVars["custom"])
+}
+
+// TestExpandGroupConfig_WithEnv tests env expansion in group
+func TestExpandGroupConfig_WithEnv(t *testing.T) {
+	t.Setenv("HOME", "/home/testuser")
+
+	// Setup Global config
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{"HOME"},
+		FromEnv:      []string{"home=HOME"},
+		Vars:         []string{"app_dir=%{home}/app"},
+	}
+
+	filter := environment.NewFilter(global.EnvAllowlist)
+
+	// Expand global first
+	err := config.ExpandGlobalConfig(global, filter)
+	require.NoError(t, err)
+
+	// Setup Group with env that references internal vars
+	group := &runnertypes.CommandGroup{
+		Name: "env_group",
+		Vars: []string{"log_dir=%{app_dir}/logs"},
+		Env:  []string{"LOG_DIR=%{log_dir}", "APP_DIR=%{app_dir}"},
+	}
+
+	// Expand group
+	err = config.ExpandGroupConfig(group, global, filter)
+	require.NoError(t, err)
+
+	// Verify ExpandedVars
+	require.NotNil(t, group.ExpandedVars)
+	assert.Equal(t, "/home/testuser/app/logs", group.ExpandedVars["log_dir"])
+
+	// Verify ExpandedEnv
+	require.NotNil(t, group.ExpandedEnv)
+	assert.Equal(t, "/home/testuser/app/logs", group.ExpandedEnv["LOG_DIR"])
+	assert.Equal(t, "/home/testuser/app", group.ExpandedEnv["APP_DIR"])
+}
+
+// TestExpandGroupConfig_WithVerifyFiles tests verify_files expansion in group
+func TestExpandGroupConfig_WithVerifyFiles(t *testing.T) {
+	t.Setenv("HOME", "/home/testuser")
+
+	// Setup Global config
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{"HOME"},
+		FromEnv:      []string{"home=HOME"},
+		Vars:         []string{"app_dir=%{home}/app"},
+	}
+
+	filter := environment.NewFilter(global.EnvAllowlist)
+
+	// Expand global first
+	err := config.ExpandGlobalConfig(global, filter)
+	require.NoError(t, err)
+
+	// Setup Group with verify_files that references internal vars
+	group := &runnertypes.CommandGroup{
+		Name:        "verify_group",
+		Vars:        []string{"config_dir=%{app_dir}/config"},
+		VerifyFiles: []string{"%{config_dir}/app.toml", "%{app_dir}/script.sh"},
+	}
+
+	// Expand group
+	err = config.ExpandGroupConfig(group, global, filter)
+	require.NoError(t, err)
+
+	// Verify ExpandedVerifyFiles
+	require.NotNil(t, group.ExpandedVerifyFiles)
+	require.Len(t, group.ExpandedVerifyFiles, 2)
+	assert.Equal(t, "/home/testuser/app/config/app.toml", group.ExpandedVerifyFiles[0])
+	assert.Equal(t, "/home/testuser/app/script.sh", group.ExpandedVerifyFiles[1])
+}
+
+// TestResolveGroupFromEnv tests the resolveGroupFromEnv helper function
+func TestResolveGroupFromEnv(t *testing.T) {
+	// Setup filter with system environment
+	filter := environment.NewFilter([]string{"TEST_VAR", "HOME"})
+	t.Setenv("TEST_VAR", "test_value")
+	t.Setenv("HOME", "/home/testuser")
+
+	globalExpandedVars := map[string]string{
+		"global_var1": "global_value1",
+		"global_var2": "global_value2",
+	}
+	globalAllowlist := []string{"TEST_VAR", "HOME"}
+
+	tests := []struct {
+		name                string
+		groupFromEnv        []string
+		groupEnvAllowlist   []string
+		expectedResult      map[string]string
+		expectError         bool
+		errorContains       string
+		validateIndependent bool // If true, verify result is independent copy
+	}{
+		{
+			name:              "nil from_env inherits global ExpandedVars",
+			groupFromEnv:      nil,
+			groupEnvAllowlist: nil,
+			expectedResult: map[string]string{
+				"global_var1": "global_value1",
+				"global_var2": "global_value2",
+			},
+			expectError:         false,
+			validateIndependent: true,
+		},
+		{
+			name:              "empty from_env returns empty map",
+			groupFromEnv:      []string{},
+			groupEnvAllowlist: nil,
+			expectedResult:    map[string]string{},
+			expectError:       false,
+		},
+		{
+			name:              "from_env with single mapping",
+			groupFromEnv:      []string{"my_var=TEST_VAR"},
+			groupEnvAllowlist: nil, // Inherits global allowlist
+			expectedResult: map[string]string{
+				"my_var": "test_value",
+			},
+			expectError: false,
+		},
+		{
+			name:              "from_env with multiple mappings",
+			groupFromEnv:      []string{"my_var=TEST_VAR", "home_dir=HOME"},
+			groupEnvAllowlist: nil,
+			expectedResult: map[string]string{
+				"my_var":   "test_value",
+				"home_dir": "/home/testuser",
+			},
+			expectError: false,
+		},
+		{
+			name:              "from_env with group-specific allowlist",
+			groupFromEnv:      []string{"my_var=TEST_VAR"},
+			groupEnvAllowlist: []string{"TEST_VAR"}, // Override global allowlist
+			expectedResult: map[string]string{
+				"my_var": "test_value",
+			},
+			expectError: false,
+		},
+		{
+			name:              "from_env with invalid format",
+			groupFromEnv:      []string{"invalid_format"},
+			groupEnvAllowlist: nil,
+			expectedResult:    nil,
+			expectError:       true,
+			errorContains:     "failed to process group[test_group] from_env",
+		},
+		{
+			name:              "from_env with variable not in allowlist",
+			groupFromEnv:      []string{"my_var=NOT_IN_ALLOWLIST"},
+			groupEnvAllowlist: []string{"TEST_VAR"}, // NOT_IN_ALLOWLIST is not allowed
+			expectedResult:    nil,
+			expectError:       true,
+			errorContains:     "not in allowlist",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := config.ResolveGroupFromEnv(
+				tt.groupFromEnv,
+				tt.groupEnvAllowlist,
+				globalExpandedVars,
+				globalAllowlist,
+				filter,
+				"test_group",
+			)
+
+			if tt.expectError {
+				require.Error(t, err)
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains)
+				}
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedResult, result)
+
+			// Verify that inherited maps are independent copies
+			if tt.validateIndependent && tt.groupFromEnv == nil {
+				// Modify the result and verify global is not affected
+				result["new_key"] = "new_value"
+				_, exists := globalExpandedVars["new_key"]
+				assert.False(t, exists, "Modifying result should not affect global vars")
+			}
+		})
+	}
+}
+
+// TestResolveGroupFromEnv_AllowlistInheritance tests allowlist inheritance logic
+func TestResolveGroupFromEnv_AllowlistInheritance(t *testing.T) {
+	filter := environment.NewFilter([]string{"VAR1", "VAR2", "VAR3"})
+	t.Setenv("VAR1", "value1")
+	t.Setenv("VAR2", "value2")
+	t.Setenv("VAR3", "value3")
+
+	globalExpandedVars := map[string]string{}
+	globalAllowlist := []string{"VAR1", "VAR2"}
+
+	tests := []struct {
+		name              string
+		groupFromEnv      []string
+		groupEnvAllowlist []string
+		expectError       bool
+		errorContains     string
+	}{
+		{
+			name:              "group allowlist is nil, inherits global allowlist",
+			groupFromEnv:      []string{"my_var=VAR1"},
+			groupEnvAllowlist: nil,
+			expectError:       false,
+		},
+		{
+			name:              "group allowlist overrides, VAR3 allowed",
+			groupFromEnv:      []string{"my_var=VAR3"},
+			groupEnvAllowlist: []string{"VAR3"},
+			expectError:       false,
+		},
+		{
+			name:              "group allowlist overrides, VAR3 not in global",
+			groupFromEnv:      []string{"my_var=VAR3"},
+			groupEnvAllowlist: nil, // Inherits global, VAR3 not allowed
+			expectError:       true,
+			errorContains:     "not in allowlist",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := config.ResolveGroupFromEnv(
+				tt.groupFromEnv,
+				tt.groupEnvAllowlist,
+				globalExpandedVars,
+				globalAllowlist,
+				filter,
+				"test_group",
+			)
+
+			if tt.expectError {
+				require.Error(t, err)
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
