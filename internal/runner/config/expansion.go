@@ -927,7 +927,7 @@ func ProcessFromEnv(fromEnv []string, envAllowlist []string, systemEnv map[strin
 					Level:        level,
 					Field:        "from_env",
 					VariableName: internalName,
-					Prefix:       "__runner_",
+Prefix:       reservedVariablePrefix,
 				}
 			}
 			// Otherwise, it's a POSIX validation error from security.ValidateVariableName
