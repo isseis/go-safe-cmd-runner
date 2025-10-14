@@ -3184,3 +3184,246 @@ func TestExpandString_UnclosedVariableReference(t *testing.T) {
 		})
 	}
 }
+
+// Phase 3: from_env processing tests
+
+func TestProcessFromEnv_Basic(t *testing.T) {
+	// Test basic system env var import
+	tests := []struct {
+		name      string
+		fromEnv   []string
+		systemEnv map[string]string
+		allowlist []string
+		expected  map[string]string
+	}{
+		{
+			name:      "single mapping",
+			fromEnv:   []string{"home=HOME"},
+			systemEnv: map[string]string{"HOME": "/home/test"},
+			allowlist: []string{"HOME"},
+			expected:  map[string]string{"home": "/home/test"},
+		},
+		{
+			name:      "multiple mappings",
+			fromEnv:   []string{"home=HOME", "user=USER"},
+			systemEnv: map[string]string{"HOME": "/home/test", "USER": "testuser"},
+			allowlist: []string{"HOME", "USER"},
+			expected:  map[string]string{"home": "/home/test", "user": "testuser"},
+		},
+		{
+			name:      "empty fromEnv",
+			fromEnv:   []string{},
+			systemEnv: map[string]string{"HOME": "/home/test"},
+			allowlist: []string{"HOME"},
+			expected:  map[string]string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := config.ProcessFromEnv(tt.fromEnv, tt.allowlist, tt.systemEnv, "global")
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestProcessFromEnv_NotInAllowlist(t *testing.T) {
+	// Test error when system var is not in allowlist
+	tests := []struct {
+		name      string
+		fromEnv   []string
+		systemEnv map[string]string
+		allowlist []string
+	}{
+		{
+			name:      "secret not in allowlist",
+			fromEnv:   []string{"secret=SECRET"},
+			systemEnv: map[string]string{"SECRET": "confidential"},
+			allowlist: []string{"HOME"},
+		},
+		{
+			name:      "multiple vars one not allowed",
+			fromEnv:   []string{"home=HOME", "secret=SECRET"},
+			systemEnv: map[string]string{"HOME": "/home/test", "SECRET": "confidential"},
+			allowlist: []string{"HOME"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := config.ProcessFromEnv(tt.fromEnv, tt.allowlist, tt.systemEnv, "global")
+
+			require.Error(t, err)
+			assert.Nil(t, result)
+
+			var allowlistErr *config.ErrVariableNotInAllowlistDetail
+			assert.ErrorAs(t, err, &allowlistErr)
+			assert.Equal(t, "global", allowlistErr.Level)
+		})
+	}
+}
+
+func TestProcessFromEnv_SystemVarNotSet(t *testing.T) {
+	// Test when system variable is not set (should result in empty string)
+	tests := []struct {
+		name      string
+		fromEnv   []string
+		systemEnv map[string]string
+		allowlist []string
+		expected  map[string]string
+	}{
+		{
+			name:      "missing var returns empty string",
+			fromEnv:   []string{"missing=MISSING_VAR"},
+			systemEnv: map[string]string{},
+			allowlist: []string{"MISSING_VAR"},
+			expected:  map[string]string{"missing": ""},
+		},
+		{
+			name:      "partially missing vars",
+			fromEnv:   []string{"home=HOME", "missing=MISSING"},
+			systemEnv: map[string]string{"HOME": "/home/test"},
+			allowlist: []string{"HOME", "MISSING"},
+			expected:  map[string]string{"home": "/home/test", "missing": ""},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := config.ProcessFromEnv(tt.fromEnv, tt.allowlist, tt.systemEnv, "global")
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestProcessFromEnv_InvalidInternalName(t *testing.T) {
+	// Test invalid internal variable name
+	tests := []struct {
+		name      string
+		fromEnv   []string
+		systemEnv map[string]string
+		allowlist []string
+	}{
+		{
+			name:      "name starts with number",
+			fromEnv:   []string{"123invalid=HOME"},
+			systemEnv: map[string]string{"HOME": "/home/test"},
+			allowlist: []string{"HOME"},
+		},
+		{
+			name:      "name contains hyphen",
+			fromEnv:   []string{"my-var=HOME"},
+			systemEnv: map[string]string{"HOME": "/home/test"},
+			allowlist: []string{"HOME"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := config.ProcessFromEnv(tt.fromEnv, tt.allowlist, tt.systemEnv, "global")
+
+			require.Error(t, err)
+			assert.Nil(t, result)
+
+			var varNameErr *config.ErrInvalidVariableNameDetail
+			assert.ErrorAs(t, err, &varNameErr)
+			assert.Equal(t, "global", varNameErr.Level)
+			assert.Equal(t, "from_env", varNameErr.Field)
+		})
+	}
+}
+
+func TestProcessFromEnv_ReservedPrefix(t *testing.T) {
+	// Test reserved prefix error
+	tests := []struct {
+		name      string
+		fromEnv   []string
+		systemEnv map[string]string
+		allowlist []string
+	}{
+		{
+			name:      "reserved prefix __runner_",
+			fromEnv:   []string{"__runner_home=HOME"},
+			systemEnv: map[string]string{"HOME": "/home/test"},
+			allowlist: []string{"HOME"},
+		},
+		{
+			name:      "reserved prefix in second mapping",
+			fromEnv:   []string{"valid=HOME", "__runner_test=USER"},
+			systemEnv: map[string]string{"HOME": "/home/test", "USER": "testuser"},
+			allowlist: []string{"HOME", "USER"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := config.ProcessFromEnv(tt.fromEnv, tt.allowlist, tt.systemEnv, "global")
+
+			require.Error(t, err)
+			assert.Nil(t, result)
+
+			var reservedErr *config.ErrReservedVariableNameDetail
+			assert.ErrorAs(t, err, &reservedErr)
+			assert.Equal(t, "global", reservedErr.Level)
+			assert.Equal(t, "from_env", reservedErr.Field)
+			assert.Equal(t, "__runner_", reservedErr.Prefix)
+		})
+	}
+}
+
+func TestProcessFromEnv_InvalidFormat(t *testing.T) {
+	// Test invalid format (missing '=', empty key, or invalid system var)
+	tests := []struct {
+		name        string
+		fromEnv     []string
+		systemEnv   map[string]string
+		allowlist   []string
+		expectedErr error
+	}{
+		{
+			name:        "no equals sign",
+			fromEnv:     []string{"invalid_format"},
+			systemEnv:   map[string]string{"HOME": "/home/test"},
+			allowlist:   []string{"HOME"},
+			expectedErr: config.ErrInvalidFromEnvFormat,
+		},
+		{
+			name:        "empty internal name",
+			fromEnv:     []string{"=HOME"},
+			systemEnv:   map[string]string{"HOME": "/home/test"},
+			allowlist:   []string{"HOME"},
+			expectedErr: config.ErrInvalidFromEnvFormat,
+		},
+		{
+			name:        "multiple equals signs (invalid system var name)",
+			fromEnv:     []string{"var=VAR=extra"},
+			systemEnv:   map[string]string{"VAR": "value"},
+			allowlist:   []string{"VAR=extra"},
+			expectedErr: config.ErrInvalidSystemVariableName,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := config.ProcessFromEnv(tt.fromEnv, tt.allowlist, tt.systemEnv, "global")
+
+			require.Error(t, err)
+			assert.Nil(t, result)
+			assert.ErrorIs(t, err, tt.expectedErr, "error should be of expected type")
+
+			// For system variable name errors, also check the detail struct
+			if tt.expectedErr == config.ErrInvalidSystemVariableName {
+				var detailErr *config.ErrInvalidSystemVariableNameDetail
+				assert.ErrorAs(t, err, &detailErr, "should be ErrInvalidSystemVariableNameDetail")
+				assert.Equal(t, "global", detailErr.Level)
+				assert.Equal(t, "from_env", detailErr.Field)
+				assert.NotEmpty(t, detailErr.SystemVariableName)
+				assert.NotEmpty(t, detailErr.Reason)
+			}
+		})
+	}
+}
