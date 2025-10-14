@@ -3144,3 +3144,43 @@ func TestExpandString_InvalidEscape(t *testing.T) {
 		})
 	}
 }
+
+func TestExpandString_UnclosedVariableReference(t *testing.T) {
+	// Test unclosed variable reference detection
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			name:  "unclosed at end",
+			input: "prefix_%{var",
+		},
+		{
+			name:  "unclosed in middle",
+			input: "start_%{var_middle",
+		},
+		{
+			name:  "only opening brace",
+			input: "%{",
+		},
+		{
+			name:  "unclosed with content after",
+			input: "%{\var_more text",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := config.ExpandString(tt.input, nil, "global", "test_field")
+
+			require.Error(t, err)
+			assert.Empty(t, result)
+
+			var unclosedErr *config.ErrUnclosedVariableReferenceDetail
+			assert.ErrorAs(t, err, &unclosedErr)
+			assert.Equal(t, "global", unclosedErr.Level)
+			assert.Equal(t, "test_field", unclosedErr.Field)
+			assert.Equal(t, tt.input, unclosedErr.Context)
+		})
+	}
+}

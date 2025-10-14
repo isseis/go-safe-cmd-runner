@@ -46,6 +46,9 @@ var (
 	// ErrInvalidEscapeSequence is returned when an invalid escape sequence is found
 	ErrInvalidEscapeSequence = errors.New("invalid escape sequence")
 
+	// ErrUnclosedVariableReference is returned when %{ is not closed with }
+	ErrUnclosedVariableReference = errors.New("unclosed variable reference")
+
 	// ErrMaxRecursionDepthExceeded is returned when variable expansion exceeds maximum recursion depth
 	ErrMaxRecursionDepthExceeded = errors.New("maximum recursion depth exceeded")
 )
@@ -141,6 +144,21 @@ func (e *ErrInvalidEscapeSequenceDetail) Error() string {
 
 func (e *ErrInvalidEscapeSequenceDetail) Unwrap() error {
 	return ErrInvalidEscapeSequence
+}
+
+// ErrUnclosedVariableReferenceDetail provides detailed information about unclosed variable references
+type ErrUnclosedVariableReferenceDetail struct {
+	Level   string
+	Field   string
+	Context string
+}
+
+func (e *ErrUnclosedVariableReferenceDetail) Error() string {
+	return fmt.Sprintf("unclosed variable reference in %s.%s: missing closing '}' (context: %s)", e.Level, e.Field, e.Context)
+}
+
+func (e *ErrUnclosedVariableReferenceDetail) Unwrap() error {
+	return ErrUnclosedVariableReference
 }
 
 // ErrMaxRecursionDepthExceededDetail provides detailed information about recursion depth limit
