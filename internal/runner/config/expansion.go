@@ -1069,3 +1069,73 @@ func ProcessVars(vars []string, baseExpandedVars map[string]string, level string
 
 	return result, nil
 }
+
+// ============================================================================
+
+// ProcessEnv processes env field and expands process environment variable definitions.
+//
+// The function processes the env field which defines environment variables for the
+// child process. Each definition can reference internal variables using %{VAR} syntax,
+// but cannot reference other env variables (to avoid order dependencies).
+//
+// Parameters:
+//   - env: Array of "VAR=value" definitions (value can contain %{VAR} references to internal variables)
+//   - expandedVars: Available internal variables (from from_env and vars)
+//   - level: Configuration level for error reporting (e.g., "global", "group[name]", "command[name]")
+//
+// Returns:
+//   - Map of expanded environment variables
+//   - Error if processing fails (invalid format, invalid name, undefined internal variable, etc.)
+//
+// Note: env variables cannot reference other env variables. They can only reference
+// internal variables from expandedVars. This prevents order-dependent behavior.
+//
+// Example:
+//
+//	env := []string{"BASE_DIR=%{app_dir}", "LOG_DIR=%{app_dir}/logs"}
+//	internalVars := map[string]string{"app_dir": "/opt/myapp"}
+//	result, err := ProcessEnv(env, internalVars, "global")
+//	// result: {"BASE_DIR": "/opt/myapp", "LOG_DIR": "/opt/myapp/logs"}
+func ProcessEnv(env []string, expandedVars map[string]string, level string) (map[string]string, error) {
+	result := make(map[string]string, len(env))
+
+	for _, envDef := range env {
+		// Parse "VAR=value" format
+		envVarName, envVarValue, ok := common.ParseEnvVariable(envDef)
+		if !ok {
+			return nil, fmt.Errorf("%w in %s: '%s' (expected 'VAR=value')", ErrInvalidEnvFormat, level, envDef)
+		}
+
+		// Validate environment variable name (POSIX)
+		if err := validateVariableName(envVarName); err != nil {
+			// Check if it's a reserved prefix error
+			if errors.Is(err, ErrReservedVariablePrefix) {
+				return nil, &ErrReservedVariablePrefixDetail{
+					Level:        level,
+					Field:        "env",
+					VariableName: envVarName,
+					Prefix:       reservedVariablePrefix,
+				}
+			}
+			// Otherwise, it's a POSIX validation error from security.ValidateVariableName
+			return nil, &ErrInvalidVariableNameDetail{
+				Level:        level,
+				Field:        "env",
+				VariableName: envVarName,
+				Reason:       err.Error(),
+			}
+		}
+
+		// Expand %{VAR} references in the value using internal variables only
+		// Note: env variables cannot reference other env variables
+		expandedValue, err := ExpandString(envVarValue, expandedVars, level, "env")
+		if err != nil {
+			return nil, err
+		}
+
+		// Store expanded value
+		result[envVarName] = expandedValue
+	}
+
+	return result, nil
+}

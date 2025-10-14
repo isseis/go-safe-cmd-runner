@@ -3730,3 +3730,178 @@ func TestProcessVars_MultipleReferences(t *testing.T) {
 	assert.Equal(t, "pre_middle_suf", result["combined"])
 	assert.Len(t, result, 3)
 }
+
+// ============================================================================
+// ProcessEnv Tests (Phase 5)
+// ============================================================================
+
+// TestProcessEnv_Basic tests basic env expansion without internal variables
+func TestProcessEnv_Basic(t *testing.T) {
+	env := []string{"VAR1=value1", "VAR2=value2"}
+	internalVars := map[string]string{}
+
+	result, err := config.ProcessEnv(env, internalVars, "global")
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, "value1", result["VAR1"])
+	assert.Equal(t, "value2", result["VAR2"])
+	assert.Len(t, result, 2)
+}
+
+// TestProcessEnv_ReferenceInternalVars tests env expansion with internal variable references
+func TestProcessEnv_ReferenceInternalVars(t *testing.T) {
+	env := []string{"BASE_DIR=%{app_dir}", "LOG_DIR=%{app_dir}/logs"}
+	internalVars := map[string]string{"app_dir": "/opt/myapp"}
+
+	result, err := config.ProcessEnv(env, internalVars, "global")
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, "/opt/myapp", result["BASE_DIR"])
+	assert.Equal(t, "/opt/myapp/logs", result["LOG_DIR"])
+	assert.Len(t, result, 2)
+}
+
+// TestProcessEnv_UndefinedInternalVar tests error when referencing undefined internal variable
+func TestProcessEnv_UndefinedInternalVar(t *testing.T) {
+	env := []string{"BASE_DIR=%{undefined_var}"}
+	internalVars := map[string]string{}
+
+	result, err := config.ProcessEnv(env, internalVars, "global")
+
+	require.Error(t, err)
+	assert.Nil(t, result)
+
+	var undefinedErr *config.ErrUndefinedVariableDetail
+	assert.ErrorAs(t, err, &undefinedErr)
+	assert.Equal(t, "global", undefinedErr.Level)
+	assert.Equal(t, "env", undefinedErr.Field)
+	assert.Equal(t, "undefined_var", undefinedErr.VariableName)
+}
+
+// TestProcessEnv_InvalidEnvVarName tests error for invalid environment variable name
+func TestProcessEnv_InvalidEnvVarName(t *testing.T) {
+	env := []string{"123_INVALID=value"}
+	internalVars := map[string]string{}
+
+	result, err := config.ProcessEnv(env, internalVars, "global")
+
+	require.Error(t, err)
+	assert.Nil(t, result)
+
+	var invalidNameErr *config.ErrInvalidVariableNameDetail
+	assert.ErrorAs(t, err, &invalidNameErr)
+	assert.Equal(t, "global", invalidNameErr.Level)
+	assert.Equal(t, "env", invalidNameErr.Field)
+	assert.Equal(t, "123_INVALID", invalidNameErr.VariableName)
+}
+
+// TestProcessEnv_InvalidFormat tests error for invalid env definition format
+func TestProcessEnv_InvalidFormat(t *testing.T) {
+	env := []string{"INVALID_FORMAT"}
+	internalVars := map[string]string{}
+
+	result, err := config.ProcessEnv(env, internalVars, "global")
+
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "malformed env entry")
+	assert.Contains(t, err.Error(), "INVALID_FORMAT")
+}
+
+// TestProcessEnv_EmptyEnvArray tests processing empty env array
+func TestProcessEnv_EmptyEnvArray(t *testing.T) {
+	env := []string{}
+	internalVars := map[string]string{"app_dir": "/opt/myapp"}
+
+	result, err := config.ProcessEnv(env, internalVars, "global")
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Len(t, result, 0)
+}
+
+// TestProcessEnv_ComplexReferences tests complex internal variable references
+func TestProcessEnv_ComplexReferences(t *testing.T) {
+	env := []string{
+		"APP_DIR=%{home}/%{app_name}",
+		"DATA_DIR=%{home}/%{app_name}/data",
+		"LOG_DIR=%{home}/%{app_name}/logs",
+	}
+	internalVars := map[string]string{
+		"home":     "/home/user",
+		"app_name": "myapp",
+	}
+
+	result, err := config.ProcessEnv(env, internalVars, "global")
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, "/home/user/myapp", result["APP_DIR"])
+	assert.Equal(t, "/home/user/myapp/data", result["DATA_DIR"])
+	assert.Equal(t, "/home/user/myapp/logs", result["LOG_DIR"])
+	assert.Len(t, result, 3)
+}
+
+// TestProcessEnv_NoVariableReferences tests env without any variable references
+func TestProcessEnv_NoVariableReferences(t *testing.T) {
+	env := []string{"STATIC_VAR=/opt/static", "ANOTHER_VAR=value"}
+	internalVars := map[string]string{"unused": "value"}
+
+	result, err := config.ProcessEnv(env, internalVars, "global")
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, "/opt/static", result["STATIC_VAR"])
+	assert.Equal(t, "value", result["ANOTHER_VAR"])
+	assert.Len(t, result, 2)
+}
+
+// TestProcessEnv_EscapeSequence tests escape sequences in env values
+func TestProcessEnv_EscapeSequence(t *testing.T) {
+	env := []string{
+		"PATH_WITH_ESCAPED=\\%{home}/path",
+		"PATH_WITH_BACKSLASH=%{home}\\\\bin",
+	}
+	internalVars := map[string]string{"home": "/home/user"}
+
+	result, err := config.ProcessEnv(env, internalVars, "global")
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, "%{home}/path", result["PATH_WITH_ESCAPED"])
+	assert.Equal(t, "/home/user\\bin", result["PATH_WITH_BACKSLASH"])
+	assert.Len(t, result, 2)
+}
+
+// TestProcessEnv_ReservedVariableName tests that reserved variable names are rejected
+func TestProcessEnv_ReservedVariableName(t *testing.T) {
+	env := []string{"__runner_custom=value"}
+	internalVars := map[string]string{}
+
+	result, err := config.ProcessEnv(env, internalVars, "global")
+
+	require.Error(t, err)
+	assert.Nil(t, result)
+
+	var reservedErr *config.ErrReservedVariablePrefixDetail
+	assert.ErrorAs(t, err, &reservedErr)
+	assert.Equal(t, "global", reservedErr.Level)
+	assert.Equal(t, "env", reservedErr.Field)
+	assert.Equal(t, "__runner_custom", reservedErr.VariableName)
+}
+
+// TestProcessEnv_EmptyValue tests env with empty value
+func TestProcessEnv_EmptyValue(t *testing.T) {
+	env := []string{"EMPTY_VAR=", "ANOTHER_VAR=value"}
+	internalVars := map[string]string{}
+
+	result, err := config.ProcessEnv(env, internalVars, "global")
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, "", result["EMPTY_VAR"])
+	assert.Equal(t, "value", result["ANOTHER_VAR"])
+	assert.Len(t, result, 2)
+}

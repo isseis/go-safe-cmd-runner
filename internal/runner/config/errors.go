@@ -58,6 +58,9 @@ var (
 	// ErrInvalidVarsFormat is returned when a vars entry is not in var_name=value format
 	ErrInvalidVarsFormat = errors.New("malformed vars entry (expected var_name=value format)")
 
+	// ErrInvalidEnvFormat is returned when an env entry is not in VAR=value format
+	ErrInvalidEnvFormat = errors.New("malformed env entry (expected VAR=value format)")
+
 	// ErrInvalidSystemVariableName is returned when system variable name is invalid
 	ErrInvalidSystemVariableName = errors.New("invalid system variable name")
 )
