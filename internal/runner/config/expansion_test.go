@@ -2,6 +2,7 @@
 package config_test
 
 import (
+	"log/slog"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
@@ -2711,6 +2712,413 @@ func TestExpandCommandEnv(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.Equal(t, tt.expectedVars, cmd.ExpandedEnv)
+		})
+	}
+}
+
+// ============================================================================
+// Phase 2: InternalVariableExpander Tests (TDD)
+// ============================================================================
+
+func TestExpandString_Basic(t *testing.T) {
+	// Test basic variable expansion with %{VAR} syntax
+	tests := []struct {
+		name     string
+		input    string
+		vars     map[string]string
+		expected string
+		wantErr  bool
+	}{
+		{
+			name:     "single variable expansion",
+			input:    "prefix_%{var1}_suffix",
+			vars:     map[string]string{"var1": "value1"},
+			expected: "prefix_value1_suffix",
+			wantErr:  false,
+		},
+		{
+			name:     "variable at start",
+			input:    "%{var1}_suffix",
+			vars:     map[string]string{"var1": "start"},
+			expected: "start_suffix",
+			wantErr:  false,
+		},
+		{
+			name:     "variable at end",
+			input:    "prefix_%{var1}",
+			vars:     map[string]string{"var1": "end"},
+			expected: "prefix_end",
+			wantErr:  false,
+		},
+		{
+			name:     "variable only",
+			input:    "%{var1}",
+			vars:     map[string]string{"var1": "only"},
+			expected: "only",
+			wantErr:  false,
+		},
+		{
+			name:     "no variables",
+			input:    "plain text",
+			vars:     map[string]string{"var1": "unused"},
+			expected: "plain text",
+			wantErr:  false,
+		},
+		{
+			name:     "empty string",
+			input:    "",
+			vars:     map[string]string{"var1": "unused"},
+			expected: "",
+			wantErr:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logger := slog.Default()
+			expander := config.NewInternalVariableExpander(logger)
+
+			result, err := expander.ExpandString(tt.input, tt.vars, "global", "test_field")
+
+			if tt.wantErr {
+				assert.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestExpandString_Multiple(t *testing.T) {
+	// Test multiple variable expansions in a single string
+	tests := []struct {
+		name     string
+		input    string
+		vars     map[string]string
+		expected string
+	}{
+		{
+			name:     "two variables",
+			input:    "%{var1}/%{var2}",
+			vars:     map[string]string{"var1": "a", "var2": "b"},
+			expected: "a/b",
+		},
+		{
+			name:     "three variables",
+			input:    "%{var1}/%{var2}/%{var3}",
+			vars:     map[string]string{"var1": "x", "var2": "y", "var3": "z"},
+			expected: "x/y/z",
+		},
+		{
+			name:     "same variable multiple times",
+			input:    "%{var1}_%{var1}_%{var1}",
+			vars:     map[string]string{"var1": "repeat"},
+			expected: "repeat_repeat_repeat",
+		},
+		{
+			name:     "variables with text",
+			input:    "start_%{a}_middle_%{b}_end",
+			vars:     map[string]string{"a": "AAA", "b": "BBB"},
+			expected: "start_AAA_middle_BBB_end",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logger := slog.Default()
+			expander := config.NewInternalVariableExpander(logger)
+
+			result, err := expander.ExpandString(tt.input, tt.vars, "global", "test_field")
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestExpandString_Nested(t *testing.T) {
+	// Test nested variable expansions (variable values containing %{VAR} references)
+	tests := []struct {
+		name     string
+		input    string
+		vars     map[string]string
+		expected string
+	}{
+		{
+			name:  "two-level nesting",
+			input: "%{var2}",
+			vars: map[string]string{
+				"var1": "x",
+				"var2": "%{var1}/y",
+			},
+			expected: "x/y",
+		},
+		{
+			name:  "three-level nesting",
+			input: "%{var3}",
+			vars: map[string]string{
+				"var1": "x",
+				"var2": "%{var1}/y",
+				"var3": "%{var2}/z",
+			},
+			expected: "x/y/z",
+		},
+		{
+			name:  "complex nested expansion",
+			input: "%{final}",
+			vars: map[string]string{
+				"base":  "/opt/app",
+				"logs":  "%{base}/logs",
+				"temp":  "%{logs}/temp",
+				"final": "%{temp}/output.log",
+			},
+			expected: "/opt/app/logs/temp/output.log",
+		},
+		{
+			name:  "nested with multiple references",
+			input: "%{combined}",
+			vars: map[string]string{
+				"a":        "A",
+				"b":        "B",
+				"combined": "%{a}_%{b}",
+			},
+			expected: "A_B",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logger := slog.Default()
+			expander := config.NewInternalVariableExpander(logger)
+
+			result, err := expander.ExpandString(tt.input, tt.vars, "global", "vars")
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestExpandString_UndefinedVariable(t *testing.T) {
+	// Test error handling for undefined variables
+	tests := []struct {
+		name        string
+		input       string
+		vars        map[string]string
+		expectedVar string
+	}{
+		{
+			name:        "undefined variable",
+			input:       "%{undefined}",
+			vars:        map[string]string{"defined": "value"},
+			expectedVar: "undefined",
+		},
+		{
+			name:        "undefined in middle",
+			input:       "start_%{missing}_end",
+			vars:        map[string]string{},
+			expectedVar: "missing",
+		},
+		{
+			name:        "one defined, one undefined",
+			input:       "%{defined}/%{undefined}",
+			vars:        map[string]string{"defined": "ok"},
+			expectedVar: "undefined",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logger := slog.Default()
+			expander := config.NewInternalVariableExpander(logger)
+
+			result, err := expander.ExpandString(tt.input, tt.vars, "global", "test_field")
+
+			require.Error(t, err)
+			assert.Empty(t, result)
+
+			var undefinedErr *config.ErrUndefinedVariableDetail
+			assert.ErrorAs(t, err, &undefinedErr)
+			assert.Equal(t, tt.expectedVar, undefinedErr.VariableName)
+			assert.Equal(t, "global", undefinedErr.Level)
+			assert.Equal(t, "test_field", undefinedErr.Field)
+		})
+	}
+}
+
+func TestExpandString_CircularReference(t *testing.T) {
+	// Test circular reference detection
+	tests := []struct {
+		name            string
+		input           string
+		vars            map[string]string
+		expectedVarName string
+	}{
+		{
+			name:  "direct self-reference",
+			input: "%{A}",
+			vars: map[string]string{
+				"A": "%{A}",
+			},
+			expectedVarName: "A",
+		},
+		{
+			name:  "two-variable cycle",
+			input: "%{A}",
+			vars: map[string]string{
+				"A": "%{B}",
+				"B": "%{A}",
+			},
+			expectedVarName: "A",
+		},
+		{
+			name:  "three-variable cycle",
+			input: "%{A}",
+			vars: map[string]string{
+				"A": "%{B}",
+				"B": "%{C}",
+				"C": "%{A}",
+			},
+			expectedVarName: "A",
+		},
+		{
+			name:  "cycle with prefix",
+			input: "%{B}",
+			vars: map[string]string{
+				"A": "prefix_%{B}",
+				"B": "suffix_%{A}",
+			},
+			expectedVarName: "A",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logger := slog.Default()
+			expander := config.NewInternalVariableExpander(logger)
+
+			result, err := expander.ExpandString(tt.input, tt.vars, "global", "vars")
+
+			require.Error(t, err)
+			assert.Empty(t, result)
+
+			var circularErr *config.ErrCircularReferenceDetail
+			assert.ErrorAs(t, err, &circularErr)
+			assert.Equal(t, "global", circularErr.Level)
+			assert.Equal(t, "vars", circularErr.Field)
+			// The error should mention the variable involved in the cycle
+			assert.Contains(t, err.Error(), "circular reference")
+		})
+	}
+}
+
+func TestExpandString_EscapeSequence(t *testing.T) {
+	// Test escape sequence handling
+	tests := []struct {
+		name     string
+		input    string
+		vars     map[string]string
+		expected string
+	}{
+		{
+			name:     "escape percent",
+			input:    `literal \%{var1}`,
+			vars:     map[string]string{"var1": "value1"},
+			expected: "literal %{var1}",
+		},
+		{
+			name:     "escape backslash",
+			input:    `path\\name`,
+			vars:     map[string]string{},
+			expected: `path\name`,
+		},
+		{
+			name:     "mixed escapes",
+			input:    `\%{var1} and \\path`,
+			vars:     map[string]string{"var1": "value"},
+			expected: `%{var1} and \path`,
+		},
+		{
+			name:     "escape before variable",
+			input:    `\\%{var1}`,
+			vars:     map[string]string{"var1": "test"},
+			expected: `\test`,
+		},
+		{
+			name:     "multiple escapes",
+			input:    `\%{a} \%{b} \\c`,
+			vars:     map[string]string{"a": "A", "b": "B"},
+			expected: `%{a} %{b} \c`,
+		},
+		{
+			name:     "escape and expansion",
+			input:    `\%{literal} %{var1}`,
+			vars:     map[string]string{"literal": "L", "var1": "expanded"},
+			expected: `%{literal} expanded`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logger := slog.Default()
+			expander := config.NewInternalVariableExpander(logger)
+
+			result, err := expander.ExpandString(tt.input, tt.vars, "global", "test_field")
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestExpandString_InvalidEscape(t *testing.T) {
+	// Test invalid escape sequence handling
+	tests := []struct {
+		name             string
+		input            string
+		vars             map[string]string
+		expectedSequence string
+	}{
+		{
+			name:             "invalid escape dollar",
+			input:            `\$invalid`,
+			vars:             map[string]string{},
+			expectedSequence: `\$`,
+		},
+		{
+			name:             "invalid escape x",
+			input:            `\xtest`,
+			vars:             map[string]string{},
+			expectedSequence: `\x`,
+		},
+		{
+			name:             "invalid escape n",
+			input:            `\ntest`,
+			vars:             map[string]string{},
+			expectedSequence: `\n`,
+		},
+		{
+			name:             "invalid escape in middle",
+			input:            `prefix_\t_suffix`,
+			vars:             map[string]string{},
+			expectedSequence: `\t`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logger := slog.Default()
+			expander := config.NewInternalVariableExpander(logger)
+
+			result, err := expander.ExpandString(tt.input, tt.vars, "global", "test_field")
+
+			require.Error(t, err)
+			assert.Empty(t, result)
+
+			var escapeErr *config.ErrInvalidEscapeSequenceDetail
+			assert.ErrorAs(t, err, &escapeErr)
+			assert.Equal(t, tt.expectedSequence, escapeErr.Sequence)
+			assert.Equal(t, "global", escapeErr.Level)
+			assert.Equal(t, "test_field", escapeErr.Field)
 		})
 	}
 }

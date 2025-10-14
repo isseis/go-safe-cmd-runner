@@ -162,47 +162,47 @@
 **目的**: `%{VAR}` 構文の展開処理を実装
 
 #### 2.2.1 InternalVariableExpander構造体の実装（テスト先行）
-- [ ] テスト作成: `internal/runner/config/expansion_test.go`
-  - [ ] `TestExpandString_Basic`: 基本的な変数展開
+- [x] テスト作成: `internal/runner/config/expansion_test.go`
+  - [x] `TestExpandString_Basic`: 基本的な変数展開
     ```go
     input: "prefix_%{var1}_suffix"
     vars: {"var1": "value1"}
     expected: "prefix_value1_suffix"
     ```
-  - [ ] `TestExpandString_Multiple`: 複数の変数展開
+  - [x] `TestExpandString_Multiple`: 複数の変数展開
     ```go
     input: "%{var1}/%{var2}"
     vars: {"var1": "a", "var2": "b"}
     expected: "a/b"
     ```
-  - [ ] `TestExpandString_Nested`: ネストした展開
+  - [x] `TestExpandString_Nested`: ネストした展開
     ```go
     input: "%{var3}"
     vars: {"var1": "x", "var2": "%{var1}/y", "var3": "%{var2}/z"}
     expected: "x/y/z"
     ```
-  - [ ] `TestExpandString_UndefinedVariable`: 未定義変数エラー
-  - [ ] `TestExpandString_CircularReference`: 循環参照エラー
+  - [x] `TestExpandString_UndefinedVariable`: 未定義変数エラー
+  - [x] `TestExpandString_CircularReference`: 循環参照エラー
     ```go
     vars: {"A": "%{B}", "B": "%{A}"}
     expected: ErrCircularReference
     ```
-  - [ ] `TestExpandString_EscapeSequence`: エスケープ処理
+  - [x] `TestExpandString_EscapeSequence`: エスケープ処理
     ```go
     input: "literal \%{var1} and \\path"
     expected: "literal %{var1} and \path"
     ```
-  - [ ] `TestExpandString_InvalidEscape`: 不正なエスケープエラー
+  - [x] `TestExpandString_InvalidEscape`: 不正なエスケープエラー
     ```go
     input: "\$invalid"
     expected: ErrInvalidEscapeSequence
     ```
-- [ ] テスト実行で失敗を確認
-- [ ] コミット: "Add tests for InternalVariableExpander (TDD)"
+- [x] テスト実行で失敗を確認
+- [x] コミット: "Add tests for InternalVariableExpander (TDD)"
 
 #### 2.2.2 InternalVariableExpander構造体の実装
-- [ ] `internal/runner/config/expansion.go`を編集
-  - [ ] `InternalVariableExpander`構造体を定義:
+- [x] `internal/runner/config/expansion.go`を編集
+  - [x] `InternalVariableExpander`構造体を定義:
     ```go
     type InternalVariableExpander struct {
         logger *logging.Logger
@@ -210,7 +210,7 @@
 
     func NewInternalVariableExpander(logger *logging.Logger) *InternalVariableExpander
     ```
-  - [ ] `ExpandString`メソッドを実装:
+  - [x] `ExpandString`メソッドを実装:
     ```go
     func (e *InternalVariableExpander) ExpandString(
         input string,
@@ -219,24 +219,24 @@
         field string,
     ) (string, error)
     ```
-    - [ ] `%{VAR}` パターンのマッチング
-    - [ ] エスケープシーケンス処理（`\%` → `%`, `\\` → `\`）
-    - [ ] 無効なエスケープ検出（`\$`, `\x` など）
-    - [ ] 循環参照検出（visited map使用）
-    - [ ] 変数名バリデーション
-    - [ ] 未定義変数検出
-  - [ ] `expandStringRecursive`ヘルパー関数を実装
-    - [ ] visited mapで循環参照を追跡
-    - [ ] expansionChainでエラーメッセージ用のチェーンを記録
-    - [ ] 最大ネスト深度チェック（必要に応じて）
+    - [x] `%{VAR}` パターンのマッチング
+    - [x] エスケープシーケンス処理（`\%` → `%`, `\\` → `\`）
+    - [x] 無効なエスケープ検出（`\$`, `\x` など）
+    - [x] 循環参照検出（visited map使用）
+    - [x] 変数名バリデーション
+    - [x] 未定義変数検出
+  - [x] `expandStringRecursive`ヘルパー関数を実装
+    - [x] visited mapで循環参照を追跡
+    - [x] expansionChainでエラーメッセージ用のチェーンを記録
+    - [x] 最大ネスト深度チェック（必要に応じて）
 
 #### 2.2.3 InternalVariableExpanderのテスト実行
-- [ ] すべてのテストがPASS
-- [ ] エッジケースの追加テスト
-  - [ ] 空文字列の展開
-  - [ ] 変数名のみ（`%{var}`）
-  - [ ] 複雑なネスト（3階層以上）
-- [ ] コミット: "Implement InternalVariableExpander with %{VAR} syntax"
+- [x] すべてのテストがPASS
+- [x] エッジケースの追加テスト
+  - [x] 空文字列の展開
+  - [x] 変数名のみ（`%{var}`）
+  - [x] 複雑なネスト（3階層以上）
+- [x] コミット: "Implement InternalVariableExpander with %{VAR} syntax"
 
 ---
 

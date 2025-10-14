@@ -4,6 +4,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"strings"
 
@@ -736,4 +737,160 @@ func ExpandCommandEnv(
 		groupAllowlist,               // localAllowlist (group's allowlist for command-level expansion)
 		ErrCommandEnvExpansionFailed, // failureErr
 	)
+}
+
+// ============================================================================
+// Phase 2: Internal Variable Expander (%{VAR} syntax)
+// ============================================================================
+
+// InternalVariableExpander handles expansion of internal variables (%{VAR}).
+// It provides unified expansion logic for from_env, vars, env, cmd, args, and verify_files.
+type InternalVariableExpander struct {
+	logger *slog.Logger
+}
+
+// NewInternalVariableExpander creates a new internal variable expander.
+func NewInternalVariableExpander(logger *slog.Logger) *InternalVariableExpander {
+	return &InternalVariableExpander{
+		logger: logger,
+	}
+}
+
+// ExpandString expands %{VAR} references in a string using the provided internal variables.
+// It detects circular references and reports detailed errors.
+//
+// Parameters:
+//   - input: The string to expand
+//   - expandedVars: Map of available internal variables
+//   - level: Configuration level ("global", "group", "command") for error reporting
+//   - field: Field name ("vars", "env", "cmd", "args", "verify_files") for error reporting
+//
+// Returns:
+//   - Expanded string
+//   - Error if expansion fails (circular reference, undefined variable, invalid escape)
+func (e *InternalVariableExpander) ExpandString(
+	input string,
+	expandedVars map[string]string,
+	level string,
+	field string,
+) (string, error) {
+	visited := make(map[string]bool)
+	return e.expandStringRecursive(input, expandedVars, level, field, visited, nil)
+}
+
+// expandStringRecursive performs recursive expansion with circular reference detection.
+func (e *InternalVariableExpander) expandStringRecursive(
+	input string,
+	expandedVars map[string]string,
+	level string,
+	field string,
+	visited map[string]bool,
+	expansionChain []string,
+) (string, error) {
+	var result strings.Builder
+	i := 0
+
+	for i < len(input) {
+		// Handle escape sequences
+		if input[i] == '\\' && i+1 < len(input) {
+			next := input[i+1]
+			switch next {
+			case '%':
+				result.WriteByte('%')
+				i += 2
+				continue
+			case '\\':
+				result.WriteByte('\\')
+				i += 2
+				continue
+			default:
+				// Invalid escape sequence
+				return "", &ErrInvalidEscapeSequenceDetail{
+					Level:    level,
+					Field:    field,
+					Sequence: string([]byte{input[i], next}),
+					Context:  input,
+				}
+			}
+		}
+
+		// Handle %{VAR} expansion
+		if input[i] == '%' && i+1 < len(input) && input[i+1] == '{' {
+			// Find the closing '}'
+			const openBraceLen = 2 // Length of "%{"
+			closeIdx := strings.IndexByte(input[i+openBraceLen:], '}')
+			if closeIdx == -1 {
+				// Unclosed %{ - return static error
+				return "", &ErrInvalidEscapeSequenceDetail{
+					Level:    level,
+					Field:    field,
+					Sequence: "%{",
+					Context:  input,
+				}
+			}
+			closeIdx += i + openBraceLen // Adjust to absolute position
+
+			varName := input[i+openBraceLen : closeIdx]
+
+			// Validate variable name using existing security validation
+			if err := security.ValidateVariableName(varName); err != nil {
+				return "", &ErrInvalidVariableNameDetail{
+					Level:        level,
+					Field:        field,
+					VariableName: varName,
+					Reason:       err.Error(),
+				}
+			}
+
+			// Check for circular reference
+			if visited[varName] {
+				// Copy chain to avoid modifying the passed-in slice
+				chain := make([]string, len(expansionChain)+1)
+				copy(chain, expansionChain)
+				chain[len(chain)-1] = varName
+				return "", &ErrCircularReferenceDetail{
+					Level:        level,
+					Field:        field,
+					VariableName: varName,
+					Chain:        chain,
+				}
+			}
+
+			// Lookup variable
+			value, ok := expandedVars[varName]
+			if !ok {
+				return "", &ErrUndefinedVariableDetail{
+					Level:        level,
+					Field:        field,
+					VariableName: varName,
+					Context:      input,
+				}
+			}
+
+			// Recursively expand the value
+			// Mark as visited to detect circular references in the current expansion chain
+			visited[varName] = true
+			// Create new chain for error reporting
+			newChain := make([]string, len(expansionChain)+1)
+			copy(newChain, expansionChain)
+			newChain[len(newChain)-1] = varName
+			expandedValue, err := e.expandStringRecursive(value, expandedVars, level, field, visited, newChain)
+			// Unmark after recursion completes (allow same variable in different branches)
+			delete(visited, varName)
+
+			if err != nil {
+				return "", err
+			}
+
+			result.WriteString(expandedValue)
+			i = closeIdx + 1
+			continue
+		}
+
+		// Regular character
+		result.WriteByte(input[i])
+		i++
+	}
+
+	return result.String(), nil
 }
