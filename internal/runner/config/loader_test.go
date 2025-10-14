@@ -571,10 +571,8 @@ func TestPhase1_ParseFromEnvAndVars(t *testing.T) {
 	expectedGlobalEnv := []string{"BASE_DIR=%{app_dir}"}
 	assert.Equal(t, expectedGlobalEnv, cfg.Global.Env, "Global.Env should be parsed correctly")
 
-	// Verify Global.ExpandedVars is nil or empty (not yet expanded in Phase 1)
-	// Note: In the current implementation, expansion happens in LoadConfig, so ExpandedVars may be populated
-	// For Phase 1, we just verify that the fields are parsed
-	t.Logf("Global.ExpandedVars: %v", cfg.Global.ExpandedVars)
+	// Verify Global.ExpandedVars is empty as it is not populated in Phase 1.
+	assert.Empty(t, cfg.Global.ExpandedVars, "Global.ExpandedVars should be empty in Phase 1")
 
 	// Verify groups
 	require.Len(t, cfg.Groups, 1, "Expected 1 group")
@@ -593,8 +591,8 @@ func TestPhase1_ParseFromEnvAndVars(t *testing.T) {
 	expectedGroupEnv := []string{"LOG_DIR=%{log_dir}"}
 	assert.Equal(t, expectedGroupEnv, group.Env, "Group.Env should be parsed correctly")
 
-	// Verify Group.ExpandedVars is nil or empty (not yet expanded in Phase 1)
-	t.Logf("Group.ExpandedVars: %v", group.ExpandedVars)
+	// Verify Group.ExpandedVars is empty as it is not populated in Phase 1.
+	assert.Empty(t, group.ExpandedVars, "Group.ExpandedVars should be empty in Phase 1")
 
 	// Verify commands
 	require.Len(t, group.Commands, 1, "Expected 1 command")
@@ -613,6 +611,6 @@ func TestPhase1_ParseFromEnvAndVars(t *testing.T) {
 	expectedCmdArgs := []string{"%{temp_file}"}
 	assert.Equal(t, expectedCmdArgs, cmd.Args, "Command.Args should be parsed correctly")
 
-	// Verify Command.ExpandedVars is nil or empty (not yet expanded in Phase 1)
-	t.Logf("Command.ExpandedVars: %v", cmd.ExpandedVars)
+	// Verify Command.ExpandedVars is empty as it is not populated in Phase 1.
+	assert.Empty(t, cmd.ExpandedVars, "Command.ExpandedVars should be empty in Phase 1")
 }
