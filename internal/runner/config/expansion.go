@@ -920,23 +920,8 @@ func ProcessFromEnv(fromEnv []string, envAllowlist []string, systemEnv map[strin
 		}
 
 		// Validate internal variable name
-		if err := validateVariableName(internalName); err != nil {
-			// Check if it's a reserved prefix error
-			if errors.Is(err, ErrReservedVariablePrefix) {
-				return nil, &ErrReservedVariablePrefixDetail{
-					Level:        level,
-					Field:        "from_env",
-					VariableName: internalName,
-					Prefix:       reservedVariablePrefix,
-				}
-			}
-			// Otherwise, it's a POSIX validation error from security.ValidateVariableName
-			return nil, &ErrInvalidVariableNameDetail{
-				Level:        level,
-				Field:        "from_env",
-				VariableName: internalName,
-				Reason:       err.Error(),
-			}
+		if err := validateVariableNameWithDetail(internalName, level, "from_env"); err != nil {
+			return nil, err
 		}
 
 		// Validate system variable name (should be POSIX compliant)
@@ -1029,23 +1014,8 @@ func ProcessVars(vars []string, baseExpandedVars map[string]string, level string
 		}
 
 		// Validate variable name
-		if err := validateVariableName(varName); err != nil {
-			// Check if it's a reserved prefix error
-			if errors.Is(err, ErrReservedVariablePrefix) {
-				return nil, &ErrReservedVariablePrefixDetail{
-					Level:        level,
-					Field:        "vars",
-					VariableName: varName,
-					Prefix:       reservedVariablePrefix,
-				}
-			}
-			// Otherwise, it's a POSIX validation error from security.ValidateVariableName
-			return nil, &ErrInvalidVariableNameDetail{
-				Level:        level,
-				Field:        "vars",
-				VariableName: varName,
-				Reason:       err.Error(),
-			}
+		if err := validateVariableNameWithDetail(varName, level, "vars"); err != nil {
+			return nil, err
 		}
 
 		parsedVars = append(parsedVars, struct {
@@ -1107,23 +1077,8 @@ func ProcessEnv(env []string, expandedVars map[string]string, level string) (map
 		}
 
 		// Validate environment variable name (POSIX)
-		if err := validateVariableName(envVarName); err != nil {
-			// Check if it's a reserved prefix error
-			if errors.Is(err, ErrReservedVariablePrefix) {
-				return nil, &ErrReservedVariablePrefixDetail{
-					Level:        level,
-					Field:        "env",
-					VariableName: envVarName,
-					Prefix:       reservedVariablePrefix,
-				}
-			}
-			// Otherwise, it's a POSIX validation error from security.ValidateVariableName
-			return nil, &ErrInvalidVariableNameDetail{
-				Level:        level,
-				Field:        "env",
-				VariableName: envVarName,
-				Reason:       err.Error(),
-			}
+		if err := validateVariableNameWithDetail(envVarName, level, "env"); err != nil {
+			return nil, err
 		}
 
 		// Expand %{VAR} references in the value using internal variables only
