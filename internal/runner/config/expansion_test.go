@@ -3379,28 +3379,32 @@ func TestProcessFromEnv_ReservedPrefix(t *testing.T) {
 func TestProcessFromEnv_InvalidFormat(t *testing.T) {
 	// Test invalid format (missing '=', empty key, or invalid system var)
 	tests := []struct {
-		name      string
-		fromEnv   []string
-		systemEnv map[string]string
-		allowlist []string
+		name        string
+		fromEnv     []string
+		systemEnv   map[string]string
+		allowlist   []string
+		expectedErr error
 	}{
 		{
-			name:      "no equals sign",
-			fromEnv:   []string{"invalid_format"},
-			systemEnv: map[string]string{"HOME": "/home/test"},
-			allowlist: []string{"HOME"},
+			name:        "no equals sign",
+			fromEnv:     []string{"invalid_format"},
+			systemEnv:   map[string]string{"HOME": "/home/test"},
+			allowlist:   []string{"HOME"},
+			expectedErr: config.ErrInvalidFromEnvFormat,
 		},
 		{
-			name:      "empty internal name",
-			fromEnv:   []string{"=HOME"},
-			systemEnv: map[string]string{"HOME": "/home/test"},
-			allowlist: []string{"HOME"},
+			name:        "empty internal name",
+			fromEnv:     []string{"=HOME"},
+			systemEnv:   map[string]string{"HOME": "/home/test"},
+			allowlist:   []string{"HOME"},
+			expectedErr: config.ErrInvalidFromEnvFormat,
 		},
 		{
-			name:      "multiple equals signs (invalid system var name)",
-			fromEnv:   []string{"var=VAR=extra"},
-			systemEnv: map[string]string{"VAR": "value"},
-			allowlist: []string{"VAR=extra"},
+			name:        "multiple equals signs (invalid system var name)",
+			fromEnv:     []string{"var=VAR=extra"},
+			systemEnv:   map[string]string{"VAR": "value"},
+			allowlist:   []string{"VAR=extra"},
+			expectedErr: config.ErrInvalidSystemVariableName,
 		},
 	}
 
@@ -3410,6 +3414,7 @@ func TestProcessFromEnv_InvalidFormat(t *testing.T) {
 
 			require.Error(t, err)
 			assert.Nil(t, result)
+			assert.ErrorIs(t, err, tt.expectedErr, "error should be of expected type")
 		})
 	}
 }
