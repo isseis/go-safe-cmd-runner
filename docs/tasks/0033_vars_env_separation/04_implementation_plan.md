@@ -161,6 +161,9 @@
 ### Phase 2: 内部変数展開エンジンの実装
 **目的**: `%{VAR}` 構文の展開処理を実装
 
+- [x] Phase 2 completed: InternalVariableExpander implemented and tests
+  passed (verified 2025-10-14). Stopped after Phase 2 as requested.
+
 #### 2.2.1 InternalVariableExpander構造体の実装（テスト先行）
 - [x] テスト作成: `internal/runner/config/expansion_test.go`
   - [x] `TestExpandString_Basic`: 基本的な変数展開
@@ -420,8 +423,8 @@
 **目的**: Global レベルでの from_env, vars, env の処理を統合
 
 #### 2.6.1 expandGlobalConfig()関数の実装（テスト先行）
-- [ ] テスト作成: `internal/runner/config/expansion_test.go`
-  - [ ] `TestExpandGlobalConfig_Basic`: 基本的な展開フロー
+- [x] テスト作成: `internal/runner/config/expansion_test.go`
+  - [x] `TestExpandGlobalConfig_Basic`: 基本的な展開フロー
     ```toml
     [global]
     env_allowlist = ["HOME"]
@@ -429,35 +432,34 @@
     vars = ["app_dir=%{home}/app"]
     env = ["APP_DIR=%{app_dir}"]
     ```
-  - [ ] `TestExpandGlobalConfig_NoFromEnv`: from_env なし
-  - [ ] `TestExpandGlobalConfig_NoVars`: vars なし
-  - [ ] `TestExpandGlobalConfig_NoEnv`: env なし
-  - [ ] `TestExpandGlobalConfig_ComplexChain`: 複雑な参照チェーン
-- [ ] テスト実行で失敗を確認
-- [ ] コミット: "Add tests for expandGlobalConfig (TDD)"
+  - [x] `TestExpandGlobalConfig_NoFromEnv`: from_env なし
+  - [x] `TestExpandGlobalConfig_NoVars`: vars なし
+  - [x] `TestExpandGlobalConfig_NoEnv`: env なし
+  - [x] `TestExpandGlobalConfig_ComplexChain`: 複雑な参照チェーン
+- [x] テスト実行で失敗を確認
+- [x] コミット: "Add tests for expandGlobalConfig (TDD)"
 
 #### 2.6.2 expandGlobalConfig()関数の実装
-- [ ] `internal/runner/config/loader.go`に追加
-  - [ ] `expandGlobalConfig`関数を実装:
+- [x] `internal/runner/config/expansion.go`に追加
+  - [x] `ExpandGlobalConfig`関数を実装:
     ```go
-    func expandGlobalConfig(
+    func ExpandGlobalConfig(
         global *runnertypes.GlobalConfig,
         filter *environment.Filter,
-        expander *InternalVariableExpander,
     ) error
     ```
-    - [ ] システム環境変数の取得（`filter.ParseSystemEnvironment`）
-    - [ ] `ProcessFromEnv`で Global.FromEnv を処理
-    - [ ] `ProcessVars`で Global.Vars を展開
-    - [ ] `Global.ExpandedVars`に結果を保存
-    - [ ] `ProcessEnv`で Global.Env を展開（ExpandedVars使用）
-    - [ ] `Global.ExpandedEnv`に結果を保存
-    - [ ] `ExpandVerifyFiles`で Global.VerifyFiles を展開（ExpandedVars使用）
-    - [ ] エラーハンドリング
+    - [x] システム環境変数の取得（`filter.ParseSystemEnvironment`）
+    - [x] `ProcessFromEnv`で Global.FromEnv を処理
+    - [x] `ProcessVars`で Global.Vars を展開
+    - [x] `Global.ExpandedVars`に結果を保存
+    - [x] `ProcessEnv`で Global.Env を展開（ExpandedVars使用）
+    - [x] `Global.ExpandedEnv`に結果を保存
+    - [x] `ExpandString`で Global.VerifyFiles を展開（ExpandedVars使用）
+    - [x] エラーハンドリング
 
 #### 2.6.3 expandGlobalConfig()のテスト実行
-- [ ] すべてのテストがPASS
-- [ ] コミット: "Implement expandGlobalConfig for Global-level processing"
+- [x] すべてのテストがPASS
+- [x] コミット: "Implement expandGlobalConfig for Global-level processing"
 
 ---
 
