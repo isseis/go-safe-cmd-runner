@@ -3151,34 +3151,28 @@ func TestExpandString_UnclosedVariableReference(t *testing.T) {
 	tests := []struct {
 		name  string
 		input string
-		vars  map[string]string
 	}{
 		{
 			name:  "unclosed at end",
 			input: "prefix_%{var",
-			vars:  map[string]string{"var": "value"},
 		},
 		{
 			name:  "unclosed in middle",
 			input: "start_%{var_middle",
-			vars:  map[string]string{},
 		},
 		{
 			name:  "only opening brace",
 			input: "%{",
-			vars:  map[string]string{},
 		},
 		{
 			name:  "unclosed with content after",
-			input: "%{var_more text",
-			vars:  map[string]string{},
+			input: "%{\var_more text",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_ = slog.Default()
-			result, err := config.ExpandString(tt.input, tt.vars, "global", "test_field")
+			result, err := config.ExpandString(tt.input, nil, "global", "test_field")
 
 			require.Error(t, err)
 			assert.Empty(t, result)
