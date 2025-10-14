@@ -72,6 +72,22 @@ func (e *ErrInvalidVariableNameDetail) Error() string {
 	return fmt.Sprintf("invalid variable name in %s.%s: '%s' (%s)", e.Level, e.Field, e.VariableName, e.Reason)
 }
 
+// ErrInvalidSystemVariableNameDetail provides detailed information about invalid system variable names
+type ErrInvalidSystemVariableNameDetail struct {
+	Level              string
+	Field              string
+	SystemVariableName string
+	Reason             string
+}
+
+func (e *ErrInvalidSystemVariableNameDetail) Error() string {
+	return fmt.Sprintf("invalid system variable name in %s.%s: '%s' (%s)", e.Level, e.Field, e.SystemVariableName, e.Reason)
+}
+
+func (e *ErrInvalidSystemVariableNameDetail) Unwrap() error {
+	return ErrInvalidSystemVariableName
+}
+
 // ErrReservedVariablePrefixDetail provides detailed information about reserved prefix errors
 type ErrReservedVariablePrefixDetail struct {
 	Level        string

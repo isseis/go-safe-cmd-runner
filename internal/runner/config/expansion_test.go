@@ -3415,6 +3415,16 @@ func TestProcessFromEnv_InvalidFormat(t *testing.T) {
 			require.Error(t, err)
 			assert.Nil(t, result)
 			assert.ErrorIs(t, err, tt.expectedErr, "error should be of expected type")
+
+			// For system variable name errors, also check the detail struct
+			if tt.expectedErr == config.ErrInvalidSystemVariableName {
+				var detailErr *config.ErrInvalidSystemVariableNameDetail
+				assert.ErrorAs(t, err, &detailErr, "should be ErrInvalidSystemVariableNameDetail")
+				assert.Equal(t, "global", detailErr.Level)
+				assert.Equal(t, "from_env", detailErr.Field)
+				assert.NotEmpty(t, detailErr.SystemVariableName)
+				assert.NotEmpty(t, detailErr.Reason)
+			}
 		})
 	}
 }

@@ -942,7 +942,12 @@ func ProcessFromEnv(fromEnv []string, envAllowlist []string, systemEnv map[strin
 		// Validate system variable name (should be POSIX compliant)
 		// System variables can use reserved prefixes, so we only check POSIX compliance
 		if err := security.ValidateVariableName(systemVarName); err != nil {
-			return nil, fmt.Errorf("%w in %s.from_env: '%s' (%w)", ErrInvalidSystemVariableName, level, systemVarName, err)
+			return nil, &ErrInvalidSystemVariableNameDetail{
+				Level:              level,
+				Field:              "from_env",
+				SystemVariableName: systemVarName,
+				Reason:             err.Error(),
+			}
 		}
 
 		// Check if system variable is in allowlist
