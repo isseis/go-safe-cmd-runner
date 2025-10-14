@@ -154,7 +154,7 @@
 - [x] Phase 1の新規テストがすべてPASS
 - [x] `make lint`でエラーなし
 - [x] `make fmt`でフォーマット完了
-- [ ] コミット: "Add FromEnv/Vars/ExpandedVars fields and basic validation"
+- [x] コミット: "Add FromEnv/Vars/ExpandedVars fields and basic validation"
 
 ---
 

@@ -101,7 +101,7 @@ type ErrCircularReferenceDetail struct {
 }
 
 func (e *ErrCircularReferenceDetail) Error() string {
-	return fmt.Sprintf("circular reference in %s.%s: %s (chain: %v)", e.Level, e.Field, e.VariableName, e.Chain)
+	return fmt.Sprintf("circular reference in %s.%s: '%s' (chain: %v)", e.Level, e.Field, e.VariableName, e.Chain)
 }
 
 func (e *ErrCircularReferenceDetail) Unwrap() error {
