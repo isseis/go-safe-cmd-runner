@@ -51,6 +51,12 @@ var (
 
 	// ErrMaxRecursionDepthExceeded is returned when variable expansion exceeds maximum recursion depth
 	ErrMaxRecursionDepthExceeded = errors.New("maximum recursion depth exceeded")
+
+	// ErrInvalidFromEnvFormat is returned when from_env entry is not in 'internal_name=SYSTEM_VAR' format
+	ErrInvalidFromEnvFormat = errors.New("invalid from_env format")
+
+	// ErrInvalidSystemVariableName is returned when system variable name is invalid
+	ErrInvalidSystemVariableName = errors.New("invalid system variable name")
 )
 
 // ErrInvalidVariableNameDetail provides detailed information about invalid variable names
@@ -176,3 +182,7 @@ func (e *ErrMaxRecursionDepthExceededDetail) Error() string {
 func (e *ErrMaxRecursionDepthExceededDetail) Unwrap() error {
 	return ErrMaxRecursionDepthExceeded
 }
+
+// ErrReservedVariableNameDetail is an alias for ErrReservedVariablePrefixDetail
+// to maintain consistency with test naming conventions
+type ErrReservedVariableNameDetail = ErrReservedVariablePrefixDetail

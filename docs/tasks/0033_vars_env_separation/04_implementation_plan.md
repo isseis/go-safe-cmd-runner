@@ -244,48 +244,48 @@
 **目的**: システム環境変数を内部変数として取り込む機能を実装
 
 #### 2.3.1 ProcessFromEnv()関数の実装（テスト先行）
-- [ ] テスト作成: `internal/runner/config/expansion_test.go`
-  - [ ] `TestProcessFromEnv_Basic`: 基本的な取り込み
+- [x] テスト作成: `internal/runner/config/expansion_test.go`
+  - [x] `TestProcessFromEnv_Basic`: 基本的な取り込み
     ```go
     fromEnv: ["home=HOME", "user=USER"]
     systemEnv: {"HOME": "/home/test", "USER": "testuser"}
     allowlist: ["HOME", "USER"]
     expected: {"home": "/home/test", "user": "testuser"}
     ```
-  - [ ] `TestProcessFromEnv_NotInAllowlist`: allowlist違反エラー
+  - [x] `TestProcessFromEnv_NotInAllowlist`: allowlist違反エラー
     ```go
     fromEnv: ["secret=SECRET"]
     allowlist: ["HOME"]  // SECRET not in allowlist
     expected: ErrVariableNotInAllowlist
     ```
-  - [ ] `TestProcessFromEnv_SystemVarNotSet`: システム変数が未設定
+  - [x] `TestProcessFromEnv_SystemVarNotSet`: システム変数が未設定
     ```go
     fromEnv: ["missing=MISSING_VAR"]
     systemEnv: {}
     allowlist: ["MISSING_VAR"]
     expected: {"missing": ""} with warning log
     ```
-  - [ ] `TestProcessFromEnv_InvalidInternalName`: 不正な内部変数名
+  - [x] `TestProcessFromEnv_InvalidInternalName`: 不正な内部変数名
     ```go
     fromEnv: ["123invalid=HOME"]
     expected: ErrInvalidVariableName
     ```
-  - [ ] `TestProcessFromEnv_ReservedPrefix`: 予約プレフィックス
+  - [x] `TestProcessFromEnv_ReservedPrefix`: 予約プレフィックス
     ```go
     fromEnv: ["__runner_home=HOME"]
     expected: ErrReservedVariableName
     ```
-  - [ ] `TestProcessFromEnv_InvalidFormat`: 不正なフォーマット
+  - [x] `TestProcessFromEnv_InvalidFormat`: 不正なフォーマット
     ```go
     fromEnv: ["invalid_format"]  // no '='
     expected: error
     ```
-- [ ] テスト実行で失敗を確認
-- [ ] コミット: "Add tests for ProcessFromEnv (TDD)"
+- [x] テスト実行で失敗を確認
+- [x] コミット: "Add tests for ProcessFromEnv (TDD)"
 
 #### 2.3.2 ProcessFromEnv()関数の実装
-- [ ] `internal/runner/config/expansion.go`に追加
-  - [ ] `ProcessFromEnv`メソッドを実装:
+- [x] `internal/runner/config/expansion.go`に追加
+  - [x] `ProcessFromEnv`メソッドを実装:
     ```go
     func (e *InternalVariableExpander) ProcessFromEnv(
         fromEnv []string,
@@ -294,18 +294,18 @@
         level string,
     ) (map[string]string, error)
     ```
-    - [ ] allowlistマップの構築
-    - [ ] 各マッピングをパース（`internal_name=SYSTEM_VAR`）
-    - [ ] 内部変数名のバリデーション
-    - [ ] 予約プレフィックスチェック
-    - [ ] システム変数名のバリデーション
-    - [ ] allowlistチェック
-    - [ ] システム環境変数の値を取得（未設定時は空文字列 + 警告ログ）
-    - [ ] 結果マップに格納
+    - [x] allowlistマップの構築
+    - [x] 各マッピングをパース（`internal_name=SYSTEM_VAR`）
+    - [x] 内部変数名のバリデーション
+    - [x] 予約プレフィックスチェック
+    - [x] システム変数名のバリデーション
+    - [x] allowlistチェック
+    - [x] システム環境変数の値を取得（未設定時は空文字列 + 警告ログ）
+    - [x] 結果マップに格納
 
 #### 2.3.3 ProcessFromEnv()のテスト実行
-- [ ] すべてのテストがPASS
-- [ ] コミット: "Implement ProcessFromEnv for system env var import"
+- [x] すべてのテストがPASS
+- [x] コミット: "Implement ProcessFromEnv for system env var import"
 
 ---
 

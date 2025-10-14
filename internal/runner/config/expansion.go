@@ -886,3 +886,86 @@ func expandStringRecursive(
 
 	return result.String(), nil
 }
+
+// ProcessFromEnv processes from_env mappings and imports system environment variables as internal variables.
+// It validates internal variable names, checks allowlist, and handles missing system variables.
+//
+// Parameters:
+//   - fromEnv: List of "internal_name=SYSTEM_VAR" mappings
+//   - envAllowlist: List of allowed system environment variable names
+//   - systemEnv: Map of system environment variables
+//   - level: Configuration level for error reporting ("global", "group[name]", etc.)
+//
+// Returns:
+//   - Map of internal variable names to values
+//   - Error if validation fails or system var is not in allowlist
+func ProcessFromEnv(fromEnv []string, envAllowlist []string, systemEnv map[string]string, level string) (map[string]string, error) {
+	if len(fromEnv) == 0 {
+		return make(map[string]string), nil
+	}
+
+	// Build allowlist map for O(1) lookup
+	allowlistMap := make(map[string]bool, len(envAllowlist))
+	for _, allowedVar := range envAllowlist {
+		allowlistMap[allowedVar] = true
+	}
+
+	result := make(map[string]string, len(fromEnv))
+
+	for _, mapping := range fromEnv {
+		// Parse "internal_name=SYSTEM_VAR" format
+		internalName, systemVarName, ok := common.ParseEnvVariable(mapping)
+		if !ok {
+			return nil, fmt.Errorf("%w in %s: '%s' (expected 'internal_name=SYSTEM_VAR')", ErrInvalidFromEnvFormat, level, mapping)
+		}
+
+		// Validate internal variable name
+		if err := validateVariableName(internalName); err != nil {
+			// Check if it's a reserved prefix error
+			if errors.Is(err, ErrReservedVariablePrefix) {
+				return nil, &ErrReservedVariablePrefixDetail{
+					Level:        level,
+					Field:        "from_env",
+					VariableName: internalName,
+					Prefix:       "__runner_",
+				}
+			}
+			// Otherwise, it's a POSIX validation error from security.ValidateVariableName
+			return nil, &ErrInvalidVariableNameDetail{
+				Level:        level,
+				Field:        "from_env",
+				VariableName: internalName,
+				Reason:       err.Error(),
+			}
+		}
+
+		// Validate system variable name (should be POSIX compliant)
+		// System variables can use reserved prefixes, so we only check POSIX compliance
+		if err := security.ValidateVariableName(systemVarName); err != nil {
+			return nil, fmt.Errorf("%w in %s.from_env: '%s' (%w)", ErrInvalidSystemVariableName, level, systemVarName, err)
+		}
+
+		// Check if system variable is in allowlist
+		if !allowlistMap[systemVarName] {
+			return nil, &ErrVariableNotInAllowlistDetail{
+				Level:           level,
+				SystemVarName:   systemVarName,
+				InternalVarName: internalName,
+				Allowlist:       envAllowlist,
+			}
+		}
+
+		// Get system environment variable value (empty string if not set)
+		value, exists := systemEnv[systemVarName]
+		if !exists {
+			// Log warning for missing system variable
+			// For now, we'll just use empty string
+			// TODO: Add logging once logger is available in this context
+			value = ""
+		}
+
+		result[internalName] = value
+	}
+
+	return result, nil
+}

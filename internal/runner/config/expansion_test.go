@@ -3321,12 +3321,6 @@ func TestProcessFromEnv_InvalidInternalName(t *testing.T) {
 			systemEnv: map[string]string{"HOME": "/home/test"},
 			allowlist: []string{"HOME"},
 		},
-		{
-			name:      "empty internal name",
-			fromEnv:   []string{"=HOME"},
-			systemEnv: map[string]string{"HOME": "/home/test"},
-			allowlist: []string{"HOME"},
-		},
 	}
 
 	for _, tt := range tests {
@@ -3383,7 +3377,7 @@ func TestProcessFromEnv_ReservedPrefix(t *testing.T) {
 }
 
 func TestProcessFromEnv_InvalidFormat(t *testing.T) {
-	// Test invalid format (missing '=')
+	// Test invalid format (missing '=', empty key, or invalid system var)
 	tests := []struct {
 		name      string
 		fromEnv   []string
@@ -3397,10 +3391,16 @@ func TestProcessFromEnv_InvalidFormat(t *testing.T) {
 			allowlist: []string{"HOME"},
 		},
 		{
-			name:      "multiple equals signs",
+			name:      "empty internal name",
+			fromEnv:   []string{"=HOME"},
+			systemEnv: map[string]string{"HOME": "/home/test"},
+			allowlist: []string{"HOME"},
+		},
+		{
+			name:      "multiple equals signs (invalid system var name)",
 			fromEnv:   []string{"var=VAR=extra"},
 			systemEnv: map[string]string{"VAR": "value"},
-			allowlist: []string{"VAR"},
+			allowlist: []string{"VAR=extra"},
 		},
 	}
 
