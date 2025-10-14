@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -80,5 +81,40 @@ func validateVariableName(name string) error {
 		return fmt.Errorf("%w: '%s' (prefix '%s' is reserved for internal use)", ErrReservedVariablePrefix, name, reservedVariablePrefix)
 	}
 
+	return nil
+}
+
+// validateVariableNameWithDetail validates a variable name and returns a detailed error
+// if validation fails. This helper function standardizes error handling across
+// ProcessEnv, ProcessFromEnv, and ProcessVars.
+//
+// Parameters:
+//   - varName: The variable name to validate
+//   - level: The configuration level (e.g., "global", "group:mygroup", "cmd:mycmd")
+//   - field: The field name where the variable appears (e.g., "env", "from_env", "vars")
+//
+// Returns:
+//   - nil if valid
+//   - *ErrReservedVariablePrefixDetail if the name uses a reserved prefix
+//   - *ErrInvalidVariableNameDetail for POSIX validation errors
+func validateVariableNameWithDetail(varName, level, field string) error {
+	if err := validateVariableName(varName); err != nil {
+		// Check if it's a reserved prefix error
+		if errors.Is(err, ErrReservedVariablePrefix) {
+			return &ErrReservedVariablePrefixDetail{
+				Level:        level,
+				Field:        field,
+				VariableName: varName,
+				Prefix:       reservedVariablePrefix,
+			}
+		}
+		// Otherwise, it's a POSIX validation error from security.ValidateVariableName
+		return &ErrInvalidVariableNameDetail{
+			Level:        level,
+			Field:        field,
+			VariableName: varName,
+			Reason:       err.Error(),
+		}
+	}
 	return nil
 }

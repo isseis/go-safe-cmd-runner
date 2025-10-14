@@ -376,27 +376,27 @@
 **目的**: `env` フィールドで内部変数を参照可能にする
 
 #### 2.5.1 ProcessEnv()関数の実装（テスト先行）
-- [ ] テスト作成: `internal/runner/config/expansion_test.go`
-  - [ ] `TestProcessEnv_Basic`: 基本的な展開
+- [x] テスト作成: `internal/runner/config/expansion_test.go`
+  - [x] `TestProcessEnv_Basic`: 基本的な展開
     ```go
     env: ["VAR1=value1", "VAR2=value2"]
     internalVars: {}
     expected: {"VAR1": "value1", "VAR2": "value2"}
     ```
-  - [ ] `TestProcessEnv_ReferenceInternalVars`: 内部変数の参照
+  - [x] `TestProcessEnv_ReferenceInternalVars`: 内部変数の参照
     ```go
     env: ["BASE_DIR=%{app_dir}", "LOG_DIR=%{app_dir}/logs"]
     internalVars: {"app_dir": "/opt/myapp"}
     expected: {"BASE_DIR": "/opt/myapp", "LOG_DIR": "/opt/myapp/logs"}
     ```
-  - [ ] `TestProcessEnv_UndefinedInternalVar`: 未定義変数エラー
-  - [ ] `TestProcessEnv_InvalidEnvVarName`: 不正な環境変数名
-- [ ] テスト実行で失敗を確認
-- [ ] コミット: "Add tests for ProcessEnv (TDD)"
+  - [x] `TestProcessEnv_UndefinedInternalVar`: 未定義変数エラー
+  - [x] `TestProcessEnv_InvalidEnvVarName`: 不正な環境変数名
+- [x] テスト実行で失敗を確認
+- [x] コミット: "Add tests for ProcessEnv (TDD)"
 
 #### 2.5.2 ProcessEnv()関数の実装
-- [ ] `internal/runner/config/expansion.go`に追加
-  - [ ] `ProcessEnv`メソッドを実装:
+- [x] `internal/runner/config/expansion.go`に追加
+  - [x] `ProcessEnv`メソッドを実装:
     ```go
     func (e *InternalVariableExpander) ProcessEnv(
         env []string,
@@ -404,15 +404,15 @@
         level string,
     ) (map[string]string, error)
     ```
-    - [ ] 各環境変数定義をパース（`VAR=value`）
-    - [ ] 環境変数名のバリデーション（POSIX準拠）
-    - [ ] `ExpandString`で値を展開（internalVarsを使用）
-    - [ ] 結果マップに格納
-    - [ ] **注意**: env は他の env 変数を参照できない（internalVars のみ）
+    - [x] 各環境変数定義をパース（`VAR=value`）
+    - [x] 環境変数名のバリデーション（POSIX準拠）
+    - [x] `ExpandString`で値を展開（internalVarsを使用）
+    - [x] 結果マップに格納
+    - [x] **注意**: env は他の env 変数を参照できない（internalVars のみ）
 
 #### 2.5.3 ProcessEnv()のテスト実行
-- [ ] すべてのテストがPASS
-- [ ] コミット: "Implement ProcessEnv for environment variable expansion"
+- [x] すべてのテストがPASS
+- [x] コミット: "Implement ProcessEnv for environment variable expansion"
 
 ---
 
