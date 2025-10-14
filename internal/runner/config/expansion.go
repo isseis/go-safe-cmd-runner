@@ -981,12 +981,19 @@ func ProcessFromEnv(fromEnv []string, envAllowlist []string, systemEnv map[strin
 
 // ProcessVars processes vars field and expands internal variable definitions.
 //
-// The function implements a two-pass algorithm:
-//  1. First pass: Parse all vars definitions and store unexpanded values
-//  2. Second pass: Expand all values iteratively until no more changes occur
+// The function processes variables by first parsing and validating all definitions,
+// and then expanding them sequentially.
 //
-// This allows vars to reference each other in any order, including forward
-// references and self-extension (e.g., "path=%{path}:/custom").
+// Each variable is expanded in the order it appears in the `vars` array. It can
+// reference variables from `baseExpandedVars` or any other variables that have been
+// previously defined in the same `vars` array.
+//
+// NOTE: This sequential approach does not support forward references. For instance,
+// in `vars: ["A=%{B}", "B=value"]`, the expansion of `A` will fail because `B` has
+// not been processed yet. This results in an `ErrUndefinedVariable`.
+//
+// Self-extension (e.g., "path=%{path}:/custom") is supported, provided that `path`
+// is already defined in `baseExpandedVars`.
 //
 // Parameters:
 //   - vars: Array of "var_name=value" definitions (value can contain %{VAR} references)
