@@ -161,6 +161,9 @@
 ### Phase 2: 内部変数展開エンジンの実装
 **目的**: `%{VAR}` 構文の展開処理を実装
 
+- [x] Phase 2 completed: InternalVariableExpander implemented and tests
+  passed (verified 2025-10-14). Stopped after Phase 2 as requested.
+
 #### 2.2.1 InternalVariableExpander構造体の実装（テスト先行）
 - [x] テスト作成: `internal/runner/config/expansion_test.go`
   - [x] `TestExpandString_Basic`: 基本的な変数展開
