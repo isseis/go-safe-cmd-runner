@@ -33,7 +33,7 @@ type GlobalConfig struct {
     Vars    []string `toml:"vars"`     // Internal variable definitions: "var_name=value"
 
     // Expanded results (populated during configuration loading)
-    InternalVars        map[string]string `toml:"-"` // Expanded internal variables (from_env + vars)
+    ExtendedVars        map[string]string `toml:"-"` // Expanded internal variables (from_env + vars)
     ExpandedVerifyFiles []string          `toml:"-"` // verify_files with %{VAR} expanded
     ExpandedEnv         map[string]string `toml:"-"` // Process environment variables (env field expanded)
 }
@@ -46,12 +46,12 @@ type GlobalConfig struct {
 | `FromEnv` | `[]string` | システム環境変数を内部変数として取り込み | 設定読み込み時 | `KEY=VALUE` |
 | `Vars` | `[]string` | 内部変数の定義 | 設定読み込み時 | `KEY=VALUE`, `%{VAR}` 参照可能 |
 | `Env` | `[]string` | プロセス環境変数の定義 | 設定読み込み時 | `KEY=VALUE`, `%{VAR}` 参照可能 |
-| `InternalVars` | `map[string]string` | 展開済み内部変数（`FromEnv` + `Vars`） | 設定読み込み時に構築 | - |
+| `ExtendedVars` | `map[string]string` | 展開済み内部変数（`FromEnv` + `Vars`） | 設定読み込み時に構築 | - |
 | `ExpandedEnv` | `map[string]string` | 展開済みプロセス環境変数 | 設定読み込み時に構築 | - |
 
 **処理順序**:
-1. `FromEnv` を処理 → システム環境変数を `InternalVars` に追加
-2. `Vars` を展開 → `%{VAR}` を解決し `InternalVars` に追加
+1. `FromEnv` を処理 → システム環境変数を `ExtendedVars` に追加
+2. `Vars` を展開 → `%{VAR}` を解決し `ExtendedVars` に追加
 3. `Env` を展開 → `%{VAR}` を解決し `ExpandedEnv` に追加
 4. `VerifyFiles` を展開 → `%{VAR}` を解決し `ExpandedVerifyFiles` に追加
 
@@ -77,7 +77,7 @@ type CommandGroup struct {
     Vars    []string `toml:"vars"`     // Group-level internal variables
 
     // Expanded results (populated during configuration loading)
-    InternalVars        map[string]string `toml:"-"` // Inherited + group-specific internal variables
+    ExtendedVars        map[string]string `toml:"-"` // Inherited + group-specific internal variables
     ExpandedVerifyFiles []string          `toml:"-"` // verify_files with %{VAR} expanded
     ExpandedEnv         map[string]string `toml:"-"` // Process environment variables (env field expanded)
 }
@@ -89,7 +89,7 @@ type CommandGroup struct {
 |-----------|---------|------|
 | `FromEnv` | Override | Group.FromEnv が nil または定義されていない場合は Global.FromEnv を継承、定義されている場合は上書き（Global.FromEnv は無視） |
 | `Vars` | Merge | Global.Vars と Group.Vars をマージ（Group.Vars が優先） |
-| `InternalVars` | Merge | Global.InternalVars と Group.InternalVars をマージ |
+| `ExtendedVars` | Merge | Global.ExtendedVars と Group.ExtendedVars をマージ |
 | `EnvAllowlist` | Override | Task 0031 の仕様通り |
 | `Env` | Merge | Global.Env と Group.Env をマージ（実行時にマージ） |
 
@@ -98,13 +98,13 @@ type CommandGroup struct {
 // Pseudo-code for FromEnv inheritance
 if group.FromEnv == nil {
     // Not defined in TOML → inherit from global
-    group.InternalVars = copyMap(global.InternalVars)
+    group.ExtendedVars = copyMap(global.ExtendedVars)
 } else if len(group.FromEnv) == 0 {
     // Explicitly set to [] → no system env vars
-    group.InternalVars = make(map[string]string)
+    group.ExtendedVars = make(map[string]string)
 } else {
     // Explicitly defined → override (global.FromEnv is ignored)
-    group.InternalVars = processFromEnv(group.FromEnv, group.EnvAllowlist)
+    group.ExtendedVars = processFromEnv(group.FromEnv, group.EnvAllowlist)
 }
 ```
 
@@ -123,7 +123,7 @@ type Command struct {
     // ... other existing fields ...
 
     // Expanded results
-    InternalVars map[string]string `toml:"-"`  // 追加: 展開済み内部変数（Group + Global + Command.vars）
+    ExtendedVars map[string]string `toml:"-"`  // 追加: 展開済み内部変数（Group + Global + Command.vars）
     ExpandedCmd  string            `toml:"-"`
     ExpandedArgs []string          `toml:"-"`
     ExpandedEnv  map[string]string `toml:"-"`
@@ -132,7 +132,7 @@ type Command struct {
 
 **変更点**:
 - `Vars`: コマンド専用の内部変数定義を追加
-- `InternalVars`: Global.vars + Group.vars + Command.vars をマージした最終的な内部変数マップ
+- `ExtendedVars`: Global.vars + Group.vars + Command.vars をマージした最終的な内部変数マップ
 
 ### 1.4 エラー型定義
 
@@ -243,7 +243,7 @@ func NewInternalVariableExpander(logger *logging.Logger) *InternalVariableExpand
 //
 // Parameters:
 //   - input: The string to expand
-//   - internalVars: Map of available internal variables
+//   - expandedVars: Map of available internal variables
 //   - level: Configuration level ("global", "group", "command") for error reporting
 //   - field: Field name ("vars", "env", "cmd", "args", "verify_files") for error reporting
 //
@@ -252,18 +252,18 @@ func NewInternalVariableExpander(logger *logging.Logger) *InternalVariableExpand
 //   - Error if expansion fails (circular reference, undefined variable, invalid escape)
 func (e *InternalVariableExpander) ExpandString(
     input string,
-    internalVars map[string]string,
+    expandedVars map[string]string,
     level string,
     field string,
 ) (string, error) {
     visited := make(map[string]bool)
-    return e.expandStringRecursive(input, internalVars, level, field, visited, nil)
+    return e.expandStringRecursive(input, expandedVars, level, field, visited, nil)
 }
 
 // expandStringRecursive performs recursive expansion with circular reference detection.
 func (e *InternalVariableExpander) expandStringRecursive(
     input string,
-    internalVars map[string]string,
+    expandedVars map[string]string,
     level string,
     field string,
     visited map[string]bool,
@@ -330,7 +330,7 @@ func (e *InternalVariableExpander) expandStringRecursive(
             }
 
             // Lookup variable
-            value, ok := internalVars[varName]
+            value, ok := expandedVars[varName]
             if !ok {
                 return "", &ErrUndefinedVariable{
                     Level:        level,
@@ -343,7 +343,7 @@ func (e *InternalVariableExpander) expandStringRecursive(
             // Recursively expand the value
             visited[varName] = true
             chain := append(expansionChain, varName)
-            expandedValue, err := e.expandStringRecursive(value, internalVars, level, field, visited, chain)
+            expandedValue, err := e.expandStringRecursive(value, expandedVars, level, field, visited, chain)
             delete(visited, varName)
 
             if err != nil {
@@ -498,20 +498,20 @@ func (e *InternalVariableExpander) ProcessFromEnv(
 //
 // Parameters:
 //   - vars: Array of "var_name=value" definitions (value can contain %{VAR} references)
-//   - baseInternalVars: Base internal variables (from from_env or parent level)
+//   - baseExpandedVars: Base internal variables (from from_env or parent level)
 //   - level: Configuration level for error reporting
 //
 // Returns:
-//   - Map of expanded internal variables (merged with baseInternalVars)
+//   - Map of expanded internal variables (merged with baseExpandedVars)
 //   - Error if processing fails
 func (e *InternalVariableExpander) ProcessVars(
     vars []string,
-    baseInternalVars map[string]string,
+    baseExpandedVars map[string]string,
     level string,
 ) (map[string]string, error) {
     // Start with base internal variables
     result := make(map[string]string)
-    for k, v := range baseInternalVars {
+    for k, v := range baseExpandedVars {
         result[k] = v
     }
 
@@ -569,7 +569,7 @@ func (e *InternalVariableExpander) ProcessVars(
 //
 // Parameters:
 //   - env: Array of "VAR=value" definitions (value can contain %{VAR} references)
-//   - internalVars: Available internal variables
+//   - expandedVars: Available internal variables
 //   - level: Configuration level for error reporting
 //
 // Returns:
@@ -579,7 +579,7 @@ func (e *InternalVariableExpander) ProcessVars(
 // Note: env field can only reference internal variables (%{VAR}), not other env variables.
 func (e *InternalVariableExpander) ProcessEnv(
     env []string,
-    internalVars map[string]string,
+    expandedVars map[string]string,
     level string,
 ) (map[string]string, error) {
     result := make(map[string]string)
@@ -605,7 +605,7 @@ func (e *InternalVariableExpander) ProcessEnv(
         }
 
         // Expand %{VAR} references in the value
-        expandedValue, err := e.ExpandString(envVarValue, internalVars, level, "env")
+        expandedValue, err := e.ExpandString(envVarValue, expandedVars, level, "env")
         if err != nil {
             return nil, err
         }
@@ -628,10 +628,10 @@ func (e *InternalVariableExpander) ProcessEnv(
 // expandGlobalConfig expands variables in global configuration.
 //
 // Processing order:
-//   1. Process from_env → populate InternalVars with system environment variables
-//   2. Process vars → expand and add to InternalVars
-//   3. Process env → expand using InternalVars and populate ExpandedEnv
-//   4. Expand verify_files → expand using InternalVars and populate ExpandedVerifyFiles
+//   1. Process from_env → populate ExtendedVars with system environment variables
+//   2. Process vars → expand and add to ExtendedVars
+//   3. Process env → expand using ExtendedVars and populate ExpandedEnv
+//   4. Expand verify_files → expand using ExtendedVars and populate ExpandedVerifyFiles
 //
 // This function modifies the global config in place.
 func expandGlobalConfig(
@@ -654,7 +654,7 @@ func expandGlobalConfig(
     }
 
     // Step 3: Process vars (can reference from_env variables)
-    internalVars, err := expander.ProcessVars(
+    expandedVars, err := expander.ProcessVars(
         global.Vars,
         fromEnvVars,
         "global",
@@ -662,12 +662,12 @@ func expandGlobalConfig(
     if err != nil {
         return fmt.Errorf("failed to process global.vars: %w", err)
     }
-    global.InternalVars = internalVars
+    global.ExtendedVars = expandedVars
 
     // Step 4: Process env (can reference internal variables)
     expandedEnv, err := expander.ProcessEnv(
         global.Env,
-        internalVars,
+        expandedVars,
         "global",
     )
     if err != nil {
@@ -678,7 +678,7 @@ func expandGlobalConfig(
     // Step 5: Expand verify_files
     expandedVerifyFiles := make([]string, len(global.VerifyFiles))
     for i, path := range global.VerifyFiles {
-        expandedPath, err := expander.ExpandString(path, internalVars, "global", "verify_files")
+        expandedPath, err := expander.ExpandString(path, expandedVars, "global", "verify_files")
         if err != nil {
             return fmt.Errorf("failed to expand global.verify_files[%d]: %w", i, err)
         }
@@ -710,15 +710,15 @@ func expandGroupConfig(
     filter *environment.Filter,
     expander *InternalVariableExpander,
 ) error {
-    var baseInternalVars map[string]string
+    var baseExpandedVars map[string]string
 
     // Step 1: Determine from_env inheritance
     if group.FromEnv == nil {
         // Not defined in TOML → inherit from global
-        baseInternalVars = copyMap(global.InternalVars)
+        baseExpandedVars = copyMap(global.ExtendedVars)
     } else if len(group.FromEnv) == 0 {
         // Explicitly set to [] → no system env vars
-        baseInternalVars = make(map[string]string)
+        baseExpandedVars = make(map[string]string)
     } else {
         // Explicitly defined → override (global.FromEnv is ignored)
         systemEnv := filter.ParseSystemEnvironment(nil)
@@ -738,24 +738,24 @@ func expandGroupConfig(
         if err != nil {
             return fmt.Errorf("failed to process group[%s].from_env: %w", group.Name, err)
         }
-        baseInternalVars = fromEnvVars
+        baseExpandedVars = fromEnvVars
     }
 
     // Step 2: Process vars (merge with base internal variables)
-    internalVars, err := expander.ProcessVars(
+    expandedVars, err := expander.ProcessVars(
         group.Vars,
-        baseInternalVars,
+        baseExpandedVars,
         fmt.Sprintf("group[%s]", group.Name),
     )
     if err != nil {
         return fmt.Errorf("failed to process group[%s].vars: %w", group.Name, err)
     }
-    group.InternalVars = internalVars
+    group.ExtendedVars = expandedVars
 
     // Step 3: Process env
     expandedEnv, err := expander.ProcessEnv(
         group.Env,
-        internalVars,
+        expandedVars,
         fmt.Sprintf("group[%s]", group.Name),
     )
     if err != nil {
@@ -766,7 +766,7 @@ func expandGroupConfig(
     // Step 4: Expand verify_files
     expandedVerifyFiles := make([]string, len(group.VerifyFiles))
     for i, path := range group.VerifyFiles {
-        expandedPath, err := expander.ExpandString(path, internalVars, fmt.Sprintf("group[%s]", group.Name), "verify_files")
+        expandedPath, err := expander.ExpandString(path, expandedVars, fmt.Sprintf("group[%s]", group.Name), "verify_files")
         if err != nil {
             return fmt.Errorf("failed to expand group[%s].verify_files[%d]: %w", group.Name, i, err)
         }
@@ -809,23 +809,23 @@ func expandCommandConfig(
     level := fmt.Sprintf("group[%s].command[%s]", group.Name, cmd.Name)
 
     // Step 1: Inherit internal variables from group
-    baseInternalVars := group.InternalVars
+    baseExpandedVars := group.ExtendedVars
 
     // Step 2: Process vars (merge with inherited internal variables)
-    internalVars, err := expander.ProcessVars(
+    expandedVars, err := expander.ProcessVars(
         cmd.Vars,
-        baseInternalVars,
+        baseExpandedVars,
         level,
     )
     if err != nil {
         return fmt.Errorf("failed to process command[%s].vars: %w", cmd.Name, err)
     }
-    cmd.InternalVars = internalVars
+    cmd.ExtendedVars = expandedVars
 
     // Step 3: Process env
     expandedEnv, err := expander.ProcessEnv(
         cmd.Env,
-        internalVars,
+        expandedVars,
         level,
     )
     if err != nil {
@@ -834,7 +834,7 @@ func expandCommandConfig(
     cmd.ExpandedEnv = expandedEnv
 
     // Step 4: Expand cmd
-    expandedCmd, err := expander.ExpandString(cmd.Cmd, internalVars, level, "cmd")
+    expandedCmd, err := expander.ExpandString(cmd.Cmd, expandedVars, level, "cmd")
     if err != nil {
         return fmt.Errorf("failed to expand command[%s].cmd: %w", cmd.Name, err)
     }
@@ -843,7 +843,7 @@ func expandCommandConfig(
     // Step 5: Expand args
     expandedArgs := make([]string, len(cmd.Args))
     for i, arg := range cmd.Args {
-        expandedArg, err := expander.ExpandString(arg, internalVars, level, "args")
+        expandedArg, err := expander.ExpandString(arg, expandedVars, level, "args")
         if err != nil {
             return fmt.Errorf("failed to expand command[%s].args[%d]: %w", cmd.Name, i, err)
         }
@@ -933,7 +933,7 @@ type VariableExpansionTrace struct {
     Input           string            // Original input string
     Output          string            // Expanded output string
     ReferencedVars  []string          // Variables referenced during expansion
-    InternalVars    map[string]string // Available internal variables at this point
+    ExtendedVars    map[string]string // Available internal variables at this point
     Errors          []error           // Errors encountered during expansion
 }
 
@@ -944,7 +944,7 @@ func (t *VariableExpansionTrace) TraceExpansion(
     input string,
     output string,
     referencedVars []string,
-    internalVars map[string]string,
+    expandedVars map[string]string,
     err error,
 ) {
     // Implementation details...
@@ -961,7 +961,7 @@ func (t *VariableExpansionTrace) PrintTrace(w io.Writer) {
     if len(t.ReferencedVars) > 0 {
         fmt.Fprintf(w, "Referenced Variables:\n")
         for _, varName := range t.ReferencedVars {
-            if value, ok := t.InternalVars[varName]; ok {
+            if value, ok := t.ExtendedVars[varName]; ok {
                 fmt.Fprintf(w, "  %s = %s\n", varName, value)
             } else {
                 fmt.Fprintf(w, "  %s = (undefined)\n", varName)
@@ -1056,14 +1056,14 @@ func PrintFromEnvInheritance(
     fmt.Fprintf(w, "\n=== from_env Inheritance Status ===\n")
 
     // Global from_env
-    fmt.Fprintf(w, "Global.from_env: %d variables\n", len(global.InternalVars))
+    fmt.Fprintf(w, "Global.from_env: %d variables\n", len(global.ExtendedVars))
     if len(global.FromEnv) > 0 {
         for _, mapping := range global.FromEnv {
             parts := strings.SplitN(mapping, "=", 2)
             if len(parts) == 2 {
                 internalName := parts[0]
                 systemName := parts[1]
-                value := global.InternalVars[internalName]
+                value := global.ExtendedVars[internalName]
                 fmt.Fprintf(w, "  %s = %s (from %s)\n", internalName, value, systemName)
             }
         }
@@ -1079,9 +1079,9 @@ func PrintFromEnvInheritance(
 
     if group.FromEnv == nil {
         // Inherited from global
-        fmt.Fprintf(w, "INHERITED from global (%d variables)\n", len(group.InternalVars))
-        for k, v := range group.InternalVars {
-            if _, isGlobal := global.InternalVars[k]; isGlobal {
+        fmt.Fprintf(w, "INHERITED from global (%d variables)\n", len(group.ExtendedVars))
+        for k, v := range group.ExtendedVars {
+            if _, isGlobal := global.ExtendedVars[k]; isGlobal {
                 fmt.Fprintf(w, "  %s = %s (inherited)\n", k, v)
             }
         }
@@ -1096,7 +1096,7 @@ func PrintFromEnvInheritance(
             if len(parts) == 2 {
                 internalName := parts[0]
                 systemName := parts[1]
-                value := group.InternalVars[internalName]
+                value := group.ExtendedVars[internalName]
                 fmt.Fprintf(w, "  %s = %s (from %s)\n", internalName, value, systemName)
             }
         }
@@ -1104,8 +1104,8 @@ func PrintFromEnvInheritance(
         // Warn about discarded global variables
         if len(global.FromEnv) > 0 {
             fmt.Fprintf(w, "  ⚠ Note: Global.from_env variables are NOT available:\n")
-            for k := range global.InternalVars {
-                if _, exists := group.InternalVars[k]; !exists {
+            for k := range global.ExtendedVars {
+                if _, exists := group.ExtendedVars[k]; !exists {
                     fmt.Fprintf(w, "    - %s (discarded)\n", k)
                 }
             }
@@ -1240,7 +1240,7 @@ allowlist の制御は `ProcessFromEnv` 関数で実装済み（セクション 
 ### 8.2 メモリ効率
 
 **メモリ管理**:
-1. **展開済み変数のキャッシュ**: `InternalVars`, `ExpandedEnv` で結果を保持
+1. **展開済み変数のキャッシュ**: `ExtendedVars`, `ExpandedEnv` で結果を保持
 2. **不要なコピーの回避**: マップの shallow copy のみ
 3. **スタック上のデータ構造**: visited マップは関数呼び出しスタック上で管理
 
