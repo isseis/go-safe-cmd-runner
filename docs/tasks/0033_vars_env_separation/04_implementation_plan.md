@@ -467,8 +467,8 @@
 **目的**: Group レベルでの from_env, vars, env の処理を統合（継承を含む）
 
 #### 2.7.1 expandGroupConfig()関数の実装（テスト先行）
-- [ ] テスト作成: `internal/runner/config/expansion_test.go`
-  - [ ] `TestExpandGroupConfig_InheritFromEnv`: from_env 継承
+- [x] テスト作成: `internal/runner/config/expansion_test.go`
+  - [x] `TestExpandGroupConfig_InheritFromEnv`: from_env 継承
     ```toml
     [global]
     env_allowlist = ["HOME", "PATH"]
@@ -479,7 +479,7 @@
     # from_env 未定義 → Global を継承
     vars = ["config=%{home}/.config"]
     ```
-  - [ ] `TestExpandGroupConfig_OverrideFromEnv`: from_env 上書き
+  - [x] `TestExpandGroupConfig_OverrideFromEnv`: from_env 上書き
     ```toml
     [global]
     from_env = ["home=HOME"]
@@ -490,25 +490,26 @@
     from_env = ["custom=CUSTOM_VAR"]
     # Global.from_env は無視される
     ```
-  - [ ] `TestExpandGroupConfig_EmptyFromEnv`: from_env = []
-  - [ ] `TestExpandGroupConfig_VarsMerge`: vars のマージ
-  - [ ] `TestExpandGroupConfig_AllowlistInherit`: allowlist 継承
-  - [ ] `TestExpandGroupConfig_AllowlistOverride`: allowlist 上書き
-- [ ] テスト実行で失敗を確認
-- [ ] コミット: "Add tests for expandGroupConfig (TDD)"
+  - [x] `TestExpandGroupConfig_EmptyFromEnv`: from_env = []
+  - [x] `TestExpandGroupConfig_VarsMerge`: vars のマージ
+  - [x] `TestExpandGroupConfig_AllowlistInherit`: allowlist 継承
+  - [x] `TestExpandGroupConfig_AllowlistOverride`: allowlist 上書き
+  - [x] `TestExpandGroupConfig_WithEnv`: env expansion in group
+  - [x] `TestExpandGroupConfig_WithVerifyFiles`: verify_files expansion in group
+- [x] テスト実行で失敗を確認
+- [x] コミット: "Add tests for expandGroupConfig (TDD)"
 
 #### 2.7.2 expandGroupConfig()関数の実装
-- [ ] `internal/runner/config/loader.go`に追加
-  - [ ] `expandGroupConfig`関数を実装:
+- [x] `internal/runner/config/expansion.go`に追加
+  - [x] `ExpandGroupConfig`関数を実装:
     ```go
-    func expandGroupConfig(
+    func ExpandGroupConfig(
         group *runnertypes.CommandGroup,
         global *runnertypes.GlobalConfig,
         filter *environment.Filter,
-        expander *InternalVariableExpander,
     ) error
     ```
-    - [ ] from_env 継承判定:
+    - [x] from_env 継承判定:
       ```go
       if group.FromEnv == nil {
           // 未定義 → Global を継承
@@ -523,26 +524,26 @@
           if groupAllowlist == nil {
               groupAllowlist = global.EnvAllowlist
           }
-          baseInternalVars, err = expander.ProcessFromEnv(
+          baseInternalVars, err = ProcessFromEnv(
               group.FromEnv, groupAllowlist, systemEnv, "group["+group.Name+"]")
       }
       ```
-    - [ ] `ProcessVars`で Group.Vars を展開（baseInternalVars使用）
-    - [ ] `Group.ExpandedVars`に結果を保存
-    - [ ] `ProcessEnv`で Group.Env を展開（ExpandedVars使用）
-    - [ ] `Group.ExpandedEnv`に結果を保存
-    - [ ] `ExpandVerifyFiles`で Group.VerifyFiles を展開（ExpandedVars使用）
-    - [ ] エラーハンドリング
+    - [x] `ProcessVars`で Group.Vars を展開（baseInternalVars使用）
+    - [x] `Group.ExpandedVars`に結果を保存
+    - [x] `ProcessEnv`で Group.Env を展開（ExpandedVars使用）
+    - [x] `Group.ExpandedEnv`に結果を保存
+    - [x] `ExpandString`で Group.VerifyFiles を展開（ExpandedVars使用）
+    - [x] エラーハンドリング
 
 #### 2.7.3 copyMap()ヘルパー関数の実装
-- [ ] `internal/runner/config/loader.go`に追加
+- [x] `internal/runner/config/expansion.go`に追加
   ```go
   func copyMap(m map[string]string) map[string]string
   ```
 
 #### 2.7.4 expandGroupConfig()のテスト実行
-- [ ] すべてのテストがPASS
-- [ ] コミット: "Implement expandGroupConfig with from_env inheritance"
+- [x] すべてのテストがPASS
+- [x] コミット: "Implement expandGroupConfig with from_env inheritance"
 
 ---
 

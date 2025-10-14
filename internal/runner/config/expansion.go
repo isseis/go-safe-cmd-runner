@@ -1099,6 +1099,63 @@ func ProcessEnv(env []string, expandedVars map[string]string, level string) (map
 // Phase 6: Global configuration integration
 // ============================================================================
 
+// configFieldsToExpand holds the configuration fields that need expansion.
+type configFieldsToExpand struct {
+	vars        []string
+	env         []string
+	verifyFiles []string
+}
+
+// expandedConfigFields holds the results of expansion.
+type expandedConfigFields struct {
+	expandedVars        map[string]string
+	expandedEnv         map[string]string
+	expandedVerifyFiles []string
+}
+
+// expandConfigFields is a helper function that expands vars, env, and verify_files
+// given a base set of internal variables. This consolidates the common expansion
+// logic shared between ExpandGlobalConfig and ExpandGroupConfig.
+//
+// Parameters:
+//   - fields: The configuration fields to expand (vars, env, verify_files)
+//   - baseInternalVars: Base internal variables from from_env processing
+//   - level: Context name for error messages (e.g., "global", "group[name]")
+//
+// Returns:
+//   - expandedConfigFields: The expanded results
+//   - error: Any error that occurred during expansion
+func expandConfigFields(fields configFieldsToExpand, baseInternalVars map[string]string, level string) (expandedConfigFields, error) {
+	var result expandedConfigFields
+
+	// Step 1: Process vars to expand internal variable definitions
+	expandedVars, err := ProcessVars(fields.vars, baseInternalVars, level)
+	if err != nil {
+		return result, err
+	}
+	result.expandedVars = expandedVars
+
+	// Step 2: Process env to expand environment variables
+	expandedEnv, err := ProcessEnv(fields.env, expandedVars, level)
+	if err != nil {
+		return result, fmt.Errorf("failed to process %s env: %w", level, err)
+	}
+	result.expandedEnv = expandedEnv
+
+	// Step 3: Expand verify_files using internal variables
+	expandedVerifyFiles := make([]string, 0, len(fields.verifyFiles))
+	for _, filePath := range fields.verifyFiles {
+		expandedPath, err := ExpandString(filePath, expandedVars, level, "verify_files")
+		if err != nil {
+			return result, fmt.Errorf("failed to expand %s verify_files: %w", level, err)
+		}
+		expandedVerifyFiles = append(expandedVerifyFiles, expandedPath)
+	}
+	result.expandedVerifyFiles = expandedVerifyFiles
+
+	return result, nil
+}
+
 // ExpandGlobalConfig expands all variables in global configuration (from_env, vars, env, verify_files).
 //
 // Processing order:
@@ -1128,39 +1185,151 @@ func ExpandGlobalConfig(global *runnertypes.GlobalConfig, filter *environment.Fi
 	// Step 2: Process from_env to get base internal variables
 	baseInternalVars, err := ProcessFromEnv(global.FromEnv, global.EnvAllowlist, systemEnv, "global")
 	if err != nil {
-		return fmt.Errorf("failed to process global from_env: %w", err)
+		return err
 	}
 
-	// Step 3: Process vars to expand internal variable definitions
-	expandedVars, err := ProcessVars(global.Vars, baseInternalVars, "global")
+	// Step 3: Expand remaining config fields using helper
+	fields := configFieldsToExpand{
+		vars:        global.Vars,
+		env:         global.Env,
+		verifyFiles: global.VerifyFiles,
+	}
+	expanded, err := expandConfigFields(fields, baseInternalVars, "global")
 	if err != nil {
-		return fmt.Errorf("failed to process global vars: %w", err)
+		return err
 	}
 
-	// Store expanded internal variables
-	global.ExpandedVars = expandedVars
+	// Store results
+	global.ExpandedVars = expanded.expandedVars
+	global.ExpandedEnv = expanded.expandedEnv
+	global.ExpandedVerifyFiles = expanded.expandedVerifyFiles
 
-	// Step 4: Process env to expand environment variables
-	expandedEnv, err := ProcessEnv(global.Env, expandedVars, "global")
-	if err != nil {
-		return fmt.Errorf("failed to process global env: %w", err)
-	}
+	return nil
+}
 
-	// Store expanded environment variables
-	global.ExpandedEnv = expandedEnv
+// ============================================================================
+// Phase 7: Group Configuration Expansion
+// ============================================================================
 
-	// Step 5: Expand verify_files using internal variables
-	expandedVerifyFiles := make([]string, 0, len(global.VerifyFiles))
-	for _, filePath := range global.VerifyFiles {
-		expandedPath, err := ExpandString(filePath, expandedVars, "global", "verify_files")
-		if err != nil {
-return fmt.Errorf("failed to expand global verify_files path %q: %w", filePath, err)
+// ResolveGroupFromEnv determines the base internal variables for a group based on from_env inheritance logic.
+//
+// FromEnv Inheritance Logic:
+//   - If group.FromEnv is nil (not defined in TOML): Inherit global.ExpandedVars
+//   - If group.FromEnv is [] (explicitly empty): No system env vars imported
+//   - If group.FromEnv is defined (non-nil, non-empty): Override global.FromEnv (global.from_env is ignored)
+//
+// Parameters:
+//   - groupFromEnv: The group's from_env field (may be nil, empty, or populated)
+//   - groupEnvAllowlist: The group's env_allowlist field (may be nil)
+//   - globalExpandedVars: The global.ExpandedVars map (for inheritance)
+//   - globalEnvAllowlist: The global.EnvAllowlist (for inheritance when group allowlist is nil)
+//   - filter: Environment filter for system environment access
+//   - groupName: The group name for error messages
+//
+// Returns:
+//   - map[string]string: The base internal variables for the group
+//   - error: Any error that occurred during processing
+func ResolveGroupFromEnv(
+	groupFromEnv []string,
+	groupEnvAllowlist []string,
+	globalExpandedVars map[string]string,
+	globalEnvAllowlist []string,
+	filter *environment.Filter,
+	groupName string,
+) (map[string]string, error) {
+	switch {
+	case groupFromEnv == nil:
+		// Not defined in TOML → Inherit Global.ExpandedVars
+		return maps.Clone(globalExpandedVars), nil
+
+	case len(groupFromEnv) == 0:
+		// Explicitly set to [] → No system env vars
+		return make(map[string]string), nil
+
+	default:
+		// Explicitly defined → Override (global.FromEnv is ignored)
+		systemEnv := filter.ParseSystemEnvironment(nil)
+
+		// Determine allowlist (group's allowlist or inherit global's)
+		effectiveAllowlist := groupEnvAllowlist
+		if effectiveAllowlist == nil {
+			effectiveAllowlist = globalEnvAllowlist
 		}
-		expandedVerifyFiles = append(expandedVerifyFiles, expandedPath)
+
+		baseInternalVars, err := ProcessFromEnv(
+			groupFromEnv,
+			effectiveAllowlist,
+			systemEnv,
+			fmt.Sprintf("group[%s]", groupName),
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		return baseInternalVars, nil
+	}
+}
+
+// ExpandGroupConfig expands all variables in group configuration (from_env, vars, env, verify_files).
+//
+// FromEnv Inheritance Logic:
+//   - If group.FromEnv is nil (not defined in TOML): Inherit global.ExpandedVars
+//   - If group.FromEnv is [] (explicitly empty): No system env vars imported
+//   - If group.FromEnv is defined (non-nil, non-empty): Override global.FromEnv (global.from_env is ignored)
+//
+// Processing order:
+//  1. Determine from_env inheritance/override
+//  2. Process vars → Expand group variable definitions (can reference inherited/imported variables)
+//  3. Process env → Expand environment variables (can reference internal variables)
+//  4. Process verify_files → Expand file paths (can reference internal variables)
+//
+// Results are stored in:
+//   - group.ExpandedVars: Inherited/imported from_env + group vars
+//   - group.ExpandedEnv: Expanded env field
+//   - group.ExpandedVerifyFiles: Expanded verify_files field
+//
+// Parameters:
+//   - group: CommandGroup configuration to expand
+//   - global: Global configuration (for inheritance)
+//   - filter: Environment filter for system environment access
+//
+// Returns error if any expansion step fails.
+func ExpandGroupConfig(group *runnertypes.CommandGroup, global *runnertypes.GlobalConfig, filter *environment.Filter) error {
+	if group == nil {
+		return ErrNilGroup
+	}
+	if global == nil {
+		return ErrNilConfig
 	}
 
-	// Store expanded verify files
-	global.ExpandedVerifyFiles = expandedVerifyFiles
+	// Step 1: Determine from_env inheritance using helper function
+	baseInternalVars, err := ResolveGroupFromEnv(
+		group.FromEnv,
+		group.EnvAllowlist,
+		global.ExpandedVars,
+		global.EnvAllowlist,
+		filter,
+		group.Name,
+	)
+	if err != nil {
+		return err
+	}
+
+	// Step 2: Expand remaining config fields using helper
+	fields := configFieldsToExpand{
+		vars:        group.Vars,
+		env:         group.Env,
+		verifyFiles: group.VerifyFiles,
+	}
+	expanded, err := expandConfigFields(fields, baseInternalVars, fmt.Sprintf("group[%s]", group.Name))
+	if err != nil {
+		return err
+	}
+
+	// Store results
+	group.ExpandedVars = expanded.expandedVars
+	group.ExpandedEnv = expanded.expandedEnv
+	group.ExpandedVerifyFiles = expanded.expandedVerifyFiles
 
 	return nil
 }
