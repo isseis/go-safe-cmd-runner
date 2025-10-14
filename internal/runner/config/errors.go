@@ -19,8 +19,8 @@ var (
 	// ErrDuplicateEnvVariable is returned when duplicate environment variable keys are detected
 	ErrDuplicateEnvVariable = errors.New("duplicate environment variable key")
 
-	// ErrMalformedEnvVariable is returned when an environment variable is not in KEY=VALUE format
-	ErrMalformedEnvVariable = errors.New("malformed environment variable (expected KEY=VALUE format)")
+	// ErrMalformedEnvVariable is returned when an env entry is not in KEY=VALUE format
+	ErrMalformedEnvVariable = errors.New("malformed env entry (expected KEY=VALUE format)")
 
 	// ErrInvalidEnvKey is returned when an environment variable key contains invalid characters
 	ErrInvalidEnvKey = errors.New("invalid environment variable key")
@@ -54,6 +54,9 @@ var (
 
 	// ErrInvalidFromEnvFormat is returned when from_env entry is not in 'internal_name=SYSTEM_VAR' format
 	ErrInvalidFromEnvFormat = errors.New("invalid from_env format")
+
+	// ErrInvalidVarsFormat is returned when a vars entry is not in var_name=value format
+	ErrInvalidVarsFormat = errors.New("malformed vars entry (expected var_name=value format)")
 
 	// ErrInvalidSystemVariableName is returned when system variable name is invalid
 	ErrInvalidSystemVariableName = errors.New("invalid system variable name")

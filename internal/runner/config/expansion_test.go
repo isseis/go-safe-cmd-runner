@@ -1997,7 +1997,7 @@ env = ["VAR1=value1", "VAR1=value2"]`,
 			tomlContent: `[global]
 env = ["INVALID_FORMAT"]`,
 			expectError: true,
-			errorText:   "malformed environment variable",
+			errorText:   "malformed env entry",
 		},
 		{
 			name: "reserved prefix in global env",
@@ -3427,4 +3427,306 @@ func TestProcessFromEnv_InvalidFormat(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestProcessVars_Basic tests basic variable definitions in vars field
+func TestProcessVars_Basic(t *testing.T) {
+	vars := []string{"var1=value1", "var2=value2"}
+	baseVars := map[string]string{}
+
+	result, err := config.ProcessVars(vars, baseVars, "global")
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, "value1", result["var1"])
+	assert.Equal(t, "value2", result["var2"])
+	assert.Len(t, result, 2)
+}
+
+// TestProcessVars_ReferenceBase tests referencing base variables from parent level
+func TestProcessVars_ReferenceBase(t *testing.T) {
+	vars := []string{"var2=%{var1}/sub"}
+	baseVars := map[string]string{"var1": "base"}
+
+	result, err := config.ProcessVars(vars, baseVars, "group")
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, "base", result["var1"], "base variable should be inherited")
+	assert.Equal(t, "base/sub", result["var2"], "new variable should reference base")
+	assert.Len(t, result, 2)
+}
+
+// TestProcessVars_ReferenceOther tests referencing other variables defined in same vars array
+func TestProcessVars_ReferenceOther(t *testing.T) {
+	vars := []string{"var1=a", "var2=%{var1}/b", "var3=%{var2}/c"}
+	baseVars := map[string]string{}
+
+	result, err := config.ProcessVars(vars, baseVars, "global")
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, "a", result["var1"])
+	assert.Equal(t, "a/b", result["var2"])
+	assert.Equal(t, "a/b/c", result["var3"])
+	assert.Len(t, result, 3)
+}
+
+// TestProcessVars_CircularReference tests detection of undefined variables due to ordering
+// Note: With sequential processing, forward references result in "undefined variable" errors
+// since variables are processed in order and can only reference previously defined variables
+// or base variables
+func TestProcessVars_CircularReference(t *testing.T) {
+	tests := []struct {
+		name     string
+		vars     []string
+		baseVars map[string]string
+	}{
+		{
+			name:     "forward reference A->B (B not defined yet)",
+			vars:     []string{"A=%{B}", "B=%{A}"},
+			baseVars: map[string]string{},
+		},
+		{
+			name:     "forward reference chain",
+			vars:     []string{"A=%{B}", "B=%{C}", "C=value"},
+			baseVars: map[string]string{},
+		},
+		{
+			name:     "self reference without base",
+			vars:     []string{"A=%{A}"},
+			baseVars: map[string]string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := config.ProcessVars(tt.vars, tt.baseVars, "global")
+
+			require.Error(t, err)
+			assert.Nil(t, result)
+
+			// Sequential processing results in undefined variable error
+			var undefinedErr *config.ErrUndefinedVariableDetail
+			assert.ErrorAs(t, err, &undefinedErr)
+			assert.Equal(t, "global", undefinedErr.Level)
+			assert.Equal(t, "vars", undefinedErr.Field)
+		})
+	}
+}
+
+// TestProcessVars_TrueCircularReference tests true circular reference detection
+// This happens when base vars create a cycle that gets expanded
+func TestProcessVars_TrueCircularReference(t *testing.T) {
+	// Base vars create a circular chain: A -> B -> A
+	baseVars := map[string]string{
+		"A": "%{B}",
+		"B": "%{A}",
+	}
+
+	// Try to reference A
+	vars := []string{"C=%{A}"}
+
+	result, err := config.ProcessVars(vars, baseVars, "global")
+
+	require.Error(t, err)
+	assert.Nil(t, result)
+
+	// Should detect circular reference during expansion
+	var circularErr *config.ErrCircularReferenceDetail
+	assert.ErrorAs(t, err, &circularErr)
+	assert.Equal(t, "global", circularErr.Level)
+	assert.Equal(t, "vars", circularErr.Field)
+}
+
+// TestProcessVars_SelfReference tests extending a variable with itself
+func TestProcessVars_SelfReference(t *testing.T) {
+	vars := []string{"path=%{path}:/custom"}
+	baseVars := map[string]string{"path": "/usr/bin"}
+
+	result, err := config.ProcessVars(vars, baseVars, "global")
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, "/usr/bin:/custom", result["path"])
+	assert.Len(t, result, 1)
+}
+
+// TestProcessVars_InvalidFormat tests handling of invalid format definitions
+func TestProcessVars_InvalidFormat(t *testing.T) {
+	tests := []struct {
+		name string
+		vars []string
+	}{
+		{
+			name: "no equals sign",
+			vars: []string{"invalid_format"},
+		},
+		{
+			name: "empty value is ok",
+			vars: []string{"empty_var="},
+		},
+		{
+			name: "empty key",
+			vars: []string{"=value"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := config.ProcessVars(tt.vars, map[string]string{}, "global")
+
+			if tt.name == "empty value is ok" {
+				require.NoError(t, err)
+				assert.Equal(t, "", result["empty_var"])
+			} else {
+				require.Error(t, err)
+				assert.Nil(t, result)
+			}
+		})
+	}
+}
+
+// TestProcessVars_InvalidVariableName tests handling of invalid variable names
+func TestProcessVars_InvalidVariableName(t *testing.T) {
+	tests := []struct {
+		name    string
+		vars    []string
+		varName string
+	}{
+		{
+			name:    "starts with number",
+			vars:    []string{"123invalid=value"},
+			varName: "123invalid",
+		},
+		{
+			name:    "contains hyphen",
+			vars:    []string{"invalid-name=value"},
+			varName: "invalid-name",
+		},
+		{
+			name:    "contains space",
+			vars:    []string{"invalid name=value"},
+			varName: "invalid name",
+		},
+		{
+			name:    "reserved prefix",
+			vars:    []string{"__runner_test=value"},
+			varName: "__runner_test",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := config.ProcessVars(tt.vars, map[string]string{}, "global")
+
+			require.Error(t, err)
+			assert.Nil(t, result)
+
+			if tt.name == "reserved prefix" {
+				var reservedErr *config.ErrReservedVariablePrefixDetail
+				assert.ErrorAs(t, err, &reservedErr)
+				assert.Equal(t, "global", reservedErr.Level)
+				assert.Equal(t, "vars", reservedErr.Field)
+				assert.Equal(t, tt.varName, reservedErr.VariableName)
+			} else {
+				var invalidErr *config.ErrInvalidVariableNameDetail
+				assert.ErrorAs(t, err, &invalidErr)
+				assert.Equal(t, "global", invalidErr.Level)
+				assert.Equal(t, "vars", invalidErr.Field)
+				assert.Equal(t, tt.varName, invalidErr.VariableName)
+			}
+		})
+	}
+}
+
+// TestProcessVars_ComplexChain tests complex variable reference chains
+func TestProcessVars_ComplexChain(t *testing.T) {
+	baseVars := map[string]string{
+		"home":     "/home/user",
+		"app_name": "myapp",
+	}
+
+	vars := []string{
+		"app_dir=%{home}/%{app_name}",
+		"data_dir=%{app_dir}/data",
+		"input_dir=%{data_dir}/input",
+		"output_dir=%{data_dir}/output",
+		"temp_dir=%{input_dir}/temp",
+	}
+
+	result, err := config.ProcessVars(vars, baseVars, "global")
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, "/home/user", result["home"])
+	assert.Equal(t, "myapp", result["app_name"])
+	assert.Equal(t, "/home/user/myapp", result["app_dir"])
+	assert.Equal(t, "/home/user/myapp/data", result["data_dir"])
+	assert.Equal(t, "/home/user/myapp/data/input", result["input_dir"])
+	assert.Equal(t, "/home/user/myapp/data/output", result["output_dir"])
+	assert.Equal(t, "/home/user/myapp/data/input/temp", result["temp_dir"])
+	assert.Len(t, result, 7)
+}
+
+// TestProcessVars_UndefinedVariable tests handling of undefined variable references
+func TestProcessVars_UndefinedVariable(t *testing.T) {
+	vars := []string{"var1=%{undefined_var}"}
+	baseVars := map[string]string{}
+
+	result, err := config.ProcessVars(vars, baseVars, "global")
+
+	require.Error(t, err)
+	assert.Nil(t, result)
+
+	var undefinedErr *config.ErrUndefinedVariableDetail
+	assert.ErrorAs(t, err, &undefinedErr)
+	assert.Equal(t, "global", undefinedErr.Level)
+	assert.Equal(t, "vars", undefinedErr.Field)
+	assert.Equal(t, "undefined_var", undefinedErr.VariableName)
+}
+
+// TestProcessVars_EmptyVarsArray tests processing empty vars array
+func TestProcessVars_EmptyVarsArray(t *testing.T) {
+	vars := []string{}
+	baseVars := map[string]string{"existing": "value"}
+
+	result, err := config.ProcessVars(vars, baseVars, "global")
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, "value", result["existing"])
+	assert.Len(t, result, 1)
+}
+
+// TestProcessVars_OverrideBaseVariable tests overriding base variable
+func TestProcessVars_OverrideBaseVariable(t *testing.T) {
+	vars := []string{"var1=new_value"}
+	baseVars := map[string]string{"var1": "old_value"}
+
+	result, err := config.ProcessVars(vars, baseVars, "global")
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, "new_value", result["var1"], "should override base variable")
+	assert.Len(t, result, 1)
+}
+
+// TestProcessVars_MultipleReferences tests multiple variable references in single value
+func TestProcessVars_MultipleReferences(t *testing.T) {
+	vars := []string{
+		"prefix=pre",
+		"suffix=suf",
+		"combined=%{prefix}_middle_%{suffix}",
+	}
+	baseVars := map[string]string{}
+
+	result, err := config.ProcessVars(vars, baseVars, "global")
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, "pre", result["prefix"])
+	assert.Equal(t, "suf", result["suffix"])
+	assert.Equal(t, "pre_middle_suf", result["combined"])
+	assert.Len(t, result, 3)
 }

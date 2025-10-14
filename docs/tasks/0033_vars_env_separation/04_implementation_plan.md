@@ -313,60 +313,62 @@
 **目的**: 内部変数の定義と展開を実装
 
 #### 2.4.1 ProcessVars()関数の実装（テスト先行）
-- [ ] テスト作成: `internal/runner/config/expansion_test.go`
-  - [ ] `TestProcessVars_Basic`: 基本的な定義
+- [x] テスト作成: `internal/runner/config/expansion_test.go`
+  - [x] `TestProcessVars_Basic`: 基本的な定義
     ```go
     vars: ["var1=value1", "var2=value2"]
     baseVars: {}
     expected: {"var1": "value1", "var2": "value2"}
     ```
-  - [ ] `TestProcessVars_ReferenceBase`: ベース変数の参照
+  - [x] `TestProcessVars_ReferenceBase`: ベース変数の参照
     ```go
     vars: ["var2=%{var1}/sub"]
     baseVars: {"var1": "base"}
     expected: {"var1": "base", "var2": "base/sub"}
     ```
-  - [ ] `TestProcessVars_ReferenceOther`: 同レベル変数の参照
+  - [x] `TestProcessVars_ReferenceOther`: 同レベル変数の参照
     ```go
     vars: ["var1=a", "var2=%{var1}/b", "var3=%{var2}/c"]
     expected: {"var1": "a", "var2": "a/b", "var3": "a/b/c"}
     ```
-  - [ ] `TestProcessVars_CircularReference`: 循環参照エラー
+  - [x] `TestProcessVars_CircularReference`: 循環参照エラー（順次処理により未定義エラーとなる）
     ```go
     vars: ["A=%{B}", "B=%{A}"]
-    expected: ErrCircularReference
+    expected: ErrUndefinedVariable (Bが未定義)
     ```
-  - [ ] `TestProcessVars_SelfReference`: 同名での拡張
+  - [x] `TestProcessVars_SelfReference`: 同名での拡張
     ```go
     vars: ["path=%{path}:/custom"]
     baseVars: {"path": "/usr/bin"}
     expected: {"path": "/usr/bin:/custom"}
     ```
-  - [ ] `TestProcessVars_InvalidFormat`: 不正なフォーマット
-  - [ ] `TestProcessVars_InvalidVariableName`: 不正な変数名
-- [ ] テスト実行で失敗を確認
-- [ ] コミット: "Add tests for ProcessVars (TDD)"
+  - [x] `TestProcessVars_InvalidFormat`: 不正なフォーマット
+  - [x] `TestProcessVars_InvalidVariableName`: 不正な変数名
+- [x] テスト実行で失敗を確認
+- [x] コミット: "Add tests for ProcessVars (TDD)"
 
 #### 2.4.2 ProcessVars()関数の実装
-- [ ] `internal/runner/config/expansion.go`に追加
-  - [ ] `ProcessVars`メソッドを実装:
+- [x] `internal/runner/config/expansion.go`に追加
+  - [x] `ProcessVars`関数を実装:
     ```go
-    func (e *InternalVariableExpander) ProcessVars(
+    func ProcessVars(
         vars []string,
-        baseInternalVars map[string]string,
+        baseExpandedVars map[string]string,
         level string,
     ) (map[string]string, error)
     ```
-    - [ ] ベース変数をコピーして `result` マップを作成
-    - [ ] **第1パス（パースと事前格納）**:
-    - [ ] `vars` 配列の全定義をパースし、バリデーションを行う
-    - [ ] パースした `var_name` と **未展開**の `value` を `result` マップに追加・上書きする
-    - [ ] **第2パス（展開）**:
-    - [ ] `result` マップ内の値を、依存関係が解決するまで `ExpandString` で繰り返し展開する
+    - [x] ベース変数をコピーして `result` マップを作成
+    - [x] **第1パス（パースとバリデーション）**:
+    - [x] `vars` 配列の全定義をパース
+    - [x] 変数名のバリデーションを実行
+    - [x] **第2パス（順次展開）**:
+    - [x] 各変数を順番に展開し、`result` マップに追加
+    - [x] 各変数は result マップ内の既存変数（baseVars + 前に定義された vars）を参照可能
+- [x] `ErrInvalidVarsFormat` エラーを `errors.go` に追加
 
 #### 2.4.3 ProcessVars()のテスト実行
-- [ ] すべてのテストがPASS
-- [ ] コミット: "Implement ProcessVars for internal variable definitions"
+- [x] すべてのテストがPASS
+- [x] コミット: "Implement ProcessVars for internal variable definitions"
 
 ---
 
