@@ -4570,3 +4570,202 @@ func TestResolveGroupFromEnv_AllowlistInheritance(t *testing.T) {
 		})
 	}
 }
+
+// ============================================================================
+// Phase 8: Command Configuration Expansion - Tests
+// ============================================================================
+
+func TestExpandCommandConfig_Basic(t *testing.T) {
+	group := &runnertypes.CommandGroup{
+		Name: "test_group",
+		ExpandedVars: map[string]string{
+			"log_dir": "/var/log/app",
+		},
+	}
+
+	cmd := &runnertypes.Command{
+		Name: "test_cmd",
+		Vars: []string{"temp=%{log_dir}/temp"},
+		Env:  []string{"TEMP_DIR=%{temp}"},
+		Cmd:  "%{temp}/script.sh",
+		Args: []string{"--log", "%{log_dir}"},
+	}
+
+	err := config.ExpandCommandConfig(cmd, group)
+	require.NoError(t, err)
+
+	// Verify ExpandedVars
+	assert.Equal(t, "/var/log/app", cmd.ExpandedVars["log_dir"], "log_dir should be inherited from group")
+	assert.Equal(t, "/var/log/app/temp", cmd.ExpandedVars["temp"], "temp should be expanded")
+
+	// Verify ExpandedEnv
+	assert.Equal(t, "/var/log/app/temp", cmd.ExpandedEnv["TEMP_DIR"], "TEMP_DIR should be expanded")
+
+	// Verify ExpandedCmd
+	assert.Equal(t, "/var/log/app/temp/script.sh", cmd.ExpandedCmd, "cmd should be expanded")
+
+	// Verify ExpandedArgs
+	require.Len(t, cmd.ExpandedArgs, 2)
+	assert.Equal(t, "--log", cmd.ExpandedArgs[0])
+	assert.Equal(t, "/var/log/app", cmd.ExpandedArgs[1])
+}
+
+func TestExpandCommandConfig_InheritGroupVars(t *testing.T) {
+	group := &runnertypes.CommandGroup{
+		Name: "test_group",
+		ExpandedVars: map[string]string{
+			"app_dir":  "/opt/myapp",
+			"data_dir": "/opt/myapp/data",
+		},
+	}
+
+	cmd := &runnertypes.Command{
+		Name: "process",
+		Cmd:  "/usr/bin/process",
+		Args: []string{"--data", "%{data_dir}"},
+		Env:  []string{"APP_DIR=%{app_dir}"},
+	}
+
+	err := config.ExpandCommandConfig(cmd, group)
+	require.NoError(t, err)
+
+	// Verify inherited vars
+	assert.Equal(t, "/opt/myapp", cmd.ExpandedVars["app_dir"])
+	assert.Equal(t, "/opt/myapp/data", cmd.ExpandedVars["data_dir"])
+
+	// Verify expansion
+	assert.Equal(t, "/usr/bin/process", cmd.ExpandedCmd)
+	assert.Equal(t, "/opt/myapp/data", cmd.ExpandedArgs[1])
+	assert.Equal(t, "/opt/myapp", cmd.ExpandedEnv["APP_DIR"])
+}
+
+func TestExpandCommandConfig_NoVars(t *testing.T) {
+	group := &runnertypes.CommandGroup{
+		Name: "test_group",
+		ExpandedVars: map[string]string{
+			"base": "/base",
+		},
+	}
+
+	cmd := &runnertypes.Command{
+		Name: "simple",
+		Cmd:  "/bin/echo",
+		Args: []string{"hello", "world"},
+		Env:  []string{"VAR1=value1"},
+	}
+
+	err := config.ExpandCommandConfig(cmd, group)
+	require.NoError(t, err)
+
+	// Verify inherited vars only
+	assert.Equal(t, "/base", cmd.ExpandedVars["base"])
+
+	// Verify no expansion needed
+	assert.Equal(t, "/bin/echo", cmd.ExpandedCmd)
+	assert.Equal(t, []string{"hello", "world"}, cmd.ExpandedArgs)
+	assert.Equal(t, "value1", cmd.ExpandedEnv["VAR1"])
+}
+
+func TestExpandCommandConfig_CmdExpansion(t *testing.T) {
+	group := &runnertypes.CommandGroup{
+		Name: "test_group",
+		ExpandedVars: map[string]string{
+			"bin_dir":   "/usr/local/bin",
+			"tool_name": "mytool",
+		},
+	}
+
+	cmd := &runnertypes.Command{
+		Name: "run_tool",
+		Cmd:  "%{bin_dir}/%{tool_name}",
+		Args: []string{},
+	}
+
+	err := config.ExpandCommandConfig(cmd, group)
+	require.NoError(t, err)
+
+	assert.Equal(t, "/usr/local/bin/mytool", cmd.ExpandedCmd)
+}
+
+func TestExpandCommandConfig_ArgsExpansion(t *testing.T) {
+	group := &runnertypes.CommandGroup{
+		Name: "test_group",
+		ExpandedVars: map[string]string{
+			"input_file": "/data/input.txt",
+			"output_dir": "/data/output",
+		},
+	}
+
+	cmd := &runnertypes.Command{
+		Name: "converter",
+		Cmd:  "/usr/bin/convert",
+		Args: []string{"--input", "%{input_file}", "--output", "%{output_dir}/result.txt"},
+	}
+
+	err := config.ExpandCommandConfig(cmd, group)
+	require.NoError(t, err)
+
+	require.Len(t, cmd.ExpandedArgs, 4)
+	assert.Equal(t, "--input", cmd.ExpandedArgs[0])
+	assert.Equal(t, "/data/input.txt", cmd.ExpandedArgs[1])
+	assert.Equal(t, "--output", cmd.ExpandedArgs[2])
+	assert.Equal(t, "/data/output/result.txt", cmd.ExpandedArgs[3])
+}
+
+func TestExpandCommandConfig_UndefinedVariable(t *testing.T) {
+	group := &runnertypes.CommandGroup{
+		Name: "test_group",
+		ExpandedVars: map[string]string{
+			"defined": "value",
+		},
+	}
+
+	cmd := &runnertypes.Command{
+		Name: "fail_cmd",
+		Cmd:  "/bin/%{undefined}",
+		Args: []string{},
+	}
+
+	err := config.ExpandCommandConfig(cmd, group)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "undefined")
+}
+
+func TestExpandCommandConfig_VarsReferenceError(t *testing.T) {
+	group := &runnertypes.CommandGroup{
+		Name:         "test_group",
+		ExpandedVars: map[string]string{},
+	}
+
+	cmd := &runnertypes.Command{
+		Name: "fail_cmd",
+		Vars: []string{"temp=%{missing}/temp"},
+		Cmd:  "/bin/echo",
+	}
+
+	err := config.ExpandCommandConfig(cmd, group)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "missing")
+}
+
+func TestExpandCommandConfig_NilCommand(t *testing.T) {
+	group := &runnertypes.CommandGroup{
+		Name:         "test_group",
+		ExpandedVars: map[string]string{},
+	}
+
+	err := config.ExpandCommandConfig(nil, group)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, config.ErrNilCommand)
+}
+
+func TestExpandCommandConfig_NilGroup(t *testing.T) {
+	cmd := &runnertypes.Command{
+		Name: "test_cmd",
+		Cmd:  "/bin/echo",
+	}
+
+	err := config.ExpandCommandConfig(cmd, nil)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, config.ErrNilGroup)
+}

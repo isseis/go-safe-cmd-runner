@@ -910,7 +910,7 @@ func ProcessFromEnv(fromEnv []string, envAllowlist []string, systemEnv map[strin
 		allowlistMap[allowedVar] = true
 	}
 
-	result := make(map[string]string, len(fromEnv))
+	result := make(map[string]string)
 
 	for _, mapping := range fromEnv {
 		// Parse "internal_name=SYSTEM_VAR" format
@@ -997,8 +997,7 @@ func ProcessFromEnv(fromEnv []string, envAllowlist []string, systemEnv map[strin
 //	// result: {"home": "/home/user", "var1": "a", "var2": "a/b", "var3": "a/b/c"}
 func ProcessVars(vars []string, baseExpandedVars map[string]string, level string) (map[string]string, error) {
 	// Start with base internal variables (copy to avoid modifying input)
-	result := make(map[string]string, len(baseExpandedVars)+len(vars))
-	maps.Copy(result, baseExpandedVars)
+	result := maps.Clone(baseExpandedVars)
 
 	// First pass: Parse and validate all vars definitions, store unexpanded
 	parsedVars := make([]struct {
@@ -1067,7 +1066,7 @@ func ProcessVars(vars []string, baseExpandedVars map[string]string, level string
 //	result, err := ProcessEnv(env, internalVars, "global")
 //	// result: {"BASE_DIR": "/opt/myapp", "LOG_DIR": "/opt/myapp/logs"}
 func ProcessEnv(env []string, expandedVars map[string]string, level string) (map[string]string, error) {
-	result := make(map[string]string, len(env))
+	result := make(map[string]string)
 
 	for _, envDef := range env {
 		// Parse "VAR=value" format
@@ -1099,6 +1098,35 @@ func ProcessEnv(env []string, expandedVars map[string]string, level string) (map
 // Phase 6: Global configuration integration
 // ============================================================================
 
+// expandCommonFields expands vars and env fields that are common across all configuration levels.
+// This is the core expansion logic shared by Global, Group, and Command configurations.
+//
+// Parameters:
+//   - vars: Variable definitions to expand (e.g., ["var1=value1", "var2=%{var1}/sub"])
+//   - env: Environment variable definitions to expand (e.g., ["VAR=%{var1}"])
+//   - baseInternalVars: Base internal variables to start with (from from_env or parent level)
+//   - level: Context name for error messages (e.g., "global", "group[name]", "command[name]")
+//
+// Returns:
+//   - expandedVars: Merged base + expanded vars
+//   - expandedEnv: Expanded environment variables
+//   - error: Any error that occurred during expansion
+func expandCommonFields(vars, env []string, baseInternalVars map[string]string, level string) (map[string]string, map[string]string, error) {
+	// Step 1: Process vars to expand internal variable definitions
+	expandedVars, err := ProcessVars(vars, baseInternalVars, level)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Step 2: Process env to expand environment variables
+	expandedEnv, err := ProcessEnv(env, expandedVars, level)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to process %s env: %w", level, err)
+	}
+
+	return expandedVars, expandedEnv, nil
+}
+
 // configFieldsToExpand holds the configuration fields that need expansion.
 type configFieldsToExpand struct {
 	vars        []string
@@ -1128,18 +1156,12 @@ type expandedConfigFields struct {
 func expandConfigFields(fields configFieldsToExpand, baseInternalVars map[string]string, level string) (expandedConfigFields, error) {
 	var result expandedConfigFields
 
-	// Step 1: Process vars to expand internal variable definitions
-	expandedVars, err := ProcessVars(fields.vars, baseInternalVars, level)
+	// Step 1 & 2: Use common helper to expand vars and env
+	expandedVars, expandedEnv, err := expandCommonFields(fields.vars, fields.env, baseInternalVars, level)
 	if err != nil {
 		return result, err
 	}
 	result.expandedVars = expandedVars
-
-	// Step 2: Process env to expand environment variables
-	expandedEnv, err := ProcessEnv(fields.env, expandedVars, level)
-	if err != nil {
-		return result, fmt.Errorf("failed to process %s env: %w", level, err)
-	}
 	result.expandedEnv = expandedEnv
 
 	// Step 3: Expand verify_files using internal variables
@@ -1330,6 +1352,61 @@ func ExpandGroupConfig(group *runnertypes.CommandGroup, global *runnertypes.Glob
 	group.ExpandedVars = expanded.expandedVars
 	group.ExpandedEnv = expanded.expandedEnv
 	group.ExpandedVerifyFiles = expanded.expandedVerifyFiles
+
+	return nil
+}
+
+// ============================================================================
+// Phase 8: Command Configuration Expansion
+// ============================================================================
+
+// ExpandCommandConfig expands Command-level configuration (vars, env, cmd, args).
+// It inherits Group.ExpandedVars as the base and processes Command.Vars.
+//
+// Parameters:
+//   - cmd: The Command to expand (modified in place)
+//   - group: The parent CommandGroup (used for inheritance)
+//
+// Returns:
+//   - error: Any error during expansion
+func ExpandCommandConfig(cmd *runnertypes.Command, group *runnertypes.CommandGroup) error {
+	if cmd == nil {
+		return ErrNilCommand
+	}
+	if group == nil {
+		return ErrNilGroup
+	}
+
+	level := fmt.Sprintf("command[%s]", cmd.Name)
+
+	// Step 1: Inherit Group.ExpandedVars as base (copy the map)
+	baseInternalVars := maps.Clone(group.ExpandedVars)
+
+	// Step 2 & 3: Use common helper to expand vars and env
+	expandedVars, expandedEnv, err := expandCommonFields(cmd.Vars, cmd.Env, baseInternalVars, level)
+	if err != nil {
+		return err
+	}
+	cmd.ExpandedVars = expandedVars
+	cmd.ExpandedEnv = expandedEnv
+
+	// Step 4: Expand Command.Cmd (Command-specific)
+	expandedCmd, err := ExpandString(cmd.Cmd, expandedVars, level, "cmd")
+	if err != nil {
+		return fmt.Errorf("failed to expand cmd: %w", err)
+	}
+	cmd.ExpandedCmd = expandedCmd
+
+	// Step 5: Expand Command.Args (Command-specific)
+	expandedArgs := make([]string, 0, len(cmd.Args))
+	for i, arg := range cmd.Args {
+		expandedArg, err := ExpandString(arg, expandedVars, level, fmt.Sprintf("args[%d]", i))
+		if err != nil {
+			return fmt.Errorf("failed to expand args[%d]: %w", i, err)
+		}
+		expandedArgs = append(expandedArgs, expandedArg)
+	}
+	cmd.ExpandedArgs = expandedArgs
 
 	return nil
 }
