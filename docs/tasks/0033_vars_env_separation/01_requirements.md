@@ -55,6 +55,7 @@ vars = [
 **スコープ**:
 - **Global.vars**: すべてのグループとコマンドから参照可能
 - **Group.vars**: そのグループ内のコマンドから参照可能
+- **Command.vars**: そのコマンド内でのみ参照可能
 - **内部変数は子プロセスの環境変数にはならない**（デフォルト）
 
 **参照構文**:
@@ -72,8 +73,12 @@ vars = ["db_tools=%{base_dir}/db-tools"]
 
 [[groups.commands]]
 name = "db_dump"
+vars = [
+    "timestamp=20250114",
+    "output_file=%{base_dir}/dump_%{timestamp}.sql"
+]
 cmd = "%{db_tools}/dump.sh"
-args = ["-o", "%{base_dir}/output"]
+args = ["-o", "%{output_file}"]
 ```
 
 #### F002: `from_env` による環境変数の取り込み
@@ -219,7 +224,7 @@ from_env = [
 
 **参照可能な変数**:
 - 同レベルの他の内部変数（`vars` 内の他の変数）
-- 上位レベルの内部変数（Global.vars → Group.vars）
+- 上位レベルの内部変数（Global.vars → Group.vars → Command.vars）
 - `from_env` で取り込んだ変数（継承ルールに従う）
 
 **from_env の参照における継承ルール**:
@@ -231,6 +236,7 @@ from_env = [
 2. Global.vars の展開（Global.from_env で取り込んだ変数を参照可能）
 3. Group.from_env の処理（存在する場合、Global.from_env を上書き）
 4. Group.vars の展開（Group.from_env または Global.from_env（継承時）+ Global.vars を参照可能）
+5. Command.vars の展開（Group と Global の内部変数を参照可能）
 
 **例1: 基本的な参照**:
 ```toml
@@ -251,6 +257,15 @@ vars = [
     "output_dir=%{data_dir}/output", # Global.vars の data_dir を参照
     "home_backup=%{home}/backup"     # Global.from_env の home を参照可能（継承）
 ]
+
+[[groups.commands]]
+name = "process_data"
+vars = [
+    "temp_dir=%{input_dir}/temp",    # Group.vars の input_dir を参照
+    "log_file=%{temp_dir}/process.log"  # Command.vars の temp_dir を参照
+]
+cmd = "process"
+args = ["--input", "%{input_dir}", "--log", "%{log_file}"]
 ```
 
 **例2: Group.from_env による上書き時の参照**:
@@ -267,6 +282,13 @@ vars = [
     "custom_dir=%{custom}/data",      # OK: Group.from_env の custom を参照
     "combined=%{global_dir}/custom"   # OK: Global.vars の global_dir を参照
     # "home_dir=%{home}/data"         # エラー: Global.from_env の home は継承されない
+]
+
+[[groups.commands]]
+name = "process"
+vars = [
+    "work_dir=%{custom_dir}/work",    # OK: Group.vars の custom_dir を参照
+    "output=%{combined}/output"       # OK: Group.vars の combined を参照
 ]
 ```
 
@@ -556,7 +578,8 @@ env = ["PATH=/group/bin:%{path_level2}"]
 [[groups.commands]]
 # Group.vars と Global.vars を参照可能
 env = ["PATH=/cmd/bin:%{path_level2}"]
-# 最終的な PATH: /cmd/bin:/group/bin:/custom/bin:<システムのPATH>
+# 最終的な PATH: /cmd/bin:/custom/bin:<システムのPATH>
+# （Command.env が Group.env を上書きするため、/group/bin は含まれません）
 ```
 
 **セキュリティ上の利点**:
@@ -593,9 +616,10 @@ env = ["PATH=/cmd/bin:%{path_level2}"]
    d. Group.verify_files の展開（Group と Global の内部変数を参照可能、%{VAR} のみ）
 
 6. 各 Command について以下を実行:
-   a. Command.env の展開（所属 Group と Global の内部変数を参照可能、%{VAR} のみ）
-   b. Command.cmd の展開（所属 Group と Global の内部変数を参照可能、%{VAR} のみ）
-   c. Command.args の展開（所属 Group と Global の内部変数を参照可能、%{VAR} のみ）
+   a. Command.vars の展開（Group と Global の内部変数を参照可能）
+   b. Command.env の展開（Command, Group, Global の内部変数を参照可能、%{VAR} のみ）
+   c. Command.cmd の展開（Command, Group, Global の内部変数を参照可能、%{VAR} のみ）
+   d. Command.args の展開（Command, Group, Global の内部変数を参照可能、%{VAR} のみ）
 ```
 
 **重要な制約**:
@@ -603,6 +627,7 @@ env = ["PATH=/cmd/bin:%{path_level2}"]
 - **verify_files は env を参照できない**: verify_files の展開時には env で定義した変数は使用不可
 - **env は実行時のみ有効**: env で定義した変数は子プロセス起動時にのみ設定される
 - **セキュリティ**: システム環境変数は from_env + env_allowlist 経由でのみアクセス可能
+- **Command.vars のスコープ**: Command.vars で定義した変数はそのコマンド内でのみ参照可能（他のコマンドからは参照不可）
 
 ### 2.4 セキュリティ要件
 
@@ -1000,10 +1025,12 @@ Error: To use system environment variable 'PATH', add it to from_env first (in g
 
 ### 4.1 スコープ内 (In Scope)
 
-- [ ] `GlobalConfig` と `CommandGroup` に `FromEnv`, `Vars`, `InternalVars` フィールドを追加
-- [ ] `from_env` のパースと処理（システム環境変数の取り込み）
+- [ ] `GlobalConfig`, `CommandGroup` に `FromEnv`, `Vars`, `InternalVars` フィールドを追加
+- [ ] `Command` に `Vars`, `InternalVars` フィールドを追加（`FromEnv` は追加しない）
+- [ ] `from_env` のパースと処理（システム環境変数の取り込み、Global と Group レベルのみ）
 - [ ] `from_env` の継承ルール実装（Override 方式）
-- [ ] `vars` のパースと展開（内部変数の定義）
+- [ ] `vars` のパースと展開（内部変数の定義、Global, Group, Command レベル）
+- [ ] Command.vars の実装（コマンド専用の内部変数）
 - [ ] `%{variable}` 構文での内部変数参照
 - [ ] `env` での内部変数参照（`%{VAR}` 構文のみ）
 - [ ] `cmd`, `args`, `verify_files` での内部変数参照（`%{VAR}` のみ）
@@ -1028,7 +1055,8 @@ Error: To use system environment variable 'PATH', add it to from_env first (in g
 ### 5.1 機能的成功基準
 - [ ] `vars` と `from_env` による内部変数の定義と参照が正常動作
 - [ ] `from_env` の継承ルール（Override 方式）が正常動作
-- [ ] 内部変数の階層的参照（Global → Group）が正常動作
+- [ ] 内部変数の階層的参照（Global → Group → Command）が正常動作
+- [ ] Command.vars の定義と参照が正常動作
 - [ ] すべてのフィールド（`env`, `cmd`, `args`, `verify_files`, `vars`）で `%{VAR}` が正常動作
 - [ ] すべてのフィールドで `${VAR}` がエラーとなることを確認
 - [ ] allowlist チェックが正常動作（from_env でのみ）

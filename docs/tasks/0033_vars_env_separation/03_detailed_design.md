@@ -108,7 +108,7 @@ if group.FromEnv == nil {
 }
 ```
 
-### 1.3 Command 構造体（変更なし）
+### 1.3 Command 構造体（拡張）
 
 ```go
 // internal/runner/runnertypes/config.go
@@ -119,16 +119,20 @@ type Command struct {
     Cmd         string   `toml:"cmd"`
     Args        []string `toml:"args"`
     Env         []string `toml:"env"`
+    Vars        []string `toml:"vars"`  // 追加: コマンド専用の内部変数定義
     // ... other existing fields ...
 
     // Expanded results
+    InternalVars map[string]string `toml:"-"`  // 追加: 展開済み内部変数（Group + Global + Command.vars）
     ExpandedCmd  string            `toml:"-"`
     ExpandedArgs []string          `toml:"-"`
     ExpandedEnv  map[string]string `toml:"-"`
 }
 ```
 
-**注記**: Command レベルでは `FromEnv` と `Vars` は追加しません（要件定義書で明示）。Command.Env で `%{VAR}` を参照可能です。
+**変更点**:
+- `Vars`: コマンド専用の内部変数定義を追加
+- `InternalVars`: Global.vars + Group.vars + Command.vars をマージした最終的な内部変数マップ
 
 ### 1.4 エラー型定義
 
@@ -792,8 +796,9 @@ func copyMap(m map[string]string) map[string]string {
 //
 // Processing order:
 //   1. Inherit internal variables from group
-//   2. Process env → expand using inherited internal variables
-//   3. Expand cmd and args
+//   2. Process vars → expand and merge with inherited internal variables
+//   3. Process env → expand using merged internal variables
+//   4. Expand cmd and args
 //
 // This function modifies the command config in place.
 func expandCommandConfig(
@@ -804,9 +809,20 @@ func expandCommandConfig(
     level := fmt.Sprintf("group[%s].command[%s]", group.Name, cmd.Name)
 
     // Step 1: Inherit internal variables from group
-    internalVars := group.InternalVars
+    baseInternalVars := group.InternalVars
 
-    // Step 2: Process env
+    // Step 2: Process vars (merge with inherited internal variables)
+    internalVars, err := expander.ProcessVars(
+        cmd.Vars,
+        baseInternalVars,
+        level,
+    )
+    if err != nil {
+        return fmt.Errorf("failed to process command[%s].vars: %w", cmd.Name, err)
+    }
+    cmd.InternalVars = internalVars
+
+    // Step 3: Process env
     expandedEnv, err := expander.ProcessEnv(
         cmd.Env,
         internalVars,
@@ -817,14 +833,14 @@ func expandCommandConfig(
     }
     cmd.ExpandedEnv = expandedEnv
 
-    // Step 3: Expand cmd
+    // Step 4: Expand cmd
     expandedCmd, err := expander.ExpandString(cmd.Cmd, internalVars, level, "cmd")
     if err != nil {
         return fmt.Errorf("failed to expand command[%s].cmd: %w", cmd.Name, err)
     }
     cmd.ExpandedCmd = expandedCmd
 
-    // Step 4: Expand args
+    // Step 5: Expand args
     expandedArgs := make([]string, len(cmd.Args))
     for i, arg := range cmd.Args {
         expandedArg, err := expander.ExpandString(arg, internalVars, level, "args")
@@ -1173,19 +1189,25 @@ allowlist の制御は `ProcessFromEnv` 関数で実装済み（セクション 
 1. **基本的な変数展開**:
    - Global → Group → Command の階層的展開
    - from_env による環境変数取り込み
-   - vars による変数定義
+   - vars による変数定義（Global, Group, Command レベル）
    - env による環境変数設定
 
 2. **継承テスト**:
    - from_env の継承（nil の場合）
    - from_env の上書き（定義されている場合）
    - from_env の空配列（[] の場合）
-   - vars のマージ
+   - vars のマージ（Global → Group → Command）
 
-3. **PATH 拡張テスト**:
+3. **Command.vars のテスト**:
+   - Command.vars での変数定義
+   - Command.vars から Group.vars と Global.vars の参照
+   - Command.vars を cmd, args, env で参照
+   - Command.vars のスコープ制限（他のコマンドから参照不可）
+
+4. **PATH 拡張テスト**:
    - 段階的な PATH 拡張（アーキテクチャ設計書のシナリオ）
 
-4. **セキュリティテスト**:
+5. **セキュリティテスト**:
    - allowlist 制御
    - 循環参照の検出
    - 不正な変数名の検出

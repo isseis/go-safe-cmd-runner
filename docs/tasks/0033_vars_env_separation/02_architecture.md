@@ -82,7 +82,7 @@ flowchart TD
 **重要**: 変数展開は階層的に処理されます:
 1. **Global.vars** → Global.from_env で取り込んだ環境変数を参照可能
 2. **Group.vars** → Global.vars と Group.from_env で取り込んだ環境変数を参照可能
-3. **Command.vars** → Global.vars、Group.vars、Command.from_env で取り込んだ環境変数を参照可能
+3. **Command.vars** → Global.vars と Group.vars を参照可能
 
 この処理順序により、`PATH=/custom:%{path}` のような参照も自然に解決されます（`%{path}` は既に確定済みの値を参照）。
 
