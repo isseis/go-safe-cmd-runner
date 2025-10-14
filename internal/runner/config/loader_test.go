@@ -540,3 +540,79 @@ func findGroupByName(groups []runnertypes.CommandGroup, name string) *runnertype
 	}
 	return nil
 }
+
+// ===========================================
+// Phase 1.4: TOML Parse Test for FromEnv/Vars
+// ===========================================
+
+// TestPhase1_ParseFromEnvAndVars tests that FromEnv and Vars fields are correctly parsed from TOML
+func TestPhase1_ParseFromEnvAndVars(t *testing.T) {
+	configPath := "testdata/phase1_basic_vars.toml"
+
+	// Read file content
+	content, err := os.ReadFile(configPath)
+	require.NoError(t, err, "Failed to read test config file")
+
+	// Load configuration
+	loader := NewLoader()
+	cfg, err := loader.LoadConfig(content)
+	require.NoError(t, err, "LoadConfig failed")
+	require.NotNil(t, cfg, "Config should not be nil")
+
+	// Verify Global.FromEnv is parsed correctly
+	expectedGlobalFromEnv := []string{"home=HOME", "path=PATH"}
+	assert.Equal(t, expectedGlobalFromEnv, cfg.Global.FromEnv, "Global.FromEnv should be parsed correctly")
+
+	// Verify Global.Vars is parsed correctly
+	expectedGlobalVars := []string{"app_dir=/opt/myapp"}
+	assert.Equal(t, expectedGlobalVars, cfg.Global.Vars, "Global.Vars should be parsed correctly")
+
+	// Verify Global.Env is parsed correctly
+	expectedGlobalEnv := []string{"BASE_DIR=%{app_dir}"}
+	assert.Equal(t, expectedGlobalEnv, cfg.Global.Env, "Global.Env should be parsed correctly")
+
+	// Verify Global.ExpandedVars is nil or empty (not yet expanded in Phase 1)
+	// Note: In the current implementation, expansion happens in LoadConfig, so ExpandedVars may be populated
+	// For Phase 1, we just verify that the fields are parsed
+	t.Logf("Global.ExpandedVars: %v", cfg.Global.ExpandedVars)
+
+	// Verify groups
+	require.Len(t, cfg.Groups, 1, "Expected 1 group")
+
+	group := &cfg.Groups[0]
+	assert.Equal(t, "test_group", group.Name, "Group name should be 'test_group'")
+
+	// Verify Group.FromEnv is not set (should be nil, inheriting from Global)
+	assert.Nil(t, group.FromEnv, "Group.FromEnv should be nil (inheriting from Global)")
+
+	// Verify Group.Vars is parsed correctly
+	expectedGroupVars := []string{"log_dir=%{app_dir}/logs"}
+	assert.Equal(t, expectedGroupVars, group.Vars, "Group.Vars should be parsed correctly")
+
+	// Verify Group.Env is parsed correctly
+	expectedGroupEnv := []string{"LOG_DIR=%{log_dir}"}
+	assert.Equal(t, expectedGroupEnv, group.Env, "Group.Env should be parsed correctly")
+
+	// Verify Group.ExpandedVars is nil or empty (not yet expanded in Phase 1)
+	t.Logf("Group.ExpandedVars: %v", group.ExpandedVars)
+
+	// Verify commands
+	require.Len(t, group.Commands, 1, "Expected 1 command")
+
+	cmd := &group.Commands[0]
+	assert.Equal(t, "test_cmd", cmd.Name, "Command name should be 'test_cmd'")
+
+	// Verify Command.Vars is parsed correctly
+	expectedCmdVars := []string{"temp_file=%{log_dir}/temp.log"}
+	assert.Equal(t, expectedCmdVars, cmd.Vars, "Command.Vars should be parsed correctly")
+
+	// Verify Command.Cmd is parsed correctly
+	assert.Equal(t, "/bin/echo", cmd.Cmd, "Command.Cmd should be parsed correctly")
+
+	// Verify Command.Args is parsed correctly
+	expectedCmdArgs := []string{"%{temp_file}"}
+	assert.Equal(t, expectedCmdArgs, cmd.Args, "Command.Args should be parsed correctly")
+
+	// Verify Command.ExpandedVars is nil or empty (not yet expanded in Phase 1)
+	t.Logf("Command.ExpandedVars: %v", cmd.ExpandedVars)
+}

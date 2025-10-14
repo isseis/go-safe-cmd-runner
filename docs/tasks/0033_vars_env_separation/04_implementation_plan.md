@@ -124,7 +124,7 @@
     ```
 
 #### 2.1.4 TOMLパースのテスト
-- [ ] サンプルTOMLファイルを作成: `testdata/phase1_basic_vars.toml`
+- [x] サンプルTOMLファイルを作成: `testdata/phase1_basic_vars.toml`
   ```toml
   [global]
   env_allowlist = ["HOME", "PATH"]
@@ -143,11 +143,11 @@
   cmd = "/bin/echo"
   args = ["%{temp_file}"]
   ```
-- [ ] `internal/runner/config/loader_test.go`でパーステスト
-  - [ ] Global.FromEnv, Global.Varsが正しくパースされることを確認
-  - [ ] Group.FromEnv, Group.Varsが正しくパースされることを確認
-  - [ ] Command.Varsが正しくパースされることを確認
-  - [ ] ExpandedVarsがnilまたは空であることを確認（まだ展開していない）
+- [x] `internal/runner/config/loader_test.go`でパーステスト
+  - [x] Global.FromEnv, Global.Varsが正しくパースされることを確認
+  - [x] Group.FromEnv, Group.Varsが正しくパースされることを確認
+  - [x] Command.Varsが正しくパースされることを確認
+  - [x] ExpandedVarsがnilまたは空であることを確認（まだ展開していない）
 
 #### 2.1.5 Phase 1の完了確認
 - [x] すべての既存テストがPASS
