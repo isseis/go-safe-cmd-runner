@@ -3905,3 +3905,201 @@ func TestProcessEnv_EmptyValue(t *testing.T) {
 	assert.Equal(t, "value", result["ANOTHER_VAR"])
 	assert.Len(t, result, 2)
 }
+
+// ===============================================================
+// Phase 6: expandGlobalConfig Tests
+// ===============================================================
+
+// TestExpandGlobalConfig_Basic tests basic flow of global config expansion
+func TestExpandGlobalConfig_Basic(t *testing.T) {
+	// Set up system environment
+	t.Setenv("HOME", "/home/testuser")
+
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{"HOME"},
+		FromEnv:      []string{"home=HOME"},
+		Vars:         []string{"app_dir=%{home}/app"},
+		Env:          []string{"APP_DIR=%{app_dir}"},
+		VerifyFiles:  []string{"%{app_dir}/config.toml"},
+	}
+
+	filter := environment.NewFilter(global.EnvAllowlist)
+
+	err := config.ExpandGlobalConfig(global, filter)
+
+	require.NoError(t, err)
+
+	// Check ExpandedVars
+	require.NotNil(t, global.ExpandedVars)
+	assert.Equal(t, "/home/testuser", global.ExpandedVars["home"])
+	assert.Equal(t, "/home/testuser/app", global.ExpandedVars["app_dir"])
+
+	// Check ExpandedEnv
+	require.NotNil(t, global.ExpandedEnv)
+	assert.Equal(t, "/home/testuser/app", global.ExpandedEnv["APP_DIR"])
+
+	// Check ExpandedVerifyFiles
+	require.NotNil(t, global.ExpandedVerifyFiles)
+	require.Len(t, global.ExpandedVerifyFiles, 1)
+	assert.Equal(t, "/home/testuser/app/config.toml", global.ExpandedVerifyFiles[0])
+}
+
+// TestExpandGlobalConfig_NoFromEnv tests expansion when from_env is not defined
+func TestExpandGlobalConfig_NoFromEnv(t *testing.T) {
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{},
+		Vars:         []string{"app_dir=/opt/myapp"},
+		Env:          []string{"APP_DIR=%{app_dir}"},
+	}
+
+	filter := environment.NewFilter(global.EnvAllowlist)
+
+	err := config.ExpandGlobalConfig(global, filter)
+
+	require.NoError(t, err)
+
+	// Check ExpandedVars
+	require.NotNil(t, global.ExpandedVars)
+	assert.Equal(t, "/opt/myapp", global.ExpandedVars["app_dir"])
+	assert.Len(t, global.ExpandedVars, 1)
+
+	// Check ExpandedEnv
+	require.NotNil(t, global.ExpandedEnv)
+	assert.Equal(t, "/opt/myapp", global.ExpandedEnv["APP_DIR"])
+}
+
+// TestExpandGlobalConfig_NoVars tests expansion when vars is not defined
+func TestExpandGlobalConfig_NoVars(t *testing.T) {
+	t.Setenv("PATH", "/usr/bin:/bin")
+
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{"PATH"},
+		FromEnv:      []string{"path=PATH"},
+		Env:          []string{"PATH=%{path}"},
+	}
+
+	filter := environment.NewFilter(global.EnvAllowlist)
+
+	err := config.ExpandGlobalConfig(global, filter)
+
+	require.NoError(t, err)
+
+	// Check ExpandedVars
+	require.NotNil(t, global.ExpandedVars)
+	assert.Equal(t, "/usr/bin:/bin", global.ExpandedVars["path"])
+	assert.Len(t, global.ExpandedVars, 1)
+
+	// Check ExpandedEnv
+	require.NotNil(t, global.ExpandedEnv)
+	assert.Equal(t, "/usr/bin:/bin", global.ExpandedEnv["PATH"])
+}
+
+// TestExpandGlobalConfig_NoEnv tests expansion when env is not defined
+func TestExpandGlobalConfig_NoEnv(t *testing.T) {
+	t.Setenv("HOME", "/home/testuser")
+
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{"HOME"},
+		FromEnv:      []string{"home=HOME"},
+		Vars:         []string{"app_dir=%{home}/app"},
+	}
+
+	filter := environment.NewFilter(global.EnvAllowlist)
+
+	err := config.ExpandGlobalConfig(global, filter)
+
+	require.NoError(t, err)
+
+	// Check ExpandedVars
+	require.NotNil(t, global.ExpandedVars)
+	assert.Equal(t, "/home/testuser", global.ExpandedVars["home"])
+	assert.Equal(t, "/home/testuser/app", global.ExpandedVars["app_dir"])
+
+	// Check ExpandedEnv (should be empty)
+	require.NotNil(t, global.ExpandedEnv)
+	assert.Len(t, global.ExpandedEnv, 0)
+}
+
+// TestExpandGlobalConfig_ComplexChain tests complex variable reference chain
+func TestExpandGlobalConfig_ComplexChain(t *testing.T) {
+	t.Setenv("HOME", "/home/user")
+	t.Setenv("LANG", "en_US.UTF-8")
+
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{"HOME", "LANG"},
+		FromEnv:      []string{"home=HOME", "lang=LANG"},
+		Vars: []string{
+			"base=%{home}/base",
+			"app=%{base}/app",
+			"data=%{app}/data",
+			"logs=%{data}/logs",
+		},
+		Env: []string{
+			"BASE_DIR=%{base}",
+			"APP_DIR=%{app}",
+			"DATA_DIR=%{data}",
+			"LOG_DIR=%{logs}",
+			"LANG=%{lang}",
+		},
+		VerifyFiles: []string{
+			"%{app}/config.toml",
+			"%{data}/input.txt",
+		},
+	}
+
+	filter := environment.NewFilter(global.EnvAllowlist)
+
+	err := config.ExpandGlobalConfig(global, filter)
+
+	require.NoError(t, err)
+
+	// Check ExpandedVars
+	require.NotNil(t, global.ExpandedVars)
+	assert.Equal(t, "/home/user", global.ExpandedVars["home"])
+	assert.Equal(t, "en_US.UTF-8", global.ExpandedVars["lang"])
+	assert.Equal(t, "/home/user/base", global.ExpandedVars["base"])
+	assert.Equal(t, "/home/user/base/app", global.ExpandedVars["app"])
+	assert.Equal(t, "/home/user/base/app/data", global.ExpandedVars["data"])
+	assert.Equal(t, "/home/user/base/app/data/logs", global.ExpandedVars["logs"])
+
+	// Check ExpandedEnv
+	require.NotNil(t, global.ExpandedEnv)
+	assert.Equal(t, "/home/user/base", global.ExpandedEnv["BASE_DIR"])
+	assert.Equal(t, "/home/user/base/app", global.ExpandedEnv["APP_DIR"])
+	assert.Equal(t, "/home/user/base/app/data", global.ExpandedEnv["DATA_DIR"])
+	assert.Equal(t, "/home/user/base/app/data/logs", global.ExpandedEnv["LOG_DIR"])
+	assert.Equal(t, "en_US.UTF-8", global.ExpandedEnv["LANG"])
+
+	// Check ExpandedVerifyFiles
+	require.NotNil(t, global.ExpandedVerifyFiles)
+	require.Len(t, global.ExpandedVerifyFiles, 2)
+	assert.Equal(t, "/home/user/base/app/config.toml", global.ExpandedVerifyFiles[0])
+	assert.Equal(t, "/home/user/base/app/data/input.txt", global.ExpandedVerifyFiles[1])
+}
+
+// TestExpandGlobalConfig_EmptyFields tests expansion with empty fields
+func TestExpandGlobalConfig_EmptyFields(t *testing.T) {
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{},
+		FromEnv:      []string{},
+		Vars:         []string{},
+		Env:          []string{},
+		VerifyFiles:  []string{},
+	}
+
+	filter := environment.NewFilter(global.EnvAllowlist)
+
+	err := config.ExpandGlobalConfig(global, filter)
+
+	require.NoError(t, err)
+
+	// All expanded fields should be empty but not nil
+	require.NotNil(t, global.ExpandedVars)
+	assert.Len(t, global.ExpandedVars, 0)
+
+	require.NotNil(t, global.ExpandedEnv)
+	assert.Len(t, global.ExpandedEnv, 0)
+
+	require.NotNil(t, global.ExpandedVerifyFiles)
+	assert.Len(t, global.ExpandedVerifyFiles, 0)
+}

@@ -1094,3 +1094,73 @@ func ProcessEnv(env []string, expandedVars map[string]string, level string) (map
 
 	return result, nil
 }
+
+// ============================================================================
+// Phase 6: Global configuration integration
+// ============================================================================
+
+// ExpandGlobalConfig expands all variables in global configuration (from_env, vars, env, verify_files).
+//
+// Processing order:
+//  1. Process from_env → System environment variables to internal variables
+//  2. Process vars → Expand internal variable definitions (can reference from_env variables)
+//  3. Process env → Expand environment variables (can reference internal variables)
+//  4. Process verify_files → Expand file paths (can reference internal variables)
+//
+// Results are stored in:
+//   - global.ExpandedVars: Merged from_env + vars
+//   - global.ExpandedEnv: Expanded env field
+//   - global.ExpandedVerifyFiles: Expanded verify_files field
+//
+// Parameters:
+//   - global: Global configuration to expand
+//   - filter: Environment filter for system environment access
+//
+// Returns error if any expansion step fails.
+func ExpandGlobalConfig(global *runnertypes.GlobalConfig, filter *environment.Filter) error {
+	if global == nil {
+		return ErrNilConfig
+	}
+
+	// Step 1: Get system environment variables
+	systemEnv := filter.ParseSystemEnvironment(nil)
+
+	// Step 2: Process from_env to get base internal variables
+	baseInternalVars, err := ProcessFromEnv(global.FromEnv, global.EnvAllowlist, systemEnv, "global")
+	if err != nil {
+		return fmt.Errorf("failed to process global from_env: %w", err)
+	}
+
+	// Step 3: Process vars to expand internal variable definitions
+	expandedVars, err := ProcessVars(global.Vars, baseInternalVars, "global")
+	if err != nil {
+		return fmt.Errorf("failed to process global vars: %w", err)
+	}
+
+	// Store expanded internal variables
+	global.ExpandedVars = expandedVars
+
+	// Step 4: Process env to expand environment variables
+	expandedEnv, err := ProcessEnv(global.Env, expandedVars, "global")
+	if err != nil {
+		return fmt.Errorf("failed to process global env: %w", err)
+	}
+
+	// Store expanded environment variables
+	global.ExpandedEnv = expandedEnv
+
+	// Step 5: Expand verify_files using internal variables
+	expandedVerifyFiles := make([]string, 0, len(global.VerifyFiles))
+	for _, filePath := range global.VerifyFiles {
+		expandedPath, err := ExpandString(filePath, expandedVars, "global", "verify_files")
+		if err != nil {
+			return fmt.Errorf("failed to expand global verify_files: %w", err)
+		}
+		expandedVerifyFiles = append(expandedVerifyFiles, expandedPath)
+	}
+
+	// Store expanded verify files
+	global.ExpandedVerifyFiles = expandedVerifyFiles
+
+	return nil
+}
