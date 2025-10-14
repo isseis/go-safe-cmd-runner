@@ -813,12 +813,11 @@ func expandStringRecursive(
 			const openBraceLen = 2 // Length of "%{"
 			closeIdx := strings.IndexByte(input[i+openBraceLen:], '}')
 			if closeIdx == -1 {
-				// Unclosed %{ - return static error
-				return "", &ErrInvalidEscapeSequenceDetail{
-					Level:    level,
-					Field:    field,
-					Sequence: "%{",
-					Context:  input,
+				// Unclosed %{ - return unclosed variable reference error
+				return "", &ErrUnclosedVariableReferenceDetail{
+					Level:   level,
+					Field:   field,
+					Context: input,
 				}
 			}
 			closeIdx += i + openBraceLen // Adjust to absolute position
