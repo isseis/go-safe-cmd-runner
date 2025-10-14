@@ -135,9 +135,9 @@ from_env = [
 **スコープと継承ルール**:
 - **Global.from_env**: すべてのグループとコマンドから参照可能（デフォルト）
 - **Group.from_env の継承方式**: **上書き（Override）**
-  - グループが `from_env` を定義していない（nil または空配列でない）: Global.from_env を**継承**
-  - グループが `from_env` を明示的に定義: そのマッピングのみが有効（Global.from_env は継承しない = **上書き**）
-  - グループが `from_env = []` を定義: 空のマッピング（システム環境変数を取り込まない）
+  - グループが `from_env` を定義していない（`nil`）場合: `Global.from_env` を**継承**します。
+  - グループが `from_env` を明示的に定義した場合: そのマッピングのみが有効となり、`Global.from_env` は**無視**されます（上書き）。
+    - `from_env = []` と定義すると、空のマッピングが適用され、どのシステム環境変数も取り込まれません。
 
 **重要**: `env_allowlist` と同様、`from_env` も「Union（結合）」ではなく「Override（上書き）」方式を採用する。グループが独自の `from_env` を定義すると、Global.from_env は完全に無視される。
 
