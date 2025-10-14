@@ -28,6 +28,8 @@ type GlobalConfig struct {
 	EnvAllowlist      []string `toml:"env_allowlist"`       // Global environment variable allowlist
 	MaxOutputSize     int64    `toml:"max_output_size"`     // Default output size limit in bytes
 	Env               []string `toml:"env"`                 // Global environment variables (KEY=VALUE format)
+	FromEnv           []string `toml:"from_env"`            // System env var import (internal_name=SYSTEM_VAR format)
+	Vars              []string `toml:"vars"`                // Internal variable definitions (VAR=value format)
 
 	// ExpandedVerifyFiles contains the verify_files paths with environment variable substitutions applied.
 	// It is the expanded version of the VerifyFiles field, populated during configuration loading
@@ -40,6 +42,12 @@ type GlobalConfig struct {
 	// and used during command execution to avoid re-expanding Global.Env for each command.
 	// The toml:"-" tag prevents this field from being set via TOML configuration.
 	ExpandedEnv map[string]string `toml:"-"`
+
+	// ExpandedVars contains the internal variables with all variable substitutions applied.
+	// It is the expanded version of the FromEnv and Vars fields, populated during configuration loading
+	// and used for internal variable expansion in cmd, args, env, and verify_files.
+	// The toml:"-" tag prevents this field from being set via TOML configuration.
+	ExpandedVars map[string]string `toml:"-"`
 }
 
 // CommandGroup represents a group of related commands with a name
@@ -56,6 +64,8 @@ type CommandGroup struct {
 	VerifyFiles  []string  `toml:"verify_files"`  // Files to verify for this group
 	EnvAllowlist []string  `toml:"env_allowlist"` // Group-level environment variable allowlist
 	Env          []string  `toml:"env"`           // Group-level environment variables (KEY=VALUE format)
+	FromEnv      []string  `toml:"from_env"`      // System env var import with inheritance (internal_name=SYSTEM_VAR format)
+	Vars         []string  `toml:"vars"`          // Group-level internal variables (VAR=value format)
 
 	// ExpandedVerifyFiles contains the verify_files paths with environment variable substitutions applied.
 	// It is the expanded version of the VerifyFiles field, populated during configuration loading
@@ -68,6 +78,12 @@ type CommandGroup struct {
 	// and used during command execution to avoid re-expanding Group.Env for each command.
 	// The toml:"-" tag prevents this field from being set via TOML configuration.
 	ExpandedEnv map[string]string `toml:"-"`
+
+	// ExpandedVars contains the internal variables with all variable substitutions applied.
+	// It is the expanded version of the FromEnv and Vars fields (with Global inheritance), populated during configuration loading
+	// and used for internal variable expansion in cmd, args, env, and verify_files.
+	// The toml:"-" tag prevents this field from being set via TOML configuration.
+	ExpandedVars map[string]string `toml:"-"`
 }
 
 // Command represents a single command to be executed
@@ -83,6 +99,7 @@ type Command struct {
 	RunAsGroup   string   `toml:"run_as_group"`   // Group to execute command as (using setegid)
 	MaxRiskLevel string   `toml:"max_risk_level"` // Maximum allowed risk level (low, medium, high)
 	Output       string   `toml:"output"`         // Standard output file path for capture
+	Vars         []string `toml:"vars"`           // Command-level internal variables (VAR=value format)
 
 	// ExpandedCmd contains the command path with environment variable substitutions applied.
 	// It is the expanded version of the Cmd field, populated during configuration loading
@@ -101,6 +118,12 @@ type Command struct {
 	// and used during command execution to avoid re-expanding Command.Env
 	// for each execution. The toml:"-" tag prevents this field from being set via TOML configuration.
 	ExpandedEnv map[string]string `toml:"-"`
+
+	// ExpandedVars contains the internal variables with all variable substitutions applied.
+	// It is the expanded version of the Vars field (with Group/Global inheritance), populated during configuration loading
+	// and used for internal variable expansion in cmd, args, and env.
+	// The toml:"-" tag prevents this field from being set via TOML configuration.
+	ExpandedVars map[string]string `toml:"-"`
 }
 
 // GetMaxRiskLevel returns the parsed maximum risk level for this command
