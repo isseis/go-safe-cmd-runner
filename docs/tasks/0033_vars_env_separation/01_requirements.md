@@ -663,8 +663,7 @@ vars = [
    from_env = ["path=PATH"]            # システムPATHを取り込み
    vars = ["path=/custom/bin:%{path}"] # from_env の path を参照（OK）
    ```
-   - `from_env` で定義した変数と `vars` で定義した変数は別の名前空間
-   - `from_env` の処理後に `vars` を展開するため、循環は発生しない
+   - `from_env` で取り込んだ変数は `vars` で上書き可能です。`from_env` の処理後に `vars` を展開するため、循環は発生しません。
 
 3. **階層的な展開による PATH 拡張**:
    ```toml
