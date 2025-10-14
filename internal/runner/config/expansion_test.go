@@ -2776,10 +2776,8 @@ func TestExpandString_Basic(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logger := slog.Default()
-			expander := config.NewInternalVariableExpander(logger)
-
-			result, err := expander.ExpandString(tt.input, tt.vars, "global", "test_field")
+			_ = slog.Default()
+			result, err := config.ExpandString(tt.input, tt.vars, "global", "test_field")
 
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -2828,10 +2826,8 @@ func TestExpandString_Multiple(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logger := slog.Default()
-			expander := config.NewInternalVariableExpander(logger)
-
-			result, err := expander.ExpandString(tt.input, tt.vars, "global", "test_field")
+			_ = slog.Default()
+			result, err := config.ExpandString(tt.input, tt.vars, "global", "test_field")
 			require.NoError(t, err)
 			assert.Equal(t, tt.expected, result)
 		})
@@ -2890,10 +2886,8 @@ func TestExpandString_Nested(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logger := slog.Default()
-			expander := config.NewInternalVariableExpander(logger)
-
-			result, err := expander.ExpandString(tt.input, tt.vars, "global", "vars")
+			_ = slog.Default()
+			result, err := config.ExpandString(tt.input, tt.vars, "global", "vars")
 			require.NoError(t, err)
 			assert.Equal(t, tt.expected, result)
 		})
@@ -2930,10 +2924,8 @@ func TestExpandString_UndefinedVariable(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logger := slog.Default()
-			expander := config.NewInternalVariableExpander(logger)
-
-			result, err := expander.ExpandString(tt.input, tt.vars, "global", "test_field")
+			_ = slog.Default()
+			result, err := config.ExpandString(tt.input, tt.vars, "global", "test_field")
 
 			require.Error(t, err)
 			assert.Empty(t, result)
@@ -2995,10 +2987,8 @@ func TestExpandString_CircularReference(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logger := slog.Default()
-			expander := config.NewInternalVariableExpander(logger)
-
-			result, err := expander.ExpandString(tt.input, tt.vars, "global", "vars")
+			_ = slog.Default()
+			result, err := config.ExpandString(tt.input, tt.vars, "global", "vars")
 
 			require.Error(t, err)
 			assert.Empty(t, result)
@@ -3021,8 +3011,7 @@ func TestExpandString_CircularReference(t *testing.T) {
 
 func TestExpandString_MaxRecursionDepth(t *testing.T) {
 	// Test maximum recursion depth limit to prevent stack overflow
-	logger := slog.Default()
-	expander := config.NewInternalVariableExpander(logger)
+	_ = slog.Default()
 
 	// Create a chain of variables that exceeds MaxRecursionDepth
 	// var1 -> var2 -> var3 -> ... -> var101
@@ -3037,7 +3026,7 @@ func TestExpandString_MaxRecursionDepth(t *testing.T) {
 		}
 	}
 
-	result, err := expander.ExpandString("%{var1}", vars, "global", "vars")
+	result, err := config.ExpandString("%{var1}", vars, "global", "vars")
 
 	require.Error(t, err)
 	assert.Empty(t, result)
@@ -3098,10 +3087,8 @@ func TestExpandString_EscapeSequence(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logger := slog.Default()
-			expander := config.NewInternalVariableExpander(logger)
-
-			result, err := expander.ExpandString(tt.input, tt.vars, "global", "test_field")
+			_ = slog.Default()
+			result, err := config.ExpandString(tt.input, tt.vars, "global", "test_field")
 			require.NoError(t, err)
 			assert.Equal(t, tt.expected, result)
 		})
@@ -3144,10 +3131,8 @@ func TestExpandString_InvalidEscape(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logger := slog.Default()
-			expander := config.NewInternalVariableExpander(logger)
-
-			result, err := expander.ExpandString(tt.input, tt.vars, "global", "test_field")
+			_ = slog.Default()
+			result, err := config.ExpandString(tt.input, tt.vars, "global", "test_field")
 
 			require.Error(t, err)
 			assert.Empty(t, result)

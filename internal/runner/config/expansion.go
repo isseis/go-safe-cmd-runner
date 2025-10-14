@@ -4,7 +4,6 @@ package config
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"maps"
 	"strings"
 
@@ -748,43 +747,21 @@ func ExpandCommandEnv(
 // Phase 2: Internal Variable Expander (%{VAR} syntax)
 // ============================================================================
 
-// InternalVariableExpander handles expansion of internal variables (%{VAR}).
-// It provides unified expansion logic for from_env, vars, env, cmd, args, and verify_files.
-type InternalVariableExpander struct {
-	logger *slog.Logger
-}
-
-// NewInternalVariableExpander creates a new internal variable expander.
-func NewInternalVariableExpander(logger *slog.Logger) *InternalVariableExpander {
-	return &InternalVariableExpander{
-		logger: logger,
-	}
-}
-
-// ExpandString expands %{VAR} references in a string using the provided internal variables.
-// It detects circular references and reports detailed errors.
-//
-// Parameters:
-//   - input: The string to expand
-//   - expandedVars: Map of available internal variables
-//   - level: Configuration level ("global", "group", "command") for error reporting
-//   - field: Field name ("vars", "env", "cmd", "args", "verify_files") for error reporting
-//
-// Returns:
-//   - Expanded string
-//   - Error if expansion fails (circular reference, undefined variable, invalid escape)
-func (e *InternalVariableExpander) ExpandString(
+// ExpandString expands %{VAR} references in a string using the provided
+// internal variables. It detects circular references and reports detailed
+// errors. The function is package-level (stateless) and follows Go conventions.
+func ExpandString(
 	input string,
 	expandedVars map[string]string,
 	level string,
 	field string,
 ) (string, error) {
 	visited := make(map[string]bool)
-	return e.expandStringRecursive(input, expandedVars, level, field, visited, nil, 0)
+	return expandStringRecursive(input, expandedVars, level, field, visited, nil, 0)
 }
 
 // expandStringRecursive performs recursive expansion with circular reference detection.
-func (e *InternalVariableExpander) expandStringRecursive(
+func expandStringRecursive(
 	input string,
 	expandedVars map[string]string,
 	level string,
@@ -890,7 +867,7 @@ func (e *InternalVariableExpander) expandStringRecursive(
 			newChain := make([]string, len(expansionChain)+1)
 			copy(newChain, expansionChain)
 			newChain[len(newChain)-1] = varName
-			expandedValue, err := e.expandStringRecursive(value, expandedVars, level, field, visited, newChain, depth+1)
+			expandedValue, err := expandStringRecursive(value, expandedVars, level, field, visited, newChain, depth+1)
 			// Unmark after recursion completes (allow same variable in different branches)
 			delete(visited, varName)
 
