@@ -858,6 +858,7 @@
         - Groupで新たに取り込まれる変数のリスト
         - Globalで定義されていたがGroupでは使用不可になる変数を警告表示
         - 例: `"Warning: Global variables (home, path) are not available in this group"`
+    - [ ] 上書き時に Global から使用不可になる変数を警告
     - [ ] allowlistの継承/上書きも同様に表示
       - Groupでallowlistを上書きした場合の影響を表示
 
