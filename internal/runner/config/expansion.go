@@ -1099,6 +1099,35 @@ func ProcessEnv(env []string, expandedVars map[string]string, level string) (map
 // Phase 6: Global configuration integration
 // ============================================================================
 
+// expandCommonFields expands vars and env fields that are common across all configuration levels.
+// This is the core expansion logic shared by Global, Group, and Command configurations.
+//
+// Parameters:
+//   - vars: Variable definitions to expand (e.g., ["var1=value1", "var2=%{var1}/sub"])
+//   - env: Environment variable definitions to expand (e.g., ["VAR=%{var1}"])
+//   - baseInternalVars: Base internal variables to start with (from from_env or parent level)
+//   - level: Context name for error messages (e.g., "global", "group[name]", "command[name]")
+//
+// Returns:
+//   - expandedVars: Merged base + expanded vars
+//   - expandedEnv: Expanded environment variables
+//   - error: Any error that occurred during expansion
+func expandCommonFields(vars, env []string, baseInternalVars map[string]string, level string) (map[string]string, map[string]string, error) {
+	// Step 1: Process vars to expand internal variable definitions
+	expandedVars, err := ProcessVars(vars, baseInternalVars, level)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Step 2: Process env to expand environment variables
+	expandedEnv, err := ProcessEnv(env, expandedVars, level)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to process %s env: %w", level, err)
+	}
+
+	return expandedVars, expandedEnv, nil
+}
+
 // configFieldsToExpand holds the configuration fields that need expansion.
 type configFieldsToExpand struct {
 	vars        []string
@@ -1128,18 +1157,12 @@ type expandedConfigFields struct {
 func expandConfigFields(fields configFieldsToExpand, baseInternalVars map[string]string, level string) (expandedConfigFields, error) {
 	var result expandedConfigFields
 
-	// Step 1: Process vars to expand internal variable definitions
-	expandedVars, err := ProcessVars(fields.vars, baseInternalVars, level)
+	// Step 1 & 2: Use common helper to expand vars and env
+	expandedVars, expandedEnv, err := expandCommonFields(fields.vars, fields.env, baseInternalVars, level)
 	if err != nil {
 		return result, err
 	}
 	result.expandedVars = expandedVars
-
-	// Step 2: Process env to expand environment variables
-	expandedEnv, err := ProcessEnv(fields.env, expandedVars, level)
-	if err != nil {
-		return result, fmt.Errorf("failed to process %s env: %w", level, err)
-	}
 	result.expandedEnv = expandedEnv
 
 	// Step 3: Expand verify_files using internal variables
@@ -1355,39 +1378,33 @@ func ExpandCommandConfig(cmd *runnertypes.Command, group *runnertypes.CommandGro
 		return ErrNilGroup
 	}
 
+	level := fmt.Sprintf("command[%s]", cmd.Name)
+
 	// Step 1: Inherit Group.ExpandedVars as base (copy the map)
 	baseInternalVars := make(map[string]string, len(group.ExpandedVars))
 	for k, v := range group.ExpandedVars {
 		baseInternalVars[k] = v
 	}
 
-	// Step 2: Expand Command.Vars
-	cmdVars, err := ProcessVars(cmd.Vars, baseInternalVars, fmt.Sprintf("command[%s]", cmd.Name))
+	// Step 2 & 3: Use common helper to expand vars and env
+	expandedVars, expandedEnv, err := expandCommonFields(cmd.Vars, cmd.Env, baseInternalVars, level)
 	if err != nil {
 		return err
 	}
+	cmd.ExpandedVars = expandedVars
+	cmd.ExpandedEnv = expandedEnv
 
-	// Step 3: Store ExpandedVars (base + command vars)
-	cmd.ExpandedVars = cmdVars
-
-	// Step 4: Expand Command.Env
-	cmdEnv, err := ProcessEnv(cmd.Env, cmdVars, fmt.Sprintf("command[%s]", cmd.Name))
-	if err != nil {
-		return err
-	}
-	cmd.ExpandedEnv = cmdEnv
-
-	// Step 5: Expand Command.Cmd
-	expandedCmd, err := ExpandString(cmd.Cmd, cmdVars, fmt.Sprintf("command[%s]", cmd.Name), "cmd")
+	// Step 4: Expand Command.Cmd (Command-specific)
+	expandedCmd, err := ExpandString(cmd.Cmd, expandedVars, level, "cmd")
 	if err != nil {
 		return fmt.Errorf("failed to expand cmd: %w", err)
 	}
 	cmd.ExpandedCmd = expandedCmd
 
-	// Step 6: Expand Command.Args
+	// Step 5: Expand Command.Args (Command-specific)
 	expandedArgs := make([]string, 0, len(cmd.Args))
 	for i, arg := range cmd.Args {
-		expandedArg, err := ExpandString(arg, cmdVars, fmt.Sprintf("command[%s]", cmd.Name), fmt.Sprintf("args[%d]", i))
+		expandedArg, err := ExpandString(arg, expandedVars, level, fmt.Sprintf("args[%d]", i))
 		if err != nil {
 			return fmt.Errorf("failed to expand args[%d]: %w", i, err)
 		}
