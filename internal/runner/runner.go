@@ -494,10 +494,7 @@ func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGrou
 // executeCommandInGroup executes a command within a specific group context
 func (r *Runner) executeCommandInGroup(ctx context.Context, cmd *runnertypes.Command, group *runnertypes.CommandGroup) (*executor.Result, error) {
 	// Resolve environment variables for the command with group context
-	envVars, err := r.resolveEnvironmentVars(cmd, group)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve environment variables: %w", err)
-	}
+	envVars := r.resolveEnvironmentVars(cmd, group)
 
 	// Validate resolved environment variables
 	if err := r.validator.ValidateAllEnvironmentVars(envVars); err != nil {
@@ -550,19 +547,16 @@ func (r *Runner) executeCommandInGroup(ctx context.Context, cmd *runnertypes.Com
 // resolveEnvironmentVars resolves environment variables for a command with group context.
 // This merges system environment variables (filtered by allowlist) with pre-expanded
 // Global.ExpandedEnv, Group.ExpandedEnv, and Command.ExpandedEnv.
-func (r *Runner) resolveEnvironmentVars(cmd *runnertypes.Command, group *runnertypes.CommandGroup) (map[string]string, error) {
+func (r *Runner) resolveEnvironmentVars(cmd *runnertypes.Command, group *runnertypes.CommandGroup) map[string]string {
 	// Use BuildProcessEnvironment to construct the final environment
-	envVars, err := executor.BuildProcessEnvironment(&r.config.Global, group, cmd, r.envFilter)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build process environment: %w", err)
-	}
+	envVars := executor.BuildProcessEnvironment(&r.config.Global, group, cmd)
 
 	slog.Debug("Built process environment variables",
 		"command", cmd.Name,
 		"group", group.Name,
 		"final_vars_count", len(envVars))
 
-	return envVars, nil
+	return envVars
 }
 
 // createCommandContext creates a context with timeout for command execution

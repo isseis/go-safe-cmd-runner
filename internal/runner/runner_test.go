@@ -1075,8 +1075,7 @@ func TestRunner_resolveEnvironmentVars(t *testing.T) {
 	prepareCommandWithExpandedEnv(t, &cmd, &config.Groups[0], config)
 
 	// Resolve environment variables (merges system env + Global.ExpandedEnv + Command.ExpandedEnv)
-	envVars, err := runner.resolveEnvironmentVars(&cmd, &config.Groups[0])
-	assert.NoError(t, err)
+	envVars := runner.resolveEnvironmentVars(&cmd, &config.Groups[0])
 
 	// Check that global vars are present
 	assert.Equal(t, "from_env_file", envVars["LOADED_VAR"])
@@ -1560,8 +1559,7 @@ func TestRunner_EnvironmentVariablePriority(t *testing.T) {
 			prepareCommandWithExpandedEnv(t, &testCmd, testGroup, config)
 
 			// Resolve environment variables using the runner
-			resolvedEnv, err := runner.resolveEnvironmentVars(&testCmd, testGroup)
-			require.NoError(t, err, tt.description)
+			resolvedEnv := runner.resolveEnvironmentVars(&testCmd, testGroup)
 
 			// Verify expected values are present with correct priority
 			for key, expectedValue := range tt.expectedValues {
@@ -1664,8 +1662,7 @@ func TestRunner_EnvironmentVariablePriority_CurrentImplementation(t *testing.T) 
 			prepareCommandWithExpandedEnv(t, &testCmd, testGroup, config)
 
 			// Resolve environment variables using the runner
-			resolvedEnv, err := runner.resolveEnvironmentVars(&testCmd, testGroup)
-			require.NoError(t, err, tt.description)
+			resolvedEnv := runner.resolveEnvironmentVars(&testCmd, testGroup)
 
 			// Verify expected values are present with correct priority
 			for key, expectedValue := range tt.expectedValues {
@@ -1728,8 +1725,7 @@ func TestRunner_EnvironmentVariablePriority_EdgeCases(t *testing.T) {
 		// Prepare command with expanded environment (simulates configuration loading)
 		prepareCommandWithExpandedEnv(t, &testCmd, &testGroup, config)
 
-		resolvedEnv, err := runner.resolveEnvironmentVars(&testCmd, &testGroup)
-		require.NoError(t, err)
+		resolvedEnv := runner.resolveEnvironmentVars(&testCmd, &testGroup)
 
 		// Command value should override global value even if empty
 		assert.Equal(t, "", resolvedEnv["EDGE_VAR"])

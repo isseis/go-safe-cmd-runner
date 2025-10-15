@@ -4,54 +4,19 @@
 package executor_test
 
 import (
-	"os"
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
-
-// setupTestEnv sets up test environment variables and returns a cleanup function
-func setupTestEnv(vars map[string]string) func() {
-	oldVars := make(map[string]string)
-
-	// Save current values
-	for key := range vars {
-		if val, exists := os.LookupEnv(key); exists {
-			oldVars[key] = val
-		}
-	}
-
-	// Set test values
-	for key, val := range vars {
-		os.Setenv(key, val)
-	}
-
-	// Return cleanup function
-	return func() {
-		// Restore old values
-		for key := range vars {
-			if oldVal, existed := oldVars[key]; existed {
-				os.Setenv(key, oldVal)
-			} else {
-				os.Unsetenv(key)
-			}
-		}
-	}
-}
 
 // TestBuildProcessEnvironment_Basic tests basic environment variable merging
 func TestBuildProcessEnvironment_Basic(t *testing.T) {
 	// Set up test environment variables
-	cleanup := setupTestEnv(map[string]string{
-		"HOME":   "/home/test",
-		"PATH":   "/usr/bin:/bin",
-		"SECRET": "should_not_appear",
-	})
-	defer cleanup()
+	t.Setenv("HOME", "/home/test")
+	t.Setenv("PATH", "/usr/bin:/bin")
+	t.Setenv("SECRET", "should_not_appear")
 
 	global := &runnertypes.GlobalConfig{
 		EnvAllowlist: []string{"HOME", "PATH"},
@@ -74,10 +39,7 @@ func TestBuildProcessEnvironment_Basic(t *testing.T) {
 		},
 	}
 
-	filter := environment.NewFilter(global.EnvAllowlist)
-
-	result, err := executor.BuildProcessEnvironment(global, group, cmd, filter)
-	require.NoError(t, err)
+	result := executor.BuildProcessEnvironment(global, group, cmd)
 
 	// Verify system env vars (filtered by allowlist)
 	assert.Equal(t, "/home/test", result["HOME"])
@@ -92,10 +54,7 @@ func TestBuildProcessEnvironment_Basic(t *testing.T) {
 
 // TestBuildProcessEnvironment_Priority tests the priority order of environment variables
 func TestBuildProcessEnvironment_Priority(t *testing.T) {
-	cleanup := setupTestEnv(map[string]string{
-		"COMMON": "from_system",
-	})
-	defer cleanup()
+	t.Setenv("COMMON", "from_system")
 
 	global := &runnertypes.GlobalConfig{
 		EnvAllowlist: []string{"COMMON"},
@@ -118,10 +77,7 @@ func TestBuildProcessEnvironment_Priority(t *testing.T) {
 		},
 	}
 
-	filter := environment.NewFilter(global.EnvAllowlist)
-
-	result, err := executor.BuildProcessEnvironment(global, group, cmd, filter)
-	require.NoError(t, err)
+	result := executor.BuildProcessEnvironment(global, group, cmd)
 
 	// Command env should have the highest priority
 	assert.Equal(t, "from_command", result["COMMON"])
@@ -129,13 +85,10 @@ func TestBuildProcessEnvironment_Priority(t *testing.T) {
 
 // TestBuildProcessEnvironment_AllowlistFiltering tests that only allowlisted vars are included
 func TestBuildProcessEnvironment_AllowlistFiltering(t *testing.T) {
-	cleanup := setupTestEnv(map[string]string{
-		"HOME":   "/home/test",
-		"USER":   "testuser",
-		"PATH":   "/usr/bin",
-		"SECRET": "secret",
-	})
-	defer cleanup()
+	t.Setenv("HOME", "/home/test")
+	t.Setenv("USER", "testuser")
+	t.Setenv("PATH", "/usr/bin")
+	t.Setenv("SECRET", "secret")
 
 	global := &runnertypes.GlobalConfig{
 		EnvAllowlist: []string{"HOME", "USER"},
@@ -152,10 +105,7 @@ func TestBuildProcessEnvironment_AllowlistFiltering(t *testing.T) {
 		ExpandedEnv: map[string]string{},
 	}
 
-	filter := environment.NewFilter(global.EnvAllowlist)
-
-	result, err := executor.BuildProcessEnvironment(global, group, cmd, filter)
-	require.NoError(t, err)
+	result := executor.BuildProcessEnvironment(global, group, cmd)
 
 	// Only allowlisted variables should be included
 	assert.Equal(t, "/home/test", result["HOME"])
@@ -166,10 +116,7 @@ func TestBuildProcessEnvironment_AllowlistFiltering(t *testing.T) {
 
 // TestBuildProcessEnvironment_EmptyEnv tests with empty environment configurations
 func TestBuildProcessEnvironment_EmptyEnv(t *testing.T) {
-	cleanup := setupTestEnv(map[string]string{
-		"HOME": "/home/test",
-	})
-	defer cleanup()
+	t.Setenv("HOME", "/home/test")
 
 	global := &runnertypes.GlobalConfig{
 		EnvAllowlist: []string{"HOME"},
@@ -186,10 +133,7 @@ func TestBuildProcessEnvironment_EmptyEnv(t *testing.T) {
 		ExpandedEnv: map[string]string{}, // Empty
 	}
 
-	filter := environment.NewFilter(global.EnvAllowlist)
-
-	result, err := executor.BuildProcessEnvironment(global, group, cmd, filter)
-	require.NoError(t, err)
+	result := executor.BuildProcessEnvironment(global, group, cmd)
 
 	// Only system env should be included
 	assert.Equal(t, "/home/test", result["HOME"])
@@ -198,12 +142,9 @@ func TestBuildProcessEnvironment_EmptyEnv(t *testing.T) {
 
 // TestBuildProcessEnvironment_GroupAllowlistOverride tests group-level allowlist override
 func TestBuildProcessEnvironment_GroupAllowlistOverride(t *testing.T) {
-	cleanup := setupTestEnv(map[string]string{
-		"HOME": "/home/test",
-		"PATH": "/usr/bin",
-		"USER": "testuser",
-	})
-	defer cleanup()
+	t.Setenv("HOME", "/home/test")
+	t.Setenv("PATH", "/usr/bin")
+	t.Setenv("USER", "testuser")
 
 	global := &runnertypes.GlobalConfig{
 		EnvAllowlist: []string{"HOME", "PATH"},
@@ -221,10 +162,7 @@ func TestBuildProcessEnvironment_GroupAllowlistOverride(t *testing.T) {
 		ExpandedEnv: map[string]string{},
 	}
 
-	filter := environment.NewFilter(group.EnvAllowlist)
-
-	result, err := executor.BuildProcessEnvironment(global, group, cmd, filter)
-	require.NoError(t, err)
+	result := executor.BuildProcessEnvironment(global, group, cmd)
 
 	// Only USER should be included (group allowlist takes precedence)
 	assert.Equal(t, "testuser", result["USER"])
@@ -234,10 +172,7 @@ func TestBuildProcessEnvironment_GroupAllowlistOverride(t *testing.T) {
 
 // TestBuildProcessEnvironment_NilGroup tests with nil group
 func TestBuildProcessEnvironment_NilGroup(t *testing.T) {
-	cleanup := setupTestEnv(map[string]string{
-		"HOME": "/home/test",
-	})
-	defer cleanup()
+	t.Setenv("HOME", "/home/test")
 
 	global := &runnertypes.GlobalConfig{
 		EnvAllowlist: []string{"HOME"},
@@ -253,10 +188,7 @@ func TestBuildProcessEnvironment_NilGroup(t *testing.T) {
 		},
 	}
 
-	filter := environment.NewFilter(global.EnvAllowlist)
-
-	result, err := executor.BuildProcessEnvironment(global, nil, cmd, filter)
-	require.NoError(t, err)
+	result := executor.BuildProcessEnvironment(global, nil, cmd)
 
 	// Should work without group
 	assert.Equal(t, "/home/test", result["HOME"])
@@ -266,11 +198,8 @@ func TestBuildProcessEnvironment_NilGroup(t *testing.T) {
 
 // TestBuildProcessEnvironment_SystemVarNotInAllowlist tests system var not in allowlist
 func TestBuildProcessEnvironment_SystemVarNotInAllowlist(t *testing.T) {
-	cleanup := setupTestEnv(map[string]string{
-		"HOME": "/home/test",
-		"PATH": "/usr/bin",
-	})
-	defer cleanup()
+	t.Setenv("HOME", "/home/test")
+	t.Setenv("PATH", "/usr/bin")
 
 	global := &runnertypes.GlobalConfig{
 		EnvAllowlist: []string{}, // Empty allowlist
@@ -284,10 +213,7 @@ func TestBuildProcessEnvironment_SystemVarNotInAllowlist(t *testing.T) {
 		ExpandedEnv: map[string]string{},
 	}
 
-	filter := environment.NewFilter(global.EnvAllowlist)
-
-	result, err := executor.BuildProcessEnvironment(global, nil, cmd, filter)
-	require.NoError(t, err)
+	result := executor.BuildProcessEnvironment(global, nil, cmd)
 
 	// No system vars should be included (empty allowlist)
 	assert.NotContains(t, result, "HOME")
