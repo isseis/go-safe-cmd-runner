@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"maps"
 	"sort"
 	"time"
 
@@ -549,32 +548,21 @@ func (r *Runner) executeCommandInGroup(ctx context.Context, cmd *runnertypes.Com
 }
 
 // resolveEnvironmentVars resolves environment variables for a command with group context.
-// This merges system environment variables (filtered by allowlist) with pre-expanded Command.Env.
+// This merges system environment variables (filtered by allowlist) with pre-expanded
+// Global.ExpandedEnv, Group.ExpandedEnv, and Command.ExpandedEnv.
 func (r *Runner) resolveEnvironmentVars(cmd *runnertypes.Command, group *runnertypes.CommandGroup) (map[string]string, error) {
-	// Step 1: Filter system environment variables with allowlist
-	systemEnvVars, err := r.envFilter.ResolveGroupEnvironmentVars(group, r.envVars)
+	// Use BuildProcessEnvironment to construct the final environment
+	envVars, err := executor.BuildProcessEnvironment(&r.config.Global, group, cmd, r.envFilter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve group environment variables: %w", err)
+		return nil, fmt.Errorf("failed to build process environment: %w", err)
 	}
 
-	slog.Debug("Resolved system environment variables",
-		"group", group.Name,
-		"system_vars_count", len(systemEnvVars))
-
-	// Step 2: Merge system environment with pre-expanded Command.Env
-	// Command.Env should be pre-expanded during config loading
-	finalEnvVars := make(map[string]string)
-	maps.Copy(finalEnvVars, systemEnvVars)
-	maps.Copy(finalEnvVars, cmd.ExpandedEnv)
-
-	slog.Debug("Merged environment variables",
+	slog.Debug("Built process environment variables",
 		"command", cmd.Name,
 		"group", group.Name,
-		"system_vars_count", len(systemEnvVars),
-		"command_env_count", len(cmd.ExpandedEnv),
-		"final_vars_count", len(finalEnvVars))
+		"final_vars_count", len(envVars))
 
-	return finalEnvVars, nil
+	return envVars, nil
 }
 
 // createCommandContext creates a context with timeout for command execution

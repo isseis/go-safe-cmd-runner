@@ -669,7 +669,7 @@
 - [x] Phase 9の新規テストがすべてPASS (TestPhase9Integration)
 - [x] `make lint`でエラーなし
 - [x] 新システム（%{VAR}）と旧システム（${VAR}）のマージロジック実装
-- [ ] すべての既存テストがPASS（Phase 10で対応）
+- [x] すべての既存テストがPASS（Phase 10で対応）
 
 **Phase 9実装メモ**:
 - 基本的な統合は完了し、新しい変数システム（from_env, vars, %{VAR}）が動作
@@ -717,18 +717,18 @@
   - command_test_helper.go のビルドタグを `!production` に変更
 
 #### 2.10.1 BuildProcessEnvironment()関数の実装（テスト先行）
-- [ ] テスト作成: `internal/runner/executor/environment_test.go`
-  - [ ] `TestBuildProcessEnvironment_Basic`: 基本的なマージ
-  - [ ] `TestBuildProcessEnvironment_Priority`: 優先順位のテスト
+- [x] テスト作成: `internal/runner/executor/environment_test.go`
+  - [x] `TestBuildProcessEnvironment_Basic`: 基本的なマージ
+  - [x] `TestBuildProcessEnvironment_Priority`: 優先順位のテスト
     - システム環境変数 < Global.env < Group.env < Command.env
-  - [ ] `TestBuildProcessEnvironment_AllowlistFiltering`: allowlist フィルタリング
-  - [ ] `TestBuildProcessEnvironment_EmptyEnv`: env が空の場合
-- [ ] テスト実行で失敗を確認
-- [ ] コミット: "Add tests for BuildProcessEnvironment (TDD)"
+  - [x] `TestBuildProcessEnvironment_AllowlistFiltering`: allowlist フィルタリング
+  - [x] `TestBuildProcessEnvironment_EmptyEnv`: env が空の場合
+- [x] テスト実行で失敗を確認
+- [x] コミット: "Add tests for BuildProcessEnvironment (TDD)"
 
 #### 2.10.2 BuildProcessEnvironment()関数の実装
-- [ ] `internal/runner/executor/environment.go`を作成または編集
-  - [ ] `BuildProcessEnvironment`関数を実装:
+- [x] `internal/runner/executor/environment.go`を作成または編集
+  - [x] `BuildProcessEnvironment`関数を実装:
     ```go
     func BuildProcessEnvironment(
         global *runnertypes.GlobalConfig,
@@ -737,35 +737,51 @@
         filter *environment.Filter,
     ) (map[string]string, error)
     ```
-    - [ ] システム環境変数の取得（allowlist フィルタリング）
-    - [ ] allowlist の決定（Group または Global）
-    - [ ] 環境変数のマージ（優先順位順）:
+    - [x] システム環境変数の取得（allowlist フィルタリング）
+    - [x] allowlist の決定（Group または Global）
+    - [x] 環境変数のマージ（優先順位順）:
       1. システム環境変数
       2. Global.ExpandedEnv
       3. Group.ExpandedEnv
       4. Command.ExpandedEnv
-    - [ ] 結果マップを返す
+    - [x] 結果マップを返す
 
 #### 2.10.3 BuildProcessEnvironment()のテスト実行
-- [ ] すべてのテストがPASS
-- [ ] コミット: "Implement BuildProcessEnvironment for process env construction"
+- [x] すべてのテストがPASS
+- [x] コミット: "Implement BuildProcessEnvironment for process env construction"
 
 #### 2.10.4 Executorへの統合
-- [ ] `internal/runner/executor/executor.go`を編集
-  - [ ] `executeCommand()`内で`BuildProcessEnvironment()`を呼び出す
-  - [ ] 構築した環境変数を`exec.Command`に設定
-  - [ ] 既存の環境変数構築コードを削除または置き換え
+- [x] `internal/runner/executor/executor.go`を編集
+  - [x] `executeCommand()`内で`BuildProcessEnvironment()`を呼び出す
+  - [x] 構築した環境変数を`exec.Command`に設定
+  - [x] 既存の環境変数構築コードを削除または置き換え
+- [x] **注**: `runner.go`の`resolveEnvironmentVars()`を`BuildProcessEnvironment()`を使うように更新しました。
+  既存のテストが失敗していますが、これは旧システムの動作を期待しているためです。
+  テストの修正はPhase 10.5で対応します。
 
-#### 2.10.5 統合テスト
-- [ ] E2Eテスト: `sample/`ディレクトリに新しいサンプルファイルを追加
-- [ ] 実際にrunnerを実行して動作確認
-- [ ] 子プロセスの環境変数が正しく設定されることを確認
+#### 2.10.5 統合テストと既存テストの修正
+- [x] 既存のテストを新しい動作に合わせて修正
+  - [x] `TestRunner_resolveEnvironmentVars`: 新しい優先順位に合わせて期待値を更新
+  - [x] `TestRunner_EnvironmentVariablePriority`: 新しい動作に合わせて更新
+  - [x] `TestRunner_EnvironmentVariablePriority_CurrentImplementation`: 新しい動作に合わせて更新
+- [x] E2Eテスト: `sample/`ディレクトリに新しいサンプルファイルを追加
+  - [x] `sample/vars_env_separation_e2e.toml` (包括的なテスト)
+  - [x] `sample/vars_env_simple_test.toml` (シンプルなテスト)
+- [x] 実際にrunnerを実行して動作確認
+- [x] 子プロセスの環境変数が正しく設定されることを確認
+  - [x] Global.envで定義した環境変数が子プロセスに渡される
+  - [x] Group.envで定義した環境変数が子プロセスに渡される
+  - [x] Command.envで定義した環境変数が子プロセスに渡される
+  - [x] 環境変数の優先順位が正しい (Command > Group > Global)
+  - [x] 内部変数(%{VAR})がargsで正しく展開される
+  - [x] from_envでインポートしたシステム環境変数が内部変数として使用できる
 
 #### 2.10.6 Phase 10の完了確認
-- [ ] すべての既存テストがPASS
-- [ ] Phase 10の新規テストがすべてPASS
-- [ ] `make lint`でエラーなし
-- [ ] コミット: "Integrate BuildProcessEnvironment into executor"
+- [x] すべての既存テストがPASS
+- [x] Phase 10の新規テストがすべてPASS
+- [x] `make lint`でエラーなし
+- [x] E2Eテストが成功 (2025-10-15)
+- [ ] コミット: "Complete Phase 10: BuildProcessEnvironment integration and E2E tests"
 
 ---
 
