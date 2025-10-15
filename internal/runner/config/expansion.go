@@ -1274,7 +1274,7 @@ func ExpandGlobalConfig(global *runnertypes.GlobalConfig, filter *environment.Fi
 	}
 
 	// Step 4: Merge auto variables with from_env variables
-	// Auto variables are added first, so they have the lowest priority in case of conflicts
+	// Auto variables are added last, so they have the highest priority in case of conflicts
 	// (though conflicts should not occur due to reserved prefix validation)
 	maps.Copy(baseInternalVars, autoVars)
 
