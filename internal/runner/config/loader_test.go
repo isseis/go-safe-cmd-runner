@@ -619,13 +619,10 @@ func TestPhase1_ParseFromEnvAndVars(t *testing.T) {
 
 // TestPhase9Integration tests the full integration of variable expansion in the config loader
 func TestPhase9Integration(t *testing.T) {
-	// Set required environment variables for the test
-	os.Setenv("HOME", "/home/testuser")
-	os.Setenv("PATH", "/usr/bin:/bin")
-	defer func() {
-		os.Unsetenv("HOME")
-		os.Unsetenv("PATH")
-	}()
+	// Set required environment variables for the test using t.Setenv for automatic
+	// cleanup when the test completes.
+	t.Setenv("HOME", "/home/testuser")
+	t.Setenv("PATH", "/usr/bin:/bin")
 
 	// Read test configuration file
 	content, err := os.ReadFile("testdata/phase9_integration.toml")

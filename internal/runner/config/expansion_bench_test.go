@@ -27,13 +27,9 @@ func BenchmarkExpandGlobalEnv(b *testing.B) {
 		EnvAllowlist: []string{"HOME", "USER", "PATH"},
 	}
 
-	// Set system environment variables
-	os.Setenv("PATH", "/usr/bin:/bin")
-	os.Setenv("HOME", "/home/testuser")
-	defer func() {
-		os.Unsetenv("PATH")
-		os.Unsetenv("HOME")
-	}()
+	// Set system environment variables (use b.Setenv for automatic cleanup)
+	b.Setenv("PATH", "/usr/bin:/bin")
+	b.Setenv("HOME", "/home/testuser")
 
 	// Create expander
 	filter := environment.NewFilter(cfg.EnvAllowlist)
@@ -73,13 +69,9 @@ func BenchmarkExpandGroupEnv(b *testing.B) {
 		EnvAllowlist: nil, // Inherit from Global
 	}
 
-	// Set system environment variables
-	os.Setenv("HOME", "/home/testuser")
-	os.Setenv("USER", "testuser")
-	defer func() {
-		os.Unsetenv("HOME")
-		os.Unsetenv("USER")
-	}()
+	// Set system environment variables (use b.Setenv for automatic cleanup)
+	b.Setenv("HOME", "/home/testuser")
+	b.Setenv("USER", "testuser")
 
 	// Create expander
 	filter := environment.NewFilter(globalAllowlist)
@@ -208,17 +200,11 @@ args = ["--port", "${API_PORT}"]
 		b.Fatalf("Failed to create test config file: %v", err)
 	}
 
-	// Set system environment variables
-	os.Setenv("PATH", "/usr/bin:/bin")
-	os.Setenv("HOME", "/home/testuser")
-	os.Setenv("USER", "testuser")
-	os.Setenv("PORT", "8080")
-	defer func() {
-		os.Unsetenv("PATH")
-		os.Unsetenv("HOME")
-		os.Unsetenv("USER")
-		os.Unsetenv("PORT")
-	}()
+	// Set system environment variables (use b.Setenv for automatic cleanup)
+	b.Setenv("PATH", "/usr/bin:/bin")
+	b.Setenv("HOME", "/home/testuser")
+	b.Setenv("USER", "testuser")
+	b.Setenv("PORT", "8080")
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -267,8 +253,7 @@ func BenchmarkExpandGlobalEnv_LargeConfig(b *testing.B) {
 		EnvAllowlist: []string{"HOME"},
 	}
 
-	os.Setenv("HOME", "/home/testuser")
-	defer os.Unsetenv("HOME")
+	b.Setenv("HOME", "/home/testuser")
 
 	filter := environment.NewFilter(cfg.EnvAllowlist)
 	expander := environment.NewVariableExpander(filter)
@@ -312,8 +297,7 @@ func BenchmarkExpandGroupEnv_ComplexReferences(b *testing.B) {
 		},
 	}
 
-	os.Setenv("HOME", "/home/testuser")
-	defer os.Unsetenv("HOME")
+	b.Setenv("HOME", "/home/testuser")
 
 	filter := environment.NewFilter(globalAllowlist)
 	expander := environment.NewVariableExpander(filter)
