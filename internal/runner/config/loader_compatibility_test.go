@@ -14,6 +14,17 @@ import (
 // can be loaded without errors, ensuring backward compatibility with the new
 // Global.Env and Group.Env features.
 func TestBackwardCompatibility_AllSampleFiles(t *testing.T) {
+	// Set up test environment variables for samples that reference system env vars
+	if os.Getenv("HOME") == "" {
+		t.Setenv("HOME", "/home/testuser")
+	}
+	if os.Getenv("USER") == "" {
+		t.Setenv("USER", "testuser")
+	}
+	if os.Getenv("PATH") == "" {
+		t.Setenv("PATH", "/usr/bin:/bin")
+	}
+
 	sampleFiles := []string{
 		"slack-group-notification-test.toml",
 		"slack-notify.toml",

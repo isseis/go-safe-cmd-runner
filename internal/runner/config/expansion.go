@@ -340,6 +340,10 @@ func ExpandGlobalVerifyFiles(
 
 	// If VerifyFiles is empty, nothing to expand
 	if len(global.VerifyFiles) == 0 {
+		// Set to empty slice for consistency
+		if global.ExpandedVerifyFiles == nil {
+			global.ExpandedVerifyFiles = []string{}
+		}
 		return nil
 	}
 

@@ -689,16 +689,32 @@
 **目的**: 新旧システムの完全な統合と、子プロセス実行時の環境変数を構築
 
 #### 2.10.0 Phase 9からの残課題対応
-- [ ] 新旧システム統合の完全化
-  - [ ] from_env/varsが未定義で${VAR}のみ使用するケースの対応
-  - [ ] ExpandGlobalConfig/ExpandGroupConfig/ExpandCommandConfigの条件分岐追加
+- [x] 新旧システム統合の完全化
+  - [x] from_env/varsが未定義で${VAR}のみ使用するケースの対応
+  - [x] ExpandGlobalConfig/ExpandGroupConfig/ExpandCommandConfigの条件分岐追加
     - from_env/varsが未定義の場合は処理をスキップ
-  - [ ] 旧システムテストの修正または再有効化
-- [ ] 統合テスト
-  - [ ] 新構文（%{VAR}）のみのテスト
-  - [ ] 旧構文（${VAR}）のみのテスト
-  - [ ] 新旧混在のテスト
-- [ ] コミット: "Complete new/old system integration"
+  - [x] 旧システムテストの修正または再有効化
+- [x] 統合テスト
+  - [x] 新構文（%{VAR}）のみのテスト
+  - [x] 旧構文（${VAR}）のみのテスト
+  - [x] 新旧混在のテスト
+- [x] コミット: "Complete new/old system integration"
+
+**実装メモ**:
+- loader.go に条件分岐を追加:
+  - hasGlobalNewSystem: Global.FromEnv または Global.Vars が定義されている場合のみ新システムを実行
+  - hasGroupNewSystem: Group.FromEnv が nil 以外、または Group.Vars が定義されている、または Global が新システムを使用している場合のみ実行
+  - hasCommandNewSystem: Command.Vars が定義されている、または Group が新システムを使用している場合のみ実行
+- ExpandGlobalVerifyFiles/ExpandGroupVerifyFiles: verify_files が定義されている場合のみ展開
+- テスト修正:
+  - TestBackwardCompatibility_AllSampleFiles: テスト環境変数 (HOME, USER, PATH) を設定
+  - TestSecurityIntegration: PATH 環境変数を設定
+  - TestExpandGlobalVerifyFiles: 空配列の場合に空スライスを設定するように修正
+- リファクタリング:
+  - processCommandExpansion 関数を抽出して複雑度を削減
+  - mergeCommandExpansionResults 関数を抽出
+- ビルドタグ修正:
+  - command_test_helper.go のビルドタグを `!production` に変更
 
 #### 2.10.1 BuildProcessEnvironment()関数の実装（テスト先行）
 - [ ] テスト作成: `internal/runner/executor/environment_test.go`

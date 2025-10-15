@@ -113,8 +113,12 @@ func processConfig(cfg *runnertypes.Config, filter *environment.Filter, expander
 
 	// Step 1: Expand Global configuration
 	// 1.1: Process new variable system (from_env, vars, internal variables)
-	if err := ExpandGlobalConfig(&cfg.Global, filter); err != nil {
-		return fmt.Errorf("failed to expand global config: %w", err)
+	// Only run new system if from_env or vars are defined
+	hasGlobalNewSystem := len(cfg.Global.FromEnv) > 0 || len(cfg.Global.Vars) > 0
+	if hasGlobalNewSystem {
+		if err := ExpandGlobalConfig(&cfg.Global, filter); err != nil {
+			return fmt.Errorf("failed to expand global config: %w", err)
+		}
 	}
 
 	// 1.2: Expand Global.Env with old system (${VAR} syntax with automatic environment variables)
@@ -123,8 +127,11 @@ func processConfig(cfg *runnertypes.Config, filter *environment.Filter, expander
 	}
 
 	// 1.3: Expand Global.VerifyFiles (now can reference both old and new variables)
-	if err := ExpandGlobalVerifyFiles(&cfg.Global, filter, expander); err != nil {
-		return fmt.Errorf("failed to expand global verify_files: %w", err)
+	// Only expand if verify_files are defined
+	if len(cfg.Global.VerifyFiles) > 0 {
+		if err := ExpandGlobalVerifyFiles(&cfg.Global, filter, expander); err != nil {
+			return fmt.Errorf("failed to expand global verify_files: %w", err)
+		}
 	}
 
 	// Step 2: Expand each Group configuration
@@ -132,8 +139,15 @@ func processConfig(cfg *runnertypes.Config, filter *environment.Filter, expander
 		group := &cfg.Groups[i]
 
 		// 2.1: Process new variable system (from_env inheritance/override, vars)
-		if err := ExpandGroupConfig(group, &cfg.Global, filter); err != nil {
-			return fmt.Errorf("failed to expand group[%s] config: %w", group.Name, err)
+		// Only run new system if:
+		// - Group has from_env defined (nil, [], or populated), OR
+		// - Group has vars defined, OR
+		// - Global has new system (so group can inherit)
+		hasGroupNewSystem := group.FromEnv != nil || len(group.Vars) > 0 || hasGlobalNewSystem
+		if hasGroupNewSystem {
+			if err := ExpandGroupConfig(group, &cfg.Global, filter); err != nil {
+				return fmt.Errorf("failed to expand group[%s] config: %w", group.Name, err)
+			}
 		}
 
 		// 2.2: Expand Group.Env with old system (${VAR} syntax)
@@ -142,76 +156,115 @@ func processConfig(cfg *runnertypes.Config, filter *environment.Filter, expander
 		}
 
 		// 2.3: Expand Group.VerifyFiles
-		if err := ExpandGroupVerifyFiles(group, &cfg.Global, filter, expander); err != nil {
-			return fmt.Errorf("failed to expand verify_files for group %q: %w", group.Name, err)
+		// Only expand if verify_files are defined
+		if len(group.VerifyFiles) > 0 {
+			if err := ExpandGroupVerifyFiles(group, &cfg.Global, filter, expander); err != nil {
+				return fmt.Errorf("failed to expand verify_files for group %q: %w", group.Name, err)
+			}
 		}
 
 		// Step 3: Expand each Command configuration
 		for j := range group.Commands {
 			cmd := &group.Commands[j]
-
-			// 3.1: Process new variable system (vars, env with %{VAR})
-			if err := ExpandCommandConfig(cmd, group); err != nil {
-				return fmt.Errorf("failed to expand command[%s] in group[%s]: %w", cmd.Name, group.Name, err)
+			if err := processCommandExpansion(cmd, group, &cfg.Global, expander, autoEnv, hasGroupNewSystem); err != nil {
+				return fmt.Errorf("failed to process command %q in group %q: %w", cmd.Name, group.Name, err)
 			}
-
-			// Save results from new system
-			newSystemCmd := cmd.ExpandedCmd
-			newSystemArgs := cmd.ExpandedArgs
-			newSystemEnv := cmd.ExpandedEnv
-
-			// 3.2: Expand Command with old system (Cmd, Args, Env with ${VAR})
-			expandedCmd, expandedArgs, expandedEnv, err := ExpandCommand(&ExpansionContext{
-				Command:            cmd,
-				Expander:           expander,
-				AutoEnv:            autoEnv,
-				GlobalEnv:          cfg.Global.ExpandedEnv,
-				GroupEnv:           group.ExpandedEnv,
-				GlobalEnvAllowlist: cfg.Global.EnvAllowlist,
-				GroupName:          group.Name,
-				GroupEnvAllowlist:  group.EnvAllowlist,
-			})
-			if err != nil {
-				return fmt.Errorf("failed to expand command %q in group %q: %w",
-					cmd.Name, group.Name, err)
-			}
-
-			// Merge: prefer new system if it expanded the value, otherwise use old system
-			// For cmd: use new system if it differs from original, otherwise use old system
-			if newSystemCmd != cmd.Cmd {
-				cmd.ExpandedCmd = newSystemCmd
-			} else {
-				cmd.ExpandedCmd = expandedCmd
-			}
-
-			// For args: use new system if it differs from original, otherwise use old system
-			// Note: need to compare each arg individually or check if any arg was expanded
-			argsExpanded := false
-			for i, arg := range cmd.Args {
-				if i < len(newSystemArgs) && newSystemArgs[i] != arg {
-					argsExpanded = true
-					break
-				}
-			}
-			if argsExpanded {
-				cmd.ExpandedArgs = newSystemArgs
-			} else {
-				cmd.ExpandedArgs = expandedArgs
-			}
-
-			// For env: merge both systems (new system takes precedence)
-			mergedEnv := make(map[string]string)
-			if expandedEnv != nil {
-				maps.Copy(mergedEnv, expandedEnv)
-			}
-			if newSystemEnv != nil {
-				maps.Copy(mergedEnv, newSystemEnv)
-			}
-			cmd.ExpandedEnv = mergedEnv
 		}
 	}
 
 	return nil
+}
+
+// processCommandExpansion processes a single command's expansion with both new and old systems
+func processCommandExpansion(
+	cmd *runnertypes.Command,
+	group *runnertypes.CommandGroup,
+	global *runnertypes.GlobalConfig,
+	expander *environment.VariableExpander,
+	autoEnv map[string]string,
+	hasGroupNewSystem bool,
+) error {
+	// 3.1: Process new variable system (vars, env with %{VAR})
+	// Only run new system if:
+	// - Command has vars defined, OR
+	// - Group has new system (so command can inherit)
+	hasCommandNewSystem := len(cmd.Vars) > 0 || hasGroupNewSystem
+	if hasCommandNewSystem {
+		if err := ExpandCommandConfig(cmd, group); err != nil {
+			return fmt.Errorf("failed to expand command config: %w", err)
+		}
+	}
+
+	// Save results from new system
+	newSystemCmd := cmd.ExpandedCmd
+	newSystemArgs := cmd.ExpandedArgs
+	newSystemEnv := cmd.ExpandedEnv
+
+	// 3.2: Expand Command with old system (Cmd, Args, Env with ${VAR})
+	expandedCmd, expandedArgs, expandedEnv, err := ExpandCommand(&ExpansionContext{
+		Command:            cmd,
+		Expander:           expander,
+		AutoEnv:            autoEnv,
+		GlobalEnv:          global.ExpandedEnv,
+		GroupEnv:           group.ExpandedEnv,
+		GlobalEnvAllowlist: global.EnvAllowlist,
+		GroupName:          group.Name,
+		GroupEnvAllowlist:  group.EnvAllowlist,
+	})
+	if err != nil {
+		return err
+	}
+
+	// Merge: prefer new system if it ran and expanded the value, otherwise use old system
+	mergeCommandExpansionResults(cmd, hasCommandNewSystem, newSystemCmd, newSystemArgs, newSystemEnv,
+		expandedCmd, expandedArgs, expandedEnv)
+
+	return nil
+}
+
+// mergeCommandExpansionResults merges the results from new and old expansion systems
+func mergeCommandExpansionResults(
+	cmd *runnertypes.Command,
+	hasCommandNewSystem bool,
+	newSystemCmd string,
+	newSystemArgs []string,
+	newSystemEnv map[string]string,
+	oldSystemCmd string,
+	oldSystemArgs []string,
+	oldSystemEnv map[string]string,
+) {
+	// For cmd: use new system if it differs from original, otherwise use old system
+	if hasCommandNewSystem && newSystemCmd != cmd.Cmd {
+		cmd.ExpandedCmd = newSystemCmd
+	} else {
+		cmd.ExpandedCmd = oldSystemCmd
+	}
+
+	// For args: use new system if it differs from original, otherwise use old system
+	argsExpanded := false
+	if hasCommandNewSystem {
+		for i, arg := range cmd.Args {
+			if i < len(newSystemArgs) && newSystemArgs[i] != arg {
+				argsExpanded = true
+				break
+			}
+		}
+	}
+	if argsExpanded {
+		cmd.ExpandedArgs = newSystemArgs
+	} else {
+		cmd.ExpandedArgs = oldSystemArgs
+	}
+
+	// For env: merge both systems (new system takes precedence)
+	mergedEnv := make(map[string]string)
+	if oldSystemEnv != nil {
+		maps.Copy(mergedEnv, oldSystemEnv)
+	}
+	if hasCommandNewSystem && newSystemEnv != nil {
+		maps.Copy(mergedEnv, newSystemEnv)
+	}
+	cmd.ExpandedEnv = mergedEnv
 }
 
 // validateEnvironmentVariables validates all environment variables in the config
