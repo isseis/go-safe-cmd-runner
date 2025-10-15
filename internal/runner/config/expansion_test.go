@@ -526,6 +526,9 @@ func TestSecurityIntegration(t *testing.T) {
 			if tt.name == "Unauthorized variable should fail" {
 				t.Setenv("FORBIDDEN_VAR", "forbidden_value")
 			}
+			if tt.name == "PATH extension with system variable reference should work" {
+				t.Setenv("PATH", "/usr/bin:/bin")
+			}
 
 			// Create test configuration
 			cfg := &runnertypes.Config{
