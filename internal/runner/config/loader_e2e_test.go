@@ -82,17 +82,17 @@ func TestE2E_CompleteConfiguration(t *testing.T) {
 		migrateCmd := dbGroup.Commands[0]
 		assert.Equal(t, "migrate", migrateCmd.Name, "Command name should be 'migrate'")
 
-		// Command expansion is implemented in config.Loader
-		// These fields should be unexpanded in the raw configuration
-		assert.Equal(t, "${BASE_DIR}/bin/migrate", migrateCmd.Cmd,
-			"Command.Cmd should contain unexpanded variable (not yet expanded in config.Loader)")
-		assert.Equal(t, []string{"-h", "${DB_HOST}", "-p", "${DB_PORT}"}, migrateCmd.Args,
-			"Command.Args should contain unexpanded variables (not yet expanded in config.Loader)")
+		// Command expansion is implemented in config.Loader with new system
+		// These fields should use %{VAR} syntax
+		assert.Equal(t, "%{base_dir}/bin/migrate", migrateCmd.Cmd,
+			"Command.Cmd should contain %{VAR} syntax")
+		assert.Equal(t, []string{"-h", "%{db_host}", "-p", "%{db_port}"}, migrateCmd.Args,
+			"Command.Args should contain %{VAR} syntax")
 
-		// Command.Env should be set but not yet expanded
+		// Command.Env should be set with %{VAR} syntax
 		require.Len(t, migrateCmd.Env, 1, "Command should have 1 env variable")
-		assert.Equal(t, "MIGRATION_DIR=${DB_DATA}/migrations", migrateCmd.Env[0],
-			"Command.Env should contain unexpanded variable (not yet expanded in config.Loader)")
+		assert.Equal(t, "MIGRATION_DIR=%{migration_dir}", migrateCmd.Env[0],
+			"Command.Env should contain %{VAR} syntax")
 
 		// ExpandedCmd, ExpandedArgs, ExpandedEnv should be populated
 		assert.NotEmpty(t, migrateCmd.ExpandedCmd,
@@ -127,11 +127,11 @@ func TestE2E_CompleteConfiguration(t *testing.T) {
 		startCmd := webGroup.Commands[0]
 		assert.Equal(t, "start", startCmd.Name, "Command name should be 'start'")
 
-		// Command expansion is implemented in config.Loader
-		assert.Equal(t, "${WEB_DIR}/server", startCmd.Cmd,
-			"Command.Cmd should contain unexpanded variable in raw configuration")
-		assert.Equal(t, []string{"--port", "${PORT}"}, startCmd.Args,
-			"Command.Args should contain unexpanded variables in raw configuration")
+		// Command expansion is implemented in config.Loader with new system
+		assert.Equal(t, "%{web_dir}/server", startCmd.Cmd,
+			"Command.Cmd should contain %{VAR} syntax")
+		assert.Equal(t, []string{"--port", "%{port}"}, startCmd.Args,
+			"Command.Args should contain %{VAR} syntax")
 
 		// ExpandedCmd, ExpandedArgs, ExpandedEnv should be populated
 		assert.NotEmpty(t, startCmd.ExpandedCmd,
@@ -151,18 +151,21 @@ func TestE2E_PriorityVerification(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "priority_test.toml")
 
 	configContent := `[global]
-env = ["PRIORITY=global", "GLOBAL_ONLY=global_value"]
+vars = ["priority=global"]
+env = ["PRIORITY=%{priority}", "GLOBAL_ONLY=global_value"]
 env_allowlist = ["HOME"]
 
 [[groups]]
 name = "test_group"
-env = ["PRIORITY=group", "GROUP_ONLY=group_value"]
+vars = ["priority=group"]
+env = ["PRIORITY=%{priority}", "GROUP_ONLY=group_value"]
 
 [[groups.commands]]
 name = "test_cmd"
 cmd = "/bin/echo"
-args = ["${PRIORITY}"]
-env = ["PRIORITY=command", "COMMAND_ONLY=command_value"]
+args = ["%{priority}"]
+vars = ["priority=command"]
+env = ["PRIORITY=%{priority}", "COMMAND_ONLY=command_value"]
 `
 	err := os.WriteFile(configPath, []byte(configContent), 0o644)
 	require.NoError(t, err, "Failed to create test config file")
@@ -207,9 +210,9 @@ env = ["PRIORITY=command", "COMMAND_ONLY=command_value"]
 		testCmd := testGroup.Commands[0]
 		assert.Equal(t, "test_cmd", testCmd.Name, "Command name should be 'test_cmd'")
 
-		// Command.Env should be set but not yet expanded
+		// Command.Env uses %{VAR} syntax
 		require.Len(t, testCmd.Env, 2, "Command should have 2 env variables")
-		assert.Equal(t, "PRIORITY=command", testCmd.Env[0], "PRIORITY in Command.Env should be 'command'")
+		assert.Equal(t, "PRIORITY=%{priority}", testCmd.Env[0], "PRIORITY in Command.Env should use %{VAR} syntax")
 		assert.Equal(t, "COMMAND_ONLY=command_value", testCmd.Env[1], "COMMAND_ONLY should be set")
 
 		// ExpandedEnv should be populated (expansion implemented)
@@ -306,13 +309,15 @@ func TestE2E_VerifyFilesExpansion(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "verify_files_test.toml")
 
 	configContent := `[global]
-env = ["GLOBAL_DIR=/global"]
-verify_files = ["${GLOBAL_DIR}/global_verify.sh"]
+vars = ["global_dir=/global"]
+env = ["GLOBAL_DIR=%{global_dir}"]
+verify_files = ["%{global_dir}/global_verify.sh"]
 
 [[groups]]
 name = "test_group"
-env = ["GROUP_DIR=${GLOBAL_DIR}/group"]
-verify_files = ["${GROUP_DIR}/group_verify.sh"]
+vars = ["group_dir=%{global_dir}/group"]
+env = ["GROUP_DIR=%{group_dir}"]
+verify_files = ["%{group_dir}/group_verify.sh"]
 `
 	err := os.WriteFile(configPath, []byte(configContent), 0o644)
 	require.NoError(t, err, "Failed to create test config file")
@@ -406,16 +411,16 @@ func TestE2E_FullExpansionPipeline(t *testing.T) {
 		runAppCmd := appGroup.Commands[0]
 		assert.Equal(t, "run_app", runAppCmd.Name, "Command name should be 'run_app'")
 
-		// Raw configuration values should be unexpanded
+		// Raw configuration values use %{VAR} syntax
 		t.Run("RawConfiguration", func(t *testing.T) {
-			// Raw values should be unexpanded
-			assert.Equal(t, "${APP_DIR}/bin/server", runAppCmd.Cmd,
-				"Cmd should be unexpanded in raw configuration")
-			assert.Equal(t, []string{"--log", "${LOG_DIR}/app.log"}, runAppCmd.Args,
-				"Args should be unexpanded in raw configuration")
+			// Raw values use %{VAR} syntax
+			assert.Equal(t, "%{app_dir}/bin/server", runAppCmd.Cmd,
+				"Cmd should use %{VAR} syntax")
+			assert.Equal(t, []string{"--log", "%{log_dir}/app.log"}, runAppCmd.Args,
+				"Args should use %{VAR} syntax")
 			require.Len(t, runAppCmd.Env, 1, "Command should have 1 env variable")
-			assert.Equal(t, "LOG_DIR=${APP_DIR}/logs", runAppCmd.Env[0],
-				"Command.Env should be unexpanded in raw configuration")
+			assert.Equal(t, "LOG_DIR=%{log_dir}", runAppCmd.Env[0],
+				"Command.Env should use %{VAR} syntax")
 
 			// Expanded fields should be populated
 			assert.NotEmpty(t, runAppCmd.ExpandedCmd,

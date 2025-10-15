@@ -3,35 +3,47 @@
 # with allowlist inheritance and complex variable references
 
 [global]
-env = [
-    "BASE_DIR=/opt/app",
-    "LOG_LEVEL=info",
-    "PATH=/opt/tools/bin:${PATH}"
-]
 env_allowlist = ["HOME", "USER", "PATH"]
-verify_files = ["${BASE_DIR}/verify.sh"]
+from_env = ["home=HOME", "user=USER", "path=PATH"]
+vars = ["base_dir=/opt/app"]
+env = [
+    "BASE_DIR=%{base_dir}",
+    "LOG_LEVEL=info",
+    "PATH=/opt/tools/bin:%{path}"
+]
+verify_files = ["%{base_dir}/verify.sh"]
 
 [[groups]]
 name = "database"
-env = [
-    "DB_HOST=localhost",
-    "DB_PORT=5432",
-    "DB_DATA=${BASE_DIR}/db-data"
+vars = [
+    "db_host=localhost",
+    "db_port=5432",
+    "db_data=%{base_dir}/db-data"
 ]
-verify_files = ["${DB_DATA}/schema.sql"]
+env = [
+    "DB_HOST=%{db_host}",
+    "DB_PORT=%{db_port}",
+    "DB_DATA=%{db_data}"
+]
+verify_files = ["%{db_data}/schema.sql"]
 
 [[groups.commands]]
 name = "migrate"
-cmd = "${BASE_DIR}/bin/migrate"
-args = ["-h", "${DB_HOST}", "-p", "${DB_PORT}"]
-env = ["MIGRATION_DIR=${DB_DATA}/migrations"]
+cmd = "%{base_dir}/bin/migrate"
+args = ["-h", "%{db_host}", "-p", "%{db_port}"]
+vars = ["migration_dir=%{db_data}/migrations"]
+env = ["MIGRATION_DIR=%{migration_dir}"]
 
 [[groups]]
 name = "web"
 env_allowlist = ["PORT"]  # Override: only PORT allowed
-env = ["WEB_DIR=${BASE_DIR}/web"]
+# Note: When from_env is specified, global vars are not inherited
+# So we define web_dir directly without referencing base_dir
+from_env = ["port=PORT"]
+vars = ["web_dir=/opt/app/web"]
+env = ["WEB_DIR=%{web_dir}"]
 
 [[groups.commands]]
 name = "start"
-cmd = "${WEB_DIR}/server"
-args = ["--port", "${PORT}"]
+cmd = "%{web_dir}/server"
+args = ["--port", "%{port}"]

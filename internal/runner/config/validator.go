@@ -19,8 +19,6 @@ import (
 var (
 	// ErrValidationFailed indicates that configuration validation has failed
 	ErrValidationFailed = errors.New("validation failed")
-	// ErrInvalidVariableName indicates that a variable name is invalid
-	ErrInvalidVariableName = errors.New("invalid variable name")
 	// ErrDangerousPattern indicates that a dangerous pattern was detected
 	ErrDangerousPattern = errors.New("dangerous pattern detected")
 )

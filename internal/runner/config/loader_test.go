@@ -232,12 +232,12 @@ version = "1.0"
 [global]
   workdir = "/tmp"
   env_allowlist = ["HOME"]
-  verify_files = ["${HOME}/global1.txt", "${HOME}/global2.txt"]
+  from_env = ["home=HOME"]
+  verify_files = ["%{home}/global1.txt", "%{home}/global2.txt"]
 
 [[groups]]
   name = "group1"
-  env_allowlist = ["HOME"]
-  verify_files = ["${HOME}/group/file.txt"]
+  verify_files = ["%{home}/group/file.txt"]
   [[groups.commands]]
     name = "cmd1"
     cmd = "echo"
@@ -256,12 +256,12 @@ version = "1.0"
 [global]
   workdir = "/tmp"
   env_allowlist = ["BASE"]
-  verify_files = ["${BASE}/global.txt"]
+  from_env = ["base=BASE"]
+  verify_files = ["%{base}/global.txt"]
 
 [[groups]]
   name = "group1"
-  env_allowlist = ["BASE"]
-  verify_files = ["${BASE}/group1.txt"]
+  verify_files = ["%{base}/group1.txt"]
   [[groups.commands]]
     name = "cmd1"
     cmd = "echo"
@@ -269,8 +269,7 @@ version = "1.0"
 
 [[groups]]
   name = "group2"
-  env_allowlist = ["BASE"]
-  verify_files = ["${BASE}/group2.txt"]
+  verify_files = ["%{base}/group2.txt"]
   [[groups.commands]]
     name = "cmd2"
     cmd = "echo"
@@ -290,12 +289,14 @@ version = "1.0"
 [global]
   workdir = "/tmp"
   env_allowlist = ["GLOBAL_VAR"]
-  verify_files = ["${GLOBAL_VAR}/config.toml"]
+  from_env = ["global_var=GLOBAL_VAR"]
+  verify_files = ["%{global_var}/config.toml"]
 
 [[groups]]
   name = "testgroup"
   env_allowlist = ["GROUP_VAR"]
-  verify_files = ["${GROUP_VAR}/data.txt"]
+  from_env = ["group_var=GROUP_VAR"]
+  verify_files = ["%{group_var}/data.txt"]
   [[groups.commands]]
     name = "cmd1"
     cmd = "echo"
@@ -315,11 +316,11 @@ version = "1.0"
 [global]
   workdir = "/tmp"
   env_allowlist = ["SAFE_VAR"]
-  verify_files = ["${FORBIDDEN_VAR}/config.toml"]
+  from_env = ["forbidden_var=FORBIDDEN_VAR"]
+  verify_files = ["%{forbidden_var}/config.toml"]
 
 [[groups]]
   name = "group1"
-  env_allowlist = ["SAFE_VAR"]
   [[groups.commands]]
     name = "cmd1"
     cmd = "echo"
@@ -329,7 +330,7 @@ version = "1.0"
 				t.Setenv("FORBIDDEN_VAR", "/forbidden")
 			},
 			expectError:   true,
-			errorContains: "not allowed",
+			errorContains: "not in allowlist",
 		},
 		{
 			name: "actual file verification flow",
@@ -338,12 +339,12 @@ version = "1.0"
 [global]
   workdir = "/tmp"
   env_allowlist = ["TEST_DIR"]
-  verify_files = ["${TEST_DIR}/file1.txt", "${TEST_DIR}/file2.txt"]
+  from_env = ["test_dir=TEST_DIR"]
+  verify_files = ["%{test_dir}/file1.txt", "%{test_dir}/file2.txt"]
 
 [[groups]]
   name = "group1"
-  env_allowlist = ["TEST_DIR"]
-  verify_files = ["${TEST_DIR}/group_file.txt"]
+  verify_files = ["%{test_dir}/group_file.txt"]
   [[groups.commands]]
     name = "cmd1"
     cmd = "echo"
@@ -500,28 +501,24 @@ func TestConfigLoaderEnvExpansionIntegration(t *testing.T) {
 	cmd := &appGroup.Commands[0]
 	require.Equal(t, "run_app", cmd.Name)
 
-	// Note: Command.Env, Cmd, and Args expansion happens in config.LoadConfig().
+	// Note: Command expansion happens in config.LoadConfig().
 	// At this stage, we verify that:
-	// - Global.ExpandedEnv is populated correctly
-	// - Group.ExpandedEnv is populated correctly
-	// - Command.Env field contains the raw (unexpanded) values
-	// - Command.ExpandedEnv, ExpandedCmd, and ExpandedArgs are populated
-	assert.Equal(t, []string{"LOG_DIR=${APP_DIR}/logs"}, cmd.Env)
-	assert.Equal(t, "${APP_DIR}/bin/server", cmd.Cmd)
-	assert.Equal(t, []string{"--log", "${LOG_DIR}/app.log"}, cmd.Args)
+	// - Global.ExpandedEnv contains only global.env values
+	// - Group.ExpandedEnv contains only group.env values
+	// - Command.ExpandedEnv contains only command.env values
+	// - Command.ExpandedCmd and ExpandedArgs are expanded
+	// - Final environment merging happens at execution time via BuildProcessEnvironment
+	assert.Equal(t, []string{"LOG_DIR=%{log_dir}"}, cmd.Env)
+	assert.Equal(t, "%{app_dir}/bin/server", cmd.Cmd)
+	assert.Equal(t, []string{"--log", "%{log_dir}/app.log"}, cmd.Args)
 
-	// Command.ExpandedEnv should be populated
-	// It contains Command.Env + Global.ExpandedEnv + Group.ExpandedEnv + AutoEnv
+	// Command.ExpandedEnv should contain only command-level env values
 	assert.NotNil(t, cmd.ExpandedEnv)
 	assert.Contains(t, cmd.ExpandedEnv, "LOG_DIR")
 	assert.Equal(t, "/opt/myapp/logs", cmd.ExpandedEnv["LOG_DIR"])
-	assert.Contains(t, cmd.ExpandedEnv, "BASE_DIR")
-	assert.Equal(t, "/opt", cmd.ExpandedEnv["BASE_DIR"])
-	assert.Contains(t, cmd.ExpandedEnv, "APP_DIR")
-	assert.Equal(t, "/opt/myapp", cmd.ExpandedEnv["APP_DIR"])
-	// AutoEnv variables should also be present
-	assert.Contains(t, cmd.ExpandedEnv, "__RUNNER_DATETIME")
-	assert.Contains(t, cmd.ExpandedEnv, "__RUNNER_PID")
+	// BASE_DIR and APP_DIR are in Global/Group ExpandedEnv, not merged into Command.ExpandedEnv
+	assert.NotContains(t, cmd.ExpandedEnv, "BASE_DIR")
+	assert.NotContains(t, cmd.ExpandedEnv, "APP_DIR")
 
 	// Command.ExpandedCmd should be expanded
 	assert.Equal(t, "/opt/myapp/bin/server", cmd.ExpandedCmd)

@@ -63,10 +63,12 @@ var (
 
 	// ErrInvalidSystemVariableName is returned when system variable name is invalid
 	ErrInvalidSystemVariableName = errors.New("invalid system variable name")
+
+	// ErrInvalidVariableName indicates that a variable name is invalid
+	ErrInvalidVariableName = errors.New("invalid variable name")
 )
 
 // ErrInvalidVariableNameDetail provides detailed information about invalid variable names
-// This error type is used for internal variable validation and does not wrap any base error.
 type ErrInvalidVariableNameDetail struct {
 	Level        string
 	Field        string
@@ -76,6 +78,10 @@ type ErrInvalidVariableNameDetail struct {
 
 func (e *ErrInvalidVariableNameDetail) Error() string {
 	return fmt.Sprintf("invalid variable name in %s.%s: '%s' (%s)", e.Level, e.Field, e.VariableName, e.Reason)
+}
+
+func (e *ErrInvalidVariableNameDetail) Unwrap() error {
+	return ErrInvalidVariableName
 }
 
 // ErrInvalidSystemVariableNameDetail provides detailed information about invalid system variable names
@@ -209,17 +215,63 @@ func (e *ErrMaxRecursionDepthExceededDetail) Unwrap() error {
 // to maintain consistency with test naming conventions
 type ErrReservedVariableNameDetail = ErrReservedVariablePrefixDetail
 
-// ErrDeprecatedSyntax is returned when ${VAR} syntax is detected
-type ErrDeprecatedSyntax struct {
+// ErrInvalidFromEnvFormatDetail provides detailed information about invalid from_env format
+type ErrInvalidFromEnvFormatDetail struct {
 	Level   string
-	Field   string
-	Input   string
-	Message string
+	Mapping string
+	Reason  string
 }
 
-func (e *ErrDeprecatedSyntax) Error() string {
-	if e.Message != "" {
-		return fmt.Sprintf("deprecated ${VAR} syntax in %s.%s: %s (input: %s)", e.Level, e.Field, e.Message, e.Input)
-	}
-	return fmt.Sprintf("deprecated ${VAR} syntax in %s.%s (input: %s)", e.Level, e.Field, e.Input)
+func (e *ErrInvalidFromEnvFormatDetail) Error() string {
+	return fmt.Sprintf("invalid from_env format in %s: '%s' (%s)", e.Level, e.Mapping, e.Reason)
+}
+
+func (e *ErrInvalidFromEnvFormatDetail) Unwrap() error {
+	return ErrInvalidFromEnvFormat
+}
+
+// ErrInvalidVarsFormatDetail provides detailed information about invalid vars format
+type ErrInvalidVarsFormatDetail struct {
+	Level      string
+	Definition string
+	Reason     string
+}
+
+func (e *ErrInvalidVarsFormatDetail) Error() string {
+	return fmt.Sprintf("invalid vars format in %s: '%s' (%s)", e.Level, e.Definition, e.Reason)
+}
+
+func (e *ErrInvalidVarsFormatDetail) Unwrap() error {
+	return ErrInvalidVarsFormat
+}
+
+// ErrInvalidEnvFormatDetail provides detailed information about invalid env format
+type ErrInvalidEnvFormatDetail struct {
+	Level      string
+	Definition string
+	Reason     string
+}
+
+func (e *ErrInvalidEnvFormatDetail) Error() string {
+	return fmt.Sprintf("invalid env format in %s: '%s' (%s)", e.Level, e.Definition, e.Reason)
+}
+
+func (e *ErrInvalidEnvFormatDetail) Unwrap() error {
+	return ErrInvalidEnvFormat
+}
+
+// ErrInvalidEnvKeyDetail provides detailed information about invalid environment variable key
+type ErrInvalidEnvKeyDetail struct {
+	Level   string
+	Key     string
+	Context string
+	Reason  string
+}
+
+func (e *ErrInvalidEnvKeyDetail) Error() string {
+	return fmt.Sprintf("invalid environment variable key in %s: '%s' (context: %s, reason: %s)", e.Level, e.Key, e.Context, e.Reason)
+}
+
+func (e *ErrInvalidEnvKeyDetail) Unwrap() error {
+	return ErrInvalidEnvKey
 }
