@@ -3963,7 +3963,12 @@ func TestExpandGlobalConfig_NoFromEnv(t *testing.T) {
 	// Check ExpandedVars
 	require.NotNil(t, global.ExpandedVars)
 	assert.Equal(t, "/opt/myapp", global.ExpandedVars["app_dir"])
-	assert.Len(t, global.ExpandedVars, 1)
+	// Auto variables are always present (both uppercase and lowercase)
+	assert.Contains(t, global.ExpandedVars, "__runner_datetime")
+	assert.Contains(t, global.ExpandedVars, "__runner_pid")
+	assert.Contains(t, global.ExpandedVars, "__RUNNER_DATETIME")
+	assert.Contains(t, global.ExpandedVars, "__RUNNER_PID")
+	assert.Len(t, global.ExpandedVars, 5) // app_dir + 4 auto vars (uppercase and lowercase)
 
 	// Check ExpandedEnv
 	require.NotNil(t, global.ExpandedEnv)
@@ -3989,7 +3994,12 @@ func TestExpandGlobalConfig_NoVars(t *testing.T) {
 	// Check ExpandedVars
 	require.NotNil(t, global.ExpandedVars)
 	assert.Equal(t, "/usr/bin:/bin", global.ExpandedVars["path"])
-	assert.Len(t, global.ExpandedVars, 1)
+	// Auto variables are always present (both uppercase and lowercase)
+	assert.Contains(t, global.ExpandedVars, "__runner_datetime")
+	assert.Contains(t, global.ExpandedVars, "__runner_pid")
+	assert.Contains(t, global.ExpandedVars, "__RUNNER_DATETIME")
+	assert.Contains(t, global.ExpandedVars, "__RUNNER_PID")
+	assert.Len(t, global.ExpandedVars, 5) // path + 4 auto vars (uppercase and lowercase)
 
 	// Check ExpandedEnv
 	require.NotNil(t, global.ExpandedEnv)
@@ -4095,9 +4105,14 @@ func TestExpandGlobalConfig_EmptyFields(t *testing.T) {
 
 	require.NoError(t, err)
 
-	// All expanded fields should be empty but not nil
+	// All expanded fields should be empty but not nil (except auto variables)
 	require.NotNil(t, global.ExpandedVars)
-	assert.Len(t, global.ExpandedVars, 0)
+	// Auto variables are always present even with empty fields (both uppercase and lowercase)
+	assert.Contains(t, global.ExpandedVars, "__runner_datetime")
+	assert.Contains(t, global.ExpandedVars, "__runner_pid")
+	assert.Contains(t, global.ExpandedVars, "__RUNNER_DATETIME")
+	assert.Contains(t, global.ExpandedVars, "__RUNNER_PID")
+	assert.Len(t, global.ExpandedVars, 4) // 4 auto vars (uppercase and lowercase)
 
 	require.NotNil(t, global.ExpandedEnv)
 	assert.Len(t, global.ExpandedEnv, 0)
@@ -4771,4 +4786,53 @@ func TestExpandCommandConfig_NilGroup(t *testing.T) {
 	err := config.ExpandCommandConfig(cmd, nil)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, config.ErrNilGroup)
+}
+
+// TestExpandGlobalConfig_WithAutoVariables tests that auto variables are available in Global expansion.
+func TestExpandGlobalConfig_WithAutoVariables(t *testing.T) {
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{"HOME"},
+		FromEnv:      []string{},
+		Vars:         []string{"log_file=/var/log/app_%{__runner_datetime}.log"},
+		Env:          []string{"LOG_FILE=%{log_file}"},
+	}
+
+	filter := environment.NewFilter(global.EnvAllowlist)
+
+	err := config.ExpandGlobalConfig(global, filter)
+	require.NoError(t, err)
+
+	// Check that auto variables are set (both uppercase and lowercase)
+	require.Contains(t, global.ExpandedVars, "__runner_datetime")
+	require.Contains(t, global.ExpandedVars, "__runner_pid")
+	require.Contains(t, global.ExpandedVars, "__RUNNER_DATETIME")
+	require.Contains(t, global.ExpandedVars, "__RUNNER_PID")
+
+	// Check that log_file uses auto variable
+	logFile := global.ExpandedVars["log_file"]
+	assert.Contains(t, logFile, "/var/log/app_")
+	// DatetimeLayout format: YYYYMMDDHHmmSS.msec (18 chars: 14 digits + 1 dot + 3 digits)
+	assert.Len(t, logFile, len("/var/log/app_")+18+4) // prefix + datetime (18) + .log
+
+	// Check that env uses expanded log_file
+	assert.Equal(t, logFile, global.ExpandedEnv["LOG_FILE"])
+}
+
+// TestAutoVariables_CannotBeOverridden tests that auto variables cannot be overridden by user definitions.
+func TestAutoVariables_CannotBeOverridden(t *testing.T) {
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{"HOME"},
+		FromEnv:      []string{},
+		Vars:         []string{"__runner_datetime=custom_value"},
+	}
+
+	filter := environment.NewFilter(global.EnvAllowlist)
+
+	err := config.ExpandGlobalConfig(global, filter)
+	require.Error(t, err)
+
+	// Should get reserved variable name error
+	var reservedErr *config.ErrReservedVariableNameDetail
+	assert.ErrorAs(t, err, &reservedErr)
+	assert.Equal(t, "__runner_datetime", reservedErr.VariableName)
 }

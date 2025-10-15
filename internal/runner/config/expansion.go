@@ -1259,16 +1259,26 @@ func ExpandGlobalConfig(global *runnertypes.GlobalConfig, filter *environment.Fi
 		return ErrNilConfig
 	}
 
-	// Step 1: Get system environment variables
+	// Step 1: Generate automatic internal variables using AutoEnvProvider
+	// These variables have the reserved prefix "__runner_" and are available for all expansions
+	autoEnvProvider := environment.NewAutoEnvProvider(nil)
+	autoVars := autoEnvProvider.Generate()
+
+	// Step 2: Get system environment variables
 	systemEnv := filter.ParseSystemEnvironment(nil)
 
-	// Step 2: Process from_env to get base internal variables
+	// Step 3: Process from_env to get base internal variables
 	baseInternalVars, err := ProcessFromEnv(global.FromEnv, global.EnvAllowlist, systemEnv, "global")
 	if err != nil {
 		return err
 	}
 
-	// Step 3: Expand remaining config fields using helper
+	// Step 4: Merge auto variables with from_env variables
+	// Auto variables are added last, so they have the highest priority in case of conflicts
+	// (though conflicts should not occur due to reserved prefix validation)
+	maps.Copy(baseInternalVars, autoVars)
+
+	// Step 5: Expand remaining config fields using helper
 	fields := configFieldsToExpand{
 		vars:        global.Vars,
 		env:         global.Env,

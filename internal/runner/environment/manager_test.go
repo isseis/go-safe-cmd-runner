@@ -259,8 +259,13 @@ func TestAutoEnvProviderGenerate(t *testing.T) {
 			assert.True(t, ok, "__RUNNER_PID should be present")
 			assert.Regexp(t, `^\d+$`, pid, "__RUNNER_PID should be a number")
 
-			// Check that the result contains only auto env (DATETIME + PID)
-			expectedCount := len(tt.wantAutoEnv) + 1 // +1 for PID
+			// Check that __runner_pid (lowercase) is also present
+			pidLower, ok := result["__runner_pid"]
+			assert.True(t, ok, "__runner_pid should be present")
+			assert.Regexp(t, `^\d+$`, pidLower, "__runner_pid should be a number")
+
+			// Check that the result contains only auto env (uppercase and lowercase DATETIME + PID)
+			expectedCount := (len(tt.wantAutoEnv) + 1) * 2 // +1 for PID, *2 for uppercase and lowercase formats
 			assert.Equal(t, expectedCount, len(result), "environment map size mismatch")
 		})
 	}
@@ -272,7 +277,7 @@ func TestAutoEnvProviderGenerateWithDefaultClock(t *testing.T) {
 	result := provider.Generate()
 	require.NotNil(t, result)
 
-	// Check that auto env variables are present with valid formats
+	// Check that auto env variables are present with valid formats (uppercase)
 	datetime, ok := result["__RUNNER_DATETIME"]
 	assert.True(t, ok, "__RUNNER_DATETIME should be present")
 	assert.Regexp(t, `^\d{14}\.\d{3}$`, datetime, "__RUNNER_DATETIME should match format YYYYMMDDHHmmSS.mmm")
@@ -281,8 +286,17 @@ func TestAutoEnvProviderGenerateWithDefaultClock(t *testing.T) {
 	assert.True(t, ok, "__RUNNER_PID should be present")
 	assert.Regexp(t, `^\d+$`, pid, "__RUNNER_PID should be a number")
 
-	// Check that only auto env variables are present
-	assert.Equal(t, 2, len(result), "should contain only __RUNNER_DATETIME and __RUNNER_PID")
+	// Check that auto env variables are present with valid formats (lowercase)
+	datetimeLower, ok := result["__runner_datetime"]
+	assert.True(t, ok, "__runner_datetime should be present")
+	assert.Regexp(t, `^\d{14}\.\d{3}$`, datetimeLower, "__runner_datetime should match format YYYYMMDDHHmmSS.mmm")
+
+	pidLower, ok := result["__runner_pid"]
+	assert.True(t, ok, "__runner_pid should be present")
+	assert.Regexp(t, `^\d+$`, pidLower, "__runner_pid should be a number")
+
+	// Check that only auto env variables are present (both uppercase and lowercase)
+	assert.Equal(t, 4, len(result), "should contain __RUNNER_DATETIME, __RUNNER_PID, __runner_datetime, __runner_pid")
 }
 
 func TestAutoEnvProviderGenerateConsistency(t *testing.T) {
@@ -295,10 +309,14 @@ func TestAutoEnvProviderGenerateConsistency(t *testing.T) {
 
 	result := provider.Generate()
 
-	// Auto env should always be present with correct values
+	// Auto env should always be present with correct values (uppercase)
 	assert.Equal(t, "20251005143022.123", result["__RUNNER_DATETIME"])
 	assert.Regexp(t, `^\d+$`, result["__RUNNER_PID"])
 
-	// Only auto env variables should be present
-	assert.Equal(t, 2, len(result), "should contain only __RUNNER_DATETIME and __RUNNER_PID")
+	// Auto env should always be present with correct values (lowercase)
+	assert.Equal(t, "20251005143022.123", result["__runner_datetime"])
+	assert.Regexp(t, `^\d+$`, result["__runner_pid"])
+
+	// Only auto env variables should be present (both uppercase and lowercase)
+	assert.Equal(t, 4, len(result), "should contain __RUNNER_DATETIME, __RUNNER_PID, __runner_datetime, __runner_pid")
 }
