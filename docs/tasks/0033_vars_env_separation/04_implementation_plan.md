@@ -789,18 +789,18 @@
 **目的**: `%{__runner_datetime}`, `%{__runner_pid}` を実装
 
 #### 2.11.1 自動設定変数の生成関数実装（テスト先行）
-- [ ] テスト作成: `internal/runner/config/expansion_test.go`
-  - [ ] `TestGenerateAutoVariables_DateTime`: 日時フォーマット確認
-  - [ ] `TestGenerateAutoVariables_Pid`: PIDの取得確認
-  - [ ] `TestGenerateAutoVariables_Immutable`: 実行中一定であることを確認
-- [ ] テスト実行で失敗を確認
-- [ ] コミット: "Add tests for auto-generated variables (TDD)"
+- [x] テスト作成: `internal/runner/config/expansion_test.go`
+  - [x] `TestGenerateAutoVariables_DateTime`: 日時フォーマット確認
+  - [x] `TestGenerateAutoVariables_Pid`: PIDの取得確認
+  - [x] `TestGenerateAutoVariables_Immutable`: 実行中一定であることを確認
+- [x] テスト実行で失敗を確認
+- [x] コミット: "Add tests for auto-generated variables (TDD)"
 
 #### 2.11.2 自動設定変数の生成関数実装
-- [ ] `internal/runner/config/expansion.go`に追加
-  - [ ] `generateAutoVariables`関数を実装:
+- [x] `internal/runner/config/expansion.go`に追加
+  - [x] `GenerateAutoVariables`関数を実装:
     ```go
-    func generateAutoVariables() map[string]string {
+    func GenerateAutoVariables() map[string]string {
         now := time.Now()
         return map[string]string{
             "__runner_datetime": now.Format("20060102_150405"),
@@ -810,15 +810,24 @@
     ```
 
 #### 2.11.3 expandGlobalConfig()の拡張
-- [ ] `internal/runner/config/loader.go`を編集
-  - [ ] `expandGlobalConfig()`の開始時に自動変数を生成
-  - [ ] 自動変数を Global.ExpandedVars にマージ（最初に）
-  - [ ] from_env, vars で上書き不可（予約プレフィックスチェックで保護）
+- [x] `internal/runner/config/expansion.go`を編集
+  - [x] `ExpandGlobalConfig()`の開始時に自動変数を生成
+  - [x] 自動変数を Global.ExpandedVars にマージ（最初に）
+  - [x] from_env, vars で上書き不可（予約プレフィックスチェックで保護）
 
 #### 2.11.4 テストの実行
-- [ ] すべてのテストがPASS
-- [ ] 自動変数が cmd, args, env, verify_files で使用できることを確認
-- [ ] コミット: "Implement auto-generated internal variables"
+- [x] すべてのテストがPASS
+- [x] 自動変数が cmd, args, env, verify_files で使用できることを確認
+- [x] 既存テストの修正（auto variablesが常に含まれるようになったため）
+- [x] `make lint`でエラーなし
+- [x] コミット: "Implement auto-generated internal variables"
+
+**Phase 11実装メモ**:
+- `GenerateAutoVariables()` を public 関数として実装（テストから呼び出すため）
+- `ExpandGlobalConfig()` で自動変数を最初に生成し、`baseInternalVars` にマージ
+- 既存のテスト3件（`TestExpandGlobalConfig_NoFromEnv`, `TestExpandGlobalConfig_NoVars`, `TestExpandGlobalConfig_EmptyFields`）を修正
+  - これらのテストは `ExpandedVars` が空であることを期待していたが、自動変数が常に含まれるようになったため期待値を更新
+- すべてのテストとlintが通過（2025-10-15）
 
 ---
 

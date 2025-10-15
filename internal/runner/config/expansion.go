@@ -5,7 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
@@ -66,6 +69,21 @@ type ExpansionContext struct {
 	// GroupEnvAllowlist is the group's environment variable allowlist.
 	// This should be Group.EnvAllowlist. If nil, GlobalEnvAllowlist is inherited.
 	GroupEnvAllowlist []string
+}
+
+// GenerateAutoVariables generates automatic internal variables that are available for expansion.
+// These variables are automatically set at the start of configuration processing and include:
+//   - __runner_datetime: Current timestamp in YYYYMMDD_HHMMSS format
+//   - __runner_pid: Current process ID as a string
+//
+// These variables have the reserved prefix "__runner_" and cannot be overridden by user definitions.
+// They remain constant throughout a single execution of the runner.
+func GenerateAutoVariables() map[string]string {
+	now := time.Now()
+	return map[string]string{
+		"__runner_datetime": now.Format("20060102_150405"),
+		"__runner_pid":      strconv.Itoa(os.Getpid()),
+	}
 }
 
 // ExpandCommand expands variables in a single command's Cmd, Args, and Env fields,
@@ -1259,16 +1277,27 @@ func ExpandGlobalConfig(global *runnertypes.GlobalConfig, filter *environment.Fi
 		return ErrNilConfig
 	}
 
-	// Step 1: Get system environment variables
+	// Step 1: Generate automatic internal variables
+	// These variables have the reserved prefix "__runner_" and are available for all expansions
+	autoVars := GenerateAutoVariables()
+
+	// Step 2: Get system environment variables
 	systemEnv := filter.ParseSystemEnvironment(nil)
 
-	// Step 2: Process from_env to get base internal variables
+	// Step 3: Process from_env to get base internal variables
 	baseInternalVars, err := ProcessFromEnv(global.FromEnv, global.EnvAllowlist, systemEnv, "global")
 	if err != nil {
 		return err
 	}
 
-	// Step 3: Expand remaining config fields using helper
+	// Step 4: Merge auto variables with from_env variables
+	// Auto variables are added first, so they have the lowest priority in case of conflicts
+	// (though conflicts should not occur due to reserved prefix validation)
+	for k, v := range autoVars {
+		baseInternalVars[k] = v
+	}
+
+	// Step 5: Expand remaining config fields using helper
 	fields := configFieldsToExpand{
 		vars:        global.Vars,
 		env:         global.Env,
