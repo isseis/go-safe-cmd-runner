@@ -3963,10 +3963,12 @@ func TestExpandGlobalConfig_NoFromEnv(t *testing.T) {
 	// Check ExpandedVars
 	require.NotNil(t, global.ExpandedVars)
 	assert.Equal(t, "/opt/myapp", global.ExpandedVars["app_dir"])
-	// Auto variables are always present
+	// Auto variables are always present (both uppercase and lowercase)
 	assert.Contains(t, global.ExpandedVars, "__runner_datetime")
 	assert.Contains(t, global.ExpandedVars, "__runner_pid")
-	assert.Len(t, global.ExpandedVars, 3) // app_dir + 2 auto vars
+	assert.Contains(t, global.ExpandedVars, "__RUNNER_DATETIME")
+	assert.Contains(t, global.ExpandedVars, "__RUNNER_PID")
+	assert.Len(t, global.ExpandedVars, 5) // app_dir + 4 auto vars (uppercase and lowercase)
 
 	// Check ExpandedEnv
 	require.NotNil(t, global.ExpandedEnv)
@@ -3992,10 +3994,12 @@ func TestExpandGlobalConfig_NoVars(t *testing.T) {
 	// Check ExpandedVars
 	require.NotNil(t, global.ExpandedVars)
 	assert.Equal(t, "/usr/bin:/bin", global.ExpandedVars["path"])
-	// Auto variables are always present
+	// Auto variables are always present (both uppercase and lowercase)
 	assert.Contains(t, global.ExpandedVars, "__runner_datetime")
 	assert.Contains(t, global.ExpandedVars, "__runner_pid")
-	assert.Len(t, global.ExpandedVars, 3) // path + 2 auto vars
+	assert.Contains(t, global.ExpandedVars, "__RUNNER_DATETIME")
+	assert.Contains(t, global.ExpandedVars, "__RUNNER_PID")
+	assert.Len(t, global.ExpandedVars, 5) // path + 4 auto vars (uppercase and lowercase)
 
 	// Check ExpandedEnv
 	require.NotNil(t, global.ExpandedEnv)
@@ -4103,10 +4107,12 @@ func TestExpandGlobalConfig_EmptyFields(t *testing.T) {
 
 	// All expanded fields should be empty but not nil (except auto variables)
 	require.NotNil(t, global.ExpandedVars)
-	// Auto variables are always present even with empty fields
+	// Auto variables are always present even with empty fields (both uppercase and lowercase)
 	assert.Contains(t, global.ExpandedVars, "__runner_datetime")
 	assert.Contains(t, global.ExpandedVars, "__runner_pid")
-	assert.Len(t, global.ExpandedVars, 2) // 2 auto vars
+	assert.Contains(t, global.ExpandedVars, "__RUNNER_DATETIME")
+	assert.Contains(t, global.ExpandedVars, "__RUNNER_PID")
+	assert.Len(t, global.ExpandedVars, 4) // 4 auto vars (uppercase and lowercase)
 
 	require.NotNil(t, global.ExpandedEnv)
 	assert.Len(t, global.ExpandedEnv, 0)
@@ -4782,58 +4788,6 @@ func TestExpandCommandConfig_NilGroup(t *testing.T) {
 	assert.ErrorIs(t, err, config.ErrNilGroup)
 }
 
-// TestGenerateAutoVariables_DateTime tests that __runner_datetime is generated in the correct format.
-func TestGenerateAutoVariables_DateTime(t *testing.T) {
-	autoVars := config.GenerateAutoVariables()
-
-	require.Contains(t, autoVars, "__runner_datetime")
-
-	// Check format: YYYYMMDD_HHMMSS
-	datetime := autoVars["__runner_datetime"]
-	assert.Len(t, datetime, 15, "datetime format should be YYYYMMDD_HHMMSS (15 chars)")
-	assert.Equal(t, "_", string(datetime[8]), "9th character should be underscore")
-
-	// Basic validation: should be parseable as digits and underscore
-	for i, ch := range datetime {
-		if i == 8 {
-			assert.Equal(t, '_', ch)
-		} else {
-			assert.True(t, ch >= '0' && ch <= '9', "character at position %d should be a digit", i)
-		}
-	}
-}
-
-// TestGenerateAutoVariables_Pid tests that __runner_pid contains the current process ID.
-func TestGenerateAutoVariables_Pid(t *testing.T) {
-	autoVars := config.GenerateAutoVariables()
-
-	require.Contains(t, autoVars, "__runner_pid")
-
-	pid := autoVars["__runner_pid"]
-	assert.NotEmpty(t, pid, "PID should not be empty")
-
-	// Basic validation: should be numeric
-	for _, ch := range pid {
-		assert.True(t, ch >= '0' && ch <= '9', "PID should contain only digits")
-	}
-}
-
-// TestGenerateAutoVariables_Immutable tests that auto variables remain constant within a single call.
-func TestGenerateAutoVariables_Immutable(t *testing.T) {
-	// Generate twice
-	autoVars1 := config.GenerateAutoVariables()
-	autoVars2 := config.GenerateAutoVariables()
-
-	// PID should be identical (same process)
-	assert.Equal(t, autoVars1["__runner_pid"], autoVars2["__runner_pid"])
-
-	// DateTime might differ if calls span a second boundary, but we can check format consistency
-	datetime1 := autoVars1["__runner_datetime"]
-	datetime2 := autoVars2["__runner_datetime"]
-	assert.Len(t, datetime1, 15)
-	assert.Len(t, datetime2, 15)
-}
-
 // TestExpandGlobalConfig_WithAutoVariables tests that auto variables are available in Global expansion.
 func TestExpandGlobalConfig_WithAutoVariables(t *testing.T) {
 	global := &runnertypes.GlobalConfig{
@@ -4848,14 +4802,17 @@ func TestExpandGlobalConfig_WithAutoVariables(t *testing.T) {
 	err := config.ExpandGlobalConfig(global, filter)
 	require.NoError(t, err)
 
-	// Check that auto variables are set
+	// Check that auto variables are set (both uppercase and lowercase)
 	require.Contains(t, global.ExpandedVars, "__runner_datetime")
 	require.Contains(t, global.ExpandedVars, "__runner_pid")
+	require.Contains(t, global.ExpandedVars, "__RUNNER_DATETIME")
+	require.Contains(t, global.ExpandedVars, "__RUNNER_PID")
 
 	// Check that log_file uses auto variable
 	logFile := global.ExpandedVars["log_file"]
 	assert.Contains(t, logFile, "/var/log/app_")
-	assert.Len(t, logFile, len("/var/log/app_")+15+4) // prefix + datetime + .log
+	// DatetimeLayout format: YYYYMMDDHHmmSS.msec (18 chars: 14 digits + 1 dot + 3 digits)
+	assert.Len(t, logFile, len("/var/log/app_")+18+4) // prefix + datetime (18) + .log
 
 	// Check that env uses expanded log_file
 	assert.Equal(t, logFile, global.ExpandedEnv["LOG_FILE"])

@@ -11,7 +11,7 @@ import (
 type Clock func() time.Time
 
 const (
-	// AutoEnvPrefix is the prefix for automatically generated environment variables
+	// AutoEnvPrefix is the prefix for automatically generated environment variables (uppercase format)
 	AutoEnvPrefix = "__RUNNER_"
 
 	// AutoEnvKeyDatetime is the key for the datetime auto environment variable (without prefix)
@@ -19,9 +19,17 @@ const (
 	// AutoEnvKeyPID is the key for the PID auto environment variable (without prefix)
 	AutoEnvKeyPID = "PID"
 
-	// DatetimeLayout is the Go time format for __RUNNER_DATETIME
+	// DatetimeLayout is the Go time format for __RUNNER_DATETIME and __runner_datetime
 	// Format: YYYYMMDDHHmmSS.msec (e.g., "20251005143025.123")
 	DatetimeLayout = "20060102150405.000" // Go time format for YYYYMMDDHHmmSS.msec
+
+	// AutoVarPrefix is the prefix for automatically generated internal variables (lowercase format)
+	AutoVarPrefix = "__runner_"
+
+	// AutoVarKeyDatetime is the key for the datetime auto internal variable (without prefix)
+	AutoVarKeyDatetime = "datetime"
+	// AutoVarKeyPID is the key for the PID auto internal variable (without prefix)
+	AutoVarKeyPID = "pid"
 )
 
 // AutoEnvProvider provides automatic environment variables
@@ -47,20 +55,18 @@ func NewAutoEnvProvider(clock Clock) AutoEnvProvider {
 	}
 }
 
-// Generate returns all auto environment variables as a map
+// Generate returns all auto environment variables and internal variables as a map.
+// This includes both:
+//   - Environment variables (uppercase): __RUNNER_DATETIME, __RUNNER_PID
+//   - Internal variables (lowercase): __runner_datetime, __runner_pid
 func (p *autoEnvProvider) Generate() map[string]string {
+	now := p.clock()
 	return map[string]string{
-		AutoEnvPrefix + AutoEnvKeyDatetime: p.generateDateTime(),
-		AutoEnvPrefix + AutoEnvKeyPID:      p.generatePID(),
+		// Environment variables (uppercase format)
+		AutoEnvPrefix + AutoEnvKeyDatetime: now.UTC().Format(DatetimeLayout),
+		AutoEnvPrefix + AutoEnvKeyPID:      strconv.Itoa(os.Getpid()),
+		// Internal variables (lowercase format)
+		AutoVarPrefix + AutoVarKeyDatetime: now.UTC().Format(DatetimeLayout),
+		AutoVarPrefix + AutoVarKeyPID:      strconv.Itoa(os.Getpid()),
 	}
-}
-
-// generateDateTime generates the datetime string in YYYYMMDDHHmmSS.msec format (UTC)
-func (p *autoEnvProvider) generateDateTime() string {
-	return p.clock().UTC().Format(DatetimeLayout)
-}
-
-// generatePID generates the PID string
-func (p *autoEnvProvider) generatePID() string {
-	return strconv.Itoa(os.Getpid())
 }

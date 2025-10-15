@@ -192,10 +192,12 @@ func TestIntegration_ManagerAndExpander_NoUserEnv(t *testing.T) {
 	// Build environment with auto-generated variables only
 	env := provider.Generate()
 
-	// Verify only auto-generated variables are present
-	assert.Len(t, env, 2) // Only __RUNNER_DATETIME and __RUNNER_PID
+	// Verify only auto-generated variables are present (both uppercase and lowercase formats)
+	assert.Len(t, env, 4) // __RUNNER_DATETIME, __RUNNER_PID, __runner_datetime, __runner_pid
 	assert.Equal(t, "20250615120000.500", env["__RUNNER_DATETIME"])
+	assert.Equal(t, "20250615120000.500", env["__runner_datetime"])
 	assert.NotEmpty(t, env["__RUNNER_PID"])
+	assert.NotEmpty(t, env["__runner_pid"])
 
 	// Create VariableExpander
 	filter := NewFilter([]string{})
