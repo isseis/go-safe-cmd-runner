@@ -1,0 +1,184 @@
+# E2E Test for vars/env separation (Task 0033)
+# This sample demonstrates the new variable system:
+# - from_env: Import system environment variables as internal variables
+# - vars: Define internal variables (can reference other internal variables)
+# - %{VAR}: Internal variable expansion syntax
+# - env: Define process environment variables (can reference internal variables)
+
+[global]
+# Whitelist of system environment variables that can be imported
+env_allowlist = ["HOME", "USER", "PATH"]
+
+# Import system environment variables as internal variables
+# Format: "internal_name=SYSTEM_VAR"
+from_env = [
+    "home=HOME",
+    "user=USER",
+    "system_path=PATH"
+]
+
+# Define internal variables (TOML expansion only, not process env vars)
+vars = [
+    "app_name=test_app",
+    "app_dir=%{home}/%{app_name}",
+    "data_dir=%{app_dir}/data",
+    "log_dir=%{app_dir}/logs"
+]
+
+# Define process environment variables (visible to child processes)
+env = [
+    "APP_DIR=%{app_dir}",
+    "APP_NAME=%{app_name}",
+    "CUSTOM_PATH=/usr/local/bin:/usr/bin"
+]
+
+# Commands to hash-verify before execution (disabled for E2E test)
+# verify_files = [
+#     "/usr/bin/printenv",
+#     "/bin/echo"
+# ]
+
+[[groups]]
+name = "test_group"
+
+# Inherit from_env from Global (because from_env is not defined here)
+# Inherited variables: home, user, system_path
+
+# Group-level internal variables
+vars = [
+    "input_file=%{data_dir}/input.txt",
+    "output_file=%{data_dir}/output.txt",
+    "temp_dir=%{data_dir}/temp"
+]
+
+# Group-level process environment variables
+env = [
+    "DATA_DIR=%{data_dir}",
+    "LOG_DIR=%{log_dir}"
+]
+
+# Test 1: Print all environment variables to verify they are set correctly
+[[groups.commands]]
+name = "print_all_env"
+cmd = "/usr/bin/printenv"
+args = []
+env = []  # Use inherited env from group and global
+mode = "user"
+
+# Test 2: Print specific environment variables
+[[groups.commands]]
+name = "print_app_dir"
+cmd = "/usr/bin/printenv"
+args = ["APP_DIR"]
+mode = "user"
+
+[[groups.commands]]
+name = "print_app_name"
+cmd = "/usr/bin/printenv"
+args = ["APP_NAME"]
+mode = "user"
+
+[[groups.commands]]
+name = "print_data_dir"
+cmd = "/usr/bin/printenv"
+args = ["DATA_DIR"]
+mode = "user"
+
+[[groups.commands]]
+name = "print_log_dir"
+cmd = "/usr/bin/printenv"
+args = ["LOG_DIR"]
+mode = "user"
+
+# Test 3: Use internal variables in args
+[[groups.commands]]
+name = "echo_internal_vars"
+cmd = "/bin/echo"
+args = [
+    "app_dir=%{app_dir}",
+    "data_dir=%{data_dir}",
+    "input_file=%{input_file}",
+    "output_file=%{output_file}"
+]
+mode = "user"
+
+# Test 4: Command-level variables
+[[groups.commands]]
+name = "command_level_vars"
+vars = [
+    "cmd_var=%{temp_dir}/command_specific.log"
+]
+cmd = "/bin/echo"
+args = [
+    "cmd_var=%{cmd_var}",
+    "temp_dir=%{temp_dir}"
+]
+env = [
+    "CMD_VAR=%{cmd_var}"
+]
+mode = "user"
+
+# Test 5: Verify environment variable priority
+# Command.env should override Group.env and Global.env
+[[groups.commands]]
+name = "env_priority_test"
+cmd = "/usr/bin/printenv"
+args = ["APP_NAME"]
+env = [
+    "APP_NAME=command_override"
+]
+mode = "user"
+
+[[groups]]
+name = "override_group"
+
+# Override from_env (Global.from_env is ignored)
+env_allowlist = ["USER", "PATH"]
+from_env = [
+    "user=USER",
+    "path=PATH"
+]
+
+# This group does NOT have access to %{home} because from_env is overridden
+vars = [
+    "group_specific=/opt/override_app",
+    "config=%{group_specific}/config"
+]
+
+env = [
+    "GROUP_SPECIFIC=%{group_specific}",
+    "CONFIG_DIR=%{config}"
+]
+
+[[groups.commands]]
+name = "override_test"
+cmd = "/bin/echo"
+args = [
+    "user=%{user}",
+    "path=%{path}",
+    "group_specific=%{group_specific}"
+]
+env = []
+mode = "user"
+
+[[groups]]
+name = "empty_from_env_group"
+
+# Explicitly disable from_env (no system env vars imported)
+from_env = []
+
+vars = [
+    "static_var=/static/path"
+]
+
+env = [
+    "STATIC_VAR=%{static_var}"
+]
+
+[[groups.commands]]
+name = "static_test"
+cmd = "/bin/echo"
+args = [
+    "static_var=%{static_var}"
+]
+mode = "user"

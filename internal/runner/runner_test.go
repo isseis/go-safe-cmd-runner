@@ -1046,6 +1046,11 @@ func TestRunner_resolveEnvironmentVars(t *testing.T) {
 		Global: runnertypes.GlobalConfig{
 			WorkDir:      "/tmp",
 			EnvAllowlist: []string{"SAFE_VAR", "PATH", "LOADED_VAR", "CMD_VAR", "REFERENCE_VAR"},
+			// ExpandedEnv contains variables loaded from .env file or defined in global.env
+			ExpandedEnv: map[string]string{
+				"LOADED_VAR": "from_env_file",
+				"PATH":       "/custom/path", // This should override system PATH
+			},
 		},
 		Groups: []runnertypes.CommandGroup{
 			{
@@ -1057,10 +1062,6 @@ func TestRunner_resolveEnvironmentVars(t *testing.T) {
 
 	runner, err := NewRunner(config, WithRunID("test-run-123"))
 	require.NoError(t, err)
-	runner.envVars = map[string]string{
-		"LOADED_VAR": "from_env_file",
-		"PATH":       "/custom/path", // This should override system PATH
-	}
 
 	// Test Command.Env with self-reference and cross-reference
 	cmd := runnertypes.Command{
@@ -1073,13 +1074,12 @@ func TestRunner_resolveEnvironmentVars(t *testing.T) {
 	// Prepare command with expanded environment (simulates configuration loading)
 	prepareCommandWithExpandedEnv(t, &cmd, &config.Groups[0], config)
 
-	// Resolve environment variables (merges system env + pre-expanded Command.Env)
-	envVars, err := runner.resolveEnvironmentVars(&cmd, &config.Groups[0])
-	assert.NoError(t, err)
+	// Resolve environment variables (merges system env + Global.ExpandedEnv + Command.ExpandedEnv)
+	envVars := runner.resolveEnvironmentVars(&cmd, &config.Groups[0])
 
-	// Check that system vars are present
+	// Check that global vars are present
 	assert.Equal(t, "from_env_file", envVars["LOADED_VAR"])
-	assert.Equal(t, "/custom/path", envVars["PATH"])
+	assert.Equal(t, "/custom/path", envVars["PATH"]) // Global.ExpandedEnv overrides system env
 
 	// Check that command vars are present and correctly expanded
 	assert.Equal(t, "command_value", envVars["CMD_VAR"])
@@ -1461,7 +1461,7 @@ func TestCommandGroup_TempDir_Detailed(t *testing.T) {
 }
 
 // TestRunner_EnvironmentVariablePriority tests the priority hierarchy for environment variables:
-// command-specific > global (loaded from system/env file)
+// command-specific > group > global (loaded from system/env file)
 func TestRunner_EnvironmentVariablePriority(t *testing.T) {
 	setupSafeTestEnv(t)
 
@@ -1469,6 +1469,12 @@ func TestRunner_EnvironmentVariablePriority(t *testing.T) {
 		Global: runnertypes.GlobalConfig{
 			WorkDir:      "/tmp",
 			EnvAllowlist: []string{"GLOBAL_VAR", "CMD_VAR", "OVERRIDE_VAR", "REFERENCE_VAR"},
+			// ExpandedEnv contains variables loaded from .env file or defined in global.env
+			ExpandedEnv: map[string]string{
+				"GLOBAL_VAR":    "global_value",
+				"OVERRIDE_VAR":  "global_override",
+				"REFERENCE_VAR": "global_reference",
+			},
 		},
 		Groups: []runnertypes.CommandGroup{
 			{
@@ -1480,13 +1486,6 @@ func TestRunner_EnvironmentVariablePriority(t *testing.T) {
 
 	runner, err := NewRunner(config, WithRunID("test-run-123"))
 	require.NoError(t, err)
-
-	// Set global environment variables (loaded from system/env file)
-	runner.envVars = map[string]string{
-		"GLOBAL_VAR":    "global_value",
-		"OVERRIDE_VAR":  "global_override",
-		"REFERENCE_VAR": "global_reference",
-	}
 
 	tests := []struct {
 		name           string
@@ -1518,7 +1517,7 @@ func TestRunner_EnvironmentVariablePriority(t *testing.T) {
 			name:           "variable references with command priority",
 			commandEnvVars: []string{"BASE_VAR=base_value", "REFERENCE_VAR=${BASE_VAR}_referenced"},
 			expectedValues: map[string]string{
-				"GLOBAL_VAR":    "global_value",          // From system environment
+				"GLOBAL_VAR":    "global_value",          // From global environment
 				"BASE_VAR":      "base_value",            // From Command.Env
 				"REFERENCE_VAR": "base_value_referenced", // Should resolve to Command.Env variable value
 			},
@@ -1560,8 +1559,7 @@ func TestRunner_EnvironmentVariablePriority(t *testing.T) {
 			prepareCommandWithExpandedEnv(t, &testCmd, testGroup, config)
 
 			// Resolve environment variables using the runner
-			resolvedEnv, err := runner.resolveEnvironmentVars(&testCmd, testGroup)
-			require.NoError(t, err, tt.description)
+			resolvedEnv := runner.resolveEnvironmentVars(&testCmd, testGroup)
 
 			// Verify expected values are present with correct priority
 			for key, expectedValue := range tt.expectedValues {
@@ -1574,7 +1572,7 @@ func TestRunner_EnvironmentVariablePriority(t *testing.T) {
 }
 
 // TestRunner_EnvironmentVariablePriority_CurrentImplementation tests the current implementation
-// which only supports command-specific > global priority (no group-specific variables yet)
+// which supports command-specific > group > global priority
 func TestRunner_EnvironmentVariablePriority_CurrentImplementation(t *testing.T) {
 	setupSafeTestEnv(t)
 
@@ -1582,6 +1580,12 @@ func TestRunner_EnvironmentVariablePriority_CurrentImplementation(t *testing.T) 
 		Global: runnertypes.GlobalConfig{
 			WorkDir:      "/tmp",
 			EnvAllowlist: []string{"GLOBAL_VAR", "CMD_VAR", "OVERRIDE_VAR", "REFERENCE_VAR"},
+			// ExpandedEnv contains variables loaded from .env file or defined in global.env
+			ExpandedEnv: map[string]string{
+				"GLOBAL_VAR":    "global_value",
+				"OVERRIDE_VAR":  "global_override",
+				"REFERENCE_VAR": "global_reference",
+			},
 		},
 		Groups: []runnertypes.CommandGroup{
 			{
@@ -1593,13 +1597,6 @@ func TestRunner_EnvironmentVariablePriority_CurrentImplementation(t *testing.T) 
 
 	runner, err := NewRunner(config, WithRunID("test-run-123"))
 	require.NoError(t, err)
-
-	// Set global environment variables (loaded from system/env file)
-	runner.envVars = map[string]string{
-		"GLOBAL_VAR":    "global_value",
-		"OVERRIDE_VAR":  "global_override",
-		"REFERENCE_VAR": "global_reference",
-	}
 
 	tests := []struct {
 		name           string
@@ -1631,7 +1628,7 @@ func TestRunner_EnvironmentVariablePriority_CurrentImplementation(t *testing.T) 
 			name:           "command variable references global",
 			commandEnvVars: []string{"BASE_VAR=base_value", "REFERENCE_VAR=${BASE_VAR}_referenced"},
 			expectedValues: map[string]string{
-				"GLOBAL_VAR":    "global_value",          // From system environment
+				"GLOBAL_VAR":    "global_value",          // From global environment
 				"BASE_VAR":      "base_value",            // From Command.Env
 				"REFERENCE_VAR": "base_value_referenced", // Should resolve to Command.Env variable value
 			},
@@ -1665,8 +1662,7 @@ func TestRunner_EnvironmentVariablePriority_CurrentImplementation(t *testing.T) 
 			prepareCommandWithExpandedEnv(t, &testCmd, testGroup, config)
 
 			// Resolve environment variables using the runner
-			resolvedEnv, err := runner.resolveEnvironmentVars(&testCmd, testGroup)
-			require.NoError(t, err, tt.description)
+			resolvedEnv := runner.resolveEnvironmentVars(&testCmd, testGroup)
 
 			// Verify expected values are present with correct priority
 			for key, expectedValue := range tt.expectedValues {
@@ -1729,8 +1725,7 @@ func TestRunner_EnvironmentVariablePriority_EdgeCases(t *testing.T) {
 		// Prepare command with expanded environment (simulates configuration loading)
 		prepareCommandWithExpandedEnv(t, &testCmd, &testGroup, config)
 
-		resolvedEnv, err := runner.resolveEnvironmentVars(&testCmd, &testGroup)
-		require.NoError(t, err)
+		resolvedEnv := runner.resolveEnvironmentVars(&testCmd, &testGroup)
 
 		// Command value should override global value even if empty
 		assert.Equal(t, "", resolvedEnv["EDGE_VAR"])
