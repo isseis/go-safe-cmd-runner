@@ -36,7 +36,7 @@ func TestIntegration_AutoEnvProviderAndExpander_AutoDateTime(t *testing.T) {
 
 	// Expand string containing __RUNNER_DATETIME
 	input := "backup-${__RUNNER_DATETIME}.tar.gz"
-	expanded, err := expander.ExpandString(input, env, []string{}, "", make(map[string]bool))
+	expanded, err := expander.ExpandString(input, env, []string{}, "", make(map[string]struct{}))
 	require.NoError(t, err)
 
 	// Verify expansion
@@ -63,7 +63,7 @@ func TestIntegration_AutoEnvProviderAndExpander_AutoPID(t *testing.T) {
 
 	// Expand string containing __RUNNER_PID
 	input := "process-${__RUNNER_PID}.log"
-	expanded, err := expander.ExpandString(input, env, []string{}, "", make(map[string]bool))
+	expanded, err := expander.ExpandString(input, env, []string{}, "", make(map[string]struct{}))
 	require.NoError(t, err)
 
 	// Verify expansion
@@ -95,7 +95,7 @@ func TestIntegration_ManagerAndExpander_MultipleAutoVars(t *testing.T) {
 
 	// Expand string with multiple auto variables
 	input := "${HOST}-${__RUNNER_DATETIME}-${__RUNNER_PID}.log"
-	expanded, err := expander.ExpandString(input, env, []string{}, "", make(map[string]bool))
+	expanded, err := expander.ExpandString(input, env, []string{}, "", make(map[string]struct{}))
 	require.NoError(t, err)
 
 	// Verify expansion pattern
@@ -170,7 +170,7 @@ func TestIntegration_ManagerAndExpander_RealTimeClock(t *testing.T) {
 
 	// Expand string with real datetime
 	input := "log-${__RUNNER_DATETIME}.txt"
-	expanded, err := expander.ExpandString(input, env, []string{}, "", make(map[string]bool))
+	expanded, err := expander.ExpandString(input, env, []string{}, "", make(map[string]struct{}))
 	require.NoError(t, err)
 
 	// Verify expansion pattern
@@ -203,7 +203,7 @@ func TestIntegration_ManagerAndExpander_NoUserEnv(t *testing.T) {
 
 	// Expand string with only auto variables
 	input := "${__RUNNER_DATETIME}"
-	expanded, err := expander.ExpandString(input, env, []string{}, "", make(map[string]bool))
+	expanded, err := expander.ExpandString(input, env, []string{}, "", make(map[string]struct{}))
 	require.NoError(t, err)
 
 	// Verify expansion
@@ -244,7 +244,7 @@ func TestIntegration_ManagerAndExpander_MixedWithSystemEnv(t *testing.T) {
 
 	// Expand LOG_PATH which references __RUNNER_DATETIME
 	logPath := env["LOG_PATH"]
-	expanded, err := expander.ExpandString(logPath, env, []string{}, "", make(map[string]bool))
+	expanded, err := expander.ExpandString(logPath, env, []string{}, "", make(map[string]struct{}))
 	require.NoError(t, err)
 
 	// Verify expansion

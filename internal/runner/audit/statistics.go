@@ -1,6 +1,7 @@
 package audit
 
 import (
+	"maps"
 	"sort"
 	"sync"
 
@@ -66,11 +67,7 @@ func (s *RiskStatistics) GetRiskLevelCounts() map[runnertypes.RiskLevel]int {
 	defer s.mu.RUnlock()
 
 	// Create a copy to avoid race conditions
-	counts := make(map[runnertypes.RiskLevel]int, len(s.riskLevelCounts))
-	for level, count := range s.riskLevelCounts {
-		counts[level] = count
-	}
-	return counts
+	return maps.Clone(s.riskLevelCounts)
 }
 
 // GetTopRiskFactors returns the most common risk factors up to the specified limit

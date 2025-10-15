@@ -669,8 +669,11 @@ func TestCollectVerificationFiles(t *testing.T) {
 		// Collect files
 		collectedFiles := manager.collectVerificationFiles(groupConfig)
 
-		// Should return the same files
-		assert.Equal(t, groupConfig.ExpandedVerifyFiles, collectedFiles)
+		// Should return a map with the same files
+		assert.Len(t, collectedFiles, 3)
+		assert.Contains(t, collectedFiles, "file1.txt")
+		assert.Contains(t, collectedFiles, "file2.txt")
+		assert.Contains(t, collectedFiles, "file3.txt")
 	})
 
 	t.Run("collect_empty_files", func(t *testing.T) {
@@ -688,7 +691,7 @@ func TestCollectVerificationFiles(t *testing.T) {
 		// Collect files
 		collectedFiles := manager.collectVerificationFiles(groupConfig)
 
-		// Should return empty slice
+		// Should return empty map
 		assert.Empty(t, collectedFiles)
 	})
 
@@ -701,8 +704,30 @@ func TestCollectVerificationFiles(t *testing.T) {
 		// Collect files with nil input
 		collectedFiles := manager.collectVerificationFiles(nil)
 
-		// Should return empty slice
+		// Should return empty map
 		assert.Empty(t, collectedFiles)
+	})
+
+	t.Run("automatic_deduplication", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		manager, err := NewManagerForTest(tmpDir)
+		require.NoError(t, err)
+
+		// Test group config with duplicate files
+		groupConfig := &runnertypes.CommandGroup{
+			Name:                "test-group",
+			ExpandedVerifyFiles: []string{"file1.txt", "file2.txt", "file1.txt", "file3.txt", "file2.txt"},
+		}
+
+		// Collect files
+		collectedFiles := manager.collectVerificationFiles(groupConfig)
+
+		// Should automatically remove duplicates
+		assert.Len(t, collectedFiles, 3)
+		assert.Contains(t, collectedFiles, "file1.txt")
+		assert.Contains(t, collectedFiles, "file2.txt")
+		assert.Contains(t, collectedFiles, "file3.txt")
 	})
 }
 

@@ -189,7 +189,7 @@ func TestVariableExpander_ResolveVariableReferences(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := expander.ExpandString(tt.value, tt.envVars, tt.group.EnvAllowlist, tt.group.Name, make(map[string]bool))
+			result, err := expander.ExpandString(tt.value, tt.envVars, tt.group.EnvAllowlist, tt.group.Name, make(map[string]struct{}))
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -274,7 +274,7 @@ func TestVariableExpander_ResolveVariableReferences_CircularReferences(t *testin
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := expander.ExpandString(tt.value, tt.envVars, tt.group.EnvAllowlist, tt.group.Name, make(map[string]bool))
+			result, err := expander.ExpandString(tt.value, tt.envVars, tt.group.EnvAllowlist, tt.group.Name, make(map[string]struct{}))
 
 			if tt.expectError {
 				assert.Error(t, err, "Expected error for case: %s", tt.description)
@@ -467,7 +467,7 @@ func TestVariableExpander_EscapeSequences(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := expander.ExpandString(tt.value, tt.envVars, tt.group.EnvAllowlist, tt.group.Name, make(map[string]bool))
+			result, err := expander.ExpandString(tt.value, tt.envVars, tt.group.EnvAllowlist, tt.group.Name, make(map[string]struct{}))
 
 			if tt.expectError {
 				assert.Error(t, err)

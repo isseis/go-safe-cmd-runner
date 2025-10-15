@@ -35,16 +35,9 @@ type Filter struct {
 // The function intentionally accepts only the global allowlist (slice of variable names)
 // to keep the Filter small and focused; callers should pass cfg.Global.EnvAllowlist.
 func NewFilter(allowList []string) *Filter {
-	f := &Filter{
-		globalAllowlist: make(map[string]struct{}), // Initialize with empty map
+	return &Filter{
+		globalAllowlist: common.SliceToSet(allowList),
 	}
-
-	// Initialize the allowlist map with provided global allowlist if it exists
-	for _, v := range allowList {
-		f.globalAllowlist[v] = struct{}{}
-	}
-
-	return f
 }
 
 // ParseSystemEnvironment parses os.Environ() and filters variables based on the provided predicate

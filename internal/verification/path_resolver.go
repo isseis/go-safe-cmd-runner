@@ -130,18 +130,3 @@ func (pr *PathResolver) ResolvePath(command string) (string, error) {
 func (pr *PathResolver) ValidateCommand(resolvedPath string) error {
 	return pr.validateCommandSafety(resolvedPath)
 }
-
-// removeDuplicates removes duplicate strings from a slice
-func removeDuplicates(slice []string) []string {
-	keys := make(map[string]bool)
-	result := []string{}
-
-	for _, item := range slice {
-		if !keys[item] {
-			keys[item] = true
-			result = append(result, item)
-		}
-	}
-
-	return result
-}

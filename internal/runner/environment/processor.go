@@ -84,7 +84,7 @@ func (p *VariableExpander) validateBasicEnvVariable(varName, varValue string) er
 // ExpandString expands variables in a single string, handling escape sequences.
 // It performs recursive variable expansion with circular reference detection.
 // This method is used for expanding both command-line strings and environment variable values.
-func (p *VariableExpander) ExpandString(value string, envVars map[string]string, allowlist []string, groupName string, visited map[string]bool) (string, error) {
+func (p *VariableExpander) ExpandString(value string, envVars map[string]string, allowlist []string, groupName string, visited map[string]struct{}) (string, error) {
 	p.logger.Debug("Starting variable expansion",
 		"value", value,
 		"group", groupName,
@@ -145,7 +145,7 @@ func (p *VariableExpander) handleEscapeSequence(inputChars []rune, i int, result
 }
 
 // handleVariableExpansion processes variable expansion like ${VAR}
-func (p *VariableExpander) handleVariableExpansion(inputChars []rune, i int, envVars map[string]string, allowlist []string, groupName string, visited map[string]bool, result *strings.Builder) (int, error) {
+func (p *VariableExpander) handleVariableExpansion(inputChars []rune, i int, envVars map[string]string, allowlist []string, groupName string, visited map[string]struct{}, result *strings.Builder) (int, error) {
 	// Strict validation: $ must be followed by {VAR} format
 	if i+1 >= len(inputChars) || inputChars[i+1] != '{' {
 		return 0, fmt.Errorf("%w at position %d", ErrInvalidVariableFormat, i)
@@ -208,9 +208,9 @@ func (p *VariableExpander) handleVariableExpansion(inputChars []rune, i int, env
 //     and go directly to system environment. This allows ${PATH} to refer to system PATH.
 //   - If not pre-marked but found in envVars during recursive expansion, this is a true
 //     circular reference and should be rejected.
-func (p *VariableExpander) resolveVariable(varName string, envVars map[string]string, allowlist []string, groupName string, visited map[string]bool) (string, error) {
+func (p *VariableExpander) resolveVariable(varName string, envVars map[string]string, allowlist []string, groupName string, visited map[string]struct{}) (string, error) {
 	// Check if variable is already being expanded (circular reference detection)
-	wasVisited := visited[varName]
+	_, wasVisited := visited[varName]
 
 	// Look up variable value
 	val, foundLocal := envVars[varName]
@@ -228,7 +228,7 @@ func (p *VariableExpander) resolveVariable(varName string, envVars map[string]st
 			"variable", varName,
 			"value_length", len(val),
 			"group", groupName)
-		visited[varName] = true
+		visited[varName] = struct{}{}
 		return val, nil
 	}
 
@@ -285,7 +285,7 @@ func (p *VariableExpander) ExpandStrings(texts []string, envVars map[string]stri
 	// keeps behavior consistent between empty and non-empty inputs.
 	result := make([]string, len(texts))
 	for i, text := range texts {
-		expanded, err := p.ExpandString(text, envVars, allowlist, groupName, make(map[string]bool))
+		expanded, err := p.ExpandString(text, envVars, allowlist, groupName, make(map[string]struct{}))
 		if err != nil {
 			p.logger.Error("Batch string expansion failed",
 				"index", i,
