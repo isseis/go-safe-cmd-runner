@@ -171,39 +171,6 @@ func TestPathResolver_ValidateCommandSafety(t *testing.T) {
 	})
 }
 
-func TestRemoveDuplicates(t *testing.T) {
-	t.Run("remove_duplicates_from_slice", func(t *testing.T) {
-		input := []string{
-			"/usr/bin",
-			"/bin",
-			"/usr/bin", // duplicate
-			"/usr/local/bin",
-			"/bin", // duplicate
-		}
-
-		result := removeDuplicates(input)
-
-		// Check that duplicates are removed
-		assert.Len(t, result, 3)
-		assert.Contains(t, result, "/usr/bin")
-		assert.Contains(t, result, "/bin")
-		assert.Contains(t, result, "/usr/local/bin")
-
-		// Verify no duplicates remain
-		seen := make(map[string]bool)
-		for _, path := range result {
-			assert.False(t, seen[path], "Duplicate found: %s", path)
-			seen[path] = true
-		}
-	})
-
-	t.Run("empty_slice", func(t *testing.T) {
-		input := []string{}
-		result := removeDuplicates(input)
-		assert.Empty(t, result)
-	})
-}
-
 func TestPathResolver_ValidateAndCacheCommand(t *testing.T) {
 	t.Run("successful_validation_and_caching", func(t *testing.T) {
 		tempDir := t.TempDir()

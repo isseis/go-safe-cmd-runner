@@ -212,7 +212,7 @@ func (m *Manager) VerifyGroupFiles(groupConfig *runnertypes.CommandGroup) (*Resu
 		result.Duration = time.Since(start)
 	}()
 
-	for _, file := range allFiles {
+	for file := range allFiles {
 		if m.shouldSkipVerification(file) {
 			result.SkippedFiles = append(result.SkippedFiles, file)
 			slog.Info("Skipping verification for standard system path",
@@ -259,15 +259,18 @@ func (m *Manager) shouldSkipVerification(path string) bool {
 }
 
 // collectVerificationFiles collects all files to verify for a group
-func (m *Manager) collectVerificationFiles(groupConfig *runnertypes.CommandGroup) []string {
+func (m *Manager) collectVerificationFiles(groupConfig *runnertypes.CommandGroup) map[string]struct{} {
 	if groupConfig == nil {
-		return []string{}
+		return make(map[string]struct{})
 	}
 
-	allFiles := make([]string, 0, len(groupConfig.ExpandedVerifyFiles)+len(groupConfig.Commands))
+	// Use map to automatically eliminate duplicates
+	fileSet := make(map[string]struct{}, len(groupConfig.ExpandedVerifyFiles)+len(groupConfig.Commands))
 
 	// Add explicit files
-	allFiles = append(allFiles, groupConfig.ExpandedVerifyFiles...)
+	for _, file := range groupConfig.ExpandedVerifyFiles {
+		fileSet[file] = struct{}{}
+	}
 
 	// Add command files
 	if m.pathResolver != nil {
@@ -280,12 +283,11 @@ func (m *Manager) collectVerificationFiles(groupConfig *runnertypes.CommandGroup
 					"error", err.Error())
 				continue
 			}
-			allFiles = append(allFiles, resolvedPath)
+			fileSet[resolvedPath] = struct{}{}
 		}
 	}
 
-	// Remove duplicates
-	return removeDuplicates(allFiles)
+	return fileSet
 }
 
 // ResolvePath resolves a command to its full path with security validation
