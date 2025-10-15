@@ -207,9 +207,6 @@ func expandVerifyFiles(
 	// Use existing Filter.ParseSystemEnvironment() with allowlist predicate
 	// Only include environment variables that are in the allowlist
 	allowlistSet := common.SliceToSet(allowlist)
-	for _, varName := range allowlist {
-		allowlistSet[varName] = struct{}{}
-	}
 	systemEnv := filter.ParseSystemEnvironment(func(varName string) bool {
 		_, ok := allowlistSet[varName]
 		return ok
@@ -341,6 +338,17 @@ func ExpandGlobalVerifyFiles(
 		return ErrNilConfig
 	}
 
+	// If VerifyFiles is empty, nothing to expand
+	if len(global.VerifyFiles) == 0 {
+		return nil
+	}
+
+	// If already expanded by new system and has results, use that
+	// Check both conditions: ExpandedVerifyFiles exists AND VerifyFiles was not empty
+	if len(global.ExpandedVerifyFiles) > 0 {
+		return nil
+	}
+
 	expanded, err := expandVerifyFiles(
 		global.VerifyFiles,
 		global.EnvAllowlist,
@@ -371,6 +379,16 @@ func ExpandGroupVerifyFiles(
 ) error {
 	if group == nil {
 		return ErrNilConfig
+	}
+
+	// If VerifyFiles is empty, nothing to expand
+	if len(group.VerifyFiles) == 0 {
+		return nil
+	}
+
+	// If already expanded by new system and has results, use that
+	if len(group.ExpandedVerifyFiles) > 0 {
+		return nil
 	}
 
 	// Use existing Filter.ResolveAllowlistConfiguration() for allowlist determination
@@ -622,10 +640,15 @@ func ExpandGlobalEnv(
 		return ErrNilExpander
 	}
 
-	return expandEnvInternal(
+	// Save existing ExpandedEnv from new system (%{VAR} syntax)
+	newSystemEnv := cfg.ExpandedEnv
+
+	// Expand with old system (${VAR} syntax)
+	var oldSystemEnv map[string]string
+	err := expandEnvInternal(
 		cfg.Env,                     // envList
 		"global.env",                // contextName
-		&cfg.ExpandedEnv,            // outputTarget
+		&oldSystemEnv,               // outputTarget (use temporary variable)
 		expander,                    // expander
 		autoEnv,                     // autoEnv
 		nil,                         // globalEnv (self-expansion)
@@ -634,6 +657,21 @@ func ExpandGlobalEnv(
 		cfg.EnvAllowlist,            // localAllowlist (Global.EnvAllowlist)
 		ErrGlobalEnvExpansionFailed, // failureErr
 	)
+	if err != nil {
+		return err
+	}
+
+	// Merge: new system takes precedence over old system
+	merged := make(map[string]string)
+	if oldSystemEnv != nil {
+		maps.Copy(merged, oldSystemEnv)
+	}
+	if newSystemEnv != nil {
+		maps.Copy(merged, newSystemEnv)
+	}
+
+	cfg.ExpandedEnv = merged
+	return nil
 }
 
 // ExpandGroupEnv expands environment variables in Group.Env with references to Global.Env and system environment.
@@ -670,10 +708,15 @@ func ExpandGroupEnv(
 		return ErrNilExpander
 	}
 
-	return expandEnvInternal(
+	// Save existing ExpandedEnv from new system (%{VAR} syntax)
+	newSystemEnv := group.ExpandedEnv
+
+	// Expand with old system (${VAR} syntax)
+	var oldSystemEnv map[string]string
+	err := expandEnvInternal(
 		group.Env,                               // envList
 		fmt.Sprintf("group.env:%s", group.Name), // contextName
-		&group.ExpandedEnv,                      // outputTarget
+		&oldSystemEnv,                           // outputTarget (use temporary variable)
 		expander,                                // expander
 		autoEnv,                                 // autoEnv
 		globalEnv,                               // globalEnv (Global.ExpandedEnv)
@@ -682,6 +725,21 @@ func ExpandGroupEnv(
 		group.EnvAllowlist,                      // localAllowlist (Group.EnvAllowlist)
 		ErrGroupEnvExpansionFailed,              // failureErr
 	)
+	if err != nil {
+		return err
+	}
+
+	// Merge: new system takes precedence over old system
+	merged := make(map[string]string)
+	if oldSystemEnv != nil {
+		maps.Copy(merged, oldSystemEnv)
+	}
+	if newSystemEnv != nil {
+		maps.Copy(merged, newSystemEnv)
+	}
+
+	group.ExpandedEnv = merged
+	return nil
 }
 
 // ExpandCommandEnv expands Command.Env variables with reference to global, group, and automatic environment variables.
