@@ -2,6 +2,7 @@
 package config_test
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"testing"
@@ -3085,6 +3086,18 @@ func TestExpandString_EscapeSequence(t *testing.T) {
 			vars:     map[string]string{"literal": "L", "var1": "expanded"},
 			expected: `%{literal} expanded`,
 		},
+		{
+			name:     "escape dollar (Phase 12)",
+			input:    `literal \${HOME}`,
+			vars:     map[string]string{},
+			expected: `literal ${HOME}`,
+		},
+		{
+			name:     "escape dollar with expansion (Phase 12)",
+			input:    `\${old} and %{new}`,
+			vars:     map[string]string{"new": "newvalue"},
+			expected: `${old} and newvalue`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -3099,18 +3112,13 @@ func TestExpandString_EscapeSequence(t *testing.T) {
 
 func TestExpandString_InvalidEscape(t *testing.T) {
 	// Test invalid escape sequence handling
+	// Note: \$ is now a VALID escape sequence (added in Phase 12) to support literal ${VAR}
 	tests := []struct {
 		name             string
 		input            string
 		vars             map[string]string
 		expectedSequence string
 	}{
-		{
-			name:             "invalid escape dollar",
-			input:            `\$invalid`,
-			vars:             map[string]string{},
-			expectedSequence: `\$`,
-		},
 		{
 			name:             "invalid escape x",
 			input:            `\xtest`,
@@ -4835,4 +4843,144 @@ func TestAutoVariables_CannotBeOverridden(t *testing.T) {
 	var reservedErr *config.ErrReservedVariableNameDetail
 	assert.ErrorAs(t, err, &reservedErr)
 	assert.Equal(t, "__runner_datetime", reservedErr.VariableName)
+}
+
+// ============================================================================
+// Phase 12: ${VAR} Syntax Detection Tests
+// ============================================================================
+
+// TestDetectDollarSyntax_Found tests that ${VAR} syntax is detected.
+func TestDetectDollarSyntax_Found(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			name:  "simple variable",
+			input: "${HOME}",
+		},
+		{
+			name:  "variable in path",
+			input: "/path/to/${HOME}/file",
+		},
+		{
+			name:  "multiple variables",
+			input: "${HOME}/${USER}/file",
+		},
+		{
+			name:  "variable at end",
+			input: "prefix_${VAR}",
+		},
+		{
+			name:  "variable at start",
+			input: "${VAR}_suffix",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := config.ExpandString(
+				tt.input,
+				map[string]string{},
+				"test",
+				"field",
+			)
+
+			require.Error(t, err)
+			var deprecatedErr *config.ErrDeprecatedSyntax
+			assert.ErrorAs(t, err, &deprecatedErr)
+			assert.Equal(t, "test", deprecatedErr.Level)
+			assert.Equal(t, "field", deprecatedErr.Field)
+			assert.Contains(t, deprecatedErr.Message, "${VAR}")
+			assert.Contains(t, deprecatedErr.Message, "%{VAR}")
+		})
+	}
+}
+
+// TestDetectDollarSyntax_NotFound tests that only %{VAR} syntax does not trigger error.
+func TestDetectDollarSyntax_NotFound(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		vars  map[string]string
+	}{
+		{
+			name:  "percent syntax",
+			input: "%{home}",
+			vars:  map[string]string{"home": "/home/user"},
+		},
+		{
+			name:  "no variables",
+			input: "/plain/path",
+			vars:  map[string]string{},
+		},
+		{
+			name:  "dollar without braces",
+			input: "$HOME/file",
+			vars:  map[string]string{},
+		},
+		{
+			name:  "literal dollar",
+			input: "price is $100",
+			vars:  map[string]string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := config.ExpandString(
+				tt.input,
+				tt.vars,
+				"test",
+				"field",
+			)
+			// Should not error on ${VAR} detection
+			if err != nil {
+				var deprecatedErr *config.ErrDeprecatedSyntax
+				assert.False(t, errors.As(err, &deprecatedErr),
+					"should not return ErrDeprecatedSyntax")
+			}
+			// Note: may error on undefined variable, but that's OK for this test
+			if err == nil {
+				assert.NotEmpty(t, result)
+			}
+		})
+	}
+}
+
+// TestDetectDollarSyntax_Escaped tests that \${VAR} is not detected as deprecated syntax.
+func TestDetectDollarSyntax_Escaped(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		vars     map[string]string
+		expected string
+	}{
+		{
+			name:     "escaped dollar syntax",
+			input:    "literal \\${HOME}",
+			vars:     map[string]string{},
+			expected: "literal ${HOME}",
+		},
+		{
+			name:     "escaped dollar with other vars",
+			input:    "\\${HOME} and %{user}",
+			vars:     map[string]string{"user": "testuser"},
+			expected: "${HOME} and testuser",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := config.ExpandString(
+				tt.input,
+				tt.vars,
+				"test",
+				"field",
+			)
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
 }

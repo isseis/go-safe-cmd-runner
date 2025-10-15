@@ -208,3 +208,18 @@ func (e *ErrMaxRecursionDepthExceededDetail) Unwrap() error {
 // ErrReservedVariableNameDetail is an alias for ErrReservedVariablePrefixDetail
 // to maintain consistency with test naming conventions
 type ErrReservedVariableNameDetail = ErrReservedVariablePrefixDetail
+
+// ErrDeprecatedSyntax is returned when ${VAR} syntax is detected
+type ErrDeprecatedSyntax struct {
+	Level   string
+	Field   string
+	Input   string
+	Message string
+}
+
+func (e *ErrDeprecatedSyntax) Error() string {
+	if e.Message != "" {
+		return fmt.Sprintf("deprecated ${VAR} syntax in %s.%s: %s (input: %s)", e.Level, e.Field, e.Message, e.Input)
+	}
+	return fmt.Sprintf("deprecated ${VAR} syntax in %s.%s (input: %s)", e.Level, e.Field, e.Input)
+}

@@ -835,53 +835,42 @@
 **目的**: `${VAR}` 構文の完全廃止とエラーメッセージの実装
 
 #### 2.12.1 ${VAR}検出関数の実装（テスト先行）
-- [ ] テスト作成: `internal/runner/config/expansion_test.go`
-  - [ ] `TestDetectDollarSyntax_Found`: `${VAR}` を検出
-  - [ ] `TestDetectDollarSyntax_NotFound`: `%{VAR}` のみ
-  - [ ] `TestDetectDollarSyntax_Escaped`: `\${VAR}` は検出しない
-- [ ] テスト実行で失敗を確認
-- [ ] コミット: "Add tests for ${VAR} syntax detection (TDD)"
+- [x] テスト作成: `internal/runner/config/expansion_test.go`
+  - [x] `TestDetectDollarSyntax_Found`: `${VAR}` を検出
+  - [x] `TestDetectDollarSyntax_NotFound`: `%{VAR}` のみ
+  - [x] `TestDetectDollarSyntax_Escaped`: `\${VAR}` は検出しない
+- [x] テスト実行で失敗を確認
+- [x] コミット: "Add tests for ${VAR} syntax detection (TDD)" (not committed yet)
 
 #### 2.12.2 ${VAR}検出関数の実装
-- [ ] `internal/runner/config/expansion.go`に追加
-  - [ ] `detectDeprecatedDollarSyntax`関数を実装:
-    ```go
-    func detectDeprecatedDollarSyntax(input string, level string, field string) error {
-        // Pattern: ${...} but not \${...}
-        pattern := regexp.MustCompile(`(?:[^\\]|^)\$\{[^}]+\}`)
-        if pattern.MatchString(input) {
-            return &ErrDeprecatedSyntax{
-                Level:   level,
-                Field:   field,
-                Input:   input,
-                Message: "${VAR} syntax is no longer supported. Use %{VAR} for internal variables.",
-            }
-        }
-        return nil
-    }
-    ```
+- [x] `internal/runner/config/expansion.go`に追加
+  - [x] `detectDeprecatedDollarSyntax`関数を実装（正規表現を使わないシンプルな実装）
+  - [x] エスケープシーケンス `\$` を適切に処理
 
 #### 2.12.3 ExpandString()への統合
-- [ ] `internal/runner/config/expansion.go`を編集
-  - [ ] `ExpandString()`の最初で`detectDeprecatedDollarSyntax()`を呼び出す
-  - [ ] エラーが返された場合は早期リターン
+- [x] `internal/runner/config/expansion.go`を編集
+  - [x] `ExpandString()`の最初で`detectDeprecatedDollarSyntax()`を呼び出す
+  - [x] エラーが返された場合は早期リターン
 
 #### 2.12.4 エラー型の追加
-- [ ] `internal/runner/config/errors.go`に追加
-  ```go
-  type ErrDeprecatedSyntax struct {
-      Level   string
-      Field   string
-      Input   string
-      Message string
-  }
-  ```
+- [x] `internal/runner/config/errors.go`に追加
+  - [x] `ErrDeprecatedSyntax`構造体を定義
+  - [x] `Error()`メソッドを実装
 
 #### 2.12.5 テストの実行
-- [ ] すべてのテストがPASS
-- [ ] `${VAR}` を使用した設定ファイルでエラーが発生することを確認
-- [ ] エラーメッセージに移行のヒントが含まれることを確認
-- [ ] コミット: "Implement ${VAR} syntax detection and deprecation error"
+- [x] すべてのテストがPASS
+- [x] `${VAR}` を使用した設定ファイルでエラーが発生することを確認
+- [x] エラーメッセージに移行のヒントが含まれることを確認
+- [x] 既存のテスト修正（`\$`が有効なエスケープシーケンスになったため）
+- [x] `make lint` でエラーなし
+- [x] `make test` ですべてのテストがPASS
+
+**Phase 12実装メモ**:
+- `\$`エスケープシーケンスを追加して、`${VAR}`をリテラルとして出力可能に
+- `detectDeprecatedDollarSyntax`は正規表現を使わずシンプルなループで実装
+- 既存のテスト`TestExpandString_InvalidEscape`から`invalid_escape_dollar`ケースを削除
+- `TestExpandString_EscapeSequence`に`\$`エスケープのテストケースを追加
+- すべてのテストとlintが通過（2025-10-15）
 
 ---
 

@@ -819,8 +819,40 @@ func ExpandString(
 	level string,
 	field string,
 ) (string, error) {
+	// Detect deprecated ${VAR} syntax before processing
+	if err := detectDeprecatedDollarSyntax(input, level, field); err != nil {
+		return "", err
+	}
+
 	visited := make(map[string]bool)
 	return expandStringRecursive(input, expandedVars, level, field, visited, nil, 0)
+}
+
+// detectDeprecatedDollarSyntax detects the deprecated ${VAR} syntax and returns an error.
+// It correctly handles escaped sequences like \${VAR}.
+func detectDeprecatedDollarSyntax(input string, level string, field string) error {
+	i := 0
+	for i < len(input) {
+		// Handle escape sequences - skip escaped characters
+		if input[i] == '\\' && i+1 < len(input) {
+			i += 2 // Skip the backslash and the next character
+			continue
+		}
+
+		// Check for ${...} pattern (not escaped)
+		if input[i] == '$' && i+1 < len(input) && input[i+1] == '{' {
+			return &ErrDeprecatedSyntax{
+				Level:   level,
+				Field:   field,
+				Input:   input,
+				Message: "${VAR} syntax is no longer supported. Use %{VAR} for internal variables.",
+			}
+		}
+
+		i++
+	}
+
+	return nil
 }
 
 // expandStringRecursive performs recursive expansion with circular reference detection.
@@ -857,6 +889,10 @@ func expandStringRecursive(
 				continue
 			case '\\':
 				result.WriteByte('\\')
+				i += 2
+				continue
+			case '$':
+				result.WriteByte('$')
 				i += 2
 				continue
 			default:
