@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
@@ -19,15 +18,13 @@ const reservedVariablePrefix = "__runner_"
 // - Any entry is not in KEY=VALUE format
 // - Duplicate keys are found (case-sensitive comparison)
 // - Variable names don't match the required pattern (via security.ValidateVariableName)
-// - Variable names use reserved prefix "__RUNNER_" (via environment.ValidateUserEnvNames)
 func validateEnvList(envList []string, context string) error {
 	_, err := validateAndParseEnvList(envList, context)
 	return err
 }
 
 // validateAndParseEnvList validates environment variable list and returns parsed map on success.
-// This function parses KEY=VALUE format, checks for duplicates, validates key names,
-// and checks for reserved prefixes in a single pass.
+// This function parses KEY=VALUE format, checks for duplicates, and validates key names.
 func validateAndParseEnvList(envList []string, context string) (map[string]string, error) {
 	if len(envList) == 0 {
 		return nil, nil
@@ -54,11 +51,6 @@ func validateAndParseEnvList(envList []string, context string) (map[string]strin
 		}
 
 		envMap[key] = value
-	}
-
-	// Check for reserved prefix using environment.ValidateUserEnvNames
-	if err := environment.ValidateUserEnvNames(envMap); err != nil {
-		return nil, fmt.Errorf("%w in %s: %w", ErrReservedEnvPrefix, context, err)
 	}
 
 	return envMap, nil

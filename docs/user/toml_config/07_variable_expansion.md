@@ -854,9 +854,9 @@ Example execution:
 - Output file: `/reports/20251005143022.123-12345.html`
 - Report title: `Report 20251005143022.123`
 
-### 7.8.3 DateTime Format
+### 7.11.3 DateTime Format
 
-Format specification for `__RUNNER_DATETIME`:
+Format specification for `__runner_datetime`:
 
 | Part | Description | Example |
 |------|-------------|---------|
@@ -872,23 +872,23 @@ Complete example: `20251005143045.123` = October 5, 2025 14:30:45.123 (UTC)
 
 **Note**: The timezone is always UTC, not local timezone.
 
-### 7.8.4 Reserved Prefix
+### 7.11.4 Reserved Prefix
 
-The prefix `__RUNNER_` is reserved for automatic environment variables and cannot be used for user-defined environment variables.
+The prefix `__runner_` is reserved for automatic variables and cannot be used for user-defined variables.
 
 #### Error Example
 
 ```toml
 [[groups.commands]]
-name = "invalid_env"
+name = "invalid_var"
 cmd = "/bin/echo"
-args = ["${__RUNNER_CUSTOM}"]
-env = ["__RUNNER_CUSTOM=value"]  # Error: Using reserved prefix
+args = ["%{__runner_custom}"]
+vars = ["__runner_custom=value"]  # Error: Using reserved prefix
 ```
 
 Error message:
 ```
-environment variable "__RUNNER_CUSTOM" uses reserved prefix "__RUNNER_";
+variable "__runner_custom" uses reserved prefix "__runner_";
 this prefix is reserved for automatically generated variables
 ```
 
@@ -896,15 +896,15 @@ this prefix is reserved for automatically generated variables
 
 ```toml
 [[groups.commands]]
-name = "valid_env"
+name = "valid_var"
 cmd = "/bin/echo"
-args = ["${MY_CUSTOM_VAR}"]
-env = ["MY_CUSTOM_VAR=value"]  # OK: Not using reserved prefix
+args = ["%{my_custom_var}"]
+vars = ["my_custom_var=value"]  # OK: Not using reserved prefix
 ```
 
-### 7.8.5 Timing of Variable Generation
+### 7.11.5 Timing of Variable Generation
 
-Automatic environment variables (`__RUNNER_DATETIME` and `__RUNNER_PID`) are generated once when the configuration file is loaded, not at each command execution time. All commands in all groups share the exact same values throughout the entire runner execution.
+Automatic variables (`__runner_datetime` and `__runner_pid`) are generated once when the configuration file is loaded, not at each command execution time. All commands in all groups share the exact same values throughout the entire runner execution.
 
 ```toml
 [[groups]]
@@ -913,15 +913,15 @@ name = "backup_group"
 [[groups.commands]]
 name = "backup_db"
 cmd = "/usr/bin/pg_dump"
-args = ["-f", "/tmp/backup/db-${__RUNNER_DATETIME}.sql", "mydb"]
+args = ["-f", "/tmp/backup/db-%{__runner_datetime}.sql", "mydb"]
 
 [[groups.commands]]
 name = "backup_files"
 cmd = "/usr/bin/tar"
-args = ["czf", "/tmp/backup/files-${__RUNNER_DATETIME}.tar.gz", "/data"]
+args = ["czf", "/tmp/backup/files-%{__runner_datetime}.tar.gz", "/data"]
 ```
 
-**Key Point**: Both commands use the exact same timestamp because `__RUNNER_DATETIME` is sampled at config load time, not at execution time:
+**Key Point**: Both commands use the exact same timestamp because `__runner_datetime` is sampled at config load time, not at execution time:
 - `/tmp/backup/db-20251005143022.123.sql`
 - `/tmp/backup/files-20251005143022.123.tar.gz`
 

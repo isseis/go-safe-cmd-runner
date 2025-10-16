@@ -8,6 +8,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/variable"
 )
 
 const (
@@ -585,22 +586,8 @@ func ExpandCommandConfig(
 
 // GenerateAutoVariables generates automatic internal variables
 func GenerateAutoVariables() map[string]string {
-	provider := environment.NewAutoEnvProvider(nil)
-	autoEnv := provider.Generate()
-
-	// Convert __RUNNER_* to __runner_* format (lowercase only)
-	result := make(map[string]string)
-	for k, v := range autoEnv {
-		// Convert __RUNNER_DATETIME -> __runner_datetime
-		switch k {
-		case "__RUNNER_DATETIME":
-			result["__runner_datetime"] = v
-		case "__RUNNER_PID":
-			result["__runner_pid"] = v
-		}
-	}
-
-	return result
+	provider := variable.NewAutoVarProvider(nil)
+	return provider.Generate()
 }
 
 // ============================================================================

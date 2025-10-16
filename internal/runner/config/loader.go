@@ -135,14 +135,9 @@ func (l *Loader) validateEnvironmentVariables(cfg *runnertypes.Config) error {
 	for _, group := range cfg.Groups {
 		for _, cmd := range group.Commands {
 			// Build environment map from command's Env slice
-			envMap, err := cmd.BuildEnvironmentMap()
+			_, err := cmd.BuildEnvironmentMap()
 			if err != nil {
 				return fmt.Errorf("failed to build environment map for command %q: %w", cmd.Name, err)
-			}
-
-			// Validate environment variable names
-			if err := environment.ValidateUserEnvNames(envMap); err != nil {
-				return fmt.Errorf("invalid environment variable in command %q: %w", cmd.Name, err)
 			}
 		}
 	}

@@ -659,16 +659,16 @@ vars = ["percent=100"]
 
 出力: `Literal % is different from 100`
 
-## 7.8 自動環境変数
+## 7.8 自動変数
 
 ### 7.8.1 概要
 
-システムは各コマンド実行時に以下の環境変数を自動的に設定します:
+システムは各コマンド実行時に以下の内部変数を自動的に設定します:
 
-- **`__RUNNER_DATETIME`**: 実行時刻（UTC）をYYYYMMDDHHmmSS.msec形式で表現
-- **`__RUNNER_PID`**: runnerプロセスのプロセスID
+- **`__runner_datetime`**: 実行時刻（UTC）をYYYYMMDDHHmmSS.msec形式で表現
+- **`__runner_pid`**: runnerプロセスのプロセスID
 
-これらの変数は、**内部変数として利用可能**であり、`%{__RUNNER_DATETIME}` や `%{__RUNNER_PID}` の形式で参照できます。
+これらの変数は、**内部変数として利用可能**であり、`%{__runner_datetime}` や `%{__runner_pid}` の形式で参照できます。
 
 ### 7.8.2 使用例
 
@@ -681,7 +681,7 @@ description = "タイムスタンプ付きバックアップの作成"
 cmd = "/usr/bin/tar"
 args = [
     "czf",
-    "/tmp/backup/data-%{__RUNNER_DATETIME}.tar.gz",
+    "/tmp/backup/data-%{__runner_datetime}.tar.gz",
     "/data"
 ]
 ```
@@ -699,7 +699,7 @@ description = "PIDを含むロックファイルの作成"
 cmd = "/bin/sh"
 args = [
     "-c",
-    "echo %{__RUNNER_PID} > /var/run/myapp-%{__RUNNER_PID}.lock"
+    "echo %{__runner_pid} > /var/run/myapp-%{__runner_pid}.lock"
 ]
 ```
 
@@ -716,7 +716,7 @@ description = "実行時刻とPIDをログに記録"
 cmd = "/bin/sh"
 args = [
     "-c",
-    "echo 'Executed at %{__RUNNER_DATETIME} by PID %{__RUNNER_PID}' >> /var/log/executions.log"
+    "echo 'Executed at %{__runner_datetime} by PID %{__runner_pid}' >> /var/log/executions.log"
 ]
 ```
 
@@ -733,8 +733,8 @@ name = "timestamped_report"
 description = "タイムスタンプとPID付きレポート"
 cmd = "/opt/myapp/bin/report"
 args = [
-    "--output", "/reports/%{__RUNNER_DATETIME}-%{__RUNNER_PID}.html",
-    "--title", "Report %{__RUNNER_DATETIME}"
+    "--output", "/reports/%{__runner_datetime}-%{__runner_pid}.html",
+    "--title", "Report %{__runner_datetime}"
 ]
 ```
 
@@ -744,7 +744,7 @@ args = [
 
 ### 7.8.3 日時フォーマット
 
-`__RUNNER_DATETIME` のフォーマット仕様:
+`__runner_datetime` のフォーマット仕様:
 
 | 部分 | 説明 | 例 |
 |-----|------|-----|
@@ -762,21 +762,21 @@ args = [
 
 ### 7.8.4 予約プレフィックス
 
-プレフィックス `__RUNNER_` は自動環境変数用に予約されており、ユーザー定義の環境変数では使用できません。
+プレフィックス `__runner_` は自動変数用に予約されており、ユーザー定義の変数では使用できません。
 
 #### エラーになる例
 
 ```toml
 [[groups.commands]]
-name = "invalid_env"
+name = "invalid_var"
 cmd = "/bin/echo"
-args = ["${__RUNNER_CUSTOM}"]
-env = ["__RUNNER_CUSTOM=value"]  # エラー: 予約プレフィックスの使用
+args = ["%{__runner_custom}"]
+vars = ["__runner_custom=value"]  # エラー: 予約プレフィックスの使用
 ```
 
 エラーメッセージ:
 ```
-environment variable "__RUNNER_CUSTOM" uses reserved prefix "__RUNNER_";
+variable "__runner_custom" uses reserved prefix "__runner_";
 this prefix is reserved for automatically generated variables
 ```
 
@@ -784,15 +784,15 @@ this prefix is reserved for automatically generated variables
 
 ```toml
 [[groups.commands]]
-name = "valid_env"
+name = "valid_var"
 cmd = "/bin/echo"
-args = ["${MY_CUSTOM_VAR}"]
-env = ["MY_CUSTOM_VAR=value"]  # OK: 予約プレフィックスを使用していない
+args = ["%{my_custom_var}"]
+vars = ["my_custom_var=value"]  # OK: 予約プレフィックスを使用していない
 ```
 
 ### 7.8.5 変数生成のタイミング
 
-自動環境変数（`__RUNNER_DATETIME` と `__RUNNER_PID`）は、設定ファイルのロード時に一度だけ生成され、各コマンドの実行時には生成されません。すべてのグループのすべてのコマンドは、runner実行全体を通じて完全に同じ値を共有します。
+自動変数（`__runner_datetime` と `__runner_pid`）は、設定ファイルのロード時に一度だけ生成され、各コマンドの実行時には生成されません。すべてのグループのすべてのコマンドは、runner実行全体を通じて完全に同じ値を共有します。
 
 ```toml
 [[groups]]
@@ -801,15 +801,15 @@ name = "backup_group"
 [[groups.commands]]
 name = "backup_db"
 cmd = "/usr/bin/pg_dump"
-args = ["-f", "/tmp/backup/db-%{__RUNNER_DATETIME}.sql", "mydb"]
+args = ["-f", "/tmp/backup/db-%{__runner_datetime}.sql", "mydb"]
 
 [[groups.commands]]
 name = "backup_files"
 cmd = "/usr/bin/tar"
-args = ["czf", "/tmp/backup/files-%{__RUNNER_DATETIME}.tar.gz", "/data"]
+args = ["czf", "/tmp/backup/files-%{__runner_datetime}.tar.gz", "/data"]
 ```
 
-**重要なポイント**: 両コマンドは完全に同じタイムスタンプを使用します。これは `__RUNNER_DATETIME` が実行時ではなく、設定ロード時にサンプリングされるためです:
+**重要なポイント**: 両コマンドは完全に同じタイムスタンプを使用します。これは `__runner_datetime` が実行時ではなく、設定ロード時にサンプリングされるためです:
 - `/tmp/backup/db-20251005143022.123.sql`
 - `/tmp/backup/files-20251005143022.123.tar.gz`
 
@@ -1226,7 +1226,7 @@ go-safe-cmd-runnerの変数システムは、以下の3つのコンポーネン�
    - 子プロセスに渡される環境変数
    - 内部変数 `%{VAR}` を値に使用可能
 
-3. **自動変数** (`__RUNNER_DATETIME`, `__RUNNER_PID`)
+3. **自動変数** (`__runner_datetime`, `__runner_pid`)
    - システムが自動生成
    - 内部変数として利用可能
 

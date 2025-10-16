@@ -4,7 +4,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -90,19 +89,6 @@ func TestValidateEnvList(t *testing.T) {
 			wantErr: true,
 			errType: ErrInvalidEnvKey,
 		},
-		{
-			name:    "reserved prefix __RUNNER_",
-			envList: []string{"__RUNNER_VAR=value"},
-			context: "global.env",
-			wantErr: true,
-			errType: &runnertypes.ReservedEnvPrefixError{},
-		},
-		{
-			name:    "lowercase __runner_ is allowed (case-sensitive check)",
-			envList: []string{"__runner_var=value"},
-			context: "global.env",
-			wantErr: false,
-		},
 	}
 
 	for _, tt := range tests {
@@ -111,18 +97,7 @@ func TestValidateEnvList(t *testing.T) {
 			if tt.wantErr {
 				assert.Error(t, err)
 				if tt.errType != nil {
-					// If tt.errType is a pointer to a struct error (like
-					// *runnertypes.ReservedEnvPrefixError), use errors.As to
-					// check the error chain for that concrete type. For
-					// sentinel errors (plain error values), fall back to
-					// errors.Is.
-					switch tt.errType.(type) {
-					case *runnertypes.ReservedEnvPrefixError:
-						var target *runnertypes.ReservedEnvPrefixError
-						assert.True(t, errors.As(err, &target))
-					default:
-						assert.True(t, errors.Is(err, tt.errType))
-					}
+					assert.True(t, errors.Is(err, tt.errType))
 				}
 			} else {
 				assert.NoError(t, err)
@@ -177,14 +152,6 @@ func TestValidateAndParseEnvList(t *testing.T) {
 			wantErr: true,
 			wantMap: nil,
 			errType: ErrMalformedEnvVariable,
-		},
-		{
-			name:    "reserved prefix returns error",
-			envList: []string{"__RUNNER_TEST=value"},
-			context: "global.env",
-			wantErr: true,
-			wantMap: nil,
-			errType: ErrReservedEnvPrefix,
 		},
 	}
 

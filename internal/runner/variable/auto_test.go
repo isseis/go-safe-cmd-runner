@@ -1,4 +1,5 @@
-package environment
+// package variable provides automatic variable generation for TOML configuration files.
+package variable
 
 import (
 	"os"
@@ -14,33 +15,16 @@ import (
 var datetimePattern = regexp.MustCompile(`^\d{14}\.\d{3}$`)
 
 func TestAutoEnvProvider_Generate(t *testing.T) {
-	t.Run("contains all required keys - uppercase format", func(t *testing.T) {
-		provider := NewAutoEnvProvider(nil)
-		result := provider.Generate()
-
-		assert.Contains(t, result, AutoEnvPrefix+AutoEnvKeyDatetime)
-		assert.Contains(t, result, AutoEnvPrefix+AutoEnvKeyPID)
-	})
-
 	t.Run("contains all required keys - lowercase format", func(t *testing.T) {
-		provider := NewAutoEnvProvider(nil)
+		provider := NewAutoVarProvider(nil)
 		result := provider.Generate()
 
 		assert.Contains(t, result, AutoVarPrefix+AutoVarKeyDatetime)
 		assert.Contains(t, result, AutoVarPrefix+AutoVarKeyPID)
 	})
 
-	t.Run("DATETIME has correct format - uppercase", func(t *testing.T) {
-		provider := NewAutoEnvProvider(nil)
-		result := provider.Generate()
-
-		datetime := result[AutoEnvPrefix+AutoEnvKeyDatetime]
-		// Format: YYYYMMDDHHmmSS.msec (e.g., "20251005143025.123")
-		assert.True(t, datetimePattern.MatchString(datetime), "DATETIME should match pattern YYYYMMDDHHmmSS.msec, got: %s", datetime)
-	})
-
 	t.Run("datetime has correct format - lowercase", func(t *testing.T) {
-		provider := NewAutoEnvProvider(nil)
+		provider := NewAutoVarProvider(nil)
 		result := provider.Generate()
 
 		datetime := result[AutoVarPrefix+AutoVarKeyDatetime]
@@ -48,17 +32,8 @@ func TestAutoEnvProvider_Generate(t *testing.T) {
 		assert.True(t, datetimePattern.MatchString(datetime), "datetime should match pattern YYYYMMDDHHmmSS.msec, got: %s", datetime)
 	})
 
-	t.Run("PID is valid - uppercase", func(t *testing.T) {
-		provider := NewAutoEnvProvider(nil)
-		result := provider.Generate()
-
-		pid := result[AutoEnvPrefix+AutoEnvKeyPID]
-		expectedPID := strconv.Itoa(os.Getpid())
-		assert.Equal(t, expectedPID, pid)
-	})
-
 	t.Run("pid is valid - lowercase", func(t *testing.T) {
-		provider := NewAutoEnvProvider(nil)
+		provider := NewAutoVarProvider(nil)
 		result := provider.Generate()
 
 		pid := result[AutoVarPrefix+AutoVarKeyPID]
@@ -101,18 +76,9 @@ func TestAutoEnvProvider_WithFixedClock(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name+" - uppercase", func(t *testing.T) {
-			clock := func() time.Time { return tt.fixedTime }
-			provider := NewAutoEnvProvider(clock)
-
-			result := provider.Generate()
-			datetime := result[AutoEnvPrefix+AutoEnvKeyDatetime]
-			assert.Equal(t, tt.expectedDatetime, datetime)
-		})
-
 		t.Run(tt.name+" - lowercase", func(t *testing.T) {
 			clock := func() time.Time { return tt.fixedTime }
-			provider := NewAutoEnvProvider(clock)
+			provider := NewAutoVarProvider(clock)
 
 			result := provider.Generate()
 			varDatetime := result[AutoVarPrefix+AutoVarKeyDatetime]
@@ -127,16 +93,9 @@ func TestAutoEnvProvider_UTCTimezone(t *testing.T) {
 	fixedTime := time.Date(2025, 10, 5, 23, 30, 22, 123000000, jst)
 
 	clock := func() time.Time { return fixedTime }
-	provider := NewAutoEnvProvider(clock)
+	provider := NewAutoVarProvider(clock)
 
 	result := provider.Generate()
-
-	t.Run("uppercase format converts to UTC", func(t *testing.T) {
-		datetime := result[AutoEnvPrefix+AutoEnvKeyDatetime]
-		// JST 23:30 = UTC 14:30
-		expected := "20251005143022.123"
-		assert.Equal(t, expected, datetime, "should convert to UTC")
-	})
 
 	t.Run("lowercase format converts to UTC", func(t *testing.T) {
 		varDatetime := result[AutoVarPrefix+AutoVarKeyDatetime]
@@ -147,10 +106,10 @@ func TestAutoEnvProvider_UTCTimezone(t *testing.T) {
 }
 
 func TestNewAutoEnvProvider_NilClock(t *testing.T) {
-	provider := NewAutoEnvProvider(nil)
+	provider := NewAutoVarProvider(nil)
 	result := provider.Generate()
 
 	// Should use time.Now() as default
-	assert.NotEmpty(t, result[AutoEnvPrefix+AutoEnvKeyDatetime])
-	assert.NotEmpty(t, result[AutoEnvPrefix+AutoEnvKeyPID])
+	assert.NotEmpty(t, result[AutoVarPrefix+AutoVarKeyDatetime])
+	assert.NotEmpty(t, result[AutoVarPrefix+AutoVarKeyPID])
 }
