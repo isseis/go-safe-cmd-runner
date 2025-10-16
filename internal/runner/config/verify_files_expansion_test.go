@@ -131,7 +131,7 @@ func TestVerifyFilesExpansion_Group(t *testing.T) {
 		expectError   bool
 	}{
 		{
-			name:          "グループvarsを使用したパス展開",
+			name:          "Group vars used for path expansion",
 			verifyFiles:   []string{"%{grp_dir}/file.txt"},
 			groupVars:     []string{"grp_dir=/group/data"},
 			globalVars:    []string{},
@@ -142,7 +142,7 @@ func TestVerifyFilesExpansion_Group(t *testing.T) {
 			expectError:   false,
 		},
 		{
-			name:          "グローバルvarsを継承したパス展開",
+			name:          "Inherited global vars for path expansion",
 			verifyFiles:   []string{"%{global_base}/%{filename}"},
 			groupVars:     []string{"filename=app.conf"},
 			globalVars:    []string{"global_base=/etc"},
@@ -153,7 +153,7 @@ func TestVerifyFilesExpansion_Group(t *testing.T) {
 			expectError:   false,
 		},
 		{
-			name:          "グループvarsがグローバルvarsを上書き",
+			name:          "Group vars override global vars",
 			verifyFiles:   []string{"%{dir}/file.txt"},
 			groupVars:     []string{"dir=/group/override"},
 			globalVars:    []string{"dir=/global/base"},
@@ -164,7 +164,7 @@ func TestVerifyFilesExpansion_Group(t *testing.T) {
 			expectError:   false,
 		},
 		{
-			name:          "システム環境変数からの展開",
+			name:          "Expansion from system environment variables",
 			verifyFiles:   []string{"%{user_home}/config/%{app_name}.toml"},
 			groupVars:     []string{"app_name=myapp"},
 			globalVars:    []string{},
