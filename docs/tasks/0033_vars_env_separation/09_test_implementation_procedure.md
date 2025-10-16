@@ -729,9 +729,9 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 - [x] ステップ1.2.3: TestRunner_SecurityIntegration (1-2時間)
 
 ### 1.3 環境変数優先順位E2Eテスト
-- [ ] ステップ1.3.1: TestRunner_EnvironmentVariablePriority_Basic (1.5時間)
-- [ ] ステップ1.3.2: TestRunner_EnvironmentVariablePriority_WithVars (1時間)
-- [ ] ステップ1.3.3: TestRunner_EnvironmentVariablePriority_EdgeCases + Integration (1-1.5時間)
+- [x] ステップ1.3.1: TestRunner_EnvironmentVariablePriority_Basic (1.5時間)
+- [x] ステップ1.3.2: TestRunner_EnvironmentVariablePriority_WithVars (1時間)
+- [x] ステップ1.3.3: TestRunner_EnvironmentVariablePriority_EdgeCases + Integration (1-1.5時間)
 
 ### 1.4 Phase 1完了検証
 - [ ] ステップ1.4: 全テスト実行とカバレッジ検証 (30分)
