@@ -192,7 +192,7 @@ func TestSelfReference_Circular_ThreeOrMore(t *testing.T) {
 		errorCheck  func(*testing.T, error)
 	}{
 		{
-			name:        "3変数の循環参照 A->B->C->A",
+			name:        "3-variable circular reference A->B->C->A",
 			vars:        []string{"D=%{A}"},
 			baseVars:    map[string]string{"A": "%{B}", "B": "%{C}", "C": "%{A}"},
 			expectError: true,
@@ -201,7 +201,7 @@ func TestSelfReference_Circular_ThreeOrMore(t *testing.T) {
 			},
 		},
 		{
-			name:        "4変数の循環参照 A->B->C->D->A",
+			name:        "4-variable circular reference A->B->C->D->A",
 			vars:        []string{"E=%{A}"},
 			baseVars:    map[string]string{"A": "%{B}", "B": "%{C}", "C": "%{D}", "D": "%{A}"},
 			expectError: true,
@@ -210,7 +210,7 @@ func TestSelfReference_Circular_ThreeOrMore(t *testing.T) {
 			},
 		},
 		{
-			name:        "5変数の長い循環参照",
+			name:        "5-variable long circular reference",
 			vars:        []string{"F=%{A}"},
 			baseVars:    map[string]string{"A": "%{B}", "B": "%{C}", "C": "%{D}", "D": "%{E}", "E": "%{A}"},
 			expectError: true,
@@ -249,7 +249,7 @@ func TestSelfReference_CrossLevel(t *testing.T) {
 		errorType   error
 	}{
 		{
-			name:        "グローバルで循環、グループで参照 (順序処理により未定義)",
+			name:        "Circular at global, referenced by group (undefined due to sequential processing)",
 			globalVars:  []string{"A=%{B}", "B=%{A}"},
 			groupVars:   []string{"C=%{A}"},
 			commandVars: []string{},
@@ -257,7 +257,7 @@ func TestSelfReference_CrossLevel(t *testing.T) {
 			errorType:   config.ErrUndefinedVariable, // A references undefined B
 		},
 		{
-			name:        "グローバル→グループ→コマンド 正常チェーン",
+			name:        "Global→Group→Command normal chain",
 			globalVars:  []string{"A=value_a"},
 			groupVars:   []string{"B=%{A}/sub"},
 			commandVars: []string{"C=%{B}/cmd"},
@@ -342,35 +342,35 @@ func TestSelfReference_ComplexPatterns(t *testing.T) {
 		description string
 	}{
 		{
-			name:        "ダイヤモンド型依存 (循環なし)",
+			name:        "Diamond dependency (no circular)",
 			vars:        []string{"A=a", "B=%{A}", "C=%{A}", "D=%{B}_%{C}"},
 			baseVars:    map[string]string{},
 			expectError: false,
 			description: "A is referenced by both B and C, D references both",
 		},
 		{
-			name:        "部分的な循環 - 独立したチェーンと循環チェーン",
+			name:        "Partial circular - independent chain and circular chain",
 			vars:        []string{"X=x", "Y=%{X}", "Z=%{Y}"},
 			baseVars:    map[string]string{"A": "%{B}", "B": "%{A}"},
 			expectError: false,
 			description: "Independent chain X->Y->Z coexists with circular A<->B",
 		},
 		{
-			name:        "複数の値を持つ循環",
+			name:        "Circular with multiple values",
 			vars:        []string{"C=%{A}"},
 			baseVars:    map[string]string{"A": "prefix_%{B}_suffix", "B": "value_%{A}_end"},
 			expectError: true,
 			description: "Circular reference embedded in string values",
 		},
 		{
-			name:        "自己参照での拡張 (ベース変数あり)",
+			name:        "Self-reference extension (with base variable)",
 			vars:        []string{"PATH=%{PATH}:/custom"},
 			baseVars:    map[string]string{"PATH": "/usr/bin"},
 			expectError: false,
 			description: "Extending PATH with itself is allowed",
 		},
 		{
-			name:        "自己参照での拡張 (ベース変数なし)",
+			name:        "Self-reference extension (without base variable)",
 			vars:        []string{"PATH=%{PATH}:/custom"},
 			baseVars:    map[string]string{},
 			expectError: true,
@@ -426,13 +426,13 @@ func TestSelfReference_EnvExpansion(t *testing.T) {
 		expectError bool
 	}{
 		{
-			name:        "envでの循環参照 (varsに依存)",
+			name:        "Circular reference in env (depends on vars)",
 			env:         []string{"ENV_VAR=%{var_a}"},
 			vars:        []string{"var_a=%{var_b}", "var_b=%{var_a}"},
 			expectError: true,
 		},
 		{
-			name:        "envでの正常な参照",
+			name:        "Normal reference in env",
 			env:         []string{"ENV_VAR=%{var_a}"},
 			vars:        []string{"var_a=value"},
 			expectError: false,
