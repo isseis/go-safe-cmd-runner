@@ -51,7 +51,7 @@ env = ["VAR=%{VALUE}"]
 - Case-sensitive (`home` and `HOME` are different variables)
 - Reserved prefix `__runner_` cannot be used to start variable names
 
-```toml
+```
 # Valid variable names
 "%{path}"
 "%{my_tool}"
@@ -1212,283 +1212,185 @@ verify_files = [
 [[groups.commands]]
 name = "start"
 cmd = "/bin/echo"
-args = ["starting"]
+args = ["Starting app"]
 ```
 
-When system environment variable `APP_ROOT=/opt/myapp`, expansion result:
+Expansion result (when `APP_ROOT=/opt/myapp`):
 - `${APP_ROOT}/config/app.yml` → `/opt/myapp/config/app.yml`
 - `${APP_ROOT}/bin/server` → `/opt/myapp/bin/server`
 
-### 7.11.4 Using Multiple Variables
+### 7.11.4 Complex Example
 
-By combining multiple environment variables, you can construct more flexible paths.
-
-```toml
-version = "1.0"
-
-[global]
-env_allowlist = ["BASE_DIR", "APP_NAME"]
-verify_files = [
-    "${BASE_DIR}/${APP_NAME}/config.toml",
-    "${BASE_DIR}/${APP_NAME}/data/db.sqlite",
-]
-
-[[groups]]
-name = "app_tasks"
-
-[[groups.commands]]
-name = "run"
-cmd = "/bin/echo"
-args = ["running"]
-```
-
-Expansion result (when `BASE_DIR=/opt`, `APP_NAME=myapp`):
-- `${BASE_DIR}/${APP_NAME}/config.toml` → `/opt/myapp/config.toml`
-- `${BASE_DIR}/${APP_NAME}/data/db.sqlite` → `/opt/myapp/data/db.sqlite`
-
-### 7.11.5 Environment-Specific Configuration Example
-
-Example of verifying different files for development and production environments:
+Example with dynamic path construction:
 
 ```toml
 version = "1.0"
 
 [global]
-env_allowlist = ["ENV_TYPE", "CONFIG_ROOT"]
-verify_files = ["${CONFIG_ROOT}/${ENV_TYPE}/global.toml"]
+env_allowlist = ["ENV", "APP_ROOT"]
+from_env = [
+    "env_type=ENV",
+    "app_root=APP_ROOT"
+]
+vars = [
+    "config_base=%{app_root}/configs",
+    "config_path=%{config_base}/%{env_type}"
+]
+verify_files = [
+    "%{config_path}/global.yml",
+    "%{config_path}/secrets.enc",
+    "%{app_root}/web/nginx.conf",
+    "%{app_root}/web/ssl/cert.pem",
+    "%{app_root}/web/ssl/key.pem",
+    "%{app_root}/db/schema.sql",
+    "%{app_root}/db/migrations/%{env_type}/"
+]
 
 [[groups]]
-name = "development"
-env_allowlist = ["ENV_TYPE", "CONFIG_ROOT"]
-verify_files = [
-    "${CONFIG_ROOT}/${ENV_TYPE}/dev.toml",
-    "${CONFIG_ROOT}/${ENV_TYPE}/dev_db.sqlite",
-]
+name = "deployment"
 
 [[groups.commands]]
-name = "dev_task"
-cmd = "/bin/echo"
-args = ["dev mode"]
-
-[[groups]]
-name = "production"
-env_allowlist = ["ENV_TYPE", "CONFIG_ROOT"]
-verify_files = [
-    "${CONFIG_ROOT}/${ENV_TYPE}/prod.toml",
-    "${CONFIG_ROOT}/${ENV_TYPE}/prod_db.sqlite",
-]
-
-[[groups.commands]]
-name = "prod_task"
-cmd = "/bin/echo"
-args = ["prod mode"]
+name = "deploy"
+cmd = "/opt/deploy.sh"
 ```
 
-For development environment (`ENV_TYPE=dev`, `CONFIG_ROOT=/etc/myapp`):
-- Global: `/etc/myapp/dev/global.toml`
-- development group: `/etc/myapp/dev/dev.toml`, `/etc/myapp/dev/dev_db.sqlite`
-
-For production environment (`ENV_TYPE=prod`, `CONFIG_ROOT=/etc/myapp`):
-- Global: `/etc/myapp/prod/global.toml`
-- production group: `/etc/myapp/prod/prod.toml`, `/etc/myapp/prod/prod_db.sqlite`
-
-### 7.11.6 Relationship with allowlist
-
-Security controls through `env_allowlist` are also applied to variable expansion in `verify_files`.
-
-#### Global Level allowlist
-
-Global `verify_files` uses the global `env_allowlist`:
-
-```toml
-[global]
-env_allowlist = ["HOME", "USER"]
-verify_files = [
-    "${HOME}/config.toml",    # OK: HOME is in allowlist
-    "${USER}/data.txt",       # OK: USER is in allowlist
-]
-```
-
-#### Group Level allowlist Inheritance
-
-Group `verify_files` uses the group's `env_allowlist`. If the group doesn't have an `env_allowlist` defined, it inherits the global configuration:
-
-```toml
-[global]
-env_allowlist = ["GLOBAL_VAR"]
-
-[[groups]]
-name = "group_with_inheritance"
-# env_allowlist not defined → inherits global configuration
-verify_files = ["${GLOBAL_VAR}/file.txt"]  # OK: inherits global allowlist
-
-[[groups]]
-name = "group_with_explicit"
-env_allowlist = ["GROUP_VAR"]  # explicitly defined
-verify_files = ["${GROUP_VAR}/file.txt"]   # OK: uses group allowlist
-```
-
-#### allowlist Violation Errors
-
-An error occurs when using variables not in the allowlist:
-
-```toml
-[global]
-env_allowlist = ["SAFE_VAR"]
-verify_files = ["${FORBIDDEN_VAR}/file.txt"]  # Error: not in allowlist
-```
-
-Example error message:
-```
-failed to expand global verify_files[0]: variable not allowed by allowlist: FORBIDDEN_VAR
-```
-
-### 7.11.7 Escape Sequences
-
-Escape sequences can also be used in verify_files:
-
-```toml
-[global]
-env_allowlist = ["HOME"]
-verify_files = [
-    "${HOME}/config.toml",     # Variable will be expanded
-    "\\${HOME}/literal.txt",   # Literal string "${HOME}/literal.txt"
-]
-```
-
-Expansion result (when `HOME=/home/user`):
-- `/home/user/config.toml`
-- `${HOME}/literal.txt` (not expanded)
-
-### 7.11.8 Runtime Behavior
-
-Variable expansion in verify_files is automatically executed when the configuration file is loaded:
-
-1. **Configuration file loading**: Parse TOML file
-2. **Variable expansion execution**: Expand variables in verify_files
-3. **Save expansion results**: Save expanded paths to internal fields
-4. **Execute verification**: Use expanded paths for file verification
-
-### 7.11.9 Troubleshooting
-
-#### Undefined Variable Errors
-
-An error occurs if a variable doesn't exist in the environment:
-
-```toml
-[global]
-env_allowlist = ["UNDEFINED_VAR"]
-verify_files = ["${UNDEFINED_VAR}/file.txt"]
-```
-
-Example error message:
-```
-failed to expand global verify_files[0]: variable not found in environment: UNDEFINED_VAR
-```
-
-**Solution**: Set the required environment variables in the system
-
-#### allowlist Errors
-
-An error occurs if a variable is not in the allowlist:
-
-```toml
-[global]
-env_allowlist = ["ALLOWED_VAR"]
-verify_files = ["${FORBIDDEN_VAR}/file.txt"]
-```
-
-Example error message:
-```
-failed to expand global verify_files[0]: variable not allowed by allowlist: FORBIDDEN_VAR
-```
-
-**Solution**: Add the required variables to `env_allowlist`
-
-#### Circular Reference Errors
-
-An error occurs if variables reference each other (although circular references in system environment variables are extremely rare):
-
-```bash
-# Circular reference in system environment variables (unlikely in practice)
-export VAR1="${VAR2}"
-export VAR2="${VAR1}"
-```
-
-**Solution**: Fix the environment variable definitions
-
-### 7.11.10 Practical Example: Multi-Environment Deployment
-
-A practical example of using verify_files in multi-environment deployment:
-
-```toml
-version = "1.0"
-
-[global]
-env_allowlist = ["DEPLOY_ENV", "APP_ROOT", "CONFIG_ROOT"]
-verify_files = [
-    "${CONFIG_ROOT}/${DEPLOY_ENV}/global.yml",
-    "${CONFIG_ROOT}/${DEPLOY_ENV}/secrets.enc",
-]
-
-[[groups]]
-name = "web_servers"
-env_allowlist = ["DEPLOY_ENV", "APP_ROOT"]
-verify_files = [
-    "${APP_ROOT}/web/nginx.conf",
-    "${APP_ROOT}/web/ssl/cert.pem",
-    "${APP_ROOT}/web/ssl/key.pem",
-]
-
-[[groups.commands]]
-name = "deploy_web"
-cmd = "${APP_ROOT}/scripts/deploy.sh"
-args = ["web", "${DEPLOY_ENV}"]
-env = [
-    "APP_ROOT=/opt/myapp",
-    "DEPLOY_ENV=production",
-]
-
-[[groups]]
-name = "database"
-env_allowlist = ["DEPLOY_ENV", "APP_ROOT"]
-verify_files = [
-    "${APP_ROOT}/db/schema.sql",
-    "${APP_ROOT}/db/migrations/${DEPLOY_ENV}",
-]
-
-[[groups.commands]]
-name = "migrate_db"
-cmd = "${APP_ROOT}/scripts/migrate.sh"
-args = ["${DEPLOY_ENV}"]
-env = [
-    "APP_ROOT=/opt/myapp",
-    "DEPLOY_ENV=production",
-]
-```
-
-Environment variable setup example (production environment):
+Execution (when `ENV=production APP_ROOT=/opt/myapp`):
 ```bash
 export DEPLOY_ENV=production
 export APP_ROOT=/opt/myapp
 export CONFIG_ROOT=/etc/myapp/config
 ```
 
-This configuration verifies the following files:
-- `/etc/myapp/config/production/global.yml`
-- `/etc/myapp/config/production/secrets.enc`
+The following files will be verified:
+- `/opt/myapp/configs/production/global.yml`
+- `/opt/myapp/configs/production/secrets.enc`
 - `/opt/myapp/web/nginx.conf`
 - `/opt/myapp/web/ssl/cert.pem`
 - `/opt/myapp/web/ssl/key.pem`
 - `/opt/myapp/db/schema.sql`
 - `/opt/myapp/db/migrations/production/`
 
-### 7.11.11 Limitations
+### 7.11.5 Limitations
 
-1. **Absolute path requirement**: Expanded paths must be absolute paths
-2. **System environment variables only**: Command.Env variables cannot be used in verify_files
-3. **Expansion timing**: Variables are expanded once at configuration load time (not at execution time)
+1. **Absolute Path Requirement**: Expanded paths must be absolute paths
+2. **System Environment Variables Only**: verify_files can only use system environment variables, not Command.Env variables
+3. **Expansion Timing**: Expansion happens once at configuration load time (not at execution time)
 
-## Next Steps
+## 7.12 Practical Comprehensive Example
 
-In the next chapter, we will introduce practical examples that combine the configurations we have learned so far. You will learn how to create configuration files based on actual use cases.
+Below is a practical configuration example using variable expansion features:
+
+```toml
+version = "1.0"
+
+[global]
+timeout = 300
+log_level = "info"
+env_allowlist = ["PATH", "HOME", "USER"]
+from_env = [
+    "home=HOME",
+    "username=USER"
+]
+vars = [
+    "app_root=/opt/myapp",
+    "config_dir=%{app_root}/config",
+    "bin_dir=%{app_root}/bin"
+]
+
+[[groups]]
+name = "application_deployment"
+description = "Application deployment process"
+vars = [
+    "env_type=production",
+    "log_dir=%{app_root}/logs"
+]
+
+# Step 1: Deploy configuration file
+[[groups.commands]]
+name = "deploy_config"
+description = "Deploy environment-specific configuration"
+cmd = "/bin/cp"
+args = [
+    "%{config_dir}/templates/%{env_type}/app.yml",
+    "%{config_dir}/app.yml"
+]
+
+# Step 2: Database migration
+[[groups.commands]]
+name = "db_migration"
+description = "Database schema migration"
+cmd = "%{bin_dir}/migrate"
+args = [
+    "--database", "%{db_url}",
+    "--migrations", "%{migration_dir}"
+]
+vars = [
+    "db_user=appuser",
+    "db_pass=secret123",
+    "db_host=localhost",
+    "db_port=5432",
+    "db_name=myapp_prod",
+    "db_url=postgresql://%{db_user}:%{db_pass}@%{db_host}:%{db_port}/%{db_name}",
+    "migration_dir=%{app_root}/migrations"
+]
+timeout = 600
+
+# Step 3: Start application
+[[groups.commands]]
+name = "start_application"
+description = "Start application server"
+cmd = "%{bin_dir}/server"
+args = [
+    "--config", "%{config_dir}/app.yml",
+    "--port", "%{app_port}",
+    "--workers", "%{worker_count}"
+]
+vars = [
+    "app_port=8080",
+    "worker_count=4"
+]
+env = [
+    "LOG_LEVEL=info",
+    "LOG_PATH=%{log_dir}/app.log"
+]
+
+# Step 4: Health check
+[[groups.commands]]
+name = "health_check"
+description = "Application health check"
+cmd = "/usr/bin/curl"
+args = ["-f", "%{health_url}"]
+vars = ["health_url=http://localhost:%{app_port}/health"]
+timeout = 30
+```
+
+## 7.13 Summary
+
+### Overall View of Variable System
+
+The go-safe-cmd-runner variable system consists of three main components:
+
+1. **Internal Variables** (`vars`, `from_env`)
+   - Used exclusively for TOML expansion
+   - Referenced using `%{VAR}` syntax
+   - Not passed to child processes (by default)
+
+2. **Process Environment Variables** (`env`)
+   - Environment variables passed to child processes at execution time
+   - Can use internal variables `%{VAR}` in values
+
+3. **Automatic Variables** (`__runner_datetime`, `__runner_pid`)
+   - Automatically generated by the system
+   - Available as internal variables
+
+### Best Practices
+
+1. **Utilize internal variables**: Define values that are only needed for TOML expansion (like paths and URLs) using `vars`
+2. **Explicitly import with from_env**: Import system environment variables explicitly using `from_env` to make intentions clear
+3. **Minimize env usage**: Keep environment variables passed to child processes to the minimum necessary
+4. **Consider security**: Handle sensitive information carefully and avoid passing unnecessary environment variables
+5. **Standardize naming conventions**: Use lowercase with underscores for internal variables (e.g., `app_dir`), and uppercase for environment variables
+
+### Next Steps
+
+In the next chapter, we'll cover practical examples combining all the variable expansion features you've learned. You'll learn how to create configuration files based on real-world use cases.

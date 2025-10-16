@@ -51,7 +51,7 @@ env = ["VAR=%{VALUE}"]
 - 大文字小文字を区別する(`home` と `HOME` は別の変数)
 - 予約プレフィックス `__runner_` で始まる変数名は使用不可
 
-```toml
+```
 # 有効な変数名
 "%{path}"
 "%{my_tool}"
@@ -1123,7 +1123,71 @@ verify_files = [
 [[groups.commands]]
 name = "start"
 cmd = "/bin/echo"
-## 7.11 実践的な総合例
+args = ["Starting app"]
+```
+
+展開結果（`APP_ROOT=/opt/myapp` の場合）:
+- `${APP_ROOT}/config/app.yml` → `/opt/myapp/config/app.yml`
+- `${APP_ROOT}/bin/server` → `/opt/myapp/bin/server`
+
+### 7.11.4 複雑な例
+
+動的なパス構築を含む例:
+
+```toml
+version = "1.0"
+
+[global]
+env_allowlist = ["ENV", "APP_ROOT"]
+from_env = [
+    "env_type=ENV",
+    "app_root=APP_ROOT"
+]
+vars = [
+    "config_base=%{app_root}/configs",
+    "config_path=%{config_base}/%{env_type}"
+]
+verify_files = [
+    "%{config_path}/global.yml",
+    "%{config_path}/secrets.enc",
+    "%{app_root}/web/nginx.conf",
+    "%{app_root}/web/ssl/cert.pem",
+    "%{app_root}/web/ssl/key.pem",
+    "%{app_root}/db/schema.sql",
+    "%{app_root}/db/migrations/%{env_type}/"
+]
+
+[[groups]]
+name = "deployment"
+
+[[groups.commands]]
+name = "deploy"
+cmd = "/opt/deploy.sh"
+```
+
+実行時（`ENV=production APP_ROOT=/opt/myapp` の場合）:
+```bash
+export DEPLOY_ENV=production
+export APP_ROOT=/opt/myapp
+export CONFIG_ROOT=/etc/myapp/config
+```
+
+この設定により、以下のファイルが検証されます:
+- `/opt/myapp/configs/production/global.yml`
+- `/opt/myapp/configs/production/secrets.enc`
+- `/opt/myapp/web/nginx.conf`
+- `/opt/myapp/web/ssl/cert.pem`
+- `/opt/myapp/web/ssl/key.pem`
+- `/opt/myapp/db/schema.sql`
+- `/opt/myapp/db/migrations/production/`
+
+### 7.11.5 制限事項
+
+1. **絶対パスの要件**: 展開後のパスは絶対パスである必要があります
+2. **システム環境変数のみ**: verify_files では Command.Env の変数は使用できません
+3. **展開タイミング**: 設定ロード時に1度だけ展開されます（実行時ではありません）
+
+## 7.12 実践的な総合例
 
 以下は、変数展開機能を活用した実践的な設定例です:
 
@@ -1211,7 +1275,7 @@ vars = ["health_url=http://localhost:%{app_port}/health"]
 timeout = 30
 ```
 
-## 7.12 まとめ
+## 7.13 まとめ
 
 ### 変数システムの全体像
 
