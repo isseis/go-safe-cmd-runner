@@ -118,8 +118,8 @@ description = "Verify database schema"
 cmd = "%{app_root}/scripts/verify_schema.sh"
 args = ["%{data_root}/production.db"]
 from_env = [
-    "app_root=APP_ROOT",
-    "data_root=DATA_ROOT"
+    "app_root=/opt/myapp",
+    "data_root=/var/lib/myapp/db"
 ]
 
 # Example 3: Application Deployment Group
