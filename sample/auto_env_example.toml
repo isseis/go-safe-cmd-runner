@@ -1,7 +1,7 @@
-# Automatic Environment Variables Example Configuration
+# Automatic Internal Variables Example Configuration
 #
 # This configuration demonstrates the use of automatically generated
-# environment variables (__RUNNER_DATETIME and __RUNNER_PID) for
+# internal variables (%{__runner_datetime} and %{__runner_pid}) for
 # practical use cases like timestamped backups and PID-based locking.
 
 version = "1.0"
@@ -22,7 +22,7 @@ description = "Create a backup file with timestamp"
 cmd = "/usr/bin/tar"
 args = [
     "czf",
-    "/tmp/backup/data-${__RUNNER_DATETIME}.tar.gz",
+    "/tmp/backup/data-%{__runner_datetime}.tar.gz",
     "/tmp/data"
 ]
 # Output example: /tmp/backup/data-20251005143022.123.tar.gz
@@ -34,7 +34,7 @@ description = "Database backup with timestamp"
 cmd = "/bin/sh"
 args = [
     "-c",
-    "echo 'Database dump at ${__RUNNER_DATETIME}' > /tmp/backup/db-${__RUNNER_DATETIME}.sql"
+    "echo 'Database dump at %{__runner_datetime}' > /tmp/backup/db-%{__runner_datetime}.sql"
 ]
 # Output example: /tmp/backup/db-20251005143022.123.sql
 
@@ -49,7 +49,7 @@ description = "Log execution time and PID"
 cmd = "/bin/sh"
 args = [
     "-c",
-    "echo 'Executed at ${__RUNNER_DATETIME} by PID ${__RUNNER_PID}' >> /tmp/executions.log"
+    "echo 'Executed at %{__runner_datetime} by PID %{__runner_pid}' >> /tmp/executions.log"
 ]
 # Output example: Executed at 20251005143022.123 by PID 12345
 
@@ -60,7 +60,7 @@ description = "Use both timestamp and PID in filename"
 cmd = "/bin/sh"
 args = [
     "-c",
-    "echo 'Report content' > /tmp/reports/report-${__RUNNER_DATETIME}-${__RUNNER_PID}.txt"
+    "echo 'Report content' > /tmp/reports/report-%{__runner_datetime}-%{__runner_pid}.txt"
 ]
 # Output example: /tmp/reports/report-20251005143022.123-12345.txt
 
@@ -75,7 +75,7 @@ description = "Create a PID-based lock file"
 cmd = "/bin/sh"
 args = [
     "-c",
-    "echo ${__RUNNER_PID} > /tmp/locks/myapp-${__RUNNER_PID}.lock"
+    "echo %{__runner_pid} > /tmp/locks/myapp-%{__runner_pid}.lock"
 ]
 # Output example: /tmp/locks/myapp-12345.lock (contains: 12345)
 
@@ -86,7 +86,7 @@ description = "Display lock file path"
 cmd = "/bin/sh"
 args = [
     "-c",
-    "echo 'Lock file: /tmp/locks/myapp-${__RUNNER_PID}.lock'"
+    "echo 'Lock file: /tmp/locks/myapp-%{__runner_pid}.lock'"
 ]
 # Output example: Lock file: /tmp/locks/myapp-12345.lock
 
@@ -97,15 +97,15 @@ description = "Using auto variables with user-defined variables"
 # Example 7: Combining auto and user-defined variables
 [[groups.commands]]
 name = "nested_auto_vars"
-description = "Combine automatic and custom environment variables"
+description = "Combine automatic and custom internal variables"
 cmd = "/bin/sh"
 args = [
     "-c",
-    "echo 'Backup ${BACKUP_NAME} created at ${BACKUP_PATH}'"
+    "echo 'Backup %{backup_name} created at %{backup_path}'"
 ]
-env = [
-    "BACKUP_NAME=database",
-    "BACKUP_PATH=/tmp/backup/${BACKUP_NAME}-${__RUNNER_DATETIME}.tar.gz"
+vars = [
+    "backup_name=database",
+    "backup_path=/tmp/backup/%{backup_name}-%{__runner_datetime}.tar.gz"
 ]
 # Output example: Backup database created at /tmp/backup/database-20251005143022.123.tar.gz
 
@@ -113,14 +113,14 @@ env = [
 name = "group_consistency"
 description = "Demonstrating consistent auto variables across group commands"
 
-# Both commands in this group will use the same __RUNNER_DATETIME and __RUNNER_PID
+# Both commands in this group will use the same __runner_datetime and __runner_pid
 [[groups.commands]]
 name = "backup_db_consistent"
 description = "Database backup (group consistency example)"
 cmd = "/bin/sh"
 args = [
     "-c",
-    "echo 'DB backup: /tmp/backup/db-${__RUNNER_DATETIME}.sql'"
+    "echo 'DB backup: /tmp/backup/db-%{__runner_datetime}.sql'"
 ]
 
 [[groups.commands]]
@@ -129,6 +129,6 @@ description = "File backup (group consistency example)"
 cmd = "/bin/sh"
 args = [
     "-c",
-    "echo 'Files backup: /tmp/backup/files-${__RUNNER_DATETIME}.tar.gz'"
+    "echo 'Files backup: /tmp/backup/files-%{__runner_datetime}.tar.gz'"
 ]
 # Both commands will show the same timestamp

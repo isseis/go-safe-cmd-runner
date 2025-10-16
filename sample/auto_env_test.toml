@@ -1,5 +1,5 @@
-# Automatic environment variables test configuration
-# Tests __RUNNER_DATETIME and __RUNNER_PID auto-generated variables
+# Automatic internal variables test configuration
+# Tests %{__runner_datetime} and %{__runner_pid} auto-generated variables
 version = "1.0"
 
 [global]
@@ -13,67 +13,67 @@ env_allowlist = [
     "USER",
 ]
 
-# Group 1: Basic runner variable expansion with auto env
+# Group 1: Basic runner variable expansion with auto internal variables
 [[groups]]
 name = "basic_auto_env"
-description = "Test basic automatic environment variable expansion"
+description = "Test basic automatic internal variable expansion"
 priority = 1
 
 [[groups.commands]]
 name = "expand_datetime"
-description = "Expand __RUNNER_DATETIME in args"
+description = "Expand %{__runner_datetime} in args"
 cmd = "echo"
-args = ["DateTime: ${__RUNNER_DATETIME}"]
+args = ["DateTime: %{__runner_datetime}"]
 
 [[groups.commands]]
 name = "expand_pid"
-description = "Expand __RUNNER_PID in args"
+description = "Expand %{__runner_pid} in args"
 cmd = "echo"
-args = ["PID: ${__RUNNER_PID}"]
+args = ["PID: %{__runner_pid}"]
 
 [[groups.commands]]
 name = "expand_both"
 description = "Expand both auto variables"
 cmd = "echo"
-args = ["DateTime=${__RUNNER_DATETIME}", "PID=${__RUNNER_PID}"]
+args = ["DateTime=%{__runner_datetime}", "PID=%{__runner_pid}"]
 
-# Group 2: Variable expansion with auto env and user env
+# Group 2: Variable expansion with auto variables and user vars
 [[groups]]
 name = "combined_expansion"
-description = "Test variable expansion combining auto env with user env"
+description = "Test variable expansion combining auto variables with user vars"
 priority = 2
 
 [[groups.commands]]
 name = "user_and_auto"
-description = "Combine auto env with user env in expansion"
+description = "Combine auto variables with user vars in expansion"
 cmd = "echo"
-args = ["User=${USER}, DateTime=${__RUNNER_DATETIME}, PID=${__RUNNER_PID}"]
-env = ["USER=testuser"]
+args = ["User=%{user}, DateTime=%{__runner_datetime}, PID=%{__runner_pid}"]
+vars = ["user=testuser"]
 
 [[groups.commands]]
 name = "multiple_vars"
 description = "Multiple variables in single argument"
 cmd = "echo"
-args = ["Base: ${BASE_PATH}/log-${__RUNNER_DATETIME}.txt"]
-env = ["BASE_PATH=/var/log"]
+args = ["Base: %{base_path}/log-%{__runner_datetime}.txt"]
+vars = ["base_path=/var/log"]
 
-# Group 3: File operations with auto env
+# Group 3: File operations with auto variables
 [[groups]]
 name = "file_operations"
-description = "Test file operations using auto env variables"
+description = "Test file operations using auto internal variables"
 priority = 3
 
 [[groups.commands]]
 name = "timestamp_filename"
 description = "Create filename with timestamp"
 cmd = "sh"
-args = ["-c", "echo test > /tmp/auto-env-test/file-${__RUNNER_DATETIME}.txt && ls -la /tmp/auto-env-test/file-*.txt"]
+args = ["-c", "echo test > /tmp/auto-env-test/file-%{__runner_datetime}.txt && ls -la /tmp/auto-env-test/file-*.txt"]
 
 [[groups.commands]]
 name = "pid_filename"
 description = "Create filename with PID"
 cmd = "sh"
-args = ["-c", "echo test > /tmp/auto-env-test/pid-${__RUNNER_PID}.txt && cat /tmp/auto-env-test/pid-${__RUNNER_PID}.txt"]
+args = ["-c", "echo test > /tmp/auto-env-test/pid-%{__runner_pid}.txt && cat /tmp/auto-env-test/pid-%{__runner_pid}.txt"]
 
 # Group 4: Complex scenarios
 [[groups]]
@@ -85,11 +85,14 @@ priority = 4
 name = "backup_simulation"
 description = "Simulate backup with timestamp"
 cmd = "echo"
-args = ["tar czf /tmp/backup/data-${__RUNNER_DATETIME}.tar.gz /data"]
+args = ["tar czf /tmp/backup/data-%{__runner_datetime}.tar.gz /data"]
 
 [[groups.commands]]
 name = "log_with_metadata"
 description = "Log file with multiple variables"
 cmd = "echo"
-args = ["Log: ${USER}@${HOST}-${__RUNNER_DATETIME}-${__RUNNER_PID}.log"]
-env = ["USER=admin", "HOST=server01"]
+args = ["Log: %{user}@%{host}-%{__runner_datetime}-%{__runner_pid}.log"]
+vars = [
+    "user=admin",
+    "host=server01"
+]

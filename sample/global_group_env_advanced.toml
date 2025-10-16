@@ -2,22 +2,26 @@
 #
 # This sample demonstrates advanced features including:
 # - Allowlist inheritance, override, and rejection modes
-# - Complex variable references within env definitions
-# - Command-level env override
+# - Complex variable references within vars and env definitions
+# - Command-level vars and env override
 # - Multiple groups with different configurations
+# - Internal variables (vars, from_env) vs. process environment variables (env)
 
 version = "1.0"
 
 [global]
-# Global environment variables
-env = [
-    "APP_ROOT=/opt/myapp",
-    "ENV_TYPE=production",
-    "LOG_LEVEL=info",               # Default log level
-    "LOG_DIR=${APP_ROOT}/logs",
-    "DATA_DIR=${APP_ROOT}/data",
-    "PATH=/opt/tools/bin:${PATH}",  # Extend system PATH
+# Global internal variables for TOML expansion
+vars = [
+    "app_root=/opt/myapp",
+    "env_type=production",
+    "log_level=info",               # Default log level
+    "log_dir=%{app_root}/logs",
+    "data_dir=%{app_root}/data",
 ]
+
+# Import system PATH and extend it
+from_env = ["system_path=PATH"]
+env = ["PATH=/opt/tools/bin:%{system_path}"]  # Extend PATH for child processes
 
 # Global allowlist: allows PATH, HOME, and USER from system
 env_allowlist = ["PATH", "HOME", "USER"]
@@ -25,52 +29,56 @@ env_allowlist = ["PATH", "HOME", "USER"]
 skip_standard_paths = true
 
 # Group 1: Inherit mode (default)
-# This group inherits global.env_allowlist
+# This group inherits global.env_allowlist and global.from_env
 [[groups]]
 name = "inherit_example"
-description = "Demonstrates allowlist inheritance (no env_allowlist specified)"
+description = "Demonstrates allowlist and from_env inheritance"
 
-# Note: env_allowlist is not specified, so it inherits from global
+# Note: env_allowlist and from_env are not specified, so they inherit from global
 
-env = [
-    "GROUP_VAR=inherit_group",
-    "APP_DIR=${APP_ROOT}/inherit",   # References global.env
-    "CONFIG=${APP_DIR}/config.yaml", # References group.env (APP_DIR)
+vars = [
+    "group_var=inherit_group",
+    "app_dir=%{app_root}/inherit",   # References global.vars
+    "config=%{app_dir}/config.yaml", # References group.vars (app_dir)
 ]
 
 [[groups.commands]]
 name = "show_inherited"
-description = "Show inherited allowlist behavior"
+description = "Show inherited allowlist and from_env behavior"
 cmd = "/bin/echo"
 args = [
-    "Group: ${GROUP_VAR}",
-    "App directory: ${APP_DIR}",
-    "User: ${USER}",  # Allowed via inherited global.env_allowlist
+    "Group: %{group_var}",
+    "App directory: %{app_dir}",
 ]
+# Can also use global.from_env variables if needed
 
-# Group 2: Override mode (explicit allowlist)
-# This group overrides global.env_allowlist with its own
+# Group 2: Override mode (explicit allowlist and from_env)
+# This group overrides global.env_allowlist and global.from_env with its own
 [[groups]]
 name = "override_example"
-description = "Demonstrates allowlist override (explicit env_allowlist)"
+description = "Demonstrates allowlist and from_env override"
 
 # Override global allowlist - only HOSTNAME and CUSTOM_VAR are allowed from system
 env_allowlist = ["HOSTNAME", "CUSTOM_VAR"]
 
-env = [
-    "GROUP_VAR=override_group",
-    "APP_DIR=${APP_ROOT}/override",  # Can still reference global.env variables
-    "LOG_FILE=${LOG_DIR}/override.log",
+# Override global from_env
+from_env = ["hostname=HOSTNAME"]  # Different from global.from_env
+
+vars = [
+    "group_var=override_group",
+    "app_dir=%{app_root}/override",  # Can still reference global.vars variables
+    "log_file=%{log_dir}/override.log",
 ]
 
 [[groups.commands]]
 name = "show_overridden"
-description = "Show overridden allowlist behavior"
+description = "Show overridden allowlist and from_env behavior"
 cmd = "/bin/echo"
 args = [
-    "Group: ${GROUP_VAR}",
-    "App directory: ${APP_DIR}",
-    # Note: ${USER} would cause an error here because it's not in this group's allowlist
+    "Group: %{group_var}",
+    "App directory: %{app_dir}",
+    "Hostname: %{hostname}",  # From group.from_env
+    # Note: Cannot use global.from_env variables (e.g., system_path) here
 ]
 
 # Group 3: Reject mode (empty allowlist)
@@ -81,11 +89,12 @@ description = "Demonstrates allowlist rejection (empty env_allowlist)"
 
 # Empty allowlist - reject all system environment variables
 env_allowlist = []
+from_env = []  # No system env imports
 
-env = [
-    "GROUP_VAR=reject_group",
-    "APP_DIR=${APP_ROOT}/reject",    # Can still reference global.env
-    "ISOLATED=true",                 # Group-specific variable
+vars = [
+    "group_var=reject_group",
+    "app_dir=%{app_root}/reject",    # Can still reference global.vars
+    "isolated=true",                 # Group-specific variable
 ]
 
 [[groups.commands]]
@@ -93,9 +102,9 @@ name = "show_rejected"
 description = "Show rejected allowlist behavior"
 cmd = "/bin/echo"
 args = [
-    "Group: ${GROUP_VAR}",
-    "App directory: ${APP_DIR}",
-    "Isolated: ${ISOLATED}",
+    "Group: %{group_var}",
+    "App directory: %{app_dir}",
+    "Isolated: %{isolated}",
     # Note: Any system env variable reference would cause an error here
 ]
 
@@ -105,13 +114,13 @@ args = [
 name = "complex_references"
 description = "Demonstrates complex variable reference patterns"
 
-env = [
-    "SERVICE_NAME=myservice",
-    "SERVICE_DIR=${APP_ROOT}/services/${SERVICE_NAME}",
-    "BIN_DIR=${SERVICE_DIR}/bin",
-    "LIB_DIR=${SERVICE_DIR}/lib",
-    "CONF_DIR=${SERVICE_DIR}/etc",
-    "RUN_DIR=${SERVICE_DIR}/run",
+vars = [
+    "service_name=myservice",
+    "service_dir=%{app_root}/services/%{service_name}",
+    "bin_dir=%{service_dir}/bin",
+    "lib_dir=%{service_dir}/lib",
+    "conf_dir=%{service_dir}/etc",
+    "run_dir=%{service_dir}/run",
 ]
 
 [[groups.commands]]
@@ -119,46 +128,46 @@ name = "show_paths"
 description = "Display all configured paths"
 cmd = "/bin/echo"
 args = [
-    "Service: ${SERVICE_NAME}",
-    "Binary directory: ${BIN_DIR}",
-    "Library directory: ${LIB_DIR}",
-    "Config directory: ${CONF_DIR}",
-    "Runtime directory: ${RUN_DIR}",
+    "Service: %{service_name}",
+    "Binary directory: %{bin_dir}",
+    "Library directory: %{lib_dir}",
+    "Config directory: %{conf_dir}",
+    "Runtime directory: %{run_dir}",
 ]
 
 # Group 5: Command-level override
-# Demonstrates command.env overriding group.env and global.env
+# Demonstrates command.vars and command.env overriding group.vars and group.env
 [[groups]]
 name = "command_override"
-description = "Demonstrates command-level env override"
+description = "Demonstrates command-level vars and env override"
 
-env = [
-    "LEVEL=group",
-    "GROUP_ONLY=group_value",
-    "CONFIG_DIR=${APP_ROOT}/config",
+vars = [
+    "level=group",
+    "group_only=group_value",
+    "config_dir=%{app_root}/config",
 ]
 
 [[groups.commands]]
-name = "use_group_env"
-description = "Use group-level environment variables"
+name = "use_group_vars"
+description = "Use group-level internal variables"
 cmd = "/bin/echo"
-args = ["Level: ${LEVEL}, Config: ${CONFIG_DIR}"]
-# LEVEL will be "group"
+args = ["Level: %{level}, Config: %{config_dir}"]
+# level will be "group"
 
 [[groups.commands]]
 name = "override_at_command"
-description = "Override group.env at command level"
+description = "Override group.vars at command level"
 cmd = "/bin/echo"
 args = [
-    "Level: ${LEVEL}",
-    "Group only: ${GROUP_ONLY}",
-    "Command only: ${COMMAND_ONLY}",
+    "Level: %{level}",
+    "Group only: %{group_only}",
+    "Command only: %{command_only}",
 ]
-env = [
-    "LEVEL=command",           # Overrides group.env
-    "COMMAND_ONLY=cmd_value",  # Command-specific variable
+vars = [
+    "level=command",           # Overrides group.vars
+    "command_only=cmd_value",  # Command-specific variable
 ]
-# LEVEL will be "command"
+# level will be "command"
 
 # Group 6: Multi-environment setup
 # Demonstrates how different groups can represent different environments
@@ -166,12 +175,12 @@ env = [
 name = "development"
 description = "Development environment configuration"
 
-env = [
-    "ENV_TYPE=development",    # Override global.env
-    "DB_HOST=localhost",
-    "DB_PORT=5432",
-    "LOG_LEVEL=debug",         # Override global.env (info -> debug)
-    "DEBUG_MODE=true",
+vars = [
+    "env_type=development",    # Override global.vars
+    "db_host=localhost",
+    "db_port=5432",
+    "log_level=debug",         # Override global.vars (info -> debug)
+    "debug_mode=true",
 ]
 
 [[groups.commands]]
@@ -179,22 +188,22 @@ name = "show_dev_env"
 description = "Show development environment"
 cmd = "/bin/echo"
 args = [
-    "Environment: ${ENV_TYPE}",
-    "Database: ${DB_HOST}:${DB_PORT}",
-    "Log level: ${LOG_LEVEL}",    # Will show "debug" (overridden)
-    "Debug: ${DEBUG_MODE}",
+    "Environment: %{env_type}",
+    "Database: %{db_host}:%{db_port}",
+    "Log level: %{log_level}",    # Will show "debug" (overridden)
+    "Debug: %{debug_mode}",
 ]
 
 [[groups]]
 name = "production"
 description = "Production environment configuration"
 
-env = [
-    "ENV_TYPE=production",     # Keep global.env value (explicit)
-    "DB_HOST=prod-db.example.com",
-    "DB_PORT=5432",
-    "LOG_LEVEL=info",          # Explicitly set to same value as global.env
-    "DEBUG_MODE=false",
+vars = [
+    "env_type=production",     # Keep global.vars value (explicit)
+    "db_host=prod-db.example.com",
+    "db_port=5432",
+    "log_level=info",          # Explicitly set to same value as global.vars
+    "debug_mode=false",
 ]
 
 [[groups.commands]]
@@ -202,8 +211,35 @@ name = "show_prod_env"
 description = "Show production environment"
 cmd = "/bin/echo"
 args = [
-    "Environment: ${ENV_TYPE}",
-    "Database: ${DB_HOST}:${DB_PORT}",
-    "Log level: ${LOG_LEVEL}",    # Will show "info" (same as global)
-    "Debug: ${DEBUG_MODE}",
+    "Environment: %{env_type}",
+    "Database: %{db_host}:%{db_port}",
+    "Log level: %{log_level}",    # Will show "info" (same as global)
+    "Debug: %{debug_mode}",
 ]
+
+# Group 7: Demonstrating env usage for child processes
+[[groups]]
+name = "env_demonstration"
+description = "Show difference between vars (internal) and env (process)"
+
+vars = [
+    "internal_var=only_for_toml",
+    "app_name=myapp",
+]
+
+# Pass specific internal variables to child process as environment variables
+env = [
+    "APP_NAME=%{app_name}",  # Internal var to child process env
+    "APP_ROOT=%{app_root}",  # Global internal var to child process env
+]
+
+[[groups.commands]]
+name = "show_env_vs_vars"
+description = "Show difference between internal variables and process env"
+cmd = "/bin/sh"
+args = [
+    "-c",
+    "echo Internal (TOML only): %{internal_var}; echo Process env APP_NAME: $APP_NAME; echo Process env APP_ROOT: $APP_ROOT"
+]
+# internal_var is used in TOML expansion but NOT passed to child process
+# APP_NAME and APP_ROOT are passed to child process via env
