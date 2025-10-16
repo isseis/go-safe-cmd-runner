@@ -460,13 +460,13 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 #### ステップ2.1.1: テスト実装 (2-3時間)
 
 **タスク**:
-- [ ] `internal/runner/config/command_env_expansion_test.go` を作成
-- [ ] コマンドレベルでのenv展開テストを実装
-  - [ ] 基本的なコマンドenv展開
-  - [ ] コマンドenvでのvars参照
-  - [ ] コマンドenvでのglobal/group vars参照
-  - [ ] コマンドenv展開エラーハンドリング
-  - [ ] コマンドenv優先順位
+- [x] `internal/runner/config/command_env_expansion_test.go` を作成
+- [x] コマンドレベルでのenv展開テストを実装
+  - [x] 基本的なコマンドenv展開
+  - [x] コマンドenvでのvars参照
+  - [x] コマンドenvでのglobal/group vars参照
+  - [x] コマンドenv展開エラーハンドリング
+  - [x] コマンドenv優先順位
 
 **検証**:
 ```bash
@@ -497,16 +497,16 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 #### ステップ2.2.1: テスト実装 (2-3時間)
 
 **タスク**:
-- [ ] `internal/runner/config/verify_files_expansion_test.go` を作成
-- [ ] verify_filesパス展開の包括的テストを実装
-  - [ ] Global verify_filesでのvars展開
-  - [ ] Group verify_filesでのvars展開
-  - [ ] 複数の変数参照を含むパス
-  - [ ] ネストされた変数参照
-  - [ ] パス展開エラーハンドリング
-  - [ ] 相対パスと絶対パス
-  - [ ] 特殊文字を含むパス
-  - [ ] エッジケース(空のパス、非常に長いパスなど)
+- [x] `internal/runner/config/verify_files_expansion_test.go` を作成
+- [x] verify_filesパス展開の包括的テストを実装
+  - [x] Global verify_filesでのvars展開
+  - [x] Group verify_filesでのvars展開
+  - [x] 複数の変数参照を含むパス
+  - [x] ネストされた変数参照
+  - [x] パス展開エラーハンドリング
+  - [x] 相対パスと絶対パス
+  - [x] 特殊文字を含むパス
+  - [x] エッジケース(空のパス、非常に長いパスなど)
 
 **検証**:
 ```bash
@@ -537,19 +537,19 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 ### 2.3 Phase 2完了検証 (30分)
 
 **タスク**:
-- [ ] 全テストスイートを実行
+- [x] 全テストスイートを実行
   ```bash
   go test ./...
   ```
-- [ ] レース検出器で実行
+- [x] レース検出器で実行
   ```bash
   go test -race ./...
   ```
-- [ ] カバレッジレポート生成
+- [x] カバレッジレポート生成
   ```bash
   go test -cover ./... | tee coverage_phase2.txt
   ```
-- [ ] リンター実行
+- [x] リンター実行
   ```bash
   make lint
   ```
@@ -579,12 +579,12 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 #### ステップ3.1.1: テスト実装 (2-3時間)
 
 **タスク**:
-- [ ] `internal/runner/config/self_reference_test.go` を作成
-- [ ] 自己参照と循環参照のテストを実装
-  - [ ] 直接的な自己参照検出
-  - [ ] 循環参照検出
-  - [ ] レベル間の循環参照
-  - [ ] 複雑な循環パターン
+- [x] `internal/runner/config/self_reference_test.go` を作成
+- [x] 自己参照と循環参照のテストを実装
+  - [x] 直接的な自己参照検出
+  - [x] 循環参照検出
+  - [x] レベル間の循環参照
+  - [x] 複雑な循環パターン
 
 **検証**:
 ```bash
@@ -740,15 +740,15 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
 ## チェックリスト: Phase 2 (高優先度 - 推奨)
 
-- [ ] ステップ2.1.1: コマンドenv展開テスト (2-3時間)
-- [ ] ステップ2.2.1: Verify Files展開テスト (2-3時間)
-- [ ] ステップ2.3: Phase 2完了検証 (30分)
+- [x] ステップ2.1.1: コマンドenv展開テスト (2-3時間)
+- [x] ステップ2.2.1: Verify Files展開テスト (2-3時間)
+- [x] ステップ2.3: Phase 2完了検証 (30分)
 
 ---
 
 ## チェックリスト: Phase 3 (中優先度 - オプション)
 
-- [ ] ステップ3.1.1: 自己参照テスト (2-3時間)
+- [x] ステップ3.1.1: 自己参照テスト (2-3時間)
 
 ---
 
