@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -845,6 +846,70 @@ func TestUnverifiedDataAccessPrevention(t *testing.T) {
 	t.Log("Successfully prevented access to unverified data - hash verification properly failed")
 }
 
+// envPriorityTestHelper is a helper function to reduce boilerplate in environment priority tests.
+// It sets up the test environment, loads config, and verifies expected variables.
+func envPriorityTestHelper(t *testing.T, systemEnv map[string]string, configTOML string, expectVars map[string]string) {
+	t.Helper()
+
+	// Set up system environment
+	for k, v := range systemEnv {
+		t.Setenv(k, v)
+	}
+
+	// Create temporary config file
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.toml")
+	if err := os.WriteFile(configPath, []byte(configTOML), 0o644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	// Create hash directory
+	hashDir := filepath.Join(tempDir, "hashes")
+	if err := os.MkdirAll(hashDir, 0o700); err != nil {
+		t.Fatalf("Failed to create hash directory: %v", err)
+	}
+
+	// Load and prepare config
+	verificationManager, err := verification.NewManagerForTest(hashDir, verification.WithFileValidatorDisabled())
+	if err != nil {
+		t.Fatalf("Failed to create verification manager: %v", err)
+	}
+
+	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, configPath, "test-run-env-priority")
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	// Extract the first command
+	if len(cfg.Groups) == 0 || len(cfg.Groups[0].Commands) == 0 {
+		t.Fatal("No command found in config")
+	}
+	cmd := &cfg.Groups[0].Commands[0]
+	group := &cfg.Groups[0]
+
+	// Build final environment map (simulating what runner does)
+	// Priority: command env > group env > global env > system env
+	finalEnv := make(map[string]string)
+
+	// Apply environment variables in priority order (lowest to highest)
+	maps.Copy(finalEnv, systemEnv)
+	maps.Copy(finalEnv, cfg.Global.ExpandedEnv)
+	maps.Copy(finalEnv, group.ExpandedEnv)
+	maps.Copy(finalEnv, cmd.ExpandedEnv)
+
+	// Verify expected variables
+	for k, expectedVal := range expectVars {
+		actualVal, ok := finalEnv[k]
+		if !ok {
+			t.Errorf("Variable %s not found in final environment", k)
+			continue
+		}
+		if actualVal != expectedVal {
+			t.Errorf("Variable %s: expected %q, got %q", k, expectedVal, actualVal)
+		}
+	}
+}
+
 // TestRunner_EnvironmentVariablePriority_Basic tests basic environment variable priority rules
 // Priority: command env > group env > global env > system env
 func TestRunner_EnvironmentVariablePriority_Basic(t *testing.T) {
@@ -960,77 +1025,7 @@ args = ["test"]
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Set up system environment
-			for k, v := range tt.systemEnv {
-				t.Setenv(k, v)
-			}
-
-			// Create temporary config file
-			tempDir := t.TempDir()
-			configPath := filepath.Join(tempDir, "config.toml")
-			if err := os.WriteFile(configPath, []byte(tt.configTOML), 0o644); err != nil {
-				t.Fatalf("Failed to write config file: %v", err)
-			}
-
-			// Create hash directory
-			hashDir := filepath.Join(tempDir, "hashes")
-			if err := os.MkdirAll(hashDir, 0o700); err != nil {
-				t.Fatalf("Failed to create hash directory: %v", err)
-			}
-
-			// Load and prepare config
-			verificationManager, err := verification.NewManagerForTest(hashDir, verification.WithFileValidatorDisabled())
-			if err != nil {
-				t.Fatalf("Failed to create verification manager: %v", err)
-			}
-
-			cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, configPath, "test-run-env-priority")
-			if err != nil {
-				t.Fatalf("Failed to load config: %v", err)
-			}
-
-			// Extract the first command
-			if len(cfg.Groups) == 0 || len(cfg.Groups[0].Commands) == 0 {
-				t.Fatal("No command found in config")
-			}
-			cmd := &cfg.Groups[0].Commands[0]
-			group := &cfg.Groups[0]
-
-			// Build final environment map (simulating what runner does)
-			// Priority: command env > group env > global env > system env
-			finalEnv := make(map[string]string)
-
-			// Start with system env
-			for k, v := range tt.systemEnv {
-				finalEnv[k] = v
-			}
-
-			// Apply global env (ExpandedEnv is already populated after LoadAndPrepareConfig)
-			for k, v := range cfg.Global.ExpandedEnv {
-				finalEnv[k] = v
-			}
-
-			// Apply group env
-			for k, v := range group.ExpandedEnv {
-				finalEnv[k] = v
-			}
-
-			// Apply command env
-			for k, v := range cmd.ExpandedEnv {
-				finalEnv[k] = v
-			}
-
-			// Verify expected variables
-			for k, expectedVal := range tt.expectVars {
-				actualVal, ok := finalEnv[k]
-				if !ok {
-					t.Errorf("Variable %s not found in final environment", k)
-					continue
-				}
-				if actualVal != expectedVal {
-					t.Errorf("Variable %s: expected %q, got %q", k, expectedVal, actualVal)
-				}
-			}
+			envPriorityTestHelper(t, tt.systemEnv, tt.configTOML, tt.expectVars)
 		})
 	}
 }
@@ -1112,76 +1107,7 @@ env = ["FINAL=%{gv3}/cmd"]
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Set up system environment
-			for k, v := range tt.systemEnv {
-				t.Setenv(k, v)
-			}
-
-			// Create temporary config file
-			tempDir := t.TempDir()
-			configPath := filepath.Join(tempDir, "config.toml")
-			if err := os.WriteFile(configPath, []byte(tt.configTOML), 0o644); err != nil {
-				t.Fatalf("Failed to write config file: %v", err)
-			}
-
-			// Create hash directory
-			hashDir := filepath.Join(tempDir, "hashes")
-			if err := os.MkdirAll(hashDir, 0o700); err != nil {
-				t.Fatalf("Failed to create hash directory: %v", err)
-			}
-
-			// Load and prepare config
-			verificationManager, err := verification.NewManagerForTest(hashDir, verification.WithFileValidatorDisabled())
-			if err != nil {
-				t.Fatalf("Failed to create verification manager: %v", err)
-			}
-
-			cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, configPath, "test-run-env-priority")
-			if err != nil {
-				t.Fatalf("Failed to load config: %v", err)
-			}
-
-			// Extract the first command
-			if len(cfg.Groups) == 0 || len(cfg.Groups[0].Commands) == 0 {
-				t.Fatal("No command found in config")
-			}
-			cmd := &cfg.Groups[0].Commands[0]
-			group := &cfg.Groups[0]
-
-			// Build final environment map
-			finalEnv := make(map[string]string)
-
-			// Start with system env
-			for k, v := range tt.systemEnv {
-				finalEnv[k] = v
-			}
-
-			// Apply global env
-			for k, v := range cfg.Global.ExpandedEnv {
-				finalEnv[k] = v
-			}
-
-			// Apply group env
-			for k, v := range group.ExpandedEnv {
-				finalEnv[k] = v
-			}
-
-			// Apply command env
-			for k, v := range cmd.ExpandedEnv {
-				finalEnv[k] = v
-			}
-
-			// Verify expected variables
-			for k, expectedVal := range tt.expectVars {
-				actualVal, ok := finalEnv[k]
-				if !ok {
-					t.Errorf("Variable %s not found in final environment", k)
-					continue
-				}
-				if actualVal != expectedVal {
-					t.Errorf("Variable %s: expected %q, got %q", k, expectedVal, actualVal)
-				}
-			}
+			envPriorityTestHelper(t, tt.systemEnv, tt.configTOML, tt.expectVars)
 		})
 	}
 }
@@ -1293,76 +1219,7 @@ env = ["C1=c1", "C2=c2", "C3=c3"]
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Set up system environment
-			for k, v := range tt.systemEnv {
-				t.Setenv(k, v)
-			}
-
-			// Create temporary config file
-			tempDir := t.TempDir()
-			configPath := filepath.Join(tempDir, "config.toml")
-			if err := os.WriteFile(configPath, []byte(tt.configTOML), 0o644); err != nil {
-				t.Fatalf("Failed to write config file: %v", err)
-			}
-
-			// Create hash directory
-			hashDir := filepath.Join(tempDir, "hashes")
-			if err := os.MkdirAll(hashDir, 0o700); err != nil {
-				t.Fatalf("Failed to create hash directory: %v", err)
-			}
-
-			// Load and prepare config
-			verificationManager, err := verification.NewManagerForTest(hashDir, verification.WithFileValidatorDisabled())
-			if err != nil {
-				t.Fatalf("Failed to create verification manager: %v", err)
-			}
-
-			cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, configPath, "test-run-env-priority")
-			if err != nil {
-				t.Fatalf("Failed to load config: %v", err)
-			}
-
-			// Extract the first command
-			if len(cfg.Groups) == 0 || len(cfg.Groups[0].Commands) == 0 {
-				t.Fatal("No command found in config")
-			}
-			cmd := &cfg.Groups[0].Commands[0]
-			group := &cfg.Groups[0]
-
-			// Build final environment map
-			finalEnv := make(map[string]string)
-
-			// Start with system env
-			for k, v := range tt.systemEnv {
-				finalEnv[k] = v
-			}
-
-			// Apply global env
-			for k, v := range cfg.Global.ExpandedEnv {
-				finalEnv[k] = v
-			}
-
-			// Apply group env
-			for k, v := range group.ExpandedEnv {
-				finalEnv[k] = v
-			}
-
-			// Apply command env
-			for k, v := range cmd.ExpandedEnv {
-				finalEnv[k] = v
-			}
-
-			// Verify expected variables
-			for k, expectedVal := range tt.expectVars {
-				actualVal, ok := finalEnv[k]
-				if !ok {
-					t.Errorf("Variable %s not found in final environment", k)
-					continue
-				}
-				if actualVal != expectedVal {
-					t.Errorf("Variable %s: expected %q, got %q", k, expectedVal, actualVal)
-				}
-			}
+			envPriorityTestHelper(t, tt.systemEnv, tt.configTOML, tt.expectVars)
 		})
 	}
 }
