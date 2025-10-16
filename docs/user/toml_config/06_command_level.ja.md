@@ -103,7 +103,7 @@ cmd = "コマンドパス"
 | **必須/オプション** | 必須 |
 | **設定可能な階層** | コマンドのみ |
 | **有効な値** | 絶対パス、または PATH 上のコマンド名 |
-| **変数展開** | ${VAR} 形式の変数展開が可能(第7章参照) |
+| **変数展開** | %{VAR} 形式の変数展開が可能(第7章参照) |
 
 #### 設定例
 
@@ -130,9 +130,8 @@ args = ["-la"]
 ```toml
 [[groups.commands]]
 name = "custom_tool"
-cmd = "${TOOL_DIR}/my-script"
-args = []
-env = ["TOOL_DIR=/opt/tools"]
+cmd = "%{tool_dir}/my-script"
+vars = ["tool_dir=/opt/tools"]
 # 実際には /opt/tools/my-script が実行される
 ```
 
@@ -183,7 +182,7 @@ args = ["引数1", "引数2", ...]
 | **設定可能な階層** | コマンドのみ |
 | **デフォルト値** | [] (引数なし) |
 | **有効な値** | 任意の文字列のリスト |
-| **変数展開** | ${VAR} 形式の変数展開が可能(第7章参照) |
+| **変数展開** | %{VAR} 形式の変数展開が可能(第7章参照) |
 
 #### 設定例
 
@@ -220,10 +219,10 @@ args = []  # または省略
 [[groups.commands]]
 name = "backup"
 cmd = "/usr/bin/tar"
-args = ["-czf", "${BACKUP_FILE}", "${SOURCE_DIR}"]
-env = [
-    "BACKUP_FILE=/backups/backup.tar.gz",
-    "SOURCE_DIR=/data",
+args = ["-czf", "%{backup_file}", "%{source_dir}"]
+vars = [
+    "backup_file=/backups/backup.tar.gz",
+    "source_dir=/data",
 ]
 ```
 
@@ -283,13 +282,257 @@ cmd = "echo"
 args = ["This is a message with spaces"]  # スペースを含むがそのまま1つの引数
 ```
 
-## 6.2 環境設定
+## 6.2 変数と環境設定
 
-### 6.2.1 env - 環境変数
+### 6.2.1 vars - 内部変数
 
 #### 概要
 
-コマンド実行時に設定する環境変数を `KEY=VALUE` 形式で指定します。
+TOML ファイル内で変数展開に使用される内部変数を `KEY=VALUE` 形式で指定します。コマンドレベルで定義された `vars` は、グローバルレベルおよびグループレベルの `vars` とマージされます(Union による結合)。
+
+#### 文法
+
+```toml
+[[groups.commands]]
+name = "example"
+cmd = "コマンド"
+vars = ["key1=value1", "key2=value2", ...]
+```
+
+#### パラメータの詳細
+
+| 項目 | 内容 |
+|-----|------|
+| **型** | 文字列配列 (array of strings) |
+| **必須/オプション** | オプション |
+| **設定可能な階層** | グローバル、グループ、コマンド |
+| **デフォルト値** | [] |
+| **形式** | "KEY=VALUE" |
+| **変数名の制約** | POSIX 準拠 (英数字とアンダースコア、数字で開始不可)、`__runner_` プレフィックスは予約済み |
+| **継承動作** | マージ (Union) - 下位レベルが上位レベルを上書き |
+
+#### 役割
+
+- **TOML 内での変数展開**: `cmd`、`args`、`env` の値で `%{VAR}` 形式で参照可能
+- **プロセス環境への非伝搬**: 子プロセスの環境変数には含まれない
+- **階層的なマージ**: グローバル → グループ → コマンドの順でマージ
+
+#### 設定例
+
+#### 例1: コマンド固有の変数
+
+```toml
+[[groups.commands]]
+name = "backup_database"
+cmd = "/usr/bin/pg_dump"
+vars = [
+    "db_name=production_db",
+    "backup_dir=/var/backups/postgres",
+]
+args = ["-d", "%{db_name}", "-f", "%{backup_dir}/%{db_name}.sql"]
+```
+
+#### 例2: 階層的なマージ
+
+```toml
+[global]
+vars = ["base_dir=/opt/app", "log_level=info"]
+
+[[groups]]
+name = "admin_tasks"
+vars = ["log_level=debug"]  # グローバルの log_level を上書き
+
+[[groups.commands]]
+name = "task1"
+cmd = "/bin/task"
+vars = ["task_id=42"]  # base_dir, log_level を継承、task_id を追加
+args = ["--dir", "%{base_dir}", "--log", "%{log_level}", "--id", "%{task_id}"]
+# 最終的な変数: base_dir=/opt/app, log_level=debug, task_id=42
+```
+
+#### 重要な注意事項
+
+##### 1. プロセス環境への非伝搬
+
+`vars` で定義した変数は、子プロセスの環境変数には設定されません:
+
+```toml
+[[groups.commands]]
+name = "print_vars"
+cmd = "/bin/sh"
+vars = ["my_var=hello"]
+args = ["-c", "echo $my_var"]  # my_var は空文字列 (環境変数に存在しない)
+```
+
+子プロセスに環境変数を渡すには、`env` パラメータを使用します:
+
+```toml
+[[groups.commands]]
+name = "print_vars"
+cmd = "/bin/sh"
+vars = ["my_var=hello"]
+env = ["MY_VAR=%{my_var}"]  # vars の値を env で環境変数に変換
+args = ["-c", "echo $MY_VAR"]  # MY_VAR=hello が出力される
+```
+
+##### 2. 変数名の制約
+
+変数名は以下のルールに従う必要があります:
+
+- **POSIX 準拠**: 英数字とアンダースコアのみ使用可能、数字で開始不可
+- **予約プレフィックス**: `__runner_` で始まる名前は自動変数用に予約済み
+
+```toml
+# 正しい例
+vars = ["my_var=value", "VAR_123=value", "_private=value"]
+
+# 誤った例
+vars = [
+    "123var=value",      # 数字で開始
+    "my-var=value",      # ハイフンは使用不可
+    "__runner_custom=x", # 予約プレフィックス
+]
+```
+
+##### 3. 自動変数
+
+Runner は以下の自動変数を提供します(上書き不可):
+
+- `__RUNNER_DATETIME`: コマンド実行時刻 (ISO 8601 形式)
+- `__RUNNER_PID`: Runner プロセスの PID
+
+```toml
+[[groups.commands]]
+name = "log_execution"
+cmd = "/usr/bin/logger"
+args = ["Executed at %{__RUNNER_DATETIME} by PID %{__RUNNER_PID}"]
+```
+
+### 6.2.2 from_env - システム環境変数のインポート
+
+#### 概要
+
+Runner プロセスが動作しているシステム環境変数を TOML 内の変数展開用にインポートする変数名を指定します。コマンドレベルの `from_env` は、グローバルおよびグループレベルの `from_env` を完全に上書きします(Override 動作)。
+
+#### 文法
+
+```toml
+[[groups.commands]]
+name = "example"
+cmd = "コマンド"
+from_env = ["VAR1", "VAR2", ...]
+```
+
+#### パラメータの詳細
+
+| 項目 | 内容 |
+|-----|------|
+| **型** | 文字列配列 (array of strings) |
+| **必須/オプション** | オプション |
+| **設定可能な階層** | グローバル、グループ、コマンド |
+| **デフォルト値** | [] |
+| **形式** | 変数名のみ (VALUE は不要) |
+| **セキュリティ制約** | `env_allowlist` に含まれる変数のみインポート可能 |
+| **継承動作** | 上書き (Override) - 下位レベルが上位レベルを完全に置き換え |
+
+#### 役割
+
+- **システム環境変数の取り込み**: Runner が動作する環境の変数を TOML 内で利用可能にする
+- **TOML 内での変数展開**: インポートした変数を `%{VAR}` 形式で参照可能
+- **セキュリティ管理**: `env_allowlist` による制御
+
+#### 設定例
+
+#### 例1: 基本的なインポート
+
+```toml
+[global]
+env_allowlist = ["HOME", "USER", "PATH"]
+
+[[groups.commands]]
+name = "show_user_info"
+cmd = "/bin/echo"
+from_env = ["USER", "HOME"]
+args = ["User: %{USER}, Home: %{HOME}"]
+```
+
+#### 例2: Override 動作
+
+```toml
+[global]
+env_allowlist = ["HOME", "USER", "PATH", "LANG"]
+from_env = ["HOME", "USER"]  # グローバルレベル
+
+[[groups]]
+name = "intl_tasks"
+from_env = ["LANG"]  # グループレベル: グローバルの from_env を上書き
+
+[[groups.commands]]
+name = "task1"
+cmd = "/bin/echo"
+# from_env を指定しないため、グループの from_env が適用される
+args = ["Language: %{LANG}"]  # HOME, USER は利用不可
+
+[[groups.commands]]
+name = "task2"
+cmd = "/bin/echo"
+from_env = ["HOME", "PATH"]  # コマンドレベル: グループの from_env を上書き
+args = ["Path: %{PATH}"]  # LANG は利用不可、HOME と PATH のみ利用可能
+```
+
+#### 重要な注意事項
+
+##### 1. env_allowlist との関係
+
+`from_env` でインポートする変数は、必ず `env_allowlist` に含まれている必要があります:
+
+```toml
+[global]
+env_allowlist = ["HOME", "USER"]
+
+[[groups.commands]]
+name = "example"
+cmd = "/bin/echo"
+from_env = ["HOME", "PATH"]  # エラー: PATH は env_allowlist に含まれていない
+args = ["%{HOME}"]
+```
+
+##### 2. Override による置き換え
+
+コマンドレベルで `from_env` を指定すると、グループおよびグローバルの `from_env` は完全に無視されます:
+
+```toml
+[global]
+from_env = ["HOME", "USER", "PATH"]
+
+[[groups]]
+name = "tasks"
+from_env = ["LANG", "LC_ALL"]
+
+[[groups.commands]]
+name = "task1"
+cmd = "/bin/echo"
+from_env = ["PWD"]  # HOME, USER, PATH, LANG, LC_ALL はすべて無視される
+args = ["%{PWD}"]   # PWD のみ利用可能
+```
+
+##### 3. 存在しない変数のインポート
+
+`from_env` で指定した変数がシステム環境に存在しない場合、その変数は空文字列として扱われます:
+
+```toml
+[[groups.commands]]
+name = "example"
+cmd = "/bin/echo"
+from_env = ["NONEXISTENT_VAR"]
+args = ["Value: %{NONEXISTENT_VAR}"]  # "Value: " と出力される
+```
+
+### 6.2.3 env - プロセス環境変数
+
+#### 概要
+
+コマンド実行時に子プロセスに設定する環境変数を `KEY=VALUE` 形式で指定します。
 
 #### 文法
 
@@ -310,10 +553,11 @@ env = ["KEY1=value1", "KEY2=value2", ...]
 | **設定可能な階層** | コマンドのみ |
 | **デフォルト値** | [] |
 | **形式** | "KEY=VALUE" |
-| **変数展開** | VALUE 部分で ${VAR} 形式の変数展開が可能 |
+| **変数展開** | VALUE 部分で %{VAR} 形式の変数展開が可能 |
 
 #### 役割
 
+- **プロセス環境変数**: 子プロセスの環境変数として設定される
 - **コマンド設定**: コマンドの動作を環境変数で制御
 - **認証情報**: データベース接続情報などの設定
 - **動作モード**: デバッグモードなどの切り替え
@@ -355,10 +599,12 @@ env = [
 name = "backup"
 cmd = "/usr/bin/backup.sh"
 args = []
+vars = [
+    "backup_dir=/var/backups",
+    "date=2025-01-15",
+]
 env = [
-    "BACKUP_DIR=/var/backups",
-    "BACKUP_FILE=${BACKUP_DIR}/backup-${DATE}.tar.gz",
-    "DATE=2025-01-15",
+    "BACKUP_FILE=%{backup_dir}/backup-%{date}.tar.gz",
 ]
 # BACKUP_FILE は /var/backups/backup-2025-01-15.tar.gz に展開される
 ```
@@ -419,7 +665,7 @@ env = [
 ]
 ```
 
-### 6.2.2 dir - 実行ディレクトリ
+### 6.2.4 dir - 実行ディレクトリ
 
 #### 概要
 
@@ -964,4 +1210,4 @@ max_risk_level = "high"
 
 ## 次のステップ
 
-次章では、変数展開機能について詳しく解説します。`${VAR}` 形式の変数を使用して、動的なコマンド構築を行う方法を学びます。
+次章では、変数展開機能について詳しく解説します。`%{VAR}` 形式の変数を使用して、動的なコマンド構築を行う方法を学びます。

@@ -101,21 +101,22 @@ args = ["-czf", "backup.tar.gz", "/data"]
 #### 推奨される実装
 
 ```toml
-# 良い例: Command.Env で機密情報を管理
+# 良い例: vars と env を適切に使い分け
 [global]
 env_allowlist = ["PATH", "HOME"]  # 機密情報は含めない
 
 [[groups.commands]]
 name = "api_call"
 cmd = "/usr/bin/curl"
+vars = [
+    "api_token=sk-secret123",
+    "api_endpoint=https://api.example.com",
+]
 args = [
-    "-H", "Authorization: Bearer ${API_TOKEN}",
-    "${API_ENDPOINT}",
+    "-H", "Authorization: Bearer %{api_token}",
+    "%{api_endpoint}",
 ]
-env = [
-    "API_TOKEN=sk-secret123",      # Command.Env で定義
-    "API_ENDPOINT=https://api.example.com",
-]
+env = ["API_TOKEN=%{api_token}"]  # 必要に応じて環境変数として設定
 
 # 避けるべき例: グローバルに機密情報を許可
 [global]
@@ -215,24 +216,22 @@ env = [
 #### 推奨される実装
 
 ```toml
-# 良い例: 変数の再利用
+# 良い例: vars での変数の再利用
+[global]
+vars = ["config_dest=/etc/myapp"]
+
 [[groups.commands]]
 name = "deploy_config"
 cmd = "/bin/cp"
-args = ["${CONFIG_SOURCE}/app.yml", "${CONFIG_DEST}/app.yml"]
-env = [
-    "CONFIG_SOURCE=/opt/configs/prod",
-    "CONFIG_DEST=/etc/myapp",
-]
+vars = ["config_source=/opt/configs/prod"]
+args = ["%{config_source}/app.yml", "%{config_dest}/app.yml"]
 
 [[groups.commands]]
 name = "backup_config"
 cmd = "/bin/cp"
-args = ["${CONFIG_DEST}/app.yml", "${BACKUP_DIR}/app.yml"]
-env = [
-    "CONFIG_DEST=/etc/myapp",       # 前のコマンドと同じ値を再利用
-    "BACKUP_DIR=/var/backups",
-]
+vars = ["backup_dir=/var/backups"]
+args = ["%{config_dest}/app.yml", "%{backup_dir}/app.yml"]
+# config_dest はグローバルから継承されるため再定義不要
 ```
 
 ## 9.3 グループ構成のベストプラクティス
@@ -565,8 +564,8 @@ args = ["test"]
 [[groups.commands]]
 name = "test_variables"
 cmd = "/bin/echo"
-args = ["Value: ${TEST_VAR}"]
-env = ["TEST_VAR=hello"]
+vars = ["test_var=hello"]
+args = ["Value: %{test_var}"]
 ```
 
 3. **本番相当の設定**
@@ -575,8 +574,8 @@ env = ["TEST_VAR=hello"]
 [[groups.commands]]
 name = "production_command"
 cmd = "/opt/app/bin/tool"
-args = ["--config", "${CONFIG}"]
-env = ["CONFIG=/etc/app/config.yml"]
+vars = ["config=/etc/app/config.yml"]
+args = ["--config", "%{config}"]
 run_as_user = "appuser"
 max_risk_level = "high"
 ```

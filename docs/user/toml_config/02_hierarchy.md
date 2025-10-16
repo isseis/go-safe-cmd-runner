@@ -181,19 +181,69 @@ name = "reject_group"
 env_allowlist = []  # Rejects all environment variables
 ```
 
-### 2.3.4 Configuration Priority Summary
+### 2.3.4 Variable Inheritance Patterns
+
+#### vars (Internal Variables) - Merge Inheritance
+
+`vars` are inherited through **Union (Merge)**. Settings at lower levels are merged with settings at upper levels, and when the same key exists, the lower level takes precedence.
+
+```toml
+[global]
+vars = ["base_dir=/opt/app", "log_level=info"]
+
+[[groups]]
+name = "admin_tasks"
+vars = ["log_level=debug", "task_type=admin"]  # Override log_level, add task_type
+
+[[groups.commands]]
+name = "task1"
+vars = ["task_id=42"]  # Inherit existing variables and add task_id
+cmd = "/bin/task"
+args = ["%{base_dir}", "%{log_level}", "%{task_type}", "%{task_id}"]
+# Final vars: base_dir=/opt/app, log_level=debug, task_type=admin, task_id=42
+```
+
+#### from_env (System Environment Variable Import) - Override Inheritance
+
+`from_env` is inherited through **Override (replacement)**. When specified at a lower level, the upper level configuration is completely ignored.
+
+```toml
+[global]
+from_env = ["HOME", "USER", "PATH"]
+
+[[groups]]
+name = "tasks"
+from_env = ["LANG", "LC_ALL"]  # Completely replaces global from_env
+
+[[groups.commands]]
+name = "task1"
+cmd = "/bin/echo"
+# from_env not specified → group's from_env is applied
+args = ["%{LANG}"]  # Only LANG is available (HOME, USER, PATH are not)
+
+[[groups.commands]]
+name = "task2"
+from_env = ["PWD"]  # Completely replaces group's from_env
+cmd = "/bin/echo"
+args = ["%{PWD}"]  # Only PWD is available (LANG, LC_ALL are not)
+```
+
+### 2.3.5 Configuration Priority Summary
 
 Depending on the configuration item, the priority differs:
 
-| Configuration Item | Priority (High → Low) | Notes |
-|---------|------------------|------|
-| timeout | Command > Global | Cannot be configured at group level |
-| workdir | Group > Global | Cannot be configured at command level |
-| env_allowlist | Group > Global | Behavior changes according to inheritance mode |
-| verify_files | Group + Global | Merged (both applied) |
-| log_level | Global only | Cannot be overridden at lower levels |
+| Configuration Item | Priority (High → Low) | Inheritance Pattern | Notes |
+|---------|------------------|-------------|------|
+| timeout | Command > Global | Override | Cannot be configured at group level |
+| workdir | Group > Global | Override | Cannot be configured at command level |
+| env_allowlist | Group > Global | Override | Behavior changes according to inheritance mode |
+| vars | Command > Group > Global | Merge (Union) | Lower levels merge with upper levels, same keys override |
+| from_env | Command > Group > Global | Override | Lower levels completely replace upper levels |
+| env | Command only | N/A | Process environment variable configuration |
+| verify_files | Group + Global | Merge | Merged (both applied) |
+| log_level | Global only | N/A | Cannot be overridden at lower levels |
 
-### 2.3.5 Practical Example: Complex Inheritance Pattern
+### 2.3.6 Practical Example: Complex Inheritance Pattern
 
 ```toml
 [global]

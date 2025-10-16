@@ -143,7 +143,7 @@ runner コマンドで使用する設定ファイルの詳細な記述方法を�
    - 実行ユーザー、リスクレベル、出力管理
 
 7. **[変数展開機能](toml_config/07_variable_expansion.ja.md)**
-   - `${VAR}` 形式の変数展開
+   - `%{VAR}` 形式の変数展開
    - 動的な設定構築
 
 8. **[実践的な設定例](toml_config/08_practical_examples.ja.md)**

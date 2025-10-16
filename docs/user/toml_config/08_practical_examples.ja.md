@@ -98,12 +98,12 @@ timeout = 1800
 name = "encrypt_backup"
 description = "バックアップの暗号化"
 cmd = "/usr/bin/gpg"
+vars = ["gpg_key_id=admin@example.com"]
 args = [
     "--encrypt",
-    "--recipient", "${GPG_KEY_ID}",
+    "--recipient", "%{gpg_key_id}",
     "data-backup.tar.gz",
 ]
-env = ["GPG_KEY_ID=admin@example.com"]
 max_risk_level = "medium"
 
 [[groups.commands]]
@@ -295,12 +295,12 @@ output = "reports/services.txt"
 name = "archive_reports"
 description = "レポートの圧縮"
 cmd = "/bin/tar"
+vars = ["date=2025-10-02"]
 args = [
     "-czf",
-    "system-report-${DATE}.tar.gz",
+    "system-report-%{date}.tar.gz",
     "reports/",
 ]
-env = ["DATE=2025-10-02"]
 ```
 
 ## 8.6 変数展開を活用した設定例
@@ -315,16 +315,7 @@ version = "1.0"
 [global]
 timeout = 600
 log_level = "info"
-env_allowlist = [
-    "PATH",
-    "HOME",
-    "APP_BIN",
-    "CONFIG_DIR",
-    "ENV_TYPE",
-    "LOG_LEVEL",
-    "DB_URL",
-    "API_PORT",
-]
+env_allowlist = ["PATH", "HOME"]
 
 # 開発環境
 [[groups]]
@@ -335,30 +326,31 @@ priority = 1
 [[groups.commands]]
 name = "deploy_dev_config"
 cmd = "/bin/cp"
-args = [
-    "${CONFIG_DIR}/${ENV_TYPE}/app.yml",
-    "/etc/myapp/app.yml",
+vars = [
+    "config_dir=/opt/configs",
+    "env_type=development",
 ]
-env = [
-    "CONFIG_DIR=/opt/configs",
-    "ENV_TYPE=development",
+args = [
+    "%{config_dir}/%{env_type}/app.yml",
+    "/etc/myapp/app.yml",
 ]
 
 [[groups.commands]]
 name = "start_dev_server"
-cmd = "${APP_BIN}"
+vars = [
+    "app_bin=/opt/myapp/bin/server",
+    "log_level=debug",
+    "api_port=8080",
+    "db_url=postgresql://localhost/dev_db",
+]
+cmd = "%{app_bin}"
 args = [
     "--config", "/etc/myapp/app.yml",
-    "--log-level", "${LOG_LEVEL}",
-    "--port", "${API_PORT}",
-    "--database", "${DB_URL}",
+    "--log-level", "%{log_level}",
+    "--port", "%{api_port}",
+    "--database", "%{db_url}",
 ]
-env = [
-    "APP_BIN=/opt/myapp/bin/server",
-    "LOG_LEVEL=debug",
-    "API_PORT=8080",
-    "DB_URL=postgresql://localhost/dev_db",
-]
+env = ["DB_URL=%{db_url}"]
 
 # ステージング環境
 [[groups]]
@@ -369,30 +361,31 @@ priority = 2
 [[groups.commands]]
 name = "deploy_staging_config"
 cmd = "/bin/cp"
-args = [
-    "${CONFIG_DIR}/${ENV_TYPE}/app.yml",
-    "/etc/myapp/app.yml",
+vars = [
+    "config_dir=/opt/configs",
+    "env_type=staging",
 ]
-env = [
-    "CONFIG_DIR=/opt/configs",
-    "ENV_TYPE=staging",
+args = [
+    "%{config_dir}/%{env_type}/app.yml",
+    "/etc/myapp/app.yml",
 ]
 
 [[groups.commands]]
 name = "start_staging_server"
-cmd = "${APP_BIN}"
+vars = [
+    "app_bin=/opt/myapp/bin/server",
+    "log_level=info",
+    "api_port=8081",
+    "db_url=postgresql://staging-db/staging_db",
+]
+cmd = "%{app_bin}"
 args = [
     "--config", "/etc/myapp/app.yml",
-    "--log-level", "${LOG_LEVEL}",
-    "--port", "${API_PORT}",
-    "--database", "${DB_URL}",
+    "--log-level", "%{log_level}",
+    "--port", "%{api_port}",
+    "--database", "%{db_url}",
 ]
-env = [
-    "APP_BIN=/opt/myapp/bin/server",
-    "LOG_LEVEL=info",
-    "API_PORT=8081",
-    "DB_URL=postgresql://staging-db/staging_db",
-]
+env = ["DB_URL=%{db_url}"]
 
 # 本番環境
 [[groups]]
@@ -403,30 +396,31 @@ priority = 3
 [[groups.commands]]
 name = "deploy_prod_config"
 cmd = "/bin/cp"
-args = [
-    "${CONFIG_DIR}/${ENV_TYPE}/app.yml",
-    "/etc/myapp/app.yml",
+vars = [
+    "config_dir=/opt/configs",
+    "env_type=production",
 ]
-env = [
-    "CONFIG_DIR=/opt/configs",
-    "ENV_TYPE=production",
+args = [
+    "%{config_dir}/%{env_type}/app.yml",
+    "/etc/myapp/app.yml",
 ]
 
 [[groups.commands]]
 name = "start_prod_server"
-cmd = "${APP_BIN}"
+vars = [
+    "app_bin=/opt/myapp/bin/server",
+    "log_level=warn",
+    "api_port=8082",
+    "db_url=postgresql://prod-db/prod_db",
+]
+cmd = "%{app_bin}"
 args = [
     "--config", "/etc/myapp/app.yml",
-    "--log-level", "${LOG_LEVEL}",
-    "--port", "${API_PORT}",
-    "--database", "${DB_URL}",
+    "--log-level", "%{log_level}",
+    "--port", "%{api_port}",
+    "--database", "%{db_url}",
 ]
-env = [
-    "APP_BIN=/opt/myapp/bin/server",
-    "LOG_LEVEL=warn",
-    "API_PORT=8082",
-    "DB_URL=postgresql://prod-db/prod_db",
-]
+env = ["DB_URL=%{db_url}"]
 run_as_user = "appuser"
 max_risk_level = "high"
 ```
@@ -469,15 +463,15 @@ cleanup = true
 name = "backup_current_version"
 description = "現在のバージョンをバックアップ"
 cmd = "/bin/tar"
+vars = [
+    "backup_dir=/var/backups/app",
+    "app_dir=/opt/myapp",
+    "timestamp=2025-10-02-120000",
+]
 args = [
     "-czf",
-    "${BACKUP_DIR}/app-backup-${TIMESTAMP}.tar.gz",
-    "${APP_DIR}",
-]
-env = [
-    "BACKUP_DIR=/var/backups/app",
-    "APP_DIR=/opt/myapp",
-    "TIMESTAMP=2025-10-02-120000",
+    "%{backup_dir}/app-backup-%{timestamp}.tar.gz",
+    "%{app_dir}",
 ]
 timeout = 1800
 
@@ -500,17 +494,17 @@ verify_files = ["/usr/bin/psql", "/usr/bin/pg_dump"]
 name = "backup_database"
 description = "データベースのバックアップ"
 cmd = "/usr/bin/pg_dump"
-args = [
-    "-U", "${DB_USER}",
-    "-d", "${DB_NAME}",
-    "-F", "c",
-    "-f", "/var/backups/db/backup-${TIMESTAMP}.dump",
+vars = [
+    "db_user=appuser",
+    "db_name=myapp_db",
+    "timestamp=2025-10-02-120000",
 ]
-env = [
-    "DB_USER=appuser",
-    "DB_NAME=myapp_db",
-    "TIMESTAMP=2025-10-02-120000",
-    "PGPASSWORD=secret123",
+env = ["PGPASSWORD=secret123"]
+args = [
+    "-U", "%{db_user}",
+    "-d", "%{db_name}",
+    "-F", "c",
+    "-f", "/var/backups/db/backup-%{timestamp}.dump",
 ]
 timeout = 1800
 output = "db-backup-log.txt"
@@ -519,13 +513,13 @@ output = "db-backup-log.txt"
 name = "run_migrations"
 description = "データベースマイグレーションの実行"
 cmd = "/opt/myapp/bin/migrate"
-args = [
-    "--database", "postgresql://${DB_USER}@localhost/${DB_NAME}",
-    "--migrations", "/opt/myapp/migrations",
+vars = [
+    "db_user=appuser",
+    "db_name=myapp_db",
 ]
-env = [
-    "DB_USER=appuser",
-    "DB_NAME=myapp_db",
+args = [
+    "--database", "postgresql://%{db_user}@localhost/%{db_name}",
+    "--migrations", "/opt/myapp/migrations",
 ]
 timeout = 600
 
@@ -637,14 +631,14 @@ output = "smoke-test-result.txt"
 name = "verify_database_connection"
 description = "データベース接続の確認"
 cmd = "/usr/bin/psql"
-args = [
-    "-U", "${DB_USER}",
-    "-d", "${DB_NAME}",
-    "-c", "SELECT version();",
+vars = [
+    "db_user=appuser",
+    "db_name=myapp_db",
 ]
-env = [
-    "DB_USER=appuser",
-    "DB_NAME=myapp_db",
+args = [
+    "-U", "%{db_user}",
+    "-d", "%{db_name}",
+    "-c", "SELECT version();",
 ]
 output = "db-connection-test.txt"
 
@@ -659,11 +653,11 @@ workdir = "/var/reports/deployment"
 name = "generate_deployment_report"
 description = "デプロイレポートの生成"
 cmd = "/opt/tools/generate-report"
+vars = ["timestamp=2025-10-02-120000"]
 args = [
     "--deployment-log", "/var/log/deploy.log",
-    "--output", "deployment-report-${TIMESTAMP}.html",
+    "--output", "deployment-report-%{timestamp}.html",
 ]
-env = ["TIMESTAMP=2025-10-02-120000"]
 
 [[groups.commands]]
 name = "cleanup_temp_files"

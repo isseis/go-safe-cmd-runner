@@ -450,11 +450,233 @@ cmd = "/usr/bin/curl"
 args = ["https://example.com/data"]
 ```
 
-### 5.3.2 env_allowlist - 環境変数許可リスト(グループレベル)
+### 5.3.2 vars - グループ内部変数
 
 #### 概要
 
-グループレベルで環境変数の許可リストを指定します。3つの継承モードがあります。
+グループレベルで内部変数を定義します。グローバルの `vars` とマージされ、グループ内の全コマンドから参照可能です。
+
+#### 文法
+
+```toml
+[[groups]]
+name = "example"
+vars = ["var1=value1", "var2=value2", ...]
+```
+
+#### パラメータの詳細
+
+| 項目 | 内容 |
+|-----|------|
+| **型** | 文字列配列 (array of strings) |
+| **必須/オプション** | オプション |
+| **設定可能な階層** | グローバル、グループ、コマンド |
+| **デフォルト値** | [] (変数なし) |
+| **書式** | `"変数名=値"` 形式 |
+| **参照構文** | `%{変数名}` |
+| **継承動作** | Global.vars とマージ(Group が優先) |
+
+#### 役割
+
+- **グループ固有の設定**: グループ専用の内部変数を定義
+- **Global vars の拡張**: グローバル変数を上書きまたは追加
+- **スコープ管理**: グループ内のコマンドからのみ参照可能
+
+#### 設定例
+
+#### 例1: グローバル変数の上書き
+
+```toml
+version = "1.0"
+
+[global]
+vars = [
+    "app_dir=/opt/myapp",
+    "log_level=info"
+]
+
+[[groups]]
+name = "debug_group"
+vars = [
+    "log_level=debug"  # グローバルの log_level を上書き
+]
+
+[[groups.commands]]
+name = "run_debug"
+cmd = "%{app_dir}/bin/app"
+args = ["--log-level", "%{log_level}"]
+# 実際: /opt/myapp/bin/app --log-level debug
+```
+
+#### 例2: グループ固有の変数追加
+
+```toml
+version = "1.0"
+
+[global]
+vars = ["base_dir=/opt"]
+
+[[groups]]
+name = "web_group"
+vars = [
+    "web_root=%{base_dir}/www",
+    "port=8080"
+]
+
+[[groups.commands]]
+name = "start_web"
+cmd = "/usr/bin/nginx"
+args = ["-c", "%{web_root}/nginx.conf", "-g", "daemon off;"]
+env = ["PORT=%{port}"]
+```
+
+#### 例3: 環境別設定
+
+```toml
+version = "1.0"
+
+[global]
+vars = ["app_dir=/opt/myapp"]
+
+[[groups]]
+name = "production"
+vars = [
+    "env_type=prod",
+    "config_file=%{app_dir}/config/%{env_type}.yml",
+    "db_host=prod-db.example.com"
+]
+
+[[groups.commands]]
+name = "run_prod"
+cmd = "%{app_dir}/bin/app"
+args = ["--config", "%{config_file}", "--db-host", "%{db_host}"]
+
+[[groups]]
+name = "development"
+vars = [
+    "env_type=dev",
+    "config_file=%{app_dir}/config/%{env_type}.yml",
+    "db_host=localhost"
+]
+
+[[groups.commands]]
+name = "run_dev"
+cmd = "%{app_dir}/bin/app"
+args = ["--config", "%{config_file}", "--db-host", "%{db_host}"]
+```
+
+### 5.3.3 from_env - システム環境変数の取り込み(グループレベル)
+
+#### 概要
+
+グループレベルでシステム環境変数を内部変数として取り込みます。**Override(上書き)方式**で、グループが `from_env` を定義すると Global.from_env は無視されます。
+
+#### 文法
+
+```toml
+[[groups]]
+name = "example"
+from_env = ["内部変数名=システム環境変数名", ...]
+```
+
+#### パラメータの詳細
+
+| 項目 | 内容 |
+|-----|------|
+| **型** | 文字列配列 (array of strings) |
+| **必須/オプション** | オプション |
+| **設定可能な階層** | グローバル、グループ |
+| **デフォルト値** | nil (Global.from_env を継承) |
+| **書式** | `"内部変数名=システム環境変数名"` 形式 |
+| **継承動作** | **Override(上書き)方式** |
+
+#### 継承ルール(Override方式)
+
+| Group.from_env の状態 | 動作 |
+|---------------------|------|
+| **未定義(nil)** | Global.from_env を継承 |
+| **空配列 `[]`** | どのシステム環境変数も取り込まない |
+| **定義あり** | Global.from_env を無視し、Group.from_env のみ使用 |
+
+#### 設定例
+
+#### 例1: Global.from_env の継承
+
+```toml
+version = "1.0"
+
+[global]
+env_allowlist = ["HOME", "USER"]
+from_env = [
+    "home=HOME",
+    "username=USER"
+]
+
+[[groups]]
+name = "inherit_group"
+# from_env 未定義 → Global.from_env を継承
+
+[[groups.commands]]
+name = "show_home"
+cmd = "/bin/echo"
+args = ["Home: %{home}, User: %{username}"]
+# home と username が利用可能
+```
+
+#### 例2: Global.from_env の上書き
+
+```toml
+version = "1.0"
+
+[global]
+env_allowlist = ["HOME", "USER", "HOSTNAME"]
+from_env = [
+    "home=HOME",
+    "username=USER"
+]
+
+[[groups]]
+name = "override_group"
+from_env = [
+    "host=HOSTNAME"  # Global.from_env を完全に上書き
+]
+
+[[groups.commands]]
+name = "show_host"
+cmd = "/bin/echo"
+args = ["Host: %{host}"]
+# host は利用可能だが、home と username は利用不可
+```
+
+#### 例3: システム環境変数を取り込まない
+
+```toml
+version = "1.0"
+
+[global]
+env_allowlist = ["HOME"]
+from_env = ["home=HOME"]
+
+[[groups]]
+name = "no_env_group"
+from_env = []  # 空配列: どのシステム環境変数も取り込まない
+
+[[groups.commands]]
+name = "isolated_cmd"
+cmd = "/bin/echo"
+args = ["test"]
+# home は利用不可
+```
+
+#### 重要な注意点
+
+**Override方式の理由**: グループごとに完全に独立した環境変数セットを定義できるようにするため、Union(結合)ではなくOverride(上書き)方式を採用しています。これにより、グループが明示的に定義した変数のみを使用し、予期しない変数の継承を防ぎます。
+
+### 5.3.4 env_allowlist - 環境変数許可リスト(グループレベル)
+
+#### 概要
+
+グループレベルで `from_env` によるシステム環境変数の取り込みを制御します。**Override(上書き)方式**で動作します。
 
 #### 文法
 
@@ -471,15 +693,15 @@ env_allowlist = ["変数1", "変数2", ...]
 | **型** | 文字列配列 (array of strings) |
 | **必須/オプション** | オプション |
 | **設定可能な階層** | グローバル、グループ |
-| **デフォルト値** | なし(継承モード) |
+| **デフォルト値** | nil (Global.env_allowlist を継承) |
 | **有効な値** | 環境変数名のリスト、または空配列 |
-| **継承動作** | 3つのモード(後述) |
+| **継承動作** | **Override(上書き)方式** |
 
-### 5.3.3 env - グループ環境変数
+### 5.3.5 env - グループプロセス環境変数
 
 #### 概要
 
-そのグループ内の全てのコマンドで共通して使用する環境変数を定義します。グローバルレベルの環境変数を上書きすることができます。
+そのグループ内の全てのコマンドで共通して使用するプロセス環境変数を定義します。グローバルレベルの環境変数とマージされ、子プロセスに渡されます。内部変数 `%{VAR}` を値に使用できます。
 
 #### 文法
 
@@ -498,34 +720,36 @@ env = ["KEY1=value1", "KEY2=value2", ...]
 | **設定可能な階層** | グローバル、グループ、コマンド |
 | **デフォルト値** | [] (環境変数なし) |
 | **書式** | `"KEY=VALUE"` 形式 |
-| **オーバーライド** | コマンドレベルで同名変数を上書き可能 |
+| **値での変数展開** | 内部変数 `%{VAR}` を使用可能 |
+| **マージ動作** | Global.env とマージ(Group が優先) |
 
 #### 役割
 
-- **グループ固有の設定**: そのグループに特有の環境変数を定義
+- **グループ固有の設定**: そのグループに特有のプロセス環境変数を定義
+- **内部変数の活用**: `%{VAR}` 形式で内部変数を参照可能
 - **グローバル設定の上書き**: グローバルレベルの環境変数を変更
 - **コマンド間の共有**: グループ内の全コマンドで設定を共有
 
 #### 設定例
 
-##### 例1: グループ固有の環境変数
+##### 例1: グループ固有の環境変数と内部変数の活用
 
 ```toml
 version = "1.0"
 
 [global]
-env = [
-    "BASE_DIR=/opt/app",
-    "LOG_LEVEL=info",
-]
-env_allowlist = ["HOME"]
+vars = ["base_dir=/opt/app"]
+env = ["LOG_LEVEL=info"]
 
 [[groups]]
 name = "database_group"
+vars = [
+    "db_data=%{base_dir}/db-data"
+]
 env = [
     "DB_HOST=localhost",
     "DB_PORT=5432",
-    "DB_DATA=${BASE_DIR}/db-data",  # Global.env の BASE_DIR を参照
+    "DB_DATA=%{db_data}"  # 内部変数を参照
 ]
 
 [[groups.commands]]

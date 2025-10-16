@@ -386,11 +386,370 @@ args = ["pattern", "file.txt"]
 
 `skip_standard_paths = true` を設定すると、標準パスのコマンドが改ざんされていても検出できません。セキュリティ要件が高い環境では `false` (デフォルト)のままにすることを推奨します。
 
-## 4.5 env - グローバル環境変数
+## 4.5 vars - グローバル内部変数
 
 ### 概要
 
-全てのグループとコマンドで共通して使用する環境変数を定義します。ここで定義した環境変数は、全てのコマンドで参照可能です。
+TOML設定ファイル内での展開専用の内部変数を定義します。ここで定義した内部変数は、全てのグループとコマンドで参照可能です。内部変数はデフォルトでは子プロセスの環境変数にはなりません。
+
+### 文法
+
+```toml
+[global]
+vars = ["var1=value1", "var2=value2", ...]
+```
+
+### パラメータの詳細
+
+| 項目 | 内容 |
+|-----|------|
+| **型** | 文字列配列 (array of strings) |
+| **必須/オプション** | オプション |
+| **設定可能な階層** | グローバル、グループ、コマンド |
+| **デフォルト値** | [] (変数なし) |
+| **書式** | `"変数名=値"` 形式 |
+| **参照構文** | `%{変数名}` |
+| **スコープ** | グローバル vars はすべてのグループ・コマンドから参照可能 |
+
+### 役割
+
+- **TOML展開専用**: `cmd`, `args`, `env`, `verify_files` の値を展開
+- **セキュリティ向上**: 子プロセスに渡す環境変数と分離
+- **設定の再利用**: 共通の値を一元管理
+- **パス構築**: ディレクトリパスなどを動的に構築
+
+### 設定例
+
+#### 例1: 基本的な内部変数の定義
+
+```toml
+version = "1.0"
+
+[global]
+vars = [
+    "app_dir=/opt/myapp",
+    "config_file=%{app_dir}/config.yml"
+]
+
+[[groups]]
+name = "app_group"
+
+[[groups.commands]]
+name = "show_config"
+cmd = "/bin/cat"
+args = ["%{config_file}"]
+# 実際の実行: /bin/cat /opt/myapp/config.yml
+```
+
+#### 例2: ネストした変数参照
+
+```toml
+version = "1.0"
+
+[global]
+vars = [
+    "base=/opt",
+    "app_root=%{base}/myapp",
+    "bin_dir=%{app_root}/bin",
+    "data_dir=%{app_root}/data",
+    "log_dir=%{app_root}/logs"
+]
+
+[[groups]]
+name = "deployment"
+
+[[groups.commands]]
+name = "start_app"
+cmd = "%{bin_dir}/server"
+args = ["--data", "%{data_dir}", "--log", "%{log_dir}"]
+# 実際の実行: /opt/myapp/bin/server --data /opt/myapp/data --log /opt/myapp/logs
+```
+
+#### 例3: 内部変数とプロセス環境変数の組み合わせ
+
+```toml
+version = "1.0"
+
+[global]
+vars = [
+    "app_dir=/opt/myapp",
+    "config_path=%{app_dir}/config.yml"
+]
+env = [
+    "APP_HOME=%{app_dir}",           # 内部変数を使ってプロセス環境変数を定義
+    "CONFIG_FILE=%{config_path}"
+]
+
+[[groups.commands]]
+name = "run_app"
+cmd = "%{app_dir}/bin/app"
+args = ["--config", "%{config_path}"]
+# 子プロセスは APP_HOME と CONFIG_FILE 環境変数を受け取るが、app_dir や config_path は受け取らない
+```
+
+### 変数名のルール
+
+内部変数名は以下のルールに従う必要があります:
+
+- **POSIX準拠**: `[a-zA-Z_][a-zA-Z0-9_]*` の形式
+- **推奨**: 小文字とアンダースコアを使用(例: `app_dir`, `config_file`)
+- **大文字も可**: 大文字も使用可能だが、小文字推奨
+- **予約プレフィックス禁止**: `__runner_` で始まる名前は使用不可
+
+```toml
+[global]
+vars = [
+    "app_dir=/opt/app",        # 正しい: 小文字とアンダースコア
+    "logLevel=info",           # 正しい: キャメルケース
+    "APP_ROOT=/opt",           # 正しい: 大文字も可
+    "_private=/tmp",           # 正しい: アンダースコアで開始
+    "var123=value",            # 正しい: 数字を含む
+    "__runner_var=value",      # エラー: 予約プレフィックス
+    "123invalid=value",        # エラー: 数字で開始
+    "my-var=value"             # エラー: ハイフン使用不可
+]
+```
+
+### 注意事項
+
+#### 1. 内部変数は子プロセスに渡されない
+
+`vars` で定義した変数は、デフォルトでは子プロセスの環境変数になりません:
+
+```toml
+[global]
+vars = ["secret_key=abc123"]
+
+[[groups.commands]]
+name = "test"
+cmd = "/bin/sh"
+args = ["-c", "echo $secret_key"]
+# 出力: 空文字列（secret_key は環境変数として渡されていない）
+```
+
+子プロセスに渡したい場合は、`env` フィールドで明示的に定義します:
+
+```toml
+[global]
+vars = ["secret_key=abc123"]
+env = ["SECRET_KEY=%{secret_key}"]  # 内部変数を使ってプロセス環境変数を定義
+
+[[groups.commands]]
+name = "test"
+cmd = "/bin/sh"
+args = ["-c", "echo $SECRET_KEY"]
+# 出力: abc123
+```
+
+#### 2. 循環参照の禁止
+
+変数間で循環参照を作成するとエラーになります:
+
+```toml
+[global]
+vars = [
+    "var1=%{var2}",
+    "var2=%{var1}"  # エラー: 循環参照
+]
+```
+
+#### 3. 未定義変数の参照
+
+定義されていない変数を参照するとエラーになります:
+
+```toml
+[global]
+vars = ["app_dir=/opt/app"]
+
+[[groups.commands]]
+name = "test"
+cmd = "%{undefined_var}/tool"  # エラー: undefined_var は定義されていない
+```
+
+### ベストプラクティス
+
+1. **パスの一元管理**: アプリケーションのルートパスなどを vars で定義
+2. **小文字推奨**: 内部変数名は小文字とアンダースコアを推奨
+3. **階層構造**: ネストした変数参照で階層的なパスを構築
+4. **セキュリティ**: 機密情報は vars で管理し、必要な場合のみ env で公開
+
+## 4.6 from_env - システム環境変数の取り込み
+
+### 概要
+
+システム環境変数を内部変数として明示的に取り込みます。取り込んだ変数は内部変数として `%{変数名}` で参照できます。
+
+### 文法
+
+```toml
+[global]
+from_env = ["内部変数名=システム環境変数名", ...]
+```
+
+### パラメータの詳細
+
+| 項目 | 内容 |
+|-----|------|
+| **型** | 文字列配列 (array of strings) |
+| **必須/オプション** | オプション |
+| **設定可能な階層** | グローバル、グループ |
+| **デフォルト値** | [] (取り込みなし) |
+| **書式** | `"内部変数名=システム環境変数名"` 形式 |
+| **セキュリティ制約** | `env_allowlist` に含まれる変数のみ取り込み可能 |
+
+### 役割
+
+- **明示的な取り込み**: システム環境変数を意図的に取り込む
+- **名前のマッピング**: システム環境変数を別名で参照可能
+- **セキュリティ向上**: allowlist と組み合わせて制御
+
+### 設定例
+
+#### 例1: 基本的なシステム環境変数の取り込み
+
+```toml
+version = "1.0"
+
+[global]
+env_allowlist = ["HOME", "USER"]
+from_env = [
+    "home=HOME",
+    "username=USER"
+]
+vars = [
+    "config_file=%{home}/.myapp/config.yml"
+]
+
+[[groups.commands]]
+name = "show_config"
+cmd = "/bin/cat"
+args = ["%{config_file}"]
+# HOME=/home/alice の場合: /bin/cat /home/alice/.myapp/config.yml
+```
+
+#### 例2: パスの拡張
+
+```toml
+version = "1.0"
+
+[global]
+env_allowlist = ["PATH", "HOME"]
+from_env = [
+    "user_path=PATH",
+    "home=HOME"
+]
+vars = [
+    "custom_bin=%{home}/bin",
+    "extended_path=%{custom_bin}:%{user_path}"
+]
+
+[[groups.commands]]
+name = "run_tool"
+cmd = "/bin/sh"
+args = ["-c", "echo Path: %{extended_path}"]
+env = ["PATH=%{extended_path}"]
+```
+
+#### 例3: 環境別の設定
+
+```toml
+version = "1.0"
+
+[global]
+env_allowlist = ["APP_ENV"]
+from_env = ["environment=APP_ENV"]
+vars = [
+    "config_dir=/etc/myapp/%{environment}",
+    "log_level=%{environment}"  # 環境に応じたログレベル
+]
+
+[[groups.commands]]
+name = "run_app"
+cmd = "/opt/myapp/bin/app"
+args = ["--config", "%{config_dir}/app.yml", "--log-level", "%{log_level}"]
+# APP_ENV=production の場合: --config /etc/myapp/production/app.yml --log-level production
+```
+
+### セキュリティ制約
+
+`from_env` で参照するシステム環境変数は、必ず `env_allowlist` に含まれている必要があります:
+
+```toml
+[global]
+env_allowlist = ["HOME"]
+from_env = [
+    "home=HOME",    # OK: HOME は allowlist に含まれている
+    "path=PATH"     # エラー: PATH は allowlist に含まれていない
+]
+```
+
+エラーメッセージ例:
+```
+system environment variable 'PATH' (mapped to 'path' in global.from_env) is not in env_allowlist: [HOME]
+```
+
+### 変数名のマッピング
+
+左辺(内部変数名)と右辺(システム環境変数名)で異なる名前を使用できます:
+
+```toml
+[global]
+env_allowlist = ["HOME", "USER", "HOSTNAME"]
+from_env = [
+    "user_home=HOME",       # HOME を user_home として参照
+    "current_user=USER",    # USER を current_user として参照
+    "host=HOSTNAME"         # HOSTNAME を host として参照
+]
+
+[[groups.commands]]
+name = "info"
+cmd = "/bin/echo"
+args = ["User: %{current_user}, Home: %{user_home}, Host: %{host}"]
+```
+
+### 注意事項
+
+#### 1. 環境変数が存在しない場合
+
+システム環境変数が存在しない場合、警告が表示され、空文字列が設定されます:
+
+```toml
+[global]
+env_allowlist = ["NONEXISTENT_VAR"]
+from_env = ["var=NONEXISTENT_VAR"]
+# 警告: System environment variable 'NONEXISTENT_VAR' is not set
+# var には空文字列が設定される
+```
+
+#### 2. 変数名の命名規則
+
+内部変数名(左辺)は POSIX 準拠の命名規則に従う必要があります:
+
+```toml
+[global]
+env_allowlist = ["HOME"]
+from_env = [
+    "home=HOME",            # 正しい
+    "user_home=HOME",       # 正しい
+    "HOME=HOME",            # 正しい(大文字も可)
+    "__runner_home=HOME",   # エラー: 予約プレフィックス
+    "123home=HOME",         # エラー: 数字で開始
+    "my-home=HOME"          # エラー: ハイフン使用不可
+]
+```
+
+### ベストプラクティス
+
+1. **小文字推奨**: 内部変数名は小文字とアンダースコアを推奨(例: `home`, `user_path`)
+2. **明示的な取り込み**: 必要な環境変数のみを明示的に取り込む
+3. **allowlist と併用**: env_allowlist で許可した変数のみ取り込む
+4. **わかりやすい名前**: システム環境変数名と内部変数名を区別しやすい名前に
+
+## 4.7 env - グローバルプロセス環境変数
+
+### 概要
+
+全てのグループとコマンドで共通して使用するプロセス環境変数を定義します。ここで定義した環境変数は、全てのコマンドの子プロセスに渡されます。内部変数 `%{VAR}` を値に使用できます。
 
 ### 文法
 
@@ -408,137 +767,141 @@ env = ["KEY1=value1", "KEY2=value2", ...]
 | **設定可能な階層** | グローバル、グループ、コマンド |
 | **デフォルト値** | [] (環境変数なし) |
 | **書式** | `"KEY=VALUE"` 形式 |
+| **値での変数展開** | 内部変数 `%{VAR}` を使用可能 |
 | **オーバーライド** | グループ・コマンドレベルで同名変数を上書き可能 |
 
 ### 役割
 
+- **子プロセスへの環境変数設定**: コマンド実行時に子プロセスに渡される
+- **内部変数の活用**: `%{VAR}` 形式で内部変数を参照可能
 - **設定の一元化**: 共通の環境変数を1箇所で管理
-- **再利用性の向上**: 複数のコマンドで同じ設定を共有
 - **保守性の向上**: 変更時の修正箇所を削減
 
 ### 設定例
 
-#### 例1: 基本的なグローバル環境変数
+#### 例1: 基本的なプロセス環境変数
 
 ```toml
 version = "1.0"
 
 [global]
-env = [
-    "BASE_DIR=/opt/app",
-    "LOG_LEVEL=info",
-    "CONFIG_FILE=/etc/myapp/config.yaml",
+vars = [
+    "app_dir=/opt/app",
+    "log_level=info"
 ]
-env_allowlist = ["HOME", "PATH"]
-
-[[groups]]
-name = "app_group"
+env = [
+    "APP_HOME=%{app_dir}",
+    "LOG_LEVEL=%{log_level}",
+    "CONFIG_FILE=%{app_dir}/config.yaml"
+]
 
 [[groups.commands]]
-name = "show_config"
-cmd = "/bin/echo"
-args = ["Config: ${CONFIG_FILE}"]  # Global.env の変数を参照
-# 実際の実行: /bin/echo "Config: /etc/myapp/config.yaml"
+name = "run_app"
+cmd = "/opt/app/bin/app"
+args = []
+# 子プロセスは APP_HOME, LOG_LEVEL, CONFIG_FILE 環境変数を受け取る
 ```
 
-#### 例2: パス構築に使用
+#### 例2: 内部変数を使ったパス構築
 
 ```toml
 version = "1.0"
 
 [global]
-env = [
-    "APP_ROOT=/opt/myapp",
-    "BIN_DIR=${APP_ROOT}/bin",      # Global.env 内で変数参照
-    "DATA_DIR=${APP_ROOT}/data",
+vars = [
+    "base=/opt",
+    "app_root=%{base}/myapp",
+    "data_dir=%{app_root}/data"
 ]
-env_allowlist = ["HOME"]
-
-[[groups]]
-name = "deployment"
+env = [
+    "APP_ROOT=%{app_root}",
+    "DATA_PATH=%{data_dir}",
+    "BIN_PATH=%{app_root}/bin"
+]
 
 [[groups.commands]]
 name = "start_app"
-cmd = "${BIN_DIR}/server"           # Global.env の変数を参照
-args = ["--data-dir", "${DATA_DIR}"]
+cmd = "%{app_root}/bin/server"
+args = []
+# 子プロセスは APP_ROOT, DATA_PATH, BIN_PATH を受け取る
 ```
 
-#### 例3: システム環境変数の拡張
+#### 例3: システム環境変数との組み合わせ
 
 ```toml
 version = "1.0"
 
 [global]
-env = [
-    "PATH=/opt/custom/bin:${PATH}",  # システム環境変数 PATH を拡張
+env_allowlist = ["HOME", "USER"]
+from_env = [
+    "home=HOME",
+    "username=USER"
 ]
-env_allowlist = ["PATH"]
-
-[[groups]]
-name = "tools"
+vars = [
+    "log_dir=%{home}/logs"
+]
+env = [
+    "USER_NAME=%{username}",
+    "LOG_DIRECTORY=%{log_dir}"
+]
 
 [[groups.commands]]
-name = "run_custom_tool"
-cmd = "custom-tool"  # /opt/custom/bin から検索される
-args = ["--version"]
+name = "log_info"
+cmd = "/bin/sh"
+args = ["-c", "echo USER_NAME=$USER_NAME, LOG_DIRECTORY=$LOG_DIRECTORY"]
+# 子プロセスは USER_NAME と LOG_DIRECTORY 環境変数を受け取る
 ```
 
-### 優先順位
+### 優先順位とマージ
 
-環境変数は以下の優先順位で解決されます（下に行くほど優先度が高い）：
+環境変数は以下の順序でマージされます:
 
-1. システム環境変数（最低優先）
-2. **Global.env**（グローバル環境変数）
-3. Group.env（グループ環境変数、第5章参照）
-4. Command.env（コマンド環境変数、第6章参照）（最高優先）
+1. **Global.env**（グローバル環境変数）
+2. Group.env（グループ環境変数、第5章参照）と結合
+3. Command.env（コマンド環境変数、第6章参照）と結合
+
+同じ名前の環境変数が複数レベルで定義された場合、より具体的なレベル(Command > Group > Global)が優先されます。
 
 ```toml
-# システム環境変数 PATH=/usr/bin:/bin が存在する場合
-
 [global]
+vars = ["base=global_value"]
 env = [
-    "PATH=/opt/bin:${PATH}",        # システムのPATHを拡張
-    "COMMON_VAR=global_value",
+    "COMMON_VAR=%{base}",
+    "GLOBAL_ONLY=from_global"
 ]
 
 [[groups]]
 name = "example"
-env = ["COMMON_VAR=group_value"]    # Global.env を上書き
+vars = ["base=group_value"]
+env = ["COMMON_VAR=%{base}"]    # Global.env を上書き
 
 [[groups.commands]]
 name = "cmd1"
-env = ["COMMON_VAR=command_value"]  # Group.env を上書き
+vars = ["base=command_value"]
+env = ["COMMON_VAR=%{base}"]    # Group.env を上書き
 
 # 実行時の環境変数:
-# PATH=/opt/bin:/usr/bin:/bin
-# COMMON_VAR=command_value
+# COMMON_VAR=command_value (コマンドレベルが優先)
+# GLOBAL_ONLY=from_global (グローバルのみ)
 ```
 
-### 変数展開
+### 内部変数との関係
 
-Global.env 内でも変数参照が可能です。
-
-#### Global.env 内での変数参照
+- **env の値**: 内部変数 `%{VAR}` を使用可能
+- **子プロセスへの伝播**: env で定義された変数は子プロセスに渡される
+- **内部変数は伝播しない**: varsやfrom_envで定義した内部変数はデフォルトでは子プロセスに渡されない
 
 ```toml
 [global]
-env = [
-    "BASE=/opt/app",
-    "BIN=${BASE}/bin",              # BASE を参照
-    "LIB=${BASE}/lib",              # BASE を参照
-    "CONFIG=${BASE}/etc/config",    # BASE を参照
-]
-```
+vars = ["internal_value=secret"]     # 内部変数のみ
+env = ["PUBLIC_VAR=%{internal_value}"]  # 内部変数を使って環境変数を定義
 
-#### システム環境変数の参照
-
-```toml
-[global]
-env = [
-    "MY_HOME=${HOME}/.myapp",       # システム環境変数 HOME を参照
-    "BACKUP_DIR=${HOME}/backup",
-]
-env_allowlist = ["HOME"]  # システム環境変数を参照する場合は allowlist に追加
+[[groups.commands]]
+name = "test"
+cmd = "/bin/sh"
+args = ["-c", "echo internal_value=$internal_value, PUBLIC_VAR=$PUBLIC_VAR"]
+# 出力: internal_value=, PUBLIC_VAR=secret
+# (internal_value は環境変数として渡されない)
 ```
 
 ### 注意事項
@@ -570,34 +933,37 @@ env = [
 ]
 ```
 
-#### 3. allowlist との関係
+#### 3. 内部変数の参照
 
-Global.env で定義した変数がシステム環境変数を参照する場合、参照先の変数を `env_allowlist` に追加する必要があります：
+env の値には内部変数を参照できますが、未定義の変数を参照するとエラーになります:
 
 ```toml
 [global]
+vars = ["defined=value"]
 env = [
-    "MY_PATH=${HOME}/bin",  # HOME を参照
+    "VALID=%{defined}",      # OK: defined は定義されている
+    "INVALID=%{undefined}"   # エラー: undefined は定義されていない
 ]
-env_allowlist = ["HOME"]    # 必須: HOME を許可
 ```
 
 #### 4. 循環参照の禁止
 
-変数間で循環参照を作成するとエラーになります：
+env 内の変数間で循環参照を作成するとエラーになります:
 
 ```toml
 [global]
-env = [
-    "A=${B}",
-    "B=${A}",  # エラー: 循環参照
+vars = [
+    "var1=%{var2}",
+    "var2=%{var1}"  # エラー: 循環参照
 ]
 ```
 
 ### ベストプラクティス
 
-1. **共通設定は Global.env に**: 全体で使用する変数はグローバルで定義
-2. **明確な命名**: 変数名は大文字とアンダースコアで明確に
+1. **内部変数を活用**: パスなどは vars で定義し、env で必要なもののみ公開
+2. **明確な命名**: プロセス環境変数名は大文字とアンダースコアで明確に
+3. **最小限の公開**: 子プロセスに必要な環境変数のみを env で定義
+4. **セキュリティ考慮**: 機密情報は慎重に扱い、必要最小限の環境変数のみ公開
 3. **階層的な定義**: ベースパスをまず定義し、派生パスはそれを参照
 4. **allowlist の適切な設定**: システム環境変数を参照する場合は必ず allowlist に追加
 
@@ -624,11 +990,11 @@ env_allowlist = ["HOME", "PATH"]
 - **Command.env**: コマンドレベルの環境変数については第6章を参照
 - **変数展開の詳細**: 変数展開の仕組みについては第7章を参照
 
-## 4.6 env_allowlist - 環境変数許可リスト
+## 4.8 env_allowlist - 環境変数許可リスト
 
 ### 概要
 
-コマンド実行時に使用を許可する環境変数を指定します。リストにない環境変数は全て除外されます。
+`from_env` でシステム環境変数を取り込む際に許可する環境変数を指定します。リストにない環境変数は取り込めません。
 
 ### 文法
 
@@ -752,11 +1118,11 @@ env_allowlist = [
 env_allowlist = ["PATH", "HOME", "USER"]
 ```
 
-## 4.7 verify_files - ファイル検証リスト
+## 4.9 verify_files - ファイル検証リスト
 
 ### 概要
 
-実行前に整合性を検証するファイルのリストを指定します。指定されたファイルはハッシュ値と照合され、改ざんが検出されると実行が中止されます。
+実行前に整合性を検証するファイルのリストを指定します。指定されたファイルはハッシュ値と照合され、改ざんが検出されると実行が中止されます。内部変数 `%{VAR}` を使用してパスを動的に構築できます。
 
 ### 文法
 
@@ -859,7 +1225,7 @@ verify_files = ["/opt/app/script.sh"]  # 正しい
 
 多数のファイルを検証すると起動時間が増加します。必要なファイルのみを指定してください。
 
-## 4.8 max_output_size - 出力サイズ上限
+## 4.10 max_output_size - 出力サイズ上限
 
 ### 概要
 

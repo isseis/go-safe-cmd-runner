@@ -181,19 +181,69 @@ name = "reject_group"
 env_allowlist = []  # 全ての環境変数を拒否
 ```
 
-### 2.3.4 設定の優先順位まとめ
+### 2.3.4 変数の継承パターン
+
+#### vars (内部変数) - マージ継承
+
+`vars` は **Union (マージ)** によって継承されます。下位レベルの設定は上位レベルの設定とマージされ、同じキーがある場合は下位レベルが優先されます。
+
+```toml
+[global]
+vars = ["base_dir=/opt/app", "log_level=info"]
+
+[[groups]]
+name = "admin_tasks"
+vars = ["log_level=debug", "task_type=admin"]  # log_level を上書き、task_type を追加
+
+[[groups.commands]]
+name = "task1"
+vars = ["task_id=42"]  # 既存の変数を継承しつつ task_id を追加
+cmd = "/bin/task"
+args = ["%{base_dir}", "%{log_level}", "%{task_type}", "%{task_id}"]
+# 最終的な vars: base_dir=/opt/app, log_level=debug, task_type=admin, task_id=42
+```
+
+#### from_env (システム環境変数のインポート) - Override 継承
+
+`from_env` は **Override (上書き)** によって継承されます。下位レベルで指定した場合、上位レベルの設定は完全に無視されます。
+
+```toml
+[global]
+from_env = ["HOME", "USER", "PATH"]
+
+[[groups]]
+name = "tasks"
+from_env = ["LANG", "LC_ALL"]  # グローバルの from_env を完全に置き換え
+
+[[groups.commands]]
+name = "task1"
+cmd = "/bin/echo"
+# from_env を指定しないため、グループの from_env が適用される
+args = ["%{LANG}"]  # LANG のみ利用可能 (HOME, USER, PATH は利用不可)
+
+[[groups.commands]]
+name = "task2"
+from_env = ["PWD"]  # グループの from_env も完全に置き換え
+cmd = "/bin/echo"
+args = ["%{PWD}"]  # PWD のみ利用可能 (LANG, LC_ALL も利用不可)
+```
+
+### 2.3.5 設定の優先順位まとめ
 
 設定項目によって、優先順位が異なります:
 
-| 設定項目 | 優先順位 (高 → 低) | 備考 |
-|---------|------------------|------|
-| timeout | コマンド > グローバル | グループレベルでは設定不可 |
-| workdir | グループ > グローバル | コマンドレベルでは設定不可 |
-| env_allowlist | グループ > グローバル | 継承モードに応じて動作が変化 |
-| verify_files | グループ + グローバル | マージされる(両方が適用) |
-| log_level | グローバルのみ | 下位レベルでオーバーライド不可 |
+| 設定項目 | 優先順位 (高 → 低) | 継承パターン | 備考 |
+|---------|------------------|-------------|------|
+| timeout | コマンド > グローバル | Override | グループレベルでは設定不可 |
+| workdir | グループ > グローバル | Override | コマンドレベルでは設定不可 |
+| env_allowlist | グループ > グローバル | Override | 継承モードに応じて動作が変化 |
+| vars | コマンド > グループ > グローバル | Merge (Union) | 下位レベルが上位レベルとマージ、同名キーは上書き |
+| from_env | コマンド > グループ > グローバル | Override | 下位レベルが上位レベルを完全に置き換え |
+| env | コマンドのみ | N/A | プロセス環境変数の設定 |
+| verify_files | グループ + グローバル | Merge | マージされる(両方が適用) |
+| log_level | グローバルのみ | N/A | 下位レベルでオーバーライド不可 |
 
-### 2.3.5 実践例: 複雑な継承パターン
+### 2.3.6 実践例: 複雑な継承パターン
 
 ```toml
 [global]

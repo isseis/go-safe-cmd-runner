@@ -143,7 +143,7 @@ Detailed explanation of how to write configuration files used by the runner comm
    - Execution user, risk level, output management
 
 7. **[Variable Expansion](toml_config/07_variable_expansion.md)**
-   - Variable expansion in `${VAR}` format
+   - Variable expansion in `%{VAR}` format
    - Dynamic configuration construction
 
 8. **[Practical Examples](toml_config/08_practical_examples.md)**

@@ -283,13 +283,257 @@ cmd = "echo"
 args = ["This is a message with spaces"]  # Contains spaces but is a single argument
 ```
 
-## 6.2 Environment Settings
+## 6.2 Variables and Environment Configuration
 
-### 6.2.1 env - Environment Variables
+### 6.2.1 vars - Internal Variables
 
 #### Overview
 
-Specifies environment variables to set during command execution in `KEY=VALUE` format.
+Specifies internal variables for variable expansion within the TOML file in `KEY=VALUE` format. Variables defined at command level are merged with variables at global and group levels (Union merge).
+
+#### Syntax
+
+```toml
+[[groups.commands]]
+name = "example"
+cmd = "command"
+vars = ["key1=value1", "key2=value2", ...]
+```
+
+#### Parameter Details
+
+| Item | Description |
+|------|-------------|
+| **Type** | Array of strings (array of strings) |
+| **Required/Optional** | Optional |
+| **Configurable Level** | Global, Group, Command |
+| **Default Value** | [] |
+| **Format** | "KEY=VALUE" |
+| **Variable Name Constraints** | POSIX compliant (alphanumeric and underscore only, cannot start with digit), `__runner_` prefix is reserved |
+| **Inheritance Behavior** | Merge (Union) - lower levels override upper levels |
+
+#### Role
+
+- **Variable Expansion in TOML**: Can be referenced in `cmd`, `args`, `env` values using `%{VAR}` format
+- **Non-propagation to Process Environment**: Not included in child process environment variables
+- **Hierarchical Merge**: Merged in order: Global → Group → Command
+
+#### Configuration Examples
+
+##### Example 1: Command-Specific Variables
+
+```toml
+[[groups.commands]]
+name = "backup_database"
+cmd = "/usr/bin/pg_dump"
+vars = [
+    "db_name=production_db",
+    "backup_dir=/var/backups/postgres",
+]
+args = ["-d", "%{db_name}", "-f", "%{backup_dir}/%{db_name}.sql"]
+```
+
+##### Example 2: Hierarchical Merge
+
+```toml
+[global]
+vars = ["base_dir=/opt/app", "log_level=info"]
+
+[[groups]]
+name = "admin_tasks"
+vars = ["log_level=debug"]  # Override global log_level
+
+[[groups.commands]]
+name = "task1"
+cmd = "/bin/task"
+vars = ["task_id=42"]  # Inherit base_dir, log_level; add task_id
+args = ["--dir", "%{base_dir}", "--log", "%{log_level}", "--id", "%{task_id}"]
+# Final variables: base_dir=/opt/app, log_level=debug, task_id=42
+```
+
+#### Important Notes
+
+##### 1. Non-propagation to Process Environment
+
+Variables defined in `vars` are not set as environment variables in child processes:
+
+```toml
+[[groups.commands]]
+name = "print_vars"
+cmd = "/bin/sh"
+vars = ["my_var=hello"]
+args = ["-c", "echo $my_var"]  # my_var is empty string (not in environment)
+```
+
+To pass environment variables to child processes, use `env` parameter:
+
+```toml
+[[groups.commands]]
+name = "print_vars"
+cmd = "/bin/sh"
+vars = ["my_var=hello"]
+env = ["MY_VAR=%{my_var}"]  # Convert vars value to environment variable
+args = ["-c", "echo $MY_VAR"]  # MY_VAR=hello is output
+```
+
+##### 2. Variable Name Constraints
+
+Variable names must follow these rules:
+
+- **POSIX Compliant**: Only alphanumeric and underscore; cannot start with digit
+- **Reserved Prefix**: Names starting with `__runner_` are reserved for automatic variables
+
+```toml
+# Correct examples
+vars = ["my_var=value", "VAR_123=value", "_private=value"]
+
+# Wrong examples
+vars = [
+    "123var=value",      # Starts with digit
+    "my-var=value",      # Hyphen not allowed
+    "__runner_custom=x", # Reserved prefix
+]
+```
+
+##### 3. Automatic Variables
+
+Runner provides the following automatic variables (cannot be overridden):
+
+- `__RUNNER_DATETIME`: Command execution time (ISO 8601 format)
+- `__RUNNER_PID`: PID of Runner process
+
+```toml
+[[groups.commands]]
+name = "log_execution"
+cmd = "/usr/bin/logger"
+args = ["Executed at %{__RUNNER_DATETIME} by PID %{__RUNNER_PID}"]
+```
+
+### 6.2.2 from_env - System Environment Variable Import
+
+#### Overview
+
+Specifies the names of system environment variables for go-safe-cmd-runner to import for use in TOML variable expansion. Command-level `from_env` completely overrides global and group-level `from_env` (Override behavior).
+
+#### Syntax
+
+```toml
+[[groups.commands]]
+name = "example"
+cmd = "command"
+from_env = ["VAR1", "VAR2", ...]
+```
+
+#### Parameter Details
+
+| Item | Description |
+|------|-------------|
+| **Type** | Array of strings (array of strings) |
+| **Required/Optional** | Optional |
+| **Configurable Level** | Global, Group, Command |
+| **Default Value** | [] |
+| **Format** | Variable names only (VALUE not needed) |
+| **Security Constraint** | Only variables in `env_allowlist` can be imported |
+| **Inheritance Behavior** | Override - lower levels completely replace upper levels |
+
+#### Role
+
+- **System Environment Variable Import**: Make Runner's environment variables available for use in TOML
+- **Variable Expansion in TOML**: Imported variables can be referenced using `%{VAR}` format
+- **Security Management**: Controlled through `env_allowlist`
+
+#### Configuration Examples
+
+##### Example 1: Basic Import
+
+```toml
+[global]
+env_allowlist = ["HOME", "USER", "PATH"]
+
+[[groups.commands]]
+name = "show_user_info"
+cmd = "/bin/echo"
+from_env = ["USER", "HOME"]
+args = ["User: %{USER}, Home: %{HOME}"]
+```
+
+##### Example 2: Override Behavior
+
+```toml
+[global]
+env_allowlist = ["HOME", "USER", "PATH", "LANG"]
+from_env = ["HOME", "USER"]  # Global level
+
+[[groups]]
+name = "intl_tasks"
+from_env = ["LANG"]  # Group level: overrides global from_env
+
+[[groups.commands]]
+name = "task1"
+cmd = "/bin/echo"
+# from_env not specified → group's from_env is applied
+args = ["Language: %{LANG}"]  # HOME, USER not available
+
+[[groups.commands]]
+name = "task2"
+cmd = "/bin/echo"
+from_env = ["HOME", "PATH"]  # Command level: overrides group's from_env
+args = ["Path: %{PATH}"]  # LANG not available, only HOME and PATH
+```
+
+#### Important Notes
+
+##### 1. Relationship with env_allowlist
+
+Variables to be imported with `from_env` must be included in `env_allowlist`:
+
+```toml
+[global]
+env_allowlist = ["HOME", "USER"]
+
+[[groups.commands]]
+name = "example"
+cmd = "/bin/echo"
+from_env = ["HOME", "PATH"]  # Error: PATH not in env_allowlist
+args = ["%{HOME}"]
+```
+
+##### 2. Complete Replacement with Override
+
+When `from_env` is specified at command level, global and group `from_env` are completely ignored:
+
+```toml
+[global]
+from_env = ["HOME", "USER", "PATH"]
+
+[[groups]]
+name = "tasks"
+from_env = ["LANG", "LC_ALL"]
+
+[[groups.commands]]
+name = "task1"
+cmd = "/bin/echo"
+from_env = ["PWD"]  # HOME, USER, PATH, LANG, LC_ALL all ignored
+args = ["%{PWD}"]   # Only PWD available
+```
+
+##### 3. Non-Existent Variables
+
+If a variable specified in `from_env` does not exist in the system environment, it is treated as empty string:
+
+```toml
+[[groups.commands]]
+name = "example"
+cmd = "/bin/echo"
+from_env = ["NONEXISTENT_VAR"]
+args = ["Value: %{NONEXISTENT_VAR}"]  # Output: "Value: "
+```
+
+### 6.2.3 env - Process Environment Variables
+
+#### Overview
+
+Specifies environment variables to set for child process during command execution in `KEY=VALUE` format.
 
 #### Syntax
 
@@ -310,17 +554,18 @@ env = ["KEY1=value1", "KEY2=value2", ...]
 | **Configurable Level** | Command only |
 | **Default Value** | [] |
 | **Format** | "KEY=VALUE" |
-| **Variable Expansion** | ${VAR} format variable expansion is possible in VALUE part |
+| **Variable Expansion** | VALUE part supports %{VAR} format variable expansion |
 
 #### Role
 
+- **Process Environment Variables**: Set as environment variables for child processes
 - **Command Configuration**: Control command behavior with environment variables
 - **Credentials**: Settings like database connection information
 - **Operation Mode**: Switch modes like debug mode
 
 #### Configuration Examples
 
-#### Example 1: Basic Environment Variables
+##### Example 1: Basic Environment Variables
 
 ```toml
 [[groups.commands]]
@@ -334,7 +579,7 @@ env = [
 ]
 ```
 
-#### Example 2: Database Connection Information
+##### Example 2: Database Connection Information
 
 ```toml
 [[groups.commands]]
@@ -348,17 +593,19 @@ env = [
 ]
 ```
 
-#### Example 3: Using Variable Expansion
+##### Example 3: Using Variable Expansion
 
 ```toml
 [[groups.commands]]
 name = "backup"
 cmd = "/usr/bin/backup.sh"
-args = []
+vars = [
+    "backup_dir=/var/backups",
+    "date=2025-01-15",
+]
 env = [
-    "BACKUP_DIR=/var/backups",
-    "BACKUP_FILE=${BACKUP_DIR}/backup-${DATE}.tar.gz",
-    "DATE=2025-01-15",
+    "BACKUP_DIR=%{backup_dir}",
+    "BACKUP_FILE=%{backup_dir}/backup-%{date}.tar.gz",
 ]
 # BACKUP_FILE expands to /var/backups/backup-2025-01-15.tar.gz
 ```
@@ -367,7 +614,7 @@ env = [
 
 ##### 1. Relationship with env_allowlist
 
-Set environment variables must be included in the group or global `env_allowlist`:
+Environment variables set must be included in the group or global `env_allowlist`:
 
 ```toml
 [global]
@@ -381,9 +628,9 @@ name = "run_app"
 cmd = "/opt/app/server"
 args = []
 env = [
-    "LOG_LEVEL=debug",      # OK: included in env_allowlist
-    "DATABASE_URL=...",     # OK: included in env_allowlist
-    "UNAUTHORIZED_VAR=x",   # Error: not included in env_allowlist
+    "LOG_LEVEL=debug",      # OK: in env_allowlist
+    "DATABASE_URL=...",     # OK: in env_allowlist
+    "UNAUTHORIZED_VAR=x",   # Error: not in env_allowlist
 ]
 ```
 
@@ -418,14 +665,6 @@ env = [
     "LOG_LEVEL=info",  # Error: duplicate
 ]
 ```
-
-### 6.2.2 dir - Execution Directory
-
-#### Overview
-
-Specifies an execution directory specific to this command.
-
-> **Note**: In the current version, the `dir` parameter is not implemented. The working directory should be controlled with group-level `workdir` or global `workdir`.
 
 ## 6.3 Timeout Settings
 

@@ -386,11 +386,370 @@ args = ["pattern", "file.txt"]
 
 Setting `skip_standard_paths = true` will not detect tampering of commands in standard paths. For environments with high security requirements, it is recommended to keep it as `false` (default).
 
-## 4.5 env - Global Environment Variables
+## 4.5 vars - Global Internal Variables
 
 ### Overview
 
-Defines environment variables that are commonly used across all groups and commands. Environment variables defined here can be referenced by all commands.
+Defines internal variables for expansion within the TOML configuration file. Internal variables defined here can be referenced by all groups and commands. By default, internal variables are not passed as environment variables to child processes.
+
+### Syntax
+
+```toml
+[global]
+vars = ["var1=value1", "var2=value2", ...]
+```
+
+### Parameter Details
+
+| Item | Description |
+|------|-------------|
+| **Type** | Array of strings (array of strings) |
+| **Required/Optional** | Optional |
+| **Configurable Level** | Global, Group, Command |
+| **Default Value** | [] (no variables) |
+| **Format** | `"variable_name=value"` format |
+| **Reference Syntax** | `%{variable_name}` |
+| **Scope** | Global vars can be referenced from all groups and commands |
+
+### Role
+
+- **TOML Expansion Only**: Expands values in `cmd`, `args`, `env`, and `verify_files`
+- **Enhanced Security**: Separates from environment variables passed to child processes
+- **Configuration Reuse**: Centrally manage common values
+- **Dynamic Path Building**: Build directory paths dynamically
+
+### Configuration Examples
+
+#### Example 1: Basic Internal Variable Definition
+
+```toml
+version = "1.0"
+
+[global]
+vars = [
+    "app_dir=/opt/myapp",
+    "config_file=%{app_dir}/config.yml"
+]
+
+[[groups]]
+name = "app_group"
+
+[[groups.commands]]
+name = "show_config"
+cmd = "/bin/cat"
+args = ["%{config_file}"]
+# Actual execution: /bin/cat /opt/myapp/config.yml
+```
+
+#### Example 2: Nested Variable References
+
+```toml
+version = "1.0"
+
+[global]
+vars = [
+    "base=/opt",
+    "app_root=%{base}/myapp",
+    "bin_dir=%{app_root}/bin",
+    "data_dir=%{app_root}/data",
+    "log_dir=%{app_root}/logs"
+]
+
+[[groups]]
+name = "deployment"
+
+[[groups.commands]]
+name = "start_app"
+cmd = "%{bin_dir}/server"
+args = ["--data", "%{data_dir}", "--log", "%{log_dir}"]
+# Actual execution: /opt/myapp/bin/server --data /opt/myapp/data --log /opt/myapp/logs
+```
+
+#### Example 3: Combining Internal Variables and Process Environment Variables
+
+```toml
+version = "1.0"
+
+[global]
+vars = [
+    "app_dir=/opt/myapp",
+    "config_path=%{app_dir}/config.yml"
+]
+env = [
+    "APP_HOME=%{app_dir}",           # Define process environment variable using internal variable
+    "CONFIG_FILE=%{config_path}"
+]
+
+[[groups.commands]]
+name = "run_app"
+cmd = "%{app_dir}/bin/app"
+args = ["--config", "%{config_path}"]
+# Child process receives APP_HOME and CONFIG_FILE environment variables, but not app_dir or config_path
+```
+
+### Variable Naming Rules
+
+Internal variable names must follow these rules:
+
+- **POSIX Compliance**: Format `[a-zA-Z_][a-zA-Z0-9_]*`
+- **Recommended**: Use lowercase and underscores (e.g., `app_dir`, `config_file`)
+- **Uppercase Allowed**: Uppercase letters can be used, but lowercase is recommended
+- **Reserved Prefix Prohibited**: Names starting with `__runner_` cannot be used
+
+```toml
+[global]
+vars = [
+    "app_dir=/opt/app",        # Correct: lowercase and underscores
+    "logLevel=info",           # Correct: camelCase
+    "APP_ROOT=/opt",           # Correct: uppercase allowed
+    "_private=/tmp",           # Correct: starts with underscore
+    "var123=value",            # Correct: contains numbers
+    "__runner_var=value",      # Error: reserved prefix
+    "123invalid=value",        # Error: starts with number
+    "my-var=value"             # Error: hyphens not allowed
+]
+```
+
+### Precautions
+
+#### 1. Internal Variables Are Not Passed to Child Processes
+
+Variables defined in `vars` are not passed as environment variables to child processes by default:
+
+```toml
+[global]
+vars = ["secret_key=abc123"]
+
+[[groups.commands]]
+name = "test"
+cmd = "/bin/sh"
+args = ["-c", "echo $secret_key"]
+# Output: (empty string) (secret_key is not passed as environment variable)
+```
+
+To pass to child process, explicitly define in `env` field:
+
+```toml
+[global]
+vars = ["secret_key=abc123"]
+env = ["SECRET_KEY=%{secret_key}"]  # Define process environment variable using internal variable
+
+[[groups.commands]]
+name = "test"
+cmd = "/bin/sh"
+args = ["-c", "echo $SECRET_KEY"]
+# Output: abc123
+```
+
+#### 2. Circular References Prohibited
+
+Creating circular references between variables results in an error:
+
+```toml
+[global]
+vars = [
+    "var1=%{var2}",
+    "var2=%{var1}"  # Error: circular reference
+]
+```
+
+#### 3. Undefined Variable References
+
+Referencing undefined variables results in an error:
+
+```toml
+[global]
+vars = ["app_dir=/opt/app"]
+
+[[groups.commands]]
+name = "test"
+cmd = "%{undefined_var}/tool"  # Error: undefined_var is not defined
+```
+
+### Best Practices
+
+1. **Centralize Path Management**: Define application root paths and similar values in vars
+2. **Lowercase Recommended**: Use lowercase and underscores for internal variable names
+3. **Hierarchical Structure**: Build hierarchical paths using nested variable references
+4. **Security**: Manage sensitive information in vars and expose via env only when necessary
+
+## 4.6 from_env - System Environment Variable Import
+
+### Overview
+
+Explicitly imports system environment variables as internal variables. Imported variables can be referenced as internal variables using `%{variable_name}`.
+
+### Syntax
+
+```toml
+[global]
+from_env = ["internal_var_name=SYSTEM_ENV_VAR_NAME", ...]
+```
+
+### Parameter Details
+
+| Item | Description |
+|------|-------------|
+| **Type** | Array of strings (array of strings) |
+| **Required/Optional** | Optional |
+| **Configurable Level** | Global, Group |
+| **Default Value** | [] (no imports) |
+| **Format** | `"internal_var_name=SYSTEM_ENV_VAR_NAME"` format |
+| **Security Constraint** | Only variables included in `env_allowlist` can be imported |
+
+### Role
+
+- **Explicit Import**: Intentionally import system environment variables
+- **Name Mapping**: Reference system environment variables with different names
+- **Enhanced Security**: Control with allowlist in combination
+
+### Configuration Examples
+
+#### Example 1: Basic System Environment Variable Import
+
+```toml
+version = "1.0"
+
+[global]
+env_allowlist = ["HOME", "USER"]
+from_env = [
+    "home=HOME",
+    "username=USER"
+]
+vars = [
+    "config_file=%{home}/.myapp/config.yml"
+]
+
+[[groups.commands]]
+name = "show_config"
+cmd = "/bin/cat"
+args = ["%{config_file}"]
+# When HOME=/home/alice: /bin/cat /home/alice/.myapp/config.yml
+```
+
+#### Example 2: Path Extension
+
+```toml
+version = "1.0"
+
+[global]
+env_allowlist = ["PATH", "HOME"]
+from_env = [
+    "user_path=PATH",
+    "home=HOME"
+]
+vars = [
+    "custom_bin=%{home}/bin",
+    "extended_path=%{custom_bin}:%{user_path}"
+]
+
+[[groups.commands]]
+name = "run_tool"
+cmd = "/bin/sh"
+args = ["-c", "echo Path: %{extended_path}"]
+env = ["PATH=%{extended_path}"]
+```
+
+#### Example 3: Environment-Specific Configuration
+
+```toml
+version = "1.0"
+
+[global]
+env_allowlist = ["APP_ENV"]
+from_env = ["environment=APP_ENV"]
+vars = [
+    "config_dir=/etc/myapp/%{environment}",
+    "log_level=%{environment}"  # Log level depends on environment
+]
+
+[[groups.commands]]
+name = "run_app"
+cmd = "/opt/myapp/bin/app"
+args = ["--config", "%{config_dir}/app.yml", "--log-level", "%{log_level}"]
+# When APP_ENV=production: --config /etc/myapp/production/app.yml --log-level production
+```
+
+### Security Constraint
+
+System environment variables referenced in `from_env` must be included in `env_allowlist`:
+
+```toml
+[global]
+env_allowlist = ["HOME"]
+from_env = [
+    "home=HOME",    # OK: HOME is in allowlist
+    "path=PATH"     # Error: PATH is not in allowlist
+]
+```
+
+Error message example:
+```
+system environment variable 'PATH' (mapped to 'path' in global.from_env) is not in env_allowlist: [HOME]
+```
+
+### Variable Name Mapping
+
+Different names can be used for left side (internal variable name) and right side (system environment variable name):
+
+```toml
+[global]
+env_allowlist = ["HOME", "USER", "HOSTNAME"]
+from_env = [
+    "user_home=HOME",       # Reference HOME as user_home
+    "current_user=USER",    # Reference USER as current_user
+    "host=HOSTNAME"         # Reference HOSTNAME as host
+]
+
+[[groups.commands]]
+name = "info"
+cmd = "/bin/echo"
+args = ["User: %{current_user}, Home: %{user_home}, Host: %{host}"]
+```
+
+### Precautions
+
+#### 1. When Environment Variable Does Not Exist
+
+If a system environment variable does not exist, a warning is displayed and empty string is set:
+
+```toml
+[global]
+env_allowlist = ["NONEXISTENT_VAR"]
+from_env = ["var=NONEXISTENT_VAR"]
+# Warning: System environment variable 'NONEXISTENT_VAR' is not set
+# var is set to empty string
+```
+
+#### 2. Variable Naming Convention
+
+Internal variable names (left side) must follow POSIX naming convention:
+
+```toml
+[global]
+env_allowlist = ["HOME"]
+from_env = [
+    "home=HOME",            # Correct
+    "user_home=HOME",       # Correct
+    "HOME=HOME",            # Correct (uppercase allowed)
+    "__runner_home=HOME",   # Error: reserved prefix
+    "123home=HOME",         # Error: starts with number
+    "my-home=HOME"          # Error: hyphens not allowed
+]
+```
+
+### Best Practices
+
+1. **Lowercase Recommended**: Use lowercase and underscores for internal variable names (e.g., `home`, `user_path`)
+2. **Explicit Import**: Import only necessary environment variables explicitly
+3. **Use with Allowlist**: Import only variables allowed in env_allowlist
+4. **Clear Naming**: Use names that clearly distinguish between system environment variable names and internal variable names
+
+## 4.7 env - Global Process Environment Variables
+
+### Overview
+
+Defines process environment variables that are commonly used across all groups and commands. Environment variables defined here are passed to child processes of all commands. Internal variables in the form `%{VAR}` can be used in values.
 
 ### Syntax
 
@@ -408,147 +767,149 @@ env = ["KEY1=value1", "KEY2=value2", ...]
 | **Configurable Level** | Global, Group, Command |
 | **Default Value** | [] (no environment variables) |
 | **Format** | `"KEY=VALUE"` format |
+| **Variable Expansion in Values** | Can use internal variables `%{VAR}` |
 | **Override** | Same-name variables can be overridden at group/command level |
 
 ### Role
 
+- **Child Process Environment Variable Setting**: Passed to child processes when executing commands
+- **Internal Variable Utilization**: Can reference internal variables in `%{VAR}` format
 - **Centralized Configuration**: Manage common environment variables in one place
-- **Improved Reusability**: Share the same settings across multiple commands
 - **Enhanced Maintainability**: Reduce modification points when changes are needed
 
 ### Configuration Examples
 
-#### Example 1: Basic Global Environment Variables
+#### Example 1: Basic Process Environment Variables
 
 ```toml
 version = "1.0"
 
 [global]
-env = [
-    "BASE_DIR=/opt/app",
-    "LOG_LEVEL=info",
-    "CONFIG_FILE=/etc/myapp/config.yaml",
+vars = [
+    "app_dir=/opt/app",
+    "log_level=info"
 ]
-env_allowlist = ["HOME", "PATH"]
-
-[[groups]]
-name = "app_group"
+env = [
+    "APP_HOME=%{app_dir}",
+    "LOG_LEVEL=%{log_level}",
+    "CONFIG_FILE=%{app_dir}/config.yaml"
+]
 
 [[groups.commands]]
-name = "show_config"
-cmd = "/bin/echo"
-args = ["Config: ${CONFIG_FILE}"]  # References Global.env variable
-# Actual execution: /bin/echo "Config: /etc/myapp/config.yaml"
+name = "run_app"
+cmd = "/opt/app/bin/app"
+args = []
+# Child process receives APP_HOME, LOG_LEVEL, CONFIG_FILE environment variables
 ```
 
-#### Example 2: Using for Path Construction
+#### Example 2: Path Construction Using Internal Variables
 
 ```toml
 version = "1.0"
 
 [global]
-env = [
-    "APP_ROOT=/opt/myapp",
-    "BIN_DIR=${APP_ROOT}/bin",      # Variable reference within Global.env
-    "DATA_DIR=${APP_ROOT}/data",
+vars = [
+    "base=/opt",
+    "app_root=%{base}/myapp",
+    "data_dir=%{app_root}/data"
 ]
-env_allowlist = ["HOME"]
-
-[[groups]]
-name = "deployment"
+env = [
+    "APP_ROOT=%{app_root}",
+    "DATA_PATH=%{data_dir}",
+    "BIN_PATH=%{app_root}/bin"
+]
 
 [[groups.commands]]
 name = "start_app"
-cmd = "${BIN_DIR}/server"           # References Global.env variable
-args = ["--data-dir", "${DATA_DIR}"]
+cmd = "%{app_root}/bin/server"
+args = []
+# Child process receives APP_ROOT, DATA_PATH, BIN_PATH
 ```
 
-#### Example 3: Extending System Environment Variables
+#### Example 3: Combination with System Environment Variables
 
 ```toml
 version = "1.0"
 
 [global]
-env = [
-    "PATH=/opt/custom/bin:${PATH}",  # Extends system environment variable PATH
+env_allowlist = ["HOME", "USER"]
+from_env = [
+    "home=HOME",
+    "username=USER"
 ]
-env_allowlist = ["PATH"]
-
-[[groups]]
-name = "tools"
+vars = [
+    "log_dir=%{home}/logs"
+]
+env = [
+    "USER_NAME=%{username}",
+    "LOG_DIRECTORY=%{log_dir}"
+]
 
 [[groups.commands]]
-name = "run_custom_tool"
-cmd = "custom-tool"  # Searched from /opt/custom/bin
-args = ["--version"]
+name = "log_info"
+cmd = "/bin/sh"
+args = ["-c", "echo USER_NAME=$USER_NAME, LOG_DIRECTORY=$LOG_DIRECTORY"]
+# Child process receives USER_NAME and LOG_DIRECTORY environment variables
 ```
 
-### Priority Order
+### Priority and Merging
 
-Environment variables are resolved in the following priority order (higher priority at the bottom):
+Environment variables are merged in the following order:
 
-1. System environment variables (lowest priority)
-2. **Global.env** (global environment variables)
-3. Group.env (group environment variables, see Chapter 5)
-4. Command.env (command environment variables, see Chapter 6) (highest priority)
+1. **Global.env** (global environment variables)
+2. Merged with Group.env (group environment variables, see Chapter 5)
+3. Merged with Command.env (command environment variables, see Chapter 6)
+
+When the same environment variable is defined at multiple levels, the more specific level (Command > Group > Global) takes priority:
 
 ```toml
-# If system environment variable PATH=/usr/bin:/bin exists
-
 [global]
+vars = ["base=global_value"]
 env = [
-    "PATH=/opt/bin:${PATH}",        # Extends system PATH
-    "COMMON_VAR=global_value",
+    "COMMON_VAR=%{base}",
+    "GLOBAL_ONLY=from_global"
 ]
 
 [[groups]]
 name = "example"
-env = ["COMMON_VAR=group_value"]    # Overrides Global.env
+vars = ["base=group_value"]
+env = ["COMMON_VAR=%{base}"]    # Overrides Global.env
 
 [[groups.commands]]
 name = "cmd1"
-env = ["COMMON_VAR=command_value"]  # Overrides Group.env
+vars = ["base=command_value"]
+env = ["COMMON_VAR=%{base}"]    # Overrides Group.env
 
 # Runtime environment variables:
-# PATH=/opt/bin:/usr/bin:/bin
-# COMMON_VAR=command_value
+# COMMON_VAR=command_value (command level takes priority)
+# GLOBAL_ONLY=from_global (global only)
 ```
 
-### Variable Expansion
+### Relationship with Internal Variables
 
-Variable references are possible within Global.env.
-
-#### Variable References Within Global.env
+- **env values**: Can use internal variables `%{VAR}`
+- **Propagation to Child Processes**: Environment variables defined in env are passed to child processes
+- **Internal Variables Not Propagated**: Internal variables defined in vars or from_env are not passed to child processes by default
 
 ```toml
 [global]
-env = [
-    "BASE=/opt/app",
-    "BIN=${BASE}/bin",              # References BASE
-    "LIB=${BASE}/lib",              # References BASE
-    "CONFIG=${BASE}/etc/config",    # References BASE
-]
+vars = ["internal_value=secret"]     # Internal variable only
+env = ["PUBLIC_VAR=%{internal_value}"]  # Define process environment variable using internal variable
+
+[[groups.commands]]
+name = "test"
+cmd = "/bin/sh"
+args = ["-c", "echo $PUBLIC_VAR"]
+# Child process receives PUBLIC_VAR environment variable with "secret" value
 ```
 
-#### Referencing System Environment Variables
-
-```toml
-[global]
-env = [
-    "MY_HOME=${HOME}/.myapp",       # References system environment variable HOME
-    "BACKUP_DIR=${HOME}/backup",
-]
-env_allowlist = ["HOME"]  # Must add to allowlist when referencing system environment variables
-```
-
-### Precautions
-
-#### 1. KEY Name Constraints
+### KEY Name Constraints
 
 Environment variable names (KEY part) must follow these rules:
 
 ```toml
 [global]
+vars = ["internal=value"]
 env = [
     "VALID_NAME=value",      # Correct: uppercase letters, numbers, underscores
     "MY_VAR_123=value",      # Correct
@@ -558,7 +919,7 @@ env = [
 ]
 ```
 
-#### 2. Duplicate Definitions
+### Duplicate Definitions
 
 Defining the same KEY multiple times results in an error:
 
@@ -570,61 +931,32 @@ env = [
 ]
 ```
 
-#### 3. Relationship with allowlist
-
-When variables defined in Global.env reference system environment variables, the referenced variables must be added to `env_allowlist`:
-
-```toml
-[global]
-env = [
-    "MY_PATH=${HOME}/bin",  # References HOME
-]
-env_allowlist = ["HOME"]    # Required: allow HOME
-```
-
-#### 4. Prohibition of Circular References
-
-Creating circular references between variables results in an error:
-
-```toml
-[global]
-env = [
-    "A=${B}",
-    "B=${A}",  # Error: circular reference
-]
-```
-
 ### Best Practices
 
-1. **Common Settings in Global.env**: Define variables used throughout in global
-2. **Clear Naming**: Use uppercase letters and underscores for clear variable names
-3. **Hierarchical Definition**: Define base paths first, then reference them for derived paths
-4. **Proper allowlist Settings**: Always add to allowlist when referencing system environment variables
+1. **Hierarchical Definition**: Define base paths first, then reference them for derived paths
+2. **Proper Allowlist Settings**: Always add to allowlist when referencing system environment variables
+3. **Configuration Reuse**: Leverage vars and from_env to avoid hardcoding values
+4. **Clear Variable Names**: Use descriptive names for environment variables
 
 ```toml
 # Recommended configuration
 [global]
-env = [
-    # Base settings
-    "APP_ROOT=/opt/myapp",
-    "ENV_TYPE=production",
-
-    # Derived settings (referencing base)
-    "BIN_DIR=${APP_ROOT}/bin",
-    "DATA_DIR=${APP_ROOT}/data",
-    "LOG_DIR=${APP_ROOT}/logs",
-    "CONFIG_FILE=${APP_ROOT}/etc/${ENV_TYPE}.yaml",
-]
 env_allowlist = ["HOME", "PATH"]
+from_env = ["home=HOME"]
+vars = [
+    "app_root=/opt/myapp",
+    "data_dir=%{app_root}/data",
+    "log_dir=%{app_root}/logs"
+]
+env = [
+    "APP_ROOT=%{app_root}",
+    "DATA_DIR=%{data_dir}",
+    "LOG_DIR=%{log_dir}",
+    "HOME=%{home}"
+]
 ```
 
-### Next Steps
-
-- **Group.env**: See Chapter 5 for group-level environment variables
-- **Command.env**: See Chapter 6 for command-level environment variables
-- **Variable Expansion Details**: See Chapter 7 for variable expansion mechanisms
-
-## 4.6 env_allowlist - Environment Variable Allowlist
+## 4.8 env_allowlist - Environment Variable Allowlist
 
 ### Overview
 
@@ -752,7 +1084,7 @@ env_allowlist = [
 env_allowlist = ["PATH", "HOME", "USER"]
 ```
 
-## 4.7 verify_files - File Verification List
+## 4.9 verify_files - File Verification List
 
 ### Overview
 
@@ -859,7 +1191,7 @@ If the hash of a specified file has not been recorded in advance, a verification
 
 Verifying many files increases startup time. Specify only necessary files.
 
-## 4.8 max_output_size - Maximum Output Size
+## 4.10 max_output_size - Maximum Output Size
 
 ### Overview
 
