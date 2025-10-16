@@ -289,9 +289,16 @@ func TestSecurityAttackPrevention(t *testing.T) {
 			},
 			expectError: true, // Should fail due to reserved prefix
 			errorCheck: func(t *testing.T, err error) {
-				// Verify that reserved prefix violation is detected
-				assert.Error(t, err)
-				assert.Contains(t, err.Error(), "reserved")
+				// Verify that reserved prefix violation is detected using structured error
+				assert.ErrorIs(t, err, config.ErrReservedVariablePrefix)
+
+				var detailErr *config.ErrReservedVariablePrefixDetail
+				if assert.ErrorAs(t, err, &detailErr) {
+					assert.Equal(t, "__runner_test", detailErr.VariableName)
+					assert.Equal(t, "__runner_", detailErr.Prefix)
+					assert.Equal(t, "global", detailErr.Level)
+					assert.Equal(t, "vars", detailErr.Field)
+				}
 			},
 		},
 		{

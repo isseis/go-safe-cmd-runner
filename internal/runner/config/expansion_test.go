@@ -287,14 +287,17 @@ func TestExpandString_CircularReference(t *testing.T) {
 			require.Error(t, err)
 			assert.Empty(t, result)
 
+			// Use structured error checking instead of string matching
+			assert.ErrorIs(t, err, config.ErrCircularReference)
+
 			var circularErr *config.ErrCircularReferenceDetail
 			// Use require.ErrorAs to ensure the typed error value is set for further assertions
 			require.ErrorAs(t, err, &circularErr)
 			require.NotNil(t, circularErr)
 			assert.Equal(t, "global", circularErr.Level)
 			assert.Equal(t, "vars", circularErr.Field)
-			// The error should mention the variable involved in the cycle
-			assert.Contains(t, err.Error(), "circular reference")
+			// Verify the chain is recorded in the error
+			assert.NotEmpty(t, circularErr.Chain)
 			// Verify the variable name reported matches the expected one from the test case
 			if tt.expectedVarName != "" {
 				assert.Equal(t, tt.expectedVarName, circularErr.VariableName)
@@ -325,12 +328,15 @@ func TestExpandString_MaxRecursionDepth(t *testing.T) {
 	require.Error(t, err)
 	assert.Empty(t, result)
 
+	// Use structured error checking instead of string matching
+	assert.ErrorIs(t, err, config.ErrMaxRecursionDepthExceeded)
+
 	var maxDepthErr *config.ErrMaxRecursionDepthExceededDetail
 	assert.ErrorAs(t, err, &maxDepthErr)
 	assert.Equal(t, "global", maxDepthErr.Level)
 	assert.Equal(t, "vars", maxDepthErr.Field)
 	assert.Equal(t, config.MaxRecursionDepth, maxDepthErr.MaxDepth)
-	assert.Contains(t, err.Error(), "maximum recursion depth exceeded")
+	assert.NotEmpty(t, maxDepthErr.Context)
 }
 
 func TestExpandString_EscapeSequence(t *testing.T) {
@@ -1107,8 +1113,17 @@ func TestProcessEnv_InvalidFormat(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "invalid env format")
-	assert.Contains(t, err.Error(), "INVALID_FORMAT")
+
+	// Use structured error checking instead of string matching
+	assert.ErrorIs(t, err, config.ErrInvalidEnvFormat)
+
+	var detailErr *config.ErrInvalidEnvFormatDetail
+	if assert.ErrorAs(t, err, &detailErr) {
+		assert.Equal(t, "INVALID_FORMAT", detailErr.Definition)
+		assert.Equal(t, "global", detailErr.Level)
+		// Verify the reason contains format requirement information
+		assert.NotEmpty(t, detailErr.Reason)
+	}
 }
 
 // TestProcessEnv_EmptyEnvArray tests processing empty env array
@@ -1846,7 +1861,16 @@ func TestExpandCommandConfig_UndefinedVariable(t *testing.T) {
 
 	err := config.ExpandCommandConfig(cmd, group)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "undefined")
+
+	// Use structured error checking instead of string matching
+	assert.ErrorIs(t, err, config.ErrUndefinedVariable)
+
+	var detailErr *config.ErrUndefinedVariableDetail
+	if assert.ErrorAs(t, err, &detailErr) {
+		assert.Equal(t, "undefined", detailErr.VariableName)
+		assert.NotEmpty(t, detailErr.Level)
+		assert.NotEmpty(t, detailErr.Context)
+	}
 }
 
 func TestExpandCommandConfig_VarsReferenceError(t *testing.T) {
@@ -1863,7 +1887,16 @@ func TestExpandCommandConfig_VarsReferenceError(t *testing.T) {
 
 	err := config.ExpandCommandConfig(cmd, group)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "missing")
+
+	// Use structured error checking instead of string matching
+	assert.ErrorIs(t, err, config.ErrUndefinedVariable)
+
+	var detailErr *config.ErrUndefinedVariableDetail
+	if assert.ErrorAs(t, err, &detailErr) {
+		assert.Equal(t, "missing", detailErr.VariableName)
+		assert.NotEmpty(t, detailErr.Level)
+		assert.NotEmpty(t, detailErr.Context)
+	}
 }
 
 func TestExpandCommandConfig_NilGroup(t *testing.T) {
