@@ -23,6 +23,13 @@ env_allowlist = [
     "GOTRACEBACK",
     "SLACK_WEBHOOK_URL",
 ]
+
+# Global internal variables available for TOML expansion
+vars = [
+    "app_name=cmd-runner",
+    "test_mode=comprehensive"
+]
+
 verify_files = ["/etc/passwd", "/bin/sh"]
 
 # Group 1: Basic functionality test - no dependencies
@@ -66,7 +73,7 @@ args = []
 
 [[groups.commands]]
 name = "custom_env_test"
-description = "Test custom environment variables"
+description = "Test custom environment variables passed to child process"
 cmd = "printenv"
 args = ["TEST_SECURITY_VAR"]
 env = ["TEST_SECURITY_VAR=security_value"]
@@ -116,26 +123,45 @@ description = "Create file in custom working directory"
 cmd = "touch"
 args = ["workdir_test_file.txt"]
 
-# Group 5: Environment variable inheritance tests
+# Group 5: Environment variable and internal variable tests
 [[groups]]
-name = "env_inheritance_tests"
-description = "Test environment variable inheritance modes"
+name = "env_var_tests"
+description = "Test internal variables and environment variable passing"
 priority = 5
 # Test inheritance mode - inherits from global by not specifying env_allowlist
 
+# Group-level internal variables
+vars = [
+    "group_var=group_value",
+    "test_var=inherited_value"
+]
+
 [[groups.commands]]
-name = "test_global_inheritance"
-description = "Test global environment variable inheritance"
+name = "test_internal_var_expansion"
+description = "Test internal variable expansion in TOML"
+cmd = "echo"
+args = ["Group var: %{group_var}, Test var: %{test_var}"]
+
+[[groups.commands]]
+name = "test_env_to_child"
+description = "Test passing environment variable to child process"
 cmd = "printenv"
 args = ["TEST_GLOBAL_VAR"]
-env = ["TEST_GLOBAL_VAR=inherited_value"]
+env = ["TEST_GLOBAL_VAR=%{test_var}"]  # Pass internal var to child process
 
 [[groups.commands]]
 name = "test_node_env"
-description = "Test NODE_ENV from global allowlist"
+description = "Test NODE_ENV environment variable to child process"
 cmd = "printenv"
 args = ["NODE_ENV"]
 env = ["NODE_ENV=test_environment"]
+
+[[groups.commands]]
+name = "test_system_env_import"
+description = "Test importing system environment variable"
+cmd = "echo"
+args = ["User from system: %{username}"]
+from_env = ["username=USER"]
 
 # Group 6: Environment variable rejection tests
 [[groups]]
@@ -144,6 +170,7 @@ description = "Test environment variable rejection"
 priority = 6
 # Explicit empty allowlist - rejects all environment variables
 env_allowlist = []
+from_env = []  # No system env imports
 
 [[groups.commands]]
 name = "test_env_rejection"
@@ -190,16 +217,45 @@ description = "Use verified command"
 cmd = "/bin/echo"
 args = ["Using verified command"]
 
-# Group 9: All features combined
+# Group 9: Variable expansion tests
+[[groups]]
+name = "variable_expansion_tests"
+description = "Test variable expansion in various contexts"
+priority = 9
+
+vars = [
+    "base_dir=/tmp/expansion-test",
+    "file_name=test.txt",
+    "full_path=%{base_dir}/%{file_name}"
+]
+
+[[groups.commands]]
+name = "test_nested_expansion"
+description = "Test nested variable expansion"
+cmd = "echo"
+args = ["Full path: %{full_path}"]
+
+[[groups.commands]]
+name = "test_auto_vars"
+description = "Test automatic internal variables"
+cmd = "echo"
+args = ["DateTime: %{__runner_datetime}, PID: %{__runner_pid}"]
+
+# Group 10: All features combined
 [[groups]]
 name = "comprehensive_final"
 description = "Final comprehensive test combining all features"
-priority = 9
+priority = 10
 temp_dir = true
 cleanup = true
 workdir = "/tmp/final-comprehensive-test"
 env_allowlist = ["PATH", "HOME", "FINAL_TEST_VAR"]
 verify_files = ["/bin/echo"]
+
+vars = [
+    "final_msg=comprehensive_success",
+    "test_complete=true"
+]
 
 [[groups.commands]]
 name = "final_privileged_test"
@@ -210,11 +266,17 @@ run_as_user = "root"
 timeout = 30
 
 [[groups.commands]]
+name = "final_var_expansion"
+description = "Final internal variable expansion test"
+cmd = "echo"
+args = ["Final message: %{final_msg}, Complete: %{test_complete}"]
+
+[[groups.commands]]
 name = "final_env_test"
 description = "Final environment variable test"
 cmd = "printenv"
 args = ["FINAL_TEST_VAR"]
-env = ["FINAL_TEST_VAR=comprehensive_success"]
+env = ["FINAL_TEST_VAR=%{final_msg}"]
 
 [[groups.commands]]
 name = "final_summary"
