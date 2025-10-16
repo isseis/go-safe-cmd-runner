@@ -29,7 +29,7 @@ func ExpandString(
 	level string,
 	field string,
 ) (string, error) {
-	visited := make(map[string]bool)
+	visited := make(map[string]struct{})
 	return expandStringRecursive(input, expandedVars, level, field, visited, nil, 0)
 }
 
@@ -39,7 +39,7 @@ func expandStringRecursive(
 	expandedVars map[string]string,
 	level string,
 	field string,
-	visited map[string]bool,
+	visited map[string]struct{},
 	expansionChain []string,
 	depth int,
 ) (string, error) {
@@ -67,10 +67,6 @@ func expandStringRecursive(
 				continue
 			case '\\':
 				result.WriteByte('\\')
-				i += 2
-				continue
-			case '$':
-				result.WriteByte('$')
 				i += 2
 				continue
 			default:
@@ -112,7 +108,7 @@ func expandStringRecursive(
 			}
 
 			// Check for circular reference
-			if visited[varName] {
+			if _, ok := visited[varName]; ok {
 				chain := append(expansionChain, varName) //nolint:gocritic // intentionally creating new slice
 				return "", &ErrCircularReferenceDetail{
 					Level:        level,
@@ -134,7 +130,7 @@ func expandStringRecursive(
 			}
 
 			// Mark as visited for circular reference detection
-			visited[varName] = true
+			visited[varName] = struct{}{}
 			newChain := append(expansionChain, varName) //nolint:gocritic // intentionally creating new slice
 
 			// Recursively expand the value
@@ -182,9 +178,9 @@ func ProcessFromEnv(
 	result := make(map[string]string)
 
 	// Build allowlist map for O(1) lookup
-	allowlistMap := make(map[string]bool)
+	allowlistMap := make(map[string]struct{})
 	for _, v := range envAllowlist {
-		allowlistMap[v] = true
+		allowlistMap[v] = struct{}{}
 	}
 
 	for _, mapping := range fromEnv {
@@ -217,7 +213,7 @@ func ProcessFromEnv(
 		}
 
 		// Check allowlist
-		if !allowlistMap[systemVarName] {
+		if _, ok := allowlistMap[systemVarName]; !ok {
 			return nil, &ErrVariableNotInAllowlistDetail{
 				Level:           level,
 				SystemVarName:   systemVarName,

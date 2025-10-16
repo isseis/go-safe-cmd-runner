@@ -383,18 +383,6 @@ func TestExpandString_EscapeSequence(t *testing.T) {
 			vars:     map[string]string{"literal": "L", "var1": "expanded"},
 			expected: `%{literal} expanded`,
 		},
-		{
-			name:     "escape dollar",
-			input:    `literal \${HOME}`,
-			vars:     map[string]string{},
-			expected: `literal ${HOME}`,
-		},
-		{
-			name:     "escape dollar with expansion",
-			input:    `\${old} and %{new}`,
-			vars:     map[string]string{"new": "newvalue"},
-			expected: `${old} and newvalue`,
-		},
 	}
 
 	for _, tt := range tests {
