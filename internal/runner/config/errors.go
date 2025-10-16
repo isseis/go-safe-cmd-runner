@@ -65,7 +65,9 @@ var (
 	ErrInvalidVariableName = errors.New("invalid variable name")
 )
 
-// ErrInvalidVariableNameDetail provides detailed information about invalid variable names
+// ErrInvalidVariableNameDetail provides detailed information about invalid variable names.
+// This error type wraps ErrInvalidVariableName and is used for internal variable validation
+// in vars and from_env fields.
 type ErrInvalidVariableNameDetail struct {
 	Level        string
 	Field        string

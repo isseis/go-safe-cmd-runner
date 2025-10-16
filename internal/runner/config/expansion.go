@@ -109,7 +109,7 @@ func expandStringRecursive(
 
 			// Check for circular reference
 			if _, ok := visited[varName]; ok {
-				chain := append(expansionChain, varName) //nolint:gocritic // intentionally creating new slice
+				chain := append(expansionChain, varName) //nolint:gocritic // intentionally creating new slice to avoid modifying caller's chain
 				return "", &ErrCircularReferenceDetail{
 					Level:        level,
 					Field:        field,
@@ -131,7 +131,7 @@ func expandStringRecursive(
 
 			// Mark as visited for circular reference detection
 			visited[varName] = struct{}{}
-			newChain := append(expansionChain, varName) //nolint:gocritic // intentionally creating new slice
+			newChain := append(expansionChain, varName) //nolint:gocritic // intentionally creating new slice to avoid modifying caller's chain
 
 			// Recursively expand the value
 			expandedValue, err := expandStringRecursive(
