@@ -717,11 +717,11 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 ## チェックリスト: Phase 1 (クリティカル - 必須)
 
 ### 1.1 Allowlist強制テスト
-- [ ] ステップ1.1.1: TestAllowlistViolation_Global (45分)
-- [ ] ステップ1.1.2: TestAllowlistViolation_Group (1時間)
-- [ ] ステップ1.1.3: TestAllowlistViolation_VerifyFiles (1時間)
-- [ ] ステップ1.1.4: TestAllowlistViolation_ProcessEnv (45分)
-- [ ] ステップ1.1.5: TestAllowlistViolation_EdgeCases (30分)
+- [x] ステップ1.1.1: TestAllowlistViolation_Global (45分)
+- [x] ステップ1.1.2: TestAllowlistViolation_Group (1時間)
+- [x] ステップ1.1.3: TestAllowlistViolation_VerifyFiles (1時間)
+- [x] ステップ1.1.4: TestAllowlistViolation_ProcessEnv (45分)
+- [x] ステップ1.1.5: TestAllowlistViolation_EdgeCases (30分)
 
 ### 1.2 セキュリティ統合テスト
 - [ ] ステップ1.2.1: TestSecurityIntegration_E2E (2時間)
