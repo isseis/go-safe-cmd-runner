@@ -724,9 +724,9 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 - [x] ステップ1.1.5: TestAllowlistViolation_EdgeCases (30分)
 
 ### 1.2 セキュリティ統合テスト
-- [ ] ステップ1.2.1: TestSecurityIntegration_E2E (2時間)
-- [ ] ステップ1.2.2: TestSecurityAttackPrevention (2-3時間)
-- [ ] ステップ1.2.3: TestRunner_SecurityIntegration (1-2時間)
+- [x] ステップ1.2.1: TestSecurityIntegration_E2E (2時間)
+- [x] ステップ1.2.2: TestSecurityAttackPrevention (2-3時間)
+- [x] ステップ1.2.3: TestRunner_SecurityIntegration (1-2時間)
 
 ### 1.3 環境変数優先順位E2Eテスト
 - [ ] ステップ1.3.1: TestRunner_EnvironmentVariablePriority_Basic (1.5時間)
