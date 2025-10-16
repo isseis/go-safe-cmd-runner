@@ -99,4 +99,5 @@ name = "escaped_backslash"
 description = "Test escaped backslash before variable"
 cmd = "echo"
 args = ["Path: \\\\%{home}"]
+vars = []
 from_env = ["home=HOME"]

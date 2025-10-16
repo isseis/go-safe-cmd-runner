@@ -161,6 +161,7 @@ name = "test_system_env_import"
 description = "Test importing system environment variable"
 cmd = "echo"
 args = ["User from system: %{username}"]
+vars = []
 from_env = ["username=USER"]
 
 # Group 6: Environment variable rejection tests

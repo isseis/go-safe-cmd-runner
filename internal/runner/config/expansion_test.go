@@ -1709,6 +1709,11 @@ func TestExpandGroupConfig_WithVerifyFiles(t *testing.T) {
 // ============================================================================
 
 func TestExpandCommandConfig_Basic(t *testing.T) {
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{"PATH", "HOME"},
+	}
+	filter := environment.NewFilter(global.EnvAllowlist)
+
 	group := &runnertypes.CommandGroup{
 		Name: "test_group",
 		ExpandedVars: map[string]string{
@@ -1724,7 +1729,7 @@ func TestExpandCommandConfig_Basic(t *testing.T) {
 		Args: []string{"--log", "%{log_dir}"},
 	}
 
-	err := config.ExpandCommandConfig(cmd, group)
+	err := config.ExpandCommandConfig(cmd, group, global, filter)
 	require.NoError(t, err)
 
 	// Verify ExpandedVars
@@ -1759,7 +1764,9 @@ func TestExpandCommandConfig_InheritGroupVars(t *testing.T) {
 		Env:  []string{"APP_DIR=%{app_dir}"},
 	}
 
-	err := config.ExpandCommandConfig(cmd, group)
+	global := &runnertypes.GlobalConfig{EnvAllowlist: []string{"PATH", "HOME"}}
+	filter := environment.NewFilter(global.EnvAllowlist)
+	err := config.ExpandCommandConfig(cmd, group, global, filter)
 	require.NoError(t, err)
 
 	// Verify inherited vars
@@ -1787,7 +1794,9 @@ func TestExpandCommandConfig_NoVars(t *testing.T) {
 		Env:  []string{"VAR1=value1"},
 	}
 
-	err := config.ExpandCommandConfig(cmd, group)
+	global := &runnertypes.GlobalConfig{EnvAllowlist: []string{"PATH", "HOME"}}
+	filter := environment.NewFilter(global.EnvAllowlist)
+	err := config.ExpandCommandConfig(cmd, group, global, filter)
 	require.NoError(t, err)
 
 	// Verify inherited vars only
@@ -1814,7 +1823,9 @@ func TestExpandCommandConfig_CmdExpansion(t *testing.T) {
 		Args: []string{},
 	}
 
-	err := config.ExpandCommandConfig(cmd, group)
+	global := &runnertypes.GlobalConfig{EnvAllowlist: []string{"PATH", "HOME"}}
+	filter := environment.NewFilter(global.EnvAllowlist)
+	err := config.ExpandCommandConfig(cmd, group, global, filter)
 	require.NoError(t, err)
 
 	assert.Equal(t, "/usr/local/bin/mytool", cmd.ExpandedCmd)
@@ -1835,7 +1846,9 @@ func TestExpandCommandConfig_ArgsExpansion(t *testing.T) {
 		Args: []string{"--input", "%{input_file}", "--output", "%{output_dir}/result.txt"},
 	}
 
-	err := config.ExpandCommandConfig(cmd, group)
+	global := &runnertypes.GlobalConfig{EnvAllowlist: []string{"PATH", "HOME"}}
+	filter := environment.NewFilter(global.EnvAllowlist)
+	err := config.ExpandCommandConfig(cmd, group, global, filter)
 	require.NoError(t, err)
 
 	require.Len(t, cmd.ExpandedArgs, 4)
@@ -1859,7 +1872,9 @@ func TestExpandCommandConfig_UndefinedVariable(t *testing.T) {
 		Args: []string{},
 	}
 
-	err := config.ExpandCommandConfig(cmd, group)
+	global := &runnertypes.GlobalConfig{EnvAllowlist: []string{"PATH", "HOME"}}
+	filter := environment.NewFilter(global.EnvAllowlist)
+	err := config.ExpandCommandConfig(cmd, group, global, filter)
 	require.Error(t, err)
 
 	// Use structured error checking instead of string matching
@@ -1885,7 +1900,9 @@ func TestExpandCommandConfig_VarsReferenceError(t *testing.T) {
 		Cmd:  "/bin/echo",
 	}
 
-	err := config.ExpandCommandConfig(cmd, group)
+	global := &runnertypes.GlobalConfig{EnvAllowlist: []string{"PATH", "HOME"}}
+	filter := environment.NewFilter(global.EnvAllowlist)
+	err := config.ExpandCommandConfig(cmd, group, global, filter)
 	require.Error(t, err)
 
 	// Use structured error checking instead of string matching
@@ -1900,12 +1917,17 @@ func TestExpandCommandConfig_VarsReferenceError(t *testing.T) {
 }
 
 func TestExpandCommandConfig_NilGroup(t *testing.T) {
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{"PATH", "HOME"},
+	}
+	filter := environment.NewFilter(global.EnvAllowlist)
+
 	cmd := &runnertypes.Command{
 		Name: "test_cmd",
 		Cmd:  "/bin/echo",
 	}
 
-	err := config.ExpandCommandConfig(cmd, nil)
+	err := config.ExpandCommandConfig(cmd, nil, global, filter)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, config.ErrNilGroup)
 }

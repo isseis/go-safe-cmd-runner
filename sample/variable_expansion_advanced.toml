@@ -62,6 +62,7 @@ name = "mixed_escape"
 description = "Mixed literal and expanded variables"
 cmd = "/bin/echo"
 args = ["Literal \\%{home} is different from %{home}"]
+vars = []
 from_env = ["home=HOME"]
 
 # Example 3: Complex path construction

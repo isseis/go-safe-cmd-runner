@@ -108,7 +108,7 @@ func TestSelfReference_Direct(t *testing.T) {
 					Cmd:  "/bin/echo",
 					Vars: tt.vars,
 				}
-				err = config.ExpandCommandConfig(cmd, group)
+				err = config.ExpandCommandConfig(cmd, group, global, filter)
 			}
 
 			if tt.expectError {
@@ -319,7 +319,7 @@ func TestSelfReference_CrossLevel(t *testing.T) {
 			require.NoError(t, err)
 
 			// Expand command config
-			err = config.ExpandCommandConfig(&cfg.Groups[0].Commands[0], &cfg.Groups[0])
+			err = config.ExpandCommandConfig(&cfg.Groups[0].Commands[0], &cfg.Groups[0], &cfg.Global, filter)
 			if tt.expectError {
 				require.Error(t, err)
 				if tt.errorType != nil {

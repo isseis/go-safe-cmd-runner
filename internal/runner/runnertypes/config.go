@@ -99,6 +99,7 @@ type Command struct {
 	RunAsGroup   string   `toml:"run_as_group"`   // Group to execute command as (using setegid)
 	MaxRiskLevel string   `toml:"max_risk_level"` // Maximum allowed risk level (low, medium, high)
 	Output       string   `toml:"output"`         // Standard output file path for capture
+	FromEnv      []string `toml:"from_env"`       // Command-level system environment variable imports (internal_name=SYSTEM_VAR format)
 	Vars         []string `toml:"vars"`           // Command-level internal variables (VAR=value format)
 
 	// ExpandedCmd contains the command path with environment variable substitutions applied.

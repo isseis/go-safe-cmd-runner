@@ -120,7 +120,7 @@ func processConfig(cfg *runnertypes.Config, filter *environment.Filter) error {
 		// Step 3: Expand each Command configuration
 		for j := range group.Commands {
 			cmd := &group.Commands[j]
-			if err := ExpandCommandConfig(cmd, group); err != nil {
+			if err := ExpandCommandConfig(cmd, group, &cfg.Global, filter); err != nil {
 				return fmt.Errorf("failed to expand command %q in group %q: %w", cmd.Name, group.Name, err)
 			}
 		}

@@ -500,15 +500,41 @@ func ExpandGroupConfig(group *runnertypes.CommandGroup, global *runnertypes.Glob
 }
 
 // ExpandCommandConfig expands Command-level configuration
-func ExpandCommandConfig(cmd *runnertypes.Command, group *runnertypes.CommandGroup) error {
+func ExpandCommandConfig(
+	cmd *runnertypes.Command,
+	group *runnertypes.CommandGroup,
+	global *runnertypes.GlobalConfig,
+	filter *environment.Filter,
+) error {
 	if group == nil {
 		return ErrNilGroup
 	}
 
 	level := fmt.Sprintf("command[%s]", cmd.Name)
 
-	// Inherit from Group
-	baseInternalVars := copyMap(group.ExpandedVars)
+	// Determine base internal variables based on from_env
+	var baseInternalVars map[string]string
+	if len(cmd.FromEnv) > 0 {
+		// Process command-level from_env
+		systemEnv := filter.ParseSystemEnvironment(nil)
+		// Use group's allowlist or global's allowlist
+		cmdAllowlist := group.EnvAllowlist
+		if cmdAllowlist == nil {
+			cmdAllowlist = global.EnvAllowlist
+		}
+		fromEnvVars, err := ProcessFromEnv(cmd.FromEnv, cmdAllowlist, systemEnv, level)
+		if err != nil {
+			return err
+		}
+		// Merge with group's expanded vars
+		baseInternalVars = copyMap(group.ExpandedVars)
+		for k, v := range fromEnvVars {
+			baseInternalVars[k] = v
+		}
+	} else {
+		// Inherit from Group
+		baseInternalVars = copyMap(group.ExpandedVars)
+	}
 
 	// Process vars
 	if len(cmd.Vars) > 0 {

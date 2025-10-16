@@ -34,6 +34,7 @@ name = "env_var_to_child"
 description = "Pass environment variable to child process"
 cmd = "/bin/sh"
 args = ["-c", "echo HOME from env: $HOME"]
+vars = []
 from_env = ["home=HOME"]
 env = ["HOME=%{home}"]
 # HOME is explicitly passed to child process via env

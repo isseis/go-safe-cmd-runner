@@ -133,7 +133,7 @@ func TestCommandEnvExpansion_Basic(t *testing.T) {
 			require.NoError(t, err)
 
 			// Expand command config
-			err = config.ExpandCommandConfig(&cfg.Groups[0].Commands[0], &cfg.Groups[0])
+			err = config.ExpandCommandConfig(&cfg.Groups[0].Commands[0], &cfg.Groups[0], &cfg.Global, filter)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -250,7 +250,7 @@ func TestCommandEnvExpansion_Priority(t *testing.T) {
 			require.NoError(t, err)
 
 			// Expand command config
-			err = config.ExpandCommandConfig(&cfg.Groups[0].Commands[0], &cfg.Groups[0])
+			err = config.ExpandCommandConfig(&cfg.Groups[0].Commands[0], &cfg.Groups[0], &cfg.Global, filter)
 			require.NoError(t, err)
 
 			// Verify expanded environment variables
@@ -393,7 +393,7 @@ func TestCommandEnvExpansion_ErrorHandling(t *testing.T) {
 			require.NoError(t, err)
 
 			// Expand command config
-			err = config.ExpandCommandConfig(&cfg.Groups[0].Commands[0], &cfg.Groups[0])
+			err = config.ExpandCommandConfig(&cfg.Groups[0].Commands[0], &cfg.Groups[0], &cfg.Global, filter)
 
 			if tt.expectError {
 				require.Error(t, err)
