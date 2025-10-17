@@ -231,13 +231,13 @@ func (e *ErrInvalidFromEnvFormatDetail) Unwrap() error {
 
 // ErrInvalidVarsFormatDetail provides detailed information about invalid vars format
 type ErrInvalidVarsFormatDetail struct {
-	Level      string
-	Definition string
-	Reason     string
+	Level   string
+	Mapping string
+	Reason  string
 }
 
 func (e *ErrInvalidVarsFormatDetail) Error() string {
-	return fmt.Sprintf("invalid vars format in %s: '%s' (%s)", e.Level, e.Definition, e.Reason)
+	return fmt.Sprintf("invalid vars format in %s: '%s' (%s)", e.Level, e.Mapping, e.Reason)
 }
 
 func (e *ErrInvalidVarsFormatDetail) Unwrap() error {
@@ -246,13 +246,13 @@ func (e *ErrInvalidVarsFormatDetail) Unwrap() error {
 
 // ErrInvalidEnvFormatDetail provides detailed information about invalid env format
 type ErrInvalidEnvFormatDetail struct {
-	Level      string
-	Definition string
-	Reason     string
+	Level   string
+	Mapping string
+	Reason  string
 }
 
 func (e *ErrInvalidEnvFormatDetail) Error() string {
-	return fmt.Sprintf("invalid env format in %s: '%s' (%s)", e.Level, e.Definition, e.Reason)
+	return fmt.Sprintf("invalid env format in %s: '%s' (%s)", e.Level, e.Mapping, e.Reason)
 }
 
 func (e *ErrInvalidEnvFormatDetail) Unwrap() error {

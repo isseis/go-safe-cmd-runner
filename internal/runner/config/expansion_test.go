@@ -1107,7 +1107,7 @@ func TestProcessEnv_InvalidFormat(t *testing.T) {
 
 	var detailErr *config.ErrInvalidEnvFormatDetail
 	if assert.ErrorAs(t, err, &detailErr) {
-		assert.Equal(t, "INVALID_FORMAT", detailErr.Definition)
+		assert.Equal(t, "INVALID_FORMAT", detailErr.Mapping)
 		assert.Equal(t, "global", detailErr.Level)
 		// Verify the reason contains format requirement information
 		assert.NotEmpty(t, detailErr.Reason)
