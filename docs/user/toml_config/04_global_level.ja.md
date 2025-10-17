@@ -477,14 +477,15 @@ vars = [
 ]
 env = [
     "APP_HOME=%{app_dir}",           # 内部変数を使ってプロセス環境変数を定義
-    "CONFIG_FILE=%{config_path}"
+    "CONFIG_FILE=%{config_path}"     # 設定ファイルのパスを環境変数として渡す
 ]
 
 [[groups.commands]]
 name = "run_app"
 cmd = "%{app_dir}/bin/app"
 args = ["--config", "%{config_path}"]
-# 子プロセスは APP_HOME と CONFIG_FILE 環境変数を受け取るが、app_dir や config_path は受け取らない
+# 子プロセスは CONFIG_FILE 環境変数を受け取り、コマンドライン引数として --config /opt/myapp/config.yml を受け取る
+# app_dir, config_path 内部変数は環境変数としては受け取らない
 ```
 
 ### 変数名のルール
@@ -522,8 +523,8 @@ vars = ["secret_key=abc123"]
 
 [[groups.commands]]
 name = "test"
-cmd = "/bin/sh"
-args = ["-c", "echo $secret_key"]
+cmd = "printenv"
+args = ["secret_key"]
 # 出力: 空文字列（secret_key は環境変数として渡されていない）
 ```
 
@@ -536,8 +537,8 @@ env = ["SECRET_KEY=%{secret_key}"]  # 内部変数を使ってプロセス環境
 
 [[groups.commands]]
 name = "test"
-cmd = "/bin/sh"
-args = ["-c", "echo $SECRET_KEY"]
+cmd = "printenv"
+args = ["SECRET_KEY"]
 # 出力: abc123
 ```
 
@@ -856,7 +857,7 @@ args = ["-c", "echo USER_NAME=$USER_NAME, LOG_DIRECTORY=$LOG_DIRECTORY"]
 
 環境変数は以下の順序でマージされます:
 
-1. **Global.env**（グローバル環境変数）
+1. Global.env（グローバル環境変数）
 2. Group.env（グループ環境変数、第5章参照）と結合
 3. Command.env（コマンド環境変数、第6章参照）と結合
 
@@ -1221,9 +1222,9 @@ verify_files = ["/opt/app/script.sh"]  # 正しい
 
 指定したファイルのハッシュが事前に記録されていない場合、検証エラーになります。
 
-#### 3. パフォーマンスへの影響
+#### 3. セキュリティのベストプラクティス
 
-多数のファイルを検証すると起動時間が増加します。必要なファイルのみを指定してください。
+ファイルハッシュ検証は高速に動作するため、パフォーマンスへの影響は限定的です。セキュリティを優先し、実行するコマンドやスクリプトはできるだけ検証対象に含めることを推奨します。改ざん検出によってシステム侵害を防ぐことができます。
 
 ## 4.10 max_output_size - 出力サイズ上限
 

@@ -477,14 +477,15 @@ vars = [
 ]
 env = [
     "APP_HOME=%{app_dir}",           # Define process environment variable using internal variable
-    "CONFIG_FILE=%{config_path}"
+    "CONFIG_FILE=%{config_path}"     # Pass config file path as environment variable
 ]
 
 [[groups.commands]]
 name = "run_app"
 cmd = "%{app_dir}/bin/app"
 args = ["--config", "%{config_path}"]
-# Child process receives APP_HOME and CONFIG_FILE environment variables, but not app_dir or config_path
+# Child process receives CONFIG_FILE environment variable and command-line argument --config /opt/myapp/config.yml
+# app_dir, config_path internal variables are not passed as environment variables
 ```
 
 ### Variable Naming Rules
@@ -522,8 +523,8 @@ vars = ["secret_key=abc123"]
 
 [[groups.commands]]
 name = "test"
-cmd = "/bin/sh"
-args = ["-c", "echo $secret_key"]
+cmd = "printenv"
+args = ["secret_key"]
 # Output: (empty string) (secret_key is not passed as environment variable)
 ```
 
@@ -536,8 +537,8 @@ env = ["SECRET_KEY=%{secret_key}"]  # Define process environment variable using 
 
 [[groups.commands]]
 name = "test"
-cmd = "/bin/sh"
-args = ["-c", "echo $SECRET_KEY"]
+cmd = "printenv"
+args = ["SECRET_KEY"]
 # Output: abc123
 ```
 
@@ -856,7 +857,7 @@ args = ["-c", "echo USER_NAME=$USER_NAME, LOG_DIRECTORY=$LOG_DIRECTORY"]
 
 Environment variables are merged in the following order:
 
-1. **Global.env** (global environment variables)
+1. Global.env (global environment variables)
 2. Merged with Group.env (group environment variables, see Chapter 5)
 3. Merged with Command.env (command environment variables, see Chapter 6)
 
@@ -1187,9 +1188,9 @@ verify_files = ["/opt/app/script.sh"]  # Correct
 
 If the hash of a specified file has not been recorded in advance, a verification error occurs.
 
-#### 3. Performance Impact
+#### 3. Security Best Practices
 
-Verifying many files increases startup time. Specify only necessary files.
+File hash verification operates efficiently with minimal performance impact. For security purposes, it is recommended to include as many commands and scripts as possible in the verification list. Tampering detection can prevent system compromise.
 
 ## 4.10 max_output_size - Maximum Output Size
 
