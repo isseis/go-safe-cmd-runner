@@ -1,7 +1,6 @@
 package config
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
@@ -56,29 +55,13 @@ func validateAndParseEnvList(envList []string, context string) (map[string]strin
 	return envMap, nil
 }
 
-// validateVariableName validates internal variable names for POSIX compliance and reserved prefix.
-// This function wraps security.ValidateVariableName and adds reserved prefix checking.
-// Returns an error if:
-// - The name is empty (checked by security.ValidateVariableName)
-// - The name does not match POSIX pattern (checked by security.ValidateVariableName)
-// - The name starts with reserved prefix "__runner_" (checked here)
-func validateVariableName(name string) error {
-	// First, check POSIX compliance using the existing security package function
-	if err := security.ValidateVariableName(name); err != nil {
-		return err
-	}
-
-	// Then, check for reserved prefix (additional check specific to internal variables)
-	if strings.HasPrefix(name, reservedVariablePrefix) {
-		return fmt.Errorf("%w: '%s' (prefix '%s' is reserved for internal use)", ErrReservedVariablePrefix, name, reservedVariablePrefix)
-	}
-
-	return nil
-}
-
 // validateVariableNameWithDetail validates a variable name and returns a detailed error
 // if validation fails. This helper function standardizes error handling across
 // ProcessEnv, ProcessFromEnv, and ProcessVars.
+//
+// The function performs two checks:
+// 1. POSIX compliance using security.ValidateVariableName (empty name, pattern matching)
+// 2. Reserved prefix check (names starting with "__runner_" are rejected)
 //
 // Parameters:
 //   - varName: The variable name to validate
@@ -90,17 +73,9 @@ func validateVariableName(name string) error {
 //   - *ErrReservedVariablePrefixDetail if the name uses a reserved prefix
 //   - *ErrInvalidVariableNameDetail for POSIX validation errors
 func validateVariableNameWithDetail(varName, level, field string) error {
-	if err := validateVariableName(varName); err != nil {
-		// Check if it's a reserved prefix error
-		if errors.Is(err, ErrReservedVariablePrefix) {
-			return &ErrReservedVariablePrefixDetail{
-				Level:        level,
-				Field:        field,
-				VariableName: varName,
-				Prefix:       reservedVariablePrefix,
-			}
-		}
-		// Otherwise, it's a POSIX validation error from security.ValidateVariableName
+	// First, check POSIX compliance using the existing security package function
+	if err := security.ValidateVariableName(varName); err != nil {
+		// POSIX validation error from security.ValidateVariableName
 		return &ErrInvalidVariableNameDetail{
 			Level:        level,
 			Field:        field,
@@ -108,5 +83,16 @@ func validateVariableNameWithDetail(varName, level, field string) error {
 			Reason:       err.Error(),
 		}
 	}
+
+	// Then, check for reserved prefix (additional check specific to internal variables)
+	if strings.HasPrefix(varName, reservedVariablePrefix) {
+		return &ErrReservedVariablePrefixDetail{
+			Level:        level,
+			Field:        field,
+			VariableName: varName,
+			Prefix:       reservedVariablePrefix,
+		}
+	}
+
 	return nil
 }
