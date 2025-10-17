@@ -846,9 +846,9 @@ func TestUnverifiedDataAccessPrevention(t *testing.T) {
 	t.Log("Successfully prevented access to unverified data - hash verification properly failed")
 }
 
-// envPriorityTestHelper is a helper function to reduce boilerplate in environment priority tests.
-// It sets up the test environment, loads config, and verifies expected variables.
-func envPriorityTestHelper(t *testing.T, systemEnv map[string]string, configTOML string, expectVars map[string]string) {
+// configSetupHelper creates a complete test environment with config file and hash directory.
+// It returns the loaded config.
+func configSetupHelper(t *testing.T, systemEnv map[string]string, configTOML string) *runnertypes.Config {
 	t.Helper()
 
 	// Set up system environment
@@ -879,6 +879,16 @@ func envPriorityTestHelper(t *testing.T, systemEnv map[string]string, configTOML
 	if err != nil {
 		t.Fatalf("Failed to load config: %v", err)
 	}
+
+	return cfg
+}
+
+// envPriorityTestHelper is a helper function to reduce boilerplate in environment priority tests.
+// It sets up the test environment, loads config, and verifies expected variables.
+func envPriorityTestHelper(t *testing.T, systemEnv map[string]string, configTOML string, expectVars map[string]string) {
+	t.Helper()
+
+	cfg := configSetupHelper(t, systemEnv, configTOML)
 
 	// Extract the first command
 	if len(cfg.Groups) == 0 || len(cfg.Groups[0].Commands) == 0 {
@@ -1246,34 +1256,7 @@ vars = ["filename=output.txt", "output=%{data_dir}/%{filename}"]
 env = ["OUTPUT=%{output}"]
 `
 
-	// Set up system environment
-	for k, v := range systemEnv {
-		t.Setenv(k, v)
-	}
-
-	// Create temporary config file
-	tempDir := t.TempDir()
-	configPath := filepath.Join(tempDir, "config.toml")
-	if err := os.WriteFile(configPath, []byte(configTOML), 0o644); err != nil {
-		t.Fatalf("Failed to write config file: %v", err)
-	}
-
-	// Create hash directory
-	hashDir := filepath.Join(tempDir, "hashes")
-	if err := os.MkdirAll(hashDir, 0o700); err != nil {
-		t.Fatalf("Failed to create hash directory: %v", err)
-	}
-
-	// Load and prepare config
-	verificationManager, err := verification.NewManagerForTest(hashDir, verification.WithFileValidatorDisabled())
-	if err != nil {
-		t.Fatalf("Failed to create verification manager: %v", err)
-	}
-
-	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, configPath, "test-run-env-priority")
-	if err != nil {
-		t.Fatalf("Failed to load config: %v", err)
-	}
+	cfg := configSetupHelper(t, systemEnv, configTOML)
 
 	// Extract the first command
 	if len(cfg.Groups) == 0 || len(cfg.Groups[0].Commands) == 0 {
