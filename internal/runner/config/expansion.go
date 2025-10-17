@@ -347,6 +347,16 @@ func expandConfigFields(fields configFieldsToExpand, baseVars map[string]string,
 	return result, nil
 }
 
+// determineEffectiveEnvAllowlist determines the effective env_allowlist for a group.
+// Returns group's allowlist if defined, otherwise returns global's allowlist (inheritance).
+// This implements the allowlist inheritance rule: nil means inherit, empty array means reject all.
+func determineEffectiveEnvAllowlist(groupAllowlist []string, globalAllowlist []string) []string {
+	if groupAllowlist != nil {
+		return groupAllowlist
+	}
+	return globalAllowlist
+}
+
 // ExpandGlobalConfig expands Global-level configuration (from_env, vars, env, verify_files)
 func ExpandGlobalConfig(global *runnertypes.GlobalConfig, filter *environment.Filter) error {
 	level := "global"
@@ -418,10 +428,7 @@ func ExpandGroupConfig(group *runnertypes.CommandGroup, global *runnertypes.Glob
 	// If Group defines from_env, merge it with global's vars
 	if len(group.FromEnv) > 0 {
 		systemEnv := filter.ParseSystemEnvironment()
-		envAllowlist := group.EnvAllowlist
-		if envAllowlist == nil {
-			envAllowlist = global.EnvAllowlist
-		}
+		envAllowlist := determineEffectiveEnvAllowlist(group.EnvAllowlist, global.EnvAllowlist)
 		groupFromEnvVars, err := ProcessFromEnv(group.FromEnv, envAllowlist, systemEnv, level)
 		if err != nil {
 			return err
@@ -487,20 +494,15 @@ func ExpandCommandConfig(
 	if len(cmd.FromEnv) > 0 {
 		// Process command-level from_env
 		systemEnv := filter.ParseSystemEnvironment()
-		// Use group's allowlist or global's allowlist
-		cmdAllowlist := group.EnvAllowlist
-		if cmdAllowlist == nil {
-			cmdAllowlist = global.EnvAllowlist
-		}
-		fromEnvVars, err := ProcessFromEnv(cmd.FromEnv, cmdAllowlist, systemEnv, level)
+		// Use group's allowlist or global's allowlist (with inheritance)
+		envAllowlist := determineEffectiveEnvAllowlist(group.EnvAllowlist, global.EnvAllowlist)
+		fromEnvVars, err := ProcessFromEnv(cmd.FromEnv, envAllowlist, systemEnv, level)
 		if err != nil {
 			return err
 		}
 		// Merge with group's expanded vars
 		baseVars = maps.Clone(group.ExpandedVars)
-		for k, v := range fromEnvVars {
-			baseVars[k] = v
-		}
+		maps.Copy(baseVars, fromEnvVars)
 	} else {
 		// Inherit from Group
 		baseVars = maps.Clone(group.ExpandedVars)
