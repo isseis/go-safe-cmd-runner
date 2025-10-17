@@ -364,22 +364,23 @@ cmd = "/bin/ls"  # Can execute without verification
 args = ["-la"]
 ```
 
-#### Example 2: Verify All Commands (Default)
+#### Example 2: Verify Standard Paths (Default)
 
 ```toml
 version = "1.0"
 
 [global]
 skip_standard_paths = false  # Or omit
-verify_files = ["/bin/ls", "/usr/bin/grep"]  # Explicit hash specification required
+verify_files = ["/etc/app/config.ini"]  # Add additional configuration file to verify
 
 [[groups]]
 name = "verified_commands"
 
 [[groups.commands]]
 name = "search"
-cmd = "/usr/bin/grep"
+cmd = "/usr/bin/grep"  # Standard path but still verified
 args = ["pattern", "file.txt"]
+# Both /usr/bin/grep and /etc/app/config.ini are verified
 ```
 
 ### Security Notice
@@ -1089,7 +1090,9 @@ env_allowlist = ["PATH", "HOME", "USER"]
 
 ### Overview
 
-Specifies a list of files to verify for integrity before execution. The specified files are checked against hash values, and execution is aborted if tampering is detected.
+Specifies a list of additional files to verify for integrity before execution. The specified files are checked against hash values, and execution is aborted if tampering is detected.
+
+**Important**: Command executables specified in `cmd` fields are automatically included in hash verification. Use `verify_files` to add additional files (configuration files, script files, etc.) beyond the commands themselves.
 
 ### Syntax
 
@@ -1117,26 +1120,25 @@ verify_files = ["file_path1", "file_path2", ...]
 
 ### Configuration Examples
 
-#### Example 1: Basic File Verification
+#### Example 1: Additional File Verification
 
 ```toml
 version = "1.0"
 
 [global]
 verify_files = [
-    "/bin/sh",
-    "/bin/bash",
-    "/usr/bin/python3",
+    "/opt/app/config/app.conf",
+    "/opt/app/scripts/deploy.sh",
 ]
 
 [[groups]]
-name = "scripts"
+name = "deployment"
 
 [[groups.commands]]
-name = "run_script"
-cmd = "/usr/bin/python3"
-args = ["script.py"]
-# Verifies hash of /usr/bin/python3 before execution
+name = "deploy"
+cmd = "/opt/app/scripts/deploy.sh"  # This file is automatically verified
+args = []
+# Both /opt/app/scripts/deploy.sh and /opt/app/config/app.conf are verified before execution
 ```
 
 #### Example 2: Additional Verification at Group Level
@@ -1145,33 +1147,36 @@ args = ["script.py"]
 version = "1.0"
 
 [global]
-verify_files = ["/bin/sh"]  # Verified across all groups
+verify_files = ["/etc/app/global.conf"]  # Configuration file verified across all groups
 
 [[groups]]
 name = "database_group"
-verify_files = ["/usr/bin/psql", "/usr/bin/pg_dump"]  # Group-specific verification
+verify_files = ["/etc/app/db.conf"]  # Group-specific configuration file
 
 [[groups.commands]]
 name = "db_backup"
-cmd = "/usr/bin/pg_dump"
+cmd = "/usr/bin/pg_dump"  # This command is automatically verified
 args = ["mydb"]
-# /bin/sh, /usr/bin/psql, /usr/bin/pg_dump are verified (merged)
+# /usr/bin/pg_dump (automatic), /etc/app/global.conf, /etc/app/db.conf are all verified (merged)
 ```
 
 ### Verification Mechanism
 
-1. **Pre-create Hash Files**: Record file hashes using the `record` command
-2. **Execution-time Verification**: Verify hashes of files specified in configuration
-3. **Behavior on Mismatch**: Abort execution and report error if hashes don't match
+1. **Collect Automatic Verification Targets**: Automatically add command executables specified in `cmd` fields to verification targets
+2. **Add Additional Files**: Add files listed in `verify_files` to verification targets
+3. **Pre-create Hash Files**: Record file hashes using the `record` command
+4. **Execution-time Verification**: Verify hashes of all collected files
+5. **Behavior on Mismatch**: Abort execution and report error if hashes don't match
 
 ### How to Create Hash Files
 
 ```bash
-# Record hashes of verification target files using record command
+# Automatically collect verification targets from TOML file and record hashes
+# (command executables + files listed in verify_files)
 $ go-safe-cmd-runner record config.toml
 
 # Or specify files individually
-$ go-safe-cmd-runner record /bin/sh /usr/bin/python3
+$ go-safe-cmd-runner record /opt/app/config/app.conf /opt/app/scripts/deploy.sh
 ```
 
 ### Notes
@@ -1190,7 +1195,10 @@ If the hash of a specified file has not been recorded in advance, a verification
 
 #### 3. Security Best Practices
 
-File hash verification operates efficiently with minimal performance impact. For security purposes, it is recommended to include as many commands and scripts as possible in the verification list. Tampering detection can prevent system compromise.
+- **Commands are Automatically Verified**: All commands (`cmd`) are automatically verified, so they don't need to be added to `verify_files`
+- **Verify Additional Files**: Add configuration files, script files, and libraries referenced by commands to `verify_files`
+- **Performance**: File hash verification operates efficiently with minimal performance impact
+- **Tampering Detection**: Increasing verification targets enhances protection against system compromise
 
 ## 4.10 max_output_size - Maximum Output Size
 

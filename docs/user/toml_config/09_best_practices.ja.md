@@ -53,25 +53,25 @@ env_allowlist = [
 
 ### 9.1.3 ファイル検証の活用
 
-重要なコマンドや設定ファイルは必ず検証してください。
+重要な設定ファイルやライブラリは必ず検証してください。コマンドの実行可能ファイルは自動的に検証されます。
 
 #### 推奨される実装
 
 ```toml
-# 良い例: 重要なファイルを検証
+# 良い例: 設定ファイルやスクリプトファイルを検証
 [global]
-skip_standard_paths = false
+skip_standard_paths = false  # 標準パスのコマンドも検証
 verify_files = [
-    "/bin/sh",
-    "/usr/bin/python3",
+    "/etc/app/global.conf",  # グローバル設定ファイル
 ]
 
 [[groups]]
 name = "critical_operations"
 verify_files = [
-    "/opt/app/bin/critical-tool",
-    "/opt/app/scripts/deploy.sh",
+    "/opt/app/config/critical.conf",  # 重要な設定ファイル
+    "/opt/app/lib/helper.sh",         # 補助スクリプト
 ]
+# 注: コマンド自体は自動的に検証されるため verify_files に追加不要
 ```
 
 ### 9.1.4 絶対パスの使用

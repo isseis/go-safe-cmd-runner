@@ -364,22 +364,23 @@ cmd = "/bin/ls"  # 検証なしで実行可能
 args = ["-la"]
 ```
 
-#### 例2: 全てのコマンドを検証(デフォルト)
+#### 例2: 標準パスも検証(デフォルト)
 
 ```toml
 version = "1.0"
 
 [global]
 skip_standard_paths = false  # または省略
-verify_files = ["/bin/ls", "/usr/bin/grep"]  # 明示的にハッシュ指定が必要
+verify_files = ["/etc/app/config.ini"]  # 追加の設定ファイルを検証
 
 [[groups]]
 name = "verified_commands"
 
 [[groups.commands]]
 name = "search"
-cmd = "/usr/bin/grep"
+cmd = "/usr/bin/grep"  # 標準パスだが検証される
 args = ["pattern", "file.txt"]
+# /usr/bin/grep と /etc/app/config.ini の両方が検証される
 ```
 
 ### セキュリティ上の注意
@@ -1123,7 +1124,9 @@ env_allowlist = ["PATH", "HOME", "USER"]
 
 ### 概要
 
-実行前に整合性を検証するファイルのリストを指定します。指定されたファイルはハッシュ値と照合され、改ざんが検出されると実行が中止されます。内部変数 `%{VAR}` を使用してパスを動的に構築できます。
+実行前に整合性を検証する追加ファイルのリストを指定します。指定されたファイルはハッシュ値と照合され、改ざんが検出されると実行が中止されます。内部変数 `%{VAR}` を使用してパスを動的に構築できます。
+
+**重要**: コマンド (`cmd`) で指定した実行可能ファイルは自動的にハッシュ検証の対象となります。`verify_files` はコマンド以外の追加ファイル(設定ファイル、スクリプトファイルなど)を検証対象に追加するために使用します。
 
 ### 文法
 
@@ -1151,26 +1154,25 @@ verify_files = ["ファイルパス1", "ファイルパス2", ...]
 
 ### 設定例
 
-#### 例1: 基本的なファイル検証
+#### 例1: 追加ファイルの検証
 
 ```toml
 version = "1.0"
 
 [global]
 verify_files = [
-    "/bin/sh",
-    "/bin/bash",
-    "/usr/bin/python3",
+    "/opt/app/config/app.conf",
+    "/opt/app/scripts/deploy.sh",
 ]
 
 [[groups]]
-name = "scripts"
+name = "deployment"
 
 [[groups.commands]]
-name = "run_script"
-cmd = "/usr/bin/python3"
-args = ["script.py"]
-# 実行前に /usr/bin/python3 のハッシュを検証
+name = "deploy"
+cmd = "/opt/app/scripts/deploy.sh"  # このファイルは自動的に検証される
+args = []
+# 実行前に /opt/app/scripts/deploy.sh と /opt/app/config/app.conf が検証される
 ```
 
 #### 例2: グループレベルでの追加
@@ -1179,33 +1181,36 @@ args = ["script.py"]
 version = "1.0"
 
 [global]
-verify_files = ["/bin/sh"]  # 全グループで検証
+verify_files = ["/etc/app/global.conf"]  # 全グループで検証される設定ファイル
 
 [[groups]]
 name = "database_group"
-verify_files = ["/usr/bin/psql", "/usr/bin/pg_dump"]  # グループ固有の検証
+verify_files = ["/etc/app/db.conf"]  # グループ固有の設定ファイル
 
 [[groups.commands]]
 name = "db_backup"
-cmd = "/usr/bin/pg_dump"
+cmd = "/usr/bin/pg_dump"  # このコマンドは自動的に検証される
 args = ["mydb"]
-# /bin/sh, /usr/bin/psql, /usr/bin/pg_dump が検証される(マージ)
+# /usr/bin/pg_dump (自動), /etc/app/global.conf, /etc/app/db.conf が検証される(マージ)
 ```
 
 ### 検証の仕組み
 
-1. **ハッシュファイルの事前作成**: `record` コマンドでファイルのハッシュを記録
-2. **実行時の検証**: 設定ファイルに指定されたファイルのハッシュを照合
-3. **不一致時の動作**: ハッシュが一致しない場合、実行を中止しエラーを報告
+1. **自動検証対象の収集**: 各コマンドの `cmd` フィールドで指定された実行可能ファイルを自動的に検証対象に追加
+2. **追加ファイルの指定**: `verify_files` に記載されたファイルも検証対象に追加
+3. **ハッシュファイルの事前作成**: `record` コマンドでファイルのハッシュを記録
+4. **実行時の検証**: 収集されたすべてのファイルのハッシュを照合
+5. **不一致時の動作**: ハッシュが一致しない場合、実行を中止しエラーを報告
 
 ### ハッシュファイルの作成方法
 
 ```bash
-# record コマンドで検証対象ファイルのハッシュを記録
+# record コマンドで TOML ファイルから検証対象ファイルを自動収集してハッシュを記録
+# (コマンドの実行可能ファイル + verify_files に記載されたファイル)
 $ go-safe-cmd-runner record config.toml
 
 # または個別にファイルを指定
-$ go-safe-cmd-runner record /bin/sh /usr/bin/python3
+$ go-safe-cmd-runner record /opt/app/config/app.conf /opt/app/scripts/deploy.sh
 ```
 
 ### 注意事項
@@ -1224,7 +1229,10 @@ verify_files = ["/opt/app/script.sh"]  # 正しい
 
 #### 3. セキュリティのベストプラクティス
 
-ファイルハッシュ検証は高速に動作するため、パフォーマンスへの影響は限定的です。セキュリティを優先し、実行するコマンドやスクリプトはできるだけ検証対象に含めることを推奨します。改ざん検出によってシステム侵害を防ぐことができます。
+- **コマンドは自動検証**: すべてのコマンド (`cmd`) は自動的に検証されるため、`verify_files` に追加する必要はありません
+- **追加ファイルの検証**: コマンドが参照する設定ファイル、スクリプトファイル、ライブラリなどを `verify_files` に追加してください
+- **パフォーマンス**: ファイルハッシュ検証は高速に動作するため、パフォーマンスへの影響は限定的です
+- **改ざん検出**: 検証対象を増やすことでシステム侵害をより確実に防ぐことができます
 
 ## 4.10 max_output_size - 出力サイズ上限
 

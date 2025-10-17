@@ -53,25 +53,25 @@ env_allowlist = [
 
 ### 9.1.3 Utilizing File Verification
 
-Always verify important commands and configuration files.
+Always verify important configuration files and libraries. Command executables are automatically verified.
 
 #### Recommended Implementation
 
 ```toml
-# Good example: Verify important files
+# Good example: Verify configuration files and scripts
 [global]
-skip_standard_paths = false
+skip_standard_paths = false  # Also verify commands in standard paths
 verify_files = [
-    "/bin/sh",
-    "/usr/bin/python3",
+    "/etc/app/global.conf",  # Global configuration file
 ]
 
 [[groups]]
 name = "critical_operations"
 verify_files = [
-    "/opt/app/bin/critical-tool",
-    "/opt/app/scripts/deploy.sh",
+    "/opt/app/config/critical.conf",  # Important configuration file
+    "/opt/app/lib/helper.sh",         # Helper script
 ]
+# Note: Commands themselves are automatically verified, no need to add them to verify_files
 ```
 
 ### 9.1.4 Using Absolute Paths

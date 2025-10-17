@@ -115,15 +115,15 @@ workdir = "/opt/secure"
 log_level = "info"
 skip_standard_paths = false
 env_allowlist = ["PATH"]
-verify_files = ["/bin/sh", "/bin/tar"]
+verify_files = []  # Commands are automatically verified
 
 [[groups]]
 name = "secure_backup"
-verify_files = ["/opt/secure/bin/backup-tool"]
+verify_files = ["/opt/secure/config/backup.conf"]  # Only specify additional files
 
 [[groups.commands]]
 name = "backup"
-cmd = "/opt/secure/bin/backup-tool"
+cmd = "/opt/secure/bin/backup-tool"  # Automatically verified
 args = ["--encrypt", "--output", "backup.enc"]
 max_risk_level = "medium"
 ```
@@ -378,15 +378,14 @@ log_level = "info"
 skip_standard_paths = false
 env_allowlist = ["PATH"]
 verify_files = [
-    "/bin/sh",
-    # Additional verification files
+    # Additional verification files (commands are automatically verified)
 ]
 
 [[groups]]
 name = "secure_group"
 description = "Secure operations group"
 verify_files = [
-    # Group-specific verification files
+    # Group-specific verification files (e.g., config files, libraries)
 ]
 
 [[groups.commands]]

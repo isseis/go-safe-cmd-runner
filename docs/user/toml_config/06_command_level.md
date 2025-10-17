@@ -140,16 +140,13 @@ env = ["TOOL_DIR=/opt/tools"]
 
 1. **Absolute Paths Recommended**: For security, using absolute paths is recommended
 2. **Dangers of PATH Dependency**: When using commands on PATH, unintended commands may be executed
-3. **Importance of Verification**: Verify command integrity with `verify_files`
+3. **Automatic Verification**: Command executables are automatically hash-verified
 
 ```toml
-# Recommended: absolute path and verification
-[global]
-verify_files = ["/usr/bin/pg_dump"]
-
+# Recommended: absolute path (automatically verified)
 [[groups.commands]]
 name = "backup"
-cmd = "/usr/bin/pg_dump"  # Absolute path
+cmd = "/usr/bin/pg_dump"  # Absolute path, automatically verified
 args = ["mydb"]
 
 # Not recommended: PATH dependency
@@ -1134,7 +1131,7 @@ workdir = "/var/app"
 log_level = "info"
 env_allowlist = ["PATH", "HOME", "DATABASE_URL", "BACKUP_DIR"]
 max_output_size = 10485760  # 10MB
-verify_files = ["/bin/sh"]
+verify_files = []  # Commands are automatically verified, so can be empty if no additional files
 
 [[groups]]
 name = "database_operations"
@@ -1142,7 +1139,7 @@ description = "Database-related operations"
 priority = 10
 workdir = "/var/backups/db"
 env_allowlist = ["PATH", "DATABASE_URL", "BACKUP_DIR"]
-verify_files = ["/usr/bin/pg_dump", "/usr/bin/psql"]
+verify_files = ["/etc/postgresql/pg_hba.conf"]  # Only specify additional files like config files
 
 # Command 1: Database backup
 [[groups.commands]]

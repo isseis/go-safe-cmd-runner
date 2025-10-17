@@ -139,16 +139,13 @@ vars = ["tool_dir=/opt/tools"]
 
 1. **絶対パスの推奨**: セキュリティのため、絶対パスを使用することを推奨
 2. **PATH 依存の危険性**: PATH 上のコマンドを使用する場合、意図しないコマンドが実行される可能性
-3. **検証の重要性**: `verify_files` でコマンドの整合性を検証
+3. **自動検証**: コマンドの実行可能ファイルは自動的にハッシュ検証される
 
 ```toml
-# 推奨: 絶対パスと検証
-[global]
-verify_files = ["/usr/bin/pg_dump"]
-
+# 推奨: 絶対パス (自動検証される)
 [[groups.commands]]
 name = "backup"
-cmd = "/usr/bin/pg_dump"  # 絶対パス
+cmd = "/usr/bin/pg_dump"  # 絶対パス、自動的に検証される
 args = ["mydb"]
 
 # 非推奨: PATH 依存
@@ -1141,7 +1138,7 @@ workdir = "/var/app"
 log_level = "info"
 env_allowlist = ["PATH", "HOME", "DATABASE_URL", "BACKUP_DIR"]
 max_output_size = 10485760  # 10MB
-verify_files = ["/bin/sh"]
+verify_files = []  # コマンドは自動検証されるため、追加ファイルがなければ空でよい
 
 [[groups]]
 name = "database_operations"
@@ -1149,7 +1146,7 @@ description = "データベース関連の操作"
 priority = 10
 workdir = "/var/backups/db"
 env_allowlist = ["PATH", "DATABASE_URL", "BACKUP_DIR"]
-verify_files = ["/usr/bin/pg_dump", "/usr/bin/psql"]
+verify_files = ["/etc/postgresql/pg_hba.conf"]  # 設定ファイルなど追加ファイルのみ指定
 
 # コマンド1: データベースバックアップ
 [[groups.commands]]
