@@ -143,7 +143,7 @@ func (c *Command) BuildEnvironmentMap() (map[string]string, error) {
 	env := make(map[string]string)
 
 	for _, envVar := range c.Env {
-		key, value, ok := common.ParseEnvVariable(envVar)
+		key, value, ok := common.ParseKeyValue(envVar)
 		if !ok {
 			return nil, fmt.Errorf("%w: %s", ErrInvalidEnvironmentVariableFormat, envVar)
 		}

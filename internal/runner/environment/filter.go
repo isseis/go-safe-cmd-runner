@@ -46,7 +46,7 @@ func (f *Filter) ParseSystemEnvironment() map[string]string {
 	result := make(map[string]string)
 
 	for _, env := range os.Environ() {
-		variable, value, ok := common.ParseEnvVariable(env)
+		variable, value, ok := common.ParseKeyValue(env)
 		if !ok {
 			continue
 		}

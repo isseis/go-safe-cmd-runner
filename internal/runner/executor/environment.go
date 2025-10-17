@@ -53,7 +53,7 @@ func BuildProcessEnvironment(
 func getSystemEnvironment() map[string]string {
 	result := make(map[string]string)
 	for _, env := range os.Environ() {
-		if key, value, ok := common.ParseEnvVariable(env); ok {
+		if key, value, ok := common.ParseKeyValue(env); ok {
 			result[key] = value
 		}
 	}

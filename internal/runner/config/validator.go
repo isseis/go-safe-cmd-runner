@@ -267,7 +267,7 @@ func (v *Validator) validateCommandEnv(env []string, location string, result *Va
 		itemLocation := fmt.Sprintf("%s[%d]", location, i)
 
 		// Parse environment variable
-		varName, varValue, ok := common.ParseEnvVariable(envVar)
+		varName, varValue, ok := common.ParseKeyValue(envVar)
 		if !ok {
 			result.Errors = append(result.Errors, ValidationError{
 				Type:     "invalid_env_format",

@@ -3,7 +3,7 @@ package common
 
 import "strings"
 
-// ParseEnvVariable parses an environment variable string in "KEY=VALUE" format.
+// ParseKeyValue parses a string in "KEY=VALUE" format like environment variables.
 // Returns the key, value, and a boolean indicating successful parsing.
 // If the string is not in the correct format or key is empty, returns empty strings and false.
 //
@@ -12,7 +12,7 @@ import "strings"
 //   - "KEY=" (empty value): returns key="KEY", value="", ok=true (valid)
 //   - "KEY" (no equals): returns key="", value="", ok=false (invalid)
 //   - "" (empty string): returns key="", value="", ok=false (invalid)
-func ParseEnvVariable(env string) (key, value string, ok bool) {
+func ParseKeyValue(env string) (key, value string, ok bool) {
 	key, value, found := strings.Cut(env, "=")
 	if !found || key == "" {
 		return "", "", false

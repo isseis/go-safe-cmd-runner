@@ -34,7 +34,7 @@ func validateAndParseEnvList(envList []string, context string) (map[string]strin
 
 	// Parse KEY=VALUE format, check for duplicates, and validate key names in a single loop
 	for _, envVar := range envList {
-		key, value, ok := common.ParseEnvVariable(envVar)
+		key, value, ok := common.ParseKeyValue(envVar)
 		if !ok {
 			return nil, fmt.Errorf("%w: %q in %s", ErrMalformedEnvVariable, envVar, context)
 		}

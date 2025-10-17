@@ -174,7 +174,7 @@ func ProcessFromEnv(
 	// Build allowlist map for O(1) lookup
 	allowlistMap := common.SliceToSet(envAllowlist)
 	for _, mapping := range fromEnv {
-		internalName, systemVarName, ok := common.ParseEnvVariable(mapping)
+		internalName, systemVarName, ok := common.ParseKeyValue(mapping)
 		if !ok {
 			return nil, &ErrInvalidFromEnvFormatDetail{
 				Level:   level,
@@ -231,7 +231,7 @@ func ProcessVars(vars []string, baseExpandedVars map[string]string, level string
 	definitions := make([]varDef, 0, len(vars))
 
 	for _, definition := range vars {
-		varName, varValue, ok := common.ParseEnvVariable(definition)
+		varName, varValue, ok := common.ParseKeyValue(definition)
 		if !ok {
 			return nil, &ErrInvalidVarsFormatDetail{
 				Level:      level,
@@ -273,7 +273,7 @@ func ProcessEnv(
 	result := make(map[string]string)
 
 	for _, definition := range env {
-		envVarName, envVarValue, ok := common.ParseEnvVariable(definition)
+		envVarName, envVarValue, ok := common.ParseKeyValue(definition)
 		if !ok {
 			return nil, &ErrInvalidEnvFormatDetail{
 				Level:      level,
@@ -351,9 +351,6 @@ func expandConfigFields(fields configFieldsToExpand, baseInternalVars map[string
 func ExpandGlobalConfig(global *runnertypes.GlobalConfig, filter *environment.Filter) error {
 	level := "global"
 
-	// Generate automatic variables
-	autoVars := variable.NewAutoVarProvider(nil).Generate()
-
 	// Process from_env
 	var baseInternalVars map[string]string
 	if len(global.FromEnv) > 0 {
@@ -368,6 +365,7 @@ func ExpandGlobalConfig(global *runnertypes.GlobalConfig, filter *environment.Fi
 	}
 
 	// Merge auto variables (auto variables take precedence)
+	autoVars := variable.NewAutoVarProvider(nil).Generate()
 	maps.Copy(baseInternalVars, autoVars)
 
 	// Process vars
