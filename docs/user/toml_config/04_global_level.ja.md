@@ -1205,12 +1205,8 @@ args = ["mydb"]
 ### ハッシュファイルの作成方法
 
 ```bash
-# record コマンドで TOML ファイルから検証対象ファイルを自動収集してハッシュを記録
-# (コマンドの実行可能ファイル + verify_files に記載されたファイル)
-$ go-safe-cmd-runner record config.toml
-
-# または個別にファイルを指定
-$ go-safe-cmd-runner record /opt/app/config/app.conf /opt/app/scripts/deploy.sh
+# 個別にファイルを指定
+$ record /opt/app/config/app.conf /opt/app/scripts/deploy.sh
 ```
 
 ### 注意事項

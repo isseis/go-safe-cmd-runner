@@ -454,10 +454,10 @@ configs/
 各環境で適切な設定ファイルを使用:
 ```bash
 # 開発環境
-go-safe-cmd-runner run configs/development.toml
+go-safe-cmd-runner -file configs/development.toml
 
 # 本番環境
-go-safe-cmd-runner run configs/production.toml
+go-safe-cmd-runner -file configs/production.toml
 ```
 
 ## 9.6 パフォーマンスのベストプラクティス
@@ -586,10 +586,10 @@ max_risk_level = "high"
 
 ```bash
 # ドライランで設定を検証
-go-safe-cmd-runner run --dry-run config.toml
+go-safe-cmd-runner --dry-run --file config.toml
 
 # 問題なければ本番実行
-go-safe-cmd-runner run config.toml
+go-safe-cmd-runner -file config.toml
 ```
 
 ## 9.8 ドキュメント化
@@ -613,7 +613,7 @@ go-safe-cmd-runner run config.toml
 
 ## 実行方法
 ```bash
-go-safe-cmd-runner run production-deploy.toml
+go-safe-cmd-runner -file production-deploy.toml
 ```
 
 ## 環境変数

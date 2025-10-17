@@ -1171,12 +1171,8 @@ args = ["mydb"]
 ### How to Create Hash Files
 
 ```bash
-# Automatically collect verification targets from TOML file and record hashes
-# (command executables + files listed in verify_files)
-$ go-safe-cmd-runner record config.toml
-
-# Or specify files individually
-$ go-safe-cmd-runner record /opt/app/config/app.conf /opt/app/scripts/deploy.sh
+# Specify files individually
+$ record /opt/app/config/app.conf /opt/app/scripts/deploy.sh
 ```
 
 ### Notes

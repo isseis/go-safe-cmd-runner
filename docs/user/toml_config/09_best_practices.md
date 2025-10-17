@@ -454,10 +454,10 @@ configs/
 Use appropriate configuration files for each environment:
 ```bash
 # Development environment
-go-safe-cmd-runner run configs/development.toml
+go-safe-cmd-runner -file configs/development.toml
 
 # Production environment
-go-safe-cmd-runner run configs/production.toml
+go-safe-cmd-runner -file configs/production.toml
 ```
 
 ## 9.6 Performance Best Practices
@@ -586,10 +586,10 @@ Verify behavior with dry run before production execution.
 
 ```bash
 # Validate configuration with dry run
-go-safe-cmd-runner run --dry-run config.toml
+go-safe-cmd-runner --dry-run --file config.toml
 
 # Execute in production if no issues
-go-safe-cmd-runner run config.toml
+go-safe-cmd-runner -file config.toml
 ```
 
 ## 9.8 Documentation
@@ -613,7 +613,7 @@ Configuration file to automate application deployment to production environment.
 
 ## Execution
 ```bash
-go-safe-cmd-runner run production-deploy.toml
+go-safe-cmd-runner -file production-deploy.toml
 ```
 
 ## Environment Variables
