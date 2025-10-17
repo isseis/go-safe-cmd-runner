@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testing"
 	privilegetesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
@@ -887,15 +887,9 @@ func envPriorityTestHelper(t *testing.T, systemEnv map[string]string, configTOML
 	cmd := &cfg.Groups[0].Commands[0]
 	group := &cfg.Groups[0]
 
-	// Build final environment map (simulating what runner does)
-	// Priority: command env > group env > global env > system env
-	finalEnv := make(map[string]string)
-
-	// Apply environment variables in priority order (lowest to highest)
-	maps.Copy(finalEnv, systemEnv)
-	maps.Copy(finalEnv, cfg.Global.ExpandedEnv)
-	maps.Copy(finalEnv, group.ExpandedEnv)
-	maps.Copy(finalEnv, cmd.ExpandedEnv)
+	// Call production code to build final environment
+	// This tests the actual implementation in executor.BuildProcessEnvironment
+	finalEnv := executor.BuildProcessEnvironment(&cfg.Global, group, cmd)
 
 	// Verify expected variables
 	for k, expectedVal := range expectVars {
@@ -926,6 +920,7 @@ func TestRunner_EnvironmentVariablePriority_Basic(t *testing.T) {
 			},
 			configTOML: `
 [global]
+env_allowlist = ["TEST_VAR"]
 [[groups]]
 name = "test_group"
 [[groups.commands]]
@@ -1006,6 +1001,7 @@ env = ["TEST_VAR=command_value"]
 			},
 			configTOML: `
 [global]
+env_allowlist = ["VAR_A", "VAR_B", "VAR_C"]
 env = ["VAR_B=global_b"]
 [[groups]]
 name = "test_group"
@@ -1198,6 +1194,7 @@ env = ["LONG=` + strings.Repeat("a", 1000) + `"]
 			},
 			configTOML: `
 [global]
+env_allowlist = ["S1", "S2", "S3"]
 env = ["G1=g1", "G2=g2", "G3=g3"]
 [[groups]]
 name = "test_group"
