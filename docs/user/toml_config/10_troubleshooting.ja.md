@@ -192,15 +192,15 @@ Error: file verification failed: /opt/app/script.sh: hash file not found
 
 ```bash
 # record コマンドでハッシュを記録
-record /usr/bin/tool
-record /opt/app/script.sh
+record -file /usr/bin/tool
+record -file /opt/app/script.sh
 ```
 
 **ファイルが正当に変更された場合**:
 
 ```bash
 # ハッシュを再記録
-record /usr/bin/tool
+record -file /usr/bin/tool
 ```
 
 ### 10.1.7 コマンドパスのエラー

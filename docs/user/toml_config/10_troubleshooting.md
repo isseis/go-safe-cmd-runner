@@ -192,15 +192,15 @@ Error: file verification failed: /opt/app/script.sh: hash file not found
 
 ```bash
 # Record hashes with record command
-record /usr/bin/tool
-record /opt/app/script.sh
+record -file /usr/bin/tool
+record -file /opt/app/script.sh
 ```
 
 **If file was legitimately changed**:
 
 ```bash
 # Re-record hash
-record /usr/bin/tool
+record -file /usr/bin/tool
 ```
 
 ### 10.1.7 Command Path Errors
