@@ -821,7 +821,7 @@ args = ["--config", "%{config_file}", "--db-host", "%{db_host}"]
 
 #### Overview
 
-Imports system environment variables as internal variables at group level. Uses **Override** method - when a group defines `from_env`, Global.from_env is completely ignored.
+Imports system environment variables as internal variables at group level. Uses **Merge** method — when a group defines `from_env` its entries are merged with Global.from_env (group entries take precedence when names collide).
 
 #### Syntax
 
@@ -840,15 +840,15 @@ from_env = ["internal_var_name=SYSTEM_ENV_VAR_NAME", ...]
 | **Configurable Level** | Global, Group |
 | **Default Value** | nil (inherits Global.from_env) |
 | **Format** | `"internal_var_name=SYSTEM_ENV_VAR_NAME"` format |
-| **Inheritance Behavior** | **Override (replacement) method** |
+| **Inheritance Behavior** | **Merge (union) method** |
 
-#### Inheritance Rules (Override Method)
+#### Inheritance Rules (Merge Method)
 
 | Group.from_env Status | Behavior |
 |---------------------|---------|
 | **Undefined (nil)** | Inherits Global.from_env |
-| **Empty array `[]`** | No system environment variables are imported |
-| **Defined with values** | Ignores Global.from_env and uses only Group.from_env |
+| **Empty array `[]`** | Inherits Global.from_env |
+| **Defined with values** | Global.from_env + Group.from_env are merged (Group wins on name conflicts) |
 
 #### Configuration Examples
 
@@ -875,7 +875,32 @@ args = ["Home: %{home}, User: %{username}"]
 # home and username are available
 ```
 
-##### Example 2: Overriding Global.from_env
+##### Example 2: Merging with Global.from_env
+
+```toml
+version = "1.0"
+
+[global]
+env_allowlist = ["HOME", "USER", "PATH"]
+from_env = [
+    "home=HOME",
+    "user=USER"
+]
+
+[[groups]]
+name = "merge_group"
+from_env = [
+    "path=PATH"  # Merged with Global.from_env
+]
+
+[[groups.commands]]
+name = "show_all"
+cmd = "/bin/echo"
+args = ["Home: %{home}, User: %{user}, Path: %{path}"]
+# home, user, and path are all available
+```
+
+##### Example 3: Overriding via Merge (same-name)
 
 ```toml
 version = "1.0"
@@ -884,23 +909,24 @@ version = "1.0"
 env_allowlist = ["HOME", "USER", "HOSTNAME"]
 from_env = [
     "home=HOME",
-    "username=USER"
+    "user=USER"
 ]
 
 [[groups]]
-name = "override_group"
+name = "override_merge_group"
 from_env = [
-    "host=HOSTNAME"  # Completely replaces Global.from_env
+    "home=CUSTOM_HOME_DIR",  # home is overridden by the group
+    "host=HOSTNAME"          # new variable added by the group
 ]
 
 [[groups.commands]]
-name = "show_host"
+name = "show_info"
 cmd = "/bin/echo"
-args = ["Host: %{host}"]
-# host is available, but home and username are not
+args = ["Home: %{home}, User: %{user}, Host: %{host}"]
+# home is taken from CUSTOM_HOME_DIR, user from global, host from group
 ```
 
-##### Example 3: Not Importing System Environment Variables
+##### Example 4: Empty array still inherits Global
 
 ```toml
 version = "1.0"
@@ -910,25 +936,25 @@ env_allowlist = ["HOME"]
 from_env = ["home=HOME"]
 
 [[groups]]
-name = "no_env_group"
-from_env = []  # Empty array: no system environment variables are imported
+name = "empty_merge_group"
+from_env = []  # Empty array: Global.from_env is still inherited (merge behavior)
 
 [[groups.commands]]
-name = "isolated_cmd"
+name = "show_home"
 cmd = "/bin/echo"
-args = ["test"]
-# home is not available
+args = ["Home: %{home}"]
+# home is available
 ```
 
 #### Important Notes
 
-**Reason for Override Method**: To allow each group to have a completely independent set of environment variables, we adopt Override (replacement) instead of Union (merge). This ensures that only variables explicitly defined by the group are used, preventing unexpected variable inheritance.
+**Merge method benefits**: Groups can add new variables while still inheriting common variables defined at the Global level. This reduces duplication and provides a predictable, consistent inheritance model.
 
 ### 5.3.4 env_allowlist - Environment Variable Allowlist (Group Level)
 
 #### Overview
 
-Controls the import of system environment variables through `from_env` at group level. Works with **Override** method.
+Controls the import of system environment variables through `from_env` at group level. Works with **Override(override)** method for allowlist itself.
 
 #### Syntax
 

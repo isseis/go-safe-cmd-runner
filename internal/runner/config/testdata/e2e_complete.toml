@@ -37,8 +37,8 @@ env = ["MIGRATION_DIR=%{migration_dir}"]
 [[groups]]
 name = "web"
 env_allowlist = ["PORT"]  # Override: only PORT allowed
-# Note: When from_env is specified, global vars are not inherited
-# So we define web_dir directly without referencing base_dir
+# Note: When from_env is specified, global from_env is merged
+# So global vars (home, user, path) are inherited and can be referenced
 from_env = ["port=PORT"]
 vars = ["web_dir=/opt/app/web"]
 env = ["WEB_DIR=%{web_dir}"]

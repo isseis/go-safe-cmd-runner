@@ -569,7 +569,7 @@ args = ["--config", "%{config_file}", "--db-host", "%{db_host}"]
 
 #### 概要
 
-グループレベルでシステム環境変数を内部変数として取り込みます。**Override(上書き)方式**で、グループが `from_env` を定義すると Global.from_env は無視されます。
+グループレベルでシステム環境変数を内部変数として取り込みます。**Merge(マージ)方式**で、グループが `from_env` を定義すると Global.from_env と統合されます。
 
 #### 文法
 
@@ -588,15 +588,15 @@ from_env = ["内部変数名=システム環境変数名", ...]
 | **設定可能な階層** | グローバル、グループ |
 | **デフォルト値** | nil (Global.from_env を継承) |
 | **書式** | `"内部変数名=システム環境変数名"` 形式 |
-| **継承動作** | **Override(上書き)方式** |
+| **継承動作** | **Merge(マージ)方式** |
 
-#### 継承ルール(Override方式)
+#### 継承ルール(Merge方式)
 
 | Group.from_env の状態 | 動作 |
 |---------------------|------|
 | **未定義(nil)** | Global.from_env を継承 |
-| **空配列 `[]`** | どのシステム環境変数も取り込まない |
-| **定義あり** | Global.from_env を無視し、Group.from_env のみ使用 |
+| **空配列 `[]`** | Global.from_env を継承 |
+| **定義あり** | Global.from_env + Group.from_env をマージ（同名は Group が優先） |
 
 #### 設定例
 
@@ -623,7 +623,32 @@ args = ["Home: %{home}, User: %{username}"]
 # home と username が利用可能
 ```
 
-#### 例2: Global.from_env の上書き
+#### 例2: Global.from_env とマージ
+
+```toml
+version = "1.0"
+
+[global]
+env_allowlist = ["HOME", "USER", "PATH"]
+from_env = [
+    "home=HOME",
+    "user=USER"
+]
+
+[[groups]]
+name = "merge_group"
+from_env = [
+    "path=PATH"  # Global.from_env と統合（マージ）
+]
+
+[[groups.commands]]
+name = "show_all"
+cmd = "/bin/echo"
+args = ["Home: %{home}, User: %{user}, Path: %{path}"]
+# home、user、path が全て利用可能
+```
+
+#### 例3: 同名変数の上書き
 
 ```toml
 version = "1.0"
@@ -632,23 +657,24 @@ version = "1.0"
 env_allowlist = ["HOME", "USER", "HOSTNAME"]
 from_env = [
     "home=HOME",
-    "username=USER"
+    "user=USER"
 ]
 
 [[groups]]
-name = "override_group"
+name = "override_merge_group"
 from_env = [
-    "host=HOSTNAME"  # Global.from_env を完全に上書き
+    "home=CUSTOM_HOME_DIR",  # home を上書き
+    "host=HOSTNAME"           # 新しい変数を追加
 ]
 
 [[groups.commands]]
-name = "show_host"
+name = "show_info"
 cmd = "/bin/echo"
-args = ["Host: %{host}"]
-# host は利用可能だが、home と username は利用不可
+args = ["Home: %{home}, User: %{user}, Host: %{host}"]
+# home は CUSTOM_HOME_DIR から、user は global から、host は group から取得
 ```
 
-#### 例3: システム環境変数を取り込まない
+#### 例4: 空配列でも Global を継承
 
 ```toml
 version = "1.0"
@@ -658,19 +684,19 @@ env_allowlist = ["HOME"]
 from_env = ["home=HOME"]
 
 [[groups]]
-name = "no_env_group"
-from_env = []  # 空配列: どのシステム環境変数も取り込まない
+name = "empty_merge_group"
+from_env = []  # 空配列: Global.from_env を継承（Merge方式）
 
 [[groups.commands]]
-name = "isolated_cmd"
+name = "show_home"
 cmd = "/bin/echo"
-args = ["test"]
-# home は利用不可
+args = ["Home: %{home}"]
+# home は利用可能
 ```
 
 #### 重要な注意点
 
-**Override方式の理由**: グループごとに完全に独立した環境変数セットを定義できるようにするため、Union(結合)ではなくOverride(上書き)方式を採用しています。これにより、グループが明示的に定義した変数のみを使用し、予期しない変数の継承を防ぎます。
+**Merge方式の利点**: グループで新しい変数を追加しながら、Global で定義した共通の変数も自動的に継承できます。これにより、設定の重複を避けながら、必要に応じた拡張が可能です。
 
 ### 5.3.4 env_allowlist - 環境変数許可リスト(グループレベル)
 

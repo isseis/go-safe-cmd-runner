@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
@@ -438,32 +439,32 @@ func ExpandGlobalConfig(global *runnertypes.GlobalConfig, filter *environment.Fi
 	return nil
 }
 
-// ExpandGroupConfig expands Group-level configuration with from_env inheritance
+// ExpandGroupConfig expands Group-level configuration with from_env merging
+// from_env uses Merge strategy:
+// - If Group.FromEnv is nil or [], inherit Global's from_env variables
+// - If Group.FromEnv is defined, merge with Global's from_env (Group's values take priority for same keys)
 func ExpandGroupConfig(group *runnertypes.CommandGroup, global *runnertypes.GlobalConfig, filter *environment.Filter) error {
 	level := fmt.Sprintf("group[%s]", group.Name)
 
-	// Determine base internal variables based on from_env inheritance
-	var baseInternalVars map[string]string
-	switch {
-	case group.FromEnv == nil:
-		// Inherit from Global
-		baseInternalVars = copyMap(global.ExpandedVars)
-	case len(group.FromEnv) == 0:
-		// Explicitly disabled
-		baseInternalVars = make(map[string]string)
-	default:
-		// Override: process Group.FromEnv
+	// Determine base internal variables with from_env merging
+	// Start with Global's expanded vars (includes from_env results)
+	baseInternalVars := copyMap(global.ExpandedVars)
+
+	// If Group defines from_env, merge it with global's vars
+	if len(group.FromEnv) > 0 {
 		systemEnv := filter.ParseSystemEnvironment(nil)
 		groupAllowlist := group.EnvAllowlist
 		if groupAllowlist == nil {
 			groupAllowlist = global.EnvAllowlist
 		}
-		fromEnvVars, err := ProcessFromEnv(group.FromEnv, groupAllowlist, systemEnv, level)
+		groupFromEnvVars, err := ProcessFromEnv(group.FromEnv, groupAllowlist, systemEnv, level)
 		if err != nil {
 			return err
 		}
-		baseInternalVars = fromEnvVars
+		// Merge: Group's from_env overrides Global's variables with same name
+		maps.Copy(baseInternalVars, groupFromEnvVars)
 	}
+	// If Group.FromEnv is nil or [], just inherit Global's ExpandedVars (already done above)
 
 	// Process vars
 	if len(group.Vars) > 0 {

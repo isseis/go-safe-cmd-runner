@@ -1444,7 +1444,8 @@ func TestExpandGroupConfig_InheritFromEnv(t *testing.T) {
 	assert.Equal(t, "/home/testuser/.config", group.ExpandedVars["config"], "config should reference inherited home")
 }
 
-// TestExpandGroupConfig_OverrideFromEnv tests from_env override behavior
+// TestExpandGroupConfig_OverrideFromEnv tests from_env merge behavior with override
+// (Changed from Override to Merge: now global.from_env variables are merged with group.from_env)
 func TestExpandGroupConfig_OverrideFromEnv(t *testing.T) {
 	t.Setenv("HOME", "/home/testuser")
 	t.Setenv("CUSTOM_VAR", "/custom/path")
@@ -1461,10 +1462,10 @@ func TestExpandGroupConfig_OverrideFromEnv(t *testing.T) {
 	err := config.ExpandGlobalConfig(global, filter)
 	require.NoError(t, err)
 
-	// Setup Group with explicit from_env (should override, not inherit)
+	// Setup Group with explicit from_env (should merge, not override)
 	group := &runnertypes.CommandGroup{
 		Name:         "override_group",
-		EnvAllowlist: []string{"CUSTOM_VAR"}, // Different allowlist
+		EnvAllowlist: []string{"HOME", "CUSTOM_VAR"}, // Now includes HOME to allow merging
 		FromEnv:      []string{"custom=CUSTOM_VAR"},
 		Vars:         []string{"custom_path=%{custom}/data"},
 	}
@@ -1473,17 +1474,17 @@ func TestExpandGroupConfig_OverrideFromEnv(t *testing.T) {
 	err = config.ExpandGroupConfig(group, global, filter)
 	require.NoError(t, err)
 
-	// Verify: group should have its own from_env, NOT global's
+	// Verify: group should have merged from_env variables
 	require.NotNil(t, group.ExpandedVars)
 	assert.Equal(t, "/custom/path", group.ExpandedVars["custom"], "custom should come from group's from_env")
 	assert.Equal(t, "/custom/path/data", group.ExpandedVars["custom_path"])
 
-	// Important: 'home' from global should NOT be available
-	_, exists := group.ExpandedVars["home"]
-	assert.False(t, exists, "home from global.from_env should NOT be inherited when group defines from_env")
+	// Important: 'home' from global SHOULD now be available (merge behavior)
+	assert.Equal(t, "/home/testuser", group.ExpandedVars["home"], "home from global.from_env should be inherited and merged")
 }
 
 // TestExpandGroupConfig_EmptyFromEnv tests empty from_env array behavior
+// (Changed from Override to Merge: now empty array means inherit global's from_env)
 func TestExpandGroupConfig_EmptyFromEnv(t *testing.T) {
 	t.Setenv("HOME", "/home/testuser")
 
@@ -1499,10 +1500,10 @@ func TestExpandGroupConfig_EmptyFromEnv(t *testing.T) {
 	err := config.ExpandGlobalConfig(global, filter)
 	require.NoError(t, err)
 
-	// Setup Group with explicit empty from_env array (should not import anything)
+	// Setup Group with explicit empty from_env array (should inherit global's from_env in merge mode)
 	group := &runnertypes.CommandGroup{
 		Name:    "empty_group",
-		FromEnv: []string{}, // Explicitly empty → no system env vars
+		FromEnv: []string{}, // Explicitly empty → should now inherit global's from_env
 		Vars:    []string{"static_var=static_value"},
 	}
 
@@ -1510,13 +1511,156 @@ func TestExpandGroupConfig_EmptyFromEnv(t *testing.T) {
 	err = config.ExpandGroupConfig(group, global, filter)
 	require.NoError(t, err)
 
-	// Verify: group should have no from_env variables
+	// Verify: group should inherit from_env variables from global (merge behavior)
 	require.NotNil(t, group.ExpandedVars)
 	assert.Equal(t, "static_value", group.ExpandedVars["static_var"])
 
-	// 'home' from global should NOT be available
-	_, exists := group.ExpandedVars["home"]
-	assert.False(t, exists, "home should not be imported when from_env is explicitly empty")
+	// 'home' from global should now be available (merge mode inheritance)
+	assert.Equal(t, "/home/testuser", group.ExpandedVars["home"], "home should be inherited when from_env is explicitly empty")
+}
+
+// TestExpandGroupConfig_FromEnvMerge_Addition tests merging by adding new variables
+func TestExpandGroupConfig_FromEnvMerge_Addition(t *testing.T) {
+	t.Setenv("HOME", "/home/testuser")
+	t.Setenv("USER", "testuser")
+	t.Setenv("PATH", "/usr/bin:/bin")
+
+	// Setup Global config with from_env
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{"HOME", "USER", "PATH"},
+		FromEnv:      []string{"home=HOME", "user=USER"},
+	}
+
+	filter := environment.NewFilter(global.EnvAllowlist)
+
+	// Expand global first
+	err := config.ExpandGlobalConfig(global, filter)
+	require.NoError(t, err)
+
+	// Setup Group with additional from_env variables
+	group := &runnertypes.CommandGroup{
+		Name:    "merge_add_group",
+		FromEnv: []string{"path=PATH"}, // Add new variable
+		Vars:    []string{"env_info=%{home}:%{user}:%{path}"},
+	}
+
+	// Expand group
+	err = config.ExpandGroupConfig(group, global, filter)
+	require.NoError(t, err)
+
+	// Verify: group should have merged from_env variables (global + group)
+	require.NotNil(t, group.ExpandedVars)
+	assert.Equal(t, "/home/testuser", group.ExpandedVars["home"], "home from global should be inherited")
+	assert.Equal(t, "testuser", group.ExpandedVars["user"], "user from global should be inherited")
+	assert.Equal(t, "/usr/bin:/bin", group.ExpandedVars["path"], "path from group should be added")
+	assert.Equal(t, "/home/testuser:testuser:/usr/bin:/bin", group.ExpandedVars["env_info"], "all merged variables should be available")
+}
+
+// TestExpandGroupConfig_FromEnvMerge_Override tests merging with override of specific variables
+func TestExpandGroupConfig_FromEnvMerge_Override(t *testing.T) {
+	t.Setenv("HOME", "/home/testuser")
+	t.Setenv("USER", "testuser")
+	t.Setenv("LANG", "en_US.UTF-8")
+
+	// Setup Global config with from_env
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{"HOME", "USER", "LANG"},
+		FromEnv:      []string{"home=HOME", "user=USER"},
+	}
+
+	filter := environment.NewFilter(global.EnvAllowlist)
+
+	// Expand global first
+	err := config.ExpandGlobalConfig(global, filter)
+	require.NoError(t, err)
+
+	// Setup Group with from_env that overrides global
+	group := &runnertypes.CommandGroup{
+		Name:    "merge_override_group",
+		FromEnv: []string{"home=USER", "lang=LANG"}, // Override 'home' with USER value, add 'lang'
+		Vars:    []string{"info=%{home}:%{user}:%{lang}"},
+	}
+
+	// Expand group
+	err = config.ExpandGroupConfig(group, global, filter)
+	require.NoError(t, err)
+
+	// Verify: group should have merged variables with group override
+	require.NotNil(t, group.ExpandedVars)
+	assert.Equal(t, "testuser", group.ExpandedVars["home"], "home should be overridden by group's from_env (USER value)")
+	assert.Equal(t, "testuser", group.ExpandedVars["user"], "user from global should still be inherited")
+	assert.Equal(t, "en_US.UTF-8", group.ExpandedVars["lang"], "lang from group should be added")
+	assert.Equal(t, "testuser:testuser:en_US.UTF-8", group.ExpandedVars["info"], "override should take effect")
+}
+
+// TestExpandGroupConfig_FromEnvNilInherits tests nil from_env inheritance (existing behavior, should not change)
+func TestExpandGroupConfig_FromEnvNilInherits(t *testing.T) {
+	t.Setenv("HOME", "/home/testuser")
+	t.Setenv("USER", "testuser")
+
+	// Setup Global config with from_env
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{"HOME", "USER"},
+		FromEnv:      []string{"home=HOME", "user=USER"},
+	}
+
+	filter := environment.NewFilter(global.EnvAllowlist)
+
+	// Expand global first
+	err := config.ExpandGlobalConfig(global, filter)
+	require.NoError(t, err)
+
+	// Setup Group with nil from_env (should inherit)
+	group := &runnertypes.CommandGroup{
+		Name:    "nil_group",
+		FromEnv: nil, // nil → inherit global's from_env
+		Vars:    []string{"combined=%{home}:%{user}"},
+	}
+
+	// Expand group
+	err = config.ExpandGroupConfig(group, global, filter)
+	require.NoError(t, err)
+
+	// Verify: group should inherit global's from_env variables
+	require.NotNil(t, group.ExpandedVars)
+	assert.Equal(t, "/home/testuser", group.ExpandedVars["home"], "home should be inherited from global")
+	assert.Equal(t, "testuser", group.ExpandedVars["user"], "user should be inherited from global")
+	assert.Equal(t, "/home/testuser:testuser", group.ExpandedVars["combined"], "both variables should be available")
+}
+
+// TestExpandGroupConfig_FromEnvEmptyInherits tests empty from_env array now inherits (new merge behavior)
+func TestExpandGroupConfig_FromEnvEmptyInherits(t *testing.T) {
+	t.Setenv("HOME", "/home/testuser")
+	t.Setenv("USER", "testuser")
+
+	// Setup Global config with from_env
+	global := &runnertypes.GlobalConfig{
+		EnvAllowlist: []string{"HOME", "USER"},
+		FromEnv:      []string{"home=HOME", "user=USER"},
+	}
+
+	filter := environment.NewFilter(global.EnvAllowlist)
+
+	// Expand global first
+	err := config.ExpandGlobalConfig(global, filter)
+	require.NoError(t, err)
+
+	// Setup Group with empty from_env array (should now inherit in merge mode)
+	group := &runnertypes.CommandGroup{
+		Name:    "empty_inherits_group",
+		FromEnv: []string{}, // empty [] → now inherit global's from_env (merge behavior)
+		Vars:    []string{"combined=%{home}:%{user}"},
+	}
+
+	// Expand group
+	err = config.ExpandGroupConfig(group, global, filter)
+	require.NoError(t, err)
+
+	// Verify: group should inherit global's from_env variables (new merge behavior)
+	require.NotNil(t, group.ExpandedVars)
+	assert.Equal(t, "/home/testuser", group.ExpandedVars["home"], "home should be inherited from global")
+	assert.Equal(t, "testuser", group.ExpandedVars["user"], "user should be inherited from global")
+	assert.Equal(t, "/home/testuser:testuser", group.ExpandedVars["combined"], "both variables should be available")
 }
 
 // TestExpandGroupConfig_VarsMerge tests vars merging with global

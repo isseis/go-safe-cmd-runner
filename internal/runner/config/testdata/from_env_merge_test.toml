@@ -1,0 +1,32 @@
+# Test file to verify from_env merge behavior at Group level
+# Global defines some from_env variables, Group adds more
+
+version = "1.0"
+
+[global]
+workdir = "/tmp"
+env_allowlist = ["HOME", "USER", "PATH", "LANG"]
+# Global defines home and user from system environment
+from_env = ["home=HOME", "user=USER"]
+vars = ["base_dir=%{home}/app"]
+
+[[groups]]
+name = "merge_group"
+# Group adds PATH to the inherited variables
+# Expected result: home, user (from Global) + path (from Group)
+from_env = ["path=PATH"]
+vars = [
+    "log_dir=%{base_dir}/logs",
+    "combined_env=%{home}:%{user}:%{path}"
+]
+env = [
+    "HOME_VAR=%{home}",
+    "USER_VAR=%{user}",
+    "PATH_VAR=%{path}",
+    "COMBINED=%{combined_env}"
+]
+
+[[groups.commands]]
+name = "verify_merge"
+cmd = "/bin/echo"
+args = ["Test merge: HOME=%{home}, USER=%{user}, PATH=%{path}"]

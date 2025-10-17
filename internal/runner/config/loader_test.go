@@ -574,3 +574,59 @@ func TestPhase9Integration(t *testing.T) {
 	assert.Equal(t, "--temp", cmd.ExpandedArgs[2])
 	assert.Equal(t, "/home/testuser/myapp/data/input/temp", cmd.ExpandedArgs[3], "arg should be expanded")
 }
+
+// TestFromEnvMergeIntegration verifies that from_env is merged between Global and Group levels
+func TestFromEnvMergeIntegration(t *testing.T) {
+	// Set up system environment variables
+	t.Setenv("HOME", "/home/testuser")
+	t.Setenv("USER", "testuser")
+	t.Setenv("PATH", "/usr/bin:/bin")
+
+	// Read and parse the test configuration that exercises from_env merge behavior
+	configBytes, err := os.ReadFile("testdata/from_env_merge_test.toml")
+	require.NoError(t, err, "Should read test data file")
+
+	loader := NewLoader()
+	cfg, err := loader.LoadConfig(configBytes)
+	require.NoError(t, err, "Should load config without errors")
+	require.NotNil(t, cfg, "Config should not be nil")
+
+	// Verify Global-level from_env expansion
+	require.NotNil(t, cfg.Global.ExpandedVars, "Global.ExpandedVars should be set")
+	assert.Equal(t, "/home/testuser", cfg.Global.ExpandedVars["home"], "Global: home should be from HOME env var")
+	assert.Equal(t, "testuser", cfg.Global.ExpandedVars["user"], "Global: user should be from USER env var")
+
+	// Verify Group-level from_env merge: should have Global's variables + Group's new variables
+	require.Len(t, cfg.Groups, 1, "Should have one group")
+	group := cfg.Groups[0]
+	assert.Equal(t, "merge_group", group.Name)
+
+	require.NotNil(t, group.ExpandedVars, "Group.ExpandedVars should be set")
+
+	// These should be inherited from Global.from_env
+	assert.Equal(t, "/home/testuser", group.ExpandedVars["home"], "Group should inherit home from Global.from_env")
+	assert.Equal(t, "testuser", group.ExpandedVars["user"], "Group should inherit user from Global.from_env")
+
+	// This should be from Group.from_env
+	assert.Equal(t, "/usr/bin:/bin", group.ExpandedVars["path"], "Group should have path from Group.from_env")
+
+	// Verify that vars can reference all merged from_env variables
+	assert.Equal(t, "/home/testuser/app", group.ExpandedVars["base_dir"], "base_dir should reference home from Global.from_env")
+	assert.Equal(t, "/home/testuser/app/logs", group.ExpandedVars["log_dir"], "log_dir should reference base_dir")
+	expectedCombined := "/home/testuser:testuser:/usr/bin:/bin"
+	assert.Equal(t, expectedCombined, group.ExpandedVars["combined_env"], "combined_env should use all merged variables")
+
+	// Verify Group.ExpandedEnv uses all merged variables
+	require.NotNil(t, group.ExpandedEnv, "Group.ExpandedEnv should be set")
+	assert.Equal(t, "/home/testuser", group.ExpandedEnv["HOME_VAR"], "HOME_VAR should be expanded with home")
+	assert.Equal(t, "testuser", group.ExpandedEnv["USER_VAR"], "USER_VAR should be expanded with user")
+	assert.Equal(t, "/usr/bin:/bin", group.ExpandedEnv["PATH_VAR"], "PATH_VAR should be expanded with path")
+	assert.Equal(t, expectedCombined, group.ExpandedEnv["COMBINED"], "COMBINED should use merged variables")
+
+	// Verify command-level expansion works with merged variables
+	require.Len(t, group.Commands, 1, "Group should have one command")
+	cmd := group.Commands[0]
+	assert.Equal(t, "verify_merge", cmd.Name)
+	require.NotNil(t, cmd.ExpandedArgs, "Command.ExpandedArgs should be set")
+	assert.Equal(t, "Test merge: HOME=/home/testuser, USER=testuser, PATH=/usr/bin:/bin", cmd.ExpandedArgs[0], "Command args should reference all merged variables")
+}
