@@ -55,7 +55,7 @@ func validateAndParseEnvList(envList []string, context string) (map[string]strin
 	return envMap, nil
 }
 
-// validateVariableNameWithDetail validates a variable name and returns a detailed error
+// validateVariableName validates a variable name and returns a detailed error
 // if validation fails. This helper function standardizes error handling across
 // ProcessEnv, ProcessFromEnv, and ProcessVars.
 //
@@ -72,7 +72,7 @@ func validateAndParseEnvList(envList []string, context string) (map[string]strin
 //   - nil if valid
 //   - *ErrReservedVariablePrefixDetail if the name uses a reserved prefix
 //   - *ErrInvalidVariableNameDetail for POSIX validation errors
-func validateVariableNameWithDetail(varName, level, field string) error {
+func validateVariableName(varName, level, field string) error {
 	// First, check POSIX compliance using the existing security package function
 	if err := security.ValidateVariableName(varName); err != nil {
 		// POSIX validation error from security.ValidateVariableName

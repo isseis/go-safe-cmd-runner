@@ -671,6 +671,44 @@ func TestProcessFromEnv_ReservedPrefix(t *testing.T) {
 	}
 }
 
+func TestProcessFromEnv_DuplicateDefinition(t *testing.T) {
+	// Test duplicate variable definitions in from_env
+	tests := []struct {
+		name      string
+		fromEnv   []string
+		systemEnv map[string]string
+		allowlist []string
+	}{
+		{
+			name:      "duplicate internal variable name",
+			fromEnv:   []string{"home=HOME", "home=USER"},
+			systemEnv: map[string]string{"HOME": "/home/foo", "USER": "bar"},
+			allowlist: []string{"HOME", "USER"},
+		},
+		{
+			name:      "duplicate among three definitions",
+			fromEnv:   []string{"var1=VAR1", "var2=VAR2", "var1=VAR3"},
+			systemEnv: map[string]string{"VAR1": "value1", "VAR2": "value2", "VAR3": "value3"},
+			allowlist: []string{"VAR1", "VAR2", "VAR3"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := config.ProcessFromEnv(tt.fromEnv, tt.allowlist, tt.systemEnv, "global")
+
+			require.Error(t, err)
+			assert.Nil(t, result)
+			assert.ErrorIs(t, err, config.ErrDuplicateVariableDefinition, "error should be ErrDuplicateVariableDefinition")
+
+			var detailErr *config.ErrDuplicateVariableDefinitionDetail
+			assert.ErrorAs(t, err, &detailErr, "should be ErrDuplicateVariableDefinitionDetail")
+			assert.Equal(t, "global", detailErr.Level)
+			assert.Equal(t, "from_env", detailErr.Field)
+		})
+	}
+}
+
 func TestProcessFromEnv_InvalidFormat(t *testing.T) {
 	// Test invalid format (missing '=', empty key, or invalid system var)
 	tests := []struct {
@@ -848,6 +886,52 @@ func TestProcessVars_SelfReference(t *testing.T) {
 }
 
 // TestProcessVars_InvalidFormat tests handling of invalid format definitions
+func TestProcessVars_DuplicateDefinition(t *testing.T) {
+	// Test duplicate variable definitions in vars
+	tests := []struct {
+		name     string
+		vars     []string
+		baseVars map[string]string
+	}{
+		{
+			name:     "duplicate variable name",
+			vars:     []string{"home=/home/foo", "home=/home/bar"},
+			baseVars: map[string]string{},
+		},
+		{
+			name:     "duplicate among three definitions",
+			vars:     []string{"var1=value1", "var2=value2", "var1=value3"},
+			baseVars: map[string]string{},
+		},
+		{
+			name:     "duplicate with base variable (should be allowed - override)",
+			vars:     []string{"existing=new_value"},
+			baseVars: map[string]string{"existing": "old_value"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := config.ProcessVars(tt.vars, tt.baseVars, "global")
+
+			if tt.name == "duplicate with base variable (should be allowed - override)" {
+				// Override of base variable should be allowed
+				require.NoError(t, err)
+				assert.Equal(t, "new_value", result["existing"])
+			} else {
+				require.Error(t, err)
+				assert.Nil(t, result)
+				assert.ErrorIs(t, err, config.ErrDuplicateVariableDefinition, "error should be ErrDuplicateVariableDefinition")
+
+				var detailErr *config.ErrDuplicateVariableDefinitionDetail
+				assert.ErrorAs(t, err, &detailErr, "should be ErrDuplicateVariableDefinitionDetail")
+				assert.Equal(t, "global", detailErr.Level)
+				assert.Equal(t, "vars", detailErr.Field)
+			}
+		})
+	}
+}
+
 func TestProcessVars_InvalidFormat(t *testing.T) {
 	tests := []struct {
 		name string
@@ -1093,6 +1177,41 @@ func TestProcessEnv_InvalidEnvVarName(t *testing.T) {
 }
 
 // TestProcessEnv_InvalidFormat tests error for invalid env definition format
+func TestProcessEnv_DuplicateDefinition(t *testing.T) {
+	// Test duplicate environment variable definitions in env
+	tests := []struct {
+		name         string
+		env          []string
+		internalVars map[string]string
+	}{
+		{
+			name:         "duplicate env variable name",
+			env:          []string{"HOME=/home/foo", "HOME=/home/bar"},
+			internalVars: map[string]string{},
+		},
+		{
+			name:         "duplicate among three definitions",
+			env:          []string{"VAR1=value1", "VAR2=value2", "VAR1=value3"},
+			internalVars: map[string]string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := config.ProcessEnv(tt.env, tt.internalVars, "global")
+
+			require.Error(t, err)
+			assert.Nil(t, result)
+			assert.ErrorIs(t, err, config.ErrDuplicateVariableDefinition, "error should be ErrDuplicateVariableDefinition")
+
+			var detailErr *config.ErrDuplicateVariableDefinitionDetail
+			assert.ErrorAs(t, err, &detailErr, "should be ErrDuplicateVariableDefinitionDetail")
+			assert.Equal(t, "global", detailErr.Level)
+			assert.Equal(t, "env", detailErr.Field)
+		})
+	}
+}
+
 func TestProcessEnv_InvalidFormat(t *testing.T) {
 	env := []string{"INVALID_FORMAT"}
 	internalVars := map[string]string{}

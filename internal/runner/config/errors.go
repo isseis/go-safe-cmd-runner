@@ -63,6 +63,9 @@ var (
 
 	// ErrInvalidVariableName indicates that a variable name is invalid
 	ErrInvalidVariableName = errors.New("invalid variable name")
+
+	// ErrDuplicateVariableDefinition is returned when the same variable is defined multiple times in the same scope
+	ErrDuplicateVariableDefinition = errors.New("duplicate variable definition")
 )
 
 // ErrInvalidVariableNameDetail provides detailed information about invalid variable names.
@@ -273,4 +276,19 @@ func (e *ErrInvalidEnvKeyDetail) Error() string {
 
 func (e *ErrInvalidEnvKeyDetail) Unwrap() error {
 	return ErrInvalidEnvKey
+}
+
+// ErrDuplicateVariableDefinitionDetail provides detailed information about duplicate variable definitions
+type ErrDuplicateVariableDefinitionDetail struct {
+	Level        string
+	Field        string
+	VariableName string
+}
+
+func (e *ErrDuplicateVariableDefinitionDetail) Error() string {
+	return fmt.Sprintf("duplicate variable definition in %s.%s: '%s' is defined multiple times", e.Level, e.Field, e.VariableName)
+}
+
+func (e *ErrDuplicateVariableDefinitionDetail) Unwrap() error {
+	return ErrDuplicateVariableDefinition
 }

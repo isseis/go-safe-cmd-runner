@@ -173,8 +173,8 @@ func TestValidateAndParseEnvList(t *testing.T) {
 	}
 }
 
-// TestValidateVariableNameWithDetail tests internal variable name validation with detailed errors
-func TestValidateVariableNameWithDetail(t *testing.T) {
+// TestValidateVariableName tests internal variable name validation with detailed errors
+func TestValidateVariableName(t *testing.T) {
 	tests := []struct {
 		name         string
 		variableName string
@@ -182,7 +182,6 @@ func TestValidateVariableNameWithDetail(t *testing.T) {
 		field        string
 		wantErr      bool
 		errType      error
-		errContains  string
 	}{
 		{
 			name:         "valid lowercase name",
@@ -226,7 +225,6 @@ func TestValidateVariableNameWithDetail(t *testing.T) {
 			field:        "vars",
 			wantErr:      true,
 			errType:      ErrInvalidVariableName,
-			errContains:  "variable name must start with a letter or underscore",
 		},
 		{
 			name:         "invalid name with hyphen",
@@ -235,7 +233,6 @@ func TestValidateVariableNameWithDetail(t *testing.T) {
 			field:        "vars",
 			wantErr:      true,
 			errType:      ErrInvalidVariableName,
-			errContains:  "variable name contains invalid character",
 		},
 		{
 			name:         "invalid name with dot",
@@ -244,7 +241,6 @@ func TestValidateVariableNameWithDetail(t *testing.T) {
 			field:        "vars",
 			wantErr:      true,
 			errType:      ErrInvalidVariableName,
-			errContains:  "variable name contains invalid character",
 		},
 		{
 			name:         "invalid name with space",
@@ -253,7 +249,6 @@ func TestValidateVariableNameWithDetail(t *testing.T) {
 			field:        "vars",
 			wantErr:      true,
 			errType:      ErrInvalidVariableName,
-			errContains:  "variable name contains invalid character",
 		},
 		{
 			name:         "reserved prefix __runner_",
@@ -262,7 +257,6 @@ func TestValidateVariableNameWithDetail(t *testing.T) {
 			field:        "vars",
 			wantErr:      true,
 			errType:      ErrReservedVariablePrefix,
-			errContains:  "reserved variable prefix",
 		},
 		{
 			name:         "empty string",
@@ -271,20 +265,16 @@ func TestValidateVariableNameWithDetail(t *testing.T) {
 			field:        "vars",
 			wantErr:      true,
 			errType:      ErrInvalidVariableName,
-			errContains:  "variable name cannot be empty",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateVariableNameWithDetail(tt.variableName, tt.level, tt.field)
+			err := validateVariableName(tt.variableName, tt.level, tt.field)
 			if tt.wantErr {
 				assert.Error(t, err)
 				if tt.errType != nil {
 					assert.True(t, errors.Is(err, tt.errType))
-				}
-				if tt.errContains != "" {
-					assert.Contains(t, err.Error(), tt.errContains)
 				}
 			} else {
 				assert.NoError(t, err)

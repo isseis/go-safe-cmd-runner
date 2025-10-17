@@ -184,8 +184,17 @@ func ProcessFromEnv(
 		}
 
 		// Validate internal variable name
-		if err := validateVariableNameWithDetail(internalName, level, "from_env"); err != nil {
+		if err := validateVariableName(internalName, level, "from_env"); err != nil {
 			return nil, err
+		}
+
+		// Check for duplicate definition
+		if _, exists := result[internalName]; exists {
+			return nil, &ErrDuplicateVariableDefinitionDetail{
+				Level:        level,
+				Field:        "from_env",
+				VariableName: internalName,
+			}
 		}
 
 		// Validate system variable name
@@ -241,8 +250,20 @@ func ProcessVars(vars []string, baseExpandedVars map[string]string, level string
 		}
 
 		// Validate variable name
-		if err := validateVariableNameWithDetail(varName, level, "vars"); err != nil {
+		if err := validateVariableName(varName, level, "vars"); err != nil {
 			return nil, err
+		}
+
+		// Check for duplicate definition within this vars array
+		// Note: Overriding base variables is allowed
+		for _, existing := range parsedMappings {
+			if existing.name == varName {
+				return nil, &ErrDuplicateVariableDefinitionDetail{
+					Level:        level,
+					Field:        "vars",
+					VariableName: varName,
+				}
+			}
 		}
 
 		parsedMappings = append(parsedMappings, parsedMapping{name: varName, value: varValue})
@@ -289,6 +310,15 @@ func ProcessEnv(
 				Key:     envVarName,
 				Context: mapping,
 				Reason:  err.Error(),
+			}
+		}
+
+		// Check for duplicate definition
+		if _, exists := result[envVarName]; exists {
+			return nil, &ErrDuplicateVariableDefinitionDetail{
+				Level:        level,
+				Field:        "env",
+				VariableName: envVarName,
 			}
 		}
 
