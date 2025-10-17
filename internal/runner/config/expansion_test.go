@@ -692,7 +692,7 @@ func TestProcessFromEnv_InvalidFormat(t *testing.T) {
 			fromEnv:     []string{"=HOME"},
 			systemEnv:   map[string]string{"HOME": "/home/test"},
 			allowlist:   []string{"HOME"},
-			expectedErr: config.ErrInvalidVariableName,
+			expectedErr: config.ErrInvalidFromEnvFormat,
 		},
 		{
 			name:        "multiple equals signs (invalid system var name)",

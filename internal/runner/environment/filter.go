@@ -40,9 +40,9 @@ func NewFilter(allowList []string) *Filter {
 	}
 }
 
-// ParseSystemEnvironment parses os.Environ() and filters variables based on the provided predicate
-// predicate takes a single string argument (variable name) and returns true if the variable is allowed.
-func (f *Filter) ParseSystemEnvironment(predicate func(string) bool) map[string]string {
+// ParseSystemEnvironment parses os.Environ() and returns all environment variables as a map.
+// No filtering is applied - use IsVariableAccessAllowed for filtering.
+func (f *Filter) ParseSystemEnvironment() map[string]string {
 	result := make(map[string]string)
 
 	for _, env := range os.Environ() {
@@ -51,9 +51,7 @@ func (f *Filter) ParseSystemEnvironment(predicate func(string) bool) map[string]
 			continue
 		}
 
-		if predicate == nil || predicate(variable) {
-			result[variable] = value
-		}
+		result[variable] = value
 	}
 
 	return result
@@ -76,7 +74,7 @@ const (
 // It returns a map of filtered variables.
 func (f *Filter) FilterSystemEnvironment() (map[string]string, error) {
 	// Get all system environment variables (validation deferred to execution time)
-	sysEnv := f.ParseSystemEnvironment(nil)
+	sysEnv := f.ParseSystemEnvironment()
 	return f.FilterGlobalVariables(sysEnv, SourceSystem)
 }
 
@@ -115,11 +113,17 @@ func (f *Filter) ResolveGroupEnvironmentVars(group *runnertypes.CommandGroup, lo
 		return nil, fmt.Errorf("%w: group is nil", ErrGroupNotFound)
 	}
 
-	// Add system environment variables using the common parsing logic
+	// Get all system environment variables first
+	sysEnv := f.ParseSystemEnvironment()
+
+	// Filter system environment variables by allowlist
 	// Note: Validation deferred to execution time - only variables actually used are validated
-	result := f.ParseSystemEnvironment(func(variable string) bool {
-		return f.IsVariableAccessAllowed(variable, group.EnvAllowlist, group.Name)
-	})
+	result := make(map[string]string)
+	for variable, value := range sysEnv {
+		if f.IsVariableAccessAllowed(variable, group.EnvAllowlist, group.Name) {
+			result[variable] = value
+		}
+	}
 
 	// Add loaded environment variables from .env file (already filtered in LoadEnvironment)
 	// Note: Validation deferred to execution time - only variables actually used are validated

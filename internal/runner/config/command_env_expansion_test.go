@@ -325,7 +325,7 @@ func TestCommandEnvExpansion_ErrorHandling(t *testing.T) {
 			systemEnv:   map[string]string{},
 			expectError: true,
 			errorCheck: func(t *testing.T, err error) {
-				assert.ErrorIs(t, err, config.ErrInvalidEnvKey)
+				assert.ErrorIs(t, err, config.ErrInvalidEnvFormat)
 			},
 		},
 		{

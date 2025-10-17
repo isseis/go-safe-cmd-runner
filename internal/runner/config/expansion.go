@@ -6,6 +6,7 @@ import (
 	"maps"
 	"strings"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
@@ -171,24 +172,16 @@ func ProcessFromEnv(
 	result := make(map[string]string)
 
 	// Build allowlist map for O(1) lookup
-	allowlistMap := make(map[string]struct{})
-	for _, v := range envAllowlist {
-		allowlistMap[v] = struct{}{}
-	}
-
+	allowlistMap := common.SliceToSet(envAllowlist)
 	for _, mapping := range fromEnv {
-		// Parse mapping: internal_name=SYSTEM_VAR
-		parts := strings.SplitN(mapping, "=", 2) //nolint:mnd // split on "=" always produces 2 parts
-		if len(parts) != 2 {                     //nolint:mnd // validate KEY=VALUE format
+		internalName, systemVarName, ok := common.ParseEnvVariable(mapping)
+		if !ok {
 			return nil, &ErrInvalidFromEnvFormatDetail{
 				Level:   level,
 				Mapping: mapping,
 				Reason:  "must be in 'internal_name=SYSTEM_VAR' format",
 			}
 		}
-
-		internalName := parts[0]
-		systemVarName := parts[1]
 
 		// Validate internal variable name
 		if err := validateVariableNameWithDetail(internalName, level, "from_env"); err != nil {
@@ -228,10 +221,7 @@ func ProcessFromEnv(
 // to reference earlier ones within the same vars array.
 func ProcessVars(vars []string, baseExpandedVars map[string]string, level string) (map[string]string, error) {
 	// Start with a copy of base variables
-	result := make(map[string]string)
-	for k, v := range baseExpandedVars {
-		result[k] = v
-	}
+	result := maps.Clone(baseExpandedVars)
 
 	// Phase 1: Parse and validate all variable definitions
 	type varDef struct {
@@ -241,17 +231,14 @@ func ProcessVars(vars []string, baseExpandedVars map[string]string, level string
 	definitions := make([]varDef, 0, len(vars))
 
 	for _, definition := range vars {
-		parts := strings.SplitN(definition, "=", 2) //nolint:mnd // split on "=" always produces 2 parts
-		if len(parts) != 2 {                        //nolint:mnd // validate KEY=VALUE format
+		varName, varValue, ok := common.ParseEnvVariable(definition)
+		if !ok {
 			return nil, &ErrInvalidVarsFormatDetail{
 				Level:      level,
 				Definition: definition,
 				Reason:     "must be in 'var_name=value' format",
 			}
 		}
-
-		varName := parts[0]
-		varValue := parts[1]
 
 		// Validate variable name
 		if err := validateVariableNameWithDetail(varName, level, "vars"); err != nil {
@@ -286,17 +273,14 @@ func ProcessEnv(
 	result := make(map[string]string)
 
 	for _, definition := range env {
-		parts := strings.SplitN(definition, "=", 2) //nolint:mnd // split on "=" always produces 2 parts
-		if len(parts) != 2 {                        //nolint:mnd // validate KEY=VALUE format
+		envVarName, envVarValue, ok := common.ParseEnvVariable(definition)
+		if !ok {
 			return nil, &ErrInvalidEnvFormatDetail{
 				Level:      level,
 				Definition: definition,
 				Reason:     "must be in 'VAR=value' format",
 			}
 		}
-
-		envVarName := parts[0]
-		envVarValue := parts[1]
 
 		// Validate environment variable name
 		if err := security.ValidateVariableName(envVarName); err != nil {
@@ -368,12 +352,12 @@ func ExpandGlobalConfig(global *runnertypes.GlobalConfig, filter *environment.Fi
 	level := "global"
 
 	// Generate automatic variables
-	autoVars := GenerateAutoVariables()
+	autoVars := variable.NewAutoVarProvider(nil).Generate()
 
 	// Process from_env
 	var baseInternalVars map[string]string
 	if len(global.FromEnv) > 0 {
-		systemEnv := filter.ParseSystemEnvironment(nil)
+		systemEnv := filter.ParseSystemEnvironment()
 		fromEnvVars, err := ProcessFromEnv(global.FromEnv, global.EnvAllowlist, systemEnv, level)
 		if err != nil {
 			return err
@@ -384,9 +368,7 @@ func ExpandGlobalConfig(global *runnertypes.GlobalConfig, filter *environment.Fi
 	}
 
 	// Merge auto variables (auto variables take precedence)
-	for k, v := range autoVars {
-		baseInternalVars[k] = v
-	}
+	maps.Copy(baseInternalVars, autoVars)
 
 	// Process vars
 	if len(global.Vars) > 0 {
@@ -432,7 +414,7 @@ func ExpandGroupConfig(group *runnertypes.CommandGroup, global *runnertypes.Glob
 
 	// If Group defines from_env, merge it with global's vars
 	if len(group.FromEnv) > 0 {
-		systemEnv := filter.ParseSystemEnvironment(nil)
+		systemEnv := filter.ParseSystemEnvironment()
 		groupAllowlist := group.EnvAllowlist
 		if groupAllowlist == nil {
 			groupAllowlist = global.EnvAllowlist
@@ -494,7 +476,7 @@ func ExpandCommandConfig(
 	var baseInternalVars map[string]string
 	if len(cmd.FromEnv) > 0 {
 		// Process command-level from_env
-		systemEnv := filter.ParseSystemEnvironment(nil)
+		systemEnv := filter.ParseSystemEnvironment()
 		// Use group's allowlist or global's allowlist
 		cmdAllowlist := group.EnvAllowlist
 		if cmdAllowlist == nil {
@@ -555,10 +537,4 @@ func ExpandCommandConfig(
 	cmd.ExpandedArgs = expandedArgs
 
 	return nil
-}
-
-// GenerateAutoVariables generates automatic internal variables
-func GenerateAutoVariables() map[string]string {
-	provider := variable.NewAutoVarProvider(nil)
-	return provider.Generate()
 }
