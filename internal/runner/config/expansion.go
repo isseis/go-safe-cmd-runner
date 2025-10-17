@@ -17,10 +17,6 @@ const (
 	MaxRecursionDepth = 100
 )
 
-// ============================================================================
-// Phase 2: Internal Variable Expander (%{VAR} syntax)
-// ============================================================================
-
 // ExpandString expands %{VAR} references in a string using the provided
 // internal variables. It detects circular references and reports detailed
 // errors. The function is package-level (stateless) and follows Go conventions.
@@ -164,10 +160,6 @@ func expandStringRecursive(
 	return result.String(), nil
 }
 
-// ============================================================================
-// Phase 3: from_env Processing
-// ============================================================================
-
 // ProcessFromEnv processes from_env mappings and imports system environment variables
 // as internal variables. It validates that all referenced system variables are in the allowlist.
 func ProcessFromEnv(
@@ -231,10 +223,6 @@ func ProcessFromEnv(
 	return result, nil
 }
 
-// ============================================================================
-// Phase 4: vars Processing
-// ============================================================================
-
 // ProcessVars processes vars definitions and expands them using baseExpandedVars.
 // Variables are processed sequentially in definition order, allowing later variables
 // to reference earlier ones within the same vars array.
@@ -288,10 +276,6 @@ func ProcessVars(vars []string, baseExpandedVars map[string]string, level string
 	return result, nil
 }
 
-// ============================================================================
-// Phase 5: env Processing
-// ============================================================================
-
 // ProcessEnv processes env definitions and expands them using internal variables.
 // Note: env variables cannot reference other env variables, only internal variables.
 func ProcessEnv(
@@ -335,10 +319,6 @@ func ProcessEnv(
 
 	return result, nil
 }
-
-// ============================================================================
-// Phase 6-8: Config-level Expansion Functions
-// ============================================================================
 
 // configFieldsToExpand holds the raw configuration fields that need expansion
 type configFieldsToExpand struct {
@@ -448,7 +428,7 @@ func ExpandGroupConfig(group *runnertypes.CommandGroup, global *runnertypes.Glob
 
 	// Determine base internal variables with from_env merging
 	// Start with Global's expanded vars (includes from_env results)
-	baseInternalVars := copyMap(global.ExpandedVars)
+	baseInternalVars := maps.Clone(global.ExpandedVars)
 
 	// If Group defines from_env, merge it with global's vars
 	if len(group.FromEnv) > 0 {
@@ -525,13 +505,13 @@ func ExpandCommandConfig(
 			return err
 		}
 		// Merge with group's expanded vars
-		baseInternalVars = copyMap(group.ExpandedVars)
+		baseInternalVars = maps.Clone(group.ExpandedVars)
 		for k, v := range fromEnvVars {
 			baseInternalVars[k] = v
 		}
 	} else {
 		// Inherit from Group
-		baseInternalVars = copyMap(group.ExpandedVars)
+		baseInternalVars = maps.Clone(group.ExpandedVars)
 	}
 
 	// Process vars
@@ -577,25 +557,8 @@ func ExpandCommandConfig(
 	return nil
 }
 
-// ============================================================================
-// Phase 11: Auto-generated Variables
-// ============================================================================
-
 // GenerateAutoVariables generates automatic internal variables
 func GenerateAutoVariables() map[string]string {
 	provider := variable.NewAutoVarProvider(nil)
 	return provider.Generate()
-}
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-// copyMap creates a shallow copy of a map
-func copyMap(m map[string]string) map[string]string {
-	result := make(map[string]string, len(m))
-	for k, v := range m {
-		result[k] = v
-	}
-	return result
 }
