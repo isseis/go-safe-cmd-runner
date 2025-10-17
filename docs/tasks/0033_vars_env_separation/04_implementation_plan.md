@@ -479,18 +479,20 @@
     # from_env 未定義 → Global を継承
     vars = ["config=%{home}/.config"]
     ```
-  - [x] `TestExpandGroupConfig_OverrideFromEnv`: from_env 上書き
+  - [x] `TestExpandGroupConfig_MergeFromEnv`: from_env マージ
     ```toml
     [global]
+    env_allowlist = ["HOME", "CUSTOM_VAR"]
     from_env = ["home=HOME"]
 
     [[groups]]
-    name = "override_group"
-    env_allowlist = ["CUSTOM_VAR"]
+    name = "merge_group"
     from_env = ["custom=CUSTOM_VAR"]
-    # Global.from_env は無視される
+    # Global.from_env とマージされる
+    vars = ["config=%{home}/.config", "data=%{custom}/data"]
+    # home と custom の両方が参照可能
     ```
-  - [x] `TestExpandGroupConfig_EmptyFromEnv`: from_env = []
+  - [x] `TestExpandGroupConfig_EmptyFromEnv`: from_env = [] (Globalを継承)
   - [x] `TestExpandGroupConfig_VarsMerge`: vars のマージ
   - [x] `TestExpandGroupConfig_AllowlistInherit`: allowlist 継承
   - [x] `TestExpandGroupConfig_AllowlistOverride`: allowlist 上書き
@@ -509,23 +511,32 @@
         filter *environment.Filter,
     ) error
     ```
-    - [x] from_env 継承判定:
+    - [x] from_env 継承判定（Merge方式）:
       ```go
-      if group.FromEnv == nil {
-          // 未定義 → Global を継承
+      if group.FromEnv == nil || len(group.FromEnv) == 0 {
+          // 未定義(nil)または空配列 → Global を継承
           baseInternalVars = copyMap(global.ExpandedVars)
-      } else if len(group.FromEnv) == 0 {
-          // 空配列 → 何も取り込まない
-          baseInternalVars = make(map[string]string)
       } else {
-          // 定義あり → Global.from_env を無視して上書き
+          // 定義あり → Global.from_env とマージ
+          // まずGlobal.ExpandedVarsをコピー
+          baseInternalVars = copyMap(global.ExpandedVars)
+
+          // Group.FromEnvを処理してマージ
           systemEnv := filter.ParseSystemEnvironment(nil)
           groupAllowlist := group.EnvAllowlist
           if groupAllowlist == nil {
               groupAllowlist = global.EnvAllowlist
           }
-          baseInternalVars, err = ProcessFromEnv(
+          groupFromEnvVars, err := ProcessFromEnv(
               group.FromEnv, groupAllowlist, systemEnv, "group["+group.Name+"]")
+          if err != nil {
+              return err
+          }
+
+          // マージ: Group.FromEnvで同名の変数があれば上書き
+          for k, v := range groupFromEnvVars {
+              baseInternalVars[k] = v
+          }
       }
       ```
     - [x] `ProcessVars`で Group.Vars を展開（baseInternalVars使用）
