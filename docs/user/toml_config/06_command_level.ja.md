@@ -412,7 +412,7 @@ args = ["Executed at %{__RUNNER_DATETIME} by PID %{__RUNNER_PID}"]
 
 #### 概要
 
-Runner プロセスが動作しているシステム環境変数を TOML 内の変数展開用にインポートする変数名を指定します。コマンドレベルの `from_env` は、グローバルおよびグループレベルの `from_env` を完全に上書きします(Override 動作)。
+Runner プロセスが動作しているシステム環境変数を TOML 内の変数展開用にインポートする変数名を指定します。コマンドレベルの `from_env` は、グローバルおよびグループレベルの `from_env` とマージされます(Merge 動作)。
 
 #### 文法
 
@@ -433,7 +433,7 @@ from_env = ["VAR1", "VAR2", ...]
 | **デフォルト値** | [] |
 | **形式** | 変数名のみ (VALUE は不要) |
 | **セキュリティ制約** | `env_allowlist` に含まれる変数のみインポート可能 |
-| **継承動作** | 上書き (Override) - 下位レベルが上位レベルを完全に置き換え |
+| **継承動作** | マージ (Merge) - 下位レベルが上位レベルとマージされる |
 
 #### 役割
 
@@ -456,7 +456,7 @@ from_env = ["USER", "HOME"]
 args = ["User: %{USER}, Home: %{HOME}"]
 ```
 
-#### 例2: Override 動作
+#### 例2: Merge 動作
 
 ```toml
 [global]
@@ -465,19 +465,21 @@ from_env = ["HOME", "USER"]  # グローバルレベル
 
 [[groups]]
 name = "intl_tasks"
-from_env = ["LANG"]  # グループレベル: グローバルの from_env を上書き
+from_env = ["LANG"]  # グループレベル: グローバルの from_env とマージ
 
 [[groups.commands]]
 name = "task1"
 cmd = "/bin/echo"
 # from_env を指定しないため、グループの from_env が適用される
-args = ["Language: %{LANG}"]  # HOME, USER は利用不可
+# 継承された変数: HOME, USER (global) + LANG (group)
+args = ["User: %{USER}, Language: %{LANG}"]
 
 [[groups.commands]]
 name = "task2"
 cmd = "/bin/echo"
-from_env = ["HOME", "PATH"]  # コマンドレベル: グループの from_env を上書き
-args = ["Path: %{PATH}"]  # LANG は利用不可、HOME と PATH のみ利用可能
+from_env = ["PATH"]  # コマンドレベル: グループとマージ
+# 継承された変数: HOME, USER (global) + LANG (group) + PATH (command)
+args = ["Path: %{PATH}, Home: %{HOME}"]
 ```
 
 #### 重要な注意事項
@@ -497,13 +499,13 @@ from_env = ["HOME", "PATH"]  # エラー: PATH は env_allowlist に含まれて
 args = ["%{HOME}"]
 ```
 
-##### 2. Override による置き換え
+##### 2. Merge による結合
 
-コマンドレベルで `from_env` を指定すると、グループおよびグローバルの `from_env` は完全に無視されます:
+コマンドレベルで `from_env` を指定すると、グローバル、グループ、コマンドの各レベルの `from_env` がマージされます:
 
 ```toml
 [global]
-from_env = ["HOME", "USER", "PATH"]
+from_env = ["HOME", "USER"]
 
 [[groups]]
 name = "tasks"
@@ -512,8 +514,8 @@ from_env = ["LANG", "LC_ALL"]
 [[groups.commands]]
 name = "task1"
 cmd = "/bin/echo"
-from_env = ["PWD"]  # HOME, USER, PATH, LANG, LC_ALL はすべて無視される
-args = ["%{PWD}"]   # PWD のみ利用可能
+from_env = ["PWD"]  # HOME, USER, LANG, LC_ALL, PWD がすべて利用可能
+args = ["User: %{USER}, PWD: %{PWD}"]
 ```
 
 ##### 3. 存在しない変数のインポート

@@ -413,7 +413,7 @@ args = ["Executed at %{__RUNNER_DATETIME} by PID %{__RUNNER_PID}"]
 
 #### Overview
 
-Specifies the names of system environment variables for go-safe-cmd-runner to import for use in TOML variable expansion. Command-level `from_env` completely overrides global and group-level `from_env` (Override behavior).
+Specifies the names of system environment variables for go-safe-cmd-runner to import for use in TOML variable expansion. Command-level `from_env` is merged with global and group-level `from_env` (Merge behavior).
 
 #### Syntax
 
@@ -434,7 +434,7 @@ from_env = ["VAR1", "VAR2", ...]
 | **Default Value** | [] |
 | **Format** | Variable names only (VALUE not needed) |
 | **Security Constraint** | Only variables in `env_allowlist` can be imported |
-| **Inheritance Behavior** | Override - lower levels completely replace upper levels |
+| **Inheritance Behavior** | Merge - lower levels are merged with upper levels |
 
 #### Role
 
@@ -457,7 +457,7 @@ from_env = ["USER", "HOME"]
 args = ["User: %{USER}, Home: %{HOME}"]
 ```
 
-##### Example 2: Override Behavior
+##### Example 2: Merge Behavior
 
 ```toml
 [global]
@@ -466,19 +466,21 @@ from_env = ["HOME", "USER"]  # Global level
 
 [[groups]]
 name = "intl_tasks"
-from_env = ["LANG"]  # Group level: overrides global from_env
+from_env = ["LANG"]  # Group level: merges with global from_env
 
 [[groups.commands]]
 name = "task1"
 cmd = "/bin/echo"
 # from_env not specified → group's from_env is applied
-args = ["Language: %{LANG}"]  # HOME, USER not available
+# Inherited variables: HOME, USER (global) + LANG (group)
+args = ["User: %{USER}, Language: %{LANG}"]
 
 [[groups.commands]]
 name = "task2"
 cmd = "/bin/echo"
-from_env = ["HOME", "PATH"]  # Command level: overrides group's from_env
-args = ["Path: %{PATH}"]  # LANG not available, only HOME and PATH
+from_env = ["PATH"]  # Command level: merges with group
+# Inherited variables: HOME, USER (global) + LANG (group) + PATH (command)
+args = ["Path: %{PATH}, Home: %{HOME}"]
 ```
 
 #### Important Notes
@@ -498,13 +500,13 @@ from_env = ["HOME", "PATH"]  # Error: PATH not in env_allowlist
 args = ["%{HOME}"]
 ```
 
-##### 2. Complete Replacement with Override
+##### 2. Merge Behavior
 
-When `from_env` is specified at command level, global and group `from_env` are completely ignored:
+When `from_env` is specified at command level, it is merged with global and group `from_env`:
 
 ```toml
 [global]
-from_env = ["HOME", "USER", "PATH"]
+from_env = ["HOME", "USER"]
 
 [[groups]]
 name = "tasks"
@@ -513,8 +515,8 @@ from_env = ["LANG", "LC_ALL"]
 [[groups.commands]]
 name = "task1"
 cmd = "/bin/echo"
-from_env = ["PWD"]  # HOME, USER, PATH, LANG, LC_ALL all ignored
-args = ["%{PWD}"]   # Only PWD available
+from_env = ["PWD"]  # HOME, USER, LANG, LC_ALL, PWD all available
+args = ["User: %{USER}, PWD: %{PWD}"]
 ```
 
 ##### 3. Non-Existent Variables
