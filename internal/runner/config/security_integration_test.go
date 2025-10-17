@@ -1,4 +1,24 @@
 // Package config provides tests for security integration functionality.
+//
+// # Test Scope
+//
+// This file contains UNIT-LEVEL security integration tests for the config package.
+// These tests focus on validating the security logic and expansion behavior WITHOUT
+// requiring file I/O or external dependencies.
+//
+// # Test Coverage
+//
+//   - Allowlist validation and enforcement
+//   - Variable expansion with security constraints
+//   - Multi-level (global/group) security isolation
+//   - Attack prevention (injection, traversal, bypass attempts)
+//   - Reserved prefix and circular reference detection
+//
+// # Complementary Tests
+//
+// For END-TO-END integration tests that involve actual TOML file loading and
+// file system operations, see:
+//   - internal/runner/runner_security_test.go (full-stack E2E scenarios)
 package config_test
 
 import (
@@ -11,8 +31,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestSecurityIntegration_E2E tests end-to-end security verification across all features
-func TestSecurityIntegration_E2E(t *testing.T) {
+// TestSecurityIntegration_CoreFeatures tests core security features at the config level.
+// These are unit-level tests that validate security logic without file I/O.
+func TestSecurityIntegration_CoreFeatures(t *testing.T) {
 	tests := []struct {
 		name        string
 		setup       func(*testing.T)
@@ -22,63 +43,8 @@ func TestSecurityIntegration_E2E(t *testing.T) {
 		errorCheck  func(*testing.T, error)
 		validate    func(*testing.T, *runnertypes.GlobalConfig, map[string]*runnertypes.CommandGroup)
 	}{
-		{
-			name: "Allowlist + Redaction integration",
-			setup: func(t *testing.T) {
-				t.Setenv("SAFE_VAR", "safe_value")
-				t.Setenv("SECRET_VAR", "super_secret")
-			},
-			global: &runnertypes.GlobalConfig{
-				FromEnv:      []string{"MY_SAFE=SAFE_VAR"},
-				EnvAllowlist: []string{"SAFE_VAR"},
-				Vars:         []string{"derived=%{MY_SAFE}/subdir"},
-				Env:          []string{"MY_ENV=%{derived}"},
-			},
-			expectError: false,
-			validate: func(_ *testing.T, global *runnertypes.GlobalConfig, _ map[string]*runnertypes.CommandGroup) {
-				// Verify that allowed variable is properly expanded
-				// Check ExpandedVars and ExpandedEnv instead of raw Vars/Env
-				require.NotNil(t, global.ExpandedVars)
-				require.NotNil(t, global.ExpandedEnv)
-				assert.Equal(t, "safe_value/subdir", global.ExpandedVars["derived"])
-				assert.Equal(t, "safe_value/subdir", global.ExpandedEnv["MY_ENV"])
-			},
-		},
-		{
-			name: "Allowlist blocks disallowed variable",
-			setup: func(t *testing.T) {
-				t.Setenv("SECRET_VAR", "super_secret")
-			},
-			global: &runnertypes.GlobalConfig{
-				FromEnv:      []string{"MY_SECRET=SECRET_VAR"},
-				EnvAllowlist: []string{"SAFE_VAR"}, // SECRET_VAR is not in allowlist
-			},
-			expectError: true,
-			errorCheck: func(t *testing.T, err error) {
-				assert.ErrorIs(t, err, config.ErrVariableNotInAllowlist)
-			},
-		},
-		{
-			name: "from_env + allowlist + vars + env chain",
-			setup: func(t *testing.T) {
-				t.Setenv("BASE_PATH", "/home/user")
-				t.Setenv("SECRET_PATH", "/secret")
-			},
-			global: &runnertypes.GlobalConfig{
-				FromEnv:      []string{"base=BASE_PATH"},
-				EnvAllowlist: []string{"BASE_PATH"},
-				Vars:         []string{"work_dir=%{base}/work"},
-				Env:          []string{"WORK_DIR=%{work_dir}"},
-			},
-			expectError: false,
-			validate: func(_ *testing.T, global *runnertypes.GlobalConfig, _ map[string]*runnertypes.CommandGroup) {
-				// Verify the entire chain is properly expanded
-				require.NotNil(t, global.ExpandedVars)
-				require.NotNil(t, global.ExpandedEnv)
-				assert.Equal(t, "/home/user/work", global.ExpandedVars["work_dir"])
-				assert.Equal(t, "/home/user/work", global.ExpandedEnv["WORK_DIR"])
-			},
-		},
+		// NOTE: Basic allowlist + expansion tests are covered in E2E tests (runner_security_test.go).
+		// This file focuses on edge cases and security boundary testing.
 		{
 			name: "Multiple groups with different allowlists - isolation",
 			setup: func(t *testing.T) {
@@ -122,25 +88,6 @@ func TestSecurityIntegration_E2E(t *testing.T) {
 			expectError: true,
 			errorCheck: func(t *testing.T, err error) {
 				assert.ErrorIs(t, err, config.ErrVariableNotInAllowlist)
-			},
-		},
-		{
-			name: "Complex chain with verify_files",
-			setup: func(t *testing.T) {
-				t.Setenv("PROJECT_ROOT", "/home/project")
-			},
-			global: &runnertypes.GlobalConfig{
-				FromEnv:      []string{"root=PROJECT_ROOT"},
-				EnvAllowlist: []string{"PROJECT_ROOT"},
-				Vars:         []string{"config_dir=%{root}/config"},
-				VerifyFiles:  []string{"%{config_dir}/app.conf"},
-			},
-			expectError: false,
-			validate: func(_ *testing.T, global *runnertypes.GlobalConfig, _ map[string]*runnertypes.CommandGroup) {
-				// Verify that verify_files paths are properly expanded
-				require.NotNil(t, global.ExpandedVerifyFiles)
-				require.Len(t, global.ExpandedVerifyFiles, 1)
-				assert.Equal(t, "/home/project/config/app.conf", global.ExpandedVerifyFiles[0])
 			},
 		},
 	}

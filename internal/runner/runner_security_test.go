@@ -1,4 +1,24 @@
 // Package runner provides tests for runner-level security integration.
+//
+// # Test Scope
+//
+// This file contains END-TO-END (E2E) security integration tests for the runner.
+// These tests validate the complete security flow from TOML file loading through
+// configuration expansion, including file system operations.
+//
+// # Test Coverage
+//
+//   - Complete TOML file loading with security features
+//   - File system integration (verify_files path resolution)
+//   - Multi-layer configuration expansion (global + group + command)
+//   - Real environment variable processing
+//   - Allowlist enforcement in realistic scenarios
+//
+// # Complementary Tests
+//
+// For UNIT-LEVEL security logic tests without file I/O dependencies, see:
+//   - internal/runner/config/security_integration_test.go (config package unit tests)
+//   - internal/runner/config/security_integration_test.go (attack prevention tests)
 package runner_test
 
 import (
@@ -12,7 +32,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestRunner_SecurityIntegration tests full-stack security verification at runner level
+// TestRunner_SecurityIntegration tests full-stack security verification at runner level.
+// These are E2E tests that validate security from TOML loading through execution.
 func TestRunner_SecurityIntegration(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -22,6 +43,62 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 		errorCheck  func(*testing.T, error)
 		validate    func(*testing.T, *runnertypes.Config)
 	}{
+		{
+			name: "Basic allowlist + variable expansion (E2E)",
+			systemEnv: map[string]string{
+				"SAFE_VAR": "safe_value",
+			},
+			setup: func(t *testing.T) string {
+				tmpDir := t.TempDir()
+				configPath := filepath.Join(tmpDir, "config.toml")
+
+				configContent := `
+[global]
+from_env = ["MY_SAFE=SAFE_VAR"]
+env_allowlist = ["SAFE_VAR"]
+vars = ["derived=%{MY_SAFE}/subdir"]
+env = ["MY_ENV=%{derived}"]
+`
+				err := os.WriteFile(configPath, []byte(configContent), 0o644)
+				require.NoError(t, err)
+
+				return configPath
+			},
+			expectError: false,
+			validate: func(t *testing.T, cfg *runnertypes.Config) {
+				// Verify that allowed variable is properly expanded
+				require.NotNil(t, cfg.Global.ExpandedVars)
+				require.NotNil(t, cfg.Global.ExpandedEnv)
+				assert.Equal(t, "safe_value/subdir", cfg.Global.ExpandedVars["derived"])
+				assert.Equal(t, "safe_value/subdir", cfg.Global.ExpandedEnv["MY_ENV"])
+			},
+		},
+		{
+			name: "Allowlist violation detection (E2E)",
+			systemEnv: map[string]string{
+				"SECRET_VAR": "super_secret",
+				"SAFE_VAR":   "safe_value",
+			},
+			setup: func(t *testing.T) string {
+				tmpDir := t.TempDir()
+				configPath := filepath.Join(tmpDir, "config.toml")
+
+				configContent := `
+[global]
+from_env = ["MY_SECRET=SECRET_VAR"]
+env_allowlist = ["SAFE_VAR"]
+`
+				err := os.WriteFile(configPath, []byte(configContent), 0o644)
+				require.NoError(t, err)
+
+				return configPath
+			},
+			expectError: true,
+			errorCheck: func(t *testing.T, err error) {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), "not in allowlist")
+			},
+		},
 		{
 			name: "Complete config with security features",
 			systemEnv: map[string]string{
@@ -148,34 +225,6 @@ args = ["private"]
 					require.NotNil(t, privateGroup.ExpandedVars)
 					assert.Equal(t, "private", privateGroup.ExpandedVars["priv"])
 				}
-			},
-		},
-		{
-			name: "Runtime security checks - allowlist violation",
-			systemEnv: map[string]string{
-				"SAFE_VAR":   "safe",
-				"UNSAFE_VAR": "unsafe",
-			},
-			setup: func(t *testing.T) string {
-				tmpDir := t.TempDir()
-				configPath := filepath.Join(tmpDir, "config.toml")
-
-				// This config tries to use a variable not in allowlist
-				configContent := `
-[global]
-from_env = ["bad=UNSAFE_VAR"]
-env_allowlist = ["SAFE_VAR"]
-`
-				err := os.WriteFile(configPath, []byte(configContent), 0o644)
-				require.NoError(t, err)
-
-				return configPath
-			},
-			expectError: true,
-			errorCheck: func(t *testing.T, err error) {
-				// Should fail during config loading due to allowlist violation
-				assert.Error(t, err)
-				assert.Contains(t, err.Error(), "not in allowlist")
 			},
 		},
 		{
