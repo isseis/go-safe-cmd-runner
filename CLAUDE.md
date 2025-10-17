@@ -140,6 +140,12 @@ All mock implementations should follow this standardized directory and file nami
 - After editing go files, make sure to run `make fmt` to format the files.
 - After editing files, make sure to run `make test` and `make lint` and fix errors.
 
+## Tool Execution Safety
+**CRITICAL**
+- Don't run following commands without user's explicit approval
+  - commands interactig with network, e.g. git push, git pull
+  - git commit
+
 ## Tool Execution Safety (TEMPORARY – Oct 2025)
 - Run tools **sequentially only**; do not issue a new `tool\_use` until the previous tool's `tool\_result` (or explicit cancellation) arrives.
 - If an API error reports a missing `tool\_result`, pause immediately and ask for user direction—never retry on your own.
