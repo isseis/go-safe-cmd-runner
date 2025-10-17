@@ -1,5 +1,5 @@
-# Automatic environment variables error test configuration
-# Tests that using reserved prefix __RUNNER_ in user-defined variables causes an error
+# Automatic internal variables error test configuration
+# Tests that using reserved prefix __runner_ in user-defined variables causes an error
 version = "1.0"
 
 [global]
@@ -8,29 +8,42 @@ workdir = "/tmp/auto-env-error-test"
 log_level = "debug"
 skip_standard_paths = true
 
-# This should fail: using reserved prefix __RUNNER_ in user-defined environment variable
+# This should fail: using reserved prefix __runner_ in user-defined internal variables
 [[groups]]
 name = "reserved_prefix_error"
-description = "Test error when using reserved prefix"
+description = "Test error when using reserved prefix in vars"
 priority = 1
 
 [[groups.commands]]
 name = "invalid_datetime"
-description = "Attempt to override __RUNNER_DATETIME (should fail)"
+description = "Attempt to define __runner_datetime in vars (should fail)"
 cmd = "echo"
 args = ["This should not execute"]
-env = ["__RUNNER_DATETIME=invalid"]
+vars = ["__runner_datetime=invalid"]
 
 [[groups.commands]]
 name = "invalid_pid"
-description = "Attempt to override __RUNNER_PID (should fail)"
+description = "Attempt to define __runner_pid in vars (should fail)"
 cmd = "echo"
 args = ["This should not execute"]
-env = ["__RUNNER_PID=12345"]
+vars = ["__runner_pid=12345"]
 
 [[groups.commands]]
 name = "invalid_custom"
-description = "Use custom variable with reserved prefix (should fail)"
+description = "Use custom variable with reserved prefix in vars (should fail)"
 cmd = "echo"
 args = ["This should not execute"]
-env = ["__RUNNER_CUSTOM=value"]
+vars = ["__runner_custom=value"]
+
+# Test reserved prefix in from_env (should also fail)
+[[groups]]
+name = "reserved_prefix_from_env"
+description = "Test error when using reserved prefix in from_env"
+priority = 2
+
+[[groups.commands]]
+name = "invalid_from_env"
+description = "Attempt to use reserved prefix in from_env (should fail)"
+cmd = "echo"
+args = ["This should not execute"]
+from_env = ["__runner_test=PATH"]

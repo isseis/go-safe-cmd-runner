@@ -702,11 +702,259 @@ cmd = "/usr/bin/curl"
 args = ["https://example.com/data"]
 ```
 
-### 5.3.2 env_allowlist - Environment Variable Allowlist (Group Level)
+### 5.3.2 vars - Group Internal Variables
 
 #### Overview
 
-Specifies environment variable allowlist at group level. There are three inheritance modes.
+Defines internal variables at group level. Merged with global `vars`, and can be referenced by all commands in the group.
+
+#### Syntax
+
+```toml
+[[groups]]
+name = "example"
+vars = ["var1=value1", "var2=value2", ...]
+```
+
+#### Parameter Details
+
+| Item | Description |
+|------|-------------|
+| **Type** | Array of strings (array of strings) |
+| **Required/Optional** | Optional |
+| **Configurable Level** | Global, Group, Command |
+| **Default Value** | [] (no variables) |
+| **Format** | `"variable_name=value"` format |
+| **Reference Syntax** | `%{variable_name}` |
+| **Inheritance Behavior** | Merged with Global.vars (Group takes priority) |
+
+#### Role
+
+- **Group-Specific Settings**: Define internal variables specific to the group
+- **Extension of Global vars**: Override or add to global variables
+- **Scope Management**: Can be referenced only by commands in the group
+
+#### Configuration Examples
+
+##### Example 1: Overriding Global Variables
+
+```toml
+version = "1.0"
+
+[global]
+vars = [
+    "app_dir=/opt/myapp",
+    "log_level=info"
+]
+
+[[groups]]
+name = "debug_group"
+vars = [
+    "log_level=debug"  # Override global log_level
+]
+
+[[groups.commands]]
+name = "run_debug"
+cmd = "%{app_dir}/bin/app"
+args = ["--log-level", "%{log_level}"]
+# Actual execution: /opt/myapp/bin/app --log-level debug
+```
+
+##### Example 2: Adding Group-Specific Variables
+
+```toml
+version = "1.0"
+
+[global]
+vars = ["base_dir=/opt"]
+
+[[groups]]
+name = "web_group"
+vars = [
+    "web_root=%{base_dir}/www",
+    "port=8080"
+]
+
+[[groups.commands]]
+name = "start_web"
+cmd = "/usr/bin/nginx"
+args = ["-c", "%{web_root}/nginx.conf", "-g", "daemon off;"]
+env = ["PORT=%{port}"]
+```
+
+##### Example 3: Environment-Specific Configuration
+
+```toml
+version = "1.0"
+
+[global]
+vars = ["app_dir=/opt/myapp"]
+
+[[groups]]
+name = "production"
+vars = [
+    "env_type=prod",
+    "config_file=%{app_dir}/config/%{env_type}.yml",
+    "db_host=prod-db.example.com"
+]
+
+[[groups.commands]]
+name = "run_prod"
+cmd = "%{app_dir}/bin/app"
+args = ["--config", "%{config_file}", "--db-host", "%{db_host}"]
+
+[[groups]]
+name = "development"
+vars = [
+    "env_type=dev",
+    "config_file=%{app_dir}/config/%{env_type}.yml",
+    "db_host=localhost"
+]
+
+[[groups.commands]]
+name = "run_dev"
+cmd = "%{app_dir}/bin/app"
+args = ["--config", "%{config_file}", "--db-host", "%{db_host}"]
+```
+
+### 5.3.3 from_env - System Environment Variable Import (Group Level)
+
+#### Overview
+
+Imports system environment variables as internal variables at group level. Uses **Merge** method — when a group defines `from_env` its entries are merged with Global.from_env (group entries take precedence when names collide).
+
+#### Syntax
+
+```toml
+[[groups]]
+name = "example"
+from_env = ["internal_var_name=SYSTEM_ENV_VAR_NAME", ...]
+```
+
+#### Parameter Details
+
+| Item | Description |
+|------|-------------|
+| **Type** | Array of strings (array of strings) |
+| **Required/Optional** | Optional |
+| **Configurable Level** | Global, Group |
+| **Default Value** | nil (inherits Global.from_env) |
+| **Format** | `"internal_var_name=SYSTEM_ENV_VAR_NAME"` format |
+| **Inheritance Behavior** | **Merge (union) method** |
+
+#### Inheritance Rules (Merge Method)
+
+| Group.from_env Status | Behavior |
+|---------------------|---------|
+| **Undefined (nil)** | Inherits Global.from_env |
+| **Empty array `[]`** | Inherits Global.from_env |
+| **Defined with values** | Global.from_env + Group.from_env are merged (Group wins on name conflicts) |
+
+#### Configuration Examples
+
+##### Example 1: Inheriting Global.from_env
+
+```toml
+version = "1.0"
+
+[global]
+env_allowlist = ["HOME", "USER"]
+from_env = [
+    "home=HOME",
+    "username=USER"
+]
+
+[[groups]]
+name = "inherit_group"
+# from_env undefined → Inherits Global.from_env
+
+[[groups.commands]]
+name = "show_home"
+cmd = "/bin/echo"
+args = ["Home: %{home}, User: %{username}"]
+# home and username are available
+```
+
+##### Example 2: Merging with Global.from_env
+
+```toml
+version = "1.0"
+
+[global]
+env_allowlist = ["HOME", "USER", "PATH"]
+from_env = [
+    "home=HOME",
+    "user=USER"
+]
+
+[[groups]]
+name = "merge_group"
+from_env = [
+    "path=PATH"  # Merged with Global.from_env
+]
+
+[[groups.commands]]
+name = "show_all"
+cmd = "/bin/echo"
+args = ["Home: %{home}, User: %{user}, Path: %{path}"]
+# home, user, and path are all available
+```
+
+##### Example 3: Overriding via Merge (same-name)
+
+```toml
+version = "1.0"
+
+[global]
+env_allowlist = ["HOME", "USER", "HOSTNAME"]
+from_env = [
+    "home=HOME",
+    "user=USER"
+]
+
+[[groups]]
+name = "override_merge_group"
+from_env = [
+    "home=CUSTOM_HOME_DIR",  # home is overridden by the group
+    "host=HOSTNAME"          # new variable added by the group
+]
+
+[[groups.commands]]
+name = "show_info"
+cmd = "/bin/echo"
+args = ["Home: %{home}, User: %{user}, Host: %{host}"]
+# home is taken from CUSTOM_HOME_DIR, user from global, host from group
+```
+
+##### Example 4: Empty array still inherits Global
+
+```toml
+version = "1.0"
+
+[global]
+env_allowlist = ["HOME"]
+from_env = ["home=HOME"]
+
+[[groups]]
+name = "empty_merge_group"
+from_env = []  # Empty array: Global.from_env is still inherited (merge behavior)
+
+[[groups.commands]]
+name = "show_home"
+cmd = "/bin/echo"
+args = ["Home: %{home}"]
+# home is available
+```
+
+#### Important Notes
+
+**Merge method benefits**: Groups can add new variables while still inheriting common variables defined at the Global level. This reduces duplication and provides a predictable, consistent inheritance model.
+
+### 5.3.4 env_allowlist - Environment Variable Allowlist (Group Level)
+
+#### Overview
+
+Controls the import of system environment variables through `from_env` at group level. Works with **Override(override)** method for allowlist itself.
 
 #### Syntax
 
@@ -723,9 +971,111 @@ env_allowlist = ["variable1", "variable2", ...]
 | **Type** | Array of strings (array of strings) |
 | **Required/Optional** | Optional |
 | **Configurable Level** | Global, Group |
-| **Default Value** | None (inheritance mode) |
+| **Default Value** | nil (inherits Global.env_allowlist) |
 | **Valid Values** | List of environment variable names, or empty array |
-| **Inheritance Behavior** | Three modes (described below) |
+| **Inheritance Behavior** | **Override (replacement) method** |
+
+### 5.3.5 env - Group Process Environment Variables
+
+#### Overview
+
+Defines process environment variables commonly used by all commands within that group. Merged with global-level environment variables and passed to child processes. Internal variables in the form `%{VAR}` can be used in values.
+
+#### Syntax
+
+```toml
+[[groups]]
+name = "example"
+env = ["KEY1=value1", "KEY2=value2", ...]
+```
+
+#### Parameter Details
+
+| Item | Description |
+|------|-------------|
+| **Type** | Array of strings (array of strings) |
+| **Required/Optional** | Optional |
+| **Configurable Level** | Global, Group, Command |
+| **Default Value** | [] (no environment variables) |
+| **Format** | `"KEY=VALUE"` format |
+| **Variable Expansion in Values** | Can use internal variables `%{VAR}` |
+| **Merge Behavior** | Merged with Global.env (Group takes priority) |
+
+#### Role
+
+- **Group-Specific Settings**: Define process environment variables specific to the group
+- **Internal Variable Utilization**: Can reference internal variables in `%{VAR}` format
+- **Override Global Settings**: Change global-level environment variables
+- **Sharing Between Commands**: Share settings across all commands in the group
+
+#### Configuration Examples
+
+##### Example 1: Group-Specific Environment Variables and Internal Variable Utilization
+
+```toml
+version = "1.0"
+
+[global]
+vars = ["base_dir=/opt/app"]
+env = ["LOG_LEVEL=info"]
+
+[[groups]]
+name = "database_group"
+vars = [
+    "db_data=%{base_dir}/db-data"
+]
+env = [
+    "DB_HOST=localhost",
+    "DB_PORT=5432",
+    "DB_DATA=%{db_data}"  # Reference internal variable
+]
+
+[[groups.commands]]
+name = "connect"
+cmd = "/usr/bin/psql"
+args = ["-h", "%{DB_HOST}", "-p", "%{DB_PORT}"]
+# DB_HOST and DB_PORT are obtained from Group.env
+```
+
+##### Example 2: Overriding Global Settings
+
+```toml
+version = "1.0"
+
+[global]
+env = [
+    "LOG_LEVEL=info",
+    "ENV_TYPE=production",
+]
+
+[[groups]]
+name = "development_group"
+env = [
+    "LOG_LEVEL=debug",      # Override global LOG_LEVEL
+    "ENV_TYPE=development", # Override global ENV_TYPE
+]
+
+[[groups.commands]]
+name = "run_dev"
+cmd = "/opt/app/bin/app"
+args = ["--log-level", "%{LOG_LEVEL}"]
+# LOG_LEVEL=debug is used
+```
+
+##### Example 3: Variable References Within Group
+
+```toml
+version = "1.0"
+
+[global]
+env = ["APP_ROOT=/opt/myapp"]
+
+[[groups]]
+name = "web_group"
+env = [
+    "WEB_DIR=%{APP_ROOT}/web",         # Reference APP_ROOT from Global.env
+    "STATIC_DIR=%{WEB_DIR}/static",    # Reference WEB_DIR from Group.env
+    "UPLOAD_DIR=%{WEB_DIR}/uploads",   # Reference WEB_DIR from Group.env
 
 ## 5.4 Environment Variable Inheritance Modes
 

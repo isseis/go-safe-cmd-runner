@@ -2,72 +2,339 @@
 
 ## 7.1 変数展開の概要
 
-変数展開機能は、コマンドやその引数に変数を埋め込み、実行時に実際の値に置き換える機能です。これにより、動的なコマンド構築や、環境に応じた設定の切り替えが可能になります。
+変数展開機能は、コマンドやその引数に変数を埋め込み、実行時に実際の値に置き換える機能です。go-safe-cmd-runnerでは、**内部変数**(TOML展開専用)と**プロセス環境変数**(子プロセスに渡される環境変数)を明確に分離し、セキュリティと明確性を向上させています。
 
 ### 主な利点
 
-1. **動的なコマンド構築**: 実行時に値を決定できる
-2. **設定の再利用**: 同じ変数を複数の場所で使用
-3. **環境の切り替え**: 開発/本番環境などの切り替えが容易
-4. **保守性の向上**: 変更箇所を一箇所に集約
+1. **セキュリティ向上**: 内部変数とプロセス環境変数を分離し、意図しない情報漏洩を防止
+2. **動的なコマンド構築**: 実行時に値を決定できる
+3. **設定の再利用**: 同じ変数を複数の場所で使用
+4. **環境の切り替え**: 開発/本番環境などの切り替えが容易
+5. **保守性の向上**: 変更箇所を一箇所に集約
+
+### 変数の種類
+
+go-safe-cmd-runnerでは、2種類の変数を扱います:
+
+| 変数の種類 | 用途 | 参照構文 | 定義方法 | 子プロセスへの影響 |
+|-----------|------|---------|---------|------------------|
+| **内部変数** | TOML設定ファイル内での展開専用 | `%{VAR}` | `vars`, `from_env` | なし(デフォルト) |
+| **プロセス環境変数** | 子プロセスの環境変数として設定 | - | `env` | あり |
 
 ### 使用可能な場所
 
 変数展開は以下の場所で使用できます:
 
-- **cmd**: 実行するコマンドのパス
-- **args**: コマンドの引数
-- **env**: 環境変数の値(VALUE 部分)
+- **cmd**: 実行するコマンドのパス(`%{VAR}` を使用)
+- **args**: コマンドの引数(`%{VAR}` を使用)
+- **env**: プロセス環境変数の値(`%{VAR}` を使用可能)
+- **verify_files**: 検証対象ファイルパス(`%{VAR}` を使用)
+- **vars**: 内部変数の定義(`%{VAR}` で他の内部変数を参照可能)
 
 ## 7.2 変数展開の文法
 
-### 基本文法
+### 内部変数の参照構文
 
-変数は `${変数名}` の形式で記述します:
+内部変数は `%{変数名}` の形式で記述します:
 
 ```toml
-cmd = "${VARIABLE_NAME}"
-args = ["${ARG1}", "${ARG2}"]
-env = ["VAR=${VALUE}"]
+cmd = "%{VARIABLE_NAME}"
+args = ["%{ARG1}", "%{ARG2}"]
+env = ["VAR=%{VALUE}"]
 ```
 
 ### 変数名のルール
 
-- 英大文字、数字、アンダースコア(`_`)が使用可能
-- 慣例として大文字を使用(例: `MY_VARIABLE`)
+- 英字(大文字・小文字)、数字、アンダースコア(`_`)が使用可能
+- 推奨は小文字とアンダースコアを使用(例: `my_variable`, `app_dir`)
 - 先頭は英字またはアンダースコアで開始
+- 大文字小文字を区別する(`home` と `HOME` は別の変数)
+- 予約プレフィックス `__runner_` で始まる変数名は使用不可
 
-```toml
+```
 # 有効な変数名
-"${PATH}"
-"${MY_TOOL}"
-"${_PRIVATE_VAR}"
-"${VAR123}"
+"%{path}"
+"%{my_tool}"
+"%{_private_var}"
+"%{var123}"
+"%{HOME}"
 
 # 無効な変数名
-"${123VAR}"      # 数字で開始
-"${my-var}"      # ハイフンは使用不可
-"${my.var}"      # ドットは使用不可
+"%{123var}"         # 数字で開始
+"%{my-var}"         # ハイフンは使用不可
+"%{my.var}"         # ドットは使用不可
+"%{__runner_test}"  # 予約プレフィックス
 ```
 
-## 7.3 使用可能な場所
+## 7.3 内部変数の定義
 
-### 7.3.1 cmd での変数展開
+### 7.3.1 `vars` フィールドによる内部変数定義
 
-コマンドパスを変数で指定できます。
+#### 概要
+
+`vars` フィールドを使用して、TOML展開専用の内部変数を定義できます。これらの変数は子プロセスの環境変数には影響しません。
+
+#### 設定形式
+
+```toml
+[global]
+vars = [
+    "app_dir=/opt/myapp",
+    "log_level=info"
+]
+
+[[groups]]
+name = "backup"
+vars = [
+    "backup_dir=%{app_dir}/backups",
+    "retention_days=30"
+]
+
+[[groups.commands]]
+name = "backup_db"
+vars = [
+    "timestamp=20250114",
+    "output_file=%{backup_dir}/dump_%{timestamp}.sql"
+]
+cmd = "/usr/bin/pg_dump"
+args = ["-f", "%{output_file}", "mydb"]
+```
+
+#### スコープと継承
+
+| レベル | スコープ | 継承ルール |
+|--------|---------|-----------|
+| **Global.vars** | すべてのグループとコマンドから参照可能 | - |
+| **Group.vars** | そのグループ内のコマンドから参照可能 | Global.vars とマージ(Group が優先) |
+| **Command.vars** | そのコマンド内でのみ参照可能 | Global + Group + Command をマージ |
+
+#### 参照構文
+
+- `%{変数名}` の形式で参照
+- `cmd`, `args`, `verify_files`, `env` の値、および他の `vars` 定義内で使用可能
+
+#### 基本的な例
+
+```toml
+version = "1.0"
+
+[global]
+vars = ["base_dir=/opt"]
+
+[[groups]]
+name = "prod_backup"
+vars = ["db_tools=%{base_dir}/db-tools"]
+
+[[groups.commands]]
+name = "db_dump"
+vars = [
+    "timestamp=20250114",
+    "output_file=%{base_dir}/dump_%{timestamp}.sql"
+]
+cmd = "%{db_tools}/dump.sh"
+args = ["-o", "%{output_file}"]
+```
+
+### 7.3.2 `from_env` によるシステム環境変数の取り込み
+
+#### 概要
+
+`from_env` フィールドを使用して、システム環境変数を内部変数として取り込むことができます。
+
+#### 設定形式
+
+```toml
+[global]
+env_allowlist = ["HOME", "PATH", "USER"]
+from_env = [
+    "home=HOME",
+    "user_path=PATH",
+    "username=USER"
+]
+
+[[groups]]
+name = "example"
+from_env = [
+    "custom=CUSTOM_VAR"  # このグループ専用の取り込み
+]
+```
+
+#### 構文
+
+`内部変数名=システム環境変数名` の形式で記述します:
+
+- **左辺**: 内部変数名(推奨は小文字、例: `home`, `user_path`)
+- **右辺**: システム環境変数名(通常は大文字、例: `HOME`, `PATH`)
+
+#### セキュリティ制約
+
+- `from_env` で参照するシステム環境変数は必ず `env_allowlist` に含まれている必要があります
+- `env_allowlist` にない変数を参照するとエラーになります
+
+#### 継承ルール
+
+| レベル | 継承動作 |
+|--------|---------|
+| **Global.from_env** | すべてのグループ・コマンドから継承される(デフォルト) |
+| **Group.from_env** | 定義されている場合は Global.from_env と**マージ**(Merge) |
+| **Command.from_env** | 定義されている場合は Global + Group の from_env と**マージ**(Merge) |
+| **未定義** | 上位レベルの from_env を継承 |
+
+#### 例: システム環境変数の取り込み
+
+```toml
+version = "1.0"
+
+[global]
+env_allowlist = ["HOME", "PATH"]
+from_env = [
+    "home=HOME",
+    "user_path=PATH"
+]
+
+[[groups]]
+name = "file_operations"
+
+[[groups.commands]]
+name = "list_home"
+cmd = "/bin/ls"
+args = ["-la", "%{home}"]
+# %{home} は /home/username などに展開される
+```
+
+### 7.3.3 内部変数のネスト
+
+内部変数の値には、他の内部変数への参照を含めることができます。
+
+#### 基本例
+
+```toml
+[global]
+vars = [
+    "base=/opt",
+    "app_dir=%{base}/myapp",
+    "log_dir=%{app_dir}/logs"
+]
+
+[[groups.commands]]
+name = "show_log_dir"
+cmd = "/bin/echo"
+args = ["Log directory: %{log_dir}"]
+# 実際: Log directory: /opt/myapp/logs
+```
+
+#### 展開順序
+
+変数は定義順に展開されます:
+
+1. `base` → `/opt`
+2. `app_dir` → `%{base}/myapp` → `/opt/myapp`
+3. `log_dir` → `%{app_dir}/logs` → `/opt/myapp/logs`
+
+### 7.3.4 循環参照の検出
+
+循環参照はエラーとして検出されます:
+
+```toml
+[[groups.commands]]
+name = "circular"
+vars = [
+    "var1=%{var2}",
+    "var2=%{var1}"  # エラー: 循環参照
+]
+cmd = "/bin/echo"
+args = ["%{var1}"]
+```
+
+## 7.4 プロセス環境変数の定義
+
+### 7.4.1 `env` フィールドによる環境変数設定
+
+#### 概要
+
+`env` フィールドで定義された環境変数は、コマンド実行時に子プロセスに渡されます。この値には内部変数(`%{VAR}`)を使用できます。
+
+#### 設定形式
+
+```toml
+[global]
+env = [
+    "LOG_LEVEL=info",
+    "APP_ENV=production"
+]
+
+[[groups]]
+name = "app_tasks"
+env = [
+    "DB_HOST=localhost",
+    "DB_PORT=5432"
+]
+
+[[groups.commands]]
+name = "run_app"
+cmd = "/opt/myapp/bin/app"
+env = [
+    "CONFIG_FILE=%{config_path}"  # 内部変数を使用可能
+]
+vars = ["config_path=/etc/myapp/config.yml"]
+```
+
+#### 継承とマージ
+
+`env` フィールドは以下のようにマージされます:
+
+1. Global.env
+2. Group.env (Global と結合)
+3. Command.env (Global + Group と結合)
+
+同じ名前の環境変数が複数レベルで定義された場合、より具体的なレベル(Command > Group > Global)が優先されます。
+
+#### 内部変数との関係
+
+- `env` の値には `%{VAR}` 形式で内部変数を参照できます
+- `env` で定義された環境変数は、デフォルトでは子プロセスにのみ渡され、内部変数としては使用できません
+- 内部変数として使いたい場合は、`vars` フィールドで定義してください
+
+#### 例: 内部変数を使ったプロセス環境変数の設定
+
+```toml
+version = "1.0"
+
+[global]
+vars = [
+    "app_dir=/opt/myapp",
+    "log_dir=%{app_dir}/logs"
+]
+env = [
+    "APP_HOME=%{app_dir}",
+    "LOG_PATH=%{log_dir}/app.log"
+]
+
+[[groups.commands]]
+name = "run_app"
+cmd = "/opt/myapp/bin/app"
+args = ["--verbose"]
+# 子プロセスは APP_HOME=/opt/myapp, LOG_PATH=/opt/myapp/logs/app.log を受け取る
+```
+
+## 7.5 使用可能な場所の詳細
+
+### 7.5.1 cmd での変数展開
+
+コマンドパスに内部変数を使用できます。
 
 #### 例1: 基本的なコマンドパス展開
 
 ```toml
 [[groups.commands]]
 name = "docker_version"
-cmd = "${DOCKER_CMD}"
+cmd = "%{docker_cmd}"
 args = ["version"]
-env = ["DOCKER_CMD=/usr/bin/docker"]
+vars = ["docker_cmd=/usr/bin/docker"]
 ```
 
 実行時:
-- `${DOCKER_CMD}` → `/usr/bin/docker` に展開
+- `%{docker_cmd}` → `/usr/bin/docker` に展開
 - 実際の実行: `/usr/bin/docker version`
 
 #### 例2: バージョン管理されたツール
@@ -75,22 +342,22 @@ env = ["DOCKER_CMD=/usr/bin/docker"]
 ```toml
 [[groups.commands]]
 name = "gcc_compile"
-cmd = "${TOOLCHAIN_DIR}/gcc-${VERSION}/bin/gcc"
+cmd = "%{toolchain_dir}/gcc-%{version}/bin/gcc"
 args = ["-o", "output", "main.c"]
-env = [
-    "TOOLCHAIN_DIR=/opt/toolchains",
-    "VERSION=11.2.0",
+vars = [
+    "toolchain_dir=/opt/toolchains",
+    "version=11.2.0"
 ]
 ```
 
 実行時:
-- `${TOOLCHAIN_DIR}` → `/opt/toolchains` に展開
-- `${VERSION}` → `11.2.0` に展開
+- `%{toolchain_dir}` → `/opt/toolchains` に展開
+- `%{version}` → `11.2.0` に展開
 - 実際の実行: `/opt/toolchains/gcc-11.2.0/bin/gcc -o output main.c`
 
-### 7.3.2 args での変数展開
+### 7.5.2 args での変数展開
 
-コマンド引数に変数を使用できます。
+コマンド引数に内部変数を使用できます。
 
 #### 例1: ファイルパスの構築
 
@@ -98,10 +365,10 @@ env = [
 [[groups.commands]]
 name = "backup_copy"
 cmd = "/bin/cp"
-args = ["${SOURCE_FILE}", "${DEST_FILE}"]
-env = [
-    "SOURCE_FILE=/data/original.txt",
-    "DEST_FILE=/backups/backup.txt",
+args = ["%{source_file}", "%{dest_file}"]
+vars = [
+    "source_file=/data/original.txt",
+    "dest_file=/backups/backup.txt"
 ]
 ```
 
@@ -111,16 +378,16 @@ env = [
 [[groups.commands]]
 name = "ssh_connect"
 cmd = "/usr/bin/ssh"
-args = ["${USER}@${HOST}:${PORT}"]
-env = [
-    "USER=admin",
-    "HOST=server01.example.com",
-    "PORT=22",
+args = ["%{user}@%{host}:%{port}"]
+vars = [
+    "user=admin",
+    "host=server01.example.com",
+    "port=22"
 ]
 ```
 
 実行時:
-- `${USER}@${HOST}:${PORT}` → `admin@server01.example.com:22` に展開
+- `%{user}@%{host}:%{port}` → `admin@server01.example.com:22` に展開
 
 #### 例3: 設定ファイルの切り替え
 
@@ -128,17 +395,17 @@ env = [
 [[groups.commands]]
 name = "run_app"
 cmd = "/opt/myapp/bin/app"
-args = ["--config", "${CONFIG_DIR}/${ENV_TYPE}.yml"]
-env = [
-    "CONFIG_DIR=/etc/myapp/configs",
-    "ENV_TYPE=production",
+args = ["--config", "%{config_dir}/%{env_type}.yml"]
+vars = [
+    "config_dir=/etc/myapp/configs",
+    "env_type=production"
 ]
 ```
 
 実行時:
-- `${CONFIG_DIR}/${ENV_TYPE}.yml` → `/etc/myapp/configs/production.yml` に展開
+- `%{config_dir}/%{env_type}.yml` → `/etc/myapp/configs/production.yml` に展開
 
-### 7.3.3 複数変数の組み合わせ
+### 7.5.3 複数変数の組み合わせ
 
 複数の変数を組み合わせて、複雑なパスや文字列を構築できます。
 
@@ -148,16 +415,16 @@ env = [
 [[groups.commands]]
 name = "backup_with_timestamp"
 cmd = "/bin/mkdir"
-args = ["-p", "${BACKUP_ROOT}/${DATE}/${USER}/data"]
-env = [
-    "BACKUP_ROOT=/var/backups",
-    "DATE=2025-10-02",
-    "USER=admin",
+args = ["-p", "%{backup_root}/%{date}/%{user}/data"]
+vars = [
+    "backup_root=/var/backups",
+    "date=2025-10-02",
+    "user=admin"
 ]
 ```
 
 実行時:
-- `${BACKUP_ROOT}/${DATE}/${USER}/data` → `/var/backups/2025-10-02/admin/data` に展開
+- `%{backup_root}/%{date}/%{user}/data` → `/var/backups/2025-10-02/admin/data` に展開
 
 #### 例2: データベース接続文字列
 
@@ -165,23 +432,22 @@ env = [
 [[groups.commands]]
 name = "db_connect"
 cmd = "/usr/bin/psql"
-args = ["postgresql://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}"]
-env = [
-    "DB_USER=appuser",
-    "DB_PASS=secret123",
-    "DB_HOST=localhost",
-    "DB_PORT=5432",
-    "DB_NAME=myapp_db",
+args = ["postgresql://%{db_user}:%{db_pass}@%{db_host}:%{db_port}/%{db_name}"]
+vars = [
+    "db_user=appuser",
+    "db_pass=secret123",
+    "db_host=localhost",
+    "db_port=5432",
+    "db_name=myapp_db"
 ]
 ```
 
 実行時:
 - 接続文字列が完全に展開される
 - `postgresql://appuser:secret123@localhost:5432/myapp_db`
+## 7.6 実践例
 
-## 7.4 実践例
-
-### 7.4.1 コマンドパスの動的構築
+### 7.6.1 コマンドパスの動的構築
 
 環境に応じてコマンドパスを切り替える例:
 
@@ -189,7 +455,10 @@ env = [
 version = "1.0"
 
 [global]
-env_allowlist = ["PATH", "HOME", "PYTHON_ROOT", "PY_VERSION"]
+env_allowlist = ["PATH"]
+vars = [
+    "python_root=/usr/local"
+]
 
 [[groups]]
 name = "python_tasks"
@@ -197,25 +466,19 @@ name = "python_tasks"
 # Python 3.10 を使用
 [[groups.commands]]
 name = "run_with_py310"
-cmd = "${PYTHON_ROOT}/python${PY_VERSION}/bin/python"
+cmd = "%{python_root}/python%{py_version}/bin/python"
 args = ["-V"]
-env = [
-    "PYTHON_ROOT=/usr/local",
-    "PY_VERSION=3.10",
-]
+vars = ["py_version=3.10"]
 
 # Python 3.11 を使用
 [[groups.commands]]
 name = "run_with_py311"
-cmd = "${PYTHON_ROOT}/python${PY_VERSION}/bin/python"
+cmd = "%{python_root}/python%{py_version}/bin/python"
 args = ["-V"]
-env = [
-    "PYTHON_ROOT=/usr/local",
-    "PY_VERSION=3.11",
-]
+vars = ["py_version=3.11"]
 ```
 
-### 7.4.2 引数の動的生成
+### 7.6.2 引数の動的生成
 
 Docker コンテナの起動パラメータを動的に構築:
 
@@ -223,34 +486,33 @@ Docker コンテナの起動パラメータを動的に構築:
 version = "1.0"
 
 [global]
-env_allowlist = ["PATH", "DOCKER_BIN"]
+env_allowlist = ["PATH"]
+vars = ["docker_bin=/usr/bin/docker"]
 
 [[groups]]
 name = "docker_deployment"
 
 [[groups.commands]]
 name = "start_container"
-cmd = "${DOCKER_BIN}"
+cmd = "%{docker_bin}"
 args = [
     "run",
     "-d",
-    "--name", "${CONTAINER_NAME}",
-    "-v", "${HOST_PATH}:${CONTAINER_PATH}",
-    "-e", "APP_ENV=${APP_ENV}",
-    "-p", "${HOST_PORT}:${CONTAINER_PORT}",
-    "${IMAGE_NAME}:${IMAGE_TAG}",
+    "--name", "%{container_name}",
+    "-v", "%{host_path}:%{container_path}",
+    "-p", "%{host_port}:%{container_port}",
+    "%{image_name}:%{image_tag}"
 ]
-env = [
-    "DOCKER_BIN=/usr/bin/docker",
-    "CONTAINER_NAME=myapp-prod",
-    "HOST_PATH=/opt/myapp/data",
-    "CONTAINER_PATH=/app/data",
-    "APP_ENV=production",
-    "HOST_PORT=8080",
-    "CONTAINER_PORT=80",
-    "IMAGE_NAME=myapp",
-    "IMAGE_TAG=v1.2.3",
+vars = [
+    "container_name=myapp-prod",
+    "host_path=/opt/myapp/data",
+    "container_path=/app/data",
+    "host_port=8080",
+    "container_port=80",
+    "image_name=myapp",
+    "image_tag=v1.2.3"
 ]
+env = ["APP_ENV=production"]
 ```
 
 実行されるコマンド:
@@ -258,12 +520,11 @@ env = [
 /usr/bin/docker run -d \
   --name myapp-prod \
   -v /opt/myapp/data:/app/data \
-  -e APP_ENV=production \
   -p 8080:80 \
   myapp:v1.2.3
 ```
 
-### 7.4.3 環境別設定の切り替え
+### 7.6.3 環境別設定の切り替え
 
 開発環境と本番環境で異なる設定を使用:
 
@@ -271,184 +532,97 @@ env = [
 version = "1.0"
 
 [global]
-env_allowlist = ["PATH", "APP_BIN", "CONFIG_DIR", "ENV_TYPE", "LOG_LEVEL", "DB_URL"]
+env_allowlist = ["PATH"]
+vars = [
+    "app_bin=/opt/myapp/bin/myapp",
+    "config_dir=/etc/myapp/configs"
+]
 
 # 開発環境グループ
 [[groups]]
 name = "development"
+vars = [
+    "env_type=development",
+    "log_level=debug",
+    "db_url=postgresql://localhost/dev_db"
+]
 
 [[groups.commands]]
 name = "run_dev"
-cmd = "${APP_BIN}"
+cmd = "%{app_bin}"
 args = [
-    "--config", "${CONFIG_DIR}/${ENV_TYPE}.yml",
-    "--log-level", "${LOG_LEVEL}",
-    "--db", "${DB_URL}",
-]
-env = [
-    "APP_BIN=/opt/myapp/bin/myapp",
-    "CONFIG_DIR=/etc/myapp/configs",
-    "ENV_TYPE=development",
-    "LOG_LEVEL=debug",
-    "DB_URL=postgresql://localhost/dev_db",
+    "--config", "%{config_dir}/%{env_type}.yml",
+    "--log-level", "%{log_level}",
+    "--db", "%{db_url}"
 ]
 
 # 本番環境グループ
 [[groups]]
 name = "production"
+vars = [
+    "env_type=production",
+    "log_level=info",
+    "db_url=postgresql://prod-server/prod_db"
+]
 
 [[groups.commands]]
 name = "run_prod"
-cmd = "${APP_BIN}"
+cmd = "%{app_bin}"
 args = [
-    "--config", "${CONFIG_DIR}/${ENV_TYPE}.yml",
-    "--log-level", "${LOG_LEVEL}",
-    "--db", "${DB_URL}",
-]
-env = [
-    "APP_BIN=/opt/myapp/bin/myapp",
-    "CONFIG_DIR=/etc/myapp/configs",
-    "ENV_TYPE=production",
-    "LOG_LEVEL=info",
-    "DB_URL=postgresql://prod-server/prod_db",
+    "--config", "%{config_dir}/%{env_type}.yml",
+    "--log-level", "%{log_level}",
+    "--db", "%{db_url}"
 ]
 ```
 
-## 7.5 ネスト(入れ子)変数
+### 7.6.4 システム環境変数の活用
 
-変数の値に別の変数を含めることができます。
-
-### 基本例
+`from_env` を使用してシステム環境変数を安全に取り込む例:
 
 ```toml
-[[groups.commands]]
-name = "nested_vars"
-cmd = "/bin/echo"
-args = ["Message: ${FULL_MSG}"]
-env = [
-    "FULL_MSG=Hello, ${USER}!",
-    "USER=Alice",
-]
-```
+version = "1.0"
 
-展開順序:
-1. `${USER}` → `Alice` に展開
-2. `${FULL_MSG}` → `Hello, Alice!` に展開
-3. 最終的な引数: `Message: Hello, Alice!`
-
-### 複雑なパス構築
-
-```toml
-[[groups.commands]]
-name = "complex_path"
-cmd = "/bin/echo"
-args = ["Config path: ${CONFIG_PATH}"]
-env = [
-    "CONFIG_PATH=${BASE_DIR}/${ENV_TYPE}/config.yml",
-    "BASE_DIR=/opt/myapp",
-    "ENV_TYPE=production",
-]
-```
-
-展開順序:
-1. `${BASE_DIR}` → `/opt/myapp` に展開
-2. `${ENV_TYPE}` → `production` に展開
-3. `${CONFIG_PATH}` → `/opt/myapp/production/config.yml` に展開
-
-## 7.6 変数の自己参照
-
-変数の自己参照は、環境変数を拡張する際によく使用される重要な機能です。特に `PATH` 環境変数のように、既存の値に新しい値を追加する場合に有用です。
-
-### 自己参照の仕組み
-
-`PATH=/custom/bin:${PATH}` のような記述では、`${PATH}` は **システム環境変数の元の値** を参照します。これは循環参照ではなく、意図的にサポートされた機能です。
-
-### 基本例: PATH の拡張
-
-```toml
-[[groups.commands]]
-name = "extend_path"
-cmd = "/bin/echo"
-args = ["PATH is: ${PATH}"]
-env = ["PATH=/opt/mytools/bin:${PATH}"]
-```
-
-展開過程:
-1. システム環境変数 `PATH` の値を取得（例: `/usr/bin:/bin`）
-2. `${PATH}` → `/usr/bin:/bin` に展開
-3. 最終的な値: `/opt/mytools/bin:/usr/bin:/bin`
-
-### 実用例: カスタムツールディレクトリの追加
-
-```toml
-[[groups.commands]]
-name = "use_custom_tools"
-cmd = "${CUSTOM_TOOL}"
-args = ["--version"]
-env = [
-    "PATH=${TOOL_DIR}/bin:${PATH}",
-    "TOOL_DIR=/opt/custom-tools",
-    "CUSTOM_TOOL=mytool",
-]
-```
-
-この設定では:
-- `CUSTOM_TOOL` がコマンド名のみで指定されていても、拡張された `PATH` から見つけられる
-- システムの既存 `PATH` も保持される
-
-### 他の環境変数での自己参照
-
-`PATH` 以外の環境変数でも同様の自己参照が可能です:
-
-```toml
-[[groups.commands]]
-name = "extend_lib_path"
-cmd = "/opt/myapp/bin/app"
-args = []
-env = [
-    "LD_LIBRARY_PATH=/opt/myapp/lib:${LD_LIBRARY_PATH}",
-    "PYTHONPATH=/opt/myapp/python:${PYTHONPATH}",
-]
-```
-
-### 自己参照と循環参照の違い
-
-**自己参照（正常）**: Command.Env で定義された変数が **システム環境変数** の同名変数を参照
-```toml
-env = ["PATH=/custom/bin:${PATH}"]  # ${PATH} はシステム環境変数を参照
-```
-
-**循環参照（エラー）**: Command.Env 内の変数同士が互いに参照し合う
-```toml
-env = [
-    "VAR1=${VAR2}",
-    "VAR2=${VAR1}",  # エラー: Command.Env 内での循環参照
-]
-```
-
-### 注意点
-
-1. **システム環境変数が存在しない場合**: `${PATH}` 参照時にシステムに `PATH` が存在しない場合、エラーになります
-2. **allowlist との関係**: システム環境変数を参照する場合、その変数が `env_allowlist` に含まれている必要があります
-
-```toml
 [global]
-env_allowlist = ["PATH", "HOME"]  # PATH の自己参照を許可
+env_allowlist = ["HOME", "USER", "PATH"]
+from_env = [
+    "home=HOME",
+    "username=USER"
+]
+vars = [
+    "config_file=%{home}/.myapp/config.yml",
+    "log_file=/var/log/myapp/%{username}.log"
+]
+
+[[groups]]
+name = "user_tasks"
 
 [[groups.commands]]
-name = "extend_path"
-cmd = "/bin/echo"
-args = ["${PATH}"]
-env = ["PATH=/custom:${PATH}"]  # OK: PATH は allowlist に含まれている
+name = "show_config"
+cmd = "/bin/cat"
+args = ["%{config_file}"]
+
+[[groups.commands]]
+name = "show_logs"
+cmd = "/bin/tail"
+args = ["-f", "%{log_file}"]
 ```
 
 ## 7.7 エスケープシーケンス
 
-リテラル(文字通りの)`$`や`\`を使用したい場合、エスケープが必要です。
+リテラル(文字通りの)`%` や `\` を使用したい場合、エスケープが必要です。
 
-### ドル記号のエスケープ
+### パーセント記号のエスケープ
 
-`\$` でリテラルのドル記号を表現:
+`\%` でリテラルのパーセント記号を表現:
+
+```toml
+[[groups.commands]]
+name = "percentage_display"
+cmd = "/bin/echo"
+args = ["Progress: 50\\%"]
+```
+
+出力: `Progress: 50%`
 
 ```toml
 [[groups.commands]]
@@ -467,8 +641,8 @@ args = ["Price: \\$100 USD"]
 [[groups.commands]]
 name = "windows_path"
 cmd = "/bin/echo"
-args = ["Path: C:\\\\Users\\\\${USER}"]
-env = ["USER=JohnDoe"]
+args = ["Path: C:\\\\Users\\\\%{user}"]
+vars = ["user=JohnDoe"]
 ```
 
 出力: `Path: C:\Users\JohnDoe`
@@ -479,22 +653,22 @@ env = ["USER=JohnDoe"]
 [[groups.commands]]
 name = "mixed_escape"
 cmd = "/bin/echo"
-args = ["Literal \\$HOME is different from ${HOME}"]
-env = ["HOME=/home/user"]
+args = ["Literal \\% is different from %{percent}"]
+vars = ["percent=100"]
 ```
 
-出力: `Literal $HOME is different from /home/user`
+出力: `Literal % is different from 100`
 
-## 7.8 自動環境変数
+## 7.8 自動変数
 
 ### 7.8.1 概要
 
-システムは各コマンド実行時に以下の環境変数を自動的に設定します:
+システムは各コマンド実行時に以下の内部変数を自動的に設定します:
 
-- **`__RUNNER_DATETIME`**: 実行時刻（UTC）をYYYYMMDDHHmmSS.msec形式で表現
-- **`__RUNNER_PID`**: runnerプロセスのプロセスID
+- **`__runner_datetime`**: 実行時刻（UTC）をYYYYMMDDHHmmSS.msec形式で表現
+- **`__runner_pid`**: runnerプロセスのプロセスID
 
-これらの変数は、コマンドパス、引数、環境変数の値で通常の変数と同様に使用できます。
+これらの変数は、**内部変数として利用可能**であり、`%{__runner_datetime}` や `%{__runner_pid}` の形式で参照できます。
 
 ### 7.8.2 使用例
 
@@ -507,7 +681,7 @@ description = "タイムスタンプ付きバックアップの作成"
 cmd = "/usr/bin/tar"
 args = [
     "czf",
-    "/tmp/backup/data-${__RUNNER_DATETIME}.tar.gz",
+    "/tmp/backup/data-%{__runner_datetime}.tar.gz",
     "/data"
 ]
 ```
@@ -525,7 +699,7 @@ description = "PIDを含むロックファイルの作成"
 cmd = "/bin/sh"
 args = [
     "-c",
-    "echo ${__RUNNER_PID} > /var/run/myapp-${__RUNNER_PID}.lock"
+    "echo %{__runner_pid} > /var/run/myapp-%{__runner_pid}.lock"
 ]
 ```
 
@@ -542,7 +716,7 @@ description = "実行時刻とPIDをログに記録"
 cmd = "/bin/sh"
 args = [
     "-c",
-    "echo 'Executed at ${__RUNNER_DATETIME} by PID ${__RUNNER_PID}' >> /var/log/executions.log"
+    "echo 'Executed at %{__runner_datetime} by PID %{__runner_pid}' >> /var/log/executions.log"
 ]
 ```
 
@@ -559,8 +733,8 @@ name = "timestamped_report"
 description = "タイムスタンプとPID付きレポート"
 cmd = "/opt/myapp/bin/report"
 args = [
-    "--output", "/reports/${__RUNNER_DATETIME}-${__RUNNER_PID}.html",
-    "--title", "Report ${__RUNNER_DATETIME}",
+    "--output", "/reports/%{__runner_datetime}-%{__runner_pid}.html",
+    "--title", "Report %{__runner_datetime}"
 ]
 ```
 
@@ -570,7 +744,7 @@ args = [
 
 ### 7.8.3 日時フォーマット
 
-`__RUNNER_DATETIME` のフォーマット仕様:
+`__runner_datetime` のフォーマット仕様:
 
 | 部分 | 説明 | 例 |
 |-----|------|-----|
@@ -588,21 +762,21 @@ args = [
 
 ### 7.8.4 予約プレフィックス
 
-プレフィックス `__RUNNER_` は自動環境変数用に予約されており、ユーザー定義の環境変数では使用できません。
+プレフィックス `__runner_` は自動変数用に予約されており、ユーザー定義の変数では使用できません。
 
 #### エラーになる例
 
 ```toml
 [[groups.commands]]
-name = "invalid_env"
+name = "invalid_var"
 cmd = "/bin/echo"
-args = ["${__RUNNER_CUSTOM}"]
-env = ["__RUNNER_CUSTOM=value"]  # エラー: 予約プレフィックスの使用
+args = ["%{__runner_custom}"]
+vars = ["__runner_custom=value"]  # エラー: 予約プレフィックスの使用
 ```
 
 エラーメッセージ:
 ```
-environment variable "__RUNNER_CUSTOM" uses reserved prefix "__RUNNER_";
+variable "__runner_custom" uses reserved prefix "__runner_";
 this prefix is reserved for automatically generated variables
 ```
 
@@ -610,15 +784,15 @@ this prefix is reserved for automatically generated variables
 
 ```toml
 [[groups.commands]]
-name = "valid_env"
+name = "valid_var"
 cmd = "/bin/echo"
-args = ["${MY_CUSTOM_VAR}"]
-env = ["MY_CUSTOM_VAR=value"]  # OK: 予約プレフィックスを使用していない
+args = ["%{my_custom_var}"]
+vars = ["my_custom_var=value"]  # OK: 予約プレフィックスを使用していない
 ```
 
 ### 7.8.5 変数生成のタイミング
 
-自動環境変数（`__RUNNER_DATETIME`と`__RUNNER_PID`）は、設定ファイルのロード時に一度だけ生成され、各コマンドの実行時には生成されません。すべてのグループのすべてのコマンドは、runner実行全体を通じて完全に同じ値を共有します。
+自動変数（`__runner_datetime` と `__runner_pid`）は、設定ファイルのロード時に一度だけ生成され、各コマンドの実行時には生成されません。すべてのグループのすべてのコマンドは、runner実行全体を通じて完全に同じ値を共有します。
 
 ```toml
 [[groups]]
@@ -627,15 +801,15 @@ name = "backup_group"
 [[groups.commands]]
 name = "backup_db"
 cmd = "/usr/bin/pg_dump"
-args = ["-f", "/tmp/backup/db-${__RUNNER_DATETIME}.sql", "mydb"]
+args = ["-f", "/tmp/backup/db-%{__runner_datetime}.sql", "mydb"]
 
 [[groups.commands]]
 name = "backup_files"
 cmd = "/usr/bin/tar"
-args = ["czf", "/tmp/backup/files-${__RUNNER_DATETIME}.tar.gz", "/data"]
+args = ["czf", "/tmp/backup/files-%{__runner_datetime}.tar.gz", "/data"]
 ```
 
-**重要なポイント**: 両コマンドは完全に同じタイムスタンプを使用します。これは`__RUNNER_DATETIME`が実行時ではなく、設定ロード時にサンプリングされるためです:
+**重要なポイント**: 両コマンドは完全に同じタイムスタンプを使用します。これは `__runner_datetime` が実行時ではなく、設定ロード時にサンプリングされるためです:
 - `/tmp/backup/db-20251005143022.123.sql`
 - `/tmp/backup/files-20251005143022.123.tar.gz`
 
@@ -643,129 +817,177 @@ args = ["czf", "/tmp/backup/files-${__RUNNER_DATETIME}.tar.gz", "/data"]
 
 ## 7.9 セキュリティ考慮事項
 
-### 7.9.1 Command.Env の優先度
+### 7.9.1 内部変数とプロセス環境変数の分離
 
-`Command.Env` で定義された変数は、システム環境変数よりも優先されます:
-
-```toml
-[global]
-env_allowlist = ["PATH", "HOME"]
-
-[[groups.commands]]
-name = "override_home"
-cmd = "/bin/echo"
-args = ["Home: ${HOME}"]
-env = ["HOME=/opt/custom-home"]
-# システムの $HOME ではなく、Command.Env の HOME が使用される
-```
-
-### 7.9.2 env_allowlist との関係
-
-**重要**: `Command.Env` で定義された変数は `env_allowlist` のチェックを受けません。
+内部変数(vars, from_env)とプロセス環境変数(env)は明確に分離されています:
 
 ```toml
 [global]
-env_allowlist = ["PATH", "HOME"]
-# CUSTOM_VAR は allowlist にない
+vars = [
+    "app_dir=/opt/myapp",
+    "config_path=%{app_dir}/config.yml"
+]
+env = [
+    "APP_HOME=%{app_dir}"  # 子プロセスに渡される
+]
 
 [[groups.commands]]
-name = "custom_var"
-cmd = "${CUSTOM_TOOL}"
-args = []
-env = ["CUSTOM_TOOL=/opt/tools/mytool"]
-# CUSTOM_TOOL は allowlist にないが、Command.Env で定義されているので使用可能
+name = "run_app"
+cmd = "/opt/myapp/bin/app"
+args = ["--config", "%{config_path}"]  # 内部変数を使用
+# 子プロセスは APP_HOME 環境変数を受け取るが、app_dir や config_path は受け取らない
 ```
 
-### 7.9.3 絶対パスの要件
+### 7.9.2 from_env のセキュリティ制約
 
-展開後のコマンドパスは絶対パスである必要があります:
+`from_env` で取り込めるシステム環境変数は、`env_allowlist` で明示的に許可されたもののみです:
+
+```toml
+[global]
+env_allowlist = ["HOME", "USER"]
+from_env = [
+    "home=HOME",      # OK: HOME は allowlist に含まれている
+    "user=USER",      # OK: USER は allowlist に含まれている
+    "path=PATH"       # エラー: PATH は allowlist に含まれていない
+]
+```
+
+### 7.9.3 コマンドパスの要件
+
+展開後のコマンドパスは以下の要件を満たす必要があります:
+
+#### 一般コマンド
+
+`run_as_user` または `run_as_group` が指定されていない通常のコマンドでは、ローカルパス（相対パス）または絶対パスが使用できます:
 
 ```toml
 # 正しい: 絶対パスに展開される
 [[groups.commands]]
-name = "valid"
-cmd = "${TOOL_DIR}/mytool"
-env = ["TOOL_DIR=/opt/tools"]  # 絶対パス
+name = "valid_absolute"
+cmd = "%{tool_dir}/mytool"
+vars = ["tool_dir=/opt/tools"]  # 絶対パス
 
-# 誤り: 相対パスに展開される
+# 正しい: 相対パスに展開される（一般コマンドでは許可）
 [[groups.commands]]
-name = "invalid"
-cmd = "${TOOL_DIR}/mytool"
-env = ["TOOL_DIR=./tools"]  # 相対パス - エラー
+name = "valid_relative"
+cmd = "%{tool_dir}/mytool"
+vars = ["tool_dir=./tools"]  # 相対パス - 一般コマンドではOK
 ```
+
+#### 特権コマンド
+
+`run_as_user` または `run_as_group` が指定されている特権コマンドでは、セキュリティ上の理由から**絶対パスのみ**が許可されます:
+
+```toml
+# 正しい: 絶対パスに展開される
+[[groups.commands]]
+name = "valid_privileged"
+cmd = "%{tool_dir}/mytool"
+run_as_user = "appuser"
+vars = ["tool_dir=/opt/tools"]  # 絶対パス
+
+# 誤り: 相対パスに展開される（特権コマンドではエラー）
+[[groups.commands]]
+name = "invalid_privileged"
+cmd = "%{tool_dir}/mytool"
+run_as_user = "appuser"
+vars = ["tool_dir=./tools"]  # 相対パス - 特権コマンドではエラー
+```
+
+特権コマンドで絶対パスを要求する理由:
+- PATH環境変数を使った攻撃を防止
+- 実行するコマンドの正確な位置を明示
+- 予期しないコマンド実行のリスクを低減
 
 ### 7.9.4 機密情報の扱い
 
-機密情報(APIキー、パスワードなど)は `Command.Env` で定義し、システム環境変数から隔離:
+機密情報は内部変数として定義し、必要な場合のみプロセス環境変数として渡します:
 
 ```toml
 [[groups.commands]]
 name = "api_call"
 cmd = "/usr/bin/curl"
 args = [
-    "-H", "Authorization: Bearer ${API_TOKEN}",
-    "${API_ENDPOINT}/data",
+    "-H", "Authorization: Bearer %{api_token}",
+    "%{api_endpoint}/data"
 ]
-# 機密情報は Command.Env に記述し、システム環境から隔離
-env = [
-    "API_TOKEN=sk-1234567890abcdef",
-    "API_ENDPOINT=https://api.example.com",
+vars = [
+    "api_token=sk-1234567890abcdef",
+    "api_endpoint=https://api.example.com"
 ]
+# api_token と api_endpoint は内部変数のみで、子プロセスには渡されない
 ```
 
-### 7.9.5 コマンド間の隔離
+### 7.9.5 変数名の検証
 
-各コマンドの `env` は独立しており、他のコマンドに影響を与えません:
+変数名は POSIX 準拠の命名規則に従う必要があり、予約プレフィックス `__runner_` は使用できません:
 
 ```toml
-[[groups.commands]]
-name = "cmd1"
-cmd = "/bin/echo"
-args = ["DB: ${DB_HOST}"]
-env = ["DB_HOST=db1.example.com"]
+# 有効な変数名
+vars = [
+    "app_dir=/opt/app",
+    "log_level=info",
+    "_private=value"
+]
 
-[[groups.commands]]
-name = "cmd2"
-cmd = "/bin/echo"
-args = ["DB: ${DB_HOST}"]
-env = ["DB_HOST=db2.example.com"]
-# cmd1 の DB_HOST とは独立
+# 無効な変数名
+vars = [
+    "__runner_custom=value",  # エラー: 予約プレフィックス
+    "123invalid=value",        # エラー: 数字で開始
+    "my-var=value"             # エラー: ハイフン使用不可
+]
 ```
 
 ## 7.10 トラブルシューティング
 
 ### 未定義変数
 
-変数が定義されていない場合、エラーになります:
+内部変数が定義されていない場合、エラーになります:
 
 ```toml
 [[groups.commands]]
 name = "undefined_var"
 cmd = "/bin/echo"
-args = ["Value: ${UNDEFINED}"]
-# UNDEFINED が env に定義されていない → エラー
+args = ["Value: %{UNDEFINED}"]
+# UNDEFINED が vars に定義されていない → エラー
 ```
 
-**解決方法**: 必要な変数を全て `env` で定義する
+**解決方法**: 必要な変数を `vars` または `from_env` で定義する
 
 ### 循環参照
 
-変数が互いに参照し合う場合、エラーになります:
+内部変数が互いに参照し合う場合、エラーになります:
 
 ```toml
 [[groups.commands]]
 name = "circular"
-cmd = "/bin/echo"
-args = ["${VAR1}"]
-env = [
-    "VAR1=${VAR2}",
-    "VAR2=${VAR1}",  # 循環参照 → エラー
+vars = [
+    "var1=%{var2}",
+    "var2=%{var1}"  # 循環参照 → エラー
 ]
+cmd = "/bin/echo"
+args = ["%{var1}"]
 ```
 
 **解決方法**: 変数の依存関係を整理する
 
-**注意**: `PATH=/custom:${PATH}` のような自己参照は循環参照ではありません。詳細は「7.6 変数の自己参照」を参照してください。
+### allowlist エラー
+
+`from_env` で参照するシステム環境変数が `env_allowlist` にない場合、エラーになります:
+
+```toml
+[global]
+env_allowlist = ["HOME"]
+from_env = ["path=PATH"]  # エラー: PATH が allowlist にない
+```
+
+**解決方法**: `env_allowlist` に必要な環境変数を追加する
+
+```toml
+[global]
+env_allowlist = ["HOME", "PATH"]
+from_env = ["path=PATH"]  # OK
+```
 
 ### 展開後のパス検証エラー
 
@@ -774,12 +996,18 @@ env = [
 ```toml
 [[groups.commands]]
 name = "invalid_path"
-cmd = "${TOOL}"
-args = []
-env = ["TOOL=../tool"]  # 相対パス → エラー
+cmd = "%{tool}"
+vars = ["tool=../tool"]  # 相対パス → エラー
 ```
 
 **解決方法**: 絶対パスを使用する
+
+```toml
+[[groups.commands]]
+name = "valid_path"
+cmd = "%{tool}"
+vars = ["tool=/opt/tools/tool"]  # 絶対パス → OK
+```
 
 ## 実践的な総合例
 
@@ -792,10 +1020,24 @@ version = "1.0"
 timeout = 300
 log_level = "info"
 env_allowlist = ["PATH", "HOME", "USER"]
+from_env = [
+    "home=HOME",
+    "username=USER"
+]
+vars = [
+    "app_root=/opt/myapp",
+    "config_dir=%{app_root}/config",
+    "bin_dir=%{app_root}/bin"
+]
 
 [[groups]]
 name = "application_deployment"
 description = "アプリケーションのデプロイメント処理"
+vars = [
+    "env_type=production",
+    "config_source=%{config_dir}/templates",
+    "migration_dir=%{app_root}/migrations"
+]
 
 # ステップ1: 設定ファイルの配置
 [[groups.commands]]
@@ -803,33 +1045,26 @@ name = "deploy_config"
 description = "環境別設定ファイルの配置"
 cmd = "/bin/cp"
 args = [
-    "${CONFIG_SOURCE}/${ENV_TYPE}/app.yml",
-    "${CONFIG_DEST}/app.yml",
-]
-env = [
-    "CONFIG_SOURCE=/opt/configs/templates",
-    "CONFIG_DEST=/etc/myapp",
-    "ENV_TYPE=production",
+    "%{config_source}/%{env_type}/app.yml",
+    "%{config_dir}/app.yml"
 ]
 
 # ステップ2: データベースマイグレーション
 [[groups.commands]]
 name = "db_migration"
 description = "データベーススキーマのマイグレーション"
-cmd = "${APP_BIN}/migrate"
+cmd = "%{bin_dir}/migrate"
 args = [
-    "--database", "${DB_URL}",
-    "--migrations", "${MIGRATION_DIR}",
+    "--database", "%{db_url}",
+    "--migrations", "%{migration_dir}"
 ]
-env = [
-    "APP_BIN=/opt/myapp/bin",
-    "DB_URL=postgresql://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}",
-    "DB_USER=appuser",
-    "DB_PASS=secret123",
-    "DB_HOST=localhost",
-    "DB_PORT=5432",
-    "DB_NAME=myapp_prod",
-    "MIGRATION_DIR=/opt/myapp/migrations",
+vars = [
+    "db_user=appuser",
+    "db_pass=secret123",
+    "db_host=localhost",
+    "db_port=5432",
+    "db_name=myapp_prod",
+    "db_url=postgresql://%{db_user}:%{db_pass}@%{db_host}:%{db_port}/%{db_name}"
 ]
 timeout = 600
 
@@ -837,17 +1072,19 @@ timeout = 600
 [[groups.commands]]
 name = "start_application"
 description = "アプリケーションサーバーの起動"
-cmd = "${APP_BIN}/server"
+cmd = "%{bin_dir}/server"
 args = [
-    "--config", "${CONFIG_DEST}/app.yml",
-    "--port", "${APP_PORT}",
-    "--workers", "${WORKER_COUNT}",
+    "--config", "%{config_dir}/app.yml",
+    "--port", "%{app_port}",
+    "--workers", "%{worker_count}"
+]
+vars = [
+    "app_port=8080",
+    "worker_count=4"
 ]
 env = [
-    "APP_BIN=/opt/myapp/bin",
-    "CONFIG_DEST=/etc/myapp",
-    "APP_PORT=8080",
-    "WORKER_COUNT=4",
+    "LOG_LEVEL=info",
+    "LOG_PATH=%{app_root}/logs/app.log"
 ]
 
 # ステップ4: ヘルスチェック
@@ -855,13 +1092,8 @@ env = [
 name = "health_check"
 description = "アプリケーションのヘルスチェック"
 cmd = "/usr/bin/curl"
-args = [
-    "-f",
-    "${HEALTH_URL}",
-]
-env = [
-    "HEALTH_URL=http://localhost:8080/health",
-]
+args = ["-f", "%{health_url}"]
+vars = ["health_url=http://localhost:%{app_port}/health"]
 timeout = 30
 ```
 
@@ -887,9 +1119,10 @@ version = "1.0"
 
 [global]
 env_allowlist = ["HOME"]
+from_env = ["home=HOME"]
 verify_files = [
-    "${HOME}/config.toml",
-    "${HOME}/data.txt",
+    "%{home}/config.toml",
+    "%{home}/data.txt"
 ]
 
 [[groups]]
@@ -902,8 +1135,8 @@ args = ["hello"]
 ```
 
 展開結果（`HOME=/home/user` の場合）:
-- `${HOME}/config.toml` → `/home/user/config.toml`
-- `${HOME}/data.txt` → `/home/user/data.txt`
+- `%{home}/config.toml` → `/home/user/config.toml`
+- `%{home}/data.txt` → `/home/user/data.txt`
 
 #### グループレベルでの展開
 
@@ -912,295 +1145,194 @@ version = "1.0"
 
 [global]
 env_allowlist = ["APP_ROOT"]
+from_env = ["app_root=APP_ROOT"]
 
 [[groups]]
 name = "app_group"
-env_allowlist = ["APP_ROOT"]
 verify_files = [
-    "${APP_ROOT}/config/app.yml",
-    "${APP_ROOT}/bin/server",
+    "%{app_root}/config/app.yml",
+    "%{app_root}/bin/server"
 ]
 
 [[groups.commands]]
 name = "start"
 cmd = "/bin/echo"
-args = ["starting"]
+args = ["Starting app"]
 ```
 
-システム環境変数 `APP_ROOT=/opt/myapp` の場合、展開結果:
-- `${APP_ROOT}/config/app.yml` → `/opt/myapp/config/app.yml`
-- `${APP_ROOT}/bin/server` → `/opt/myapp/bin/server`
+展開結果（`APP_ROOT=/opt/myapp` の場合）:
+- `%{app_root}/config/app.yml` → `/opt/myapp/config/app.yml`
+- `%{app_root}/bin/server` → `/opt/myapp/bin/server`
 
-### 7.11.4 複数変数の使用
+### 7.11.4 複雑な例
 
-複数の環境変数を組み合わせることで、より柔軟なパス構築が可能です。
+動的なパス構築を含む例:
 
 ```toml
 version = "1.0"
 
 [global]
-env_allowlist = ["BASE_DIR", "APP_NAME"]
+env_allowlist = ["ENV", "APP_ROOT"]
+from_env = [
+    "env_type=ENV",
+    "app_root=APP_ROOT"
+]
+vars = [
+    "config_base=%{app_root}/configs",
+    "config_path=%{config_base}/%{env_type}"
+]
 verify_files = [
-    "${BASE_DIR}/${APP_NAME}/config.toml",
-    "${BASE_DIR}/${APP_NAME}/data/db.sqlite",
+    "%{config_path}/global.yml",
+    "%{config_path}/secrets.enc",
+    "%{app_root}/web/nginx.conf",
+    "%{app_root}/web/ssl/cert.pem",
+    "%{app_root}/web/ssl/key.pem",
+    "%{app_root}/db/schema.sql",
+    "%{app_root}/db/migrations/%{env_type}/"
 ]
 
 [[groups]]
-name = "app_tasks"
+name = "deployment"
 
 [[groups.commands]]
-name = "run"
-cmd = "/bin/echo"
-args = ["running"]
+name = "deploy"
+cmd = "/opt/deploy.sh"
 ```
 
-展開結果（`BASE_DIR=/opt`, `APP_NAME=myapp` の場合）:
-- `${BASE_DIR}/${APP_NAME}/config.toml` → `/opt/myapp/config.toml`
-- `${BASE_DIR}/${APP_NAME}/data/db.sqlite` → `/opt/myapp/data/db.sqlite`
-
-### 7.11.5 環境別設定の例
-
-開発環境と本番環境で異なるファイルを検証する例:
-
-```toml
-version = "1.0"
-
-[global]
-env_allowlist = ["ENV_TYPE", "CONFIG_ROOT"]
-verify_files = ["${CONFIG_ROOT}/${ENV_TYPE}/global.toml"]
-
-[[groups]]
-name = "development"
-env_allowlist = ["ENV_TYPE", "CONFIG_ROOT"]
-verify_files = [
-    "${CONFIG_ROOT}/${ENV_TYPE}/dev.toml",
-    "${CONFIG_ROOT}/${ENV_TYPE}/dev_db.sqlite",
-]
-
-[[groups.commands]]
-name = "dev_task"
-cmd = "/bin/echo"
-args = ["dev mode"]
-
-[[groups]]
-name = "production"
-env_allowlist = ["ENV_TYPE", "CONFIG_ROOT"]
-verify_files = [
-    "${CONFIG_ROOT}/${ENV_TYPE}/prod.toml",
-    "${CONFIG_ROOT}/${ENV_TYPE}/prod_db.sqlite",
-]
-
-[[groups.commands]]
-name = "prod_task"
-cmd = "/bin/echo"
-args = ["prod mode"]
-```
-
-開発環境（`ENV_TYPE=dev`, `CONFIG_ROOT=/etc/myapp`）の場合:
-- グローバル: `/etc/myapp/dev/global.toml`
-- development グループ: `/etc/myapp/dev/dev.toml`, `/etc/myapp/dev/dev_db.sqlite`
-
-本番環境（`ENV_TYPE=prod`, `CONFIG_ROOT=/etc/myapp`）の場合:
-- グローバル: `/etc/myapp/prod/global.toml`
-- production グループ: `/etc/myapp/prod/prod.toml`, `/etc/myapp/prod/prod_db.sqlite`
-
-### 7.11.6 allowlist との関係
-
-`verify_files` での変数展開でも、`env_allowlist` によるセキュリティ制御が適用されます。
-
-#### グローバルレベルの allowlist
-
-グローバル `verify_files` では、グローバル `env_allowlist` が使用されます:
-
-```toml
-[global]
-env_allowlist = ["HOME", "USER"]
-verify_files = [
-    "${HOME}/config.toml",    # OK: HOME は allowlist に含まれる
-    "${USER}/data.txt",       # OK: USER は allowlist に含まれる
-]
-```
-
-#### グループレベルの allowlist 継承
-
-グループ `verify_files` では、グループの `env_allowlist` が使用されます。グループに `env_allowlist` が定義されていない場合は、グローバル設定を継承します:
-
-```toml
-[global]
-env_allowlist = ["GLOBAL_VAR"]
-
-[[groups]]
-name = "group_with_inheritance"
-# env_allowlist が未定義 → グローバル設定を継承
-verify_files = ["${GLOBAL_VAR}/file.txt"]  # OK: グローバル allowlist を継承
-
-[[groups]]
-name = "group_with_explicit"
-env_allowlist = ["GROUP_VAR"]  # 明示的に定義
-verify_files = ["${GROUP_VAR}/file.txt"]   # OK: グループ allowlist を使用
-```
-
-#### allowlist 違反のエラー
-
-allowlist に含まれない変数を使用するとエラーになります:
-
-```toml
-[global]
-env_allowlist = ["SAFE_VAR"]
-verify_files = ["${FORBIDDEN_VAR}/file.txt"]  # エラー: allowlist に含まれない
-```
-
-エラーメッセージ例:
-```
-failed to expand global verify_files[0]: variable not allowed by allowlist: FORBIDDEN_VAR
-```
-
-### 7.11.7 エスケープシーケンス
-
-verify_files でもエスケープシーケンスを使用できます:
-
-```toml
-[global]
-env_allowlist = ["HOME"]
-verify_files = [
-    "${HOME}/config.toml",     # 変数展開される
-    "\\${HOME}/literal.txt",   # リテラル文字列 "${HOME}/literal.txt"
-]
-```
-
-展開結果（`HOME=/home/user` の場合）:
-- `/home/user/config.toml`
-- `${HOME}/literal.txt` （展開されない）
-
-### 7.11.8 実行時の動作
-
-verify_files の変数展開は、設定ファイルのロード時に自動的に実行されます:
-
-1. **設定ファイル読み込み**: TOML ファイルをパース
-2. **変数展開実行**: verify_files 内の変数を展開
-3. **展開結果保存**: 展開後のパスを内部フィールドに保存
-4. **検証実行**: 展開後のパスを使用してファイル検証
-
-### 7.11.9 トラブルシューティング
-
-#### 未定義変数のエラー
-
-変数が環境に存在しない場合、エラーになります:
-
-```toml
-[global]
-env_allowlist = ["UNDEFINED_VAR"]
-verify_files = ["${UNDEFINED_VAR}/file.txt"]
-```
-
-エラーメッセージ例:
-```
-failed to expand global verify_files[0]: variable not found in environment: UNDEFINED_VAR
-```
-
-**解決方法**: 必要な環境変数をシステムに設定する
-
-#### allowlist エラー
-
-変数が allowlist に含まれていない場合、エラーになります:
-
-```toml
-[global]
-env_allowlist = ["ALLOWED_VAR"]
-verify_files = ["${FORBIDDEN_VAR}/file.txt"]
-```
-
-エラーメッセージ例:
-```
-failed to expand global verify_files[0]: variable not allowed by allowlist: FORBIDDEN_VAR
-```
-
-**解決方法**: 必要な変数を `env_allowlist` に追加する
-
-#### 循環参照のエラー
-
-変数が互いに参照し合う場合、エラーになります（ただし、システム環境変数での循環参照は極めて稀です）:
-
-```bash
-# システム環境変数での循環参照（実際には発生しにくい）
-export VAR1="${VAR2}"
-export VAR2="${VAR1}"
-```
-
-**解決方法**: 環境変数の定義を修正する
-
-### 7.11.10 実践例: マルチ環境デプロイ
-
-実践的な例として、マルチ環境デプロイメントでの verify_files 使用例を示します:
-
-```toml
-version = "1.0"
-
-[global]
-env_allowlist = ["DEPLOY_ENV", "APP_ROOT", "CONFIG_ROOT"]
-verify_files = [
-    "${CONFIG_ROOT}/${DEPLOY_ENV}/global.yml",
-    "${CONFIG_ROOT}/${DEPLOY_ENV}/secrets.enc",
-]
-
-[[groups]]
-name = "web_servers"
-env_allowlist = ["DEPLOY_ENV", "APP_ROOT"]
-verify_files = [
-    "${APP_ROOT}/web/nginx.conf",
-    "${APP_ROOT}/web/ssl/cert.pem",
-    "${APP_ROOT}/web/ssl/key.pem",
-]
-
-[[groups.commands]]
-name = "deploy_web"
-cmd = "${APP_ROOT}/scripts/deploy.sh"
-args = ["web", "${DEPLOY_ENV}"]
-env = [
-    "APP_ROOT=/opt/myapp",
-    "DEPLOY_ENV=production",
-]
-
-[[groups]]
-name = "database"
-env_allowlist = ["DEPLOY_ENV", "APP_ROOT"]
-verify_files = [
-    "${APP_ROOT}/db/schema.sql",
-    "${APP_ROOT}/db/migrations/${DEPLOY_ENV}",
-]
-
-[[groups.commands]]
-name = "migrate_db"
-cmd = "${APP_ROOT}/scripts/migrate.sh"
-args = ["${DEPLOY_ENV}"]
-env = [
-    "APP_ROOT=/opt/myapp",
-    "DEPLOY_ENV=production",
-]
-```
-
-環境変数設定例（本番環境）:
-```bash
-export DEPLOY_ENV=production
-export APP_ROOT=/opt/myapp
-export CONFIG_ROOT=/etc/myapp/config
-```
+実行時の環境変数が以下の場合:
+- `ENV=production`
+- `APP_ROOT=/opt/myapp`
 
 この設定により、以下のファイルが検証されます:
-- `/etc/myapp/config/production/global.yml`
-- `/etc/myapp/config/production/secrets.enc`
+- `/opt/myapp/configs/production/global.yml`
+- `/opt/myapp/configs/production/secrets.enc`
 - `/opt/myapp/web/nginx.conf`
 - `/opt/myapp/web/ssl/cert.pem`
 - `/opt/myapp/web/ssl/key.pem`
 - `/opt/myapp/db/schema.sql`
 - `/opt/myapp/db/migrations/production/`
 
-### 7.11.11 制限事項
+### 7.11.5 制限事項
 
 1. **絶対パスの要件**: 展開後のパスは絶対パスである必要があります
 2. **システム環境変数のみ**: verify_files では Command.Env の変数は使用できません
 3. **展開タイミング**: 設定ロード時に1度だけ展開されます（実行時ではありません）
 
-## 次のステップ
+## 7.12 実践的な総合例
+
+以下は、変数展開機能を活用した実践的な設定例です:
+
+```toml
+version = "1.0"
+
+[global]
+timeout = 300
+log_level = "info"
+env_allowlist = ["PATH", "HOME", "USER"]
+from_env = [
+    "home=HOME",
+    "username=USER"
+]
+vars = [
+    "app_root=/opt/myapp",
+    "config_dir=%{app_root}/config",
+    "bin_dir=%{app_root}/bin"
+]
+
+[[groups]]
+name = "application_deployment"
+description = "アプリケーションのデプロイメント処理"
+vars = [
+    "env_type=production",
+    "log_dir=%{app_root}/logs"
+]
+
+# ステップ1: 設定ファイルの配置
+[[groups.commands]]
+name = "deploy_config"
+description = "環境別設定ファイルの配置"
+cmd = "/bin/cp"
+args = [
+    "%{config_dir}/templates/%{env_type}/app.yml",
+    "%{config_dir}/app.yml"
+]
+
+# ステップ2: データベースマイグレーション
+[[groups.commands]]
+name = "db_migration"
+description = "データベーススキーマのマイグレーション"
+cmd = "%{bin_dir}/migrate"
+args = [
+    "--database", "%{db_url}",
+    "--migrations", "%{migration_dir}"
+]
+vars = [
+    "db_user=appuser",
+    "db_pass=secret123",
+    "db_host=localhost",
+    "db_port=5432",
+    "db_name=myapp_prod",
+    "db_url=postgresql://%{db_user}:%{db_pass}@%{db_host}:%{db_port}/%{db_name}",
+    "migration_dir=%{app_root}/migrations"
+]
+timeout = 600
+
+# ステップ3: アプリケーションの起動
+[[groups.commands]]
+name = "start_application"
+description = "アプリケーションサーバーの起動"
+cmd = "%{bin_dir}/server"
+args = [
+    "--config", "%{config_dir}/app.yml",
+    "--port", "%{app_port}",
+    "--workers", "%{worker_count}"
+]
+vars = [
+    "app_port=8080",
+    "worker_count=4"
+]
+env = [
+    "LOG_LEVEL=info",
+    "LOG_PATH=%{log_dir}/app.log"
+]
+
+# ステップ4: ヘルスチェック
+[[groups.commands]]
+name = "health_check"
+description = "アプリケーションのヘルスチェック"
+cmd = "/usr/bin/curl"
+args = ["-f", "%{health_url}"]
+vars = ["health_url=http://localhost:%{app_port}/health"]
+timeout = 30
+```
+
+## 7.13 まとめ
+
+### 変数システムの全体像
+
+go-safe-cmd-runnerの変数システムは、以下の3つのコンポーネントで構成されています:
+
+1. **内部変数** (`vars`, `from_env`)
+   - TOML設定ファイル内での展開専用
+   - `%{VAR}` 構文で参照
+   - 子プロセスには渡されない(デフォルト)
+
+2. **プロセス環境変数** (`env`)
+   - 子プロセスに渡される環境変数
+   - 内部変数 `%{VAR}` を値に使用可能
+
+3. **自動変数** (`__runner_datetime`, `__runner_pid`)
+   - システムが自動生成
+   - 内部変数として利用可能
+
+### ベストプラクティス
+
+1. **内部変数を活用する**: パスやURLなど、TOML展開にのみ必要な値は `vars` で定義
+2. **from_env で明示的に取り込む**: システム環境変数は `from_env` で明示的に取り込み、意図を明確に
+3. **env は必要最小限に**: 子プロセスに渡す環境変数は必要最小限に抑える
+4. **セキュリティを考慮**: 機密情報は慎重に扱い、不要な環境変数は渡さない
+5. **命名規則を統一**: 内部変数は小文字とアンダースコア、環境変数は大文字を推奨
+
+### 次のステップ
 
 次章では、これまで学んだ設定を組み合わせた実践的な例を紹介します。実際のユースケースに基づいた設定ファイルの作成方法を学びます。

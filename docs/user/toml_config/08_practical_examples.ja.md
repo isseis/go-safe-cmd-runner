@@ -8,6 +8,19 @@
 
 日次でファイルをバックアップする基本的な設定:
 
+**実行前の準備:**
+
+```bash
+# TOML設定ファイルのハッシュを記録
+record -file backup-config.toml -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+
+# 実行バイナリのハッシュを記録
+record -file /bin/tar -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -file /bin/ls -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+```
+
+**設定ファイル (backup-config.toml):**
+
 ```toml
 version = "1.0"
 
@@ -31,6 +44,7 @@ args = [
     "config-backup.tar.gz",
     "/etc/myapp",
 ]
+max_risk_level = "medium"
 timeout = 600
 
 [[groups.commands]]
@@ -42,6 +56,7 @@ args = [
     "logs-backup.tar.gz",
     "/var/log/myapp",
 ]
+max_risk_level = "medium"
 timeout = 600
 
 [[groups.commands]]
@@ -57,6 +72,23 @@ output = "backup-list.txt"
 ### ファイル検証とアクセス制御
 
 セキュリティ要件が高い環境向けの設定:
+
+**実行前の準備:**
+
+```bash
+# TOML設定ファイルのハッシュを記録
+record -file secure-backup.toml -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+
+# Global verify_files で指定したファイルのハッシュを記録
+record -file /bin/sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -file /bin/tar -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -file /usr/bin/gpg -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+
+# Group verify_files で指定したファイルのハッシュを記録
+record -file /opt/secure/bin/backup-tool -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+```
+
+**設定ファイル (secure-backup.toml):**
 
 ```toml
 version = "1.0"
@@ -98,12 +130,12 @@ timeout = 1800
 name = "encrypt_backup"
 description = "バックアップの暗号化"
 cmd = "/usr/bin/gpg"
+vars = ["gpg_key_id=admin@example.com"]
 args = [
     "--encrypt",
-    "--recipient", "${GPG_KEY_ID}",
+    "--recipient", "%{gpg_key_id}",
     "data-backup.tar.gz",
 ]
-env = ["GPG_KEY_ID=admin@example.com"]
 max_risk_level = "medium"
 
 [[groups.commands]]
@@ -114,7 +146,6 @@ args = [
     "--verify",
     "data-backup.tar.gz.gpg",
 ]
-max_risk_level = "low"
 output = "verification-result.txt"
 ```
 
@@ -146,6 +177,7 @@ args = [
     "-o", "data.csv",
     "https://example.com/data/export.csv",
 ]
+max_risk_level = "medium"
 timeout = 600
 
 [[groups.commands]]
@@ -156,6 +188,7 @@ args = [
     "--input", "data.csv",
     "--output", "processed.csv",
 ]
+max_risk_level = "medium"
 timeout = 900
 
 [[groups.commands]]
@@ -167,6 +200,7 @@ args = [
     "-F", "file=@processed.csv",
     "https://example.com/api/upload",
 ]
+max_risk_level = "medium"
 timeout = 600
 output = "upload-response.txt"
 
@@ -203,7 +237,6 @@ name = "check_disk_space"
 description = "ディスク使用量の確認"
 cmd = "/bin/df"
 args = ["-h"]
-max_risk_level = "low"
 output = "disk-usage.txt"
 
 # 特権タスク: パッケージの更新
@@ -231,7 +264,6 @@ name = "check_service_status"
 description = "サービス状態の確認"
 cmd = "/usr/bin/systemctl"
 args = ["status", "myapp.service"]
-max_risk_level = "low"
 output = "service-status.txt"
 ```
 
@@ -295,12 +327,13 @@ output = "reports/services.txt"
 name = "archive_reports"
 description = "レポートの圧縮"
 cmd = "/bin/tar"
+vars = ["date=2025-10-02"]
 args = [
     "-czf",
-    "system-report-${DATE}.tar.gz",
+    "system-report-%{date}.tar.gz",
     "reports/",
 ]
-env = ["DATE=2025-10-02"]
+max_risk_level = "medium"
 ```
 
 ## 8.6 変数展開を活用した設定例
@@ -315,16 +348,7 @@ version = "1.0"
 [global]
 timeout = 600
 log_level = "info"
-env_allowlist = [
-    "PATH",
-    "HOME",
-    "APP_BIN",
-    "CONFIG_DIR",
-    "ENV_TYPE",
-    "LOG_LEVEL",
-    "DB_URL",
-    "API_PORT",
-]
+env_allowlist = ["PATH", "HOME"]
 
 # 開発環境
 [[groups]]
@@ -335,30 +359,33 @@ priority = 1
 [[groups.commands]]
 name = "deploy_dev_config"
 cmd = "/bin/cp"
+vars = [
+    "config_dir=/opt/configs",
+    "env_type=development",
+]
 args = [
-    "${CONFIG_DIR}/${ENV_TYPE}/app.yml",
+    "%{config_dir}/%{env_type}/app.yml",
     "/etc/myapp/app.yml",
 ]
-env = [
-    "CONFIG_DIR=/opt/configs",
-    "ENV_TYPE=development",
-]
+max_risk_level = "medium"
 
 [[groups.commands]]
 name = "start_dev_server"
-cmd = "${APP_BIN}"
+vars = [
+    "app_bin=/opt/myapp/bin/server",
+    "log_level=debug",
+    "api_port=8080",
+    "db_url=postgresql://localhost/dev_db",
+]
+cmd = "%{app_bin}"
 args = [
     "--config", "/etc/myapp/app.yml",
-    "--log-level", "${LOG_LEVEL}",
-    "--port", "${API_PORT}",
-    "--database", "${DB_URL}",
+    "--log-level", "%{log_level}",
+    "--port", "%{api_port}",
+    "--database", "%{db_url}",
 ]
-env = [
-    "APP_BIN=/opt/myapp/bin/server",
-    "LOG_LEVEL=debug",
-    "API_PORT=8080",
-    "DB_URL=postgresql://localhost/dev_db",
-]
+env = ["DB_URL=%{db_url}"]
+max_risk_level = "high"
 
 # ステージング環境
 [[groups]]
@@ -369,30 +396,33 @@ priority = 2
 [[groups.commands]]
 name = "deploy_staging_config"
 cmd = "/bin/cp"
+vars = [
+    "config_dir=/opt/configs",
+    "env_type=staging",
+]
 args = [
-    "${CONFIG_DIR}/${ENV_TYPE}/app.yml",
+    "%{config_dir}/%{env_type}/app.yml",
     "/etc/myapp/app.yml",
 ]
-env = [
-    "CONFIG_DIR=/opt/configs",
-    "ENV_TYPE=staging",
-]
+max_risk_level = "medium"
 
 [[groups.commands]]
 name = "start_staging_server"
-cmd = "${APP_BIN}"
+vars = [
+    "app_bin=/opt/myapp/bin/server",
+    "log_level=info",
+    "api_port=8081",
+    "db_url=postgresql://staging-db/staging_db",
+]
+cmd = "%{app_bin}"
 args = [
     "--config", "/etc/myapp/app.yml",
-    "--log-level", "${LOG_LEVEL}",
-    "--port", "${API_PORT}",
-    "--database", "${DB_URL}",
+    "--log-level", "%{log_level}",
+    "--port", "%{api_port}",
+    "--database", "%{db_url}",
 ]
-env = [
-    "APP_BIN=/opt/myapp/bin/server",
-    "LOG_LEVEL=info",
-    "API_PORT=8081",
-    "DB_URL=postgresql://staging-db/staging_db",
-]
+env = ["DB_URL=%{db_url}"]
+max_risk_level = "high"
 
 # 本番環境
 [[groups]]
@@ -403,30 +433,32 @@ priority = 3
 [[groups.commands]]
 name = "deploy_prod_config"
 cmd = "/bin/cp"
+vars = [
+    "config_dir=/opt/configs",
+    "env_type=production",
+]
 args = [
-    "${CONFIG_DIR}/${ENV_TYPE}/app.yml",
+    "%{config_dir}/%{env_type}/app.yml",
     "/etc/myapp/app.yml",
 ]
-env = [
-    "CONFIG_DIR=/opt/configs",
-    "ENV_TYPE=production",
-]
+max_risk_level = "medium"
 
 [[groups.commands]]
 name = "start_prod_server"
-cmd = "${APP_BIN}"
+vars = [
+    "app_bin=/opt/myapp/bin/server",
+    "log_level=warn",
+    "api_port=8082",
+    "db_url=postgresql://prod-db/prod_db",
+]
+cmd = "%{app_bin}"
 args = [
     "--config", "/etc/myapp/app.yml",
-    "--log-level", "${LOG_LEVEL}",
-    "--port", "${API_PORT}",
-    "--database", "${DB_URL}",
+    "--log-level", "%{log_level}",
+    "--port", "%{api_port}",
+    "--database", "%{db_url}",
 ]
-env = [
-    "APP_BIN=/opt/myapp/bin/server",
-    "LOG_LEVEL=warn",
-    "API_PORT=8082",
-    "DB_URL=postgresql://prod-db/prod_db",
-]
+env = ["DB_URL=%{db_url}"]
 run_as_user = "appuser"
 max_risk_level = "high"
 ```
@@ -436,6 +468,31 @@ max_risk_level = "high"
 ### フルスタックアプリケーションのデプロイ
 
 データベース、アプリケーション、Webサーバーの統合デプロイ:
+
+**実行前の準備:**
+
+```bash
+# TOML設定ファイルのハッシュを記録
+record -file deploy-fullstack.toml -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+
+# Global verify_files で指定したファイルのハッシュを記録
+record -file /usr/bin/psql -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -file /usr/bin/pg_dump -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+
+# 実行バイナリのハッシュを記録
+record -file /bin/tar -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -file /usr/bin/dpkg -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -file /opt/myapp/bin/migrate -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -file /usr/bin/systemctl -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -file /usr/bin/pip3 -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -file /bin/cp -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -file /usr/bin/nginx -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -file /usr/bin/curl -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -file /opt/tools/generate-report -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -file /bin/rm -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+```
+
+**設定ファイル (deploy-fullstack.toml):**
 
 ```toml
 version = "1.0"
@@ -469,16 +526,17 @@ cleanup = true
 name = "backup_current_version"
 description = "現在のバージョンをバックアップ"
 cmd = "/bin/tar"
+vars = [
+    "backup_dir=/var/backups/app",
+    "app_dir=/opt/myapp",
+    "timestamp=2025-10-02-120000",
+]
 args = [
     "-czf",
-    "${BACKUP_DIR}/app-backup-${TIMESTAMP}.tar.gz",
-    "${APP_DIR}",
+    "%{backup_dir}/app-backup-%{timestamp}.tar.gz",
+    "%{app_dir}",
 ]
-env = [
-    "BACKUP_DIR=/var/backups/app",
-    "APP_DIR=/opt/myapp",
-    "TIMESTAMP=2025-10-02-120000",
-]
+max_risk_level = "medium"
 timeout = 1800
 
 [[groups.commands]]
@@ -500,18 +558,19 @@ verify_files = ["/usr/bin/psql", "/usr/bin/pg_dump"]
 name = "backup_database"
 description = "データベースのバックアップ"
 cmd = "/usr/bin/pg_dump"
+vars = [
+    "db_user=appuser",
+    "db_name=myapp_db",
+    "timestamp=2025-10-02-120000",
+]
+env = ["PGPASSWORD=secret123"]
 args = [
-    "-U", "${DB_USER}",
-    "-d", "${DB_NAME}",
+    "-U", "%{db_user}",
+    "-d", "%{db_name}",
     "-F", "c",
-    "-f", "/var/backups/db/backup-${TIMESTAMP}.dump",
+    "-f", "/var/backups/db/backup-%{timestamp}.dump",
 ]
-env = [
-    "DB_USER=appuser",
-    "DB_NAME=myapp_db",
-    "TIMESTAMP=2025-10-02-120000",
-    "PGPASSWORD=secret123",
-]
+max_risk_level = "medium"
 timeout = 1800
 output = "db-backup-log.txt"
 
@@ -519,14 +578,15 @@ output = "db-backup-log.txt"
 name = "run_migrations"
 description = "データベースマイグレーションの実行"
 cmd = "/opt/myapp/bin/migrate"
+vars = [
+    "db_user=appuser",
+    "db_name=myapp_db",
+]
 args = [
-    "--database", "postgresql://${DB_USER}@localhost/${DB_NAME}",
+    "--database", "postgresql://%{db_user}@localhost/%{db_name}",
     "--migrations", "/opt/myapp/migrations",
 ]
-env = [
-    "DB_USER=appuser",
-    "DB_NAME=myapp_db",
-]
+max_risk_level = "high"
 timeout = 600
 
 # フェーズ3: アプリケーションデプロイ
@@ -553,6 +613,7 @@ args = [
     "/opt/deploy/releases/myapp-v2.0.0.tar.gz",
     "-C", "/opt/myapp",
 ]
+max_risk_level = "medium"
 
 [[groups.commands]]
 name = "install_dependencies"
@@ -562,6 +623,7 @@ args = [
     "install",
     "-r", "/opt/myapp/requirements.txt",
 ]
+max_risk_level = "high"
 timeout = 600
 
 [[groups.commands]]
@@ -587,6 +649,7 @@ args = [
     "/etc/nginx/sites-available/myapp.conf",
 ]
 run_as_user = "root"
+max_risk_level = "high"
 
 [[groups.commands]]
 name = "test_nginx_config"
@@ -594,6 +657,7 @@ description = "Nginx設定の検証"
 cmd = "/usr/bin/nginx"
 args = ["-t"]
 run_as_user = "root"
+max_risk_level = "medium"
 output = "nginx-config-test.txt"
 
 [[groups.commands]]
@@ -637,14 +701,14 @@ output = "smoke-test-result.txt"
 name = "verify_database_connection"
 description = "データベース接続の確認"
 cmd = "/usr/bin/psql"
-args = [
-    "-U", "${DB_USER}",
-    "-d", "${DB_NAME}",
-    "-c", "SELECT version();",
+vars = [
+    "db_user=appuser",
+    "db_name=myapp_db",
 ]
-env = [
-    "DB_USER=appuser",
-    "DB_NAME=myapp_db",
+args = [
+    "-U", "%{db_user}",
+    "-d", "%{db_name}",
+    "-c", "SELECT version();",
 ]
 output = "db-connection-test.txt"
 
@@ -659,11 +723,11 @@ workdir = "/var/reports/deployment"
 name = "generate_deployment_report"
 description = "デプロイレポートの生成"
 cmd = "/opt/tools/generate-report"
+vars = ["timestamp=2025-10-02-120000"]
 args = [
     "--deployment-log", "/var/log/deploy.log",
-    "--output", "deployment-report-${TIMESTAMP}.html",
+    "--output", "deployment-report-%{timestamp}.html",
 ]
-env = ["TIMESTAMP=2025-10-02-120000"]
 
 [[groups.commands]]
 name = "cleanup_temp_files"
@@ -706,7 +770,6 @@ name = "read_config"
 description = "設定ファイルの読み取り"
 cmd = "/bin/cat"
 args = ["/etc/myapp/config.yml"]
-max_risk_level = "low"
 output = "config-content.txt"
 
 # 中リスク: ファイル作成・変更
@@ -730,10 +793,11 @@ timeout = 1800
 # リスクレベル超過で実行拒否される例
 [[groups.commands]]
 name = "dangerous_deletion"
-description = "大量削除(低リスクレベルでは実行不可)"
+description = "大量削除(デフォルトリスクレベルでは実行不可)"
 cmd = "/bin/rm"
 args = ["-rf", "/tmp/old-data"]
-max_risk_level = "low"  # rm -rf は中リスク以上 → 実行拒否
+# max_risk_level のデフォルトは "low"
+# rm -rf は中リスク以上が必要 → 実行拒否される
 ```
 
 ## まとめ

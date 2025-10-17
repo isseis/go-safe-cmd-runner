@@ -139,12 +139,11 @@ from_env = [
 
 **スコープと継承ルール**:
 - **Global.from_env**: すべてのグループとコマンドから参照可能（デフォルト）
-- **Group.from_env の継承方式**: **上書き（Override）**
-  - グループが `from_env` を定義していない（`nil`）場合: `Global.from_env` を**継承**します。
-  - グループが `from_env` を明示的に定義した場合: そのマッピングのみが有効となり、`Global.from_env` は**無視**されます（上書き）。
-    - `from_env = []` と定義すると、空のマッピングが適用され、どのシステム環境変数も取り込まれません。
+- **Group.from_env の継承方式**: **マージ（Merge）**
+  - グループが `from_env` を定義していない（`nil`）または空配列 `[]` の場合: `Global.from_env` を**継承**します。
+  - グループが `from_env` を明示的に定義した場合: `Global.from_env` と**マージ**され、同名の変数はグループの定義で優先されます。
 
-**重要**: `env_allowlist` と同様、`from_env` も「Union（結合）」ではなく「Override（上書き）」方式を採用する。グループが独自の `from_env` を定義すると、Global.from_env は完全に無視される。
+**重要**: `from_env` は「Merge（マージ）」方式を採用する。グループが独自の `from_env` を定義すると、Global.from_env との統合が行われ、グループで定義された変数が同名の Global 変数を上書きします。
 
 **セキュリティ制約**:
 - `from_env` で参照するシステム環境変数は `env_allowlist` に含まれている必要がある
@@ -187,7 +186,7 @@ args = ["%{home}"]       # OK: Global.from_env の home を参照可能
 # %{username} も参照可能（Global.from_env から継承）
 ```
 
-**例3: Group.from_env の上書き（グループが from_env を定義する場合）**:
+**例3: Group.from_env のマージ（グループが from_env を定義する場合）**:
 ```toml
 [global]
 env_allowlist = ["HOME", "USER", "CUSTOM_VAR"]
@@ -197,16 +196,20 @@ from_env = [
 ]
 
 [[groups]]
-name = "override_group"
+name = "merge_group"
 from_env = [
-    "custom=CUSTOM_VAR"  # 明示的定義 → Global.from_env は無視される
+    "custom=CUSTOM_VAR"  # Global.from_env とマージされる
 ]
 
 [[groups.commands]]
-name = "show_custom"
+name = "show_all"
 cmd = "echo"
-args = ["%{custom}"]     # OK: Group.from_env の custom を参照可能
-args = ["%{home}"]       # エラー: Global.from_env の home は継承されない
+args = [
+    "%{home}",      # OK: Global.from_env の home を参照可能（継承）
+    "%{username}",  # OK: Global.from_env の username を参照可能（継承）
+    "%{custom}"     # OK: Group.from_env の custom を参照可能
+]
+# 結果: home, username, custom のすべてが利用可能
 ```
 
 **例4: allowlist チェック（エラーケース）**:
@@ -228,14 +231,14 @@ from_env = [
 - `from_env` で取り込んだ変数（継承ルールに従う）
 
 **from_env の参照における継承ルール**:
-- グループが `from_env` を定義していない場合: Global.from_env の変数を参照可能
-- グループが `from_env` を定義した場合: Global.from_env の変数は参照不可（上書き）
+- グループが `from_env` を定義していない場合またはfrom_env = []の場合: Global.from_env の変数を参照可能（継承）
+- グループが `from_env` を定義した場合: Global.from_env + Group.from_env がマージされ、すべての変数を参照可能（Merge方式）
 
 **展開順序**:
 1. Global.from_env の処理（システム環境変数の取り込み）
 2. Global.vars の展開（Global.from_env で取り込んだ変数を参照可能）
-3. Group.from_env の処理（存在する場合、Global.from_env を上書き）
-4. Group.vars の展開（Group.from_env または Global.from_env（継承時）+ Global.vars を参照可能）
+3. Group.from_env の処理（存在する場合、Global.from_env とマージ）
+4. Group.vars の展開（マージされた from_env 変数 + Global.vars を参照可能）
 5. Command.vars の展開（Group と Global の内部変数を参照可能）
 
 **例1: 基本的な参照**:
@@ -268,7 +271,7 @@ cmd = "process"
 args = ["--input", "%{input_dir}", "--log", "%{log_file}"]
 ```
 
-**例2: Group.from_env による上書き時の参照**:
+**例2: Group.from_env によるマージ時の参照**:
 ```toml
 [global]
 env_allowlist = ["HOME", "CUSTOM_VAR"]
@@ -277,18 +280,19 @@ vars = ["global_dir=%{home}/global"]
 
 [[groups]]
 name = "custom_group"
-from_env = ["custom=CUSTOM_VAR"]  # Global.from_env を上書き
+from_env = ["custom=CUSTOM_VAR"]  # Global.from_env とマージ
 vars = [
     "custom_dir=%{custom}/data",      # OK: Group.from_env の custom を参照
-    "combined=%{global_dir}/custom"   # OK: Global.vars の global_dir を参照
-    # "home_dir=%{home}/data"         # エラー: Global.from_env の home は継承されない
+    "combined=%{global_dir}/custom",  # OK: Global.vars の global_dir を参照
+    "home_dir=%{home}/data"           # OK: Global.from_env の home も参照可能（継承）
 ]
 
 [[groups.commands]]
 name = "process"
 vars = [
     "work_dir=%{custom_dir}/work",    # OK: Group.vars の custom_dir を参照
-    "output=%{combined}/output"       # OK: Group.vars の combined を参照
+    "output=%{combined}/output",      # OK: Group.vars の combined を参照
+    "backup=%{home}/backup"           # OK: Global.from_env の home も参照可能
 ]
 ```
 

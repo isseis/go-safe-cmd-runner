@@ -22,18 +22,21 @@ description = "Use nested variable references"
 name = "nested_vars_simple"
 description = "Simple nested variable expansion"
 cmd = "/bin/echo"
-args = ["Message: ${FULL_MSG}"]
-env = ["FULL_MSG=Hello, ${USER}!", "USER=Alice"]
+args = ["Message: %{full_msg}"]
+vars = [
+    "user=Alice",
+    "full_msg=Hello, %{user}!"
+]
 
 [[groups.commands]]
 name = "nested_vars_complex"
 description = "Multiple levels of nested variables"
 cmd = "/bin/echo"
-args = ["Config path: ${CONFIG_PATH}"]
-env = [
-    "CONFIG_PATH=${BASE_DIR}/${ENV_TYPE}/config.yml",
-    "BASE_DIR=/opt/myapp",
-    "ENV_TYPE=production"
+args = ["Config path: %{config_path}"]
+vars = [
+    "base_dir=/opt/myapp",
+    "env_type=production",
+    "config_path=%{base_dir}/%{env_type}/config.yml"
 ]
 
 # Example 2: Escape sequences
@@ -42,24 +45,25 @@ name = "escape_sequences"
 description = "Use escape sequences for literal characters"
 
 [[groups.commands]]
-name = "escape_dollar"
-description = "Literal dollar sign with \\$"
+name = "escape_percent"
+description = "Literal percent sign with \\%"
 cmd = "/bin/echo"
-args = ["Price: \\$100 USD"]
+args = ["Discount: 20\\%"]
 
 [[groups.commands]]
 name = "escape_backslash"
 description = "Literal backslash with \\\\"
 cmd = "/bin/echo"
-args = ["Windows path: C:\\\\Users\\\\${USER}"]
-env = ["USER=JohnDoe"]
+args = ["Windows path: C:\\\\Users\\\\%{user}"]
+vars = ["user=JohnDoe"]
 
 [[groups.commands]]
 name = "mixed_escape"
 description = "Mixed literal and expanded variables"
 cmd = "/bin/echo"
-args = ["Literal \\$HOME is different from ${HOME}"]
-env = ["HOME=/home/user"]
+args = ["Literal \\%{home} is different from %{home}"]
+vars = []
+from_env = ["home=HOME"]
 
 # Example 3: Complex path construction
 [[groups]]
@@ -70,11 +74,11 @@ description = "Build complex file paths with multiple variables"
 name = "backup_with_timestamp"
 description = "Create backup path with date and user"
 cmd = "/bin/mkdir"
-args = ["-p", "${BACKUP_ROOT}/${DATE}/${USER}/data"]
-env = [
-    "BACKUP_ROOT=/var/backups",
-    "DATE=2025-10-01",
-    "USER=admin"
+args = ["-p", "%{backup_root}/%{date}/%{user}/data"]
+vars = [
+    "backup_root=/var/backups",
+    "date=2025-10-01",
+    "user=admin"
 ]
 
 # Example 4: Multi-variable string construction
@@ -86,13 +90,13 @@ description = "Build complex strings from multiple variables"
 name = "connection_string"
 description = "Database connection string from components"
 cmd = "/bin/echo"
-args = ["Connecting to: ${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}"]
-env = [
-    "DB_USER=appuser",
-    "DB_PASS=secret123",
-    "DB_HOST=localhost",
-    "DB_PORT=5432",
-    "DB_NAME=myapp_db"
+args = ["Connecting to: %{db_user}:%{db_pass}@%{db_host}:%{db_port}/%{db_name}"]
+vars = [
+    "db_user=appuser",
+    "db_pass=secret123",
+    "db_host=localhost",
+    "db_port=5432",
+    "db_name=myapp_db"
 ]
 
 # Example 5: Toolchain version management
@@ -103,21 +107,21 @@ description = "Manage different tool versions with variables"
 [[groups.commands]]
 name = "gcc_versioned"
 description = "Use specific GCC version"
-cmd = "${TOOLCHAIN_DIR}/gcc-${VERSION}/bin/gcc"
+cmd = "%{toolchain_dir}/gcc-%{version}/bin/gcc"
 args = ["--version"]
-env = [
-    "TOOLCHAIN_DIR=/opt/toolchains",
-    "VERSION=11.2.0"
+vars = [
+    "toolchain_dir=/opt/toolchains",
+    "version=11.2.0"
 ]
 
 [[groups.commands]]
 name = "python_versioned"
 description = "Use specific Python version"
-cmd = "${PYTHON_ROOT}/python${PY_VERSION}/bin/python"
+cmd = "%{python_root}/python%{py_version}/bin/python"
 args = ["-V"]
-env = [
-    "PYTHON_ROOT=/usr/local",
-    "PY_VERSION=3.11"
+vars = [
+    "python_root=/usr/local",
+    "py_version=3.11"
 ]
 
 # Example 6: Conditional-like behavior with variables
@@ -128,13 +132,13 @@ description = "Different behavior based on ENV_TYPE variable"
 [[groups.commands]]
 name = "run_with_env_config"
 description = "Load environment-specific configuration"
-cmd = "${APP_BIN}"
-args = ["--config", "${CONFIG_DIR}/${ENV_TYPE}.yml", "--log-level", "${LOG_LEVEL}"]
-env = [
-    "APP_BIN=/opt/myapp/bin/myapp",
-    "CONFIG_DIR=/etc/myapp/configs",
-    "ENV_TYPE=development",
-    "LOG_LEVEL=debug"
+cmd = "%{app_bin}"
+args = ["--config", "%{config_dir}/%{env_type}.yml", "--log-level", "%{log_level}"]
+vars = [
+    "app_bin=/opt/myapp/bin/myapp",
+    "config_dir=/etc/myapp/configs",
+    "env_type=development",
+    "log_level=debug"
 ]
 
 # Example 7: Complex Docker command with variables
@@ -145,24 +149,24 @@ description = "Advanced Docker commands with multiple variables"
 [[groups.commands]]
 name = "docker_run_complex"
 description = "Run container with many variable-based options"
-cmd = "${DOCKER_BIN}"
+cmd = "%{docker_bin}"
 args = [
     "run",
     "-d",
-    "--name", "${CONTAINER_NAME}",
-    "-v", "${HOST_PATH}:${CONTAINER_PATH}",
-    "-e", "APP_ENV=${APP_ENV}",
-    "-p", "${HOST_PORT}:${CONTAINER_PORT}",
-    "${IMAGE_NAME}:${IMAGE_TAG}"
+    "--name", "%{container_name}",
+    "-v", "%{host_path}:%{container_path}",
+    "-e", "APP_ENV=%{app_env}",
+    "-p", "%{host_port}:%{container_port}",
+    "%{image_name}:%{image_tag}"
 ]
-env = [
-    "DOCKER_BIN=/usr/bin/docker",
-    "CONTAINER_NAME=myapp-prod",
-    "HOST_PATH=/opt/myapp/data",
-    "CONTAINER_PATH=/app/data",
-    "APP_ENV=production",
-    "HOST_PORT=8080",
-    "CONTAINER_PORT=80",
-    "IMAGE_NAME=myapp",
-    "IMAGE_TAG=v1.2.3"
+vars = [
+    "docker_bin=/usr/bin/docker",
+    "container_name=myapp-prod",
+    "host_path=/opt/myapp/data",
+    "container_path=/app/data",
+    "app_env=production",
+    "host_port=8080",
+    "container_port=80",
+    "image_name=myapp",
+    "image_tag=v1.2.3"
 ]

@@ -1,5 +1,5 @@
 # Security-Focused Variable Expansion Examples
-# This file demonstrates security features including allowlist and Command.Env priority
+# This file demonstrates security features including allowlist and vars/env separation
 version = "1.0"
 
 [global]
@@ -16,46 +16,49 @@ env_allowlist = [
     "TZ",
 ]
 
-# Example 1: Command.Env takes priority over system environment
+# Example 1: Internal variables vs. process environment variables
 [[groups]]
-name = "command_env_priority"
-description = "Demonstrate Command.Env priority over system variables"
+name = "vars_env_separation"
+description = "Demonstrate internal variables vs. process environment variables"
 
 [[groups.commands]]
-name = "override_home"
-description = "Command.Env HOME overrides system HOME"
+name = "internal_var_only"
+description = "Use internal variable (not passed to child process)"
 cmd = "/bin/echo"
-args = ["Home directory: ${HOME}"]
-# This local HOME definition takes priority over system $HOME
-env = ["HOME=/opt/custom-home"]
+args = ["Tool path: %{tool_path}"]
+vars = ["tool_path=/opt/tools/mytool"]
+# tool_path is only used for TOML expansion, not passed to child process
 
 [[groups.commands]]
-name = "override_user"
-description = "Command.Env USER overrides system USER"
-cmd = "/bin/echo"
-args = ["Current user: ${USER}"]
-# This local USER definition takes priority over system $USER
-env = ["USER=serviceaccount"]
+name = "env_var_to_child"
+description = "Pass environment variable to child process"
+cmd = "/bin/sh"
+args = ["-c", "echo HOME from env: $HOME"]
+vars = []
+from_env = ["home=HOME"]
+env = ["HOME=%{home}"]
+# HOME is explicitly passed to child process via env
 
-# Example 2: Using variables not in allowlist (via Command.Env)
+# Example 2: Using system environment variables with from_env
 [[groups]]
-name = "local_vars_no_allowlist"
-description = "Command.Env variables don't need to be in allowlist"
+name = "from_env_usage"
+description = "Safe system environment variable import"
 
 [[groups.commands]]
-name = "custom_vars"
-description = "Use custom variables defined in Command.Env"
-cmd = "${MY_TOOL}"
-args = ["--config", "${MY_CONFIG}", "--data", "${MY_DATA}"]
-# MY_TOOL, MY_CONFIG, MY_DATA are not in global allowlist,
-# but they can be used because they're defined in Command.Env
-env = [
-    "MY_TOOL=/opt/myapp/tool",
-    "MY_CONFIG=/etc/myapp/config.yml",
-    "MY_DATA=/var/myapp/data"
-]
+name = "use_system_home"
+description = "Import and use system HOME variable"
+cmd = "/bin/echo"
+args = ["Home directory: %{home}"]
+from_env = ["home=HOME"]  # Import HOME as internal variable 'home'
 
-# Example 3: Security with absolute paths
+[[groups.commands]]
+name = "use_system_user"
+description = "Import and use system USER variable"
+cmd = "/bin/echo"
+args = ["Current user: %{username}"]
+from_env = ["username=USER"]  # Import USER as internal variable 'username'
+
+# Example 3: Absolute path requirement
 [[groups]]
 name = "absolute_path_requirement"
 description = "Commands must resolve to absolute paths"
@@ -63,10 +66,9 @@ description = "Commands must resolve to absolute paths"
 [[groups.commands]]
 name = "secure_command_path"
 description = "Command path is absolute after expansion"
-cmd = "${SECURE_BIN}"
+cmd = "%{secure_bin}"
 args = ["--version"]
-# Must use absolute path to pass security validation
-env = ["SECURE_BIN=/usr/local/bin/mytool"]
+vars = ["secure_bin=/usr/local/bin/mytool"]  # Must use absolute path
 
 # Example 4: No shell interpretation - literal argument passing
 [[groups]]
@@ -77,67 +79,86 @@ description = "Arguments are passed literally without shell interpretation"
 name = "literal_glob_pattern"
 description = "Glob patterns are passed as literal strings, not expanded by shell"
 cmd = "/bin/echo"
-args = ["Files matching pattern: ${PATTERN}"]
+args = ["Files matching pattern: %{pattern}"]
+vars = ["pattern=*.txt"]
 # The *.txt pattern is passed as a literal string to echo,
 # not expanded by a shell (which would list all .txt files)
-env = ["PATTERN=*.txt"]
 
-# Example 5: Combining allowlist and Command.Env
+# Example 5: Combining from_env and vars
 [[groups]]
 name = "mixed_sources"
-description = "Use both allowlisted system vars and Command.Env vars"
+description = "Use both system environment variables and internal variables"
 
 [[groups.commands]]
 name = "mixed_variables"
-description = "Combine system and local variables"
-cmd = "/bin/bash"
-args = ["-c", "echo User ${USER} in ${HOME}, app at ${APP_DIR}"]
-# USER and HOME come from system (via allowlist)
-# APP_DIR is local to this command
-env = ["APP_DIR=/opt/application"]
+description = "Combine system and internal variables"
+cmd = "/bin/sh"
+args = ["-c", "echo User %{username} in %{home}, app at %{app_dir}"]
+from_env = [
+    "username=USER",
+    "home=HOME"
+]
+vars = ["app_dir=/opt/application"]
+# username and home come from system (via from_env)
+# app_dir is internal variable
 
-# Example 6: Sensitive data in Command.Env
+# Example 6: Sensitive data in internal variables
 [[groups]]
 name = "sensitive_data"
-description = "Keep sensitive data in Command.Env, not system environment"
+description = "Keep sensitive data in internal variables"
 
 [[groups.commands]]
 name = "api_call_with_token"
-description = "Use API token from Command.Env"
+description = "Use API token from internal variable"
 cmd = "/usr/bin/curl"
 args = [
-    "-H", "Authorization: Bearer ${API_TOKEN}",
+    "-H", "Authorization: Bearer %{api_token}",
     "-H", "Content-Type: application/json",
-    "${API_ENDPOINT}/data"
+    "%{api_endpoint}/data"
 ]
-# Sensitive values like API_TOKEN are kept in Command.Env
-# and not exposed to the system environment
-env = [
-    "API_TOKEN=sk-1234567890abcdef",
-    "API_ENDPOINT=https://api.example.com"
+vars = [
+    "api_token=sk-1234567890abcdef",
+    "api_endpoint=https://api.example.com"
 ]
+# api_token and api_endpoint are internal variables only,
+# not passed to child process environment
 
-# Example 7: Isolation between commands
+# Example 7: Explicit environment variable passing
+[[groups]]
+name = "explicit_env_passing"
+description = "Explicitly pass internal variables as environment variables"
+
+[[groups.commands]]
+name = "pass_to_env"
+description = "Pass internal variable to child process environment"
+cmd = "/bin/sh"
+args = ["-c", "echo Config file: $CONFIG_FILE"]
+vars = ["config_path=/etc/myapp/config.yml"]
+env = ["CONFIG_FILE=%{config_path}"]
+# config_path is internal variable used in TOML expansion
+# CONFIG_FILE is environment variable passed to child process
+
+# Example 8: Isolation between commands
 [[groups]]
 name = "command_isolation"
-description = "Each command has isolated environment variables"
+description = "Each command has isolated internal variables"
 
 [[groups.commands]]
 name = "isolated_cmd_1"
 description = "First command with its own DB_HOST"
 cmd = "/bin/echo"
-args = ["Connecting to ${DB_HOST}"]
-env = ["DB_HOST=db1.example.com"]
+args = ["Connecting to %{db_host}"]
+vars = ["db_host=db1.example.com"]
 
 [[groups.commands]]
 name = "isolated_cmd_2"
 description = "Second command with different DB_HOST"
 cmd = "/bin/echo"
-args = ["Connecting to ${DB_HOST}"]
-# This DB_HOST is independent of the previous command
-env = ["DB_HOST=db2.example.com"]
+args = ["Connecting to %{db_host}"]
+vars = ["db_host=db2.example.com"]
+# This db_host is independent of the previous command
 
-# Example 8: Preventing path traversal
+# Example 9: Preventing path traversal
 [[groups]]
 name = "path_security"
 description = "Safe handling of file paths with variables"
@@ -146,49 +167,52 @@ description = "Safe handling of file paths with variables"
 name = "safe_file_access"
 description = "Access files within allowed directory"
 cmd = "/bin/cat"
-args = ["${DATA_DIR}/${FILENAME}"]
-# Construct paths safely with validated components
-env = [
-    "DATA_DIR=/var/app/data",
-    "FILENAME=config.json"
+args = ["%{data_dir}/%{filename}"]
+vars = [
+    "data_dir=/var/app/data",
+    "filename=config.json"
 ]
+# Construct paths safely with validated components
 
-# Example 9: Multi-layer security with nested variables
+# Example 10: Nested internal variables
 [[groups]]
 name = "nested_security"
-description = "Nested variables with security controls"
+description = "Nested internal variables with security controls"
 
 [[groups.commands]]
 name = "secure_nested"
-description = "Nested variables with Command.Env priority"
+description = "Nested variables for controlled path construction"
 cmd = "/bin/echo"
-args = ["Full path: ${FULL_PATH}"]
-# All components are defined in Command.Env for maximum control
-env = [
-    "FULL_PATH=${BASE}/${SUBDIR}/${FILE}",
-    "BASE=/opt/secure",
-    "SUBDIR=configs",
-    "FILE=app.yml"
+args = ["Full path: %{full_path}"]
+vars = [
+    "base=/opt/secure",
+    "subdir=configs",
+    "file=app.yml",
+    "full_path=%{base}/%{subdir}/%{file}"
 ]
+# All components are internal variables for maximum control
 
-# Example 10: Audit trail with variables
+# Example 11: PATH extension example
 [[groups]]
-name = "audit_logging"
-description = "Use variables for audit and logging"
+name = "path_extension"
+description = "Safely extend PATH using from_env"
 
 [[groups.commands]]
-name = "logged_operation"
-description = "Operation with audit context in variables"
-cmd = "/opt/tools/audit-wrapper"
-args = [
-    "--user", "${AUDIT_USER}",
-    "--action", "${AUDIT_ACTION}",
-    "--timestamp", "${AUDIT_TIME}",
-    "--command", "${TARGET_CMD}"
-]
-env = [
-    "AUDIT_USER=admin",
-    "AUDIT_ACTION=config-update",
-    "AUDIT_TIME=2025-10-01T12:00:00Z",
-    "TARGET_CMD=/usr/local/bin/config-tool"
-]
+name = "extend_path"
+description = "Extend system PATH with custom directories"
+cmd = "/bin/sh"
+args = ["-c", "echo Extended PATH: $PATH"]
+from_env = ["system_path=PATH"]
+env = ["PATH=/opt/custom/bin:%{system_path}"]
+# Import system PATH, then extend it for child process
+
+# Example 12: Allowlist violation prevention
+# Note: The following would cause errors if uncommented:
+
+# [[groups]]
+# name = "allowlist_error_example"
+# [[groups.commands]]
+# name = "not_in_allowlist"
+# cmd = "/bin/echo"
+# args = ["%{secret}"]
+# from_env = ["secret=SECRET_VAR"]  # Error: SECRET_VAR not in allowlist

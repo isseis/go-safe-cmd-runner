@@ -192,18 +192,15 @@ Error: file verification failed: /opt/app/script.sh: hash file not found
 
 ```bash
 # Record hashes with record command
-go-safe-cmd-runner record /usr/bin/tool
-go-safe-cmd-runner record /opt/app/script.sh
-
-# Or specify entire configuration file
-go-safe-cmd-runner record config.toml
+record -file /usr/bin/tool
+record -file /opt/app/script.sh
 ```
 
 **If file was legitimately changed**:
 
 ```bash
 # Re-record hash
-go-safe-cmd-runner record /usr/bin/tool
+record -file /usr/bin/tool
 ```
 
 ### 10.1.7 Command Path Errors
@@ -307,7 +304,7 @@ sudo chown user:group /var/secure/data
 
 ```bash
 # Execute with root privileges
-sudo go-safe-cmd-runner run config.toml
+sudo go-safe-cmd-runner -file config.toml
 ```
 
 ### 10.1.10 Risk Level Exceeded Error
@@ -348,10 +345,10 @@ Validate configuration file syntax:
 
 ```bash
 # Test configuration file loading
-go-safe-cmd-runner validate config.toml
+go-safe-cmd-runner --validate config.toml
 
 # Pre-execution validation with dry run
-go-safe-cmd-runner run --dry-run config.toml
+go-safe-cmd-runner --dry-run --file config.toml
 ```
 
 ### 10.2.2 Incremental Validation
@@ -373,7 +370,7 @@ args = ["test"]
 
 ```bash
 # Execute to confirm basic operation
-go-safe-cmd-runner run minimal.toml
+go-safe-cmd-runner -file minimal.toml
 ```
 
 ```toml
@@ -387,7 +384,7 @@ env = ["VAR=hello"]
 
 ```bash
 # Confirm variable expansion behavior
-go-safe-cmd-runner run with-vars.toml
+go-safe-cmd-runner -file with-vars.toml
 ```
 
 ### 10.2.3 Utilizing Log Levels
@@ -481,7 +478,7 @@ Confirm behavior without actual execution:
 
 ```bash
 # Display execution plan with dry run
-go-safe-cmd-runner run --dry-run config.toml
+go-safe-cmd-runner --dry-run --file config.toml
 ```
 
 Output example:
@@ -613,11 +610,9 @@ env_allowlist = ["PATH"]
 **A**: Create or update hash files.
 
 ```bash
-# Create hash files
-go-safe-cmd-runner record config.toml
-
 # Record individual files
-go-safe-cmd-runner record /usr/bin/tool
+record -file config.toml
+record -file /usr/bin/tool
 ```
 
 ### Q4: Frequent timeout errors
@@ -646,7 +641,7 @@ timeout = 3600  # 1 hour
 
 ```bash
 # When root privileges are needed
-sudo go-safe-cmd-runner run config.toml
+sudo go-safe-cmd-runner -file config.toml
 
 # Or use run_as_user in configuration
 ```
@@ -679,7 +674,7 @@ go-safe-cmd-runner --version
 cat config.toml
 
 # Error logs (debug level)
-go-safe-cmd-runner run --log-level=debug config.toml 2>&1 | tee debug.log
+go-safe-cmd-runner --log-level=debug --file config.toml 2>&1 | tee debug.log
 ```
 
 ## Summary

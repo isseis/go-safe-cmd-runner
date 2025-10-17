@@ -1,5 +1,5 @@
 # Basic Variable Expansion Examples
-# This file demonstrates simple variable expansion patterns using ${VAR} format
+# This file demonstrates simple variable expansion patterns using %{VAR} format
 version = "1.0"
 
 [global]
@@ -21,9 +21,9 @@ description = "Expand variables in command name"
 [[groups.commands]]
 name = "docker_command"
 description = "Use Docker command with variable path"
-cmd = "${DOCKER_CMD}"
+cmd = "%{docker_cmd}"
 args = ["version"]
-env = ["DOCKER_CMD=/usr/bin/docker"]
+vars = ["docker_cmd=/usr/bin/docker"]
 
 # Example 2: Variable expansion in arguments
 [[groups]]
@@ -34,8 +34,9 @@ description = "Expand variables in command arguments"
 name = "copy_file"
 description = "Copy file using variables in args"
 cmd = "/bin/cp"
-args = ["${HOME}/source.txt", "${BACKUP_DIR}/backup.txt"]
-env = ["HOME=/home/user", "BACKUP_DIR=/opt/backups"]
+args = ["%{home}/source.txt", "%{backup_dir}/backup.txt"]
+vars = ["backup_dir=/opt/backups"]
+from_env = ["home=HOME"]
 
 # Example 3: Multiple variables in one string
 [[groups]]
@@ -46,8 +47,12 @@ description = "Use multiple variables in a single argument"
 name = "ssh_connection"
 description = "Build SSH connection string from variables"
 cmd = "/usr/bin/ssh"
-args = ["${USER}@${HOSTNAME}:${PORT}"]
-env = ["USER=admin", "HOSTNAME=server01", "PORT=22"]
+args = ["%{user}@%{hostname}:%{port}"]
+vars = [
+    "user=admin",
+    "hostname=server01",
+    "port=22"
+]
 
 # Example 4: Path construction with variables
 [[groups]]
@@ -57,12 +62,12 @@ description = "Build file paths dynamically"
 [[groups.commands]]
 name = "custom_tool"
 description = "Execute tool from variable directory"
-cmd = "${TOOL_DIR}/my-script"
-args = ["--input", "${INPUT_FILE}", "--output", "${OUTPUT_FILE}"]
-env = [
-    "TOOL_DIR=/opt/tools",
-    "INPUT_FILE=/data/input.txt",
-    "OUTPUT_FILE=/data/output.txt"
+cmd = "%{tool_dir}/my-script"
+args = ["--input", "%{input_file}", "--output", "%{output_file}"]
+vars = [
+    "tool_dir=/opt/tools",
+    "input_file=/data/input.txt",
+    "output_file=/data/output.txt"
 ]
 
 # Example 5: Environment-specific configuration
@@ -73,10 +78,10 @@ description = "Switch behavior based on environment type"
 [[groups.commands]]
 name = "deploy_script"
 description = "Run deployment with environment-specific settings"
-cmd = "${APP_DIR}/deploy.sh"
-args = ["--env", "${ENV_TYPE}", "--region", "${REGION}"]
-env = [
-    "APP_DIR=/opt/myapp",
-    "ENV_TYPE=production",
-    "REGION=us-west-2"
+cmd = "%{app_dir}/deploy.sh"
+args = ["--env", "%{env_type}", "--region", "%{region}"]
+vars = [
+    "app_dir=/opt/myapp",
+    "env_type=production",
+    "region=us-west-2"
 ]

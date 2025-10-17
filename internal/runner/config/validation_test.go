@@ -4,7 +4,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -90,19 +89,6 @@ func TestValidateEnvList(t *testing.T) {
 			wantErr: true,
 			errType: ErrInvalidEnvKey,
 		},
-		{
-			name:    "reserved prefix __RUNNER_",
-			envList: []string{"__RUNNER_VAR=value"},
-			context: "global.env",
-			wantErr: true,
-			errType: &runnertypes.ReservedEnvPrefixError{},
-		},
-		{
-			name:    "lowercase __runner_ is allowed (case-sensitive check)",
-			envList: []string{"__runner_var=value"},
-			context: "global.env",
-			wantErr: false,
-		},
 	}
 
 	for _, tt := range tests {
@@ -111,18 +97,7 @@ func TestValidateEnvList(t *testing.T) {
 			if tt.wantErr {
 				assert.Error(t, err)
 				if tt.errType != nil {
-					// If tt.errType is a pointer to a struct error (like
-					// *runnertypes.ReservedEnvPrefixError), use errors.As to
-					// check the error chain for that concrete type. For
-					// sentinel errors (plain error values), fall back to
-					// errors.Is.
-					switch tt.errType.(type) {
-					case *runnertypes.ReservedEnvPrefixError:
-						var target *runnertypes.ReservedEnvPrefixError
-						assert.True(t, errors.As(err, &target))
-					default:
-						assert.True(t, errors.Is(err, tt.errType))
-					}
+					assert.True(t, errors.Is(err, tt.errType))
 				}
 			} else {
 				assert.NoError(t, err)
@@ -178,14 +153,6 @@ func TestValidateAndParseEnvList(t *testing.T) {
 			wantMap: nil,
 			errType: ErrMalformedEnvVariable,
 		},
-		{
-			name:    "reserved prefix returns error",
-			envList: []string{"__RUNNER_TEST=value"},
-			context: "global.env",
-			wantErr: true,
-			wantMap: nil,
-			errType: ErrReservedEnvPrefix,
-		},
 	}
 
 	for _, tt := range tests {
@@ -206,84 +173,108 @@ func TestValidateAndParseEnvList(t *testing.T) {
 	}
 }
 
-// TestValidateVariableName tests internal variable name validation
+// TestValidateVariableName tests internal variable name validation with detailed errors
 func TestValidateVariableName(t *testing.T) {
 	tests := []struct {
 		name         string
 		variableName string
+		level        string
+		field        string
 		wantErr      bool
-		errContains  string
+		errType      error
 	}{
 		{
 			name:         "valid lowercase name",
 			variableName: "home",
+			level:        "global",
+			field:        "vars",
 			wantErr:      false,
 		},
 		{
 			name:         "valid uppercase name",
 			variableName: "MY_VAR",
+			level:        "global",
+			field:        "vars",
 			wantErr:      false,
 		},
 		{
 			name:         "valid mixed case name",
 			variableName: "user_path",
+			level:        "group:mygroup",
+			field:        "vars",
 			wantErr:      false,
 		},
 		{
 			name:         "valid name starting with underscore",
 			variableName: "_private",
+			level:        "cmd:mycmd",
+			field:        "vars",
 			wantErr:      false,
 		},
 		{
 			name:         "valid name with numbers",
 			variableName: "var123",
+			level:        "global",
+			field:        "vars",
 			wantErr:      false,
 		},
 		{
 			name:         "invalid name starting with number",
 			variableName: "123var",
+			level:        "global",
+			field:        "vars",
 			wantErr:      true,
-			errContains:  "variable name must start with a letter or underscore",
+			errType:      ErrInvalidVariableName,
 		},
 		{
 			name:         "invalid name with hyphen",
 			variableName: "my-var",
+			level:        "global",
+			field:        "vars",
 			wantErr:      true,
-			errContains:  "variable name contains invalid character",
+			errType:      ErrInvalidVariableName,
 		},
 		{
 			name:         "invalid name with dot",
 			variableName: "my.var",
+			level:        "global",
+			field:        "vars",
 			wantErr:      true,
-			errContains:  "variable name contains invalid character",
+			errType:      ErrInvalidVariableName,
 		},
 		{
 			name:         "invalid name with space",
 			variableName: "my var",
+			level:        "global",
+			field:        "vars",
 			wantErr:      true,
-			errContains:  "variable name contains invalid character",
+			errType:      ErrInvalidVariableName,
 		},
 		{
 			name:         "reserved prefix __runner_",
 			variableName: "__runner_foo",
+			level:        "global",
+			field:        "vars",
 			wantErr:      true,
-			errContains:  "reserved for internal use",
+			errType:      ErrReservedVariablePrefix,
 		},
 		{
 			name:         "empty string",
 			variableName: "",
+			level:        "global",
+			field:        "vars",
 			wantErr:      true,
-			errContains:  "variable name cannot be empty",
+			errType:      ErrInvalidVariableName,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateVariableName(tt.variableName)
+			err := validateVariableName(tt.variableName, tt.level, tt.field)
 			if tt.wantErr {
 				assert.Error(t, err)
-				if tt.errContains != "" {
-					assert.Contains(t, err.Error(), tt.errContains)
+				if tt.errType != nil {
+					assert.True(t, errors.Is(err, tt.errType))
 				}
 			} else {
 				assert.NoError(t, err)

@@ -181,19 +181,71 @@ name = "reject_group"
 env_allowlist = []  # Rejects all environment variables
 ```
 
-### 2.3.4 Configuration Priority Summary
+### 2.3.4 Variable Inheritance Patterns
+
+#### vars (Internal Variables) - Merge Inheritance
+
+`vars` are inherited through **Union (Merge)**. Settings at lower levels are merged with settings at upper levels, and when the same key exists, the lower level takes precedence.
+
+```toml
+[global]
+vars = ["base_dir=/opt/app", "log_level=info"]
+
+[[groups]]
+name = "admin_tasks"
+vars = ["log_level=debug", "task_type=admin"]  # Override log_level, add task_type
+
+[[groups.commands]]
+name = "task1"
+vars = ["task_id=42"]  # Inherit existing variables and add task_id
+cmd = "/bin/task"
+args = ["%{base_dir}", "%{log_level}", "%{task_type}", "%{task_id}"]
+# Final vars: base_dir=/opt/app, log_level=debug, task_type=admin, task_id=42
+```
+
+#### from_env (System Environment Variable Import) - Merge Inheritance
+
+`from_env` is inherited through **Merge**. When specified at a lower level, it is merged with the upper level configuration.
+
+```toml
+[global]
+from_env = ["HOME", "USER"]
+
+[[groups]]
+name = "tasks"
+from_env = ["LANG", "LC_ALL"]  # Merges with global from_env
+
+[[groups.commands]]
+name = "task1"
+cmd = "/bin/echo"
+# from_env not specified → group's from_env is applied
+# Inherited variables: HOME, USER (global) + LANG, LC_ALL (group)
+args = ["User: %{USER}, Lang: %{LANG}"]
+
+[[groups.commands]]
+name = "task2"
+from_env = ["PWD"]  # Merges with group's from_env
+cmd = "/bin/echo"
+# Inherited variables: HOME, USER (global) + LANG, LC_ALL (group) + PWD (command)
+args = ["Home: %{HOME}, PWD: %{PWD}"]
+```
+
+### 2.3.5 Configuration Priority Summary
 
 Depending on the configuration item, the priority differs:
 
-| Configuration Item | Priority (High → Low) | Notes |
-|---------|------------------|------|
-| timeout | Command > Global | Cannot be configured at group level |
-| workdir | Group > Global | Cannot be configured at command level |
-| env_allowlist | Group > Global | Behavior changes according to inheritance mode |
-| verify_files | Group + Global | Merged (both applied) |
-| log_level | Global only | Cannot be overridden at lower levels |
+| Configuration Item | Priority (High → Low) | Inheritance Pattern | Notes |
+|---------|------------------|-------------|------|
+| timeout | Command > Global | Override | Cannot be configured at group level |
+| workdir | Group > Global | Override | Cannot be configured at command level |
+| env_allowlist | Group > Global | Override | Behavior changes according to inheritance mode |
+| vars | Command > Group > Global | Merge (Union) | Lower levels merge with upper levels, same keys override |
+| from_env | Command > Group > Global | Merge | Lower levels merge with upper levels |
+| env | Command > Group > Global | Merge | Process environment variable configuration ※Security: Define at minimal necessary level |
+| verify_files | Group + Global | Merge | Merged (both applied) |
+| log_level | Global only | N/A | Cannot be overridden at lower levels |
 
-### 2.3.5 Practical Example: Complex Inheritance Pattern
+### 2.3.6 Practical Example: Complex Inheritance Pattern
 
 ```toml
 [global]
@@ -223,6 +275,106 @@ In this example:
 - `timeout`: Overridden to `300` at command level
 - `env_allowlist`: Uses own configuration at group level
 - `verify_files`: Global and group configurations are merged
+
+### 2.3.7 Security Best Practices: Environment Variable Definition Levels
+
+While `env` (process environment variables) can be defined at all hierarchy levels (Global, Group, and Command), it's important to define them at the appropriate level from a security perspective.
+
+#### Recommended Definition Levels
+
+| Level | Recommendation | Scope | Use Cases |
+|--------|--------|---------|--------|
+| **Command Level** | **Recommended** | Specific command only | Sensitive information, command-specific settings |
+| **Group Level** | Acceptable | All commands in group | Group-wide common settings |
+| **Global Level** | Caution | All commands | Safe common settings only |
+
+#### Best Practices
+
+##### 1. Principle of Least Privilege
+
+Define only the environment variables needed for each command:
+
+```toml
+# Recommended: Define only necessary environment variables at command level
+[[groups.commands]]
+name = "db_backup"
+cmd = "/usr/bin/pg_dump"
+env = [
+    "PGPASSWORD=secret",      # Only needed for this command
+    "PGHOST=localhost"
+]
+
+# Not recommended: Exposing sensitive information globally to all commands
+[global]
+env = ["PGPASSWORD=secret"]   # Passed to all commands (dangerous)
+```
+
+##### 2. Proper Use of vars vs env
+
+Leverage internal variables `vars` and expose to child processes via `env` only when necessary:
+
+```toml
+[global]
+vars = [
+    "db_password=secret123",     # Kept as internal variable (not passed to child processes)
+    "app_dir=/opt/myapp"
+]
+
+[[groups.commands]]
+name = "db_backup"
+env = ["PGPASSWORD=%{db_password}"]  # Expose as env only for commands that need it
+
+[[groups.commands]]
+name = "log_check"
+cmd = "/bin/grep"
+args = ["ERROR", "%{app_dir}/logs/app.log"]
+# No env defined → db_password is not passed to child process
+```
+
+##### 3. Global-level env Should Contain Only Safe Values
+
+At the global level, define only environment variables that are safe to pass to all commands:
+
+```toml
+[global]
+env = [
+    "LANG=C",              # Safe: Locale setting
+    "TZ=UTC",              # Safe: Timezone setting
+    "LC_ALL=C"             # Safe: Language setting
+]
+# Do not define sensitive information at global level
+```
+
+##### 4. Use Group Level for Common Settings
+
+Define settings common to all commands within a group at the group level:
+
+```toml
+[[groups]]
+name = "database_group"
+env = [
+    "PGHOST=localhost",
+    "PGPORT=5432",
+    "PGDATABASE=production"
+]
+
+[[groups.commands]]
+name = "backup"
+env = ["PGPASSWORD=backup_secret"]   # Command-specific sensitive information
+
+[[groups.commands]]
+name = "analyze"
+env = ["PGPASSWORD=readonly_secret"] # Different credentials for different commands
+```
+
+#### Security Checklist
+
+When creating configuration files, verify the following:
+
+- [ ] No sensitive information (passwords, tokens, etc.) defined at global level
+- [ ] Only necessary environment variables defined for each command
+- [ ] Values that can be managed with internal `vars` are not unnecessarily exposed via `env`
+- [ ] `env_allowlist` permits only the minimal necessary system environment variables
 
 ## Next Steps
 

@@ -53,25 +53,25 @@ env_allowlist = [
 
 ### 9.1.3 ファイル検証の活用
 
-重要なコマンドや設定ファイルは必ず検証してください。
+重要な設定ファイルやライブラリは必ず検証してください。コマンドの実行可能ファイルは自動的に検証されます。
 
 #### 推奨される実装
 
 ```toml
-# 良い例: 重要なファイルを検証
+# 良い例: 設定ファイルやスクリプトファイルを検証
 [global]
-skip_standard_paths = false
+skip_standard_paths = false  # 標準パスのコマンドも検証
 verify_files = [
-    "/bin/sh",
-    "/usr/bin/python3",
+    "/etc/app/global.conf",  # グローバル設定ファイル
 ]
 
 [[groups]]
 name = "critical_operations"
 verify_files = [
-    "/opt/app/bin/critical-tool",
-    "/opt/app/scripts/deploy.sh",
+    "/opt/app/config/critical.conf",  # 重要な設定ファイル
+    "/opt/app/lib/helper.sh",         # 補助スクリプト
 ]
+# 注: コマンド自体は自動的に検証されるため verify_files に追加不要
 ```
 
 ### 9.1.4 絶対パスの使用
@@ -101,21 +101,22 @@ args = ["-czf", "backup.tar.gz", "/data"]
 #### 推奨される実装
 
 ```toml
-# 良い例: Command.Env で機密情報を管理
+# 良い例: vars と env を適切に使い分け
 [global]
 env_allowlist = ["PATH", "HOME"]  # 機密情報は含めない
 
 [[groups.commands]]
 name = "api_call"
 cmd = "/usr/bin/curl"
+vars = [
+    "api_token=sk-secret123",
+    "api_endpoint=https://api.example.com",
+]
 args = [
-    "-H", "Authorization: Bearer ${API_TOKEN}",
-    "${API_ENDPOINT}",
+    "-H", "Authorization: Bearer %{api_token}",
+    "%{api_endpoint}",
 ]
-env = [
-    "API_TOKEN=sk-secret123",      # Command.Env で定義
-    "API_ENDPOINT=https://api.example.com",
-]
+env = ["API_TOKEN=%{api_token}"]  # 必要に応じて環境変数として設定
 
 # 避けるべき例: グローバルに機密情報を許可
 [global]
@@ -215,24 +216,22 @@ env = [
 #### 推奨される実装
 
 ```toml
-# 良い例: 変数の再利用
+# 良い例: vars での変数の再利用
+[global]
+vars = ["config_dest=/etc/myapp"]
+
 [[groups.commands]]
 name = "deploy_config"
 cmd = "/bin/cp"
-args = ["${CONFIG_SOURCE}/app.yml", "${CONFIG_DEST}/app.yml"]
-env = [
-    "CONFIG_SOURCE=/opt/configs/prod",
-    "CONFIG_DEST=/etc/myapp",
-]
+vars = ["config_source=/opt/configs/prod"]
+args = ["%{config_source}/app.yml", "%{config_dest}/app.yml"]
 
 [[groups.commands]]
 name = "backup_config"
 cmd = "/bin/cp"
-args = ["${CONFIG_DEST}/app.yml", "${BACKUP_DIR}/app.yml"]
-env = [
-    "CONFIG_DEST=/etc/myapp",       # 前のコマンドと同じ値を再利用
-    "BACKUP_DIR=/var/backups",
-]
+vars = ["backup_dir=/var/backups"]
+args = ["%{config_dest}/app.yml", "%{backup_dir}/app.yml"]
+# config_dest はグローバルから継承されるため再定義不要
 ```
 
 ## 9.3 グループ構成のベストプラクティス
@@ -455,10 +454,10 @@ configs/
 各環境で適切な設定ファイルを使用:
 ```bash
 # 開発環境
-go-safe-cmd-runner run configs/development.toml
+go-safe-cmd-runner -file configs/development.toml
 
 # 本番環境
-go-safe-cmd-runner run configs/production.toml
+go-safe-cmd-runner -file configs/production.toml
 ```
 
 ## 9.6 パフォーマンスのベストプラクティス
@@ -565,8 +564,8 @@ args = ["test"]
 [[groups.commands]]
 name = "test_variables"
 cmd = "/bin/echo"
-args = ["Value: ${TEST_VAR}"]
-env = ["TEST_VAR=hello"]
+vars = ["test_var=hello"]
+args = ["Value: %{test_var}"]
 ```
 
 3. **本番相当の設定**
@@ -575,8 +574,8 @@ env = ["TEST_VAR=hello"]
 [[groups.commands]]
 name = "production_command"
 cmd = "/opt/app/bin/tool"
-args = ["--config", "${CONFIG}"]
-env = ["CONFIG=/etc/app/config.yml"]
+vars = ["config=/etc/app/config.yml"]
+args = ["--config", "%{config}"]
 run_as_user = "appuser"
 max_risk_level = "high"
 ```
@@ -587,10 +586,10 @@ max_risk_level = "high"
 
 ```bash
 # ドライランで設定を検証
-go-safe-cmd-runner run --dry-run config.toml
+go-safe-cmd-runner --dry-run --file config.toml
 
 # 問題なければ本番実行
-go-safe-cmd-runner run config.toml
+go-safe-cmd-runner -file config.toml
 ```
 
 ## 9.8 ドキュメント化
@@ -614,7 +613,7 @@ go-safe-cmd-runner run config.toml
 
 ## 実行方法
 ```bash
-go-safe-cmd-runner run production-deploy.toml
+go-safe-cmd-runner -file production-deploy.toml
 ```
 
 ## 環境変数

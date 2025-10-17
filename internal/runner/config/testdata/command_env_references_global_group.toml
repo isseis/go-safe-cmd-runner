@@ -1,21 +1,24 @@
-# Integration test: Command.Env with Global/Group.Env reference
+# Integration test: Command.Env with Global/Group vars reference
 # This test validates:
-# - Command.Env can reference Global.ExpandedEnv
-# - Command.Env can reference Group.ExpandedEnv
-# - Cmd can reference Group.ExpandedEnv
-# - Args can reference Command.ExpandedEnv
-# - Variable priority: Command.Env > Group.Env > Global.Env > System Env
+# - Command.Env can reference internal variables from Global/Group
+# - Cmd can reference internal variables
+# - Args can reference internal variables
+# - Variable priority: Command vars > Group vars > Global vars
+# - New system: vars (internal variables) and %{VAR} syntax
 
 [global]
-env = ["BASE_DIR=/opt"]
+vars = ["base_dir=/opt"]
+env = ["BASE_DIR=%{base_dir}"]
 env_allowlist = ["HOME", "PATH"]
 
 [[groups]]
 name = "app_group"
-env = ["APP_DIR=${BASE_DIR}/myapp"]
+vars = ["app_dir=%{base_dir}/myapp"]
+env = ["APP_DIR=%{app_dir}"]
 
 [[groups.commands]]
 name = "run_app"
-cmd = "${APP_DIR}/bin/server"
-args = ["--log", "${LOG_DIR}/app.log"]
-env = ["LOG_DIR=${APP_DIR}/logs"]
+cmd = "%{app_dir}/bin/server"
+args = ["--log", "%{log_dir}/app.log"]
+vars = ["log_dir=%{app_dir}/logs"]
+env = ["LOG_DIR=%{log_dir}"]

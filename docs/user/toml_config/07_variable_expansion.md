@@ -2,72 +2,339 @@
 
 ## 7.1 Overview of Variable Expansion
 
-Variable expansion is a feature that allows you to embed variables in commands and their arguments, which are then replaced with actual values at runtime. This enables dynamic command construction and easy switching between environment-specific configurations.
+Variable expansion is a feature that allows you to embed variables in commands and their arguments, which are then replaced with actual values at runtime. In go-safe-cmd-runner, **internal variables** (for TOML expansion only) and **process environment variables** (environment variables passed to child processes) are clearly separated to improve security and clarity.
 
 ### Key Benefits
 
-1. **Dynamic Command Construction**: Values can be determined at runtime
-2. **Configuration Reuse**: The same variable can be used in multiple places
-3. **Environment Switching**: Easy switching between development/production environments
-4. **Improved Maintainability**: Changes can be centralized in one location
+1. **Improved Security**: Internal variables and process environment variables are separated to prevent unintended information leakage
+2. **Dynamic Command Construction**: Values can be determined at runtime
+3. **Configuration Reuse**: The same variable can be used in multiple places
+4. **Environment Switching**: Easy switching between development/production environments
+5. **Improved Maintainability**: Changes can be centralized in one location
+
+### Types of Variables
+
+go-safe-cmd-runner handles 2 types of variables:
+
+| Variable Type | Purpose | Reference Syntax | Definition Method | Impact on Child Process |
+|---------------|---------|------------------|-------------------|------------------------|
+| **Internal Variables** | For expansion only within TOML configuration files | `%{VAR}` | `vars`, `from_env` | None (default) |
+| **Process Environment Variables** | Set as environment variables for child processes | - | `env` | Yes |
 
 ### Locations Where Variables Can Be Used
 
 Variable expansion can be used in the following locations:
 
-- **cmd**: Path to the command to execute
-- **args**: Command arguments
-- **env**: Environment variable values (VALUE portion)
+- **cmd**: Path to the command to execute (use `%{VAR}`)
+- **args**: Command arguments (use `%{VAR}`)
+- **env**: Process environment variable values (use `%{VAR}` if needed)
+- **verify_files**: Paths of files to verify (use `%{VAR}`)
+- **vars**: Internal variable definitions (can reference other internal variables with `%{VAR}`)
 
 ## 7.2 Variable Expansion Syntax
 
-### Basic Syntax
+### Internal Variable Reference Syntax
 
-Variables are written in the format `${VARIABLE_NAME}`:
+Internal variables are written in the format `%{variable_name}`:
 
 ```toml
-cmd = "${VARIABLE_NAME}"
-args = ["${ARG1}", "${ARG2}"]
-env = ["VAR=${VALUE}"]
+cmd = "%{VARIABLE_NAME}"
+args = ["%{ARG1}", "%{ARG2}"]
+env = ["VAR=%{VALUE}"]
 ```
 
 ### Variable Naming Rules
 
-- Uppercase letters, numbers, and underscores (`_`) are allowed
-- Uppercase is used by convention (e.g., `MY_VARIABLE`)
+- Letters (uppercase/lowercase), numbers, and underscores (`_`) are allowed
+- Recommended to use lowercase and underscores (e.g., `my_variable`, `app_dir`)
 - Must start with a letter or underscore
+- Case-sensitive (`home` and `HOME` are different variables)
+- Reserved prefix `__runner_` cannot be used to start variable names
 
-```toml
+```
 # Valid variable names
-"${PATH}"
-"${MY_TOOL}"
-"${_PRIVATE_VAR}"
-"${VAR123}"
+"%{path}"
+"%{my_tool}"
+"%{_private_var}"
+"%{var123}"
+"%{HOME}"
 
 # Invalid variable names
-"${123VAR}"      # Starts with a number
-"${my-var}"      # Hyphens not allowed
-"${my.var}"      # Dots not allowed
+"%{123var}"         # Starts with a number
+"%{my-var}"         # Hyphens not allowed
+"%{my.var}"         # Dots not allowed
+"%{__runner_test}"  # Reserved prefix
 ```
 
-## 7.3 Locations Where Variables Can Be Used
+## 7.3 Internal Variable Definition
 
-### 7.3.1 Variable Expansion in cmd
+### 7.3.1 Defining Internal Variables Using the `vars` Field
 
-Command paths can be specified using variables.
+#### Overview
+
+Using the `vars` field, you can define internal variables for TOML expansion only. These variables do not affect the environment variables of child processes.
+
+#### Configuration Format
+
+```toml
+[global]
+vars = [
+    "app_dir=/opt/myapp",
+    "log_level=info"
+]
+
+[[groups]]
+name = "backup"
+vars = [
+    "backup_dir=%{app_dir}/backups",
+    "retention_days=30"
+]
+
+[[groups.commands]]
+name = "backup_db"
+vars = [
+    "timestamp=20250114",
+    "output_file=%{backup_dir}/dump_%{timestamp}.sql"
+]
+cmd = "/usr/bin/pg_dump"
+args = ["-f", "%{output_file}", "mydb"]
+```
+
+#### Scope and Inheritance
+
+| Level | Scope | Inheritance Rule |
+|-------|-------|------------------|
+| **Global.vars** | Accessible from all groups and commands | - |
+| **Group.vars** | Accessible from commands in that group | Merge with Global.vars (Group takes priority) |
+| **Command.vars** | Accessible only within that command | Merge Global + Group + Command |
+
+#### Reference Syntax
+
+- Reference in the format `%{variable_name}`
+- Can be used in the values of `cmd`, `args`, `verify_files`, `env`, and in other `vars` definitions
+
+#### Basic Example
+
+```toml
+version = "1.0"
+
+[global]
+vars = ["base_dir=/opt"]
+
+[[groups]]
+name = "prod_backup"
+vars = ["db_tools=%{base_dir}/db-tools"]
+
+[[groups.commands]]
+name = "db_dump"
+vars = [
+    "timestamp=20250114",
+    "output_file=%{base_dir}/dump_%{timestamp}.sql"
+]
+cmd = "%{db_tools}/dump.sh"
+args = ["-o", "%{output_file}"]
+```
+
+### 7.3.2 Importing System Environment Variables Using `from_env`
+
+#### Overview
+
+Using the `from_env` field, you can import system environment variables as internal variables.
+
+#### Configuration Format
+
+```toml
+[global]
+env_allowlist = ["HOME", "PATH", "USER"]
+from_env = [
+    "home=HOME",
+    "user_path=PATH",
+    "username=USER"
+]
+
+[[groups]]
+name = "example"
+from_env = [
+    "custom=CUSTOM_VAR"  # Import specific to this group
+]
+```
+
+#### Syntax
+
+Written in the format `internal_variable_name=system_environment_variable_name`:
+
+- **Left side**: Internal variable name (recommended lowercase, e.g., `home`, `user_path`)
+- **Right side**: System environment variable name (typically uppercase, e.g., `HOME`, `PATH`)
+
+#### Security Constraints
+
+- System environment variables referenced in `from_env` must be included in `env_allowlist`
+- An error will occur if you reference a variable not in `env_allowlist`
+
+#### Inheritance Rules
+
+| Level | Inheritance Behavior |
+|-------|----------------------|
+| **Global.from_env** | Inherited by all groups and commands (default) |
+| **Group.from_env** | If defined, **merges** (Merge) with Global.from_env |
+| **Command.from_env** | If defined, **merges** (Merge) with Global + Group from_env |
+| **Undefined** | Inherits from_env from upper levels |
+
+#### Example: Importing System Environment Variables
+
+```toml
+version = "1.0"
+
+[global]
+env_allowlist = ["HOME", "PATH"]
+from_env = [
+    "home=HOME",
+    "user_path=PATH"
+]
+
+[[groups]]
+name = "file_operations"
+
+[[groups.commands]]
+name = "list_home"
+cmd = "/bin/ls"
+args = ["-la", "%{home}"]
+# %{home} expands to /home/username, etc.
+```
+
+### 7.3.3 Nesting Internal Variables
+
+Internal variable values can contain references to other internal variables.
+
+#### Basic Example
+
+```toml
+[global]
+vars = [
+    "base=/opt",
+    "app_dir=%{base}/myapp",
+    "log_dir=%{app_dir}/logs"
+]
+
+[[groups.commands]]
+name = "show_log_dir"
+cmd = "/bin/echo"
+args = ["Log directory: %{log_dir}"]
+# Actual: Log directory: /opt/myapp/logs
+```
+
+#### Expansion Order
+
+Variables are expanded in the order of definition:
+
+1. `base` → `/opt`
+2. `app_dir` → `%{base}/myapp` → `/opt/myapp`
+3. `log_dir` → `%{app_dir}/logs` → `/opt/myapp/logs`
+
+### 7.3.4 Circular Reference Detection
+
+Circular references are detected as errors:
+
+```toml
+[[groups.commands]]
+name = "circular"
+vars = [
+    "var1=%{var2}",
+    "var2=%{var1}"  # Error: circular reference
+]
+cmd = "/bin/echo"
+args = ["%{var1}"]
+```
+
+## 7.4 Defining Process Environment Variables
+
+### 7.4.1 Setting Environment Variables Using the `env` Field
+
+#### Overview
+
+Environment variables defined in the `env` field are passed to child processes when commands are executed. Internal variables (`%{VAR}`) can be used in these values.
+
+#### Configuration Format
+
+```toml
+[global]
+env = [
+    "LOG_LEVEL=info",
+    "APP_ENV=production"
+]
+
+[[groups]]
+name = "app_tasks"
+env = [
+    "DB_HOST=localhost",
+    "DB_PORT=5432"
+]
+
+[[groups.commands]]
+name = "run_app"
+cmd = "/opt/myapp/bin/app"
+env = [
+    "CONFIG_FILE=%{config_path}"  # Internal variables can be used
+]
+vars = ["config_path=/etc/myapp/config.yml"]
+```
+
+#### Inheritance and Merging
+
+The `env` field is merged as follows:
+
+1. Global.env
+2. Group.env (combined with Global)
+3. Command.env (combined with Global + Group)
+
+When the same environment variable name is defined at multiple levels, the more specific level (Command > Group > Global) takes priority.
+
+#### Relationship with Internal Variables
+
+- Internal variables can be referenced in `env` values using the `%{VAR}` format
+- By default, environment variables defined in `env` are passed only to child processes and cannot be used as internal variables
+- If you want to use them as internal variables, define them in the `vars` field
+
+#### Example: Setting Process Environment Variables Using Internal Variables
+
+```toml
+version = "1.0"
+
+[global]
+vars = [
+    "app_dir=/opt/myapp",
+    "log_dir=%{app_dir}/logs"
+]
+env = [
+    "APP_HOME=%{app_dir}",
+    "LOG_PATH=%{log_dir}/app.log"
+]
+
+[[groups.commands]]
+name = "run_app"
+cmd = "/opt/myapp/bin/app"
+args = ["--verbose"]
+# Child process receives APP_HOME=/opt/myapp, LOG_PATH=/opt/myapp/logs/app.log
+```
+
+## 7.5 Detailed Locations Where Variables Can Be Used
+
+### 7.5.1 Variable Expansion in cmd
+
+Internal variables can be used in command paths.
 
 #### Example 1: Basic Command Path Expansion
 
 ```toml
 [[groups.commands]]
 name = "docker_version"
-cmd = "${DOCKER_CMD}"
+cmd = "%{docker_cmd}"
 args = ["version"]
-env = ["DOCKER_CMD=/usr/bin/docker"]
+vars = ["docker_cmd=/usr/bin/docker"]
 ```
 
 At runtime:
-- `${DOCKER_CMD}` → expands to `/usr/bin/docker`
+- `%{docker_cmd}` → expands to `/usr/bin/docker`
 - Actual execution: `/usr/bin/docker version`
 
 #### Example 2: Version-Managed Tools
@@ -75,22 +342,22 @@ At runtime:
 ```toml
 [[groups.commands]]
 name = "gcc_compile"
-cmd = "${TOOLCHAIN_DIR}/gcc-${VERSION}/bin/gcc"
+cmd = "%{toolchain_dir}/gcc-%{version}/bin/gcc"
 args = ["-o", "output", "main.c"]
-env = [
-    "TOOLCHAIN_DIR=/opt/toolchains",
-    "VERSION=11.2.0",
+vars = [
+    "toolchain_dir=/opt/toolchains",
+    "version=11.2.0"
 ]
 ```
 
 At runtime:
-- `${TOOLCHAIN_DIR}` → expands to `/opt/toolchains`
-- `${VERSION}` → expands to `11.2.0`
+- `%{toolchain_dir}` → expands to `/opt/toolchains`
+- `%{version}` → expands to `11.2.0`
 - Actual execution: `/opt/toolchains/gcc-11.2.0/bin/gcc -o output main.c`
 
-### 7.3.2 Variable Expansion in args
+### 7.5.2 Variable Expansion in args
 
-Variables can be used in command arguments.
+Internal variables can be used in command arguments.
 
 #### Example 1: File Path Construction
 
@@ -98,10 +365,10 @@ Variables can be used in command arguments.
 [[groups.commands]]
 name = "backup_copy"
 cmd = "/bin/cp"
-args = ["${SOURCE_FILE}", "${DEST_FILE}"]
-env = [
-    "SOURCE_FILE=/data/original.txt",
-    "DEST_FILE=/backups/backup.txt",
+args = ["%{source_file}", "%{dest_file}"]
+vars = [
+    "source_file=/data/original.txt",
+    "dest_file=/backups/backup.txt"
 ]
 ```
 
@@ -111,16 +378,16 @@ env = [
 [[groups.commands]]
 name = "ssh_connect"
 cmd = "/usr/bin/ssh"
-args = ["${USER}@${HOST}:${PORT}"]
-env = [
-    "USER=admin",
-    "HOST=server01.example.com",
-    "PORT=22",
+args = ["%{user}@%{host}:%{port}"]
+vars = [
+    "user=admin",
+    "host=server01.example.com",
+    "port=22"
 ]
 ```
 
 At runtime:
-- `${USER}@${HOST}:${PORT}` → expands to `admin@server01.example.com:22`
+- `%{user}@%{host}:%{port}` → expands to `admin@server01.example.com:22`
 
 #### Example 3: Configuration File Switching
 
@@ -128,17 +395,17 @@ At runtime:
 [[groups.commands]]
 name = "run_app"
 cmd = "/opt/myapp/bin/app"
-args = ["--config", "${CONFIG_DIR}/${ENV_TYPE}.yml"]
-env = [
-    "CONFIG_DIR=/etc/myapp/configs",
-    "ENV_TYPE=production",
+args = ["--config", "%{config_dir}/%{env_type}.yml"]
+vars = [
+    "config_dir=/etc/myapp/configs",
+    "env_type=production"
 ]
 ```
 
 At runtime:
-- `${CONFIG_DIR}/${ENV_TYPE}.yml` → expands to `/etc/myapp/configs/production.yml`
+- `%{config_dir}/%{env_type}.yml` → expands to `/etc/myapp/configs/production.yml`
 
-### 7.3.3 Combining Multiple Variables
+### 7.5.3 Combining Multiple Variables
 
 Multiple variables can be combined to construct complex paths and strings.
 
@@ -148,16 +415,16 @@ Multiple variables can be combined to construct complex paths and strings.
 [[groups.commands]]
 name = "backup_with_timestamp"
 cmd = "/bin/mkdir"
-args = ["-p", "${BACKUP_ROOT}/${DATE}/${USER}/data"]
-env = [
-    "BACKUP_ROOT=/var/backups",
-    "DATE=2025-10-02",
-    "USER=admin",
+args = ["-p", "%{backup_root}/%{date}/%{user}/data"]
+vars = [
+    "backup_root=/var/backups",
+    "date=2025-10-02",
+    "user=admin"
 ]
 ```
 
 At runtime:
-- `${BACKUP_ROOT}/${DATE}/${USER}/data` → expands to `/var/backups/2025-10-02/admin/data`
+- `%{backup_root}/%{date}/%{user}/data` → expands to `/var/backups/2025-10-02/admin/data`
 
 #### Example 2: Database Connection String
 
@@ -165,13 +432,13 @@ At runtime:
 [[groups.commands]]
 name = "db_connect"
 cmd = "/usr/bin/psql"
-args = ["postgresql://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}"]
-env = [
-    "DB_USER=appuser",
-    "DB_PASS=secret123",
-    "DB_HOST=localhost",
-    "DB_PORT=5432",
-    "DB_NAME=myapp_db",
+args = ["postgresql://%{db_user}:%{db_pass}@%{db_host}:%{db_port}/%{db_name}"]
+vars = [
+    "db_user=appuser",
+    "db_pass=secret123",
+    "db_host=localhost",
+    "db_port=5432",
+    "db_name=myapp_db"
 ]
 ```
 
@@ -179,9 +446,9 @@ At runtime:
 - Connection string is fully expanded
 - `postgresql://appuser:secret123@localhost:5432/myapp_db`
 
-## 7.4 Practical Examples
+## 7.6 Practical Examples
 
-### 7.4.1 Dynamic Command Path Construction
+### 7.6.1 Dynamic Command Path Construction
 
 Example of switching command paths based on environment:
 
@@ -197,25 +464,25 @@ name = "python_tasks"
 # Using Python 3.10
 [[groups.commands]]
 name = "run_with_py310"
-cmd = "${PYTHON_ROOT}/python${PY_VERSION}/bin/python"
+cmd = "%{python_root}/python%{py_version}/bin/python"
 args = ["-V"]
-env = [
-    "PYTHON_ROOT=/usr/local",
-    "PY_VERSION=3.10",
+vars = [
+    "python_root=/usr/local",
+    "py_version=3.10"
 ]
 
 # Using Python 3.11
 [[groups.commands]]
 name = "run_with_py311"
-cmd = "${PYTHON_ROOT}/python${PY_VERSION}/bin/python"
+cmd = "%{python_root}/python%{py_version}/bin/python"
 args = ["-V"]
-env = [
-    "PYTHON_ROOT=/usr/local",
-    "PY_VERSION=3.11",
+vars = [
+    "python_root=/usr/local",
+    "py_version=3.11"
 ]
 ```
 
-### 7.4.2 Dynamic Argument Generation
+### 7.6.2 Dynamic Argument Generation
 
 Dynamically constructing Docker container startup parameters:
 
@@ -230,26 +497,26 @@ name = "docker_deployment"
 
 [[groups.commands]]
 name = "start_container"
-cmd = "${DOCKER_BIN}"
+cmd = "%{docker_bin}"
 args = [
     "run",
     "-d",
-    "--name", "${CONTAINER_NAME}",
-    "-v", "${HOST_PATH}:${CONTAINER_PATH}",
-    "-e", "APP_ENV=${APP_ENV}",
-    "-p", "${HOST_PORT}:${CONTAINER_PORT}",
-    "${IMAGE_NAME}:${IMAGE_TAG}",
+    "--name", "%{container_name}",
+    "-v", "%{host_path}:%{container_path}",
+    "-e", "APP_ENV=%{app_env}",
+    "-p", "%{host_port}:%{container_port}",
+    "%{image_name}:%{image_tag}",
 ]
-env = [
-    "DOCKER_BIN=/usr/bin/docker",
-    "CONTAINER_NAME=myapp-prod",
-    "HOST_PATH=/opt/myapp/data",
-    "CONTAINER_PATH=/app/data",
-    "APP_ENV=production",
-    "HOST_PORT=8080",
-    "CONTAINER_PORT=80",
-    "IMAGE_NAME=myapp",
-    "IMAGE_TAG=v1.2.3",
+vars = [
+    "docker_bin=/usr/bin/docker",
+    "container_name=myapp-prod",
+    "host_path=/opt/myapp/data",
+    "container_path=/app/data",
+    "app_env=production",
+    "host_port=8080",
+    "container_port=80",
+    "image_name=myapp",
+    "image_tag=v1.2.3"
 ]
 ```
 
@@ -263,7 +530,7 @@ Executed command:
   myapp:v1.2.3
 ```
 
-### 7.4.3 Environment-Specific Configuration Switching
+### 7.6.3 Environment-Specific Configuration Switching
 
 Using different configurations for development and production environments:
 
@@ -279,18 +546,18 @@ name = "development"
 
 [[groups.commands]]
 name = "run_dev"
-cmd = "${APP_BIN}"
+cmd = "%{app_bin}"
 args = [
-    "--config", "${CONFIG_DIR}/${ENV_TYPE}.yml",
-    "--log-level", "${LOG_LEVEL}",
-    "--db", "${DB_URL}",
+    "--config", "%{config_dir}/%{env_type}.yml",
+    "--log-level", "%{log_level}",
+    "--db", "%{db_url}",
 ]
-env = [
-    "APP_BIN=/opt/myapp/bin/myapp",
-    "CONFIG_DIR=/etc/myapp/configs",
-    "ENV_TYPE=development",
-    "LOG_LEVEL=debug",
-    "DB_URL=postgresql://localhost/dev_db",
+vars = [
+    "app_bin=/opt/myapp/bin/myapp",
+    "config_dir=/etc/myapp/configs",
+    "env_type=development",
+    "log_level=debug",
+    "db_url=postgresql://localhost/dev_db"
 ]
 
 # Production environment group
@@ -299,22 +566,22 @@ name = "production"
 
 [[groups.commands]]
 name = "run_prod"
-cmd = "${APP_BIN}"
+cmd = "%{app_bin}"
 args = [
-    "--config", "${CONFIG_DIR}/${ENV_TYPE}.yml",
-    "--log-level", "${LOG_LEVEL}",
-    "--db", "${DB_URL}",
+    "--config", "%{config_dir}/%{env_type}.yml",
+    "--log-level", "%{log_level}",
+    "--db", "%{db_url}",
 ]
-env = [
-    "APP_BIN=/opt/myapp/bin/myapp",
-    "CONFIG_DIR=/etc/myapp/configs",
-    "ENV_TYPE=production",
-    "LOG_LEVEL=info",
-    "DB_URL=postgresql://prod-server/prod_db",
+vars = [
+    "app_bin=/opt/myapp/bin/myapp",
+    "config_dir=/etc/myapp/configs",
+    "env_type=production",
+    "log_level=info",
+    "db_url=postgresql://prod-server/prod_db"
 ]
 ```
 
-## 7.5 Nested Variables
+## 7.8 Nested Variables
 
 Variable values can contain other variables.
 
@@ -324,16 +591,16 @@ Variable values can contain other variables.
 [[groups.commands]]
 name = "nested_vars"
 cmd = "/bin/echo"
-args = ["Message: ${FULL_MSG}"]
-env = [
-    "FULL_MSG=Hello, ${USER}!",
-    "USER=Alice",
+args = ["Message: %{full_msg}"]
+vars = [
+    "full_msg=Hello, %{user}!",
+    "user=Alice"
 ]
 ```
 
 Expansion order:
-1. `${USER}` → expands to `Alice`
-2. `${FULL_MSG}` → expands to `Hello, Alice!`
+1. `%{user}` → expands to `Alice`
+2. `%{full_msg}` → expands to `Hello, Alice!`
 3. Final argument: `Message: Hello, Alice!`
 
 ### Complex Path Construction
@@ -342,58 +609,68 @@ Expansion order:
 [[groups.commands]]
 name = "complex_path"
 cmd = "/bin/echo"
-args = ["Config path: ${CONFIG_PATH}"]
-env = [
-    "CONFIG_PATH=${BASE_DIR}/${ENV_TYPE}/config.yml",
-    "BASE_DIR=/opt/myapp",
-    "ENV_TYPE=production",
+args = ["Config path: %{config_path}"]
+vars = [
+    "config_path=%{base_dir}/%{env_type}/config.yml",
+    "base_dir=/opt/myapp",
+    "env_type=production"
 ]
 ```
 
 Expansion order:
-1. `${BASE_DIR}` → expands to `/opt/myapp`
-2. `${ENV_TYPE}` → expands to `production`
-3. `${CONFIG_PATH}` → expands to `/opt/myapp/production/config.yml`
+1. `%{base_dir}` → expands to `/opt/myapp`
+2. `%{env_type}` → expands to `production`
+3. `%{config_path}` → expands to `/opt/myapp/production/config.yml`
 
-## 7.6 Variable Self-Reference
+## 7.9 Variable Self-Reference
 
 Variable self-reference is an important feature commonly used when extending environment variables. It is particularly useful for environment variables like `PATH`, where you want to add new values to existing ones.
 
 ### How Self-Reference Works
 
-In expressions like `PATH=/custom/bin:${PATH}`, the `${PATH}` refers to the **original value of the system environment variable**. This is not a circular reference but an intentionally supported feature.
+In expressions like `PATH=/custom/bin:%{path}`, the `%{path}` refers to a **system environment variable imported via `from_env`** or it can reference an internal variable. This is not a circular reference but an intentionally supported feature.
 
 ### Basic Example: PATH Extension
 
 ```toml
+[global]
+env_allowlist = ["PATH"]
+from_env = ["path=PATH"]
+
 [[groups.commands]]
 name = "extend_path"
 cmd = "/bin/echo"
-args = ["PATH is: ${PATH}"]
-env = ["PATH=/opt/mytools/bin:${PATH}"]
+args = ["PATH is: %{path}"]
+env = ["PATH=/opt/mytools/bin:%{path}"]
 ```
 
 Expansion process:
-1. Retrieve the value of the system environment variable `PATH` (e.g., `/usr/bin:/bin`)
-2. `${PATH}` → expands to `/usr/bin:/bin`
+1. Import system environment variable `PATH` as `%{path}` (e.g., `/usr/bin:/bin`)
+2. `%{path}` → expands to `/usr/bin:/bin`
 3. Final value: `/opt/mytools/bin:/usr/bin:/bin`
 
 ### Practical Example: Adding Custom Tool Directory
 
 ```toml
+[global]
+env_allowlist = ["PATH"]
+from_env = ["path=PATH"]
+
 [[groups.commands]]
 name = "use_custom_tools"
-cmd = "${CUSTOM_TOOL}"
+cmd = "%{custom_tool}"
 args = ["--version"]
+vars = [
+    "tool_dir=/opt/custom-tools",
+    "custom_tool=%{tool_dir}/bin/mytool"
+]
 env = [
-    "PATH=${TOOL_DIR}/bin:${PATH}",
-    "TOOL_DIR=/opt/custom-tools",
-    "CUSTOM_TOOL=mytool",
+    "PATH=%{tool_dir}/bin:%{path}"
 ]
 ```
 
 With this configuration:
-- `CUSTOM_TOOL` can be found from the extended `PATH` even when specified as just a command name (not a full path)
+- `%{custom_tool}` can be found from the extended `PATH` even when specified as just a command name (not a full path)
 - The existing system `PATH` is preserved
 
 ### Self-Reference with Other Environment Variables
@@ -401,63 +678,72 @@ With this configuration:
 `PATH` is not the only environment variable that supports self-reference:
 
 ```toml
+[global]
+env_allowlist = ["LD_LIBRARY_PATH", "PYTHONPATH"]
+from_env = [
+    "ld_library_path=LD_LIBRARY_PATH",
+    "pythonpath=PYTHONPATH"
+]
+
 [[groups.commands]]
 name = "extend_lib_path"
 cmd = "/opt/myapp/bin/app"
 args = []
 env = [
-    "LD_LIBRARY_PATH=/opt/myapp/lib:${LD_LIBRARY_PATH}",
-    "PYTHONPATH=/opt/myapp/python:${PYTHONPATH}",
+    "LD_LIBRARY_PATH=/opt/myapp/lib:%{ld_library_path}",
+    "PYTHONPATH=/opt/myapp/python:%{pythonpath}"
 ]
 ```
 
 ### Difference Between Self-Reference and Circular Reference
 
-**Self-Reference (Normal)**: A variable defined in Command.Env references the **system environment variable** with the same name
+**Self-Reference (Normal)**: Referencing a system environment variable imported via `from_env` or an internal variable
 ```toml
-env = ["PATH=/custom/bin:${PATH}"]  # ${PATH} refers to system environment variable
+env = ["PATH=/custom/bin:%{path}"]  # %{path} refers to system environment variable
 ```
 
-**Circular Reference (Error)**: Variables within Command.Env reference each other
+**Circular Reference (Error)**: Variables within vars reference each other circularly
 ```toml
-env = [
-    "VAR1=${VAR2}",
-    "VAR2=${VAR1}",  # Error: Circular reference within Command.Env
+vars = [
+    "var1=%{var2}",
+    "var2=%{var1}",  # Error: Circular reference
 ]
 ```
 
 ### Important Notes
 
-1. **When system environment variable doesn't exist**: If `PATH` doesn't exist in the system when referencing `${PATH}`, an error will occur
-2. **Relationship with allowlist**: When referencing system environment variables, those variables must be included in `env_allowlist`
+1. **When system environment variable doesn't exist**: If the system environment variable referenced in `from_env` doesn't exist, an error will occur
+2. **Relationship with allowlist**: When referencing system environment variables via `from_env`, those variables must be included in `env_allowlist`
 
 ```toml
 [global]
-env_allowlist = ["PATH", "HOME"]  # Allow PATH self-reference
+env_allowlist = ["PATH", "HOME"]  # Allow PATH and HOME to be imported
 
 [[groups.commands]]
 name = "extend_path"
 cmd = "/bin/echo"
-args = ["${PATH}"]
-env = ["PATH=/custom:${PATH}"]  # OK: PATH is included in allowlist
+args = ["%{path}"]
+vars = ["path=PATH_PREFIX:/custom:%{system_path}"]
+from_env = ["system_path=PATH"]  # OK: PATH is included in allowlist
+env = ["PATH=%{path}"]
 ```
 
-## 7.7 Escape Sequences
+## 7.10 Escape Sequences
 
-When you want to use literal `$` or `\` characters, escaping is required.
+When you want to use literal `%` or `\` characters, escaping is required.
 
-### Escaping Dollar Signs
+### Escaping Percent Signs
 
-Use `\$` to represent a literal dollar sign:
+Use `\%` to represent a literal percent sign:
 
 ```toml
 [[groups.commands]]
-name = "price_display"
+name = "percentage_display"
 cmd = "/bin/echo"
-args = ["Price: \\$100 USD"]
+args = ["Progress: 100\\% complete"]
 ```
 
-Output: `Price: $100 USD`
+Output: `Progress: 100% complete`
 
 ### Escaping Backslashes
 
@@ -467,8 +753,8 @@ Use `\\` to represent a literal backslash:
 [[groups.commands]]
 name = "windows_path"
 cmd = "/bin/echo"
-args = ["Path: C:\\\\Users\\\\${USER}"]
-env = ["USER=JohnDoe"]
+args = ["Path: C:\\\\Users\\\\%{user}"]
+vars = ["user=JohnDoe"]
 ```
 
 Output: `Path: C:\Users\JohnDoe`
@@ -479,24 +765,24 @@ Output: `Path: C:\Users\JohnDoe`
 [[groups.commands]]
 name = "mixed_escape"
 cmd = "/bin/echo"
-args = ["Literal \\$HOME is different from ${HOME}"]
-env = ["HOME=/home/user"]
+args = ["Literal \\%{HOME} is different from %{home}"]
+vars = ["home=/home/user"]
 ```
 
 Output: `Literal $HOME is different from /home/user`
 
-## 7.8 Automatic Environment Variables
+## 7.11 Automatic Environment Variables
 
-### 7.8.1 Overview
+### 7.11.1 Overview
 
-The system automatically sets the following environment variables for each command execution:
+The system automatically sets the following internal variables for each command execution:
 
-- **`__RUNNER_DATETIME`**: Execution time (UTC) in YYYYMMDDHHmmSS.msec format
-- **`__RUNNER_PID`**: Process ID of the runner process
+- **`__runner_datetime`**: Execution time (UTC) in YYYYMMDDHHmmSS.msec format
+- **`__runner_pid`**: Process ID of the runner process
 
-These variables can be used in command paths, arguments, and environment variable values just like regular variables.
+These variables can be used in command paths, arguments, and environment variable values just like regular internal variables.
 
-### 7.8.2 Usage Examples
+### 7.11.2 Usage Examples
 
 #### Timestamped Backups
 
@@ -507,7 +793,7 @@ description = "Create backup with timestamp"
 cmd = "/usr/bin/tar"
 args = [
     "czf",
-    "/tmp/backup/data-${__RUNNER_DATETIME}.tar.gz",
+    "/tmp/backup/data-%{__runner_datetime}.tar.gz",
     "/data"
 ]
 ```
@@ -525,7 +811,7 @@ description = "Create lock file with PID"
 cmd = "/bin/sh"
 args = [
     "-c",
-    "echo ${__RUNNER_PID} > /var/run/myapp-${__RUNNER_PID}.lock"
+    "echo %{__runner_pid} > /var/run/myapp-%{__runner_pid}.lock"
 ]
 ```
 
@@ -542,7 +828,7 @@ description = "Log execution time and PID"
 cmd = "/bin/sh"
 args = [
     "-c",
-    "echo 'Executed at ${__RUNNER_DATETIME} by PID ${__RUNNER_PID}' >> /var/log/executions.log"
+    "echo 'Executed at %{__runner_datetime} by PID %{__runner_pid}' >> /var/log/executions.log"
 ]
 ```
 
@@ -559,8 +845,8 @@ name = "timestamped_report"
 description = "Report with timestamp and PID"
 cmd = "/opt/myapp/bin/report"
 args = [
-    "--output", "/reports/${__RUNNER_DATETIME}-${__RUNNER_PID}.html",
-    "--title", "Report ${__RUNNER_DATETIME}",
+    "--output", "/reports/%{__runner_datetime}-%{__runner_pid}.html",
+    "--title", "Report %{__runner_datetime}",
 ]
 ```
 
@@ -568,9 +854,9 @@ Example execution:
 - Output file: `/reports/20251005143022.123-12345.html`
 - Report title: `Report 20251005143022.123`
 
-### 7.8.3 DateTime Format
+### 7.11.3 DateTime Format
 
-Format specification for `__RUNNER_DATETIME`:
+Format specification for `__runner_datetime`:
 
 | Part | Description | Example |
 |------|-------------|---------|
@@ -586,23 +872,23 @@ Complete example: `20251005143045.123` = October 5, 2025 14:30:45.123 (UTC)
 
 **Note**: The timezone is always UTC, not local timezone.
 
-### 7.8.4 Reserved Prefix
+### 7.11.4 Reserved Prefix
 
-The prefix `__RUNNER_` is reserved for automatic environment variables and cannot be used for user-defined environment variables.
+The prefix `__runner_` is reserved for automatic variables and cannot be used for user-defined variables.
 
 #### Error Example
 
 ```toml
 [[groups.commands]]
-name = "invalid_env"
+name = "invalid_var"
 cmd = "/bin/echo"
-args = ["${__RUNNER_CUSTOM}"]
-env = ["__RUNNER_CUSTOM=value"]  # Error: Using reserved prefix
+args = ["%{__runner_custom}"]
+vars = ["__runner_custom=value"]  # Error: Using reserved prefix
 ```
 
 Error message:
 ```
-environment variable "__RUNNER_CUSTOM" uses reserved prefix "__RUNNER_";
+variable "__runner_custom" uses reserved prefix "__runner_";
 this prefix is reserved for automatically generated variables
 ```
 
@@ -610,15 +896,15 @@ this prefix is reserved for automatically generated variables
 
 ```toml
 [[groups.commands]]
-name = "valid_env"
+name = "valid_var"
 cmd = "/bin/echo"
-args = ["${MY_CUSTOM_VAR}"]
-env = ["MY_CUSTOM_VAR=value"]  # OK: Not using reserved prefix
+args = ["%{my_custom_var}"]
+vars = ["my_custom_var=value"]  # OK: Not using reserved prefix
 ```
 
-### 7.8.5 Timing of Variable Generation
+### 7.11.5 Timing of Variable Generation
 
-Automatic environment variables (`__RUNNER_DATETIME` and `__RUNNER_PID`) are generated once when the configuration file is loaded, not at each command execution time. All commands in all groups share the exact same values throughout the entire runner execution.
+Automatic variables (`__runner_datetime` and `__runner_pid`) are generated once when the configuration file is loaded, not at each command execution time. All commands in all groups share the exact same values throughout the entire runner execution.
 
 ```toml
 [[groups]]
@@ -627,21 +913,21 @@ name = "backup_group"
 [[groups.commands]]
 name = "backup_db"
 cmd = "/usr/bin/pg_dump"
-args = ["-f", "/tmp/backup/db-${__RUNNER_DATETIME}.sql", "mydb"]
+args = ["-f", "/tmp/backup/db-%{__runner_datetime}.sql", "mydb"]
 
 [[groups.commands]]
 name = "backup_files"
 cmd = "/usr/bin/tar"
-args = ["czf", "/tmp/backup/files-${__RUNNER_DATETIME}.tar.gz", "/data"]
+args = ["czf", "/tmp/backup/files-%{__runner_datetime}.tar.gz", "/data"]
 ```
 
-**Key Point**: Both commands use the exact same timestamp because `__RUNNER_DATETIME` is sampled at config load time, not at execution time:
+**Key Point**: Both commands use the exact same timestamp because `__runner_datetime` is sampled at config load time, not at execution time:
 - `/tmp/backup/db-20251005143022.123.sql`
 - `/tmp/backup/files-20251005143022.123.tar.gz`
 
 This ensures consistency across all commands in a single runner execution, even if commands are executed at different times or in different groups.
 
-## 7.9 Security Considerations
+## 7.12 Security Considerations
 
 ### 7.9.1 Command.Env Priority
 
@@ -676,23 +962,52 @@ env = ["CUSTOM_TOOL=/opt/tools/mytool"]
 # CUSTOM_TOOL is not in allowlist, but can be used because it's defined in Command.Env
 ```
 
-### 7.9.3 Absolute Path Requirements
+### 7.9.3 Command Path Requirements
 
-Command paths after expansion must be absolute paths:
+Command paths after expansion must meet the following requirements:
+
+#### Regular Commands
+
+For regular commands (without `run_as_user` or `run_as_group`), both local paths (relative paths) and absolute paths are allowed:
 
 ```toml
 # Correct: expands to absolute path
 [[groups.commands]]
-name = "valid"
+name = "valid_absolute"
 cmd = "${TOOL_DIR}/mytool"
 env = ["TOOL_DIR=/opt/tools"]  # Absolute path
 
-# Incorrect: expands to relative path
+# Correct: expands to relative path (allowed for regular commands)
 [[groups.commands]]
-name = "invalid"
+name = "valid_relative"
 cmd = "${TOOL_DIR}/mytool"
-env = ["TOOL_DIR=./tools"]  # Relative path - error
+env = ["TOOL_DIR=./tools"]  # Relative path - OK for regular commands
 ```
+
+#### Privileged Commands
+
+For privileged commands (with `run_as_user` or `run_as_group`), **only absolute paths** are allowed for security reasons:
+
+```toml
+# Correct: expands to absolute path
+[[groups.commands]]
+name = "valid_privileged"
+cmd = "${TOOL_DIR}/mytool"
+run_as_user = "appuser"
+env = ["TOOL_DIR=/opt/tools"]  # Absolute path
+
+# Incorrect: expands to relative path (error for privileged commands)
+[[groups.commands]]
+name = "invalid_privileged"
+cmd = "${TOOL_DIR}/mytool"
+run_as_user = "appuser"
+env = ["TOOL_DIR=./tools"]  # Relative path - error for privileged commands
+```
+
+Why absolute paths are required for privileged commands:
+- Prevents PATH-based attacks
+- Explicitly specifies the exact location of the command
+- Reduces the risk of executing unintended commands
 
 ### 7.9.4 Handling Sensitive Information
 
@@ -713,7 +1028,7 @@ env = [
 ]
 ```
 
-### 7.9.5 Isolation Between Commands
+### 7.12.5 Isolation Between Commands
 
 Each command's `env` is independent and does not affect other commands:
 
@@ -721,18 +1036,20 @@ Each command's `env` is independent and does not affect other commands:
 [[groups.commands]]
 name = "cmd1"
 cmd = "/bin/echo"
-args = ["DB: ${DB_HOST}"]
-env = ["DB_HOST=db1.example.com"]
+args = ["DB: %{db_host}"]
+vars = ["db_host=db1.example.com"]
+env = ["DB_HOST=%{db_host}"]
 
 [[groups.commands]]
 name = "cmd2"
 cmd = "/bin/echo"
-args = ["DB: ${DB_HOST}"]
-env = ["DB_HOST=db2.example.com"]
+args = ["DB: %{db_host}"]
+vars = ["db_host=db2.example.com"]
+env = ["DB_HOST=%{db_host}"]
 # Independent from cmd1's DB_HOST
 ```
 
-## 7.10 Troubleshooting
+## 7.13 Troubleshooting
 
 ### Undefined Variables
 
@@ -792,10 +1109,24 @@ version = "1.0"
 timeout = 300
 log_level = "info"
 env_allowlist = ["PATH", "HOME", "USER"]
+from_env = [
+    "home=HOME",
+    "username=USER"
+]
+vars = [
+    "app_root=/opt/myapp",
+    "config_dir=%{app_root}/config",
+    "bin_dir=%{app_root}/bin"
+]
 
 [[groups]]
 name = "application_deployment"
 description = "Application deployment process"
+vars = [
+    "env_type=production",
+    "config_source=%{config_dir}/templates",
+    "migration_dir=%{app_root}/migrations"
+]
 
 # Step 1: Deploy configuration file
 [[groups.commands]]
@@ -803,33 +1134,26 @@ name = "deploy_config"
 description = "Deploy environment-specific configuration file"
 cmd = "/bin/cp"
 args = [
-    "${CONFIG_SOURCE}/${ENV_TYPE}/app.yml",
-    "${CONFIG_DEST}/app.yml",
-]
-env = [
-    "CONFIG_SOURCE=/opt/configs/templates",
-    "CONFIG_DEST=/etc/myapp",
-    "ENV_TYPE=production",
+    "%{config_source}/%{env_type}/app.yml",
+    "%{config_dir}/app.yml"
 ]
 
 # Step 2: Database migration
 [[groups.commands]]
 name = "db_migration"
 description = "Database schema migration"
-cmd = "${APP_BIN}/migrate"
+cmd = "%{bin_dir}/migrate"
 args = [
-    "--database", "${DB_URL}",
-    "--migrations", "${MIGRATION_DIR}",
+    "--database", "%{db_url}",
+    "--migrations", "%{migration_dir}"
 ]
-env = [
-    "APP_BIN=/opt/myapp/bin",
-    "DB_URL=postgresql://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}",
-    "DB_USER=appuser",
-    "DB_PASS=secret123",
-    "DB_HOST=localhost",
-    "DB_PORT=5432",
-    "DB_NAME=myapp_prod",
-    "MIGRATION_DIR=/opt/myapp/migrations",
+vars = [
+    "db_user=appuser",
+    "db_pass=secret123",
+    "db_host=localhost",
+    "db_port=5432",
+    "db_name=myapp_prod",
+    "db_url=postgresql://%{db_user}:%{db_pass}@%{db_host}:%{db_port}/%{db_name}"
 ]
 timeout = 600
 
@@ -837,17 +1161,19 @@ timeout = 600
 [[groups.commands]]
 name = "start_application"
 description = "Start application server"
-cmd = "${APP_BIN}/server"
+cmd = "%{bin_dir}/server"
 args = [
-    "--config", "${CONFIG_DEST}/app.yml",
-    "--port", "${APP_PORT}",
-    "--workers", "${WORKER_COUNT}",
+    "--config", "%{config_dir}/app.yml",
+    "--port", "%{app_port}",
+    "--workers", "%{worker_count}"
+]
+vars = [
+    "app_port=8080",
+    "worker_count=4"
 ]
 env = [
-    "APP_BIN=/opt/myapp/bin",
-    "CONFIG_DEST=/etc/myapp",
-    "APP_PORT=8080",
-    "WORKER_COUNT=4",
+    "LOG_LEVEL=info",
+    "LOG_PATH=%{app_root}/logs/app.log"
 ]
 
 # Step 4: Health check
@@ -855,17 +1181,12 @@ env = [
 name = "health_check"
 description = "Application health check"
 cmd = "/usr/bin/curl"
-args = [
-    "-f",
-    "${HEALTH_URL}",
-]
-env = [
-    "HEALTH_URL=http://localhost:8080/health",
-]
+args = ["-f", "%{health_url}"]
+vars = ["health_url=http://localhost:%{app_port}/health"]
 timeout = 30
 ```
 
-## 7.11 Variable Expansion in verify_files
+## 7.14 Variable Expansion in verify_files
 
 ### 7.11.1 Overview
 
@@ -887,9 +1208,10 @@ version = "1.0"
 
 [global]
 env_allowlist = ["HOME"]
+from_env = ["home=HOME"]
 verify_files = [
-    "${HOME}/config.toml",
-    "${HOME}/data.txt",
+    "%{home}/config.toml",
+    "%{home}/data.txt"
 ]
 
 [[groups]]
@@ -902,8 +1224,8 @@ args = ["hello"]
 ```
 
 Expansion result (when `HOME=/home/user`):
-- `${HOME}/config.toml` → `/home/user/config.toml`
-- `${HOME}/data.txt` → `/home/user/data.txt`
+- `%{home}/config.toml` → `/home/user/config.toml`
+- `%{home}/data.txt` → `/home/user/data.txt`
 
 #### Group Level Expansion
 
@@ -912,295 +1234,194 @@ version = "1.0"
 
 [global]
 env_allowlist = ["APP_ROOT"]
+from_env = ["app_root=APP_ROOT"]
 
 [[groups]]
 name = "app_group"
-env_allowlist = ["APP_ROOT"]
 verify_files = [
-    "${APP_ROOT}/config/app.yml",
-    "${APP_ROOT}/bin/server",
+    "%{app_root}/config/app.yml",
+    "%{app_root}/bin/server"
 ]
 
 [[groups.commands]]
 name = "start"
 cmd = "/bin/echo"
-args = ["starting"]
+args = ["Starting app"]
 ```
 
-When system environment variable `APP_ROOT=/opt/myapp`, expansion result:
-- `${APP_ROOT}/config/app.yml` → `/opt/myapp/config/app.yml`
-- `${APP_ROOT}/bin/server` → `/opt/myapp/bin/server`
+Expansion result (when `APP_ROOT=/opt/myapp`):
+- `%{app_root}/config/app.yml` → `/opt/myapp/config/app.yml`
+- `%{app_root}/bin/server` → `/opt/myapp/bin/server`
 
-### 7.11.4 Using Multiple Variables
+### 7.11.4 Complex Example
 
-By combining multiple environment variables, you can construct more flexible paths.
+Example with dynamic path construction:
 
 ```toml
 version = "1.0"
 
 [global]
-env_allowlist = ["BASE_DIR", "APP_NAME"]
+env_allowlist = ["ENV", "APP_ROOT"]
+from_env = [
+    "env_type=ENV",
+    "app_root=APP_ROOT"
+]
+vars = [
+    "config_base=%{app_root}/configs",
+    "config_path=%{config_base}/%{env_type}"
+]
 verify_files = [
-    "${BASE_DIR}/${APP_NAME}/config.toml",
-    "${BASE_DIR}/${APP_NAME}/data/db.sqlite",
+    "%{config_path}/global.yml",
+    "%{config_path}/secrets.enc",
+    "%{app_root}/web/nginx.conf",
+    "%{app_root}/web/ssl/cert.pem",
+    "%{app_root}/web/ssl/key.pem",
+    "%{app_root}/db/schema.sql",
+    "%{app_root}/db/migrations/%{env_type}/"
 ]
 
 [[groups]]
-name = "app_tasks"
+name = "deployment"
 
 [[groups.commands]]
-name = "run"
-cmd = "/bin/echo"
-args = ["running"]
+name = "deploy"
+cmd = "/opt/deploy.sh"
 ```
 
-Expansion result (when `BASE_DIR=/opt`, `APP_NAME=myapp`):
-- `${BASE_DIR}/${APP_NAME}/config.toml` → `/opt/myapp/config.toml`
-- `${BASE_DIR}/${APP_NAME}/data/db.sqlite` → `/opt/myapp/data/db.sqlite`
+When the following environment variables are set:
+- `ENV=production`
+- `APP_ROOT=/opt/myapp`
 
-### 7.11.5 Environment-Specific Configuration Example
-
-Example of verifying different files for development and production environments:
-
-```toml
-version = "1.0"
-
-[global]
-env_allowlist = ["ENV_TYPE", "CONFIG_ROOT"]
-verify_files = ["${CONFIG_ROOT}/${ENV_TYPE}/global.toml"]
-
-[[groups]]
-name = "development"
-env_allowlist = ["ENV_TYPE", "CONFIG_ROOT"]
-verify_files = [
-    "${CONFIG_ROOT}/${ENV_TYPE}/dev.toml",
-    "${CONFIG_ROOT}/${ENV_TYPE}/dev_db.sqlite",
-]
-
-[[groups.commands]]
-name = "dev_task"
-cmd = "/bin/echo"
-args = ["dev mode"]
-
-[[groups]]
-name = "production"
-env_allowlist = ["ENV_TYPE", "CONFIG_ROOT"]
-verify_files = [
-    "${CONFIG_ROOT}/${ENV_TYPE}/prod.toml",
-    "${CONFIG_ROOT}/${ENV_TYPE}/prod_db.sqlite",
-]
-
-[[groups.commands]]
-name = "prod_task"
-cmd = "/bin/echo"
-args = ["prod mode"]
-```
-
-For development environment (`ENV_TYPE=dev`, `CONFIG_ROOT=/etc/myapp`):
-- Global: `/etc/myapp/dev/global.toml`
-- development group: `/etc/myapp/dev/dev.toml`, `/etc/myapp/dev/dev_db.sqlite`
-
-For production environment (`ENV_TYPE=prod`, `CONFIG_ROOT=/etc/myapp`):
-- Global: `/etc/myapp/prod/global.toml`
-- production group: `/etc/myapp/prod/prod.toml`, `/etc/myapp/prod/prod_db.sqlite`
-
-### 7.11.6 Relationship with allowlist
-
-Security controls through `env_allowlist` are also applied to variable expansion in `verify_files`.
-
-#### Global Level allowlist
-
-Global `verify_files` uses the global `env_allowlist`:
-
-```toml
-[global]
-env_allowlist = ["HOME", "USER"]
-verify_files = [
-    "${HOME}/config.toml",    # OK: HOME is in allowlist
-    "${USER}/data.txt",       # OK: USER is in allowlist
-]
-```
-
-#### Group Level allowlist Inheritance
-
-Group `verify_files` uses the group's `env_allowlist`. If the group doesn't have an `env_allowlist` defined, it inherits the global configuration:
-
-```toml
-[global]
-env_allowlist = ["GLOBAL_VAR"]
-
-[[groups]]
-name = "group_with_inheritance"
-# env_allowlist not defined → inherits global configuration
-verify_files = ["${GLOBAL_VAR}/file.txt"]  # OK: inherits global allowlist
-
-[[groups]]
-name = "group_with_explicit"
-env_allowlist = ["GROUP_VAR"]  # explicitly defined
-verify_files = ["${GROUP_VAR}/file.txt"]   # OK: uses group allowlist
-```
-
-#### allowlist Violation Errors
-
-An error occurs when using variables not in the allowlist:
-
-```toml
-[global]
-env_allowlist = ["SAFE_VAR"]
-verify_files = ["${FORBIDDEN_VAR}/file.txt"]  # Error: not in allowlist
-```
-
-Example error message:
-```
-failed to expand global verify_files[0]: variable not allowed by allowlist: FORBIDDEN_VAR
-```
-
-### 7.11.7 Escape Sequences
-
-Escape sequences can also be used in verify_files:
-
-```toml
-[global]
-env_allowlist = ["HOME"]
-verify_files = [
-    "${HOME}/config.toml",     # Variable will be expanded
-    "\\${HOME}/literal.txt",   # Literal string "${HOME}/literal.txt"
-]
-```
-
-Expansion result (when `HOME=/home/user`):
-- `/home/user/config.toml`
-- `${HOME}/literal.txt` (not expanded)
-
-### 7.11.8 Runtime Behavior
-
-Variable expansion in verify_files is automatically executed when the configuration file is loaded:
-
-1. **Configuration file loading**: Parse TOML file
-2. **Variable expansion execution**: Expand variables in verify_files
-3. **Save expansion results**: Save expanded paths to internal fields
-4. **Execute verification**: Use expanded paths for file verification
-
-### 7.11.9 Troubleshooting
-
-#### Undefined Variable Errors
-
-An error occurs if a variable doesn't exist in the environment:
-
-```toml
-[global]
-env_allowlist = ["UNDEFINED_VAR"]
-verify_files = ["${UNDEFINED_VAR}/file.txt"]
-```
-
-Example error message:
-```
-failed to expand global verify_files[0]: variable not found in environment: UNDEFINED_VAR
-```
-
-**Solution**: Set the required environment variables in the system
-
-#### allowlist Errors
-
-An error occurs if a variable is not in the allowlist:
-
-```toml
-[global]
-env_allowlist = ["ALLOWED_VAR"]
-verify_files = ["${FORBIDDEN_VAR}/file.txt"]
-```
-
-Example error message:
-```
-failed to expand global verify_files[0]: variable not allowed by allowlist: FORBIDDEN_VAR
-```
-
-**Solution**: Add the required variables to `env_allowlist`
-
-#### Circular Reference Errors
-
-An error occurs if variables reference each other (although circular references in system environment variables are extremely rare):
-
-```bash
-# Circular reference in system environment variables (unlikely in practice)
-export VAR1="${VAR2}"
-export VAR2="${VAR1}"
-```
-
-**Solution**: Fix the environment variable definitions
-
-### 7.11.10 Practical Example: Multi-Environment Deployment
-
-A practical example of using verify_files in multi-environment deployment:
-
-```toml
-version = "1.0"
-
-[global]
-env_allowlist = ["DEPLOY_ENV", "APP_ROOT", "CONFIG_ROOT"]
-verify_files = [
-    "${CONFIG_ROOT}/${DEPLOY_ENV}/global.yml",
-    "${CONFIG_ROOT}/${DEPLOY_ENV}/secrets.enc",
-]
-
-[[groups]]
-name = "web_servers"
-env_allowlist = ["DEPLOY_ENV", "APP_ROOT"]
-verify_files = [
-    "${APP_ROOT}/web/nginx.conf",
-    "${APP_ROOT}/web/ssl/cert.pem",
-    "${APP_ROOT}/web/ssl/key.pem",
-]
-
-[[groups.commands]]
-name = "deploy_web"
-cmd = "${APP_ROOT}/scripts/deploy.sh"
-args = ["web", "${DEPLOY_ENV}"]
-env = [
-    "APP_ROOT=/opt/myapp",
-    "DEPLOY_ENV=production",
-]
-
-[[groups]]
-name = "database"
-env_allowlist = ["DEPLOY_ENV", "APP_ROOT"]
-verify_files = [
-    "${APP_ROOT}/db/schema.sql",
-    "${APP_ROOT}/db/migrations/${DEPLOY_ENV}",
-]
-
-[[groups.commands]]
-name = "migrate_db"
-cmd = "${APP_ROOT}/scripts/migrate.sh"
-args = ["${DEPLOY_ENV}"]
-env = [
-    "APP_ROOT=/opt/myapp",
-    "DEPLOY_ENV=production",
-]
-```
-
-Environment variable setup example (production environment):
-```bash
-export DEPLOY_ENV=production
-export APP_ROOT=/opt/myapp
-export CONFIG_ROOT=/etc/myapp/config
-```
-
-This configuration verifies the following files:
-- `/etc/myapp/config/production/global.yml`
-- `/etc/myapp/config/production/secrets.enc`
+The following files will be verified:
+- `/opt/myapp/configs/production/global.yml`
+- `/opt/myapp/configs/production/secrets.enc`
 - `/opt/myapp/web/nginx.conf`
 - `/opt/myapp/web/ssl/cert.pem`
 - `/opt/myapp/web/ssl/key.pem`
 - `/opt/myapp/db/schema.sql`
 - `/opt/myapp/db/migrations/production/`
 
-### 7.11.11 Limitations
+### 7.11.5 Limitations
 
-1. **Absolute path requirement**: Expanded paths must be absolute paths
-2. **System environment variables only**: Command.Env variables cannot be used in verify_files
-3. **Expansion timing**: Variables are expanded once at configuration load time (not at execution time)
+1. **Absolute Path Requirement**: Expanded paths must be absolute paths
+2. **System Environment Variables Only**: verify_files can only use system environment variables, not Command.Env variables
+3. **Expansion Timing**: Expansion happens once at configuration load time (not at execution time)
 
-## Next Steps
+## 7.12 Practical Comprehensive Example
 
-In the next chapter, we will introduce practical examples that combine the configurations we have learned so far. You will learn how to create configuration files based on actual use cases.
+Below is a practical configuration example using variable expansion features:
+
+```toml
+version = "1.0"
+
+[global]
+timeout = 300
+log_level = "info"
+env_allowlist = ["PATH", "HOME", "USER"]
+from_env = [
+    "home=HOME",
+    "username=USER"
+]
+vars = [
+    "app_root=/opt/myapp",
+    "config_dir=%{app_root}/config",
+    "bin_dir=%{app_root}/bin"
+]
+
+[[groups]]
+name = "application_deployment"
+description = "Application deployment process"
+vars = [
+    "env_type=production",
+    "log_dir=%{app_root}/logs"
+]
+
+# Step 1: Deploy configuration file
+[[groups.commands]]
+name = "deploy_config"
+description = "Deploy environment-specific configuration"
+cmd = "/bin/cp"
+args = [
+    "%{config_dir}/templates/%{env_type}/app.yml",
+    "%{config_dir}/app.yml"
+]
+
+# Step 2: Database migration
+[[groups.commands]]
+name = "db_migration"
+description = "Database schema migration"
+cmd = "%{bin_dir}/migrate"
+args = [
+    "--database", "%{db_url}",
+    "--migrations", "%{migration_dir}"
+]
+vars = [
+    "db_user=appuser",
+    "db_pass=secret123",
+    "db_host=localhost",
+    "db_port=5432",
+    "db_name=myapp_prod",
+    "db_url=postgresql://%{db_user}:%{db_pass}@%{db_host}:%{db_port}/%{db_name}",
+    "migration_dir=%{app_root}/migrations"
+]
+timeout = 600
+
+# Step 3: Start application
+[[groups.commands]]
+name = "start_application"
+description = "Start application server"
+cmd = "%{bin_dir}/server"
+args = [
+    "--config", "%{config_dir}/app.yml",
+    "--port", "%{app_port}",
+    "--workers", "%{worker_count}"
+]
+vars = [
+    "app_port=8080",
+    "worker_count=4"
+]
+env = [
+    "LOG_LEVEL=info",
+    "LOG_PATH=%{log_dir}/app.log"
+]
+
+# Step 4: Health check
+[[groups.commands]]
+name = "health_check"
+description = "Application health check"
+cmd = "/usr/bin/curl"
+args = ["-f", "%{health_url}"]
+vars = ["health_url=http://localhost:%{app_port}/health"]
+timeout = 30
+```
+
+## 7.13 Summary
+
+### Overall View of Variable System
+
+The go-safe-cmd-runner variable system consists of three main components:
+
+1. **Internal Variables** (`vars`, `from_env`)
+   - Used exclusively for TOML expansion
+   - Referenced using `%{VAR}` syntax
+   - Not passed to child processes (by default)
+
+2. **Process Environment Variables** (`env`)
+   - Environment variables passed to child processes at execution time
+   - Can use internal variables `%{VAR}` in values
+
+3. **Automatic Variables** (`__runner_datetime`, `__runner_pid`)
+   - Automatically generated by the system
+   - Available as internal variables
+
+### Best Practices
+
+1. **Utilize internal variables**: Define values that are only needed for TOML expansion (like paths and URLs) using `vars`
+2. **Explicitly import with from_env**: Import system environment variables explicitly using `from_env` to make intentions clear
+3. **Minimize env usage**: Keep environment variables passed to child processes to the minimum necessary
+4. **Consider security**: Handle sensitive information carefully and avoid passing unnecessary environment variables
+5. **Standardize naming conventions**: Use lowercase with underscores for internal variables (e.g., `app_dir`), and uppercase for environment variables
+
+### Next Steps
+
+In the next chapter, we'll cover practical examples combining all the variable expansion features you've learned. You'll learn how to create configuration files based on real-world use cases.

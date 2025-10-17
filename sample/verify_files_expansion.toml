@@ -1,13 +1,13 @@
 # verify_files Variable Expansion Sample Configuration
 #
-# This sample demonstrates how to use environment variable expansion in verify_files fields.
+# This sample demonstrates how to use internal variable expansion in verify_files fields.
 # The verify_files feature allows you to dynamically construct file verification paths using
-# environment variables, providing flexibility for different deployment environments.
+# internal variables (from_env and vars), providing flexibility for different deployment environments.
 #
 # Features demonstrated:
 # 1. Global-level verify_files expansion
 # 2. Group-level verify_files expansion
-# 3. Multiple environment variables in a single path
+# 3. Multiple internal variables in a single path
 # 4. Environment-specific configurations (dev/staging/prod)
 # 5. Allowlist inheritance
 #
@@ -26,16 +26,24 @@ log_level = "info"
 workdir = "/tmp"
 
 # Environment variable allowlist for global scope
-# These variables can be used in global verify_files
+# These variables can be imported via from_env
 env_allowlist = ["DEPLOY_ENV", "CONFIG_ROOT", "APP_ROOT", "DATA_ROOT"]
 
-# Global verify_files with environment variable expansion
+# Import system environment variables as internal variables
+from_env = [
+    "deploy_env=DEPLOY_ENV",
+    "config_root=CONFIG_ROOT",
+    "app_root=APP_ROOT",
+    "data_root=DATA_ROOT"
+]
+
+# Global verify_files with internal variable expansion
 # These files will be verified before any group execution
 verify_files = [
-    "${CONFIG_ROOT}/${DEPLOY_ENV}/global.yml",
-    "${CONFIG_ROOT}/${DEPLOY_ENV}/secrets.enc",
-    "${APP_ROOT}/LICENSE",
-    "${APP_ROOT}/VERSION",
+    "%{config_root}/%{deploy_env}/global.yml",
+    "%{config_root}/%{deploy_env}/secrets.enc",
+    "%{app_root}/LICENSE",
+    "%{app_root}/VERSION",
 ]
 
 # Example 1: Web Server Deployment Group
@@ -47,12 +55,18 @@ description = "Deploy and configure web servers"
 # Group-level allowlist (overrides global allowlist for this group)
 env_allowlist = ["DEPLOY_ENV", "APP_ROOT"]
 
+# Group-level from_env (overrides global from_env)
+from_env = [
+    "deploy_env=DEPLOY_ENV",
+    "app_root=APP_ROOT"
+]
+
 # Group verify_files - these files are verified before executing commands in this group
 verify_files = [
-    "${APP_ROOT}/web/nginx.conf",
-    "${APP_ROOT}/web/ssl/cert.pem",
-    "${APP_ROOT}/web/ssl/key.pem",
-    "${APP_ROOT}/web/static/index.html",
+    "%{app_root}/web/nginx.conf",
+    "%{app_root}/web/ssl/cert.pem",
+    "%{app_root}/web/ssl/key.pem",
+    "%{app_root}/web/static/index.html",
 ]
 
 [[groups.commands]]
@@ -60,10 +74,10 @@ name = "deploy_web_config"
 description = "Deploy web server configuration"
 cmd = "/bin/cp"
 args = [
-    "${APP_ROOT}/web/nginx.conf",
+    "%{app_root}/web/nginx.conf",
     "/etc/nginx/sites-available/myapp.conf",
 ]
-env = ["APP_ROOT=/opt/myapp"]
+vars = ["app_root=/opt/myapp"]
 
 [[groups.commands]]
 name = "reload_nginx"
@@ -78,33 +92,34 @@ name = "database"
 description = "Database schema and migration management"
 
 # No env_allowlist specified - inherits from global allowlist
+# No from_env specified - inherits from global from_env
 
-# Group verify_files using inherited global allowlist
+# Group verify_files using inherited global from_env
 verify_files = [
-    "${APP_ROOT}/db/schema.sql",
-    "${APP_ROOT}/db/migrations/${DEPLOY_ENV}/001_initial.sql",
-    "${DATA_ROOT}/db/backup/.gitkeep",
+    "%{app_root}/db/schema.sql",
+    "%{app_root}/db/migrations/%{deploy_env}/001_initial.sql",
+    "%{data_root}/db/backup/.gitkeep",
 ]
 
 [[groups.commands]]
 name = "run_migrations"
 description = "Run database migrations"
-cmd = "${APP_ROOT}/scripts/migrate.sh"
-args = ["${DEPLOY_ENV}"]
-env = [
-    "APP_ROOT=/opt/myapp",
-    "DEPLOY_ENV=production",
+cmd = "%{app_root}/scripts/migrate.sh"
+args = ["%{env_type}"]
+vars = [
+    "app_root=/opt/myapp",
+    "env_type=production"
 ]
 timeout = 600
 
 [[groups.commands]]
 name = "verify_schema"
 description = "Verify database schema"
-cmd = "${APP_ROOT}/scripts/verify_schema.sh"
-args = ["${DATA_ROOT}/db/production.db"]
-env = [
-    "APP_ROOT=/opt/myapp",
-    "DATA_ROOT=/var/lib/myapp",
+cmd = "%{app_root}/scripts/verify_schema.sh"
+args = ["%{data_root}/production.db"]
+from_env = [
+    "app_root=/opt/myapp",
+    "data_root=/var/lib/myapp/db"
 ]
 
 # Example 3: Application Deployment Group
@@ -114,13 +129,18 @@ name = "application"
 description = "Deploy application binaries and configuration"
 
 env_allowlist = ["APP_ROOT", "DEPLOY_ENV", "CONFIG_ROOT"]
+from_env = [
+    "app_root=APP_ROOT",
+    "deploy_env=DEPLOY_ENV",
+    "config_root=CONFIG_ROOT"
+]
 
 verify_files = [
-    "${APP_ROOT}/bin/server",
-    "${APP_ROOT}/bin/worker",
-    "${CONFIG_ROOT}/${DEPLOY_ENV}/app.yml",
-    "${CONFIG_ROOT}/${DEPLOY_ENV}/database.yml",
-    "${CONFIG_ROOT}/${DEPLOY_ENV}/redis.yml",
+    "%{app_root}/bin/server",
+    "%{app_root}/bin/worker",
+    "%{config_root}/%{deploy_env}/app.yml",
+    "%{config_root}/%{deploy_env}/database.yml",
+    "%{config_root}/%{deploy_env}/redis.yml",
 ]
 
 [[groups.commands]]
@@ -128,25 +148,25 @@ name = "deploy_app_config"
 description = "Deploy application configuration files"
 cmd = "/bin/cp"
 args = [
-    "${CONFIG_ROOT}/${DEPLOY_ENV}/app.yml",
+    "%{config_root}/%{env_type}/app.yml",
     "/etc/myapp/app.yml",
 ]
-env = [
-    "CONFIG_ROOT=/etc/myapp/config",
-    "DEPLOY_ENV=production",
+vars = [
+    "config_root=/etc/myapp/config",
+    "env_type=production"
 ]
 
 [[groups.commands]]
 name = "start_server"
 description = "Start application server"
-cmd = "${APP_ROOT}/bin/server"
+cmd = "%{app_root}/bin/server"
 args = [
     "--config", "/etc/myapp/app.yml",
-    "--env", "${DEPLOY_ENV}",
+    "--env", "%{env_type}",
 ]
-env = [
-    "APP_ROOT=/opt/myapp",
-    "DEPLOY_ENV=production",
+vars = [
+    "app_root=/opt/myapp",
+    "env_type=production"
 ]
 timeout = 60
 
@@ -157,12 +177,17 @@ name = "monitoring"
 description = "Setup monitoring and logging"
 
 env_allowlist = ["APP_ROOT", "DATA_ROOT", "DEPLOY_ENV"]
+from_env = [
+    "app_root=APP_ROOT",
+    "data_root=DATA_ROOT",
+    "deploy_env=DEPLOY_ENV"
+]
 
 # Different log directories and configurations based on environment
 verify_files = [
-    "${DATA_ROOT}/logs/${DEPLOY_ENV}/.gitkeep",
-    "${APP_ROOT}/monitoring/prometheus.yml",
-    "${APP_ROOT}/monitoring/grafana-dashboard.json",
+    "%{data_root}/logs/%{deploy_env}/.gitkeep",
+    "%{app_root}/monitoring/prometheus.yml",
+    "%{app_root}/monitoring/grafana-dashboard.json",
 ]
 
 [[groups.commands]]
@@ -170,10 +195,10 @@ name = "configure_prometheus"
 description = "Configure Prometheus monitoring"
 cmd = "/bin/cp"
 args = [
-    "${APP_ROOT}/monitoring/prometheus.yml",
+    "%{app_root}/monitoring/prometheus.yml",
     "/etc/prometheus/prometheus.yml",
 ]
-env = ["APP_ROOT=/opt/myapp"]
+vars = ["app_root=/opt/myapp"]
 
 [[groups.commands]]
 name = "setup_log_rotation"
@@ -181,9 +206,9 @@ description = "Setup log rotation for application logs"
 cmd = "/usr/sbin/logrotate"
 args = [
     "-f",
-    "${APP_ROOT}/monitoring/logrotate.conf",
+    "%{app_root}/monitoring/logrotate.conf",
 ]
-env = ["APP_ROOT=/opt/myapp"]
+vars = ["app_root=/opt/myapp"]
 
 # Example 5: Backup and Restore Group
 # Demonstrates date-based path construction (though variables are static in verify_files)
@@ -192,24 +217,28 @@ name = "backup"
 description = "Backup and restore operations"
 
 env_allowlist = ["DATA_ROOT", "APP_ROOT"]
+from_env = [
+    "data_root=DATA_ROOT",
+    "app_root=APP_ROOT"
+]
 
 verify_files = [
-    "${DATA_ROOT}/backups/.gitkeep",
-    "${APP_ROOT}/scripts/backup.sh",
-    "${APP_ROOT}/scripts/restore.sh",
+    "%{data_root}/backups/.gitkeep",
+    "%{app_root}/scripts/backup.sh",
+    "%{app_root}/scripts/restore.sh",
 ]
 
 [[groups.commands]]
 name = "create_backup"
 description = "Create database and file backup"
-cmd = "${APP_ROOT}/scripts/backup.sh"
+cmd = "%{app_root}/scripts/backup.sh"
 args = [
-    "--db", "${DATA_ROOT}/db/production.db",
-    "--output", "${DATA_ROOT}/backups/backup-${__RUNNER_DATETIME}.tar.gz",
+    "--db", "%{data_root}/db/production.db",
+    "--output", "%{data_root}/backups/backup-%{__runner_datetime}.tar.gz",
 ]
-env = [
-    "APP_ROOT=/opt/myapp",
-    "DATA_ROOT=/var/lib/myapp",
+from_env = [
+    "app_root=APP_ROOT",
+    "data_root=DATA_ROOT"
 ]
 timeout = 1800
 
@@ -218,12 +247,12 @@ name = "cleanup_old_backups"
 description = "Remove backups older than 30 days"
 cmd = "/usr/bin/find"
 args = [
-    "${DATA_ROOT}/backups",
+    "%{data_root}/backups",
     "-name", "backup-*.tar.gz",
     "-mtime", "+30",
     "-delete",
 ]
-env = ["DATA_ROOT=/var/lib/myapp"]
+from_env = ["data_root=DATA_ROOT"]
 
 # Notes:
 #
@@ -239,7 +268,7 @@ env = ["DATA_ROOT=/var/lib/myapp"]
 # 3. Security:
 #    - All variables used in verify_files must be in the allowlist
 #    - Expanded paths must be absolute paths
-#    - System environment variables only (Command.Env variables cannot be used)
+#    - System environment variables are imported via from_env
 #
 # 4. Error Handling:
 #    - Undefined variables cause configuration load errors

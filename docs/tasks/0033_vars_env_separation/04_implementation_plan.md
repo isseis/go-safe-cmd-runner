@@ -479,18 +479,20 @@
     # from_env 未定義 → Global を継承
     vars = ["config=%{home}/.config"]
     ```
-  - [x] `TestExpandGroupConfig_OverrideFromEnv`: from_env 上書き
+  - [x] `TestExpandGroupConfig_MergeFromEnv`: from_env マージ
     ```toml
     [global]
+    env_allowlist = ["HOME", "CUSTOM_VAR"]
     from_env = ["home=HOME"]
 
     [[groups]]
-    name = "override_group"
-    env_allowlist = ["CUSTOM_VAR"]
+    name = "merge_group"
     from_env = ["custom=CUSTOM_VAR"]
-    # Global.from_env は無視される
+    # Global.from_env とマージされる
+    vars = ["config=%{home}/.config", "data=%{custom}/data"]
+    # home と custom の両方が参照可能
     ```
-  - [x] `TestExpandGroupConfig_EmptyFromEnv`: from_env = []
+  - [x] `TestExpandGroupConfig_EmptyFromEnv`: from_env = [] (Globalを継承)
   - [x] `TestExpandGroupConfig_VarsMerge`: vars のマージ
   - [x] `TestExpandGroupConfig_AllowlistInherit`: allowlist 継承
   - [x] `TestExpandGroupConfig_AllowlistOverride`: allowlist 上書き
@@ -509,23 +511,32 @@
         filter *environment.Filter,
     ) error
     ```
-    - [x] from_env 継承判定:
+    - [x] from_env 継承判定（Merge方式）:
       ```go
-      if group.FromEnv == nil {
-          // 未定義 → Global を継承
+      if group.FromEnv == nil || len(group.FromEnv) == 0 {
+          // 未定義(nil)または空配列 → Global を継承
           baseInternalVars = copyMap(global.ExpandedVars)
-      } else if len(group.FromEnv) == 0 {
-          // 空配列 → 何も取り込まない
-          baseInternalVars = make(map[string]string)
       } else {
-          // 定義あり → Global.from_env を無視して上書き
+          // 定義あり → Global.from_env とマージ
+          // まずGlobal.ExpandedVarsをコピー
+          baseInternalVars = copyMap(global.ExpandedVars)
+
+          // Group.FromEnvを処理してマージ
           systemEnv := filter.ParseSystemEnvironment(nil)
           groupAllowlist := group.EnvAllowlist
           if groupAllowlist == nil {
               groupAllowlist = global.EnvAllowlist
           }
-          baseInternalVars, err = ProcessFromEnv(
+          groupFromEnvVars, err := ProcessFromEnv(
               group.FromEnv, groupAllowlist, systemEnv, "group["+group.Name+"]")
+          if err != nil {
+              return err
+          }
+
+          // マージ: Group.FromEnvで同名の変数があれば上書き
+          for k, v := range groupFromEnvVars {
+              baseInternalVars[k] = v
+          }
       }
       ```
     - [x] `ProcessVars`で Group.Vars を展開（baseInternalVars使用）
@@ -835,53 +846,42 @@
 **目的**: `${VAR}` 構文の完全廃止とエラーメッセージの実装
 
 #### 2.12.1 ${VAR}検出関数の実装（テスト先行）
-- [ ] テスト作成: `internal/runner/config/expansion_test.go`
-  - [ ] `TestDetectDollarSyntax_Found`: `${VAR}` を検出
-  - [ ] `TestDetectDollarSyntax_NotFound`: `%{VAR}` のみ
-  - [ ] `TestDetectDollarSyntax_Escaped`: `\${VAR}` は検出しない
-- [ ] テスト実行で失敗を確認
-- [ ] コミット: "Add tests for ${VAR} syntax detection (TDD)"
+- [x] テスト作成: `internal/runner/config/expansion_test.go`
+  - [x] `TestDetectDollarSyntax_Found`: `${VAR}` を検出
+  - [x] `TestDetectDollarSyntax_NotFound`: `%{VAR}` のみ
+  - [x] `TestDetectDollarSyntax_Escaped`: `\${VAR}` は検出しない
+- [x] テスト実行で失敗を確認
+- [x] コミット: "Add tests for ${VAR} syntax detection (TDD)" (not committed yet)
 
 #### 2.12.2 ${VAR}検出関数の実装
-- [ ] `internal/runner/config/expansion.go`に追加
-  - [ ] `detectDeprecatedDollarSyntax`関数を実装:
-    ```go
-    func detectDeprecatedDollarSyntax(input string, level string, field string) error {
-        // Pattern: ${...} but not \${...}
-        pattern := regexp.MustCompile(`(?:[^\\]|^)\$\{[^}]+\}`)
-        if pattern.MatchString(input) {
-            return &ErrDeprecatedSyntax{
-                Level:   level,
-                Field:   field,
-                Input:   input,
-                Message: "${VAR} syntax is no longer supported. Use %{VAR} for internal variables.",
-            }
-        }
-        return nil
-    }
-    ```
+- [x] `internal/runner/config/expansion.go`に追加
+  - [x] `detectDeprecatedDollarSyntax`関数を実装（正規表現を使わないシンプルな実装）
+  - [x] エスケープシーケンス `\$` を適切に処理
 
 #### 2.12.3 ExpandString()への統合
-- [ ] `internal/runner/config/expansion.go`を編集
-  - [ ] `ExpandString()`の最初で`detectDeprecatedDollarSyntax()`を呼び出す
-  - [ ] エラーが返された場合は早期リターン
+- [x] `internal/runner/config/expansion.go`を編集
+  - [x] `ExpandString()`の最初で`detectDeprecatedDollarSyntax()`を呼び出す
+  - [x] エラーが返された場合は早期リターン
 
 #### 2.12.4 エラー型の追加
-- [ ] `internal/runner/config/errors.go`に追加
-  ```go
-  type ErrDeprecatedSyntax struct {
-      Level   string
-      Field   string
-      Input   string
-      Message string
-  }
-  ```
+- [x] `internal/runner/config/errors.go`に追加
+  - [x] `ErrDeprecatedSyntax`構造体を定義
+  - [x] `Error()`メソッドを実装
 
 #### 2.12.5 テストの実行
-- [ ] すべてのテストがPASS
-- [ ] `${VAR}` を使用した設定ファイルでエラーが発生することを確認
-- [ ] エラーメッセージに移行のヒントが含まれることを確認
-- [ ] コミット: "Implement ${VAR} syntax detection and deprecation error"
+- [x] すべてのテストがPASS
+- [x] `${VAR}` を使用した設定ファイルでエラーが発生することを確認
+- [x] エラーメッセージに移行のヒントが含まれることを確認
+- [x] 既存のテスト修正（`\$`が有効なエスケープシーケンスになったため）
+- [x] `make lint` でエラーなし
+- [x] `make test` ですべてのテストがPASS
+
+**Phase 12実装メモ**:
+- `\$`エスケープシーケンスを追加して、`${VAR}`をリテラルとして出力可能に
+- `detectDeprecatedDollarSyntax`は正規表現を使わずシンプルなループで実装
+- 既存のテスト`TestExpandString_InvalidEscape`から`invalid_escape_dollar`ケースを削除
+- `TestExpandString_EscapeSequence`に`\$`エスケープのテストケースを追加
+- すべてのテストとlintが通過（2025-10-15）
 
 ---
 

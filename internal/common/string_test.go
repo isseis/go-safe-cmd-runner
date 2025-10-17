@@ -72,7 +72,7 @@ func TestParseEnvVariable(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			key, val, ok := ParseEnvVariable(tt.env)
+			key, val, ok := ParseKeyValue(tt.env)
 
 			if key != tt.expectedKey {
 				t.Errorf("ParseEnvVariable() key = %v, expected %v", key, tt.expectedKey)

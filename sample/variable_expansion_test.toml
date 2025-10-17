@@ -1,5 +1,5 @@
 # Variable expansion test configuration
-# Tests cmd and args variable expansion with ${VAR} format
+# Tests cmd and args variable expansion with %{VAR} format
 version = "1.0"
 
 [global]
@@ -11,10 +11,6 @@ env_allowlist = [
     "PATH",
     "HOME",
     "USER",
-    "TEST_VAR",
-    "BASE_PATH",
-    "FILENAME",
-    "EXTENSION",
 ]
 
 # Group 1: Basic variable expansion in cmd
@@ -25,10 +21,10 @@ priority = 1
 
 [[groups.commands]]
 name = "echo_with_var_cmd"
-description = "Use echo command via PATH variable"
-cmd = "${PATH}"
-args = ["Command path from PATH"]
-env = ["PATH=/bin/echo"]
+description = "Use echo command via path variable"
+cmd = "%{path}"
+args = ["Command path from path variable"]
+vars = ["path=/bin/echo"]
 
 # Group 2: Basic variable expansion in args
 [[groups]]
@@ -40,15 +36,19 @@ priority = 2
 name = "echo_with_var_args"
 description = "Echo message with variable in args"
 cmd = "echo"
-args = ["Hello, ${USER}!"]
-env = ["USER=TestUser"]
+args = ["Hello, %{user}!"]
+vars = ["user=TestUser"]
 
 [[groups.commands]]
 name = "echo_multiple_vars"
 description = "Echo with multiple variables in args"
 cmd = "echo"
-args = ["Base: ${BASE_PATH}", "File: ${FILENAME}.${EXTENSION}"]
-env = ["BASE_PATH=/home/test", "FILENAME=data", "EXTENSION=txt"]
+args = ["Base: %{base_path}", "File: %{filename}.%{extension}"]
+vars = [
+    "base_path=/home/test",
+    "filename=data",
+    "extension=txt"
+]
 
 # Group 3: Combined cmd and args expansion
 [[groups]]
@@ -59,9 +59,12 @@ priority = 3
 [[groups.commands]]
 name = "full_expansion_test"
 description = "Expand variables in both cmd and args"
-cmd = "${PATH}"
-args = ["Variable test: ${TEST_VAR}"]
-env = ["PATH=/bin/echo", "TEST_VAR=success"]
+cmd = "%{path}"
+args = ["Variable test: %{test_var}"]
+vars = [
+    "path=/bin/echo",
+    "test_var=success"
+]
 
 # Group 4: Nested variable expansion
 [[groups]]
@@ -73,8 +76,11 @@ priority = 4
 name = "nested_vars"
 description = "Use nested variable expansion"
 cmd = "echo"
-args = ["Nested: ${TEST_VAR}"]
-env = ["TEST_VAR=${USER}_nested", "USER=testuser"]
+args = ["Nested: %{test_var}"]
+vars = [
+    "user=testuser",
+    "test_var=%{user}_nested"
+]
 
 # Group 5: Escape sequence test
 [[groups]]
@@ -83,14 +89,15 @@ description = "Test backslash escape sequences"
 priority = 5
 
 [[groups.commands]]
-name = "escaped_dollar"
-description = "Test escaped dollar sign"
+name = "escaped_percent"
+description = "Test escaped percent sign"
 cmd = "echo"
-args = ["Literal \\$HOME should not expand"]
+args = ["Literal \\%{HOME} should not expand"]
 
 [[groups.commands]]
 name = "escaped_backslash"
 description = "Test escaped backslash before variable"
 cmd = "echo"
-args = ["Path: \\\\${HOME}"]
-env = ["HOME=/home/testuser"]
+args = ["Path: \\\\%{home}"]
+vars = []
+from_env = ["home=HOME"]

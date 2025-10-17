@@ -53,25 +53,25 @@ env_allowlist = [
 
 ### 9.1.3 Utilizing File Verification
 
-Always verify important commands and configuration files.
+Always verify important configuration files and libraries. Command executables are automatically verified.
 
 #### Recommended Implementation
 
 ```toml
-# Good example: Verify important files
+# Good example: Verify configuration files and scripts
 [global]
-skip_standard_paths = false
+skip_standard_paths = false  # Also verify commands in standard paths
 verify_files = [
-    "/bin/sh",
-    "/usr/bin/python3",
+    "/etc/app/global.conf",  # Global configuration file
 ]
 
 [[groups]]
 name = "critical_operations"
 verify_files = [
-    "/opt/app/bin/critical-tool",
-    "/opt/app/scripts/deploy.sh",
+    "/opt/app/config/critical.conf",  # Important configuration file
+    "/opt/app/lib/helper.sh",         # Helper script
 ]
+# Note: Commands themselves are automatically verified, no need to add them to verify_files
 ```
 
 ### 9.1.4 Using Absolute Paths
@@ -101,25 +101,26 @@ Manage sensitive information with Command.Env and isolate it from the system env
 #### Recommended Implementation
 
 ```toml
-# Good example: Manage sensitive information with Command.Env
+# Good example: Use vars and env appropriately
 [global]
 env_allowlist = ["PATH", "HOME"]  # Don't include sensitive information
 
 [[groups.commands]]
 name = "api_call"
 cmd = "/usr/bin/curl"
+vars = [
+    "api_token=sk-secret123",
+    "api_endpoint=https://api.example.com",
+]
 args = [
-    "-H", "Authorization: Bearer ${API_TOKEN}",
-    "${API_ENDPOINT}",
+    "-H", "Authorization: Bearer %{api_token}",
+    "%{api_endpoint}",
 ]
-env = [
-    "API_TOKEN=sk-secret123",      # Defined in Command.Env
-    "API_ENDPOINT=https://api.example.com",
-]
+env = ["API_TOKEN=%{api_token}"]  # Set as environment variable if needed
 
 # Example to avoid: Allowing sensitive information globally
 [global]
-env_allowlist = ["PATH", "HOME", "API_TOKEN"]  # Dependent on system env vars
+env_allowlist = ["PATH", "HOME", "API_TOKEN"]  # Dangerous!
 ```
 
 ### 9.1.6 Appropriate Risk Level Settings
@@ -215,24 +216,22 @@ Define common values as variables and reuse them.
 #### Recommended Implementation
 
 ```toml
-# Good example: Variable reuse
+# Good example: Variable reuse using vars
+[global]
+vars = ["config_dest=/etc/myapp"]
+
 [[groups.commands]]
 name = "deploy_config"
 cmd = "/bin/cp"
-args = ["${CONFIG_SOURCE}/app.yml", "${CONFIG_DEST}/app.yml"]
-env = [
-    "CONFIG_SOURCE=/opt/configs/prod",
-    "CONFIG_DEST=/etc/myapp",
-]
+vars = ["config_source=/opt/configs/prod"]
+args = ["%{config_source}/app.yml", "%{config_dest}/app.yml"]
 
 [[groups.commands]]
 name = "backup_config"
 cmd = "/bin/cp"
-args = ["${CONFIG_DEST}/app.yml", "${BACKUP_DIR}/app.yml"]
-env = [
-    "CONFIG_DEST=/etc/myapp",       # Reuse same value from previous command
-    "BACKUP_DIR=/var/backups",
-]
+vars = ["backup_dir=/var/backups"]
+args = ["%{config_dest}/app.yml", "%{backup_dir}/app.yml"]
+# config_dest is inherited from global, no need to redefine
 ```
 
 ## 9.3 Group Organization Best Practices
@@ -455,10 +454,10 @@ configs/
 Use appropriate configuration files for each environment:
 ```bash
 # Development environment
-go-safe-cmd-runner run configs/development.toml
+go-safe-cmd-runner -file configs/development.toml
 
 # Production environment
-go-safe-cmd-runner run configs/production.toml
+go-safe-cmd-runner -file configs/production.toml
 ```
 
 ## 9.6 Performance Best Practices
@@ -565,8 +564,8 @@ args = ["test"]
 [[groups.commands]]
 name = "test_variables"
 cmd = "/bin/echo"
-args = ["Value: ${TEST_VAR}"]
-env = ["TEST_VAR=hello"]
+vars = ["test_var=hello"]
+args = ["Value: %{test_var}"]
 ```
 
 3. **Production-equivalent configuration**
@@ -575,8 +574,8 @@ env = ["TEST_VAR=hello"]
 [[groups.commands]]
 name = "production_command"
 cmd = "/opt/app/bin/tool"
-args = ["--config", "${CONFIG}"]
-env = ["CONFIG=/etc/app/config.yml"]
+vars = ["config=/etc/app/config.yml"]
+args = ["--config", "%{config}"]
 run_as_user = "appuser"
 max_risk_level = "high"
 ```
@@ -587,10 +586,10 @@ Verify behavior with dry run before production execution.
 
 ```bash
 # Validate configuration with dry run
-go-safe-cmd-runner run --dry-run config.toml
+go-safe-cmd-runner --dry-run --file config.toml
 
 # Execute in production if no issues
-go-safe-cmd-runner run config.toml
+go-safe-cmd-runner -file config.toml
 ```
 
 ## 9.8 Documentation
@@ -614,7 +613,7 @@ Configuration file to automate application deployment to production environment.
 
 ## Execution
 ```bash
-go-safe-cmd-runner run production-deploy.toml
+go-safe-cmd-runner -file production-deploy.toml
 ```
 
 ## Environment Variables

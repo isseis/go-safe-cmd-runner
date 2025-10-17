@@ -192,18 +192,15 @@ Error: file verification failed: /opt/app/script.sh: hash file not found
 
 ```bash
 # record コマンドでハッシュを記録
-go-safe-cmd-runner record /usr/bin/tool
-go-safe-cmd-runner record /opt/app/script.sh
-
-# または設定ファイル全体を指定
-go-safe-cmd-runner record config.toml
+record -file /usr/bin/tool
+record -file /opt/app/script.sh
 ```
 
 **ファイルが正当に変更された場合**:
 
 ```bash
 # ハッシュを再記録
-go-safe-cmd-runner record /usr/bin/tool
+record -file /usr/bin/tool
 ```
 
 ### 10.1.7 コマンドパスのエラー
@@ -307,7 +304,7 @@ sudo chown user:group /var/secure/data
 
 ```bash
 # root 権限で実行
-sudo go-safe-cmd-runner run config.toml
+sudo go-safe-cmd-runner -file config.toml
 ```
 
 ### 10.1.10 リスクレベル超過エラー
@@ -348,10 +345,10 @@ max_risk_level = "low"
 
 ```bash
 # 設定ファイルの読み込みテスト
-go-safe-cmd-runner validate config.toml
+go-safe-cmd-runner --validate config.toml
 
 # ドライランで実行前検証
-go-safe-cmd-runner run --dry-run config.toml
+go-safe-cmd-runner --dry-run --file config.toml
 ```
 
 ### 10.2.2 段階的な検証
@@ -373,7 +370,7 @@ args = ["test"]
 
 ```bash
 # 実行して基本動作を確認
-go-safe-cmd-runner run minimal.toml
+go-safe-cmd-runner -file minimal.toml
 ```
 
 ```toml
@@ -387,7 +384,7 @@ env = ["VAR=hello"]
 
 ```bash
 # 変数展開の動作を確認
-go-safe-cmd-runner run with-vars.toml
+go-safe-cmd-runner -file with-vars.toml
 ```
 
 ### 10.2.3 ログレベルの活用
@@ -481,7 +478,7 @@ env = ["CUSTOM_VAR=test"]
 
 ```bash
 # ドライランで実行計画を表示
-go-safe-cmd-runner run --dry-run config.toml
+go-safe-cmd-runner --dry-run --file config.toml
 ```
 
 出力例:
@@ -614,10 +611,8 @@ env_allowlist = ["PATH"]
 
 ```bash
 # ハッシュファイルの作成
-go-safe-cmd-runner record config.toml
-
-# 個別のファイルを記録
-go-safe-cmd-runner record /usr/bin/tool
+record -file config.toml
+record -file /usr/bin/tool
 ```
 
 ### Q4: タイムアウトエラーが頻発する
@@ -646,7 +641,7 @@ timeout = 3600  # 1時間
 
 ```bash
 # root 権限が必要な場合
-sudo go-safe-cmd-runner run config.toml
+sudo go-safe-cmd-runner -file config.toml
 
 # または設定で run_as_user を使用
 ```
@@ -679,7 +674,7 @@ go-safe-cmd-runner --version
 cat config.toml
 
 # エラーログ(デバッグレベル)
-go-safe-cmd-runner run --log-level=debug config.toml 2>&1 | tee debug.log
+go-safe-cmd-runner --log-level=debug --file config.toml 2>&1 | tee debug.log
 ```
 
 ## まとめ

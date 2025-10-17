@@ -30,7 +30,10 @@ go-safe-cmd-runner のメイン実行コマンド `runner` の使用方法を解
 ```
 1. TOML設定ファイルを作成
    ↓
-2. 実行バイナリのハッシュ値を記録（record コマンド）
+2. ハッシュ値を記録（record コマンド）
+   - TOML設定ファイル自体のハッシュ（必須）
+   - 実行バイナリのハッシュ
+   - verify_files で指定したファイルのハッシュ
    ↓
 3. 設定ファイルを検証（-validate フラグ）
    ↓
@@ -47,6 +50,7 @@ go-safe-cmd-runner のメイン実行コマンド `runner` の使用方法を解
 # 1. 設定ファイルを作成（config.toml）
 cat > config.toml << 'EOF'
 version = "1.0"
+skip_standard_paths = true
 
 [[groups]]
 name = "hello"
@@ -63,14 +67,23 @@ runner -config config.toml
 
 ### 2.2 事前準備：ハッシュファイルの作成
 
-セキュリティのため、実行前に設定ファイルやバイナリのハッシュ値を記録する必要があります。
+**重要**: runner コマンドは、TOML設定ファイルと実行バイナリの両方についてハッシュ検証を行います。これにより、設定ファイルや実行ファイルの改ざんを防ぎ、TOCTOU攻撃（Time-of-check to time-of-use）から保護します。
+
+実行前に、以下のファイルのハッシュ値を記録する必要があります：
+
+1. **TOML設定ファイル自体** （必須）
+2. 設定ファイル内で指定された実行バイナリ
+3. `verify_files` で指定されたファイル
 
 ```bash
-# 設定ファイルのハッシュを記録
+# 1. TOML設定ファイルのハッシュを記録（最も重要）
 record -file config.toml -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
 
-# 実行バイナリのハッシュを記録
+# 2. 実行バイナリのハッシュを記録
 record -file /usr/local/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+
+# 3. verify_files で指定したファイルのハッシュを記録（環境設定ファイルなど）
+record -file /etc/myapp/database.conf -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
 ```
 
 詳細は [record コマンドガイド](record_command.ja.md) を参照してください。
@@ -116,9 +129,10 @@ runner -config ~/configs/backup.toml
 
 **注意事項**
 
-- 設定ファイルは事前にハッシュ値を記録しておく必要があります
+- **設定ファイルは事前にハッシュ値を記録しておく必要があります（TOML設定ファイル自体も検証対象です）**
 - ファイルが存在しない場合はエラーになります
 - 設定ファイルの検証に失敗した場合、実行は中断されます
+- TOML設定ファイルの読み取りと検証はアトミックに実行され、TOCTOU攻撃を防ぎます
 
 ### 3.2 実行モード制御
 
@@ -1117,7 +1131,9 @@ jobs:
       - name: Record hashes
         run: |
           sudo mkdir -p /usr/local/etc/go-safe-cmd-runner/hashes
+          # TOML設定ファイル自体のハッシュを記録（最重要）
           sudo ./build/record -file config.toml -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+          # 実行バイナリのハッシュを記録
           sudo ./build/record -file /usr/local/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
 
       - name: Validate configuration

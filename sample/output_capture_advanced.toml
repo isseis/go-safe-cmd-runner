@@ -113,25 +113,40 @@ output = "working_directory.txt"
 # Environment variable testing with output
 [[groups]]
 name = "environment_output_tests"
-description = "Test environment variables with output capture"
+description = "Test internal variables and environment variables with output capture"
 priority = 4
 env_allowlist = ["PATH", "HOME", "ADVANCED_TEST_VAR", "BUILD_ENV"]
 
+vars = [
+    "build_env=production",
+    "test_var=advanced_value"
+]
+
 [[groups.commands]]
 name = "custom_env_capture"
-description = "Capture output with custom environment"
+description = "Capture output with custom environment passed to child process"
 cmd = "printenv"
 args = ["BUILD_ENV"]
-env = ["BUILD_ENV=production", "ADVANCED_TEST_VAR=advanced_value"]
+env = [
+    "BUILD_ENV=%{build_env}",
+    "ADVANCED_TEST_VAR=%{test_var}"
+]
 output = "custom_env_output.txt"
 
 [[groups.commands]]
 name = "build_script_simulation"
-description = "Simulate build script with output capture"
+description = "Simulate build script with variable expansion and output capture"
 cmd = "echo"
-args = ["Build completed successfully in ${BUILD_ENV} environment"] # Note: variable expansion is not yet implemented
-env = ["BUILD_ENV=staging"]
+args = ["Build completed successfully in %{build_env} environment"]
+vars = ["build_env=staging"]  # Override group-level value
 output = "build_results.txt"
+
+[[groups.commands]]
+name = "variable_expansion_demo"
+description = "Demonstrate variable expansion in output capture"
+cmd = "echo"
+args = ["Test var: %{test_var}, Build env: %{build_env}"]
+output = "variable_expansion.txt"
 
 # Performance and resource management
 [[groups]]

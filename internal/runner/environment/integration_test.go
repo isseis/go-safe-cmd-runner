@@ -9,33 +9,34 @@ import (
 	"testing"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/variable"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 // TestIntegration_AutoEnvProviderAndExpander_AutoDateTime tests integration between
-// AutoEnvProvider and VariableExpander for __RUNNER_DATETIME expansion
+// AutoEnvProvider and VariableExpander for __runner_datetime expansion
 func TestIntegration_AutoEnvProviderAndExpander_AutoDateTime(t *testing.T) {
 	// Fixed time for testing
 	fixedTime := time.Date(2025, 10, 5, 14, 30, 22, 123456789, time.UTC)
 	clock := func() time.Time { return fixedTime }
 
 	// Create AutoEnvProvider with fixed clock
-	provider := NewAutoEnvProvider(clock)
+	provider := variable.NewAutoVarProviderWithClock(clock)
 
-	// Generate auto environment variables
+	// Generate auto internal variables
 	env := provider.Generate()
 
 	// Verify auto-generated variables are present
-	assert.Equal(t, "20251005143022.123", env["__RUNNER_DATETIME"])
-	assert.NotEmpty(t, env["__RUNNER_PID"])
+	assert.Equal(t, "20251005143022.123", env["__runner_datetime"])
+	assert.NotEmpty(t, env["__runner_pid"])
 
 	// Create VariableExpander with empty filter (allow all)
 	filter := NewFilter([]string{})
 	expander := NewVariableExpander(filter)
 
-	// Expand string containing __RUNNER_DATETIME
-	input := "backup-${__RUNNER_DATETIME}.tar.gz"
+	// Expand string containing __runner_datetime
+	input := "backup-${__runner_datetime}.tar.gz"
 	expanded, err := expander.ExpandString(input, env, []string{}, "", make(map[string]struct{}))
 	require.NoError(t, err)
 
@@ -45,24 +46,24 @@ func TestIntegration_AutoEnvProviderAndExpander_AutoDateTime(t *testing.T) {
 }
 
 // TestIntegration_AutoEnvProviderAndExpander_AutoPID tests integration between
-// AutoEnvProvider and VariableExpander for __RUNNER_PID expansion
+// AutoEnvProvider and VariableExpander for __runner_pid expansion
 func TestIntegration_AutoEnvProviderAndExpander_AutoPID(t *testing.T) {
 	// Create AutoEnvProvider with default clock
-	provider := NewAutoEnvProvider(nil)
+	provider := variable.NewAutoVarProvider()
 
-	// Generate auto environment variables
+	// Generate auto internal variables
 	env := provider.Generate()
 
-	// Verify __RUNNER_PID is present and equals current PID
+	// Verify __runner_pid is present and equals current PID
 	expectedPID := strconv.Itoa(os.Getpid())
-	assert.Equal(t, expectedPID, env["__RUNNER_PID"])
+	assert.Equal(t, expectedPID, env["__runner_pid"])
 
 	// Create VariableExpander
 	filter := NewFilter([]string{})
 	expander := NewVariableExpander(filter)
 
-	// Expand string containing __RUNNER_PID
-	input := "process-${__RUNNER_PID}.log"
+	// Expand string containing __runner_pid
+	input := "process-${__runner_pid}.log"
 	expanded, err := expander.ExpandString(input, env, []string{}, "", make(map[string]struct{}))
 	require.NoError(t, err)
 
@@ -79,7 +80,7 @@ func TestIntegration_ManagerAndExpander_MultipleAutoVars(t *testing.T) {
 	clock := func() time.Time { return fixedTime }
 
 	// Create EnvironmentManager with fixed clock
-	provider := NewAutoEnvProvider(clock)
+	provider := variable.NewAutoVarProviderWithClock(clock)
 
 	// Build environment with auto-generated variables
 	autoEnv := provider.Generate()
@@ -87,14 +88,14 @@ func TestIntegration_ManagerAndExpander_MultipleAutoVars(t *testing.T) {
 	// Add user-defined variables (simulating what happens in ExpandCommand)
 	env := make(map[string]string)
 	maps.Copy(env, autoEnv)
-	env["HOST"] = "server01"
+	env["host"] = "server01"
 
 	// Create VariableExpander
 	filter := NewFilter([]string{})
 	expander := NewVariableExpander(filter)
 
 	// Expand string with multiple auto variables
-	input := "${HOST}-${__RUNNER_DATETIME}-${__RUNNER_PID}.log"
+	input := "${host}-${__runner_datetime}-${__runner_pid}.log"
 	expanded, err := expander.ExpandString(input, env, []string{}, "", make(map[string]struct{}))
 	require.NoError(t, err)
 
@@ -112,7 +113,7 @@ func TestIntegration_ManagerAndExpander_ExpandStrings(t *testing.T) {
 	clock := func() time.Time { return fixedTime }
 
 	// Create EnvironmentManager with fixed clock
-	provider := NewAutoEnvProvider(clock)
+	provider := variable.NewAutoVarProviderWithClock(clock)
 
 	// Build environment with auto-generated variables
 	autoEnv := provider.Generate()
@@ -120,7 +121,7 @@ func TestIntegration_ManagerAndExpander_ExpandStrings(t *testing.T) {
 	// Add user-defined variables (simulating what happens in ExpandCommand)
 	env := make(map[string]string)
 	maps.Copy(env, autoEnv)
-	env["DATA_DIR"] = "/data"
+	env["data_dir"] = "/data"
 
 	// Create VariableExpander
 	filter := NewFilter([]string{})
@@ -130,8 +131,8 @@ func TestIntegration_ManagerAndExpander_ExpandStrings(t *testing.T) {
 	inputs := []string{
 		"tar",
 		"czf",
-		"${DATA_DIR}/backup-${__RUNNER_DATETIME}.tar.gz",
-		"${DATA_DIR}/files",
+		"${data_dir}/backup-${__runner_datetime}.tar.gz",
+		"${data_dir}/files",
 	}
 	expanded, err := expander.ExpandStrings(inputs, env, []string{}, "")
 	require.NoError(t, err)
@@ -150,26 +151,26 @@ func TestIntegration_ManagerAndExpander_ExpandStrings(t *testing.T) {
 // real-time clock (not fixed) to ensure datetime format is correct
 func TestIntegration_ManagerAndExpander_RealTimeClock(t *testing.T) {
 	// Create EnvironmentManager with nil clock (uses time.Now)
-	provider := NewAutoEnvProvider(nil)
+	provider := variable.NewAutoVarProvider()
 
 	// Build environment with auto-generated variables
 	env := provider.Generate()
 
-	// Verify __RUNNER_DATETIME matches expected format (YYYYMMDDHHmmSS.mmm)
-	datetime := env["__RUNNER_DATETIME"]
+	// Verify __runner_datetime matches expected format (YYYYMMDDHHmmSS.mmm)
+	datetime := env["__runner_datetime"]
 	assert.NotEmpty(t, datetime)
 
 	// Verify format using regex
 	datetimePattern := regexp.MustCompile(`^\d{14}\.\d{3}$`)
 	assert.Truef(t, datetimePattern.MatchString(datetime),
-		"__RUNNER_DATETIME format should be YYYYMMDDHHmmSS.mmm, got: %s", datetime)
+		"__runner_datetime format should be YYYYMMDDHHmmSS.mmm, got: %s", datetime)
 
 	// Create VariableExpander
 	filter := NewFilter([]string{})
 	expander := NewVariableExpander(filter)
 
 	// Expand string with real datetime
-	input := "log-${__RUNNER_DATETIME}.txt"
+	input := "log-${__runner_datetime}.txt"
 	expanded, err := expander.ExpandString(input, env, []string{}, "", make(map[string]struct{}))
 	require.NoError(t, err)
 
@@ -187,16 +188,14 @@ func TestIntegration_ManagerAndExpander_NoUserEnv(t *testing.T) {
 	clock := func() time.Time { return fixedTime }
 
 	// Create EnvironmentManager with fixed clock
-	provider := NewAutoEnvProvider(clock)
+	provider := variable.NewAutoVarProviderWithClock(clock)
 
 	// Build environment with auto-generated variables only
 	env := provider.Generate()
 
-	// Verify only auto-generated variables are present (both uppercase and lowercase formats)
-	assert.Len(t, env, 4) // __RUNNER_DATETIME, __RUNNER_PID, __runner_datetime, __runner_pid
-	assert.Equal(t, "20250615120000.500", env["__RUNNER_DATETIME"])
+	// Verify only auto-generated variables are present (lowercase format only)
+	assert.Len(t, env, 2) // __runner_datetime, __runner_pid
 	assert.Equal(t, "20250615120000.500", env["__runner_datetime"])
-	assert.NotEmpty(t, env["__RUNNER_PID"])
 	assert.NotEmpty(t, env["__runner_pid"])
 
 	// Create VariableExpander
@@ -204,7 +203,7 @@ func TestIntegration_ManagerAndExpander_NoUserEnv(t *testing.T) {
 	expander := NewVariableExpander(filter)
 
 	// Expand string with only auto variables
-	input := "${__RUNNER_DATETIME}"
+	input := "${__runner_datetime}"
 	expanded, err := expander.ExpandString(input, env, []string{}, "", make(map[string]struct{}))
 	require.NoError(t, err)
 
@@ -220,7 +219,7 @@ func TestIntegration_ManagerAndExpander_MixedWithSystemEnv(t *testing.T) {
 	clock := func() time.Time { return fixedTime }
 
 	// Create EnvironmentManager with fixed clock
-	provider := NewAutoEnvProvider(clock)
+	provider := variable.NewAutoVarProviderWithClock(clock)
 
 	// Build environment with auto-generated variables
 	autoEnv := provider.Generate()
@@ -228,24 +227,24 @@ func TestIntegration_ManagerAndExpander_MixedWithSystemEnv(t *testing.T) {
 	// Add user-defined variables (simulating what happens in ExpandCommand)
 	env := make(map[string]string)
 	maps.Copy(env, autoEnv)
-	env["PATH"] = "/usr/bin:/bin"
-	env["HOME"] = "/home/user"
-	env["CUSTOM"] = "value"
-	env["LOG_PATH"] = "/var/log/${__RUNNER_DATETIME}"
+	env["path"] = "/usr/bin:/bin"
+	env["home"] = "/home/user"
+	env["custom"] = "value"
+	env["log_path"] = "/var/log/${__runner_datetime}"
 
 	// Verify both auto and user variables are present
-	assert.Equal(t, "20250320083045.100", env["__RUNNER_DATETIME"])
-	assert.NotEmpty(t, env["__RUNNER_PID"])
-	assert.Equal(t, "/usr/bin:/bin", env["PATH"])
-	assert.Equal(t, "/home/user", env["HOME"])
-	assert.Equal(t, "value", env["CUSTOM"])
+	assert.Equal(t, "20250320083045.100", env["__runner_datetime"])
+	assert.NotEmpty(t, env["__runner_pid"])
+	assert.Equal(t, "/usr/bin:/bin", env["path"])
+	assert.Equal(t, "/home/user", env["home"])
+	assert.Equal(t, "value", env["custom"])
 
 	// Create VariableExpander
 	filter := NewFilter([]string{})
 	expander := NewVariableExpander(filter)
 
-	// Expand LOG_PATH which references __RUNNER_DATETIME
-	logPath := env["LOG_PATH"]
+	// Expand log_path which references __runner_datetime
+	logPath := env["log_path"]
 	expanded, err := expander.ExpandString(logPath, env, []string{}, "", make(map[string]struct{}))
 	require.NoError(t, err)
 

@@ -19,8 +19,6 @@ import (
 var (
 	// ErrValidationFailed indicates that configuration validation has failed
 	ErrValidationFailed = errors.New("validation failed")
-	// ErrInvalidVariableName indicates that a variable name is invalid
-	ErrInvalidVariableName = errors.New("invalid variable name")
 	// ErrDangerousPattern indicates that a dangerous pattern was detected
 	ErrDangerousPattern = errors.New("dangerous pattern detected")
 )
@@ -269,7 +267,7 @@ func (v *Validator) validateCommandEnv(env []string, location string, result *Va
 		itemLocation := fmt.Sprintf("%s[%d]", location, i)
 
 		// Parse environment variable
-		varName, varValue, ok := common.ParseEnvVariable(envVar)
+		varName, varValue, ok := common.ParseKeyValue(envVar)
 		if !ok {
 			result.Errors = append(result.Errors, ValidationError{
 				Type:     "invalid_env_format",

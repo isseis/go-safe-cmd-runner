@@ -115,15 +115,15 @@ workdir = "/opt/secure"
 log_level = "info"
 skip_standard_paths = false
 env_allowlist = ["PATH"]
-verify_files = ["/bin/sh", "/bin/tar"]
+verify_files = []  # コマンドは自動検証される
 
 [[groups]]
 name = "secure_backup"
-verify_files = ["/opt/secure/bin/backup-tool"]
+verify_files = ["/opt/secure/config/backup.conf"]  # 追加ファイルのみ指定
 
 [[groups.commands]]
 name = "backup"
-cmd = "/opt/secure/bin/backup-tool"
+cmd = "/opt/secure/bin/backup-tool"  # 自動的に検証される
 args = ["--encrypt", "--output", "backup.enc"]
 max_risk_level = "medium"
 ```
@@ -378,15 +378,14 @@ log_level = "info"
 skip_standard_paths = false
 env_allowlist = ["PATH"]
 verify_files = [
-    "/bin/sh",
-    # 追加の検証ファイル
+    # 追加の検証ファイル (コマンドは自動検証される)
 ]
 
 [[groups]]
 name = "secure_group"
 description = "セキュアな操作グループ"
 verify_files = [
-    # グループ固有の検証ファイル
+    # グループ固有の検証ファイル (例: 設定ファイル、ライブラリ)
 ]
 
 [[groups.commands]]

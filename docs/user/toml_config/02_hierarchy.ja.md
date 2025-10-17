@@ -181,19 +181,71 @@ name = "reject_group"
 env_allowlist = []  # 全ての環境変数を拒否
 ```
 
-### 2.3.4 設定の優先順位まとめ
+### 2.3.4 変数の継承パターン
+
+#### vars (内部変数) - マージ継承
+
+`vars` は **Union (マージ)** によって継承されます。下位レベルの設定は上位レベルの設定とマージされ、同じキーがある場合は下位レベルが優先されます。
+
+```toml
+[global]
+vars = ["base_dir=/opt/app", "log_level=info"]
+
+[[groups]]
+name = "admin_tasks"
+vars = ["log_level=debug", "task_type=admin"]  # log_level を上書き、task_type を追加
+
+[[groups.commands]]
+name = "task1"
+vars = ["task_id=42"]  # 既存の変数を継承しつつ task_id を追加
+cmd = "/bin/task"
+args = ["%{base_dir}", "%{log_level}", "%{task_type}", "%{task_id}"]
+# 最終的な vars: base_dir=/opt/app, log_level=debug, task_type=admin, task_id=42
+```
+
+#### from_env (システム環境変数のインポート) - Merge 継承
+
+`from_env` は **Merge (マージ)** によって継承されます。下位レベルで指定した場合、上位レベルの設定とマージされます。
+
+```toml
+[global]
+from_env = ["HOME", "USER"]
+
+[[groups]]
+name = "tasks"
+from_env = ["LANG", "LC_ALL"]  # グローバルの from_env とマージ
+
+[[groups.commands]]
+name = "task1"
+cmd = "/bin/echo"
+# from_env を指定しないため、グループの from_env が適用される
+# 継承された変数: HOME, USER (global) + LANG, LC_ALL (group)
+args = ["User: %{USER}, Lang: %{LANG}"]
+
+[[groups.commands]]
+name = "task2"
+from_env = ["PWD"]  # グループの from_env とマージ
+cmd = "/bin/echo"
+# 継承された変数: HOME, USER (global) + LANG, LC_ALL (group) + PWD (command)
+args = ["Home: %{HOME}, PWD: %{PWD}"]
+```
+
+### 2.3.5 設定の優先順位まとめ
 
 設定項目によって、優先順位が異なります:
 
-| 設定項目 | 優先順位 (高 → 低) | 備考 |
-|---------|------------------|------|
-| timeout | コマンド > グローバル | グループレベルでは設定不可 |
-| workdir | グループ > グローバル | コマンドレベルでは設定不可 |
-| env_allowlist | グループ > グローバル | 継承モードに応じて動作が変化 |
-| verify_files | グループ + グローバル | マージされる(両方が適用) |
-| log_level | グローバルのみ | 下位レベルでオーバーライド不可 |
+| 設定項目 | 優先順位 (高 → 低) | 継承パターン | 備考 |
+|---------|------------------|-------------|------|
+| timeout | コマンド > グローバル | Override | グループレベルでは設定不可 |
+| workdir | グループ > グローバル | Override | コマンドレベルでは設定不可 |
+| env_allowlist | グループ > グローバル | Override | 継承モードに応じて動作が変化 |
+| vars | コマンド > グループ > グローバル | Merge (Union) | 下位レベルが上位レベルとマージ、同名キーは上書き |
+| from_env | コマンド > グループ > グローバル | Merge | 下位レベルが上位レベルとマージ |
+| env | コマンド > グループ > グローバル | Merge | プロセス環境変数の設定 ※セキュリティ: 必要最小限のレベルで定義を推奨 |
+| verify_files | グループ + グローバル | Merge | マージされる(両方が適用) |
+| log_level | グローバルのみ | N/A | 下位レベルでオーバーライド不可 |
 
-### 2.3.5 実践例: 複雑な継承パターン
+### 2.3.6 実践例: 複雑な継承パターン
 
 ```toml
 [global]
@@ -223,6 +275,106 @@ timeout = 300  # グローバルの 60 をオーバーライド
 - `timeout`: コマンドレベルで `300` にオーバーライド
 - `env_allowlist`: グループレベルで独自の設定を使用
 - `verify_files`: グローバルとグループの設定がマージされる
+
+### 2.3.7 セキュリティベストプラクティス: 環境変数の定義レベル
+
+`env` (プロセス環境変数)は、グローバル・グループ・コマンドの全階層で定義可能ですが、セキュリティ観点から適切なレベルで定義することが重要です。
+
+#### 推奨される定義レベル
+
+| レベル | 推奨度 | 適用範囲 | 使用例 |
+|--------|--------|---------|--------|
+| **コマンドレベル** | **推奨** | 特定のコマンドのみ | 機密情報、コマンド固有の設定 |
+| **グループレベル** | 許容 | グループ内の全コマンド | グループ共通の設定 |
+| **グローバルレベル** | 注意 | 全コマンド | 安全な共通設定のみ |
+
+#### ベストプラクティス
+
+##### 1. 最小権限の原則
+
+各コマンドに必要な環境変数のみを定義します:
+
+```toml
+# 推奨: コマンドレベルで必要な環境変数のみを定義
+[[groups.commands]]
+name = "db_backup"
+cmd = "/usr/bin/pg_dump"
+env = [
+    "PGPASSWORD=secret",      # このコマンドのみで必要
+    "PGHOST=localhost"
+]
+
+# 非推奨: グローバルで全コマンドに機密情報を公開
+[global]
+env = ["PGPASSWORD=secret"]   # 全コマンドに渡される(危険)
+```
+
+##### 2. vars と env の使い分け
+
+内部変数 `vars` を活用し、必要な場合のみ `env` で子プロセスに公開します:
+
+```toml
+[global]
+vars = [
+    "db_password=secret123",     # 内部変数として保持(子プロセスには渡らない)
+    "app_dir=/opt/myapp"
+]
+
+[[groups.commands]]
+name = "db_backup"
+env = ["PGPASSWORD=%{db_password}"]  # 必要なコマンドのみで env として公開
+
+[[groups.commands]]
+name = "log_check"
+cmd = "/bin/grep"
+args = ["ERROR", "%{app_dir}/logs/app.log"]
+# env は定義しない → db_password は子プロセスに渡らない
+```
+
+##### 3. グローバルレベルの env は安全な値のみ
+
+グローバルレベルでは、全コマンドに渡しても安全な環境変数のみを定義します:
+
+```toml
+[global]
+env = [
+    "LANG=C",              # 安全: ロケール設定
+    "TZ=UTC",              # 安全: タイムゾーン設定
+    "LC_ALL=C"             # 安全: 言語設定
+]
+# 機密情報はグローバルで定義しない
+```
+
+##### 4. グループレベルは共通設定に使用
+
+グループ内の全コマンドで共通する設定をグループレベルで定義します:
+
+```toml
+[[groups]]
+name = "database_group"
+env = [
+    "PGHOST=localhost",
+    "PGPORT=5432",
+    "PGDATABASE=production"
+]
+
+[[groups.commands]]
+name = "backup"
+env = ["PGPASSWORD=backup_secret"]   # コマンド固有の機密情報
+
+[[groups.commands]]
+name = "analyze"
+env = ["PGPASSWORD=readonly_secret"] # 別のコマンドには別の認証情報
+```
+
+#### セキュリティチェックリスト
+
+設定ファイルを作成する際は、以下を確認してください:
+
+- [ ] 機密情報(パスワード、トークン等)をグローバルレベルで定義していないか
+- [ ] 各コマンドに必要な環境変数のみを定義しているか
+- [ ] 内部変数 `vars` で管理できる値を不必要に `env` で公開していないか
+- [ ] `env_allowlist` で必要最小限のシステム環境変数のみを許可しているか
 
 ## 次のステップ
 

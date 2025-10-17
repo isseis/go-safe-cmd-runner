@@ -1,39 +1,45 @@
 # Global and Group Environment Variables - Basic Example
 #
-# This sample demonstrates the basic usage of global.env and groups[].env fields.
-# It shows how to define environment variables at different levels and how they
-# are inherited and overridden.
+# This sample demonstrates the basic usage of global.vars, groups[].vars, and env fields.
+# It shows how to define internal variables and environment variables at different levels
+# and how they are inherited and used.
 
 version = "1.0"
 
 [global]
-# Global environment variables: available to all groups and commands
-env = [
-    "BASE_DIR=/opt/myapp",
-    "LOG_LEVEL=info",
-    "CONFIG_FILE=/etc/myapp/config.yaml",
+# Global internal variables: available to all groups and commands for TOML expansion
+vars = [
+    "base_dir=/opt/myapp",
+    "log_level=info",
+    "config_file=/etc/myapp/config.yaml",
 ]
 
 # Allow system environment variables
 env_allowlist = ["HOME", "PATH", "USER"]
 
+# Import system environment variables as internal variables
+from_env = [
+    "home=HOME",
+    "user=USER"
+]
+
 # Verify critical files before execution
-verify_files = ["${BASE_DIR}/verify.sh"]
+verify_files = ["%{base_dir}/verify.sh"]
 
 # Skip standard path validation for system commands
 skip_standard_paths = true
 
-# Database group: demonstrates group-level environment variables
+# Database group: demonstrates group-level internal variables
 [[groups]]
 name = "database"
 description = "Database management tasks"
 
-# Group-level environment variables: available to all commands in this group
-env = [
-    "DB_HOST=localhost",
-    "DB_PORT=5432",
-    "DB_NAME=myapp_db",
-    "DB_DATA=${BASE_DIR}/db-data",  # References global.env variable
+# Group-level internal variables: available to all commands in this group for TOML expansion
+vars = [
+    "db_host=localhost",
+    "db_port=5432",
+    "db_name=myapp_db",
+    "db_data=%{base_dir}/db-data",  # References global.vars variable
 ]
 
 [[groups.commands]]
@@ -41,26 +47,26 @@ name = "show_db_config"
 description = "Display database configuration"
 cmd = "/bin/echo"
 args = [
-    "Database: ${DB_NAME} at ${DB_HOST}:${DB_PORT}",
-    "Data directory: ${DB_DATA}",
+    "Database: %{db_name} at %{db_host}:%{db_port}",
+    "Data directory: %{db_data}",
 ]
 
 [[groups.commands]]
 name = "show_log_level"
-description = "Display log level from global.env"
+description = "Display log level from global.vars"
 cmd = "/bin/echo"
-args = ["Log level: ${LOG_LEVEL}"]  # References global.env variable
+args = ["Log level: %{log_level}"]  # References global.vars variable
 
 # Web server group: demonstrates variable override
 [[groups]]
 name = "web"
 description = "Web server management tasks"
 
-# Override global.env LOG_LEVEL for this group
-env = [
-    "LOG_LEVEL=debug",              # Overrides global.env
-    "WEB_DIR=${BASE_DIR}/web",      # References global.env
-    "PORT=8080",                    # Group-specific variable
+# Override global.vars LOG_LEVEL for this group
+vars = [
+    "log_level=debug",              # Overrides global.vars
+    "web_dir=%{base_dir}/web",      # References global.vars
+    "port=8080",                    # Group-specific variable
 ]
 
 [[groups.commands]]
@@ -68,30 +74,29 @@ name = "show_web_config"
 description = "Display web server configuration"
 cmd = "/bin/echo"
 args = [
-    "Web directory: ${WEB_DIR}",
-    "Port: ${PORT}",
-    "Log level: ${LOG_LEVEL}",  # Will show "debug" (overridden)
+    "Web directory: %{web_dir}",
+    "Port: %{port}",
+    "Log level: %{log_level}",  # Will show "debug" (overridden)
 ]
 
-# System tools group: demonstrates system env variable expansion
+# System tools group: demonstrates system env variable import and PATH extension
 [[groups]]
 name = "tools"
 description = "System utility tasks"
 
-# Extend system PATH variable
-env = [
-    "PATH=/opt/custom/bin:${PATH}",  # Extends system PATH
-    "TOOL_DIR=${HOME}/tools",        # References system HOME variable
-]
+# Import and extend system PATH variable
+from_env = ["system_path=PATH"]
+vars = ["tool_dir=%{home}/tools"]  # References from_env variable 'home'
+env = ["PATH=/opt/custom/bin:%{system_path}"]  # Extend PATH for child process
 
 [[groups.commands]]
 name = "show_path"
 description = "Display extended PATH"
-cmd = "/bin/echo"
-args = ["Custom PATH: ${PATH}"]
+cmd = "/bin/sh"
+args = ["-c", "echo Custom PATH: $PATH"]
 
 [[groups.commands]]
 name = "show_tool_dir"
 description = "Display tool directory"
 cmd = "/bin/echo"
-args = ["Tool directory: ${TOOL_DIR}"]
+args = ["Tool directory: %{tool_dir}"]

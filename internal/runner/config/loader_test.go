@@ -58,122 +58,6 @@ version = "1.0"
 	assert.True(t, cmd.HasUserGroupSpecification(), "expected command to have user/group specification")
 }
 
-// TestValidateReservedPrefix tests that config loading validates reserved prefix usage in env vars
-func TestValidateReservedPrefix(t *testing.T) {
-	tests := []struct {
-		name        string
-		configTOML  string
-		expectError bool
-		errorType   error
-	}{
-		{
-			name: "valid_command_level_env",
-			configTOML: `
-version = "1.0"
-[global]
-  workdir = "/tmp"
-
-[[groups]]
-  name = "test"
-  [[groups.commands]]
-    name = "test_cmd"
-    cmd = "echo"
-    args = ["hello"]
-    env = ["NORMAL_VAR=value", "PATH=/usr/bin"]
-`,
-			expectError: false,
-		},
-		{
-			name: "reserved_prefix_at_command_level",
-			configTOML: `
-version = "1.0"
-[global]
-  workdir = "/tmp"
-
-[[groups]]
-  name = "test"
-  [[groups.commands]]
-    name = "test_cmd"
-    cmd = "echo"
-    args = ["hello"]
-    env = ["__RUNNER_CUSTOM=value"]
-`,
-			expectError: true,
-			errorType:   &runnertypes.ReservedEnvPrefixError{},
-		},
-		{
-			name: "reserved_prefix_DATETIME",
-			configTOML: `
-version = "1.0"
-[global]
-  workdir = "/tmp"
-
-[[groups]]
-  name = "test"
-  [[groups.commands]]
-    name = "test_cmd"
-    cmd = "echo"
-    env = ["__RUNNER_DATETIME=override"]
-`,
-			expectError: true,
-			errorType:   &runnertypes.ReservedEnvPrefixError{},
-		},
-		{
-			name: "reserved_prefix_PID",
-			configTOML: `
-version = "1.0"
-[global]
-  workdir = "/tmp"
-
-[[groups]]
-  name = "test"
-  [[groups.commands]]
-    name = "test_cmd"
-    cmd = "echo"
-    env = ["__RUNNER_PID=12345"]
-`,
-			expectError: true,
-			errorType:   &runnertypes.ReservedEnvPrefixError{},
-		},
-		{
-			name: "similar_but_not_reserved",
-			configTOML: `
-version = "1.0"
-[global]
-  workdir = "/tmp"
-
-[[groups]]
-  name = "test"
-  [[groups.commands]]
-    name = "test_cmd"
-    cmd = "echo"
-    env = ["GO_RUNNER_VAR=value", "RUNNER_VAR=value"]
-`,
-			expectError: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			loader := NewLoader()
-
-			// Load the config (validation is performed inside LoadConfig now)
-			cfg, err := loader.LoadConfig([]byte(tt.configTOML))
-
-			if tt.expectError {
-				require.Error(t, err, "expected LoadConfig to fail with validation error")
-				if tt.errorType != nil {
-					assert.ErrorAs(t, err, &tt.errorType, "expected error type to match")
-				}
-				assert.Nil(t, cfg, "expected cfg to be nil when error occurs")
-			} else {
-				require.NoError(t, err, "expected LoadConfig to succeed")
-				require.NotNil(t, cfg, "expected cfg to be non-nil")
-			}
-		})
-	}
-}
-
 // TestBasicTOMLParse tests basic TOML parsing for Global.Env and Group.Env
 func TestBasicTOMLParse(t *testing.T) {
 	configContent := `
@@ -213,258 +97,14 @@ args = ["test"]
 	assert.Equal(t, "group_value", cfg.Groups[0].ExpandedEnv["GROUP_VAR"])
 }
 
-// TestVerifyFilesExpansionIntegration tests end-to-end config loading with verify_files expansion
-func TestVerifyFilesExpansionIntegration(t *testing.T) {
-	tests := []struct {
-		name                   string
-		configTOML             string
-		setupEnv               func(*testing.T)
-		expectedGlobalExpanded []string
-		expectedGroup1Expanded []string
-		expectedGroup2Expanded []string
-		expectError            bool
-		errorContains          string
-	}{
-		{
-			name: "E2E config load with expansion",
-			configTOML: `
-version = "1.0"
-[global]
-  workdir = "/tmp"
-  env_allowlist = ["HOME"]
-  verify_files = ["${HOME}/global1.txt", "${HOME}/global2.txt"]
-
-[[groups]]
-  name = "group1"
-  env_allowlist = ["HOME"]
-  verify_files = ["${HOME}/group/file.txt"]
-  [[groups.commands]]
-    name = "cmd1"
-    cmd = "echo"
-    args = ["test"]
-`,
-			setupEnv: func(t *testing.T) {
-				t.Setenv("HOME", "/home/testuser")
-			},
-			expectedGlobalExpanded: []string{"/home/testuser/global1.txt", "/home/testuser/global2.txt"},
-			expectedGroup1Expanded: []string{"/home/testuser/group/file.txt"},
-		},
-		{
-			name: "multiple groups with expansion",
-			configTOML: `
-version = "1.0"
-[global]
-  workdir = "/tmp"
-  env_allowlist = ["BASE"]
-  verify_files = ["${BASE}/global.txt"]
-
-[[groups]]
-  name = "group1"
-  env_allowlist = ["BASE"]
-  verify_files = ["${BASE}/group1.txt"]
-  [[groups.commands]]
-    name = "cmd1"
-    cmd = "echo"
-    args = ["test"]
-
-[[groups]]
-  name = "group2"
-  env_allowlist = ["BASE"]
-  verify_files = ["${BASE}/group2.txt"]
-  [[groups.commands]]
-    name = "cmd2"
-    cmd = "echo"
-    args = ["test"]
-`,
-			setupEnv: func(t *testing.T) {
-				t.Setenv("BASE", "/opt")
-			},
-			expectedGlobalExpanded: []string{"/opt/global.txt"},
-			expectedGroup1Expanded: []string{"/opt/group1.txt"},
-			expectedGroup2Expanded: []string{"/opt/group2.txt"},
-		},
-		{
-			name: "global and group combination",
-			configTOML: `
-version = "1.0"
-[global]
-  workdir = "/tmp"
-  env_allowlist = ["GLOBAL_VAR"]
-  verify_files = ["${GLOBAL_VAR}/config.toml"]
-
-[[groups]]
-  name = "testgroup"
-  env_allowlist = ["GROUP_VAR"]
-  verify_files = ["${GROUP_VAR}/data.txt"]
-  [[groups.commands]]
-    name = "cmd1"
-    cmd = "echo"
-    args = ["test"]
-`,
-			setupEnv: func(t *testing.T) {
-				t.Setenv("GLOBAL_VAR", "/etc/app")
-				t.Setenv("GROUP_VAR", "/var/lib/app")
-			},
-			expectedGlobalExpanded: []string{"/etc/app/config.toml"},
-			expectedGroup1Expanded: []string{"/var/lib/app/data.txt"},
-		},
-		{
-			name: "error stops config loading",
-			configTOML: `
-version = "1.0"
-[global]
-  workdir = "/tmp"
-  env_allowlist = ["SAFE_VAR"]
-  verify_files = ["${FORBIDDEN_VAR}/config.toml"]
-
-[[groups]]
-  name = "group1"
-  env_allowlist = ["SAFE_VAR"]
-  [[groups.commands]]
-    name = "cmd1"
-    cmd = "echo"
-    args = ["test"]
-`,
-			setupEnv: func(t *testing.T) {
-				t.Setenv("FORBIDDEN_VAR", "/forbidden")
-			},
-			expectError:   true,
-			errorContains: "not allowed",
-		},
-		{
-			name: "actual file verification flow",
-			configTOML: `
-version = "1.0"
-[global]
-  workdir = "/tmp"
-  env_allowlist = ["TEST_DIR"]
-  verify_files = ["${TEST_DIR}/file1.txt", "${TEST_DIR}/file2.txt"]
-
-[[groups]]
-  name = "group1"
-  env_allowlist = ["TEST_DIR"]
-  verify_files = ["${TEST_DIR}/group_file.txt"]
-  [[groups.commands]]
-    name = "cmd1"
-    cmd = "echo"
-    args = ["test"]
-`,
-			setupEnv: func(t *testing.T) {
-				t.Setenv("TEST_DIR", "/tmp/test")
-			},
-			expectedGlobalExpanded: []string{"/tmp/test/file1.txt", "/tmp/test/file2.txt"},
-			expectedGroup1Expanded: []string{"/tmp/test/group_file.txt"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Setup environment
-			if tt.setupEnv != nil {
-				tt.setupEnv(t)
-			}
-
-			// Load config
-			loader := NewLoader()
-			cfg, err := loader.LoadConfig([]byte(tt.configTOML))
-
-			// Verify results
-			if tt.expectError {
-				require.Error(t, err)
-				if tt.errorContains != "" {
-					assert.Contains(t, err.Error(), tt.errorContains)
-				}
-				return
-			}
-
-			require.NoError(t, err)
-			require.NotNil(t, cfg)
-
-			// Verify global expanded verify_files
-			if tt.expectedGlobalExpanded != nil {
-				assert.Equal(t, tt.expectedGlobalExpanded, cfg.Global.ExpandedVerifyFiles)
-			}
-
-			// Verify group1 expanded verify_files
-			if tt.expectedGroup1Expanded != nil && len(cfg.Groups) > 0 {
-				assert.Equal(t, tt.expectedGroup1Expanded, cfg.Groups[0].ExpandedVerifyFiles)
-			}
-
-			// Verify group2 expanded verify_files
-			if tt.expectedGroup2Expanded != nil && len(cfg.Groups) > 1 {
-				assert.Equal(t, tt.expectedGroup2Expanded, cfg.Groups[1].ExpandedVerifyFiles)
-			}
-		})
-	}
-}
-
 // ===========================================
 // Integration Tests
 // ===========================================
 
-// TestLoader_GroupEnvIntegration tests the complete integration of Group.Env functionality
+// TestLoader_GroupEnvIntegration tests basic Group.Env loading from a TOML file
+// Note: Detailed allowlist scenarios are covered in loader_e2e_test.go::TestE2E_AllowlistScenarios
 func TestLoader_GroupEnvIntegration(t *testing.T) {
 	configPath := "testdata/group_env.toml"
-
-	// Read file content
-	content, err := os.ReadFile(configPath)
-	require.NoError(t, err)
-
-	// Load configuration
-	loader := NewLoader()
-	cfg, err := loader.LoadConfig(content)
-	require.NoError(t, err)
-	require.NotNil(t, cfg) // Verify Global.Env expansion
-	expectedGlobalEnv := map[string]string{
-		"BASE_DIR":  "/opt",
-		"LOG_LEVEL": "info",
-	}
-	assert.Equal(t, expectedGlobalEnv, cfg.Global.ExpandedEnv)
-
-	// Verify groups
-	require.Len(t, cfg.Groups, 3)
-
-	// Test inherit_group (inherits from global allowlist)
-	inheritGroup := findGroupByName(cfg.Groups, "inherit_group")
-	require.NotNil(t, inheritGroup)
-
-	expectedInheritEnv := map[string]string{
-		"APP_DIR": "/opt/app",
-	}
-	assert.Equal(t, expectedInheritEnv, inheritGroup.ExpandedEnv)
-
-	expectedInheritVerifyFiles := []string{"/opt/app/verify.sh"}
-	assert.Equal(t, expectedInheritVerifyFiles, inheritGroup.ExpandedVerifyFiles)
-
-	// Test override_group (overrides global allowlist)
-	overrideGroup := findGroupByName(cfg.Groups, "override_group")
-	require.NotNil(t, overrideGroup)
-
-	expectedOverrideEnv := map[string]string{
-		"DATA_DIR": "/data",
-	}
-	assert.Equal(t, expectedOverrideEnv, overrideGroup.ExpandedEnv)
-
-	expectedOverrideVerifyFiles := []string{"/data/verify.sh"}
-	assert.Equal(t, expectedOverrideVerifyFiles, overrideGroup.ExpandedVerifyFiles)
-
-	// Test reject_group (rejects all system environment variables)
-	rejectGroup := findGroupByName(cfg.Groups, "reject_group")
-	require.NotNil(t, rejectGroup)
-
-	expectedRejectEnv := map[string]string{
-		"STATIC_DIR": "/static",
-	}
-	assert.Equal(t, expectedRejectEnv, rejectGroup.ExpandedEnv)
-
-	expectedRejectVerifyFiles := []string{"/static/verify.sh"}
-	assert.Equal(t, expectedRejectVerifyFiles, rejectGroup.ExpandedVerifyFiles)
-}
-
-// TestLoader_GlobalGroupEnvExpansion verifies that Global.Env and Group.Env are expanded
-// during config loading, while Command-level expansion is deferred to bootstrap.
-func TestConfigLoaderEnvExpansionIntegration(t *testing.T) {
-	configPath := "testdata/command_env_references_global_group.toml"
 
 	// Read file content
 	content, err := os.ReadFile(configPath)
@@ -478,57 +118,27 @@ func TestConfigLoaderEnvExpansionIntegration(t *testing.T) {
 
 	// Verify Global.Env expansion
 	expectedGlobalEnv := map[string]string{
-		"BASE_DIR": "/opt",
+		"BASE_DIR":  "/opt",
+		"LOG_LEVEL": "info",
 	}
 	assert.Equal(t, expectedGlobalEnv, cfg.Global.ExpandedEnv)
 
-	// Verify groups
-	require.Len(t, cfg.Groups, 1)
+	// Verify groups are loaded
+	require.Len(t, cfg.Groups, 3)
 
-	// Test app_group
-	appGroup := findGroupByName(cfg.Groups, "app_group")
-	require.NotNil(t, appGroup)
+	// Basic verification that each group has expected fields populated
+	inheritGroup := findGroupByName(cfg.Groups, "inherit_group")
+	require.NotNil(t, inheritGroup)
+	assert.NotNil(t, inheritGroup.ExpandedEnv)
+	assert.NotEmpty(t, inheritGroup.ExpandedVerifyFiles)
 
-	// Verify Group.Env expansion (references Global.Env)
-	expectedGroupEnv := map[string]string{
-		"APP_DIR": "/opt/myapp",
-	}
-	assert.Equal(t, expectedGroupEnv, appGroup.ExpandedEnv)
+	overrideGroup := findGroupByName(cfg.Groups, "override_group")
+	require.NotNil(t, overrideGroup)
+	assert.NotNil(t, overrideGroup.ExpandedEnv)
 
-	// Verify commands
-	require.Len(t, appGroup.Commands, 1)
-	cmd := &appGroup.Commands[0]
-	require.Equal(t, "run_app", cmd.Name)
-
-	// Note: Command.Env, Cmd, and Args expansion happens in config.LoadConfig().
-	// At this stage, we verify that:
-	// - Global.ExpandedEnv is populated correctly
-	// - Group.ExpandedEnv is populated correctly
-	// - Command.Env field contains the raw (unexpanded) values
-	// - Command.ExpandedEnv, ExpandedCmd, and ExpandedArgs are populated
-	assert.Equal(t, []string{"LOG_DIR=${APP_DIR}/logs"}, cmd.Env)
-	assert.Equal(t, "${APP_DIR}/bin/server", cmd.Cmd)
-	assert.Equal(t, []string{"--log", "${LOG_DIR}/app.log"}, cmd.Args)
-
-	// Command.ExpandedEnv should be populated
-	// It contains Command.Env + Global.ExpandedEnv + Group.ExpandedEnv + AutoEnv
-	assert.NotNil(t, cmd.ExpandedEnv)
-	assert.Contains(t, cmd.ExpandedEnv, "LOG_DIR")
-	assert.Equal(t, "/opt/myapp/logs", cmd.ExpandedEnv["LOG_DIR"])
-	assert.Contains(t, cmd.ExpandedEnv, "BASE_DIR")
-	assert.Equal(t, "/opt", cmd.ExpandedEnv["BASE_DIR"])
-	assert.Contains(t, cmd.ExpandedEnv, "APP_DIR")
-	assert.Equal(t, "/opt/myapp", cmd.ExpandedEnv["APP_DIR"])
-	// AutoEnv variables should also be present
-	assert.Contains(t, cmd.ExpandedEnv, "__RUNNER_DATETIME")
-	assert.Contains(t, cmd.ExpandedEnv, "__RUNNER_PID")
-
-	// Command.ExpandedCmd should be expanded
-	assert.Equal(t, "/opt/myapp/bin/server", cmd.ExpandedCmd)
-
-	// Command.ExpandedArgs should be expanded
-	expectedArgs := []string{"--log", "/opt/myapp/logs/app.log"}
-	assert.Equal(t, expectedArgs, cmd.ExpandedArgs)
+	rejectGroup := findGroupByName(cfg.Groups, "reject_group")
+	require.NotNil(t, rejectGroup)
+	assert.NotNil(t, rejectGroup.ExpandedEnv)
 }
 
 // Helper function to find a group by name
@@ -692,4 +302,60 @@ func TestPhase9Integration(t *testing.T) {
 	assert.Equal(t, "/home/testuser/myapp/data/input", cmd.ExpandedArgs[1], "arg should be expanded")
 	assert.Equal(t, "--temp", cmd.ExpandedArgs[2])
 	assert.Equal(t, "/home/testuser/myapp/data/input/temp", cmd.ExpandedArgs[3], "arg should be expanded")
+}
+
+// TestFromEnvMergeIntegration verifies that from_env is merged between Global and Group levels
+func TestFromEnvMergeIntegration(t *testing.T) {
+	// Set up system environment variables
+	t.Setenv("HOME", "/home/testuser")
+	t.Setenv("USER", "testuser")
+	t.Setenv("PATH", "/usr/bin:/bin")
+
+	// Read and parse the test configuration that exercises from_env merge behavior
+	configBytes, err := os.ReadFile("testdata/from_env_merge_test.toml")
+	require.NoError(t, err, "Should read test data file")
+
+	loader := NewLoader()
+	cfg, err := loader.LoadConfig(configBytes)
+	require.NoError(t, err, "Should load config without errors")
+	require.NotNil(t, cfg, "Config should not be nil")
+
+	// Verify Global-level from_env expansion
+	require.NotNil(t, cfg.Global.ExpandedVars, "Global.ExpandedVars should be set")
+	assert.Equal(t, "/home/testuser", cfg.Global.ExpandedVars["home"], "Global: home should be from HOME env var")
+	assert.Equal(t, "testuser", cfg.Global.ExpandedVars["user"], "Global: user should be from USER env var")
+
+	// Verify Group-level from_env merge: should have Global's variables + Group's new variables
+	require.Len(t, cfg.Groups, 1, "Should have one group")
+	group := cfg.Groups[0]
+	assert.Equal(t, "merge_group", group.Name)
+
+	require.NotNil(t, group.ExpandedVars, "Group.ExpandedVars should be set")
+
+	// These should be inherited from Global.from_env
+	assert.Equal(t, "/home/testuser", group.ExpandedVars["home"], "Group should inherit home from Global.from_env")
+	assert.Equal(t, "testuser", group.ExpandedVars["user"], "Group should inherit user from Global.from_env")
+
+	// This should be from Group.from_env
+	assert.Equal(t, "/usr/bin:/bin", group.ExpandedVars["path"], "Group should have path from Group.from_env")
+
+	// Verify that vars can reference all merged from_env variables
+	assert.Equal(t, "/home/testuser/app", group.ExpandedVars["base_dir"], "base_dir should reference home from Global.from_env")
+	assert.Equal(t, "/home/testuser/app/logs", group.ExpandedVars["log_dir"], "log_dir should reference base_dir")
+	expectedCombined := "/home/testuser:testuser:/usr/bin:/bin"
+	assert.Equal(t, expectedCombined, group.ExpandedVars["combined_env"], "combined_env should use all merged variables")
+
+	// Verify Group.ExpandedEnv uses all merged variables
+	require.NotNil(t, group.ExpandedEnv, "Group.ExpandedEnv should be set")
+	assert.Equal(t, "/home/testuser", group.ExpandedEnv["HOME_VAR"], "HOME_VAR should be expanded with home")
+	assert.Equal(t, "testuser", group.ExpandedEnv["USER_VAR"], "USER_VAR should be expanded with user")
+	assert.Equal(t, "/usr/bin:/bin", group.ExpandedEnv["PATH_VAR"], "PATH_VAR should be expanded with path")
+	assert.Equal(t, expectedCombined, group.ExpandedEnv["COMBINED"], "COMBINED should use merged variables")
+
+	// Verify command-level expansion works with merged variables
+	require.Len(t, group.Commands, 1, "Group should have one command")
+	cmd := group.Commands[0]
+	assert.Equal(t, "verify_merge", cmd.Name)
+	require.NotNil(t, cmd.ExpandedArgs, "Command.ExpandedArgs should be set")
+	assert.Equal(t, "Test merge: HOME=/home/testuser, USER=testuser, PATH=/usr/bin:/bin", cmd.ExpandedArgs[0], "Command args should reference all merged variables")
 }

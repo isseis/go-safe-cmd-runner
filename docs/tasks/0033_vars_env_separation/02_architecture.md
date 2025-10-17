@@ -160,16 +160,14 @@ flowchart TD
     subgraph GROUP_DETAIL["Group内部処理"]
         INHERIT_CHECK2{{"from_env継承判定"}}
         INHERIT2["Global.from_env継承"]
-        OVERRIDE2["Group.from_env適用"]
+        MERGE2["Global.from_env + Group.from_env マージ"]
         GR_VARS2["Group.vars展開"]
         GR_ENV2["Group.env展開"]
 
-    INHERIT_CHECK2 -->|"未定義(nil)"| INHERIT2
-    INHERIT_CHECK2 -->|"定義(非空)"| OVERRIDE2
-    INHERIT_CHECK2 -->|"定義(空配列[])"| GR_VARS2
-    %% 空配列([])は何も取り込まない（継承もしない）
+    INHERIT_CHECK2 -->|"未定義(nil)または空配列([])"| INHERIT2
+    INHERIT_CHECK2 -->|"定義(非空)"| MERGE2
         INHERIT2 --> GR_VARS2
-        OVERRIDE2 --> GR_VARS2
+        MERGE2 --> GR_VARS2
         GR_VARS2 --> GR_ENV2
     end
 
@@ -177,7 +175,7 @@ flowchart TD
 
     style INHERIT_CHECK2 fill:#fff3e0
     style INHERIT2 fill:#e8f5e8
-    style OVERRIDE2 fill:#ffebee
+    style MERGE2 fill:#e1f5fe
 ```
 
 ### 4.2 実行時環境変数構築フロー
@@ -436,13 +434,14 @@ flowchart TD
   BACKUP_DIR: %{backup_dir} → /home/user/app/backups (source: group.vars)
 
 [Group "custom"] from_env inheritance decision
-  ✗ from_env DEFINED → Overriding Global.from_env (1 variable, global variables discarded)
-    CUSTOM_VAR: /custom/path (allowed by group.env_allowlist)
-  ⚠ Note: Global.from_env variables (HOME, PATH) are NOT available in this group
+  ✓ from_env DEFINED → Merging with Global.from_env (3 variables total: 2 from global + 1 from group)
+    HOME: /home/user (inherited from global)
+    PATH: /usr/bin:/bin (inherited from global)
+    CUSTOM_VAR: /custom/path (added by group, allowed by group.env_allowlist)
 
 [Group "custom".vars] Expanding internal variables
   custom_path: %{CUSTOM_VAR}/data → /custom/path/data (source: group.from_env)
-  # HOME is NOT available here (Global.from_env was overridden)
+  home_backup: %{HOME}/backup → /home/user/backup (source: global.from_env, inherited)
 
 [Command "backup_task"] Inheriting variables
   From Global: app_dir, config_dir
@@ -460,13 +459,13 @@ LOG_FILE=/home/user/app/backups/logs/app.log (source: command.env, expansion: 3 
 === from_env Inheritance Summary ===
 Global: 2 variables (HOME, PATH)
 Group "backup": inherited global (2 variables)
-Group "custom": overridden (1 variable: CUSTOM_VAR), global discarded
+Group "custom": merged with global (3 variables total: HOME, PATH from global + CUSTOM_VAR from group)
 ```
 
 **デバッグ出力のポイント**:
-1. **from_env継承判定の明示**: 各グループでfrom_envが定義されているか、継承されているかを明確に表示
-2. **継承時の変数リスト**: 継承された変数の一覧と値を表示
-3. **上書き時の警告**: Global.from_envが上書きされた場合、どの変数が使用不可になるかを警告
+1. **from_env継承判定の明示**: 各グループでfrom_envが定義されているか、継承されているか、マージされているかを明確に表示
+2. **継承・マージ時の変数リスト**: 継承またはマージされた変数の一覧と値を表示
+3. **マージ結果の詳細表示**: Global.from_envとGroup.from_envがマージされた場合、それぞれからどの変数が来たかを表示
 4. **変数ソースの追跡**: 各変数がどのレベル（global/group/command）のどのフィールド（from_env/vars/env）から来たかを表示
 5. **展開チェーンの可視化**: 複数ステップの展開がある場合、その過程を表示
 

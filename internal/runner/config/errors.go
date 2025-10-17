@@ -25,9 +25,6 @@ var (
 	// ErrInvalidEnvKey is returned when an environment variable key contains invalid characters
 	ErrInvalidEnvKey = errors.New("invalid environment variable key")
 
-	// ErrReservedEnvPrefix is returned when an environment variable key uses a reserved prefix
-	ErrReservedEnvPrefix = errors.New("environment variable key uses reserved prefix")
-
 	// ErrNilGroup is returned when group parameter is nil
 	ErrNilGroup = errors.New("group cannot be nil")
 
@@ -63,10 +60,17 @@ var (
 
 	// ErrInvalidSystemVariableName is returned when system variable name is invalid
 	ErrInvalidSystemVariableName = errors.New("invalid system variable name")
+
+	// ErrInvalidVariableName indicates that a variable name is invalid
+	ErrInvalidVariableName = errors.New("invalid variable name")
+
+	// ErrDuplicateVariableDefinition is returned when the same variable is defined multiple times in the same scope
+	ErrDuplicateVariableDefinition = errors.New("duplicate variable definition")
 )
 
-// ErrInvalidVariableNameDetail provides detailed information about invalid variable names
-// This error type is used for internal variable validation and does not wrap any base error.
+// ErrInvalidVariableNameDetail provides detailed information about invalid variable names.
+// This error type wraps ErrInvalidVariableName and is used for internal variable validation
+// in vars and from_env fields.
 type ErrInvalidVariableNameDetail struct {
 	Level        string
 	Field        string
@@ -76,6 +80,10 @@ type ErrInvalidVariableNameDetail struct {
 
 func (e *ErrInvalidVariableNameDetail) Error() string {
 	return fmt.Sprintf("invalid variable name in %s.%s: '%s' (%s)", e.Level, e.Field, e.VariableName, e.Reason)
+}
+
+func (e *ErrInvalidVariableNameDetail) Unwrap() error {
+	return ErrInvalidVariableName
 }
 
 // ErrInvalidSystemVariableNameDetail provides detailed information about invalid system variable names
@@ -208,3 +216,79 @@ func (e *ErrMaxRecursionDepthExceededDetail) Unwrap() error {
 // ErrReservedVariableNameDetail is an alias for ErrReservedVariablePrefixDetail
 // to maintain consistency with test naming conventions
 type ErrReservedVariableNameDetail = ErrReservedVariablePrefixDetail
+
+// ErrInvalidFromEnvFormatDetail provides detailed information about invalid from_env format
+type ErrInvalidFromEnvFormatDetail struct {
+	Level   string
+	Mapping string
+	Reason  string
+}
+
+func (e *ErrInvalidFromEnvFormatDetail) Error() string {
+	return fmt.Sprintf("invalid from_env format in %s: '%s' (%s)", e.Level, e.Mapping, e.Reason)
+}
+
+func (e *ErrInvalidFromEnvFormatDetail) Unwrap() error {
+	return ErrInvalidFromEnvFormat
+}
+
+// ErrInvalidVarsFormatDetail provides detailed information about invalid vars format
+type ErrInvalidVarsFormatDetail struct {
+	Level   string
+	Mapping string
+	Reason  string
+}
+
+func (e *ErrInvalidVarsFormatDetail) Error() string {
+	return fmt.Sprintf("invalid vars format in %s: '%s' (%s)", e.Level, e.Mapping, e.Reason)
+}
+
+func (e *ErrInvalidVarsFormatDetail) Unwrap() error {
+	return ErrInvalidVarsFormat
+}
+
+// ErrInvalidEnvFormatDetail provides detailed information about invalid env format
+type ErrInvalidEnvFormatDetail struct {
+	Level   string
+	Mapping string
+	Reason  string
+}
+
+func (e *ErrInvalidEnvFormatDetail) Error() string {
+	return fmt.Sprintf("invalid env format in %s: '%s' (%s)", e.Level, e.Mapping, e.Reason)
+}
+
+func (e *ErrInvalidEnvFormatDetail) Unwrap() error {
+	return ErrInvalidEnvFormat
+}
+
+// ErrInvalidEnvKeyDetail provides detailed information about invalid environment variable key
+type ErrInvalidEnvKeyDetail struct {
+	Level   string
+	Key     string
+	Context string
+	Reason  string
+}
+
+func (e *ErrInvalidEnvKeyDetail) Error() string {
+	return fmt.Sprintf("invalid environment variable key in %s: '%s' (context: %s, reason: %s)", e.Level, e.Key, e.Context, e.Reason)
+}
+
+func (e *ErrInvalidEnvKeyDetail) Unwrap() error {
+	return ErrInvalidEnvKey
+}
+
+// ErrDuplicateVariableDefinitionDetail provides detailed information about duplicate variable definitions
+type ErrDuplicateVariableDefinitionDetail struct {
+	Level        string
+	Field        string
+	VariableName string
+}
+
+func (e *ErrDuplicateVariableDefinitionDetail) Error() string {
+	return fmt.Sprintf("duplicate variable definition in %s.%s: '%s' is defined multiple times", e.Level, e.Field, e.VariableName)
+}
+
+func (e *ErrDuplicateVariableDefinitionDetail) Unwrap() error {
+	return ErrDuplicateVariableDefinition
+}
