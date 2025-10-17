@@ -336,23 +336,31 @@ func ProcessEnv(
 
 // configFieldsToExpand holds the raw configuration fields that need expansion
 type configFieldsToExpand struct {
-	env         []string
+	// env is the raw environment variable definitions (e.g., ["VAR=%{value}"])
+	env []string
+	// verifyFiles is the list of file paths to verify (may contain %{VAR} references)
 	verifyFiles []string
+	// expandedVars is the map of internal variables to use for expansion
+	expandedVars map[string]string
+	// level is the configuration level identifier for logging (e.g., "global", "group[name]")
+	level string
 }
 
 // expandedConfigFields holds the expanded results
 type expandedConfigFields struct {
-	expandedEnv         map[string]string
+	// expandedEnv contains the fully expanded environment variables (VAR -> value)
+	expandedEnv map[string]string
+	// expandedVerifyFiles contains the fully expanded file paths to verify
 	expandedVerifyFiles []string
 }
 
 // expandConfigFields expands env and verify_files using internal variables
-func expandConfigFields(fields configFieldsToExpand, baseVars map[string]string, level string) (expandedConfigFields, error) {
+func expandConfigFields(fields configFieldsToExpand) (expandedConfigFields, error) {
 	var result expandedConfigFields
 
 	// Expand env
 	if len(fields.env) > 0 {
-		expandedEnv, err := ProcessEnv(fields.env, baseVars, level)
+		expandedEnv, err := ProcessEnv(fields.env, fields.expandedVars, fields.level)
 		if err != nil {
 			return result, err
 		}
@@ -365,7 +373,7 @@ func expandConfigFields(fields configFieldsToExpand, baseVars map[string]string,
 	if len(fields.verifyFiles) > 0 {
 		expandedFiles := make([]string, len(fields.verifyFiles))
 		for i, file := range fields.verifyFiles {
-			expanded, err := ExpandString(file, baseVars, level, "verify_files")
+			expanded, err := ExpandString(file, fields.expandedVars, fields.level, "verify_files")
 			if err != nil {
 				return result, fmt.Errorf("failed to expand verify_files[%d]: %w", i, err)
 			}
@@ -389,9 +397,7 @@ func determineEffectiveEnvAllowlist(groupAllowlist []string, globalAllowlist []s
 
 // ExpandGlobalConfig expands Global-level configuration (from_env, vars, env, verify_files)
 func ExpandGlobalConfig(global *runnertypes.GlobalConfig, filter *environment.Filter) error {
-	level := "global"
-
-	// Process from_env
+	const level = "global"
 	var baseVars map[string]string
 	if len(global.FromEnv) > 0 {
 		systemEnv := filter.ParseSystemEnvironment()
@@ -426,10 +432,12 @@ func ExpandGlobalConfig(global *runnertypes.GlobalConfig, filter *environment.Fi
 	// - verify_files: Separate responsibility - Global files verified at startup,
 	//   Group files verified before group execution (no automatic merging)
 	fields := configFieldsToExpand{
-		env:         global.Env,
-		verifyFiles: global.VerifyFiles,
+		env:          global.Env,
+		verifyFiles:  global.VerifyFiles,
+		expandedVars: global.ExpandedVars,
+		level:        level,
 	}
-	expanded, err := expandConfigFields(fields, global.ExpandedVars, level)
+	expanded, err := expandConfigFields(fields)
 	if err != nil {
 		return err
 	}
@@ -488,10 +496,12 @@ func ExpandGroupConfig(group *runnertypes.CommandGroup, global *runnertypes.Glob
 	//   Global.ExpandedVerifyFiles are verified separately at startup.
 	//   This separation avoids redundant verification of Global files for each Group.
 	fields := configFieldsToExpand{
-		env:         group.Env,
-		verifyFiles: group.VerifyFiles,
+		env:          group.Env,
+		verifyFiles:  group.VerifyFiles,
+		expandedVars: group.ExpandedVars,
+		level:        level,
 	}
-	expanded, err := expandConfigFields(fields, group.ExpandedVars, level)
+	expanded, err := expandConfigFields(fields)
 	if err != nil {
 		return err
 	}
