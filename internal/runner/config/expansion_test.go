@@ -13,9 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Phase 2: InternalVariableExpander Tests (TDD)
-// ============================================================================
-
 func TestExpandString_Basic(t *testing.T) {
 	// Test basic variable expansion with %{VAR} syntax
 	tests := []struct {
@@ -299,16 +296,13 @@ func TestExpandString_CircularReference(t *testing.T) {
 			// Verify the chain is recorded in the error
 			assert.NotEmpty(t, circularErr.Chain)
 			// Verify the variable name reported matches the expected one from the test case
-			if tt.expectedVarName != "" {
-				assert.Equal(t, tt.expectedVarName, circularErr.VariableName)
-			}
+			assert.Equal(t, tt.expectedVarName, circularErr.VariableName)
 		})
 	}
 }
 
 func TestExpandString_MaxRecursionDepth(t *testing.T) {
 	// Test maximum recursion depth limit to prevent stack overflow
-	_ = slog.Default()
 
 	// Create a chain of variables that exceeds MaxRecursionDepth
 	// var1 -> var2 -> var3 -> ... -> var101
@@ -397,7 +391,6 @@ func TestExpandString_EscapeSequence(t *testing.T) {
 
 func TestExpandString_InvalidEscape(t *testing.T) {
 	// Test invalid escape sequence handling
-	// Note: \$ is now a VALID escape sequence (added in Phase 12) to support literal ${VAR}
 	tests := []struct {
 		name             string
 		input            string
@@ -480,8 +473,6 @@ func TestExpandString_UnclosedVariableReference(t *testing.T) {
 		})
 	}
 }
-
-// Phase 3: from_env processing tests
 
 func TestProcessFromEnv_Basic(t *testing.T) {
 	// Test basic system env var import
@@ -988,11 +979,6 @@ func TestProcessVars_InvalidVariableName(t *testing.T) {
 			vars:    []string{"invalid name=value"},
 			varName: "invalid name",
 		},
-		{
-			name:    "reserved prefix",
-			vars:    []string{"__runner_test=value"},
-			varName: "__runner_test",
-		},
 	}
 
 	for _, tt := range tests {
@@ -1002,21 +988,29 @@ func TestProcessVars_InvalidVariableName(t *testing.T) {
 			require.Error(t, err)
 			assert.Nil(t, result)
 
-			if tt.name == "reserved prefix" {
-				var reservedErr *config.ErrReservedVariablePrefixDetail
-				assert.ErrorAs(t, err, &reservedErr)
-				assert.Equal(t, "global", reservedErr.Level)
-				assert.Equal(t, "vars", reservedErr.Field)
-				assert.Equal(t, tt.varName, reservedErr.VariableName)
-			} else {
-				var invalidErr *config.ErrInvalidVariableNameDetail
-				assert.ErrorAs(t, err, &invalidErr)
-				assert.Equal(t, "global", invalidErr.Level)
-				assert.Equal(t, "vars", invalidErr.Field)
-				assert.Equal(t, tt.varName, invalidErr.VariableName)
-			}
+			var invalidErr *config.ErrInvalidVariableNameDetail
+			assert.ErrorAs(t, err, &invalidErr)
+			assert.Equal(t, "global", invalidErr.Level)
+			assert.Equal(t, "vars", invalidErr.Field)
+			assert.Equal(t, tt.varName, invalidErr.VariableName)
 		})
 	}
+}
+
+// TestProcessVars_ReservedPrefix tests handling of reserved variable name prefixes
+func TestProcessVars_ReservedPrefix(t *testing.T) {
+	vars := []string{"__runner_test=value"}
+
+	result, err := config.ProcessVars(vars, map[string]string{}, "global")
+
+	require.Error(t, err)
+	assert.Nil(t, result)
+
+	var reservedErr *config.ErrReservedVariablePrefixDetail
+	assert.ErrorAs(t, err, &reservedErr)
+	assert.Equal(t, "global", reservedErr.Level)
+	assert.Equal(t, "vars", reservedErr.Field)
+	assert.Equal(t, "__runner_test", reservedErr.VariableName)
 }
 
 // TestProcessVars_ComplexChain tests complex variable reference chains
@@ -1109,10 +1103,6 @@ func TestProcessVars_MultipleReferences(t *testing.T) {
 	assert.Equal(t, "pre_middle_suf", result["combined"])
 	assert.Len(t, result, 3)
 }
-
-// ============================================================================
-// ProcessEnv Tests (Phase 5)
-// ============================================================================
 
 // TestProcessEnv_Basic tests basic env expansion without internal variables
 func TestProcessEnv_Basic(t *testing.T) {
@@ -1316,10 +1306,6 @@ func TestProcessEnv_EmptyValue(t *testing.T) {
 	assert.Len(t, result, 2)
 }
 
-// ===============================================================
-// Phase 6: expandGlobalConfig Tests
-// ===============================================================
-
 // TestExpandGlobalConfig_Basic tests basic flow of global config expansion
 func TestExpandGlobalConfig_Basic(t *testing.T) {
 	// Set up system environment
@@ -1522,10 +1508,6 @@ func TestExpandGlobalConfig_EmptyFields(t *testing.T) {
 	require.NotNil(t, global.ExpandedVerifyFiles)
 	assert.Len(t, global.ExpandedVerifyFiles, 0)
 }
-
-// ==================================================
-// Phase 7: Group Config Expansion Tests
-// ==================================================
 
 // TestExpandGroupConfig_InheritFromEnv tests from_env inheritance from Global
 func TestExpandGroupConfig_InheritFromEnv(t *testing.T) {
@@ -1954,10 +1936,6 @@ func TestExpandGroupConfig_WithVerifyFiles(t *testing.T) {
 	assert.Equal(t, "/home/testuser/app/config/app.toml", group.ExpandedVerifyFiles[0])
 	assert.Equal(t, "/home/testuser/app/script.sh", group.ExpandedVerifyFiles[1])
 }
-
-// ============================================================================
-// Phase 8: Command Configuration Expansion - Tests
-// ============================================================================
 
 func TestExpandCommandConfig_Basic(t *testing.T) {
 	global := &runnertypes.GlobalConfig{
