@@ -852,23 +852,52 @@ from_env = [
 ]
 ```
 
-### 7.9.3 絶対パスの要件
+### 7.9.3 コマンドパスの要件
 
-展開後のコマンドパスは絶対パスである必要があります:
+展開後のコマンドパスは以下の要件を満たす必要があります:
+
+#### 一般コマンド
+
+`run_as_user` または `run_as_group` が指定されていない通常のコマンドでは、ローカルパス（相対パス）または絶対パスが使用できます:
 
 ```toml
 # 正しい: 絶対パスに展開される
 [[groups.commands]]
-name = "valid"
+name = "valid_absolute"
 cmd = "%{tool_dir}/mytool"
 vars = ["tool_dir=/opt/tools"]  # 絶対パス
 
-# 誤り: 相対パスに展開される
+# 正しい: 相対パスに展開される（一般コマンドでは許可）
 [[groups.commands]]
-name = "invalid"
+name = "valid_relative"
 cmd = "%{tool_dir}/mytool"
-vars = ["tool_dir=./tools"]  # 相対パス - エラー
+vars = ["tool_dir=./tools"]  # 相対パス - 一般コマンドではOK
 ```
+
+#### 特権コマンド
+
+`run_as_user` または `run_as_group` が指定されている特権コマンドでは、セキュリティ上の理由から**絶対パスのみ**が許可されます:
+
+```toml
+# 正しい: 絶対パスに展開される
+[[groups.commands]]
+name = "valid_privileged"
+cmd = "%{tool_dir}/mytool"
+run_as_user = "appuser"
+vars = ["tool_dir=/opt/tools"]  # 絶対パス
+
+# 誤り: 相対パスに展開される（特権コマンドではエラー）
+[[groups.commands]]
+name = "invalid_privileged"
+cmd = "%{tool_dir}/mytool"
+run_as_user = "appuser"
+vars = ["tool_dir=./tools"]  # 相対パス - 特権コマンドではエラー
+```
+
+特権コマンドで絶対パスを要求する理由:
+- PATH環境変数を使った攻撃を防止
+- 実行するコマンドの正確な位置を明示
+- 予期しないコマンド実行のリスクを低減
 
 ### 7.9.4 機密情報の扱い
 

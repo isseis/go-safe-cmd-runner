@@ -962,23 +962,52 @@ env = ["CUSTOM_TOOL=/opt/tools/mytool"]
 # CUSTOM_TOOL is not in allowlist, but can be used because it's defined in Command.Env
 ```
 
-### 7.9.3 Absolute Path Requirements
+### 7.9.3 Command Path Requirements
 
-Command paths after expansion must be absolute paths:
+Command paths after expansion must meet the following requirements:
+
+#### Regular Commands
+
+For regular commands (without `run_as_user` or `run_as_group`), both local paths (relative paths) and absolute paths are allowed:
 
 ```toml
 # Correct: expands to absolute path
 [[groups.commands]]
-name = "valid"
+name = "valid_absolute"
 cmd = "${TOOL_DIR}/mytool"
 env = ["TOOL_DIR=/opt/tools"]  # Absolute path
 
-# Incorrect: expands to relative path
+# Correct: expands to relative path (allowed for regular commands)
 [[groups.commands]]
-name = "invalid"
+name = "valid_relative"
 cmd = "${TOOL_DIR}/mytool"
-env = ["TOOL_DIR=./tools"]  # Relative path - error
+env = ["TOOL_DIR=./tools"]  # Relative path - OK for regular commands
 ```
+
+#### Privileged Commands
+
+For privileged commands (with `run_as_user` or `run_as_group`), **only absolute paths** are allowed for security reasons:
+
+```toml
+# Correct: expands to absolute path
+[[groups.commands]]
+name = "valid_privileged"
+cmd = "${TOOL_DIR}/mytool"
+run_as_user = "appuser"
+env = ["TOOL_DIR=/opt/tools"]  # Absolute path
+
+# Incorrect: expands to relative path (error for privileged commands)
+[[groups.commands]]
+name = "invalid_privileged"
+cmd = "${TOOL_DIR}/mytool"
+run_as_user = "appuser"
+env = ["TOOL_DIR=./tools"]  # Relative path - error for privileged commands
+```
+
+Why absolute paths are required for privileged commands:
+- Prevents PATH-based attacks
+- Explicitly specifies the exact location of the command
+- Reduces the risk of executing unintended commands
 
 ### 7.9.4 Handling Sensitive Information
 
