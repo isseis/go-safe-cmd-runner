@@ -380,6 +380,11 @@ func ExpandGlobalConfig(global *runnertypes.GlobalConfig, filter *environment.Fi
 	}
 
 	// Expand env and verify_files
+	// Note: Unlike vars/from_env which use merge strategy between Global and Group levels,
+	// env and verify_files are processed at each level independently:
+	// - env: Maps with same key override, different keys coexist (processed per level)
+	// - verify_files: Separate responsibility - Global files verified at startup,
+	//   Group files verified before group execution (no automatic merging)
 	fields := configFieldsToExpand{
 		env:         global.Env,
 		verifyFiles: global.VerifyFiles,
@@ -438,6 +443,13 @@ func ExpandGroupConfig(group *runnertypes.CommandGroup, global *runnertypes.Glob
 	}
 
 	// Expand env and verify_files
+	// Note: Unlike vars/from_env which merge Global and Group levels,
+	// env and verify_files are processed independently at each level:
+	// - env: Group.ExpandedEnv contains only Group-level definitions (not merged with Global.ExpandedEnv).
+	//   At command execution, Global.ExpandedEnv and Group.ExpandedEnv are merged dynamically.
+	// - verify_files: Group.ExpandedVerifyFiles contains only Group-level files.
+	//   Global.ExpandedVerifyFiles are verified separately at startup.
+	//   This separation avoids redundant verification of Global files for each Group.
 	fields := configFieldsToExpand{
 		env:         group.Env,
 		verifyFiles: group.VerifyFiles,
