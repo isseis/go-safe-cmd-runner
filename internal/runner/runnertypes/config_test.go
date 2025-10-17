@@ -1,7 +1,6 @@
 package runnertypes
 
 import (
-	"errors"
 	"testing"
 )
 
@@ -211,43 +210,6 @@ func TestCommandHasUserGroupSpecification(t *testing.T) {
 				t.Errorf("expected %v, got %v", tt.expected, result)
 			}
 		})
-	}
-}
-
-// TestBuildEnvironmentMap_Success verifies that a well-formed Env slice
-// produces the expected map without error.
-func TestBuildEnvironmentMap_Success(t *testing.T) {
-	c := &Command{
-		Env: []string{"FOO=bar", "BAZ=qux"},
-	}
-
-	m, err := c.BuildEnvironmentMap()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if got, want := m["FOO"], "bar"; got != want {
-		t.Fatalf("FOO: got %q want %q", got, want)
-	}
-	if got, want := m["BAZ"], "qux"; got != want {
-		t.Fatalf("BAZ: got %q want %q", got, want)
-	}
-}
-
-// TestBuildEnvironmentMap_DuplicateKey verifies that when the same key is
-// specified twice, BuildEnvironmentMap returns ErrDuplicateEnvironmentVariable.
-func TestBuildEnvironmentMap_DuplicateKey(t *testing.T) {
-	c := &Command{
-		Env: []string{"FOO=bar", "FOO=baz"},
-	}
-
-	_, err := c.BuildEnvironmentMap()
-	if err == nil {
-		t.Fatalf("expected error for duplicate key, got nil")
-	}
-
-	if !errors.Is(err, ErrDuplicateEnvironmentVariable) {
-		t.Fatalf("expected ErrDuplicateEnvironmentVariable, got: %v", err)
 	}
 }
 

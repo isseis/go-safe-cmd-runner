@@ -82,11 +82,6 @@ func (l *Loader) LoadConfig(content []byte) (*runnertypes.Config, error) {
 	}
 	cfg.Global.WorkDir = workDir
 
-	// Validate that user-defined environment variables do not use reserved prefix
-	if err := l.validateEnvironmentVariables(&cfg); err != nil {
-		return nil, fmt.Errorf("environment variable validation failed: %w", err)
-	}
-
 	// Create Filter for environment variable filtering
 	filter := environment.NewFilter(cfg.Global.EnvAllowlist)
 
@@ -122,22 +117,6 @@ func processConfig(cfg *runnertypes.Config, filter *environment.Filter) error {
 			cmd := &group.Commands[j]
 			if err := ExpandCommandConfig(cmd, group, &cfg.Global, filter); err != nil {
 				return fmt.Errorf("failed to expand command %q in group %q: %w", cmd.Name, group.Name, err)
-			}
-		}
-	}
-
-	return nil
-}
-
-// validateEnvironmentVariables validates all environment variables in the config
-func (l *Loader) validateEnvironmentVariables(cfg *runnertypes.Config) error {
-	// Validate environment variables for each command in each group
-	for _, group := range cfg.Groups {
-		for _, cmd := range group.Commands {
-			// Build environment map from command's Env slice
-			_, err := cmd.BuildEnvironmentMap()
-			if err != nil {
-				return fmt.Errorf("failed to build environment map for command %q: %w", cmd.Name, err)
 			}
 		}
 	}

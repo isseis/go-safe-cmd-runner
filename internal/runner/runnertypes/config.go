@@ -137,25 +137,6 @@ func (c *Command) HasUserGroupSpecification() bool {
 	return c.RunAsUser != "" || c.RunAsGroup != ""
 }
 
-// BuildEnvironmentMap builds a map of environment variables from the command's Env slice.
-// This is used for variable expansion processing.
-func (c *Command) BuildEnvironmentMap() (map[string]string, error) {
-	env := make(map[string]string)
-
-	for _, envVar := range c.Env {
-		key, value, ok := common.ParseKeyValue(envVar)
-		if !ok {
-			return nil, fmt.Errorf("%w: %s", ErrInvalidEnvironmentVariableFormat, envVar)
-		}
-		if _, exists := env[key]; exists {
-			return nil, fmt.Errorf("%w: %s", ErrDuplicateEnvironmentVariable, key)
-		}
-		env[key] = value
-	}
-
-	return env, nil
-}
-
 // InheritanceMode represents how environment allowlist inheritance works
 type InheritanceMode int
 
