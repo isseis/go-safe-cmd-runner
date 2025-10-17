@@ -229,9 +229,6 @@ func ProcessFromEnv(
 // Variables are processed sequentially in definition order, allowing later variables
 // to reference earlier ones within the same vars array.
 func ProcessVars(vars []string, baseExpandedVars map[string]string, level string) (map[string]string, error) {
-	// Start with a copy of base variables
-	result := maps.Clone(baseExpandedVars)
-
 	// Step 1: Parse and validate all variable definitions
 	type parsedMapping struct {
 		name  string
@@ -269,19 +266,22 @@ func ProcessVars(vars []string, baseExpandedVars map[string]string, level string
 		parsedMappings = append(parsedMappings, parsedMapping{name: varName, value: varValue})
 	}
 
+	// Start with a copy of base variables
+	expandedVars := maps.Clone(baseExpandedVars)
+
 	// Step 2: Sequential expansion
 	for _, parsedMapping := range parsedMappings {
-		// Expand using current result map (includes baseVars + previously defined vars)
-		expandedValue, err := ExpandString(parsedMapping.value, result, level, "vars")
+		// Expand using current result map (includes baseExpandedVars + previously defined vars)
+		expandedValue, err := ExpandString(parsedMapping.value, expandedVars, level, "vars")
 		if err != nil {
 			return nil, err
 		}
 
 		// Add to result map for subsequent variables to reference
-		result[parsedMapping.name] = expandedValue
+		expandedVars[parsedMapping.name] = expandedValue
 	}
 
-	return result, nil
+	return expandedVars, nil
 }
 
 // ProcessEnv processes env definitions and expands them using internal variables.
@@ -291,7 +291,7 @@ func ProcessEnv(
 	internalVars map[string]string,
 	level string,
 ) (map[string]string, error) {
-	result := make(map[string]string)
+	expandedEnvVars := make(map[string]string)
 
 	for _, mapping := range env {
 		envVarName, envVarValue, ok := common.ParseKeyValue(mapping)
@@ -314,7 +314,7 @@ func ProcessEnv(
 		}
 
 		// Check for duplicate definition
-		if _, exists := result[envVarName]; exists {
+		if _, exists := expandedEnvVars[envVarName]; exists {
 			return nil, &ErrDuplicateVariableDefinitionDetail{
 				Level:        level,
 				Field:        "env",
@@ -328,10 +328,10 @@ func ProcessEnv(
 			return nil, err
 		}
 
-		result[envVarName] = expandedValue
+		expandedEnvVars[envVarName] = expandedValue
 	}
 
-	return result, nil
+	return expandedEnvVars, nil
 }
 
 // configFieldsToExpand holds the raw configuration fields that need expansion
@@ -359,28 +359,22 @@ func expandConfigFields(fields configFieldsToExpand) (expandedConfigFields, erro
 	var result expandedConfigFields
 
 	// Expand env
-	if len(fields.env) > 0 {
-		expandedEnv, err := ProcessEnv(fields.env, fields.expandedVars, fields.level)
-		if err != nil {
-			return result, err
-		}
-		result.expandedEnv = expandedEnv
-	} else {
-		result.expandedEnv = make(map[string]string)
+	expandedEnv, err := ProcessEnv(fields.env, fields.expandedVars, fields.level)
+	if err != nil {
+		return result, err
 	}
+	result.expandedEnv = expandedEnv
 
 	// Expand verify_files
-	if len(fields.verifyFiles) > 0 {
-		expandedFiles := make([]string, len(fields.verifyFiles))
-		for i, file := range fields.verifyFiles {
-			expanded, err := ExpandString(file, fields.expandedVars, fields.level, "verify_files")
-			if err != nil {
-				return result, fmt.Errorf("failed to expand verify_files[%d]: %w", i, err)
-			}
-			expandedFiles[i] = expanded
+	expandedFiles := make([]string, len(fields.verifyFiles))
+	for i, file := range fields.verifyFiles {
+		expanded, err := ExpandString(file, fields.expandedVars, fields.level, "verify_files")
+		if err != nil {
+			return result, fmt.Errorf("failed to expand verify_files[%d]: %w", i, err)
 		}
-		result.expandedVerifyFiles = expandedFiles
+		expandedFiles[i] = expanded
 	}
+	result.expandedVerifyFiles = expandedFiles
 
 	return result, nil
 }
@@ -398,32 +392,22 @@ func determineEffectiveEnvAllowlist(groupAllowlist []string, globalAllowlist []s
 // ExpandGlobalConfig expands Global-level configuration (from_env, vars, env, verify_files)
 func ExpandGlobalConfig(global *runnertypes.GlobalConfig, filter *environment.Filter) error {
 	const level = "global"
-	var baseVars map[string]string
-	if len(global.FromEnv) > 0 {
-		systemEnv := filter.ParseSystemEnvironment()
-		fromEnvVars, err := ProcessFromEnv(global.FromEnv, global.EnvAllowlist, systemEnv, level)
-		if err != nil {
-			return err
-		}
-		baseVars = fromEnvVars
-	} else {
-		baseVars = make(map[string]string)
+	systemEnv := filter.ParseSystemEnvironment()
+	baseExpandedVars, err := ProcessFromEnv(global.FromEnv, global.EnvAllowlist, systemEnv, level)
+	if err != nil {
+		return err
 	}
 
 	// Merge auto variables (auto variables take precedence)
 	autoVars := variable.NewAutoVarProvider().Generate()
-	maps.Copy(baseVars, autoVars)
+	maps.Copy(baseExpandedVars, autoVars)
 
 	// Process vars
-	if len(global.Vars) > 0 {
-		expandedVars, err := ProcessVars(global.Vars, baseVars, level)
-		if err != nil {
-			return err
-		}
-		global.ExpandedVars = expandedVars
-	} else {
-		global.ExpandedVars = baseVars
+	expandedVars, err := ProcessVars(global.Vars, baseExpandedVars, level)
+	if err != nil {
+		return err
 	}
+	global.ExpandedVars = expandedVars
 
 	// Expand env and verify_files
 	// Note: Unlike vars/from_env which use merge strategy between Global and Group levels,
@@ -443,12 +427,7 @@ func ExpandGlobalConfig(global *runnertypes.GlobalConfig, filter *environment.Fi
 	}
 
 	global.ExpandedEnv = expanded.expandedEnv
-	if len(expanded.expandedVerifyFiles) > 0 {
-		global.ExpandedVerifyFiles = expanded.expandedVerifyFiles
-	} else {
-		global.ExpandedVerifyFiles = []string{}
-	}
-
+	global.ExpandedVerifyFiles = expanded.expandedVerifyFiles
 	return nil
 }
 
@@ -461,31 +440,25 @@ func ExpandGroupConfig(group *runnertypes.CommandGroup, global *runnertypes.Glob
 
 	// Determine base internal variables with from_env merging
 	// Start with Global's expanded vars (includes from_env results)
-	baseVars := maps.Clone(global.ExpandedVars)
+	baseExpandedVars := maps.Clone(global.ExpandedVars)
 
 	// If Group defines from_env, merge it with global's vars
-	if len(group.FromEnv) > 0 {
-		systemEnv := filter.ParseSystemEnvironment()
-		envAllowlist := determineEffectiveEnvAllowlist(group.EnvAllowlist, global.EnvAllowlist)
-		groupFromEnvVars, err := ProcessFromEnv(group.FromEnv, envAllowlist, systemEnv, level)
-		if err != nil {
-			return err
-		}
-		// Merge: Group's from_env overrides Global's variables with same name
-		maps.Copy(baseVars, groupFromEnvVars)
+	systemEnv := filter.ParseSystemEnvironment()
+	envAllowlist := determineEffectiveEnvAllowlist(group.EnvAllowlist, global.EnvAllowlist)
+	groupFromEnvVars, err := ProcessFromEnv(group.FromEnv, envAllowlist, systemEnv, level)
+	if err != nil {
+		return err
 	}
+	// Merge: Group's from_env overrides Global's variables with same name
+	maps.Copy(baseExpandedVars, groupFromEnvVars)
 	// If Group.FromEnv is nil or [], just inherit Global's ExpandedVars (already done above)
 
 	// Process vars
-	if len(group.Vars) > 0 {
-		expandedVars, err := ProcessVars(group.Vars, baseVars, level)
-		if err != nil {
-			return err
-		}
-		group.ExpandedVars = expandedVars
-	} else {
-		group.ExpandedVars = baseVars
+	expandedVars, err := ProcessVars(group.Vars, baseExpandedVars, level)
+	if err != nil {
+		return err
 	}
+	group.ExpandedVars = expandedVars
 
 	// Expand env and verify_files
 	// Note: Unlike vars/from_env which merge Global and Group levels,
@@ -507,12 +480,7 @@ func ExpandGroupConfig(group *runnertypes.CommandGroup, global *runnertypes.Glob
 	}
 
 	group.ExpandedEnv = expanded.expandedEnv
-	if len(expanded.expandedVerifyFiles) > 0 {
-		group.ExpandedVerifyFiles = expanded.expandedVerifyFiles
-	} else {
-		group.ExpandedVerifyFiles = []string{}
-	}
-
+	group.ExpandedVerifyFiles = expanded.expandedVerifyFiles
 	return nil
 }
 
@@ -530,45 +498,31 @@ func ExpandCommandConfig(
 	level := fmt.Sprintf("command[%s]", cmd.Name)
 
 	// Determine base internal variables based on from_env
-	var baseVars map[string]string
-	if len(cmd.FromEnv) > 0 {
-		// Process command-level from_env
-		systemEnv := filter.ParseSystemEnvironment()
-		// Use group's allowlist or global's allowlist (with inheritance)
-		envAllowlist := determineEffectiveEnvAllowlist(group.EnvAllowlist, global.EnvAllowlist)
-		fromEnvVars, err := ProcessFromEnv(cmd.FromEnv, envAllowlist, systemEnv, level)
-		if err != nil {
-			return err
-		}
-		// Merge with group's expanded vars
-		baseVars = maps.Clone(group.ExpandedVars)
-		maps.Copy(baseVars, fromEnvVars)
-	} else {
-		// Inherit from Group
-		baseVars = maps.Clone(group.ExpandedVars)
+	// Process command-level from_env
+	systemEnv := filter.ParseSystemEnvironment()
+	// Use group's allowlist or global's allowlist (with inheritance)
+	envAllowlist := determineEffectiveEnvAllowlist(group.EnvAllowlist, global.EnvAllowlist)
+	fromEnvVars, err := ProcessFromEnv(cmd.FromEnv, envAllowlist, systemEnv, level)
+	if err != nil {
+		return err
 	}
+	// Merge with group's expanded vars
+	baseExpandedVars := maps.Clone(group.ExpandedVars)
+	maps.Copy(baseExpandedVars, fromEnvVars)
 
 	// Process vars
-	if len(cmd.Vars) > 0 {
-		expandedVars, err := ProcessVars(cmd.Vars, baseVars, level)
-		if err != nil {
-			return err
-		}
-		cmd.ExpandedVars = expandedVars
-	} else {
-		cmd.ExpandedVars = baseVars
+	expandedVars, err := ProcessVars(cmd.Vars, baseExpandedVars, level)
+	if err != nil {
+		return err
 	}
+	cmd.ExpandedVars = expandedVars
 
 	// Expand env
-	if len(cmd.Env) > 0 {
-		expandedEnv, err := ProcessEnv(cmd.Env, cmd.ExpandedVars, level)
-		if err != nil {
-			return err
-		}
-		cmd.ExpandedEnv = expandedEnv
-	} else {
-		cmd.ExpandedEnv = make(map[string]string)
+	expandedEnv, err := ProcessEnv(cmd.Env, cmd.ExpandedVars, level)
+	if err != nil {
+		return err
 	}
+	cmd.ExpandedEnv = expandedEnv
 
 	// Expand cmd
 	expandedCmd, err := ExpandString(cmd.Cmd, cmd.ExpandedVars, level, "cmd")
