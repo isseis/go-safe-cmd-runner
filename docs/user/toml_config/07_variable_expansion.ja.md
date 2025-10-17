@@ -1020,10 +1020,24 @@ version = "1.0"
 timeout = 300
 log_level = "info"
 env_allowlist = ["PATH", "HOME", "USER"]
+from_env = [
+    "home=HOME",
+    "username=USER"
+]
+vars = [
+    "app_root=/opt/myapp",
+    "config_dir=%{app_root}/config",
+    "bin_dir=%{app_root}/bin"
+]
 
 [[groups]]
 name = "application_deployment"
 description = "アプリケーションのデプロイメント処理"
+vars = [
+    "env_type=production",
+    "config_source=%{config_dir}/templates",
+    "migration_dir=%{app_root}/migrations"
+]
 
 # ステップ1: 設定ファイルの配置
 [[groups.commands]]
@@ -1031,33 +1045,26 @@ name = "deploy_config"
 description = "環境別設定ファイルの配置"
 cmd = "/bin/cp"
 args = [
-    "${CONFIG_SOURCE}/${ENV_TYPE}/app.yml",
-    "${CONFIG_DEST}/app.yml",
-]
-env = [
-    "CONFIG_SOURCE=/opt/configs/templates",
-    "CONFIG_DEST=/etc/myapp",
-    "ENV_TYPE=production",
+    "%{config_source}/%{env_type}/app.yml",
+    "%{config_dir}/app.yml"
 ]
 
 # ステップ2: データベースマイグレーション
 [[groups.commands]]
 name = "db_migration"
 description = "データベーススキーマのマイグレーション"
-cmd = "${APP_BIN}/migrate"
+cmd = "%{bin_dir}/migrate"
 args = [
-    "--database", "${DB_URL}",
-    "--migrations", "${MIGRATION_DIR}",
+    "--database", "%{db_url}",
+    "--migrations", "%{migration_dir}"
 ]
-env = [
-    "APP_BIN=/opt/myapp/bin",
-    "DB_URL=postgresql://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}",
-    "DB_USER=appuser",
-    "DB_PASS=secret123",
-    "DB_HOST=localhost",
-    "DB_PORT=5432",
-    "DB_NAME=myapp_prod",
-    "MIGRATION_DIR=/opt/myapp/migrations",
+vars = [
+    "db_user=appuser",
+    "db_pass=secret123",
+    "db_host=localhost",
+    "db_port=5432",
+    "db_name=myapp_prod",
+    "db_url=postgresql://%{db_user}:%{db_pass}@%{db_host}:%{db_port}/%{db_name}"
 ]
 timeout = 600
 
@@ -1065,17 +1072,19 @@ timeout = 600
 [[groups.commands]]
 name = "start_application"
 description = "アプリケーションサーバーの起動"
-cmd = "${APP_BIN}/server"
+cmd = "%{bin_dir}/server"
 args = [
-    "--config", "${CONFIG_DEST}/app.yml",
-    "--port", "${APP_PORT}",
-    "--workers", "${WORKER_COUNT}",
+    "--config", "%{config_dir}/app.yml",
+    "--port", "%{app_port}",
+    "--workers", "%{worker_count}"
+]
+vars = [
+    "app_port=8080",
+    "worker_count=4"
 ]
 env = [
-    "APP_BIN=/opt/myapp/bin",
-    "CONFIG_DEST=/etc/myapp",
-    "APP_PORT=8080",
-    "WORKER_COUNT=4",
+    "LOG_LEVEL=info",
+    "LOG_PATH=%{app_root}/logs/app.log"
 ]
 
 # ステップ4: ヘルスチェック
@@ -1083,13 +1092,8 @@ env = [
 name = "health_check"
 description = "アプリケーションのヘルスチェック"
 cmd = "/usr/bin/curl"
-args = [
-    "-f",
-    "${HEALTH_URL}",
-]
-env = [
-    "HEALTH_URL=http://localhost:8080/health",
-]
+args = ["-f", "%{health_url}"]
+vars = ["health_url=http://localhost:%{app_port}/health"]
 timeout = 30
 ```
 
@@ -1115,9 +1119,10 @@ version = "1.0"
 
 [global]
 env_allowlist = ["HOME"]
+from_env = ["home=HOME"]
 verify_files = [
-    "${HOME}/config.toml",
-    "${HOME}/data.txt",
+    "%{home}/config.toml",
+    "%{home}/data.txt"
 ]
 
 [[groups]]
@@ -1130,8 +1135,8 @@ args = ["hello"]
 ```
 
 展開結果（`HOME=/home/user` の場合）:
-- `${HOME}/config.toml` → `/home/user/config.toml`
-- `${HOME}/data.txt` → `/home/user/data.txt`
+- `%{home}/config.toml` → `/home/user/config.toml`
+- `%{home}/data.txt` → `/home/user/data.txt`
 
 #### グループレベルでの展開
 
@@ -1140,13 +1145,13 @@ version = "1.0"
 
 [global]
 env_allowlist = ["APP_ROOT"]
+from_env = ["app_root=APP_ROOT"]
 
 [[groups]]
 name = "app_group"
-env_allowlist = ["APP_ROOT"]
 verify_files = [
-    "${APP_ROOT}/config/app.yml",
-    "${APP_ROOT}/bin/server",
+    "%{app_root}/config/app.yml",
+    "%{app_root}/bin/server"
 ]
 
 [[groups.commands]]
@@ -1156,8 +1161,8 @@ args = ["Starting app"]
 ```
 
 展開結果（`APP_ROOT=/opt/myapp` の場合）:
-- `${APP_ROOT}/config/app.yml` → `/opt/myapp/config/app.yml`
-- `${APP_ROOT}/bin/server` → `/opt/myapp/bin/server`
+- `%{app_root}/config/app.yml` → `/opt/myapp/config/app.yml`
+- `%{app_root}/bin/server` → `/opt/myapp/bin/server`
 
 ### 7.11.4 複雑な例
 
@@ -1194,12 +1199,9 @@ name = "deploy"
 cmd = "/opt/deploy.sh"
 ```
 
-実行時（`ENV=production APP_ROOT=/opt/myapp` の場合）:
-```bash
-export DEPLOY_ENV=production
-export APP_ROOT=/opt/myapp
-export CONFIG_ROOT=/etc/myapp/config
-```
+実行時の環境変数が以下の場合:
+- `ENV=production`
+- `APP_ROOT=/opt/myapp`
 
 この設定により、以下のファイルが検証されます:
 - `/opt/myapp/configs/production/global.yml`
@@ -1332,29 +1334,5 @@ go-safe-cmd-runnerの変数システムは、以下の3つのコンポーネン�
 5. **命名規則を統一**: 内部変数は小文字とアンダースコア、環境変数は大文字を推奨
 
 ### 次のステップ
-
-次章では、これらの変数展開機能を含む実践的な例を紹介します。
-```bash
-export DEPLOY_ENV=production
-export APP_ROOT=/opt/myapp
-export CONFIG_ROOT=/etc/myapp/config
-```
-
-この設定により、以下のファイルが検証されます:
-- `/etc/myapp/config/production/global.yml`
-- `/etc/myapp/config/production/secrets.enc`
-- `/opt/myapp/web/nginx.conf`
-- `/opt/myapp/web/ssl/cert.pem`
-- `/opt/myapp/web/ssl/key.pem`
-- `/opt/myapp/db/schema.sql`
-- `/opt/myapp/db/migrations/production/`
-
-### 7.11.11 制限事項
-
-1. **絶対パスの要件**: 展開後のパスは絶対パスである必要があります
-2. **システム環境変数のみ**: verify_files では Command.Env の変数は使用できません
-3. **展開タイミング**: 設定ロード時に1度だけ展開されます（実行時ではありません）
-
-## 次のステップ
 
 次章では、これまで学んだ設定を組み合わせた実践的な例を紹介します。実際のユースケースに基づいた設定ファイルの作成方法を学びます。

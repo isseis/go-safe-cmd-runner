@@ -1109,10 +1109,24 @@ version = "1.0"
 timeout = 300
 log_level = "info"
 env_allowlist = ["PATH", "HOME", "USER"]
+from_env = [
+    "home=HOME",
+    "username=USER"
+]
+vars = [
+    "app_root=/opt/myapp",
+    "config_dir=%{app_root}/config",
+    "bin_dir=%{app_root}/bin"
+]
 
 [[groups]]
 name = "application_deployment"
 description = "Application deployment process"
+vars = [
+    "env_type=production",
+    "config_source=%{config_dir}/templates",
+    "migration_dir=%{app_root}/migrations"
+]
 
 # Step 1: Deploy configuration file
 [[groups.commands]]
@@ -1120,33 +1134,26 @@ name = "deploy_config"
 description = "Deploy environment-specific configuration file"
 cmd = "/bin/cp"
 args = [
-    "${CONFIG_SOURCE}/${ENV_TYPE}/app.yml",
-    "${CONFIG_DEST}/app.yml",
-]
-env = [
-    "CONFIG_SOURCE=/opt/configs/templates",
-    "CONFIG_DEST=/etc/myapp",
-    "ENV_TYPE=production",
+    "%{config_source}/%{env_type}/app.yml",
+    "%{config_dir}/app.yml"
 ]
 
 # Step 2: Database migration
 [[groups.commands]]
 name = "db_migration"
 description = "Database schema migration"
-cmd = "${APP_BIN}/migrate"
+cmd = "%{bin_dir}/migrate"
 args = [
-    "--database", "${DB_URL}",
-    "--migrations", "${MIGRATION_DIR}",
+    "--database", "%{db_url}",
+    "--migrations", "%{migration_dir}"
 ]
-env = [
-    "APP_BIN=/opt/myapp/bin",
-    "DB_URL=postgresql://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}",
-    "DB_USER=appuser",
-    "DB_PASS=secret123",
-    "DB_HOST=localhost",
-    "DB_PORT=5432",
-    "DB_NAME=myapp_prod",
-    "MIGRATION_DIR=/opt/myapp/migrations",
+vars = [
+    "db_user=appuser",
+    "db_pass=secret123",
+    "db_host=localhost",
+    "db_port=5432",
+    "db_name=myapp_prod",
+    "db_url=postgresql://%{db_user}:%{db_pass}@%{db_host}:%{db_port}/%{db_name}"
 ]
 timeout = 600
 
@@ -1154,17 +1161,19 @@ timeout = 600
 [[groups.commands]]
 name = "start_application"
 description = "Start application server"
-cmd = "${APP_BIN}/server"
+cmd = "%{bin_dir}/server"
 args = [
-    "--config", "${CONFIG_DEST}/app.yml",
-    "--port", "${APP_PORT}",
-    "--workers", "${WORKER_COUNT}",
+    "--config", "%{config_dir}/app.yml",
+    "--port", "%{app_port}",
+    "--workers", "%{worker_count}"
+]
+vars = [
+    "app_port=8080",
+    "worker_count=4"
 ]
 env = [
-    "APP_BIN=/opt/myapp/bin",
-    "CONFIG_DEST=/etc/myapp",
-    "APP_PORT=8080",
-    "WORKER_COUNT=4",
+    "LOG_LEVEL=info",
+    "LOG_PATH=%{app_root}/logs/app.log"
 ]
 
 # Step 4: Health check
@@ -1172,13 +1181,8 @@ env = [
 name = "health_check"
 description = "Application health check"
 cmd = "/usr/bin/curl"
-args = [
-    "-f",
-    "${HEALTH_URL}",
-]
-env = [
-    "HEALTH_URL=http://localhost:8080/health",
-]
+args = ["-f", "%{health_url}"]
+vars = ["health_url=http://localhost:%{app_port}/health"]
 timeout = 30
 ```
 
@@ -1204,9 +1208,10 @@ version = "1.0"
 
 [global]
 env_allowlist = ["HOME"]
+from_env = ["home=HOME"]
 verify_files = [
-    "${HOME}/config.toml",
-    "${HOME}/data.txt",
+    "%{home}/config.toml",
+    "%{home}/data.txt"
 ]
 
 [[groups]]
@@ -1219,8 +1224,8 @@ args = ["hello"]
 ```
 
 Expansion result (when `HOME=/home/user`):
-- `${HOME}/config.toml` → `/home/user/config.toml`
-- `${HOME}/data.txt` → `/home/user/data.txt`
+- `%{home}/config.toml` → `/home/user/config.toml`
+- `%{home}/data.txt` → `/home/user/data.txt`
 
 #### Group Level Expansion
 
@@ -1229,13 +1234,13 @@ version = "1.0"
 
 [global]
 env_allowlist = ["APP_ROOT"]
+from_env = ["app_root=APP_ROOT"]
 
 [[groups]]
 name = "app_group"
-env_allowlist = ["APP_ROOT"]
 verify_files = [
-    "${APP_ROOT}/config/app.yml",
-    "${APP_ROOT}/bin/server",
+    "%{app_root}/config/app.yml",
+    "%{app_root}/bin/server"
 ]
 
 [[groups.commands]]
@@ -1245,8 +1250,8 @@ args = ["Starting app"]
 ```
 
 Expansion result (when `APP_ROOT=/opt/myapp`):
-- `${APP_ROOT}/config/app.yml` → `/opt/myapp/config/app.yml`
-- `${APP_ROOT}/bin/server` → `/opt/myapp/bin/server`
+- `%{app_root}/config/app.yml` → `/opt/myapp/config/app.yml`
+- `%{app_root}/bin/server` → `/opt/myapp/bin/server`
 
 ### 7.11.4 Complex Example
 
@@ -1283,12 +1288,9 @@ name = "deploy"
 cmd = "/opt/deploy.sh"
 ```
 
-Execution (when `ENV=production APP_ROOT=/opt/myapp`):
-```bash
-export DEPLOY_ENV=production
-export APP_ROOT=/opt/myapp
-export CONFIG_ROOT=/etc/myapp/config
-```
+When the following environment variables are set:
+- `ENV=production`
+- `APP_ROOT=/opt/myapp`
 
 The following files will be verified:
 - `/opt/myapp/configs/production/global.yml`
