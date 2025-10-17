@@ -175,10 +175,10 @@ from_env = [
 
 | レベル | 継承動作 |
 |--------|---------|
-| **Global.from_env** | すべてのグループから継承される(デフォルト) |
-| **Group.from_env** | 定義されている場合は Global.from_env を**上書き**(Override) |
-| **Group.from_env が nil** | Global.from_env を継承 |
-| **Group.from_env が []** | 空のマッピング(どの環境変数も取り込まない) |
+| **Global.from_env** | すべてのグループ・コマンドから継承される(デフォルト) |
+| **Group.from_env** | 定義されている場合は Global.from_env と**マージ**(Merge) |
+| **Command.from_env** | 定義されている場合は Global + Group の from_env と**マージ**(Merge) |
+| **未定義** | 上位レベルの from_env を継承 |
 
 #### 例: システム環境変数の取り込み
 

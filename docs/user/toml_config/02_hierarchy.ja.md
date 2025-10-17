@@ -203,29 +203,31 @@ args = ["%{base_dir}", "%{log_level}", "%{task_type}", "%{task_id}"]
 # 最終的な vars: base_dir=/opt/app, log_level=debug, task_type=admin, task_id=42
 ```
 
-#### from_env (システム環境変数のインポート) - Override 継承
+#### from_env (システム環境変数のインポート) - Merge 継承
 
-`from_env` は **Override (上書き)** によって継承されます。下位レベルで指定した場合、上位レベルの設定は完全に無視されます。
+`from_env` は **Merge (マージ)** によって継承されます。下位レベルで指定した場合、上位レベルの設定とマージされます。
 
 ```toml
 [global]
-from_env = ["HOME", "USER", "PATH"]
+from_env = ["HOME", "USER"]
 
 [[groups]]
 name = "tasks"
-from_env = ["LANG", "LC_ALL"]  # グローバルの from_env を完全に置き換え
+from_env = ["LANG", "LC_ALL"]  # グローバルの from_env とマージ
 
 [[groups.commands]]
 name = "task1"
 cmd = "/bin/echo"
 # from_env を指定しないため、グループの from_env が適用される
-args = ["%{LANG}"]  # LANG のみ利用可能 (HOME, USER, PATH は利用不可)
+# 継承された変数: HOME, USER (global) + LANG, LC_ALL (group)
+args = ["User: %{USER}, Lang: %{LANG}"]
 
 [[groups.commands]]
 name = "task2"
-from_env = ["PWD"]  # グループの from_env も完全に置き換え
+from_env = ["PWD"]  # グループの from_env とマージ
 cmd = "/bin/echo"
-args = ["%{PWD}"]  # PWD のみ利用可能 (LANG, LC_ALL も利用不可)
+# 継承された変数: HOME, USER (global) + LANG, LC_ALL (group) + PWD (command)
+args = ["Home: %{HOME}, PWD: %{PWD}"]
 ```
 
 ### 2.3.5 設定の優先順位まとめ
@@ -238,7 +240,7 @@ args = ["%{PWD}"]  # PWD のみ利用可能 (LANG, LC_ALL も利用不可)
 | workdir | グループ > グローバル | Override | コマンドレベルでは設定不可 |
 | env_allowlist | グループ > グローバル | Override | 継承モードに応じて動作が変化 |
 | vars | コマンド > グループ > グローバル | Merge (Union) | 下位レベルが上位レベルとマージ、同名キーは上書き |
-| from_env | コマンド > グループ > グローバル | Override | 下位レベルが上位レベルを完全に置き換え |
+| from_env | コマンド > グループ > グローバル | Merge | 下位レベルが上位レベルとマージ |
 | env | コマンド > グループ > グローバル | Merge | プロセス環境変数の設定 ※セキュリティ: 必要最小限のレベルで定義を推奨 |
 | verify_files | グループ + グローバル | Merge | マージされる(両方が適用) |
 | log_level | グローバルのみ | N/A | 下位レベルでオーバーライド不可 |

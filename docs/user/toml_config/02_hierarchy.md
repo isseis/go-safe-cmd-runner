@@ -203,29 +203,31 @@ args = ["%{base_dir}", "%{log_level}", "%{task_type}", "%{task_id}"]
 # Final vars: base_dir=/opt/app, log_level=debug, task_type=admin, task_id=42
 ```
 
-#### from_env (System Environment Variable Import) - Override Inheritance
+#### from_env (System Environment Variable Import) - Merge Inheritance
 
-`from_env` is inherited through **Override (replacement)**. When specified at a lower level, the upper level configuration is completely ignored.
+`from_env` is inherited through **Merge**. When specified at a lower level, it is merged with the upper level configuration.
 
 ```toml
 [global]
-from_env = ["HOME", "USER", "PATH"]
+from_env = ["HOME", "USER"]
 
 [[groups]]
 name = "tasks"
-from_env = ["LANG", "LC_ALL"]  # Completely replaces global from_env
+from_env = ["LANG", "LC_ALL"]  # Merges with global from_env
 
 [[groups.commands]]
 name = "task1"
 cmd = "/bin/echo"
 # from_env not specified → group's from_env is applied
-args = ["%{LANG}"]  # Only LANG is available (HOME, USER, PATH are not)
+# Inherited variables: HOME, USER (global) + LANG, LC_ALL (group)
+args = ["User: %{USER}, Lang: %{LANG}"]
 
 [[groups.commands]]
 name = "task2"
-from_env = ["PWD"]  # Completely replaces group's from_env
+from_env = ["PWD"]  # Merges with group's from_env
 cmd = "/bin/echo"
-args = ["%{PWD}"]  # Only PWD is available (LANG, LC_ALL are not)
+# Inherited variables: HOME, USER (global) + LANG, LC_ALL (group) + PWD (command)
+args = ["Home: %{HOME}, PWD: %{PWD}"]
 ```
 
 ### 2.3.5 Configuration Priority Summary
@@ -238,7 +240,7 @@ Depending on the configuration item, the priority differs:
 | workdir | Group > Global | Override | Cannot be configured at command level |
 | env_allowlist | Group > Global | Override | Behavior changes according to inheritance mode |
 | vars | Command > Group > Global | Merge (Union) | Lower levels merge with upper levels, same keys override |
-| from_env | Command > Group > Global | Override | Lower levels completely replace upper levels |
+| from_env | Command > Group > Global | Merge | Lower levels merge with upper levels |
 | env | Command > Group > Global | Merge | Process environment variable configuration ※Security: Define at minimal necessary level |
 | verify_files | Group + Global | Merge | Merged (both applied) |
 | log_level | Global only | N/A | Cannot be overridden at lower levels |

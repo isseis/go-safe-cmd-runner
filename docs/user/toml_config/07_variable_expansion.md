@@ -175,10 +175,10 @@ Written in the format `internal_variable_name=system_environment_variable_name`:
 
 | Level | Inheritance Behavior |
 |-------|----------------------|
-| **Global.from_env** | Inherited by all groups (default) |
-| **Group.from_env** | If defined, **overrides** (Override) Global.from_env |
-| **Group.from_env is nil** | Inherits Global.from_env |
-| **Group.from_env is []** | Empty mapping (no environment variables imported) |
+| **Global.from_env** | Inherited by all groups and commands (default) |
+| **Group.from_env** | If defined, **merges** (Merge) with Global.from_env |
+| **Command.from_env** | If defined, **merges** (Merge) with Global + Group from_env |
+| **Undefined** | Inherits from_env from upper levels |
 
 #### Example: Importing System Environment Variables
 
