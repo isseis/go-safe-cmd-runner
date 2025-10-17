@@ -137,7 +137,8 @@ args = ["Hello, World!"]
 1. **Create configuration file**: Create a `config.toml` file
 2. **Create hash file** (if needed):
    ```bash
-  record config.toml /bin/echo
+  record -file config.toml
+  record -file /bin/echo
    ```
 3. **Execute**:
    ```bash

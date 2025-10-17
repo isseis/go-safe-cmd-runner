@@ -611,7 +611,8 @@ env_allowlist = ["PATH"]
 
 ```bash
 # Record individual files
-record config.toml /usr/bin/tool
+record -file config.toml
+record -file /usr/bin/tool
 ```
 
 ### Q4: Frequent timeout errors

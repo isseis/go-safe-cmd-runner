@@ -611,7 +611,8 @@ env_allowlist = ["PATH"]
 
 ```bash
 # ハッシュファイルの作成
-record config.toml /usr/bin/tool
+record -file config.toml
+record -file /usr/bin/tool
 ```
 
 ### Q4: タイムアウトエラーが頻発する
