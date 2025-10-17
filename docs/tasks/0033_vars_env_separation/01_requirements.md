@@ -204,9 +204,11 @@ from_env = [
 [[groups.commands]]
 name = "show_all"
 cmd = "echo"
-args = ["%{home}"]       # OK: Global.from_env の home を参照可能（継承）
-args = ["%{username}"]   # OK: Global.from_env の username を参照可能（継承）
-args = ["%{custom}"]     # OK: Group.from_env の custom を参照可能
+args = [
+    "%{home}",      # OK: Global.from_env の home を参照可能（継承）
+    "%{username}",  # OK: Global.from_env の username を参照可能（継承）
+    "%{custom}"     # OK: Group.from_env の custom を参照可能
+]
 # 結果: home, username, custom のすべてが利用可能
 ```
 
