@@ -31,6 +31,7 @@ args = [
     "config-backup.tar.gz",
     "/etc/myapp",
 ]
+max_risk_level = "medium"
 timeout = 600
 
 [[groups.commands]]
@@ -42,6 +43,7 @@ args = [
     "logs-backup.tar.gz",
     "/var/log/myapp",
 ]
+max_risk_level = "medium"
 timeout = 600
 
 [[groups.commands]]
@@ -114,7 +116,6 @@ args = [
     "--verify",
     "data-backup.tar.gz.gpg",
 ]
-max_risk_level = "low"
 output = "verification-result.txt"
 ```
 
@@ -146,6 +147,7 @@ args = [
     "-o", "data.csv",
     "https://example.com/data/export.csv",
 ]
+max_risk_level = "medium"
 timeout = 600
 
 [[groups.commands]]
@@ -156,6 +158,7 @@ args = [
     "--input", "data.csv",
     "--output", "processed.csv",
 ]
+max_risk_level = "medium"
 timeout = 900
 
 [[groups.commands]]
@@ -167,6 +170,7 @@ args = [
     "-F", "file=@processed.csv",
     "https://example.com/api/upload",
 ]
+max_risk_level = "medium"
 timeout = 600
 output = "upload-response.txt"
 
@@ -203,7 +207,6 @@ name = "check_disk_space"
 description = "Check disk usage"
 cmd = "/bin/df"
 args = ["-h"]
-max_risk_level = "low"
 output = "disk-usage.txt"
 
 # Privileged task: Update packages
@@ -231,7 +234,6 @@ name = "check_service_status"
 description = "Check service status"
 cmd = "/usr/bin/systemctl"
 args = ["status", "myapp.service"]
-max_risk_level = "low"
 output = "service-status.txt"
 ```
 
@@ -301,6 +303,7 @@ args = [
     "system-report-%{date}.tar.gz",
     "reports/",
 ]
+max_risk_level = "medium"
 ```
 
 ## 8.6 Configuration Examples Using Variable Expansion
@@ -334,6 +337,7 @@ args = [
     "%{config_dir}/%{env_type}/app.yml",
     "/etc/myapp/app.yml",
 ]
+max_risk_level = "medium"
 
 [[groups.commands]]
 name = "start_dev_server"
@@ -350,6 +354,7 @@ args = [
     "--port", "%{api_port}",
     "--database", "%{db_url}",
 ]
+max_risk_level = "high"
 
 # Staging environment
 [[groups]]
@@ -368,6 +373,7 @@ args = [
     "%{config_dir}/%{env_type}/app.yml",
     "/etc/myapp/app.yml",
 ]
+max_risk_level = "medium"
 
 [[groups.commands]]
 name = "start_staging_server"
@@ -384,6 +390,7 @@ args = [
     "--port", "%{api_port}",
     "--database", "%{db_url}",
 ]
+max_risk_level = "high"
 
 # Production environment
 [[groups]]
@@ -402,6 +409,7 @@ args = [
     "%{config_dir}/%{env_type}/app.yml",
     "/etc/myapp/app.yml",
 ]
+max_risk_level = "medium"
 
 [[groups.commands]]
 name = "start_prod_server"
@@ -470,6 +478,7 @@ args = [
     "%{backup_dir}/app-backup-%{timestamp}.tar.gz",
     "%{app_dir}",
 ]
+max_risk_level = "medium"
 timeout = 1800
 
 [[groups.commands]]
@@ -503,6 +512,7 @@ args = [
     "-F", "c",
     "-f", "/var/backups/db/backup-%{timestamp}.dump",
 ]
+max_risk_level = "medium"
 timeout = 1800
 output = "db-backup-log.txt"
 
@@ -518,6 +528,7 @@ args = [
     "--database", "postgresql://%{db_user}@localhost/%{db_name}",
     "--migrations", "/opt/myapp/migrations",
 ]
+max_risk_level = "high"
 timeout = 600
 
 # Phase 3: Application deployment
@@ -544,6 +555,7 @@ args = [
     "/opt/deploy/releases/myapp-v2.0.0.tar.gz",
     "-C", "/opt/myapp",
 ]
+max_risk_level = "medium"
 
 [[groups.commands]]
 name = "install_dependencies"
@@ -553,6 +565,7 @@ args = [
     "install",
     "-r", "/opt/myapp/requirements.txt",
 ]
+max_risk_level = "high"
 timeout = 600
 
 [[groups.commands]]
@@ -578,6 +591,7 @@ args = [
     "/etc/nginx/sites-available/myapp.conf",
 ]
 run_as_user = "root"
+max_risk_level = "high"
 
 [[groups.commands]]
 name = "test_nginx_config"
@@ -585,6 +599,7 @@ description = "Validate Nginx configuration"
 cmd = "/usr/bin/nginx"
 args = ["-t"]
 run_as_user = "root"
+max_risk_level = "medium"
 output = "nginx-config-test.txt"
 
 [[groups.commands]]
@@ -697,7 +712,6 @@ name = "read_config"
 description = "Read configuration file"
 cmd = "/bin/cat"
 args = ["/etc/myapp/config.yml"]
-max_risk_level = "low"
 output = "config-content.txt"
 
 # Medium risk: File creation/modification
@@ -721,10 +735,11 @@ timeout = 1800
 # Example that will be rejected for exceeding risk level
 [[groups.commands]]
 name = "dangerous_deletion"
-description = "Mass deletion (cannot run at low risk level)"
+description = "Mass deletion (cannot run at default risk level)"
 cmd = "/bin/rm"
 args = ["-rf", "/tmp/old-data"]
-max_risk_level = "low"  # rm -rf is medium risk or higher → execution rejected
+# max_risk_level defaults to "low"
+# rm -rf requires medium risk or higher → execution rejected
 ```
 
 ## Summary

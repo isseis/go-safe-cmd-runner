@@ -44,6 +44,7 @@ args = [
     "config-backup.tar.gz",
     "/etc/myapp",
 ]
+max_risk_level = "medium"
 timeout = 600
 
 [[groups.commands]]
@@ -55,6 +56,7 @@ args = [
     "logs-backup.tar.gz",
     "/var/log/myapp",
 ]
+max_risk_level = "medium"
 timeout = 600
 
 [[groups.commands]]
@@ -144,7 +146,6 @@ args = [
     "--verify",
     "data-backup.tar.gz.gpg",
 ]
-max_risk_level = "low"
 output = "verification-result.txt"
 ```
 
@@ -176,6 +177,7 @@ args = [
     "-o", "data.csv",
     "https://example.com/data/export.csv",
 ]
+max_risk_level = "medium"
 timeout = 600
 
 [[groups.commands]]
@@ -186,6 +188,7 @@ args = [
     "--input", "data.csv",
     "--output", "processed.csv",
 ]
+max_risk_level = "medium"
 timeout = 900
 
 [[groups.commands]]
@@ -197,6 +200,7 @@ args = [
     "-F", "file=@processed.csv",
     "https://example.com/api/upload",
 ]
+max_risk_level = "medium"
 timeout = 600
 output = "upload-response.txt"
 
@@ -233,7 +237,6 @@ name = "check_disk_space"
 description = "ディスク使用量の確認"
 cmd = "/bin/df"
 args = ["-h"]
-max_risk_level = "low"
 output = "disk-usage.txt"
 
 # 特権タスク: パッケージの更新
@@ -261,7 +264,6 @@ name = "check_service_status"
 description = "サービス状態の確認"
 cmd = "/usr/bin/systemctl"
 args = ["status", "myapp.service"]
-max_risk_level = "low"
 output = "service-status.txt"
 ```
 
@@ -331,6 +333,7 @@ args = [
     "system-report-%{date}.tar.gz",
     "reports/",
 ]
+max_risk_level = "medium"
 ```
 
 ## 8.6 変数展開を活用した設定例
@@ -364,6 +367,7 @@ args = [
     "%{config_dir}/%{env_type}/app.yml",
     "/etc/myapp/app.yml",
 ]
+max_risk_level = "medium"
 
 [[groups.commands]]
 name = "start_dev_server"
@@ -381,6 +385,7 @@ args = [
     "--database", "%{db_url}",
 ]
 env = ["DB_URL=%{db_url}"]
+max_risk_level = "high"
 
 # ステージング環境
 [[groups]]
@@ -399,6 +404,7 @@ args = [
     "%{config_dir}/%{env_type}/app.yml",
     "/etc/myapp/app.yml",
 ]
+max_risk_level = "medium"
 
 [[groups.commands]]
 name = "start_staging_server"
@@ -416,6 +422,7 @@ args = [
     "--database", "%{db_url}",
 ]
 env = ["DB_URL=%{db_url}"]
+max_risk_level = "high"
 
 # 本番環境
 [[groups]]
@@ -434,6 +441,7 @@ args = [
     "%{config_dir}/%{env_type}/app.yml",
     "/etc/myapp/app.yml",
 ]
+max_risk_level = "medium"
 
 [[groups.commands]]
 name = "start_prod_server"
@@ -528,6 +536,7 @@ args = [
     "%{backup_dir}/app-backup-%{timestamp}.tar.gz",
     "%{app_dir}",
 ]
+max_risk_level = "medium"
 timeout = 1800
 
 [[groups.commands]]
@@ -561,6 +570,7 @@ args = [
     "-F", "c",
     "-f", "/var/backups/db/backup-%{timestamp}.dump",
 ]
+max_risk_level = "medium"
 timeout = 1800
 output = "db-backup-log.txt"
 
@@ -576,6 +586,7 @@ args = [
     "--database", "postgresql://%{db_user}@localhost/%{db_name}",
     "--migrations", "/opt/myapp/migrations",
 ]
+max_risk_level = "high"
 timeout = 600
 
 # フェーズ3: アプリケーションデプロイ
@@ -602,6 +613,7 @@ args = [
     "/opt/deploy/releases/myapp-v2.0.0.tar.gz",
     "-C", "/opt/myapp",
 ]
+max_risk_level = "medium"
 
 [[groups.commands]]
 name = "install_dependencies"
@@ -611,6 +623,7 @@ args = [
     "install",
     "-r", "/opt/myapp/requirements.txt",
 ]
+max_risk_level = "high"
 timeout = 600
 
 [[groups.commands]]
@@ -636,6 +649,7 @@ args = [
     "/etc/nginx/sites-available/myapp.conf",
 ]
 run_as_user = "root"
+max_risk_level = "high"
 
 [[groups.commands]]
 name = "test_nginx_config"
@@ -643,6 +657,7 @@ description = "Nginx設定の検証"
 cmd = "/usr/bin/nginx"
 args = ["-t"]
 run_as_user = "root"
+max_risk_level = "medium"
 output = "nginx-config-test.txt"
 
 [[groups.commands]]
@@ -755,7 +770,6 @@ name = "read_config"
 description = "設定ファイルの読み取り"
 cmd = "/bin/cat"
 args = ["/etc/myapp/config.yml"]
-max_risk_level = "low"
 output = "config-content.txt"
 
 # 中リスク: ファイル作成・変更
@@ -779,10 +793,11 @@ timeout = 1800
 # リスクレベル超過で実行拒否される例
 [[groups.commands]]
 name = "dangerous_deletion"
-description = "大量削除(低リスクレベルでは実行不可)"
+description = "大量削除(デフォルトリスクレベルでは実行不可)"
 cmd = "/bin/rm"
 args = ["-rf", "/tmp/old-data"]
-max_risk_level = "low"  # rm -rf は中リスク以上 → 実行拒否
+# max_risk_level のデフォルトは "low"
+# rm -rf は中リスク以上が必要 → 実行拒否される
 ```
 
 ## まとめ
