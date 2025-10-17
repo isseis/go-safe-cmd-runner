@@ -31,7 +31,7 @@ func TestAutoEnvProviderGenerate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			provider := variable.NewAutoVarProvider(tt.clock)
+			provider := variable.NewAutoVarProviderWithClock(tt.clock)
 			result := provider.Generate()
 
 			require.NotNil(t, result)
@@ -56,7 +56,7 @@ func TestAutoEnvProviderGenerate(t *testing.T) {
 }
 
 func TestAutoEnvProviderGenerateWithDefaultClock(t *testing.T) {
-	provider := variable.NewAutoVarProvider(nil)
+	provider := variable.NewAutoVarProvider()
 
 	result := provider.Generate()
 	require.NotNil(t, result)
@@ -80,7 +80,7 @@ func TestAutoEnvProviderGenerateConsistency(t *testing.T) {
 	fixedTime := time.Date(2025, 10, 5, 14, 30, 22, 123456789, time.UTC)
 	fixedClock := func() time.Time { return fixedTime }
 
-	provider := variable.NewAutoVarProvider(fixedClock)
+	provider := variable.NewAutoVarProviderWithClock(fixedClock)
 
 	result := provider.Generate()
 

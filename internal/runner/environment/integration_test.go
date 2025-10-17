@@ -22,7 +22,7 @@ func TestIntegration_AutoEnvProviderAndExpander_AutoDateTime(t *testing.T) {
 	clock := func() time.Time { return fixedTime }
 
 	// Create AutoEnvProvider with fixed clock
-	provider := variable.NewAutoVarProvider(clock)
+	provider := variable.NewAutoVarProviderWithClock(clock)
 
 	// Generate auto internal variables
 	env := provider.Generate()
@@ -49,7 +49,7 @@ func TestIntegration_AutoEnvProviderAndExpander_AutoDateTime(t *testing.T) {
 // AutoEnvProvider and VariableExpander for __runner_pid expansion
 func TestIntegration_AutoEnvProviderAndExpander_AutoPID(t *testing.T) {
 	// Create AutoEnvProvider with default clock
-	provider := variable.NewAutoVarProvider(nil)
+	provider := variable.NewAutoVarProvider()
 
 	// Generate auto internal variables
 	env := provider.Generate()
@@ -80,7 +80,7 @@ func TestIntegration_ManagerAndExpander_MultipleAutoVars(t *testing.T) {
 	clock := func() time.Time { return fixedTime }
 
 	// Create EnvironmentManager with fixed clock
-	provider := variable.NewAutoVarProvider(clock)
+	provider := variable.NewAutoVarProviderWithClock(clock)
 
 	// Build environment with auto-generated variables
 	autoEnv := provider.Generate()
@@ -113,7 +113,7 @@ func TestIntegration_ManagerAndExpander_ExpandStrings(t *testing.T) {
 	clock := func() time.Time { return fixedTime }
 
 	// Create EnvironmentManager with fixed clock
-	provider := variable.NewAutoVarProvider(clock)
+	provider := variable.NewAutoVarProviderWithClock(clock)
 
 	// Build environment with auto-generated variables
 	autoEnv := provider.Generate()
@@ -151,7 +151,7 @@ func TestIntegration_ManagerAndExpander_ExpandStrings(t *testing.T) {
 // real-time clock (not fixed) to ensure datetime format is correct
 func TestIntegration_ManagerAndExpander_RealTimeClock(t *testing.T) {
 	// Create EnvironmentManager with nil clock (uses time.Now)
-	provider := variable.NewAutoVarProvider(nil)
+	provider := variable.NewAutoVarProvider()
 
 	// Build environment with auto-generated variables
 	env := provider.Generate()
@@ -188,7 +188,7 @@ func TestIntegration_ManagerAndExpander_NoUserEnv(t *testing.T) {
 	clock := func() time.Time { return fixedTime }
 
 	// Create EnvironmentManager with fixed clock
-	provider := variable.NewAutoVarProvider(clock)
+	provider := variable.NewAutoVarProviderWithClock(clock)
 
 	// Build environment with auto-generated variables only
 	env := provider.Generate()
@@ -219,7 +219,7 @@ func TestIntegration_ManagerAndExpander_MixedWithSystemEnv(t *testing.T) {
 	clock := func() time.Time { return fixedTime }
 
 	// Create EnvironmentManager with fixed clock
-	provider := variable.NewAutoVarProvider(clock)
+	provider := variable.NewAutoVarProviderWithClock(clock)
 
 	// Build environment with auto-generated variables
 	autoEnv := provider.Generate()

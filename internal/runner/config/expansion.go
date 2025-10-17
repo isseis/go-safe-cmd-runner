@@ -365,7 +365,7 @@ func ExpandGlobalConfig(global *runnertypes.GlobalConfig, filter *environment.Fi
 	}
 
 	// Merge auto variables (auto variables take precedence)
-	autoVars := variable.NewAutoVarProvider(nil).Generate()
+	autoVars := variable.NewAutoVarProvider().Generate()
 	maps.Copy(baseInternalVars, autoVars)
 
 	// Process vars

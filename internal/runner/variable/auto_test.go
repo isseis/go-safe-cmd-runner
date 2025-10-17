@@ -1,3 +1,5 @@
+//go:build test
+
 // package variable provides automatic variable generation for TOML configuration files.
 package variable
 
@@ -16,7 +18,7 @@ var datetimePattern = regexp.MustCompile(`^\d{14}\.\d{3}$`)
 
 func TestAutoEnvProvider_Generate(t *testing.T) {
 	t.Run("contains all required keys - lowercase format", func(t *testing.T) {
-		provider := NewAutoVarProvider(nil)
+		provider := NewAutoVarProvider()
 		result := provider.Generate()
 
 		assert.Contains(t, result, AutoVarPrefix+AutoVarKeyDatetime)
@@ -24,7 +26,7 @@ func TestAutoEnvProvider_Generate(t *testing.T) {
 	})
 
 	t.Run("datetime has correct format - lowercase", func(t *testing.T) {
-		provider := NewAutoVarProvider(nil)
+		provider := NewAutoVarProvider()
 		result := provider.Generate()
 
 		datetime := result[AutoVarPrefix+AutoVarKeyDatetime]
@@ -33,7 +35,7 @@ func TestAutoEnvProvider_Generate(t *testing.T) {
 	})
 
 	t.Run("pid is valid - lowercase", func(t *testing.T) {
-		provider := NewAutoVarProvider(nil)
+		provider := NewAutoVarProvider()
 		result := provider.Generate()
 
 		pid := result[AutoVarPrefix+AutoVarKeyPID]
@@ -78,7 +80,7 @@ func TestAutoEnvProvider_WithFixedClock(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name+" - lowercase", func(t *testing.T) {
 			clock := func() time.Time { return tt.fixedTime }
-			provider := NewAutoVarProvider(clock)
+			provider := NewAutoVarProviderWithClock(clock)
 
 			result := provider.Generate()
 			varDatetime := result[AutoVarPrefix+AutoVarKeyDatetime]
@@ -93,7 +95,7 @@ func TestAutoEnvProvider_UTCTimezone(t *testing.T) {
 	fixedTime := time.Date(2025, 10, 5, 23, 30, 22, 123000000, jst)
 
 	clock := func() time.Time { return fixedTime }
-	provider := NewAutoVarProvider(clock)
+	provider := NewAutoVarProviderWithClock(clock)
 
 	result := provider.Generate()
 
@@ -106,7 +108,7 @@ func TestAutoEnvProvider_UTCTimezone(t *testing.T) {
 }
 
 func TestNewAutoEnvProvider_NilClock(t *testing.T) {
-	provider := NewAutoVarProvider(nil)
+	provider := NewAutoVarProvider()
 	result := provider.Generate()
 
 	// Should use time.Now() as default

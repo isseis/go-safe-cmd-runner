@@ -36,14 +36,10 @@ type autoVarProvider struct {
 	clock Clock
 }
 
-// NewAutoVarProvider creates a new AutoVarProvider.
-// If clock is nil, it defaults to time.Now.
-func NewAutoVarProvider(clock Clock) AutoVarProvider {
-	if clock == nil {
-		clock = time.Now
-	}
+// NewAutoVarProvider creates a new AutoVarProvider with the default clock (time.Now).
+func NewAutoVarProvider() AutoVarProvider {
 	return &autoVarProvider{
-		clock: clock,
+		clock: time.Now,
 	}
 }
 
