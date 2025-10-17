@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -107,12 +108,11 @@ func expandStringRecursive(
 
 			// Check for circular reference
 			if _, ok := visited[varName]; ok {
-				chain := append(expansionChain, varName) //nolint:gocritic // intentionally creating new slice to avoid modifying caller's chain
 				return "", &ErrCircularReferenceDetail{
 					Level:        level,
 					Field:        field,
 					VariableName: varName,
-					Chain:        chain,
+					Chain:        slices.Insert(expansionChain, len(expansionChain), varName),
 				}
 			}
 
@@ -129,7 +129,6 @@ func expandStringRecursive(
 
 			// Mark as visited for circular reference detection
 			visited[varName] = struct{}{}
-			newChain := append(expansionChain, varName) //nolint:gocritic // intentionally creating new slice to avoid modifying caller's chain
 
 			// Recursively expand the value
 			expandedValue, err := expandStringRecursive(
@@ -138,7 +137,7 @@ func expandStringRecursive(
 				level,
 				field,
 				visited,
-				newChain,
+				slices.Insert(expansionChain, len(expansionChain), varName),
 				depth+1,
 			)
 			if err != nil {

@@ -2207,3 +2207,174 @@ func TestAutoVariables_CannotBeOverridden(t *testing.T) {
 	assert.ErrorAs(t, err, &reservedErr)
 	assert.Equal(t, "__runner_datetime", reservedErr.VariableName)
 }
+
+// TestExpandString_ChainNotModified tests that the expansion chain is not modified
+// when circular references are detected. This is a regression test for a bug where
+// append() was used without properly creating a new slice, which could modify the
+// caller's chain if the backing array had sufficient capacity.
+//
+// The bug occurs when:
+//  1. A string contains multiple variable references: "%{VAR1} %{VAR2}"
+//  2. During expansion of VAR1, a chain is built with spare capacity
+//  3. During expansion of VAR2 in the same recursion level, append() reuses
+//     the backing array from VAR1's chain if capacity allows
+//  4. This causes VAR1's chain to be inadvertently modified
+func TestExpandString_ChainNotModified(t *testing.T) {
+	_ = slog.Default()
+
+	// Create variables where one expands to another, creating a chain with capacity
+	// The first variable reference will create a chain like [PREFIX, A]
+	// If append() is used incorrectly, the second variable might corrupt this chain
+	vars := map[string]string{
+		"PREFIX": "start",
+		"A":      "%{PREFIX}_a",   // Expands PREFIX, creating chain [PREFIX, A]
+		"B":      "%{PREFIX}_b",   // Expands PREFIX, creating chain [PREFIX, B]
+		"TEST":   "%{A} and %{B}", // Expands both A and B in sequence
+	}
+
+	// Expand TEST which contains two variable references
+	result, err := config.ExpandString("%{TEST}", vars, "global", "vars")
+	require.NoError(t, err)
+	assert.Equal(t, "start_a and start_b", result)
+
+	// Now test with circular reference to expose the chain corruption
+	vars2 := map[string]string{
+		"X": "%{Y}",
+		"Y": "%{X}", // Circular reference
+		// First we expand X (which tries to expand Y)
+		// If the chain from a previous expansion had spare capacity,
+		// append() might reuse it and corrupt the error message
+	}
+
+	_, err2 := config.ExpandString("%{X}", vars2, "global", "vars")
+	require.Error(t, err2)
+
+	var circErr *config.ErrCircularReferenceDetail
+	require.ErrorAs(t, err2, &circErr)
+
+	// Verify the chain is correct and not corrupted
+	assert.Equal(t, []string{"X", "Y", "X"}, circErr.Chain)
+}
+
+// TestExpandString_ChainIsolation tests that multiple concurrent expansions
+// maintain isolated expansion chains without interference.
+func TestExpandString_ChainIsolation(t *testing.T) {
+	_ = slog.Default()
+
+	// Test case 1: Simple two-level chain
+	vars1 := map[string]string{
+		"A": "%{B}",
+		"B": "%{A}",
+	}
+
+	// Test case 2: Three-level chain
+	vars2 := map[string]string{
+		"X": "%{Y}",
+		"Y": "%{Z}",
+		"Z": "%{X}",
+	}
+
+	// Get errors from both cases
+	_, err1 := config.ExpandString("%{A}", vars1, "test1", "field1")
+	require.Error(t, err1)
+	var circErr1 *config.ErrCircularReferenceDetail
+	require.ErrorAs(t, err1, &circErr1)
+
+	_, err2 := config.ExpandString("%{X}", vars2, "test2", "field2")
+	require.Error(t, err2)
+	var circErr2 *config.ErrCircularReferenceDetail
+	require.ErrorAs(t, err2, &circErr2)
+
+	// Verify chains have expected lengths
+	assert.Len(t, circErr1.Chain, 3, "Two-variable cycle should have chain: [A, B, A]")
+	assert.Len(t, circErr2.Chain, 4, "Three-variable cycle should have chain: [X, Y, Z, X]")
+
+	// Verify chains are completely independent
+	assert.Equal(t, []string{"A", "B", "A"}, circErr1.Chain)
+	assert.Equal(t, []string{"X", "Y", "Z", "X"}, circErr2.Chain)
+}
+
+// TestExpandString_MultipleVariablesInSameString tests the critical case where
+// a single string contains multiple variable references at the same recursion level.
+// This is the most likely scenario to expose the append() backing array bug.
+func TestExpandString_MultipleVariablesInSameString(t *testing.T) {
+	_ = slog.Default()
+
+	// Create a scenario where:
+	// 1. A string has two variable references: "%{A} %{B}"
+	// 2. Both A and B expand to values that require recursion
+	// 3. Each expansion builds a chain
+	// 4. If append() shares backing arrays, the chains could interfere
+	vars := map[string]string{
+		"COMMON": "shared",
+		"A":      "%{COMMON}_valueA",
+		"B":      "%{COMMON}_valueB",
+	}
+
+	result, err := config.ExpandString("%{A} and %{B}", vars, "global", "vars")
+	require.NoError(t, err)
+	assert.Equal(t, "shared_valueA and shared_valueB", result)
+
+	// Now test with a circular reference in a multi-variable string
+	// This will expose if the chain from the first variable expansion
+	// is corrupted by the second variable expansion
+	vars2 := map[string]string{
+		"P":  "%{Q}",
+		"Q":  "%{P}", // Circular reference
+		"OK": "valid",
+	}
+
+	// The string "%{OK} %{P}" will:
+	// 1. First expand OK successfully, creating chain [OK]
+	// 2. Then try to expand P, which will detect circular reference
+	// If append() was used incorrectly, the chain for P might be corrupted
+	_, err2 := config.ExpandString("%{OK} %{P}", vars2, "global", "vars")
+	require.Error(t, err2)
+
+	var circErr *config.ErrCircularReferenceDetail
+	require.ErrorAs(t, err2, &circErr)
+
+	// Verify the circular reference chain is correct
+	// It should be [P, Q, P], not corrupted by the previous expansion of OK
+	assert.Equal(t, []string{"P", "Q", "P"}, circErr.Chain,
+		"Chain should only contain P->Q->P cycle, not be corrupted by previous OK expansion")
+}
+
+// TestExpandString_BackingArrayBug is a regression test for the critical append() bug
+// where multiple variables at the same recursion level could share a backing array.
+//
+// The bug occurs when:
+// 1. A value contains multiple variable references: "prefix_%{A} suffix_%{B}"
+// 2. During expansion, expansionChain is passed to both A and B expansions
+// 3. If expansionChain has spare capacity, append() reuses the backing array
+// 4. This causes the chain created for A to be corrupted when B is expanded
+//
+// This test creates a scenario that reliably triggers the bug with naive append().
+func TestExpandString_BackingArrayBug(t *testing.T) {
+	_ = slog.Default()
+
+	// Create a nested structure that will build up a chain with capacity
+	// ROOT expands to a value containing both A and B at the same level
+	vars := map[string]string{
+		"LEVEL1":   "%{LEVEL2}",
+		"LEVEL2":   "%{ROOT}",
+		"ROOT":     "value_%{A}_and_%{B}", // Both A and B at same recursion level
+		"A":        "%{A_NESTED}",
+		"A_NESTED": "%{A}", // Circular reference in A
+		"B":        "simple_b",
+	}
+
+	// Expand LEVEL1, which will create a deep chain before hitting the circular reference
+	_, err := config.ExpandString("%{LEVEL1}", vars, "global", "vars")
+	require.Error(t, err)
+
+	var circErr *config.ErrCircularReferenceDetail
+	require.ErrorAs(t, err, &circErr)
+
+	// The chain should be: [LEVEL1, LEVEL2, ROOT, A, A_NESTED, A]
+	// If append() was used incorrectly, the chain might be corrupted by
+	// the intermediate expansions at the ROOT level
+	expectedChain := []string{"LEVEL1", "LEVEL2", "ROOT", "A", "A_NESTED", "A"}
+	assert.Equal(t, expectedChain, circErr.Chain,
+		"Chain should show the full path to the circular reference without corruption")
+}
