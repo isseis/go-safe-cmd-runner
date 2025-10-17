@@ -30,7 +30,10 @@ User guide for the main execution command `runner` of go-safe-cmd-runner.
 ```
 1. Create TOML configuration file
    ↓
-2. Record hash values of executable binaries (record command)
+2. Record hash values (record command)
+   - Hash of the TOML configuration file itself (required)
+   - Hash of executable binaries
+   - Hash of files specified in verify_files
    ↓
 3. Validate configuration file (-validate flag)
    ↓
@@ -63,14 +66,23 @@ runner -config config.toml
 
 ### 2.2 Preparation: Creating Hash Files
 
-For security purposes, you need to record hash values of configuration files and binaries before execution.
+**Important**: The runner command performs hash verification on both the TOML configuration file and executable binaries. This prevents tampering with configuration files and executable files, and protects against TOCTOU attacks (Time-of-check to time-of-use).
+
+You need to record hash values of the following files before execution:
+
+1. **The TOML configuration file itself** (required)
+2. Executable binaries specified in the configuration file
+3. Files specified in `verify_files`
 
 ```bash
-# Record hash of configuration file
+# 1. Record hash of the TOML configuration file (most important)
 record -file config.toml -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
 
-# Record hash of executable binary
+# 2. Record hash of executable binaries
 record -file /usr/local/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+
+# 3. Record hash of files specified in verify_files (e.g., environment config files)
+record -file /etc/myapp/database.conf -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
 ```
 
 For details, see [record Command Guide](record_command.md).
@@ -116,9 +128,10 @@ runner -config ~/configs/backup.toml
 
 **Notes**
 
-- The configuration file must have its hash value recorded in advance
+- **The configuration file must have its hash value recorded in advance (the TOML configuration file itself is also a verification target)**
 - An error occurs if the file does not exist
 - Execution is aborted if configuration file validation fails
+- Reading and verification of the TOML configuration file is performed atomically to prevent TOCTOU attacks
 
 ### 3.2 Execution Mode Control
 
@@ -1117,7 +1130,9 @@ jobs:
       - name: Record hashes
         run: |
           sudo mkdir -p /usr/local/etc/go-safe-cmd-runner/hashes
+          # Record hash of the TOML configuration file itself (most important)
           sudo ./build/record -file config.toml -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+          # Record hash of executable binaries
           sudo ./build/record -file /usr/local/bin/backup.sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
 
       - name: Validate configuration

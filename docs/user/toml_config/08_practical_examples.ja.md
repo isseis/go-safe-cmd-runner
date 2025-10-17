@@ -8,6 +8,19 @@
 
 日次でファイルをバックアップする基本的な設定:
 
+**実行前の準備:**
+
+```bash
+# TOML設定ファイルのハッシュを記録
+record -file backup-config.toml -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+
+# 実行バイナリのハッシュを記録
+record -file /bin/tar -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -file /bin/ls -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+```
+
+**設定ファイル (backup-config.toml):**
+
 ```toml
 version = "1.0"
 
@@ -57,6 +70,23 @@ output = "backup-list.txt"
 ### ファイル検証とアクセス制御
 
 セキュリティ要件が高い環境向けの設定:
+
+**実行前の準備:**
+
+```bash
+# TOML設定ファイルのハッシュを記録
+record -file secure-backup.toml -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+
+# Global verify_files で指定したファイルのハッシュを記録
+record -file /bin/sh -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -file /bin/tar -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -file /usr/bin/gpg -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+
+# Group verify_files で指定したファイルのハッシュを記録
+record -file /opt/secure/bin/backup-tool -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+```
+
+**設定ファイル (secure-backup.toml):**
 
 ```toml
 version = "1.0"
@@ -430,6 +460,31 @@ max_risk_level = "high"
 ### フルスタックアプリケーションのデプロイ
 
 データベース、アプリケーション、Webサーバーの統合デプロイ:
+
+**実行前の準備:**
+
+```bash
+# TOML設定ファイルのハッシュを記録
+record -file deploy-fullstack.toml -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+
+# Global verify_files で指定したファイルのハッシュを記録
+record -file /usr/bin/psql -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -file /usr/bin/pg_dump -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+
+# 実行バイナリのハッシュを記録
+record -file /bin/tar -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -file /usr/bin/dpkg -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -file /opt/myapp/bin/migrate -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -file /usr/bin/systemctl -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -file /usr/bin/pip3 -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -file /bin/cp -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -file /usr/bin/nginx -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -file /usr/bin/curl -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -file /opt/tools/generate-report -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+record -file /bin/rm -hash-dir /usr/local/etc/go-safe-cmd-runner/hashes
+```
+
+**設定ファイル (deploy-fullstack.toml):**
 
 ```toml
 version = "1.0"
