@@ -894,16 +894,24 @@ flowchart TD
 
 この設計により、複数の異なる終了パスでも確実にクリーンアップが実行される。
 
-### 13.2 Context パターン
+### 13.2 状態管理パターン
 
-`GroupContext` でグループレベルの状態を一元管理：
+グループレベルの状態は `AutoVarProvider` を通じて管理：
 
-- ワークディレクトリ（絶対パス）
-- グループ名
-- 一時ディレクトリフラグ
-- `--keep-temp-dirs` フラグ
+**状態情報**:
+- ワークディレクトリ（`__runner_workdir` として提供）
+- 実行時刻（`__runner_datetime`）
+- プロセスID（`__runner_pid`）
 
-コンテキストはグループ内のすべてのコマンド実行に渡され、一貫した状態を維持。
+**ライフサイクル**:
+1. グループ実行開始時: `AutoVarProvider.SetWorkDir(workdir)` を呼び出す
+2. 変数展開時: `AutoVarProvider.Generate()` で最新の自動変数を取得
+3. 既存の `config.ExpandString` で変数展開を実行
+
+**利点**:
+- 新しい型（GroupContext）が不要
+- 既存の変数展開機構をそのまま活用
+- 一貫した変数管理パターン
 
 ### 13.3 Strategy パターン
 

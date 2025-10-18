@@ -64,9 +64,10 @@
 **対象者**: 実装者（Go開発者）
 
 **内容**:
-- 型定義（削除・追加フィールド、実行時型）
-- API 仕様（TempDirManager、GroupExecutor、VariableExpander のインターフェース）
+- 型定義（削除・追加フィールド）
+- API 仕様（TempDirManager、GroupExecutor、AutoVarProvider の拡張）
 - ワークディレクトリ決定ロジック（アルゴリズム）
+- 既存の変数展開機構の活用（config.ExpandString）
 - 実装詳細（完全なコード例）
 - コマンドラインオプション実装例
 - ロギング仕様
@@ -151,19 +152,31 @@
 利点: 明確で理解しやすい、デフォルトで安全
 ```
 
-### グループコンテキスト（GroupContext）
+### 自動変数による状態管理
 
-グループ実行時の状態を保持する重要な概念：
+グループ実行時のワークディレクトリは `AutoVarProvider` を通じて管理されます：
 
 ```go
-type GroupContext struct {
-    GroupName     string  // グループの識別
-    WorkDir       string  // 実際に使用するワークディレクトリ
-    IsTempDir     bool    // 一時ディレクトリか固定ディレクトリか
-    TempDirPath   string  // クリーンアップ用パス
-    KeepTempDirs  bool    // --keep-temp-dirs フラグの値
+// AutoVarProvider: 自動変数の提供
+type AutoVarProvider interface {
+    Generate() map[string]string
+    SetWorkDir(workdir string)  // グループ実行時に呼び出す
 }
+
+// グループ実行開始時:
+autoVarProvider.SetWorkDir("/tmp/scr-backup-XXXXXX")
+
+// 変数展開時:
+vars := autoVarProvider.Generate()
+// → vars["__runner_datetime"] = "20251018143025.123"
+// → vars["__runner_pid"] = "12345"
+// → vars["__runner_workdir"] = "/tmp/scr-backup-XXXXXX"
 ```
+
+**利点**:
+- 新しい型が不要（既存の `AutoVarProvider` を拡張）
+- 既存の変数展開機構（`config.ExpandString`）をそのまま活用
+- 一貫した変数管理（`__runner_datetime`, `__runner_pid` と同じパターン）
 
 ### Fail-Safe パターン
 
@@ -171,11 +184,14 @@ type GroupContext struct {
 
 ```
 GroupExecutor.ExecuteGroup():
-  ├─ GroupContext 作成
-  ├─ defer CleanupTempDir() 登録 ← 重要
+  ├─ ワークディレクトリを決定（固定 or 一時）
+  ├─ 一時ディレクトリの場合:
+  │  ├─ TempDirManager.Create() で生成
+  │  └─ defer mgr.Cleanup() 登録 ← 重要（Fail-Safe）
+  ├─ AutoVarProvider.SetWorkDir() で __runner_workdir を設定
   ├─ コマンド実行ループ
   │  └─ エラー可能性
-  └─ 終了時 → defer 実行（成功・失敗問わず）
+  └─ 終了時 → defer 実行（成功・失敗問わずクリーンアップ）
 ```
 
 ### %{__runner_workdir} 予約変数
@@ -227,6 +243,7 @@ args = ["%{__runner_workdir}/dump.sql"]
 | 日付 | バージョン | 変更内容 |
 |------|----------|--------|
 | 2025-10-18 | 1.0 | 初版作成：3つのドキュメント完成 |
+| 2025-10-18 | 1.1 | 設計変更：GroupContext を削除し AutoVarProvider で状態管理 |
 
 ---
 
