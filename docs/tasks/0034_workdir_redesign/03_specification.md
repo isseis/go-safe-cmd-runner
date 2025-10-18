@@ -87,14 +87,14 @@ Error: unknown field 'dir' in section [[groups.commands]]
 **設計方針**:
 - グループ単位でインスタンスを作成・破棄
 - 一時ディレクトリを使用する場合のみインスタンスを作成
-- インスタンス作成時にgroupNameを渡し、内部で保持
+- インスタンス作成時にloggerとgroupNameを渡し、内部で保持
 - 固定ディレクトリを使用する場合はインスタンスを作成しない
 
 ```go
 // TempDirManager: グループ単位の一時ディレクトリ管理
 //
 // ライフサイクル:
-//   1. NewTempDirManager(groupName) でインスタンス作成
+//   1. NewTempDirManager(logger, groupName) でインスタンス作成
 //   2. Create() で一時ディレクトリ生成
 //   3. defer で Cleanup() を登録
 //   4. グループ実行完了時に自動クリーンアップ
@@ -112,7 +112,7 @@ type TempDirManager interface {
     //   4. 生成されたパスを内部で保持
     //
     // 例:
-    //   mgr := NewTempDirManager("backup")
+    //   mgr := NewTempDirManager(logger, "backup")
     //   tempDir, err := mgr.Create()
     //   // → "/tmp/scr-backup-a1b2c3d4"
     Create() (string, error)
@@ -154,14 +154,15 @@ type TempDirManager interface {
 // NewTempDirManager: TempDirManager のコンストラクタ
 //
 // 引数:
+//   logger: ロギングインターフェース
 //   groupName: グループ名
 //
 // 戻り値:
 //   TempDirManager: 一時ディレクトリマネージャーのインスタンス
 //
 // 例:
-//   mgr := NewTempDirManager("backup")
-func NewTempDirManager(groupName string) TempDirManager
+//   mgr := NewTempDirManager(logger, "backup")
+func NewTempDirManager(logger logging.Logger, groupName string) TempDirManager
 ```
 
 ### 3.2 GroupExecutor インターフェース
@@ -327,7 +328,7 @@ func (e *DefaultGroupExecutor) resolveGroupWorkDir(
     }
 
     // 一時ディレクトリマネージャーを作成
-    tempDirMgr := NewTempDirManager(group.Name)
+    tempDirMgr := NewTempDirManager(e.logger, group.Name)
 
     // 一時ディレクトリを生成
     tempDir, err := tempDirMgr.Create()
@@ -375,20 +376,22 @@ import (
 // DefaultTempDirManager: 一時ディレクトリの標準実装
 type DefaultTempDirManager struct {
     logger      logging.Logger
+    groupName   string  // グループ名（インスタンス作成時に設定）
     tempDirPath string  // Create() で生成されたパス（Path() と Cleanup() で使用）
 }
 
-// NewDefaultTempDirManager: 新規インスタンスを作成
-func NewDefaultTempDirManager(logger logging.Logger) *DefaultTempDirManager {
+// NewTempDirManager: 新規インスタンスを作成
+func NewTempDirManager(logger logging.Logger, groupName string) TempDirManager {
     return &DefaultTempDirManager{
-        logger: logger,
+        logger:    logger,
+        groupName: groupName,
     }
 }
 
-// CreateTempDir: 一時ディレクトリを生成
-func (m *DefaultTempDirManager) CreateTempDir(groupName string) (string, error) {
+// Create: 一時ディレクトリを生成
+func (m *DefaultTempDirManager) Create() (string, error) {
     // プレフィックス: "scr-<groupName>-"
-    prefix := fmt.Sprintf("scr-%s-", groupName)
+    prefix := fmt.Sprintf("scr-%s-", m.groupName)
 
     // OS の TempDir() 関数を使用
     baseTmpDir := os.TempDir()
@@ -405,7 +408,7 @@ func (m *DefaultTempDirManager) CreateTempDir(groupName string) (string, error) 
     // ログ出力 (INFO レベル)
     m.logger.Info(fmt.Sprintf(
         "Created temporary directory for group '%s': %s",
-        groupName, tempDir,
+        m.groupName, tempDir,
     ))
 
     return tempDir, nil
@@ -783,7 +786,7 @@ func (e *DefaultGroupExecutor) resolveGroupWorkDir(
     }
 
     // 一時ディレクトリマネージャーを作成
-    tempDirMgr := NewTempDirManager(group.Name)
+    tempDirMgr := NewTempDirManager(e.logger, group.Name)
 
     // 一時ディレクトリを生成
     tempDir, err := tempDirMgr.Create()

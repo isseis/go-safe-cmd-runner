@@ -326,7 +326,7 @@ flowchart LR
 **設計方針**:
 - **グループ単位のインスタンス**: 各グループに対して独立したインスタンスを作成
 - **一時ディレクトリ使用時のみ作成**: 固定ディレクトリを使用する場合はインスタンスを作成しない
-- **インスタンス作成時にgroupNameを渡す**: コンストラクタで `NewTempDirManager(groupName)` として受け取る
+- **インスタンス作成時にloggerとgroupNameを渡す**: コンストラクタで `NewTempDirManager(logger, groupName)` として受け取る
 - **シンプルなメソッド名**: `CreateTempDir()` ではなく `Create()`、`CleanupTempDir()` ではなく `Cleanup()`
 
 **責務**:
@@ -359,7 +359,7 @@ sequenceDiagram
 
     Note over GE: Group.WorkDir未指定の場合のみ
 
-    GE->>GE: NewTempDirManager(groupName)
+    GE->>GE: NewTempDirManager(logger, groupName)
     activate TDM
     GE->>TDM: Create()
     TDM->>OS: MkdirTemp("scr-<group>-")
