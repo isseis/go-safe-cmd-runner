@@ -54,16 +54,18 @@ type Command struct {
 
 | 旧設定 | 新設定 | 対応 |
 |-------|-------|------|
-| `[global]` `workdir = "/tmp"` | 削除 | エラー（未知フィールド） |
-| `temp_dir = true` | 削除 | エラー（未知フィールド） |
-| `dir = "/path"` | `workdir = "/path"` | エラー（未知フィールド） |
+| `[global]` `workdir = "/tmp"` | 削除 | TOMLパーサーエラー（unknown field） |
+| `temp_dir = true` | 削除 | TOMLパーサーエラー（unknown field） |
+| `dir = "/path"` | `workdir = "/path"` | TOMLパーサーエラー（unknown field） |
 
 **エラーメッセージ例**:
 ```
-Error: unknown field 'workdir' in section [global]
-Error: unknown field 'temp_dir' in section [[groups]]
-Error: unknown field 'dir' in section [[groups.commands]]
+Error: toml: line X: unknown field 'workdir'
+Error: toml: line Y: unknown field 'temp_dir'
+Error: toml: line Z: unknown field 'dir'
 ```
+
+**注意**: 詳細なエラーメッセージ（セクション情報など）は`go-toml/v2`の実装に依存します。
 
 ### 2.2 実行時の変数管理
 
@@ -1073,22 +1075,15 @@ func (l *Loader) validateDeprecatedFields(cfg *runnertypes.Config) error {
 
 ### 14.2 エラーメッセージ
 
-```
-Error: toml: unmarshal error
-  in the file at line X
-  key 'workdir' is not valid in the [global] section
-  (この field は廃止されました)
+TOMLパーサー(`go-toml/v2`)が返す標準エラーメッセージを使用します。
 
-Error: toml: unmarshal error
-  in the file at line X
-  key 'temp_dir' is not valid in the [[groups]] section
-  (この field は廃止されました)
+**エラー例**:
 
-Error: toml: unmarshal error
-  in the file at line X
-  key 'dir' is not valid in the [[groups.commands]] section
-  (Field は 'workdir' に名称変更されました)
 ```
+Error: toml: line X: unknown field 'workdir'
+```
+
+**注意**: カスタムエラーメッセージは実装しません（YAGNIの原則に従い、シンプルな実装を維持）。
 
 ## 15. 実装チェックリスト
 
