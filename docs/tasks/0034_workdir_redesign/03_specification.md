@@ -368,8 +368,6 @@ package executor
 import (
     "fmt"
     "os"
-    "path/filepath"
-    "strings"
 
     "go-safe-cmd-runner/internal/logging"
 )
