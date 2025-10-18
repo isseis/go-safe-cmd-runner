@@ -337,7 +337,7 @@ func resolveGroupWorkDir(
     }
 
     // 自動一時ディレクトリを生成
-    tempDir, err := tempDirMgr.CreateTempDir(groupConfig.Name)
+    tempDir, err := tempDirMgr.Create()
     if err != nil {
         return "", false, fmt.Errorf("failed to create temp directory: %w", err)
     }

@@ -309,7 +309,6 @@ flowchart LR
 |----------|-----|------|
 | `GroupName` | `string` | グループの識別、ログ出力 |
 | `WorkDir` | `string` | 実際に使用されるワークディレクトリ（絶対パス） |
-| `KeepTempDirs` | `bool` | `--keep-temp-dirs` フラグの値 |
 
 このコンテキストは、グループ実行を通して各コマンド実行に渡され、ワークディレクトリの決定と変数展開に使用される。
 
@@ -338,8 +337,13 @@ flowchart LR
 
 **メソッド**:
 - `Create() (string, error)`: 一時ディレクトリを生成し、パスを返す
-- `Cleanup(keepTempDirs bool) error`: 一時ディレクトリを削除
+- `Cleanup() error`: 一時ディレクトリを削除
 - `Path() string`: 生成された一時ディレクトリのパスを取得
+
+**クリーンアップの制御**:
+- `Cleanup()` メソッドは引数を持たず、常に削除処理を実行
+- 一時ディレクトリを保持する場合は、呼び出し元（GroupExecutor）が `Cleanup()` を呼ばないことで制御
+- GroupExecutor が `--keep-temp-dirs` フラグに応じて `if !keepTempDirs { mgr.Cleanup() }` のように条件付き呼び出し
 
 ### 5.2 一時ディレクトリのライフサイクル
 
@@ -363,12 +367,13 @@ sequenceDiagram
     TDM-->>GE: tempDir
     deactivate TDM
 
-    GE->>GE: defer tempDirMgr.Cleanup()
+    Note over GE: keepTempDirs フラグで制御
+    GE->>GE: if !keepTempDirs {<br/>  defer tempDirMgr.Cleanup()<br/>}
 
     GE->>GE: ExecuteCommandLoop
 
-    alt All success or any error
-        GE->>TDM: Cleanup(keepFlag)
+    alt All success or any error (if !keepTempDirs)
+        GE->>TDM: Cleanup()
         activate TDM
         TDM->>OS: RemoveAll(tempDir)
         TDM-->>GE: error (or nil)
@@ -382,9 +387,9 @@ sequenceDiagram
 **ポイント**:
 1. **グループ単位のインスタンス**: `Group.WorkDir` 未指定の場合のみ `TempDirManager` を作成
 2. **シンプルなメソッド**: `Create()` と `Cleanup()` でディレクトリのライフサイクルを管理
-3. **defer パターン**: `defer` で削除処理を登録（エラー時も確実に実行）
-4. **スコープの明確化**: `TempDirManager` インスタンスの有無で一時ディレクトリか固定ディレクトリかを判断
-5. `--keep-temp-dirs` フラグで削除をスキップ可能
+3. **defer パターンと条件付き呼び出し**: `if !keepTempDirs { defer mgr.Cleanup() }` で削除処理を登録
+4. **呼び出し元での制御**: `--keep-temp-dirs` フラグは GroupExecutor が保持し、`Cleanup()` 呼び出しを制御
+5. **スコープの明確化**: `TempDirManager` インスタンスの有無で一時ディレクトリか固定ディレクトリかを判断
 6. 削除失敗時もプロセスは継続（エラーハンドリング戦略）
 
 ### 5.3 命名規則
@@ -614,11 +619,11 @@ $ cat /tmp/scr-backup-*/dump.sql
 GroupExecutor.ExecuteGroup():
   1. ワークディレクトリを決定
   2. GroupContext を作成
-  3. defer CleanupTempDir を登録 ← 重要: ここで登録
+  3. if !keepTempDirs { defer mgr.Cleanup() } を登録 ← 重要: ここで条件付き登録
   4. コマンド実行ループ
      └─ エラー発生
   5. グループ実行終了
-  6. defer が実行 ← ここでリソース削除（エラー時も実行）
+  6. defer が実行 ← ここでリソース削除（エラー時も実行、keepTempDirs=false の場合のみ）
 ```
 
 **利点**:
@@ -747,17 +752,18 @@ flowchart TD
     ExecuteGroup -->|resolve| ResolveWorkDir
     ResolveWorkDir{"Group.WorkDir<br/>指定?"}
     ResolveWorkDir -->|Yes| UseGroupWD["固定ディレクトリ"]
-    ResolveWorkDir -->|No| CreateTempDir["TempDirManager<br/>.CreateTempDir"]
+    ResolveWorkDir -->|No| CreateTempDir["TempDirManager<br/>.Create"]
 
-    UseGroupWD -->|workdir| CreateGroupCtx["GroupContext作成<br/>IsTempDir=false"]
-    CreateTempDir -->|tempdir| CreateGroupCtx2["GroupContext作成<br/>IsTempDir=true"]
+    UseGroupWD -->|workdir| CreateGroupCtx["GroupContext作成<br/>(固定ディレクトリ)"]
+    CreateTempDir -->|tempdir| CreateGroupCtx2["GroupContext作成<br/>(一時ディレクトリ)"]
 
-    CreateGroupCtx -->|GroupContext| RegisterDefer
+    CreateGroupCtx -->|GroupContext| CmdLoop["コマンドループ"]
     CreateGroupCtx2 -->|GroupContext| RegisterDefer
 
-    RegisterDefer["defer CleanupTempDir<br/>(重要: エラー時も実行)"]
+    RegisterDefer["if !keepTempDirs {<br/>  defer mgr.Cleanup()<br/>}"]
+    RegisterDefer -->|defer registered| CmdLoop
 
-    RegisterDefer -->|cmd loop| ExecuteCmd["コマンド実行"]
+    CmdLoop -->|cmd loop| ExecuteCmd["コマンド実行"]
 
     ExecuteCmd -->|expand| VariableExpander["VariableExpander<br/>workdir変数展開"]
     VariableExpander -->|expanded cmd| ResolveCmd["resolveWorkDir<br/>(Cmd vs Group)"]
@@ -765,19 +771,17 @@ flowchart TD
 
     CommandExecutor -->|success/error| NextCmd{次のコマンド?}
     NextCmd -->|Yes| ExecuteCmd
-    NextCmd -->|No| DeferRun
+    NextCmd -->|No| GroupEnd["グループ実行終了"]
 
     Error1 -->|exit| End["終了"]
-    DeferRun["defer実行: CleanupTempDir"]
-    DeferRun -->|tempdir check| DeleteCheck{IsTempDir?}
-    DeleteCheck -->|Yes, keep=false| Delete["RemoveAll"]
-    DeleteCheck -->|Yes, keep=true| Keep["保持（INFO log）"]
-    DeleteCheck -->|No| NoDelete["削除しない"]
+
+    GroupEnd -->|defer実行| DeferCheck{"defer登録済み?<br/>(一時dir かつ !keepTempDirs)"}
+    DeferCheck -->|Yes| Delete["mgr.Cleanup()<br/>→ RemoveAll"]
+    DeferCheck -->|No| NoDelete["削除しない<br/>(固定dir または keepTempDirs=true)"]
 
     Delete -->|success| DeleteOK["DEBUG log"]
     Delete -->|error| DeleteErr["ERROR log + stderr"]
 
-    Keep --> End
     NoDelete --> End
     DeleteOK --> End
     DeleteErr --> End
@@ -788,18 +792,19 @@ flowchart TD
 新規に導入されるインターフェースの概要：
 
 **TempDirManager**:
-- `CreateTempDir(groupName string) (string, error)`: 一時ディレクトリ生成
-- `CleanupTempDir(path string, keepFlag bool) error`: ディレクトリ削除
-- `IsTempDir(path string) bool`: 一時ディレクトリ判定
+- `Create() (string, error)`: 一時ディレクトリ生成
+- `Cleanup() error`: ディレクトリ削除（引数なし、常に削除）
+- `Path() string`: 生成されたディレクトリのパスを取得
 
 **VariableExpander**:
 - `ExpandCommand(ctx, cmd) (cmd, error)`: コマンド内の変数展開
 - `ExpandString(ctx, str) (string, error)`: 文字列内の変数展開
 
 **GroupExecutor** (拡張):
-- `ExecuteGroup(group, opts) error`: グループ実行（新）
+- `ExecuteGroup(group) error`: グループ実行（新）
 - グループレベルで GroupContext を管理
 - 一時ディレクトリの生成・削除を統括
+- `keepTempDirs` フラグを保持し、`Cleanup()` 呼び出しを条件付きで制御
 
 詳細なインターフェース定義は **詳細仕様書** を参照。
 
@@ -815,7 +820,6 @@ flowchart TD
 
 2. 実行時型の定義
    - `GroupContext` 構造体
-   - `ExecutionOptions` 構造体
 
 3. TOML パーサーレベルのバリデーション
    - 廃止フィールド存在時にエラー表示
