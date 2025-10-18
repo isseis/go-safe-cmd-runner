@@ -79,23 +79,8 @@ type GroupContext struct {
     // - グループレベル workdir が未指定: 自動生成された一時ディレクトリパス
     WorkDir string
 
-    // KeepTempDirs: --keep-temp-dirs フラグの値
-    KeepTempDirs bool
-
     // その他の実行時情報（将来の拡張用）
     // Metadata map[string]interface{}
-}
-
-// ExecutionOptions: グループ実行時のオプション
-// パッケージ: internal/runner/executor
-type ExecutionOptions struct {
-    // KeepTempDirs: --keep-temp-dirs フラグ
-    KeepTempDirs bool
-
-    // DryRun: ドライランモード（コマンド実行しない）
-    DryRun bool
-
-    // その他のオプション...
 }
 ```
 
@@ -140,24 +125,25 @@ type TempDirManager interface {
 
     // Cleanup: 一時ディレクトリを削除
     //
-    // 引数:
-    //   keepTempDirs: --keep-temp-dirs フラグの値
-    //
     // 戻り値:
     //   error: エラー（例: アクセス権限なし）
     //           返されたエラーは記録されるが、処理は継続される
     //
     // 動作:
-    //   1. keepTempDirs=true の場合: 削除しない（INFO ログ出力）
-    //   2. Create() で生成されたディレクトリを削除
-    //   3. 削除成功: DEBUG ログ
-    //   4. 削除失敗: ERROR ログ + 標準エラー出力
+    //   1. Create() で生成されたディレクトリを削除
+    //   2. 削除成功: DEBUG ログ
+    //   3. 削除失敗: ERROR ログ + 標準エラー出力
+    //
+    // 注意:
+    //   - 一時ディレクトリを保持する場合は、呼び出し元が Cleanup() を呼ばないことで制御する
+    //   - Runner が --keep-temp-dirs フラグに応じて呼び出しを制御する
     //
     // 例:
-    //   err := mgr.Cleanup(false)
-    //   // 削除成功の場合 err=nil、失敗の場合 err != nil
-    //   // ただし呼び出し元の処理は継続される
-    Cleanup(keepTempDirs bool) error
+    //   if !keepTempDirs {
+    //       err := mgr.Cleanup()
+    //       // 削除成功の場合 err=nil、失敗の場合 err != nil
+    //   }
+    Cleanup() error
 
     // Path: 生成された一時ディレクトリのパスを取得
     //
@@ -195,7 +181,6 @@ type GroupExecutor interface {
     //
     // 引数:
     //   config: 設定オブジェクト
-    //   opts: 実行オプション
     //
     // 戻り値:
     //   error: エラー（グループまたはコマンド実行失敗）
@@ -204,13 +189,12 @@ type GroupExecutor interface {
     //   1. グループループを開始
     //   2. 各グループに対して ExecuteGroup() を呼び出し
     //   3. グループ実行失敗時の処理（中止/継続）は設定で決定
-    ExecuteGroups(config *runnertypes.Config, opts *ExecutionOptions) error
+    ExecuteGroups(config *runnertypes.Config) error
 
     // ExecuteGroup: 1つのグループを実行
     //
     // 引数:
     //   group: グループ設定
-    //   opts: 実行オプション
     //
     // 戻り値:
     //   *GroupContext: グループ実行コンテキスト（外部参照不可）
@@ -218,12 +202,12 @@ type GroupExecutor interface {
     //
     // ライフサイクル:
     //   1. ワークディレクトリを決定（resolveGroupWorkDir）
-    //   2. 一時ディレクトリの場合は生成（TempDirManager.CreateTempDir）
+    //   2. 一時ディレクトリの場合は生成（TempDirManager.Create）
     //   3. GroupContext を作成
-    //   4. defer CleanupTempDir を登録 ← 重要: エラー時も実行
+    //   4. defer で条件付きクリーンアップを登録（if !keepTempDirs { mgr.Cleanup() }）
     //   5. コマンド実行ループ
     //   6. グループ実行終了（成功・失敗問わず） → defer 実行
-    ExecuteGroup(group *runnertypes.CommandGroup, opts *ExecutionOptions) error
+    ExecuteGroup(group *runnertypes.CommandGroup) error
 }
 ```
 
@@ -429,39 +413,26 @@ func (m *DefaultTempDirManager) CreateTempDir(groupName string) (string, error) 
     return tempDir, nil
 }
 
-// CleanupTempDir: 一時ディレクトリを削除
-func (m *DefaultTempDirManager) CleanupTempDir(
-    tempDirPath string,
-    keepTempDirs bool,
-) error {
-    // --keep-temp-dirs フラグが指定されている場合は削除しない
-    if keepTempDirs {
-        m.logger.Info(fmt.Sprintf(
-            "Keeping temporary directory (--keep-temp-dirs): %s",
-            tempDirPath,
-        ))
-        return nil
-    }
-
-    // 一時ディレクトリか確認
-    if !m.IsTempDir(tempDirPath) {
-        // 固定ディレクトリの場合は削除しない
+// Cleanup: 一時ディレクトリを削除
+func (m *DefaultTempDirManager) Cleanup() error {
+    if m.tempDirPath == "" {
+        // Create() が呼ばれていない場合は何もしない
         return nil
     }
 
     // ディレクトリを削除
-    err := os.RemoveAll(tempDirPath)
+    err := os.RemoveAll(m.tempDirPath)
     if err != nil {
         // エラーログ出力 (ERROR レベル)
         m.logger.Error(fmt.Sprintf(
             "Failed to cleanup temporary directory: %s: %v",
-            tempDirPath, err,
+            m.tempDirPath, err,
         ))
 
         // 標準エラー出力
         fmt.Fprintf(os.Stderr,
             "Warning: Failed to cleanup temporary directory: %s\n",
-            tempDirPath,
+            m.tempDirPath,
         )
 
         return fmt.Errorf("failed to cleanup temporary directory: %w", err)
@@ -470,16 +441,15 @@ func (m *DefaultTempDirManager) CleanupTempDir(
     // ログ出力 (DEBUG レベル)
     m.logger.Debug(fmt.Sprintf(
         "Cleaned up temporary directory: %s",
-        tempDirPath,
+        m.tempDirPath,
     ))
 
     return nil
 }
 
-// IsTempDir: パスが一時ディレクトリか判定
-func (m *DefaultTempDirManager) IsTempDir(tempDirPath string) bool {
-    baseName := filepath.Base(tempDirPath)
-    return strings.HasPrefix(baseName, "scr-")
+// Path: 生成された一時ディレクトリのパスを取得
+func (m *DefaultTempDirManager) Path() string {
+    return m.tempDirPath
 }
 ```
 
@@ -690,13 +660,15 @@ func main() {
         os.Exit(1)
     }
 
-    // グループ実行オプション
-    opts := &runner.ExecutionOptions{
-        KeepTempDirs: *keepTempDirs,
+    // Runner を作成（keepTempDirs フラグを渡す）
+    r, err := runner.NewRunner(config, runner.WithKeepTempDirs(*keepTempDirs))
+    if err != nil {
+        fmt.Fprintf(os.Stderr, "Error: Failed to create runner: %v\n", err)
+        os.Exit(1)
     }
 
     // グループ実行
-    err = runner.ExecuteGroups(config, opts)
+    err = r.ExecuteGroups()
     if err != nil {
         fmt.Fprintf(os.Stderr, "Error: %v\n", err)
         os.Exit(1)
@@ -740,6 +712,7 @@ type DefaultGroupExecutor struct {
     logger       logging.Logger
     varExpander  VariableExpander
     cmdExecutor  CommandExecutor
+    keepTempDirs bool  // Runner から受け取った --keep-temp-dirs フラグ
 }
 
 // NewDefaultGroupExecutor: 新規インスタンスを作成
@@ -747,11 +720,13 @@ func NewDefaultGroupExecutor(
     logger logging.Logger,
     varExpander VariableExpander,
     cmdExecutor CommandExecutor,
+    keepTempDirs bool,
 ) *DefaultGroupExecutor {
     return &DefaultGroupExecutor{
-        logger:      logger,
-        varExpander: varExpander,
-        cmdExecutor: cmdExecutor,
+        logger:       logger,
+        varExpander:  varExpander,
+        cmdExecutor:  cmdExecutor,
+        keepTempDirs: keepTempDirs,
     }
 }
 
@@ -759,7 +734,6 @@ func NewDefaultGroupExecutor(
 func (e *DefaultGroupExecutor) ExecuteGroup(
     ctx context.Context,
     group *types.CommandGroup,
-    opts *ExecutionOptions,
 ) error {
     // ステップ1: ワークディレクトリを決定
     workDir, tempDirMgr, err := e.resolveGroupWorkDir(group)
@@ -768,9 +742,9 @@ func (e *DefaultGroupExecutor) ExecuteGroup(
     }
 
     // ステップ2: defer でクリーンアップを登録（重要: エラー時も実行）
-    if tempDirMgr != nil {
+    if tempDirMgr != nil && !e.keepTempDirs {
         defer func() {
-            err := tempDirMgr.Cleanup(opts.KeepTempDirs)
+            err := tempDirMgr.Cleanup()
             if err != nil {
                 // エラーをログするが、処理は継続
                 e.logger.Error(fmt.Sprintf("Cleanup warning: %v", err))
@@ -780,9 +754,8 @@ func (e *DefaultGroupExecutor) ExecuteGroup(
 
     // ステップ3: GroupContext を作成
     groupCtx := &GroupContext{
-        GroupName:    group.Name,
-        WorkDir:      workDir,
-        KeepTempDirs: opts.KeepTempDirs,
+        GroupName: group.Name,
+        WorkDir:   workDir,
     }
 
     // ステップ4: コマンド実行ループ
@@ -1012,18 +985,17 @@ func TestCreateTempDir(t *testing.T) {
 #### T002: TempDirManager.CleanupTempDir
 ```go
 func TestCleanupTempDir(t *testing.T) {
-    // テスト条件:
-    // - keepTempDirs: false
+    // テスト1: 正常削除
+    // - Cleanup() を呼び出し
     // - 期待: ディレクトリが削除される
     // - 確認: ディレクトリ削除、DEBUG ログ
 
-    // テスト条件:
-    // - keepTempDirs: true
+    // テスト2: Cleanup() を呼ばない（keepTempDirs = true の動作）
+    // - Cleanup() を呼び出さない
     // - 期待: ディレクトリが保持される
-    // - 確認: ディレクトリ存在、INFO ログ
+    // - 確認: ディレクトリ存在
 
-    // テスト条件:
-    // - 削除失敗（パーミッション拒否）
+    // テスト3: 削除失敗（パーミッション拒否）
     // - 期待: エラーを返す
     // - 確認: ERROR ログ、標準エラー出力
 }
@@ -1110,14 +1082,13 @@ Error: toml: unmarshal error
 - [ ] `Group.TempDir` を削除
 - [ ] `Command.Dir` → `Command.WorkDir` に変更
 - [ ] `GroupContext` 型を定義
-- [ ] `ExecutionOptions` 型を定義
 
 ### Phase 2: 一時ディレクトリ機能
 - [ ] `TempDirManager` インターフェース定義
 - [ ] `DefaultTempDirManager` 実装
-- [ ] `--keep-temp-dirs` フラグ実装
-- [ ] `GroupExecutor` に統合
-- [ ] `defer` でクリーンアップ登録
+- [ ] `--keep-temp-dirs` フラグを Runner に追加
+- [ ] Runner から GroupExecutor へ keepTempDirs を渡す
+- [ ] `defer` で条件付きクリーンアップ登録（`if !keepTempDirs { mgr.Cleanup() }`）
 
 ### Phase 3: 変数展開
 - [ ] `VariableExpander` インターフェース定義
