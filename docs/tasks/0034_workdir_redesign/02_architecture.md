@@ -107,7 +107,7 @@ graph TB
     end
 
     subgraph ExpansionLayer["変数展開層"]
-        VariableExpander["VariableExpander<br/>(workdir変数展開)"]
+        ConfigExpander["config.ExpandString<br/>(変数展開)"]
     end
 
     subgraph ExecutionLayer["実行層"]
@@ -121,8 +121,8 @@ graph TB
     ConfigLoader -->|検証後| Validation
     Validation -->|設定| GroupExecutor
     GroupExecutor -->|生成・管理| TempDirManager
-    GroupExecutor -->|展開| VariableExpander
-    VariableExpander -->|コマンド| CommandExecutor
+    GroupExecutor -->|展開| ConfigExpander
+    ConfigExpander -->|コマンド| CommandExecutor
     CommandExecutor -->|実行| FileSystem
     TempDirManager -->|操作| FileSystem
 
@@ -130,7 +130,7 @@ graph TB
     class Validation enhanced;
     class GroupExecutor enhanced;
     class TempDirManager new;
-    class VariableExpander enhanced;
+    class ConfigExpander existing;
     class CommandExecutor existing;
     class FileSystem existing;
 ```
@@ -157,7 +157,7 @@ graph TB
     end
 
     subgraph ExpansionLayer["変数展開層"]
-        VariableExpander["variable.AutoVarProvider<br/>(internal/runner/variable)"]
+        ConfigExpander["config.ExpandString<br/>(internal/runner/config)"]
     end
 
     subgraph ExecutionLayer["実行層"]
@@ -171,8 +171,8 @@ graph TB
     ConfigLoader -->|検証後| Validation
     Validation -->|設定| Runner
     Runner -->|生成・管理| TempDirManager
-    Runner -->|展開| VariableExpander
-    VariableExpander -->|コマンド| CommandExecutor
+    Runner -->|展開| ConfigExpander
+    ConfigExpander -->|コマンド| CommandExecutor
     CommandExecutor -->|実行| ResourceManager
     TempDirManager -->|操作| ResourceManager
 
@@ -180,7 +180,7 @@ graph TB
     class Validation enhanced;
     class Runner enhanced;
     class TempDirManager new;
-    class VariableExpander enhanced;
+    class ConfigExpander existing;
     class CommandExecutor existing;
     class ResourceManager existing;
 ```
@@ -191,7 +191,7 @@ graph TB
 |------------|----------------|----------|
 | GroupExecutor | `Runner.ExecuteGroup()` メソッド | `internal/runner` |
 | TempDirManager | `TempDirManager` インターフェース（新規） | `internal/runner/executor` |
-| VariableExpander | `variable.AutoVarProvider` インターフェース | `internal/runner/variable` |
+| ConfigExpander | `config.ExpandString` 関数 | `internal/runner/config` |
 | CommandExecutor | `executor.CommandExecutor` インターフェース | `internal/runner/executor` |
 | FileSystem | `resource.ResourceManager` インターフェース | `internal/runner/resource` |
 
@@ -265,11 +265,11 @@ flowchart TD
 #### 変数展開プロセス
 
 ```mermaid
-flowchart LR
+flowchart TD
     Input["コマンド設定"]
     Input -->|args, cmd, workdir| HasVariable{"__runner_workdir<br/>を含む?"}
 
-    HasVariable -->|Yes| GetWorkDirPath["AutoVarProvider から<br/>__runner_workdir を取得"]
+    HasVariable -->|Yes| GetWorkDirPath["cmd.ExpandedVars から<br/>__runner_workdir を取得"]
     HasVariable -->|No| NoExpansion["展開せず使用"]
 
     GetWorkDirPath -->|workdir: string| ReplaceVariable["すべての<br/>__runner_workdir<br/>を置換"]
@@ -303,7 +303,7 @@ flowchart LR
 
 ### 4.2 実行時の状態管理
 
-グループ実行時の状態は `AutoVarProvider` を通じて管理される：
+グループ実行時の状態は `group.ExpandedVars` に直接設定される：
 
 **管理される情報**:
 - ワークディレクトリ（`__runner_workdir` として提供）
@@ -311,11 +311,12 @@ flowchart LR
 - プロセスID（`__runner_pid`）
 
 **ライフサイクル**:
-1. グループ実行開始時: `AutoVarProvider.SetWorkDir(workdir)` を呼び出す
-2. 変数展開時: `AutoVarProvider.Generate()` で最新の自動変数を取得
+1. グループ実行開始時: `resolveGroupWorkDir()` でワークディレクトリを決定
+2. 決定した `workdir` を `group.ExpandedVars["__runner_workdir"]` に直接設定
 3. 既存の `config.ExpandString` で変数展開を実行
 
 **設計の利点**:
+- シンプルで直接的な実装（余計な間接化がない）
 - 新しい型（GroupContext）が不要
 - 既存の変数展開機構をそのまま活用
 - 一貫した変数管理パターン（`__runner_*` 予約変数）
@@ -478,8 +479,7 @@ args = ["mydb", "-f", "%{__runner_workdir}/dump.sql"]
 ```
 
 実行時に:
-- `AutoVarProvider.SetWorkDir("/tmp/scr-backup-a1b2c3d4")` が呼ばれる
-- `ExpandedVars["__runner_workdir"]` = `/tmp/scr-backup-a1b2c3d4`
+- `group.ExpandedVars["__runner_workdir"]` = `/tmp/scr-backup-a1b2c3d4` が直接設定される
 - `args[1]` = `"%{__runner_workdir}/dump.sql"` → `/tmp/scr-backup-a1b2c3d4/dump.sql`
 
 **グループ "build" で固定ディレクトリを使用**:
@@ -495,8 +495,7 @@ args = ["clone", "https://github.com/example/repo.git", "%{__runner_workdir}/pro
 ```
 
 実行時に:
-- `AutoVarProvider.SetWorkDir("/opt/project")` が呼ばれる
-- `ExpandedVars["__runner_workdir"]` = `/opt/project`
+- `group.ExpandedVars["__runner_workdir"]` = `/opt/project` が直接設定される
 - `args[2]` = `"%{__runner_workdir}/project"` → `/opt/project/project`
 
 ## 7. ワークディレクトリ解決ロジック
@@ -526,7 +525,6 @@ sequenceDiagram
     participant GE as GroupExecutor
     participant Resolve as Resolver
     participant TDM as TempDirManager
-    participant AVP as AutoVarProvider
     participant CE as CommandExecutor
 
     Config->>GE: group.commands[]
@@ -546,16 +544,10 @@ sequenceDiagram
     end
     deactivate Resolve
 
-    GE->>AVP: SetWorkDir(resolved)
-    activate AVP
-    AVP-->>GE: (workdir set)
-    deactivate AVP
-
-    GE->>AVP: Generate()
-    AVP-->>GE: autoVars (including __runner_workdir)
+    GE->>GE: group.ExpandedVars["__runner_workdir"] = resolved
 
     loop for each command
-        GE->>GE: Merge autoVars into cmd.ExpandedVars
+        GE->>GE: Copy group.ExpandedVars to cmd.ExpandedVars
         GE->>CE: Execute(cmd)
         activate CE
 
@@ -634,7 +626,7 @@ $ cat /tmp/scr-backup-*/dump.sql
 ```
 GroupExecutor.ExecuteGroup():
   1. ワークディレクトリを決定
-  2. AutoVarProvider.SetWorkDir(workdir) を呼び出す
+  2. group.ExpandedVars["__runner_workdir"] に直接設定
   3. if !keepTempDirs { defer mgr.Cleanup() } を登録 ← 重要: ここで条件付き登録
   4. コマンド実行ループ
      └─ エラー発生
@@ -704,7 +696,7 @@ graph TB
     subgraph ProcessLayer["処理層"]
         GE["GroupExecutor<br/>(グループ実行制御)"]
         TDM["TempDirManager<br/>(一時ディレクトリ管理)"]
-        AVP["AutoVarProvider<br/>(自動変数管理)"]
+        Expander["config.ExpandString<br/>(変数展開)"]
         CE["CommandExecutor<br/>(コマンド実行)"]
     end
 
@@ -717,8 +709,9 @@ graph TB
     Flag -->|keep flag| GE
 
     GE -->|workdir決定| TDM
-    GE -->|SetWorkDir| AVP
-    AVP -->|__runner_workdir| GE
+    GE -->|__runner_workdir設定| GE
+    GE -->|変数展開| Expander
+    Expander -->|展開済みコマンド| CE
     GE -->|コマンド実行| CE
 
     TDM -->|生成・削除| TDM
@@ -729,8 +722,8 @@ graph TB
     CE -->|結果| GE
 
     class Config,Log,Stderr data;
-    class Flag,CE existing;
-    class GE,AVP enhanced;
+    class Flag,CE,Expander existing;
+    class GE enhanced;
     class TDM new;
 ```
 
@@ -769,8 +762,8 @@ flowchart TD
     ResolveWorkDir -->|Yes| UseGroupWD["固定ディレクトリ"]
     ResolveWorkDir -->|No| CreateTempDir["TempDirManager<br/>.Create"]
 
-    UseGroupWD -->|workdir| SetWorkDir["AutoVarProvider<br/>.SetWorkDir(workdir)"]
-    CreateTempDir -->|tempdir| SetWorkDir2["AutoVarProvider<br/>.SetWorkDir(tempdir)"]
+    UseGroupWD -->|workdir| SetWorkDir["group.ExpandedVars<br/>['__runner_workdir'] = workdir"]
+    CreateTempDir -->|tempdir| SetWorkDir2["group.ExpandedVars<br/>['__runner_workdir'] = tempdir"]
 
     SetWorkDir -->|set| CmdLoop["コマンドループ"]
     SetWorkDir2 -->|set| RegisterDefer
@@ -811,13 +804,9 @@ flowchart TD
 - `Cleanup() error`: ディレクトリ削除（引数なし、常に削除）
 - `Path() string`: 生成されたディレクトリのパスを取得
 
-**AutoVarProvider** (拡張):
-- `SetWorkDir(workdir string)`: 現在のグループのワークディレクトリを設定（新規追加）
-- `Generate() map[string]string`: 自動変数を生成（`__runner_workdir` を含む）
-
 **GroupExecutor** (拡張):
 - `ExecuteGroup(group) error`: グループ実行（拡張）
-- グループレベルで AutoVarProvider を使って状態を管理
+- グループレベルで `group.ExpandedVars` に `__runner_workdir` を直接設定
 - 一時ディレクトリの生成・削除を統括
 - `keepTempDirs` フラグを保持し、`Cleanup()` 呼び出しを条件付きで制御
 
@@ -857,15 +846,12 @@ flowchart TD
 ### 12.3 Phase 3: 変数展開
 
 **実装項目**:
-1. `AutoVarProvider` の拡張
-   - `SetWorkDir(workdir string)` メソッドの追加
-   - `Generate()` メソッドで `__runner_workdir` を含める
-   - `AutoVarKeyWorkDir` 定数の追加
+1. 定数の追加
+   - `AutoVarKeyWorkDir` 定数の追加（`internal/runner/variable`）
 
 2. `GroupExecutor` への統合
-   - グループ実行時に `AutoVarProvider.SetWorkDir()` を呼び出す
-   - `AutoVarProvider.Generate()` で自動変数を取得
-   - `cmd.ExpandedVars` に自動変数をマージ
+   - グループ実行時に `group.ExpandedVars["__runner_workdir"]` に直接設定
+   - `cmd.ExpandedVars` にグループレベルの変数をマージ
 
 3. パストラバーサル検証
    - 絶対パス要件
@@ -876,7 +862,7 @@ flowchart TD
 **実装項目**:
 1. 単体テスト
    - `TempDirManager` のテスト
-   - `AutoVarProvider` のテスト（`SetWorkDir` と `Generate`）
+   - 変数展開のテスト（`__runner_workdir` を含む）
    - エラーハンドリングのテスト
 
 2. 統合テスト
@@ -909,7 +895,7 @@ flowchart TD
 
 ### 13.2 状態管理パターン
 
-グループレベルの状態は `AutoVarProvider` を通じて管理：
+グループレベルの状態は `group.ExpandedVars` に直接設定：
 
 **状態情報**:
 - ワークディレクトリ（`__runner_workdir` として提供）
@@ -917,11 +903,12 @@ flowchart TD
 - プロセスID（`__runner_pid`）
 
 **ライフサイクル**:
-1. グループ実行開始時: `AutoVarProvider.SetWorkDir(workdir)` を呼び出す
-2. 変数展開時: `AutoVarProvider.Generate()` で最新の自動変数を取得
+1. グループ実行開始時: `resolveGroupWorkDir()` でワークディレクトリを決定
+2. 決定した `workdir` を `group.ExpandedVars["__runner_workdir"]` に直接設定
 3. 既存の `config.ExpandString` で変数展開を実行
 
 **利点**:
+- シンプルで直接的な実装（余計な間接化がない）
 - 新しい型（GroupContext）が不要
 - 既存の変数展開機構をそのまま活用
 - 一貫した変数管理パターン

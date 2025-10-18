@@ -69,16 +69,16 @@ Error: toml: line Z: unknown field 'dir'
 
 ### 2.2 実行時の変数管理
 
-実行時のワークディレクトリ情報は `AutoVarProvider` を通じて管理されます：
+実行時のワークディレクトリ情報は `group.ExpandedVars` に直接設定されます：
 
-1. グループ実行開始時に `AutoVarProvider.SetWorkDir(workDir)` を呼び出す
-2. `AutoVarProvider.Generate()` で `__runner_workdir` を含む変数マップを取得
+1. グループ実行開始時に `resolveGroupWorkDir()` でワークディレクトリを決定
+2. 決定した `workDir` を `group.ExpandedVars["__runner_workdir"]` に直接設定
 3. この変数マップを既存の変数展開機構（`config.ExpandString`）で利用
 
 **利点**:
-- 新しい型（GroupContext）が不要
-- 既存の変数展開機構をそのまま活用
-- 一貫した変数管理（`__runner_datetime`, `__runner_pid` と同じパターン）
+- シンプルで直接的な実装（余計な間接化がない）
+- `AutoVarProvider` への依存が不要
+- ワークディレクトリの決定と設定が同じスコープ内で完結
 
 ## 3. API 仕様
 
@@ -207,55 +207,9 @@ type GroupExecutor interface {
 }
 ```
 
-### 3.3 AutoVarProvider の拡張
+### 3.3 __runner_workdir の定数定義
 
 **パッケージ**: `internal/runner/variable`
-
-**既存の `AutoVarProvider` インターフェースに `SetWorkDir` メソッドを追加**:
-
-```go
-// AutoVarProvider provides automatic internal variables
-type AutoVarProvider interface {
-    // Generate returns all auto internal variables as a map.
-    // All keys have the AutoVarPrefix (__runner_).
-    Generate() map[string]string
-
-    // SetWorkDir sets the current group's working directory
-    // This must be called before each group execution to update __runner_workdir
-    SetWorkDir(workdir string)
-}
-
-// autoVarProvider implements AutoVarProvider
-type autoVarProvider struct {
-    clock   Clock
-    workdir string  // 追加: グループごとに設定される作業ディレクトリ
-}
-
-// SetWorkDir sets the current group's working directory
-func (p *autoVarProvider) SetWorkDir(workdir string) {
-    p.workdir = workdir
-}
-
-// Generate returns all auto internal variables as a map.
-// This includes:
-//   - __runner_datetime: 現在時刻（UTC、YYYYMMDDHHmmSS.msec形式）
-//   - __runner_pid: プロセスID
-//   - __runner_workdir: 現在のグループの作業ディレクトリ（SetWorkDir で設定された場合のみ）
-func (p *autoVarProvider) Generate() map[string]string {
-    now := p.clock()
-    vars := map[string]string{
-        AutoVarPrefix + AutoVarKeyDatetime: now.UTC().Format(DatetimeLayout),
-        AutoVarPrefix + AutoVarKeyPID:      strconv.Itoa(os.Getpid()),
-    }
-
-    // workdir が設定されている場合のみ追加
-    if p.workdir != "" {
-        vars[AutoVarPrefix + AutoVarKeyWorkDir] = p.workdir
-    }
-
-    return vars
-}
-```
 
 **定数の追加**:
 
@@ -265,6 +219,8 @@ const (
     AutoVarKeyWorkDir = "workdir"
 )
 ```
+
+**注意**: `AutoVarProvider` インターフェースへの変更は不要です。`__runner_workdir` は `GroupExecutor` が直接 `group.ExpandedVars` に設定します。
 
 ### 3.4 既存の変数展開機構の活用
 
@@ -287,8 +243,8 @@ func ExpandString(
 
 **統合方法**:
 
-1. グループ実行開始時に `AutoVarProvider.SetWorkDir(workDir)` を呼び出す
-2. `AutoVarProvider.Generate()` で `__runner_workdir` を含む変数マップを取得
+1. グループ実行開始時に `resolveGroupWorkDir()` でワークディレクトリを決定
+2. 決定した `workDir` を `group.ExpandedVars["__runner_workdir"]` に直接設定
 3. この変数マップを `ExpandString` に渡してコマンド引数を展開
 
 ## 4. ワークディレクトリ決定ロジック
@@ -470,7 +426,7 @@ func (m *DefaultTempDirManager) Path() string {
 
 ## 6. 変数展開の統合
 
-### 6.1 グループ実行時の AutoVarProvider 更新
+### 6.1 グループ実行時の __runner_workdir 設定
 
 **ファイル**: `internal/runner/executor/group_executor.go`
 
@@ -496,36 +452,29 @@ func (e *DefaultGroupExecutor) ExecuteGroup(
         }()
     }
 
-    // ステップ3: AutoVarProvider に workdir をセット
-    e.autoVarProvider.SetWorkDir(workDir)
+    // ステップ3: グループレベル変数に __runner_workdir を直接設定
+    group.ExpandedVars[variable.AutoVarPrefix + variable.AutoVarKeyWorkDir] = workDir
 
-    // ステップ4: グループレベル変数を更新（__runner_workdir を含める）
-    // 注: 既存の ExpandGroupConfig は Global 後に実行されるため、
-    //     ここでは __runner_workdir のみを追加する
-    autoVars := e.autoVarProvider.Generate()
-    // group.ExpandedVars に __runner_workdir を追加
-    maps.Copy(group.ExpandedVars, autoVars)
-
-    // ステップ5: コマンド実行ループ
+    // ステップ4: コマンド実行ループ
     for _, cmd := range group.Commands {
-        // ステップ5-1: コマンドレベルの変数マップを更新
+        // ステップ4-1: コマンドレベルの変数マップを更新
         // group.ExpandedVars（__runner_workdir を含む）を cmd.ExpandedVars にマージ
         // これにより、コマンド固有の変数とグループレベルの変数が統合される
         maps.Copy(cmd.ExpandedVars, group.ExpandedVars)
 
-        // ステップ5-2: コマンドレベルの変数展開を再実行（__runner_workdir を含める）
+        // ステップ4-2: コマンドレベルの変数展開を再実行（__runner_workdir を含める）
         err := e.expandCommandWithWorkDir(cmd, group)
         if err != nil {
             return fmt.Errorf("failed to expand command '%s': %w", cmd.Name, err)
         }
 
-        // ステップ5-3: コマンド実行
+        // ステップ4-3: コマンド実行
         output, err := e.cmdExecutor.Execute(ctx, cmd)
         if err != nil {
             return fmt.Errorf("command '%s' failed: %w", cmd.Name, err)
         }
 
-        // ステップ5-4: 出力ハンドリング（既存ロジック）
+        // ステップ4-4: 出力ハンドリング（既存ロジック）
         e.handleCommandOutput(cmd, output)
     }
 
@@ -703,24 +652,21 @@ import (
 
 // DefaultGroupExecutor: グループ実行の標準実装
 type DefaultGroupExecutor struct {
-    logger          logging.Logger
-    autoVarProvider variable.AutoVarProvider  // 変更: VariableExpander → AutoVarProvider
-    cmdExecutor     CommandExecutor
-    keepTempDirs    bool  // Runner から受け取った --keep-temp-dirs フラグ
+    logger       logging.Logger
+    cmdExecutor  CommandExecutor
+    keepTempDirs bool  // Runner から受け取った --keep-temp-dirs フラグ
 }
 
 // NewDefaultGroupExecutor: 新規インスタンスを作成
 func NewDefaultGroupExecutor(
     logger logging.Logger,
-    autoVarProvider variable.AutoVarProvider,  // 変更: VariableExpander → AutoVarProvider
     cmdExecutor CommandExecutor,
     keepTempDirs bool,
 ) *DefaultGroupExecutor {
     return &DefaultGroupExecutor{
-        logger:          logger,
-        autoVarProvider: autoVarProvider,
-        cmdExecutor:     cmdExecutor,
-        keepTempDirs:    keepTempDirs,
+        logger:       logger,
+        cmdExecutor:  cmdExecutor,
+        keepTempDirs: keepTempDirs,
     }
 }
 
@@ -746,33 +692,29 @@ func (e *DefaultGroupExecutor) ExecuteGroup(
         }()
     }
 
-    // ステップ3: AutoVarProvider に workdir をセット
-    e.autoVarProvider.SetWorkDir(workDir)
+    // ステップ3: グループレベル変数に __runner_workdir を直接設定
+    group.ExpandedVars[variable.AutoVarPrefix + variable.AutoVarKeyWorkDir] = workDir
 
-    // ステップ4: グループレベル変数を更新（__runner_workdir を含める）
-    autoVars := e.autoVarProvider.Generate()
-    maps.Copy(group.ExpandedVars, autoVars)
-
-    // ステップ5: コマンド実行ループ
+    // ステップ4: コマンド実行ループ
     for _, cmd := range group.Commands {
-        // ステップ5-1: コマンドレベルの変数マップを更新
+        // ステップ4-1: コマンドレベルの変数マップを更新
         // group.ExpandedVars（__runner_workdir を含む）を cmd.ExpandedVars にマージ
         // これにより、コマンド固有の変数とグループレベルの変数が統合される
         maps.Copy(cmd.ExpandedVars, group.ExpandedVars)
 
-        // ステップ5-2: コマンドレベルの変数展開を再実行（__runner_workdir を含める）
+        // ステップ4-2: コマンドレベルの変数展開を再実行（__runner_workdir を含める）
         err := e.expandCommandWithWorkDir(cmd, group)
         if err != nil {
             return fmt.Errorf("failed to expand command '%s': %w", cmd.Name, err)
         }
 
-        // ステップ5-3: コマンド実行
+        // ステップ4-3: コマンド実行
         output, err := e.cmdExecutor.Execute(ctx, cmd)
         if err != nil {
             return fmt.Errorf("command '%s' failed: %w", cmd.Name, err)
         }
 
-        // ステップ5-4: 出力ハンドリング（既存ロジック）
+        // ステップ4-4: 出力ハンドリング（既存ロジック）
         e.handleCommandOutput(cmd, output)
     }
 
@@ -1101,10 +1043,8 @@ Error: toml: line X: unknown field 'workdir'
 - [ ] `defer` で条件付きクリーンアップ登録（`if !keepTempDirs { mgr.Cleanup() }`）
 
 ### Phase 3: 変数展開
-- [ ] `AutoVarProvider` に `SetWorkDir` メソッドを追加
-- [ ] `AutoVarProvider.Generate()` で `__runner_workdir` を返すように実装
-- [ ] `AutoVarKeyWorkDir` 定数を追加
-- [ ] `GroupExecutor.ExecuteGroup()` でグループ実行時に `SetWorkDir` を呼び出す
+- [ ] `AutoVarKeyWorkDir` 定数を追加（`internal/runner/variable`）
+- [ ] `GroupExecutor.ExecuteGroup()` で `group.ExpandedVars["__runner_workdir"]` に直接設定
 - [ ] `GroupExecutor.expandCommandWithWorkDir()` を実装（コマンド変数の再展開）
 - [ ] `CommandExecutor.resolveWorkDir()` を実装（ワークディレクトリ決定ロジック）
 
