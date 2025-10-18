@@ -589,13 +589,12 @@ func validatePath(path string) error {
     if !filepath.IsAbs(path) {
         return fmt.Errorf("path must be absolute: %s", path)
     }
-
-    // 相対パスコンポーネント (..) を検出
-    clean := filepath.Clean(path)
-    if clean != path {
-        return fmt.Errorf("path contains relative components: %s", path)
+    // パストラバーサル攻撃を防ぐため、パスコンポーネントに ".." が含まれることを禁止する
+    for _, part := range strings.Split(path, string(filepath.Separator)) {
+        if part == ".." {
+            return fmt.Errorf("path contains '..' component, which is a security risk: %s", path)
+        }
     }
-
     return nil
 }
 ```
@@ -767,8 +766,11 @@ func (e *DefaultGroupExecutor) ExecuteGroup(
         GroupName:    group.Name,
         WorkDir:      workDir,
         IsTempDir:    isTempDir,
-        TempDirPath:  workDir,
+        TempDirPath:  "", // 後で設定
         KeepTempDirs: opts.KeepTempDirs,
+    }
+    if isTempDir {
+        groupCtx.TempDirPath = workDir
     }
 
     // ステップ3: defer でクリーンアップを登録（重要: エラー時も実行）
@@ -908,10 +910,12 @@ func validatePath(path string) error {
         return fmt.Errorf("path must be absolute: %s", path)
     }
 
-    // ルール2: 相対パスコンポーネント (..) を検出
-    clean := filepath.Clean(path)
-    if clean != path {
-        return fmt.Errorf("path contains relative components: %s", path)
+    // ルール2: パストラバーサル攻撃を防ぐため、".." コンポーネントを禁止
+    // filepath.Clean() は // を正規化してしまうため、コンポーネント単位で検証
+    for _, part := range strings.Split(path, string(filepath.Separator)) {
+        if part == ".." {
+            return fmt.Errorf("path contains '..' component, which is a security risk: %s", path)
+        }
     }
 
     // ルール3: シンボリックリンク検証
