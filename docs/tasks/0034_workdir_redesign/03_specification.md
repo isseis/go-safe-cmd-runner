@@ -192,13 +192,12 @@ type GroupExecutor interface {
     //   group: グループ設定
     //
     // 戻り値:
-    //   *GroupContext: グループ実行コンテキスト（外部参照不可）
     //   error: エラー（コマンド実行失敗など）
     //
     // ライフサイクル:
     //   1. ワークディレクトリを決定（resolveGroupWorkDir）
     //   2. 一時ディレクトリの場合は生成（TempDirManager.Create）
-    //   3. GroupContext を作成
+    //   3. AutoVarProvider.SetWorkDir() でワークディレクトリを設定
     //   4. defer で条件付きクリーンアップを登録（if !keepTempDirs { mgr.Cleanup() }）
     //   5. コマンド実行ループ
     //   6. グループ実行終了（成功・失敗問わず） → defer 実行
