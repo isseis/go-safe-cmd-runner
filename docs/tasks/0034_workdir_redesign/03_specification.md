@@ -497,7 +497,7 @@ func (e *DefaultGroupExecutor) ExecuteGroup(
     // ステップ3: AutoVarProvider に workdir をセット
     e.autoVarProvider.SetWorkDir(workDir)
 
-    // ステップ4: グループレベル変数を再展開（__runner_workdir を含める）
+    // ステップ4: グループレベル変数を更新（__runner_workdir を含める）
     // 注: 既存の ExpandGroupConfig は Global 後に実行されるため、
     //     ここでは __runner_workdir のみを追加する
     autoVars := e.autoVarProvider.Generate()
@@ -506,19 +506,24 @@ func (e *DefaultGroupExecutor) ExecuteGroup(
 
     // ステップ5: コマンド実行ループ
     for _, cmd := range group.Commands {
-        // コマンドレベルの変数展開を再実行（__runner_workdir を含める）
+        // ステップ5-1: コマンドレベルの変数マップを更新
+        // group.ExpandedVars（__runner_workdir を含む）を cmd.ExpandedVars にマージ
+        // これにより、コマンド固有の変数とグループレベルの変数が統合される
+        maps.Copy(cmd.ExpandedVars, group.ExpandedVars)
+
+        // ステップ5-2: コマンドレベルの変数展開を再実行（__runner_workdir を含める）
         err := e.expandCommandWithWorkDir(cmd, group)
         if err != nil {
             return fmt.Errorf("failed to expand command '%s': %w", cmd.Name, err)
         }
 
-        // コマンド実行
+        // ステップ5-3: コマンド実行
         output, err := e.cmdExecutor.Execute(ctx, cmd)
         if err != nil {
             return fmt.Errorf("command '%s' failed: %w", cmd.Name, err)
         }
 
-        // 出力ハンドリング（既存ロジック）
+        // ステップ5-4: 出力ハンドリング（既存ロジック）
         e.handleCommandOutput(cmd, output)
     }
 
@@ -748,19 +753,24 @@ func (e *DefaultGroupExecutor) ExecuteGroup(
 
     // ステップ5: コマンド実行ループ
     for _, cmd := range group.Commands {
-        // コマンドレベルの変数展開を再実行（__runner_workdir を含める）
+        // ステップ5-1: コマンドレベルの変数マップを更新
+        // group.ExpandedVars（__runner_workdir を含む）を cmd.ExpandedVars にマージ
+        // これにより、コマンド固有の変数とグループレベルの変数が統合される
+        maps.Copy(cmd.ExpandedVars, group.ExpandedVars)
+
+        // ステップ5-2: コマンドレベルの変数展開を再実行（__runner_workdir を含める）
         err := e.expandCommandWithWorkDir(cmd, group)
         if err != nil {
             return fmt.Errorf("failed to expand command '%s': %w", cmd.Name, err)
         }
 
-        // コマンド実行
+        // ステップ5-3: コマンド実行
         output, err := e.cmdExecutor.Execute(ctx, cmd)
         if err != nil {
             return fmt.Errorf("command '%s' failed: %w", cmd.Name, err)
         }
 
-        // 出力ハンドリング（既存ロジック）
+        // ステップ5-4: 出力ハンドリング（既存ロジック）
         e.handleCommandOutput(cmd, output)
     }
 
