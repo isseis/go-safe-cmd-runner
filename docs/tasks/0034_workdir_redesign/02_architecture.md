@@ -157,7 +157,7 @@ graph TB
     end
 
     subgraph ExpansionLayer["変数展開層"]
-        VariableExpander["expansion.VariableExpander<br/>(internal/runner/expansion)"]
+        VariableExpander["variable.AutoVarProvider<br/>(internal/runner/variable)"]
     end
 
     subgraph ExecutionLayer["実行層"]
@@ -190,8 +190,8 @@ graph TB
 | 概念図の名称 | 実装における対応 | パッケージ |
 |------------|----------------|----------|
 | GroupExecutor | `Runner.ExecuteGroup()` メソッド | `internal/runner` |
-| TempDirManager | `TempDirManager` インターフェース（新規） | TBD（新規パッケージ） |
-| VariableExpander | `environment.VariableExpander` 構造体 | `internal/runner/environment` |
+| TempDirManager | `TempDirManager` インターフェース（新規） | `internal/runner/executor` |
+| VariableExpander | `variable.AutoVarProvider` インターフェース | `internal/runner/variable` |
 | CommandExecutor | `executor.CommandExecutor` インターフェース | `internal/runner/executor` |
 | FileSystem | `resource.ResourceManager` インターフェース | `internal/runner/resource` |
 
