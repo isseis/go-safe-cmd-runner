@@ -377,35 +377,15 @@ args = ["clone", "https://github.com/example/repo.git", "%{__runner_workdir}/pro
 - `GroupContext.WorkDir` = `/opt/project`
 - `args[2]` = `"%{__runner_workdir}/project"` → `/opt/project/project`
 
-## 8. コマンドラインオプション
+## 7. ワークディレクトリ解決ロジック
 
-### 8.1 `--keep-temp-dirs` フラグ
+### 7.1 優先順位と決定プロセス
 
-一時ディレクトリを削除せずに保持するオプション。デバッグ時やトラブルシューティングで一時ディレクトリ内のファイルを検査したい場合に使用される。
+ワークディレクトリは以下の優先順位で決定されます:
 
-**定義**:
-- **フラグ名**: `--keep-temp-dirs`
-- **型**: ブール フラグ（boolean flag）
-- **デフォルト**: `false`（一時ディレクトリ自動削除）
-- **用途**: `runner --config config.toml --keep-temp-dirs`
-
-**動作**:
-- フラグなし → グループ実行終了後に一時ディレクトリを削除
-- フラグあり → グループ実行終了後も一時ディレクトリを保持
-- 固定ディレクトリ → フラグの値に関わらず削除しない
-
-**ユースケース**:
-```bash
-# 通常実行
-$ ./runner --config backup.toml
-# グループ実行完了後、一時ディレクトリは自動削除
-
-# デバッグ実行
-$ ./runner --config backup.toml --keep-temp-dirs
-# グループ実行完了後、一時ディレクトリは保持
-$ ls -la /tmp/scr-backup-*/
-$ cat /tmp/scr-backup-*/dump.sql
-```
+1. **コマンドレベル**: `Command.WorkDir` が指定されている場合、そのディレクトリを使用
+2. **グループレベル**: `Group.WorkDir` が指定されている場合、そのディレクトリを使用
+3. **自動一時ディレクトリ**: どちらも未指定の場合、自動生成された一時ディレクトリを使用
 
 ### 7.2 決定マトリックス
 
@@ -458,6 +438,36 @@ sequenceDiagram
     end
 
     deactivate GE
+```
+
+## 8. コマンドラインオプション
+
+### 8.1 `--keep-temp-dirs` フラグ
+
+一時ディレクトリを削除せずに保持するオプション。デバッグ時やトラブルシューティングで一時ディレクトリ内のファイルを検査したい場合に使用される。
+
+**定義**:
+- **フラグ名**: `--keep-temp-dirs`
+- **型**: ブール フラグ（boolean flag）
+- **デフォルト**: `false`（一時ディレクトリ自動削除）
+- **用途**: `runner --config config.toml --keep-temp-dirs`
+
+**動作**:
+- フラグなし → グループ実行終了後に一時ディレクトリを削除
+- フラグあり → グループ実行終了後も一時ディレクトリを保持
+- 固定ディレクトリ → フラグの値に関わらず削除しない
+
+**ユースケース**:
+```bash
+# 通常実行
+$ ./runner --config backup.toml
+# グループ実行完了後、一時ディレクトリは自動削除
+
+# デバッグ実行
+$ ./runner --config backup.toml --keep-temp-dirs
+# グループ実行完了後、一時ディレクトリは保持
+$ ls -la /tmp/scr-backup-*/
+$ cat /tmp/scr-backup-*/dump.sql
 ```
 
 ## 9. エラーハンドリング戦略

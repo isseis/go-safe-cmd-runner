@@ -943,7 +943,8 @@ workdir = "/var/backup"  # オプション（指定時は固定ディレクト�
 name = "dump"
 cmd = "pg_dump"
 args = ["mydb", "-f", "%{__runner_workdir}/dump.sql"]
-# workdir は指定不可（コマンドレベルで指定）
+# workdir はグループでは指定せず自動作成される一時ディレクトリを使用
+# 必要に応じてコマンドレベルで指定
 
 # グループレベル workdir が未指定 → 一時ディレクトリを自動生成
 [[groups]]
