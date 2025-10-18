@@ -65,7 +65,7 @@
 
 **内容**:
 - 型定義（削除・追加フィールド）
-- API 仕様（TempDirManager、GroupExecutor、AutoVarProvider の拡張）
+- API 仕様（TempDirManager、GroupExecutor）
 - ワークディレクトリ決定ロジック（アルゴリズム）
 - 既存の変数展開機構の活用（config.ExpandString）
 - 実装詳細（完全なコード例）
@@ -154,27 +154,26 @@
 
 ### 自動変数による状態管理
 
-グループ実行時のワークディレクトリは `AutoVarProvider` を通じて管理されます：
+グループ実行時のワークディレクトリは `group.ExpandedVars` に直接設定されます：
 
 ```go
-// AutoVarProvider: 自動変数の提供
-type AutoVarProvider interface {
-    Generate() map[string]string
-    SetWorkDir(workdir string)  // グループ実行時に呼び出す
-}
-
 // グループ実行開始時:
-autoVarProvider.SetWorkDir("/tmp/scr-backup-XXXXXX")
+// ワークディレクトリを決定
+workDir := resolveGroupWorkDir(group)  // "/tmp/scr-backup-XXXXXX"
+
+// group.ExpandedVars に直接設定
+group.ExpandedVars["__runner_workdir"] = workDir
 
 // 変数展開時:
-vars := autoVarProvider.Generate()
-// → vars["__runner_datetime"] = "20251018143025.123"
-// → vars["__runner_pid"] = "12345"
-// → vars["__runner_workdir"] = "/tmp/scr-backup-XXXXXX"
+// config.ExpandString が group.ExpandedVars を使用
+// → group.ExpandedVars["__runner_datetime"] = "20251018143025.123"
+// → group.ExpandedVars["__runner_pid"] = "12345"
+// → group.ExpandedVars["__runner_workdir"] = "/tmp/scr-backup-XXXXXX"
 ```
 
 **利点**:
-- 新しい型が不要（既存の `AutoVarProvider` を拡張）
+- シンプルで直接的な実装（余計な間接化がない）
+- 新しい型が不要
 - 既存の変数展開機構（`config.ExpandString`）をそのまま活用
 - 一貫した変数管理（`__runner_datetime`, `__runner_pid` と同じパターン）
 
@@ -188,7 +187,7 @@ GroupExecutor.ExecuteGroup():
   ├─ 一時ディレクトリの場合:
   │  ├─ TempDirManager.Create() で生成
   │  └─ defer mgr.Cleanup() 登録 ← 重要（Fail-Safe）
-  ├─ AutoVarProvider.SetWorkDir() で __runner_workdir を設定
+  ├─ group.ExpandedVars["__runner_workdir"] に直接設定
   ├─ コマンド実行ループ
   │  └─ エラー可能性
   └─ 終了時 → defer 実行（成功・失敗問わずクリーンアップ）
@@ -244,6 +243,7 @@ args = ["%{__runner_workdir}/dump.sql"]
 |------|----------|--------|
 | 2025-10-18 | 1.0 | 初版作成：3つのドキュメント完成 |
 | 2025-10-18 | 1.1 | 設計変更：GroupContext を削除し AutoVarProvider で状態管理 |
+| 2025-10-18 | 1.2 | 設計簡素化：AutoVarProvider 依存を削除、group.ExpandedVars への直接設定方式に変更 |
 
 ---
 

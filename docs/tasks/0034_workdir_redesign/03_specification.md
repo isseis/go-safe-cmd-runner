@@ -199,7 +199,7 @@ type GroupExecutor interface {
     // ライフサイクル:
     //   1. ワークディレクトリを決定（resolveGroupWorkDir）
     //   2. 一時ディレクトリの場合は生成（TempDirManager.Create）
-    //   3. AutoVarProvider.SetWorkDir() でワークディレクトリを設定
+    //   3. group.ExpandedVars["__runner_workdir"] にワークディレクトリを直接設定
     //   4. defer で条件付きクリーンアップを登録（if !keepTempDirs { mgr.Cleanup() }）
     //   5. コマンド実行ループ
     //   6. グループ実行終了（成功・失敗問わず） → defer 実行

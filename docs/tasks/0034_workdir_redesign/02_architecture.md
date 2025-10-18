@@ -836,7 +836,7 @@ flowchart TD
 
 2. `GroupExecutor` への統合
    - グループレベルでワークディレクトリ決定
-   - `AutoVarProvider.SetWorkDir()` の呼び出し
+   - `group.ExpandedVars["__runner_workdir"]` への直接設定
    - `defer` でクリーンアップ登録
 
 3. `--keep-temp-dirs` フラグ実装
@@ -883,7 +883,7 @@ flowchart TD
 ```
 グループ実行開始
   ├─ ワークディレクトリ決定
-  ├─ AutoVarProvider.SetWorkDir() 呼び出し
+  ├─ group.ExpandedVars["__runner_workdir"] に直接設定
   ├─ defer CleanupTempDir 登録 ← ここで登録
   ├─ コマンド実行ループ
   │   └─ エラー可能性あり
@@ -931,7 +931,7 @@ ResolveWorkDir:
 ```
 GroupExecutor
   ├─ TempDirManager (一時ディレクトリ生成・管理)
-  ├─ AutoVarProvider (自動変数管理・変数展開)
+  ├─ config.ExpandString (変数展開)
   └─ CommandExecutor (コマンド実行)
 ```
 
