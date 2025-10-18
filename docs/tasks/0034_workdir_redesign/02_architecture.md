@@ -22,12 +22,12 @@
 - **設定の簡素化**: グローバルレベル設定を削除し、優先順位の階層を2段階に統一
 - **命名の統一**: `dir` と `workdir` の不統一を解消
 - **ユーザビリティの向上**: `%{__runner_workdir}` 予約変数でパスアクセスを簡素化
-- **信頼性**: エラー時も確実にリソース清理を実施する Fail-Safe 原則
+- **信頼性**: エラー時も確実にリソースのクリーンアップを実施する Fail-Safe 原則
 
 ### 1.2 設計の原則
 
 1. **Separation of Concerns**: 一時ディレクトリ管理と設定管理を分離し、各コンポーネントが単一責務を持つ
-2. **Fail-Safe**: `defer` パターンでエラー時も確実にリソース清理を実施
+2. **Fail-Safe**: `defer` パターンでエラー時も確実にリソースのクリーンアップを実施
 3. **Security First**: セキュリティを優先し、デフォルト動作は常に安全側を選択
 4. **Explicit is Better than Implicit**: 一時ディレクトリの利用を明示的に把握可能にする（ログ出力）
 5. **YAGNI**: 不要な機能は追加しない。実装スコープは要件に基づく
@@ -130,7 +130,7 @@ flowchart TD
     ResolveWorkDir -->|Yes| UseGroupWorkDir["Group.WorkDir を使用"]
     ResolveWorkDir -->|No| CreateTempDir["自動一時ディレクトリ生成"]
 
-    UseGroupWorkDir -->|workdir: string| StoreWorkDir["群のworkdirを保存<br/>exec.groupContext.WorkDir"]
+    UseGroupWorkDir -->|workdir: string| StoreWorkDir["グループのworkdirを保存<br/>exec.groupContext.WorkDir"]
     CreateTempDir -->|tempdir: string| StoreWorkDir
 
     StoreWorkDir --> InitCleanup["defer で cleanup を登録<br/>defer cleanup handler"]
@@ -487,7 +487,7 @@ sequenceDiagram
 
 ### 9.3 Fail-Safe パターン
 
-エラー時も確実にリソース清理を実施するため、`defer` パターンを採用：
+エラー時も確実にリソースのクリーンアップを実施するため、`defer` パターンを採用：
 
 ```
 GroupExecutor.ExecuteGroup():
@@ -728,7 +728,7 @@ flowchart TD
 
 ### 13.1 Fail-Safe パターン
 
-エラー時も確実にリソース清理を実施するため、`defer` パターンを採用：
+エラー時も確実にリソースのクリーンアップを実施するため、`defer` パターンを採用：
 
 ```
 グループ実行開始

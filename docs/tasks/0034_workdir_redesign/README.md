@@ -167,7 +167,7 @@ type GroupContext struct {
 
 ### Fail-Safe パターン
 
-エラー時も確実にリソース清理を実施：
+エラー時も確実にリソースのクリーンアップを実施：
 
 ```
 GroupExecutor.ExecuteGroup():
