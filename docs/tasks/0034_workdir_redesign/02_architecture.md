@@ -157,7 +157,7 @@ graph TB
     end
 
     subgraph ExpansionLayer["変数展開層"]
-        VariableExpander["environment.VariableExpander<br/>(internal/runner/environment)"]
+        VariableExpander["expansion.VariableExpander<br/>(internal/runner/expansion)"]
     end
 
     subgraph ExecutionLayer["実行層"]
