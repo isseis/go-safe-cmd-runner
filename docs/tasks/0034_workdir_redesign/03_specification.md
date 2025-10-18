@@ -79,13 +79,6 @@ type GroupContext struct {
     // - グループレベル workdir が未指定: 自動生成された一時ディレクトリパス
     WorkDir string
 
-    // IsTempDir: true = 一時ディレクトリ、false = 固定ディレクトリ
-    IsTempDir bool
-
-    // TempDirPath: 一時ディレクトリの場合のパス
-    // IsTempDir=false の場合は空文字列
-    TempDirPath string
-
     // KeepTempDirs: --keep-temp-dirs フラグの値
     KeepTempDirs bool
 
@@ -112,13 +105,22 @@ type ExecutionOptions struct {
 
 **パッケージ**: `internal/runner/executor`
 
+**設計方針**:
+- グループ単位でインスタンスを作成・破棄
+- 一時ディレクトリを使用する場合のみインスタンスを作成
+- インスタンス作成時にgroupNameを渡し、内部で保持
+- 固定ディレクトリを使用する場合はインスタンスを作成しない
+
 ```go
-// TempDirManager: 一時ディレクトリの生成・管理・削除
+// TempDirManager: グループ単位の一時ディレクトリ管理
+//
+// ライフサイクル:
+//   1. NewTempDirManager(groupName) でインスタンス作成
+//   2. Create() で一時ディレクトリ生成
+//   3. defer で Cleanup() を登録
+//   4. グループ実行完了時に自動クリーンアップ
 type TempDirManager interface {
-    // CreateTempDir: グループの一時ディレクトリを生成
-    //
-    // 引数:
-    //   groupName: グループ名
+    // Create: 一時ディレクトリを生成
     //
     // 戻り値:
     //   string: 生成された一時ディレクトリの絶対パス
@@ -128,16 +130,17 @@ type TempDirManager interface {
     //   1. プレフィックス "scr-<groupName>-" でランダムなディレクトリを生成
     //   2. パーミッションは 0700 に設定
     //   3. INFO レベルでログ出力
+    //   4. 生成されたパスを内部で保持
     //
     // 例:
-    //   tempDir, err := mgr.CreateTempDir("backup")
+    //   mgr := NewTempDirManager("backup")
+    //   tempDir, err := mgr.Create()
     //   // → "/tmp/scr-backup-a1b2c3d4"
-    CreateTempDir(groupName string) (string, error)
+    Create() (string, error)
 
-    // CleanupTempDir: 一時ディレクトリを削除
+    // Cleanup: 一時ディレクトリを削除
     //
     // 引数:
-    //   tempDirPath: 削除対象のディレクトリパス
     //   keepTempDirs: --keep-temp-dirs フラグの値
     //
     // 戻り値:
@@ -146,33 +149,39 @@ type TempDirManager interface {
     //
     // 動作:
     //   1. keepTempDirs=true の場合: 削除しない（INFO ログ出力）
-    //   2. IsTempDir() で一時ディレクトリか確認
-    //   3. 一時ディレクトリの場合のみ削除
-    //   4. 削除成功: DEBUG ログ
-    //   5. 削除失敗: ERROR ログ + 標準エラー出力
+    //   2. Create() で生成されたディレクトリを削除
+    //   3. 削除成功: DEBUG ログ
+    //   4. 削除失敗: ERROR ログ + 標準エラー出力
     //
     // 例:
-    //   err := mgr.CleanupTempDir("/tmp/scr-backup-a1b2c3d4", false)
+    //   err := mgr.Cleanup(false)
     //   // 削除成功の場合 err=nil、失敗の場合 err != nil
     //   // ただし呼び出し元の処理は継続される
-    CleanupTempDir(tempDirPath string, keepTempDirs bool) error
+    Cleanup(keepTempDirs bool) error
 
-    // IsTempDir: 与えられたパスが一時ディレクトリか判定
-    //
-    // 引数:
-    //   tempDirPath: 判定対象のパス
+    // Path: 生成された一時ディレクトリのパスを取得
     //
     // 戻り値:
-    //   bool: true = 一時ディレクトリ、false = 固定ディレクトリ
-    //
-    // 動作:
-    //   ディレクトリ名の basename が "scr-" プレフィックスを持つか確認
+    //   string: 一時ディレクトリの絶対パス
+    //           Create() が呼ばれていない場合は空文字列
     //
     // 例:
-    //   mgr.IsTempDir("/tmp/scr-backup-a1b2c3d4")  // true
-    //   mgr.IsTempDir("/var/data")                  // false
-    IsTempDir(tempDirPath string) bool
+    //   path := mgr.Path()
+    //   // → "/tmp/scr-backup-a1b2c3d4"
+    Path() string
 }
+
+// NewTempDirManager: TempDirManager のコンストラクタ
+//
+// 引数:
+//   groupName: グループ名
+//
+// 戻り値:
+//   TempDirManager: 一時ディレクトリマネージャーのインスタンス
+//
+// 例:
+//   mgr := NewTempDirManager("backup")
+func NewTempDirManager(groupName string) TempDirManager
 ```
 
 ### 3.2 GroupExecutor インターフェース
@@ -729,7 +738,6 @@ import (
 // DefaultGroupExecutor: グループ実行の標準実装
 type DefaultGroupExecutor struct {
     logger       logging.Logger
-    tempDirMgr   TempDirManager
     varExpander  VariableExpander
     cmdExecutor  CommandExecutor
 }
@@ -737,13 +745,11 @@ type DefaultGroupExecutor struct {
 // NewDefaultGroupExecutor: 新規インスタンスを作成
 func NewDefaultGroupExecutor(
     logger logging.Logger,
-    tempDirMgr TempDirManager,
     varExpander VariableExpander,
     cmdExecutor CommandExecutor,
 ) *DefaultGroupExecutor {
     return &DefaultGroupExecutor{
         logger:      logger,
-        tempDirMgr:  tempDirMgr,
         varExpander: varExpander,
         cmdExecutor: cmdExecutor,
     }
@@ -756,33 +762,28 @@ func (e *DefaultGroupExecutor) ExecuteGroup(
     opts *ExecutionOptions,
 ) error {
     // ステップ1: ワークディレクトリを決定
-    workDir, isTempDir, err := e.resolveGroupWorkDir(group)
+    workDir, tempDirMgr, err := e.resolveGroupWorkDir(group)
     if err != nil {
         return fmt.Errorf("failed to resolve work directory: %w", err)
     }
 
-    // ステップ2: GroupContext を作成
-    groupCtx := &GroupContext{
-        GroupName:    group.Name,
-        WorkDir:      workDir,
-        IsTempDir:    isTempDir,
-        TempDirPath:  "", // 後で設定
-        KeepTempDirs: opts.KeepTempDirs,
-    }
-    if isTempDir {
-        groupCtx.TempDirPath = workDir
-    }
-
-    // ステップ3: defer でクリーンアップを登録（重要: エラー時も実行）
-    defer func() {
-        if isTempDir {
-            err := e.tempDirMgr.CleanupTempDir(groupCtx.TempDirPath, opts.KeepTempDirs)
+    // ステップ2: defer でクリーンアップを登録（重要: エラー時も実行）
+    if tempDirMgr != nil {
+        defer func() {
+            err := tempDirMgr.Cleanup(opts.KeepTempDirs)
             if err != nil {
                 // エラーをログするが、処理は継続
                 e.logger.Error(fmt.Sprintf("Cleanup warning: %v", err))
             }
-        }
-    }()
+        }()
+    }
+
+    // ステップ3: GroupContext を作成
+    groupCtx := &GroupContext{
+        GroupName:    group.Name,
+        WorkDir:      workDir,
+        KeepTempDirs: opts.KeepTempDirs,
+    }
 
     // ステップ4: コマンド実行ループ
     for _, cmd := range group.Commands {
@@ -800,9 +801,12 @@ func (e *DefaultGroupExecutor) ExecuteGroup(
 }
 
 // resolveGroupWorkDir: グループのワークディレクトリを決定
+// 戻り値: (workdir, tempDirManager, error)
+//   - 固定ディレクトリの場合: tempDirManager は nil
+//   - 一時ディレクトリの場合: tempDirManager は非nil（クリーンアップに使用）
 func (e *DefaultGroupExecutor) resolveGroupWorkDir(
     group *types.CommandGroup,
-) (string, bool, error) {
+) (string, TempDirManager, error) {
     // グループレベル WorkDir が指定されている?
     if group.WorkDir != "" {
         // 固定ディレクトリを使用
@@ -810,16 +814,19 @@ func (e *DefaultGroupExecutor) resolveGroupWorkDir(
             "Using group workdir for '%s': %s",
             group.Name, group.WorkDir,
         ))
-        return group.WorkDir, false, nil
+        return group.WorkDir, nil, nil
     }
 
-    // 自動一時ディレクトリを生成
-    tempDir, err := e.tempDirMgr.CreateTempDir(group.Name)
+    // 一時ディレクトリマネージャーを作成
+    tempDirMgr := NewTempDirManager(group.Name)
+
+    // 一時ディレクトリを生成
+    tempDir, err := tempDirMgr.Create()
     if err != nil {
-        return "", false, err
+        return "", nil, err
     }
 
-    return tempDir, true, nil
+    return tempDir, tempDirMgr, nil
 }
 
 // handleCommandOutput: コマンド出力を処理（既存ロジック）

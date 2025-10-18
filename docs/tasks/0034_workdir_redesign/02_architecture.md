@@ -85,8 +85,17 @@
 
 ### 3.2 コンポーネント図
 
+#### 概念図（設計意図を示す）
+
+この図は設計の意図と責務の分離を示す概念図です。
+
 ```mermaid
 graph TB
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef existing fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+    classDef new fill:#ffe8f5,stroke:#d946ef,stroke-width:2px,color:#701a75;
+
     subgraph ConfigLayer["設定層"]
         ConfigLoader["ConfigLoader<br/>(TOML解析)"]
         Validation["Validation<br/>(フィールド検証)"]
@@ -98,7 +107,7 @@ graph TB
     end
 
     subgraph ExpansionLayer["変数展開層"]
-        VariableExpander["VariableExpander<br/>(%{__runner_workdir}展開)"]
+        VariableExpander["VariableExpander<br/>(workdir変数展開)"]
     end
 
     subgraph ExecutionLayer["実行層"]
@@ -116,6 +125,90 @@ graph TB
     VariableExpander -->|コマンド| CommandExecutor
     CommandExecutor -->|実行| FileSystem
     TempDirManager -->|操作| FileSystem
+
+    class ConfigLoader enhanced;
+    class Validation enhanced;
+    class GroupExecutor enhanced;
+    class TempDirManager new;
+    class VariableExpander enhanced;
+    class CommandExecutor existing;
+    class FileSystem existing;
+```
+
+#### 実装マッピング図（実際のパッケージ・型との対応）
+
+この図は実際の実装における型とパッケージの対応を示します。
+
+```mermaid
+graph TB
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef existing fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+    classDef new fill:#ffe8f5,stroke:#d946ef,stroke-width:2px,color:#701a75;
+
+    subgraph ConfigLayer["設定層"]
+        ConfigLoader["config.LoadConfig()<br/>(internal/runner/config)"]
+        Validation["runnertypes型定義<br/>(internal/runner/runnertypes)"]
+    end
+
+    subgraph GroupLayer["グループ実行層"]
+        Runner["Runner.ExecuteGroup()<br/>(internal/runner)"]
+        TempDirManager["TempDirManager<br/>(新規パッケージ)"]
+    end
+
+    subgraph ExpansionLayer["変数展開層"]
+        VariableExpander["environment.VariableExpander<br/>(internal/runner/environment)"]
+    end
+
+    subgraph ExecutionLayer["実行層"]
+        CommandExecutor["executor.CommandExecutor<br/>(internal/runner/executor)"]
+    end
+
+    subgraph OSLayer["OS層"]
+        ResourceManager["resource.ResourceManager<br/>(internal/runner/resource)"]
+    end
+
+    ConfigLoader -->|検証後| Validation
+    Validation -->|設定| Runner
+    Runner -->|生成・管理| TempDirManager
+    Runner -->|展開| VariableExpander
+    VariableExpander -->|コマンド| CommandExecutor
+    CommandExecutor -->|実行| ResourceManager
+    TempDirManager -->|操作| ResourceManager
+
+    class ConfigLoader enhanced;
+    class Validation enhanced;
+    class Runner enhanced;
+    class TempDirManager new;
+    class VariableExpander enhanced;
+    class CommandExecutor existing;
+    class ResourceManager existing;
+```
+
+**実装における対応関係**:
+
+| 概念図の名称 | 実装における対応 | パッケージ |
+|------------|----------------|----------|
+| GroupExecutor | `Runner.ExecuteGroup()` メソッド | `internal/runner` |
+| TempDirManager | `TempDirManager` インターフェース（新規） | TBD（新規パッケージ） |
+| VariableExpander | `environment.VariableExpander` 構造体 | `internal/runner/environment` |
+| CommandExecutor | `executor.CommandExecutor` インターフェース | `internal/runner/executor` |
+| FileSystem | `resource.ResourceManager` インターフェース | `internal/runner/resource` |
+
+**凡例（Legend）**
+
+```mermaid
+flowchart LR
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef existing fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+    classDef new fill:#ffe8f5,stroke:#d946ef,stroke-width:2px,color:#701a75;
+
+    D1[("Data")] --> E1["Existing Component"] --> E2["Enhanced Component"] --> N1["New Component"]
+    class D1 data
+    class E1 existing
+    class E2 enhanced
+    class N1 new
 ```
 
 ### 3.3 フローチャート
@@ -146,7 +239,7 @@ flowchart TD
     UseCommandWorkDir -->|workdir: string| ExpandVariables
     UseGroupWorkDir2 -->|workdir: string| ExpandVariables
 
-    ExpandVariables["変数展開<br/>%{__runner_workdir} → 実際のパス"] -->|expanded: string| ExecuteCommand
+    ExpandVariables["変数展開<br/>workdir変数 → 実際のパス"] -->|expanded: string| ExecuteCommand
 
     ExecuteCommand["コマンド実行<br/>executor.Execute"]
 
@@ -174,12 +267,12 @@ flowchart TD
 ```mermaid
 flowchart LR
     Input["コマンド設定"]
-    Input -->|args, cmd, workdir| HasVariable{%{__runner_workdir}<br/>を含む?}
+    Input -->|args, cmd, workdir| HasVariable{"__runner_workdir<br/>を含む?"}
 
     HasVariable -->|Yes| GetWorkDirPath["GroupContext から<br/>WorkDir パスを取得"]
     HasVariable -->|No| NoExpansion["展開せず使用"]
 
-    GetWorkDirPath -->|workdir: string| ReplaceVariable["すべての<br/>%{__runner_workdir}<br/>を置換"]
+    GetWorkDirPath -->|workdir: string| ReplaceVariable["すべての<br/>__runner_workdir<br/>を置換"]
 
     ReplaceVariable -->|expanded| ResolveAbsPath["絶対パス化<br/>filepath.Abs"]
 
@@ -216,11 +309,14 @@ flowchart LR
 |----------|-----|------|
 | `GroupName` | `string` | グループの識別、ログ出力 |
 | `WorkDir` | `string` | 実際に使用されるワークディレクトリ（絶対パス） |
-| `IsTempDir` | `bool` | 一時ディレクトリ（true）か固定ディレクトリ（false）かの区別 |
-| `TempDirPath` | `string` | 一時ディレクトリの場合のパス（クリーンアップ用） |
 | `KeepTempDirs` | `bool` | `--keep-temp-dirs` フラグの値 |
 
 このコンテキストは、グループ実行を通して各コマンド実行に渡され、ワークディレクトリの決定と変数展開に使用される。
+
+**設計の簡素化**:
+- 一時ディレクトリか固定ディレクトリかの判定は `TempDirManager` インスタンスの有無で判断
+- `TempDirManager` は一時ディレクトリを使用する場合のみ作成され、グループ実行スコープで保持
+- これにより、`GroupContext` から `IsTempDir` と `TempDirPath` フィールドが削除され、よりシンプルな設計となる
 
 ## 5. 一時ディレクトリ管理
 
@@ -228,11 +324,22 @@ flowchart LR
 
 一時ディレクトリ管理を専門とするコンポーネント `TempDirManager` を導入する。
 
+**設計方針**:
+- **グループ単位のインスタンス**: 各グループに対して独立したインスタンスを作成
+- **一時ディレクトリ使用時のみ作成**: 固定ディレクトリを使用する場合はインスタンスを作成しない
+- **インスタンス作成時にgroupNameを渡す**: コンストラクタで `NewTempDirManager(groupName)` として受け取る
+- **シンプルなメソッド名**: `CreateTempDir()` ではなく `Create()`、`CleanupTempDir()` ではなく `Cleanup()`
+
 **責務**:
 - グループごとの一時ディレクトリ生成（`scr-<groupName>-XXXXXX` 形式）
 - パーミッション管理（0700: 所有者のみアクセス可能）
 - 一時ディレクトリの削除（エラー時も確実に実施）
 - 削除失敗時のエラーハンドリング（ログ出力、標準エラー出力）
+
+**メソッド**:
+- `Create() (string, error)`: 一時ディレクトリを生成し、パスを返す
+- `Cleanup(keepTempDirs bool) error`: 一時ディレクトリを削除
+- `Path() string`: 生成された一時ディレクトリのパスを取得
 
 ### 5.2 一時ディレクトリのライフサイクル
 
@@ -246,19 +353,22 @@ sequenceDiagram
     App->>GE: ExecuteGroup(group)
     activate GE
 
-    GE->>TDM: CreateTempDir(groupName)
+    Note over GE: Group.WorkDir未指定の場合のみ
+
+    GE->>GE: NewTempDirManager(groupName)
     activate TDM
+    GE->>TDM: Create()
     TDM->>OS: MkdirTemp("scr-<group>-")
     OS-->>TDM: /tmp/scr-group-XXXXXX
     TDM-->>GE: tempDir
     deactivate TDM
 
-    GE->>GE: defer CleanupTempDir()
+    GE->>GE: defer tempDirMgr.Cleanup()
 
     GE->>GE: ExecuteCommandLoop
 
     alt All success or any error
-        GE->>TDM: CleanupTempDir(tempDir, keepFlag)
+        GE->>TDM: Cleanup(keepFlag)
         activate TDM
         TDM->>OS: RemoveAll(tempDir)
         TDM-->>GE: error (or nil)
@@ -270,11 +380,12 @@ sequenceDiagram
 ```
 
 **ポイント**:
-1. グループ実行開始時に一時ディレクトリを生成（未指定の場合）
-2. `defer` で削除処理を登録（エラー時も確実に実行）
-3. コマンド実行中は同じディレクトリを共有
-4. `--keep-temp-dirs` フラグで削除をスキップ可能
-5. 削除失敗時もプロセスは継続（エラーハンドリング戦略）
+1. **グループ単位のインスタンス**: `Group.WorkDir` 未指定の場合のみ `TempDirManager` を作成
+2. **シンプルなメソッド**: `Create()` と `Cleanup()` でディレクトリのライフサイクルを管理
+3. **defer パターン**: `defer` で削除処理を登録（エラー時も確実に実行）
+4. **スコープの明確化**: `TempDirManager` インスタンスの有無で一時ディレクトリか固定ディレクトリかを判断
+5. `--keep-temp-dirs` フラグで削除をスキップ可能
+6. 削除失敗時もプロセスは継続（エラーハンドリング戦略）
 
 ### 5.3 命名規則
 
@@ -328,9 +439,9 @@ flowchart TD
     Start["コマンド実行前"] -->|Command + GroupContext| GetValue
 
     GetValue["GroupContext.WorkDir<br/>を取得"]
-    GetValue -->|workdir: string| Scan["コマンド内で<br/>%{__runner_workdir}<br/>を検索"]
+    GetValue -->|workdir: string| Scan["コマンド内で<br/>workdir変数<br/>を検索"]
 
-    Scan -->|見つかった| Replace["文字列置換<br/>%{__runner_workdir}<br/>→ workdir"]
+    Scan -->|見つかった| Replace["文字列置換<br/>workdir変数<br/>→ workdir"]
     Scan -->|見つからない| NoChange["そのまま使用"]
 
     Replace -->|replaced| ValidatePath["パストラバーサル検証<br/>(絶対パス確認)"]
@@ -559,8 +670,13 @@ GroupExecutor.ExecuteGroup():
 
 ```mermaid
 graph TB
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef existing fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+    classDef new fill:#ffe8f5,stroke:#d946ef,stroke-width:2px,color:#701a75;
+
     subgraph InputLayer["入力"]
-        Config["Config/TOML<br/>(グループ・コマンド設定)"]
+        Config[("Config/TOML<br/>(グループ・コマンド設定)")]
         Flag["--keep-temp-dirs<br/>(コマンドラインフラグ)"]
     end
 
@@ -568,12 +684,12 @@ graph TB
         GE["GroupExecutor<br/>(グループ実行制御)"]
         TDM["TempDirManager<br/>(一時ディレクトリ管理)"]
         VE["VariableExpander<br/>(変数展開)"]
-        CE["CommandExecutor<br/>(既存: コマンド実行)"]
+        CE["CommandExecutor<br/>(コマンド実行)"]
     end
 
     subgraph OutputLayer["出力"]
-        Log["ログ出力<br/>(INFO/ERROR/DEBUG)"]
-        Stderr["標準エラー出力<br/>(エラー通知)"]
+        Log[("ログ出力<br/>(INFO/ERROR/DEBUG)")]
+        Stderr[("標準エラー出力<br/>(エラー通知)")]
     end
 
     Config -->|group設定| GE
@@ -591,6 +707,27 @@ graph TB
 
     CE -->|実行| CE
     CE -->|結果| GE
+
+    class Config,Log,Stderr data;
+    class Flag,CE existing;
+    class GE,VE enhanced;
+    class TDM new;
+```
+
+**凡例（Legend）**
+
+```mermaid
+flowchart LR
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef existing fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+    classDef new fill:#ffe8f5,stroke:#d946ef,stroke-width:2px,color:#701a75;
+
+    D1[("Data")] --> E1["Existing Component"] --> E2["Enhanced Component"] --> N1["New Component"]
+    class D1 data
+    class E1 existing
+    class E2 enhanced
+    class N1 new
 ```
 
 ### 11.2 フロー統合図
@@ -622,7 +759,7 @@ flowchart TD
 
     RegisterDefer -->|cmd loop| ExecuteCmd["コマンド実行"]
 
-    ExecuteCmd -->|expand| VariableExpander["VariableExpander<br/>%{__runner_workdir}展開"]
+    ExecuteCmd -->|expand| VariableExpander["VariableExpander<br/>workdir変数展開"]
     VariableExpander -->|expanded cmd| ResolveCmd["resolveWorkDir<br/>(Cmd vs Group)"]
     ResolveCmd -->|実ワークディレクトリ| CommandExecutor["CommandExecutor<br/>.Execute"]
 
