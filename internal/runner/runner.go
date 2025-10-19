@@ -258,7 +258,10 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 		resourceManager:     opts.resourceManager,
 	}
 
-	// Create GroupExecutor with notification function bound to runner
+	// Create GroupExecutor with a logging callback bound to runner.
+	// Note: this callback emits a structured slog record intended for
+	// consumption by notification handlers (for example `SlackHandler`).
+	// The callback itself does not perform network calls.
 	runner.groupExecutor = NewDefaultGroupExecutor(
 		opts.executor,
 		config,
@@ -266,7 +269,7 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 		opts.verificationManager,
 		opts.resourceManager,
 		opts.runID,
-		runner.sendGroupNotification,
+		runner.logGroupExecutionSummary,
 	)
 
 	return runner, nil
@@ -371,8 +374,12 @@ func (r *Runner) GetDryRunResults() *resource.DryRunResult {
 	return r.resourceManager.GetDryRunResults()
 }
 
-// sendGroupNotification sends a Slack notification for group execution completion
-func (r *Runner) sendGroupNotification(group runnertypes.CommandGroup, result *groupExecutionResult, duration time.Duration) {
+// logGroupExecutionSummary emits a structured log record summarizing the
+// execution of a command group. This record includes attributes (such as
+// "slack_notify" and "message_type") that notification handlers (for
+// example `internal/logging.SlackHandler`) can use to send alerts. The
+// function itself only logs; it does not perform network I/O.
+func (r *Runner) logGroupExecutionSummary(group runnertypes.CommandGroup, result *groupExecutionResult, duration time.Duration) {
 	slog.Info(
 		"Command group execution completed",
 		"group", group.Name,
