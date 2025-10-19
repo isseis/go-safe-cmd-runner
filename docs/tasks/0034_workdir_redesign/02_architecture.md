@@ -949,8 +949,8 @@ flowchart TD
 **実装項目**:
 1. `TempDirManager` インターフェース実装
    - `DefaultTempDirManager` の実装
-   - `CreateTempDir()`: プレフィックス付きディレクトリ生成
-   - `CleanupTempDir()`: 削除とエラーハンドリング
+   - `Create()`: プレフィックス付きディレクトリ生成
+   - `Cleanup()`: 削除とエラーハンドリング
    - `IsTempDir()`: 一時ディレクトリ判定
 
 2. `GroupExecutor` への統合
