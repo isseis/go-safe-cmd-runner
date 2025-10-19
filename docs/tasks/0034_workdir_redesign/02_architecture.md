@@ -299,7 +299,7 @@ flowchart TD
         UseExpandedVars["Command.ExpandedVars使用<br/>(事前計算済み)"]
     end
 
-    CmdExpandedVars -.->|保存された変数マップ| UseExpandedVars
+    CmdExpandedVars --> UseExpandedVars
 
     class TOMLFile,RawVars,GroupExpandedVars,CmdExpandedVars data;
     class ParseTOML,ExpandGroupVars,ExpandCmdVars,UseExpandedVars process;
@@ -341,23 +341,28 @@ flowchart TD
 
     subgraph ExecPhase["⚙️ コマンド実行時"]
         direction TB
-        WorkDirValue[("__runner_workdir値<br/>(動的生成)")]
-        BuildVarsMap["変数マップ構築<br/>(Group変数 + __runner_workdir<br/>+ Cmd変数)"]
+        ResolveWorkDir["ワークディレクトリ決定<br/>(resolveGroupWorkDir)"]
+        WorkDirValue[("workDir値")]
+        SetToGroup["Group.ExpandedVars設定<br/>(__runner_workdir = workDir)"]
+        BuildVarsMap["変数マップ構築<br/>(buildVarsForCommand)"]
         ExpandCmdVars["Command.Vars展開"]
         CmdExpandedVars[("Command.ExpandedVars")]
         UseExpandedVars["Command.ExpandedVars使用"]
 
-        WorkDirValue --> BuildVarsMap
+        ResolveWorkDir --> WorkDirValue
+        WorkDirValue --> SetToGroup
+        SetToGroup --> BuildVarsMap
         BuildVarsMap --> ExpandCmdVars
         ExpandCmdVars --> CmdExpandedVars
         CmdExpandedVars --> UseExpandedVars
     end
 
+    GroupExpandedVars --> ResolveWorkDir
     GroupExpandedVars --> BuildVarsMap
     CmdVars --> BuildVarsMap
 
     class TOMLFile,RawVars,GroupExpandedVars,CmdVars,WorkDirValue,CmdExpandedVars data;
-    class ParseTOML,ExpandGroupVars,BuildVarsMap,ExpandCmdVars,UseExpandedVars process;
+    class ParseTOML,ExpandGroupVars,ResolveWorkDir,SetToGroup,BuildVarsMap,ExpandCmdVars,UseExpandedVars process;
     class LoadPhase loadPhase;
     class ExecPhase execPhase;
 ```
@@ -365,8 +370,11 @@ flowchart TD
 **改善点**:
 - TOMLロード時は `Group.Vars` のみ展開して `Group.ExpandedVars` に保存
 - `Command.Vars` は未展開のまま保持（`Command.ExpandedVars` は作成しない）
-- コマンド実行時に `__runner_workdir` を `Group.ExpandedVars` に追加
-- `Group.ExpandedVars` と `Command.Vars` を統合してコマンド変数を展開
+- コマンド実行時の流れ:
+  1. `resolveGroupWorkDir()` でワークディレクトリを決定
+  2. 決定した `workDir` を `Group.ExpandedVars["__runner_workdir"]` に**直接設定**（副作用）
+  3. `buildVarsForCommand()` で `Group.ExpandedVars`（`__runner_workdir` 含む）と `Command.Vars` を統合
+  4. 統合された変数マップでコマンド変数を展開
 - すべての実行時情報（ワークディレクトリ、時刻、PIDなど）が揃った状態で展開
 
 ## 4. データモデル
