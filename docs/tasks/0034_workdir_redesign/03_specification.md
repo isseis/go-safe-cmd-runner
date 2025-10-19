@@ -683,7 +683,7 @@ func (e *DefaultGroupExecutor) expandCommand(
 
 ### 6.2 Command 型の変更
 
-**ファイル**: `internal/runner/runnertypes/config_types.go`
+**ファイル**: `internal/runner/types/config_types.go`
 
 ```go
 type Command struct {
@@ -841,7 +841,7 @@ func NewDefaultGroupExecutor(
 // ExecuteGroup: 1つのグループを実行
 func (e *DefaultGroupExecutor) ExecuteGroup(
     ctx context.Context,
-    group *types.CommandGroup,
+    group *runnertypes.CommandGroup,
 ) error {
     // ステップ1: ワークディレクトリを決定
     workDir, tempDirMgr, err := e.resolveGroupWorkDir(group)
