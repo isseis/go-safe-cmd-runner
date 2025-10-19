@@ -825,6 +825,7 @@ type DefaultGroupExecutor struct {
     logger       logging.Logger
     cmdExecutor  CommandExecutor
     keepTempDirs bool  // Runner から受け取った --keep-temp-dirs フラグ
+    isDryRun     bool  // dry-run モードフラグ
 }
 
 // NewDefaultGroupExecutor: 新規インスタンスを作成
@@ -832,11 +833,13 @@ func NewDefaultGroupExecutor(
     logger logging.Logger,
     cmdExecutor CommandExecutor,
     keepTempDirs bool,
+    isDryRun bool,
 ) *DefaultGroupExecutor {
     return &DefaultGroupExecutor{
         logger:       logger,
         cmdExecutor:  cmdExecutor,
         keepTempDirs: keepTempDirs,
+        isDryRun:     isDryRun,
     }
 }
 
@@ -908,7 +911,7 @@ func (e *DefaultGroupExecutor) resolveGroupWorkDir(
     }
 
     // 一時ディレクトリマネージャーを作成
-    tempDirMgr := NewTempDirManager(e.logger, group.Name)
+    tempDirMgr := NewTempDirManager(e.logger, group.Name, e.isDryRun)
 
     // 一時ディレクトリを生成
     tempDir, err := tempDirMgr.Create()
