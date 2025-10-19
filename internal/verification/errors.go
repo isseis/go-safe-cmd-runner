@@ -97,10 +97,14 @@ func (e *Error) Is(target error) bool {
 //
 //nolint:revive // VerificationError is descriptive and distinguishes from the base Error type
 type VerificationError struct {
-	Op      string   // operation that failed (e.g., "global", "group")
-	Group   string   // group name (if applicable)
-	Details []string // details about the error (e.g., failed files)
-	Err     error    // underlying error
+	Op            string   // operation that failed (e.g., "global", "group")
+	Group         string   // group name (if applicable)
+	Details       []string // details about the error (e.g., failed files)
+	TotalFiles    int      // total number of files to verify
+	VerifiedFiles int      // number of files successfully verified
+	FailedFiles   int      // number of files that failed verification
+	SkippedFiles  int      // number of files that were skipped
+	Err           error    // underlying error
 }
 
 // Error returns the error message

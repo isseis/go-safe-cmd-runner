@@ -125,6 +125,12 @@ type Command struct {
 	// and used for internal variable expansion in cmd, args, and env.
 	// The toml:"-" tag prevents this field from being set via TOML configuration.
 	ExpandedVars map[string]string `toml:"-"`
+
+	// EffectiveWorkdir contains the working directory resolved at runtime from multiple sources.
+	// It is populated during group execution and represents the final working directory used for command execution.
+	// Resolution priority: 1) Dir field (if set), 2) Group TempDir (if enabled), 3) Group WorkDir (if set), 4) Global WorkDir
+	// The toml:"-" tag prevents this field from being set via TOML configuration.
+	EffectiveWorkdir string `toml:"-"`
 }
 
 // GetMaxRiskLevel returns the parsed maximum risk level for this command

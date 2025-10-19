@@ -178,8 +178,8 @@ func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path strin
 	execCmd := exec.CommandContext(ctx, path, cmd.ExpandedArgs...)
 
 	// Set up working directory
-	if cmd.Dir != "" {
-		execCmd.Dir = cmd.Dir
+	if cmd.EffectiveWorkdir != "" {
+		execCmd.Dir = cmd.EffectiveWorkdir
 	}
 
 	// Set up environment variables
@@ -249,13 +249,13 @@ func (e *DefaultExecutor) Validate(cmd runnertypes.Command) error {
 	}
 
 	// Check if working directory exists and is accessible
-	if cmd.Dir != "" {
-		exists, err := e.FS.FileExists(cmd.Dir)
+	if cmd.EffectiveWorkdir != "" {
+		exists, err := e.FS.FileExists(cmd.EffectiveWorkdir)
 		if err != nil {
-			return fmt.Errorf("failed to check directory %s: %w", cmd.Dir, err)
+			return fmt.Errorf("failed to check directory %s: %w", cmd.EffectiveWorkdir, err)
 		}
 		if !exists {
-			return fmt.Errorf("working directory %q does not exist: %w", cmd.Dir, ErrDirNotExists)
+			return fmt.Errorf("working directory %q does not exist: %w", cmd.EffectiveWorkdir, ErrDirNotExists)
 		}
 	}
 
@@ -326,8 +326,8 @@ func (e *DefaultExecutor) validatePrivilegedCommand(cmd runnertypes.Command) err
 	}
 
 	// Ensure working directory is also absolute for privileged commands
-	if cmd.Dir != "" && !filepath.IsAbs(cmd.Dir) {
-		return fmt.Errorf("%w: privileged commands must use absolute working directory paths: %s", ErrPrivilegedCmdSecurity, cmd.Dir)
+	if cmd.EffectiveWorkdir != "" && !filepath.IsAbs(cmd.EffectiveWorkdir) {
+		return fmt.Errorf("%w: privileged commands must use absolute working directory paths: %s", ErrPrivilegedCmdSecurity, cmd.EffectiveWorkdir)
 	}
 
 	// Additional validation could include:

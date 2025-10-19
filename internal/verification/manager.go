@@ -177,10 +177,14 @@ func (m *Manager) VerifyGlobalFiles(globalConfig *runnertypes.GlobalConfig) (*Re
 			"failed_files", result.FailedFiles,
 			"verified_files", result.VerifiedFiles,
 			"total_files", result.TotalFiles)
-		return result, &VerificationError{
-			Op:      "global",
-			Details: result.FailedFiles,
-			Err:     ErrGlobalVerificationFailed,
+		return nil, &VerificationError{
+			Op:            "global",
+			Details:       result.FailedFiles,
+			TotalFiles:    result.TotalFiles,
+			VerifiedFiles: result.VerifiedFiles,
+			FailedFiles:   len(result.FailedFiles),
+			SkippedFiles:  len(result.SkippedFiles),
+			Err:           ErrGlobalVerificationFailed,
 		}
 	}
 
@@ -234,11 +238,15 @@ func (m *Manager) VerifyGroupFiles(groupConfig *runnertypes.CommandGroup) (*Resu
 	}
 
 	if len(result.FailedFiles) > 0 {
-		return result, &VerificationError{
-			Op:      "group",
-			Group:   groupConfig.Name,
-			Details: result.FailedFiles,
-			Err:     ErrGroupVerificationFailed,
+		return nil, &VerificationError{
+			Op:            "group",
+			Group:         groupConfig.Name,
+			Details:       result.FailedFiles,
+			TotalFiles:    result.TotalFiles,
+			VerifiedFiles: result.VerifiedFiles,
+			FailedFiles:   len(result.FailedFiles),
+			SkippedFiles:  len(result.SkippedFiles),
+			Err:           ErrGroupVerificationFailed,
 		}
 	}
 

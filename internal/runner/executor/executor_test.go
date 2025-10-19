@@ -309,9 +309,9 @@ func TestValidate(t *testing.T) {
 
 			runnertypes.PrepareCommand(&tt.cmd)
 			// Set up directory existence based on test case
-			if tt.cmd.Dir != "" {
-				// For non-empty Dir, configure whether it exists
-				fileSystem.ExistingPaths[tt.cmd.Dir] = !tt.wantErr
+			if tt.cmd.EffectiveWorkdir != "" {
+				// For non-empty EffectiveWorkdir, configure whether it exists
+				fileSystem.ExistingPaths[tt.cmd.EffectiveWorkdir] = !tt.wantErr
 			}
 
 			e := &executor.DefaultExecutor{
@@ -552,7 +552,7 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 				RunAsGroup: "testgroup",
 			},
 			expectError:   true,
-			errorContains: "directory does not exist", // Basic validation fails first
+			errorContains: "does not exist", // Basic validation fails first (directory existence check)
 		},
 		{
 			name: "absolute working directory works for user/group command",
@@ -596,7 +596,7 @@ func TestUserGroupCommandValidation_PathRequirements(t *testing.T) {
 			ctx := context.Background()
 			envVars := map[string]string{"PATH": "/usr/bin"}
 
-			// Prepare command to set ExpandedCmd and ExpandedArgs
+			// Prepare command to set ExpandedCmd, ExpandedArgs, and EffectiveWorkdir
 			runnertypes.PrepareCommand(&tt.cmd)
 
 			_, err := exec.Execute(ctx, tt.cmd, envVars, nil)
