@@ -189,11 +189,13 @@ graph TB
 
 | 概念図の名称 | 実装における対応 | パッケージ |
 |------------|----------------|----------|
-| GroupExecutor | `Runner.ExecuteGroup()` メソッド | `internal/runner` |
+| GroupExecutor | `GroupExecutor` インターフェースと `DefaultGroupExecutor` 実装 | `internal/runner` |
 | TempDirManager | `TempDirManager` インターフェース（新規） | `internal/runner/executor` |
 | ConfigExpander | `config.ExpandString` 関数 | `internal/runner/config` |
 | CommandExecutor | `executor.CommandExecutor` インターフェース | `internal/runner/executor` |
 | FileSystem | `resource.ResourceManager` インターフェース | `internal/runner/resource` |
+
+**注**: GroupExecutorは当初「概念モデル」として設計されましたが、Phase 0リファクタリングにより独立したインターフェースとして実装されました。これにより、Runnerクラスの肥大化を防ぎ、責務の分離が改善されました。
 
 **凡例（Legend）**
 

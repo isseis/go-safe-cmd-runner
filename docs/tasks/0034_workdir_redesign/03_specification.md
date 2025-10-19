@@ -803,12 +803,14 @@ $ cat /tmp/scr-backup-*/dump.sql
 
 ## 8. GroupExecutor の実装
 
+**注**: Phase 0リファクタリングにより、GroupExecutorは既に`internal/runner/group_executor.go`として実装済みです。このセクションでは、workdir redesign機能を追加する際の変更点を記述します。
+
 ### 8.1 グループ実行のライフサイクル
 
-**ファイル**: `internal/runner/executor/group_executor.go`
+**ファイル**: `internal/runner/group_executor.go` (既存ファイルを拡張)
 
 ```go
-package executor
+package runner
 
 import (
     "context"
