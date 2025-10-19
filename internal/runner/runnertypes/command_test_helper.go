@@ -15,4 +15,7 @@ func PrepareCommand(cmd *Command) {
 	if cmd.ExpandedArgs == nil {
 		cmd.ExpandedArgs = append([]string{}, cmd.Args...)
 	}
+	if cmd.EffectiveWorkdir == "" {
+		cmd.EffectiveWorkdir = cmd.Dir
+	}
 }

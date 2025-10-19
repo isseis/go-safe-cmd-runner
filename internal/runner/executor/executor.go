@@ -178,13 +178,8 @@ func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path strin
 	execCmd := exec.CommandContext(ctx, path, cmd.ExpandedArgs...)
 
 	// Set up working directory
-	// Use EffectiveWorkdir if set (resolved at runtime), otherwise fallback to Dir
-	workdir := cmd.EffectiveWorkdir
-	if workdir == "" {
-		workdir = cmd.Dir
-	}
-	if workdir != "" {
-		execCmd.Dir = workdir
+	if cmd.EffectiveWorkdir != "" {
+		execCmd.Dir = cmd.EffectiveWorkdir
 	}
 
 	// Set up environment variables
@@ -254,18 +249,13 @@ func (e *DefaultExecutor) Validate(cmd runnertypes.Command) error {
 	}
 
 	// Check if working directory exists and is accessible
-	// Use EffectiveWorkdir if set (resolved at runtime), otherwise fallback to Dir
-	workdir := cmd.EffectiveWorkdir
-	if workdir == "" {
-		workdir = cmd.Dir
-	}
-	if workdir != "" {
-		exists, err := e.FS.FileExists(workdir)
+	if cmd.EffectiveWorkdir != "" {
+		exists, err := e.FS.FileExists(cmd.EffectiveWorkdir)
 		if err != nil {
-			return fmt.Errorf("failed to check directory %s: %w", workdir, err)
+			return fmt.Errorf("failed to check directory %s: %w", cmd.EffectiveWorkdir, err)
 		}
 		if !exists {
-			return fmt.Errorf("working directory %q does not exist: %w", workdir, ErrDirNotExists)
+			return fmt.Errorf("working directory %q does not exist: %w", cmd.EffectiveWorkdir, ErrDirNotExists)
 		}
 	}
 
@@ -336,13 +326,8 @@ func (e *DefaultExecutor) validatePrivilegedCommand(cmd runnertypes.Command) err
 	}
 
 	// Ensure working directory is also absolute for privileged commands
-	// Use EffectiveWorkdir if set (resolved at runtime), otherwise fallback to Dir
-	workdir := cmd.EffectiveWorkdir
-	if workdir == "" {
-		workdir = cmd.Dir
-	}
-	if workdir != "" && !filepath.IsAbs(workdir) {
-		return fmt.Errorf("%w: privileged commands must use absolute working directory paths: %s", ErrPrivilegedCmdSecurity, workdir)
+	if cmd.EffectiveWorkdir != "" && !filepath.IsAbs(cmd.EffectiveWorkdir) {
+		return fmt.Errorf("%w: privileged commands must use absolute working directory paths: %s", ErrPrivilegedCmdSecurity, cmd.EffectiveWorkdir)
 	}
 
 	// Additional validation could include:

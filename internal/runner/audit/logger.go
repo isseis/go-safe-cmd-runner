@@ -77,13 +77,8 @@ func (l *Logger) LogUserGroupExecution(
 	}
 
 	// Add working directory if specified
-	// Use EffectiveWorkdir if set (resolved at runtime), otherwise fallback to Dir
-	workdir := cmd.EffectiveWorkdir
-	if workdir == "" {
-		workdir = cmd.Dir
-	}
-	if workdir != "" {
-		baseAttrs = append(baseAttrs, slog.String("working_directory", workdir))
+	if cmd.EffectiveWorkdir != "" {
+		baseAttrs = append(baseAttrs, slog.String("working_directory", cmd.EffectiveWorkdir))
 	}
 
 	if result.ExitCode == 0 {

@@ -142,13 +142,8 @@ func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd runnerty
 
 	// Generate simulated output
 	stdout := fmt.Sprintf("[DRY-RUN] Would execute: %s", cmd.ExpandedCmd)
-	// Use EffectiveWorkdir if set (resolved at runtime), otherwise fallback to Dir
-	workdir := cmd.EffectiveWorkdir
-	if workdir == "" {
-		workdir = cmd.Dir
-	}
-	if workdir != "" {
-		stdout += fmt.Sprintf(" (in directory: %s)", workdir)
+	if cmd.EffectiveWorkdir != "" {
+		stdout += fmt.Sprintf(" (in directory: %s)", cmd.EffectiveWorkdir)
 	}
 	if cmd.Output != "" {
 		stdout += fmt.Sprintf(" (output would be captured to: %s)", cmd.Output)
@@ -166,19 +161,13 @@ func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd runnerty
 
 // analyzeCommand analyzes a command for dry-run
 func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) (ResourceAnalysis, error) {
-	// Use EffectiveWorkdir if set (resolved at runtime), otherwise fallback to Dir
-	workdir := cmd.EffectiveWorkdir
-	if workdir == "" {
-		workdir = cmd.Dir
-	}
-
 	analysis := ResourceAnalysis{
 		Type:      ResourceTypeCommand,
 		Operation: OperationExecute,
 		Target:    cmd.ExpandedCmd,
 		Parameters: map[string]any{
 			"command":           cmd.ExpandedCmd,
-			"working_directory": workdir,
+			"working_directory": cmd.EffectiveWorkdir,
 			"timeout":           cmd.Timeout,
 		},
 		Impact: ResourceImpact{
