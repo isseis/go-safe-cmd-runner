@@ -77,8 +77,8 @@ func (l *Logger) LogUserGroupExecution(
 	}
 
 	// Add working directory if specified
-	if cmd.Dir != "" {
-		baseAttrs = append(baseAttrs, slog.String("working_directory", cmd.Dir))
+	if cmd.EffectiveWorkdir != "" {
+		baseAttrs = append(baseAttrs, slog.String("working_directory", cmd.EffectiveWorkdir))
 	}
 
 	if result.ExitCode == 0 {

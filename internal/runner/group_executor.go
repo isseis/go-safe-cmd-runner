@@ -61,21 +61,25 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, group runnerty
 	// Record execution start time for notification
 	startTime := time.Now()
 
-	fmt.Printf("Executing group: %s\n", group.Name)
 	if group.Description != "" {
-		fmt.Printf("Description: %s\n", group.Description)
+		slog.Info("Executing group", "name", group.Name, "description", group.Description)
+	} else {
+		slog.Info("Executing group", "name", group.Name)
 	}
 
 	// Track temporary directories for cleanup
 	groupTempDirs := make([]string, 0)
-	defer func() {
-		// Clean up temp directories created for this group using ResourceManager
+
+	// Explicit cleanup function to ensure resources are released as soon as
+	// group execution is finished (or on early return). Previously cleanup
+	// was deferred until function return which delayed releasing resources.
+	cleanupGroupTempDirs := func() {
 		for _, tempDirPath := range groupTempDirs {
 			if err := ge.resourceManager.CleanupTempDir(tempDirPath); err != nil {
 				slog.Warn("Failed to cleanup temp directory", "path", tempDirPath, "error", err)
 			}
 		}
-	}()
+	}
 
 	// Defer notification to ensure it's sent regardless of success or failure
 	var executionResult *groupExecutionResult
@@ -102,19 +106,21 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, group runnerty
 
 	// Determine and set the effective working directory for each command
 	for i := range processedGroup.Commands {
-		// Skip if command already has a directory specified
-		if processedGroup.Commands[i].Dir != "" {
-			continue
-		}
-
 		// Priority for working directory:
-		// 1. TempDir (if enabled)
-		// 2. Group's WorkDir
+		// 1. Command's Dir (if set) - highest priority
+		// 2. TempDir (if enabled)
+		// 3. Group's WorkDir
+		// 4. Global WorkDir (handled later in executeCommandInGroup)
 		switch {
+		case processedGroup.Commands[i].Dir != "":
+			// Command has explicit Dir - use it as-is
+			processedGroup.Commands[i].EffectiveWorkdir = processedGroup.Commands[i].Dir
 		case tempDirPath != "":
-			processedGroup.Commands[i].Dir = tempDirPath
+			// Use auto-generated temp directory
+			processedGroup.Commands[i].EffectiveWorkdir = tempDirPath
 		case processedGroup.WorkDir != "":
-			processedGroup.Commands[i].Dir = processedGroup.WorkDir
+			// Use group's WorkDir
+			processedGroup.Commands[i].EffectiveWorkdir = processedGroup.WorkDir
 		}
 	}
 
@@ -122,14 +128,10 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, group runnerty
 	if ge.verificationManager != nil {
 		result, err := ge.verificationManager.VerifyGroupFiles(&processedGroup)
 		if err != nil {
-			return &VerificationError{
-				GroupName:     processedGroup.Name,
-				TotalFiles:    result.TotalFiles,
-				VerifiedFiles: result.VerifiedFiles,
-				FailedFiles:   len(result.FailedFiles),
-				SkippedFiles:  len(result.SkippedFiles),
-				Err:           err,
-			}
+			// Ensure temp dirs are cleaned up before returning an error
+			cleanupGroupTempDirs()
+			// Return the error directly (it already contains all necessary information)
+			return err
 		}
 
 		if result.TotalFiles > 0 {
@@ -144,66 +146,51 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, group runnerty
 	// Execute commands in the group sequentially
 	var lastCommand string
 	var lastOutput string
+	var lastExitCode int
 	for i, cmd := range processedGroup.Commands {
-		fmt.Printf("  [%d/%d] Executing command: %s\n", i+1, len(processedGroup.Commands), cmd.Name)
+		slog.Info("Executing command", "command", cmd.Name, "index", i+1, "total", len(processedGroup.Commands))
 
 		// Process the command
 		processedCmd := cmd
 		lastCommand = processedCmd.Name
 
-		// Create command context with timeout
-		cmdCtx, cancel := ge.createCommandContext(ctx, processedCmd)
-		defer cancel()
-
-		// Execute the command with group context
-		result, err := ge.executeCommandInGroup(cmdCtx, &processedCmd, &processedGroup)
+		// Execute the command
+		newOutput, exitCode, err := ge.executeSingleCommand(ctx, &processedCmd, &processedGroup)
 		if err != nil {
-			fmt.Printf("    Command failed: %v\n", err)
 			// Set failure result for notification
 			executionResult = &groupExecutionResult{
 				status:      GroupExecutionStatusError,
-				exitCode:    1,
+				exitCode:    exitCode,
 				lastCommand: lastCommand,
 				output:      lastOutput,
 				errorMsg:    err.Error(),
 			}
-			return fmt.Errorf("command %s failed: %w", processedCmd.Name, err)
+			// Clean up temp dirs immediately before returning to avoid
+			// holding onto filesystem resources longer than necessary.
+			cleanupGroupTempDirs()
+			return err
 		}
 
-		// Display result
-		fmt.Printf("    Exit code: %d\n", result.ExitCode)
-		if result.Stdout != "" {
-			fmt.Printf("    Stdout: %s\n", result.Stdout)
-			lastOutput = result.Stdout
+		// Update last output if command produced output
+		if newOutput != "" {
+			lastOutput = newOutput
 		}
-		if result.Stderr != "" {
-			fmt.Printf("    Stderr: %s\n", result.Stderr)
-		}
-
-		// Check if command succeeded
-		if result.ExitCode != 0 {
-			// Set failure result for notification
-			executionResult = &groupExecutionResult{
-				status:      GroupExecutionStatusError,
-				exitCode:    result.ExitCode,
-				lastCommand: lastCommand,
-				output:      lastOutput,
-				errorMsg:    fmt.Sprintf("command failed with exit code %d", result.ExitCode),
-			}
-			return fmt.Errorf("%w: command %s failed with exit code %d", ErrCommandFailed, processedCmd.Name, result.ExitCode)
-		}
+		lastExitCode = exitCode
 	}
 
 	// Set success result for notification
 	executionResult = &groupExecutionResult{
 		status:      GroupExecutionStatusSuccess,
-		exitCode:    0,
+		exitCode:    lastExitCode,
 		lastCommand: lastCommand,
 		output:      lastOutput,
 		errorMsg:    "",
 	}
 
-	fmt.Printf("Group %s completed successfully\n", processedGroup.Name)
+	// Clean up temporary directories now that the group completed
+	cleanupGroupTempDirs()
+
+	slog.Info("Group completed successfully", "name", processedGroup.Name)
 	return nil
 }
 
@@ -239,9 +226,9 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 		cmd.ExpandedCmd = resolvedPath
 	}
 
-	// Set working directory from global config if not specified
-	if cmd.Dir == "" {
-		cmd.Dir = ge.config.Global.WorkDir
+	// Set effective working directory from global config if not already resolved
+	if cmd.EffectiveWorkdir == "" {
+		cmd.EffectiveWorkdir = ge.config.Global.WorkDir
 	}
 
 	// Validate output path before command execution if output capture is requested
@@ -274,4 +261,43 @@ func (ge *DefaultGroupExecutor) createCommandContext(ctx context.Context, cmd ru
 	}
 
 	return context.WithTimeout(ctx, timeout)
+}
+
+// executeSingleCommand executes a single command with proper context management
+// Returns the output string, exit code, and any error encountered
+func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *runnertypes.Command, group *runnertypes.CommandGroup) (string, int, error) {
+	// Create command context with timeout
+	cmdCtx, cancel := ge.createCommandContext(ctx, *cmd)
+	defer cancel()
+
+	// Execute the command with group context
+	result, err := ge.executeCommandInGroup(cmdCtx, cmd, group)
+	if err != nil {
+		slog.Error("Command failed", "command", cmd.Name, "exit_code", 1, "error", err)
+		return "", 1, fmt.Errorf("command %s failed: %w", cmd.Name, err)
+	}
+
+	// Display result
+	output := ""
+	if result.Stdout != "" {
+		output = result.Stdout
+	}
+
+	// Log command result with all relevant fields
+	logArgs := []any{"command", cmd.Name, "exit_code", result.ExitCode}
+	if result.Stdout != "" {
+		logArgs = append(logArgs, "stdout", result.Stdout)
+	}
+	if result.Stderr != "" {
+		logArgs = append(logArgs, "stderr", result.Stderr)
+	}
+	slog.Debug("Command execution result", logArgs...)
+
+	// Check if command succeeded
+	if result.ExitCode != 0 {
+		slog.Error("Command failed with non-zero exit code", "command", cmd.Name, "exit_code", result.ExitCode)
+		return output, result.ExitCode, fmt.Errorf("%w: command %s failed with exit code %d", ErrCommandFailed, cmd.Name, result.ExitCode)
+	}
+
+	return output, 0, nil
 }

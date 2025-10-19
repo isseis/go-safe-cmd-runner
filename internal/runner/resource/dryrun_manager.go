@@ -142,8 +142,8 @@ func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd runnerty
 
 	// Generate simulated output
 	stdout := fmt.Sprintf("[DRY-RUN] Would execute: %s", cmd.ExpandedCmd)
-	if cmd.Dir != "" {
-		stdout += fmt.Sprintf(" (in directory: %s)", cmd.Dir)
+	if cmd.EffectiveWorkdir != "" {
+		stdout += fmt.Sprintf(" (in directory: %s)", cmd.EffectiveWorkdir)
 	}
 	if cmd.Output != "" {
 		stdout += fmt.Sprintf(" (output would be captured to: %s)", cmd.Output)
@@ -167,7 +167,7 @@ func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd runnertype
 		Target:    cmd.ExpandedCmd,
 		Parameters: map[string]any{
 			"command":           cmd.ExpandedCmd,
-			"working_directory": cmd.Dir,
+			"working_directory": cmd.EffectiveWorkdir,
 			"timeout":           cmd.Timeout,
 		},
 		Impact: ResourceImpact{
