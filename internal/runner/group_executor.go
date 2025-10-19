@@ -68,14 +68,17 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, group runnerty
 
 	// Track temporary directories for cleanup
 	groupTempDirs := make([]string, 0)
-	defer func() {
-		// Clean up temp directories created for this group using ResourceManager
+
+	// Explicit cleanup function to ensure resources are released as soon as
+	// group execution is finished (or on early return). Previously cleanup
+	// was deferred until function return which delayed releasing resources.
+	cleanupGroupTempDirs := func() {
 		for _, tempDirPath := range groupTempDirs {
 			if err := ge.resourceManager.CleanupTempDir(tempDirPath); err != nil {
 				slog.Warn("Failed to cleanup temp directory", "path", tempDirPath, "error", err)
 			}
 		}
-	}()
+	}
 
 	// Defer notification to ensure it's sent regardless of success or failure
 	var executionResult *groupExecutionResult
@@ -122,6 +125,8 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, group runnerty
 	if ge.verificationManager != nil {
 		result, err := ge.verificationManager.VerifyGroupFiles(&processedGroup)
 		if err != nil {
+			// Ensure temp dirs are cleaned up before returning an error
+			cleanupGroupTempDirs()
 			return &VerificationError{
 				GroupName:     processedGroup.Name,
 				TotalFiles:    result.TotalFiles,
@@ -151,14 +156,9 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, group runnerty
 		processedCmd := cmd
 		lastCommand = processedCmd.Name
 
-		// Create command context with timeout
-		cmdCtx, cancel := ge.createCommandContext(ctx, processedCmd)
-		defer cancel()
-
-		// Execute the command with group context
-		result, err := ge.executeCommandInGroup(cmdCtx, &processedCmd, &processedGroup)
+		// Execute the command
+		newOutput, err := ge.executeSingleCommand(ctx, &processedCmd, &processedGroup)
 		if err != nil {
-			fmt.Printf("    Command failed: %v\n", err)
 			// Set failure result for notification
 			executionResult = &groupExecutionResult{
 				status:      GroupExecutionStatusError,
@@ -167,30 +167,15 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, group runnerty
 				output:      lastOutput,
 				errorMsg:    err.Error(),
 			}
-			return fmt.Errorf("command %s failed: %w", processedCmd.Name, err)
+			// Clean up temp dirs immediately before returning to avoid
+			// holding onto filesystem resources longer than necessary.
+			cleanupGroupTempDirs()
+			return err
 		}
 
-		// Display result
-		fmt.Printf("    Exit code: %d\n", result.ExitCode)
-		if result.Stdout != "" {
-			fmt.Printf("    Stdout: %s\n", result.Stdout)
-			lastOutput = result.Stdout
-		}
-		if result.Stderr != "" {
-			fmt.Printf("    Stderr: %s\n", result.Stderr)
-		}
-
-		// Check if command succeeded
-		if result.ExitCode != 0 {
-			// Set failure result for notification
-			executionResult = &groupExecutionResult{
-				status:      GroupExecutionStatusError,
-				exitCode:    result.ExitCode,
-				lastCommand: lastCommand,
-				output:      lastOutput,
-				errorMsg:    fmt.Sprintf("command failed with exit code %d", result.ExitCode),
-			}
-			return fmt.Errorf("%w: command %s failed with exit code %d", ErrCommandFailed, processedCmd.Name, result.ExitCode)
+		// Update last output if command produced output
+		if newOutput != "" {
+			lastOutput = newOutput
 		}
 	}
 
@@ -202,6 +187,9 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, group runnerty
 		output:      lastOutput,
 		errorMsg:    "",
 	}
+
+	// Clean up temporary directories now that the group completed
+	cleanupGroupTempDirs()
 
 	fmt.Printf("Group %s completed successfully\n", processedGroup.Name)
 	return nil
@@ -274,4 +262,37 @@ func (ge *DefaultGroupExecutor) createCommandContext(ctx context.Context, cmd ru
 	}
 
 	return context.WithTimeout(ctx, timeout)
+}
+
+// executeSingleCommand executes a single command with proper context management
+// Returns the output string and any error encountered
+func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *runnertypes.Command, group *runnertypes.CommandGroup) (string, error) {
+	// Create command context with timeout
+	cmdCtx, cancel := ge.createCommandContext(ctx, *cmd)
+	defer cancel()
+
+	// Execute the command with group context
+	result, err := ge.executeCommandInGroup(cmdCtx, cmd, group)
+	if err != nil {
+		fmt.Printf("    Command failed: %v\n", err)
+		return "", fmt.Errorf("command %s failed: %w", cmd.Name, err)
+	}
+
+	// Display result
+	fmt.Printf("    Exit code: %d\n", result.ExitCode)
+	output := ""
+	if result.Stdout != "" {
+		fmt.Printf("    Stdout: %s\n", result.Stdout)
+		output = result.Stdout
+	}
+	if result.Stderr != "" {
+		fmt.Printf("    Stderr: %s\n", result.Stderr)
+	}
+
+	// Check if command succeeded
+	if result.ExitCode != 0 {
+		return output, fmt.Errorf("%w: command %s failed with exit code %d", ErrCommandFailed, cmd.Name, result.ExitCode)
+	}
+
+	return output, nil
 }
