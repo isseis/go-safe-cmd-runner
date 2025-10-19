@@ -264,27 +264,110 @@ flowchart TD
     LogDeleteError --> End
 ```
 
-#### 変数展開プロセス（新設計）
+#### 変数展開プロセス（旧設計 vs 新設計）
+
+##### 旧設計（TOMLロード時にすべて展開）
 
 ```mermaid
 flowchart TD
-    Input["コマンド設定<br/>(cmd, group)"]
-    Input -->|未展開| BuildVars["buildVarsForCommand<br/>変数マップ構築"]
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef loadPhase fill:#fef3e8,stroke:#fd7e14,stroke-width:3px,stroke-dasharray: 5 5;
+    classDef execPhase fill:#e8f5f3,stroke:#20c997,stroke-width:3px,stroke-dasharray: 5 5;
 
-    BuildVars -->|1. グループ変数をコピー| CopyGroupVars["group.ExpandedVars<br/>(__runner_workdir含む)"]
-    CopyGroupVars -->|2. コマンド変数で上書き| MergeVars["cmd.Vars で上書き<br/>(コマンドが優先)"]
+    subgraph LoadPhase["📄 TOMLロード時"]
+        direction TB
+        TOMLFile[("TOML設定ファイル")]
+        ParseTOML["TOML解析"]
+        RawVars[("Group.Vars<br/>Command.Vars")]
+        ExpandGroupVars["Group.Vars展開"]
+        GroupExpandedVars[("Group.ExpandedVars")]
+        ExpandCmdVars["Command.Vars展開<br/>(Group変数 + Cmd変数)"]
+        CmdExpandedVars[("Command.ExpandedVars")]
 
-    MergeVars -->|vars: map[string]string| ExpandCmd["expandCommand<br/>一度だけ展開"]
+        TOMLFile --> ParseTOML
+        ParseTOML --> RawVars
+        RawVars --> ExpandGroupVars
+        ExpandGroupVars --> GroupExpandedVars
+        GroupExpandedVars --> ExpandCmdVars
+        RawVars --> ExpandCmdVars
+        ExpandCmdVars --> CmdExpandedVars
+    end
 
-    ExpandCmd -->|ExpandString| ExpandFields["cmd, args, workdir, env<br/>すべて展開"]
+    subgraph ExecPhase["⚙️ コマンド実行時"]
+        direction TB
+        UseExpandedVars["Command.ExpandedVars使用<br/>(事前計算済み)"]
+    end
 
-    ExpandFields -->|展開済み| ValidatePath["パス検証<br/>(トラバーサル検査)"]
+    CmdExpandedVars -.->|保存された変数マップ| UseExpandedVars
 
-    ValidatePath -->|Valid| Output["展開済みコマンド<br/>(新しいインスタンス)"]
-    ValidatePath -->|Invalid| Error["エラー: Invalid path"]
-    Error -.->|error| End["エラー終了"]
-    Output --> End
+    class TOMLFile,RawVars,GroupExpandedVars,CmdExpandedVars data;
+    class ParseTOML,ExpandGroupVars,ExpandCmdVars,UseExpandedVars process;
+    class LoadPhase loadPhase;
+    class ExecPhase execPhase;
 ```
+
+**問題点**:
+- TOMLロード時に `Group.ExpandedVars` と `Command.ExpandedVars` の両方を計算
+- グループのワークディレクトリ（`__runner_workdir`）はコマンド実行時に決定されるが、TOMLロード時には未確定
+- 未確定の `__runner_workdir` を含む状態でコマンド変数を展開していた
+
+##### 新設計（グループ変数のみTOMLロード時、コマンド変数は実行時に展開）
+
+```mermaid
+flowchart TD
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef validation fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+    classDef error fill:#ffe8e8,stroke:#dc3545,stroke-width:2px,color:#721c24;
+    classDef loadPhase fill:#fef3e8,stroke:#fd7e14,stroke-width:3px,stroke-dasharray: 5 5;
+    classDef execPhase fill:#e8f5f3,stroke:#20c997,stroke-width:3px,stroke-dasharray: 5 5;
+
+    subgraph LoadPhase["📄 TOMLロード時"]
+        direction TB
+        TOMLFile[("TOML設定ファイル")]
+        ParseTOML["TOML解析"]
+        RawVars[("Group.Vars<br/>Command.Vars")]
+        ExpandGroupVars["Group.Vars展開"]
+        GroupExpandedVars[("Group.ExpandedVars")]
+        CmdVars[("Command.Vars<br/>(未展開のまま保持)")]
+
+        TOMLFile --> ParseTOML
+        ParseTOML --> RawVars
+        RawVars --> ExpandGroupVars
+        ExpandGroupVars --> GroupExpandedVars
+        RawVars --> CmdVars
+    end
+
+    subgraph ExecPhase["⚙️ コマンド実行時"]
+        direction TB
+        WorkDirValue[("__runner_workdir値<br/>(動的生成)")]
+        BuildVarsMap["変数マップ構築<br/>(Group変数 + __runner_workdir<br/>+ Cmd変数)"]
+        ExpandCmdVars["Command.Vars展開"]
+        CmdExpandedVars[("Command.ExpandedVars")]
+        UseExpandedVars["Command.ExpandedVars使用"]
+
+        WorkDirValue --> BuildVarsMap
+        BuildVarsMap --> ExpandCmdVars
+        ExpandCmdVars --> CmdExpandedVars
+        CmdExpandedVars --> UseExpandedVars
+    end
+
+    GroupExpandedVars --> BuildVarsMap
+    CmdVars --> BuildVarsMap
+
+    class TOMLFile,RawVars,GroupExpandedVars,CmdVars,WorkDirValue,CmdExpandedVars data;
+    class ParseTOML,ExpandGroupVars,BuildVarsMap,ExpandCmdVars,UseExpandedVars process;
+    class LoadPhase loadPhase;
+    class ExecPhase execPhase;
+```
+
+**改善点**:
+- TOMLロード時は `Group.Vars` のみ展開して `Group.ExpandedVars` に保存
+- `Command.Vars` は未展開のまま保持（`Command.ExpandedVars` は作成しない）
+- コマンド実行時に `__runner_workdir` を `Group.ExpandedVars` に追加
+- `Group.ExpandedVars` と `Command.Vars` を統合してコマンド変数を展開
+- すべての実行時情報（ワークディレクトリ、時刻、PIDなど）が揃った状態で展開
 
 ## 4. データモデル
 
