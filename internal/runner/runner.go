@@ -80,6 +80,7 @@ type Runner struct {
 	privilegeManager    runnertypes.PrivilegeManager // Optional privilege manager for privileged commands
 	runID               string                       // Unique identifier for this execution run
 	resourceManager     resource.ResourceManager     // Manages all side-effects (commands, filesystem, privileges, etc.)
+	groupExecutor       GroupExecutor                // Executes command groups
 }
 
 // Option is a function type for configuring Runner instances
@@ -263,7 +264,7 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 		}
 	}
 
-	return &Runner{
+	runner := &Runner{
 		executor:            opts.executor,
 		config:              config,
 		envVars:             make(map[string]string),
@@ -273,7 +274,20 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 		privilegeManager:    opts.privilegeManager,
 		runID:               opts.runID,
 		resourceManager:     opts.resourceManager,
-	}, nil
+	}
+
+	// Create GroupExecutor with notification function bound to runner
+	runner.groupExecutor = NewDefaultGroupExecutor(
+		opts.executor,
+		config,
+		validator,
+		opts.verificationManager,
+		opts.resourceManager,
+		opts.runID,
+		runner.sendGroupNotification,
+	)
+
+	return runner, nil
 }
 
 // LoadSystemEnvironment loads and filters system environment variables.
@@ -341,233 +355,9 @@ func (r *Runner) ExecuteAll(ctx context.Context) error {
 }
 
 // ExecuteGroup executes all commands in a group sequentially
+// This method delegates to the GroupExecutor implementation
 func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGroup) error {
-	// Record execution start time for notification
-	startTime := time.Now()
-
-	fmt.Printf("Executing group: %s\n", group.Name)
-	if group.Description != "" {
-		fmt.Printf("Description: %s\n", group.Description)
-	}
-
-	// Track temporary directories for cleanup
-	groupTempDirs := make([]string, 0)
-	defer func() {
-		// Clean up temp directories created for this group using ResourceManager
-		for _, tempDirPath := range groupTempDirs {
-			if err := r.resourceManager.CleanupTempDir(tempDirPath); err != nil {
-				slog.Warn("Failed to cleanup temp directory", "path", tempDirPath, "error", err)
-			}
-		}
-	}()
-
-	// Defer notification to ensure it's sent regardless of success or failure
-	var executionResult *groupExecutionResult
-	defer func() {
-		if executionResult != nil {
-			r.sendGroupNotification(group, executionResult, time.Since(startTime))
-		}
-	}()
-
-	// Process the group without template
-	processedGroup := group
-
-	// Process new fields (TempDir, Cleanup, WorkDir)
-	var tempDirPath string
-	if processedGroup.TempDir {
-		// Create temporary directory for this group using ResourceManager
-		var err error
-		tempDirPath, err = r.resourceManager.CreateTempDir(processedGroup.Name)
-		if err != nil {
-			return fmt.Errorf("failed to create temp directory for group %s: %w", processedGroup.Name, err)
-		}
-		groupTempDirs = append(groupTempDirs, tempDirPath)
-	}
-
-	// Determine and set the effective working directory for each command
-	for i := range processedGroup.Commands {
-		// Skip if command already has a directory specified
-		if processedGroup.Commands[i].Dir != "" {
-			continue
-		}
-
-		// Priority for working directory:
-		// 1. TempDir (if enabled)
-		// 2. Group's WorkDir
-		switch {
-		case tempDirPath != "":
-			processedGroup.Commands[i].Dir = tempDirPath
-		case processedGroup.WorkDir != "":
-			processedGroup.Commands[i].Dir = processedGroup.WorkDir
-		}
-	}
-
-	// Verify group files before execution
-	if r.verificationManager != nil {
-		result, err := r.verificationManager.VerifyGroupFiles(&processedGroup)
-		if err != nil {
-			return &VerificationError{
-				GroupName:     processedGroup.Name,
-				TotalFiles:    result.TotalFiles,
-				VerifiedFiles: result.VerifiedFiles,
-				FailedFiles:   len(result.FailedFiles),
-				SkippedFiles:  len(result.SkippedFiles),
-				Err:           err,
-			}
-		}
-
-		if result.TotalFiles > 0 {
-			slog.Info("Group file verification completed",
-				"group", processedGroup.Name,
-				"verified_files", result.VerifiedFiles,
-				"skipped_files", len(result.SkippedFiles),
-				"duration_ms", result.Duration.Milliseconds())
-		}
-	}
-
-	// Execute commands in the group sequentially
-	var lastCommand string
-	var lastOutput string
-	for i, cmd := range processedGroup.Commands {
-		fmt.Printf("  [%d/%d] Executing command: %s\n", i+1, len(processedGroup.Commands), cmd.Name)
-
-		// Process the command
-		processedCmd := cmd
-		lastCommand = processedCmd.Name
-
-		// Create command context with timeout
-		cmdCtx, cancel := r.createCommandContext(ctx, processedCmd)
-		defer cancel()
-
-		// Execute the command with group context
-		result, err := r.executeCommandInGroup(cmdCtx, &processedCmd, &processedGroup)
-		if err != nil {
-			fmt.Printf("    Command failed: %v\n", err)
-			// Set failure result for notification
-			executionResult = &groupExecutionResult{
-				status:      GroupExecutionStatusError,
-				exitCode:    1,
-				lastCommand: lastCommand,
-				output:      lastOutput,
-				errorMsg:    err.Error(),
-			}
-			return fmt.Errorf("command %s failed: %w", processedCmd.Name, err)
-		}
-
-		// Display result
-		fmt.Printf("    Exit code: %d\n", result.ExitCode)
-		if result.Stdout != "" {
-			fmt.Printf("    Stdout: %s\n", result.Stdout)
-			lastOutput = result.Stdout
-		}
-		if result.Stderr != "" {
-			fmt.Printf("    Stderr: %s\n", result.Stderr)
-		}
-
-		// Check if command succeeded
-		if result.ExitCode != 0 {
-			// Set failure result for notification
-			executionResult = &groupExecutionResult{
-				status:      GroupExecutionStatusError,
-				exitCode:    result.ExitCode,
-				lastCommand: lastCommand,
-				output:      lastOutput,
-				errorMsg:    fmt.Sprintf("command failed with exit code %d", result.ExitCode),
-			}
-			return fmt.Errorf("%w: command %s failed with exit code %d", ErrCommandFailed, processedCmd.Name, result.ExitCode)
-		}
-	}
-
-	// Set success result for notification
-	executionResult = &groupExecutionResult{
-		status:      GroupExecutionStatusSuccess,
-		exitCode:    0,
-		lastCommand: lastCommand,
-		output:      lastOutput,
-		errorMsg:    "",
-	}
-
-	fmt.Printf("Group %s completed successfully\n", processedGroup.Name)
-	return nil
-}
-
-// executeCommandInGroup executes a command within a specific group context
-func (r *Runner) executeCommandInGroup(ctx context.Context, cmd *runnertypes.Command, group *runnertypes.CommandGroup) (*executor.Result, error) {
-	// Resolve environment variables for the command with group context
-	envVars := r.resolveEnvironmentVars(cmd, group)
-
-	// Validate resolved environment variables
-	if err := r.validator.ValidateAllEnvironmentVars(envVars); err != nil {
-		return nil, fmt.Errorf("resolved environment variables security validation failed: %w", err)
-	}
-
-	// Resolve and validate command path if verification manager is available
-	if r.verificationManager != nil {
-		// Use ExpandedCmd if available, fallback to original Cmd
-		cmdToResolve := cmd.ExpandedCmd
-		if cmdToResolve == "" {
-			cmdToResolve = cmd.Cmd
-		}
-
-		resolvedPath, err := r.verificationManager.ResolvePath(cmdToResolve)
-		if err != nil {
-			return nil, fmt.Errorf("command path resolution failed: %w", err)
-		}
-
-		// Update the expanded command path (don't modify original)
-		cmd.ExpandedCmd = resolvedPath
-	}
-
-	// Set working directory from global config if not specified
-	if cmd.Dir == "" {
-		cmd.Dir = r.config.Global.WorkDir
-	}
-
-	// Validate output path before command execution if output capture is requested
-	if cmd.Output != "" {
-		if err := r.resourceManager.ValidateOutputPath(cmd.Output, group.WorkDir); err != nil {
-			return nil, fmt.Errorf("output path validation failed: %w", err)
-		}
-	}
-
-	// Execute the command using ResourceManager
-	result, err := r.resourceManager.ExecuteCommand(ctx, *cmd, group, envVars)
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert ResourceManager result to executor.Result
-	return &executor.Result{
-		ExitCode: result.ExitCode,
-		Stdout:   result.Stdout,
-		Stderr:   result.Stderr,
-	}, nil
-}
-
-// resolveEnvironmentVars resolves environment variables for a command with group context.
-// This merges system environment variables (filtered by allowlist) with pre-expanded
-// Global.ExpandedEnv, Group.ExpandedEnv, and Command.ExpandedEnv.
-func (r *Runner) resolveEnvironmentVars(cmd *runnertypes.Command, group *runnertypes.CommandGroup) map[string]string {
-	// Use BuildProcessEnvironment to construct the final environment
-	envVars := executor.BuildProcessEnvironment(&r.config.Global, group, cmd)
-
-	slog.Debug("Built process environment variables",
-		"command", cmd.Name,
-		"group", group.Name,
-		"final_vars_count", len(envVars))
-
-	return envVars
-}
-
-// createCommandContext creates a context with timeout for command execution
-func (r *Runner) createCommandContext(ctx context.Context, cmd runnertypes.Command) (context.Context, context.CancelFunc) {
-	// Use command-specific timeout if specified, otherwise use global timeout
-	timeout := time.Duration(r.config.Global.Timeout) * time.Second
-	if cmd.Timeout > 0 {
-		timeout = time.Duration(cmd.Timeout) * time.Second
-	}
-
-	return context.WithTimeout(ctx, timeout)
+	return r.groupExecutor.ExecuteGroup(ctx, group)
 }
 
 // ListCommands lists all available commands

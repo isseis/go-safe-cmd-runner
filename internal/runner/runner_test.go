@@ -819,39 +819,8 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 	})
 }
 
-func TestRunner_createCommandContext(t *testing.T) {
-	config := &runnertypes.Config{
-		Global: runnertypes.GlobalConfig{
-			Timeout: 10,
-		},
-	}
-	runner, err := NewRunner(config, WithRunID("test-run-123"))
-	require.NoError(t, err)
-
-	t.Run("use global timeout", func(t *testing.T) {
-		cmd := runnertypes.Command{Name: "test-cmd"}
-		ctx := context.Background()
-
-		cmdCtx, cancel := runner.createCommandContext(ctx, cmd)
-		defer cancel()
-
-		deadline, ok := cmdCtx.Deadline()
-		assert.True(t, ok)
-		assert.WithinDuration(t, time.Now().Add(10*time.Second), deadline, 100*time.Millisecond)
-	})
-
-	t.Run("use command-specific timeout", func(t *testing.T) {
-		cmd := runnertypes.Command{Name: "test-cmd", Timeout: 5}
-		ctx := context.Background()
-
-		cmdCtx, cancel := runner.createCommandContext(ctx, cmd)
-		defer cancel()
-
-		deadline, ok := cmdCtx.Deadline()
-		assert.True(t, ok)
-		assert.WithinDuration(t, time.Now().Add(5*time.Second), deadline, 100*time.Millisecond)
-	})
-}
+// TestRunner_createCommandContext has been removed as it tested an internal implementation detail
+// of GroupExecutor. Timeout behavior is already tested by TestRunner_CommandTimeoutBehavior.
 
 func TestRunner_CommandTimeoutBehavior(t *testing.T) {
 	sleepCmd := runnertypes.Command{
