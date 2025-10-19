@@ -106,19 +106,21 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, group runnerty
 
 	// Determine and set the effective working directory for each command
 	for i := range processedGroup.Commands {
-		// Skip if command already has a directory specified
-		if processedGroup.Commands[i].Dir != "" {
-			continue
-		}
-
 		// Priority for working directory:
-		// 1. TempDir (if enabled)
-		// 2. Group's WorkDir
+		// 1. Command's Dir (if set) - highest priority
+		// 2. TempDir (if enabled)
+		// 3. Group's WorkDir
+		// 4. Global WorkDir (handled later in executeCommandInGroup)
 		switch {
+		case processedGroup.Commands[i].Dir != "":
+			// Command has explicit Dir - use it as-is
+			processedGroup.Commands[i].EffectiveWorkdir = processedGroup.Commands[i].Dir
 		case tempDirPath != "":
-			processedGroup.Commands[i].Dir = tempDirPath
+			// Use auto-generated temp directory
+			processedGroup.Commands[i].EffectiveWorkdir = tempDirPath
 		case processedGroup.WorkDir != "":
-			processedGroup.Commands[i].Dir = processedGroup.WorkDir
+			// Use group's WorkDir
+			processedGroup.Commands[i].EffectiveWorkdir = processedGroup.WorkDir
 		}
 	}
 
@@ -222,9 +224,9 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 		cmd.ExpandedCmd = resolvedPath
 	}
 
-	// Set working directory from global config if not specified
-	if cmd.Dir == "" {
-		cmd.Dir = ge.config.Global.WorkDir
+	// Set effective working directory from global config if not already resolved
+	if cmd.EffectiveWorkdir == "" {
+		cmd.EffectiveWorkdir = ge.config.Global.WorkDir
 	}
 
 	// Validate output path before command execution if output capture is requested

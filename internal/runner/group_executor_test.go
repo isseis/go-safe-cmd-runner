@@ -171,10 +171,10 @@ func TestExecuteGroup_WorkDirPriority(t *testing.T) {
 				mockRM.AssertCalled(t, "CleanupTempDir", tt.expectedTempDir)
 			}
 
-			// Verify the command was executed with the correct directory
+			// Verify the command was executed with the correct effective working directory
 			mockRM.AssertCalled(t, "ExecuteCommand", mock.Anything,
 				mock.MatchedBy(func(cmd runnertypes.Command) bool {
-					return cmd.Dir == tt.expectedCommandDir
+					return cmd.EffectiveWorkdir == tt.expectedCommandDir
 				}), mock.Anything, mock.Anything)
 		})
 	}

@@ -178,8 +178,13 @@ func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path strin
 	execCmd := exec.CommandContext(ctx, path, cmd.ExpandedArgs...)
 
 	// Set up working directory
-	if cmd.Dir != "" {
-		execCmd.Dir = cmd.Dir
+	// Use EffectiveWorkdir if set (resolved at runtime), otherwise fallback to Dir
+	workdir := cmd.EffectiveWorkdir
+	if workdir == "" {
+		workdir = cmd.Dir
+	}
+	if workdir != "" {
+		execCmd.Dir = workdir
 	}
 
 	// Set up environment variables
@@ -249,13 +254,18 @@ func (e *DefaultExecutor) Validate(cmd runnertypes.Command) error {
 	}
 
 	// Check if working directory exists and is accessible
-	if cmd.Dir != "" {
-		exists, err := e.FS.FileExists(cmd.Dir)
+	// Use EffectiveWorkdir if set (resolved at runtime), otherwise fallback to Dir
+	workdir := cmd.EffectiveWorkdir
+	if workdir == "" {
+		workdir = cmd.Dir
+	}
+	if workdir != "" {
+		exists, err := e.FS.FileExists(workdir)
 		if err != nil {
-			return fmt.Errorf("failed to check directory %s: %w", cmd.Dir, err)
+			return fmt.Errorf("failed to check directory %s: %w", workdir, err)
 		}
 		if !exists {
-			return fmt.Errorf("working directory %q does not exist: %w", cmd.Dir, ErrDirNotExists)
+			return fmt.Errorf("working directory %q does not exist: %w", workdir, ErrDirNotExists)
 		}
 	}
 
@@ -326,8 +336,13 @@ func (e *DefaultExecutor) validatePrivilegedCommand(cmd runnertypes.Command) err
 	}
 
 	// Ensure working directory is also absolute for privileged commands
-	if cmd.Dir != "" && !filepath.IsAbs(cmd.Dir) {
-		return fmt.Errorf("%w: privileged commands must use absolute working directory paths: %s", ErrPrivilegedCmdSecurity, cmd.Dir)
+	// Use EffectiveWorkdir if set (resolved at runtime), otherwise fallback to Dir
+	workdir := cmd.EffectiveWorkdir
+	if workdir == "" {
+		workdir = cmd.Dir
+	}
+	if workdir != "" && !filepath.IsAbs(workdir) {
+		return fmt.Errorf("%w: privileged commands must use absolute working directory paths: %s", ErrPrivilegedCmdSecurity, workdir)
 	}
 
 	// Additional validation could include:
