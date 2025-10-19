@@ -457,10 +457,19 @@ func (m *DefaultTempDirManager) Create() (string, error) {
     // OS の TempDir() 関数を使用
     baseTmpDir := os.TempDir()
 
-    // MkdirTemp でランダムディレクトリを生成（パーミッション 0700）
+    // MkdirTemp でランダムディレクトリを生成
+    // os.MkdirTemp は内部的に 0700 を使用するが、プロセスの umask の影響を受ける
+    // 実際のパーミッションは 0700 より厳しくなる可能性がある
     tempDir, err := os.MkdirTemp(baseTmpDir, prefix)
     if err != nil {
         return "", fmt.Errorf("failed to create temporary directory: %w", err)
+    }
+
+    // セキュリティ要件: 厳密に 0700 を保証（umask の影響を排除）
+    if err := os.Chmod(tempDir, 0700); err != nil {
+        // クリーンアップを試みる
+        _ = os.RemoveAll(tempDir)
+        return "", fmt.Errorf("failed to set directory permissions: %w", err)
     }
 
     // 生成されたパスを保存
