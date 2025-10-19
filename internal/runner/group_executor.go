@@ -146,6 +146,7 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, group runnerty
 	// Execute commands in the group sequentially
 	var lastCommand string
 	var lastOutput string
+	var lastExitCode int
 	for i, cmd := range processedGroup.Commands {
 		slog.Info("Executing command", "command", cmd.Name, "index", i+1, "total", len(processedGroup.Commands))
 
@@ -154,12 +155,12 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, group runnerty
 		lastCommand = processedCmd.Name
 
 		// Execute the command
-		newOutput, err := ge.executeSingleCommand(ctx, &processedCmd, &processedGroup)
+		newOutput, exitCode, err := ge.executeSingleCommand(ctx, &processedCmd, &processedGroup)
 		if err != nil {
 			// Set failure result for notification
 			executionResult = &groupExecutionResult{
 				status:      GroupExecutionStatusError,
-				exitCode:    1,
+				exitCode:    exitCode,
 				lastCommand: lastCommand,
 				output:      lastOutput,
 				errorMsg:    err.Error(),
@@ -174,12 +175,13 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, group runnerty
 		if newOutput != "" {
 			lastOutput = newOutput
 		}
+		lastExitCode = exitCode
 	}
 
 	// Set success result for notification
 	executionResult = &groupExecutionResult{
 		status:      GroupExecutionStatusSuccess,
-		exitCode:    0,
+		exitCode:    lastExitCode,
 		lastCommand: lastCommand,
 		output:      lastOutput,
 		errorMsg:    "",
@@ -262,8 +264,8 @@ func (ge *DefaultGroupExecutor) createCommandContext(ctx context.Context, cmd ru
 }
 
 // executeSingleCommand executes a single command with proper context management
-// Returns the output string and any error encountered
-func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *runnertypes.Command, group *runnertypes.CommandGroup) (string, error) {
+// Returns the output string, exit code, and any error encountered
+func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *runnertypes.Command, group *runnertypes.CommandGroup) (string, int, error) {
 	// Create command context with timeout
 	cmdCtx, cancel := ge.createCommandContext(ctx, *cmd)
 	defer cancel()
@@ -271,8 +273,8 @@ func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *r
 	// Execute the command with group context
 	result, err := ge.executeCommandInGroup(cmdCtx, cmd, group)
 	if err != nil {
-		slog.Error("Command failed", "command", cmd.Name, "error", err)
-		return "", fmt.Errorf("command %s failed: %w", cmd.Name, err)
+		slog.Error("Command failed", "command", cmd.Name, "exit_code", 1, "error", err)
+		return "", 1, fmt.Errorf("command %s failed: %w", cmd.Name, err)
 	}
 
 	// Display result
@@ -293,8 +295,9 @@ func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *r
 
 	// Check if command succeeded
 	if result.ExitCode != 0 {
-		return output, fmt.Errorf("%w: command %s failed with exit code %d", ErrCommandFailed, cmd.Name, result.ExitCode)
+		slog.Error("Command failed with non-zero exit code", "command", cmd.Name, "exit_code", result.ExitCode)
+		return output, result.ExitCode, fmt.Errorf("%w: command %s failed with exit code %d", ErrCommandFailed, cmd.Name, result.ExitCode)
 	}
 
-	return output, nil
+	return output, 0, nil
 }

@@ -367,6 +367,59 @@ func TestExecuteGroup_CommandExecutionFailure(t *testing.T) {
 	assert.Equal(t, "test-cmd", capturedNotification.lastCommand)
 }
 
+// TestExecuteGroup_CommandExecutionFailure_NonStandardExitCode tests that non-standard exit codes are preserved
+func TestExecuteGroup_CommandExecutionFailure_NonStandardExitCode(t *testing.T) {
+	mockRM := new(MockResourceManager)
+
+	config := &runnertypes.Config{
+		Global: runnertypes.GlobalConfig{
+			Timeout: 30,
+		},
+	}
+
+	var capturedNotification *groupExecutionResult
+	notificationFunc := func(_ runnertypes.CommandGroup, result *groupExecutionResult, _ time.Duration) {
+		capturedNotification = result
+	}
+
+	ge := NewDefaultGroupExecutor(
+		nil,
+		config,
+		nil,
+		nil,
+		mockRM,
+		"test-run-123",
+		notificationFunc,
+	)
+
+	group := runnertypes.CommandGroup{
+		Name: "test-group",
+		Commands: []runnertypes.Command{
+			{
+				Name: "test-cmd",
+				Cmd:  "/bin/some-command",
+			},
+		},
+	}
+
+	// Mock execution to return exit code 127 (command not found)
+	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+		&resource.ExecutionResult{ExitCode: 127, Stdout: "", Stderr: "command not found"}, nil)
+	mockRM.On("ValidateOutputPath", mock.Anything, mock.Anything).Return(nil).Maybe()
+
+	ctx := context.Background()
+	err := ge.ExecuteGroup(ctx, group)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrCommandFailed)
+
+	// Verify notification was sent with error status and correct exit code
+	require.NotNil(t, capturedNotification)
+	assert.Equal(t, GroupExecutionStatusError, capturedNotification.status)
+	assert.Equal(t, 127, capturedNotification.exitCode)
+	assert.Equal(t, "test-cmd", capturedNotification.lastCommand)
+}
+
 // TestExecuteGroup_SuccessNotification tests that success notification is sent properly
 func TestExecuteGroup_SuccessNotification(t *testing.T) {
 	mockRM := new(MockResourceManager)
