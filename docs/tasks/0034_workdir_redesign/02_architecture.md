@@ -223,7 +223,7 @@ flowchart TD
     ResolveWorkDir -->|Yes| UseGroupWorkDir["Group.WorkDir を使用"]
     ResolveWorkDir -->|No| CreateTempDir["自動一時ディレクトリ生成"]
 
-    UseGroupWorkDir -->|workdir: string| StoreWorkDir["グループのworkdirを保存<br/>exec.groupContext.WorkDir"]
+    UseGroupWorkDir -->|workdir: string| StoreWorkDir["グループのworkdirを保存<br/>group.ExpandedVars['__runner_workdir']"]
     CreateTempDir -->|tempdir: string| StoreWorkDir
 
     StoreWorkDir --> InitCleanup["defer で cleanup を登録<br/>defer cleanup handler"]
