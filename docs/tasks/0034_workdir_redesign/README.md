@@ -200,13 +200,27 @@ GroupExecutor.ExecuteGroup():
 ```toml
 [[groups]]
 name = "backup"
-# workdir 未指定 → /tmp/scr-backup-XXXXXX が自動生成
+workdir = "%{backup_base}/data"           # OK: 他の変数参照
+# workdir = "%{__runner_workdir}/sub"     # NG: 未定義変数エラー
 
 [[groups.commands]]
 name = "dump"
 args = ["%{__runner_workdir}/dump.sql"]
-# → args = ["/tmp/scr-backup-XXXXXX/dump.sql"]
+# OK: コマンドレベルで参照可能
+# → args = ["/var/backup/data/dump.sql"]
 ```
+
+**変数展開の動作**:
+
+| レベル | `__runner_workdir` 参照 | その他の変数参照 |
+|--------|----------------------|----------------|
+| グループ (`group.workdir`) | ❌ 不可（未定義エラー） | ✅ 可能 |
+| コマンド (`cmd.*`) | ✅ 可能 | ✅ 可能 |
+
+**dry-runモードでの検証**:
+- 変数が定義されているか（変数マップに存在するか）で正当性を判断
+- 構文的検証（絶対パス、パストラバーサル）は実行
+- 存在チェック（ディレクトリが実在するか）はスキップ
 
 ## 実装フェーズ
 
@@ -244,6 +258,10 @@ args = ["%{__runner_workdir}/dump.sql"]
 | 2025-10-18 | 1.0 | 初版作成：3つのドキュメント完成 |
 | 2025-10-18 | 1.1 | 設計変更：GroupContext を削除し AutoVarProvider で状態管理 |
 | 2025-10-18 | 1.2 | 設計簡素化：AutoVarProvider 依存を削除、group.ExpandedVars への直接設定方式に変更 |
+| 2025-10-18 | 1.3 | 変数展開の遅延評価：`cmd.ExpandedVars` を削除し、実行時に動的構築する方式に変更。優先順位の問題を根本的に解決し、二重展開を回避 |
+| 2025-10-18 | 1.4 | グループレベル `workdir` の変数展開対応：`%{backup_base}` などの変数参照を可能に。ただし `%{__runner_workdir}` は未定義エラー（循環参照防止） |
+| 2025-10-18 | 1.5 | dry-runモード対応：`TempDirManager` に `isDryRun` フラグを追加。dry-runでは仮想パスを生成し、実際のファイルシステム操作は行わない |
+| 2025-10-18 | 1.6 | アーキテクチャ明確化：`GroupExecutor` は概念モデルで、実装は `Runner.ExecuteGroup()` メソッド。`TempDirManager` は `Runner` 内で直接使用 |
 
 ---
 

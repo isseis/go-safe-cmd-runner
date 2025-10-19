@@ -262,26 +262,24 @@ flowchart TD
     LogDeleteError --> End
 ```
 
-#### 変数展開プロセス
+#### 変数展開プロセス（新設計）
 
 ```mermaid
 flowchart TD
-    Input["コマンド設定"]
-    Input -->|args, cmd, workdir| HasVariable{"__runner_workdir<br/>を含む?"}
+    Input["コマンド設定<br/>(cmd, group)"]
+    Input -->|未展開| BuildVars["buildVarsForCommand<br/>変数マップ構築"]
 
-    HasVariable -->|Yes| GetWorkDirPath["cmd.ExpandedVars から<br/>__runner_workdir を取得"]
-    HasVariable -->|No| NoExpansion["展開せず使用"]
+    BuildVars -->|1. グループ変数をコピー| CopyGroupVars["group.ExpandedVars<br/>(__runner_workdir含む)"]
+    CopyGroupVars -->|2. コマンド変数で上書き| MergeVars["cmd.Vars で上書き<br/>(コマンドが優先)"]
 
-    GetWorkDirPath -->|workdir: string| ReplaceVariable["すべての<br/>__runner_workdir<br/>を置換"]
+    MergeVars -->|vars: map[string]string| ExpandCmd["expandCommand<br/>一度だけ展開"]
 
-    ReplaceVariable -->|expanded| ResolveAbsPath["絶対パス化<br/>filepath.Abs"]
+    ExpandCmd -->|ExpandString| ExpandFields["cmd, args, workdir, env<br/>すべて展開"]
 
-    ResolveAbsPath -->|absolute| ValidatePath["パス検証<br/>(トラバーサル検査)"]
+    ExpandFields -->|展開済み| ValidatePath["パス検証<br/>(トラバーサル検査)"]
 
-    ValidatePath -->|Valid| Output["展開済みコマンド"]
+    ValidatePath -->|Valid| Output["展開済みコマンド<br/>(新しいインスタンス)"]
     ValidatePath -->|Invalid| Error["エラー: Invalid path"]
-
-    NoExpansion --> Output
     Error -.->|error| End["エラー終了"]
     Output --> End
 ```
@@ -329,10 +327,16 @@ flowchart TD
 一時ディレクトリ管理を専門とするコンポーネント `TempDirManager` を導入する。
 
 **設計方針**:
+- **dry-runモード対応**: 実際のファイルシステム操作を行わず、ログ出力のみ
 - **グループ単位のインスタンス**: 各グループに対して独立したインスタンスを作成
 - **一時ディレクトリ使用時のみ作成**: 固定ディレクトリを使用する場合はインスタンスを作成しない
-- **インスタンス作成時にloggerとgroupNameを渡す**: コンストラクタで `NewTempDirManager(logger, groupName)` として受け取る
+- **インスタンス作成時にlogger、groupName、isDryRunを渡す**: コンストラクタで `NewTempDirManager(logger, groupName, isDryRun)` として受け取る
 - **シンプルなメソッド名**: `CreateTempDir()` ではなく `Create()`、`CleanupTempDir()` ではなく `Cleanup()`
+
+**dry-runモードの動作**:
+- `Create()`: 仮想パスを生成（`/tmp/scr-<groupName>-dryrun-<timestamp>`）、実際のディレクトリは作成しない
+- `Cleanup()`: ログ出力のみ（`[DRY-RUN] Would delete temp dir: <path>`）、実際の削除は行わない
+- 仮想パスは `%{__runner_workdir}` に設定され、変数展開で使用される
 
 **責務**:
 - グループごとの一時ディレクトリ生成（`scr-<groupName>-XXXXXX` 形式）
@@ -420,13 +424,25 @@ sequenceDiagram
 | 項目 | 値 |
 |-----|-----|
 | 変数名 | `%{__runner_workdir}` |
-| スコープ | グループ内のすべてのコマンド（コマンドレベル） |
+| スコープ | グループ内のすべてのコマンド（**コマンドレベルのみ**） |
 | 値 | グループのワークディレクトリの絶対パス |
 | 命名規則 | `__runner_` プレフィックスは予約（Task 0033で定義） |
 
 **値の決定ロジック**:
-- `Group.WorkDir` が指定 → その値を使用
+- `Group.WorkDir` が指定 → 変数展開後の値を使用
 - `Group.WorkDir` が未指定 → 自動生成された一時ディレクトリのパスを使用
+
+**変数展開の動作**:
+
+| レベル | 変数展開 | `__runner_workdir` 参照 | その他の変数参照 |
+|--------|---------|----------------------|----------------|
+| グループ (`group.workdir`) | ✅ 可能 | ❌ 不可（未定義エラー） | ✅ 可能 |
+| コマンド (`cmd.*`) | ✅ 可能 | ✅ 可能 | ✅ 可能 |
+
+**理由**:
+- `__runner_workdir` は `group.workdir` を決定した**後**に設定される
+- グループレベルで参照すると循環参照になるため、未定義変数エラーとなる
+- その他の変数（`%{backup_base}` など）はグループレベルでも参照可能
 
 ### 6.2 VariableExpander コンポーネント
 
@@ -471,11 +487,13 @@ flowchart TD
 ```toml
 [[groups]]
 name = "backup"
+# workdir 未指定 → 一時ディレクトリが自動生成される
 
 [[groups.commands]]
 name = "dump"
 cmd = "pg_dump"
 args = ["mydb", "-f", "%{__runner_workdir}/dump.sql"]
+# OK: コマンドレベルで %{__runner_workdir} を参照
 ```
 
 実行時に:
@@ -486,12 +504,15 @@ args = ["mydb", "-f", "%{__runner_workdir}/dump.sql"]
 ```toml
 [[groups]]
 name = "build"
-workdir = "/opt/project"
+workdir = "/opt/project"                # OK: 固定パス
+# workdir = "%{project_base}/build"     # OK: 他の変数参照
+# workdir = "%{__runner_workdir}/sub"   # NG: 未定義変数エラー
 
 [[groups.commands]]
 name = "checkout"
 cmd = "git"
 args = ["clone", "https://github.com/example/repo.git", "%{__runner_workdir}/project"]
+# OK: コマンドレベルで %{__runner_workdir} を参照
 ```
 
 実行時に:
@@ -547,13 +568,18 @@ sequenceDiagram
     GE->>GE: group.ExpandedVars["__runner_workdir"] = resolved
 
     loop for each command
-        GE->>GE: Copy group.ExpandedVars to cmd.ExpandedVars
-        GE->>CE: Execute(cmd)
+        GE->>GE: vars = buildVarsForCommand(cmd, group)
+        Note over GE: グループ変数 + コマンド変数を統合<br/>(コマンドが優先)
+
+        GE->>GE: expandedCmd = expandCommand(cmd, vars)
+        Note over GE: 変数展開を一度だけ実行<br/>(cmd, args, workdir, env)
+
+        GE->>CE: Execute(expandedCmd)
         activate CE
 
-        alt cmd.WorkDir specified
-            CE->>CE: use cmd.ExpandedWorkDir
-        else cmd.WorkDir empty
+        alt expandedCmd.ExpandedWorkDir specified
+            CE->>CE: use expandedCmd.ExpandedWorkDir
+        else expandedWorkDir empty
             CE->>CE: use group.WorkDir (resolved)
         end
 
@@ -849,11 +875,16 @@ flowchart TD
 1. 定数の追加
    - `AutoVarKeyWorkDir` 定数の追加（`internal/runner/variable`）
 
-2. `GroupExecutor` への統合
-   - グループ実行時に `group.ExpandedVars["__runner_workdir"]` に直接設定
-   - `cmd.ExpandedVars` にグループレベルの変数をマージ
+2. `Command` 型の変更
+   - `Vars` フィールドの追加（未展開の変数定義）
+   - `ExpandedVars` フィールドの削除（実行時に動的構築）
 
-3. パストラバーサル検証
+3. `GroupExecutor` への統合
+   - グループ実行時に `group.ExpandedVars["__runner_workdir"]` に直接設定
+   - `buildVarsForCommand()` 実装: グループ変数とコマンド変数を統合
+   - `expandCommand()` 実装: 変数展開を一度だけ実行（新しいインスタンスを返す）
+
+4. パストラバーサル検証
    - 絶対パス要件
    - 相対パスコンポーネント検出
 

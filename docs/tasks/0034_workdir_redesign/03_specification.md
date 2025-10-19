@@ -69,11 +69,25 @@ Error: toml: line Z: unknown field 'dir'
 
 ### 2.2 実行時の変数管理
 
+#### 2.2.1 変数展開の遅延評価
+
+**設計方針**:
+- **コマンド実行時まで変数展開を遅延させる**
+- ローディング時には変数を展開せず、元の定義を保持
+- 実行時にグループ変数とコマンド変数を統合して一度だけ展開
+
+**利点**:
+1. **優先順位が自然に実現**: グループ変数をベースに、コマンド変数で上書き
+2. **二重展開を回避**: 展開は実行時の1回のみ
+3. **シンプルな実装**: マージロジックが不要
+
+#### 2.2.2 ワークディレクトリの設定
+
 実行時のワークディレクトリ情報は `group.ExpandedVars` に直接設定されます：
 
 1. グループ実行開始時に `resolveGroupWorkDir()` でワークディレクトリを決定
 2. 決定した `workDir` を `group.ExpandedVars["__runner_workdir"]` に直接設定
-3. この変数マップを既存の変数展開機構（`config.ExpandString`）で利用
+3. コマンド実行時に、グループ変数とコマンド変数を統合して展開
 
 **利点**:
 - シンプルで直接的な実装（余計な間接化がない）
@@ -89,46 +103,69 @@ Error: toml: line Z: unknown field 'dir'
 **設計方針**:
 - グループ単位でインスタンスを作成・破棄
 - 一時ディレクトリを使用する場合のみインスタンスを作成
-- インスタンス作成時にloggerとgroupNameを渡し、内部で保持
+- インスタンス作成時にlogger、groupName、isDryRunを渡し、内部で保持
 - 固定ディレクトリを使用する場合はインスタンスを作成しない
+- **dry-runモードでは実際のディレクトリ操作を行わず、ログ出力のみ**
+
+**アーキテクチャ上の位置づけ**:
+- `TempDirManager` は `Runner.ExecuteGroup()` メソッド内でローカルに使用される
+- `Runner.resourceManager` (`NormalResourceManager` / `DryRunResourceManager`) とは独立
+- `isDryRun` フラグは `Runner` から受け取り、`TempDirManager` に渡す
 
 ```go
 // TempDirManager: グループ単位の一時ディレクトリ管理
 //
 // ライフサイクル:
-//   1. NewTempDirManager(logger, groupName) でインスタンス作成
-//   2. Create() で一時ディレクトリ生成
+//   1. NewTempDirManager(logger, groupName, isDryRun) でインスタンス作成
+//   2. Create() で一時ディレクトリ生成（dry-runでは仮想パスを返す）
 //   3. defer で Cleanup() を登録
-//   4. グループ実行完了時に自動クリーンアップ
+//   4. グループ実行完了時に自動クリーンアップ（dry-runではログのみ）
 type TempDirManager interface {
     // Create: 一時ディレクトリを生成
     //
     // 戻り値:
     //   string: 生成された一時ディレクトリの絶対パス
+    //          (dry-runモード: 仮想パス "/tmp/scr-<groupName>-dryrun-<timestamp>")
     //   error: エラー（例: パーミッションエラー、ディスク容量不足）
     //
-    // 動作:
+    // 動作（通常モード）:
     //   1. プレフィックス "scr-<groupName>-" でランダムなディレクトリを生成
     //   2. パーミッションは 0700 に設定
     //   3. INFO レベルでログ出力
     //   4. 生成されたパスを内部で保持
     //
+    // 動作（dry-runモード）:
+    //   1. 仮想パスを生成（実際のディレクトリは作成しない）
+    //   2. INFO レベルでログ出力（"[DRY-RUN] Would create temp dir: <path>"）
+    //   3. 仮想パスを内部で保持
+    //
     // 例:
-    //   mgr := NewTempDirManager(logger, "backup")
+    //   // 通常モード
+    //   mgr := NewTempDirManager(logger, "backup", false)
     //   tempDir, err := mgr.Create()
     //   // → "/tmp/scr-backup-a1b2c3d4"
+    //
+    //   // dry-runモード
+    //   mgr := NewTempDirManager(logger, "backup", true)
+    //   tempDir, err := mgr.Create()
+    //   // → "/tmp/scr-backup-dryrun-20251018143025"
     Create() (string, error)
 
     // Cleanup: 一時ディレクトリを削除
     //
     // 戻り値:
     //   error: エラー（例: アクセス権限なし）
-    //           返されたエラーは記録されるが、処理は継続される
+    //          返されたエラーは記録されるが、処理は継続される
+    //          dry-runモードでは常に nil
     //
-    // 動作:
+    // 動作（通常モード）:
     //   1. Create() で生成されたディレクトリを削除
     //   2. 削除成功: DEBUG ログ
     //   3. 削除失敗: ERROR ログ + 標準エラー出力
+    //
+    // 動作（dry-runモード）:
+    //   1. 実際の削除は行わない
+    //   2. DEBUG ログ（"[DRY-RUN] Would delete temp dir: <path>"）
     //
     // 注意:
     //   - 一時ディレクトリを保持する場合は、呼び出し元が Cleanup() を呼ばないことで制御する
@@ -158,54 +195,49 @@ type TempDirManager interface {
 // 引数:
 //   logger: ロギングインターフェース
 //   groupName: グループ名
+//   isDryRun: dry-runモードフラグ（trueの場合、実際のファイルシステム操作を行わない）
 //
 // 戻り値:
 //   TempDirManager: 一時ディレクトリマネージャーのインスタンス
 //
 // 例:
-//   mgr := NewTempDirManager(logger, "backup")
-func NewTempDirManager(logger logging.Logger, groupName string) TempDirManager
+//   // 通常モード
+//   mgr := NewTempDirManager(logger, "backup", false)
+//
+//   // dry-runモード
+//   mgr := NewTempDirManager(logger, "backup", true)
+func NewTempDirManager(logger logging.Logger, groupName string, isDryRun bool) TempDirManager
 ```
 
-### 3.2 GroupExecutor インターフェース
+### 3.2 Runner.ExecuteGroup() メソッド
 
-**パッケージ**: `internal/runner/executor`
+**パッケージ**: `internal/runner`
+
+**注意**: `GroupExecutor` は概念上のモデルで、実際の実装は `Runner.ExecuteGroup()` メソッドです。
 
 ```go
-// GroupExecutor: グループ実行の制御
-type GroupExecutor interface {
-    // ExecuteGroups: 設定のすべてのグループを実行
-    //
-    // 引数:
-    //   config: 設定オブジェクト
-    //
-    // 戻り値:
-    //   error: エラー（グループまたはコマンド実行失敗）
-    //
-    // 動作:
-    //   1. グループループを開始
-    //   2. 各グループに対して ExecuteGroup() を呼び出し
-    //   3. グループ実行失敗時の処理（中止/継続）は設定で決定
-    ExecuteGroups(config *runnertypes.Config) error
-
-    // ExecuteGroup: 1つのグループを実行
-    //
-    // 引数:
-    //   group: グループ設定
-    //
-    // 戻り値:
-    //   error: エラー（コマンド実行失敗など）
-    //
-    // ライフサイクル:
-    //   1. ワークディレクトリを決定（resolveGroupWorkDir）
-    //   2. 一時ディレクトリの場合は生成（TempDirManager.Create）
-    //   3. group.ExpandedVars["__runner_workdir"] にワークディレクトリを直接設定
-    //   4. defer で条件付きクリーンアップを登録（if !keepTempDirs { mgr.Cleanup() }）
-    //   5. コマンド実行ループ
-    //   6. グループ実行終了（成功・失敗問わず） → defer 実行
-    ExecuteGroup(group *runnertypes.CommandGroup) error
-}
+// Runner.ExecuteGroup: 1つのグループを実行
+//
+// 引数:
+//   ctx: コンテキスト
+//   group: グループ設定
+//
+// 戻り値:
+//   error: エラー（グループまたはコマンド実行失敗）
+//
+// 動作:
+//   1. ワークディレクトリを決定（resolveGroupWorkDir）
+//   2. 一時ディレクトリの場合は生成（TempDirManager.Create）
+//   3. group.ExpandedVars["__runner_workdir"] にワークディレクトリを直接設定
+//   4. defer で条件付きクリーンアップを登録（if !keepTempDirs { mgr.Cleanup() }）
+//   5. コマンド実行ループ
+func (r *Runner) ExecuteGroup(ctx context.Context, group *runnertypes.CommandGroup) error
 ```
+
+**dry-runモードでの動作**:
+- `r.dryRun` フラグに基づいて `TempDirManager` を作成（`isDryRun` 引数を渡す）
+- 仮想パスが生成され、`group.ExpandedVars["__runner_workdir"]` に設定される
+- コマンド実行は `DryRunResourceManager` 経由で分析のみ行われる
 
 ### 3.3 __runner_workdir の定数定義
 
@@ -220,9 +252,48 @@ const (
 )
 ```
 
+**変数展開の動作**:
+
+| レベル | 変数展開 | `__runner_workdir` 参照 | その他の変数参照 |
+|--------|---------|----------------------|----------------|
+| グループ (`group.workdir`) | ✅ 可能 | ❌ 不可（未定義エラー） | ✅ 可能 |
+| コマンド (`cmd.*`) | ✅ 可能 | ✅ 可能 | ✅ 可能 |
+
+**理由**:
+- `__runner_workdir` は `ExecuteGroup()` で `group.workdir` を決定した**後**に設定される
+- グループレベルで参照すると循環参照になるため、未定義変数エラーとなる
+- その他の変数（`%{backup_base}` など）はグループレベルでも参照可能
+
+**使用例**:
+```toml
+[[groups]]
+name = "backup"
+workdir = "%{backup_base}/data"        # ✅ OK: 他の変数参照
+# workdir = "%{__runner_workdir}/sub"  # ❌ NG: 未定義変数エラー
+
+[[groups.commands]]
+name = "dump"
+args = ["%{__runner_workdir}/dump.sql"]  # ✅ OK: コマンドレベル
+```
+
 **注意**: `AutoVarProvider` インターフェースへの変更は不要です。`__runner_workdir` は `GroupExecutor` が直接 `group.ExpandedVars` に設定します。
 
-### 3.4 既存の変数展開機構の活用
+### 3.4 変数展開の実行タイミング
+
+**変更前（旧設計）**:
+- ローディング時: `LoadConfig()` で `cmd.ExpandedVars` を計算
+- 実行時: `ExecuteGroup()` で `cmd.ExpandedVars` を再展開
+
+**変更後（新設計）**:
+- ローディング時: 変数を展開せず、`cmd.Vars` に raw 値を保持
+- 実行時: `buildVarsForCommand()` でグループ変数とコマンド変数を統合し、`expandCommand()` で一度だけ展開
+
+**利点**:
+1. 二重展開を回避
+2. 優先順位が自然に実現（コマンド変数 > グループ変数）
+3. `cmd.ExpandedVars` の状態管理が不要
+
+### 3.5 既存の変数展開機構の活用
 
 **既存の `config.ExpandString` を活用**:
 
@@ -245,7 +316,8 @@ func ExpandString(
 
 1. グループ実行開始時に `resolveGroupWorkDir()` でワークディレクトリを決定
 2. 決定した `workDir` を `group.ExpandedVars["__runner_workdir"]` に直接設定
-3. この変数マップを `ExpandString` に渡してコマンド引数を展開
+3. コマンド実行時に `buildVarsForCommand()` でグループ変数とコマンド変数を統合
+4. 統合された変数マップを `ExpandString` に渡してコマンド引数を展開
 
 ## 4. ワークディレクトリ決定ロジック
 
@@ -276,18 +348,31 @@ func (e *DefaultGroupExecutor) resolveGroupWorkDir(
 ) (string, TempDirManager, error) {
     // グループレベル WorkDir が指定されている?
     if group.WorkDir != "" {
-        // 固定ディレクトリを使用
+        // 変数展開を実行（注意: __runner_workdir はまだ未定義）
+        level := fmt.Sprintf("group[%s]", group.Name)
+        expandedWorkDir, err := config.ExpandString(
+            group.WorkDir,
+            group.ExpandedVars,  // __runner_workdir は含まれない
+            level,
+            "workdir",
+        )
+        if err != nil {
+            return "", nil, fmt.Errorf("failed to expand group workdir: %w", err)
+        }
+
         e.logger.Info(fmt.Sprintf(
             "Using group workdir for '%s': %s",
-            group.Name, group.WorkDir,
+            group.Name, expandedWorkDir,
         ))
-        return group.WorkDir, nil, nil
+        return expandedWorkDir, nil, nil
     }
 
     // 一時ディレクトリマネージャーを作成
-    tempDirMgr := NewTempDirManager(e.logger, group.Name)
+    // 注: isDryRun フラグは GroupExecutor のフィールドとして保持
+    tempDirMgr := NewTempDirManager(e.logger, group.Name, e.isDryRun)
 
     // 一時ディレクトリを生成
+    // dry-runモードでは仮想パスが返される
     tempDir, err := tempDirMgr.Create()
     if err != nil {
         return "", nil, err
@@ -334,19 +419,38 @@ import (
 type DefaultTempDirManager struct {
     logger      logging.Logger
     groupName   string  // グループ名（インスタンス作成時に設定）
+    isDryRun    bool    // dry-runモードフラグ
     tempDirPath string  // Create() で生成されたパス（Path() と Cleanup() で使用）
 }
 
 // NewTempDirManager: 新規インスタンスを作成
-func NewTempDirManager(logger logging.Logger, groupName string) TempDirManager {
+func NewTempDirManager(logger logging.Logger, groupName string, isDryRun bool) TempDirManager {
     return &DefaultTempDirManager{
         logger:    logger,
         groupName: groupName,
+        isDryRun:  isDryRun,
     }
 }
 
 // Create: 一時ディレクトリを生成
 func (m *DefaultTempDirManager) Create() (string, error) {
+    // dry-runモード: 仮想パスを生成
+    if m.isDryRun {
+        // タイムスタンプベースの仮想パス
+        timestamp := time.Now().Format("20060102150405")
+        tempDir := filepath.Join(os.TempDir(), fmt.Sprintf("scr-%s-dryrun-%s", m.groupName, timestamp))
+        m.tempDirPath = tempDir
+
+        // ログ出力（実際には作成しない）
+        m.logger.Info(fmt.Sprintf(
+            "[DRY-RUN] Would create temporary directory for group '%s': %s",
+            m.groupName, tempDir,
+        ))
+
+        return tempDir, nil
+    }
+
+    // 通常モード: 実際にディレクトリを生成
     // プレフィックス: "scr-<groupName>-"
     prefix := fmt.Sprintf("scr-%s-", m.groupName)
 
@@ -378,7 +482,16 @@ func (m *DefaultTempDirManager) Cleanup() error {
         return nil
     }
 
-    // ディレクトリを削除
+    // dry-runモード: ログ出力のみ
+    if m.isDryRun {
+        m.logger.Debug(fmt.Sprintf(
+            "[DRY-RUN] Would delete temporary directory: %s",
+            m.tempDirPath,
+        ))
+        return nil
+    }
+
+    // 通常モード: 実際にディレクトリを削除
     err := os.RemoveAll(m.tempDirPath)
     if err != nil {
         // エラーログ出力 (ERROR レベル)
@@ -428,98 +541,138 @@ func (m *DefaultTempDirManager) Path() string {
 
 ### 6.1 グループ実行時の __runner_workdir 設定
 
-**ファイル**: `internal/runner/executor/group_executor.go`
+**ファイル**: `internal/runner/runner.go`
+
+**注意**: 実際の実装は `Runner.ExecuteGroup()` メソッドです。
 
 ```go
 // ExecuteGroup: 1つのグループを実行
-func (e *DefaultGroupExecutor) ExecuteGroup(
+func (r *Runner) ExecuteGroup(
     ctx context.Context,
-    group *types.CommandGroup,
+    group *runnertypes.CommandGroup,
 ) error {
     // ステップ1: ワークディレクトリを決定
-    workDir, tempDirMgr, err := e.resolveGroupWorkDir(group)
+    // r.dryRun フラグに基づいて TempDirManager を作成
+    workDir, tempDirMgr, err := r.resolveGroupWorkDir(group)
     if err != nil {
         return fmt.Errorf("failed to resolve work directory: %w", err)
     }
 
     // ステップ2: defer でクリーンアップを登録（重要: エラー時も実行）
-    if tempDirMgr != nil && !e.keepTempDirs {
+    // dry-runモードでもCleanup()は呼ばれるが、実際の削除は行わない
+    if tempDirMgr != nil && !r.keepTempDirs {
         defer func() {
             err := tempDirMgr.Cleanup()
             if err != nil {
-                e.logger.Error(fmt.Sprintf("Cleanup warning: %v", err))
+                r.logger.Error(fmt.Sprintf("Cleanup warning: %v", err))
             }
         }()
     }
 
     // ステップ3: グループレベル変数に __runner_workdir を直接設定
+    // dry-runモードでは仮想パスが設定される
     group.ExpandedVars[variable.AutoVarPrefix + variable.AutoVarKeyWorkDir] = workDir
 
     // ステップ4: コマンド実行ループ
     for _, cmd := range group.Commands {
-        // ステップ4-1: コマンドレベルの変数マップを更新
-        // group.ExpandedVars（__runner_workdir を含む）を cmd.ExpandedVars にマージ
-        // これにより、コマンド固有の変数とグループレベルの変数が統合される
-        maps.Copy(cmd.ExpandedVars, group.ExpandedVars)
+        // ステップ4-1: 変数マップを構築
+        // グループ変数をベースに、コマンド固有の変数で上書き（コマンドが優先）
+        vars := r.buildVarsForCommand(cmd, group)
 
-        // ステップ4-2: コマンドレベルの変数展開を再実行（__runner_workdir を含める）
-        err := e.expandCommandWithWorkDir(cmd, group)
+        // ステップ4-2: コマンドの変数展開（一度だけ）
+        expandedCmd, err := r.expandCommand(cmd, vars)
         if err != nil {
             return fmt.Errorf("failed to expand command '%s': %w", cmd.Name, err)
         }
 
         // ステップ4-3: コマンド実行
-        output, err := e.cmdExecutor.Execute(ctx, cmd)
+        // dry-runモードでは resourceManager が DryRunResourceManager なので、
+        // 実際のコマンド実行は行わず、分析のみ実施
+        output, err := r.resourceManager.ExecuteCommand(ctx, expandedCmd)
         if err != nil {
             return fmt.Errorf("command '%s' failed: %w", cmd.Name, err)
         }
 
         // ステップ4-4: 出力ハンドリング（既存ロジック）
-        e.handleCommandOutput(cmd, output)
+        r.handleCommandOutput(cmd, output)
     }
 
     return nil
 }
 
-// expandCommandWithWorkDir: コマンド変数を再展開（__runner_workdir を含める）
-func (e *DefaultGroupExecutor) expandCommandWithWorkDir(
+// buildVarsForCommand: コマンド実行用の変数マップを構築
+// グループ変数とコマンド変数を統合（コマンド変数が優先）
+func (e *DefaultGroupExecutor) buildVarsForCommand(
     cmd *runnertypes.Command,
     group *runnertypes.CommandGroup,
-) error {
-    // コマンドレベルの変数を group.ExpandedVars をベースに再展開
-    // この時点で group.ExpandedVars には __runner_workdir が含まれている
+) map[string]string {
+    // 新しいマップを作成
+    vars := make(map[string]string, len(group.ExpandedVars) + len(cmd.Vars))
+
+    // 1. グループ変数をコピー（__runner_workdir を含む）
+    maps.Copy(vars, group.ExpandedVars)
+
+    // 2. コマンド固有の変数で上書き（コマンドが優先）
+    // 注意: cmd.Vars は未展開の変数定義（TOML から読み込んだ raw 値）
+    maps.Copy(vars, cmd.Vars)
+
+    return vars
+}
+
+// expandCommand: コマンドの変数展開を実行
+// 戻り値: 展開済みコマンド構造体（元の cmd は変更しない）
+func (e *DefaultGroupExecutor) expandCommand(
+    cmd *runnertypes.Command,
+    vars map[string]string,
+) (*runnertypes.Command, error) {
     level := fmt.Sprintf("command[%s]", cmd.Name)
 
-    // ExpandedCmd の再展開
-    expandedCmd, err := config.ExpandString(cmd.Cmd, cmd.ExpandedVars, level, "cmd")
+    // 展開済みコマンド構造体を作成
+    expanded := &runnertypes.Command{
+        Name: cmd.Name,
+    }
+
+    // Cmd の展開
+    expandedCmd, err := config.ExpandString(cmd.Cmd, vars, level, "cmd")
     if err != nil {
-        return err
+        return nil, err
     }
-    cmd.ExpandedCmd = expandedCmd
+    expanded.ExpandedCmd = expandedCmd
 
-    // ExpandedArgs の再展開
+    // Args の展開
+    expanded.ExpandedArgs = make([]string, len(cmd.Args))
     for i, arg := range cmd.Args {
-        expanded, err := config.ExpandString(arg, cmd.ExpandedVars, level, fmt.Sprintf("args[%d]", i))
+        expandedArg, err := config.ExpandString(arg, vars, level, fmt.Sprintf("args[%d]", i))
         if err != nil {
-            return err
+            return nil, err
         }
-        cmd.ExpandedArgs[i] = expanded
+        expanded.ExpandedArgs[i] = expandedArg
     }
 
-    // WorkDir の展開（新規追加）
+    // WorkDir の展開
     if cmd.WorkDir != "" {
-        expandedWorkDir, err := config.ExpandString(cmd.WorkDir, cmd.ExpandedVars, level, "workdir")
+        expandedWorkDir, err := config.ExpandString(cmd.WorkDir, vars, level, "workdir")
         if err != nil {
-            return err
+            return nil, err
         }
-        cmd.ExpandedWorkDir = expandedWorkDir
+        expanded.ExpandedWorkDir = expandedWorkDir
     }
 
-    return nil
+    // Env の展開（既存ロジックを保持）
+    expanded.ExpandedEnv = make(map[string]string, len(cmd.Env))
+    for key, value := range cmd.Env {
+        expandedValue, err := config.ExpandString(value, vars, level, fmt.Sprintf("env[%s]", key))
+        if err != nil {
+            return nil, err
+        }
+        expanded.ExpandedEnv[key] = expandedValue
+    }
+
+    return expanded, nil
 }
 ```
 
-### 6.2 Command 型への ExpandedWorkDir フィールド追加
+### 6.2 Command 型の変更
 
 **ファイル**: `internal/runner/runnertypes/config_types.go`
 
@@ -529,15 +682,21 @@ type Command struct {
     Cmd     string   `toml:"cmd"`
     Args    []string `toml:"args"`
     WorkDir string   `toml:"workdir"`  // 変更: dir → workdir
+    Env     map[string]string `toml:"env"`
+    Vars    map[string]string `toml:"vars"`  // 重要: 未展開の変数定義
 
-    // Expanded fields
+    // Expanded fields (実行時に設定)
     ExpandedCmd     string
     ExpandedArgs    []string
     ExpandedWorkDir string  // 追加: 展開済み WorkDir
-    ExpandedVars    map[string]string
     ExpandedEnv     map[string]string
+    // 注意: ExpandedVars は削除（実行時に動的に構築するため不要）
 }
 ```
+
+**重要な変更点**:
+1. `Vars` フィールド: TOML から読み込んだ未展開の変数定義を保持
+2. `ExpandedVars` フィールド: 削除（実行時に `buildVarsForCommand()` で動的に構築）
 
 ### 6.3 ワークディレクトリ決定ロジック
 
@@ -697,19 +856,18 @@ func (e *DefaultGroupExecutor) ExecuteGroup(
 
     // ステップ4: コマンド実行ループ
     for _, cmd := range group.Commands {
-        // ステップ4-1: コマンドレベルの変数マップを更新
-        // group.ExpandedVars（__runner_workdir を含む）を cmd.ExpandedVars にマージ
-        // これにより、コマンド固有の変数とグループレベルの変数が統合される
-        maps.Copy(cmd.ExpandedVars, group.ExpandedVars)
+        // ステップ4-1: 変数マップを構築
+        // グループ変数をベースに、コマンド固有の変数で上書き（コマンドが優先）
+        vars := e.buildVarsForCommand(cmd, group)
 
-        // ステップ4-2: コマンドレベルの変数展開を再実行（__runner_workdir を含める）
-        err := e.expandCommandWithWorkDir(cmd, group)
+        // ステップ4-2: コマンドの変数展開（一度だけ）
+        expandedCmd, err := e.expandCommand(cmd, vars)
         if err != nil {
             return fmt.Errorf("failed to expand command '%s': %w", cmd.Name, err)
         }
 
         // ステップ4-3: コマンド実行
-        output, err := e.cmdExecutor.Execute(ctx, cmd)
+        output, err := e.cmdExecutor.Execute(ctx, expandedCmd)
         if err != nil {
             return fmt.Errorf("command '%s' failed: %w", cmd.Name, err)
         }
@@ -766,7 +924,9 @@ func (e *DefaultGroupExecutor) handleCommandOutput(
 | イベント | ログレベル | 出力先 | 形式 |
 |---------|-----------|--------|------|
 | 一時ディレクトリ作成 | INFO | ログ | `Created temporary directory for group 'X': /path` |
+| 一時ディレクトリ作成（dry-run） | INFO | ログ | `[DRY-RUN] Would create temporary directory for group 'X': /path` |
 | 一時ディレクトリ削除成功 | DEBUG | ログ | `Cleaned up temporary directory: /path` |
+| 一時ディレクトリ削除（dry-run） | DEBUG | ログ | `[DRY-RUN] Would delete temporary directory: /path` |
 | 一時ディレクトリ削除失敗 | ERROR | ログ+stderr | `Failed to cleanup temporary directory: /path: error` |
 | keep-temp-dirs フラグ | INFO | ログ | `Keeping temporary directory (--keep-temp-dirs): /path` |
 
@@ -831,14 +991,46 @@ type ErrInvalidPath struct {
 
 ### 11.1 検証ルール
 
+#### 11.1.1 dry-runモードでの検証方針
+
+**基本方針**:
+- **構文的検証は実行**: 絶対パス要件、パストラバーサル検出
+- **存在チェックはスキップ**: ファイル/ディレクトリの実在は検証しない
+
+**理由**:
+- dry-runでは仮想パス（`/tmp/scr-<group>-dryrun-<timestamp>`）を使用
+- 仮想パスは実在しないが、構文的には正当なパス
+- 変数展開の正当性（未定義変数参照でないこと）は、変数マップに存在するかで判断
+
+**変数展開の検証**:
 ```go
-func validatePath(path string) error {
-    // ルール1: 絶対パスのみ許可
+// config.ExpandString の既存動作:
+// - 変数が ExpandedVars に存在しない → ErrUndefinedVariable
+// - 変数が存在する → 展開を実行（値が仮想パスでも問題なし）
+
+// dry-runモード
+group.ExpandedVars["__runner_workdir"] = "/tmp/scr-backup-dryrun-20251018143025"
+
+// 展開時: 変数が定義されているため成功
+ExpandString("%{__runner_workdir}/file", group.ExpandedVars, ...)
+// → "/tmp/scr-backup-dryrun-20251018143025/file"
+
+// 未定義変数の参照: 失敗
+ExpandString("%{undefined_var}/file", group.ExpandedVars, ...)
+// → ErrUndefinedVariable
+```
+
+### 11.2 検証の実装
+
+```go
+func validatePath(path string, isDryRun bool) error {
+    // ルール1: 絶対パスのみ許可（dry-runでも実行）
     if !filepath.IsAbs(path) {
         return fmt.Errorf("path must be absolute: %s", path)
     }
 
     // ルール2: パストラバーサル攻撃を防ぐため、".." コンポーネントを禁止
+    // (dry-runでも実行)
     // filepath.Clean() は // を正規化してしまうため、コンポーネント単位で検証
     for _, part := range strings.Split(path, string(filepath.Separator)) {
         if part == ".." {
@@ -846,8 +1038,19 @@ func validatePath(path string) error {
         }
     }
 
-    // ルール3: シンボリックリンク検証
-    // (既存の SafeFileIO の仕組みを活用)
+    // ルール3: ファイル/ディレクトリの存在チェック
+    // (dry-runではスキップ)
+    if !isDryRun {
+        if _, err := os.Stat(path); err != nil {
+            // 注意: 存在しない場合はエラーを返すか、警告のみにするかは
+            // コンテキストによる（グループのworkdirなら必須、コマンドの出力先なら作成される可能性がある）
+            // ここでは検証のみを行い、実際のエラーハンドリングは呼び出し元で行う
+            return fmt.Errorf("path does not exist: %s: %w", path, err)
+        }
+    }
+
+    // ルール4: シンボリックリンク検証
+    // (既存の SafeFileIO の仕組みを活用、dry-runではスキップされる可能性あり)
 
     return nil
 }
@@ -865,14 +1068,15 @@ func validatePath(path string) error {
 # グループレベル
 [[groups]]
 name = "backup"
-workdir = "/var/backup"  # オプション（指定時は固定ディレクトリ）
+workdir = "/var/backup"              # OK: 固定パス
+# workdir = "%{backup_base}/data"    # OK: 他の変数参照
+# workdir = "%{__runner_workdir}"    # NG: 未定義変数エラー
 
 [[groups.commands]]
 name = "dump"
 cmd = "pg_dump"
 args = ["mydb", "-f", "%{__runner_workdir}/dump.sql"]
-# workdir はグループでは指定せず自動作成される一時ディレクトリを使用
-# 必要に応じてコマンドレベルで指定
+# OK: %{__runner_workdir} はコマンドレベルで使用可能
 
 # グループレベル workdir が未指定 → 一時ディレクトリを自動生成
 [[groups]]
@@ -955,9 +1159,11 @@ func TestExpandCommandArgsWithRunnerWorkdir(t *testing.T) {
     // テスト条件:
     // - コマンド: cp
     // - 引数: ["%{__runner_workdir}/file", "/dest"]
-    // - cmd.ExpandedVars["__runner_workdir"]: /tmp/scr-test-XXXXXX
-    // - 期待: ExpandedArgs[0] = /tmp/scr-test-XXXXXX/file
-    // - 期待: ExpandedArgs[1] = /dest
+    // - group.ExpandedVars["__runner_workdir"]: /tmp/scr-test-XXXXXX
+    // - vars := buildVarsForCommand(cmd, group) で変数を統合
+    // - expandedCmd := expandCommand(cmd, vars) で展開
+    // - 期待: expandedCmd.ExpandedArgs[0] = /tmp/scr-test-XXXXXX/file
+    // - 期待: expandedCmd.ExpandedArgs[1] = /dest
 }
 ```
 
@@ -977,6 +1183,27 @@ func TestExpandStringWithRunnerWorkdir(t *testing.T) {
     // テストケース3: __runner_workdir が含まれない場合
     // - 文字列: /var/log/app.log
     // - 期待: /var/log/app.log（変更なし）
+}
+```
+
+#### T004-dryrun: dry-runモードでの一時ディレクトリ管理
+```go
+func TestTempDirManagerDryRun(t *testing.T) {
+    // テスト1: dry-runモードでのCreate()
+    // - isDryRun: true
+    // - 期待: 仮想パスが返される（/tmp/scr-test-dryrun-YYYYMMDDHHMMSS）
+    // - 期待: 実際のディレクトリは作成されない
+    // - 確認: "[DRY-RUN] Would create temp dir" ログ
+
+    // テスト2: dry-runモードでのCleanup()
+    // - isDryRun: true
+    // - 期待: エラーなし（常に nil）
+    // - 期待: 実際の削除は行われない
+    // - 確認: "[DRY-RUN] Would delete temp dir" ログ
+
+    // テスト3: dry-runでの変数展開
+    // - 仮想パスが %{__runner_workdir} に設定される
+    // - コマンド引数で正しく展開される
 }
 ```
 
@@ -1038,8 +1265,11 @@ Error: toml: line X: unknown field 'workdir'
 ### Phase 2: 一時ディレクトリ機能
 - [ ] `TempDirManager` インターフェース定義
 - [ ] `DefaultTempDirManager` 実装
+  - [ ] `isDryRun` フラグのサポート
+  - [ ] dry-runモードでの仮想パス生成
+  - [ ] dry-runモードでのログ出力（"[DRY-RUN]" プレフィックス）
 - [ ] `--keep-temp-dirs` フラグを Runner に追加
-- [ ] Runner から GroupExecutor へ keepTempDirs を渡す
+- [ ] Runner から GroupExecutor へ `keepTempDirs` と `isDryRun` を渡す
 - [ ] `defer` で条件付きクリーンアップ登録（`if !keepTempDirs { mgr.Cleanup() }`）
 
 ### Phase 3: 変数展開
