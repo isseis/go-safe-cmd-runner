@@ -31,24 +31,6 @@ var (
 	ErrRunIDRequired        = errors.New("runID is required")
 )
 
-// VerificationError contains detailed information about verification failures
-type VerificationError struct {
-	GroupName     string
-	TotalFiles    int
-	VerifiedFiles int
-	FailedFiles   int
-	SkippedFiles  int
-	Err           error
-}
-
-func (e *VerificationError) Error() string {
-	return fmt.Sprintf("group file verification failed for group %s: %v", e.GroupName, e.Err)
-}
-
-func (e *VerificationError) Unwrap() error {
-	return e.Err
-}
-
 // GroupExecutionStatus represents the execution status of a command group
 type GroupExecutionStatus string
 
@@ -330,10 +312,10 @@ func (r *Runner) ExecuteAll(ctx context.Context) error {
 			}
 
 			// Check if this is a verification error - if so, log warning and continue
-			var verErr *VerificationError
+			var verErr *verification.VerificationError
 			if errors.As(err, &verErr) {
 				slog.Warn("Group file verification failed, skipping group",
-					"group", verErr.GroupName,
+					"group", verErr.Group,
 					"total_files", verErr.TotalFiles,
 					"verified_files", verErr.VerifiedFiles,
 					"failed_files", verErr.FailedFiles,

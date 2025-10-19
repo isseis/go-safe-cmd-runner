@@ -286,28 +286,44 @@ func TestVerificationErrorStructure(t *testing.T) {
 
 	t.Run("error_with_group", func(t *testing.T) {
 		err := &VerificationError{
-			Op:      "group",
-			Group:   "test-group",
-			Details: []string{"file1.txt", "file2.txt"},
-			Err:     baseErr,
+			Op:            "group",
+			Group:         "test-group",
+			Details:       []string{"file1.txt", "file2.txt"},
+			TotalFiles:    10,
+			VerifiedFiles: 8,
+			FailedFiles:   2,
+			SkippedFiles:  0,
+			Err:           baseErr,
 		}
 
 		expectedMessage := "verification error in group for group test-group: config invalid"
 		assert.Equal(t, expectedMessage, err.Error())
 		assert.Equal(t, "test-group", err.Group)
 		assert.Equal(t, []string{"file1.txt", "file2.txt"}, err.Details)
+		assert.Equal(t, 10, err.TotalFiles)
+		assert.Equal(t, 8, err.VerifiedFiles)
+		assert.Equal(t, 2, err.FailedFiles)
+		assert.Equal(t, 0, err.SkippedFiles)
 	})
 
 	t.Run("error_without_group", func(t *testing.T) {
 		err := &VerificationError{
-			Op:      "global",
-			Details: []string{"global_file.txt"},
-			Err:     baseErr,
+			Op:            "global",
+			Details:       []string{"global_file.txt"},
+			TotalFiles:    5,
+			VerifiedFiles: 4,
+			FailedFiles:   1,
+			SkippedFiles:  0,
+			Err:           baseErr,
 		}
 
 		expectedMessage := "verification error in global: config invalid"
 		assert.Equal(t, expectedMessage, err.Error())
 		assert.Empty(t, err.Group)
+		assert.Equal(t, 5, err.TotalFiles)
+		assert.Equal(t, 4, err.VerifiedFiles)
+		assert.Equal(t, 1, err.FailedFiles)
+		assert.Equal(t, 0, err.SkippedFiles)
 	})
 
 	t.Run("unwrap_functionality", func(t *testing.T) {

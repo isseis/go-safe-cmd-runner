@@ -127,14 +127,8 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, group runnerty
 		if err != nil {
 			// Ensure temp dirs are cleaned up before returning an error
 			cleanupGroupTempDirs()
-			return &VerificationError{
-				GroupName:     processedGroup.Name,
-				TotalFiles:    result.TotalFiles,
-				VerifiedFiles: result.VerifiedFiles,
-				FailedFiles:   len(result.FailedFiles),
-				SkippedFiles:  len(result.SkippedFiles),
-				Err:           err,
-			}
+			// Return the error directly (it already contains all necessary information)
+			return err
 		}
 
 		if result.TotalFiles > 0 {
