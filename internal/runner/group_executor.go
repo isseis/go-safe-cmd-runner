@@ -61,9 +61,10 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, group runnerty
 	// Record execution start time for notification
 	startTime := time.Now()
 
-	fmt.Printf("Executing group: %s\n", group.Name)
 	if group.Description != "" {
-		fmt.Printf("Description: %s\n", group.Description)
+		slog.Info("Executing group", "name", group.Name, "description", group.Description)
+	} else {
+		slog.Info("Executing group", "name", group.Name)
 	}
 
 	// Track temporary directories for cleanup
@@ -144,7 +145,7 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, group runnerty
 	var lastCommand string
 	var lastOutput string
 	for i, cmd := range processedGroup.Commands {
-		fmt.Printf("  [%d/%d] Executing command: %s\n", i+1, len(processedGroup.Commands), cmd.Name)
+		slog.Info("Executing command", "command", cmd.Name, "index", i+1, "total", len(processedGroup.Commands))
 
 		// Process the command
 		processedCmd := cmd
@@ -185,7 +186,7 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, group runnerty
 	// Clean up temporary directories now that the group completed
 	cleanupGroupTempDirs()
 
-	fmt.Printf("Group %s completed successfully\n", processedGroup.Name)
+	slog.Info("Group completed successfully", "name", processedGroup.Name)
 	return nil
 }
 
@@ -268,20 +269,25 @@ func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *r
 	// Execute the command with group context
 	result, err := ge.executeCommandInGroup(cmdCtx, cmd, group)
 	if err != nil {
-		fmt.Printf("    Command failed: %v\n", err)
+		slog.Error("Command failed", "command", cmd.Name, "error", err)
 		return "", fmt.Errorf("command %s failed: %w", cmd.Name, err)
 	}
 
 	// Display result
-	fmt.Printf("    Exit code: %d\n", result.ExitCode)
 	output := ""
 	if result.Stdout != "" {
-		fmt.Printf("    Stdout: %s\n", result.Stdout)
 		output = result.Stdout
 	}
-	if result.Stderr != "" {
-		fmt.Printf("    Stderr: %s\n", result.Stderr)
+
+	// Log command result with all relevant fields
+	logArgs := []any{"command", cmd.Name, "exit_code", result.ExitCode}
+	if result.Stdout != "" {
+		logArgs = append(logArgs, "stdout", result.Stdout)
 	}
+	if result.Stderr != "" {
+		logArgs = append(logArgs, "stderr", result.Stderr)
+	}
+	slog.Debug("Command execution result", logArgs...)
 
 	// Check if command succeeded
 	if result.ExitCode != 0 {
