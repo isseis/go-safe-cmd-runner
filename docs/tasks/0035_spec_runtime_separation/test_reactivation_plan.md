@@ -53,16 +53,19 @@ Task 0035 (Spec/Runtime Separation) の進行に伴い、一時的に `skip_inte
 4. ✅ 全ての `CommandGroup` 使用箇所を `GroupSpec` に変換
 5. ✅ テスト実行確認（全テスト PASS）
 
-### 🔄 Phase 7 で再有効化予定（Executor の RuntimeCommand 対応）
+### ✅ Phase 7 完了（Executor の RuntimeCommand 対応）
 
-| ファイル | 理由 | 必要な修正 |
-|---------|------|----------|
-| `internal/runner/executor/environment_test.go` | Executor が `RuntimeCommand` を使用するように変更 | テスト内で RuntimeCommand を使用 |
-| `internal/runner/executor/executor_test.go` | 同上 | 同上 |
+| ファイル | 状態 | 備考 |
+|---------|------|------|
+| `internal/runner/executor/environment_test.go` | ✅ 完了 | ビルドタグ削除、`RuntimeGlobal`/`RuntimeCommand` を使用、テスト実行確認済み |
+| `internal/runner/executor/executor_test.go` | ✅ 完了 | ビルドタグ削除、`RuntimeCommand` を使用、テスト実行確認済み |
 
-**必要な作業**:
-1. Executor の実装を `RuntimeCommand` を受け取るように変更
-2. テストコード内で `CommandSpec` → `RuntimeCommand` への変換処理を追加
+**完了した作業**:
+1. ✅ ビルドタグを削除（`skip_integration_tests` を除去）
+2. ✅ `environment_test.go`: `BuildProcessEnvironment` が `RuntimeGlobal`/`RuntimeCommand` を受け取るように変更されたため、ヘルパー関数を実装してテストケースを更新
+3. ✅ `executor_test.go`: `Execute()` メソッドが `RuntimeCommand` を受け取るように変更されたため、ヘルパー関数 `createRuntimeCommand()` と `createRuntimeCommandWithName()` を実装
+4. ✅ 全ての `Command` 使用箇所を `RuntimeCommand` に変換
+5. ✅ テスト実行確認（全テスト PASS）
 
 ### 🔄 Phase 8 で再有効化予定（Group Executor の完全な統合テスト）
 
@@ -134,7 +137,9 @@ Task 0035 (Spec/Runtime Separation) の進行に伴い、一時的に `skip_inte
   - ✅ manager_test.go
 - [x] Phase 6: Verification Manager テスト有効化
   - ✅ manager_test.go
-- [ ] Phase 7: Executor テスト有効化
+- [x] Phase 7: Executor テスト有効化 (2/2 完了)
+  - ✅ environment_test.go
+  - ✅ executor_test.go
 - [ ] Phase 8: 統合テスト有効化
 
 ## 参考情報

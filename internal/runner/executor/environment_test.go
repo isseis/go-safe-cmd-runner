@@ -1,5 +1,5 @@
-//go:build test && skip_integration_tests
-// +build test,skip_integration_tests
+//go:build test
+// +build test
 
 package executor_test
 
@@ -11,6 +11,34 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// Helper functions for creating test data
+
+func createTestRuntimeGlobal(envAllowlist []string, expandedEnv map[string]string) *runnertypes.RuntimeGlobal {
+	spec := &runnertypes.GlobalSpec{
+		EnvAllowlist: envAllowlist,
+	}
+	return &runnertypes.RuntimeGlobal{
+		Spec:        spec,
+		ExpandedEnv: expandedEnv,
+	}
+}
+
+func createTestRuntimeCommand(expandedArgs []string, expandedEnv map[string]string) *runnertypes.RuntimeCommand {
+	spec := &runnertypes.CommandSpec{
+		Name:    "test-command",
+		Cmd:     "echo",
+		Args:    expandedArgs,
+		WorkDir: "/tmp",
+	}
+	return &runnertypes.RuntimeCommand{
+		Spec:             spec,
+		ExpandedCmd:      "echo",
+		ExpandedArgs:     expandedArgs,
+		ExpandedEnv:      expandedEnv,
+		EffectiveWorkDir: "/tmp",
+	}
+}
+
 // TestBuildProcessEnvironment_Basic tests basic environment variable merging
 func TestBuildProcessEnvironment_Basic(t *testing.T) {
 	// Set up test environment variables
@@ -18,28 +46,21 @@ func TestBuildProcessEnvironment_Basic(t *testing.T) {
 	t.Setenv("PATH", "/usr/bin:/bin")
 	t.Setenv("SECRET", "should_not_appear")
 
-	global := &runnertypes.GlobalConfig{
-		EnvAllowlist: []string{"HOME", "PATH"},
-		ExpandedEnv: map[string]string{
+	global := createTestRuntimeGlobal(
+		[]string{"HOME", "PATH"},
+		map[string]string{
 			"GLOBAL_VAR": "global_value",
 		},
-	}
+	)
 
-	group := &runnertypes.CommandGroup{
-		Name: "test_group",
-		ExpandedEnv: map[string]string{
-			"GROUP_VAR": "group_value",
-		},
-	}
-
-	cmd := &runnertypes.Command{
-		Name: "test_cmd",
-		ExpandedEnv: map[string]string{
+	cmd := createTestRuntimeCommand(
+		[]string{"hello"},
+		map[string]string{
 			"CMD_VAR": "cmd_value",
 		},
-	}
+	)
 
-	result := executor.BuildProcessEnvironment(global, group, cmd)
+	result := executor.BuildProcessEnvironment(global, cmd)
 
 	// Verify system env vars (filtered by allowlist)
 	assert.Equal(t, "/home/test", result["HOME"])
@@ -48,7 +69,6 @@ func TestBuildProcessEnvironment_Basic(t *testing.T) {
 
 	// Verify merged env vars
 	assert.Equal(t, "global_value", result["GLOBAL_VAR"])
-	assert.Equal(t, "group_value", result["GROUP_VAR"])
 	assert.Equal(t, "cmd_value", result["CMD_VAR"])
 }
 
@@ -56,28 +76,21 @@ func TestBuildProcessEnvironment_Basic(t *testing.T) {
 func TestBuildProcessEnvironment_Priority(t *testing.T) {
 	t.Setenv("COMMON", "from_system")
 
-	global := &runnertypes.GlobalConfig{
-		EnvAllowlist: []string{"COMMON"},
-		ExpandedEnv: map[string]string{
+	global := createTestRuntimeGlobal(
+		[]string{"COMMON"},
+		map[string]string{
 			"COMMON": "from_global",
 		},
-	}
+	)
 
-	group := &runnertypes.CommandGroup{
-		Name: "test_group",
-		ExpandedEnv: map[string]string{
-			"COMMON": "from_group", // Should override global
+	cmd := createTestRuntimeCommand(
+		[]string{"test"},
+		map[string]string{
+			"COMMON": "from_command", // Should override global
 		},
-	}
+	)
 
-	cmd := &runnertypes.Command{
-		Name: "test_cmd",
-		ExpandedEnv: map[string]string{
-			"COMMON": "from_command", // Should override group
-		},
-	}
-
-	result := executor.BuildProcessEnvironment(global, group, cmd)
+	result := executor.BuildProcessEnvironment(global, cmd)
 
 	// Command env should have the highest priority
 	assert.Equal(t, "from_command", result["COMMON"])
@@ -90,22 +103,17 @@ func TestBuildProcessEnvironment_AllowlistFiltering(t *testing.T) {
 	t.Setenv("PATH", "/usr/bin")
 	t.Setenv("SECRET", "secret")
 
-	global := &runnertypes.GlobalConfig{
-		EnvAllowlist: []string{"HOME", "USER"},
-		ExpandedEnv:  map[string]string{},
-	}
+	global := createTestRuntimeGlobal(
+		[]string{"HOME", "USER"},
+		map[string]string{},
+	)
 
-	group := &runnertypes.CommandGroup{
-		Name:        "test_group",
-		ExpandedEnv: map[string]string{},
-	}
+	cmd := createTestRuntimeCommand(
+		[]string{"test"},
+		map[string]string{},
+	)
 
-	cmd := &runnertypes.Command{
-		Name:        "test_cmd",
-		ExpandedEnv: map[string]string{},
-	}
-
-	result := executor.BuildProcessEnvironment(global, group, cmd)
+	result := executor.BuildProcessEnvironment(global, cmd)
 
 	// Only allowlisted variables should be included
 	assert.Equal(t, "/home/test", result["HOME"])
@@ -118,79 +126,44 @@ func TestBuildProcessEnvironment_AllowlistFiltering(t *testing.T) {
 func TestBuildProcessEnvironment_EmptyEnv(t *testing.T) {
 	t.Setenv("HOME", "/home/test")
 
-	global := &runnertypes.GlobalConfig{
-		EnvAllowlist: []string{"HOME"},
-		ExpandedEnv:  map[string]string{}, // Empty
-	}
+	global := createTestRuntimeGlobal(
+		[]string{"HOME"},
+		map[string]string{}, // Empty
+	)
 
-	group := &runnertypes.CommandGroup{
-		Name:        "test_group",
-		ExpandedEnv: map[string]string{}, // Empty
-	}
+	cmd := createTestRuntimeCommand(
+		[]string{"test"},
+		map[string]string{}, // Empty
+	)
 
-	cmd := &runnertypes.Command{
-		Name:        "test_cmd",
-		ExpandedEnv: map[string]string{}, // Empty
-	}
-
-	result := executor.BuildProcessEnvironment(global, group, cmd)
+	result := executor.BuildProcessEnvironment(global, cmd)
 
 	// Only system env should be included
 	assert.Equal(t, "/home/test", result["HOME"])
 	assert.Len(t, result, 1)
 }
 
-// TestBuildProcessEnvironment_GroupAllowlistOverride tests group-level allowlist override
-func TestBuildProcessEnvironment_GroupAllowlistOverride(t *testing.T) {
-	t.Setenv("HOME", "/home/test")
-	t.Setenv("PATH", "/usr/bin")
-	t.Setenv("USER", "testuser")
-
-	global := &runnertypes.GlobalConfig{
-		EnvAllowlist: []string{"HOME", "PATH"},
-		ExpandedEnv:  map[string]string{},
-	}
-
-	group := &runnertypes.CommandGroup{
-		Name:         "test_group",
-		EnvAllowlist: []string{"USER"}, // Override global allowlist
-		ExpandedEnv:  map[string]string{},
-	}
-
-	cmd := &runnertypes.Command{
-		Name:        "test_cmd",
-		ExpandedEnv: map[string]string{},
-	}
-
-	result := executor.BuildProcessEnvironment(global, group, cmd)
-
-	// Only USER should be included (group allowlist takes precedence)
-	assert.Equal(t, "testuser", result["USER"])
-	assert.NotContains(t, result, "HOME")
-	assert.NotContains(t, result, "PATH")
-}
-
-// TestBuildProcessEnvironment_NilGroup tests with nil group
-func TestBuildProcessEnvironment_NilGroup(t *testing.T) {
+// TestBuildProcessEnvironment_NilEnvMaps tests with nil environment maps
+func TestBuildProcessEnvironment_NilEnvMaps(t *testing.T) {
 	t.Setenv("HOME", "/home/test")
 
-	global := &runnertypes.GlobalConfig{
-		EnvAllowlist: []string{"HOME"},
-		ExpandedEnv: map[string]string{
+	global := createTestRuntimeGlobal(
+		[]string{"HOME"},
+		map[string]string{
 			"GLOBAL_VAR": "global_value",
 		},
-	}
+	)
 
-	cmd := &runnertypes.Command{
-		Name: "test_cmd",
-		ExpandedEnv: map[string]string{
+	cmd := createTestRuntimeCommand(
+		[]string{"test"},
+		map[string]string{
 			"CMD_VAR": "cmd_value",
 		},
-	}
+	)
 
-	result := executor.BuildProcessEnvironment(global, nil, cmd)
+	result := executor.BuildProcessEnvironment(global, cmd)
 
-	// Should work without group
+	// Should work properly
 	assert.Equal(t, "/home/test", result["HOME"])
 	assert.Equal(t, "global_value", result["GLOBAL_VAR"])
 	assert.Equal(t, "cmd_value", result["CMD_VAR"])
@@ -201,19 +174,19 @@ func TestBuildProcessEnvironment_SystemVarNotInAllowlist(t *testing.T) {
 	t.Setenv("HOME", "/home/test")
 	t.Setenv("PATH", "/usr/bin")
 
-	global := &runnertypes.GlobalConfig{
-		EnvAllowlist: []string{}, // Empty allowlist
-		ExpandedEnv: map[string]string{
+	global := createTestRuntimeGlobal(
+		[]string{}, // Empty allowlist
+		map[string]string{
 			"CUSTOM": "custom_value",
 		},
-	}
+	)
 
-	cmd := &runnertypes.Command{
-		Name:        "test_cmd",
-		ExpandedEnv: map[string]string{},
-	}
+	cmd := createTestRuntimeCommand(
+		[]string{"test"},
+		map[string]string{},
+	)
 
-	result := executor.BuildProcessEnvironment(global, nil, cmd)
+	result := executor.BuildProcessEnvironment(global, cmd)
 
 	// No system vars should be included (empty allowlist)
 	assert.NotContains(t, result, "HOME")
