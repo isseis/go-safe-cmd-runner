@@ -722,9 +722,9 @@ type Command struct {
 **ファイル**: `internal/runner/executor/command_executor.go`
 
 ```go
-// resolveWorkDir: 実際に使用するワークディレクトリを決定
+// resolveCommandWorkDir: 実際に使用するワークディレクトリを決定
 // 優先度: Command.ExpandedWorkDir > Group.ExpandedWorkDir
-func (e *DefaultCommandExecutor) resolveWorkDir(
+func (e *DefaultCommandExecutor) resolveCommandWorkDir(
     cmd *runnertypes.Command,
     group *runnertypes.CommandGroup,
 ) string {
@@ -1307,7 +1307,7 @@ Error: toml: line X: unknown field 'workdir'
   - [ ] `group.ExpandedWorkDir` に展開済みワークディレクトリを設定
   - [ ] `group.ExpandedVars["__runner_workdir"]` に同じ値を設定
 - [ ] `GroupExecutor.expandCommandWithWorkDir()` を実装（コマンド変数の再展開）
-- [ ] `CommandExecutor.resolveWorkDir()` を実装（`group.ExpandedWorkDir` を参照）
+- [ ] `CommandExecutor.resolveCommandWorkDir()` を実装（`group.ExpandedWorkDir` を参照）
 
 ### Phase 4: テスト
 - [ ] 単体テスト実装
