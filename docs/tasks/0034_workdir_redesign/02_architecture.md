@@ -1,0 +1,1088 @@
+# アーキテクチャ設計書: 作業ディレクトリ仕様の再設計
+
+## 1. 概要
+
+本ドキュメントは、タスク0034「作業ディレクトリ仕様の再設計」のハイレベルなアーキテクチャ設計を記述します。
+
+### ドキュメント体系
+
+本タスクは3つのドキュメントで構成されます：
+
+| ドキュメント | 内容 | 対象者 |
+|----------|------|------|
+| **01_requirements.md** | 要件定義書：ビジネス要件、機能要件、テスト要件 | PM、QA、開発全体 |
+| **02_architecture.md** (本文) | アーキテクチャ設計書：ハイレベルな設計、図式、パターン、全体フロー | 設計者、シニア開発者 |
+| **03_specification.md** | 詳細仕様書：インターフェース、API、コード例、エラーハンドリング | 実装者 |
+
+本タスクは、複雑な3階層のワークディレクトリ設定を、シンプルな2階層に簡素化し、デフォルトで安全な一時ディレクトリ方式を採用することで、セキュリティと利便性を同時に実現します。
+
+### 1.1 設計の目標
+
+- **セキュリティの向上**: デフォルトで一時ディレクトリを使用し、機密情報の残留リスクを低減
+- **設定の簡素化**: グローバルレベル設定を削除し、優先順位の階層を2段階に統一
+- **命名の統一**: `dir` と `workdir` の不統一を解消
+- **ユーザビリティの向上**: `%{__runner_workdir}` 予約変数でパスアクセスを簡素化
+- **信頼性**: エラー時も確実にリソースのクリーンアップを実施する Fail-Safe 原則
+
+### 1.2 設計の原則
+
+1. **Separation of Concerns**: 一時ディレクトリ管理と設定管理を分離し、各コンポーネントが単一責務を持つ
+2. **Fail-Safe**: `defer` パターンでエラー時も確実にリソースのクリーンアップを実施
+3. **Security First**: セキュリティを優先し、デフォルト動作は常に安全側を選択
+4. **Explicit is Better than Implicit**: 一時ディレクトリの利用を明示的に把握可能にする（ログ出力）
+5. **YAGNI**: 不要な機能は追加しない。実装スコープは要件に基づく
+
+## 2. 現状分析
+
+### 2.1 現在の構造
+
+```
+作業ディレクトリ設定（3階層）
+│
+├─ グローバルレベル: Global.WorkDir (デフォルト: /tmp)
+├─ グループレベル:
+│  ├─ TempDir (bool) - true時に自動一時ディレクトリ生成
+│  └─ WorkDir - 固定ディレクトリ
+└─ コマンドレベル: Command.Dir
+
+優先順位:
+  Command.Dir (優先度1)
+  → Group.TempDir=true (優先度2)
+  → Group.WorkDir (優先度3)
+  → Global.WorkDir (優先度4)
+  → カレントディレクトリ (優先度5)
+```
+
+### 2.2 現在の問題点
+
+| 問題 | 影響 | 深刻度 |
+|-----|------|-------|
+| 3階層の設定が複雑 | ユーザーが優先順位を理解しづらい | 中 |
+| `temp_dir` フラグが必須 | デフォルトで永続ディレクトリが使用される | 高 |
+| 命名が不統一 | `dir` vs `workdir` の混在 | 中 |
+| グローバル設定の必要性が低い | グループごとに設定できるため冗長 | 低 |
+
+## 3. 新アーキテクチャ
+
+### 3.1 簡素化された構造
+
+```
+作業ディレクトリ設定（2階層）
+│
+├─ グループレベル: Group.WorkDir
+│  ├─ 指定: 固定ディレクトリを使用
+│  └─ 未指定: 自動一時ディレクトリ生成（推奨デフォルト）
+│
+└─ コマンドレベル: Command.WorkDir
+   ├─ 指定: そのディレクトリを使用
+   └─ 未指定: グループの設定を継承
+
+優先順位 (シンプル化):
+  1. Command.WorkDir
+  2. Group.WorkDir
+  3. 自動生成一時ディレクトリ
+```
+
+### 3.2 コンポーネント図
+
+#### 概念図（設計意図を示す）
+
+この図は設計の意図と責務の分離を示す概念図です。
+
+```mermaid
+graph TB
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef existing fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+    classDef new fill:#ffe8f5,stroke:#d946ef,stroke-width:2px,color:#701a75;
+
+    subgraph ConfigLayer["設定層"]
+        ConfigLoader["ConfigLoader<br/>(TOML解析)"]
+        Validation["Validation<br/>(フィールド検証)"]
+    end
+
+    subgraph GroupLayer["グループ実行層"]
+        GroupExecutor["GroupExecutor<br/>(グループ実行制御)"]
+        TempDirManager["TempDirManager<br/>(一時ディレクトリ管理)"]
+    end
+
+    subgraph ExpansionLayer["変数展開層"]
+        ConfigExpander["config.ExpandString<br/>(変数展開)"]
+    end
+
+    subgraph ExecutionLayer["実行層"]
+        CommandExecutor["CommandExecutor<br/>(コマンド実行)"]
+    end
+
+    subgraph OSLayer["OS層"]
+        FileSystem["FileSystem<br/>(OS File Operations)"]
+    end
+
+    ConfigLoader -->|検証後| Validation
+    Validation -->|設定| GroupExecutor
+    GroupExecutor -->|生成・管理| TempDirManager
+    GroupExecutor -->|展開| ConfigExpander
+    ConfigExpander -->|コマンド| CommandExecutor
+    CommandExecutor -->|実行| FileSystem
+    TempDirManager -->|操作| FileSystem
+
+    class ConfigLoader enhanced;
+    class Validation enhanced;
+    class GroupExecutor enhanced;
+    class TempDirManager new;
+    class ConfigExpander existing;
+    class CommandExecutor existing;
+    class FileSystem existing;
+```
+
+#### 実装マッピング図（実際のパッケージ・型との対応）
+
+この図は実際の実装における型とパッケージの対応を示します。
+
+```mermaid
+graph TB
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef existing fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+    classDef new fill:#ffe8f5,stroke:#d946ef,stroke-width:2px,color:#701a75;
+
+    subgraph ConfigLayer["設定層"]
+        ConfigLoader["config.LoadConfig()<br/>(internal/runner/config)"]
+        Validation["runnertypes型定義<br/>(internal/runner/runnertypes)"]
+    end
+
+    subgraph GroupLayer["グループ実行層"]
+        GroupExecutor["DefaultGroupExecutor<br/>(internal/runner)"]
+        TempDirManager["TempDirManager<br/>(新規パッケージ)"]
+    end
+
+    subgraph ExpansionLayer["変数展開層"]
+        ConfigExpander["config.ExpandString<br/>(internal/runner/config)"]
+    end
+
+    subgraph ExecutionLayer["実行層"]
+        CommandExecutor["executor.CommandExecutor<br/>(internal/runner/executor)"]
+    end
+
+    subgraph OSLayer["OS層"]
+        ResourceManager["resource.ResourceManager<br/>(internal/runner/resource)"]
+    end
+
+    ConfigLoader -->|検証後| Validation
+    Validation -->|設定| GroupExecutor
+    GroupExecutor -->|生成・管理| TempDirManager
+    GroupExecutor -->|展開| ConfigExpander
+    ConfigExpander -->|コマンド| CommandExecutor
+    CommandExecutor -->|実行| ResourceManager
+    TempDirManager -->|操作| ResourceManager
+
+    class ConfigLoader enhanced;
+    class Validation enhanced;
+    class GroupExecutor enhanced;
+    class TempDirManager new;
+    class ConfigExpander existing;
+    class CommandExecutor existing;
+    class ResourceManager existing;
+```
+
+**実装における対応関係**:
+
+| 概念図の名称 | 実装における対応 | パッケージ |
+|------------|----------------|----------|
+| GroupExecutor | `GroupExecutor` インターフェースと `DefaultGroupExecutor` 実装 | `internal/runner` |
+| TempDirManager | `TempDirManager` インターフェース（新規） | `internal/runner/executor` |
+| ConfigExpander | `config.ExpandString` 関数 | `internal/runner/config` |
+| CommandExecutor | `executor.CommandExecutor` インターフェース | `internal/runner/executor` |
+| FileSystem | `resource.ResourceManager` インターフェース | `internal/runner/resource` |
+
+**注**: GroupExecutorは当初「概念モデル」として設計されましたが、Phase 0リファクタリングにより独立したインターフェースとして実装されました。これにより、Runnerクラスの肥大化を防ぎ、責務の分離が改善されました。
+
+**凡例（Legend）**
+
+```mermaid
+flowchart LR
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef existing fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+    classDef new fill:#ffe8f5,stroke:#d946ef,stroke-width:2px,color:#701a75;
+
+    D1[("Data")] --> E1["Existing Component"] --> E2["Enhanced Component"] --> N1["New Component"]
+    class D1 data
+    class E1 existing
+    class E2 enhanced
+    class N1 new
+```
+
+### 3.3 フローチャート
+
+#### グループ実行のライフサイクル
+
+```mermaid
+flowchart TD
+    Start["グループ実行開始"] -->|groupConfig: *runnertypes.CommandGroup| ResolveWorkDir
+
+    ResolveWorkDir{"Group.WorkDir<br/>指定?"}
+    ResolveWorkDir -->|Yes| UseGroupWorkDir["Group.WorkDir を使用"]
+    ResolveWorkDir -->|No| CreateTempDir["自動一時ディレクトリ生成"]
+
+    UseGroupWorkDir -->|workdir: string| StoreWorkDir["グループのworkdirを保存<br/>group.ExpandedVars['__runner_workdir']"]
+    CreateTempDir -->|tempdir: string| StoreWorkDir
+
+    StoreWorkDir --> InitCleanup["defer で cleanup を登録<br/>defer cleanup handler"]
+
+    InitCleanup --> ExecuteCommands["コマンド実行ループ"]
+
+    ExecuteCommands -->|cmd: *runnertypes.Command| ResolveCommandWorkDir
+
+    ResolveCommandWorkDir{"Command.WorkDir<br/>指定?"}
+    ResolveCommandWorkDir -->|Yes| UseCommandWorkDir["Command.WorkDir を使用"]
+    ResolveCommandWorkDir -->|No| UseGroupWorkDir2["Group workdir を使用"]
+
+    UseCommandWorkDir -->|workdir: string| ExpandVariables
+    UseGroupWorkDir2 -->|workdir: string| ExpandVariables
+
+    ExpandVariables["変数展開<br/>workdir変数 → 実際のパス"] -->|expanded: string| ExecuteCommand
+
+    ExecuteCommand["コマンド実行<br/>executor.Execute"]
+
+    ExecuteCommand -->|Success| NextCommand{次のコマンド?}
+    ExecuteCommand -->|Error| CleanupError["エラーのため cleanup"]
+
+    NextCommand -->|Yes| ExecuteCommands
+    NextCommand -->|No| CleanupSuccess["正常終了cleanup"]
+
+    CleanupSuccess -->|--keep-temp-dirs<br/>フラグ?| CheckKeepFlag{keep-temp-dirs<br/>指定?}
+    CleanupError -->|--keep-temp-dirs<br/>フラグ?| CheckKeepFlag
+
+    CheckKeepFlag -->|Yes| LogKeep["ログ: Keep temp dir"]
+    CheckKeepFlag -->|No| DeleteTempDir["一時ディレクトリ削除<br/>一時ディレクトリの場合のみ"]
+
+    LogKeep --> End["完了"]
+    DeleteTempDir -->|Success| LogDelete["ログ: Deleted"]
+    DeleteTempDir -->|Error| LogDeleteError["ログ: ERROR"]
+    LogDelete --> End
+    LogDeleteError --> End
+```
+
+#### 変数展開プロセス（旧設計 vs 新設計）
+
+##### 旧設計（TOMLロード時にすべて展開）
+
+```mermaid
+flowchart TD
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef loadPhase fill:#fef3e8,stroke:#fd7e14,stroke-width:3px,stroke-dasharray: 5 5;
+    classDef execPhase fill:#e8f5f3,stroke:#20c997,stroke-width:3px,stroke-dasharray: 5 5;
+
+    subgraph LoadPhase["📄 TOMLロード時"]
+        direction TB
+        TOMLFile[("TOML設定ファイル")]
+        ParseTOML["TOML解析"]
+        RawVars[("Group.Vars<br/>Command.Vars")]
+        ExpandGroupVars["Group.Vars展開"]
+        GroupExpandedVars[("Group.ExpandedVars")]
+        ExpandCmdVars["Command.Vars展開<br/>(Group変数 + Cmd変数)"]
+        CmdExpandedVars[("Command.ExpandedVars")]
+
+        TOMLFile --> ParseTOML
+        ParseTOML --> RawVars
+        RawVars --> ExpandGroupVars
+        ExpandGroupVars --> GroupExpandedVars
+        GroupExpandedVars --> ExpandCmdVars
+        RawVars --> ExpandCmdVars
+        ExpandCmdVars --> CmdExpandedVars
+    end
+
+    subgraph ExecPhase["⚙️ コマンド実行時"]
+        direction TB
+        UseExpandedVars["Command.ExpandedVars使用<br/>(事前計算済み)"]
+    end
+
+    CmdExpandedVars --> UseExpandedVars
+
+    class TOMLFile,RawVars,GroupExpandedVars,CmdExpandedVars data;
+    class ParseTOML,ExpandGroupVars,ExpandCmdVars,UseExpandedVars process;
+    class LoadPhase loadPhase;
+    class ExecPhase execPhase;
+```
+
+**問題点**:
+- TOMLロード時に `Group.ExpandedVars` と `Command.ExpandedVars` の両方を計算
+- グループのワークディレクトリ（`__runner_workdir`）はコマンド実行時に決定されるが、TOMLロード時には未確定
+- 未確定の `__runner_workdir` を含む状態でコマンド変数を展開していた
+
+##### 新設計（グループ変数のみTOMLロード時、コマンド変数は実行時に展開）
+
+```mermaid
+flowchart TD
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef validation fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+    classDef error fill:#ffe8e8,stroke:#dc3545,stroke-width:2px,color:#721c24;
+    classDef loadPhase fill:#fef3e8,stroke:#fd7e14,stroke-width:3px,stroke-dasharray: 5 5;
+    classDef execPhase fill:#e8f5f3,stroke:#20c997,stroke-width:3px,stroke-dasharray: 5 5;
+
+    subgraph LoadPhase["📄 TOMLロード時"]
+        direction TB
+        TOMLFile[("TOML設定ファイル")]
+        ParseTOML["TOML解析"]
+        RawVars[("Group.Vars<br/>Command.Vars")]
+        ExpandGroupVars["Group.Vars展開"]
+        GroupExpandedVars[("Group.ExpandedVars")]
+        CmdVars[("Command.Vars<br/>(未展開のまま保持)")]
+
+        TOMLFile --> ParseTOML
+        ParseTOML --> RawVars
+        RawVars --> ExpandGroupVars
+        ExpandGroupVars --> GroupExpandedVars
+        RawVars --> CmdVars
+    end
+
+    subgraph ExecPhase["⚙️ コマンド実行時"]
+        direction TB
+        ResolveWorkDir["ワークディレクトリ決定<br/>(resolveGroupWorkDir)"]
+        WorkDirValue[("workDir値")]
+        SetToGroup["Group.ExpandedVars設定<br/>(__runner_workdir = workDir)"]
+        BuildVarsMap["変数マップ構築<br/>(buildVarsForCommand)"]
+        ExpandCmdVars["Command.Vars展開"]
+        CmdExpandedVars[("Command.ExpandedVars")]
+        UseExpandedVars["Command.ExpandedVars使用"]
+
+        ResolveWorkDir --> WorkDirValue
+        WorkDirValue --> SetToGroup
+        SetToGroup --> BuildVarsMap
+        BuildVarsMap --> ExpandCmdVars
+        ExpandCmdVars --> CmdExpandedVars
+        CmdExpandedVars --> UseExpandedVars
+    end
+
+    GroupExpandedVars --> ResolveWorkDir
+    GroupExpandedVars --> BuildVarsMap
+    CmdVars --> BuildVarsMap
+
+    class TOMLFile,RawVars,GroupExpandedVars,CmdVars,WorkDirValue,CmdExpandedVars data;
+    class ParseTOML,ExpandGroupVars,ResolveWorkDir,SetToGroup,BuildVarsMap,ExpandCmdVars,UseExpandedVars process;
+    class LoadPhase loadPhase;
+    class ExecPhase execPhase;
+```
+
+**改善点**:
+- TOMLロード時は `Group.Vars` のみ展開して `Group.ExpandedVars` に保存
+- `Command.Vars` は未展開のまま保持（`Command.ExpandedVars` は作成しない）
+- コマンド実行時の流れ:
+  1. `resolveGroupWorkDir()` でワークディレクトリを決定
+  2. 決定した `workDir` を `Group.ExpandedVars["__runner_workdir"]` に**直接設定**（副作用）
+  3. `buildVarsForCommand()` で `Group.ExpandedVars`（`__runner_workdir` 含む）と `Command.Vars` を統合
+  4. 統合された変数マップでコマンド変数を展開
+- すべての実行時情報（ワークディレクトリ、時刻、PIDなど）が揃った状態で展開
+
+## 4. データモデル
+
+### 4.1 設定型の変更方針
+
+本タスクでは、以下の設定型の変更を行う：
+
+**削除対象**:
+- `GlobalConfig.WorkDir`: グローバルレベルでのデフォルトディレクトリ設定
+- `CommandGroup.TempDir`: グループレベルでの一時ディレクトリフラグ
+
+**名称変更**:
+- `Command.Dir` → `Command.WorkDir`: コマンドレベルのワークディレクトリ指定
+
+これにより、TOML 設定ファイルで既にこれらのフィールドを使用している場合は、パーサーレベルで「未知フィールド」エラーが発生し、ユーザーに明確な移行メッセージを促す。
+
+### 4.2 実行時の状態管理
+
+グループ実行時の状態は `group.ExpandedVars` に直接設定される：
+
+**管理される情報**:
+- ワークディレクトリ（`__runner_workdir` として提供）
+- 実行時刻（`__runner_datetime`）
+- プロセスID（`__runner_pid`）
+
+**ライフサイクル**:
+1. グループ実行開始時: `resolveGroupWorkDir()` でワークディレクトリを決定
+2. 決定した `workdir` を `group.ExpandedVars["__runner_workdir"]` に直接設定
+3. 既存の `config.ExpandString` で変数展開を実行
+
+**設計の利点**:
+- シンプルで直接的な実装（余計な間接化がない）
+- 新しい型（GroupContext）が不要
+- 既存の変数展開機構をそのまま活用
+- 一貫した変数管理パターン（`__runner_*` 予約変数）
+- 一時ディレクトリか固定ディレクトリかの判定は `TempDirManager` インスタンスの有無で判断
+
+## 5. 一時ディレクトリ管理
+
+### 5.1 TempDirManager の責務
+
+一時ディレクトリ管理を専門とするコンポーネント `TempDirManager` を導入する。
+
+**設計方針**:
+- **dry-runモード対応**: 実際のファイルシステム操作を行わず、ログ出力のみ
+- **グループ単位のインスタンス**: 各グループに対して独立したインスタンスを作成
+- **一時ディレクトリ使用時のみ作成**: 固定ディレクトリを使用する場合はインスタンスを作成しない
+- **インスタンス作成時にlogger、groupName、isDryRunを渡す**: コンストラクタで `NewTempDirManager(logger, groupName, isDryRun)` として受け取る
+- **シンプルなメソッド名**: `CreateTempDir()` ではなく `Create()`、`CleanupTempDir()` ではなく `Cleanup()`
+
+**dry-runモードの動作**:
+- `Create()`: 仮想パスを生成（`/tmp/scr-<groupName>-dryrun-<timestamp>`）、実際のディレクトリは作成しない
+- `Cleanup()`: ログ出力のみ（`[DRY-RUN] Would delete temp dir: <path>`）、実際の削除は行わない
+- 仮想パスは `%{__runner_workdir}` に設定され、変数展開で使用される
+
+**責務**:
+- グループごとの一時ディレクトリ生成（`scr-<groupName>-XXXXXX` 形式）
+- パーミッション管理（0700: 所有者のみアクセス可能）
+- 一時ディレクトリの削除（エラー時も確実に実施）
+- 削除失敗時のエラーハンドリング（ログ出力、標準エラー出力）
+
+**メソッド**:
+- `Create() (string, error)`: 一時ディレクトリを生成し、パスを返す
+- `Cleanup() error`: 一時ディレクトリを削除
+- `Path() string`: 生成された一時ディレクトリのパスを取得
+
+**クリーンアップの制御**:
+- `Cleanup()` メソッドは引数を持たず、常に削除処理を実行
+- 一時ディレクトリを保持する場合は、呼び出し元（GroupExecutor）が `Cleanup()` を呼ばないことで制御
+- GroupExecutor が `--keep-temp-dirs` フラグに応じて `if !keepTempDirs { mgr.Cleanup() }` のように条件付き呼び出し
+
+### 5.2 一時ディレクトリのライフサイクル
+
+```mermaid
+sequenceDiagram
+    participant App as Application
+    participant GE as GroupExecutor
+    participant TDM as TempDirManager
+    participant OS as OS/FileSystem
+
+    App->>GE: ExecuteGroup(group)
+    activate GE
+
+    Note over GE: Group.WorkDir未指定の場合のみ
+
+    GE->>GE: NewTempDirManager(logger, groupName)
+    activate TDM
+    GE->>TDM: Create()
+    TDM->>OS: MkdirTemp("scr-<group>-")
+    OS-->>TDM: /tmp/scr-group-XXXXXX
+    TDM-->>GE: tempDir
+    deactivate TDM
+
+    Note over GE: keepTempDirs フラグで制御
+    GE->>GE: if !keepTempDirs {<br/>  defer tempDirMgr.Cleanup()<br/>}
+
+    GE->>GE: ExecuteCommandLoop
+
+    alt All success or any error (if !keepTempDirs)
+        GE->>TDM: Cleanup()
+        activate TDM
+        TDM->>OS: RemoveAll(tempDir)
+        TDM-->>GE: error (or nil)
+        deactivate TDM
+    end
+
+    deactivate GE
+    App-->>App: Continue
+```
+
+**ポイント**:
+1. **グループ単位のインスタンス**: `Group.WorkDir` 未指定の場合のみ `TempDirManager` を作成
+2. **シンプルなメソッド**: `Create()` と `Cleanup()` でディレクトリのライフサイクルを管理
+3. **defer パターンと条件付き呼び出し**: `if !keepTempDirs { defer mgr.Cleanup() }` で削除処理を登録
+4. **呼び出し元での制御**: `--keep-temp-dirs` フラグは GroupExecutor が保持し、`Cleanup()` 呼び出しを制御
+5. **スコープの明確化**: `TempDirManager` インスタンスの有無で一時ディレクトリか固定ディレクトリかを判断
+6. 削除失敗時もプロセスは継続（エラーハンドリング戦略）
+
+### 5.3 命名規則
+
+```
+ディレクトリ名: scr-<groupName>-<randomSuffix>
+例:
+  /tmp/scr-backup-a1b2c3d4e5f6
+  /tmp/scr-build-f7g8h9i0j1k2
+  /tmp/scr-deploy-l3m4n5o6p7q8
+
+プレフィックス "scr-" は以下の目的：
+- コマンド実行でのディレクトリ作成と明確に区別
+- 削除時に一時ディレクトリと固定ディレクトリを区別
+```
+
+## 6. 変数展開機構
+
+### 6.1 `%{__runner_workdir}` 予約変数
+
+グループのワークディレクトリにアクセスするための予約変数を導入する：
+
+| 項目 | 値 |
+|-----|-----|
+| 変数名 | `%{__runner_workdir}` |
+| スコープ | グループ内のすべてのコマンド（**コマンドレベルのみ**） |
+| 値 | グループのワークディレクトリの絶対パス |
+| 命名規則 | `__runner_` プレフィックスは予約（Task 0033で定義） |
+
+**値の決定ロジック**:
+- `Group.WorkDir` が指定 → 変数展開後の値を使用
+- `Group.WorkDir` が未指定 → 自動生成された一時ディレクトリのパスを使用
+
+**変数展開の動作**:
+
+| レベル | 変数展開 | `__runner_workdir` 参照 | その他の変数参照 |
+|--------|---------|----------------------|----------------|
+| グループ (`group.workdir`) | ✅ 可能 | ❌ 不可（未定義エラー） | ✅ 可能 |
+| コマンド (`cmd.*`) | ✅ 可能 | ✅ 可能 | ✅ 可能 |
+
+**理由**:
+- `__runner_workdir` は `group.workdir` を決定した**後**に設定される
+- グループレベルで参照すると循環参照になるため、未定義変数エラーとなる
+- その他の変数（`%{backup_base}` など）はグループレベルでも参照可能
+
+### 6.2 ConfigExpander コンポーネント
+
+変数展開を担当する専門のコンポーネントを導入する。
+
+**責務**:
+- コマンド文字列内の `%{__runner_workdir}` を実際のパスに置換
+- 置換後の文字列を絶対パス化
+- パストラバーサル攻撃を防ぐためのパス検証
+
+**対象フィールド**:
+- `Command.Cmd`: コマンド実行ファイルパス
+- `Command.Args`: コマンド引数（複数）
+- `Command.WorkDir`: ワークディレクトリ
+
+### 6.3 展開の流れ
+
+```mermaid
+flowchart TD
+    Start["コマンド実行前"] -->|Command + ExpandedVars| GetValue
+
+    GetValue["ExpandedVars から<br/>__runner_workdir を取得"]
+    GetValue -->|workdir: string| Scan["コマンド内で<br/>%{__runner_workdir}<br/>を検索"]
+
+    Scan -->|見つかった| Replace["文字列置換<br/>config.ExpandString"]
+    Scan -->|見つからない| NoChange["そのまま使用"]
+
+    Replace -->|replaced| ValidatePath["パストラバーサル検証<br/>(絶対パス確認)"]
+
+    ValidatePath -->|Valid| Output["展開済みコマンド<br/>で実行"]
+    ValidatePath -->|Invalid| Error["エラー終了"]
+
+    NoChange --> Output
+
+    Output -->|Execution| End["完了"]
+    Error -.->|Abort| End
+```
+
+### 6.4 例
+
+**グループ "backup" で一時ディレクトリを使用**:
+```toml
+[[groups]]
+name = "backup"
+# workdir 未指定 → 一時ディレクトリが自動生成される
+
+[[groups.commands]]
+name = "dump"
+cmd = "pg_dump"
+args = ["mydb", "-f", "%{__runner_workdir}/dump.sql"]
+# OK: コマンドレベルで %{__runner_workdir} を参照
+```
+
+実行時に:
+- `group.ExpandedVars["__runner_workdir"]` = `/tmp/scr-backup-a1b2c3d4` が直接設定される
+- `args[1]` = `"%{__runner_workdir}/dump.sql"` → `/tmp/scr-backup-a1b2c3d4/dump.sql`
+
+**グループ "build" で固定ディレクトリを使用**:
+```toml
+[[groups]]
+name = "build"
+workdir = "/opt/project"                # OK: 固定パス
+# workdir = "%{project_base}/build"     # OK: 他の変数参照
+# workdir = "%{__runner_workdir}/sub"   # NG: 未定義変数エラー
+
+[[groups.commands]]
+name = "checkout"
+cmd = "git"
+args = ["clone", "https://github.com/example/repo.git", "%{__runner_workdir}/project"]
+# OK: コマンドレベルで %{__runner_workdir} を参照
+```
+
+実行時に:
+- `group.ExpandedVars["__runner_workdir"]` = `/opt/project` が直接設定される
+- `args[2]` = `"%{__runner_workdir}/project"` → `/opt/project/project`
+
+## 7. ワークディレクトリ解決ロジック
+
+### 7.1 優先順位と決定プロセス
+
+ワークディレクトリは以下の優先順位で決定されます:
+
+1. **コマンドレベル**: `Command.WorkDir` が指定されている場合、そのディレクトリを使用
+2. **グループレベル**: `Group.WorkDir` が指定されている場合、そのディレクトリを使用
+3. **自動一時ディレクトリ**: どちらも未指定の場合、自動生成された一時ディレクトリを使用
+
+### 7.2 決定マトリックス
+
+| Group.WorkDir | Command.WorkDir | 実際の動作 | 備考 |
+|--------------|-----------------|----------|------|
+| 未指定 | 未指定 | 自動一時ディレクトリ | デフォルト、最も安全 |
+| 未指定 | `/opt/app` | `/opt/app` | コマンド特化ディレクトリ |
+| `/var/data` | 未指定 | `/var/data` | グループ全体で固定 |
+| `/var/data` | `/opt/app` | `/opt/app` | コマンドが優先 |
+
+### 7.3 シーケンス図
+
+```mermaid
+sequenceDiagram
+    participant Config as Config/TOML
+    participant GE as GroupExecutor
+    participant Resolve as Resolver
+    participant TDM as TempDirManager
+    participant CE as CommandExecutor
+
+    Config->>GE: group.commands[]
+    activate GE
+
+    GE->>Resolve: ResolveGroupWorkDir(group)
+    activate Resolve
+
+    alt group.WorkDir specified
+        Resolve-->>GE: (workdir, nil)
+    else group.WorkDir empty
+        Resolve->>TDM: NewTempDirManager(logger, groupName)
+        activate TDM
+        Resolve->>TDM: Create()
+        TDM-->>Resolve: /tmp/scr-group-XXXXXX
+        Resolve-->>GE: (tempdir, TempDirManager)
+    end
+    deactivate Resolve
+
+    GE->>GE: group.ExpandedVars["__runner_workdir"] = resolved
+
+    loop for each command
+        GE->>GE: vars = buildVarsForCommand(cmd, group)
+        Note over GE: グループ変数 + コマンド変数を統合<br/>(コマンドが優先)
+
+        GE->>GE: expandedCmd = expandCommand(cmd, vars)
+        Note over GE: 変数展開を一度だけ実行<br/>(cmd, args, workdir, env)
+
+        GE->>CE: Execute(expandedCmd)
+        activate CE
+
+        alt expandedCmd.ExpandedWorkDir specified
+            CE->>CE: use expandedCmd.ExpandedWorkDir
+        else expandedWorkDir empty
+            CE->>CE: use group.WorkDir (resolved)
+        end
+
+        CE-->>GE: result
+        deactivate CE
+    end
+
+    deactivate GE
+```
+
+## 8. コマンドラインオプション
+
+### 8.1 `--keep-temp-dirs` フラグ
+
+一時ディレクトリを削除せずに保持するオプション。デバッグ時やトラブルシューティングで一時ディレクトリ内のファイルを検査したい場合に使用される。
+
+**定義**:
+- **フラグ名**: `--keep-temp-dirs`
+- **型**: ブール フラグ（boolean flag）
+- **デフォルト**: `false`（一時ディレクトリ自動削除）
+- **用途**: `runner --config config.toml --keep-temp-dirs`
+
+**動作**:
+- フラグなし → グループ実行終了後に一時ディレクトリを削除
+- フラグあり → グループ実行終了後も一時ディレクトリを保持
+- 固定ディレクトリ → フラグの値に関わらず削除しない
+
+**ユースケース**:
+```bash
+# 通常実行
+$ ./runner --config backup.toml
+# グループ実行完了後、一時ディレクトリは自動削除
+
+# デバッグ実行
+$ ./runner --config backup.toml --keep-temp-dirs
+# グループ実行完了後、一時ディレクトリは保持
+$ ls -la /tmp/scr-backup-*/
+$ cat /tmp/scr-backup-*/dump.sql
+```
+
+## 9. エラーハンドリング戦略
+
+### 9.1 エラー分類と対応
+
+| エラー | 原因例 | 処理 | グループ継続 | ログレベル |
+|-------|-------|------|-----------|----------|
+| 一時ディレクトリ生成失敗 | ディスク容量不足 | グループ実行中止 | ✗ | ERROR |
+| 一時ディレクトリ削除失敗 | パーミッション不足 | ログ記録のみ | ✓ | ERROR + stderr |
+| 変数展開エラー | パストラバーサル検出 | コマンド実行中止 | 設定依存 | ERROR |
+| パス検証エラー | 相対パス指定 | エラーを返す | 設定依存 | ERROR |
+
+### 9.2 削除失敗時の処理（重要）
+
+一時ディレクトリの削除失敗は、**セキュリティリスク** になるため、特別な配慮が必要：
+
+1. **必ず通知**: ERROR レベルログ + 標準エラー出力
+2. **処理継続**: 削除失敗でもプロセスを中断しない
+3. **パス明記**: ディレクトリパスをログに含める
+4. **ユーザー対応**: ユーザーが手動で確認・削除可能にする
+
+```
+一時ディレクトリ削除エラー → ERROR ログ → 標準エラー出力
+    └─ ユーザーが認識 → 手動確認・削除
+```
+
+### 9.3 Fail-Safe パターン
+
+エラー時も確実にリソースのクリーンアップを実施するため、`defer` パターンを採用：
+
+```
+GroupExecutor.ExecuteGroup():
+  1. ワークディレクトリを決定
+  2. group.ExpandedVars["__runner_workdir"] に直接設定
+  3. if !keepTempDirs { defer mgr.Cleanup() } を登録 ← 重要: ここで条件付き登録
+  4. コマンド実行ループ
+     └─ エラー発生
+  5. グループ実行終了
+  6. defer が実行 ← ここでリソース削除（エラー時も実行、keepTempDirs=false の場合のみ）
+```
+
+**利点**:
+- 成功時と失敗時の両方でクリーンアップが実行される
+- 複数の異なる終了パスでも同じクリーンアップロジックが使われる
+- コードの重複が少ない
+
+## 10. セキュリティ考慮事項
+
+### 10.1 一時ディレクトリのセキュリティ
+
+**パーミッション管理**:
+- 生成パーミッション: `0700`（所有者のみアクセス可能）
+- OS の `os.MkdirTemp()` のデフォルト動作に依存
+- 他のユーザーのアクセスは物理的に不可能
+
+**確実な削除戦略**:
+1. グループ実行終了時に必ず削除（`defer` で確保）
+2. 成功時・失敗時の両方で削除
+3. 削除失敗時はユーザーに通知（ERROR ログ + stderr）
+4. ユーザーが手動対応可能にする
+
+**ファイル残留リスクの低減**:
+- デフォルトで一時ディレクトリ使用（改善前は `/tmp` 永続化）
+- グループごとに独立したディレクトリ（グループ間の汚染なし）
+- 自動削除でユーザー忘却の可能性を排除
+
+### 10.2 パストラバーサル攻撃への対策
+
+変数展開後のパスに対して以下の検証を実施：
+
+1. **絶対パス要件**: 相対パスは許可しない
+2. **コンポーネント検証**: `..` などの相対パスコンポーネントを検出
+3. **シンボリックリンク**: 既存の SafeFileIO メカニズムを活用
+
+この検証により、`%{__runner_workdir}/../../../etc/passwd` のようなトラバーサル攻撃を防止。
+
+### 10.3 機密情報保護
+
+1. **アクセス制限**: 一時ディレクトリは所有者のみアクセス（0700）
+2. **自動削除**: デフォルトで削除（情報残留の最小化）
+3. **ログ管理**: 削除失敗時のみ目立つログ（セキュリティ意識向上）
+
+## 11. 統合アーキテクチャ
+
+### 11.1 既存コンポーネントとの連携
+
+新機能は既存の `CommandExecutor` に統合される：
+
+```mermaid
+graph TB
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef existing fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+    classDef new fill:#ffe8f5,stroke:#d946ef,stroke-width:2px,color:#701a75;
+
+    subgraph InputLayer["入力"]
+        Config[("Config/TOML<br/>(グループ・コマンド設定)")]
+        Flag["--keep-temp-dirs<br/>(コマンドラインフラグ)"]
+    end
+
+    subgraph ProcessLayer["処理層"]
+        GE["GroupExecutor<br/>(グループ実行制御)"]
+        TDM["TempDirManager<br/>(一時ディレクトリ管理)"]
+        Expander["config.ExpandString<br/>(変数展開)"]
+        CE["CommandExecutor<br/>(コマンド実行)"]
+    end
+
+    subgraph OutputLayer["出力"]
+        Log[("ログ出力<br/>(INFO/ERROR/DEBUG)")]
+        Stderr[("標準エラー出力<br/>(エラー通知)")]
+    end
+
+    Config -->|group設定| GE
+    Flag -->|keep flag| GE
+
+    GE -->|workdir決定| TDM
+    GE -->|__runner_workdir設定| GE
+    GE -->|変数展開| Expander
+    Expander -->|展開済みコマンド| CE
+    GE -->|コマンド実行| CE
+
+    TDM -->|生成・削除| TDM
+    TDM -->|ログ出力| Log
+    TDM -->|エラー通知| Stderr
+
+    CE -->|実行| CE
+    CE -->|結果| GE
+
+    class Config,Log,Stderr data;
+    class Flag,CE,Expander existing;
+    class GE enhanced;
+    class TDM new;
+```
+
+**凡例（Legend）**
+
+```mermaid
+flowchart LR
+    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
+    classDef existing fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
+    classDef enhanced fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
+    classDef new fill:#ffe8f5,stroke:#d946ef,stroke-width:2px,color:#701a75;
+
+    D1[("Data")] --> E1["Existing Component"] --> E2["Enhanced Component"] --> N1["New Component"]
+    class D1 data
+    class E1 existing
+    class E2 enhanced
+    class N1 new
+```
+
+### 11.2 フロー統合図
+
+```mermaid
+flowchart TD
+    Start["runner 実行"] -->|--keep-temp-dirs flag| Main["main.go"]
+
+    Main -->|config load| ConfigLoader["ConfigLoader<br/>(型定義の変更を反映)"]
+    ConfigLoader -->|deprecated fields error| Error1["エラー: 廃止フィールド検出"]
+    ConfigLoader -->|config ok| ExecuteGroups
+
+    ExecuteGroups["ExecuteGroups()"]
+
+    ExecuteGroups -->|group loop| ExecuteGroup["ExecuteGroup(group)"]
+
+    ExecuteGroup -->|resolve| ResolveWorkDir
+    ResolveWorkDir{"Group.WorkDir<br/>指定?"}
+    ResolveWorkDir -->|Yes| UseGroupWD["固定ディレクトリ"]
+    ResolveWorkDir -->|No| CreateTempDir["TempDirManager<br/>.Create"]
+
+    UseGroupWD -->|workdir| SetWorkDir["group.ExpandedVars<br/>['__runner_workdir'] = workdir"]
+    CreateTempDir -->|tempdir| SetWorkDir2["group.ExpandedVars<br/>['__runner_workdir'] = tempdir"]
+
+    SetWorkDir -->|set| CmdLoop["コマンドループ"]
+    SetWorkDir2 -->|set| RegisterDefer
+
+    RegisterDefer["if !keepTempDirs {<br/>  defer mgr.Cleanup()<br/>}"]
+    RegisterDefer -->|defer registered| CmdLoop
+
+    CmdLoop -->|cmd loop| ExecuteCmd["コマンド実行"]
+
+    ExecuteCmd -->|expand| VariableExpander["config.ExpandString<br/>__runner_workdir変数展開"]
+    VariableExpander -->|expanded cmd| ResolveCmd["resolveWorkDir<br/>(Cmd vs Group)"]
+    ResolveCmd -->|実ワークディレクトリ| CommandExecutor["CommandExecutor<br/>.Execute"]
+
+    CommandExecutor -->|success/error| NextCmd{次のコマンド?}
+    NextCmd -->|Yes| ExecuteCmd
+    NextCmd -->|No| GroupEnd["グループ実行終了"]
+
+    Error1 -->|exit| End["終了"]
+
+    GroupEnd -->|defer実行| DeferCheck{"defer登録済み?<br/>(一時dir かつ !keepTempDirs)"}
+    DeferCheck -->|Yes| Delete["mgr.Cleanup()<br/>→ RemoveAll"]
+    DeferCheck -->|No| NoDelete["削除しない<br/>(固定dir または keepTempDirs=true)"]
+
+    Delete -->|success| DeleteOK["DEBUG log"]
+    Delete -->|error| DeleteErr["ERROR log + stderr"]
+
+    NoDelete --> End
+    DeleteOK --> End
+    DeleteErr --> End
+```
+
+### 11.3 インターフェース定義（概要）
+
+新規に導入されるインターフェースの概要：
+
+**TempDirManager**:
+- `Create() (string, error)`: 一時ディレクトリ生成
+- `Cleanup() error`: ディレクトリ削除（引数なし、常に削除）
+- `Path() string`: 生成されたディレクトリのパスを取得
+
+**GroupExecutor** (拡張):
+- `ExecuteGroup(group) error`: グループ実行（拡張）
+- グループレベルで `group.ExpandedVars` に `__runner_workdir` を直接設定
+- 一時ディレクトリの生成・削除を統括
+- `keepTempDirs` フラグを保持し、`Cleanup()` 呼び出しを条件付きで制御
+
+詳細なインターフェース定義は **詳細仕様書** を参照。
+
+## 12. 実装フェーズ
+
+### 12.1 Phase 1: 型定義とバリデーション
+
+**実装項目**:
+1. 設定型から廃止フィールドを削除
+   - `GlobalConfig.WorkDir` 削除
+   - `CommandGroup.TempDir` 削除
+   - `Command.Dir` → `Command.WorkDir` に名称変更
+
+2. TOML パーサーレベルのバリデーション
+   - 廃止フィールド存在時にエラー表示
+
+### 12.2 Phase 2: 一時ディレクトリ機能
+
+**実装項目**:
+1. `TempDirManager` インターフェース実装
+   - `DefaultTempDirManager` の実装
+   - `Create()`: プレフィックス付きディレクトリ生成
+   - `Cleanup()`: 削除とエラーハンドリング
+
+2. `GroupExecutor` への統合
+   - グループレベルでワークディレクトリ決定
+   - `group.ExpandedVars["__runner_workdir"]` への直接設定
+   - `defer` でクリーンアップ登録
+
+3. `--keep-temp-dirs` フラグ実装
+   - コマンドラインフラグの追加
+   - 削除処理への反映
+
+### 12.3 Phase 3: 変数展開
+
+**実装項目**:
+1. 定数の追加
+   - `AutoVarKeyWorkDir` 定数の追加（`internal/runner/variable`）
+
+2. `Command` 型の変更
+   - `Vars` フィールドの追加（未展開の変数定義）
+   - `ExpandedVars` フィールドの削除（実行時に動的構築）
+
+3. `GroupExecutor` への統合
+   - グループ実行時に `group.ExpandedVars["__runner_workdir"]` に直接設定
+   - `buildVarsForCommand()` 実装: グループ変数とコマンド変数を統合
+   - `expandCommand()` 実装: 変数展開を一度だけ実行（新しいインスタンスを返す）
+
+4. パストラバーサル検証
+   - 絶対パス要件
+   - 相対パスコンポーネント検出
+
+### 12.4 Phase 4: テストとドキュメント
+
+**実装項目**:
+1. 単体テスト
+   - `TempDirManager` のテスト
+   - 変数展開のテスト（`__runner_workdir` を含む）
+   - エラーハンドリングのテスト
+
+2. 統合テスト
+   - グループ実行全体のライフサイクル
+   - 複数グループでの独立性
+
+3. ドキュメント更新
+   - ユーザードキュメント
+   - サンプルファイル
+   - CHANGELOG
+
+## 13. 設計パターン
+
+### 13.1 Fail-Safe パターン
+
+エラー時も確実にリソースのクリーンアップを実施するため、`defer` パターンを採用：
+
+```
+グループ実行開始
+  ├─ ワークディレクトリ決定
+  ├─ group.ExpandedVars["__runner_workdir"] に直接設定
+  ├─ defer CleanupTempDir 登録 ← ここで登録
+  ├─ コマンド実行ループ
+  │   └─ エラー可能性あり
+  ├─ グループ実行終了
+  └─ defer 実行 ← エラー時も成功時も実行
+```
+
+この設計により、複数の異なる終了パスでも確実にクリーンアップが実行される。
+
+### 13.2 状態管理パターン
+
+グループレベルの状態は `group.ExpandedVars` に直接設定：
+
+**状態情報**:
+- ワークディレクトリ（`__runner_workdir` として提供）
+- 実行時刻（`__runner_datetime`）
+- プロセスID（`__runner_pid`）
+
+**ライフサイクル**:
+1. グループ実行開始時: `resolveGroupWorkDir()` でワークディレクトリを決定
+2. 決定した `workdir` を `group.ExpandedVars["__runner_workdir"]` に直接設定
+3. 既存の `config.ExpandString` で変数展開を実行
+
+**利点**:
+- シンプルで直接的な実装（余計な間接化がない）
+- 新しい型（GroupContext）が不要
+- 既存の変数展開機構をそのまま活用
+- 一貫した変数管理パターン
+
+### 13.3 Strategy パターン
+
+ワークディレクトリ決定は優先順位に基づく Strategy パターン：
+
+```
+ResolveWorkDir:
+  if Command.WorkDir != "" → strategy 1 (コマンド優先)
+  else if Group.WorkDir != "" → strategy 2 (グループ優先)
+  else → strategy 3 (自動一時ディレクトリ)
+```
+
+### 13.4 Composition パターン
+
+`GroupExecutor` は複数のコンポーネントを合成：
+
+```
+GroupExecutor
+  ├─ TempDirManager (一時ディレクトリ生成・管理)
+  ├─ config.ExpandString (変数展開)
+  └─ CommandExecutor (コマンド実行)
+```
+
+各コンポーネントは独立し、テスト可能で再利用可能。
+
+## 14. 関連ドキュメント
+
+- **詳細仕様書** (`03_specification.md`): インターフェース定義、API 仕様、実装詳細
+- **要件定義書** (`01_requirements.md`): 機能要件、非機能要件、テスト要件
+
+## 15. まとめ
+
+このアーキテクチャ設計は、3階層の複雑な設定を2階層に簡素化し、デフォルトで一時ディレクトリを使用することでセキュリティと利便性を同時に実現します。
+
+**主要な特性**:
+
+✅ **シンプル**: 優先順位が明確で理解しやすい（3階層 → 2階層）
+
+✅ **セキュリティファースト**: デフォルトで一時ディレクトリ使用、自動削除
+
+✅ **信頼性**: `defer` パターンでエラー時も確実にクリーンアップ
+
+✅ **柔軟性**: `%{__runner_workdir}` 変数でパスアクセスを簡素化
+
+✅ **拡張性**: 既存コンポーネントとの良好な統合、インターフェースベースの設計
+
+**セキュリティ側面**:
+- パーミッション: 0700（所有者のみアクセス可能）
+- 確実な削除: エラー時も実施
+- パストラバーサル対策: 絶対パス要件、コンポーネント検証
+- 自動クリーンアップ: ユーザー忘却の排除
