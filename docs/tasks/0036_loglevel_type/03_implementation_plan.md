@@ -259,7 +259,7 @@ func (l LogLevel) String() string {
 
 **手順**:
 1. 上記コードを `config.go` に追加
-2. import に `log/slog` および `strings` を追加
+2. import に `fmt`, `log/slog` および `strings` を追加
 3. テストを実行 (`go test -tags test -v ./internal/runner/runnertypes`)
 4. すべてのテストが成功することを確認
 5. リンターを実行 (`make lint`)

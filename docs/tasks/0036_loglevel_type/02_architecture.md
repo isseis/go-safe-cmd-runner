@@ -187,7 +187,6 @@ TOML File (log_level = "debg") → UnmarshalText() → エラー返却 → confi
    - `ToSlogLevel()` がエラーを返す
    - `slog.Level(0)` を返す（ゼロ値）
    - 呼び出し元が明示的にエラーを処理
-   - 呼び出し元がデフォルト値（`slog.LevelInfo`）を設定する責務を持つ
    - アプリケーションは起動せず、エラーメッセージを表示
 
 **理由**:

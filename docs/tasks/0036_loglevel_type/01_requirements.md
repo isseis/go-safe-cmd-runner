@@ -112,7 +112,7 @@ LogLevel を専用のカスタム型として定義し、`encoding.TextUnmarshal
 
 ### 関連する既存の実装
 
-- `RiskLevel` 型: [runnertypes/config.go:163-234](../../internal/runner/runnertypes/config.go#L163-L234)
+- `RiskLevel` 型: [runnertypes/config.go:163-234](../../../internal/runner/runnertypes/config.go#L163-L234)
   - 同様のカスタム型 + バリデーションのパターン
   - `ParseRiskLevel()` による文字列からの変換
 
