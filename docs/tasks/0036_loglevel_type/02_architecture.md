@@ -84,10 +84,11 @@ func (l *LogLevel) UnmarshalText(text []byte) error {
 
 ```go
 // ToSlogLevel converts LogLevel to slog.Level for use with the slog package.
+// Returns slog.Level(0) on error, allowing the caller to handle the default value explicitly.
 func (l LogLevel) ToSlogLevel() (slog.Level, error) {
 	var level slog.Level
 	if err := level.UnmarshalText([]byte(l)); err != nil {
-		return slog.LevelInfo, fmt.Errorf("failed to convert log level %q to slog.Level: %w", l, err)
+		return slog.Level(0), fmt.Errorf("failed to convert log level %q to slog.Level: %w", l, err)
 	}
 	return level, nil
 }
@@ -95,8 +96,9 @@ func (l LogLevel) ToSlogLevel() (slog.Level, error) {
 
 **設計の根拠**:
 - `slog.Level` の `UnmarshalText()` を利用することで、標準ライブラリとの整合性を保つ
-- エラー時のデフォルト値として `slog.LevelInfo` を返す
-- エラーはラップして詳細な情報を提供
+- 責務を「変換」に集中させ、エラーハンドリングは呼び出し元に委譲する
+- エラー時には `slog.Level(0)` を返し、呼び出し元が明示的にデフォルト値を設定する
+- これにより、エラー発生時の動作がより予測可能になり、暗黙のフォールバックを回避できる
 
 ### 3.4 String メソッド
 
@@ -148,7 +150,13 @@ TOML File → go-toml/v2 → LogLevel.UnmarshalText() → GlobalConfig.LogLevel 
 
 #### ロガー初期化時
 ```
-GlobalConfig.LogLevel → LogLevel.ToSlogLevel() → slog.Level → Handler Options
+GlobalConfig.LogLevel → LogLevel.ToSlogLevel() → slog.Level or error
+                                                      ↓
+                                            エラー発生時は呼び出し元で処理
+                                                      ↓
+                                         デフォルト値設定 (slog.LevelInfo)
+                                                      ↓
+                                              Handler Options
 ```
 
 #### エラーケース
@@ -177,8 +185,15 @@ TOML File (log_level = "debg") → UnmarshalText() → エラー返却 → confi
 
 2. **slog.Level 変換時のエラー**:
    - `ToSlogLevel()` がエラーを返す
-   - `bootstrap.SetupLogging()` が失敗
+   - `slog.Level(0)` を返す（ゼロ値）
+   - 呼び出し元が明示的にエラーを処理
+   - 呼び出し元がデフォルト値（`slog.LevelInfo`）を設定する責務を持つ
    - アプリケーションは起動せず、エラーメッセージを表示
+
+**理由**:
+- 責務の明確化: `ToSlogLevel()` は「変換」のみを行い、エラーハンドリングは呼び出し元に委譲
+- 暗黙のフォールバックを避け、エラー発生時の動作がより予測可能
+- 呼び出し元が明示的にデフォルト値を設定することで、意図した動作を表現できる
 
 ## 6. 既存コードへの影響
 
