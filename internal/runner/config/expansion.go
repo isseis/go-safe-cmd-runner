@@ -568,8 +568,8 @@ func ExpandGlobal(spec *runnertypes.GlobalSpec) (*runnertypes.RuntimeGlobal, err
 	}
 
 	// 1. Process FromEnv (TODO: To be implemented in Task 0033)
-	// For now, skip FromEnv processing as it requires environment.Filter
-
+	// FromEnv processing imports system environment variables as internal variables according to the FromEnv specification.
+	// For now, skip FromEnv processing as it requires environment.Filter.
 	// 2. Process Vars
 	expandedVars, err := ProcessVars(spec.Vars, runtime.ExpandedVars, "global")
 	if err != nil {
