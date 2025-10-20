@@ -737,12 +737,12 @@ Phase 1 → Phase 2 → Phase 3 → Phase 5 → Phase 6 → Phase 7
 ## 7. 実装チェックリスト
 
 ### Phase 1: Spec層の型定義
-- [ ] `ConfigSpec` を定義
-- [ ] `GlobalSpec` を定義
-- [ ] `GroupSpec` を定義
-- [ ] `CommandSpec` を定義
-- [ ] `GetMaxRiskLevel()`, `HasUserGroupSpecification()` を実装
-- [ ] Spec層のテストを実装
+- [x] `ConfigSpec` を定義
+- [x] `GlobalSpec` を定義
+- [x] `GroupSpec` を定義
+- [x] `CommandSpec` を定義
+- [x] `GetMaxRiskLevel()`, `HasUserGroupSpecification()` を実装
+- [x] Spec層のテストを実装
 
 ### Phase 2: Runtime層の型定義
 - [ ] `RuntimeGlobal` を定義
