@@ -10,7 +10,7 @@
 
 #### 2.1.1 削除対象フィールド
 
-**変更対象**: `internal/runner/types/config_types.go`
+**変更対象**: `internal/runner/runnertypes/config.go`
 
 ```go
 // 変更前
@@ -695,7 +695,7 @@ func (e *DefaultGroupExecutor) expandCommand(
 
 ### 6.2 Command 型の変更
 
-**ファイル**: `internal/runner/types/config_types.go`
+**ファイル**: `internal/runner/runnertypes/config.go`
 
 ```go
 type Command struct {
@@ -829,7 +829,7 @@ import (
     "fmt"
 
     "go-safe-cmd-runner/internal/logging"
-    "go-safe-cmd-runner/internal/runner/types"
+    "go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
 // DefaultGroupExecutor: グループ実行の標準実装
@@ -914,7 +914,7 @@ func (e *DefaultGroupExecutor) ExecuteGroup(
 //   - 固定ディレクトリの場合: tempDirManager は nil
 //   - 一時ディレクトリの場合: tempDirManager は非nil（クリーンアップに使用）
 func (e *DefaultGroupExecutor) resolveGroupWorkDir(
-    group *types.CommandGroup,
+    group *runnertypes.CommandGroup,
 ) (string, TempDirManager, error) {
     // グループレベル WorkDir が指定されている?
     if group.WorkDir != "" {
@@ -940,7 +940,7 @@ func (e *DefaultGroupExecutor) resolveGroupWorkDir(
 
 // handleCommandOutput: コマンド出力を処理（既存ロジック）
 func (e *DefaultGroupExecutor) handleCommandOutput(
-    cmd *types.Command,
+    cmd *runnertypes.Command,
     output Output,
 ) {
     // 既存のハンドリングロジック
