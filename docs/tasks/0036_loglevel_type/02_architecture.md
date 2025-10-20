@@ -57,25 +57,28 @@ const (
 // UnmarshalText implements the encoding.TextUnmarshaler interface.
 // This enables validation during TOML parsing.
 func (l *LogLevel) UnmarshalText(text []byte) error {
-	s := LogLevel(text)
-	switch s {
+	s := strings.ToLower(string(text))
+	switch LogLevel(s) {
 	case LogLevelDebug, LogLevelInfo, LogLevelWarn, LogLevelError:
-		*l = s
+		*l = LogLevel(s)
 		return nil
 	case "":
 		// Empty string defaults to info level
 		*l = LogLevelInfo
 		return nil
 	default:
-		return fmt.Errorf("invalid log level %q: must be one of: debug, info, warn, error", s)
+		return fmt.Errorf("invalid log level %q: must be one of: debug, info, warn, error", string(text))
 	}
 }
 ```
 
 **設計の根拠**:
 - `encoding.TextUnmarshaler` インターフェースを実装することで、TOML パーサーが自動的にバリデーションを実行
+- `strings.ToLower()` で入力を小文字に正規化することで、大文字小文字を区別しない動作を実現
+- `slog.Level.UnmarshalText()` の挙動と一貫性を持たせる
 - 空文字列を info レベルとして扱うことで、デフォルト動作を明確化
 - エラーメッセージに有効な値のリストを含めることで、ユーザビリティを向上
+- エラーメッセージには元の入力値（正規化前）を含めることで、ユーザーに分かりやすいフィードバックを提供
 
 ### 3.3 slog.Level への変換
 
