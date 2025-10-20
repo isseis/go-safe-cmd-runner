@@ -32,36 +32,7 @@ var (
 
 const defaultTestCommandName = "test"
 
-// setupTestEnv sets up a clean test environment.
-func setupTestEnv(t *testing.T, envVars map[string]string) {
-	t.Helper()
-
-	// Set up the test environment variables
-	for key, value := range envVars {
-		t.Setenv(key, value)
-	}
-}
-
-// setupSafeTestEnv sets up a minimal safe environment for tests.
-// This is useful for security-related tests where we want to ensure a clean, minimal environment.
-func setupSafeTestEnv(t *testing.T) {
-	t.Helper()
-	safeEnv := map[string]string{
-		"PATH": "/usr/bin:/bin",
-		"HOME": "/home/test",
-		"USER": "test",
-	}
-	setupTestEnv(t, safeEnv)
-}
-
 var ErrExecutionFailed = errors.New("execution failed")
-
-// MockResourceManager is an alias to the shared mock implementation
-type MockResourceManager = runnertesting.MockResourceManager
-
-func (m *MockResourceManager) RecordAnalysis(analysis *resource.ResourceAnalysis) {
-	m.Called(analysis)
-}
 
 // MockSecurityValidator for output testing
 type MockSecurityValidator struct {
@@ -73,47 +44,10 @@ func (m *MockSecurityValidator) ValidateOutputWritePermission(outputPath string,
 	return args.Error(0)
 }
 
-// SetupDefaultMockBehavior sets up common default mock expectations for basic test scenarios
-func (m *MockResourceManager) SetupDefaultMockBehavior() {
-	// Default ValidateOutputPath behavior - allows any output path
-	m.On("ValidateOutputPath", mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil).Maybe()
-
-	// Default ExecuteCommand behavior - returns successful execution
-	defaultResult := &resource.ExecutionResult{
-		ExitCode: 0,
-		Stdout:   "",
-		Stderr:   "",
-	}
-	m.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(defaultResult, nil).Maybe()
-}
-
-// SetupSuccessfulMockExecution sets up mock for successful command execution with custom output
-func (m *MockResourceManager) SetupSuccessfulMockExecution(stdout, stderr string) {
-	m.On("ValidateOutputPath", mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
-	result := &resource.ExecutionResult{
-		ExitCode: 0,
-		Stdout:   stdout,
-		Stderr:   stderr,
-	}
-	m.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(result, nil)
-}
-
-// SetupFailedMockExecution sets up mock for failed command execution with custom error
-func (m *MockResourceManager) SetupFailedMockExecution(err error) {
-	m.On("ValidateOutputPath", mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
-	m.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, err)
-}
-
-// NewMockResourceManagerWithDefaults creates a new MockResourceManager with default behavior setup
-func NewMockResourceManagerWithDefaults() *MockResourceManager {
-	mockRM := &MockResourceManager{}
-	mockRM.SetupDefaultMockBehavior()
-	return mockRM
-}
-
 func TestNewRunner(t *testing.T) {
-	config := &runnertypes.Config{
-		Global: runnertypes.GlobalConfig{
+	config := &runnertypes.ConfigSpec{
+		Version: "1.0",
+		Global: runnertypes.GlobalSpec{
 			Timeout:  3600,
 			WorkDir:  "/tmp",
 			LogLevel: "info",
@@ -178,8 +112,9 @@ func TestNewRunner(t *testing.T) {
 }
 
 func TestNewRunnerWithSecurity(t *testing.T) {
-	config := &runnertypes.Config{
-		Global: runnertypes.GlobalConfig{
+	config := &runnertypes.ConfigSpec{
+		Version: "1.0",
+		Global: runnertypes.GlobalSpec{
 			Timeout:  3600,
 			WorkDir:  "/tmp",
 			LogLevel: "info",
@@ -225,17 +160,17 @@ func TestRunner_ExecuteGroup(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		group       runnertypes.CommandGroup
+		group       runnertypes.GroupSpec
 		mockResults []*resource.ExecutionResult
 		mockErrors  []error
 		expectedErr error
 	}{
 		{
 			name: "successful execution",
-			group: runnertypes.CommandGroup{
+			group: runnertypes.GroupSpec{
 				Name:        "test-group",
 				Description: "Test group",
-				Commands: []runnertypes.Command{
+				Commands: []runnertypes.CommandSpec{
 					{
 						Name: "test-cmd-1",
 						Cmd:  "echo",
@@ -257,9 +192,9 @@ func TestRunner_ExecuteGroup(t *testing.T) {
 		},
 		{
 			name: "command execution error",
-			group: runnertypes.CommandGroup{
+			group: runnertypes.GroupSpec{
 				Name: "test-group",
-				Commands: []runnertypes.Command{
+				Commands: []runnertypes.CommandSpec{
 					{
 						Name: "test-cmd-1",
 						Cmd:  "echo",
@@ -273,9 +208,9 @@ func TestRunner_ExecuteGroup(t *testing.T) {
 		},
 		{
 			name: "command exit code error",
-			group: runnertypes.CommandGroup{
+			group: runnertypes.GroupSpec{
 				Name: "test-group",
-				Commands: []runnertypes.Command{
+				Commands: []runnertypes.CommandSpec{
 					{
 						Name: "test-cmd-1",
 						Cmd:  "false",
@@ -290,13 +225,14 @@ func TestRunner_ExecuteGroup(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config := &runnertypes.Config{
-				Global: runnertypes.GlobalConfig{
+			config := &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Global: runnertypes.GlobalSpec{
 					Timeout:  3600,
 					WorkDir:  "/tmp",
 					LogLevel: "info",
 				},
-				Groups: []runnertypes.CommandGroup{tt.group},
+				Groups: []runnertypes.GroupSpec{tt.group},
 			}
 
 			mockResourceManager := new(MockResourceManager)
@@ -307,16 +243,16 @@ func TestRunner_ExecuteGroup(t *testing.T) {
 			for i, cmd := range config.Groups[0].Commands {
 				// Create expected command with EffectiveWorkdir set
 				expectedCmd := cmd
-				if expectedCmd.Dir == "" {
+				if expectedCmd.WorkDir == "" {
 					expectedCmd.EffectiveWorkdir = config.Global.WorkDir
 				} else {
-					expectedCmd.EffectiveWorkdir = expectedCmd.Dir
+					expectedCmd.EffectiveWorkdir = expectedCmd.WorkDir
 				}
 				mockResourceManager.On("ExecuteCommand", mock.Anything, expectedCmd, &config.Groups[0], mock.Anything).Return(tt.mockResults[i], tt.mockErrors[i])
 			}
 
 			ctx := context.Background()
-			err = runner.ExecuteGroup(ctx, config.Groups[0])
+			err = runner.ExecuteGroup(ctx, &config.Groups[0])
 
 			if tt.expectedErr != nil {
 				assert.Error(t, err)
