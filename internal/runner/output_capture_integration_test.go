@@ -1,20 +1,47 @@
 // This file contains integration tests for output capture functionality
 
-//go:build skip_integration_tests
-
-package runner_test
+package runner
 
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	runnertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/testing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+// MockResourceManager is an alias to the shared mock implementation
+type MockResourceManager = runnertesting.MockResourceManager
+
+// setupTestEnv sets up a test environment with specific environment variables
+func setupTestEnv(t *testing.T, env map[string]string) {
+	t.Helper()
+	// Clear all environment variables
+	os.Clearenv()
+	// Set new environment
+	for k, v := range env {
+		if err := os.Setenv(k, v); err != nil {
+			t.Fatalf("Failed to set env var %s: %v", k, err)
+		}
+	}
+}
+
+// setupSafeTestEnv sets up a minimal safe test environment
+func setupSafeTestEnv(t *testing.T) {
+	t.Helper()
+	safeEnv := map[string]string{
+		"PATH": "/usr/bin:/bin",
+		"HOME": "/home/test",
+		"USER": "test",
+	}
+	setupTestEnv(t, safeEnv)
+}
 
 // TestRunner_OutputCaptureIntegration tests basic output capture integration
 func TestRunner_OutputCaptureIntegration(t *testing.T) {
@@ -58,16 +85,17 @@ func TestRunner_OutputCaptureIntegration(t *testing.T) {
 			tempDir := t.TempDir()
 
 			// Create basic configuration with output capture
-			cfg := &runnertypes.Config{
-				Global: runnertypes.GlobalConfig{
+			cfg := &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Global: runnertypes.GlobalSpec{
 					Timeout:       30,
 					WorkDir:       tempDir,
 					MaxOutputSize: 1024,
 				},
-				Groups: []runnertypes.CommandGroup{
+				Groups: []runnertypes.GroupSpec{
 					{
 						Name: "test-group",
-						Commands: []runnertypes.Command{
+						Commands: []runnertypes.CommandSpec{
 							{
 								Name:   "test-cmd",
 								Cmd:    "echo",
@@ -92,7 +120,7 @@ func TestRunner_OutputCaptureIntegration(t *testing.T) {
 
 			// Execute the group
 			ctx := context.Background()
-			err = runner.ExecuteGroup(ctx, cfg.Groups[0])
+			err = runner.ExecuteGroup(ctx, &cfg.Groups[0])
 
 			if tt.expectError {
 				require.Error(t, err, "Should return error for %s", tt.description)
@@ -149,16 +177,17 @@ func TestRunner_OutputCaptureSecurityValidation(t *testing.T) {
 			tempDir := t.TempDir()
 
 			// Create configuration with potentially problematic output path
-			cfg := &runnertypes.Config{
-				Global: runnertypes.GlobalConfig{
+			cfg := &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Global: runnertypes.GlobalSpec{
 					Timeout:       30,
 					WorkDir:       tempDir,
 					MaxOutputSize: 1024,
 				},
-				Groups: []runnertypes.CommandGroup{
+				Groups: []runnertypes.GroupSpec{
 					{
 						Name: "test-group",
-						Commands: []runnertypes.Command{
+						Commands: []runnertypes.CommandSpec{
 							{
 								Name:   "test-cmd",
 								Cmd:    "echo",
@@ -206,7 +235,7 @@ func TestRunner_OutputCaptureSecurityValidation(t *testing.T) {
 
 			// Execute the group
 			ctx := context.Background()
-			err = runner.ExecuteGroup(ctx, cfg.Groups[0])
+			err = runner.ExecuteGroup(ctx, &cfg.Groups[0])
 
 			if tt.expectError != "" {
 				require.Error(t, err, "Security validation should prevent execution for %s", tt.description)
