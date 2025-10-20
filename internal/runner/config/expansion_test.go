@@ -2378,3 +2378,298 @@ func TestExpandString_BackingArrayBug(t *testing.T) {
 	assert.Equal(t, expectedChain, circErr.Chain,
 		"Chain should show the full path to the circular reference without corruption")
 }
+
+// TestExpandGlobal tests the ExpandGlobal function for Spec/Runtime separation
+func TestExpandGlobal(t *testing.T) {
+	tests := []struct {
+		name    string
+		spec    *runnertypes.GlobalSpec
+		want    *runnertypes.RuntimeGlobal
+		wantErr bool
+	}{
+		{
+			name: "basic expansion",
+			spec: &runnertypes.GlobalSpec{
+				Vars: []string{"PREFIX=/opt"},
+				Env:  []string{"PATH=%{PREFIX}/bin"},
+			},
+			want: &runnertypes.RuntimeGlobal{
+				ExpandedVars: map[string]string{
+					"PREFIX": "/opt",
+				},
+				ExpandedEnv: map[string]string{
+					"PATH": "/opt/bin",
+				},
+				ExpandedVerifyFiles: []string{},
+			},
+			wantErr: false,
+		},
+		{
+			name: "with verify_files",
+			spec: &runnertypes.GlobalSpec{
+				Vars:        []string{"APP=/opt/app"},
+				VerifyFiles: []string{"%{APP}/config.toml", "%{APP}/data.db"},
+			},
+			want: &runnertypes.RuntimeGlobal{
+				ExpandedVars: map[string]string{
+					"APP": "/opt/app",
+				},
+				ExpandedEnv:         map[string]string{},
+				ExpandedVerifyFiles: []string{"/opt/app/config.toml", "/opt/app/data.db"},
+			},
+			wantErr: false,
+		},
+		{
+			name: "undefined variable error",
+			spec: &runnertypes.GlobalSpec{
+				Env: []string{"PATH=%{UNDEFINED}"},
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "empty spec",
+			spec: &runnertypes.GlobalSpec{},
+			want: &runnertypes.RuntimeGlobal{
+				ExpandedVars:        map[string]string{},
+				ExpandedEnv:         map[string]string{},
+				ExpandedVerifyFiles: []string{},
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := config.ExpandGlobal(tt.spec)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ExpandGlobal() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr {
+				assert.NotNil(t, got)
+				assert.Equal(t, tt.spec, got.Spec, "Spec reference should be set")
+				assert.Equal(t, tt.want.ExpandedVars, got.ExpandedVars, "ExpandedVars mismatch")
+				assert.Equal(t, tt.want.ExpandedEnv, got.ExpandedEnv, "ExpandedEnv mismatch")
+				assert.Equal(t, tt.want.ExpandedVerifyFiles, got.ExpandedVerifyFiles, "ExpandedVerifyFiles mismatch")
+			}
+		})
+	}
+}
+
+// TestExpandGroup tests the ExpandGroup function for Spec/Runtime separation
+func TestExpandGroup(t *testing.T) {
+	globalVars := map[string]string{
+		"GLOBAL_VAR": "global_value",
+		"BASE_DIR":   "/opt/base",
+	}
+
+	tests := []struct {
+		name    string
+		spec    *runnertypes.GroupSpec
+		want    *runnertypes.RuntimeGroup
+		wantErr bool
+	}{
+		{
+			name: "basic expansion with inheritance",
+			spec: &runnertypes.GroupSpec{
+				Name: "test-group",
+				Vars: []string{"GROUP_VAR=group_value"},
+				Env:  []string{"GROUP_ENV=%{GROUP_VAR}"},
+			},
+			want: &runnertypes.RuntimeGroup{
+				ExpandedVars: map[string]string{
+					"GLOBAL_VAR": "global_value",
+					"BASE_DIR":   "/opt/base",
+					"GROUP_VAR":  "group_value",
+				},
+				ExpandedEnv: map[string]string{
+					"GROUP_ENV": "group_value",
+				},
+				ExpandedVerifyFiles: []string{},
+			},
+			wantErr: false,
+		},
+		{
+			name: "reference global variables",
+			spec: &runnertypes.GroupSpec{
+				Name: "test-group",
+				Vars: []string{"APP_DIR=%{BASE_DIR}/app"},
+				Env:  []string{"PATH=%{APP_DIR}/bin"},
+			},
+			want: &runnertypes.RuntimeGroup{
+				ExpandedVars: map[string]string{
+					"GLOBAL_VAR": "global_value",
+					"BASE_DIR":   "/opt/base",
+					"APP_DIR":    "/opt/base/app",
+				},
+				ExpandedEnv: map[string]string{
+					"PATH": "/opt/base/app/bin",
+				},
+				ExpandedVerifyFiles: []string{},
+			},
+			wantErr: false,
+		},
+		{
+			name: "override global variable",
+			spec: &runnertypes.GroupSpec{
+				Name: "test-group",
+				Vars: []string{"BASE_DIR=/custom/base"},
+			},
+			want: &runnertypes.RuntimeGroup{
+				ExpandedVars: map[string]string{
+					"GLOBAL_VAR": "global_value",
+					"BASE_DIR":   "/custom/base",
+				},
+				ExpandedEnv:         map[string]string{},
+				ExpandedVerifyFiles: []string{},
+			},
+			wantErr: false,
+		},
+		{
+			name: "with verify_files",
+			spec: &runnertypes.GroupSpec{
+				Name:        "test-group",
+				VerifyFiles: []string{"%{BASE_DIR}/group.conf"},
+			},
+			want: &runnertypes.RuntimeGroup{
+				ExpandedVars: map[string]string{
+					"GLOBAL_VAR": "global_value",
+					"BASE_DIR":   "/opt/base",
+				},
+				ExpandedEnv:         map[string]string{},
+				ExpandedVerifyFiles: []string{"/opt/base/group.conf"},
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := config.ExpandGroup(tt.spec, globalVars)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ExpandGroup() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr {
+				assert.NotNil(t, got)
+				assert.Equal(t, tt.spec, got.Spec, "Spec reference should be set")
+				assert.Equal(t, tt.want.ExpandedVars, got.ExpandedVars, "ExpandedVars mismatch")
+				assert.Equal(t, tt.want.ExpandedEnv, got.ExpandedEnv, "ExpandedEnv mismatch")
+				assert.Equal(t, tt.want.ExpandedVerifyFiles, got.ExpandedVerifyFiles, "ExpandedVerifyFiles mismatch")
+				assert.Empty(t, got.Commands, "Commands should be empty (not expanded by ExpandGroup)")
+			}
+		})
+	}
+}
+
+// TestExpandCommand tests the ExpandCommand function for Spec/Runtime separation
+func TestExpandCommand(t *testing.T) {
+	groupVars := map[string]string{
+		"GROUP_VAR": "group_value",
+		"BUILD_DIR": "/tmp/build",
+	}
+
+	tests := []struct {
+		name      string
+		spec      *runnertypes.CommandSpec
+		groupName string
+		want      *runnertypes.RuntimeCommand
+		wantErr   bool
+	}{
+		{
+			name: "basic command expansion",
+			spec: &runnertypes.CommandSpec{
+				Name: "test-cmd",
+				Cmd:  "/usr/bin/make",
+				Args: []string{"test", "-C", "%{BUILD_DIR}"},
+			},
+			groupName: "test-group",
+			want: &runnertypes.RuntimeCommand{
+				ExpandedCmd:  "/usr/bin/make",
+				ExpandedArgs: []string{"test", "-C", "/tmp/build"},
+				ExpandedVars: map[string]string{
+					"GROUP_VAR": "group_value",
+					"BUILD_DIR": "/tmp/build",
+				},
+				ExpandedEnv: map[string]string{},
+			},
+			wantErr: false,
+		},
+		{
+			name: "command with vars and env",
+			spec: &runnertypes.CommandSpec{
+				Name: "test-cmd",
+				Cmd:  "/bin/echo",
+				Args: []string{"%{OUTPUT}"},
+				Vars: []string{"OUTPUT=%{BUILD_DIR}/output.txt"},
+				Env:  []string{"LOG_FILE=%{OUTPUT}"},
+			},
+			groupName: "test-group",
+			want: &runnertypes.RuntimeCommand{
+				ExpandedCmd:  "/bin/echo",
+				ExpandedArgs: []string{"/tmp/build/output.txt"},
+				ExpandedVars: map[string]string{
+					"GROUP_VAR": "group_value",
+					"BUILD_DIR": "/tmp/build",
+					"OUTPUT":    "/tmp/build/output.txt",
+				},
+				ExpandedEnv: map[string]string{
+					"LOG_FILE": "/tmp/build/output.txt",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "command with variable in cmd",
+			spec: &runnertypes.CommandSpec{
+				Name: "test-cmd",
+				Cmd:  "%{BUILD_DIR}/custom-tool",
+				Args: []string{"arg1"},
+			},
+			groupName: "test-group",
+			want: &runnertypes.RuntimeCommand{
+				ExpandedCmd:  "/tmp/build/custom-tool",
+				ExpandedArgs: []string{"arg1"},
+				ExpandedVars: map[string]string{
+					"GROUP_VAR": "group_value",
+					"BUILD_DIR": "/tmp/build",
+				},
+				ExpandedEnv: map[string]string{},
+			},
+			wantErr: false,
+		},
+		{
+			name: "undefined variable in args",
+			spec: &runnertypes.CommandSpec{
+				Name: "test-cmd",
+				Cmd:  "/bin/echo",
+				Args: []string{"%{UNDEFINED}"},
+			},
+			groupName: "test-group",
+			want:      nil,
+			wantErr:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := config.ExpandCommand(tt.spec, groupVars, tt.groupName)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ExpandCommand() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr {
+				assert.NotNil(t, got)
+				assert.Equal(t, tt.spec, got.Spec, "Spec reference should be set")
+				assert.Equal(t, tt.want.ExpandedCmd, got.ExpandedCmd, "ExpandedCmd mismatch")
+				assert.Equal(t, tt.want.ExpandedArgs, got.ExpandedArgs, "ExpandedArgs mismatch")
+				assert.Equal(t, tt.want.ExpandedVars, got.ExpandedVars, "ExpandedVars mismatch")
+				assert.Equal(t, tt.want.ExpandedEnv, got.ExpandedEnv, "ExpandedEnv mismatch")
+				// EffectiveWorkDir and EffectiveTimeout are not set by ExpandCommand
+				assert.Equal(t, "", got.EffectiveWorkDir, "EffectiveWorkDir should not be set")
+				assert.Equal(t, 0, got.EffectiveTimeout, "EffectiveTimeout should not be set")
+			}
+		})
+	}
+}

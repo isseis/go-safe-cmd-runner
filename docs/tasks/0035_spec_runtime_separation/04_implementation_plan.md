@@ -752,10 +752,10 @@ Phase 1 → Phase 2 → Phase 3 → Phase 5 → Phase 6 → Phase 7
 - [x] Runtime層のテストを実装
 
 ### Phase 3: 展開関数の実装
-- [ ] `ExpandGlobal()` を実装
-- [ ] `ExpandGroup()` を実装
-- [ ] `ExpandCommand()` を実装
-- [ ] 展開関数のテストを実装
+- [x] `ExpandGlobal()` を実装
+- [x] `ExpandGroup()` を実装
+- [x] `ExpandCommand()` を実装
+- [x] 展開関数のテストを実装
 
 ### Phase 4: TOMLローダーの更新
 - [ ] `Load()` を更新（`ConfigSpec` を返す）
