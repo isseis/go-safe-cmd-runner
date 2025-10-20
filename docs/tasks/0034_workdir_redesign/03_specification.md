@@ -38,7 +38,8 @@ type GlobalConfig struct {
 
 type CommandGroup struct {
     // TempDir は削除（デフォルトで一時ディレクトリを使用するため不要）
-    WorkDir string `toml:"workdir"`
+    WorkDir string `toml:"workdir"`  // TOMLから読み込んだ生の値
+    ExpandedWorkDir string            // 展開済みの物理/仮想パス（実行時に設定）
     // ... その他のフィールド
 }
 
@@ -83,13 +84,17 @@ Error: toml: line Z: unknown field 'dir'
 
 #### 2.2.2 ワークディレクトリの設定
 
-実行時のワークディレクトリ情報は `group.ExpandedVars` に直接設定されます：
+実行時のワークディレクトリ情報は2箇所に設定されます：
 
-1. グループ実行開始時に `resolveGroupWorkDir()` でワークディレクトリを決定
-2. 決定した `workDir` を `group.ExpandedVars["__runner_workdir"]` に直接設定
+1. グループ実行開始時に `resolveGroupWorkDir()` でワークディレクトリを決定・展開
+2. 決定した物理/仮想パスを以下に設定:
+   - `group.ExpandedWorkDir`: 後続処理（`resolveCommandWorkDir` など）で参照
+   - `group.ExpandedVars["__runner_workdir"]`: コマンドレベルの変数展開で参照
 3. コマンド実行時に、グループ変数とコマンド変数を統合して展開
 
-**利点**:
+**設計の利点**:
+- `group.WorkDir`: TOMLの生の値を保持（トレーサビリティ）
+- `group.ExpandedWorkDir`: 展開済みの値を保持（処理ロジックで使用）
 - シンプルで直接的な実装（余計な間接化がない）
 - `AutoVarProvider` への依存が不要
 - ワークディレクトリの決定と設定が同じスコープ内で完結
@@ -382,7 +387,7 @@ func (e *DefaultGroupExecutor) resolveGroupWorkDir(
 }
 
 // resolveCommandWorkDir: コマンドのワークディレクトリを決定
-// 優先度: Command.ExpandedWorkDir > Group の実際のワークディレクトリ
+// 優先度: Command.ExpandedWorkDir > Group.ExpandedWorkDir
 func (e *DefaultCommandExecutor) resolveCommandWorkDir(
     cmd *runnertypes.Command,
     group *runnertypes.CommandGroup,
@@ -392,10 +397,10 @@ func (e *DefaultCommandExecutor) resolveCommandWorkDir(
         return cmd.ExpandedWorkDir
     }
 
-    // 優先度2: グループの実際のワークディレクトリ
-    // 注: ExecuteGroup で resolveGroupWorkDir により決定済み
-    //     （一時ディレクトリまたは固定ディレクトリの物理パス）
-    return group.WorkDir
+    // 優先度2: グループレベル ExpandedWorkDir
+    // 注: ExecuteGroup で resolveGroupWorkDir により決定・展開済み
+    //     （一時ディレクトリまたは固定ディレクトリの物理/仮想パス）
+    return group.ExpandedWorkDir
 }
 ```
 
@@ -578,8 +583,13 @@ func (r *Runner) ExecuteGroup(
         }()
     }
 
-    // ステップ3: グループレベル変数に __runner_workdir を直接設定
-    // dry-runモードでは仮想パスが設定される
+    // ステップ3: グループの展開済みワークディレクトリを設定
+    // (1) group.ExpandedWorkDir に物理/仮想パスを設定
+    //     dry-runモードでは仮想パスが設定される
+    group.ExpandedWorkDir = workDir
+
+    // (2) グループレベル変数に __runner_workdir を設定
+    //     コマンドレベルの変数展開で参照可能
     group.ExpandedVars[variable.AutoVarPrefix + variable.AutoVarKeyWorkDir] = workDir
 
     // ステップ4: コマンド実行ループ
@@ -713,20 +723,20 @@ type Command struct {
 
 ```go
 // resolveWorkDir: 実際に使用するワークディレクトリを決定
-// 優先度: Command.ExpandedWorkDir > Group.WorkDir
+// 優先度: Command.ExpandedWorkDir > Group.ExpandedWorkDir
 func (e *DefaultCommandExecutor) resolveWorkDir(
     cmd *runnertypes.Command,
     group *runnertypes.CommandGroup,
 ) string {
-    // 優先度1: コマンドレベル WorkDir
+    // 優先度1: コマンドレベル ExpandedWorkDir
     if cmd.ExpandedWorkDir != "" {
         return cmd.ExpandedWorkDir
     }
 
-    // 優先度2: グループレベル WorkDir（ExecuteGroup で決定済み）
-    // 注: この時点で group.WorkDir は物理的なディレクトリパス
+    // 優先度2: グループレベル ExpandedWorkDir（ExecuteGroup で決定・展開済み）
+    // 注: この時点で group.ExpandedWorkDir は物理/仮想ディレクトリパス
     //     （一時ディレクトリまたは固定ディレクトリ）
-    return group.WorkDir
+    return group.ExpandedWorkDir
 }
 ```
 
@@ -865,7 +875,11 @@ func (e *DefaultGroupExecutor) ExecuteGroup(
         }()
     }
 
-    // ステップ3: グループレベル変数に __runner_workdir を直接設定
+    // ステップ3: グループの展開済みワークディレクトリを設定
+    // (1) group.ExpandedWorkDir に物理/仮想パスを設定
+    group.ExpandedWorkDir = workDir
+
+    // (2) グループレベル変数に __runner_workdir を設定
     group.ExpandedVars[variable.AutoVarPrefix + variable.AutoVarKeyWorkDir] = workDir
 
     // ステップ4: コマンド実行ループ
@@ -1273,6 +1287,7 @@ Error: toml: line X: unknown field 'workdir'
 ### Phase 1: 型定義
 - [ ] `Global.WorkDir` を削除
 - [ ] `Group.TempDir` を削除
+- [ ] `CommandGroup.ExpandedWorkDir` フィールドを追加（展開済みワークディレクトリ）
 - [ ] `Command.Dir` → `Command.WorkDir` に変更
 - [ ] `Command.ExpandedWorkDir` フィールドを追加
 
@@ -1288,9 +1303,11 @@ Error: toml: line X: unknown field 'workdir'
 
 ### Phase 3: 変数展開
 - [ ] `AutoVarKeyWorkDir` 定数を追加（`internal/runner/variable`）
-- [ ] `GroupExecutor.ExecuteGroup()` で `group.ExpandedVars["__runner_workdir"]` に直接設定
+- [ ] `GroupExecutor.ExecuteGroup()` で以下を設定:
+  - [ ] `group.ExpandedWorkDir` に展開済みワークディレクトリを設定
+  - [ ] `group.ExpandedVars["__runner_workdir"]` に同じ値を設定
 - [ ] `GroupExecutor.expandCommandWithWorkDir()` を実装（コマンド変数の再展開）
-- [ ] `CommandExecutor.resolveWorkDir()` を実装（ワークディレクトリ決定ロジック）
+- [ ] `CommandExecutor.resolveWorkDir()` を実装（`group.ExpandedWorkDir` を参照）
 
 ### Phase 4: テスト
 - [ ] 単体テスト実装
@@ -1311,4 +1328,5 @@ Error: toml: line X: unknown field 'workdir'
 - デフォルトで一時ディレクトリ使用（セキュリティ向上）
 - `defer` で確実にクリーンアップ（Fail-Safe）
 - `%{__runner_workdir}` 変数で柔軟なパスアクセス
+- 生の値（`WorkDir`）と展開済みの値（`ExpandedWorkDir`）を分離管理
 - 破壊的変更は TOML パーサーレベルで検出
