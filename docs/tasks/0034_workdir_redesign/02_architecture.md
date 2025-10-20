@@ -152,7 +152,7 @@ graph TB
     end
 
     subgraph GroupLayer["グループ実行層"]
-        Runner["Runner.ExecuteGroup()<br/>(internal/runner)"]
+        GroupExecutor["DefaultGroupExecutor<br/>(internal/runner)"]
         TempDirManager["TempDirManager<br/>(新規パッケージ)"]
     end
 
@@ -169,16 +169,16 @@ graph TB
     end
 
     ConfigLoader -->|検証後| Validation
-    Validation -->|設定| Runner
-    Runner -->|生成・管理| TempDirManager
-    Runner -->|展開| ConfigExpander
+    Validation -->|設定| GroupExecutor
+    GroupExecutor -->|生成・管理| TempDirManager
+    GroupExecutor -->|展開| ConfigExpander
     ConfigExpander -->|コマンド| CommandExecutor
     CommandExecutor -->|実行| ResourceManager
     TempDirManager -->|操作| ResourceManager
 
     class ConfigLoader enhanced;
     class Validation enhanced;
-    class Runner enhanced;
+    class GroupExecutor enhanced;
     class TempDirManager new;
     class ConfigExpander existing;
     class CommandExecutor existing;
