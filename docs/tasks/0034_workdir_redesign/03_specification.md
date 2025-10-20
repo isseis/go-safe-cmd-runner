@@ -113,9 +113,9 @@ Error: toml: line Z: unknown field 'dir'
 - **dry-runモードでは実際のディレクトリ操作を行わず、ログ出力のみ**
 
 **アーキテクチャ上の位置づけ**:
-- `TempDirManager` は `Runner.ExecuteGroup()` メソッド内でローカルに使用される
-- `Runner.resourceManager` (`NormalResourceManager` / `DryRunResourceManager`) とは独立
-- `isDryRun` フラグは `Runner` から受け取り、`TempDirManager` に渡す
+- `TempDirManager` は `DefaultGroupExecutor.ExecuteGroup()` メソッド内でローカルに使用される
+- `resourceManager` (`NormalResourceManager` / `DryRunResourceManager`) とは独立
+- `isDryRun` フラグは `DefaultGroupExecutor` のフィールドとして保持
 
 ```go
 // TempDirManager: グループ単位の一時ディレクトリ管理
@@ -214,12 +214,12 @@ type TempDirManager interface {
 func NewTempDirManager(logger logging.Logger, groupName string, isDryRun bool) TempDirManager
 ```
 
-### 3.2 Runner.ExecuteGroup() メソッド
+### 3.2 DefaultGroupExecutor.ExecuteGroup() メソッド
 
 **パッケージ**: `internal/runner`
 
 ```go
-// Runner.ExecuteGroup: 1つのグループを実行
+// DefaultGroupExecutor.ExecuteGroup: 1つのグループを実行
 //
 // 引数:
 //   ctx: コンテキスト
@@ -555,13 +555,13 @@ func (m *DefaultTempDirManager) Path() string {
 
 ### 6.1 グループ実行時の __runner_workdir 設定
 
-**ファイル**: `internal/runner/runner.go`
+**ファイル**: `internal/runner/group_executor.go`
 
-**注意**: 実際の実装は `Runner.ExecuteGroup()` メソッドです。
+**注意**: 実装は `DefaultGroupExecutor.ExecuteGroup()` メソッドです。
 
 ```go
 // ExecuteGroup: 1つのグループを実行
-func (r *Runner) ExecuteGroup(
+func (e *DefaultGroupExecutor) ExecuteGroup(
     ctx context.Context,
     group *runnertypes.CommandGroup,
 ) error {

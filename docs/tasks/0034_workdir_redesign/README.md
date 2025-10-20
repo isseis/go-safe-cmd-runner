@@ -262,6 +262,7 @@ args = ["%{__runner_workdir}/dump.sql"]
 | 2025-10-18 | 1.4 | グループレベル `workdir` の変数展開対応：`%{backup_base}` などの変数参照を可能に。ただし `%{__runner_workdir}` は未定義エラー（循環参照防止） |
 | 2025-10-18 | 1.5 | dry-runモード対応：`TempDirManager` に `isDryRun` フラグを追加。dry-runでは仮想パスを生成し、実際のファイルシステム操作は行わない |
 | 2025-10-18 | 1.6 | アーキテクチャ明確化：`GroupExecutor` は概念モデルで、実装は `Runner.ExecuteGroup()` メソッド。`TempDirManager` は `Runner` 内で直接使用 |
+| 2025-10-20 | 1.7 | アーキテクチャ実装更新：Phase 0リファクタリングにより `GroupExecutor` インターフェースと `DefaultGroupExecutor` 実装を導入。責務の分離を改善 |
 
 ---
 
