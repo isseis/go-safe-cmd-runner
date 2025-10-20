@@ -790,6 +790,11 @@ Phase 1 → Phase 2 → Phase 3 → Phase 5 → Phase 6 → Phase 7
 2. **Task 0034 の実装再開** (Phase 1以降)
    - 作業ディレクトリ仕様の再設計を実装
 
+3. **Task 0036: LogLevel 型の導入**
+   - カスタム LogLevel 型の導入により、TOML パース時点でログレベルのバリデーションを実現
+   - 早期エラー検出と型安全性の向上
+   - 詳細: `docs/tasks/0036_loglevel_type/`
+
 ---
 
 ## まとめ
