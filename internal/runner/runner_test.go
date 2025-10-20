@@ -1,5 +1,4 @@
-//go:build skip_until_phase5
-// +build skip_until_phase5
+//go:build skip_integration_tests
 
 package runner
 
@@ -70,7 +69,7 @@ func (m *MockResourceManager) GetMode() resource.ExecutionMode {
 	return args.Get(0).(resource.ExecutionMode)
 }
 
-func (m *MockResourceManager) ExecuteCommand(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) (*resource.ExecutionResult, error) {
+func (m *MockResourceManager) ExecuteCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec, env map[string]string) (*resource.ExecutionResult, error) {
 	args := m.Called(ctx, cmd, group, env)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)

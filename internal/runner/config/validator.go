@@ -48,7 +48,7 @@ func NewConfigValidator() *Validator {
 }
 
 // ValidateConfig performs comprehensive validation of the configuration
-func (v *Validator) ValidateConfig(config *runnertypes.Config) (*ValidationResult, error) {
+func (v *Validator) ValidateConfig(configSpec *runnertypes.ConfigSpec) (*ValidationResult, error) {
 	result := &ValidationResult{
 		Valid:     true,
 		Errors:    []ValidationError{},
@@ -57,11 +57,11 @@ func (v *Validator) ValidateConfig(config *runnertypes.Config) (*ValidationResul
 	}
 
 	// Validate global configuration
-	v.validateGlobalConfig(&config.Global, result)
+	v.validateGlobalConfig(&configSpec.Global, result)
 
 	// Validate groups
 	seenGroupNames := make(map[string]int)
-	for i, group := range config.Groups {
+	for i, group := range configSpec.Groups {
 		// Check for duplicate group names before individual validation
 		if _, exists := seenGroupNames[group.Name]; exists && group.Name != "" {
 			result.Errors = append(result.Errors, ValidationError{
@@ -73,11 +73,11 @@ func (v *Validator) ValidateConfig(config *runnertypes.Config) (*ValidationResul
 		}
 		seenGroupNames[group.Name] = i
 
-		v.validateGroup(&group, i, &config.Global, result)
+		v.validateGroup(&group, i, &configSpec.Global, result)
 	}
 
 	// Calculate summary
-	v.calculateSummary(config, result)
+	v.calculateSummary(configSpec, result)
 
 	// Set overall validity
 	result.Valid = len(result.Errors) == 0
@@ -86,7 +86,7 @@ func (v *Validator) ValidateConfig(config *runnertypes.Config) (*ValidationResul
 }
 
 // validateGlobalConfig validates the global configuration settings
-func (v *Validator) validateGlobalConfig(global *runnertypes.GlobalConfig, result *ValidationResult) {
+func (v *Validator) validateGlobalConfig(global *runnertypes.GlobalSpec, result *ValidationResult) {
 	// Validate global allowlist
 	v.validateAllowlist(global.EnvAllowlist, "global.env_allowlist", result)
 
@@ -115,7 +115,7 @@ func (v *Validator) validateGlobalConfig(global *runnertypes.GlobalConfig, resul
 }
 
 // validateGroup validates a command group configuration
-func (v *Validator) validateGroup(group *runnertypes.CommandGroup, index int, global *runnertypes.GlobalConfig, result *ValidationResult) {
+func (v *Validator) validateGroup(group *runnertypes.GroupSpec, index int, global *runnertypes.GlobalSpec, result *ValidationResult) {
 	groupLocation := fmt.Sprintf("groups[%d]", index)
 
 	// Validate group name
@@ -227,7 +227,7 @@ func (v *Validator) validateWorkingDirectory(path, location string, result *Vali
 }
 
 // validateCommand validates a command configuration
-func (v *Validator) validateCommand(cmd *runnertypes.Command, index int, location string, result *ValidationResult) {
+func (v *Validator) validateCommand(cmd *runnertypes.CommandSpec, index int, location string, result *ValidationResult) {
 	cmdLocation := fmt.Sprintf("%s[%d]", location, index)
 
 	// Validate command name
@@ -323,7 +323,7 @@ func (v *Validator) validateVariableValue(name, value string) error {
 }
 
 // analyzeInheritanceMode analyzes the inheritance mode and provides appropriate warnings
-func (v *Validator) analyzeInheritanceMode(group *runnertypes.CommandGroup, location string, global *runnertypes.GlobalConfig, result *ValidationResult) {
+func (v *Validator) analyzeInheritanceMode(group *runnertypes.GroupSpec, location string, global *runnertypes.GlobalSpec, result *ValidationResult) {
 	if group.EnvAllowlist == nil {
 		// Inherit mode
 		if len(global.EnvAllowlist) == 0 {
@@ -357,13 +357,13 @@ func (v *Validator) analyzeInheritanceMode(group *runnertypes.CommandGroup, loca
 }
 
 // calculateSummary calculates validation summary statistics
-func (v *Validator) calculateSummary(config *runnertypes.Config, result *ValidationResult) {
+func (v *Validator) calculateSummary(configSpec *runnertypes.ConfigSpec, result *ValidationResult) {
 	summary := &result.Summary
 
-	summary.TotalGroups = len(config.Groups)
-	summary.GlobalAllowlistSize = len(config.Global.EnvAllowlist)
+	summary.TotalGroups = len(configSpec.Groups)
+	summary.GlobalAllowlistSize = len(configSpec.Global.EnvAllowlist)
 
-	for _, group := range config.Groups {
+	for _, group := range configSpec.Groups {
 		if group.EnvAllowlist != nil {
 			summary.GroupsWithAllowlist++
 		}
@@ -433,7 +433,7 @@ func (v *Validator) getStatusString(valid bool) string {
 }
 
 // validatePrivilegedCommand validates privileged command security for commands with run_as_user or run_as_group
-func (v *Validator) validatePrivilegedCommand(cmd *runnertypes.Command, location string, result *ValidationResult) {
+func (v *Validator) validatePrivilegedCommand(cmd *runnertypes.CommandSpec, location string, result *ValidationResult) {
 	// Skip validation if security validator is not available
 	if v.securityValidator == nil {
 		return
@@ -486,7 +486,7 @@ func (v *Validator) validatePrivilegedCommand(cmd *runnertypes.Command, location
 }
 
 // validateRootPrivilegedCommand provides additional validation for commands running as root
-func (v *Validator) validateRootPrivilegedCommand(cmd *runnertypes.Command, location string, result *ValidationResult) {
+func (v *Validator) validateRootPrivilegedCommand(cmd *runnertypes.CommandSpec, location string, result *ValidationResult) {
 	// Skip validation if security validator is not available
 	if v.securityValidator == nil {
 		return

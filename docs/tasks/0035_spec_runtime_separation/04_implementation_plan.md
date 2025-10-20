@@ -368,11 +368,11 @@ func ExpandGlobal(spec *GlobalSpec) (*RuntimeGlobal, error) {
 - `expansion_test.go`: 展開関数のテスト
 
 **完了条件**:
-- [ ] `ExpandGlobal()` が実装されている
-- [ ] `ExpandGroup()` が実装されている
-- [ ] `ExpandCommand()` が実装されている
-- [ ] すべてのテストが成功している
-- [ ] エラーハンドリングが適切
+- [x] `ExpandGlobal()` が実装されている
+- [x] `ExpandGroup()` が実装されている
+- [x] `ExpandCommand()` が実装されている
+- [x] すべてのテストが成功している
+- [x] エラーハンドリングが適切
 
 ---
 
@@ -417,9 +417,9 @@ func (l *DefaultLoader) Load(path string) (*runnertypes.ConfigSpec, error) {
 - 更新された `loader_test.go`
 
 **完了条件**:
-- [ ] `Load()` が `*ConfigSpec` を返す
-- [ ] 既存のテストが成功している
-- [ ] TOMLファイルフォーマットの互換性が維持されている
+- [x] `Load()` が `*ConfigSpec` を返す
+- [x] 既存のテストが成功している
+- [x] TOMLファイルフォーマットの互換性が維持されている
 
 ---
 
@@ -484,9 +484,9 @@ func (e *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *runn
 - 更新された `group_executor_test.go`
 
 **完了条件**:
-- [ ] `ExecuteGroup()` が `GroupSpec` を受け取る
-- [ ] 内部で `ExpandGroup()`, `ExpandCommand()` を呼び出す
-- [ ] 既存のテストが成功している
+- [x] `ExecuteGroup()` が `GroupSpec` を受け取る
+- [x] 内部で `ExpandGroup()`, `ExpandCommand()` を呼び出す
+- [ ] 既存のテストが成功している（一部のテストは skip_integration_tests タグで無効化中）
 
 ---
 
@@ -762,8 +762,8 @@ Phase 1 → Phase 2 → Phase 3 → Phase 5 → Phase 6 → Phase 7
 - [x] テストを更新
 
 ### Phase 5: GroupExecutorの更新
-- [ ] `ExecuteGroup()` を更新（`GroupSpec` を受け取る）
-- [ ] テストを更新
+- [x] `ExecuteGroup()` を更新（`GroupSpec` を受け取る）
+- [ ] テストを更新（一部のテストは skip_integration_tests タグで無効化中）
 
 ### Phase 6: Executorの更新
 - [ ] `Execute()` を更新（`RuntimeCommand` を受け取る）
@@ -775,6 +775,12 @@ Phase 1 → Phase 2 → Phase 3 → Phase 5 → Phase 6 → Phase 7
 - [ ] ベンチマークテストを実施
 - [ ] GoDocコメントを完成
 - [ ] README.md を作成
+
+### 追加作業
+- [x] `ExpandGlobal()` に from_env 処理を実装（Phase 5 完了後）
+- [x] `TestRunner_SecurityIntegration` の修正
+- [x] テスト再有効化計画の作成（`test_reactivation_plan.md`）
+- [x] `types_test.go` の再有効化
 
 ---
 

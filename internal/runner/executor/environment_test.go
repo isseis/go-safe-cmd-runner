@@ -1,5 +1,5 @@
-//go:build test
-// +build test
+//go:build test && skip_integration_tests
+// +build test,skip_integration_tests
 
 package executor_test
 

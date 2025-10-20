@@ -19,6 +19,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/cli"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -133,8 +134,19 @@ func run(runID string) error {
 		return err
 	}
 
+	// Phase 4.5: Expand global configuration
+	runtimeGlobal, err := config.ExpandGlobal(&cfg.Global)
+	if err != nil {
+		return &logging.PreExecutionError{
+			Type:      logging.ErrorTypeConfigParsing,
+			Message:   fmt.Sprintf("Failed to expand global configuration: %v", err),
+			Component: "config",
+			RunID:     runID,
+		}
+	}
+
 	// Phase 5: Perform global file verification (using verification manager directly)
-	result, err := verificationManager.VerifyGlobalFiles(&cfg.Global)
+	result, err := verificationManager.VerifyGlobalFiles(runtimeGlobal)
 	if err != nil {
 		return &logging.PreExecutionError{
 			Type:      logging.ErrorTypeFileAccess,
@@ -158,7 +170,7 @@ func run(runID string) error {
 }
 
 // executeRunner initializes and executes the runner with proper cleanup
-func executeRunner(ctx context.Context, cfg *runnertypes.Config, verificationManager *verification.Manager, runID string) error {
+func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, verificationManager *verification.Manager, runID string) error {
 	// Initialize privilege manager
 	logger := slog.Default()
 	privMgr := privilege.NewManager(logger)

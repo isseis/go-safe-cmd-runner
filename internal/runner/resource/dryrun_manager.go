@@ -113,7 +113,7 @@ func (d *DryRunResourceManager) ValidateOutputPath(outputPath, workDir string) e
 }
 
 // ExecuteCommand simulates command execution in dry-run mode
-func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) (*ExecutionResult, error) {
+func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec, env map[string]string) (*ExecutionResult, error) {
 	start := time.Now()
 
 	// Validate command and group for consistency with normal mode
@@ -132,7 +132,7 @@ func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd runnerty
 	}
 
 	// Check if output capture is requested and analyze it
-	if cmd.Output != "" && d.outputManager != nil {
+	if cmd.Spec.Output != "" && d.outputManager != nil {
 		outputAnalysis := d.analyzeOutput(cmd, group)
 		d.RecordAnalysis(&outputAnalysis)
 	}
@@ -142,11 +142,11 @@ func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd runnerty
 
 	// Generate simulated output
 	stdout := fmt.Sprintf("[DRY-RUN] Would execute: %s", cmd.ExpandedCmd)
-	if cmd.EffectiveWorkdir != "" {
-		stdout += fmt.Sprintf(" (in directory: %s)", cmd.EffectiveWorkdir)
+	if cmd.EffectiveWorkDir != "" {
+		stdout += fmt.Sprintf(" (in directory: %s)", cmd.EffectiveWorkDir)
 	}
-	if cmd.Output != "" {
-		stdout += fmt.Sprintf(" (output would be captured to: %s)", cmd.Output)
+	if cmd.Spec.Output != "" {
+		stdout += fmt.Sprintf(" (output would be captured to: %s)", cmd.Spec.Output)
 	}
 
 	return &ExecutionResult{
@@ -160,15 +160,15 @@ func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd runnerty
 }
 
 // analyzeCommand analyzes a command for dry-run
-func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) (ResourceAnalysis, error) {
+func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec, env map[string]string) (ResourceAnalysis, error) {
 	analysis := ResourceAnalysis{
 		Type:      ResourceTypeCommand,
 		Operation: OperationExecute,
 		Target:    cmd.ExpandedCmd,
 		Parameters: map[string]any{
 			"command":           cmd.ExpandedCmd,
-			"working_directory": cmd.EffectiveWorkdir,
-			"timeout":           cmd.Timeout,
+			"working_directory": cmd.EffectiveWorkDir,
+			"timeout":           cmd.Spec.Timeout,
 		},
 		Impact: ResourceImpact{
 			Reversible:  false, // Commands are generally not reversible
@@ -196,18 +196,18 @@ func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd runnertype
 
 	// Add user/group privilege specification if present (after security analysis)
 	if cmd.HasUserGroupSpecification() {
-		analysis.Parameters["run_as_user"] = cmd.RunAsUser
-		analysis.Parameters["run_as_group"] = cmd.RunAsGroup
+		analysis.Parameters["run_as_user"] = cmd.RunAsUser()
+		analysis.Parameters["run_as_group"] = cmd.RunAsGroup()
 
 		// Validate user/group configuration in dry-run mode
 		if d.privilegeManager != nil && d.privilegeManager.IsPrivilegedExecutionSupported() {
 			// Use unified WithPrivileges API with dry-run operation for validation
 			executionCtx := runnertypes.ElevationContext{
 				Operation:   runnertypes.OperationUserGroupDryRun,
-				CommandName: cmd.Name,
+				CommandName: cmd.Name(),
 				FilePath:    cmd.ExpandedCmd,
-				RunAsUser:   cmd.RunAsUser,
-				RunAsGroup:  cmd.RunAsGroup,
+				RunAsUser:   cmd.RunAsUser(),
+				RunAsGroup:  cmd.RunAsGroup(),
 			}
 			err := d.privilegeManager.WithPrivileges(executionCtx, func() error {
 				return nil // No-op function for dry-run validation
@@ -230,7 +230,7 @@ func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd runnertype
 
 // analyzeCommandSecurity resolves the command path and performs security analysis
 // using the configuration stored in the DryRunResourceManager.
-func (d *DryRunResourceManager) analyzeCommandSecurity(cmd runnertypes.Command, analysis *ResourceAnalysis) error {
+func (d *DryRunResourceManager) analyzeCommandSecurity(cmd *runnertypes.RuntimeCommand, analysis *ResourceAnalysis) error {
 	// PathResolver is guaranteed to be non-nil due to constructor validation
 	resolvedPath, err := d.pathResolver.ResolvePath(cmd.ExpandedCmd)
 	if err != nil {
@@ -359,26 +359,26 @@ func (d *DryRunResourceManager) SendNotification(message string, details map[str
 }
 
 // analyzeOutput analyzes output capture configuration for dry-run
-func (d *DryRunResourceManager) analyzeOutput(cmd runnertypes.Command, group *runnertypes.CommandGroup) ResourceAnalysis {
+func (d *DryRunResourceManager) analyzeOutput(cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec) ResourceAnalysis {
 	analysis := ResourceAnalysis{
 		Type:      ResourceTypeFilesystem,
 		Operation: OperationCreate,
-		Target:    cmd.Output,
+		Target:    cmd.Spec.Output,
 		Parameters: map[string]any{
-			"output_path":       cmd.Output,
+			"output_path":       cmd.Spec.Output,
 			"command":           cmd.ExpandedCmd,
 			"working_directory": group.WorkDir,
 		},
 		Impact: ResourceImpact{
 			Reversible:  false, // Output files are persistent
 			Persistent:  true,
-			Description: fmt.Sprintf("Capture command output to file: %s", cmd.Output),
+			Description: fmt.Sprintf("Capture command output to file: %s", cmd.Spec.Output),
 		},
 		Timestamp: time.Now(),
 	}
 
 	// Use the output manager to analyze the output path
-	outputAnalysis, err := d.outputManager.AnalyzeOutput(cmd.Output, group.WorkDir)
+	outputAnalysis, err := d.outputManager.AnalyzeOutput(cmd.Spec.Output, group.WorkDir)
 	if err != nil {
 		analysis.Impact.Description += fmt.Sprintf(" [ERROR: %v]", err)
 		analysis.Impact.SecurityRisk = riskLevelHigh

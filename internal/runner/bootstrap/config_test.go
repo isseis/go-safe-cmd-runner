@@ -1,5 +1,4 @@
-//go:build skip_until_phase5
-// +build skip_until_phase5
+//go:build test
 
 package bootstrap
 
@@ -9,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
@@ -45,63 +45,78 @@ func TestBootstrapCommandEnvExpansionIntegration(t *testing.T) {
 	_, err = validator.Record(configPath, false)
 	require.NoError(t, err)
 
-	// Load and prepare config (this should perform all expansions)
+	// Load and prepare config (returns ConfigSpec)
 	cfg, err := LoadAndPrepareConfig(verificationManager, configPath, "test-run-001")
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
+
+	// Expand global spec to runtime
+	runtimeGlobal, err := config.ExpandGlobal(&cfg.Global)
+	require.NoError(t, err)
+	require.NotNil(t, runtimeGlobal)
 
 	// Verify Global.Env expansion
 	expectedGlobalEnv := map[string]string{
 		"BASE_DIR": "/opt",
 	}
-	assert.Equal(t, expectedGlobalEnv, cfg.Global.ExpandedEnv, "Global.Env should be expanded correctly")
+	assert.Equal(t, expectedGlobalEnv, runtimeGlobal.ExpandedEnv, "Global.Env should be expanded correctly")
 
 	// Verify groups
 	require.Len(t, cfg.Groups, 1, "Should have exactly one group")
 
 	// Find app_group
-	var appGroup *runnertypes.CommandGroup
+	var appGroupSpec *runnertypes.GroupSpec
 	for i := range cfg.Groups {
 		if cfg.Groups[i].Name == "app_group" {
-			appGroup = &cfg.Groups[i]
+			appGroupSpec = &cfg.Groups[i]
 			break
 		}
 	}
-	require.NotNil(t, appGroup, "app_group should exist")
+	require.NotNil(t, appGroupSpec, "app_group should exist")
+
+	// Expand group spec to runtime
+	runtimeGroup, err := config.ExpandGroup(appGroupSpec, runtimeGlobal.ExpandedVars)
+	require.NoError(t, err)
+	require.NotNil(t, runtimeGroup)
 
 	// Verify Group.Env expansion (references Global.Env)
 	expectedGroupEnv := map[string]string{
 		"APP_DIR": "/opt/myapp",
 	}
-	assert.Equal(t, expectedGroupEnv, appGroup.ExpandedEnv, "Group.Env should reference Global.Env correctly")
+	assert.Equal(t, expectedGroupEnv, runtimeGroup.ExpandedEnv, "Group.Env should reference Global.Env correctly")
 
 	// Verify commands
-	require.Len(t, appGroup.Commands, 1, "app_group should have exactly one command")
-	cmd := &appGroup.Commands[0]
-	require.Equal(t, "run_app", cmd.Name)
+	require.Len(t, appGroupSpec.Commands, 1, "app_group should have exactly one command")
+	cmdSpec := &appGroupSpec.Commands[0]
+	require.Equal(t, "run_app", cmdSpec.Name)
+
+	// Expand command spec to runtime
+	runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup.ExpandedVars, appGroupSpec.Name)
+	require.NoError(t, err)
+	require.NotNil(t, runtimeCmd)
 
 	// Verify Command.Env expansion (uses internal variables)
 	// Note: In new system, each level's ExpandedEnv contains only that level's env field values
 	// The final process environment is built by BuildProcessEnvironment which merges all levels
-	assert.Equal(t, "/opt/myapp/logs", cmd.ExpandedEnv["LOG_DIR"], "Command.Env variable LOG_DIR should be expanded correctly")
+	assert.Equal(t, "/opt/myapp/logs", runtimeCmd.ExpandedEnv["LOG_DIR"], "Command.Env variable LOG_DIR should be expanded correctly")
 
 	// BASE_DIR and APP_DIR are in Global/Group ExpandedEnv respectively, not merged into Command.ExpandedEnv
 	// They will be merged at execution time by BuildProcessEnvironment
-	assert.Equal(t, "/opt", cfg.Global.ExpandedEnv["BASE_DIR"], "Global.Env variable BASE_DIR should be in Global.ExpandedEnv")
-	assert.Equal(t, "/opt/myapp", appGroup.ExpandedEnv["APP_DIR"], "Group.Env variable APP_DIR should be in Group.ExpandedEnv")
+	assert.Equal(t, "/opt", runtimeGlobal.ExpandedEnv["BASE_DIR"], "Global.Env variable BASE_DIR should be in Global.ExpandedEnv")
+	assert.Equal(t, "/opt/myapp", runtimeGroup.ExpandedEnv["APP_DIR"], "Group.Env variable APP_DIR should be in Group.ExpandedEnv")
 
 	// Verify Command.Cmd expansion (references internal variables)
 	expectedCmd := "/opt/myapp/bin/server"
-	assert.Equal(t, expectedCmd, cmd.ExpandedCmd, "Command.Cmd should reference internal variables correctly")
+	assert.Equal(t, expectedCmd, runtimeCmd.ExpandedCmd, "Command.Cmd should reference internal variables correctly")
 
 	// Verify Command.Args expansion (references internal variables)
 	expectedArgs := []string{"--log", "/opt/myapp/logs/app.log"}
-	assert.Equal(t, expectedArgs, cmd.ExpandedArgs, "Command.Args should reference internal variables correctly")
+	assert.Equal(t, expectedArgs, runtimeCmd.ExpandedArgs, "Command.Args should reference internal variables correctly")
 
 	// Also verify that raw values are preserved for debugging/auditing
-	assert.Equal(t, "%{app_dir}/bin/server", cmd.Cmd, "Raw Cmd should be preserved")
-	assert.Equal(t, []string{"--log", "%{log_dir}/app.log"}, cmd.Args, "Raw Args should be preserved")
-	assert.Equal(t, []string{"LOG_DIR=%{log_dir}"}, cmd.Env, "Raw Env should be preserved")
+	assert.Equal(t, "%{app_dir}/bin/server", cmdSpec.Cmd, "Raw Cmd should be preserved")
+	assert.Equal(t, []string{"--log", "%{log_dir}/app.log"}, cmdSpec.Args, "Raw Args should be preserved")
+	assert.Equal(t, []string{"LOG_DIR=%{log_dir}"}, cmdSpec.Env, "Raw Env should be preserved")
 }
 
 // TestLoadAndPrepareConfig_MissingConfigFile verifies error handling for missing config files

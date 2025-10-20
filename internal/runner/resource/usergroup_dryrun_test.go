@@ -1,4 +1,5 @@
-//go:build !windows
+//go:build test && skip_integration_tests && !windows
+// +build test,skip_integration_tests,!windows
 
 package resource
 

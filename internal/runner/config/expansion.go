@@ -547,7 +547,7 @@ func ExpandCommandConfig(
 // ExpandGlobal expands a GlobalSpec into a RuntimeGlobal.
 //
 // This function processes:
-// 1. FromEnv: Imports system environment variables as internal variables (NOT IMPLEMENTED YET - Task 0033)
+// 1. FromEnv: Imports system environment variables as internal variables
 // 2. Vars: Defines internal variables
 // 3. Env: Expands environment variables using internal variables
 // 4. VerifyFiles: Expands file paths using internal variables
@@ -558,8 +558,6 @@ func ExpandCommandConfig(
 // Returns:
 //   - *RuntimeGlobal: The expanded runtime global configuration
 //   - error: An error if expansion fails (e.g., undefined variable reference)
-//
-// Note: FromEnv processing is not yet implemented. This function currently only processes Vars, Env, and VerifyFiles.
 func ExpandGlobal(spec *runnertypes.GlobalSpec) (*runnertypes.RuntimeGlobal, error) {
 	runtime := &runnertypes.RuntimeGlobal{
 		Spec:         spec,
@@ -567,9 +565,15 @@ func ExpandGlobal(spec *runnertypes.GlobalSpec) (*runnertypes.RuntimeGlobal, err
 		ExpandedEnv:  make(map[string]string),
 	}
 
-	// 1. Process FromEnv (TODO: To be implemented in Task 0033)
-	// FromEnv processing imports system environment variables as internal variables according to the FromEnv specification.
-	// For now, skip FromEnv processing as it requires environment.Filter.
+	// 1. Process FromEnv
+	// Build system environment map from os.Environ()
+	systemEnv := environment.NewFilter(spec.EnvAllowlist).ParseSystemEnvironment()
+	fromEnvVars, err := ProcessFromEnv(spec.FromEnv, spec.EnvAllowlist, systemEnv, "global")
+	if err != nil {
+		return nil, fmt.Errorf("failed to process global from_env: %w", err)
+	}
+	runtime.ExpandedVars = fromEnvVars
+
 	// 2. Process Vars
 	expandedVars, err := ProcessVars(spec.Vars, runtime.ExpandedVars, "global")
 	if err != nil {

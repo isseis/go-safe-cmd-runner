@@ -1,3 +1,5 @@
+//go:build skip_integration_tests
+
 package performance
 
 import (

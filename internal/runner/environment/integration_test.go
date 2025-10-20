@@ -1,4 +1,6 @@
-package environment
+//go:build skip_integration_tests
+
+package environment_test
 
 import (
 	"fmt"

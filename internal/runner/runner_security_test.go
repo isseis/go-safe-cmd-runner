@@ -1,6 +1,3 @@
-//go:build skip_until_phase5
-// +build skip_until_phase5
-
 // Package runner provides tests for runner-level security integration.
 //
 // # Test Scope
@@ -44,7 +41,7 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 		systemEnv   map[string]string
 		expectError bool
 		errorCheck  func(*testing.T, error)
-		validate    func(*testing.T, *runnertypes.Config)
+		validate    func(*testing.T, *runnertypes.ConfigSpec)
 	}{
 		{
 			name: "Basic allowlist + variable expansion (E2E)",
@@ -68,12 +65,15 @@ env = ["MY_ENV=%{derived}"]
 				return configPath
 			},
 			expectError: false,
-			validate: func(t *testing.T, cfg *runnertypes.Config) {
+			validate: func(t *testing.T, cfg *runnertypes.ConfigSpec) {
 				// Verify that allowed variable is properly expanded
-				require.NotNil(t, cfg.Global.ExpandedVars)
-				require.NotNil(t, cfg.Global.ExpandedEnv)
-				assert.Equal(t, "safe_value/subdir", cfg.Global.ExpandedVars["derived"])
-				assert.Equal(t, "safe_value/subdir", cfg.Global.ExpandedEnv["MY_ENV"])
+				// Need to expand GlobalSpec to RuntimeGlobal to access ExpandedVars and ExpandedEnv
+				runtimeGlobal, err := config.ExpandGlobal(&cfg.Global)
+				require.NoError(t, err)
+				require.NotNil(t, runtimeGlobal.ExpandedVars)
+				require.NotNil(t, runtimeGlobal.ExpandedEnv)
+				assert.Equal(t, "safe_value/subdir", runtimeGlobal.ExpandedVars["derived"])
+				assert.Equal(t, "safe_value/subdir", runtimeGlobal.ExpandedEnv["MY_ENV"])
 			},
 		},
 		{
@@ -148,28 +148,31 @@ env = ["CMD_VAR=%{group_path}"]
 				return configPath
 			},
 			expectError: false,
-			validate: func(t *testing.T, cfg *runnertypes.Config) {
+			validate: func(t *testing.T, cfg *runnertypes.ConfigSpec) {
 				// Verify that global level expansion is correct
-				require.NotNil(t, cfg.Global.ExpandedVars)
-				require.NotNil(t, cfg.Global.ExpandedEnv)
-				assert.Equal(t, "/home/user/work", cfg.Global.ExpandedVars["work_dir"])
-				assert.Equal(t, "/home/user/config", cfg.Global.ExpandedVars["config_dir"])
-				assert.Equal(t, "/home/user/work", cfg.Global.ExpandedEnv["WORK_DIR"])
-				assert.Equal(t, "/home/user/config", cfg.Global.ExpandedEnv["CONFIG_DIR"])
+				runtimeGlobal, err := config.ExpandGlobal(&cfg.Global)
+				require.NoError(t, err)
+				require.NotNil(t, runtimeGlobal.ExpandedVars)
+				require.NotNil(t, runtimeGlobal.ExpandedEnv)
+				assert.Equal(t, "/home/user/work", runtimeGlobal.ExpandedVars["work_dir"])
+				assert.Equal(t, "/home/user/config", runtimeGlobal.ExpandedVars["config_dir"])
+				assert.Equal(t, "/home/user/work", runtimeGlobal.ExpandedEnv["WORK_DIR"])
+				assert.Equal(t, "/home/user/config", runtimeGlobal.ExpandedEnv["CONFIG_DIR"])
 
 				// Verify that verify_files are expanded
-				require.NotNil(t, cfg.Global.ExpandedVerifyFiles)
-				if len(cfg.Global.ExpandedVerifyFiles) > 0 {
-					assert.Equal(t, "/home/user/config/app.conf", cfg.Global.ExpandedVerifyFiles[0])
+				require.NotNil(t, runtimeGlobal.ExpandedVerifyFiles)
+				if len(runtimeGlobal.ExpandedVerifyFiles) > 0 {
+					assert.Equal(t, "/home/user/config/app.conf", runtimeGlobal.ExpandedVerifyFiles[0])
 				}
 
 				// Verify group level expansion
 				if len(cfg.Groups) > 0 {
-					group := cfg.Groups[0]
-					require.NotNil(t, group.ExpandedVars)
-					require.NotNil(t, group.ExpandedEnv)
-					assert.Equal(t, "allowed_value/data", group.ExpandedVars["group_path"])
-					assert.Equal(t, "allowed_value/data", group.ExpandedEnv["GROUP_PATH"])
+					runtimeGroup, err := config.ExpandGroup(&cfg.Groups[0], runtimeGlobal.ExpandedVars)
+					require.NoError(t, err)
+					require.NotNil(t, runtimeGroup.ExpandedVars)
+					require.NotNil(t, runtimeGroup.ExpandedEnv)
+					assert.Equal(t, "allowed_value/data", runtimeGroup.ExpandedVars["group_path"])
+					assert.Equal(t, "allowed_value/data", runtimeGroup.ExpandedEnv["GROUP_PATH"])
 				}
 			},
 		},
@@ -215,16 +218,21 @@ args = ["private"]
 				return configPath
 			},
 			expectError: false,
-			validate: func(t *testing.T, cfg *runnertypes.Config) {
+			validate: func(t *testing.T, cfg *runnertypes.ConfigSpec) {
 				// Verify that each group has proper isolation
 				if len(cfg.Groups) == 2 {
+					runtimeGlobal, err := config.ExpandGlobal(&cfg.Global)
+					require.NoError(t, err)
+
 					// Public group should have access to PUBLIC_VAR
-					publicGroup := cfg.Groups[0]
+					publicGroup, err := config.ExpandGroup(&cfg.Groups[0], runtimeGlobal.ExpandedVars)
+					require.NoError(t, err)
 					require.NotNil(t, publicGroup.ExpandedVars)
 					assert.Equal(t, "public", publicGroup.ExpandedVars["pub"])
 
 					// Private group should have access to PRIVATE_VAR
-					privateGroup := cfg.Groups[1]
+					privateGroup, err := config.ExpandGroup(&cfg.Groups[1], runtimeGlobal.ExpandedVars)
+					require.NoError(t, err)
 					require.NotNil(t, privateGroup.ExpandedVars)
 					assert.Equal(t, "private", privateGroup.ExpandedVars["priv"])
 				}
@@ -258,11 +266,13 @@ verify_files = ["%{file_path}"]
 				return configPath
 			},
 			expectError: false,
-			validate: func(t *testing.T, cfg *runnertypes.Config) {
+			validate: func(t *testing.T, cfg *runnertypes.ConfigSpec) {
 				// Verify that verify_files path is correctly expanded
-				require.NotNil(t, cfg.Global.ExpandedVerifyFiles)
-				require.Len(t, cfg.Global.ExpandedVerifyFiles, 1)
-				assert.Equal(t, "/tmp/test_security_file.txt", cfg.Global.ExpandedVerifyFiles[0])
+				runtimeGlobal, err := config.ExpandGlobal(&cfg.Global)
+				require.NoError(t, err)
+				require.NotNil(t, runtimeGlobal.ExpandedVerifyFiles)
+				require.Len(t, runtimeGlobal.ExpandedVerifyFiles, 1)
+				assert.Equal(t, "/tmp/test_security_file.txt", runtimeGlobal.ExpandedVerifyFiles[0])
 			},
 		},
 	}
@@ -284,16 +294,21 @@ verify_files = ["%{file_path}"]
 			// Load configuration using config loader directly
 			cfgLoader := config.NewLoader()
 			cfg, err := cfgLoader.LoadConfig(content)
+			require.NoError(t, err) // LoadConfig should always succeed (it only parses TOML)
+			require.NotNil(t, cfg)
+
+			// Try to expand global configuration
+			// This is where from_env allowlist validation happens
+			_, expandErr := config.ExpandGlobal(&cfg.Global)
 
 			// Check error expectations
 			if tt.expectError {
-				require.Error(t, err)
+				require.Error(t, expandErr)
 				if tt.errorCheck != nil {
-					tt.errorCheck(t, err)
+					tt.errorCheck(t, expandErr)
 				}
 			} else {
-				require.NoError(t, err)
-				require.NotNil(t, cfg)
+				require.NoError(t, expandErr)
 
 				// Validate config
 				if tt.validate != nil {

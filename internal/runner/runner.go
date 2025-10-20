@@ -12,6 +12,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/audit"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
@@ -54,7 +55,8 @@ type groupExecutionResult struct {
 // Runner manages the execution of command groups
 type Runner struct {
 	executor            executor.CommandExecutor
-	config              *runnertypes.Config
+	config              *runnertypes.ConfigSpec    // TOML configuration
+	runtimeGlobal       *runnertypes.RuntimeGlobal // Expanded global configuration
 	envVars             map[string]string
 	validator           *security.Validator
 	verificationManager *verification.Manager
@@ -139,7 +141,7 @@ func WithDryRun(dryRunOptions *resource.DryRunOptions) Option {
 }
 
 // NewRunner creates a new command runner with the given configuration and optional customizations
-func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
+func NewRunner(configSpec *runnertypes.ConfigSpec, options ...Option) (*Runner, error) {
 	// Apply default options
 	opts := &runnerOptions{}
 	for _, option := range options {
@@ -157,8 +159,17 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 		return nil, fmt.Errorf("failed to create security validator: %w", err)
 	}
 
+	// Create environment filter
+	envFilter := environment.NewFilter(configSpec.Global.EnvAllowlist)
+
+	// Expand global configuration
+	runtimeGlobal, err := config.ExpandGlobal(&configSpec.Global)
+	if err != nil {
+		return nil, fmt.Errorf("failed to expand global configuration: %w", err)
+	}
+
 	// Create default privilege manager and audit logger if not provided but needed
-	if opts.privilegeManager == nil && hasUserGroupCommands(config) {
+	if opts.privilegeManager == nil && hasUserGroupCommands(configSpec) {
 		opts.privilegeManager = privilege.NewManager(slog.Default())
 	}
 
@@ -178,9 +189,6 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 		}
 		opts.executor = executor.NewDefaultExecutor(executorOpts...)
 	}
-
-	// Create environment filter
-	envFilter := environment.NewFilter(config.Global.EnvAllowlist)
 
 	// Create default ResourceManager if not provided
 	if opts.resourceManager == nil {
@@ -223,7 +231,7 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 				pathResolver = verification.NewPathResolver("", validator, false)
 			}
 			// Get max output size from config (use default if not specified)
-			maxOutputSize := config.Global.MaxOutputSize
+			maxOutputSize := configSpec.Global.MaxOutputSize
 			if maxOutputSize <= 0 {
 				maxOutputSize = 0 // Will use default from output package
 			}
@@ -248,7 +256,8 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 
 	runner := &Runner{
 		executor:            opts.executor,
-		config:              config,
+		config:              configSpec,
+		runtimeGlobal:       runtimeGlobal,
 		envVars:             make(map[string]string),
 		validator:           validator,
 		verificationManager: opts.verificationManager,
@@ -264,7 +273,7 @@ func NewRunner(config *runnertypes.Config, options ...Option) (*Runner, error) {
 	// The callback itself does not perform network calls.
 	runner.groupExecutor = NewDefaultGroupExecutor(
 		opts.executor,
-		config,
+		configSpec,
 		validator,
 		opts.verificationManager,
 		opts.resourceManager,
@@ -289,8 +298,10 @@ func (r *Runner) LoadSystemEnvironment() error {
 // ExecuteAll executes all command groups in the configured order
 func (r *Runner) ExecuteAll(ctx context.Context) error {
 	// Sort groups by priority (lower number = higher priority)
-	groups := make([]runnertypes.CommandGroup, len(r.config.Groups))
-	copy(groups, r.config.Groups)
+	groups := make([]*runnertypes.GroupSpec, len(r.config.Groups))
+	for i := range r.config.Groups {
+		groups[i] = &r.config.Groups[i]
+	}
 	sort.Slice(groups, func(i, j int) bool {
 		return groups[i].Priority < groups[j].Priority
 	})
@@ -341,8 +352,8 @@ func (r *Runner) ExecuteAll(ctx context.Context) error {
 
 // ExecuteGroup executes all commands in a group sequentially
 // This method delegates to the GroupExecutor implementation
-func (r *Runner) ExecuteGroup(ctx context.Context, group runnertypes.CommandGroup) error {
-	return r.groupExecutor.ExecuteGroup(ctx, group)
+func (r *Runner) ExecuteGroup(ctx context.Context, groupSpec *runnertypes.GroupSpec) error {
+	return r.groupExecutor.ExecuteGroup(ctx, groupSpec, r.runtimeGlobal)
 }
 
 // ListCommands lists all available commands
@@ -360,7 +371,7 @@ func (r *Runner) ListCommands() {
 }
 
 // GetConfig returns the current configuration
-func (r *Runner) GetConfig() *runnertypes.Config {
+func (r *Runner) GetConfig() *runnertypes.ConfigSpec {
 	return r.config
 }
 
@@ -379,10 +390,10 @@ func (r *Runner) GetDryRunResults() *resource.DryRunResult {
 // "slack_notify" and "message_type") that notification handlers (for
 // example `internal/logging.SlackHandler`) can use to send alerts. The
 // function itself only logs; it does not perform network I/O.
-func (r *Runner) logGroupExecutionSummary(group runnertypes.CommandGroup, result *groupExecutionResult, duration time.Duration) {
+func (r *Runner) logGroupExecutionSummary(groupSpec *runnertypes.GroupSpec, result *groupExecutionResult, duration time.Duration) {
 	slog.Info(
 		"Command group execution completed",
-		"group", group.Name,
+		"group", groupSpec.Name,
 		"command", result.lastCommand,
 		"status", result.status,
 		"exit_code", result.exitCode,
@@ -395,8 +406,8 @@ func (r *Runner) logGroupExecutionSummary(group runnertypes.CommandGroup, result
 }
 
 // hasUserGroupCommands checks if the configuration contains any commands with user/group specifications
-func hasUserGroupCommands(config *runnertypes.Config) bool {
-	for _, group := range config.Groups {
+func hasUserGroupCommands(configSpec *runnertypes.ConfigSpec) bool {
+	for _, group := range configSpec.Groups {
 		for _, cmd := range group.Commands {
 			if cmd.HasUserGroupSpecification() {
 				return true

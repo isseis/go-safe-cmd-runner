@@ -24,6 +24,7 @@ type ConfigSpec struct {
 type GlobalSpec struct {
 	// Execution control
 	Timeout           int    `toml:"timeout"`             // Global timeout in seconds (0 = no timeout)
+	WorkDir           string `toml:"workdir"`             // Working directory
 	LogLevel          string `toml:"log_level"`           // Log level: debug, info, warn, error
 	SkipStandardPaths bool   `toml:"skip_standard_paths"` // Skip verification for standard system paths
 	MaxOutputSize     int64  `toml:"max_output_size"`     // Maximum output size in bytes (0 = unlimited)

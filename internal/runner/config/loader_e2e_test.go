@@ -1,5 +1,4 @@
-//go:build skip_until_phase5
-// +build skip_until_phase5
+//go:build skip_e2e_tests
 
 package config_test
 
@@ -33,23 +32,28 @@ func TestE2E_CompleteConfiguration(t *testing.T) {
 	require.NoError(t, err, "Failed to load E2E test configuration")
 	require.NotNil(t, cfg, "Configuration should not be nil")
 
+	// Expand global configuration to access ExpandedEnv
+	runtimeGlobal, err := config.ExpandGlobal(&cfg.Global)
+	require.NoError(t, err, "Failed to expand global configuration")
+	require.NotNil(t, runtimeGlobal, "RuntimeGlobal should not be nil")
+
 	// Verify Global configuration
 	t.Run("GlobalEnv", func(t *testing.T) {
-		require.NotNil(t, cfg.Global.ExpandedEnv, "Global.ExpandedEnv should be initialized")
+		require.NotNil(t, runtimeGlobal.ExpandedEnv, "Global.ExpandedEnv should be initialized")
 
 		// Check Global.Env variables are expanded
-		assert.Equal(t, "/opt/app", cfg.Global.ExpandedEnv["BASE_DIR"], "BASE_DIR should be set")
-		assert.Equal(t, "info", cfg.Global.ExpandedEnv["LOG_LEVEL"], "LOG_LEVEL should be set")
+		assert.Equal(t, "/opt/app", runtimeGlobal.ExpandedEnv["BASE_DIR"], "BASE_DIR should be set")
+		assert.Equal(t, "info", runtimeGlobal.ExpandedEnv["LOG_LEVEL"], "LOG_LEVEL should be set")
 
 		// Check PATH includes both custom and system PATH
-		path := cfg.Global.ExpandedEnv["PATH"]
+		path := runtimeGlobal.ExpandedEnv["PATH"]
 		assert.Contains(t, path, "/opt/tools/bin", "PATH should include custom path")
 		assert.Contains(t, path, "/usr/bin:/bin", "PATH should include system PATH")
 	})
 
 	t.Run("GlobalVerifyFiles", func(t *testing.T) {
 		// Global.ExpandedVerifyFiles should reference Global.Env variables
-		require.Len(t, cfg.Global.ExpandedVerifyFiles, 1, "Global should have 1 expanded verify_files entry")
+		require.Len(t, runtimeGlobal.ExpandedVerifyFiles, 1, "Global should have 1 expanded verify_files entry")
 		assert.Equal(t, "/opt/app/verify.sh", cfg.Global.ExpandedVerifyFiles[0],
 			"Global.ExpandedVerifyFiles should expand BASE_DIR")
 	})
@@ -455,7 +459,7 @@ func TestE2E_FullExpansionPipeline(t *testing.T) {
 }
 
 // Helper function to find a group by name
-func findGroup(t *testing.T, cfg *runnertypes.Config, name string) *runnertypes.CommandGroup {
+func findGroup(t *testing.T, cfg *runnertypes.ConfigSpec, name string) *runnertypes.GroupSpec {
 	t.Helper()
 	for i := range cfg.Groups {
 		if cfg.Groups[i].Name == name {

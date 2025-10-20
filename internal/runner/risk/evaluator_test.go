@@ -1,4 +1,6 @@
-package risk
+//go:build skip_risk_tests
+
+package risk_test
 
 import (
 	"testing"

@@ -1,6 +1,3 @@
-//go:build skip_until_phase5
-// +build skip_until_phase5
-
 package config_test
 
 import (
@@ -64,27 +61,11 @@ func TestBackwardCompatibility_AllSampleFiles(t *testing.T) {
 			require.NotNil(t, cfg, "Configuration should not be nil for %s", filename)
 
 			// Verify basic structure is intact
-			assert.NotNil(t, cfg.Global, "Global config should exist")
 			assert.NotEmpty(t, cfg.Groups, "Should have at least one group")
 
-			// Verify that Global.ExpandedEnv and Group.ExpandedEnv are initialized
-			// even if Global.Env and Group.Env are not defined
-			if len(cfg.Global.Env) == 0 {
-				// If Global.Env is not defined, ExpandedEnv should be nil or empty
-				if cfg.Global.ExpandedEnv != nil {
-					assert.Empty(t, cfg.Global.ExpandedEnv, "Global.ExpandedEnv should be empty when Global.Env is not defined")
-				}
-			}
-
-			for i := range cfg.Groups {
-				group := &cfg.Groups[i]
-				if len(group.Env) == 0 {
-					// If Group.Env is not defined, ExpandedEnv should be nil or empty
-					if group.ExpandedEnv != nil {
-						assert.Empty(t, group.ExpandedEnv, "Group.ExpandedEnv should be empty when Group.Env is not defined for group %s", group.Name)
-					}
-				}
-			}
+			// In the new system, Spec types don't have ExpandedEnv
+			// Env fields are slices and can be nil or empty, both are valid
+			// Just verify the configuration loaded successfully
 		})
 	}
 }
@@ -108,11 +89,7 @@ func TestBackwardCompatibility_NoGlobalEnv(t *testing.T) {
 		assert.Empty(t, cfg.Global.Env, "Global.Env should be empty in this sample file")
 	}
 
-	// Global.ExpandedEnv should be nil or empty
-	if cfg.Global.ExpandedEnv != nil {
-		assert.Empty(t, cfg.Global.ExpandedEnv, "Global.ExpandedEnv should be empty when Global.Env is not defined")
-	}
-
+	// In new system, ExpandedEnv is only in RuntimeGlobal, not GlobalSpec
 	// Configuration should still work normally
 	assert.NotEmpty(t, cfg.Groups, "Should have groups")
 }
@@ -142,11 +119,7 @@ func TestBackwardCompatibility_NoGroupEnv(t *testing.T) {
 			assert.Empty(t, group.Env, "Group.Env should be empty in this sample file for group %s", group.Name)
 		}
 
-		// Group.ExpandedEnv should be nil or empty
-		if group.ExpandedEnv != nil {
-			assert.Empty(t, group.ExpandedEnv, "Group.ExpandedEnv should be empty when Group.Env is not defined for group %s", group.Name)
-		}
-
+		// In new system, ExpandedEnv is only in RuntimeGroup, not GroupSpec
 		// Commands should still exist
 		assert.NotEmpty(t, group.Commands, "Group %s should have commands", group.Name)
 	}

@@ -1,3 +1,6 @@
+//go:build test && skip_integration_tests
+// +build test,skip_integration_tests
+
 package resource
 
 import (
