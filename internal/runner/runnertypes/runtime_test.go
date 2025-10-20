@@ -371,6 +371,22 @@ func TestRuntimeCommand_Structure(t *testing.T) {
 	if len(runtime.ExpandedArgs) != 2 {
 		t.Errorf("len(ExpandedArgs) = %d, want 2", len(runtime.ExpandedArgs))
 	}
+	// Verify the content of ExpandedArgs
+	expectedArgs := []string{"hello", "world"}
+	for i, arg := range runtime.ExpandedArgs {
+		if i < len(expectedArgs) && arg != expectedArgs[i] {
+			t.Errorf("ExpandedArgs[%d] = %s, want %s", i, arg, expectedArgs[i])
+		}
+	}
+	// Verify ExpandedEnv content
+	if len(runtime.ExpandedEnv) != 1 {
+		t.Errorf("len(ExpandedEnv) = %d, want 1", len(runtime.ExpandedEnv))
+	}
+	if val, exists := runtime.ExpandedEnv["TEST"]; !exists {
+		t.Error("ExpandedEnv[TEST] key not found")
+	} else if val != "value" {
+		t.Errorf("ExpandedEnv[TEST] = %s, want value", val)
+	}
 	if runtime.EffectiveWorkDir != "/tmp" {
 		t.Errorf("EffectiveWorkDir = %s, want /tmp", runtime.EffectiveWorkDir)
 	}
