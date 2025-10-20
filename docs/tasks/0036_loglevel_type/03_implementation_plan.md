@@ -667,5 +667,5 @@ cfg.Global.LogLevel = runnertypes.LogLevelDebug
 
 - [encoding.TextUnmarshaler interface](https://pkg.go.dev/encoding#TextUnmarshaler)
 - [log/slog package](https://pkg.go.dev/log/slog)
-- [go-toml/v2 documentation](https://github.com/pelletier/go-toml)
+- [go-toml/v2 documentation](https://pkg.go.dev/github.com/pelletier/go-toml/v2)
 - 既存の RiskLevel 実装: `internal/runner/runnertypes/config.go:163-234`
