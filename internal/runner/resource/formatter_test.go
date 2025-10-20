@@ -1,5 +1,5 @@
-//go:build test && skip_integration_tests
-// +build test,skip_integration_tests
+//go:build test
+// +build test
 
 package resource
 

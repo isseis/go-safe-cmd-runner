@@ -30,8 +30,8 @@ Task 0035 (Spec/Runtime Separation) の進行に伴い、一時的に `skip_inte
 | `internal/runner/resource/integration_test.go` | ✅ 完了 | `CommandSpec`/`GroupSpec` を使用、テスト実行確認済み |
 | `internal/runner/resource/performance_test.go` | ✅ 完了 | `CommandSpec`/`GroupSpec` を使用、ベンチマーク実行確認済み |
 | `internal/runner/resource/security_test.go` | ✅ 完了 | `CommandSpec` を使用、テスト実行確認済み |
-| `internal/runner/resource/formatter_test.go` | ⏸️ 保留 | 他テストとの依存関係のため一時的に無効化 |
-| `internal/runner/resource/manager_test.go` | ⏸️ 保留 | 他テストとの依存関係のため一時的に無効化 |
+| `internal/runner/resource/formatter_test.go` | ✅ 完了 | ビルドタグ削除、テスト実行確認済み（新型への依存なし） |
+| `internal/runner/resource/manager_test.go` | ✅ 完了 | ビルドタグ削除、テスト実行確認済み（新型への依存なし） |
 | `internal/runner/resource/usergroup_dryrun_test.go` | ✅ 完了 | ビルドタグ削除、テスト実行確認済み |
 
 **完了した作業**:
@@ -121,7 +121,7 @@ Task 0035 (Spec/Runtime Separation) の進行に伴い、一時的に `skip_inte
 ## 進捗状況
 
 - [x] Phase 5: types_test.go 有効化
-- [x] Phase 6: Resource Manager テスト有効化 (8/10 完了、2ファイル保留)
+- [x] Phase 6: Resource Manager テスト有効化 (10/10 完了)
   - ✅ normal_manager_test.go
   - ✅ default_manager_test.go
   - ✅ dryrun_manager_test.go
@@ -130,8 +130,8 @@ Task 0035 (Spec/Runtime Separation) の進行に伴い、一時的に `skip_inte
   - ✅ performance_test.go
   - ✅ security_test.go
   - ✅ usergroup_dryrun_test.go
-  - ⏸️ formatter_test.go (保留)
-  - ⏸️ manager_test.go (保留)
+  - ✅ formatter_test.go
+  - ✅ manager_test.go
 - [x] Phase 6: Verification Manager テスト有効化
   - ✅ manager_test.go
 - [ ] Phase 7: Executor テスト有効化
