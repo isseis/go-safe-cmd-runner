@@ -168,10 +168,10 @@ func (s *CommandSpec) HasUserGroupSpecification() bool {
 - `spec_test.go`: Spec層のテスト
 
 **完了条件**:
-- [ ] すべてのSpec型が定義されている
-- [ ] TOMLタグが正しく設定されている
-- [ ] GoDocコメントが記述されている
-- [ ] 単体テストが成功している
+- [x] すべてのSpec型が定義されている
+- [x] TOMLタグが正しく設定されている
+- [x] GoDocコメントが記述されている
+- [x] 単体テストが成功している
 
 ---
 
@@ -737,12 +737,12 @@ Phase 1 → Phase 2 → Phase 3 → Phase 5 → Phase 6 → Phase 7
 ## 7. 実装チェックリスト
 
 ### Phase 1: Spec層の型定義
-- [ ] `ConfigSpec` を定義
-- [ ] `GlobalSpec` を定義
-- [ ] `GroupSpec` を定義
-- [ ] `CommandSpec` を定義
-- [ ] `GetMaxRiskLevel()`, `HasUserGroupSpecification()` を実装
-- [ ] Spec層のテストを実装
+- [x] `ConfigSpec` を定義
+- [x] `GlobalSpec` を定義
+- [x] `GroupSpec` を定義
+- [x] `CommandSpec` を定義
+- [x] `GetMaxRiskLevel()`, `HasUserGroupSpecification()` を実装
+- [x] Spec層のテストを実装
 
 ### Phase 2: Runtime層の型定義
 - [ ] `RuntimeGlobal` を定義
