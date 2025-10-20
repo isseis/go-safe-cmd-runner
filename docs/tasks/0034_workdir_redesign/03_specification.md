@@ -719,26 +719,15 @@ type Command struct {
 
 ### 6.3 ワークディレクトリ決定ロジック
 
+コマンド実行時のワークディレクトリ決定ロジックについては、**Section 4.2「ワークディレクトリ決定ロジック」** で詳細に定義されています。
+
+**関数**: `DefaultCommandExecutor.resolveCommandWorkDir()`
 **ファイル**: `internal/runner/executor/command_executor.go`
+**定義箇所**: Section 4.2 (line 387-402)
 
-```go
-// resolveCommandWorkDir: 実際に使用するワークディレクトリを決定
-// 優先度: Command.ExpandedWorkDir > Group.ExpandedWorkDir
-func (e *DefaultCommandExecutor) resolveCommandWorkDir(
-    cmd *runnertypes.Command,
-    group *runnertypes.CommandGroup,
-) string {
-    // 優先度1: コマンドレベル ExpandedWorkDir
-    if cmd.ExpandedWorkDir != "" {
-        return cmd.ExpandedWorkDir
-    }
-
-    // 優先度2: グループレベル ExpandedWorkDir（ExecuteGroup で決定・展開済み）
-    // 注: この時点で group.ExpandedWorkDir は物理/仮想ディレクトリパス
-    //     （一時ディレクトリまたは固定ディレクトリ）
-    return group.ExpandedWorkDir
-}
-```
+**概要**:
+- 優先度1: `Command.ExpandedWorkDir`（コマンドレベルで指定された場合）
+- 優先度2: `Group.ExpandedWorkDir`（グループレベルで決定・展開済み）
 
 ## 7. コマンドラインオプション
 
@@ -908,46 +897,10 @@ func (e *DefaultGroupExecutor) ExecuteGroup(
 }
 
 // resolveGroupWorkDir: グループのワークディレクトリを決定
+// 詳細な実装は Section 4.1 (line 345-385) を参照
 // 戻り値: (workdir, tempDirManager, error)
 //   - 固定ディレクトリの場合: tempDirManager は nil
 //   - 一時ディレクトリの場合: tempDirManager は非nil（クリーンアップに使用）
-func (e *DefaultGroupExecutor) resolveGroupWorkDir(
-    group *runnertypes.CommandGroup,
-) (string, TempDirManager, error) {
-    // グループレベル WorkDir が指定されている?
-    if group.WorkDir != "" {
-        // 変数展開を実行（注意: __runner_workdir はまだ未定義）
-        level := fmt.Sprintf("group[%s]", group.Name)
-        expandedWorkDir, err := config.ExpandString(
-            group.WorkDir,
-            group.ExpandedVars,  // __runner_workdir は含まれない
-            level,
-            "workdir",
-        )
-        if err != nil {
-            return "", nil, fmt.Errorf("failed to expand group workdir: %w", err)
-        }
-
-        e.logger.Info(fmt.Sprintf(
-            "Using group workdir for '%s': %s",
-            group.Name, expandedWorkDir,
-        ))
-        return expandedWorkDir, nil, nil
-    }
-
-    // 一時ディレクトリマネージャーを作成
-    // 注: isDryRun フラグは GroupExecutor のフィールドとして保持
-    tempDirMgr := NewTempDirManager(e.logger, group.Name, e.isDryRun)
-
-    // 一時ディレクトリを生成
-    // dry-runモードでは仮想パスが返される
-    tempDir, err := tempDirMgr.Create()
-    if err != nil {
-        return "", nil, err
-    }
-
-    return tempDir, tempDirMgr, nil
-}
 
 // handleCommandOutput: コマンド出力を処理（既存ロジック）
 func (e *DefaultGroupExecutor) handleCommandOutput(
