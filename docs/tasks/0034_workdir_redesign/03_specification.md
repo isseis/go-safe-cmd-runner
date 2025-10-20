@@ -1180,7 +1180,7 @@ func TestExpandStringWithRunnerWorkdir(t *testing.T) {
 }
 ```
 
-#### T004-dryrun: dry-runモードでの一時ディレクトリ管理
+#### T005: dry-runモードでの一時ディレクトリ管理
 ```go
 func TestTempDirManagerDryRun(t *testing.T) {
     // テスト1: dry-runモードでのCreate()
@@ -1203,7 +1203,7 @@ func TestTempDirManagerDryRun(t *testing.T) {
 
 ### 13.2 統合テストケース
 
-#### T005: グループ実行全体
+#### T006: グループ実行全体
 ```go
 func TestExecuteGroupWithTempDir(t *testing.T) {
     // テスト条件:
