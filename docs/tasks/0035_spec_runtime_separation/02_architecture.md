@@ -689,8 +689,8 @@ func (e *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *runn
     // ...
 
     // 3. 各コマンドを展開・実行
-    for _, cmdSpec := range groupSpec.Commands {
-        runtimeCmd, err := config.ExpandCommand(&cmdSpec, runtimeGroup.ExpandedVars, groupSpec.Name)
+    for i := range groupSpec.Commands {
+        runtimeCmd, err := config.ExpandCommand(&groupSpec.Commands[i], runtimeGroup.ExpandedVars, groupSpec.Name)
         if err != nil {
             return err
         }
