@@ -218,8 +218,6 @@ func NewTempDirManager(logger logging.Logger, groupName string, isDryRun bool) T
 
 **パッケージ**: `internal/runner`
 
-**注意**: `GroupExecutor` は概念上のモデルで、実際の実装は `Runner.ExecuteGroup()` メソッドです。
-
 ```go
 // Runner.ExecuteGroup: 1つのグループを実行
 //
