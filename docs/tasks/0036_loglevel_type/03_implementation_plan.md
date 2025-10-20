@@ -60,6 +60,14 @@ func TestLogLevel_UnmarshalText_ValidLevels(t *testing.T) {
 		{"warn", "warn", LogLevelWarn},
 		{"error", "error", LogLevelError},
 		{"empty defaults to info", "", LogLevelInfo},
+		{"uppercase DEBUG", "DEBUG", LogLevelDebug},
+		{"uppercase INFO", "INFO", LogLevelInfo},
+		{"uppercase WARN", "WARN", LogLevelWarn},
+		{"uppercase ERROR", "ERROR", LogLevelError},
+		{"mixed case Debug", "Debug", LogLevelDebug},
+		{"mixed case Info", "Info", LogLevelInfo},
+		{"mixed case Warn", "Warn", LogLevelWarn},
+		{"mixed case Error", "Error", LogLevelError},
 	}
 
 	for _, tt := range tests {
@@ -83,8 +91,6 @@ func TestLogLevel_UnmarshalText_InvalidLevels(t *testing.T) {
 		input string
 	}{
 		{"typo", "debg"},
-		{"uppercase", "DEBUG"},
-		{"mixed case", "Info"},
 		{"unknown", "unknown"},
 		{"number", "1"},
 	}
@@ -185,17 +191,17 @@ const (
 // UnmarshalText implements the encoding.TextUnmarshaler interface.
 // This enables validation during TOML parsing.
 func (l *LogLevel) UnmarshalText(text []byte) error {
-	s := LogLevel(text)
-	switch s {
+	s := strings.ToLower(string(text))
+	switch LogLevel(s) {
 	case LogLevelDebug, LogLevelInfo, LogLevelWarn, LogLevelError:
-		*l = s
+		*l = LogLevel(s)
 		return nil
 	case "":
 		// Empty string defaults to info level
 		*l = LogLevelInfo
 		return nil
 	default:
-		return fmt.Errorf("invalid log level %q: must be one of: debug, info, warn, error", s)
+		return fmt.Errorf("invalid log level %q: must be one of: debug, info, warn, error", string(text))
 	}
 }
 
@@ -216,7 +222,7 @@ func (l LogLevel) String() string {
 
 **手順**:
 1. 上記コードを `config.go` に追加
-2. import に `log/slog` を追加 (必要な場合)
+2. import に `log/slog` および `strings` を追加
 3. テストを実行 (`go test -tags test -v ./internal/runner/runnertypes`)
 4. すべてのテストが成功することを確認
 5. リンターを実行 (`make lint`)
