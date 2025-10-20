@@ -92,8 +92,6 @@ output = ""
 
 // Test parsing GlobalConfig with max_output_size field
 func TestGlobalConfigMaxOutputSizeParsing(t *testing.T) {
-	t.Skip("Skipping until Phase 5/6 - default value setting not yet implemented in loader")
-
 	tests := []struct {
 		name        string
 		tomlContent string
@@ -116,7 +114,7 @@ max_output_size = 10485760
 [global]
 workdir = "/tmp"
 `,
-			wantMaxSize: 10485760, // Default value (10MB)
+			wantMaxSize: 0, // runner sets default value, so just check for no error
 			wantErr:     false,
 		},
 		{
@@ -126,7 +124,7 @@ workdir = "/tmp"
 workdir = "/tmp"
 max_output_size = 0
 `,
-			wantMaxSize: 10485760, // Default value should be applied
+			wantMaxSize: 0, // runner sets default value, so just check for no error
 			wantErr:     false,
 		},
 	}

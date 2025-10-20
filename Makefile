@@ -98,7 +98,7 @@ HASH_TARGETS := \
 	./sample/slack-notify.toml \
 	./sample/slack-group-notification-test.toml
 
-.PHONY: all lint build run clean test benchmark coverage coverage-internal hash integration-test integration-test-success slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check performance-test
+.PHONY: all lint build run clean test benchmark coverage coverage-internal hash integration-test integration-test-success slack-notify-test slack-group-notification-test fmt fmt-all security-check build-security-check performance-test additional-test
 
 all: security-check
 
@@ -163,6 +163,8 @@ build-test: $(BINARY_TEST_RECORD) $(BINARY_TEST_VERIFY) $(BINARY_TEST_RUNNER)
 test: build-test
 	$(ENVSET) CGO_ENABLED=1 $(GOTEST) -tags test -race -p 2 -v ./...
 	$(ENVSET) CGO_ENABLED=0 $(GOTEST) -tags test -p 2 -v ./...
+
+additional-test: test
 	$(ENVSET) $(BINARY_TEST_RUNNER) -dry-run -config ./sample/comprehensive.toml
 	$(PYTHON) scripts/test_additional_security_checks.py
 

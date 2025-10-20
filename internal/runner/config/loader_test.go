@@ -59,8 +59,6 @@ version = "1.0"
 
 // TestBasicTOMLParse tests basic TOML parsing for Global.Env and Group.Env
 func TestBasicTOMLParse(t *testing.T) {
-	t.Skip("Skipping until Phase 5/6 - expansion not yet implemented in loader")
-
 	configContent := `
 version = "1.0"
 
@@ -94,8 +92,6 @@ args = ["test"]
 // TestLoader_GroupEnvIntegration tests basic Group.Env loading from a TOML file
 // Note: Detailed allowlist scenarios are covered in loader_e2e_test.go::TestE2E_AllowlistScenarios
 func TestLoader_GroupEnvIntegration(t *testing.T) {
-	t.Skip("Skipping until Phase 5/6 - expansion not yet implemented in loader")
-
 	configPath := "testdata/group_env.toml"
 
 	// Read file content

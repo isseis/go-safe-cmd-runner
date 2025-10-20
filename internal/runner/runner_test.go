@@ -16,6 +16,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
+	runnertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/testing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -55,65 +56,8 @@ func setupSafeTestEnv(t *testing.T) {
 
 var ErrExecutionFailed = errors.New("execution failed")
 
-// MockResourceManager is a mock implementation of ResourceManager
-type MockResourceManager struct {
-	mock.Mock
-}
-
-func (m *MockResourceManager) SetMode(mode resource.ExecutionMode, opts *resource.DryRunOptions) {
-	m.Called(mode, opts)
-}
-
-func (m *MockResourceManager) GetMode() resource.ExecutionMode {
-	args := m.Called()
-	return args.Get(0).(resource.ExecutionMode)
-}
-
-func (m *MockResourceManager) ExecuteCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec, env map[string]string) (*resource.ExecutionResult, error) {
-	args := m.Called(ctx, cmd, group, env)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*resource.ExecutionResult), args.Error(1)
-}
-
-func (m *MockResourceManager) ValidateOutputPath(outputPath, workDir string) error {
-	args := m.Called(outputPath, workDir)
-	return args.Error(0)
-}
-
-func (m *MockResourceManager) CreateTempDir(groupName string) (string, error) {
-	args := m.Called(groupName)
-	return args.String(0), args.Error(1)
-}
-
-func (m *MockResourceManager) CleanupTempDir(tempDirPath string) error {
-	args := m.Called(tempDirPath)
-	return args.Error(0)
-}
-
-func (m *MockResourceManager) CleanupAllTempDirs() error {
-	args := m.Called()
-	return args.Error(0)
-}
-
-func (m *MockResourceManager) WithPrivileges(ctx context.Context, fn func() error) error {
-	args := m.Called(ctx, fn)
-	return args.Error(0)
-}
-
-func (m *MockResourceManager) SendNotification(message string, details map[string]any) error {
-	args := m.Called(message, details)
-	return args.Error(0)
-}
-
-func (m *MockResourceManager) GetDryRunResults() *resource.DryRunResult {
-	args := m.Called()
-	if args.Get(0) == nil {
-		return nil
-	}
-	return args.Get(0).(*resource.DryRunResult)
-}
+// MockResourceManager is an alias to the shared mock implementation
+type MockResourceManager = runnertesting.MockResourceManager
 
 func (m *MockResourceManager) RecordAnalysis(analysis *resource.ResourceAnalysis) {
 	m.Called(analysis)
