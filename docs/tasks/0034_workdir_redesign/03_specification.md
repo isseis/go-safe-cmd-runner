@@ -646,10 +646,9 @@ func (e *DefaultGroupExecutor) expandCommand(
 ) (*runnertypes.Command, error) {
     level := fmt.Sprintf("command[%s]", cmd.Name)
 
-    // 展開済みコマンド構造体を作成
-    expanded := &runnertypes.Command{
-        Name: cmd.Name,
-    }
+    // 元のcmdのシャローコピーを作成（全フィールドをコピー）
+    // これにより、TOMLから読み込んだ生の値（Cmd, Args, Vars, Envなど）を保持
+    expanded := *cmd
 
     // Cmd の展開
     expandedCmd, err := config.ExpandString(cmd.Cmd, vars, level, "cmd")
@@ -687,7 +686,7 @@ func (e *DefaultGroupExecutor) expandCommand(
         expanded.ExpandedEnv[key] = expandedValue
     }
 
-    return expanded, nil
+    return &expanded, nil
 }
 ```
 
@@ -1017,14 +1016,13 @@ ExpandString("%{undefined_var}/file", group.ExpandedVars, ...)
 ### 11.2 検証の実装
 
 ```go
-func validatePath(path string, isDryRun bool) error {
-    // ルール1: 絶対パスのみ許可（dry-runでも実行）
+func validatePath(path string) error {
+    // ルール1: 絶対パスのみ許可
     if !filepath.IsAbs(path) {
         return fmt.Errorf("path must be absolute: %s", path)
     }
 
     // ルール2: パストラバーサル攻撃を防ぐため、".." コンポーネントを禁止
-    // (dry-runでも実行)
     // filepath.Clean() は // を正規化してしまうため、コンポーネント単位で検証
     for _, part := range strings.Split(path, string(filepath.Separator)) {
         if part == ".." {
@@ -1032,19 +1030,11 @@ func validatePath(path string, isDryRun bool) error {
         }
     }
 
-    // ルール3: ファイル/ディレクトリの存在チェック
-    // (dry-runではスキップ)
-    if !isDryRun {
-        if _, err := os.Stat(path); err != nil {
-            // 注意: 存在しない場合はエラーを返すか、警告のみにするかは
-            // コンテキストによる（グループのworkdirなら必須、コマンドの出力先なら作成される可能性がある）
-            // ここでは検証のみを行い、実際のエラーハンドリングは呼び出し元で行う
-            return fmt.Errorf("path does not exist: %s: %w", path, err)
-        }
-    }
-
-    // ルール4: シンボリックリンク検証
-    // (既存の SafeFileIO の仕組みを活用、dry-runではスキップされる可能性あり)
+    // 注意: ファイル/ディレクトリの存在チェックは行わない
+    // 理由:
+    // - グループ内のコマンドがディレクトリを作成するケース (mkdir -p) を妨げない
+    // - 存在しないパスへのアクセスは、コマンド実行時のOSエラーで適切にハンドリングされる
+    // - dry-runモードとの動作の一貫性を保つ
 
     return nil
 }
