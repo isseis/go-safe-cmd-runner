@@ -146,8 +146,8 @@ func TestLogLevel_ToSlogLevel_InvalidLevels(t *testing.T) {
 		{"typo debg", LogLevel("debg"), true},
 		{"unknown value", LogLevel("unknown"), true},
 		{"numeric string", LogLevel("1"), true},
-		{"uppercase DEBUG", LogLevel("DEBUG"), true},
-		{"mixed case Debug", LogLevel("Debug"), true},
+		{"uppercase DEBUG", LogLevel("DEBUG"), false},
+		{"mixed case Debug", LogLevel("Debug"), false},
 		{"whitespace", LogLevel(" debug"), true},
 		{"empty string", LogLevel(""), false}, // empty string should work (defaults to info)
 	}
