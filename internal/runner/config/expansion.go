@@ -626,9 +626,7 @@ func ExpandGroup(spec *runnertypes.GroupSpec, globalVars map[string]string) (*ru
 	}
 
 	// 1. Inherit global variables
-	for k, v := range globalVars {
-		runtime.ExpandedVars[k] = v
-	}
+	maps.Copy(runtime.ExpandedVars, globalVars)
 
 	// 2. Process FromEnv (group-level) (TODO: To be implemented in Task 0033)
 	// For now, skip FromEnv processing
@@ -691,9 +689,7 @@ func ExpandCommand(spec *runnertypes.CommandSpec, groupVars map[string]string, _
 	}
 
 	// 1. Inherit group variables
-	for k, v := range groupVars {
-		runtime.ExpandedVars[k] = v
-	}
+	maps.Copy(runtime.ExpandedVars, groupVars)
 
 	// 2. Process FromEnv (command-level) (TODO: To be implemented in Task 0033)
 	// For now, skip FromEnv processing
