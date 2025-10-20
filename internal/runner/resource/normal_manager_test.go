@@ -1,5 +1,5 @@
-//go:build test && skip_integration_tests
-// +build test,skip_integration_tests
+//go:build test
+// +build test
 
 package resource
 
@@ -109,27 +109,46 @@ func createTestNormalResourceManager() (*NormalResourceManager, *executortesting
 	return manager, mockExec, mockFS, mockPriv
 }
 
-func createTestCommand() runnertypes.Command {
-	cmd := runnertypes.Command{
+func createTestCommand() *runnertypes.RuntimeCommand {
+	spec := &runnertypes.CommandSpec{
 		Name:        "test-command",
 		Description: "Test command description",
 		Cmd:         "echo",
 		Args:        []string{"hello", "world"},
-		Dir:         "/tmp",
+		WorkDir:     "/tmp",
 		Timeout:     30,
 	}
-	runnertypes.PrepareCommand(&cmd)
-	return cmd
+	return &runnertypes.RuntimeCommand{
+		Spec:             spec,
+		ExpandedCmd:      "echo",
+		ExpandedArgs:     []string{"hello", "world"},
+		ExpandedEnv:      make(map[string]string),
+		ExpandedVars:     make(map[string]string),
+		EffectiveWorkDir: "/tmp",
+		EffectiveTimeout: 30,
+	}
 }
 
-func createTestCommandGroup() *runnertypes.CommandGroup {
-	return &runnertypes.CommandGroup{
+func createTestCommandGroup() *runnertypes.GroupSpec {
+	return &runnertypes.GroupSpec{
 		Name:        "test-group",
 		Description: "Test group description",
 		Priority:    1,
-		TempDir:     false,
 		WorkDir:     "/tmp",
-		Commands:    []runnertypes.Command{createTestCommand()},
+		Commands:    []runnertypes.CommandSpec{},
+	}
+}
+
+// Helper to convert CommandSpec to RuntimeCommand for testing
+func createRuntimeCommand(spec *runnertypes.CommandSpec) *runnertypes.RuntimeCommand {
+	return &runnertypes.RuntimeCommand{
+		Spec:             spec,
+		ExpandedCmd:      spec.Cmd,
+		ExpandedArgs:     spec.Args,
+		ExpandedEnv:      make(map[string]string),
+		ExpandedVars:     make(map[string]string),
+		EffectiveWorkDir: spec.WorkDir,
+		EffectiveTimeout: spec.Timeout,
 	}
 }
 
@@ -191,16 +210,15 @@ func TestNormalResourceManager_ExecuteCommand_PrivilegeEscalationBlocked(t *test
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cmd := runnertypes.Command{
+			cmd := createRuntimeCommand(&runnertypes.CommandSpec{
 				Name:         "test-privilege-command",
 				Description:  "Test privilege escalation command",
 				Cmd:          tc.cmd,
 				Args:         tc.args,
-				Dir:          "/tmp",
+				WorkDir:      "/tmp",
 				Timeout:      30,
 				MaxRiskLevel: "low", // Default max risk level to ensure Critical risk is blocked
-			}
-			runnertypes.PrepareCommand(&cmd)
+			})
 			group := createTestCommandGroup()
 			env := map[string]string{"TEST": "value"}
 			ctx := context.Background()
@@ -285,16 +303,15 @@ func TestNormalResourceManager_ExecuteCommand_MaxRiskLevelControl(t *testing.T) 
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cmd := runnertypes.Command{
+			cmd := createRuntimeCommand(&runnertypes.CommandSpec{
 				Name:         "test-command",
 				Description:  "Test command",
 				Cmd:          tc.cmd,
 				Args:         tc.args,
 				MaxRiskLevel: tc.maxRiskLevel,
-				Dir:          "/tmp",
+				WorkDir:      "/tmp",
 				Timeout:      30,
-			}
-			runnertypes.PrepareCommand(&cmd)
+			})
 
 			if tc.shouldExecute {
 				expectedResult := &executor.Result{

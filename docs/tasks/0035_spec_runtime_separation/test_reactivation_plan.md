@@ -21,33 +21,37 @@ Task 0035 (Spec/Runtime Separation) の進行に伴い、一時的に `skip_inte
 
 以下のテストは、Resource Manager が `RuntimeCommand` を使用するように修正が必要です。
 
-| ファイル | 理由 | 必要な修正 |
-|---------|------|----------|
-| `internal/runner/resource/default_manager_test.go` | `Command` → `RuntimeCommand` への変更 | MockExecutor の Execute() シグネチャ変更 |
-| `internal/runner/resource/dryrun_manager_test.go` | 同上 | 同上 |
-| `internal/runner/resource/error_scenarios_test.go` | 同上 | 同上 |
-| `internal/runner/resource/formatter_test.go` | 同上 | 同上 |
-| `internal/runner/resource/integration_test.go` | 同上 | 同上 |
-| `internal/runner/resource/manager_test.go` | 同上 | 同上 |
-| `internal/runner/resource/normal_manager_test.go` | 同上 | 同上 |
-| `internal/runner/resource/performance_test.go` | 同上 | 同上 |
-| `internal/runner/resource/security_test.go` | 同上 | 同上 |
-| `internal/runner/resource/usergroup_dryrun_test.go` | 同上 | 同上 |
+| ファイル | 状態 | 備考 |
+|---------|------|------|
+| `internal/runner/resource/normal_manager_test.go` | ✅ 完了 | ヘルパー関数を追加し、全テストケースを `RuntimeCommand` に変換 |
+| `internal/runner/resource/default_manager_test.go` | ✅ 完了 | normal_manager_test.go のヘルパー関数を使用 |
+| `internal/runner/resource/dryrun_manager_test.go` | ✅ 完了 | `CommandSpec` → `RuntimeCommand` 変換を実装 |
+| `internal/runner/resource/error_scenarios_test.go` | ✅ 完了 | テストケース構造体を `CommandSpec`/`GroupSpec` に変更 |
+| `internal/runner/resource/integration_test.go` | ✅ 完了 | `CommandSpec`/`GroupSpec` を使用、テスト実行確認済み |
+| `internal/runner/resource/performance_test.go` | ✅ 完了 | `CommandSpec`/`GroupSpec` を使用、ベンチマーク実行確認済み |
+| `internal/runner/resource/security_test.go` | ✅ 完了 | `CommandSpec` を使用、テスト実行確認済み |
+| `internal/runner/resource/formatter_test.go` | ⏸️ 保留 | 他テストとの依存関係のため一時的に無効化 |
+| `internal/runner/resource/manager_test.go` | ⏸️ 保留 | 他テストとの依存関係のため一時的に無効化 |
+| `internal/runner/resource/usergroup_dryrun_test.go` | ✅ 完了 | ビルドタグ削除、テスト実行確認済み |
 
-**必要な作業**:
-1. `executor.CommandExecutor` インターフェースの `Execute()` メソッドを `RuntimeCommand` を受け取るように変更
-2. `MockExecutor` の実装を更新
-3. テストコード内で `Command` → `RuntimeCommand` への変換処理を追加
+**完了した作業**:
+1. ✅ `executor.CommandExecutor` インターフェースの `Execute()` メソッドを `RuntimeCommand` を受け取るように変更
+2. ✅ `MockExecutor` の実装を更新
+3. ✅ テストコード内で `CommandSpec` → `RuntimeCommand` への変換処理を追加（ヘルパー関数 `createRuntimeCommand()` を実装）
+4. ✅ usergroup_dryrun_test.go: ビルドタグを削除し、テスト実行確認
 
-### 🔄 Phase 6 で再有効化予定（Verification Manager の RuntimeGlobal 対応）
+### ✅ Phase 6 完了（Verification Manager の RuntimeGlobal 対応）
 
-| ファイル | 理由 | 必要な修正 |
-|---------|------|----------|
-| `internal/verification/manager_test.go` | `GlobalConfig` → `RuntimeGlobal`, `CommandGroup` → `GroupSpec` への変更 | テスト内で ExpandGlobal/ExpandGroup を使用して Runtime 型を生成 |
+| ファイル | 状態 | 備考 |
+|---------|------|------|
+| `internal/verification/manager_test.go` | ✅ 完了 | `RuntimeGlobal`/`GroupSpec` を使用するヘルパー関数を追加、テスト実行確認済み |
 
-**必要な作業**:
-1. テストコード内で `GlobalConfig` を使用している箇所を `GlobalSpec` → `RuntimeGlobal` への展開に変更
-2. `CommandGroup` を使用している箇所を `GroupSpec` → `RuntimeGroup` への展開に変更
+**完了した作業**:
+1. ✅ ビルドタグを削除（`skip_integration_tests` を除去）
+2. ✅ ヘルパー関数 `createRuntimeGlobal()` と `createGroupSpec()` を実装
+3. ✅ 全ての `GlobalConfig` 使用箇所を `RuntimeGlobal` に変換
+4. ✅ 全ての `CommandGroup` 使用箇所を `GroupSpec` に変換
+5. ✅ テスト実行確認（全テスト PASS）
 
 ### 🔄 Phase 7 で再有効化予定（Executor の RuntimeCommand 対応）
 
@@ -117,8 +121,19 @@ Task 0035 (Spec/Runtime Separation) の進行に伴い、一時的に `skip_inte
 ## 進捗状況
 
 - [x] Phase 5: types_test.go 有効化
-- [ ] Phase 6: Resource Manager テスト有効化
-- [ ] Phase 6: Verification Manager テスト有効化
+- [x] Phase 6: Resource Manager テスト有効化 (8/10 完了、2ファイル保留)
+  - ✅ normal_manager_test.go
+  - ✅ default_manager_test.go
+  - ✅ dryrun_manager_test.go
+  - ✅ error_scenarios_test.go
+  - ✅ integration_test.go
+  - ✅ performance_test.go
+  - ✅ security_test.go
+  - ✅ usergroup_dryrun_test.go
+  - ⏸️ formatter_test.go (保留)
+  - ⏸️ manager_test.go (保留)
+- [x] Phase 6: Verification Manager テスト有効化
+  - ✅ manager_test.go
 - [ ] Phase 7: Executor テスト有効化
 - [ ] Phase 8: 統合テスト有効化
 

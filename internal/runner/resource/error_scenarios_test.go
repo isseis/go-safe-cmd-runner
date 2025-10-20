@@ -1,5 +1,5 @@
-//go:build test && skip_integration_tests
-// +build test,skip_integration_tests
+//go:build test
+// +build test
 
 package resource
 
@@ -20,16 +20,16 @@ import (
 // Mock implementations for testing
 type mockCommandExecutor struct{}
 
-func (m *mockCommandExecutor) Execute(_ context.Context, cmd runnertypes.Command, _ map[string]string, _ executor.OutputWriter) (*executor.Result, error) {
+func (m *mockCommandExecutor) Execute(_ context.Context, cmd *runnertypes.RuntimeCommand, _ map[string]string, _ executor.OutputWriter) (*executor.Result, error) {
 	// Normal mode test implementation
 	return &executor.Result{
 		ExitCode: 0,
-		Stdout:   fmt.Sprintf("Mock execution: %s", cmd.Cmd),
+		Stdout:   fmt.Sprintf("Mock execution: %s", cmd.ExpandedCmd),
 		Stderr:   "",
 	}, nil
 }
 
-func (m *mockCommandExecutor) Validate(_ runnertypes.Command) error {
+func (m *mockCommandExecutor) Validate(_ *runnertypes.RuntimeCommand) error {
 	// Executor level validation is minimal since validation happens at ResourceManager level
 	return nil
 }
@@ -52,8 +52,8 @@ func (m *mockFileSystem) FileExists(_ string) (bool, error) {
 func TestErrorScenariosConsistency(t *testing.T) {
 	tests := []struct {
 		name          string
-		command       runnertypes.Command
-		group         *runnertypes.CommandGroup
+		spec          runnertypes.CommandSpec
+		groupSpec     *runnertypes.GroupSpec
 		envVars       map[string]string
 		expectError   bool
 		expectedError error
@@ -61,11 +61,11 @@ func TestErrorScenariosConsistency(t *testing.T) {
 	}{
 		{
 			name: "empty command",
-			command: runnertypes.Command{
+			spec: runnertypes.CommandSpec{
 				Name: "test-cmd",
 				Cmd:  "",
 			},
-			group:         &runnertypes.CommandGroup{Name: "test-group"},
+			groupSpec:     &runnertypes.GroupSpec{Name: "test-group"},
 			envVars:       map[string]string{},
 			expectError:   true,
 			expectedError: ErrEmptyCommand,
@@ -73,11 +73,11 @@ func TestErrorScenariosConsistency(t *testing.T) {
 		},
 		{
 			name: "empty command name",
-			command: runnertypes.Command{
+			spec: runnertypes.CommandSpec{
 				Name: "",
 				Cmd:  "echo test",
 			},
-			group:         &runnertypes.CommandGroup{Name: "test-group"},
+			groupSpec:     &runnertypes.GroupSpec{Name: "test-group"},
 			envVars:       map[string]string{},
 			expectError:   true,
 			expectedError: ErrEmptyCommandName,
@@ -85,11 +85,11 @@ func TestErrorScenariosConsistency(t *testing.T) {
 		},
 		{
 			name: "nil command group",
-			command: runnertypes.Command{
+			spec: runnertypes.CommandSpec{
 				Name: "test-cmd",
 				Cmd:  "echo test",
 			},
-			group:         nil,
+			groupSpec:     nil,
 			envVars:       map[string]string{},
 			expectError:   true,
 			expectedError: ErrNilCommandGroup,
@@ -97,11 +97,11 @@ func TestErrorScenariosConsistency(t *testing.T) {
 		},
 		{
 			name: "empty group name",
-			command: runnertypes.Command{
+			spec: runnertypes.CommandSpec{
 				Name: "test-cmd",
 				Cmd:  "echo test",
 			},
-			group:         &runnertypes.CommandGroup{Name: ""},
+			groupSpec:     &runnertypes.GroupSpec{Name: ""},
 			envVars:       map[string]string{},
 			expectError:   true,
 			expectedError: ErrEmptyGroupName,
@@ -109,11 +109,11 @@ func TestErrorScenariosConsistency(t *testing.T) {
 		},
 		{
 			name: "valid command",
-			command: runnertypes.Command{
+			spec: runnertypes.CommandSpec{
 				Name: "test-cmd",
 				Cmd:  "echo test",
 			},
-			group:         &runnertypes.CommandGroup{Name: "test-group"},
+			groupSpec:     &runnertypes.GroupSpec{Name: "test-group"},
 			envVars:       map[string]string{"TEST": "value"},
 			expectError:   false,
 			expectedError: nil,
@@ -121,11 +121,11 @@ func TestErrorScenariosConsistency(t *testing.T) {
 		},
 		{
 			name: "large environment variables",
-			command: runnertypes.Command{
+			spec: runnertypes.CommandSpec{
 				Name: "large-env-test",
 				Cmd:  "echo $LARGE_VAR",
 			},
-			group: &runnertypes.CommandGroup{Name: "test-group"},
+			groupSpec: &runnertypes.GroupSpec{Name: "test-group"},
 			envVars: func() map[string]string {
 				largeValue := make([]byte, 10000)
 				for i := range largeValue {
@@ -141,11 +141,11 @@ func TestErrorScenariosConsistency(t *testing.T) {
 		},
 		{
 			name: "unicode command",
-			command: runnertypes.Command{
+			spec: runnertypes.CommandSpec{
 				Name: "unicode-test",
 				Cmd:  "echo 'こんにちは世界'",
 			},
-			group: &runnertypes.CommandGroup{Name: "test-group"},
+			groupSpec: &runnertypes.GroupSpec{Name: "test-group"},
 			envVars: map[string]string{
 				"UNICODE_VAR": "値",
 			},
@@ -155,11 +155,11 @@ func TestErrorScenariosConsistency(t *testing.T) {
 		},
 		{
 			name: "special characters in command",
-			command: runnertypes.Command{
+			spec: runnertypes.CommandSpec{
 				Name: "special-chars",
 				Cmd:  "echo 'test with $@#%^&*()[]{}|\\;:\"<>?/'",
 			},
-			group:         &runnertypes.CommandGroup{Name: "test-group"},
+			groupSpec:     &runnertypes.GroupSpec{Name: "test-group"},
 			envVars:       map[string]string{},
 			expectError:   false,
 			expectedError: nil,
@@ -167,11 +167,11 @@ func TestErrorScenariosConsistency(t *testing.T) {
 		},
 		{
 			name: "very long command",
-			command: runnertypes.Command{
+			spec: runnertypes.CommandSpec{
 				Name: "long-cmd",
 				Cmd:  "echo " + string(make([]byte, 1000)),
 			},
-			group:         &runnertypes.CommandGroup{Name: "test-group"},
+			groupSpec:     &runnertypes.GroupSpec{Name: "test-group"},
 			envVars:       map[string]string{},
 			expectError:   false,
 			expectedError: nil,
@@ -179,11 +179,11 @@ func TestErrorScenariosConsistency(t *testing.T) {
 		},
 		{
 			name: "nil environment variables",
-			command: runnertypes.Command{
+			spec: runnertypes.CommandSpec{
 				Name: "nil-env-test",
 				Cmd:  "echo test",
 			},
-			group:         &runnertypes.CommandGroup{Name: "test-group"},
+			groupSpec:     &runnertypes.GroupSpec{Name: "test-group"},
 			envVars:       nil,
 			expectError:   false,
 			expectedError: nil,
@@ -227,8 +227,10 @@ func TestErrorScenariosConsistency(t *testing.T) {
 			t.Run(fmt.Sprintf("%s_%s", mode.name, tt.name), func(t *testing.T) {
 				ctx := context.Background()
 				manager := mode.setup()
+				cmd := createRuntimeCommand(&tt.spec)
+				group := tt.groupSpec
 
-				result, err := manager.ExecuteCommand(ctx, tt.command, tt.group, tt.envVars)
+				result, err := manager.ExecuteCommand(ctx, cmd, group, tt.envVars)
 
 				if tt.expectError {
 					assert.Error(t, err, "expected error for %s", tt.description)
@@ -293,7 +295,7 @@ func TestConcurrentExecutionConsistency(t *testing.T) {
 					ctx := context.Background()
 					manager := mode.setup()
 
-					group := &runnertypes.CommandGroup{
+					group := &runnertypes.GroupSpec{
 						Name: "concurrent-test-group",
 					}
 
@@ -302,12 +304,12 @@ func TestConcurrentExecutionConsistency(t *testing.T) {
 					}
 
 					for j := range commandsPerGoroutine {
-						command := runnertypes.Command{
+						cmd := createRuntimeCommand(&runnertypes.CommandSpec{
 							Name: fmt.Sprintf("concurrent-cmd-%d-%d", goroutineID, j),
 							Cmd:  "echo concurrent test",
-						}
+						})
 
-						result, err := manager.ExecuteCommand(ctx, command, group, envVars)
+						result, err := manager.ExecuteCommand(ctx, cmd, group, envVars)
 						if err != nil {
 							errors <- err
 						} else {
@@ -351,8 +353,8 @@ func TestDryRunManagerErrorHandling(t *testing.T) {
 	tests := []struct {
 		name         string
 		setup        func() (*DryRunResourceManager, error)
-		command      runnertypes.Command
-		group        *runnertypes.CommandGroup
+		spec         runnertypes.CommandSpec
+		groupSpec    *runnertypes.GroupSpec
 		envVars      map[string]string
 		expectError  bool
 		expectResult bool
@@ -370,11 +372,11 @@ func TestDryRunManagerErrorHandling(t *testing.T) {
 				}
 				return manager, nil
 			},
-			command: runnertypes.Command{
+			spec: runnertypes.CommandSpec{
 				Name: "concurrent-test",
 				Cmd:  "echo concurrent",
 			},
-			group: &runnertypes.CommandGroup{
+			groupSpec: &runnertypes.GroupSpec{
 				Name: "test-group",
 			},
 			envVars:      map[string]string{},
@@ -395,11 +397,11 @@ func TestDryRunManagerErrorHandling(t *testing.T) {
 				}
 				return manager, nil
 			},
-			command: runnertypes.Command{
+			spec: runnertypes.CommandSpec{
 				Name: "options-test",
 				Cmd:  "echo test",
 			},
-			group: &runnertypes.CommandGroup{
+			groupSpec: &runnertypes.GroupSpec{
 				Name: "test-group",
 			},
 			envVars:      map[string]string{},
@@ -419,11 +421,11 @@ func TestDryRunManagerErrorHandling(t *testing.T) {
 				}
 				return manager, nil
 			},
-			command: runnertypes.Command{
+			spec: runnertypes.CommandSpec{
 				Name: "nil-options-test",
 				Cmd:  "echo test",
 			},
-			group: &runnertypes.CommandGroup{
+			groupSpec: &runnertypes.GroupSpec{
 				Name: "test-group",
 			},
 			envVars:      map[string]string{},
@@ -448,11 +450,11 @@ func TestDryRunManagerErrorHandling(t *testing.T) {
 				}
 				return manager, nil
 			},
-			command: runnertypes.Command{
+			spec: runnertypes.CommandSpec{
 				Name: "consistency-test",
 				Cmd:  "echo consistency",
 			},
-			group: &runnertypes.CommandGroup{
+			groupSpec: &runnertypes.GroupSpec{
 				Name: "test-group",
 			},
 			envVars:      map[string]string{"SENSITIVE": "secret"},
@@ -467,8 +469,10 @@ func TestDryRunManagerErrorHandling(t *testing.T) {
 
 			manager, err := tt.setup()
 			require.NoError(t, err, "setup failed: %v", err)
+			cmd := createRuntimeCommand(&tt.spec)
+			group := tt.groupSpec
 
-			result, err := manager.ExecuteCommand(ctx, tt.command, tt.group, tt.envVars)
+			result, err := manager.ExecuteCommand(ctx, cmd, group, tt.envVars)
 
 			if tt.expectError {
 				assert.Error(t, err, "expected error but got none")
@@ -605,7 +609,7 @@ func TestConcurrentExecution(t *testing.T) {
 				return
 			}
 
-			group := &runnertypes.CommandGroup{
+			group := &runnertypes.GroupSpec{
 				Name:        "concurrent-test-group",
 				Description: "Concurrent test group",
 				Priority:    1,
@@ -617,13 +621,13 @@ func TestConcurrentExecution(t *testing.T) {
 
 			// Execute multiple commands in this goroutine
 			for range commandsPerGoroutine {
-				command := runnertypes.Command{
+				cmd := createRuntimeCommand(&runnertypes.CommandSpec{
 					Name:        "concurrent-cmd",
 					Description: "Concurrent test command",
 					Cmd:         "echo concurrent test",
-				}
+				})
 
-				_, err := manager.ExecuteCommand(ctx, command, group, envVars)
+				_, err := manager.ExecuteCommand(ctx, cmd, group, envVars)
 				if err != nil {
 					errors <- err
 					return
@@ -680,13 +684,13 @@ func TestResourceManagerStateConsistency(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, manager)
 
-	command := runnertypes.Command{
+	cmd := createRuntimeCommand(&runnertypes.CommandSpec{
 		Name:        "state-test",
 		Description: "State consistency test",
 		Cmd:         "echo state test",
-	}
+	})
 
-	group := &runnertypes.CommandGroup{
+	group := &runnertypes.GroupSpec{
 		Name:        "state-test-group",
 		Description: "State test group",
 		Priority:    1,
@@ -699,7 +703,7 @@ func TestResourceManagerStateConsistency(t *testing.T) {
 	// Execute the same command multiple times
 	const numExecutions = 5
 	for i := range numExecutions {
-		result, err := manager.ExecuteCommand(ctx, command, group, envVars)
+		result, err := manager.ExecuteCommand(ctx, cmd, group, envVars)
 		assert.NoError(t, err, "execution %d should not error", i)
 		assert.NotNil(t, result, "execution %d should return result", i)
 
@@ -717,10 +721,10 @@ func TestResourceManagerStateConsistency(t *testing.T) {
 	// Test edge case: null bytes in environment variables
 	// This tests both normal and dry-run modes for proper handling
 	t.Run("null_bytes_in_environment", func(t *testing.T) {
-		nullCommand := runnertypes.Command{
+		nullCmd := createRuntimeCommand(&runnertypes.CommandSpec{
 			Name: "null-test",
 			Cmd:  "echo $NULL_VAR",
-		}
+		})
 
 		nullEnvVars := map[string]string{
 			"NULL_VAR": "test\x00null",
@@ -732,7 +736,7 @@ func TestResourceManagerStateConsistency(t *testing.T) {
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
 		dryRunManager, err := NewDefaultResourceManager(nil, nil, nil, mockPathResolver, slog.Default(), ExecutionModeDryRun, dryRunOpts)
 		require.NoError(t, err)
-		result, err := dryRunManager.ExecuteCommand(ctx, nullCommand, group, nullEnvVars)
+		result, err := dryRunManager.ExecuteCommand(ctx, nullCmd, group, nullEnvVars)
 		assert.NoError(t, err, "dry-run mode should handle null bytes in environment")
 		assert.NotNil(t, result, "dry-run mode should return result")
 		assert.True(t, result.DryRun, "result should indicate dry-run mode")
@@ -742,7 +746,7 @@ func TestResourceManagerStateConsistency(t *testing.T) {
 		mockPathResolver2.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil)
 		normalManager, err := NewDefaultResourceManager(&mockCommandExecutor{}, &mockFileSystem{}, nil, mockPathResolver2, slog.Default(), ExecutionModeNormal, nil)
 		require.NoError(t, err)
-		result, err = normalManager.ExecuteCommand(ctx, nullCommand, group, nullEnvVars)
+		result, err = normalManager.ExecuteCommand(ctx, nullCmd, group, nullEnvVars)
 		assert.NoError(t, err, "normal mode should handle null bytes in environment")
 		assert.NotNil(t, result, "normal mode should return result")
 		assert.False(t, result.DryRun, "result should indicate normal mode")

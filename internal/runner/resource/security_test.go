@@ -1,5 +1,5 @@
-//go:build test && skip_integration_tests
-// +build test,skip_integration_tests
+//go:build test
+// +build test
 
 package resource
 
@@ -18,13 +18,13 @@ import (
 func TestSecurityAnalysis(t *testing.T) {
 	tests := []struct {
 		name            string
-		command         runnertypes.Command
+		spec            runnertypes.CommandSpec
 		expectRisk      bool
 		expectedPattern string // Expected pattern found in security analysis
 	}{
 		{
 			name: "dangerous command - rm with wildcards",
-			command: runnertypes.Command{
+			spec: runnertypes.CommandSpec{
 				Name:        "dangerous-rm",
 				Description: "Dangerous rm command",
 				Cmd:         "rm",
@@ -35,7 +35,7 @@ func TestSecurityAnalysis(t *testing.T) {
 		},
 		{
 			name: "sudo rm command with user specification",
-			command: runnertypes.Command{
+			spec: runnertypes.CommandSpec{
 				Name:        "sudo-rm-command",
 				Description: "Command requiring sudo with rm",
 				Cmd:         "sudo",
@@ -47,7 +47,7 @@ func TestSecurityAnalysis(t *testing.T) {
 		},
 		{
 			name: "network command - curl to external",
-			command: runnertypes.Command{
+			spec: runnertypes.CommandSpec{
 				Name:        "external-curl",
 				Description: "External network request",
 				Cmd:         "curl",
@@ -58,7 +58,7 @@ func TestSecurityAnalysis(t *testing.T) {
 		},
 		{
 			name: "safe command - simple echo",
-			command: runnertypes.Command{
+			spec: runnertypes.CommandSpec{
 				Name:        "safe-echo",
 				Description: "Safe echo command",
 				Cmd:         "echo",
@@ -88,7 +88,7 @@ func TestSecurityAnalysis(t *testing.T) {
 			}
 			require.NotNil(t, manager)
 
-			group := &runnertypes.CommandGroup{
+			group := &runnertypes.GroupSpec{
 				Name:        "security-test-group",
 				Description: "Security test group",
 				Priority:    1,
@@ -99,8 +99,8 @@ func TestSecurityAnalysis(t *testing.T) {
 			}
 
 			// Execute the command
-			runnertypes.PrepareCommand(&tt.command)
-			result, err := manager.ExecuteCommand(ctx, tt.command, group, envVars)
+			cmd := createRuntimeCommand(&tt.spec)
+			result, err := manager.ExecuteCommand(ctx, cmd, group, envVars)
 			assert.NoError(t, err)
 			assert.NotNil(t, result)
 
@@ -138,12 +138,12 @@ func TestSecurityAnalysis(t *testing.T) {
 func TestPrivilegeEscalationDetection(t *testing.T) {
 	tests := []struct {
 		name                  string
-		command               runnertypes.Command
+		spec                  runnertypes.CommandSpec
 		expectPrivilegeChange bool
 	}{
 		{
 			name: "sudo rm command",
-			command: runnertypes.Command{
+			spec: runnertypes.CommandSpec{
 				Name:        "sudo-rm-test",
 				Description: "Sudo rm test command",
 				Cmd:         "sudo",
@@ -154,7 +154,7 @@ func TestPrivilegeEscalationDetection(t *testing.T) {
 		},
 		{
 			name: "normal command",
-			command: runnertypes.Command{
+			spec: runnertypes.CommandSpec{
 				Name:        "normal-test",
 				Description: "Normal command test",
 				Cmd:         "ls",
@@ -184,7 +184,7 @@ func TestPrivilegeEscalationDetection(t *testing.T) {
 			}
 			require.NotNil(t, manager)
 
-			group := &runnertypes.CommandGroup{
+			group := &runnertypes.GroupSpec{
 				Name:        "privilege-test-group",
 				Description: "Privilege test group",
 				Priority:    1,
@@ -195,8 +195,8 @@ func TestPrivilegeEscalationDetection(t *testing.T) {
 			}
 
 			// Execute the command
-			runnertypes.PrepareCommand(&tt.command)
-			_, err = manager.ExecuteCommand(ctx, tt.command, group, envVars)
+			cmd := createRuntimeCommand(&tt.spec)
+			_, err = manager.ExecuteCommand(ctx, cmd, group, envVars)
 			assert.NoError(t, err)
 
 			// Get dry-run results
@@ -257,21 +257,21 @@ func TestCommandSecurityAnalysis(t *testing.T) {
 	}
 	require.NotNil(t, manager)
 
-	group := &runnertypes.CommandGroup{
+	group := &runnertypes.GroupSpec{
 		Name:        "security-test-group",
 		Description: "Security test group",
 		Priority:    1,
 	}
 
-	command := runnertypes.Command{
+	cmd := createRuntimeCommand(&runnertypes.CommandSpec{
 		Name:        "dangerous-rm",
 		Description: "Dangerous rm command",
 		Cmd:         "rm",
 		Args:        []string{"-rf", "/tmp/*"},
-	}
+	})
 
 	// Execute the command
-	_, err = manager.ExecuteCommand(ctx, command, group, map[string]string{})
+	_, err = manager.ExecuteCommand(ctx, cmd, group, map[string]string{})
 	assert.NoError(t, err)
 
 	// Get dry-run results and verify security analysis was applied
@@ -304,14 +304,14 @@ func TestSecurityAnalysisIntegration(t *testing.T) {
 	}
 	require.NotNil(t, manager)
 
-	group := &runnertypes.CommandGroup{
+	group := &runnertypes.GroupSpec{
 		Name:        "security-integration-test",
 		Description: "Security integration test group",
 		Priority:    1,
 	}
 
 	// Test multiple commands with different risk levels
-	commands := []runnertypes.Command{
+	commandSpecs := []runnertypes.CommandSpec{
 		{
 			Name: "high-risk",
 			Cmd:  "rm",
@@ -330,8 +330,8 @@ func TestSecurityAnalysisIntegration(t *testing.T) {
 	}
 
 	var analyses []ResourceAnalysis
-	for _, cmd := range commands {
-		runnertypes.PrepareCommand(&cmd)
+	for _, cmdSpec := range commandSpecs {
+		cmd := createRuntimeCommand(&cmdSpec)
 		_, err := manager.ExecuteCommand(ctx, cmd, group, map[string]string{})
 		assert.NoError(t, err)
 
