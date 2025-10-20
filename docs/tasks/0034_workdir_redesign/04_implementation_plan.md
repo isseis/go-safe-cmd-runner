@@ -296,6 +296,12 @@ const (
 
 #### P3-2: resolveGroupWorkDir実装
 
+**注意**: `validatePath`関数は03_specification.md Section 11.2で定義されています。以下のセキュリティ検証のみを実施し、ディレクトリの存在チェックは行いません:
+- 絶対パス要件（相対パス禁止）
+- パストラバーサル禁止（".."コンポーネント検出）
+
+存在しないディレクトリへのアクセスは、コマンド実行時のOSエラーで適切にハンドリングされます。これにより、グループ内でディレクトリを作成するコマンド（`mkdir -p`など）を妨げません。
+
 ```go
 // internal/runner/group_executor.go
 
@@ -317,8 +323,9 @@ func (e *DefaultGroupExecutor) resolveGroupWorkDir(
             return "", nil, fmt.Errorf("failed to expand group workdir: %w", err)
         }
 
-        // パス検証
-        if err := validatePath(expandedWorkDir, e.isDryRun); err != nil {
+        // パス検証（セキュリティチェックのみ: 絶対パス、パストラバーサル禁止）
+        // 注: ディレクトリの存在チェックは行わない（mkdir -pなどのケースを妨げない）
+        if err := validatePath(expandedWorkDir); err != nil {
             return "", nil, err
         }
 
@@ -400,10 +407,9 @@ func (e *DefaultGroupExecutor) expandCommand(
 ) (*runnertypes.Command, error) {
     level := fmt.Sprintf("command[%s]", cmd.Name)
 
-    // 新しい展開済みコマンド構造体を作成（元のcmdは変更しない）
-    expanded := &runnertypes.Command{
-        Name: cmd.Name,
-    }
+    // 元のcmdのシャローコピーを作成（全フィールドをコピー）
+    // これにより、TOMLから読み込んだ生の値（Cmd, Args, Vars, Envなど）を保持
+    expanded := *cmd
 
     // Cmd の展開
     expandedCmd, err := config.ExpandString(cmd.Cmd, vars, level, "cmd")
@@ -441,15 +447,20 @@ func (e *DefaultGroupExecutor) expandCommand(
         expanded.ExpandedEnv[key] = expandedValue
     }
 
-    return expanded, nil
+    return &expanded, nil
 }
 ```
 
 **実装のポイント**:
-1. **不変性の保証**: 元の`cmd`を変更せず、新しい`expanded`インスタンスを生成
-2. **全フィールドの展開**: Cmd, Args, WorkDir, Envの各フィールドを変数展開
-3. **エラーハンドリング**: 各フィールドの展開時にエラーチェックを実施
-4. **`__runner_workdir`のサポート**: varsに含まれる`__runner_workdir`が正しく展開される
+1. **不変性の保証**: 元の`cmd`を変更せず、シャローコピーで`expanded`インスタンスを生成
+2. **完全性の保証**: シャローコピーにより、TOMLから読み込んだ全フィールド（`Cmd`, `Args`, `Vars`, `Env`など）を保持
+3. **全フィールドの展開**: `ExpandedCmd`, `ExpandedArgs`, `ExpandedWorkDir`, `ExpandedEnv`の各フィールドを変数展開して設定
+4. **エラーハンドリング**: 各フィールドの展開時にエラーチェックを実施
+
+**シャローコピーの利点**:
+- デバッグ時に元のTOML定義を参照可能（トレーサビリティ）
+- 後続処理で`cmd.Cmd`や`cmd.Args`などの生の値を参照できる
+- 不完全なオブジェクトによるバグを防止
 
 #### P3-6: ワークディレクトリ決定テスト
 
