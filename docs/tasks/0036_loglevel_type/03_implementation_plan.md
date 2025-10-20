@@ -146,8 +146,8 @@ func TestLogLevel_ToSlogLevel_InvalidLevels(t *testing.T) {
 		{"typo debg", LogLevel("debg"), true},
 		{"unknown value", LogLevel("unknown"), true},
 		{"numeric string", LogLevel("1"), true},
-		{"uppercase DEBUG", LogLevel("DEBUG"), true},
-		{"mixed case Debug", LogLevel("Debug"), true},
+		{"uppercase DEBUG", LogLevel("DEBUG"), false},
+		{"mixed case Debug", LogLevel("Debug"), false},
 		{"whitespace", LogLevel(" debug"), true},
 		{"empty string", LogLevel(""), false}, // empty string should work (defaults to info)
 	}
@@ -246,7 +246,7 @@ func (l *LogLevel) UnmarshalText(text []byte) error {
 func (l LogLevel) ToSlogLevel() (slog.Level, error) {
 	var level slog.Level
 	if err := level.UnmarshalText([]byte(l)); err != nil {
-		return slog.LevelInfo, fmt.Errorf("failed to convert log level %q to slog.Level: %w", l, err)
+		return slog.Level(0), fmt.Errorf("failed to convert log level %q to slog.Level: %w", l, err)
 	}
 	return level, nil
 }
@@ -320,7 +320,7 @@ LogLevel LogLevel `toml:"log_level"` // Log level (debug, info, warn, error)
 Level string
 
 // After:
-Level LogLevel
+Level runnertypes.LogLevel
 ```
 
 **変更箇所 2**: SetupLoggerWithConfig 関数 (現在の行 40-44)
@@ -667,5 +667,5 @@ cfg.Global.LogLevel = runnertypes.LogLevelDebug
 
 - [encoding.TextUnmarshaler interface](https://pkg.go.dev/encoding#TextUnmarshaler)
 - [log/slog package](https://pkg.go.dev/log/slog)
-- [go-toml/v2 documentation](https://github.com/pelletier/go-toml)
+- [go-toml/v2 documentation](https://pkg.go.dev/github.com/pelletier/go-toml/v2)
 - 既存の RiskLevel 実装: `internal/runner/runnertypes/config.go:163-234`
