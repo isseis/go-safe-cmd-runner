@@ -1306,7 +1306,7 @@ Error: toml: line X: unknown field 'workdir'
 - [ ] `GroupExecutor.ExecuteGroup()` で以下を設定:
   - [ ] `group.ExpandedWorkDir` に展開済みワークディレクトリを設定
   - [ ] `group.ExpandedVars["__runner_workdir"]` に同じ値を設定
-- [ ] `GroupExecutor.expandCommandWithWorkDir()` を実装（コマンド変数の再展開）
+- [ ] `GroupExecutor.expandCommand()` を実装（コマンド変数の再展開）
 - [ ] `CommandExecutor.resolveCommandWorkDir()` を実装（`group.ExpandedWorkDir` を参照）
 
 ### Phase 4: テスト
