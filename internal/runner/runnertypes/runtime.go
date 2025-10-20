@@ -1,10 +1,20 @@
 package runnertypes
 
+import "errors"
+
+// Error definitions for runtime types
+var (
+	// ErrNilSpec is returned when a nil spec is provided to a constructor
+	ErrNilSpec = errors.New("spec must not be nil")
+)
+
 // RuntimeGlobal represents the runtime-expanded global configuration.
 // It contains references to the original GlobalSpec along with expanded variables
 // and resources that are resolved at runtime.
+//
+// Invariant: Spec must be non-nil. Use NewRuntimeGlobal to create instances.
 type RuntimeGlobal struct {
-	// Spec is a reference to the original spec loaded from TOML
+	// Spec is a reference to the original spec loaded from TOML (must be non-nil)
 	Spec *GlobalSpec
 
 	// ExpandedVerifyFiles contains the list of files to verify with variables expanded
@@ -17,11 +27,27 @@ type RuntimeGlobal struct {
 	ExpandedVars map[string]string
 }
 
+// NewRuntimeGlobal creates a new RuntimeGlobal with the required spec.
+// Returns ErrNilSpec if spec is nil.
+func NewRuntimeGlobal(spec *GlobalSpec) (*RuntimeGlobal, error) {
+	if spec == nil {
+		return nil, ErrNilSpec
+	}
+	return &RuntimeGlobal{
+		Spec:                spec,
+		ExpandedVerifyFiles: []string{},
+		ExpandedEnv:         make(map[string]string),
+		ExpandedVars:        make(map[string]string),
+	}, nil
+}
+
 // RuntimeGroup represents the runtime-expanded group configuration.
 // It contains references to the original GroupSpec along with expanded variables
 // and resources that are resolved at runtime.
+//
+// Invariant: Spec must be non-nil. Use NewRuntimeGroup to create instances.
 type RuntimeGroup struct {
-	// Spec is a reference to the original spec loaded from TOML
+	// Spec is a reference to the original spec loaded from TOML (must be non-nil)
 	Spec *GroupSpec
 
 	// ExpandedVerifyFiles contains the list of files to verify with variables expanded
@@ -40,11 +66,28 @@ type RuntimeGroup struct {
 	Commands []*RuntimeCommand
 }
 
+// NewRuntimeGroup creates a new RuntimeGroup with the required spec.
+// Returns ErrNilSpec if spec is nil.
+func NewRuntimeGroup(spec *GroupSpec) (*RuntimeGroup, error) {
+	if spec == nil {
+		return nil, ErrNilSpec
+	}
+	return &RuntimeGroup{
+		Spec:                spec,
+		ExpandedVerifyFiles: []string{},
+		ExpandedEnv:         make(map[string]string),
+		ExpandedVars:        make(map[string]string),
+		Commands:            []*RuntimeCommand{},
+	}, nil
+}
+
 // RuntimeCommand represents the runtime-expanded command configuration.
 // It contains references to the original CommandSpec along with expanded variables
 // and resources that are resolved at runtime.
+//
+// Invariant: Spec must be non-nil. Use NewRuntimeCommand to create instances.
 type RuntimeCommand struct {
-	// Spec is a reference to the original spec loaded from TOML
+	// Spec is a reference to the original spec loaded from TOML (must be non-nil)
 	Spec *CommandSpec
 
 	// ExpandedCmd is the command path with all variable references expanded
@@ -66,34 +109,72 @@ type RuntimeCommand struct {
 	EffectiveTimeout int
 }
 
+// NewRuntimeCommand creates a new RuntimeCommand with the required spec.
+// Returns ErrNilSpec if spec is nil.
+func NewRuntimeCommand(spec *CommandSpec) (*RuntimeCommand, error) {
+	if spec == nil {
+		return nil, ErrNilSpec
+	}
+	return &RuntimeCommand{
+		Spec:         spec,
+		ExpandedArgs: []string{},
+		ExpandedEnv:  make(map[string]string),
+		ExpandedVars: make(map[string]string),
+	}, nil
+}
+
 // Convenience methods for RuntimeCommand
 
 // Name returns the command name from the spec.
+// Panics if r or r.Spec is nil (programming error - use NewRuntimeCommand).
 func (r *RuntimeCommand) Name() string {
+	if r == nil || r.Spec == nil {
+		panic("RuntimeCommand.Name: nil receiver or Spec (programming error - use NewRuntimeCommand)")
+	}
 	return r.Spec.Name
 }
 
 // RunAsUser returns the user to run the command as from the spec.
+// Panics if r or r.Spec is nil (programming error - use NewRuntimeCommand).
 func (r *RuntimeCommand) RunAsUser() string {
+	if r == nil || r.Spec == nil {
+		panic("RuntimeCommand.RunAsUser: nil receiver or Spec (programming error - use NewRuntimeCommand)")
+	}
 	return r.Spec.RunAsUser
 }
 
 // RunAsGroup returns the group to run the command as from the spec.
+// Panics if r or r.Spec is nil (programming error - use NewRuntimeCommand).
 func (r *RuntimeCommand) RunAsGroup() string {
+	if r == nil || r.Spec == nil {
+		panic("RuntimeCommand.RunAsGroup: nil receiver or Spec (programming error - use NewRuntimeCommand)")
+	}
 	return r.Spec.RunAsGroup
 }
 
 // Output returns the output file path from the spec.
+// Panics if r or r.Spec is nil (programming error - use NewRuntimeCommand).
 func (r *RuntimeCommand) Output() string {
+	if r == nil || r.Spec == nil {
+		panic("RuntimeCommand.Output: nil receiver or Spec (programming error - use NewRuntimeCommand)")
+	}
 	return r.Spec.Output
 }
 
 // GetMaxRiskLevel parses and returns the maximum risk level for this command.
+// Panics if r or r.Spec is nil (programming error - use NewRuntimeCommand).
 func (r *RuntimeCommand) GetMaxRiskLevel() (RiskLevel, error) {
+	if r == nil || r.Spec == nil {
+		panic("RuntimeCommand.GetMaxRiskLevel: nil receiver or Spec (programming error - use NewRuntimeCommand)")
+	}
 	return r.Spec.GetMaxRiskLevel()
 }
 
 // HasUserGroupSpecification returns true if either run_as_user or run_as_group is specified.
+// Panics if r or r.Spec is nil (programming error - use NewRuntimeCommand).
 func (r *RuntimeCommand) HasUserGroupSpecification() bool {
+	if r == nil || r.Spec == nil {
+		panic("RuntimeCommand.HasUserGroupSpecification: nil receiver or Spec (programming error - use NewRuntimeCommand)")
+	}
 	return r.Spec.HasUserGroupSpecification()
 }
