@@ -320,7 +320,7 @@ LogLevel LogLevel `toml:"log_level"` // Log level (debug, info, warn, error)
 Level string
 
 // After:
-Level LogLevel
+Level runnertypes.LogLevel
 ```
 
 **変更箇所 2**: SetupLoggerWithConfig 関数 (現在の行 40-44)
