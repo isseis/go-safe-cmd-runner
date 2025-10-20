@@ -692,8 +692,9 @@ func ExpandCommand(spec *runnertypes.CommandSpec, groupVars map[string]string, _
 	// 1. Inherit group variables
 	maps.Copy(runtime.ExpandedVars, groupVars)
 
-	// 2. Process FromEnv (command-level) (TODO: To be implemented in Task 0033)
-	// For now, skip FromEnv processing
+	// 2. Process FromEnv (command-level)
+	// TODO (Task 0033): Implement FromEnv processing, which imports specified system environment variables
+	// as internal variables for this command. For now, skip FromEnv processing.
 
 	// 3. Process Vars (command-level)
 	expandedVars, err := ProcessVars(spec.Vars, runtime.ExpandedVars, fmt.Sprintf("command[%s]", spec.Name))
