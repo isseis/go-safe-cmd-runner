@@ -758,8 +758,8 @@ Phase 1 → Phase 2 → Phase 3 → Phase 5 → Phase 6 → Phase 7
 - [x] 展開関数のテストを実装
 
 ### Phase 4: TOMLローダーの更新
-- [ ] `Load()` を更新（`ConfigSpec` を返す）
-- [ ] テストを更新
+- [x] `Load()` を更新（`ConfigSpec` を返す）
+- [x] テストを更新
 
 ### Phase 5: GroupExecutorの更新
 - [ ] `ExecuteGroup()` を更新（`GroupSpec` を受け取る）

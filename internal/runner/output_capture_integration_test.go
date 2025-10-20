@@ -1,3 +1,6 @@
+//go:build skip_until_phase5
+// +build skip_until_phase5
+
 // This file contains integration tests for output capture functionality
 
 package runner

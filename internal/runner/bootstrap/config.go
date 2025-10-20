@@ -28,9 +28,9 @@ import (
 //   - runID: Unique identifier for this execution run
 //
 // Returns:
-//   - *Config: Prepared configuration ready for command execution
+//   - *ConfigSpec: Prepared configuration ready for command execution
 //   - error: Any error during verification, loading, or parsing
-func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath, runID string) (*runnertypes.Config, error) {
+func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath, runID string) (*runnertypes.ConfigSpec, error) {
 	if configPath == "" {
 		return nil, &logging.PreExecutionError{
 			Type:      logging.ErrorTypeRequiredArgumentMissing,

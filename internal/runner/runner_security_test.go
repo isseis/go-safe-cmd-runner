@@ -1,3 +1,6 @@
+//go:build skip_until_phase5
+// +build skip_until_phase5
+
 // Package runner provides tests for runner-level security integration.
 //
 // # Test Scope

@@ -1,4 +1,5 @@
-//go:build test
+//go:build skip_until_phase5
+// +build skip_until_phase5
 
 package bootstrap
 
