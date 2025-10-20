@@ -916,18 +916,31 @@ func (e *DefaultGroupExecutor) resolveGroupWorkDir(
 ) (string, TempDirManager, error) {
     // グループレベル WorkDir が指定されている?
     if group.WorkDir != "" {
-        // 固定ディレクトリを使用
+        // 変数展開を実行（注意: __runner_workdir はまだ未定義）
+        level := fmt.Sprintf("group[%s]", group.Name)
+        expandedWorkDir, err := config.ExpandString(
+            group.WorkDir,
+            group.ExpandedVars,  // __runner_workdir は含まれない
+            level,
+            "workdir",
+        )
+        if err != nil {
+            return "", nil, fmt.Errorf("failed to expand group workdir: %w", err)
+        }
+
         e.logger.Info(fmt.Sprintf(
             "Using group workdir for '%s': %s",
-            group.Name, group.WorkDir,
+            group.Name, expandedWorkDir,
         ))
-        return group.WorkDir, nil, nil
+        return expandedWorkDir, nil, nil
     }
 
     // 一時ディレクトリマネージャーを作成
+    // 注: isDryRun フラグは GroupExecutor のフィールドとして保持
     tempDirMgr := NewTempDirManager(e.logger, group.Name, e.isDryRun)
 
     // 一時ディレクトリを生成
+    // dry-runモードでは仮想パスが返される
     tempDir, err := tempDirMgr.Create()
     if err != nil {
         return "", nil, err
