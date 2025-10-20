@@ -543,3 +543,192 @@ func ExpandCommandConfig(
 
 	return nil
 }
+
+// ExpandGlobal expands a GlobalSpec into a RuntimeGlobal.
+//
+// This function processes:
+// 1. FromEnv: Imports system environment variables as internal variables (NOT IMPLEMENTED YET - Task 0033)
+// 2. Vars: Defines internal variables
+// 3. Env: Expands environment variables using internal variables
+// 4. VerifyFiles: Expands file paths using internal variables
+//
+// Parameters:
+//   - spec: The global configuration spec to expand
+//
+// Returns:
+//   - *RuntimeGlobal: The expanded runtime global configuration
+//   - error: An error if expansion fails (e.g., undefined variable reference)
+//
+// Note: FromEnv processing is not yet implemented. This function currently only processes Vars, Env, and VerifyFiles.
+func ExpandGlobal(spec *runnertypes.GlobalSpec) (*runnertypes.RuntimeGlobal, error) {
+	runtime := &runnertypes.RuntimeGlobal{
+		Spec:         spec,
+		ExpandedVars: make(map[string]string),
+		ExpandedEnv:  make(map[string]string),
+	}
+
+	// 1. Process FromEnv (TODO: To be implemented in Task 0033)
+	// FromEnv processing imports system environment variables as internal variables according to the FromEnv specification.
+	// For now, skip FromEnv processing as it requires environment.Filter.
+	// 2. Process Vars
+	expandedVars, err := ProcessVars(spec.Vars, runtime.ExpandedVars, "global")
+	if err != nil {
+		return nil, fmt.Errorf("failed to process global vars: %w", err)
+	}
+	runtime.ExpandedVars = expandedVars
+
+	// 3. Expand Env
+	expandedEnv, err := ProcessEnv(spec.Env, runtime.ExpandedVars, "global")
+	if err != nil {
+		return nil, fmt.Errorf("failed to process global env: %w", err)
+	}
+	runtime.ExpandedEnv = expandedEnv
+
+	// 4. Expand VerifyFiles
+	runtime.ExpandedVerifyFiles = make([]string, len(spec.VerifyFiles))
+	for i, file := range spec.VerifyFiles {
+		expandedFile, err := ExpandString(file, runtime.ExpandedVars, "global", fmt.Sprintf("verify_files[%d]", i))
+		if err != nil {
+			return nil, err
+		}
+		runtime.ExpandedVerifyFiles[i] = expandedFile
+	}
+
+	return runtime, nil
+}
+
+// ExpandGroup expands a GroupSpec into a RuntimeGroup.
+//
+// This function processes:
+// 1. Inherits global variables
+// 2. FromEnv: Imports system environment variables as internal variables (group-level) (NOT IMPLEMENTED YET)
+// 3. Vars: Defines internal variables (group-level)
+// 4. Env: Expands environment variables using internal variables
+// 5. VerifyFiles: Expands file paths using internal variables
+//
+// Parameters:
+//   - spec: The group configuration spec to expand
+//   - globalVars: Global-level internal variables (from RuntimeGlobal.ExpandedVars)
+//
+// Returns:
+//   - *RuntimeGroup: The expanded runtime group configuration
+//   - error: An error if expansion fails
+//
+// Note:
+//   - Commands are NOT expanded by this function. They are expanded separately
+//     by GroupExecutor using ExpandCommand() for each command.
+func ExpandGroup(spec *runnertypes.GroupSpec, globalVars map[string]string) (*runnertypes.RuntimeGroup, error) {
+	runtime := &runnertypes.RuntimeGroup{
+		Spec:         spec,
+		ExpandedVars: make(map[string]string),
+		ExpandedEnv:  make(map[string]string),
+		Commands:     make([]*runnertypes.RuntimeCommand, 0),
+	}
+
+	// 1. Inherit global variables
+	maps.Copy(runtime.ExpandedVars, globalVars)
+
+	// 2. Process FromEnv (group-level)
+	// TODO (Task 0033): Implement FromEnv processing, which imports specified system environment variables
+	// as internal variables for the group. For now, skip FromEnv processing.
+
+	// 3. Process Vars (group-level)
+	expandedVars, err := ProcessVars(spec.Vars, runtime.ExpandedVars, fmt.Sprintf("group[%s]", spec.Name))
+	if err != nil {
+		return nil, fmt.Errorf("failed to process group[%s] vars: %w", spec.Name, err)
+	}
+	runtime.ExpandedVars = expandedVars
+
+	// 4. Expand Env
+	expandedEnv, err := ProcessEnv(spec.Env, runtime.ExpandedVars, fmt.Sprintf("group[%s]", spec.Name))
+	if err != nil {
+		return nil, fmt.Errorf("failed to process group[%s] env: %w", spec.Name, err)
+	}
+	runtime.ExpandedEnv = expandedEnv
+
+	// 5. Expand VerifyFiles
+	runtime.ExpandedVerifyFiles = make([]string, len(spec.VerifyFiles))
+	for i, file := range spec.VerifyFiles {
+		expandedFile, err := ExpandString(file, runtime.ExpandedVars, fmt.Sprintf("group[%s]", spec.Name), fmt.Sprintf("verify_files[%d]", i))
+		if err != nil {
+			return nil, err
+		}
+		runtime.ExpandedVerifyFiles[i] = expandedFile
+	}
+
+	// Note: Commands are not expanded at this point
+	return runtime, nil
+}
+
+// ExpandCommand expands a CommandSpec into a RuntimeCommand.
+//
+// This function processes:
+// 1. Inherits group variables
+// 2. FromEnv: Imports system environment variables as internal variables (command-level) (NOT IMPLEMENTED YET)
+// 3. Vars: Defines internal variables (command-level)
+// 4. Cmd: Expands command path using internal variables
+// 5. Args: Expands command arguments using internal variables
+// 6. Env: Expands environment variables using internal variables
+//
+// Parameters:
+//   - spec: The command configuration spec to expand
+//   - groupVars: Group-level internal variables (from RuntimeGroup.ExpandedVars)
+//   - groupName: Group name for error messages (currently unused as spec.Name is used directly)
+//
+// Returns:
+//   - *RuntimeCommand: The expanded runtime command configuration
+//   - error: An error if expansion fails
+//
+// Note:
+//   - EffectiveWorkDir and EffectiveTimeout are NOT set by this function.
+//     They are set by GroupExecutor after expansion.
+func ExpandCommand(spec *runnertypes.CommandSpec, groupVars map[string]string, _ string) (*runnertypes.RuntimeCommand, error) {
+	runtime := &runnertypes.RuntimeCommand{
+		Spec:         spec,
+		ExpandedVars: make(map[string]string),
+		ExpandedEnv:  make(map[string]string),
+	}
+
+	// 1. Inherit group variables
+	maps.Copy(runtime.ExpandedVars, groupVars)
+
+	// 2. Process FromEnv (command-level)
+	// TODO (Task 0033): Implement FromEnv processing, which imports specified system environment variables
+	// as internal variables for this command. For now, skip FromEnv processing.
+
+	// 3. Process Vars (command-level)
+	expandedVars, err := ProcessVars(spec.Vars, runtime.ExpandedVars, fmt.Sprintf("command[%s]", spec.Name))
+	if err != nil {
+		return nil, fmt.Errorf("failed to process command[%s] vars: %w", spec.Name, err)
+	}
+	runtime.ExpandedVars = expandedVars
+
+	level := fmt.Sprintf("command[%s]", spec.Name)
+
+	// 4. Expand Cmd
+	expandedCmd, err := ExpandString(spec.Cmd, runtime.ExpandedVars, level, "cmd")
+	if err != nil {
+		return nil, err
+	}
+	runtime.ExpandedCmd = expandedCmd
+
+	// 5. Expand Args
+	runtime.ExpandedArgs = make([]string, len(spec.Args))
+	for i, arg := range spec.Args {
+		expandedArg, err := ExpandString(arg, runtime.ExpandedVars, level, fmt.Sprintf("args[%d]", i))
+		if err != nil {
+			return nil, err
+		}
+		runtime.ExpandedArgs[i] = expandedArg
+	}
+
+	// 6. Expand Env
+	expandedEnv, err := ProcessEnv(spec.Env, runtime.ExpandedVars, level)
+	if err != nil {
+		return nil, fmt.Errorf("failed to process command[%s] env: %w", spec.Name, err)
+	}
+	runtime.ExpandedEnv = expandedEnv
+
+	// Note: EffectiveWorkDir and EffectiveTimeout are not set here
+	return runtime, nil
+}
