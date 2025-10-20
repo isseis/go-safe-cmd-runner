@@ -246,7 +246,7 @@ func (l *LogLevel) UnmarshalText(text []byte) error {
 func (l LogLevel) ToSlogLevel() (slog.Level, error) {
 	var level slog.Level
 	if err := level.UnmarshalText([]byte(l)); err != nil {
-		return slog.LevelInfo, fmt.Errorf("failed to convert log level %q to slog.Level: %w", l, err)
+		return slog.Level(0), fmt.Errorf("failed to convert log level %q to slog.Level: %w", l, err)
 	}
 	return level, nil
 }
