@@ -103,6 +103,7 @@ go build -tags test ./internal/runner/...
 ```
 
 **コミットメッセージ**: `test: add helper methods for runner_test.go migration`
+**ステータス**: ✅ 完了 (2025-10-20)
 
 ### Step 2: TestNewRunner の移行（30分）
 
@@ -135,12 +136,14 @@ go test -tags test -v ./internal/runner -run TestNewRunner
 ```
 
 **コミットメッセージ**: `test: migrate TestNewRunner to ConfigSpec`
+**ステータス**: ✅ 完了 (2025-10-20)
 
 ### Step 3: TestNewRunnerWithSecurity の移行（30分）
 
 同様に`TestNewRunnerWithSecurity`関数（行180-221）を修正。
 
 **コミットメッセージ**: `test: migrate TestNewRunnerWithSecurity to ConfigSpec`
+**ステータス**: ✅ 完了 (2025-10-20)
 
 ### Step 4: TestRunner_ExecuteGroup の移行（2-3時間）⚠️ 複雑
 
@@ -219,10 +222,56 @@ go test -tags test -v ./internal/runner -run TestRunner_ExecuteGroup
 ```
 
 **コミットメッセージ**: `test: migrate TestRunner_ExecuteGroup to GroupSpec/CommandSpec`
+**ステータス**: ✅ 完了 (2025-10-20)
 
-### Step 5-23: 残りのテスト関数の移行（8-12時間）
+### Step 5: TestRunner_ExecuteGroup_ComplexErrorScenarios の移行（1-2時間）
+
+**コミットメッセージ**: `test: migrate TestRunner_ExecuteGroup_ComplexErrorScenarios to new type system`
+**ステータス**: ✅ 完了 (2025-10-20)
+
+### Step 6: TestRunner_ExecuteAll の移行（1-2時間）
+
+**コミットメッセージ**: `test: migrate TestRunner_ExecuteAll to new type system`
+**ステータス**: ✅ 完了 (2025-10-20)
+
+### Step 7: TestRunner_ExecuteAll_ComplexErrorScenarios の移行（2-3時間）
+
+**コミットメッセージ**: `test: migrate TestRunner_ExecuteAll_ComplexErrorScenarios to new type system`
+**ステータス**: ✅ 完了 (2025-10-20)
+
+### Step 8: TestRunner_CommandTimeoutBehavior の移行（1時間）
+
+**コミットメッセージ**: `test: migrate TestRunner_CommandTimeoutBehavior to new type system`
+**ステータス**: ✅ 完了 (2025-10-20)
+
+### Step 9-24: 残りのテスト関数の移行（8-12時間）
 
 各テスト関数を順次移行。複雑度に応じて1-2時間/関数。
+
+#### 進捗状況（7/21 完了、33%）
+**完了**:
+- ✅ TestNewRunner
+- ✅ TestNewRunnerWithSecurity
+- ✅ TestRunner_ExecuteGroup
+- ✅ TestRunner_ExecuteGroup_ComplexErrorScenarios
+- ✅ TestRunner_ExecuteAll
+- ✅ TestRunner_ExecuteAll_ComplexErrorScenarios
+- ✅ TestRunner_CommandTimeoutBehavior
+
+**未完了**:
+- ⏳ TestRunner_ExecuteCommand (次のターゲット)
+- ⏳ TestRunner_ExecuteCommand_WithEnvironment
+- ⏳ TestRunner_OutputCapture
+- ⏳ TestRunner_OutputCaptureEdgeCases
+- ⏳ TestRunner_OutputSizeLimit
+- ⏳ TestRunner_EnvironmentVariables
+- ⏳ TestRunner_ExecuteAllWithPriority
+- ⏳ TestRunner_GroupPriority
+- ⏳ TestRunner_DependencyHandling ⚠️ 最も複雑
+- ⏳ TestRunner_PrivilegedCommand
+- ⏳ TestRunner_SecurityValidation
+- ⏳ TestRunner_SecurityIntegration
+- ⏳ その他2テスト
 
 #### 優先順位
 1. **簡単**（30分-1時間）:

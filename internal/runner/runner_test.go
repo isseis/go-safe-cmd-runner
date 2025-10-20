@@ -839,16 +839,16 @@ func TestCommandGroup_NewFields(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		group       runnertypes.CommandGroup
+		group       runnertypes.GroupSpec
 		expectError bool
 		description string
 	}{
 		{
 			name: "TempDir enabled",
-			group: runnertypes.CommandGroup{
+			group: runnertypes.GroupSpec{
 				Name:    "test-tempdir",
 				TempDir: true,
-				Commands: []runnertypes.Command{
+				Commands: []runnertypes.CommandSpec{
 					{Name: "test", Cmd: "echo", Args: []string{"hello"}},
 				},
 				EnvAllowlist: []string{"PATH"},
@@ -858,10 +858,10 @@ func TestCommandGroup_NewFields(t *testing.T) {
 		},
 		{
 			name: "WorkDir specified",
-			group: runnertypes.CommandGroup{
+			group: runnertypes.GroupSpec{
 				Name:    "test-workdir",
 				WorkDir: "/tmp",
-				Commands: []runnertypes.Command{
+				Commands: []runnertypes.CommandSpec{
 					{Name: "test", Cmd: "echo", Args: []string{"hello"}},
 				},
 				EnvAllowlist: []string{"PATH"},
@@ -870,28 +870,29 @@ func TestCommandGroup_NewFields(t *testing.T) {
 			description: "Should set working directory from group WorkDir field",
 		},
 		{
-			name: "Command with existing Dir should not be overridden",
-			group: runnertypes.CommandGroup{
+			name: "Command with existing WorkDir should not be overridden",
+			group: runnertypes.GroupSpec{
 				Name:    "test-existing-dir",
 				WorkDir: "/tmp",
-				Commands: []runnertypes.Command{
-					{Name: "test", Cmd: "echo", Args: []string{"hello"}, Dir: "/usr"},
+				Commands: []runnertypes.CommandSpec{
+					{Name: "test", Cmd: "echo", Args: []string{"hello"}, WorkDir: "/usr"},
 				},
 				EnvAllowlist: []string{"PATH"},
 			},
 			expectError: false,
-			description: "Commands with existing Dir should not be overridden by group WorkDir",
+			description: "Commands with existing WorkDir should not be overridden by group WorkDir",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config := &runnertypes.Config{
-				Global: runnertypes.GlobalConfig{
+			config := &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Global: runnertypes.GlobalSpec{
 					WorkDir:      "/tmp",
 					EnvAllowlist: []string{"PATH"},
 				},
-				Groups: []runnertypes.CommandGroup{tt.group},
+				Groups: []runnertypes.GroupSpec{tt.group},
 			}
 
 			// Create runner with mock resource manager to avoid actually executing commands
@@ -914,7 +915,7 @@ func TestCommandGroup_NewFields(t *testing.T) {
 
 			// Execute the group
 			ctx := context.Background()
-			err = runner.ExecuteGroup(ctx, tt.group)
+			err = runner.ExecuteGroup(ctx, &tt.group)
 
 			if tt.expectError {
 				assert.Error(t, err, tt.description)
@@ -926,12 +927,12 @@ func TestCommandGroup_NewFields(t *testing.T) {
 
 				// Additional verification based on test case
 				switch tt.name {
-				case "WorkDir specified", "Command with existing Dir should not be overridden":
+				case "WorkDir specified", "Command with existing WorkDir should not be overridden":
 					// Verify the command was called with the expected working directory
 					calls := mockResourceManager.Calls
 					require.Len(t, calls, 1)
-					cmd, ok := calls[0].Arguments[1].(runnertypes.Command)
-					require.True(t, ok, "expected calls[0].Arguments[1] to be of type runnertypes.Command, but it was not")
+					cmd, ok := calls[0].Arguments[1].(runnertypes.CommandSpec)
+					require.True(t, ok, "expected calls[0].Arguments[1] to be of type runnertypes.CommandSpec, but it was not")
 					if tt.name == "WorkDir specified" {
 						assert.Equal(t, "/tmp", cmd.EffectiveWorkdir)
 					} else {
@@ -947,18 +948,19 @@ func TestCommandGroup_NewFields(t *testing.T) {
 func TestCommandGroup_TempDir_Detailed(t *testing.T) {
 	setupSafeTestEnv(t)
 
-	t.Run("TempDir creates directory and sets Dir field", func(t *testing.T) {
-		config := &runnertypes.Config{
-			Global: runnertypes.GlobalConfig{
+	t.Run("TempDir creates directory and sets WorkDir field", func(t *testing.T) {
+		config := &runnertypes.ConfigSpec{
+			Version: "1.0",
+			Global: runnertypes.GlobalSpec{
 				WorkDir:      "/tmp",
 				EnvAllowlist: []string{"PATH"},
 			},
 		}
 
-		group := runnertypes.CommandGroup{
+		group := runnertypes.GroupSpec{
 			Name:    "test-tempdir-detailed",
 			TempDir: true,
-			Commands: []runnertypes.Command{
+			Commands: []runnertypes.CommandSpec{
 				{Name: "test", Cmd: "echo", Args: []string{"hello"}},
 			},
 			EnvAllowlist: []string{"PATH"},
@@ -973,9 +975,9 @@ func TestCommandGroup_TempDir_Detailed(t *testing.T) {
 		// Set expectation for CleanupTempDir - resource manager will clean up temp directory
 		mockResourceManager.On("CleanupTempDir", "/tmp/test-temp-dir").Return(nil)
 
-		// Set expectation for ExecuteCommand - verify that Dir field is properly set
-		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.MatchedBy(func(cmd runnertypes.Command) bool {
-			// Verify that the command's Dir field has been set to a temp directory path
+		// Set expectation for ExecuteCommand - verify that WorkDir field is properly set
+		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.MatchedBy(func(cmd runnertypes.CommandSpec) bool {
+			// Verify that the command's WorkDir field has been set to a temp directory path
 			return cmd.Name == defaultTestCommandName &&
 				cmd.Cmd == "echo" &&
 				len(cmd.Args) == 1 && cmd.Args[0] == "hello" &&
@@ -994,7 +996,7 @@ func TestCommandGroup_TempDir_Detailed(t *testing.T) {
 
 		// Execute the group
 		ctx := context.Background()
-		err = runner.ExecuteGroup(ctx, group)
+		err = runner.ExecuteGroup(ctx, &group)
 
 		// Verify no error occurred
 		assert.NoError(t, err)
@@ -1007,17 +1009,18 @@ func TestCommandGroup_TempDir_Detailed(t *testing.T) {
 	})
 
 	t.Run("TempDir cleanup", func(t *testing.T) {
-		config := &runnertypes.Config{
-			Global: runnertypes.GlobalConfig{
+		config := &runnertypes.ConfigSpec{
+			Version: "1.0",
+			Global: runnertypes.GlobalSpec{
 				WorkDir:      "/tmp",
 				EnvAllowlist: []string{"PATH"},
 			},
 		}
 
-		group := runnertypes.CommandGroup{
+		group := runnertypes.GroupSpec{
 			Name:    "test-tempdir-cleanup",
 			TempDir: true,
-			Commands: []runnertypes.Command{
+			Commands: []runnertypes.CommandSpec{
 				{Name: "test", Cmd: "echo", Args: []string{"hello"}},
 			},
 			EnvAllowlist: []string{"PATH"},
@@ -1032,9 +1035,9 @@ func TestCommandGroup_TempDir_Detailed(t *testing.T) {
 		// Set expectation for CleanupTempDir - resource manager will clean up temp directory
 		mockResourceManager.On("CleanupTempDir", "/tmp/test-temp-dir").Return(nil)
 
-		// Set expectation for ExecuteCommand - verify that Dir field is properly set
-		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.MatchedBy(func(cmd runnertypes.Command) bool {
-			// Verify that the command's Dir field has been set to a temp directory path
+		// Set expectation for ExecuteCommand - verify that WorkDir field is properly set
+		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.MatchedBy(func(cmd runnertypes.CommandSpec) bool {
+			// Verify that the command's WorkDir field has been set to a temp directory path
 			return cmd.Name == defaultTestCommandName &&
 				cmd.Cmd == "echo" &&
 				len(cmd.Args) == 1 && cmd.Args[0] == "hello" &&
@@ -1053,7 +1056,7 @@ func TestCommandGroup_TempDir_Detailed(t *testing.T) {
 
 		// Execute the group
 		ctx := context.Background()
-		err = runner.ExecuteGroup(ctx, group)
+		err = runner.ExecuteGroup(ctx, &group)
 
 		// Verify no error occurred
 		assert.NoError(t, err)
@@ -1065,19 +1068,20 @@ func TestCommandGroup_TempDir_Detailed(t *testing.T) {
 		mockResourceManager.AssertCalled(t, "CreateTempDir", "test-tempdir-cleanup")
 	})
 
-	t.Run("Command with existing Dir is not overridden by TempDir", func(t *testing.T) {
-		config := &runnertypes.Config{
-			Global: runnertypes.GlobalConfig{
+	t.Run("Command with existing WorkDir is not overridden by TempDir", func(t *testing.T) {
+		config := &runnertypes.ConfigSpec{
+			Version: "1.0",
+			Global: runnertypes.GlobalSpec{
 				WorkDir:      "/tmp",
 				EnvAllowlist: []string{"PATH"},
 			},
 		}
 
-		group := runnertypes.CommandGroup{
+		group := runnertypes.GroupSpec{
 			Name:    "test-existing-dir",
 			TempDir: true, // TempDir is enabled
-			Commands: []runnertypes.Command{
-				{Name: "test", Cmd: "echo", Args: []string{"hello"}, Dir: "/existing/dir"}, // But command already has Dir
+			Commands: []runnertypes.CommandSpec{
+				{Name: "test", Cmd: "echo", Args: []string{"hello"}, WorkDir: "/existing/dir"}, // But command already has WorkDir
 			},
 			EnvAllowlist: []string{"PATH"},
 		}
@@ -1091,13 +1095,13 @@ func TestCommandGroup_TempDir_Detailed(t *testing.T) {
 		// CleanupTempDir expectation
 		mockResourceManager.On("CleanupTempDir", "/tmp/test-temp-dir").Return(nil)
 
-		// Set expectation for ExecuteCommand - verify that existing Dir is preserved in EffectiveWorkdir
-		mockResourceManager.On("ExecuteCommand", mock.Anything, runnertypes.Command{
+		// Set expectation for ExecuteCommand - verify that existing WorkDir is preserved in EffectiveWorkdir
+		mockResourceManager.On("ExecuteCommand", mock.Anything, runnertypes.CommandSpec{
 			Name:             "test",
 			Cmd:              "echo",
 			Args:             []string{"hello"},
-			Dir:              "/existing/dir", // Original Dir is preserved
-			EffectiveWorkdir: "/existing/dir", // EffectiveWorkdir is set from Dir
+			WorkDir:          "/existing/dir", // Original WorkDir is preserved
+			EffectiveWorkdir: "/existing/dir", // EffectiveWorkdir is set from WorkDir
 		}, &group, mock.Anything).Return(
 			&resource.ExecutionResult{ExitCode: 0, Stdout: "hello\n", Stderr: ""}, nil)
 
@@ -1111,7 +1115,7 @@ func TestCommandGroup_TempDir_Detailed(t *testing.T) {
 
 		// Execute the group
 		ctx := context.Background()
-		err = runner.ExecuteGroup(ctx, group)
+		err = runner.ExecuteGroup(ctx, &group)
 
 		// Verify no error occurred
 		assert.NoError(t, err)
