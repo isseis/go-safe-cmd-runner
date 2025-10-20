@@ -293,8 +293,10 @@ func TestRuntimeGlobal_Structure(t *testing.T) {
 	if len(runtime.ExpandedEnv) != 1 {
 		t.Errorf("len(ExpandedEnv) = %d, want 1", len(runtime.ExpandedEnv))
 	}
-	if runtime.ExpandedEnv["PATH"] != "/usr/bin" {
-		t.Errorf("ExpandedEnv[PATH] = %s, want /usr/bin", runtime.ExpandedEnv["PATH"])
+	if val, exists := runtime.ExpandedEnv["PATH"]; !exists {
+		t.Error("ExpandedEnv[PATH] key not found")
+	} else if val != "/usr/bin" {
+		t.Errorf("ExpandedEnv[PATH] = %s, want /usr/bin", val)
 	}
 }
 
