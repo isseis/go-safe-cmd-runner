@@ -16,7 +16,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
-	runnertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/testing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -717,21 +716,21 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 // of GroupExecutor. Timeout behavior is already tested by TestRunner_CommandTimeoutBehavior.
 
 func TestRunner_CommandTimeoutBehavior(t *testing.T) {
-	sleepCmd := runnertypes.Command{
+	sleepCmd := runnertypes.CommandSpec{
 		Cmd:  "sleep",
 		Args: []string{"5"}, // Sleep for 5 seconds, longer than timeout
 	}
-	runnertypes.PrepareCommand(&sleepCmd)
 
-	config := &runnertypes.Config{
-		Global: runnertypes.GlobalConfig{
+	config := &runnertypes.ConfigSpec{
+		Version: "1.0",
+		Global: runnertypes.GlobalSpec{
 			Timeout: 1, // 1 second timeout
 			WorkDir: "/tmp",
 		},
-		Groups: []runnertypes.CommandGroup{
+		Groups: []runnertypes.GroupSpec{
 			{
 				Name:     "timeout-test-group",
-				Commands: []runnertypes.Command{sleepCmd},
+				Commands: []runnertypes.CommandSpec{sleepCmd},
 			},
 		},
 	}
@@ -761,22 +760,22 @@ func TestRunner_CommandTimeoutBehavior(t *testing.T) {
 
 	t.Run("command-specific timeout overrides global timeout", func(t *testing.T) {
 		// Create config with command-specific shorter timeout
-		shortTimeoutCmd := runnertypes.Command{
+		shortTimeoutCmd := runnertypes.CommandSpec{
 			Cmd:     "sleep",
 			Args:    []string{"5"}, // Sleep for 5 seconds
 			Timeout: 1,             // But timeout after 1 second
 		}
-		runnertypes.PrepareCommand(&shortTimeoutCmd)
 
-		configWithCmdTimeout := &runnertypes.Config{
-			Global: runnertypes.GlobalConfig{
+		configWithCmdTimeout := &runnertypes.ConfigSpec{
+			Version: "1.0",
+			Global: runnertypes.GlobalSpec{
 				Timeout: 10, // 10 seconds global timeout
 				WorkDir: "/tmp",
 			},
-			Groups: []runnertypes.CommandGroup{
+			Groups: []runnertypes.GroupSpec{
 				{
 					Name:     "cmd-timeout-test-group",
-					Commands: []runnertypes.Command{shortTimeoutCmd},
+					Commands: []runnertypes.CommandSpec{shortTimeoutCmd},
 				},
 			},
 		}
