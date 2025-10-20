@@ -628,8 +628,9 @@ func ExpandGroup(spec *runnertypes.GroupSpec, globalVars map[string]string) (*ru
 	// 1. Inherit global variables
 	maps.Copy(runtime.ExpandedVars, globalVars)
 
-	// 2. Process FromEnv (group-level) (TODO: To be implemented in Task 0033)
-	// For now, skip FromEnv processing
+	// 2. Process FromEnv (group-level)
+	// TODO (Task 0033): Implement FromEnv processing, which imports specified system environment variables
+	// as internal variables for the group. For now, skip FromEnv processing.
 
 	// 3. Process Vars (group-level)
 	expandedVars, err := ProcessVars(spec.Vars, runtime.ExpandedVars, fmt.Sprintf("group[%s]", spec.Name))
