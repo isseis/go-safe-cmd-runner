@@ -277,11 +277,11 @@ func (r *RuntimeCommand) HasUserGroupSpecification() bool {
 - `runtime_test.go`: Runtime層のテスト
 
 **完了条件**:
-- [ ] すべてのRuntime型が定義されている
-- [ ] Specへの参照が正しく設定されている
-- [ ] 便利メソッドが実装されている
-- [ ] GoDocコメントが記述されている
-- [ ] 単体テストが成功している
+- [x] すべてのRuntime型が定義されている
+- [x] Specへの参照が正しく設定されている
+- [x] 便利メソッドが実装されている
+- [x] GoDocコメントが記述されている
+- [x] 単体テストが成功している
 
 ---
 
@@ -745,11 +745,11 @@ Phase 1 → Phase 2 → Phase 3 → Phase 5 → Phase 6 → Phase 7
 - [x] Spec層のテストを実装
 
 ### Phase 2: Runtime層の型定義
-- [ ] `RuntimeGlobal` を定義
-- [ ] `RuntimeGroup` を定義
-- [ ] `RuntimeCommand` を定義
-- [ ] 便利メソッドを実装
-- [ ] Runtime層のテストを実装
+- [x] `RuntimeGlobal` を定義
+- [x] `RuntimeGroup` を定義
+- [x] `RuntimeCommand` を定義
+- [x] 便利メソッドを実装
+- [x] Runtime層のテストを実装
 
 ### Phase 3: 展開関数の実装
 - [ ] `ExpandGlobal()` を実装
