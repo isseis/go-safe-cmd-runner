@@ -214,7 +214,7 @@
 #### 4.1.5 `internal/safefileio` (76.4% → 85%以上)
 
 **未テスト機能:**
-- `IsOpenat2Available()` - openat2システムコール利用可否
+- `isOpenat2Available()` - openat2システムコール利用可否
 
 **必要なテストケース:**
 1. Linux環境でのopenat2サポート確認
