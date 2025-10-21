@@ -54,7 +54,7 @@ func TestE2E_CompleteConfiguration(t *testing.T) {
 	t.Run("GlobalVerifyFiles", func(t *testing.T) {
 		// Global.ExpandedVerifyFiles should reference Global.Env variables
 		require.Len(t, runtimeGlobal.ExpandedVerifyFiles, 1, "Global should have 1 expanded verify_files entry")
-		assert.Equal(t, "/opt/app/verify.sh", cfg.Global.ExpandedVerifyFiles[0],
+		assert.Equal(t, "/opt/app/verify.sh", runtimeGlobal.ExpandedVerifyFiles[0],
 			"Global.ExpandedVerifyFiles should expand BASE_DIR")
 	})
 
