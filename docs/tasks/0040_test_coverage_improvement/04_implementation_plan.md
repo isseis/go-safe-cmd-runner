@@ -76,19 +76,27 @@
   - [ ] `output_test.go` の作成
 
 - [ ] 3.2.2 `ParseDryRunDetailLevel()` の正常系テスト
-  - [ ] "none" レベルのパース
-  - [ ] "minimal" レベルのパース
+  - [ ] "summary" レベルのパース
+  - [ ] "detailed" レベルのパース
   - [ ] "full" レベルのパース
-  - [ ] 大文字入力（"NONE", "MINIMAL", "FULL"）のパース
-  - [ ] 混在ケース（"None", "Minimal", "Full"）のパース
 
 - [ ] 3.2.3 `ParseDryRunDetailLevel()` の異常系テスト
   - [ ] 無効な文字列（"invalid", "unknown"）のエラー
   - [ ] 空文字列のエラー
   - [ ] 数値入力（"0", "1", "2"）のエラー
+  - [ ] 大文字入力（"SUMMARY", "DETAILED", "FULL"）のエラー
+
+- [ ] 3.2.4 `ParseDryRunOutputFormat()` の正常系テスト
+  - [ ] "text" フォーマットのパース
+  - [ ] "json" フォーマットのパース
+
+- [ ] 3.2.5 `ParseDryRunOutputFormat()` の異常系テスト
+  - [ ] 無効な文字列（"xml", "yaml"）のエラー
+  - [ ] 空文字列のエラー
+  - [ ] 大文字入力（"TEXT", "JSON"）のエラー
   - [ ] 特殊文字を含む入力のエラー
 
-- [ ] 3.2.4 カバレッジ確認
+- [ ] 3.2.6 カバレッジ確認
   - [ ] `go test -cover` で80%以上を確認
 
 ### 3.3 `internal/runner/bootstrap` (11.5% → 80%以上)
