@@ -1175,15 +1175,15 @@ func TestE2E_VerifyFilesExpansion_ErrorHandling(t *testing.T)
 
 ### 9.6 完了条件
 
-- [ ] Phase 9.1: 循環参照テスト作成完了
-  - [ ] 7個以上の循環参照テストケースが実装されている
-  - [ ] すべてのテストが成功している
-  - [ ] `ErrCircularReference` が適切に検出される
+- [x] Phase 9.1: 循環参照テスト作成完了
+  - [x] 8個の循環参照テストケースが実装されている
+  - [x] すべてのテストが成功している
+  - [x] 循環参照および未定義変数エラーが適切に検出される
 
-- [ ] Phase 9.2: 展開関数ユニットテスト作成完了
-  - [ ] 20個以上のユニットテストが実装されている
-  - [ ] `ExpandString`, `ProcessFromEnv`, `ProcessVars`, `ProcessEnv` がカバーされている
-  - [ ] エラーハンドリングが詳細にテストされている
+- [x] Phase 9.2: 展開関数ユニットテスト作成完了
+  - [x] 18個のユニットテストが実装されている
+  - [x] `ExpandString`, `ProcessFromEnv`, `ProcessVars`, `ProcessEnv` がカバーされている
+  - [x] エラーハンドリングが詳細にテストされている
 
 - [ ] Phase 9.3: Allowlistテスト強化完了（オプション）
   - [ ] allowlist違反の詳細なエラーハンドリングがテストされている
