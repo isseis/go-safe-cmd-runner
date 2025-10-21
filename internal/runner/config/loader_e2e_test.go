@@ -506,8 +506,10 @@ verify_files = ["%{base_dir}/%{sub_dir}/script.sh"]
 	t.Run("GroupVerifyFiles_WithDashes", func(t *testing.T) {
 		testGroup := findGroup(t, expandedCfg, "test_group")
 		require.NotNil(t, testGroup)
-		require.Len(t, testGroup.ExpandedVerifyFiles, 1)
-		assert.Equal(t, "/opt/my app/sub-dir/script.sh", testGroup.ExpandedVerifyFiles[0],
+		runtimeGroup, err := config.ExpandGroup(testGroup, cfg.Global, map[string]string{})
+		require.NoError(t, err, "Failed to expand group")
+		require.Len(t, runtimeGroup.ExpandedVerifyFiles, 1)
+		assert.Equal(t, "/opt/my app/sub-dir/script.sh", runtimeGroup.ExpandedVerifyFiles[0],
 			"verify_files should handle paths with dashes")
 	})
 }
