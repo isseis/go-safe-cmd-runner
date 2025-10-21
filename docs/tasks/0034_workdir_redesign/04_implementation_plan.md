@@ -875,7 +875,7 @@ Phase 0 → Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5
 
 ### 6.1 機能実装の完了基準
 
-- [ ] 全ての型定義変更が完了している (部分的完了: GlobalSpec.WorkDir削除が未完了)
+- [x] 全ての型定義変更が完了している
 - [ ] `TempDirManager` が実装され、テストが成功している (未実装)
 - [ ] `__runner_workdir` 変数が正しく動作している (未実装)
 - [ ] ワークディレクトリ決定ロジックが実装されている (部分的完了: group_executor.goにインライン実装あり)

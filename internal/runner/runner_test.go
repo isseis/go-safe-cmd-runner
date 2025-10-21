@@ -1003,9 +1003,6 @@ func TestSlackNotification(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create temporary directory for test (not used after Global.WorkDir removal)
-			_ = t.TempDir()
-
 			// Create config with a simple command group
 			config := &runnertypes.ConfigSpec{
 				Version: "1.0",
@@ -1136,9 +1133,6 @@ func TestRunner_OutputCaptureEndToEnd(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create temporary directory for this test (not used after Global.WorkDir removal)
-			_ = t.TempDir()
-
 			// Create config with output capture settings
 			config := &runnertypes.ConfigSpec{
 				Version: "1.0",
@@ -1247,9 +1241,6 @@ func TestRunner_OutputCaptureErrorScenarios(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create temporary directory for this test (not used after Global.WorkDir removal)
-			_ = t.TempDir()
-
 			// Create config
 			config := &runnertypes.ConfigSpec{
 				Version: "1.0",
@@ -1528,8 +1519,6 @@ func TestRunner_OutputCaptureErrorTypes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_ = t.TempDir() // Not used after Global.WorkDir removal
-
 			// Create basic configuration with output capture
 			cfg := &runnertypes.ConfigSpec{
 				Version: "1.0",
@@ -1635,8 +1624,6 @@ func TestRunner_OutputCaptureExecutionStages(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_ = t.TempDir() // Not used after Global.WorkDir removal
-
 			// Create basic configuration with output capture
 			cfg := &runnertypes.ConfigSpec{
 				Version: "1.0",
@@ -1828,8 +1815,6 @@ func TestRunner_OutputCaptureSecurityIntegration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_ = t.TempDir() // Not used after Global.WorkDir removal
-
 			// Create configuration with potentially malicious output path
 			cfg := &runnertypes.ConfigSpec{
 				Version: "1.0",
@@ -1967,8 +1952,6 @@ func TestRunner_OutputCaptureResourceManagement(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_ = t.TempDir() // Not used after Global.WorkDir removal
-
 			// Create configuration with output capture
 			cfg := &runnertypes.ConfigSpec{
 				Version: "1.0",
