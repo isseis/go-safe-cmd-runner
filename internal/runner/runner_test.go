@@ -1,4 +1,4 @@
-//go:build skip_integration_tests
+//go:build test
 
 package runner
 
@@ -22,14 +22,10 @@ import (
 )
 
 var (
-	errCommandNotFound  = errors.New("command not found")
-	errPermissionDenied = errors.New("permission denied")
-	errDiskFull         = errors.New("disk full")
-	errResourceBusy     = errors.New("resource busy")
-	errCleanupFailed    = errors.New("cleanup failed")
+	errCommandNotFound = errors.New("command not found")
+	errResourceBusy    = errors.New("resource busy")
+	errCleanupFailed   = errors.New("cleanup failed")
 )
-
-const defaultTestCommandName = "test"
 
 var ErrExecutionFailed = errors.New("execution failed")
 
@@ -270,13 +266,14 @@ func TestRunner_ExecuteGroup(t *testing.T) {
 
 			// Setup mock expectations
 			for i, cmd := range config.Groups[0].Commands {
-				// Create expected command with EffectiveWorkdir set
-				expectedCmd := cmd
-				if expectedCmd.WorkDir == "" {
-					expectedCmd.EffectiveWorkdir = config.Global.WorkDir
+				// Create RuntimeCommand with EffectiveWorkDir set
+				var effectiveWorkDir string
+				if cmd.WorkDir == "" {
+					effectiveWorkDir = config.Global.WorkDir
 				} else {
-					expectedCmd.EffectiveWorkdir = expectedCmd.WorkDir
+					effectiveWorkDir = cmd.WorkDir
 				}
+				expectedCmd := createTestRuntimeCommand(&cmd, effectiveWorkDir)
 				mockResourceManager.On("ExecuteCommand", mock.Anything, expectedCmd, &config.Groups[0], mock.Anything).Return(tt.mockResults[i], tt.mockErrors[i])
 			}
 
@@ -323,7 +320,8 @@ func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
 		require.NoError(t, err)
 
 		// First command fails with non-zero exit code
-		mockResourceManager.On("ExecuteCommand", mock.Anything, runnertypes.CommandSpec{Name: "cmd-1", Cmd: "false", EffectiveWorkdir: "/tmp"}, &group, mock.Anything).
+		expectedCmd := createTestRuntimeCommand(&runnertypes.CommandSpec{Name: "cmd-1", Cmd: "false"}, "/tmp")
+		mockResourceManager.On("ExecuteCommand", mock.Anything, expectedCmd, &group, mock.Anything).
 			Return(&resource.ExecutionResult{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil)
 
 		// Subsequent commands should not be executed due to fail-fast behavior
@@ -360,14 +358,14 @@ func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
 		require.NoError(t, err)
 
 		// First command succeeds
-		mockResourceManager.On("ExecuteCommand", mock.Anything, runnertypes.CommandSpec{Name: "cmd-1", Cmd: "echo", Args: []string{"first"}, EffectiveWorkdir: "/tmp"}, &group, mock.Anything).
+		expectedCmd1 := createTestRuntimeCommand(&runnertypes.CommandSpec{Name: "cmd-1", Cmd: "echo", Args: []string{"first"}}, "/tmp")
+		mockResourceManager.On("ExecuteCommand", mock.Anything, expectedCmd1, &group, mock.Anything).
 			Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "first\n", Stderr: ""}, nil)
 
 		// Second command fails
-		mockResourceManager.On("ExecuteCommand", mock.Anything, runnertypes.CommandSpec{Name: "cmd-2", Cmd: "false", EffectiveWorkdir: "/tmp"}, &group, mock.Anything).
-			Return(&resource.ExecutionResult{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil)
-
-		// Third command should not be executed due to fail-fast behavior
+		expectedCmd2 := createTestRuntimeCommand(&runnertypes.CommandSpec{Name: "cmd-2", Cmd: "false"}, "/tmp")
+		mockResourceManager.On("ExecuteCommand", mock.Anything, expectedCmd2, &group, mock.Anything).
+			Return(&resource.ExecutionResult{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil) // Third command should not be executed due to fail-fast behavior
 
 		ctx := context.Background()
 		err = runner.ExecuteGroup(ctx, &group)
@@ -402,14 +400,14 @@ func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
 		require.NoError(t, err)
 
 		// First command succeeds
-		mockResourceManager.On("ExecuteCommand", mock.Anything, runnertypes.CommandSpec{Name: "cmd-1", Cmd: "echo", Args: []string{"first"}, EffectiveWorkdir: "/tmp"}, &group, mock.Anything).
+		expectedCmd1 := createTestRuntimeCommand(&runnertypes.CommandSpec{Name: "cmd-1", Cmd: "echo", Args: []string{"first"}}, "/tmp")
+		mockResourceManager.On("ExecuteCommand", mock.Anything, expectedCmd1, &group, mock.Anything).
 			Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "first\n", Stderr: ""}, nil)
 
 		// Second command returns executor error
-		mockResourceManager.On("ExecuteCommand", mock.Anything, runnertypes.CommandSpec{Name: "cmd-2", Cmd: "invalid-command", EffectiveWorkdir: "/tmp"}, &group, mock.Anything).
-			Return((*resource.ExecutionResult)(nil), errCommandNotFound)
-
-		// Third command should not be executed
+		expectedCmd2 := createTestRuntimeCommand(&runnertypes.CommandSpec{Name: "cmd-2", Cmd: "invalid-command"}, "/tmp")
+		mockResourceManager.On("ExecuteCommand", mock.Anything, expectedCmd2, &group, mock.Anything).
+			Return((*resource.ExecutionResult)(nil), errCommandNotFound) // Third command should not be executed
 
 		ctx := context.Background()
 		err = runner.ExecuteGroup(ctx, &group)
@@ -453,8 +451,10 @@ func TestRunner_ExecuteAll(t *testing.T) {
 	require.NoError(t, err)
 
 	// Setup mock expectations - should be called in priority order
-	mockResourceManager.On("ExecuteCommand", mock.Anything, runnertypes.CommandSpec{Name: "cmd-1", Cmd: "echo", Args: []string{"first"}, EffectiveWorkdir: "/tmp"}, &config.Groups[1], mock.Anything).Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "first\n"}, nil)
-	mockResourceManager.On("ExecuteCommand", mock.Anything, runnertypes.CommandSpec{Name: "cmd-2", Cmd: "echo", Args: []string{"second"}, EffectiveWorkdir: "/tmp"}, &config.Groups[0], mock.Anything).Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "second\n"}, nil)
+	expectedCmd1 := createTestRuntimeCommand(&runnertypes.CommandSpec{Name: "cmd-1", Cmd: "echo", Args: []string{"first"}}, "/tmp")
+	mockResourceManager.On("ExecuteCommand", mock.Anything, expectedCmd1, &config.Groups[1], mock.Anything).Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "first\n"}, nil)
+	expectedCmd2 := createTestRuntimeCommand(&runnertypes.CommandSpec{Name: "cmd-2", Cmd: "echo", Args: []string{"second"}}, "/tmp")
+	mockResourceManager.On("ExecuteCommand", mock.Anything, expectedCmd2, &config.Groups[0], mock.Anything).Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "second\n"}, nil)
 
 	ctx := context.Background()
 	err = runner.ExecuteAll(ctx)
@@ -504,14 +504,17 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		require.NoError(t, err)
 
 		// First group's command should be called and fail
-		mockResourceManager.On("ExecuteCommand", mock.Anything, runnertypes.CommandSpec{Name: "fail-cmd", Cmd: "false", EffectiveWorkdir: "/tmp"}, &config.Groups[0], mock.Anything).
+		expectedCmd1 := createTestRuntimeCommand(&runnertypes.CommandSpec{Name: "fail-cmd", Cmd: "false"}, "/tmp")
+		mockResourceManager.On("ExecuteCommand", mock.Anything, expectedCmd1, &config.Groups[0], mock.Anything).
 			Return(&resource.ExecutionResult{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil)
 
 		// Remaining groups should still be executed
-		mockResourceManager.On("ExecuteCommand", mock.Anything, runnertypes.CommandSpec{Name: "success-cmd", Cmd: "echo", Args: []string{"should execute"}, EffectiveWorkdir: "/tmp"}, &config.Groups[1], mock.Anything).
+		expectedCmd2 := createTestRuntimeCommand(&runnertypes.CommandSpec{Name: "success-cmd", Cmd: "echo", Args: []string{"should execute"}}, "/tmp")
+		mockResourceManager.On("ExecuteCommand", mock.Anything, expectedCmd2, &config.Groups[1], mock.Anything).
 			Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "should execute\n", Stderr: ""}, nil)
 
-		mockResourceManager.On("ExecuteCommand", mock.Anything, runnertypes.CommandSpec{Name: "another-cmd", Cmd: "echo", Args: []string{"also should execute"}, EffectiveWorkdir: "/tmp"}, &config.Groups[2], mock.Anything).
+		expectedCmd3 := createTestRuntimeCommand(&runnertypes.CommandSpec{Name: "another-cmd", Cmd: "echo", Args: []string{"also should execute"}}, "/tmp")
+		mockResourceManager.On("ExecuteCommand", mock.Anything, expectedCmd3, &config.Groups[2], mock.Anything).
 			Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "also should execute\n", Stderr: ""}, nil)
 
 		ctx := context.Background()
@@ -561,15 +564,18 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		require.NoError(t, err)
 
 		// First group should succeed
-		mockResourceManager.On("ExecuteCommand", mock.Anything, runnertypes.CommandSpec{Name: "success-cmd-1", Cmd: "echo", Args: []string{"first"}, EffectiveWorkdir: "/tmp"}, &config.Groups[0], mock.Anything).
+		expectedCmd1 := createTestRuntimeCommand(&runnertypes.CommandSpec{Name: "success-cmd-1", Cmd: "echo", Args: []string{"first"}}, "/tmp")
+		mockResourceManager.On("ExecuteCommand", mock.Anything, expectedCmd1, &config.Groups[0], mock.Anything).
 			Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "first\n", Stderr: ""}, nil)
 
 		// Second group should fail
-		mockResourceManager.On("ExecuteCommand", mock.Anything, runnertypes.CommandSpec{Name: "fail-cmd", Cmd: "false", EffectiveWorkdir: "/tmp"}, &config.Groups[1], mock.Anything).
+		expectedCmd2 := createTestRuntimeCommand(&runnertypes.CommandSpec{Name: "fail-cmd", Cmd: "false"}, "/tmp")
+		mockResourceManager.On("ExecuteCommand", mock.Anything, expectedCmd2, &config.Groups[1], mock.Anything).
 			Return(&resource.ExecutionResult{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil)
 
 		// Third group should still be executed
-		mockResourceManager.On("ExecuteCommand", mock.Anything, runnertypes.CommandSpec{Name: "should-execute", Cmd: "echo", Args: []string{"third"}, EffectiveWorkdir: "/tmp"}, &config.Groups[2], mock.Anything).
+		expectedCmd3 := createTestRuntimeCommand(&runnertypes.CommandSpec{Name: "should-execute", Cmd: "echo", Args: []string{"third"}}, "/tmp")
+		mockResourceManager.On("ExecuteCommand", mock.Anything, expectedCmd3, &config.Groups[2], mock.Anything).
 			Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "third\n", Stderr: ""}, nil)
 
 		ctx := context.Background()
@@ -613,16 +619,19 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		require.NoError(t, err)
 
 		// First command in group-1 should succeed
-		mockResourceManager.On("ExecuteCommand", mock.Anything, runnertypes.CommandSpec{Name: "success-cmd-1", Cmd: "echo", Args: []string{"first"}, EffectiveWorkdir: "/tmp"}, &config.Groups[0], mock.Anything).
+		expectedCmd1 := createTestRuntimeCommand(&runnertypes.CommandSpec{Name: "success-cmd-1", Cmd: "echo", Args: []string{"first"}}, "/tmp")
+		mockResourceManager.On("ExecuteCommand", mock.Anything, expectedCmd1, &config.Groups[0], mock.Anything).
 			Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "first\n", Stderr: ""}, nil)
 
 		// Second command in group-1 should fail
-		mockResourceManager.On("ExecuteCommand", mock.Anything, runnertypes.CommandSpec{Name: "fail-cmd", Cmd: "false", EffectiveWorkdir: "/tmp"}, &config.Groups[0], mock.Anything).
+		expectedCmd2 := createTestRuntimeCommand(&runnertypes.CommandSpec{Name: "fail-cmd", Cmd: "false"}, "/tmp")
+		mockResourceManager.On("ExecuteCommand", mock.Anything, expectedCmd2, &config.Groups[0], mock.Anything).
 			Return(&resource.ExecutionResult{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil)
 
 		// Third command in group-1 should not be executed (group-level failure stops remaining commands in same group)
 		// But group-2 should still be executed (new behavior)
-		mockResourceManager.On("ExecuteCommand", mock.Anything, runnertypes.CommandSpec{Name: "group2-cmd", Cmd: "echo", Args: []string{"group2"}, EffectiveWorkdir: "/tmp"}, &config.Groups[1], mock.Anything).
+		expectedCmd3 := createTestRuntimeCommand(&runnertypes.CommandSpec{Name: "group2-cmd", Cmd: "echo", Args: []string{"group2"}}, "/tmp")
+		mockResourceManager.On("ExecuteCommand", mock.Anything, expectedCmd3, &config.Groups[1], mock.Anything).
 			Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "group2\n", Stderr: ""}, nil)
 
 		ctx := context.Background()
@@ -664,11 +673,13 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		require.NoError(t, err)
 
 		// First command should return executor error
-		mockResourceManager.On("ExecuteCommand", mock.Anything, runnertypes.CommandSpec{Name: "executor-error-cmd", Cmd: "nonexistent-command", EffectiveWorkdir: "/tmp"}, &config.Groups[0], mock.Anything).
+		expectedCmd1 := createTestRuntimeCommand(&runnertypes.CommandSpec{Name: "executor-error-cmd", Cmd: "nonexistent-command"}, "/tmp")
+		mockResourceManager.On("ExecuteCommand", mock.Anything, expectedCmd1, &config.Groups[0], mock.Anything).
 			Return((*resource.ExecutionResult)(nil), errCommandNotFound)
 
 		// Second group should still be executed
-		mockResourceManager.On("ExecuteCommand", mock.Anything, runnertypes.CommandSpec{Name: "should-execute", Cmd: "echo", Args: []string{"second"}, EffectiveWorkdir: "/tmp"}, &config.Groups[1], mock.Anything).
+		expectedCmd2 := createTestRuntimeCommand(&runnertypes.CommandSpec{Name: "should-execute", Cmd: "echo", Args: []string{"second"}}, "/tmp")
+		mockResourceManager.On("ExecuteCommand", mock.Anything, expectedCmd2, &config.Groups[1], mock.Anything).
 			Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "second\n", Stderr: ""}, nil)
 
 		ctx := context.Background()
@@ -874,19 +885,6 @@ func TestCommandGroup_NewFields(t *testing.T) {
 		description string
 	}{
 		{
-			name: "TempDir enabled",
-			group: runnertypes.GroupSpec{
-				Name:    "test-tempdir",
-				TempDir: true,
-				Commands: []runnertypes.CommandSpec{
-					{Name: "test", Cmd: "echo", Args: []string{"hello"}},
-				},
-				EnvAllowlist: []string{"PATH"},
-			},
-			expectError: false,
-			description: "Should create temporary directory and set it as working directory",
-		},
-		{
 			name: "WorkDir specified",
 			group: runnertypes.GroupSpec{
 				Name:    "test-workdir",
@@ -930,16 +928,8 @@ func TestCommandGroup_NewFields(t *testing.T) {
 			mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 				&resource.ExecutionResult{ExitCode: 0, Stdout: "test output", Stderr: ""}, nil)
 
-			// Set up CreateTempDir and CleanupTempDir expectations if TempDir is enabled
-			if tt.group.TempDir {
-				mockResourceManager.On("CreateTempDir", tt.group.Name).Return("/tmp/test-temp-dir", nil)
-				mockResourceManager.On("CleanupTempDir", "/tmp/test-temp-dir").Return(nil)
-			}
-
 			runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
-			require.NoError(t, err)
-
-			// Load basic environment
+			require.NoError(t, err) // Load basic environment
 			err = runner.LoadSystemEnvironment()
 			require.NoError(t, err)
 
@@ -961,12 +951,12 @@ func TestCommandGroup_NewFields(t *testing.T) {
 					// Verify the command was called with the expected working directory
 					calls := mockResourceManager.Calls
 					require.Len(t, calls, 1)
-					cmd, ok := calls[0].Arguments[1].(runnertypes.CommandSpec)
-					require.True(t, ok, "expected calls[0].Arguments[1] to be of type runnertypes.CommandSpec, but it was not")
+					cmd, ok := calls[0].Arguments[1].(runnertypes.RuntimeCommand)
+					require.True(t, ok, "expected calls[0].Arguments[1] to be of type runnertypes.RuntimeCommand, but it was not")
 					if tt.name == "WorkDir specified" {
-						assert.Equal(t, "/tmp", cmd.EffectiveWorkdir)
+						assert.Equal(t, "/tmp", cmd.EffectiveWorkDir)
 					} else {
-						assert.Equal(t, "/usr", cmd.EffectiveWorkdir) // Should not be overridden
+						assert.Equal(t, "/usr", cmd.EffectiveWorkDir) // Should not be overridden
 					}
 				}
 			}
@@ -975,184 +965,9 @@ func TestCommandGroup_NewFields(t *testing.T) {
 }
 
 // TestCommandGroup_TempDir_Detailed tests TempDir functionality with detailed mock expectations
+// SKIPPED: TempDir feature removed in new design - use t.TempDir() directly instead
 func TestCommandGroup_TempDir_Detailed(t *testing.T) {
-	setupSafeTestEnv(t)
-
-	t.Run("TempDir creates directory and sets WorkDir field", func(t *testing.T) {
-		config := &runnertypes.ConfigSpec{
-			Version: "1.0",
-			Global: runnertypes.GlobalSpec{
-				WorkDir:      "/tmp",
-				EnvAllowlist: []string{"PATH"},
-			},
-		}
-
-		group := runnertypes.GroupSpec{
-			Name:    "test-tempdir-detailed",
-			TempDir: true,
-			Commands: []runnertypes.CommandSpec{
-				{Name: "test", Cmd: "echo", Args: []string{"hello"}},
-			},
-			EnvAllowlist: []string{"PATH"},
-		}
-
-		// Create mock resource manager
-		mockResourceManager := &MockResourceManager{}
-
-		// Set expectation for CreateTempDir - resource manager will create temp directory
-		mockResourceManager.On("CreateTempDir", "test-tempdir-detailed").Return("/tmp/test-temp-dir", nil)
-
-		// Set expectation for CleanupTempDir - resource manager will clean up temp directory
-		mockResourceManager.On("CleanupTempDir", "/tmp/test-temp-dir").Return(nil)
-
-		// Set expectation for ExecuteCommand - verify that WorkDir field is properly set
-		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.MatchedBy(func(cmd runnertypes.CommandSpec) bool {
-			// Verify that the command's WorkDir field has been set to a temp directory path
-			return cmd.Name == defaultTestCommandName &&
-				cmd.Cmd == "echo" &&
-				len(cmd.Args) == 1 && cmd.Args[0] == "hello" &&
-				cmd.EffectiveWorkdir != "" && // EffectiveWorkdir should be set
-				strings.Contains(cmd.EffectiveWorkdir, "/tmp") // Should contain temp directory
-		}), &group, mock.Anything).Return(
-			&resource.ExecutionResult{ExitCode: 0, Stdout: "hello\n", Stderr: ""}, nil)
-
-		// Create runner with mock resource manager
-		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
-		require.NoError(t, err)
-
-		// Load basic environment
-		err = runner.LoadSystemEnvironment()
-		require.NoError(t, err)
-
-		// Execute the group
-		ctx := context.Background()
-		err = runner.ExecuteGroup(ctx, &group)
-
-		// Verify no error occurred
-		assert.NoError(t, err)
-
-		// Verify all mock expectations were met
-		mockResourceManager.AssertExpectations(t)
-
-		// Verify that CreateTempDir was called (temp directory was created)
-		mockResourceManager.AssertCalled(t, "CreateTempDir", "test-tempdir-detailed")
-	})
-
-	t.Run("TempDir cleanup", func(t *testing.T) {
-		config := &runnertypes.ConfigSpec{
-			Version: "1.0",
-			Global: runnertypes.GlobalSpec{
-				WorkDir:      "/tmp",
-				EnvAllowlist: []string{"PATH"},
-			},
-		}
-
-		group := runnertypes.GroupSpec{
-			Name:    "test-tempdir-cleanup",
-			TempDir: true,
-			Commands: []runnertypes.CommandSpec{
-				{Name: "test", Cmd: "echo", Args: []string{"hello"}},
-			},
-			EnvAllowlist: []string{"PATH"},
-		}
-
-		// Create mock resource manager
-		mockResourceManager := &MockResourceManager{}
-
-		// Set expectation for CreateTempDir - resource manager will create temp directory
-		mockResourceManager.On("CreateTempDir", "test-tempdir-cleanup").Return("/tmp/test-temp-dir", nil)
-
-		// Set expectation for CleanupTempDir - resource manager will clean up temp directory
-		mockResourceManager.On("CleanupTempDir", "/tmp/test-temp-dir").Return(nil)
-
-		// Set expectation for ExecuteCommand - verify that WorkDir field is properly set
-		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.MatchedBy(func(cmd runnertypes.CommandSpec) bool {
-			// Verify that the command's WorkDir field has been set to a temp directory path
-			return cmd.Name == defaultTestCommandName &&
-				cmd.Cmd == "echo" &&
-				len(cmd.Args) == 1 && cmd.Args[0] == "hello" &&
-				cmd.EffectiveWorkdir != "" && // EffectiveWorkdir should be set
-				strings.Contains(cmd.EffectiveWorkdir, "/tmp") // Should contain temp directory
-		}), &group, mock.Anything).Return(
-			&resource.ExecutionResult{ExitCode: 0, Stdout: "hello\n", Stderr: ""}, nil)
-
-		// Create runner with mock resource manager
-		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
-		require.NoError(t, err)
-
-		// Load basic environment
-		err = runner.LoadSystemEnvironment()
-		require.NoError(t, err)
-
-		// Execute the group
-		ctx := context.Background()
-		err = runner.ExecuteGroup(ctx, &group)
-
-		// Verify no error occurred
-		assert.NoError(t, err)
-
-		// Verify all mock expectations were met
-		mockResourceManager.AssertExpectations(t)
-
-		// Verify that CreateTempDir was called (temp directory was created)
-		mockResourceManager.AssertCalled(t, "CreateTempDir", "test-tempdir-cleanup")
-	})
-
-	t.Run("Command with existing WorkDir is not overridden by TempDir", func(t *testing.T) {
-		config := &runnertypes.ConfigSpec{
-			Version: "1.0",
-			Global: runnertypes.GlobalSpec{
-				WorkDir:      "/tmp",
-				EnvAllowlist: []string{"PATH"},
-			},
-		}
-
-		group := runnertypes.GroupSpec{
-			Name:    "test-existing-dir",
-			TempDir: true, // TempDir is enabled
-			Commands: []runnertypes.CommandSpec{
-				{Name: "test", Cmd: "echo", Args: []string{"hello"}, WorkDir: "/existing/dir"}, // But command already has WorkDir
-			},
-			EnvAllowlist: []string{"PATH"},
-		}
-
-		// Create mock resource manager
-		mockResourceManager := &MockResourceManager{}
-
-		// Set expectation for CreateTempDir - temp directory should still be created
-		mockResourceManager.On("CreateTempDir", "test-existing-dir").Return("/tmp/test-temp-dir", nil)
-
-		// CleanupTempDir expectation
-		mockResourceManager.On("CleanupTempDir", "/tmp/test-temp-dir").Return(nil)
-
-		// Set expectation for ExecuteCommand - verify that existing WorkDir is preserved in EffectiveWorkdir
-		mockResourceManager.On("ExecuteCommand", mock.Anything, runnertypes.CommandSpec{
-			Name:             "test",
-			Cmd:              "echo",
-			Args:             []string{"hello"},
-			WorkDir:          "/existing/dir", // Original WorkDir is preserved
-			EffectiveWorkdir: "/existing/dir", // EffectiveWorkdir is set from WorkDir
-		}, &group, mock.Anything).Return(
-			&resource.ExecutionResult{ExitCode: 0, Stdout: "hello\n", Stderr: ""}, nil)
-
-		// Create runner with mock resource manager
-		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
-		require.NoError(t, err)
-
-		// Load basic environment
-		err = runner.LoadSystemEnvironment()
-		require.NoError(t, err)
-
-		// Execute the group
-		ctx := context.Background()
-		err = runner.ExecuteGroup(ctx, &group)
-
-		// Verify no error occurred
-		assert.NoError(t, err)
-
-		// Verify all mock expectations were met
-		mockResourceManager.AssertExpectations(t)
-	})
+	t.Skip("TempDir feature removed - WorkDir now uses t.TempDir() directly")
 }
 
 // TestRunner_EnvironmentVariablePriority tests the priority hierarchy for environment variables:
@@ -1170,350 +985,11 @@ func TestRunner_EnvironmentVariablePriority_GroupLevelSupport(t *testing.T) {
 }
 
 // TestRunner_EnvironmentVariablePriority_EdgeCases tests edge cases for environment variable priority
+// SKIPPED: TempDir feature removed in new design
 func TestResourceManagement_FailureScenarios(t *testing.T) {
-	setupSafeTestEnv(t)
-
-	t.Run("temp directory creation failure", func(t *testing.T) {
-		config := &runnertypes.ConfigSpec{
-			Version: "1.0",
-			Global: runnertypes.GlobalSpec{
-				WorkDir:      "/tmp",
-				EnvAllowlist: []string{"PATH"},
-			},
-		}
-
-		group := runnertypes.GroupSpec{
-			Name:    "test-tempdir-failure",
-			TempDir: true,
-			Commands: []runnertypes.CommandSpec{
-				{Name: "test", Cmd: "echo", Args: []string{"hello"}},
-			},
-			EnvAllowlist: []string{"PATH"},
-		}
-
-		// Create mock resource manager that fails on directory creation
-		mockResourceManager := &MockResourceManager{}
-		mockResourceManager.On("CreateTempDir", "test-tempdir-failure").
-			Return("", errPermissionDenied)
-
-		// Create runner with mock resource manager
-		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
-		require.NoError(t, err)
-
-		// Load basic environment
-		err = runner.LoadSystemEnvironment()
-		require.NoError(t, err)
-
-		// Execute the group - should fail due to temp directory creation failure
-		ctx := context.Background()
-		err = runner.ExecuteGroup(ctx, &group)
-
-		// Verify error occurred
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to create temp directory for group test-tempdir-failure")
-
-		// Verify mock expectations
-		mockResourceManager.AssertExpectations(t)
-		// ExecuteCommand should not have been called due to temp dir creation failure
-		mockResourceManager.AssertNotCalled(t, "ExecuteCommand")
-	})
-
-	t.Run("temp directory cleanup failure", func(t *testing.T) {
-		config := &runnertypes.ConfigSpec{
-			Version: "1.0",
-			Global: runnertypes.GlobalSpec{
-				WorkDir:      "/tmp",
-				EnvAllowlist: []string{"PATH"},
-			},
-		}
-
-		group := runnertypes.GroupSpec{
-			Name:    "test-cleanup-failure",
-			TempDir: true,
-			Commands: []runnertypes.CommandSpec{
-				{Name: "test", Cmd: "echo", Args: []string{"hello"}},
-			},
-			EnvAllowlist: []string{"PATH"},
-		}
-
-		// Create mock resource manager
-		mockResourceManager := &MockResourceManager{}
-		// Directory creation succeeds
-		mockResourceManager.On("CreateTempDir", "test-cleanup-failure").Return("/tmp/test-temp-dir", nil)
-
-		// CleanupTempDir expectation
-		mockResourceManager.On("CleanupTempDir", "/tmp/test-temp-dir").Return(nil)
-
-		// ExecuteCommand should be called and succeed
-		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.MatchedBy(func(cmd runnertypes.CommandSpec) bool {
-			return cmd.Name == defaultTestCommandName && cmd.WorkDir != ""
-		}), &group, mock.Anything).Return(
-			&resource.ExecutionResult{ExitCode: 0, Stdout: "hello\n", Stderr: ""}, nil)
-
-		// Create runner with mock resource manager
-		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
-		require.NoError(t, err)
-
-		// Load basic environment
-		err = runner.LoadSystemEnvironment()
-		require.NoError(t, err)
-
-		// Execute the group - should succeed despite cleanup failure (cleanup failure is logged as warning)
-		ctx := context.Background()
-		err = runner.ExecuteGroup(ctx, &group)
-
-		// Command execution should succeed even if cleanup fails
-		assert.NoError(t, err)
-
-		// Verify mock expectations
-		mockResourceManager.AssertExpectations(t)
-	})
-
-	t.Run("multiple temp directory failures", func(t *testing.T) {
-		config := &runnertypes.ConfigSpec{
-			Version: "1.0",
-			Global: runnertypes.GlobalSpec{
-				WorkDir:      "/tmp",
-				EnvAllowlist: []string{"PATH"},
-			},
-			Groups: []runnertypes.GroupSpec{
-				{
-					Name:     "group-1",
-					Priority: 1,
-					TempDir:  true,
-					Commands: []runnertypes.CommandSpec{
-						{Name: "cmd-1", Cmd: "echo", Args: []string{"first"}},
-					},
-					EnvAllowlist: []string{"PATH"},
-				},
-				{
-					Name:     "group-2",
-					Priority: 2,
-					TempDir:  true,
-					Commands: []runnertypes.CommandSpec{
-						{Name: "cmd-2", Cmd: "echo", Args: []string{"second"}},
-					},
-					EnvAllowlist: []string{"PATH"},
-				},
-			},
-		}
-
-		// Create mock resource manager
-		mockResourceManager := &MockResourceManager{}
-		// First directory creation succeeds
-		mockResourceManager.On("CreateTempDir", "group-1").
-			Return("/tmp/test-temp-dir", nil).Once()
-		// Second directory creation fails
-		mockResourceManager.On("CreateTempDir", "group-2").
-			Return("", errDiskFull)
-
-		// CleanupTempDir for first group only (since second group creation fails)
-		mockResourceManager.On("CleanupTempDir", "/tmp/test-temp-dir").Return(nil).Once()
-
-		// Only first group's command should execute
-		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.MatchedBy(func(cmd runnertypes.CommandSpec) bool {
-			return cmd.Name == "cmd-1"
-		}), &config.Groups[0], mock.Anything).Return(
-			&resource.ExecutionResult{ExitCode: 0, Stdout: "first\n", Stderr: ""}, nil)
-
-		// Create runner with mock resource manager
-		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
-		require.NoError(t, err)
-
-		// Load basic environment
-		err = runner.LoadSystemEnvironment()
-		require.NoError(t, err)
-
-		// Execute all groups - first should succeed, second should fail
-		ctx := context.Background()
-		err = runner.ExecuteAll(ctx)
-
-		// Should return error from second group's temp directory creation failure
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to execute group group-2")
-		assert.Contains(t, err.Error(), "failed to create temp directory")
-
-		// Verify mock expectations
-		mockResourceManager.AssertExpectations(t)
-	})
-
-	t.Run("resource cleanup during early termination", func(t *testing.T) {
-		config := &runnertypes.ConfigSpec{
-			Version: "1.0",
-			Global: runnertypes.GlobalSpec{
-				WorkDir:      "/tmp",
-				EnvAllowlist: []string{"PATH"},
-			},
-		}
-
-		group := runnertypes.GroupSpec{
-			Name:    "test-early-termination",
-			TempDir: true,
-			Commands: []runnertypes.CommandSpec{
-				{Name: "first-cmd", Cmd: "echo", Args: []string{"first"}},
-				{Name: "failing-cmd", Cmd: "false"}, // This command will fail
-				{Name: "never-executed", Cmd: "echo", Args: []string{"never"}},
-			},
-			EnvAllowlist: []string{"PATH"},
-		}
-
-		// Create mock resource manager
-		mockResourceManager := &MockResourceManager{}
-		// Directory creation should succeed
-		mockResourceManager.On("CreateTempDir", "test-early-termination").Return("/tmp/test-temp-dir", nil)
-
-		// CleanupTempDir expectation - should be called even if command fails
-		mockResourceManager.On("CleanupTempDir", "/tmp/test-temp-dir").Return(nil)
-
-		// First command succeeds
-		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.MatchedBy(func(cmd runnertypes.CommandSpec) bool {
-			return cmd.Name == "first-cmd"
-		}), &group, mock.Anything).Return(
-			&resource.ExecutionResult{ExitCode: 0, Stdout: "first\n", Stderr: ""}, nil)
-
-		// Second command fails
-		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.MatchedBy(func(cmd runnertypes.CommandSpec) bool {
-			return cmd.Name == "failing-cmd"
-		}), &group, mock.Anything).Return(
-			&resource.ExecutionResult{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil)
-
-		// Third command should never be called due to failure of second command
-
-		// Create runner with mock resource manager
-		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
-		require.NoError(t, err)
-
-		// Load basic environment
-		err = runner.LoadSystemEnvironment()
-		require.NoError(t, err)
-
-		// Execute the group - should fail on second command but still clean up resources
-		ctx := context.Background()
-		err = runner.ExecuteGroup(ctx, &group)
-
-		// Should return error from failing command
-		assert.Error(t, err)
-		assert.ErrorIs(t, err, ErrCommandFailed)
-
-		// Verify mock expectations
-		mockResourceManager.AssertExpectations(t)
-
-		// Verify that commands were executed as expected
-		mockResourceManager.AssertExpectations(t)
-	})
-
-	t.Run("resource manager cleanup all failure", func(t *testing.T) {
-		config := &runnertypes.ConfigSpec{
-			Version: "1.0",
-			Global: runnertypes.GlobalSpec{
-				WorkDir:      "/tmp",
-				EnvAllowlist: []string{"PATH"},
-			},
-		}
-
-		group := runnertypes.GroupSpec{
-			Name:    "test-cleanup-all",
-			TempDir: true,
-			Commands: []runnertypes.CommandSpec{
-				{Name: "test", Cmd: "echo", Args: []string{"hello"}},
-			},
-			EnvAllowlist: []string{"PATH"},
-		}
-
-		// Create mock resource manager
-		mockResourceManager := &MockResourceManager{}
-		mockResourceManager.On("CreateTempDir", "test-cleanup-all").Return("/tmp/test-temp-dir", nil)
-
-		// CleanupTempDir expectation
-		mockResourceManager.On("CleanupTempDir", "/tmp/test-temp-dir").Return(nil)
-
-		// CleanupAllTempDirs expectation for testing cleanup all failure
-		mockResourceManager.On("CleanupAllTempDirs").Return(errCleanupFailed)
-
-		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.MatchedBy(func(cmd runnertypes.CommandSpec) bool {
-			return cmd.Name == defaultTestCommandName
-		}), &group, mock.Anything).Return(
-			&resource.ExecutionResult{ExitCode: 0, Stdout: "hello\n", Stderr: ""}, nil)
-
-		// Create runner with mock resource manager
-		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
-		require.NoError(t, err)
-
-		// Load basic environment
-		err = runner.LoadSystemEnvironment()
-		require.NoError(t, err)
-
-		// Execute the group
-		ctx := context.Background()
-		err = runner.ExecuteGroup(ctx, &group)
-		assert.NoError(t, err)
-
-		// Now test CleanupAllResources - should return error
-		err = runner.CleanupAllResources()
-		assert.Error(t, err)
-		assert.ErrorIs(t, err, errCleanupFailed)
-
-		// Verify mock expectations
-		mockResourceManager.AssertExpectations(t)
-	})
-
-	t.Run("concurrent resource access failure", func(t *testing.T) {
-		config := &runnertypes.ConfigSpec{
-			Version: "1.0",
-			Global: runnertypes.GlobalSpec{
-				WorkDir:      "/tmp",
-				EnvAllowlist: []string{"PATH"},
-			},
-		}
-
-		group := runnertypes.GroupSpec{
-			Name:    "test-concurrent",
-			TempDir: true,
-			Commands: []runnertypes.CommandSpec{
-				{Name: "test", Cmd: "echo", Args: []string{"hello"}},
-			},
-			EnvAllowlist: []string{"PATH"},
-		}
-
-		// Create mock resource manager that fails after first successful call
-		mockResourceManager := &MockResourceManager{}
-		mockResourceManager.On("CreateTempDir", "test-concurrent").
-			Return("/tmp/test-temp-dir", nil).Once()
-		mockResourceManager.On("CreateTempDir", "test-concurrent").
-			Return("", errResourceBusy)
-
-		// CleanupTempDir expectation for first successful call
-		mockResourceManager.On("CleanupTempDir", "/tmp/test-temp-dir").Return(nil).Once()
-
-		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.MatchedBy(func(cmd runnertypes.CommandSpec) bool {
-			return cmd.Name == defaultTestCommandName
-		}), &group, mock.Anything).Return(
-			&resource.ExecutionResult{ExitCode: 0, Stdout: "hello\n", Stderr: ""}, nil)
-
-		// Create runner with mock resource manager
-		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
-		require.NoError(t, err)
-
-		// Load basic environment
-		err = runner.LoadSystemEnvironment()
-		require.NoError(t, err)
-
-		// First execution should succeed
-		ctx := context.Background()
-		err = runner.ExecuteGroup(ctx, &group)
-		assert.NoError(t, err)
-
-		// Second execution should fail due to resource busy error
-		err = runner.ExecuteGroup(ctx, &group)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to create temp directory")
-
-		// Verify mock expectations
-		mockResourceManager.AssertExpectations(t)
-	})
+	t.Skip("TempDir resource management tests removed - feature deprecated")
 }
 
-// TestSlackNotification tests that Slack notifications are sent correctly
 func TestSlackNotification(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -2040,28 +1516,28 @@ func TestRunner_OutputCaptureErrorTypes(t *testing.T) {
 		{
 			name: "InvalidFormat",
 			setupMock: func(mockRM *MockResourceManager) {
-				mockRM.SetupFailedMockExecution(errors.New("invalid output format"))
+				setupFailedMockExecution(mockRM, errors.New("invalid output format"))
 			},
 			expectError: "invalid output format",
 		},
 		{
 			name: "SecurityViolation",
 			setupMock: func(mockRM *MockResourceManager) {
-				mockRM.SetupFailedMockExecution(errors.New("security violation: path traversal detected"))
+				setupFailedMockExecution(mockRM, errors.New("security violation: path traversal detected"))
 			},
 			expectError: "security violation",
 		},
 		{
 			name: "DiskFull",
 			setupMock: func(mockRM *MockResourceManager) {
-				mockRM.SetupFailedMockExecution(errors.New("disk full: cannot write output"))
+				setupFailedMockExecution(mockRM, errors.New("disk full: cannot write output"))
 			},
 			expectError: "disk full",
 		},
 		{
 			name: "Unknown",
 			setupMock: func(mockRM *MockResourceManager) {
-				mockRM.SetupFailedMockExecution(errors.New("unknown error occurred"))
+				setupFailedMockExecution(mockRM, errors.New("unknown error occurred"))
 			},
 			expectError: "unknown error",
 		},
@@ -2142,7 +1618,7 @@ func TestRunner_OutputCaptureExecutionStages(t *testing.T) {
 			stage: "pre-validation",
 			setupMock: func(mockRM *MockResourceManager) {
 				// Simulate pre-validation error (before command execution)
-				mockRM.SetupFailedMockExecution(ErrPreValidationTest)
+				setupFailedMockExecution(mockRM, ErrPreValidationTest)
 			},
 			expectError: ErrPreValidationTest,
 		},
@@ -2151,7 +1627,7 @@ func TestRunner_OutputCaptureExecutionStages(t *testing.T) {
 			stage: "execution",
 			setupMock: func(mockRM *MockResourceManager) {
 				// Simulate execution error (during command execution)
-				mockRM.SetupFailedMockExecution(ErrExecutionTest)
+				setupFailedMockExecution(mockRM, ErrExecutionTest)
 			},
 			expectError: ErrExecutionTest,
 		},
@@ -2160,7 +1636,7 @@ func TestRunner_OutputCaptureExecutionStages(t *testing.T) {
 			stage: "post-processing",
 			setupMock: func(mockRM *MockResourceManager) {
 				// Simulate post-processing error (after command execution)
-				mockRM.SetupFailedMockExecution(ErrPostProcessingTest)
+				setupFailedMockExecution(mockRM, ErrPostProcessingTest)
 			},
 			expectError: ErrPostProcessingTest,
 		},
@@ -2169,7 +1645,7 @@ func TestRunner_OutputCaptureExecutionStages(t *testing.T) {
 			stage: "cleanup",
 			setupMock: func(mockRM *MockResourceManager) {
 				// Simulate cleanup error (during resource cleanup)
-				mockRM.SetupFailedMockExecution(ErrCleanupTest)
+				setupFailedMockExecution(mockRM, ErrCleanupTest)
 			},
 			expectError: ErrCleanupTest,
 		},
@@ -2522,8 +1998,7 @@ func TestRunner_OutputCaptureResourceManagement(t *testing.T) {
 				},
 				Groups: []runnertypes.GroupSpec{
 					{
-						Name:    "test-group",
-						TempDir: true, // Enable temp directory to test resource management
+						Name: "test-group",
 						Commands: []runnertypes.CommandSpec{
 							{
 								Name:   "resource-test-cmd",
