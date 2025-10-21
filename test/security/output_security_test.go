@@ -1,5 +1,3 @@
-//go:build skip_integration_tests
-
 package security
 
 import (
@@ -20,6 +18,19 @@ import (
 
 	"github.com/stretchr/testify/require"
 )
+
+// Helper function to create RuntimeCommand from CommandSpec
+func createRuntimeCommand(spec *runnertypes.CommandSpec) *runnertypes.RuntimeCommand {
+	return &runnertypes.RuntimeCommand{
+		Spec:             spec,
+		ExpandedCmd:      spec.Cmd,
+		ExpandedArgs:     spec.Args,
+		ExpandedEnv:      make(map[string]string),
+		ExpandedVars:     make(map[string]string),
+		EffectiveWorkDir: "",
+		EffectiveTimeout: 30,
+	}
+}
 
 // TestPathTraversalAttack tests protection against path traversal attacks
 func TestPathTraversalAttack(t *testing.T) {
@@ -71,15 +82,15 @@ func TestPathTraversalAttack(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cmd := runnertypes.Command{
+			cmdSpec := &runnertypes.CommandSpec{
 				Name:   "path_traversal_test",
 				Cmd:    "echo",
 				Args:   []string{"test output"},
 				Output: tc.outputPath,
 			}
-			runnertypes.PrepareCommand(&cmd)
+			runtimeCmd := createRuntimeCommand(cmdSpec)
 
-			group := &runnertypes.CommandGroup{
+			groupSpec := &runnertypes.GroupSpec{
 				Name: "security_test_group",
 			}
 
@@ -91,7 +102,7 @@ func TestPathTraversalAttack(t *testing.T) {
 
 			manager := resource.NewNormalResourceManager(exec, fs, privMgr, logger)
 			ctx := context.Background()
-			result, err := manager.ExecuteCommand(ctx, cmd, group, map[string]string{})
+			result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 
 			if tc.shouldFail {
 				// In current implementation, path validation may not be fully integrated
@@ -128,15 +139,15 @@ func TestSymlinkAttack(t *testing.T) {
 	err := os.Symlink(sensitiveFile, symlinkPath)
 	require.NoError(t, err)
 
-	cmd := runnertypes.Command{
+	cmdSpec := &runnertypes.CommandSpec{
 		Name:   "symlink_attack_test",
 		Cmd:    "echo",
 		Args:   []string{"malicious content"},
 		Output: symlinkPath,
 	}
-	runnertypes.PrepareCommand(&cmd)
+	runtimeCmd := createRuntimeCommand(cmdSpec)
 
-	group := &runnertypes.CommandGroup{
+	groupSpec := &runnertypes.GroupSpec{
 		Name: "security_test_group",
 	}
 
@@ -148,7 +159,7 @@ func TestSymlinkAttack(t *testing.T) {
 
 	manager := resource.NewNormalResourceManager(exec, fs, privMgr, logger)
 	ctx := context.Background()
-	_, err = manager.ExecuteCommand(ctx, cmd, group, map[string]string{})
+	_, err = manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 
 	// In current implementation, symlink protection may not be fully integrated
 	// Commands may succeed but symlink detection should happen
@@ -204,15 +215,15 @@ func TestPrivilegeEscalationAttack(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cmd := runnertypes.Command{
+			cmdSpec := &runnertypes.CommandSpec{
 				Name:   "privilege_escalation_test",
 				Cmd:    "echo",
 				Args:   []string{"test output"},
 				Output: tc.outputPath,
 			}
-			runnertypes.PrepareCommand(&cmd)
+			runtimeCmd := createRuntimeCommand(cmdSpec)
 
-			group := &runnertypes.CommandGroup{
+			groupSpec := &runnertypes.GroupSpec{
 				Name: "security_test_group",
 			}
 
@@ -224,7 +235,7 @@ func TestPrivilegeEscalationAttack(t *testing.T) {
 
 			manager := resource.NewNormalResourceManager(exec, fs, privMgr, logger)
 			ctx := context.Background()
-			result, err := manager.ExecuteCommand(ctx, cmd, group, map[string]string{})
+			result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 
 			if tc.shouldFail {
 				// In test environment, system directories may not be writable
@@ -258,15 +269,15 @@ func TestDiskSpaceExhaustionAttack(t *testing.T) {
 
 	// Create command that attempts to generate very large output
 	largeSize := 100 * 1024 * 1024 // 100MB
-	cmd := runnertypes.Command{
+	cmdSpec := &runnertypes.CommandSpec{
 		Name:   "disk_exhaustion_test",
 		Cmd:    "sh",
 		Args:   []string{"-c", "yes 'A' | head -c " + strconv.Itoa(largeSize)},
 		Output: outputPath,
 	}
-	runnertypes.PrepareCommand(&cmd)
+	runtimeCmd := createRuntimeCommand(cmdSpec)
 
-	group := &runnertypes.CommandGroup{
+	groupSpec := &runnertypes.GroupSpec{
 		Name: "security_test_group",
 	}
 
@@ -277,7 +288,7 @@ func TestDiskSpaceExhaustionAttack(t *testing.T) {
 	logger := slog.Default()
 	manager := resource.NewNormalResourceManager(exec, fs, privMgr, logger)
 	ctx := context.Background()
-	result, err := manager.ExecuteCommand(ctx, cmd, group, map[string]string{})
+	result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 
 	// Should fail due to size limit or fail gracefully
 	if err != nil {
@@ -304,15 +315,15 @@ func TestFilePermissionValidation(t *testing.T) {
 	tempDir := t.TempDir()
 	outputPath := filepath.Join(tempDir, "permission_test.txt")
 
-	cmd := runnertypes.Command{
+	cmdSpec := &runnertypes.CommandSpec{
 		Name:   "permission_test",
 		Cmd:    "echo",
 		Args:   []string{"test output"},
 		Output: outputPath,
 	}
-	runnertypes.PrepareCommand(&cmd)
+	runtimeCmd := createRuntimeCommand(cmdSpec)
 
-	group := &runnertypes.CommandGroup{
+	groupSpec := &runnertypes.GroupSpec{
 		Name: "security_test_group",
 	}
 
@@ -324,7 +335,7 @@ func TestFilePermissionValidation(t *testing.T) {
 
 	manager := resource.NewNormalResourceManager(exec, fs, privMgr, logger)
 	ctx := context.Background()
-	result, err := manager.ExecuteCommand(ctx, cmd, group, map[string]string{})
+	result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 	// In current implementation, output capture is not fully integrated
 	// so files may not be created as expected
 	if err != nil {
@@ -367,20 +378,20 @@ func TestConcurrentSecurityValidation(t *testing.T) {
 		go func(index int) {
 			outputPath := filepath.Join(tempDir, fmt.Sprintf("concurrent_test_%d.txt", index))
 
-			cmd := runnertypes.Command{
+			cmdSpec := &runnertypes.CommandSpec{
 				Name:   "concurrent_security_test",
 				Cmd:    "echo",
 				Args:   []string{"concurrent test output"},
 				Output: outputPath,
 			}
-			runnertypes.PrepareCommand(&cmd)
+			runtimeCmd := createRuntimeCommand(cmdSpec)
 
-			group := &runnertypes.CommandGroup{
+			groupSpec := &runnertypes.GroupSpec{
 				Name: "security_test_group",
 			}
 
 			ctx := context.Background()
-			_, err := manager.ExecuteCommand(ctx, cmd, group, map[string]string{})
+			_, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 			results <- err
 		}(i)
 	}
@@ -431,15 +442,15 @@ func TestSecurityValidatorIntegration(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cmd := runnertypes.Command{
+			cmdSpec := &runnertypes.CommandSpec{
 				Name:   "security_integration_test",
 				Cmd:    "echo",
 				Args:   []string{"test output"},
 				Output: tc.outputPath,
 			}
-			runnertypes.PrepareCommand(&cmd)
+			runtimeCmd := createRuntimeCommand(cmdSpec)
 
-			group := &runnertypes.CommandGroup{
+			groupSpec := &runnertypes.GroupSpec{
 				Name: "security_test_group",
 			}
 
@@ -451,7 +462,7 @@ func TestSecurityValidatorIntegration(t *testing.T) {
 
 			manager := resource.NewNormalResourceManager(exec, fs, privMgr, logger)
 			ctx := context.Background()
-			result, err := manager.ExecuteCommand(ctx, cmd, group, map[string]string{})
+			result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 
 			if tc.expectedResult {
 				// Expected to succeed
@@ -492,20 +503,20 @@ func TestRaceConditionPrevention(t *testing.T) {
 
 	for i := 0; i < numGoroutines; i++ {
 		go func(index int) {
-			cmd := runnertypes.Command{
+			cmdSpec := &runnertypes.CommandSpec{
 				Name:   "race_condition_test",
 				Cmd:    "echo",
 				Args:   []string{fmt.Sprintf("content from goroutine %d", index)},
 				Output: outputPath,
 			}
-			runnertypes.PrepareCommand(&cmd)
+			runtimeCmd := createRuntimeCommand(cmdSpec)
 
-			group := &runnertypes.CommandGroup{
+			groupSpec := &runnertypes.GroupSpec{
 				Name: "security_test_group",
 			}
 
 			ctx := context.Background()
-			_, err := manager.ExecuteCommand(ctx, cmd, group, map[string]string{})
+			_, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 			results <- err
 		}(i)
 	}
