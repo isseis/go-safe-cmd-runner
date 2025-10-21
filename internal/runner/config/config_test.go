@@ -244,7 +244,7 @@ cmd = "echo"
 args = ["hello"]
 output = "/tmp/test.txt"
 `
-		var cmd runnertypes.Command
+		var cmd runnertypes.CommandSpec
 		err := toml.Unmarshal([]byte(tomlData), &cmd)
 		if err != nil {
 			t.Fatalf("Failed to unmarshal command: %v", err)
@@ -261,7 +261,7 @@ workdir = "/tmp"
 timeout = 600
 max_output_size = 5242880
 `
-		var global runnertypes.GlobalConfig
+		var global runnertypes.GlobalSpec
 		err := toml.Unmarshal([]byte(tomlData), &global)
 		if err != nil {
 			t.Fatalf("Failed to unmarshal global config: %v", err)

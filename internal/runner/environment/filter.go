@@ -104,39 +104,6 @@ func (f *Filter) FilterGlobalVariables(envFileVars map[string]string, src Source
 	return result, nil
 }
 
-// ResolveGroupEnvironmentVars resolves environment variables for a specific group
-// Security model:
-// - System environment variables: filtered by allowlist, validated at execution time
-// - .env file variables: filtered by allowlist, validated at execution time
-func (f *Filter) ResolveGroupEnvironmentVars(group *runnertypes.CommandGroup, loadedEnvVars map[string]string) (map[string]string, error) {
-	if group == nil {
-		return nil, fmt.Errorf("%w: group is nil", ErrGroupNotFound)
-	}
-
-	// Get all system environment variables first
-	sysEnv := f.ParseSystemEnvironment()
-
-	// Filter system environment variables by allowlist
-	// Note: Validation deferred to execution time - only variables actually used are validated
-	result := make(map[string]string)
-	for variable, value := range sysEnv {
-		if f.IsVariableAccessAllowed(variable, group.EnvAllowlist, group.Name) {
-			result[variable] = value
-		}
-	}
-
-	// Add loaded environment variables from .env file (already filtered in LoadEnvironment)
-	// Note: Validation deferred to execution time - only variables actually used are validated
-	// These override system variables
-	for variable, value := range loadedEnvVars {
-		if f.IsVariableAccessAllowed(variable, group.EnvAllowlist, group.Name) {
-			result[variable] = value
-		}
-	}
-
-	return result, nil
-}
-
 // determineInheritanceMode determines the inheritance mode based on allowlist configuration
 func (f *Filter) determineInheritanceMode(allowlist []string) runnertypes.InheritanceMode {
 	// nil slice = inherit, empty slice = reject, non-empty = explicit

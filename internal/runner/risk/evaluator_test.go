@@ -124,7 +124,6 @@ func TestStandardEvaluator_EvaluateRisk(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			runnertypes.PrepareCommand(tt.cmd)
 			result, err := evaluator.EvaluateRisk(tt.cmd)
 			if err != nil {
 				t.Errorf("unexpected error: %v", err)
@@ -187,7 +186,6 @@ func TestStandardEvaluator_RiskLevelHierarchy(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			runnertypes.PrepareCommand(tt.cmd)
 			result, err := evaluator.EvaluateRisk(tt.cmd)
 			if err != nil {
 				t.Errorf("unexpected error: %v", err)
@@ -233,7 +231,6 @@ func TestStandardEvaluator_ErrorHandling(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			runnertypes.PrepareCommand(tt.cmd)
 			result, err := evaluator.EvaluateRisk(tt.cmd)
 
 			if tt.expectError && err == nil {

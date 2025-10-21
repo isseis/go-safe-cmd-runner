@@ -831,25 +831,42 @@ Phase 1 → Phase 2 → Phase 3 → Phase 5 → Phase 6 → Phase 7
   - [x] 古い型の参照を全て新しい型に置換
 
 **Phase 8.2: テストファイルの一括移行**（8-12時間）
-- [x] 古い展開関数を使用していないテストファイルの移行（4ファイル、73箇所）
+- [x] 古い展開関数を使用していないテストファイルの移行（5ファイル、79箇所）
   - [x] `internal/runner/security/command_analysis_test.go` (2箇所)
   - [x] `internal/runner/environment/filter_test.go` (13箇所)
   - [x] `internal/runner/environment/processor_test.go` (39箇所)
   - [x] `internal/runner/risk/evaluator_test.go` (19箇所)
-- [ ] 古い展開関数を使用するテストファイルの移行（6ファイル、124箇所）
-  - [ ] `internal/runner/config/allowlist_test.go` (18箇所) - ExpandGlobalConfig使用
-  - [ ] `internal/runner/config/command_env_expansion_test.go` (12箇所) - ExpandCommandConfig使用
-  - [ ] `internal/runner/config/expansion_test.go` (55箇所) - 全展開関数使用
-  - [ ] `internal/runner/config/security_integration_test.go` (20箇所) - 全展開関数使用
-  - [ ] `internal/runner/config/self_reference_test.go` (11箇所) - 全展開関数使用
-  - [ ] `internal/runner/config/verify_files_expansion_test.go` (8箇所) - ExpandGlobalConfig使用
-  - 注: これらは古い展開関数のテストのため、Phase 8.3で古い関数と一緒に削除または書き換え
+  - [x] `internal/runner/security/hash_validation_test.go` (6箇所)
+- [x] 古い展開関数を使用するテストファイルの移行（6ファイル、124箇所）
+  - [x] `internal/runner/config/allowlist_test.go` - 削除済み（古い展開関数のテストのため）
+  - [x] `internal/runner/config/command_env_expansion_test.go` - 削除済み
+  - [x] `internal/runner/config/expansion_test.go` - 削除済み
+  - [x] `internal/runner/config/security_integration_test.go` - 削除済み
+  - [x] `internal/runner/config/self_reference_test.go` - 削除済み
+  - [x] `internal/runner/config/verify_files_expansion_test.go` - 削除済み
+  - 注: これらのファイルは古い展開関数のテストであったため、e83ef87で削除済み
 
-**Phase 8.3: 古い型定義の削除**（1-2時間）
-- すべての使用箇所がないことを確認
-- 古い展開関数(`ExpandGlobalConfig`, `ExpandGroupConfig`, `ExpandCommandConfig`)の削除
-- 古い展開関数を使用するテストファイルの削除または新展開関数への書き換え
-- `internal/runner/runnertypes/config.go` から古い型を削除
+**Phase 8.3: 古い型定義と未使用関数の削除**（1-2時間）
+- [x] 古い展開関数の削除（6箇所）
+  - [x] `internal/runner/config/expansion.go`: `ExpandGlobalConfig()` 削除
+  - [x] `internal/runner/config/expansion.go`: `ExpandGroupConfig()` 削除
+  - [x] `internal/runner/config/expansion.go`: `expandCommandConfig()` 削除
+  - [x] `internal/runner/config/expansion.go`: 未使用ヘルパー型（`configFieldsToExpand`, `expandedConfigFields`）削除
+  - [x] `internal/runner/config/expansion.go`: 未使用ヘルパー関数（`expandConfigFields`）削除
+  - [x] `internal/runner/environment/filter.go`: `ResolveGroupEnvironmentVars()` 削除
+- [x] 古い型定義の削除
+  - [x] `internal/runner/runnertypes/config.go` から古い型を削除
+    * `Config`
+    * `GlobalConfig`
+    * `CommandGroup`
+    * `Command`
+  - [x] `internal/runner/runnertypes/command_test_helper.go` 削除（`PrepareCommand`ヘルパーが不要に）
+- [x] テストファイルの更新
+  - [x] `internal/runner/runnertypes/config_test.go`: `Command` → `CommandSpec`
+  - [x] `internal/runner/config/config_test.go`: `Command` → `CommandSpec`, `GlobalConfig` → `GlobalSpec`
+  - [x] `internal/runner/risk/evaluator_test.go`: `PrepareCommand`呼び出し削除
+- [x] 未使用のimport削除
+  - [x] `internal/runner/config/expansion.go`: `variable`パッケージのimport削除
 
 #### オプション2: 古い型を残す
 
@@ -891,9 +908,48 @@ Phase 1 → Phase 2 → Phase 3 → Phase 5 → Phase 6 → Phase 7
 - [x] Task 0038: テストインフラの最終整備（進行中）
 - [x] Task 0039: runner_test.go の大規模移行
 
-### Phase 8（残作業）
-- [ ] 残存テストファイルの型移行（11-17時間）
-- [ ] 古い型定義の完全削除
+### Phase 8: 最終クリーンアップ
+
+#### Phase 8.1: validation.go の型移行（完了）
+- [x] `internal/runner/output/validation.go` および対応するテストファイルの型移行
+- コミット: ca37bc4
+
+#### Phase 8.2: テストファイルの型移行（部分完了）
+- [x] 古い拡張関数を使用していない4つのテストファイルを移行:
+  - `internal/runner/security/command_analysis_test.go`
+  - `internal/runner/environment/filter_test.go`
+  - `internal/runner/environment/processor_test.go`
+  - `internal/runner/risk/evaluator_test.go`
+- コミット: e83ef87
+
+#### Phase 8.3: 古い拡張関数と型定義の削除（進行中）
+**作業内容**:
+1. 古い拡張関数を直接テストしている6つのテストファイルを削除:
+   - `internal/runner/config/allowlist_test.go` (18 occurrences)
+   - `internal/runner/config/command_env_expansion_test.go` (12 occurrences)
+   - `internal/runner/config/expansion_test.go` (55 occurrences)
+   - `internal/runner/config/security_integration_test.go` (20 occurrences)
+   - `internal/runner/config/self_reference_test.go` (11 occurrences)
+   - `internal/runner/config/verify_files_expansion_test.go` (8 occurrences)
+
+   **理由**: これらのテストは古い拡張関数 (`ExpandGlobalConfig`, `ExpandGroupConfig`, `ExpandCommandConfig`) の機能をテストするものであり、新しい拡張関数 (`ExpandGlobal`, `ExpandGroup`, `ExpandCommand`) に対応する同等のテストが `expansion_spec_test.go` などに既に存在するため。
+
+2. 古い拡張関数を削除:
+   - `internal/runner/config/expansion.go` から:
+     - `ExpandGlobalConfig()`
+     - `ExpandGroupConfig()`
+     - `ExpandCommandConfig()`
+
+3. 古い型定義を削除:
+   - `internal/runner/runnertypes/config.go` から:
+     - `Config`
+     - `GlobalConfig`
+     - `CommandGroup`
+     - `Command` （既に `CommandSpec` に移行済み）
+
+4. すべてのテストが通ることを確認
+
+**推定期間**: 2-3時間
 
 ### Phase 8 完了後
 1. **Task 0034 のドキュメント更新**
@@ -937,14 +993,28 @@ Phase 1 → Phase 2 → Phase 3 → Phase 5 → Phase 6 → Phase 7
 - [x] runner_test.go の型移行（Task 0036, 0039）
 - [x] 統合テストの型移行（Task 0037, 0038）
 
-### Phase 8（残作業）
+### Phase 8（完了）
 
 **目的**: 古い型を使用している残存テストファイルの移行と古い型定義の削除
 
 **推定期間**: 11-17時間（1.5-2日）
+**実績**: Phase 8.1-8.3 完了
 
-**次のステップ**: Phase 8.1（プロダクションコードの更新）から開始してください。
+**完了状況**:
+- [x] Phase 8.1: プロダクションコードの更新（validation.go, validation_test.go）
+- [x] Phase 8.2: テストファイルの移行（hash_validation_test.go）
+  - 注: 6つの古いテスト削除は既にcommit e83ef87で完了済み
+- [x] Phase 8.3: 古い型定義と未使用関数の削除
+  - [x] 古い展開関数削除（ExpandGlobalConfig, ExpandGroupConfig, ExpandCommandConfig）
+  - [x] 古い型定義削除（Config, GlobalConfig, CommandGroup, Command）
+  - [x] 未使用ヘルパー削除（command_test_helper.go等）
+- [x] 完了確認
+  - [x] すべてのテスト成功（make test）
+  - [x] lintエラーなし（make lint: 0 issues）
+  - [x] 古い型への参照が残っていないことを確認
+
+**次のステップ**: Task 0035完了。Phase 1-8すべて完了。
 
 ---
 
-**全体の進捗**: Phase 1-7 完了、Phase 8 未着手
+**全体の進捗**: Phase 1-8 すべて完了 ✅
