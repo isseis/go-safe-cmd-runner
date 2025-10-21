@@ -251,7 +251,7 @@
 #### タスクチェックリスト
 
 - [ ] 3.7.1 テストファイルの作成
-  - [ ] `errors_test.go` の作成（存在する場合はrunnertypes/errors_test.go）
+  - [ ] `errors_test.go` の作成
 
 - [ ] 3.7.2 基本メソッドのテスト
   - [ ] `Error()` メソッドの出力確認
