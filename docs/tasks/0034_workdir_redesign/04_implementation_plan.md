@@ -247,13 +247,13 @@ type RuntimeCommand struct {
 
 **作業項目**:
 
-| ID | タスク | ファイル | 作業内容 | 所要時間 |
-|----|-------|---------|---------|---------|
-| P2-1 | インターフェース定義 | `internal/runner/executor/tempdir_manager.go` | `TempDirManager` インターフェース定義 | 0.5h |
-| P2-2 | 標準実装 | `internal/runner/executor/tempdir_manager.go` | `DefaultTempDirManager` 実装 | 2h |
-| P2-3 | 単体テスト（通常モード） | `internal/runner/executor/tempdir_manager_test.go` | Create/Cleanup/Pathのテスト | 1.5h |
-| P2-4 | 単体テスト（dry-run） | `internal/runner/executor/tempdir_manager_test.go` | dry-runモードのテスト | 1h |
-| P2-5 | エラーケーステスト | `internal/runner/executor/tempdir_manager_test.go` | パーミッションエラー等のテスト | 1h |
+| ID | タスク | ファイル | 作業内容 | 所要時間 | 状態 |
+|----|-------|---------|---------|---------|------|
+| P2-1 | インターフェース定義 | `internal/runner/executor/tempdir_manager.go` | `TempDirManager` インターフェース定義 | 0.5h | ✅ |
+| P2-2 | 標準実装 | `internal/runner/executor/tempdir_manager.go` | `DefaultTempDirManager` 実装 | 2h | ✅ |
+| P2-3 | 単体テスト（通常モード） | `internal/runner/executor/tempdir_manager_test.go` | Create/Cleanup/Pathのテスト | 1.5h | ✅ |
+| P2-4 | 単体テスト（dry-run） | `internal/runner/executor/tempdir_manager_test.go` | dry-runモードのテスト | 1h | ✅ |
+| P2-5 | エラーケーステスト | `internal/runner/executor/tempdir_manager_test.go` | パーミッションエラー等のテスト | 1h | ✅ |
 
 **詳細実装内容**:
 
@@ -326,13 +326,13 @@ func (m *DefaultTempDirManager) Create() (string, error) {
 - 5種類以上の単体テスト
 
 **完了条件**:
-- [ ] `TempDirManager` インターフェースが定義されている (未実装)
-- [ ] `DefaultTempDirManager` が実装されている (未実装)
-- [ ] 通常モードで一時ディレクトリが生成・削除できる (未実装)
-- [ ] dry-runモードで仮想パスが生成される (未実装)
-- [ ] パーミッションが厳密に0700に設定される (未実装)
-- [ ] エラーケースが適切に処理される (未実装)
-- [ ] 全テストが成功している (テスト未作成)
+- [x] `TempDirManager` インターフェースが定義されている
+- [x] `DefaultTempDirManager` が実装されている
+- [x] 通常モードで一時ディレクトリが生成・削除できる
+- [x] dry-runモードで仮想パスが生成される
+- [x] パーミッションが厳密に0700に設定される
+- [x] エラーケースが適切に処理される
+- [x] 全テストが成功している
 
 **リスク**:
 - **パーミッション設定の失敗**: umaskの影響でパーミッションが期待通りにならない可能性
@@ -905,7 +905,7 @@ Phase 0 → Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5
 
 ---
 
-## 7. 実装チェックリスト（詳細仕様書からの転記）
+### 7.2 実装チェックリスト（詳細仕様書からの転記）
 
 ### Phase 1: 型定義
 - [x] `Global.WorkDir` を削除
@@ -915,11 +915,11 @@ Phase 0 → Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5
 - [x] `RuntimeCommand.EffectiveWorkDir` フィールドを追加
 
 ### Phase 2: 一時ディレクトリ機能
-- [ ] `TempDirManager` インターフェース定義 (未実装)
-- [ ] `DefaultTempDirManager` 実装 (未実装)
-  - [ ] `isDryRun` フラグのサポート
-  - [ ] `Create()`, `Cleanup()`, `Path()` メソッド
-  - [ ] dry-runモードでのログ出力（"[DRY-RUN]" プレフィックス）
+- [x] `TempDirManager` インターフェース定義
+- [x] `DefaultTempDirManager` 実装
+  - [x] `isDryRun` フラグのサポート
+  - [x] `Create()`, `Cleanup()`, `Path()` メソッド
+  - [x] dry-runモードでのログ出力（"[DRY-RUN]" プレフィックス）
 - [ ] `--keep-temp-dirs` フラグを Runner に追加 (未実装)
 - [ ] Runner から GroupExecutor へ `keepTempDirs` と `isDryRun` を渡す (未実装)
 - [ ] `defer` で条件付きクリーンアップ登録（`if !keepTempDirs { mgr.Cleanup() }`） (未実装)
