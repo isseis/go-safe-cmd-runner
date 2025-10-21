@@ -11,7 +11,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/variable"
 )
 
 const (
@@ -333,51 +332,6 @@ func ProcessEnv(
 	return expandedEnvVars, nil
 }
 
-// configFieldsToExpand holds the raw configuration fields that need expansion
-type configFieldsToExpand struct {
-	// env is the raw environment variable definitions (e.g., ["VAR=%{value}"])
-	env []string
-	// verifyFiles is the list of file paths to verify (may contain %{VAR} references)
-	verifyFiles []string
-	// expandedVars is the map of internal variables to use for expansion
-	expandedVars map[string]string
-	// level is the configuration level identifier for logging (e.g., "global", "group[name]")
-	level string
-}
-
-// expandedConfigFields holds the expanded results
-type expandedConfigFields struct {
-	// expandedEnv contains the fully expanded environment variables (VAR -> value)
-	expandedEnv map[string]string
-	// expandedVerifyFiles contains the fully expanded file paths to verify
-	expandedVerifyFiles []string
-}
-
-// expandConfigFields expands env and verify_files using internal variables
-func expandConfigFields(fields configFieldsToExpand) (expandedConfigFields, error) {
-	var result expandedConfigFields
-
-	// Expand env
-	expandedEnv, err := ProcessEnv(fields.env, fields.expandedVars, fields.level)
-	if err != nil {
-		return result, err
-	}
-	result.expandedEnv = expandedEnv
-
-	// Expand verify_files
-	expandedFiles := make([]string, len(fields.verifyFiles))
-	for i, file := range fields.verifyFiles {
-		expanded, err := ExpandString(file, fields.expandedVars, fields.level, "verify_files")
-		if err != nil {
-			return result, fmt.Errorf("failed to expand verify_files[%d]: %w", i, err)
-		}
-		expandedFiles[i] = expanded
-	}
-	result.expandedVerifyFiles = expandedFiles
-
-	return result, nil
-}
-
 // determineEffectiveEnvAllowlist determines the effective env_allowlist for a group.
 // Returns group's allowlist if defined, otherwise returns global's allowlist (inheritance).
 // This implements the allowlist inheritance rule: nil means inherit, empty array means reject all.
@@ -388,166 +342,10 @@ func determineEffectiveEnvAllowlist(groupAllowlist []string, globalAllowlist []s
 	return globalAllowlist
 }
 
-// ExpandGlobalConfig expands Global-level configuration (from_env, vars, env, verify_files)
-func ExpandGlobalConfig(global *runnertypes.GlobalConfig, filter *environment.Filter) error {
-	const level = "global"
-	systemEnv := filter.ParseSystemEnvironment()
-	baseExpandedVars, err := ProcessFromEnv(global.FromEnv, global.EnvAllowlist, systemEnv, level)
-	if err != nil {
-		return err
-	}
-
-	// Merge auto variables (auto variables take precedence)
-	autoVars := variable.NewAutoVarProvider().Generate()
-	maps.Copy(baseExpandedVars, autoVars)
-
-	// Process vars
-	expandedVars, err := ProcessVars(global.Vars, baseExpandedVars, level)
-	if err != nil {
-		return err
-	}
-	global.ExpandedVars = expandedVars
-
-	// Expand env and verify_files
-	// Note: Unlike vars/from_env which use merge strategy between Global and Group levels,
-	// env and verify_files are processed at each level independently:
-	// - env: Maps with same key override, different keys coexist (processed per level)
-	// - verify_files: Separate responsibility - Global files verified at startup,
-	//   Group files verified before group execution (no automatic merging)
-	fields := configFieldsToExpand{
-		env:          global.Env,
-		verifyFiles:  global.VerifyFiles,
-		expandedVars: global.ExpandedVars,
-		level:        level,
-	}
-	expanded, err := expandConfigFields(fields)
-	if err != nil {
-		return err
-	}
-
-	global.ExpandedEnv = expanded.expandedEnv
-	global.ExpandedVerifyFiles = expanded.expandedVerifyFiles
-	return nil
-}
-
-// ExpandGroupConfig expands Group-level configuration with from_env merging
-// from_env uses Merge strategy:
-// - If Group.FromEnv is nil or [], inherit Global's from_env variables
-// - If Group.FromEnv is defined, merge with Global's from_env (Group's values take priority for same keys)
-func ExpandGroupConfig(group *runnertypes.CommandGroup, global *runnertypes.GlobalConfig, filter *environment.Filter) error {
-	level := fmt.Sprintf("group[%s]", group.Name)
-
-	// Determine base internal variables with from_env merging
-	// Start with Global's expanded vars (includes from_env results)
-	baseExpandedVars := maps.Clone(global.ExpandedVars)
-
-	// If Group defines from_env, merge it with global's vars
-	systemEnv := filter.ParseSystemEnvironment()
-	envAllowlist := determineEffectiveEnvAllowlist(group.EnvAllowlist, global.EnvAllowlist)
-	groupFromEnvVars, err := ProcessFromEnv(group.FromEnv, envAllowlist, systemEnv, level)
-	if err != nil {
-		return err
-	}
-	// Merge: Group's from_env overrides Global's variables with same name
-	maps.Copy(baseExpandedVars, groupFromEnvVars)
-	// If Group.FromEnv is nil or [], just inherit Global's ExpandedVars (already done above)
-
-	// Process vars
-	expandedVars, err := ProcessVars(group.Vars, baseExpandedVars, level)
-	if err != nil {
-		return err
-	}
-	group.ExpandedVars = expandedVars
-
-	// Expand env and verify_files
-	// Note: Unlike vars/from_env which merge Global and Group levels,
-	// env and verify_files are processed independently at each level:
-	// - env: Group.ExpandedEnv contains only Group-level definitions (not merged with Global.ExpandedEnv).
-	//   At command execution, Global.ExpandedEnv and Group.ExpandedEnv are merged dynamically.
-	// - verify_files: Group.ExpandedVerifyFiles contains only Group-level files.
-	//   Global.ExpandedVerifyFiles are verified separately at startup.
-	//   This separation avoids redundant verification of Global files for each Group.
-	fields := configFieldsToExpand{
-		env:          group.Env,
-		verifyFiles:  group.VerifyFiles,
-		expandedVars: group.ExpandedVars,
-		level:        level,
-	}
-	expanded, err := expandConfigFields(fields)
-	if err != nil {
-		return err
-	}
-
-	group.ExpandedEnv = expanded.expandedEnv
-	group.ExpandedVerifyFiles = expanded.expandedVerifyFiles
-	return nil
-}
-
-// ExpandCommandConfig expands Command-level configuration
-func ExpandCommandConfig(
-	cmd *runnertypes.Command,
-	group *runnertypes.CommandGroup,
-	global *runnertypes.GlobalConfig,
-	filter *environment.Filter,
-) error {
-	if group == nil {
-		return ErrNilGroup
-	}
-
-	level := fmt.Sprintf("command[%s]", cmd.Name)
-
-	// Determine base internal variables based on from_env
-	// Process command-level from_env
-	systemEnv := filter.ParseSystemEnvironment()
-	// Use group's allowlist or global's allowlist (with inheritance)
-	envAllowlist := determineEffectiveEnvAllowlist(group.EnvAllowlist, global.EnvAllowlist)
-	fromEnvVars, err := ProcessFromEnv(cmd.FromEnv, envAllowlist, systemEnv, level)
-	if err != nil {
-		return err
-	}
-	// Merge with group's expanded vars
-	baseExpandedVars := maps.Clone(group.ExpandedVars)
-	maps.Copy(baseExpandedVars, fromEnvVars)
-
-	// Process vars
-	expandedVars, err := ProcessVars(cmd.Vars, baseExpandedVars, level)
-	if err != nil {
-		return err
-	}
-	cmd.ExpandedVars = expandedVars
-
-	// Expand env
-	expandedEnv, err := ProcessEnv(cmd.Env, cmd.ExpandedVars, level)
-	if err != nil {
-		return err
-	}
-	cmd.ExpandedEnv = expandedEnv
-
-	// Expand cmd
-	expandedCmd, err := ExpandString(cmd.Cmd, cmd.ExpandedVars, level, "cmd")
-	if err != nil {
-		return err
-	}
-	cmd.ExpandedCmd = expandedCmd
-
-	// Expand args
-	expandedArgs := make([]string, len(cmd.Args))
-	for i, arg := range cmd.Args {
-		expanded, err := ExpandString(arg, cmd.ExpandedVars, level, fmt.Sprintf("args[%d]", i))
-		if err != nil {
-			return err
-		}
-		expandedArgs[i] = expanded
-	}
-	cmd.ExpandedArgs = expandedArgs
-
-	return nil
-}
-
 // ExpandGlobal expands a GlobalSpec into a RuntimeGlobal.
 //
 // This function processes:
-// 1. FromEnv: Imports system environment variables as internal variables (NOT IMPLEMENTED YET - Task 0033)
+// 1. FromEnv: Imports system environment variables as internal variables
 // 2. Vars: Defines internal variables
 // 3. Env: Expands environment variables using internal variables
 // 4. VerifyFiles: Expands file paths using internal variables
@@ -558,8 +356,6 @@ func ExpandCommandConfig(
 // Returns:
 //   - *RuntimeGlobal: The expanded runtime global configuration
 //   - error: An error if expansion fails (e.g., undefined variable reference)
-//
-// Note: FromEnv processing is not yet implemented. This function currently only processes Vars, Env, and VerifyFiles.
 func ExpandGlobal(spec *runnertypes.GlobalSpec) (*runnertypes.RuntimeGlobal, error) {
 	runtime := &runnertypes.RuntimeGlobal{
 		Spec:         spec,
@@ -567,9 +363,15 @@ func ExpandGlobal(spec *runnertypes.GlobalSpec) (*runnertypes.RuntimeGlobal, err
 		ExpandedEnv:  make(map[string]string),
 	}
 
-	// 1. Process FromEnv (TODO: To be implemented in Task 0033)
-	// FromEnv processing imports system environment variables as internal variables according to the FromEnv specification.
-	// For now, skip FromEnv processing as it requires environment.Filter.
+	// 1. Process FromEnv
+	// Build system environment map from os.Environ()
+	systemEnv := environment.NewFilter(spec.EnvAllowlist).ParseSystemEnvironment()
+	fromEnvVars, err := ProcessFromEnv(spec.FromEnv, spec.EnvAllowlist, systemEnv, "global")
+	if err != nil {
+		return nil, fmt.Errorf("failed to process global from_env: %w", err)
+	}
+	runtime.ExpandedVars = fromEnvVars
+
 	// 2. Process Vars
 	expandedVars, err := ProcessVars(spec.Vars, runtime.ExpandedVars, "global")
 	if err != nil {

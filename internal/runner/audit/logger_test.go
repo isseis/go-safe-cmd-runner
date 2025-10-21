@@ -30,19 +30,21 @@ func TestNewAuditLoggerWithCustom(t *testing.T) {
 func TestLogger_LogUserGroupExecution(t *testing.T) {
 	tests := []struct {
 		name     string
-		cmd      runnertypes.Command
+		cmd      *runnertypes.RuntimeCommand
 		result   *audit.ExecutionResult
 		duration time.Duration
 		metrics  audit.PrivilegeMetrics
 	}{
 		{
 			name: "successful user/group command",
-			cmd: runnertypes.Command{
-				Name:       "test_user_group_cmd",
-				Cmd:        "/bin/echo",
-				Args:       []string{"test"},
-				RunAsUser:  "testuser",
-				RunAsGroup: "testgroup",
+			cmd: &runnertypes.RuntimeCommand{
+				Spec: &runnertypes.CommandSpec{
+					Name:       "test_user_group_cmd",
+					RunAsUser:  "testuser",
+					RunAsGroup: "testgroup",
+				},
+				ExpandedCmd:  "/bin/echo",
+				ExpandedArgs: []string{"test"},
 			},
 			result: &audit.ExecutionResult{
 				Stdout:   "test output",
@@ -57,12 +59,14 @@ func TestLogger_LogUserGroupExecution(t *testing.T) {
 		},
 		{
 			name: "failed user/group command",
-			cmd: runnertypes.Command{
-				Name:       "test_failed_user_group_cmd",
-				Cmd:        "/bin/false",
-				Args:       []string{},
-				RunAsUser:  "testuser",
-				RunAsGroup: "testgroup",
+			cmd: &runnertypes.RuntimeCommand{
+				Spec: &runnertypes.CommandSpec{
+					Name:       "test_failed_user_group_cmd",
+					RunAsUser:  "testuser",
+					RunAsGroup: "testgroup",
+				},
+				ExpandedCmd:  "/bin/false",
+				ExpandedArgs: []string{},
 			},
 			result: &audit.ExecutionResult{
 				Stdout:   "",
@@ -77,11 +81,13 @@ func TestLogger_LogUserGroupExecution(t *testing.T) {
 		},
 		{
 			name: "user only command",
-			cmd: runnertypes.Command{
-				Name:      "test_user_only_cmd",
-				Cmd:       "/bin/id",
-				Args:      []string{},
-				RunAsUser: "testuser",
+			cmd: &runnertypes.RuntimeCommand{
+				Spec: &runnertypes.CommandSpec{
+					Name:      "test_user_only_cmd",
+					RunAsUser: "testuser",
+				},
+				ExpandedCmd:  "/bin/id",
+				ExpandedArgs: []string{},
 			},
 			result: &audit.ExecutionResult{
 				Stdout:   "uid=1001(testuser)",
@@ -107,13 +113,13 @@ func TestLogger_LogUserGroupExecution(t *testing.T) {
 
 			logOutput := buf.String()
 			assert.Contains(t, logOutput, "user_group_execution")
-			assert.Contains(t, logOutput, tt.cmd.Name)
-			assert.Contains(t, logOutput, tt.cmd.Cmd)
-			if tt.cmd.RunAsUser != "" {
-				assert.Contains(t, logOutput, tt.cmd.RunAsUser)
+			assert.Contains(t, logOutput, tt.cmd.Name())
+			assert.Contains(t, logOutput, tt.cmd.ExpandedCmd)
+			if tt.cmd.RunAsUser() != "" {
+				assert.Contains(t, logOutput, tt.cmd.RunAsUser())
 			}
-			if tt.cmd.RunAsGroup != "" {
-				assert.Contains(t, logOutput, tt.cmd.RunAsGroup)
+			if tt.cmd.RunAsGroup() != "" {
+				assert.Contains(t, logOutput, tt.cmd.RunAsGroup())
 			}
 		})
 	}

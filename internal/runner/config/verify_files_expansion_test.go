@@ -1,479 +1,239 @@
-// Package config provides tests for verify_files path expansion functionality.
 package config_test
 
 import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// TestVerifyFilesExpansion_Global tests global-level verify_files path expansion
-func TestVerifyFilesExpansion_Global(t *testing.T) {
-	tests := []struct {
-		name        string
-		verifyFiles []string
-		vars        []string
-		fromEnv     []string
-		allowlist   []string
-		systemEnv   map[string]string
-		expected    []string
-		expectError bool
-	}{
-		{
-			name:        "Literal paths - no variable references",
-			verifyFiles: []string{"/etc/config.toml", "/var/log/app.log"},
-			vars:        []string{},
-			fromEnv:     []string{},
-			allowlist:   []string{},
-			systemEnv:   map[string]string{},
-			expected:    []string{"/etc/config.toml", "/var/log/app.log"},
-			expectError: false,
-		},
-		{
-			name:        "Single variable reference",
-			verifyFiles: []string{"/path/%{dir}/file.txt"},
-			vars:        []string{"dir=data"},
-			fromEnv:     []string{},
-			allowlist:   []string{},
-			systemEnv:   map[string]string{},
-			expected:    []string{"/path/data/file.txt"},
-			expectError: false,
-		},
-		{
-			name:        "Multiple variable references",
-			verifyFiles: []string{"%{base}/%{subdir}/%{filename}"},
-			vars:        []string{"base=/root", "subdir=config", "filename=app.toml"},
-			fromEnv:     []string{},
-			allowlist:   []string{},
-			systemEnv:   map[string]string{},
-			expected:    []string{"/root/config/app.toml"},
-			expectError: false,
-		},
-		{
-			name:        "Variable references from system environment",
-			verifyFiles: []string{"%{home}/config.toml"},
-			vars:        []string{},
-			fromEnv:     []string{"home=HOME"},
-			allowlist:   []string{"HOME"},
-			systemEnv:   map[string]string{"HOME": "/home/user"},
-			expected:    []string{"/home/user/config.toml"},
-			expectError: false,
-		},
-		{
-			name:        "Multiple paths with different variables",
-			verifyFiles: []string{"%{path1}/file1", "%{path2}/file2"},
-			vars:        []string{"path1=/etc", "path2=/var"},
-			fromEnv:     []string{},
-			allowlist:   []string{},
-			systemEnv:   map[string]string{},
-			expected:    []string{"/etc/file1", "/var/file2"},
-			expectError: false,
-		},
-		{
-			name:        "Relative paths",
-			verifyFiles: []string{"./config/%{env}.toml", "../data/%{file}"},
-			vars:        []string{"env=prod", "file=data.json"},
-			fromEnv:     []string{},
-			allowlist:   []string{},
-			systemEnv:   map[string]string{},
-			expected:    []string{"./config/prod.toml", "../data/data.json"},
-			expectError: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Set up system environment variables
-			for key, value := range tt.systemEnv {
-				t.Setenv(key, value)
-			}
-
-			// Create global config
-			global := &runnertypes.GlobalConfig{
-				Vars:         tt.vars,
-				FromEnv:      tt.fromEnv,
-				VerifyFiles:  tt.verifyFiles,
-				EnvAllowlist: tt.allowlist,
-			}
-
-			// Create environment filter
-			filter := environment.NewFilter(global.EnvAllowlist)
-
-			// Expand global config
-			err := config.ExpandGlobalConfig(global, filter)
-
-			if tt.expectError {
-				require.Error(t, err)
-				return
-			}
-
-			require.NoError(t, err)
-			assert.Equal(t, tt.expected, global.ExpandedVerifyFiles)
-		})
-	}
-}
-
-// TestVerifyFilesExpansion_Group tests group-level verify_files path expansion
-func TestVerifyFilesExpansion_Group(t *testing.T) {
-	tests := []struct {
-		name          string
-		verifyFiles   []string
-		groupVars     []string
-		globalVars    []string
-		globalFromEnv []string
-		allowlist     []string
-		systemEnv     map[string]string
-		expected      []string
-		expectError   bool
-	}{
-		{
-			name:          "Group vars used for path expansion",
-			verifyFiles:   []string{"%{grp_dir}/file.txt"},
-			groupVars:     []string{"grp_dir=/group/data"},
-			globalVars:    []string{},
-			globalFromEnv: []string{},
-			allowlist:     []string{},
-			systemEnv:     map[string]string{},
-			expected:      []string{"/group/data/file.txt"},
-			expectError:   false,
-		},
-		{
-			name:          "Inherited global vars for path expansion",
-			verifyFiles:   []string{"%{global_base}/%{filename}"},
-			groupVars:     []string{"filename=app.conf"},
-			globalVars:    []string{"global_base=/etc"},
-			globalFromEnv: []string{},
-			allowlist:     []string{},
-			systemEnv:     map[string]string{},
-			expected:      []string{"/etc/app.conf"},
-			expectError:   false,
-		},
-		{
-			name:          "Group vars override global vars",
-			verifyFiles:   []string{"%{dir}/file.txt"},
-			groupVars:     []string{"dir=/group/override"},
-			globalVars:    []string{"dir=/global/base"},
-			globalFromEnv: []string{},
-			allowlist:     []string{},
-			systemEnv:     map[string]string{},
-			expected:      []string{"/group/override/file.txt"},
-			expectError:   false,
-		},
-		{
-			name:          "Expansion from system environment variables",
-			verifyFiles:   []string{"%{user_home}/config/%{app_name}.toml"},
-			groupVars:     []string{"app_name=myapp"},
-			globalVars:    []string{},
-			globalFromEnv: []string{"user_home=HOME"},
-			allowlist:     []string{"HOME"},
-			systemEnv:     map[string]string{"HOME": "/home/testuser"},
-			expected:      []string{"/home/testuser/config/myapp.toml"},
-			expectError:   false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Set up system environment variables
-			for key, value := range tt.systemEnv {
-				t.Setenv(key, value)
-			}
-
-			// Create config
-			cfg := &runnertypes.Config{
-				Global: runnertypes.GlobalConfig{
-					Vars:         tt.globalVars,
-					FromEnv:      tt.globalFromEnv,
-					EnvAllowlist: tt.allowlist,
-				},
-				Groups: []runnertypes.CommandGroup{
-					{
-						Name:        "test_group",
-						Vars:        tt.groupVars,
-						VerifyFiles: tt.verifyFiles,
-					},
-				},
-			}
-
-			// Create environment filter
-			filter := environment.NewFilter(cfg.Global.EnvAllowlist)
-
-			// Expand global config first
-			err := config.ExpandGlobalConfig(&cfg.Global, filter)
-			require.NoError(t, err)
-
-			// Expand group config
-			err = config.ExpandGroupConfig(&cfg.Groups[0], &cfg.Global, filter)
-
-			if tt.expectError {
-				require.Error(t, err)
-				return
-			}
-
-			require.NoError(t, err)
-			assert.Equal(t, tt.expected, cfg.Groups[0].ExpandedVerifyFiles)
-		})
-	}
-}
-
-// TestVerifyFilesExpansion_NestedReferences tests nested variable references
-func TestVerifyFilesExpansion_NestedReferences(t *testing.T) {
-	tests := []struct {
-		name        string
-		verifyFiles []string
-		vars        []string
-		fromEnv     []string
-		allowlist   []string
-		systemEnv   map[string]string
-		expected    []string
-	}{
-		{
-			name:        "2-level nested references",
-			verifyFiles: []string{"%{path}/file.txt"},
-			vars:        []string{"base=/root", "path=%{base}/subdir"},
-			fromEnv:     []string{},
-			allowlist:   []string{},
-			systemEnv:   map[string]string{},
-			expected:    []string{"/root/subdir/file.txt"},
-		},
-		{
-			name:        "3-level nested references",
-			verifyFiles: []string{"%{full_path}"},
-			vars:        []string{"base=/etc", "file=config.toml", "mid=%{base}/subdir", "full_path=%{mid}/%{file}"},
-			fromEnv:     []string{},
-			allowlist:   []string{},
-			systemEnv:   map[string]string{},
-			expected:    []string{"/etc/subdir/config.toml"},
-		},
-		{
-			name:        "Nested references including system env variables",
-			verifyFiles: []string{"%{app_path}/config.toml"},
-			vars:        []string{"app_path=%{home}/apps/myapp"},
-			fromEnv:     []string{"home=HOME"},
-			allowlist:   []string{"HOME"},
-			systemEnv:   map[string]string{"HOME": "/home/user"},
-			expected:    []string{"/home/user/apps/myapp/config.toml"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Set up system environment variables
-			for key, value := range tt.systemEnv {
-				t.Setenv(key, value)
-			}
-
-			// Create global config
-			global := &runnertypes.GlobalConfig{
-				Vars:         tt.vars,
-				FromEnv:      tt.fromEnv,
-				VerifyFiles:  tt.verifyFiles,
-				EnvAllowlist: tt.allowlist,
-			}
-
-			// Create environment filter
-			filter := environment.NewFilter(global.EnvAllowlist)
-
-			// Expand global config
-			err := config.ExpandGlobalConfig(global, filter)
-			require.NoError(t, err)
-			assert.Equal(t, tt.expected, global.ExpandedVerifyFiles)
-		})
-	}
-}
-
-// TestVerifyFilesExpansion_SpecialCharacters tests paths with special characters
+// TestVerifyFilesExpansion_SpecialCharacters tests verify_files expansion with special characters
 func TestVerifyFilesExpansion_SpecialCharacters(t *testing.T) {
-	tests := []struct {
-		name        string
-		verifyFiles []string
-		vars        []string
-		expected    []string
-	}{
-		{
-			name:        "Path containing spaces",
-			verifyFiles: []string{"%{dir}/my file.txt"},
-			vars:        []string{"dir=/path/with spaces"},
-			expected:    []string{"/path/with spaces/my file.txt"},
-		},
-		{
-			name:        "Path containing special characters",
-			verifyFiles: []string{"%{base}/@file-name_123.conf"},
-			vars:        []string{"base=/etc/app"},
-			expected:    []string{"/etc/app/@file-name_123.conf"},
-		},
-		{
-			name:        "Path containing Japanese characters",
-			verifyFiles: []string{"%{dir}/設定.toml"},
-			vars:        []string{"dir=/home/ユーザー"},
-			expected:    []string{"/home/ユーザー/設定.toml"},
-		},
-	}
+	t.Run("GlobalVerifyFiles_WithSpaces", func(t *testing.T) {
+		spec := &runnertypes.GlobalSpec{
+			Vars:        []string{"base_dir=/opt/my app", "file_name=test-file_v1.0.sh"},
+			VerifyFiles: []string{"%{base_dir}/%{file_name}"},
+		}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Create global config
-			global := &runnertypes.GlobalConfig{
-				Vars:        tt.vars,
-				VerifyFiles: tt.verifyFiles,
-			}
+		runtime, err := config.ExpandGlobal(spec)
+		require.NoError(t, err)
+		require.Len(t, runtime.ExpandedVerifyFiles, 1)
+		assert.Equal(t, "/opt/my app/test-file_v1.0.sh", runtime.ExpandedVerifyFiles[0],
+			"verify_files should handle paths with spaces and special characters")
+	})
 
-			// Create environment filter
-			filter := environment.NewFilter([]string{})
+	t.Run("GlobalVerifyFiles_WithDashes", func(t *testing.T) {
+		spec := &runnertypes.GlobalSpec{
+			Vars:        []string{"base_dir=/opt/app", "sub_dir=sub-dir_v2.0"},
+			VerifyFiles: []string{"%{base_dir}/%{sub_dir}/script.sh"},
+		}
 
-			// Expand global config
-			err := config.ExpandGlobalConfig(global, filter)
-			require.NoError(t, err)
-			assert.Equal(t, tt.expected, global.ExpandedVerifyFiles)
-		})
-	}
+		runtime, err := config.ExpandGlobal(spec)
+		require.NoError(t, err)
+		require.Len(t, runtime.ExpandedVerifyFiles, 1)
+		assert.Equal(t, "/opt/app/sub-dir_v2.0/script.sh", runtime.ExpandedVerifyFiles[0],
+			"verify_files should handle paths with dashes and underscores")
+	})
+
+	t.Run("GroupVerifyFiles_WithSpecialChars", func(t *testing.T) {
+		globalSpec := &runnertypes.GlobalSpec{
+			Vars: []string{"root=/opt/my-app"},
+		}
+		globalRuntime, err := config.ExpandGlobal(globalSpec)
+		require.NoError(t, err)
+
+		groupSpec := &runnertypes.GroupSpec{
+			Name:        "test_group",
+			Vars:        []string{"sub_dir=test dir v1.0"},
+			VerifyFiles: []string{"%{root}/%{sub_dir}/verify.sh"},
+		}
+
+		groupRuntime, err := config.ExpandGroup(groupSpec, globalRuntime.ExpandedVars)
+		require.NoError(t, err)
+		require.Len(t, groupRuntime.ExpandedVerifyFiles, 1)
+		assert.Equal(t, "/opt/my-app/test dir v1.0/verify.sh", groupRuntime.ExpandedVerifyFiles[0],
+			"Group verify_files should handle paths with spaces and special characters")
+	})
 }
 
-// TestVerifyFilesExpansion_ErrorHandling tests error cases
+// TestVerifyFilesExpansion_NestedReferences tests verify_files with nested variable references
+func TestVerifyFilesExpansion_NestedReferences(t *testing.T) {
+	t.Run("GlobalVerifyFiles_NestedReferences", func(t *testing.T) {
+		spec := &runnertypes.GlobalSpec{
+			Vars:        []string{"root=/opt", "app_name=myapp", "app_dir=%{root}/%{app_name}"},
+			VerifyFiles: []string{"%{app_dir}/verify.sh"},
+		}
+
+		runtime, err := config.ExpandGlobal(spec)
+		require.NoError(t, err)
+		require.Len(t, runtime.ExpandedVerifyFiles, 1)
+		assert.Equal(t, "/opt/myapp/verify.sh", runtime.ExpandedVerifyFiles[0],
+			"verify_files should handle nested variable references (root -> app_name -> app_dir)")
+	})
+
+	t.Run("GlobalVerifyFiles_DeeplyNestedReferences", func(t *testing.T) {
+		spec := &runnertypes.GlobalSpec{
+			Vars: []string{
+				"root=/opt",
+				"app_name=myapp",
+				"version=v1.0",
+				"app_dir=%{root}/%{app_name}",
+				"versioned_dir=%{app_dir}/%{version}",
+			},
+			VerifyFiles: []string{"%{versioned_dir}/scripts/verify.sh"},
+		}
+
+		runtime, err := config.ExpandGlobal(spec)
+		require.NoError(t, err)
+		require.Len(t, runtime.ExpandedVerifyFiles, 1)
+		assert.Equal(t, "/opt/myapp/v1.0/scripts/verify.sh", runtime.ExpandedVerifyFiles[0],
+			"verify_files should handle deeply nested variable references")
+	})
+
+	t.Run("GroupVerifyFiles_DeeplyNestedReferences", func(t *testing.T) {
+		globalSpec := &runnertypes.GlobalSpec{
+			Vars: []string{"root=/opt", "app_name=myapp", "app_dir=%{root}/%{app_name}"},
+		}
+		globalRuntime, err := config.ExpandGlobal(globalSpec)
+		require.NoError(t, err)
+
+		groupSpec := &runnertypes.GroupSpec{
+			Name:        "test_group",
+			Vars:        []string{"subdir=scripts", "full_path=%{app_dir}/%{subdir}"},
+			VerifyFiles: []string{"%{full_path}/check.sh"},
+		}
+
+		groupRuntime, err := config.ExpandGroup(groupSpec, globalRuntime.ExpandedVars)
+		require.NoError(t, err)
+		require.Len(t, groupRuntime.ExpandedVerifyFiles, 1)
+		assert.Equal(t, "/opt/myapp/scripts/check.sh", groupRuntime.ExpandedVerifyFiles[0],
+			"Group verify_files should handle deeply nested references (root -> app_name -> app_dir -> subdir -> full_path)")
+	})
+}
+
+// TestVerifyFilesExpansion_ErrorHandling tests error handling for invalid verify_files expansion
 func TestVerifyFilesExpansion_ErrorHandling(t *testing.T) {
-	tests := []struct {
-		name        string
-		verifyFiles []string
-		vars        []string
-		fromEnv     []string
-		allowlist   []string
-		systemEnv   map[string]string
-		expectError bool
-		errorCheck  func(*testing.T, error)
-	}{
-		{
-			name:        "Undefined variable reference",
-			verifyFiles: []string{"/path/%{undefined}/file"},
-			vars:        []string{},
-			fromEnv:     []string{},
-			allowlist:   []string{},
-			systemEnv:   map[string]string{},
-			expectError: true,
-			errorCheck: func(t *testing.T, err error) {
-				assert.ErrorIs(t, err, config.ErrUndefinedVariable)
+	t.Run("UndefinedVariable", func(t *testing.T) {
+		spec := &runnertypes.GlobalSpec{
+			Vars:        []string{"existing_var=/opt"},
+			VerifyFiles: []string{"%{undefined_var}/script.sh"},
+		}
+
+		_, err := config.ExpandGlobal(spec)
+		require.Error(t, err, "Should fail when verify_files references undefined variable")
+		assert.Contains(t, err.Error(), "undefined_var", "Error should mention the undefined variable name")
+		assert.Contains(t, err.Error(), "undefined variable", "Error should indicate it's an undefined variable error")
+	})
+
+	t.Run("EmptyVariableName", func(t *testing.T) {
+		spec := &runnertypes.GlobalSpec{
+			VerifyFiles: []string{"%{}/script.sh"},
+		}
+
+		_, err := config.ExpandGlobal(spec)
+		require.Error(t, err, "Should fail when verify_files has empty variable name")
+		assert.Contains(t, err.Error(), "variable name cannot be empty", "Error should mention empty variable name")
+	})
+
+	t.Run("MultipleVerifyFilesWithMixedErrors", func(t *testing.T) {
+		spec := &runnertypes.GlobalSpec{
+			Vars: []string{"valid_dir=/opt"},
+			VerifyFiles: []string{
+				"%{valid_dir}/good.sh",
+				"%{invalid_var}/bad.sh",
 			},
-		},
-		{
-			name:        "Unclosed variable reference",
-			verifyFiles: []string{"/path/%{unclosed/file"},
-			vars:        []string{},
-			fromEnv:     []string{},
-			allowlist:   []string{},
-			systemEnv:   map[string]string{},
-			expectError: true,
-			errorCheck: func(t *testing.T, err error) {
-				assert.ErrorIs(t, err, config.ErrUnclosedVariableReference)
-			},
-		},
-		{
-			name:        "Empty path",
-			verifyFiles: []string{""},
-			vars:        []string{},
-			fromEnv:     []string{},
-			allowlist:   []string{},
-			systemEnv:   map[string]string{},
-			expectError: false, // Empty path is allowed (will be validated elsewhere)
-		},
-	}
+		}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Set up system environment variables
-			for key, value := range tt.systemEnv {
-				t.Setenv(key, value)
-			}
+		_, err := config.ExpandGlobal(spec)
+		require.Error(t, err, "Should fail on first invalid verify_files entry")
+		assert.Contains(t, err.Error(), "invalid_var", "Error should mention the first invalid variable")
+	})
 
-			// Create global config
-			global := &runnertypes.GlobalConfig{
-				Vars:         tt.vars,
-				FromEnv:      tt.fromEnv,
-				VerifyFiles:  tt.verifyFiles,
-				EnvAllowlist: tt.allowlist,
-			}
+	t.Run("GroupVerifyFiles_UndefinedVariable", func(t *testing.T) {
+		globalSpec := &runnertypes.GlobalSpec{
+			Vars: []string{"global_var=/opt"},
+		}
+		globalRuntime, err := config.ExpandGlobal(globalSpec)
+		require.NoError(t, err)
 
-			// Create environment filter
-			filter := environment.NewFilter(global.EnvAllowlist)
+		groupSpec := &runnertypes.GroupSpec{
+			Name:        "test_group",
+			VerifyFiles: []string{"%{undefined_group_var}/script.sh"},
+		}
 
-			// Expand global config
-			err := config.ExpandGlobalConfig(global, filter)
-
-			if tt.expectError {
-				require.Error(t, err)
-				if tt.errorCheck != nil {
-					tt.errorCheck(t, err)
-				}
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
+		_, err = config.ExpandGroup(groupSpec, globalRuntime.ExpandedVars)
+		require.Error(t, err, "Should fail when group verify_files references undefined variable")
+		assert.Contains(t, err.Error(), "undefined_group_var")
+	})
 }
 
-// TestVerifyFilesExpansion_EdgeCases tests edge cases
-func TestVerifyFilesExpansion_EdgeCases(t *testing.T) {
-	tests := []struct {
-		name        string
-		verifyFiles []string
-		vars        []string
-		expected    []string
-	}{
-		{
-			name:        "Extremely long path",
-			verifyFiles: []string{"%{base}/very/long/path/with/many/directories/and/subdirectories/file.txt"},
-			vars:        []string{"base=/root"},
-			expected:    []string{"/root/very/long/path/with/many/directories/and/subdirectories/file.txt"},
-		},
-		{
-			name: "Multiple verify_files entries",
-			verifyFiles: []string{
-				"%{base}/file1.txt",
-				"%{base}/file2.txt",
-				"%{base}/file3.txt",
-				"%{base}/file4.txt",
-				"%{base}/file5.txt",
+// TestVerifyFilesExpansion_EmptyAndNoFiles tests behavior with no verify_files entries
+func TestVerifyFilesExpansion_EmptyAndNoFiles(t *testing.T) {
+	t.Run("NoVerifyFiles", func(t *testing.T) {
+		spec := &runnertypes.GlobalSpec{
+			Vars:        []string{"var1=/opt"},
+			VerifyFiles: nil,
+		}
+
+		runtime, err := config.ExpandGlobal(spec)
+		require.NoError(t, err)
+		assert.Empty(t, runtime.ExpandedVerifyFiles, "Empty VerifyFiles should result in empty ExpandedVerifyFiles")
+	})
+
+	t.Run("EmptyVerifyFilesList", func(t *testing.T) {
+		spec := &runnertypes.GlobalSpec{
+			Vars:        []string{"var1=/opt"},
+			VerifyFiles: []string{},
+		}
+
+		runtime, err := config.ExpandGlobal(spec)
+		require.NoError(t, err)
+		assert.Empty(t, runtime.ExpandedVerifyFiles, "Empty VerifyFiles list should result in empty ExpandedVerifyFiles")
+	})
+}
+
+// TestVerifyFilesExpansion_MultipleFiles tests expansion of multiple verify_files entries
+func TestVerifyFilesExpansion_MultipleFiles(t *testing.T) {
+	t.Run("GlobalMultipleVerifyFiles", func(t *testing.T) {
+		spec := &runnertypes.GlobalSpec{
+			Vars: []string{"dir1=/opt/app1", "dir2=/opt/app2"},
+			VerifyFiles: []string{
+				"%{dir1}/verify1.sh",
+				"%{dir2}/verify2.sh",
+				"%{dir1}/verify3.sh",
 			},
-			vars: []string{"base=/data"},
-			expected: []string{
-				"/data/file1.txt",
-				"/data/file2.txt",
-				"/data/file3.txt",
-				"/data/file4.txt",
-				"/data/file5.txt",
+		}
+
+		runtime, err := config.ExpandGlobal(spec)
+		require.NoError(t, err)
+		require.Len(t, runtime.ExpandedVerifyFiles, 3)
+		assert.Equal(t, "/opt/app1/verify1.sh", runtime.ExpandedVerifyFiles[0])
+		assert.Equal(t, "/opt/app2/verify2.sh", runtime.ExpandedVerifyFiles[1])
+		assert.Equal(t, "/opt/app1/verify3.sh", runtime.ExpandedVerifyFiles[2])
+	})
+
+	t.Run("GroupMultipleVerifyFiles", func(t *testing.T) {
+		globalSpec := &runnertypes.GlobalSpec{
+			Vars: []string{"root=/opt"},
+		}
+		globalRuntime, err := config.ExpandGlobal(globalSpec)
+		require.NoError(t, err)
+
+		groupSpec := &runnertypes.GroupSpec{
+			Name: "test_group",
+			Vars: []string{"app=myapp"},
+			VerifyFiles: []string{
+				"%{root}/%{app}/check1.sh",
+				"%{root}/%{app}/check2.sh",
 			},
-		},
-		{
-			name:        "Path composed only of variables",
-			verifyFiles: []string{"%{full_path}"},
-			vars:        []string{"full_path=/etc/config.toml"},
-			expected:    []string{"/etc/config.toml"},
-		},
-		{
-			name:        "Concatenated variable references",
-			verifyFiles: []string{"%{dir1}%{dir2}/file"},
-			vars:        []string{"dir1=/root", "dir2=/subdir"},
-			expected:    []string{"/root/subdir/file"},
-		},
-	}
+		}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Create global config
-			global := &runnertypes.GlobalConfig{
-				Vars:        tt.vars,
-				VerifyFiles: tt.verifyFiles,
-			}
-
-			// Create environment filter
-			filter := environment.NewFilter([]string{})
-
-			// Expand global config
-			err := config.ExpandGlobalConfig(global, filter)
-			require.NoError(t, err)
-			assert.Equal(t, tt.expected, global.ExpandedVerifyFiles)
-		})
-	}
+		groupRuntime, err := config.ExpandGroup(groupSpec, globalRuntime.ExpandedVars)
+		require.NoError(t, err)
+		require.Len(t, groupRuntime.ExpandedVerifyFiles, 2)
+		assert.Equal(t, "/opt/myapp/check1.sh", groupRuntime.ExpandedVerifyFiles[0])
+		assert.Equal(t, "/opt/myapp/check2.sh", groupRuntime.ExpandedVerifyFiles[1])
+	})
 }

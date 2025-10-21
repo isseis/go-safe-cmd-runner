@@ -1,3 +1,6 @@
+//go:build test
+// +build test
+
 package verification
 
 import (
@@ -14,6 +17,26 @@ import (
 )
 
 const testHashDir = "/usr/local/etc/go-safe-cmd-runner/hashes"
+
+// Helper function to create RuntimeGlobal for testing
+func createRuntimeGlobal(verifyFiles []string) *runnertypes.RuntimeGlobal {
+	spec := &runnertypes.GlobalSpec{
+		VerifyFiles: verifyFiles,
+	}
+	runtime, _ := runnertypes.NewRuntimeGlobal(spec)
+	runtime.ExpandedVerifyFiles = verifyFiles
+	return runtime
+}
+
+// Helper function to create GroupSpec for testing
+// Name and Description are fixed for tests to avoid unparam lint warnings
+func createGroupSpec(verifyFiles []string) *runnertypes.GroupSpec {
+	return &runnertypes.GroupSpec{
+		Name:        "test-group",
+		Description: "",
+		VerifyFiles: verifyFiles,
+	}
+}
 
 func TestNewManager(t *testing.T) {
 	testCases := []struct {
@@ -464,13 +487,11 @@ func TestVerifyGlobalFiles(t *testing.T) {
 		manager, err := NewManagerForTest(tmpDir, WithFileValidatorDisabled(), WithSkipHashDirectoryValidation())
 		require.NoError(t, err)
 
-		// Create test global config
-		globalConfig := &runnertypes.GlobalConfig{
-			VerifyFiles: []string{}, // Empty files list should succeed
-		}
+		// Create test runtime global
+		runtimeGlobal := createRuntimeGlobal([]string{}) // Empty files list should succeed
 
 		// Test verification
-		result, err := manager.VerifyGlobalFiles(globalConfig)
+		result, err := manager.VerifyGlobalFiles(runtimeGlobal)
 
 		// Should succeed with empty files
 		assert.NoError(t, err)
@@ -497,12 +518,10 @@ func TestVerifyGlobalFiles(t *testing.T) {
 	t.Run("hash_directory_validation_failure", func(t *testing.T) {
 		manager := invalidHashDirManager()
 
-		globalConfig := &runnertypes.GlobalConfig{
-			VerifyFiles: []string{},
-		}
+		runtimeGlobal := createRuntimeGlobal([]string{})
 
 		// Test with invalid hash directory
-		result, err := manager.VerifyGlobalFiles(globalConfig)
+		result, err := manager.VerifyGlobalFiles(runtimeGlobal)
 
 		// Should fail hash directory validation
 		assert.Error(t, err)
@@ -520,14 +539,11 @@ func TestVerifyGroupFiles(t *testing.T) {
 		manager, err := NewManagerForTest(tmpDir, WithFileValidatorDisabled(), WithSkipHashDirectoryValidation())
 		require.NoError(t, err)
 
-		// Create test group config
-		groupConfig := &runnertypes.CommandGroup{
-			Name:        "test-group",
-			VerifyFiles: []string{}, // Empty files list should succeed
-		}
+		// Create test group spec
+		groupSpec := createGroupSpec([]string{}) // Empty files list should succeed
 
 		// Test verification
-		result, err := manager.VerifyGroupFiles(groupConfig)
+		result, err := manager.VerifyGroupFiles(groupSpec)
 
 		// Should succeed with empty files
 		assert.NoError(t, err)
@@ -554,13 +570,10 @@ func TestVerifyGroupFiles(t *testing.T) {
 	t.Run("hash_directory_validation_failure", func(t *testing.T) {
 		manager := invalidHashDirManager()
 
-		groupConfig := &runnertypes.CommandGroup{
-			Name:        "test-group",
-			VerifyFiles: []string{},
-		}
+		groupSpec := createGroupSpec([]string{})
 
 		// Test with invalid hash directory
-		result, err := manager.VerifyGroupFiles(groupConfig)
+		result, err := manager.VerifyGroupFiles(groupSpec)
 
 		// Should fail hash directory validation
 		assert.Error(t, err)
@@ -660,14 +673,11 @@ func TestCollectVerificationFiles(t *testing.T) {
 		manager, err := NewManagerForTest(tmpDir)
 		require.NoError(t, err)
 
-		// Test group config with files
-		groupConfig := &runnertypes.CommandGroup{
-			Name:                "test-group",
-			ExpandedVerifyFiles: []string{"file1.txt", "file2.txt", "file3.txt"},
-		}
+		// Test group spec with files
+		groupSpec := createGroupSpec([]string{"file1.txt", "file2.txt", "file3.txt"})
 
 		// Collect files
-		collectedFiles := manager.collectVerificationFiles(groupConfig)
+		collectedFiles := manager.collectVerificationFiles(groupSpec)
 
 		// Should return a map with the same files
 		assert.Len(t, collectedFiles, 3)
@@ -682,14 +692,11 @@ func TestCollectVerificationFiles(t *testing.T) {
 		manager, err := NewManagerForTest(tmpDir)
 		require.NoError(t, err)
 
-		// Test group config with empty files
-		groupConfig := &runnertypes.CommandGroup{
-			Name:                "test-group",
-			ExpandedVerifyFiles: []string{},
-		}
+		// Test group spec with empty files
+		groupSpec := createGroupSpec([]string{})
 
 		// Collect files
-		collectedFiles := manager.collectVerificationFiles(groupConfig)
+		collectedFiles := manager.collectVerificationFiles(groupSpec)
 
 		// Should return empty map
 		assert.Empty(t, collectedFiles)
@@ -714,14 +721,11 @@ func TestCollectVerificationFiles(t *testing.T) {
 		manager, err := NewManagerForTest(tmpDir)
 		require.NoError(t, err)
 
-		// Test group config with duplicate files
-		groupConfig := &runnertypes.CommandGroup{
-			Name:                "test-group",
-			ExpandedVerifyFiles: []string{"file1.txt", "file2.txt", "file1.txt", "file3.txt", "file2.txt"},
-		}
+		// Test group spec with duplicate files
+		groupSpec := createGroupSpec([]string{"file1.txt", "file2.txt", "file1.txt", "file3.txt", "file2.txt"})
 
 		// Collect files
-		collectedFiles := manager.collectVerificationFiles(groupConfig)
+		collectedFiles := manager.collectVerificationFiles(groupSpec)
 
 		// Should automatically remove duplicates
 		assert.Len(t, collectedFiles, 3)

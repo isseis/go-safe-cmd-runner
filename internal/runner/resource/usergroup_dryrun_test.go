@@ -1,4 +1,5 @@
-//go:build !windows
+//go:build test && !windows
+// +build test,!windows
 
 package resource
 
@@ -29,16 +30,15 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 			t.Fatalf("Failed to create DryRunResourceManager: %v", err)
 		}
 
-		cmd := runnertypes.Command{
+		cmd := createRuntimeCommand(&runnertypes.CommandSpec{
 			Name:       "test_user_group",
 			Cmd:        "echo",
 			Args:       []string{"test"},
 			RunAsUser:  "testuser",
 			RunAsGroup: "testgroup",
-		}
-		runnertypes.PrepareCommand(&cmd)
+		})
 
-		group := &runnertypes.CommandGroup{
+		group := &runnertypes.GroupSpec{
 			Name:        "test_group",
 			Description: "Test group",
 		}
@@ -73,15 +73,15 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 			t.Fatalf("Failed to create DryRunResourceManager: %v", err)
 		}
 
-		cmd := runnertypes.Command{
+		cmd := createRuntimeCommand(&runnertypes.CommandSpec{
 			Name:       "test_invalid_user_group",
 			Cmd:        "echo",
 			Args:       []string{"test"},
 			RunAsUser:  "nonexistent_user",
 			RunAsGroup: "nonexistent_group",
-		}
+		})
 
-		group := &runnertypes.CommandGroup{
+		group := &runnertypes.GroupSpec{
 			Name:        "test_group",
 			Description: "Test group",
 		}
@@ -114,15 +114,15 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 			t.Fatalf("Failed to create DryRunResourceManager: %v", err)
 		}
 
-		cmd := runnertypes.Command{
+		cmd := createRuntimeCommand(&runnertypes.CommandSpec{
 			Name:       "test_user_group_unsupported",
 			Cmd:        "echo",
 			Args:       []string{"test"},
 			RunAsUser:  "testuser",
 			RunAsGroup: "testgroup",
-		}
+		})
 
-		group := &runnertypes.CommandGroup{
+		group := &runnertypes.GroupSpec{
 			Name:        "test_group",
 			Description: "Test group",
 		}
@@ -152,15 +152,15 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 			t.Fatalf("Failed to create DryRunResourceManager: %v", err)
 		}
 
-		cmd := runnertypes.Command{
+		cmd := createRuntimeCommand(&runnertypes.CommandSpec{
 			Name:       "test_no_privmgr",
 			Cmd:        "echo",
 			Args:       []string{"test"},
 			RunAsUser:  "testuser",
 			RunAsGroup: "testgroup",
-		}
+		})
 
-		group := &runnertypes.CommandGroup{
+		group := &runnertypes.GroupSpec{
 			Name:        "test_group",
 			Description: "Test group",
 		}
@@ -190,15 +190,15 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 			t.Fatalf("Failed to create DryRunResourceManager: %v", err)
 		}
 
-		cmd := runnertypes.Command{
+		cmd := createRuntimeCommand(&runnertypes.CommandSpec{
 			Name:      "test_user_only",
 			Cmd:       "echo",
 			Args:      []string{"test"},
 			RunAsUser: "testuser",
 			// RunAsGroup is empty
-		}
+		})
 
-		group := &runnertypes.CommandGroup{
+		group := &runnertypes.GroupSpec{
 			Name:        "test_group",
 			Description: "Test group",
 		}
@@ -233,14 +233,14 @@ func TestDryRunResourceManager_UserGroupValidation(t *testing.T) {
 			t.Fatalf("Failed to create DryRunResourceManager: %v", err)
 		}
 
-		cmd := runnertypes.Command{
+		cmd := createRuntimeCommand(&runnertypes.CommandSpec{
 			Name: "test_no_user_group",
 			Cmd:  "echo",
 			Args: []string{"test"},
 			// No RunAsUser or RunAsGroup
-		}
+		})
 
-		group := &runnertypes.CommandGroup{
+		group := &runnertypes.GroupSpec{
 			Name:        "test_group",
 			Description: "Test group",
 		}

@@ -17,7 +17,7 @@ var (
 )
 
 // ValidateConfigCommand implements config validation CLI command
-func ValidateConfigCommand(cfg *runnertypes.Config) error {
+func ValidateConfigCommand(cfg *runnertypes.ConfigSpec) error {
 	// Validate config
 	validator := config.NewConfigValidator()
 	result, err := validator.ValidateConfig(cfg)

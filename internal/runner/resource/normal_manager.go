@@ -86,7 +86,7 @@ func (n *NormalResourceManager) ValidateOutputPath(outputPath, workDir string) e
 }
 
 // ExecuteCommand executes a command in normal mode
-func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) (*ExecutionResult, error) {
+func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec, env map[string]string) (*ExecutionResult, error) {
 	start := time.Now()
 
 	// Validate command and group for consistency with dry-run mode
@@ -100,7 +100,7 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd runnerty
 
 	// Unified Risk Evaluation Approach
 	// Step 1: Evaluate security risk (includes privilege escalation detection)
-	effectiveRisk, err := n.riskEvaluator.EvaluateRisk(&cmd)
+	effectiveRisk, err := n.riskEvaluator.EvaluateRisk(cmd)
 	if err != nil {
 		return nil, fmt.Errorf("risk evaluation failed: %w", err)
 	}
@@ -114,7 +114,7 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd runnerty
 	// Step 3: Unified risk level comparison
 	if effectiveRisk > maxAllowedRisk {
 		n.logger.Error("Command execution rejected due to risk level violation",
-			"command", cmd.Name,
+			"command", cmd.Name(),
 			"cmd_binary", cmd.ExpandedCmd,
 			"effective_risk", effectiveRisk.String(),
 			"max_allowed_risk", maxAllowedRisk.String(),
@@ -125,7 +125,7 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd runnerty
 	}
 
 	// Check if output capture is requested and delegate to executeCommandWithOutput
-	if cmd.Output != "" && n.outputManager != nil {
+	if cmd.Output() != "" && n.outputManager != nil {
 		return n.executeCommandWithOutput(ctx, cmd, group, env, start)
 	}
 
@@ -134,14 +134,14 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd runnerty
 }
 
 // executeCommandWithOutput executes a command with output capture
-func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string, start time.Time) (result *ExecutionResult, err error) {
+func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec, env map[string]string, start time.Time) (result *ExecutionResult, err error) {
 	// Prepare output capture
 	maxSize := n.maxOutputSize
 	if maxSize <= 0 {
 		maxSize = output.DefaultMaxOutputSize // Use default from output package
 	}
 
-	capture, err := n.outputManager.PrepareOutput(cmd.Output, group.WorkDir, maxSize)
+	capture, err := n.outputManager.PrepareOutput(cmd.Output(), group.WorkDir, maxSize)
 	if err != nil {
 		return nil, fmt.Errorf("output capture preparation failed: %w", err)
 	}
@@ -150,7 +150,7 @@ func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, cm
 	defer func() {
 		if err != nil {
 			if cleanupErr := n.outputManager.CleanupOutput(capture); cleanupErr != nil {
-				n.logger.Error("Failed to cleanup output capture", "error", cleanupErr, "path", cmd.Output)
+				n.logger.Error("Failed to cleanup output capture", "error", cleanupErr, "path", cmd.Output())
 			}
 		}
 	}()
@@ -184,7 +184,7 @@ func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, cm
 }
 
 // executeCommandInternal contains the shared command execution logic
-func (n *NormalResourceManager) executeCommandInternal(ctx context.Context, cmd runnertypes.Command, env map[string]string, start time.Time, outputWriter executor.OutputWriter) (*ExecutionResult, error) {
+func (n *NormalResourceManager) executeCommandInternal(ctx context.Context, cmd *runnertypes.RuntimeCommand, env map[string]string, start time.Time, outputWriter executor.OutputWriter) (*ExecutionResult, error) {
 	var result *executor.Result
 	var err error
 

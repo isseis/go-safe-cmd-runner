@@ -52,7 +52,7 @@ func (e ExecutionMode) String() string {
 // nolint:revive // ResourceManager is intentionally named to be clear about its purpose
 type ResourceManager interface {
 	// Command execution
-	ExecuteCommand(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) (*ExecutionResult, error)
+	ExecuteCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, group *runnertypes.GroupSpec, env map[string]string) (*ExecutionResult, error)
 
 	// Output validation - validates output paths before command execution
 	ValidateOutputPath(outputPath, workDir string) error
@@ -91,18 +91,18 @@ type ExecutionResult struct {
 }
 
 // validateCommand validates command for consistency across execution modes
-func validateCommand(cmd runnertypes.Command) error {
-	if cmd.Cmd == "" {
+func validateCommand(cmd *runnertypes.RuntimeCommand) error {
+	if cmd.Cmd() == "" {
 		return ErrEmptyCommand
 	}
-	if cmd.Name == "" {
+	if cmd.Name() == "" {
 		return ErrEmptyCommandName
 	}
 	return nil
 }
 
 // validateCommandGroup validates command group for consistency across execution modes
-func validateCommandGroup(group *runnertypes.CommandGroup) error {
+func validateCommandGroup(group *runnertypes.GroupSpec) error {
 	if group == nil {
 		return ErrNilCommandGroup
 	}

@@ -1,3 +1,6 @@
+//go:build test
+// +build test
+
 package resource
 
 import (
@@ -16,21 +19,21 @@ import (
 func TestDryRunExecutionPath(t *testing.T) {
 	tests := []struct {
 		name             string
-		commands         []runnertypes.Command
-		groups           []*runnertypes.CommandGroup
+		commandSpecs     []runnertypes.CommandSpec
+		groupSpecs       []*runnertypes.GroupSpec
 		envVars          map[string]string
 		expectedAnalyses int // Expected number of resource analyses
 	}{
 		{
 			name: "basic command dry-run execution",
-			commands: []runnertypes.Command{
+			commandSpecs: []runnertypes.CommandSpec{
 				{
 					Name:        "test-echo",
 					Description: "Basic echo command",
 					Cmd:         "echo hello world",
 				},
 			},
-			groups: []*runnertypes.CommandGroup{
+			groupSpecs: []*runnertypes.GroupSpec{
 				{
 					Name:        "test-group",
 					Description: "Test command group",
@@ -44,7 +47,7 @@ func TestDryRunExecutionPath(t *testing.T) {
 		},
 		{
 			name: "multiple commands dry-run execution",
-			commands: []runnertypes.Command{
+			commandSpecs: []runnertypes.CommandSpec{
 				{
 					Name:        "test-echo1",
 					Description: "First echo command",
@@ -56,7 +59,7 @@ func TestDryRunExecutionPath(t *testing.T) {
 					Cmd:         "echo second",
 				},
 			},
-			groups: []*runnertypes.CommandGroup{
+			groupSpecs: []*runnertypes.GroupSpec{
 				{
 					Name:        "test-group",
 					Description: "Test command group",
@@ -90,9 +93,9 @@ func TestDryRunExecutionPath(t *testing.T) {
 				t.Fatalf("Failed to create DryRunResourceManager: %v", err)
 			}
 			require.NotNil(t, dryRunManager) // Execute commands in dry-run mode
-			for _, cmd := range tt.commands {
-				group := tt.groups[0] // Use first group for simplicity
-				runnertypes.PrepareCommand(&cmd)
+			for _, cmdSpec := range tt.commandSpecs {
+				group := tt.groupSpecs[0] // Use first group for simplicity
+				cmd := createRuntimeCommand(&cmdSpec)
 				result, err := dryRunManager.ExecuteCommand(ctx, cmd, group, tt.envVars)
 
 				// Verify that dry-run execution doesn't produce errors
@@ -144,13 +147,13 @@ func TestDryRunResultConsistency(t *testing.T) {
 		VerifyFiles:   true,
 	}
 
-	command := runnertypes.Command{
+	cmd := createRuntimeCommand(&runnertypes.CommandSpec{
 		Name:        "consistency-test",
 		Description: "Consistency test command",
 		Cmd:         "echo consistency test",
-	}
+	})
 
-	group := &runnertypes.CommandGroup{
+	group := &runnertypes.GroupSpec{
 		Name:        "consistency-group",
 		Description: "Consistency test group",
 		Priority:    1,
@@ -173,7 +176,7 @@ func TestDryRunResultConsistency(t *testing.T) {
 			t.Fatalf("Failed to create DryRunResourceManager: %v", err)
 		}
 
-		_, err = manager.ExecuteCommand(ctx, command, group, envVars)
+		_, err = manager.ExecuteCommand(ctx, cmd, group, envVars)
 		require.NoError(t, err)
 
 		result := manager.GetDryRunResults()
@@ -210,13 +213,13 @@ func TestDryRunResultConsistency(t *testing.T) {
 func TestDefaultResourceManagerModeConsistency(t *testing.T) {
 	ctx := context.Background()
 
-	command := runnertypes.Command{
+	cmd := createRuntimeCommand(&runnertypes.CommandSpec{
 		Name:        "mode-test",
 		Description: "Mode consistency test",
 		Cmd:         "echo mode test",
-	}
+	})
 
-	group := &runnertypes.CommandGroup{
+	group := &runnertypes.GroupSpec{
 		Name:        "mode-group",
 		Description: "Mode test group",
 		Priority:    1,
@@ -257,7 +260,7 @@ func TestDefaultResourceManagerModeConsistency(t *testing.T) {
 		assert.Equal(t, ExecutionModeDryRun, manager.GetMode())
 
 		// Execute a command
-		_, err = manager.ExecuteCommand(ctx, command, group, envVars)
+		_, err = manager.ExecuteCommand(ctx, cmd, group, envVars)
 		assert.NoError(t, err)
 
 		// Dry-run mode should provide results

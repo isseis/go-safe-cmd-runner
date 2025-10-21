@@ -41,6 +41,44 @@ func NewRuntimeGlobal(spec *GlobalSpec) (*RuntimeGlobal, error) {
 	}, nil
 }
 
+// Convenience methods for RuntimeGlobal
+
+// Timeout returns the global timeout from the spec.
+// Panics if r or r.Spec is nil (programming error - use NewRuntimeGlobal).
+func (r *RuntimeGlobal) Timeout() int {
+	if r == nil || r.Spec == nil {
+		panic("RuntimeGlobal.Timeout: nil receiver or Spec (programming error - use NewRuntimeGlobal)")
+	}
+	return r.Spec.Timeout
+}
+
+// WorkDir returns the global working directory from the spec.
+// Panics if r or r.Spec is nil (programming error - use NewRuntimeGlobal).
+func (r *RuntimeGlobal) WorkDir() string {
+	if r == nil || r.Spec == nil {
+		panic("RuntimeGlobal.WorkDir: nil receiver or Spec (programming error - use NewRuntimeGlobal)")
+	}
+	return r.Spec.WorkDir
+}
+
+// EnvAllowlist returns the environment variable allowlist from the spec.
+// Panics if r or r.Spec is nil (programming error - use NewRuntimeGlobal).
+func (r *RuntimeGlobal) EnvAllowlist() []string {
+	if r == nil || r.Spec == nil {
+		panic("RuntimeGlobal.EnvAllowlist: nil receiver or Spec (programming error - use NewRuntimeGlobal)")
+	}
+	return r.Spec.EnvAllowlist
+}
+
+// SkipStandardPaths returns the skip_standard_paths setting from the spec.
+// Panics if r or r.Spec is nil (programming error - use NewRuntimeGlobal).
+func (r *RuntimeGlobal) SkipStandardPaths() bool {
+	if r == nil || r.Spec == nil {
+		panic("RuntimeGlobal.SkipStandardPaths: nil receiver or Spec (programming error - use NewRuntimeGlobal)")
+	}
+	return r.Spec.SkipStandardPaths
+}
+
 // RuntimeGroup represents the runtime-expanded group configuration.
 // It contains references to the original GroupSpec along with expanded variables
 // and resources that are resolved at runtime.
@@ -79,6 +117,26 @@ func NewRuntimeGroup(spec *GroupSpec) (*RuntimeGroup, error) {
 		ExpandedVars:        make(map[string]string),
 		Commands:            []*RuntimeCommand{},
 	}, nil
+}
+
+// Convenience methods for RuntimeGroup
+
+// Name returns the group name from the spec.
+// Panics if r or r.Spec is nil (programming error - use NewRuntimeGroup).
+func (r *RuntimeGroup) Name() string {
+	if r == nil || r.Spec == nil {
+		panic("RuntimeGroup.Name: nil receiver or Spec (programming error - use NewRuntimeGroup)")
+	}
+	return r.Spec.Name
+}
+
+// WorkDir returns the group working directory from the spec (not yet expanded).
+// Panics if r or r.Spec is nil (programming error - use NewRuntimeGroup).
+func (r *RuntimeGroup) WorkDir() string {
+	if r == nil || r.Spec == nil {
+		panic("RuntimeGroup.WorkDir: nil receiver or Spec (programming error - use NewRuntimeGroup)")
+	}
+	return r.Spec.WorkDir
 }
 
 // RuntimeCommand represents the runtime-expanded command configuration.
@@ -159,6 +217,34 @@ func (r *RuntimeCommand) Output() string {
 		panic("RuntimeCommand.Output: nil receiver or Spec (programming error - use NewRuntimeCommand)")
 	}
 	return r.Spec.Output
+}
+
+// Cmd returns the command path from the spec (not yet expanded).
+// Panics if r or r.Spec is nil (programming error - use NewRuntimeCommand).
+func (r *RuntimeCommand) Cmd() string {
+	if r == nil || r.Spec == nil {
+		panic("RuntimeCommand.Cmd: nil receiver or Spec (programming error - use NewRuntimeCommand)")
+	}
+	return r.Spec.Cmd
+}
+
+// Args returns the command arguments from the spec (not yet expanded).
+// Panics if r or r.Spec is nil (programming error - use NewRuntimeCommand).
+func (r *RuntimeCommand) Args() []string {
+	if r == nil || r.Spec == nil {
+		panic("RuntimeCommand.Args: nil receiver or Spec (programming error - use NewRuntimeCommand)")
+	}
+	return r.Spec.Args
+}
+
+// Timeout returns the command-specific timeout from the spec.
+// Returns 0 if no timeout is specified (use EffectiveTimeout for resolved value).
+// Panics if r or r.Spec is nil (programming error - use NewRuntimeCommand).
+func (r *RuntimeCommand) Timeout() int {
+	if r == nil || r.Spec == nil {
+		panic("RuntimeCommand.Timeout: nil receiver or Spec (programming error - use NewRuntimeCommand)")
+	}
+	return r.Spec.Timeout
 }
 
 // GetMaxRiskLevel parses and returns the maximum risk level for this command.

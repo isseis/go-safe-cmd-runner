@@ -143,7 +143,7 @@ func TestCommandGetMaxRiskLevel(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cmd := &Command{
+			cmd := &CommandSpec{
 				MaxRiskLevel: tt.maxRiskStr,
 			}
 
@@ -199,7 +199,7 @@ func TestCommandHasUserGroupSpecification(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cmd := &Command{
+			cmd := &CommandSpec{
 				RunAsUser:  tt.runAsUser,
 				RunAsGroup: tt.runAsGroup,
 			}

@@ -45,7 +45,7 @@ type ExecutionResult struct {
 // LogUserGroupExecution logs the execution of a command with user/group privilege changes
 func (l *Logger) LogUserGroupExecution(
 	ctx context.Context,
-	cmd runnertypes.Command,
+	cmd *runnertypes.RuntimeCommand,
 	result *ExecutionResult,
 	duration time.Duration,
 	privilegeMetrics PrivilegeMetrics,
@@ -54,9 +54,9 @@ func (l *Logger) LogUserGroupExecution(
 		slog.String("audit_type", "user_group_execution"),
 		slog.Bool("audit", true), // Mark as audit event for new logging framework
 		slog.Int64("timestamp", time.Now().Unix()),
-		slog.String("command_name", cmd.Name),
-		slog.String("command_path", cmd.Cmd),
-		slog.String("command_args", strings.Join(cmd.Args, " ")),
+		slog.String("command_name", cmd.Name()),
+		slog.String("command_path", cmd.Cmd()),
+		slog.String("command_args", strings.Join(cmd.Args(), " ")),
 		slog.String("expanded_command_path", cmd.ExpandedCmd),
 		slog.String("expanded_command_args", strings.Join(cmd.ExpandedArgs, " ")),
 		slog.Int("exit_code", result.ExitCode),
@@ -69,16 +69,16 @@ func (l *Logger) LogUserGroupExecution(
 	}
 
 	// Add user/group information
-	if cmd.RunAsUser != "" {
-		baseAttrs = append(baseAttrs, slog.String("run_as_user", cmd.RunAsUser))
+	if cmd.RunAsUser() != "" {
+		baseAttrs = append(baseAttrs, slog.String("run_as_user", cmd.RunAsUser()))
 	}
-	if cmd.RunAsGroup != "" {
-		baseAttrs = append(baseAttrs, slog.String("run_as_group", cmd.RunAsGroup))
+	if cmd.RunAsGroup() != "" {
+		baseAttrs = append(baseAttrs, slog.String("run_as_group", cmd.RunAsGroup()))
 	}
 
 	// Add working directory if specified
-	if cmd.EffectiveWorkdir != "" {
-		baseAttrs = append(baseAttrs, slog.String("working_directory", cmd.EffectiveWorkdir))
+	if cmd.EffectiveWorkDir != "" {
+		baseAttrs = append(baseAttrs, slog.String("working_directory", cmd.EffectiveWorkDir))
 	}
 
 	if result.ExitCode == 0 {

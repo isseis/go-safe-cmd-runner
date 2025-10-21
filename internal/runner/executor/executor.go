@@ -73,7 +73,7 @@ func NewDefaultExecutor(opts ...Option) CommandExecutor {
 }
 
 // Execute implements the CommandExecutor interface
-func (e *DefaultExecutor) Execute(ctx context.Context, cmd runnertypes.Command, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
+func (e *DefaultExecutor) Execute(ctx context.Context, cmd *runnertypes.RuntimeCommand, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
 	// Note: outputWriter lifecycle is managed by the caller.
 	// The caller is responsible for calling Close() when done.
 	// This executor will NOT close the outputWriter.
@@ -85,7 +85,7 @@ func (e *DefaultExecutor) Execute(ctx context.Context, cmd runnertypes.Command, 
 }
 
 // executeWithUserGroup handles command execution with user/group privilege changes with audit logging and metrics
-func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, cmd runnertypes.Command, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
+func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, cmd *runnertypes.RuntimeCommand, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
 	startTime := time.Now()
 	var metrics audit.PrivilegeMetrics
 
@@ -116,10 +116,10 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, cmd runnerty
 	// Create elevation context for user/group execution
 	executionCtx := runnertypes.ElevationContext{
 		Operation:   runnertypes.OperationUserGroupExecution,
-		CommandName: cmd.Name,
+		CommandName: cmd.Name(),
 		FilePath:    cmd.ExpandedCmd,
-		RunAsUser:   cmd.RunAsUser,
-		RunAsGroup:  cmd.RunAsGroup,
+		RunAsUser:   cmd.RunAsUser(),
+		RunAsGroup:  cmd.RunAsGroup(),
 	}
 
 	var result *Result
@@ -152,7 +152,7 @@ func (e *DefaultExecutor) executeWithUserGroup(ctx context.Context, cmd runnerty
 }
 
 // executeNormal handles normal (non-privileged) command execution
-func (e *DefaultExecutor) executeNormal(ctx context.Context, cmd runnertypes.Command, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
+func (e *DefaultExecutor) executeNormal(ctx context.Context, cmd *runnertypes.RuntimeCommand, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
 	// Validate the command before execution
 	if err := e.Validate(cmd); err != nil {
 		return nil, fmt.Errorf("command validation failed: %w", err)
@@ -172,14 +172,14 @@ func (e *DefaultExecutor) executeNormal(ctx context.Context, cmd runnertypes.Com
 }
 
 // executeCommandWithPath executes a command with the given resolved path
-func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path string, cmd runnertypes.Command, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
+func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path string, cmd *runnertypes.RuntimeCommand, envVars map[string]string, outputWriter OutputWriter) (*Result, error) {
 	// Create the command with the resolved path
 	// #nosec G204 - The command and arguments are validated before execution with e.Validate()
 	execCmd := exec.CommandContext(ctx, path, cmd.ExpandedArgs...)
 
 	// Set up working directory
-	if cmd.EffectiveWorkdir != "" {
-		execCmd.Dir = cmd.EffectiveWorkdir
+	if cmd.EffectiveWorkDir != "" {
+		execCmd.Dir = cmd.EffectiveWorkDir
 	}
 
 	// Set up environment variables
@@ -235,7 +235,7 @@ func (e *DefaultExecutor) executeCommandWithPath(ctx context.Context, path strin
 }
 
 // Validate implements the CommandExecutor interface
-func (e *DefaultExecutor) Validate(cmd runnertypes.Command) error {
+func (e *DefaultExecutor) Validate(cmd *runnertypes.RuntimeCommand) error {
 	if cmd.ExpandedCmd == "" {
 		return ErrEmptyCommand
 	}
@@ -249,13 +249,13 @@ func (e *DefaultExecutor) Validate(cmd runnertypes.Command) error {
 	}
 
 	// Check if working directory exists and is accessible
-	if cmd.EffectiveWorkdir != "" {
-		exists, err := e.FS.FileExists(cmd.EffectiveWorkdir)
+	if cmd.EffectiveWorkDir != "" {
+		exists, err := e.FS.FileExists(cmd.EffectiveWorkDir)
 		if err != nil {
-			return fmt.Errorf("failed to check directory %s: %w", cmd.EffectiveWorkdir, err)
+			return fmt.Errorf("failed to check directory %s: %w", cmd.EffectiveWorkDir, err)
 		}
 		if !exists {
-			return fmt.Errorf("working directory %q does not exist: %w", cmd.EffectiveWorkdir, ErrDirNotExists)
+			return fmt.Errorf("working directory %q does not exist: %w", cmd.EffectiveWorkDir, ErrDirNotExists)
 		}
 	}
 
@@ -315,7 +315,7 @@ func (w *outputWrapper) GetBuffer() []byte {
 
 // validatePrivilegedCommand performs additional security checks specifically for privileged commands
 // This adds an extra layer of security validation beyond the basic validation
-func (e *DefaultExecutor) validatePrivilegedCommand(cmd runnertypes.Command) error {
+func (e *DefaultExecutor) validatePrivilegedCommand(cmd *runnertypes.RuntimeCommand) error {
 	if cmd.ExpandedCmd == "" {
 		return ErrEmptyCommand
 	}
@@ -326,8 +326,8 @@ func (e *DefaultExecutor) validatePrivilegedCommand(cmd runnertypes.Command) err
 	}
 
 	// Ensure working directory is also absolute for privileged commands
-	if cmd.EffectiveWorkdir != "" && !filepath.IsAbs(cmd.EffectiveWorkdir) {
-		return fmt.Errorf("%w: privileged commands must use absolute working directory paths: %s", ErrPrivilegedCmdSecurity, cmd.EffectiveWorkdir)
+	if cmd.EffectiveWorkDir != "" && !filepath.IsAbs(cmd.EffectiveWorkDir) {
+		return fmt.Errorf("%w: privileged commands must use absolute working directory paths: %s", ErrPrivilegedCmdSecurity, cmd.EffectiveWorkDir)
 	}
 
 	// Additional validation could include:

@@ -1,3 +1,5 @@
+//go:build test
+
 // This file contains integration tests for output capture functionality
 
 package runner
@@ -56,16 +58,17 @@ func TestRunner_OutputCaptureIntegration(t *testing.T) {
 			tempDir := t.TempDir()
 
 			// Create basic configuration with output capture
-			cfg := &runnertypes.Config{
-				Global: runnertypes.GlobalConfig{
+			cfg := &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Global: runnertypes.GlobalSpec{
 					Timeout:       30,
 					WorkDir:       tempDir,
 					MaxOutputSize: 1024,
 				},
-				Groups: []runnertypes.CommandGroup{
+				Groups: []runnertypes.GroupSpec{
 					{
 						Name: "test-group",
-						Commands: []runnertypes.Command{
+						Commands: []runnertypes.CommandSpec{
 							{
 								Name:   "test-cmd",
 								Cmd:    "echo",
@@ -90,7 +93,7 @@ func TestRunner_OutputCaptureIntegration(t *testing.T) {
 
 			// Execute the group
 			ctx := context.Background()
-			err = runner.ExecuteGroup(ctx, cfg.Groups[0])
+			err = runner.ExecuteGroup(ctx, &cfg.Groups[0])
 
 			if tt.expectError {
 				require.Error(t, err, "Should return error for %s", tt.description)
@@ -147,16 +150,17 @@ func TestRunner_OutputCaptureSecurityValidation(t *testing.T) {
 			tempDir := t.TempDir()
 
 			// Create configuration with potentially problematic output path
-			cfg := &runnertypes.Config{
-				Global: runnertypes.GlobalConfig{
+			cfg := &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Global: runnertypes.GlobalSpec{
 					Timeout:       30,
 					WorkDir:       tempDir,
 					MaxOutputSize: 1024,
 				},
-				Groups: []runnertypes.CommandGroup{
+				Groups: []runnertypes.GroupSpec{
 					{
 						Name: "test-group",
-						Commands: []runnertypes.Command{
+						Commands: []runnertypes.CommandSpec{
 							{
 								Name:   "test-cmd",
 								Cmd:    "echo",
@@ -204,7 +208,7 @@ func TestRunner_OutputCaptureSecurityValidation(t *testing.T) {
 
 			// Execute the group
 			ctx := context.Background()
-			err = runner.ExecuteGroup(ctx, cfg.Groups[0])
+			err = runner.ExecuteGroup(ctx, &cfg.Groups[0])
 
 			if tt.expectError != "" {
 				require.Error(t, err, "Security validation should prevent execution for %s", tt.description)

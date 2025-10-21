@@ -17,7 +17,7 @@ type MockExecutor struct {
 
 // Execute implements executor.CommandExecutor.Execute with safe nil handling.
 // If the mock returns nil as the result, it safely returns nil without panicking.
-func (m *MockExecutor) Execute(ctx context.Context, cmd runnertypes.Command, env map[string]string, outputWriter executor.OutputWriter) (*executor.Result, error) {
+func (m *MockExecutor) Execute(ctx context.Context, cmd *runnertypes.RuntimeCommand, env map[string]string, outputWriter executor.OutputWriter) (*executor.Result, error) {
 	args := m.Called(ctx, cmd, env, outputWriter)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -26,7 +26,7 @@ func (m *MockExecutor) Execute(ctx context.Context, cmd runnertypes.Command, env
 }
 
 // Validate implements executor.CommandExecutor.Validate.
-func (m *MockExecutor) Validate(cmd runnertypes.Command) error {
+func (m *MockExecutor) Validate(cmd *runnertypes.RuntimeCommand) error {
 	args := m.Called(cmd)
 	return args.Error(0)
 }

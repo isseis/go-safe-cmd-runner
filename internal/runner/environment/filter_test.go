@@ -9,7 +9,7 @@ import (
 )
 
 func TestNewFilter(t *testing.T) {
-	config := &runnertypes.Config{}
+	config := &runnertypes.ConfigSpec{}
 	filter := NewFilter(config.Global.EnvAllowlist)
 
 	require.NotNil(t, filter, "NewFilter returned nil")
@@ -18,7 +18,7 @@ func TestNewFilter(t *testing.T) {
 func TestDetermineInheritanceMode(t *testing.T) {
 	tests := []struct {
 		name         string
-		group        *runnertypes.CommandGroup
+		group        *runnertypes.GroupSpec
 		expectedMode runnertypes.InheritanceMode
 		expectError  bool
 	}{
@@ -29,7 +29,7 @@ func TestDetermineInheritanceMode(t *testing.T) {
 		},
 		{
 			name: "nil allowlist should inherit",
-			group: &runnertypes.CommandGroup{
+			group: &runnertypes.GroupSpec{
 				Name:         "test",
 				EnvAllowlist: nil,
 			},
@@ -37,7 +37,7 @@ func TestDetermineInheritanceMode(t *testing.T) {
 		},
 		{
 			name: "empty allowlist should reject",
-			group: &runnertypes.CommandGroup{
+			group: &runnertypes.GroupSpec{
 				Name:         "test",
 				EnvAllowlist: []string{},
 			},
@@ -45,7 +45,7 @@ func TestDetermineInheritanceMode(t *testing.T) {
 		},
 		{
 			name: "non-empty allowlist should be explicit",
-			group: &runnertypes.CommandGroup{
+			group: &runnertypes.GroupSpec{
 				Name:         "test",
 				EnvAllowlist: []string{"VAR1", "VAR2"},
 			},
@@ -55,7 +55,7 @@ func TestDetermineInheritanceMode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			filter := NewFilter((&runnertypes.Config{}).Global.EnvAllowlist)
+			filter := NewFilter((&runnertypes.ConfigSpec{}).Global.EnvAllowlist)
 			var allowlist []string
 			if tt.group != nil {
 				allowlist = tt.group.EnvAllowlist
@@ -77,33 +77,33 @@ func TestDetermineInheritanceMode(t *testing.T) {
 }
 
 func TestIsVariableAccessAllowedWithInheritance(t *testing.T) {
-	config := &runnertypes.Config{
-		Global: runnertypes.GlobalConfig{
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
 			EnvAllowlist: []string{"GLOBAL_VAR", "COMMON_VAR"},
 		},
 	}
 
 	// Groups for testing different inheritance modes
-	groupInherit := &runnertypes.CommandGroup{
+	groupInherit := &runnertypes.GroupSpec{
 		Name:         "group-inherit",
 		EnvAllowlist: nil, // Inherit from global
 	}
-	groupExplicit := &runnertypes.CommandGroup{
+	groupExplicit := &runnertypes.GroupSpec{
 		Name:         "group-explicit",
 		EnvAllowlist: []string{"GROUP_VAR", "COMMON_VAR"}, // Explicit allowlist
 	}
-	groupReject := &runnertypes.CommandGroup{
+	groupReject := &runnertypes.GroupSpec{
 		Name:         "group-reject",
 		EnvAllowlist: []string{}, // Reject all
 	}
-	groupNil := (*runnertypes.CommandGroup)(nil)
+	groupNil := (*runnertypes.GroupSpec)(nil)
 
 	filter := NewFilter(config.Global.EnvAllowlist)
 
 	tests := []struct {
 		name     string
 		variable string
-		group    *runnertypes.CommandGroup
+		group    *runnertypes.GroupSpec
 		expected bool
 	}{
 		// --- InheritanceModeInherit ---

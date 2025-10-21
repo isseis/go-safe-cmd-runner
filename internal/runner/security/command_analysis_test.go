@@ -20,7 +20,7 @@ func TestAnalyzeCommandSecurity_Integration(t *testing.T) {
 		name            string
 		setupFile       func() string
 		args            []string
-		globalConfig    *runnertypes.GlobalConfig
+		globalConfig    *runnertypes.GlobalSpec
 		expectedRisk    runnertypes.RiskLevel
 		expectedPattern string
 		expectedReason  string
@@ -33,7 +33,7 @@ func TestAnalyzeCommandSecurity_Integration(t *testing.T) {
 				return "/bin/ls"
 			},
 			args: []string{},
-			globalConfig: &runnertypes.GlobalConfig{
+			globalConfig: &runnertypes.GlobalSpec{
 				SkipStandardPaths: true,
 			},
 			expectedRisk:   runnertypes.RiskLevelLow,
@@ -49,7 +49,7 @@ func TestAnalyzeCommandSecurity_Integration(t *testing.T) {
 				return testFile
 			},
 			args: []string{},
-			globalConfig: &runnertypes.GlobalConfig{
+			globalConfig: &runnertypes.GlobalSpec{
 				SkipStandardPaths: false, // Hash validation enabled
 			},
 			expectedRisk:   runnertypes.RiskLevelUnknown,

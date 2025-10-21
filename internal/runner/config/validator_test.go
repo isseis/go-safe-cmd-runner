@@ -21,21 +21,21 @@ func TestConfigValidator_ValidateConfig(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		config         *runnertypes.Config
+		config         *runnertypes.ConfigSpec
 		expectValid    bool
 		expectedErrors int
 	}{
 		{
 			name: "valid configuration",
-			config: &runnertypes.Config{
-				Global: runnertypes.GlobalConfig{
+			config: &runnertypes.ConfigSpec{
+				Global: runnertypes.GlobalSpec{
 					EnvAllowlist: []string{"PATH", "HOME"},
 				},
-				Groups: []runnertypes.CommandGroup{
+				Groups: []runnertypes.GroupSpec{
 					{
 						Name:         "test_group",
 						EnvAllowlist: []string{"GROUP_VAR"},
-						Commands: []runnertypes.Command{
+						Commands: []runnertypes.CommandSpec{
 							{
 								Name: "test_cmd",
 								Cmd:  "/bin/echo",
@@ -50,14 +50,14 @@ func TestConfigValidator_ValidateConfig(t *testing.T) {
 		},
 		{
 			name: "invalid configuration - empty group name",
-			config: &runnertypes.Config{
-				Global: runnertypes.GlobalConfig{
+			config: &runnertypes.ConfigSpec{
+				Global: runnertypes.GlobalSpec{
 					EnvAllowlist: []string{"PATH"},
 				},
-				Groups: []runnertypes.CommandGroup{
+				Groups: []runnertypes.GroupSpec{
 					{
 						Name: "", // Empty name should cause error
-						Commands: []runnertypes.Command{
+						Commands: []runnertypes.CommandSpec{
 							{
 								Name: "test_cmd",
 								Cmd:  "/bin/echo",
@@ -71,14 +71,14 @@ func TestConfigValidator_ValidateConfig(t *testing.T) {
 		},
 		{
 			name: "invalid configuration - empty command name",
-			config: &runnertypes.Config{
-				Global: runnertypes.GlobalConfig{
+			config: &runnertypes.ConfigSpec{
+				Global: runnertypes.GlobalSpec{
 					EnvAllowlist: []string{"PATH"},
 				},
-				Groups: []runnertypes.CommandGroup{
+				Groups: []runnertypes.GroupSpec{
 					{
 						Name: "test_group",
-						Commands: []runnertypes.Command{
+						Commands: []runnertypes.CommandSpec{
 							{
 								Name: "", // Empty command name should cause error
 								Cmd:  "/bin/echo",
@@ -92,14 +92,14 @@ func TestConfigValidator_ValidateConfig(t *testing.T) {
 		},
 		{
 			name: "invalid configuration - invalid variable name",
-			config: &runnertypes.Config{
-				Global: runnertypes.GlobalConfig{
+			config: &runnertypes.ConfigSpec{
+				Global: runnertypes.GlobalSpec{
 					EnvAllowlist: []string{"123INVALID"}, // Invalid variable name
 				},
-				Groups: []runnertypes.CommandGroup{
+				Groups: []runnertypes.GroupSpec{
 					{
 						Name: "test_group",
-						Commands: []runnertypes.Command{
+						Commands: []runnertypes.CommandSpec{
 							{
 								Name: "test_cmd",
 								Cmd:  "/bin/echo",
@@ -113,14 +113,14 @@ func TestConfigValidator_ValidateConfig(t *testing.T) {
 		},
 		{
 			name: "invalid configuration - duplicate group names",
-			config: &runnertypes.Config{
-				Global: runnertypes.GlobalConfig{
+			config: &runnertypes.ConfigSpec{
+				Global: runnertypes.GlobalSpec{
 					EnvAllowlist: []string{"PATH"},
 				},
-				Groups: []runnertypes.CommandGroup{
+				Groups: []runnertypes.GroupSpec{
 					{
 						Name: "duplicate_group",
-						Commands: []runnertypes.Command{
+						Commands: []runnertypes.CommandSpec{
 							{
 								Name: "test_cmd1",
 								Cmd:  "/bin/echo",
@@ -129,7 +129,7 @@ func TestConfigValidator_ValidateConfig(t *testing.T) {
 					},
 					{
 						Name: "duplicate_group", // Duplicate name should cause error
-						Commands: []runnertypes.Command{
+						Commands: []runnertypes.CommandSpec{
 							{
 								Name: "test_cmd2",
 								Cmd:  "/bin/echo",
@@ -143,14 +143,14 @@ func TestConfigValidator_ValidateConfig(t *testing.T) {
 		},
 		{
 			name: "valid configuration - empty group names are not considered duplicates",
-			config: &runnertypes.Config{
-				Global: runnertypes.GlobalConfig{
+			config: &runnertypes.ConfigSpec{
+				Global: runnertypes.GlobalSpec{
 					EnvAllowlist: []string{"PATH"},
 				},
-				Groups: []runnertypes.CommandGroup{
+				Groups: []runnertypes.GroupSpec{
 					{
 						Name: "", // Empty name
-						Commands: []runnertypes.Command{
+						Commands: []runnertypes.CommandSpec{
 							{
 								Name: "test_cmd1",
 								Cmd:  "/bin/echo",
@@ -159,7 +159,7 @@ func TestConfigValidator_ValidateConfig(t *testing.T) {
 					},
 					{
 						Name: "", // Another empty name - should not be considered duplicate
-						Commands: []runnertypes.Command{
+						Commands: []runnertypes.CommandSpec{
 							{
 								Name: "test_cmd2",
 								Cmd:  "/bin/echo",
@@ -173,14 +173,14 @@ func TestConfigValidator_ValidateConfig(t *testing.T) {
 		},
 		{
 			name: "invalid configuration - multiple duplicate groups",
-			config: &runnertypes.Config{
-				Global: runnertypes.GlobalConfig{
+			config: &runnertypes.ConfigSpec{
+				Global: runnertypes.GlobalSpec{
 					EnvAllowlist: []string{"PATH"},
 				},
-				Groups: []runnertypes.CommandGroup{
+				Groups: []runnertypes.GroupSpec{
 					{
 						Name: "group_a",
-						Commands: []runnertypes.Command{
+						Commands: []runnertypes.CommandSpec{
 							{
 								Name: "test_cmd1",
 								Cmd:  "/bin/echo",
@@ -189,7 +189,7 @@ func TestConfigValidator_ValidateConfig(t *testing.T) {
 					},
 					{
 						Name: "group_b",
-						Commands: []runnertypes.Command{
+						Commands: []runnertypes.CommandSpec{
 							{
 								Name: "test_cmd2",
 								Cmd:  "/bin/echo",
@@ -198,7 +198,7 @@ func TestConfigValidator_ValidateConfig(t *testing.T) {
 					},
 					{
 						Name: "group_a", // Duplicate of first group
-						Commands: []runnertypes.Command{
+						Commands: []runnertypes.CommandSpec{
 							{
 								Name: "test_cmd3",
 								Cmd:  "/bin/echo",
@@ -207,7 +207,7 @@ func TestConfigValidator_ValidateConfig(t *testing.T) {
 					},
 					{
 						Name: "group_b", // Duplicate of second group
-						Commands: []runnertypes.Command{
+						Commands: []runnertypes.CommandSpec{
 							{
 								Name: "test_cmd4",
 								Cmd:  "/bin/echo",
@@ -237,13 +237,13 @@ func TestConfigValidator_ValidateGlobalConfig(t *testing.T) {
 
 	tests := []struct {
 		name             string
-		global           *runnertypes.GlobalConfig
+		global           *runnertypes.GlobalSpec
 		expectedWarnings int
 		expectedErrors   int
 	}{
 		{
 			name: "valid global config",
-			global: &runnertypes.GlobalConfig{
+			global: &runnertypes.GlobalSpec{
 				EnvAllowlist: []string{"PATH", "HOME", "USER"},
 			},
 			expectedWarnings: 0,
@@ -251,7 +251,7 @@ func TestConfigValidator_ValidateGlobalConfig(t *testing.T) {
 		},
 		{
 			name: "empty global allowlist",
-			global: &runnertypes.GlobalConfig{
+			global: &runnertypes.GlobalSpec{
 				EnvAllowlist: []string{},
 			},
 			expectedWarnings: 1, // Should warn about empty allowlist
@@ -259,7 +259,7 @@ func TestConfigValidator_ValidateGlobalConfig(t *testing.T) {
 		},
 		{
 			name: "dangerous variables in global allowlist",
-			global: &runnertypes.GlobalConfig{
+			global: &runnertypes.GlobalSpec{
 				EnvAllowlist: []string{"PATH", "LD_PRELOAD"},
 			},
 			expectedWarnings: 1, // Should warn about dangerous variable
@@ -489,59 +489,59 @@ func TestConfigValidator_AnalyzeInheritanceMode(t *testing.T) {
 
 	tests := []struct {
 		name             string
-		group            *runnertypes.CommandGroup
-		global           *runnertypes.GlobalConfig
+		group            *runnertypes.GroupSpec
+		global           *runnertypes.GlobalSpec
 		expectedWarnings int
 	}{
 		{
 			name: "inherit mode with non-empty global",
-			group: &runnertypes.CommandGroup{
+			group: &runnertypes.GroupSpec{
 				Name:         "test_group",
 				EnvAllowlist: nil, // inherit mode
-				Commands:     []runnertypes.Command{},
+				Commands:     []runnertypes.CommandSpec{},
 			},
-			global: &runnertypes.GlobalConfig{
+			global: &runnertypes.GlobalSpec{
 				EnvAllowlist: []string{"PATH", "HOME"},
 			},
 			expectedWarnings: 0,
 		},
 		{
 			name: "inherit mode with empty global",
-			group: &runnertypes.CommandGroup{
+			group: &runnertypes.GroupSpec{
 				Name:         "test_group",
 				EnvAllowlist: nil, // inherit mode
-				Commands:     []runnertypes.Command{},
+				Commands:     []runnertypes.CommandSpec{},
 			},
-			global: &runnertypes.GlobalConfig{
+			global: &runnertypes.GlobalSpec{
 				EnvAllowlist: []string{}, // empty global allowlist
 			},
 			expectedWarnings: 1,
 		},
 		{
 			name: "reject mode with command env",
-			group: &runnertypes.CommandGroup{
+			group: &runnertypes.GroupSpec{
 				Name:         "test_group",
 				EnvAllowlist: []string{}, // reject mode
-				Commands: []runnertypes.Command{
+				Commands: []runnertypes.CommandSpec{
 					{
 						Name: "test_cmd",
 						Env:  []string{"FOO=bar"}, // has command env
 					},
 				},
 			},
-			global: &runnertypes.GlobalConfig{
+			global: &runnertypes.GlobalSpec{
 				EnvAllowlist: []string{"PATH"},
 			},
 			expectedWarnings: 1,
 		},
 		{
 			name: "explicit mode",
-			group: &runnertypes.CommandGroup{
+			group: &runnertypes.GroupSpec{
 				Name:         "test_group",
 				EnvAllowlist: []string{"GROUP_VAR"}, // explicit mode
-				Commands:     []runnertypes.Command{},
+				Commands:     []runnertypes.CommandSpec{},
 			},
-			global: &runnertypes.GlobalConfig{
+			global: &runnertypes.GlobalSpec{
 				EnvAllowlist: []string{"PATH"},
 			},
 			expectedWarnings: 0,
@@ -563,15 +563,15 @@ func TestConfigValidator_AnalyzeInheritanceMode(t *testing.T) {
 func TestConfigValidator_CalculateSummary(t *testing.T) {
 	validator := NewConfigValidator()
 
-	config := &runnertypes.Config{
-		Global: runnertypes.GlobalConfig{
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
 			EnvAllowlist: []string{"PATH", "HOME"},
 		},
-		Groups: []runnertypes.CommandGroup{
+		Groups: []runnertypes.GroupSpec{
 			{
 				Name:         "group1",
 				EnvAllowlist: []string{"GROUP_VAR"}, // explicit allowlist
-				Commands: []runnertypes.Command{
+				Commands: []runnertypes.CommandSpec{
 					{
 						Name: "cmd1",
 						Env:  []string{"FOO=bar"}, // has env
@@ -585,7 +585,7 @@ func TestConfigValidator_CalculateSummary(t *testing.T) {
 			{
 				Name:         "group2",
 				EnvAllowlist: nil, // inherit mode
-				Commands: []runnertypes.Command{
+				Commands: []runnertypes.CommandSpec{
 					{
 						Name: "cmd3",
 						Env:  []string{"BAZ=qux"}, // has env
@@ -714,12 +714,12 @@ func TestConfigValidator_ValidatePrivilegedCommand(t *testing.T) {
 
 	tests := []struct {
 		name             string
-		cmd              *runnertypes.Command
+		cmd              *runnertypes.CommandSpec
 		expectedWarnings int
 	}{
 		{
 			name: "non-privileged command",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Name: "test_cmd",
 				Cmd:  "/bin/echo",
 				Args: []string{"hello"},
@@ -729,7 +729,7 @@ func TestConfigValidator_ValidatePrivilegedCommand(t *testing.T) {
 		},
 		{
 			name: "privileged command - run_as_user only",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Name:      "test_cmd",
 				Cmd:       "/bin/echo",
 				Args:      []string{"hello"},
@@ -739,7 +739,7 @@ func TestConfigValidator_ValidatePrivilegedCommand(t *testing.T) {
 		},
 		{
 			name: "privileged command - run_as_group only",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Name:       "test_cmd",
 				Cmd:        "/bin/echo",
 				Args:       []string{"hello"},
@@ -749,7 +749,7 @@ func TestConfigValidator_ValidatePrivilegedCommand(t *testing.T) {
 		},
 		{
 			name: "privileged command - both user and group",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Name:       "test_cmd",
 				Cmd:        "/bin/echo",
 				Args:       []string{"hello"},
@@ -760,7 +760,7 @@ func TestConfigValidator_ValidatePrivilegedCommand(t *testing.T) {
 		},
 		{
 			name: "privileged command - relative path",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Name:      "test_cmd",
 				Cmd:       "echo", // relative path
 				Args:      []string{"hello"},
@@ -770,7 +770,7 @@ func TestConfigValidator_ValidatePrivilegedCommand(t *testing.T) {
 		},
 		{
 			name: "privileged command - shell metacharacters in args",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Name:      "test_cmd",
 				Cmd:       "/bin/echo",
 				Args:      []string{"hello; rm -rf /"},
@@ -780,7 +780,7 @@ func TestConfigValidator_ValidatePrivilegedCommand(t *testing.T) {
 		},
 		{
 			name: "root privileged command - dangerous command",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Name:      "dangerous_cmd",
 				Cmd:       "/bin/rm",
 				Args:      []string{"-rf", "/var/*"},
@@ -807,12 +807,12 @@ func TestConfigValidator_ValidateRootPrivilegedCommand(t *testing.T) {
 
 	tests := []struct {
 		name             string
-		cmd              *runnertypes.Command
+		cmd              *runnertypes.CommandSpec
 		expectedWarnings int
 	}{
 		{
 			name: "safe root command",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Name:      "safe_cmd",
 				Cmd:       "/bin/echo",
 				Args:      []string{"hello"},
@@ -822,7 +822,7 @@ func TestConfigValidator_ValidateRootPrivilegedCommand(t *testing.T) {
 		},
 		{
 			name: "dangerous root command - rm",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Name:      "dangerous_rm",
 				Cmd:       "/bin/rm",
 				Args:      []string{"-rf", "/tmp/test"},
@@ -832,7 +832,7 @@ func TestConfigValidator_ValidateRootPrivilegedCommand(t *testing.T) {
 		},
 		{
 			name: "dangerous root command - dd",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Name:      "dangerous_dd",
 				Cmd:       "/bin/dd",
 				Args:      []string{"if=/dev/zero", "of=/dev/sda"},
@@ -842,7 +842,7 @@ func TestConfigValidator_ValidateRootPrivilegedCommand(t *testing.T) {
 		},
 		{
 			name: "root command with wildcards",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Name:      "wildcard_cmd",
 				Cmd:       "/bin/ls",
 				Args:      []string{"/var/*", "/tmp/?"},
@@ -852,7 +852,7 @@ func TestConfigValidator_ValidateRootPrivilegedCommand(t *testing.T) {
 		},
 		{
 			name: "root command with system critical paths",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Name:      "critical_path_cmd",
 				Cmd:       "/bin/ls",
 				Args:      []string{"/", "/etc", "/var/log"},
@@ -862,7 +862,7 @@ func TestConfigValidator_ValidateRootPrivilegedCommand(t *testing.T) {
 		},
 		{
 			name: "root command with force flag",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Name:      "force_cmd",
 				Cmd:       "/bin/cp",
 				Args:      []string{"--force", "--recursive", "/src", "/dst"},
@@ -872,7 +872,7 @@ func TestConfigValidator_ValidateRootPrivilegedCommand(t *testing.T) {
 		},
 		{
 			name: "non-root privileged command",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Name:      "non_root_cmd",
 				Cmd:       "/bin/rm",
 				Args:      []string{"-rf", "/tmp/*"},
@@ -882,7 +882,7 @@ func TestConfigValidator_ValidateRootPrivilegedCommand(t *testing.T) {
 		},
 		{
 			name: "root command (username)",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Name:      "root_username_cmd",
 				Cmd:       "/bin/rm",
 				Args:      []string{"-f", "/tmp/test"},

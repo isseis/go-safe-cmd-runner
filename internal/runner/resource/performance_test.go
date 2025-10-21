@@ -1,3 +1,6 @@
+//go:build test
+// +build test
+
 package resource
 
 import (
@@ -25,16 +28,16 @@ func BenchmarkDryRunPerformance(b *testing.B) {
 	for _, bm := range benchmarks {
 		b.Run(bm.name, func(b *testing.B) {
 			// Create test commands
-			commands := make([]runnertypes.Command, bm.numCommands)
+			commands := make([]*runnertypes.RuntimeCommand, bm.numCommands)
 			for i := 0; i < bm.numCommands; i++ {
-				commands[i] = runnertypes.Command{
+				commands[i] = createRuntimeCommand(&runnertypes.CommandSpec{
 					Name:        "test-cmd",
 					Description: "Benchmark test command",
 					Cmd:         "echo test",
-				}
+				})
 			}
 
-			group := &runnertypes.CommandGroup{
+			group := &runnertypes.GroupSpec{
 				Name:        "benchmark-group",
 				Description: "Benchmark test group",
 				Priority:    1,
@@ -146,13 +149,13 @@ func BenchmarkFormatterPerformance(b *testing.B) {
 
 // BenchmarkResourceManagerModeSwitch benchmarks mode switching performance
 func BenchmarkResourceManagerModeSwitch(b *testing.B) {
-	command := runnertypes.Command{
+	cmd := createRuntimeCommand(&runnertypes.CommandSpec{
 		Name:        "switch-test",
 		Description: "Mode switch test",
 		Cmd:         "echo switch test",
-	}
+	})
 
-	group := &runnertypes.CommandGroup{
+	group := &runnertypes.GroupSpec{
 		Name:        "switch-group",
 		Description: "Switch test group",
 		Priority:    1,
@@ -180,7 +183,7 @@ func BenchmarkResourceManagerModeSwitch(b *testing.B) {
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			_, err := manager.ExecuteCommand(ctx, command, group, envVars)
+			_, err := manager.ExecuteCommand(ctx, cmd, group, envVars)
 			if err != nil {
 				b.Fatalf("unexpected error: %v", err)
 			}
@@ -190,16 +193,16 @@ func BenchmarkResourceManagerModeSwitch(b *testing.B) {
 
 // BenchmarkMemoryUsage benchmarks memory usage during dry-run execution
 func BenchmarkMemoryUsage(b *testing.B) {
-	commands := make([]runnertypes.Command, 1000)
+	commands := make([]*runnertypes.RuntimeCommand, 1000)
 	for i := 0; i < 1000; i++ {
-		commands[i] = runnertypes.Command{
+		commands[i] = createRuntimeCommand(&runnertypes.CommandSpec{
 			Name:        "memory-test",
 			Description: "Memory usage test command",
 			Cmd:         "echo memory test",
-		}
+		})
 	}
 
-	group := &runnertypes.CommandGroup{
+	group := &runnertypes.GroupSpec{
 		Name:        "memory-group",
 		Description: "Memory test group",
 		Priority:    1,

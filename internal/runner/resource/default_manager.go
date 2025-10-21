@@ -66,8 +66,8 @@ func (d *DefaultResourceManager) activeManager() ResourceManager {
 }
 
 // ExecuteCommand delegates to the active manager.
-func (d *DefaultResourceManager) ExecuteCommand(ctx context.Context, cmd runnertypes.Command, group *runnertypes.CommandGroup, env map[string]string) (*ExecutionResult, error) {
-	return d.activeManager().ExecuteCommand(ctx, cmd, group, env)
+func (d *DefaultResourceManager) ExecuteCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, groupSpec *runnertypes.GroupSpec, env map[string]string) (*ExecutionResult, error) {
+	return d.activeManager().ExecuteCommand(ctx, cmd, groupSpec, env)
 }
 
 // ValidateOutputPath delegates to the active manager.

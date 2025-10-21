@@ -9,7 +9,7 @@ import (
 
 // Evaluator interface defines methods for evaluating command risk levels
 type Evaluator interface {
-	EvaluateRisk(cmd *runnertypes.Command) (runnertypes.RiskLevel, error)
+	EvaluateRisk(cmd *runnertypes.RuntimeCommand) (runnertypes.RiskLevel, error)
 }
 
 // StandardEvaluator implements risk evaluation using predefined patterns
@@ -21,7 +21,7 @@ func NewStandardEvaluator() Evaluator {
 }
 
 // EvaluateRisk analyzes a command and returns its risk level
-func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.Command) (runnertypes.RiskLevel, error) {
+func (e *StandardEvaluator) EvaluateRisk(cmd *runnertypes.RuntimeCommand) (runnertypes.RiskLevel, error) {
 	// Check for privilege escalation commands (critical risk - should be blocked)
 	isPrivEsc, err := security.IsPrivilegeEscalationCommand(cmd.ExpandedCmd)
 	if err != nil {

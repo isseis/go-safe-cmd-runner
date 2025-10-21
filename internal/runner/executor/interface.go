@@ -32,9 +32,9 @@ type CommandExecutor interface {
 	// - Write() calls are made during command execution as output is generated (streamed)
 	// - The outputWriter must remain valid for the entire duration of command execution
 	// - Multiple concurrent Write() calls may occur, so implementations must be thread-safe
-	Execute(ctx context.Context, cmd runnertypes.Command, env map[string]string, outputWriter OutputWriter) (*Result, error)
+	Execute(ctx context.Context, cmd *runnertypes.RuntimeCommand, env map[string]string, outputWriter OutputWriter) (*Result, error)
 	// Validate validates a command without executing it
-	Validate(cmd runnertypes.Command) error
+	Validate(cmd *runnertypes.RuntimeCommand) error
 }
 
 // Result contains the result of a command execution

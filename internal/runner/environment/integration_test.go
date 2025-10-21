@@ -1,4 +1,4 @@
-package environment
+package environment_test
 
 import (
 	"fmt"
@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/environment"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/variable"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -32,8 +33,8 @@ func TestIntegration_AutoEnvProviderAndExpander_AutoDateTime(t *testing.T) {
 	assert.NotEmpty(t, env["__runner_pid"])
 
 	// Create VariableExpander with empty filter (allow all)
-	filter := NewFilter([]string{})
-	expander := NewVariableExpander(filter)
+	filter := environment.NewFilter([]string{})
+	expander := environment.NewVariableExpander(filter)
 
 	// Expand string containing __runner_datetime
 	input := "backup-${__runner_datetime}.tar.gz"
@@ -59,8 +60,8 @@ func TestIntegration_AutoEnvProviderAndExpander_AutoPID(t *testing.T) {
 	assert.Equal(t, expectedPID, env["__runner_pid"])
 
 	// Create VariableExpander
-	filter := NewFilter([]string{})
-	expander := NewVariableExpander(filter)
+	filter := environment.NewFilter([]string{})
+	expander := environment.NewVariableExpander(filter)
 
 	// Expand string containing __runner_pid
 	input := "process-${__runner_pid}.log"
@@ -91,8 +92,8 @@ func TestIntegration_ManagerAndExpander_MultipleAutoVars(t *testing.T) {
 	env["host"] = "server01"
 
 	// Create VariableExpander
-	filter := NewFilter([]string{})
-	expander := NewVariableExpander(filter)
+	filter := environment.NewFilter([]string{})
+	expander := environment.NewVariableExpander(filter)
 
 	// Expand string with multiple auto variables
 	input := "${host}-${__runner_datetime}-${__runner_pid}.log"
@@ -124,8 +125,8 @@ func TestIntegration_ManagerAndExpander_ExpandStrings(t *testing.T) {
 	env["data_dir"] = "/data"
 
 	// Create VariableExpander
-	filter := NewFilter([]string{})
-	expander := NewVariableExpander(filter)
+	filter := environment.NewFilter([]string{})
+	expander := environment.NewVariableExpander(filter)
 
 	// Expand multiple strings (simulating command args)
 	inputs := []string{
@@ -166,8 +167,8 @@ func TestIntegration_ManagerAndExpander_RealTimeClock(t *testing.T) {
 		"__runner_datetime format should be YYYYMMDDHHmmSS.mmm, got: %s", datetime)
 
 	// Create VariableExpander
-	filter := NewFilter([]string{})
-	expander := NewVariableExpander(filter)
+	filter := environment.NewFilter([]string{})
+	expander := environment.NewVariableExpander(filter)
 
 	// Expand string with real datetime
 	input := "log-${__runner_datetime}.txt"
@@ -199,8 +200,8 @@ func TestIntegration_ManagerAndExpander_NoUserEnv(t *testing.T) {
 	assert.NotEmpty(t, env["__runner_pid"])
 
 	// Create VariableExpander
-	filter := NewFilter([]string{})
-	expander := NewVariableExpander(filter)
+	filter := environment.NewFilter([]string{})
+	expander := environment.NewVariableExpander(filter)
 
 	// Expand string with only auto variables
 	input := "${__runner_datetime}"
@@ -240,8 +241,8 @@ func TestIntegration_ManagerAndExpander_MixedWithSystemEnv(t *testing.T) {
 	assert.Equal(t, "value", env["custom"])
 
 	// Create VariableExpander
-	filter := NewFilter([]string{})
-	expander := NewVariableExpander(filter)
+	filter := environment.NewFilter([]string{})
+	expander := environment.NewVariableExpander(filter)
 
 	// Expand log_path which references __runner_datetime
 	logPath := env["log_path"]

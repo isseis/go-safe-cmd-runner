@@ -12,7 +12,7 @@ func TestShouldSkipHashValidation(t *testing.T) {
 	testCases := []struct {
 		name         string
 		cmdPath      string
-		globalConfig *runnertypes.GlobalConfig
+		globalConfig *runnertypes.GlobalSpec
 		expectedSkip bool
 	}{
 		{
@@ -24,7 +24,7 @@ func TestShouldSkipHashValidation(t *testing.T) {
 		{
 			name:    "SkipStandardPaths=false should not skip standard directory",
 			cmdPath: "/bin/ls",
-			globalConfig: &runnertypes.GlobalConfig{
+			globalConfig: &runnertypes.GlobalSpec{
 				SkipStandardPaths: false,
 			},
 			expectedSkip: false,
@@ -32,7 +32,7 @@ func TestShouldSkipHashValidation(t *testing.T) {
 		{
 			name:    "SkipStandardPaths=false should not skip non-standard directory",
 			cmdPath: "/home/user/script",
-			globalConfig: &runnertypes.GlobalConfig{
+			globalConfig: &runnertypes.GlobalSpec{
 				SkipStandardPaths: false,
 			},
 			expectedSkip: false,
@@ -40,7 +40,7 @@ func TestShouldSkipHashValidation(t *testing.T) {
 		{
 			name:    "SkipStandardPaths=true should skip standard directory",
 			cmdPath: "/bin/ls",
-			globalConfig: &runnertypes.GlobalConfig{
+			globalConfig: &runnertypes.GlobalSpec{
 				SkipStandardPaths: true,
 			},
 			expectedSkip: true,
@@ -48,7 +48,7 @@ func TestShouldSkipHashValidation(t *testing.T) {
 		{
 			name:    "SkipStandardPaths=true should not skip non-standard directory",
 			cmdPath: "/home/user/script",
-			globalConfig: &runnertypes.GlobalConfig{
+			globalConfig: &runnertypes.GlobalSpec{
 				SkipStandardPaths: true,
 			},
 			expectedSkip: false,
@@ -56,7 +56,7 @@ func TestShouldSkipHashValidation(t *testing.T) {
 		{
 			name:    "SkipStandardPaths=true should skip usr/bin",
 			cmdPath: "/usr/bin/cat",
-			globalConfig: &runnertypes.GlobalConfig{
+			globalConfig: &runnertypes.GlobalSpec{
 				SkipStandardPaths: true,
 			},
 			expectedSkip: true,
@@ -64,7 +64,7 @@ func TestShouldSkipHashValidation(t *testing.T) {
 		{
 			name:    "SkipStandardPaths=true should skip usr/sbin",
 			cmdPath: "/usr/sbin/systemctl",
-			globalConfig: &runnertypes.GlobalConfig{
+			globalConfig: &runnertypes.GlobalSpec{
 				SkipStandardPaths: true,
 			},
 			expectedSkip: true,

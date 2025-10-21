@@ -13,21 +13,19 @@ import (
 // Merge order (lower priority to higher priority):
 //  1. System environment variables (filtered by env_allowlist)
 //  2. Global.ExpandedEnv
-//  3. Group.ExpandedEnv
-//  4. Command.ExpandedEnv
+//  3. Command.ExpandedEnv
 //
 // Returns:
 //   - Map of environment variables to be passed to the child process
 func BuildProcessEnvironment(
-	global *runnertypes.GlobalConfig,
-	group *runnertypes.CommandGroup,
-	cmd *runnertypes.Command,
+	runtimeGlobal *runnertypes.RuntimeGlobal,
+	cmd *runnertypes.RuntimeCommand,
 ) map[string]string {
 	result := make(map[string]string)
 
 	// Step 1: Get system environment variables (filtered by allowlist)
 	systemEnv := getSystemEnvironment()
-	allowlist := resolveAllowlist(global, group)
+	allowlist := runtimeGlobal.EnvAllowlist()
 
 	for _, name := range allowlist {
 		if value, ok := systemEnv[name]; ok {
@@ -36,14 +34,9 @@ func BuildProcessEnvironment(
 	}
 
 	// Step 2: Merge Global.ExpandedEnv (overrides system env)
-	maps.Copy(result, global.ExpandedEnv)
+	maps.Copy(result, runtimeGlobal.ExpandedEnv)
 
-	// Step 3: Merge Group.ExpandedEnv (overrides global env)
-	if group != nil {
-		maps.Copy(result, group.ExpandedEnv)
-	}
-
-	// Step 4: Merge Command.ExpandedEnv (overrides group env)
+	// Step 3: Merge Command.ExpandedEnv (overrides global env)
 	maps.Copy(result, cmd.ExpandedEnv)
 
 	return result
@@ -58,12 +51,4 @@ func getSystemEnvironment() map[string]string {
 		}
 	}
 	return result
-}
-
-// resolveAllowlist determines the effective allowlist for a command.
-func resolveAllowlist(global *runnertypes.GlobalConfig, group *runnertypes.CommandGroup) []string {
-	if group != nil && group.EnvAllowlist != nil {
-		return group.EnvAllowlist
-	}
-	return global.EnvAllowlist
 }

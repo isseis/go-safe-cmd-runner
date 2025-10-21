@@ -126,8 +126,8 @@ func (m *Manager) ensureHashDirectoryValidated() error {
 }
 
 // VerifyGlobalFiles verifies the integrity of global files
-func (m *Manager) VerifyGlobalFiles(globalConfig *runnertypes.GlobalConfig) (*Result, error) {
-	if globalConfig == nil {
+func (m *Manager) VerifyGlobalFiles(runtimeGlobal *runnertypes.RuntimeGlobal) (*Result, error) {
+	if runtimeGlobal == nil {
 		return nil, ErrConfigNil
 	}
 
@@ -137,7 +137,7 @@ func (m *Manager) VerifyGlobalFiles(globalConfig *runnertypes.GlobalConfig) (*Re
 	}
 
 	result := &Result{
-		TotalFiles:   len(globalConfig.ExpandedVerifyFiles),
+		TotalFiles:   len(runtimeGlobal.ExpandedVerifyFiles),
 		FailedFiles:  []string{},
 		SkippedFiles: []string{},
 	}
@@ -149,10 +149,10 @@ func (m *Manager) VerifyGlobalFiles(globalConfig *runnertypes.GlobalConfig) (*Re
 
 	// Update PathResolver with skip_standard_paths setting
 	if m.pathResolver != nil {
-		m.pathResolver.skipStandardPaths = globalConfig.SkipStandardPaths
+		m.pathResolver.skipStandardPaths = runtimeGlobal.SkipStandardPaths()
 	}
 
-	for _, filePath := range globalConfig.ExpandedVerifyFiles {
+	for _, filePath := range runtimeGlobal.ExpandedVerifyFiles {
 		// Check if file should be skipped
 		if m.shouldSkipVerification(filePath) {
 			result.SkippedFiles = append(result.SkippedFiles, filePath)
@@ -192,8 +192,8 @@ func (m *Manager) VerifyGlobalFiles(globalConfig *runnertypes.GlobalConfig) (*Re
 }
 
 // VerifyGroupFiles verifies the integrity of group files
-func (m *Manager) VerifyGroupFiles(groupConfig *runnertypes.CommandGroup) (*Result, error) {
-	if groupConfig == nil {
+func (m *Manager) VerifyGroupFiles(groupSpec *runnertypes.GroupSpec) (*Result, error) {
+	if groupSpec == nil {
 		return nil, ErrConfigNil
 	}
 
@@ -203,7 +203,7 @@ func (m *Manager) VerifyGroupFiles(groupConfig *runnertypes.CommandGroup) (*Resu
 	}
 
 	// Collect all files to verify (explicit files + command files)
-	allFiles := m.collectVerificationFiles(groupConfig)
+	allFiles := m.collectVerificationFiles(groupSpec)
 
 	result := &Result{
 		TotalFiles:   len(allFiles),
@@ -220,7 +220,7 @@ func (m *Manager) VerifyGroupFiles(groupConfig *runnertypes.CommandGroup) (*Resu
 		if m.shouldSkipVerification(file) {
 			result.SkippedFiles = append(result.SkippedFiles, file)
 			slog.Info("Skipping verification for standard system path",
-				"group", groupConfig.Name,
+				"group", groupSpec.Name,
 				"file", file)
 			continue
 		}
@@ -229,7 +229,7 @@ func (m *Manager) VerifyGroupFiles(groupConfig *runnertypes.CommandGroup) (*Resu
 		if err := m.verifyFileWithFallback(file); err != nil {
 			result.FailedFiles = append(result.FailedFiles, file)
 			slog.Error("Group file verification failed",
-				"group", groupConfig.Name,
+				"group", groupSpec.Name,
 				"file", file,
 				"error", err)
 		} else {
@@ -240,7 +240,7 @@ func (m *Manager) VerifyGroupFiles(groupConfig *runnertypes.CommandGroup) (*Resu
 	if len(result.FailedFiles) > 0 {
 		return nil, &VerificationError{
 			Op:            "group",
-			Group:         groupConfig.Name,
+			Group:         groupSpec.Name,
 			Details:       result.FailedFiles,
 			TotalFiles:    result.TotalFiles,
 			VerifiedFiles: result.VerifiedFiles,
@@ -267,27 +267,33 @@ func (m *Manager) shouldSkipVerification(path string) bool {
 }
 
 // collectVerificationFiles collects all files to verify for a group
-func (m *Manager) collectVerificationFiles(groupConfig *runnertypes.CommandGroup) map[string]struct{} {
-	if groupConfig == nil {
+func (m *Manager) collectVerificationFiles(groupSpec *runnertypes.GroupSpec) map[string]struct{} {
+	if groupSpec == nil {
 		return make(map[string]struct{})
 	}
 
 	// Use map to automatically eliminate duplicates
-	fileSet := make(map[string]struct{}, len(groupConfig.ExpandedVerifyFiles)+len(groupConfig.Commands))
+	fileSet := make(map[string]struct{}, len(groupSpec.VerifyFiles)+len(groupSpec.Commands))
 
-	// Add explicit files
-	for _, file := range groupConfig.ExpandedVerifyFiles {
+	// Add explicit files (VerifyFiles from GroupSpec need to be expanded)
+	// NOTE: In the new architecture, VerifyFiles expansion is done by RuntimeGroup
+	// For now, we'll use the raw VerifyFiles from GroupSpec
+	// TODO: Pass RuntimeGroup here to use ExpandedVerifyFiles
+	for _, file := range groupSpec.VerifyFiles {
 		fileSet[file] = struct{}{}
 	}
 
 	// Add command files
 	if m.pathResolver != nil {
-		for _, command := range groupConfig.Commands {
-			resolvedPath, err := m.pathResolver.ResolvePath(command.ExpandedCmd)
+		for _, command := range groupSpec.Commands {
+			// NOTE: In the new architecture, command.Cmd needs to be expanded to ExpandedCmd
+			// For now, we'll use the raw Cmd from CommandSpec
+			// TODO: Pass expanded commands here
+			resolvedPath, err := m.pathResolver.ResolvePath(command.Cmd)
 			if err != nil {
 				slog.Warn("Failed to resolve command path",
-					"group", groupConfig.Name,
-					"command", command.ExpandedCmd,
+					"group", groupSpec.Name,
+					"command", command.Cmd,
 					"error", err.Error())
 				continue
 			}

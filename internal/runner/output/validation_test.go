@@ -13,7 +13,7 @@ func TestConfigValidator_ValidateGlobalConfig(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		config      *runnertypes.GlobalConfig
+		config      *runnertypes.GlobalSpec
 		expectError bool
 		expectedMax int64
 	}{
@@ -24,28 +24,28 @@ func TestConfigValidator_ValidateGlobalConfig(t *testing.T) {
 		},
 		{
 			name: "negative max output size",
-			config: &runnertypes.GlobalConfig{
+			config: &runnertypes.GlobalSpec{
 				MaxOutputSize: -1,
 			},
 			expectError: true,
 		},
 		{
 			name: "zero max output size (should be valid)",
-			config: &runnertypes.GlobalConfig{
+			config: &runnertypes.GlobalSpec{
 				MaxOutputSize: 0,
 			},
 			expectError: false,
 		},
 		{
 			name: "exceeds absolute maximum",
-			config: &runnertypes.GlobalConfig{
+			config: &runnertypes.GlobalSpec{
 				MaxOutputSize: AbsoluteMaxOutputSize + 1,
 			},
 			expectError: true,
 		},
 		{
 			name: "valid max output size",
-			config: &runnertypes.GlobalConfig{
+			config: &runnertypes.GlobalSpec{
 				MaxOutputSize: 5 * 1024 * 1024, // 5MB
 			},
 			expectError: false,
@@ -71,13 +71,13 @@ func TestConfigValidator_ValidateGlobalConfig(t *testing.T) {
 
 func TestConfigValidator_ValidateCommand(t *testing.T) {
 	validator := NewConfigValidator()
-	globalConfig := &runnertypes.GlobalConfig{
+	globalConfig := &runnertypes.GlobalSpec{
 		MaxOutputSize: DefaultMaxOutputSize,
 	}
 
 	tests := []struct {
 		name        string
-		command     *runnertypes.Command
+		command     *runnertypes.CommandSpec
 		expectError bool
 	}{
 		{
@@ -87,7 +87,7 @@ func TestConfigValidator_ValidateCommand(t *testing.T) {
 		},
 		{
 			name: "command without output",
-			command: &runnertypes.Command{
+			command: &runnertypes.CommandSpec{
 				Name: "test",
 				Cmd:  "echo",
 			},
@@ -95,7 +95,7 @@ func TestConfigValidator_ValidateCommand(t *testing.T) {
 		},
 		{
 			name: "valid command with output",
-			command: &runnertypes.Command{
+			command: &runnertypes.CommandSpec{
 				Name:   "test",
 				Cmd:    "echo",
 				Output: "output.txt",
@@ -104,7 +104,7 @@ func TestConfigValidator_ValidateCommand(t *testing.T) {
 		},
 		{
 			name: "command with path traversal",
-			command: &runnertypes.Command{
+			command: &runnertypes.CommandSpec{
 				Name:   "test",
 				Cmd:    "echo",
 				Output: "../../../etc/passwd",
@@ -113,7 +113,7 @@ func TestConfigValidator_ValidateCommand(t *testing.T) {
 		},
 		{
 			name: "command with system directory output",
-			command: &runnertypes.Command{
+			command: &runnertypes.CommandSpec{
 				Name:   "test",
 				Cmd:    "echo",
 				Output: "/etc/malicious.txt",
@@ -122,7 +122,7 @@ func TestConfigValidator_ValidateCommand(t *testing.T) {
 		},
 		{
 			name: "command with executable extension",
-			command: &runnertypes.Command{
+			command: &runnertypes.CommandSpec{
 				Name:   "test",
 				Cmd:    "echo",
 				Output: "malicious.sh",
@@ -146,23 +146,23 @@ func TestConfigValidator_ValidateCommand(t *testing.T) {
 
 func TestConfigValidator_ValidateCommands(t *testing.T) {
 	validator := NewConfigValidator()
-	globalConfig := &runnertypes.GlobalConfig{
+	globalConfig := &runnertypes.GlobalSpec{
 		MaxOutputSize: DefaultMaxOutputSize,
 	}
 
 	tests := []struct {
 		name        string
-		commands    []runnertypes.Command
+		commands    []runnertypes.CommandSpec
 		expectError bool
 	}{
 		{
 			name:        "empty commands",
-			commands:    []runnertypes.Command{},
+			commands:    []runnertypes.CommandSpec{},
 			expectError: false,
 		},
 		{
 			name: "valid commands",
-			commands: []runnertypes.Command{
+			commands: []runnertypes.CommandSpec{
 				{Name: "cmd1", Cmd: "echo", Output: "output1.txt"},
 				{Name: "cmd2", Cmd: "echo", Output: "output2.txt"},
 			},
@@ -170,7 +170,7 @@ func TestConfigValidator_ValidateCommands(t *testing.T) {
 		},
 		{
 			name: "conflicting output paths",
-			commands: []runnertypes.Command{
+			commands: []runnertypes.CommandSpec{
 				{Name: "cmd1", Cmd: "echo", Output: "output.txt"},
 				{Name: "cmd2", Cmd: "echo", Output: "output.txt"},
 			},
@@ -178,7 +178,7 @@ func TestConfigValidator_ValidateCommands(t *testing.T) {
 		},
 		{
 			name: "invalid command in slice",
-			commands: []runnertypes.Command{
+			commands: []runnertypes.CommandSpec{
 				{Name: "valid", Cmd: "echo", Output: "valid.txt"},
 				{Name: "invalid", Cmd: "echo", Output: "../../../etc/passwd"},
 			},
@@ -204,13 +204,13 @@ func TestConfigValidator_ValidateCommands(t *testing.T) {
 // This test verifies that conflict detection reports the correct command names.
 func TestConfigValidator_ValidateCommands_LoopVariablePointerFix(t *testing.T) {
 	validator := NewConfigValidator()
-	globalConfig := &runnertypes.GlobalConfig{
+	globalConfig := &runnertypes.GlobalSpec{
 		MaxOutputSize: DefaultMaxOutputSize,
 	}
 
 	// Create commands where multiple commands have the same output path
 	// This tests that the error message correctly identifies which commands conflict
-	commands := []runnertypes.Command{
+	commands := []runnertypes.CommandSpec{
 		{Name: "first_command", Cmd: "echo", Output: "different_output1.txt"},
 		{Name: "second_command", Cmd: "echo", Output: "different_output2.txt"},
 		{Name: "third_command", Cmd: "echo", Output: "conflicting_output.txt"}, // First to use this path
@@ -241,12 +241,12 @@ func TestConfigValidator_ValidateCommands_LoopVariablePointerFix(t *testing.T) {
 // multiple different path conflicts correctly, ensuring each conflict reports the right commands.
 func TestConfigValidator_ValidateCommands_MultipleConflictDetection(t *testing.T) {
 	validator := NewConfigValidator()
-	globalConfig := &runnertypes.GlobalConfig{
+	globalConfig := &runnertypes.GlobalSpec{
 		MaxOutputSize: DefaultMaxOutputSize,
 	}
 
 	// Test with multiple conflicting output paths to ensure the fix works in complex scenarios
-	commands := []runnertypes.Command{
+	commands := []runnertypes.CommandSpec{
 		{Name: "cmd_a", Cmd: "echo", Output: "output_1.txt"},
 		{Name: "cmd_b", Cmd: "echo", Output: "output_2.txt"},
 		{Name: "cmd_c", Cmd: "echo", Output: "output_1.txt"}, // Conflicts with cmd_a
@@ -269,7 +269,7 @@ func TestConfigValidator_ValidateConfigFile(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		config      *runnertypes.Config
+		config      *runnertypes.ConfigSpec
 		expectError bool
 	}{
 		{
@@ -279,14 +279,14 @@ func TestConfigValidator_ValidateConfigFile(t *testing.T) {
 		},
 		{
 			name: "valid config",
-			config: &runnertypes.Config{
-				Global: runnertypes.GlobalConfig{
+			config: &runnertypes.ConfigSpec{
+				Global: runnertypes.GlobalSpec{
 					MaxOutputSize: DefaultMaxOutputSize,
 				},
-				Groups: []runnertypes.CommandGroup{
+				Groups: []runnertypes.GroupSpec{
 					{
 						Name: "test",
-						Commands: []runnertypes.Command{
+						Commands: []runnertypes.CommandSpec{
 							{Name: "cmd1", Cmd: "echo", Output: "output.txt"},
 						},
 					},
@@ -296,8 +296,8 @@ func TestConfigValidator_ValidateConfigFile(t *testing.T) {
 		},
 		{
 			name: "invalid global config",
-			config: &runnertypes.Config{
-				Global: runnertypes.GlobalConfig{
+			config: &runnertypes.ConfigSpec{
+				Global: runnertypes.GlobalSpec{
 					MaxOutputSize: -1,
 				},
 			},
@@ -459,7 +459,7 @@ func TestConfigValidator_GenerateValidationReport(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		config         *runnertypes.Config
+		config         *runnertypes.ConfigSpec
 		expectedValid  bool
 		expectedErrors int
 	}{
@@ -471,14 +471,14 @@ func TestConfigValidator_GenerateValidationReport(t *testing.T) {
 		},
 		{
 			name: "valid config",
-			config: &runnertypes.Config{
-				Global: runnertypes.GlobalConfig{
+			config: &runnertypes.ConfigSpec{
+				Global: runnertypes.GlobalSpec{
 					MaxOutputSize: DefaultMaxOutputSize,
 				},
-				Groups: []runnertypes.CommandGroup{
+				Groups: []runnertypes.GroupSpec{
 					{
 						Name: "test",
-						Commands: []runnertypes.Command{
+						Commands: []runnertypes.CommandSpec{
 							{Name: "cmd1", Cmd: "echo", Output: "output.txt"},
 						},
 					},
@@ -489,14 +489,14 @@ func TestConfigValidator_GenerateValidationReport(t *testing.T) {
 		},
 		{
 			name: "invalid config with multiple errors",
-			config: &runnertypes.Config{
-				Global: runnertypes.GlobalConfig{
+			config: &runnertypes.ConfigSpec{
+				Global: runnertypes.GlobalSpec{
 					MaxOutputSize: -1, // Invalid
 				},
-				Groups: []runnertypes.CommandGroup{
+				Groups: []runnertypes.GroupSpec{
 					{
 						Name: "test",
-						Commands: []runnertypes.Command{
+						Commands: []runnertypes.CommandSpec{
 							{Name: "cmd1", Cmd: "echo", Output: "../../../etc/passwd"}, // Invalid
 						},
 					},
@@ -527,7 +527,7 @@ func TestConfigValidator_getEffectiveMaxSize(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		config       *runnertypes.GlobalConfig
+		config       *runnertypes.GlobalSpec
 		expectedSize int64
 	}{
 		{
@@ -537,21 +537,21 @@ func TestConfigValidator_getEffectiveMaxSize(t *testing.T) {
 		},
 		{
 			name: "zero max size",
-			config: &runnertypes.GlobalConfig{
+			config: &runnertypes.GlobalSpec{
 				MaxOutputSize: 0,
 			},
 			expectedSize: DefaultMaxOutputSize,
 		},
 		{
 			name: "negative max size",
-			config: &runnertypes.GlobalConfig{
+			config: &runnertypes.GlobalSpec{
 				MaxOutputSize: -1,
 			},
 			expectedSize: DefaultMaxOutputSize,
 		},
 		{
 			name: "valid max size",
-			config: &runnertypes.GlobalConfig{
+			config: &runnertypes.GlobalSpec{
 				MaxOutputSize: 5 * 1024 * 1024,
 			},
 			expectedSize: 5 * 1024 * 1024,
@@ -644,19 +644,19 @@ func TestConfigValidator_CustomSecurityConfig(t *testing.T) {
 func TestConfigValidator_FalsePositivePrevention(t *testing.T) {
 	// Test that string contains matching doesn't create false positives
 	validator := NewConfigValidator()
-	globalConfig := &runnertypes.GlobalConfig{
+	globalConfig := &runnertypes.GlobalSpec{
 		MaxOutputSize: DefaultMaxOutputSize,
 	}
 
 	tests := []struct {
 		name        string
-		command     *runnertypes.Command
+		command     *runnertypes.CommandSpec
 		expectError bool
 		description string
 	}{
 		{
 			name: "false_positive_etc_in_path",
-			command: &runnertypes.Command{
+			command: &runnertypes.CommandSpec{
 				Name:         "test",
 				Cmd:          "echo",
 				Output:       "/home/user/project-etc/file.txt",
@@ -667,7 +667,7 @@ func TestConfigValidator_FalsePositivePrevention(t *testing.T) {
 		},
 		{
 			name: "false_positive_root_in_path",
-			command: &runnertypes.Command{
+			command: &runnertypes.CommandSpec{
 				Name:         "test",
 				Cmd:          "echo",
 				Output:       "/home/user/project-root/file.txt",
@@ -678,7 +678,7 @@ func TestConfigValidator_FalsePositivePrevention(t *testing.T) {
 		},
 		{
 			name: "false_positive_bin_in_path",
-			command: &runnertypes.Command{
+			command: &runnertypes.CommandSpec{
 				Name:         "test",
 				Cmd:          "echo",
 				Output:       "/home/user/my-bin/file.txt",
@@ -689,7 +689,7 @@ func TestConfigValidator_FalsePositivePrevention(t *testing.T) {
 		},
 		{
 			name: "true_positive_actual_etc",
-			command: &runnertypes.Command{
+			command: &runnertypes.CommandSpec{
 				Name:         "test",
 				Cmd:          "echo",
 				Output:       "/etc/passwd",
@@ -700,7 +700,7 @@ func TestConfigValidator_FalsePositivePrevention(t *testing.T) {
 		},
 		{
 			name: "true_positive_actual_root",
-			command: &runnertypes.Command{
+			command: &runnertypes.CommandSpec{
 				Name:         "test",
 				Cmd:          "echo",
 				Output:       "/root/sensitive.txt",
@@ -711,7 +711,7 @@ func TestConfigValidator_FalsePositivePrevention(t *testing.T) {
 		},
 		{
 			name: "false_positive_etc_in_filename",
-			command: &runnertypes.Command{
+			command: &runnertypes.CommandSpec{
 				Name:         "test",
 				Cmd:          "echo",
 				Output:       "/home/user/etc-backup.txt",
@@ -781,19 +781,19 @@ func TestConfigValidator_RiskAssessmentFalsePositivePrevention(t *testing.T) {
 
 func TestConfigValidator_MaxRiskLevel(t *testing.T) {
 	validator := NewConfigValidator()
-	globalConfig := &runnertypes.GlobalConfig{
+	globalConfig := &runnertypes.GlobalSpec{
 		MaxOutputSize: DefaultMaxOutputSize,
 	}
 
 	tests := []struct {
 		name        string
-		command     *runnertypes.Command
+		command     *runnertypes.CommandSpec
 		expectError bool
 		description string
 	}{
 		{
 			name: "high risk path with max_risk_level high (should pass)",
-			command: &runnertypes.Command{
+			command: &runnertypes.CommandSpec{
 				Name:         "test",
 				Cmd:          "echo",
 				Output:       "malicious.sh", // High risk due to .sh extension
@@ -804,7 +804,7 @@ func TestConfigValidator_MaxRiskLevel(t *testing.T) {
 		},
 		{
 			name: "high risk path with max_risk_level low (should fail)",
-			command: &runnertypes.Command{
+			command: &runnertypes.CommandSpec{
 				Name:         "test",
 				Cmd:          "echo",
 				Output:       "malicious.sh", // High risk due to .sh extension
@@ -815,7 +815,7 @@ func TestConfigValidator_MaxRiskLevel(t *testing.T) {
 		},
 		{
 			name: "critical risk path with max_risk_level high (should fail)",
-			command: &runnertypes.Command{
+			command: &runnertypes.CommandSpec{
 				Name:         "test",
 				Cmd:          "echo",
 				Output:       "/etc/passwd", // Critical risk
@@ -826,7 +826,7 @@ func TestConfigValidator_MaxRiskLevel(t *testing.T) {
 		},
 		{
 			name: "medium risk path with max_risk_level medium (should pass)",
-			command: &runnertypes.Command{
+			command: &runnertypes.CommandSpec{
 				Name:         "test",
 				Cmd:          "echo",
 				Output:       "/tmp/output.txt", // Medium risk (tmp directory)
@@ -837,7 +837,7 @@ func TestConfigValidator_MaxRiskLevel(t *testing.T) {
 		},
 		{
 			name: "low risk path always passes",
-			command: &runnertypes.Command{
+			command: &runnertypes.CommandSpec{
 				Name:         "test",
 				Cmd:          "echo",
 				Output:       "output.txt", // Low risk (relative path)
@@ -848,7 +848,7 @@ func TestConfigValidator_MaxRiskLevel(t *testing.T) {
 		},
 		{
 			name: "default max_risk_level behavior (empty string defaults to low)",
-			command: &runnertypes.Command{
+			command: &runnertypes.CommandSpec{
 				Name:         "test",
 				Cmd:          "echo",
 				Output:       "malicious.sh", // High risk due to .sh extension

@@ -21,6 +21,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Helper function to create RuntimeCommand from CommandSpec
+func createRuntimeCommand(spec *runnertypes.CommandSpec) *runnertypes.RuntimeCommand {
+	return &runnertypes.RuntimeCommand{
+		Spec:             spec,
+		ExpandedCmd:      spec.Cmd,
+		ExpandedArgs:     spec.Args,
+		ExpandedEnv:      make(map[string]string),
+		ExpandedVars:     make(map[string]string),
+		EffectiveWorkDir: "",
+		EffectiveTimeout: 30,
+	}
+}
+
 // TestLargeOutputMemoryUsage tests memory usage with large output
 func TestLargeOutputMemoryUsage(t *testing.T) {
 	if testing.Short() {
@@ -31,15 +44,15 @@ func TestLargeOutputMemoryUsage(t *testing.T) {
 	outputPath := filepath.Join(tempDir, "large_output.txt")
 
 	// Create test configuration
-	cmd := runnertypes.Command{
+	cmdSpec := &runnertypes.CommandSpec{
 		Name:   "large_output_test",
 		Cmd:    "sh",
 		Args:   []string{"-c", "yes 'A' | head -c 10240"}, // 10KB of data
 		Output: outputPath,
 	}
-	runnertypes.PrepareCommand(&cmd)
+	runtimeCmd := createRuntimeCommand(cmdSpec)
 
-	group := &runnertypes.CommandGroup{Name: "test_group"}
+	groupSpec := &runnertypes.GroupSpec{Name: "test_group"}
 
 	// Create necessary components for ResourceManager
 	fs := common.NewDefaultFileSystem()
@@ -55,7 +68,7 @@ func TestLargeOutputMemoryUsage(t *testing.T) {
 	// Create resource manager and execute command
 	manager := resource.NewNormalResourceManager(exec, fs, privMgr, logger)
 	ctx := context.Background()
-	result, err := manager.ExecuteCommand(ctx, cmd, group, map[string]string{})
+	result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 
 	require.NoError(t, err)
 	require.Equal(t, 0, result.ExitCode)
@@ -108,15 +121,15 @@ func TestOutputSizeLimit(t *testing.T) {
 	outputPath := filepath.Join(tempDir, "size_limited_output.txt")
 
 	// Create command that generates more output than the limit
-	cmd := runnertypes.Command{
+	cmdSpec := &runnertypes.CommandSpec{
 		Name:   "size_limit_test",
 		Cmd:    "sh",
 		Args:   []string{"-c", "yes 'A' | head -c 2048"}, // 2KB of data
 		Output: outputPath,
 	}
-	runnertypes.PrepareCommand(&cmd)
+	runtimeCmd := createRuntimeCommand(cmdSpec)
 
-	group := &runnertypes.CommandGroup{Name: "test_group", WorkDir: tempDir}
+	groupSpec := &runnertypes.GroupSpec{Name: "test_group", WorkDir: tempDir}
 
 	// Create necessary components for ResourceManager with output capture
 	fs := common.NewDefaultFileSystem()
@@ -132,7 +145,7 @@ func TestOutputSizeLimit(t *testing.T) {
 	// Create resource manager with output capture support
 	manager := resource.NewNormalResourceManagerWithOutput(exec, fs, privMgr, outputMgr, maxOutputSize, logger)
 	ctx := context.Background()
-	result, err := manager.ExecuteCommand(ctx, cmd, group, map[string]string{})
+	result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 
 	// Should get an error due to size limit being exceeded
 	require.Error(t, err, "Expected error when output size limit is exceeded")
@@ -174,18 +187,18 @@ func TestConcurrentExecution(t *testing.T) {
 
 	for i := 0; i < numCommands; i++ {
 		go func(index int) {
-			cmd := runnertypes.Command{
+			cmdSpec := &runnertypes.CommandSpec{
 				Name:   fmt.Sprintf("concurrent_test_%d", index),
 				Cmd:    "echo",
 				Args:   []string{fmt.Sprintf("Output from command %d", index)},
 				Output: filepath.Join(tempDir, fmt.Sprintf("output_%d.txt", index)),
 			}
-			runnertypes.PrepareCommand(&cmd)
+			runtimeCmd := createRuntimeCommand(cmdSpec)
 
-			group := &runnertypes.CommandGroup{Name: "test_group"}
+			groupSpec := &runnertypes.GroupSpec{Name: "test_group"}
 
 			ctx := context.Background()
-			_, err := manager.ExecuteCommand(ctx, cmd, group, map[string]string{})
+			_, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 			results <- err
 		}(i)
 	}
@@ -227,16 +240,16 @@ func TestLongRunningStability(t *testing.T) {
 	outputPath := filepath.Join(tempDir, "long_running_output.txt")
 
 	// Create command that runs for a while and produces incremental output
-	cmd := runnertypes.Command{
+	cmdSpec := &runnertypes.CommandSpec{
 		Name:    "long_running_test",
 		Cmd:     "sh",
 		Args:    []string{"-c", "for i in $(seq 1 10); do echo \"Line $i\"; sleep 0.1; done"},
 		Output:  outputPath,
 		Timeout: 30,
 	}
-	runnertypes.PrepareCommand(&cmd)
+	runtimeCmd := createRuntimeCommand(cmdSpec)
 
-	group := &runnertypes.CommandGroup{Name: "test_group"}
+	groupSpec := &runnertypes.GroupSpec{Name: "test_group"}
 
 	// Create necessary components for ResourceManager
 	fs := common.NewDefaultFileSystem()
@@ -251,7 +264,7 @@ func TestLongRunningStability(t *testing.T) {
 
 	start := time.Now()
 	ctx := context.Background()
-	result, err := manager.ExecuteCommand(ctx, cmd, group, map[string]string{})
+	result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 	duration := time.Since(start)
 
 	require.NoError(t, err)
@@ -294,20 +307,20 @@ func BenchmarkOutputCapture(b *testing.B) {
 	b.Run("SmallOutput", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			outputPath := filepath.Join(tempDir, fmt.Sprintf("small_output_%d.txt", i))
-			cmd := runnertypes.Command{
+			cmdSpec := &runnertypes.CommandSpec{
 				Name:   "small_output_bench",
 				Cmd:    "echo",
 				Args:   []string{"small output"},
 				Output: outputPath,
 			}
-			runnertypes.PrepareCommand(&cmd)
+			runtimeCmd := createRuntimeCommand(cmdSpec)
 
-			group := &runnertypes.CommandGroup{
+			groupSpec := &runnertypes.GroupSpec{
 				Name: "bench_group",
 			}
 
 			ctx := context.Background()
-			_, err := manager.ExecuteCommand(ctx, cmd, group, map[string]string{})
+			_, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -319,20 +332,20 @@ func BenchmarkOutputCapture(b *testing.B) {
 		largeData := strings.Repeat("A", 100*1024) // 100KB
 		for i := 0; i < b.N; i++ {
 			outputPath := filepath.Join(tempDir, fmt.Sprintf("large_output_%d.txt", i))
-			cmd := runnertypes.Command{
+			cmdSpec := &runnertypes.CommandSpec{
 				Name:   "large_output_bench",
 				Cmd:    "echo",
 				Args:   []string{largeData},
 				Output: outputPath,
 			}
-			runnertypes.PrepareCommand(&cmd)
+			runtimeCmd := createRuntimeCommand(cmdSpec)
 
-			group := &runnertypes.CommandGroup{
+			groupSpec := &runnertypes.GroupSpec{
 				Name: "bench_group",
 			}
 
 			ctx := context.Background()
-			_, err := manager.ExecuteCommand(ctx, cmd, group, map[string]string{})
+			_, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -365,20 +378,20 @@ func TestMemoryLeakDetection(t *testing.T) {
 	// Execute many commands to detect memory leaks
 	for i := 0; i < iterations; i++ {
 		outputPath := filepath.Join(tempDir, fmt.Sprintf("leak_test_%d.txt", i))
-		cmd := runnertypes.Command{
+		cmdSpec := &runnertypes.CommandSpec{
 			Name:   fmt.Sprintf("leak_test_%d", i),
 			Cmd:    "echo",
 			Args:   []string{fmt.Sprintf("Test output %d", i)},
 			Output: outputPath,
 		}
-		runnertypes.PrepareCommand(&cmd)
+		runtimeCmd := createRuntimeCommand(cmdSpec)
 
-		group := &runnertypes.CommandGroup{
+		groupSpec := &runnertypes.GroupSpec{
 			Name: "leak_test_group",
 		}
 
 		ctx := context.Background()
-		result, err := manager.ExecuteCommand(ctx, cmd, group, map[string]string{})
+		result, err := manager.ExecuteCommand(ctx, runtimeCmd, groupSpec, map[string]string{})
 		require.NoError(t, err)
 		require.Equal(t, 0, result.ExitCode)
 

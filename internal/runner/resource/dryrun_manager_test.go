@@ -1,3 +1,6 @@
+//go:build test
+// +build test
+
 package resource
 
 import (
@@ -53,12 +56,12 @@ func TestDryRunResourceManager_ExecuteCommand(t *testing.T) {
 	assert.NotNil(t, result)
 	assert.Equal(t, 0, result.ExitCode)
 	assert.Contains(t, result.Stdout, "[DRY-RUN]")
-	assert.Contains(t, result.Stdout, cmd.Cmd)
+	assert.Contains(t, result.Stdout, cmd.ExpandedCmd)
 	assert.True(t, result.DryRun)
 	assert.NotNil(t, result.Analysis)
 	assert.Equal(t, ResourceTypeCommand, result.Analysis.Type)
 	assert.Equal(t, OperationExecute, result.Analysis.Operation)
-	assert.Equal(t, cmd.Cmd, result.Analysis.Target)
+	assert.Equal(t, cmd.ExpandedCmd, result.Analysis.Target)
 }
 
 func TestDryRunResourceManager_CreateTempDir(t *testing.T) {
@@ -173,13 +176,13 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 
 	tests := []struct {
 		name                 string
-		cmd                  runnertypes.Command
+		spec                 runnertypes.CommandSpec
 		expectedSecurityRisk string
 		expectedDescription  string
 	}{
 		{
 			name: "dangerous rm command with args",
-			cmd: runnertypes.Command{
+			spec: runnertypes.CommandSpec{
 				Name: "dangerous-rm",
 				Cmd:  "rm",
 				Args: []string{"-rf", "/important/data"},
@@ -189,7 +192,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 		},
 		{
 			name: "user/group privilege command",
-			cmd: runnertypes.Command{
+			spec: runnertypes.CommandSpec{
 				Name:      "restart-nginx",
 				Cmd:       "systemctl",
 				Args:      []string{"restart", "nginx"},
@@ -200,7 +203,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 		},
 		{
 			name: "normal command",
-			cmd: runnertypes.Command{
+			spec: runnertypes.CommandSpec{
 				Name: "list-files",
 				Cmd:  "ls",
 				Args: []string{"-la"},
@@ -210,7 +213,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 		},
 		{
 			name: "dangerous command with user specification should be high risk",
-			cmd: runnertypes.Command{
+			spec: runnertypes.CommandSpec{
 				Name:      "privileged-rm",
 				Cmd:       "sudo",
 				Args:      []string{"rm", "-rf", "/important/data"},
@@ -221,7 +224,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 		},
 		{
 			name: "dangerous command with args and user specification",
-			cmd: runnertypes.Command{
+			spec: runnertypes.CommandSpec{
 				Name:      "rm-privileged",
 				Cmd:       "rm",
 				Args:      []string{"-rf", "/important/data"},
@@ -232,7 +235,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 		},
 		{
 			name: "dd command with separate args",
-			cmd: runnertypes.Command{
+			spec: runnertypes.CommandSpec{
 				Name: "disk-dd",
 				Cmd:  "dd",
 				Args: []string{"if=/dev/zero", "of=/dev/sda", "bs=1M"},
@@ -242,7 +245,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 		},
 		{
 			name: "chmod with separate args",
-			cmd: runnertypes.Command{
+			spec: runnertypes.CommandSpec{
 				Name: "change-perms",
 				Cmd:  "chmod",
 				Args: []string{"777", "/tmp/test"},
@@ -252,7 +255,7 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 		},
 		{
 			name: "executable without setuid bit but with chmod 777 pattern",
-			cmd: runnertypes.Command{
+			spec: runnertypes.CommandSpec{
 				Name: "chmod-test",
 				Cmd:  "chmod", // Use the actual chmod command
 				Args: []string{"777", "/tmp/test"},
@@ -289,12 +292,11 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 		setuidManager, err := NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts)
 		require.NoError(t, err)
 
-		cmd := runnertypes.Command{
+		cmd := createRuntimeCommand(&runnertypes.CommandSpec{
 			Name: "setuid-chmod",
 			Cmd:  "setuid-chmod",
 			Args: []string{"777", "/tmp/test"}, // This would normally be medium risk
-		}
-		runnertypes.PrepareCommand(&cmd)
+		})
 
 		ctx := context.Background()
 		group := createTestCommandGroup()
@@ -313,9 +315,9 @@ func TestDryRunResourceManager_SecurityAnalysis(t *testing.T) {
 			ctx := context.Background()
 			group := createTestCommandGroup()
 			env := map[string]string{}
-			runnertypes.PrepareCommand(&tt.cmd)
+			cmd := createRuntimeCommand(&tt.spec)
 
-			result, err := manager.ExecuteCommand(ctx, tt.cmd, group, env)
+			result, err := manager.ExecuteCommand(ctx, cmd, group, env)
 
 			assert.NoError(t, err)
 			assert.NotNil(t, result.Analysis)
@@ -357,12 +359,11 @@ func TestDryRunResourceManager_PathResolutionFailure(t *testing.T) {
 	}
 	require.NoError(t, err)
 
-	cmd := runnertypes.Command{
+	cmd := createRuntimeCommand(&runnertypes.CommandSpec{
 		Name: "test-failure",
 		Cmd:  "nonexistent-cmd",
 		Args: []string{"arg1"},
-	}
-	runnertypes.PrepareCommand(&cmd)
+	})
 	group := createTestCommandGroup()
 	env := map[string]string{}
 	ctx := context.Background()
