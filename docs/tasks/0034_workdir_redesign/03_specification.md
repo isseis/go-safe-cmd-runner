@@ -521,7 +521,7 @@ func (e *DefaultGroupExecutor) resolveGroupWorkDir(
 // 優先度: RuntimeCommand.EffectiveWorkDir > RuntimeGroup.EffectiveWorkDir
 //
 // Task 0035 による変更点:
-//   - 引数: (*runnertypes.Command, *runnertypes.CommandGroup) → *runnertypes.RuntimeCommand
+//   - 引数: (*runnertypes.Command, *runnertypes.CommandGroup) → (*runnertypes.RuntimeCommand, *runnertypes.RuntimeGroup)
 //   - RuntimeCommand は RuntimeGroup への参照を持つ（将来実装予定）
 func (e *DefaultCommandExecutor) resolveCommandWorkDir(
     runtimeCmd *runnertypes.RuntimeCommand,
