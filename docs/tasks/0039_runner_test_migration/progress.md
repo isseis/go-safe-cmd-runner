@@ -40,19 +40,29 @@
 - `phase1_1_analysis_report.md`: 詳細分析レポート
 
 #### 1.2 設計方針の決定
-- **状態**: ⏸️ 未開始
-- **推定工数**: 0.5-1時間
-- **実績工数**: -
-- **完了日**: -
+- **状態**: ✅ 完了
+- **推定工数**: 0.5-1時間 → 修正: 1-1.5時間
+- **実績工数**: 1時間
+- **完了日**: 2025-10-21
 
 **チェックリスト**:
-- [ ] EffectiveWorkDir の扱い方を決定（RuntimeCommand使用 or 別の方法）
-- [ ] TempDir の代替実装方法を決定（スキップ or ワークディレクトリで代替）
-- [ ] モックメソッドの追加/修正方針を決定
-- [ ] 設計ドキュメントを作成
+- [x] EffectiveWorkDir の扱い方を決定（RuntimeCommand使用 or 別の方法）
+- [x] TempDir の代替実装方法を決定（スキップ or ワークディレクトリで代替）
+- [x] モックメソッドの追加/修正方針を決定
+- [x] 設計ドキュメントを作成
 
 **設計決定事項**:
-- (未実施)
+1. **EffectiveWorkdir**: `createTestRuntimeCommand` ヘルパー関数を使用（executor_test.goパターン踏襲）
+2. **SetupFailedMockExecution**: 既存の `setupFailedMockExecution` 関数を使用（test_helpers.goに存在）
+3. **TempDir**: Go標準の `t.TempDir()` を使用
+
+**成果物**:
+- `phase1_2_design_decision.md`: 詳細設計ドキュメント
+
+**工数改善**:
+- Phase 2: 3-5h → 1-2h (モック実装既存)
+- Phase 3: 12-20h → 8-12h (解決策明確化)
+- 合計: 19-31h → 13-19h (約6-12h短縮)
 
 #### 1.3 移行計画の詳細化
 - **状態**: ⏸️ 未開始
