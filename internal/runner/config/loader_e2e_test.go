@@ -54,14 +54,18 @@ func TestE2E_CompleteConfiguration(t *testing.T) {
 	t.Run("GlobalVerifyFiles", func(t *testing.T) {
 		// Global.ExpandedVerifyFiles should reference Global.Env variables
 		require.Len(t, runtimeGlobal.ExpandedVerifyFiles, 1, "Global should have 1 expanded verify_files entry")
-		assert.Equal(t, "/opt/app/verify.sh", cfg.Global.ExpandedVerifyFiles[0],
+		assert.Equal(t, "/opt/app/verify.sh", runtimeGlobal.ExpandedVerifyFiles[0],
 			"Global.ExpandedVerifyFiles should expand BASE_DIR")
 	})
 
 	// Verify Database Group
 	t.Run("DatabaseGroup", func(t *testing.T) {
-		dbGroup := findGroup(t, cfg, "database")
-		require.NotNil(t, dbGroup, "Database group should exist")
+		dbGroupSpec := findGroup(t, cfg, "database")
+		require.NotNil(t, dbGroupSpec, "Database group should exist")
+
+		// Expand the group to get RuntimeGroup
+		dbGroup, err := ExpandGroup(dbGroupSpec, runtimeGlobal.ExpandedVars)
+		require.NoError(t, err, "ExpandGroup should succeed for database group")
 		require.NotNil(t, dbGroup.ExpandedEnv, "Database group ExpandedEnv should be initialized")
 
 		// Check Group.Env variables are expanded and reference Global.Env
@@ -338,15 +342,23 @@ verify_files = ["%{group_dir}/group_verify.sh"]
 	require.NoError(t, err, "Failed to load test configuration")
 	require.NotNil(t, cfg, "Configuration should not be nil")
 
+	// Expand global configuration to get RuntimeGlobal
+	runtimeGlobal, err := ExpandGlobal(&cfg.Global)
+	require.NoError(t, err, "Failed to expand global configuration")
+
 	t.Run("GlobalVerifyFiles", func(t *testing.T) {
-		require.Len(t, cfg.Global.ExpandedVerifyFiles, 1, "Global should have 1 expanded verify_files entry")
-		assert.Equal(t, "/global/global_verify.sh", cfg.Global.ExpandedVerifyFiles[0],
+		require.Len(t, runtimeGlobal.ExpandedVerifyFiles, 1, "Global should have 1 expanded verify_files entry")
+		assert.Equal(t, "/global/global_verify.sh", runtimeGlobal.ExpandedVerifyFiles[0],
 			"Global.ExpandedVerifyFiles should expand GLOBAL_DIR")
 	})
 
 	t.Run("GroupVerifyFiles", func(t *testing.T) {
-		testGroup := findGroup(t, cfg, "test_group")
-		require.NotNil(t, testGroup, "Test group should exist")
+		testGroupSpec := findGroup(t, cfg, "test_group")
+		require.NotNil(t, testGroupSpec, "Test group should exist")
+
+		// Expand the group to get RuntimeGroup
+		testGroup, err := ExpandGroup(testGroupSpec, runtimeGlobal.ExpandedVars)
+		require.NoError(t, err, "ExpandGroup should succeed for test_group")
 
 		require.Len(t, testGroup.ExpandedVerifyFiles, 1, "Group should have 1 expanded verify_files entry")
 		assert.Equal(t, "/global/group/group_verify.sh", testGroup.ExpandedVerifyFiles[0],
@@ -374,6 +386,10 @@ func TestE2E_FullExpansionPipeline(t *testing.T) {
 	require.NoError(t, err, "Failed to load test configuration")
 	require.NotNil(t, cfg, "Configuration should not be nil")
 
+	// Expand global configuration to get RuntimeGlobal
+	runtimeGlobal, err := ExpandGlobal(&cfg.Global)
+	require.NoError(t, err, "Failed to expand global configuration")
+
 	// Verify Global.ExpandedEnv
 	t.Run("GlobalExpandedEnv", func(t *testing.T) {
 		require.NotNil(t, cfg.Global.ExpandedEnv, "Global.ExpandedEnv should be initialized")
@@ -384,7 +400,7 @@ func TestE2E_FullExpansionPipeline(t *testing.T) {
 	t.Run("GlobalExpandedVerifyFiles", func(t *testing.T) {
 		// command_env_references_global_group.toml doesn't have verify_files at Global level
 		// This is acceptable for this test
-		assert.Empty(t, cfg.Global.ExpandedVerifyFiles,
+		assert.Empty(t, runtimeGlobal.ExpandedVerifyFiles,
 			"Global.ExpandedVerifyFiles should be empty for this config")
 	})
 
@@ -401,8 +417,12 @@ func TestE2E_FullExpansionPipeline(t *testing.T) {
 
 	// Verify Group.ExpandedVerifyFiles (if present in config)
 	t.Run("GroupExpandedVerifyFiles", func(t *testing.T) {
-		appGroup := findGroup(t, cfg, "app_group")
-		require.NotNil(t, appGroup, "app_group should exist")
+		appGroupSpec := findGroup(t, cfg, "app_group")
+		require.NotNil(t, appGroupSpec, "app_group should exist")
+
+		// Expand the group to get RuntimeGroup
+		appGroup, err := ExpandGroup(appGroupSpec, runtimeGlobal.ExpandedVars)
+		require.NoError(t, err, "ExpandGroup should succeed for app_group")
 
 		// command_env_references_global_group.toml doesn't have verify_files at Group level
 		assert.Empty(t, appGroup.ExpandedVerifyFiles,
@@ -494,15 +514,24 @@ verify_files = ["%{base_dir}/%{sub_dir}/script.sh"]
 	require.NoError(t, err, "Failed to load test configuration")
 	require.NotNil(t, cfg, "Configuration should not be nil")
 
+	// Expand global configuration to get RuntimeGlobal
+	runtimeGlobal, err := ExpandGlobal(&cfg.Global)
+	require.NoError(t, err, "Failed to expand global configuration")
+
 	t.Run("GlobalVerifyFiles_WithSpaces", func(t *testing.T) {
-		require.Len(t, cfg.Global.ExpandedVerifyFiles, 1)
-		assert.Equal(t, "/opt/my app/test-file_v1.0.sh", cfg.Global.ExpandedVerifyFiles[0],
+		require.Len(t, runtimeGlobal.ExpandedVerifyFiles, 1)
+		assert.Equal(t, "/opt/my app/test-file_v1.0.sh", runtimeGlobal.ExpandedVerifyFiles[0],
 			"verify_files should handle paths with spaces and special characters")
 	})
 
 	t.Run("GroupVerifyFiles_WithDashes", func(t *testing.T) {
-		testGroup := findGroup(t, cfg, "test_group")
-		require.NotNil(t, testGroup)
+		testGroupSpec := findGroup(t, cfg, "test_group")
+		require.NotNil(t, testGroupSpec)
+
+		// Expand the group to get RuntimeGroup
+		testGroup, err := ExpandGroup(testGroupSpec, runtimeGlobal.ExpandedVars)
+		require.NoError(t, err, "ExpandGroup should succeed for test_group")
+
 		require.Len(t, testGroup.ExpandedVerifyFiles, 1)
 		assert.Equal(t, "/opt/my app/sub-dir/script.sh", testGroup.ExpandedVerifyFiles[0],
 			"verify_files should handle paths with dashes")
@@ -534,15 +563,24 @@ verify_files = ["%{full_path}/check.sh"]
 	require.NoError(t, err, "Failed to load test configuration")
 	require.NotNil(t, cfg, "Configuration should not be nil")
 
+	// Expand global configuration to get RuntimeGlobal
+	runtimeGlobal, err := ExpandGlobal(&cfg.Global)
+	require.NoError(t, err, "Failed to expand global configuration")
+
 	t.Run("GlobalVerifyFiles_NestedReferences", func(t *testing.T) {
-		require.Len(t, cfg.Global.ExpandedVerifyFiles, 1)
-		assert.Equal(t, "/opt/myapp/verify.sh", cfg.Global.ExpandedVerifyFiles[0],
+		require.Len(t, runtimeGlobal.ExpandedVerifyFiles, 1)
+		assert.Equal(t, "/opt/myapp/verify.sh", runtimeGlobal.ExpandedVerifyFiles[0],
 			"verify_files should handle nested variable references (root -> app_name -> app_dir)")
 	})
 
 	t.Run("GroupVerifyFiles_DeeplyNestedReferences", func(t *testing.T) {
-		testGroup := findGroup(t, cfg, "test_group")
-		require.NotNil(t, testGroup)
+		testGroupSpec := findGroup(t, cfg, "test_group")
+		require.NotNil(t, testGroupSpec)
+
+		// Expand the group to get RuntimeGroup
+		testGroup, err := ExpandGroup(testGroupSpec, runtimeGlobal.ExpandedVars)
+		require.NoError(t, err, "ExpandGroup should succeed for test_group")
+
 		require.Len(t, testGroup.ExpandedVerifyFiles, 1)
 		assert.Equal(t, "/opt/myapp/scripts/check.sh", testGroup.ExpandedVerifyFiles[0],
 			"verify_files should handle deeply nested references (root -> app_name -> app_dir -> subdir -> full_path)")
