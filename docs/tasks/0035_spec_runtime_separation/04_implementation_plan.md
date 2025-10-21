@@ -1013,8 +1013,195 @@ Phase 1 → Phase 2 → Phase 3 → Phase 5 → Phase 6 → Phase 7
   - [x] lintエラーなし（make lint: 0 issues）
   - [x] 古い型への参照が残っていないことを確認
 
-**次のステップ**: Task 0035完了。Phase 1-8すべて完了。
+**次のステップ**: Phase 9 テストカバレッジギャップの補完
 
 ---
 
-**全体の進捗**: Phase 1-8 すべて完了 ✅
+## Phase 9: テストカバレッジギャップの補完
+
+**目的**: Task 0035の型移行時に削除されたテストファイルで失われたカバレッジを補完し、コア機能の堅牢性を確保する
+
+**依存関係**: Phase 8完了後に開始
+
+**状態**: 未着手
+
+### 9.1 背景
+
+Phase 8.2で以下の6つのテストファイル（約101テスト）を削除しました：
+- `allowlist_test.go` (5テスト)
+- `command_env_expansion_test.go` (3テスト)
+- `expansion_test.go` (78テスト) ⚠️
+- `security_integration_test.go` (2テスト)
+- `self_reference_test.go` (7テスト) ⚠️
+- `verify_files_expansion_test.go` (6テスト)
+
+これらのテストの多くはE2Eテストでカバーされていますが、**以下の重大なカバレッジギャップが判明しています**：
+
+#### 高リスク領域（未カバー：0-20%）
+
+1. **自己参照・循環参照の詳細テスト**
+   - 直接的な自己参照（`v=%{v}`）
+   - 2変数以上の循環参照（`a=%{b}, b=%{a}`）
+   - 再帰深度制限の検証
+   - クロスレベル循環参照（global ↔ group ↔ command）
+
+2. **コア展開関数のユニットテスト**
+   - `ExpandString()`: エスケープシーケンス、エラーハンドリング
+   - `ProcessFromEnv()`: allowlist違反、システム変数未設定、無効な形式
+   - `ProcessVars()`: 循環参照、重複定義、無効な変数名
+   - `ProcessEnv()`: 変数参照、エラーハンドリング
+
+### 9.2 作業項目
+
+| Phase | タスク | ファイル | 作業内容 | 所要時間 | 優先度 |
+|-------|-------|---------|---------|---------|-------|
+| 9.1 | 循環参照テスト作成 | `internal/runner/config/circular_reference_test.go` | 自己参照・循環参照の詳細テスト | 4-6時間 | **緊急** |
+| 9.2 | 展開関数ユニットテスト作成 | `internal/runner/config/expansion_unit_test.go` | コア展開関数の詳細テスト | 6-8時間 | **重要** |
+| 9.3 | Allowlistテスト強化 | `internal/runner/config/allowlist_validation_test.go` | allowlist違反の詳細なエラーハンドリング | 2-3時間 | 望ましい |
+| 9.4 | verify_filesテスト強化 | `loader_e2e_test.go` に追加 | verify_files展開のエッジケース | 1-2時間 | 望ましい |
+
+### 9.3 詳細実装内容
+
+#### Phase 9.1: 循環参照テスト作成（優先度：緊急）
+
+**新規ファイル**: `internal/runner/config/circular_reference_test.go`
+
+**テストケース**:
+
+```go
+// 直接的な自己参照
+func TestCircularReference_DirectSelfReference(t *testing.T)
+
+// 2変数の循環参照
+func TestCircularReference_TwoVariables(t *testing.T)
+
+// 3変数以上の複雑な循環参照
+func TestCircularReference_ComplexChain(t *testing.T)
+
+// 再帰深度制限の検証
+func TestCircularReference_RecursionDepthLimit(t *testing.T)
+
+// クロスレベル循環参照（global ↔ group）
+func TestCircularReference_CrossLevel_GlobalGroup(t *testing.T)
+
+// クロスレベル循環参照（group ↔ command）
+func TestCircularReference_CrossLevel_GroupCommand(t *testing.T)
+
+// 複雑な循環パターン
+func TestCircularReference_ComplexPatterns(t *testing.T)
+```
+
+**期待されるエラー**: `ErrCircularReference`
+
+#### Phase 9.2: 展開関数ユニットテスト作成（優先度：重要）
+
+**新規ファイル**: `internal/runner/config/expansion_unit_test.go`
+
+**テストケース**:
+
+```go
+// ExpandString 関連
+func TestExpandString_EscapeSequence(t *testing.T)
+func TestExpandString_UndefinedVariable(t *testing.T)
+func TestExpandString_ComplexPatterns(t *testing.T)
+func TestExpandString_InvalidSyntax(t *testing.T)
+func TestExpandString_EmptyVariableName(t *testing.T)
+
+// ProcessFromEnv 関連
+func TestProcessFromEnv_AllowlistViolation(t *testing.T)
+func TestProcessFromEnv_SystemVariableNotSet(t *testing.T)
+func TestProcessFromEnv_InvalidFormat(t *testing.T)
+func TestProcessFromEnv_InvalidInternalVariableName(t *testing.T)
+func TestProcessFromEnv_ReservedPrefix(t *testing.T)
+func TestProcessFromEnv_DuplicateDefinition(t *testing.T)
+
+// ProcessVars 関連
+func TestProcessVars_CircularReference(t *testing.T)
+func TestProcessVars_DuplicateDefinition(t *testing.T)
+func TestProcessVars_InvalidVariableName(t *testing.T)
+func TestProcessVars_ComplexReferenceChain(t *testing.T)
+func TestProcessVars_UndefinedReference(t *testing.T)
+
+// ProcessEnv 関連
+func TestProcessEnv_VariableReference(t *testing.T)
+func TestProcessEnv_UndefinedVariable(t *testing.T)
+func TestProcessEnv_InvalidEnvVarName(t *testing.T)
+func TestProcessEnv_DuplicateDefinition(t *testing.T)
+```
+
+#### Phase 9.3: Allowlistテスト強化（優先度：望ましい）
+
+**新規ファイル**: `internal/runner/config/allowlist_validation_test.go`
+
+**テストケース**:
+
+```go
+func TestAllowlist_ViolationAtGlobalLevel(t *testing.T)
+func TestAllowlist_ViolationAtGroupLevel(t *testing.T)
+func TestAllowlist_ViolationAtCommandLevel(t *testing.T)
+func TestAllowlist_DetailedErrorMessages(t *testing.T)
+func TestAllowlist_EmptyAllowlistBlocksAll(t *testing.T)
+```
+
+#### Phase 9.4: verify_filesテスト強化（優先度：望ましい）
+
+**既存ファイルに追加**: `internal/runner/config/loader_e2e_test.go`
+
+**テストケース**:
+
+```go
+func TestE2E_VerifyFilesExpansion_SpecialCharacters(t *testing.T)
+func TestE2E_VerifyFilesExpansion_NestedReferences(t *testing.T)
+func TestE2E_VerifyFilesExpansion_ErrorHandling(t *testing.T)
+```
+
+### 9.4 リスク評価
+
+| リスク | 影響度 | 発生確率 | 対策 |
+|-------|-------|---------|------|
+| 循環参照検出の欠陥がリリースされる | 高 | 中 | Phase 9.1を緊急対応 |
+| 展開関数のエッジケースバグ | 高 | 中 | Phase 9.2を重要対応 |
+| Allowlist違反の見逃し | 中 | 低 | Phase 9.3で強化 |
+| verify_files展開のエッジケース | 中 | 低 | Phase 9.4で強化 |
+
+### 9.5 期待される改善
+
+| 指標 | 現状 | 目標 |
+|-----|------|------|
+| 全体的なカバレッジ | 約50% | 約85% |
+| 高リスク領域カバレッジ | 10-30% | 90%+ |
+| 循環参照検出テスト | 0個 | 7個以上 |
+| コア展開関数ユニットテスト | 0個 | 20個以上 |
+
+### 9.6 完了条件
+
+- [ ] Phase 9.1: 循環参照テスト作成完了
+  - [ ] 7個以上の循環参照テストケースが実装されている
+  - [ ] すべてのテストが成功している
+  - [ ] `ErrCircularReference` が適切に検出される
+
+- [ ] Phase 9.2: 展開関数ユニットテスト作成完了
+  - [ ] 20個以上のユニットテストが実装されている
+  - [ ] `ExpandString`, `ProcessFromEnv`, `ProcessVars`, `ProcessEnv` がカバーされている
+  - [ ] エラーハンドリングが詳細にテストされている
+
+- [ ] Phase 9.3: Allowlistテスト強化完了（オプション）
+  - [ ] allowlist違反の詳細なエラーハンドリングがテストされている
+
+- [ ] Phase 9.4: verify_filesテスト強化完了（オプション）
+  - [ ] 特殊文字、ネストされた参照、エラーハンドリングがテストされている
+
+### 9.7 推定期間
+
+| Phase | 推定工数 | 優先度 |
+|-------|---------|-------|
+| 9.1 循環参照テスト | 4-6時間 | 緊急 |
+| 9.2 展開関数ユニットテスト | 6-8時間 | 重要 |
+| 9.3 Allowlistテスト | 2-3時間 | 望ましい |
+| 9.4 verify_filesテスト | 1-2時間 | 望ましい |
+| **合計（必須）** | **10-14時間** | - |
+| **合計（全体）** | **13-19時間** | - |
+
+---
+
+**全体の進捗**: Phase 1-8 完了 ✅ | Phase 9 未着手 ⚠️
