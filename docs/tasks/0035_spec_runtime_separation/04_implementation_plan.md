@@ -819,9 +819,16 @@ Phase 1 → Phase 2 → Phase 3 → Phase 5 → Phase 6 → Phase 7
 #### オプション1: 段階的移行（推奨）
 
 **Phase 8.1: プロダクションコードの更新**（2-3時間）
-- `internal/runner/output/validation.go` のメソッドシグネチャを変更
-  - `ValidateConfigFile(cfg *runnertypes.Config)` → `ValidateConfigFile(cfg *runnertypes.ConfigSpec)`
-  - `GenerateValidationReport(cfg *runnertypes.Config)` → `GenerateValidationReport(cfg *runnertypes.ConfigSpec)`
+- [x] `internal/runner/output/validation.go` のメソッドシグネチャを変更
+  - [x] `ValidateGlobalConfig(globalConfig *runnertypes.GlobalConfig)` → `ValidateGlobalConfig(globalSpec *runnertypes.GlobalSpec)`
+  - [x] `ValidateCommand(cmd *runnertypes.Command, globalConfig *runnertypes.GlobalConfig)` → `ValidateCommand(cmdSpec *runnertypes.CommandSpec, globalSpec *runnertypes.GlobalSpec)`
+  - [x] `ValidateCommands(commands []runnertypes.Command, globalConfig *runnertypes.GlobalConfig)` → `ValidateCommands(commandSpecs []runnertypes.CommandSpec, globalSpec *runnertypes.GlobalSpec)`
+  - [x] `ValidateConfigFile(cfg *runnertypes.Config)` → `ValidateConfigFile(cfg *runnertypes.ConfigSpec)`
+  - [x] `GenerateValidationReport(cfg *runnertypes.Config)` → `GenerateValidationReport(cfg *runnertypes.ConfigSpec)`
+  - [x] `validateOutputPathWithRiskLevel(outputPath string, cmd *runnertypes.Command)` → `validateOutputPathWithRiskLevel(outputPath string, cmdSpec *runnertypes.CommandSpec)`
+  - [x] `getEffectiveMaxSize(globalConfig *runnertypes.GlobalConfig)` → `getEffectiveMaxSize(globalSpec *runnertypes.GlobalSpec)`
+- [x] `internal/runner/output/validation_test.go` を新しい型に対応
+  - [x] 古い型の参照を全て新しい型に置換
 
 **Phase 8.2: テストファイルの一括移行**（8-12時間）
 - 移行パターンを適用して18ファイルを順次移行
