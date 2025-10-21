@@ -1185,11 +1185,16 @@ func TestE2E_VerifyFilesExpansion_ErrorHandling(t *testing.T)
   - [x] `ExpandString`, `ProcessFromEnv`, `ProcessVars`, `ProcessEnv` がカバーされている
   - [x] エラーハンドリングが詳細にテストされている
 
-- [ ] Phase 9.3: Allowlistテスト強化完了（オプション）
-  - [ ] allowlist違反の詳細なエラーハンドリングがテストされている
+- [x] Phase 9.3: Allowlistテスト強化完了
+  - [x] allowlist違反の詳細なエラーハンドリングがテストされている（グローバルレベル）
+  - [x] グループ/コマンドレベルのテストは Task 0033 実装待ち（TODO としてマーク）
+  - [x] エラーメッセージの詳細性とallowlist継承がテストされている
 
-- [ ] Phase 9.4: verify_filesテスト強化完了（オプション）
-  - [ ] 特殊文字、ネストされた参照、エラーハンドリングがテストされている
+- [x] Phase 9.4: verify_filesテスト強化完了
+  - [x] 特殊文字を含むパスの展開がテストされている
+  - [x] ネストされた変数参照の展開がテストされている
+  - [x] エラーハンドリング（未定義変数、空変数名、複数ファイル）がテストされている
+  - [x] 複数ファイルと空リストの処理がテストされている
 
 ### 9.7 推定期間
 
@@ -1204,4 +1209,38 @@ func TestE2E_VerifyFilesExpansion_ErrorHandling(t *testing.T)
 
 ---
 
-**全体の進捗**: Phase 1-8 完了 ✅ | Phase 9 未着手 ⚠️
+**全体の進捗**: Phase 1-9 完了 ✅
+
+### Phase 9 完了サマリー
+
+Phase 9（テストカバレッジギャップの補完）のすべてのサブフェーズが完了しました：
+
+**Phase 9.1: 循環参照テスト** ✅
+- ファイル: `internal/runner/config/circular_reference_test.go`
+- テストケース数: 8個（完了）
+- カバレッジ: 直接的な自己参照、2変数循環、複雑な循環チェーン、再帰深度制限、クロスレベル循環参照、複雑なパターン、有効な複雑参照
+
+**Phase 9.2: 展開関数ユニットテスト** ✅
+- ファイル: `internal/runner/config/expansion_unit_test.go`
+- テストケース数: 18個（完了）
+- カバレッジ: `ExpandString`, `ProcessFromEnv`, `ProcessVars`, `ProcessEnv` のエスケープシーケンス、未定義変数、複雑なパターン、無効な構文、allowlist違反、システム変数未設定、無効フォーマット、重複定義、変数参照、無効な変数名
+
+**Phase 9.3: Allowlistテスト強化** ✅
+- ファイル: `internal/runner/config/allowlist_validation_test.go`
+- テストケース数: 6個のテスト関数（グローバルレベルで完全実装）
+- カバレッジ: グローバルレベルでの allowlist 違反、空 allowlist、詳細なエラーメッセージ、継承テスト
+- 注: グループ/コマンドレベルの FromEnv 処理は Task 0033 で実装予定のため、該当テストは skip 済み
+
+**Phase 9.4: verify_filesテスト強化** ✅
+- ファイル: `internal/runner/config/verify_files_expansion_test.go`
+- テストケース数: 5個のテスト関数、15個のサブテスト
+- カバレッジ: 特殊文字、ネストされた参照、エラーハンドリング、空/複数ファイル
+
+**成果**:
+- 新規テストファイル: 4個
+- 新規テストケース: 47個以上
+- すべてのテスト成功: ✅
+- lint エラー: 0 issues ✅
+- コードカバレッジ: 高リスク領域（循環参照、展開関数）のカバレッジを大幅改善
+
+**次のステップ**: Task 0035 完全完了 → Task 0034 の作業ディレクトリ仕様の実装
