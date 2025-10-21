@@ -1,3 +1,5 @@
+//go:build test
+
 // This file contains integration tests for output capture functionality
 
 package runner
