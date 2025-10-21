@@ -351,7 +351,7 @@ func NewTempDirManager(logger logging.Logger, groupName string, isDryRun bool) T
 //   5. defer で条件付きクリーンアップを登録（if !keepTempDirs { mgr.Cleanup() }）
 //   6. コマンド実行ループ:
 //      - for each commandSpec in groupSpec.Commands:
-//        a. ExpandCommand(commandSpec, runtimeGroup) → RuntimeCommand 生成
+//        a. ExpandCommand(commandSpec, runtimeGroup.ExpandedVars, runtimeGroup.Spec.Name) → RuntimeCommand 生成
 //        b. executor.Execute(ctx, runtimeCommand)
 func (e *DefaultGroupExecutor) ExecuteGroup(
     ctx context.Context,
