@@ -494,14 +494,17 @@ verify_files = ["%{base_dir}/%{sub_dir}/script.sh"]
 	require.NoError(t, err, "Failed to load test configuration")
 	require.NotNil(t, cfg, "Configuration should not be nil")
 
+	expandedCfg, err := config.ExpandGlobal(cfg)
+	require.NoError(t, err, "Failed to expand configuration")
+
 	t.Run("GlobalVerifyFiles_WithSpaces", func(t *testing.T) {
-		require.Len(t, cfg.Global.ExpandedVerifyFiles, 1)
-		assert.Equal(t, "/opt/my app/test-file_v1.0.sh", cfg.Global.ExpandedVerifyFiles[0],
+		require.Len(t, expandedCfg.Global.ExpandedVerifyFiles, 1)
+		assert.Equal(t, "/opt/my app/test-file_v1.0.sh", expandedCfg.Global.ExpandedVerifyFiles[0],
 			"verify_files should handle paths with spaces and special characters")
 	})
 
 	t.Run("GroupVerifyFiles_WithDashes", func(t *testing.T) {
-		testGroup := findGroup(t, cfg, "test_group")
+		testGroup := findGroup(t, expandedCfg, "test_group")
 		require.NotNil(t, testGroup)
 		require.Len(t, testGroup.ExpandedVerifyFiles, 1)
 		assert.Equal(t, "/opt/my app/sub-dir/script.sh", testGroup.ExpandedVerifyFiles[0],
