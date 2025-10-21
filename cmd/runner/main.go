@@ -166,11 +166,11 @@ func run(runID string) error {
 	}
 
 	// Phase 6: Initialize and execute runner with all verified data
-	return executeRunner(ctx, cfg, verificationManager, runID)
+	return executeRunner(ctx, cfg, runtimeGlobal, verificationManager, runID)
 }
 
 // executeRunner initializes and executes the runner with proper cleanup
-func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, verificationManager *verification.Manager, runID string) error {
+func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlobal *runnertypes.RuntimeGlobal, verificationManager *verification.Manager, runID string) error {
 	// Initialize privilege manager
 	logger := slog.Default()
 	privMgr := privilege.NewManager(logger)
@@ -180,6 +180,7 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, verificatio
 		runner.WithVerificationManager(verificationManager),
 		runner.WithPrivilegeManager(privMgr),
 		runner.WithRunID(runID),
+		runner.WithRuntimeGlobal(runtimeGlobal),
 	}
 
 	// Parse dry-run options once for the entire function

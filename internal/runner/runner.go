@@ -81,6 +81,7 @@ type runnerOptions struct {
 	resourceManager     resource.ResourceManager
 	dryRun              bool
 	dryRunOptions       *resource.DryRunOptions
+	runtimeGlobal       *runnertypes.RuntimeGlobal
 }
 
 // WithSecurity sets a custom security configuration
@@ -140,6 +141,113 @@ func WithDryRun(dryRunOptions *resource.DryRunOptions) Option {
 	}
 }
 
+// WithRuntimeGlobal sets a pre-expanded runtime global configuration
+func WithRuntimeGlobal(runtimeGlobal *runnertypes.RuntimeGlobal) Option {
+	return func(opts *runnerOptions) {
+		opts.runtimeGlobal = runtimeGlobal
+	}
+}
+
+// initializeRuntimeGlobal initializes the runtime global configuration
+func initializeRuntimeGlobal(opts *runnerOptions, configSpec *runnertypes.ConfigSpec) (*runnertypes.RuntimeGlobal, error) {
+	if opts.runtimeGlobal != nil {
+		return opts.runtimeGlobal, nil
+	}
+	return config.ExpandGlobal(&configSpec.Global)
+}
+
+// initializeDefaultComponents initializes default privilege manager, audit logger, and executor if not provided
+func initializeDefaultComponents(opts *runnerOptions, configSpec *runnertypes.ConfigSpec) {
+	// Create default privilege manager and audit logger if not provided but needed
+	if opts.privilegeManager == nil && hasUserGroupCommands(configSpec) {
+		opts.privilegeManager = privilege.NewManager(slog.Default())
+	}
+
+	if opts.auditLogger == nil && opts.privilegeManager != nil {
+		opts.auditLogger = audit.NewAuditLogger()
+	}
+
+	// Use provided components or create defaults
+	if opts.executor == nil {
+		executorOpts := []executor.Option{}
+		if opts.privilegeManager != nil {
+			executorOpts = append(executorOpts, executor.WithPrivilegeManager(opts.privilegeManager))
+		}
+		if opts.auditLogger != nil {
+			executorOpts = append(executorOpts, executor.WithAuditLogger(opts.auditLogger))
+		}
+		opts.executor = executor.NewDefaultExecutor(executorOpts...)
+	}
+}
+
+// createResourceManager creates a resource manager for dry-run or normal mode
+func createResourceManager(opts *runnerOptions, configSpec *runnertypes.ConfigSpec, validator *security.Validator) error {
+	if opts.resourceManager != nil {
+		return nil
+	}
+
+	// Helper function to get path resolver
+	getPathResolver := func() resource.PathResolver {
+		if opts.verificationManager != nil {
+			return opts.verificationManager
+		}
+		return verification.NewPathResolver("", validator, false)
+	}
+
+	if opts.dryRun {
+		return createDryRunResourceManager(opts, getPathResolver())
+	}
+	return createNormalResourceManager(opts, configSpec, getPathResolver())
+}
+
+// createDryRunResourceManager creates a resource manager for dry-run mode
+func createDryRunResourceManager(opts *runnerOptions, pathResolver resource.PathResolver) error {
+	if opts.dryRunOptions == nil {
+		opts.dryRunOptions = &resource.DryRunOptions{
+			DetailLevel:  resource.DetailLevelDetailed,
+			OutputFormat: resource.OutputFormatText,
+		}
+	}
+
+	resourceManager, err := resource.NewDryRunResourceManager(
+		opts.executor,
+		opts.privilegeManager,
+		pathResolver,
+		opts.dryRunOptions,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create dry-run resource manager: %w", err)
+	}
+	opts.resourceManager = resourceManager
+	return nil
+}
+
+// createNormalResourceManager creates a resource manager for normal mode
+func createNormalResourceManager(opts *runnerOptions, configSpec *runnertypes.ConfigSpec, pathResolver resource.PathResolver) error {
+	fs := common.NewDefaultFileSystem()
+	maxOutputSize := configSpec.Global.MaxOutputSize
+	if maxOutputSize <= 0 {
+		maxOutputSize = 0 // Will use default from output package
+	}
+
+	resourceManager, err := resource.NewDefaultResourceManagerWithOutput(
+		opts.executor,
+		fs,
+		opts.privilegeManager,
+		pathResolver,
+		slog.Default(),
+		resource.ExecutionModeNormal,
+		&resource.DryRunOptions{}, // Empty dry-run options for normal mode
+		nil,                       // Use default output manager
+		maxOutputSize,             // Max output size from config
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create default resource manager: %w", err)
+	}
+	opts.resourceManager = resourceManager
+	return nil
+}
+
 // NewRunner creates a new command runner with the given configuration and optional customizations
 func NewRunner(configSpec *runnertypes.ConfigSpec, options ...Option) (*Runner, error) {
 	// Apply default options
@@ -162,96 +270,18 @@ func NewRunner(configSpec *runnertypes.ConfigSpec, options ...Option) (*Runner, 
 	// Create environment filter
 	envFilter := environment.NewFilter(configSpec.Global.EnvAllowlist)
 
-	// Expand global configuration
-	runtimeGlobal, err := config.ExpandGlobal(&configSpec.Global)
+	// Initialize runtime global configuration
+	runtimeGlobal, err := initializeRuntimeGlobal(opts, configSpec)
 	if err != nil {
 		return nil, fmt.Errorf("failed to expand global configuration: %w", err)
 	}
 
-	// Create default privilege manager and audit logger if not provided but needed
-	if opts.privilegeManager == nil && hasUserGroupCommands(configSpec) {
-		opts.privilegeManager = privilege.NewManager(slog.Default())
-	}
+	// Initialize default components
+	initializeDefaultComponents(opts, configSpec)
 
-	if opts.auditLogger == nil && opts.privilegeManager != nil {
-		opts.auditLogger = audit.NewAuditLogger()
-	}
-
-	// Use provided components or create defaults
-	if opts.executor == nil {
-		executorOpts := []executor.Option{}
-
-		if opts.privilegeManager != nil {
-			executorOpts = append(executorOpts, executor.WithPrivilegeManager(opts.privilegeManager))
-		}
-		if opts.auditLogger != nil {
-			executorOpts = append(executorOpts, executor.WithAuditLogger(opts.auditLogger))
-		}
-		opts.executor = executor.NewDefaultExecutor(executorOpts...)
-	}
-
-	// Create default ResourceManager if not provided
-	if opts.resourceManager == nil {
-		// Check if dry-run mode is requested
-		if opts.dryRun {
-			// Ensure dryRunOptions has default values if nil
-			if opts.dryRunOptions == nil {
-				opts.dryRunOptions = &resource.DryRunOptions{
-					DetailLevel:  resource.DetailLevelDetailed,
-					OutputFormat: resource.OutputFormatText,
-				}
-			}
-			// For dry-run mode, create a simple path resolver using verification manager
-			var pathResolver resource.PathResolver
-			if opts.verificationManager != nil {
-				pathResolver = opts.verificationManager
-			} else {
-				// Create a default PathResolver when verification manager is not provided
-				pathResolver = verification.NewPathResolver("", validator, false)
-			}
-			resourceManager, err := resource.NewDryRunResourceManager(
-				opts.executor,
-				opts.privilegeManager,
-				pathResolver,
-				opts.dryRunOptions,
-			)
-			if err != nil {
-				return nil, fmt.Errorf("failed to create dry-run resource manager: %w", err)
-			}
-			opts.resourceManager = resourceManager
-		} else {
-			// Use common.DefaultFileSystem for normal mode
-			fs := common.NewDefaultFileSystem()
-			// For normal mode, create a simple path resolver using verification manager
-			var pathResolver resource.PathResolver
-			if opts.verificationManager != nil {
-				pathResolver = opts.verificationManager
-			} else {
-				// Create a default PathResolver when verification manager is not provided
-				pathResolver = verification.NewPathResolver("", validator, false)
-			}
-			// Get max output size from config (use default if not specified)
-			maxOutputSize := configSpec.Global.MaxOutputSize
-			if maxOutputSize <= 0 {
-				maxOutputSize = 0 // Will use default from output package
-			}
-
-			resourceManager, err := resource.NewDefaultResourceManagerWithOutput(
-				opts.executor,
-				fs,
-				opts.privilegeManager,
-				pathResolver,
-				slog.Default(),
-				resource.ExecutionModeNormal,
-				&resource.DryRunOptions{}, // Empty dry-run options for normal mode
-				nil,                       // Use default output manager
-				maxOutputSize,             // Max output size from config
-			)
-			if err != nil {
-				return nil, fmt.Errorf("failed to create default resource manager: %w", err)
-			}
-			opts.resourceManager = resourceManager
-		}
+	// Create resource manager if not provided
+	if err := createResourceManager(opts, configSpec, validator); err != nil {
+		return nil, err
 	}
 
 	runner := &Runner{
