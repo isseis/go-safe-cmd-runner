@@ -33,6 +33,36 @@ const defaultTestCommandName = "test"
 
 var ErrExecutionFailed = errors.New("execution failed")
 
+// createTestRuntimeCommand creates a RuntimeCommand for testing with minimal setup.
+// This helper wraps a CommandSpec into a RuntimeCommand with the specified effective working directory.
+//
+// Parameters:
+//   - spec: The CommandSpec to wrap
+//   - effectiveWorkDir: The effective working directory for the command
+//
+// Returns:
+//   - *runnertypes.RuntimeCommand: A RuntimeCommand ready for testing
+//
+// Example:
+//
+//	spec := &runnertypes.CommandSpec{
+//	    Name: "test-cmd",
+//	    Cmd:  "echo",
+//	    Args: []string{"hello"},
+//	}
+//	runtimeCmd := createTestRuntimeCommand(spec, "/tmp")
+func createTestRuntimeCommand(spec *runnertypes.CommandSpec, effectiveWorkDir string) *runnertypes.RuntimeCommand {
+	return &runnertypes.RuntimeCommand{
+		Spec:             spec,
+		ExpandedCmd:      spec.Cmd,
+		ExpandedArgs:     spec.Args,
+		ExpandedEnv:      make(map[string]string),
+		ExpandedVars:     make(map[string]string),
+		EffectiveWorkDir: effectiveWorkDir,
+		EffectiveTimeout: 30,
+	}
+}
+
 // MockSecurityValidator for output testing
 type MockSecurityValidator struct {
 	mock.Mock
