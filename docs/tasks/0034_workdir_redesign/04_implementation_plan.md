@@ -226,12 +226,12 @@ type RuntimeCommand struct {
 
 **完了条件**:
 - [ ] `GlobalSpec.WorkDir` が削除されている
-- [ ] `GroupSpec.TempDir` が削除されている
-- [ ] `CommandSpec.Dir` が `CommandSpec.WorkDir` に変更されている
-- [ ] `RuntimeGroup.EffectiveWorkDir` が追加されている
-- [ ] `RuntimeCommand.EffectiveWorkDir` が追加されている
+- [x] `GroupSpec.TempDir` が削除されている
+- [x] `CommandSpec.Dir` が `CommandSpec.WorkDir` に変更されている
+- [x] `RuntimeGroup.EffectiveWorkDir` が追加されている
+- [x] `RuntimeCommand.EffectiveWorkDir` が追加されている
 - [ ] 廃止フィールドを含むTOMLファイルでエラーが発生することが確認されている
-- [ ] 全テストが成功している
+- [x] 全テストが成功している
 
 **リスク**:
 - **破壊的変更**: 既存のTOMLファイルがロードできなくなる
@@ -326,13 +326,13 @@ func (m *DefaultTempDirManager) Create() (string, error) {
 - 5種類以上の単体テスト
 
 **完了条件**:
-- [ ] `TempDirManager` インターフェースが定義されている
-- [ ] `DefaultTempDirManager` が実装されている
-- [ ] 通常モードで一時ディレクトリが生成・削除できる
-- [ ] dry-runモードで仮想パスが生成される
-- [ ] パーミッションが厳密に0700に設定される
-- [ ] エラーケースが適切に処理される
-- [ ] 全テストが成功している
+- [ ] `TempDirManager` インターフェースが定義されている (未実装)
+- [ ] `DefaultTempDirManager` が実装されている (未実装)
+- [ ] 通常モードで一時ディレクトリが生成・削除できる (未実装)
+- [ ] dry-runモードで仮想パスが生成される (未実装)
+- [ ] パーミッションが厳密に0700に設定される (未実装)
+- [ ] エラーケースが適切に処理される (未実装)
+- [ ] 全テストが成功している (テスト未作成)
 
 **リスク**:
 - **パーミッション設定の失敗**: umaskの影響でパーミッションが期待通りにならない可能性
@@ -482,12 +482,12 @@ func (e *DefaultCommandExecutor) resolveCommandWorkDir(
 - 単体テスト一式
 
 **完了条件**:
-- [ ] `AutoVarKeyWorkDir` 定数が定義されている
-- [ ] グループワークディレクトリ決定ロジックが実装されている（RuntimeGroup を受け取る）
-- [ ] コマンドワークディレクトリ決定ロジックが実装されている（RuntimeCommand を受け取る）
-- [ ] `__runner_workdir` が正しく展開される（`config.ExpandCommand()` を通して）
-- [ ] 優先順位が正しく動作する
-- [ ] 全テストが成功している
+- [ ] `AutoVarKeyWorkDir` 定数が定義されている (未実装)
+- [ ] グループワークディレクトリ決定ロジックが実装されている（RuntimeGroup を受け取る） (未実装、ただしgroup_executor.goに類似のインラインロジックあり)
+- [ ] コマンドワークディレクトリ決定ロジックが実装されている（RuntimeCommand を受け取る） (未実装、ただしgroup_executor.goに類似のインラインロジックあり)
+- [ ] `__runner_workdir` が正しく展開される（`config.ExpandCommand()` を通して） (未実装)
+- [ ] 優先順位が正しく動作する (部分的にgroup_executor.goで実装済み)
+- [ ] 全テストが成功している (テスト未作成)
 
 ---
 
@@ -620,12 +620,12 @@ func main() {
 - 統合テスト一式
 
 **完了条件**:
-- [ ] `ExecuteGroup()` がワークディレクトリを決定・設定している
-- [ ] 一時ディレクトリが自動的にクリーンアップされる
-- [ ] `--keep-temp-dirs` フラグが動作する
-- [ ] dry-runモードで仮想パスが使用される
-- [ ] エラー時もクリーンアップが実行される
-- [ ] 全テストが成功している
+- [ ] `ExecuteGroup()` がワークディレクトリを決定・設定している (部分的に実装済み、TempDirManager未統合)
+- [ ] 一時ディレクトリが自動的にクリーンアップされる (未実装、TempDirManager未作成)
+- [ ] `--keep-temp-dirs` フラグが動作する (未実装)
+- [ ] dry-runモードで仮想パスが使用される (未実装)
+- [ ] エラー時もクリーンアップが実行される (未実装)
+- [ ] 全テストが成功している (テスト未作成)
 
 ---
 
@@ -758,11 +758,11 @@ workdir = "/var/backups"  # dir → workdir に変更
 - 更新されたREADME
 
 **完了条件**:
-- [ ] ユーザーマニュアルが新仕様に更新されている
-- [ ] 全サンプルファイルが新仕様で動作する
-- [ ] CHANGELOGに破壊的変更が記載されている
-- [ ] READMEに新機能が説明されている
-- [ ] マイグレーションガイドが提供されている
+- [ ] ユーザーマニュアルが新仕様に更新されている (未実装)
+- [ ] 全サンプルファイルが新仕様で動作する (未実装)
+- [ ] CHANGELOGに破壊的変更が記載されている (未実装)
+- [ ] READMEに新機能が説明されている (未実装)
+- [ ] マイグレーションガイドが提供されている (未実装)
 
 ---
 
@@ -875,27 +875,27 @@ Phase 0 → Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5
 
 ### 6.1 機能実装の完了基準
 
-- [ ] 全ての型定義変更が完了している
-- [ ] `TempDirManager` が実装され、テストが成功している
-- [ ] `__runner_workdir` 変数が正しく動作している
-- [ ] ワークディレクトリ決定ロジックが実装されている
-- [ ] `--keep-temp-dirs` フラグが動作している
-- [ ] dry-runモードで仮想パスが使用されている
+- [ ] 全ての型定義変更が完了している (部分的完了: GlobalSpec.WorkDir削除が未完了)
+- [ ] `TempDirManager` が実装され、テストが成功している (未実装)
+- [ ] `__runner_workdir` 変数が正しく動作している (未実装)
+- [ ] ワークディレクトリ決定ロジックが実装されている (部分的完了: group_executor.goにインライン実装あり)
+- [ ] `--keep-temp-dirs` フラグが動作している (未実装)
+- [ ] dry-runモードで仮想パスが使用されている (未実装)
 
 ### 6.2 テストの完了基準
 
-- [ ] 全単体テストが成功している（カバレッジ > 80%）
-- [ ] 全統合テストが成功している
-- [ ] 全エラーケーステストが成功している
-- [ ] パフォーマンステストが成功基準を満たしている
+- [ ] 全単体テストが成功している（カバレッジ > 80%） (テスト未作成)
+- [ ] 全統合テストが成功している (テスト未作成)
+- [ ] 全エラーケーステストが成功している (テスト未作成)
+- [ ] パフォーマンステストが成功基準を満たしている (テスト未作成)
 
 ### 6.3 ドキュメントの完了基準
 
-- [ ] ユーザーマニュアルが更新されている
-- [ ] 全サンプルファイルが新仕様で動作する
-- [ ] CHANGELOGに破壊的変更が記載されている
-- [ ] READMEに新機能が説明されている
-- [ ] マイグレーションガイドが提供されている
+- [ ] ユーザーマニュアルが更新されている (未実装)
+- [ ] 全サンプルファイルが新仕様で動作する (未実装)
+- [ ] CHANGELOGに破壊的変更が記載されている (未実装)
+- [ ] READMEに新機能が説明されている (未実装)
+- [ ] マイグレーションガイドが提供されている (未実装)
 
 ### 6.4 コードレビューの完了基準
 
@@ -908,39 +908,39 @@ Phase 0 → Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5
 ## 7. 実装チェックリスト（詳細仕様書からの転記）
 
 ### Phase 1: 型定義
-- [ ] `Global.WorkDir` を削除
-- [ ] `Group.TempDir` を削除
-- [ ] `CommandGroup.ExpandedWorkDir` フィールドを追加（展開済みワークディレクトリ）
-- [ ] `Command.Dir` → `Command.WorkDir` に変更
-- [ ] `Command.ExpandedWorkDir` フィールドを追加
+- [ ] `Global.WorkDir` を削除 (未完了)
+- [x] `Group.TempDir` を削除
+- [x] `RuntimeGroup.EffectiveWorkDir` フィールドを追加（実行時ワークディレクトリ）
+- [x] `Command.Dir` → `Command.WorkDir` に変更
+- [x] `RuntimeCommand.EffectiveWorkDir` フィールドを追加
 
 ### Phase 2: 一時ディレクトリ機能
-- [ ] `TempDirManager` インターフェース定義
-- [ ] `DefaultTempDirManager` 実装
+- [ ] `TempDirManager` インターフェース定義 (未実装)
+- [ ] `DefaultTempDirManager` 実装 (未実装)
   - [ ] `isDryRun` フラグのサポート
   - [ ] `Create()`, `Cleanup()`, `Path()` メソッド
   - [ ] dry-runモードでのログ出力（"[DRY-RUN]" プレフィックス）
-- [ ] `--keep-temp-dirs` フラグを Runner に追加
-- [ ] Runner から GroupExecutor へ `keepTempDirs` と `isDryRun` を渡す
-- [ ] `defer` で条件付きクリーンアップ登録（`if !keepTempDirs { mgr.Cleanup() }`）
+- [ ] `--keep-temp-dirs` フラグを Runner に追加 (未実装)
+- [ ] Runner から GroupExecutor へ `keepTempDirs` と `isDryRun` を渡す (未実装)
+- [ ] `defer` で条件付きクリーンアップ登録（`if !keepTempDirs { mgr.Cleanup() }`） (未実装)
 
 ### Phase 3: 変数展開
-- [ ] `AutoVarKeyWorkDir` 定数を追加（`internal/runner/variable`）
-- [ ] `GroupExecutor.ExecuteGroup()` で以下を設定:
-  - [ ] `group.ExpandedWorkDir` に展開済みワークディレクトリを設定
-  - [ ] `group.ExpandedVars["__runner_workdir"]` に同じ値を設定
-- [ ] `GroupExecutor.expandCommand()` を実装（コマンド変数の再展開）
-- [ ] `CommandExecutor.resolveCommandWorkDir()` を実装（`group.ExpandedWorkDir` を参照）
+- [ ] `AutoVarKeyWorkDir` 定数を追加（`internal/runner/variable`） (未実装)
+- [ ] `GroupExecutor.ExecuteGroup()` で以下を設定: (部分的完了)
+  - [ ] `runtimeGroup.EffectiveWorkDir` に展開済みワークディレクトリを設定 (未実装)
+  - [ ] `runtimeGroup.ExpandedVars["__runner_workdir"]` に同じ値を設定 (未実装)
+- [ ] `resolveGroupWorkDir()` を実装 (未実装、類似のインラインロジックあり)
+- [ ] `resolveCommandWorkDir()` を実装 (未実装、類似のインラインロジックあり)
 
 ### Phase 4: テスト
-- [ ] 単体テスト実装
-- [ ] 統合テスト実装
-- [ ] エラーケーステスト
+- [ ] 単体テスト実装 (未実装)
+- [ ] 統合テスト実装 (未実装)
+- [ ] エラーケーステスト (未実装)
 
 ### Phase 5: ドキュメント
-- [ ] ユーザードキュメント更新
-- [ ] サンプルファイル更新
-- [ ] CHANGELOG 更新
+- [ ] ユーザードキュメント更新 (未実装)
+- [ ] サンプルファイル更新 (未実装)
+- [ ] CHANGELOG 更新 (未実装)
 
 ---
 
