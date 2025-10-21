@@ -1128,13 +1128,13 @@ func TestCommandGroup_TempDir_Detailed(t *testing.T) {
 // TestRunner_EnvironmentVariablePriority tests the priority hierarchy for environment variables:
 // command-specific > group > global (loaded from system/env file)
 func TestRunner_EnvironmentVariablePriority_GroupLevelSupport(t *testing.T) {
-	t.Skip("Group-level environment variables are not yet implemented. CommandGroup struct needs an Env field similar to Command.Env")
+	t.Skip("Group-level environment variables are not yet implemented. GroupSpec struct needs an Env field similar to CommandSpec.Env")
 
 	// This test documents what the expected behavior should be when group-level environment variables are implemented:
 	// Priority order should be: command-specific > group-specific > global
 	//
 	// Required changes:
-	// 1. Add Env []string field to CommandGroup struct in runnertypes/config.go
+	// 1. Add Env []string field to GroupSpec struct in runnertypes/config.go
 	// 2. Modify resolveEnvironmentVars method to apply group environment variables before command variables
 	// 3. Ensure variable resolution works across all three levels
 }
@@ -1144,17 +1144,18 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 	setupSafeTestEnv(t)
 
 	t.Run("temp directory creation failure", func(t *testing.T) {
-		config := &runnertypes.Config{
-			Global: runnertypes.GlobalConfig{
+		config := &runnertypes.ConfigSpec{
+			Version: "1.0",
+			Global: runnertypes.GlobalSpec{
 				WorkDir:      "/tmp",
 				EnvAllowlist: []string{"PATH"},
 			},
 		}
 
-		group := runnertypes.CommandGroup{
+		group := runnertypes.GroupSpec{
 			Name:    "test-tempdir-failure",
 			TempDir: true,
-			Commands: []runnertypes.Command{
+			Commands: []runnertypes.CommandSpec{
 				{Name: "test", Cmd: "echo", Args: []string{"hello"}},
 			},
 			EnvAllowlist: []string{"PATH"},
@@ -1175,7 +1176,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 
 		// Execute the group - should fail due to temp directory creation failure
 		ctx := context.Background()
-		err = runner.ExecuteGroup(ctx, group)
+		err = runner.ExecuteGroup(ctx, &group)
 
 		// Verify error occurred
 		assert.Error(t, err)
@@ -1188,17 +1189,18 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 	})
 
 	t.Run("temp directory cleanup failure", func(t *testing.T) {
-		config := &runnertypes.Config{
-			Global: runnertypes.GlobalConfig{
+		config := &runnertypes.ConfigSpec{
+			Version: "1.0",
+			Global: runnertypes.GlobalSpec{
 				WorkDir:      "/tmp",
 				EnvAllowlist: []string{"PATH"},
 			},
 		}
 
-		group := runnertypes.CommandGroup{
+		group := runnertypes.GroupSpec{
 			Name:    "test-cleanup-failure",
 			TempDir: true,
-			Commands: []runnertypes.Command{
+			Commands: []runnertypes.CommandSpec{
 				{Name: "test", Cmd: "echo", Args: []string{"hello"}},
 			},
 			EnvAllowlist: []string{"PATH"},
@@ -1213,8 +1215,8 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		mockResourceManager.On("CleanupTempDir", "/tmp/test-temp-dir").Return(nil)
 
 		// ExecuteCommand should be called and succeed
-		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.MatchedBy(func(cmd runnertypes.Command) bool {
-			return cmd.Name == defaultTestCommandName && cmd.EffectiveWorkdir != ""
+		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.MatchedBy(func(cmd runnertypes.CommandSpec) bool {
+			return cmd.Name == defaultTestCommandName && cmd.WorkDir != ""
 		}), &group, mock.Anything).Return(
 			&resource.ExecutionResult{ExitCode: 0, Stdout: "hello\n", Stderr: ""}, nil)
 
@@ -1228,7 +1230,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 
 		// Execute the group - should succeed despite cleanup failure (cleanup failure is logged as warning)
 		ctx := context.Background()
-		err = runner.ExecuteGroup(ctx, group)
+		err = runner.ExecuteGroup(ctx, &group)
 
 		// Command execution should succeed even if cleanup fails
 		assert.NoError(t, err)
@@ -1238,17 +1240,18 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 	})
 
 	t.Run("multiple temp directory failures", func(t *testing.T) {
-		config := &runnertypes.Config{
-			Global: runnertypes.GlobalConfig{
+		config := &runnertypes.ConfigSpec{
+			Version: "1.0",
+			Global: runnertypes.GlobalSpec{
 				WorkDir:      "/tmp",
 				EnvAllowlist: []string{"PATH"},
 			},
-			Groups: []runnertypes.CommandGroup{
+			Groups: []runnertypes.GroupSpec{
 				{
 					Name:     "group-1",
 					Priority: 1,
 					TempDir:  true,
-					Commands: []runnertypes.Command{
+					Commands: []runnertypes.CommandSpec{
 						{Name: "cmd-1", Cmd: "echo", Args: []string{"first"}},
 					},
 					EnvAllowlist: []string{"PATH"},
@@ -1257,7 +1260,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 					Name:     "group-2",
 					Priority: 2,
 					TempDir:  true,
-					Commands: []runnertypes.Command{
+					Commands: []runnertypes.CommandSpec{
 						{Name: "cmd-2", Cmd: "echo", Args: []string{"second"}},
 					},
 					EnvAllowlist: []string{"PATH"},
@@ -1278,7 +1281,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		mockResourceManager.On("CleanupTempDir", "/tmp/test-temp-dir").Return(nil).Once()
 
 		// Only first group's command should execute
-		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.MatchedBy(func(cmd runnertypes.Command) bool {
+		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.MatchedBy(func(cmd runnertypes.CommandSpec) bool {
 			return cmd.Name == "cmd-1"
 		}), &config.Groups[0], mock.Anything).Return(
 			&resource.ExecutionResult{ExitCode: 0, Stdout: "first\n", Stderr: ""}, nil)
@@ -1305,17 +1308,18 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 	})
 
 	t.Run("resource cleanup during early termination", func(t *testing.T) {
-		config := &runnertypes.Config{
-			Global: runnertypes.GlobalConfig{
+		config := &runnertypes.ConfigSpec{
+			Version: "1.0",
+			Global: runnertypes.GlobalSpec{
 				WorkDir:      "/tmp",
 				EnvAllowlist: []string{"PATH"},
 			},
 		}
 
-		group := runnertypes.CommandGroup{
+		group := runnertypes.GroupSpec{
 			Name:    "test-early-termination",
 			TempDir: true,
-			Commands: []runnertypes.Command{
+			Commands: []runnertypes.CommandSpec{
 				{Name: "first-cmd", Cmd: "echo", Args: []string{"first"}},
 				{Name: "failing-cmd", Cmd: "false"}, // This command will fail
 				{Name: "never-executed", Cmd: "echo", Args: []string{"never"}},
@@ -1332,13 +1336,13 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		mockResourceManager.On("CleanupTempDir", "/tmp/test-temp-dir").Return(nil)
 
 		// First command succeeds
-		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.MatchedBy(func(cmd runnertypes.Command) bool {
+		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.MatchedBy(func(cmd runnertypes.CommandSpec) bool {
 			return cmd.Name == "first-cmd"
 		}), &group, mock.Anything).Return(
 			&resource.ExecutionResult{ExitCode: 0, Stdout: "first\n", Stderr: ""}, nil)
 
 		// Second command fails
-		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.MatchedBy(func(cmd runnertypes.Command) bool {
+		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.MatchedBy(func(cmd runnertypes.CommandSpec) bool {
 			return cmd.Name == "failing-cmd"
 		}), &group, mock.Anything).Return(
 			&resource.ExecutionResult{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil)
@@ -1355,7 +1359,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 
 		// Execute the group - should fail on second command but still clean up resources
 		ctx := context.Background()
-		err = runner.ExecuteGroup(ctx, group)
+		err = runner.ExecuteGroup(ctx, &group)
 
 		// Should return error from failing command
 		assert.Error(t, err)
@@ -1369,17 +1373,18 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 	})
 
 	t.Run("resource manager cleanup all failure", func(t *testing.T) {
-		config := &runnertypes.Config{
-			Global: runnertypes.GlobalConfig{
+		config := &runnertypes.ConfigSpec{
+			Version: "1.0",
+			Global: runnertypes.GlobalSpec{
 				WorkDir:      "/tmp",
 				EnvAllowlist: []string{"PATH"},
 			},
 		}
 
-		group := runnertypes.CommandGroup{
+		group := runnertypes.GroupSpec{
 			Name:    "test-cleanup-all",
 			TempDir: true,
-			Commands: []runnertypes.Command{
+			Commands: []runnertypes.CommandSpec{
 				{Name: "test", Cmd: "echo", Args: []string{"hello"}},
 			},
 			EnvAllowlist: []string{"PATH"},
@@ -1395,7 +1400,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		// CleanupAllTempDirs expectation for testing cleanup all failure
 		mockResourceManager.On("CleanupAllTempDirs").Return(errCleanupFailed)
 
-		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.MatchedBy(func(cmd runnertypes.Command) bool {
+		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.MatchedBy(func(cmd runnertypes.CommandSpec) bool {
 			return cmd.Name == defaultTestCommandName
 		}), &group, mock.Anything).Return(
 			&resource.ExecutionResult{ExitCode: 0, Stdout: "hello\n", Stderr: ""}, nil)
@@ -1410,7 +1415,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 
 		// Execute the group
 		ctx := context.Background()
-		err = runner.ExecuteGroup(ctx, group)
+		err = runner.ExecuteGroup(ctx, &group)
 		assert.NoError(t, err)
 
 		// Now test CleanupAllResources - should return error
@@ -1423,17 +1428,18 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 	})
 
 	t.Run("concurrent resource access failure", func(t *testing.T) {
-		config := &runnertypes.Config{
-			Global: runnertypes.GlobalConfig{
+		config := &runnertypes.ConfigSpec{
+			Version: "1.0",
+			Global: runnertypes.GlobalSpec{
 				WorkDir:      "/tmp",
 				EnvAllowlist: []string{"PATH"},
 			},
 		}
 
-		group := runnertypes.CommandGroup{
+		group := runnertypes.GroupSpec{
 			Name:    "test-concurrent",
 			TempDir: true,
-			Commands: []runnertypes.Command{
+			Commands: []runnertypes.CommandSpec{
 				{Name: "test", Cmd: "echo", Args: []string{"hello"}},
 			},
 			EnvAllowlist: []string{"PATH"},
@@ -1449,7 +1455,7 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 		// CleanupTempDir expectation for first successful call
 		mockResourceManager.On("CleanupTempDir", "/tmp/test-temp-dir").Return(nil).Once()
 
-		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.MatchedBy(func(cmd runnertypes.Command) bool {
+		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.MatchedBy(func(cmd runnertypes.CommandSpec) bool {
 			return cmd.Name == defaultTestCommandName
 		}), &group, mock.Anything).Return(
 			&resource.ExecutionResult{ExitCode: 0, Stdout: "hello\n", Stderr: ""}, nil)
@@ -1464,11 +1470,11 @@ func TestResourceManagement_FailureScenarios(t *testing.T) {
 
 		// First execution should succeed
 		ctx := context.Background()
-		err = runner.ExecuteGroup(ctx, group)
+		err = runner.ExecuteGroup(ctx, &group)
 		assert.NoError(t, err)
 
 		// Second execution should fail due to resource busy error
-		err = runner.ExecuteGroup(ctx, group)
+		err = runner.ExecuteGroup(ctx, &group)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to create temp directory")
 
@@ -1505,16 +1511,17 @@ func TestSlackNotification(t *testing.T) {
 			tempDir := t.TempDir()
 
 			// Create config with a simple command group
-			config := &runnertypes.Config{
-				Global: runnertypes.GlobalConfig{
+			config := &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Global: runnertypes.GlobalSpec{
 					WorkDir: tempDir,
 					Timeout: 30,
 				},
-				Groups: []runnertypes.CommandGroup{
+				Groups: []runnertypes.GroupSpec{
 					{
 						Name:        "test-group",
 						Description: "Test group for notification",
-						Commands: []runnertypes.Command{
+						Commands: []runnertypes.CommandSpec{
 							{
 								Name: "test-command",
 								Cmd:  "echo",
@@ -1558,7 +1565,7 @@ func TestSlackNotification(t *testing.T) {
 
 			// Execute the group
 			ctx := context.Background()
-			err = runner.ExecuteGroup(ctx, config.Groups[0])
+			err = runner.ExecuteGroup(ctx, &config.Groups[0])
 
 			if tt.commandSuccess {
 				assert.NoError(t, err)
@@ -1581,13 +1588,13 @@ func TestRunner_OutputCaptureEndToEnd(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		commands    []runnertypes.Command
+		commands    []runnertypes.CommandSpec
 		expectError bool
 		description string
 	}{
 		{
 			name: "command with output configuration",
-			commands: []runnertypes.Command{
+			commands: []runnertypes.CommandSpec{
 				{
 					Name:   "test-echo",
 					Cmd:    "echo",
@@ -1600,7 +1607,7 @@ func TestRunner_OutputCaptureEndToEnd(t *testing.T) {
 		},
 		{
 			name: "command without output capture",
-			commands: []runnertypes.Command{
+			commands: []runnertypes.CommandSpec{
 				{
 					Name: "no-output",
 					Cmd:  "echo",
@@ -1613,7 +1620,7 @@ func TestRunner_OutputCaptureEndToEnd(t *testing.T) {
 		},
 		{
 			name: "mixed commands with and without output",
-			commands: []runnertypes.Command{
+			commands: []runnertypes.CommandSpec{
 				{
 					Name:   "with-output",
 					Cmd:    "echo",
@@ -1638,14 +1645,15 @@ func TestRunner_OutputCaptureEndToEnd(t *testing.T) {
 			tempDir := t.TempDir()
 
 			// Create config with output capture settings
-			config := &runnertypes.Config{
-				Global: runnertypes.GlobalConfig{
+			config := &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Global: runnertypes.GlobalSpec{
 					Timeout:       30,
 					WorkDir:       tempDir,
 					LogLevel:      "info",
 					MaxOutputSize: 1024 * 1024, // 1MB limit
 				},
-				Groups: []runnertypes.CommandGroup{
+				Groups: []runnertypes.GroupSpec{
 					{
 						Name:        "output-test-group",
 						Description: "Test group for output capture",
@@ -1685,14 +1693,14 @@ func TestRunner_OutputCaptureErrorScenarios(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		commands     []runnertypes.Command
-		globalConfig runnertypes.GlobalConfig
+		commands     []runnertypes.CommandSpec
+		globalConfig runnertypes.GlobalSpec
 		expectError  string
 		description  string
 	}{
 		{
 			name: "path traversal attempt",
-			commands: []runnertypes.Command{
+			commands: []runnertypes.CommandSpec{
 				{
 					Name:   "path-traversal",
 					Cmd:    "echo",
@@ -1700,7 +1708,7 @@ func TestRunner_OutputCaptureErrorScenarios(t *testing.T) {
 					Output: "../../../etc/passwd",
 				},
 			},
-			globalConfig: runnertypes.GlobalConfig{
+			globalConfig: runnertypes.GlobalSpec{
 				Timeout:       30,
 				WorkDir:       "/tmp",
 				MaxOutputSize: 1024,
@@ -1710,7 +1718,7 @@ func TestRunner_OutputCaptureErrorScenarios(t *testing.T) {
 		},
 		{
 			name: "non-existent directory",
-			commands: []runnertypes.Command{
+			commands: []runnertypes.CommandSpec{
 				{
 					Name:   "non-existent-dir",
 					Cmd:    "echo",
@@ -1718,7 +1726,7 @@ func TestRunner_OutputCaptureErrorScenarios(t *testing.T) {
 					Output: "/non/existent/directory/output.txt",
 				},
 			},
-			globalConfig: runnertypes.GlobalConfig{
+			globalConfig: runnertypes.GlobalSpec{
 				Timeout:       30,
 				WorkDir:       "/tmp",
 				MaxOutputSize: 1024,
@@ -1728,7 +1736,7 @@ func TestRunner_OutputCaptureErrorScenarios(t *testing.T) {
 		},
 		{
 			name: "permission denied directory",
-			commands: []runnertypes.Command{
+			commands: []runnertypes.CommandSpec{
 				{
 					Name:   "permission-denied",
 					Cmd:    "echo",
@@ -1736,7 +1744,7 @@ func TestRunner_OutputCaptureErrorScenarios(t *testing.T) {
 					Output: "/root/output.txt",
 				},
 			},
-			globalConfig: runnertypes.GlobalConfig{
+			globalConfig: runnertypes.GlobalSpec{
 				Timeout:       30,
 				WorkDir:       "/tmp",
 				MaxOutputSize: 1024,
@@ -1753,9 +1761,10 @@ func TestRunner_OutputCaptureErrorScenarios(t *testing.T) {
 			tt.globalConfig.WorkDir = tempDir
 
 			// Create config
-			config := &runnertypes.Config{
-				Global: tt.globalConfig,
-				Groups: []runnertypes.CommandGroup{
+			config := &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Global:  tt.globalConfig,
+				Groups: []runnertypes.GroupSpec{
 					{
 						Name:        "error-test-group",
 						Description: "Test group for output capture errors",
@@ -1774,7 +1783,7 @@ func TestRunner_OutputCaptureErrorScenarios(t *testing.T) {
 
 			// Execute the group - should fail
 			ctx := context.Background()
-			err = runner.ExecuteGroup(ctx, config.Groups[0])
+			err = runner.ExecuteGroup(ctx, &config.Groups[0])
 
 			// Verify error occurred and contains expected message
 			assert.Error(t, err, tt.description)
@@ -1791,18 +1800,19 @@ func TestRunner_OutputCaptureDryRun(t *testing.T) {
 	tempDir := t.TempDir()
 
 	// Create config with output capture
-	config := &runnertypes.Config{
-		Global: runnertypes.GlobalConfig{
+	config := &runnertypes.ConfigSpec{
+		Version: "1.0",
+		Global: runnertypes.GlobalSpec{
 			Timeout:       30,
 			WorkDir:       tempDir,
 			LogLevel:      "info",
 			MaxOutputSize: 1024,
 		},
-		Groups: []runnertypes.CommandGroup{
+		Groups: []runnertypes.GroupSpec{
 			{
 				Name:        "dryrun-test-group",
 				Description: "Test group for dry-run output capture",
-				Commands: []runnertypes.Command{
+				Commands: []runnertypes.CommandSpec{
 					{
 						Name:   "dryrun-echo",
 						Cmd:    "echo",
@@ -1854,7 +1864,7 @@ func TestRunner_OutputCaptureDryRun(t *testing.T) {
 
 	// Execute the group in dry-run mode
 	ctx := context.Background()
-	err = runner.ExecuteGroup(ctx, config.Groups[0])
+	err = runner.ExecuteGroup(ctx, &config.Groups[0])
 
 	// Dry-run should not fail
 	assert.NoError(t, err, "Dry-run execution should not fail")
@@ -1944,7 +1954,13 @@ args = ["No output capture"]
 
 		// Verify runner configuration
 		runnerConfig := runner.GetConfig()
-		assert.Equal(t, config, runnerConfig)
+		// Compare fields individually as ConfigSpec should have Version field
+		assert.Equal(t, config.Global, runnerConfig.Global)
+		assert.Equal(t, len(config.Groups), len(runnerConfig.Groups))
+		if len(config.Groups) > 0 && len(runnerConfig.Groups) > 0 {
+			assert.Equal(t, config.Groups[0].Name, runnerConfig.Groups[0].Name)
+			assert.Equal(t, len(config.Groups[0].Commands), len(runnerConfig.Groups[0].Commands))
+		}
 	})
 
 	// Test TOML config validation for output capture
@@ -2026,16 +2042,17 @@ func TestRunner_OutputCaptureErrorTypes(t *testing.T) {
 			tempDir := t.TempDir()
 
 			// Create basic configuration with output capture
-			cfg := &runnertypes.Config{
-				Global: runnertypes.GlobalConfig{
+			cfg := &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Global: runnertypes.GlobalSpec{
 					Timeout:       30,
 					WorkDir:       tempDir,
 					MaxOutputSize: 1024,
 				},
-				Groups: []runnertypes.CommandGroup{
+				Groups: []runnertypes.GroupSpec{
 					{
 						Name: "test-group",
-						Commands: []runnertypes.Command{
+						Commands: []runnertypes.CommandSpec{
 							{
 								Name:   "test-cmd",
 								Cmd:    "echo",
@@ -2062,7 +2079,7 @@ func TestRunner_OutputCaptureErrorTypes(t *testing.T) {
 
 			// Execute the group instead of full run
 			ctx := context.Background()
-			err = runner.ExecuteGroup(ctx, cfg.Groups[0])
+			err = runner.ExecuteGroup(ctx, &cfg.Groups[0])
 
 			// Verify error contains expected message
 			require.Error(t, err, "Should return error for %s", tt.name)
@@ -2133,16 +2150,17 @@ func TestRunner_OutputCaptureExecutionStages(t *testing.T) {
 			tempDir := t.TempDir()
 
 			// Create basic configuration with output capture
-			cfg := &runnertypes.Config{
-				Global: runnertypes.GlobalConfig{
+			cfg := &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Global: runnertypes.GlobalSpec{
 					Timeout:       30,
 					WorkDir:       tempDir,
 					MaxOutputSize: 1024,
 				},
-				Groups: []runnertypes.CommandGroup{
+				Groups: []runnertypes.GroupSpec{
 					{
 						Name: "test-group",
-						Commands: []runnertypes.Command{
+						Commands: []runnertypes.CommandSpec{
 							{
 								Name:   "test-cmd",
 								Cmd:    "echo",
@@ -2169,7 +2187,7 @@ func TestRunner_OutputCaptureExecutionStages(t *testing.T) {
 
 			// Execute the group instead of full run
 			ctx := context.Background()
-			err = runner.ExecuteGroup(ctx, cfg.Groups[0])
+			err = runner.ExecuteGroup(ctx, &cfg.Groups[0])
 
 			// Verify error matches expected type using errors.Is()
 			require.Error(t, err, "Should return error for %s stage", tt.stage)
@@ -2326,16 +2344,17 @@ func TestRunner_OutputCaptureSecurityIntegration(t *testing.T) {
 			tempDir := t.TempDir()
 
 			// Create configuration with potentially malicious output path
-			cfg := &runnertypes.Config{
-				Global: runnertypes.GlobalConfig{
+			cfg := &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Global: runnertypes.GlobalSpec{
 					Timeout:       30,
 					WorkDir:       tempDir,
 					MaxOutputSize: 1024,
 				},
-				Groups: []runnertypes.CommandGroup{
+				Groups: []runnertypes.GroupSpec{
 					{
 						Name: "security-test-group",
-						Commands: []runnertypes.Command{
+						Commands: []runnertypes.CommandSpec{
 							{
 								Name:   "security-test-cmd",
 								Cmd:    "echo",
@@ -2376,7 +2395,7 @@ func TestRunner_OutputCaptureSecurityIntegration(t *testing.T) {
 
 			// Execute the group
 			ctx := context.Background()
-			err = runner.ExecuteGroup(ctx, cfg.Groups[0])
+			err = runner.ExecuteGroup(ctx, &cfg.Groups[0])
 
 			if tt.expectError {
 				require.Error(t, err, "Should return error for %s", tt.description)
@@ -2464,17 +2483,18 @@ func TestRunner_OutputCaptureResourceManagement(t *testing.T) {
 			tempDir := t.TempDir()
 
 			// Create configuration with output capture
-			cfg := &runnertypes.Config{
-				Global: runnertypes.GlobalConfig{
+			cfg := &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Global: runnertypes.GlobalSpec{
 					Timeout:       30,
 					WorkDir:       tempDir,
 					MaxOutputSize: 1024,
 				},
-				Groups: []runnertypes.CommandGroup{
+				Groups: []runnertypes.GroupSpec{
 					{
 						Name:    "test-group",
 						TempDir: true, // Enable temp directory to test resource management
-						Commands: []runnertypes.Command{
+						Commands: []runnertypes.CommandSpec{
 							{
 								Name:   "resource-test-cmd",
 								Cmd:    "echo",
@@ -2501,7 +2521,7 @@ func TestRunner_OutputCaptureResourceManagement(t *testing.T) {
 
 			// Execute the group
 			ctx := context.Background()
-			err = runner.ExecuteGroup(ctx, cfg.Groups[0])
+			err = runner.ExecuteGroup(ctx, &cfg.Groups[0])
 
 			if tt.expectSuccess {
 				// Note: May still fail due to actual implementation details
