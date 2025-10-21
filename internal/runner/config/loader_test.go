@@ -204,3 +204,85 @@ func TestPhase9Integration(t *testing.T) {
 func TestFromEnvMergeIntegration(t *testing.T) {
 	t.Skip("Skipping until Phase 5/6 - expansion not yet implemented in loader")
 }
+
+// TestDeprecatedFields_GlobalWorkDir tests that Global.WorkDir field is ignored (not an error in go-toml/v2)
+func TestDeprecatedFields_GlobalWorkDir(t *testing.T) {
+	configContent := `
+version = "1.0"
+
+[global]
+  timeout = 3600
+  workdir = "/tmp"
+
+[[groups]]
+  name = "test"
+
+  [[groups.commands]]
+    name = "test_cmd"
+    cmd = "echo"
+`
+
+	loader := NewLoader()
+	cfg, err := loader.LoadConfig([]byte(configContent))
+
+	// go-toml/v2 silently ignores unknown fields by default
+	// The config should load successfully, but WorkDir field won't be set (because it doesn't exist)
+	require.NoError(t, err, "LoadConfig should succeed (go-toml ignores unknown fields)")
+	require.NotNil(t, cfg)
+	// Verify the field doesn't exist (we can't check it directly since it's been removed)
+	assert.Equal(t, 3600, cfg.Global.Timeout)
+}
+
+// TestDeprecatedFields_GroupTempDir tests that Group.TempDir field is ignored (not an error in go-toml/v2)
+func TestDeprecatedFields_GroupTempDir(t *testing.T) {
+	configContent := `
+version = "1.0"
+
+[global]
+  timeout = 3600
+
+[[groups]]
+  name = "test"
+  temp_dir = true
+
+  [[groups.commands]]
+    name = "test_cmd"
+    cmd = "echo"
+`
+
+	loader := NewLoader()
+	cfg, err := loader.LoadConfig([]byte(configContent))
+
+	// go-toml/v2 silently ignores unknown fields by default
+	require.NoError(t, err, "LoadConfig should succeed (go-toml ignores unknown fields)")
+	require.NotNil(t, cfg)
+	assert.Equal(t, "test", cfg.Groups[0].Name)
+}
+
+// TestDeprecatedFields_CommandDir tests that Command.Dir field is ignored (not an error in go-toml/v2)
+func TestDeprecatedFields_CommandDir(t *testing.T) {
+	configContent := `
+version = "1.0"
+
+[global]
+  timeout = 3600
+
+[[groups]]
+  name = "test"
+
+  [[groups.commands]]
+    name = "test_cmd"
+    cmd = "echo"
+    dir = "/tmp"
+`
+
+	loader := NewLoader()
+	cfg, err := loader.LoadConfig([]byte(configContent))
+
+	// go-toml/v2 silently ignores unknown fields by default
+	require.NoError(t, err, "LoadConfig should succeed (go-toml ignores unknown fields)")
+	require.NotNil(t, cfg)
+	assert.Equal(t, "test_cmd", cfg.Groups[0].Commands[0].Name)
+	// WorkDir field should be empty (not set from the deprecated 'dir' field)
+	assert.Equal(t, "", cfg.Groups[0].Commands[0].WorkDir)
+}

@@ -154,9 +154,9 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 		// 4.2 Set EffectiveWorkDir
 		// Priority for working directory:
 		// 1. Command's WorkDir (if set) - highest priority
-		// 2. TempDir (if enabled)
+		// 2. TempDir (if enabled) - to be implemented in Phase 2
 		// 3. Group's WorkDir
-		// 4. Global WorkDir (handled later in executeCommandInGroup)
+		// Note: Global WorkDir has been removed in Task 0034
 		switch {
 		case cmdSpec.WorkDir != "":
 			// Command has explicit WorkDir - use it as-is
@@ -244,10 +244,8 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 		cmd.ExpandedCmd = resolvedPath
 	}
 
-	// Set effective working directory from global config if not already resolved
-	if cmd.EffectiveWorkDir == "" {
-		cmd.EffectiveWorkDir = runtimeGlobal.WorkDir()
-	}
+	// Note: EffectiveWorkDir should be set earlier in ExecuteGroup()
+	// If still empty at this point, the command will use the process's current working directory
 
 	// Validate output path before command execution if output capture is requested
 	if cmd.Output() != "" {

@@ -55,14 +55,11 @@ func TestRunner_OutputCaptureIntegration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tempDir := t.TempDir()
-
 			// Create basic configuration with output capture
 			cfg := &runnertypes.ConfigSpec{
 				Version: "1.0",
 				Global: runnertypes.GlobalSpec{
 					Timeout:       30,
-					WorkDir:       tempDir,
 					MaxOutputSize: 1024,
 				},
 				Groups: []runnertypes.GroupSpec{
@@ -147,14 +144,11 @@ func TestRunner_OutputCaptureSecurityValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tempDir := t.TempDir()
-
 			// Create configuration with potentially problematic output path
 			cfg := &runnertypes.ConfigSpec{
 				Version: "1.0",
 				Global: runnertypes.GlobalSpec{
 					Timeout:       30,
-					WorkDir:       tempDir,
 					MaxOutputSize: 1024,
 				},
 				Groups: []runnertypes.GroupSpec{

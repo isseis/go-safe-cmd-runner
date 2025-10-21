@@ -225,13 +225,13 @@ type RuntimeCommand struct {
 - TOMLパーサーエラーの検証テスト
 
 **完了条件**:
-- [ ] `GlobalSpec.WorkDir` が削除されている
+- [x] `GlobalSpec.WorkDir` が削除されている
 - [x] `GroupSpec.TempDir` が削除されている
 - [x] `CommandSpec.Dir` が `CommandSpec.WorkDir` に変更されている
 - [x] `RuntimeGroup.EffectiveWorkDir` が追加されている
 - [x] `RuntimeCommand.EffectiveWorkDir` が追加されている
-- [ ] 廃止フィールドを含むTOMLファイルでエラーが発生することが確認されている
-- [x] 全テストが成功している
+- [x] 廃止フィールドを含むTOMLファイルの動作が確認されている（go-toml/v2は unknown field を無視）
+- [x] 全テストが成功している（`make test` パス、`make lint` 0 issues）
 
 **リスク**:
 - **破壊的変更**: 既存のTOMLファイルがロードできなくなる

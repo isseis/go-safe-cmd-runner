@@ -433,7 +433,6 @@ func TestRuntimeCommand_HelperMethods(t *testing.T) {
 func TestRuntimeGlobal_HelperMethods(t *testing.T) {
 	spec := &GlobalSpec{
 		Timeout:           300,
-		WorkDir:           "/usr/local",
 		EnvAllowlist:      []string{"PATH", "HOME"},
 		SkipStandardPaths: true,
 	}
@@ -446,11 +445,6 @@ func TestRuntimeGlobal_HelperMethods(t *testing.T) {
 	// Test Timeout()
 	if got := runtime.Timeout(); got != 300 {
 		t.Errorf("Timeout() = %d, want 300", got)
-	}
-
-	// Test WorkDir()
-	if got := runtime.WorkDir(); got != "/usr/local" {
-		t.Errorf("WorkDir() = %s, want /usr/local", got)
 	}
 
 	// Test EnvAllowlist()
