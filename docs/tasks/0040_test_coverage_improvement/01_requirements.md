@@ -146,6 +146,7 @@
 
 **未テスト機能:**
 - `ParseDryRunDetailLevel()` - Dry-run詳細レベルのパース
+- `ParseDryRunOutputFormat()` - Dry-run出力フォーマットのパース
 
 **必要なテストケース:**
 1. "none" レベルのパース
