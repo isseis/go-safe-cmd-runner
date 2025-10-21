@@ -556,7 +556,7 @@ func (e *DefaultGroupExecutor) ExecuteGroup(
         cmdSpec := &groupSpec.Commands[i]
 
         // ステップ5-1: コマンド変数を展開（Task 0035 で実装済み）
-        runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup)
+        runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup.ExpandedVars, runtimeGroup.Spec.Name)
         if err != nil {
             return fmt.Errorf("failed to expand command '%s': %w", cmdSpec.Name, err)
         }
