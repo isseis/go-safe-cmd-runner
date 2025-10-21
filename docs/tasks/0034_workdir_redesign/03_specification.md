@@ -4,48 +4,153 @@
 
 本ドキュメントは、タスク0034「作業ディレクトリ仕様の再設計」の詳細仕様を記述します。
 
-## 2. 型定義
+## 2. 型定義（Task 0035 完了後）
 
 ### 2.1 設定型の変更
 
-#### 2.1.1 削除対象フィールド
+#### 2.1.1 Task 0035 による変更（完了済み）
 
-**変更対象**: `internal/runner/runnertypes/config.go`
+Task 0035 により、以下の Spec/Runtime 構造体が導入されました:
+
+**Spec 層** (`internal/runner/runnertypes/spec.go`):
+- `ConfigSpec`: TOML ルート設定
+- `GlobalSpec`: グローバル設定
+- `GroupSpec`: グループ設定
+- `CommandSpec`: コマンド設定
+
+**Runtime 層** (`internal/runner/runnertypes/runtime.go`):
+- `RuntimeGlobal`: 実行時グローバル設定（`ExpandedVars` を含む）
+- `RuntimeGroup`: 実行時グループ設定（`ExpandedVars`, `Commands []*RuntimeCommand` を含む）
+- `RuntimeCommand`: 実行時コマンド設定（`ExpandedCmd`, `ExpandedArgs` を含む）
+
+#### 2.1.2 Task 0034 で変更するフィールド
+
+**変更対象**: `internal/runner/runnertypes/spec.go`
 
 ```go
-// 変更前
-type GlobalConfig struct {
-    WorkDir string `toml:"workdir"`  // 削除対象
-    // ... その他のフィールド
+// 変更前（Task 0035 完了時点）
+type GlobalSpec struct {
+    WorkDir          string   `toml:"workdir"`  // Task 0034 で削除
+    Timeout          int      `toml:"timeout"`
+    LogLevel         string   `toml:"log_level"`
+    SkipStandardPaths bool    `toml:"skip_standard_paths"`
+    MaxOutputSize    int64    `toml:"max_output_size"`
+    VerifyFiles      []string `toml:"verify_files"`
+    EnvAllowlist     []string `toml:"env_allowlist"`
+    Env              []string `toml:"env"`
+    FromEnv          []string `toml:"from_env"`
+    Vars             []string `toml:"vars"`
 }
 
-type CommandGroup struct {
-    TempDir bool   `toml:"temp_dir"`  // 削除対象
-    WorkDir string `toml:"workdir"`
-    // ... その他のフィールド
+type GroupSpec struct {
+    Name         string        `toml:"name"`
+    Description  string        `toml:"description"`
+    Priority     int           `toml:"priority"`
+    TempDir      bool          `toml:"temp_dir"`  // Task 0034 で削除
+    WorkDir      string        `toml:"workdir"`
+    Commands     []CommandSpec `toml:"commands"`
+    VerifyFiles  []string      `toml:"verify_files"`
+    EnvAllowlist []string      `toml:"env_allowlist"`
+    Env          []string      `toml:"env"`
+    FromEnv      []string      `toml:"from_env"`
+    Vars         []string      `toml:"vars"`
 }
 
-type Command struct {
-    Dir string `toml:"dir"`  // 削除対象（変更対象）
-    // ... その他のフィールド
+type CommandSpec struct {
+    Name         string   `toml:"name"`
+    Description  string   `toml:"description"`
+    Cmd          string   `toml:"cmd"`
+    Args         []string `toml:"args"`
+    Dir          string   `toml:"dir"`  // Task 0034 で WorkDir に名称変更
+    Timeout      int      `toml:"timeout"`
+    RunAsUser    string   `toml:"run_as_user"`
+    RunAsGroup   string   `toml:"run_as_group"`
+    MaxRiskLevel string   `toml:"max_risk_level"`
+    Output       string   `toml:"output"`
+    Env          []string `toml:"env"`
+    FromEnv      []string `toml:"from_env"`
+    Vars         []string `toml:"vars"`
 }
 
-// 変更後
-type GlobalConfig struct {
-    // WorkDir は削除（グローバルレベルでのデフォルト設定は廃止）
-    // ... その他のフィールド
+// 変更後（Task 0034 完了後）
+type GlobalSpec struct {
+    // WorkDir を削除（グローバルレベルでのデフォルト設定は廃止）
+    Timeout          int      `toml:"timeout"`
+    LogLevel         string   `toml:"log_level"`
+    SkipStandardPaths bool    `toml:"skip_standard_paths"`
+    MaxOutputSize    int64    `toml:"max_output_size"`
+    VerifyFiles      []string `toml:"verify_files"`
+    EnvAllowlist     []string `toml:"env_allowlist"`
+    Env              []string `toml:"env"`
+    FromEnv          []string `toml:"from_env"`
+    Vars             []string `toml:"vars"`
 }
 
-type CommandGroup struct {
-    // TempDir は削除（デフォルトで一時ディレクトリを使用するため不要）
-    WorkDir string `toml:"workdir"`  // TOMLから読み込んだ生の値
-    ExpandedWorkDir string            // 展開済みの物理/仮想パス（実行時に設定）
-    // ... その他のフィールド
+type GroupSpec struct {
+    Name         string        `toml:"name"`
+    Description  string        `toml:"description"`
+    Priority     int           `toml:"priority"`
+    // TempDir を削除（デフォルトで一時ディレクトリを使用するため不要）
+    WorkDir      string        `toml:"workdir"`  // TOMLから読み込んだ生の値
+    Commands     []CommandSpec `toml:"commands"`
+    VerifyFiles  []string      `toml:"verify_files"`
+    EnvAllowlist []string      `toml:"env_allowlist"`
+    Env          []string      `toml:"env"`
+    FromEnv      []string      `toml:"from_env"`
+    Vars         []string      `toml:"vars"`
 }
 
-type Command struct {
-    WorkDir string `toml:"workdir"`  // 名称変更（旧: dir）
-    // ... その他のフィールド
+type CommandSpec struct {
+    Name         string   `toml:"name"`
+    Description  string   `toml:"description"`
+    Cmd          string   `toml:"cmd"`
+    Args         []string `toml:"args"`
+    WorkDir      string   `toml:"workdir"`  // 名称変更（旧: dir）
+    Timeout      int      `toml:"timeout"`
+    RunAsUser    string   `toml:"run_as_user"`
+    RunAsGroup   string   `toml:"run_as_group"`
+    MaxRiskLevel string   `toml:"max_risk_level"`
+    Output       string   `toml:"output"`
+    Env          []string `toml:"env"`
+    FromEnv      []string `toml:"from_env"`
+    Vars         []string `toml:"vars"`
+}
+```
+
+#### 2.1.3 Runtime 構造体の拡張
+
+**変更対象**: `internal/runner/runnertypes/runtime.go`
+
+```go
+// RuntimeGroup への追加
+type RuntimeGroup struct {
+    Spec *GroupSpec  // 元の Spec への参照
+
+    // 展開済み変数（Task 0035 で実装済み）
+    ExpandedVerifyFiles []string
+    ExpandedEnv         map[string]string
+    ExpandedVars        map[string]string
+
+    // Task 0034 で追加
+    EffectiveWorkDir string  // 実行時に決定されたワークディレクトリ（一時または固定）
+
+    // 展開済みコマンド（Task 0035 で実装済み）
+    Commands []*RuntimeCommand
+}
+
+// RuntimeCommand への追加
+type RuntimeCommand struct {
+    Spec *CommandSpec  // 元の Spec への参照
+
+    // 展開済みコマンド情報（Task 0035 で実装済み）
+    ExpandedCmd  string
+    ExpandedArgs []string
+    ExpandedEnv  map[string]string
+    ExpandedVars map[string]string
+
+    // Task 0034 で追加
+    EffectiveWorkDir string  // コマンドレベルで決定されたワークディレクトリ
+    EffectiveTimeout int     // 実行時タイムアウト（Task 0035 で実装済み）
 }
 ```
 
@@ -68,35 +173,43 @@ Error: toml: line Z: unknown field 'dir'
 
 **注意**: 詳細なエラーメッセージ（セクション情報など）は`go-toml/v2`の実装に依存します。
 
-### 2.2 実行時の変数管理
+### 2.2 実行時の変数管理（Task 0035 完了後）
 
-#### 2.2.1 変数展開の遅延評価
+#### 2.2.1 変数展開の遅延評価（Task 0035 で実装済み）
+
+Task 0035 により、変数展開の遅延評価が実装されました:
 
 **設計方針**:
-- **コマンド実行時まで変数展開を遅延させる**
-- ローディング時には変数を展開せず、元の定義を保持
-- 実行時にグループ変数とコマンド変数を統合して一度だけ展開
+- **TOMLロード時**: `ConfigSpec` のみ生成、変数は未展開
+- **実行時**: `ExpandGlobal()`, `ExpandGroup()`, `ExpandCommand()` で段階的に展開
+
+**展開の流れ**:
+1. `ExpandGlobal(GlobalSpec)` → `RuntimeGlobal` (グローバル変数を展開)
+2. `ExpandGroup(GroupSpec, RuntimeGlobal)` → `RuntimeGroup` (グループ変数を展開、グローバル変数を継承)
+3. `ExpandCommand(CommandSpec, RuntimeGroup)` → `RuntimeCommand` (コマンド変数を展開、グループ変数を継承)
 
 **利点**:
-1. **優先順位が自然に実現**: グループ変数をベースに、コマンド変数で上書き
-2. **二重展開を回避**: 展開は実行時の1回のみ
-3. **シンプルな実装**: マージロジックが不要
+1. **優先順位の明確化**: コマンド変数 > グループ変数 > グローバル変数
+2. **二重展開を回避**: 各レベルで一度だけ展開
+3. **Spec/Runtime 分離**: TOML由来の値と実行時の値を明確に区別
 
-#### 2.2.2 ワークディレクトリの設定
+#### 2.2.2 ワークディレクトリの設定（Task 0034 で実装）
 
-実行時のワークディレクトリ情報は2箇所に設定されます：
+Task 0034 では、Task 0035 の Runtime 構造体にワークディレクトリ機能を追加します:
 
-1. グループ実行開始時に `resolveGroupWorkDir()` でワークディレクトリを決定・展開
-2. 決定した物理/仮想パスを以下に設定:
-   - `group.ExpandedWorkDir`: 後続処理（`resolveCommandWorkDir` など）で参照
-   - `group.ExpandedVars["__runner_workdir"]`: コマンドレベルの変数展開で参照
-3. コマンド実行時に、グループ変数とコマンド変数を統合して展開
+**実行時のワークディレクトリ情報の設定**:
+
+1. `ExpandGroup(GroupSpec, RuntimeGlobal)` でグループ変数を展開 → `RuntimeGroup` 生成
+2. グループ実行開始時に `resolveGroupWorkDir(RuntimeGroup)` でワークディレクトリを決定
+3. 決定した物理/仮想パスを以下に設定:
+   - `RuntimeGroup.EffectiveWorkDir`: 後続処理（`resolveCommandWorkDir` など）で参照
+   - `RuntimeGroup.ExpandedVars["__runner_workdir"]`: コマンドレベルの変数展開で参照
+4. `ExpandCommand(CommandSpec, RuntimeGroup)` でコマンド変数を展開 → `RuntimeCommand` 生成
 
 **設計の利点**:
-- `group.WorkDir`: TOMLの生の値を保持（トレーサビリティ）
-- `group.ExpandedWorkDir`: 展開済みの値を保持（処理ロジックで使用）
-- シンプルで直接的な実装（余計な間接化がない）
-- `AutoVarProvider` への依存が不要
+- `GroupSpec.WorkDir`: TOMLの生の値を保持（トレーサビリティ）
+- `RuntimeGroup.EffectiveWorkDir`: 展開済みの値を保持（処理ロジックで使用）
+- Task 0035 の Spec/Runtime 分離パターンに準拠
 - ワークディレクトリの決定と設定が同じスコープ内で完結
 
 ## 3. API 仕様
@@ -214,7 +327,7 @@ type TempDirManager interface {
 func NewTempDirManager(logger logging.Logger, groupName string, isDryRun bool) TempDirManager
 ```
 
-### 3.2 DefaultGroupExecutor.ExecuteGroup() メソッド
+### 3.2 DefaultGroupExecutor.ExecuteGroup() メソッド（Task 0035 完了後）
 
 **パッケージ**: `internal/runner`
 
@@ -223,23 +336,38 @@ func NewTempDirManager(logger logging.Logger, groupName string, isDryRun bool) T
 //
 // 引数:
 //   ctx: コンテキスト
-//   group: グループ設定
+//   groupSpec: グループ設定（Spec層）
 //
 // 戻り値:
 //   error: エラー（グループまたはコマンド実行失敗）
 //
-// 動作:
-//   1. ワークディレクトリを決定（resolveGroupWorkDir）
-//   2. 一時ディレクトリの場合は生成（TempDirManager.Create）
-//   3. group.ExpandedVars["__runner_workdir"] にワークディレクトリを直接設定
-//   4. defer で条件付きクリーンアップを登録（if !keepTempDirs { mgr.Cleanup() }）
-//   5. コマンド実行ループ
-func (r *Runner) ExecuteGroup(ctx context.Context, group *runnertypes.CommandGroup) error
+// 動作（Task 0035 完了後 + Task 0034 実装）:
+//   1. ExpandGroup(groupSpec, runtimeGlobal) でグループ変数を展開 → RuntimeGroup 生成
+//   2. resolveGroupWorkDir(runtimeGroup) でワークディレクトリを決定
+//   3. 一時ディレクトリの場合は TempDirManager.Create() で生成
+//   4. 決定したワークディレクトリを以下に設定:
+//      - runtimeGroup.EffectiveWorkDir
+//      - runtimeGroup.ExpandedVars["__runner_workdir"]
+//   5. defer で条件付きクリーンアップを登録（if !keepTempDirs { mgr.Cleanup() }）
+//   6. コマンド実行ループ:
+//      - for each commandSpec in groupSpec.Commands:
+//        a. ExpandCommand(commandSpec, runtimeGroup.ExpandedVars, runtimeGroup.Spec.Name) → RuntimeCommand 生成
+//        b. executor.Execute(ctx, runtimeCommand)
+func (e *DefaultGroupExecutor) ExecuteGroup(
+    ctx context.Context,
+    groupSpec *runnertypes.GroupSpec,
+) error
 ```
 
+**Task 0035 による変更点**:
+- 引数: `*runnertypes.CommandGroup` → `*runnertypes.GroupSpec`
+- グループ変数展開: `ExpandGroup()` を使用して `RuntimeGroup` を生成
+- コマンド変数展開: `ExpandCommand()` を使用して `RuntimeCommand` を生成
+- ワークディレクトリ設定先: `group.ExpandedVars` → `runtimeGroup.ExpandedVars`
+
 **dry-runモードでの動作**:
-- `r.dryRun` フラグに基づいて `TempDirManager` を作成（`isDryRun` 引数を渡す）
-- 仮想パスが生成され、`group.ExpandedVars["__runner_workdir"]` に設定される
+- `e.isDryRun` フラグに基づいて `TempDirManager` を作成（`isDryRun` 引数を渡す）
+- 仮想パスが生成され、`runtimeGroup.ExpandedVars["__runner_workdir"]` に設定される
 - コマンド実行は `DryRunResourceManager` 経由で分析のみ行われる
 
 ### 3.3 __runner_workdir の定数定義
@@ -322,16 +450,16 @@ func ExpandString(
 3. コマンド実行時に `buildVarsForCommand()` でグループ変数とコマンド変数を統合
 4. 統合された変数マップを `ExpandString` に渡してコマンド引数を展開
 
-## 4. ワークディレクトリ決定ロジック
+## 4. ワークディレクトリ決定ロジック（Task 0035 完了後）
 
 ### 4.1 優先順位（新規）
 
 ```
-Level 1: コマンドレベル (Command.WorkDir)
+Level 1: コマンドレベル (CommandSpec.WorkDir → RuntimeCommand.EffectiveWorkDir)
   └─ 指定: そのパスを使用
   └─ 未指定: Level 2 へ
 
-Level 2: グループレベル (Group.WorkDir)
+Level 2: グループレベル (GroupSpec.WorkDir → RuntimeGroup.EffectiveWorkDir)
   └─ 指定: そのパスを使用
   └─ 未指定: Level 3 へ
 
@@ -339,23 +467,28 @@ Level 3: 自動生成一時ディレクトリ（デフォルト）
   └─ /tmp/scr-<groupName>-XXXXXX を自動生成
 ```
 
-### 4.2 決定アルゴリズム
+### 4.2 決定アルゴリズム（Task 0035 完了後）
 
 ```go
 // resolveGroupWorkDir: グループのワークディレクトリを決定
 // 戻り値: (workdir, tempDirManager, error)
 //   - 固定ディレクトリの場合: tempDirManager は nil
 //   - 一時ディレクトリの場合: tempDirManager は非nil（クリーンアップに使用）
+//
+// Task 0035 による変更点:
+//   - 引数: *runnertypes.CommandGroup → *runnertypes.RuntimeGroup
+//   - group.WorkDir → runtimeGroup.Spec.WorkDir (TOML の生の値)
+//   - group.ExpandedVars → runtimeGroup.ExpandedVars (展開済み変数)
 func (e *DefaultGroupExecutor) resolveGroupWorkDir(
-    group *runnertypes.CommandGroup,
+    runtimeGroup *runnertypes.RuntimeGroup,
 ) (string, TempDirManager, error) {
     // グループレベル WorkDir が指定されている?
-    if group.WorkDir != "" {
+    if runtimeGroup.Spec.WorkDir != "" {
         // 変数展開を実行（注意: __runner_workdir はまだ未定義）
-        level := fmt.Sprintf("group[%s]", group.Name)
+        level := fmt.Sprintf("group[%s]", runtimeGroup.Spec.Name)
         expandedWorkDir, err := config.ExpandString(
-            group.WorkDir,
-            group.ExpandedVars,  // __runner_workdir は含まれない
+            runtimeGroup.Spec.WorkDir,
+            runtimeGroup.ExpandedVars,  // __runner_workdir は含まれない
             level,
             "workdir",
         )
@@ -365,14 +498,14 @@ func (e *DefaultGroupExecutor) resolveGroupWorkDir(
 
         e.logger.Info(fmt.Sprintf(
             "Using group workdir for '%s': %s",
-            group.Name, expandedWorkDir,
+            runtimeGroup.Spec.Name, expandedWorkDir,
         ))
         return expandedWorkDir, nil, nil
     }
 
     // 一時ディレクトリマネージャーを作成
     // 注: isDryRun フラグは GroupExecutor のフィールドとして保持
-    tempDirMgr := NewTempDirManager(e.logger, group.Name, e.isDryRun)
+    tempDirMgr := NewTempDirManager(e.logger, runtimeGroup.Spec.Name, e.isDryRun)
 
     // 一時ディレクトリを生成
     // dry-runモードでは仮想パスが返される
@@ -385,20 +518,24 @@ func (e *DefaultGroupExecutor) resolveGroupWorkDir(
 }
 
 // resolveCommandWorkDir: コマンドのワークディレクトリを決定
-// 優先度: Command.ExpandedWorkDir > Group.ExpandedWorkDir
+// 優先度: RuntimeCommand.EffectiveWorkDir > RuntimeGroup.EffectiveWorkDir
+//
+// Task 0035 による変更点:
+//   - 引数: (*runnertypes.Command, *runnertypes.CommandGroup) → (*runnertypes.RuntimeCommand, *runnertypes.RuntimeGroup)
+//   - RuntimeCommand は RuntimeGroup への参照を持つ（将来実装予定）
 func (e *DefaultCommandExecutor) resolveCommandWorkDir(
-    cmd *runnertypes.Command,
-    group *runnertypes.CommandGroup,
+    runtimeCmd *runnertypes.RuntimeCommand,
+    runtimeGroup *runnertypes.RuntimeGroup,
 ) string {
-    // 優先度1: コマンドレベル ExpandedWorkDir
-    if cmd.ExpandedWorkDir != "" {
-        return cmd.ExpandedWorkDir
+    // 優先度1: コマンドレベル EffectiveWorkDir
+    if runtimeCmd.EffectiveWorkDir != "" {
+        return runtimeCmd.EffectiveWorkDir
     }
 
-    // 優先度2: グループレベル ExpandedWorkDir
-    // 注: ExecuteGroup で resolveGroupWorkDir により決定・展開済み
+    // 優先度2: グループレベル EffectiveWorkDir
+    // 注: ExecuteGroup で resolveGroupWorkDir により決定・設定済み
     //     （一時ディレクトリまたは固定ディレクトリの物理/仮想パス）
-    return group.ExpandedWorkDir
+    return runtimeGroup.EffectiveWorkDir
 }
 ```
 
@@ -553,168 +690,108 @@ func (m *DefaultTempDirManager) Path() string {
 
 ## 6. 変数展開の統合
 
-### 6.1 グループ実行時の __runner_workdir 設定
+### 6.1 グループ実行時の __runner_workdir 設定（Task 0035 完了後）
 
 **ファイル**: `internal/runner/group_executor.go`
 
 **注意**: 実装は `DefaultGroupExecutor.ExecuteGroup()` メソッドです。
 
 ```go
-// ExecuteGroup: 1つのグループを実行
+// ExecuteGroup: 1つのグループを実行（Task 0035 完了後 + Task 0034 実装）
 func (e *DefaultGroupExecutor) ExecuteGroup(
     ctx context.Context,
-    group *runnertypes.CommandGroup,
+    groupSpec *runnertypes.GroupSpec,
 ) error {
-    // ステップ1: ワークディレクトリを決定
-    // r.dryRun フラグに基づいて TempDirManager を作成
-    workDir, tempDirMgr, err := r.resolveGroupWorkDir(group)
+    // ステップ1: グループ変数を展開（Task 0035 で実装済み）
+    runtimeGroup, err := config.ExpandGroup(groupSpec, e.runtimeGlobal)
+    if err != nil {
+        return fmt.Errorf("failed to expand group '%s': %w", groupSpec.Name, err)
+    }
+
+    // ステップ2: ワークディレクトリを決定（Task 0034 で実装）
+    workDir, tempDirMgr, err := e.resolveGroupWorkDir(runtimeGroup)
     if err != nil {
         return fmt.Errorf("failed to resolve work directory: %w", err)
     }
 
-    // ステップ2: defer でクリーンアップを登録（重要: エラー時も実行）
+    // ステップ3: defer でクリーンアップを登録（重要: エラー時も実行）
     // dry-runモードでもCleanup()は呼ばれるが、実際の削除は行わない
-    if tempDirMgr != nil && !r.keepTempDirs {
+    if tempDirMgr != nil && !e.keepTempDirs {
         defer func() {
             err := tempDirMgr.Cleanup()
             if err != nil {
-                r.logger.Error(fmt.Sprintf("Cleanup warning: %v", err))
+                e.logger.Error(fmt.Sprintf("Cleanup warning: %v", err))
             }
         }()
     }
 
-    // ステップ3: グループの展開済みワークディレクトリを設定
-    // (1) group.ExpandedWorkDir に物理/仮想パスを設定
+    // ステップ4: グループの実行時ワークディレクトリを設定（Task 0034 で実装）
+    // (1) RuntimeGroup.EffectiveWorkDir に物理/仮想パスを設定
     //     dry-runモードでは仮想パスが設定される
-    group.ExpandedWorkDir = workDir
+    runtimeGroup.EffectiveWorkDir = workDir
 
     // (2) グループレベル変数に __runner_workdir を設定
     //     コマンドレベルの変数展開で参照可能
-    group.ExpandedVars[variable.AutoVarPrefix + variable.AutoVarKeyWorkDir] = workDir
+    runtimeGroup.ExpandedVars[variable.AutoVarPrefix + variable.AutoVarKeyWorkDir] = workDir
 
-    // ステップ4: コマンド実行ループ
-    for _, cmd := range group.Commands {
-        // ステップ4-1: 変数マップを構築
-        // グループ変数をベースに、コマンド固有の変数で上書き（コマンドが優先）
-        vars := r.buildVarsForCommand(cmd, group)
+    // ステップ5: コマンド実行ループ（Task 0035 で実装済み + Task 0034 で拡張）
+    for i := range groupSpec.Commands {
+        cmdSpec := &groupSpec.Commands[i]
 
-        // ステップ4-2: コマンドの変数展開（一度だけ）
-        expandedCmd, err := r.expandCommand(cmd, vars)
+        // ステップ5-1: コマンド変数を展開（Task 0035 で実装済み）
+        runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup)
         if err != nil {
-            return fmt.Errorf("failed to expand command '%s': %w", cmd.Name, err)
+            return fmt.Errorf("failed to expand command '%s': %w", cmdSpec.Name, err)
         }
 
-        // ステップ4-3: コマンド実行
-        // dry-runモードでは resourceManager が DryRunResourceManager なので、
+        // ステップ5-2: コマンドレベルのワークディレクトリを決定（Task 0034 で実装）
+        runtimeCmd.EffectiveWorkDir = e.resolveCommandWorkDir(runtimeCmd, runtimeGroup)
+
+        // ステップ5-3: コマンド実行
+        // dry-runモードでは executor が DryRunExecutor なので、
         // 実際のコマンド実行は行わず、分析のみ実施
-        output, err := r.resourceManager.ExecuteCommand(ctx, expandedCmd)
+        err = e.executor.Execute(ctx, runtimeCmd)
         if err != nil {
-            return fmt.Errorf("command '%s' failed: %w", cmd.Name, err)
+            return fmt.Errorf("command '%s' failed: %w", cmdSpec.Name, err)
         }
-
-        // ステップ4-4: 出力ハンドリング（既存ロジック）
-        r.handleCommandOutput(cmd, output)
     }
 
     return nil
 }
 
-// buildVarsForCommand: コマンド実行用の変数マップを構築
-// グループ変数とコマンド変数を統合（コマンド変数が優先）
-func (e *DefaultGroupExecutor) buildVarsForCommand(
-    cmd *runnertypes.Command,
-    group *runnertypes.CommandGroup,
-) map[string]string {
-    // 新しいマップを作成
-    vars := make(map[string]string, len(group.ExpandedVars) + len(cmd.Vars))
-
-    // 1. グループ変数をコピー（__runner_workdir を含む）
-    maps.Copy(vars, group.ExpandedVars)
-
-    // 2. コマンド固有の変数で上書き（コマンドが優先）
-    // 注意: cmd.Vars は未展開の変数定義（TOML から読み込んだ raw 値）
-    maps.Copy(vars, cmd.Vars)
-
-    return vars
-}
-
-// expandCommand: コマンドの変数展開を実行
-// 戻り値: 展開済みコマンド構造体（元の cmd は変更しない）
-func (e *DefaultGroupExecutor) expandCommand(
-    cmd *runnertypes.Command,
-    vars map[string]string,
-) (*runnertypes.Command, error) {
-    level := fmt.Sprintf("command[%s]", cmd.Name)
-
-    // 元のcmdのシャローコピーを作成（全フィールドをコピー）
-    // これにより、TOMLから読み込んだ生の値（Cmd, Args, Vars, Envなど）を保持
-    expanded := *cmd
-
-    // Cmd の展開
-    expandedCmd, err := config.ExpandString(cmd.Cmd, vars, level, "cmd")
-    if err != nil {
-        return nil, err
-    }
-    expanded.ExpandedCmd = expandedCmd
-
-    // Args の展開
-    expanded.ExpandedArgs = make([]string, len(cmd.Args))
-    for i, arg := range cmd.Args {
-        expandedArg, err := config.ExpandString(arg, vars, level, fmt.Sprintf("args[%d]", i))
-        if err != nil {
-            return nil, err
-        }
-        expanded.ExpandedArgs[i] = expandedArg
-    }
-
-    // WorkDir の展開
-    if cmd.WorkDir != "" {
-        expandedWorkDir, err := config.ExpandString(cmd.WorkDir, vars, level, "workdir")
-        if err != nil {
-            return nil, err
-        }
-        expanded.ExpandedWorkDir = expandedWorkDir
-    }
-
-    // Env の展開（既存ロジックを保持）
-    expanded.ExpandedEnv = make(map[string]string, len(cmd.Env))
-    for key, value := range cmd.Env {
-        expandedValue, err := config.ExpandString(value, vars, level, fmt.Sprintf("env[%s]", key))
-        if err != nil {
-            return nil, err
-        }
-        expanded.ExpandedEnv[key] = expandedValue
-    }
-
-    return &expanded, nil
-}
+// Task 0035 により、buildVarsForCommand() と expandCommand() は削除されました。
+// これらの機能は config.ExpandGroup() と config.ExpandCommand() に統合されています。
 ```
 
-### 6.2 Command 型の変更
+### 6.2 Runtime 構造体の変更（Task 0035 完了後）
 
-**ファイル**: `internal/runner/runnertypes/config.go`
+**ファイル**: `internal/runner/runnertypes/runtime.go`
+
+Task 0035 により、Spec/Runtime が分離されたため、Task 0034 では Runtime 構造体にワークディレクトリ機能を追加します:
 
 ```go
-type Command struct {
-    Name    string   `toml:"name"`
-    Cmd     string   `toml:"cmd"`
-    Args    []string `toml:"args"`
-    WorkDir string   `toml:"workdir"`  // 変更: dir → workdir
-    Env     map[string]string `toml:"env"`
-    Vars    map[string]string `toml:"vars"`  // 重要: 未展開の変数定義
+// RuntimeCommand: 実行時コマンド設定（Task 0035 で導入、Task 0034 で拡張）
+type RuntimeCommand struct {
+    Spec *CommandSpec  // 元の CommandSpec への参照
 
-    // Expanded fields (実行時に設定)
-    ExpandedCmd     string
-    ExpandedArgs    []string
-    ExpandedWorkDir string  // 追加: 展開済み WorkDir
-    ExpandedEnv     map[string]string
-    // 注意: ExpandedVars は削除（実行時に動的に構築するため不要）
+    // 展開済みコマンド情報（Task 0035 で実装済み）
+    ExpandedCmd  string
+    ExpandedArgs []string
+    ExpandedEnv  map[string]string
+    ExpandedVars map[string]string
+
+    // 実行時情報（Task 0035 で実装済み）
+    EffectiveTimeout int
+
+    // Task 0034 で追加
+    EffectiveWorkDir string  // 実行時に決定されたワークディレクトリ
 }
 ```
 
-**重要な変更点**:
-1. `Vars` フィールド: TOML から読み込んだ未展開の変数定義を保持
-2. `ExpandedVars` フィールド: 削除（実行時に `buildVarsForCommand()` で動的に構築）
+**Task 0035 による変更点**:
+1. `CommandSpec`: TOML から読み込んだ未展開の設定（`Cmd`, `Args`, `WorkDir`, `Env`, `Vars` など）
+2. `RuntimeCommand`: 実行時に展開された設定（`ExpandedCmd`, `ExpandedArgs`, `ExpandedEnv`, `ExpandedVars` など）
+3. `EffectiveWorkDir`: Task 0034 で追加するフィールド（`resolveCommandWorkDir()` で設定）
 
 ### 6.3 ワークディレクトリ決定ロジック
 

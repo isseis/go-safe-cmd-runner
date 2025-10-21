@@ -191,11 +191,13 @@ graph TB
 |------------|----------------|----------|
 | GroupExecutor | `GroupExecutor` インターフェースと `DefaultGroupExecutor` 実装 | `internal/runner` |
 | TempDirManager | `TempDirManager` インターフェース（新規） | `internal/runner/executor` |
-| ConfigExpander | `config.ExpandString` 関数 | `internal/runner/config` |
+| ConfigExpander | `config.ExpandGroup`, `config.ExpandCommand` 関数 | `internal/runner/config` |
 | CommandExecutor | `executor.CommandExecutor` インターフェース | `internal/runner/executor` |
 | FileSystem | `resource.ResourceManager` インターフェース | `internal/runner/resource` |
 
-**注**: GroupExecutorは当初「概念モデル」として設計されましたが、Phase 0リファクタリングにより独立したインターフェースとして実装されました。これにより、Runnerクラスの肥大化を防ぎ、責務の分離が改善されました。
+**注**:
+- GroupExecutorは当初「概念モデル」として設計されましたが、Phase 0リファクタリングにより独立したインターフェースとして実装されました。これにより、Runnerクラスの肥大化を防ぎ、責務の分離が改善されました。
+- Task 0035 (Spec/Runtime分離) により、変数展開は `ExpandString` から `ExpandGroup`, `ExpandCommand` へ変更されました。これらの関数は `GroupSpec` → `RuntimeGroup`, `CommandSpec` → `RuntimeCommand` への変換を行います。
 
 **凡例（Legend）**
 
@@ -264,154 +266,127 @@ flowchart TD
     LogDeleteError --> End
 ```
 
-#### 変数展開プロセス（旧設計 vs 新設計）
+#### 変数展開プロセス（Task 0035 完了後の設計）
 
-##### 旧設計（TOMLロード時にすべて展開）
+##### 変数展開の遅延評価と Spec/Runtime 分離
 
-```mermaid
-flowchart TD
-    classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
-    classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
-    classDef loadPhase fill:#fef3e8,stroke:#fd7e14,stroke-width:3px,stroke-dasharray: 5 5;
-    classDef execPhase fill:#e8f5f3,stroke:#20c997,stroke-width:3px,stroke-dasharray: 5 5;
+Task 0035 により、Spec/Runtime 分離が実装され、変数展開の遅延評価が実現されました。
 
-    subgraph LoadPhase["📄 TOMLロード時"]
-        direction TB
-        TOMLFile[("TOML設定ファイル")]
-        ParseTOML["TOML解析"]
-        RawVars[("Group.Vars<br/>Command.Vars")]
-        ExpandGroupVars["Group.Vars展開"]
-        GroupExpandedVars[("Group.ExpandedVars")]
-        ExpandCmdVars["Command.Vars展開<br/>(Group変数 + Cmd変数)"]
-        CmdExpandedVars[("Command.ExpandedVars")]
-
-        TOMLFile --> ParseTOML
-        ParseTOML --> RawVars
-        RawVars --> ExpandGroupVars
-        ExpandGroupVars --> GroupExpandedVars
-        GroupExpandedVars --> ExpandCmdVars
-        RawVars --> ExpandCmdVars
-        ExpandCmdVars --> CmdExpandedVars
-    end
-
-    subgraph ExecPhase["⚙️ コマンド実行時"]
-        direction TB
-        UseExpandedVars["Command.ExpandedVars使用<br/>(事前計算済み)"]
-    end
-
-    CmdExpandedVars --> UseExpandedVars
-
-    class TOMLFile,RawVars,GroupExpandedVars,CmdExpandedVars data;
-    class ParseTOML,ExpandGroupVars,ExpandCmdVars,UseExpandedVars process;
-    class LoadPhase loadPhase;
-    class ExecPhase execPhase;
-```
-
-**問題点**:
+**Task 0035 以前の問題点**:
 - TOMLロード時に `Group.ExpandedVars` と `Command.ExpandedVars` の両方を計算
 - グループのワークディレクトリ（`__runner_workdir`）はコマンド実行時に決定されるが、TOMLロード時には未確定
 - 未確定の `__runner_workdir` を含む状態でコマンド変数を展開していた
 
-##### 新設計（グループ変数のみTOMLロード時、コマンド変数は実行時に展開）
+##### Task 0035 完了後の設計（Spec/Runtime 分離）
 
 ```mermaid
 flowchart TD
     classDef data fill:#e6f7ff,stroke:#1f77b4,stroke-width:1px,color:#0b3d91;
     classDef process fill:#fff1e6,stroke:#ff7f0e,stroke-width:1px,color:#8a3e00;
     classDef validation fill:#e8f5e8,stroke:#2e8b57,stroke-width:2px,color:#006400;
-    classDef error fill:#ffe8e8,stroke:#dc3545,stroke-width:2px,color:#721c24;
     classDef loadPhase fill:#fef3e8,stroke:#fd7e14,stroke-width:3px,stroke-dasharray: 5 5;
     classDef execPhase fill:#e8f5f3,stroke:#20c997,stroke-width:3px,stroke-dasharray: 5 5;
 
-    subgraph LoadPhase["📄 TOMLロード時"]
+    subgraph LoadPhase["📄 TOMLロード時 (Spec層)"]
         direction TB
         TOMLFile[("TOML設定ファイル")]
         ParseTOML["TOML解析"]
-        RawVars[("Group.Vars<br/>Command.Vars")]
-        ExpandGroupVars["Group.Vars展開"]
-        GroupExpandedVars[("Group.ExpandedVars")]
-        CmdVars[("Command.Vars<br/>(未展開のまま保持)")]
+        ConfigSpec[("ConfigSpec<br/>GlobalSpec<br/>GroupSpec<br/>CommandSpec")]
 
         TOMLFile --> ParseTOML
-        ParseTOML --> RawVars
-        RawVars --> ExpandGroupVars
-        ExpandGroupVars --> GroupExpandedVars
-        RawVars --> CmdVars
+        ParseTOML --> ConfigSpec
     end
 
-    subgraph ExecPhase["⚙️ コマンド実行時"]
+    subgraph ExecPhase["⚙️ コマンド実行時 (Runtime層)"]
         direction TB
-        ResolveWorkDir["ワークディレクトリ決定<br/>(resolveGroupWorkDir)"]
-        WorkDirValue[("workDir値")]
-        SetToGroup["Group.ExpandedVars設定<br/>(__runner_workdir = workDir)"]
-        BuildVarsMap["変数マップ構築<br/>(buildVarsForCommand)"]
-        ExpandCmdVars["Command.Vars展開"]
-        CmdExpandedVars[("Command.ExpandedVars")]
-        UseExpandedVars["Command.ExpandedVars使用"]
+        ExpandGlobal["ExpandGlobal()<br/>(GlobalSpec → RuntimeGlobal)"]
+        RuntimeGlobal[("RuntimeGlobal<br/>ExpandedVars")]
 
-        ResolveWorkDir --> WorkDirValue
-        WorkDirValue --> SetToGroup
-        SetToGroup --> BuildVarsMap
-        BuildVarsMap --> ExpandCmdVars
-        ExpandCmdVars --> CmdExpandedVars
-        CmdExpandedVars --> UseExpandedVars
+        ExpandGroup["ExpandGroup()<br/>(GroupSpec → RuntimeGroup)"]
+        RuntimeGroup[("RuntimeGroup<br/>ExpandedVars")]
+
+        ResolveWorkDir["ワークディレクトリ決定<br/>(resolveGroupWorkDir)"]
+        SetWorkDir["RuntimeGroup.ExpandedVars設定<br/>(__runner_workdir = workDir)"]
+
+        ExpandCommand["ExpandCommand()<br/>(CommandSpec → RuntimeCommand)"]
+        RuntimeCommand[("RuntimeCommand<br/>ExpandedCmd, ExpandedArgs")]
+
+        Execute["コマンド実行"]
+
+        ExpandGlobal --> RuntimeGlobal
+        RuntimeGlobal --> ExpandGroup
+        ExpandGroup --> RuntimeGroup
+        RuntimeGroup --> ResolveWorkDir
+        ResolveWorkDir --> SetWorkDir
+        SetWorkDir --> ExpandCommand
+        ExpandCommand --> RuntimeCommand
+        RuntimeCommand --> Execute
     end
 
-    GroupExpandedVars --> ResolveWorkDir
-    GroupExpandedVars --> BuildVarsMap
-    CmdVars --> BuildVarsMap
+    ConfigSpec --> ExpandGlobal
 
-    class TOMLFile,RawVars,GroupExpandedVars,CmdVars,WorkDirValue,CmdExpandedVars data;
-    class ParseTOML,ExpandGroupVars,ResolveWorkDir,SetToGroup,BuildVarsMap,ExpandCmdVars,UseExpandedVars process;
+    class TOMLFile,ConfigSpec,RuntimeGlobal,RuntimeGroup,RuntimeCommand data;
+    class ParseTOML,ExpandGlobal,ExpandGroup,ResolveWorkDir,SetWorkDir,ExpandCommand,Execute process;
     class LoadPhase loadPhase;
     class ExecPhase execPhase;
 ```
 
-**改善点**:
-- TOMLロード時は `Group.Vars` のみ展開して `Group.ExpandedVars` に保存
-- `Command.Vars` は未展開のまま保持（`Command.ExpandedVars` は作成しない）
-- コマンド実行時の流れ:
-  1. `resolveGroupWorkDir()` でワークディレクトリを決定
-  2. 決定した `workDir` を `Group.ExpandedVars["__runner_workdir"]` に**直接設定**（副作用）
-  3. `buildVarsForCommand()` で `Group.ExpandedVars`（`__runner_workdir` 含む）と `Command.Vars` を統合
-  4. 統合された変数マップでコマンド変数を展開
-- すべての実行時情報（ワークディレクトリ、時刻、PIDなど）が揃った状態で展開
+**Task 0035 による改善点**:
+1. **Spec/Runtime 分離**: TOML由来の設定値（Spec）と実行時の展開値（Runtime）を明確に分離
+2. **変数展開の遅延評価**: TOMLロード時は解析のみ、実行時に展開
+3. **階層的な展開**:
+   - `ExpandGlobal(GlobalSpec)` → `RuntimeGlobal` (グローバル変数展開)
+   - `ExpandGroup(GroupSpec, RuntimeGlobal)` → `RuntimeGroup` (グループ変数展開、グローバル変数継承)
+   - `ExpandCommand(CommandSpec, RuntimeGroup)` → `RuntimeCommand` (コマンド変数展開、グループ変数継承)
+4. **ワークディレクトリの設定時期**:
+   - `resolveGroupWorkDir()` でワークディレクトリを決定
+   - `RuntimeGroup.ExpandedVars["__runner_workdir"]` に設定
+   - `ExpandCommand()` で `__runner_workdir` を含む変数展開を実行
+5. **トレーサビリティ**: Runtime構造体は対応する Spec への参照を保持（`RuntimeGroup.Spec`, `RuntimeCommand.Spec`）
 
 ## 4. データモデル
 
-### 4.1 設定型の変更方針
+### 4.1 設定型の変更方針（Task 0035 完了後）
 
-本タスクでは、以下の設定型の変更を行う：
+本タスクでは、Task 0035 で導入された Spec/Runtime 構造体に基づいて以下の変更を行う：
 
-**削除対象**:
-- `GlobalConfig.WorkDir`: グローバルレベルでのデフォルトディレクトリ設定
-- `CommandGroup.TempDir`: グループレベルでの一時ディレクトリフラグ
+**削除対象**（Task 0035 で完了済み）:
+- 古い型定義: `Config`, `GlobalConfig`, `CommandGroup`, `Command`
 
-**名称変更**:
-- `Command.Dir` → `Command.WorkDir`: コマンドレベルのワークディレクトリ指定
+**Task 0034 で変更する対象**:
+- `GlobalSpec.WorkDir`: グローバルレベルでのデフォルトディレクトリ設定を削除
+- `GroupSpec.TempDir`: グループレベルでの一時ディレクトリフラグを削除
+- `CommandSpec.Dir` → `CommandSpec.WorkDir`: コマンドレベルのワークディレクトリ指定（名称変更）
+
+**Runtime 構造体の拡張**:
+- `RuntimeGroup.EffectiveWorkDir`: 実行時に決定されたワークディレクトリ（一時または固定）
+- `RuntimeCommand.EffectiveWorkDir`: コマンドレベルで決定されたワークディレクトリ
 
 これにより、TOML 設定ファイルで既にこれらのフィールドを使用している場合は、パーサーレベルで「未知フィールド」エラーが発生し、ユーザーに明確な移行メッセージを促す。
 
-### 4.2 実行時の状態管理
+### 4.2 実行時の状態管理（Task 0035 完了後）
 
-グループ実行時の状態は `group.ExpandedVars` に直接設定される：
+グループ実行時の状態は `RuntimeGroup.ExpandedVars` に設定される：
 
 **管理される情報**:
 - ワークディレクトリ（`__runner_workdir` として提供）
-- 実行時刻（`__runner_datetime`）
-- プロセスID（`__runner_pid`）
+- 実行時刻（`__runner_datetime`） - Task 0035 で実装済み
+- プロセスID（`__runner_pid`） - 将来実装予定
 
 **ライフサイクル**:
-1. グループ実行開始時: `resolveGroupWorkDir()` でワークディレクトリを決定
-2. 決定した `workdir` を `group.ExpandedVars["__runner_workdir"]` に直接設定
-3. 既存の `config.ExpandString` で変数展開を実行
+1. `ExpandGroup(GroupSpec, RuntimeGlobal)` でグループ変数を展開 → `RuntimeGroup` 生成
+2. グループ実行開始時: `resolveGroupWorkDir(RuntimeGroup)` でワークディレクトリを決定
+3. 決定した `workDir` を以下に設定:
+   - `RuntimeGroup.EffectiveWorkDir`: 後続処理で参照
+   - `RuntimeGroup.ExpandedVars["__runner_workdir"]`: コマンド変数展開で参照
+4. `ExpandCommand(CommandSpec, RuntimeGroup)` でコマンド変数を展開 → `RuntimeCommand` 生成
 
-**設計の利点**:
-- シンプルで直接的な実装（余計な間接化がない）
-- 新しい型（GroupContext）が不要
-- 既存の変数展開機構をそのまま活用
-- 一貫した変数管理パターン（`__runner_*` 予約変数）
-- 一時ディレクトリか固定ディレクトリかの判定は `TempDirManager` インスタンスの有無で判断
+**設計の利点（Task 0035 による）**:
+- **Spec/Runtime 分離**: TOML由来の値と実行時の値を明確に区別
+- **トレーサビリティ**: Runtime構造体は対応する Spec への参照を保持
+- **変数展開の遅延評価**: すべての実行時情報が揃った状態で展開
+- **一貫した変数管理**: `__runner_*` 予約変数のパターンを活用
+- **判定の明確化**: 一時ディレクトリか固定ディレクトリかは `TempDirManager` インスタンスの有無で判断
 
 ## 5. 一時ディレクトリ管理
 
