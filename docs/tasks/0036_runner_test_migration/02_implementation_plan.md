@@ -244,11 +244,11 @@ go test -tags test -v ./internal/runner -run TestRunner_ExecuteGroup
 **コミットメッセージ**: `test: migrate TestRunner_CommandTimeoutBehavior to new type system`
 **ステータス**: ✅ 完了 (2025-10-20)
 
-### Step 9-24: 残りのテスト関数の移行（8-12時間）
+### Step 9-24: 残りのテスト関数の移行（完了）
 
 各テスト関数を順次移行。複雑度に応じて1-2時間/関数。
 
-#### 進捗状況（7/21 完了、33%）
+#### 進捗状況（21/21 完了、100%）✅
 **完了**:
 - ✅ TestNewRunner
 - ✅ TestNewRunnerWithSecurity
@@ -257,43 +257,38 @@ go test -tags test -v ./internal/runner -run TestRunner_ExecuteGroup
 - ✅ TestRunner_ExecuteAll
 - ✅ TestRunner_ExecuteAll_ComplexErrorScenarios
 - ✅ TestRunner_CommandTimeoutBehavior
+- ✅ TestCommandGroup_NewFields
+- ✅ TestCommandGroup_TempDir_Detailed
+- ✅ TestRunner_OutputAnalysisValidation
+- ✅ TestRunner_EnvironmentVariablePriority_GroupLevelSupport
+- ✅ TestResourceManagement_FailureScenarios (6サブテスト)
+- ✅ TestSlackNotification
+- ✅ TestRunner_OutputCaptureEndToEnd
+- ✅ TestRunner_OutputCaptureErrorScenarios
+- ✅ TestRunner_OutputCaptureDryRun
+- ✅ TestRunner_OutputCaptureWithTOMLConfig
+- ✅ TestRunner_OutputCaptureErrorTypes
+- ✅ TestRunner_OutputCaptureExecutionStages
+- ✅ TestRunner_OutputCaptureSecurityIntegration
+- ✅ TestRunner_OutputCaptureResourceManagement
 
-**未完了**:
-- ⏳ TestRunner_ExecuteCommand (次のターゲット)
-- ⏳ TestRunner_ExecuteCommand_WithEnvironment
-- ⏳ TestRunner_OutputCapture
-- ⏳ TestRunner_OutputCaptureEdgeCases
-- ⏳ TestRunner_OutputSizeLimit
-- ⏳ TestRunner_EnvironmentVariables
-- ⏳ TestRunner_ExecuteAllWithPriority
-- ⏳ TestRunner_GroupPriority
-- ⏳ TestRunner_DependencyHandling ⚠️ 最も複雑
-- ⏳ TestRunner_PrivilegedCommand
-- ⏳ TestRunner_SecurityValidation
-- ⏳ TestRunner_SecurityIntegration
-- ⏳ その他2テスト
+**ステータス**: ✅ 完了 (2025-10-20)
 
-#### 優先順位
-1. **簡単**（30分-1時間）:
-   - TestRunner_ExecuteCommand
-   - TestRunner_CommandTimeout
-   - TestRunner_GroupTimeout
-   - TestRunner_GlobalTimeout
+すべてのテスト関数（21個）が新しいSpec/Runtime型システムへの移行を完了しました。
 
-2. **中程度**（1-2時間）:
-   - TestRunner_ExecuteAll
-   - TestRunner_OutputCapture
-   - TestRunner_OutputCaptureEdgeCases
-   - TestRunner_OutputSizeLimit
-   - TestRunner_EnvironmentVariables
+#### 移行パターン
+1. **型変換**:
+   - Config → ConfigSpec (Version: "1.0" 追加必須)
+   - GlobalConfig → GlobalSpec
+   - CommandGroup → GroupSpec
+   - Command → CommandSpec
 
-3. **複雑**（2-3時間）:
-   - TestRunner_ExecuteAllWithPriority
-   - TestRunner_GroupPriority
-   - TestRunner_DependencyHandling ⚠️ 最も複雑
-   - TestRunner_PrivilegedCommand
-   - TestRunner_SecurityValidation
-   - TestRunner_SecurityIntegration
+2. **フィールド名変更**:
+   - Dir → WorkDir
+   - EffectiveWorkdir → WorkDir
+
+3. **API変更**:
+   - ExecuteGroup(ctx, group) → ExecuteGroup(ctx, &group) (ポインタパラメータ)
 
 ### Step 24: skip_integration_testsタグの削除（15分）
 
