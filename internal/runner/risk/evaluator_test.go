@@ -18,7 +18,7 @@ func TestStandardEvaluator_EvaluateRisk(t *testing.T) {
 	}{
 		{
 			name: "privilege escalation command - sudo",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Cmd:  "sudo",
 				Args: []string{"ls", "/root"},
 			},
@@ -26,7 +26,7 @@ func TestStandardEvaluator_EvaluateRisk(t *testing.T) {
 		},
 		{
 			name: "privilege escalation command - su",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Cmd:  "su",
 				Args: []string{"root"},
 			},
@@ -34,7 +34,7 @@ func TestStandardEvaluator_EvaluateRisk(t *testing.T) {
 		},
 		{
 			name: "privilege escalation command - doas",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Cmd:  "doas",
 				Args: []string{"ls", "/root"},
 			},
@@ -42,7 +42,7 @@ func TestStandardEvaluator_EvaluateRisk(t *testing.T) {
 		},
 		{
 			name: "destructive file operation - rm",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Cmd:  "rm",
 				Args: []string{"-rf", "/tmp/files"},
 			},
@@ -50,7 +50,7 @@ func TestStandardEvaluator_EvaluateRisk(t *testing.T) {
 		},
 		{
 			name: "destructive file operation - find with delete",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Cmd:  "find",
 				Args: []string{"/tmp", "-name", "*.tmp", "-delete"},
 			},
@@ -58,7 +58,7 @@ func TestStandardEvaluator_EvaluateRisk(t *testing.T) {
 		},
 		{
 			name: "network operation - wget",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Cmd:  "wget",
 				Args: []string{"https://example.com/file.txt"},
 			},
@@ -66,7 +66,7 @@ func TestStandardEvaluator_EvaluateRisk(t *testing.T) {
 		},
 		{
 			name: "network operation - curl",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Cmd:  "curl",
 				Args: []string{"-O", "https://example.com/file.txt"},
 			},
@@ -74,7 +74,7 @@ func TestStandardEvaluator_EvaluateRisk(t *testing.T) {
 		},
 		{
 			name: "system modification - systemctl",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Cmd:  "systemctl",
 				Args: []string{"restart", "nginx"},
 			},
@@ -82,7 +82,7 @@ func TestStandardEvaluator_EvaluateRisk(t *testing.T) {
 		},
 		{
 			name: "package installation - apt install",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Cmd:  "apt",
 				Args: []string{"install", "vim"},
 			},
@@ -90,7 +90,7 @@ func TestStandardEvaluator_EvaluateRisk(t *testing.T) {
 		},
 		{
 			name: "safe package query - apt list",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Cmd:  "apt",
 				Args: []string{"list", "--installed"},
 			},
@@ -98,7 +98,7 @@ func TestStandardEvaluator_EvaluateRisk(t *testing.T) {
 		},
 		{
 			name: "safe command - echo",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Cmd:  "echo",
 				Args: []string{"Hello, World!"},
 			},
@@ -106,7 +106,7 @@ func TestStandardEvaluator_EvaluateRisk(t *testing.T) {
 		},
 		{
 			name: "safe command - ls",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Cmd:  "ls",
 				Args: []string{"-la", "/home"},
 			},
@@ -114,7 +114,7 @@ func TestStandardEvaluator_EvaluateRisk(t *testing.T) {
 		},
 		{
 			name: "safe command - cat",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Cmd:  "cat",
 				Args: []string{"/etc/passwd"},
 			},
@@ -149,7 +149,7 @@ func TestStandardEvaluator_RiskLevelHierarchy(t *testing.T) {
 	}{
 		{
 			name: "critical risk overrides all",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Cmd:  "sudo",
 				Args: []string{"rm", "-rf", "/"},
 			},
@@ -158,7 +158,7 @@ func TestStandardEvaluator_RiskLevelHierarchy(t *testing.T) {
 		},
 		{
 			name: "high risk destructive operations",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Cmd:  "rm",
 				Args: []string{"-rf", "/important/data"},
 			},
@@ -167,7 +167,7 @@ func TestStandardEvaluator_RiskLevelHierarchy(t *testing.T) {
 		},
 		{
 			name: "medium risk network operations",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Cmd:  "wget",
 				Args: []string{"https://suspicious.example.com/script.sh"},
 			},
@@ -176,7 +176,7 @@ func TestStandardEvaluator_RiskLevelHierarchy(t *testing.T) {
 		},
 		{
 			name: "medium risk system modifications",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Cmd:  "systemctl",
 				Args: []string{"stop", "important-service"},
 			},
@@ -213,7 +213,7 @@ func TestStandardEvaluator_ErrorHandling(t *testing.T) {
 	}{
 		{
 			name: "normal command should not error",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Cmd:  "echo",
 				Args: []string{"hello"},
 			},
@@ -222,7 +222,7 @@ func TestStandardEvaluator_ErrorHandling(t *testing.T) {
 		},
 		{
 			name: "empty command name",
-			cmd: &runnertypes.Command{
+			cmd: &runnertypes.CommandSpec{
 				Cmd:  "",
 				Args: []string{"test"},
 			},

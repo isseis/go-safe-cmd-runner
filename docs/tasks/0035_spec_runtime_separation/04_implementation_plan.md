@@ -831,11 +831,24 @@ Phase 1 → Phase 2 → Phase 3 → Phase 5 → Phase 6 → Phase 7
   - [x] 古い型の参照を全て新しい型に置換
 
 **Phase 8.2: テストファイルの一括移行**（8-12時間）
-- 移行パターンを適用して18ファイルを順次移行
-- Task 0036-0039 で確立したヘルパー関数を活用
+- [x] 古い展開関数を使用していないテストファイルの移行（4ファイル、73箇所）
+  - [x] `internal/runner/security/command_analysis_test.go` (2箇所)
+  - [x] `internal/runner/environment/filter_test.go` (13箇所)
+  - [x] `internal/runner/environment/processor_test.go` (39箇所)
+  - [x] `internal/runner/risk/evaluator_test.go` (19箇所)
+- [ ] 古い展開関数を使用するテストファイルの移行（6ファイル、124箇所）
+  - [ ] `internal/runner/config/allowlist_test.go` (18箇所) - ExpandGlobalConfig使用
+  - [ ] `internal/runner/config/command_env_expansion_test.go` (12箇所) - ExpandCommandConfig使用
+  - [ ] `internal/runner/config/expansion_test.go` (55箇所) - 全展開関数使用
+  - [ ] `internal/runner/config/security_integration_test.go` (20箇所) - 全展開関数使用
+  - [ ] `internal/runner/config/self_reference_test.go` (11箇所) - 全展開関数使用
+  - [ ] `internal/runner/config/verify_files_expansion_test.go` (8箇所) - ExpandGlobalConfig使用
+  - 注: これらは古い展開関数のテストのため、Phase 8.3で古い関数と一緒に削除または書き換え
 
 **Phase 8.3: 古い型定義の削除**（1-2時間）
 - すべての使用箇所がないことを確認
+- 古い展開関数(`ExpandGlobalConfig`, `ExpandGroupConfig`, `ExpandCommandConfig`)の削除
+- 古い展開関数を使用するテストファイルの削除または新展開関数への書き換え
 - `internal/runner/runnertypes/config.go` から古い型を削除
 
 #### オプション2: 古い型を残す
