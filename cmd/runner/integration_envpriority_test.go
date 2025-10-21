@@ -141,8 +141,8 @@ args = ["TEST_VAR"]
 				"TEST_VAR": "global_value",
 			},
 		},
-		// Note: Group-level env is not currently merged into process environment by BuildProcessEnvironment
-		// This test is skipped as it doesn't match the current implementation
+		// Note: Group-level env is not currently merged into process environment by BuildProcessEnvironment.
+		// This test passes because command-level env correctly overrides all other levels (system and global).
 		{
 			name: "command_overrides_all",
 			systemEnv: map[string]string{
