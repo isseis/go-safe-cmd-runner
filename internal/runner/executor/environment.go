@@ -25,7 +25,7 @@ func BuildProcessEnvironment(
 
 	// Step 1: Get system environment variables (filtered by allowlist)
 	systemEnv := getSystemEnvironment()
-	allowlist := runtimeGlobal.Spec.EnvAllowlist
+	allowlist := runtimeGlobal.EnvAllowlist()
 
 	for _, name := range allowlist {
 		if value, ok := systemEnv[name]; ok {

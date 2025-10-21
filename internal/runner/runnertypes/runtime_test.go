@@ -394,3 +394,99 @@ func TestRuntimeCommand_Structure(t *testing.T) {
 		t.Errorf("EffectiveTimeout = %d, want 60", runtime.EffectiveTimeout)
 	}
 }
+
+// TestRuntimeCommand_HelperMethods tests the helper methods for RuntimeCommand
+func TestRuntimeCommand_HelperMethods(t *testing.T) {
+	spec := &CommandSpec{
+		Name:    "test-cmd",
+		Cmd:     "/usr/bin/echo",
+		Args:    []string{"hello", "world"},
+		Timeout: 60,
+	}
+
+	runtime, err := NewRuntimeCommand(spec)
+	if err != nil {
+		t.Fatalf("NewRuntimeCommand() failed: %v", err)
+	}
+
+	// Test Cmd()
+	if got := runtime.Cmd(); got != "/usr/bin/echo" {
+		t.Errorf("Cmd() = %s, want /usr/bin/echo", got)
+	}
+
+	// Test Args()
+	args := runtime.Args()
+	if len(args) != 2 {
+		t.Errorf("len(Args()) = %d, want 2", len(args))
+	}
+	if args[0] != "hello" || args[1] != "world" {
+		t.Errorf("Args() = %v, want [hello world]", args)
+	}
+
+	// Test Timeout()
+	if got := runtime.Timeout(); got != 60 {
+		t.Errorf("Timeout() = %d, want 60", got)
+	}
+}
+
+// TestRuntimeGlobal_HelperMethods tests the helper methods for RuntimeGlobal
+func TestRuntimeGlobal_HelperMethods(t *testing.T) {
+	spec := &GlobalSpec{
+		Timeout:           300,
+		WorkDir:           "/usr/local",
+		EnvAllowlist:      []string{"PATH", "HOME"},
+		SkipStandardPaths: true,
+	}
+
+	runtime, err := NewRuntimeGlobal(spec)
+	if err != nil {
+		t.Fatalf("NewRuntimeGlobal() failed: %v", err)
+	}
+
+	// Test Timeout()
+	if got := runtime.Timeout(); got != 300 {
+		t.Errorf("Timeout() = %d, want 300", got)
+	}
+
+	// Test WorkDir()
+	if got := runtime.WorkDir(); got != "/usr/local" {
+		t.Errorf("WorkDir() = %s, want /usr/local", got)
+	}
+
+	// Test EnvAllowlist()
+	allowlist := runtime.EnvAllowlist()
+	if len(allowlist) != 2 {
+		t.Errorf("len(EnvAllowlist()) = %d, want 2", len(allowlist))
+	}
+	if allowlist[0] != "PATH" || allowlist[1] != "HOME" {
+		t.Errorf("EnvAllowlist() = %v, want [PATH HOME]", allowlist)
+	}
+
+	// Test SkipStandardPaths()
+	if got := runtime.SkipStandardPaths(); !got {
+		t.Errorf("SkipStandardPaths() = %v, want true", got)
+	}
+}
+
+// TestRuntimeGroup_HelperMethods tests the helper methods for RuntimeGroup
+func TestRuntimeGroup_HelperMethods(t *testing.T) {
+	spec := &GroupSpec{
+		Name:    "test-group",
+		WorkDir: "/tmp/test",
+	}
+
+	runtime, err := NewRuntimeGroup(spec)
+	if err != nil {
+		t.Fatalf("NewRuntimeGroup() failed: %v", err)
+	}
+
+	// Test Name()
+	if got := runtime.Name(); got != "test-group" {
+		t.Errorf("Name() = %s, want test-group", got)
+	}
+
+	// Test WorkDir()
+	if got := runtime.WorkDir(); got != "/tmp/test" {
+		t.Errorf("WorkDir() = %s, want /tmp/test", got)
+	}
+}

@@ -92,7 +92,7 @@ type ExecutionResult struct {
 
 // validateCommand validates command for consistency across execution modes
 func validateCommand(cmd *runnertypes.RuntimeCommand) error {
-	if cmd.Spec.Cmd == "" {
+	if cmd.Cmd() == "" {
 		return ErrEmptyCommand
 	}
 	if cmd.Name() == "" {

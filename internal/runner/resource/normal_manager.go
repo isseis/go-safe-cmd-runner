@@ -125,7 +125,7 @@ func (n *NormalResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 	}
 
 	// Check if output capture is requested and delegate to executeCommandWithOutput
-	if cmd.Spec.Output != "" && n.outputManager != nil {
+	if cmd.Output() != "" && n.outputManager != nil {
 		return n.executeCommandWithOutput(ctx, cmd, group, env, start)
 	}
 
@@ -141,7 +141,7 @@ func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, cm
 		maxSize = output.DefaultMaxOutputSize // Use default from output package
 	}
 
-	capture, err := n.outputManager.PrepareOutput(cmd.Spec.Output, group.WorkDir, maxSize)
+	capture, err := n.outputManager.PrepareOutput(cmd.Output(), group.WorkDir, maxSize)
 	if err != nil {
 		return nil, fmt.Errorf("output capture preparation failed: %w", err)
 	}
@@ -150,7 +150,7 @@ func (n *NormalResourceManager) executeCommandWithOutput(ctx context.Context, cm
 	defer func() {
 		if err != nil {
 			if cleanupErr := n.outputManager.CleanupOutput(capture); cleanupErr != nil {
-				n.logger.Error("Failed to cleanup output capture", "error", cleanupErr, "path", cmd.Spec.Output)
+				n.logger.Error("Failed to cleanup output capture", "error", cleanupErr, "path", cmd.Output())
 			}
 		}
 	}()

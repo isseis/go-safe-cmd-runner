@@ -149,7 +149,7 @@ func (m *Manager) VerifyGlobalFiles(runtimeGlobal *runnertypes.RuntimeGlobal) (*
 
 	// Update PathResolver with skip_standard_paths setting
 	if m.pathResolver != nil {
-		m.pathResolver.skipStandardPaths = runtimeGlobal.Spec.SkipStandardPaths
+		m.pathResolver.skipStandardPaths = runtimeGlobal.SkipStandardPaths()
 	}
 
 	for _, filePath := range runtimeGlobal.ExpandedVerifyFiles {

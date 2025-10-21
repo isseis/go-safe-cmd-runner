@@ -55,8 +55,8 @@ func (l *Logger) LogUserGroupExecution(
 		slog.Bool("audit", true), // Mark as audit event for new logging framework
 		slog.Int64("timestamp", time.Now().Unix()),
 		slog.String("command_name", cmd.Name()),
-		slog.String("command_path", cmd.Spec.Cmd),
-		slog.String("command_args", strings.Join(cmd.Spec.Args, " ")),
+		slog.String("command_path", cmd.Cmd()),
+		slog.String("command_args", strings.Join(cmd.Args(), " ")),
 		slog.String("expanded_command_path", cmd.ExpandedCmd),
 		slog.String("expanded_command_args", strings.Join(cmd.ExpandedArgs, " ")),
 		slog.Int("exit_code", result.ExitCode),

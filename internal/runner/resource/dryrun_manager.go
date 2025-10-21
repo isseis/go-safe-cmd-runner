@@ -132,7 +132,7 @@ func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 	}
 
 	// Check if output capture is requested and analyze it
-	if cmd.Spec.Output != "" && d.outputManager != nil {
+	if cmd.Output() != "" && d.outputManager != nil {
 		outputAnalysis := d.analyzeOutput(cmd, group)
 		d.RecordAnalysis(&outputAnalysis)
 	}
@@ -145,8 +145,8 @@ func (d *DryRunResourceManager) ExecuteCommand(ctx context.Context, cmd *runnert
 	if cmd.EffectiveWorkDir != "" {
 		stdout += fmt.Sprintf(" (in directory: %s)", cmd.EffectiveWorkDir)
 	}
-	if cmd.Spec.Output != "" {
-		stdout += fmt.Sprintf(" (output would be captured to: %s)", cmd.Spec.Output)
+	if cmd.Output() != "" {
+		stdout += fmt.Sprintf(" (output would be captured to: %s)", cmd.Output())
 	}
 
 	return &ExecutionResult{
@@ -168,7 +168,7 @@ func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd *runnertyp
 		Parameters: map[string]any{
 			"command":           cmd.ExpandedCmd,
 			"working_directory": cmd.EffectiveWorkDir,
-			"timeout":           cmd.Spec.Timeout,
+			"timeout":           cmd.Timeout(),
 		},
 		Impact: ResourceImpact{
 			Reversible:  false, // Commands are generally not reversible
@@ -363,22 +363,22 @@ func (d *DryRunResourceManager) analyzeOutput(cmd *runnertypes.RuntimeCommand, g
 	analysis := ResourceAnalysis{
 		Type:      ResourceTypeFilesystem,
 		Operation: OperationCreate,
-		Target:    cmd.Spec.Output,
+		Target:    cmd.Output(),
 		Parameters: map[string]any{
-			"output_path":       cmd.Spec.Output,
+			"output_path":       cmd.Output(),
 			"command":           cmd.ExpandedCmd,
 			"working_directory": group.WorkDir,
 		},
 		Impact: ResourceImpact{
 			Reversible:  false, // Output files are persistent
 			Persistent:  true,
-			Description: fmt.Sprintf("Capture command output to file: %s", cmd.Spec.Output),
+			Description: fmt.Sprintf("Capture command output to file: %s", cmd.Output()),
 		},
 		Timestamp: time.Now(),
 	}
 
 	// Use the output manager to analyze the output path
-	outputAnalysis, err := d.outputManager.AnalyzeOutput(cmd.Spec.Output, group.WorkDir)
+	outputAnalysis, err := d.outputManager.AnalyzeOutput(cmd.Output(), group.WorkDir)
 	if err != nil {
 		analysis.Impact.Description += fmt.Sprintf(" [ERROR: %v]", err)
 		analysis.Impact.SecurityRisk = riskLevelHigh

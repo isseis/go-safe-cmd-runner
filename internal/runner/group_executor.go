@@ -173,7 +173,7 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 		if cmdSpec.Timeout > 0 {
 			runtimeCmd.EffectiveTimeout = cmdSpec.Timeout
 		} else {
-			runtimeCmd.EffectiveTimeout = runtimeGlobal.Spec.Timeout
+			runtimeCmd.EffectiveTimeout = runtimeGlobal.Timeout()
 		}
 
 		lastCommand = cmdSpec.Name
@@ -246,7 +246,7 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 
 	// Set effective working directory from global config if not already resolved
 	if cmd.EffectiveWorkDir == "" {
-		cmd.EffectiveWorkDir = runtimeGlobal.Spec.WorkDir
+		cmd.EffectiveWorkDir = runtimeGlobal.WorkDir()
 	}
 
 	// Validate output path before command execution if output capture is requested
