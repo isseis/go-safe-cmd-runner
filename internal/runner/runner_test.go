@@ -21,11 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var (
-	errCommandNotFound = errors.New("command not found")
-	errResourceBusy    = errors.New("resource busy")
-	errCleanupFailed   = errors.New("cleanup failed")
-)
+var errCommandNotFound = errors.New("command not found")
 
 var ErrExecutionFailed = errors.New("execution failed")
 
@@ -954,30 +950,162 @@ func TestCommandGroup_NewFields(t *testing.T) {
 	}
 }
 
-// TestCommandGroup_TempDir_Detailed tests TempDir functionality with detailed mock expectations
-// SKIPPED: TempDir feature removed in new design - use t.TempDir() directly instead
-func TestCommandGroup_TempDir_Detailed(t *testing.T) {
-	t.Skip("TempDir feature removed - WorkDir now uses t.TempDir() directly")
-}
-
-// TestRunner_EnvironmentVariablePriority tests the priority hierarchy for environment variables:
-// command-specific > group > global (loaded from system/env file)
+// TestRunner_EnvironmentVariablePriority_GroupLevelSupport tests the priority hierarchy for environment variables:
+// Priority order: System < Global < Group < Command
 func TestRunner_EnvironmentVariablePriority_GroupLevelSupport(t *testing.T) {
-	t.Skip("Group-level environment variables are not yet implemented. GroupSpec struct needs an Env field similar to CommandSpec.Env")
+	setupSafeTestEnv(t)
 
-	// This test documents what the expected behavior should be when group-level environment variables are implemented:
-	// Priority order should be: command-specific > group-specific > global
-	//
-	// Required changes:
-	// 1. Add Env []string field to GroupSpec struct in runnertypes/config.go
-	// 2. Modify resolveEnvironmentVars method to apply group environment variables before command variables
-	// 3. Ensure variable resolution works across all three levels
-}
+	t.Run("Command overrides Group and Global", func(t *testing.T) {
+		t.Setenv("TEST_VAR", "from_system")
 
-// TestRunner_EnvironmentVariablePriority_EdgeCases tests edge cases for environment variable priority
-// SKIPPED: TempDir feature removed in new design
-func TestResourceManagement_FailureScenarios(t *testing.T) {
-	t.Skip("TempDir resource management tests removed - feature deprecated")
+		config := &runnertypes.ConfigSpec{
+			Version: "1.0",
+			Global: runnertypes.GlobalSpec{
+				Timeout:      3600,
+				EnvAllowlist: []string{"TEST_VAR"},
+				Env:          []string{"TEST_VAR=from_global"},
+			},
+			Groups: []runnertypes.GroupSpec{
+				{
+					Name: "test-group",
+					Env:  []string{"TEST_VAR=from_group"},
+					Commands: []runnertypes.CommandSpec{
+						{
+							Name: "test-cmd",
+							Cmd:  "printenv",
+							Args: []string{"TEST_VAR"},
+							Env:  []string{"TEST_VAR=from_command"},
+						},
+					},
+				},
+			},
+		}
+
+		mockResourceManager := &MockResourceManager{}
+
+		// Capture the actual envVars passed to ExecuteCommand
+		var capturedEnv map[string]string
+		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Run(func(args mock.Arguments) {
+				// The 4th argument is envVars
+				capturedEnv = args.Get(3).(map[string]string)
+			}).
+			Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "from_command\n", Stderr: ""}, nil)
+
+		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
+		require.NoError(t, err)
+
+		err = runner.LoadSystemEnvironment()
+		require.NoError(t, err)
+
+		ctx := context.Background()
+		err = runner.ExecuteGroup(ctx, &config.Groups[0])
+		require.NoError(t, err)
+
+		// Verify command env has the highest priority
+		assert.Equal(t, "from_command", capturedEnv["TEST_VAR"])
+		mockResourceManager.AssertExpectations(t)
+	})
+
+	t.Run("Group overrides Global and System", func(t *testing.T) {
+		t.Setenv("TEST_VAR", "from_system")
+
+		config := &runnertypes.ConfigSpec{
+			Version: "1.0",
+			Global: runnertypes.GlobalSpec{
+				Timeout:      3600,
+				EnvAllowlist: []string{"TEST_VAR"},
+				Env:          []string{"TEST_VAR=from_global"},
+			},
+			Groups: []runnertypes.GroupSpec{
+				{
+					Name: "test-group",
+					Env:  []string{"TEST_VAR=from_group"},
+					Commands: []runnertypes.CommandSpec{
+						{
+							Name: "test-cmd",
+							Cmd:  "printenv",
+							Args: []string{"TEST_VAR"},
+							// No command-level env
+						},
+					},
+				},
+			},
+		}
+
+		mockResourceManager := &MockResourceManager{}
+
+		var capturedEnv map[string]string
+		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Run(func(args mock.Arguments) {
+				capturedEnv = args.Get(3).(map[string]string)
+			}).
+			Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "from_group\n", Stderr: ""}, nil)
+
+		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
+		require.NoError(t, err)
+
+		err = runner.LoadSystemEnvironment()
+		require.NoError(t, err)
+
+		ctx := context.Background()
+		err = runner.ExecuteGroup(ctx, &config.Groups[0])
+		require.NoError(t, err)
+
+		// Verify group env overrides global and system
+		assert.Equal(t, "from_group", capturedEnv["TEST_VAR"])
+		mockResourceManager.AssertExpectations(t)
+	})
+
+	t.Run("Global overrides System", func(t *testing.T) {
+		t.Setenv("TEST_VAR", "from_system")
+
+		config := &runnertypes.ConfigSpec{
+			Version: "1.0",
+			Global: runnertypes.GlobalSpec{
+				Timeout:      3600,
+				EnvAllowlist: []string{"TEST_VAR"},
+				Env:          []string{"TEST_VAR=from_global"},
+			},
+			Groups: []runnertypes.GroupSpec{
+				{
+					Name: "test-group",
+					// No group-level env
+					Commands: []runnertypes.CommandSpec{
+						{
+							Name: "test-cmd",
+							Cmd:  "printenv",
+							Args: []string{"TEST_VAR"},
+							// No command-level env
+						},
+					},
+				},
+			},
+		}
+
+		mockResourceManager := &MockResourceManager{}
+
+		var capturedEnv map[string]string
+		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Run(func(args mock.Arguments) {
+				capturedEnv = args.Get(3).(map[string]string)
+			}).
+			Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "from_global\n", Stderr: ""}, nil)
+
+		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
+		require.NoError(t, err)
+
+		err = runner.LoadSystemEnvironment()
+		require.NoError(t, err)
+
+		ctx := context.Background()
+		err = runner.ExecuteGroup(ctx, &config.Groups[0])
+		require.NoError(t, err)
+
+		// Verify global env overrides system
+		assert.Equal(t, "from_global", capturedEnv["TEST_VAR"])
+		mockResourceManager.AssertExpectations(t)
+	})
 }
 
 func TestSlackNotification(t *testing.T) {
@@ -1881,126 +2009,6 @@ func TestRunner_OutputCaptureSecurityIntegration(t *testing.T) {
 
 			// Verify mock expectations (only for success cases with mock)
 			// Error cases use real resource manager, so no mock to verify
-		})
-	}
-}
-
-// TestRunner_OutputCaptureResourceManagement tests resource management integration
-func TestRunner_OutputCaptureResourceManagement(t *testing.T) {
-	t.Skip("Skipped: Tests CreateTempDir/CleanupTempDir methods which were removed with TempDir feature deprecation")
-	setupSafeTestEnv(t)
-
-	tests := []struct {
-		name          string
-		setupMock     func(*MockResourceManager)
-		expectSuccess bool
-		description   string
-	}{
-		{
-			name: "TempDirectoryLifecycle",
-			setupMock: func(mockRM *MockResourceManager) {
-				// Simulate temp directory creation and cleanup
-				mockRM.On("ValidateOutputPath", "resource-output.txt", mock.Anything).Return(nil)
-				mockRM.On("CreateTempDir", "test-group").Return("/tmp/test-temp-dir", nil)
-				mockRM.On("CleanupTempDir", "/tmp/test-temp-dir").Return(nil)
-
-				result := &resource.ExecutionResult{
-					ExitCode: 0,
-					Stdout:   "test output",
-					Stderr:   "",
-				}
-				mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-					Return(result, nil)
-			},
-			expectSuccess: true,
-			description:   "Temp directory should be created and cleaned up properly",
-		},
-		{
-			name: "ResourceContention",
-			setupMock: func(mockRM *MockResourceManager) {
-				// Setup temp directory to satisfy TempDir requirement
-				mockRM.On("ValidateOutputPath", "resource-output.txt", mock.Anything).Return(nil)
-				mockRM.On("CreateTempDir", "test-group").Return("/tmp/test-temp-dir", nil)
-				mockRM.On("CleanupTempDir", "/tmp/test-temp-dir").Return(nil)
-				// Simulate resource contention scenario
-				mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-					Return(nil, errResourceBusy)
-			},
-			expectSuccess: false,
-			description:   "Resource contention should be handled gracefully",
-		},
-		{
-			name: "CleanupFailure",
-			setupMock: func(mockRM *MockResourceManager) {
-				// Simulate cleanup failure - cleanup errors are logged but don't fail the execution
-				mockRM.On("ValidateOutputPath", "resource-output.txt", mock.Anything).Return(nil)
-				mockRM.On("CreateTempDir", "test-group").Return("/tmp/test-temp-dir", nil)
-				mockRM.On("CleanupTempDir", "/tmp/test-temp-dir").Return(errCleanupFailed)
-
-				result := &resource.ExecutionResult{
-					ExitCode: 0,
-					Stdout:   "test output",
-					Stderr:   "",
-				}
-				mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-					Return(result, nil)
-			},
-			expectSuccess: true, // Cleanup failures are logged but don't fail the execution
-			description:   "Cleanup failures should be properly reported",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Create configuration with output capture
-			cfg := &runnertypes.ConfigSpec{
-				Version: "1.0",
-				Global: runnertypes.GlobalSpec{
-					Timeout:       30,
-					MaxOutputSize: 1024,
-				},
-				Groups: []runnertypes.GroupSpec{
-					{
-						Name: "test-group",
-						Commands: []runnertypes.CommandSpec{
-							{
-								Name:   "resource-test-cmd",
-								Cmd:    "echo",
-								Args:   []string{"resource test"},
-								Output: "resource-output.txt",
-							},
-						},
-					},
-				},
-			}
-
-			// Create mock resource manager
-			mockRM := &MockResourceManager{}
-			tt.setupMock(mockRM)
-
-			// Create runner with proper options
-			options := []Option{
-				WithResourceManager(mockRM),
-				WithRunID("test-run-output-capture"),
-			}
-
-			runner, err := NewRunner(cfg, options...)
-			require.NoError(t, err)
-
-			// Execute the group
-			ctx := context.Background()
-			err = runner.ExecuteGroup(ctx, &cfg.Groups[0])
-
-			if tt.expectSuccess {
-				// Note: May still fail due to actual implementation details
-				// This test focuses on resource management configuration
-				t.Logf("Resource management test completed: %s", tt.description)
-			} else {
-				require.Error(t, err, "Should return error for %s", tt.description)
-			}
-
-			// Verify mock expectations
-			mockRM.AssertExpectations(t)
 		})
 	}
 }

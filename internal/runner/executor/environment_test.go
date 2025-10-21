@@ -39,6 +39,15 @@ func createTestRuntimeCommand(expandedArgs []string, expandedEnv map[string]stri
 	}
 }
 
+func createTestRuntimeGroup(expandedEnv map[string]string) *runnertypes.RuntimeGroup {
+	spec := &runnertypes.GroupSpec{
+		Name: "test-group",
+	}
+	group, _ := runnertypes.NewRuntimeGroup(spec)
+	group.ExpandedEnv = expandedEnv
+	return group
+}
+
 // TestBuildProcessEnvironment_Basic tests basic environment variable merging
 func TestBuildProcessEnvironment_Basic(t *testing.T) {
 	// Set up test environment variables
@@ -53,6 +62,12 @@ func TestBuildProcessEnvironment_Basic(t *testing.T) {
 		},
 	)
 
+	group := createTestRuntimeGroup(
+		map[string]string{
+			"GROUP_VAR": "group_value",
+		},
+	)
+
 	cmd := createTestRuntimeCommand(
 		[]string{"hello"},
 		map[string]string{
@@ -60,7 +75,7 @@ func TestBuildProcessEnvironment_Basic(t *testing.T) {
 		},
 	)
 
-	result := executor.BuildProcessEnvironment(global, cmd)
+	result := executor.BuildProcessEnvironment(global, group, cmd)
 
 	// Verify system env vars (filtered by allowlist)
 	assert.Equal(t, "/home/test", result["HOME"])
@@ -69,31 +84,112 @@ func TestBuildProcessEnvironment_Basic(t *testing.T) {
 
 	// Verify merged env vars
 	assert.Equal(t, "global_value", result["GLOBAL_VAR"])
+	assert.Equal(t, "group_value", result["GROUP_VAR"])
 	assert.Equal(t, "cmd_value", result["CMD_VAR"])
 }
 
 // TestBuildProcessEnvironment_Priority tests the priority order of environment variables
+// Priority: System < Global < Group < Command
 func TestBuildProcessEnvironment_Priority(t *testing.T) {
-	t.Setenv("COMMON", "from_system")
+	t.Run("Command overrides Group, Global, and System", func(t *testing.T) {
+		t.Setenv("COMMON", "from_system")
 
-	global := createTestRuntimeGlobal(
-		[]string{"COMMON"},
-		map[string]string{
-			"COMMON": "from_global",
-		},
-	)
+		global := createTestRuntimeGlobal(
+			[]string{"COMMON"},
+			map[string]string{
+				"COMMON": "from_global",
+			},
+		)
 
-	cmd := createTestRuntimeCommand(
-		[]string{"test"},
-		map[string]string{
-			"COMMON": "from_command", // Should override global
-		},
-	)
+		group := createTestRuntimeGroup(
+			map[string]string{
+				"COMMON": "from_group",
+			},
+		)
 
-	result := executor.BuildProcessEnvironment(global, cmd)
+		cmd := createTestRuntimeCommand(
+			[]string{"test"},
+			map[string]string{
+				"COMMON": "from_command",
+			},
+		)
 
-	// Command env should have the highest priority
-	assert.Equal(t, "from_command", result["COMMON"])
+		result := executor.BuildProcessEnvironment(global, group, cmd)
+
+		// Command env should have the highest priority
+		assert.Equal(t, "from_command", result["COMMON"])
+	})
+
+	t.Run("Group overrides Global and System", func(t *testing.T) {
+		t.Setenv("COMMON", "from_system")
+
+		global := createTestRuntimeGlobal(
+			[]string{"COMMON"},
+			map[string]string{
+				"COMMON": "from_global",
+			},
+		)
+
+		group := createTestRuntimeGroup(
+			map[string]string{
+				"COMMON": "from_group",
+			},
+		)
+
+		cmd := createTestRuntimeCommand(
+			[]string{"test"},
+			map[string]string{},
+		)
+
+		result := executor.BuildProcessEnvironment(global, group, cmd)
+
+		// Group env should override global and system
+		assert.Equal(t, "from_group", result["COMMON"])
+	})
+
+	t.Run("Global overrides System", func(t *testing.T) {
+		t.Setenv("COMMON", "from_system")
+
+		global := createTestRuntimeGlobal(
+			[]string{"COMMON"},
+			map[string]string{
+				"COMMON": "from_global",
+			},
+		)
+
+		group := createTestRuntimeGroup(map[string]string{})
+
+		cmd := createTestRuntimeCommand(
+			[]string{"test"},
+			map[string]string{},
+		)
+
+		result := executor.BuildProcessEnvironment(global, group, cmd)
+
+		// Global env should override system
+		assert.Equal(t, "from_global", result["COMMON"])
+	})
+
+	t.Run("System env is used when not overridden", func(t *testing.T) {
+		t.Setenv("COMMON", "from_system")
+
+		global := createTestRuntimeGlobal(
+			[]string{"COMMON"},
+			map[string]string{},
+		)
+
+		group := createTestRuntimeGroup(map[string]string{})
+
+		cmd := createTestRuntimeCommand(
+			[]string{"test"},
+			map[string]string{},
+		)
+
+		result := executor.BuildProcessEnvironment(global, group, cmd)
+
+		// System env should be used when not overridden
+		assert.Equal(t, "from_system", result["COMMON"])
+	})
 }
 
 // TestBuildProcessEnvironment_AllowlistFiltering tests that only allowlisted vars are included
@@ -108,12 +204,14 @@ func TestBuildProcessEnvironment_AllowlistFiltering(t *testing.T) {
 		map[string]string{},
 	)
 
+	group := createTestRuntimeGroup(map[string]string{})
+
 	cmd := createTestRuntimeCommand(
 		[]string{"test"},
 		map[string]string{},
 	)
 
-	result := executor.BuildProcessEnvironment(global, cmd)
+	result := executor.BuildProcessEnvironment(global, group, cmd)
 
 	// Only allowlisted variables should be included
 	assert.Equal(t, "/home/test", result["HOME"])
@@ -131,12 +229,14 @@ func TestBuildProcessEnvironment_EmptyEnv(t *testing.T) {
 		map[string]string{}, // Empty
 	)
 
+	group := createTestRuntimeGroup(map[string]string{}) // Empty
+
 	cmd := createTestRuntimeCommand(
 		[]string{"test"},
 		map[string]string{}, // Empty
 	)
 
-	result := executor.BuildProcessEnvironment(global, cmd)
+	result := executor.BuildProcessEnvironment(global, group, cmd)
 
 	// Only system env should be included
 	assert.Equal(t, "/home/test", result["HOME"])
@@ -154,6 +254,12 @@ func TestBuildProcessEnvironment_NilEnvMaps(t *testing.T) {
 		},
 	)
 
+	group := createTestRuntimeGroup(
+		map[string]string{
+			"GROUP_VAR": "group_value",
+		},
+	)
+
 	cmd := createTestRuntimeCommand(
 		[]string{"test"},
 		map[string]string{
@@ -161,11 +267,12 @@ func TestBuildProcessEnvironment_NilEnvMaps(t *testing.T) {
 		},
 	)
 
-	result := executor.BuildProcessEnvironment(global, cmd)
+	result := executor.BuildProcessEnvironment(global, group, cmd)
 
 	// Should work properly
 	assert.Equal(t, "/home/test", result["HOME"])
 	assert.Equal(t, "global_value", result["GLOBAL_VAR"])
+	assert.Equal(t, "group_value", result["GROUP_VAR"])
 	assert.Equal(t, "cmd_value", result["CMD_VAR"])
 }
 
@@ -181,12 +288,14 @@ func TestBuildProcessEnvironment_SystemVarNotInAllowlist(t *testing.T) {
 		},
 	)
 
+	group := createTestRuntimeGroup(map[string]string{})
+
 	cmd := createTestRuntimeCommand(
 		[]string{"test"},
 		map[string]string{},
 	)
 
-	result := executor.BuildProcessEnvironment(global, cmd)
+	result := executor.BuildProcessEnvironment(global, group, cmd)
 
 	// No system vars should be included (empty allowlist)
 	assert.NotContains(t, result, "HOME")

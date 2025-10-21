@@ -79,7 +79,7 @@ func envPriorityTestHelper(t *testing.T, systemEnv map[string]string, configTOML
 
 	// Call production code to build final environment
 	// This tests the actual implementation in executor.BuildProcessEnvironment
-	finalEnv := executor.BuildProcessEnvironment(runtimeGlobal, runtimeCmd)
+	finalEnv := executor.BuildProcessEnvironment(runtimeGlobal, runtimeGroup, runtimeCmd)
 
 	// Verify expected variables
 	for k, expectedVal := range expectVars {
