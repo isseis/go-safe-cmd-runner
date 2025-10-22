@@ -299,14 +299,16 @@ func validateTempDirBehavior(
 // TestIntegration_TempDirHandling tests temporary directory handling
 func TestIntegration_TempDirHandling(t *testing.T) {
 	tests := []struct {
-		name          string
-		keepTempDirs  bool
-		configContent string
-		expectTempDir bool
+		name             string
+		keepTempDirs     bool
+		configContent    string
+		expectTempDir    bool
+		usesFixedWorkdir bool
 	}{
 		{
-			name:         "Auto temp dir without keep flag",
-			keepTempDirs: false,
+			name:             "Auto temp dir without keep flag",
+			keepTempDirs:     false,
+			usesFixedWorkdir: false,
 			configContent: `
 [[groups]]
 name = "test_group"
@@ -320,8 +322,9 @@ max_risk_level = "medium"
 			expectTempDir: true,
 		},
 		{
-			name:         "Auto temp dir with keep flag",
-			keepTempDirs: true,
+			name:             "Auto temp dir with keep flag",
+			keepTempDirs:     true,
+			usesFixedWorkdir: false,
 			configContent: `
 [[groups]]
 name = "test_group"
@@ -335,8 +338,9 @@ max_risk_level = "medium"
 			expectTempDir: true,
 		},
 		{
-			name:         "Fixed workdir",
-			keepTempDirs: false,
+			name:             "Fixed workdir",
+			keepTempDirs:     false,
+			usesFixedWorkdir: true,
 			// configContent is dynamically generated for this test case (with fixed workdir)
 			configContent: "",
 			expectTempDir: false,
@@ -347,17 +351,20 @@ max_risk_level = "medium"
 		t.Run(tt.name, func(t *testing.T) {
 			// TC-003: Create fixed workdir if needed
 			var fixedWorkdir string
-			if tt.name == "Fixed workdir" {
+			if tt.usesFixedWorkdir {
 				var err error
 				fixedWorkdir, err = os.MkdirTemp("", "test-fixed-workdir-*")
 				require.NoError(t, err)
 				defer os.RemoveAll(fixedWorkdir)
 
+				// Escape path for TOML string (Windows compatibility: backslashes must be escaped)
+				escapedPath := strings.ReplaceAll(fixedWorkdir, `\`, `\\`)
+
 				// Generate configContent dynamically with fixed workdir path
 				tt.configContent = `
 [[groups]]
 name = "test_group"
-workdir = "` + fixedWorkdir + `"
+workdir = "` + escapedPath + `"
 
 [[groups.commands]]
 name = "test_cmd"
@@ -378,7 +385,7 @@ max_risk_level = "medium"
 			workdirPath := extractWorkdirFromOutput(t, output)
 
 			// 4. TC-003: Verify that fixed workdir is used
-			if tt.name == "Fixed workdir" {
+			if tt.usesFixedWorkdir {
 				assert.Equal(t, fixedWorkdir, workdirPath,
 					"Expected fixed workdir to be used: %s, got: %s", fixedWorkdir, workdirPath)
 			}
