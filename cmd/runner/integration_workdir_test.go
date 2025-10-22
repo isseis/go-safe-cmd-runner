@@ -441,13 +441,14 @@ max_risk_level = "medium"
 	privMgr := privilege.NewManager(slog.Default())
 
 	// Setup dry-run options
+	hashDir := t.TempDir()
 	dryRunOptions := &resource.DryRunOptions{
 		DetailLevel:       resource.DetailLevelDetailed,
 		OutputFormat:      resource.OutputFormatText,
 		ShowSensitive:     false,
 		VerifyFiles:       true,
 		SkipStandardPaths: cfg.Global.SkipStandardPaths,
-		HashDir:           "/tmp/scr-hash",
+		HashDir:           hashDir,
 	}
 
 	// Create runner with dry-run option
