@@ -1,20 +1,101 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"io"
+	"log/slog"
 	"os"
+	"os/exec"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/privilege"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// testOutputBuffer captures command output for testing
+type testOutputBuffer struct {
+	stdout bytes.Buffer
+	stderr bytes.Buffer //nolint:unused // Reserved for future use (stderr capture)
+	mu     sync.Mutex
+}
+
+// Write implements io.Writer interface
+func (b *testOutputBuffer) Write(p []byte) (n int, err error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.stdout.Write(p)
+}
+
+// String returns the captured output as a string
+func (b *testOutputBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.stdout.String()
+}
+
+// executorWithOutput wraps an executor to capture command output
+//
+//nolint:unused // Used in Phase 2+ (createRunnerWithOutputCapture helper function)
+type executorWithOutput struct {
+	executor.CommandExecutor
+	output io.Writer
+}
+
+// ExecuteCommand executes a command and captures its output
+//
+//nolint:unused // Used in Phase 2+ (createRunnerWithOutputCapture helper function)
+func (e *executorWithOutput) ExecuteCommand(
+	ctx context.Context,
+	cmd *runnertypes.RuntimeCommand,
+	_ *runnertypes.GroupSpec,
+	env map[string]string,
+) (int, error) {
+	// Create os/exec.Cmd
+	execCmd := exec.CommandContext(ctx, cmd.ExpandedCmd, cmd.ExpandedArgs...)
+	execCmd.Env = buildEnvSlice(env)
+	execCmd.Dir = cmd.EffectiveWorkDir
+
+	// Redirect output to both standard output and capture buffer
+	execCmd.Stdout = io.MultiWriter(os.Stdout, e.output)
+	execCmd.Stderr = os.Stderr
+
+	// Execute command
+	err := execCmd.Run()
+
+	// Get exit code
+	exitCode := 0
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		} else {
+			return 0, err
+		}
+	}
+
+	return exitCode, nil
+}
+
+// buildEnvSlice converts environment map to slice format
+//
+//nolint:unused // Used in Phase 2+ (called by executorWithOutput.ExecuteCommand)
+func buildEnvSlice(env map[string]string) []string {
+	result := make([]string, 0, len(env))
+	for k, v := range env {
+		result = append(result, k+"="+v)
+	}
+	return result
+}
 
 // TestIntegration_TempDirHandling tests temporary directory handling
 func TestIntegration_TempDirHandling(t *testing.T) {
@@ -35,6 +116,7 @@ name = "test_group"
 name = "test_cmd"
 cmd = "echo"
 args = ["working in: %{__runner_workdir}"]
+max_risk_level = "medium"
 `,
 			expectTempDir: true,
 		},
@@ -49,6 +131,7 @@ name = "test_group"
 name = "test_cmd"
 cmd = "echo"
 args = ["working in: %{__runner_workdir}"]
+max_risk_level = "medium"
 `,
 			expectTempDir: true,
 		},
@@ -64,6 +147,7 @@ workdir = "/tmp"
 name = "test_cmd"
 cmd = "echo"
 args = ["working in: %{__runner_workdir}"]
+max_risk_level = "medium"
 `,
 			expectTempDir: false,
 		},
@@ -71,6 +155,11 @@ args = ["working in: %{__runner_workdir}"]
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Create temporary hash directory for test
+			tempHashDir, err := os.MkdirTemp("", "test-hash-*")
+			require.NoError(t, err)
+			defer os.RemoveAll(tempHashDir)
+
 			// Create temporary config file
 			tempConfigFile, err := os.CreateTemp("", "test_config_*.toml")
 			require.NoError(t, err)
@@ -80,8 +169,8 @@ args = ["working in: %{__runner_workdir}"]
 			require.NoError(t, err)
 			tempConfigFile.Close()
 
-			// Parse configuration
-			verificationManager, err := verification.NewManager()
+			// Parse configuration with test verification manager (file validation disabled for dynamic test files)
+			verificationManager, err := verification.NewManagerForTest(tempHashDir, verification.WithFileValidatorDisabled())
 			require.NoError(t, err)
 
 			cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, tempConfigFile.Name(), "test-run-id")
@@ -92,7 +181,7 @@ args = ["working in: %{__runner_workdir}"]
 			require.NoError(t, err)
 
 			// Initialize privilege manager
-			privMgr := privilege.NewManager(nil)
+			privMgr := privilege.NewManager(slog.Default())
 
 			// Create runner with keepTempDirs option
 			runnerOptions := []runner.Option{
@@ -137,6 +226,7 @@ name = "test_group"
 name = "test_cmd"
 cmd = "echo"
 args = ["working in: %{__runner_workdir}"]
+max_risk_level = "medium"
 `
 
 	// Create temporary config file
@@ -160,7 +250,7 @@ args = ["working in: %{__runner_workdir}"]
 	require.NoError(t, err)
 
 	// Initialize privilege manager
-	privMgr := privilege.NewManager(nil)
+	privMgr := privilege.NewManager(slog.Default())
 
 	// Setup dry-run options
 	dryRunOptions := &resource.DryRunOptions{
@@ -206,4 +296,17 @@ args = ["working in: %{__runner_workdir}"]
 	// Cleanup
 	err = r.CleanupAllResources()
 	require.NoError(t, err)
+}
+
+// TestOutputCapture verifies that output capture infrastructure works correctly
+// This is a temporary test for Phase 1 verification and will be removed after Phase 1 completion
+func TestOutputCapture(t *testing.T) {
+	buf := &testOutputBuffer{}
+
+	n, err := buf.Write([]byte("test output\n"))
+	require.NoError(t, err)
+	require.Equal(t, 12, n)
+
+	output := buf.String()
+	require.Equal(t, "test output\n", output)
 }

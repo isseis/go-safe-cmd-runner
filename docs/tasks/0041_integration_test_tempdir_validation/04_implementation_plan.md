@@ -52,11 +52,11 @@
 
 | ID | タスク | ファイル | 作業内容 | 所要時間 | 状態 |
 |----|-------|---------|---------|---------|------|
-| P1-1 | testOutputBuffer実装 | `cmd/runner/integration_workdir_test.go` | 出力バッファ構造体と `Write()`, `String()` メソッドを実装 | 30min | [ ] |
-| P1-2 | executorWithOutput実装 | `cmd/runner/integration_workdir_test.go` | Executor ラッパー構造体と `ExecuteCommand()` メソッドを実装 | 45min | [ ] |
-| P1-3 | buildEnvSlice実装 | `cmd/runner/integration_workdir_test.go` | 環境変数マップをスライスに変換するヘルパー関数 | 15min | [ ] |
-| P1-4 | 動作確認テスト | - | 簡易的なテストで出力キャプチャが動作することを確認 | 30min | [ ] |
-| P1-5 | コミット | - | Phase 1 の実装をコミット | 10min | [ ] |
+| P1-1 | testOutputBuffer実装 | `cmd/runner/integration_workdir_test.go` | 出力バッファ構造体と `Write()`, `String()` メソッドを実装 | 30min | [x] |
+| P1-2 | executorWithOutput実装 | `cmd/runner/integration_workdir_test.go` | Executor ラッパー構造体と `ExecuteCommand()` メソッドを実装 | 45min | [x] |
+| P1-3 | buildEnvSlice実装 | `cmd/runner/integration_workdir_test.go` | 環境変数マップをスライスに変換するヘルパー関数 | 15min | [x] |
+| P1-4 | 動作確認テスト | - | 簡易的なテストで出力キャプチャが動作することを確認 | 30min | [x] |
+| P1-5 | コミット | - | Phase 1 の実装をコミット | 10min | [x] |
 
 #### P1-1: testOutputBuffer 実装
 
@@ -613,10 +613,10 @@ go test -v -run TestIntegration_TempDirHandling ./cmd/runner/
 ## 6. 実装チェックリスト
 
 ### Phase 1: テストインフラの実装
-- [ ] `testOutputBuffer` 構造体を実装
-- [ ] `executorWithOutput` 構造体を実装
-- [ ] `buildEnvSlice()` ヘルパー関数を実装
-- [ ] 動作確認テストを実行
+- [x] `testOutputBuffer` 構造体を実装
+- [x] `executorWithOutput` 構造体を実装
+- [x] `buildEnvSlice()` ヘルパー関数を実装
+- [x] 動作確認テストを実行
 - [ ] Phase 1 をコミット
 
 ### Phase 2: ヘルパー関数の実装

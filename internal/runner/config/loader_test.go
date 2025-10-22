@@ -57,6 +57,61 @@ version = "1.0"
 	assert.True(t, cmd.HasUserGroupSpecification(), "expected command to have user/group specification")
 }
 
+// TestDefaultTimeout tests that RuntimeGlobal.Timeout() returns DefaultTimeout when not specified in config
+func TestDefaultTimeout(t *testing.T) {
+	configContent := `
+[[groups]]
+name = "test_group"
+
+[[groups.commands]]
+name = "test_command"
+cmd = "/bin/echo"
+args = ["test"]
+`
+
+	loader := NewLoader()
+	cfg, err := loader.LoadConfig([]byte(configContent))
+	require.NoError(t, err, "LoadConfig failed")
+	require.NotNil(t, cfg)
+
+	// Verify that ConfigSpec.Global.Timeout is 0 (not set in TOML)
+	assert.Equal(t, 0, cfg.Global.Timeout, "Expected ConfigSpec.Global.Timeout to be 0 when not set in TOML")
+
+	// Create RuntimeGlobal and verify default timeout is returned
+	runtimeGlobal, err := runnertypes.NewRuntimeGlobal(&cfg.Global)
+	require.NoError(t, err, "NewRuntimeGlobal failed")
+	assert.Equal(t, runnertypes.DefaultTimeout, runtimeGlobal.Timeout(), "Expected RuntimeGlobal.Timeout() to return DefaultTimeout")
+}
+
+// TestExplicitTimeoutNotOverridden tests that explicitly set timeout is preserved
+func TestExplicitTimeoutNotOverridden(t *testing.T) {
+	configContent := `
+[global]
+timeout = 120
+
+[[groups]]
+name = "test_group"
+
+[[groups.commands]]
+name = "test_command"
+cmd = "/bin/echo"
+args = ["test"]
+`
+
+	loader := NewLoader()
+	cfg, err := loader.LoadConfig([]byte(configContent))
+	require.NoError(t, err, "LoadConfig failed")
+	require.NotNil(t, cfg)
+
+	// Verify explicit timeout is preserved in ConfigSpec
+	assert.Equal(t, 120, cfg.Global.Timeout, "Expected ConfigSpec.Global.Timeout to preserve explicit value")
+
+	// Create RuntimeGlobal and verify explicit timeout is returned
+	runtimeGlobal, err := runnertypes.NewRuntimeGlobal(&cfg.Global)
+	require.NoError(t, err, "NewRuntimeGlobal failed")
+	assert.Equal(t, 120, runtimeGlobal.Timeout(), "Expected RuntimeGlobal.Timeout() to return explicit value")
+}
+
 // TestBasicTOMLParse tests basic TOML parsing for Global.Env and Group.Env
 func TestBasicTOMLParse(t *testing.T) {
 	configContent := `

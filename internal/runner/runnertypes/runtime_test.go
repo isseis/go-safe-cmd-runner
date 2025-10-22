@@ -462,6 +462,23 @@ func TestRuntimeGlobal_HelperMethods(t *testing.T) {
 	}
 }
 
+// TestRuntimeGlobal_TimeoutDefault tests that Timeout() returns default value when not set
+func TestRuntimeGlobal_TimeoutDefault(t *testing.T) {
+	spec := &GlobalSpec{
+		Timeout: 0, // Not set in TOML
+	}
+
+	runtime, err := NewRuntimeGlobal(spec)
+	if err != nil {
+		t.Fatalf("NewRuntimeGlobal() failed: %v", err)
+	}
+
+	// Test Timeout() returns default value
+	if got := runtime.Timeout(); got != DefaultTimeout {
+		t.Errorf("Timeout() = %d, want %d (DefaultTimeout)", got, DefaultTimeout)
+	}
+}
+
 // TestRuntimeGroup_HelperMethods tests the helper methods for RuntimeGroup
 func TestRuntimeGroup_HelperMethods(t *testing.T) {
 	spec := &GroupSpec{
