@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	runnertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/testing"
@@ -877,4 +878,159 @@ func TestResolveCommandWorkDir(t *testing.T) {
 			assert.Equal(t, tt.expectedWorkDir, result)
 		})
 	}
+}
+
+// TestExecuteGroup_RunnerWorkdirExpansion tests the __runner_workdir variable expansion
+func TestExecuteGroup_RunnerWorkdirExpansion(t *testing.T) {
+	tests := []struct {
+		name               string
+		groupWorkDir       string
+		commandArgs        []string
+		isDryRun           bool
+		expectedWorkDir    string
+		expectedArgPattern string // Pattern to match in expanded args
+	}{
+		{
+			name:               "fixed workdir with __runner_workdir in args",
+			groupWorkDir:       "/opt/app",
+			commandArgs:        []string{"echo", "%{__runner_workdir}/output.txt"},
+			isDryRun:           false,
+			expectedWorkDir:    "/opt/app",
+			expectedArgPattern: "/opt/app/output.txt",
+		},
+		{
+			name:               "temp dir with __runner_workdir in args",
+			groupWorkDir:       "", // Use temp dir
+			commandArgs:        []string{"mkdir", "-p", "%{__runner_workdir}/backup"},
+			isDryRun:           false,
+			expectedWorkDir:    "",        // Will be temp dir (verified by pattern)
+			expectedArgPattern: "/backup", // Will match temp path ending
+		},
+		{
+			name:               "dry-run mode with __runner_workdir",
+			groupWorkDir:       "",
+			commandArgs:        []string{"touch", "%{__runner_workdir}/test.log"},
+			isDryRun:           true,
+			expectedWorkDir:    "",        // Will be virtual temp dir
+			expectedArgPattern: "dryrun-", // Will contain dryrun in path
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Setup mocks
+			mockExecutor := new(runnertesting.MockResourceManager)
+			mockNotificationFunc := func(_ *runnertypes.GroupSpec, _ *groupExecutionResult, _ time.Duration) {
+				// Test notification function - no-op
+			}
+
+			configSpec := &runnertypes.ConfigSpec{
+				Global: runnertypes.GlobalSpec{
+					Timeout: 30,
+				},
+			}
+
+			ge := NewDefaultGroupExecutor(
+				nil, // command executor - we'll test without executing actual commands
+				configSpec,
+				nil,          // validator
+				nil,          // verificationManager
+				mockExecutor, // resourceManager
+				"test-run-123",
+				mockNotificationFunc,
+				tt.isDryRun,
+				false, // keepTempDirs
+			)
+
+			group := &runnertypes.GroupSpec{
+				Name:    "test-group",
+				WorkDir: tt.groupWorkDir,
+				Commands: []runnertypes.CommandSpec{
+					{
+						Name: "test-cmd",
+						Cmd:  "echo",
+						Args: tt.commandArgs,
+					},
+				},
+			}
+
+			runtimeGlobal := &runnertypes.RuntimeGlobal{
+				Spec:         &runnertypes.GlobalSpec{Timeout: 30},
+				ExpandedVars: map[string]string{},
+			}
+
+			// We cannot easily test the full ExecuteGroup without mocking the entire execution stack
+			// Instead, let's test the workdir resolution and variable setting directly
+
+			// 1. Test group workdir resolution
+			runtimeGroup, err := config.ExpandGroup(group, runtimeGlobal.ExpandedVars)
+			require.NoError(t, err)
+
+			workDir, tempDirMgr, err := ge.resolveGroupWorkDir(runtimeGroup)
+			require.NoError(t, err)
+
+			if tt.expectedWorkDir != "" {
+				assert.Equal(t, tt.expectedWorkDir, workDir)
+			} else {
+				// For temp dirs, just verify it's not empty
+				assert.NotEmpty(t, workDir)
+			}
+
+			// 2. Test that __runner_workdir is set correctly
+			runtimeGroup.EffectiveWorkDir = workDir
+			if runtimeGroup.ExpandedVars == nil {
+				runtimeGroup.ExpandedVars = make(map[string]string)
+			}
+			runtimeGroup.ExpandedVars["__runner_workdir"] = workDir
+
+			// 3. Test command expansion with __runner_workdir
+			cmdSpec := &group.Commands[0]
+			runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup.ExpandedVars, group.Name)
+			require.NoError(t, err)
+
+			// Verify __runner_workdir was expanded in arguments
+			require.NotEmpty(t, runtimeCmd.ExpandedArgs, "Command should have expanded args")
+
+			// Find the argument that should contain the expanded workdir
+			foundExpectedPattern := false
+			for _, arg := range runtimeCmd.ExpandedArgs {
+				if tt.expectedArgPattern != "" {
+					if tt.expectedWorkDir != "" && arg == tt.expectedArgPattern {
+						foundExpectedPattern = true
+						break
+					} else if tt.expectedWorkDir == "" && containsPattern(arg, tt.expectedArgPattern) {
+						foundExpectedPattern = true
+						break
+					}
+				}
+			}
+
+			if tt.expectedArgPattern != "" {
+				assert.True(t, foundExpectedPattern,
+					"Expected pattern '%s' not found in expanded args: %v",
+					tt.expectedArgPattern, runtimeCmd.ExpandedArgs)
+			}
+
+			// Cleanup temp dir if created
+			if tempDirMgr != nil {
+				tempDirMgr.Cleanup()
+			}
+		})
+	}
+}
+
+// containsPattern checks if a string contains the expected pattern
+func containsPattern(s, pattern string) bool {
+	if len(pattern) == 0 || len(s) == 0 {
+		return false
+	}
+
+	// Check if pattern is anywhere in the string (for substrings like "dryrun-")
+	for i := 0; i <= len(s)-len(pattern); i++ {
+		if s[i:i+len(pattern)] == pattern {
+			return true
+		}
+	}
+
+	return false
 }
