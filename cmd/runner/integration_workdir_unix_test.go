@@ -5,7 +5,6 @@ package main
 import (
 	"os"
 	"regexp"
-	"strings"
 	"testing"
 	"time"
 
@@ -25,10 +24,6 @@ func TestIntegration_CommandLevelWorkdir(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(fixedWorkdir2)
 
-	// Escape paths for TOML (Windows compatibility)
-	escapedPath1 := strings.ReplaceAll(fixedWorkdir1, `\`, `\\`)
-	escapedPath2 := strings.ReplaceAll(fixedWorkdir2, `\`, `\\`)
-
 	configContent := `
 [[groups]]
 name = "test_group"
@@ -37,14 +32,14 @@ name = "test_group"
 name = "cmd_with_custom_workdir1"
 cmd = "pwd"
 args = []
-workdir = "` + escapedPath1 + `"
+workdir = "` + fixedWorkdir1 + `"
 max_risk_level = "medium"
 
 [[groups.commands]]
 name = "cmd_with_custom_workdir2"
 cmd = "pwd"
 args = []
-workdir = "` + escapedPath2 + `"
+workdir = "` + fixedWorkdir2 + `"
 max_risk_level = "medium"
 
 [[groups.commands]]
