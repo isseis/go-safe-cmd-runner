@@ -955,157 +955,93 @@ func TestCommandGroup_NewFields(t *testing.T) {
 func TestRunner_EnvironmentVariablePriority_GroupLevelSupport(t *testing.T) {
 	setupSafeTestEnv(t)
 
-	t.Run("Command overrides Group and Global", func(t *testing.T) {
-		t.Setenv("TEST_VAR", "from_system")
+	tests := []struct {
+		name        string
+		systemEnv   string
+		globalEnv   []string
+		groupEnv    []string
+		commandEnv  []string
+		expectedVar string
+	}{
+		{
+			name:        "Command overrides Group and Global",
+			systemEnv:   "from_system",
+			globalEnv:   []string{"TEST_VAR=from_global"},
+			groupEnv:    []string{"TEST_VAR=from_group"},
+			commandEnv:  []string{"TEST_VAR=from_command"},
+			expectedVar: "from_command",
+		},
+		{
+			name:        "Group overrides Global and System",
+			systemEnv:   "from_system",
+			globalEnv:   []string{"TEST_VAR=from_global"},
+			groupEnv:    []string{"TEST_VAR=from_group"},
+			commandEnv:  nil, // No command-level env
+			expectedVar: "from_group",
+		},
+		{
+			name:        "Global overrides System",
+			systemEnv:   "from_system",
+			globalEnv:   []string{"TEST_VAR=from_global"},
+			groupEnv:    nil, // No group-level env
+			commandEnv:  nil, // No command-level env
+			expectedVar: "from_global",
+		},
+	}
 
-		config := &runnertypes.ConfigSpec{
-			Version: "1.0",
-			Global: runnertypes.GlobalSpec{
-				Timeout:      3600,
-				EnvAllowlist: []string{"TEST_VAR"},
-				Env:          []string{"TEST_VAR=from_global"},
-			},
-			Groups: []runnertypes.GroupSpec{
-				{
-					Name: "test-group",
-					Env:  []string{"TEST_VAR=from_group"},
-					Commands: []runnertypes.CommandSpec{
-						{
-							Name: "test-cmd",
-							Cmd:  "printenv",
-							Args: []string{"TEST_VAR"},
-							Env:  []string{"TEST_VAR=from_command"},
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("TEST_VAR", tt.systemEnv)
+
+			config := &runnertypes.ConfigSpec{
+				Version: "1.0",
+				Global: runnertypes.GlobalSpec{
+					Timeout:      3600,
+					EnvAllowlist: []string{"TEST_VAR"},
+					Env:          tt.globalEnv,
+				},
+				Groups: []runnertypes.GroupSpec{
+					{
+						Name: "test-group",
+						Env:  tt.groupEnv,
+						Commands: []runnertypes.CommandSpec{
+							{
+								Name: "test-cmd",
+								Cmd:  "printenv",
+								Args: []string{"TEST_VAR"},
+								Env:  tt.commandEnv,
+							},
 						},
 					},
 				},
-			},
-		}
+			}
 
-		mockResourceManager := &MockResourceManager{}
+			mockResourceManager := &MockResourceManager{}
 
-		// Capture the actual envVars passed to ExecuteCommand
-		var capturedEnv map[string]string
-		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-			Run(func(args mock.Arguments) {
-				// The 4th argument is envVars
-				capturedEnv = args.Get(3).(map[string]string)
-			}).
-			Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "from_command\n", Stderr: ""}, nil)
+			// Capture the actual envVars passed to ExecuteCommand
+			var capturedEnv map[string]string
+			mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+				Run(func(args mock.Arguments) {
+					// The 4th argument is envVars
+					capturedEnv = args.Get(3).(map[string]string)
+				}).
+				Return(&resource.ExecutionResult{ExitCode: 0, Stdout: tt.expectedVar + "\n", Stderr: ""}, nil)
 
-		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
-		require.NoError(t, err)
+			runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
+			require.NoError(t, err)
 
-		err = runner.LoadSystemEnvironment()
-		require.NoError(t, err)
+			err = runner.LoadSystemEnvironment()
+			require.NoError(t, err)
 
-		ctx := context.Background()
-		err = runner.ExecuteGroup(ctx, &config.Groups[0])
-		require.NoError(t, err)
+			ctx := context.Background()
+			err = runner.ExecuteGroup(ctx, &config.Groups[0])
+			require.NoError(t, err)
 
-		// Verify command env has the highest priority
-		assert.Equal(t, "from_command", capturedEnv["TEST_VAR"])
-		mockResourceManager.AssertExpectations(t)
-	})
-
-	t.Run("Group overrides Global and System", func(t *testing.T) {
-		t.Setenv("TEST_VAR", "from_system")
-
-		config := &runnertypes.ConfigSpec{
-			Version: "1.0",
-			Global: runnertypes.GlobalSpec{
-				Timeout:      3600,
-				EnvAllowlist: []string{"TEST_VAR"},
-				Env:          []string{"TEST_VAR=from_global"},
-			},
-			Groups: []runnertypes.GroupSpec{
-				{
-					Name: "test-group",
-					Env:  []string{"TEST_VAR=from_group"},
-					Commands: []runnertypes.CommandSpec{
-						{
-							Name: "test-cmd",
-							Cmd:  "printenv",
-							Args: []string{"TEST_VAR"},
-							// No command-level env
-						},
-					},
-				},
-			},
-		}
-
-		mockResourceManager := &MockResourceManager{}
-
-		var capturedEnv map[string]string
-		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-			Run(func(args mock.Arguments) {
-				capturedEnv = args.Get(3).(map[string]string)
-			}).
-			Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "from_group\n", Stderr: ""}, nil)
-
-		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
-		require.NoError(t, err)
-
-		err = runner.LoadSystemEnvironment()
-		require.NoError(t, err)
-
-		ctx := context.Background()
-		err = runner.ExecuteGroup(ctx, &config.Groups[0])
-		require.NoError(t, err)
-
-		// Verify group env overrides global and system
-		assert.Equal(t, "from_group", capturedEnv["TEST_VAR"])
-		mockResourceManager.AssertExpectations(t)
-	})
-
-	t.Run("Global overrides System", func(t *testing.T) {
-		t.Setenv("TEST_VAR", "from_system")
-
-		config := &runnertypes.ConfigSpec{
-			Version: "1.0",
-			Global: runnertypes.GlobalSpec{
-				Timeout:      3600,
-				EnvAllowlist: []string{"TEST_VAR"},
-				Env:          []string{"TEST_VAR=from_global"},
-			},
-			Groups: []runnertypes.GroupSpec{
-				{
-					Name: "test-group",
-					// No group-level env
-					Commands: []runnertypes.CommandSpec{
-						{
-							Name: "test-cmd",
-							Cmd:  "printenv",
-							Args: []string{"TEST_VAR"},
-							// No command-level env
-						},
-					},
-				},
-			},
-		}
-
-		mockResourceManager := &MockResourceManager{}
-
-		var capturedEnv map[string]string
-		mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-			Run(func(args mock.Arguments) {
-				capturedEnv = args.Get(3).(map[string]string)
-			}).
-			Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "from_global\n", Stderr: ""}, nil)
-
-		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
-		require.NoError(t, err)
-
-		err = runner.LoadSystemEnvironment()
-		require.NoError(t, err)
-
-		ctx := context.Background()
-		err = runner.ExecuteGroup(ctx, &config.Groups[0])
-		require.NoError(t, err)
-
-		// Verify global env overrides system
-		assert.Equal(t, "from_global", capturedEnv["TEST_VAR"])
-		mockResourceManager.AssertExpectations(t)
-	})
+			// Verify environment variable priority
+			assert.Equal(t, tt.expectedVar, capturedEnv["TEST_VAR"])
+			mockResourceManager.AssertExpectations(t)
+		})
+	}
 }
 
 func TestSlackNotification(t *testing.T) {
