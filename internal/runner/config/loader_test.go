@@ -204,8 +204,3 @@ func TestPhase9Integration(t *testing.T) {
 func TestFromEnvMergeIntegration(t *testing.T) {
 	t.Skip("Skipping until Phase 5/6 - expansion not yet implemented in loader")
 }
-
-// Note: Tests for deprecated fields (global.workdir, group.temp_dir, command.dir) have been removed.
-// These tests were checking go-toml/v2's behavior (silently ignoring unknown fields), which is
-// the TOML library's responsibility, not ours. The backward compatibility behavior is documented
-// in CHANGELOG.md instead.
