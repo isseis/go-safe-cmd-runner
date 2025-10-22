@@ -499,7 +499,7 @@ func (e *DefaultCommandExecutor) resolveCommandWorkDir(
 
 ---
 
-### Phase 4: GroupExecutor統合（部分完了 - P4-1〜P4-4完了、P4-5は別ブランチで作成中）
+### Phase 4: GroupExecutor統合（部分完了 - P4-1〜P4-5完了
 
 **目的**: GroupExecutorに一時ディレクトリ管理とワークディレクトリ決定を統合する
 
@@ -513,9 +513,7 @@ func (e *DefaultCommandExecutor) resolveCommandWorkDir(
 | P4-2 | クリーンアップロジック | `internal/runner/group_executor.go` | `defer` でのクリーンアップ実装 | 1h | ✅ |
 | P4-3 | keep-temp-dirsフラグ | `cmd/runner/main.go` | コマンドラインフラグ追加 | 0.5h | ✅ |
 | P4-4 | Runnerへのフラグ伝播 | `internal/runner/runner.go` | フラグをGroupExecutorに渡す | 0.5h | ✅ |
-| P4-5 | 統合テスト | `cmd/runner/integration_test.go` | エンドツーエンドテスト | 3h | 🔄 |
-
-**注記**: P4-5（統合テスト）は別ブランチで作成中のため、マージ後に再検討予定。
+| P4-5 | 統合テスト | `cmd/runner/integration_*_test.go` | エンドツーエンドテスト | 3h | ✅ |
 
 **詳細実装内容**:
 
@@ -895,7 +893,7 @@ Phase 0 → Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5
 ### 6.2 テストの完了基準
 
 - [x] 全単体テストが成功している（カバレッジ > 80%）
-- [ ] 全統合テストが成功している (P4-5は別ブランチで作成中)
+- [x] 全統合テストが成功している
 - [x] 全エラーケーステストが成功している
 - [x] パフォーマンステストが成功基準を満たしている
 
