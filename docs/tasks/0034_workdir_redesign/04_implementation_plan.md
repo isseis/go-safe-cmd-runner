@@ -355,11 +355,19 @@ func (m *DefaultTempDirManager) Create() (string, error) {
 
 | ID | タスク | ファイル | 作業内容 | 所要時間 |
 |----|-------|---------|---------|---------|
-| P3-1 | 定数定義 | `internal/runner/variable/constants.go` | `AutoVarKeyWorkDir` 定数追加 | 0.5h |
+| P3-1 | 定数定義 | `internal/runner/variable/auto.go` | `AutoVarKeyWorkDir` 定数追加 | 0.5h |
 | P3-2 | resolveGroupWorkDir実装 | `internal/runner/group_executor.go` | グループワークディレクトリ決定ロジック（RuntimeGroup を受け取る） | 2h |
-| P3-3 | resolveCommandWorkDir実装 | `internal/runner/executor/command_executor.go` | コマンドワークディレクトリ決定ロジック（RuntimeCommand を受け取る） | 1h |
+| P3-3 | resolveCommandWorkDir実装 | `internal/runner/group_executor.go` | コマンドワークディレクトリ決定ロジック（RuntimeCommand を受け取る） | 1h |
 | P3-4 | ワークディレクトリ決定テスト | `internal/runner/group_executor_test.go` | resolveGroupWorkDir、resolveCommandWorkDirのテスト | 1h |
-| P3-5 | `__runner_workdir`展開テスト | `internal/runner/config/expansion_test.go` | `__runner_workdir`変数の展開テスト | 1h |
+| P3-5 | `__runner_workdir`展開テスト | `internal/runner/group_executor_test.go` | `__runner_workdir`変数の展開テスト（既存テストで確認済み） | 1h |
+
+**作業完了状況**:
+- [x] P3-1: `AutoVarKeyWorkDir` 定数を `internal/runner/variable/auto.go` に追加
+- [x] P3-2: `resolveGroupWorkDir()` を実装（TempDirManager統合、dry-run対応）
+- [x] P3-3: `resolveCommandWorkDir()` を実装（変数展開対応）
+- [x] P3-4: `TestResolveGroupWorkDir` および `TestResolveCommandWorkDir` を実装（各4テストケース）
+- [x] P3-5: `__runner_workdir` 変数の展開を `ExecuteGroup()` で実装し、テストで確認
+- [x] 全テストおよびlintチェックが成功
 
 **詳細実装内容**:
 
@@ -482,12 +490,12 @@ func (e *DefaultCommandExecutor) resolveCommandWorkDir(
 - 単体テスト一式
 
 **完了条件**:
-- [ ] `AutoVarKeyWorkDir` 定数が定義されている (未実装)
-- [ ] グループワークディレクトリ決定ロジックが実装されている（RuntimeGroup を受け取る） (未実装、ただしgroup_executor.goに類似のインラインロジックあり)
-- [ ] コマンドワークディレクトリ決定ロジックが実装されている（RuntimeCommand を受け取る） (未実装、ただしgroup_executor.goに類似のインラインロジックあり)
-- [ ] `__runner_workdir` が正しく展開される（`config.ExpandCommand()` を通して） (未実装)
-- [ ] 優先順位が正しく動作する (部分的にgroup_executor.goで実装済み)
-- [ ] 全テストが成功している (テスト未作成)
+- [x] `AutoVarKeyWorkDir` 定数が定義されている
+- [x] グループワークディレクトリ決定ロジックが実装されている（RuntimeGroup を受け取る）
+- [x] コマンドワークディレクトリ決定ロジックが実装されている（RuntimeCommand を受け取る）
+- [x] `__runner_workdir` が正しく展開される（`config.ExpandCommand()` を通して）
+- [x] 優先順位が正しく動作する
+- [x] 全テストが成功している
 
 ---
 

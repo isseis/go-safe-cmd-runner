@@ -143,6 +143,8 @@ func TestExecuteGroup_WorkDirPriority(t *testing.T) {
 				mockRM,
 				"test-run-123",
 				nil,
+				false, // isDryRun
+				false, // keepTempDirs
 			)
 
 			group := &runnertypes.GroupSpec{
@@ -238,6 +240,8 @@ func TestExecuteGroup_TempDirCleanup(t *testing.T) {
 				mockRM,
 				"test-run-123",
 				nil,
+				false, // isDryRun
+				false, // keepTempDirs
 			)
 
 			group := &runnertypes.GroupSpec{
@@ -306,6 +310,8 @@ func TestExecuteGroup_CreateTempDirFailure(t *testing.T) {
 		mockRM,
 		"test-run-123",
 		nil,
+		false, // isDryRun
+		false, // keepTempDirs
 	)
 
 	group := &runnertypes.GroupSpec{
@@ -357,6 +363,8 @@ func TestExecuteGroup_CommandExecutionFailure(t *testing.T) {
 		mockRM,
 		"test-run-123",
 		notificationFunc,
+		false, // isDryRun
+		false, // keepTempDirs
 	)
 
 	group := &runnertypes.GroupSpec{
@@ -414,6 +422,8 @@ func TestExecuteGroup_CommandExecutionFailure_NonStandardExitCode(t *testing.T) 
 		mockRM,
 		"test-run-123",
 		notificationFunc,
+		false, // isDryRun
+		false, // keepTempDirs
 	)
 
 	group := &runnertypes.GroupSpec{
@@ -473,6 +483,8 @@ func TestExecuteGroup_SuccessNotification(t *testing.T) {
 		mockRM,
 		"test-run-123",
 		notificationFunc,
+		false, // isDryRun
+		false, // keepTempDirs
 	)
 
 	group := &runnertypes.GroupSpec{
@@ -531,6 +543,8 @@ func TestExecuteCommandInGroup_OutputPathValidationFailure(t *testing.T) {
 		mockRM,
 		"test-run-123",
 		nil,
+		false, // isDryRun
+		false, // keepTempDirs
 	)
 
 	cmd := &runnertypes.RuntimeCommand{
@@ -585,6 +599,8 @@ func TestExecuteGroup_MultipleCommands(t *testing.T) {
 		mockRM,
 		"test-run-123",
 		nil,
+		false, // isDryRun
+		false, // keepTempDirs
 	)
 
 	group := &runnertypes.GroupSpec{
@@ -641,6 +657,8 @@ func TestExecuteGroup_StopOnFirstFailure(t *testing.T) {
 		mockRM,
 		"test-run-123",
 		nil,
+		false, // isDryRun
+		false, // keepTempDirs
 	)
 
 	group := &runnertypes.GroupSpec{
@@ -695,4 +713,168 @@ func TestExecuteGroup_StopOnFirstFailure(t *testing.T) {
 		}
 	}
 	assert.Equal(t, 2, executeCalls, "should stop after second command fails")
+}
+
+// TestResolveGroupWorkDir tests the resolveGroupWorkDir method
+func TestResolveGroupWorkDir(t *testing.T) {
+	tests := []struct {
+		name            string
+		groupWorkDir    string
+		groupVars       map[string]string
+		isDryRun        bool
+		expectTempDir   bool
+		expectError     bool
+		expectedWorkDir string // For fixed workdir cases
+	}{
+		{
+			name:            "fixed workdir specified",
+			groupWorkDir:    "/opt/app",
+			groupVars:       map[string]string{},
+			isDryRun:        false,
+			expectTempDir:   false,
+			expectError:     false,
+			expectedWorkDir: "/opt/app",
+		},
+		{
+			name:            "workdir with variable expansion",
+			groupWorkDir:    "/opt/%{project}",
+			groupVars:       map[string]string{"project": "myapp"},
+			isDryRun:        false,
+			expectTempDir:   false,
+			expectError:     false,
+			expectedWorkDir: "/opt/myapp",
+		},
+		{
+			name:          "no workdir - temp dir created (normal mode)",
+			groupWorkDir:  "",
+			groupVars:     map[string]string{},
+			isDryRun:      false,
+			expectTempDir: true,
+			expectError:   false,
+		},
+		{
+			name:          "no workdir - temp dir created (dry-run mode)",
+			groupWorkDir:  "",
+			groupVars:     map[string]string{},
+			isDryRun:      true,
+			expectTempDir: true,
+			expectError:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ge := &DefaultGroupExecutor{
+				isDryRun: tt.isDryRun,
+			}
+
+			runtimeGroup := &runnertypes.RuntimeGroup{
+				Spec: &runnertypes.GroupSpec{
+					Name:    "test-group",
+					WorkDir: tt.groupWorkDir,
+				},
+				ExpandedVars: tt.groupVars,
+			}
+
+			workDir, tempDirMgr, err := ge.resolveGroupWorkDir(runtimeGroup)
+
+			if tt.expectError {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			require.NotEmpty(t, workDir)
+
+			if tt.expectTempDir {
+				require.NotNil(t, tempDirMgr, "temp dir manager should be non-nil for temp directories")
+				assert.Contains(t, workDir, "scr-test-group", "temp dir should contain group name")
+				if tt.isDryRun {
+					assert.Contains(t, workDir, "dryrun", "dry-run temp dir should contain 'dryrun'")
+				}
+			} else {
+				assert.Nil(t, tempDirMgr, "temp dir manager should be nil for fixed directories")
+				assert.Equal(t, tt.expectedWorkDir, workDir)
+			}
+		})
+	}
+}
+
+// TestResolveCommandWorkDir tests the resolveCommandWorkDir method
+func TestResolveCommandWorkDir(t *testing.T) {
+	tests := []struct {
+		name                  string
+		commandWorkDir        string
+		commandVars           map[string]string
+		groupEffectiveWorkDir string
+		expectedWorkDir       string
+		expectError           bool
+	}{
+		{
+			name:                  "command workdir takes priority",
+			commandWorkDir:        "/cmd/workdir",
+			commandVars:           map[string]string{},
+			groupEffectiveWorkDir: "/group/workdir",
+			expectedWorkDir:       "/cmd/workdir",
+			expectError:           false,
+		},
+		{
+			name:                  "use group workdir when command workdir is empty",
+			commandWorkDir:        "",
+			commandVars:           map[string]string{},
+			groupEffectiveWorkDir: "/group/workdir",
+			expectedWorkDir:       "/group/workdir",
+			expectError:           false,
+		},
+		{
+			name:                  "both empty returns empty",
+			commandWorkDir:        "",
+			commandVars:           map[string]string{},
+			groupEffectiveWorkDir: "",
+			expectedWorkDir:       "",
+			expectError:           false,
+		},
+		{
+			name:                  "command workdir with variable expansion",
+			commandWorkDir:        "/opt/%{project}",
+			commandVars:           map[string]string{"project": "myapp"},
+			groupEffectiveWorkDir: "/group/workdir",
+			expectedWorkDir:       "/opt/myapp",
+			expectError:           false,
+		},
+		{
+			name:                  "variable expansion error stops execution",
+			commandWorkDir:        "/opt/%{undefined_var}",
+			commandVars:           map[string]string{},
+			groupEffectiveWorkDir: "/group/workdir",
+			expectedWorkDir:       "",
+			expectError:           true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ge := &DefaultGroupExecutor{}
+
+			runtimeCmd := &runnertypes.RuntimeCommand{
+				Spec: &runnertypes.CommandSpec{
+					Name:    "test-cmd",
+					WorkDir: tt.commandWorkDir,
+				},
+				ExpandedVars: tt.commandVars,
+			}
+
+			runtimeGroup := &runnertypes.RuntimeGroup{
+				EffectiveWorkDir: tt.groupEffectiveWorkDir,
+			}
+
+			result, err := ge.resolveCommandWorkDir(runtimeCmd, runtimeGroup)
+			if tt.expectError {
+				assert.Error(t, err)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectedWorkDir, result)
+		})
+	}
 }

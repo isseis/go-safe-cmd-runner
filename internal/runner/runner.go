@@ -82,6 +82,7 @@ type runnerOptions struct {
 	dryRun              bool
 	dryRunOptions       *resource.DryRunOptions
 	runtimeGlobal       *runnertypes.RuntimeGlobal
+	keepTempDirs        bool
 }
 
 // WithSecurity sets a custom security configuration
@@ -138,6 +139,13 @@ func WithDryRun(dryRunOptions *resource.DryRunOptions) Option {
 	return func(opts *runnerOptions) {
 		opts.dryRun = true
 		opts.dryRunOptions = dryRunOptions
+	}
+}
+
+// WithKeepTempDirs sets the flag to keep temporary directories after execution
+func WithKeepTempDirs(keep bool) Option {
+	return func(opts *runnerOptions) {
+		opts.keepTempDirs = keep
 	}
 }
 
@@ -309,6 +317,8 @@ func NewRunner(configSpec *runnertypes.ConfigSpec, options ...Option) (*Runner, 
 		opts.resourceManager,
 		opts.runID,
 		runner.logGroupExecutionSummary,
+		opts.dryRun,
+		opts.keepTempDirs,
 	)
 
 	return runner, nil

@@ -13,6 +13,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/variable"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 )
 
@@ -31,6 +32,8 @@ type DefaultGroupExecutor struct {
 	resourceManager     resource.ResourceManager
 	runID               string
 	notificationFunc    groupNotificationFunc
+	isDryRun            bool
+	keepTempDirs        bool
 }
 
 // groupNotificationFunc is a function type for sending group notifications
@@ -45,6 +48,8 @@ func NewDefaultGroupExecutor(
 	resourceManager resource.ResourceManager,
 	runID string,
 	notificationFunc groupNotificationFunc,
+	isDryRun bool,
+	keepTempDirs bool,
 ) *DefaultGroupExecutor {
 	return &DefaultGroupExecutor{
 		executor:            executor,
@@ -54,6 +59,8 @@ func NewDefaultGroupExecutor(
 		resourceManager:     resourceManager,
 		runID:               runID,
 		notificationFunc:    notificationFunc,
+		isDryRun:            isDryRun,
+		keepTempDirs:        keepTempDirs,
 	}
 }
 
@@ -74,20 +81,6 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 		return fmt.Errorf("failed to expand group[%s]: %w", groupSpec.Name, err)
 	}
 
-	// Track temporary directories for cleanup
-	groupTempDirs := make([]string, 0)
-
-	// Explicit cleanup function to ensure resources are released as soon as
-	// group execution is finished (or on early return). Previously cleanup
-	// was deferred until function return which delayed releasing resources.
-	cleanupGroupTempDirs := func() {
-		for _, tempDirPath := range groupTempDirs {
-			if err := ge.resourceManager.CleanupTempDir(tempDirPath); err != nil {
-				slog.Warn("Failed to cleanup temp directory", "path", tempDirPath, "error", err)
-			}
-		}
-	}
-
 	// Defer notification to ensure it's sent regardless of success or failure
 	var executionResult *groupExecutionResult
 	defer func() {
@@ -96,25 +89,35 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 		}
 	}()
 
-	// 2. Process TempDir (NOTE: TempDir is currently not part of GroupSpec)
-	// TODO: Implement TempDir feature in a future task
-	var tempDirPath string
-	// if groupSpec.TempDir {
-	// 	// Create temporary directory for this group using ResourceManager
-	// 	var err error
-	// 	tempDirPath, err = ge.resourceManager.CreateTempDir(groupSpec.Name)
-	// 	if err != nil {
-	// 		return fmt.Errorf("failed to create temp directory for group %s: %w", groupSpec.Name, err)
-	// 	}
-	// 	groupTempDirs = append(groupTempDirs, tempDirPath)
-	// }
+	// 2. Determine working directory for the group
+	workDir, tempDirMgr, err := ge.resolveGroupWorkDir(runtimeGroup)
+	if err != nil {
+		return fmt.Errorf("failed to resolve work directory: %w", err)
+	}
 
-	// 3. Verify group files before execution
+	// 3. Register cleanup for temporary directories if applicable
+	if tempDirMgr != nil && !ge.keepTempDirs {
+		defer func() {
+			if err := tempDirMgr.Cleanup(); err != nil {
+				slog.Warn("Cleanup warning", "error", err)
+			}
+		}()
+	}
+
+	// 4. Set effective working directory for the group
+	runtimeGroup.EffectiveWorkDir = workDir
+
+	// 5. Set __runner_workdir variable for use in commands
+	// This allows commands to reference the working directory via %{__runner_workdir}
+	if runtimeGroup.ExpandedVars == nil {
+		runtimeGroup.ExpandedVars = make(map[string]string)
+	}
+	runtimeGroup.ExpandedVars[variable.WorkDirKey()] = workDir
+
+	// 6. Verify group files before execution
 	if ge.verificationManager != nil {
 		result, err := ge.verificationManager.VerifyGroupFiles(groupSpec)
 		if err != nil {
-			// Ensure temp dirs are cleaned up before returning an error
-			cleanupGroupTempDirs()
 			// Return the error directly (it already contains all necessary information)
 			return err
 		}
@@ -128,7 +131,7 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 		}
 	}
 
-	// 4. Execute commands in the group sequentially
+	// 7. Execute commands in the group sequentially
 	var lastCommand string
 	var lastOutput string
 	var lastExitCode int
@@ -136,7 +139,7 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 		cmdSpec := &groupSpec.Commands[i]
 		slog.Info("Executing command", "command", cmdSpec.Name, "index", i+1, "total", len(groupSpec.Commands))
 
-		// 4.1 Expand command configuration
+		// 7.1 Expand command configuration
 		runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup.ExpandedVars, groupSpec.Name)
 		if err != nil {
 			// Set failure result for notification
@@ -147,29 +150,25 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 				output:      lastOutput,
 				errorMsg:    fmt.Sprintf("failed to expand command[%s]: %v", cmdSpec.Name, err),
 			}
-			cleanupGroupTempDirs()
 			return fmt.Errorf("failed to expand command[%s]: %w", cmdSpec.Name, err)
 		}
 
-		// 4.2 Set EffectiveWorkDir
-		// Priority for working directory:
-		// 1. Command's WorkDir (if set) - highest priority
-		// 2. TempDir (if enabled) - to be implemented in Phase 2
-		// 3. Group's WorkDir
-		// Note: Global WorkDir has been removed in Task 0034
-		switch {
-		case cmdSpec.WorkDir != "":
-			// Command has explicit WorkDir - use it as-is
-			runtimeCmd.EffectiveWorkDir = cmdSpec.WorkDir
-		case tempDirPath != "":
-			// Use auto-generated temp directory
-			runtimeCmd.EffectiveWorkDir = tempDirPath
-		case groupSpec.WorkDir != "":
-			// Use group's WorkDir
-			runtimeCmd.EffectiveWorkDir = groupSpec.WorkDir
+		// 7.2 Determine effective working directory for the command
+		workDir, err := ge.resolveCommandWorkDir(runtimeCmd, runtimeGroup)
+		if err != nil {
+			// Set failure result for notification
+			executionResult = &groupExecutionResult{
+				status:      GroupExecutionStatusError,
+				exitCode:    1,
+				lastCommand: cmdSpec.Name,
+				output:      lastOutput,
+				errorMsg:    fmt.Sprintf("failed to resolve command workdir[%s]: %v", cmdSpec.Name, err),
+			}
+			return fmt.Errorf("failed to resolve command workdir[%s]: %w", cmdSpec.Name, err)
 		}
+		runtimeCmd.EffectiveWorkDir = workDir
 
-		// 4.3 Set EffectiveTimeout
+		// 7.3 Set EffectiveTimeout
 		if cmdSpec.Timeout > 0 {
 			runtimeCmd.EffectiveTimeout = cmdSpec.Timeout
 		} else {
@@ -178,7 +177,7 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 
 		lastCommand = cmdSpec.Name
 
-		// 4.4 Execute the command
+		// 7.4 Execute the command
 		newOutput, exitCode, err := ge.executeSingleCommand(ctx, runtimeCmd, groupSpec, runtimeGroup, runtimeGlobal)
 		if err != nil {
 			// Set failure result for notification
@@ -189,9 +188,6 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 				output:      lastOutput,
 				errorMsg:    err.Error(),
 			}
-			// Clean up temp dirs immediately before returning to avoid
-			// holding onto filesystem resources longer than necessary.
-			cleanupGroupTempDirs()
 			return err
 		}
 
@@ -210,9 +206,6 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 		output:      lastOutput,
 		errorMsg:    "",
 	}
-
-	// Clean up temporary directories now that the group completed
-	cleanupGroupTempDirs()
 
 	slog.Info("Group completed successfully", "name", groupSpec.Name)
 	return nil
@@ -311,4 +304,73 @@ func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *r
 	}
 
 	return output, 0, nil
+}
+
+// resolveGroupWorkDir determines the working directory for a group.
+// Returns: (workdir, tempDirManager, error)
+//   - For fixed directories: tempDirManager is nil
+//   - For temporary directories: tempDirManager is non-nil (used for cleanup)
+func (ge *DefaultGroupExecutor) resolveGroupWorkDir(
+	runtimeGroup *runnertypes.RuntimeGroup,
+) (string, executor.TempDirManager, error) {
+	// Check if group-level WorkDir is specified
+	if runtimeGroup.Spec.WorkDir != "" {
+		// Expand variables (note: __runner_workdir is not yet defined at this point)
+		level := fmt.Sprintf("group[%s]", runtimeGroup.Spec.Name)
+		expandedWorkDir, err := config.ExpandString(
+			runtimeGroup.Spec.WorkDir,
+			runtimeGroup.ExpandedVars, // __runner_workdir is not included
+			level,
+			"workdir",
+		)
+		if err != nil {
+			return "", nil, fmt.Errorf("failed to expand group workdir: %w", err)
+		}
+
+		slog.Info("Using group workdir",
+			"group", runtimeGroup.Spec.Name,
+			"workdir", expandedWorkDir)
+		return expandedWorkDir, nil, nil
+	}
+
+	// Create temporary directory manager
+	tempDirMgr := executor.NewTempDirManager(runtimeGroup.Spec.Name, ge.isDryRun)
+
+	// Create temporary directory
+	// In dry-run mode, a virtual path is returned
+	tempDir, err := tempDirMgr.Create()
+	if err != nil {
+		return "", nil, err
+	}
+
+	return tempDir, tempDirMgr, nil
+}
+
+// resolveCommandWorkDir determines the working directory for a command.
+// Priority: Command.WorkDir > RuntimeGroup.EffectiveWorkDir
+// Returns (workdir, error). Returns error if variable expansion fails.
+func (ge *DefaultGroupExecutor) resolveCommandWorkDir(
+	runtimeCmd *runnertypes.RuntimeCommand,
+	runtimeGroup *runnertypes.RuntimeGroup,
+) (string, error) {
+	// Priority 1: Command-level WorkDir (from spec)
+	if runtimeCmd.Spec.WorkDir != "" {
+		// Expand variables in command workdir
+		level := fmt.Sprintf("command[%s]", runtimeCmd.Spec.Name)
+		expandedWorkDir, err := config.ExpandString(
+			runtimeCmd.Spec.WorkDir,
+			runtimeCmd.ExpandedVars, // Use command's expanded vars
+			level,
+			"workdir",
+		)
+		if err != nil {
+			return "", fmt.Errorf("failed to expand command workdir: %w", err)
+		}
+		return expandedWorkDir, nil
+	}
+
+	// Priority 2: Group-level EffectiveWorkDir
+	// Note: Already determined and set in ExecuteGroup by resolveGroupWorkDir
+	//       (either a temporary directory or a fixed directory physical/virtual path)
+	return runtimeGroup.EffectiveWorkDir, nil
 }

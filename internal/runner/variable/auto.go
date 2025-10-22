@@ -22,6 +22,8 @@ const (
 	AutoVarKeyDatetime = "datetime"
 	// AutoVarKeyPID is the key for the PID auto internal variable (without prefix)
 	AutoVarKeyPID = "pid"
+	// AutoVarKeyWorkDir is the key for the workdir auto internal variable (without prefix)
+	AutoVarKeyWorkDir = "workdir"
 )
 
 // AutoVarProvider provides automatic internal variables
@@ -53,4 +55,10 @@ func (p *autoVarProvider) Generate() map[string]string {
 		AutoVarPrefix + AutoVarKeyDatetime: now.UTC().Format(DatetimeLayout),
 		AutoVarPrefix + AutoVarKeyPID:      strconv.Itoa(os.Getpid()),
 	}
+}
+
+// WorkDirKey returns the auto variable key used to store the runner
+// working directory for a group during execution.
+func WorkDirKey() string {
+	return AutoVarPrefix + AutoVarKeyWorkDir
 }
