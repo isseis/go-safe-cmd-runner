@@ -272,3 +272,157 @@ max_output_size = 5242880
 		}
 	})
 }
+
+// TestCommandWorkdirWithRunnerWorkdirVariable tests that command-level workdir
+// can use the %{__runner_workdir} variable after expansion
+func TestCommandWorkdirWithRunnerWorkdirVariable(t *testing.T) {
+	tests := []struct {
+		name            string
+		tomlContent     string
+		expectedCmdName string
+		expectedWorkDir string // Expected after variable expansion
+		runnerWorkdir   string // Value to set for __runner_workdir
+	}{
+		{
+			name: "command workdir with __runner_workdir variable",
+			tomlContent: `
+[[groups]]
+name = "build"
+workdir = "/opt/project"
+
+[[groups.commands]]
+name = "compile"
+cmd = "make"
+args = ["build"]
+workdir = "%{__runner_workdir}/src"
+`,
+			expectedCmdName: "compile",
+			expectedWorkDir: "/opt/project/src",
+			runnerWorkdir:   "/opt/project",
+		},
+		{
+			name: "command workdir with __runner_workdir in temp dir scenario",
+			tomlContent: `
+[[groups]]
+name = "test"
+
+[[groups.commands]]
+name = "run-tests"
+cmd = "pytest"
+workdir = "%{__runner_workdir}/tests"
+`,
+			expectedCmdName: "run-tests",
+			expectedWorkDir: "/tmp/scr-test-abc123/tests",
+			runnerWorkdir:   "/tmp/scr-test-abc123",
+		},
+		{
+			name: "command without workdir should not fail",
+			tomlContent: `
+[[groups]]
+name = "simple"
+
+[[groups.commands]]
+name = "echo-test"
+cmd = "echo"
+args = ["hello"]
+`,
+			expectedCmdName: "echo-test",
+			expectedWorkDir: "", // No workdir specified
+			runnerWorkdir:   "/tmp/scr-simple-xyz",
+		},
+		{
+			name: "command args with __runner_workdir variable",
+			tomlContent: `
+[[groups]]
+name = "backup"
+workdir = "/var/backup"
+
+[[groups.commands]]
+name = "dump"
+cmd = "pg_dump"
+args = ["mydb", "-f", "%{__runner_workdir}/dump.sql"]
+`,
+			expectedCmdName: "dump",
+			expectedWorkDir: "", // No command-level workdir
+			runnerWorkdir:   "/var/backup",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// 1. Parse TOML
+			loader := NewLoader()
+			config, err := loader.LoadConfig([]byte(tt.tomlContent))
+			if err != nil {
+				t.Fatalf("Failed to parse TOML: %v", err)
+			}
+
+			if len(config.Groups) == 0 {
+				t.Fatal("Expected at least one group")
+			}
+
+			group := &config.Groups[0]
+			if len(group.Commands) == 0 {
+				t.Fatal("Expected at least one command")
+			}
+
+			// 2. Simulate group variable expansion (mimic what ExecuteGroup does)
+			runtimeGlobal := &runnertypes.RuntimeGlobal{
+				Spec:         &config.Global,
+				ExpandedVars: make(map[string]string),
+			}
+
+			runtimeGroup, err := ExpandGroup(group, runtimeGlobal.ExpandedVars)
+			if err != nil {
+				t.Fatalf("Failed to expand group: %v", err)
+			}
+
+			// 3. Set __runner_workdir (this would normally be set by resolveGroupWorkDir)
+			runtimeGroup.EffectiveWorkDir = tt.runnerWorkdir
+			runtimeGroup.ExpandedVars["__runner_workdir"] = tt.runnerWorkdir
+
+			// 4. Expand command
+			cmdSpec := &group.Commands[0]
+			runtimeCmd, err := ExpandCommand(cmdSpec, runtimeGroup.ExpandedVars, group.Name)
+			if err != nil {
+				t.Fatalf("Failed to expand command: %v", err)
+			}
+
+			// 5. Verify command name
+			if cmdSpec.Name != tt.expectedCmdName {
+				t.Errorf("Expected command name '%s', got '%s'", tt.expectedCmdName, cmdSpec.Name)
+			}
+
+			// 6. Verify command workdir expansion (if specified)
+			if cmdSpec.WorkDir != "" {
+				expandedWorkDir, err := ExpandString(
+					cmdSpec.WorkDir,
+					runtimeGroup.ExpandedVars,
+					"command["+cmdSpec.Name+"]",
+					"workdir",
+				)
+				if err != nil {
+					t.Fatalf("Failed to expand command workdir: %v", err)
+				}
+
+				if expandedWorkDir != tt.expectedWorkDir {
+					t.Errorf("Expected expanded workdir '%s', got '%s'", tt.expectedWorkDir, expandedWorkDir)
+				}
+			} else if tt.expectedWorkDir != "" {
+				t.Errorf("Expected workdir '%s', but command has no workdir field", tt.expectedWorkDir)
+			}
+
+			// 7. Verify args expansion (for the test case with args using __runner_workdir)
+			if tt.name == "command args with __runner_workdir variable" {
+				if len(runtimeCmd.ExpandedArgs) < 3 {
+					t.Fatalf("Expected at least 3 args, got %d", len(runtimeCmd.ExpandedArgs))
+				}
+
+				expectedArg := tt.runnerWorkdir + "/dump.sql"
+				if runtimeCmd.ExpandedArgs[2] != expectedArg {
+					t.Errorf("Expected args[2] to be '%s', got '%s'", expectedArg, runtimeCmd.ExpandedArgs[2])
+				}
+			}
+		})
+	}
+}

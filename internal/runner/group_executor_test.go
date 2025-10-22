@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -885,10 +886,12 @@ func TestExecuteGroup_RunnerWorkdirExpansion(t *testing.T) {
 	tests := []struct {
 		name               string
 		groupWorkDir       string
+		commandWorkDir     string // Command-level workdir
 		commandArgs        []string
 		isDryRun           bool
 		expectedWorkDir    string
 		expectedArgPattern string // Pattern to match in expanded args
+		expectedCmdWorkDir string // Expected expanded command workdir
 	}{
 		{
 			name:               "fixed workdir with __runner_workdir in args",
@@ -913,6 +916,33 @@ func TestExecuteGroup_RunnerWorkdirExpansion(t *testing.T) {
 			isDryRun:           true,
 			expectedWorkDir:    "",        // Will be virtual temp dir
 			expectedArgPattern: "dryrun-", // Will contain dryrun in path
+		},
+		{
+			name:               "command workdir with __runner_workdir",
+			groupWorkDir:       "/opt/app",
+			commandWorkDir:     "%{__runner_workdir}/src",
+			commandArgs:        []string{"make", "build"},
+			isDryRun:           false,
+			expectedWorkDir:    "/opt/app",
+			expectedCmdWorkDir: "/opt/app/src",
+		},
+		{
+			name:               "command workdir with __runner_workdir in temp dir",
+			groupWorkDir:       "", // Use temp dir
+			commandWorkDir:     "%{__runner_workdir}/build",
+			commandArgs:        []string{"cmake", ".."},
+			isDryRun:           false,
+			expectedWorkDir:    "",       // Will be temp dir
+			expectedCmdWorkDir: "/build", // Pattern to verify
+		},
+		{
+			name:               "dry-run with command workdir using __runner_workdir",
+			groupWorkDir:       "",
+			commandWorkDir:     "%{__runner_workdir}/test",
+			commandArgs:        []string{"pytest"},
+			isDryRun:           true,
+			expectedWorkDir:    "",        // Will be virtual temp dir
+			expectedCmdWorkDir: "dryrun-", // Pattern to verify
 		},
 	}
 
@@ -947,9 +977,10 @@ func TestExecuteGroup_RunnerWorkdirExpansion(t *testing.T) {
 				WorkDir: tt.groupWorkDir,
 				Commands: []runnertypes.CommandSpec{
 					{
-						Name: "test-cmd",
-						Cmd:  "echo",
-						Args: tt.commandArgs,
+						Name:    "test-cmd",
+						Cmd:     "echo",
+						Args:    tt.commandArgs,
+						WorkDir: tt.commandWorkDir,
 					},
 				},
 			}
@@ -1009,6 +1040,29 @@ func TestExecuteGroup_RunnerWorkdirExpansion(t *testing.T) {
 				assert.True(t, foundExpectedPattern,
 					"Expected pattern '%s' not found in expanded args: %v",
 					tt.expectedArgPattern, runtimeCmd.ExpandedArgs)
+			}
+
+			// 4. Verify command-level workdir expansion with __runner_workdir
+			if tt.commandWorkDir != "" {
+				// Manually expand command workdir (normally done by executor)
+				expandedCmdWorkDir, err := config.ExpandString(
+					cmdSpec.WorkDir,
+					runtimeGroup.ExpandedVars,
+					fmt.Sprintf("command[%s]", cmdSpec.Name),
+					"workdir",
+				)
+				require.NoError(t, err, "Command workdir expansion should succeed")
+
+				if tt.expectedWorkDir != "" {
+					// Fixed path test - expect exact match
+					assert.Equal(t, tt.expectedCmdWorkDir, expandedCmdWorkDir,
+						"Command workdir should be expanded to expected value")
+				} else {
+					// Temp dir or dry-run test - expect pattern match
+					assert.True(t, containsPattern(expandedCmdWorkDir, tt.expectedCmdWorkDir),
+						"Command workdir should contain pattern '%s', got: %s",
+						tt.expectedCmdWorkDir, expandedCmdWorkDir)
+				}
 			}
 
 			// Cleanup temp dir if created
