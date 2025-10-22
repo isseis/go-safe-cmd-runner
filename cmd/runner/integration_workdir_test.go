@@ -218,7 +218,8 @@ func extractWorkdirFromOutput(t *testing.T, output string) string {
 	return workdirPath
 }
 
-// extractPathsFromOutput extracts all paths from output lines using a regex pattern
+// extractPathsFromOutput extracts all paths (e.g., file system paths) from output lines using a regular expression pattern.
+// The provided pattern must contain at least one capture group; the function extracts the last capture group from each matching line.
 func extractPathsFromOutput(t *testing.T, output string, pattern *regexp.Regexp) []string {
 	t.Helper()
 
