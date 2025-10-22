@@ -99,7 +99,7 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 	if tempDirMgr != nil && !ge.keepTempDirs {
 		defer func() {
 			if err := tempDirMgr.Cleanup(); err != nil {
-				slog.Error("Cleanup warning", "error", err)
+				slog.Warn("Cleanup warning", "error", err)
 			}
 		}()
 	}
@@ -327,10 +327,9 @@ func (ge *DefaultGroupExecutor) resolveGroupWorkDir(
 			return "", nil, fmt.Errorf("failed to expand group workdir: %w", err)
 		}
 
-		slog.Info(fmt.Sprintf(
-			"Using group workdir for '%s': %s",
-			runtimeGroup.Spec.Name, expandedWorkDir,
-		))
+		slog.Info("Using group workdir",
+			"group", runtimeGroup.Spec.Name,
+			"workdir", expandedWorkDir)
 		return expandedWorkDir, nil, nil
 	}
 
