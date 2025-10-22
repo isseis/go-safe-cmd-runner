@@ -58,7 +58,7 @@ func (m *DefaultTempDirManager) Create() (string, error) {
 		timestamp := time.Now().Format("20060102150405")
 		tempDir := filepath.Join(os.TempDir(), fmt.Sprintf("scr-%s-dryrun-%s", m.groupName, timestamp))
 		m.tempDirPath = tempDir
-		slog.Info(fmt.Sprintf("[DRY-RUN] Would create temporary directory for group '%s': %s", m.groupName, tempDir))
+		slog.Info("[DRY-RUN] Would create temporary directory", "group", m.groupName, "path", tempDir)
 		return tempDir, nil
 	}
 
@@ -77,7 +77,7 @@ func (m *DefaultTempDirManager) Create() (string, error) {
 	}
 
 	m.tempDirPath = tempDir
-	slog.Info(fmt.Sprintf("Created temporary directory for group '%s': %s", m.groupName, tempDir))
+	slog.Info("Created temporary directory", "group", m.groupName, "path", tempDir)
 	return tempDir, nil
 }
 
@@ -89,20 +89,19 @@ func (m *DefaultTempDirManager) Cleanup() error {
 
 	if m.isDryRun {
 		// Dry-run mode: log only
-		slog.Debug(fmt.Sprintf("[DRY-RUN] Would delete temporary directory: %s", m.tempDirPath))
+		slog.Debug("[DRY-RUN] Would delete temporary directory", "path", m.tempDirPath)
 		return nil
 	}
 
 	// Normal mode: actually remove the directory
 	err := os.RemoveAll(m.tempDirPath)
 	if err != nil {
-		// Log error but don't fail the process
-		slog.Error(fmt.Sprintf("Failed to cleanup temporary directory '%s': %v", m.tempDirPath, err))
-		fmt.Fprintf(os.Stderr, "Warning: Failed to cleanup temporary directory '%s': %v\n", m.tempDirPath, err)
-		return err
+		// Return wrapped error; caller decides whether this is fatal
+		slog.Error("Failed to cleanup temporary directory", "path", m.tempDirPath, "error", err)
+		return fmt.Errorf("failed to cleanup temporary directory '%s': %w", m.tempDirPath, err)
 	}
 
-	slog.Debug(fmt.Sprintf("Cleaned up temporary directory: %s", m.tempDirPath))
+	slog.Debug("Cleaned up temporary directory", "path", m.tempDirPath)
 	m.tempDirPath = ""
 	return nil
 }
