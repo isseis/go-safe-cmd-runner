@@ -1020,11 +1020,14 @@ func TestRunner_EnvironmentVariablePriority_GroupLevelSupport(t *testing.T) {
 
 			// Capture the actual envVars passed to ExecuteCommand
 			var capturedEnv map[string]string
-			mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-				Run(func(args mock.Arguments) {
-					// The 4th argument is envVars
-					capturedEnv = args.Get(3).(map[string]string)
-				}).
+			mockResourceManager.On("ExecuteCommand",
+				mock.Anything, // ctx
+				mock.Anything, // cmd
+				mock.Anything, // group
+				mock.MatchedBy(func(env map[string]string) bool {
+					capturedEnv = env
+					return true
+				})).
 				Return(&resource.ExecutionResult{ExitCode: 0, Stdout: tt.expectedVar + "\n", Stderr: ""}, nil)
 
 			runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
