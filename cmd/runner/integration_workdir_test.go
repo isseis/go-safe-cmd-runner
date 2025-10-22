@@ -359,6 +359,7 @@ max_risk_level = "medium"
 		t.Run(tt.name, func(t *testing.T) {
 			// TC-003: Create fixed workdir if needed
 			var fixedWorkdir string
+			configContent := tt.configContent
 			if tt.usesFixedWorkdir {
 				var err error
 				fixedWorkdir, err = os.MkdirTemp("", "test-fixed-workdir-*")
@@ -369,7 +370,7 @@ max_risk_level = "medium"
 				escapedPath := strings.ReplaceAll(fixedWorkdir, `\`, `\\`)
 
 				// Generate configContent dynamically with fixed workdir path
-				tt.configContent = `
+				configContent = `
 [[groups]]
 name = "test_group"
 workdir = "` + escapedPath + `"
@@ -383,7 +384,7 @@ max_risk_level = "medium"
 			}
 
 			// 1. Create Runner with output capture enabled
-			r, outputBuf := createRunnerWithOutputCapture(t, tt.configContent, tt.keepTempDirs)
+			r, outputBuf := createRunnerWithOutputCapture(t, configContent, tt.keepTempDirs)
 
 			// 2. Execute all groups with timeout
 			executeRunnerWithTimeout(t, r, 30*time.Second)
