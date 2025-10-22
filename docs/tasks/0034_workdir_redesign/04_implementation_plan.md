@@ -908,7 +908,7 @@ Phase 0 → Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5
 ## 7. 実装チェックリスト（詳細仕様書からの転記）
 
 ### Phase 1: 型定義
-- [ ] `Global.WorkDir` を削除 (未完了)
+- [x] `Global.WorkDir` を削除
 - [x] `Group.TempDir` を削除
 - [x] `RuntimeGroup.EffectiveWorkDir` フィールドを追加（実行時ワークディレクトリ）
 - [x] `Command.Dir` → `Command.WorkDir` に変更
