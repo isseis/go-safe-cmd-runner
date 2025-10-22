@@ -101,6 +101,9 @@ func (w *captureOutputWriter) Write(stream string, data []byte) error {
 
 // Close closes the wrapped writer if it implements io.Closer
 func (w *captureOutputWriter) Close() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	if w.wrapped != nil {
 		return w.wrapped.Close()
 	}
@@ -240,9 +243,9 @@ func extractPathsFromOutput(t *testing.T, output string, pattern *regexp.Regexp)
 func assertUniquePaths(t *testing.T, paths []string, context string) {
 	t.Helper()
 
-	uniquePaths := make(map[string]bool)
+	uniquePaths := make(map[string]struct{})
 	for _, path := range paths {
-		uniquePaths[path] = true
+		uniquePaths[path] = struct{}{}
 	}
 
 	assert.Len(t, uniquePaths, len(paths),
@@ -267,12 +270,10 @@ func assertAllPathsExist(t *testing.T, paths []string, context string) {
 
 	for i, path := range paths {
 		info, err := os.Stat(path)
-		assert.NoError(t, err,
+		require.NoError(t, err,
 			"%s: Path %d should exist: %s", context, i+1, path)
-		if err == nil {
-			assert.True(t, info.IsDir(),
-				"%s: Path %d should be a directory: %s", context, i+1, path)
-		}
+		assert.True(t, info.IsDir(),
+			"%s: Path %d should be a directory: %s", context, i+1, path)
 	}
 }
 
@@ -709,17 +710,4 @@ max_risk_level = "medium"
 
 	// Register paths for cleanup at test end
 	registerPathsForCleanup(t, workdirPaths)
-}
-
-// TestOutputCapture verifies that output capture infrastructure works correctly
-// This is a temporary test for Phase 1 verification and will be removed after Phase 1 completion
-func TestOutputCapture(t *testing.T) {
-	buf := &testOutputBuffer{}
-
-	n, err := buf.Write([]byte("test output\n"))
-	require.NoError(t, err)
-	require.Equal(t, 12, n)
-
-	output := buf.String()
-	require.Equal(t, "test output\n", output)
 }
