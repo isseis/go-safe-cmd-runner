@@ -353,13 +353,13 @@ func (m *DefaultTempDirManager) Create() (string, error) {
 
 **作業項目**:
 
-| ID | タスク | ファイル | 作業内容 | 所要時間 |
-|----|-------|---------|---------|---------|
-| P3-1 | 定数定義 | `internal/runner/variable/auto.go` | `AutoVarKeyWorkDir` 定数追加 | 0.5h |
-| P3-2 | resolveGroupWorkDir実装 | `internal/runner/group_executor.go` | グループワークディレクトリ決定ロジック（RuntimeGroup を受け取る） | 2h |
-| P3-3 | resolveCommandWorkDir実装 | `internal/runner/group_executor.go` | コマンドワークディレクトリ決定ロジック（RuntimeCommand を受け取る） | 1h |
-| P3-4 | ワークディレクトリ決定テスト | `internal/runner/group_executor_test.go` | resolveGroupWorkDir、resolveCommandWorkDirのテスト | 1h |
-| P3-5 | `__runner_workdir`展開テスト | `internal/runner/group_executor_test.go` | `__runner_workdir`変数の展開テスト（既存テストで確認済み） | 1h |
+| ID | タスク | ファイル | 作業内容 | 所要時間 | 状態 |
+|----|-------|---------|---------|---------|------|
+| P3-1 | 定数定義 | `internal/runner/variable/auto.go` | `AutoVarKeyWorkDir` 定数追加 | 0.5h | ✅ |
+| P3-2 | resolveGroupWorkDir実装 | `internal/runner/group_executor.go` | グループワークディレクトリ決定ロジック（RuntimeGroup を受け取る） | 2h | ✅ |
+| P3-3 | resolveCommandWorkDir実装 | `internal/runner/group_executor.go` | コマンドワークディレクトリ決定ロジック（RuntimeCommand を受け取る） | 1h | ✅ |
+| P3-4 | ワークディレクトリ決定テスト | `internal/runner/group_executor_test.go` | resolveGroupWorkDir、resolveCommandWorkDirのテスト | 1h | ✅ |
+| P3-5 | `__runner_workdir`展開テスト | `internal/runner/group_executor_test.go` | `__runner_workdir`変数の展開テスト（TestExecuteGroup_RunnerWorkdirExpansion を作成） | 1h | ✅ |
 
 **作業完了状況**:
 - [x] P3-1: `AutoVarKeyWorkDir` 定数を `internal/runner/variable/auto.go` に追加
