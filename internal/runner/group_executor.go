@@ -154,9 +154,9 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 		// 4.2 Set EffectiveWorkDir
 		// Priority for working directory:
 		// 1. Command's WorkDir (if set) - highest priority
-		// 2. TempDir (if enabled)
+		// 2. TempDir (if enabled) - to be implemented in Phase 2
 		// 3. Group's WorkDir
-		// 4. Global WorkDir (handled later in executeCommandInGroup)
+		// Note: Global WorkDir has been removed in Task 0034
 		switch {
 		case cmdSpec.WorkDir != "":
 			// Command has explicit WorkDir - use it as-is
@@ -179,7 +179,7 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 		lastCommand = cmdSpec.Name
 
 		// 4.4 Execute the command
-		newOutput, exitCode, err := ge.executeSingleCommand(ctx, runtimeCmd, groupSpec, runtimeGlobal)
+		newOutput, exitCode, err := ge.executeSingleCommand(ctx, runtimeCmd, groupSpec, runtimeGroup, runtimeGlobal)
 		if err != nil {
 			// Set failure result for notification
 			executionResult = &groupExecutionResult{
@@ -219,9 +219,9 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 }
 
 // executeCommandInGroup executes a command within a specific group context
-func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *runnertypes.RuntimeCommand, groupSpec *runnertypes.GroupSpec, runtimeGlobal *runnertypes.RuntimeGlobal) (*executor.Result, error) {
+func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *runnertypes.RuntimeCommand, groupSpec *runnertypes.GroupSpec, runtimeGroup *runnertypes.RuntimeGroup, runtimeGlobal *runnertypes.RuntimeGlobal) (*executor.Result, error) {
 	// Resolve environment variables for the command with group context
-	envVars := executor.BuildProcessEnvironment(runtimeGlobal, cmd)
+	envVars := executor.BuildProcessEnvironment(runtimeGlobal, runtimeGroup, cmd)
 
 	slog.Debug("Built process environment variables",
 		"command", cmd.Name(),
@@ -244,10 +244,8 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 		cmd.ExpandedCmd = resolvedPath
 	}
 
-	// Set effective working directory from global config if not already resolved
-	if cmd.EffectiveWorkDir == "" {
-		cmd.EffectiveWorkDir = runtimeGlobal.WorkDir()
-	}
+	// Note: EffectiveWorkDir should be set earlier in ExecuteGroup()
+	// If still empty at this point, the command will use the process's current working directory
 
 	// Validate output path before command execution if output capture is requested
 	if cmd.Output() != "" {
@@ -278,13 +276,13 @@ func (ge *DefaultGroupExecutor) createCommandContext(ctx context.Context, cmd *r
 
 // executeSingleCommand executes a single command with proper context management
 // Returns the output string, exit code, and any error encountered
-func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, groupSpec *runnertypes.GroupSpec, runtimeGlobal *runnertypes.RuntimeGlobal) (string, int, error) {
+func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *runnertypes.RuntimeCommand, groupSpec *runnertypes.GroupSpec, runtimeGroup *runnertypes.RuntimeGroup, runtimeGlobal *runnertypes.RuntimeGlobal) (string, int, error) {
 	// Create command context with timeout
 	cmdCtx, cancel := ge.createCommandContext(ctx, cmd)
 	defer cancel()
 
 	// Execute the command with group context
-	result, err := ge.executeCommandInGroup(cmdCtx, cmd, groupSpec, runtimeGlobal)
+	result, err := ge.executeCommandInGroup(cmdCtx, cmd, groupSpec, runtimeGroup, runtimeGlobal)
 	if err != nil {
 		slog.Error("Command failed", "command", cmd.Name(), "exit_code", 1, "error", err)
 		return "", 1, fmt.Errorf("command %s failed: %w", cmd.Name(), err)

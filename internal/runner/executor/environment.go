@@ -13,12 +13,14 @@ import (
 // Merge order (lower priority to higher priority):
 //  1. System environment variables (filtered by env_allowlist)
 //  2. Global.ExpandedEnv
-//  3. Command.ExpandedEnv
+//  3. Group.ExpandedEnv
+//  4. Command.ExpandedEnv
 //
 // Returns:
 //   - Map of environment variables to be passed to the child process
 func BuildProcessEnvironment(
 	runtimeGlobal *runnertypes.RuntimeGlobal,
+	runtimeGroup *runnertypes.RuntimeGroup,
 	cmd *runnertypes.RuntimeCommand,
 ) map[string]string {
 	result := make(map[string]string)
@@ -36,7 +38,10 @@ func BuildProcessEnvironment(
 	// Step 2: Merge Global.ExpandedEnv (overrides system env)
 	maps.Copy(result, runtimeGlobal.ExpandedEnv)
 
-	// Step 3: Merge Command.ExpandedEnv (overrides global env)
+	// Step 3: Merge Group.ExpandedEnv (overrides global env)
+	maps.Copy(result, runtimeGroup.ExpandedEnv)
+
+	// Step 4: Merge Command.ExpandedEnv (overrides group env)
 	maps.Copy(result, cmd.ExpandedEnv)
 
 	return result

@@ -543,10 +543,13 @@ func TestExecuteCommandInGroup_OutputPathValidationFailure(t *testing.T) {
 		ExpandedArgs: []string{},
 	}
 
-	group := &runnertypes.GroupSpec{
+	groupSpec := &runnertypes.GroupSpec{
 		Name:    "test-group",
 		WorkDir: "/work",
 	}
+
+	runtimeGroup, err := runnertypes.NewRuntimeGroup(groupSpec)
+	require.NoError(t, err)
 
 	expectedErr := errors.New("output path is outside work directory")
 	mockRM.On("ValidateOutputPath", "/invalid/output/path", "/work").Return(expectedErr)
@@ -556,7 +559,7 @@ func TestExecuteCommandInGroup_OutputPathValidationFailure(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	result, err := ge.executeCommandInGroup(ctx, cmd, group, runtimeGlobal)
+	result, err := ge.executeCommandInGroup(ctx, cmd, groupSpec, runtimeGroup, runtimeGlobal)
 
 	require.Error(t, err)
 	assert.Nil(t, result)

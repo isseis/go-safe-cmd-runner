@@ -52,15 +52,6 @@ func (r *RuntimeGlobal) Timeout() int {
 	return r.Spec.Timeout
 }
 
-// WorkDir returns the global working directory from the spec.
-// Panics if r or r.Spec is nil (programming error - use NewRuntimeGlobal).
-func (r *RuntimeGlobal) WorkDir() string {
-	if r == nil || r.Spec == nil {
-		panic("RuntimeGlobal.WorkDir: nil receiver or Spec (programming error - use NewRuntimeGlobal)")
-	}
-	return r.Spec.WorkDir
-}
-
 // EnvAllowlist returns the environment variable allowlist from the spec.
 // Panics if r or r.Spec is nil (programming error - use NewRuntimeGlobal).
 func (r *RuntimeGlobal) EnvAllowlist() []string {
