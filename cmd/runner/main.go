@@ -46,6 +46,7 @@ var (
 	runID            = flag.String("run-id", "", "unique identifier for this execution run (auto-generates ULID if not provided)")
 	forceInteractive = flag.Bool("interactive", false, "force interactive mode with colored output (overrides environment detection)")
 	forceQuiet       = flag.Bool("quiet", false, "force non-interactive mode (disables colored output)")
+	keepTempDirs     = flag.Bool("keep-temp-dirs", false, "keep temporary directories after execution")
 )
 
 func main() {
@@ -181,6 +182,7 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 		runner.WithPrivilegeManager(privMgr),
 		runner.WithRunID(runID),
 		runner.WithRuntimeGlobal(runtimeGlobal),
+		runner.WithKeepTempDirs(*keepTempDirs),
 	}
 
 	// Parse dry-run options once for the entire function
