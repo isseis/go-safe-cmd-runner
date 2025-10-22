@@ -56,3 +56,9 @@ func (p *autoVarProvider) Generate() map[string]string {
 		AutoVarPrefix + AutoVarKeyPID:      strconv.Itoa(os.Getpid()),
 	}
 }
+
+// WorkDirKey returns the auto variable key used to store the runner
+// working directory for a group during execution.
+func WorkDirKey() string {
+	return AutoVarPrefix + AutoVarKeyWorkDir
+}

@@ -13,6 +13,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/variable"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 )
 
@@ -98,7 +99,7 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 	if tempDirMgr != nil && !ge.keepTempDirs {
 		defer func() {
 			if err := tempDirMgr.Cleanup(); err != nil {
-				slog.Error(fmt.Sprintf("Cleanup warning: %v", err))
+				slog.Error("Cleanup warning", "error", err)
 			}
 		}()
 	}
@@ -111,7 +112,7 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 	if runtimeGroup.ExpandedVars == nil {
 		runtimeGroup.ExpandedVars = make(map[string]string)
 	}
-	runtimeGroup.ExpandedVars["__runner_workdir"] = workDir
+	runtimeGroup.ExpandedVars[variable.WorkDirKey()] = workDir
 
 	// 6. Verify group files before execution
 	if ge.verificationManager != nil {
