@@ -121,7 +121,7 @@ func TestTempDirManager_Path_BeforeCreate(t *testing.T) {
 
 // TestTempDirManager_MultipleCreates tests that multiple creates fail or update path
 func TestTempDirManager_MultipleCreates(t *testing.T) {
-	mgr := NewTempDirManager("test-group", false).(*DefaultTempDirManager)
+	mgr := NewTempDirManager("test-group", false)
 	defer func() {
 		if mgr.Path() != "" {
 			os.RemoveAll(mgr.Path())
