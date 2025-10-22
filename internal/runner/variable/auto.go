@@ -22,6 +22,8 @@ const (
 	AutoVarKeyDatetime = "datetime"
 	// AutoVarKeyPID is the key for the PID auto internal variable (without prefix)
 	AutoVarKeyPID = "pid"
+	// AutoVarKeyWorkDir is the key for the workdir auto internal variable (without prefix)
+	AutoVarKeyWorkDir = "workdir"
 )
 
 // AutoVarProvider provides automatic internal variables
