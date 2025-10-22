@@ -239,7 +239,7 @@ type RuntimeCommand struct {
 
 ---
 
-### Phase 2: TempDirManager実装（新規機能）
+### Phase 2: TempDirManager実装（新規機能 - ✅ 完了）
 
 **目的**: 一時ディレクトリのライフサイクル管理を実装する
 
@@ -499,7 +499,7 @@ func (e *DefaultCommandExecutor) resolveCommandWorkDir(
 
 ---
 
-### Phase 4: GroupExecutor統合
+### Phase 4: GroupExecutor統合（部分完了 - P4-1〜P4-4完了、P4-5は別ブランチで作成中）
 
 **目的**: GroupExecutorに一時ディレクトリ管理とワークディレクトリ決定を統合する
 
@@ -507,13 +507,15 @@ func (e *DefaultCommandExecutor) resolveCommandWorkDir(
 
 **作業項目**:
 
-| ID | タスク | ファイル | 作業内容 | 所要時間 |
-|----|-------|---------|---------|---------|
-| P4-1 | ExecuteGroup更新 | `internal/runner/group_executor.go` | ワークディレクトリ決定・設定を統合 | 2h |
-| P4-2 | クリーンアップロジック | `internal/runner/group_executor.go` | `defer` でのクリーンアップ実装 | 1h |
-| P4-3 | keep-temp-dirsフラグ | `cmd/runner/main.go` | コマンドラインフラグ追加 | 0.5h |
-| P4-4 | Runnerへのフラグ伝播 | `internal/runner/runner.go` | フラグをGroupExecutorに渡す | 0.5h |
-| P4-5 | 統合テスト | `cmd/runner/integration_test.go` | エンドツーエンドテスト | 3h |
+| ID | タスク | ファイル | 作業内容 | 所要時間 | 状態 |
+|----|-------|---------|---------|---------|------|
+| P4-1 | ExecuteGroup更新 | `internal/runner/group_executor.go` | ワークディレクトリ決定・設定を統合 | 2h | ✅ |
+| P4-2 | クリーンアップロジック | `internal/runner/group_executor.go` | `defer` でのクリーンアップ実装 | 1h | ✅ |
+| P4-3 | keep-temp-dirsフラグ | `cmd/runner/main.go` | コマンドラインフラグ追加 | 0.5h | ✅ |
+| P4-4 | Runnerへのフラグ伝播 | `internal/runner/runner.go` | フラグをGroupExecutorに渡す | 0.5h | ✅ |
+| P4-5 | 統合テスト | `cmd/runner/integration_test.go` | エンドツーエンドテスト | 3h | 🔄 |
+
+**注記**: P4-5（統合テスト）は別ブランチで作成中のため、マージ後に再検討予定。
 
 **詳細実装内容**:
 
@@ -634,6 +636,7 @@ func main() {
 - [x] dry-runモードで仮想パスが使用される
 - [x] エラー時もクリーンアップが実行される
 - [x] 全テストが成功している (統合テストは実装完了、テスト環境の問題で実行に問題があるが実装は完了)
+runner wiring and mark workdir redesign tasks complete in docs)
 
 ---
 
@@ -884,18 +887,18 @@ Phase 0 → Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5
 ### 6.1 機能実装の完了基準
 
 - [x] 全ての型定義変更が完了している
-- [ ] `TempDirManager` が実装され、テストが成功している (未実装)
-- [ ] `__runner_workdir` 変数が正しく動作している (未実装)
-- [ ] ワークディレクトリ決定ロジックが実装されている (部分的完了: group_executor.goにインライン実装あり)
-- [ ] `--keep-temp-dirs` フラグが動作している (未実装)
-- [ ] dry-runモードで仮想パスが使用されている (未実装)
+- [x] `TempDirManager` が実装され、テストが成功している
+- [x] `__runner_workdir` 変数が正しく動作している
+- [x] ワークディレクトリ決定ロジックが実装されている
+- [x] `--keep-temp-dirs` フラグが動作している
+- [x] dry-runモードで仮想パスが使用されている
 
 ### 6.2 テストの完了基準
 
-- [ ] 全単体テストが成功している（カバレッジ > 80%） (テスト未作成)
-- [ ] 全統合テストが成功している (テスト未作成)
-- [ ] 全エラーケーステストが成功している (テスト未作成)
-- [ ] パフォーマンステストが成功基準を満たしている (テスト未作成)
+- [x] 全単体テストが成功している（カバレッジ > 80%）
+- [ ] 全統合テストが成功している (P4-5は別ブランチで作成中)
+- [x] 全エラーケーステストが成功している
+- [x] パフォーマンステストが成功基準を満たしている
 
 ### 6.3 ドキュメントの完了基準
 
@@ -928,22 +931,22 @@ Phase 0 → Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5
   - [x] `isDryRun` フラグのサポート
   - [x] `Create()`, `Cleanup()`, `Path()` メソッド
   - [x] dry-runモードでのログ出力（"[DRY-RUN]" プレフィックス）
-- [ ] `--keep-temp-dirs` フラグを Runner に追加 (未実装)
-- [ ] Runner から GroupExecutor へ `keepTempDirs` と `isDryRun` を渡す (未実装)
-- [ ] `defer` で条件付きクリーンアップ登録（`if !keepTempDirs { mgr.Cleanup() }`） (未実装)
+- [x] `--keep-temp-dirs` フラグを Runner に追加
+- [x] Runner から GroupExecutor へ `keepTempDirs` と `isDryRun` を渡す
+- [x] `defer` で条件付きクリーンアップ登録（`if !keepTempDirs { mgr.Cleanup() }`）
 
 ### Phase 3: 変数展開
-- [ ] `AutoVarKeyWorkDir` 定数を追加（`internal/runner/variable`） (未実装)
-- [ ] `GroupExecutor.ExecuteGroup()` で以下を設定: (部分的完了)
-  - [ ] `runtimeGroup.EffectiveWorkDir` に展開済みワークディレクトリを設定 (未実装)
-  - [ ] `runtimeGroup.ExpandedVars["__runner_workdir"]` に同じ値を設定 (未実装)
-- [ ] `resolveGroupWorkDir()` を実装 (未実装、類似のインラインロジックあり)
-- [ ] `resolveCommandWorkDir()` を実装 (未実装、類似のインラインロジックあり)
+- [x] `AutoVarKeyWorkDir` 定数を追加（`internal/runner/variable`）
+- [x] `GroupExecutor.ExecuteGroup()` で以下を設定:
+  - [x] `runtimeGroup.EffectiveWorkDir` に展開済みワークディレクトリを設定
+  - [x] `runtimeGroup.ExpandedVars["__runner_workdir"]` に同じ値を設定
+- [x] `resolveGroupWorkDir()` を実装
+- [x] `resolveCommandWorkDir()` を実装
 
 ### Phase 4: テスト
-- [ ] 単体テスト実装 (未実装)
-- [ ] 統合テスト実装 (未実装)
-- [ ] エラーケーステスト (未実装)
+- [x] 単体テスト実装
+- [ ] 統合テスト実装 (別ブランチで作成中)
+- [x] エラーケーステスト
 
 ### Phase 5: ドキュメント
 - [ ] ユーザードキュメント更新 (未実装)
