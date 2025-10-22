@@ -945,7 +945,14 @@ Phase 0 → Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5
 
 ### Phase 4: テスト
 - [x] 単体テスト実装
-- [ ] 統合テスト実装 (別ブランチで作成中)
+- [x] 統合テスト実装
+  - [x] IT-001: グループ実行（一時ディレクトリ）自動生成・自動削除 (`TestIntegration_TempDirHandling`)
+  - [x] IT-002: --keep-temp-dirsフラグ (`TestIntegration_TempDirHandling`)
+  - [x] IT-003: エラー時のクリーンアップ (`TestIntegration_ErrorCleanup`)
+  - [x] IT-004: 複数グループ実行 (`TestIntegration_MultipleGroups`)
+  - [x] IT-005: dry-runモード (`TestIntegration_DryRunWithTempDir`)
+  - [x] IT-006: 固定ディレクトリ使用 (`TestIntegration_TempDirHandling`)
+  - [x] IT-007: コマンドレベルworkdir (`TestIntegration_CommandLevelWorkdir`)
 - [x] エラーケーステスト
 
 ### Phase 5: ドキュメント
