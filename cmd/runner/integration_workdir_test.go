@@ -225,8 +225,12 @@ func validateTempDirBehavior(
 
 	// Case 1: Fixed workdir (expectTempDir=false)
 	if !expectTempDir {
-		// Fixed workdir should not start with 'scr-' prefix
-		assert.False(t, strings.HasPrefix(filepath.Base(workdirPath), "scr-"),
+		// Fixed workdir should not match temp dir pattern (scr-*-*)
+		baseName := filepath.Base(workdirPath)
+		hasScrPrefix := strings.HasPrefix(baseName, "scr-")
+		hasMultipleDashes := strings.Count(baseName, "-") >= 2
+		isTempDirPattern := hasScrPrefix && hasMultipleDashes
+		assert.False(t, isTempDirPattern,
 			"Expected fixed workdir, but got temp dir: %s", workdirPath)
 
 		// Fixed workdir should not be deleted
@@ -239,9 +243,12 @@ func validateTempDirBehavior(
 
 	// Case 2: Temp dir (expectTempDir=true)
 
-	// Verify temp dir naming pattern (starts with 'scr-' prefix)
-	assert.True(t, strings.HasPrefix(filepath.Base(workdirPath), "scr-"),
-		"Expected temp dir pattern 'scr-*', but got: %s", workdirPath)
+	// Verify temp dir naming pattern (matches 'scr-*-*' pattern)
+	baseName := filepath.Base(workdirPath)
+	hasScrPrefix := strings.HasPrefix(baseName, "scr-")
+	hasMultipleDashes := strings.Count(baseName, "-") >= 2
+	assert.True(t, hasScrPrefix && hasMultipleDashes,
+		"Expected temp dir pattern 'scr-*-*', but got: %s", workdirPath)
 
 	// Security check: temp dir should be under system temp dir
 	tempRoot := os.TempDir()
