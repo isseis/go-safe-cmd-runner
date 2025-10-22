@@ -206,6 +206,8 @@ func TestOutputCapture(t *testing.T) {
 | P2-4 | ヘルパー関数のテスト | - | 各ヘルパー関数が正しく動作することを確認 | 30min | [x] |
 | P2-5 | コミット | - | Phase 2 の実装をコミット | 10min | [x] |
 
+**注記**: Phase 2 完了後、`TestIntegration_DryRunWithTempDir` の検証強化も実施しました（別コミット）。
+
 #### P2-1: createRunnerWithOutputCapture 実装
 
 **ファイル:** `cmd/runner/integration_workdir_test.go`

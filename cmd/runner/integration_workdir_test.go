@@ -454,7 +454,40 @@ max_risk_level = "medium"
 	require.NotNil(t, result)
 
 	// Verify that the result contains resource analyses
-	assert.Greater(t, len(result.ResourceAnalyses), 0)
+	require.Greater(t, len(result.ResourceAnalyses), 0, "Expected at least one resource analysis")
+
+	// Find the echo command analysis
+	var cmdAnalysis *resource.ResourceAnalysis
+	for i := range result.ResourceAnalyses {
+		analysis := &result.ResourceAnalyses[i]
+		if analysis.Type == resource.ResourceTypeCommand &&
+			analysis.Operation == resource.OperationExecute &&
+			(analysis.Target == "echo" || analysis.Target == "/bin/echo") {
+			cmdAnalysis = analysis
+			break
+		}
+	}
+	require.NotNil(t, cmdAnalysis, "Expected to find analysis for echo command")
+
+	// Verify that working_directory parameter exists and contains virtual temp dir path
+	workDir, ok := cmdAnalysis.Parameters["working_directory"]
+	require.True(t, ok, "Expected working_directory parameter in command analysis")
+	workDirStr, ok := workDir.(string)
+	require.True(t, ok, "Expected working_directory to be a string")
+
+	// Verify virtual temp dir path pattern
+	assert.Contains(t, workDirStr, "/tmp/scr-", "Expected virtual temp dir path to start with /tmp/scr-")
+	assert.Contains(t, workDirStr, "test_group", "Expected group name in virtual temp dir path")
+
+	// Verify that the virtual temp dir does NOT exist on the filesystem
+	_, err = os.Stat(workDirStr)
+	assert.True(t, os.IsNotExist(err),
+		"Virtual temp dir should not exist on filesystem: %s", workDirStr)
+
+	// Verify group parameter
+	groupName, ok := cmdAnalysis.Parameters["group"]
+	require.True(t, ok, "Expected group parameter in command analysis")
+	assert.Equal(t, "test_group", groupName, "Expected group name to be 'test_group'")
 
 	// Cleanup
 	err = r.CleanupAllResources()
