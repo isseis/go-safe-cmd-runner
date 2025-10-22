@@ -213,6 +213,14 @@ func extractWorkdirFromOutput(t *testing.T, output string) string {
 	return workdirPath
 }
 
+// isTempDirPattern checks if a path matches the temporary directory pattern (scr-*-*)
+func isTempDirPattern(path string) bool {
+	baseName := filepath.Base(path)
+	hasScrPrefix := strings.HasPrefix(baseName, "scr-")
+	hasMultipleDashes := strings.Count(baseName, "-") >= 2
+	return hasScrPrefix && hasMultipleDashes
+}
+
 // validateTempDirBehavior validates temporary directory creation and cleanup behavior
 func validateTempDirBehavior(
 	t *testing.T,
@@ -226,11 +234,7 @@ func validateTempDirBehavior(
 	// Case 1: Fixed workdir (expectTempDir=false)
 	if !expectTempDir {
 		// Fixed workdir should not match temp dir pattern (scr-*-*)
-		baseName := filepath.Base(workdirPath)
-		hasScrPrefix := strings.HasPrefix(baseName, "scr-")
-		hasMultipleDashes := strings.Count(baseName, "-") >= 2
-		isTempDirPattern := hasScrPrefix && hasMultipleDashes
-		assert.False(t, isTempDirPattern,
+		assert.False(t, isTempDirPattern(workdirPath),
 			"Expected fixed workdir, but got temp dir: %s", workdirPath)
 
 		// Fixed workdir should not be deleted
@@ -244,10 +248,7 @@ func validateTempDirBehavior(
 	// Case 2: Temp dir (expectTempDir=true)
 
 	// Verify temp dir naming pattern (matches 'scr-*-*' pattern)
-	baseName := filepath.Base(workdirPath)
-	hasScrPrefix := strings.HasPrefix(baseName, "scr-")
-	hasMultipleDashes := strings.Count(baseName, "-") >= 2
-	assert.True(t, hasScrPrefix && hasMultipleDashes,
+	assert.True(t, isTempDirPattern(workdirPath),
 		"Expected temp dir pattern 'scr-*-*', but got: %s", workdirPath)
 
 	// Security check: temp dir should be under system temp dir
