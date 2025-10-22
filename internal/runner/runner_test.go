@@ -987,6 +987,14 @@ func TestRunner_EnvironmentVariablePriority_GroupLevelSupport(t *testing.T) {
 			commandEnv:  nil, // No command-level env
 			expectedVar: "from_global",
 		},
+		{
+			name:        "System environment used when not overridden",
+			systemEnv:   "from_system",
+			globalEnv:   nil, // No global-level env
+			groupEnv:    nil, // No group-level env
+			commandEnv:  nil, // No command-level env
+			expectedVar: "from_system",
+		},
 	}
 
 	for _, tt := range tests {
