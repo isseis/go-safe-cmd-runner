@@ -635,8 +635,7 @@ func main() {
 - [x] `--keep-temp-dirs` フラグが動作する
 - [x] dry-runモードで仮想パスが使用される
 - [x] エラー時もクリーンアップが実行される
-- [x] 全テストが成功している (統合テストは実装完了、テスト環境の問題で実行に問題があるが実装は完了)
-runner wiring and mark workdir redesign tasks complete in docs)
+- [x] 全テストが成功している
 
 ---
 
