@@ -90,6 +90,7 @@ func (m *DefaultTempDirManager) Cleanup() error {
 	if m.isDryRun {
 		// Dry-run mode: log only
 		slog.Debug("[DRY-RUN] Would delete temporary directory", "path", m.tempDirPath)
+		m.tempDirPath = ""
 		return nil
 	}
 

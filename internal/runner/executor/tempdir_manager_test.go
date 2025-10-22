@@ -19,38 +19,25 @@ func TestTempDirManager_Create_NormalMode(t *testing.T) {
 	}()
 
 	path, err := mgr.Create()
-	if err != nil {
-		t.Fatalf("Create() failed: %v", err)
-	}
+	assert.NoError(t, err, "Create() failed")
+	assert.NotEmpty(t, path, "Create() returned empty path")
 
 	// Verify path is not empty
-	if path == "" {
-		t.Error("Create() returned empty path")
-	}
+	assert.NotEmpty(t, path, "Create() returned empty path")
 
 	// Verify path matches the manager's stored path
-	if mgr.Path() != path {
-		t.Errorf("Path() = %s, want %s", mgr.Path(), path)
-	}
+	assert.Equal(t, mgr.Path(), path, "Path() does not match created path")
 
 	// Verify directory exists
 	info, err := os.Stat(path)
-	if err != nil {
-		t.Errorf("Directory does not exist: %v", err)
-	}
-	if !info.IsDir() {
-		t.Error("Path is not a directory")
-	}
+	assert.NoError(t, err, "Stat() failed for created directory")
+	assert.True(t, info.IsDir(), "Path is not a directory")
 
 	// Verify permissions (0700)
-	if info.Mode().Perm() != 0o700 {
-		t.Errorf("Permissions = %o, want 0700", info.Mode().Perm())
-	}
+	assert.Equal(t, info.Mode().Perm(), os.FileMode(0o700), "Permissions = %o, want 0700", info.Mode().Perm())
 
 	// Verify path contains group name
-	if !strings.Contains(filepath.Base(path), "test-group") {
-		t.Errorf("Path does not contain group name: %s", path)
-	}
+	assert.True(t, strings.Contains(filepath.Base(path), "test-group"), "Path does not contain group name: %s", path)
 }
 
 // TestTempDirManager_Create_DryRunMode tests directory creation in dry-run mode
@@ -58,30 +45,21 @@ func TestTempDirManager_Create_DryRunMode(t *testing.T) {
 	mgr := NewTempDirManager("test-group", true)
 
 	path, err := mgr.Create()
-	if err != nil {
-		t.Fatalf("Create() failed: %v", err)
-	}
+	assert.NoError(t, err, "Create() failed")
+	assert.NotEmpty(t, path, "Create() returned empty path")
 
 	// Verify path is not empty
-	if path == "" {
-		t.Error("Create() returned empty path")
-	}
+	assert.NotEmpty(t, path, "Create() returned empty path")
 
 	// Verify path contains "dryrun"
-	if !strings.Contains(path, "dryrun") {
-		t.Errorf("Dry-run path does not contain 'dryrun': %s", path)
-	}
+	assert.True(t, strings.Contains(path, "dryrun"), "Dry-run path does not contain 'dryrun': %s", path)
 
 	// Verify directory does NOT exist (dry-run)
 	_, err = os.Stat(path)
-	if err == nil {
-		t.Errorf("Directory should not exist in dry-run mode: %s", path)
-	}
+	assert.True(t, os.IsNotExist(err), "Directory should not exist in dry-run mode: %s", path)
 
 	// Verify path matches the manager's stored path
-	if mgr.Path() != path {
-		t.Errorf("Path() = %s, want %s", mgr.Path(), path)
-	}
+	assert.Equal(t, mgr.Path(), path, "Path() does not match created path")
 }
 
 // TestTempDirManager_Cleanup_Success tests successful cleanup
@@ -89,26 +67,23 @@ func TestTempDirManager_Cleanup_Success(t *testing.T) {
 	mgr := NewTempDirManager("test-group", false)
 
 	path, err := mgr.Create()
-	if err != nil {
-		t.Fatalf("Create() failed: %v", err)
-	}
+	assert.NoError(t, err, "Create() failed")
+	assert.NotEmpty(t, path, "Create() returned empty path")
 
 	// Verify directory exists before cleanup
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("Directory does not exist before cleanup: %v", err)
-	}
+	_, err = os.Stat(path)
+	assert.NoError(t, err, "Directory does not exist before cleanup")
 
 	// Cleanup
 	err = mgr.Cleanup()
-	if err != nil {
-		t.Errorf("Cleanup() failed: %v", err)
-	}
+	assert.NoError(t, err, "Cleanup() failed")
 
 	// Verify directory does not exist after cleanup
 	_, err = os.Stat(path)
-	if err == nil {
-		t.Errorf("Directory still exists after cleanup: %s", path)
-	}
+	assert.True(t, os.IsNotExist(err), "Directory should not exist after cleanup: %s", path)
+
+	// Path should be cleared after cleanup
+	assert.Empty(t, mgr.Path(), "Path is not cleared after cleanup")
 }
 
 // TestTempDirManager_Cleanup_DryRun tests cleanup in dry-run mode
@@ -116,20 +91,15 @@ func TestTempDirManager_Cleanup_DryRun(t *testing.T) {
 	mgr := NewTempDirManager("test-group", true)
 
 	path, err := mgr.Create()
-	if err != nil {
-		t.Fatalf("Create() failed: %v", err)
-	}
+	assert.NoError(t, err, "Create() in dry-run mode failed")
+	assert.NotEmpty(t, path, "Create() returns empty path")
 
 	// Cleanup should succeed without error
 	err = mgr.Cleanup()
-	if err != nil {
-		t.Errorf("Cleanup() in dry-run mode should not fail: %v", err)
-	}
+	assert.NoError(t, err, "Cleanup() in dry-run mode should not fail")
 
-	// Path should still be accessible
-	if mgr.Path() != path {
-		t.Errorf("Path changed after cleanup: got %s, want %s", mgr.Path(), path)
-	}
+	// Path should be cleared after cleanup
+	assert.Empty(t, mgr.Path(), "Path is not cleared after cleanup")
 }
 
 // TestTempDirManager_Cleanup_NoCreate tests cleanup without create
@@ -138,9 +108,7 @@ func TestTempDirManager_Cleanup_NoCreate(t *testing.T) {
 
 	// Cleanup without creating should not fail
 	err := mgr.Cleanup()
-	if err != nil {
-		t.Errorf("Cleanup() without Create() should not fail: %v", err)
-	}
+	assert.NoError(t, err, "Cleanup() without Create() should not fail")
 }
 
 // TestTempDirManager_Path_BeforeCreate tests Path() before Create()
@@ -148,9 +116,7 @@ func TestTempDirManager_Path_BeforeCreate(t *testing.T) {
 	mgr := NewTempDirManager("test-group", false)
 
 	path := mgr.Path()
-	if path != "" {
-		t.Errorf("Path() before Create() should return empty string, got: %s", path)
-	}
+	assert.Empty(t, path, "Path() before Create() should return empty string")
 }
 
 // TestTempDirManager_MultipleCreates tests that multiple creates fail or update path
