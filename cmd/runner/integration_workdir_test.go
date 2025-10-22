@@ -29,7 +29,7 @@ import (
 // testOutputBuffer captures command output for testing
 type testOutputBuffer struct {
 	stdout bytes.Buffer
-	mu     sync.Mutex
+	mu     sync.RWMutex
 }
 
 // Write implements io.Writer interface
@@ -41,8 +41,8 @@ func (b *testOutputBuffer) Write(p []byte) (n int, err error) {
 
 // String returns the captured output as a string
 func (b *testOutputBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
+	b.mu.RLock()
+	defer b.mu.RUnlock()
 	return b.stdout.String()
 }
 
