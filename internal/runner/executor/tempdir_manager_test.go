@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // TestTempDirManager_Create_NormalMode tests directory creation in normal mode
@@ -161,28 +163,14 @@ func TestTempDirManager_MultipleCreates(t *testing.T) {
 	}()
 
 	path1, err := mgr.Create()
-	if err != nil {
-		t.Fatalf("First Create() failed: %v", err)
-	}
+	assert.NoError(t, err, "First Create() failed")
+	assert.NotEqual(t, "", path1, "First Create() returned empty path")
 
-	// Second create should overwrite the path
+	// Second create should fail
 	path2, err := mgr.Create()
-	if err != nil {
-		t.Fatalf("Second Create() failed: %v", err)
-	}
+	assert.Error(t, err, "Second Create() should fail but succeeded")
+	assert.Equal(t, "", path2, "Second Create() should return empty path on failure")
 
-	// Cleanup old path manually if it still exists
-	if path1 != path2 {
-		os.RemoveAll(path1)
-	}
-
-	// Both paths should be different (new temp dir each time)
-	if path1 == path2 {
-		t.Error("Multiple Create() calls should create different directories")
-	}
-
-	// Manager should track the latest path
-	if mgr.Path() != path2 {
-		t.Errorf("Path() = %s, want %s", mgr.Path(), path2)
-	}
+	// Manager should track the first path
+	assert.Equal(t, mgr.Path(), path1, "Path() should return the first created path")
 }

@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -12,6 +13,10 @@ const (
 	// tempDirPermissions is the permission mode for temporary directories (owner read/write/execute only)
 	tempDirPermissions = 0o700
 )
+
+// ErrTempDirAlreadyCreated is returned when Create() is called more than once
+// on the same TempDirManager instance.
+var ErrTempDirAlreadyCreated = errors.New("temporary directory has already been created for this TempDirManager instance; Create() can only be called once")
 
 // TempDirManager manages the lifecycle of a temporary directory for a group
 type TempDirManager interface {
@@ -44,6 +49,10 @@ func NewTempDirManager(groupName string, isDryRun bool) TempDirManager {
 
 // Create creates a temporary directory
 func (m *DefaultTempDirManager) Create() (string, error) {
+	if m.tempDirPath != "" {
+		return "", ErrTempDirAlreadyCreated
+	}
+
 	if m.isDryRun {
 		// Generate virtual path in dry-run mode
 		timestamp := time.Now().Format("20060102150405")
@@ -94,6 +103,7 @@ func (m *DefaultTempDirManager) Cleanup() error {
 	}
 
 	slog.Debug(fmt.Sprintf("Cleaned up temporary directory: %s", m.tempDirPath))
+	m.tempDirPath = ""
 	return nil
 }
 
