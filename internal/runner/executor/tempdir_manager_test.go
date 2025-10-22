@@ -20,7 +20,6 @@ func TestTempDirManager_Create_NormalMode(t *testing.T) {
 
 	path, err := mgr.Create()
 	assert.NoError(t, err, "Create() failed")
-	assert.NotEmpty(t, path, "Create() returned empty path")
 
 	// Verify path is not empty
 	assert.NotEmpty(t, path, "Create() returned empty path")
@@ -46,7 +45,6 @@ func TestTempDirManager_Create_DryRunMode(t *testing.T) {
 
 	path, err := mgr.Create()
 	assert.NoError(t, err, "Create() failed")
-	assert.NotEmpty(t, path, "Create() returned empty path")
 
 	// Verify path is not empty
 	assert.NotEmpty(t, path, "Create() returned empty path")
@@ -92,7 +90,7 @@ func TestTempDirManager_Cleanup_DryRun(t *testing.T) {
 
 	path, err := mgr.Create()
 	assert.NoError(t, err, "Create() in dry-run mode failed")
-	assert.NotEmpty(t, path, "Create() returns empty path")
+	assert.NotEmpty(t, path, "Create() returned empty path")
 
 	// Cleanup should succeed without error
 	err = mgr.Cleanup()
