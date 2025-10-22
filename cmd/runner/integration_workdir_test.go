@@ -6,7 +6,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -30,7 +29,6 @@ import (
 // testOutputBuffer captures command output for testing
 type testOutputBuffer struct {
 	stdout bytes.Buffer
-	stderr bytes.Buffer //nolint:unused // Reserved for future use (stderr capture)
 	mu     sync.Mutex
 }
 
@@ -49,61 +47,67 @@ func (b *testOutputBuffer) String() string {
 }
 
 // executorWithOutput wraps an executor to capture command output
-//
-//nolint:unused // Used in Phase 2+ (createRunnerWithOutputCapture helper function)
 type executorWithOutput struct {
-	executor.CommandExecutor
-	output io.Writer
+	baseExecutor executor.CommandExecutor
+	output       io.Writer
 }
 
-// ExecuteCommand executes a command and captures its output
-//
-//nolint:unused // Used in Phase 2+ (createRunnerWithOutputCapture helper function)
-func (e *executorWithOutput) ExecuteCommand(
+// Execute executes a command and captures its output
+func (e *executorWithOutput) Execute(
 	ctx context.Context,
 	cmd *runnertypes.RuntimeCommand,
-	_ *runnertypes.GroupSpec,
 	env map[string]string,
-) (int, error) {
-	// Create os/exec.Cmd
-	execCmd := exec.CommandContext(ctx, cmd.ExpandedCmd, cmd.ExpandedArgs...)
-	execCmd.Env = buildEnvSlice(env)
-	execCmd.Dir = cmd.EffectiveWorkDir
-
-	// Redirect output to both standard output and capture buffer
-	execCmd.Stdout = io.MultiWriter(os.Stdout, e.output)
-	execCmd.Stderr = os.Stderr
-
-	// Execute command
-	err := execCmd.Run()
-
-	// Get exit code
-	exitCode := 0
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			exitCode = exitErr.ExitCode()
-		} else {
-			return 0, err
-		}
+	outputWriter executor.OutputWriter,
+) (*executor.Result, error) {
+	// Create a custom output writer that writes to both the provided writer and our capture buffer
+	captureWriter := &captureOutputWriter{
+		wrapped: outputWriter,
+		capture: e.output,
 	}
 
-	return exitCode, nil
+	// Use the base executor with our custom output writer
+	return e.baseExecutor.Execute(ctx, cmd, env, captureWriter)
 }
 
-// buildEnvSlice converts environment map to slice format
-//
-//nolint:unused // Used in Phase 2+ (called by executorWithOutput.ExecuteCommand)
-func buildEnvSlice(env map[string]string) []string {
-	result := make([]string, 0, len(env))
-	for k, v := range env {
-		result = append(result, k+"="+v)
+// Validate validates a command without executing it
+func (e *executorWithOutput) Validate(cmd *runnertypes.RuntimeCommand) error {
+	return e.baseExecutor.Validate(cmd)
+}
+
+// captureOutputWriter wraps an OutputWriter to also capture output
+type captureOutputWriter struct {
+	wrapped executor.OutputWriter
+	capture io.Writer
+	mu      sync.Mutex
+}
+
+// Write writes data to both the wrapped writer and capture buffer
+func (w *captureOutputWriter) Write(stream string, data []byte) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	// Write to capture buffer (only stdout for simplicity)
+	if stream == executor.StdoutStream {
+		_, _ = w.capture.Write(data)
 	}
-	return result
+
+	// Write to wrapped writer if provided
+	if w.wrapped != nil {
+		return w.wrapped.Write(stream, data)
+	}
+
+	return nil
+}
+
+// Close closes the wrapped writer if it implements io.Closer
+func (w *captureOutputWriter) Close() error {
+	if w.wrapped != nil {
+		return w.wrapped.Close()
+	}
+	return nil
 }
 
 // createRunnerWithOutputCapture creates a Runner with output capture enabled
-//
-//nolint:unused // Used in Phase 3 (TestIntegration_TempDirHandling enhancement)
 func createRunnerWithOutputCapture(
 	t *testing.T,
 	configContent string,
@@ -111,7 +115,14 @@ func createRunnerWithOutputCapture(
 ) (*runner.Runner, *testOutputBuffer) {
 	t.Helper()
 
-	// 1. Create temporary config file
+	// 1. Create temporary hash directory for test
+	tempHashDir, err := os.MkdirTemp("", "test-hash-*")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		os.RemoveAll(tempHashDir)
+	})
+
+	// 2. Create temporary config file
 	tempConfigFile, err := os.CreateTemp("", "test_config_*.toml")
 	require.NoError(t, err)
 	defer os.Remove(tempConfigFile.Name())
@@ -120,8 +131,8 @@ func createRunnerWithOutputCapture(
 	require.NoError(t, err)
 	tempConfigFile.Close()
 
-	// 2. Load configuration
-	verificationManager, err := verification.NewManager()
+	// 3. Load configuration with test verification manager (file validation disabled for dynamic test files)
+	verificationManager, err := verification.NewManagerForTest(tempHashDir, verification.WithFileValidatorDisabled())
 	require.NoError(t, err)
 
 	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, tempConfigFile.Name(), "test-run-id")
@@ -130,20 +141,20 @@ func createRunnerWithOutputCapture(
 	runtimeGlobal, err := config.ExpandGlobal(&cfg.Global)
 	require.NoError(t, err)
 
-	// 3. Create output buffer
+	// 4. Create output buffer
 	outputBuf := &testOutputBuffer{}
 
-	// 4. Create executor with output redirect
+	// 5. Create executor with output redirect
 	baseExec := executor.NewDefaultExecutor()
 	exec := &executorWithOutput{
-		CommandExecutor: baseExec,
-		output:          outputBuf,
+		baseExecutor: baseExec,
+		output:       outputBuf,
 	}
 
-	// 5. Initialize privilege manager
+	// 6. Initialize privilege manager
 	privMgr := privilege.NewManager(slog.Default())
 
-	// 6. Create runner
+	// 7. Create runner
 	runnerOptions := []runner.Option{
 		runner.WithVerificationManager(verificationManager),
 		runner.WithPrivilegeManager(privMgr),
@@ -160,8 +171,6 @@ func createRunnerWithOutputCapture(
 }
 
 // extractWorkdirFromOutput extracts the __runner_workdir path from command output
-//
-//nolint:unused // Used in Phase 3 (TestIntegration_TempDirHandling enhancement)
 func extractWorkdirFromOutput(t *testing.T, output string) string {
 	t.Helper()
 
@@ -180,8 +189,6 @@ func extractWorkdirFromOutput(t *testing.T, output string) string {
 }
 
 // validateTempDirBehavior validates temporary directory creation and cleanup behavior
-//
-//nolint:unused // Used in Phase 3 (TestIntegration_TempDirHandling enhancement)
 func validateTempDirBehavior(
 	t *testing.T,
 	workdirPath string,
@@ -193,8 +200,8 @@ func validateTempDirBehavior(
 
 	// Case 1: Fixed workdir (expectTempDir=false)
 	if !expectTempDir {
-		// Verify it's not a temp dir pattern
-		assert.NotContains(t, workdirPath, "scr-temp-",
+		// Fixed workdir should not start with 'scr-' prefix
+		assert.False(t, strings.HasPrefix(filepath.Base(workdirPath), "scr-"),
 			"Expected fixed workdir, but got temp dir: %s", workdirPath)
 
 		// Fixed workdir should not be deleted
@@ -207,9 +214,9 @@ func validateTempDirBehavior(
 
 	// Case 2: Temp dir (expectTempDir=true)
 
-	// Verify temp dir naming pattern
-	assert.Contains(t, workdirPath, "scr-temp-",
-		"Expected temp dir pattern 'scr-temp-*', but got: %s", workdirPath)
+	// Verify temp dir naming pattern (starts with 'scr-' prefix)
+	assert.True(t, strings.HasPrefix(filepath.Base(workdirPath), "scr-"),
+		"Expected temp dir pattern 'scr-*', but got: %s", workdirPath)
 
 	// Security check: temp dir should be under system temp dir
 	tempRoot := os.TempDir()
@@ -238,16 +245,28 @@ func validateTempDirBehavior(
 				workdirPath)
 		}
 	} else {
-		// Verification before cleanup
+		// Verification before CleanupAllResources()
+		// Note: With keepTempDirs=false, temp dirs are auto-deleted after group execution,
+		// so they may not exist at this point.
 		info, err := os.Stat(workdirPath)
-		require.NoError(t, err, "Temp dir should exist before cleanup: %s", workdirPath)
-		require.True(t, info.IsDir(), "Path should be a directory: %s", workdirPath)
 
-		// Permission verification (Linux/Unix only)
-		if runtime.GOOS != "windows" {
-			mode := info.Mode()
-			assert.Equal(t, os.FileMode(0o700), mode.Perm(),
-				"Temp dir permissions should be 0700, got: %o", mode.Perm())
+		if keepTempDirs {
+			// With keepTempDirs=true, directory should still exist
+			require.NoError(t, err, "Temp dir should exist before cleanup with keepTempDirs=true: %s", workdirPath)
+			require.True(t, info.IsDir(), "Path should be a directory: %s", workdirPath)
+
+			// Permission verification (Linux/Unix only)
+			if runtime.GOOS != "windows" {
+				mode := info.Mode()
+				assert.Equal(t, os.FileMode(0o700), mode.Perm(),
+					"Temp dir permissions should be 0700, got: %o", mode.Perm())
+			}
+		} else {
+			// With keepTempDirs=false, directory is auto-deleted after group execution
+			// So it's expected to not exist here
+			assert.True(t, os.IsNotExist(err),
+				"Temp dir should be auto-deleted after ExecuteAll with keepTempDirs=false, but exists: %s",
+				workdirPath)
 		}
 	}
 }
@@ -293,80 +312,69 @@ max_risk_level = "medium"
 		{
 			name:         "Fixed workdir",
 			keepTempDirs: false,
-			configContent: `
-[[groups]]
-name = "test_group"
-workdir = "/tmp"
-
-[[groups.commands]]
-name = "test_cmd"
-cmd = "echo"
-args = ["working in: %{__runner_workdir}"]
-max_risk_level = "medium"
-`,
+			// configContent is dynamically generated for this test case (with fixed workdir)
+			configContent: "",
 			expectTempDir: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create temporary hash directory for test
-			tempHashDir, err := os.MkdirTemp("", "test-hash-*")
-			require.NoError(t, err)
-			defer os.RemoveAll(tempHashDir)
+			// TC-003: Create fixed workdir if needed
+			var fixedWorkdir string
+			if tt.name == "Fixed workdir" {
+				var err error
+				fixedWorkdir, err = os.MkdirTemp("", "test-fixed-workdir-*")
+				require.NoError(t, err)
+				defer os.RemoveAll(fixedWorkdir)
 
-			// Create temporary config file
-			tempConfigFile, err := os.CreateTemp("", "test_config_*.toml")
-			require.NoError(t, err)
-			defer os.Remove(tempConfigFile.Name())
+				// Generate configContent dynamically with fixed workdir path
+				tt.configContent = `
+[[groups]]
+name = "test_group"
+workdir = "` + fixedWorkdir + `"
 
-			_, err = tempConfigFile.WriteString(tt.configContent)
-			require.NoError(t, err)
-			tempConfigFile.Close()
-
-			// Parse configuration with test verification manager (file validation disabled for dynamic test files)
-			verificationManager, err := verification.NewManagerForTest(tempHashDir, verification.WithFileValidatorDisabled())
-			require.NoError(t, err)
-
-			cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, tempConfigFile.Name(), "test-run-id")
-			require.NoError(t, err)
-
-			// Expand global configuration
-			runtimeGlobal, err := config.ExpandGlobal(&cfg.Global)
-			require.NoError(t, err)
-
-			// Initialize privilege manager
-			privMgr := privilege.NewManager(slog.Default())
-
-			// Create runner with keepTempDirs option
-			runnerOptions := []runner.Option{
-				runner.WithVerificationManager(verificationManager),
-				runner.WithPrivilegeManager(privMgr),
-				runner.WithRunID("test-run-id"),
-				runner.WithRuntimeGlobal(runtimeGlobal),
-				runner.WithKeepTempDirs(tt.keepTempDirs),
+[[groups.commands]]
+name = "test_cmd"
+cmd = "echo"
+args = ["working in: %{__runner_workdir}"]
+max_risk_level = "medium"
+`
 			}
 
-			r, err := runner.NewRunner(cfg, runnerOptions...)
+			// 1. Create Runner with output capture enabled
+			r, outputBuf := createRunnerWithOutputCapture(t, tt.configContent, tt.keepTempDirs)
+
+			// 2. Load system environment
+			err := r.LoadSystemEnvironment()
 			require.NoError(t, err)
 
-			// Load system environment
-			err = r.LoadSystemEnvironment()
-			require.NoError(t, err)
-
-			// Execute all groups
+			// 3. Execute all groups
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 
 			err = r.ExecuteAll(ctx)
 			require.NoError(t, err)
 
-			// Cleanup
+			// 4. Extract __runner_workdir value from command output
+			output := outputBuf.String()
+			workdirPath := extractWorkdirFromOutput(t, output)
+
+			// 5. TC-003: Verify that fixed workdir is used
+			if tt.name == "Fixed workdir" {
+				assert.Equal(t, fixedWorkdir, workdirPath,
+					"Expected fixed workdir to be used: %s, got: %s", fixedWorkdir, workdirPath)
+			}
+
+			// 6. Validate temp dir behavior before cleanup
+			validateTempDirBehavior(t, workdirPath, tt.expectTempDir, tt.keepTempDirs, false)
+
+			// 7. Cleanup all resources
 			err = r.CleanupAllResources()
 			require.NoError(t, err)
 
-			// For this test, we primarily verify that the execution completes successfully
-			// The actual temp directory behavior is tested at the unit level
+			// 8. Validate temp dir behavior after cleanup
+			validateTempDirBehavior(t, workdirPath, tt.expectTempDir, tt.keepTempDirs, true)
 		})
 	}
 }

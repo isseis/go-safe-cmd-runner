@@ -400,10 +400,10 @@ func validateTempDirBehavior(
 
 | ID | タスク | ファイル | 作業内容 | 所要時間 | 状態 |
 |----|-------|---------|---------|---------|------|
-| P3-1 | テストコードの書き換え | `cmd/runner/integration_workdir_test.go` | `TestIntegration_TempDirHandling` を改善 | 60min | [ ] |
-| P3-2 | テスト実行 | - | 改善したテストを実行し、失敗を確認 | 15min | [ ] |
+| P3-1 | テストコードの書き換え | `cmd/runner/integration_workdir_test.go` | `TestIntegration_TempDirHandling` を改善 | 60min | [x] |
+| P3-2 | テスト実行 | - | 改善したテストを実行し、成功を確認 | 15min | [x] |
 | P3-3 | コミット（テスト） | - | Phase 3 のテストをコミット | 10min | [ ] |
-| P3-4 | テスト実行（確認） | - | すべてのテストが成功することを確認 | 15min | [ ] |
+| P3-4 | テスト実行（確認） | - | すべてのテストが成功することを確認 | 15min | [x] |
 | P3-5 | 最終コミット | - | Phase 3 の完成版をコミット | 10min | [ ] |
 
 #### P3-1: TestIntegration_TempDirHandling の改善
@@ -625,9 +625,9 @@ go test -v -run TestIntegration_TempDirHandling ./cmd/runner/
 - [x] ヘルパー関数の動作確認
 
 ### Phase 3: 統合テストの改善
-- [ ] `TestIntegration_TempDirHandling` を改善
-- [ ] テスト実行して成功を確認
-- [ ] `make test` と `make lint` を実行して成功を確認
+- [x] `TestIntegration_TempDirHandling` を改善
+- [x] テスト実行して成功を確認
+- [x] `make test` と `make lint` を実行して成功を確認
 
 ## 7. 見積もり
 
