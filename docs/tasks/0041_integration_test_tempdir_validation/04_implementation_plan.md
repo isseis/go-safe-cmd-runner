@@ -204,7 +204,7 @@ func TestOutputCapture(t *testing.T) {
 | P2-2 | extractWorkdirFromOutput実装 | `cmd/runner/integration_workdir_test.go` | 出力から `__runner_workdir` の値を抽出する関数 | 30min | [x] |
 | P2-3 | validateTempDirBehavior実装 | `cmd/runner/integration_workdir_test.go` | 一時ディレクトリの動作を検証する関数 | 60min | [x] |
 | P2-4 | ヘルパー関数のテスト | - | 各ヘルパー関数が正しく動作することを確認 | 30min | [x] |
-| P2-5 | コミット | - | Phase 2 の実装をコミット | 10min | [ ] |
+| P2-5 | コミット | - | Phase 2 の実装をコミット | 10min | [x] |
 
 #### P2-1: createRunnerWithOutputCapture 実装
 
@@ -402,9 +402,9 @@ func validateTempDirBehavior(
 |----|-------|---------|---------|---------|------|
 | P3-1 | テストコードの書き換え | `cmd/runner/integration_workdir_test.go` | `TestIntegration_TempDirHandling` を改善 | 60min | [x] |
 | P3-2 | テスト実行 | - | 改善したテストを実行し、成功を確認 | 15min | [x] |
-| P3-3 | コミット（テスト） | - | Phase 3 のテストをコミット | 10min | [ ] |
+| P3-3 | コミット（テスト） | - | Phase 3 のテストをコミット | 10min | [x] |
 | P3-4 | テスト実行（確認） | - | すべてのテストが成功することを確認 | 15min | [x] |
-| P3-5 | 最終コミット | - | Phase 3 の完成版をコミット | 10min | [ ] |
+| P3-5 | 最終コミット | - | Phase 3 の完成版をコミット | 10min | [x] |
 
 #### P3-1: TestIntegration_TempDirHandling の改善
 
@@ -575,22 +575,22 @@ go test -v -run TestIntegration_TempDirHandling ./cmd/runner/
 
 ### 4.1 コード完了基準
 
-- [ ] Phase 1-3 のすべてのタスクが完了している
-- [ ] すべてのチェックボックスがチェックされている
-- [ ] コードレビューが完了している
+- [x] Phase 1-3 のすべてのタスクが完了している
+- [x] すべてのチェックボックスがチェックされている
+- [x] コードレビューが完了している
 
 ### 4.2 テスト完了基準
 
-- [ ] `TestIntegration_TempDirHandling` のすべてのサブテストが成功する
-- [ ] `make test` が成功する
-- [ ] `make lint` が成功する
+- [x] `TestIntegration_TempDirHandling` のすべてのサブテストが成功する
+- [x] `make test` が成功する
+- [x] `make lint` が成功する
 
 ### 4.3 ドキュメント完了基準
 
-- [ ] 要件定義書が作成されている
-- [ ] アーキテクチャ設計書が作成されている
-- [ ] 詳細仕様書が作成されている
-- [ ] 実装計画書が作成されている（本ドキュメント）
+- [x] 要件定義書が作成されている
+- [x] アーキテクチャ設計書が作成されている
+- [x] 詳細仕様書が作成されている
+- [x] 実装計画書が作成されている（本ドキュメント）
 
 ## 5. リスク管理
 
