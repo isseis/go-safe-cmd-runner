@@ -200,10 +200,10 @@ func TestOutputCapture(t *testing.T) {
 
 | ID | タスク | ファイル | 作業内容 | 所要時間 | 状態 |
 |----|-------|---------|---------|---------|------|
-| P2-1 | createRunnerWithOutputCapture実装 | `cmd/runner/integration_workdir_test.go` | 出力キャプチャ付き Runner を作成するヘルパー関数 | 60min | [ ] |
-| P2-2 | extractWorkdirFromOutput実装 | `cmd/runner/integration_workdir_test.go` | 出力から `__runner_workdir` の値を抽出する関数 | 30min | [ ] |
-| P2-3 | validateTempDirBehavior実装 | `cmd/runner/integration_workdir_test.go` | 一時ディレクトリの動作を検証する関数 | 60min | [ ] |
-| P2-4 | ヘルパー関数のテスト | - | 各ヘルパー関数が正しく動作することを確認 | 30min | [ ] |
+| P2-1 | createRunnerWithOutputCapture実装 | `cmd/runner/integration_workdir_test.go` | 出力キャプチャ付き Runner を作成するヘルパー関数 | 60min | [x] |
+| P2-2 | extractWorkdirFromOutput実装 | `cmd/runner/integration_workdir_test.go` | 出力から `__runner_workdir` の値を抽出する関数 | 30min | [x] |
+| P2-3 | validateTempDirBehavior実装 | `cmd/runner/integration_workdir_test.go` | 一時ディレクトリの動作を検証する関数 | 60min | [x] |
+| P2-4 | ヘルパー関数のテスト | - | 各ヘルパー関数が正しく動作することを確認 | 30min | [x] |
 | P2-5 | コミット | - | Phase 2 の実装をコミット | 10min | [ ] |
 
 #### P2-1: createRunnerWithOutputCapture 実装
@@ -617,19 +617,16 @@ go test -v -run TestIntegration_TempDirHandling ./cmd/runner/
 - [x] `executorWithOutput` 構造体を実装
 - [x] `buildEnvSlice()` ヘルパー関数を実装
 - [x] 動作確認テストを実行
-- [ ] Phase 1 をコミット
 
 ### Phase 2: ヘルパー関数の実装
-- [ ] `createRunnerWithOutputCapture()` を実装
-- [ ] `extractWorkdirFromOutput()` を実装
-- [ ] `validateTempDirBehavior()` を実装
-- [ ] ヘルパー関数の動作確認
-- [ ] Phase 2 をコミット
+- [x] `createRunnerWithOutputCapture()` を実装
+- [x] `extractWorkdirFromOutput()` を実装
+- [x] `validateTempDirBehavior()` を実装
+- [x] ヘルパー関数の動作確認
 
 ### Phase 3: 統合テストの改善
 - [ ] `TestIntegration_TempDirHandling` を改善
 - [ ] テスト実行して成功を確認
-- [ ] Phase 3 をコミット
 - [ ] `make test` と `make lint` を実行して成功を確認
 
 ## 7. 見積もり
