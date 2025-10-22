@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -1029,7 +1030,7 @@ func TestExecuteGroup_RunnerWorkdirExpansion(t *testing.T) {
 					if tt.expectedWorkDir != "" && arg == tt.expectedArgPattern {
 						foundExpectedPattern = true
 						break
-					} else if tt.expectedWorkDir == "" && containsPattern(arg, tt.expectedArgPattern) {
+					} else if tt.expectedWorkDir == "" && containsPattern(t, arg, tt.expectedArgPattern) {
 						foundExpectedPattern = true
 						break
 					}
@@ -1059,7 +1060,7 @@ func TestExecuteGroup_RunnerWorkdirExpansion(t *testing.T) {
 						"Command workdir should be expanded to expected value")
 				} else {
 					// Temp dir or dry-run test - expect pattern match
-					assert.True(t, containsPattern(expandedCmdWorkDir, tt.expectedCmdWorkDir),
+					assert.True(t, containsPattern(t, expandedCmdWorkDir, tt.expectedCmdWorkDir),
 						"Command workdir should contain pattern '%s', got: %s",
 						tt.expectedCmdWorkDir, expandedCmdWorkDir)
 				}
@@ -1074,20 +1075,15 @@ func TestExecuteGroup_RunnerWorkdirExpansion(t *testing.T) {
 }
 
 // containsPattern checks if a string contains the expected pattern
-func containsPattern(s, pattern string) bool {
+func containsPattern(t *testing.T, s, pattern string) bool {
+	t.Helper()
 	if len(pattern) == 0 {
-		panic("pattern must not be empty")
+		t.Fatal("pattern must not be empty")
 	}
 	if len(s) == 0 {
 		return false
 	}
 
 	// Check if pattern is anywhere in the string (for substrings like "dryrun-")
-	for i := 0; i <= len(s)-len(pattern); i++ {
-		if s[i:i+len(pattern)] == pattern {
-			return true
-		}
-	}
-
-	return false
+	return strings.Contains(s, pattern)
 }
