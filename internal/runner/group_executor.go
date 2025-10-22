@@ -154,7 +154,19 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 		}
 
 		// 7.2 Determine effective working directory for the command
-		runtimeCmd.EffectiveWorkDir = ge.resolveCommandWorkDir(runtimeCmd, runtimeGroup)
+		workDir, err := ge.resolveCommandWorkDir(runtimeCmd, runtimeGroup)
+		if err != nil {
+			// Set failure result for notification
+			executionResult = &groupExecutionResult{
+				status:      GroupExecutionStatusError,
+				exitCode:    1,
+				lastCommand: cmdSpec.Name,
+				output:      lastOutput,
+				errorMsg:    fmt.Sprintf("failed to resolve command workdir[%s]: %v", cmdSpec.Name, err),
+			}
+			return fmt.Errorf("failed to resolve command workdir[%s]: %w", cmdSpec.Name, err)
+		}
+		runtimeCmd.EffectiveWorkDir = workDir
 
 		// 7.3 Set EffectiveTimeout
 		if cmdSpec.Timeout > 0 {
@@ -337,10 +349,11 @@ func (ge *DefaultGroupExecutor) resolveGroupWorkDir(
 
 // resolveCommandWorkDir determines the working directory for a command.
 // Priority: Command.WorkDir > RuntimeGroup.EffectiveWorkDir
+// Returns (workdir, error). Returns error if variable expansion fails.
 func (ge *DefaultGroupExecutor) resolveCommandWorkDir(
 	runtimeCmd *runnertypes.RuntimeCommand,
 	runtimeGroup *runnertypes.RuntimeGroup,
-) string {
+) (string, error) {
 	// Priority 1: Command-level WorkDir (from spec)
 	if runtimeCmd.Spec.WorkDir != "" {
 		// Expand variables in command workdir
@@ -352,15 +365,13 @@ func (ge *DefaultGroupExecutor) resolveCommandWorkDir(
 			"workdir",
 		)
 		if err != nil {
-			// Log error but fall back to group workdir
-			slog.Error(fmt.Sprintf("Failed to expand command workdir, using group workdir: %v", err))
-			return runtimeGroup.EffectiveWorkDir
+			return "", fmt.Errorf("failed to expand command workdir: %w", err)
 		}
-		return expandedWorkDir
+		return expandedWorkDir, nil
 	}
 
 	// Priority 2: Group-level EffectiveWorkDir
 	// Note: Already determined and set in ExecuteGroup by resolveGroupWorkDir
 	//       (either a temporary directory or a fixed directory physical/virtual path)
-	return runtimeGroup.EffectiveWorkDir
+	return runtimeGroup.EffectiveWorkDir, nil
 }

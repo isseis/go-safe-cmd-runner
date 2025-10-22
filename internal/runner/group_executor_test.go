@@ -808,6 +808,7 @@ func TestResolveCommandWorkDir(t *testing.T) {
 		commandVars           map[string]string
 		groupEffectiveWorkDir string
 		expectedWorkDir       string
+		expectError           bool
 	}{
 		{
 			name:                  "command workdir takes priority",
@@ -815,6 +816,7 @@ func TestResolveCommandWorkDir(t *testing.T) {
 			commandVars:           map[string]string{},
 			groupEffectiveWorkDir: "/group/workdir",
 			expectedWorkDir:       "/cmd/workdir",
+			expectError:           false,
 		},
 		{
 			name:                  "use group workdir when command workdir is empty",
@@ -822,6 +824,7 @@ func TestResolveCommandWorkDir(t *testing.T) {
 			commandVars:           map[string]string{},
 			groupEffectiveWorkDir: "/group/workdir",
 			expectedWorkDir:       "/group/workdir",
+			expectError:           false,
 		},
 		{
 			name:                  "both empty returns empty",
@@ -829,6 +832,7 @@ func TestResolveCommandWorkDir(t *testing.T) {
 			commandVars:           map[string]string{},
 			groupEffectiveWorkDir: "",
 			expectedWorkDir:       "",
+			expectError:           false,
 		},
 		{
 			name:                  "command workdir with variable expansion",
@@ -836,6 +840,15 @@ func TestResolveCommandWorkDir(t *testing.T) {
 			commandVars:           map[string]string{"project": "myapp"},
 			groupEffectiveWorkDir: "/group/workdir",
 			expectedWorkDir:       "/opt/myapp",
+			expectError:           false,
+		},
+		{
+			name:                  "variable expansion error stops execution",
+			commandWorkDir:        "/opt/%{undefined_var}",
+			commandVars:           map[string]string{},
+			groupEffectiveWorkDir: "/group/workdir",
+			expectedWorkDir:       "",
+			expectError:           true,
 		},
 	}
 
@@ -855,7 +868,12 @@ func TestResolveCommandWorkDir(t *testing.T) {
 				EffectiveWorkDir: tt.groupEffectiveWorkDir,
 			}
 
-			result := ge.resolveCommandWorkDir(runtimeCmd, runtimeGroup)
+			result, err := ge.resolveCommandWorkDir(runtimeCmd, runtimeGroup)
+			if tt.expectError {
+				assert.Error(t, err)
+				return
+			}
+			assert.NoError(t, err)
 			assert.Equal(t, tt.expectedWorkDir, result)
 		})
 	}
