@@ -122,20 +122,14 @@ func createRunnerWithOutputCapture(
 		os.RemoveAll(tempHashDir)
 	})
 
-	// 2. Create temporary config file
-	tempConfigFile, err := os.CreateTemp("", "test_config_*.toml")
-	require.NoError(t, err)
-	defer os.Remove(tempConfigFile.Name())
-
-	_, err = tempConfigFile.WriteString(configContent)
-	require.NoError(t, err)
-	tempConfigFile.Close()
+	// 2. Create temporary config file using helper
+	configPath := setupTestConfig(t, configContent)
 
 	// 3. Load configuration with test verification manager (file validation disabled for dynamic test files)
 	verificationManager, err := verification.NewManagerForTest(tempHashDir, verification.WithFileValidatorDisabled())
 	require.NoError(t, err)
 
-	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, tempConfigFile.Name(), "test-run-id")
+	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, configPath, "test-run-id")
 	require.NoError(t, err)
 
 	runtimeGlobal, err := config.ExpandGlobal(&cfg.Global)
@@ -168,6 +162,37 @@ func createRunnerWithOutputCapture(
 	require.NoError(t, err)
 
 	return r, outputBuf
+}
+
+// setupTestConfig creates a temporary config file with the given content
+func setupTestConfig(t *testing.T, configContent string) string {
+	t.Helper()
+
+	tempConfigFile, err := os.CreateTemp("", "test_config_*.toml")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		os.Remove(tempConfigFile.Name())
+	})
+
+	_, err = tempConfigFile.WriteString(configContent)
+	require.NoError(t, err)
+	tempConfigFile.Close()
+
+	return tempConfigFile.Name()
+}
+
+// executeRunnerWithTimeout executes a runner with LoadSystemEnvironment and ExecuteAll
+func executeRunnerWithTimeout(t *testing.T, r *runner.Runner, timeout time.Duration) {
+	t.Helper()
+
+	err := r.LoadSystemEnvironment()
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	err = r.ExecuteAll(ctx)
+	require.NoError(t, err)
 }
 
 // extractWorkdirFromOutput extracts the __runner_workdir path from command output
@@ -345,35 +370,27 @@ max_risk_level = "medium"
 			// 1. Create Runner with output capture enabled
 			r, outputBuf := createRunnerWithOutputCapture(t, tt.configContent, tt.keepTempDirs)
 
-			// 2. Load system environment
-			err := r.LoadSystemEnvironment()
-			require.NoError(t, err)
+			// 2. Execute all groups with timeout
+			executeRunnerWithTimeout(t, r, 30*time.Second)
 
-			// 3. Execute all groups
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-
-			err = r.ExecuteAll(ctx)
-			require.NoError(t, err)
-
-			// 4. Extract __runner_workdir value from command output
+			// 3. Extract __runner_workdir value from command output
 			output := outputBuf.String()
 			workdirPath := extractWorkdirFromOutput(t, output)
 
-			// 5. TC-003: Verify that fixed workdir is used
+			// 4. TC-003: Verify that fixed workdir is used
 			if tt.name == "Fixed workdir" {
 				assert.Equal(t, fixedWorkdir, workdirPath,
 					"Expected fixed workdir to be used: %s, got: %s", fixedWorkdir, workdirPath)
 			}
 
-			// 6. Validate temp dir behavior before cleanup
+			// 5. Validate temp dir behavior before cleanup
 			validateTempDirBehavior(t, workdirPath, tt.expectTempDir, tt.keepTempDirs, false)
 
-			// 7. Cleanup all resources
-			err = r.CleanupAllResources()
+			// 6. Cleanup all resources
+			err := r.CleanupAllResources()
 			require.NoError(t, err)
 
-			// 8. Validate temp dir behavior after cleanup
+			// 7. Validate temp dir behavior after cleanup
 			validateTempDirBehavior(t, workdirPath, tt.expectTempDir, tt.keepTempDirs, true)
 		})
 	}
@@ -392,20 +409,14 @@ args = ["working in: %{__runner_workdir}"]
 max_risk_level = "medium"
 `
 
-	// Create temporary config file
-	tempConfigFile, err := os.CreateTemp("", "test_config_*.toml")
-	require.NoError(t, err)
-	defer os.Remove(tempConfigFile.Name())
-
-	_, err = tempConfigFile.WriteString(configContent)
-	require.NoError(t, err)
-	tempConfigFile.Close()
+	// Create temporary config file using helper
+	configPath := setupTestConfig(t, configContent)
 
 	// Parse configuration
 	verificationManager, err := verification.NewManagerForDryRun()
 	require.NoError(t, err)
 
-	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, tempConfigFile.Name(), "test-run-id")
+	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, configPath, "test-run-id")
 	require.NoError(t, err)
 
 	// Expand global configuration
@@ -438,16 +449,8 @@ max_risk_level = "medium"
 	r, err := runner.NewRunner(cfg, runnerOptions...)
 	require.NoError(t, err)
 
-	// Load system environment
-	err = r.LoadSystemEnvironment()
-	require.NoError(t, err)
-
-	// Execute all groups in dry-run mode
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	err = r.ExecuteAll(ctx)
-	require.NoError(t, err)
+	// Execute all groups in dry-run mode with timeout
+	executeRunnerWithTimeout(t, r, 30*time.Second)
 
 	// Get dry-run results
 	result := r.GetDryRunResults()
