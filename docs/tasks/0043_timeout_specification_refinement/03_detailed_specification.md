@@ -17,6 +17,10 @@ type TimeoutValue *int
 const (
     // DefaultTimeout is used when no timeout is explicitly set
     DefaultTimeout = 60 // seconds
+
+    // MaxTimeout defines the maximum allowed timeout value (24 hours)
+    // Using int32 max to ensure cross-platform compatibility
+    MaxTimeout = 86400 // 24 hours in seconds
 )
 ```
 
@@ -71,11 +75,11 @@ type CommandSpec struct {
 
     // 他のフィールドは変更なし
     WorkDir     string   `toml:"workdir"`
-    Output      string   `toml:"output"`
+    OutputFile  string   `toml:"output_file"`
     Background  bool     `toml:"background"`
     RunAsUser   string   `toml:"run_as_user"`
     RunAsGroup  string   `toml:"run_as_group"`
-    MaxRisk     string   `toml:"max_risk_level"`
+    RiskLevel   string   `toml:"risk_level"`
     EnvVars     []string `toml:"env_vars"`
     EnvImport   []string `toml:"env_import"`
     Vars        []string `toml:"vars"`
@@ -92,13 +96,11 @@ type CommandSpec struct {
 // ResolveTimeout resolves the effective timeout value from the hierarchy.
 // It returns the resolved timeout in seconds.
 // A value of 0 means unlimited execution.
-func ResolveTimeout(cmdTimeout, groupTimeout, globalTimeout *int) int {
+func ResolveTimeout(cmdTimeout, globalTimeout *int) int {
     // Determine which timeout pointer to use based on hierarchy
     var effectiveTimeout *int
     if cmdTimeout != nil {
         effectiveTimeout = cmdTimeout
-    } else if groupTimeout != nil {
-        effectiveTimeout = groupTimeout
     } else if globalTimeout != nil {
         effectiveTimeout = globalTimeout
     }
@@ -119,15 +121,13 @@ func ResolveTimeout(cmdTimeout, groupTimeout, globalTimeout *int) int {
    - 存在する場合: その値を使用（0も含む）
    - 存在しない場合: 次のレベルへ
 
-2. **グループレベル**: `[[groups]]`の`timeout`（将来実装予定）
+2. **グローバルレベル**: `[global]`の`timeout`
    - 存在する場合: その値を使用（0も含む）
    - 存在しない場合: 次のレベルへ
 
-3. **グローバルレベル**: `[global]`の`timeout`
-   - 存在する場合: その値を使用（0も含む）
-   - 存在しない場合: 次のレベルへ
+3. **デフォルト**: システム定義の`DefaultTimeout`（60秒）
 
-4. **デフォルト**: システム定義の`DefaultTimeout`（60秒）
+**注意**: グループレベルのタイムアウト設定（`[[groups]]`の`timeout`）は本仕様のスコープ外です。
 
 ### 3.2. RuntimeGlobal の変更
 
@@ -163,12 +163,12 @@ type RuntimeCommand struct {
     EffectiveTimeout int
 
     // 他のフィールド
-    ExpandedCmd       string
-    ExpandedArgs      []string
-    ExpandedEnv       map[string]string
-    ExpandedVars      map[string]string
-    ExpandedWorkDir   string
-    ExpandedOutput    string
+    ExpandedCmd         string
+    ExpandedArgs        []string
+    ExpandedEnv         map[string]string
+    ExpandedVars        map[string]string
+    ExpandedWorkDir     string
+    ExpandedOutputFile  string
 }
 
 // NewRuntimeCommand creates a new RuntimeCommand with resolved timeout
@@ -206,11 +206,17 @@ func parseTimeoutValue(value interface{}) (*int, error) {
         if v < 0 {
             return nil, fmt.Errorf("timeout must be non-negative, got %d", v)
         }
+        if v > MaxTimeout {
+            return nil, fmt.Errorf("timeout value too large: %d. Maximum value is %d", v, MaxTimeout)
+        }
         intVal := int(v)
         return &intVal, nil
     case int:
         if v < 0 {
             return nil, fmt.Errorf("timeout must be non-negative, got %d", v)
+        }
+        if v > MaxTimeout {
+            return nil, fmt.Errorf("timeout value too large: %d. Maximum value is %d", v, MaxTimeout)
         }
         return &v, nil
     default:
@@ -232,6 +238,10 @@ func ValidateTimeout(timeout *int, context string) error {
         return fmt.Errorf("%s: timeout must be non-negative, got %d", context, *timeout)
     }
 
+    if *timeout > MaxTimeout {
+        return fmt.Errorf("%s: timeout value too large: %d. Maximum value is %d", context, *timeout, MaxTimeout)
+    }
+
     return nil
 }
 ```
@@ -244,7 +254,7 @@ func ValidateTimeout(timeout *int, context string) error {
 |-------------|-----------------|
 | 負の値 | `Invalid timeout value: -1. Timeout must be a non-negative integer (0 for no timeout, positive values for timeout in seconds).` |
 | 不正な型 | `Invalid timeout type: string. Timeout must be an integer.` |
-| オーバーフロー | `Timeout value too large: 2147483648. Maximum value is 2147483647.` |
+| 上限超過 | `Timeout value too large: 90000. Maximum value is 86400 (24 hours).` |
 
 #### 4.2.2. 実行時警告
 
@@ -263,20 +273,21 @@ func ValidateTimeout(timeout *int, context string) error {
 ```go
 // ExecuteWithTimeout executes a command with the specified timeout.
 func ExecuteWithTimeout(cmd *exec.Cmd, timeout int) error {
-    if timeout == 0 {
-        // Log a warning for unlimited execution for better observability.
-        log.Warn("Executing command with unlimited timeout")
-    }
+    var ctx context.Context
+    var cancel context.CancelFunc
 
-    // Create a context with the specified timeout.
-    // If timeout is 0 or negative, it returns a non-cancellable context,
-    // effectively creating an unlimited timeout.
-    ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
+    if timeout <= 0 {
+        // For unlimited execution, use a non-cancellable context
+        log.Warn("Executing command with unlimited timeout")
+        ctx = context.Background()
+        cancel = func() {} // No-op cancel function
+    } else {
+        // For limited execution, create a context with timeout
+        ctx, cancel = context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
+    }
     defer cancel()
 
-    // Assign the context to the command.
-    // Note: This should be cmd.Context = ctx, not re-creating the command.
-    // Assuming the original code had a bug, this is the corrected version.
+    // Assign the context to the command
     cmd.Context = ctx
 
     return cmd.Run()
@@ -287,7 +298,10 @@ func ExecuteWithTimeout(cmd *exec.Cmd, timeout int) error {
 
 ```go
 // MonitorUnlimitedExecution monitors commands running without timeout
-func MonitorUnlimitedExecution(cmd *exec.Cmd, cmdName string) {
+// Returns a cancel function that should be called when the command finishes
+func MonitorUnlimitedExecution(cmd *exec.Cmd, cmdName string) context.CancelFunc {
+    ctx, cancel := context.WithCancel(context.Background())
+
     go func() {
         ticker := time.NewTicker(5 * time.Minute)
         defer ticker.Stop()
@@ -299,11 +313,13 @@ func MonitorUnlimitedExecution(cmd *exec.Cmd, cmdName string) {
                     log.Warnf("Command '%s' (PID: %d) running for more than 5 minutes with unlimited timeout",
                              cmdName, cmd.Process.Pid)
                 }
-            case <-done:
+            case <-ctx.Done():
                 return
             }
         }
     }()
+
+    return cancel
 }
 ```
 
@@ -342,6 +358,12 @@ func TestTimeoutParsing(t *testing.T) {
         {
             name:     "negative timeout",
             toml:     `timeout = -1`,
+            expected: nil,
+            wantErr:  true,
+        },
+        {
+            name:     "timeout exceeds maximum",
+            toml:     `timeout = 90000`,
             expected: nil,
             wantErr:  true,
         },
@@ -393,7 +415,7 @@ func TestTimeoutResolution(t *testing.T) {
 
     for _, tt := range tests {
         t.Run(tt.name, func(t *testing.T) {
-            result := ResolveTimeout(tt.cmdTimeout, nil, tt.globalTimeout)
+            result := ResolveTimeout(tt.cmdTimeout, tt.globalTimeout)
             assert.Equal(t, tt.expected, result)
         })
     }
@@ -489,11 +511,10 @@ func (r *RuntimeGlobal) Timeout() int {
 
 ```go
 // Precompute timeout values during runtime creation
-func NewRuntimeCommand(spec *CommandSpec, context *ExecutionContext) *RuntimeCommand {
+func NewRuntimeCommand(spec *CommandSpec, globalTimeout *int) *RuntimeCommand {
     effectiveTimeout := ResolveTimeout(
         spec.Timeout,
-        context.GroupTimeout,
-        context.GlobalTimeout,
+        globalTimeout,
     )
 
     return &RuntimeCommand{
@@ -638,7 +659,7 @@ timeout = 60    # Explicit 60 seconds
 const (
     ErrNegativeTimeout = "Invalid timeout value: %d. Timeout must be a non-negative integer (0 for no timeout, positive values for timeout in seconds)."
     ErrInvalidTimeoutType = "Invalid timeout type: %T. Timeout must be an integer."
-    ErrTimeoutOverflow = "Timeout value too large: %d. Maximum value is %d."
+    ErrTimeoutOverflow = "Timeout value too large: %d. Maximum value is %d (24 hours)."
 )
 ```
 
