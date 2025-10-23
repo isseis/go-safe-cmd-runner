@@ -169,8 +169,9 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 		runtimeCmd.EffectiveWorkDir = workDir
 
 		// 7.3 Set EffectiveTimeout
-		if cmdSpec.Timeout > 0 {
-			runtimeCmd.EffectiveTimeout = cmdSpec.Timeout
+		// Use command-specific timeout if set, otherwise use global timeout
+		if cmdSpec.Timeout != nil {
+			runtimeCmd.EffectiveTimeout = *cmdSpec.Timeout
 		} else {
 			runtimeCmd.EffectiveTimeout = runtimeGlobal.Timeout()
 		}

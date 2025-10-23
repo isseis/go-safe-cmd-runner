@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -75,12 +76,12 @@ args = ["test"]
 	require.NotNil(t, cfg)
 
 	// Verify that ConfigSpec.Global.Timeout is 0 (not set in TOML)
-	assert.Equal(t, 0, cfg.Global.Timeout, "Expected ConfigSpec.Global.Timeout to be 0 when not set in TOML")
+	assert.Nil(t, cfg.Global.Timeout, "Expected ConfigSpec.Global.Timeout to be nil when not set in TOML")
 
 	// Create RuntimeGlobal and verify default timeout is returned
 	runtimeGlobal, err := runnertypes.NewRuntimeGlobal(&cfg.Global)
 	require.NoError(t, err, "NewRuntimeGlobal failed")
-	assert.Equal(t, runnertypes.DefaultTimeout, runtimeGlobal.Timeout(), "Expected RuntimeGlobal.Timeout() to return DefaultTimeout")
+	assert.Equal(t, common.DefaultTimeout, runtimeGlobal.Timeout(), "Expected RuntimeGlobal.Timeout() to return DefaultTimeout")
 }
 
 // TestExplicitTimeoutNotOverridden tests that explicitly set timeout is preserved
@@ -104,7 +105,8 @@ args = ["test"]
 	require.NotNil(t, cfg)
 
 	// Verify explicit timeout is preserved in ConfigSpec
-	assert.Equal(t, 120, cfg.Global.Timeout, "Expected ConfigSpec.Global.Timeout to preserve explicit value")
+	require.NotNil(t, cfg.Global.Timeout, "Expected ConfigSpec.Global.Timeout to be non-nil")
+	assert.Equal(t, 120, *cfg.Global.Timeout, "Expected ConfigSpec.Global.Timeout to preserve explicit value")
 
 	// Create RuntimeGlobal and verify explicit timeout is returned
 	runtimeGlobal, err := runnertypes.NewRuntimeGlobal(&cfg.Global)

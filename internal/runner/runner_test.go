@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
+
 	configpkg "github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
@@ -39,7 +41,7 @@ func TestNewRunner(t *testing.T) {
 	config := &runnertypes.ConfigSpec{
 		Version: "1.0",
 		Global: runnertypes.GlobalSpec{
-			Timeout:  3600,
+			Timeout:  common.IntPtr(3600),
 			LogLevel: "info",
 		},
 	}
@@ -105,7 +107,7 @@ func TestNewRunnerWithSecurity(t *testing.T) {
 	config := &runnertypes.ConfigSpec{
 		Version: "1.0",
 		Global: runnertypes.GlobalSpec{
-			Timeout:  3600,
+			Timeout:  common.IntPtr(3600),
 			LogLevel: "info",
 		},
 	}
@@ -217,7 +219,7 @@ func TestRunner_ExecuteGroup(t *testing.T) {
 			config := &runnertypes.ConfigSpec{
 				Version: "1.0",
 				Global: runnertypes.GlobalSpec{
-					Timeout:  3600,
+					Timeout:  common.IntPtr(3600),
 					LogLevel: "info",
 				},
 				Groups: []runnertypes.GroupSpec{tt.group},
@@ -267,7 +269,7 @@ func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
 		config := &runnertypes.ConfigSpec{
 			Version: "1.0",
 			Global: runnertypes.GlobalSpec{
-				Timeout:  3600,
+				Timeout:  common.IntPtr(3600),
 				LogLevel: "info",
 			},
 			Groups: []runnertypes.GroupSpec{group},
@@ -303,7 +305,7 @@ func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
 		config := &runnertypes.ConfigSpec{
 			Version: "1.0",
 			Global: runnertypes.GlobalSpec{
-				Timeout:  3600,
+				Timeout:  common.IntPtr(3600),
 				LogLevel: "info",
 			},
 			Groups: []runnertypes.GroupSpec{group},
@@ -343,7 +345,7 @@ func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
 		config := &runnertypes.ConfigSpec{
 			Version: "1.0",
 			Global: runnertypes.GlobalSpec{
-				Timeout:  3600,
+				Timeout:  common.IntPtr(3600),
 				LogLevel: "info",
 			},
 			Groups: []runnertypes.GroupSpec{group},
@@ -377,7 +379,7 @@ func TestRunner_ExecuteAll(t *testing.T) {
 	config := &runnertypes.ConfigSpec{
 		Version: "1.0",
 		Global: runnertypes.GlobalSpec{
-			Timeout:  3600,
+			Timeout:  common.IntPtr(3600),
 			LogLevel: "info",
 		},
 		Groups: []runnertypes.GroupSpec{
@@ -420,7 +422,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		config := &runnertypes.ConfigSpec{
 			Version: "1.0",
 			Global: runnertypes.GlobalSpec{
-				Timeout:  3600,
+				Timeout:  common.IntPtr(3600),
 				LogLevel: "info",
 			},
 			Groups: []runnertypes.GroupSpec{
@@ -476,7 +478,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		config := &runnertypes.ConfigSpec{
 			Version: "1.0",
 			Global: runnertypes.GlobalSpec{
-				Timeout:  3600,
+				Timeout:  common.IntPtr(3600),
 				LogLevel: "info",
 			},
 			Groups: []runnertypes.GroupSpec{
@@ -532,7 +534,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		config := &runnertypes.ConfigSpec{
 			Version: "1.0",
 			Global: runnertypes.GlobalSpec{
-				Timeout:  3600,
+				Timeout:  common.IntPtr(3600),
 				LogLevel: "info",
 			},
 			Groups: []runnertypes.GroupSpec{
@@ -584,7 +586,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		config := &runnertypes.ConfigSpec{
 			Version: "1.0",
 			Global: runnertypes.GlobalSpec{
-				Timeout:  3600,
+				Timeout:  common.IntPtr(3600),
 				LogLevel: "info",
 			},
 			Groups: []runnertypes.GroupSpec{
@@ -629,7 +631,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		config := &runnertypes.ConfigSpec{
 			Version: "1.0",
 			Global: runnertypes.GlobalSpec{
-				Timeout:  3600,
+				Timeout:  common.IntPtr(3600),
 				LogLevel: "info",
 			},
 			Groups: []runnertypes.GroupSpec{
@@ -669,7 +671,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		config := &runnertypes.ConfigSpec{
 			Version: "1.0",
 			Global: runnertypes.GlobalSpec{
-				Timeout:  3600,
+				Timeout:  common.IntPtr(3600),
 				LogLevel: "info",
 			},
 			Groups: []runnertypes.GroupSpec{}, // Empty groups
@@ -699,7 +701,7 @@ func TestRunner_CommandTimeoutBehavior(t *testing.T) {
 	config := &runnertypes.ConfigSpec{
 		Version: "1.0",
 		Global: runnertypes.GlobalSpec{
-			Timeout: 1, // 1 second timeout
+			Timeout: common.IntPtr(1), // 1 second timeout
 		},
 		Groups: []runnertypes.GroupSpec{
 			{
@@ -736,14 +738,14 @@ func TestRunner_CommandTimeoutBehavior(t *testing.T) {
 		// Create config with command-specific shorter timeout
 		shortTimeoutCmd := runnertypes.CommandSpec{
 			Cmd:     "sleep",
-			Args:    []string{"5"}, // Sleep for 5 seconds
-			Timeout: 1,             // But timeout after 1 second
+			Args:    []string{"5"},    // Sleep for 5 seconds
+			Timeout: common.IntPtr(1), // But timeout after 1 second
 		}
 
 		configWithCmdTimeout := &runnertypes.ConfigSpec{
 			Version: "1.0",
 			Global: runnertypes.GlobalSpec{
-				Timeout: 10, // 10 seconds global timeout
+				Timeout: common.IntPtr(10), // 10 seconds global timeout
 			},
 			Groups: []runnertypes.GroupSpec{
 				{
@@ -949,7 +951,7 @@ func TestRunner_EnvironmentVariablePriority_GroupLevelSupport(t *testing.T) {
 			config := &runnertypes.ConfigSpec{
 				Version: "1.0",
 				Global: runnertypes.GlobalSpec{
-					Timeout:    3600,
+					Timeout:    common.IntPtr(3600),
 					EnvAllowed: []string{"TEST_VAR"},
 					EnvVars:    tt.globalEnv,
 				},
@@ -1027,7 +1029,7 @@ func TestSlackNotification(t *testing.T) {
 			config := &runnertypes.ConfigSpec{
 				Version: "1.0",
 				Global: runnertypes.GlobalSpec{
-					Timeout: 30,
+					Timeout: common.IntPtr(30),
 				},
 				Groups: []runnertypes.GroupSpec{
 					{
@@ -1157,7 +1159,7 @@ func TestRunner_OutputCaptureEndToEnd(t *testing.T) {
 			config := &runnertypes.ConfigSpec{
 				Version: "1.0",
 				Global: runnertypes.GlobalSpec{
-					Timeout:         30,
+					Timeout:         common.IntPtr(30),
 					LogLevel:        "info",
 					OutputSizeLimit: 1024 * 1024, // 1MB limit
 				},
@@ -1217,7 +1219,7 @@ func TestRunner_OutputCaptureErrorScenarios(t *testing.T) {
 				},
 			},
 			globalConfig: runnertypes.GlobalSpec{
-				Timeout:         30,
+				Timeout:         common.IntPtr(30),
 				OutputSizeLimit: 1024,
 			},
 			expectError: "path traversal",
@@ -1234,7 +1236,7 @@ func TestRunner_OutputCaptureErrorScenarios(t *testing.T) {
 				},
 			},
 			globalConfig: runnertypes.GlobalSpec{
-				Timeout:         30,
+				Timeout:         common.IntPtr(30),
 				OutputSizeLimit: 1024,
 			},
 			expectError: "directory",
@@ -1251,7 +1253,7 @@ func TestRunner_OutputCaptureErrorScenarios(t *testing.T) {
 				},
 			},
 			globalConfig: runnertypes.GlobalSpec{
-				Timeout:         30,
+				Timeout:         common.IntPtr(30),
 				OutputSizeLimit: 1024,
 			},
 			expectError: "permission",
@@ -1304,7 +1306,7 @@ func TestRunner_OutputCaptureDryRun(t *testing.T) {
 	config := &runnertypes.ConfigSpec{
 		Version: "1.0",
 		Global: runnertypes.GlobalSpec{
-			Timeout:         30,
+			Timeout:         common.IntPtr(30),
 			LogLevel:        "info",
 			OutputSizeLimit: 1024,
 		},
@@ -1543,7 +1545,7 @@ func TestRunner_OutputCaptureErrorTypes(t *testing.T) {
 			cfg := &runnertypes.ConfigSpec{
 				Version: "1.0",
 				Global: runnertypes.GlobalSpec{
-					Timeout:         30,
+					Timeout:         common.IntPtr(30),
 					OutputSizeLimit: 1024,
 				},
 				Groups: []runnertypes.GroupSpec{
@@ -1648,7 +1650,7 @@ func TestRunner_OutputCaptureExecutionStages(t *testing.T) {
 			cfg := &runnertypes.ConfigSpec{
 				Version: "1.0",
 				Global: runnertypes.GlobalSpec{
-					Timeout:         30,
+					Timeout:         common.IntPtr(30),
 					OutputSizeLimit: 1024,
 				},
 				Groups: []runnertypes.GroupSpec{
@@ -1839,7 +1841,7 @@ func TestRunner_OutputCaptureSecurityIntegration(t *testing.T) {
 			cfg := &runnertypes.ConfigSpec{
 				Version: "1.0",
 				Global: runnertypes.GlobalSpec{
-					Timeout:         30,
+					Timeout:         common.IntPtr(30),
 					OutputSizeLimit: 1024,
 				},
 				Groups: []runnertypes.GroupSpec{

@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -213,7 +214,7 @@ args = ["hello"]
 			want: &ConfigSpec{
 				Version: "1.0",
 				Global: GlobalSpec{
-					Timeout: 300,
+					Timeout: common.IntPtr(300),
 				},
 				Groups: []GroupSpec{
 					{
@@ -256,7 +257,7 @@ cmd = "/bin/echo"
 			want: &ConfigSpec{
 				Version: "1.0",
 				Global: GlobalSpec{
-					Timeout:             300,
+					Timeout:             common.IntPtr(300),
 					LogLevel:            "debug",
 					VerifyStandardPaths: func() *bool { b := false; return &b }(),
 					OutputSizeLimit:     1048576,
@@ -306,7 +307,7 @@ cmd = "/usr/bin/make"
 			want: &ConfigSpec{
 				Version: "1.0",
 				Global: GlobalSpec{
-					Timeout: 300,
+					Timeout: common.IntPtr(300),
 				},
 				Groups: []GroupSpec{
 					{
@@ -359,7 +360,7 @@ vars = ["TEST_VAR=value"]
 			want: &ConfigSpec{
 				Version: "1.0",
 				Global: GlobalSpec{
-					Timeout: 300,
+					Timeout: common.IntPtr(300),
 				},
 				Groups: []GroupSpec{
 					{
@@ -371,7 +372,7 @@ vars = ["TEST_VAR=value"]
 								Cmd:         "/usr/bin/python3",
 								Args:        []string{"-m", "pytest"},
 								WorkDir:     "/tmp/test",
-								Timeout:     60,
+								Timeout:     common.IntPtr(60),
 								RunAsUser:   "testuser",
 								RunAsGroup:  "testgroup",
 								RiskLevel:   "medium",
@@ -448,7 +449,7 @@ cmd = "/bin/date"
 			want: &ConfigSpec{
 				Version: "1.0",
 				Global: GlobalSpec{
-					Timeout: 300,
+					Timeout: common.IntPtr(300),
 				},
 				Groups: []GroupSpec{
 					{

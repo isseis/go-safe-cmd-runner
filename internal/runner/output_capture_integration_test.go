@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
+
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
@@ -59,7 +61,7 @@ func TestRunner_OutputCaptureIntegration(t *testing.T) {
 			cfg := &runnertypes.ConfigSpec{
 				Version: "1.0",
 				Global: runnertypes.GlobalSpec{
-					Timeout:         30,
+					Timeout:         common.IntPtr(30),
 					OutputSizeLimit: 1024,
 				},
 				Groups: []runnertypes.GroupSpec{
@@ -148,7 +150,7 @@ func TestRunner_OutputCaptureSecurityValidation(t *testing.T) {
 			cfg := &runnertypes.ConfigSpec{
 				Version: "1.0",
 				Global: runnertypes.GlobalSpec{
-					Timeout:         30,
+					Timeout:         common.IntPtr(30),
 					OutputSizeLimit: 1024,
 				},
 				Groups: []runnertypes.GroupSpec{

@@ -26,7 +26,7 @@ func createRuntimeCommand(cmd string, args []string, workDir string, runAsUser, 
 		Cmd:        cmd,
 		Args:       args,
 		WorkDir:    workDir,
-		Timeout:    0,
+		Timeout:    nil,
 		RunAsUser:  runAsUser,
 		RunAsGroup: runAsGroup,
 	}
@@ -47,7 +47,7 @@ func createRuntimeCommandWithName(name, cmd string, args []string, workDir strin
 		Cmd:        cmd,
 		Args:       args,
 		WorkDir:    workDir,
-		Timeout:    0,
+		Timeout:    nil,
 		RunAsUser:  runAsUser,
 		RunAsGroup: runAsGroup,
 	}

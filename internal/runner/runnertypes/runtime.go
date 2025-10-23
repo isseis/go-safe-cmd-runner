@@ -1,10 +1,9 @@
 package runnertypes
 
-import "errors"
+import (
+	"errors"
 
-const (
-	// DefaultTimeout is the default timeout in seconds when not specified in config
-	DefaultTimeout = 60
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
 
 // Error definitions for runtime types
@@ -49,16 +48,17 @@ func NewRuntimeGlobal(spec *GlobalSpec) (*RuntimeGlobal, error) {
 // Convenience methods for RuntimeGlobal
 
 // Timeout returns the global timeout from the spec.
-// Returns DefaultTimeout (60 seconds) if not specified in config (Spec.Timeout == 0).
+// Returns common.DefaultTimeout (60 seconds) if not specified in config (Spec.Timeout == nil).
+// Returns 0 for unlimited execution if explicitly set to 0.
 // Panics if r or r.Spec is nil (programming error - use NewRuntimeGlobal).
 func (r *RuntimeGlobal) Timeout() int {
 	if r == nil || r.Spec == nil {
 		panic("RuntimeGlobal.Timeout: nil receiver or Spec (programming error - use NewRuntimeGlobal)")
 	}
-	if r.Spec.Timeout == 0 {
-		return DefaultTimeout
+	if r.Spec.Timeout == nil {
+		return common.DefaultTimeout
 	}
-	return r.Spec.Timeout
+	return *r.Spec.Timeout
 }
 
 // EnvAllowlist returns the environment variable allowlist from the spec.
@@ -249,9 +249,9 @@ func (r *RuntimeCommand) Args() []string {
 }
 
 // Timeout returns the command-specific timeout from the spec.
-// Returns 0 if no timeout is specified (use EffectiveTimeout for resolved value).
+// Returns nil if no timeout is specified (use EffectiveTimeout for resolved value).
 // Panics if r or r.Spec is nil (programming error - use NewRuntimeCommand).
-func (r *RuntimeCommand) Timeout() int {
+func (r *RuntimeCommand) Timeout() *int {
 	if r == nil || r.Spec == nil {
 		panic("RuntimeCommand.Timeout: nil receiver or Spec (programming error - use NewRuntimeCommand)")
 	}

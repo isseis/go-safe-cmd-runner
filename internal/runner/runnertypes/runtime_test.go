@@ -2,6 +2,8 @@ package runnertypes
 
 import (
 	"testing"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
 
 func TestRuntimeCommand_Name(t *testing.T) {
@@ -266,7 +268,7 @@ func TestRuntimeCommand_HasUserGroupSpecification(t *testing.T) {
 func TestRuntimeGlobal_Structure(t *testing.T) {
 	// Test that RuntimeGlobal can be created with proper structure
 	spec := &GlobalSpec{
-		Timeout:  300,
+		Timeout:  common.IntPtr(300),
 		LogLevel: "debug",
 		EnvVars:  []string{"PATH=/usr/bin"},
 		Vars:     []string{"VAR1=value1"},
@@ -287,8 +289,12 @@ func TestRuntimeGlobal_Structure(t *testing.T) {
 	if runtime.Spec == nil {
 		t.Error("RuntimeGlobal.Spec should not be nil")
 	}
-	if runtime.Spec.Timeout != 300 {
-		t.Errorf("Spec.Timeout = %d, want 300", runtime.Spec.Timeout)
+	if runtime.Spec.Timeout == nil || *runtime.Spec.Timeout != 300 {
+		if runtime.Spec.Timeout == nil {
+			t.Error("Spec.Timeout should not be nil")
+		} else {
+			t.Errorf("Spec.Timeout = %d, want 300", *runtime.Spec.Timeout)
+		}
 	}
 	if len(runtime.ExpandedEnv) != 1 {
 		t.Errorf("len(ExpandedEnv) = %d, want 1", len(runtime.ExpandedEnv))
@@ -344,7 +350,7 @@ func TestRuntimeCommand_Structure(t *testing.T) {
 		Cmd:     "/usr/bin/echo",
 		Args:    []string{"hello", "world"},
 		WorkDir: "/tmp",
-		Timeout: 60,
+		Timeout: common.IntPtr(60),
 		EnvVars: []string{"TEST=value"},
 	}
 
@@ -401,7 +407,7 @@ func TestRuntimeCommand_HelperMethods(t *testing.T) {
 		Name:    "test-cmd",
 		Cmd:     "/usr/bin/echo",
 		Args:    []string{"hello", "world"},
-		Timeout: 60,
+		Timeout: common.IntPtr(60),
 	}
 
 	runtime, err := NewRuntimeCommand(spec)
@@ -424,15 +430,19 @@ func TestRuntimeCommand_HelperMethods(t *testing.T) {
 	}
 
 	// Test Timeout()
-	if got := runtime.Timeout(); got != 60 {
-		t.Errorf("Timeout() = %d, want 60", got)
+	if got := runtime.Timeout(); got == nil || *got != 60 {
+		if got == nil {
+			t.Error("Timeout() should not be nil")
+		} else {
+			t.Errorf("Timeout() = %d, want 60", *got)
+		}
 	}
 }
 
 // TestRuntimeGlobal_HelperMethods tests the helper methods for RuntimeGlobal
 func TestRuntimeGlobal_HelperMethods(t *testing.T) {
 	spec := &GlobalSpec{
-		Timeout:             300,
+		Timeout:             common.IntPtr(300),
 		EnvAllowed:          []string{"PATH", "HOME"},
 		VerifyStandardPaths: func() *bool { b := false; return &b }(),
 	}
@@ -465,7 +475,7 @@ func TestRuntimeGlobal_HelperMethods(t *testing.T) {
 // TestRuntimeGlobal_TimeoutDefault tests that Timeout() returns default value when not set
 func TestRuntimeGlobal_TimeoutDefault(t *testing.T) {
 	spec := &GlobalSpec{
-		Timeout: 0, // Not set in TOML
+		Timeout: nil, // Not set in TOML
 	}
 
 	runtime, err := NewRuntimeGlobal(spec)
@@ -474,8 +484,8 @@ func TestRuntimeGlobal_TimeoutDefault(t *testing.T) {
 	}
 
 	// Test Timeout() returns default value
-	if got := runtime.Timeout(); got != DefaultTimeout {
-		t.Errorf("Timeout() = %d, want %d (DefaultTimeout)", got, DefaultTimeout)
+	if got := runtime.Timeout(); got != common.DefaultTimeout {
+		t.Errorf("Timeout() = %d, want %d (DefaultTimeout)", got, common.DefaultTimeout)
 	}
 }
 

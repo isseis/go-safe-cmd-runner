@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	executortesting "github.com/isseis/go-safe-cmd-runner/internal/runner/executor/testing"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -116,7 +117,7 @@ func createTestCommand() *runnertypes.RuntimeCommand {
 		Cmd:         "echo",
 		Args:        []string{"hello", "world"},
 		WorkDir:     "/tmp",
-		Timeout:     30,
+		Timeout:     common.IntPtr(30),
 	}
 	return &runnertypes.RuntimeCommand{
 		Spec:             spec,
@@ -141,6 +142,10 @@ func createTestCommandGroup() *runnertypes.GroupSpec {
 
 // Helper to convert CommandSpec to RuntimeCommand for testing
 func createRuntimeCommand(spec *runnertypes.CommandSpec) *runnertypes.RuntimeCommand {
+	effectiveTimeout := 60 // default
+	if spec.Timeout != nil {
+		effectiveTimeout = *spec.Timeout
+	}
 	return &runnertypes.RuntimeCommand{
 		Spec:             spec,
 		ExpandedCmd:      spec.Cmd,
@@ -148,7 +153,7 @@ func createRuntimeCommand(spec *runnertypes.CommandSpec) *runnertypes.RuntimeCom
 		ExpandedEnv:      make(map[string]string),
 		ExpandedVars:     make(map[string]string),
 		EffectiveWorkDir: spec.WorkDir,
-		EffectiveTimeout: spec.Timeout,
+		EffectiveTimeout: effectiveTimeout,
 	}
 }
 
@@ -216,7 +221,7 @@ func TestNormalResourceManager_ExecuteCommand_PrivilegeEscalationBlocked(t *test
 				Cmd:         tc.cmd,
 				Args:        tc.args,
 				WorkDir:     "/tmp",
-				Timeout:     30,
+				Timeout:     common.IntPtr(30),
 				RiskLevel:   "low", // Default max risk level to ensure Critical risk is blocked
 			})
 			group := createTestCommandGroup()
@@ -310,7 +315,7 @@ func TestNormalResourceManager_ExecuteCommand_MaxRiskLevelControl(t *testing.T) 
 				Args:        tc.args,
 				RiskLevel:   tc.maxRiskLevel,
 				WorkDir:     "/tmp",
-				Timeout:     30,
+				Timeout:     common.IntPtr(30),
 			})
 
 			if tc.shouldExecute {

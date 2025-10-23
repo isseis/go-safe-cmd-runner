@@ -23,7 +23,11 @@ type ConfigSpec struct {
 // For runtime-expanded values (e.g., ExpandedEnv, ExpandedVars), see RuntimeGlobal instead.
 type GlobalSpec struct {
 	// Execution control
-	Timeout             int    `toml:"timeout"`               // Global timeout in seconds (0 = no timeout)
+	// Timeout specifies the default timeout for all commands
+	// nil: use DefaultTimeout (60 seconds)
+	// *0: no timeout (unlimited execution)
+	// *N (N>0): timeout after N seconds
+	Timeout             *int   `toml:"timeout"`               // Global timeout in seconds (nil=default 60s, *0=unlimited)
 	LogLevel            string `toml:"log_level"`             // Log level: debug, info, warn, error
 	VerifyStandardPaths *bool  `toml:"verify_standard_paths"` // Verify files in standard system paths (nil=default true)
 	OutputSizeLimit     int64  `toml:"output_size_limit"`     // Maximum output size in bytes (0 = unlimited)
@@ -78,8 +82,12 @@ type CommandSpec struct {
 	Args []string `toml:"args"` // Command arguments (may contain variables)
 
 	// Execution settings
-	WorkDir    string `toml:"workdir"`      // Working directory for this command (raw value)
-	Timeout    int    `toml:"timeout"`      // Command-specific timeout in seconds (overrides global/group)
+	WorkDir string `toml:"workdir"` // Working directory for this command (raw value)
+	// Timeout specifies command-specific timeout
+	// nil: inherit from parent (group or global)
+	// *0: no timeout (unlimited execution)
+	// *N (N>0): timeout after N seconds
+	Timeout    *int   `toml:"timeout"`      // Command-specific timeout in seconds (nil=inherit, *0=unlimited)
 	RunAsUser  string `toml:"run_as_user"`  // User to execute command as (using seteuid)
 	RunAsGroup string `toml:"run_as_group"` // Group to execute command as (using setegid)
 	RiskLevel  string `toml:"risk_level"`   // Maximum allowed risk level: low, medium, high
