@@ -38,9 +38,9 @@ env_import = ["home=HOME"]
 env_vars = ["HOME=%{home}"]
 # HOME is explicitly passed to child process via env
 
-# Example 2: Using system environment variables with from_env
+# Example 2: Using system environment variables with env_import
 [[groups]]
-name = "from_env_usage"
+name = "env_import_usage"
 description = "Safe system environment variable import"
 
 [[groups.commands]]
@@ -83,7 +83,7 @@ vars = ["pattern=*.txt"]
 # The *.txt pattern is passed as a literal string to echo,
 # not expanded by a shell (which would list all .txt files)
 
-# Example 5: Combining from_env and vars
+# Example 5: Combining env_import and vars
 [[groups]]
 name = "mixed_sources"
 description = "Use both system environment variables and internal variables"
@@ -98,7 +98,7 @@ env_import = [
     "home=HOME"
 ]
 vars = ["app_dir=/opt/application"]
-# username and home come from system (via from_env)
+# username and home come from system (via env_import)
 # app_dir is internal variable
 
 # Example 6: Sensitive data in internal variables
@@ -194,7 +194,7 @@ vars = [
 # Example 11: PATH extension example
 [[groups]]
 name = "path_extension"
-description = "Safely extend PATH using from_env"
+description = "Safely extend PATH using env_import"
 
 [[groups.commands]]
 name = "extend_path"

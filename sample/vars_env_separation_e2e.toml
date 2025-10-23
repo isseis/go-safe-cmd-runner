@@ -1,9 +1,9 @@
 # E2E Test for vars/env separation (Task 0033)
 # This sample demonstrates the new variable system:
-# - from_env: Import system environment variables as internal variables
+# - env_import: Import system environment variables as internal variables
 # - vars: Define internal variables (can reference other internal variables)
 # - %{VAR}: Internal variable expansion syntax
-# - env: Define process environment variables (can reference internal variables)
+# - env_vars: Define process environment variables (can reference internal variables)
 
 [global]
 # Whitelist of system environment variables that can be imported
@@ -41,7 +41,7 @@ env_vars = [
 [[groups]]
 name = "test_group"
 
-# Inherit from_env from Global (because from_env is not defined here)
+# Inherit env_import from Global (because env_import is not defined here)
 # Inherited variables: home, user, system_path
 
 # Group-level internal variables
@@ -132,14 +132,14 @@ mode = "user"
 [[groups]]
 name = "override_group"
 
-# Override from_env (Global.from_env is ignored)
+# Override env_import (Global.env_import is ignored)
 env_allowed = ["USER", "PATH"]
 env_import = [
     "user=USER",
     "path=PATH"
 ]
 
-# This group does NOT have access to %{home} because from_env is overridden
+# This group does NOT have access to %{home} because env_import is overridden
 vars = [
     "group_specific=/opt/override_app",
     "config=%{group_specific}/config"
@@ -162,9 +162,9 @@ env_vars = []
 mode = "user"
 
 [[groups]]
-name = "empty_from_env_group"
+name = "empty_env_import_group"
 
-# Explicitly disable from_env (no system env vars imported)
+# Explicitly disable env_import (no system env vars imported)
 env_import = []
 
 vars = [

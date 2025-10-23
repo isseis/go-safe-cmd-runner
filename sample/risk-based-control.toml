@@ -8,7 +8,7 @@ verify_files = ["/etc/ssl/certs/ca-certificates.crt"]
 verify_standard_paths = false
 env_allowed = ["PATH", "HOME", "USER", "LANG"]
 
-# Group with low-risk commands (no max_risk_level needed, defaults to low)
+# Group with low-risk commands (no risk_level needed, defaults to low)
 [[groups]]
 name = "safe_operations"
 description = "Safe information gathering commands"
@@ -30,7 +30,7 @@ name = "show_date"
 description = "Display current date and time"
 cmd = "date"
 
-# Group with medium-risk commands (requires explicit max_risk_level)
+# Group with medium-risk commands (requires explicit risk_level)
 [[groups]]
 name = "network_operations"
 description = "Network-related commands with medium risk"
@@ -49,7 +49,7 @@ cmd = "curl"
 args = ["-I", "https://api.example.com/health"]
 risk_level = "medium"
 
-# Group with high-risk commands (requires explicit max_risk_level)
+# Group with high-risk commands (requires explicit risk_level)
 [[groups]]
 name = "maintenance_operations"
 description = "High-risk maintenance commands"

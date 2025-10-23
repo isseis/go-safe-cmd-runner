@@ -422,9 +422,9 @@ TOML設定フィールド名の改善を段階的かつ安全に実装する。
 
 ### 4.1 サンプル TOML ファイルの更新
 
-- [ ] **対象ディレクトリ**: `sample/`
-- [ ] **対象ファイル**: `sample/*.toml` (すべての `.toml` ファイル)
-- [ ] **変更内容**:
+- [x] **対象ディレクトリ**: `sample/`
+- [x] **対象ファイル**: `sample/*.toml` (すべての `.toml` ファイル)
+- [x] **変更内容**:
   - `skip_standard_paths` → `verify_standard_paths` (値の反転が必要)
   - `env` → `env_vars`
   - `env_allowlist` → `env_allowed`
@@ -432,17 +432,17 @@ TOML設定フィールド名の改善を段階的かつ安全に実装する。
   - `max_risk_level` → `risk_level`
   - `output` → `output_file`
   - `max_output_size` → `output_size_limit`
-- [ ] **確認**: 各サンプルファイルが正常に動作することを確認
+- [x] **確認**: 各サンプルファイルが正常に動作することを確認
   - `./build/runner --config sample/<file>.toml --dry-run`
-- [ ] **コミット**: "refactor: update sample TOML files with new field names"
+- [x] **コミット**: "refactor: update sample TOML files with new field names"
 
 ### 4.2 Phase 3 完了確認
 
-- [ ] **確認項目**:
-  - [ ] すべてのサンプルファイルが新フィールド名を使用
-  - [ ] すべてのサンプルファイルが `--dry-run` で正常動作
-  - [ ] `make build` が成功
-- [ ] **Phase 3 完了**: サンプルファイル更新完了
+- [x] **確認項目**:
+  - [x] すべてのサンプルファイルが新フィールド名を使用
+  - [x] すべてのサンプルファイルが `--dry-run` で正常動作
+  - [x] `make build` が成功
+- [x] **Phase 3 完了**: サンプルファイル更新完了
 
 ## 5. Phase 4: ドキュメントの更新
 
@@ -665,8 +665,11 @@ TOML設定フィールド名の改善を段階的かつ安全に実装する。
   - [x] インテグレーションテストの更新完了
   - [x] テストデータファイルの更新完了
   - [x] 全52パッケージのテストがパス
-- [ ] Phase 3: サンプルファイルの更新 (次のステップ)
-- [ ] Phase 4: ドキュメントの更新
+- [x] Phase 3: サンプルファイルの更新 ✅
+  - [x] コメント内の古いフィールド名を新しい名前に更新
+  - [x] 全サンプルファイルでdry-runテストが動作確認済み
+  - [x] `make build`, `make test`, `make lint` すべて成功
+- [ ] Phase 4: ドキュメントの更新 (次のステップ)
 - [ ] Phase 5: 最終確認とリリース準備
 
 ### 8.2 重要なマイルストーン
@@ -691,7 +694,6 @@ TOML設定フィールド名の改善を段階的かつ安全に実装する。
    - `internal/runner/config/testdata/*.toml` (6ファイル)
 
 **次のステップ:**
-- Phase 3: `sample/` ディレクトリのTOMLファイルを更新
 - Phase 4: ドキュメントの更新（CHANGELOG, 移行ガイド等）
 
 ## 9. リスクと対策

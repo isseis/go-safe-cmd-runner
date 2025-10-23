@@ -138,7 +138,7 @@ args = ["workdir_test_file.txt"]
 name = "env_var_tests"
 description = "Test internal variables and environment variable passing"
 priority = 5
-# Test inheritance mode - inherits from global by not specifying env_allowlist
+# Test inheritance mode - inherits from global by not specifying env_allowed
 
 # Group-level internal variables
 vars = [
