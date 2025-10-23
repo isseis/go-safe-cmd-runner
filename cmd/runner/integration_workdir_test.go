@@ -101,6 +101,9 @@ func (w *captureOutputWriter) Write(stream string, data []byte) error {
 
 // Close closes the wrapped writer if it implements io.Closer
 func (w *captureOutputWriter) Close() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	if w.wrapped != nil {
 		return w.wrapped.Close()
 	}
@@ -182,6 +185,8 @@ func setupTestConfig(t *testing.T, configContent string) string {
 }
 
 // executeRunnerWithTimeout executes a runner with LoadSystemEnvironment and ExecuteAll
+//
+//nolint:unparam // timeout parameter kept for test flexibility even though currently always receives same value
 func executeRunnerWithTimeout(t *testing.T, r *runner.Runner, timeout time.Duration) {
 	t.Helper()
 
@@ -211,6 +216,78 @@ func extractWorkdirFromOutput(t *testing.T, output string) string {
 	require.NotEmpty(t, workdirPath, "Extracted workdir path is empty")
 
 	return workdirPath
+}
+
+// extractPathsFromOutput extracts all paths (e.g., file system paths) from output lines using a regular expression pattern.
+// The provided pattern must contain at least one capture group; the function extracts the last capture group from each matching line.
+func extractPathsFromOutput(t *testing.T, output string, pattern *regexp.Regexp) []string {
+	t.Helper()
+
+	lines := strings.Split(output, "\n")
+	var paths []string
+
+	for _, line := range lines {
+		matches := pattern.FindStringSubmatch(line)
+		if len(matches) >= 2 {
+			// Take the last capture group as the path (matches[len(matches)-1])
+			path := strings.TrimSpace(matches[len(matches)-1])
+			if path != "" {
+				paths = append(paths, path)
+			}
+		}
+	}
+
+	return paths
+}
+
+// assertUniquePaths verifies that all paths in the slice are unique
+func assertUniquePaths(t *testing.T, paths []string, context string) {
+	t.Helper()
+
+	uniquePaths := make(map[string]struct{})
+	for _, path := range paths {
+		uniquePaths[path] = struct{}{}
+	}
+
+	assert.Len(t, uniquePaths, len(paths),
+		"%s: Expected %d unique paths, but got duplicates: %v",
+		context, len(paths), paths)
+}
+
+// assertAllPathsAreTempDirs verifies all paths match temp directory pattern
+func assertAllPathsAreTempDirs(t *testing.T, paths []string, context string) {
+	t.Helper()
+
+	for i, path := range paths {
+		assert.True(t, isTempDirPattern(path),
+			"%s: Expected temp dir pattern for path %d, but got: %s",
+			context, i+1, path)
+	}
+}
+
+// assertAllPathsExist verifies all paths exist as directories
+func assertAllPathsExist(t *testing.T, paths []string, context string) {
+	t.Helper()
+
+	for i, path := range paths {
+		info, err := os.Stat(path)
+		require.NoError(t, err,
+			"%s: Path %d should exist: %s", context, i+1, path)
+		assert.True(t, info.IsDir(),
+			"%s: Path %d should be a directory: %s", context, i+1, path)
+	}
+}
+
+// registerPathsForCleanup registers paths for cleanup at test end
+func registerPathsForCleanup(t *testing.T, paths []string) {
+	t.Helper()
+
+	for _, path := range paths {
+		p := path // capture loop variable
+		t.Cleanup(func() {
+			os.RemoveAll(p)
+		})
+	}
 }
 
 // isTempDirPattern checks if a path matches the temporary directory pattern (scr-*-*)
@@ -514,15 +591,124 @@ max_risk_level = "medium"
 	require.NoError(t, err)
 }
 
-// TestOutputCapture verifies that output capture infrastructure works correctly
-// This is a temporary test for Phase 1 verification and will be removed after Phase 1 completion
-func TestOutputCapture(t *testing.T) {
-	buf := &testOutputBuffer{}
+// TestIntegration_ErrorCleanup tests that temporary directories are cleaned up even when errors occur
+func TestIntegration_ErrorCleanup(t *testing.T) {
+	configContent := `
+[[groups]]
+name = "test_group"
 
-	n, err := buf.Write([]byte("test output\n"))
+[[groups.commands]]
+name = "failing_cmd"
+cmd = "echo"
+args = ["working in: %{__runner_workdir}"]
+max_risk_level = "medium"
+
+[[groups.commands]]
+name = "invalid_cmd"
+cmd = "/nonexistent/invalid/command/path"
+args = []
+max_risk_level = "medium"
+`
+
+	// 1. Create Runner with output capture enabled (keepTempDirs=false for auto cleanup)
+	r, outputBuf := createRunnerWithOutputCapture(t, configContent, false)
+
+	// 2. Execute all groups - expecting error from invalid_cmd
+	err := r.LoadSystemEnvironment()
 	require.NoError(t, err)
-	require.Equal(t, 12, n)
 
-	output := buf.String()
-	require.Equal(t, "test output\n", output)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// ExecuteAll should fail due to invalid command
+	err = r.ExecuteAll(ctx)
+	require.Error(t, err, "Expected error from invalid command")
+
+	// 3. Extract __runner_workdir value from command output (from the first successful command)
+	output := outputBuf.String()
+	workdirPath := extractWorkdirFromOutput(t, output)
+
+	// 4. Verify temp dir pattern
+	assert.True(t, isTempDirPattern(workdirPath),
+		"Expected temp dir pattern 'scr-*-*', but got: %s", workdirPath)
+
+	// 5. Verify temp dir is deleted even after error (auto-deleted after group execution)
+	_, statErr := os.Stat(workdirPath)
+	assert.True(t, os.IsNotExist(statErr),
+		"Temp dir should be auto-deleted even after error with keepTempDirs=false, but exists: %s",
+		workdirPath)
+
+	// 6. Cleanup all resources
+	cleanupErr := r.CleanupAllResources()
+	require.NoError(t, cleanupErr)
+
+	// 7. Verify temp dir remains deleted after cleanup
+	_, statErr = os.Stat(workdirPath)
+	assert.True(t, os.IsNotExist(statErr),
+		"Temp dir should remain deleted after cleanup: %s", workdirPath)
+}
+
+// TestIntegration_MultipleGroups tests that each group gets independent temporary directories
+func TestIntegration_MultipleGroups(t *testing.T) {
+	configContent := `
+[[groups]]
+name = "group1"
+
+[[groups.commands]]
+name = "cmd1"
+cmd = "echo"
+args = ["group1: %{__runner_workdir}"]
+max_risk_level = "medium"
+
+[[groups]]
+name = "group2"
+
+[[groups.commands]]
+name = "cmd2"
+cmd = "echo"
+args = ["group2: %{__runner_workdir}"]
+max_risk_level = "medium"
+
+[[groups]]
+name = "group3"
+
+[[groups.commands]]
+name = "cmd3"
+cmd = "echo"
+args = ["group3: %{__runner_workdir}"]
+max_risk_level = "medium"
+`
+
+	// 1. Create Runner with output capture enabled (keepTempDirs=true to verify independence)
+	r, outputBuf := createRunnerWithOutputCapture(t, configContent, true)
+
+	// 2. Execute all groups
+	executeRunnerWithTimeout(t, r, 30*time.Second)
+
+	// 3. Parse output and extract workdir paths for each group using common helper
+	output := outputBuf.String()
+	groupPattern := regexp.MustCompile(`(group\d+): (.+)`)
+	workdirPaths := extractPathsFromOutput(t, output, groupPattern)
+
+	// 4. Verify we found exactly 3 workdir paths (one per group)
+	require.Len(t, workdirPaths, 3, "Expected 3 workdir paths from 3 groups")
+
+	// 5. Verify all paths are temporary directories
+	assertAllPathsAreTempDirs(t, workdirPaths, "MultipleGroups")
+
+	// 6. Verify all paths are unique (independent temp dirs for each group)
+	assertUniquePaths(t, workdirPaths, "MultipleGroups")
+
+	// 7. Verify all temp dirs exist (because keepTempDirs=true)
+	assertAllPathsExist(t, workdirPaths, "MultipleGroups (before cleanup)")
+
+	// 8. Cleanup all resources
+	err := r.CleanupAllResources()
+	require.NoError(t, err)
+
+	// 9. Verify all temp dirs still exist after cleanup (because keepTempDirs=true)
+	assertAllPathsExist(t, workdirPaths, "MultipleGroups (after cleanup)")
+
+	// Register paths for cleanup at test end
+	registerPathsForCleanup(t, workdirPaths)
 }
