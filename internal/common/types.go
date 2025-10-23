@@ -8,7 +8,7 @@ const (
 	DefaultTimeout = 60 // seconds
 
 	// MaxTimeout defines the maximum allowed timeout value (24 hours)
-	// Using int32 max to ensure cross-platform compatibility
+	// The value is well within int32 range, ensuring cross-platform compatibility.
 	MaxTimeout = 86400 // 24 hours in seconds
 )
 

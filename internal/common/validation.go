@@ -58,7 +58,7 @@ func ValidateTimeout(timeout *int, context string) error {
 // ParseTimeoutValue converts TOML value to *int for timeout configuration.
 // It handles the following cases:
 // - nil/missing field: returns nil (unset)
-// - int64/int: converts to *int with validation
+// - int/int32/int64: converts to *int with validation
 // - other types: returns error
 func ParseTimeoutValue(value interface{}) (*int, error) {
 	if value == nil {
@@ -66,43 +66,25 @@ func ParseTimeoutValue(value interface{}) (*int, error) {
 		return nil, nil
 	}
 
+	// Convert to int based on type
+	var result int
 	switch v := value.(type) {
 	case int:
-		// Direct int value
-		result := v
-		if err := ValidateTimeout(&result, "TOML timeout field"); err != nil {
-			return nil, err
-		}
-		return &result, nil
-
+		result = v
 	case int64:
 		// TOML often parses integers as int64
-		if v > int64(MaxTimeout) || v < 0 {
+		// Check for overflow before conversion
+		maxInt := int64(^uint(0) >> 1)
+		minInt := ^maxInt
+		if v > maxInt || v < minInt {
 			return nil, ErrInvalidTimeout{
 				Value:   v,
-				Context: "TOML timeout field (out of valid range)",
+				Context: "TOML timeout field (int overflow)",
 			}
 		}
-		result := int(v)
-		if err := ValidateTimeout(&result, "TOML timeout field"); err != nil {
-			return nil, err
-		}
-		return &result, nil
-
+		result = int(v)
 	case int32:
-		// Handle int32 case
-		if v < 0 {
-			return nil, ErrInvalidTimeout{
-				Value:   v,
-				Context: "TOML timeout field (negative value)",
-			}
-		}
-		result := int(v)
-		if err := ValidateTimeout(&result, "TOML timeout field"); err != nil {
-			return nil, err
-		}
-		return &result, nil
-
+		result = int(v)
 	default:
 		// Unsupported type
 		return nil, ErrInvalidTimeout{
@@ -110,6 +92,13 @@ func ParseTimeoutValue(value interface{}) (*int, error) {
 			Context: fmt.Sprintf("TOML timeout field (unsupported type: %s)", reflect.TypeOf(value)),
 		}
 	}
+
+	// Validate the converted value once
+	if err := ValidateTimeout(&result, "TOML timeout field"); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
 }
 
 // IsValidTimeoutValue checks if a given *int is a valid timeout value
