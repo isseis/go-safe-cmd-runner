@@ -495,23 +495,12 @@ TOML設定フィールド名の改善を段階的かつ安全に実装する。
   3. **Natural Word Order**: `max_output_size` → `output_size_limit`
 
   4. **Clarity**: `output` → `output_file`, `max_risk_level` → `risk_level`
-
-  ##### Migration Guide
-
-  See [Migration Guide](docs/migration/toml_field_renaming.en.md) for detailed instructions.
   ```
 - [x] **コミット**: "docs: add CHANGELOG entry for TOML field renaming"
 
 #### 5.1.2 移行ガイドの作成（日本語版）
 
-- [x] **File**: `docs/migration/toml_field_renaming.md` (新規作成)
-- **内容**:
-  - Breaking change の概要
-  - フィールド名対応表（詳細版）
-  - デフォルト値変更の影響
-  - 移行手順（sed による一括置換例）
-  - よくある質問（FAQ）
-- [x] **コミット**: "docs: add migration guide for TOML field renaming (Japanese)"
+省略
 
 #### 5.1.3 ユーザーガイドの更新（日本語版）
 
@@ -539,17 +528,7 @@ TOML設定フィールド名の改善を段階的かつ安全に実装する。
 
 #### 5.2.2 移行ガイドの英語版作成
 
-- [x] **File**: `docs/migration/toml_field_renaming.en.md` (新規作成)
-- **作成方法**:
-  - `docs/migration/toml_field_renaming.md` (日本語版) を基に翻訳
-  - 単語帳の訳語を使用
-  - 章見出しと文の構成を日本語版と一致させる
-  - 流暢さより正確さを優先
-- [x] **レビュー**:
-  - 日本語版と英語版を並べて確認
-  - 削除された内容や追加された内容がないか確認
-  - 章見出しが一致しているか確認
-- [x] **コミット**: "docs: add migration guide for TOML field renaming (English)"
+省略
 
 #### 5.2.3 ユーザーガイドの英語版作成
 
