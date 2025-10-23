@@ -773,6 +773,87 @@ jobs:
 - Error messages are output to stderr
 - Log level settings remain effective
 
+#### `--keep-temp-dirs`
+
+**Overview**
+
+Keeps temporary directories after execution completes instead of deleting them. Used for debugging purposes.
+
+**Syntax**
+
+```bash
+runner -config <path> --keep-temp-dirs
+```
+
+**Usage Examples**
+
+```bash
+# Execute with keeping temporary directories
+runner -config config.toml --keep-temp-dirs
+
+# Combine with dry-run (to verify temporary directory paths)
+runner -config config.toml --keep-temp-dirs -dry-run
+```
+
+**Behavior Details**
+
+Normally, when a group does not specify `workdir`, a temporary directory is automatically generated and deleted after group execution completes. With this flag:
+
+- Temporary directories are not deleted and remain
+- Temporary directory paths are logged
+- Can be used for debugging and result verification
+
+**Temporary Directory Location**
+
+```
+/tmp/scr-<group-name>-<random-string>
+```
+
+Examples:
+```
+/tmp/scr-backup-20250102123456789
+/tmp/scr-analysis-20250102123500123
+```
+
+**Use Cases**
+
+- **Debugging**: Verify command execution result files
+- **Troubleshooting**: Investigate intermediate files and temporary files
+- **Development/Testing**: Verify impact of configuration changes
+- **Auditing**: Save evidence of execution results
+
+**Usage Example (Actual Workflow)**
+
+```bash
+# 1. Execute with keeping temporary directories
+runner -config backup.toml --keep-temp-dirs
+
+# 2. Check temporary directory path from logs
+# Output example: "Created temporary directory for group 'backup': /tmp/scr-backup-20250102123456"
+
+# 3. Verify temporary directory contents
+ls -la /tmp/scr-backup-20250102123456
+
+# 4. Manually cleanup if needed
+rm -rf /tmp/scr-backup-20250102123456
+```
+
+**Combining with Dry-Run Mode**
+
+```bash
+# Verify temporary directory paths (not actually created)
+runner -config config.toml --keep-temp-dirs -dry-run
+```
+
+In dry-run mode, temporary directories are not actually created, but you can verify which paths would be used.
+
+**Notes**
+
+- Temporary directories must be manually cleaned up
+- Does not affect groups with fixed `workdir` specified
+- Multiple executions create multiple temporary directories
+- Watch out for disk space usage
+
 ## 4. Environment Variables
 
 ### 4.1 Color Output Control

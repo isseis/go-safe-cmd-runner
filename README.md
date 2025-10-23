@@ -65,6 +65,9 @@ Common use cases include scheduled backups, system maintenance tasks, and delega
 
 ### Command Execution
 - **Batch Processing**: Command execution in organized groups with dependency management
+- **Automatic Temporary Directories**: Auto-generation and cleanup of temporary directories per group
+- **Working Directory Control**: Execute in fixed directories or auto-generated temporary directories
+- **`__runner_workdir` Variable**: Reserved variable that references the runtime working directory
 - **Variable Expansion**: `${VAR}` format expansion in command names and arguments
 - **Automatic Environment Variables**: Automatically generated variables for timestamps and process tracking
 - **Output Capture**: Save command output to files with secure permissions
@@ -187,9 +190,20 @@ log_level = "info"
 env_allowlist = ["PATH", "HOME", "USER", "LANG"]
 
 [[groups]]
+name = "backup"
+description = "Backup operations"
+# No workdir specified - automatic temporary directory will be created
+
+[[groups.commands]]
+name = "database_backup"
+cmd = "/usr/bin/mysqldump"
+args = ["--all-databases", "--result-file=%{__runner_workdir}/db.sql"]
+max_risk_level = "medium"
+
+[[groups]]
 name = "maintenance"
 description = "System maintenance tasks"
-priority = 1
+workdir = "/tmp/maintenance"  # Fixed working directory
 
 [[groups.commands]]
 name = "system_check"

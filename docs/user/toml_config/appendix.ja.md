@@ -27,8 +27,7 @@
 | name | string | ✓ | なし | グループ名(一意) |
 | description | string | - | "" | グループの説明 |
 | priority | int | - | 0 | 実行優先度(小さいほど優先) |
-| temp_dir | bool | - | false | 一時ディレクトリの自動作成 |
-| workdir | string | - | グローバル設定 | 作業ディレクトリ(グローバルをオーバーライド) |
+| workdir | string | - | 自動生成 | 作業ディレクトリ(未指定時は一時ディレクトリを自動生成) |
 | verify_files | []string | - | [] | 検証対象ファイル(グローバルに追加) |
 | env_allowlist | []string | - | nil(継承) | 環境変数許可リスト(継承モード参照) |
 
@@ -41,6 +40,7 @@
 | cmd | string | ✓ | なし | 実行するコマンド(絶対パスまたはPATH上) |
 | args | []string | - | [] | コマンドの引数 |
 | env | []string | - | [] | 環境変数("KEY=VALUE"形式) |
+| workdir | string | - | グループ設定 | 作業ディレクトリ(グループ設定をオーバーライド) |
 | timeout | int | - | グローバル設定 | タイムアウト(グローバルをオーバーライド) |
 | run_as_user | string | - | "" | 実行ユーザー |
 | run_as_group | string | - | "" | 実行グループ |
@@ -320,7 +320,7 @@ max_risk_level = "high"
 : コマンドが実行される現在のディレクトリ。`workdir` で設定。
 
 **一時ディレクトリ (Temporary Directory)**
-: 一時的な作業用に自動作成されるディレクトリ。`temp_dir = true` で有効化。
+: ランナーが自動的に作成・管理する作業用ディレクトリ。`%{__runner_workdir}` 変数でアクセス可能。
 
 **出力キャプチャ (Output Capture)**
 : コマンドの標準出力をファイルに保存する機能。`output` パラメータで設定。

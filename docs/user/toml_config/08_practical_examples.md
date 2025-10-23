@@ -136,8 +136,7 @@ env_allowlist = ["PATH", "HOME"]
 [[groups]]
 name = "temp_processing"
 description = "Data processing in temporary directory"
-temp_dir = true   # Automatically create temporary directory
-cleanup = true    # Automatically delete after processing
+# Working directory uses automatically created temporary directory
 
 [[groups.commands]]
 name = "download_data"
@@ -173,8 +172,6 @@ args = [
 max_risk_level = "medium"
 timeout = 600
 output = "upload-response.txt"
-
-# Temporary directory is automatically deleted
 ```
 
 ## 8.4 Configuration Examples with Privilege Escalation
@@ -461,8 +458,6 @@ name = "preparation"
 description = "Pre-deployment preparation"
 priority = 1
 workdir = "/opt/deploy/prep"
-temp_dir = true
-cleanup = true
 
 [[groups.commands]]
 name = "backup_current_version"

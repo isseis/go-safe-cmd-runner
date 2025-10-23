@@ -181,6 +181,52 @@ max_risk_level = "medium"
 
 ---
 
+## Working Directory Configuration
+
+### Default Behavior (Recommended)
+
+If `workdir` is not specified at the group level, a temporary directory is automatically generated.
+The temporary directory is automatically deleted after the group execution completes.
+
+```toml
+[[groups]]
+name = "backup"
+
+[[groups.commands]]
+name = "dump"
+cmd = "pg_dump"
+args = ["mydb", "-f", "%{__runner_workdir}/dump.sql"]
+# Output to /tmp/scr-backup-XXXXXX/dump.sql
+```
+
+### Using a Fixed Directory
+
+To use a fixed directory, specify `workdir` at the group level.
+
+```toml
+[[groups]]
+name = "build"
+workdir = "/opt/app"
+
+[[groups.commands]]
+name = "compile"
+cmd = "make"
+```
+
+### Reserved Variable `%{__runner_workdir}`
+
+Use `%{__runner_workdir}` at the command level to reference the working directory at execution time.
+
+### Keeping Temporary Directories
+
+To keep temporary directories for debugging purposes, use the `--keep-temp-dirs` flag.
+
+```bash
+$ ./runner --config backup.toml --keep-temp-dirs
+```
+
+---
+
 ## Security
 
 ### [Security Risk Assessment](security-risk-assessment.md)

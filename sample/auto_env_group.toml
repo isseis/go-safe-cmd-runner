@@ -4,7 +4,6 @@ version = "1.0"
 
 [global]
 timeout = 30
-workdir = "/tmp/auto-env-group-test"
 log_level = "debug"
 skip_standard_paths = true
 

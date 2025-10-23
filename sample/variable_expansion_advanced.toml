@@ -4,7 +4,6 @@ version = "1.0"
 
 [global]
 timeout = 60
-workdir = "/tmp"
 log_level = "debug"
 skip_standard_paths = true
 env_allowlist = [

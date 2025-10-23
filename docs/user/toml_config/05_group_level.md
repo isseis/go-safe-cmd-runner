@@ -487,106 +487,52 @@ args = []
 
 ## 5.2 Resource Management Settings
 
-### 5.2.1 temp_dir - Temporary Directory
+### 5.2.1 ❌ temp_dir - Temporary Directory (Deprecated)
 
-#### Overview
+#### ⚠️ Deprecation Notice
 
-Automatically creates a temporary directory when the group executes. The created directory becomes the working directory for all commands in the group.
+**This feature has been deprecated.** The `temp_dir` field at the group level is no longer supported.
 
-#### Syntax
+#### Alternative Methods in the New Specification
 
-```toml
-[[groups]]
-name = "example"
-temp_dir = true/false
-```
+The `temp_dir` field has been removed and replaced with a simpler specification:
 
-#### Parameter Details
+1. **Automatic Temporary Directory (Default)**: If `workdir` is not specified, a temporary directory is automatically generated
+2. **Fixed Directory**: If `workdir` is specified, that fixed directory is used
+3. **`__runner_workdir` Variable**: A reserved variable is available to reference the working directory at execution time
 
-| Item | Description |
-|------|-------------|
-| **Type** | Boolean (boolean) |
-| **Required/Optional** | Optional |
-| **Configurable Level** | Group only |
-| **Default Value** | false |
-| **Valid Values** | true, false |
-
-#### Role
-
-- **Isolated Work Environment**: Provides independent workspace for each group
-- **Avoid Conflicts**: No conflicts even when multiple groups execute simultaneously
-- **Automatic Cleanup**: Automatic deletion when combined with cleanup option
-
-#### Configuration Examples
-
-#### Example 1: Using Temporary Directory
+#### Migration Example
 
 ```toml
-version = "1.0"
-
+# Old specification (will cause an error)
 [[groups]]
 name = "data_processing"
-temp_dir = true  # Automatically create temporary directory
+temp_dir = true  # ❌ This must be removed
+
+# New specification (automatic temporary directory)
+[[groups]]
+name = "data_processing"
+# workdir not specified - a temporary directory is automatically generated
 
 [[groups.commands]]
 name = "download_data"
 cmd = "wget"
-args = ["https://example.com/data.csv", "-O", "data.csv"]
-# data.csv is downloaded to the temporary directory
-
-[[groups.commands]]
-name = "process_data"
-cmd = "/opt/app/process"
-args = ["data.csv", "output.txt"]
-# Process in the same temporary directory
-
-[[groups.commands]]
-name = "list_results"
-cmd = "ls"
-args = ["-la"]
-# Display contents of temporary directory
+args = ["https://example.com/data.csv", "-O", "%{__runner_workdir}/data.csv"]
+# ✅ Reference temporary directory with __runner_workdir variable
 ```
-
-#### Example 2: Combination with cleanup
-
-```toml
-version = "1.0"
-
-[[groups]]
-name = "temporary_work"
-temp_dir = true   # Create temporary directory
-cleanup = true    # Automatically delete after group completion
-
-[[groups.commands]]
-name = "create_temp_files"
-cmd = "touch"
-args = ["temp1.txt", "temp2.txt"]
-
-[[groups.commands]]
-name = "process_files"
-cmd = "cat"
-args = ["temp1.txt", "temp2.txt"]
-# Temporary directory is deleted after group completion
-```
-
-#### Temporary Directory Location
-
-Temporary directories are created in the following location:
-- Under the system temporary directory (`$TMPDIR` or `/tmp`)
-- Directory name: `go-safe-cmd-runner-<random_string>`
 
 ### 5.2.2 workdir - Working Directory
 
 #### Overview
 
-Specifies the working directory where all commands in the group are executed. Overrides the global-level `workdir`.
+Specifies the working directory where all commands in the group are executed. If not specified, a temporary directory is automatically generated.
 
 #### Syntax
 
 ```toml
 [[groups]]
 name = "example"
-workdir = "directory_path"
+workdir = "directory_path"  # Optional
 ```
 
 #### Parameter Details
@@ -595,51 +541,79 @@ workdir = "directory_path"
 |------|-------------|
 | **Type** | String (string) |
 | **Required/Optional** | Optional |
-| **Configurable Level** | Global, Group |
-| **Default Value** | Global workdir, or execution directory |
+| **Configurable Level** | Group, Command |
+| **Default Value** | Automatically generated temporary directory |
 | **Valid Values** | Absolute path |
-| **Override** | Overrides global setting |
+| **Override** | Can be overridden at command level |
+
+#### New Feature: Automatic Temporary Directories
+
+**Default Behavior (Recommended)**: When `workdir` is not specified
+
+```toml
+[[groups]]
+name = "backup"
+# workdir not specified → Temporary directory is automatically generated
+
+[[groups.commands]]
+name = "create_backup"
+cmd = "tar"
+args = ["-czf", "%{__runner_workdir}/backup.tar.gz", "/etc"]
+# backup.tar.gz is created in the temporary directory
+```
+
+**Temporary Directory Characteristics**:
+- Path: `/tmp/scr-<group-name>-<random-string>`
+- Permissions: 0700 (accessible only by owner)
+- Auto-deletion: Deleted after group execution completes (can be kept with `--keep-temp-dirs` flag)
 
 #### Configuration Examples
 
-#### Example 1: Group-Specific Working Directory
+**Using a Fixed Directory**:
 
 ```toml
-version = "1.0"
-
-[global]
-workdir = "/tmp"
-
 [[groups]]
 name = "log_analysis"
-workdir = "/var/log"  # This group executes in /var/log
+workdir = "/var/log"  # Specify fixed working directory
 
 [[groups.commands]]
 name = "grep_errors"
 cmd = "grep"
 args = ["ERROR", "app.log"]
 # Search from /var/log/app.log
+```
 
+**Using Automatic Temporary Directory (Recommended)**:
+
+```toml
 [[groups]]
 name = "backup"
-workdir = "/var/backups"  # This group executes in /var/backups
+# workdir not specified → Temporary directory is automatically generated
 
 [[groups.commands]]
 name = "create_backup"
 cmd = "tar"
-args = ["-czf", "backup.tar.gz", "/etc"]
-# Creates /var/backups/backup.tar.gz
+args = ["-czf", "%{__runner_workdir}/backup.tar.gz", "/etc"]
+# backup.tar.gz is created in the automatically generated temporary directory
 ```
 
-#### Example 2: Relationship with temp_dir
+#### Getting Directory Path at Execution Time
 
-When `temp_dir = true` is specified, `workdir` is ignored and the automatically generated temporary directory is used.
+Use the `__runner_workdir` reserved variable to get the working directory path at execution time:
 
 ```toml
 [[groups]]
-name = "temp_work"
-workdir = "/var/data"  # This setting is ignored
-temp_dir = true        # Temporary directory takes priority
+name = "data_processing"
+
+[[groups.commands]]
+name = "show_workdir"
+cmd = "echo"
+args = ["Current working directory: %{__runner_workdir}"]
+
+[[groups.commands]]
+name = "create_output"
+cmd = "touch"
+args = ["%{__runner_workdir}/output.txt"]
 ```
 
 ## 5.3 Security Settings
@@ -1378,7 +1352,7 @@ args = [".", "-name", "*.log.gz", "-mtime", "+30", "-delete"]
 name = "temp_processing"
 description = "Data processing in temporary directory"
 priority = 30
-temp_dir = true   # Automatically create temporary directory
+# workdir not specified - a temporary directory is automatically generated
 env_allowlist = []  # Reject mode: No environment variables
 
 [[groups.commands]]

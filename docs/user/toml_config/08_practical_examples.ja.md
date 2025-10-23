@@ -166,8 +166,7 @@ env_allowlist = ["PATH", "HOME"]
 [[groups]]
 name = "temp_processing"
 description = "一時ディレクトリでのデータ処理"
-temp_dir = true   # 一時ディレクトリを自動作成
-cleanup = true    # 処理完了後に自動削除
+# 作業ディレクトリは自動的に作成される一時ディレクトリを使用
 
 [[groups.commands]]
 name = "download_data"
@@ -519,8 +518,6 @@ name = "preparation"
 description = "デプロイ前の準備作業"
 priority = 1
 workdir = "/opt/deploy/prep"
-temp_dir = true
-cleanup = true
 
 [[groups.commands]]
 name = "backup_current_version"

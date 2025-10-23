@@ -27,8 +27,7 @@
 | name | string | ✓ | none | Group name (unique) |
 | description | string | - | "" | Group description |
 | priority | int | - | 0 | Execution priority (lower runs first) |
-| temp_dir | bool | - | false | Automatic temporary directory creation |
-| workdir | string | - | Global setting | Working directory (overrides global) |
+| workdir | string | - | Auto-generated | Working directory (auto-generates temporary directory if not specified) |
 | verify_files | []string | - | [] | Files to verify (added to global) |
 | env_allowlist | []string | - | nil (inherit) | Environment variable allowlist (see inheritance mode) |
 
@@ -41,6 +40,7 @@
 | cmd | string | ✓ | none | Command to execute (absolute path or in PATH) |
 | args | []string | - | [] | Command arguments |
 | env | []string | - | [] | Environment variables ("KEY=VALUE" format) |
+| workdir | string | - | Group setting | Working directory (overrides group setting) |
 | timeout | int | - | Global setting | Timeout (overrides global) |
 | run_as_user | string | - | "" | User to run as |
 | run_as_group | string | - | "" | Group to run as |
@@ -320,7 +320,7 @@ max_risk_level = "high"
 : The current directory where commands are executed. Set with `workdir`.
 
 **Temporary Directory**
-: A directory automatically created for temporary work. Enabled with `temp_dir = true`.
+: A working directory automatically created and managed by the runner. Accessible via the `%{__runner_workdir}` variable.
 
 **Output Capture**
 : A feature that saves command standard output to a file. Set with the `output` parameter.

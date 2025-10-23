@@ -110,95 +110,43 @@ timeout = 0   # Invalid setting
 timeout = -1  # Invalid setting
 ```
 
-## 4.2 workdir - Working Directory
+## 4.2 ❌ workdir - Working Directory (Deprecated)
 
-### Overview
+### ⚠️ Deprecation Notice
 
-Specifies the working directory (current directory) where commands are executed.
+**This feature has been deprecated.** The `workdir` field at the global level is no longer supported.
 
-### Syntax
+### Alternative Methods in the New Specification
 
-```toml
-[global]
-workdir = "directory_path"
-```
+Global-level working directory configuration has been removed and replaced with the following methods:
 
-### Parameter Details
+1. **Automatic Temporary Directories (Recommended)**: If `workdir` is not specified at the group level, a temporary directory is automatically generated
+2. **Group-Level Configuration**: Set `workdir` for each group as needed
+3. **Command-Level Configuration**: Set `workdir` for individual commands
 
-| Item | Description |
-|------|-------------|
-| **Type** | String (string) |
-| **Required/Optional** | Optional |
-| **Configurable Level** | Global, Group |
-| **Default Value** | Execution directory of go-safe-cmd-runner |
-| **Valid Values** | Absolute path |
-| **Override** | Can be overridden at group level |
-
-### Role
-
-- **Unified Execution Environment**: Ensures all commands run in the same directory
-- **Base for Relative Paths**: Sets the base directory for commands using relative paths
-- **Security**: Prevents command execution in unexpected directories
-
-### Configuration Examples
-
-#### Example 1: Setting Global Working Directory
+### Migration Example
 
 ```toml
-version = "1.0"
-
+# Old specification (will cause an error)
 [global]
-workdir = "/var/app/workspace"
+workdir = "/var/app/workspace"  # ❌ This must be removed
 
+# New specification
 [[groups]]
 name = "file_operations"
+workdir = "/var/app/workspace"  # ✅ Set at group level
 
 [[groups.commands]]
 name = "create_file"
 cmd = "touch"
 args = ["test.txt"]
-# /var/app/workspace/test.txt will be created
 ```
 
-#### Example 2: Override at Group Level
+### Additional Information
 
-```toml
-version = "1.0"
-
-[global]
-workdir = "/tmp"
-
-[[groups]]
-name = "log_processing"
-workdir = "/var/log/app"  # Group-specific working directory
-
-[[groups.commands]]
-name = "grep_errors"
-cmd = "grep"
-args = ["ERROR", "app.log"]
-# Executed in /var/log/app directory
-```
-
-### Notes
-
-#### 1. Use Absolute Paths
-
-Relative paths cannot be used:
-
-```toml
-[global]
-workdir = "./workspace"  # Error: relative paths not allowed
-workdir = "/tmp/workspace"  # Correct: absolute path
-```
-
-#### 2. Directory Existence Check
-
-If the specified directory does not exist, an error occurs:
-
-```toml
-[global]
-workdir = "/nonexistent/directory"  # Error if directory doesn't exist
-```
+- [CHANGELOG.md](../../../CHANGELOG.md): Details on breaking changes
+- [05_group_level.md](05_group_level.md): Working directory configuration at group level
+- [06_command_level.md](06_command_level.md): Working directory configuration at command level
 
 #### 3. Permission Check
 

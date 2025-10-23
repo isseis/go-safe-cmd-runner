@@ -110,95 +110,43 @@ timeout = 0   # 無効な設定
 timeout = -1  # 無効な設定
 ```
 
-## 4.2 workdir - 作業ディレクトリ
+## 4.2 ❌ workdir - 作業ディレクトリ（廃止済み）
 
-### 概要
+### ⚠️ 廃止通知
 
-コマンドを実行する作業ディレクトリ(カレントディレクトリ)を指定します。
+**この機能は廃止されました。** グローバルレベルでの `workdir` フィールドはサポートされなくなりました。
 
-### 文法
+### 新しい仕様での代替方法
 
-```toml
-[global]
-workdir = "ディレクトリパス"
-```
+グローバルレベルでの作業ディレクトリ設定は削除され、以下の方法に変更されました：
 
-### パラメータの詳細
+1. **自動一時ディレクトリ（推奨）**: グループレベルで `workdir` を指定しない場合、自動的に一時ディレクトリが生成されます
+2. **グループレベル設定**: 必要に応じてグループごとに `workdir` を設定します
+3. **コマンドレベル設定**: 個別のコマンドに `workdir` を設定します
 
-| 項目 | 内容 |
-|-----|------|
-| **型** | 文字列 (string) |
-| **必須/オプション** | オプション |
-| **設定可能な階層** | グローバル、グループ |
-| **デフォルト値** | go-safe-cmd-runner の実行ディレクトリ |
-| **有効な値** | 絶対パス |
-| **オーバーライド** | グループレベルでオーバーライド可能 |
-
-### 役割
-
-- **実行環境の統一**: 全てのコマンドが同じディレクトリで実行されることを保証
-- **相対パス参照の基準**: 相対パスを使用するコマンドの基準ディレクトリを設定
-- **セキュリティ**: 予期しないディレクトリでのコマンド実行を防止
-
-### 設定例
-
-#### 例1: グローバル作業ディレクトリの設定
+### マイグレーション例
 
 ```toml
-version = "1.0"
-
+# 旧仕様（エラーになります）
 [global]
-workdir = "/var/app/workspace"
+workdir = "/var/app/workspace"  # ❌ 削除する必要があります
 
+# 新仕様
 [[groups]]
 name = "file_operations"
+workdir = "/var/app/workspace"  # ✅ グループレベルで設定
 
 [[groups.commands]]
 name = "create_file"
 cmd = "touch"
 args = ["test.txt"]
-# /var/app/workspace/test.txt が作成される
 ```
 
-#### 例2: グループレベルでのオーバーライド
+### 詳細情報
 
-```toml
-version = "1.0"
-
-[global]
-workdir = "/tmp"
-
-[[groups]]
-name = "log_processing"
-workdir = "/var/log/app"  # グループ専用の作業ディレクトリ
-
-[[groups.commands]]
-name = "grep_errors"
-cmd = "grep"
-args = ["ERROR", "app.log"]
-# /var/log/app ディレクトリで実行される
-```
-
-### 注意事項
-
-#### 1. 絶対パスを使用
-
-相対パスは使用できません:
-
-```toml
-[global]
-workdir = "./workspace"  # エラー: 相対パスは使用不可
-workdir = "/tmp/workspace"  # 正しい: 絶対パス
-```
-
-#### 2. ディレクトリの存在確認
-
-指定されたディレクトリが存在しない場合、エラーになります:
-
-```toml
-[global]
-workdir = "/nonexistent/directory"  # ディレクトリが存在しない場合エラー
-```
+- [CHANGELOG.md](../../../CHANGELOG.md): 破壊的変更の詳細
+- [05_group_level.ja.md](05_group_level.ja.md): グループレベルでの作業ディレクトリ設定
+- [06_command_level.ja.md](06_command_level.ja.md): コマンドレベルでの作業ディレクトリ設定
 
 #### 3. 権限の確認
 

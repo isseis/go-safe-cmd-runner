@@ -235,106 +235,52 @@ args = []
 
 ## 5.2 リソース管理設定
 
-### 5.2.1 temp_dir - 一時ディレクトリ
+### 5.2.1 ❌ temp_dir - 一時ディレクトリ（廃止済み）
 
-#### 概要
+#### ⚠️ 廃止通知
 
-グループ実行時に一時ディレクトリを自動作成します。作成されたディレクトリはグループ内の全コマンドの作業ディレクトリになります。
+**この機能は廃止されました。** グループレベルでの `temp_dir` フィールドはサポートされなくなりました。
 
-#### 文法
+#### 新しい仕様での代替方法
 
-```toml
-[[groups]]
-name = "example"
-temp_dir = true/false
-```
+`temp_dir` フィールドは削除され、より簡潔な仕様に変更されました：
 
-#### パラメータの詳細
+1. **自動一時ディレクトリ（デフォルト）**: `workdir` を指定しない場合、自動的に一時ディレクトリが生成されます
+2. **固定ディレクトリ**: `workdir` を指定した場合、その固定ディレクトリが使用されます
+3. **`__runner_workdir` 変数**: 実行時のワークディレクトリを参照できる予約変数が利用可能です
 
-| 項目 | 内容 |
-|-----|------|
-| **型** | 真偽値 (boolean) |
-| **必須/オプション** | オプション |
-| **設定可能な階層** | グループのみ |
-| **デフォルト値** | false |
-| **有効な値** | true, false |
-
-#### 役割
-
-- **隔離された作業環境**: グループごとに独立した作業スペースを提供
-- **衝突回避**: 複数のグループが同時実行されても競合しない
-- **自動クリーンアップ**: cleanup オプションと組み合わせて自動削除
-
-#### 設定例
-
-#### 例1: 一時ディレクトリの使用
+#### マイグレーション例
 
 ```toml
-version = "1.0"
-
+# 旧仕様（エラーになります）
 [[groups]]
 name = "data_processing"
-temp_dir = true  # 一時ディレクトリを自動作成
+temp_dir = true  # ❌ 削除する必要があります
+
+# 新仕様（自動一時ディレクトリ）
+[[groups]]
+name = "data_processing"
+# workdir未指定 - 自動的に一時ディレクトリが生成される
 
 [[groups.commands]]
 name = "download_data"
 cmd = "wget"
-args = ["https://example.com/data.csv", "-O", "data.csv"]
-# 一時ディレクトリに data.csv がダウンロードされる
-
-[[groups.commands]]
-name = "process_data"
-cmd = "/opt/app/process"
-args = ["data.csv", "output.txt"]
-# 同じ一時ディレクトリで処理
-
-[[groups.commands]]
-name = "list_results"
-cmd = "ls"
-args = ["-la"]
-# 一時ディレクトリの内容を表示
+args = ["https://example.com/data.csv", "-O", "%{__runner_workdir}/data.csv"]
+# ✅ __runner_workdir変数で一時ディレクトリを参照
 ```
-
-#### 例2: cleanup との組み合わせ
-
-```toml
-version = "1.0"
-
-[[groups]]
-name = "temporary_work"
-temp_dir = true   # 一時ディレクトリを作成
-cleanup = true    # グループ終了後に自動削除
-
-[[groups.commands]]
-name = "create_temp_files"
-cmd = "touch"
-args = ["temp1.txt", "temp2.txt"]
-
-[[groups.commands]]
-name = "process_files"
-cmd = "cat"
-args = ["temp1.txt", "temp2.txt"]
-# グループ終了後、一時ディレクトリごと削除される
-```
-
-#### 一時ディレクトリの場所
-
-一時ディレクトリは以下の場所に作成されます:
-- システムの一時ディレクトリ(`$TMPDIR` または `/tmp`)配下
-- ディレクトリ名: `go-safe-cmd-runner-<ランダム文字列>`
 
 ### 5.2.2 workdir - 作業ディレクトリ
 
 #### 概要
 
-グループ内の全コマンドが実行される作業ディレクトリを指定します。グローバルレベルの `workdir` をオーバーライドします。
+グループ内の全コマンドが実行される作業ディレクトリを指定します。指定しない場合は自動的に一時ディレクトリが生成されます。
 
 #### 文法
 
 ```toml
 [[groups]]
 name = "example"
-workdir = "ディレクトリパス"
+workdir = "ディレクトリパス"  # オプション
 ```
 
 #### パラメータの詳細
@@ -343,51 +289,79 @@ workdir = "ディレクトリパス"
 |-----|------|
 | **型** | 文字列 (string) |
 | **必須/オプション** | オプション |
-| **設定可能な階層** | グローバル、グループ |
-| **デフォルト値** | グローバルの workdir、または実行ディレクトリ |
+| **設定可能な階層** | グループ、コマンド |
+| **デフォルト値** | 自動生成された一時ディレクトリ |
 | **有効な値** | 絶対パス |
-| **オーバーライド** | グローバル設定をオーバーライド |
+| **オーバーライド** | コマンドレベルでオーバーライド可能 |
+
+#### 新機能: 自動一時ディレクトリ
+
+**デフォルト動作（推奨）**: `workdir` を指定しない場合
+
+```toml
+[[groups]]
+name = "backup"
+# workdir未指定 → 自動的に一時ディレクトリが生成
+
+[[groups.commands]]
+name = "create_backup"
+cmd = "tar"
+args = ["-czf", "%{__runner_workdir}/backup.tar.gz", "/etc"]
+# 一時ディレクトリに backup.tar.gz が作成される
+```
+
+**一時ディレクトリの特徴**:
+- パス: `/tmp/scr-<グループ名>-<ランダム文字列>`
+- 権限: 0700（所有者のみアクセス可能）
+- 自動削除: グループ実行終了後に削除（`--keep-temp-dirs` フラグで保持可能）
 
 #### 設定例
 
-#### 例1: グループ固有の作業ディレクトリ
+**固定ディレクトリを使用する場合**:
 
 ```toml
-version = "1.0"
-
-[global]
-workdir = "/tmp"
-
 [[groups]]
 name = "log_analysis"
-workdir = "/var/log"  # このグループは /var/log で実行
+workdir = "/var/log"  # 固定作業ディレクトリを指定
 
 [[groups.commands]]
 name = "grep_errors"
 cmd = "grep"
 args = ["ERROR", "app.log"]
 # /var/log/app.log から検索
+```
 
+**自動一時ディレクトリを使用する場合（推奨）**:
+
+```toml
 [[groups]]
 name = "backup"
-workdir = "/var/backups"  # このグループは /var/backups で実行
+# workdir未指定 → 自動的に一時ディレクトリが生成
 
 [[groups.commands]]
 name = "create_backup"
 cmd = "tar"
-args = ["-czf", "backup.tar.gz", "/etc"]
-# /var/backups/backup.tar.gz を作成
+args = ["-czf", "%{__runner_workdir}/backup.tar.gz", "/etc"]
+# 自動生成された一時ディレクトリに backup.tar.gz を作成
 ```
 
-#### 例2: temp_dir との関係
+#### 実行時のディレクトリパス取得
 
-`temp_dir = true` が指定されている場合、`workdir` は無視され、自動生成された一時ディレクトリが使用されます。
+`__runner_workdir` 予約変数を使用して、実行時のワークディレクトリパスを取得できます：
 
 ```toml
 [[groups]]
-name = "temp_work"
-workdir = "/var/data"  # この設定は無視される
-temp_dir = true        # 一時ディレクトリが優先
+name = "data_processing"
+
+[[groups.commands]]
+name = "show_workdir"
+cmd = "echo"
+args = ["Current working directory: %{__runner_workdir}"]
+
+[[groups.commands]]
+name = "create_output"
+cmd = "touch"
+args = ["%{__runner_workdir}/output.txt"]
 ```
 
 ## 5.3 セキュリティ設定
@@ -1277,7 +1251,7 @@ args = [".", "-name", "*.log.gz", "-mtime", "+30", "-delete"]
 name = "temp_processing"
 description = "一時ディレクトリでのデータ処理"
 priority = 30
-temp_dir = true   # 一時ディレクトリを自動作成
+# workdir未指定 - 自動的に一時ディレクトリが生成される
 env_allowlist = []  # 拒否モード: 環境変数なし
 
 [[groups.commands]]

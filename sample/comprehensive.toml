@@ -5,7 +5,6 @@ version = "1.0"
 
 [global]
 timeout = 60
-workdir = "/tmp/cmd-runner-comprehensive"
 log_level = "debug"
 skip_standard_paths = true
 # Global environment variables - comprehensive list for testing
@@ -83,7 +82,6 @@ env = ["TEST_SECURITY_VAR=security_value"]
 name = "resource_tests"
 description = "Test temporary directory creation and cleanup"
 priority = 3
-temp_dir = true
 cleanup = true
 
 [[groups.commands]]
@@ -103,6 +101,18 @@ name = "write_temp_data"
 description = "Write data to temporary file"
 cmd = "echo"
 args = ["Temporary data for testing"]
+
+[[groups.commands]]
+name = "show_workdir_path"
+description = "Show current working directory using __runner_workdir variable"
+cmd = "echo"
+args = ["Current working directory: %{__runner_workdir}"]
+
+[[groups.commands]]
+name = "create_file_with_workdir_path"
+description = "Create file with workdir path in filename"
+cmd = "touch"
+args = ["%{__runner_workdir}/workdir_reference.txt"]
 
 # Group 4: Working directory tests
 [[groups]]
@@ -247,7 +257,6 @@ args = ["DateTime: %{__runner_datetime}, PID: %{__runner_pid}"]
 name = "comprehensive_final"
 description = "Final comprehensive test combining all features"
 priority = 10
-temp_dir = true
 cleanup = true
 workdir = "/tmp/final-comprehensive-test"
 env_allowlist = ["PATH", "HOME", "FINAL_TEST_VAR"]
