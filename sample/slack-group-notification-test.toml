@@ -6,7 +6,6 @@ version = "1.0"
 
 [global]
 timeout = 30
-workdir = "/tmp"
 log_level = "info"
 skip_standard_paths = true
 

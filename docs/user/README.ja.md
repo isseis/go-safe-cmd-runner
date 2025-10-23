@@ -181,6 +181,52 @@ max_risk_level = "medium"
 
 ---
 
+## 作業ディレクトリの設定
+
+### デフォルト動作（推奨）
+
+グループレベルで `workdir` を指定しない場合、自動的に一時ディレクトリが生成されます。
+一時ディレクトリはグループ実行終了後に自動的に削除されます。
+
+```toml
+[[groups]]
+name = "backup"
+
+[[groups.commands]]
+name = "dump"
+cmd = "pg_dump"
+args = ["mydb", "-f", "%{__runner_workdir}/dump.sql"]
+# /tmp/scr-backup-XXXXXX/dump.sql に出力される
+```
+
+### 固定ディレクトリの使用
+
+固定ディレクトリを使用する場合は、グループレベルで `workdir` を指定します。
+
+```toml
+[[groups]]
+name = "build"
+workdir = "/opt/app"
+
+[[groups.commands]]
+name = "compile"
+cmd = "make"
+```
+
+### 予約変数 `%{__runner_workdir}`
+
+コマンドレベルで `%{__runner_workdir}` を使用すると、実行時のワークディレクトリを参照できます。
+
+### 一時ディレクトリの保持
+
+デバッグ目的で一時ディレクトリを削除したくない場合は、`--keep-temp-dirs` フラグを使用します。
+
+```bash
+$ ./runner --config backup.toml --keep-temp-dirs
+```
+
+---
+
 ## セキュリティ
 
 ### [セキュリティリスク評価](security-risk-assessment.ja.md)

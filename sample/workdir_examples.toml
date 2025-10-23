@@ -1,0 +1,76 @@
+# Temporary directory usage example for go-safe-cmd-runner
+# This example demonstrates automatic temporary directory creation and cleanup
+# with the new __runner_workdir variable functionality
+version = "1.0"
+
+[global]
+timeout = 60
+log_level = "info"
+skip_standard_paths = true
+env_allowlist = ["PATH", "HOME", "USER"]
+
+# Example 1: Automatic temporary directory (recommended)
+# When no workdir is specified, a temporary directory is automatically created
+[[groups]]
+name = "temp_backup"
+description = "Backup example using automatic temporary directory"
+priority = 1
+
+[[groups.commands]]
+name = "show_temp_dir"
+description = "Show the automatically created temporary directory path"
+cmd = "echo"
+args = ["Working in directory: %{__runner_workdir}"]
+
+[[groups.commands]]
+name = "create_backup_data"
+description = "Create sample backup data"
+cmd = "echo"
+args = ["Backup data created at $(date)"]
+output = "%{__runner_workdir}/backup.log"
+
+[[groups.commands]]
+name = "list_backup_contents"
+description = "List contents of backup directory"
+cmd = "ls"
+args = ["-la", "%{__runner_workdir}"]
+
+# Example 2: Fixed working directory
+# When workdir is specified, that directory is used instead
+[[groups]]
+name = "fixed_backup"
+description = "Backup example using fixed working directory"
+priority = 2
+workdir = "/tmp/fixed-backup-dir"
+
+[[groups.commands]]
+name = "show_fixed_dir"
+description = "Show the fixed working directory path"
+cmd = "echo"
+args = ["Working in fixed directory: %{__runner_workdir}"]
+
+[[groups.commands]]
+name = "create_fixed_backup"
+description = "Create backup in fixed directory"
+cmd = "echo"
+args = ["Fixed backup created at $(date)"]
+output = "%{__runner_workdir}/fixed_backup.log"
+
+# Example 3: Command-level workdir override
+[[groups]]
+name = "mixed_workdir"
+description = "Mixed workdir example with command-level overrides"
+priority = 3
+
+[[groups.commands]]
+name = "default_temp_location"
+description = "Command using group's automatic temporary directory"
+cmd = "echo"
+args = ["Default location: %{__runner_workdir}"]
+
+[[groups.commands]]
+name = "custom_command_location"
+description = "Command with its own working directory"
+cmd = "echo"
+args = ["Custom location: %{__runner_workdir}"]
+workdir = "/tmp/custom-command-dir"

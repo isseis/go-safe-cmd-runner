@@ -4,7 +4,6 @@ version = "1.0"
 
 [global]
 timeout = 30
-workdir = "/tmp"
 log_level = "info"
 skip_standard_paths = true
 # Global allowlist: only these system environment variables can be used

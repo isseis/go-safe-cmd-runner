@@ -65,6 +65,9 @@ Go Safe Command Runnerは、以下のような環境における安全なコマ�
 
 ### コマンド実行
 - **バッチ処理**: 依存関係管理を備えた組織化されたグループでのコマンド実行
+- **自動一時ディレクトリ**: グループごとの自動一時ディレクトリ生成とクリーンアップ機能
+- **作業ディレクトリ制御**: 固定ディレクトリまたは自動生成一時ディレクトリでの実行
+- **`__runner_workdir`変数**: 実行時作業ディレクトリを参照する予約変数
 - **変数展開**: コマンド名と引数での`${VAR}`形式の展開
 - **自動環境変数**: タイムスタンプとプロセス追跡のための自動生成変数
 - **出力キャプチャ**: セキュアな権限でのファイルへのコマンド出力保存
@@ -187,9 +190,20 @@ log_level = "info"
 env_allowlist = ["PATH", "HOME", "USER", "LANG"]
 
 [[groups]]
+name = "backup"
+description = "バックアップ操作"
+# workdir未指定 - 自動的に一時ディレクトリが生成される
+
+[[groups.commands]]
+name = "database_backup"
+cmd = "/usr/bin/mysqldump"
+args = ["--all-databases", "--result-file=%{__runner_workdir}/db.sql"]
+max_risk_level = "medium"
+
+[[groups]]
 name = "maintenance"
 description = "システム保守タスク"
-priority = 1
+workdir = "/tmp/maintenance"  # 固定作業ディレクトリを指定
 
 [[groups.commands]]
 name = "system_check"

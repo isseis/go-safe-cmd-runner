@@ -637,7 +637,7 @@ func main() {
 
 ---
 
-### Phase 5: ドキュメント・サンプル更新
+### Phase 5: ドキュメント・サンプル更新（✅ 完了）
 
 **目的**: ユーザー向けドキュメントとサンプルファイルを更新する
 
@@ -652,6 +652,7 @@ func main() {
 | P5-3 | CHANGELOG更新 | `CHANGELOG.md` | 破壊的変更の記載 | 0.5h |
 | P5-4 | README更新 | `README.md`, `README.ja.md` | 新機能の説明追加 | 0.5h |
 | P5-5 | サンプル動作確認 | `sample/` | 全サンプルファイルの動作確認 | 1h |
+| P5-6 | TOMLドキュメント更新 | `docs/user/toml_config/*.ja.md` | 廃止フィールドの削除と新仕様への更新 | 2h | ✅ |
 
 **詳細実装内容**:
 
@@ -764,13 +765,15 @@ workdir = "/var/backups"  # dir → workdir に変更
 - 更新されたサンプルファイル
 - 更新されたCHANGELOG
 - 更新されたREADME
+- 更新されたTOMLドキュメント（04_global_level.ja.md, 05_group_level.ja.md, 06_command_level.ja.md, appendix.ja.md, README.ja.md, 08_practical_examples.ja.md）
 
 **完了条件**:
-- [ ] ユーザーマニュアルが新仕様に更新されている (未実装)
-- [ ] 全サンプルファイルが新仕様で動作する (未実装)
-- [ ] CHANGELOGに破壊的変更が記載されている (未実装)
-- [ ] READMEに新機能が説明されている (未実装)
-- [ ] マイグレーションガイドが提供されている (未実装)
+- [x] ユーザーマニュアルが新仕様に更新されている
+- [x] 全サンプルファイルが新仕様で動作する
+- [x] CHANGELOGに破壊的変更が記載されている
+- [x] READMEに新機能が説明されている
+- [x] マイグレーションガイドが提供されている
+- [x] TOMLドキュメントが新仕様に更新されている（P5-6完了）
 
 ---
 

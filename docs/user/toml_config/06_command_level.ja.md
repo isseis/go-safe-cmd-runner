@@ -664,13 +664,87 @@ env = [
 ]
 ```
 
-### 6.2.4 dir - 実行ディレクトリ
+### 6.2.4 workdir - 作業ディレクトリ
 
 #### 概要
 
-このコマンド専用の実行ディレクトリを指定します。
+このコマンド専用の作業ディレクトリを指定します。指定した場合、グループまたはグローバルの作業ディレクトリ設定をオーバーライドします。
 
-> **注意**: 現在のバージョンでは `dir` パラメータは実装されていません。作業ディレクトリはグループレベルの `workdir` またはグローバルの `workdir` で制御してください。
+#### 文法
+
+```toml
+[[groups.commands]]
+name = "example"
+cmd = "コマンド"
+args = []
+workdir = "ディレクトリパス"
+```
+
+#### パラメータの詳細
+
+| 項目 | 内容 |
+|-----|------|
+| **型** | 文字列 (string) |
+| **必須/オプション** | オプション |
+| **設定可能な階層** | コマンドのみ |
+| **有効な値** | 絶対パス |
+| **オーバーライド** | グループまたはグローバルの作業ディレクトリ設定 |
+| **自動作成** | 指定されたディレクトリが存在しない場合は自動作成 |
+
+#### 使用可能な変数
+
+コマンドレベルの `workdir` では以下の変数が使用できます:
+
+- `%{__runner_workdir}`: ランナーが自動生成する一時作業ディレクトリ
+
+#### 設定例
+
+#### 例1: 固定ディレクトリの指定
+
+```toml
+[[groups]]
+name = "report_tasks"
+
+[[groups.commands]]
+name = "generate_report"
+cmd = "/opt/app/report"
+args = ["--output", "daily_report.pdf"]
+workdir = "/var/reports/daily"
+# このコマンドは /var/reports/daily で実行される
+```
+
+#### 例2: 一時ディレクトリの使用
+
+```toml
+[[groups.commands]]
+name = "temp_processing"
+cmd = "/usr/bin/convert"
+args = ["input.jpg", "-resize", "800x600", "output.jpg"]
+workdir = "%{__runner_workdir}"
+# ランナーが生成する一時ディレクトリで実行
+```
+
+#### 例3: コマンドごとの異なる作業ディレクトリ
+
+```toml
+[[groups]]
+name = "multi_dir_tasks"
+workdir = "/var/app"  # グループのデフォルト
+
+[[groups.commands]]
+name = "process_logs"
+cmd = "/opt/tools/logparser"
+args = ["access.log"]
+workdir = "/var/log/apache"  # ログディレクトリで実行
+
+[[groups.commands]]
+name = "process_data"
+cmd = "/opt/tools/dataparser"
+args = ["data.csv"]
+# workdir 未指定 → グループの /var/app を使用
+```
+
+> **注意**: 過去のバージョンでは `dir` パラメータが提案されていましたが、実装されませんでした。現在のバージョンでは `workdir` パラメータを使用してください。
 
 ## 6.3 タイムアウト設定
 
@@ -1170,12 +1244,13 @@ output = "verification.log"
 timeout = 600  # 10分
 max_risk_level = "low"
 
-# コマンド3: 古いバックアップの削除
+# コマンド3: 古いバックアップの削除（一時ディレクトリで実行）
 [[groups.commands]]
 name = "cleanup_old_backups"
 description = "30日以上前のバックアップファイルを削除"
 cmd = "/usr/bin/find"
-args = [".", "-name", "*.sql", "-mtime", "+30", "-delete"]
+args = ["/var/backups/db", "-name", "*.sql", "-mtime", "+30", "-delete"]
+workdir = "%{__runner_workdir}"  # 一時ディレクトリで安全に実行
 timeout = 300  # 5分
 max_risk_level = "medium"
 
@@ -1205,6 +1280,32 @@ args = ["update"]
 run_as_user = "root"
 timeout = 600
 max_risk_level = "high"
+
+[[groups]]
+name = "temporary_processing"
+description = "一時ディレクトリでの処理タスク"
+priority = 30
+
+# コマンド6: 一時ディレクトリでの画像変換
+[[groups.commands]]
+name = "image_resize"
+description = "画像のリサイズ処理"
+cmd = "/usr/bin/convert"
+args = ["/data/input.jpg", "-resize", "800x600", "resized.jpg"]
+workdir = "%{__runner_workdir}"
+output = "conversion.log"
+timeout = 300
+max_risk_level = "low"
+
+# コマンド7: 固定ディレクトリでの作業
+[[groups.commands]]
+name = "copy_result"
+description = "処理結果を永続化ディレクトリにコピー"
+cmd = "/usr/bin/cp"
+args = ["%{__runner_workdir}/resized.jpg", "/var/output/final.jpg"]
+workdir = "/var/output"
+timeout = 60
+max_risk_level = "low"
 ```
 
 ## 次のステップ

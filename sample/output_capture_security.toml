@@ -5,7 +5,6 @@ version = "1.0"
 
 [global]
 timeout = 30
-workdir = "/tmp/security-output-test"
 log_level = "info"
 # Conservative output size limit (1MB) for security
 max_output_size = 1048576
@@ -75,7 +74,6 @@ output = "${HOME}/Documents/user_identity.txt" # Note: variable expansion is not
 name = "controlled_temp_usage"
 description = "Controlled usage of temporary directories"
 priority = 3
-temp_dir = true
 cleanup = true
 
 [[groups.commands]]

@@ -5,7 +5,6 @@ version = "1.0"
 
 [global]
 timeout = 60
-workdir = "/tmp/advanced-output-test"
 log_level = "debug"
 # Set higher output size limit for advanced scenarios (10MB)
 max_output_size = 10485760
@@ -85,7 +84,6 @@ output = "kernel_modules.txt"
 name = "complex_path_scenarios"
 description = "Test various path configurations for output files"
 priority = 3
-temp_dir = true
 cleanup = true
 
 [[groups.commands]]

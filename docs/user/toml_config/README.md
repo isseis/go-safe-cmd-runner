@@ -39,7 +39,6 @@ A comprehensive user guide explaining how to write TOML configuration files for 
   - description - Description
   - priority - Priority
 - Resource management configuration
-  - temp_dir - Temporary directory
   - workdir - Working directory
 - Security configuration
   - verify_files - File verification

@@ -3,7 +3,6 @@ version = "1.0"
 
 [global]
 timeout = 30
-workdir = "/tmp/single-error-test"
 log_level = "debug"
 max_output_size = 1024
 env_allowlist = ["PATH"]

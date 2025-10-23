@@ -3,7 +3,6 @@ version = "1.0"
 
 [global]
 timeout = 300
-workdir = "/opt/safe-runner"
 log_level = "info"
 verify_files = ["/etc/ssl/certs/ca-certificates.crt"]
 skip_standard_paths = false

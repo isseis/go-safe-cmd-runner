@@ -1,0 +1,37 @@
+# Starter Example - Minimal Configuration for Beginners
+# This is the simplest possible configuration to get started with go-safe-cmd-runner
+version = "1.0"
+
+[global]
+# Basic timeout setting (30 seconds)
+timeout = 30
+# Log level: info (other options: debug, warn, error)
+log_level = "info"
+# Allow only essential environment variables
+env_allowlist = ["PATH", "HOME"]
+
+# Define a simple group with a few basic commands
+[[groups]]
+name = "hello_world"
+description = "Basic example commands"
+
+# Command 1: Simple echo
+[[groups.commands]]
+name = "greet"
+description = "Display a greeting message"
+cmd = "echo"
+args = ["Hello from go-safe-cmd-runner!"]
+
+# Command 2: Show current date and time
+[[groups.commands]]
+name = "show_date"
+description = "Display current date and time"
+cmd = "date"
+args = []
+
+# Command 3: List files in current directory
+[[groups.commands]]
+name = "list_files"
+description = "List files in the working directory"
+cmd = "ls"
+args = ["-l"]
