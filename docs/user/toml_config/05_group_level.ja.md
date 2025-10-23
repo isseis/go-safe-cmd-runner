@@ -501,7 +501,7 @@ vars = [
 name = "start_web"
 cmd = "/usr/bin/nginx"
 args = ["-c", "%{web_root}/nginx.conf", "-g", "daemon off;"]
-env = ["PORT=%{port}"]
+env_vars = ["PORT=%{port}"]
 ```
 
 #### 例3: 環境別設定
@@ -550,7 +550,7 @@ args = ["--config", "%{config_file}", "--db-host", "%{db_host}"]
 ```toml
 [[groups]]
 name = "example"
-from_env = ["内部変数名=システム環境変数名", ...]
+env_import = ["内部変数名=システム環境変数名", ...]
 ```
 
 #### パラメータの詳細
@@ -580,8 +580,8 @@ from_env = ["内部変数名=システム環境変数名", ...]
 version = "1.0"
 
 [global]
-env_allowlist = ["HOME", "USER"]
-from_env = [
+env_allowed = ["HOME", "USER"]
+from_env_vars = [
     "home=HOME",
     "username=USER"
 ]
@@ -603,15 +603,15 @@ args = ["Home: %{home}, User: %{username}"]
 version = "1.0"
 
 [global]
-env_allowlist = ["HOME", "USER", "PATH"]
-from_env = [
+env_allowed = ["HOME", "USER", "PATH"]
+from_env_vars = [
     "home=HOME",
     "user=USER"
 ]
 
 [[groups]]
 name = "merge_group"
-from_env = [
+from_env_vars = [
     "path=PATH"  # Global.from_env と統合（マージ）
 ]
 
@@ -628,15 +628,15 @@ args = ["Home: %{home}, User: %{user}, Path: %{path}"]
 version = "1.0"
 
 [global]
-env_allowlist = ["HOME", "USER", "HOSTNAME"]
-from_env = [
+env_allowed = ["HOME", "USER", "HOSTNAME"]
+from_env_vars = [
     "home=HOME",
     "user=USER"
 ]
 
 [[groups]]
 name = "override_merge_group"
-from_env = [
+from_env_vars = [
     "home=CUSTOM_HOME_DIR",  # home を上書き
     "host=HOSTNAME"           # 新しい変数を追加
 ]
@@ -654,12 +654,12 @@ args = ["Home: %{home}, User: %{user}, Host: %{host}"]
 version = "1.0"
 
 [global]
-env_allowlist = ["HOME"]
-from_env = ["home=HOME"]
+env_allowed = ["HOME"]
+from_env_vars = ["home=HOME"]
 
 [[groups]]
 name = "empty_merge_group"
-from_env = []  # 空配列: Global.from_env を継承（Merge方式）
+from_env_vars = []  # 空配列: Global.from_env を継承（Merge方式）
 
 [[groups.commands]]
 name = "show_home"
@@ -672,7 +672,7 @@ args = ["Home: %{home}"]
 
 **Merge方式の利点**: グループで新しい変数を追加しながら、Global で定義した共通の変数も自動的に継承できます。これにより、設定の重複を避けながら、必要に応じた拡張が可能です。
 
-### 5.3.4 env_allowlist - 環境変数許可リスト(グループレベル)
+### 5.3.4 env_allowed - 環境変数許可リスト(グループレベル)
 
 #### 概要
 
@@ -683,7 +683,7 @@ args = ["Home: %{home}"]
 ```toml
 [[groups]]
 name = "example"
-env_allowlist = ["変数1", "変数2", ...]
+env_allowed = ["変数1", "変数2", ...]
 ```
 
 #### パラメータの詳細
@@ -693,7 +693,7 @@ env_allowlist = ["変数1", "変数2", ...]
 | **型** | 文字列配列 (array of strings) |
 | **必須/オプション** | オプション |
 | **設定可能な階層** | グローバル、グループ |
-| **デフォルト値** | nil (Global.env_allowlist を継承) |
+| **デフォルト値** | nil (Global.env_allowed を継承) |
 | **有効な値** | 環境変数名のリスト、または空配列 |
 | **継承動作** | **Override(上書き)方式** |
 
@@ -708,7 +708,7 @@ env_allowlist = ["変数1", "変数2", ...]
 ```toml
 [[groups]]
 name = "example"
-env = ["KEY1=value1", "KEY2=value2", ...]
+env_vars = ["KEY1=value1", "KEY2=value2", ...]
 ```
 
 #### パラメータの詳細
@@ -739,14 +739,14 @@ version = "1.0"
 
 [global]
 vars = ["base_dir=/opt/app"]
-env = ["LOG_LEVEL=info"]
+env_vars = ["LOG_LEVEL=info"]
 
 [[groups]]
 name = "database_group"
 vars = [
     "db_data=%{base_dir}/db-data"
 ]
-env = [
+env_vars = [
     "DB_HOST=localhost",
     "DB_PORT=5432",
     "DB_DATA=%{db_data}"  # 内部変数を参照
@@ -765,14 +765,14 @@ args = ["-h", "${DB_HOST}", "-p", "${DB_PORT}"]
 version = "1.0"
 
 [global]
-env = [
+env_vars = [
     "LOG_LEVEL=info",
     "ENV_TYPE=production",
 ]
 
 [[groups]]
 name = "development_group"
-env = [
+env_vars = [
     "LOG_LEVEL=debug",      # Global.env の LOG_LEVEL を上書き
     "ENV_TYPE=development", # Global.env の ENV_TYPE を上書き
 ]
@@ -790,11 +790,11 @@ args = ["--log-level", "${LOG_LEVEL}"]
 version = "1.0"
 
 [global]
-env = ["APP_ROOT=/opt/myapp"]
+env_vars = ["APP_ROOT=/opt/myapp"]
 
 [[groups]]
 name = "web_group"
-env = [
+env_vars = [
     "WEB_DIR=${APP_ROOT}/web",         # Global.env の APP_ROOT を参照
     "STATIC_DIR=${WEB_DIR}/static",    # Group.env の WEB_DIR を参照
     "UPLOAD_DIR=${WEB_DIR}/uploads",   # Group.env の WEB_DIR を参照
@@ -817,15 +817,15 @@ args = ["--static", "${STATIC_DIR}", "--upload", "${UPLOAD_DIR}"]
 
 ```toml
 [global]
-env = ["SHARED=global", "OVERRIDE=global"]
+env_vars = ["SHARED=global", "OVERRIDE=global"]
 
 [[groups]]
 name = "example"
-env = ["OVERRIDE=group", "GROUP_ONLY=group"]  # OVERRIDE を上書き
+env_vars = ["OVERRIDE=group", "GROUP_ONLY=group"]  # OVERRIDE を上書き
 
 [[groups.commands]]
 name = "cmd1"
-env = ["OVERRIDE=command"]  # さらに上書き
+env_vars = ["OVERRIDE=command"]  # さらに上書き
 
 # 実行時の環境変数:
 # SHARED=global
@@ -841,11 +841,11 @@ Group.env 内では、Global.env で定義した変数や、同じ Group.env 内
 
 ```toml
 [global]
-env = ["BASE=/opt/app"]
+env_vars = ["BASE=/opt/app"]
 
 [[groups]]
 name = "services"
-env = [
+env_vars = [
     "SERVICE_DIR=${BASE}/services",     # Global.env の BASE を参照
     "CONFIG=${SERVICE_DIR}/config",     # Group.env の SERVICE_DIR を参照
 ]
@@ -855,11 +855,11 @@ env = [
 
 ```toml
 [global]
-env_allowlist = ["HOME", "USER"]
+env_allowed = ["HOME", "USER"]
 
 [[groups]]
 name = "user_specific"
-env = [
+env_vars = [
     "USER_DATA=${HOME}/${USER}/data",  # システム環境変数 HOME と USER を参照
 ]
 ```
@@ -876,16 +876,16 @@ Global.env と同じ制約が適用されます（第4章参照）。
 
 ##### 3. allowlist との関係
 
-Group.env で定義した変数がシステム環境変数を参照する場合、そのグループの `env_allowlist` に参照先の変数を追加する必要があります。
+Group.env で定義した変数がシステム環境変数を参照する場合、そのグループの `env_allowed` に参照先の変数を追加する必要があります。
 
 ```toml
 [global]
-env_allowlist = ["PATH"]
+env_allowed = ["PATH"]
 
 [[groups]]
 name = "example"
-env = ["MY_HOME=${HOME}/app"]  # HOME を参照
-env_allowlist = ["HOME"]       # 必須: HOME を許可（グローバルを上書き）
+env_vars = ["MY_HOME=${HOME}/app"]  # HOME を参照
+env_allowed = ["HOME"]       # 必須: HOME を許可（グローバルを上書き）
 ```
 
 ##### 4. グループ間の独立性
@@ -895,7 +895,7 @@ Group.env で定義した変数は、そのグループ内でのみ有効です�
 ```toml
 [[groups]]
 name = "group1"
-env = ["VAR=value1"]
+env_vars = ["VAR=value1"]
 
 [[groups.commands]]
 name = "cmd1"
@@ -922,15 +922,15 @@ args = ["${VAR}"]  # エラー: VAR は未定義
 ```toml
 # 推奨される構成
 [global]
-env = [
+env_vars = [
     "APP_ROOT=/opt/myapp",
     "ENV_TYPE=production",
 ]
-env_allowlist = ["HOME", "PATH"]
+env_allowed = ["HOME", "PATH"]
 
 [[groups]]
 name = "database"
-env = [
+env_vars = [
     "DB_HOST=localhost",              # グループ固有
     "DB_PORT=5432",                   # グループ固有
     "DB_DATA=${APP_ROOT}/db-data",    # Global.env を参照
@@ -938,7 +938,7 @@ env = [
 
 [[groups]]
 name = "web"
-env = [
+env_vars = [
     "WEB_DIR=${APP_ROOT}/web",        # Global.env を参照
     "PORT=8080",                      # グループ固有
 ]
@@ -952,13 +952,13 @@ env = [
 
 ## 5.4 環境変数継承モード
 
-環境変数の許可リスト(`env_allowlist`)には、3つの継承モードがあります。これは go-safe-cmd-runner の重要な機能の一つです。
+環境変数の許可リスト(`env_allowed`)には、3つの継承モードがあります。これは go-safe-cmd-runner の重要な機能の一つです。
 
 ### 5.4.1 継承モード (inherit)
 
 #### 動作
 
-グループレベルで `env_allowlist` を**指定しない**場合、グローバルの設定を継承します。
+グループレベルで `env_allowed` を**指定しない**場合、グローバルの設定を継承します。
 
 #### 使用シーン
 
@@ -971,11 +971,11 @@ env = [
 version = "1.0"
 
 [global]
-env_allowlist = ["PATH", "HOME", "USER"]
+env_allowed = ["PATH", "HOME", "USER"]
 
 [[groups]]
 name = "inherit_group"
-# env_allowlist を指定しない → グローバルを継承
+# env_allowed を指定しない → グローバルを継承
 
 [[groups.commands]]
 name = "show_env"
@@ -988,7 +988,7 @@ args = []
 
 #### 動作
 
-グループレベルで `env_allowlist` に**具体的な値**を指定した場合、グローバル設定を無視し、指定された値のみを使用します。
+グループレベルで `env_allowed` に**具体的な値**を指定した場合、グローバル設定を無視し、指定された値のみを使用します。
 
 #### 使用シーン
 
@@ -1001,17 +1001,17 @@ args = []
 version = "1.0"
 
 [global]
-env_allowlist = ["PATH", "HOME", "USER"]
+env_allowed = ["PATH", "HOME", "USER"]
 
 [[groups]]
 name = "explicit_group"
-env_allowlist = ["PATH", "DATABASE_URL", "API_KEY"]  # グローバルを無視
+env_allowed = ["PATH", "DATABASE_URL", "API_KEY"]  # グローバルを無視
 
 [[groups.commands]]
 name = "run_app"
 cmd = "/opt/app/bin/app"
 args = []
-env = [
+env_vars = [
     "DATABASE_URL=postgresql://localhost/mydb",
     "API_KEY=secret123",
 ]
@@ -1023,7 +1023,7 @@ env = [
 
 #### 動作
 
-グループレベルで `env_allowlist = []` と**空の配列**を明示的に指定した場合、全ての環境変数を拒否します。
+グループレベルで `env_allowed = []` と**空の配列**を明示的に指定した場合、全ての環境変数を拒否します。
 
 #### 使用シーン
 
@@ -1036,11 +1036,11 @@ env = [
 version = "1.0"
 
 [global]
-env_allowlist = ["PATH", "HOME", "USER"]
+env_allowed = ["PATH", "HOME", "USER"]
 
 [[groups]]
 name = "reject_group"
-env_allowlist = []  # 全ての環境変数を拒否
+env_allowed = []  # 全ての環境変数を拒否
 
 [[groups.commands]]
 name = "isolated_command"
@@ -1055,15 +1055,15 @@ args = ["完全に隔離された実行"]
 
 ```mermaid
 flowchart TD
-    A["env_allowlist の確認"] --> B{"グループレベルで<br/>env_allowlist が<br/>定義されているか?"}
+    A["env_allowed の確認"] --> B{"グループレベルで<br/>env_allowed が<br/>定義されているか?"}
     B -->|No| C["継承モード<br/>inherit"]
     B -->|Yes| D{"値は空配列<br/>[] か?"}
     D -->|Yes| E["拒否モード<br/>reject"]
     D -->|No| F["明示モード<br/>explicit"]
 
-    C --> G["グローバルの<br/>env_allowlist を使用"]
+    C --> G["グローバルの<br/>env_allowed を使用"]
     E --> H["全ての環境変数を拒否"]
-    F --> I["グループの<br/>env_allowlist を使用"]
+    F --> I["グループの<br/>env_allowed を使用"]
 
     style C fill:#e8f5e9
     style E fill:#ffebee
@@ -1076,12 +1076,12 @@ flowchart TD
 version = "1.0"
 
 [global]
-env_allowlist = ["PATH", "HOME", "USER"]
+env_allowed = ["PATH", "HOME", "USER"]
 
 # モード1: 継承モード
 [[groups]]
 name = "group_inherit"
-# env_allowlist 未指定
+# env_allowed 未指定
 # 結果: PATH, HOME, USER が利用可能
 
 [[groups.commands]]
@@ -1092,7 +1092,7 @@ args = ["HOME"]  # HOME が出力される
 # モード2: 明示モード
 [[groups]]
 name = "group_explicit"
-env_allowlist = ["PATH", "CUSTOM_VAR"]
+env_allowed = ["PATH", "CUSTOM_VAR"]
 # 結果: PATH, CUSTOM_VAR のみが利用可能(HOME, USER は不可)
 
 [[groups.commands]]
@@ -1104,12 +1104,12 @@ args = ["HOME"]  # エラー: HOME は許可されていない
 name = "test3"
 cmd = "printenv"
 args = ["CUSTOM_VAR"]
-env = ["CUSTOM_VAR=value"]  # CUSTOM_VAR が出力される
+env_vars = ["CUSTOM_VAR=value"]  # CUSTOM_VAR が出力される
 
 # モード3: 拒否モード
 [[groups]]
 name = "group_reject"
-env_allowlist = []
+env_allowed = []
 # 結果: 全ての環境変数が拒否される
 
 [[groups.commands]]
@@ -1126,12 +1126,12 @@ args = ["PATH"]  # エラー: PATH も許可されていない
 version = "1.0"
 
 [global]
-env_allowlist = ["PATH", "HOME", "USER"]
+env_allowed = ["PATH", "HOME", "USER"]
 
 # 通常のタスク: グローバルを継承
 [[groups]]
 name = "normal_tasks"
-# env_allowlist 未指定 → 継承モード
+# env_allowed 未指定 → 継承モード
 
 [[groups.commands]]
 name = "backup"
@@ -1141,7 +1141,7 @@ args = []
 # 機密データ処理: 最小限の環境変数
 [[groups]]
 name = "sensitive_data"
-env_allowlist = ["PATH"]  # PATH のみ許可 → 明示モード
+env_allowed = ["PATH"]  # PATH のみ許可 → 明示モード
 
 [[groups.commands]]
 name = "process_sensitive"
@@ -1151,7 +1151,7 @@ args = []
 # 完全隔離タスク: 環境変数なし
 [[groups]]
 name = "isolated_tasks"
-env_allowlist = []  # 全て拒否 → 拒否モード
+env_allowed = []  # 全て拒否 → 拒否モード
 
 [[groups.commands]]
 name = "isolated_check"
@@ -1165,12 +1165,12 @@ args = ["完全隔離"]
 version = "1.0"
 
 [global]
-env_allowlist = ["PATH", "HOME"]
+env_allowed = ["PATH", "HOME"]
 
 # 開発環境グループ
 [[groups]]
 name = "development"
-env_allowlist = [
+env_allowed = [
     "PATH",
     "HOME",
     "DEBUG_MODE",
@@ -1181,12 +1181,12 @@ env_allowlist = [
 name = "dev_server"
 cmd = "/opt/app/server"
 args = []
-env = ["DEBUG_MODE=true", "DEV_DATABASE_URL=postgresql://localhost/dev"]
+env_vars = ["DEBUG_MODE=true", "DEV_DATABASE_URL=postgresql://localhost/dev"]
 
 # 本番環境グループ
 [[groups]]
 name = "production"
-env_allowlist = [
+env_allowed = [
     "PATH",
     "PROD_DATABASE_URL",
 ]  # 明示モード: 本番用変数のみ
@@ -1195,7 +1195,7 @@ env_allowlist = [
 name = "prod_server"
 cmd = "/opt/app/server"
 args = []
-env = ["PROD_DATABASE_URL=postgresql://prod-server/prod"]
+env_vars = ["PROD_DATABASE_URL=postgresql://prod-server/prod"]
 ```
 
 ## グループ設定の全体例
@@ -1208,7 +1208,7 @@ version = "1.0"
 [global]
 timeout = 300
 workdir = "/tmp"
-env_allowlist = ["PATH", "HOME", "USER"]
+env_allowed = ["PATH", "HOME", "USER"]
 verify_files = ["/bin/sh"]
 
 # グループ1: データベースバックアップ
@@ -1218,14 +1218,14 @@ description = "PostgreSQL データベースの日次バックアップ"
 priority = 10
 workdir = "/var/backups/db"
 verify_files = ["/usr/bin/pg_dump", "/usr/bin/psql"]
-env_allowlist = ["PATH", "PGDATA", "PGHOST"]
+env_allowed = ["PATH", "PGDATA", "PGHOST"]
 
 [[groups.commands]]
 name = "backup_main_db"
 description = "メインデータベースのバックアップ"
 cmd = "/usr/bin/pg_dump"
 args = ["-U", "postgres", "maindb"]
-output = "maindb_backup.sql"
+output_file = "maindb_backup.sql"
 timeout = 600
 
 # グループ2: ログローテーション
@@ -1234,7 +1234,7 @@ name = "log_rotation"
 description = "古いログファイルの圧縮と削除"
 priority = 20
 workdir = "/var/log/app"
-env_allowlist = ["PATH"]  # 明示モード: PATH のみ
+env_allowed = ["PATH"]  # 明示モード: PATH のみ
 
 [[groups.commands]]
 name = "compress_old_logs"
@@ -1252,13 +1252,13 @@ name = "temp_processing"
 description = "一時ディレクトリでのデータ処理"
 priority = 30
 # workdir未指定 - 自動的に一時ディレクトリが生成される
-env_allowlist = []  # 拒否モード: 環境変数なし
+env_allowed = []  # 拒否モード: 環境変数なし
 
 [[groups.commands]]
 name = "create_temp_data"
 cmd = "echo"
 args = ["Temporary data"]
-output = "temp_data.txt"
+output_file = "temp_data.txt"
 
 [[groups.commands]]
 name = "process_temp_data"

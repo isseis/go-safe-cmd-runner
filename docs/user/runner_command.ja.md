@@ -50,7 +50,7 @@ go-safe-cmd-runner のメイン実行コマンド `runner` の使用方法を解
 # 1. 設定ファイルを作成（config.toml）
 cat > config.toml << 'EOF'
 version = "1.0"
-skip_standard_paths = true
+verify_standard_paths = false
 
 [[groups]]
 name = "hello"

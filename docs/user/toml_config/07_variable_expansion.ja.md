@@ -18,8 +18,8 @@ go-safe-cmd-runnerでは、2種類の変数を扱います:
 
 | 変数の種類 | 用途 | 参照構文 | 定義方法 | 子プロセスへの影響 |
 |-----------|------|---------|---------|------------------|
-| **内部変数** | TOML設定ファイル内での展開専用 | `%{VAR}` | `vars`, `from_env` | なし(デフォルト) |
-| **プロセス環境変数** | 子プロセスの環境変数として設定 | - | `env` | あり |
+| **内部変数** | TOML設定ファイル内での展開専用 | `%{VAR}` | `vars`, `env_import` | なし(デフォルト) |
+| **プロセス環境変数** | 子プロセスの環境変数として設定 | - | `env_vars` | あり |
 
 ### 使用可能な場所
 
@@ -27,7 +27,7 @@ go-safe-cmd-runnerでは、2種類の変数を扱います:
 
 - **cmd**: 実行するコマンドのパス(`%{VAR}` を使用)
 - **args**: コマンドの引数(`%{VAR}` を使用)
-- **env**: プロセス環境変数の値(`%{VAR}` を使用可能)
+- **env_vars**: プロセス環境変数の値(`%{VAR}` を使用可能)
 - **verify_files**: 検証対象ファイルパス(`%{VAR}` を使用)
 - **vars**: 内部変数の定義(`%{VAR}` で他の内部変数を参照可能)
 
@@ -40,7 +40,7 @@ go-safe-cmd-runnerでは、2種類の変数を扱います:
 ```toml
 cmd = "%{VARIABLE_NAME}"
 args = ["%{ARG1}", "%{ARG2}"]
-env = ["VAR=%{VALUE}"]
+env_vars = ["VAR=%{VALUE}"]
 ```
 
 ### 変数名のルール
@@ -135,18 +135,18 @@ cmd = "%{db_tools}/dump.sh"
 args = ["-o", "%{output_file}"]
 ```
 
-### 7.3.2 `from_env` によるシステム環境変数の取り込み
+### 7.3.2 `env_import` によるシステム環境変数の取り込み
 
 #### 概要
 
-`from_env` フィールドを使用して、システム環境変数を内部変数として取り込むことができます。
+`env_import` フィールドを使用して、システム環境変数を内部変数として取り込むことができます。
 
 #### 設定形式
 
 ```toml
 [global]
-env_allowlist = ["HOME", "PATH", "USER"]
-from_env = [
+env_allowed = ["HOME", "PATH", "USER"]
+env_import = [
     "home=HOME",
     "user_path=PATH",
     "username=USER"
@@ -154,7 +154,7 @@ from_env = [
 
 [[groups]]
 name = "example"
-from_env = [
+env_import = [
     "custom=CUSTOM_VAR"  # このグループ専用の取り込み
 ]
 ```
@@ -168,17 +168,17 @@ from_env = [
 
 #### セキュリティ制約
 
-- `from_env` で参照するシステム環境変数は必ず `env_allowlist` に含まれている必要があります
-- `env_allowlist` にない変数を参照するとエラーになります
+- `env_import` で参照するシステム環境変数は必ず `env_allowed` に含まれている必要があります
+- `env_allowed` にない変数を参照するとエラーになります
 
 #### 継承ルール
 
 | レベル | 継承動作 |
 |--------|---------|
-| **Global.from_env** | すべてのグループ・コマンドから継承される(デフォルト) |
-| **Group.from_env** | 定義されている場合は Global.from_env と**マージ**(Merge) |
-| **Command.from_env** | 定義されている場合は Global + Group の from_env と**マージ**(Merge) |
-| **未定義** | 上位レベルの from_env を継承 |
+| **Global.env_import** | すべてのグループ・コマンドから継承される(デフォルト) |
+| **Group.env_import** | 定義されている場合は Global.env_import と**マージ**(Merge) |
+| **Command.env_import** | 定義されている場合は Global + Group の env_import と**マージ**(Merge) |
+| **未定義** | 上位レベルの env_import を継承 |
 
 #### 例: システム環境変数の取り込み
 
@@ -186,8 +186,8 @@ from_env = [
 version = "1.0"
 
 [global]
-env_allowlist = ["HOME", "PATH"]
-from_env = [
+env_allowed = ["HOME", "PATH"]
+env_import = [
     "home=HOME",
     "user_path=PATH"
 ]
@@ -258,14 +258,14 @@ args = ["%{var1}"]
 
 ```toml
 [global]
-env = [
+env_vars = [
     "LOG_LEVEL=info",
     "APP_ENV=production"
 ]
 
 [[groups]]
 name = "app_tasks"
-env = [
+env_vars = [
     "DB_HOST=localhost",
     "DB_PORT=5432"
 ]
@@ -273,7 +273,7 @@ env = [
 [[groups.commands]]
 name = "run_app"
 cmd = "/opt/myapp/bin/app"
-env = [
+env_vars = [
     "CONFIG_FILE=%{config_path}"  # 内部変数を使用可能
 ]
 vars = ["config_path=/etc/myapp/config.yml"]
@@ -305,7 +305,7 @@ vars = [
     "app_dir=/opt/myapp",
     "log_dir=%{app_dir}/logs"
 ]
-env = [
+env_vars = [
     "APP_HOME=%{app_dir}",
     "LOG_PATH=%{log_dir}/app.log"
 ]
@@ -455,7 +455,7 @@ vars = [
 version = "1.0"
 
 [global]
-env_allowlist = ["PATH"]
+env_allowed = ["PATH"]
 vars = [
     "python_root=/usr/local"
 ]
@@ -486,7 +486,7 @@ Docker コンテナの起動パラメータを動的に構築:
 version = "1.0"
 
 [global]
-env_allowlist = ["PATH"]
+env_allowed = ["PATH"]
 vars = ["docker_bin=/usr/bin/docker"]
 
 [[groups]]
@@ -512,7 +512,7 @@ vars = [
     "image_name=myapp",
     "image_tag=v1.2.3"
 ]
-env = ["APP_ENV=production"]
+env_vars = ["APP_ENV=production"]
 ```
 
 実行されるコマンド:
@@ -532,7 +532,7 @@ env = ["APP_ENV=production"]
 version = "1.0"
 
 [global]
-env_allowlist = ["PATH"]
+env_allowed = ["PATH"]
 vars = [
     "app_bin=/opt/myapp/bin/myapp",
     "config_dir=/etc/myapp/configs"
@@ -577,14 +577,14 @@ args = [
 
 ### 7.6.4 システム環境変数の活用
 
-`from_env` を使用してシステム環境変数を安全に取り込む例:
+`env_import` を使用してシステム環境変数を安全に取り込む例:
 
 ```toml
 version = "1.0"
 
 [global]
-env_allowlist = ["HOME", "USER", "PATH"]
-from_env = [
+env_allowed = ["HOME", "USER", "PATH"]
+env_import = [
     "home=HOME",
     "username=USER"
 ]
@@ -819,7 +819,7 @@ args = ["czf", "/tmp/backup/files-%{__runner_datetime}.tar.gz", "/data"]
 
 ### 7.9.1 内部変数とプロセス環境変数の分離
 
-内部変数(vars, from_env)とプロセス環境変数(env)は明確に分離されています:
+内部変数(vars, env_import)とプロセス環境変数(env)は明確に分離されています:
 
 ```toml
 [global]
@@ -827,7 +827,7 @@ vars = [
     "app_dir=/opt/myapp",
     "config_path=%{app_dir}/config.yml"
 ]
-env = [
+env_vars = [
     "APP_HOME=%{app_dir}"  # 子プロセスに渡される
 ]
 
@@ -838,14 +838,14 @@ args = ["--config", "%{config_path}"]  # 内部変数を使用
 # 子プロセスは APP_HOME 環境変数を受け取るが、app_dir や config_path は受け取らない
 ```
 
-### 7.9.2 from_env のセキュリティ制約
+### 7.9.2 env_import のセキュリティ制約
 
-`from_env` で取り込めるシステム環境変数は、`env_allowlist` で明示的に許可されたもののみです:
+`env_import` で取り込めるシステム環境変数は、`env_allowed` で明示的に許可されたもののみです:
 
 ```toml
 [global]
-env_allowlist = ["HOME", "USER"]
-from_env = [
+env_allowed = ["HOME", "USER"]
+env_import = [
     "home=HOME",      # OK: HOME は allowlist に含まれている
     "user=USER",      # OK: USER は allowlist に含まれている
     "path=PATH"       # エラー: PATH は allowlist に含まれていない
@@ -952,7 +952,7 @@ args = ["Value: %{UNDEFINED}"]
 # UNDEFINED が vars に定義されていない → エラー
 ```
 
-**解決方法**: 必要な変数を `vars` または `from_env` で定義する
+**解決方法**: 必要な変数を `vars` または `env_import` で定義する
 
 ### 循環参照
 
@@ -973,20 +973,20 @@ args = ["%{var1}"]
 
 ### allowlist エラー
 
-`from_env` で参照するシステム環境変数が `env_allowlist` にない場合、エラーになります:
+`env_import` で参照するシステム環境変数が `env_allowed` にない場合、エラーになります:
 
 ```toml
 [global]
-env_allowlist = ["HOME"]
-from_env = ["path=PATH"]  # エラー: PATH が allowlist にない
+env_allowed = ["HOME"]
+env_import = ["path=PATH"]  # エラー: PATH が allowlist にない
 ```
 
-**解決方法**: `env_allowlist` に必要な環境変数を追加する
+**解決方法**: `env_allowed` に必要な環境変数を追加する
 
 ```toml
 [global]
-env_allowlist = ["HOME", "PATH"]
-from_env = ["path=PATH"]  # OK
+env_allowed = ["HOME", "PATH"]
+env_import = ["path=PATH"]  # OK
 ```
 
 ### 展開後のパス検証エラー
@@ -1019,8 +1019,8 @@ version = "1.0"
 [global]
 timeout = 300
 log_level = "info"
-env_allowlist = ["PATH", "HOME", "USER"]
-from_env = [
+env_allowed = ["PATH", "HOME", "USER"]
+env_import = [
     "home=HOME",
     "username=USER"
 ]
@@ -1082,7 +1082,7 @@ vars = [
     "app_port=8080",
     "worker_count=4"
 ]
-env = [
+env_vars = [
     "LOG_LEVEL=info",
     "LOG_PATH=%{app_root}/logs/app.log"
 ]
@@ -1118,8 +1118,8 @@ timeout = 30
 version = "1.0"
 
 [global]
-env_allowlist = ["HOME"]
-from_env = ["home=HOME"]
+env_allowed = ["HOME"]
+env_import = ["home=HOME"]
 verify_files = [
     "%{home}/config.toml",
     "%{home}/data.txt"
@@ -1144,8 +1144,8 @@ args = ["hello"]
 version = "1.0"
 
 [global]
-env_allowlist = ["APP_ROOT"]
-from_env = ["app_root=APP_ROOT"]
+env_allowed = ["APP_ROOT"]
+env_import = ["app_root=APP_ROOT"]
 
 [[groups]]
 name = "app_group"
@@ -1172,8 +1172,8 @@ args = ["Starting app"]
 version = "1.0"
 
 [global]
-env_allowlist = ["ENV", "APP_ROOT"]
-from_env = [
+env_allowed = ["ENV", "APP_ROOT"]
+env_import = [
     "env_type=ENV",
     "app_root=APP_ROOT"
 ]
@@ -1228,8 +1228,8 @@ version = "1.0"
 [global]
 timeout = 300
 log_level = "info"
-env_allowlist = ["PATH", "HOME", "USER"]
-from_env = [
+env_allowed = ["PATH", "HOME", "USER"]
+env_import = [
     "home=HOME",
     "username=USER"
 ]
@@ -1291,7 +1291,7 @@ vars = [
     "app_port=8080",
     "worker_count=4"
 ]
-env = [
+env_vars = [
     "LOG_LEVEL=info",
     "LOG_PATH=%{log_dir}/app.log"
 ]
@@ -1312,7 +1312,7 @@ timeout = 30
 
 go-safe-cmd-runnerの変数システムは、以下の3つのコンポーネントで構成されています:
 
-1. **内部変数** (`vars`, `from_env`)
+1. **内部変数** (`vars`, `env_import`)
    - TOML設定ファイル内での展開専用
    - `%{VAR}` 構文で参照
    - 子プロセスには渡されない(デフォルト)
@@ -1328,7 +1328,7 @@ go-safe-cmd-runnerの変数システムは、以下の3つのコンポーネン�
 ### ベストプラクティス
 
 1. **内部変数を活用する**: パスやURLなど、TOML展開にのみ必要な値は `vars` で定義
-2. **from_env で明示的に取り込む**: システム環境変数は `from_env` で明示的に取り込み、意図を明確に
+2. **env_import で明示的に取り込む**: システム環境変数は `env_import` で明示的に取り込み、意図を明確に
 3. **env は必要最小限に**: 子プロセスに渡す環境変数は必要最小限に抑える
 4. **セキュリティを考慮**: 機密情報は慎重に扱い、不要な環境変数は渡さない
 5. **命名規則を統一**: 内部変数は小文字とアンダースコア、環境変数は大文字を推奨

@@ -17,7 +17,7 @@ name = "read_log"
 cmd = "/bin/cat"
 args = ["/var/log/app/app.log"]
 run_as_group = "loggroup"  # Only privileges needed for log reading
-max_risk_level = "low"
+risk_level = "low"
 
 # Example to avoid: Excessive privileges
 [[groups.commands]]
@@ -36,7 +36,7 @@ Set the environment variable allowlist to the minimum necessary.
 ```toml
 # Good example: Allow only necessary variables
 [global]
-env_allowlist = [
+env_allowed = [
     "PATH",           # Required for command search
     "HOME",           # Used for config file search
     "APP_CONFIG_DIR", # App-specific configuration
@@ -44,7 +44,7 @@ env_allowlist = [
 
 # Example to avoid: Overly permissive configuration
 [global]
-env_allowlist = [
+env_allowed = [
     "PATH", "HOME", "USER", "SHELL", "EDITOR", "PAGER",
     "MAIL", "LOGNAME", "HOSTNAME", "DISPLAY", "XAUTHORITY",
     # ... too many
@@ -60,7 +60,7 @@ Always verify important configuration files and libraries. Command executables a
 ```toml
 # Good example: Verify configuration files and scripts
 [global]
-skip_standard_paths = false  # Also verify commands in standard paths
+verify_standard_paths = true  # Also verify commands in standard paths
 verify_files = [
     "/etc/app/global.conf",  # Global configuration file
 ]
@@ -103,7 +103,7 @@ Manage sensitive information with Command.Env and isolate it from the system env
 ```toml
 # Good example: Use vars and env appropriately
 [global]
-env_allowlist = ["PATH", "HOME"]  # Don't include sensitive information
+env_allowed = ["PATH", "HOME"]  # Don't include sensitive information
 
 [[groups.commands]]
 name = "api_call"
@@ -116,11 +116,11 @@ args = [
     "-H", "Authorization: Bearer %{api_token}",
     "%{api_endpoint}",
 ]
-env = ["API_TOKEN=%{api_token}"]  # Set as environment variable if needed
+env_vars = ["API_TOKEN=%{api_token}"]  # Set as environment variable if needed
 
 # Example to avoid: Allowing sensitive information globally
 [global]
-env_allowlist = ["PATH", "HOME", "API_TOKEN"]  # Dangerous!
+env_allowed = ["PATH", "HOME", "API_TOKEN"]  # Dangerous!
 ```
 
 ### 9.1.6 Appropriate Risk Level Settings
@@ -135,14 +135,14 @@ Set appropriate risk levels according to the nature of the command.
 name = "read_config"
 cmd = "/bin/cat"
 args = ["/etc/app/config.yml"]
-max_risk_level = "low"
+risk_level = "low"
 
 # File creation/modification: medium
 [[groups.commands]]
 name = "create_backup"
 cmd = "/bin/tar"
 args = ["-czf", "backup.tar.gz", "/data"]
-max_risk_level = "medium"
+risk_level = "medium"
 
 # System changes/privilege escalation: high
 [[groups.commands]]
@@ -150,7 +150,7 @@ name = "install_package"
 cmd = "/usr/bin/apt-get"
 args = ["install", "-y", "package"]
 run_as_user = "root"
-max_risk_level = "high"
+risk_level = "high"
 ```
 
 ## 9.2 Environment Variable Management Best Practices
@@ -163,22 +163,22 @@ Use environment variable inheritance modes according to purpose.
 
 ```toml
 [global]
-env_allowlist = ["PATH", "HOME", "USER"]
+env_allowed = ["PATH", "HOME", "USER"]
 
 # Pattern 1: Inheritance mode - When global settings are sufficient
 [[groups]]
 name = "standard_group"
-# env_allowlist unspecified → Inherits from global
+# env_allowed unspecified → Inherits from global
 
 # Pattern 2: Explicit mode - When group-specific variables are needed
 [[groups]]
 name = "database_group"
-env_allowlist = ["PATH", "DB_HOST", "DB_USER"]  # Different from global
+env_allowed = ["PATH", "DB_HOST", "DB_USER"]  # Different from global
 
 # Pattern 3: Deny mode - When complete isolation is needed
 [[groups]]
 name = "isolated_group"
-env_allowlist = []  # Deny all environment variables
+env_allowed = []  # Deny all environment variables
 ```
 
 ### 9.2.2 Variable Naming Conventions
@@ -189,7 +189,7 @@ Use consistent naming conventions.
 
 ```toml
 # Good example: Consistent naming conventions
-env = [
+env_vars = [
     "APP_DIR=/opt/myapp",           # APP_ prefix for app-related
     "APP_CONFIG=/etc/myapp/config.yml",
     "APP_LOG_DIR=/var/log/myapp",
@@ -201,7 +201,7 @@ env = [
 ]
 
 # Example to avoid: Inconsistent naming
-env = [
+env_vars = [
     "app_directory=/opt/myapp",     # Lowercase with underscore
     "APPCONFIG=/etc/myapp/config.yml",  # No prefix
     "log-dir=/var/log/myapp",       # Using hyphens
@@ -357,11 +357,11 @@ Set output size limits according to the amount of data being processed.
 ```toml
 # For log file analysis with large output
 [global]
-max_output_size = 104857600  # 100MB
+output_size_limit = 104857600  # 100MB
 
 # For small output only
 [global]
-max_output_size = 1048576  # 1MB
+output_size_limit = 1048576  # 1MB
 ```
 
 ## 9.5 Maintainability Best Practices
@@ -386,7 +386,7 @@ timeout = 900
 log_level = "info"
 
 # Due to security requirements, verify system paths as well
-skip_standard_paths = false
+verify_standard_paths = true
 
 [[groups]]
 name = "production_deployment"
@@ -410,7 +410,7 @@ version = "1.0"
 timeout = 600
 workdir = "/opt/deploy"
 log_level = "info"
-env_allowlist = ["PATH", "HOME"]
+env_allowed = ["PATH", "HOME"]
 
 # ========================================
 # Phase 1: Preparation
@@ -499,14 +499,14 @@ Specify only files that need verification.
 ```toml
 # Good example: Verify only necessary files
 [global]
-skip_standard_paths = true  # Skip standard paths
+verify_standard_paths = false  # Skip standard paths
 verify_files = [
     "/opt/app/bin/critical-tool",  # Verify only app-specific tools
 ]
 
 # Example to avoid: Excessive verification
 [global]
-skip_standard_paths = false
+verify_standard_paths = true
 verify_files = [
     "/bin/ls", "/bin/cat", "/bin/grep", "/bin/sed",
     # ... Many standard commands (performance degradation)
@@ -525,7 +525,7 @@ Capture output only when necessary.
 name = "system_info"
 cmd = "/bin/df"
 args = ["-h"]
-output = "disk-usage.txt"  # Needed for report generation
+output_file = "disk-usage.txt"  # Needed for report generation
 
 [[groups.commands]]
 name = "simple_echo"
@@ -538,7 +538,7 @@ args = ["Processing..."]
 name = "simple_echo"
 cmd = "/bin/echo"
 args = ["Processing..."]
-output = "echo-output.txt"  # Unnecessary capture (waste of resources)
+output_file = "echo-output.txt"  # Unnecessary capture (waste of resources)
 ```
 
 ## 9.7 Testing and Validation
@@ -577,7 +577,7 @@ cmd = "/opt/app/bin/tool"
 vars = ["config=/etc/app/config.yml"]
 args = ["--config", "%{config}"]
 run_as_user = "appuser"
-max_risk_level = "high"
+risk_level = "high"
 ```
 
 ### 9.7.2 Utilizing Dry Run Feature

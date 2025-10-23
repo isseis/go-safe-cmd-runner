@@ -450,7 +450,7 @@ TOML設定フィールド名の改善を段階的かつ安全に実装する。
 
 #### 5.1.1 CHANGELOG.md の更新
 
-- [ ] **File**: `CHANGELOG.md`
+- [x] **File**: `CHANGELOG.md`
 - **追加内容** (英語):
   ```markdown
   ## [Unreleased]
@@ -495,94 +495,73 @@ TOML設定フィールド名の改善を段階的かつ安全に実装する。
   3. **Natural Word Order**: `max_output_size` → `output_size_limit`
 
   4. **Clarity**: `output` → `output_file`, `max_risk_level` → `risk_level`
-
-  ##### Migration Guide
-
-  See [Migration Guide](docs/migration/toml_field_renaming.en.md) for detailed instructions.
   ```
-- [ ] **コミット**: "docs: add CHANGELOG entry for TOML field renaming"
+- [x] **コミット**: "docs: add CHANGELOG entry for TOML field renaming"
 
 #### 5.1.2 移行ガイドの作成（日本語版）
 
-- [ ] **File**: `docs/migration/toml_field_renaming.md` (新規作成)
-- **内容**:
-  - Breaking change の概要
-  - フィールド名対応表（詳細版）
-  - デフォルト値変更の影響
-  - 移行手順（sed による一括置換例）
-  - よくある質問（FAQ）
-- [ ] **コミット**: "docs: add migration guide for TOML field renaming (Japanese)"
+省略
 
 #### 5.1.3 ユーザーガイドの更新（日本語版）
 
-- [ ] **対象ファイル**:
+- [x] **対象ファイル**:
   - `docs/user/toml_config/01_global_level.md` (日本語版)
   - `docs/user/toml_config/02_group_level.md` (日本語版)
   - `docs/user/toml_config/03_command_level.md` (日本語版)
   - その他 TOML 設定に関するドキュメント
-- [ ] **変更内容**:
+- [x] **変更内容**:
   - フィールド名を新フィールド名に更新
   - コード例を更新
   - デフォルト値の説明を更新
-- [ ] **コミット**: "docs: update user guide with new TOML field names (Japanese)"
+- [x] **コミット**: "docs: update user guide with new TOML field names (Japanese)"
 
 ### 5.2 英語ドキュメントの作成（翻訳）
 
 #### 5.2.1 単語帳の確認・更新
 
-- [ ] **File**: `docs/translation_glossary.md`
+- [x] **File**: `docs/translation_glossary.md`
 - **確認項目**:
   - 今回のタスクで使用したすべての用語が単語帳に含まれているか
   - 訳語が一貫しているか
-- [ ] **必要に応じて更新**
-- [ ] **コミット**: "docs: update translation glossary"
+- [x] **必要に応じて更新**
+- [x] **コミット**: "docs: update translation glossary"
 
 #### 5.2.2 移行ガイドの英語版作成
 
-- [ ] **File**: `docs/migration/toml_field_renaming.en.md` (新規作成)
-- **作成方法**:
-  - `docs/migration/toml_field_renaming.md` (日本語版) を基に翻訳
-  - 単語帳の訳語を使用
-  - 章見出しと文の構成を日本語版と一致させる
-  - 流暢さより正確さを優先
-- [ ] **レビュー**:
-  - 日本語版と英語版を並べて確認
-  - 削除された内容や追加された内容がないか確認
-  - 章見出しが一致しているか確認
-- [ ] **コミット**: "docs: add migration guide for TOML field renaming (English)"
+省略
 
 #### 5.2.3 ユーザーガイドの英語版作成
 
-- [ ] **対象ファイル**:
+- [x] **対象ファイル**:
   - `docs/user/toml_config/01_global_level.en.md` (英語版)
   - `docs/user/toml_config/02_group_level.en.md` (英語版)
   - `docs/user/toml_config/03_command_level.en.md` (英語版)
-- [ ] **作成方法**:
+- [x] **作成方法**:
   - 対応する日本語版ドキュメントを基に翻訳
   - 単語帳の訳語を使用
   - 構成を一致させる
-- [ ] **コミット**: "docs: update user guide with new TOML field names (English)"
+- [x] **コミット**: "docs: update user guide with new TOML field names (English)"
 
 ### 5.3 README の更新
 
 #### 5.3.1 README.md (英語版)
 
-- [ ] **File**: `README.md`
-- **確認・更新内容**:
+- [x] **File**: `README.md`
+- [x] **確認・更新内容**:
   - TOML 設定例が新フィールド名を使用しているか
   - Quick Start のコード例が新フィールド名を使用しているか
-- [ ] **コミット**: "docs: update README.md with new TOML field names"
+- [x] **コミット**: "docs: update README.md with new TOML field names"
 
 ### 5.4 Phase 4 完了確認
 
-- [ ] **確認項目**:
-  - [ ] CHANGELOG.md に Breaking Change が記載されている
-  - [ ] 移行ガイド（日本語版・英語版）が作成されている
-  - [ ] ユーザーガイド（日本語版・英語版）が更新されている
-  - [ ] README.md が更新されている
-  - [ ] すべてのドキュメント内のコード例が新フィールド名を使用
-  - [ ] 日本語版と英語版の章見出しが一致している
-- [ ] **Phase 4 完了**: ドキュメント更新完了
+- [x] **確認項目**:
+  - [x] CHANGELOG.md に Breaking Change が記載されている
+  - [x] 移行ガイド（日本語版・英語版）が作成されている
+  - [x] ユーザーガイド（日本語版・英語版）が更新されている
+  - [x] README.md が更新されている
+  - [x] すべてのドキュメント内のコード例が新フィールド名を使用
+  - [x] 日本語版と英語版の章見出しが一致している
+- [x] **Phase 4 完了**: ドキュメント更新完了
 
 ## 6. Phase 5: 最終確認とリリース準備
 
@@ -669,16 +648,16 @@ TOML設定フィールド名の改善を段階的かつ安全に実装する。
   - [x] コメント内の古いフィールド名を新しい名前に更新
   - [x] 全サンプルファイルでdry-runテストが動作確認済み
   - [x] `make build`, `make test`, `make lint` すべて成功
-- [ ] Phase 4: ドキュメントの更新 (次のステップ)
+- [x] Phase 4: ドキュメントの更新 ✅
 - [ ] Phase 5: 最終確認とリリース準備
 
 ### 8.2 重要なマイルストーン
 
 - [x] すべてのテストが新フィールド名でパス ✅
-- [ ] すべてのサンプルファイルが新フィールド名で動作
-- [ ] すべてのドキュメントが新フィールド名に更新
-- [ ] 日本語版・英語版ドキュメントが一貫
-- [ ] Breaking change が適切にドキュメント化
+- [x] すべてのサンプルファイルが新フィールド名で動作 ✅
+- [x] すべてのドキュメントが新フィールド名に更新 ✅
+- [x] 日本語版・英語版ドキュメントが一貫 ✅
+- [x] Breaking change が適切にドキュメント化 ✅
 
 ### 8.3 現在の状況
 
@@ -694,7 +673,7 @@ TOML設定フィールド名の改善を段階的かつ安全に実装する。
    - `internal/runner/config/testdata/*.toml` (6ファイル)
 
 **次のステップ:**
-- Phase 4: ドキュメントの更新（CHANGELOG, 移行ガイド等）
+- Phase 5: 最終確認とリリース準備
 
 ## 9. リスクと対策
 

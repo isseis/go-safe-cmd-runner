@@ -96,31 +96,31 @@ args = ["-czf", "backup.tar.gz", "/data"]
 #### エラー例
 
 ```
-Error: environment variable 'CUSTOM_VAR' is not allowed by env_allowlist
+Error: environment variable 'CUSTOM_VAR' is not allowed by env_allowed
 ```
 
 #### 原因
 
-使用している環境変数が `env_allowlist` に含まれていない。
+使用している環境変数が `env_allowed` に含まれていない。
 
 #### 解決方法
 
-**方法1**: グローバルまたはグループの `env_allowlist` に追加
+**方法1**: グローバルまたはグループの `env_allowed` に追加
 
 ```toml
 [global]
-env_allowlist = ["PATH", "HOME", "CUSTOM_VAR"]  # CUSTOM_VAR を追加
+env_allowed = ["PATH", "HOME", "CUSTOM_VAR"]  # CUSTOM_VAR を追加
 ```
 
 **方法2**: Command.Env で定義(推奨)
 
 ```toml
-# env_allowlist に追加不要
+# env_allowed に追加不要
 [[groups.commands]]
 name = "custom_command"
 cmd = "${CUSTOM_TOOL}"
 args = []
-env = ["CUSTOM_TOOL=/opt/tools/mytool"]  # Command.Env で定義
+env_vars = ["CUSTOM_TOOL=/opt/tools/mytool"]  # Command.Env で定義
 ```
 
 ### 10.1.5 変数展開エラー
@@ -153,20 +153,20 @@ args = []
 name = "run_tool"
 cmd = "${TOOL_DIR}/mytool"
 args = []
-env = ["TOOL_DIR=/opt/tools"]
+env_vars = ["TOOL_DIR=/opt/tools"]
 ```
 
 **循環参照の場合**:
 
 ```toml
 # 誤り: 循環参照
-env = [
+env_vars = [
     "VAR1=${VAR2}",
     "VAR2=${VAR1}",
 ]
 
 # 正しい: 循環を解消
-env = [
+env_vars = [
     "VAR1=/path/to/dir",
     "VAR2=${VAR1}/subdir",
 ]
@@ -312,29 +312,29 @@ sudo go-safe-cmd-runner -file config.toml
 #### エラー例
 
 ```
-Error: command risk level exceeds maximum: command risk=medium, max_risk_level=low
+Error: command risk level exceeds maximum: command risk=medium, risk_level=low
 ```
 
 #### 原因
 
-コマンドのリスクレベルが `max_risk_level` を超えている。
+コマンドのリスクレベルが `risk_level` を超えている。
 
 #### 解決方法
 
 ```toml
-# 方法1: max_risk_level を引き上げ
+# 方法1: risk_level を引き上げ
 [[groups.commands]]
 name = "risky_command"
 cmd = "/bin/rm"
 args = ["-rf", "/tmp/data"]
-max_risk_level = "medium"  # low → medium に変更
+risk_level = "medium"  # low → medium に変更
 
 # 方法2: より安全なコマンドに変更
 [[groups.commands]]
 name = "safer_command"
 cmd = "/bin/rm"
 args = ["/tmp/data/specific-file.txt"]  # -rf を削除
-max_risk_level = "low"
+risk_level = "low"
 ```
 
 ## 10.2 設定検証方法
@@ -379,7 +379,7 @@ go-safe-cmd-runner -file minimal.toml
 name = "with_variables"
 cmd = "/bin/echo"
 args = ["Value: ${VAR}"]
-env = ["VAR=hello"]
+env_vars = ["VAR=hello"]
 ```
 
 ```bash
@@ -424,12 +424,12 @@ args = [
     "CONFIG=${CONFIG}",
     "ENV=${ENV_TYPE}",
 ]
-env = [
+env_vars = [
     "TOOL_DIR=/opt/tools",
     "CONFIG=/etc/app/config.yml",
     "ENV_TYPE=production",
 ]
-output = "debug-vars.txt"
+output_file = "debug-vars.txt"
 ```
 
 実行後、`debug-vars.txt` を確認:
@@ -446,7 +446,7 @@ TOOL_DIR=/opt/tools CONFIG=/etc/app/config.yml ENV=production
 name = "diagnose"
 cmd = "/usr/bin/systemctl"
 args = ["status", "myapp.service"]
-output = "service-status.txt"
+output_file = "service-status.txt"
 ```
 
 実行後、出力ファイルを確認:
@@ -469,7 +469,7 @@ name = "test_single_command"
 name = "problematic_command"
 cmd = "/usr/bin/tool"
 args = ["--option", "value"]
-env = ["CUSTOM_VAR=test"]
+env_vars = ["CUSTOM_VAR=test"]
 ```
 
 ### 10.3.4 ドライランの活用
@@ -499,13 +499,13 @@ go-safe-cmd-runner --dry-run --file config.toml
 name = "check_permissions"
 cmd = "/usr/bin/id"
 args = []
-output = "current-user.txt"
+output_file = "current-user.txt"
 
 [[groups.commands]]
 name = "check_file_access"
 cmd = "/bin/ls"
 args = ["-la", "/path/to/file"]
-output = "file-permissions.txt"
+output_file = "file-permissions.txt"
 ```
 
 ### 10.3.6 環境変数の確認
@@ -517,7 +517,7 @@ output = "file-permissions.txt"
 name = "dump_env"
 cmd = "/usr/bin/env"
 args = []
-output = "environment.txt"
+output_file = "environment.txt"
 ```
 
 ## 10.4 パフォーマンス問題
@@ -534,7 +534,7 @@ output = "environment.txt"
 ```toml
 # 標準パスの検証をスキップ
 [global]
-skip_standard_paths = true
+verify_standard_paths = false
 
 # 必要最小限のファイルのみ検証
 verify_files = [
@@ -573,19 +573,19 @@ args = ["Processing..."]
 
 **Q**: `${HOME}` が展開されず、そのまま文字列として扱われる。
 
-**A**: 環境変数は `env_allowlist` に含めるか、`Command.Env` で定義してください。
+**A**: 環境変数は `env_allowed` に含めるか、`Command.Env` で定義してください。
 
 ```toml
-# 方法1: env_allowlist に追加
+# 方法1: env_allowed に追加
 [global]
-env_allowlist = ["PATH", "HOME"]
+env_allowed = ["PATH", "HOME"]
 
 # 方法2: Command.Env で定義(推奨)
 [[groups.commands]]
 name = "test"
 cmd = "/bin/echo"
 args = ["${MY_HOME}"]
-env = ["MY_HOME=/home/user"]
+env_vars = ["MY_HOME=/home/user"]
 ```
 
 ### Q2: コマンドが見つからない
@@ -600,7 +600,7 @@ cmd = "/usr/bin/tool"
 
 # または: PATH を確認
 [global]
-env_allowlist = ["PATH"]
+env_allowed = ["PATH"]
 ```
 
 ### Q3: ファイル検証が失敗する

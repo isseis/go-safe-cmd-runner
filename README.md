@@ -154,7 +154,7 @@ version = "1.0"
 [global]
 timeout = 3600
 log_level = "info"
-env_allowlist = ["PATH", "HOME", "USER"]
+env_allowed = ["PATH", "HOME", "USER"]
 
 [[groups]]
 name = "backup"
@@ -165,9 +165,9 @@ name = "database_backup"
 description = "Backup database"
 cmd = "/usr/bin/mysqldump"
 args = ["--all-databases"]
-output = "backup.sql"  # Save output to file
+output_file = "backup.sql"  # Save output to file
 run_as_user = "mysql"
-max_risk_level = "medium"
+risk_level = "medium"
 ```
 
 ## Configuration
@@ -187,7 +187,7 @@ version = "1.0"
 [global]
 timeout = 3600
 log_level = "info"
-env_allowlist = ["PATH", "HOME", "USER", "LANG"]
+env_allowed = ["PATH", "HOME", "USER", "LANG"]
 
 [[groups]]
 name = "backup"
@@ -198,7 +198,7 @@ description = "Backup operations"
 name = "database_backup"
 cmd = "/usr/bin/mysqldump"
 args = ["--all-databases", "--result-file=%{__runner_workdir}/db.sql"]
-max_risk_level = "medium"
+risk_level = "medium"
 
 [[groups]]
 name = "maintenance"
@@ -209,7 +209,7 @@ workdir = "/tmp/maintenance"  # Fixed working directory
 name = "system_check"
 cmd = "/usr/bin/systemctl"
 args = ["status"]
-max_risk_level = "medium"
+risk_level = "medium"
 ```
 
 ### Detailed Configuration Guide

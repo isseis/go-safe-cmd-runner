@@ -17,7 +17,7 @@ name = "read_log"
 cmd = "/bin/cat"
 args = ["/var/log/app/app.log"]
 run_as_group = "loggroup"  # ログ読み取りに必要な権限のみ
-max_risk_level = "low"
+risk_level = "low"
 
 # 避けるべき例: 過剰な権限
 [[groups.commands]]
@@ -36,7 +36,7 @@ run_as_user = "root"  # 不必要に root 権限を使用
 ```toml
 # 良い例: 必要な変数のみを許可
 [global]
-env_allowlist = [
+env_allowed = [
     "PATH",           # コマンド検索に必須
     "HOME",           # 設定ファイル検索に使用
     "APP_CONFIG_DIR", # アプリ固有の設定
@@ -44,7 +44,7 @@ env_allowlist = [
 
 # 避けるべき例: 過度に寛容な設定
 [global]
-env_allowlist = [
+env_allowed = [
     "PATH", "HOME", "USER", "SHELL", "EDITOR", "PAGER",
     "MAIL", "LOGNAME", "HOSTNAME", "DISPLAY", "XAUTHORITY",
     # ... 多すぎる
@@ -60,7 +60,7 @@ env_allowlist = [
 ```toml
 # 良い例: 設定ファイルやスクリプトファイルを検証
 [global]
-skip_standard_paths = false  # 標準パスのコマンドも検証
+verify_standard_paths = true  # 標準パスのコマンドも検証
 verify_files = [
     "/etc/app/global.conf",  # グローバル設定ファイル
 ]
@@ -103,7 +103,7 @@ args = ["-czf", "backup.tar.gz", "/data"]
 ```toml
 # 良い例: vars と env を適切に使い分け
 [global]
-env_allowlist = ["PATH", "HOME"]  # 機密情報は含めない
+env_allowed = ["PATH", "HOME"]  # 機密情報は含めない
 
 [[groups.commands]]
 name = "api_call"
@@ -116,11 +116,11 @@ args = [
     "-H", "Authorization: Bearer %{api_token}",
     "%{api_endpoint}",
 ]
-env = ["API_TOKEN=%{api_token}"]  # 必要に応じて環境変数として設定
+env_vars = ["API_TOKEN=%{api_token}"]  # 必要に応じて環境変数として設定
 
 # 避けるべき例: グローバルに機密情報を許可
 [global]
-env_allowlist = ["PATH", "HOME", "API_TOKEN"]  # システム環境変数に依存
+env_allowed = ["PATH", "HOME", "API_TOKEN"]  # システム環境変数に依存
 ```
 
 ### 9.1.6 リスクレベルの適切な設定
@@ -135,14 +135,14 @@ env_allowlist = ["PATH", "HOME", "API_TOKEN"]  # システム環境変数に依�
 name = "read_config"
 cmd = "/bin/cat"
 args = ["/etc/app/config.yml"]
-max_risk_level = "low"
+risk_level = "low"
 
 # ファイル作成・変更: medium
 [[groups.commands]]
 name = "create_backup"
 cmd = "/bin/tar"
 args = ["-czf", "backup.tar.gz", "/data"]
-max_risk_level = "medium"
+risk_level = "medium"
 
 # システム変更・権限昇格: high
 [[groups.commands]]
@@ -150,7 +150,7 @@ name = "install_package"
 cmd = "/usr/bin/apt-get"
 args = ["install", "-y", "package"]
 run_as_user = "root"
-max_risk_level = "high"
+risk_level = "high"
 ```
 
 ## 9.2 環境変数管理のベストプラクティス
@@ -163,22 +163,22 @@ max_risk_level = "high"
 
 ```toml
 [global]
-env_allowlist = ["PATH", "HOME", "USER"]
+env_allowed = ["PATH", "HOME", "USER"]
 
 # パターン1: 継承モード - グローバル設定で十分な場合
 [[groups]]
 name = "standard_group"
-# env_allowlist 未指定 → グローバルを継承
+# env_allowed 未指定 → グローバルを継承
 
 # パターン2: 明示モード - グループ固有の変数が必要な場合
 [[groups]]
 name = "database_group"
-env_allowlist = ["PATH", "DB_HOST", "DB_USER"]  # グローバルとは異なる設定
+env_allowed = ["PATH", "DB_HOST", "DB_USER"]  # グローバルとは異なる設定
 
 # パターン3: 拒否モード - 完全隔離が必要な場合
 [[groups]]
 name = "isolated_group"
-env_allowlist = []  # 全ての環境変数を拒否
+env_allowed = []  # 全ての環境変数を拒否
 ```
 
 ### 9.2.2 変数の命名規則
@@ -189,7 +189,7 @@ env_allowlist = []  # 全ての環境変数を拒否
 
 ```toml
 # 良い例: 一貫した命名規則
-env = [
+env_vars = [
     "APP_DIR=/opt/myapp",           # アプリ関連は APP_ プレフィックス
     "APP_CONFIG=/etc/myapp/config.yml",
     "APP_LOG_DIR=/var/log/myapp",
@@ -201,7 +201,7 @@ env = [
 ]
 
 # 避けるべき例: 不統一な命名
-env = [
+env_vars = [
     "app_directory=/opt/myapp",     # 小文字とアンダースコア
     "APPCONFIG=/etc/myapp/config.yml",  # プレフィックスなし
     "log-dir=/var/log/myapp",       # ハイフン使用
@@ -357,11 +357,11 @@ timeout = 7200  # ネットワーク転送には十分な時間を確保
 ```toml
 # ログファイル解析など、出力が多い場合
 [global]
-max_output_size = 104857600  # 100MB
+output_size_limit = 104857600  # 100MB
 
 # 小規模な出力のみの場合
 [global]
-max_output_size = 1048576  # 1MB
+output_size_limit = 1048576  # 1MB
 ```
 
 ## 9.5 保守性のベストプラクティス
@@ -386,7 +386,7 @@ timeout = 900
 log_level = "info"
 
 # セキュリティ要件により、システムパスも検証
-skip_standard_paths = false
+verify_standard_paths = true
 
 [[groups]]
 name = "production_deployment"
@@ -410,7 +410,7 @@ version = "1.0"
 timeout = 600
 workdir = "/opt/deploy"
 log_level = "info"
-env_allowlist = ["PATH", "HOME"]
+env_allowed = ["PATH", "HOME"]
 
 # ========================================
 # フェーズ1: 事前準備
@@ -499,14 +499,14 @@ priority = 11  # 不必要に依存関係を作っている
 ```toml
 # 良い例: 必要なファイルのみ検証
 [global]
-skip_standard_paths = true  # 標準パスはスキップ
+verify_standard_paths = false  # 標準パスはスキップ
 verify_files = [
     "/opt/app/bin/critical-tool",  # アプリ固有のツールのみ検証
 ]
 
 # 避けるべき例: 過度な検証
 [global]
-skip_standard_paths = false
+verify_standard_paths = true
 verify_files = [
     "/bin/ls", "/bin/cat", "/bin/grep", "/bin/sed",
     # ... 多数の標準コマンド(パフォーマンス低下)
@@ -525,7 +525,7 @@ verify_files = [
 name = "system_info"
 cmd = "/bin/df"
 args = ["-h"]
-output = "disk-usage.txt"  # レポート生成に必要
+output_file = "disk-usage.txt"  # レポート生成に必要
 
 [[groups.commands]]
 name = "simple_echo"
@@ -538,7 +538,7 @@ args = ["Processing..."]
 name = "simple_echo"
 cmd = "/bin/echo"
 args = ["Processing..."]
-output = "echo-output.txt"  # 不要なキャプチャ(リソースの無駄)
+output_file = "echo-output.txt"  # 不要なキャプチャ(リソースの無駄)
 ```
 
 ## 9.7 テストとバリデーション
@@ -577,7 +577,7 @@ cmd = "/opt/app/bin/tool"
 vars = ["config=/etc/app/config.yml"]
 args = ["--config", "%{config}"]
 run_as_user = "appuser"
-max_risk_level = "high"
+risk_level = "high"
 ```
 
 ### 9.7.2 ドライラン機能の活用

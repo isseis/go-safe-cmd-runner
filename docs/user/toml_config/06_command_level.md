@@ -132,7 +132,7 @@ args = ["-la"]
 name = "custom_tool"
 cmd = "%{TOOL_DIR}/my-script"
 args = []
-env = ["TOOL_DIR=/opt/tools"]
+env_vars = ["TOOL_DIR=/opt/tools"]
 # Actually executes /opt/tools/my-script
 ```
 
@@ -218,7 +218,7 @@ args = []  # Or omit
 name = "backup"
 cmd = "/usr/bin/tar"
 args = ["-czf", "%{BACKUP_FILE}", "%{SOURCE_DIR}"]
-env = [
+env_vars = [
     "BACKUP_FILE=/backups/backup.tar.gz",
     "SOURCE_DIR=/data",
 ]
@@ -266,7 +266,7 @@ args = ["test", ">", "output.txt"]  # Redirects don't work
 name = "save_output"
 cmd = "echo"
 args = ["test"]
-output = "output.txt"  # This is the correct way
+output_file = "output.txt"  # This is the correct way
 ```
 
 ##### 3. Arguments with Spaces
@@ -369,7 +369,7 @@ To pass environment variables to child processes, use `env` parameter:
 name = "print_vars"
 cmd = "/bin/sh"
 vars = ["my_var=hello"]
-env = ["MY_VAR=%{my_var}"]  # Convert vars value to environment variable
+env_vars = ["MY_VAR=%{my_var}"]  # Convert vars value to environment variable
 args = ["-c", "echo $MY_VAR"]  # MY_VAR=hello is output
 ```
 
@@ -406,11 +406,11 @@ cmd = "/usr/bin/logger"
 args = ["Executed at %{__RUNNER_DATETIME} by PID %{__RUNNER_PID}"]
 ```
 
-### 6.2.2 from_env - System Environment Variable Import
+### 6.2.2 env_import - System Environment Variable Import
 
 #### Overview
 
-Specifies the names of system environment variables for go-safe-cmd-runner to import for use in TOML variable expansion. Command-level `from_env` is merged with global and group-level `from_env` (Merge behavior).
+Specifies the names of system environment variables for go-safe-cmd-runner to import for use in TOML variable expansion. Command-level `env_import` is merged with global and group-level `env_import` (Merge behavior).
 
 #### Syntax
 
@@ -418,7 +418,7 @@ Specifies the names of system environment variables for go-safe-cmd-runner to im
 [[groups.commands]]
 name = "example"
 cmd = "command"
-from_env = ["VAR1", "VAR2", ...]
+env_import = ["VAR1", "VAR2", ...]
 ```
 
 #### Parameter Details
@@ -430,14 +430,14 @@ from_env = ["VAR1", "VAR2", ...]
 | **Configurable Level** | Global, Group, Command |
 | **Default Value** | [] |
 | **Format** | Variable names only (VALUE not needed) |
-| **Security Constraint** | Only variables in `env_allowlist` can be imported |
+| **Security Constraint** | Only variables in `env_allowed` can be imported |
 | **Inheritance Behavior** | Merge - lower levels are merged with upper levels |
 
 #### Role
 
 - **System Environment Variable Import**: Make Runner's environment variables available for use in TOML
 - **Variable Expansion in TOML**: Imported variables can be referenced using `%{VAR}` format
-- **Security Management**: Controlled through `env_allowlist`
+- **Security Management**: Controlled through `env_allowed`
 
 #### Configuration Examples
 
@@ -445,12 +445,12 @@ from_env = ["VAR1", "VAR2", ...]
 
 ```toml
 [global]
-env_allowlist = ["HOME", "USER", "PATH"]
+env_allowed = ["HOME", "USER", "PATH"]
 
 [[groups.commands]]
 name = "show_user_info"
 cmd = "/bin/echo"
-from_env = ["USER", "HOME"]
+env_import = ["USER", "HOME"]
 args = ["User: %{USER}, Home: %{HOME}"]
 ```
 
@@ -458,73 +458,73 @@ args = ["User: %{USER}, Home: %{HOME}"]
 
 ```toml
 [global]
-env_allowlist = ["HOME", "USER", "PATH", "LANG"]
-from_env = ["HOME", "USER"]  # Global level
+env_allowed = ["HOME", "USER", "PATH", "LANG"]
+env_import = ["HOME", "USER"]  # Global level
 
 [[groups]]
 name = "intl_tasks"
-from_env = ["LANG"]  # Group level: merges with global from_env
+env_import = ["LANG"]  # Group level: merges with global env_import
 
 [[groups.commands]]
 name = "task1"
 cmd = "/bin/echo"
-# from_env not specified → group's from_env is applied
+# env_import not specified → group's env_import is applied
 # Inherited variables: HOME, USER (global) + LANG (group)
 args = ["User: %{USER}, Language: %{LANG}"]
 
 [[groups.commands]]
 name = "task2"
 cmd = "/bin/echo"
-from_env = ["PATH"]  # Command level: merges with group
+env_import = ["PATH"]  # Command level: merges with group
 # Inherited variables: HOME, USER (global) + LANG (group) + PATH (command)
 args = ["Path: %{PATH}, Home: %{HOME}"]
 ```
 
 #### Important Notes
 
-##### 1. Relationship with env_allowlist
+##### 1. Relationship with env_allowed
 
-Variables to be imported with `from_env` must be included in `env_allowlist`:
+Variables to be imported with `env_import` must be included in `env_allowed`:
 
 ```toml
 [global]
-env_allowlist = ["HOME", "USER"]
+env_allowed = ["HOME", "USER"]
 
 [[groups.commands]]
 name = "example"
 cmd = "/bin/echo"
-from_env = ["HOME", "PATH"]  # Error: PATH not in env_allowlist
+env_import = ["HOME", "PATH"]  # Error: PATH not in env_allowed
 args = ["%{HOME}"]
 ```
 
 ##### 2. Merge Behavior
 
-When `from_env` is specified at command level, it is merged with global and group `from_env`:
+When `env_import` is specified at command level, it is merged with global and group `env_import`:
 
 ```toml
 [global]
-from_env = ["HOME", "USER"]
+env_import = ["HOME", "USER"]
 
 [[groups]]
 name = "tasks"
-from_env = ["LANG", "LC_ALL"]
+env_import = ["LANG", "LC_ALL"]
 
 [[groups.commands]]
 name = "task1"
 cmd = "/bin/echo"
-from_env = ["PWD"]  # HOME, USER, LANG, LC_ALL, PWD all available
+env_import = ["PWD"]  # HOME, USER, LANG, LC_ALL, PWD all available
 args = ["User: %{USER}, PWD: %{PWD}"]
 ```
 
 ##### 3. Non-Existent Variables
 
-If a variable specified in `from_env` does not exist in the system environment, it is treated as empty string:
+If a variable specified in `env_import` does not exist in the system environment, it is treated as empty string:
 
 ```toml
 [[groups.commands]]
 name = "example"
 cmd = "/bin/echo"
-from_env = ["NONEXISTENT_VAR"]
+env_import = ["NONEXISTENT_VAR"]
 args = ["Value: %{NONEXISTENT_VAR}"]  # Output: "Value: "
 ```
 
@@ -541,7 +541,7 @@ Specifies environment variables to set for child process during command executio
 name = "example"
 cmd = "command"
 args = []
-env = ["KEY1=value1", "KEY2=value2", ...]
+env_vars = ["KEY1=value1", "KEY2=value2", ...]
 ```
 
 #### Parameter Details
@@ -571,7 +571,7 @@ env = ["KEY1=value1", "KEY2=value2", ...]
 name = "run_app"
 cmd = "/opt/app/server"
 args = []
-env = [
+env_vars = [
     "LOG_LEVEL=debug",
     "PORT=8080",
     "CONFIG_FILE=/etc/app/config.yaml",
@@ -585,7 +585,7 @@ env = [
 name = "db_migration"
 cmd = "/opt/app/migrate"
 args = []
-env = [
+env_vars = [
     "DATABASE_URL=postgresql://localhost:5432/mydb",
     "DB_USER=appuser",
     "DB_PASSWORD=secret123",
@@ -602,7 +602,7 @@ vars = [
     "backup_dir=/var/backups",
     "date=2025-01-15",
 ]
-env = [
+env_vars = [
     "BACKUP_DIR=%{backup_dir}",
     "BACKUP_FILE=%{backup_dir}/backup-%{date}.tar.gz",
 ]
@@ -611,13 +611,13 @@ env = [
 
 #### Important Notes
 
-##### 1. Relationship with env_allowlist
+##### 1. Relationship with env_allowed
 
-Environment variables set must be included in the group or global `env_allowlist`:
+Environment variables set must be included in the group or global `env_allowed`:
 
 ```toml
 [global]
-env_allowlist = ["PATH", "LOG_LEVEL", "DATABASE_URL"]
+env_allowed = ["PATH", "LOG_LEVEL", "DATABASE_URL"]
 
 [[groups]]
 name = "app_group"
@@ -626,10 +626,10 @@ name = "app_group"
 name = "run_app"
 cmd = "/opt/app/server"
 args = []
-env = [
-    "LOG_LEVEL=debug",      # OK: in env_allowlist
-    "DATABASE_URL=...",     # OK: in env_allowlist
-    "UNAUTHORIZED_VAR=x",   # Error: not in env_allowlist
+env_vars = [
+    "LOG_LEVEL=debug",      # OK: in env_allowed
+    "DATABASE_URL=...",     # OK: in env_allowed
+    "UNAUTHORIZED_VAR=x",   # Error: not in env_allowed
 ]
 ```
 
@@ -641,13 +641,13 @@ env = [
 
 ```toml
 # Correct
-env = [
+env_vars = [
     "KEY=value",
     "EMPTY_VAR=",  # Empty value
 ]
 
 # Wrong
-env = [
+env_vars = [
     "KEY",         # Error: no =
     "KEY value",   # Error: no =
 ]
@@ -659,7 +659,7 @@ The same key cannot be defined multiple times:
 
 ```toml
 # Wrong: LOG_LEVEL is duplicated
-env = [
+env_vars = [
     "LOG_LEVEL=debug",
     "LOG_LEVEL=info",  # Error: duplicate
 ]
@@ -796,7 +796,7 @@ args = ["-c", "3", "localhost"]
 name = "long_backup"
 cmd = "/usr/bin/pg_dump"
 args = ["--all-databases"]
-output = "full_backup.sql"
+output_file = "full_backup.sql"
 timeout = 1800  # 30 minutes = 1800 seconds
 ```
 
@@ -937,7 +937,7 @@ run_as_group = "admingroup"
 
 ## 6.5 Risk Management
 
-### 6.5.1 max_risk_level - Maximum Risk Level
+### 6.5.1 risk_level - Maximum Risk Level
 
 #### Overview
 
@@ -950,7 +950,7 @@ Specifies the maximum risk level allowed for a command. If the command's risk ex
 name = "example"
 cmd = "command"
 args = []
-max_risk_level = "risk_level"
+risk_level = "risk_level"
 ```
 
 #### Parameter Details
@@ -991,7 +991,7 @@ go-safe-cmd-runner automatically assesses command risk from the following elemen
 name = "list_files"
 cmd = "/bin/ls"
 args = ["-la"]
-max_risk_level = "low"  # Read-only, so low risk
+risk_level = "low"  # Read-only, so low risk
 ```
 
 #### Example 2: Medium-Risk Command
@@ -1001,7 +1001,7 @@ max_risk_level = "low"  # Read-only, so low risk
 name = "create_backup"
 cmd = "/usr/bin/tar"
 args = ["-czf", "backup.tar.gz", "/data"]
-max_risk_level = "medium"  # File creation, so medium risk
+risk_level = "medium"  # File creation, so medium risk
 ```
 
 #### Example 3: High-Risk Command
@@ -1012,7 +1012,7 @@ name = "install_package"
 cmd = "/usr/bin/apt-get"
 args = ["install", "-y", "package-name"]
 run_as_user = "root"
-max_risk_level = "high"  # System changes and privilege escalation, so high risk
+risk_level = "high"  # System changes and privilege escalation, so high risk
 ```
 
 #### Example 4: Behavior When Risk Level is Violated
@@ -1022,7 +1022,7 @@ max_risk_level = "high"  # System changes and privilege escalation, so high risk
 name = "dangerous_operation"
 cmd = "/bin/rm"
 args = ["-rf", "/tmp/data"]
-max_risk_level = "low"  # rm -rf is medium risk or higher
+risk_level = "low"  # rm -rf is medium risk or higher
 # This command is rejected (risk level exceeded)
 ```
 
@@ -1037,20 +1037,20 @@ name = "safe_operations"
 name = "read_config"
 cmd = "/bin/cat"
 args = ["/etc/app/config.yaml"]
-max_risk_level = "low"  # Read only
+risk_level = "low"  # Read only
 
 [[groups.commands]]
 name = "backup_data"
 cmd = "/usr/bin/tar"
 args = ["-czf", "backup.tar.gz", "/data"]
-max_risk_level = "medium"  # File creation
+risk_level = "medium"  # File creation
 
 [[groups.commands]]
 name = "system_update"
 cmd = "/usr/bin/apt-get"
 args = ["update"]
 run_as_user = "root"
-max_risk_level = "high"  # System changes and privilege escalation
+risk_level = "high"  # System changes and privilege escalation
 ```
 
 ## 6.6 Output Management
@@ -1068,7 +1068,7 @@ Saves the command's standard output to a file.
 name = "example"
 cmd = "command"
 args = []
-output = "file_path"
+output_file = "file_path"
 ```
 
 #### Parameter Details
@@ -1079,7 +1079,7 @@ output = "file_path"
 | **Required/Optional** | Optional |
 | **Configurable Level** | Command only |
 | **Valid Values** | Relative path or absolute path |
-| **Size Limit** | Limited by global max_output_size |
+| **Size Limit** | Limited by global output_size_limit |
 | **Directory Creation** | Automatically created as needed |
 
 #### Role
@@ -1101,7 +1101,7 @@ workdir = "/var/app/output"
 name = "export_users"
 cmd = "/opt/app/export"
 args = ["--table", "users"]
-output = "users.csv"
+output_file = "users.csv"
 # Saved to /var/app/output/users.csv
 ```
 
@@ -1112,7 +1112,7 @@ output = "users.csv"
 name = "system_report"
 cmd = "/usr/bin/systemctl"
 args = ["status"]
-output = "/var/log/reports/system_status.txt"
+output_file = "/var/log/reports/system_status.txt"
 # Saved with absolute path
 ```
 
@@ -1127,7 +1127,7 @@ workdir = "/var/app"
 name = "export_logs"
 cmd = "/opt/app/export-logs"
 args = []
-output = "logs/export/output.txt"
+output_file = "logs/export/output.txt"
 # /var/app/logs/export/ directory is automatically created,
 # saved to /var/app/logs/export/output.txt
 ```
@@ -1143,36 +1143,36 @@ workdir = "/tmp/reports"
 name = "disk_usage"
 cmd = "/bin/df"
 args = ["-h"]
-output = "disk_usage.txt"
+output_file = "disk_usage.txt"
 
 [[groups.commands]]
 name = "memory_info"
 cmd = "/usr/bin/free"
 args = ["-h"]
-output = "memory_info.txt"
+output_file = "memory_info.txt"
 
 [[groups.commands]]
 name = "process_list"
 cmd = "/bin/ps"
 args = ["aux"]
-output = "processes.txt"
+output_file = "processes.txt"
 ```
 
 #### Important Notes
 
 ##### 1. Size Limit
 
-Output size is limited by `max_output_size` (global setting):
+Output size is limited by `output_size_limit` (global setting):
 
 ```toml
 [global]
-max_output_size = 1048576  # 1MB
+output_size_limit = 1048576  # 1MB
 
 [[groups.commands]]
 name = "large_export"
 cmd = "/usr/bin/pg_dump"
 args = ["large_db"]
-output = "dump.sql"
+output_file = "dump.sql"
 # If output exceeds 1MB, a warning is recorded
 ```
 
@@ -1191,7 +1191,7 @@ If a file with the same name exists, it will be overwritten:
 name = "daily_report"
 cmd = "/opt/app/report"
 args = []
-output = "daily.txt"
+output_file = "daily.txt"
 # Existing daily.txt is overwritten
 ```
 
@@ -1210,8 +1210,8 @@ version = "1.0"
 timeout = 300
 workdir = "/var/app"
 log_level = "info"
-env_allowlist = ["PATH", "HOME", "DATABASE_URL", "BACKUP_DIR"]
-max_output_size = 10485760  # 10MB
+env_allowed = ["PATH", "HOME", "DATABASE_URL", "BACKUP_DIR"]
+output_size_limit = 10485760  # 10MB
 verify_files = []  # Commands are automatically verified, so can be empty if no additional files
 
 [[groups]]
@@ -1219,7 +1219,7 @@ name = "database_operations"
 description = "Database-related operations"
 priority = 10
 workdir = "/var/backups/db"
-env_allowlist = ["PATH", "DATABASE_URL", "BACKUP_DIR"]
+env_allowed = ["PATH", "DATABASE_URL", "BACKUP_DIR"]
 verify_files = ["/etc/postgresql/pg_hba.conf"]  # Only specify additional files like config files
 
 # Command 1: Database backup
@@ -1228,10 +1228,10 @@ name = "full_backup"
 description = "Backup of all PostgreSQL databases"
 cmd = "/usr/bin/pg_dump"
 args = ["--all-databases", "--verbose"]
-env = ["DATABASE_URL=postgresql://localhost/postgres"]
-output = "full_backup.sql"
+env_vars = ["DATABASE_URL=postgresql://localhost/postgres"]
+output_file = "full_backup.sql"
 timeout = 1800  # 30 minutes
-max_risk_level = "medium"
+risk_level = "medium"
 
 # Command 2: Verify backup
 [[groups.commands]]
@@ -1239,10 +1239,10 @@ name = "verify_backup"
 description = "Verify backup file integrity"
 cmd = "/usr/bin/psql"
 args = ["--dry-run", "-f", "full_backup.sql"]
-env = ["DATABASE_URL=postgresql://localhost/testdb"]
-output = "verification.log"
+env_vars = ["DATABASE_URL=postgresql://localhost/testdb"]
+output_file = "verification.log"
 timeout = 600  # 10 minutes
-max_risk_level = "low"
+risk_level = "low"
 
 # Command 3: Delete old backups
 [[groups.commands]]
@@ -1251,14 +1251,14 @@ description = "Delete backup files older than 30 days"
 cmd = "/usr/bin/find"
 args = ["/var/backups/db", "-name", "*.sql", "-mtime", "+30", "-delete"]
 timeout = 300  # 5 minutes
-max_risk_level = "medium"
+risk_level = "medium"
 
 [[groups]]
 name = "system_maintenance"
 description = "System maintenance tasks"
 priority = 20
 workdir = "/tmp"
-env_allowlist = []  # No environment variables
+env_allowed = []  # No environment variables
 
 # Command 4: Disk usage report
 [[groups.commands]]
@@ -1266,9 +1266,9 @@ name = "disk_report"
 description = "Generate disk usage report"
 cmd = "/bin/df"
 args = ["-h", "/var"]
-output = "/var/log/disk_usage.txt"
+output_file = "/var/log/disk_usage.txt"
 timeout = 60
-max_risk_level = "low"
+risk_level = "low"
 
 # Command 5: System update (root privileges)
 [[groups.commands]]
@@ -1278,7 +1278,7 @@ cmd = "/usr/bin/apt-get"
 args = ["update"]
 run_as_user = "root"
 timeout = 600
-max_risk_level = "high"
+risk_level = "high"
 
 [[groups]]
 name = "temporary_processing"
@@ -1291,9 +1291,9 @@ name = "image_resize"
 description = "Resize image processing"
 cmd = "/usr/bin/convert"
 args = ["/data/input.jpg", "-resize", "800x600", "%{__runner_workdir}/resized.jpg"]
-output = "conversion.log"
+output_file = "conversion.log"
 timeout = 300
-max_risk_level = "low"
+risk_level = "low"
 
 # Command 7: Work in fixed directory
 [[groups.commands]]
@@ -1303,7 +1303,7 @@ cmd = "/usr/bin/cp"
 args = ["%{__runner_workdir}/resized.jpg", "/var/output/final.jpg"]
 workdir = "/var/output"
 timeout = 60
-max_risk_level = "low"
+risk_level = "low"
 ```
 
 ## Next Steps

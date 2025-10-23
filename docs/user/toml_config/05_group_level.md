@@ -34,7 +34,7 @@ Defines environment variables that are commonly used by all commands within that
 ```toml
 [[groups]]
 name = "example"
-env = ["KEY1=value1", "KEY2=value2", ...]
+env_vars = ["KEY1=value1", "KEY2=value2", ...]
 ```
 
 #### Parameter Details
@@ -62,15 +62,15 @@ env = ["KEY1=value1", "KEY2=value2", ...]
 version = "1.0"
 
 [global]
-env = [
+env_vars = [
     "BASE_DIR=/opt/app",
     "LOG_LEVEL=info",
 ]
-env_allowlist = ["HOME"]
+env_allowed = ["HOME"]
 
 [[groups]]
 name = "database_group"
-env = [
+env_vars = [
     "DB_HOST=localhost",
     "DB_PORT=5432",
     "DB_DATA=%{BASE_DIR}/db-data",  # References BASE_DIR from Global.env
@@ -89,14 +89,14 @@ args = ["-h", "%{DB_HOST}", "-p", "%{DB_PORT}"]
 version = "1.0"
 
 [global]
-env = [
+env_vars = [
     "LOG_LEVEL=info",
     "ENV_TYPE=production",
 ]
 
 [[groups]]
 name = "development_group"
-env = [
+env_vars = [
     "LOG_LEVEL=debug",      # Overrides Global.env LOG_LEVEL
     "ENV_TYPE=development", # Overrides Global.env ENV_TYPE
 ]
@@ -114,11 +114,11 @@ args = ["--log-level", "%{LOG_LEVEL}"]
 version = "1.0"
 
 [global]
-env = ["APP_ROOT=/opt/myapp"]
+env_vars = ["APP_ROOT=/opt/myapp"]
 
 [[groups]]
 name = "web_group"
-env = [
+env_vars = [
     "WEB_DIR=%{APP_ROOT}/web",         # References APP_ROOT from Global.env
     "STATIC_DIR=%{WEB_DIR}/static",    # References WEB_DIR from Group.env
     "UPLOAD_DIR=%{WEB_DIR}/uploads",   # References WEB_DIR from Group.env
@@ -141,15 +141,15 @@ Environment variables are resolved in the following priority order:
 
 ```toml
 [global]
-env = ["SHARED=global", "OVERRIDE=global"]
+env_vars = ["SHARED=global", "OVERRIDE=global"]
 
 [[groups]]
 name = "example"
-env = ["OVERRIDE=group", "GROUP_ONLY=group"]  # Overrides OVERRIDE
+env_vars = ["OVERRIDE=group", "GROUP_ONLY=group"]  # Overrides OVERRIDE
 
 [[groups.commands]]
 name = "cmd1"
-env = ["OVERRIDE=command"]  # Further override
+env_vars = ["OVERRIDE=command"]  # Further override
 
 # Runtime environment variables:
 # SHARED=global
@@ -165,11 +165,11 @@ Within Group.env, you can reference variables defined in Global.env or other var
 
 ```toml
 [global]
-env = ["BASE=/opt/app"]
+env_vars = ["BASE=/opt/app"]
 
 [[groups]]
 name = "services"
-env = [
+env_vars = [
     "SERVICE_DIR=%{BASE}/services",     # References BASE from Global.env
     "CONFIG=%{SERVICE_DIR}/config",     # References SERVICE_DIR from Group.env
 ]
@@ -179,12 +179,12 @@ env = [
 
 ```toml
 [global]
-env_allowlist = ["HOME", "USER"]
+env_allowed = ["HOME", "USER"]
 
 [[groups]]
 name = "user_specific"
-env = [
-    "USER_DATA=%{HOME}/%{USER}/data",  # References system environment variables HOME and USER
+env_vars = [
+    "USER_DATA=${HOME}/%{USER}/data",  # References system environment variables HOME and USER
 ]
 ```
 
@@ -200,16 +200,16 @@ Defining the same KEY multiple times within the same group results in an error.
 
 ##### 3. Relationship with allowlist
 
-When variables defined in Group.env reference system environment variables, the referenced variables must be added to that group's `env_allowlist`.
+When variables defined in Group.env reference system environment variables, the referenced variables must be added to that group's `env_allowed`.
 
 ```toml
 [global]
-env_allowlist = ["PATH"]
+env_allowed = ["PATH"]
 
 [[groups]]
 name = "example"
-env = ["MY_HOME=%{HOME}/app"]  # References HOME
-env_allowlist = ["HOME"]       # Required: Allow HOME (overrides global)
+env_vars = ["MY_HOME=%{HOME}/app"]  # References HOME
+env_allowed = ["HOME"]       # Required: Allow HOME (overrides global)
 ```
 
 ##### 4. Independence Between Groups
@@ -219,7 +219,7 @@ Variables defined in Group.env are only valid within that group. They do not aff
 ```toml
 [[groups]]
 name = "group1"
-env = ["VAR=value1"]
+env_vars = ["VAR=value1"]
 
 [[groups.commands]]
 name = "cmd1"
@@ -246,15 +246,15 @@ args = ["%{VAR}"]  # Error: VAR is undefined
 ```toml
 # Recommended configuration
 [global]
-env = [
+env_vars = [
     "APP_ROOT=/opt/myapp",
     "ENV_TYPE=production",
 ]
-env_allowlist = ["HOME", "PATH"]
+env_allowed = ["HOME", "PATH"]
 
 [[groups]]
 name = "database"
-env = [
+env_vars = [
     "DB_HOST=localhost",              # Group-specific
     "DB_PORT=5432",                   # Group-specific
     "DB_DATA=%{APP_ROOT}/db-data",    # References Global.env
@@ -753,7 +753,7 @@ vars = [
 name = "start_web"
 cmd = "/usr/bin/nginx"
 args = ["-c", "%{web_root}/nginx.conf", "-g", "daemon off;"]
-env = ["PORT=%{port}"]
+env_vars = ["PORT=%{port}"]
 ```
 
 ##### Example 3: Environment-Specific Configuration
@@ -791,18 +791,18 @@ cmd = "%{app_dir}/bin/app"
 args = ["--config", "%{config_file}", "--db-host", "%{db_host}"]
 ```
 
-### 5.3.3 from_env - System Environment Variable Import (Group Level)
+### 5.3.3 env_import - System Environment Variable Import (Group Level)
 
 #### Overview
 
-Imports system environment variables as internal variables at group level. Uses **Merge** method — when a group defines `from_env` its entries are merged with Global.from_env (group entries take precedence when names collide).
+Imports system environment variables as internal variables at group level. Uses **Merge** method — when a group defines `env_import` its entries are merged with Global.env_import (group entries take precedence when names collide).
 
 #### Syntax
 
 ```toml
 [[groups]]
 name = "example"
-from_env = ["internal_var_name=SYSTEM_ENV_VAR_NAME", ...]
+env_import = ["internal_var_name=SYSTEM_ENV_VAR_NAME", ...]
 ```
 
 #### Parameter Details
@@ -812,35 +812,35 @@ from_env = ["internal_var_name=SYSTEM_ENV_VAR_NAME", ...]
 | **Type** | Array of strings (array of strings) |
 | **Required/Optional** | Optional |
 | **Configurable Level** | Global, Group |
-| **Default Value** | nil (inherits Global.from_env) |
+| **Default Value** | nil (inherits Global.env_import) |
 | **Format** | `"internal_var_name=SYSTEM_ENV_VAR_NAME"` format |
 | **Inheritance Behavior** | **Merge (union) method** |
 
 #### Inheritance Rules (Merge Method)
 
-| Group.from_env Status | Behavior |
+| Group.env_import Status | Behavior |
 |---------------------|---------|
-| **Undefined (nil)** | Inherits Global.from_env |
-| **Empty array `[]`** | Inherits Global.from_env |
-| **Defined with values** | Global.from_env + Group.from_env are merged (Group wins on name conflicts) |
+| **Undefined (nil)** | Inherits Global.env_import |
+| **Empty array `[]`** | Inherits Global.env_import |
+| **Defined with values** | Global.env_import + Group.env_import are merged (Group wins on name conflicts) |
 
 #### Configuration Examples
 
-##### Example 1: Inheriting Global.from_env
+##### Example 1: Inheriting Global.env_import
 
 ```toml
 version = "1.0"
 
 [global]
-env_allowlist = ["HOME", "USER"]
-from_env = [
+env_allowed = ["HOME", "USER"]
+env_import = [
     "home=HOME",
     "username=USER"
 ]
 
 [[groups]]
 name = "inherit_group"
-# from_env undefined → Inherits Global.from_env
+# env_import undefined → Inherits Global.env_import
 
 [[groups.commands]]
 name = "show_home"
@@ -849,22 +849,22 @@ args = ["Home: %{home}, User: %{username}"]
 # home and username are available
 ```
 
-##### Example 2: Merging with Global.from_env
+##### Example 2: Merging with Global.env_import
 
 ```toml
 version = "1.0"
 
 [global]
-env_allowlist = ["HOME", "USER", "PATH"]
-from_env = [
+env_allowed = ["HOME", "USER", "PATH"]
+env_import = [
     "home=HOME",
     "user=USER"
 ]
 
 [[groups]]
 name = "merge_group"
-from_env = [
-    "path=PATH"  # Merged with Global.from_env
+env_import = [
+    "path=PATH"  # Merged with Global.env_import
 ]
 
 [[groups.commands]]
@@ -880,15 +880,15 @@ args = ["Home: %{home}, User: %{user}, Path: %{path}"]
 version = "1.0"
 
 [global]
-env_allowlist = ["HOME", "USER", "HOSTNAME"]
-from_env = [
+env_allowed = ["HOME", "USER", "HOSTNAME"]
+env_import = [
     "home=HOME",
     "user=USER"
 ]
 
 [[groups]]
 name = "override_merge_group"
-from_env = [
+env_import = [
     "home=CUSTOM_HOME_DIR",  # home is overridden by the group
     "host=HOSTNAME"          # new variable added by the group
 ]
@@ -906,12 +906,12 @@ args = ["Home: %{home}, User: %{user}, Host: %{host}"]
 version = "1.0"
 
 [global]
-env_allowlist = ["HOME"]
-from_env = ["home=HOME"]
+env_allowed = ["HOME"]
+env_import = ["home=HOME"]
 
 [[groups]]
 name = "empty_merge_group"
-from_env = []  # Empty array: Global.from_env is still inherited (merge behavior)
+env_import = []  # Empty array: Global.env_import is still inherited (merge behavior)
 
 [[groups.commands]]
 name = "show_home"
@@ -924,18 +924,18 @@ args = ["Home: %{home}"]
 
 **Merge method benefits**: Groups can add new variables while still inheriting common variables defined at the Global level. This reduces duplication and provides a predictable, consistent inheritance model.
 
-### 5.3.4 env_allowlist - Environment Variable Allowlist (Group Level)
+### 5.3.4 env_allowed - Environment Variable Allowlist (Group Level)
 
 #### Overview
 
-Controls the import of system environment variables through `from_env` at group level. Works with **Override(override)** method for allowlist itself.
+Controls the import of system environment variables through `env_import` at group level. Works with **Override(override)** method for allowlist itself.
 
 #### Syntax
 
 ```toml
 [[groups]]
 name = "example"
-env_allowlist = ["variable1", "variable2", ...]
+env_allowed = ["variable1", "variable2", ...]
 ```
 
 #### Parameter Details
@@ -945,7 +945,7 @@ env_allowlist = ["variable1", "variable2", ...]
 | **Type** | Array of strings (array of strings) |
 | **Required/Optional** | Optional |
 | **Configurable Level** | Global, Group |
-| **Default Value** | nil (inherits Global.env_allowlist) |
+| **Default Value** | nil (inherits Global.env_allowed) |
 | **Valid Values** | List of environment variable names, or empty array |
 | **Inheritance Behavior** | **Override (replacement) method** |
 
@@ -960,7 +960,7 @@ Defines process environment variables commonly used by all commands within that 
 ```toml
 [[groups]]
 name = "example"
-env = ["KEY1=value1", "KEY2=value2", ...]
+env_vars = ["KEY1=value1", "KEY2=value2", ...]
 ```
 
 #### Parameter Details
@@ -991,14 +991,14 @@ version = "1.0"
 
 [global]
 vars = ["base_dir=/opt/app"]
-env = ["LOG_LEVEL=info"]
+env_vars = ["LOG_LEVEL=info"]
 
 [[groups]]
 name = "database_group"
 vars = [
     "db_data=%{base_dir}/db-data"
 ]
-env = [
+env_vars = [
     "DB_HOST=localhost",
     "DB_PORT=5432",
     "DB_DATA=%{db_data}"  # Reference internal variable
@@ -1017,14 +1017,14 @@ args = ["-h", "%{DB_HOST}", "-p", "%{DB_PORT}"]
 version = "1.0"
 
 [global]
-env = [
+env_vars = [
     "LOG_LEVEL=info",
     "ENV_TYPE=production",
 ]
 
 [[groups]]
 name = "development_group"
-env = [
+env_vars = [
     "LOG_LEVEL=debug",      # Override global LOG_LEVEL
     "ENV_TYPE=development", # Override global ENV_TYPE
 ]
@@ -1042,24 +1042,24 @@ args = ["--log-level", "%{LOG_LEVEL}"]
 version = "1.0"
 
 [global]
-env = ["APP_ROOT=/opt/myapp"]
+env_vars = ["APP_ROOT=/opt/myapp"]
 
 [[groups]]
 name = "web_group"
-env = [
+env_vars = [
     "WEB_DIR=%{APP_ROOT}/web",         # Reference APP_ROOT from Global.env
     "STATIC_DIR=%{WEB_DIR}/static",    # Reference WEB_DIR from Group.env
     "UPLOAD_DIR=%{WEB_DIR}/uploads",   # Reference WEB_DIR from Group.env
 
 ## 5.4 Environment Variable Inheritance Modes
 
-The environment variable allowlist (`env_allowlist`) has three inheritance modes. This is one of the important features of go-safe-cmd-runner.
+The environment variable allowlist (`env_allowed`) has three inheritance modes. This is one of the important features of go-safe-cmd-runner.
 
 ### 5.4.1 Inherit Mode (inherit)
 
 #### Behavior
 
-When `env_allowlist` is **not specified** at group level, inherits the global setting.
+When `env_allowed` is **not specified** at group level, inherits the global setting.
 
 #### Use Case
 
@@ -1072,11 +1072,11 @@ When `env_allowlist` is **not specified** at group level, inherits the global se
 version = "1.0"
 
 [global]
-env_allowlist = ["PATH", "HOME", "USER"]
+env_allowed = ["PATH", "HOME", "USER"]
 
 [[groups]]
 name = "inherit_group"
-# env_allowlist not specified → inherits global
+# env_allowed not specified → inherits global
 
 [[groups.commands]]
 name = "show_env"
@@ -1089,7 +1089,7 @@ args = []
 
 #### Behavior
 
-When `env_allowlist` has **specific values** at group level, ignores global settings and uses only the specified values.
+When `env_allowed` has **specific values** at group level, ignores global settings and uses only the specified values.
 
 #### Use Case
 
@@ -1102,17 +1102,17 @@ When `env_allowlist` has **specific values** at group level, ignores global sett
 version = "1.0"
 
 [global]
-env_allowlist = ["PATH", "HOME", "USER"]
+env_allowed = ["PATH", "HOME", "USER"]
 
 [[groups]]
 name = "explicit_group"
-env_allowlist = ["PATH", "DATABASE_URL", "API_KEY"]  # Ignores global
+env_allowed = ["PATH", "DATABASE_URL", "API_KEY"]  # Ignores global
 
 [[groups.commands]]
 name = "run_app"
 cmd = "/opt/app/bin/app"
 args = []
-env = [
+env_vars = [
     "DATABASE_URL=postgresql://localhost/mydb",
     "API_KEY=secret123",
 ]
@@ -1124,7 +1124,7 @@ env = [
 
 #### Behavior
 
-When `env_allowlist = []` (an **empty array**) is explicitly specified at group level, all environment variables are rejected.
+When `env_allowed = []` (an **empty array**) is explicitly specified at group level, all environment variables are rejected.
 
 #### Use Case
 
@@ -1137,11 +1137,11 @@ When `env_allowlist = []` (an **empty array**) is explicitly specified at group 
 version = "1.0"
 
 [global]
-env_allowlist = ["PATH", "HOME", "USER"]
+env_allowed = ["PATH", "HOME", "USER"]
 
 [[groups]]
 name = "reject_group"
-env_allowlist = []  # Reject all environment variables
+env_allowed = []  # Reject all environment variables
 
 [[groups.commands]]
 name = "isolated_command"
@@ -1156,15 +1156,15 @@ Mode determination follows this logic:
 
 ```mermaid
 flowchart TD
-    A["Check env_allowlist"] --> B{"Is env_allowlist<br/>defined at<br/>group level?"}
+    A["Check env_allowed"] --> B{"Is env_allowed<br/>defined at<br/>group level?"}
     B -->|No| C["Inherit Mode<br/>inherit"]
     B -->|Yes| D{"Is value<br/>empty array<br/>[]?"}
     D -->|Yes| E["Reject Mode<br/>reject"]
     D -->|No| F["Explicit Mode<br/>explicit"]
 
-    C --> G["Use global<br/>env_allowlist"]
+    C --> G["Use global<br/>env_allowed"]
     E --> H["Reject all<br/>environment variables"]
-    F --> I["Use group's<br/>env_allowlist"]
+    F --> I["Use group's<br/>env_allowed"]
 
     style C fill:#e8f5e9
     style E fill:#ffebee
@@ -1177,12 +1177,12 @@ flowchart TD
 version = "1.0"
 
 [global]
-env_allowlist = ["PATH", "HOME", "USER"]
+env_allowed = ["PATH", "HOME", "USER"]
 
 # Mode 1: Inherit Mode
 [[groups]]
 name = "group_inherit"
-# env_allowlist not specified
+# env_allowed not specified
 # Result: PATH, HOME, USER are available
 
 [[groups.commands]]
@@ -1193,7 +1193,7 @@ args = ["HOME"]  # HOME is output
 # Mode 2: Explicit Mode
 [[groups]]
 name = "group_explicit"
-env_allowlist = ["PATH", "CUSTOM_VAR"]
+env_allowed = ["PATH", "CUSTOM_VAR"]
 # Result: Only PATH, CUSTOM_VAR are available (HOME, USER are not)
 
 [[groups.commands]]
@@ -1205,12 +1205,12 @@ args = ["HOME"]  # Error: HOME is not allowed
 name = "test3"
 cmd = "printenv"
 args = ["CUSTOM_VAR"]
-env = ["CUSTOM_VAR=value"]  # CUSTOM_VAR is output
+env_vars = ["CUSTOM_VAR=value"]  # CUSTOM_VAR is output
 
 # Mode 3: Reject Mode
 [[groups]]
 name = "group_reject"
-env_allowlist = []
+env_allowed = []
 # Result: All environment variables are rejected
 
 [[groups.commands]]
@@ -1227,12 +1227,12 @@ args = ["PATH"]  # Error: PATH is also not allowed
 version = "1.0"
 
 [global]
-env_allowlist = ["PATH", "HOME", "USER"]
+env_allowed = ["PATH", "HOME", "USER"]
 
 # Normal tasks: Inherit global
 [[groups]]
 name = "normal_tasks"
-# env_allowlist not specified → Inherit mode
+# env_allowed not specified → Inherit mode
 
 [[groups.commands]]
 name = "backup"
@@ -1242,7 +1242,7 @@ args = []
 # Sensitive data processing: Minimal environment variables
 [[groups]]
 name = "sensitive_data"
-env_allowlist = ["PATH"]  # Allow only PATH → Explicit mode
+env_allowed = ["PATH"]  # Allow only PATH → Explicit mode
 
 [[groups.commands]]
 name = "process_sensitive"
@@ -1252,7 +1252,7 @@ args = []
 # Completely isolated tasks: No environment variables
 [[groups]]
 name = "isolated_tasks"
-env_allowlist = []  # Reject all → Reject mode
+env_allowed = []  # Reject all → Reject mode
 
 [[groups.commands]]
 name = "isolated_check"
@@ -1266,12 +1266,12 @@ args = ["Completely isolated"]
 version = "1.0"
 
 [global]
-env_allowlist = ["PATH", "HOME"]
+env_allowed = ["PATH", "HOME"]
 
 # Development environment group
 [[groups]]
 name = "development"
-env_allowlist = [
+env_allowed = [
     "PATH",
     "HOME",
     "DEBUG_MODE",
@@ -1282,12 +1282,12 @@ env_allowlist = [
 name = "dev_server"
 cmd = "/opt/app/server"
 args = []
-env = ["DEBUG_MODE=true", "DEV_DATABASE_URL=postgresql://localhost/dev"]
+env_vars = ["DEBUG_MODE=true", "DEV_DATABASE_URL=postgresql://localhost/dev"]
 
 # Production environment group
 [[groups]]
 name = "production"
-env_allowlist = [
+env_allowed = [
     "PATH",
     "PROD_DATABASE_URL",
 ]  # Explicit mode: Only production variables
@@ -1296,7 +1296,7 @@ env_allowlist = [
 name = "prod_server"
 cmd = "/opt/app/server"
 args = []
-env = ["PROD_DATABASE_URL=postgresql://prod-server/prod"]
+env_vars = ["PROD_DATABASE_URL=postgresql://prod-server/prod"]
 ```
 
 ## Overall Group Configuration Example
@@ -1309,7 +1309,7 @@ version = "1.0"
 [global]
 timeout = 300
 workdir = "/tmp"
-env_allowlist = ["PATH", "HOME", "USER"]
+env_allowed = ["PATH", "HOME", "USER"]
 verify_files = ["/bin/sh"]
 
 # Group 1: Database backup
@@ -1319,14 +1319,14 @@ description = "Daily PostgreSQL database backup"
 priority = 10
 workdir = "/var/backups/db"
 verify_files = ["/usr/bin/pg_dump", "/usr/bin/psql"]
-env_allowlist = ["PATH", "PGDATA", "PGHOST"]
+env_allowed = ["PATH", "PGDATA", "PGHOST"]
 
 [[groups.commands]]
 name = "backup_main_db"
 description = "Backup of main database"
 cmd = "/usr/bin/pg_dump"
 args = ["-U", "postgres", "maindb"]
-output = "maindb_backup.sql"
+output_file = "maindb_backup.sql"
 timeout = 600
 
 # Group 2: Log rotation
@@ -1335,7 +1335,7 @@ name = "log_rotation"
 description = "Compression and deletion of old log files"
 priority = 20
 workdir = "/var/log/app"
-env_allowlist = ["PATH"]  # Explicit mode: PATH only
+env_allowed = ["PATH"]  # Explicit mode: PATH only
 
 [[groups.commands]]
 name = "compress_old_logs"
@@ -1353,13 +1353,13 @@ name = "temp_processing"
 description = "Data processing in temporary directory"
 priority = 30
 # workdir not specified - a temporary directory is automatically generated
-env_allowlist = []  # Reject mode: No environment variables
+env_allowed = []  # Reject mode: No environment variables
 
 [[groups.commands]]
 name = "create_temp_data"
 cmd = "echo"
 args = ["Temporary data"]
-output = "temp_data.txt"
+output_file = "temp_data.txt"
 
 [[groups.commands]]
 name = "process_temp_data"

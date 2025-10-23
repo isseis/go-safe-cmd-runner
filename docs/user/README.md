@@ -162,7 +162,7 @@ version = "1.0"
 [global]
 timeout = 3600
 log_level = "info"
-env_allowlist = ["PATH", "HOME"]
+env_allowed = ["PATH", "HOME"]
 
 [[groups]]
 name = "backup"
@@ -172,9 +172,9 @@ description = "Database backup"
 name = "db_backup"
 cmd = "/usr/bin/pg_dump"
 args = ["mydb"]
-output = "backup.sql"
+output_file = "backup.sql"
 run_as_user = "postgres"
-max_risk_level = "medium"
+risk_level = "medium"
 ```
 
 [Learn more →](toml_config/README.md)
@@ -281,7 +281,7 @@ version = "1.0"
 
 [global]
 timeout = 3600
-env_allowlist = ["PATH", "HOME"]
+env_allowed = ["PATH", "HOME"]
 
 [[groups]]
 name = "backup"
@@ -290,7 +290,7 @@ name = "backup"
 name = "db_backup"
 cmd = "/usr/bin/pg_dump"
 args = ["-U", "postgres", "mydb"]
-output = "/var/backups/db.sql"
+output_file = "/var/backups/db.sql"
 run_as_user = "postgres"
 EOF
 

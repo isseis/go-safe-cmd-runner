@@ -15,7 +15,7 @@ version = "1.0"
 timeout = 300
 workdir = "/tmp"
 log_level = "info"
-env_allowlist = ["PATH", "HOME"]
+env_allowed = ["PATH", "HOME"]
 
 [[groups]]
 name = "daily_backup"
@@ -31,7 +31,7 @@ args = [
     "config-backup.tar.gz",
     "/etc/myapp",
 ]
-max_risk_level = "medium"
+risk_level = "medium"
 timeout = 600
 
 [[groups.commands]]
@@ -43,7 +43,7 @@ args = [
     "logs-backup.tar.gz",
     "/var/log/myapp",
 ]
-max_risk_level = "medium"
+risk_level = "medium"
 timeout = 600
 
 [[groups.commands]]
@@ -51,7 +51,7 @@ name = "list_backups"
 description = "List backup files"
 cmd = "/bin/ls"
 args = ["-lh", "*.tar.gz"]
-output = "backup-list.txt"
+output_file = "backup-list.txt"
 ```
 
 ## 8.2 Security-Focused Configuration Examples
@@ -67,8 +67,8 @@ version = "1.0"
 timeout = 300
 workdir = "/opt/secure"
 log_level = "info"
-skip_standard_paths = false  # Verify all files
-env_allowlist = ["PATH"]      # Minimal environment variables
+verify_standard_paths = true  # Verify all files
+env_allowed = ["PATH"]      # Minimal environment variables
 verify_files = [
     "/bin/sh",
     "/bin/tar",
@@ -79,7 +79,7 @@ verify_files = [
 name = "secure_backup"
 description = "Secure backup process"
 workdir = "/var/secure/backups"
-env_allowlist = ["PATH", "GPG_KEY_ID"]
+env_allowed = ["PATH", "GPG_KEY_ID"]
 verify_files = [
     "/opt/secure/bin/backup-tool",
 ]
@@ -93,7 +93,7 @@ args = [
     "data-backup.tar.gz",
     "/opt/secure/data",
 ]
-max_risk_level = "medium"
+risk_level = "medium"
 timeout = 1800
 
 [[groups.commands]]
@@ -106,7 +106,7 @@ args = [
     "--recipient", "%{gpg_key_id}",
     "data-backup.tar.gz",
 ]
-max_risk_level = "medium"
+risk_level = "medium"
 
 [[groups.commands]]
 name = "verify_encrypted"
@@ -116,7 +116,7 @@ args = [
     "--verify",
     "data-backup.tar.gz.gpg",
 ]
-output = "verification-result.txt"
+output_file = "verification-result.txt"
 ```
 
 ## 8.3 Configuration Examples with Resource Management
@@ -131,7 +131,7 @@ version = "1.0"
 [global]
 timeout = 300
 log_level = "info"
-env_allowlist = ["PATH", "HOME"]
+env_allowed = ["PATH", "HOME"]
 
 [[groups]]
 name = "temp_processing"
@@ -146,7 +146,7 @@ args = [
     "-o", "data.csv",
     "https://example.com/data/export.csv",
 ]
-max_risk_level = "medium"
+risk_level = "medium"
 timeout = 600
 
 [[groups.commands]]
@@ -157,7 +157,7 @@ args = [
     "--input", "data.csv",
     "--output", "processed.csv",
 ]
-max_risk_level = "medium"
+risk_level = "medium"
 timeout = 900
 
 [[groups.commands]]
@@ -169,9 +169,9 @@ args = [
     "-F", "file=@processed.csv",
     "https://example.com/api/upload",
 ]
-max_risk_level = "medium"
+risk_level = "medium"
 timeout = 600
-output = "upload-response.txt"
+output_file = "upload-response.txt"
 ```
 
 ## 8.4 Configuration Examples with Privilege Escalation
@@ -187,7 +187,7 @@ version = "1.0"
 timeout = 600
 workdir = "/tmp"
 log_level = "info"
-env_allowlist = ["PATH", "HOME"]
+env_allowed = ["PATH", "HOME"]
 verify_files = [
     "/usr/bin/apt-get",
     "/usr/bin/systemctl",
@@ -204,7 +204,7 @@ name = "check_disk_space"
 description = "Check disk usage"
 cmd = "/bin/df"
 args = ["-h"]
-output = "disk-usage.txt"
+output_file = "disk-usage.txt"
 
 # Privileged task: Update packages
 [[groups.commands]]
@@ -213,7 +213,7 @@ description = "Update package list"
 cmd = "/usr/bin/apt-get"
 args = ["update"]
 run_as_user = "root"
-max_risk_level = "high"
+risk_level = "high"
 timeout = 900
 
 # Privileged task: Restart service
@@ -223,7 +223,7 @@ description = "Restart application service"
 cmd = "/usr/bin/systemctl"
 args = ["restart", "myapp.service"]
 run_as_user = "root"
-max_risk_level = "high"
+risk_level = "high"
 
 # Non-privileged task: Check service status
 [[groups.commands]]
@@ -231,7 +231,7 @@ name = "check_service_status"
 description = "Check service status"
 cmd = "/usr/bin/systemctl"
 args = ["status", "myapp.service"]
-output = "service-status.txt"
+output_file = "service-status.txt"
 ```
 
 ## 8.5 Configuration Examples Using Output Capture
@@ -247,8 +247,8 @@ version = "1.0"
 timeout = 300
 workdir = "/var/reports"
 log_level = "info"
-env_allowlist = ["PATH", "HOME"]
-max_output_size = 10485760  # 10MB
+env_allowed = ["PATH", "HOME"]
+output_size_limit = 10485760  # 10MB
 
 [[groups]]
 name = "system_report"
@@ -259,35 +259,35 @@ name = "disk_usage_report"
 description = "Disk usage report"
 cmd = "/bin/df"
 args = ["-h"]
-output = "reports/disk-usage.txt"
+output_file = "reports/disk-usage.txt"
 
 [[groups.commands]]
 name = "memory_report"
 description = "Memory usage report"
 cmd = "/usr/bin/free"
 args = ["-h"]
-output = "reports/memory-usage.txt"
+output_file = "reports/memory-usage.txt"
 
 [[groups.commands]]
 name = "process_report"
 description = "Process list report"
 cmd = "/bin/ps"
 args = ["aux"]
-output = "reports/processes.txt"
+output_file = "reports/processes.txt"
 
 [[groups.commands]]
 name = "network_report"
 description = "Network connection status report"
 cmd = "/bin/netstat"
 args = ["-tuln"]
-output = "reports/network-connections.txt"
+output_file = "reports/network-connections.txt"
 
 [[groups.commands]]
 name = "service_report"
 description = "Service status report"
 cmd = "/usr/bin/systemctl"
 args = ["list-units", "--type=service", "--state=running"]
-output = "reports/services.txt"
+output_file = "reports/services.txt"
 
 # Archive report files
 [[groups.commands]]
@@ -300,7 +300,7 @@ args = [
     "system-report-%{date}.tar.gz",
     "reports/",
 ]
-max_risk_level = "medium"
+risk_level = "medium"
 ```
 
 ## 8.6 Configuration Examples Using Variable Expansion
@@ -315,7 +315,7 @@ version = "1.0"
 [global]
 timeout = 600
 log_level = "info"
-env_allowlist = ["PATH", "HOME"]
+env_allowed = ["PATH", "HOME"]
 
 # Development environment
 [[groups]]
@@ -334,7 +334,7 @@ args = [
     "%{config_dir}/%{env_type}/app.yml",
     "/etc/myapp/app.yml",
 ]
-max_risk_level = "medium"
+risk_level = "medium"
 
 [[groups.commands]]
 name = "start_dev_server"
@@ -351,7 +351,7 @@ args = [
     "--port", "%{api_port}",
     "--database", "%{db_url}",
 ]
-max_risk_level = "high"
+risk_level = "high"
 
 # Staging environment
 [[groups]]
@@ -370,7 +370,7 @@ args = [
     "%{config_dir}/%{env_type}/app.yml",
     "/etc/myapp/app.yml",
 ]
-max_risk_level = "medium"
+risk_level = "medium"
 
 [[groups.commands]]
 name = "start_staging_server"
@@ -387,7 +387,7 @@ args = [
     "--port", "%{api_port}",
     "--database", "%{db_url}",
 ]
-max_risk_level = "high"
+risk_level = "high"
 
 # Production environment
 [[groups]]
@@ -406,7 +406,7 @@ args = [
     "%{config_dir}/%{env_type}/app.yml",
     "/etc/myapp/app.yml",
 ]
-max_risk_level = "medium"
+risk_level = "medium"
 
 [[groups.commands]]
 name = "start_prod_server"
@@ -424,7 +424,7 @@ args = [
     "--database", "%{db_url}",
 ]
 run_as_user = "appuser"
-max_risk_level = "high"
+risk_level = "high"
 ```
 
 ## 8.7 Comprehensive Configuration Examples
@@ -440,8 +440,8 @@ version = "1.0"
 timeout = 900
 workdir = "/opt/deploy"
 log_level = "info"
-skip_standard_paths = true
-env_allowlist = [
+verify_standard_paths = false
+env_allowed = [
     "PATH",
     "HOME",
     "DB_USER",
@@ -450,7 +450,7 @@ env_allowlist = [
     "WEB_ROOT",
     "BACKUP_DIR",
 ]
-max_output_size = 52428800  # 50MB
+output_size_limit = 52428800  # 50MB
 
 # Phase 1: Preparation
 [[groups]]
@@ -473,7 +473,7 @@ args = [
     "%{backup_dir}/app-backup-%{timestamp}.tar.gz",
     "%{app_dir}",
 ]
-max_risk_level = "medium"
+risk_level = "medium"
 timeout = 1800
 
 [[groups.commands]]
@@ -481,14 +481,14 @@ name = "check_dependencies"
 description = "Check dependencies"
 cmd = "/usr/bin/dpkg"
 args = ["-l"]
-output = "installed-packages.txt"
+output_file = "installed-packages.txt"
 
 # Phase 2: Database update
 [[groups]]
 name = "database_migration"
 description = "Update database schema"
 priority = 2
-env_allowlist = ["PATH", "DB_USER", "DB_NAME", "PGPASSWORD"]
+env_allowed = ["PATH", "DB_USER", "DB_NAME", "PGPASSWORD"]
 verify_files = ["/usr/bin/psql", "/usr/bin/pg_dump"]
 
 [[groups.commands]]
@@ -500,16 +500,16 @@ vars = [
     "db_name=myapp_db",
     "timestamp=2025-10-02-120000",
 ]
-env = ["PGPASSWORD=secret123"]
+env_vars = ["PGPASSWORD=secret123"]
 args = [
     "-U", "%{db_user}",
     "-d", "%{db_name}",
     "-F", "c",
     "-f", "/var/backups/db/backup-%{timestamp}.dump",
 ]
-max_risk_level = "medium"
+risk_level = "medium"
 timeout = 1800
-output = "db-backup-log.txt"
+output_file = "db-backup-log.txt"
 
 [[groups.commands]]
 name = "run_migrations"
@@ -523,7 +523,7 @@ args = [
     "--database", "postgresql://%{db_user}@localhost/%{db_name}",
     "--migrations", "/opt/myapp/migrations",
 ]
-max_risk_level = "high"
+risk_level = "high"
 timeout = 600
 
 # Phase 3: Application deployment
@@ -539,7 +539,7 @@ description = "Stop application"
 cmd = "/usr/bin/systemctl"
 args = ["stop", "myapp.service"]
 run_as_user = "root"
-max_risk_level = "high"
+risk_level = "high"
 
 [[groups.commands]]
 name = "deploy_new_version"
@@ -550,7 +550,7 @@ args = [
     "/opt/deploy/releases/myapp-v2.0.0.tar.gz",
     "-C", "/opt/myapp",
 ]
-max_risk_level = "medium"
+risk_level = "medium"
 
 [[groups.commands]]
 name = "install_dependencies"
@@ -560,7 +560,7 @@ args = [
     "install",
     "-r", "/opt/myapp/requirements.txt",
 ]
-max_risk_level = "high"
+risk_level = "high"
 timeout = 600
 
 [[groups.commands]]
@@ -569,7 +569,7 @@ description = "Start application"
 cmd = "/usr/bin/systemctl"
 args = ["start", "myapp.service"]
 run_as_user = "root"
-max_risk_level = "high"
+risk_level = "high"
 
 # Phase 4: Web server configuration update
 [[groups]]
@@ -586,7 +586,7 @@ args = [
     "/etc/nginx/sites-available/myapp.conf",
 ]
 run_as_user = "root"
-max_risk_level = "high"
+risk_level = "high"
 
 [[groups.commands]]
 name = "test_nginx_config"
@@ -594,8 +594,8 @@ description = "Validate Nginx configuration"
 cmd = "/usr/bin/nginx"
 args = ["-t"]
 run_as_user = "root"
-max_risk_level = "medium"
-output = "nginx-config-test.txt"
+risk_level = "medium"
+output_file = "nginx-config-test.txt"
 
 [[groups.commands]]
 name = "reload_nginx"
@@ -603,7 +603,7 @@ description = "Reload Nginx"
 cmd = "/usr/bin/systemctl"
 args = ["reload", "nginx"]
 run_as_user = "root"
-max_risk_level = "high"
+risk_level = "high"
 
 # Phase 5: Deployment verification
 [[groups]]
@@ -621,7 +621,7 @@ args = [
     "http://localhost:8080/health",
 ]
 timeout = 30
-output = "health-check-result.txt"
+output_file = "health-check-result.txt"
 
 [[groups.commands]]
 name = "smoke_test"
@@ -632,7 +632,7 @@ args = [
     "-s",
     "http://localhost:8080/api/status",
 ]
-output = "smoke-test-result.txt"
+output_file = "smoke-test-result.txt"
 
 [[groups.commands]]
 name = "verify_database_connection"
@@ -647,7 +647,7 @@ args = [
     "-d", "%{db_name}",
     "-c", "SELECT version();",
 ]
-output = "db-connection-test.txt"
+output_file = "db-connection-test.txt"
 
 # Phase 6: Post-processing and reporting
 [[groups]]
@@ -671,7 +671,7 @@ name = "cleanup_temp_files"
 description = "Delete temporary files"
 cmd = "/bin/rm"
 args = ["-rf", "/opt/deploy/temp"]
-max_risk_level = "medium"
+risk_level = "medium"
 
 [[groups.commands]]
 name = "send_notification"
@@ -695,7 +695,7 @@ version = "1.0"
 [global]
 timeout = 300
 log_level = "info"
-env_allowlist = ["PATH", "HOME"]
+env_allowed = ["PATH", "HOME"]
 
 [[groups]]
 name = "risk_controlled_operations"
@@ -707,7 +707,7 @@ name = "read_config"
 description = "Read configuration file"
 cmd = "/bin/cat"
 args = ["/etc/myapp/config.yml"]
-output = "config-content.txt"
+output_file = "config-content.txt"
 
 # Medium risk: File creation/modification
 [[groups.commands]]
@@ -715,7 +715,7 @@ name = "update_cache"
 description = "Update cache file"
 cmd = "/opt/myapp/update-cache"
 args = ["--refresh"]
-max_risk_level = "medium"
+risk_level = "medium"
 
 # High risk: System changes
 [[groups.commands]]
@@ -724,7 +724,7 @@ description = "Update system packages"
 cmd = "/usr/bin/apt-get"
 args = ["upgrade", "-y"]
 run_as_user = "root"
-max_risk_level = "high"
+risk_level = "high"
 timeout = 1800
 
 # Example that will be rejected for exceeding risk level
@@ -733,7 +733,7 @@ name = "dangerous_deletion"
 description = "Mass deletion (cannot run at default risk level)"
 cmd = "/bin/rm"
 args = ["-rf", "/tmp/old-data"]
-# max_risk_level defaults to "low"
+# risk_level defaults to "low"
 # rm -rf requires medium risk or higher → execution rejected
 ```
 

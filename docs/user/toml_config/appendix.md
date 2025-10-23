@@ -15,10 +15,10 @@
 | timeout | int | - | System default | Command execution timeout (seconds) |
 | workdir | string | - | Execution directory | Absolute path of working directory |
 | log_level | string | - | "info" | Log level (debug/info/warn/error) |
-| skip_standard_paths | bool | - | false | Skip standard path validation |
-| env_allowlist | []string | - | [] | Environment variable allowlist |
+| verify_standard_paths | bool | - | true | Verify standard path validation |
+| env_allowed | []string | - | [] | Environment variable allowlist |
 | verify_files | []string | - | [] | List of files to verify |
-| max_output_size | int64 | - | 10485760 | Maximum output size (bytes) |
+| output_size_limit | int64 | - | 10485760 | Maximum output size (bytes) |
 
 ### A.3 Group Level Parameters ([[groups]])
 
@@ -29,7 +29,7 @@
 | priority | int | - | 0 | Execution priority (lower runs first) |
 | workdir | string | - | Auto-generated | Working directory (auto-generates temporary directory if not specified) |
 | verify_files | []string | - | [] | Files to verify (added to global) |
-| env_allowlist | []string | - | nil (inherit) | Environment variable allowlist (see inheritance mode) |
+| env_allowed | []string | - | nil (inherit) | Environment variable allowlist (see inheritance mode) |
 
 ### A.4 Command Level Parameters ([[groups.commands]])
 
@@ -39,21 +39,21 @@
 | description | string | - | "" | Command description |
 | cmd | string | ✓ | none | Command to execute (absolute path or in PATH) |
 | args | []string | - | [] | Command arguments |
-| env | []string | - | [] | Environment variables ("KEY=VALUE" format) |
+| env_vars | []string | - | [] | Environment variables ("KEY=VALUE" format) |
 | workdir | string | - | Group setting | Working directory (overrides group setting) |
 | timeout | int | - | Global setting | Timeout (overrides global) |
 | run_as_user | string | - | "" | User to run as |
 | run_as_group | string | - | "" | Group to run as |
-| max_risk_level | string | - | "low" | Maximum risk level (low/medium/high) |
-| output | string | - | "" | File path to save standard output |
+| risk_level | string | - | "low" | Maximum risk level (low/medium/high) |
+| output_file | string | - | "" | File path to save standard output |
 
 ### A.5 Environment Variable Inheritance Modes
 
 | Mode | Condition | Behavior |
 |------|-----------|----------|
-| Inherit | env_allowlist is undefined (nil) | Inherit global settings |
-| Explicit | env_allowlist has value set | Use only configured values (ignore global) |
-| Reject | env_allowlist = [] (empty array) | Reject all environment variables |
+| Inherit | env_allowed is undefined (nil) | Inherit global settings |
+| Explicit | env_allowed has value set | Use only configured values (ignore global) |
+| Reject | env_allowed = [] (empty array) | Reject all environment variables |
 
 ### A.6 Risk Levels
 
@@ -88,7 +88,7 @@ version = "1.0"
 timeout = 600
 workdir = "/var/backups"
 log_level = "info"
-env_allowlist = ["PATH", "HOME"]
+env_allowed = ["PATH", "HOME"]
 
 [[groups]]
 name = "daily_backup"
@@ -113,8 +113,8 @@ version = "1.0"
 timeout = 300
 workdir = "/opt/secure"
 log_level = "info"
-skip_standard_paths = false
-env_allowlist = ["PATH"]
+verify_standard_paths = true
+env_allowed = ["PATH"]
 verify_files = []  # Commands are automatically verified
 
 [[groups]]
@@ -125,7 +125,7 @@ verify_files = ["/opt/secure/config/backup.conf"]  # Only specify additional fil
 name = "backup"
 cmd = "/opt/secure/bin/backup-tool"  # Automatically verified
 args = ["--encrypt", "--output", "backup.enc"]
-max_risk_level = "medium"
+risk_level = "medium"
 ```
 
 ### B.4 Variable Expansion
@@ -134,7 +134,7 @@ max_risk_level = "medium"
 version = "1.0"
 
 [global]
-env_allowlist = ["PATH", "HOME", "APP_DIR", "ENV_TYPE"]
+env_allowed = ["PATH", "HOME", "APP_DIR", "ENV_TYPE"]
 
 [[groups]]
 name = "deployment"
@@ -143,7 +143,7 @@ name = "deployment"
 name = "deploy"
 cmd = "${APP_DIR}/bin/deploy"
 args = ["--env", "${ENV_TYPE}", "--config", "${APP_DIR}/config/${ENV_TYPE}.yml"]
-env = [
+env_vars = [
     "APP_DIR=/opt/myapp",
     "ENV_TYPE=production",
 ]
@@ -157,7 +157,7 @@ version = "1.0"
 [global]
 timeout = 600
 log_level = "info"
-env_allowlist = ["PATH"]
+env_allowed = ["PATH"]
 
 [[groups]]
 name = "system_maintenance"
@@ -166,14 +166,14 @@ name = "system_maintenance"
 name = "check_status"
 cmd = "/usr/bin/systemctl"
 args = ["status", "myapp"]
-max_risk_level = "low"
+risk_level = "low"
 
 [[groups.commands]]
 name = "restart_service"
 cmd = "/usr/bin/systemctl"
 args = ["restart", "myapp"]
 run_as_user = "root"
-max_risk_level = "high"
+risk_level = "high"
 ```
 
 ### B.6 Output Capture
@@ -183,7 +183,7 @@ version = "1.0"
 
 [global]
 workdir = "/var/reports"
-max_output_size = 10485760
+output_size_limit = 10485760
 
 [[groups]]
 name = "system_report"
@@ -192,13 +192,13 @@ name = "system_report"
 name = "disk_usage"
 cmd = "/bin/df"
 args = ["-h"]
-output = "disk-usage.txt"
+output_file = "disk-usage.txt"
 
 [[groups.commands]]
 name = "memory_usage"
 cmd = "/usr/bin/free"
 args = ["-h"]
-output = "memory-usage.txt"
+output_file = "memory-usage.txt"
 ```
 
 ### B.7 Multi-Environment Support
@@ -207,7 +207,7 @@ output = "memory-usage.txt"
 version = "1.0"
 
 [global]
-env_allowlist = ["PATH", "APP_BIN", "CONFIG_DIR", "ENV_TYPE", "DB_URL"]
+env_allowed = ["PATH", "APP_BIN", "CONFIG_DIR", "ENV_TYPE", "DB_URL"]
 
 # Development environment
 [[groups]]
@@ -218,7 +218,7 @@ priority = 1
 name = "run_dev"
 cmd = "${APP_BIN}"
 args = ["--config", "${CONFIG_DIR}/${ENV_TYPE}.yml", "--db", "${DB_URL}"]
-env = [
+env_vars = [
     "APP_BIN=/opt/app/bin/server",
     "CONFIG_DIR=/etc/app",
     "ENV_TYPE=development",
@@ -234,14 +234,14 @@ priority = 2
 name = "run_prod"
 cmd = "${APP_BIN}"
 args = ["--config", "${CONFIG_DIR}/${ENV_TYPE}.yml", "--db", "${DB_URL}"]
-env = [
+env_vars = [
     "APP_BIN=/opt/app/bin/server",
     "CONFIG_DIR=/etc/app",
     "ENV_TYPE=production",
     "DB_URL=postgresql://prod-db/prod_db",
 ]
 run_as_user = "appuser"
-max_risk_level = "high"
+risk_level = "high"
 ```
 
 ## Appendix C: Glossary
@@ -353,7 +353,7 @@ version = "1.0"
 timeout = 300
 workdir = "/path/to/workdir"
 log_level = "info"
-env_allowlist = ["PATH", "HOME"]
+env_allowed = ["PATH", "HOME"]
 
 [[groups]]
 name = "group_name"
@@ -375,8 +375,8 @@ version = "1.0"
 timeout = 600
 workdir = "/opt/secure"
 log_level = "info"
-skip_standard_paths = false
-env_allowlist = ["PATH"]
+verify_standard_paths = true
+env_allowed = ["PATH"]
 verify_files = [
     # Additional verification files (commands are automatically verified)
 ]
@@ -393,7 +393,7 @@ name = "secure_command"
 description = "Secure command"
 cmd = "/path/to/verified/command"
 args = []
-max_risk_level = "medium"
+risk_level = "medium"
 ```
 
 ### D.3 Variable Expansion Template
@@ -402,7 +402,7 @@ max_risk_level = "medium"
 version = "1.0"
 
 [global]
-env_allowlist = [
+env_allowed = [
     "PATH",
     "HOME",
     # Additional allowed variables
@@ -418,7 +418,7 @@ args = [
     "--config", "${CONFIG_FILE}",
     "--output", "${OUTPUT_DIR}/result.txt",
 ]
-env = [
+env_vars = [
     "TOOL_DIR=/opt/tools",
     "CONFIG_FILE=/etc/app/config.yml",
     "OUTPUT_DIR=/var/output",
@@ -431,7 +431,7 @@ env = [
 version = "1.0"
 
 [global]
-env_allowlist = [
+env_allowed = [
     "PATH",
     "APP_BIN",
     "ENV_TYPE",
@@ -447,7 +447,7 @@ priority = 1
 name = "run_dev"
 cmd = "${APP_BIN}"
 args = ["--env", "${ENV_TYPE}", "--config", "${CONFIG_DIR}/${ENV_TYPE}.yml"]
-env = [
+env_vars = [
     "APP_BIN=/opt/app/bin/server",
     "ENV_TYPE=development",
     "CONFIG_DIR=/etc/app/configs",
@@ -462,13 +462,13 @@ priority = 2
 name = "run_prod"
 cmd = "${APP_BIN}"
 args = ["--env", "${ENV_TYPE}", "--config", "${CONFIG_DIR}/${ENV_TYPE}.yml"]
-env = [
+env_vars = [
     "APP_BIN=/opt/app/bin/server",
     "ENV_TYPE=production",
     "CONFIG_DIR=/etc/app/configs",
 ]
 run_as_user = "appuser"
-max_risk_level = "high"
+risk_level = "high"
 ```
 
 ## Appendix E: Reference Links

@@ -265,7 +265,7 @@ args = ["test", ">", "output.txt"]  # リダイレクトは機能しない
 name = "save_output"
 cmd = "echo"
 args = ["test"]
-output = "output.txt"  # これが正しい方法
+output_file = "output.txt"  # これが正しい方法
 ```
 
 ##### 3. スペースを含む引数
@@ -368,7 +368,7 @@ args = ["-c", "echo $my_var"]  # my_var は空文字列 (環境変数に存在�
 name = "print_vars"
 cmd = "/bin/sh"
 vars = ["my_var=hello"]
-env = ["MY_VAR=%{my_var}"]  # vars の値を env で環境変数に変換
+env_vars = ["MY_VAR=%{my_var}"]  # vars の値を env で環境変数に変換
 args = ["-c", "echo $MY_VAR"]  # MY_VAR=hello が出力される
 ```
 
@@ -417,7 +417,7 @@ Runner プロセスが動作しているシステム環境変数を TOML 内の�
 [[groups.commands]]
 name = "example"
 cmd = "コマンド"
-from_env = ["VAR1", "VAR2", ...]
+env_import = ["VAR1", "VAR2", ...]
 ```
 
 #### パラメータの詳細
@@ -429,14 +429,14 @@ from_env = ["VAR1", "VAR2", ...]
 | **設定可能な階層** | グローバル、グループ、コマンド |
 | **デフォルト値** | [] |
 | **形式** | 変数名のみ (VALUE は不要) |
-| **セキュリティ制約** | `env_allowlist` に含まれる変数のみインポート可能 |
+| **セキュリティ制約** | `env_allowed` に含まれる変数のみインポート可能 |
 | **継承動作** | マージ (Merge) - 下位レベルが上位レベルとマージされる |
 
 #### 役割
 
 - **システム環境変数の取り込み**: Runner が動作する環境の変数を TOML 内で利用可能にする
 - **TOML 内での変数展開**: インポートした変数を `%{VAR}` 形式で参照可能
-- **セキュリティ管理**: `env_allowlist` による制御
+- **セキュリティ管理**: `env_allowed` による制御
 
 #### 設定例
 
@@ -444,12 +444,12 @@ from_env = ["VAR1", "VAR2", ...]
 
 ```toml
 [global]
-env_allowlist = ["HOME", "USER", "PATH"]
+env_allowed = ["HOME", "USER", "PATH"]
 
 [[groups.commands]]
 name = "show_user_info"
 cmd = "/bin/echo"
-from_env = ["USER", "HOME"]
+from_env_vars = ["USER", "HOME"]
 args = ["User: %{USER}, Home: %{HOME}"]
 ```
 
@@ -457,12 +457,12 @@ args = ["User: %{USER}, Home: %{HOME}"]
 
 ```toml
 [global]
-env_allowlist = ["HOME", "USER", "PATH", "LANG"]
-from_env = ["HOME", "USER"]  # グローバルレベル
+env_allowed = ["HOME", "USER", "PATH", "LANG"]
+from_env_vars = ["HOME", "USER"]  # グローバルレベル
 
 [[groups]]
 name = "intl_tasks"
-from_env = ["LANG"]  # グループレベル: グローバルの from_env とマージ
+from_env_vars = ["LANG"]  # グループレベル: グローバルの from_env とマージ
 
 [[groups.commands]]
 name = "task1"
@@ -474,25 +474,25 @@ args = ["User: %{USER}, Language: %{LANG}"]
 [[groups.commands]]
 name = "task2"
 cmd = "/bin/echo"
-from_env = ["PATH"]  # コマンドレベル: グループとマージ
+from_env_vars = ["PATH"]  # コマンドレベル: グループとマージ
 # 継承された変数: HOME, USER (global) + LANG (group) + PATH (command)
 args = ["Path: %{PATH}, Home: %{HOME}"]
 ```
 
 #### 重要な注意事項
 
-##### 1. env_allowlist との関係
+##### 1. env_allowed との関係
 
-`from_env` でインポートする変数は、必ず `env_allowlist` に含まれている必要があります:
+`from_env` でインポートする変数は、必ず `env_allowed` に含まれている必要があります:
 
 ```toml
 [global]
-env_allowlist = ["HOME", "USER"]
+env_allowed = ["HOME", "USER"]
 
 [[groups.commands]]
 name = "example"
 cmd = "/bin/echo"
-from_env = ["HOME", "PATH"]  # エラー: PATH は env_allowlist に含まれていない
+from_env_vars = ["HOME", "PATH"]  # エラー: PATH は env_allowed に含まれていない
 args = ["%{HOME}"]
 ```
 
@@ -502,16 +502,16 @@ args = ["%{HOME}"]
 
 ```toml
 [global]
-from_env = ["HOME", "USER"]
+from_env_vars = ["HOME", "USER"]
 
 [[groups]]
 name = "tasks"
-from_env = ["LANG", "LC_ALL"]
+from_env_vars = ["LANG", "LC_ALL"]
 
 [[groups.commands]]
 name = "task1"
 cmd = "/bin/echo"
-from_env = ["PWD"]  # HOME, USER, LANG, LC_ALL, PWD がすべて利用可能
+from_env_vars = ["PWD"]  # HOME, USER, LANG, LC_ALL, PWD がすべて利用可能
 args = ["User: %{USER}, PWD: %{PWD}"]
 ```
 
@@ -523,7 +523,7 @@ args = ["User: %{USER}, PWD: %{PWD}"]
 [[groups.commands]]
 name = "example"
 cmd = "/bin/echo"
-from_env = ["NONEXISTENT_VAR"]
+from_env_vars = ["NONEXISTENT_VAR"]
 args = ["Value: %{NONEXISTENT_VAR}"]  # "Value: " と出力される
 ```
 
@@ -540,7 +540,7 @@ args = ["Value: %{NONEXISTENT_VAR}"]  # "Value: " と出力される
 name = "example"
 cmd = "コマンド"
 args = []
-env = ["KEY1=value1", "KEY2=value2", ...]
+env_vars = ["KEY1=value1", "KEY2=value2", ...]
 ```
 
 #### パラメータの詳細
@@ -570,7 +570,7 @@ env = ["KEY1=value1", "KEY2=value2", ...]
 name = "run_app"
 cmd = "/opt/app/server"
 args = []
-env = [
+env_vars = [
     "LOG_LEVEL=debug",
     "PORT=8080",
     "CONFIG_FILE=/etc/app/config.yaml",
@@ -584,7 +584,7 @@ env = [
 name = "db_migration"
 cmd = "/opt/app/migrate"
 args = []
-env = [
+env_vars = [
     "DATABASE_URL=postgresql://localhost:5432/mydb",
     "DB_USER=appuser",
     "DB_PASSWORD=secret123",
@@ -602,7 +602,7 @@ vars = [
     "backup_dir=/var/backups",
     "date=2025-01-15",
 ]
-env = [
+env_vars = [
     "BACKUP_FILE=%{backup_dir}/backup-%{date}.tar.gz",
 ]
 # BACKUP_FILE は /var/backups/backup-2025-01-15.tar.gz に展開される
@@ -610,13 +610,13 @@ env = [
 
 #### 重要な注意事項
 
-##### 1. env_allowlist との関係
+##### 1. env_allowed との関係
 
-設定した環境変数は、グループまたはグローバルの `env_allowlist` に含まれている必要があります:
+設定した環境変数は、グループまたはグローバルの `env_allowed` に含まれている必要があります:
 
 ```toml
 [global]
-env_allowlist = ["PATH", "LOG_LEVEL", "DATABASE_URL"]
+env_allowed = ["PATH", "LOG_LEVEL", "DATABASE_URL"]
 
 [[groups]]
 name = "app_group"
@@ -625,10 +625,10 @@ name = "app_group"
 name = "run_app"
 cmd = "/opt/app/server"
 args = []
-env = [
-    "LOG_LEVEL=debug",      # OK: env_allowlist に含まれる
-    "DATABASE_URL=...",     # OK: env_allowlist に含まれる
-    "UNAUTHORIZED_VAR=x",   # エラー: env_allowlist に含まれない
+env_vars = [
+    "LOG_LEVEL=debug",      # OK: env_allowed に含まれる
+    "DATABASE_URL=...",     # OK: env_allowed に含まれる
+    "UNAUTHORIZED_VAR=x",   # エラー: env_allowed に含まれない
 ]
 ```
 
@@ -640,13 +640,13 @@ env = [
 
 ```toml
 # 正しい
-env = [
+env_vars = [
     "KEY=value",
     "EMPTY_VAR=",  # 空の値
 ]
 
 # 誤り
-env = [
+env_vars = [
     "KEY",         # エラー: = がない
     "KEY value",   # エラー: = がない
 ]
@@ -658,7 +658,7 @@ env = [
 
 ```toml
 # 誤り: LOG_LEVEL が重複
-env = [
+env_vars = [
     "LOG_LEVEL=debug",
     "LOG_LEVEL=info",  # エラー: 重複
 ]
@@ -795,7 +795,7 @@ args = ["-c", "3", "localhost"]
 name = "long_backup"
 cmd = "/usr/bin/pg_dump"
 args = ["--all-databases"]
-output = "full_backup.sql"
+output_file = "full_backup.sql"
 timeout = 1800  # 30分 = 1800秒
 ```
 
@@ -936,7 +936,7 @@ run_as_group = "admingroup"
 
 ## 6.5 リスク管理
 
-### 6.5.1 max_risk_level - 最大リスクレベル
+### 6.5.1 risk_level - 最大リスクレベル
 
 #### 概要
 
@@ -949,7 +949,7 @@ run_as_group = "admingroup"
 name = "example"
 cmd = "コマンド"
 args = []
-max_risk_level = "リスクレベル"
+risk_level = "リスクレベル"
 ```
 
 #### パラメータの詳細
@@ -990,7 +990,7 @@ go-safe-cmd-runner は以下の要素からコマンドのリスクを自動評�
 name = "list_files"
 cmd = "/bin/ls"
 args = ["-la"]
-max_risk_level = "low"  # 読み取り専用なので低リスク
+risk_level = "low"  # 読み取り専用なので低リスク
 ```
 
 #### 例2: 中リスクコマンド
@@ -1000,7 +1000,7 @@ max_risk_level = "low"  # 読み取り専用なので低リスク
 name = "create_backup"
 cmd = "/usr/bin/tar"
 args = ["-czf", "backup.tar.gz", "/data"]
-max_risk_level = "medium"  # ファイル作成なので中リスク
+risk_level = "medium"  # ファイル作成なので中リスク
 ```
 
 #### 例3: 高リスクコマンド
@@ -1011,7 +1011,7 @@ name = "install_package"
 cmd = "/usr/bin/apt-get"
 args = ["install", "-y", "package-name"]
 run_as_user = "root"
-max_risk_level = "high"  # システム変更と権限昇格なので高リスク
+risk_level = "high"  # システム変更と権限昇格なので高リスク
 ```
 
 #### 例4: リスクレベル違反時の挙動
@@ -1021,7 +1021,7 @@ max_risk_level = "high"  # システム変更と権限昇格なので高リス�
 name = "dangerous_operation"
 cmd = "/bin/rm"
 args = ["-rf", "/tmp/data"]
-max_risk_level = "low"  # rm -rf は中リスク以上
+risk_level = "low"  # rm -rf は中リスク以上
 # このコマンドは実行拒否される(リスクレベル超過)
 ```
 
@@ -1036,20 +1036,20 @@ name = "safe_operations"
 name = "read_config"
 cmd = "/bin/cat"
 args = ["/etc/app/config.yaml"]
-max_risk_level = "low"  # 読み取りのみ
+risk_level = "low"  # 読み取りのみ
 
 [[groups.commands]]
 name = "backup_data"
 cmd = "/usr/bin/tar"
 args = ["-czf", "backup.tar.gz", "/data"]
-max_risk_level = "medium"  # ファイル作成
+risk_level = "medium"  # ファイル作成
 
 [[groups.commands]]
 name = "system_update"
 cmd = "/usr/bin/apt-get"
 args = ["update"]
 run_as_user = "root"
-max_risk_level = "high"  # システム変更と権限昇格
+risk_level = "high"  # システム変更と権限昇格
 ```
 
 ## 6.6 出力管理
@@ -1067,7 +1067,7 @@ max_risk_level = "high"  # システム変更と権限昇格
 name = "example"
 cmd = "コマンド"
 args = []
-output = "ファイルパス"
+output_file = "ファイルパス"
 ```
 
 #### パラメータの詳細
@@ -1078,7 +1078,7 @@ output = "ファイルパス"
 | **必須/オプション** | オプション |
 | **設定可能な階層** | コマンドのみ |
 | **有効な値** | 相対パスまたは絶対パス |
-| **サイズ制限** | グローバルの max_output_size による制限 |
+| **サイズ制限** | グローバルの output_size_limit による制限 |
 | **ディレクトリ作成** | 必要に応じて自動作成 |
 
 #### 役割
@@ -1100,7 +1100,7 @@ workdir = "/var/app/output"
 name = "export_users"
 cmd = "/opt/app/export"
 args = ["--table", "users"]
-output = "users.csv"
+output_file = "users.csv"
 # /var/app/output/users.csv に保存
 ```
 
@@ -1111,7 +1111,7 @@ output = "users.csv"
 name = "system_report"
 cmd = "/usr/bin/systemctl"
 args = ["status"]
-output = "/var/log/reports/system_status.txt"
+output_file = "/var/log/reports/system_status.txt"
 # 絶対パスで保存
 ```
 
@@ -1126,7 +1126,7 @@ workdir = "/var/app"
 name = "export_logs"
 cmd = "/opt/app/export-logs"
 args = []
-output = "logs/export/output.txt"
+output_file = "logs/export/output.txt"
 # /var/app/logs/export/ ディレクトリが自動作成され、
 # /var/app/logs/export/output.txt に保存
 ```
@@ -1142,36 +1142,36 @@ workdir = "/tmp/reports"
 name = "disk_usage"
 cmd = "/bin/df"
 args = ["-h"]
-output = "disk_usage.txt"
+output_file = "disk_usage.txt"
 
 [[groups.commands]]
 name = "memory_info"
 cmd = "/usr/bin/free"
 args = ["-h"]
-output = "memory_info.txt"
+output_file = "memory_info.txt"
 
 [[groups.commands]]
 name = "process_list"
 cmd = "/bin/ps"
 args = ["aux"]
-output = "processes.txt"
+output_file = "processes.txt"
 ```
 
 #### 重要な注意事項
 
 ##### 1. サイズ制限
 
-出力サイズは `max_output_size` (グローバル設定)によって制限されます:
+出力サイズは `output_size_limit` (グローバル設定)によって制限されます:
 
 ```toml
 [global]
-max_output_size = 1048576  # 1MB
+output_size_limit = 1048576  # 1MB
 
 [[groups.commands]]
 name = "large_export"
 cmd = "/usr/bin/pg_dump"
 args = ["large_db"]
-output = "dump.sql"
+output_file = "dump.sql"
 # 出力が 1MB を超える場合、警告が記録される
 ```
 
@@ -1190,7 +1190,7 @@ output = "dump.sql"
 name = "daily_report"
 cmd = "/opt/app/report"
 args = []
-output = "daily.txt"
+output_file = "daily.txt"
 # 既存の daily.txt は上書きされる
 ```
 
@@ -1209,8 +1209,8 @@ version = "1.0"
 timeout = 300
 workdir = "/var/app"
 log_level = "info"
-env_allowlist = ["PATH", "HOME", "DATABASE_URL", "BACKUP_DIR"]
-max_output_size = 10485760  # 10MB
+env_allowed = ["PATH", "HOME", "DATABASE_URL", "BACKUP_DIR"]
+output_size_limit = 10485760  # 10MB
 verify_files = []  # コマンドは自動検証されるため、追加ファイルがなければ空でよい
 
 [[groups]]
@@ -1218,7 +1218,7 @@ name = "database_operations"
 description = "データベース関連の操作"
 priority = 10
 workdir = "/var/backups/db"
-env_allowlist = ["PATH", "DATABASE_URL", "BACKUP_DIR"]
+env_allowed = ["PATH", "DATABASE_URL", "BACKUP_DIR"]
 verify_files = ["/etc/postgresql/pg_hba.conf"]  # 設定ファイルなど追加ファイルのみ指定
 
 # コマンド1: データベースバックアップ
@@ -1227,10 +1227,10 @@ name = "full_backup"
 description = "PostgreSQL 全データベースのバックアップ"
 cmd = "/usr/bin/pg_dump"
 args = ["--all-databases", "--verbose"]
-env = ["DATABASE_URL=postgresql://localhost/postgres"]
-output = "full_backup.sql"
+env_vars = ["DATABASE_URL=postgresql://localhost/postgres"]
+output_file = "full_backup.sql"
 timeout = 1800  # 30分
-max_risk_level = "medium"
+risk_level = "medium"
 
 # コマンド2: バックアップの検証
 [[groups.commands]]
@@ -1238,10 +1238,10 @@ name = "verify_backup"
 description = "バックアップファイルの整合性確認"
 cmd = "/usr/bin/psql"
 args = ["--dry-run", "-f", "full_backup.sql"]
-env = ["DATABASE_URL=postgresql://localhost/testdb"]
-output = "verification.log"
+env_vars = ["DATABASE_URL=postgresql://localhost/testdb"]
+output_file = "verification.log"
 timeout = 600  # 10分
-max_risk_level = "low"
+risk_level = "low"
 
 # コマンド3: 古いバックアップの削除
 [[groups.commands]]
@@ -1250,14 +1250,14 @@ description = "30日以上前のバックアップファイルを削除"
 cmd = "/usr/bin/find"
 args = ["/var/backups/db", "-name", "*.sql", "-mtime", "+30", "-delete"]
 timeout = 300  # 5分
-max_risk_level = "medium"
+risk_level = "medium"
 
 [[groups]]
 name = "system_maintenance"
 description = "システムメンテナンスタスク"
 priority = 20
 workdir = "/tmp"
-env_allowlist = []  # 環境変数なし
+env_allowed = []  # 環境変数なし
 
 # コマンド4: ディスク使用量レポート
 [[groups.commands]]
@@ -1265,9 +1265,9 @@ name = "disk_report"
 description = "ディスク使用量のレポート生成"
 cmd = "/bin/df"
 args = ["-h", "/var"]
-output = "/var/log/disk_usage.txt"
+output_file = "/var/log/disk_usage.txt"
 timeout = 60
-max_risk_level = "low"
+risk_level = "low"
 
 # コマンド5: システムアップデート(root権限)
 [[groups.commands]]
@@ -1277,7 +1277,7 @@ cmd = "/usr/bin/apt-get"
 args = ["update"]
 run_as_user = "root"
 timeout = 600
-max_risk_level = "high"
+risk_level = "high"
 
 [[groups]]
 name = "temporary_processing"
@@ -1290,9 +1290,9 @@ name = "image_resize"
 description = "画像のリサイズ処理"
 cmd = "/usr/bin/convert"
 args = ["/data/input.jpg", "-resize", "800x600", "%{__runner_workdir}/resized.jpg"]
-output = "conversion.log"
+output_file = "conversion.log"
 timeout = 300
-max_risk_level = "low"
+risk_level = "low"
 
 # コマンド7: 固定ディレクトリでの作業
 [[groups.commands]]
@@ -1302,7 +1302,7 @@ cmd = "/usr/bin/cp"
 args = ["%{__runner_workdir}/resized.jpg", "/var/output/final.jpg"]
 workdir = "/var/output"
 timeout = 60
-max_risk_level = "low"
+risk_level = "low"
 ```
 
 ## 次のステップ

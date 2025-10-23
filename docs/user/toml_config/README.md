@@ -29,9 +29,9 @@ A comprehensive user guide explaining how to write TOML configuration files for 
 - workdir - Working directory
 - log_level - Log level
 - skip_standard_paths - Skip standard path validation
-- env_allowlist - Environment variable allowlist
+- env_allowed - Environment variable allowlist
 - verify_files - File verification list
-- max_output_size - Maximum output size
+- output_size_limit - Maximum output size
 
 ### Chapter 5: [Group Level Configuration](05_group_level.md)
 - Group basic configuration
@@ -42,7 +42,7 @@ A comprehensive user guide explaining how to write TOML configuration files for 
   - workdir - Working directory
 - Security configuration
   - verify_files - File verification
-  - env_allowlist - Environment variable allowlist
+  - env_allowed - Environment variable allowlist
 - Environment variable inheritance modes
   - Inherit mode (inherit)
   - Explicit mode (explicit)
@@ -62,7 +62,7 @@ A comprehensive user guide explaining how to write TOML configuration files for 
   - run_as_user - Execution user
   - run_as_group - Execution group
 - Risk management
-  - max_risk_level - Maximum risk level
+  - risk_level - Maximum risk level
 - Output management
   - output - Standard output capture
 
