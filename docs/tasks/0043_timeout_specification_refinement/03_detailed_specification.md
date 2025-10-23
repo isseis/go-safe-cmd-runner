@@ -22,7 +22,14 @@ const (
     // Using int32 max to ensure cross-platform compatibility
     MaxTimeout = 86400 // 24 hours in seconds
 )
+
+// Helper function for creating integer pointers
+// TimeoutValue is a type alias for *int, so IntPtr can be used for both
+// general *int values and TimeoutValue instances
+func IntPtr(v int) *int { return &v }
 ```
+
+**注記**: `TimeoutValue` は `*int` の型エイリアスであるため、`TimeoutValue` を生成する際にも汎用の `IntPtr()` ヘルパー関数を使用します。これにより、コードの重複を避け、一貫性を保ちます。
 
 #### 2.1.2. 型の意味論
 
