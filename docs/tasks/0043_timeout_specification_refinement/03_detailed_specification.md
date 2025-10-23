@@ -96,11 +96,13 @@ type CommandSpec struct {
 // ResolveTimeout resolves the effective timeout value from the hierarchy.
 // It returns the resolved timeout in seconds.
 // A value of 0 means unlimited execution.
-func ResolveTimeout(cmdTimeout, globalTimeout *int) int {
+func ResolveTimeout(cmdTimeout, groupTimeout, globalTimeout *int) int {
     // Determine which timeout pointer to use based on hierarchy
     var effectiveTimeout *int
     if cmdTimeout != nil {
         effectiveTimeout = cmdTimeout
+    } else if groupTimeout != nil {
+        effectiveTimeout = groupTimeout
     } else if globalTimeout != nil {
         effectiveTimeout = globalTimeout
     }
@@ -121,13 +123,15 @@ func ResolveTimeout(cmdTimeout, globalTimeout *int) int {
    - 存在する場合: その値を使用（0も含む）
    - 存在しない場合: 次のレベルへ
 
-2. **グローバルレベル**: `[global]`の`timeout`
+2. **グループレベル**: `[[groups]]`の`timeout`（将来実装予定）
    - 存在する場合: その値を使用（0も含む）
    - 存在しない場合: 次のレベルへ
 
-3. **デフォルト**: システム定義の`DefaultTimeout`（60秒）
+3. **グローバルレベル**: `[global]`の`timeout`
+   - 存在する場合: その値を使用（0も含む）
+   - 存在しない場合: 次のレベルへ
 
-**注意**: グループレベルのタイムアウト設定（`[[groups]]`の`timeout`）は本仕様のスコープ外です。
+4. **デフォルト**: システム定義の`DefaultTimeout`（60秒）
 
 ### 3.2. RuntimeGlobal の変更
 
