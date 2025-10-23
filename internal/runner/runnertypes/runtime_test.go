@@ -501,3 +501,48 @@ func TestRuntimeGroup_HelperMethods(t *testing.T) {
 		t.Errorf("WorkDir() = %s, want /tmp/test", got)
 	}
 }
+
+// TestRuntimeGlobal_SkipStandardPaths_WithNil tests SkipStandardPaths with nil value
+// This also indirectly tests the determineVerifyStandardPaths helper function
+func TestRuntimeGlobal_SkipStandardPaths_WithNil(t *testing.T) {
+	tests := []struct {
+		name                string
+		verifyStandardPaths *bool
+		wantSkip            bool
+	}{
+		{
+			name:                "nil value defaults to verify (skip=false)",
+			verifyStandardPaths: nil,
+			wantSkip:            false, // don't skip = verify
+		},
+		{
+			name:                "explicit true (verify) means skip=false",
+			verifyStandardPaths: boolPtr(true),
+			wantSkip:            false,
+		},
+		{
+			name:                "explicit false (don't verify) means skip=true",
+			verifyStandardPaths: boolPtr(false),
+			wantSkip:            true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runtime := &RuntimeGlobal{
+				Spec: &GlobalSpec{
+					VerifyStandardPaths: tt.verifyStandardPaths,
+				},
+			}
+			got := runtime.SkipStandardPaths()
+			if got != tt.wantSkip {
+				t.Errorf("SkipStandardPaths() = %v, want %v", got, tt.wantSkip)
+			}
+		})
+	}
+}
+
+// boolPtr is a helper to create *bool from bool value
+func boolPtr(b bool) *bool {
+	return &b
+}

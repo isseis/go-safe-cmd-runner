@@ -227,8 +227,9 @@ func TestCommandSecurityAnalysis(t *testing.T) {
 	ctx := context.Background()
 
 	// Test that we can directly verify the security analysis function
+	// VerifyStandardPaths: true means hash validation is performed for standard paths like /bin/rm
 	opts := &security.AnalysisOptions{
-		VerifyStandardPaths: false,
+		VerifyStandardPaths: true,
 		HashDir:             "",
 	}
 	riskLevel, pattern, reason, err := security.AnalyzeCommandSecurity("/bin/rm", []string{"-rf", "/tmp/*"}, opts)
