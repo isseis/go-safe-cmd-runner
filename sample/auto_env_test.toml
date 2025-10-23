@@ -5,8 +5,8 @@ version = "1.0"
 [global]
 timeout = 30
 log_level = "debug"
-skip_standard_paths = true
-env_allowlist = [
+verify_standard_paths = false
+env_allowed = [
     "PATH",
     "HOME",
     "USER",

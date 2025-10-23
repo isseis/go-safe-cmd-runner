@@ -5,9 +5,9 @@ version = "1.0"
 [global]
 timeout = 30
 log_level = "warn"
-skip_standard_paths = true
+verify_standard_paths = false
 # Environment variables for Slack notification testing
-env_allowlist = [
+env_allowed = [
     "PATH",
     "HOME",
     "LANG",

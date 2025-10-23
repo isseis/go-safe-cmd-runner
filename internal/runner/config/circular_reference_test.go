@@ -290,9 +290,9 @@ func TestCircularReference_CrossLevel_GroupCommand(t *testing.T) {
 				Vars: []string{"GROUP_VAR=value"},
 			},
 			command: &runnertypes.CommandSpec{
-				Name: "test",
-				Cmd:  "/bin/test",
-				Env:  []string{"CMD_ENV=%{UNDEFINED}"},
+				Name:    "test",
+				Cmd:     "/bin/test",
+				EnvVars: []string{"CMD_ENV=%{UNDEFINED}"},
 			},
 			wantErr:  "undefined variable",
 			contains: "UNDEFINED",
@@ -387,7 +387,7 @@ func TestCircularReference_ComplexPatterns(t *testing.T) {
 					"VAR1=%{VAR2}",
 					"VAR2=value",
 				},
-				Env: []string{
+				EnvVars: []string{
 					"ENV1=%{VAR1}",
 					"ENV2=%{ENV1}", // ENV1 is not in ExpandedVars, only in ExpandedEnv
 				},

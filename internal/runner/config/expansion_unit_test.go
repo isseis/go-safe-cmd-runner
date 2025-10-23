@@ -582,7 +582,7 @@ func TestProcessEnv_DuplicateDefinition(t *testing.T) {
 func TestIntegration_FullExpansionChain(t *testing.T) {
 	// Create a GlobalSpec that uses all three: from_env, vars, env
 	spec := &runnertypes.GlobalSpec{
-		FromEnv: []string{
+		EnvImport: []string{
 			"sys_path=PATH",
 			"sys_home=HOME",
 		},
@@ -590,11 +590,11 @@ func TestIntegration_FullExpansionChain(t *testing.T) {
 			"base_dir=%{sys_home}/app",
 			"bin_dir=%{base_dir}/bin",
 		},
-		Env: []string{
+		EnvVars: []string{
 			"APP_HOME=%{base_dir}",
 			"PATH=%{bin_dir}:%{sys_path}",
 		},
-		EnvAllowlist: []string{"PATH", "HOME"},
+		EnvAllowed: []string{"PATH", "HOME"},
 	}
 
 	// Set system environment variables

@@ -12,8 +12,8 @@ import (
 // BenchmarkExpandGlobal measures the performance of global configuration expansion
 func BenchmarkExpandGlobal(b *testing.B) {
 	spec := &runnertypes.GlobalSpec{
-		Vars: []string{"VAR1=value1", "VAR2=value2", "VAR3=%{VAR1}/subdir"},
-		Env:  []string{"PATH=%{VAR1}/bin:%{VAR2}/bin", "HOME=/home/user"},
+		Vars:    []string{"VAR1=value1", "VAR2=value2", "VAR3=%{VAR1}/subdir"},
+		EnvVars: []string{"PATH=%{VAR1}/bin:%{VAR2}/bin", "HOME=/home/user"},
 	}
 
 	b.ResetTimer()
@@ -25,10 +25,10 @@ func BenchmarkExpandGlobal(b *testing.B) {
 // BenchmarkExpandGlobalWithFromEnv measures performance with from_env processing
 func BenchmarkExpandGlobalWithFromEnv(b *testing.B) {
 	spec := &runnertypes.GlobalSpec{
-		FromEnv:      []string{"MY_PATH=PATH", "MY_HOME=HOME"},
-		Vars:         []string{"VAR1=%{MY_PATH}", "VAR2=%{MY_HOME}/local"},
-		Env:          []string{"NEW_PATH=%{VAR1}:%{VAR2}/bin"},
-		EnvAllowlist: []string{"PATH", "HOME"},
+		EnvImport:  []string{"MY_PATH=PATH", "MY_HOME=HOME"},
+		Vars:       []string{"VAR1=%{MY_PATH}", "VAR2=%{MY_HOME}/local"},
+		EnvVars:    []string{"NEW_PATH=%{VAR1}:%{VAR2}/bin"},
+		EnvAllowed: []string{"PATH", "HOME"},
 	}
 
 	// Set environment variables for benchmark
@@ -44,9 +44,9 @@ func BenchmarkExpandGlobalWithFromEnv(b *testing.B) {
 // BenchmarkExpandGroup measures the performance of group configuration expansion
 func BenchmarkExpandGroup(b *testing.B) {
 	spec := &runnertypes.GroupSpec{
-		Name: "test_group",
-		Vars: []string{"GROUP_VAR=group_value", "DERIVED=%{GROUP_VAR}/subdir"},
-		Env:  []string{"GROUP_ENV=%{DERIVED}"},
+		Name:    "test_group",
+		Vars:    []string{"GROUP_VAR=group_value", "DERIVED=%{GROUP_VAR}/subdir"},
+		EnvVars: []string{"GROUP_ENV=%{DERIVED}"},
 	}
 	globalVars := map[string]string{
 		"GLOBAL_VAR": "global_value",
@@ -61,11 +61,11 @@ func BenchmarkExpandGroup(b *testing.B) {
 // BenchmarkExpandCommand measures the performance of command expansion
 func BenchmarkExpandCommand(b *testing.B) {
 	spec := &runnertypes.CommandSpec{
-		Name: "test_command",
-		Cmd:  "/usr/bin/test",
-		Args: []string{"%{ARG1}", "%{ARG2}"},
-		Env:  []string{"CMD_ENV=%{CMD_VAR}"},
-		Vars: []string{"CMD_VAR=cmd_value", "ARG1=arg1", "ARG2=arg2"},
+		Name:    "test_command",
+		Cmd:     "/usr/bin/test",
+		Args:    []string{"%{ARG1}", "%{ARG2}"},
+		EnvVars: []string{"CMD_ENV=%{CMD_VAR}"},
+		Vars:    []string{"CMD_VAR=cmd_value", "ARG1=arg1", "ARG2=arg2"},
 	}
 	groupVars := map[string]string{
 		"GROUP_VAR": "group_value",
@@ -88,7 +88,7 @@ func BenchmarkExpandGlobalComplex(b *testing.B) {
 			"CONFIG=%{BASE}/config",
 			"LOGS=%{BASE}/logs",
 		},
-		Env: []string{
+		EnvVars: []string{
 			"PATH=%{BIN}:/usr/bin:/bin",
 			"LD_LIBRARY_PATH=%{LIB}",
 			"APP_DATA=%{DATA}",

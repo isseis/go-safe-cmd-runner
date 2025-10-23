@@ -7,8 +7,8 @@ version = "1.0"
 timeout = 60
 log_level = "debug"
 # Set higher output size limit for advanced scenarios (10MB)
-max_output_size = 10485760
-env_allowlist = [
+output_size_limit = 10485760
+env_allowed = [
     "PATH",
     "HOME",
     "USER",
@@ -31,7 +31,7 @@ name = "large_directory_listing"
 description = "Generate large output with complete system directory listing"
 cmd = "/usr/bin/find"
 args = ["/usr", "-type", "f", "-ls"]
-output = "large_system_listing.txt"
+output_file = "large_system_listing.txt"
 timeout = 120
 
 [[groups.commands]]
@@ -39,14 +39,14 @@ name = "system_processes"
 description = "Capture detailed process information"
 cmd = "ps"
 args = ["aux"]
-output = "process_list.txt"
+output_file = "process_list.txt"
 
 [[groups.commands]]
 name = "disk_usage_report"
 description = "Generate disk usage report"
 cmd = "du"
 args = ["-ah", "/var/log"]
-output = "disk_usage_report.txt"
+output_file = "disk_usage_report.txt"
 timeout = 90
 
 # Privileged operations with output capture
@@ -61,7 +61,7 @@ description = "System information with root privileges"
 cmd = "dmidecode"
 args = ["-t", "system"]
 run_as_user = "root"
-output = "system_info.txt"
+output_file = "system_info.txt"
 timeout = 30
 
 [[groups.commands]]
@@ -70,14 +70,14 @@ description = "Display network connections with privileges"
 cmd = "netstat"
 args = ["-tlnp"]
 run_as_user = "root"
-output = "network_connections.txt"
+output_file = "network_connections.txt"
 
 [[groups.commands]]
 name = "kernel_modules"
 description = "List kernel modules"
 cmd = "lsmod"
 args = []
-output = "kernel_modules.txt"
+output_file = "kernel_modules.txt"
 
 # Complex path scenarios
 [[groups]]
@@ -91,14 +91,14 @@ name = "temp_dir_output"
 description = "Output to temporary directory"
 cmd = "uname"
 args = ["-a"]
-output = "system_info.txt"
+output_file = "system_info.txt"
 
 [[groups.commands]]
 name = "nested_directory_creation"
 description = "Output to nested directory (auto-created)"
 cmd = "date"
 args = ["+%Y-%m-%d %H:%M:%S"]
-output = "logs/daily/current_time.txt"
+output_file = "logs/daily/current_time.txt"
 
 [[groups.commands]]
 name = "different_workdir"
@@ -106,14 +106,14 @@ description = "Output with different working directory"
 cmd = "pwd"
 args = []
 workdir = "/tmp/different-workdir"
-output = "working_directory.txt"
+output_file = "working_directory.txt"
 
 # Environment variable testing with output
 [[groups]]
 name = "environment_output_tests"
 description = "Test internal variables and environment variables with output capture"
 priority = 4
-env_allowlist = ["PATH", "HOME", "ADVANCED_TEST_VAR", "BUILD_ENV"]
+env_allowed = ["PATH", "HOME", "ADVANCED_TEST_VAR", "BUILD_ENV"]
 
 vars = [
     "build_env=production",
@@ -125,11 +125,11 @@ name = "custom_env_capture"
 description = "Capture output with custom environment passed to child process"
 cmd = "printenv"
 args = ["BUILD_ENV"]
-env = [
+env_vars = [
     "BUILD_ENV=%{build_env}",
     "ADVANCED_TEST_VAR=%{test_var}"
 ]
-output = "custom_env_output.txt"
+output_file = "custom_env_output.txt"
 
 [[groups.commands]]
 name = "build_script_simulation"
@@ -137,14 +137,14 @@ description = "Simulate build script with variable expansion and output capture"
 cmd = "echo"
 args = ["Build completed successfully in %{build_env} environment"]
 vars = ["build_env=staging"]  # Override group-level value
-output = "build_results.txt"
+output_file = "build_results.txt"
 
 [[groups.commands]]
 name = "variable_expansion_demo"
 description = "Demonstrate variable expansion in output capture"
 cmd = "echo"
 args = ["Test var: %{test_var}, Build env: %{build_env}"]
-output = "variable_expansion.txt"
+output_file = "variable_expansion.txt"
 
 # Performance and resource management
 [[groups]]
@@ -157,7 +157,7 @@ name = "cpu_intensive_with_output"
 description = "CPU intensive command with output capture"
 cmd = "openssl"
 args = ["speed", "aes-256-cbc"]
-output = "openssl_benchmark.txt"
+output_file = "openssl_benchmark.txt"
 timeout = 180
 
 [[groups.commands]]
@@ -165,14 +165,14 @@ name = "memory_info_capture"
 description = "Capture memory information"
 cmd = "cat"
 args = ["/proc/meminfo"]
-output = "memory_info.txt"
+output_file = "memory_info.txt"
 
 [[groups.commands]]
 name = "system_uptime"
 description = "System uptime and load"
 cmd = "uptime"
 args = []
-output = "system_uptime.txt"
+output_file = "system_uptime.txt"
 
 # Mixed scenarios - some with output, some without
 [[groups]]
@@ -185,7 +185,7 @@ name = "with_capture"
 description = "Command with output capture"
 cmd = "hostname"
 args = []
-output = "hostname.txt"
+output_file = "hostname.txt"
 
 [[groups.commands]]
 name = "without_capture"
@@ -198,7 +198,7 @@ name = "with_capture_again"
 description = "Another command with output capture"
 cmd = "whoami"
 args = []
-output = "current_user.txt"
+output_file = "current_user.txt"
 
 [[groups.commands]]
 name = "final_status"

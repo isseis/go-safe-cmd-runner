@@ -506,8 +506,8 @@ func IsSystemModification(cmd string, args []string) bool {
 
 // AnalysisOptions contains configuration options for command security analysis
 type AnalysisOptions struct {
-	// SkipStandardPaths determines whether to skip hash validation for standard system paths
-	SkipStandardPaths bool
+	// VerifyStandardPaths determines whether to perform hash validation for standard system paths
+	VerifyStandardPaths bool
 	// HashDir specifies the directory containing hash files for validation
 	HashDir string
 	// Config provides access to security configuration including test settings
@@ -532,14 +532,14 @@ type AnalysisOptions struct {
 //
 //	// Analysis with hash validation
 //	opts := &AnalysisOptions{
-//		SkipStandardPaths: false,
+//		VerifyStandardPaths: true,
 //		HashDir:          "/path/to/hashes",
 //	}
 //	risk, pattern, reason, err := AnalyzeCommandSecurity("/usr/local/bin/custom", []string{}, opts)
 //
 //	// Analysis skipping standard paths (useful for system commands)
 //	opts := &AnalysisOptions{
-//		SkipStandardPaths: true,
+//		VerifyStandardPaths: false,
 //		HashDir:          "/path/to/hashes",
 //	}
 //	risk, pattern, reason, err := AnalyzeCommandSecurity("/bin/ls", []string{"-la"}, opts)
@@ -577,8 +577,8 @@ func AnalyzeCommandSecurity(resolvedPath string, args []string, opts *AnalysisOp
 	// Step 3: Directory-based default risk assessment
 	defaultRisk := getDefaultRiskByDirectory(resolvedPath)
 
-	// Step 4: Hash validation (skip for standard paths when SkipStandardPaths=true)
-	if !shouldSkipHashValidation(resolvedPath, opts.SkipStandardPaths) && opts.HashDir != "" {
+	// Step 4: Hash validation (verify for standard paths when VerifyStandardPaths=true)
+	if shouldPerformHashValidation(resolvedPath, opts.VerifyStandardPaths) && opts.HashDir != "" {
 		if err := validateFileHash(resolvedPath, opts.HashDir, opts.Config); err != nil {
 			return runnertypes.RiskLevelCritical, resolvedPath,
 				fmt.Sprintf("Hash validation failed: %v", err), nil

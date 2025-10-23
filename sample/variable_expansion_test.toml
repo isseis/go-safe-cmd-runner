@@ -5,8 +5,8 @@ version = "1.0"
 [global]
 timeout = 30
 log_level = "debug"
-skip_standard_paths = true
-env_allowlist = [
+verify_standard_paths = false
+env_allowed = [
     "PATH",
     "HOME",
     "USER",
@@ -99,4 +99,4 @@ description = "Test escaped backslash before variable"
 cmd = "echo"
 args = ["Path: \\\\%{home}"]
 vars = []
-from_env = ["home=HOME"]
+env_import = ["home=HOME"]

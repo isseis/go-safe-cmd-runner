@@ -7,6 +7,186 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
+func TestGlobalSpec_UnmarshalTOML_NewFieldNames(t *testing.T) {
+	tests := []struct {
+		name    string
+		toml    string
+		want    GlobalSpec
+		wantErr bool
+	}{
+		{
+			name: "verify_standard_paths = true",
+			toml: `
+verify_standard_paths = true
+env_vars = ["LANG=en_US.UTF-8"]
+env_allowed = ["PATH", "HOME"]
+env_import = ["user=USER"]
+output_size_limit = 1048576
+`,
+			want: GlobalSpec{
+				VerifyStandardPaths: func() *bool { b := true; return &b }(),
+				EnvVars:             []string{"LANG=en_US.UTF-8"},
+				EnvAllowed:          []string{"PATH", "HOME"},
+				EnvImport:           []string{"user=USER"},
+				OutputSizeLimit:     1048576,
+			},
+		},
+		{
+			name: "verify_standard_paths = false",
+			toml: `
+verify_standard_paths = false
+env_vars = []
+env_allowed = []
+env_import = []
+output_size_limit = 0
+`,
+			want: GlobalSpec{
+				VerifyStandardPaths: func() *bool { b := false; return &b }(),
+				EnvVars:             []string{},
+				EnvAllowed:          []string{},
+				EnvImport:           []string{},
+				OutputSizeLimit:     0,
+			},
+		},
+		{
+			name: "verify_standard_paths omitted (nil)",
+			toml: `
+env_vars = ["DEBUG=1"]
+env_allowed = ["DEBUG"]
+env_import = []
+output_size_limit = 2097152
+`,
+			want: GlobalSpec{
+				VerifyStandardPaths: nil, // Should remain nil
+				EnvVars:             []string{"DEBUG=1"},
+				EnvAllowed:          []string{"DEBUG"},
+				EnvImport:           []string{},
+				OutputSizeLimit:     2097152,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var spec GlobalSpec
+			err := toml.Unmarshal([]byte(tt.toml), &spec)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("toml.Unmarshal() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if !reflect.DeepEqual(spec, tt.want) {
+				t.Errorf("GlobalSpec unmarshal result mismatch")
+				t.Logf("Got:  %+v", spec)
+				t.Logf("Want: %+v", tt.want)
+
+				// Detailed comparison for VerifyStandardPaths
+				switch {
+				case spec.VerifyStandardPaths == nil && tt.want.VerifyStandardPaths != nil:
+					t.Errorf("VerifyStandardPaths: got nil, want %v", *tt.want.VerifyStandardPaths)
+				case spec.VerifyStandardPaths != nil && tt.want.VerifyStandardPaths == nil:
+					t.Errorf("VerifyStandardPaths: got %v, want nil", *spec.VerifyStandardPaths)
+				case spec.VerifyStandardPaths != nil && tt.want.VerifyStandardPaths != nil:
+					if *spec.VerifyStandardPaths != *tt.want.VerifyStandardPaths {
+						t.Errorf("VerifyStandardPaths: got %v, want %v", *spec.VerifyStandardPaths, *tt.want.VerifyStandardPaths)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestGroupSpec_UnmarshalTOML_NewFieldNames(t *testing.T) {
+	tests := []struct {
+		name    string
+		toml    string
+		want    GroupSpec
+		wantErr bool
+	}{
+		{
+			name: "all new field names",
+			toml: `
+name = "test-group"
+env_vars = ["GROUP_VAR=value"]
+env_allowed = ["GROUP_VAR", "PATH"]
+env_import = ["group_user=USER"]
+`,
+			want: GroupSpec{
+				Name:       "test-group",
+				EnvVars:    []string{"GROUP_VAR=value"},
+				EnvAllowed: []string{"GROUP_VAR", "PATH"},
+				EnvImport:  []string{"group_user=USER"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var spec GroupSpec
+			err := toml.Unmarshal([]byte(tt.toml), &spec)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("toml.Unmarshal() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if !reflect.DeepEqual(spec, tt.want) {
+				t.Errorf("GroupSpec unmarshal result mismatch")
+				t.Logf("Got:  %+v", spec)
+				t.Logf("Want: %+v", tt.want)
+			}
+		})
+	}
+}
+
+func TestCommandSpec_UnmarshalTOML_NewFieldNames(t *testing.T) {
+	tests := []struct {
+		name    string
+		toml    string
+		want    CommandSpec
+		wantErr bool
+	}{
+		{
+			name: "all new field names",
+			toml: `
+name = "test-command"
+cmd = "/bin/echo"
+env_vars = ["CMD_VAR=test"]
+env_import = ["cmd_user=USER"]
+risk_level = "low"
+output_file = "/tmp/output.log"
+`,
+			want: CommandSpec{
+				Name:       "test-command",
+				Cmd:        "/bin/echo",
+				EnvVars:    []string{"CMD_VAR=test"},
+				EnvImport:  []string{"cmd_user=USER"},
+				RiskLevel:  "low",
+				OutputFile: "/tmp/output.log",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var spec CommandSpec
+			err := toml.Unmarshal([]byte(tt.toml), &spec)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("toml.Unmarshal() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if !reflect.DeepEqual(spec, tt.want) {
+				t.Errorf("CommandSpec unmarshal result mismatch")
+				t.Logf("Got:  %+v", spec)
+				t.Logf("Want: %+v", tt.want)
+			}
+		})
+	}
+}
+
 func TestConfigSpec_Parse(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -58,12 +238,12 @@ version = "1.0"
 [global]
 timeout = 300
 log_level = "debug"
-skip_standard_paths = true
-max_output_size = 1048576
+verify_standard_paths = false
+output_size_limit = 1048576
 verify_files = ["/usr/bin/python3", "/usr/bin/gcc"]
-env_allowlist = ["PATH", "HOME"]
-env = ["PATH=/usr/bin:/bin", "HOME=/root"]
-from_env = ["user=USER", "shell=SHELL"]
+env_allowed = ["PATH", "HOME"]
+env_vars = ["PATH=/usr/bin:/bin", "HOME=/root"]
+env_import = ["user=USER", "shell=SHELL"]
 vars = ["PREFIX=/opt", "VERSION=1.0"]
 
 [[groups]]
@@ -76,15 +256,15 @@ cmd = "/bin/echo"
 			want: &ConfigSpec{
 				Version: "1.0",
 				Global: GlobalSpec{
-					Timeout:           300,
-					LogLevel:          "debug",
-					SkipStandardPaths: true,
-					MaxOutputSize:     1048576,
-					VerifyFiles:       []string{"/usr/bin/python3", "/usr/bin/gcc"},
-					EnvAllowlist:      []string{"PATH", "HOME"},
-					Env:               []string{"PATH=/usr/bin:/bin", "HOME=/root"},
-					FromEnv:           []string{"user=USER", "shell=SHELL"},
-					Vars:              []string{"PREFIX=/opt", "VERSION=1.0"},
+					Timeout:             300,
+					LogLevel:            "debug",
+					VerifyStandardPaths: func() *bool { b := false; return &b }(),
+					OutputSizeLimit:     1048576,
+					VerifyFiles:         []string{"/usr/bin/python3", "/usr/bin/gcc"},
+					EnvAllowed:          []string{"PATH", "HOME"},
+					EnvVars:             []string{"PATH=/usr/bin:/bin", "HOME=/root"},
+					EnvImport:           []string{"user=USER", "shell=SHELL"},
+					Vars:                []string{"PREFIX=/opt", "VERSION=1.0"},
 				},
 				Groups: []GroupSpec{
 					{
@@ -114,9 +294,9 @@ description = "Build tasks"
 priority = 1
 workdir = "/tmp/build"
 verify_files = ["/usr/bin/make"]
-env_allowlist = ["PATH", "CC"]
-env = ["CC=gcc"]
-from_env = ["home=HOME"]
+env_allowed = ["PATH", "CC"]
+env_vars = ["CC=gcc"]
+env_import = ["home=HOME"]
 vars = ["BUILD_TYPE=release"]
 
 [[groups.commands]]
@@ -130,15 +310,15 @@ cmd = "/usr/bin/make"
 				},
 				Groups: []GroupSpec{
 					{
-						Name:         "build",
-						Description:  "Build tasks",
-						Priority:     1,
-						WorkDir:      "/tmp/build",
-						VerifyFiles:  []string{"/usr/bin/make"},
-						EnvAllowlist: []string{"PATH", "CC"},
-						Env:          []string{"CC=gcc"},
-						FromEnv:      []string{"home=HOME"},
-						Vars:         []string{"BUILD_TYPE=release"},
+						Name:        "build",
+						Description: "Build tasks",
+						Priority:    1,
+						WorkDir:     "/tmp/build",
+						VerifyFiles: []string{"/usr/bin/make"},
+						EnvAllowed:  []string{"PATH", "CC"},
+						EnvVars:     []string{"CC=gcc"},
+						EnvImport:   []string{"home=HOME"},
+						Vars:        []string{"BUILD_TYPE=release"},
 						Commands: []CommandSpec{
 							{
 								Name: "compile",
@@ -170,10 +350,10 @@ workdir = "/tmp/test"
 timeout = 60
 run_as_user = "testuser"
 run_as_group = "testgroup"
-max_risk_level = "medium"
-output = "/tmp/output.log"
-env = ["PYTHONPATH=/opt/lib"]
-from_env = ["path=PATH"]
+risk_level = "medium"
+output_file = "/tmp/output.log"
+env_vars = ["PYTHONPATH=/opt/lib"]
+env_import = ["path=PATH"]
 vars = ["TEST_VAR=value"]
 `,
 			want: &ConfigSpec{
@@ -186,19 +366,19 @@ vars = ["TEST_VAR=value"]
 						Name: "test",
 						Commands: []CommandSpec{
 							{
-								Name:         "mycommand",
-								Description:  "Test command",
-								Cmd:          "/usr/bin/python3",
-								Args:         []string{"-m", "pytest"},
-								WorkDir:      "/tmp/test",
-								Timeout:      60,
-								RunAsUser:    "testuser",
-								RunAsGroup:   "testgroup",
-								MaxRiskLevel: "medium",
-								Output:       "/tmp/output.log",
-								Env:          []string{"PYTHONPATH=/opt/lib"},
-								FromEnv:      []string{"path=PATH"},
-								Vars:         []string{"TEST_VAR=value"},
+								Name:        "mycommand",
+								Description: "Test command",
+								Cmd:         "/usr/bin/python3",
+								Args:        []string{"-m", "pytest"},
+								WorkDir:     "/tmp/test",
+								Timeout:     60,
+								RunAsUser:   "testuser",
+								RunAsGroup:  "testgroup",
+								RiskLevel:   "medium",
+								OutputFile:  "/tmp/output.log",
+								EnvVars:     []string{"PYTHONPATH=/opt/lib"},
+								EnvImport:   []string{"path=PATH"},
+								Vars:        []string{"TEST_VAR=value"},
 							},
 						},
 					},
@@ -378,7 +558,7 @@ func TestCommandSpec_GetMaxRiskLevel(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			spec := &CommandSpec{
-				MaxRiskLevel: tt.maxRiskLevel,
+				RiskLevel: tt.maxRiskLevel,
 			}
 			got, err := spec.GetMaxRiskLevel()
 			if (err != nil) != tt.wantErr {

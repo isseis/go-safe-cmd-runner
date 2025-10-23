@@ -24,7 +24,7 @@ name = "test"
 name = "ls"
 cmd = "ls"
 args = ["-la"]
-output = "/tmp/ls-output.txt"
+output_file = "/tmp/ls-output.txt"
 `,
 			wantOutput: "/tmp/ls-output.txt",
 			wantErr:    false,
@@ -51,7 +51,7 @@ name = "test"
 name = "ls"
 cmd = "ls"
 args = ["-la"]
-output = ""
+output_file = ""
 `,
 			wantOutput: "",
 			wantErr:    false,
@@ -83,8 +83,8 @@ output = ""
 			}
 
 			command := config.Groups[0].Commands[0]
-			if command.Output != tt.wantOutput {
-				t.Errorf("Expected output '%s', got '%s'", tt.wantOutput, command.Output)
+			if command.OutputFile != tt.wantOutput {
+				t.Errorf("Expected output '%s', got '%s'", tt.wantOutput, command.OutputFile)
 			}
 		})
 	}
@@ -103,7 +103,7 @@ func TestGlobalConfigMaxOutputSizeParsing(t *testing.T) {
 			tomlContent: `
 [global]
 workdir = "/tmp"
-max_output_size = 10485760
+output_size_limit = 10485760
 `,
 			wantMaxSize: 10485760, // 10MB
 			wantErr:     false,
@@ -122,7 +122,7 @@ workdir = "/tmp"
 			tomlContent: `
 [global]
 workdir = "/tmp"
-max_output_size = 0
+output_size_limit = 0
 `,
 			wantMaxSize: 0, // runner sets default value, so just check for no error
 			wantErr:     false,
@@ -145,8 +145,8 @@ max_output_size = 0
 				t.Fatalf("Unexpected error: %v", err)
 			}
 
-			if config.Global.MaxOutputSize != tt.wantMaxSize {
-				t.Errorf("Expected max_output_size %d, got %d", tt.wantMaxSize, config.Global.MaxOutputSize)
+			if config.Global.OutputSizeLimit != tt.wantMaxSize {
+				t.Errorf("Expected max_output_size %d, got %d", tt.wantMaxSize, config.Global.OutputSizeLimit)
 			}
 		})
 	}
@@ -160,7 +160,7 @@ version = "1.0"
 [global]
 workdir = "/tmp"
 timeout = 300
-max_output_size = 20971520
+output_size_limit = 20971520
 
 [[groups]]
 name = "build"
@@ -171,14 +171,14 @@ name = "make"
 description = "Run make command"
 cmd = "make"
 args = ["all"]
-output = "/tmp/build.log"
+output_file = "/tmp/build.log"
 
 [[groups.commands]]
 name = "test"
 description = "Run tests"
 cmd = "make"
 args = ["test"]
-output = "/tmp/test.log"
+output_file = "/tmp/test.log"
 
 [[groups]]
 name = "utilities"
@@ -199,8 +199,8 @@ args = ["-la"]
 	}
 
 	// Test global configuration
-	if config.Global.MaxOutputSize != 20971520 {
-		t.Errorf("Expected max_output_size 20971520, got %d", config.Global.MaxOutputSize)
+	if config.Global.OutputSizeLimit != 20971520 {
+		t.Errorf("Expected max_output_size 20971520, got %d", config.Global.OutputSizeLimit)
 	}
 
 	// Test first group commands
@@ -214,13 +214,13 @@ args = ["-la"]
 	}
 
 	makeCmd := buildGroup.Commands[0]
-	if makeCmd.Output != "/tmp/build.log" {
-		t.Errorf("Expected make command output '/tmp/build.log', got '%s'", makeCmd.Output)
+	if makeCmd.OutputFile != "/tmp/build.log" {
+		t.Errorf("Expected make command output '/tmp/build.log', got '%s'", makeCmd.OutputFile)
 	}
 
 	testCmd := buildGroup.Commands[1]
-	if testCmd.Output != "/tmp/test.log" {
-		t.Errorf("Expected test command output '/tmp/test.log', got '%s'", testCmd.Output)
+	if testCmd.OutputFile != "/tmp/test.log" {
+		t.Errorf("Expected test command output '/tmp/test.log', got '%s'", testCmd.OutputFile)
 	}
 
 	// Test second group command (no output specified)
@@ -230,8 +230,8 @@ args = ["-la"]
 	}
 
 	lsCmd := utilGroup.Commands[0]
-	if lsCmd.Output != "" {
-		t.Errorf("Expected ls command output to be empty, got '%s'", lsCmd.Output)
+	if lsCmd.OutputFile != "" {
+		t.Errorf("Expected ls command output to be empty, got '%s'", lsCmd.OutputFile)
 	}
 }
 
@@ -242,7 +242,7 @@ func TestDirectUnmarshalingOfNewFields(t *testing.T) {
 name = "test-cmd"
 cmd = "echo"
 args = ["hello"]
-output = "/tmp/test.txt"
+output_file = "/tmp/test.txt"
 `
 		var cmd runnertypes.CommandSpec
 		err := toml.Unmarshal([]byte(tomlData), &cmd)
@@ -250,8 +250,8 @@ output = "/tmp/test.txt"
 			t.Fatalf("Failed to unmarshal command: %v", err)
 		}
 
-		if cmd.Output != "/tmp/test.txt" {
-			t.Errorf("Expected output '/tmp/test.txt', got '%s'", cmd.Output)
+		if cmd.OutputFile != "/tmp/test.txt" {
+			t.Errorf("Expected output '/tmp/test.txt', got '%s'", cmd.OutputFile)
 		}
 	})
 
@@ -259,7 +259,7 @@ output = "/tmp/test.txt"
 		tomlData := `
 workdir = "/tmp"
 timeout = 600
-max_output_size = 5242880
+output_size_limit = 5242880
 `
 		var global runnertypes.GlobalSpec
 		err := toml.Unmarshal([]byte(tomlData), &global)
@@ -267,8 +267,8 @@ max_output_size = 5242880
 			t.Fatalf("Failed to unmarshal global config: %v", err)
 		}
 
-		if global.MaxOutputSize != 5242880 {
-			t.Errorf("Expected max_output_size 5242880, got %d", global.MaxOutputSize)
+		if global.OutputSizeLimit != 5242880 {
+			t.Errorf("Expected max_output_size 5242880, got %d", global.OutputSizeLimit)
 		}
 	})
 }

@@ -7,9 +7,9 @@ version = "1.0"
 timeout = 30
 log_level = "info"
 # Conservative output size limit (1MB) for security
-max_output_size = 1048576
+output_size_limit = 1048576
 # Minimal environment allowlist for security
-env_allowlist = [
+env_allowed = [
     "PATH",
     "HOME",
     "USER",
@@ -33,21 +33,21 @@ name = "safe_relative_path"
 description = "Output to safe relative path"
 cmd = "echo"
 args = ["Safe output in working directory"]
-output = "safe_output.txt"
+output_file = "safe_output.txt"
 
 [[groups.commands]]
 name = "safe_subdirectory"
 description = "Output to safe subdirectory"
 cmd = "date"
 args = []
-output = "logs/safe_date.txt"
+output_file = "logs/safe_date.txt"
 
 [[groups.commands]]
 name = "safe_nested_path"
 description = "Output to nested safe path"
 cmd = "whoami"
 args = []
-output = "reports/user/identity.txt"
+output_file = "reports/user/identity.txt"
 
 # User home directory outputs (low security risk)
 [[groups]]
@@ -60,14 +60,14 @@ name = "home_directory_output"
 description = "Output to user home directory"
 cmd = "uname"
 args = ["-a"]
-output = "${HOME}/security_test/system_info.txt" # Note: variable expansion is not yet implemented
+output_file = "${HOME}/security_test/system_info.txt" # Note: variable expansion is not yet implemented
 
 [[groups.commands]]
 name = "user_documents_output"
 description = "Output to user documents"
 cmd = "id"
 args = []
-output = "${HOME}/Documents/user_identity.txt" # Note: variable expansion is not yet implemented
+output_file = "${HOME}/Documents/user_identity.txt" # Note: variable expansion is not yet implemented
 
 # Controlled temporary directory usage
 [[groups]]
@@ -81,14 +81,14 @@ name = "temp_system_info"
 description = "System information in temporary directory"
 cmd = "cat"
 args = ["/proc/version"]
-output = "system_version.txt"
+output_file = "system_version.txt"
 
 [[groups.commands]]
 name = "temp_user_info"
 description = "User information in temporary directory"
 cmd = "id"
 args = ["-a"]
-output = "detailed_user_info.txt"
+output_file = "detailed_user_info.txt"
 
 # Security validation scenarios
 [[groups]]
@@ -101,14 +101,14 @@ name = "permitted_system_read"
 description = "Read permitted system information"
 cmd = "cat"
 args = ["/proc/cpuinfo"]
-output = "cpu_info.txt"
+output_file = "cpu_info.txt"
 
 [[groups.commands]]
 name = "safe_find_operation"
 description = "Safe find operation with output"
 cmd = "/usr/bin/find"
 args = ["/tmp", "-name", "*.txt", "-type", "f"]
-output = "found_files.txt"
+output_file = "found_files.txt"
 timeout = 60
 
 [[groups.commands]]
@@ -116,7 +116,7 @@ name = "network_info_safe"
 description = "Safe network information gathering"
 cmd = "ip"
 args = ["addr", "show"]
-output = "network_interfaces.txt"
+output_file = "network_interfaces.txt"
 
 # Risk level management with output capture
 [[groups]]
@@ -129,16 +129,16 @@ name = "low_risk_with_output"
 description = "Low risk command with output capture"
 cmd = "echo"
 args = ["Low risk operation"]
-output = "low_risk_result.txt"
-max_risk_level = "low"
+output_file = "low_risk_result.txt"
+risk_level = "low"
 
 [[groups.commands]]
 name = "medium_risk_with_output"
 description = "Medium risk command with controlled output"
 cmd = "ps"
 args = ["aux"]
-output = "process_list.txt"
-max_risk_level = "medium"
+output_file = "process_list.txt"
+risk_level = "medium"
 
 # Environment variable security
 [[groups]]
@@ -146,21 +146,21 @@ name = "env_security_tests"
 description = "Environment variable security with output capture"
 priority = 6
 # Explicit minimal allowlist for this group
-env_allowlist = ["PATH", "USER"]
+env_allowed = ["PATH", "USER"]
 
 [[groups.commands]]
 name = "secure_env_check"
 description = "Check environment variables securely"
 cmd = "printenv"
 args = ["USER"]
-output = "user_env.txt"
+output_file = "user_env.txt"
 
 [[groups.commands]]
 name = "no_sensitive_env"
 description = "Command without sensitive environment access"
 cmd = "echo"
 args = ["No sensitive environment variables exposed"]
-output = "env_safety_check.txt"
+output_file = "env_safety_check.txt"
 
 # File permission demonstration
 [[groups]]
@@ -173,14 +173,14 @@ name = "secure_file_creation"
 description = "Create output file with secure permissions"
 cmd = "echo"
 args = ["This file should have secure permissions (0600)"]
-output = "secure_permissions.txt"
+output_file = "secure_permissions.txt"
 
 [[groups.commands]]
 name = "verify_permissions"
 description = "Verify file was created with correct permissions"
 cmd = "ls"
 args = ["-la", "secure_permissions.txt"]
-output = "permission_check.txt"
+output_file = "permission_check.txt"
 
 # Size limit security
 [[groups]]
@@ -193,14 +193,14 @@ name = "controlled_size_output"
 description = "Command with controlled output size"
 cmd = "echo"
 args = ["Controlled size output for security"]
-output = "size_controlled.txt"
+output_file = "size_controlled.txt"
 
 [[groups.commands]]
 name = "system_info_sample"
 description = "Sample system information with size awareness"
 cmd = "head"
 args = ["-n", "50", "/proc/cpuinfo"]
-output = "system_info_sample.txt"
+output_file = "system_info_sample.txt"
 timeout = 30
 
 # Security best practices summary
@@ -216,11 +216,11 @@ cmd = "echo"
 args = [
     "Security features: Path validation ✓, Permission checks ✓, Size limits ✓, Risk assessment ✓"
 ]
-output = "security_checklist.txt"
+output_file = "security_checklist.txt"
 
 [[groups.commands]]
 name = "final_security_status"
 description = "Final security validation status"
 cmd = "echo"
 args = ["All security-focused output capture tests completed successfully"]
-output = "final_security_status.txt"
+output_file = "final_security_status.txt"

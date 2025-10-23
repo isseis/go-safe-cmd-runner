@@ -5,8 +5,8 @@ version = "1.0"
 [global]
 timeout = 30
 log_level = "debug"
-max_output_size = 1024
-env_allowlist = ["PATH"]
+output_size_limit = 1024
+env_allowed = ["PATH"]
 
 # Test various error scenarios
 [[groups]]
@@ -18,25 +18,25 @@ name = "path_traversal_attempt"
 description = "Attempt path traversal (should fail)"
 cmd = "echo"
 args = ["Attempting path traversal"]
-output = "../../etc/passwd"
+output_file = "../../etc/passwd"
 
 [[groups.commands]]
 name = "system_directory_attempt"
 description = "Attempt to write to system directory (should fail)"
 cmd = "echo"
 args = ["Attempting system write"]
-output = "/etc/malicious_output.txt"
+output_file = "/etc/malicious_output.txt"
 
 [[groups.commands]]
 name = "dangerous_characters"
 description = "Attempt dangerous characters in path (should fail)"
 cmd = "echo"
 args = ["Dangerous path"]
-output = "output; rm -rf /"
+output_file = "output; rm -rf /"
 
 [[groups.commands]]
 name = "empty_output_path"
 description = "Empty output path (should fail)"
 cmd = "echo"
 args = ["Empty path test"]
-output = ""
+output_file = ""

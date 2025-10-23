@@ -83,10 +83,10 @@ func TestPathTraversalAttack(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			cmdSpec := &runnertypes.CommandSpec{
-				Name:   "path_traversal_test",
-				Cmd:    "echo",
-				Args:   []string{"test output"},
-				Output: tc.outputPath,
+				Name:       "path_traversal_test",
+				Cmd:        "echo",
+				Args:       []string{"test output"},
+				OutputFile: tc.outputPath,
 			}
 			runtimeCmd := createRuntimeCommand(cmdSpec)
 
@@ -140,10 +140,10 @@ func TestSymlinkAttack(t *testing.T) {
 	require.NoError(t, err)
 
 	cmdSpec := &runnertypes.CommandSpec{
-		Name:   "symlink_attack_test",
-		Cmd:    "echo",
-		Args:   []string{"malicious content"},
-		Output: symlinkPath,
+		Name:       "symlink_attack_test",
+		Cmd:        "echo",
+		Args:       []string{"malicious content"},
+		OutputFile: symlinkPath,
 	}
 	runtimeCmd := createRuntimeCommand(cmdSpec)
 
@@ -216,10 +216,10 @@ func TestPrivilegeEscalationAttack(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			cmdSpec := &runnertypes.CommandSpec{
-				Name:   "privilege_escalation_test",
-				Cmd:    "echo",
-				Args:   []string{"test output"},
-				Output: tc.outputPath,
+				Name:       "privilege_escalation_test",
+				Cmd:        "echo",
+				Args:       []string{"test output"},
+				OutputFile: tc.outputPath,
 			}
 			runtimeCmd := createRuntimeCommand(cmdSpec)
 
@@ -270,10 +270,10 @@ func TestDiskSpaceExhaustionAttack(t *testing.T) {
 	// Create command that attempts to generate very large output
 	largeSize := 100 * 1024 * 1024 // 100MB
 	cmdSpec := &runnertypes.CommandSpec{
-		Name:   "disk_exhaustion_test",
-		Cmd:    "sh",
-		Args:   []string{"-c", "yes 'A' | head -c " + strconv.Itoa(largeSize)},
-		Output: outputPath,
+		Name:       "disk_exhaustion_test",
+		Cmd:        "sh",
+		Args:       []string{"-c", "yes 'A' | head -c " + strconv.Itoa(largeSize)},
+		OutputFile: outputPath,
 	}
 	runtimeCmd := createRuntimeCommand(cmdSpec)
 
@@ -316,10 +316,10 @@ func TestFilePermissionValidation(t *testing.T) {
 	outputPath := filepath.Join(tempDir, "permission_test.txt")
 
 	cmdSpec := &runnertypes.CommandSpec{
-		Name:   "permission_test",
-		Cmd:    "echo",
-		Args:   []string{"test output"},
-		Output: outputPath,
+		Name:       "permission_test",
+		Cmd:        "echo",
+		Args:       []string{"test output"},
+		OutputFile: outputPath,
 	}
 	runtimeCmd := createRuntimeCommand(cmdSpec)
 
@@ -379,10 +379,10 @@ func TestConcurrentSecurityValidation(t *testing.T) {
 			outputPath := filepath.Join(tempDir, fmt.Sprintf("concurrent_test_%d.txt", index))
 
 			cmdSpec := &runnertypes.CommandSpec{
-				Name:   "concurrent_security_test",
-				Cmd:    "echo",
-				Args:   []string{"concurrent test output"},
-				Output: outputPath,
+				Name:       "concurrent_security_test",
+				Cmd:        "echo",
+				Args:       []string{"concurrent test output"},
+				OutputFile: outputPath,
 			}
 			runtimeCmd := createRuntimeCommand(cmdSpec)
 
@@ -443,10 +443,10 @@ func TestSecurityValidatorIntegration(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			cmdSpec := &runnertypes.CommandSpec{
-				Name:   "security_integration_test",
-				Cmd:    "echo",
-				Args:   []string{"test output"},
-				Output: tc.outputPath,
+				Name:       "security_integration_test",
+				Cmd:        "echo",
+				Args:       []string{"test output"},
+				OutputFile: tc.outputPath,
 			}
 			runtimeCmd := createRuntimeCommand(cmdSpec)
 
@@ -504,10 +504,10 @@ func TestRaceConditionPrevention(t *testing.T) {
 	for i := 0; i < numGoroutines; i++ {
 		go func(index int) {
 			cmdSpec := &runnertypes.CommandSpec{
-				Name:   "race_condition_test",
-				Cmd:    "echo",
-				Args:   []string{fmt.Sprintf("content from goroutine %d", index)},
-				Output: outputPath,
+				Name:       "race_condition_test",
+				Cmd:        "echo",
+				Args:       []string{fmt.Sprintf("content from goroutine %d", index)},
+				OutputFile: outputPath,
 			}
 			runtimeCmd := createRuntimeCommand(cmdSpec)
 

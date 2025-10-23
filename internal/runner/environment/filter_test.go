@@ -10,7 +10,7 @@ import (
 
 func TestNewFilter(t *testing.T) {
 	config := &runnertypes.ConfigSpec{}
-	filter := NewFilter(config.Global.EnvAllowlist)
+	filter := NewFilter(config.Global.EnvAllowed)
 
 	require.NotNil(t, filter, "NewFilter returned nil")
 }
@@ -30,24 +30,24 @@ func TestDetermineInheritanceMode(t *testing.T) {
 		{
 			name: "nil allowlist should inherit",
 			group: &runnertypes.GroupSpec{
-				Name:         "test",
-				EnvAllowlist: nil,
+				Name:       "test",
+				EnvAllowed: nil,
 			},
 			expectedMode: runnertypes.InheritanceModeInherit,
 		},
 		{
 			name: "empty allowlist should reject",
 			group: &runnertypes.GroupSpec{
-				Name:         "test",
-				EnvAllowlist: []string{},
+				Name:       "test",
+				EnvAllowed: []string{},
 			},
 			expectedMode: runnertypes.InheritanceModeReject,
 		},
 		{
 			name: "non-empty allowlist should be explicit",
 			group: &runnertypes.GroupSpec{
-				Name:         "test",
-				EnvAllowlist: []string{"VAR1", "VAR2"},
+				Name:       "test",
+				EnvAllowed: []string{"VAR1", "VAR2"},
 			},
 			expectedMode: runnertypes.InheritanceModeExplicit,
 		},
@@ -55,10 +55,10 @@ func TestDetermineInheritanceMode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			filter := NewFilter((&runnertypes.ConfigSpec{}).Global.EnvAllowlist)
+			filter := NewFilter((&runnertypes.ConfigSpec{}).Global.EnvAllowed)
 			var allowlist []string
 			if tt.group != nil {
-				allowlist = tt.group.EnvAllowlist
+				allowlist = tt.group.EnvAllowed
 			}
 			mode := filter.determineInheritanceMode(allowlist)
 
@@ -79,26 +79,26 @@ func TestDetermineInheritanceMode(t *testing.T) {
 func TestIsVariableAccessAllowedWithInheritance(t *testing.T) {
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			EnvAllowlist: []string{"GLOBAL_VAR", "COMMON_VAR"},
+			EnvAllowed: []string{"GLOBAL_VAR", "COMMON_VAR"},
 		},
 	}
 
 	// Groups for testing different inheritance modes
 	groupInherit := &runnertypes.GroupSpec{
-		Name:         "group-inherit",
-		EnvAllowlist: nil, // Inherit from global
+		Name:       "group-inherit",
+		EnvAllowed: nil, // Inherit from global
 	}
 	groupExplicit := &runnertypes.GroupSpec{
-		Name:         "group-explicit",
-		EnvAllowlist: []string{"GROUP_VAR", "COMMON_VAR"}, // Explicit allowlist
+		Name:       "group-explicit",
+		EnvAllowed: []string{"GROUP_VAR", "COMMON_VAR"}, // Explicit allowlist
 	}
 	groupReject := &runnertypes.GroupSpec{
-		Name:         "group-reject",
-		EnvAllowlist: []string{}, // Reject all
+		Name:       "group-reject",
+		EnvAllowed: []string{}, // Reject all
 	}
 	groupNil := (*runnertypes.GroupSpec)(nil)
 
-	filter := NewFilter(config.Global.EnvAllowlist)
+	filter := NewFilter(config.Global.EnvAllowed)
 
 	tests := []struct {
 		name     string
@@ -198,7 +198,7 @@ func TestIsVariableAccessAllowedWithInheritance(t *testing.T) {
 			var allowlist []string
 			var groupName string
 			if tt.group != nil {
-				allowlist = tt.group.EnvAllowlist
+				allowlist = tt.group.EnvAllowed
 				groupName = tt.group.Name
 			}
 			result := filter.IsVariableAccessAllowed(tt.variable, allowlist, groupName)

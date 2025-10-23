@@ -1,12 +1,12 @@
 [global]
-env_allowlist = ["HOME", "PATH"]
-from_env = ["home=HOME", "system_path=PATH"]
+env_allowed = ["HOME", "PATH"]
+env_import = ["home=HOME", "system_path=PATH"]
 vars = [
     "app_name=myapp",
     "app_dir=%{home}/%{app_name}",
     "data_dir=%{app_dir}/data"
 ]
-env = ["APP_DIR=%{app_dir}"]
+env_vars = ["APP_DIR=%{app_dir}"]
 verify_files = ["%{app_dir}/verify.sh"]
 
 [[groups]]
@@ -15,11 +15,11 @@ vars = [
     "input_dir=%{data_dir}/input",
     "output_dir=%{data_dir}/output"
 ]
-env = ["INPUT_DIR=%{input_dir}"]
+env_vars = ["INPUT_DIR=%{input_dir}"]
 
 [[groups.commands]]
 name = "process_data"
 vars = ["temp_dir=%{input_dir}/temp"]
 cmd = "/usr/bin/process"
 args = ["--input", "%{input_dir}", "--temp", "%{temp_dir}"]
-env = ["TEMP_DIR=%{temp_dir}"]
+env_vars = ["TEMP_DIR=%{temp_dir}"]

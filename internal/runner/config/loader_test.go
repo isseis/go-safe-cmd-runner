@@ -112,18 +112,18 @@ args = ["test"]
 	assert.Equal(t, 120, runtimeGlobal.Timeout(), "Expected RuntimeGlobal.Timeout() to return explicit value")
 }
 
-// TestBasicTOMLParse tests basic TOML parsing for Global.Env and Group.Env
+// TestBasicTOMLParse tests basic TOML parsing for Global.EnvVars and Group.EnvVars
 func TestBasicTOMLParse(t *testing.T) {
 	configContent := `
 version = "1.0"
 
 [global]
 timeout = 300
-env = ["VAR1=value1", "VAR2=value2"]
+env_vars = ["VAR1=value1", "VAR2=value2"]
 
 [[groups]]
 name = "test_group"
-env = ["GROUP_VAR=group_value"]
+env_vars = ["GROUP_VAR=group_value"]
 
 [[groups.commands]]
 name = "test_command"
@@ -136,15 +136,15 @@ args = ["test"]
 	require.NoError(t, err, "LoadConfig failed")
 	require.NotNil(t, cfg)
 
-	// Verify Global.Env is parsed correctly
-	assert.Equal(t, []string{"VAR1=value1", "VAR2=value2"}, cfg.Global.Env)
+	// Verify Global.EnvVars is parsed correctly
+	assert.Equal(t, []string{"VAR1=value1", "VAR2=value2"}, cfg.Global.EnvVars)
 }
 
 // ===========================================
 // Integration Tests
 // ===========================================
 
-// TestLoader_GroupEnvIntegration tests basic Group.Env loading from a TOML file
+// TestLoader_GroupEnvIntegration tests basic Group.EnvVars loading from a TOML file
 // Note: Detailed allowlist scenarios are covered in loader_e2e_test.go::TestE2E_AllowlistScenarios
 func TestLoader_GroupEnvIntegration(t *testing.T) {
 	configPath := "testdata/group_env.toml"
@@ -203,17 +203,17 @@ func TestPhase1_ParseFromEnvAndVars(t *testing.T) {
 	require.NoError(t, err, "LoadConfig failed")
 	require.NotNil(t, cfg, "Config should not be nil")
 
-	// Verify Global.FromEnv is parsed correctly
+	// Verify Global.EnvImport is parsed correctly
 	expectedGlobalFromEnv := []string{"home=HOME", "path=PATH"}
-	assert.Equal(t, expectedGlobalFromEnv, cfg.Global.FromEnv, "Global.FromEnv should be parsed correctly")
+	assert.Equal(t, expectedGlobalFromEnv, cfg.Global.EnvImport, "Global.EnvImport should be parsed correctly")
 
 	// Verify Global.Vars is parsed correctly
 	expectedGlobalVars := []string{"app_dir=/opt/myapp"}
 	assert.Equal(t, expectedGlobalVars, cfg.Global.Vars, "Global.Vars should be parsed correctly")
 
-	// Verify Global.Env is parsed correctly
+	// Verify Global.EnvVars is parsed correctly
 	expectedGlobalEnv := []string{"BASE_DIR=%{app_dir}"}
-	assert.Equal(t, expectedGlobalEnv, cfg.Global.Env, "Global.Env should be parsed correctly")
+	assert.Equal(t, expectedGlobalEnv, cfg.Global.EnvVars, "Global.EnvVars should be parsed correctly")
 
 	// Verify groups
 	require.Len(t, cfg.Groups, 1, "Expected 1 group")
@@ -221,16 +221,16 @@ func TestPhase1_ParseFromEnvAndVars(t *testing.T) {
 	group := &cfg.Groups[0]
 	assert.Equal(t, "test_group", group.Name, "Group name should be 'test_group'")
 
-	// Verify Group.FromEnv is not set (should be nil, inheriting from Global)
-	assert.Nil(t, group.FromEnv, "Group.FromEnv should be nil (inheriting from Global)")
+	// Verify Group.EnvImport is not set (should be nil, inheriting from Global)
+	assert.Nil(t, group.EnvImport, "Group.EnvImport should be nil (inheriting from Global)")
 
 	// Verify Group.Vars is parsed correctly
 	expectedGroupVars := []string{"log_dir=%{app_dir}/logs"}
 	assert.Equal(t, expectedGroupVars, group.Vars, "Group.Vars should be parsed correctly")
 
-	// Verify Group.Env is parsed correctly
+	// Verify Group.EnvVars is parsed correctly
 	expectedGroupEnv := []string{"LOG_DIR=%{log_dir}"}
-	assert.Equal(t, expectedGroupEnv, group.Env, "Group.Env should be parsed correctly")
+	assert.Equal(t, expectedGroupEnv, group.EnvVars, "Group.EnvVars should be parsed correctly")
 
 	// Verify commands
 	require.Len(t, group.Commands, 1, "Expected 1 command")

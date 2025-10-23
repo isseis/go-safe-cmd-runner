@@ -12,7 +12,7 @@ import (
 
 // TestBackwardCompatibility_AllSampleFiles verifies that all existing sample files
 // can be loaded without errors, ensuring backward compatibility with the new
-// Global.Env and Group.Env features.
+// Global.EnvVars and Group.EnvVars features.
 func TestBackwardCompatibility_AllSampleFiles(t *testing.T) {
 	// Set up test environment variables for samples that reference system env vars
 	if os.Getenv("HOME") == "" {
@@ -71,9 +71,9 @@ func TestBackwardCompatibility_AllSampleFiles(t *testing.T) {
 }
 
 // TestBackwardCompatibility_NoGlobalEnv verifies that configurations without
-// Global.Env work as before (no regression).
+// Global.EnvVars work as before (no regression).
 func TestBackwardCompatibility_NoGlobalEnv(t *testing.T) {
-	// Use an existing sample file that doesn't have Global.Env
+	// Use an existing sample file that doesn't have Global.EnvVars
 	configPath := filepath.Join("..", "..", "..", "sample", "variable_expansion_basic.toml")
 	content, err := os.ReadFile(configPath)
 	require.NoError(t, err, "Failed to read configuration file")
@@ -84,9 +84,9 @@ func TestBackwardCompatibility_NoGlobalEnv(t *testing.T) {
 	require.NoError(t, err, "Configuration should load without errors")
 	require.NotNil(t, cfg, "Configuration should not be nil")
 
-	// Global.Env should be nil or empty
-	if cfg.Global.Env != nil {
-		assert.Empty(t, cfg.Global.Env, "Global.Env should be empty in this sample file")
+	// Global.EnvVars should be nil or empty
+	if cfg.Global.EnvVars != nil {
+		assert.Empty(t, cfg.Global.EnvVars, "Global.EnvVars should be empty in this sample file")
 	}
 
 	// In new system, ExpandedEnv is only in RuntimeGlobal, not GlobalSpec
@@ -95,7 +95,7 @@ func TestBackwardCompatibility_NoGlobalEnv(t *testing.T) {
 }
 
 // TestBackwardCompatibility_NoGroupEnv verifies that configurations without
-// Group.Env work as before (no regression).
+// Group.EnvVars work as before (no regression).
 func TestBackwardCompatibility_NoGroupEnv(t *testing.T) {
 	// Use an existing sample file
 	configPath := filepath.Join("..", "..", "..", "sample", "output_capture_basic.toml")
@@ -114,9 +114,9 @@ func TestBackwardCompatibility_NoGroupEnv(t *testing.T) {
 	for i := range cfg.Groups {
 		group := &cfg.Groups[i]
 
-		// Group.Env should be nil or empty
-		if group.Env != nil {
-			assert.Empty(t, group.Env, "Group.Env should be empty in this sample file for group %s", group.Name)
+		// Group.EnvVars should be nil or empty
+		if group.EnvVars != nil {
+			assert.Empty(t, group.EnvVars, "Group.EnvVars should be empty in this sample file for group %s", group.Name)
 		}
 
 		// In new system, ExpandedEnv is only in RuntimeGroup, not GroupSpec
@@ -126,7 +126,7 @@ func TestBackwardCompatibility_NoGroupEnv(t *testing.T) {
 }
 
 // TestBackwardCompatibility_ExistingBehavior verifies that the existing behavior
-// of Command.Env, verify_files, and other features is preserved.
+// of Command.EnvVars, verify_files, and other features is preserved.
 func TestBackwardCompatibility_ExistingBehavior(t *testing.T) {
 	configPath := filepath.Join("..", "..", "..", "sample", "comprehensive.toml")
 	content, err := os.ReadFile(configPath)
@@ -142,16 +142,16 @@ func TestBackwardCompatibility_ExistingBehavior(t *testing.T) {
 	assert.NotNil(t, cfg.Global, "Global config should exist")
 	assert.NotEmpty(t, cfg.Groups, "Should have groups")
 
-	// Check that Command.Env is still present (not expanded at config load time)
+	// Check that Command.EnvVars is still present (not expanded at config load time)
 	foundCommandWithEnv := false
 	for i := range cfg.Groups {
 		for j := range cfg.Groups[i].Commands {
 			cmd := &cfg.Groups[i].Commands[j]
-			if len(cmd.Env) > 0 {
+			if len(cmd.EnvVars) > 0 {
 				foundCommandWithEnv = true
-				// Command.Env should not be expanded yet (happens in bootstrap)
-				for _, envVar := range cmd.Env {
-					assert.Contains(t, envVar, "=", "Command.Env should be in KEY=VALUE format")
+				// Command.EnvVars should not be expanded yet (happens in bootstrap)
+				for _, envVar := range cmd.EnvVars {
+					assert.Contains(t, envVar, "=", "Command.EnvVars should be in KEY=VALUE format")
 				}
 			}
 		}

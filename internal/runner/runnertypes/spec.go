@@ -23,19 +23,19 @@ type ConfigSpec struct {
 // For runtime-expanded values (e.g., ExpandedEnv, ExpandedVars), see RuntimeGlobal instead.
 type GlobalSpec struct {
 	// Execution control
-	Timeout           int    `toml:"timeout"`             // Global timeout in seconds (0 = no timeout)
-	LogLevel          string `toml:"log_level"`           // Log level: debug, info, warn, error
-	SkipStandardPaths bool   `toml:"skip_standard_paths"` // Skip verification for standard system paths
-	MaxOutputSize     int64  `toml:"max_output_size"`     // Maximum output size in bytes (0 = unlimited)
+	Timeout             int    `toml:"timeout"`               // Global timeout in seconds (0 = no timeout)
+	LogLevel            string `toml:"log_level"`             // Log level: debug, info, warn, error
+	VerifyStandardPaths *bool  `toml:"verify_standard_paths"` // Verify files in standard system paths (nil=default true)
+	OutputSizeLimit     int64  `toml:"output_size_limit"`     // Maximum output size in bytes (0 = unlimited)
 
 	// Security
-	VerifyFiles  []string `toml:"verify_files"`  // Files to verify before execution (raw paths)
-	EnvAllowlist []string `toml:"env_allowlist"` // Allowed environment variables
+	VerifyFiles []string `toml:"verify_files"` // Files to verify before execution (raw paths)
+	EnvAllowed  []string `toml:"env_allowed"`  // Allowed environment variables
 
 	// Variable definitions (raw values, not yet expanded)
-	Env     []string `toml:"env"`      // Environment variables in KEY=VALUE format
-	FromEnv []string `toml:"from_env"` // System env var imports in internal_name=SYSTEM_VAR format
-	Vars    []string `toml:"vars"`     // Internal variables in VAR=value format
+	EnvVars   []string `toml:"env_vars"`   // Environment variables in KEY=VALUE format
+	EnvImport []string `toml:"env_import"` // System env var imports in internal_name=SYSTEM_VAR format
+	Vars      []string `toml:"vars"`       // Internal variables in VAR=value format
 }
 
 // GroupSpec represents a command group configuration loaded from TOML file.
@@ -55,13 +55,13 @@ type GroupSpec struct {
 	Commands []CommandSpec `toml:"commands"` // Commands in this group
 
 	// Security
-	VerifyFiles  []string `toml:"verify_files"`  // Files to verify for this group (raw paths)
-	EnvAllowlist []string `toml:"env_allowlist"` // Group-level environment variable allowlist
+	VerifyFiles []string `toml:"verify_files"` // Files to verify for this group (raw paths)
+	EnvAllowed  []string `toml:"env_allowed"`  // Group-level environment variable allowlist
 
 	// Variable definitions (raw values, not yet expanded)
-	Env     []string `toml:"env"`      // Group-level environment variables in KEY=VALUE format
-	FromEnv []string `toml:"from_env"` // System env var imports in internal_name=SYSTEM_VAR format
-	Vars    []string `toml:"vars"`     // Group-level internal variables in VAR=value format
+	EnvVars   []string `toml:"env_vars"`   // Group-level environment variables in KEY=VALUE format
+	EnvImport []string `toml:"env_import"` // System env var imports in internal_name=SYSTEM_VAR format
+	Vars      []string `toml:"vars"`       // Group-level internal variables in VAR=value format
 }
 
 // CommandSpec represents a single command configuration loaded from TOML file.
@@ -78,17 +78,17 @@ type CommandSpec struct {
 	Args []string `toml:"args"` // Command arguments (may contain variables)
 
 	// Execution settings
-	WorkDir      string `toml:"workdir"`        // Working directory for this command (raw value)
-	Timeout      int    `toml:"timeout"`        // Command-specific timeout in seconds (overrides global/group)
-	RunAsUser    string `toml:"run_as_user"`    // User to execute command as (using seteuid)
-	RunAsGroup   string `toml:"run_as_group"`   // Group to execute command as (using setegid)
-	MaxRiskLevel string `toml:"max_risk_level"` // Maximum allowed risk level: low, medium, high
-	Output       string `toml:"output"`         // Standard output file path for capture
+	WorkDir    string `toml:"workdir"`      // Working directory for this command (raw value)
+	Timeout    int    `toml:"timeout"`      // Command-specific timeout in seconds (overrides global/group)
+	RunAsUser  string `toml:"run_as_user"`  // User to execute command as (using seteuid)
+	RunAsGroup string `toml:"run_as_group"` // Group to execute command as (using setegid)
+	RiskLevel  string `toml:"risk_level"`   // Maximum allowed risk level: low, medium, high
+	OutputFile string `toml:"output_file"`  // Standard output file path for capture
 
 	// Variable definitions (raw values, not yet expanded)
-	Env     []string `toml:"env"`      // Command-level environment variables in KEY=VALUE format
-	FromEnv []string `toml:"from_env"` // System env var imports in internal_name=SYSTEM_VAR format
-	Vars    []string `toml:"vars"`     // Command-level internal variables in VAR=value format
+	EnvVars   []string `toml:"env_vars"`   // Command-level environment variables in KEY=VALUE format
+	EnvImport []string `toml:"env_import"` // System env var imports in internal_name=SYSTEM_VAR format
+	Vars      []string `toml:"vars"`       // Command-level internal variables in VAR=value format
 }
 
 // GetMaxRiskLevel parses and returns the maximum risk level for this command.
@@ -96,7 +96,7 @@ type CommandSpec struct {
 //
 // Critical risk level cannot be set in configuration (reserved for internal use only).
 func (s *CommandSpec) GetMaxRiskLevel() (RiskLevel, error) {
-	return ParseRiskLevel(s.MaxRiskLevel)
+	return ParseRiskLevel(s.RiskLevel)
 }
 
 // HasUserGroupSpecification returns true if either run_as_user or run_as_group is specified.

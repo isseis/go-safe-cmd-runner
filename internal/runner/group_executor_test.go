@@ -552,9 +552,9 @@ func TestExecuteCommandInGroup_OutputPathValidationFailure(t *testing.T) {
 
 	cmd := &runnertypes.RuntimeCommand{
 		Spec: &runnertypes.CommandSpec{
-			Name:   "test-cmd",
-			Cmd:    "/bin/echo",
-			Output: "/invalid/output/path",
+			Name:       "test-cmd",
+			Cmd:        "/bin/echo",
+			OutputFile: "/invalid/output/path",
 		},
 		ExpandedCmd:  "/bin/echo",
 		ExpandedArgs: []string{},

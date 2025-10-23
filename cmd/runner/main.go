@@ -205,12 +205,12 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 		}
 
 		dryRunOpts := &resource.DryRunOptions{
-			DetailLevel:       detailLevel,
-			OutputFormat:      outputFormat,
-			ShowSensitive:     false,
-			VerifyFiles:       true,
-			SkipStandardPaths: cfg.Global.SkipStandardPaths,   // Use setting from TOML config
-			HashDir:           cmdcommon.DefaultHashDirectory, // Use secure default hash directory
+			DetailLevel:         detailLevel,
+			OutputFormat:        outputFormat,
+			ShowSensitive:       false,
+			VerifyFiles:         true,
+			VerifyStandardPaths: runnertypes.DetermineVerifyStandardPaths(cfg.Global.VerifyStandardPaths), // Use new verify logic
+			HashDir:             cmdcommon.DefaultHashDirectory,                                           // Use secure default hash directory
 		}
 		runnerOptions = append(runnerOptions, runner.WithDryRun(dryRunOpts))
 	}

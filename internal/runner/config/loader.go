@@ -45,5 +45,13 @@ func (l *Loader) LoadConfig(content []byte) (*runnertypes.ConfigSpec, error) {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
 
+	// Apply default values
+	ApplyGlobalDefaults(&cfg.Global)
+	for i := range cfg.Groups {
+		for j := range cfg.Groups[i].Commands {
+			ApplyCommandDefaults(&cfg.Groups[i].Commands[j])
+		}
+	}
+
 	return &cfg, nil
 }

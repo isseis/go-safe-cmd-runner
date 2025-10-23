@@ -5,14 +5,14 @@ version = "1.0"
 
 [global]
 vars = ["base_dir=/opt"]
-env = ["BASE_DIR=%{base_dir}", "LOG_LEVEL=info"]
-env_allowlist = ["HOME", "PATH", "USER"]
+env_vars = ["BASE_DIR=%{base_dir}", "LOG_LEVEL=info"]
+env_allowed = ["HOME", "PATH", "USER"]
 
 [[groups]]
 name = "inherit_group"
 # env_allowlist is not defined → should inherit from global allowlist
 vars = ["app_dir=%{base_dir}/app"]
-env = ["APP_DIR=%{app_dir}"]
+env_vars = ["APP_DIR=%{app_dir}"]
 verify_files = ["%{app_dir}/verify.sh"]
 
 [[groups.commands]]
@@ -22,9 +22,9 @@ args = ["%{app_dir}"]
 
 [[groups]]
 name = "override_group"
-env_allowlist = ["USER"]  # Override global allowlist
+env_allowed = ["USER"]  # Override global allowlist
 vars = ["data_dir=/data"]
-env = ["DATA_DIR=%{data_dir}"]
+env_vars = ["DATA_DIR=%{data_dir}"]
 verify_files = ["%{data_dir}/verify.sh"]
 
 [[groups.commands]]
@@ -34,9 +34,9 @@ args = ["%{data_dir}"]
 
 [[groups]]
 name = "reject_group"
-env_allowlist = []  # Empty slice should reject all system environment variables
+env_allowed = []  # Empty slice should reject all system environment variables
 vars = ["static_dir=/static"]
-env = ["STATIC_DIR=%{static_dir}"]
+env_vars = ["STATIC_DIR=%{static_dir}"]
 verify_files = ["%{static_dir}/verify.sh"]
 
 [[groups.commands]]

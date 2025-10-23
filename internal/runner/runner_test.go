@@ -824,7 +824,7 @@ func TestCommandGroup_NewFields(t *testing.T) {
 				Commands: []runnertypes.CommandSpec{
 					{Name: "test", Cmd: "echo", Args: []string{"hello"}},
 				},
-				EnvAllowlist: []string{"PATH"},
+				EnvAllowed: []string{"PATH"},
 			},
 			expectError: false,
 			description: "Should set working directory from group WorkDir field",
@@ -837,7 +837,7 @@ func TestCommandGroup_NewFields(t *testing.T) {
 				Commands: []runnertypes.CommandSpec{
 					{Name: "test", Cmd: "echo", Args: []string{"hello"}, WorkDir: "/usr"},
 				},
-				EnvAllowlist: []string{"PATH"},
+				EnvAllowed: []string{"PATH"},
 			},
 			expectError: false,
 			description: "Commands with existing WorkDir should not be overridden by group WorkDir",
@@ -849,7 +849,7 @@ func TestCommandGroup_NewFields(t *testing.T) {
 			config := &runnertypes.ConfigSpec{
 				Version: "1.0",
 				Global: runnertypes.GlobalSpec{
-					EnvAllowlist: []string{"PATH"},
+					EnvAllowed: []string{"PATH"},
 				},
 				Groups: []runnertypes.GroupSpec{tt.group},
 			}
@@ -949,20 +949,20 @@ func TestRunner_EnvironmentVariablePriority_GroupLevelSupport(t *testing.T) {
 			config := &runnertypes.ConfigSpec{
 				Version: "1.0",
 				Global: runnertypes.GlobalSpec{
-					Timeout:      3600,
-					EnvAllowlist: []string{"TEST_VAR"},
-					Env:          tt.globalEnv,
+					Timeout:    3600,
+					EnvAllowed: []string{"TEST_VAR"},
+					EnvVars:    tt.globalEnv,
 				},
 				Groups: []runnertypes.GroupSpec{
 					{
-						Name: "test-group",
-						Env:  tt.groupEnv,
+						Name:    "test-group",
+						EnvVars: tt.groupEnv,
 						Commands: []runnertypes.CommandSpec{
 							{
-								Name: "test-cmd",
-								Cmd:  "printenv",
-								Args: []string{"TEST_VAR"},
-								Env:  tt.commandEnv,
+								Name:    "test-cmd",
+								Cmd:     "printenv",
+								Args:    []string{"TEST_VAR"},
+								EnvVars: tt.commandEnv,
 							},
 						},
 					},
@@ -1108,10 +1108,10 @@ func TestRunner_OutputCaptureEndToEnd(t *testing.T) {
 			name: "command with output configuration",
 			commands: []runnertypes.CommandSpec{
 				{
-					Name:   "test-echo",
-					Cmd:    "echo",
-					Args:   []string{"Hello World"},
-					Output: "test-output.txt",
+					Name:       "test-echo",
+					Cmd:        "echo",
+					Args:       []string{"Hello World"},
+					OutputFile: "test-output.txt",
 				},
 			},
 			expectError: false, // Note: This may fail due to output capture implementation, which is expected
@@ -1134,10 +1134,10 @@ func TestRunner_OutputCaptureEndToEnd(t *testing.T) {
 			name: "mixed commands with and without output",
 			commands: []runnertypes.CommandSpec{
 				{
-					Name:   "with-output",
-					Cmd:    "echo",
-					Args:   []string{"Captured"},
-					Output: "mixed-output.txt",
+					Name:       "with-output",
+					Cmd:        "echo",
+					Args:       []string{"Captured"},
+					OutputFile: "mixed-output.txt",
 				},
 				{
 					Name: "without-output",
@@ -1157,9 +1157,9 @@ func TestRunner_OutputCaptureEndToEnd(t *testing.T) {
 			config := &runnertypes.ConfigSpec{
 				Version: "1.0",
 				Global: runnertypes.GlobalSpec{
-					Timeout:       30,
-					LogLevel:      "info",
-					MaxOutputSize: 1024 * 1024, // 1MB limit
+					Timeout:         30,
+					LogLevel:        "info",
+					OutputSizeLimit: 1024 * 1024, // 1MB limit
 				},
 				Groups: []runnertypes.GroupSpec{
 					{
@@ -1181,12 +1181,12 @@ func TestRunner_OutputCaptureEndToEnd(t *testing.T) {
 			// Verify runner was created properly with output capture configuration
 			runnerConfig := runner.GetConfig()
 			assert.Equal(t, config, runnerConfig)
-			assert.Equal(t, int64(1024*1024), runnerConfig.Global.MaxOutputSize)
+			assert.Equal(t, int64(1024*1024), runnerConfig.Global.OutputSizeLimit)
 
 			// Verify output field is preserved in configuration
 			for i, originalCmd := range tt.commands {
 				actualCmd := runnerConfig.Groups[0].Commands[i]
-				assert.Equal(t, originalCmd.Output, actualCmd.Output, "Output field should be preserved")
+				assert.Equal(t, originalCmd.OutputFile, actualCmd.OutputFile, "Output field should be preserved")
 			}
 
 			// Note: Actual execution may fail due to output capture implementation not being complete,
@@ -1210,15 +1210,15 @@ func TestRunner_OutputCaptureErrorScenarios(t *testing.T) {
 			name: "path traversal attempt",
 			commands: []runnertypes.CommandSpec{
 				{
-					Name:   "path-traversal",
-					Cmd:    "echo",
-					Args:   []string{"attempt"},
-					Output: "../../../etc/passwd",
+					Name:       "path-traversal",
+					Cmd:        "echo",
+					Args:       []string{"attempt"},
+					OutputFile: "../../../etc/passwd",
 				},
 			},
 			globalConfig: runnertypes.GlobalSpec{
-				Timeout:       30,
-				MaxOutputSize: 1024,
+				Timeout:         30,
+				OutputSizeLimit: 1024,
 			},
 			expectError: "path traversal",
 			description: "Path traversal attempts should be rejected",
@@ -1227,15 +1227,15 @@ func TestRunner_OutputCaptureErrorScenarios(t *testing.T) {
 			name: "non-existent directory",
 			commands: []runnertypes.CommandSpec{
 				{
-					Name:   "non-existent-dir",
-					Cmd:    "echo",
-					Args:   []string{"test"},
-					Output: "/non/existent/directory/output.txt",
+					Name:       "non-existent-dir",
+					Cmd:        "echo",
+					Args:       []string{"test"},
+					OutputFile: "/non/existent/directory/output.txt",
 				},
 			},
 			globalConfig: runnertypes.GlobalSpec{
-				Timeout:       30,
-				MaxOutputSize: 1024,
+				Timeout:         30,
+				OutputSizeLimit: 1024,
 			},
 			expectError: "directory",
 			description: "Non-existent directories should cause error",
@@ -1244,15 +1244,15 @@ func TestRunner_OutputCaptureErrorScenarios(t *testing.T) {
 			name: "permission denied directory",
 			commands: []runnertypes.CommandSpec{
 				{
-					Name:   "permission-denied",
-					Cmd:    "echo",
-					Args:   []string{"test"},
-					Output: "/root/output.txt",
+					Name:       "permission-denied",
+					Cmd:        "echo",
+					Args:       []string{"test"},
+					OutputFile: "/root/output.txt",
 				},
 			},
 			globalConfig: runnertypes.GlobalSpec{
-				Timeout:       30,
-				MaxOutputSize: 1024,
+				Timeout:         30,
+				OutputSizeLimit: 1024,
 			},
 			expectError: "permission",
 			description: "Permission denied should cause error",
@@ -1304,9 +1304,9 @@ func TestRunner_OutputCaptureDryRun(t *testing.T) {
 	config := &runnertypes.ConfigSpec{
 		Version: "1.0",
 		Global: runnertypes.GlobalSpec{
-			Timeout:       30,
-			LogLevel:      "info",
-			MaxOutputSize: 1024,
+			Timeout:         30,
+			LogLevel:        "info",
+			OutputSizeLimit: 1024,
 		},
 		Groups: []runnertypes.GroupSpec{
 			{
@@ -1314,10 +1314,10 @@ func TestRunner_OutputCaptureDryRun(t *testing.T) {
 				Description: "Test group for dry-run output capture",
 				Commands: []runnertypes.CommandSpec{
 					{
-						Name:   "dryrun-echo",
-						Cmd:    "echo",
-						Args:   []string{"Dry run test"},
-						Output: "dryrun-output.txt",
+						Name:       "dryrun-echo",
+						Cmd:        "echo",
+						Args:       []string{"Dry run test"},
+						OutputFile: "dryrun-output.txt",
 					},
 				},
 			},
@@ -1393,7 +1393,7 @@ func TestRunner_OutputCaptureWithTOMLConfig(t *testing.T) {
 [global]
 timeout = 30
 workdir = "` + tempDir + `"
-max_output_size = 1048576
+output_size_limit = 1048576
 
 [[groups]]
 name = "output-capture-group"
@@ -1403,13 +1403,13 @@ description = "Test group with output capture"
 name = "simple-echo"
 cmd = "echo"
 args = ["Hello from TOML config"]
-output = "toml-output.txt"
+output_file = "toml-output.txt"
 
 [[groups.commands]]
 name = "multiline-output"
 cmd = "sh"
 args = ["-c", "echo 'Line 1'; echo 'Line 2'"]
-output = "multiline-toml-output.txt"
+output_file = "multiline-toml-output.txt"
 
 [[groups.commands]]
 name = "no-output-command"
@@ -1434,15 +1434,15 @@ args = ["No output capture"]
 
 		// Verify configuration was loaded correctly
 		// Note: Global.WorkDir has been removed in Task 0034
-		assert.Equal(t, int64(1048576), config.Global.MaxOutputSize)
+		assert.Equal(t, int64(1048576), config.Global.OutputSizeLimit)
 		assert.Len(t, config.Groups, 1)
 		assert.Equal(t, "output-capture-group", config.Groups[0].Name)
 		assert.Len(t, config.Groups[0].Commands, 3)
 
 		// Verify commands have correct output configuration
-		assert.Equal(t, "toml-output.txt", config.Groups[0].Commands[0].Output)
-		assert.Equal(t, "multiline-toml-output.txt", config.Groups[0].Commands[1].Output)
-		assert.Equal(t, "", config.Groups[0].Commands[2].Output) // No output field
+		assert.Equal(t, "toml-output.txt", config.Groups[0].Commands[0].OutputFile)
+		assert.Equal(t, "multiline-toml-output.txt", config.Groups[0].Commands[1].OutputFile)
+		assert.Equal(t, "", config.Groups[0].Commands[2].OutputFile) // No output field
 
 		// Create runner to verify basic initialization works
 		runner, err := NewRunner(config, WithRunID("test-toml-config"))
@@ -1469,7 +1469,7 @@ args = ["No output capture"]
 [global]
 timeout = 30
 workdir = "` + tempDir + `"
-max_output_size = -1  # Invalid negative size
+output_size_limit = -1  # Invalid negative size
 
 [[groups]]
 name = "invalid-group"
@@ -1493,8 +1493,8 @@ output = "output.txt"
 		config, err := loader.LoadConfig(invalidConfigContent)
 		require.NoError(t, err, "Config loader should parse TOML structure")
 
-		// Verify negative max_output_size was loaded (validation happens later)
-		assert.Equal(t, int64(-1), config.Global.MaxOutputSize)
+		// Verify negative output_size_limit was loaded (validation happens later)
+		assert.Equal(t, int64(-1), config.Global.OutputSizeLimit)
 	})
 }
 
@@ -1543,18 +1543,18 @@ func TestRunner_OutputCaptureErrorTypes(t *testing.T) {
 			cfg := &runnertypes.ConfigSpec{
 				Version: "1.0",
 				Global: runnertypes.GlobalSpec{
-					Timeout:       30,
-					MaxOutputSize: 1024,
+					Timeout:         30,
+					OutputSizeLimit: 1024,
 				},
 				Groups: []runnertypes.GroupSpec{
 					{
 						Name: "test-group",
 						Commands: []runnertypes.CommandSpec{
 							{
-								Name:   "test-cmd",
-								Cmd:    "echo",
-								Args:   []string{"test"},
-								Output: "output.txt",
+								Name:       "test-cmd",
+								Cmd:        "echo",
+								Args:       []string{"test"},
+								OutputFile: "output.txt",
 							},
 						},
 					},
@@ -1648,18 +1648,18 @@ func TestRunner_OutputCaptureExecutionStages(t *testing.T) {
 			cfg := &runnertypes.ConfigSpec{
 				Version: "1.0",
 				Global: runnertypes.GlobalSpec{
-					Timeout:       30,
-					MaxOutputSize: 1024,
+					Timeout:         30,
+					OutputSizeLimit: 1024,
 				},
 				Groups: []runnertypes.GroupSpec{
 					{
 						Name: "test-group",
 						Commands: []runnertypes.CommandSpec{
 							{
-								Name:   "test-cmd",
-								Cmd:    "echo",
-								Args:   []string{"test"},
-								Output: "output.txt",
+								Name:       "test-cmd",
+								Cmd:        "echo",
+								Args:       []string{"test"},
+								OutputFile: "output.txt",
 							},
 						},
 					},
@@ -1839,18 +1839,18 @@ func TestRunner_OutputCaptureSecurityIntegration(t *testing.T) {
 			cfg := &runnertypes.ConfigSpec{
 				Version: "1.0",
 				Global: runnertypes.GlobalSpec{
-					Timeout:       30,
-					MaxOutputSize: 1024,
+					Timeout:         30,
+					OutputSizeLimit: 1024,
 				},
 				Groups: []runnertypes.GroupSpec{
 					{
 						Name: "security-test-group",
 						Commands: []runnertypes.CommandSpec{
 							{
-								Name:   "security-test-cmd",
-								Cmd:    "echo",
-								Args:   []string{"test"},
-								Output: tt.outputPath,
+								Name:       "security-test-cmd",
+								Cmd:        "echo",
+								Args:       []string{"test"},
+								OutputFile: tt.outputPath,
 							},
 						},
 					},

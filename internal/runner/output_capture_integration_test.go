@@ -59,18 +59,18 @@ func TestRunner_OutputCaptureIntegration(t *testing.T) {
 			cfg := &runnertypes.ConfigSpec{
 				Version: "1.0",
 				Global: runnertypes.GlobalSpec{
-					Timeout:       30,
-					MaxOutputSize: 1024,
+					Timeout:         30,
+					OutputSizeLimit: 1024,
 				},
 				Groups: []runnertypes.GroupSpec{
 					{
 						Name: "test-group",
 						Commands: []runnertypes.CommandSpec{
 							{
-								Name:   "test-cmd",
-								Cmd:    "echo",
-								Args:   []string{"test"},
-								Output: "output.txt",
+								Name:       "test-cmd",
+								Cmd:        "echo",
+								Args:       []string{"test"},
+								OutputFile: "output.txt",
 							},
 						},
 					},
@@ -148,18 +148,18 @@ func TestRunner_OutputCaptureSecurityValidation(t *testing.T) {
 			cfg := &runnertypes.ConfigSpec{
 				Version: "1.0",
 				Global: runnertypes.GlobalSpec{
-					Timeout:       30,
-					MaxOutputSize: 1024,
+					Timeout:         30,
+					OutputSizeLimit: 1024,
 				},
 				Groups: []runnertypes.GroupSpec{
 					{
 						Name: "test-group",
 						Commands: []runnertypes.CommandSpec{
 							{
-								Name:   "test-cmd",
-								Cmd:    "echo",
-								Args:   []string{"test"},
-								Output: tt.outputPath,
+								Name:       "test-cmd",
+								Cmd:        "echo",
+								Args:       []string{"test"},
+								OutputFile: tt.outputPath,
 							},
 						},
 					},

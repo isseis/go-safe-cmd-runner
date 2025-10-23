@@ -16,13 +16,13 @@ import (
 )
 
 // TestBootstrapCommandEnvExpansionIntegration verifies the complete expansion pipeline
-// from Global.Env -> Group.Env -> Command.Env/Cmd/Args during bootstrap process.
+// from Global.EnvVars -> Group.EnvVars -> Command.EnvVars/Cmd/Args during bootstrap process.
 // This test ensures that:
-// 1. Global.Env is expanded correctly
-// 2. Group.Env can reference Global.Env
-// 3. Command.Env can reference Global.Env and Group.Env
-// 4. Command.Cmd can reference Group.Env
-// 5. Command.Args can reference Command.Env
+// 1. Global.EnvVars is expanded correctly
+// 2. Group.EnvVars can reference Global.EnvVars
+// 3. Command.EnvVars can reference Global.EnvVars and Group.EnvVars
+// 4. Command.Cmd can reference Group.EnvVars
+// 5. Command.Args can reference Command.EnvVars
 func TestBootstrapCommandEnvExpansionIntegration(t *testing.T) {
 	// Setup: Create temporary directory for hash storage
 	tempDir := t.TempDir()
@@ -55,11 +55,11 @@ func TestBootstrapCommandEnvExpansionIntegration(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, runtimeGlobal)
 
-	// Verify Global.Env expansion
+	// Verify Global.EnvVars expansion
 	expectedGlobalEnv := map[string]string{
 		"BASE_DIR": "/opt",
 	}
-	assert.Equal(t, expectedGlobalEnv, runtimeGlobal.ExpandedEnv, "Global.Env should be expanded correctly")
+	assert.Equal(t, expectedGlobalEnv, runtimeGlobal.ExpandedEnv, "Global.EnvVars should be expanded correctly")
 
 	// Verify groups
 	require.Len(t, cfg.Groups, 1, "Should have exactly one group")
@@ -79,11 +79,11 @@ func TestBootstrapCommandEnvExpansionIntegration(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, runtimeGroup)
 
-	// Verify Group.Env expansion (references Global.Env)
+	// Verify Group.EnvVars expansion (references Global.EnvVars)
 	expectedGroupEnv := map[string]string{
 		"APP_DIR": "/opt/myapp",
 	}
-	assert.Equal(t, expectedGroupEnv, runtimeGroup.ExpandedEnv, "Group.Env should reference Global.Env correctly")
+	assert.Equal(t, expectedGroupEnv, runtimeGroup.ExpandedEnv, "Group.EnvVars should reference Global.EnvVars correctly")
 
 	// Verify commands
 	require.Len(t, appGroupSpec.Commands, 1, "app_group should have exactly one command")
@@ -95,15 +95,15 @@ func TestBootstrapCommandEnvExpansionIntegration(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, runtimeCmd)
 
-	// Verify Command.Env expansion (uses internal variables)
+	// Verify Command.EnvVars expansion (uses internal variables)
 	// Note: In new system, each level's ExpandedEnv contains only that level's env field values
 	// The final process environment is built by BuildProcessEnvironment which merges all levels
-	assert.Equal(t, "/opt/myapp/logs", runtimeCmd.ExpandedEnv["LOG_DIR"], "Command.Env variable LOG_DIR should be expanded correctly")
+	assert.Equal(t, "/opt/myapp/logs", runtimeCmd.ExpandedEnv["LOG_DIR"], "Command.EnvVars variable LOG_DIR should be expanded correctly")
 
 	// BASE_DIR and APP_DIR are in Global/Group ExpandedEnv respectively, not merged into Command.ExpandedEnv
 	// They will be merged at execution time by BuildProcessEnvironment
-	assert.Equal(t, "/opt", runtimeGlobal.ExpandedEnv["BASE_DIR"], "Global.Env variable BASE_DIR should be in Global.ExpandedEnv")
-	assert.Equal(t, "/opt/myapp", runtimeGroup.ExpandedEnv["APP_DIR"], "Group.Env variable APP_DIR should be in Group.ExpandedEnv")
+	assert.Equal(t, "/opt", runtimeGlobal.ExpandedEnv["BASE_DIR"], "Global.EnvVars variable BASE_DIR should be in Global.ExpandedEnv")
+	assert.Equal(t, "/opt/myapp", runtimeGroup.ExpandedEnv["APP_DIR"], "Group.EnvVars variable APP_DIR should be in Group.ExpandedEnv")
 
 	// Verify Command.Cmd expansion (references internal variables)
 	expectedCmd := "/opt/myapp/bin/server"
@@ -116,7 +116,7 @@ func TestBootstrapCommandEnvExpansionIntegration(t *testing.T) {
 	// Also verify that raw values are preserved for debugging/auditing
 	assert.Equal(t, "%{app_dir}/bin/server", cmdSpec.Cmd, "Raw Cmd should be preserved")
 	assert.Equal(t, []string{"--log", "%{log_dir}/app.log"}, cmdSpec.Args, "Raw Args should be preserved")
-	assert.Equal(t, []string{"LOG_DIR=%{log_dir}"}, cmdSpec.Env, "Raw Env should be preserved")
+	assert.Equal(t, []string{"LOG_DIR=%{log_dir}"}, cmdSpec.EnvVars, "Raw Env should be preserved")
 }
 
 // TestLoadAndPrepareConfig_MissingConfigFile verifies error handling for missing config files

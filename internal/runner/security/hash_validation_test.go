@@ -8,75 +8,80 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestShouldSkipHashValidation(t *testing.T) {
+func TestShouldPerformHashValidation(t *testing.T) {
 	testCases := []struct {
-		name         string
-		cmdPath      string
-		globalConfig *runnertypes.GlobalSpec
-		expectedSkip bool
+		name            string
+		cmdPath         string
+		globalConfig    *runnertypes.GlobalSpec
+		expectedPerform bool
 	}{
 		{
-			name:         "nil config should not skip",
-			cmdPath:      "/bin/ls",
-			globalConfig: nil,
-			expectedSkip: false,
+			name:            "nil config should perform validation (default: verify standard paths)",
+			cmdPath:         "/bin/ls",
+			globalConfig:    nil,
+			expectedPerform: true, // default behavior is to verify standard paths (VerifyStandardPaths=true)
 		},
 		{
-			name:    "SkipStandardPaths=false should not skip standard directory",
+			name:    "VerifyStandardPaths=false should not perform validation for standard directory",
 			cmdPath: "/bin/ls",
 			globalConfig: &runnertypes.GlobalSpec{
-				SkipStandardPaths: false,
+				VerifyStandardPaths: &[]bool{false}[0], // false means skip verification
 			},
-			expectedSkip: false,
+			expectedPerform: false,
 		},
 		{
-			name:    "SkipStandardPaths=false should not skip non-standard directory",
+			name:    "VerifyStandardPaths=false should perform validation for non-standard directory",
 			cmdPath: "/home/user/script",
 			globalConfig: &runnertypes.GlobalSpec{
-				SkipStandardPaths: false,
+				VerifyStandardPaths: &[]bool{false}[0], // false means skip verification
 			},
-			expectedSkip: false,
+			expectedPerform: true,
 		},
 		{
-			name:    "SkipStandardPaths=true should skip standard directory",
+			name:    "VerifyStandardPaths=true should perform validation for standard directory",
 			cmdPath: "/bin/ls",
 			globalConfig: &runnertypes.GlobalSpec{
-				SkipStandardPaths: true,
+				VerifyStandardPaths: &[]bool{true}[0], // true means verify (don't skip)
 			},
-			expectedSkip: true,
+			expectedPerform: true,
 		},
 		{
-			name:    "SkipStandardPaths=true should not skip non-standard directory",
+			name:    "VerifyStandardPaths=true should perform validation for non-standard directory",
 			cmdPath: "/home/user/script",
 			globalConfig: &runnertypes.GlobalSpec{
-				SkipStandardPaths: true,
+				VerifyStandardPaths: &[]bool{true}[0], // true means verify (don't skip)
 			},
-			expectedSkip: false,
+			expectedPerform: true,
 		},
 		{
-			name:    "SkipStandardPaths=true should skip usr/bin",
-			cmdPath: "/usr/bin/cat",
+			name:    "VerifyStandardPaths=true should perform validation for usr/bin",
+			cmdPath: "/usr/bin/curl",
 			globalConfig: &runnertypes.GlobalSpec{
-				SkipStandardPaths: true,
+				VerifyStandardPaths: &[]bool{true}[0], // true means verify (don't skip)
 			},
-			expectedSkip: true,
+			expectedPerform: true,
 		},
 		{
-			name:    "SkipStandardPaths=true should skip usr/sbin",
-			cmdPath: "/usr/sbin/systemctl",
+			name:    "VerifyStandardPaths=true should perform validation for usr/sbin",
+			cmdPath: "/usr/sbin/nginx",
 			globalConfig: &runnertypes.GlobalSpec{
-				SkipStandardPaths: true,
+				VerifyStandardPaths: &[]bool{true}[0], // true means verify (don't skip)
 			},
-			expectedSkip: true,
+			expectedPerform: true,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Convert globalConfig to skipStandardPaths boolean
-			skipStandardPaths := tc.globalConfig != nil && tc.globalConfig.SkipStandardPaths
-			result := shouldSkipHashValidation(tc.cmdPath, skipStandardPaths)
-			assert.Equal(t, tc.expectedSkip, result)
+			// Determine VerifyStandardPaths from globalConfig
+			var verifyStandardPathsPtr *bool
+			if tc.globalConfig != nil {
+				verifyStandardPathsPtr = tc.globalConfig.VerifyStandardPaths
+			}
+
+			verifyStandardPaths := runnertypes.DetermineVerifyStandardPaths(verifyStandardPathsPtr)
+			result := shouldPerformHashValidation(tc.cmdPath, verifyStandardPaths)
+			assert.Equal(t, tc.expectedPerform, result)
 		})
 	}
 }

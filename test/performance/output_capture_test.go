@@ -45,10 +45,10 @@ func TestLargeOutputMemoryUsage(t *testing.T) {
 
 	// Create test configuration
 	cmdSpec := &runnertypes.CommandSpec{
-		Name:   "large_output_test",
-		Cmd:    "sh",
-		Args:   []string{"-c", "yes 'A' | head -c 10240"}, // 10KB of data
-		Output: outputPath,
+		Name:       "large_output_test",
+		Cmd:        "sh",
+		Args:       []string{"-c", "yes 'A' | head -c 10240"}, // 10KB of data
+		OutputFile: outputPath,
 	}
 	runtimeCmd := createRuntimeCommand(cmdSpec)
 
@@ -122,10 +122,10 @@ func TestOutputSizeLimit(t *testing.T) {
 
 	// Create command that generates more output than the limit
 	cmdSpec := &runnertypes.CommandSpec{
-		Name:   "size_limit_test",
-		Cmd:    "sh",
-		Args:   []string{"-c", "yes 'A' | head -c 2048"}, // 2KB of data
-		Output: outputPath,
+		Name:       "size_limit_test",
+		Cmd:        "sh",
+		Args:       []string{"-c", "yes 'A' | head -c 2048"}, // 2KB of data
+		OutputFile: outputPath,
 	}
 	runtimeCmd := createRuntimeCommand(cmdSpec)
 
@@ -188,10 +188,10 @@ func TestConcurrentExecution(t *testing.T) {
 	for i := 0; i < numCommands; i++ {
 		go func(index int) {
 			cmdSpec := &runnertypes.CommandSpec{
-				Name:   fmt.Sprintf("concurrent_test_%d", index),
-				Cmd:    "echo",
-				Args:   []string{fmt.Sprintf("Output from command %d", index)},
-				Output: filepath.Join(tempDir, fmt.Sprintf("output_%d.txt", index)),
+				Name:       fmt.Sprintf("concurrent_test_%d", index),
+				Cmd:        "echo",
+				Args:       []string{fmt.Sprintf("Output from command %d", index)},
+				OutputFile: filepath.Join(tempDir, fmt.Sprintf("output_%d.txt", index)),
 			}
 			runtimeCmd := createRuntimeCommand(cmdSpec)
 
@@ -241,11 +241,11 @@ func TestLongRunningStability(t *testing.T) {
 
 	// Create command that runs for a while and produces incremental output
 	cmdSpec := &runnertypes.CommandSpec{
-		Name:    "long_running_test",
-		Cmd:     "sh",
-		Args:    []string{"-c", "for i in $(seq 1 10); do echo \"Line $i\"; sleep 0.1; done"},
-		Output:  outputPath,
-		Timeout: 30,
+		Name:       "long_running_test",
+		Cmd:        "sh",
+		Args:       []string{"-c", "for i in $(seq 1 10); do echo \"Line $i\"; sleep 0.1; done"},
+		OutputFile: outputPath,
+		Timeout:    30,
 	}
 	runtimeCmd := createRuntimeCommand(cmdSpec)
 
@@ -308,10 +308,10 @@ func BenchmarkOutputCapture(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			outputPath := filepath.Join(tempDir, fmt.Sprintf("small_output_%d.txt", i))
 			cmdSpec := &runnertypes.CommandSpec{
-				Name:   "small_output_bench",
-				Cmd:    "echo",
-				Args:   []string{"small output"},
-				Output: outputPath,
+				Name:       "small_output_bench",
+				Cmd:        "echo",
+				Args:       []string{"small output"},
+				OutputFile: outputPath,
 			}
 			runtimeCmd := createRuntimeCommand(cmdSpec)
 
@@ -333,10 +333,10 @@ func BenchmarkOutputCapture(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			outputPath := filepath.Join(tempDir, fmt.Sprintf("large_output_%d.txt", i))
 			cmdSpec := &runnertypes.CommandSpec{
-				Name:   "large_output_bench",
-				Cmd:    "echo",
-				Args:   []string{largeData},
-				Output: outputPath,
+				Name:       "large_output_bench",
+				Cmd:        "echo",
+				Args:       []string{largeData},
+				OutputFile: outputPath,
 			}
 			runtimeCmd := createRuntimeCommand(cmdSpec)
 
@@ -379,10 +379,10 @@ func TestMemoryLeakDetection(t *testing.T) {
 	for i := 0; i < iterations; i++ {
 		outputPath := filepath.Join(tempDir, fmt.Sprintf("leak_test_%d.txt", i))
 		cmdSpec := &runnertypes.CommandSpec{
-			Name:   fmt.Sprintf("leak_test_%d", i),
-			Cmd:    "echo",
-			Args:   []string{fmt.Sprintf("Test output %d", i)},
-			Output: outputPath,
+			Name:       fmt.Sprintf("leak_test_%d", i),
+			Cmd:        "echo",
+			Args:       []string{fmt.Sprintf("Test output %d", i)},
+			OutputFile: outputPath,
 		}
 		runtimeCmd := createRuntimeCommand(cmdSpec)
 

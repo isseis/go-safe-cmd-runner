@@ -65,9 +65,19 @@ func (r *RuntimeGlobal) Timeout() int {
 // Panics if r or r.Spec is nil (programming error - use NewRuntimeGlobal).
 func (r *RuntimeGlobal) EnvAllowlist() []string {
 	if r == nil || r.Spec == nil {
-		panic("RuntimeGlobal.EnvAllowlist: nil receiver or Spec (programming error - use NewRuntimeGlobal)")
+		panic("RuntimeGlobal.EnvAllowed: nil receiver or Spec (programming error - use NewRuntimeGlobal)")
 	}
-	return r.Spec.EnvAllowlist
+	return r.Spec.EnvAllowed
+}
+
+// DetermineVerifyStandardPaths returns the effective verify_standard_paths setting.
+// If verifyStandardPaths is nil, returns the security-safe default (true = verify).
+// This ensures consistent behavior even if ApplyGlobalDefaults hasn't been called.
+func DetermineVerifyStandardPaths(verifyStandardPaths *bool) bool {
+	if verifyStandardPaths == nil {
+		return true // default: verify paths (matches DefaultVerifyStandardPaths)
+	}
+	return *verifyStandardPaths // use explicit value
 }
 
 // SkipStandardPaths returns the skip_standard_paths setting from the spec.
@@ -76,7 +86,8 @@ func (r *RuntimeGlobal) SkipStandardPaths() bool {
 	if r == nil || r.Spec == nil {
 		panic("RuntimeGlobal.SkipStandardPaths: nil receiver or Spec (programming error - use NewRuntimeGlobal)")
 	}
-	return r.Spec.SkipStandardPaths
+	// Convert verify_standard_paths to skip_standard_paths logic (invert boolean)
+	return !DetermineVerifyStandardPaths(r.Spec.VerifyStandardPaths)
 }
 
 // RuntimeGroup represents the runtime-expanded group configuration.
@@ -214,9 +225,9 @@ func (r *RuntimeCommand) RunAsGroup() string {
 // Panics if r or r.Spec is nil (programming error - use NewRuntimeCommand).
 func (r *RuntimeCommand) Output() string {
 	if r == nil || r.Spec == nil {
-		panic("RuntimeCommand.Output: nil receiver or Spec (programming error - use NewRuntimeCommand)")
+		panic("RuntimeCommand.OutputFile: nil receiver or Spec (programming error - use NewRuntimeCommand)")
 	}
-	return r.Spec.Output
+	return r.Spec.OutputFile
 }
 
 // Cmd returns the command path from the spec (not yet expanded).

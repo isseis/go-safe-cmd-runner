@@ -6,8 +6,8 @@ version = "1.0"
 timeout = 30
 log_level = "info"
 # Set default output size limit to 1MB
-max_output_size = 1048576
-env_allowlist = [
+output_size_limit = 1048576
+env_allowed = [
     "PATH",
     "HOME",
     "USER",
@@ -25,7 +25,7 @@ description = "Echo command with output captured to file"
 cmd = "echo"
 args = ["Hello, Output Capture!"]
 # Capture standard output to file (relative path)
-output = "simple_echo_output.txt"
+output_file = "simple_echo_output.txt"
 
 [[groups.commands]]
 name = "date_to_file"
@@ -33,7 +33,7 @@ description = "Date command with output captured to file"
 cmd = "date"
 args = []
 # Capture standard output to file
-output = "date_output.txt"
+output_file = "date_output.txt"
 
 [[groups.commands]]
 name = "multi_line_output"
@@ -41,7 +41,7 @@ description = "Command with multi-line output"
 cmd = "ls"
 args = ["-la", "/etc"]
 # Capture directory listing to file
-output = "directory_listing.txt"
+output_file = "directory_listing.txt"
 
 [[groups.commands]]
 name = "no_output_capture"
@@ -55,7 +55,7 @@ name = "environment_variables"
 description = "Display environment variables with output capture"
 cmd = "env"
 args = []
-output = "env_output.txt"
+output_file = "env_output.txt"
 
 # Test working with subdirectories
 [[groups]]
@@ -67,11 +67,11 @@ name = "nested_directory_output"
 description = "Output to nested directory (auto-created)"
 cmd = "pwd"
 args = []
-output = "logs/current_directory.txt"
+output_file = "logs/current_directory.txt"
 
 [[groups.commands]]
 name = "user_info_output"
 description = "Output user information to subdirectory"
 cmd = "whoami"
 args = []
-output = "info/whoami_output.txt"
+output_file = "info/whoami_output.txt"

@@ -29,12 +29,12 @@ func TestConfigValidator_ValidateConfig(t *testing.T) {
 			name: "valid configuration",
 			config: &runnertypes.ConfigSpec{
 				Global: runnertypes.GlobalSpec{
-					EnvAllowlist: []string{"PATH", "HOME"},
+					EnvAllowed: []string{"PATH", "HOME"},
 				},
 				Groups: []runnertypes.GroupSpec{
 					{
-						Name:         "test_group",
-						EnvAllowlist: []string{"GROUP_VAR"},
+						Name:       "test_group",
+						EnvAllowed: []string{"GROUP_VAR"},
 						Commands: []runnertypes.CommandSpec{
 							{
 								Name: "test_cmd",
@@ -52,7 +52,7 @@ func TestConfigValidator_ValidateConfig(t *testing.T) {
 			name: "invalid configuration - empty group name",
 			config: &runnertypes.ConfigSpec{
 				Global: runnertypes.GlobalSpec{
-					EnvAllowlist: []string{"PATH"},
+					EnvAllowed: []string{"PATH"},
 				},
 				Groups: []runnertypes.GroupSpec{
 					{
@@ -73,7 +73,7 @@ func TestConfigValidator_ValidateConfig(t *testing.T) {
 			name: "invalid configuration - empty command name",
 			config: &runnertypes.ConfigSpec{
 				Global: runnertypes.GlobalSpec{
-					EnvAllowlist: []string{"PATH"},
+					EnvAllowed: []string{"PATH"},
 				},
 				Groups: []runnertypes.GroupSpec{
 					{
@@ -94,7 +94,7 @@ func TestConfigValidator_ValidateConfig(t *testing.T) {
 			name: "invalid configuration - invalid variable name",
 			config: &runnertypes.ConfigSpec{
 				Global: runnertypes.GlobalSpec{
-					EnvAllowlist: []string{"123INVALID"}, // Invalid variable name
+					EnvAllowed: []string{"123INVALID"}, // Invalid variable name
 				},
 				Groups: []runnertypes.GroupSpec{
 					{
@@ -115,7 +115,7 @@ func TestConfigValidator_ValidateConfig(t *testing.T) {
 			name: "invalid configuration - duplicate group names",
 			config: &runnertypes.ConfigSpec{
 				Global: runnertypes.GlobalSpec{
-					EnvAllowlist: []string{"PATH"},
+					EnvAllowed: []string{"PATH"},
 				},
 				Groups: []runnertypes.GroupSpec{
 					{
@@ -145,7 +145,7 @@ func TestConfigValidator_ValidateConfig(t *testing.T) {
 			name: "valid configuration - empty group names are not considered duplicates",
 			config: &runnertypes.ConfigSpec{
 				Global: runnertypes.GlobalSpec{
-					EnvAllowlist: []string{"PATH"},
+					EnvAllowed: []string{"PATH"},
 				},
 				Groups: []runnertypes.GroupSpec{
 					{
@@ -175,7 +175,7 @@ func TestConfigValidator_ValidateConfig(t *testing.T) {
 			name: "invalid configuration - multiple duplicate groups",
 			config: &runnertypes.ConfigSpec{
 				Global: runnertypes.GlobalSpec{
-					EnvAllowlist: []string{"PATH"},
+					EnvAllowed: []string{"PATH"},
 				},
 				Groups: []runnertypes.GroupSpec{
 					{
@@ -244,7 +244,7 @@ func TestConfigValidator_ValidateGlobalConfig(t *testing.T) {
 		{
 			name: "valid global config",
 			global: &runnertypes.GlobalSpec{
-				EnvAllowlist: []string{"PATH", "HOME", "USER"},
+				EnvAllowed: []string{"PATH", "HOME", "USER"},
 			},
 			expectedWarnings: 0,
 			expectedErrors:   0,
@@ -252,7 +252,7 @@ func TestConfigValidator_ValidateGlobalConfig(t *testing.T) {
 		{
 			name: "empty global allowlist",
 			global: &runnertypes.GlobalSpec{
-				EnvAllowlist: []string{},
+				EnvAllowed: []string{},
 			},
 			expectedWarnings: 1, // Should warn about empty allowlist
 			expectedErrors:   0,
@@ -260,7 +260,7 @@ func TestConfigValidator_ValidateGlobalConfig(t *testing.T) {
 		{
 			name: "dangerous variables in global allowlist",
 			global: &runnertypes.GlobalSpec{
-				EnvAllowlist: []string{"PATH", "LD_PRELOAD"},
+				EnvAllowed: []string{"PATH", "LD_PRELOAD"},
 			},
 			expectedWarnings: 1, // Should warn about dangerous variable
 			expectedErrors:   0,
@@ -496,53 +496,53 @@ func TestConfigValidator_AnalyzeInheritanceMode(t *testing.T) {
 		{
 			name: "inherit mode with non-empty global",
 			group: &runnertypes.GroupSpec{
-				Name:         "test_group",
-				EnvAllowlist: nil, // inherit mode
-				Commands:     []runnertypes.CommandSpec{},
+				Name:       "test_group",
+				EnvAllowed: nil, // inherit mode
+				Commands:   []runnertypes.CommandSpec{},
 			},
 			global: &runnertypes.GlobalSpec{
-				EnvAllowlist: []string{"PATH", "HOME"},
+				EnvAllowed: []string{"PATH", "HOME"},
 			},
 			expectedWarnings: 0,
 		},
 		{
 			name: "inherit mode with empty global",
 			group: &runnertypes.GroupSpec{
-				Name:         "test_group",
-				EnvAllowlist: nil, // inherit mode
-				Commands:     []runnertypes.CommandSpec{},
+				Name:       "test_group",
+				EnvAllowed: nil, // inherit mode
+				Commands:   []runnertypes.CommandSpec{},
 			},
 			global: &runnertypes.GlobalSpec{
-				EnvAllowlist: []string{}, // empty global allowlist
+				EnvAllowed: []string{}, // empty global allowlist
 			},
 			expectedWarnings: 1,
 		},
 		{
 			name: "reject mode with command env",
 			group: &runnertypes.GroupSpec{
-				Name:         "test_group",
-				EnvAllowlist: []string{}, // reject mode
+				Name:       "test_group",
+				EnvAllowed: []string{}, // reject mode
 				Commands: []runnertypes.CommandSpec{
 					{
-						Name: "test_cmd",
-						Env:  []string{"FOO=bar"}, // has command env
+						Name:    "test_cmd",
+						EnvVars: []string{"FOO=bar"}, // has command env
 					},
 				},
 			},
 			global: &runnertypes.GlobalSpec{
-				EnvAllowlist: []string{"PATH"},
+				EnvAllowed: []string{"PATH"},
 			},
 			expectedWarnings: 1,
 		},
 		{
 			name: "explicit mode",
 			group: &runnertypes.GroupSpec{
-				Name:         "test_group",
-				EnvAllowlist: []string{"GROUP_VAR"}, // explicit mode
-				Commands:     []runnertypes.CommandSpec{},
+				Name:       "test_group",
+				EnvAllowed: []string{"GROUP_VAR"}, // explicit mode
+				Commands:   []runnertypes.CommandSpec{},
 			},
 			global: &runnertypes.GlobalSpec{
-				EnvAllowlist: []string{"PATH"},
+				EnvAllowed: []string{"PATH"},
 			},
 			expectedWarnings: 0,
 		},
@@ -565,30 +565,30 @@ func TestConfigValidator_CalculateSummary(t *testing.T) {
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			EnvAllowlist: []string{"PATH", "HOME"},
+			EnvAllowed: []string{"PATH", "HOME"},
 		},
 		Groups: []runnertypes.GroupSpec{
 			{
-				Name:         "group1",
-				EnvAllowlist: []string{"GROUP_VAR"}, // explicit allowlist
+				Name:       "group1",
+				EnvAllowed: []string{"GROUP_VAR"}, // explicit allowlist
 				Commands: []runnertypes.CommandSpec{
 					{
-						Name: "cmd1",
-						Env:  []string{"FOO=bar"}, // has env
+						Name:    "cmd1",
+						EnvVars: []string{"FOO=bar"}, // has env
 					},
 					{
-						Name: "cmd2",
-						Env:  []string{}, // no env
+						Name:    "cmd2",
+						EnvVars: []string{}, // no env
 					},
 				},
 			},
 			{
-				Name:         "group2",
-				EnvAllowlist: nil, // inherit mode
+				Name:       "group2",
+				EnvAllowed: nil, // inherit mode
 				Commands: []runnertypes.CommandSpec{
 					{
-						Name: "cmd3",
-						Env:  []string{"BAZ=qux"}, // has env
+						Name:    "cmd3",
+						EnvVars: []string{"BAZ=qux"}, // has env
 					},
 				},
 			},

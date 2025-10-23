@@ -54,10 +54,10 @@ func TestRunner_SecurityIntegration(t *testing.T) {
 
 				configContent := `
 [global]
-from_env = ["MY_SAFE=SAFE_VAR"]
-env_allowlist = ["SAFE_VAR"]
+env_import = ["MY_SAFE=SAFE_VAR"]
+env_allowed = ["SAFE_VAR"]
 vars = ["derived=%{MY_SAFE}/subdir"]
-env = ["MY_ENV=%{derived}"]
+env_vars = ["MY_ENV=%{derived}"]
 `
 				err := os.WriteFile(configPath, []byte(configContent), 0o644)
 				require.NoError(t, err)
@@ -88,8 +88,8 @@ env = ["MY_ENV=%{derived}"]
 
 				configContent := `
 [global]
-from_env = ["MY_SECRET=SECRET_VAR"]
-env_allowlist = ["SAFE_VAR"]
+env_import = ["MY_SECRET=SECRET_VAR"]
+env_allowed = ["SAFE_VAR"]
 `
 				err := os.WriteFile(configPath, []byte(configContent), 0o644)
 				require.NoError(t, err)
@@ -116,24 +116,24 @@ env_allowlist = ["SAFE_VAR"]
 
 				configContent := `
 [global]
-from_env = ["home=SAFE_HOME", "allowed=ALLOWED_VAR"]
-env_allowlist = ["SAFE_HOME", "ALLOWED_VAR"]
+env_import = ["home=SAFE_HOME", "allowed=ALLOWED_VAR"]
+env_allowed = ["SAFE_HOME", "ALLOWED_VAR"]
 vars = ["work_dir=%{home}/work", "config_dir=%{home}/config"]
-env = ["WORK_DIR=%{work_dir}", "CONFIG_DIR=%{config_dir}"]
+env_vars = ["WORK_DIR=%{work_dir}", "CONFIG_DIR=%{config_dir}"]
 verify_files = ["%{config_dir}/app.conf"]
 
 [[group]]
 name = "secure_group"
-from_env = ["group_var=ALLOWED_VAR"]
-env_allowlist = ["ALLOWED_VAR"]
+env_import = ["group_var=ALLOWED_VAR"]
+env_allowed = ["ALLOWED_VAR"]
 vars = ["group_path=%{group_var}/data"]
-env = ["GROUP_PATH=%{group_path}"]
+env_vars = ["GROUP_PATH=%{group_path}"]
 
 [[group.commands]]
 name = "secure_command"
 cmd = "echo"
 args = ["Running with security"]
-env = ["CMD_VAR=%{group_path}"]
+env_vars = ["CMD_VAR=%{group_path}"]
 `
 				err := os.WriteFile(configPath, []byte(configContent), 0o644)
 				require.NoError(t, err)
@@ -188,13 +188,13 @@ env = ["CMD_VAR=%{group_path}"]
 
 				configContent := `
 [global]
-env_allowlist = ["PUBLIC_VAR", "PRIVATE_VAR"]
+env_allowed = ["PUBLIC_VAR", "PRIVATE_VAR"]
 
 [[group]]
 name = "public_group"
-from_env = ["pub=PUBLIC_VAR"]
-env_allowlist = ["PUBLIC_VAR"]
-env = ["PUBLIC=%{pub}"]
+env_import = ["pub=PUBLIC_VAR"]
+env_allowed = ["PUBLIC_VAR"]
+env_vars = ["PUBLIC=%{pub}"]
 
 [[group.commands]]
 name = "public_cmd"
@@ -203,9 +203,9 @@ args = ["public"]
 
 [[group]]
 name = "private_group"
-from_env = ["priv=PRIVATE_VAR"]
-env_allowlist = ["PRIVATE_VAR"]
-env = ["PRIVATE=%{priv}"]
+env_import = ["priv=PRIVATE_VAR"]
+env_allowed = ["PRIVATE_VAR"]
+env_vars = ["PRIVATE=%{priv}"]
 
 [[group.commands]]
 name = "private_cmd"
@@ -255,8 +255,8 @@ args = ["private"]
 
 				configContent := `
 [global]
-from_env = ["dir=SAFE_DIR"]
-env_allowlist = ["SAFE_DIR"]
+env_import = ["dir=SAFE_DIR"]
+env_allowed = ["SAFE_DIR"]
 vars = ["file_path=%{dir}/test_security_file.txt"]
 verify_files = ["%{file_path}"]
 `

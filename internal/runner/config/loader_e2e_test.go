@@ -41,7 +41,7 @@ func TestE2E_CompleteConfiguration(t *testing.T) {
 	t.Run("GlobalEnv", func(t *testing.T) {
 		require.NotNil(t, runtimeGlobal.ExpandedEnv, "Global.ExpandedEnv should be initialized")
 
-		// Check Global.Env variables are expanded
+		// Check Global.EnvVars variables are expanded
 		assert.Equal(t, "/opt/app", runtimeGlobal.ExpandedEnv["BASE_DIR"], "BASE_DIR should be set")
 		assert.Equal(t, "info", runtimeGlobal.ExpandedEnv["LOG_LEVEL"], "LOG_LEVEL should be set")
 
@@ -52,7 +52,7 @@ func TestE2E_CompleteConfiguration(t *testing.T) {
 	})
 
 	t.Run("GlobalVerifyFiles", func(t *testing.T) {
-		// Global.ExpandedVerifyFiles should reference Global.Env variables
+		// Global.ExpandedVerifyFiles should reference Global.EnvVars variables
 		require.Len(t, runtimeGlobal.ExpandedVerifyFiles, 1, "Global should have 1 expanded verify_files entry")
 		assert.Equal(t, "/opt/app/verify.sh", runtimeGlobal.ExpandedVerifyFiles[0],
 			"Global.ExpandedVerifyFiles should expand BASE_DIR")
@@ -68,13 +68,13 @@ func TestE2E_CompleteConfiguration(t *testing.T) {
 		require.NoError(t, err, "ExpandGroup should succeed for database group")
 		require.NotNil(t, dbGroup.ExpandedEnv, "Database group ExpandedEnv should be initialized")
 
-		// Check Group.Env variables are expanded and reference Global.Env
+		// Check Group.EnvVars variables are expanded and reference Global.EnvVars
 		assert.Equal(t, "localhost", dbGroup.ExpandedEnv["DB_HOST"], "DB_HOST should be set")
 		assert.Equal(t, "5432", dbGroup.ExpandedEnv["DB_PORT"], "DB_PORT should be set")
 		assert.Equal(t, "/opt/app/db-data", dbGroup.ExpandedEnv["DB_DATA"],
-			"DB_DATA should expand BASE_DIR from Global.Env")
+			"DB_DATA should expand BASE_DIR from Global.EnvVars")
 
-		// Check Group.ExpandedVerifyFiles references Group.Env
+		// Check Group.ExpandedVerifyFiles references Group.EnvVars
 		require.Len(t, dbGroup.ExpandedVerifyFiles, 1, "Database group should have 1 expanded verify_files entry")
 		assert.Equal(t, "/opt/app/db-data/schema.sql", dbGroup.ExpandedVerifyFiles[0],
 			"Group.ExpandedVerifyFiles should expand DB_DATA")
@@ -82,7 +82,7 @@ func TestE2E_CompleteConfiguration(t *testing.T) {
 		// Check allowlist inheritance (should inherit from Global)
 		// Note: We cannot directly check the effective allowlist in this test,
 		// but we verify that the group doesn't define its own allowlist
-		assert.Nil(t, dbGroup.EnvAllowlist, "Database group should not define env_allowlist (inherits from Global)")
+		assert.Nil(t, dbGroup.EnvAllowed, "Database group should not define env_allowlist (inherits from Global)")
 	})
 
 	t.Run("DatabaseMigrateCommand", func(t *testing.T) {
@@ -100,10 +100,10 @@ func TestE2E_CompleteConfiguration(t *testing.T) {
 		assert.Equal(t, []string{"-h", "%{db_host}", "-p", "%{db_port}"}, migrateCmd.Args,
 			"Command.Args should contain %{VAR} syntax")
 
-		// Command.Env should be set with %{VAR} syntax
-		require.Len(t, migrateCmd.Env, 1, "Command should have 1 env variable")
-		assert.Equal(t, "MIGRATION_DIR=%{migration_dir}", migrateCmd.Env[0],
-			"Command.Env should contain %{VAR} syntax")
+		// Command.EnvVars should be set with %{VAR} syntax
+		require.Len(t, migrateCmd.EnvVars, 1, "Command should have 1 env variable")
+		assert.Equal(t, "MIGRATION_DIR=%{migration_dir}", migrateCmd.EnvVars[0],
+			"Command.EnvVars should contain %{VAR} syntax")
 
 		// ExpandedCmd, ExpandedArgs, ExpandedEnv should be populated
 		assert.NotEmpty(t, migrateCmd.ExpandedCmd,
@@ -120,14 +120,14 @@ func TestE2E_CompleteConfiguration(t *testing.T) {
 		require.NotNil(t, webGroup, "Web group should exist")
 		require.NotNil(t, webGroup.ExpandedEnv, "Web group ExpandedEnv should be initialized")
 
-		// Check Group.Env variables are expanded and reference Global.Env
+		// Check Group.EnvVars variables are expanded and reference Global.EnvVars
 		assert.Equal(t, "/opt/app/web", webGroup.ExpandedEnv["WEB_DIR"],
-			"WEB_DIR should expand BASE_DIR from Global.Env")
+			"WEB_DIR should expand BASE_DIR from Global.EnvVars")
 
 		// Check allowlist override
-		require.NotNil(t, webGroup.EnvAllowlist, "Web group should define its own env_allowlist")
-		require.Len(t, webGroup.EnvAllowlist, 1, "Web group should have 1 allowlist entry")
-		assert.Equal(t, "PORT", webGroup.EnvAllowlist[0], "Web group allowlist should only contain PORT")
+		require.NotNil(t, webGroup.EnvAllowed, "Web group should define its own env_allowlist")
+		require.Len(t, webGroup.EnvAllowed, 1, "Web group should have 1 allowlist entry")
+		assert.Equal(t, "PORT", webGroup.EnvAllowed[0], "Web group allowlist should only contain PORT")
 	})
 
 	t.Run("WebStartCommand", func(t *testing.T) {
@@ -155,7 +155,7 @@ func TestE2E_CompleteConfiguration(t *testing.T) {
 }
 
 // TestE2E_PriorityVerification verifies the variable priority:
-// Command.Env > Group.Env > Global.Env > System Env
+// Command.EnvVars > Group.EnvVars > Global.EnvVars > System Env
 func TestE2E_PriorityVerification(t *testing.T) {
 	// Create a temporary test configuration
 	tmpDir := t.TempDir()
@@ -163,20 +163,20 @@ func TestE2E_PriorityVerification(t *testing.T) {
 
 	configContent := `[global]
 vars = ["priority=global"]
-env = ["PRIORITY=%{priority}", "GLOBAL_ONLY=global_value"]
-env_allowlist = ["HOME"]
+env_vars = ["PRIORITY=%{priority}", "GLOBAL_ONLY=global_value"]
+env_allowed = ["HOME"]
 
 [[groups]]
 name = "test_group"
 vars = ["priority=group"]
-env = ["PRIORITY=%{priority}", "GROUP_ONLY=group_value"]
+env_vars = ["PRIORITY=%{priority}", "GROUP_ONLY=group_value"]
 
 [[groups.commands]]
 name = "test_cmd"
 cmd = "/bin/echo"
 args = ["%{priority}"]
 vars = ["priority=command"]
-env = ["PRIORITY=%{priority}", "COMMAND_ONLY=command_value"]
+env_vars = ["PRIORITY=%{priority}", "COMMAND_ONLY=command_value"]
 `
 	err := os.WriteFile(configPath, []byte(configContent), 0o644)
 	require.NoError(t, err, "Failed to create test config file")
@@ -190,21 +190,21 @@ env = ["PRIORITY=%{priority}", "COMMAND_ONLY=command_value"]
 	require.NoError(t, err, "Failed to load test configuration")
 	require.NotNil(t, cfg, "Configuration should not be nil")
 
-	// Verify Global.Env
+	// Verify Global.EnvVars
 	t.Run("GlobalEnv", func(t *testing.T) {
 		require.NotNil(t, cfg.Global.ExpandedEnv, "Global.ExpandedEnv should be initialized")
-		assert.Equal(t, "global", cfg.Global.ExpandedEnv["PRIORITY"], "PRIORITY in Global.Env should be 'global'")
+		assert.Equal(t, "global", cfg.Global.ExpandedEnv["PRIORITY"], "PRIORITY in Global.EnvVars should be 'global'")
 		assert.Equal(t, "global_value", cfg.Global.ExpandedEnv["GLOBAL_ONLY"], "GLOBAL_ONLY should be set")
 	})
 
-	// Verify Group.Env overrides Global.Env
+	// Verify Group.EnvVars overrides Global.EnvVars
 	t.Run("GroupEnv", func(t *testing.T) {
 		testGroup := findGroup(t, cfg, "test_group")
 		require.NotNil(t, testGroup, "Test group should exist")
 		require.NotNil(t, testGroup.ExpandedEnv, "Group.ExpandedEnv should be initialized")
 
 		// Group.ExpandedEnv only contains Group-level variables
-		assert.Equal(t, "group", testGroup.ExpandedEnv["PRIORITY"], "PRIORITY in Group.Env should be 'group'")
+		assert.Equal(t, "group", testGroup.ExpandedEnv["PRIORITY"], "PRIORITY in Group.EnvVars should be 'group'")
 		assert.Equal(t, "group_value", testGroup.ExpandedEnv["GROUP_ONLY"], "GROUP_ONLY should be set")
 
 		// Global-level variables are not in Group.ExpandedEnv
@@ -212,7 +212,7 @@ env = ["PRIORITY=%{priority}", "COMMAND_ONLY=command_value"]
 		assert.False(t, hasGlobalOnly, "GLOBAL_ONLY should not be in Group.ExpandedEnv")
 	})
 
-	// Command.Env expansion is implemented
+	// Command.EnvVars expansion is implemented
 	t.Run("CommandEnv", func(t *testing.T) {
 		testGroup := findGroup(t, cfg, "test_group")
 		require.NotNil(t, testGroup, "Test group should exist")
@@ -221,10 +221,10 @@ env = ["PRIORITY=%{priority}", "COMMAND_ONLY=command_value"]
 		testCmd := testGroup.Commands[0]
 		assert.Equal(t, "test_cmd", testCmd.Name, "Command name should be 'test_cmd'")
 
-		// Command.Env uses %{VAR} syntax
-		require.Len(t, testCmd.Env, 2, "Command should have 2 env variables")
-		assert.Equal(t, "PRIORITY=%{priority}", testCmd.Env[0], "PRIORITY in Command.Env should use %{VAR} syntax")
-		assert.Equal(t, "COMMAND_ONLY=command_value", testCmd.Env[1], "COMMAND_ONLY should be set")
+		// Command.EnvVars uses %{VAR} syntax
+		require.Len(t, testCmd.EnvVars, 2, "Command should have 2 env variables")
+		assert.Equal(t, "PRIORITY=%{priority}", testCmd.EnvVars[0], "PRIORITY in Command.EnvVars should use %{VAR} syntax")
+		assert.Equal(t, "COMMAND_ONLY=command_value", testCmd.EnvVars[1], "COMMAND_ONLY should be set")
 
 		// ExpandedEnv should be populated (expansion implemented)
 		assert.NotNil(t, testCmd.ExpandedEnv,
@@ -242,23 +242,23 @@ func TestE2E_AllowlistScenarios(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "allowlist_test.toml")
 
 	configContent := `[global]
-env = ["BASE=/base"]
-env_allowlist = ["HOME", "USER"]
+env_vars = ["BASE=/base"]
+env_allowed = ["HOME", "USER"]
 
 [[groups]]
 name = "inherit_group"
-# env_allowlist not defined -> inherits from Global
-env = ["INHERIT_VAR=value"]
+# env_allowed not defined -> inherits from Global
+env_vars = ["INHERIT_VAR=value"]
 
 [[groups]]
 name = "override_group"
-env_allowlist = ["PATH"]  # Override
-env = ["OVERRIDE_VAR=value"]
+env_allowed = ["PATH"]  # Override
+env_vars = ["OVERRIDE_VAR=value"]
 
 [[groups]]
 name = "reject_group"
-env_allowlist = []  # Reject all
-env = ["REJECT_VAR=value"]
+env_allowed = []  # Reject all
+env_vars = ["REJECT_VAR=value"]
 `
 	err := os.WriteFile(configPath, []byte(configContent), 0o644)
 	require.NoError(t, err, "Failed to create test config file")
@@ -277,9 +277,9 @@ env = ["REJECT_VAR=value"]
 		require.NotNil(t, inheritGroup, "Inherit group should exist")
 
 		// Group should not define its own allowlist
-		assert.Nil(t, inheritGroup.EnvAllowlist, "Inherit group should not define env_allowlist")
+		assert.Nil(t, inheritGroup.EnvAllowed, "Inherit group should not define env_allowlist")
 
-		// Group.Env should be expanded
+		// Group.EnvVars should be expanded
 		require.NotNil(t, inheritGroup.ExpandedEnv, "Group.ExpandedEnv should be initialized")
 		assert.Equal(t, "value", inheritGroup.ExpandedEnv["INHERIT_VAR"], "INHERIT_VAR should be set")
 	})
@@ -289,11 +289,11 @@ env = ["REJECT_VAR=value"]
 		require.NotNil(t, overrideGroup, "Override group should exist")
 
 		// Group should define its own allowlist
-		require.NotNil(t, overrideGroup.EnvAllowlist, "Override group should define env_allowlist")
-		require.Len(t, overrideGroup.EnvAllowlist, 1, "Override group should have 1 allowlist entry")
-		assert.Equal(t, "PATH", overrideGroup.EnvAllowlist[0], "Override group allowlist should be PATH")
+		require.NotNil(t, overrideGroup.EnvAllowed, "Override group should define env_allowlist")
+		require.Len(t, overrideGroup.EnvAllowed, 1, "Override group should have 1 allowlist entry")
+		assert.Equal(t, "PATH", overrideGroup.EnvAllowed[0], "Override group allowlist should be PATH")
 
-		// Group.Env should be expanded
+		// Group.EnvVars should be expanded
 		require.NotNil(t, overrideGroup.ExpandedEnv, "Group.ExpandedEnv should be initialized")
 		assert.Equal(t, "value", overrideGroup.ExpandedEnv["OVERRIDE_VAR"], "OVERRIDE_VAR should be set")
 	})
@@ -303,17 +303,17 @@ env = ["REJECT_VAR=value"]
 		require.NotNil(t, rejectGroup, "Reject group should exist")
 
 		// Group should define empty allowlist
-		require.NotNil(t, rejectGroup.EnvAllowlist, "Reject group should define env_allowlist")
-		assert.Empty(t, rejectGroup.EnvAllowlist, "Reject group allowlist should be empty")
+		require.NotNil(t, rejectGroup.EnvAllowed, "Reject group should define env_allowlist")
+		assert.Empty(t, rejectGroup.EnvAllowed, "Reject group allowlist should be empty")
 
-		// Group.Env should be expanded
+		// Group.EnvVars should be expanded
 		require.NotNil(t, rejectGroup.ExpandedEnv, "Group.ExpandedEnv should be initialized")
 		assert.Equal(t, "value", rejectGroup.ExpandedEnv["REJECT_VAR"], "REJECT_VAR should be set")
 	})
 }
 
 // TestE2E_VerifyFilesExpansion tests that verify_files at all levels can reference
-// environment variables from Global.Env and Group.Env.
+// environment variables from Global.EnvVars and Group.EnvVars.
 func TestE2E_VerifyFilesExpansion(t *testing.T) {
 	// Create a temporary test configuration
 	tmpDir := t.TempDir()
@@ -321,13 +321,13 @@ func TestE2E_VerifyFilesExpansion(t *testing.T) {
 
 	configContent := `[global]
 vars = ["global_dir=/global"]
-env = ["GLOBAL_DIR=%{global_dir}"]
+env_vars = ["GLOBAL_DIR=%{global_dir}"]
 verify_files = ["%{global_dir}/global_verify.sh"]
 
 [[groups]]
 name = "test_group"
 vars = ["group_dir=%{global_dir}/group"]
-env = ["GROUP_DIR=%{group_dir}"]
+env_vars = ["GROUP_DIR=%{group_dir}"]
 verify_files = ["%{group_dir}/group_verify.sh"]
 `
 	err := os.WriteFile(configPath, []byte(configContent), 0o644)
@@ -367,7 +367,7 @@ verify_files = ["%{group_dir}/group_verify.sh"]
 }
 
 // TestE2E_FullExpansionPipeline is a comprehensive test for the entire expansion pipeline
-// from Global.Env -> Group.Env -> Command.Env/Cmd/Args.
+// from Global.EnvVars -> Group.EnvVars -> Command.EnvVars/Cmd/Args.
 //
 // This test verifies that Command expansion is performed correctly
 func TestE2E_FullExpansionPipeline(t *testing.T) {
@@ -376,7 +376,7 @@ func TestE2E_FullExpansionPipeline(t *testing.T) {
 	t.Setenv("HOME", "/home/testuser")
 
 	// Load configuration with command_env_references_global_group.toml
-	// This config tests Command.Env/Cmd/Args referencing Global and Group env
+	// This config tests Command.EnvVars/Cmd/Args referencing Global and Group env
 	configPath := filepath.Join("testdata", "command_env_references_global_group.toml")
 	content, err := os.ReadFile(configPath)
 	require.NoError(t, err, "Failed to read test configuration file")
@@ -410,9 +410,9 @@ func TestE2E_FullExpansionPipeline(t *testing.T) {
 		require.NotNil(t, appGroup, "app_group should exist")
 		require.NotNil(t, appGroup.ExpandedEnv, "Group.ExpandedEnv should be initialized")
 
-		// APP_DIR should reference BASE_DIR from Global.Env
+		// APP_DIR should reference BASE_DIR from Global.EnvVars
 		assert.Equal(t, "/opt/myapp", appGroup.ExpandedEnv["APP_DIR"],
-			"APP_DIR should expand BASE_DIR from Global.Env")
+			"APP_DIR should expand BASE_DIR from Global.EnvVars")
 	})
 
 	// Verify Group.ExpandedVerifyFiles (if present in config)
@@ -445,9 +445,9 @@ func TestE2E_FullExpansionPipeline(t *testing.T) {
 				"Cmd should use %{VAR} syntax")
 			assert.Equal(t, []string{"--log", "%{log_dir}/app.log"}, runAppCmd.Args,
 				"Args should use %{VAR} syntax")
-			require.Len(t, runAppCmd.Env, 1, "Command should have 1 env variable")
-			assert.Equal(t, "LOG_DIR=%{log_dir}", runAppCmd.Env[0],
-				"Command.Env should use %{VAR} syntax")
+			require.Len(t, runAppCmd.EnvVars, 1, "Command should have 1 env variable")
+			assert.Equal(t, "LOG_DIR=%{log_dir}", runAppCmd.EnvVars[0],
+				"Command.EnvVars should use %{VAR} syntax")
 
 			// Expanded fields should be populated
 			assert.NotEmpty(t, runAppCmd.ExpandedCmd,
@@ -463,17 +463,17 @@ func TestE2E_FullExpansionPipeline(t *testing.T) {
 			// Command.ExpandedEnv should be populated with expanded variables
 			require.NotNil(t, runAppCmd.ExpandedEnv, "ExpandedEnv should be populated")
 			assert.Equal(t, "/opt/myapp/logs", runAppCmd.ExpandedEnv["LOG_DIR"],
-				"LOG_DIR should expand APP_DIR from Group.Env")
+				"LOG_DIR should expand APP_DIR from Group.EnvVars")
 
 			// Command.ExpandedCmd should be expanded
 			assert.Equal(t, "/opt/myapp/bin/server", runAppCmd.ExpandedCmd,
-				"ExpandedCmd should expand APP_DIR from Group.Env")
+				"ExpandedCmd should expand APP_DIR from Group.EnvVars")
 
 			// Command.ExpandedArgs should be expanded
 			require.Len(t, runAppCmd.ExpandedArgs, 2, "ExpandedArgs should have 2 elements")
 			assert.Equal(t, "--log", runAppCmd.ExpandedArgs[0], "First arg should be unchanged")
 			assert.Equal(t, "/opt/myapp/logs/app.log", runAppCmd.ExpandedArgs[1],
-				"Second arg should expand LOG_DIR from Command.Env")
+				"Second arg should expand LOG_DIR from Command.EnvVars")
 		})
 	})
 }
