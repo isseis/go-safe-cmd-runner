@@ -58,9 +58,9 @@ const (
     MaxTimeout = 86400 // 24 hours in seconds
 )
 
-// Helper functions
+// Helper function for creating integer pointers
+// Used for both general *int values and TimeoutValue (which is a type alias for *int)
 func IntPtr(v int) *int { return &v }
-func TimeoutPtr(v int) TimeoutValue { return &v }
 ```
 
 **target file**: `internal/common/config.go` (修正)
@@ -94,7 +94,7 @@ func ResolveTimeout(cmdTimeout, groupTimeout, globalTimeout *int) int
 type TimeoutResolutionContext struct {
     CommandName string
     GroupName   string
-    Level      string // "command", "group", "global", "default"
+    Level       string // "command", "group", "global", "default"
 }
 ```
 
@@ -268,7 +268,6 @@ func TestE2ETimeoutBehavior(t *testing.T) {
 
 ### Breaking Changes
 - **BREAKING**: `timeout = 0` now means unlimited execution (previously defaulted to 60 seconds)
-- **BREAKING**: Unset timeout still defaults to 60 seconds
 
 ### Added
 - Support for unlimited command execution with `timeout = 0`
@@ -318,7 +317,6 @@ See `docs/migration/v2.0.0_timeout_changes.md` for detailed migration instructio
 - リソース使用量の監視
 
 #### 4.3.2. DoS攻撃対策
-- 同時無制限実行数の制限検討
 - プロセス監視による異常検出
 - 管理者への通知機能
 
@@ -411,7 +409,7 @@ See `docs/migration/v2.0.0_timeout_changes.md` for detailed migration instructio
 - **対策**: 十分なテストケース作成、型変換ロジックの慎重実装
 - **コンティンジェンシー**: パーサー部分の分離実装
 
-#### 中リスク: 無制限実行のリソース問題
+#### 高リスク: 無制限実行のリソース問題
 - **影響**: システムリソース枯渇
 - **対策**: 監視機能の強化、適切な警告実装
 - **コンティンジェンシー**: 緊急停止機能の実装
