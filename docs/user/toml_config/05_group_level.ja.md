@@ -550,7 +550,7 @@ args = ["--config", "%{config_file}", "--db-host", "%{db_host}"]
 ```toml
 [[groups]]
 name = "example"
-from_env_vars = ["内部変数名=システム環境変数名", ...]
+env_import = ["内部変数名=システム環境変数名", ...]
 ```
 
 #### パラメータの詳細
