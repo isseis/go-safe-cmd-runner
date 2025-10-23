@@ -146,7 +146,6 @@ args = [
     "-o", "data.csv",
     "https://example.com/data/export.csv",
 ]
-workdir = "%{__runner_workdir}"
 max_risk_level = "medium"
 timeout = 600
 
@@ -158,7 +157,6 @@ args = [
     "--input", "data.csv",
     "--output", "processed.csv",
 ]
-workdir = "%{__runner_workdir}"
 max_risk_level = "medium"
 timeout = 900
 

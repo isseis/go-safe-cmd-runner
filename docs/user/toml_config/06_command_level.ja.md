@@ -713,15 +713,14 @@ workdir = "/var/reports/daily"
 # このコマンドは /var/reports/daily で実行される
 ```
 
-#### 例2: 一時ディレクトリの使用
+#### 例2: 引数での `%{__runner_workdir}` 変数の使用
 
 ```toml
 [[groups.commands]]
 name = "temp_processing"
 cmd = "/usr/bin/convert"
-args = ["input.jpg", "-resize", "800x600", "output.jpg"]
-workdir = "%{__runner_workdir}"
-# ランナーが生成する一時ディレクトリで実行
+args = ["/data/input.jpg", "-resize", "800x600", "%{__runner_workdir}/output.jpg"]
+# 出力ファイルはグループの作業ディレクトリ（未指定の場合は自動生成される一時ディレクトリ）に保存される
 ```
 
 #### 例3: コマンドごとの異なる作業ディレクトリ
@@ -1244,13 +1243,12 @@ output = "verification.log"
 timeout = 600  # 10分
 max_risk_level = "low"
 
-# コマンド3: 古いバックアップの削除（一時ディレクトリで実行）
+# コマンド3: 古いバックアップの削除
 [[groups.commands]]
 name = "cleanup_old_backups"
 description = "30日以上前のバックアップファイルを削除"
 cmd = "/usr/bin/find"
 args = ["/var/backups/db", "-name", "*.sql", "-mtime", "+30", "-delete"]
-workdir = "%{__runner_workdir}"  # 一時ディレクトリで安全に実行
 timeout = 300  # 5分
 max_risk_level = "medium"
 
@@ -1291,8 +1289,7 @@ priority = 30
 name = "image_resize"
 description = "画像のリサイズ処理"
 cmd = "/usr/bin/convert"
-args = ["/data/input.jpg", "-resize", "800x600", "resized.jpg"]
-workdir = "%{__runner_workdir}"
+args = ["/data/input.jpg", "-resize", "800x600", "%{__runner_workdir}/resized.jpg"]
 output = "conversion.log"
 timeout = 300
 max_risk_level = "low"
