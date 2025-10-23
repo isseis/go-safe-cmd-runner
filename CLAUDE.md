@@ -10,6 +10,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - Follow the style and legend used in `docs/tasks/0030_verify_files_variable_expansion/02_architecture.md`.
   - Use a cylinder shape for "data" nodes instead of the default rectangle (in Mermaid flowcharts a cylinder node can be written as `[(data)]`).
 
+### Translation Guidelines (Japanese to English)
+When translating Japanese documentation to English:
+
+1. **Translation Workflow**:
+   - First create and commit the Japanese version
+   - Then create the English version based on the Japanese original
+
+2. **Translation Principles**:
+   - **Accuracy over fluency**: Prioritize precise translation over natural-sounding English
+   - **Faithful translation**: Do not delete content from the Japanese version or add content not present in the original
+   - **Structural consistency**: Match chapter headings and sentence structure between Japanese and English versions
+
+3. **Terminology Management**:
+   - Create and maintain a glossary file under `docs/` directory
+   - Use consistent terminology from the glossary
+   - Add new terms to the glossary as needed
+   - Glossary location: `docs/translation_glossary.md`
+
 ## Commands
 
 ### Build Commands
