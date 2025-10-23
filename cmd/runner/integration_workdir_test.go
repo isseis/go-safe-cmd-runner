@@ -229,8 +229,8 @@ func extractPathsFromOutput(t *testing.T, output string, pattern *regexp.Regexp)
 	for _, line := range lines {
 		matches := pattern.FindStringSubmatch(line)
 		if len(matches) >= 2 {
-			// Take the first capture group as the path (matches[1])
-			path := strings.TrimSpace(matches[1])
+			// Take the last capture group as the path (matches[len(matches)-1])
+			path := strings.TrimSpace(matches[len(matches)-1])
 			if path != "" {
 				paths = append(paths, path)
 			}
