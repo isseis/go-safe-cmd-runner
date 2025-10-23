@@ -81,8 +81,8 @@ type DryRunOptions struct {
 	MaxDepth         int          `json:"max_depth"` // Maximum depth for variable resolution
 
 	// Security analysis configuration
-	SkipStandardPaths bool   `json:"skip_standard_paths"` // Skip hash validation for standard system paths
-	HashDir           string `json:"hash_dir"`            // Directory containing hash files
+	VerifyStandardPaths bool   `json:"verify_standard_paths"` // Perform hash validation for standard system paths
+	HashDir             string `json:"hash_dir"`              // Directory containing hash files
 }
 
 // DetailLevel represents the level of detail in output

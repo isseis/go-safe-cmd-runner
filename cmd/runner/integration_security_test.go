@@ -130,7 +130,7 @@ func TestVerificationIntegration(t *testing.T) {
 				configContent := `
 [global]
 log_level = "debug"
-skip_standard_paths = true
+verify_standard_paths = false
 
 [[groups]]
 name = "integration-test"
@@ -365,9 +365,9 @@ func TestMaliciousConfigCommandControlSecurity(t *testing.T) {
 			mockPathResolver.On("ResolvePath", tc.cmd.ExpandedCmd).Return("/usr/bin/"+tc.cmd.ExpandedCmd, nil)
 
 			opts := &resource.DryRunOptions{
-				DetailLevel:       resource.DetailLevelDetailed,
-				HashDir:           hashDir,
-				SkipStandardPaths: true,
+				DetailLevel:         resource.DetailLevelDetailed,
+				HashDir:             hashDir,
+				VerifyStandardPaths: false,
 			}
 
 			dryRunManager, err := resource.NewDryRunResourceManager(mockExec, mockPriv, mockPathResolver, opts)

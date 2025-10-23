@@ -118,14 +118,14 @@ func TestRuntimeCommand_Output(t *testing.T) {
 		{
 			name: "output path specified",
 			spec: &CommandSpec{
-				Output: "/tmp/output.log",
+				OutputFile: "/tmp/output.log",
 			},
 			want: "/tmp/output.log",
 		},
 		{
 			name: "no output specified",
 			spec: &CommandSpec{
-				Output: "",
+				OutputFile: "",
 			},
 			want: "",
 		},
@@ -154,7 +154,7 @@ func TestRuntimeCommand_GetMaxRiskLevel(t *testing.T) {
 		{
 			name: "low risk level",
 			spec: &CommandSpec{
-				MaxRiskLevel: "low",
+				RiskLevel: "low",
 			},
 			want:    RiskLevelLow,
 			wantErr: false,
@@ -162,7 +162,7 @@ func TestRuntimeCommand_GetMaxRiskLevel(t *testing.T) {
 		{
 			name: "medium risk level",
 			spec: &CommandSpec{
-				MaxRiskLevel: "medium",
+				RiskLevel: "medium",
 			},
 			want:    RiskLevelMedium,
 			wantErr: false,
@@ -170,7 +170,7 @@ func TestRuntimeCommand_GetMaxRiskLevel(t *testing.T) {
 		{
 			name: "high risk level",
 			spec: &CommandSpec{
-				MaxRiskLevel: "high",
+				RiskLevel: "high",
 			},
 			want:    RiskLevelHigh,
 			wantErr: false,
@@ -178,7 +178,7 @@ func TestRuntimeCommand_GetMaxRiskLevel(t *testing.T) {
 		{
 			name: "empty defaults to low",
 			spec: &CommandSpec{
-				MaxRiskLevel: "",
+				RiskLevel: "",
 			},
 			want:    RiskLevelLow,
 			wantErr: false,
@@ -186,7 +186,7 @@ func TestRuntimeCommand_GetMaxRiskLevel(t *testing.T) {
 		{
 			name: "invalid risk level",
 			spec: &CommandSpec{
-				MaxRiskLevel: "invalid",
+				RiskLevel: "invalid",
 			},
 			want:    RiskLevelUnknown,
 			wantErr: true,
@@ -268,7 +268,7 @@ func TestRuntimeGlobal_Structure(t *testing.T) {
 	spec := &GlobalSpec{
 		Timeout:  300,
 		LogLevel: "debug",
-		Env:      []string{"PATH=/usr/bin"},
+		EnvVars:  []string{"PATH=/usr/bin"},
 		Vars:     []string{"VAR1=value1"},
 	}
 
@@ -305,7 +305,7 @@ func TestRuntimeGroup_Structure(t *testing.T) {
 	spec := &GroupSpec{
 		Name:    "test-group",
 		WorkDir: "/tmp/test",
-		Env:     []string{"CC=gcc"},
+		EnvVars: []string{"CC=gcc"},
 		Vars:    []string{"BUILD_TYPE=release"},
 	}
 
@@ -345,7 +345,7 @@ func TestRuntimeCommand_Structure(t *testing.T) {
 		Args:    []string{"hello", "world"},
 		WorkDir: "/tmp",
 		Timeout: 60,
-		Env:     []string{"TEST=value"},
+		EnvVars: []string{"TEST=value"},
 	}
 
 	runtime := &RuntimeCommand{
@@ -432,9 +432,9 @@ func TestRuntimeCommand_HelperMethods(t *testing.T) {
 // TestRuntimeGlobal_HelperMethods tests the helper methods for RuntimeGlobal
 func TestRuntimeGlobal_HelperMethods(t *testing.T) {
 	spec := &GlobalSpec{
-		Timeout:           300,
-		EnvAllowlist:      []string{"PATH", "HOME"},
-		SkipStandardPaths: true,
+		Timeout:             300,
+		EnvAllowed:          []string{"PATH", "HOME"},
+		VerifyStandardPaths: func() *bool { b := false; return &b }(),
 	}
 
 	runtime, err := NewRuntimeGlobal(spec)

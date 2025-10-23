@@ -6,9 +6,9 @@ version = "1.0"
 [global]
 timeout = 60
 log_level = "debug"
-skip_standard_paths = true
+verify_standard_paths = false
 # Global environment variables - comprehensive list for testing
-env_allowlist = [
+env_allowed = [
     "PATH",
     "HOME",
     "USER",
@@ -55,7 +55,7 @@ name = "security_tests"
 description = "Security feature testing including privilege escalation"
 priority = 2
 # Group-level explicit environment allowlist (overrides global)
-env_allowlist = ["PATH", "HOME", "TEST_SECURITY_VAR"]
+env_allowed = ["PATH", "HOME", "TEST_SECURITY_VAR"]
 
 [[groups.commands]]
 name = "privileged_whoami"
@@ -75,7 +75,7 @@ name = "custom_env_test"
 description = "Test custom environment variables passed to child process"
 cmd = "printenv"
 args = ["TEST_SECURITY_VAR"]
-env = ["TEST_SECURITY_VAR=security_value"]
+env_vars = ["TEST_SECURITY_VAR=security_value"]
 
 # Group 3: Resource management tests - temporary directories and cleanup
 [[groups]]
@@ -157,14 +157,14 @@ name = "test_env_to_child"
 description = "Test passing environment variable to child process"
 cmd = "printenv"
 args = ["TEST_GLOBAL_VAR"]
-env = ["TEST_GLOBAL_VAR=%{test_var}"]  # Pass internal var to child process
+env_vars = ["TEST_GLOBAL_VAR=%{test_var}"]  # Pass internal var to child process
 
 [[groups.commands]]
 name = "test_node_env"
 description = "Test NODE_ENV environment variable to child process"
 cmd = "printenv"
 args = ["NODE_ENV"]
-env = ["NODE_ENV=test_environment"]
+env_vars = ["NODE_ENV=test_environment"]
 
 [[groups.commands]]
 name = "test_system_env_import"
@@ -172,7 +172,7 @@ description = "Test importing system environment variable"
 cmd = "echo"
 args = ["User from system: %{username}"]
 vars = []
-from_env = ["username=USER"]
+env_import = ["username=USER"]
 
 # Group 6: Environment variable rejection tests
 [[groups]]
@@ -180,8 +180,8 @@ name = "env_rejection_tests"
 description = "Test environment variable rejection"
 priority = 6
 # Explicit empty allowlist - rejects all environment variables
-env_allowlist = []
-from_env = []  # No system env imports
+env_allowed = []
+env_import = []  # No system env imports
 
 [[groups.commands]]
 name = "test_env_rejection"
@@ -259,7 +259,7 @@ description = "Final comprehensive test combining all features"
 priority = 10
 cleanup = true
 workdir = "/tmp/final-comprehensive-test"
-env_allowlist = ["PATH", "HOME", "FINAL_TEST_VAR"]
+env_allowed = ["PATH", "HOME", "FINAL_TEST_VAR"]
 verify_files = ["/bin/echo"]
 
 vars = [
@@ -286,7 +286,7 @@ name = "final_env_test"
 description = "Final environment variable test"
 cmd = "printenv"
 args = ["FINAL_TEST_VAR"]
-env = ["FINAL_TEST_VAR=%{final_msg}"]
+env_vars = ["FINAL_TEST_VAR=%{final_msg}"]
 
 [[groups.commands]]
 name = "final_summary"

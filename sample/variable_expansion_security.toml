@@ -5,9 +5,9 @@ version = "1.0"
 [global]
 timeout = 30
 log_level = "info"
-skip_standard_paths = true
+verify_standard_paths = false
 # Global allowlist: only these system environment variables can be used
-env_allowlist = [
+env_allowed = [
     "PATH",
     "HOME",
     "USER",
@@ -34,8 +34,8 @@ description = "Pass environment variable to child process"
 cmd = "/bin/sh"
 args = ["-c", "echo HOME from env: $HOME"]
 vars = []
-from_env = ["home=HOME"]
-env = ["HOME=%{home}"]
+env_import = ["home=HOME"]
+env_vars = ["HOME=%{home}"]
 # HOME is explicitly passed to child process via env
 
 # Example 2: Using system environment variables with from_env
@@ -48,14 +48,14 @@ name = "use_system_home"
 description = "Import and use system HOME variable"
 cmd = "/bin/echo"
 args = ["Home directory: %{home}"]
-from_env = ["home=HOME"]  # Import HOME as internal variable 'home'
+env_import = ["home=HOME"]  # Import HOME as internal variable 'home'
 
 [[groups.commands]]
 name = "use_system_user"
 description = "Import and use system USER variable"
 cmd = "/bin/echo"
 args = ["Current user: %{username}"]
-from_env = ["username=USER"]  # Import USER as internal variable 'username'
+env_import = ["username=USER"]  # Import USER as internal variable 'username'
 
 # Example 3: Absolute path requirement
 [[groups]]
@@ -93,7 +93,7 @@ name = "mixed_variables"
 description = "Combine system and internal variables"
 cmd = "/bin/sh"
 args = ["-c", "echo User %{username} in %{home}, app at %{app_dir}"]
-from_env = [
+env_import = [
     "username=USER",
     "home=HOME"
 ]
@@ -133,7 +133,7 @@ description = "Pass internal variable to child process environment"
 cmd = "/bin/sh"
 args = ["-c", "echo Config file: $CONFIG_FILE"]
 vars = ["config_path=/etc/myapp/config.yml"]
-env = ["CONFIG_FILE=%{config_path}"]
+env_vars = ["CONFIG_FILE=%{config_path}"]
 # config_path is internal variable used in TOML expansion
 # CONFIG_FILE is environment variable passed to child process
 
@@ -201,8 +201,8 @@ name = "extend_path"
 description = "Extend system PATH with custom directories"
 cmd = "/bin/sh"
 args = ["-c", "echo Extended PATH: $PATH"]
-from_env = ["system_path=PATH"]
-env = ["PATH=/opt/custom/bin:%{system_path}"]
+env_import = ["system_path=PATH"]
+env_vars = ["PATH=/opt/custom/bin:%{system_path}"]
 # Import system PATH, then extend it for child process
 
 # Example 12: Allowlist violation prevention
@@ -214,4 +214,4 @@ env = ["PATH=/opt/custom/bin:%{system_path}"]
 # name = "not_in_allowlist"
 # cmd = "/bin/echo"
 # args = ["%{secret}"]
-# from_env = ["secret=SECRET_VAR"]  # Error: SECRET_VAR not in allowlist
+# env_import = ["secret=SECRET_VAR"]  # Error: SECRET_VAR not in allowlist

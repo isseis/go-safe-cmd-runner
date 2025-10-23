@@ -9,7 +9,7 @@ version = "1.0"
 [global]
 timeout = 3600
 log_level = "info"
-env_allowlist = ["PATH", "HOME", "USER"]
+env_allowed = ["PATH", "HOME", "USER"]
 
 [[groups]]
 name = "backup_operations"

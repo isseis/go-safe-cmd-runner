@@ -88,10 +88,10 @@ func (v *Validator) ValidateConfig(configSpec *runnertypes.ConfigSpec) (*Validat
 // validateGlobalConfig validates the global configuration settings
 func (v *Validator) validateGlobalConfig(global *runnertypes.GlobalSpec, result *ValidationResult) {
 	// Validate global allowlist
-	v.validateAllowlist(global.EnvAllowlist, "global.env_allowlist", result)
+	v.validateAllowlist(global.EnvAllowed, "global.env_allowlist", result)
 
 	// Check for empty global allowlist
-	if len(global.EnvAllowlist) == 0 {
+	if len(global.EnvAllowed) == 0 {
 		result.Warnings = append(result.Warnings, ValidationWarning{
 			Type:       "empty_global_allowlist",
 			Message:    "Global environment allowlist is empty",
@@ -103,7 +103,7 @@ func (v *Validator) validateGlobalConfig(global *runnertypes.GlobalSpec, result 
 	// Check for potentially dangerous variables in global allowlist
 	dangerousVars := []string{"LD_LIBRARY_PATH", "LD_PRELOAD", "DYLD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES"}
 	for _, dangerousVar := range dangerousVars {
-		if slices.Contains(global.EnvAllowlist, dangerousVar) {
+		if slices.Contains(global.EnvAllowed, dangerousVar) {
 			result.Warnings = append(result.Warnings, ValidationWarning{
 				Type:       "dangerous_global_variable",
 				Message:    fmt.Sprintf("Global allowlist contains potentially dangerous variable: %s", dangerousVar),
@@ -131,8 +131,8 @@ func (v *Validator) validateGroup(group *runnertypes.GroupSpec, index int, globa
 	// Note: Duplicate group names are now checked at the ValidateConfig level before calling this function
 
 	// Validate group allowlist
-	if group.EnvAllowlist != nil {
-		v.validateAllowlist(group.EnvAllowlist, fmt.Sprintf("%s.env_allowlist", groupLocation), result)
+	if group.EnvAllowed != nil {
+		v.validateAllowlist(group.EnvAllowed, fmt.Sprintf("%s.env_allowlist", groupLocation), result)
 
 		// Check inheritance mode and provide warnings
 		v.analyzeInheritanceMode(group, groupLocation, global, result)
@@ -256,7 +256,7 @@ func (v *Validator) validateCommand(cmd *runnertypes.CommandSpec, index int, loc
 	}
 
 	// Validate command environment variables
-	v.validateCommandEnv(cmd.Env, fmt.Sprintf("%s.env", cmdLocation), result)
+	v.validateCommandEnv(cmd.EnvVars, fmt.Sprintf("%s.env", cmdLocation), result)
 }
 
 // validateCommandEnv validates command-specific environment variables
@@ -324,9 +324,9 @@ func (v *Validator) validateVariableValue(name, value string) error {
 
 // analyzeInheritanceMode analyzes the inheritance mode and provides appropriate warnings
 func (v *Validator) analyzeInheritanceMode(group *runnertypes.GroupSpec, location string, global *runnertypes.GlobalSpec, result *ValidationResult) {
-	if group.EnvAllowlist == nil {
+	if group.EnvAllowed == nil {
 		// Inherit mode
-		if len(global.EnvAllowlist) == 0 {
+		if len(global.EnvAllowed) == 0 {
 			result.Warnings = append(result.Warnings, ValidationWarning{
 				Type:       "inherit_from_empty_global",
 				Message:    "Group inherits from empty global allowlist",
@@ -334,11 +334,11 @@ func (v *Validator) analyzeInheritanceMode(group *runnertypes.GroupSpec, locatio
 				Suggestion: "Either add variables to global allowlist or define explicit group allowlist",
 			})
 		}
-	} else if len(group.EnvAllowlist) == 0 {
+	} else if len(group.EnvAllowed) == 0 {
 		// Reject mode
 		hasCommandsWithEnv := false
 		for _, cmd := range group.Commands {
-			if len(cmd.Env) > 0 {
+			if len(cmd.EnvVars) > 0 {
 				hasCommandsWithEnv = true
 				break
 			}
@@ -347,9 +347,9 @@ func (v *Validator) analyzeInheritanceMode(group *runnertypes.GroupSpec, locatio
 		if hasCommandsWithEnv {
 			result.Warnings = append(result.Warnings, ValidationWarning{
 				Type:       "reject_mode_with_command_env",
-				Message:    "Group rejects all environment variables but has commands with Command.Env",
+				Message:    "Group rejects all environment variables but has commands with Command.EnvVars",
 				Location:   fmt.Sprintf("%s.env_allowlist", location),
-				Suggestion: "Command.Env variables will still work, but cannot reference system variables",
+				Suggestion: "Command.EnvVars variables will still work, but cannot reference system variables",
 			})
 		}
 	}
@@ -361,16 +361,16 @@ func (v *Validator) calculateSummary(configSpec *runnertypes.ConfigSpec, result 
 	summary := &result.Summary
 
 	summary.TotalGroups = len(configSpec.Groups)
-	summary.GlobalAllowlistSize = len(configSpec.Global.EnvAllowlist)
+	summary.GlobalAllowlistSize = len(configSpec.Global.EnvAllowed)
 
 	for _, group := range configSpec.Groups {
-		if group.EnvAllowlist != nil {
+		if group.EnvAllowed != nil {
 			summary.GroupsWithAllowlist++
 		}
 
 		for _, cmd := range group.Commands {
 			summary.TotalCommands++
-			if len(cmd.Env) > 0 {
+			if len(cmd.EnvVars) > 0 {
 				summary.CommandsWithEnv++
 			}
 		}

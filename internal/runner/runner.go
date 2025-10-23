@@ -233,7 +233,7 @@ func createDryRunResourceManager(opts *runnerOptions, pathResolver resource.Path
 // createNormalResourceManager creates a resource manager for normal mode
 func createNormalResourceManager(opts *runnerOptions, configSpec *runnertypes.ConfigSpec, pathResolver resource.PathResolver) error {
 	fs := common.NewDefaultFileSystem()
-	maxOutputSize := configSpec.Global.MaxOutputSize
+	maxOutputSize := configSpec.Global.OutputSizeLimit
 	if maxOutputSize <= 0 {
 		maxOutputSize = 0 // Will use default from output package
 	}
@@ -276,7 +276,7 @@ func NewRunner(configSpec *runnertypes.ConfigSpec, options ...Option) (*Runner, 
 	}
 
 	// Create environment filter
-	envFilter := environment.NewFilter(configSpec.Global.EnvAllowlist)
+	envFilter := environment.NewFilter(configSpec.Global.EnvAllowed)
 
 	// Initialize runtime global configuration
 	runtimeGlobal, err := initializeRuntimeGlobal(opts, configSpec)

@@ -33,7 +33,7 @@ type Filter struct {
 
 // NewFilter creates a new environment variable filter with the provided global allowlist
 // The function intentionally accepts only the global allowlist (slice of variable names)
-// to keep the Filter small and focused; callers should pass cfg.Global.EnvAllowlist.
+// to keep the Filter small and focused; callers should pass cfg.Global.EnvAllowed.
 func NewFilter(allowList []string) *Filter {
 	return &Filter{
 		globalAllowlist: common.SliceToSet(allowList),

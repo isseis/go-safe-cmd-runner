@@ -15,7 +15,7 @@ import (
 
 func createTestRuntimeGlobal(envAllowlist []string, expandedEnv map[string]string) *runnertypes.RuntimeGlobal {
 	spec := &runnertypes.GlobalSpec{
-		EnvAllowlist: envAllowlist,
+		EnvAllowed: envAllowlist,
 	}
 	return &runnertypes.RuntimeGlobal{
 		Spec:        spec,

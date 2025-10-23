@@ -144,7 +144,7 @@ func TestCommandGetMaxRiskLevel(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := &CommandSpec{
-				MaxRiskLevel: tt.maxRiskStr,
+				RiskLevel: tt.maxRiskStr,
 			}
 
 			result, err := cmd.GetMaxRiskLevel()

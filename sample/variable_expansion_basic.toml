@@ -5,8 +5,8 @@ version = "1.0"
 [global]
 timeout = 30
 log_level = "info"
-skip_standard_paths = true
-env_allowlist = [
+verify_standard_paths = false
+env_allowed = [
     "PATH",
     "HOME",
     "USER",
@@ -35,7 +35,7 @@ description = "Copy file using variables in args"
 cmd = "/bin/cp"
 args = ["%{home}/source.txt", "%{backup_dir}/backup.txt"]
 vars = ["backup_dir=/opt/backups"]
-from_env = ["home=HOME"]
+env_import = ["home=HOME"]
 
 # Example 3: Multiple variables in one string
 [[groups]]

@@ -4,8 +4,8 @@ version = "1.0"
 [global]
 timeout = 30
 log_level = "debug"
-max_output_size = 1024
-env_allowlist = ["PATH"]
+output_size_limit = 1024
+env_allowed = ["PATH"]
 
 [[groups]]
 name = "single_error_test"
@@ -16,4 +16,4 @@ name = "dangerous_characters"
 description = "Attempt dangerous characters in path"
 cmd = "echo"
 args = ["Dangerous path"]
-output = "output; rm -rf /"
+output_file = "output; rm -rf /"

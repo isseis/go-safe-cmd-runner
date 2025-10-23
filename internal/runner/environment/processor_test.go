@@ -12,10 +12,10 @@ import (
 func TestNewVariableExpander(t *testing.T) {
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			EnvAllowlist: []string{"PATH", "HOME"},
+			EnvAllowed: []string{"PATH", "HOME"},
 		},
 	}
-	filter := NewFilter(config.Global.EnvAllowlist)
+	filter := NewFilter(config.Global.EnvAllowed)
 	expander := NewVariableExpander(filter)
 
 	assert.NotNil(t, expander)
@@ -26,10 +26,10 @@ func TestNewVariableExpander(t *testing.T) {
 func TestVariableExpander_ResolveVariableReferences(t *testing.T) {
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			EnvAllowlist: []string{"PATH", "HOME", "USER"},
+			EnvAllowed: []string{"PATH", "HOME", "USER"},
 		},
 	}
-	filter := NewFilter(config.Global.EnvAllowlist)
+	filter := NewFilter(config.Global.EnvAllowed)
 	expander := NewVariableExpander(filter)
 
 	// Set up test environment variables
@@ -50,8 +50,8 @@ func TestVariableExpander_ResolveVariableReferences(t *testing.T) {
 			value:   "simple_value",
 			envVars: map[string]string{"FOO": "bar"},
 			group: &runnertypes.GroupSpec{
-				Name:         "test_group",
-				EnvAllowlist: []string{"PATH", "HOME"},
+				Name:       "test_group",
+				EnvAllowed: []string{"PATH", "HOME"},
 			},
 			expected: "simple_value",
 		},
@@ -60,8 +60,8 @@ func TestVariableExpander_ResolveVariableReferences(t *testing.T) {
 			value:   "${FOO}/bin",
 			envVars: map[string]string{"FOO": "/custom/path"},
 			group: &runnertypes.GroupSpec{
-				Name:         "test_group",
-				EnvAllowlist: []string{"PATH", "HOME"},
+				Name:       "test_group",
+				EnvAllowed: []string{"PATH", "HOME"},
 			},
 			expected: "/custom/path/bin",
 		},
@@ -70,8 +70,8 @@ func TestVariableExpander_ResolveVariableReferences(t *testing.T) {
 			value:   "${PATH}:/custom",
 			envVars: map[string]string{},
 			group: &runnertypes.GroupSpec{
-				Name:         "test_group",
-				EnvAllowlist: []string{"PATH", "HOME"},
+				Name:       "test_group",
+				EnvAllowed: []string{"PATH", "HOME"},
 			},
 			expected: "/usr/bin:/bin:/custom",
 		},
@@ -80,8 +80,8 @@ func TestVariableExpander_ResolveVariableReferences(t *testing.T) {
 			value:   "${USER}/bin",
 			envVars: map[string]string{},
 			group: &runnertypes.GroupSpec{
-				Name:         "test_group",
-				EnvAllowlist: []string{"PATH", "HOME"}, // USER not in allowlist
+				Name:       "test_group",
+				EnvAllowed: []string{"PATH", "HOME"}, // USER not in allowlist
 			},
 			expectError: true,
 			expectedErr: ErrVariableNotAllowed,
@@ -91,8 +91,8 @@ func TestVariableExpander_ResolveVariableReferences(t *testing.T) {
 			value:   "${NONEXISTENT}/bin",
 			envVars: map[string]string{},
 			group: &runnertypes.GroupSpec{
-				Name:         "test_group",
-				EnvAllowlist: []string{"PATH", "HOME"},
+				Name:       "test_group",
+				EnvAllowed: []string{"PATH", "HOME"},
 			},
 			expectError: true,
 			expectedErr: ErrVariableNotFound,
@@ -102,8 +102,8 @@ func TestVariableExpander_ResolveVariableReferences(t *testing.T) {
 			value:   "${HOME}/${FOO}",
 			envVars: map[string]string{"FOO": "bin"},
 			group: &runnertypes.GroupSpec{
-				Name:         "test_group",
-				EnvAllowlist: []string{"PATH", "HOME"},
+				Name:       "test_group",
+				EnvAllowed: []string{"PATH", "HOME"},
 			},
 			expected: "/home/testuser/bin",
 		},
@@ -112,8 +112,8 @@ func TestVariableExpander_ResolveVariableReferences(t *testing.T) {
 			value:   "${UNCLOSED",
 			envVars: map[string]string{},
 			group: &runnertypes.GroupSpec{
-				Name:         "test_group",
-				EnvAllowlist: []string{"PATH", "HOME"},
+				Name:       "test_group",
+				EnvAllowed: []string{"PATH", "HOME"},
 			},
 			expectError: true,
 			expectedErr: ErrUnclosedVariable,
@@ -123,8 +123,8 @@ func TestVariableExpander_ResolveVariableReferences(t *testing.T) {
 			value:   "${}",
 			envVars: map[string]string{},
 			group: &runnertypes.GroupSpec{
-				Name:         "test_group",
-				EnvAllowlist: []string{},
+				Name:       "test_group",
+				EnvAllowed: []string{},
 			},
 			expectError: true,
 			expectedErr: ErrInvalidVariableName,
@@ -134,8 +134,8 @@ func TestVariableExpander_ResolveVariableReferences(t *testing.T) {
 			value:   "${3}",
 			envVars: map[string]string{},
 			group: &runnertypes.GroupSpec{
-				Name:         "test_group",
-				EnvAllowlist: []string{},
+				Name:       "test_group",
+				EnvAllowed: []string{},
 			},
 			expectError: true,
 			expectedErr: ErrInvalidVariableName,
@@ -146,8 +146,8 @@ func TestVariableExpander_ResolveVariableReferences(t *testing.T) {
 			value:   "$HOME",
 			envVars: map[string]string{"HOME": "/home/user"},
 			group: &runnertypes.GroupSpec{
-				Name:         "test_group",
-				EnvAllowlist: []string{"HOME"},
+				Name:       "test_group",
+				EnvAllowed: []string{"HOME"},
 			},
 			expectError: true,
 			expectedErr: ErrInvalidVariableFormat,
@@ -157,8 +157,8 @@ func TestVariableExpander_ResolveVariableReferences(t *testing.T) {
 			value:   "path$",
 			envVars: map[string]string{},
 			group: &runnertypes.GroupSpec{
-				Name:         "test_group",
-				EnvAllowlist: []string{},
+				Name:       "test_group",
+				EnvAllowed: []string{},
 			},
 			expectError: true,
 			expectedErr: ErrInvalidVariableFormat,
@@ -168,8 +168,8 @@ func TestVariableExpander_ResolveVariableReferences(t *testing.T) {
 			value:   "$@INVALID",
 			envVars: map[string]string{},
 			group: &runnertypes.GroupSpec{
-				Name:         "test_group",
-				EnvAllowlist: []string{},
+				Name:       "test_group",
+				EnvAllowed: []string{},
 			},
 			expectError: true,
 			expectedErr: ErrInvalidVariableFormat,
@@ -179,8 +179,8 @@ func TestVariableExpander_ResolveVariableReferences(t *testing.T) {
 			value:   "${HOME} and $USER",
 			envVars: map[string]string{"HOME": "/home/user", "USER": "testuser"},
 			group: &runnertypes.GroupSpec{
-				Name:         "test_group",
-				EnvAllowlist: []string{"HOME", "USER"},
+				Name:       "test_group",
+				EnvAllowed: []string{"HOME", "USER"},
 			},
 			expectError: true,
 			expectedErr: ErrInvalidVariableFormat,
@@ -189,7 +189,7 @@ func TestVariableExpander_ResolveVariableReferences(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := expander.ExpandString(tt.value, tt.envVars, tt.group.EnvAllowlist, tt.group.Name, make(map[string]struct{}))
+			result, err := expander.ExpandString(tt.value, tt.envVars, tt.group.EnvAllowed, tt.group.Name, make(map[string]struct{}))
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -206,10 +206,10 @@ func TestVariableExpander_ResolveVariableReferences(t *testing.T) {
 func TestVariableExpander_ResolveVariableReferences_CircularReferences(t *testing.T) {
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			EnvAllowlist: []string{"CIRCULAR_VAR", "VAR1", "VAR2", "VAR3"},
+			EnvAllowed: []string{"CIRCULAR_VAR", "VAR1", "VAR2", "VAR3"},
 		},
 	}
-	filter := NewFilter(config.Global.EnvAllowlist)
+	filter := NewFilter(config.Global.EnvAllowed)
 	expander := NewVariableExpander(filter)
 
 	tests := []struct {
@@ -226,8 +226,8 @@ func TestVariableExpander_ResolveVariableReferences_CircularReferences(t *testin
 			value:   "${CIRCULAR_VAR}",
 			envVars: map[string]string{"CIRCULAR_VAR": "${CIRCULAR_VAR}"},
 			group: &runnertypes.GroupSpec{
-				Name:         "test_group",
-				EnvAllowlist: []string{"CIRCULAR_VAR"},
+				Name:       "test_group",
+				EnvAllowed: []string{"CIRCULAR_VAR"},
 			},
 			expectError: true,
 			description: "A variable that references itself should be detected as infinite loop after max iterations",
@@ -237,8 +237,8 @@ func TestVariableExpander_ResolveVariableReferences_CircularReferences(t *testin
 			value:   "${VAR1}",
 			envVars: map[string]string{"VAR1": "${VAR2}", "VAR2": "${VAR1}"},
 			group: &runnertypes.GroupSpec{
-				Name:         "test_group",
-				EnvAllowlist: []string{"VAR1", "VAR2"},
+				Name:       "test_group",
+				EnvAllowed: []string{"VAR1", "VAR2"},
 			},
 			expectError: true,
 			description: "Two variables referencing each other should be detected as infinite loop",
@@ -248,8 +248,8 @@ func TestVariableExpander_ResolveVariableReferences_CircularReferences(t *testin
 			value:   "${VAR1}",
 			envVars: map[string]string{"VAR1": "prefix-${VAR2}-suffix", "VAR2": "nested-${VAR1}-nested"},
 			group: &runnertypes.GroupSpec{
-				Name:         "test_group",
-				EnvAllowlist: []string{"VAR1", "VAR2"},
+				Name:       "test_group",
+				EnvAllowed: []string{"VAR1", "VAR2"},
 			},
 			expectError: true,
 			description: "Complex nested circular references should be detected",
@@ -263,8 +263,8 @@ func TestVariableExpander_ResolveVariableReferences_CircularReferences(t *testin
 				"VAR3": "base",
 			},
 			group: &runnertypes.GroupSpec{
-				Name:         "test_group",
-				EnvAllowlist: []string{"VAR1", "VAR2", "VAR3"},
+				Name:       "test_group",
+				EnvAllowed: []string{"VAR1", "VAR2", "VAR3"},
 			},
 			expectError:    false,
 			expectedResult: "base/middle/final",
@@ -274,7 +274,7 @@ func TestVariableExpander_ResolveVariableReferences_CircularReferences(t *testin
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := expander.ExpandString(tt.value, tt.envVars, tt.group.EnvAllowlist, tt.group.Name, make(map[string]struct{}))
+			result, err := expander.ExpandString(tt.value, tt.envVars, tt.group.EnvAllowed, tt.group.Name, make(map[string]struct{}))
 
 			if tt.expectError {
 				assert.Error(t, err, "Expected error for case: %s", tt.description)
@@ -344,10 +344,10 @@ func TestVariableExpander_ValidateBasicEnvVariable(t *testing.T) {
 func TestVariableExpander_EscapeSequences(t *testing.T) {
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
-			EnvAllowlist: []string{"FOO", "BAR", "ESCAPED_VAR"},
+			EnvAllowed: []string{"FOO", "BAR", "ESCAPED_VAR"},
 		},
 	}
-	filter := NewFilter(config.Global.EnvAllowlist)
+	filter := NewFilter(config.Global.EnvAllowed)
 	expander := NewVariableExpander(filter)
 
 	tests := []struct {
@@ -365,8 +365,8 @@ func TestVariableExpander_EscapeSequences(t *testing.T) {
 			value:   `\${FOO}`,
 			envVars: map[string]string{"FOO": "value"},
 			group: &runnertypes.GroupSpec{
-				Name:         "test_group",
-				EnvAllowlist: []string{"FOO"},
+				Name:       "test_group",
+				EnvAllowed: []string{"FOO"},
 			},
 			expected: "${FOO}",
 		},
@@ -375,8 +375,8 @@ func TestVariableExpander_EscapeSequences(t *testing.T) {
 			value:   `\\FOO`,
 			envVars: map[string]string{},
 			group: &runnertypes.GroupSpec{
-				Name:         "test_group",
-				EnvAllowlist: []string{},
+				Name:       "test_group",
+				EnvAllowed: []string{},
 			},
 			expected: `\FOO`,
 		},
@@ -385,8 +385,8 @@ func TestVariableExpander_EscapeSequences(t *testing.T) {
 			value:   `\${FOO} and ${BAR}`,
 			envVars: map[string]string{"FOO": "foo", "BAR": "bar"},
 			group: &runnertypes.GroupSpec{
-				Name:         "test_group",
-				EnvAllowlist: []string{"FOO", "BAR"},
+				Name:       "test_group",
+				EnvAllowed: []string{"FOO", "BAR"},
 			},
 			expected: "${FOO} and bar",
 		},
@@ -395,8 +395,8 @@ func TestVariableExpander_EscapeSequences(t *testing.T) {
 			value:   `\\${FOO}`,
 			envVars: map[string]string{"FOO": "value"},
 			group: &runnertypes.GroupSpec{
-				Name:         "test_group",
-				EnvAllowlist: []string{"FOO"},
+				Name:       "test_group",
+				EnvAllowed: []string{"FOO"},
 			},
 			expected: `\value`,
 		},
@@ -405,8 +405,8 @@ func TestVariableExpander_EscapeSequences(t *testing.T) {
 			value:   `\${FOO} \${BAR} \\baz`,
 			envVars: map[string]string{"FOO": "f", "BAR": "b"},
 			group: &runnertypes.GroupSpec{
-				Name:         "test_group",
-				EnvAllowlist: []string{"FOO", "BAR"},
+				Name:       "test_group",
+				EnvAllowed: []string{"FOO", "BAR"},
 			},
 			expected: "${FOO} ${BAR} \\baz",
 		},
@@ -415,8 +415,8 @@ func TestVariableExpander_EscapeSequences(t *testing.T) {
 			value:   `\${FOO} ${BAR}`,
 			envVars: map[string]string{"FOO": "foo", "BAR": "bar"},
 			group: &runnertypes.GroupSpec{
-				Name:         "test_group",
-				EnvAllowlist: []string{"FOO", "BAR"},
+				Name:       "test_group",
+				EnvAllowed: []string{"FOO", "BAR"},
 			},
 			expected: "${FOO} bar",
 		},
@@ -425,8 +425,8 @@ func TestVariableExpander_EscapeSequences(t *testing.T) {
 			value:   `prefix \${FOO} ${BAR} suffix`,
 			envVars: map[string]string{"FOO": "foo", "BAR": "bar"},
 			group: &runnertypes.GroupSpec{
-				Name:         "test_group",
-				EnvAllowlist: []string{"FOO", "BAR"},
+				Name:       "test_group",
+				EnvAllowed: []string{"FOO", "BAR"},
 			},
 			expected: "prefix ${FOO} bar suffix",
 		},
@@ -467,7 +467,7 @@ func TestVariableExpander_EscapeSequences(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := expander.ExpandString(tt.value, tt.envVars, tt.group.EnvAllowlist, tt.group.Name, make(map[string]struct{}))
+			result, err := expander.ExpandString(tt.value, tt.envVars, tt.group.EnvAllowed, tt.group.Name, make(map[string]struct{}))
 
 			if tt.expectError {
 				assert.Error(t, err)

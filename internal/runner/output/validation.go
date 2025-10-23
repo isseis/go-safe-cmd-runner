@@ -55,17 +55,17 @@ func (v *ConfigValidator) ValidateGlobalConfig(globalSpec *runnertypes.GlobalSpe
 		return ErrGlobalConfigNil
 	}
 
-	// Validate MaxOutputSize
-	if globalSpec.MaxOutputSize < 0 {
-		return fmt.Errorf("%w: %d", ErrNegativeMaxOutputSize, globalSpec.MaxOutputSize)
+	// Validate OutputSizeLimit
+	if globalSpec.OutputSizeLimit < 0 {
+		return fmt.Errorf("%w: %d", ErrNegativeMaxOutputSize, globalSpec.OutputSizeLimit)
 	}
 
-	// MaxOutputSize 0 is valid (will use default), but negative values are not allowed
-	// Note: MaxOutputSize 0 is handled by setting default in config loader
+	// OutputSizeLimit 0 is valid (will use default), but negative values are not allowed
+	// Note: OutputSizeLimit 0 is handled by setting default in config loader
 
-	if globalSpec.MaxOutputSize > AbsoluteMaxOutputSize {
+	if globalSpec.OutputSizeLimit > AbsoluteMaxOutputSize {
 		return fmt.Errorf("%w (%d): %d", ErrMaxOutputSizeExceeded,
-			AbsoluteMaxOutputSize, globalSpec.MaxOutputSize)
+			AbsoluteMaxOutputSize, globalSpec.OutputSizeLimit)
 	}
 
 	return nil
@@ -78,8 +78,8 @@ func (v *ConfigValidator) ValidateCommand(cmdSpec *runnertypes.CommandSpec, glob
 	}
 
 	// Validate output path, considering max_risk_level
-	if err := v.validateOutputPathWithRiskLevel(cmdSpec.Output, cmdSpec); err != nil {
-		return fmt.Errorf("invalid output path '%s': %w", cmdSpec.Output, err)
+	if err := v.validateOutputPathWithRiskLevel(cmdSpec.OutputFile, cmdSpec); err != nil {
+		return fmt.Errorf("invalid output path '%s': %w", cmdSpec.OutputFile, err)
 	}
 
 	// Validate effective size limit
@@ -110,11 +110,11 @@ func (v *ConfigValidator) ValidateCommands(commandSpecs []runnertypes.CommandSpe
 		}
 
 		// Check for output path conflicts
-		if cmdSpec.Output != "" {
-			resolvedPath, err := filepath.Abs(cmdSpec.Output)
+		if cmdSpec.OutputFile != "" {
+			resolvedPath, err := filepath.Abs(cmdSpec.OutputFile)
 			if err != nil {
 				// Use original path if resolution fails
-				resolvedPath = cmdSpec.Output
+				resolvedPath = cmdSpec.OutputFile
 			}
 
 			if existingCmd, exists := outputPaths[resolvedPath]; exists {
@@ -193,10 +193,10 @@ func (v *ConfigValidator) validateOutputPathWithRiskLevel(outputPath string, cmd
 
 // getEffectiveMaxSize returns the effective maximum output size
 func (v *ConfigValidator) getEffectiveMaxSize(globalSpec *runnertypes.GlobalSpec) int64 {
-	if globalSpec == nil || globalSpec.MaxOutputSize <= 0 {
+	if globalSpec == nil || globalSpec.OutputSizeLimit <= 0 {
 		return DefaultMaxOutputSize
 	}
-	return globalSpec.MaxOutputSize
+	return globalSpec.OutputSizeLimit
 }
 
 // AssessSecurityRisk assesses the security risk of an output path
@@ -228,9 +228,9 @@ func (v *ConfigValidator) GenerateValidationReport(cfg *runnertypes.ConfigSpec) 
 	}
 
 	// Analyze size configuration
-	if cfg.Global.MaxOutputSize > DefaultMaxOutputSize {
+	if cfg.Global.OutputSizeLimit > DefaultMaxOutputSize {
 		report.Warnings = append(report.Warnings,
-			fmt.Sprintf("Large max output size configured: %d bytes", cfg.Global.MaxOutputSize))
+			fmt.Sprintf("Large max output size configured: %d bytes", cfg.Global.OutputSizeLimit))
 	}
 
 	// Validate all groups and collect statistics
@@ -238,7 +238,7 @@ func (v *ConfigValidator) GenerateValidationReport(cfg *runnertypes.ConfigSpec) 
 		for _, cmdSpec := range group.Commands {
 			report.CommandCount++
 
-			if cmdSpec.Output != "" {
+			if cmdSpec.OutputFile != "" {
 				report.OutputCount++
 
 				// Validate command
@@ -255,18 +255,18 @@ func (v *ConfigValidator) GenerateValidationReport(cfg *runnertypes.ConfigSpec) 
 					maxAllowedRisk = runnertypes.RiskLevelLow
 				}
 
-				evaluation := v.riskEvaluator.EvaluateWithMaxRiskLevel(cmdSpec.Output, maxAllowedRisk)
+				evaluation := v.riskEvaluator.EvaluateWithMaxRiskLevel(cmdSpec.OutputFile, maxAllowedRisk)
 
 				if evaluation.IsBlocking {
 					// This would cause execution failure
 					report.Warnings = append(report.Warnings,
 						fmt.Sprintf("Command '%s' output path risk (%s) exceeds max_risk_level (%s): %s (%s)",
-							cmdSpec.Name, evaluation.Level.String(), maxAllowedRisk.String(), cmdSpec.Output, evaluation.Reason))
+							cmdSpec.Name, evaluation.Level.String(), maxAllowedRisk.String(), cmdSpec.OutputFile, evaluation.Reason))
 				} else if evaluation.Level == runnertypes.RiskLevelHigh || evaluation.Level == runnertypes.RiskLevelCritical {
 					// High/critical risk but within allowed range
 					report.Warnings = append(report.Warnings,
 						fmt.Sprintf("Command '%s' has %s risk output path (allowed by max_risk_level %s): %s (%s)",
-							cmdSpec.Name, evaluation.Level.String(), maxAllowedRisk.String(), cmdSpec.Output, evaluation.Reason))
+							cmdSpec.Name, evaluation.Level.String(), maxAllowedRisk.String(), cmdSpec.OutputFile, evaluation.Reason))
 				}
 			}
 		}

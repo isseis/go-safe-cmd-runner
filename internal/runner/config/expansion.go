@@ -365,8 +365,8 @@ func ExpandGlobal(spec *runnertypes.GlobalSpec) (*runnertypes.RuntimeGlobal, err
 
 	// 1. Process FromEnv
 	// Build system environment map from os.Environ()
-	systemEnv := environment.NewFilter(spec.EnvAllowlist).ParseSystemEnvironment()
-	fromEnvVars, err := ProcessFromEnv(spec.FromEnv, spec.EnvAllowlist, systemEnv, "global")
+	systemEnv := environment.NewFilter(spec.EnvAllowed).ParseSystemEnvironment()
+	fromEnvVars, err := ProcessFromEnv(spec.EnvImport, spec.EnvAllowed, systemEnv, "global")
 	if err != nil {
 		return nil, fmt.Errorf("failed to process global from_env: %w", err)
 	}
@@ -380,7 +380,7 @@ func ExpandGlobal(spec *runnertypes.GlobalSpec) (*runnertypes.RuntimeGlobal, err
 	runtime.ExpandedVars = expandedVars
 
 	// 3. Expand Env
-	expandedEnv, err := ProcessEnv(spec.Env, runtime.ExpandedVars, "global")
+	expandedEnv, err := ProcessEnv(spec.EnvVars, runtime.ExpandedVars, "global")
 	if err != nil {
 		return nil, fmt.Errorf("failed to process global env: %w", err)
 	}
@@ -442,7 +442,7 @@ func ExpandGroup(spec *runnertypes.GroupSpec, globalVars map[string]string) (*ru
 	runtime.ExpandedVars = expandedVars
 
 	// 4. Expand Env
-	expandedEnv, err := ProcessEnv(spec.Env, runtime.ExpandedVars, fmt.Sprintf("group[%s]", spec.Name))
+	expandedEnv, err := ProcessEnv(spec.EnvVars, runtime.ExpandedVars, fmt.Sprintf("group[%s]", spec.Name))
 	if err != nil {
 		return nil, fmt.Errorf("failed to process group[%s] env: %w", spec.Name, err)
 	}
@@ -525,7 +525,7 @@ func ExpandCommand(spec *runnertypes.CommandSpec, groupVars map[string]string, _
 	}
 
 	// 6. Expand Env
-	expandedEnv, err := ProcessEnv(spec.Env, runtime.ExpandedVars, level)
+	expandedEnv, err := ProcessEnv(spec.EnvVars, runtime.ExpandedVars, level)
 	if err != nil {
 		return nil, fmt.Errorf("failed to process command[%s] env: %w", spec.Name, err)
 	}

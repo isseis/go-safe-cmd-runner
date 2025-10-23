@@ -7,11 +7,11 @@
 
 [global]
 # Whitelist of system environment variables that can be imported
-env_allowlist = ["HOME", "USER", "PATH"]
+env_allowed = ["HOME", "USER", "PATH"]
 
 # Import system environment variables as internal variables
 # Format: "internal_name=SYSTEM_VAR"
-from_env = [
+env_import = [
     "home=HOME",
     "user=USER",
     "system_path=PATH"
@@ -26,7 +26,7 @@ vars = [
 ]
 
 # Define process environment variables (visible to child processes)
-env = [
+env_vars = [
     "APP_DIR=%{app_dir}",
     "APP_NAME=%{app_name}",
     "CUSTOM_PATH=/usr/local/bin:/usr/bin"
@@ -52,7 +52,7 @@ vars = [
 ]
 
 # Group-level process environment variables
-env = [
+env_vars = [
     "DATA_DIR=%{data_dir}",
     "LOG_DIR=%{log_dir}"
 ]
@@ -62,7 +62,7 @@ env = [
 name = "print_all_env"
 cmd = "/usr/bin/printenv"
 args = []
-env = []  # Use inherited env from group and global
+env_vars = []  # Use inherited env from group and global
 mode = "user"
 
 # Test 2: Print specific environment variables
@@ -113,7 +113,7 @@ args = [
     "cmd_var=%{cmd_var}",
     "temp_dir=%{temp_dir}"
 ]
-env = [
+env_vars = [
     "CMD_VAR=%{cmd_var}"
 ]
 mode = "user"
@@ -124,7 +124,7 @@ mode = "user"
 name = "env_priority_test"
 cmd = "/usr/bin/printenv"
 args = ["APP_NAME"]
-env = [
+env_vars = [
     "APP_NAME=command_override"
 ]
 mode = "user"
@@ -133,8 +133,8 @@ mode = "user"
 name = "override_group"
 
 # Override from_env (Global.from_env is ignored)
-env_allowlist = ["USER", "PATH"]
-from_env = [
+env_allowed = ["USER", "PATH"]
+env_import = [
     "user=USER",
     "path=PATH"
 ]
@@ -145,7 +145,7 @@ vars = [
     "config=%{group_specific}/config"
 ]
 
-env = [
+env_vars = [
     "GROUP_SPECIFIC=%{group_specific}",
     "CONFIG_DIR=%{config}"
 ]
@@ -158,20 +158,20 @@ args = [
     "path=%{path}",
     "group_specific=%{group_specific}"
 ]
-env = []
+env_vars = []
 mode = "user"
 
 [[groups]]
 name = "empty_from_env_group"
 
 # Explicitly disable from_env (no system env vars imported)
-from_env = []
+env_import = []
 
 vars = [
     "static_var=/static/path"
 ]
 
-env = [
+env_vars = [
     "STATIC_VAR=%{static_var}"
 ]
 

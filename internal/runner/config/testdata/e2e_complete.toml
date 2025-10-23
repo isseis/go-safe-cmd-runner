@@ -3,10 +3,10 @@
 # with allowlist inheritance and complex variable references
 
 [global]
-env_allowlist = ["HOME", "USER", "PATH"]
-from_env = ["home=HOME", "user=USER", "path=PATH"]
+env_allowed = ["HOME", "USER", "PATH"]
+env_import = ["home=HOME", "user=USER", "path=PATH"]
 vars = ["base_dir=/opt/app"]
-env = [
+env_vars = [
     "BASE_DIR=%{base_dir}",
     "LOG_LEVEL=info",
     "PATH=/opt/tools/bin:%{path}"
@@ -20,7 +20,7 @@ vars = [
     "db_port=5432",
     "db_data=%{base_dir}/db-data"
 ]
-env = [
+env_vars = [
     "DB_HOST=%{db_host}",
     "DB_PORT=%{db_port}",
     "DB_DATA=%{db_data}"
@@ -32,16 +32,16 @@ name = "migrate"
 cmd = "%{base_dir}/bin/migrate"
 args = ["-h", "%{db_host}", "-p", "%{db_port}"]
 vars = ["migration_dir=%{db_data}/migrations"]
-env = ["MIGRATION_DIR=%{migration_dir}"]
+env_vars = ["MIGRATION_DIR=%{migration_dir}"]
 
 [[groups]]
 name = "web"
-env_allowlist = ["PORT"]  # Override: only PORT allowed
+env_allowed = ["PORT"]  # Override: only PORT allowed
 # Note: When from_env is specified, global from_env is merged
 # So global vars (home, user, path) are inherited and can be referenced
-from_env = ["port=PORT"]
+env_import = ["port=PORT"]
 vars = ["web_dir=/opt/app/web"]
-env = ["WEB_DIR=%{web_dir}"]
+env_vars = ["WEB_DIR=%{web_dir}"]
 
 [[groups.commands]]
 name = "start"

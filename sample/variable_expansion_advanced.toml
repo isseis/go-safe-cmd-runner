@@ -5,8 +5,8 @@ version = "1.0"
 [global]
 timeout = 60
 log_level = "debug"
-skip_standard_paths = true
-env_allowlist = [
+verify_standard_paths = false
+env_allowed = [
     "PATH",
     "HOME",
     "USER",
@@ -62,7 +62,7 @@ description = "Mixed literal and expanded variables"
 cmd = "/bin/echo"
 args = ["Literal \\%{home} is different from %{home}"]
 vars = []
-from_env = ["home=HOME"]
+env_import = ["home=HOME"]
 
 # Example 3: Complex path construction
 [[groups]]

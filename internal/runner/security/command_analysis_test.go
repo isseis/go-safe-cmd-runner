@@ -27,14 +27,14 @@ func TestAnalyzeCommandSecurity_Integration(t *testing.T) {
 		expectError     bool
 	}{
 		{
-			name: "standard directory with SkipStandardPaths=true should apply directory risk",
+			name: "standard directory with VerifyStandardPaths=false should skip verification",
 			setupFile: func() string {
 				// Use a standard directory path (simulated)
 				return "/bin/ls"
 			},
 			args: []string{},
 			globalConfig: &runnertypes.GlobalSpec{
-				SkipStandardPaths: true,
+				VerifyStandardPaths: &[]bool{false}[0], // false means skip verification
 			},
 			expectedRisk:   runnertypes.RiskLevelLow,
 			expectedReason: "Default directory-based risk level",
@@ -50,7 +50,7 @@ func TestAnalyzeCommandSecurity_Integration(t *testing.T) {
 			},
 			args: []string{},
 			globalConfig: &runnertypes.GlobalSpec{
-				SkipStandardPaths: false, // Hash validation enabled
+				VerifyStandardPaths: &[]bool{true}[0], // true means verify (hash validation enabled)
 			},
 			expectedRisk:   runnertypes.RiskLevelUnknown,
 			expectedReason: "",
@@ -93,14 +93,14 @@ func TestAnalyzeCommandSecurity_Integration(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			cmdPath := tc.setupFile()
 
-			// Convert globalConfig to skipStandardPaths boolean
-			skipStandardPaths := tc.globalConfig != nil && tc.globalConfig.SkipStandardPaths
+			// Convert globalConfig to verifyStandardPaths boolean (note: inverted logic)
+			verifyStandardPaths := tc.globalConfig == nil || (tc.globalConfig.VerifyStandardPaths != nil && *tc.globalConfig.VerifyStandardPaths)
 
 			// Use empty hashDir for tests since hash validation is not the main focus
 			opts := &AnalysisOptions{
-				SkipStandardPaths: skipStandardPaths,
-				HashDir:           "",
-				Config:            NewSkipHashValidationTestConfig(),
+				VerifyStandardPaths: verifyStandardPaths, // AnalysisOptions.VerifyStandardPaths has "verify" semantics
+				HashDir:             "",
+				Config:              NewSkipHashValidationTestConfig(),
 			}
 			risk, pattern, reason, err := AnalyzeCommandSecurity(cmdPath, tc.args, opts)
 

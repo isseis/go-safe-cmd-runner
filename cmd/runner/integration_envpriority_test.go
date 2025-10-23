@@ -110,7 +110,7 @@ func TestRunner_EnvironmentVariablePriority_Basic(t *testing.T) {
 			},
 			configTOML: `
 [global]
-env_allowlist = ["TEST_VAR"]
+env_allowed = ["TEST_VAR"]
 [[groups]]
 name = "test_group"
 [[groups.commands]]
@@ -129,7 +129,7 @@ args = ["TEST_VAR"]
 			},
 			configTOML: `
 [global]
-env = ["TEST_VAR=global_value"]
+env_vars = ["TEST_VAR=global_value"]
 [[groups]]
 name = "test_group"
 [[groups.commands]]
@@ -150,15 +150,15 @@ args = ["TEST_VAR"]
 			},
 			configTOML: `
 [global]
-env = ["TEST_VAR=global_value"]
+env_vars = ["TEST_VAR=global_value"]
 [[groups]]
 name = "test_group"
-env = ["TEST_VAR=group_value"]
+env_vars = ["TEST_VAR=group_value"]
 [[groups.commands]]
 name = "test"
 cmd = "printenv"
 args = ["TEST_VAR"]
-env = ["TEST_VAR=command_value"]
+env_vars = ["TEST_VAR=command_value"]
 `,
 			expectVars: map[string]string{
 				"TEST_VAR": "command_value",
@@ -173,15 +173,15 @@ env = ["TEST_VAR=command_value"]
 			},
 			configTOML: `
 [global]
-env_allowlist = ["VAR_A", "VAR_B", "VAR_C"]
-env = ["VAR_B=global_b"]
+env_allowed = ["VAR_A", "VAR_B", "VAR_C"]
+env_vars = ["VAR_B=global_b"]
 [[groups]]
 name = "test_group"
 [[groups.commands]]
 name = "test"
 cmd = "echo"
 args = ["test"]
-env = ["VAR_C=command_c"]
+env_vars = ["VAR_C=command_c"]
 `,
 			expectVars: map[string]string{
 				"VAR_A": "sys_a",
@@ -213,10 +213,10 @@ func TestRunner_EnvironmentVariablePriority_WithVars(t *testing.T) {
 			},
 			configTOML: `
 [global]
-from_env = ["USER=USER"]
-env_allowlist = ["USER"]
+env_import = ["USER=USER"]
+env_allowed = ["USER"]
 vars = ["myvar=%{USER}"]
-env = ["HOME=%{myvar}"]
+env_vars = ["HOME=%{myvar}"]
 [[groups]]
 name = "test_group"
 [[groups.commands]]
@@ -242,7 +242,7 @@ name = "test"
 cmd = "echo"
 args = ["test"]
 vars = ["v=command"]
-env = ["RESULT=%{v}"]
+env_vars = ["RESULT=%{v}"]
 `,
 			expectVars: map[string]string{
 				"RESULT": "command",
@@ -255,8 +255,8 @@ env = ["RESULT=%{v}"]
 			},
 			configTOML: `
 [global]
-from_env = ["HOME=HOME"]
-env_allowlist = ["HOME"]
+env_import = ["HOME=HOME"]
+env_allowed = ["HOME"]
 vars = ["gv2=%{HOME}/global"]
 [[groups]]
 name = "test_group"
@@ -265,7 +265,7 @@ vars = ["gv3=%{gv2}/group"]
 name = "test"
 cmd = "echo"
 args = ["test"]
-env = ["FINAL=%{gv3}/cmd"]
+env_vars = ["FINAL=%{gv3}/cmd"]
 `,
 			expectVars: map[string]string{
 				"FINAL": "/home/test/global/group/cmd",
@@ -295,7 +295,7 @@ func TestRunner_EnvironmentVariablePriority_EdgeCases(t *testing.T) {
 			},
 			configTOML: `
 [global]
-env = ["VAR="]
+env_vars = ["VAR="]
 [[groups]]
 name = "test_group"
 [[groups.commands]]
@@ -312,7 +312,7 @@ args = ["test"]
 			systemEnv: map[string]string{},
 			configTOML: `
 [global]
-env = ["VAR=global_value"]
+env_vars = ["VAR=global_value"]
 [[groups]]
 name = "test_group"
 [[groups.commands]]
@@ -335,7 +335,7 @@ name = "test_group"
 name = "test"
 cmd = "echo"
 args = ["test"]
-env = ["NUM=123", "SPECIAL=$pecial!@#"]
+env_vars = ["NUM=123", "SPECIAL=$pecial!@#"]
 `,
 			expectVars: map[string]string{
 				"NUM":     "123",
@@ -353,7 +353,7 @@ name = "test_group"
 name = "test"
 cmd = "echo"
 args = ["test"]
-env = ["LONG=` + strings.Repeat("a", 1000) + `"]
+env_vars = ["LONG=` + strings.Repeat("a", 1000) + `"]
 `,
 			expectVars: map[string]string{
 				"LONG": strings.Repeat("a", 1000),
@@ -366,15 +366,15 @@ env = ["LONG=` + strings.Repeat("a", 1000) + `"]
 			},
 			configTOML: `
 [global]
-env_allowlist = ["S1", "S2", "S3"]
-env = ["G1=g1", "G2=g2", "G3=g3"]
+env_allowed = ["S1", "S2", "S3"]
+env_vars = ["G1=g1", "G2=g2", "G3=g3"]
 [[groups]]
 name = "test_group"
 [[groups.commands]]
 name = "test"
 cmd = "echo"
 args = ["test"]
-env = ["C1=c1", "C2=c2", "C3=c3"]
+env_vars = ["C1=c1", "C2=c2", "C3=c3"]
 `,
 			expectVars: map[string]string{
 				"S1": "s1", "S2": "s2", "S3": "s3",
@@ -400,20 +400,20 @@ func TestRunner_ResolveEnvironmentVars_Integration(t *testing.T) {
 
 	configTOML := `
 [global]
-from_env = ["HOME=HOME", "USER=USER"]
-env_allowlist = ["HOME", "USER"]
+env_import = ["HOME=HOME", "USER=USER"]
+env_allowed = ["HOME", "USER"]
 vars = ["base=%{HOME}/app"]
-env = ["APP_BASE=%{base}"]
+env_vars = ["APP_BASE=%{base}"]
 [[groups]]
 name = "test_group"
 vars = ["rel_path=data", "data_dir=%{base}/%{rel_path}"]
-env = ["DATA_DIR=%{data_dir}"]
+env_vars = ["DATA_DIR=%{data_dir}"]
 [[groups.commands]]
 name = "test"
 cmd = "echo"
 args = ["%{data_dir}"]
 vars = ["filename=output.txt", "output=%{data_dir}/%{filename}"]
-env = ["OUTPUT=%{output}"]
+env_vars = ["OUTPUT=%{output}"]
 `
 
 	cfg := configSetupHelper(t, systemEnv, configTOML)

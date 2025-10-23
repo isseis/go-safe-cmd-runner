@@ -8,12 +8,12 @@ import (
 )
 
 // shouldSkipHashValidation determines whether to skip hash validation
-func shouldSkipHashValidation(cmdPath string, skipStandardPaths bool) bool {
-	if !skipStandardPaths {
-		return false // Validate all files when SkipStandardPaths=false
+func shouldPerformHashValidation(cmdPath string, verifyStandardPaths bool) bool {
+	if verifyStandardPaths {
+		return true // Validate all files when VerifyStandardPaths=true
 	}
 
-	return isStandardDirectory(cmdPath) // Skip only standard directories
+	return !isStandardDirectory(cmdPath) // Skip standard directories when VerifyStandardPaths=false
 }
 
 // validateFileHash performs file hash validation using provided validator

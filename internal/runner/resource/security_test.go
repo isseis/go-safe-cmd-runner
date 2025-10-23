@@ -228,8 +228,8 @@ func TestCommandSecurityAnalysis(t *testing.T) {
 
 	// Test that we can directly verify the security analysis function
 	opts := &security.AnalysisOptions{
-		SkipStandardPaths: false,
-		HashDir:           "",
+		VerifyStandardPaths: false,
+		HashDir:             "",
 	}
 	riskLevel, pattern, reason, err := security.AnalyzeCommandSecurity("/bin/rm", []string{"-rf", "/tmp/*"}, opts)
 	require.NoError(t, err)

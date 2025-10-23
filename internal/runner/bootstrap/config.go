@@ -16,7 +16,7 @@ import (
 //  1. Verifies the configuration file's hash (TOCTOU protection)
 //  2. Loads the configuration using config.Loader
 //
-// Note: All variable expansion (Global.Env, Group.Env, Command.Env, Cmd, Args)
+// Note: All variable expansion (Global.EnvVars, Group.EnvVars, Command.EnvVars, Cmd, Args)
 // is now performed inside config.Loader.LoadConfig(). This function only handles
 // verification and loading.
 //
@@ -53,7 +53,7 @@ func LoadAndPrepareConfig(verificationManager *verification.Manager, configPath,
 	}
 
 	// Load config from the verified content
-	// All expansion (Global.Env, Group.Env, Command.Env, Cmd, Args) is now
+	// All expansion (Global.EnvVars, Group.EnvVars, Command.EnvVars, Cmd, Args) is now
 	// performed inside config.Loader.LoadConfig()
 	cfgLoader := config.NewLoader()
 	cfg, err := cfgLoader.LoadConfig(content)

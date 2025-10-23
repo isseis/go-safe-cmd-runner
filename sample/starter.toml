@@ -8,7 +8,7 @@ timeout = 30
 # Log level: info (other options: debug, warn, error)
 log_level = "info"
 # Allow only essential environment variables
-env_allowlist = ["PATH", "HOME"]
+env_allowed = ["PATH", "HOME"]
 
 # Define a simple group with a few basic commands
 [[groups]]

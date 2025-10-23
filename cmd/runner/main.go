@@ -205,12 +205,12 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 		}
 
 		dryRunOpts := &resource.DryRunOptions{
-			DetailLevel:       detailLevel,
-			OutputFormat:      outputFormat,
-			ShowSensitive:     false,
-			VerifyFiles:       true,
-			SkipStandardPaths: cfg.Global.SkipStandardPaths,   // Use setting from TOML config
-			HashDir:           cmdcommon.DefaultHashDirectory, // Use secure default hash directory
+			DetailLevel:         detailLevel,
+			OutputFormat:        outputFormat,
+			ShowSensitive:       false,
+			VerifyFiles:         true,
+			VerifyStandardPaths: determineVerifyStandardPaths(cfg.Global.VerifyStandardPaths), // Use new verify logic
+			HashDir:             cmdcommon.DefaultHashDirectory,                               // Use secure default hash directory
 		}
 		runnerOptions = append(runnerOptions, runner.WithDryRun(dryRunOpts))
 	}
@@ -267,4 +267,15 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 	}
 
 	return nil
+}
+
+// determineVerifyStandardPaths converts VerifyStandardPaths to boolean value
+// VerifyStandardPaths: true -> true (verify paths)
+// VerifyStandardPaths: false -> false (skip verification)
+// VerifyStandardPaths: nil -> false (default: skip verification)
+func determineVerifyStandardPaths(verifyStandardPaths *bool) bool {
+	if verifyStandardPaths == nil {
+		return false // default: skip verification (false)
+	}
+	return *verifyStandardPaths // use value directly
 }

@@ -20,8 +20,8 @@ func TestAllowlist_ViolationAtGlobalLevel(t *testing.T) {
 		{
 			name: "from_env with empty allowlist blocks all",
 			spec: &runnertypes.GlobalSpec{
-				FromEnv:      []string{"MY_VAR=HOME"},
-				EnvAllowlist: []string{}, // Empty allowlist
+				EnvImport:  []string{"MY_VAR=HOME"},
+				EnvAllowed: []string{}, // Empty allowlist
 			},
 			wantErr:     "not in allowlist",
 			description: "Empty allowlist should block all system variables",
@@ -29,8 +29,8 @@ func TestAllowlist_ViolationAtGlobalLevel(t *testing.T) {
 		{
 			name: "from_env with system variable not in allowlist",
 			spec: &runnertypes.GlobalSpec{
-				FromEnv:      []string{"MY_VAR=HOME"},
-				EnvAllowlist: []string{"PATH", "USER"}, // HOME not in list
+				EnvImport:  []string{"MY_VAR=HOME"},
+				EnvAllowed: []string{"PATH", "USER"}, // HOME not in list
 			},
 			wantErr:     "not in allowlist",
 			description: "System variable not in allowlist should be rejected",
@@ -38,8 +38,8 @@ func TestAllowlist_ViolationAtGlobalLevel(t *testing.T) {
 		{
 			name: "from_env with system variable in allowlist",
 			spec: &runnertypes.GlobalSpec{
-				FromEnv:      []string{"MY_VAR=HOME"},
-				EnvAllowlist: []string{"HOME", "PATH"},
+				EnvImport:  []string{"MY_VAR=HOME"},
+				EnvAllowed: []string{"HOME", "PATH"},
 			},
 			wantErr:     "",
 			description: "System variable in allowlist should be accepted",
@@ -47,8 +47,8 @@ func TestAllowlist_ViolationAtGlobalLevel(t *testing.T) {
 		{
 			name: "multiple from_env with mixed allowlist status",
 			spec: &runnertypes.GlobalSpec{
-				FromEnv:      []string{"VAR1=HOME", "VAR2=NOTALLOWED"},
-				EnvAllowlist: []string{"HOME"},
+				EnvImport:  []string{"VAR1=HOME", "VAR2=NOTALLOWED"},
+				EnvAllowed: []string{"HOME"},
 			},
 			wantErr:     "not in allowlist",
 			description: "First violation should be reported",
@@ -84,11 +84,11 @@ func TestAllowlist_ViolationAtGroupLevel(t *testing.T) {
 		{
 			name: "group from_env with empty global allowlist",
 			globalSpec: &runnertypes.GlobalSpec{
-				EnvAllowlist: []string{}, // Empty allowlist
+				EnvAllowed: []string{}, // Empty allowlist
 			},
 			groupSpec: &runnertypes.GroupSpec{
-				Name:    "test-group",
-				FromEnv: []string{"GROUP_VAR=HOME"},
+				Name:      "test-group",
+				EnvImport: []string{"GROUP_VAR=HOME"},
 			},
 			wantErr:     "not in allowlist",
 			description: "Group-level from_env should respect global allowlist",
@@ -96,11 +96,11 @@ func TestAllowlist_ViolationAtGroupLevel(t *testing.T) {
 		{
 			name: "group from_env with system variable not in allowlist",
 			globalSpec: &runnertypes.GlobalSpec{
-				EnvAllowlist: []string{"PATH"},
+				EnvAllowed: []string{"PATH"},
 			},
 			groupSpec: &runnertypes.GroupSpec{
-				Name:    "test-group",
-				FromEnv: []string{"GROUP_VAR=HOME"},
+				Name:      "test-group",
+				EnvImport: []string{"GROUP_VAR=HOME"},
 			},
 			wantErr:     "not in allowlist",
 			description: "Group-level from_env should check global allowlist",
@@ -108,11 +108,11 @@ func TestAllowlist_ViolationAtGroupLevel(t *testing.T) {
 		{
 			name: "group from_env with system variable in allowlist",
 			globalSpec: &runnertypes.GlobalSpec{
-				EnvAllowlist: []string{"HOME", "PATH"},
+				EnvAllowed: []string{"HOME", "PATH"},
 			},
 			groupSpec: &runnertypes.GroupSpec{
-				Name:    "test-group",
-				FromEnv: []string{"GROUP_VAR=HOME"},
+				Name:      "test-group",
+				EnvImport: []string{"GROUP_VAR=HOME"},
 			},
 			wantErr:     "",
 			description: "Group-level from_env should succeed with allowed variable",
@@ -154,15 +154,15 @@ func TestAllowlist_ViolationAtCommandLevel(t *testing.T) {
 		{
 			name: "command from_env with empty global allowlist",
 			globalSpec: &runnertypes.GlobalSpec{
-				EnvAllowlist: []string{}, // Empty allowlist
+				EnvAllowed: []string{}, // Empty allowlist
 			},
 			groupSpec: &runnertypes.GroupSpec{
 				Name: "test-group",
 			},
 			cmdSpec: &runnertypes.CommandSpec{
-				Name:    "test-cmd",
-				Cmd:     "echo",
-				FromEnv: []string{"CMD_VAR=HOME"},
+				Name:      "test-cmd",
+				Cmd:       "echo",
+				EnvImport: []string{"CMD_VAR=HOME"},
 			},
 			wantErr:     "not in allowlist",
 			description: "Command-level from_env should respect global allowlist",
@@ -170,15 +170,15 @@ func TestAllowlist_ViolationAtCommandLevel(t *testing.T) {
 		{
 			name: "command from_env with system variable not in allowlist",
 			globalSpec: &runnertypes.GlobalSpec{
-				EnvAllowlist: []string{"PATH"},
+				EnvAllowed: []string{"PATH"},
 			},
 			groupSpec: &runnertypes.GroupSpec{
 				Name: "test-group",
 			},
 			cmdSpec: &runnertypes.CommandSpec{
-				Name:    "test-cmd",
-				Cmd:     "echo",
-				FromEnv: []string{"CMD_VAR=HOME"},
+				Name:      "test-cmd",
+				Cmd:       "echo",
+				EnvImport: []string{"CMD_VAR=HOME"},
 			},
 			wantErr:     "not in allowlist",
 			description: "Command-level from_env should check global allowlist",
@@ -186,15 +186,15 @@ func TestAllowlist_ViolationAtCommandLevel(t *testing.T) {
 		{
 			name: "command from_env with system variable in allowlist",
 			globalSpec: &runnertypes.GlobalSpec{
-				EnvAllowlist: []string{"HOME", "PATH"},
+				EnvAllowed: []string{"HOME", "PATH"},
 			},
 			groupSpec: &runnertypes.GroupSpec{
 				Name: "test-group",
 			},
 			cmdSpec: &runnertypes.CommandSpec{
-				Name:    "test-cmd",
-				Cmd:     "echo",
-				FromEnv: []string{"CMD_VAR=HOME"},
+				Name:      "test-cmd",
+				Cmd:       "echo",
+				EnvImport: []string{"CMD_VAR=HOME"},
 			},
 			wantErr:     "",
 			description: "Command-level from_env should succeed with allowed variable",
@@ -234,8 +234,8 @@ func TestAllowlist_DetailedErrorMessages(t *testing.T) {
 		{
 			name: "error message includes variable name",
 			spec: &runnertypes.GlobalSpec{
-				FromEnv:      []string{"MY_VAR=SECRET_VAR"},
-				EnvAllowlist: []string{"HOME"},
+				EnvImport:  []string{"MY_VAR=SECRET_VAR"},
+				EnvAllowed: []string{"HOME"},
 			},
 			wantErrContains: []string{"SECRET_VAR", "not in allowlist"},
 			description:     "Error should mention the rejected system variable name",
@@ -243,8 +243,8 @@ func TestAllowlist_DetailedErrorMessages(t *testing.T) {
 		{
 			name: "error message for empty allowlist",
 			spec: &runnertypes.GlobalSpec{
-				FromEnv:      []string{"VAR=PATH"},
-				EnvAllowlist: []string{},
+				EnvImport:  []string{"VAR=PATH"},
+				EnvAllowed: []string{},
 			},
 			wantErrContains: []string{"PATH", "not in allowlist"},
 			description:     "Error should mention the variable even with empty allowlist",
@@ -269,8 +269,8 @@ func TestAllowlist_EmptyAllowlistBlocksAll(t *testing.T) {
 	for _, sysVar := range commonSystemVars {
 		t.Run("blocks_"+sysVar, func(t *testing.T) {
 			spec := &runnertypes.GlobalSpec{
-				FromEnv:      []string{"MY_VAR=" + sysVar},
-				EnvAllowlist: []string{}, // Empty allowlist
+				EnvImport:  []string{"MY_VAR=" + sysVar},
+				EnvAllowed: []string{}, // Empty allowlist
 			}
 
 			_, err := config.ExpandGlobal(spec)
@@ -289,11 +289,11 @@ func TestAllowlist_InheritanceAcrossLevels(t *testing.T) {
 		t.Skip("Group-level FromEnv processing not yet implemented (TODO in Task 0033)")
 
 		globalSpec := &runnertypes.GlobalSpec{
-			EnvAllowlist: []string{"HOME", "PATH"},
+			EnvAllowed: []string{"HOME", "PATH"},
 		}
 		groupSpec := &runnertypes.GroupSpec{
-			Name:    "test-group",
-			FromEnv: []string{"VAR=HOME"}, // Should be allowed
+			Name:      "test-group",
+			EnvImport: []string{"VAR=HOME"}, // Should be allowed
 		}
 
 		globalRuntime, err := config.ExpandGlobal(globalSpec)
@@ -307,15 +307,15 @@ func TestAllowlist_InheritanceAcrossLevels(t *testing.T) {
 		t.Skip("Command-level FromEnv processing not yet implemented (TODO in Task 0033)")
 
 		globalSpec := &runnertypes.GlobalSpec{
-			EnvAllowlist: []string{"HOME", "PATH"},
+			EnvAllowed: []string{"HOME", "PATH"},
 		}
 		groupSpec := &runnertypes.GroupSpec{
 			Name: "test-group",
 		}
 		cmdSpec := &runnertypes.CommandSpec{
-			Name:    "test-cmd",
-			Cmd:     "echo",
-			FromEnv: []string{"VAR=PATH"}, // Should be allowed
+			Name:      "test-cmd",
+			Cmd:       "echo",
+			EnvImport: []string{"VAR=PATH"}, // Should be allowed
 		}
 
 		globalRuntime, err := config.ExpandGlobal(globalSpec)

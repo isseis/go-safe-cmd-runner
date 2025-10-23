@@ -402,7 +402,7 @@ name = "test_group"
 name = "test_cmd"
 cmd = "echo"
 args = ["working in: %{__runner_workdir}"]
-max_risk_level = "medium"
+risk_level = "medium"
 `,
 			expectTempDir: true,
 		},
@@ -418,7 +418,7 @@ name = "test_group"
 name = "test_cmd"
 cmd = "echo"
 args = ["working in: %{__runner_workdir}"]
-max_risk_level = "medium"
+risk_level = "medium"
 `,
 			expectTempDir: true,
 		},
@@ -456,7 +456,7 @@ workdir = "` + escapedPath + `"
 name = "test_cmd"
 cmd = "echo"
 args = ["working in: %{__runner_workdir}"]
-max_risk_level = "medium"
+risk_level = "medium"
 `
 			}
 
@@ -499,7 +499,7 @@ name = "test_group"
 name = "test_cmd"
 cmd = "echo"
 args = ["working in: %{__runner_workdir}"]
-max_risk_level = "medium"
+risk_level = "medium"
 `
 
 	// Create temporary config file using helper
@@ -522,12 +522,12 @@ max_risk_level = "medium"
 	// Setup dry-run options
 	hashDir := t.TempDir()
 	dryRunOptions := &resource.DryRunOptions{
-		DetailLevel:       resource.DetailLevelDetailed,
-		OutputFormat:      resource.OutputFormatText,
-		ShowSensitive:     false,
-		VerifyFiles:       true,
-		SkipStandardPaths: cfg.Global.SkipStandardPaths,
-		HashDir:           hashDir,
+		DetailLevel:         resource.DetailLevelDetailed,
+		OutputFormat:        resource.OutputFormatText,
+		ShowSensitive:       false,
+		VerifyFiles:         true,
+		VerifyStandardPaths: cfg.Global.VerifyStandardPaths != nil && *cfg.Global.VerifyStandardPaths,
+		HashDir:             hashDir,
 	}
 
 	// Create runner with dry-run option
@@ -601,13 +601,13 @@ name = "test_group"
 name = "failing_cmd"
 cmd = "echo"
 args = ["working in: %{__runner_workdir}"]
-max_risk_level = "medium"
+risk_level = "medium"
 
 [[groups.commands]]
 name = "invalid_cmd"
 cmd = "/nonexistent/invalid/command/path"
 args = []
-max_risk_level = "medium"
+risk_level = "medium"
 `
 
 	// 1. Create Runner with output capture enabled (keepTempDirs=false for auto cleanup)
@@ -658,7 +658,7 @@ name = "group1"
 name = "cmd1"
 cmd = "echo"
 args = ["group1: %{__runner_workdir}"]
-max_risk_level = "medium"
+risk_level = "medium"
 
 [[groups]]
 name = "group2"
@@ -667,7 +667,7 @@ name = "group2"
 name = "cmd2"
 cmd = "echo"
 args = ["group2: %{__runner_workdir}"]
-max_risk_level = "medium"
+risk_level = "medium"
 
 [[groups]]
 name = "group3"
@@ -676,7 +676,7 @@ name = "group3"
 name = "cmd3"
 cmd = "echo"
 args = ["group3: %{__runner_workdir}"]
-max_risk_level = "medium"
+risk_level = "medium"
 `
 
 	// 1. Create Runner with output capture enabled (keepTempDirs=true to verify independence)

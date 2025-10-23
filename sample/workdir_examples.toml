@@ -6,8 +6,8 @@ version = "1.0"
 [global]
 timeout = 60
 log_level = "info"
-skip_standard_paths = true
-env_allowlist = ["PATH", "HOME", "USER"]
+verify_standard_paths = false
+env_allowed = ["PATH", "HOME", "USER"]
 
 # Example 1: Automatic temporary directory (recommended)
 # When no workdir is specified, a temporary directory is automatically created
@@ -27,7 +27,7 @@ name = "create_backup_data"
 description = "Create sample backup data"
 cmd = "echo"
 args = ["Backup data created at $(date)"]
-output = "%{__runner_workdir}/backup.log"
+output_file = "%{__runner_workdir}/backup.log"
 
 [[groups.commands]]
 name = "list_backup_contents"
@@ -54,7 +54,7 @@ name = "create_fixed_backup"
 description = "Create backup in fixed directory"
 cmd = "echo"
 args = ["Fixed backup created at $(date)"]
-output = "%{__runner_workdir}/fixed_backup.log"
+output_file = "%{__runner_workdir}/fixed_backup.log"
 
 # Example 3: Command-level workdir override
 [[groups]]
