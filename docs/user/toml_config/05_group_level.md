@@ -73,13 +73,13 @@ name = "database_group"
 env = [
     "DB_HOST=localhost",
     "DB_PORT=5432",
-    "DB_DATA=${BASE_DIR}/db-data",  # References BASE_DIR from Global.env
+    "DB_DATA=%{BASE_DIR}/db-data",  # References BASE_DIR from Global.env
 ]
 
 [[groups.commands]]
 name = "connect"
 cmd = "/usr/bin/psql"
-args = ["-h", "${DB_HOST}", "-p", "${DB_PORT}"]
+args = ["-h", "%{DB_HOST}", "-p", "%{DB_PORT}"]
 # DB_HOST and DB_PORT are obtained from Group.env
 ```
 
@@ -104,7 +104,7 @@ env = [
 [[groups.commands]]
 name = "run_dev"
 cmd = "/opt/app/bin/app"
-args = ["--log-level", "${LOG_LEVEL}"]
+args = ["--log-level", "%{LOG_LEVEL}"]
 # LOG_LEVEL=debug is used
 ```
 
@@ -119,15 +119,15 @@ env = ["APP_ROOT=/opt/myapp"]
 [[groups]]
 name = "web_group"
 env = [
-    "WEB_DIR=${APP_ROOT}/web",         # References APP_ROOT from Global.env
-    "STATIC_DIR=${WEB_DIR}/static",    # References WEB_DIR from Group.env
-    "UPLOAD_DIR=${WEB_DIR}/uploads",   # References WEB_DIR from Group.env
+    "WEB_DIR=%{APP_ROOT}/web",         # References APP_ROOT from Global.env
+    "STATIC_DIR=%{WEB_DIR}/static",    # References WEB_DIR from Group.env
+    "UPLOAD_DIR=%{WEB_DIR}/uploads",   # References WEB_DIR from Group.env
 ]
 
 [[groups.commands]]
 name = "start_server"
-cmd = "${WEB_DIR}/server"
-args = ["--static", "${STATIC_DIR}", "--upload", "${UPLOAD_DIR}"]
+cmd = "%{WEB_DIR}/server"
+args = ["--static", "%{STATIC_DIR}", "--upload", "%{UPLOAD_DIR}"]
 ```
 
 #### Priority Order
@@ -170,8 +170,8 @@ env = ["BASE=/opt/app"]
 [[groups]]
 name = "services"
 env = [
-    "SERVICE_DIR=${BASE}/services",     # References BASE from Global.env
-    "CONFIG=${SERVICE_DIR}/config",     # References SERVICE_DIR from Group.env
+    "SERVICE_DIR=%{BASE}/services",     # References BASE from Global.env
+    "CONFIG=%{SERVICE_DIR}/config",     # References SERVICE_DIR from Group.env
 ]
 ```
 
@@ -184,7 +184,7 @@ env_allowlist = ["HOME", "USER"]
 [[groups]]
 name = "user_specific"
 env = [
-    "USER_DATA=${HOME}/${USER}/data",  # References system environment variables HOME and USER
+    "USER_DATA=%{HOME}/%{USER}/data",  # References system environment variables HOME and USER
 ]
 ```
 
@@ -208,7 +208,7 @@ env_allowlist = ["PATH"]
 
 [[groups]]
 name = "example"
-env = ["MY_HOME=${HOME}/app"]  # References HOME
+env = ["MY_HOME=%{HOME}/app"]  # References HOME
 env_allowlist = ["HOME"]       # Required: Allow HOME (overrides global)
 ```
 
@@ -224,7 +224,7 @@ env = ["VAR=value1"]
 [[groups.commands]]
 name = "cmd1"
 cmd = "/bin/echo"
-args = ["${VAR}"]  # value1
+args = ["%{VAR}"]  # value1
 
 [[groups]]
 name = "group2"
@@ -233,7 +233,7 @@ name = "group2"
 [[groups.commands]]
 name = "cmd2"
 cmd = "/bin/echo"
-args = ["${VAR}"]  # Error: VAR is undefined
+args = ["%{VAR}"]  # Error: VAR is undefined
 ```
 
 #### Best Practices
@@ -257,13 +257,13 @@ name = "database"
 env = [
     "DB_HOST=localhost",              # Group-specific
     "DB_PORT=5432",                   # Group-specific
-    "DB_DATA=${APP_ROOT}/db-data",    # References Global.env
+    "DB_DATA=%{APP_ROOT}/db-data",    # References Global.env
 ]
 
 [[groups]]
 name = "web"
 env = [
-    "WEB_DIR=${APP_ROOT}/web",        # References Global.env
+    "WEB_DIR=%{APP_ROOT}/web",        # References Global.env
     "PORT=8080",                      # Group-specific
 ]
 ```

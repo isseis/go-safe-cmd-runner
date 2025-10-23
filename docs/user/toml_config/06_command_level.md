@@ -103,7 +103,7 @@ cmd = "command_path"
 | **Required/Optional** | Required |
 | **Configurable Level** | Command only |
 | **Valid Values** | Absolute path, or command name on PATH |
-| **Variable Expansion** | ${VAR} format variable expansion is possible (see Chapter 7) |
+| **Variable Expansion** | %{VAR} format variable expansion is possible (see Chapter 7) |
 
 #### Configuration Examples
 
@@ -130,7 +130,7 @@ args = ["-la"]
 ```toml
 [[groups.commands]]
 name = "custom_tool"
-cmd = "${TOOL_DIR}/my-script"
+cmd = "%{TOOL_DIR}/my-script"
 args = []
 env = ["TOOL_DIR=/opt/tools"]
 # Actually executes /opt/tools/my-script
@@ -180,7 +180,7 @@ args = ["arg1", "arg2", ...]
 | **Configurable Level** | Command only |
 | **Default Value** | [] (no arguments) |
 | **Valid Values** | List of any strings |
-| **Variable Expansion** | ${VAR} format variable expansion is possible (see Chapter 7) |
+| **Variable Expansion** | %{VAR} format variable expansion is possible (see Chapter 7) |
 
 #### Configuration Examples
 
@@ -217,7 +217,7 @@ args = []  # Or omit
 [[groups.commands]]
 name = "backup"
 cmd = "/usr/bin/tar"
-args = ["-czf", "${BACKUP_FILE}", "${SOURCE_DIR}"]
+args = ["-czf", "%{BACKUP_FILE}", "%{SOURCE_DIR}"]
 env = [
     "BACKUP_FILE=/backups/backup.tar.gz",
     "SOURCE_DIR=/data",
@@ -1308,4 +1308,4 @@ max_risk_level = "low"
 
 ## Next Steps
 
-The next chapter will provide detailed explanations of variable expansion functionality. You will learn how to perform dynamic command construction using `${VAR}` format variables.
+The next chapter will provide detailed explanations of variable expansion functionality. You will learn how to perform dynamic command construction using `%{VAR}` format variables.
