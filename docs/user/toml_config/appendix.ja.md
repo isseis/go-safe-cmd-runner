@@ -15,7 +15,7 @@
 | timeout | int | - | システムデフォルト | コマンド実行のタイムアウト(秒) |
 | workdir | string | - | 実行ディレクトリ | 作業ディレクトリの絶対パス |
 | log_level | string | - | "info" | ログレベル(debug/info/warn/error) |
-| skip_standard_paths | bool | - | false | 標準パスの検証スキップ |
+| verify_standard_paths | bool | - | true | 標準パスの検証を有効化 |
 | env_allowed | []string | - | [] | 環境変数の許可リスト |
 | verify_files | []string | - | [] | 検証対象ファイルのリスト |
 | output_size_limit | int64 | - | 10485760 | 出力サイズ上限(バイト) |
