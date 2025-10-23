@@ -49,11 +49,11 @@ type GlobalSpec struct {
 
 ```go
 type GlobalSpec struct {
-    VerifyStandardPaths bool     `toml:"verify_standard_paths"`
-    EnvVars             []string `toml:"env_vars"`
-    EnvAllowed          []string `toml:"env_allowed"`
-    EnvImport           []string `toml:"env_import"`
-    OutputSizeLimit     int64    `toml:"output_size_limit"`
+    VerifyStandardPaths *bool     `toml:"verify_standard_paths"`
+    EnvVars             []string  `toml:"env_vars"`
+    EnvAllowed          []string  `toml:"env_allowed"`
+    EnvImport           []string  `toml:"env_import"`
+    OutputSizeLimit     int64     `toml:"output_size_limit"`
     // ... その他のフィールド
 }
 ```
@@ -809,13 +809,14 @@ sed -i 's/max_output_size/output_size_limit/g' config.toml
 ```toml
 # 旧設定で skip_standard_paths を省略していた場合
 [global]
-# skip_standard_paths が省略 → デフォルト false（検証しない）
+# skip_standard_paths が省略 → デフォルト false（検証する）
 
 # 新設定では verify_standard_paths のデフォルトが true（検証する）
 [global]
 # verify_standard_paths が省略 → デフォルト true（検証する）
 
-# 旧動作を維持したい場合は明示的に false を設定
+# デフォルト動作は同じ（検証を実行）なので、通常は変更不要
+# 検証をスキップしたい場合のみ明示的に false を設定
 [global]
 verify_standard_paths = false
 ```

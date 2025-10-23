@@ -193,7 +193,9 @@ cmd = "/bin/ls"
 
 | フィールド | 旧デフォルト | 新デフォルト | 理由 |
 |-----------|------------|------------|------|
-| `skip_standard_paths` → `verify_standard_paths` | `false` (検証しない) | `true` (検証する) | セキュアデフォルト |
+| `skip_standard_paths` → `verify_standard_paths` | `false` (検証する) | `true` (検証する) | フィールド名の反転に伴う値の変更。動作は変わらず検証を継続 |
+
+**重要**: `skip_standard_paths` のデフォルト `false` は「スキップしない = 検証する」を意味していました。新しい `verify_standard_paths` のデフォルト `true` は「検証する」を意味します。**デフォルトの動作は変わらず、標準パスの検証は引き続き実行されます**。変更はフィールド名の分かりやすさの向上のみです。
 
 その他のフィールドはデフォルト値変更なし。
 
@@ -211,7 +213,7 @@ cmd = "/bin/ls"
 #### ドキュメント更新
 
 **ユーザーガイド トップレベル**:
-- `docs/user/README.md/.ja.md`: ユーザーガイドのトップページ、サンプルコードを更新
+- `docs/user/README.md`, `docs/user/README.ja.md`: ユーザーガイドのトップページ、サンプルコードを更新
 
 **ユーザーガイド詳細**: `docs/user/toml_config/` 以下の全ドキュメント（日英両方）
 

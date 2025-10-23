@@ -434,7 +434,7 @@ TOML設定フィールド名の改善を段階的かつ安全に実装する。
 #### 5.1.1 CHANGELOG.md の更新
 
 - [ ] **File**: `CHANGELOG.md`
-- **追加内容**:
+- **追加内容** (英語):
   ```markdown
   ## [Unreleased]
 
@@ -442,15 +442,15 @@ TOML設定フィールド名の改善を段階的かつ安全に実装する。
 
   #### TOML Field Renaming
 
-  すべてのTOML設定フィールド名が改善されました。
+  All TOML configuration field names have been updated to improve clarity and consistency.
 
-  **移行が必要**: 既存の設定ファイルを手動で更新する必要があります。
+  **Migration Required**: Existing configuration files must be manually updated.
 
-  ##### フィールド名対応表
+  ##### Field Name Mapping
 
-  | レベル | 旧フィールド名 | 新フィールド名 | デフォルト値変更 |
-  |--------|--------------|--------------|----------------|
-  | Global | `skip_standard_paths` | `verify_standard_paths` | `false` → `true` |
+  | Level | Old Field Name | New Field Name | Default Value Change |
+  |-------|----------------|----------------|---------------------|
+  | Global | `skip_standard_paths` | `verify_standard_paths` | `false` (verify) → `true` (verify) |
   | Global | `env` | `env_vars` | - |
   | Global | `env_allowlist` | `env_allowed` | - |
   | Global | `from_env` | `env_import` | - |
@@ -463,25 +463,25 @@ TOML設定フィールド名の改善を段階的かつ安全に実装する。
   | Command | `max_risk_level` | `risk_level` | - |
   | Command | `output` | `output_file` | - |
 
-  ##### 主な変更点
+  ##### Key Changes
 
-  1. **肯定形への変更**: `skip_standard_paths` → `verify_standard_paths`
-     - 旧: `skip_standard_paths = true` (検証をスキップ)
-     - 新: `verify_standard_paths = false` (検証をスキップ)
-     - **デフォルト値が `false` から `true` に変更（セキュアデフォルト）**
+  1. **Positive Naming**: `skip_standard_paths` → `verify_standard_paths`
+     - Old: `skip_standard_paths = false` (default: verify standard paths)
+     - New: `verify_standard_paths = true` (default: verify standard paths)
+     - **Default behavior unchanged (verification continues), but field name is now clearer**
 
-  2. **環境変数関連のプレフィックス統一**: すべて `env_` プレフィックスを使用
+  2. **Environment Variable Prefix Unification**: All environment-related fields now use `env_` prefix
      - `env` → `env_vars`
      - `env_allowlist` → `env_allowed`
      - `from_env` → `env_import`
 
-  3. **自然な語順**: `max_output_size` → `output_size_limit`
+  3. **Natural Word Order**: `max_output_size` → `output_size_limit`
 
-  4. **明確化**: `output` → `output_file`, `max_risk_level` → `risk_level`
+  4. **Clarity**: `output` → `output_file`, `max_risk_level` → `risk_level`
 
-  ##### 移行ガイド
+  ##### Migration Guide
 
-  詳細な移行手順については [移行ガイド](docs/migration/toml_field_renaming.md) を参照してください。
+  See [Migration Guide](docs/migration/toml_field_renaming.en.md) for detailed instructions.
   ```
 - [ ] **コミット**: "docs: add CHANGELOG entry for TOML field renaming"
 

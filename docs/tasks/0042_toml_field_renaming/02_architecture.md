@@ -161,16 +161,19 @@ output_size_limit ← 出力サイズ制限
 #### `verify_standard_paths`
 
 **変更内容**:
-- 旧: `skip_standard_paths = false` （デフォルトで検証しない）
+- 旧: `skip_standard_paths = false` （デフォルトで検証する）
 - 新: `verify_standard_paths = true` （デフォルトで検証する）
+
+**重要**: `skip_standard_paths` のデフォルト `false` は「スキップしない = 検証する」を意味していました。新しい `verify_standard_paths` のデフォルト `true` は「検証する」を意味します。**デフォルトの動作は変わらず、標準パスの検証は引き続き実行されます**。
 
 **設計根拠**:
 - **Secure by Default**: セキュリティ機能はデフォルトで有効
-- **Fail-Safe**: 検証を明示的に無効化しない限り実行される
+- **Positive Naming**: 肯定形で動作が明確
 - **Defence in Depth**: 多層防御の一環として標準パス検証を推奨
 
 **影響**:
-- 既存の設定ファイルで `skip_standard_paths` を省略していた場合、動作が変わる
+- **デフォルト動作**: 変更なし（引き続き検証を実行）
+- **フィールド名**: より分かりやすく変更
 - 検証をスキップしたいユーザーは明示的に `verify_standard_paths = false` を記述する必要がある
 
 **移行パス**:
@@ -284,19 +287,6 @@ env_import = ["user=USER"]              # システムからインポート
 - `CHANGELOG.md` に Breaking Change セクションを追加
 - フィールド名対応表を提供
 - 移行例を記載
-
-#### エラーメッセージ
-旧フィールド名を検出した場合のエラーメッセージ案：
-
-```
-Error: Unknown field 'skip_standard_paths' in [global] section.
-Did you mean 'verify_standard_paths'?
-
-Note: Field names have changed in version X.X.X.
-See CHANGELOG.md for the migration guide.
-```
-
-**実装**: TOML パーサーの標準エラーに依存（カスタムエラーハンドリングは不要）
 
 ### 6.3 移行チェックリスト
 
