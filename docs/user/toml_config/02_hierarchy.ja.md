@@ -209,7 +209,7 @@ args = ["%{base_dir}", "%{log_level}", "%{task_type}", "%{task_id}"]
 
 ```toml
 [global]
-from_env_vars = ["HOME", "USER"]
+env_import = ["HOME", "USER"]
 
 [[groups]]
 name = "tasks"
