@@ -93,12 +93,15 @@ func TestAnalyzeCommandSecurity_Integration(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			cmdPath := tc.setupFile()
 
-			// Convert globalConfig to verifyStandardPaths boolean (note: inverted logic)
-			verifyStandardPaths := tc.globalConfig == nil || (tc.globalConfig.VerifyStandardPaths != nil && *tc.globalConfig.VerifyStandardPaths)
+			// Determine VerifyStandardPaths from globalConfig
+			var verifyStandardPathsPtr *bool
+			if tc.globalConfig != nil {
+				verifyStandardPathsPtr = tc.globalConfig.VerifyStandardPaths
+			}
 
 			// Use empty hashDir for tests since hash validation is not the main focus
 			opts := &AnalysisOptions{
-				VerifyStandardPaths: verifyStandardPaths, // AnalysisOptions.VerifyStandardPaths has "verify" semantics
+				VerifyStandardPaths: runnertypes.DetermineVerifyStandardPaths(verifyStandardPathsPtr), // AnalysisOptions.VerifyStandardPaths has "verify" semantics
 				HashDir:             "",
 				Config:              NewSkipHashValidationTestConfig(),
 			}

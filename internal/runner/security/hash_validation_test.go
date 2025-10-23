@@ -16,10 +16,10 @@ func TestShouldPerformHashValidation(t *testing.T) {
 		expectedPerform bool
 	}{
 		{
-			name:            "nil config should perform validation",
+			name:            "nil config should perform validation (default: verify standard paths)",
 			cmdPath:         "/bin/ls",
 			globalConfig:    nil,
-			expectedPerform: false, // default behavior is not to verify standard paths
+			expectedPerform: true, // default behavior is to verify standard paths (VerifyStandardPaths=true)
 		},
 		{
 			name:    "VerifyStandardPaths=false should not perform validation for standard directory",
@@ -73,8 +73,13 @@ func TestShouldPerformHashValidation(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Convert globalConfig to verifyStandardPaths boolean (default is false)
-			verifyStandardPaths := tc.globalConfig != nil && tc.globalConfig.VerifyStandardPaths != nil && *tc.globalConfig.VerifyStandardPaths
+			// Determine VerifyStandardPaths from globalConfig
+			var verifyStandardPathsPtr *bool
+			if tc.globalConfig != nil {
+				verifyStandardPathsPtr = tc.globalConfig.VerifyStandardPaths
+			}
+
+			verifyStandardPaths := runnertypes.DetermineVerifyStandardPaths(verifyStandardPathsPtr)
 			result := shouldPerformHashValidation(tc.cmdPath, verifyStandardPaths)
 			assert.Equal(t, tc.expectedPerform, result)
 		})

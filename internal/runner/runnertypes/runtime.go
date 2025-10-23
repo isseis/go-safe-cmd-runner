@@ -70,10 +70,10 @@ func (r *RuntimeGlobal) EnvAllowlist() []string {
 	return r.Spec.EnvAllowed
 }
 
-// determineVerifyStandardPaths returns the effective verify_standard_paths setting.
+// DetermineVerifyStandardPaths returns the effective verify_standard_paths setting.
 // If verifyStandardPaths is nil, returns the security-safe default (true = verify).
 // This ensures consistent behavior even if ApplyGlobalDefaults hasn't been called.
-func determineVerifyStandardPaths(verifyStandardPaths *bool) bool {
+func DetermineVerifyStandardPaths(verifyStandardPaths *bool) bool {
 	if verifyStandardPaths == nil {
 		return true // default: verify paths (matches DefaultVerifyStandardPaths)
 	}
@@ -87,7 +87,7 @@ func (r *RuntimeGlobal) SkipStandardPaths() bool {
 		panic("RuntimeGlobal.SkipStandardPaths: nil receiver or Spec (programming error - use NewRuntimeGlobal)")
 	}
 	// Convert verify_standard_paths to skip_standard_paths logic (invert boolean)
-	return !determineVerifyStandardPaths(r.Spec.VerifyStandardPaths)
+	return !DetermineVerifyStandardPaths(r.Spec.VerifyStandardPaths)
 }
 
 // RuntimeGroup represents the runtime-expanded group configuration.

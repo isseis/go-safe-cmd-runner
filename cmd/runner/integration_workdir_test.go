@@ -522,18 +522,12 @@ risk_level = "medium"
 	// Setup dry-run options
 	hashDir := t.TempDir()
 
-	// Determine VerifyStandardPaths: nil means true (default: verify), otherwise use explicit value
-	verifyStandardPaths := true // default
-	if cfg.Global.VerifyStandardPaths != nil {
-		verifyStandardPaths = *cfg.Global.VerifyStandardPaths
-	}
-
 	dryRunOptions := &resource.DryRunOptions{
 		DetailLevel:         resource.DetailLevelDetailed,
 		OutputFormat:        resource.OutputFormatText,
 		ShowSensitive:       false,
 		VerifyFiles:         true,
-		VerifyStandardPaths: verifyStandardPaths,
+		VerifyStandardPaths: runnertypes.DetermineVerifyStandardPaths(cfg.Global.VerifyStandardPaths),
 		HashDir:             hashDir,
 	}
 
