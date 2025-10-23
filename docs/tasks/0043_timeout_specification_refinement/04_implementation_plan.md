@@ -47,9 +47,6 @@
 
 **target file**: `internal/common/types.go` (新規作成)
 ```go
-// TimeoutValue represents a timeout setting that can be unset, zero, or positive
-type TimeoutValue *int
-
 const (
     // DefaultTimeout is used when no timeout is explicitly set
     DefaultTimeout = 60 // seconds
@@ -59,11 +56,10 @@ const (
 )
 
 // Helper function for creating integer pointers
-// Used for both general *int values and TimeoutValue (which is a type alias for *int)
 func IntPtr(v int) *int { return &v }
 ```
 
-**target file**: `internal/common/config.go` (修正)
+**target file**: `internal/runner/runnertypes/spec.go` (修正)
 - `GlobalSpec.Timeout` を `*int` に変更
 - `CommandSpec.Timeout` を `*int` に変更
 

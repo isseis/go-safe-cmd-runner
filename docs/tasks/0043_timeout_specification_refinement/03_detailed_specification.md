@@ -11,9 +11,6 @@
 #### 2.1.1. Nullable Timeout Type
 
 ```go
-// TimeoutValue represents a timeout setting that can be unset, zero, or positive
-type TimeoutValue *int
-
 const (
     // DefaultTimeout is used when no timeout is explicitly set
     DefaultTimeout = 60 // seconds
@@ -24,12 +21,10 @@ const (
 )
 
 // Helper function for creating integer pointers
-// TimeoutValue is a type alias for *int, so IntPtr can be used for both
-// general *int values and TimeoutValue instances
 func IntPtr(v int) *int { return &v }
 ```
 
-**注記**: `TimeoutValue` は `*int` の型エイリアスであるため、`TimeoutValue` を生成する際にも汎用の `IntPtr()` ヘルパー関数を使用します。これにより、コードの重複を避け、一貫性を保ちます。
+**注記**: タイムアウト値は `*int` 型を直接使用します。`IntPtr()` ヘルパー関数を使ってポインタ値を簡単に作成できます。
 
 #### 2.1.2. 型の意味論
 

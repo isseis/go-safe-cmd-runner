@@ -3,9 +3,6 @@
 //nolint:revive // "common" is an appropriate name for shared utilities package
 package common
 
-// TimeoutValue represents a timeout setting that can be unset, zero, or positive
-type TimeoutValue *int
-
 const (
 	// DefaultTimeout is used when no timeout is explicitly set
 	DefaultTimeout = 60 // seconds
@@ -15,17 +12,9 @@ const (
 	MaxTimeout = 86400 // 24 hours in seconds
 )
 
-// Helper functions for creating timeout value pointers
-
 // IntPtr returns a pointer to the given int value.
 // This is a convenience function for creating timeout values.
 func IntPtr(v int) *int {
-	return &v
-}
-
-// TimeoutPtr returns a TimeoutValue (pointer to int) for the given value.
-// This is a convenience function for creating timeout values.
-func TimeoutPtr(v int) TimeoutValue {
 	return &v
 }
 
