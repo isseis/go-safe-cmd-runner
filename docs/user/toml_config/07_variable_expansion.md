@@ -18,7 +18,7 @@ go-safe-cmd-runner handles 2 types of variables:
 
 | Variable Type | Purpose | Reference Syntax | Definition Method | Impact on Child Process |
 |---------------|---------|------------------|-------------------|------------------------|
-| **Internal Variables** | For expansion only within TOML configuration files | `%{VAR}` | `vars`, `from_env` | None (default) |
+| **Internal Variables** | For expansion only within TOML configuration files | `%{VAR}` | `vars`, `env_import` | None (default) |
 | **Process Environment Variables** | Set as environment variables for child processes | - | `env` | Yes |
 
 ### Locations Where Variables Can Be Used
@@ -40,7 +40,7 @@ Internal variables are written in the format `%{variable_name}`:
 ```toml
 cmd = "%{VARIABLE_NAME}"
 args = ["%{ARG1}", "%{ARG2}"]
-env = ["VAR=%{VALUE}"]
+env_vars = ["VAR=%{VALUE}"]
 ```
 
 ### Variable Naming Rules
@@ -135,18 +135,18 @@ cmd = "%{db_tools}/dump.sh"
 args = ["-o", "%{output_file}"]
 ```
 
-### 7.3.2 Importing System Environment Variables Using `from_env`
+### 7.3.2 Importing System Environment Variables Using `env_import`
 
 #### Overview
 
-Using the `from_env` field, you can import system environment variables as internal variables.
+Using the `env_import` field, you can import system environment variables as internal variables.
 
 #### Configuration Format
 
 ```toml
 [global]
-env_allowlist = ["HOME", "PATH", "USER"]
-from_env = [
+env_allowed = ["HOME", "PATH", "USER"]
+env_import = [
     "home=HOME",
     "user_path=PATH",
     "username=USER"
@@ -154,7 +154,7 @@ from_env = [
 
 [[groups]]
 name = "example"
-from_env = [
+env_import = [
     "custom=CUSTOM_VAR"  # Import specific to this group
 ]
 ```
@@ -168,17 +168,17 @@ Written in the format `internal_variable_name=system_environment_variable_name`:
 
 #### Security Constraints
 
-- System environment variables referenced in `from_env` must be included in `env_allowlist`
-- An error will occur if you reference a variable not in `env_allowlist`
+- System environment variables referenced in `env_import` must be included in `env_allowed`
+- An error will occur if you reference a variable not in `env_allowed`
 
 #### Inheritance Rules
 
 | Level | Inheritance Behavior |
 |-------|----------------------|
-| **Global.from_env** | Inherited by all groups and commands (default) |
-| **Group.from_env** | If defined, **merges** (Merge) with Global.from_env |
-| **Command.from_env** | If defined, **merges** (Merge) with Global + Group from_env |
-| **Undefined** | Inherits from_env from upper levels |
+| **Global.env_import** | Inherited by all groups and commands (default) |
+| **Group.env_import** | If defined, **merges** (Merge) with Global.env_import |
+| **Command.env_import** | If defined, **merges** (Merge) with Global + Group env_import |
+| **Undefined** | Inherits env_import from upper levels |
 
 #### Example: Importing System Environment Variables
 
@@ -186,8 +186,8 @@ Written in the format `internal_variable_name=system_environment_variable_name`:
 version = "1.0"
 
 [global]
-env_allowlist = ["HOME", "PATH"]
-from_env = [
+env_allowed = ["HOME", "PATH"]
+env_import = [
     "home=HOME",
     "user_path=PATH"
 ]
@@ -258,14 +258,14 @@ Environment variables defined in the `env` field are passed to child processes w
 
 ```toml
 [global]
-env = [
+env_vars = [
     "LOG_LEVEL=info",
     "APP_ENV=production"
 ]
 
 [[groups]]
 name = "app_tasks"
-env = [
+env_vars = [
     "DB_HOST=localhost",
     "DB_PORT=5432"
 ]
@@ -273,7 +273,7 @@ env = [
 [[groups.commands]]
 name = "run_app"
 cmd = "/opt/myapp/bin/app"
-env = [
+env_vars = [
     "CONFIG_FILE=%{config_path}"  # Internal variables can be used
 ]
 vars = ["config_path=/etc/myapp/config.yml"]
@@ -305,7 +305,7 @@ vars = [
     "app_dir=/opt/myapp",
     "log_dir=%{app_dir}/logs"
 ]
-env = [
+env_vars = [
     "APP_HOME=%{app_dir}",
     "LOG_PATH=%{log_dir}/app.log"
 ]
@@ -456,7 +456,7 @@ Example of switching command paths based on environment:
 version = "1.0"
 
 [global]
-env_allowlist = ["PATH", "HOME", "PYTHON_ROOT", "PY_VERSION"]
+env_allowed = ["PATH", "HOME", "PYTHON_ROOT", "PY_VERSION"]
 
 [[groups]]
 name = "python_tasks"
@@ -490,7 +490,7 @@ Dynamically constructing Docker container startup parameters:
 version = "1.0"
 
 [global]
-env_allowlist = ["PATH", "DOCKER_BIN"]
+env_allowed = ["PATH", "DOCKER_BIN"]
 
 [[groups]]
 name = "docker_deployment"
@@ -538,7 +538,7 @@ Using different configurations for development and production environments:
 version = "1.0"
 
 [global]
-env_allowlist = ["PATH", "APP_BIN", "CONFIG_DIR", "ENV_TYPE", "LOG_LEVEL", "DB_URL"]
+env_allowed = ["PATH", "APP_BIN", "CONFIG_DIR", "ENV_TYPE", "LOG_LEVEL", "DB_URL"]
 
 # Development environment group
 [[groups]]
@@ -628,20 +628,20 @@ Variable self-reference is an important feature commonly used when extending env
 
 ### How Self-Reference Works
 
-In expressions like `PATH=/custom/bin:%{path}`, the `%{path}` refers to a **system environment variable imported via `from_env`** or it can reference an internal variable. This is not a circular reference but an intentionally supported feature.
+In expressions like `PATH=/custom/bin:%{path}`, the `%{path}` refers to a **system environment variable imported via `env_import`** or it can reference an internal variable. This is not a circular reference but an intentionally supported feature.
 
 ### Basic Example: PATH Extension
 
 ```toml
 [global]
-env_allowlist = ["PATH"]
-from_env = ["path=PATH"]
+env_allowed = ["PATH"]
+env_import = ["path=PATH"]
 
 [[groups.commands]]
 name = "extend_path"
 cmd = "/bin/echo"
 args = ["PATH is: %{path}"]
-env = ["PATH=/opt/mytools/bin:%{path}"]
+env_vars = ["PATH=/opt/mytools/bin:%{path}"]
 ```
 
 Expansion process:
@@ -653,8 +653,8 @@ Expansion process:
 
 ```toml
 [global]
-env_allowlist = ["PATH"]
-from_env = ["path=PATH"]
+env_allowed = ["PATH"]
+env_import = ["path=PATH"]
 
 [[groups.commands]]
 name = "use_custom_tools"
@@ -664,7 +664,7 @@ vars = [
     "tool_dir=/opt/custom-tools",
     "custom_tool=%{tool_dir}/bin/mytool"
 ]
-env = [
+env_vars = [
     "PATH=%{tool_dir}/bin:%{path}"
 ]
 ```
@@ -679,8 +679,8 @@ With this configuration:
 
 ```toml
 [global]
-env_allowlist = ["LD_LIBRARY_PATH", "PYTHONPATH"]
-from_env = [
+env_allowed = ["LD_LIBRARY_PATH", "PYTHONPATH"]
+env_import = [
     "ld_library_path=LD_LIBRARY_PATH",
     "pythonpath=PYTHONPATH"
 ]
@@ -689,7 +689,7 @@ from_env = [
 name = "extend_lib_path"
 cmd = "/opt/myapp/bin/app"
 args = []
-env = [
+env_vars = [
     "LD_LIBRARY_PATH=/opt/myapp/lib:%{ld_library_path}",
     "PYTHONPATH=/opt/myapp/python:%{pythonpath}"
 ]
@@ -697,9 +697,9 @@ env = [
 
 ### Difference Between Self-Reference and Circular Reference
 
-**Self-Reference (Normal)**: Referencing a system environment variable imported via `from_env` or an internal variable
+**Self-Reference (Normal)**: Referencing a system environment variable imported via `env_import` or an internal variable
 ```toml
-env = ["PATH=/custom/bin:%{path}"]  # %{path} refers to system environment variable
+env_vars = ["PATH=/custom/bin:%{path}"]  # %{path} refers to system environment variable
 ```
 
 **Circular Reference (Error)**: Variables within vars reference each other circularly
@@ -712,20 +712,20 @@ vars = [
 
 ### Important Notes
 
-1. **When system environment variable doesn't exist**: If the system environment variable referenced in `from_env` doesn't exist, an error will occur
-2. **Relationship with allowlist**: When referencing system environment variables via `from_env`, those variables must be included in `env_allowlist`
+1. **When system environment variable doesn't exist**: If the system environment variable referenced in `env_import` doesn't exist, an error will occur
+2. **Relationship with allowlist**: When referencing system environment variables via `env_import`, those variables must be included in `env_allowed`
 
 ```toml
 [global]
-env_allowlist = ["PATH", "HOME"]  # Allow PATH and HOME to be imported
+env_allowed = ["PATH", "HOME"]  # Allow PATH and HOME to be imported
 
 [[groups.commands]]
 name = "extend_path"
 cmd = "/bin/echo"
 args = ["%{path}"]
 vars = ["path=PATH_PREFIX:/custom:%{system_path}"]
-from_env = ["system_path=PATH"]  # OK: PATH is included in allowlist
-env = ["PATH=%{path}"]
+env_import = ["system_path=PATH"]  # OK: PATH is included in allowlist
+env_vars = ["PATH=%{path}"]
 ```
 
 ## 7.10 Escape Sequences
@@ -935,30 +935,30 @@ Variables defined in `Command.Env` take priority over system environment variabl
 
 ```toml
 [global]
-env_allowlist = ["PATH", "HOME"]
+env_allowed = ["PATH", "HOME"]
 
 [[groups.commands]]
 name = "override_home"
 cmd = "/bin/echo"
 args = ["Home: ${HOME}"]
-env = ["HOME=/opt/custom-home"]
+env_vars = ["HOME=/opt/custom-home"]
 # The HOME from Command.Env is used, not the system $HOME
 ```
 
-### 7.9.2 Relationship with env_allowlist
+### 7.9.2 Relationship with env_allowed
 
-**Important**: Variables defined in `Command.Env` are not subject to `env_allowlist` checks.
+**Important**: Variables defined in `Command.Env` are not subject to `env_allowed` checks.
 
 ```toml
 [global]
-env_allowlist = ["PATH", "HOME"]
+env_allowed = ["PATH", "HOME"]
 # CUSTOM_VAR is not in allowlist
 
 [[groups.commands]]
 name = "custom_var"
 cmd = "${CUSTOM_TOOL}"
 args = []
-env = ["CUSTOM_TOOL=/opt/tools/mytool"]
+env_vars = ["CUSTOM_TOOL=/opt/tools/mytool"]
 # CUSTOM_TOOL is not in allowlist, but can be used because it's defined in Command.Env
 ```
 
@@ -975,13 +975,13 @@ For regular commands (without `run_as_user` or `run_as_group`), both local paths
 [[groups.commands]]
 name = "valid_absolute"
 cmd = "${TOOL_DIR}/mytool"
-env = ["TOOL_DIR=/opt/tools"]  # Absolute path
+env_vars = ["TOOL_DIR=/opt/tools"]  # Absolute path
 
 # Correct: expands to relative path (allowed for regular commands)
 [[groups.commands]]
 name = "valid_relative"
 cmd = "${TOOL_DIR}/mytool"
-env = ["TOOL_DIR=./tools"]  # Relative path - OK for regular commands
+env_vars = ["TOOL_DIR=./tools"]  # Relative path - OK for regular commands
 ```
 
 #### Privileged Commands
@@ -994,14 +994,14 @@ For privileged commands (with `run_as_user` or `run_as_group`), **only absolute 
 name = "valid_privileged"
 cmd = "${TOOL_DIR}/mytool"
 run_as_user = "appuser"
-env = ["TOOL_DIR=/opt/tools"]  # Absolute path
+env_vars = ["TOOL_DIR=/opt/tools"]  # Absolute path
 
 # Incorrect: expands to relative path (error for privileged commands)
 [[groups.commands]]
 name = "invalid_privileged"
 cmd = "${TOOL_DIR}/mytool"
 run_as_user = "appuser"
-env = ["TOOL_DIR=./tools"]  # Relative path - error for privileged commands
+env_vars = ["TOOL_DIR=./tools"]  # Relative path - error for privileged commands
 ```
 
 Why absolute paths are required for privileged commands:
@@ -1022,7 +1022,7 @@ args = [
     "${API_ENDPOINT}/data",
 ]
 # Sensitive information is defined in Command.Env and isolated from system environment
-env = [
+env_vars = [
     "API_TOKEN=sk-1234567890abcdef",
     "API_ENDPOINT=https://api.example.com",
 ]
@@ -1038,14 +1038,14 @@ name = "cmd1"
 cmd = "/bin/echo"
 args = ["DB: %{db_host}"]
 vars = ["db_host=db1.example.com"]
-env = ["DB_HOST=%{db_host}"]
+env_vars = ["DB_HOST=%{db_host}"]
 
 [[groups.commands]]
 name = "cmd2"
 cmd = "/bin/echo"
 args = ["DB: %{db_host}"]
 vars = ["db_host=db2.example.com"]
-env = ["DB_HOST=%{db_host}"]
+env_vars = ["DB_HOST=%{db_host}"]
 # Independent from cmd1's DB_HOST
 ```
 
@@ -1074,7 +1074,7 @@ If variables reference each other, an error occurs:
 name = "circular"
 cmd = "/bin/echo"
 args = ["${VAR1}"]
-env = [
+env_vars = [
     "VAR1=${VAR2}",
     "VAR2=${VAR1}",  # Circular reference → error
 ]
@@ -1093,7 +1093,7 @@ If the path after expansion is invalid, an error occurs:
 name = "invalid_path"
 cmd = "${TOOL}"
 args = []
-env = ["TOOL=../tool"]  # Relative path → error
+env_vars = ["TOOL=../tool"]  # Relative path → error
 ```
 
 **Solution**: Use absolute paths
@@ -1108,8 +1108,8 @@ version = "1.0"
 [global]
 timeout = 300
 log_level = "info"
-env_allowlist = ["PATH", "HOME", "USER"]
-from_env = [
+env_allowed = ["PATH", "HOME", "USER"]
+env_import = [
     "home=HOME",
     "username=USER"
 ]
@@ -1171,7 +1171,7 @@ vars = [
     "app_port=8080",
     "worker_count=4"
 ]
-env = [
+env_vars = [
     "LOG_LEVEL=info",
     "LOG_PATH=%{app_root}/logs/app.log"
 ]
@@ -1207,8 +1207,8 @@ Variable expansion can be used in the following `verify_files` fields:
 version = "1.0"
 
 [global]
-env_allowlist = ["HOME"]
-from_env = ["home=HOME"]
+env_allowed = ["HOME"]
+env_import = ["home=HOME"]
 verify_files = [
     "%{home}/config.toml",
     "%{home}/data.txt"
@@ -1233,8 +1233,8 @@ Expansion result (when `HOME=/home/user`):
 version = "1.0"
 
 [global]
-env_allowlist = ["APP_ROOT"]
-from_env = ["app_root=APP_ROOT"]
+env_allowed = ["APP_ROOT"]
+env_import = ["app_root=APP_ROOT"]
 
 [[groups]]
 name = "app_group"
@@ -1261,8 +1261,8 @@ Example with dynamic path construction:
 version = "1.0"
 
 [global]
-env_allowlist = ["ENV", "APP_ROOT"]
-from_env = [
+env_allowed = ["ENV", "APP_ROOT"]
+env_import = [
     "env_type=ENV",
     "app_root=APP_ROOT"
 ]
@@ -1317,8 +1317,8 @@ version = "1.0"
 [global]
 timeout = 300
 log_level = "info"
-env_allowlist = ["PATH", "HOME", "USER"]
-from_env = [
+env_allowed = ["PATH", "HOME", "USER"]
+env_import = [
     "home=HOME",
     "username=USER"
 ]
@@ -1380,7 +1380,7 @@ vars = [
     "app_port=8080",
     "worker_count=4"
 ]
-env = [
+env_vars = [
     "LOG_LEVEL=info",
     "LOG_PATH=%{log_dir}/app.log"
 ]
@@ -1401,7 +1401,7 @@ timeout = 30
 
 The go-safe-cmd-runner variable system consists of three main components:
 
-1. **Internal Variables** (`vars`, `from_env`)
+1. **Internal Variables** (`vars`, `env_import`)
    - Used exclusively for TOML expansion
    - Referenced using `%{VAR}` syntax
    - Not passed to child processes (by default)
@@ -1417,7 +1417,7 @@ The go-safe-cmd-runner variable system consists of three main components:
 ### Best Practices
 
 1. **Utilize internal variables**: Define values that are only needed for TOML expansion (like paths and URLs) using `vars`
-2. **Explicitly import with from_env**: Import system environment variables explicitly using `from_env` to make intentions clear
+2. **Explicitly import with env_import**: Import system environment variables explicitly using `env_import` to make intentions clear
 3. **Minimize env usage**: Keep environment variables passed to child processes to the minimum necessary
 4. **Consider security**: Handle sensitive information carefully and avoid passing unnecessary environment variables
 5. **Standardize naming conventions**: Use lowercase with underscores for internal variables (e.g., `app_dir`), and uppercase for environment variables

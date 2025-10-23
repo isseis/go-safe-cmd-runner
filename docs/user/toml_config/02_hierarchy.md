@@ -43,7 +43,7 @@ Defines configuration common to all groups and commands.
 timeout = 60
 workdir = "/tmp/workspace"
 log_level = "info"
-env_allowlist = ["PATH", "HOME"]
+env_allowed = ["PATH", "HOME"]
 ```
 
 **Role**: Providing default values, centralized management of common configuration
@@ -140,45 +140,45 @@ args = ["ERROR", "app.log"]
 
 ### 2.3.3 Environment Variable Inheritance Modes
 
-The environment variable allowlist (`env_allowlist`) has three inheritance modes:
+The environment variable allowlist (`env_allowed`) has three inheritance modes:
 
 #### Mode 1: Inherit Mode (inherit)
 
-If `env_allowlist` is not specified at the group level, it inherits the global configuration.
+If `env_allowed` is not specified at the group level, it inherits the global configuration.
 
 ```toml
 [global]
-env_allowlist = ["PATH", "HOME", "USER"]
+env_allowed = ["PATH", "HOME", "USER"]
 
 [[groups]]
 name = "inherit_group"
-# env_allowlist not specified → inherits global ["PATH", "HOME", "USER"]
+# env_allowed not specified → inherits global ["PATH", "HOME", "USER"]
 ```
 
 #### Mode 2: Explicit Mode (explicit)
 
-If `env_allowlist` is specified at the group level, it ignores the global configuration and uses only the specified values.
+If `env_allowed` is specified at the group level, it ignores the global configuration and uses only the specified values.
 
 ```toml
 [global]
-env_allowlist = ["PATH", "HOME", "USER"]
+env_allowed = ["PATH", "HOME", "USER"]
 
 [[groups]]
 name = "explicit_group"
-env_allowlist = ["PATH", "CUSTOM_VAR"]  # Ignores global and uses this configuration
+env_allowed = ["PATH", "CUSTOM_VAR"]  # Ignores global and uses this configuration
 ```
 
 #### Mode 3: Reject Mode (reject)
 
-If `env_allowlist = []` is explicitly specified as an empty array at the group level, it rejects all environment variables.
+If `env_allowed = []` is explicitly specified as an empty array at the group level, it rejects all environment variables.
 
 ```toml
 [global]
-env_allowlist = ["PATH", "HOME", "USER"]
+env_allowed = ["PATH", "HOME", "USER"]
 
 [[groups]]
 name = "reject_group"
-env_allowlist = []  # Rejects all environment variables
+env_allowed = []  # Rejects all environment variables
 ```
 
 ### 2.3.4 Variable Inheritance Patterns
@@ -203,28 +203,28 @@ args = ["%{base_dir}", "%{log_level}", "%{task_type}", "%{task_id}"]
 # Final vars: base_dir=/opt/app, log_level=debug, task_type=admin, task_id=42
 ```
 
-#### from_env (System Environment Variable Import) - Merge Inheritance
+#### env_import (System Environment Variable Import) - Merge Inheritance
 
-`from_env` is inherited through **Merge**. When specified at a lower level, it is merged with the upper level configuration.
+`env_import` is inherited through **Merge**. When specified at a lower level, it is merged with the upper level configuration.
 
 ```toml
 [global]
-from_env = ["HOME", "USER"]
+env_import = ["HOME", "USER"]
 
 [[groups]]
 name = "tasks"
-from_env = ["LANG", "LC_ALL"]  # Merges with global from_env
+env_import = ["LANG", "LC_ALL"]  # Merges with global env_import
 
 [[groups.commands]]
 name = "task1"
 cmd = "/bin/echo"
-# from_env not specified → group's from_env is applied
+# env_import not specified → group's env_import is applied
 # Inherited variables: HOME, USER (global) + LANG, LC_ALL (group)
 args = ["User: %{USER}, Lang: %{LANG}"]
 
 [[groups.commands]]
 name = "task2"
-from_env = ["PWD"]  # Merges with group's from_env
+env_import = ["PWD"]  # Merges with group's env_import
 cmd = "/bin/echo"
 # Inherited variables: HOME, USER (global) + LANG, LC_ALL (group) + PWD (command)
 args = ["Home: %{HOME}, PWD: %{PWD}"]
@@ -238,9 +238,9 @@ Depending on the configuration item, the priority differs:
 |---------|------------------|-------------|------|
 | timeout | Command > Global | Override | Cannot be configured at group level |
 | workdir | Group > Global | Override | Cannot be configured at command level |
-| env_allowlist | Group > Global | Override | Behavior changes according to inheritance mode |
+| env_allowed | Group > Global | Override | Behavior changes according to inheritance mode |
 | vars | Command > Group > Global | Merge (Union) | Lower levels merge with upper levels, same keys override |
-| from_env | Command > Group > Global | Merge | Lower levels merge with upper levels |
+| env_import | Command > Group > Global | Merge | Lower levels merge with upper levels |
 | env | Command > Group > Global | Merge | Process environment variable configuration ※Security: Define at minimal necessary level |
 | verify_files | Group + Global | Merge | Merged (both applied) |
 | log_level | Global only | N/A | Cannot be overridden at lower levels |
@@ -251,13 +251,13 @@ Depending on the configuration item, the priority differs:
 [global]
 timeout = 60
 workdir = "/tmp"
-env_allowlist = ["PATH", "HOME", "USER"]
+env_allowed = ["PATH", "HOME", "USER"]
 verify_files = ["/bin/sh"]
 
 [[groups]]
 name = "database_group"
 workdir = "/var/db"              # Overrides global /tmp
-env_allowlist = ["PATH", "PGDATA"]  # Ignores global and uses own configuration
+env_allowed = ["PATH", "PGDATA"]  # Ignores global and uses own configuration
 verify_files = ["/usr/bin/psql"]   # Added to global /bin/sh
 
 [[groups.commands]]
@@ -266,14 +266,14 @@ cmd = "/usr/bin/pg_dump"
 args = ["-U", "postgres"]
 timeout = 300  # Overrides global 60
 # workdir not specified → uses group's /var/db
-# env_allowlist not specified → uses group's ["PATH", "PGDATA"]
+# env_allowed not specified → uses group's ["PATH", "PGDATA"]
 # verify_files: global ["/bin/sh"] and group ["/usr/bin/psql"] are merged
 ```
 
 In this example:
 - `workdir`: Overridden to `/var/db` at group level
 - `timeout`: Overridden to `300` at command level
-- `env_allowlist`: Uses own configuration at group level
+- `env_allowed`: Uses own configuration at group level
 - `verify_files`: Global and group configurations are merged
 
 ### 2.3.7 Security Best Practices: Environment Variable Definition Levels
@@ -299,14 +299,14 @@ Define only the environment variables needed for each command:
 [[groups.commands]]
 name = "db_backup"
 cmd = "/usr/bin/pg_dump"
-env = [
+env_vars = [
     "PGPASSWORD=secret",      # Only needed for this command
     "PGHOST=localhost"
 ]
 
 # Not recommended: Exposing sensitive information globally to all commands
 [global]
-env = ["PGPASSWORD=secret"]   # Passed to all commands (dangerous)
+env_vars = ["PGPASSWORD=secret"]   # Passed to all commands (dangerous)
 ```
 
 ##### 2. Proper Use of vars vs env
@@ -322,7 +322,7 @@ vars = [
 
 [[groups.commands]]
 name = "db_backup"
-env = ["PGPASSWORD=%{db_password}"]  # Expose as env only for commands that need it
+env_vars = ["PGPASSWORD=%{db_password}"]  # Expose as env only for commands that need it
 
 [[groups.commands]]
 name = "log_check"
@@ -337,7 +337,7 @@ At the global level, define only environment variables that are safe to pass to 
 
 ```toml
 [global]
-env = [
+env_vars = [
     "LANG=C",              # Safe: Locale setting
     "TZ=UTC",              # Safe: Timezone setting
     "LC_ALL=C"             # Safe: Language setting
@@ -352,7 +352,7 @@ Define settings common to all commands within a group at the group level:
 ```toml
 [[groups]]
 name = "database_group"
-env = [
+env_vars = [
     "PGHOST=localhost",
     "PGPORT=5432",
     "PGDATABASE=production"
@@ -360,11 +360,11 @@ env = [
 
 [[groups.commands]]
 name = "backup"
-env = ["PGPASSWORD=backup_secret"]   # Command-specific sensitive information
+env_vars = ["PGPASSWORD=backup_secret"]   # Command-specific sensitive information
 
 [[groups.commands]]
 name = "analyze"
-env = ["PGPASSWORD=readonly_secret"] # Different credentials for different commands
+env_vars = ["PGPASSWORD=readonly_secret"] # Different credentials for different commands
 ```
 
 #### Security Checklist
@@ -374,7 +374,7 @@ When creating configuration files, verify the following:
 - [ ] No sensitive information (passwords, tokens, etc.) defined at global level
 - [ ] Only necessary environment variables defined for each command
 - [ ] Values that can be managed with internal `vars` are not unnecessarily exposed via `env`
-- [ ] `env_allowlist` permits only the minimal necessary system environment variables
+- [ ] `env_allowed` permits only the minimal necessary system environment variables
 
 ## Next Steps
 

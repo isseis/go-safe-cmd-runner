@@ -16,9 +16,9 @@
 | workdir | string | - | 実行ディレクトリ | 作業ディレクトリの絶対パス |
 | log_level | string | - | "info" | ログレベル(debug/info/warn/error) |
 | skip_standard_paths | bool | - | false | 標準パスの検証スキップ |
-| env_allowlist | []string | - | [] | 環境変数の許可リスト |
+| env_allowed | []string | - | [] | 環境変数の許可リスト |
 | verify_files | []string | - | [] | 検証対象ファイルのリスト |
-| max_output_size | int64 | - | 10485760 | 出力サイズ上限(バイト) |
+| output_size_limit | int64 | - | 10485760 | 出力サイズ上限(バイト) |
 
 ### A.3 グループレベルパラメータ ([[groups]])
 
@@ -29,7 +29,7 @@
 | priority | int | - | 0 | 実行優先度(小さいほど優先) |
 | workdir | string | - | 自動生成 | 作業ディレクトリ(未指定時は一時ディレクトリを自動生成) |
 | verify_files | []string | - | [] | 検証対象ファイル(グローバルに追加) |
-| env_allowlist | []string | - | nil(継承) | 環境変数許可リスト(継承モード参照) |
+| env_allowed | []string | - | nil(継承) | 環境変数許可リスト(継承モード参照) |
 
 ### A.4 コマンドレベルパラメータ ([[groups.commands]])
 
@@ -44,16 +44,16 @@
 | timeout | int | - | グローバル設定 | タイムアウト(グローバルをオーバーライド) |
 | run_as_user | string | - | "" | 実行ユーザー |
 | run_as_group | string | - | "" | 実行グループ |
-| max_risk_level | string | - | "low" | 最大リスクレベル(low/medium/high) |
+| risk_level | string | - | "low" | 最大リスクレベル(low/medium/high) |
 | output | string | - | "" | 標準出力の保存先ファイルパス |
 
 ### A.5 環境変数継承モード
 
 | モード | 条件 | 動作 |
 |--------|------|------|
-| 継承 (inherit) | env_allowlist が未定義(nil) | グローバル設定を継承 |
-| 明示 (explicit) | env_allowlist に値が設定 | 設定値のみを使用(グローバル無視) |
-| 拒否 (reject) | env_allowlist = [] (空配列) | 全ての環境変数を拒否 |
+| 継承 (inherit) | env_allowed が未定義(nil) | グローバル設定を継承 |
+| 明示 (explicit) | env_allowed に値が設定 | 設定値のみを使用(グローバル無視) |
+| 拒否 (reject) | env_allowed = [] (空配列) | 全ての環境変数を拒否 |
 
 ### A.6 リスクレベル
 
@@ -88,7 +88,7 @@ version = "1.0"
 timeout = 600
 workdir = "/var/backups"
 log_level = "info"
-env_allowlist = ["PATH", "HOME"]
+env_allowed = ["PATH", "HOME"]
 
 [[groups]]
 name = "daily_backup"
@@ -113,8 +113,8 @@ version = "1.0"
 timeout = 300
 workdir = "/opt/secure"
 log_level = "info"
-skip_standard_paths = false
-env_allowlist = ["PATH"]
+verify_standard_paths = true
+env_allowed = ["PATH"]
 verify_files = []  # コマンドは自動検証される
 
 [[groups]]
@@ -125,7 +125,7 @@ verify_files = ["/opt/secure/config/backup.conf"]  # 追加ファイルのみ指
 name = "backup"
 cmd = "/opt/secure/bin/backup-tool"  # 自動的に検証される
 args = ["--encrypt", "--output", "backup.enc"]
-max_risk_level = "medium"
+risk_level = "medium"
 ```
 
 ### B.4 変数展開の活用
@@ -134,7 +134,7 @@ max_risk_level = "medium"
 version = "1.0"
 
 [global]
-env_allowlist = ["PATH", "HOME", "APP_DIR", "ENV_TYPE"]
+env_allowed = ["PATH", "HOME", "APP_DIR", "ENV_TYPE"]
 
 [[groups]]
 name = "deployment"
@@ -143,7 +143,7 @@ name = "deployment"
 name = "deploy"
 cmd = "${APP_DIR}/bin/deploy"
 args = ["--env", "${ENV_TYPE}", "--config", "${APP_DIR}/config/${ENV_TYPE}.yml"]
-env = [
+env_vars = [
     "APP_DIR=/opt/myapp",
     "ENV_TYPE=production",
 ]
@@ -157,7 +157,7 @@ version = "1.0"
 [global]
 timeout = 600
 log_level = "info"
-env_allowlist = ["PATH"]
+env_allowed = ["PATH"]
 
 [[groups]]
 name = "system_maintenance"
@@ -166,14 +166,14 @@ name = "system_maintenance"
 name = "check_status"
 cmd = "/usr/bin/systemctl"
 args = ["status", "myapp"]
-max_risk_level = "low"
+risk_level = "low"
 
 [[groups.commands]]
 name = "restart_service"
 cmd = "/usr/bin/systemctl"
 args = ["restart", "myapp"]
 run_as_user = "root"
-max_risk_level = "high"
+risk_level = "high"
 ```
 
 ### B.6 出力キャプチャ
@@ -183,7 +183,7 @@ version = "1.0"
 
 [global]
 workdir = "/var/reports"
-max_output_size = 10485760
+output_size_limit = 10485760
 
 [[groups]]
 name = "system_report"
@@ -192,13 +192,13 @@ name = "system_report"
 name = "disk_usage"
 cmd = "/bin/df"
 args = ["-h"]
-output = "disk-usage.txt"
+output_file = "disk-usage.txt"
 
 [[groups.commands]]
 name = "memory_usage"
 cmd = "/usr/bin/free"
 args = ["-h"]
-output = "memory-usage.txt"
+output_file = "memory-usage.txt"
 ```
 
 ### B.7 複数環境対応
@@ -207,7 +207,7 @@ output = "memory-usage.txt"
 version = "1.0"
 
 [global]
-env_allowlist = ["PATH", "APP_BIN", "CONFIG_DIR", "ENV_TYPE", "DB_URL"]
+env_allowed = ["PATH", "APP_BIN", "CONFIG_DIR", "ENV_TYPE", "DB_URL"]
 
 # 開発環境
 [[groups]]
@@ -218,7 +218,7 @@ priority = 1
 name = "run_dev"
 cmd = "${APP_BIN}"
 args = ["--config", "${CONFIG_DIR}/${ENV_TYPE}.yml", "--db", "${DB_URL}"]
-env = [
+env_vars = [
     "APP_BIN=/opt/app/bin/server",
     "CONFIG_DIR=/etc/app",
     "ENV_TYPE=development",
@@ -234,14 +234,14 @@ priority = 2
 name = "run_prod"
 cmd = "${APP_BIN}"
 args = ["--config", "${CONFIG_DIR}/${ENV_TYPE}.yml", "--db", "${DB_URL}"]
-env = [
+env_vars = [
     "APP_BIN=/opt/app/bin/server",
     "CONFIG_DIR=/etc/app",
     "ENV_TYPE=production",
     "DB_URL=postgresql://prod-db/prod_db",
 ]
 run_as_user = "appuser"
-max_risk_level = "high"
+risk_level = "high"
 ```
 
 ## 付録C: 用語集
@@ -353,7 +353,7 @@ version = "1.0"
 timeout = 300
 workdir = "/path/to/workdir"
 log_level = "info"
-env_allowlist = ["PATH", "HOME"]
+env_allowed = ["PATH", "HOME"]
 
 [[groups]]
 name = "group_name"
@@ -375,8 +375,8 @@ version = "1.0"
 timeout = 600
 workdir = "/opt/secure"
 log_level = "info"
-skip_standard_paths = false
-env_allowlist = ["PATH"]
+verify_standard_paths = true
+env_allowed = ["PATH"]
 verify_files = [
     # 追加の検証ファイル (コマンドは自動検証される)
 ]
@@ -393,7 +393,7 @@ name = "secure_command"
 description = "セキュアなコマンド"
 cmd = "/path/to/verified/command"
 args = []
-max_risk_level = "medium"
+risk_level = "medium"
 ```
 
 ### D.3 変数展開テンプレート
@@ -402,7 +402,7 @@ max_risk_level = "medium"
 version = "1.0"
 
 [global]
-env_allowlist = [
+env_allowed = [
     "PATH",
     "HOME",
     # 追加の許可変数
@@ -418,7 +418,7 @@ args = [
     "--config", "${CONFIG_FILE}",
     "--output", "${OUTPUT_DIR}/result.txt",
 ]
-env = [
+env_vars = [
     "TOOL_DIR=/opt/tools",
     "CONFIG_FILE=/etc/app/config.yml",
     "OUTPUT_DIR=/var/output",
@@ -431,7 +431,7 @@ env = [
 version = "1.0"
 
 [global]
-env_allowlist = [
+env_allowed = [
     "PATH",
     "APP_BIN",
     "ENV_TYPE",
@@ -447,7 +447,7 @@ priority = 1
 name = "run_dev"
 cmd = "${APP_BIN}"
 args = ["--env", "${ENV_TYPE}", "--config", "${CONFIG_DIR}/${ENV_TYPE}.yml"]
-env = [
+env_vars = [
     "APP_BIN=/opt/app/bin/server",
     "ENV_TYPE=development",
     "CONFIG_DIR=/etc/app/configs",
@@ -462,13 +462,13 @@ priority = 2
 name = "run_prod"
 cmd = "${APP_BIN}"
 args = ["--env", "${ENV_TYPE}", "--config", "${CONFIG_DIR}/${ENV_TYPE}.yml"]
-env = [
+env_vars = [
     "APP_BIN=/opt/app/bin/server",
     "ENV_TYPE=production",
     "CONFIG_DIR=/etc/app/configs",
 ]
 run_as_user = "appuser"
-max_risk_level = "high"
+risk_level = "high"
 ```
 
 ## 付録E: 参考リンク

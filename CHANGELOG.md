@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+#### TOML Field Renaming
+
+All TOML configuration field names have been updated to improve clarity and consistency.
+
+**Migration Required**: Existing configuration files must be manually updated.
+
+##### Field Name Mapping
+
+| Level | Old Field Name | New Field Name | Default Value Change |
+|-------|----------------|----------------|---------------------|
+| Global | `skip_standard_paths` | `verify_standard_paths` | `false` (verify) → `true` (verify) |
+| Global | `env` | `env_vars` | - |
+| Global | `env_allowlist` | `env_allowed` | - |
+| Global | `from_env` | `env_import` | - |
+| Global | `max_output_size` | `output_size_limit` | - |
+| Group | `env` | `env_vars` | - |
+| Group | `env_allowlist` | `env_allowed` | - |
+| Group | `from_env` | `env_import` | - |
+| Command | `env` | `env_vars` | - |
+| Command | `from_env` | `env_import` | - |
+| Command | `max_risk_level` | `risk_level` | - |
+| Command | `output` | `output_file` | - |
+
+##### Key Changes
+
+1. **Positive Naming**: `skip_standard_paths` → `verify_standard_paths`
+   - Old: `skip_standard_paths = false` (default: verify standard paths)
+   - New: `verify_standard_paths = true` (default: verify standard paths)
+   - **Default behavior unchanged (verification continues), but field name is now clearer**
+
+2. **Environment Variable Prefix Unification**: All environment-related fields now use `env_` prefix
+   - `env` → `env_vars`
+   - `env_allowlist` → `env_allowed`
+   - `from_env` → `env_import`
+
+3. **Natural Word Order**: `max_output_size` → `output_size_limit`
+
+4. **Clarity**: `output` → `output_file`, `max_risk_level` → `risk_level`
+
+##### Migration Guide
+
+See [Migration Guide](docs/migration/toml_field_renaming.en.md) for detailed instructions.
+
+#### Working Directory Specification Redesign
+
 ### Added
 
 - **`__runner_workdir` reserved variable**: New automatic variable that references the runtime working directory for command execution

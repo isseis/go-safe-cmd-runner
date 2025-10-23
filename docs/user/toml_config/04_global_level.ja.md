@@ -275,7 +275,7 @@ args = ["-f", "/tmp/check.txt"]
 
 ```toml
 [global]
-skip_standard_paths = true/false
+verify_standard_paths = false/false
 ```
 
 ### パラメータの詳細
@@ -301,7 +301,7 @@ skip_standard_paths = true/false
 version = "1.0"
 
 [global]
-skip_standard_paths = true  # /bin, /usr/bin などの検証をスキップ
+verify_standard_paths = false  # /bin, /usr/bin などの検証をスキップ
 
 [[groups]]
 name = "system_commands"
@@ -318,7 +318,7 @@ args = ["-la"]
 version = "1.0"
 
 [global]
-skip_standard_paths = false  # または省略
+verify_standard_paths = true  # または省略
 verify_files = ["/etc/app/config.ini"]  # 追加の設定ファイルを検証
 
 [[groups]]
@@ -333,7 +333,7 @@ args = ["pattern", "file.txt"]
 
 ### セキュリティ上の注意
 
-`skip_standard_paths = true` を設定すると、標準パスのコマンドが改ざんされていても検出できません。セキュリティ要件が高い環境では `false` (デフォルト)のままにすることを推奨します。
+`verify_standard_paths = false` を設定すると、標準パスのコマンドが改ざんされていても検出できません。セキュリティ要件が高い環境では `false` (デフォルト)のままにすることを推奨します。
 
 ## 4.5 vars - グローバル内部変数
 
@@ -424,7 +424,7 @@ vars = [
     "app_dir=/opt/myapp",
     "config_path=%{app_dir}/config.yml"
 ]
-env = [
+env_vars = [
     "APP_HOME=%{app_dir}",           # 内部変数を使ってプロセス環境変数を定義
     "CONFIG_FILE=%{config_path}"     # 設定ファイルのパスを環境変数として渡す
 ]
@@ -482,7 +482,7 @@ args = ["secret_key"]
 ```toml
 [global]
 vars = ["secret_key=abc123"]
-env = ["SECRET_KEY=%{secret_key}"]  # 内部変数を使ってプロセス環境変数を定義
+env_vars = ["SECRET_KEY=%{secret_key}"]  # 内部変数を使ってプロセス環境変数を定義
 
 [[groups.commands]]
 name = "test"
@@ -533,7 +533,7 @@ cmd = "%{undefined_var}/tool"  # エラー: undefined_var は定義されてい�
 
 ```toml
 [global]
-from_env = ["内部変数名=システム環境変数名", ...]
+from_env_vars = ["内部変数名=システム環境変数名", ...]
 ```
 
 ### パラメータの詳細
@@ -545,7 +545,7 @@ from_env = ["内部変数名=システム環境変数名", ...]
 | **設定可能な階層** | グローバル、グループ |
 | **デフォルト値** | [] (取り込みなし) |
 | **書式** | `"内部変数名=システム環境変数名"` 形式 |
-| **セキュリティ制約** | `env_allowlist` に含まれる変数のみ取り込み可能 |
+| **セキュリティ制約** | `env_allowed` に含まれる変数のみ取り込み可能 |
 
 ### 役割
 
@@ -561,8 +561,8 @@ from_env = ["内部変数名=システム環境変数名", ...]
 version = "1.0"
 
 [global]
-env_allowlist = ["HOME", "USER"]
-from_env = [
+env_allowed = ["HOME", "USER"]
+from_env_vars = [
     "home=HOME",
     "username=USER"
 ]
@@ -583,8 +583,8 @@ args = ["%{config_file}"]
 version = "1.0"
 
 [global]
-env_allowlist = ["PATH", "HOME"]
-from_env = [
+env_allowed = ["PATH", "HOME"]
+from_env_vars = [
     "user_path=PATH",
     "home=HOME"
 ]
@@ -597,7 +597,7 @@ vars = [
 name = "run_tool"
 cmd = "/bin/sh"
 args = ["-c", "echo Path: %{extended_path}"]
-env = ["PATH=%{extended_path}"]
+env_vars = ["PATH=%{extended_path}"]
 ```
 
 #### 例3: 環境別の設定
@@ -606,8 +606,8 @@ env = ["PATH=%{extended_path}"]
 version = "1.0"
 
 [global]
-env_allowlist = ["APP_ENV"]
-from_env = ["environment=APP_ENV"]
+env_allowed = ["APP_ENV"]
+from_env_vars = ["environment=APP_ENV"]
 vars = [
     "config_dir=/etc/myapp/%{environment}",
     "log_level=%{environment}"  # 環境に応じたログレベル
@@ -622,12 +622,12 @@ args = ["--config", "%{config_dir}/app.yml", "--log-level", "%{log_level}"]
 
 ### セキュリティ制約
 
-`from_env` で参照するシステム環境変数は、必ず `env_allowlist` に含まれている必要があります:
+`from_env` で参照するシステム環境変数は、必ず `env_allowed` に含まれている必要があります:
 
 ```toml
 [global]
-env_allowlist = ["HOME"]
-from_env = [
+env_allowed = ["HOME"]
+from_env_vars = [
     "home=HOME",    # OK: HOME は allowlist に含まれている
     "path=PATH"     # エラー: PATH は allowlist に含まれていない
 ]
@@ -635,7 +635,7 @@ from_env = [
 
 エラーメッセージ例:
 ```
-system environment variable 'PATH' (mapped to 'path' in global.from_env) is not in env_allowlist: [HOME]
+system environment variable 'PATH' (mapped to 'path' in global.from_env) is not in env_allowed: [HOME]
 ```
 
 ### 変数名のマッピング
@@ -644,8 +644,8 @@ system environment variable 'PATH' (mapped to 'path' in global.from_env) is not 
 
 ```toml
 [global]
-env_allowlist = ["HOME", "USER", "HOSTNAME"]
-from_env = [
+env_allowed = ["HOME", "USER", "HOSTNAME"]
+from_env_vars = [
     "user_home=HOME",       # HOME を user_home として参照
     "current_user=USER",    # USER を current_user として参照
     "host=HOSTNAME"         # HOSTNAME を host として参照
@@ -665,8 +665,8 @@ args = ["User: %{current_user}, Home: %{user_home}, Host: %{host}"]
 
 ```toml
 [global]
-env_allowlist = ["NONEXISTENT_VAR"]
-from_env = ["var=NONEXISTENT_VAR"]
+env_allowed = ["NONEXISTENT_VAR"]
+from_env_vars = ["var=NONEXISTENT_VAR"]
 # 警告: System environment variable 'NONEXISTENT_VAR' is not set
 # var には空文字列が設定される
 ```
@@ -677,8 +677,8 @@ from_env = ["var=NONEXISTENT_VAR"]
 
 ```toml
 [global]
-env_allowlist = ["HOME"]
-from_env = [
+env_allowed = ["HOME"]
+from_env_vars = [
     "home=HOME",            # 正しい
     "user_home=HOME",       # 正しい
     "HOME=HOME",            # 正しい(大文字も可)
@@ -692,7 +692,7 @@ from_env = [
 
 1. **小文字推奨**: 内部変数名は小文字とアンダースコアを推奨(例: `home`, `user_path`)
 2. **明示的な取り込み**: 必要な環境変数のみを明示的に取り込む
-3. **allowlist と併用**: env_allowlist で許可した変数のみ取り込む
+3. **allowlist と併用**: env_allowed で許可した変数のみ取り込む
 4. **わかりやすい名前**: システム環境変数名と内部変数名を区別しやすい名前に
 
 ## 4.7 env - グローバルプロセス環境変数
@@ -705,7 +705,7 @@ from_env = [
 
 ```toml
 [global]
-env = ["KEY1=value1", "KEY2=value2", ...]
+env_vars = ["KEY1=value1", "KEY2=value2", ...]
 ```
 
 ### パラメータの詳細
@@ -739,7 +739,7 @@ vars = [
     "app_dir=/opt/app",
     "log_level=info"
 ]
-env = [
+env_vars = [
     "APP_HOME=%{app_dir}",
     "LOG_LEVEL=%{log_level}",
     "CONFIG_FILE=%{app_dir}/config.yaml"
@@ -763,7 +763,7 @@ vars = [
     "app_root=%{base}/myapp",
     "data_dir=%{app_root}/data"
 ]
-env = [
+env_vars = [
     "APP_ROOT=%{app_root}",
     "DATA_PATH=%{data_dir}",
     "BIN_PATH=%{app_root}/bin"
@@ -782,15 +782,15 @@ args = []
 version = "1.0"
 
 [global]
-env_allowlist = ["HOME", "USER"]
-from_env = [
+env_allowed = ["HOME", "USER"]
+from_env_vars = [
     "home=HOME",
     "username=USER"
 ]
 vars = [
     "log_dir=%{home}/logs"
 ]
-env = [
+env_vars = [
     "USER_NAME=%{username}",
     "LOG_DIRECTORY=%{log_dir}"
 ]
@@ -815,7 +815,7 @@ args = ["-c", "echo USER_NAME=$USER_NAME, LOG_DIRECTORY=$LOG_DIRECTORY"]
 ```toml
 [global]
 vars = ["base=global_value"]
-env = [
+env_vars = [
     "COMMON_VAR=%{base}",
     "GLOBAL_ONLY=from_global"
 ]
@@ -823,12 +823,12 @@ env = [
 [[groups]]
 name = "example"
 vars = ["base=group_value"]
-env = ["COMMON_VAR=%{base}"]    # Global.env を上書き
+env_vars = ["COMMON_VAR=%{base}"]    # Global.env を上書き
 
 [[groups.commands]]
 name = "cmd1"
 vars = ["base=command_value"]
-env = ["COMMON_VAR=%{base}"]    # Group.env を上書き
+env_vars = ["COMMON_VAR=%{base}"]    # Group.env を上書き
 
 # 実行時の環境変数:
 # COMMON_VAR=command_value (コマンドレベルが優先)
@@ -844,7 +844,7 @@ env = ["COMMON_VAR=%{base}"]    # Group.env を上書き
 ```toml
 [global]
 vars = ["internal_value=secret"]     # 内部変数のみ
-env = ["PUBLIC_VAR=%{internal_value}"]  # 内部変数を使って環境変数を定義
+env_vars = ["PUBLIC_VAR=%{internal_value}"]  # 内部変数を使って環境変数を定義
 
 [[groups.commands]]
 name = "test"
@@ -862,7 +862,7 @@ args = ["-c", "echo internal_value=$internal_value, PUBLIC_VAR=$PUBLIC_VAR"]
 
 ```toml
 [global]
-env = [
+env_vars = [
     "VALID_NAME=value",      # 正しい: 英大文字、数字、アンダースコア
     "MY_VAR_123=value",      # 正しい
     "123INVALID=value",      # エラー: 数字で始まる
@@ -877,7 +877,7 @@ env = [
 
 ```toml
 [global]
-env = [
+env_vars = [
     "VAR=value1",
     "VAR=value2",  # エラー: 重複定義
 ]
@@ -890,7 +890,7 @@ env の値には内部変数を参照できますが、未定義の変数を参�
 ```toml
 [global]
 vars = ["defined=value"]
-env = [
+env_vars = [
     "VALID=%{defined}",      # OK: defined は定義されている
     "INVALID=%{undefined}"   # エラー: undefined は定義されていない
 ]
@@ -920,7 +920,7 @@ vars = [
 ```toml
 # 推奨される構成
 [global]
-env = [
+env_vars = [
     # ベース設定
     "APP_ROOT=/opt/myapp",
     "ENV_TYPE=production",
@@ -931,7 +931,7 @@ env = [
     "LOG_DIR=${APP_ROOT}/logs",
     "CONFIG_FILE=${APP_ROOT}/etc/${ENV_TYPE}.yaml",
 ]
-env_allowlist = ["HOME", "PATH"]
+env_allowed = ["HOME", "PATH"]
 ```
 
 ### 次のステップ
@@ -940,7 +940,7 @@ env_allowlist = ["HOME", "PATH"]
 - **Command.env**: コマンドレベルの環境変数については第6章を参照
 - **変数展開の詳細**: 変数展開の仕組みについては第7章を参照
 
-## 4.8 env_allowlist - 環境変数許可リスト
+## 4.8 env_allowed - 環境変数許可リスト
 
 ### 概要
 
@@ -950,7 +950,7 @@ env_allowlist = ["HOME", "PATH"]
 
 ```toml
 [global]
-env_allowlist = ["変数1", "変数2", ...]
+env_allowed = ["変数1", "変数2", ...]
 ```
 
 ### パラメータの詳細
@@ -978,7 +978,7 @@ env_allowlist = ["変数1", "変数2", ...]
 version = "1.0"
 
 [global]
-env_allowlist = [
+env_allowed = [
     "PATH",    # コマンド検索パス
     "HOME",    # ホームディレクトリ
     "USER",    # ユーザー名
@@ -1001,7 +1001,7 @@ args = []
 version = "1.0"
 
 [global]
-env_allowlist = [
+env_allowed = [
     "PATH",
     "HOME",
     "APP_CONFIG_DIR",   # アプリ設定ディレクトリ
@@ -1016,7 +1016,7 @@ name = "app_tasks"
 name = "run_app"
 cmd = "/opt/myapp/bin/app"
 args = ["--config", "${APP_CONFIG_DIR}/config.yaml"]
-env = ["APP_CONFIG_DIR=/etc/myapp"]
+env_vars = ["APP_CONFIG_DIR=/etc/myapp"]
 ```
 
 #### 例3: 空のリスト(全て拒否)
@@ -1025,7 +1025,7 @@ env = ["APP_CONFIG_DIR=/etc/myapp"]
 version = "1.0"
 
 [global]
-env_allowlist = []  # 全ての環境変数を拒否
+env_allowed = []  # 全ての環境変数を拒否
 
 [[groups]]
 name = "isolated_tasks"
@@ -1057,7 +1057,7 @@ args = ["Hello"]
 ```toml
 # 推奨しない: 過度に寛容
 [global]
-env_allowlist = [
+env_allowed = [
     "PATH", "HOME", "USER", "SHELL", "EDITOR", "PAGER",
     "MAIL", "LOGNAME", "HOSTNAME", "DISPLAY", "XAUTHORITY",
     # ... 多すぎる
@@ -1065,7 +1065,7 @@ env_allowlist = [
 
 # 推奨: 必要最小限
 [global]
-env_allowlist = ["PATH", "HOME", "USER"]
+env_allowed = ["PATH", "HOME", "USER"]
 ```
 
 ## 4.9 verify_files - ファイル検証リスト
@@ -1178,7 +1178,7 @@ verify_files = ["/opt/app/script.sh"]  # 正しい
 - **パフォーマンス**: ファイルハッシュ検証は高速に動作するため、パフォーマンスへの影響は限定的です
 - **改ざん検出**: 検証対象を増やすことでシステム侵害をより確実に防ぐことができます
 
-## 4.10 max_output_size - 出力サイズ上限
+## 4.10 output_size_limit - 出力サイズ上限
 
 ### 概要
 
@@ -1188,7 +1188,7 @@ verify_files = ["/opt/app/script.sh"]  # 正しい
 
 ```toml
 [global]
-max_output_size = バイト数
+output_size_limit = バイト数
 ```
 
 ### パラメータの詳細
@@ -1216,7 +1216,7 @@ max_output_size = バイト数
 version = "1.0"
 
 [global]
-max_output_size = 1048576  # 1MB = 1024 * 1024 バイト
+output_size_limit = 1048576  # 1MB = 1024 * 1024 バイト
 
 [[groups]]
 name = "log_analysis"
@@ -1225,7 +1225,7 @@ name = "log_analysis"
 name = "grep_logs"
 cmd = "grep"
 args = ["ERROR", "/var/log/app.log"]
-output = "errors.txt"
+output_file = "errors.txt"
 # 出力が 1MB を超えるとエラー
 ```
 
@@ -1235,7 +1235,7 @@ output = "errors.txt"
 version = "1.0"
 
 [global]
-max_output_size = 104857600  # 100MB = 100 * 1024 * 1024 バイト
+output_size_limit = 104857600  # 100MB = 100 * 1024 * 1024 バイト
 
 [[groups]]
 name = "data_export"
@@ -1244,7 +1244,7 @@ name = "data_export"
 name = "export_database"
 cmd = "/usr/bin/pg_dump"
 args = ["large_db"]
-output = "database_dump.sql"
+output_file = "database_dump.sql"
 # 大きなデータベースダンプを許可
 ```
 
@@ -1253,10 +1253,10 @@ output = "database_dump.sql"
 ```toml
 [global]
 # 一般的な用途に応じた推奨値
-max_output_size = 1048576      # 1MB  - ログ分析、小規模データ
-max_output_size = 10485760     # 10MB - デフォルト、中規模データ
-max_output_size = 104857600    # 100MB - 大規模データ、データベースダンプ
-max_output_size = 1073741824   # 1GB  - 非常に大きなデータ(注意が必要)
+output_size_limit = 1048576      # 1MB  - ログ分析、小規模データ
+output_size_limit = 10485760     # 10MB - デフォルト、中規模データ
+output_size_limit = 104857600    # 100MB - 大規模データ、データベースダンプ
+output_size_limit = 1073741824   # 1GB  - 非常に大きなデータ(注意が必要)
 ```
 
 ### 制限超過時の動作
@@ -1275,11 +1275,11 @@ max_output_size = 1073741824   # 1GB  - 非常に大きなデータ(注意が必
 ```toml
 # 推奨しない: 小さすぎる制限
 [global]
-max_output_size = 1024  # 1KB - ほとんどのコマンドで不足
+output_size_limit = 1024  # 1KB - ほとんどのコマンドで不足
 
 # 推奨: 適切な制限
 [global]
-max_output_size = 10485760  # 10MB - 一般的な用途に適切
+output_size_limit = 10485760  # 10MB - 一般的な用途に適切
 ```
 
 ## 全体的な設定例
@@ -1300,10 +1300,10 @@ workdir = "/var/app/workspace"
 log_level = "info"
 
 # 標準パスの検証スキップ
-skip_standard_paths = true
+verify_standard_paths = false
 
 # 環境変数許可リスト
-env_allowlist = [
+env_allowed = [
     "PATH",
     "HOME",
     "USER",
@@ -1319,7 +1319,7 @@ verify_files = [
 ]
 
 # 出力サイズ制限
-max_output_size = 10485760  # 10MB
+output_size_limit = 10485760  # 10MB
 
 [[groups]]
 name = "application_tasks"

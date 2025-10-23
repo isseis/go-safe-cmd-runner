@@ -43,7 +43,7 @@ version = "1.0"
 timeout = 60
 workdir = "/tmp/workspace"
 log_level = "info"
-env_allowlist = ["PATH", "HOME"]
+env_allowed = ["PATH", "HOME"]
 ```
 
 **役割**: デフォルト値の提供、共通設定の一元管理
@@ -140,45 +140,45 @@ args = ["ERROR", "app.log"]
 
 ### 2.3.3 環境変数の継承モード
 
-環境変数の許可リスト (`env_allowlist`) には、3つの継承モードがあります:
+環境変数の許可リスト (`env_allowed`) には、3つの継承モードがあります:
 
 #### モード1: 継承モード (inherit)
 
-グループレベルで `env_allowlist` を指定しない場合、グローバル設定を継承します。
+グループレベルで `env_allowed` を指定しない場合、グローバル設定を継承します。
 
 ```toml
 [global]
-env_allowlist = ["PATH", "HOME", "USER"]
+env_allowed = ["PATH", "HOME", "USER"]
 
 [[groups]]
 name = "inherit_group"
-# env_allowlist 未指定 → グローバルの ["PATH", "HOME", "USER"] を継承
+# env_allowed 未指定 → グローバルの ["PATH", "HOME", "USER"] を継承
 ```
 
 #### モード2: 明示モード (explicit)
 
-グループレベルで `env_allowlist` を指定した場合、グローバル設定を無視し、指定された値のみを使用します。
+グループレベルで `env_allowed` を指定した場合、グローバル設定を無視し、指定された値のみを使用します。
 
 ```toml
 [global]
-env_allowlist = ["PATH", "HOME", "USER"]
+env_allowed = ["PATH", "HOME", "USER"]
 
 [[groups]]
 name = "explicit_group"
-env_allowlist = ["PATH", "CUSTOM_VAR"]  # グローバルを無視してこの設定を使用
+env_allowed = ["PATH", "CUSTOM_VAR"]  # グローバルを無視してこの設定を使用
 ```
 
 #### モード3: 拒否モード (reject)
 
-グループレベルで `env_allowlist = []` と明示的に空配列を指定した場合、全ての環境変数を拒否します。
+グループレベルで `env_allowed = []` と明示的に空配列を指定した場合、全ての環境変数を拒否します。
 
 ```toml
 [global]
-env_allowlist = ["PATH", "HOME", "USER"]
+env_allowed = ["PATH", "HOME", "USER"]
 
 [[groups]]
 name = "reject_group"
-env_allowlist = []  # 全ての環境変数を拒否
+env_allowed = []  # 全ての環境変数を拒否
 ```
 
 ### 2.3.4 変数の継承パターン
@@ -209,11 +209,11 @@ args = ["%{base_dir}", "%{log_level}", "%{task_type}", "%{task_id}"]
 
 ```toml
 [global]
-from_env = ["HOME", "USER"]
+from_env_vars = ["HOME", "USER"]
 
 [[groups]]
 name = "tasks"
-from_env = ["LANG", "LC_ALL"]  # グローバルの from_env とマージ
+from_env_vars = ["LANG", "LC_ALL"]  # グローバルの from_env とマージ
 
 [[groups.commands]]
 name = "task1"
@@ -224,7 +224,7 @@ args = ["User: %{USER}, Lang: %{LANG}"]
 
 [[groups.commands]]
 name = "task2"
-from_env = ["PWD"]  # グループの from_env とマージ
+from_env_vars = ["PWD"]  # グループの from_env とマージ
 cmd = "/bin/echo"
 # 継承された変数: HOME, USER (global) + LANG, LC_ALL (group) + PWD (command)
 args = ["Home: %{HOME}, PWD: %{PWD}"]
@@ -238,7 +238,7 @@ args = ["Home: %{HOME}, PWD: %{PWD}"]
 |---------|------------------|-------------|------|
 | timeout | コマンド > グローバル | Override | グループレベルでは設定不可 |
 | workdir | グループ > グローバル | Override | コマンドレベルでは設定不可 |
-| env_allowlist | グループ > グローバル | Override | 継承モードに応じて動作が変化 |
+| env_allowed | グループ > グローバル | Override | 継承モードに応じて動作が変化 |
 | vars | コマンド > グループ > グローバル | Merge (Union) | 下位レベルが上位レベルとマージ、同名キーは上書き |
 | from_env | コマンド > グループ > グローバル | Merge | 下位レベルが上位レベルとマージ |
 | env | コマンド > グループ > グローバル | Merge | プロセス環境変数の設定 ※セキュリティ: 必要最小限のレベルで定義を推奨 |
@@ -251,13 +251,13 @@ args = ["Home: %{HOME}, PWD: %{PWD}"]
 [global]
 timeout = 60
 workdir = "/tmp"
-env_allowlist = ["PATH", "HOME", "USER"]
+env_allowed = ["PATH", "HOME", "USER"]
 verify_files = ["/bin/sh"]
 
 [[groups]]
 name = "database_group"
 workdir = "/var/db"              # グローバルの /tmp をオーバーライド
-env_allowlist = ["PATH", "PGDATA"]  # グローバルを無視して独自の設定
+env_allowed = ["PATH", "PGDATA"]  # グローバルを無視して独自の設定
 verify_files = ["/usr/bin/psql"]   # グローバルの /bin/sh に追加
 
 [[groups.commands]]
@@ -266,14 +266,14 @@ cmd = "/usr/bin/pg_dump"
 args = ["-U", "postgres"]
 timeout = 300  # グローバルの 60 をオーバーライド
 # workdir は未指定 → グループの /var/db を使用
-# env_allowlist は未指定 → グループの ["PATH", "PGDATA"] を使用
+# env_allowed は未指定 → グループの ["PATH", "PGDATA"] を使用
 # verify_files: グローバルの ["/bin/sh"] とグループの ["/usr/bin/psql"] がマージされる
 ```
 
 この例では:
 - `workdir`: グループレベルで `/var/db` にオーバーライド
 - `timeout`: コマンドレベルで `300` にオーバーライド
-- `env_allowlist`: グループレベルで独自の設定を使用
+- `env_allowed`: グループレベルで独自の設定を使用
 - `verify_files`: グローバルとグループの設定がマージされる
 
 ### 2.3.7 セキュリティベストプラクティス: 環境変数の定義レベル
@@ -299,14 +299,14 @@ timeout = 300  # グローバルの 60 をオーバーライド
 [[groups.commands]]
 name = "db_backup"
 cmd = "/usr/bin/pg_dump"
-env = [
+env_vars = [
     "PGPASSWORD=secret",      # このコマンドのみで必要
     "PGHOST=localhost"
 ]
 
 # 非推奨: グローバルで全コマンドに機密情報を公開
 [global]
-env = ["PGPASSWORD=secret"]   # 全コマンドに渡される(危険)
+env_vars = ["PGPASSWORD=secret"]   # 全コマンドに渡される(危険)
 ```
 
 ##### 2. vars と env の使い分け
@@ -322,7 +322,7 @@ vars = [
 
 [[groups.commands]]
 name = "db_backup"
-env = ["PGPASSWORD=%{db_password}"]  # 必要なコマンドのみで env として公開
+env_vars = ["PGPASSWORD=%{db_password}"]  # 必要なコマンドのみで env として公開
 
 [[groups.commands]]
 name = "log_check"
@@ -337,7 +337,7 @@ args = ["ERROR", "%{app_dir}/logs/app.log"]
 
 ```toml
 [global]
-env = [
+env_vars = [
     "LANG=C",              # 安全: ロケール設定
     "TZ=UTC",              # 安全: タイムゾーン設定
     "LC_ALL=C"             # 安全: 言語設定
@@ -352,7 +352,7 @@ env = [
 ```toml
 [[groups]]
 name = "database_group"
-env = [
+env_vars = [
     "PGHOST=localhost",
     "PGPORT=5432",
     "PGDATABASE=production"
@@ -360,11 +360,11 @@ env = [
 
 [[groups.commands]]
 name = "backup"
-env = ["PGPASSWORD=backup_secret"]   # コマンド固有の機密情報
+env_vars = ["PGPASSWORD=backup_secret"]   # コマンド固有の機密情報
 
 [[groups.commands]]
 name = "analyze"
-env = ["PGPASSWORD=readonly_secret"] # 別のコマンドには別の認証情報
+env_vars = ["PGPASSWORD=readonly_secret"] # 別のコマンドには別の認証情報
 ```
 
 #### セキュリティチェックリスト
@@ -374,7 +374,7 @@ env = ["PGPASSWORD=readonly_secret"] # 別のコマンドには別の認証情�
 - [ ] 機密情報(パスワード、トークン等)をグローバルレベルで定義していないか
 - [ ] 各コマンドに必要な環境変数のみを定義しているか
 - [ ] 内部変数 `vars` で管理できる値を不必要に `env` で公開していないか
-- [ ] `env_allowlist` で必要最小限のシステム環境変数のみを許可しているか
+- [ ] `env_allowed` で必要最小限のシステム環境変数のみを許可しているか
 
 ## 次のステップ
 

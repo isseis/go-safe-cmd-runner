@@ -28,7 +28,7 @@ version = "1.0"
 timeout = 300
 workdir = "/tmp"
 log_level = "info"
-env_allowlist = ["PATH", "HOME"]
+env_allowed = ["PATH", "HOME"]
 
 [[groups]]
 name = "daily_backup"
@@ -44,7 +44,7 @@ args = [
     "config-backup.tar.gz",
     "/etc/myapp",
 ]
-max_risk_level = "medium"
+risk_level = "medium"
 timeout = 600
 
 [[groups.commands]]
@@ -56,7 +56,7 @@ args = [
     "logs-backup.tar.gz",
     "/var/log/myapp",
 ]
-max_risk_level = "medium"
+risk_level = "medium"
 timeout = 600
 
 [[groups.commands]]
@@ -64,7 +64,7 @@ name = "list_backups"
 description = "バックアップファイルの一覧表示"
 cmd = "/bin/ls"
 args = ["-lh", "*.tar.gz"]
-output = "backup-list.txt"
+output_file = "backup-list.txt"
 ```
 
 ## 8.2 セキュリティを重視した設定例
@@ -97,8 +97,8 @@ version = "1.0"
 timeout = 300
 workdir = "/opt/secure"
 log_level = "info"
-skip_standard_paths = false  # 全てのファイルを検証
-env_allowlist = ["PATH"]      # 最小限の環境変数
+verify_standard_paths = true  # 全てのファイルを検証
+env_allowed = ["PATH"]      # 最小限の環境変数
 verify_files = [
     "/bin/sh",
     "/bin/tar",
@@ -109,7 +109,7 @@ verify_files = [
 name = "secure_backup"
 description = "セキュアなバックアップ処理"
 workdir = "/var/secure/backups"
-env_allowlist = ["PATH", "GPG_KEY_ID"]
+env_allowed = ["PATH", "GPG_KEY_ID"]
 verify_files = [
     "/opt/secure/bin/backup-tool",
 ]
@@ -123,7 +123,7 @@ args = [
     "data-backup.tar.gz",
     "/opt/secure/data",
 ]
-max_risk_level = "medium"
+risk_level = "medium"
 timeout = 1800
 
 [[groups.commands]]
@@ -136,7 +136,7 @@ args = [
     "--recipient", "%{gpg_key_id}",
     "data-backup.tar.gz",
 ]
-max_risk_level = "medium"
+risk_level = "medium"
 
 [[groups.commands]]
 name = "verify_encrypted"
@@ -146,7 +146,7 @@ args = [
     "--verify",
     "data-backup.tar.gz.gpg",
 ]
-output = "verification-result.txt"
+output_file = "verification-result.txt"
 ```
 
 ## 8.3 リソース管理を含む設定例
@@ -161,7 +161,7 @@ version = "1.0"
 [global]
 timeout = 300
 log_level = "info"
-env_allowlist = ["PATH", "HOME"]
+env_allowed = ["PATH", "HOME"]
 
 [[groups]]
 name = "temp_processing"
@@ -176,7 +176,7 @@ args = [
     "-o", "data.csv",
     "https://example.com/data/export.csv",
 ]
-max_risk_level = "medium"
+risk_level = "medium"
 timeout = 600
 
 [[groups.commands]]
@@ -187,7 +187,7 @@ args = [
     "--input", "data.csv",
     "--output", "processed.csv",
 ]
-max_risk_level = "medium"
+risk_level = "medium"
 timeout = 900
 
 [[groups.commands]]
@@ -199,9 +199,9 @@ args = [
     "-F", "file=@processed.csv",
     "https://example.com/api/upload",
 ]
-max_risk_level = "medium"
+risk_level = "medium"
 timeout = 600
-output = "upload-response.txt"
+output_file = "upload-response.txt"
 
 # 一時ディレクトリは自動的に削除される
 ```
@@ -219,7 +219,7 @@ version = "1.0"
 timeout = 600
 workdir = "/tmp"
 log_level = "info"
-env_allowlist = ["PATH", "HOME"]
+env_allowed = ["PATH", "HOME"]
 verify_files = [
     "/usr/bin/apt-get",
     "/usr/bin/systemctl",
@@ -236,7 +236,7 @@ name = "check_disk_space"
 description = "ディスク使用量の確認"
 cmd = "/bin/df"
 args = ["-h"]
-output = "disk-usage.txt"
+output_file = "disk-usage.txt"
 
 # 特権タスク: パッケージの更新
 [[groups.commands]]
@@ -245,7 +245,7 @@ description = "パッケージリストの更新"
 cmd = "/usr/bin/apt-get"
 args = ["update"]
 run_as_user = "root"
-max_risk_level = "high"
+risk_level = "high"
 timeout = 900
 
 # 特権タスク: サービスの再起動
@@ -255,7 +255,7 @@ description = "アプリケーションサービスの再起動"
 cmd = "/usr/bin/systemctl"
 args = ["restart", "myapp.service"]
 run_as_user = "root"
-max_risk_level = "high"
+risk_level = "high"
 
 # 非特権タスク: サービス状態の確認
 [[groups.commands]]
@@ -263,7 +263,7 @@ name = "check_service_status"
 description = "サービス状態の確認"
 cmd = "/usr/bin/systemctl"
 args = ["status", "myapp.service"]
-output = "service-status.txt"
+output_file = "service-status.txt"
 ```
 
 ## 8.5 出力キャプチャを使用した設定例
@@ -279,8 +279,8 @@ version = "1.0"
 timeout = 300
 workdir = "/var/reports"
 log_level = "info"
-env_allowlist = ["PATH", "HOME"]
-max_output_size = 10485760  # 10MB
+env_allowed = ["PATH", "HOME"]
+output_size_limit = 10485760  # 10MB
 
 [[groups]]
 name = "system_report"
@@ -291,35 +291,35 @@ name = "disk_usage_report"
 description = "ディスク使用量レポート"
 cmd = "/bin/df"
 args = ["-h"]
-output = "reports/disk-usage.txt"
+output_file = "reports/disk-usage.txt"
 
 [[groups.commands]]
 name = "memory_report"
 description = "メモリ使用状況レポート"
 cmd = "/usr/bin/free"
 args = ["-h"]
-output = "reports/memory-usage.txt"
+output_file = "reports/memory-usage.txt"
 
 [[groups.commands]]
 name = "process_report"
 description = "プロセス一覧レポート"
 cmd = "/bin/ps"
 args = ["aux"]
-output = "reports/processes.txt"
+output_file = "reports/processes.txt"
 
 [[groups.commands]]
 name = "network_report"
 description = "ネットワーク接続状況レポート"
 cmd = "/bin/netstat"
 args = ["-tuln"]
-output = "reports/network-connections.txt"
+output_file = "reports/network-connections.txt"
 
 [[groups.commands]]
 name = "service_report"
 description = "サービス状態レポート"
 cmd = "/usr/bin/systemctl"
 args = ["list-units", "--type=service", "--state=running"]
-output = "reports/services.txt"
+output_file = "reports/services.txt"
 
 # レポートファイルのアーカイブ
 [[groups.commands]]
@@ -332,7 +332,7 @@ args = [
     "system-report-%{date}.tar.gz",
     "reports/",
 ]
-max_risk_level = "medium"
+risk_level = "medium"
 ```
 
 ## 8.6 変数展開を活用した設定例
@@ -347,7 +347,7 @@ version = "1.0"
 [global]
 timeout = 600
 log_level = "info"
-env_allowlist = ["PATH", "HOME"]
+env_allowed = ["PATH", "HOME"]
 
 # 開発環境
 [[groups]]
@@ -366,7 +366,7 @@ args = [
     "%{config_dir}/%{env_type}/app.yml",
     "/etc/myapp/app.yml",
 ]
-max_risk_level = "medium"
+risk_level = "medium"
 
 [[groups.commands]]
 name = "start_dev_server"
@@ -383,8 +383,8 @@ args = [
     "--port", "%{api_port}",
     "--database", "%{db_url}",
 ]
-env = ["DB_URL=%{db_url}"]
-max_risk_level = "high"
+env_vars = ["DB_URL=%{db_url}"]
+risk_level = "high"
 
 # ステージング環境
 [[groups]]
@@ -403,7 +403,7 @@ args = [
     "%{config_dir}/%{env_type}/app.yml",
     "/etc/myapp/app.yml",
 ]
-max_risk_level = "medium"
+risk_level = "medium"
 
 [[groups.commands]]
 name = "start_staging_server"
@@ -420,8 +420,8 @@ args = [
     "--port", "%{api_port}",
     "--database", "%{db_url}",
 ]
-env = ["DB_URL=%{db_url}"]
-max_risk_level = "high"
+env_vars = ["DB_URL=%{db_url}"]
+risk_level = "high"
 
 # 本番環境
 [[groups]]
@@ -440,7 +440,7 @@ args = [
     "%{config_dir}/%{env_type}/app.yml",
     "/etc/myapp/app.yml",
 ]
-max_risk_level = "medium"
+risk_level = "medium"
 
 [[groups.commands]]
 name = "start_prod_server"
@@ -457,9 +457,9 @@ args = [
     "--port", "%{api_port}",
     "--database", "%{db_url}",
 ]
-env = ["DB_URL=%{db_url}"]
+env_vars = ["DB_URL=%{db_url}"]
 run_as_user = "appuser"
-max_risk_level = "high"
+risk_level = "high"
 ```
 
 ## 8.7 複合的な設定例
@@ -500,8 +500,8 @@ version = "1.0"
 timeout = 900
 workdir = "/opt/deploy"
 log_level = "info"
-skip_standard_paths = true
-env_allowlist = [
+verify_standard_paths = false
+env_allowed = [
     "PATH",
     "HOME",
     "DB_USER",
@@ -510,7 +510,7 @@ env_allowlist = [
     "WEB_ROOT",
     "BACKUP_DIR",
 ]
-max_output_size = 52428800  # 50MB
+output_size_limit = 52428800  # 50MB
 
 # フェーズ1: 事前準備
 [[groups]]
@@ -533,7 +533,7 @@ args = [
     "%{backup_dir}/app-backup-%{timestamp}.tar.gz",
     "%{app_dir}",
 ]
-max_risk_level = "medium"
+risk_level = "medium"
 timeout = 1800
 
 [[groups.commands]]
@@ -541,14 +541,14 @@ name = "check_dependencies"
 description = "依存関係の確認"
 cmd = "/usr/bin/dpkg"
 args = ["-l"]
-output = "installed-packages.txt"
+output_file = "installed-packages.txt"
 
 # フェーズ2: データベース更新
 [[groups]]
 name = "database_migration"
 description = "データベーススキーマの更新"
 priority = 2
-env_allowlist = ["PATH", "DB_USER", "DB_NAME", "PGPASSWORD"]
+env_allowed = ["PATH", "DB_USER", "DB_NAME", "PGPASSWORD"]
 verify_files = ["/usr/bin/psql", "/usr/bin/pg_dump"]
 
 [[groups.commands]]
@@ -560,16 +560,16 @@ vars = [
     "db_name=myapp_db",
     "timestamp=2025-10-02-120000",
 ]
-env = ["PGPASSWORD=secret123"]
+env_vars = ["PGPASSWORD=secret123"]
 args = [
     "-U", "%{db_user}",
     "-d", "%{db_name}",
     "-F", "c",
     "-f", "/var/backups/db/backup-%{timestamp}.dump",
 ]
-max_risk_level = "medium"
+risk_level = "medium"
 timeout = 1800
-output = "db-backup-log.txt"
+output_file = "db-backup-log.txt"
 
 [[groups.commands]]
 name = "run_migrations"
@@ -583,7 +583,7 @@ args = [
     "--database", "postgresql://%{db_user}@localhost/%{db_name}",
     "--migrations", "/opt/myapp/migrations",
 ]
-max_risk_level = "high"
+risk_level = "high"
 timeout = 600
 
 # フェーズ3: アプリケーションデプロイ
@@ -599,7 +599,7 @@ description = "アプリケーションの停止"
 cmd = "/usr/bin/systemctl"
 args = ["stop", "myapp.service"]
 run_as_user = "root"
-max_risk_level = "high"
+risk_level = "high"
 
 [[groups.commands]]
 name = "deploy_new_version"
@@ -610,7 +610,7 @@ args = [
     "/opt/deploy/releases/myapp-v2.0.0.tar.gz",
     "-C", "/opt/myapp",
 ]
-max_risk_level = "medium"
+risk_level = "medium"
 
 [[groups.commands]]
 name = "install_dependencies"
@@ -620,7 +620,7 @@ args = [
     "install",
     "-r", "/opt/myapp/requirements.txt",
 ]
-max_risk_level = "high"
+risk_level = "high"
 timeout = 600
 
 [[groups.commands]]
@@ -629,7 +629,7 @@ description = "アプリケーションの起動"
 cmd = "/usr/bin/systemctl"
 args = ["start", "myapp.service"]
 run_as_user = "root"
-max_risk_level = "high"
+risk_level = "high"
 
 # フェーズ4: Webサーバー設定更新
 [[groups]]
@@ -646,7 +646,7 @@ args = [
     "/etc/nginx/sites-available/myapp.conf",
 ]
 run_as_user = "root"
-max_risk_level = "high"
+risk_level = "high"
 
 [[groups.commands]]
 name = "test_nginx_config"
@@ -654,8 +654,8 @@ description = "Nginx設定の検証"
 cmd = "/usr/bin/nginx"
 args = ["-t"]
 run_as_user = "root"
-max_risk_level = "medium"
-output = "nginx-config-test.txt"
+risk_level = "medium"
+output_file = "nginx-config-test.txt"
 
 [[groups.commands]]
 name = "reload_nginx"
@@ -663,7 +663,7 @@ description = "Nginxの再読み込み"
 cmd = "/usr/bin/systemctl"
 args = ["reload", "nginx"]
 run_as_user = "root"
-max_risk_level = "high"
+risk_level = "high"
 
 # フェーズ5: デプロイ検証
 [[groups]]
@@ -681,7 +681,7 @@ args = [
     "http://localhost:8080/health",
 ]
 timeout = 30
-output = "health-check-result.txt"
+output_file = "health-check-result.txt"
 
 [[groups.commands]]
 name = "smoke_test"
@@ -692,7 +692,7 @@ args = [
     "-s",
     "http://localhost:8080/api/status",
 ]
-output = "smoke-test-result.txt"
+output_file = "smoke-test-result.txt"
 
 [[groups.commands]]
 name = "verify_database_connection"
@@ -707,7 +707,7 @@ args = [
     "-d", "%{db_name}",
     "-c", "SELECT version();",
 ]
-output = "db-connection-test.txt"
+output_file = "db-connection-test.txt"
 
 # フェーズ6: 後処理とレポート
 [[groups]]
@@ -731,7 +731,7 @@ name = "cleanup_temp_files"
 description = "一時ファイルの削除"
 cmd = "/bin/rm"
 args = ["-rf", "/opt/deploy/temp"]
-max_risk_level = "medium"
+risk_level = "medium"
 
 [[groups.commands]]
 name = "send_notification"
@@ -755,7 +755,7 @@ version = "1.0"
 [global]
 timeout = 300
 log_level = "info"
-env_allowlist = ["PATH", "HOME"]
+env_allowed = ["PATH", "HOME"]
 
 [[groups]]
 name = "risk_controlled_operations"
@@ -767,7 +767,7 @@ name = "read_config"
 description = "設定ファイルの読み取り"
 cmd = "/bin/cat"
 args = ["/etc/myapp/config.yml"]
-output = "config-content.txt"
+output_file = "config-content.txt"
 
 # 中リスク: ファイル作成・変更
 [[groups.commands]]
@@ -775,7 +775,7 @@ name = "update_cache"
 description = "キャッシュファイルの更新"
 cmd = "/opt/myapp/update-cache"
 args = ["--refresh"]
-max_risk_level = "medium"
+risk_level = "medium"
 
 # 高リスク: システム変更
 [[groups.commands]]
@@ -784,7 +784,7 @@ description = "システムパッケージの更新"
 cmd = "/usr/bin/apt-get"
 args = ["upgrade", "-y"]
 run_as_user = "root"
-max_risk_level = "high"
+risk_level = "high"
 timeout = 1800
 
 # リスクレベル超過で実行拒否される例
@@ -793,7 +793,7 @@ name = "dangerous_deletion"
 description = "大量削除(デフォルトリスクレベルでは実行不可)"
 cmd = "/bin/rm"
 args = ["-rf", "/tmp/old-data"]
-# max_risk_level のデフォルトは "low"
+# risk_level のデフォルトは "low"
 # rm -rf は中リスク以上が必要 → 実行拒否される
 ```
 

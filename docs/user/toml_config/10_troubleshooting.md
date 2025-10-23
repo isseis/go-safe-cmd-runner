@@ -96,31 +96,31 @@ args = ["-czf", "backup.tar.gz", "/data"]
 #### Error Example
 
 ```
-Error: environment variable 'CUSTOM_VAR' is not allowed by env_allowlist
+Error: environment variable 'CUSTOM_VAR' is not allowed by env_allowed
 ```
 
 #### Cause
 
-The environment variable being used is not included in `env_allowlist`.
+The environment variable being used is not included in `env_allowed`.
 
 #### Solution
 
-**Method 1**: Add to global or group's `env_allowlist`
+**Method 1**: Add to global or group's `env_allowed`
 
 ```toml
 [global]
-env_allowlist = ["PATH", "HOME", "CUSTOM_VAR"]  # Add CUSTOM_VAR
+env_allowed = ["PATH", "HOME", "CUSTOM_VAR"]  # Add CUSTOM_VAR
 ```
 
 **Method 2**: Define in Command.Env (recommended)
 
 ```toml
-# No need to add to env_allowlist
+# No need to add to env_allowed
 [[groups.commands]]
 name = "custom_command"
 cmd = "${CUSTOM_TOOL}"
 args = []
-env = ["CUSTOM_TOOL=/opt/tools/mytool"]  # Define in Command.Env
+env_vars = ["CUSTOM_TOOL=/opt/tools/mytool"]  # Define in Command.Env
 ```
 
 ### 10.1.5 Variable Expansion Error
@@ -153,20 +153,20 @@ args = []
 name = "run_tool"
 cmd = "${TOOL_DIR}/mytool"
 args = []
-env = ["TOOL_DIR=/opt/tools"]
+env_vars = ["TOOL_DIR=/opt/tools"]
 ```
 
 **For circular references**:
 
 ```toml
 # Wrong: Circular reference
-env = [
+env_vars = [
     "VAR1=${VAR2}",
     "VAR2=${VAR1}",
 ]
 
 # Correct: Resolve the circular reference
-env = [
+env_vars = [
     "VAR1=/path/to/dir",
     "VAR2=${VAR1}/subdir",
 ]
@@ -312,29 +312,29 @@ sudo go-safe-cmd-runner -file config.toml
 #### Error Example
 
 ```
-Error: command risk level exceeds maximum: command risk=medium, max_risk_level=low
+Error: command risk level exceeds maximum: command risk=medium, risk_level=low
 ```
 
 #### Cause
 
-Command risk level exceeds `max_risk_level`.
+Command risk level exceeds `risk_level`.
 
 #### Solution
 
 ```toml
-# Method 1: Increase max_risk_level
+# Method 1: Increase risk_level
 [[groups.commands]]
 name = "risky_command"
 cmd = "/bin/rm"
 args = ["-rf", "/tmp/data"]
-max_risk_level = "medium"  # Change low → medium
+risk_level = "medium"  # Change low → medium
 
 # Method 2: Change to safer command
 [[groups.commands]]
 name = "safer_command"
 cmd = "/bin/rm"
 args = ["/tmp/data/specific-file.txt"]  # Remove -rf
-max_risk_level = "low"
+risk_level = "low"
 ```
 
 ## 10.2 Configuration Validation Methods
@@ -379,7 +379,7 @@ go-safe-cmd-runner -file minimal.toml
 name = "with_variables"
 cmd = "/bin/echo"
 args = ["Value: ${VAR}"]
-env = ["VAR=hello"]
+env_vars = ["VAR=hello"]
 ```
 
 ```bash
@@ -424,12 +424,12 @@ args = [
     "CONFIG=${CONFIG}",
     "ENV=${ENV_TYPE}",
 ]
-env = [
+env_vars = [
     "TOOL_DIR=/opt/tools",
     "CONFIG=/etc/app/config.yml",
     "ENV_TYPE=production",
 ]
-output = "debug-vars.txt"
+output_file = "debug-vars.txt"
 ```
 
 After execution, check `debug-vars.txt`:
@@ -446,7 +446,7 @@ Save command output to examine details:
 name = "diagnose"
 cmd = "/usr/bin/systemctl"
 args = ["status", "myapp.service"]
-output = "service-status.txt"
+output_file = "service-status.txt"
 ```
 
 After execution, check output file:
@@ -469,7 +469,7 @@ name = "test_single_command"
 name = "problematic_command"
 cmd = "/usr/bin/tool"
 args = ["--option", "value"]
-env = ["CUSTOM_VAR=test"]
+env_vars = ["CUSTOM_VAR=test"]
 ```
 
 ### 10.3.4 Utilizing Dry Run
@@ -499,13 +499,13 @@ Diagnose permission-related issues:
 name = "check_permissions"
 cmd = "/usr/bin/id"
 args = []
-output = "current-user.txt"
+output_file = "current-user.txt"
 
 [[groups.commands]]
 name = "check_file_access"
 cmd = "/bin/ls"
 args = ["-la", "/path/to/file"]
-output = "file-permissions.txt"
+output_file = "file-permissions.txt"
 ```
 
 ### 10.3.6 Checking Environment Variables
@@ -517,7 +517,7 @@ Diagnose environment variable state:
 name = "dump_env"
 cmd = "/usr/bin/env"
 args = []
-output = "environment.txt"
+output_file = "environment.txt"
 ```
 
 ## 10.4 Performance Issues
@@ -534,7 +534,7 @@ output = "environment.txt"
 ```toml
 # Skip standard path verification
 [global]
-skip_standard_paths = true
+verify_standard_paths = false
 
 # Verify only minimum necessary files
 verify_files = [
@@ -573,19 +573,19 @@ args = ["Processing..."]
 
 **Q**: `${HOME}` is not expanded and is treated as a literal string.
 
-**A**: Environment variables must be included in `env_allowlist` or defined in `Command.Env`.
+**A**: Environment variables must be included in `env_allowed` or defined in `Command.Env`.
 
 ```toml
-# Method 1: Add to env_allowlist
+# Method 1: Add to env_allowed
 [global]
-env_allowlist = ["PATH", "HOME"]
+env_allowed = ["PATH", "HOME"]
 
 # Method 2: Define in Command.Env (recommended)
 [[groups.commands]]
 name = "test"
 cmd = "/bin/echo"
 args = ["${MY_HOME}"]
-env = ["MY_HOME=/home/user"]
+env_vars = ["MY_HOME=/home/user"]
 ```
 
 ### Q2: Command not found
@@ -600,7 +600,7 @@ cmd = "/usr/bin/tool"
 
 # Or: Check PATH
 [global]
-env_allowlist = ["PATH"]
+env_allowed = ["PATH"]
 ```
 
 ### Q3: File verification fails

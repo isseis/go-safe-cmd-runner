@@ -275,7 +275,7 @@ Skips file verification for standard system paths (`/bin`, `/usr/bin`, etc.).
 
 ```toml
 [global]
-skip_standard_paths = true/false
+verify_standard_paths = false/false
 ```
 
 ### Parameter Details
@@ -301,7 +301,7 @@ skip_standard_paths = true/false
 version = "1.0"
 
 [global]
-skip_standard_paths = true  # Skip verification of /bin, /usr/bin, etc.
+verify_standard_paths = false  # Skip verification of /bin, /usr/bin, etc.
 
 [[groups]]
 name = "system_commands"
@@ -318,7 +318,7 @@ args = ["-la"]
 version = "1.0"
 
 [global]
-skip_standard_paths = false  # Or omit
+verify_standard_paths = true  # Or omit
 verify_files = ["/etc/app/config.ini"]  # Add additional configuration file to verify
 
 [[groups]]
@@ -333,7 +333,7 @@ args = ["pattern", "file.txt"]
 
 ### Security Notice
 
-Setting `skip_standard_paths = true` will not detect tampering of commands in standard paths. For environments with high security requirements, it is recommended to keep it as `false` (default).
+Setting `verify_standard_paths = false` will not detect tampering of commands in standard paths. For environments with high security requirements, it is recommended to keep it as `false` (default).
 
 ## 4.5 vars - Global Internal Variables
 
@@ -424,7 +424,7 @@ vars = [
     "app_dir=/opt/myapp",
     "config_path=%{app_dir}/config.yml"
 ]
-env = [
+env_vars = [
     "APP_HOME=%{app_dir}",           # Define process environment variable using internal variable
     "CONFIG_FILE=%{config_path}"     # Pass config file path as environment variable
 ]
@@ -482,7 +482,7 @@ To pass to child process, explicitly define in `env` field:
 ```toml
 [global]
 vars = ["secret_key=abc123"]
-env = ["SECRET_KEY=%{secret_key}"]  # Define process environment variable using internal variable
+env_vars = ["SECRET_KEY=%{secret_key}"]  # Define process environment variable using internal variable
 
 [[groups.commands]]
 name = "test"
@@ -523,7 +523,7 @@ cmd = "%{undefined_var}/tool"  # Error: undefined_var is not defined
 3. **Hierarchical Structure**: Build hierarchical paths using nested variable references
 4. **Security**: Manage sensitive information in vars and expose via env only when necessary
 
-## 4.6 from_env - System Environment Variable Import
+## 4.6 env_import - System Environment Variable Import
 
 ### Overview
 
@@ -533,7 +533,7 @@ Explicitly imports system environment variables as internal variables. Imported 
 
 ```toml
 [global]
-from_env = ["internal_var_name=SYSTEM_ENV_VAR_NAME", ...]
+env_import = ["internal_var_name=SYSTEM_ENV_VAR_NAME", ...]
 ```
 
 ### Parameter Details
@@ -545,7 +545,7 @@ from_env = ["internal_var_name=SYSTEM_ENV_VAR_NAME", ...]
 | **Configurable Level** | Global, Group |
 | **Default Value** | [] (no imports) |
 | **Format** | `"internal_var_name=SYSTEM_ENV_VAR_NAME"` format |
-| **Security Constraint** | Only variables included in `env_allowlist` can be imported |
+| **Security Constraint** | Only variables included in `env_allowed` can be imported |
 
 ### Role
 
@@ -561,8 +561,8 @@ from_env = ["internal_var_name=SYSTEM_ENV_VAR_NAME", ...]
 version = "1.0"
 
 [global]
-env_allowlist = ["HOME", "USER"]
-from_env = [
+env_allowed = ["HOME", "USER"]
+env_import = [
     "home=HOME",
     "username=USER"
 ]
@@ -583,8 +583,8 @@ args = ["%{config_file}"]
 version = "1.0"
 
 [global]
-env_allowlist = ["PATH", "HOME"]
-from_env = [
+env_allowed = ["PATH", "HOME"]
+env_import = [
     "user_path=PATH",
     "home=HOME"
 ]
@@ -597,7 +597,7 @@ vars = [
 name = "run_tool"
 cmd = "/bin/sh"
 args = ["-c", "echo Path: %{extended_path}"]
-env = ["PATH=%{extended_path}"]
+env_vars = ["PATH=%{extended_path}"]
 ```
 
 #### Example 3: Environment-Specific Configuration
@@ -606,8 +606,8 @@ env = ["PATH=%{extended_path}"]
 version = "1.0"
 
 [global]
-env_allowlist = ["APP_ENV"]
-from_env = ["environment=APP_ENV"]
+env_allowed = ["APP_ENV"]
+env_import = ["environment=APP_ENV"]
 vars = [
     "config_dir=/etc/myapp/%{environment}",
     "log_level=%{environment}"  # Log level depends on environment
@@ -622,12 +622,12 @@ args = ["--config", "%{config_dir}/app.yml", "--log-level", "%{log_level}"]
 
 ### Security Constraint
 
-System environment variables referenced in `from_env` must be included in `env_allowlist`:
+System environment variables referenced in `env_import` must be included in `env_allowed`:
 
 ```toml
 [global]
-env_allowlist = ["HOME"]
-from_env = [
+env_allowed = ["HOME"]
+env_import = [
     "home=HOME",    # OK: HOME is in allowlist
     "path=PATH"     # Error: PATH is not in allowlist
 ]
@@ -635,7 +635,7 @@ from_env = [
 
 Error message example:
 ```
-system environment variable 'PATH' (mapped to 'path' in global.from_env) is not in env_allowlist: [HOME]
+system environment variable 'PATH' (mapped to 'path' in global.env_import) is not in env_allowed: [HOME]
 ```
 
 ### Variable Name Mapping
@@ -644,8 +644,8 @@ Different names can be used for left side (internal variable name) and right sid
 
 ```toml
 [global]
-env_allowlist = ["HOME", "USER", "HOSTNAME"]
-from_env = [
+env_allowed = ["HOME", "USER", "HOSTNAME"]
+env_import = [
     "user_home=HOME",       # Reference HOME as user_home
     "current_user=USER",    # Reference USER as current_user
     "host=HOSTNAME"         # Reference HOSTNAME as host
@@ -665,8 +665,8 @@ If a system environment variable does not exist, a warning is displayed and empt
 
 ```toml
 [global]
-env_allowlist = ["NONEXISTENT_VAR"]
-from_env = ["var=NONEXISTENT_VAR"]
+env_allowed = ["NONEXISTENT_VAR"]
+env_import = ["var=NONEXISTENT_VAR"]
 # Warning: System environment variable 'NONEXISTENT_VAR' is not set
 # var is set to empty string
 ```
@@ -677,8 +677,8 @@ Internal variable names (left side) must follow POSIX naming convention:
 
 ```toml
 [global]
-env_allowlist = ["HOME"]
-from_env = [
+env_allowed = ["HOME"]
+env_import = [
     "home=HOME",            # Correct
     "user_home=HOME",       # Correct
     "HOME=HOME",            # Correct (uppercase allowed)
@@ -692,7 +692,7 @@ from_env = [
 
 1. **Lowercase Recommended**: Use lowercase and underscores for internal variable names (e.g., `home`, `user_path`)
 2. **Explicit Import**: Import only necessary environment variables explicitly
-3. **Use with Allowlist**: Import only variables allowed in env_allowlist
+3. **Use with Allowlist**: Import only variables allowed in env_allowed
 4. **Clear Naming**: Use names that clearly distinguish between system environment variable names and internal variable names
 
 ## 4.7 env - Global Process Environment Variables
@@ -705,7 +705,7 @@ Defines process environment variables that are commonly used across all groups a
 
 ```toml
 [global]
-env = ["KEY1=value1", "KEY2=value2", ...]
+env_vars = ["KEY1=value1", "KEY2=value2", ...]
 ```
 
 ### Parameter Details
@@ -739,7 +739,7 @@ vars = [
     "app_dir=/opt/app",
     "log_level=info"
 ]
-env = [
+env_vars = [
     "APP_HOME=%{app_dir}",
     "LOG_LEVEL=%{log_level}",
     "CONFIG_FILE=%{app_dir}/config.yaml"
@@ -763,7 +763,7 @@ vars = [
     "app_root=%{base}/myapp",
     "data_dir=%{app_root}/data"
 ]
-env = [
+env_vars = [
     "APP_ROOT=%{app_root}",
     "DATA_PATH=%{data_dir}",
     "BIN_PATH=%{app_root}/bin"
@@ -782,15 +782,15 @@ args = []
 version = "1.0"
 
 [global]
-env_allowlist = ["HOME", "USER"]
-from_env = [
+env_allowed = ["HOME", "USER"]
+env_import = [
     "home=HOME",
     "username=USER"
 ]
 vars = [
     "log_dir=%{home}/logs"
 ]
-env = [
+env_vars = [
     "USER_NAME=%{username}",
     "LOG_DIRECTORY=%{log_dir}"
 ]
@@ -815,7 +815,7 @@ When the same environment variable is defined at multiple levels, the more speci
 ```toml
 [global]
 vars = ["base=global_value"]
-env = [
+env_vars = [
     "COMMON_VAR=%{base}",
     "GLOBAL_ONLY=from_global"
 ]
@@ -823,12 +823,12 @@ env = [
 [[groups]]
 name = "example"
 vars = ["base=group_value"]
-env = ["COMMON_VAR=%{base}"]    # Overrides Global.env
+env_vars = ["COMMON_VAR=%{base}"]    # Overrides Global.env
 
 [[groups.commands]]
 name = "cmd1"
 vars = ["base=command_value"]
-env = ["COMMON_VAR=%{base}"]    # Overrides Group.env
+env_vars = ["COMMON_VAR=%{base}"]    # Overrides Group.env
 
 # Runtime environment variables:
 # COMMON_VAR=command_value (command level takes priority)
@@ -839,12 +839,12 @@ env = ["COMMON_VAR=%{base}"]    # Overrides Group.env
 
 - **env values**: Can use internal variables `%{VAR}`
 - **Propagation to Child Processes**: Environment variables defined in env are passed to child processes
-- **Internal Variables Not Propagated**: Internal variables defined in vars or from_env are not passed to child processes by default
+- **Internal Variables Not Propagated**: Internal variables defined in vars or env_import are not passed to child processes by default
 
 ```toml
 [global]
 vars = ["internal_value=secret"]     # Internal variable only
-env = ["PUBLIC_VAR=%{internal_value}"]  # Define process environment variable using internal variable
+env_vars = ["PUBLIC_VAR=%{internal_value}"]  # Define process environment variable using internal variable
 
 [[groups.commands]]
 name = "test"
@@ -860,7 +860,7 @@ Environment variable names (KEY part) must follow these rules:
 ```toml
 [global]
 vars = ["internal=value"]
-env = [
+env_vars = [
     "VALID_NAME=value",      # Correct: uppercase letters, numbers, underscores
     "MY_VAR_123=value",      # Correct
     "123INVALID=value",      # Error: starts with number
@@ -875,7 +875,7 @@ Defining the same KEY multiple times results in an error:
 
 ```toml
 [global]
-env = [
+env_vars = [
     "VAR=value1",
     "VAR=value2",  # Error: duplicate definition
 ]
@@ -885,20 +885,20 @@ env = [
 
 1. **Hierarchical Definition**: Define base paths first, then reference them for derived paths
 2. **Proper Allowlist Settings**: Always add to allowlist when referencing system environment variables
-3. **Configuration Reuse**: Leverage vars and from_env to avoid hardcoding values
+3. **Configuration Reuse**: Leverage vars and env_import to avoid hardcoding values
 4. **Clear Variable Names**: Use descriptive names for environment variables
 
 ```toml
 # Recommended configuration
 [global]
-env_allowlist = ["HOME", "PATH"]
-from_env = ["home=HOME"]
+env_allowed = ["HOME", "PATH"]
+env_import = ["home=HOME"]
 vars = [
     "app_root=/opt/myapp",
     "data_dir=%{app_root}/data",
     "log_dir=%{app_root}/logs"
 ]
-env = [
+env_vars = [
     "APP_ROOT=%{app_root}",
     "DATA_DIR=%{data_dir}",
     "LOG_DIR=%{log_dir}",
@@ -906,7 +906,7 @@ env = [
 ]
 ```
 
-## 4.8 env_allowlist - Environment Variable Allowlist
+## 4.8 env_allowed - Environment Variable Allowlist
 
 ### Overview
 
@@ -916,7 +916,7 @@ Specifies environment variables allowed to be used during command execution. All
 
 ```toml
 [global]
-env_allowlist = ["variable1", "variable2", ...]
+env_allowed = ["variable1", "variable2", ...]
 ```
 
 ### Parameter Details
@@ -944,7 +944,7 @@ env_allowlist = ["variable1", "variable2", ...]
 version = "1.0"
 
 [global]
-env_allowlist = [
+env_allowed = [
     "PATH",    # Command search path
     "HOME",    # Home directory
     "USER",    # Username
@@ -967,7 +967,7 @@ args = []
 version = "1.0"
 
 [global]
-env_allowlist = [
+env_allowed = [
     "PATH",
     "HOME",
     "APP_CONFIG_DIR",   # App configuration directory
@@ -982,7 +982,7 @@ name = "app_tasks"
 name = "run_app"
 cmd = "/opt/myapp/bin/app"
 args = ["--config", "%{APP_CONFIG_DIR}/config.yaml"]
-env = ["APP_CONFIG_DIR=/etc/myapp"]
+env_vars = ["APP_CONFIG_DIR=/etc/myapp"]
 ```
 
 #### Example 3: Empty List (Deny All)
@@ -991,7 +991,7 @@ env = ["APP_CONFIG_DIR=/etc/myapp"]
 version = "1.0"
 
 [global]
-env_allowlist = []  # Deny all environment variables
+env_allowed = []  # Deny all environment variables
 
 [[groups]]
 name = "isolated_tasks"
@@ -1023,7 +1023,7 @@ args = ["Hello"]
 ```toml
 # Not recommended: overly permissive
 [global]
-env_allowlist = [
+env_allowed = [
     "PATH", "HOME", "USER", "SHELL", "EDITOR", "PAGER",
     "MAIL", "LOGNAME", "HOSTNAME", "DISPLAY", "XAUTHORITY",
     # ... too many
@@ -1031,7 +1031,7 @@ env_allowlist = [
 
 # Recommended: minimal necessary
 [global]
-env_allowlist = ["PATH", "HOME", "USER"]
+env_allowed = ["PATH", "HOME", "USER"]
 ```
 
 ## 4.9 verify_files - File Verification List
@@ -1144,7 +1144,7 @@ If the hash of a specified file has not been recorded in advance, a verification
 - **Performance**: File hash verification operates efficiently with minimal performance impact
 - **Tampering Detection**: Increasing verification targets enhances protection against system compromise
 
-## 4.10 max_output_size - Maximum Output Size
+## 4.10 output_size_limit - Maximum Output Size
 
 ### Overview
 
@@ -1154,7 +1154,7 @@ Specifies the maximum size in bytes when capturing command standard output.
 
 ```toml
 [global]
-max_output_size = bytes
+output_size_limit = bytes
 ```
 
 ### Parameter Details
@@ -1182,7 +1182,7 @@ max_output_size = bytes
 version = "1.0"
 
 [global]
-max_output_size = 1048576  # 1MB = 1024 * 1024 bytes
+output_size_limit = 1048576  # 1MB = 1024 * 1024 bytes
 
 [[groups]]
 name = "log_analysis"
@@ -1191,7 +1191,7 @@ name = "log_analysis"
 name = "grep_logs"
 cmd = "grep"
 args = ["ERROR", "/var/log/app.log"]
-output = "errors.txt"
+output_file = "errors.txt"
 # Error if output exceeds 1MB
 ```
 
@@ -1201,7 +1201,7 @@ output = "errors.txt"
 version = "1.0"
 
 [global]
-max_output_size = 104857600  # 100MB = 100 * 1024 * 1024 bytes
+output_size_limit = 104857600  # 100MB = 100 * 1024 * 1024 bytes
 
 [[groups]]
 name = "data_export"
@@ -1210,7 +1210,7 @@ name = "data_export"
 name = "export_database"
 cmd = "/usr/bin/pg_dump"
 args = ["large_db"]
-output = "database_dump.sql"
+output_file = "database_dump.sql"
 # Allow large database dumps
 ```
 
@@ -1219,10 +1219,10 @@ output = "database_dump.sql"
 ```toml
 [global]
 # Recommended values based on common use cases
-max_output_size = 1048576      # 1MB  - log analysis, small-scale data
-max_output_size = 10485760     # 10MB - default, medium-scale data
-max_output_size = 104857600    # 100MB - large-scale data, database dumps
-max_output_size = 1073741824   # 1GB  - very large data (caution required)
+output_size_limit = 1048576      # 1MB  - log analysis, small-scale data
+output_size_limit = 10485760     # 10MB - default, medium-scale data
+output_size_limit = 104857600    # 100MB - large-scale data, database dumps
+output_size_limit = 1073741824   # 1GB  - very large data (caution required)
 ```
 
 ### Behavior When Limit is Exceeded
@@ -1241,11 +1241,11 @@ When output size exceeds the limit:
 ```toml
 # Not recommended: limit too small
 [global]
-max_output_size = 1024  # 1KB - insufficient for most commands
+output_size_limit = 1024  # 1KB - insufficient for most commands
 
 # Recommended: appropriate limit
 [global]
-max_output_size = 10485760  # 10MB - appropriate for general use
+output_size_limit = 10485760  # 10MB - appropriate for general use
 ```
 
 ## Overall Configuration Example
@@ -1266,10 +1266,10 @@ workdir = "/var/app/workspace"
 log_level = "info"
 
 # Skip standard path verification
-skip_standard_paths = true
+verify_standard_paths = false
 
 # Environment variable allowlist
-env_allowlist = [
+env_allowed = [
     "PATH",
     "HOME",
     "USER",
@@ -1285,7 +1285,7 @@ verify_files = [
 ]
 
 # Output size limit
-max_output_size = 10485760  # 10MB
+output_size_limit = 10485760  # 10MB
 
 [[groups]]
 name = "application_tasks"
