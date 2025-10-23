@@ -45,7 +45,7 @@
 | run_as_user | string | - | "" | 実行ユーザー |
 | run_as_group | string | - | "" | 実行グループ |
 | risk_level | string | - | "low" | 最大リスクレベル(low/medium/high) |
-| output | string | - | "" | 標準出力の保存先ファイルパス |
+| output_file | string | - | "" | 標準出力の保存先ファイルパス |
 
 ### A.5 環境変数継承モード
 
