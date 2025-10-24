@@ -84,7 +84,7 @@ type Timeout struct {
 - `GlobalSpec.Timeout` を `common.Timeout` に変更
 - `CommandSpec.Timeout` を `common.Timeout` に変更
 
-**target file**: `internal/common/validation.go` (既存)
+**target file**: `internal/common/validation.go` (既存 - Phase 2 で削除予定)
 ```go
 // ErrInvalidTimeout is returned when an invalid timeout value is encountered
 type ErrInvalidTimeout struct {
@@ -95,6 +95,8 @@ type ErrInvalidTimeout struct {
 // ValidateTimeout validates timeout configuration (legacy support)
 func ValidateTimeout(timeout *int, context string) error
 ```
+
+**注**: `validation.go` は Phase 1 では既存のまま維持されるが、Phase 2 で `ErrInvalidTimeout` を `timeout.go` に移動し、このファイルは削除される。
 
 #### 3.1.2. 実装チェックポイント
 - [x] Timeout型定義が正しく作成されている
@@ -123,10 +125,21 @@ type TimeoutResolutionContext struct {
 - `RuntimeCommand` 構造体に `EffectiveTimeout` フィールド追加
 - `NewRuntimeCommand` 関数でタイムアウト解決実装
 
+**target file**: `internal/common/timeout.go` (修正)
+- `ErrInvalidTimeout` 型定義を `validation.go` から移動
+- エラー型をタイムアウト関連コードと同じファイルに集約
+
+**target file**: `internal/common/validation.go` (削除)
+- `ErrInvalidTimeout` を `timeout.go` に移動後、このファイルを削除
+- `ValidateTimeout` 関数は使用されていないため削除
+- タイムアウト関連コードを `timeout.go` に集約することで保守性を向上
+
 #### 3.2.2. 実装チェックポイント
 - [ ] タイムアウト解決アルゴリズムが正しく動作する
 - [ ] 階層継承ロジックが仕様通りに実装されている
 - [ ] RuntimeCommand にタイムアウト値が正しく設定される
+- [ ] `ErrInvalidTimeout` が `timeout.go` に移動されている
+- [ ] `validation.go` が削除され、既存のビルドが通る
 
 ### 3.3. Phase 3: 実行制御実装
 
