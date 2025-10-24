@@ -138,8 +138,8 @@ type TimeoutResolutionContext struct {
 - [x] タイムアウト解決アルゴリズムが正しく動作する
 - [x] 階層継承ロジックが仕様通りに実装されている
 - [x] RuntimeCommand にタイムアウト値が正しく設定される
-- [ ] `ErrInvalidTimeout` が `timeout.go` に移動されている
-- [ ] `validation.go` が削除され、既存のビルドが通る
+- [x] `ErrInvalidTimeout` が `timeout.go` に移動されている
+- [x] `validation.go` が削除され、既存のビルドが通る
 
 ### 3.3. Phase 3: 実行制御実装
 
@@ -415,9 +415,9 @@ See `docs/migration/v2.0.0_timeout_changes.md` for detailed migration instructio
 - [x] Timeout型定義がコンパイルエラーなく動作
 
 #### Phase 2 完了基準
-- [ ] タイムアウト解決ロジックが仕様通り動作
-- [ ] RuntimeCommand にタイムアウト値が正しく設定
-- [ ] 階層継承テストが全てパス
+- [x] タイムアウト解決ロジックが仕様通り動作
+- [x] RuntimeCommand にタイムアウト値が正しく設定
+- [x] 階層継承テストが全てパス
 
 #### Phase 3 完了基準
 - [ ] 無制限実行が正常動作
