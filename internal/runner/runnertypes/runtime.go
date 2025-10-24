@@ -21,6 +21,9 @@ type RuntimeGlobal struct {
 	// Spec is a reference to the original spec loaded from TOML (must be non-nil)
 	Spec *GlobalSpec
 
+	// timeout is the converted Timeout value from Spec.Timeout
+	timeout common.Timeout
+
 	// ExpandedVerifyFiles contains the list of files to verify with variables expanded
 	ExpandedVerifyFiles []string
 
@@ -37,8 +40,10 @@ func NewRuntimeGlobal(spec *GlobalSpec) (*RuntimeGlobal, error) {
 	if spec == nil {
 		return nil, ErrNilSpec
 	}
+
 	return &RuntimeGlobal{
 		Spec:                spec,
+		timeout:             common.NewFromIntPtr(spec.Timeout),
 		ExpandedVerifyFiles: []string{},
 		ExpandedEnv:         make(map[string]string),
 		ExpandedVars:        make(map[string]string),
@@ -48,17 +53,15 @@ func NewRuntimeGlobal(spec *GlobalSpec) (*RuntimeGlobal, error) {
 // Convenience methods for RuntimeGlobal
 
 // Timeout returns the global timeout from the spec.
-// Returns common.DefaultTimeout (60 seconds) if not specified in config (Spec.Timeout == nil).
-// Returns 0 for unlimited execution if explicitly set to 0.
+// Returns the configured Timeout value, which can be unset, unlimited, or a positive value.
+// If unset, the caller should use common.DefaultTimeout (60 seconds).
+// If unlimited (IsUnlimited() == true), Value() returns 0.
 // Panics if r or r.Spec is nil (programming error - use NewRuntimeGlobal).
-func (r *RuntimeGlobal) Timeout() int {
+func (r *RuntimeGlobal) Timeout() common.Timeout {
 	if r == nil || r.Spec == nil {
 		panic("RuntimeGlobal.Timeout: nil receiver or Spec (programming error - use NewRuntimeGlobal)")
 	}
-	if r.Spec.Timeout == nil {
-		return common.DefaultTimeout
-	}
-	return *r.Spec.Timeout
+	return r.timeout
 }
 
 // EnvAllowlist returns the environment variable allowlist from the spec.
@@ -159,6 +162,9 @@ type RuntimeCommand struct {
 	// Spec is a reference to the original spec loaded from TOML (must be non-nil)
 	Spec *CommandSpec
 
+	// timeout is the converted Timeout value from Spec.Timeout
+	timeout common.Timeout
+
 	// ExpandedCmd is the command path with all variable references expanded
 	ExpandedCmd string
 
@@ -184,8 +190,10 @@ func NewRuntimeCommand(spec *CommandSpec) (*RuntimeCommand, error) {
 	if spec == nil {
 		return nil, ErrNilSpec
 	}
+
 	return &RuntimeCommand{
 		Spec:         spec,
+		timeout:      common.NewFromIntPtr(spec.Timeout),
 		ExpandedArgs: []string{},
 		ExpandedEnv:  make(map[string]string),
 		ExpandedVars: make(map[string]string),
@@ -249,13 +257,13 @@ func (r *RuntimeCommand) Args() []string {
 }
 
 // Timeout returns the command-specific timeout from the spec.
-// Returns nil if no timeout is specified (use EffectiveTimeout for resolved value).
+// Use EffectiveTimeout for the fully resolved timeout value.
 // Panics if r or r.Spec is nil (programming error - use NewRuntimeCommand).
-func (r *RuntimeCommand) Timeout() *int {
+func (r *RuntimeCommand) Timeout() common.Timeout {
 	if r == nil || r.Spec == nil {
 		panic("RuntimeCommand.Timeout: nil receiver or Spec (programming error - use NewRuntimeCommand)")
 	}
-	return r.Spec.Timeout
+	return r.timeout
 }
 
 // GetMaxRiskLevel parses and returns the maximum risk level for this command.

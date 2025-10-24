@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
@@ -170,10 +171,16 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 
 		// 7.3 Set EffectiveTimeout
 		// Use command-specific timeout if set, otherwise use global timeout
-		if cmdSpec.Timeout != nil {
-			runtimeCmd.EffectiveTimeout = *cmdSpec.Timeout
+		timeout := runtimeCmd.Timeout()
+		if timeout.IsSet() {
+			runtimeCmd.EffectiveTimeout = timeout.Value()
 		} else {
-			runtimeCmd.EffectiveTimeout = runtimeGlobal.Timeout()
+			globalTimeout := runtimeGlobal.Timeout()
+			if globalTimeout.IsSet() {
+				runtimeCmd.EffectiveTimeout = globalTimeout.Value()
+			} else {
+				runtimeCmd.EffectiveTimeout = common.DefaultTimeout
+			}
 		}
 
 		lastCommand = cmdSpec.Name

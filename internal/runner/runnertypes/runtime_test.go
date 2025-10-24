@@ -274,15 +274,16 @@ func TestRuntimeGlobal_Structure(t *testing.T) {
 		Vars:     []string{"VAR1=value1"},
 	}
 
-	runtime := &RuntimeGlobal{
-		Spec:                spec,
-		ExpandedVerifyFiles: []string{"/usr/bin/test"},
-		ExpandedEnv: map[string]string{
-			"PATH": "/usr/bin",
-		},
-		ExpandedVars: map[string]string{
-			"VAR1": "value1",
-		},
+	runtime, err := NewRuntimeGlobal(spec)
+	if err != nil {
+		t.Fatalf("NewRuntimeGlobal failed: %v", err)
+	}
+	runtime.ExpandedVerifyFiles = []string{"/usr/bin/test"}
+	runtime.ExpandedEnv = map[string]string{
+		"PATH": "/usr/bin",
+	}
+	runtime.ExpandedVars = map[string]string{
+		"VAR1": "value1",
 	}
 
 	// Verify that the structure is properly created
@@ -430,11 +431,11 @@ func TestRuntimeCommand_HelperMethods(t *testing.T) {
 	}
 
 	// Test Timeout()
-	if got := runtime.Timeout(); got == nil || *got != 60 {
-		if got == nil {
-			t.Error("Timeout() should not be nil")
+	if got := runtime.Timeout(); !got.IsSet() || got.Value() != 60 {
+		if !got.IsSet() {
+			t.Error("Timeout() should be set")
 		} else {
-			t.Errorf("Timeout() = %d, want 60", *got)
+			t.Errorf("Timeout().Value() = %d, want 60", got.Value())
 		}
 	}
 }
@@ -453,8 +454,13 @@ func TestRuntimeGlobal_HelperMethods(t *testing.T) {
 	}
 
 	// Test Timeout()
-	if got := runtime.Timeout(); got != 300 {
-		t.Errorf("Timeout() = %d, want 300", got)
+	timeout := runtime.Timeout()
+	if !timeout.IsSet() || timeout.Value() != 300 {
+		if !timeout.IsSet() {
+			t.Error("Timeout() should be set")
+		} else {
+			t.Errorf("Timeout().Value() = %d, want 300", timeout.Value())
+		}
 	}
 
 	// Test EnvAllowlist()
@@ -483,9 +489,10 @@ func TestRuntimeGlobal_TimeoutDefault(t *testing.T) {
 		t.Fatalf("NewRuntimeGlobal() failed: %v", err)
 	}
 
-	// Test Timeout() returns default value
-	if got := runtime.Timeout(); got != common.DefaultTimeout {
-		t.Errorf("Timeout() = %d, want %d (DefaultTimeout)", got, common.DefaultTimeout)
+	// Test Timeout() is unset (caller should use DefaultTimeout)
+	timeout := runtime.Timeout()
+	if timeout.IsSet() {
+		t.Errorf("Timeout() should be unset when not specified, got set with value %d", timeout.Value())
 	}
 }
 

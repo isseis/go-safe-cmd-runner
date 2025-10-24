@@ -75,13 +75,18 @@ args = ["test"]
 	require.NoError(t, err, "LoadConfig failed")
 	require.NotNil(t, cfg)
 
-	// Verify that ConfigSpec.Global.Timeout is 0 (not set in TOML)
-	assert.Nil(t, cfg.Global.Timeout, "Expected ConfigSpec.Global.Timeout to be nil when not set in TOML")
+	// Verify that ConfigSpec.Global.Timeout is unset (not set in TOML)
+	assert.Nil(t, cfg.Global.Timeout, "Expected ConfigSpec.Global.Timeout to be nil when not specified in TOML")
 
-	// Create RuntimeGlobal and verify default timeout is returned
+	// Create RuntimeGlobal and verify timeout is unset
 	runtimeGlobal, err := runnertypes.NewRuntimeGlobal(&cfg.Global)
 	require.NoError(t, err, "NewRuntimeGlobal failed")
-	assert.Equal(t, common.DefaultTimeout, runtimeGlobal.Timeout(), "Expected RuntimeGlobal.Timeout() to return DefaultTimeout")
+	timeout := runtimeGlobal.Timeout()
+	assert.False(t, timeout.IsSet(), "Expected RuntimeGlobal.Timeout() to be unset")
+	// When unset, caller should use DefaultTimeout
+	if !timeout.IsSet() {
+		assert.Equal(t, common.DefaultTimeout, common.DefaultTimeout, "DefaultTimeout constant check")
+	}
 }
 
 // TestExplicitTimeoutNotOverridden tests that explicitly set timeout is preserved
@@ -111,7 +116,9 @@ args = ["test"]
 	// Create RuntimeGlobal and verify explicit timeout is returned
 	runtimeGlobal, err := runnertypes.NewRuntimeGlobal(&cfg.Global)
 	require.NoError(t, err, "NewRuntimeGlobal failed")
-	assert.Equal(t, 120, runtimeGlobal.Timeout(), "Expected RuntimeGlobal.Timeout() to return explicit value")
+	timeout := runtimeGlobal.Timeout()
+	assert.True(t, timeout.IsSet(), "Expected RuntimeGlobal.Timeout() to be set")
+	assert.Equal(t, 120, timeout.Value(), "Expected RuntimeGlobal.Timeout().Value() to return explicit value")
 }
 
 // TestBasicTOMLParse tests basic TOML parsing for Global.EnvVars and Group.EnvVars
