@@ -419,40 +419,40 @@ func mustNewTimeout(seconds int) common.Timeout {
 ```go
 func TestTimeoutResolution(t *testing.T) {
     tests := []struct {
-        name           string
-        cmdTimeout     common.Timeout
-        globalTimeout  common.Timeout
-        expected       int
+        name        string
+        cmdTimeout  *int
+        globalTimeout *int
+        expected    int
     }{
         {
-            name:          "command overrides global",
-            cmdTimeout:    mustNewTimeout(120),
-            globalTimeout: mustNewTimeout(60),
-            expected:      120,
+            name:        "command overrides global",
+            cmdTimeout:  intPtr(120),
+            globalTimeout: intPtr(60),
+            expected:    120,
         },
         {
-            name:          "command zero overrides global",
-            cmdTimeout:    common.NewUnlimitedTimeout(),
-            globalTimeout: mustNewTimeout(60),
-            expected:      0,
+            name:        "command zero overrides global",
+            cmdTimeout:  intPtr(0),
+            globalTimeout: intPtr(60),
+            expected:    0,
         },
         {
-            name:          "inherit global",
-            cmdTimeout:    common.NewUnsetTimeout(),
-            globalTimeout: mustNewTimeout(60),
-            expected:      60,
+            name:        "inherit global",
+            cmdTimeout:  nil,
+            globalTimeout: intPtr(60),
+            expected:    60,
         },
         {
-            name:          "use default",
-            cmdTimeout:    common.NewUnsetTimeout(),
-            globalTimeout: common.NewUnsetTimeout(),
-            expected:      common.DefaultTimeout,
+            name:        "use default",
+            cmdTimeout:  nil,
+            globalTimeout: nil,
+            expected:    DefaultTimeout,
         },
     }
 
     for _, tt := range tests {
         t.Run(tt.name, func(t *testing.T) {
-            result := common.ResolveEffectiveTimeout(tt.cmdTimeout, tt.globalTimeout)
+            result := ResolveTimeout(tt.cmdTimeout, tt.globalTimeout)
             assert.Equal(t, tt.expected, result)
         })
     }
