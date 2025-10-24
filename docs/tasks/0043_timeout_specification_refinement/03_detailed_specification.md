@@ -75,11 +75,11 @@ func (t Timeout) IsUnlimited() bool {
 }
 
 // Value returns the timeout value in seconds.
-// Returns 0 if unset (caller should apply default or inherit from parent).
-// For unlimited timeout, returns 0 (use IsUnlimited to distinguish from unset).
+// Panics if called on an unset Timeout - caller must check IsSet() first.
+// For unlimited timeout (0), returns 0.
 func (t Timeout) Value() int {
     if t.value == nil {
-        return 0
+        panic("Value() called on unset Timeout - check IsSet() before calling Value()")
     }
     return *t.value
 }
@@ -156,32 +156,32 @@ type CommandSpec struct {
 #### 3.1.1. 解決アルゴリズム
 
 ```go
-// ResolveTimeout resolves the effective timeout value from the hierarchy.
-// It returns the resolved timeout in seconds.
-// A value of 0 means unlimited execution.
-func ResolveTimeout(cmdTimeout, groupTimeout, globalTimeout common.Timeout) int {
-    // Determine which timeout to use based on hierarchy
-    var effectiveTimeout common.Timeout
-    if cmdTimeout.IsSet() {
-        effectiveTimeout = cmdTimeout
-    } else if groupTimeout.IsSet() {
-        effectiveTimeout = groupTimeout
-    } else if globalTimeout.IsSet() {
-        effectiveTimeout = globalTimeout
-    } else {
-        // If no timeout is set at any level, use the default
-        return common.DefaultTimeout
+// ResolveEffectiveTimeout determines the effective timeout value using the priority chain:
+// 1. Command-level timeout (if set)
+// 2. Global-level timeout (if set)
+// 3. DefaultTimeout constant (60 seconds)
+//
+// This function encapsulates the timeout resolution logic used throughout the command runner,
+// ensuring consistent behavior in both production code and tests.
+//
+// Parameters:
+//   - commandTimeout: The command-specific timeout (may be unset)
+//   - globalTimeout: The global timeout (may be unset)
+//
+// Returns:
+//   - The resolved timeout value in seconds
+func ResolveEffectiveTimeout(commandTimeout, globalTimeout Timeout) int {
+    if commandTimeout.IsSet() {
+        return commandTimeout.Value()
     }
-
-    // If timeout is unlimited, return 0
-    if effectiveTimeout.IsUnlimited() {
-        return 0
+    if globalTimeout.IsSet() {
+        return globalTimeout.Value()
     }
-
-    // Return the explicit timeout value
-    return effectiveTimeout.Value()
+    return DefaultTimeout
 }
 ```
+
+**注記**: グループレベルのタイムアウトは現在の実装では未サポートです。
 
 #### 3.1.2. 解決順序の詳細
 
@@ -189,40 +189,32 @@ func ResolveTimeout(cmdTimeout, groupTimeout, globalTimeout common.Timeout) int 
    - 存在する場合: その値を使用（0も含む）
    - 存在しない場合: 次のレベルへ
 
-2. **グループレベル**: `[[groups]]`の`timeout`（将来実装予定）
+2. **グローバルレベル**: `[global]`の`timeout`
    - 存在する場合: その値を使用（0も含む）
    - 存在しない場合: 次のレベルへ
 
-3. **グローバルレベル**: `[global]`の`timeout`
-   - 存在する場合: その値を使用（0も含む）
-   - 存在しない場合: 次のレベルへ
+3. **デフォルト**: システム定義の`DefaultTimeout`（60秒）
 
-4. **デフォルト**: システム定義の`DefaultTimeout`（60秒）
+**注記**: グループレベルのタイムアウト（`[[groups]]`の`timeout`）は将来実装予定です。
 
 ### 3.2. RuntimeGlobal の変更
 
 #### 3.2.1. Timeout メソッドの更新
 
 ```go
-// Timeout returns the effective global timeout value
-// Returns DefaultTimeout if not specified in config (Spec.Timeout not set)
-// Returns 0 for unlimited execution if explicitly set to 0
-func (r *RuntimeGlobal) Timeout() int {
+// Timeout returns the global timeout from the spec.
+// Returns the configured Timeout value, which can be unset, unlimited, or a positive value.
+// Use common.ResolveEffectiveTimeout() to resolve the effective timeout with proper fallback logic.
+// Panics if r or r.Spec is nil (programming error - use NewRuntimeGlobal).
+func (r *RuntimeGlobal) Timeout() common.Timeout {
     if r == nil || r.Spec == nil {
-        panic("RuntimeGlobal.Timeout: nil receiver or Spec")
+        panic("RuntimeGlobal.Timeout: nil receiver or Spec (programming error - use NewRuntimeGlobal)")
     }
-
-    if !r.Spec.Timeout.IsSet() {
-        return common.DefaultTimeout
-    }
-
-    if r.Spec.Timeout.IsUnlimited() {
-        return 0
-    }
-
-    return r.Spec.Timeout.Value()
+    return r.timeout
 }
 ```
+
+**注記**: `Timeout()`メソッドは`common.Timeout`オブジェクトを返します。実際のタイムアウト値（秒単位）を解決するには、`common.ResolveEffectiveTimeout()`関数を使用してください。
 
 #### 3.2.2. RuntimeCommand の変更
 
@@ -230,6 +222,9 @@ func (r *RuntimeGlobal) Timeout() int {
 // RuntimeCommand represents runtime command configuration
 type RuntimeCommand struct {
     Spec *CommandSpec
+
+    // timeout is the converted Timeout value from Spec.Timeout
+    timeout common.Timeout
 
     // EffectiveTimeout is the resolved timeout value for this command
     // 0 means unlimited execution
@@ -241,26 +236,40 @@ type RuntimeCommand struct {
     ExpandedArgs        []string
     ExpandedEnv         map[string]string
     ExpandedVars        map[string]string
-    ExpandedWorkDir     string
-    ExpandedOutputFile  string
+    EffectiveWorkDir    string
 }
 
-// NewRuntimeCommand creates a new RuntimeCommand with resolved timeout
-func NewRuntimeCommand(spec *CommandSpec, globalTimeout common.Timeout) (*RuntimeCommand, error) {
+// NewRuntimeCommand creates a new RuntimeCommand with the required spec.
+// Returns ErrNilSpec if spec is nil.
+// Note: EffectiveTimeout is resolved later during command preparation.
+func NewRuntimeCommand(spec *CommandSpec) (*RuntimeCommand, error) {
     if spec == nil {
         return nil, ErrNilSpec
     }
 
-    effectiveTimeout := ResolveTimeout(spec.Timeout, common.NewUnsetTimeout(), globalTimeout)
-
     return &RuntimeCommand{
-        Spec:             spec,
-        EffectiveTimeout: effectiveTimeout,
-        ExpandedEnv:      make(map[string]string),
-        ExpandedVars:     make(map[string]string),
+        Spec:         spec,
+        timeout:      common.NewFromIntPtr(spec.Timeout),
+        ExpandedArgs: []string{},
+        ExpandedEnv:  make(map[string]string),
+        ExpandedVars: make(map[string]string),
     }, nil
 }
+
+// Timeout returns the command-specific timeout from the spec.
+// Use EffectiveTimeout for the fully resolved timeout value.
+// Panics if r or r.Spec is nil (programming error - use NewRuntimeCommand).
+func (r *RuntimeCommand) Timeout() common.Timeout {
+    if r == nil || r.Spec == nil {
+        panic("RuntimeCommand.Timeout: nil receiver or Spec (programming error - use NewRuntimeCommand)")
+    }
+    return r.timeout
+}
 ```
+
+**注記**:
+- `NewRuntimeCommand()`はコマンドspecのみを受け取り、`EffectiveTimeout`の解決は後で`common.ResolveEffectiveTimeout()`を使用して行います
+- `Timeout()`メソッドは`common.Timeout`オブジェクトを返します
 
 ## 4. TOML パース仕様
 
@@ -410,40 +419,40 @@ func mustNewTimeout(seconds int) common.Timeout {
 ```go
 func TestTimeoutResolution(t *testing.T) {
     tests := []struct {
-        name        string
-        cmdTimeout  *int
-        globalTimeout *int
-        expected    int
+        name           string
+        cmdTimeout     common.Timeout
+        globalTimeout  common.Timeout
+        expected       int
     }{
         {
-            name:        "command overrides global",
-            cmdTimeout:  intPtr(120),
-            globalTimeout: intPtr(60),
-            expected:    120,
+            name:          "command overrides global",
+            cmdTimeout:    mustNewTimeout(120),
+            globalTimeout: mustNewTimeout(60),
+            expected:      120,
         },
         {
-            name:        "command zero overrides global",
-            cmdTimeout:  intPtr(0),
-            globalTimeout: intPtr(60),
-            expected:    0,
+            name:          "command zero overrides global",
+            cmdTimeout:    common.NewUnlimitedTimeout(),
+            globalTimeout: mustNewTimeout(60),
+            expected:      0,
         },
         {
-            name:        "inherit global",
-            cmdTimeout:  nil,
-            globalTimeout: intPtr(60),
-            expected:    60,
+            name:          "inherit global",
+            cmdTimeout:    common.NewUnsetTimeout(),
+            globalTimeout: mustNewTimeout(60),
+            expected:      60,
         },
         {
-            name:        "use default",
-            cmdTimeout:  nil,
-            globalTimeout: nil,
-            expected:    DefaultTimeout,
+            name:          "use default",
+            cmdTimeout:    common.NewUnsetTimeout(),
+            globalTimeout: common.NewUnsetTimeout(),
+            expected:      common.DefaultTimeout,
         },
     }
 
     for _, tt := range tests {
         t.Run(tt.name, func(t *testing.T) {
-            result := ResolveTimeout(tt.cmdTimeout, tt.globalTimeout)
+            result := common.ResolveEffectiveTimeout(tt.cmdTimeout, tt.globalTimeout)
             assert.Equal(t, tt.expected, result)
         })
     }
@@ -540,7 +549,7 @@ func (t Timeout) IsUnlimited() bool {
 //go:inline
 func (t Timeout) Value() int {
     if t.value == nil {
-        return 0
+        panic("Value() called on unset Timeout - check IsSet() before calling Value()")
     }
     return *t.value
 }
@@ -549,20 +558,18 @@ func (t Timeout) Value() int {
 #### 7.2.2. プリコンピューテーション
 
 ```go
-// Precompute timeout values during runtime creation
-func NewRuntimeCommand(spec *CommandSpec, globalTimeout common.Timeout) *RuntimeCommand {
-    effectiveTimeout := ResolveTimeout(
-        spec.Timeout,
-        common.NewUnsetTimeout(), // group timeout placeholder
+// Precompute timeout values during command preparation
+// Note: NewRuntimeCommand does not resolve effective timeout;
+// it is resolved later during command preparation using ResolveEffectiveTimeout
+func PrepareCommandTimeout(cmd *RuntimeCommand, globalTimeout common.Timeout) {
+    cmd.EffectiveTimeout = common.ResolveEffectiveTimeout(
+        cmd.Timeout(),
         globalTimeout,
     )
-
-    return &RuntimeCommand{
-        Spec:             spec,
-        EffectiveTimeout: effectiveTimeout, // Pre-computed
-    }
 }
 ```
+
+**注記**: `NewRuntimeCommand()`はタイムアウトを解決しません。`EffectiveTimeout`の解決は、コマンド準備時に`common.ResolveEffectiveTimeout()`を使用して行います。
 
 ## 8. セキュリティ仕様
 
