@@ -492,7 +492,7 @@ func TestRuntimeGlobal_TimeoutDefault(t *testing.T) {
 	// Test Timeout() is unset (caller should use DefaultTimeout)
 	timeout := runtime.Timeout()
 	if timeout.IsSet() {
-		t.Errorf("Timeout() should be unset when not specified, got set with value %d", timeout.Value())
+		t.Error("Timeout() should be unset when not specified")
 	}
 }
 

@@ -14,9 +14,7 @@ func TestNewUnsetTimeout(t *testing.T) {
 	if timeout.IsUnlimited() {
 		t.Error("NewUnsetTimeout() should not be unlimited")
 	}
-	if timeout.Value() != 0 {
-		t.Errorf("NewUnsetTimeout().Value() = %d, want 0", timeout.Value())
-	}
+	// Value() should not be called on unset timeout - it should panic
 }
 
 func TestNewUnlimitedTimeout(t *testing.T) {
@@ -183,11 +181,6 @@ func TestTimeout_Value(t *testing.T) {
 		want    int
 	}{
 		{
-			name:    "unset timeout",
-			timeout: NewUnsetTimeout(),
-			want:    0,
-		},
-		{
 			name:    "unlimited timeout",
 			timeout: NewUnlimitedTimeout(),
 			want:    0,
@@ -217,4 +210,17 @@ func TestTimeout_Value(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestTimeout_ValuePanicsOnUnset(t *testing.T) {
+	timeout := NewUnsetTimeout()
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("Value() should panic when called on unset Timeout")
+		}
+	}()
+
+	// This should panic
+	_ = timeout.Value()
 }
