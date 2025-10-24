@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestNewRuntimeCommand_TimeoutResolution(t *testing.T) {
@@ -55,27 +56,19 @@ func TestNewRuntimeCommand_TimeoutResolution(t *testing.T) {
 			}
 
 			runtime, err := NewRuntimeCommand(spec, tt.globalTimeout)
-			if err != nil {
-				t.Fatalf("NewRuntimeCommand() failed: %v", err)
-			}
+			assert.NoError(t, err, "NewRuntimeCommand() should not fail")
 
-			if runtime.EffectiveTimeout != tt.expectedEffective {
-				t.Errorf("EffectiveTimeout = %d, want %d", runtime.EffectiveTimeout, tt.expectedEffective)
-			}
+			assert.Equal(t, tt.expectedEffective, runtime.EffectiveTimeout,
+				"EffectiveTimeout should match expected value")
 
 			// Verify that the original spec timeout is preserved
 			timeout := runtime.Timeout()
 			if tt.commandTimeout == nil {
-				if timeout.IsSet() {
-					t.Errorf("Timeout().IsSet() = true, want false (unset)")
-				}
+				assert.False(t, timeout.IsSet(), "Timeout should be unset when command timeout is nil")
 			} else {
-				if !timeout.IsSet() {
-					t.Errorf("Timeout().IsSet() = false, want true")
-				}
-				if timeout.Value() != *tt.commandTimeout {
-					t.Errorf("Timeout().Value() = %d, want %d", timeout.Value(), *tt.commandTimeout)
-				}
+				assert.True(t, timeout.IsSet(), "Timeout should be set when command timeout is specified")
+				assert.Equal(t, *tt.commandTimeout, timeout.Value(),
+					"Timeout value should match command timeout")
 			}
 		})
 	}
@@ -91,20 +84,15 @@ func TestNewRuntimeCommandLegacy_BackwardCompatibility(t *testing.T) {
 	}
 
 	runtime, err := NewRuntimeCommandLegacy(spec)
-	if err != nil {
-		t.Fatalf("NewRuntimeCommandLegacy() failed: %v", err)
-	}
+	assert.NoError(t, err, "NewRuntimeCommandLegacy() should not fail")
 
 	// Should use default timeout since no global timeout is provided
-	if runtime.EffectiveTimeout != common.DefaultTimeout {
-		t.Errorf("EffectiveTimeout = %d, want %d", runtime.EffectiveTimeout, common.DefaultTimeout)
-	}
+	assert.Equal(t, common.DefaultTimeout, runtime.EffectiveTimeout,
+		"Should use default timeout when no global timeout is provided")
 
 	// Verify that the spec timeout is unset
 	timeout := runtime.Timeout()
-	if timeout.IsSet() {
-		t.Errorf("Timeout().IsSet() = true, want false (unset)")
-	}
+	assert.False(t, timeout.IsSet(), "Timeout should be unset when not specified")
 }
 
 func TestNewRuntimeCommand_CommandTimeoutZero(t *testing.T) {
@@ -118,26 +106,17 @@ func TestNewRuntimeCommand_CommandTimeoutZero(t *testing.T) {
 	globalTimeout := common.IntPtr(60) // 60 seconds global timeout
 
 	runtime, err := NewRuntimeCommand(spec, globalTimeout)
-	if err != nil {
-		t.Fatalf("NewRuntimeCommand() failed: %v", err)
-	}
+	assert.NoError(t, err, "NewRuntimeCommand() should not fail")
 
 	// Command timeout should take precedence, resulting in unlimited execution
-	if runtime.EffectiveTimeout != 0 {
-		t.Errorf("EffectiveTimeout = %d, want 0 (unlimited)", runtime.EffectiveTimeout)
-	}
+	assert.Equal(t, 0, runtime.EffectiveTimeout,
+		"Command timeout should take precedence, resulting in unlimited execution")
 
 	// Verify that the original command timeout is preserved (0 = unlimited)
 	timeout := runtime.Timeout()
-	if !timeout.IsSet() {
-		t.Errorf("Timeout().IsSet() = false, want true")
-	}
-	if !timeout.IsUnlimited() {
-		t.Errorf("Timeout().IsUnlimited() = false, want true")
-	}
-	if timeout.Value() != 0 {
-		t.Errorf("Timeout().Value() = %d, want 0", timeout.Value())
-	}
+	assert.True(t, timeout.IsSet(), "Timeout should be set when explicitly set to 0")
+	assert.True(t, timeout.IsUnlimited(), "Timeout should be unlimited when set to 0")
+	assert.Equal(t, 0, timeout.Value(), "Timeout value should be 0")
 }
 
 func TestNewRuntimeCommand_GlobalTimeoutZero(t *testing.T) {
@@ -151,38 +130,25 @@ func TestNewRuntimeCommand_GlobalTimeoutZero(t *testing.T) {
 	globalTimeout := common.IntPtr(0) // Unlimited global timeout
 
 	runtime, err := NewRuntimeCommand(spec, globalTimeout)
-	if err != nil {
-		t.Fatalf("NewRuntimeCommand() failed: %v", err)
-	}
+	assert.NoError(t, err, "NewRuntimeCommand() should not fail")
 
 	// Should inherit unlimited execution from global timeout
-	if runtime.EffectiveTimeout != 0 {
-		t.Errorf("EffectiveTimeout = %d, want 0 (unlimited)", runtime.EffectiveTimeout)
-	}
+	assert.Equal(t, 0, runtime.EffectiveTimeout,
+		"Should inherit unlimited execution from global timeout")
 
 	// Verify that the command timeout is still unset (not specified at command level)
 	timeout := runtime.Timeout()
-	if timeout.IsSet() {
-		t.Errorf("Timeout().IsSet() = true, want false (unset at command level)")
-	}
+	assert.False(t, timeout.IsSet(), "Timeout should be unset at command level when not specified")
 }
 
 func TestNewRuntimeCommand_ErrorHandling(t *testing.T) {
 	// Test with nil spec
 	runtime, err := NewRuntimeCommand(nil, common.IntPtr(60))
-	if err != ErrNilSpec {
-		t.Errorf("NewRuntimeCommand(nil, ...) error = %v, want %v", err, ErrNilSpec)
-	}
-	if runtime != nil {
-		t.Errorf("NewRuntimeCommand(nil, ...) runtime = %v, want nil", runtime)
-	}
+	assert.ErrorIs(t, err, ErrNilSpec, "NewRuntimeCommand(nil, ...) should return ErrNilSpec")
+	assert.Nil(t, runtime, "NewRuntimeCommand(nil, ...) should return nil runtime")
 
 	// Test legacy function with nil spec
 	runtimeLegacy, err := NewRuntimeCommandLegacy(nil)
-	if err != ErrNilSpec {
-		t.Errorf("NewRuntimeCommandLegacy(nil) error = %v, want %v", err, ErrNilSpec)
-	}
-	if runtimeLegacy != nil {
-		t.Errorf("NewRuntimeCommandLegacy(nil) runtime = %v, want nil", runtimeLegacy)
-	}
+	assert.ErrorIs(t, err, ErrNilSpec, "NewRuntimeCommandLegacy(nil) should return ErrNilSpec")
+	assert.Nil(t, runtimeLegacy, "NewRuntimeCommandLegacy(nil) should return nil runtime")
 }

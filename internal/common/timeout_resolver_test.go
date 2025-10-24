@@ -2,6 +2,8 @@ package common
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestResolveTimeout(t *testing.T) {
@@ -66,9 +68,7 @@ func TestResolveTimeout(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := ResolveTimeout(tt.cmdTimeout, tt.groupTimeout, tt.globalTimeout)
-			if result != tt.expectedResult {
-				t.Errorf("ResolveTimeout() = %d, want %d", result, tt.expectedResult)
-			}
+			assert.Equal(t, tt.expectedResult, result)
 		})
 	}
 }
@@ -146,21 +146,10 @@ func TestResolveTimeoutWithContext(t *testing.T) {
 				tt.groupName,
 			)
 
-			if timeout != tt.expectedTimeout {
-				t.Errorf("ResolveTimeoutWithContext() timeout = %d, want %d", timeout, tt.expectedTimeout)
-			}
-
-			if context.Level != tt.expectedLevel {
-				t.Errorf("ResolveTimeoutWithContext() level = %s, want %s", context.Level, tt.expectedLevel)
-			}
-
-			if context.CommandName != tt.commandName {
-				t.Errorf("ResolveTimeoutWithContext() commandName = %s, want %s", context.CommandName, tt.commandName)
-			}
-
-			if context.GroupName != tt.groupName {
-				t.Errorf("ResolveTimeoutWithContext() groupName = %s, want %s", context.GroupName, tt.groupName)
-			}
+			assert.Equal(t, tt.expectedTimeout, timeout)
+			assert.Equal(t, tt.expectedLevel, context.Level)
+			assert.Equal(t, tt.commandName, context.CommandName)
+			assert.Equal(t, tt.groupName, context.GroupName)
 		})
 	}
 }
@@ -191,9 +180,7 @@ func TestIsUnlimitedTimeout(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := IsUnlimitedTimeout(tt.timeout)
-			if result != tt.expected {
-				t.Errorf("IsUnlimitedTimeout(%d) = %t, want %t", tt.timeout, result, tt.expected)
-			}
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
@@ -224,9 +211,7 @@ func TestIsDefaultTimeout(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := IsDefaultTimeout(tt.timeout)
-			if result != tt.expected {
-				t.Errorf("IsDefaultTimeout(%d) = %t, want %t", tt.timeout, result, tt.expected)
-			}
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
