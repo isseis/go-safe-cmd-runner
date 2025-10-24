@@ -34,17 +34,10 @@ type TimeoutResolutionContext struct {
 // 3. Else if globalTimeout is set (not nil), use its value (even if 0)
 // 4. Else use DefaultTimeout (60 seconds)
 func ResolveTimeout(cmdTimeout, groupTimeout, globalTimeout *int) int {
-	// Determine which timeout pointer to use based on hierarchy
-	switch {
-	case cmdTimeout != nil:
-		return *cmdTimeout
-	case groupTimeout != nil:
-		return *groupTimeout
-	case globalTimeout != nil:
-		return *globalTimeout
-	default:
-		return DefaultTimeout
-	}
+	// Use ResolveTimeoutWithContext and discard the context information
+	// This ensures timeout resolution logic is defined in a single place
+	resolvedValue, _ := ResolveTimeoutWithContext(cmdTimeout, groupTimeout, globalTimeout, "", "")
+	return resolvedValue
 }
 
 // ResolveTimeoutWithContext resolves the effective timeout value and returns context information.
