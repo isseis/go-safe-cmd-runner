@@ -78,8 +78,3 @@ func ResolveTimeoutWithContext(cmdTimeout, groupTimeout, globalTimeout *int, com
 func IsUnlimitedTimeout(timeout int) bool {
 	return timeout == 0
 }
-
-// IsDefaultTimeout returns true if the given timeout value is the system default.
-func IsDefaultTimeout(timeout int) bool {
-	return timeout == DefaultTimeout
-}

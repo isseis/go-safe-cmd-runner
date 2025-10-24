@@ -184,34 +184,3 @@ func TestIsUnlimitedTimeout(t *testing.T) {
 		})
 	}
 }
-
-func TestIsDefaultTimeout(t *testing.T) {
-	tests := []struct {
-		name     string
-		timeout  int
-		expected bool
-	}{
-		{
-			name:     "default timeout value",
-			timeout:  DefaultTimeout,
-			expected: true,
-		},
-		{
-			name:     "zero timeout is not default",
-			timeout:  0,
-			expected: false,
-		},
-		{
-			name:     "custom timeout is not default",
-			timeout:  120,
-			expected: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := IsDefaultTimeout(tt.timeout)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
