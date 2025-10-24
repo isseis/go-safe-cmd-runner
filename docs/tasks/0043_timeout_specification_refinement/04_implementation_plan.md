@@ -78,7 +78,6 @@ type Timeout struct {
 // - IsSet() bool
 // - IsUnlimited() bool
 // - Value() int
-// - UnmarshalTOML(data interface{}) error
 ```
 
 **target file**: `internal/runner/runnertypes/spec.go` (修正)
@@ -100,7 +99,6 @@ func ValidateTimeout(timeout *int, context string) error
 #### 3.1.2. 実装チェックポイント
 - [x] Timeout型定義が正しく作成されている
 - [x] 構造体フィールドが正しく更新されている
-- [x] UnmarshalTOML が動作する
 - [x] 既存のビルドが通る
 
 ### 3.2. Phase 2: 解決ロジック実装
@@ -182,7 +180,6 @@ func (s *SecurityLogger) LogLongRunningProcess(cmdName string, duration time.Dur
 **target file**: `internal/common/timeout_test.go` (新規作成)
 - Timeout型のテスト
 - コンストラクタ関数のテスト
-- UnmarshalTOML のテスト
 
 **target file**: `internal/runner/executor_test.go` (修正)
 - 無制限実行テスト
@@ -403,7 +400,6 @@ See `docs/migration/v2.0.0_timeout_changes.md` for detailed migration instructio
 #### Phase 1 完了基準
 - [x] 全ての既存テストがパス
 - [x] Timeout型定義がコンパイルエラーなく動作
-- [x] UnmarshalTOML機能が正常動作
 
 #### Phase 2 完了基準
 - [ ] タイムアウト解決ロジックが仕様通り動作

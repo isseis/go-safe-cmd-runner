@@ -83,49 +83,6 @@ func (t Timeout) Value() int {
     }
     return *t.value
 }
-
-// UnmarshalTOML implements the TOML unmarshaler interface.
-// This allows Timeout to be automatically unmarshaled from TOML files.
-func (t *Timeout) UnmarshalTOML(data interface{}) error {
-    if data == nil {
-        *t = NewUnsetTimeout()
-        return nil
-    }
-
-    // Convert to int based on type
-    var value int
-    switch v := data.(type) {
-    case int:
-        value = v
-    case int64:
-        // TOML often parses integers as int64
-        // Check for overflow before conversion
-        maxInt := int64(^uint(0) >> 1)
-        minInt := ^maxInt
-        if v > maxInt || v < minInt {
-            return ErrInvalidTimeout{
-                Value:   v,
-                Context: "TOML timeout field (int overflow)",
-            }
-        }
-        value = int(v)
-    case int32:
-        value = int(v)
-    default:
-        return ErrInvalidTimeout{
-            Value:   data,
-            Context: "TOML timeout field (unsupported type)",
-        }
-    }
-
-    // Validate and create Timeout
-    timeout, err := NewTimeout(value)
-    if err != nil {
-        return err
-    }
-    *t = timeout
-    return nil
-}
 ```
 
 **注記**: `Timeout`型は内部に`*int`を持つ構造体として実装されており、型安全性と明示的なセマンティクスを提供します。
@@ -309,77 +266,7 @@ func NewRuntimeCommand(spec *CommandSpec, globalTimeout common.Timeout) (*Runtim
 
 ### 4.1. TOML読み込み処理
 
-#### 4.1.1. 型変換ロジック
-
-TOML unmarshaling は `Timeout` 型の `UnmarshalTOML` メソッドで自動的に処理されます：
-
-```go
-// UnmarshalTOML implements the TOML unmarshaler interface.
-func (t *Timeout) UnmarshalTOML(data interface{}) error {
-    if data == nil {
-        *t = NewUnsetTimeout()
-        return nil
-    }
-
-    var value int
-    switch v := data.(type) {
-    case int:
-        value = v
-    case int64:
-        // TOML often parses integers as int64
-        maxInt := int64(^uint(0) >> 1)
-        minInt := ^maxInt
-        if v > maxInt || v < minInt {
-            return ErrInvalidTimeout{
-                Value:   v,
-                Context: "TOML timeout field (int overflow)",
-            }
-        }
-        value = int(v)
-    case int32:
-        value = int(v)
-    default:
-        return ErrInvalidTimeout{
-            Value:   data,
-            Context: "TOML timeout field (unsupported type)",
-        }
-    }
-
-    // Validate and create Timeout
-    timeout, err := NewTimeout(value)
-    if err != nil {
-        return err
-    }
-    *t = timeout
-    return nil
-}
-```
-
-#### 4.1.2. バリデーション
-
-```go
-// ValidateTimeout validates timeout configuration.
-// Note: With the Timeout type, validation is mostly built into the type itself.
-// This function is kept for backward compatibility and additional validation contexts.
-func ValidateTimeout(timeout *int, context string) error {
-    if timeout == nil {
-        return nil // Unset is valid
-    }
-
-    if *timeout < 0 {
-        return fmt.Errorf("%s: timeout must be non-negative, got %d", context, *timeout)
-    }
-
-    if *timeout > MaxTimeout {
-        return fmt.Errorf("%s: timeout value too large: %d. Maximum value is %d", context, *timeout, MaxTimeout)
-    }
-
-    return nil
-}
-
-// For Timeout type, validation is implicit in the constructor:
-// NewTimeout(seconds int) returns error for invalid values
-```
+TOML の整数値が *int に読み込まれるため、特別な処理は不要です。
 
 ### 4.2. エラーメッセージ仕様
 
@@ -837,7 +724,6 @@ const (
 - [ ] `CommandSpec.Timeout` を `common.Timeout` に変更
 - [ ] `RuntimeGlobal.Timeout()` メソッド更新
 - [ ] `ResolveTimeout` 関数実装
-- [ ] TOML unmarshalingの自動処理（`UnmarshalTOML`メソッド）
 - [ ] 実行エンジンでの無制限タイムアウト対応
 
 ### 11.2. テスト実装

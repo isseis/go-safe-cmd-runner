@@ -129,7 +129,6 @@ classDiagram
         +IsSet() bool
         +IsUnlimited() bool
         +Value() int
-        +UnmarshalTOML(data interface{}) error
     }
 
     class GlobalSpec {
