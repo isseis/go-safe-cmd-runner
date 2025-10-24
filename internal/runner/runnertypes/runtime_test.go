@@ -2,6 +2,10 @@ package runnertypes
 
 import (
 	"testing"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRuntimeCommand_Name(t *testing.T) {
@@ -32,9 +36,7 @@ func TestRuntimeCommand_Name(t *testing.T) {
 				Spec: tt.spec,
 			}
 			got := r.Name()
-			if got != tt.want {
-				t.Errorf("Name() = %v, want %v", got, tt.want)
-			}
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
@@ -67,9 +69,7 @@ func TestRuntimeCommand_RunAsUser(t *testing.T) {
 				Spec: tt.spec,
 			}
 			got := r.RunAsUser()
-			if got != tt.want {
-				t.Errorf("RunAsUser() = %v, want %v", got, tt.want)
-			}
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
@@ -102,9 +102,7 @@ func TestRuntimeCommand_RunAsGroup(t *testing.T) {
 				Spec: tt.spec,
 			}
 			got := r.RunAsGroup()
-			if got != tt.want {
-				t.Errorf("RunAsGroup() = %v, want %v", got, tt.want)
-			}
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
@@ -137,9 +135,7 @@ func TestRuntimeCommand_Output(t *testing.T) {
 				Spec: tt.spec,
 			}
 			got := r.Output()
-			if got != tt.want {
-				t.Errorf("Output() = %v, want %v", got, tt.want)
-			}
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
@@ -199,13 +195,12 @@ func TestRuntimeCommand_GetMaxRiskLevel(t *testing.T) {
 				Spec: tt.spec,
 			}
 			got, err := r.GetMaxRiskLevel()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("GetMaxRiskLevel() error = %v, wantErr %v", err, tt.wantErr)
-				return
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
 			}
-			if got != tt.want {
-				t.Errorf("GetMaxRiskLevel() = %v, want %v", got, tt.want)
-			}
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
@@ -256,9 +251,7 @@ func TestRuntimeCommand_HasUserGroupSpecification(t *testing.T) {
 				Spec: tt.spec,
 			}
 			got := r.HasUserGroupSpecification()
-			if got != tt.want {
-				t.Errorf("HasUserGroupSpecification() = %v, want %v", got, tt.want)
-			}
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
@@ -266,38 +259,29 @@ func TestRuntimeCommand_HasUserGroupSpecification(t *testing.T) {
 func TestRuntimeGlobal_Structure(t *testing.T) {
 	// Test that RuntimeGlobal can be created with proper structure
 	spec := &GlobalSpec{
-		Timeout:  300,
+		Timeout:  common.IntPtr(300),
 		LogLevel: "debug",
 		EnvVars:  []string{"PATH=/usr/bin"},
 		Vars:     []string{"VAR1=value1"},
 	}
 
-	runtime := &RuntimeGlobal{
-		Spec:                spec,
-		ExpandedVerifyFiles: []string{"/usr/bin/test"},
-		ExpandedEnv: map[string]string{
-			"PATH": "/usr/bin",
-		},
-		ExpandedVars: map[string]string{
-			"VAR1": "value1",
-		},
+	runtime, err := NewRuntimeGlobal(spec)
+	require.NoError(t, err)
+
+	runtime.ExpandedVerifyFiles = []string{"/usr/bin/test"}
+	runtime.ExpandedEnv = map[string]string{
+		"PATH": "/usr/bin",
+	}
+	runtime.ExpandedVars = map[string]string{
+		"VAR1": "value1",
 	}
 
 	// Verify that the structure is properly created
-	if runtime.Spec == nil {
-		t.Error("RuntimeGlobal.Spec should not be nil")
-	}
-	if runtime.Spec.Timeout != 300 {
-		t.Errorf("Spec.Timeout = %d, want 300", runtime.Spec.Timeout)
-	}
-	if len(runtime.ExpandedEnv) != 1 {
-		t.Errorf("len(ExpandedEnv) = %d, want 1", len(runtime.ExpandedEnv))
-	}
-	if val, exists := runtime.ExpandedEnv["PATH"]; !exists {
-		t.Error("ExpandedEnv[PATH] key not found")
-	} else if val != "/usr/bin" {
-		t.Errorf("ExpandedEnv[PATH] = %s, want /usr/bin", val)
-	}
+	require.NotNil(t, runtime.Spec)
+	require.NotNil(t, runtime.Spec.Timeout)
+	assert.Equal(t, 300, *runtime.Spec.Timeout)
+	require.Len(t, runtime.ExpandedEnv, 1)
+	assert.Equal(t, "/usr/bin", runtime.ExpandedEnv["PATH"])
 }
 
 func TestRuntimeGroup_Structure(t *testing.T) {
@@ -323,18 +307,10 @@ func TestRuntimeGroup_Structure(t *testing.T) {
 	}
 
 	// Verify that the structure is properly created
-	if runtime.Spec == nil {
-		t.Error("RuntimeGroup.Spec should not be nil")
-	}
-	if runtime.Spec.Name != "test-group" {
-		t.Errorf("Spec.Name = %s, want test-group", runtime.Spec.Name)
-	}
-	if runtime.EffectiveWorkDir != "/tmp/test" {
-		t.Errorf("EffectiveWorkDir = %s, want /tmp/test", runtime.EffectiveWorkDir)
-	}
-	if len(runtime.ExpandedEnv) != 1 {
-		t.Errorf("len(ExpandedEnv) = %d, want 1", len(runtime.ExpandedEnv))
-	}
+	require.NotNil(t, runtime.Spec)
+	assert.Equal(t, "test-group", runtime.Spec.Name)
+	assert.Equal(t, "/tmp/test", runtime.EffectiveWorkDir)
+	require.Len(t, runtime.ExpandedEnv, 1)
 }
 
 func TestRuntimeCommand_Structure(t *testing.T) {
@@ -344,7 +320,7 @@ func TestRuntimeCommand_Structure(t *testing.T) {
 		Cmd:     "/usr/bin/echo",
 		Args:    []string{"hello", "world"},
 		WorkDir: "/tmp",
-		Timeout: 60,
+		Timeout: common.IntPtr(60),
 		EnvVars: []string{"TEST=value"},
 	}
 
@@ -359,40 +335,15 @@ func TestRuntimeCommand_Structure(t *testing.T) {
 	}
 
 	// Verify that the structure is properly created
-	if runtime.Spec == nil {
-		t.Error("RuntimeCommand.Spec should not be nil")
-	}
-	if runtime.Name() != "test-cmd" {
-		t.Errorf("Name() = %s, want test-cmd", runtime.Name())
-	}
-	if runtime.ExpandedCmd != "/usr/bin/echo" {
-		t.Errorf("ExpandedCmd = %s, want /usr/bin/echo", runtime.ExpandedCmd)
-	}
-	if len(runtime.ExpandedArgs) != 2 {
-		t.Errorf("len(ExpandedArgs) = %d, want 2", len(runtime.ExpandedArgs))
-	}
-	// Verify the content of ExpandedArgs
-	expectedArgs := []string{"hello", "world"}
-	for i, arg := range runtime.ExpandedArgs {
-		if i < len(expectedArgs) && arg != expectedArgs[i] {
-			t.Errorf("ExpandedArgs[%d] = %s, want %s", i, arg, expectedArgs[i])
-		}
-	}
-	// Verify ExpandedEnv content
-	if len(runtime.ExpandedEnv) != 1 {
-		t.Errorf("len(ExpandedEnv) = %d, want 1", len(runtime.ExpandedEnv))
-	}
-	if val, exists := runtime.ExpandedEnv["TEST"]; !exists {
-		t.Error("ExpandedEnv[TEST] key not found")
-	} else if val != "value" {
-		t.Errorf("ExpandedEnv[TEST] = %s, want value", val)
-	}
-	if runtime.EffectiveWorkDir != "/tmp" {
-		t.Errorf("EffectiveWorkDir = %s, want /tmp", runtime.EffectiveWorkDir)
-	}
-	if runtime.EffectiveTimeout != 60 {
-		t.Errorf("EffectiveTimeout = %d, want 60", runtime.EffectiveTimeout)
-	}
+	require.NotNil(t, runtime.Spec)
+	assert.Equal(t, "test-cmd", runtime.Name())
+	assert.Equal(t, "/usr/bin/echo", runtime.ExpandedCmd)
+	require.Len(t, runtime.ExpandedArgs, 2)
+	assert.Equal(t, []string{"hello", "world"}, runtime.ExpandedArgs)
+	require.Len(t, runtime.ExpandedEnv, 1)
+	assert.Equal(t, "value", runtime.ExpandedEnv["TEST"])
+	assert.Equal(t, "/tmp", runtime.EffectiveWorkDir)
+	assert.Equal(t, 60, runtime.EffectiveTimeout)
 }
 
 // TestRuntimeCommand_HelperMethods tests the helper methods for RuntimeCommand
@@ -401,40 +352,32 @@ func TestRuntimeCommand_HelperMethods(t *testing.T) {
 		Name:    "test-cmd",
 		Cmd:     "/usr/bin/echo",
 		Args:    []string{"hello", "world"},
-		Timeout: 60,
+		Timeout: common.IntPtr(60),
 	}
 
 	runtime, err := NewRuntimeCommand(spec)
-	if err != nil {
-		t.Fatalf("NewRuntimeCommand() failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	// Test Cmd()
-	if got := runtime.Cmd(); got != "/usr/bin/echo" {
-		t.Errorf("Cmd() = %s, want /usr/bin/echo", got)
-	}
+	assert.Equal(t, "/usr/bin/echo", runtime.Cmd())
 
 	// Test Args()
 	args := runtime.Args()
-	if len(args) != 2 {
-		t.Errorf("len(Args()) = %d, want 2", len(args))
-	}
-	if args[0] != "hello" || args[1] != "world" {
-		t.Errorf("Args() = %v, want [hello world]", args)
-	}
+	require.Len(t, args, 2)
+	assert.Equal(t, []string{"hello", "world"}, args)
 
 	// Test Timeout()
-	if got := runtime.Timeout(); got != 60 {
-		t.Errorf("Timeout() = %d, want 60", got)
-	}
+	timeout := runtime.Timeout()
+	require.True(t, timeout.IsSet())
+	assert.Equal(t, 60, timeout.Value())
 }
 
 // TestRuntimeGlobal_HelperMethods tests the helper methods for RuntimeGlobal
 func TestRuntimeGlobal_HelperMethods(t *testing.T) {
 	spec := &GlobalSpec{
-		Timeout:             300,
+		Timeout:             common.IntPtr(300),
 		EnvAllowed:          []string{"PATH", "HOME"},
-		VerifyStandardPaths: func() *bool { b := false; return &b }(),
+		VerifyStandardPaths: common.BoolPtr(false),
 	}
 
 	runtime, err := NewRuntimeGlobal(spec)
@@ -443,40 +386,32 @@ func TestRuntimeGlobal_HelperMethods(t *testing.T) {
 	}
 
 	// Test Timeout()
-	if got := runtime.Timeout(); got != 300 {
-		t.Errorf("Timeout() = %d, want 300", got)
-	}
+	timeout := runtime.Timeout()
+	require.True(t, timeout.IsSet())
+	assert.Equal(t, 300, timeout.Value())
 
 	// Test EnvAllowlist()
 	allowlist := runtime.EnvAllowlist()
-	if len(allowlist) != 2 {
-		t.Errorf("len(EnvAllowlist()) = %d, want 2", len(allowlist))
-	}
-	if allowlist[0] != "PATH" || allowlist[1] != "HOME" {
-		t.Errorf("EnvAllowlist() = %v, want [PATH HOME]", allowlist)
-	}
+	require.Len(t, allowlist, 2)
+	assert.Equal(t, "PATH", allowlist[0])
+	assert.Equal(t, "HOME", allowlist[1])
 
 	// Test SkipStandardPaths()
-	if got := runtime.SkipStandardPaths(); !got {
-		t.Errorf("SkipStandardPaths() = %v, want true", got)
-	}
+	assert.True(t, runtime.SkipStandardPaths())
 }
 
 // TestRuntimeGlobal_TimeoutDefault tests that Timeout() returns default value when not set
 func TestRuntimeGlobal_TimeoutDefault(t *testing.T) {
 	spec := &GlobalSpec{
-		Timeout: 0, // Not set in TOML
+		Timeout: nil, // Not set in TOML
 	}
 
 	runtime, err := NewRuntimeGlobal(spec)
-	if err != nil {
-		t.Fatalf("NewRuntimeGlobal() failed: %v", err)
-	}
+	require.NoError(t, err)
 
-	// Test Timeout() returns default value
-	if got := runtime.Timeout(); got != DefaultTimeout {
-		t.Errorf("Timeout() = %d, want %d (DefaultTimeout)", got, DefaultTimeout)
-	}
+	// Test Timeout() is unset (caller should use DefaultTimeout)
+	timeout := runtime.Timeout()
+	assert.False(t, timeout.IsSet())
 }
 
 // TestRuntimeGroup_HelperMethods tests the helper methods for RuntimeGroup
@@ -487,19 +422,13 @@ func TestRuntimeGroup_HelperMethods(t *testing.T) {
 	}
 
 	runtime, err := NewRuntimeGroup(spec)
-	if err != nil {
-		t.Fatalf("NewRuntimeGroup() failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	// Test Name()
-	if got := runtime.Name(); got != "test-group" {
-		t.Errorf("Name() = %s, want test-group", got)
-	}
+	assert.Equal(t, "test-group", runtime.Name())
 
 	// Test WorkDir()
-	if got := runtime.WorkDir(); got != "/tmp/test" {
-		t.Errorf("WorkDir() = %s, want /tmp/test", got)
-	}
+	assert.Equal(t, "/tmp/test", runtime.WorkDir())
 }
 
 // TestRuntimeGlobal_SkipStandardPaths_WithNil tests SkipStandardPaths with nil value
@@ -517,12 +446,12 @@ func TestRuntimeGlobal_SkipStandardPaths_WithNil(t *testing.T) {
 		},
 		{
 			name:                "explicit true (verify) means skip=false",
-			verifyStandardPaths: boolPtr(true),
+			verifyStandardPaths: common.BoolPtr(true),
 			wantSkip:            false,
 		},
 		{
 			name:                "explicit false (don't verify) means skip=true",
-			verifyStandardPaths: boolPtr(false),
+			verifyStandardPaths: common.BoolPtr(false),
 			wantSkip:            true,
 		},
 	}
@@ -535,14 +464,7 @@ func TestRuntimeGlobal_SkipStandardPaths_WithNil(t *testing.T) {
 				},
 			}
 			got := runtime.SkipStandardPaths()
-			if got != tt.wantSkip {
-				t.Errorf("SkipStandardPaths() = %v, want %v", got, tt.wantSkip)
-			}
+			assert.Equal(t, tt.wantSkip, got)
 		})
 	}
-}
-
-// boolPtr is a helper to create *bool from bool value
-func boolPtr(b bool) *bool {
-	return &b
 }

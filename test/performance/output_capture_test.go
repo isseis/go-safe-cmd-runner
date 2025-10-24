@@ -245,7 +245,7 @@ func TestLongRunningStability(t *testing.T) {
 		Cmd:        "sh",
 		Args:       []string{"-c", "for i in $(seq 1 10); do echo \"Line $i\"; sleep 0.1; done"},
 		OutputFile: outputPath,
-		Timeout:    30,
+		Timeout:    common.IntPtr(30),
 	}
 	runtimeCmd := createRuntimeCommand(cmdSpec)
 
