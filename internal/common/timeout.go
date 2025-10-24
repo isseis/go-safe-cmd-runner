@@ -3,6 +3,15 @@
 //nolint:revive // "common" is an appropriate name for shared utilities package
 package common
 
+const (
+	// DefaultTimeout is used when no timeout is explicitly set
+	DefaultTimeout = 60 // seconds
+
+	// MaxTimeout defines the maximum allowed timeout value (24 hours)
+	// The value is well within int32 range, ensuring cross-platform compatibility.
+	MaxTimeout = 86400 // 24 hours in seconds
+)
+
 // Timeout represents a timeout configuration value.
 // It distinguishes between three states:
 // - Unset (use default or inherit from parent)
