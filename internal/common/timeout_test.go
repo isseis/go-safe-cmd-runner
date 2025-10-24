@@ -3,32 +3,25 @@ package common
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewUnsetTimeout(t *testing.T) {
 	timeout := NewUnsetTimeout()
 
-	if timeout.IsSet() {
-		t.Error("NewUnsetTimeout() should create an unset timeout")
-	}
-	if timeout.IsUnlimited() {
-		t.Error("NewUnsetTimeout() should not be unlimited")
-	}
+	assert.False(t, timeout.IsSet(), "NewUnsetTimeout() should create an unset timeout")
+	assert.False(t, timeout.IsUnlimited(), "NewUnsetTimeout() should not be unlimited")
 	// Value() should not be called on unset timeout - it should panic
 }
 
 func TestNewUnlimitedTimeout(t *testing.T) {
 	timeout := NewUnlimitedTimeout()
 
-	if !timeout.IsSet() {
-		t.Error("NewUnlimitedTimeout() should be set")
-	}
-	if !timeout.IsUnlimited() {
-		t.Error("NewUnlimitedTimeout() should be unlimited")
-	}
-	if timeout.Value() != 0 {
-		t.Errorf("NewUnlimitedTimeout().Value() = %d, want 0", timeout.Value())
-	}
+	assert.True(t, timeout.IsSet(), "NewUnlimitedTimeout() should be set")
+	assert.True(t, timeout.IsUnlimited(), "NewUnlimitedTimeout() should be unlimited")
+	assert.Equal(t, 0, timeout.Value(), "NewUnlimitedTimeout().Value() should be 0")
 }
 
 func TestNewTimeout(t *testing.T) {
@@ -68,29 +61,16 @@ func TestNewTimeout(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			timeout, err := NewTimeout(tt.seconds)
 			if tt.wantErr {
-				if err == nil {
-					t.Errorf("NewTimeout(%d) should return error", tt.seconds)
-				}
+				assert.Error(t, err, "NewTimeout(%d) should return error", tt.seconds)
 				return
 			}
-			if err != nil {
-				t.Errorf("NewTimeout(%d) unexpected error: %v", tt.seconds, err)
-				return
-			}
-			if !timeout.IsSet() {
-				t.Error("NewTimeout() should create a set timeout")
-			}
-			if timeout.Value() != tt.seconds {
-				t.Errorf("NewTimeout(%d).Value() = %d, want %d", tt.seconds, timeout.Value(), tt.seconds)
-			}
+			require.NoError(t, err, "NewTimeout(%d) should not return error", tt.seconds)
+			assert.True(t, timeout.IsSet(), "NewTimeout() should create a set timeout")
+			assert.Equal(t, tt.seconds, timeout.Value(), "NewTimeout(%d).Value() should match", tt.seconds)
 			if tt.seconds == 0 {
-				if !timeout.IsUnlimited() {
-					t.Error("NewTimeout(0) should be unlimited")
-				}
+				assert.True(t, timeout.IsUnlimited(), "NewTimeout(0) should be unlimited")
 			} else {
-				if timeout.IsUnlimited() {
-					t.Error("NewTimeout(non-zero) should not be unlimited")
-				}
+				assert.False(t, timeout.IsUnlimited(), "NewTimeout(non-zero) should not be unlimited")
 			}
 		})
 	}
@@ -124,9 +104,7 @@ func TestTimeout_IsSet(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.timeout.IsSet(); got != tt.want {
-				t.Errorf("Timeout.IsSet() = %v, want %v", got, tt.want)
-			}
+			assert.Equal(t, tt.want, tt.timeout.IsSet(), "Timeout.IsSet() should match expected value")
 		})
 	}
 }
@@ -167,9 +145,7 @@ func TestTimeout_IsUnlimited(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.timeout.IsUnlimited(); got != tt.want {
-				t.Errorf("Timeout.IsUnlimited() = %v, want %v", got, tt.want)
-			}
+			assert.Equal(t, tt.want, tt.timeout.IsUnlimited(), "Timeout.IsUnlimited() should match expected value")
 		})
 	}
 }
@@ -205,9 +181,7 @@ func TestTimeout_Value(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.timeout.Value(); got != tt.want {
-				t.Errorf("Timeout.Value() = %d, want %d", got, tt.want)
-			}
+			assert.Equal(t, tt.want, tt.timeout.Value(), "Timeout.Value() should match expected value")
 		})
 	}
 }
@@ -215,12 +189,7 @@ func TestTimeout_Value(t *testing.T) {
 func TestTimeout_ValuePanicsOnUnset(t *testing.T) {
 	timeout := NewUnsetTimeout()
 
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("Value() should panic when called on unset Timeout")
-		}
-	}()
-
-	// This should panic
-	_ = timeout.Value()
+	assert.Panics(t, func() {
+		_ = timeout.Value()
+	}, "Value() should panic when called on unset Timeout")
 }
