@@ -8,3 +8,9 @@ package common
 func IntPtr(v int) *int {
 	return &v
 }
+
+// BoolPtr returns a pointer to the given bool value.
+// This is a convenience function for creating pointer values in tests and configuration.
+func BoolPtr(v bool) *bool {
+	return &v
+}

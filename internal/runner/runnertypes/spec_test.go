@@ -25,7 +25,7 @@ env_import = ["user=USER"]
 output_size_limit = 1048576
 `,
 			want: GlobalSpec{
-				VerifyStandardPaths: func() *bool { b := true; return &b }(),
+				VerifyStandardPaths: common.BoolPtr(true),
 				EnvVars:             []string{"LANG=en_US.UTF-8"},
 				EnvAllowed:          []string{"PATH", "HOME"},
 				EnvImport:           []string{"user=USER"},
@@ -42,7 +42,7 @@ env_import = []
 output_size_limit = 0
 `,
 			want: GlobalSpec{
-				VerifyStandardPaths: func() *bool { b := false; return &b }(),
+				VerifyStandardPaths: common.BoolPtr(false),
 				EnvVars:             []string{},
 				EnvAllowed:          []string{},
 				EnvImport:           []string{},
@@ -259,7 +259,7 @@ cmd = "/bin/echo"
 				Global: GlobalSpec{
 					Timeout:             common.IntPtr(300),
 					LogLevel:            "debug",
-					VerifyStandardPaths: func() *bool { b := false; return &b }(),
+					VerifyStandardPaths: common.BoolPtr(false),
 					OutputSizeLimit:     1048576,
 					VerifyFiles:         []string{"/usr/bin/python3", "/usr/bin/gcc"},
 					EnvAllowed:          []string{"PATH", "HOME"},

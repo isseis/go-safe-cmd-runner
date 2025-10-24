@@ -445,7 +445,7 @@ func TestRuntimeGlobal_HelperMethods(t *testing.T) {
 	spec := &GlobalSpec{
 		Timeout:             common.IntPtr(300),
 		EnvAllowed:          []string{"PATH", "HOME"},
-		VerifyStandardPaths: func() *bool { b := false; return &b }(),
+		VerifyStandardPaths: common.BoolPtr(false),
 	}
 
 	runtime, err := NewRuntimeGlobal(spec)
