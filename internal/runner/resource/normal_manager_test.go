@@ -142,10 +142,11 @@ func createTestCommandGroup() *runnertypes.GroupSpec {
 
 // Helper to convert CommandSpec to RuntimeCommand for testing
 func createRuntimeCommand(spec *runnertypes.CommandSpec) *runnertypes.RuntimeCommand {
-	effectiveTimeout := 60 // default
-	if spec.Timeout != nil {
-		effectiveTimeout = *spec.Timeout
-	}
+	// Use the shared timeout resolution logic
+	commandTimeout := common.NewFromIntPtr(spec.Timeout)
+	globalTimeout := common.NewUnsetTimeout() // Tests typically don't need global timeout
+	effectiveTimeout := common.ResolveEffectiveTimeout(commandTimeout, globalTimeout)
+
 	return &runnertypes.RuntimeCommand{
 		Spec:             spec,
 		ExpandedCmd:      spec.Cmd,
