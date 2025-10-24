@@ -72,10 +72,10 @@ func (t Timeout) IsUnlimited() bool {
 // Value returns the timeout value in seconds.
 // Panics if the timeout is not set (IsSet() == false).
 // Callers must check IsSet() before calling Value().
-// For unlimited timeout, returns 0 (use IsUnlimited to distinguish from set non-zero values).
+// For unlimited timeout, returns 0. Callers should use IsUnlimited() to distinguish between unlimited (zero) and set non-zero values; do not interpret Value() == 0 as unset.
 func (t Timeout) Value() int {
 	if t.value == nil {
-		panic("Value() called on unset Timeout - check IsSet() before calling Value()")
+		panic("Timeout.Value() called on unset Timeout: use IsSet() to check if the timeout is set before calling Value(). Note: Value() == 0 means unlimited, not unset; use IsUnlimited() to distinguish.")
 	}
 	return *t.value
 }

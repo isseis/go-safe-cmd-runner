@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -83,10 +82,7 @@ args = ["test"]
 	require.NoError(t, err, "NewRuntimeGlobal failed")
 	timeout := runtimeGlobal.Timeout()
 	assert.False(t, timeout.IsSet(), "Expected RuntimeGlobal.Timeout() to be unset")
-	// When unset, caller should use DefaultTimeout
-	if !timeout.IsSet() {
-		assert.Equal(t, common.DefaultTimeout, common.DefaultTimeout, "DefaultTimeout constant check")
-	}
+	// When unset, caller should use DefaultTimeout (see common.DefaultTimeout)
 }
 
 // TestExplicitTimeoutNotOverridden tests that explicitly set timeout is preserved
