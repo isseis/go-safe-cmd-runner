@@ -5,6 +5,7 @@
 ### 1.1. 実装目標
 - TOML設定における「未設定」と「明示的なゼロ」の区別を可能にする
 - `timeout = 0` を無制限実行として明確に定義する
+- 専用の`Timeout`型による型安全性の向上
 - 既存機能の後方互換性を維持しつつ、新機能を安全に導入する
 
 ### 1.2. 実装戦略
@@ -45,7 +46,7 @@
 
 #### 3.1.1. ファイル変更計画
 
-**target file**: `internal/common/types.go` (新規作成)
+**target file**: `internal/common/types.go` (既存)
 ```go
 const (
     // DefaultTimeout is used when no timeout is explicitly set
@@ -54,27 +55,52 @@ const (
     // MaxTimeout defines the maximum allowed timeout value (24 hours)
     MaxTimeout = 86400 // 24 hours in seconds
 )
+```
 
-// Helper function for creating integer pointers
-func IntPtr(v int) *int { return &v }
+**target file**: `internal/common/timeout.go` (既存)
+```go
+// Timeout represents a timeout configuration value.
+// It distinguishes between three states:
+// - Unset (use default or inherit from parent)
+// - Zero (unlimited execution, no timeout)
+// - Positive value (timeout in seconds)
+type Timeout struct {
+    value *int
+}
+
+// Constructor functions:
+// - NewUnsetTimeout() Timeout
+// - NewUnlimitedTimeout() Timeout
+// - NewTimeout(seconds int) (Timeout, error)
+// - NewFromIntPtr(ptr *int) Timeout
+//
+// Methods:
+// - IsSet() bool
+// - IsUnlimited() bool
+// - Value() int
+// - UnmarshalTOML(data interface{}) error
 ```
 
 **target file**: `internal/runner/runnertypes/spec.go` (修正)
-- `GlobalSpec.Timeout` を `*int` に変更
-- `CommandSpec.Timeout` を `*int` に変更
+- `GlobalSpec.Timeout` を `common.Timeout` に変更
+- `CommandSpec.Timeout` を `common.Timeout` に変更
 
-**target file**: `internal/common/validation.go` (新規作成)
+**target file**: `internal/common/validation.go` (既存)
 ```go
-// ValidateTimeout validates timeout configuration
+// ErrInvalidTimeout is returned when an invalid timeout value is encountered
+type ErrInvalidTimeout struct {
+    Value   interface{}
+    Context string
+}
+
+// ValidateTimeout validates timeout configuration (legacy support)
 func ValidateTimeout(timeout *int, context string) error
-// parseTimeoutValue converts TOML value to *int
-func parseTimeoutValue(value interface{}) (*int, error)
 ```
 
 #### 3.1.2. 実装チェックポイント
-- [x] 型定義が正しく作成されている
+- [x] Timeout型定義が正しく作成されている
 - [x] 構造体フィールドが正しく更新されている
-- [x] バリデーション関数が動作する
+- [x] UnmarshalTOML が動作する
 - [x] 既存のビルドが通る
 
 ### 3.2. Phase 2: 解決ロジック実装
@@ -84,7 +110,7 @@ func parseTimeoutValue(value interface{}) (*int, error)
 **target file**: `internal/common/timeout_resolver.go` (新規作成)
 ```go
 // ResolveTimeout resolves the effective timeout value from the hierarchy
-func ResolveTimeout(cmdTimeout, groupTimeout, globalTimeout *int) int
+func ResolveTimeout(cmdTimeout, groupTimeout, globalTimeout Timeout) int
 
 // TimeoutResolutionContext provides context for timeout resolution
 type TimeoutResolutionContext struct {
@@ -154,9 +180,9 @@ func (s *SecurityLogger) LogLongRunningProcess(cmdName string, duration time.Dur
 #### 3.4.1. テストファイル構成
 
 **target file**: `internal/common/timeout_test.go` (新規作成)
-- 型変換テスト
-- バリデーションテスト
-- タイムアウト解決テスト
+- Timeout型のテスト
+- コンストラクタ関数のテスト
+- UnmarshalTOML のテスト
 
 **target file**: `internal/runner/executor_test.go` (修正)
 - 無制限実行テスト
@@ -174,18 +200,44 @@ func (s *SecurityLogger) LogLongRunningProcess(cmdName string, duration time.Dur
 
 ```go
 // 単体テスト例
-func TestTimeoutParsing(t *testing.T) {
+func TestTimeoutCreation(t *testing.T) {
     tests := []struct {
-        name     string
-        toml     string
-        expected *int
-        wantErr  bool
+        name      string
+        create    func() (Timeout, error)
+        wantSet   bool
+        wantUnlim bool
+        wantValue int
+        wantErr   bool
     }{
-        {"unset timeout", "", nil, false},
-        {"zero timeout", "timeout = 0", intPtr(0), false},
-        {"positive timeout", "timeout = 300", intPtr(300), false},
-        {"negative timeout", "timeout = -1", nil, true},
-        {"overflow timeout", "timeout = 90000", nil, true},
+        {
+            name:      "unset timeout",
+            create:    func() (Timeout, error) { return NewUnsetTimeout(), nil },
+            wantSet:   false,
+            wantUnlim: false,
+            wantValue: 0,
+            wantErr:   false,
+        },
+        {
+            name:      "unlimited timeout",
+            create:    func() (Timeout, error) { return NewUnlimitedTimeout(), nil },
+            wantSet:   true,
+            wantUnlim: true,
+            wantValue: 0,
+            wantErr:   false,
+        },
+        {
+            name:      "positive timeout",
+            create:    func() (Timeout, error) { return NewTimeout(300) },
+            wantSet:   true,
+            wantUnlim: false,
+            wantValue: 300,
+            wantErr:   false,
+        },
+        {
+            name:      "negative timeout",
+            create:    func() (Timeout, error) { return NewTimeout(-1) },
+            wantErr:   true,
+        },
     }
     // テスト実装...
 }
@@ -350,8 +402,8 @@ See `docs/migration/v2.0.0_timeout_changes.md` for detailed migration instructio
 
 #### Phase 1 完了基準
 - [x] 全ての既存テストがパス
-- [x] 新しい型定義がコンパイルエラーなく動作
-- [x] バリデーション機能が正常動作
+- [x] Timeout型定義がコンパイルエラーなく動作
+- [x] UnmarshalTOML機能が正常動作
 
 #### Phase 2 完了基準
 - [ ] タイムアウト解決ロジックが仕様通り動作

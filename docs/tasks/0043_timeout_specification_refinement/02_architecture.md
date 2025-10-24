@@ -9,7 +9,7 @@
 ### 2.1. 主要目標
 - **設定の明確化**: TOMLで未設定、ゼロ、正の値を明確に区別
 - **後方互換性の考慮**: 既存機能への影響を最小化
-- **型安全性の向上**: コンパイル時の型チェック強化
+- **型安全性の向上**: 専用の`Timeout`型によるコンパイル時の型チェック強化
 - **実行時安全性**: 無制限実行時の適切な警告とガイダンス
 
 ### 2.2. 設計原則
@@ -31,7 +31,7 @@ graph TB
     E --> F["Timeout Controller"]
 
     subgraph "Type System"
-        G["*int型<br>(Nullable Integer)"]
+        G["Timeout型<br>(専用構造体)"]
         H["DefaultTimeout<br>(60秒)"]
     end
 
@@ -57,8 +57,8 @@ sequenceDiagram
     participant Controller as "Timeout Controller"
 
     TOML->>Loader: "設定読み込み"
-    Loader->>Spec: "*int型で保存"
-    Note over Spec: "nil, *0, *N を区別"
+    Loader->>Spec: "Timeout型で保存"
+    Note over Spec: "Unset, Unlimited, N秒 を区別"
 
     Spec->>Runtime: "実行時展開"
     Runtime->>Runtime: "階層的解決<br>(Command→Group→Global)"
@@ -81,8 +81,11 @@ sequenceDiagram
 **役割**: TOML設定の静的な表現を保持
 
 **主要な変更点**:
-- `Timeout`フィールドを`int`から`*int`に変更
-- `nil`: 未設定、`*0`: ゼロ設定、`*N`: N秒設定
+- `Timeout`フィールドを`int`から`common.Timeout`型に変更
+- `Timeout`型が3つの状態を明示的に区別:
+  - Unset: 未設定（デフォルトまたは親から継承）
+  - Unlimited: ゼロ設定（無制限実行）
+  - N seconds: 正の値（N秒でタイムアウト）
 
 **影響範囲**:
 - `GlobalSpec`
@@ -114,25 +117,29 @@ sequenceDiagram
 
 ## 5. データ型設計
 
-### 5.1. Nullable Integer Pattern
+### 5.1. Timeout型の設計
 
 ```mermaid
 classDiagram
-    class TimeoutValue {
-        <<union>>
-        +nil "未設定"
-        +*0 "ゼロ（無制限）"
-        +*N "N秒タイムアウト"
+    class Timeout {
+        -value *int
+        +NewUnsetTimeout() Timeout
+        +NewUnlimitedTimeout() Timeout
+        +NewTimeout(seconds int) Timeout
+        +IsSet() bool
+        +IsUnlimited() bool
+        +Value() int
+        +UnmarshalTOML(data interface{}) error
     }
 
     class GlobalSpec {
-        +Timeout *int
+        +Timeout common.Timeout
         +resolveTimeout() int
     }
 
     class CommandSpec {
-        +Timeout *int
-        +resolveTimeout(parent *int) int
+        +Timeout common.Timeout
+        +resolveTimeout(parent common.Timeout) int
     }
 
     class RuntimeGlobal {
@@ -145,8 +152,8 @@ classDiagram
         +EffectiveTimeout int
     }
 
-    TimeoutValue --> GlobalSpec
-    TimeoutValue --> CommandSpec
+    Timeout --> GlobalSpec
+    Timeout --> CommandSpec
     GlobalSpec --> RuntimeGlobal
     CommandSpec --> RuntimeCommand
 ```
@@ -155,9 +162,9 @@ classDiagram
 
 | TOML設定 | Go内部表現 | 実行時解決 | 動作 |
 |---------|-----------|-----------|------|
-| 設定なし | `nil` | `DefaultTimeout` (60) | 60秒でタイムアウト |
-| `timeout = 0` | `*int(0)` | `0` | 無制限実行 |
-| `timeout = 30` | `*int(30)` | `30` | 30秒でタイムアウト |
+| 設定なし | `Timeout{value: nil}` | `DefaultTimeout` (60) | 60秒でタイムアウト |
+| `timeout = 0` | `Timeout{value: &0}` | `0` | 無制限実行 |
+| `timeout = 30` | `Timeout{value: &30}` | `30` | 30秒でタイムアウト |
 
 ## 6. 階層的継承設計
 
@@ -197,8 +204,8 @@ flowchart TD
 4. **システムデフォルト** (60秒)
 
 各レベルで「設定あり」は以下を意味する：
-- `nil`以外の値が設定されている場合
-- `*0`（無制限）も「設定あり」として扱われる
+- `Timeout.IsSet()`が`true`を返す場合
+- `IsUnlimited()`が`true`（無制限）の場合も「設定あり」として扱われる
 
 ## 7. エラーハンドリング設計
 
@@ -290,13 +297,14 @@ graph TD
 
 - **設定読み込み**: 既存性能から5%以内の劣化
 - **実行時オーバーヘッド**: 1ms以内の追加コスト
-- **メモリ使用量**: ポインタ型導入による微増（無視可能レベル）
+- **メモリ使用量**: Timeout型は`*int`と同等のサイズ（8バイト）で無視可能レベル
 
 ### 10.2. 最適化ポイント
 
-- **インライン展開**: 頻繁に呼ばれるタイムアウト取得関数
+- **インライン展開**: Timeoutメソッド(`IsSet()`, `IsUnlimited()`, `Value()`)のインライン化
 - **事前計算**: 設定解決結果のキャッシュ
 - **ゼロコピー**: 可能な限り設定データのコピーを避ける
+- **型安全性**: コンパイル時チェックによる実行時エラー削減
 
 ## 11. テスト戦略
 

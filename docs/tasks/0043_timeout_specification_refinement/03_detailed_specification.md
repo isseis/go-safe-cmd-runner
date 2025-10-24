@@ -8,31 +8,135 @@
 
 ### 2.1. 基本型定義
 
-#### 2.1.1. Nullable Timeout Type
+#### 2.1.1. Timeout Type
 
 ```go
+// Package common provides shared data types and constants used throughout the command runner.
+package common
+
 const (
     // DefaultTimeout is used when no timeout is explicitly set
     DefaultTimeout = 60 // seconds
 
     // MaxTimeout defines the maximum allowed timeout value (24 hours)
-    // Using int32 max to ensure cross-platform compatibility
+    // The value is well within int32 range, ensuring cross-platform compatibility.
     MaxTimeout = 86400 // 24 hours in seconds
 )
 
-// Helper function for creating integer pointers
-func IntPtr(v int) *int { return &v }
+// Timeout represents a timeout configuration value.
+// It distinguishes between three states:
+// - Unset (use default or inherit from parent)
+// - Zero (unlimited execution, no timeout)
+// - Positive value (timeout in seconds)
+//
+// This type provides type safety and explicit semantics compared to using *int directly.
+type Timeout struct {
+    value *int
+}
+
+// NewUnsetTimeout creates an unset Timeout (will use default or inherit from parent).
+func NewUnsetTimeout() Timeout {
+    return Timeout{value: nil}
+}
+
+// NewUnlimitedTimeout creates a Timeout with unlimited execution (no timeout).
+func NewUnlimitedTimeout() Timeout {
+    zero := 0
+    return Timeout{value: &zero}
+}
+
+// NewTimeout creates a Timeout with the specified duration in seconds.
+// Returns error if seconds is negative or exceeds MaxTimeout.
+func NewTimeout(seconds int) (Timeout, error) {
+    if seconds < 0 {
+        return Timeout{}, ErrInvalidTimeout{
+            Value:   seconds,
+            Context: "timeout cannot be negative",
+        }
+    }
+    if seconds > MaxTimeout {
+        return Timeout{}, ErrInvalidTimeout{
+            Value:   seconds,
+            Context: "timeout exceeds maximum allowed value",
+        }
+    }
+    return Timeout{value: &seconds}, nil
+}
+
+// IsSet returns true if the timeout has been explicitly set (non-nil).
+func (t Timeout) IsSet() bool {
+    return t.value != nil
+}
+
+// IsUnlimited returns true if the timeout is explicitly set to unlimited (0).
+// Returns false if the timeout is unset (nil).
+func (t Timeout) IsUnlimited() bool {
+    return t.value != nil && *t.value == 0
+}
+
+// Value returns the timeout value in seconds.
+// Returns 0 if unset (caller should apply default or inherit from parent).
+// For unlimited timeout, returns 0 (use IsUnlimited to distinguish from unset).
+func (t Timeout) Value() int {
+    if t.value == nil {
+        return 0
+    }
+    return *t.value
+}
+
+// UnmarshalTOML implements the TOML unmarshaler interface.
+// This allows Timeout to be automatically unmarshaled from TOML files.
+func (t *Timeout) UnmarshalTOML(data interface{}) error {
+    if data == nil {
+        *t = NewUnsetTimeout()
+        return nil
+    }
+
+    // Convert to int based on type
+    var value int
+    switch v := data.(type) {
+    case int:
+        value = v
+    case int64:
+        // TOML often parses integers as int64
+        // Check for overflow before conversion
+        maxInt := int64(^uint(0) >> 1)
+        minInt := ^maxInt
+        if v > maxInt || v < minInt {
+            return ErrInvalidTimeout{
+                Value:   v,
+                Context: "TOML timeout field (int overflow)",
+            }
+        }
+        value = int(v)
+    case int32:
+        value = int(v)
+    default:
+        return ErrInvalidTimeout{
+            Value:   data,
+            Context: "TOML timeout field (unsupported type)",
+        }
+    }
+
+    // Validate and create Timeout
+    timeout, err := NewTimeout(value)
+    if err != nil {
+        return err
+    }
+    *t = timeout
+    return nil
+}
 ```
 
-**注記**: タイムアウト値は `*int` 型を直接使用します。`IntPtr()` ヘルパー関数を使ってポインタ値を簡単に作成できます。
+**注記**: `Timeout`型は内部に`*int`を持つ構造体として実装されており、型安全性と明示的なセマンティクスを提供します。
 
 #### 2.1.2. 型の意味論
 
 | Go表現 | TOML表現 | 意味 | 実行時動作 |
 |--------|----------|------|-----------|
-| `nil` | 設定なし | デフォルトタイムアウトを使用 | 60秒でタイムアウト |
-| `*int(0)` | `timeout = 0` | 無制限実行 | タイムアウトしない |
-| `*int(N)` (N>0) | `timeout = N` | N秒タイムアウト | N秒でタイムアウト |
+| `NewUnsetTimeout()` | 設定なし | デフォルトタイムアウトを使用 | 60秒でタイムアウト |
+| `NewUnlimitedTimeout()` | `timeout = 0` | 無制限実行 | タイムアウトしない |
+| `NewTimeout(N)` (N>0) | `timeout = N` | N秒タイムアウト | N秒でタイムアウト |
 
 ### 2.2. 構造体定義変更
 
@@ -42,10 +146,10 @@ func IntPtr(v int) *int { return &v }
 // GlobalSpec represents global configuration loaded from TOML
 type GlobalSpec struct {
     // Timeout specifies the default timeout for all commands
-    // nil: use DefaultTimeout (60 seconds)
-    // *0: no timeout (unlimited execution)
-    // *N (N>0): timeout after N seconds
-    Timeout *int `toml:"timeout"`
+    // Use NewUnsetTimeout(): use DefaultTimeout (60 seconds)
+    // Use NewUnlimitedTimeout(): no timeout (unlimited execution)
+    // Use NewTimeout(N): timeout after N seconds
+    Timeout common.Timeout `toml:"timeout"`
 
     // 他のフィールドは変更なし
     LogLevel            string   `toml:"log_level"`
@@ -70,10 +174,10 @@ type CommandSpec struct {
     Args        []string `toml:"args"`
 
     // Timeout specifies command-specific timeout
-    // nil: inherit from parent (group or global)
-    // *0: no timeout (unlimited execution)
-    // *N (N>0): timeout after N seconds
-    Timeout *int `toml:"timeout"`
+    // Unset: inherit from parent (group or global)
+    // Unlimited: no timeout (unlimited execution)
+    // N seconds: timeout after N seconds
+    Timeout common.Timeout `toml:"timeout"`
 
     // 他のフィールドは変更なし
     WorkDir     string   `toml:"workdir"`
@@ -98,24 +202,27 @@ type CommandSpec struct {
 // ResolveTimeout resolves the effective timeout value from the hierarchy.
 // It returns the resolved timeout in seconds.
 // A value of 0 means unlimited execution.
-func ResolveTimeout(cmdTimeout, groupTimeout, globalTimeout *int) int {
-    // Determine which timeout pointer to use based on hierarchy
-    var effectiveTimeout *int
-    if cmdTimeout != nil {
+func ResolveTimeout(cmdTimeout, groupTimeout, globalTimeout common.Timeout) int {
+    // Determine which timeout to use based on hierarchy
+    var effectiveTimeout common.Timeout
+    if cmdTimeout.IsSet() {
         effectiveTimeout = cmdTimeout
-    } else if groupTimeout != nil {
+    } else if groupTimeout.IsSet() {
         effectiveTimeout = groupTimeout
-    } else if globalTimeout != nil {
+    } else if globalTimeout.IsSet() {
         effectiveTimeout = globalTimeout
+    } else {
+        // If no timeout is set at any level, use the default
+        return common.DefaultTimeout
     }
 
-    // If no timeout is set at any level, use the default
-    if effectiveTimeout == nil {
-        return DefaultTimeout
+    // If timeout is unlimited, return 0
+    if effectiveTimeout.IsUnlimited() {
+        return 0
     }
 
-    // If a timeout is set, return its value (0 for unlimited)
-    return *effectiveTimeout
+    // Return the explicit timeout value
+    return effectiveTimeout.Value()
 }
 ```
 
@@ -141,18 +248,22 @@ func ResolveTimeout(cmdTimeout, groupTimeout, globalTimeout *int) int {
 
 ```go
 // Timeout returns the effective global timeout value
-// Returns DefaultTimeout if not specified in config (Spec.Timeout == nil)
+// Returns DefaultTimeout if not specified in config (Spec.Timeout not set)
 // Returns 0 for unlimited execution if explicitly set to 0
 func (r *RuntimeGlobal) Timeout() int {
     if r == nil || r.Spec == nil {
         panic("RuntimeGlobal.Timeout: nil receiver or Spec")
     }
 
-    if r.Spec.Timeout == nil {
-        return DefaultTimeout
+    if !r.Spec.Timeout.IsSet() {
+        return common.DefaultTimeout
     }
 
-    return *r.Spec.Timeout
+    if r.Spec.Timeout.IsUnlimited() {
+        return 0
+    }
+
+    return r.Spec.Timeout.Value()
 }
 ```
 
@@ -178,12 +289,12 @@ type RuntimeCommand struct {
 }
 
 // NewRuntimeCommand creates a new RuntimeCommand with resolved timeout
-func NewRuntimeCommand(spec *CommandSpec, globalTimeout *int) (*RuntimeCommand, error) {
+func NewRuntimeCommand(spec *CommandSpec, globalTimeout common.Timeout) (*RuntimeCommand, error) {
     if spec == nil {
         return nil, ErrNilSpec
     }
 
-    effectiveTimeout := ResolveTimeout(spec.Timeout, nil, globalTimeout)
+    effectiveTimeout := ResolveTimeout(spec.Timeout, common.NewUnsetTimeout(), globalTimeout)
 
     return &RuntimeCommand{
         Spec:             spec,
@@ -200,41 +311,56 @@ func NewRuntimeCommand(spec *CommandSpec, globalTimeout *int) (*RuntimeCommand, 
 
 #### 4.1.1. 型変換ロジック
 
+TOML unmarshaling は `Timeout` 型の `UnmarshalTOML` メソッドで自動的に処理されます：
+
 ```go
-// parseTimeoutValue converts TOML value to *int
-func parseTimeoutValue(value interface{}) (*int, error) {
-    if value == nil {
-        return nil, nil // Unset
+// UnmarshalTOML implements the TOML unmarshaler interface.
+func (t *Timeout) UnmarshalTOML(data interface{}) error {
+    if data == nil {
+        *t = NewUnsetTimeout()
+        return nil
     }
 
-    switch v := value.(type) {
-    case int64:
-        if v < 0 {
-            return nil, fmt.Errorf("timeout must be non-negative, got %d", v)
-        }
-        if v > MaxTimeout {
-            return nil, fmt.Errorf("timeout value too large: %d. Maximum value is %d", v, MaxTimeout)
-        }
-        intVal := int(v)
-        return &intVal, nil
+    var value int
+    switch v := data.(type) {
     case int:
-        if v < 0 {
-            return nil, fmt.Errorf("timeout must be non-negative, got %d", v)
+        value = v
+    case int64:
+        // TOML often parses integers as int64
+        maxInt := int64(^uint(0) >> 1)
+        minInt := ^maxInt
+        if v > maxInt || v < minInt {
+            return ErrInvalidTimeout{
+                Value:   v,
+                Context: "TOML timeout field (int overflow)",
+            }
         }
-        if v > MaxTimeout {
-            return nil, fmt.Errorf("timeout value too large: %d. Maximum value is %d", v, MaxTimeout)
-        }
-        return &v, nil
+        value = int(v)
+    case int32:
+        value = int(v)
     default:
-        return nil, fmt.Errorf("timeout must be an integer, got %T", v)
+        return ErrInvalidTimeout{
+            Value:   data,
+            Context: "TOML timeout field (unsupported type)",
+        }
     }
+
+    // Validate and create Timeout
+    timeout, err := NewTimeout(value)
+    if err != nil {
+        return err
+    }
+    *t = timeout
+    return nil
 }
 ```
 
 #### 4.1.2. バリデーション
 
 ```go
-// ValidateTimeout validates timeout configuration
+// ValidateTimeout validates timeout configuration.
+// Note: With the Timeout type, validation is mostly built into the type itself.
+// This function is kept for backward compatibility and additional validation contexts.
 func ValidateTimeout(timeout *int, context string) error {
     if timeout == nil {
         return nil // Unset is valid
@@ -250,6 +376,9 @@ func ValidateTimeout(timeout *int, context string) error {
 
     return nil
 }
+
+// For Timeout type, validation is implicit in the constructor:
+// NewTimeout(seconds int) returns error for invalid values
 ```
 
 ### 4.2. エラーメッセージ仕様
@@ -340,37 +469,35 @@ func TestTimeoutParsing(t *testing.T) {
     tests := []struct {
         name     string
         toml     string
-        expected *int
+        expected common.Timeout
         wantErr  bool
     }{
         {
             name:     "unset timeout",
-            toml:     ``,
-            expected: nil,
+            toml:     `version = "1.0"`,
+            expected: common.NewUnsetTimeout(),
             wantErr:  false,
         },
         {
             name:     "zero timeout",
-            toml:     `timeout = 0`,
-            expected: intPtr(0),
+            toml:     `version = "1.0"\ntimeout = 0`,
+            expected: common.NewUnlimitedTimeout(),
             wantErr:  false,
         },
         {
             name:     "positive timeout",
-            toml:     `timeout = 300`,
-            expected: intPtr(300),
+            toml:     `version = "1.0"\ntimeout = 300`,
+            expected: mustNewTimeout(300),
             wantErr:  false,
         },
         {
             name:     "negative timeout",
-            toml:     `timeout = -1`,
-            expected: nil,
+            toml:     `version = "1.0"\ntimeout = -1`,
             wantErr:  true,
         },
         {
             name:     "timeout exceeds maximum",
-            toml:     `timeout = 90000`,
-            expected: nil,
+            toml:     `version = "1.0"\ntimeout = 90000`,
             wantErr:  true,
         },
     }
@@ -380,6 +507,14 @@ func TestTimeoutParsing(t *testing.T) {
             // テスト実装
         })
     }
+}
+
+func mustNewTimeout(seconds int) common.Timeout {
+    t, err := common.NewTimeout(seconds)
+    if err != nil {
+        panic(err)
+    }
+    return t
 }
 ```
 
@@ -489,8 +624,9 @@ func TestE2ETimeoutBehavior(t *testing.T) {
 
 #### 7.1.1. メモリ使用量
 
-- **追加メモリ**: ポインタ型導入による1構造体あたり8バイト増加
-- **影響度**: 通常の設定ファイル（<100コマンド）では無視可能レベル
+- **Timeout型サイズ**: 8バイト（ポインタ1つ分）
+- **影響度**: `*int`型と同等のメモリ使用量
+- **追加コスト**: 型安全性のための実装であり、性能面でのオーバーヘッドは無視可能
 
 #### 7.1.2. 実行時性能
 
@@ -503,13 +639,23 @@ func TestE2ETimeoutBehavior(t *testing.T) {
 #### 7.2.1. インライン化
 
 ```go
-// Timeout resolution should be inlined for performance
+// Timeout methods should be inlined for performance
 //go:inline
-func (r *RuntimeGlobal) Timeout() int {
-    if r.Spec.Timeout == nil {
-        return DefaultTimeout
+func (t Timeout) IsSet() bool {
+    return t.value != nil
+}
+
+//go:inline
+func (t Timeout) IsUnlimited() bool {
+    return t.value != nil && *t.value == 0
+}
+
+//go:inline
+func (t Timeout) Value() int {
+    if t.value == nil {
+        return 0
     }
-    return *r.Spec.Timeout
+    return *t.value
 }
 ```
 
@@ -517,9 +663,10 @@ func (r *RuntimeGlobal) Timeout() int {
 
 ```go
 // Precompute timeout values during runtime creation
-func NewRuntimeCommand(spec *CommandSpec, globalTimeout *int) *RuntimeCommand {
+func NewRuntimeCommand(spec *CommandSpec, globalTimeout common.Timeout) *RuntimeCommand {
     effectiveTimeout := ResolveTimeout(
         spec.Timeout,
+        common.NewUnsetTimeout(), // group timeout placeholder
         globalTimeout,
     )
 
@@ -685,11 +832,12 @@ const (
 
 ### 11.1. コード変更
 
-- [ ] `GlobalSpec.Timeout` を `*int` に変更
-- [ ] `CommandSpec.Timeout` を `*int` に変更
+- [x] `Timeout`型を`internal/common/timeout.go`に定義
+- [ ] `GlobalSpec.Timeout` を `common.Timeout` に変更
+- [ ] `CommandSpec.Timeout` を `common.Timeout` に変更
 - [ ] `RuntimeGlobal.Timeout()` メソッド更新
 - [ ] `ResolveTimeout` 関数実装
-- [ ] TOML パーサーでの負の値バリデーション
+- [ ] TOML unmarshalingの自動処理（`UnmarshalTOML`メソッド）
 - [ ] 実行エンジンでの無制限タイムアウト対応
 
 ### 11.2. テスト実装
