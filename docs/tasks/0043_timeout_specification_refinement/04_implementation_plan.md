@@ -134,12 +134,19 @@ type TimeoutResolutionContext struct {
 - `ValidateTimeout` 関数は使用されていないため削除
 - タイムアウト関連コードを `timeout.go` に集約することで保守性を向上
 
+**target file**: `cmd/runner/main.go` (修正)
+- `NewRuntimeCommandLegacy` から `NewRuntimeCommand` への切り替え
+- タイムアウト解決機能を有効化
+- レガシー関数の使用を廃止
+
 #### 3.2.2. 実装チェックポイント
 - [x] タイムアウト解決アルゴリズムが正しく動作する
 - [x] 階層継承ロジックが仕様通りに実装されている
 - [x] RuntimeCommand にタイムアウト値が正しく設定される
 - [x] `ErrInvalidTimeout` が `timeout.go` に移動されている
 - [x] `validation.go` が削除され、既存のビルドが通る
+- [ ] プロダクションコードで `NewRuntimeCommand` を使用している
+- [ ] `NewRuntimeCommandLegacy` が使用されていないことを確認
 
 ### 3.3. Phase 3: 実行制御実装
 
