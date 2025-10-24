@@ -12,6 +12,8 @@ const (
 	MaxTimeout = 86400 // 24 hours in seconds
 )
 
+var zero = 0
+
 // Timeout represents a timeout configuration value.
 // It distinguishes between three states:
 // - Unset (use default or inherit from parent)
@@ -35,7 +37,6 @@ func NewUnsetTimeout() Timeout {
 
 // NewUnlimitedTimeout creates a Timeout with unlimited execution (no timeout).
 func NewUnlimitedTimeout() Timeout {
-	zero := 0
 	return Timeout{value: &zero}
 }
 
