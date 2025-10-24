@@ -135,9 +135,9 @@ type TimeoutResolutionContext struct {
 - タイムアウト関連コードを `timeout.go` に集約することで保守性を向上
 
 #### 3.2.2. 実装チェックポイント
-- [ ] タイムアウト解決アルゴリズムが正しく動作する
-- [ ] 階層継承ロジックが仕様通りに実装されている
-- [ ] RuntimeCommand にタイムアウト値が正しく設定される
+- [x] タイムアウト解決アルゴリズムが正しく動作する
+- [x] 階層継承ロジックが仕様通りに実装されている
+- [x] RuntimeCommand にタイムアウト値が正しく設定される
 - [ ] `ErrInvalidTimeout` が `timeout.go` に移動されている
 - [ ] `validation.go` が削除され、既存のビルドが通る
 
