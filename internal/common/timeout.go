@@ -3,6 +3,20 @@
 //nolint:revive // "common" is an appropriate name for shared utilities package
 package common
 
+import (
+	"fmt"
+)
+
+// ErrInvalidTimeout is returned when an invalid timeout value is encountered
+type ErrInvalidTimeout struct {
+	Value   any
+	Context string
+}
+
+func (e ErrInvalidTimeout) Error() string {
+	return fmt.Sprintf("invalid timeout value %v in %s", e.Value, e.Context)
+}
+
 const (
 	// DefaultTimeout is used when no timeout is explicitly set
 	DefaultTimeout = 60 // seconds

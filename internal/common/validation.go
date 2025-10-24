@@ -5,16 +5,6 @@ import (
 	"fmt"
 )
 
-// ErrInvalidTimeout is returned when an invalid timeout value is encountered
-type ErrInvalidTimeout struct {
-	Value   interface{}
-	Context string
-}
-
-func (e ErrInvalidTimeout) Error() string {
-	return fmt.Sprintf("invalid timeout value %v in %s", e.Value, e.Context)
-}
-
 // ValidateTimeout validates timeout configuration.
 // It accepts *int values and validates them according to the timeout specification:
 // - nil: valid (unset, will use default)
