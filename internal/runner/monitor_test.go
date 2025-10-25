@@ -6,18 +6,18 @@ import (
 	"time"
 )
 
-func TestNewUnlimitedExecutionMonitor(t *testing.T) {
-	monitor := NewUnlimitedExecutionMonitor()
+func TestNewProcessMonitor(t *testing.T) {
+	monitor := NewProcessMonitor()
 	if monitor == nil {
-		t.Fatal("NewUnlimitedExecutionMonitor returned nil")
+		t.Fatal("NewProcessMonitor returned nil")
 	}
 	if monitor.processes == nil {
 		t.Error("processes map not initialized")
 	}
 }
 
-func TestUnlimitedExecutionMonitor_Register(t *testing.T) {
-	monitor := NewUnlimitedExecutionMonitor()
+func TestProcessMonitor_Register(t *testing.T) {
+	monitor := NewProcessMonitor()
 
 	monitor.Register(123, "test-command")
 
@@ -34,8 +34,8 @@ func TestUnlimitedExecutionMonitor_Register(t *testing.T) {
 	}
 }
 
-func TestUnlimitedExecutionMonitor_Unregister(t *testing.T) {
-	monitor := NewUnlimitedExecutionMonitor()
+func TestProcessMonitor_Unregister(t *testing.T) {
+	monitor := NewProcessMonitor()
 
 	monitor.Register(123, "test-command")
 	monitor.Register(456, "another-command")
@@ -52,20 +52,90 @@ func TestUnlimitedExecutionMonitor_Unregister(t *testing.T) {
 	}
 }
 
-func TestMonitorUnlimitedExecution(t *testing.T) {
+func TestProcessMonitor_StartStop(t *testing.T) {
+	monitor := NewProcessMonitor()
 	ctx := context.Background()
-	cancel := MonitorUnlimitedExecution(ctx, 123, "test-command")
 
-	if cancel == nil {
-		t.Fatal("MonitorUnlimitedExecution returned nil cancel function")
+	// Initially not running
+	if monitor.IsRunning() {
+		t.Error("Monitor should not be running initially")
 	}
 
-	// Clean up
-	cancel()
+	// Start monitoring
+	err := monitor.Start(ctx)
+	if err != nil {
+		t.Fatalf("Start() returned error: %v", err)
+	}
+
+	// Should be running now
+	if !monitor.IsRunning() {
+		t.Error("Monitor should be running after Start()")
+	}
+
+	// Starting again should be safe (idempotent)
+	err = monitor.Start(ctx)
+	if err != nil {
+		t.Errorf("Second Start() returned error: %v", err)
+	}
+
+	// Stop monitoring
+	monitor.Stop()
+
+	// Should not be running
+	if monitor.IsRunning() {
+		t.Error("Monitor should not be running after Stop()")
+	}
+
+	// Stopping again should be safe (idempotent)
+	monitor.Stop()
 }
 
-func TestUnlimitedExecutionMonitor_CheckLongRunningProcesses(t *testing.T) {
-	monitor := NewUnlimitedExecutionMonitor()
+func TestProcessMonitor_MonitoringLoop(t *testing.T) {
+	monitor := NewProcessMonitor()
+	ctx := context.Background()
+
+	// Set short intervals for testing
+	monitor.SetCheckInterval(100 * time.Millisecond)
+	monitor.SetWarnThreshold(50 * time.Millisecond)
+
+	// Register a process
+	monitor.Register(123, "test-command")
+
+	// Start monitoring
+	err := monitor.Start(ctx)
+	if err != nil {
+		t.Fatalf("Start() returned error: %v", err)
+	}
+	defer monitor.Stop()
+
+	// Wait for at least one check cycle
+	time.Sleep(200 * time.Millisecond)
+
+	// Verify process is still registered
+	processes := monitor.GetRunningProcesses()
+	if len(processes) != 1 {
+		t.Errorf("Expected 1 process, got %d", len(processes))
+	}
+}
+
+func TestProcessMonitor_SetIntervals(t *testing.T) {
+	monitor := NewProcessMonitor()
+
+	// Test SetCheckInterval
+	monitor.SetCheckInterval(10 * time.Second)
+	if monitor.checkInterval != 10*time.Second {
+		t.Errorf("Expected check interval 10s, got %v", monitor.checkInterval)
+	}
+
+	// Test SetWarnThreshold
+	monitor.SetWarnThreshold(15 * time.Minute)
+	if monitor.warnThreshold != 15*time.Minute {
+		t.Errorf("Expected warn threshold 15m, got %v", monitor.warnThreshold)
+	}
+}
+
+func TestProcessMonitor_CheckLongRunningProcesses(t *testing.T) {
+	monitor := NewProcessMonitor()
 
 	// Register a process that started in the past
 	monitor.Register(123, "long-running-command")
@@ -85,8 +155,8 @@ func TestUnlimitedExecutionMonitor_CheckLongRunningProcesses(t *testing.T) {
 	}
 }
 
-func TestUnlimitedExecutionMonitor_GetRunningProcesses(t *testing.T) {
-	monitor := NewUnlimitedExecutionMonitor()
+func TestProcessMonitor_GetRunningProcesses(t *testing.T) {
+	monitor := NewProcessMonitor()
 
 	// Register multiple processes
 	monitor.Register(123, "command1")
@@ -105,8 +175,8 @@ func TestUnlimitedExecutionMonitor_GetRunningProcesses(t *testing.T) {
 	}
 }
 
-func TestUnlimitedExecutionMonitor_ConcurrentAccess(t *testing.T) {
-	monitor := NewUnlimitedExecutionMonitor()
+func TestProcessMonitor_ConcurrentAccess(t *testing.T) {
+	monitor := NewProcessMonitor()
 
 	// Test concurrent registration and unregistration
 	done := make(chan bool)
