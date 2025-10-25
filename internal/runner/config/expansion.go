@@ -430,7 +430,7 @@ func ExpandGroup(spec *runnertypes.GroupSpec, globalRuntime *runnertypes.Runtime
 	}
 
 	// 1. Inherit global variables
-	if globalRuntime != nil && globalRuntime.ExpandedVars != nil {
+	if globalRuntime != nil {
 		maps.Copy(runtime.ExpandedVars, globalRuntime.ExpandedVars)
 	}
 
@@ -518,7 +518,7 @@ func ExpandCommand(spec *runnertypes.CommandSpec, runtimeGroup *runnertypes.Runt
 	}
 
 	// 1. Inherit group variables
-	if runtimeGroup != nil && runtimeGroup.ExpandedVars != nil {
+	if runtimeGroup != nil {
 		maps.Copy(runtime.ExpandedVars, runtimeGroup.ExpandedVars)
 	}
 
