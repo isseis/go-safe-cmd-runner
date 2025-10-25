@@ -67,11 +67,18 @@ output_file = "full_backup.sql.gz"
 timeout = 3600  # Override: 1 hour for large backup
 
 [[groups.commands]]
-name = "system_update"
-description = "Update system packages"
+name = "system_update_index"
+description = "Update system package index"
 cmd = "apt"
-args = ["update", "&&", "apt", "upgrade", "-y"]
-timeout = 1800  # Override: 30 minutes for system updates
+args = ["update"]
+timeout = 300  # Override: 5 minutes for package index update
+
+[[groups.commands]]
+name = "system_upgrade"
+description = "Upgrade system packages"
+cmd = "apt"
+args = ["upgrade", "-y"]
+timeout = 1800  # Override: 30 minutes for system upgrades
 
 # Example 4: Unlimited Execution (v2.0.0+)
 [[groups]]
