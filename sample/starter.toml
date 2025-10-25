@@ -4,6 +4,8 @@ version = "1.0"
 
 [global]
 # Basic timeout setting (30 seconds)
+# Note: From v2.0.0, timeout = 0 means unlimited execution (no timeout)
+# Positive values specify timeout in seconds
 timeout = 30
 # Log level: info (other options: debug, warn, error)
 log_level = "info"

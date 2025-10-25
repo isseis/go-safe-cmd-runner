@@ -767,12 +767,16 @@ timeout = 秒数
 
 | 項目 | 内容 |
 |-----|------|
-| **型** | 整数 (int) |
+| **型** | 整数 (int) またはnull |
 | **必須/オプション** | オプション |
 | **設定可能な階層** | グローバル、コマンド |
-| **デフォルト値** | グローバルの timeout |
-| **有効な値** | 正の整数(秒単位) |
+| **デフォルト値** | グローバルtimeout（設定されている場合）、そうでなければ60秒 |
+| **有効な値** | 0（無制限）、正の整数（秒単位） |
 | **オーバーライド** | グローバル設定をオーバーライド |
+
+#### ⚠️ 重要な注意事項
+
+`timeout = 0` は**無制限実行**（タイムアウトなし）を意味します。
 
 #### 設定例
 
@@ -826,6 +830,61 @@ cmd = "/usr/bin/pg_dump"
 args = ["large_db"]
 timeout = 3600  # 1時間
 ```
+
+#### 例3: 無制限実行
+
+```toml
+[global]
+timeout = 120  # デフォルト: 2分
+
+[[groups]]
+name = "data_processing"
+
+[[groups.commands]]
+name = "interactive_data_entry"
+cmd = "/usr/bin/data-entry-tool"
+args = ["--interactive"]
+timeout = 0  # ✅ 無制限実行 - ユーザー操作を待機
+
+[[groups.commands]]
+name = "large_dataset_analysis"
+cmd = "/usr/bin/analyze"
+args = ["--dataset", "huge_dataset.csv"]
+timeout = 0  # ✅ 無制限実行 - 処理時間が予測できない
+
+[[groups.commands]]
+name = "quick_validation"
+cmd = "/usr/bin/validate"
+args = ["small_file.txt"]
+# グローバルの 120秒を使用
+```
+
+#### 継承ロジック
+
+有効なタイムアウト値は以下の解決階層に従います:
+
+1. **コマンドレベル `timeout`**（最高優先度）
+   ```toml
+   [[groups.commands]]
+   name = "cmd"
+   timeout = 300  # ← この値が使用される
+   ```
+
+2. **グローバルレベル `timeout`**
+   ```toml
+   [global]
+   timeout = 180  # ← コマンドタイムアウトが指定されていない場合に使用
+   ```
+
+3. **システムデフォルト**（最低優先度）
+   ```toml
+   [global]
+   # timeout は指定されていません
+   
+   [[groups.commands]]
+   name = "cmd"
+   # timeout は指定されていません
+   # → システムデフォルトの 60秒 が使用されます
 
 ## 6.4 権限管理
 

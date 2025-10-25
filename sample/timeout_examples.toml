@@ -1,0 +1,270 @@
+# Timeout Configuration Examples
+# This file demonstrates various timeout settings and use cases
+# Available from v2.0.0
+
+version = "1.0"
+
+# Global timeout setting - applies to all commands unless overridden
+[global]
+timeout = 120  # Default timeout: 2 minutes
+
+# Example 1: Quick Operations with Default Timeout
+[[groups]]
+name = "quick_operations"
+description = "Fast commands that should complete quickly"
+
+[[groups.commands]]
+name = "api_health_check"
+description = "Check if API endpoint is responding"
+cmd = "curl"
+args = ["-f", "-s", "--max-time", "10", "https://api.example.com/health"]
+# Uses global timeout (120 seconds) - more than enough for API call
+
+[[groups.commands]]
+name = "disk_space_check"
+description = "Check available disk space"
+cmd = "df"
+args = ["-h", "/"]
+# Uses global timeout (120 seconds)
+
+[[groups.commands]]
+name = "memory_usage"
+description = "Display current memory usage"
+cmd = "free"
+args = ["-h"]
+# Uses global timeout (120 seconds)
+
+# Example 2: Short Timeout for Network Operations
+[[groups]]
+name = "network_checks"
+description = "Network operations that should fail fast"
+
+[[groups.commands]]
+name = "ping_test"
+description = "Quick connectivity test"
+cmd = "ping"
+args = ["-c", "3", "8.8.8.8"]
+timeout = 30  # Override: 30 seconds (shorter than global)
+
+[[groups.commands]]
+name = "dns_lookup"
+description = "Resolve domain name"
+cmd = "nslookup"
+args = ["example.com"]
+timeout = 15  # Override: 15 seconds for DNS resolution
+
+# Example 3: Long-Running Operations with Extended Timeout
+[[groups]]
+name = "long_operations"
+description = "Operations that need more time"
+
+[[groups.commands]]
+name = "database_backup"
+description = "Full database backup"
+cmd = "/usr/bin/pg_dump"
+args = ["--all-databases", "--compress=9"]
+output_file = "full_backup.sql.gz"
+timeout = 3600  # Override: 1 hour for large backup
+
+[[groups.commands]]
+name = "system_update_index"
+description = "Update system package index"
+cmd = "apt"
+args = ["update"]
+timeout = 300  # Override: 5 minutes for package index update
+
+[[groups.commands]]
+name = "system_upgrade"
+description = "Upgrade system packages"
+cmd = "apt"
+args = ["upgrade", "-y"]
+timeout = 1800  # Override: 30 minutes for system upgrades
+
+# Example 4: Unlimited Execution (v2.0.0+)
+[[groups]]
+name = "unlimited_operations"
+description = "Tasks that may run indefinitely"
+
+[[groups.commands]]
+name = "interactive_setup"
+description = "Interactive system configuration wizard"
+cmd = "/usr/bin/system-setup-wizard"
+args = ["--interactive"]
+timeout = 0  # ✅ Unlimited: waits for user input
+
+[[groups.commands]]
+name = "large_data_processing"
+description = "Process dataset of unknown size"
+cmd = "/usr/bin/process-data"
+args = ["--input", "/data/large-dataset.csv", "--optimize"]
+timeout = 0  # ✅ Unlimited: processing time varies greatly
+
+[[groups.commands]]
+name = "continuous_monitoring"
+description = "Start monitoring service (runs until stopped)"
+cmd = "/usr/bin/monitor"
+args = ["--daemon", "--config", "/etc/monitor.conf"]
+timeout = 0  # ✅ Unlimited: service runs continuously
+
+# Example 5: Development and Testing Timeouts
+[[groups]]
+name = "development_tasks"
+description = "Development and testing operations"
+
+[[groups.commands]]
+name = "unit_tests"
+description = "Run unit test suite"
+cmd = "go"
+args = ["test", "./..."]
+timeout = 300  # Override: 5 minutes for test suite
+
+[[groups.commands]]
+name = "integration_tests"
+description = "Run integration tests"
+cmd = "go"
+args = ["test", "-tags=integration", "./..."]
+timeout = 900  # Override: 15 minutes for integration tests
+
+[[groups.commands]]
+name = "manual_testing"
+description = "Manual testing session"
+cmd = "/usr/bin/test-runner"
+args = ["--interactive", "--manual"]
+timeout = 0  # ✅ Unlimited: manual testing takes unpredictable time
+
+# Example 6: Mixed Timeout Strategy
+[[groups]]
+name = "backup_and_cleanup"
+description = "Backup with cleanup - mixed timeout requirements"
+
+[[groups.commands]]
+name = "pre_backup_check"
+description = "Quick check before backup"
+cmd = "/usr/bin/backup-checker"
+args = ["--quick"]
+timeout = 60  # Override: 1 minute for quick check
+
+[[groups.commands]]
+name = "incremental_backup"
+description = "Fast incremental backup"
+cmd = "/usr/bin/backup"
+args = ["--incremental", "/data"]
+timeout = 600  # Override: 10 minutes for incremental
+
+[[groups.commands]]
+name = "full_backup"
+description = "Complete system backup"
+cmd = "/usr/bin/backup"
+args = ["--full", "--compress", "/"]
+timeout = 0  # ✅ Unlimited: full backup may take hours
+
+[[groups.commands]]
+name = "cleanup_temp_files"
+description = "Remove temporary files"
+cmd = "find"
+args = ["/tmp", "-type", "f", "-mtime", "+7", "-delete"]
+timeout = 300  # Override: 5 minutes for cleanup
+
+# Example 7: Timeout Hierarchy Demonstration
+[[groups]]
+name = "hierarchy_example"
+description = "Shows how timeout inheritance works"
+
+[[groups.commands]]
+name = "uses_global"
+description = "Command without timeout specification"
+cmd = "echo"
+args = ["Using global timeout (120 seconds)"]
+# No timeout specified → uses global timeout (120 seconds)
+
+[[groups.commands]]
+name = "overrides_global"
+description = "Command with explicit timeout"
+cmd = "echo"
+args = ["Using command timeout (30 seconds)"]
+timeout = 30  # Overrides global timeout
+
+[[groups.commands]]
+name = "unlimited_override"
+description = "Command with unlimited timeout"
+cmd = "echo"
+args = ["Using unlimited timeout (0 = no timeout)"]
+timeout = 0  # Overrides global timeout with unlimited
+
+# Example 8: Security-Conscious Timeout Settings
+[[groups]]
+name = "security_operations"
+description = "Security-related tasks with careful timeout settings"
+
+[[groups.commands]]
+name = "vulnerability_scan"
+description = "Quick vulnerability scan"
+cmd = "/usr/bin/nmap"
+args = ["-sS", "-F", "localhost"]
+timeout = 180  # Override: 3 minutes - balance between thorough scan and resource usage
+
+[[groups.commands]]
+name = "log_analysis"
+description = "Analyze security logs"
+cmd = "/usr/bin/analyze-logs"
+args = ["--security", "/var/log/auth.log"]
+timeout = 600  # Override: 10 minutes for log analysis
+
+[[groups.commands]]
+name = "incident_response"
+description = "Interactive incident response tool"
+cmd = "/usr/bin/incident-response"
+args = ["--interactive"]
+timeout = 0  # ✅ Unlimited: incident response requires flexible timing
+
+# Example 9: Resource-Intensive Operations
+[[groups]]
+name = "resource_intensive"
+description = "CPU/Memory intensive tasks"
+
+[[groups.commands]]
+name = "video_encoding"
+description = "Encode video file"
+cmd = "/usr/bin/ffmpeg"
+args = ["-i", "input.mp4", "-c:v", "libx264", "output.mp4"]
+timeout = 0  # ✅ Unlimited: video encoding time varies by file size
+
+[[groups.commands]]
+name = "data_compression"
+description = "Compress large archive"
+cmd = "tar"
+args = ["-czf", "backup.tar.gz", "/home/user/documents/"]
+timeout = 0  # ✅ Unlimited: compression time depends on data size
+
+[[groups.commands]]
+name = "checksum_verification"
+description = "Verify large file checksums"
+cmd = "sha256sum"
+args = ["-c", "checksums.txt"]
+timeout = 0  # ✅ Unlimited: checksum verification for large files
+
+# Example 10: Graduated Timeout Strategy
+[[groups]]
+name = "graduated_timeouts"
+description = "Timeouts increase based on operation complexity"
+
+[[groups.commands]]
+name = "quick_validation"
+description = "Fast syntax check"
+cmd = "/usr/bin/validator"
+args = ["--quick", "config.toml"]
+timeout = 30  # 30 seconds for quick validation
+
+[[groups.commands]]
+name = "thorough_validation"
+description = "Complete validation with external checks"
+cmd = "/usr/bin/validator"
+args = ["--thorough", "--external", "config.toml"]
+timeout = 300  # 5 minutes for thorough validation
+
+[[groups.commands]]
+name = "full_system_validation"
+description = "Complete system validation and testing"
+cmd = "/usr/bin/validator"
+args = ["--full-system", "--all-configs"]
+timeout = 0  # ✅ Unlimited: comprehensive validation takes unpredictable time
