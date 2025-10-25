@@ -492,14 +492,6 @@ func ExpandCommand(spec *runnertypes.CommandSpec, groupVars map[string]string, _
 		return nil, fmt.Errorf("failed to create RuntimeCommand for command[%s]: %w", spec.Name, err)
 	}
 
-	// Initialize maps if not already initialized
-	if runtime.ExpandedVars == nil {
-		runtime.ExpandedVars = make(map[string]string)
-	}
-	if runtime.ExpandedEnv == nil {
-		runtime.ExpandedEnv = make(map[string]string)
-	}
-
 	// 1. Inherit group variables
 	maps.Copy(runtime.ExpandedVars, groupVars)
 
