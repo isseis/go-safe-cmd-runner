@@ -454,9 +454,7 @@ func ExpandGroup(spec *runnertypes.GroupSpec, globalRuntime *runnertypes.Runtime
 		}
 
 		// Merge from_env variables into expanded vars (group-level from_env may override inherited vars)
-		for k, v := range fromEnvVars {
-			runtime.ExpandedVars[k] = v
-		}
+		maps.Copy(runtime.ExpandedVars, fromEnvVars)
 	}
 
 	// 3. Process Vars (group-level)
@@ -546,9 +544,7 @@ func ExpandCommand(spec *runnertypes.CommandSpec, runtimeGroup *runnertypes.Runt
 		}
 
 		// Merge command-level from_env into expanded vars (command-level may override group vars)
-		for k, v := range fromEnvVars {
-			runtime.ExpandedVars[k] = v
-		}
+		maps.Copy(runtime.ExpandedVars, fromEnvVars)
 	}
 
 	// 3. Process Vars (command-level)
