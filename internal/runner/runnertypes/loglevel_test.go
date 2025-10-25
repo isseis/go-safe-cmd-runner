@@ -63,7 +63,8 @@ func TestLogLevel_UnmarshalText_InvalidLevels(t *testing.T) {
 	}
 }
 
-// Test ToSlogLevel conversion with valid levels
+// Test ToSlogLevel conversion
+// LogLevel is a string alias, so both valid constants and invalid values can be tested
 func TestLogLevel_ToSlogLevel(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -71,10 +72,31 @@ func TestLogLevel_ToSlogLevel(t *testing.T) {
 		expected slog.Level
 		wantErr  bool
 	}{
-		{"debug", LogLevelDebug, slog.LevelDebug, false},
-		{"info", LogLevelInfo, slog.LevelInfo, false},
-		{"warn", LogLevelWarn, slog.LevelWarn, false},
-		{"error", LogLevelError, slog.LevelError, false},
+		// Valid constant levels
+		{"debug constant", LogLevelDebug, slog.LevelDebug, false},
+		{"info constant", LogLevelInfo, slog.LevelInfo, false},
+		{"warn constant", LogLevelWarn, slog.LevelWarn, false},
+		{"error constant", LogLevelError, slog.LevelError, false},
+
+		// Valid string variations (case-insensitive)
+		{"uppercase DEBUG", LogLevel("DEBUG"), slog.LevelDebug, false},
+		{"uppercase INFO", LogLevel("INFO"), slog.LevelInfo, false},
+		{"uppercase WARN", LogLevel("WARN"), slog.LevelWarn, false},
+		{"uppercase ERROR", LogLevel("ERROR"), slog.LevelError, false},
+		{"mixed case Debug", LogLevel("Debug"), slog.LevelDebug, false},
+		{"mixed case Info", LogLevel("Info"), slog.LevelInfo, false},
+		{"mixed case Warn", LogLevel("Warn"), slog.LevelWarn, false},
+		{"mixed case Error", LogLevel("Error"), slog.LevelError, false},
+
+		// Empty string defaults to info
+		{"empty string", LogLevel(""), slog.LevelInfo, false},
+
+		// Invalid levels
+		{"typo dbg", LogLevel("dbg"), slog.Level(0), true},
+		{"typo debg", LogLevel("debg"), slog.Level(0), true},
+		{"unknown value", LogLevel("unknown"), slog.Level(0), true},
+		{"numeric string", LogLevel("1"), slog.Level(0), true},
+		{"whitespace prefix", LogLevel(" debug"), slog.Level(0), true},
 	}
 
 	for _, tt := range tests {
@@ -84,45 +106,8 @@ func TestLogLevel_ToSlogLevel(t *testing.T) {
 				t.Errorf("ToSlogLevel() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if slogLevel != tt.expected {
+			if !tt.wantErr && slogLevel != tt.expected {
 				t.Errorf("ToSlogLevel() = %v, want %v", slogLevel, tt.expected)
-			}
-		})
-	}
-}
-
-// Test ToSlogLevel conversion with invalid levels
-// LogLevel is a string alias, so invalid values can be set directly without going through UnmarshalText
-func TestLogLevel_ToSlogLevel_InvalidLevels(t *testing.T) {
-	tests := []struct {
-		name    string
-		level   LogLevel
-		wantErr bool
-	}{
-		{"typo dbg", LogLevel("dbg"), true},
-		{"typo debg", LogLevel("debg"), true},
-		{"unknown value", LogLevel("unknown"), true},
-		{"numeric string", LogLevel("1"), true},
-		{"uppercase DEBUG", LogLevel("DEBUG"), false},
-		{"mixed case Debug", LogLevel("Debug"), false},
-		{"whitespace", LogLevel(" debug"), true},
-		{"empty string", LogLevel(""), false}, // empty string should work (defaults to info)
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			slogLevel, err := tt.level.ToSlogLevel()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ToSlogLevel() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			// For invalid levels, we just check that an error was returned
-			if tt.wantErr && err == nil {
-				t.Errorf("ToSlogLevel() expected error for invalid level %q, got nil", tt.level)
-			}
-			// For empty string, it should default to info level
-			if tt.level == LogLevel("") && !tt.wantErr && slogLevel != slog.LevelInfo {
-				t.Errorf("ToSlogLevel() empty string should default to info, got %v", slogLevel)
 			}
 		})
 	}
