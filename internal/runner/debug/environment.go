@@ -31,7 +31,6 @@ func PrintFinalEnvironment(
 	}
 	sort.Strings(keys)
 
-	const maxDisplayLength = 60
 	_, _ = fmt.Fprintf(w, "Environment variables (%d):\n", len(envVars))
 	for _, k := range keys {
 		value := envVars[k]
@@ -39,9 +38,8 @@ func PrintFinalEnvironment(
 
 		// Truncate long values for readability
 		displayValue := value
-		if len(displayValue) > maxDisplayLength {
-			const ellipsis = 3
-			displayValue = displayValue[:maxDisplayLength-ellipsis] + "..."
+		if len(displayValue) > MaxDisplayLength {
+			displayValue = displayValue[:MaxDisplayLength-EllipsisLength] + "..."
 		}
 
 		_, _ = fmt.Fprintf(w, "  %s=%s\n", k, displayValue)

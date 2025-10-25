@@ -44,13 +44,11 @@ func (t *VariableExpansionTrace) PrintTrace(w io.Writer) {
 		sort.Strings(keys)
 
 		_, _ = fmt.Fprintf(w, "  Available variables (%d):\n", len(t.ExpandedVars))
-		const maxValueLength = 50
-		const ellipsis = 3
 		for _, k := range keys {
 			// Truncate long values for readability
 			value := t.ExpandedVars[k]
-			if len(value) > maxValueLength {
-				value = value[:maxValueLength-ellipsis] + "..."
+			if len(value) > MaxDisplayLength {
+				value = value[:MaxDisplayLength-EllipsisLength] + "..."
 			}
 			_, _ = fmt.Fprintf(w, "    %s = %s\n", k, value)
 		}
