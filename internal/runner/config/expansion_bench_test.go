@@ -53,9 +53,16 @@ func BenchmarkExpandGroup(b *testing.B) {
 		"GLOBAL_VAR": "global_value",
 	}
 
+	// Prepare a minimal RuntimeGlobal for benchmark
+	rg := &runnertypes.RuntimeGlobal{
+		Spec:         &runnertypes.GlobalSpec{},
+		ExpandedVars: globalVars,
+		ExpandedEnv:  map[string]string{},
+	}
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = ExpandGroup(spec, globalVars)
+		_, _ = ExpandGroup(spec, rg)
 	}
 }
 
@@ -72,9 +79,17 @@ func BenchmarkExpandCommand(b *testing.B) {
 		"GROUP_VAR": "group_value",
 	}
 
+	// Prepare minimal runtimes for command benchmark
+	rGroup := &runnertypes.RuntimeGroup{
+		Spec:         &runnertypes.GroupSpec{Name: "bench"},
+		ExpandedVars: groupVars,
+		ExpandedEnv:  map[string]string{},
+	}
+	rGlobal := &runnertypes.RuntimeGlobal{Spec: &runnertypes.GlobalSpec{}, ExpandedVars: map[string]string{}, ExpandedEnv: map[string]string{}}
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = ExpandCommand(spec, groupVars, "/tmp/workdir", common.NewUnsetTimeout())
+		_, _ = ExpandCommand(spec, rGroup, rGlobal, common.NewUnsetTimeout())
 	}
 }
 

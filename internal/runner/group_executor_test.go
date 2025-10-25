@@ -996,7 +996,7 @@ func TestExecuteGroup_RunnerWorkdirExpansion(t *testing.T) {
 			// Instead, let's test the workdir resolution and variable setting directly
 
 			// 1. Test group workdir resolution
-			runtimeGroup, err := config.ExpandGroup(group, runtimeGlobal.ExpandedVars)
+			runtimeGroup, err := config.ExpandGroup(group, runtimeGlobal)
 			require.NoError(t, err)
 
 			workDir, tempDirMgr, err := ge.resolveGroupWorkDir(runtimeGroup)
@@ -1018,7 +1018,7 @@ func TestExecuteGroup_RunnerWorkdirExpansion(t *testing.T) {
 
 			// 3. Test command expansion with __runner_workdir
 			cmdSpec := &group.Commands[0]
-			runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup.ExpandedVars, group.Name, common.NewUnsetTimeout())
+			runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout())
 			require.NoError(t, err)
 
 			// Verify __runner_workdir was expanded in arguments

@@ -50,7 +50,7 @@ func TestVerifyFilesExpansion_SpecialCharacters(t *testing.T) {
 			VerifyFiles: []string{"%{root}/%{sub_dir}/verify.sh"},
 		}
 
-		groupRuntime, err := config.ExpandGroup(groupSpec, globalRuntime.ExpandedVars)
+		groupRuntime, err := config.ExpandGroup(groupSpec, globalRuntime)
 		require.NoError(t, err)
 		require.Len(t, groupRuntime.ExpandedVerifyFiles, 1)
 		assert.Equal(t, "/opt/my-app/test dir v1.0/verify.sh", groupRuntime.ExpandedVerifyFiles[0],
@@ -105,7 +105,7 @@ func TestVerifyFilesExpansion_NestedReferences(t *testing.T) {
 			VerifyFiles: []string{"%{full_path}/check.sh"},
 		}
 
-		groupRuntime, err := config.ExpandGroup(groupSpec, globalRuntime.ExpandedVars)
+		groupRuntime, err := config.ExpandGroup(groupSpec, globalRuntime)
 		require.NoError(t, err)
 		require.Len(t, groupRuntime.ExpandedVerifyFiles, 1)
 		assert.Equal(t, "/opt/myapp/scripts/check.sh", groupRuntime.ExpandedVerifyFiles[0],
@@ -163,7 +163,7 @@ func TestVerifyFilesExpansion_ErrorHandling(t *testing.T) {
 			VerifyFiles: []string{"%{undefined_group_var}/script.sh"},
 		}
 
-		_, err = config.ExpandGroup(groupSpec, globalRuntime.ExpandedVars)
+		_, err = config.ExpandGroup(groupSpec, globalRuntime)
 		require.Error(t, err, "Should fail when group verify_files references undefined variable")
 		assert.Contains(t, err.Error(), "undefined_group_var")
 	})
@@ -230,7 +230,7 @@ func TestVerifyFilesExpansion_MultipleFiles(t *testing.T) {
 			},
 		}
 
-		groupRuntime, err := config.ExpandGroup(groupSpec, globalRuntime.ExpandedVars)
+		groupRuntime, err := config.ExpandGroup(groupSpec, globalRuntime)
 		require.NoError(t, err)
 		require.Len(t, groupRuntime.ExpandedVerifyFiles, 2)
 		assert.Equal(t, "/opt/myapp/check1.sh", groupRuntime.ExpandedVerifyFiles[0])

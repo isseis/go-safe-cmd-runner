@@ -6,9 +6,11 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/debug"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -76,9 +78,17 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 	}
 
 	// 1. Expand group configuration
-	runtimeGroup, err := config.ExpandGroup(groupSpec, runtimeGlobal.ExpandedVars)
+	runtimeGroup, err := config.ExpandGroup(groupSpec, runtimeGlobal)
 	if err != nil {
 		return fmt.Errorf("failed to expand group[%s]: %w", groupSpec.Name, err)
+	}
+
+	// Print debug information in dry-run mode
+	if ge.isDryRun {
+		_, _ = fmt.Fprintf(os.Stdout, "\n===== Variable Expansion Debug Information =====\n\n")
+
+		// Print from_env inheritance analysis
+		debug.PrintFromEnvInheritance(os.Stdout, &ge.config.Global, groupSpec)
 	}
 
 	// Defer notification to ensure it's sent regardless of success or failure
@@ -141,7 +151,7 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 
 		// 7.1 Expand command configuration
 		// Pass global timeout for timeout resolution hierarchy
-		runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup.ExpandedVars, groupSpec.Name, runtimeGlobal.Timeout())
+		runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup, runtimeGlobal, runtimeGlobal.Timeout())
 		if err != nil {
 			// Set failure result for notification
 			executionResult = &groupExecutionResult{

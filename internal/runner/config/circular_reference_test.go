@@ -267,7 +267,7 @@ func TestCircularReference_CrossLevel_GlobalGroup(t *testing.T) {
 			}
 
 			// Then try to expand group (this is where cycle should be detected)
-			_, err = config.ExpandGroup(tt.group, runtimeGlobal.ExpandedVars)
+			_, err = config.ExpandGroup(tt.group, runtimeGlobal)
 			require.Error(t, err, "Expected error in group expansion")
 			assert.Contains(t, err.Error(), tt.wantErr)
 			assert.Contains(t, err.Error(), tt.contains)
@@ -324,11 +324,11 @@ func TestCircularReference_CrossLevel_GroupCommand(t *testing.T) {
 				Spec:         &runnertypes.GlobalSpec{},
 				ExpandedVars: make(map[string]string),
 			}
-			runtimeGroup, err := config.ExpandGroup(tt.group, runtimeGlobal.ExpandedVars)
+			runtimeGroup, err := config.ExpandGroup(tt.group, runtimeGlobal)
 			require.NoError(t, err, "Group expansion should succeed")
 
 			// Then try to expand command (this is where error should be detected)
-			_, err = config.ExpandCommand(tt.command, runtimeGroup.ExpandedVars, tt.group.Name, common.NewUnsetTimeout())
+			_, err = config.ExpandCommand(tt.command, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout())
 			require.Error(t, err, "Expected error in command expansion")
 			assert.Contains(t, err.Error(), tt.wantErr)
 			assert.Contains(t, err.Error(), tt.contains)
