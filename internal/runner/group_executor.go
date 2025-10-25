@@ -220,7 +220,7 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 // executeCommandInGroup executes a command within a specific group context
 func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *runnertypes.RuntimeCommand, groupSpec *runnertypes.GroupSpec, runtimeGroup *runnertypes.RuntimeGroup, runtimeGlobal *runnertypes.RuntimeGlobal) (*executor.Result, error) {
 	// Resolve environment variables for the command with group context
-	envVars := executor.BuildProcessEnvironment(runtimeGlobal, runtimeGroup, cmd)
+	envVars, _ := executor.BuildProcessEnvironment(runtimeGlobal, runtimeGroup, cmd)
 
 	slog.Debug("Built process environment variables",
 		"command", cmd.Name(),

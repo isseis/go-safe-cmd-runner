@@ -1,14 +1,15 @@
 package executor
 
 import (
-	"maps"
+	"fmt"
 	"os"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
-// BuildProcessEnvironment builds the final process environment variables for command execution.
+// BuildProcessEnvironment builds the final process environment variables for command execution
+// and tracks the origin of each variable.
 //
 // Merge order (lower priority to higher priority):
 //  1. System environment variables (filtered by env_allowlist)
@@ -17,13 +18,15 @@ import (
 //  4. Command.ExpandedEnv
 //
 // Returns:
-//   - Map of environment variables to be passed to the child process
+//   - envVars: Map of environment variables to be passed to the child process
+//   - origins: Map tracking the origin of each environment variable
 func BuildProcessEnvironment(
 	runtimeGlobal *runnertypes.RuntimeGlobal,
 	runtimeGroup *runnertypes.RuntimeGroup,
 	cmd *runnertypes.RuntimeCommand,
-) map[string]string {
+) (envVars map[string]string, origins map[string]string) {
 	result := make(map[string]string)
+	originsMap := make(map[string]string)
 
 	// Step 1: Get system environment variables (filtered by allowlist)
 	systemEnv := getSystemEnvironment()
@@ -32,19 +35,29 @@ func BuildProcessEnvironment(
 	for _, name := range allowlist {
 		if value, ok := systemEnv[name]; ok {
 			result[name] = value
+			originsMap[name] = "System (filtered by allowlist)"
 		}
 	}
 
 	// Step 2: Merge Global.ExpandedEnv (overrides system env)
-	maps.Copy(result, runtimeGlobal.ExpandedEnv)
+	for k, v := range runtimeGlobal.ExpandedEnv {
+		result[k] = v
+		originsMap[k] = "Global"
+	}
 
 	// Step 3: Merge Group.ExpandedEnv (overrides global env)
-	maps.Copy(result, runtimeGroup.ExpandedEnv)
+	for k, v := range runtimeGroup.ExpandedEnv {
+		result[k] = v
+		originsMap[k] = fmt.Sprintf("Group[%s]", runtimeGroup.Name())
+	}
 
 	// Step 4: Merge Command.ExpandedEnv (overrides group env)
-	maps.Copy(result, cmd.ExpandedEnv)
+	for k, v := range cmd.ExpandedEnv {
+		result[k] = v
+		originsMap[k] = fmt.Sprintf("Command[%s]", cmd.Name())
+	}
 
-	return result
+	return result, originsMap
 }
 
 // getSystemEnvironment retrieves all system environment variables as a map.

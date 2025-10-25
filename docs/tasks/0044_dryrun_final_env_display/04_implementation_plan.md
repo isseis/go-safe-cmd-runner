@@ -46,22 +46,22 @@
 
 **作業項目**:
 1. `internal/runner/command_executor.go` の修正
-   - [ ] `BuildProcessEnvironment` のシグネチャ変更
-   - [ ] origins マップの初期化
-   - [ ] System環境変数のorigin記録
-   - [ ] Global.ExpandedEnv のorigin記録
-   - [ ] Group.ExpandedEnv のorigin記録
-   - [ ] Command.ExpandedEnv のorigin記録
-   - [ ] 戻り値の変更: `return result, origins`
+   - [x] `BuildProcessEnvironment` のシグネチャ変更
+   - [x] origins マップの初期化
+   - [x] System環境変数のorigin記録
+   - [x] Global.ExpandedEnv のorigin記録
+   - [x] Group.ExpandedEnv のorigin記録
+   - [x] Command.ExpandedEnv のorigin記録
+   - [x] 戻り値の変更: `return result, origins`
 
 2. 呼び出し箇所の更新
-   - [ ] `internal/runner/group_executor.go` の executeCommandInGroup
-   - [ ] コンパイルエラーの解消
+   - [x] `internal/runner/group_executor.go` の executeCommandInGroup
+   - [x] コンパイルエラーの解消
 
 3. 単体テスト実装
-   - [ ] `TestBuildProcessEnvironment_OriginTracking`
-   - [ ] `TestBuildProcessEnvironment_OriginOverride`
-   - [ ] `TestBuildProcessEnvironment_SystemEnvFiltering`
+   - [x] `TestBuildProcessEnvironment_OriginTracking`
+   - [x] `TestBuildProcessEnvironment_OriginOverride`
+   - [x] `TestBuildProcessEnvironment_SystemEnvFiltering`
 
 **成果物**:
 - 修正された `command_executor.go`
@@ -69,10 +69,10 @@
 - BuildProcessEnvironment の単体テスト
 
 **検証基準**:
-- [ ] 全ての単体テストがパス
-- [ ] コンパイルエラーなし
-- [ ] 各レベルのoriginが正確に記録される
-- [ ] 上書き時のorigin更新が正しい
+- [x] 全ての単体テストがパス
+- [x] コンパイルエラーなし
+- [x] 各レベルのoriginが正確に記録される
+- [x] 上書き時のorigin更新が正しい
 
 ### Phase 2: PrintFinalEnvironment の改善 (2-3 hours)
 
