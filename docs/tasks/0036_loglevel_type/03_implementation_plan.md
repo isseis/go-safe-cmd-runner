@@ -28,7 +28,7 @@ LogLevel を専用のカスタム型として定義し、`encoding.TextUnmarshal
 - [x] 3.1. 統合テストの実行 (make test)
 - [x] 3.2. エラーメッセージの手動確認
 - [x] 3.3. ドキュメントの更新
-- [ ] 3.4. コミット: "docs: update for LogLevel type"
+- [x] 3.4. コミット: "docs: update for LogLevel type"
 - [ ] 3.5. PR 作成とレビュー
 
 ## 3. 詳細実装計画
@@ -592,7 +592,7 @@ Introduces a custom `LogLevel` type to replace the string-based log level config
 - [x] リンター実行 (make lint)
 - [x] エラーメッセージの手動確認
 - [x] ドキュメント更新
-- [ ] コミット
+- [x] コミット
 - [ ] PR 作成
 
 ### レビュー後
