@@ -309,6 +309,10 @@ func NewRunner(configSpec *runnertypes.ConfigSpec, options ...Option) (*Runner, 
 	// Note: this callback emits a structured slog record intended for
 	// consumption by notification handlers (for example `SlackHandler`).
 	// The callback itself does not perform network calls.
+	var detailLevel resource.DetailLevel
+	if opts.dryRunOptions != nil {
+		detailLevel = opts.dryRunOptions.DetailLevel
+	}
 	runner.groupExecutor = NewDefaultGroupExecutor(
 		opts.executor,
 		configSpec,
@@ -318,6 +322,7 @@ func NewRunner(configSpec *runnertypes.ConfigSpec, options ...Option) (*Runner, 
 		opts.runID,
 		runner.logGroupExecutionSummary,
 		opts.dryRun,
+		detailLevel,
 		opts.keepTempDirs,
 	)
 

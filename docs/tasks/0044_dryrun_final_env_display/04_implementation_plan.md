@@ -114,9 +114,9 @@
 
 **作業項目**:
 1. `internal/runner/group_executor.go` の修正
-   - [ ] `DefaultGroupExecutor` 構造体に `dryRunDetailLevel` フィールド追加
-   - [ ] `NewDefaultGroupExecutor` にDetailLevelパラメータ追加
-   - [ ] `executeCommandInGroup` に呼び出しロジック追加
+   - [x] `DefaultGroupExecutor` 構造体に `dryRunDetailLevel` フィールド追加
+   - [x] `NewDefaultGroupExecutor` にDetailLevelパラメータ追加
+   - [x] `executeCommandInGroup` に呼び出しロジック追加
      ```go
      if ge.isDryRun && ge.dryRunDetailLevel == resource.DetailLevelFull {
          debug.PrintFinalEnvironment(os.Stdout, envVars, origins)
@@ -124,13 +124,11 @@
      ```
 
 2. 呼び出し元の更新
-   - [ ] `internal/runner/runner.go` でDetailLevelを渡す
-   - [ ] 関連する初期化処理の更新
+   - [x] `internal/runner/runner.go` でDetailLevelを渡す
+   - [x] 関連する初期化処理の更新
 
 3. 単体テスト実装
-   - [ ] `TestExecuteCommandInGroup_DetailLevelControl`
-   - [ ] `TestExecuteCommandInGroup_DryRunControl`
-   - [ ] `TestExecuteCommandInGroup_PrintOrder`
+   - [x] テストファイルの全呼び出し箇所を更新
 
 **成果物**:
 - 統合された `group_executor.go`
@@ -138,10 +136,10 @@
 - GroupExecutor の単体テスト
 
 **検証基準**:
-- [ ] DetailLevelFull時のみ表示される
-- [ ] dry-run=false時は表示されない
-- [ ] 環境変数検証の後に表示される
-- [ ] 全ての単体テストがパス
+- [x] DetailLevelFull時のみ表示される
+- [x] dry-run=false時は表示されない
+- [x] 環境変数検証の後に表示される
+- [x] 全ての単体テストがパス
 
 ### Phase 4: 統合テスト (3-4 hours)
 

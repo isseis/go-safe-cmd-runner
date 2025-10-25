@@ -35,6 +35,7 @@ type DefaultGroupExecutor struct {
 	runID               string
 	notificationFunc    groupNotificationFunc
 	isDryRun            bool
+	dryRunDetailLevel   resource.DetailLevel
 	keepTempDirs        bool
 }
 
@@ -51,6 +52,7 @@ func NewDefaultGroupExecutor(
 	runID string,
 	notificationFunc groupNotificationFunc,
 	isDryRun bool,
+	dryRunDetailLevel resource.DetailLevel,
 	keepTempDirs bool,
 ) *DefaultGroupExecutor {
 	return &DefaultGroupExecutor{
@@ -62,6 +64,7 @@ func NewDefaultGroupExecutor(
 		runID:               runID,
 		notificationFunc:    notificationFunc,
 		isDryRun:            isDryRun,
+		dryRunDetailLevel:   dryRunDetailLevel,
 		keepTempDirs:        keepTempDirs,
 	}
 }
@@ -220,7 +223,7 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 // executeCommandInGroup executes a command within a specific group context
 func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *runnertypes.RuntimeCommand, groupSpec *runnertypes.GroupSpec, runtimeGroup *runnertypes.RuntimeGroup, runtimeGlobal *runnertypes.RuntimeGlobal) (*executor.Result, error) {
 	// Resolve environment variables for the command with group context
-	envVars, _ := executor.BuildProcessEnvironment(runtimeGlobal, runtimeGroup, cmd)
+	envVars, origins := executor.BuildProcessEnvironment(runtimeGlobal, runtimeGroup, cmd)
 
 	slog.Debug("Built process environment variables",
 		"command", cmd.Name(),
@@ -230,6 +233,11 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 	// Validate resolved environment variables
 	if err := ge.validator.ValidateAllEnvironmentVars(envVars); err != nil {
 		return nil, fmt.Errorf("resolved environment variables security validation failed: %w", err)
+	}
+
+	// Print final environment in dry-run mode with full detail level
+	if ge.isDryRun && ge.dryRunDetailLevel == resource.DetailLevelFull {
+		debug.PrintFinalEnvironment(os.Stdout, envVars, origins)
 	}
 
 	// Resolve and validate command path if verification manager is available
