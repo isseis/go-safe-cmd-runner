@@ -879,10 +879,7 @@ The effective timeout value follows this resolution hierarchy:
    timeout = 180  # ← Used if command timeout is not specified
    ```
 
-3. **System default** (lowest priority)
-   ```
-   60 seconds  # ← Used if neither global nor command timeout is specified
-   ```
+3. **System default** (lowest priority): 60 seconds  # ← Used if neither global nor command timeout is specified
 
 ## 6.4 Privilege Management
 
