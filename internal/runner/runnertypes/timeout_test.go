@@ -55,7 +55,7 @@ func TestNewRuntimeCommand_TimeoutResolution(t *testing.T) {
 				Timeout: tt.commandTimeout,
 			}
 
-			runtime, err := NewRuntimeCommand(spec, tt.globalTimeout)
+			runtime, err := NewRuntimeCommand(spec, common.NewFromIntPtr(tt.globalTimeout))
 			assert.NoError(t, err, "NewRuntimeCommand() should not fail")
 
 			assert.Equal(t, tt.expectedEffective, runtime.EffectiveTimeout,
@@ -84,7 +84,7 @@ func TestNewRuntimeCommand_CommandTimeoutZero(t *testing.T) {
 
 	globalTimeout := common.IntPtr(60) // 60 seconds global timeout
 
-	runtime, err := NewRuntimeCommand(spec, globalTimeout)
+	runtime, err := NewRuntimeCommand(spec, common.NewFromIntPtr(globalTimeout))
 	assert.NoError(t, err, "NewRuntimeCommand() should not fail")
 
 	// Command timeout should take precedence, resulting in unlimited execution
@@ -108,7 +108,7 @@ func TestNewRuntimeCommand_GlobalTimeoutZero(t *testing.T) {
 
 	globalTimeout := common.IntPtr(0) // Unlimited global timeout
 
-	runtime, err := NewRuntimeCommand(spec, globalTimeout)
+	runtime, err := NewRuntimeCommand(spec, common.NewFromIntPtr(globalTimeout))
 	assert.NoError(t, err, "NewRuntimeCommand() should not fail")
 
 	// Should inherit unlimited execution from global timeout
@@ -122,7 +122,7 @@ func TestNewRuntimeCommand_GlobalTimeoutZero(t *testing.T) {
 
 func TestNewRuntimeCommand_ErrorHandling(t *testing.T) {
 	// Test with nil spec
-	runtime, err := NewRuntimeCommand(nil, common.IntPtr(60))
+	runtime, err := NewRuntimeCommand(nil, common.NewFromIntPtr(common.IntPtr(60)))
 	assert.ErrorIs(t, err, ErrNilSpec, "NewRuntimeCommand(nil, ...) should return ErrNilSpec")
 	assert.Nil(t, runtime, "NewRuntimeCommand(nil, ...) should return nil runtime")
 }

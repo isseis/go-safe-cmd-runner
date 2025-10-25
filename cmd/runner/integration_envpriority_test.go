@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
@@ -72,7 +73,7 @@ func envPriorityTestHelper(t *testing.T, systemEnv map[string]string, configTOML
 	if err != nil {
 		t.Fatalf("Failed to expand group config: %v", err)
 	}
-	runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup.ExpandedVars, "", nil)
+	runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup.ExpandedVars, "", common.NewUnsetTimeout())
 	if err != nil {
 		t.Fatalf("Failed to expand command config: %v", err)
 	}
@@ -434,7 +435,7 @@ env_vars = ["OUTPUT=%{output}"]
 	if err != nil {
 		t.Fatalf("Failed to expand group config: %v", err)
 	}
-	runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup.ExpandedVars, "", nil)
+	runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup.ExpandedVars, "", common.NewUnsetTimeout())
 	if err != nil {
 		t.Fatalf("Failed to expand command config: %v", err)
 	}

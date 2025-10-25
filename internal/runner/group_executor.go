@@ -141,7 +141,7 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 
 		// 7.1 Expand command configuration
 		// Pass global timeout for timeout resolution hierarchy
-		runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup.ExpandedVars, groupSpec.Name, runtimeGlobal.Spec.Timeout)
+		runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup.ExpandedVars, groupSpec.Name, runtimeGlobal.Timeout())
 		if err != nil {
 			// Set failure result for notification
 			executionResult = &groupExecutionResult{

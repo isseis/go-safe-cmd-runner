@@ -6,6 +6,7 @@ package config
 import (
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
@@ -73,7 +74,7 @@ func BenchmarkExpandCommand(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = ExpandCommand(spec, groupVars, "/tmp/workdir", nil)
+		_, _ = ExpandCommand(spec, groupVars, "/tmp/workdir", common.NewUnsetTimeout())
 	}
 }
 
