@@ -9,6 +9,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/terminal"
 )
 
@@ -19,7 +20,7 @@ const (
 
 // LoggerConfig holds all configuration for logger setup
 type LoggerConfig struct {
-	Level           string
+	Level           runnertypes.LogLevel
 	LogDir          string
 	RunID           string
 	SlackWebhookURL string
@@ -37,8 +38,8 @@ func SetupLoggerWithConfig(config LoggerConfig, forceInteractive, forceQuiet boo
 	var invalidLogLevel bool
 
 	// Parse log level for all handlers
-	var slogLevel slog.Level
-	if err := slogLevel.UnmarshalText([]byte(config.Level)); err != nil {
+	slogLevel, err := config.Level.ToSlogLevel()
+	if err != nil {
 		slogLevel = slog.LevelInfo // Default to info on parse error
 		invalidLogLevel = true
 	}

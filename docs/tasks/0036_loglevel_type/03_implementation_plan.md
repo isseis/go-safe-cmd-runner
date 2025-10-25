@@ -7,28 +7,28 @@ LogLevel を専用のカスタム型として定義し、`encoding.TextUnmarshal
 ## 2. 実装フェーズ
 
 ### フェーズ 1: 型定義とテスト (TDD)
-- [ ] 1.1. テストファイルの作成
-- [ ] 1.2. LogLevel 型の基本テスト追加 (失敗することを確認)
-- [ ] 1.3. LogLevel 型と定数の定義
-- [ ] 1.4. UnmarshalText() の実装
-- [ ] 1.5. ToSlogLevel() の実装
-- [ ] 1.6. String() の実装
-- [ ] 1.7. テストの成功を確認
-- [ ] 1.8. コミット: "feat: add LogLevel type with validation"
+- [x] 1.1. テストファイルの作成
+- [x] 1.2. LogLevel 型の基本テスト追加 (失敗することを確認)
+- [x] 1.3. LogLevel 型と定数の定義
+- [x] 1.4. UnmarshalText() の実装
+- [x] 1.5. ToSlogLevel() の実装
+- [x] 1.6. String() の実装
+- [x] 1.7. テストの成功を確認
+- [x] 1.8. コミット: "feat: add LogLevel type with validation"
 
 ### フェーズ 2: 既存コードの更新
-- [ ] 2.1. GlobalConfig.LogLevel の型変更
-- [ ] 2.2. bootstrap.LoggerConfig.Level の型変更
-- [ ] 2.3. cmd/runner/main.go のコマンドライン引数処理更新
-- [ ] 2.4. 既存テストの更新
-- [ ] 2.5. テストの成功を確認
-- [ ] 2.6. コミット: "refactor: use LogLevel type in GlobalConfig"
+- [x] 2.1. GlobalConfig.LogLevel の型変更
+- [x] 2.2. bootstrap.LoggerConfig.Level の型変更
+- [x] 2.3. cmd/runner/main.go のコマンドライン引数処理更新
+- [x] 2.4. 既存テストの更新
+- [x] 2.5. テストの成功を確認
+- [x] 2.6. コミット: "refactor: use LogLevel type in GlobalConfig"
 
 ### フェーズ 3: 統合テストと検証
-- [ ] 3.1. 統合テストの実行 (make test)
-- [ ] 3.2. エラーメッセージの手動確認
-- [ ] 3.3. ドキュメントの更新
-- [ ] 3.4. コミット: "docs: update for LogLevel type"
+- [x] 3.1. 統合テストの実行 (make test)
+- [x] 3.2. エラーメッセージの手動確認
+- [x] 3.3. ドキュメントの更新
+- [x] 3.4. コミット: "docs: update for LogLevel type"
 - [ ] 3.5. PR 作成とレビュー
 
 ## 3. 詳細実装計画
@@ -572,27 +572,27 @@ Introduces a custom `LogLevel` type to replace the string-based log level config
 - [ ] 実装計画書のレビュー
 
 ### フェーズ 1
-- [ ] テストファイルの作成
-- [ ] LogLevel 型のテスト追加 (TDD)
-- [ ] LogLevel 型の実装
-- [ ] テスト成功確認
-- [ ] コミット
+- [x] テストファイルの作成
+- [x] LogLevel 型のテスト追加 (TDD)
+- [x] LogLevel 型の実装
+- [x] テスト成功確認
+- [x] コミット
 
 ### フェーズ 2
-- [ ] GlobalConfig.LogLevel の型変更
-- [ ] bootstrap.LoggerConfig の更新
-- [ ] cmd/runner/main.go の更新
-- [ ] 既存テストの更新
-- [ ] テスト成功確認
-- [ ] コミット
+- [x] GlobalConfig.LogLevel の型変更
+- [x] bootstrap.LoggerConfig の更新
+- [x] cmd/runner/main.go の更新
+- [x] 既存テストの更新
+- [x] テスト成功確認
+- [x] コミット
 
 ### フェーズ 3
-- [ ] 統合テスト実行 (make test)
-- [ ] ビルド確認 (make build)
-- [ ] リンター実行 (make lint)
-- [ ] エラーメッセージの手動確認
-- [ ] ドキュメント更新
-- [ ] コミット
+- [x] 統合テスト実行 (make test)
+- [x] ビルド確認 (make build)
+- [x] リンター実行 (make lint)
+- [x] エラーメッセージの手動確認
+- [x] ドキュメント更新
+- [x] コミット
 - [ ] PR 作成
 
 ### レビュー後
@@ -651,8 +651,8 @@ cfg.Global.LogLevel = runnertypes.LogLevelDebug
 5. ✅ 統合テストが成功
 6. ✅ 手動テストで無効なログレベルがエラーになることを確認
 7. ✅ ドキュメントが更新されている
-8. ✅ PR が作成され、レビュー済み
-9. ✅ マージ済み
+8. [ ] PR が作成され、レビュー済み
+9. [ ] マージ済み
 
 ## 7. 推定工数
 

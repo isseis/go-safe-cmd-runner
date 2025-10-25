@@ -5,10 +5,11 @@ import (
 	"os"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
 // SetupLogging sets up logging system without environment file handling
-func SetupLogging(logLevel, logDir, runID string, forceInteractive, forceQuiet bool) error {
+func SetupLogging(logLevel runnertypes.LogLevel, logDir, runID string, forceInteractive, forceQuiet bool) error {
 	// Get Slack webhook URL from OS environment variables
 	slackURL := os.Getenv(logging.SlackWebhookURLEnvVar)
 

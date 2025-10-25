@@ -88,6 +88,21 @@ func main() {
 	}
 }
 
+// parseLogLevel parses a log level string and returns the corresponding LogLevel value.
+// It returns a PreExecutionError if the log level string is invalid.
+func parseLogLevel(logLevelStr string, runID string) (runnertypes.LogLevel, error) {
+	var level runnertypes.LogLevel
+	if err := level.UnmarshalText([]byte(logLevelStr)); err != nil {
+		return level, &logging.PreExecutionError{
+			Type:      logging.ErrorTypeConfigParsing,
+			Message:   fmt.Sprintf("Invalid log level %q: %v", logLevelStr, err),
+			Component: "main",
+			RunID:     runID,
+		}
+	}
+	return level, nil
+}
+
 func run(runID string) error {
 	// Set up context with cancellation
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -131,7 +146,12 @@ func run(runID string) error {
 	}
 
 	// Phase 4: Setup logging (using bootstrap package)
-	if err := bootstrap.SetupLogging(*logLevel, *logDir, runID, *forceInteractive, *forceQuiet); err != nil {
+	// Parse log level string to LogLevel type
+	logLevelValue, err := parseLogLevel(*logLevel, runID)
+	if err != nil {
+		return err
+	}
+	if err := bootstrap.SetupLogging(logLevelValue, *logDir, runID, *forceInteractive, *forceQuiet); err != nil {
 		return err
 	}
 
@@ -226,7 +246,11 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 	}
 
 	if *logLevel != "" {
-		cfg.Global.LogLevel = *logLevel
+		level, err := parseLogLevel(*logLevel, runID)
+		if err != nil {
+			return err
+		}
+		cfg.Global.LogLevel = level
 	}
 
 	// Ensure cleanup of all resources on exit
