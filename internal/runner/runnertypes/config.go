@@ -70,16 +70,18 @@ func (l *LogLevel) UnmarshalText(text []byte) error {
 
 // ToSlogLevel converts LogLevel to slog.Level for use with the slog package.
 func (l LogLevel) ToSlogLevel() (slog.Level, error) {
-	// Handle empty string as default to info (same as UnmarshalText)
-	if l == "" {
+	switch strings.ToLower(string(l)) {
+	case "debug":
+		return slog.LevelDebug, nil
+	case "info", "":
 		return slog.LevelInfo, nil
+	case "warn":
+		return slog.LevelWarn, nil
+	case "error":
+		return slog.LevelError, nil
+	default:
+		return 0, fmt.Errorf("%w: %q", ErrInvalidLogLevel, l)
 	}
-
-	var level slog.Level
-	if err := level.UnmarshalText([]byte(l)); err != nil {
-		return slog.Level(0), fmt.Errorf("failed to convert log level %q to slog.Level: %w", l, err)
-	}
-	return level, nil
 }
 
 // String returns the string representation of LogLevel.
