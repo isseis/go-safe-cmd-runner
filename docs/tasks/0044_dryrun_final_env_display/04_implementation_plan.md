@@ -168,7 +168,7 @@
 - [x] BuildProcessEnvironment: 100変数で0.011ms（要件0.5ms以内を達成）
 - [x] PrintFinalEnvironment: 100変数で0.016ms（要件1ms以内を達成）
 - [x] dry-run全体: 既存の110%以内
-- [ ] dry-runモードの`--dry-run-detail=full`指定時、`--show-sensitive`フラグの有無に関わらず、センシティブ情報がマスクされずに表示されることを確認する
+- [x] dry-runモードの`--dry-run-detail=full`指定時、`--show-sensitive`フラグの有無に関わらず、センシティブ情報がマスクされずに表示されることを確認する
 - [x] 全てのlintチェックがパス
 
 ### Phase 5: ドキュメント更新 (2-3 hours)

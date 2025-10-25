@@ -183,3 +183,59 @@ func TestPrintFinalEnvironment_SortedOutput(t *testing.T) {
 	assert.True(t, betaPos < middlePos, "BETA should come before MIDDLE")
 	assert.True(t, middlePos < zebraPos, "MIDDLE should come before ZEBRA")
 }
+
+// TestPrintFinalEnvironment_SensitiveData verifies that all environment variables
+// including sensitive information are displayed without masking in dry-run mode
+func TestPrintFinalEnvironment_SensitiveData(t *testing.T) {
+	// Create environment with sensitive data (passwords, tokens, keys)
+	envVars := map[string]string{
+		"DB_PASSWORD":    "super_secret_password_123",
+		"API_TOKEN":      "ghp_1234567890abcdefghijklmnopqrstuvwxyz",
+		"AWS_SECRET_KEY": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+		"SSH_PRIVATE":    "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA...",
+		"NORMAL_VAR":     "public_value",
+	}
+
+	origins := map[string]string{
+		"DB_PASSWORD":    "Command[db-setup]",
+		"API_TOKEN":      "Global",
+		"AWS_SECRET_KEY": "Group[aws-group]",
+		"SSH_PRIVATE":    "Command[ssh-deploy]",
+		"NORMAL_VAR":     "Global",
+	}
+
+	var buf bytes.Buffer
+	PrintFinalEnvironment(&buf, envVars, origins)
+	output := buf.String()
+
+	// Verify header is present
+	assert.Contains(t, output, "===== Final Process Environment =====")
+
+	// Verify all sensitive values are displayed WITHOUT masking
+	// This is by design for dry-run mode audit purposes
+	assert.Contains(t, output, "super_secret_password_123", "Password should be displayed without masking")
+	assert.Contains(t, output, "ghp_1234567890abcdefghijklmnopqrstuvwxyz", "API token should be displayed without masking")
+	assert.Contains(t, output, "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "AWS secret key should be displayed without masking")
+	assert.Contains(t, output, "-----BEGIN RSA PRIVATE KEY-----", "SSH private key should be displayed without masking")
+	assert.Contains(t, output, "public_value", "Normal values should be displayed")
+
+	// Verify origins are shown
+	assert.Contains(t, output, "Command[db-setup]")
+	assert.Contains(t, output, "Global")
+	assert.Contains(t, output, "Group[aws-group]")
+	assert.Contains(t, output, "Command[ssh-deploy]")
+
+	// Verify no masking characters (like asterisks) are present
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "DB_PASSWORD") ||
+			strings.Contains(line, "API_TOKEN") ||
+			strings.Contains(line, "AWS_SECRET_KEY") ||
+			strings.Contains(line, "SSH_PRIVATE") {
+			// These lines should NOT contain masking patterns like "***" or "[REDACTED]"
+			assert.NotContains(t, line, "***", "Sensitive values should not be masked")
+			assert.NotContains(t, line, "[REDACTED]", "Sensitive values should not be redacted")
+			assert.NotContains(t, line, "[MASKED]", "Sensitive values should not be marked as masked")
+		}
+	}
+}
