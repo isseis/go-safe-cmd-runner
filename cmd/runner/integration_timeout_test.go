@@ -5,6 +5,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // timeoutTestHelper is a helper function for timeout resolution integration tests.
@@ -16,17 +17,14 @@ func timeoutTestHelper(t *testing.T, configTOML string) int {
 	cfg := configSetupHelper(t, nil, configTOML)
 
 	// Extract the first command
-	if len(cfg.Groups) == 0 || len(cfg.Groups[0].Commands) == 0 {
-		t.Fatal("No command found in config")
-	}
+	require.NotEmpty(t, cfg.Groups, "Groups should not be empty")
+	require.NotEmpty(t, cfg.Groups[0].Commands, "Commands in first group should not be empty")
 	cmdSpec := &cfg.Groups[0].Commands[0]
 
 	// Create RuntimeCommand with timeout resolution
 	// Note: Group-level timeout is not yet implemented (future enhancement)
 	finalRuntimeCmd, err := runnertypes.NewRuntimeCommand(cmdSpec, cfg.Global.Timeout)
-	if err != nil {
-		t.Fatalf("Failed to create RuntimeCommand: %v", err)
-	}
+	require.NoError(t, err, "Failed to create RuntimeCommand")
 
 	return finalRuntimeCmd.EffectiveTimeout
 }
@@ -274,9 +272,9 @@ timeout = 0
 	cfg := configSetupHelper(t, nil, configTOML)
 
 	// Verify that we have 3 commands
-	if len(cfg.Groups) == 0 || len(cfg.Groups[0].Commands) < 3 {
-		t.Fatal("Expected 3 commands in config")
-	}
+	require.NotEmpty(t, cfg.Groups, "Groups should not be empty")
+	require.NotEmpty(t, cfg.Groups[0].Commands, "Commands in first group should not be empty")
+	require.GreaterOrEqual(t, len(cfg.Groups[0].Commands), 3, "Expected at least 3 commands in config")
 	groupSpec := &cfg.Groups[0]
 
 	// Test each command independently
@@ -294,9 +292,7 @@ timeout = 0
 		cmdSpec := &groupSpec.Commands[tc.cmdIndex]
 
 		finalRuntimeCmd, err := runnertypes.NewRuntimeCommand(cmdSpec, cfg.Global.Timeout)
-		if err != nil {
-			t.Fatalf("Failed to create RuntimeCommand for %s: %v", cmdSpec.Name, err)
-		}
+		require.NoError(t, err, "Failed to create RuntimeCommand for %s", cmdSpec.Name)
 
 		assert.Equal(t, tc.expectedTimeout, finalRuntimeCmd.EffectiveTimeout, tc.description)
 	}
