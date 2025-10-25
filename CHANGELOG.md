@@ -73,7 +73,7 @@ All TOML configuration field names have been updated to improve clarity and cons
 - Security monitoring for unlimited execution commands
 - Long-running process detection and logging
 - Comprehensive timeout examples in `sample/timeout_examples.toml`
-- Migration guide at `docs/migration/v2.0.0_timeout_changes.md`
+- Migration guide for timeout changes
 - **`__runner_workdir` reserved variable**: New automatic variable that references the runtime working directory for command execution
 - **`--keep-temp-dirs` flag**: New command-line flag to preserve temporary directories after execution for debugging purposes
 - **Automatic temporary directory generation**: Groups without specified `workdir` now automatically generate temporary directories
@@ -115,7 +115,7 @@ All TOML configuration field names have been updated to improve clarity and cons
 
 #### Timeout Configuration
 
-See `docs/migration/v2.0.0_timeout_changes.md` for detailed migration instructions.
+For detailed migration instructions, see the timeout configuration documentation.
 
 #### TOML Field Renaming
 

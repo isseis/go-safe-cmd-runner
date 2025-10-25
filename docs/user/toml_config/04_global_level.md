@@ -28,11 +28,9 @@ timeout = seconds
 | **Valid Values** | 0 (unlimited), positive integer (in seconds) |
 | **Override** | Can be overridden at command level |
 
-### ⚠️ Breaking Change Notice (v2.0.0)
+### ⚠️ Important Note
 
-**BREAKING**: Starting from v2.0.0, `timeout = 0` means **unlimited execution** (no timeout).
-- **Before v2.0.0**: `timeout = 0` was treated as invalid and defaulted to system default
-- **From v2.0.0**: `timeout = 0` explicitly means unlimited execution time
+`timeout = 0` means **unlimited execution** (no timeout).
 
 ### Role
 
@@ -84,7 +82,7 @@ args = []
 timeout = 300  # Set to 300 seconds only for this command
 ```
 
-#### Example 3: Unlimited Execution (v2.0.0+)
+#### Example 3: Unlimited Execution
 
 ```toml
 version = "1.0"
@@ -108,7 +106,7 @@ args = ["--large-dataset"]
 timeout = 0  # ✅ Unlimited execution for long-running task
 ```
 
-### Timeout Resolution Hierarchy (v2.0.0+)
+### Timeout Resolution Hierarchy
 
 Timeout values are resolved in the following order of priority:
 1. **Command level**: `[[groups.commands]]` timeout setting
@@ -177,7 +175,7 @@ args = ["large_database"]
 # Likely won't complete in 10 seconds → timeout error
 ```
 
-#### 2. Unlimited Execution with `timeout = 0` (v2.0.0+)
+#### 2. Unlimited Execution with `timeout = 0`
 
 ```toml
 [global]

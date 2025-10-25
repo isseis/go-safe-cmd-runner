@@ -775,11 +775,9 @@ timeout = seconds
 | **Valid Values** | 0 (unlimited), positive integer (in seconds) |
 | **Override** | Overrides global setting |
 
-#### ⚠️ Breaking Change Notice (v2.0.0)
+#### ⚠️ Important Note
 
-**BREAKING**: Starting from v2.0.0, `timeout = 0` means **unlimited execution** (no timeout).
-- **Before v2.0.0**: `timeout = 0` was treated as invalid and defaulted to global timeout
-- **From v2.0.0**: `timeout = 0` explicitly means unlimited execution time
+`timeout = 0` means **unlimited execution** (no timeout).
 
 #### Configuration Examples
 
@@ -834,7 +832,7 @@ args = ["large_db"]
 timeout = 3600  # 1 hour
 ```
 
-#### Example 3: Unlimited Execution (v2.0.0+)
+#### Example 3: Unlimited Execution
 
 ```toml
 [global]
@@ -862,7 +860,7 @@ args = ["small_file.txt"]
 # Uses global 120 seconds
 ```
 
-#### Inheritance Logic (v2.0.0+)
+#### Inheritance Logic
 
 The effective timeout value follows this resolution hierarchy:
 
