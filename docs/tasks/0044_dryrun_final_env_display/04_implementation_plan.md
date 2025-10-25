@@ -80,33 +80,33 @@
 
 **作業項目**:
 1. `internal/debug/print_env.go` の修正
-   - [ ] `PrintFinalEnvironment` のシグネチャ変更
-   - [ ] originsマップを使用する実装に変更
-   - [ ] `determineOrigin()` 関数の削除
-   - [ ] 長い値の切り詰め処理の維持
-   - [ ] ソート処理の維持
+   - [x] `PrintFinalEnvironment` のシグネチャ変更
+   - [x] originsマップを使用する実装に変更
+   - [x] `determineOrigin()` 関数の削除
+   - [x] 長い値の切り詰め処理の維持
+   - [x] ソート処理の維持
 
 2. 定数の定義
-   - [ ] `MaxDisplayLength = 60`
-   - [ ] `EllipsisLength = 3`
+   - [x] `MaxDisplayLength = 60`
+   - [x] `EllipsisLength = 3`
 
 3. 単体テスト実装
-   - [ ] `TestPrintFinalEnvironment_WithOrigins`
-   - [ ] `TestPrintFinalEnvironment_MultipleOrigins`
-   - [ ] `TestPrintFinalEnvironment_LongValue`
-   - [ ] `TestPrintFinalEnvironment_EmptyEnv`
-   - [ ] `TestPrintFinalEnvironment_SpecialCharacters`
+   - [x] `TestPrintFinalEnvironment_WithOrigins`
+   - [x] `TestPrintFinalEnvironment_MultipleOrigins`
+   - [x] `TestPrintFinalEnvironment_LongValue`
+   - [x] `TestPrintFinalEnvironment_EmptyEnv`
+   - [x] `TestPrintFinalEnvironment_SpecialCharacters`
 
 **成果物**:
 - 改善された `print_env.go`
 - PrintFinalEnvironment の単体テスト
 
 **検証基準**:
-- [ ] 全ての単体テストがパス
-- [ ] originsマップから正しくoriginを取得
-- [ ] 出力フォーマットが仕様通り
-- [ ] 長い値が正しく切り詰められる
-- [ ] 特殊文字が適切に処理される
+- [x] 全ての単体テストがパス
+- [x] originsマップから正しくoriginを取得
+- [x] 出力フォーマットが仕様通り
+- [x] 長い値が正しく切り詰められる
+- [x] 特殊文字が適切に処理される
 
 ### Phase 3: Group Executor統合 (2-3 hours)
 
