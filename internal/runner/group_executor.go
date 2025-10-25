@@ -265,7 +265,7 @@ func (ge *DefaultGroupExecutor) createCommandContext(ctx context.Context, cmd *r
 		// Unlimited execution: return a cancellable context without a timeout
 		slog.Warn("Command configured with unlimited timeout",
 			"command", cmd.Name(),
-			"timeout", cmd.EffectiveTimeout)
+			"timeout", "unlimited")
 		return context.WithCancel(ctx)
 	}
 
