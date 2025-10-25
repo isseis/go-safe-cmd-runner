@@ -427,9 +427,9 @@ See `docs/migration/v2.0.0_timeout_changes.md` for detailed migration instructio
 - [x] 階層継承テストが全てパス
 
 #### Phase 3 完了基準
-- [ ] 無制限実行が正常動作
-- [ ] 監視機能が適切に動作
-- [ ] セキュリティログが正しく出力
+- [x] 無制限実行が正常動作
+- [x] 監視機能が適切に動作
+- [x] セキュリティログが正しく出力
 
 #### Phase 4 完了基準
 - [ ] 単体テストカバレッジ95%以上
