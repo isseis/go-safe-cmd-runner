@@ -76,7 +76,7 @@ func TestBootstrapCommandEnvExpansionIntegration(t *testing.T) {
 	require.NotNil(t, appGroupSpec, "app_group should exist")
 
 	// Expand group spec to runtime
-	runtimeGroup, err := config.ExpandGroup(appGroupSpec, runtimeGlobal.ExpandedVars)
+	runtimeGroup, err := config.ExpandGroup(appGroupSpec, runtimeGlobal)
 	require.NoError(t, err)
 	require.NotNil(t, runtimeGroup)
 
@@ -92,7 +92,7 @@ func TestBootstrapCommandEnvExpansionIntegration(t *testing.T) {
 	require.Equal(t, "run_app", cmdSpec.Name)
 
 	// Expand command spec to runtime
-	runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup.ExpandedVars, appGroupSpec.Name, common.NewUnsetTimeout())
+	runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout())
 	require.NoError(t, err)
 	require.NotNil(t, runtimeCmd)
 

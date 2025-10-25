@@ -373,7 +373,7 @@ args = ["mydb", "-f", "%{__runner_workdir}/dump.sql"]
 				ExpandedVars: make(map[string]string),
 			}
 
-			runtimeGroup, err := ExpandGroup(group, runtimeGlobal.ExpandedVars)
+			runtimeGroup, err := ExpandGroup(group, runtimeGlobal)
 			if err != nil {
 				t.Fatalf("Failed to expand group: %v", err)
 			}
@@ -384,7 +384,7 @@ args = ["mydb", "-f", "%{__runner_workdir}/dump.sql"]
 
 			// 4. Expand command
 			cmdSpec := &group.Commands[0]
-			runtimeCmd, err := ExpandCommand(cmdSpec, runtimeGroup.ExpandedVars, group.Name, common.NewUnsetTimeout())
+			runtimeCmd, err := ExpandCommand(cmdSpec, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout())
 			if err != nil {
 				t.Fatalf("Failed to expand command: %v", err)
 			}

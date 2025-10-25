@@ -64,7 +64,7 @@ func TestE2E_CompleteConfiguration(t *testing.T) {
 		require.NotNil(t, dbGroupSpec, "Database group should exist")
 
 		// Expand the group to get RuntimeGroup
-		dbGroup, err := ExpandGroup(dbGroupSpec, runtimeGlobal.ExpandedVars)
+		dbGroup, err := ExpandGroup(dbGroupSpec, runtimeGlobal)
 		require.NoError(t, err, "ExpandGroup should succeed for database group")
 		require.NotNil(t, dbGroup.ExpandedEnv, "Database group ExpandedEnv should be initialized")
 
@@ -357,7 +357,7 @@ verify_files = ["%{group_dir}/group_verify.sh"]
 		require.NotNil(t, testGroupSpec, "Test group should exist")
 
 		// Expand the group to get RuntimeGroup
-		testGroup, err := ExpandGroup(testGroupSpec, runtimeGlobal.ExpandedVars)
+		testGroup, err := ExpandGroup(testGroupSpec, runtimeGlobal)
 		require.NoError(t, err, "ExpandGroup should succeed for test_group")
 
 		require.Len(t, testGroup.ExpandedVerifyFiles, 1, "Group should have 1 expanded verify_files entry")
@@ -421,7 +421,7 @@ func TestE2E_FullExpansionPipeline(t *testing.T) {
 		require.NotNil(t, appGroupSpec, "app_group should exist")
 
 		// Expand the group to get RuntimeGroup
-		appGroup, err := ExpandGroup(appGroupSpec, runtimeGlobal.ExpandedVars)
+		appGroup, err := ExpandGroup(appGroupSpec, runtimeGlobal)
 		require.NoError(t, err, "ExpandGroup should succeed for app_group")
 
 		// command_env_references_global_group.toml doesn't have verify_files at Group level
@@ -529,7 +529,7 @@ verify_files = ["%{base_dir}/%{sub_dir}/script.sh"]
 		require.NotNil(t, testGroupSpec)
 
 		// Expand the group to get RuntimeGroup
-		testGroup, err := ExpandGroup(testGroupSpec, runtimeGlobal.ExpandedVars)
+		testGroup, err := ExpandGroup(testGroupSpec, runtimeGlobal)
 		require.NoError(t, err, "ExpandGroup should succeed for test_group")
 
 		require.Len(t, testGroup.ExpandedVerifyFiles, 1)
@@ -578,7 +578,7 @@ verify_files = ["%{full_path}/check.sh"]
 		require.NotNil(t, testGroupSpec)
 
 		// Expand the group to get RuntimeGroup
-		testGroup, err := ExpandGroup(testGroupSpec, runtimeGlobal.ExpandedVars)
+		testGroup, err := ExpandGroup(testGroupSpec, runtimeGlobal)
 		require.NoError(t, err, "ExpandGroup should succeed for test_group")
 
 		require.Len(t, testGroup.ExpandedVerifyFiles, 1)

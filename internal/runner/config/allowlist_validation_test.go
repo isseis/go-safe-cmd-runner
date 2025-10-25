@@ -127,7 +127,7 @@ func TestAllowlist_ViolationAtGroupLevel(t *testing.T) {
 			require.NoError(t, err)
 
 			// Then expand group
-			_, err = config.ExpandGroup(tt.groupSpec, globalRuntime.ExpandedVars)
+			_, err = config.ExpandGroup(tt.groupSpec, globalRuntime)
 			if tt.wantErr != "" {
 				require.Error(t, err, tt.description)
 				assert.Contains(t, err.Error(), tt.wantErr)
@@ -209,11 +209,11 @@ func TestAllowlist_ViolationAtCommandLevel(t *testing.T) {
 			require.NoError(t, err)
 
 			// Then expand group
-			groupRuntime, err := config.ExpandGroup(tt.groupSpec, globalRuntime.ExpandedVars)
+			groupRuntime, err := config.ExpandGroup(tt.groupSpec, globalRuntime)
 			require.NoError(t, err)
 
 			// Finally expand command
-			_, err = config.ExpandCommand(tt.cmdSpec, groupRuntime.ExpandedVars, tt.groupSpec.Name, common.NewUnsetTimeout())
+			_, err = config.ExpandCommand(tt.cmdSpec, groupRuntime, globalRuntime, common.NewUnsetTimeout())
 			if tt.wantErr != "" {
 				require.Error(t, err, tt.description)
 				assert.Contains(t, err.Error(), tt.wantErr)
@@ -300,7 +300,7 @@ func TestAllowlist_InheritanceAcrossLevels(t *testing.T) {
 		globalRuntime, err := config.ExpandGlobal(globalSpec)
 		require.NoError(t, err)
 
-		_, err = config.ExpandGroup(groupSpec, globalRuntime.ExpandedVars)
+		_, err = config.ExpandGroup(groupSpec, globalRuntime)
 		require.NoError(t, err, "Group should inherit global allowlist")
 	})
 
@@ -322,10 +322,9 @@ func TestAllowlist_InheritanceAcrossLevels(t *testing.T) {
 		globalRuntime, err := config.ExpandGlobal(globalSpec)
 		require.NoError(t, err)
 
-		groupRuntime, err := config.ExpandGroup(groupSpec, globalRuntime.ExpandedVars)
+		groupRuntime, err := config.ExpandGroup(groupSpec, globalRuntime)
 		require.NoError(t, err)
-
-		_, err = config.ExpandCommand(cmdSpec, groupRuntime.ExpandedVars, groupSpec.Name, common.NewUnsetTimeout())
+		_, err = config.ExpandCommand(cmdSpec, groupRuntime, globalRuntime, common.NewUnsetTimeout())
 		require.NoError(t, err, "Command should inherit global allowlist")
 	})
 }

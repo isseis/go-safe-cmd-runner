@@ -69,11 +69,11 @@ func envPriorityTestHelper(t *testing.T, systemEnv map[string]string, configTOML
 	if err != nil {
 		t.Fatalf("Failed to expand global config: %v", err)
 	}
-	runtimeGroup, err := config.ExpandGroup(&cfg.Groups[0], runtimeGlobal.ExpandedVars)
+	runtimeGroup, err := config.ExpandGroup(&cfg.Groups[0], runtimeGlobal)
 	if err != nil {
 		t.Fatalf("Failed to expand group config: %v", err)
 	}
-	runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup.ExpandedVars, "", common.NewUnsetTimeout())
+	runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout())
 	if err != nil {
 		t.Fatalf("Failed to expand command config: %v", err)
 	}
@@ -431,11 +431,11 @@ env_vars = ["OUTPUT=%{output}"]
 	if err != nil {
 		t.Fatalf("Failed to expand global config: %v", err)
 	}
-	runtimeGroup, err := config.ExpandGroup(groupSpec, runtimeGlobal.ExpandedVars)
+	runtimeGroup, err := config.ExpandGroup(groupSpec, runtimeGlobal)
 	if err != nil {
 		t.Fatalf("Failed to expand group config: %v", err)
 	}
-	runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup.ExpandedVars, "", common.NewUnsetTimeout())
+	runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup, runtimeGlobal, common.NewUnsetTimeout())
 	if err != nil {
 		t.Fatalf("Failed to expand command config: %v", err)
 	}

@@ -363,10 +363,12 @@ func ExpandGlobal(spec *runnertypes.GlobalSpec) (*runnertypes.RuntimeGlobal, err
 		ExpandedEnv:  make(map[string]string),
 	}
 
+	// 0. Parse system environment once and cache it
+	// This avoids repeated os.Environ() parsing in ExpandGroup and ExpandCommand
+	runtime.SystemEnv = environment.NewFilter(spec.EnvAllowed).ParseSystemEnvironment()
+
 	// 1. Process FromEnv
-	// Build system environment map from os.Environ()
-	systemEnv := environment.NewFilter(spec.EnvAllowed).ParseSystemEnvironment()
-	fromEnvVars, err := ProcessFromEnv(spec.EnvImport, spec.EnvAllowed, systemEnv, "global")
+	fromEnvVars, err := ProcessFromEnv(spec.EnvImport, spec.EnvAllowed, runtime.SystemEnv, "global")
 	if err != nil {
 		return nil, fmt.Errorf("failed to process global from_env: %w", err)
 	}
@@ -419,7 +421,7 @@ func ExpandGlobal(spec *runnertypes.GlobalSpec) (*runnertypes.RuntimeGlobal, err
 // Note:
 //   - Commands are NOT expanded by this function. They are expanded separately
 //     by GroupExecutor using ExpandCommand() for each command.
-func ExpandGroup(spec *runnertypes.GroupSpec, globalVars map[string]string) (*runnertypes.RuntimeGroup, error) {
+func ExpandGroup(spec *runnertypes.GroupSpec, globalRuntime *runnertypes.RuntimeGlobal) (*runnertypes.RuntimeGroup, error) {
 	runtime := &runnertypes.RuntimeGroup{
 		Spec:         spec,
 		ExpandedVars: make(map[string]string),
@@ -428,11 +430,32 @@ func ExpandGroup(spec *runnertypes.GroupSpec, globalVars map[string]string) (*ru
 	}
 
 	// 1. Inherit global variables
-	maps.Copy(runtime.ExpandedVars, globalVars)
+	if globalRuntime != nil {
+		maps.Copy(runtime.ExpandedVars, globalRuntime.ExpandedVars)
+	}
 
 	// 2. Process FromEnv (group-level)
-	// TODO (Task 0033): Implement FromEnv processing, which imports specified system environment variables
-	// as internal variables for the group. For now, skip FromEnv processing.
+	// Implement from_env processing with allowlist inheritance: group.EnvAllowed (if non-nil)
+	// overrides global; nil means inherit global allowlist; empty slice means reject all.
+	if len(spec.EnvImport) > 0 {
+		// Use cached system environment from globalRuntime
+		var globalAllowlist []string
+		var systemEnv map[string]string
+		if globalRuntime != nil {
+			globalAllowlist = globalRuntime.EnvAllowlist()
+			systemEnv = globalRuntime.SystemEnv
+		}
+
+		effectiveAllowlist := determineEffectiveEnvAllowlist(spec.EnvAllowed, globalAllowlist)
+
+		fromEnvVars, err := ProcessFromEnv(spec.EnvImport, effectiveAllowlist, systemEnv, fmt.Sprintf("group[%s]", spec.Name))
+		if err != nil {
+			return nil, fmt.Errorf("failed to process group[%s] from_env: %w", spec.Name, err)
+		}
+
+		// Merge from_env variables into expanded vars (group-level from_env may override inherited vars)
+		maps.Copy(runtime.ExpandedVars, fromEnvVars)
+	}
 
 	// 3. Process Vars (group-level)
 	expandedVars, err := ProcessVars(spec.Vars, runtime.ExpandedVars, fmt.Sprintf("group[%s]", spec.Name))
@@ -485,7 +508,7 @@ func ExpandGroup(spec *runnertypes.GroupSpec, globalVars map[string]string) (*ru
 // Note:
 //   - EffectiveTimeout is set by NewRuntimeCommand using timeout resolution hierarchy.
 //   - EffectiveWorkDir is NOT set by this function; it is set by GroupExecutor after expansion.
-func ExpandCommand(spec *runnertypes.CommandSpec, groupVars map[string]string, _ string, globalTimeout common.Timeout) (*runnertypes.RuntimeCommand, error) {
+func ExpandCommand(spec *runnertypes.CommandSpec, runtimeGroup *runnertypes.RuntimeGroup, globalRuntime *runnertypes.RuntimeGlobal, globalTimeout common.Timeout) (*runnertypes.RuntimeCommand, error) {
 	// Create RuntimeCommand using NewRuntimeCommand to properly resolve timeout
 	runtime, err := runnertypes.NewRuntimeCommand(spec, globalTimeout)
 	if err != nil {
@@ -493,11 +516,36 @@ func ExpandCommand(spec *runnertypes.CommandSpec, groupVars map[string]string, _
 	}
 
 	// 1. Inherit group variables
-	maps.Copy(runtime.ExpandedVars, groupVars)
+	if runtimeGroup != nil {
+		maps.Copy(runtime.ExpandedVars, runtimeGroup.ExpandedVars)
+	}
 
 	// 2. Process FromEnv (command-level)
-	// TODO (Task 0033): Implement FromEnv processing, which imports specified system environment variables
-	// as internal variables for this command. For now, skip FromEnv processing.
+	// Command-level from_env uses group's allowlist (if any) with fallback to global allowlist
+	if len(spec.EnvImport) > 0 {
+		// Use cached system environment from globalRuntime
+		var globalAllowlist []string
+		var systemEnv map[string]string
+		if globalRuntime != nil {
+			globalAllowlist = globalRuntime.EnvAllowlist()
+			systemEnv = globalRuntime.SystemEnv
+		}
+
+		var groupAllowlist []string
+		if runtimeGroup != nil && runtimeGroup.Spec != nil {
+			groupAllowlist = runtimeGroup.Spec.EnvAllowed
+		}
+
+		effectiveAllowlist := determineEffectiveEnvAllowlist(groupAllowlist, globalAllowlist)
+
+		fromEnvVars, err := ProcessFromEnv(spec.EnvImport, effectiveAllowlist, systemEnv, fmt.Sprintf("command[%s]", spec.Name))
+		if err != nil {
+			return nil, fmt.Errorf("failed to process command[%s] from_env: %w", spec.Name, err)
+		}
+
+		// Merge command-level from_env into expanded vars (command-level may override group vars)
+		maps.Copy(runtime.ExpandedVars, fromEnvVars)
+	}
 
 	// 3. Process Vars (command-level)
 	expandedVars, err := ProcessVars(spec.Vars, runtime.ExpandedVars, fmt.Sprintf("command[%s]", spec.Name))

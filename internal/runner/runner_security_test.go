@@ -167,7 +167,7 @@ env_vars = ["CMD_VAR=%{group_path}"]
 
 				// Verify group level expansion
 				if len(cfg.Groups) > 0 {
-					runtimeGroup, err := config.ExpandGroup(&cfg.Groups[0], runtimeGlobal.ExpandedVars)
+					runtimeGroup, err := config.ExpandGroup(&cfg.Groups[0], runtimeGlobal)
 					require.NoError(t, err)
 					require.NotNil(t, runtimeGroup.ExpandedVars)
 					require.NotNil(t, runtimeGroup.ExpandedEnv)
@@ -225,13 +225,13 @@ args = ["private"]
 					require.NoError(t, err)
 
 					// Public group should have access to PUBLIC_VAR
-					publicGroup, err := config.ExpandGroup(&cfg.Groups[0], runtimeGlobal.ExpandedVars)
+					publicGroup, err := config.ExpandGroup(&cfg.Groups[0], runtimeGlobal)
 					require.NoError(t, err)
 					require.NotNil(t, publicGroup.ExpandedVars)
 					assert.Equal(t, "public", publicGroup.ExpandedVars["pub"])
 
 					// Private group should have access to PRIVATE_VAR
-					privateGroup, err := config.ExpandGroup(&cfg.Groups[1], runtimeGlobal.ExpandedVars)
+					privateGroup, err := config.ExpandGroup(&cfg.Groups[1], runtimeGlobal)
 					require.NoError(t, err)
 					require.NotNil(t, privateGroup.ExpandedVars)
 					assert.Equal(t, "private", privateGroup.ExpandedVars["priv"])
