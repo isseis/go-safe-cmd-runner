@@ -145,8 +145,8 @@ type TimeoutResolutionContext struct {
 - [x] RuntimeCommand にタイムアウト値が正しく設定される
 - [x] `ErrInvalidTimeout` が `timeout.go` に移動されている
 - [x] `validation.go` が削除され、既存のビルドが通る
-- [ ] プロダクションコードで `NewRuntimeCommand` を使用している
-- [ ] `NewRuntimeCommandLegacy` が使用されていないことを確認
+- [x] プロダクションコードで `NewRuntimeCommand` を使用している
+- [x] `NewRuntimeCommandLegacy` が使用されていないことを確認
 
 ### 3.3. Phase 3: 実行制御実装
 

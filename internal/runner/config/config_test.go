@@ -383,7 +383,7 @@ args = ["mydb", "-f", "%{__runner_workdir}/dump.sql"]
 
 			// 4. Expand command
 			cmdSpec := &group.Commands[0]
-			runtimeCmd, err := ExpandCommand(cmdSpec, runtimeGroup.ExpandedVars, group.Name)
+			runtimeCmd, err := ExpandCommand(cmdSpec, runtimeGroup.ExpandedVars, group.Name, nil)
 			if err != nil {
 				t.Fatalf("Failed to expand command: %v", err)
 			}

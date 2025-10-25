@@ -74,27 +74,6 @@ func TestNewRuntimeCommand_TimeoutResolution(t *testing.T) {
 	}
 }
 
-func TestNewRuntimeCommandLegacy_BackwardCompatibility(t *testing.T) {
-	spec := &CommandSpec{
-		Name: "test-command",
-		Cmd:  "/bin/echo",
-		Args: []string{"hello"},
-		// No timeout specified
-		Timeout: nil,
-	}
-
-	runtime, err := NewRuntimeCommandLegacy(spec)
-	assert.NoError(t, err, "NewRuntimeCommandLegacy() should not fail")
-
-	// Should use default timeout since no global timeout is provided
-	assert.Equal(t, common.DefaultTimeout, runtime.EffectiveTimeout,
-		"Should use default timeout when no global timeout is provided")
-
-	// Verify that the spec timeout is unset
-	timeout := runtime.Timeout()
-	assert.False(t, timeout.IsSet(), "Timeout should be unset when not specified")
-}
-
 func TestNewRuntimeCommand_CommandTimeoutZero(t *testing.T) {
 	spec := &CommandSpec{
 		Name:    "unlimited-command",
@@ -146,9 +125,4 @@ func TestNewRuntimeCommand_ErrorHandling(t *testing.T) {
 	runtime, err := NewRuntimeCommand(nil, common.IntPtr(60))
 	assert.ErrorIs(t, err, ErrNilSpec, "NewRuntimeCommand(nil, ...) should return ErrNilSpec")
 	assert.Nil(t, runtime, "NewRuntimeCommand(nil, ...) should return nil runtime")
-
-	// Test legacy function with nil spec
-	runtimeLegacy, err := NewRuntimeCommandLegacy(nil)
-	assert.ErrorIs(t, err, ErrNilSpec, "NewRuntimeCommandLegacy(nil) should return ErrNilSpec")
-	assert.Nil(t, runtimeLegacy, "NewRuntimeCommandLegacy(nil) should return nil runtime")
 }

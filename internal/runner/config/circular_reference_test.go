@@ -327,7 +327,7 @@ func TestCircularReference_CrossLevel_GroupCommand(t *testing.T) {
 			require.NoError(t, err, "Group expansion should succeed")
 
 			// Then try to expand command (this is where error should be detected)
-			_, err = config.ExpandCommand(tt.command, runtimeGroup.ExpandedVars, tt.group.Name)
+			_, err = config.ExpandCommand(tt.command, runtimeGroup.ExpandedVars, tt.group.Name, nil)
 			require.Error(t, err, "Expected error in command expansion")
 			assert.Contains(t, err.Error(), tt.wantErr)
 			assert.Contains(t, err.Error(), tt.contains)

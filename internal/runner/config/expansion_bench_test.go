@@ -73,7 +73,7 @@ func BenchmarkExpandCommand(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = ExpandCommand(spec, groupVars, "/tmp/workdir")
+		_, _ = ExpandCommand(spec, groupVars, "/tmp/workdir", nil)
 	}
 }
 

@@ -91,7 +91,7 @@ func TestBootstrapCommandEnvExpansionIntegration(t *testing.T) {
 	require.Equal(t, "run_app", cmdSpec.Name)
 
 	// Expand command spec to runtime
-	runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup.ExpandedVars, appGroupSpec.Name)
+	runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup.ExpandedVars, appGroupSpec.Name, nil)
 	require.NoError(t, err)
 	require.NotNil(t, runtimeCmd)
 

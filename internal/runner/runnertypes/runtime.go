@@ -204,13 +204,6 @@ func NewRuntimeCommand(spec *CommandSpec, globalTimeout *int) (*RuntimeCommand, 
 	}, nil
 }
 
-// NewRuntimeCommandLegacy creates a new RuntimeCommand with the old signature for backward compatibility.
-// This method uses DefaultTimeout as fallback when no timeout is specified.
-// Deprecated: Use NewRuntimeCommand with explicit globalTimeout parameter instead.
-func NewRuntimeCommandLegacy(spec *CommandSpec) (*RuntimeCommand, error) {
-	return NewRuntimeCommand(spec, nil)
-}
-
 // Convenience methods for RuntimeCommand
 
 // Name returns the command name from the spec.
