@@ -740,28 +740,24 @@ func TestDefaultExecutor_UserGroupRootExecution(t *testing.T) {
 // TestCreateCommandContextWithTimeout tests the CreateCommandContextWithTimeout function
 func TestCreateCommandContextWithTimeout(t *testing.T) {
 	tests := []struct {
-		name            string
-		timeout         int
-		expectTimeout   bool
-		expectImmediate bool
+		name          string
+		timeout       int
+		expectTimeout bool
 	}{
 		{
-			name:            "unlimited timeout (0)",
-			timeout:         0,
-			expectTimeout:   false,
-			expectImmediate: false,
+			name:          "unlimited timeout (0)",
+			timeout:       0,
+			expectTimeout: false,
 		},
 		{
-			name:            "unlimited timeout (negative)",
-			timeout:         -1,
-			expectTimeout:   false,
-			expectImmediate: false,
+			name:          "unlimited timeout (negative)",
+			timeout:       -1,
+			expectTimeout: false,
 		},
 		{
-			name:            "limited timeout",
-			timeout:         1,
-			expectTimeout:   true,
-			expectImmediate: false,
+			name:          "limited timeout",
+			timeout:       1,
+			expectTimeout: true,
 		},
 	}
 
