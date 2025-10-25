@@ -111,7 +111,7 @@ timeout = 0  # ✅ Unlimited execution for long-running task
 Timeout values are resolved in the following order of priority:
 1. **Command level**: `[[groups.commands]]` timeout setting
 2. **Global level**: `[global]` timeout setting
-3. **System default**: 60 seconds (if no timeout is specified anywhere)
+3. **System default**: 60 seconds (used if neither global nor command timeout is specified)
 
 #### Example of Hierarchy Resolution
 
