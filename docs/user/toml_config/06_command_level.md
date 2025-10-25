@@ -768,12 +768,18 @@ timeout = seconds
 
 | Item | Description |
 |------|-------------|
-| **Type** | Integer (int) |
+| **Type** | Integer (int) or null |
 | **Required/Optional** | Optional |
 | **Configurable Level** | Global, Command |
-| **Default Value** | Global timeout |
-| **Valid Values** | Positive integer (in seconds) |
+| **Default Value** | Global timeout (if set), otherwise 60 seconds |
+| **Valid Values** | 0 (unlimited), positive integer (in seconds) |
 | **Override** | Overrides global setting |
+
+#### ⚠️ Breaking Change Notice (v2.0.0)
+
+**BREAKING**: Starting from v2.0.0, `timeout = 0` means **unlimited execution** (no timeout).
+- **Before v2.0.0**: `timeout = 0` was treated as invalid and defaulted to global timeout
+- **From v2.0.0**: `timeout = 0` explicitly means unlimited execution time
 
 #### Configuration Examples
 
@@ -827,6 +833,56 @@ cmd = "/usr/bin/pg_dump"
 args = ["large_db"]
 timeout = 3600  # 1 hour
 ```
+
+#### Example 3: Unlimited Execution (v2.0.0+)
+
+```toml
+[global]
+timeout = 120  # Default: 2 minutes
+
+[[groups]]
+name = "data_processing"
+
+[[groups.commands]]
+name = "interactive_data_entry"
+cmd = "/usr/bin/data-entry-tool"
+args = ["--interactive"]
+timeout = 0  # ✅ Unlimited execution - waits for user interaction
+
+[[groups.commands]]
+name = "large_dataset_analysis"
+cmd = "/usr/bin/analyze"
+args = ["--dataset", "huge_dataset.csv"]
+timeout = 0  # ✅ Unlimited execution - unpredictable processing time
+
+[[groups.commands]]
+name = "quick_validation"
+cmd = "/usr/bin/validate"
+args = ["small_file.txt"]
+# Uses global 120 seconds
+```
+
+#### Inheritance Logic (v2.0.0+)
+
+The effective timeout value follows this resolution hierarchy:
+
+1. **Command-level `timeout`** (highest priority)
+   ```toml
+   [[groups.commands]]
+   name = "cmd"
+   timeout = 300  # ← This value is used
+   ```
+
+2. **Global-level `timeout`**
+   ```toml
+   [global]
+   timeout = 180  # ← Used if command timeout is not specified
+   ```
+
+3. **System default** (lowest priority)
+   ```
+   60 seconds  # ← Used if neither global nor command timeout is specified
+   ```
 
 ## 6.4 Privilege Management
 

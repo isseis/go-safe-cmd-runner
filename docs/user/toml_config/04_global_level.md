@@ -21,12 +21,18 @@ timeout = seconds
 
 | Item | Description |
 |------|-------------|
-| **Type** | Integer (int) |
+| **Type** | Integer (int) or null |
 | **Required/Optional** | Optional |
 | **Configurable Level** | Global, Command |
-| **Default Value** | System default (typically no limit) |
-| **Valid Values** | Positive integer (in seconds) |
+| **Default Value** | 60 seconds (if not specified) |
+| **Valid Values** | 0 (unlimited), positive integer (in seconds) |
 | **Override** | Can be overridden at command level |
+
+### ⚠️ Breaking Change Notice (v2.0.0)
+
+**BREAKING**: Starting from v2.0.0, `timeout = 0` means **unlimited execution** (no timeout).
+- **Before v2.0.0**: `timeout = 0` was treated as invalid and defaulted to system default
+- **From v2.0.0**: `timeout = 0` explicitly means unlimited execution time
 
 ### Role
 
@@ -78,12 +84,81 @@ args = []
 timeout = 300  # Set to 300 seconds only for this command
 ```
 
+#### Example 3: Unlimited Execution (v2.0.0+)
+
+```toml
+version = "1.0"
+
+[global]
+timeout = 60  # Default: 60 seconds for most commands
+
+[[groups]]
+name = "data_processing"
+
+[[groups.commands]]
+name = "interactive_setup"
+cmd = "/usr/bin/interactive-setup"
+args = []
+timeout = 0  # ✅ Unlimited execution - no timeout
+
+[[groups.commands]]
+name = "large_data_import"
+cmd = "/usr/bin/import-data"
+args = ["--large-dataset"]
+timeout = 0  # ✅ Unlimited execution for long-running task
+```
+
+### Timeout Resolution Hierarchy (v2.0.0+)
+
+Timeout values are resolved in the following order of priority:
+1. **Command level**: `[[groups.commands]]` timeout setting
+2. **Global level**: `[global]` timeout setting
+3. **System default**: 60 seconds (if no timeout is specified anywhere)
+
+#### Example of Hierarchy Resolution
+
+```toml
+version = "1.0"
+
+[global]
+timeout = 120  # Global default: 120 seconds
+
+[[groups]]
+name = "tasks"
+
+[[groups.commands]]
+name = "command1"
+cmd = "/bin/sleep"
+args = ["30"]
+# Uses global timeout: 120 seconds
+
+[[groups.commands]]
+name = "command2"
+cmd = "/bin/sleep"
+args = ["30"]
+timeout = 0  # Command-specific: unlimited (overrides global)
+
+[[groups.commands]]
+name = "command3"
+cmd = "/bin/sleep"
+args = ["30"]
+timeout = 60  # Command-specific: 60 seconds (overrides global)
+```
+
 ### Behavior Details
 
+#### For Limited Timeout (positive integer)
 When a timeout occurs:
 1. Sends termination signal (SIGTERM) to the running command
 2. After waiting for a certain period, sends forced termination signal (SIGKILL)
 3. Records as error and proceeds to the next command
+
+#### For Unlimited Timeout (`timeout = 0`)
+When unlimited timeout is set:
+1. **No automatic termination**: Command runs until completion
+2. **Resource monitoring**: System monitors long-running processes
+3. **Security logging**: Logs unlimited execution for security audit
+4. **Manual interruption**: Can be stopped by user intervention (Ctrl+C)
 
 ### Notes
 
@@ -102,12 +177,25 @@ args = ["large_database"]
 # Likely won't complete in 10 seconds → timeout error
 ```
 
-#### 2. 0 or Negative Values Are Invalid
+#### 2. Unlimited Execution with `timeout = 0` (v2.0.0+)
 
 ```toml
 [global]
-timeout = 0   # Invalid setting
-timeout = -1  # Invalid setting
+timeout = 0  # ✅ Unlimited execution (no timeout)
+```
+
+**Use cases for unlimited timeout:**
+- Long-running data processing tasks
+- Interactive commands requiring user input
+- System maintenance scripts with unpredictable duration
+
+⚠️ **Security considerations**: Use unlimited timeouts carefully to avoid resource exhaustion.
+
+#### 3. Invalid Values
+
+```toml
+[global]
+timeout = -1  # ❌ Invalid: negative values are not allowed
 ```
 
 ## 4.2 ❌ workdir - Working Directory (Deprecated)

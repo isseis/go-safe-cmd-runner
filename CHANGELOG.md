@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2025-10-25
+
+### Breaking Changes
+
+#### Timeout Behavior Change
+
+**BREAKING**: `timeout = 0` now means unlimited execution (previously defaulted to 60 seconds)
+
+- **Before v2.0.0**: `timeout = 0` was treated as invalid and used system default timeout
+- **From v2.0.0**: `timeout = 0` explicitly means unlimited execution time (no timeout)
+
+**Migration Required**: Review all `timeout = 0` settings in existing configuration files.
+
+### Added
+
+- Support for unlimited command execution with `timeout = 0`
+- Enhanced timeout hierarchy resolution (command → global → system default)
+- Security monitoring for unlimited execution commands
+- Long-running process detection and logging
+- Comprehensive timeout examples in `sample/timeout_examples.toml`
+- Migration guide at `docs/migration/v2.0.0_timeout_changes.md`
+
+### Changed
+
+- Timeout configuration now uses nullable integers for better control
+- Improved timeout resolution logic with clear inheritance hierarchy
+- Enhanced error messages for timeout configuration errors
+- Updated documentation with breaking change notices and examples
+
+### Security
+
+- Added security logging for unlimited timeout executions
+- Implemented monitoring for long-running processes
+- Enhanced resource usage tracking for unlimited execution commands
+
+### Migration Guide
+
+See `docs/migration/v2.0.0_timeout_changes.md` for detailed migration instructions.
+
 ### Breaking Changes
 
 #### TOML Field Renaming

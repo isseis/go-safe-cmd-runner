@@ -4,6 +4,8 @@
 version = "1.0"
 
 [global]
+# Global timeout setting
+# Note: From v2.0.0, timeout = 0 means unlimited execution (no timeout)
 timeout = 60
 log_level = "debug"
 verify_standard_paths = false

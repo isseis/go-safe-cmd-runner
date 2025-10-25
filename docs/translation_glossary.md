@@ -135,6 +135,8 @@
 |--------|---------|------|
 | ハッシュ | hash | |
 | 階層 | hierarchy / level | "level" は設定階層の文脈で使用 |
+| 階層継承 | hierarchy inheritance | |
+| 階層解決 | hierarchy resolution | |
 
 ### I
 
@@ -143,6 +145,7 @@
 | 実装 | implementation | |
 | 実装計画書 | implementation plan | |
 | インポート | import | |
+| 継承 | inheritance | |
 | 整合性 | integrity | |
 | 整数 | integer | |
 | 内部変数 | internal variable | |
@@ -182,6 +185,7 @@
 | 中級者 | intermediate (user) | |
 | 移行 | migration | |
 | 移行ガイド | migration guide | |
+| 監視 | monitoring | |
 | モード | mode | |
 
 ### N
@@ -290,6 +294,9 @@
 | ターミナル | terminal | |
 | テスト | test / testing | |
 | タイムアウト | timeout | |
+| タイムアウト階層 | timeout hierarchy | |
+| タイムアウト解決 | timeout resolution | |
+| タイムアウト継承 | timeout inheritance | |
 | タイムゾーン | timezone | |
 | ツール | tool | |
 | TOML設定 | TOML configuration | |
@@ -307,6 +314,9 @@
 | 一意 | unique | |
 | ユニオン | union | |
 | 一様性 | uniformity | |
+| 無制限 | unlimited | |
+| 無制限実行 | unlimited execution | |
+| 無制限タイムアウト | unlimited timeout | |
 | 更新 | update | |
 | アップロード | upload | |
 | 使用 | use / usage | |
