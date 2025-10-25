@@ -60,15 +60,14 @@ Environment variables (5):
 
 **制御ロジック**:
 ```go
-switch detailLevel {
-case DetailLevelSummary:    // 最小限の情報のみ
-    // 環境変数情報は表示しない
-case DetailLevelDetailed:   // 統計情報 + env継承関係
+// DetailLevelSummary: 最小限の情報のみ（環境変数情報は表示しない）
+
+if detailLevel >= DetailLevelDetailed {
     // EnvironmentInfo統計情報のみ表示 (既存)
     // PrintFromEnvInheritance表示 (既存)
-case DetailLevelFull:       // 全詳細情報
-    // EnvironmentInfo統計情報表示 (既存)
-    // PrintFromEnvInheritance表示 (既存)
+}
+
+if detailLevel == DetailLevelFull {
     // PrintFinalEnvironment表示 (新機能)
 }
 ```
@@ -335,18 +334,18 @@ const (
 func (f *TextFormatter) Format(result *DryRunResult, opts *FormatterOptions) (string, error) {
     // 既存のセクション出力...
 
-    switch opts.DetailLevel {
-    case DetailLevelDetailed, DetailLevelFull:
-        // env継承関係表示 (既存)
-
-    case DetailLevelFull:
+    // Detailed以上のレベルで環境変数統計情報と継承関係を表示
+    if opts.DetailLevel >= DetailLevelDetailed {
         // 環境変数統計情報表示 (既存)
         f.writeEnvironmentInfo(&buf, result.EnvironmentInfo)
 
-        // NOTE: 最終環境変数の詳細は各コマンド実行時に
-        // PrintFinalEnvironmentで出力されるため、
-        // FormatterではEnvironmentInfoの統計のみ表示
+        // env継承関係表示 (既存)
+        // ...
     }
+
+    // NOTE: 最終環境変数の詳細は各コマンド実行時に
+    // PrintFinalEnvironmentで出力されるため、
+    // FormatterではEnvironmentInfoの統計のみ表示
 }
 ```
 
