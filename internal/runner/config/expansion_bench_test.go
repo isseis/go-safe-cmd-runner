@@ -123,3 +123,108 @@ func BenchmarkExpandGlobalComplex(b *testing.B) {
 		_, _ = ExpandGlobal(spec)
 	}
 }
+
+// BenchmarkExpandCommandWithEnvImport benchmarks command expansion with env_import.
+// This benchmark measures the benefit of SystemEnv caching, as ExpandCommand
+// now uses the cached SystemEnv from RuntimeGlobal instead of parsing os.Environ()
+// for each command.
+func BenchmarkExpandCommandWithEnvImport(b *testing.B) {
+	// Prepare a global spec with env_import
+	globalSpec := &runnertypes.GlobalSpec{
+		EnvAllowed: []string{"PATH", "HOME", "USER"},
+		EnvImport:  []string{"MY_PATH=PATH"},
+		Vars:       []string{"GLOBAL_VAR=global_value"},
+	}
+
+	// Set environment variables for benchmark
+	b.Setenv("PATH", "/usr/bin:/bin:/usr/local/bin")
+	b.Setenv("HOME", "/home/testuser")
+	b.Setenv("USER", "testuser")
+
+	// Expand global to get RuntimeGlobal with cached SystemEnv
+	globalRuntime, err := ExpandGlobal(globalSpec)
+	if err != nil {
+		b.Fatalf("Failed to expand global: %v", err)
+	}
+
+	// Prepare group runtime
+	groupSpec := &runnertypes.GroupSpec{
+		Name: "test_group",
+		Vars: []string{"GROUP_VAR=group_value"},
+	}
+	groupRuntime, err := ExpandGroup(groupSpec, globalRuntime)
+	if err != nil {
+		b.Fatalf("Failed to expand group: %v", err)
+	}
+
+	// Prepare command spec with env_import
+	cmdSpec := &runnertypes.CommandSpec{
+		Name:      "test_command",
+		Cmd:       "/usr/bin/test",
+		Args:      []string{"%{CMD_ARG}"},
+		EnvImport: []string{"CMD_PATH=PATH"},
+		Vars:      []string{"CMD_ARG=arg_value"},
+		EnvVars:   []string{"CMD_ENV=%{CMD_ARG}"},
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = ExpandCommand(cmdSpec, groupRuntime, globalRuntime, common.NewUnsetTimeout())
+	}
+}
+
+// BenchmarkExpandMultipleCommandsWithEnvImport simulates realistic usage where
+// multiple commands are expanded within a group, each with env_import.
+// This benchmark demonstrates the performance improvement from SystemEnv caching,
+// as the system environment is parsed only once in ExpandGlobal.
+func BenchmarkExpandMultipleCommandsWithEnvImport(b *testing.B) {
+	// Prepare global spec
+	globalSpec := &runnertypes.GlobalSpec{
+		EnvAllowed: []string{"PATH", "HOME", "USER", "LANG"},
+		EnvImport:  []string{"MY_PATH=PATH"},
+		Vars:       []string{"GLOBAL_VAR=global_value"},
+	}
+
+	// Set environment variables
+	b.Setenv("PATH", "/usr/bin:/bin:/usr/local/bin")
+	b.Setenv("HOME", "/home/testuser")
+	b.Setenv("USER", "testuser")
+	b.Setenv("LANG", "en_US.UTF-8")
+
+	// Expand global once
+	globalRuntime, err := ExpandGlobal(globalSpec)
+	if err != nil {
+		b.Fatalf("Failed to expand global: %v", err)
+	}
+
+	// Prepare group runtime
+	groupSpec := &runnertypes.GroupSpec{
+		Name: "test_group",
+		Vars: []string{"GROUP_VAR=group_value"},
+	}
+	groupRuntime, err := ExpandGroup(groupSpec, globalRuntime)
+	if err != nil {
+		b.Fatalf("Failed to expand group: %v", err)
+	}
+
+	// Prepare 10 command specs, each with env_import
+	cmdSpecs := make([]*runnertypes.CommandSpec, 10)
+	for i := 0; i < 10; i++ {
+		cmdSpecs[i] = &runnertypes.CommandSpec{
+			Name:      "test_command",
+			Cmd:       "/usr/bin/test",
+			Args:      []string{"%{CMD_ARG}"},
+			EnvImport: []string{"CMD_PATH=PATH", "CMD_HOME=HOME"},
+			Vars:      []string{"CMD_ARG=arg_value"},
+			EnvVars:   []string{"CMD_ENV=%{CMD_ARG}"},
+		}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// Expand all commands (simulating loop in group_executor)
+		for _, cmdSpec := range cmdSpecs {
+			_, _ = ExpandCommand(cmdSpec, groupRuntime, globalRuntime, common.NewUnsetTimeout())
+		}
+	}
+}

@@ -363,10 +363,12 @@ func ExpandGlobal(spec *runnertypes.GlobalSpec) (*runnertypes.RuntimeGlobal, err
 		ExpandedEnv:  make(map[string]string),
 	}
 
+	// 0. Parse system environment once and cache it
+	// This avoids repeated os.Environ() parsing in ExpandGroup and ExpandCommand
+	runtime.SystemEnv = environment.NewFilter(spec.EnvAllowed).ParseSystemEnvironment()
+
 	// 1. Process FromEnv
-	// Build system environment map from os.Environ()
-	systemEnv := environment.NewFilter(spec.EnvAllowed).ParseSystemEnvironment()
-	fromEnvVars, err := ProcessFromEnv(spec.EnvImport, spec.EnvAllowed, systemEnv, "global")
+	fromEnvVars, err := ProcessFromEnv(spec.EnvImport, spec.EnvAllowed, runtime.SystemEnv, "global")
 	if err != nil {
 		return nil, fmt.Errorf("failed to process global from_env: %w", err)
 	}
@@ -436,12 +438,13 @@ func ExpandGroup(spec *runnertypes.GroupSpec, globalRuntime *runnertypes.Runtime
 	// Implement from_env processing with allowlist inheritance: group.EnvAllowed (if non-nil)
 	// overrides global; nil means inherit global allowlist; empty slice means reject all.
 	if len(spec.EnvImport) > 0 {
-		// Build system environment map using global allowlist context (ParseSystemEnvironment does not filter)
+		// Use cached system environment from globalRuntime
 		var globalAllowlist []string
+		var systemEnv map[string]string
 		if globalRuntime != nil {
 			globalAllowlist = globalRuntime.EnvAllowlist()
+			systemEnv = globalRuntime.SystemEnv
 		}
-		systemEnv := environment.NewFilter(globalAllowlist).ParseSystemEnvironment()
 
 		effectiveAllowlist := determineEffectiveEnvAllowlist(spec.EnvAllowed, globalAllowlist)
 
@@ -522,9 +525,12 @@ func ExpandCommand(spec *runnertypes.CommandSpec, runtimeGroup *runnertypes.Runt
 	// 2. Process FromEnv (command-level)
 	// Command-level from_env uses group's allowlist (if any) with fallback to global allowlist
 	if len(spec.EnvImport) > 0 {
+		// Use cached system environment from globalRuntime
 		var globalAllowlist []string
+		var systemEnv map[string]string
 		if globalRuntime != nil {
 			globalAllowlist = globalRuntime.EnvAllowlist()
+			systemEnv = globalRuntime.SystemEnv
 		}
 
 		var groupAllowlist []string
@@ -533,8 +539,6 @@ func ExpandCommand(spec *runnertypes.CommandSpec, runtimeGroup *runnertypes.Runt
 		}
 
 		effectiveAllowlist := determineEffectiveEnvAllowlist(groupAllowlist, globalAllowlist)
-
-		systemEnv := environment.NewFilter(globalAllowlist).ParseSystemEnvironment()
 
 		fromEnvVars, err := ProcessFromEnv(spec.EnvImport, effectiveAllowlist, systemEnv, fmt.Sprintf("command[%s]", spec.Name))
 		if err != nil {

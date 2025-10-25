@@ -32,6 +32,11 @@ type RuntimeGlobal struct {
 
 	// ExpandedVars contains internal variables with all variable references expanded
 	ExpandedVars map[string]string
+
+	// SystemEnv contains the cached system environment variables parsed from os.Environ().
+	// This is populated once during ExpandGlobal to avoid repeated os.Environ() parsing
+	// in ExpandGroup and ExpandCommand.
+	SystemEnv map[string]string
 }
 
 // NewRuntimeGlobal creates a new RuntimeGlobal with the required spec.
@@ -47,6 +52,7 @@ func NewRuntimeGlobal(spec *GlobalSpec) (*RuntimeGlobal, error) {
 		ExpandedVerifyFiles: []string{},
 		ExpandedEnv:         make(map[string]string),
 		ExpandedVars:        make(map[string]string),
+		SystemEnv:           make(map[string]string),
 	}, nil
 }
 
