@@ -700,8 +700,8 @@ graph TD
     RUN_MODE -->|通常実行| NRM["Normal Execution"]
     RUN_MODE -->|dry-run| DRY["Dry-Run Mode"]
 
-    NRM --> SF{show-sensitive<br/>フラグ?}
-    SF -->|true| SHOW_ALL["全値表示<br/>通常実行]
+    NRM --> SF{"show-sensitive<br/>フラグ?"}
+    SF -->|true| SHOW_ALL["全値表示<br/>通常実行"]
     SF -->|false| REDACT["Redaction適用<br/>センシティブ値隠蔽"]
 
     DRY --> AUDIT["監査目的<br/>実行なし"]
