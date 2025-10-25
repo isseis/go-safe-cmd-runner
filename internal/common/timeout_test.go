@@ -193,3 +193,138 @@ func TestTimeout_ValuePanicsOnUnset(t *testing.T) {
 		_ = timeout.Value()
 	}, "Value() should panic when called on unset Timeout")
 }
+
+func TestNewFromIntPtr(t *testing.T) {
+	tests := []struct {
+		name      string
+		ptr       *int
+		wantSet   bool
+		wantUnlim bool
+		wantValue int
+	}{
+		{
+			name:      "nil pointer creates unset timeout",
+			ptr:       nil,
+			wantSet:   false,
+			wantUnlim: false,
+			wantValue: 0, // Value() should not be called, but this is for documentation
+		},
+		{
+			name:      "zero pointer creates unlimited timeout",
+			ptr:       IntPtr(0),
+			wantSet:   true,
+			wantUnlim: true,
+			wantValue: 0,
+		},
+		{
+			name:      "positive pointer creates timeout",
+			ptr:       IntPtr(120),
+			wantSet:   true,
+			wantUnlim: false,
+			wantValue: 120,
+		},
+		{
+			name:      "max timeout pointer",
+			ptr:       IntPtr(MaxTimeout),
+			wantSet:   true,
+			wantUnlim: false,
+			wantValue: MaxTimeout,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			timeout := NewFromIntPtr(tt.ptr)
+			assert.Equal(t, tt.wantSet, timeout.IsSet(), "IsSet() should match expected value")
+			assert.Equal(t, tt.wantUnlim, timeout.IsUnlimited(), "IsUnlimited() should match expected value")
+			if tt.wantSet {
+				assert.Equal(t, tt.wantValue, timeout.Value(), "Value() should match expected value")
+			}
+		})
+	}
+}
+
+func TestResolveEffectiveTimeout(t *testing.T) {
+	tests := []struct {
+		name              string
+		commandTimeoutSec *int // nil for unset, pointer to value otherwise
+		globalTimeoutSec  *int // nil for unset, pointer to value otherwise
+		want              int
+	}{
+		{
+			name:              "command timeout overrides global",
+			commandTimeoutSec: IntPtr(120),
+			globalTimeoutSec:  IntPtr(60),
+			want:              120,
+		},
+		{
+			name:              "command unlimited overrides global",
+			commandTimeoutSec: IntPtr(0),
+			globalTimeoutSec:  IntPtr(60),
+			want:              0,
+		},
+		{
+			name:              "global timeout when command unset",
+			commandTimeoutSec: nil,
+			globalTimeoutSec:  IntPtr(90),
+			want:              90,
+		},
+		{
+			name:              "global unlimited when command unset",
+			commandTimeoutSec: nil,
+			globalTimeoutSec:  IntPtr(0),
+			want:              0,
+		},
+		{
+			name:              "default timeout when both unset",
+			commandTimeoutSec: nil,
+			globalTimeoutSec:  nil,
+			want:              DefaultTimeout,
+		},
+		{
+			name:              "command zero overrides positive global",
+			commandTimeoutSec: IntPtr(0),
+			globalTimeoutSec:  IntPtr(300),
+			want:              0,
+		},
+		{
+			name:              "command positive overrides global zero",
+			commandTimeoutSec: IntPtr(180),
+			globalTimeoutSec:  IntPtr(0),
+			want:              180,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create command timeout
+			var commandTimeout Timeout
+			switch {
+			case tt.commandTimeoutSec == nil:
+				commandTimeout = NewUnsetTimeout()
+			case *tt.commandTimeoutSec == 0:
+				commandTimeout = NewUnlimitedTimeout()
+			default:
+				var err error
+				commandTimeout, err = NewTimeout(*tt.commandTimeoutSec)
+				require.NoError(t, err, "Failed to create command timeout")
+			}
+
+			// Create global timeout
+			var globalTimeout Timeout
+			switch {
+			case tt.globalTimeoutSec == nil:
+				globalTimeout = NewUnsetTimeout()
+			case *tt.globalTimeoutSec == 0:
+				globalTimeout = NewUnlimitedTimeout()
+			default:
+				var err error
+				globalTimeout, err = NewTimeout(*tt.globalTimeoutSec)
+				require.NoError(t, err, "Failed to create global timeout")
+			}
+
+			result := ResolveEffectiveTimeout(commandTimeout, globalTimeout)
+			assert.Equal(t, tt.want, result, "ResolveEffectiveTimeout() should return expected value")
+		})
+	}
+}
