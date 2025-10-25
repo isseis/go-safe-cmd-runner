@@ -3,6 +3,7 @@ package config
 import (
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/pelletier/go-toml/v2"
 )
@@ -383,7 +384,7 @@ args = ["mydb", "-f", "%{__runner_workdir}/dump.sql"]
 
 			// 4. Expand command
 			cmdSpec := &group.Commands[0]
-			runtimeCmd, err := ExpandCommand(cmdSpec, runtimeGroup.ExpandedVars, group.Name)
+			runtimeCmd, err := ExpandCommand(cmdSpec, runtimeGroup.ExpandedVars, group.Name, common.NewUnsetTimeout())
 			if err != nil {
 				t.Fatalf("Failed to expand command: %v", err)
 			}

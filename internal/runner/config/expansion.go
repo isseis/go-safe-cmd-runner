@@ -476,19 +476,20 @@ func ExpandGroup(spec *runnertypes.GroupSpec, globalVars map[string]string) (*ru
 //   - spec: The command configuration spec to expand
 //   - groupVars: Group-level internal variables (from RuntimeGroup.ExpandedVars)
 //   - groupName: Group name for error messages (currently unused as spec.Name is used directly)
+//   - globalTimeout: Global timeout setting for timeout resolution hierarchy
 //
 // Returns:
-//   - *RuntimeCommand: The expanded runtime command configuration
+//   - *RuntimeCommand: The expanded runtime command configuration with resolved EffectiveTimeout
 //   - error: An error if expansion fails
 //
 // Note:
-//   - EffectiveWorkDir and EffectiveTimeout are NOT set by this function.
-//     They are set by GroupExecutor after expansion.
-func ExpandCommand(spec *runnertypes.CommandSpec, groupVars map[string]string, _ string) (*runnertypes.RuntimeCommand, error) {
-	runtime := &runnertypes.RuntimeCommand{
-		Spec:         spec,
-		ExpandedVars: make(map[string]string),
-		ExpandedEnv:  make(map[string]string),
+//   - EffectiveTimeout is set by NewRuntimeCommand using timeout resolution hierarchy.
+//   - EffectiveWorkDir is NOT set by this function; it is set by GroupExecutor after expansion.
+func ExpandCommand(spec *runnertypes.CommandSpec, groupVars map[string]string, _ string, globalTimeout common.Timeout) (*runnertypes.RuntimeCommand, error) {
+	// Create RuntimeCommand using NewRuntimeCommand to properly resolve timeout
+	runtime, err := runnertypes.NewRuntimeCommand(spec, globalTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create RuntimeCommand for command[%s]: %w", spec.Name, err)
 	}
 
 	// 1. Inherit group variables

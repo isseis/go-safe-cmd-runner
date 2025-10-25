@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
@@ -141,7 +140,8 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 		slog.Info("Executing command", "command", cmdSpec.Name, "index", i+1, "total", len(groupSpec.Commands))
 
 		// 7.1 Expand command configuration
-		runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup.ExpandedVars, groupSpec.Name)
+		// Pass global timeout for timeout resolution hierarchy
+		runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup.ExpandedVars, groupSpec.Name, runtimeGlobal.Timeout())
 		if err != nil {
 			// Set failure result for notification
 			executionResult = &groupExecutionResult{
@@ -169,12 +169,7 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 		}
 		runtimeCmd.EffectiveWorkDir = workDir
 
-		// 7.3 Set EffectiveTimeout
-		// Use command-specific timeout if set, otherwise use global timeout, then default
-		runtimeCmd.EffectiveTimeout = common.ResolveEffectiveTimeout(
-			runtimeCmd.Timeout(),
-			runtimeGlobal.Timeout(),
-		)
+		// Note: EffectiveTimeout is already set by NewRuntimeCommand in ExpandCommand
 
 		lastCommand = cmdSpec.Name
 

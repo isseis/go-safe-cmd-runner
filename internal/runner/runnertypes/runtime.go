@@ -184,18 +184,24 @@ type RuntimeCommand struct {
 }
 
 // NewRuntimeCommand creates a new RuntimeCommand with the required spec.
+// The globalTimeout parameter is used for timeout resolution hierarchy.
 // Returns ErrNilSpec if spec is nil.
-func NewRuntimeCommand(spec *CommandSpec) (*RuntimeCommand, error) {
+func NewRuntimeCommand(spec *CommandSpec, globalTimeout common.Timeout) (*RuntimeCommand, error) {
 	if spec == nil {
 		return nil, ErrNilSpec
 	}
 
+	// Resolve the effective timeout using the hierarchy
+	commandTimeout := common.NewFromIntPtr(spec.Timeout)
+	effectiveTimeout := common.ResolveEffectiveTimeout(commandTimeout, globalTimeout)
+
 	return &RuntimeCommand{
-		Spec:         spec,
-		timeout:      common.NewFromIntPtr(spec.Timeout),
-		ExpandedArgs: []string{},
-		ExpandedEnv:  make(map[string]string),
-		ExpandedVars: make(map[string]string),
+		Spec:             spec,
+		timeout:          commandTimeout,
+		ExpandedArgs:     []string{},
+		ExpandedEnv:      make(map[string]string),
+		ExpandedVars:     make(map[string]string),
+		EffectiveTimeout: effectiveTimeout,
 	}, nil
 }
 

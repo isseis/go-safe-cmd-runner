@@ -134,12 +134,19 @@ type TimeoutResolutionContext struct {
 - `ValidateTimeout` 関数は使用されていないため削除
 - タイムアウト関連コードを `timeout.go` に集約することで保守性を向上
 
+**target file**: `cmd/runner/main.go` (修正)
+- `NewRuntimeCommandLegacy` から `NewRuntimeCommand` への切り替え
+- タイムアウト解決機能を有効化
+- レガシー関数の使用を廃止
+
 #### 3.2.2. 実装チェックポイント
-- [ ] タイムアウト解決アルゴリズムが正しく動作する
-- [ ] 階層継承ロジックが仕様通りに実装されている
-- [ ] RuntimeCommand にタイムアウト値が正しく設定される
-- [ ] `ErrInvalidTimeout` が `timeout.go` に移動されている
-- [ ] `validation.go` が削除され、既存のビルドが通る
+- [x] タイムアウト解決アルゴリズムが正しく動作する
+- [x] 階層継承ロジックが仕様通りに実装されている
+- [x] RuntimeCommand にタイムアウト値が正しく設定される
+- [x] `ErrInvalidTimeout` が `timeout.go` に移動されている
+- [x] `validation.go` が削除され、既存のビルドが通る
+- [x] プロダクションコードで `NewRuntimeCommand` を使用している
+- [x] `NewRuntimeCommandLegacy` が使用されていないことを確認
 
 ### 3.3. Phase 3: 実行制御実装
 
@@ -283,8 +290,8 @@ func TestE2ETimeoutBehavior(t *testing.T) {
 ```
 
 #### 3.4.3. テスト実装チェックポイント
-- [ ] 単体テストカバレッジ95%以上
-- [ ] 統合テストが全てパス
+- [x] 単体テストカバレッジ95%以上
+- [x] 統合テストが全てパス (`cmd/runner/integration_timeout_test.go` 実装済み)
 - [ ] E2Eテストで実際の動作確認
 - [ ] 性能回帰テストでオーバーヘッド確認
 - [ ] セキュリティテストで監視機能確認
@@ -415,9 +422,9 @@ See `docs/migration/v2.0.0_timeout_changes.md` for detailed migration instructio
 - [x] Timeout型定義がコンパイルエラーなく動作
 
 #### Phase 2 完了基準
-- [ ] タイムアウト解決ロジックが仕様通り動作
-- [ ] RuntimeCommand にタイムアウト値が正しく設定
-- [ ] 階層継承テストが全てパス
+- [x] タイムアウト解決ロジックが仕様通り動作
+- [x] RuntimeCommand にタイムアウト値が正しく設定
+- [x] 階層継承テストが全てパス
 
 #### Phase 3 完了基準
 - [ ] 無制限実行が正常動作

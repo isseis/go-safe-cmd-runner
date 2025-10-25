@@ -355,7 +355,7 @@ func TestRuntimeCommand_HelperMethods(t *testing.T) {
 		Timeout: common.IntPtr(60),
 	}
 
-	runtime, err := NewRuntimeCommand(spec)
+	runtime, err := NewRuntimeCommand(spec, common.NewUnsetTimeout())
 	require.NoError(t, err)
 
 	// Test Cmd()

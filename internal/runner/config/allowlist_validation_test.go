@@ -3,6 +3,7 @@ package config_test
 import (
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
@@ -212,7 +213,7 @@ func TestAllowlist_ViolationAtCommandLevel(t *testing.T) {
 			require.NoError(t, err)
 
 			// Finally expand command
-			_, err = config.ExpandCommand(tt.cmdSpec, groupRuntime.ExpandedVars, tt.groupSpec.Name)
+			_, err = config.ExpandCommand(tt.cmdSpec, groupRuntime.ExpandedVars, tt.groupSpec.Name, common.NewUnsetTimeout())
 			if tt.wantErr != "" {
 				require.Error(t, err, tt.description)
 				assert.Contains(t, err.Error(), tt.wantErr)
@@ -324,7 +325,7 @@ func TestAllowlist_InheritanceAcrossLevels(t *testing.T) {
 		groupRuntime, err := config.ExpandGroup(groupSpec, globalRuntime.ExpandedVars)
 		require.NoError(t, err)
 
-		_, err = config.ExpandCommand(cmdSpec, groupRuntime.ExpandedVars, groupSpec.Name)
+		_, err = config.ExpandCommand(cmdSpec, groupRuntime.ExpandedVars, groupSpec.Name, common.NewUnsetTimeout())
 		require.NoError(t, err, "Command should inherit global allowlist")
 	})
 }
