@@ -337,3 +337,16 @@ func (e *DefaultExecutor) validatePrivilegedCommand(cmd *runnertypes.RuntimeComm
 	// 4. Verify that the command binary has proper permissions
 	return nil
 }
+
+// CreateCommandContextWithTimeout creates a context with timeout for command execution.
+// If timeout is 0 or negative, returns a cancellable context for unlimited execution.
+// Otherwise, creates a context with the specified timeout in seconds.
+func CreateCommandContextWithTimeout(ctx context.Context, timeout int) (context.Context, context.CancelFunc) {
+	if timeout <= 0 {
+		// Unlimited execution: return a cancellable context without timeout
+		return context.WithCancel(ctx)
+	}
+
+	// Limited execution: create a context with timeout
+	return context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+}

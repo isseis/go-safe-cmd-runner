@@ -736,3 +736,60 @@ func TestDefaultExecutor_UserGroupRootExecution(t *testing.T) {
 		})
 	}
 }
+
+// TestCreateCommandContextWithTimeout tests the CreateCommandContextWithTimeout function
+func TestCreateCommandContextWithTimeout(t *testing.T) {
+	tests := []struct {
+		name          string
+		timeout       int
+		expectTimeout bool
+	}{
+		{
+			name:          "unlimited timeout (0)",
+			timeout:       0,
+			expectTimeout: false,
+		},
+		{
+			name:          "unlimited timeout (negative)",
+			timeout:       -1,
+			expectTimeout: false,
+		},
+		{
+			name:          "limited timeout",
+			timeout:       1,
+			expectTimeout: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			cmdCtx, cancel := executor.CreateCommandContextWithTimeout(ctx, tt.timeout)
+			defer cancel()
+
+			if cmdCtx == nil {
+				t.Fatal("CreateCommandContextWithTimeout returned nil context")
+			}
+
+			if tt.expectTimeout {
+				// For limited timeout, the context should have a deadline
+				deadline, ok := cmdCtx.Deadline()
+				if !ok {
+					t.Error("Expected context to have a deadline")
+				}
+				// Check that the deadline is approximately correct
+				expectedDeadline := time.Now().Add(time.Duration(tt.timeout) * time.Second)
+				diff := deadline.Sub(expectedDeadline)
+				if diff < -100*time.Millisecond || diff > 100*time.Millisecond {
+					t.Errorf("Deadline differs from expected by %v", diff)
+				}
+			} else {
+				// For unlimited timeout, context should not have a deadline
+				_, ok := cmdCtx.Deadline()
+				if ok {
+					t.Error("Expected context to not have a deadline for unlimited timeout")
+				}
+			}
+		})
+	}
+}
