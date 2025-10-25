@@ -149,13 +149,6 @@ graph TD
 **改善案（Origin 記録方式）**:
 
 ```go
-// New data structure to track environment variable origins
-type EnvOrigin struct {
-    Key    string
-    Value  string
-    Source string  // "System", "Global", "Group[name]", "Command[name]"
-}
-
 // Enhanced BuildProcessEnvironment
 func BuildProcessEnvironment(
     runtimeGlobal *runnertypes.RuntimeGlobal,
