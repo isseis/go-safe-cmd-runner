@@ -17,11 +17,9 @@
 **入力パラメータ**:
 ```go
 type PrintFinalEnvironmentParams struct {
-    Writer          io.Writer                    // 出力先 (通常はos.Stdout)
-    EnvVars         map[string]string           // BuildProcessEnvironmentの結果
-    RuntimeGlobal   *runnertypes.RuntimeGlobal  // グローバル設定
-    RuntimeGroup    *runnertypes.RuntimeGroup   // グループ設定
-    RuntimeCommand  *runnertypes.RuntimeCommand // コマンド設定
+    Writer  io.Writer            // 出力先 (通常はos.Stdout)
+    EnvVars map[string]string    // BuildProcessEnvironmentの結果（環境変数マップ）
+    Origins map[string]string    // BuildProcessEnvironmentの結果（originsマップ）
 }
 ```
 
@@ -81,15 +79,15 @@ if detailLevel == DetailLevelFull {
 **表示タイミング**:
 ```go
 func executeCommandInGroup() {
-    // 1. 環境変数構築
-    envVars := executor.BuildProcessEnvironment(runtimeGlobal, runtimeGroup, cmd)
+    // 1. 環境変数構築 + origin 追跡
+    envVars, origins := executor.BuildProcessEnvironment(runtimeGlobal, runtimeGroup, cmd)
 
     // 2. 環境変数検証
     validator.ValidateAllEnvironmentVars(envVars)
 
     // 3. [NEW] dry-run且つDetailLevelFullの場合に表示
     if isDryRun && detailLevel == DetailLevelFull {
-        debug.PrintFinalEnvironment(os.Stdout, envVars, runtimeGlobal, runtimeGroup, cmd)
+        debug.PrintFinalEnvironment(os.Stdout, envVars, origins)
     }
 
     // 4. 以降の処理...
@@ -98,27 +96,82 @@ func executeCommandInGroup() {
 
 ### 2.2 環境変数出所判定仕様
 
-#### 2.2.1 判定ロジック
+#### 2.2.1 Origin追跡ロジック
 
 **機能ID**: `FN-004`
-**機能名**: 環境変数出所判定
-**説明**: 各環境変数がGlobal/Group/Command/Systemのどのレベルから設定されているかを判定する。
+**機能名**: 環境変数Origin追跡
+**説明**: 各環境変数がGlobal/Group/Command/Systemのどのレベルから設定されているかを、構築時に記録する。
 
-**判定アルゴリズム**:
+**Origin記録アルゴリズム**:
 ```go
-func determineOrigin(key, value string, global, group, cmd) string {
-    // 優先度順で判定
-    if cmd.ExpandedEnv[key] == value {
-        return fmt.Sprintf("Command[%s]", cmd.Name())
+func BuildProcessEnvironment(global, group, cmd) (map[string]string, map[string]string) {
+    result := make(map[string]string)
+    origins := make(map[string]string)
+
+    // Step 1: System環境変数 (allowlistフィルタ後)
+    for _, name := range allowlist {
+        if value, ok := systemEnv[name]; ok {
+            result[name] = value
+            origins[name] = "System (filtered by allowlist)"
+        }
     }
-    if group.ExpandedEnv[key] == value {
-        return fmt.Sprintf("Group[%s]", group.Name())
+
+    // Step 2: Global.ExpandedEnv (上書き + origin記録)
+    for k, v := range global.ExpandedEnv {
+        result[k] = v
+        origins[k] = "Global"
     }
-    if global.ExpandedEnv[key] == value {
-        return "Global"
+
+    // Step 3: Group.ExpandedEnv (上書き + origin記録)
+    for k, v := range group.ExpandedEnv {
+        result[k] = v
+        origins[k] = fmt.Sprintf("Group[%s]", group.Name())
     }
-    return "System (filtered by allowlist)"
+
+    // Step 4: Command.ExpandedEnv (上書き + origin記録)
+    for k, v := range cmd.ExpandedEnv {
+        result[k] = v
+        origins[k] = fmt.Sprintf("Command[%s]", cmd.Name())
+    }
+
+    return result, origins
 }
+```
+
+**旧方式との比較**:
+
+| 項目 | 旧方式 (determineOrigin) | 新方式 (Origins map) |
+|------|-------------------------|---------------------|
+| タイミング | 後処理（表示時） | 構築時 |
+| 方法 | 値の比較による推測 | 直接記録 |
+| 正確性 | 同じ値の場合に誤判定リスク | 常に正確 |
+| 効率性 | 全レベルを走査 | 記録のみ |
+| 保守性 | 複雑なロジック | シンプルな実装 |
+
+**判定結果の種類**:
+- `"Command[{name}]"`: コマンドレベルの設定
+- `"Group[{name}]"`: グループレベルの設定
+- `"Global"`: グローバルレベルの設定
+- `"System (filtered by allowlist)"`: システム環境変数
+
+**Origin取得方法**:
+```go
+// 表示時は単にマップから取得するだけ
+origin := origins[key]
+```
+
+#### 2.2.2 出所表示フォーマット
+
+**System環境変数**:
+```
+HOME=/home/user
+  (from System (filtered by allowlist))
+```
+
+**Global設定**:
+```
+APP_ENV=production
+  (from Global)
 ```
 
 **判定ルール**:
@@ -194,9 +247,100 @@ VERY_LONG_PATH=/usr/local/very/long/path/that/exceeds/the/limit/an...
 
 ## 3. API仕様
 
-### 3.1 Group Executor拡張
+### 3.1 API変更の明確化
 
-#### 3.1.1 DefaultGroupExecutor構造体拡張
+本機能実装に伴い、以下のAPIを変更します。
+
+#### 3.1.1 BuildProcessEnvironment の拡張
+
+**変更理由**:
+- Origin情報を環境変数構築時に記録することで、正確性と効率性を向上
+- 後処理での推測ロジック(`determineOrigin`)を不要にする
+
+**変更内容**:
+
+**Before (既存)**:
+```go
+func BuildProcessEnvironment(
+    runtimeGlobal *runnertypes.RuntimeGlobal,
+    runtimeGroup *runnertypes.RuntimeGroup,
+    cmd *runnertypes.RuntimeCommand,
+) map[string]string
+```
+
+**After (本機能で変更)**:
+```go
+func BuildProcessEnvironment(
+    runtimeGlobal *runnertypes.RuntimeGlobal,
+    runtimeGroup *runnertypes.RuntimeGroup,
+    cmd *runnertypes.RuntimeCommand,
+) (envVars map[string]string, origins map[string]string)
+```
+
+**影響範囲**:
+- `internal/runner/group_executor.go`: executeCommandInGroup
+- 関連するテストコード
+
+**移行方針**:
+- 呼び出し箇所で `envVars, origins :=` または `envVars, _ :=` で受け取る
+- コンパイラエラーにより全ての変更箇所を確実に検出可能
+
+#### 3.1.2 PrintFinalEnvironment の改善
+
+**変更理由**:
+- Origins マップを直接受け取ることで、シンプルで正確な実装を実現
+- `determineOrigin()` 関数を削除し、保守性を向上
+
+**変更内容**:
+
+**Before (既存)**:
+```go
+func PrintFinalEnvironment(
+    w io.Writer,
+    envVars map[string]string,
+    global *runnertypes.RuntimeGlobal,
+    group *runnertypes.RuntimeGroup,
+    cmd *runnertypes.RuntimeCommand,
+)
+```
+
+**After (本機能で変更)**:
+```go
+func PrintFinalEnvironment(
+    w io.Writer,
+    envVars map[string]string,
+    origins map[string]string,
+)
+```
+
+**影響範囲**:
+- `internal/runner/group_executor.go`: executeCommandInGroup
+- `internal/debug/print_env.go`: 実装本体
+- 関連するテストコード
+
+**削除される関数**:
+- `determineOrigin()` - Origins マップにより不要になる
+
+#### 3.1.3 API変更のスコープ
+
+これらのAPI変更は**本機能の実装スコープに含まれます**。理由:
+
+1. **必要性**: Origin情報の正確な追跡には構築時の記録が不可欠
+2. **効率性**: 後処理での推測よりも、構築時の記録の方が高速で正確
+3. **実装の単純化**: `determineOrigin()` のような複雑な推測ロジックが不要
+4. **影響の限定性**: 内部APIの変更であり、影響範囲は明確で限定的
+
+#### 3.1.4 実装順序
+
+1. Phase 1: `BuildProcessEnvironment` の拡張とoriginsマップの記録
+2. Phase 2: 既存の呼び出し箇所の更新
+3. Phase 3: `PrintFinalEnvironment` のシグネチャ変更
+4. Phase 4: `determineOrigin()` の削除
+5. Phase 5: テストコードの更新
+
+### 3.2 Group Executor拡張
+
+#### 3.2.1 DefaultGroupExecutor構造体拡張
 
 **現在の構造**:
 ```go
@@ -219,7 +363,7 @@ type DefaultGroupExecutor struct {
 }
 ```
 
-#### 3.1.2 コンストラクタ拡張
+#### 3.2.2 コンストラクタ拡張
 
 **現在のシグネチャ**:
 ```go
@@ -242,7 +386,7 @@ func NewDefaultGroupExecutor(
 ) GroupExecutor
 ```
 
-#### 3.1.3 executeCommandInGroup拡張
+#### 3.2.3 executeCommandInGroup拡張
 
 **統合ポイント**:
 ```go
@@ -254,8 +398,8 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(
     runtimeGlobal *runnertypes.RuntimeGlobal,
 ) (*executor.Result, error) {
 
-    // 1. 環境変数構築 (既存)
-    envVars := executor.BuildProcessEnvironment(runtimeGlobal, runtimeGroup, cmd)
+    // 1. [Enhanced] 環境変数構築 + origin 追跡
+    envVars, origins := executor.BuildProcessEnvironment(runtimeGlobal, runtimeGroup, cmd)
 
     // 2. 環境変数検証 (既存)
     if err := ge.validator.ValidateAllEnvironmentVars(envVars); err != nil {
@@ -264,7 +408,7 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(
 
     // 3. [NEW] 最終環境変数表示
     if ge.isDryRun && ge.dryRunDetailLevel == resource.DetailLevelFull {
-        debug.PrintFinalEnvironment(os.Stdout, envVars, runtimeGlobal, runtimeGroup, cmd)
+        debug.PrintFinalEnvironment(os.Stdout, envVars, origins)
     }
 
     // 4. 以降の既存処理...
@@ -272,49 +416,68 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(
 }
 ```
 
-### 3.2 Debug Package API
+### 3.3 Debug Package API
 
-#### 3.2.1 PrintFinalEnvironment関数
+#### 3.3.1 PrintFinalEnvironment関数
 
-**既存のシグネチャ** (変更なし):
+**新しいシグネチャ** (3.1.2で定義):
 ```go
 func PrintFinalEnvironment(
     w io.Writer,
     envVars map[string]string,
-    global *runnertypes.RuntimeGlobal,
-    group *runnertypes.RuntimeGroup,
-    cmd *runnertypes.RuntimeCommand,
+    origins map[string]string,
 )
 ```
 
 **パラメータ詳細**:
 - `w`: 出力先ライター（通常は`os.Stdout`）
-- `envVars`: `executor.BuildProcessEnvironment`の結果
-- `global`: 展開済みグローバル設定
-- `group`: 展開済みグループ設定
-- `cmd`: 展開済みコマンド設定
+- `envVars`: `executor.BuildProcessEnvironment`の結果（環境変数マップ）
+- `origins`: `executor.BuildProcessEnvironment`の結果（originsマップ）
 
-#### 3.2.2 determineOrigin関数
-
-**既存のシグネチャ** (変更なし):
+**実装詳細**:
 ```go
-func determineOrigin(
-    key, value string,
-    global *runnertypes.RuntimeGlobal,
-    group *runnertypes.RuntimeGroup,
-    cmd *runnertypes.RuntimeCommand,
-) string
+func PrintFinalEnvironment(
+    w io.Writer,
+    envVars map[string]string,
+    origins map[string]string,
+) {
+    fmt.Fprintf(w, "\n===== Final Process Environment =====\n\n")
+    fmt.Fprintf(w, "Environment variables (%d):\n", len(envVars))
+
+    // ソート処理
+    keys := make([]string, 0, len(envVars))
+    for key := range envVars {
+        keys = append(keys, key)
+    }
+    sort.Strings(keys)
+
+    // 出力
+    for _, key := range keys {
+        value := envVars[key]
+        origin := origins[key]
+
+        displayValue := value
+        if len(value) > MaxDisplayLength {
+            displayValue = value[:MaxDisplayLength-EllipsisLength] + "..."
+        }
+
+        fmt.Fprintf(w, "  %s=%s\n", key, displayValue)
+        fmt.Fprintf(w, "    (from %s)\n", origin)
+    }
+
+    fmt.Fprintf(w, "\n")
+}
 ```
 
-**戻り値の種類**:
-- `"Command[{name}]"`: コマンドレベルの設定
-- `"Group[{name}]"`: グループレベルの設定
-- `"Global"`: グローバルレベルの設定
-- `"System (filtered by allowlist)"`: システム環境変数
+#### 3.3.2 削除される関数
 
-### 3.3 Resource Package API
+**determineOrigin関数**:
+- 本機能の実装により不要になるため削除
+- originsマップにより、より正確で効率的な実装が可能になる
 
-#### 3.3.1 DetailLevel定数
+### 3.4 Resource Package API
+
+#### 3.4.1 DetailLevel定数
 
 **既存の定義** (変更なし):
 ```go
@@ -327,7 +490,7 @@ const (
 )
 ```
 
-#### 3.3.2 TextFormatter拡張
+#### 3.4.2 TextFormatter拡張
 
 **DetailLevelFull処理の拡張**:
 ```go
@@ -370,11 +533,11 @@ sequenceDiagram
         DryRun->>GroupExec: ExecuteGroup()
         loop for each command
             GroupExec->>BuildEnv: BuildProcessEnvironment()
-            BuildEnv-->>GroupExec: envVars
+            BuildEnv-->>GroupExec: envVars, origins
             GroupExec->>GroupExec: ValidateAllEnvironmentVars()
 
             alt isDryRun && DetailLevelFull
-                GroupExec->>PrintFinal: PrintFinalEnvironment()
+                GroupExec->>PrintFinal: PrintFinalEnvironment(envVars, origins)
                 PrintFinal-->>GroupExec: (output to stdout)
             end
 
@@ -386,6 +549,81 @@ sequenceDiagram
 
     Runner->>TextForm: Format(result)
     TextForm-->>CLI: formatted output
+```
+
+### 4.2 PrintFinalEnvironment内部シーケンス
+
+```mermaid
+graph TD
+    PFE["PrintFinalEnvironment<br/>開始"]
+
+    PFE --> OUT1["出力: ===== Final Process<br/>Environment ====="]
+    OUT1 --> CHECK["envVars<br/>が空?"]
+
+    CHECK -->|Yes| OUT2["No environment<br/>variables set."]
+    CHECK -->|No| SORT["環境変数キーを<br/>ソート"]
+
+    SORT --> LOOP["For each key"]
+    LOOP --> GET_ORG["originsマップから<br/>origin取得"]
+
+    GET_ORG --> TRUNC["値の長さ check<br/>MaxDisplayLength"]
+    TRUNC -->|超過| CUT["値を切り詰め<br/>57chars + '...'"]
+    TRUNC -->|以内| NOCUT["値そのまま"]
+
+    CUT --> DISP["変数表示<br/>key=value"]
+    NOCUT --> DISP
+
+    DISP --> ORDISP["出所表示<br/>from origin"]
+    ORDISP --> LOOP_CHECK{"次の<br/>変数?"}
+
+    LOOP_CHECK -->|Yes| LOOP
+    LOOP_CHECK -->|No| END["処理完了"]
+```
+
+### 4.3 BuildProcessEnvironment の Origin 追跡
+
+```mermaid
+graph TD
+    START["BuildProcessEnvironment<br/>開始"]
+
+    START --> INIT["result, origins<br/>マップ初期化"]
+
+    INIT --> STEP1["Step 1: System環境変数<br/>allowlistフィルタ"]
+    STEP1 --> STEP1_REC["各変数に<br/>origin='System (filtered)'<br/>を記録"]
+
+    STEP1_REC --> STEP2["Step 2: Global.ExpandedEnv<br/>をマージ"]
+    STEP2 --> STEP2_REC["各変数に<br/>origin='Global'<br/>を記録"]
+
+    STEP2_REC --> STEP3["Step 3: Group.ExpandedEnv<br/>をマージ"]
+    STEP3 --> STEP3_REC["各変数に<br/>origin='Group[name]'<br/>を記録"]
+
+    STEP3_REC --> STEP4["Step 4: Command.ExpandedEnv<br/>をマージ"]
+    STEP4 --> STEP4_REC["各変数に<br/>origin='Command[name]'<br/>を記録"]
+
+    STEP4_REC --> RETURN["return result, origins"]
+```
+
+## 5. エラーハンドリング
+
+### 5.1 エラーケースの処理フロー
+
+```mermaid
+graph TD
+    CALL["PrintFinalEnvironment<br/>呼び出し"]
+
+    CALL --> PARAM_CHECK["パラメータ<br/>null check"]
+
+    PARAM_CHECK -->|nil found| NIL_ERR["Panic<br/>開発時エラー"]
+    PARAM_CHECK -->|OK| WRITE_TRY["io.Writer<br/>へ書き込み"]
+
+    WRITE_TRY -->|Error| WRITE_ERR["エラー無視<br/>debug出力のため"]
+    WRITE_TRY -->|Success| SORT_VARS["キーをソート"]
+
+    WRITE_ERR --> SORT_VARS
+    SORT_VARS --> LOOP_VARS["各変数を処理"]
+    LOOP_VARS --> ORG_GET["originsから<br/>出所取得"]
+    ORG_GET --> VAL_DISP["値表示<br/>切り詰め処理"]
+    VAL_DISP --> END["処理完了"]
 ```
 
 ### 4.2 PrintFinalEnvironment内部シーケンス
@@ -486,19 +724,18 @@ slog.Debug("Failed to print final environment",
 graph TD
     UT["単体テスト"]
 
+    UT --> BPE["BuildProcessEnvironment<br/>テスト"]
     UT --> PFE["PrintFinalEnvironment<br/>テスト"]
-    UT --> DO["determineOrigin<br/>テスト"]
     UT --> GE["GroupExecutor<br/>テスト"]
 
-    PFE --> PFE1["✓ 複数出所の変数<br/>Global/Group/Command"]
+    BPE --> BPE1["✓ Origin追跡<br/>各レベル記録"]
+    BPE --> BPE2["✓ Origin上書き<br/>優先度反映"]
+    BPE --> BPE3["✓ Systemフィルタ<br/>allowlist適用"]
+
+    PFE --> PFE1["✓ Origins表示<br/>Global/Group/Command"]
     PFE --> PFE2["✓ 長い値の切り詰め<br/>60文字超過"]
     PFE --> PFE3["✓ 空の環境変数<br/>エラーメッセージ"]
     PFE --> PFE4["✓ 特殊文字処理<br/>改行/タブ"]
-
-    DO --> DO1["✓ Command優先度"]
-    DO --> DO2["✓ Group優先度"]
-    DO --> DO3["✓ Global優先度"]
-    DO --> DO4["✓ System判定"]
 
     GE --> GE1["✓ DetailLevelControl<br/>Summary/Detailed/Full"]
     GE --> GE2["✓ dry-runフラグ<br/>有効/無効"]
@@ -525,11 +762,11 @@ graph TD
    }
    ```
 
-3. **出所判定テスト**
+3. **Origin取得テスト**
    ```go
-   func TestDetermineOrigin_AllSources(t *testing.T) {
-       // Command、Group、Global、Systemの各出所を検証
-       // 優先度順の判定ロジックを確認
+   func TestPrintFinalEnvironment_WithOrigins(t *testing.T) {
+       // originsマップから正しくoriginを取得できることを検証
+       // 各種origin（Command、Group、Global、System）の表示を確認
    }
    ```
 
@@ -540,7 +777,35 @@ graph TD
    }
    ```
 
-#### 6.1.3 Group Executor テスト
+#### 6.1.3 BuildProcessEnvironment テスト
+
+**テストケース**:
+
+1. **Origin追跡テスト**
+   ```go
+   func TestBuildProcessEnvironment_OriginTracking(t *testing.T) {
+       // 各レベル（System、Global、Group、Command）のorigin記録を検証
+       // originsマップの内容が正確であることを確認
+   }
+   ```
+
+2. **Origin上書きテスト**
+   ```go
+   func TestBuildProcessEnvironment_OriginOverride(t *testing.T) {
+       // 同じ変数が複数レベルで定義された場合
+       // 最終的なoriginが正しく記録されることを検証
+   }
+   ```
+
+3. **System環境変数フィルタリングテスト**
+   ```go
+   func TestBuildProcessEnvironment_SystemEnvFiltering(t *testing.T) {
+       // allowlistに基づくフィルタリングを検証
+       // originが"System (filtered by allowlist)"となることを確認
+   }
+   ```
+
+#### 6.1.4 Group Executor テスト
 
 **テストケース**:
 
@@ -658,12 +923,18 @@ var testRuntimeData = struct {
 #### 7.1.1 応答時間
 
 - **PrintFinalEnvironment**: 環境変数100個で1ms以内
-- **determineOrigin**: 1変数あたり0.01ms以内
+- **BuildProcessEnvironment (origins追跡含む)**: 環境変数100個で0.5ms以内
 - **dry-run全体**: 既存性能の110%以内（10%以下の劣化）
+
+**改善見込み**:
+- 旧方式（determineOrigin）: 各変数につき全レベルを走査（O(n*m)）
+- 新方式（origins記録）: マージ時に記録のみ（O(n)）
+- 期待される性能向上: 約2-3倍高速化
 
 #### 7.1.2 メモリ使用量
 
-- **追加メモリ**: 既存処理の5%以下の追加使用量
+- **追加メモリ**: originsマップ（環境変数数 × 約50バイト/エントリ）
+- **100変数の場合**: 約5KB追加（negligible）
 - **一時オブジェクト**: 環境変数キーのソート用配列のみ
 
 ### 7.2 最適化施策
@@ -843,13 +1114,30 @@ graph TD
     FWD --> FWD1["将来実装"]
 ```
 
-#### 10.1.1 既存API互換性
+#### 10.1.1 API変更の影響
 
-- **Group Executorコンストラクタ**: パラメータ追加（DetailLevel）
-- **既存のdry-run出力**: DetailLevelSummary/Detailedは変更なし
-- **debug.PrintFinalEnvironment**: 既存シグネチャを維持
+**BuildProcessEnvironment**:
+- **変更**: 戻り値を`(envVars, origins)`に変更
+- **影響範囲**: 内部APIのため、外部への影響なし
+- **移行方法**: 呼び出し箇所を一括更新（コンパイラエラーで検出）
 
-#### 10.1.2 設定ファイル互換性
+**PrintFinalEnvironment**:
+- **変更**: パラメータを`(w, envVars, origins)`に変更
+- **影響範囲**: 内部APIのため、外部への影響なし
+- **移行方法**: 新しいシグネチャに合わせて更新
+
+**Group Executorコンストラクタ**:
+- **変更**: DetailLevelパラメータ追加
+- **影響範囲**: 内部コンポーネント間の結合のみ
+- **移行方法**: 呼び出し箇所でDetailLevelを指定
+
+#### 10.1.2 既存動作の保持
+
+- **dry-run出力**: DetailLevelSummary/Detailedは変更なし
+- **通常実行**: 一切変更なし
+- **設定ファイル**: TOML設定に変更なし
+
+#### 10.1.3 設定ファイル互換性
 
 - **TOML設定**: 変更なし
 - **CLI引数**: `--dry-run-detail=full`オプション追加のみ
@@ -882,23 +1170,50 @@ type EnvironmentDisplayParams struct {
 
 ### 11.1 コード変更
 
+#### Phase 1: BuildProcessEnvironment の拡張
+- [ ] `BuildProcessEnvironment`の戻り値を`(envVars, origins)`に変更
+- [ ] 各ステップでoriginを記録する実装を追加
+- [ ] 既存の呼び出し箇所を更新（group_executor.go）
+- [ ] コンパイルエラーがないことを確認
+
+#### Phase 2: PrintFinalEnvironment の改善
+- [ ] `PrintFinalEnvironment`のシグネチャを変更
+- [ ] originsマップを使用する実装に変更
+- [ ] `determineOrigin()`関数を削除
+- [ ] 関連するテストを更新
+
+#### Phase 3: Group Executor統合
 - [ ] `DefaultGroupExecutor`にDetailLevel追加
 - [ ] `executeCommandInGroup`にPrintFinalEnvironment呼び出し追加
 - [ ] コンストラクタパラメータ追加
-- [ ] 既存のdebug.PrintFinalEnvironment動作確認
+- [ ] dry-run制御ロジックの実装
 
 ### 11.2 テスト実装
 
-- [ ] PrintFinalEnvironment単体テスト
-- [ ] determineOrigin単体テスト
+#### 単体テスト
+- [ ] `TestBuildProcessEnvironment_OriginTracking`
+- [ ] `TestBuildProcessEnvironment_OriginOverride`
+- [ ] `TestBuildProcessEnvironment_SystemEnvFiltering`
+- [ ] `TestPrintFinalEnvironment_WithOrigins`
+- [ ] `TestPrintFinalEnvironment_LongValue`
+- [ ] `TestPrintFinalEnvironment_EmptyEnv`
+
+#### 統合テスト
 - [ ] DetailLevel制御テスト
+- [ ] dry-run vs 通常実行テスト
 - [ ] E2E統合テスト
-- [ ] パフォーマンステスト
+
+#### パフォーマンステスト
+- [ ] BuildProcessEnvironmentのベンチマーク
+- [ ] PrintFinalEnvironmentのベンチマーク
+- [ ] dry-run全体の性能測定
 
 ### 11.3 ドキュメント
 
-- [ ] APIドキュメント更新
-- [ ] ユーザーガイド更新
+- [ ] APIドキュメント更新（変更されたシグネチャ）
+- [ ] ユーザーガイド更新（`--dry-run-detail=full`の説明）
+- [ ] アーキテクチャドキュメント更新
+- [ ] 詳細仕様書更新（本ドキュメント）
 - [ ] セキュリティに関する注意事項追加
 - [ ] パフォーマンス特性の文書化
 

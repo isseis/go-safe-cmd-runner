@@ -329,8 +329,8 @@ func PrintFinalEnvironment(
 
         // Truncate long values for display
         displayValue := value
-        if len(value) > 80 {
-            displayValue = value[:77] + "..."
+        if len(value) > debug.MaxDisplayLength {
+            displayValue = value[:debug.MaxDisplayLength-debug.EllipsisLength] + "..."
         }
 
         fmt.Fprintf(w, "  %s=%s\n", key, displayValue)
