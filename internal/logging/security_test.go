@@ -2,6 +2,7 @@ package logging
 
 import (
 	"bytes"
+	"encoding/json"
 	"log/slog"
 	"testing"
 	"time"
@@ -30,117 +31,118 @@ func TestNewSecurityLoggerWithLogger(t *testing.T) {
 	}
 }
 
-func TestSecurityLogger_LogUnlimitedExecution(t *testing.T) {
-	var buf bytes.Buffer
-	customLogger := slog.New(slog.NewTextHandler(&buf, nil))
-	logger := NewSecurityLoggerWithLogger(customLogger)
-
-	logger.LogUnlimitedExecution("test-command", "testuser")
-
-	output := buf.String()
-	if output == "" {
-		t.Error("LogUnlimitedExecution produced no output")
+func TestSecurityLogger_LogMethods(t *testing.T) {
+	tests := []struct {
+		name           string
+		logFunc        func(*SecurityLogger)
+		expectedLevel  string
+		expectedFields map[string]any
+		logLevel       slog.Level
+	}{
+		{
+			name: "LogUnlimitedExecution",
+			logFunc: func(sl *SecurityLogger) {
+				sl.LogUnlimitedExecution("test-command", "testuser")
+			},
+			expectedLevel: "WARN",
+			expectedFields: map[string]any{
+				"command":        "test-command",
+				"user":           "testuser",
+				"timeout":        "unlimited",
+				"security_event": "unlimited_execution_start",
+			},
+			logLevel: slog.LevelWarn,
+		},
+		{
+			name: "LogLongRunningProcess",
+			logFunc: func(sl *SecurityLogger) {
+				sl.LogLongRunningProcess("long-command", 15*time.Minute, 12345)
+			},
+			expectedLevel: "WARN",
+			expectedFields: map[string]any{
+				"command":          "long-command",
+				"pid":              float64(12345), // JSON numbers are float64
+				"duration_minutes": float64(15),
+				"security_event":   "long_running_process",
+			},
+			logLevel: slog.LevelWarn,
+		},
+		{
+			name: "LogTimeoutExceeded",
+			logFunc: func(sl *SecurityLogger) {
+				sl.LogTimeoutExceeded("timeout-command", 300, 67890)
+			},
+			expectedLevel: "ERROR",
+			expectedFields: map[string]any{
+				"command":         "timeout-command",
+				"pid":             float64(67890),
+				"timeout_seconds": float64(300),
+				"security_event":  "timeout_exceeded",
+			},
+			logLevel: slog.LevelError,
+		},
+		{
+			name: "LogTimeoutConfiguration_Unlimited",
+			logFunc: func(sl *SecurityLogger) {
+				sl.LogTimeoutConfiguration("unlimited-command", 0, "command-level")
+			},
+			expectedLevel: "INFO",
+			expectedFields: map[string]any{
+				"command": "unlimited-command",
+				"timeout": "unlimited",
+				"source":  "command-level",
+			},
+			logLevel: slog.LevelInfo,
+		},
+		{
+			name: "LogTimeoutConfiguration_Limited",
+			logFunc: func(sl *SecurityLogger) {
+				sl.LogTimeoutConfiguration("limited-command", 120, "global")
+			},
+			expectedLevel: "DEBUG",
+			expectedFields: map[string]any{
+				"command":         "limited-command",
+				"timeout_seconds": float64(120),
+				"source":          "global",
+			},
+			logLevel: slog.LevelDebug,
+		},
 	}
 
-	// Check that the output contains expected fields
-	expectedFields := []string{"test-command", "testuser", "unlimited"}
-	for _, field := range expectedFields {
-		if !containsString(output, field) {
-			t.Errorf("LogUnlimitedExecution output missing expected field: %s", field)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			opts := &slog.HandlerOptions{
+				Level: slog.LevelDebug, // Enable all log levels for testing
+			}
+			customLogger := slog.New(slog.NewJSONHandler(&buf, opts))
+			logger := NewSecurityLoggerWithLogger(customLogger)
+
+			// Execute the log function
+			tt.logFunc(logger)
+
+			// Parse the JSON output
+			var logEntry map[string]any
+			if err := json.Unmarshal(buf.Bytes(), &logEntry); err != nil {
+				t.Fatalf("Failed to parse JSON log output: %v\nOutput: %s", err, buf.String())
+			}
+
+			// Verify log level
+			if level, ok := logEntry["level"].(string); !ok || level != tt.expectedLevel {
+				t.Errorf("Expected log level %q, got %q", tt.expectedLevel, level)
+			}
+
+			// Verify expected fields
+			for key, expectedValue := range tt.expectedFields {
+				actualValue, ok := logEntry[key]
+				if !ok {
+					t.Errorf("Missing expected field %q in log output", key)
+					continue
+				}
+				if actualValue != expectedValue {
+					t.Errorf("Field %q: expected %v, got %v", key, expectedValue, actualValue)
+				}
+			}
+		})
 	}
-}
-
-func TestSecurityLogger_LogLongRunningProcess(t *testing.T) {
-	var buf bytes.Buffer
-	customLogger := slog.New(slog.NewTextHandler(&buf, nil))
-	logger := NewSecurityLoggerWithLogger(customLogger)
-
-	duration := 15 * time.Minute
-	logger.LogLongRunningProcess("long-command", duration, 12345)
-
-	output := buf.String()
-	if output == "" {
-		t.Error("LogLongRunningProcess produced no output")
-	}
-
-	// Check that the output contains expected fields
-	expectedFields := []string{"long-command", "12345", "15"}
-	for _, field := range expectedFields {
-		if !containsString(output, field) {
-			t.Errorf("LogLongRunningProcess output missing expected field: %s", field)
-		}
-	}
-}
-
-func TestSecurityLogger_LogTimeoutExceeded(t *testing.T) {
-	var buf bytes.Buffer
-	customLogger := slog.New(slog.NewTextHandler(&buf, nil))
-	logger := NewSecurityLoggerWithLogger(customLogger)
-
-	logger.LogTimeoutExceeded("timeout-command", 300, 67890)
-
-	output := buf.String()
-	if output == "" {
-		t.Error("LogTimeoutExceeded produced no output")
-	}
-
-	// Check that the output contains expected fields
-	expectedFields := []string{"timeout-command", "67890", "300"}
-	for _, field := range expectedFields {
-		if !containsString(output, field) {
-			t.Errorf("LogTimeoutExceeded output missing expected field: %s", field)
-		}
-	}
-}
-
-func TestSecurityLogger_LogTimeoutConfiguration_Unlimited(t *testing.T) {
-	var buf bytes.Buffer
-	customLogger := slog.New(slog.NewTextHandler(&buf, nil))
-	logger := NewSecurityLoggerWithLogger(customLogger)
-
-	logger.LogTimeoutConfiguration("unlimited-command", 0, "command-level")
-
-	output := buf.String()
-	if output == "" {
-		t.Error("LogTimeoutConfiguration produced no output")
-	}
-
-	// Check that the output contains expected fields
-	expectedFields := []string{"unlimited-command", "unlimited", "command-level"}
-	for _, field := range expectedFields {
-		if !containsString(output, field) {
-			t.Errorf("LogTimeoutConfiguration output missing expected field: %s", field)
-		}
-	}
-}
-
-func TestSecurityLogger_LogTimeoutConfiguration_Limited(t *testing.T) {
-	var buf bytes.Buffer
-	// Use a handler with DEBUG level enabled
-	opts := &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	}
-	customLogger := slog.New(slog.NewTextHandler(&buf, opts))
-	logger := NewSecurityLoggerWithLogger(customLogger)
-
-	logger.LogTimeoutConfiguration("limited-command", 120, "global")
-
-	output := buf.String()
-	if output == "" {
-		t.Error("LogTimeoutConfiguration produced no output")
-	}
-
-	// Check that the output contains expected fields
-	expectedFields := []string{"limited-command", "120", "global"}
-	for _, field := range expectedFields {
-		if !containsString(output, field) {
-			t.Errorf("LogTimeoutConfiguration output missing expected field: %s", field)
-		}
-	}
-}
-
-// Helper function to check if a string contains a substring
-func containsString(str, substr string) bool {
-	return bytes.Contains([]byte(str), []byte(substr))
 }
