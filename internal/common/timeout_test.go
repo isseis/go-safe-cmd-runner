@@ -297,31 +297,8 @@ func TestResolveEffectiveTimeout(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create command timeout
-			var commandTimeout Timeout
-			switch {
-			case tt.commandTimeoutSec == nil:
-				commandTimeout = NewUnsetTimeout()
-			case *tt.commandTimeoutSec == 0:
-				commandTimeout = NewUnlimitedTimeout()
-			default:
-				var err error
-				commandTimeout, err = NewTimeout(*tt.commandTimeoutSec)
-				require.NoError(t, err, "Failed to create command timeout")
-			}
-
-			// Create global timeout
-			var globalTimeout Timeout
-			switch {
-			case tt.globalTimeoutSec == nil:
-				globalTimeout = NewUnsetTimeout()
-			case *tt.globalTimeoutSec == 0:
-				globalTimeout = NewUnlimitedTimeout()
-			default:
-				var err error
-				globalTimeout, err = NewTimeout(*tt.globalTimeoutSec)
-				require.NoError(t, err, "Failed to create global timeout")
-			}
+			commandTimeout := NewFromIntPtr(tt.commandTimeoutSec)
+			globalTimeout := NewFromIntPtr(tt.globalTimeoutSec)
 
 			result := ResolveEffectiveTimeout(commandTimeout, globalTimeout)
 			assert.Equal(t, tt.want, result, "ResolveEffectiveTimeout() should return expected value")
