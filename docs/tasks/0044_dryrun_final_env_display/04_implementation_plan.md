@@ -173,7 +173,7 @@
 - [ ] BuildProcessEnvironment: 100変数で0.5ms以内
 - [ ] PrintFinalEnvironment: 100変数で1ms以内
 - [ ] dry-run全体: 既存の110%以内
-- [ ] センシティブ情報が適切に表示される
+- [ ] dry-runモードの`--dry-run-detail=full`指定時、`--show-sensitive`フラグの有無に関わらず、センシティブ情報がマスクされずに表示されることを確認する
 
 ### Phase 5: ドキュメント更新 (2-3 hours)
 
