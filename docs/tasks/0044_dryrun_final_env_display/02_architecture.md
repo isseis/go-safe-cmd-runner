@@ -98,10 +98,10 @@ func (f *TextFormatter) Format(result *DryRunResult, opts *FormatterOptions) (st
     // 既存の出力セクション
     // ...
 
-    if opts.DetailLevel == DetailLevelFull {
-        f.writeEnvironmentInfo(&buf, result.EnvironmentInfo)  // 既存
-        // [NEW] 最終環境変数の詳細は各コマンド実行時に出力されるため、
-        // FormatterではEnvironmentInfoの統計情報のみ表示
+    if opts.DetailLevel >= resource.DetailLevelDetailed {
+        f.writeEnvironmentInfo(&buf, result.EnvironmentInfo)  // 'Detailed' と 'Full' の両方で表示
+        // [NOTE] 'Full' レベルで表示される最終環境変数の詳細は各コマンド実行時に出力されるため、
+        // FormatterではEnvironmentInfoの統計情報のみ表示します。
     }
 }
 ```
