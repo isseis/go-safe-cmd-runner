@@ -7,13 +7,13 @@ LogLevel を専用のカスタム型として定義し、`encoding.TextUnmarshal
 ## 2. 実装フェーズ
 
 ### フェーズ 1: 型定義とテスト (TDD)
-- [ ] 1.1. テストファイルの作成
-- [ ] 1.2. LogLevel 型の基本テスト追加 (失敗することを確認)
-- [ ] 1.3. LogLevel 型と定数の定義
-- [ ] 1.4. UnmarshalText() の実装
-- [ ] 1.5. ToSlogLevel() の実装
-- [ ] 1.6. String() の実装
-- [ ] 1.7. テストの成功を確認
+- [x] 1.1. テストファイルの作成
+- [x] 1.2. LogLevel 型の基本テスト追加 (失敗することを確認)
+- [x] 1.3. LogLevel 型と定数の定義
+- [x] 1.4. UnmarshalText() の実装
+- [x] 1.5. ToSlogLevel() の実装
+- [x] 1.6. String() の実装
+- [x] 1.7. テストの成功を確認
 - [ ] 1.8. コミット: "feat: add LogLevel type with validation"
 
 ### フェーズ 2: 既存コードの更新
@@ -572,10 +572,10 @@ Introduces a custom `LogLevel` type to replace the string-based log level config
 - [ ] 実装計画書のレビュー
 
 ### フェーズ 1
-- [ ] テストファイルの作成
-- [ ] LogLevel 型のテスト追加 (TDD)
-- [ ] LogLevel 型の実装
-- [ ] テスト成功確認
+- [x] テストファイルの作成
+- [x] LogLevel 型のテスト追加 (TDD)
+- [x] LogLevel 型の実装
+- [x] テスト成功確認
 - [ ] コミット
 
 ### フェーズ 2
