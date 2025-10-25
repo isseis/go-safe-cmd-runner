@@ -131,7 +131,17 @@ func run(runID string) error {
 	}
 
 	// Phase 4: Setup logging (using bootstrap package)
-	if err := bootstrap.SetupLogging(*logLevel, *logDir, runID, *forceInteractive, *forceQuiet); err != nil {
+	// Parse log level string to LogLevel type
+	var logLevelValue runnertypes.LogLevel
+	if err := logLevelValue.UnmarshalText([]byte(*logLevel)); err != nil {
+		return &logging.PreExecutionError{
+			Type:      logging.ErrorTypeConfigParsing,
+			Message:   fmt.Sprintf("Invalid log level %q: %v", *logLevel, err),
+			Component: "main",
+			RunID:     runID,
+		}
+	}
+	if err := bootstrap.SetupLogging(logLevelValue, *logDir, runID, *forceInteractive, *forceQuiet); err != nil {
 		return err
 	}
 
@@ -226,7 +236,16 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 	}
 
 	if *logLevel != "" {
-		cfg.Global.LogLevel = *logLevel
+		var level runnertypes.LogLevel
+		if err := level.UnmarshalText([]byte(*logLevel)); err != nil {
+			return &logging.PreExecutionError{
+				Type:      logging.ErrorTypeConfigParsing,
+				Message:   fmt.Sprintf("Invalid log level %q: %v", *logLevel, err),
+				Component: "main",
+				RunID:     runID,
+			}
+		}
+		cfg.Global.LogLevel = level
 	}
 
 	// Ensure cleanup of all resources on exit

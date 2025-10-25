@@ -27,10 +27,10 @@ type GlobalSpec struct {
 	// nil: use DefaultTimeout (60 seconds)
 	// 0: unlimited execution (no timeout)
 	// Positive value: timeout after N seconds
-	Timeout             *int   `toml:"timeout"`               // Global timeout in seconds (nil=default 60s, 0=unlimited)
-	LogLevel            string `toml:"log_level"`             // Log level: debug, info, warn, error
-	VerifyStandardPaths *bool  `toml:"verify_standard_paths"` // Verify files in standard system paths (nil=default true)
-	OutputSizeLimit     int64  `toml:"output_size_limit"`     // Maximum output size in bytes (0 = unlimited)
+	Timeout             *int     `toml:"timeout"`               // Global timeout in seconds (nil=default 60s, 0=unlimited)
+	LogLevel            LogLevel `toml:"log_level"`             // Log level: debug, info, warn, error
+	VerifyStandardPaths *bool    `toml:"verify_standard_paths"` // Verify files in standard system paths (nil=default true)
+	OutputSizeLimit     int64    `toml:"output_size_limit"`     // Maximum output size in bytes (0 = unlimited)
 
 	// Security
 	VerifyFiles []string `toml:"verify_files"` // Files to verify before execution (raw paths)

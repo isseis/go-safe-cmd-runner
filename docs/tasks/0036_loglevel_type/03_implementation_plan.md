@@ -17,11 +17,11 @@ LogLevel を専用のカスタム型として定義し、`encoding.TextUnmarshal
 - [ ] 1.8. コミット: "feat: add LogLevel type with validation"
 
 ### フェーズ 2: 既存コードの更新
-- [ ] 2.1. GlobalConfig.LogLevel の型変更
-- [ ] 2.2. bootstrap.LoggerConfig.Level の型変更
-- [ ] 2.3. cmd/runner/main.go のコマンドライン引数処理更新
-- [ ] 2.4. 既存テストの更新
-- [ ] 2.5. テストの成功を確認
+- [x] 2.1. GlobalConfig.LogLevel の型変更
+- [x] 2.2. bootstrap.LoggerConfig.Level の型変更
+- [x] 2.3. cmd/runner/main.go のコマンドライン引数処理更新
+- [x] 2.4. 既存テストの更新
+- [x] 2.5. テストの成功を確認
 - [ ] 2.6. コミット: "refactor: use LogLevel type in GlobalConfig"
 
 ### フェーズ 3: 統合テストと検証
@@ -576,14 +576,14 @@ Introduces a custom `LogLevel` type to replace the string-based log level config
 - [x] LogLevel 型のテスト追加 (TDD)
 - [x] LogLevel 型の実装
 - [x] テスト成功確認
-- [ ] コミット
+- [x] コミット
 
 ### フェーズ 2
-- [ ] GlobalConfig.LogLevel の型変更
-- [ ] bootstrap.LoggerConfig の更新
-- [ ] cmd/runner/main.go の更新
-- [ ] 既存テストの更新
-- [ ] テスト成功確認
+- [x] GlobalConfig.LogLevel の型変更
+- [x] bootstrap.LoggerConfig の更新
+- [x] cmd/runner/main.go の更新
+- [x] 既存テストの更新
+- [x] テスト成功確認
 - [ ] コミット
 
 ### フェーズ 3
