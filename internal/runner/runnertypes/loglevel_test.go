@@ -64,7 +64,7 @@ func TestLogLevel_UnmarshalText_InvalidLevels(t *testing.T) {
 }
 
 // Test ToSlogLevel conversion
-// LogLevel is a string alias, so both valid constants and invalid values can be tested
+// Verifies conversion of valid and invalid log levels to slog.Level and error handling
 func TestLogLevel_ToSlogLevel(t *testing.T) {
 	tests := []struct {
 		name     string
