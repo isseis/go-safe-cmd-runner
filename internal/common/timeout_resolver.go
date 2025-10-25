@@ -1,4 +1,6 @@
 // Package common provides timeout resolution functionality for the command runner.
+//
+//nolint:revive // "common" is an appropriate name for shared utilities package
 package common
 
 // TimeoutResolutionContext provides context information for timeout resolution logging and debugging.

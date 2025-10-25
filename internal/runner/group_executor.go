@@ -257,9 +257,23 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 	}, nil
 }
 
-// createCommandContext creates a context with timeout for command execution
+// createCommandContext creates a context with timeout for command execution.
+// If EffectiveTimeout is 0, returns a non-cancellable context for unlimited execution.
+// Otherwise, creates a context with the specified timeout.
 func (ge *DefaultGroupExecutor) createCommandContext(ctx context.Context, cmd *runnertypes.RuntimeCommand) (context.Context, context.CancelFunc) {
+	if cmd.EffectiveTimeout <= 0 {
+		// Unlimited execution: return a non-cancellable context
+		slog.Warn("Command configured with unlimited timeout",
+			"command", cmd.Name(),
+			"timeout", cmd.EffectiveTimeout)
+		return context.WithCancel(ctx)
+	}
+
+	// Limited execution: create a context with timeout
 	timeout := time.Duration(cmd.EffectiveTimeout) * time.Second
+	slog.Debug("Command timeout configured",
+		"command", cmd.Name(),
+		"timeout_seconds", cmd.EffectiveTimeout)
 	return context.WithTimeout(ctx, timeout)
 }
 
