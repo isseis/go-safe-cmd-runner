@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **BREAKING**: `timeout = 0` now means unlimited execution (previously defaulted to 60 seconds)
 
-- **Before**: `timeout = 0` was treated as invalid and used system default timeout
+- **Before**: `timeout = 0` was treated as invalid (not accepted)
 - **After**: `timeout = 0` explicitly means unlimited execution time (no timeout)
 
 **Migration Required**: Review all `timeout = 0` settings in existing configuration files.
