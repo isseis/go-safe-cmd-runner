@@ -103,15 +103,21 @@ func (h *sensitiveTestHelper) executeWithCapturedOutput(
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	errCh := make(chan error, 1)
 	go func() {
-		_ = r1.ExecuteAll(ctx)
-		w.Close()
+		defer w.Close()
+		errCh <- r1.ExecuteAll(ctx)
 	}()
 
 	// Read captured output
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	_, err = io.Copy(&buf, r)
+	require.NoError(h.t, err, "Should copy stdout without error")
 	os.Stdout = oldStdout
+
+	// Check for execution error
+	execErr := <-errCh
+	require.NoError(h.t, execErr, "ExecuteAll should run without error")
 
 	// Verify dry-run results
 	result := r1.GetDryRunResults()
