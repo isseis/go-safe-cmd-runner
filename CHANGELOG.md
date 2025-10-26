@@ -42,9 +42,7 @@ Environment variables (5):
 ```
 
 **Performance:**
-- BuildProcessEnvironment: <0.5ms for 100 variables (actual: ~0.011ms)
-- PrintFinalEnvironment: <1ms for 100 variables (actual: ~0.016ms)
-- Overall dry-run overhead: <10% (within 110% of previous performance)
+- The overhead for displaying the final environment in dry-run mode is negligible (less than 10% in tests), ensuring minimal impact on performance.
 
 ### Breaking Changes
 
