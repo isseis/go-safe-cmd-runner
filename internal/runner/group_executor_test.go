@@ -1,9 +1,12 @@
 package runner
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -1191,15 +1194,147 @@ func containsPattern(t *testing.T, s, pattern string) bool {
 }
 
 // TestExecuteCommandInGroup_ValidateEnvironmentVarsFailure tests environment variable validation error (T1.2)
-// Skipped: Requires mock validator implementation
 func TestExecuteCommandInGroup_ValidateEnvironmentVarsFailure(t *testing.T) {
-	t.Skip("T1.2: Requires mock validator - deferred until mock infrastructure is ready")
+	// Arrange
+	mockValidator := new(securitytesting.MockValidator)
+	mockRM := new(runnertesting.MockResourceManager)
+
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
+			Timeout: common.IntPtr(30),
+		},
+	}
+
+	expectedErr := errors.New("dangerous pattern detected: rm -rf")
+	mockValidator.On("ValidateAllEnvironmentVars",
+		mock.MatchedBy(func(envVars map[string]string) bool {
+			val, exists := envVars["DANGEROUS_VAR"]
+			return exists && strings.Contains(val, "rm -rf")
+		})).Return(expectedErr)
+
+	ge := NewDefaultGroupExecutor(
+		nil,
+		config,
+		mockValidator,
+		nil,
+		mockRM,
+		"test-run-123",
+		nil,
+		false,
+		resource.DetailLevelSummary,
+		false,
+		false,
+	)
+
+	cmd := &runnertypes.RuntimeCommand{
+		Spec: &runnertypes.CommandSpec{
+			Name: "dangerous-cmd",
+		},
+		ExpandedCmd:  "/bin/echo",
+		ExpandedArgs: []string{},
+		ExpandedEnv: map[string]string{
+			"DANGEROUS_VAR": "rm -rf /",
+		},
+		ExpandedVars: map[string]string{},
+	}
+
+	groupSpec := &runnertypes.GroupSpec{
+		Name: "test-group",
+	}
+
+	runtimeGroup, err := runnertypes.NewRuntimeGroup(groupSpec)
+	require.NoError(t, err)
+
+	runtimeGlobal := &runnertypes.RuntimeGlobal{
+		Spec:         &runnertypes.GlobalSpec{Timeout: common.IntPtr(30)},
+		ExpandedVars: map[string]string{},
+	}
+
+	// Act
+	ctx := context.Background()
+	result, err := ge.executeCommandInGroup(ctx, cmd, groupSpec, runtimeGroup, runtimeGlobal)
+
+	// Assert
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "environment variables security validation failed")
+	assert.ErrorIs(t, err, expectedErr)
+
+	mockRM.AssertNotCalled(t, "ExecuteCommand")
+	mockValidator.AssertExpectations(t)
 }
 
 // TestExecuteCommandInGroup_ResolvePathFailure tests path resolution error (T1.3)
-// Skipped: Requires mock verification manager implementation
 func TestExecuteCommandInGroup_ResolvePathFailure(t *testing.T) {
-	t.Skip("T1.3: Requires mock verification manager - deferred until mock infrastructure is ready")
+	// Arrange
+	mockValidator := new(securitytesting.MockValidator)
+	mockVM := new(verificationtesting.MockManager)
+	mockRM := new(runnertesting.MockResourceManager)
+
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
+			Timeout: common.IntPtr(30),
+		},
+	}
+
+	// Setup: validator passes
+	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
+
+	// Setup: path resolution fails
+	expectedErr := errors.New("command not found in PATH")
+	mockVM.On("ResolvePath", "/nonexistent/command").Return("", expectedErr)
+
+	ge := NewDefaultGroupExecutor(
+		nil,
+		config,
+		mockValidator,
+		mockVM,
+		mockRM,
+		"test-run-123",
+		nil,
+		false,
+		resource.DetailLevelSummary,
+		false,
+		false,
+	)
+
+	cmd := &runnertypes.RuntimeCommand{
+		Spec: &runnertypes.CommandSpec{
+			Name: "test-cmd",
+		},
+		ExpandedCmd:  "/nonexistent/command",
+		ExpandedArgs: []string{},
+		ExpandedEnv:  map[string]string{},
+		ExpandedVars: map[string]string{},
+	}
+
+	groupSpec := &runnertypes.GroupSpec{
+		Name: "test-group",
+	}
+
+	runtimeGroup, err := runnertypes.NewRuntimeGroup(groupSpec)
+	require.NoError(t, err)
+
+	runtimeGlobal := &runnertypes.RuntimeGlobal{
+		Spec:         &runnertypes.GlobalSpec{Timeout: common.IntPtr(30)},
+		ExpandedVars: map[string]string{},
+	}
+
+	// Act
+	ctx := context.Background()
+	result, err := ge.executeCommandInGroup(ctx, cmd, groupSpec, runtimeGroup, runtimeGlobal)
+
+	// Assert
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "command path resolution failed")
+	assert.ErrorIs(t, err, expectedErr)
+
+	// Verify mocks
+	mockRM.AssertNotCalled(t, "ExecuteCommand")
+	mockVM.AssertCalled(t, "ResolvePath", "/nonexistent/command")
+	mockValidator.AssertExpectations(t)
+	mockVM.AssertExpectations(t)
 }
 
 // setupMocksForTest creates commonly needed mocks for testing
@@ -1219,4 +1354,162 @@ func setupMocksForTest(t *testing.T) (*securitytesting.MockValidator, *verificat
 	mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil).Maybe()
 
 	return mockValidator, mockVerificationManager
+}
+
+// TestExecuteCommandInGroup_DryRunDetailLevelFull tests dry-run with DetailLevelFull (T2.1)
+func TestExecuteCommandInGroup_DryRunDetailLevelFull(t *testing.T) {
+	// Arrange
+	mockValidator, mockVM := setupMocksForTest(t)
+	mockRM := new(runnertesting.MockResourceManager)
+
+	// Capture stdout
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
+			Timeout: common.IntPtr(30),
+		},
+	}
+
+	// Setup: path resolution succeeds
+	mockVM.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil)
+
+	ge := NewDefaultGroupExecutor(
+		nil,
+		config,
+		mockValidator,
+		mockVM,
+		mockRM,
+		"test-run-123",
+		nil,
+		true,                     // isDryRun = true
+		resource.DetailLevelFull, // DetailLevelFull
+		false,                    // dryRunShowSensitive = false
+		false,
+	)
+
+	cmd := &runnertypes.RuntimeCommand{
+		Spec: &runnertypes.CommandSpec{
+			Name: "test-cmd",
+		},
+		ExpandedCmd:  "/bin/echo",
+		ExpandedArgs: []string{},
+		ExpandedEnv: map[string]string{
+			"TEST_VAR": "test_value",
+			"SECRET":   "secret_value",
+		},
+		ExpandedVars: map[string]string{},
+	}
+
+	groupSpec := &runnertypes.GroupSpec{
+		Name: "test-group",
+	}
+
+	runtimeGroup, err := runnertypes.NewRuntimeGroup(groupSpec)
+	require.NoError(t, err)
+
+	runtimeGlobal := &runnertypes.RuntimeGlobal{
+		Spec:         &runnertypes.GlobalSpec{Timeout: common.IntPtr(30)},
+		ExpandedVars: map[string]string{},
+	}
+
+	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "[DRY-RUN] output"}, nil)
+
+	// Act
+	ctx := context.Background()
+	result, err := ge.executeCommandInGroup(ctx, cmd, groupSpec, runtimeGroup, runtimeGlobal)
+
+	// Capture output
+	w.Close()
+	os.Stdout = oldStdout
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+	output := buf.String()
+
+	// Assert
+	require.NoError(t, err)
+	assert.NotNil(t, result)
+
+	// Verify environment output
+	assert.Contains(t, output, "Final Process Environment")
+	assert.Contains(t, output, "TEST_VAR")
+	assert.Contains(t, output, "test_value")
+	assert.Contains(t, output, "SECRET")
+	// Note: Masking behavior depends on redaction implementation
+
+	mockRM.AssertExpectations(t)
+	mockValidator.AssertExpectations(t)
+	mockVM.AssertExpectations(t)
+}
+
+// TestExecuteGroup_DryRunVariableExpansion tests dry-run variable expansion debug output (T2.2)
+func TestExecuteGroup_DryRunVariableExpansion(t *testing.T) {
+	// Arrange
+	mockValidator, mockVM := setupMocksForTest(t)
+	mockRM := new(runnertesting.MockResourceManager)
+
+	// Capture stdout
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
+			Timeout: common.IntPtr(30),
+		},
+	}
+
+	// Setup: path resolution succeeds
+	mockVM.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil)
+
+	ge := NewDefaultGroupExecutor(
+		nil,
+		config,
+		mockValidator,
+		mockVM,
+		mockRM,
+		"test-run-123",
+		nil,
+		true, // isDryRun = true
+		resource.DetailLevelSummary,
+		false,
+		false,
+	)
+
+	group := &runnertypes.GroupSpec{
+		Name: "test-group",
+		Vars: []string{"TEST_VAR=test_value"},
+		Commands: []runnertypes.CommandSpec{
+			{Name: "test-cmd", Cmd: "/bin/echo"},
+		},
+	}
+
+	runtimeGlobal := &runnertypes.RuntimeGlobal{
+		Spec:         &runnertypes.GlobalSpec{Timeout: common.IntPtr(30)},
+		ExpandedVars: map[string]string{},
+	}
+
+	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&resource.ExecutionResult{ExitCode: 0}, nil)
+
+	// Act
+	err := ge.ExecuteGroup(context.Background(), group, runtimeGlobal)
+
+	// Capture output
+	w.Close()
+	os.Stdout = oldStdout
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+	output := buf.String()
+
+	// Assert
+	require.NoError(t, err)
+	assert.Contains(t, output, "Variable Expansion Debug Information")
+
+	mockRM.AssertExpectations(t)
+	mockValidator.AssertExpectations(t)
+	mockVM.AssertExpectations(t)
 }
