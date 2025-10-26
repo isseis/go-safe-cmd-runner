@@ -5,29 +5,37 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/stretchr/testify/assert"
 )
 
 // TestPrintFinalEnvironment_WithOrigins tests that PrintFinalEnvironment correctly uses the origins map
 func TestPrintFinalEnvironment_WithOrigins(t *testing.T) {
-	envVars := map[string]string{
-		"HOME":       "/home/test",
-		"PATH":       "/usr/bin:/bin",
-		"GLOBAL_VAR": "global_value",
-		"GROUP_VAR":  "group_value",
-		"CMD_VAR":    "cmd_value",
-	}
-
-	origins := map[string]string{
-		"HOME":       "System (filtered by allowlist)",
-		"PATH":       "System (filtered by allowlist)",
-		"GLOBAL_VAR": "Global",
-		"GROUP_VAR":  "Group[test-group]",
-		"CMD_VAR":    "Command[test-command]",
+	envMap := map[string]executor.EnvVar{
+		"HOME": {
+			Value:  "/home/test",
+			Origin: "System (filtered by allowlist)",
+		},
+		"PATH": {
+			Value:  "/usr/bin:/bin",
+			Origin: "System (filtered by allowlist)",
+		},
+		"GLOBAL_VAR": {
+			Value:  "global_value",
+			Origin: "Global",
+		},
+		"GROUP_VAR": {
+			Value:  "group_value",
+			Origin: "Group[test-group]",
+		},
+		"CMD_VAR": {
+			Value:  "cmd_value",
+			Origin: "Command[test-command]",
+		},
 	}
 
 	var buf bytes.Buffer
-	PrintFinalEnvironment(&buf, envVars, origins, false)
+	PrintFinalEnvironment(&buf, envMap, false)
 
 	output := buf.String()
 
@@ -55,22 +63,27 @@ func TestPrintFinalEnvironment_WithOrigins(t *testing.T) {
 
 // TestPrintFinalEnvironment_MultipleOrigins tests output with multiple different origins
 func TestPrintFinalEnvironment_MultipleOrigins(t *testing.T) {
-	envVars := map[string]string{
-		"VAR1": "value1",
-		"VAR2": "value2",
-		"VAR3": "value3",
-		"VAR4": "value4",
-	}
-
-	origins := map[string]string{
-		"VAR1": "System (filtered by allowlist)",
-		"VAR2": "Global",
-		"VAR3": "Group[my-group]",
-		"VAR4": "Command[my-command]",
+	envMap := map[string]executor.EnvVar{
+		"VAR1": {
+			Value:  "value1",
+			Origin: "System (filtered by allowlist)",
+		},
+		"VAR2": {
+			Value:  "value2",
+			Origin: "Global",
+		},
+		"VAR3": {
+			Value:  "value3",
+			Origin: "Group[my-group]",
+		},
+		"VAR4": {
+			Value:  "value4",
+			Origin: "Command[my-command]",
+		},
 	}
 
 	var buf bytes.Buffer
-	PrintFinalEnvironment(&buf, envVars, origins, false)
+	PrintFinalEnvironment(&buf, envMap, false)
 
 	output := buf.String()
 
@@ -86,16 +99,15 @@ func TestPrintFinalEnvironment_LongValue(t *testing.T) {
 	// Create a value longer than MaxDisplayLength (60)
 	longValue := strings.Repeat("a", 100)
 
-	envVars := map[string]string{
-		"LONG_VAR": longValue,
-	}
-
-	origins := map[string]string{
-		"LONG_VAR": "Global",
+	envMap := map[string]executor.EnvVar{
+		"LONG_VAR": {
+			Value:  longValue,
+			Origin: "Global",
+		},
 	}
 
 	var buf bytes.Buffer
-	PrintFinalEnvironment(&buf, envVars, origins, false)
+	PrintFinalEnvironment(&buf, envMap, false)
 
 	output := buf.String()
 
@@ -110,11 +122,10 @@ func TestPrintFinalEnvironment_LongValue(t *testing.T) {
 
 // TestPrintFinalEnvironment_EmptyEnv tests with empty environment
 func TestPrintFinalEnvironment_EmptyEnv(t *testing.T) {
-	envVars := map[string]string{}
-	origins := map[string]string{}
+	envMap := map[string]executor.EnvVar{}
 
 	var buf bytes.Buffer
-	PrintFinalEnvironment(&buf, envVars, origins, false)
+	PrintFinalEnvironment(&buf, envMap, false)
 
 	output := buf.String()
 
@@ -125,22 +136,27 @@ func TestPrintFinalEnvironment_EmptyEnv(t *testing.T) {
 
 // TestPrintFinalEnvironment_SpecialCharacters tests handling of special characters
 func TestPrintFinalEnvironment_SpecialCharacters(t *testing.T) {
-	envVars := map[string]string{
-		"VAR_WITH_NEWLINE": "value\nwith\nnewlines",
-		"VAR_WITH_TAB":     "value\twith\ttabs",
-		"VAR_WITH_QUOTES":  `value "with" quotes`,
-		"VAR_WITH_SPACES":  "value with spaces",
-	}
-
-	origins := map[string]string{
-		"VAR_WITH_NEWLINE": "Global",
-		"VAR_WITH_TAB":     "Global",
-		"VAR_WITH_QUOTES":  "Global",
-		"VAR_WITH_SPACES":  "Global",
+	envMap := map[string]executor.EnvVar{
+		"VAR_WITH_NEWLINE": {
+			Value:  "value\nwith\nnewlines",
+			Origin: "Global",
+		},
+		"VAR_WITH_TAB": {
+			Value:  "value\twith\ttabs",
+			Origin: "Global",
+		},
+		"VAR_WITH_QUOTES": {
+			Value:  `value "with" quotes`,
+			Origin: "Global",
+		},
+		"VAR_WITH_SPACES": {
+			Value:  "value with spaces",
+			Origin: "Global",
+		},
 	}
 
 	var buf bytes.Buffer
-	PrintFinalEnvironment(&buf, envVars, origins, false)
+	PrintFinalEnvironment(&buf, envMap, false)
 
 	output := buf.String()
 
@@ -153,22 +169,27 @@ func TestPrintFinalEnvironment_SpecialCharacters(t *testing.T) {
 
 // TestPrintFinalEnvironment_SortedOutput tests that output is sorted alphabetically
 func TestPrintFinalEnvironment_SortedOutput(t *testing.T) {
-	envVars := map[string]string{
-		"ZEBRA":  "z",
-		"ALPHA":  "a",
-		"MIDDLE": "m",
-		"BETA":   "b",
-	}
-
-	origins := map[string]string{
-		"ZEBRA":  "Global",
-		"ALPHA":  "Global",
-		"MIDDLE": "Global",
-		"BETA":   "Global",
+	envMap := map[string]executor.EnvVar{
+		"ZEBRA": {
+			Value:  "z",
+			Origin: "Global",
+		},
+		"ALPHA": {
+			Value:  "a",
+			Origin: "Global",
+		},
+		"MIDDLE": {
+			Value:  "m",
+			Origin: "Global",
+		},
+		"BETA": {
+			Value:  "b",
+			Origin: "Global",
+		},
 	}
 
 	var buf bytes.Buffer
-	PrintFinalEnvironment(&buf, envVars, origins, false)
+	PrintFinalEnvironment(&buf, envMap, false)
 
 	output := buf.String()
 
@@ -188,26 +209,35 @@ func TestPrintFinalEnvironment_SortedOutput(t *testing.T) {
 // environment variables are masked by default (showSensitive=false)
 func TestPrintFinalEnvironment_MaskingSensitiveData_Default(t *testing.T) {
 	// Create environment with sensitive data (passwords, tokens, keys)
-	envVars := map[string]string{
-		"DB_PASSWORD":       "super_secret_password_123",
-		"API_TOKEN":         "ghp_1234567890abcdefghijklmnopqrstuvwxyz",
-		"AWS_SECRET_KEY":    "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-		"SSH_PRIVATE_KEY":   "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA...",
-		"GITHUB_AUTH_TOKEN": "ghp_another_token_12345",
-		"NORMAL_VAR":        "public_value",
-	}
-
-	origins := map[string]string{
-		"DB_PASSWORD":       "Command[db-setup]",
-		"API_TOKEN":         "Global",
-		"AWS_SECRET_KEY":    "Group[aws-group]",
-		"SSH_PRIVATE_KEY":   "Command[ssh-deploy]",
-		"GITHUB_AUTH_TOKEN": "Global",
-		"NORMAL_VAR":        "Global",
+	envMap := map[string]executor.EnvVar{
+		"DB_PASSWORD": {
+			Value:  "super_secret_password_123",
+			Origin: "Command[db-setup]",
+		},
+		"API_TOKEN": {
+			Value:  "ghp_1234567890abcdefghijklmnopqrstuvwxyz",
+			Origin: "Global",
+		},
+		"AWS_SECRET_KEY": {
+			Value:  "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+			Origin: "Group[aws-group]",
+		},
+		"SSH_PRIVATE_KEY": {
+			Value:  "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA...",
+			Origin: "Command[ssh-deploy]",
+		},
+		"GITHUB_AUTH_TOKEN": {
+			Value:  "ghp_another_token_12345",
+			Origin: "Global",
+		},
+		"NORMAL_VAR": {
+			Value:  "public_value",
+			Origin: "Global",
+		},
 	}
 
 	var buf bytes.Buffer
-	PrintFinalEnvironment(&buf, envVars, origins, false) // showSensitive=false (default)
+	PrintFinalEnvironment(&buf, envMap, false) // showSensitive=false (default)
 	output := buf.String()
 
 	// Verify header is present
@@ -241,26 +271,35 @@ func TestPrintFinalEnvironment_MaskingSensitiveData_Default(t *testing.T) {
 // environment variables are displayed when showSensitive=true
 func TestPrintFinalEnvironment_ShowSensitiveData_Explicit(t *testing.T) {
 	// Create environment with sensitive data (passwords, tokens, keys)
-	envVars := map[string]string{
-		"DB_PASSWORD":       "super_secret_password_123",
-		"API_TOKEN":         "ghp_1234567890abcdefghijklmnopqrstuvwxyz",
-		"AWS_SECRET_KEY":    "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-		"SSH_PRIVATE_KEY":   "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA...",
-		"GITHUB_AUTH_TOKEN": "ghp_another_token_12345",
-		"NORMAL_VAR":        "public_value",
-	}
-
-	origins := map[string]string{
-		"DB_PASSWORD":       "Command[db-setup]",
-		"API_TOKEN":         "Global",
-		"AWS_SECRET_KEY":    "Group[aws-group]",
-		"SSH_PRIVATE_KEY":   "Command[ssh-deploy]",
-		"GITHUB_AUTH_TOKEN": "Global",
-		"NORMAL_VAR":        "Global",
+	envMap := map[string]executor.EnvVar{
+		"DB_PASSWORD": {
+			Value:  "super_secret_password_123",
+			Origin: "Command[db-setup]",
+		},
+		"API_TOKEN": {
+			Value:  "ghp_1234567890abcdefghijklmnopqrstuvwxyz",
+			Origin: "Global",
+		},
+		"AWS_SECRET_KEY": {
+			Value:  "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+			Origin: "Group[aws-group]",
+		},
+		"SSH_PRIVATE_KEY": {
+			Value:  "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA...",
+			Origin: "Command[ssh-deploy]",
+		},
+		"GITHUB_AUTH_TOKEN": {
+			Value:  "ghp_another_token_12345",
+			Origin: "Global",
+		},
+		"NORMAL_VAR": {
+			Value:  "public_value",
+			Origin: "Global",
+		},
 	}
 
 	var buf bytes.Buffer
-	PrintFinalEnvironment(&buf, envVars, origins, true) // showSensitive=true (explicit)
+	PrintFinalEnvironment(&buf, envMap, true) // showSensitive=true (explicit)
 	output := buf.String()
 
 	// Verify header is present

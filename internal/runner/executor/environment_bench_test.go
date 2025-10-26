@@ -62,7 +62,7 @@ func BenchmarkBuildProcessEnvironment(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = executor.BuildProcessEnvironment(global, group, cmd)
+		_ = executor.BuildProcessEnvironment(global, group, cmd)
 	}
 }
 
@@ -100,7 +100,7 @@ func BenchmarkBuildProcessEnvironment_Small(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = executor.BuildProcessEnvironment(global, group, cmd)
+		_ = executor.BuildProcessEnvironment(global, group, cmd)
 	}
 }
 

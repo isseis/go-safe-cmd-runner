@@ -75,17 +75,17 @@ func TestBuildProcessEnvironment_Basic(t *testing.T) {
 		},
 	)
 
-	result, _ := executor.BuildProcessEnvironment(global, group, cmd)
+	result := executor.BuildProcessEnvironment(global, group, cmd)
 
 	// Verify system env vars (filtered by allowlist)
-	assert.Equal(t, "/home/test", result["HOME"])
-	assert.Equal(t, "/usr/bin:/bin", result["PATH"])
+	assert.Equal(t, "/home/test", result["HOME"].Value)
+	assert.Equal(t, "/usr/bin:/bin", result["PATH"].Value)
 	assert.NotContains(t, result, "SECRET") // Should be filtered out
 
 	// Verify merged env vars
-	assert.Equal(t, "global_value", result["GLOBAL_VAR"])
-	assert.Equal(t, "group_value", result["GROUP_VAR"])
-	assert.Equal(t, "cmd_value", result["CMD_VAR"])
+	assert.Equal(t, "global_value", result["GLOBAL_VAR"].Value)
+	assert.Equal(t, "group_value", result["GROUP_VAR"].Value)
+	assert.Equal(t, "cmd_value", result["CMD_VAR"].Value)
 }
 
 // TestBuildProcessEnvironment_Priority tests the priority order of environment variables
@@ -114,10 +114,10 @@ func TestBuildProcessEnvironment_Priority(t *testing.T) {
 			},
 		)
 
-		result, _ := executor.BuildProcessEnvironment(global, group, cmd)
+		result := executor.BuildProcessEnvironment(global, group, cmd)
 
 		// Command env should have the highest priority
-		assert.Equal(t, "from_command", result["COMMON"])
+		assert.Equal(t, "from_command", result["COMMON"].Value)
 	})
 
 	t.Run("Group overrides Global and System", func(t *testing.T) {
@@ -141,10 +141,10 @@ func TestBuildProcessEnvironment_Priority(t *testing.T) {
 			map[string]string{},
 		)
 
-		result, _ := executor.BuildProcessEnvironment(global, group, cmd)
+		result := executor.BuildProcessEnvironment(global, group, cmd)
 
 		// Group env should override global and system
-		assert.Equal(t, "from_group", result["COMMON"])
+		assert.Equal(t, "from_group", result["COMMON"].Value)
 	})
 
 	t.Run("Global overrides System", func(t *testing.T) {
@@ -164,10 +164,10 @@ func TestBuildProcessEnvironment_Priority(t *testing.T) {
 			map[string]string{},
 		)
 
-		result, _ := executor.BuildProcessEnvironment(global, group, cmd)
+		result := executor.BuildProcessEnvironment(global, group, cmd)
 
 		// Global env should override system
-		assert.Equal(t, "from_global", result["COMMON"])
+		assert.Equal(t, "from_global", result["COMMON"].Value)
 	})
 
 	t.Run("System env is used when not overridden", func(t *testing.T) {
@@ -185,10 +185,10 @@ func TestBuildProcessEnvironment_Priority(t *testing.T) {
 			map[string]string{},
 		)
 
-		result, _ := executor.BuildProcessEnvironment(global, group, cmd)
+		result := executor.BuildProcessEnvironment(global, group, cmd)
 
 		// System env should be used when not overridden
-		assert.Equal(t, "from_system", result["COMMON"])
+		assert.Equal(t, "from_system", result["COMMON"].Value)
 	})
 }
 
@@ -211,11 +211,11 @@ func TestBuildProcessEnvironment_AllowlistFiltering(t *testing.T) {
 		map[string]string{},
 	)
 
-	result, _ := executor.BuildProcessEnvironment(global, group, cmd)
+	result := executor.BuildProcessEnvironment(global, group, cmd)
 
 	// Only allowlisted variables should be included
-	assert.Equal(t, "/home/test", result["HOME"])
-	assert.Equal(t, "testuser", result["USER"])
+	assert.Equal(t, "/home/test", result["HOME"].Value)
+	assert.Equal(t, "testuser", result["USER"].Value)
 	assert.NotContains(t, result, "PATH")
 	assert.NotContains(t, result, "SECRET")
 }
@@ -236,10 +236,10 @@ func TestBuildProcessEnvironment_EmptyEnv(t *testing.T) {
 		map[string]string{}, // Empty
 	)
 
-	result, _ := executor.BuildProcessEnvironment(global, group, cmd)
+	result := executor.BuildProcessEnvironment(global, group, cmd)
 
 	// Only system env should be included
-	assert.Equal(t, "/home/test", result["HOME"])
+	assert.Equal(t, "/home/test", result["HOME"].Value)
 	assert.Len(t, result, 1)
 }
 
@@ -267,13 +267,13 @@ func TestBuildProcessEnvironment_NilEnvMaps(t *testing.T) {
 		},
 	)
 
-	result, _ := executor.BuildProcessEnvironment(global, group, cmd)
+	result := executor.BuildProcessEnvironment(global, group, cmd)
 
 	// Should work properly
-	assert.Equal(t, "/home/test", result["HOME"])
-	assert.Equal(t, "global_value", result["GLOBAL_VAR"])
-	assert.Equal(t, "group_value", result["GROUP_VAR"])
-	assert.Equal(t, "cmd_value", result["CMD_VAR"])
+	assert.Equal(t, "/home/test", result["HOME"].Value)
+	assert.Equal(t, "global_value", result["GLOBAL_VAR"].Value)
+	assert.Equal(t, "group_value", result["GROUP_VAR"].Value)
+	assert.Equal(t, "cmd_value", result["CMD_VAR"].Value)
 }
 
 // TestBuildProcessEnvironment_SystemVarNotInAllowlist tests system var not in allowlist
@@ -295,14 +295,14 @@ func TestBuildProcessEnvironment_SystemVarNotInAllowlist(t *testing.T) {
 		map[string]string{},
 	)
 
-	result, _ := executor.BuildProcessEnvironment(global, group, cmd)
+	result := executor.BuildProcessEnvironment(global, group, cmd)
 
 	// No system vars should be included (empty allowlist)
 	assert.NotContains(t, result, "HOME")
 	assert.NotContains(t, result, "PATH")
 
 	// Only explicitly defined env vars should be included
-	assert.Equal(t, "custom_value", result["CUSTOM"])
+	assert.Equal(t, "custom_value", result["CUSTOM"].Value)
 }
 
 // TestBuildProcessEnvironment_OriginTracking tests that origin information is correctly tracked
@@ -330,24 +330,24 @@ func TestBuildProcessEnvironment_OriginTracking(t *testing.T) {
 		},
 	)
 
-	envVars, origins := executor.BuildProcessEnvironment(global, group, cmd)
+	envMap := executor.BuildProcessEnvironment(global, group, cmd)
 
 	// Verify environment variables are built correctly
-	assert.Equal(t, "/home/test", envVars["HOME"])
-	assert.Equal(t, "/usr/bin:/bin", envVars["PATH"])
-	assert.Equal(t, "global_value", envVars["GLOBAL_VAR"])
-	assert.Equal(t, "group_value", envVars["GROUP_VAR"])
-	assert.Equal(t, "cmd_value", envVars["CMD_VAR"])
+	assert.Equal(t, "/home/test", envMap["HOME"].Value)
+	assert.Equal(t, "/usr/bin:/bin", envMap["PATH"].Value)
+	assert.Equal(t, "global_value", envMap["GLOBAL_VAR"].Value)
+	assert.Equal(t, "group_value", envMap["GROUP_VAR"].Value)
+	assert.Equal(t, "cmd_value", envMap["CMD_VAR"].Value)
 
 	// Verify origin tracking
-	assert.Equal(t, "System (filtered by allowlist)", origins["HOME"])
-	assert.Equal(t, "System (filtered by allowlist)", origins["PATH"])
-	assert.Equal(t, "Global", origins["GLOBAL_VAR"])
-	assert.Equal(t, "Group[test-group]", origins["GROUP_VAR"])
-	assert.Equal(t, "Command[test-command]", origins["CMD_VAR"])
+	assert.Equal(t, "System (filtered by allowlist)", envMap["HOME"].Origin)
+	assert.Equal(t, "System (filtered by allowlist)", envMap["PATH"].Origin)
+	assert.Equal(t, "Global", envMap["GLOBAL_VAR"].Origin)
+	assert.Equal(t, "Group[test-group]", envMap["GROUP_VAR"].Origin)
+	assert.Equal(t, "Command[test-command]", envMap["CMD_VAR"].Origin)
 
-	// Verify origins map has same keys as envVars
-	assert.Equal(t, len(envVars), len(origins))
+	// Verify all environment variables have origin information
+	assert.Equal(t, 5, len(envMap))
 }
 
 // TestBuildProcessEnvironment_OriginOverride tests that origin is updated when variables are overridden
@@ -374,13 +374,13 @@ func TestBuildProcessEnvironment_OriginOverride(t *testing.T) {
 		},
 	)
 
-	envVars, origins := executor.BuildProcessEnvironment(global, group, cmd)
+	envMap := executor.BuildProcessEnvironment(global, group, cmd)
 
 	// Verify the final value is from command (highest priority)
-	assert.Equal(t, "from_command", envVars["COMMON"])
+	assert.Equal(t, "from_command", envMap["COMMON"].Value)
 
 	// Verify origin reflects the actual source (Command, not System)
-	assert.Equal(t, "Command[test-command]", origins["COMMON"])
+	assert.Equal(t, "Command[test-command]", envMap["COMMON"].Origin)
 }
 
 // TestBuildProcessEnvironment_SystemEnvFiltering tests that system environment variable filtering is tracked correctly
@@ -405,23 +405,23 @@ func TestBuildProcessEnvironment_SystemEnvFiltering(t *testing.T) {
 		map[string]string{},
 	)
 
-	envVars, origins := executor.BuildProcessEnvironment(global, group, cmd)
+	envMap := executor.BuildProcessEnvironment(global, group, cmd)
 
 	// Verify only allowlisted system vars are included
-	assert.Contains(t, envVars, "HOME")
-	assert.Contains(t, envVars, "USER")
-	assert.NotContains(t, envVars, "PATH")
-	assert.NotContains(t, envVars, "SECRET")
+	assert.Contains(t, envMap, "HOME")
+	assert.Contains(t, envMap, "USER")
+	assert.NotContains(t, envMap, "PATH")
+	assert.NotContains(t, envMap, "SECRET")
 
 	// Verify origins for allowlisted system vars
-	assert.Equal(t, "System (filtered by allowlist)", origins["HOME"])
-	assert.Equal(t, "System (filtered by allowlist)", origins["USER"])
+	assert.Equal(t, "System (filtered by allowlist)", envMap["HOME"].Origin)
+	assert.Equal(t, "System (filtered by allowlist)", envMap["USER"].Origin)
 
 	// Verify global var and its origin
-	assert.Equal(t, "global_value", envVars["GLOBAL_VAR"])
-	assert.Equal(t, "Global", origins["GLOBAL_VAR"])
+	assert.Equal(t, "global_value", envMap["GLOBAL_VAR"].Value)
+	assert.Equal(t, "Global", envMap["GLOBAL_VAR"].Origin)
 
-	// Verify PATH and SECRET are not in origins map
-	assert.NotContains(t, origins, "PATH")
-	assert.NotContains(t, origins, "SECRET")
+	// Verify PATH and SECRET are not in envMap
+	assert.NotContains(t, envMap, "PATH")
+	assert.NotContains(t, envMap, "SECRET")
 }
