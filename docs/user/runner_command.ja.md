@@ -349,7 +349,51 @@ Group: backup (Priority: 1)
       PATH=/sbin:/usr/sbin:/bin:/usr/bin
       HOME=/root
       PGPASSWORD=[REDACTED]
+
+===== Final Process Environment =====
+
+Environment variables (5):
+  BACKUP_DIR=/var/backups
+    (from Global)
+  HOME=/root
+    (from System (filtered by allowlist))
+  PATH=/sbin:/usr/sbin:/bin:/usr/bin
+    (from System (filtered by allowlist))
+  PGPASSWORD=[REDACTED]
+    (from Command[db_backup])
+  TEMP_DIR=/tmp/runner-backup
+    (from Group[backup])
 ```
+
+**センシティブ情報の表示**
+
+デフォルトでは、パスワードやトークンなどのセンシティブ情報は `[REDACTED]` でマスクされます。デバッグ時に平文で表示する必要がある場合は、`--show-sensitive` フラグを使用します。
+
+```bash
+runner -config config.toml -dry-run -dry-run-detail full --show-sensitive
+```
+
+出力例（センシティブ情報を表示）：
+```
+===== Final Process Environment =====
+
+Environment variables (5):
+  BACKUP_DIR=/var/backups
+    (from Global)
+  HOME=/root
+    (from System (filtered by allowlist))
+  PATH=/sbin:/usr/sbin:/bin:/usr/bin
+    (from System (filtered by allowlist))
+  PGPASSWORD=super_secret_password_123
+    (from Command[db_backup])
+  TEMP_DIR=/tmp/runner-backup
+    (from Group[backup])
+```
+
+**注意事項**:
+- `--show-sensitive` はデバッグ用途のみで使用してください
+- 本番環境やログファイルに出力する場合は使用しないでください
+- CI/CD環境では機密情報の漏洩リスクがあるため、デフォルトのマスク動作を推奨します
 
 **詳細レベルの使い分け**
 
@@ -415,6 +459,109 @@ jobs:
       - name: Validate configuration
         run: |
           runner -config config.toml -validate
+```
+
+#### `-show-sensitive`
+
+**概要**
+
+ドライラン実行時に、センシティブな環境変数の値をマスクせずに平文で表示します。デフォルトでは、パスワードやトークンなどのセンシティブ情報は `[REDACTED]` として表示されます。
+
+**セキュリティ警告**: このフラグは、デバッグやトラブルシューティング時にのみ使用してください。本番環境や共有環境では使用しないでください。ログファイルやCI/CD環境への機密情報漏洩のリスクがあります。
+
+**文法**
+
+```bash
+runner -config <path> -dry-run -dry-run-detail full -show-sensitive
+```
+
+**使用例**
+
+**デフォルト動作（センシティブ情報はマスク）**
+
+```bash
+runner -config config.toml -dry-run -dry-run-detail full
+```
+
+出力例：
+```
+===== Final Process Environment =====
+
+Environment variables (5):
+  DB_HOST=localhost
+    (from Global)
+  DB_USER=appuser
+    (from Global)
+  DB_PASSWORD=[REDACTED]
+    (from Global)
+  API_TOKEN=[REDACTED]
+    (from Command[deploy])
+  LOG_LEVEL=info
+    (from Command[deploy])
+```
+
+**センシティブ情報を表示（`-show-sensitive` 使用時）**
+
+```bash
+runner -config config.toml -dry-run -dry-run-detail full -show-sensitive
+```
+
+出力例：
+```
+===== Final Process Environment =====
+
+Environment variables (5):
+  DB_HOST=localhost
+    (from Global)
+  DB_USER=appuser
+    (from Global)
+  DB_PASSWORD=MySecretPassword123
+    (from Global)
+  API_TOKEN=sk-1234567890abcdef
+    (from Command[deploy])
+  LOG_LEVEL=info
+    (from Command[deploy])
+```
+
+**センシティブ環境変数の判定基準**
+
+以下のパターンに一致する環境変数名は、センシティブ情報として扱われます：
+
+- `*PASSWORD*`
+- `*SECRET*`
+- `*TOKEN*`
+- `*KEY*`
+- `*CREDENTIAL*`
+- `*AUTH*`
+
+例：`DB_PASSWORD`, `API_SECRET_KEY`, `GITHUB_TOKEN`, `AWS_SECRET_ACCESS_KEY`, `OAUTH_CREDENTIAL`, `AUTH_TOKEN`
+
+**ユースケース**
+
+- **ローカル開発環境でのデバッグ**: 環境変数の展開が正しく行われているか確認
+- **トラブルシューティング**: 環境変数の値が期待通りに設定されているか確認
+- **設定ファイルの初期検証**: 新しい設定ファイルを作成した際の動作確認
+
+**使用上の注意事項**
+
+1. **本番環境では使用しないでください**: 機密情報がログに記録される可能性があります
+2. **CI/CD環境では使用しないでください**: ビルドログに機密情報が残る可能性があります
+3. **Slack通知が有効な場合は特に注意**: センシティブ情報が通知メッセージに含まれる可能性があります
+4. **ログファイルの取り扱いに注意**: `-show-sensitive` を使用した実行ログは、適切に保護してください
+
+**推奨される使用方法**
+
+```bash
+# ローカル環境での一時的なデバッグ
+runner -config config.toml -dry-run -dry-run-detail full -show-sensitive
+
+# 実行後、ターミナルの履歴をクリア（bash）
+history -c
+
+# または、出力をファイルに保存し、確認後に削除
+runner -config config.toml -dry-run -dry-run-detail full -show-sensitive > debug.txt
+# 確認後
+shred -u debug.txt  # secure deletion
 ```
 
 ### 3.3 ログ設定
