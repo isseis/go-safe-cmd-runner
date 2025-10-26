@@ -530,7 +530,7 @@ Environment variable names matching the following patterns are treated as sensit
 - `*PASSWORD*`
 - `*SECRET*`
 - `*TOKEN*`
-- `*KEY*` (including `*_KEY`)
+- `*KEY*`
 - `*CREDENTIAL*`
 - `*AUTH*`
 
