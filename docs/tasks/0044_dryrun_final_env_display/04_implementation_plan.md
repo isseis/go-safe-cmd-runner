@@ -231,6 +231,71 @@
 - ログファイルやCI/CD環境での機密情報漏洩を防止
 - デバッグ時のみ明示的に `--show-sensitive` を指定
 
+### Phase 4.8: `--show-sensitive` フラグの統合テスト実装 (2-3 hours)
+
+**目的**: `--show-sensitive` フラグのE2E動作を統合テストで検証し、セキュリティ要件を保証する
+
+**背景**:
+- Phase 4.7で`--show-sensitive`フラグとマスク処理を実装
+- セキュリティ上重要なデフォルトマスク動作を統合テストで常に検証する必要がある
+- 単体テストだけでなく、実際のrunner実行フローでの動作確認が必須
+
+**作業項目**:
+
+#### 4.8.1 統合テストファイルの作成
+- [x] `cmd/runner/integration_dryrun_sensitive_test.go` の作成
+  - [x] テストビルドタグ `//go:build test` の追加
+  - [x] 必要なパッケージのインポート
+  - [x] テストヘルパー関数の実装
+
+#### 4.8.2 マスク処理の統合テスト
+- [x] `TestIntegration_DryRunSensitiveDataMasking` の実装
+  - [x] `showSensitive=false` （デフォルト）でマスクされることを確認
+  - [x] `showSensitive=true` で平文表示されることを確認
+  - [x] TOMLファイルベースのE2E実行
+  - [x] 標準出力キャプチャによる出力検証
+  - [x] センシティブ変数（DB_PASSWORD, API_TOKEN, AWS_SECRET_KEY）のテスト
+  - [x] 通常変数（NORMAL_VAR）は常に平文表示されることを確認
+
+#### 4.8.3 デフォルト動作の統合テスト
+- [x] `TestIntegration_DryRunSensitiveDataDefault` の実装
+  - [x] `ShowSensitive`フィールドを明示的に設定しないケース
+  - [x] デフォルトでマスクされることを確認（セキュリティ要件）
+  - [x] 機密情報が平文で出力されないことを確認
+
+#### 4.8.4 DetailLevelによる制御の統合テスト
+- [x] `TestIntegration_DryRunDetailLevelWithoutFull` の実装
+  - [x] `DetailLevelSummary` で環境変数が表示されないことを確認
+  - [x] `DetailLevelDetailed` で環境変数が表示されないことを確認
+  - [x] `PrintFinalEnvironment` が呼ばれないことを確認
+
+#### 4.8.5 TOML設定の修正
+- [x] `environment` フィールドを `env_vars` に修正
+  - [x] 既存サンプルファイルとの一貫性確保
+  - [x] 全テストケースでの修正完了
+
+**成果物**:
+- [x] `cmd/runner/integration_dryrun_sensitive_test.go` (401行)
+- [x] 3つの包括的な統合テスト関数
+- [x] TOMLベースのE2E検証
+
+**検証基準**:
+- [x] 全テストがパス（`go test -tags=test -run TestIntegration_DryRunSensitive`）
+- [x] デフォルトマスク動作の検証完了
+- [x] `--show-sensitive=true` 時の平文表示検証完了
+- [x] DetailLevel制御の検証完了
+- [x] 既存の統合テストへの影響なし
+- [x] lintチェックがパス（0 issues）
+- [x] 標準出力キャプチャが正しく動作
+
+**セキュリティ検証**:
+- [x] デフォルト（`showSensitive=false`）でセンシティブ値が`[REDACTED]`と表示される
+- [x] 機密情報（password, token, secret key）が平文でログに出力されない
+- [x] `showSensitive=true`時のみ平文表示される
+- [x] DetailLevel=Full以外では環境変数自体が表示されない
+
+**実装完了時刻**: 2025-10-26 00:36 UTC
+
 ### Phase 5: ドキュメント更新 (2-3 hours)
 
 **目的**: 実装内容の文書化とユーザーガイドの更新
