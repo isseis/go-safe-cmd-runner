@@ -14,6 +14,17 @@ type EnvVar struct {
 	Origin string
 }
 
+// mergeEnvWithOrigin merges environment variables from envMap into result with the specified origin.
+// This helper function reduces code duplication when merging environment variables from different sources.
+func mergeEnvWithOrigin(result map[string]EnvVar, envMap map[string]string, origin string) {
+	for k, v := range envMap {
+		result[k] = EnvVar{
+			Value:  v,
+			Origin: origin,
+		}
+	}
+}
+
 // BuildProcessEnvironment builds the final process environment variables for command execution
 // and tracks the origin of each variable.
 //
@@ -47,28 +58,13 @@ func BuildProcessEnvironment(
 	}
 
 	// Step 2: Merge Global.ExpandedEnv (overrides system env)
-	for k, v := range runtimeGlobal.ExpandedEnv {
-		result[k] = EnvVar{
-			Value:  v,
-			Origin: "Global",
-		}
-	}
+	mergeEnvWithOrigin(result, runtimeGlobal.ExpandedEnv, "Global")
 
 	// Step 3: Merge Group.ExpandedEnv (overrides global env)
-	for k, v := range runtimeGroup.ExpandedEnv {
-		result[k] = EnvVar{
-			Value:  v,
-			Origin: fmt.Sprintf("Group[%s]", runtimeGroup.Name()),
-		}
-	}
+	mergeEnvWithOrigin(result, runtimeGroup.ExpandedEnv, fmt.Sprintf("Group[%s]", runtimeGroup.Name()))
 
 	// Step 4: Merge Command.ExpandedEnv (overrides group env)
-	for k, v := range cmd.ExpandedEnv {
-		result[k] = EnvVar{
-			Value:  v,
-			Origin: fmt.Sprintf("Command[%s]", cmd.Name()),
-		}
-	}
+	mergeEnvWithOrigin(result, cmd.ExpandedEnv, fmt.Sprintf("Command[%s]", cmd.Name()))
 
 	return result
 }
