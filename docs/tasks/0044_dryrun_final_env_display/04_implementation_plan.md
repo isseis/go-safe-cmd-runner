@@ -389,7 +389,7 @@
 4. **テストカバレッジ**:
    - ✅ BuildProcessEnvironment: 100%
    - ✅ PrintFinalEnvironment: 100%
-   - ✅ GroupExecutor: 71.4%（executeCommandInGroup）
+   - ✅ GroupExecutor: 82.4%（executeCommandInGroup: 100%, ExecuteGroup: 86.0%）
    - ✅ 統合テスト: 全てパス（3テストケース）
    - ✅ パフォーマンステスト: 全てパス
 
