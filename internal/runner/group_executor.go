@@ -35,6 +35,8 @@ type DefaultGroupExecutor struct {
 	runID               string
 	notificationFunc    groupNotificationFunc
 	isDryRun            bool
+	dryRunDetailLevel   resource.DetailLevel
+	dryRunShowSensitive bool
 	keepTempDirs        bool
 }
 
@@ -51,6 +53,8 @@ func NewDefaultGroupExecutor(
 	runID string,
 	notificationFunc groupNotificationFunc,
 	isDryRun bool,
+	dryRunDetailLevel resource.DetailLevel,
+	dryRunShowSensitive bool,
 	keepTempDirs bool,
 ) *DefaultGroupExecutor {
 	return &DefaultGroupExecutor{
@@ -62,6 +66,8 @@ func NewDefaultGroupExecutor(
 		runID:               runID,
 		notificationFunc:    notificationFunc,
 		isDryRun:            isDryRun,
+		dryRunDetailLevel:   dryRunDetailLevel,
+		dryRunShowSensitive: dryRunShowSensitive,
 		keepTempDirs:        keepTempDirs,
 	}
 }
@@ -220,16 +226,27 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 // executeCommandInGroup executes a command within a specific group context
 func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *runnertypes.RuntimeCommand, groupSpec *runnertypes.GroupSpec, runtimeGroup *runnertypes.RuntimeGroup, runtimeGlobal *runnertypes.RuntimeGlobal) (*executor.Result, error) {
 	// Resolve environment variables for the command with group context
-	envVars := executor.BuildProcessEnvironment(runtimeGlobal, runtimeGroup, cmd)
+	envMap := executor.BuildProcessEnvironment(runtimeGlobal, runtimeGroup, cmd)
 
 	slog.Debug("Built process environment variables",
 		"command", cmd.Name(),
 		"group", groupSpec.Name,
-		"final_vars_count", len(envVars))
+		"final_vars_count", len(envMap))
+
+	// Extract values for validation
+	envVars := make(map[string]string, len(envMap))
+	for k, v := range envMap {
+		envVars[k] = v.Value
+	}
 
 	// Validate resolved environment variables
 	if err := ge.validator.ValidateAllEnvironmentVars(envVars); err != nil {
 		return nil, fmt.Errorf("resolved environment variables security validation failed: %w", err)
+	}
+
+	// Print final environment in dry-run mode with full detail level
+	if ge.isDryRun && ge.dryRunDetailLevel == resource.DetailLevelFull {
+		debug.PrintFinalEnvironment(os.Stdout, envMap, ge.dryRunShowSensitive)
 	}
 
 	// Resolve and validate command path if verification manager is available

@@ -147,8 +147,10 @@ func TestExecuteGroup_WorkDirPriority(t *testing.T) {
 				mockRM,
 				"test-run-123",
 				nil,
-				false, // isDryRun
-				false, // keepTempDirs
+				false,                       // isDryRun
+				resource.DetailLevelSummary, // dryRunDetailLevel
+				false,                       // dryRunShowSensitive
+				false,                       // keepTempDirs
 			)
 
 			group := &runnertypes.GroupSpec{
@@ -244,8 +246,10 @@ func TestExecuteGroup_TempDirCleanup(t *testing.T) {
 				mockRM,
 				"test-run-123",
 				nil,
-				false, // isDryRun
-				false, // keepTempDirs
+				false,                       // isDryRun
+				resource.DetailLevelSummary, // dryRunDetailLevel
+				false,                       // dryRunShowSensitive
+				false,                       // keepTempDirs
 			)
 
 			group := &runnertypes.GroupSpec{
@@ -314,8 +318,10 @@ func TestExecuteGroup_CreateTempDirFailure(t *testing.T) {
 		mockRM,
 		"test-run-123",
 		nil,
-		false, // isDryRun
-		false, // keepTempDirs
+		false,                       // isDryRun
+		resource.DetailLevelSummary, // dryRunDetailLevel
+		false,                       // dryRunShowSensitive
+		false,                       // keepTempDirs
 	)
 
 	group := &runnertypes.GroupSpec{
@@ -367,8 +373,10 @@ func TestExecuteGroup_CommandExecutionFailure(t *testing.T) {
 		mockRM,
 		"test-run-123",
 		notificationFunc,
-		false, // isDryRun
-		false, // keepTempDirs
+		false,                       // isDryRun
+		resource.DetailLevelSummary, // dryRunDetailLevel
+		false,                       // dryRunShowSensitive
+		false,                       // keepTempDirs
 	)
 
 	group := &runnertypes.GroupSpec{
@@ -426,8 +434,10 @@ func TestExecuteGroup_CommandExecutionFailure_NonStandardExitCode(t *testing.T) 
 		mockRM,
 		"test-run-123",
 		notificationFunc,
-		false, // isDryRun
-		false, // keepTempDirs
+		false,                       // isDryRun
+		resource.DetailLevelSummary, // dryRunDetailLevel
+		false,                       // dryRunShowSensitive
+		false,                       // keepTempDirs
 	)
 
 	group := &runnertypes.GroupSpec{
@@ -487,8 +497,10 @@ func TestExecuteGroup_SuccessNotification(t *testing.T) {
 		mockRM,
 		"test-run-123",
 		notificationFunc,
-		false, // isDryRun
-		false, // keepTempDirs
+		false,                       // isDryRun
+		resource.DetailLevelSummary, // dryRunDetailLevel
+		false,                       // dryRunShowSensitive
+		false,                       // keepTempDirs
 	)
 
 	group := &runnertypes.GroupSpec{
@@ -547,8 +559,10 @@ func TestExecuteCommandInGroup_OutputPathValidationFailure(t *testing.T) {
 		mockRM,
 		"test-run-123",
 		nil,
-		false, // isDryRun
-		false, // keepTempDirs
+		false,                       // isDryRun
+		resource.DetailLevelSummary, // dryRunDetailLevel
+		false,                       // dryRunShowSensitive
+		false,                       // keepTempDirs
 	)
 
 	cmd := &runnertypes.RuntimeCommand{
@@ -603,8 +617,10 @@ func TestExecuteGroup_MultipleCommands(t *testing.T) {
 		mockRM,
 		"test-run-123",
 		nil,
-		false, // isDryRun
-		false, // keepTempDirs
+		false,                       // isDryRun
+		resource.DetailLevelSummary, // dryRunDetailLevel
+		false,                       // dryRunShowSensitive
+		false,                       // keepTempDirs
 	)
 
 	group := &runnertypes.GroupSpec{
@@ -661,8 +677,10 @@ func TestExecuteGroup_StopOnFirstFailure(t *testing.T) {
 		mockRM,
 		"test-run-123",
 		nil,
-		false, // isDryRun
-		false, // keepTempDirs
+		false,                       // isDryRun
+		resource.DetailLevelSummary, // dryRunDetailLevel
+		false,                       // dryRunShowSensitive
+		false,                       // keepTempDirs
 	)
 
 	group := &runnertypes.GroupSpec{
@@ -971,7 +989,9 @@ func TestExecuteGroup_RunnerWorkdirExpansion(t *testing.T) {
 				"test-run-123",
 				mockNotificationFunc,
 				tt.isDryRun,
-				false, // keepTempDirs
+				resource.DetailLevelSummary, // dryRunDetailLevel
+				false,                       // dryRunShowSensitive
+				false,                       // keepTempDirs
 			)
 
 			group := &runnertypes.GroupSpec{

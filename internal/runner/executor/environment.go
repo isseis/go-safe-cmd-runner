@@ -1,14 +1,32 @@
 package executor
 
 import (
-	"maps"
+	"fmt"
 	"os"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
-// BuildProcessEnvironment builds the final process environment variables for command execution.
+// EnvVar represents an environment variable with its value and origin.
+type EnvVar struct {
+	Value  string
+	Origin string
+}
+
+// mergeEnvWithOrigin merges environment variables from envMap into result with the specified origin.
+// This helper function reduces code duplication when merging environment variables from different sources.
+func mergeEnvWithOrigin(result map[string]EnvVar, envMap map[string]string, origin string) {
+	for k, v := range envMap {
+		result[k] = EnvVar{
+			Value:  v,
+			Origin: origin,
+		}
+	}
+}
+
+// BuildProcessEnvironment builds the final process environment variables for command execution
+// and tracks the origin of each variable.
 //
 // Merge order (lower priority to higher priority):
 //  1. System environment variables (filtered by env_allowlist)
@@ -17,13 +35,14 @@ import (
 //  4. Command.ExpandedEnv
 //
 // Returns:
-//   - Map of environment variables to be passed to the child process
+//   - A map where keys are environment variable names and values are EnvVar structs
+//     containing the variable value and its origin
 func BuildProcessEnvironment(
 	runtimeGlobal *runnertypes.RuntimeGlobal,
 	runtimeGroup *runnertypes.RuntimeGroup,
 	cmd *runnertypes.RuntimeCommand,
-) map[string]string {
-	result := make(map[string]string)
+) map[string]EnvVar {
+	result := make(map[string]EnvVar)
 
 	// Step 1: Get system environment variables (filtered by allowlist)
 	systemEnv := getSystemEnvironment()
@@ -31,18 +50,21 @@ func BuildProcessEnvironment(
 
 	for _, name := range allowlist {
 		if value, ok := systemEnv[name]; ok {
-			result[name] = value
+			result[name] = EnvVar{
+				Value:  value,
+				Origin: "System (filtered by allowlist)",
+			}
 		}
 	}
 
 	// Step 2: Merge Global.ExpandedEnv (overrides system env)
-	maps.Copy(result, runtimeGlobal.ExpandedEnv)
+	mergeEnvWithOrigin(result, runtimeGlobal.ExpandedEnv, "Global")
 
 	// Step 3: Merge Group.ExpandedEnv (overrides global env)
-	maps.Copy(result, runtimeGroup.ExpandedEnv)
+	mergeEnvWithOrigin(result, runtimeGroup.ExpandedEnv, fmt.Sprintf("Group[%s]", runtimeGroup.Name()))
 
 	// Step 4: Merge Command.ExpandedEnv (overrides group env)
-	maps.Copy(result, cmd.ExpandedEnv)
+	mergeEnvWithOrigin(result, cmd.ExpandedEnv, fmt.Sprintf("Command[%s]", cmd.Name()))
 
 	return result
 }

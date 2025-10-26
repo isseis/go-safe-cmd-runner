@@ -84,13 +84,13 @@ func envPriorityTestHelper(t *testing.T, systemEnv map[string]string, configTOML
 
 	// Verify expected variables
 	for k, expectedVal := range expectVars {
-		actualVal, ok := finalEnv[k]
+		envVar, ok := finalEnv[k]
 		if !ok {
 			t.Errorf("Variable %s not found in final environment", k)
 			continue
 		}
-		if actualVal != expectedVal {
-			t.Errorf("Variable %s: expected %q, got %q", k, expectedVal, actualVal)
+		if envVar.Value != expectedVal {
+			t.Errorf("Variable %s: expected %q, got %q", k, expectedVal, envVar.Value)
 		}
 	}
 }

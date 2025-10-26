@@ -28,6 +28,7 @@ func setupTestFlags() func() {
 	dryRun = flag.Bool("dry-run", false, "print commands without executing them")
 	dryRunFormat = flag.String("dry-run-format", "text", "dry-run output format (text, json)")
 	dryRunDetail = flag.String("dry-run-detail", "detailed", "dry-run detail level (summary, detailed, full)")
+	showSensitive = flag.Bool("show-sensitive", false, "show sensitive information in dry-run output (use with caution)")
 	validateConfig = flag.Bool("validate", false, "validate configuration file and exit")
 	runID = flag.String("run-id", "", "unique identifier for this execution run (auto-generates ULID if not provided)")
 	forceInteractive = flag.Bool("interactive", false, "force interactive mode with colored output (overrides environment detection)")
