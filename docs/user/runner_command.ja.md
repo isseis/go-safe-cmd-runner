@@ -530,7 +530,7 @@ Environment variables (5):
 - `*PASSWORD*`
 - `*SECRET*`
 - `*TOKEN*`
-- `*KEY*`（`*_KEY` を含む）
+- `*KEY*`
 - `*CREDENTIAL*`
 - `*AUTH*`
 
