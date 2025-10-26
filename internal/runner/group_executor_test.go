@@ -1513,3 +1513,370 @@ func TestExecuteGroup_DryRunVariableExpansion(t *testing.T) {
 	mockValidator.AssertExpectations(t)
 	mockVM.AssertExpectations(t)
 }
+
+// TestExecuteCommandInGroup_VerificationManagerNil tests path resolution skip when verificationManager is nil (T3.1)
+func TestExecuteCommandInGroup_VerificationManagerNil(t *testing.T) {
+	// Arrange
+	mockValidator, _ := setupMocksForTest(t)
+	mockRM := new(runnertesting.MockResourceManager)
+
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
+			Timeout: common.IntPtr(30),
+		},
+	}
+
+	// verificationManager = nil (no path resolution)
+	ge := NewDefaultGroupExecutor(
+		nil,
+		config,
+		mockValidator,
+		nil, // verificationManager = nil
+		mockRM,
+		"test-run-123",
+		nil,
+		false,
+		resource.DetailLevelSummary,
+		false,
+		false,
+	)
+
+	cmd := &runnertypes.RuntimeCommand{
+		Spec: &runnertypes.CommandSpec{
+			Name: "test-cmd",
+		},
+		ExpandedCmd:  "/bin/echo",
+		ExpandedArgs: []string{"hello"},
+		ExpandedVars: map[string]string{},
+	}
+
+	groupSpec := &runnertypes.GroupSpec{
+		Name: "test-group",
+	}
+
+	runtimeGroup, err := runnertypes.NewRuntimeGroup(groupSpec)
+	require.NoError(t, err)
+
+	runtimeGlobal := &runnertypes.RuntimeGlobal{
+		Spec:         &runnertypes.GlobalSpec{Timeout: common.IntPtr(30)},
+		ExpandedVars: map[string]string{},
+	}
+
+	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "hello"}, nil)
+
+	// Act
+	ctx := context.Background()
+	result, err := ge.executeCommandInGroup(ctx, cmd, groupSpec, runtimeGroup, runtimeGlobal)
+
+	// Assert
+	require.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, 0, result.ExitCode)
+
+	// Verify that command executed without path resolution
+	mockRM.AssertCalled(t, "ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	mockRM.AssertExpectations(t)
+	mockValidator.AssertExpectations(t)
+}
+
+// TestExecuteGroup_KeepTempDirs tests that cleanup is skipped when keepTempDirs is true (T3.2)
+func TestExecuteGroup_KeepTempDirs(t *testing.T) {
+	// Arrange
+	mockValidator, mockVM := setupMocksForTest(t)
+	mockRM := new(runnertesting.MockResourceManager)
+
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
+			Timeout: common.IntPtr(30),
+		},
+	}
+
+	// Setup: path resolution succeeds
+	mockVM.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil)
+
+	// keepTempDirs = true
+	ge := NewDefaultGroupExecutor(
+		nil,
+		config,
+		mockValidator,
+		mockVM,
+		mockRM,
+		"test-run-123",
+		nil,
+		false,
+		resource.DetailLevelSummary,
+		false,
+		true, // keepTempDirs = true
+	)
+
+	group := &runnertypes.GroupSpec{
+		Name: "test-group",
+		Commands: []runnertypes.CommandSpec{
+			{Name: "test-cmd", Cmd: "/bin/echo", Args: []string{"hello"}},
+		},
+	}
+
+	runtimeGlobal := &runnertypes.RuntimeGlobal{
+		Spec:         &runnertypes.GlobalSpec{Timeout: common.IntPtr(30)},
+		ExpandedVars: map[string]string{},
+	}
+
+	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "hello"}, nil)
+
+	// Act
+	ctx := context.Background()
+	err := ge.ExecuteGroup(ctx, group, runtimeGlobal)
+
+	// Assert
+	require.NoError(t, err)
+
+	// Note: We cannot directly verify that Cleanup was not called because
+	// the tempDirMgr is created internally. However, we verify that the
+	// execution completes successfully with keepTempDirs=true
+	mockRM.AssertExpectations(t)
+	mockValidator.AssertExpectations(t)
+	mockVM.AssertExpectations(t)
+}
+
+// TestExecuteGroup_NoNotificationFunc tests that notification is skipped when notificationFunc is nil (T3.3)
+func TestExecuteGroup_NoNotificationFunc(t *testing.T) {
+	// Arrange
+	mockValidator, mockVM := setupMocksForTest(t)
+	mockRM := new(runnertesting.MockResourceManager)
+
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
+			Timeout: common.IntPtr(30),
+		},
+	}
+
+	// Setup: path resolution succeeds
+	mockVM.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil)
+
+	// notificationFunc = nil
+	ge := NewDefaultGroupExecutor(
+		nil,
+		config,
+		mockValidator,
+		mockVM,
+		mockRM,
+		"test-run-123",
+		nil, // notificationFunc = nil
+		false,
+		resource.DetailLevelSummary,
+		false,
+		false,
+	)
+
+	group := &runnertypes.GroupSpec{
+		Name: "test-group",
+		Commands: []runnertypes.CommandSpec{
+			{Name: "test-cmd", Cmd: "/bin/echo", Args: []string{"hello"}},
+		},
+	}
+
+	runtimeGlobal := &runnertypes.RuntimeGlobal{
+		Spec:         &runnertypes.GlobalSpec{Timeout: common.IntPtr(30)},
+		ExpandedVars: map[string]string{},
+	}
+
+	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "hello"}, nil)
+
+	// Act
+	ctx := context.Background()
+	err := ge.ExecuteGroup(ctx, group, runtimeGlobal)
+
+	// Assert
+	require.NoError(t, err)
+
+	// Verify that execution completed successfully without notification
+	// (notificationFunc is nil, so no notification is sent)
+	mockRM.AssertExpectations(t)
+	mockValidator.AssertExpectations(t)
+	mockVM.AssertExpectations(t)
+}
+
+// TestExecuteGroup_EmptyDescription tests log output when Description is empty (T3.4)
+func TestExecuteGroup_EmptyDescription(t *testing.T) {
+	// Arrange
+	mockValidator, mockVM := setupMocksForTest(t)
+	mockRM := new(runnertesting.MockResourceManager)
+
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
+			Timeout: common.IntPtr(30),
+		},
+	}
+
+	// Setup: path resolution succeeds
+	mockVM.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil)
+
+	ge := NewDefaultGroupExecutor(
+		nil,
+		config,
+		mockValidator,
+		mockVM,
+		mockRM,
+		"test-run-123",
+		nil,
+		false,
+		resource.DetailLevelSummary,
+		false,
+		false,
+	)
+
+	// Group with empty description
+	group := &runnertypes.GroupSpec{
+		Name:        "test-group",
+		Description: "", // Empty description
+		Commands: []runnertypes.CommandSpec{
+			{Name: "test-cmd", Cmd: "/bin/echo", Args: []string{"hello"}},
+		},
+	}
+
+	runtimeGlobal := &runnertypes.RuntimeGlobal{
+		Spec:         &runnertypes.GlobalSpec{Timeout: common.IntPtr(30)},
+		ExpandedVars: map[string]string{},
+	}
+
+	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "hello"}, nil)
+
+	// Act
+	ctx := context.Background()
+	err := ge.ExecuteGroup(ctx, group, runtimeGlobal)
+
+	// Assert
+	require.NoError(t, err)
+
+	// With empty description, only group name is logged (not description)
+	// We verify the execution completes successfully
+	mockRM.AssertExpectations(t)
+	mockValidator.AssertExpectations(t)
+	mockVM.AssertExpectations(t)
+}
+
+// TestExecuteGroup_VariableExpansionError tests variable expansion error in WorkDir (T3.5)
+func TestExecuteGroup_VariableExpansionError(t *testing.T) {
+	// Arrange
+	mockValidator, _ := setupMocksForTest(t)
+	mockRM := new(runnertesting.MockResourceManager)
+
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
+			Timeout: common.IntPtr(30),
+		},
+	}
+
+	ge := NewDefaultGroupExecutor(
+		nil,
+		config,
+		mockValidator,
+		nil, // No verification manager for this test
+		mockRM,
+		"test-run-123",
+		nil,
+		false,
+		resource.DetailLevelSummary,
+		false,
+		false,
+	)
+
+	// Group with WorkDir containing undefined variable
+	group := &runnertypes.GroupSpec{
+		Name:    "test-group",
+		WorkDir: "/tmp/%{UNDEFINED_VAR}/path", // Undefined variable
+		Commands: []runnertypes.CommandSpec{
+			{Name: "test-cmd", Cmd: "/bin/echo", Args: []string{"hello"}},
+		},
+	}
+
+	runtimeGlobal := &runnertypes.RuntimeGlobal{
+		Spec:         &runnertypes.GlobalSpec{Timeout: common.IntPtr(30)},
+		ExpandedVars: map[string]string{}, // No UNDEFINED_VAR defined
+	}
+
+	// Act
+	ctx := context.Background()
+	err := ge.ExecuteGroup(ctx, group, runtimeGlobal)
+
+	// Assert
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "undefined variable")
+	assert.Contains(t, err.Error(), "UNDEFINED_VAR")
+
+	// Verify that ExecuteCommand was not called due to early error
+	mockRM.AssertNotCalled(t, "ExecuteCommand")
+	mockValidator.AssertExpectations(t)
+}
+
+// TestExecuteGroup_FileVerificationResultLog tests file verification result logging (T3.6)
+func TestExecuteGroup_FileVerificationResultLog(t *testing.T) {
+	// Arrange
+	mockValidator, mockVM := setupMocksForTest(t)
+	mockRM := new(runnertesting.MockResourceManager)
+
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
+			Timeout: common.IntPtr(30),
+		},
+	}
+
+	// Setup: path resolution succeeds
+	mockVM.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil)
+
+	// Setup: VerifyGroupFiles returns a result with files verified
+	verifyResult := &verification.Result{
+		TotalFiles:    2,
+		VerifiedFiles: 2,
+		SkippedFiles:  []string{},
+		Duration:      100 * time.Millisecond,
+	}
+	mockVM.On("VerifyGroupFiles", mock.Anything).Return(verifyResult, nil)
+
+	ge := NewDefaultGroupExecutor(
+		nil,
+		config,
+		mockValidator,
+		mockVM,
+		mockRM,
+		"test-run-123",
+		nil,
+		false,
+		resource.DetailLevelSummary,
+		false,
+		false,
+	)
+
+	group := &runnertypes.GroupSpec{
+		Name: "test-group",
+		Commands: []runnertypes.CommandSpec{
+			{Name: "test-cmd", Cmd: "/bin/echo", Args: []string{"hello"}},
+		},
+	}
+
+	runtimeGlobal := &runnertypes.RuntimeGlobal{
+		Spec:         &runnertypes.GlobalSpec{Timeout: common.IntPtr(30)},
+		ExpandedVars: map[string]string{},
+	}
+
+	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&resource.ExecutionResult{ExitCode: 0, Stdout: "hello"}, nil)
+
+	// Act
+	ctx := context.Background()
+	err := ge.ExecuteGroup(ctx, group, runtimeGlobal)
+
+	// Assert
+	require.NoError(t, err)
+
+	// Verify that file verification was performed and logged
+	// Note: We can't directly capture log output, but we verify the call was made
+	mockVM.AssertCalled(t, "VerifyGroupFiles", mock.Anything)
+	mockRM.AssertExpectations(t)
+	mockValidator.AssertExpectations(t)
+	mockVM.AssertExpectations(t)
+}
