@@ -18,6 +18,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
+	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -37,6 +38,14 @@ func (m *MockSecurityValidator) ValidateOutputWritePermission(outputPath string,
 	return args.Error(0)
 }
 
+// setupDryRunVerification creates a verification manager for dry-run testing
+func setupDryRunVerification(t *testing.T) *verification.Manager {
+	t.Helper()
+	vm, err := verification.NewManagerForDryRun()
+	require.NoError(t, err)
+	return vm
+}
+
 func TestNewRunner(t *testing.T) {
 	config := &runnertypes.ConfigSpec{
 		Version: "1.0",
@@ -47,7 +56,9 @@ func TestNewRunner(t *testing.T) {
 	}
 
 	t.Run("default configuration", func(t *testing.T) {
-		runner, err := NewRunner(config, WithRunID("test-run-123"))
+		runner, err := NewRunner(config,
+			WithVerificationManager(setupDryRunVerification(t)),
+			WithRunID("test-run-123"))
 		require.NoError(t, err, "NewRunner should not return an error with valid config")
 		assert.NotNil(t, runner)
 		assert.Equal(t, config, runner.config)
@@ -70,7 +81,7 @@ func TestNewRunner(t *testing.T) {
 		securityConfig.AllowedCommands = []string{"^echo$", "^cat$"}
 		securityConfig.SensitiveEnvVars = []string{".*PASSWORD.*", ".*TOKEN.*"}
 
-		runner, err := NewRunner(config, WithSecurity(securityConfig), WithRunID("test-run-123"))
+		runner, err := NewRunner(config, WithSecurity(securityConfig), WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-run-123"))
 		assert.NoError(t, err)
 		assert.NotNil(t, runner)
 		assert.Equal(t, config, runner.config)
@@ -85,6 +96,7 @@ func TestNewRunner(t *testing.T) {
 
 		runner, err := NewRunner(config,
 			WithSecurity(securityConfig),
+			WithVerificationManager(setupDryRunVerification(t)),
 			WithRunID("test-run-123"))
 		assert.NoError(t, err)
 		assert.NotNil(t, runner)
@@ -96,7 +108,7 @@ func TestNewRunner(t *testing.T) {
 		invalidSecurityConfig.AllowedCommands = []string{"[invalid regex"} // Invalid regex
 		invalidSecurityConfig.SensitiveEnvVars = []string{".*PASSWORD.*"}
 
-		runner, err := NewRunner(config, WithSecurity(invalidSecurityConfig), WithRunID("test-run-123"))
+		runner, err := NewRunner(config, WithSecurity(invalidSecurityConfig), WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-run-123"))
 		assert.Error(t, err)
 		assert.Nil(t, runner)
 		assert.ErrorIs(t, err, security.ErrInvalidRegexPattern)
@@ -118,7 +130,7 @@ func TestNewRunnerWithSecurity(t *testing.T) {
 		securityConfig.AllowedCommands = []string{"^echo$", "^cat$"}
 		securityConfig.SensitiveEnvVars = []string{".*PASSWORD.*", ".*TOKEN.*"}
 
-		runner, err := NewRunner(config, WithSecurity(securityConfig), WithRunID("test-run-123"))
+		runner, err := NewRunner(config, WithSecurity(securityConfig), WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-run-123"))
 		assert.NoError(t, err)
 		assert.NotNil(t, runner)
 		assert.Equal(t, config, runner.config)
@@ -133,14 +145,14 @@ func TestNewRunnerWithSecurity(t *testing.T) {
 		invalidSecurityConfig.AllowedCommands = []string{"[invalid regex"} // Invalid regex
 		invalidSecurityConfig.SensitiveEnvVars = []string{".*PASSWORD.*"}
 
-		runner, err := NewRunner(config, WithSecurity(invalidSecurityConfig), WithRunID("test-run-123"))
+		runner, err := NewRunner(config, WithSecurity(invalidSecurityConfig), WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-run-123"))
 		assert.Error(t, err)
 		assert.Nil(t, runner)
 		assert.ErrorIs(t, err, security.ErrInvalidRegexPattern)
 	})
 
 	t.Run("with nil security config", func(t *testing.T) {
-		runner, err := NewRunner(config, WithSecurity(nil), WithRunID("test-run-123"))
+		runner, err := NewRunner(config, WithSecurity(nil), WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-run-123"))
 		assert.NoError(t, err)
 		assert.NotNil(t, runner)
 	})
@@ -226,7 +238,10 @@ func TestRunner_ExecuteGroup(t *testing.T) {
 			}
 
 			mockResourceManager := new(MockResourceManager)
-			runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
+			runner, err := NewRunner(config,
+				WithResourceManager(mockResourceManager),
+				WithVerificationManager(setupDryRunVerification(t)),
+				WithRunID("test-run-123"))
 			require.NoError(t, err, "NewRunner should not return an error with valid config")
 
 			// Setup mock expectations
@@ -276,7 +291,7 @@ func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
 		}
 
 		mockResourceManager := new(MockResourceManager)
-		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
+		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-run-123"))
 		require.NoError(t, err)
 
 		// First command fails with non-zero exit code
@@ -312,7 +327,7 @@ func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
 		}
 
 		mockResourceManager := new(MockResourceManager)
-		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
+		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-run-123"))
 		require.NoError(t, err)
 
 		// First command succeeds
@@ -337,7 +352,7 @@ func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
 			Name: "test-executor-error",
 			Commands: []runnertypes.CommandSpec{
 				{Name: "cmd-1", Cmd: "echo", Args: []string{"first"}},
-				{Name: "cmd-2", Cmd: "invalid-command"}, // This causes executor error
+				{Name: "cmd-2", Cmd: "cat"}, // Use a real command that the executor will return an error for
 				{Name: "cmd-3", Cmd: "echo", Args: []string{"third"}},
 			},
 		}
@@ -352,7 +367,7 @@ func TestRunner_ExecuteGroup_ComplexErrorScenarios(t *testing.T) {
 		}
 
 		mockResourceManager := new(MockResourceManager)
-		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
+		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-run-123"))
 		require.NoError(t, err)
 
 		// First command succeeds
@@ -401,7 +416,7 @@ func TestRunner_ExecuteAll(t *testing.T) {
 	}
 
 	mockResourceManager := new(MockResourceManager)
-	runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
+	runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-run-123"))
 	require.NoError(t, err)
 
 	// Setup mock expectations - should be called in priority order
@@ -451,7 +466,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		}
 
 		mockResourceManager := new(MockResourceManager)
-		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
+		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-run-123"))
 		require.NoError(t, err)
 
 		// First group's command should be called and fail
@@ -507,7 +522,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		}
 
 		mockResourceManager := new(MockResourceManager)
-		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
+		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-run-123"))
 		require.NoError(t, err)
 
 		// First group should succeed
@@ -558,7 +573,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		}
 
 		mockResourceManager := new(MockResourceManager)
-		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
+		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-run-123"))
 		require.NoError(t, err)
 
 		// First command in group-1 should succeed
@@ -594,7 +609,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 					Name:     "group-1",
 					Priority: 1,
 					Commands: []runnertypes.CommandSpec{
-						{Name: "executor-error-cmd", Cmd: "nonexistent-command"},
+						{Name: "executor-error-cmd", Cmd: "cat"}, // Use a real command that can return an error
 					},
 				},
 				{
@@ -608,7 +623,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		}
 
 		mockResourceManager := new(MockResourceManager)
-		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
+		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-run-123"))
 		require.NoError(t, err)
 
 		// First command should return executor error
@@ -653,7 +668,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 		}
 
 		mockResourceManager := new(MockResourceManager)
-		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
+		runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-run-123"))
 		require.NoError(t, err)
 
 		// Create a context that gets cancelled
@@ -677,7 +692,7 @@ func TestRunner_ExecuteAll_ComplexErrorScenarios(t *testing.T) {
 			Groups: []runnertypes.GroupSpec{}, // Empty groups
 		}
 
-		runner, err := NewRunner(config, WithRunID("test-run-123"))
+		runner, err := NewRunner(config, WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-run-123"))
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -712,7 +727,7 @@ func TestRunner_CommandTimeoutBehavior(t *testing.T) {
 	}
 
 	t.Run("global timeout is enforced", func(t *testing.T) {
-		runner, err := NewRunner(config, WithRunID("test-run-123"))
+		runner, err := NewRunner(config, WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-run-123"))
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -755,7 +770,7 @@ func TestRunner_CommandTimeoutBehavior(t *testing.T) {
 			},
 		}
 
-		runner, err := NewRunner(configWithCmdTimeout, WithRunID("test-run-123"))
+		runner, err := NewRunner(configWithCmdTimeout, WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-run-123"))
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -778,7 +793,7 @@ func TestRunner_CommandTimeoutBehavior(t *testing.T) {
 	})
 
 	t.Run("timeout with context cancellation prioritization", func(t *testing.T) {
-		runner, err := NewRunner(config, WithRunID("test-run-123"))
+		runner, err := NewRunner(config, WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-run-123"))
 		require.NoError(t, err)
 
 		// Create a context that will be cancelled after 500ms
@@ -861,7 +876,7 @@ func TestCommandGroup_NewFields(t *testing.T) {
 			mockResourceManager.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 				&resource.ExecutionResult{ExitCode: 0, Stdout: "test output", Stderr: ""}, nil)
 
-			runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
+			runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-run-123"))
 			require.NoError(t, err) // Load basic environment
 			err = runner.LoadSystemEnvironment()
 			require.NoError(t, err)
@@ -985,7 +1000,7 @@ func TestRunner_EnvironmentVariablePriority_GroupLevelSupport(t *testing.T) {
 				})).
 				Return(&resource.ExecutionResult{ExitCode: 0, Stdout: tt.expectedVar + "\n", Stderr: ""}, nil)
 
-			runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-run-123"))
+			runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-run-123"))
 			require.NoError(t, err)
 
 			err = runner.LoadSystemEnvironment()
@@ -1071,6 +1086,7 @@ func TestSlackNotification(t *testing.T) {
 			// Create runner options
 			var options []Option
 			options = append(options, WithResourceManager(mockResourceManager))
+			options = append(options, WithVerificationManager(setupDryRunVerification(t)))
 			options = append(options, WithRunID("test-run-123"))
 
 			// Create runner
@@ -1173,7 +1189,7 @@ func TestRunner_OutputCaptureEndToEnd(t *testing.T) {
 			}
 
 			// Create runner
-			runner, err := NewRunner(config, WithRunID("test-end-to-end"))
+			runner, err := NewRunner(config, WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-end-to-end"))
 			require.NoError(t, err, "NewRunner should not return an error")
 
 			// Load basic environment
@@ -1277,7 +1293,7 @@ func TestRunner_OutputCaptureErrorScenarios(t *testing.T) {
 			}
 
 			// Create runner
-			runner, err := NewRunner(config, WithRunID("test-error-scenarios"))
+			runner, err := NewRunner(config, WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-error-scenarios"))
 			require.NoError(t, err, "NewRunner should not return an error")
 
 			// Load basic environment
@@ -1354,7 +1370,7 @@ func TestRunner_OutputCaptureDryRun(t *testing.T) {
 	})
 
 	// Create runner with mock resource manager
-	runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithRunID("test-dry-run"))
+	runner, err := NewRunner(config, WithResourceManager(mockResourceManager), WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-dry-run"))
 	require.NoError(t, err, "NewRunner should not return an error")
 
 	// Load basic environment
@@ -1447,7 +1463,7 @@ args = ["No output capture"]
 		assert.Equal(t, "", config.Groups[0].Commands[2].OutputFile) // No output field
 
 		// Create runner to verify basic initialization works
-		runner, err := NewRunner(config, WithRunID("test-toml-config"))
+		runner, err := NewRunner(config, WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-toml-config"))
 		require.NoError(t, err, "NewRunner should not return an error")
 
 		// Load basic environment to verify runner setup
@@ -1570,6 +1586,7 @@ func TestRunner_OutputCaptureErrorTypes(t *testing.T) {
 			// Create runner with proper options
 			options := []Option{
 				WithResourceManager(mockRM),
+				WithVerificationManager(setupDryRunVerification(t)),
 				WithRunID("test-run-id"),
 			}
 
@@ -1675,6 +1692,7 @@ func TestRunner_OutputCaptureExecutionStages(t *testing.T) {
 			// Create runner with proper options
 			options := []Option{
 				WithResourceManager(mockRM),
+				WithVerificationManager(setupDryRunVerification(t)),
 				WithRunID("test-run-id"),
 			}
 
@@ -1874,11 +1892,13 @@ func TestRunner_OutputCaptureSecurityIntegration(t *testing.T) {
 					Return(result, nil)
 				options = []Option{
 					WithResourceManager(mockRM),
+					WithVerificationManager(setupDryRunVerification(t)),
 					WithRunID("test-run-output-capture"),
 				}
 			} else {
 				// For error cases, use default resource manager to allow real validation
 				options = []Option{
+					WithVerificationManager(setupDryRunVerification(t)),
 					WithRunID("test-run-output-capture"),
 				}
 			}

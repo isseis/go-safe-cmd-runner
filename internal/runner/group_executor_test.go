@@ -12,7 +12,10 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	securitytesting "github.com/isseis/go-safe-cmd-runner/internal/runner/security/testing"
 	runnertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/testing"
+	"github.com/isseis/go-safe-cmd-runner/internal/verification"
+	verificationtesting "github.com/isseis/go-safe-cmd-runner/internal/verification/testing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -395,6 +398,8 @@ func TestExecuteGroup_CreateTempDirFailure(t *testing.T) {
 // TestExecuteGroup_CommandExecutionFailure tests error handling when command execution fails
 func TestExecuteGroup_CommandExecutionFailure(t *testing.T) {
 	mockRM := new(runnertesting.MockResourceManager)
+	mockValidator := new(securitytesting.MockValidator)
+	mockVerificationManager := new(verificationtesting.MockManager)
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
@@ -408,10 +413,10 @@ func TestExecuteGroup_CommandExecutionFailure(t *testing.T) {
 	}
 
 	ge := NewDefaultGroupExecutor(
-		nil,
+		nil, // executor
 		config,
-		nil,
-		nil,
+		mockValidator,
+		mockVerificationManager,
 		mockRM,
 		"test-run-123",
 		notificationFunc,
@@ -435,6 +440,13 @@ func TestExecuteGroup_CommandExecutionFailure(t *testing.T) {
 		Spec: &runnertypes.GlobalSpec{Timeout: common.IntPtr(30)},
 	}
 
+	// Mock validator to allow all validations
+	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
+
+	// Mock verification manager to verify group files and resolve paths
+	mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
+	mockVerificationManager.On("ResolvePath", "/bin/false").Return("/bin/false", nil)
+
 	// Mock execution to return non-zero exit code
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		&resource.ExecutionResult{ExitCode: 1, Stdout: "", Stderr: "command failed"}, nil)
@@ -456,6 +468,8 @@ func TestExecuteGroup_CommandExecutionFailure(t *testing.T) {
 // TestExecuteGroup_CommandExecutionFailure_NonStandardExitCode tests that non-standard exit codes are preserved
 func TestExecuteGroup_CommandExecutionFailure_NonStandardExitCode(t *testing.T) {
 	mockRM := new(runnertesting.MockResourceManager)
+	mockValidator := new(securitytesting.MockValidator)
+	mockVerificationManager := new(verificationtesting.MockManager)
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
@@ -469,10 +483,10 @@ func TestExecuteGroup_CommandExecutionFailure_NonStandardExitCode(t *testing.T) 
 	}
 
 	ge := NewDefaultGroupExecutor(
-		nil,
+		nil, // executor
 		config,
-		nil,
-		nil,
+		mockValidator,
+		mockVerificationManager,
 		mockRM,
 		"test-run-123",
 		notificationFunc,
@@ -496,6 +510,13 @@ func TestExecuteGroup_CommandExecutionFailure_NonStandardExitCode(t *testing.T) 
 		Spec: &runnertypes.GlobalSpec{Timeout: common.IntPtr(30)},
 	}
 
+	// Mock validator to allow all validations
+	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil)
+
+	// Mock verification manager to verify group files and resolve paths
+	mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil)
+	mockVerificationManager.On("ResolvePath", "/bin/some-command").Return("/bin/some-command", nil)
+
 	// Mock execution to return exit code 127 (command not found)
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		&resource.ExecutionResult{ExitCode: 127, Stdout: "", Stderr: "command not found"}, nil)
@@ -517,6 +538,7 @@ func TestExecuteGroup_CommandExecutionFailure_NonStandardExitCode(t *testing.T) 
 // TestExecuteGroup_SuccessNotification tests that success notification is sent properly
 func TestExecuteGroup_SuccessNotification(t *testing.T) {
 	mockRM := new(runnertesting.MockResourceManager)
+	mockValidator, mockVerificationManager := setupMocksForTest(t)
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
@@ -532,10 +554,10 @@ func TestExecuteGroup_SuccessNotification(t *testing.T) {
 	}
 
 	ge := NewDefaultGroupExecutor(
-		nil,
+		nil, // executor
 		config,
-		nil,
-		nil,
+		mockValidator,
+		mockVerificationManager,
 		mockRM,
 		"test-run-123",
 		notificationFunc,
@@ -558,6 +580,9 @@ func TestExecuteGroup_SuccessNotification(t *testing.T) {
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
 		Spec: &runnertypes.GlobalSpec{Timeout: common.IntPtr(30)},
 	}
+
+	// Mock verification manager to resolve paths
+	mockVerificationManager.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil)
 
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		&resource.ExecutionResult{ExitCode: 0, Stdout: "success", Stderr: ""}, nil)
@@ -586,6 +611,7 @@ func TestExecuteGroup_SuccessNotification(t *testing.T) {
 // TestExecuteCommandInGroup_OutputPathValidationFailure tests error handling for output path validation
 func TestExecuteCommandInGroup_OutputPathValidationFailure(t *testing.T) {
 	mockRM := new(runnertesting.MockResourceManager)
+	mockValidator, mockVerificationManager := setupMocksForTest(t)
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
@@ -594,10 +620,10 @@ func TestExecuteCommandInGroup_OutputPathValidationFailure(t *testing.T) {
 	}
 
 	ge := NewDefaultGroupExecutor(
-		nil,
+		nil, // executor
 		config,
-		nil,
-		nil,
+		mockValidator,
+		mockVerificationManager,
 		mockRM,
 		"test-run-123",
 		nil,
@@ -625,6 +651,9 @@ func TestExecuteCommandInGroup_OutputPathValidationFailure(t *testing.T) {
 	runtimeGroup, err := runnertypes.NewRuntimeGroup(groupSpec)
 	require.NoError(t, err)
 
+	// Mock verification manager to resolve paths
+	mockVerificationManager.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil)
+
 	expectedErr := errors.New("output path is outside work directory")
 	mockRM.On("ValidateOutputPath", "/invalid/output/path", "/work").Return(expectedErr)
 
@@ -644,6 +673,7 @@ func TestExecuteCommandInGroup_OutputPathValidationFailure(t *testing.T) {
 // TestExecuteGroup_MultipleCommands tests execution of multiple commands in sequence
 func TestExecuteGroup_MultipleCommands(t *testing.T) {
 	mockRM := new(runnertesting.MockResourceManager)
+	mockValidator, mockVerificationManager := setupMocksForTest(t)
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
@@ -652,10 +682,10 @@ func TestExecuteGroup_MultipleCommands(t *testing.T) {
 	}
 
 	ge := NewDefaultGroupExecutor(
-		nil,
+		nil, // executor
 		config,
-		nil,
-		nil,
+		mockValidator,
+		mockVerificationManager,
 		mockRM,
 		"test-run-123",
 		nil,
@@ -687,6 +717,9 @@ func TestExecuteGroup_MultipleCommands(t *testing.T) {
 		Spec: &runnertypes.GlobalSpec{Timeout: common.IntPtr(30)},
 	}
 
+	// Mock verification manager to resolve paths (all commands use /bin/echo)
+	mockVerificationManager.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil)
+
 	// Mock all executions
 	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		&resource.ExecutionResult{ExitCode: 0, Stdout: "ok", Stderr: ""}, nil)
@@ -704,6 +737,7 @@ func TestExecuteGroup_MultipleCommands(t *testing.T) {
 // TestExecuteGroup_StopOnFirstFailure tests that execution stops on first command failure
 func TestExecuteGroup_StopOnFirstFailure(t *testing.T) {
 	mockRM := new(runnertesting.MockResourceManager)
+	mockValidator, mockVerificationManager := setupMocksForTest(t)
 
 	config := &runnertypes.ConfigSpec{
 		Global: runnertypes.GlobalSpec{
@@ -712,10 +746,10 @@ func TestExecuteGroup_StopOnFirstFailure(t *testing.T) {
 	}
 
 	ge := NewDefaultGroupExecutor(
-		nil,
+		nil, // executor
 		config,
-		nil,
-		nil,
+		mockValidator,
+		mockVerificationManager,
 		mockRM,
 		"test-run-123",
 		nil,
@@ -746,6 +780,11 @@ func TestExecuteGroup_StopOnFirstFailure(t *testing.T) {
 	runtimeGlobal := &runnertypes.RuntimeGlobal{
 		Spec: &runnertypes.GlobalSpec{Timeout: common.IntPtr(30)},
 	}
+
+	// Mock verification manager to resolve paths for all commands
+	mockVerificationManager.On("ResolvePath", "/bin/true").Return("/bin/true", nil)
+	mockVerificationManager.On("ResolvePath", "/bin/false").Return("/bin/false", nil)
+	mockVerificationManager.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil)
 
 	// First command succeeds
 	mockRM.On("ExecuteCommand", mock.Anything,
@@ -1161,4 +1200,23 @@ func TestExecuteCommandInGroup_ValidateEnvironmentVarsFailure(t *testing.T) {
 // Skipped: Requires mock verification manager implementation
 func TestExecuteCommandInGroup_ResolvePathFailure(t *testing.T) {
 	t.Skip("T1.3: Requires mock verification manager - deferred until mock infrastructure is ready")
+}
+
+// setupMocksForTest creates commonly needed mocks for testing
+func setupMocksForTest(t *testing.T) (*securitytesting.MockValidator, *verificationtesting.MockManager) {
+	t.Helper()
+	mockValidator := new(securitytesting.MockValidator)
+	mockVerificationManager := new(verificationtesting.MockManager)
+
+	// Setup default behaviors for validator
+	mockValidator.On("ValidateAllEnvironmentVars", mock.Anything).Return(nil).Maybe()
+
+	// Setup default behaviors for verification manager - return the input path as-is
+	// Note: Cannot use dynamic return in Maybe() mocks, so we don't set up a default mock here.
+	// Tests that need ResolvePath should set it up explicitly.
+
+	// Setup default behavior for file verification - return empty Result
+	mockVerificationManager.On("VerifyGroupFiles", mock.Anything).Return(&verification.Result{}, nil).Maybe()
+
+	return mockValidator, mockVerificationManager
 }

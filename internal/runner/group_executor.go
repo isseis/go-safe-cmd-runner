@@ -29,8 +29,8 @@ type GroupExecutor interface {
 type DefaultGroupExecutor struct {
 	executor            executor.CommandExecutor
 	config              *runnertypes.ConfigSpec
-	validator           *security.Validator
-	verificationManager *verification.Manager
+	validator           security.ValidatorInterface
+	verificationManager verification.ManagerInterface
 	resourceManager     resource.ResourceManager
 	runID               string
 	notificationFunc    groupNotificationFunc
@@ -47,8 +47,8 @@ type groupNotificationFunc func(group *runnertypes.GroupSpec, result *groupExecu
 func NewDefaultGroupExecutor(
 	executor executor.CommandExecutor,
 	config *runnertypes.ConfigSpec,
-	validator *security.Validator,
-	verificationManager *verification.Manager,
+	validator security.ValidatorInterface,
+	verificationManager verification.ManagerInterface,
 	resourceManager resource.ResourceManager,
 	runID string,
 	notificationFunc groupNotificationFunc,

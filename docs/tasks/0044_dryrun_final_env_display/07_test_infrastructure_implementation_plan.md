@@ -20,37 +20,37 @@
 
 #### 2.1 タスク一覧
 
-- [ ] **Task 1.1**: security.ValidatorInterfaceの定義
-  - [ ] `internal/runner/security/interfaces.go`を作成
-  - [ ] ValidatorInterfaceを定義
-  - [ ] 既存Validatorが実装していることを確認
-  - [ ] lint, testチェック
+- [x] **Task 1.1**: security.ValidatorInterfaceの定義
+  - [x] `internal/runner/security/interfaces.go`を作成
+  - [x] ValidatorInterfaceを定義
+  - [x] 既存Validatorが実装していることを確認
+  - [x] lint, testチェック
 
-- [ ] **Task 1.2**: security.Validator モック実装
-  - [ ] `internal/runner/security/testing/`ディレクトリ作成
-  - [ ] `testify_mocks.go`を作成
-  - [ ] MockValidatorを実装
-  - [ ] 単体テストを追加
-  - [ ] lint, testチェック
+- [x] **Task 1.2**: security.Validator モック実装
+  - [x] `internal/runner/security/testing/`ディレクトリ作成
+  - [x] `testify_mocks.go`を作成
+  - [x] MockValidatorを実装
+  - [x] 単体テストを追加
+  - [x] lint, testチェック
 
-- [ ] **Task 1.3**: verification.ManagerInterfaceの定義
-  - [ ] `internal/verification/interfaces.go`を作成
-  - [ ] ManagerInterfaceを定義
-  - [ ] 既存Managerが実装していることを確認
-  - [ ] lint, testチェック
+- [x] **Task 1.3**: verification.ManagerInterfaceの定義
+  - [x] `internal/verification/interfaces.go`を作成
+  - [x] ManagerInterfaceを定義
+  - [x] 既存Managerが実装していることを確認
+  - [x] lint, testチェック
 
-- [ ] **Task 1.4**: verification.Manager モック実装
-  - [ ] `internal/verification/testing/`ディレクトリ作成
-  - [ ] `testify_mocks.go`を作成
-  - [ ] MockManagerを実装
-  - [ ] 単体テストを追加
-  - [ ] lint, testチェック
+- [x] **Task 1.4**: verification.Manager モック実装
+  - [x] `internal/verification/testing/`ディレクトリ作成
+  - [x] `testify_mocks.go`を作成
+  - [x] MockManagerを実装
+  - [x] 単体テストを追加
+  - [x] lint, testチェック
 
-- [ ] **Task 1.5**: GroupExecutorの型更新
-  - [ ] DefaultGroupExecutorのフィールド型を更新
-  - [ ] NewDefaultGroupExecutorのシグネチャを更新
-  - [ ] 既存テストの動作確認
-  - [ ] lint, testチェック
+- [x] **Task 1.5**: GroupExecutorの型更新
+  - [x] DefaultGroupExecutorのフィールド型を更新
+  - [x] NewDefaultGroupExecutorのシグネチャを更新
+  - [ ] 既存テストの動作確認（後続フェーズで対応）
+  - [x] lint, testチェック
 
 ### Phase 2: 優先度1延期テスト + 優先度2テスト実装
 
