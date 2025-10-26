@@ -169,10 +169,67 @@
 - [x] BuildProcessEnvironment: 100変数で0.011ms（要件0.5ms以内を達成）
 - [x] PrintFinalEnvironment: 100変数で0.016ms（要件1ms以内を達成）
 - [x] dry-run全体: 既存の110%以内
-- [x] dry-runモードの`--dry-run-detail=full`指定時、`--show-sensitive`フラグの有無に関わらず、センシティブ情報がマスクされずに表示されることを確認する
-  - `TestPrintFinalEnvironment_SensitiveData` で `PrintFinalEnvironment` 関数自体が環境変数をマスクせずに表示することを検証済み
-  - 呼び出し制御（`--dry-run-detail=full` の時のみ実行）は上記の条件分岐で実装済み
+- [~] ~~dry-runモードの`--dry-run-detail=full`指定時、`--show-sensitive`フラグの有無に関わらず、センシティブ情報がマスクされずに表示されることを確認する~~ → **仕様変更により Phase 4.7 で再実装**
+  - ~~`TestPrintFinalEnvironment_SensitiveData` で `PrintFinalEnvironment` 関数自体が環境変数をマスクせずに表示することを検証済み~~
+  - ~~呼び出し制御（`--dry-run-detail=full` の時のみ実行）は上記の条件分岐で実装済み~~
 - [x] 全てのlintチェックがパス
+
+### Phase 4.7: `--show-sensitive` フラグ実装とマスク処理の追加 (2-3 hours)
+
+**目的**: セキュリティ強化のため、デフォルトでセンシティブ情報をマスクし、必要時のみ表示可能にする
+
+**背景**:
+- 当初の仕様では「dry-runモードは監査目的のため、センシティブ情報をマスクせずに表示」としていた
+- しかし、ログファイルやSlack通知への機密情報漏洩リスクを考慮し、仕様を変更
+- Secure by Default 原則に基づき、デフォルトでマスク、デバッグ時のみ明示的に表示
+
+**作業項目**:
+
+#### 4.7.1 コマンドラインフラグの追加
+- [x] `cmd/runner/main.go` にフラグ定義追加
+  ```go
+  showSensitive = flag.Bool("show-sensitive", false, "show sensitive information in dry-run output (use with caution)")
+  ```
+- [x] `DryRunOptions` に `showSensitive` を設定
+- [x] `FormatterOptions` に `showSensitive` を設定（既存コードを修正）
+
+#### 4.7.2 PrintFinalEnvironment のマスク処理実装
+- [x] `internal/runner/debug/environment.go` の修正
+  - [x] `PrintFinalEnvironment` のシグネチャに `showSensitive bool` パラメータ追加
+  - [x] センシティブな環境変数名の判定ロジック追加
+  - [x] マスク処理の実装（`[REDACTED]` 表示）
+- [x] 呼び出し箇所の更新
+  - [x] `internal/runner/group_executor.go` で `showSensitive` を渡す
+
+#### 4.7.3 テストケースの追加
+- [x] `internal/runner/debug/environment_test.go` の修正
+  - [x] `TestPrintFinalEnvironment_MaskingSensitiveData_Default`: デフォルト（mask=true）の動作確認
+  - [x] `TestPrintFinalEnvironment_ShowSensitiveData_Explicit`: `showSensitive=true` で表示されることを確認
+  - [x] 既存の `TestPrintFinalEnvironment_SensitiveData` を更新または削除
+
+#### 4.7.4 ドキュメント更新
+- [x] 実装計画書の仕様変更箇所を明記
+- [x] セキュリティに関する注意事項の追記
+
+**成果物**:
+- `--show-sensitive` フラグが実装されたrunner
+- センシティブ情報をマスクする `PrintFinalEnvironment`
+- マスク処理を検証するテストケース
+- 更新された実装計画書
+
+**検証基準**:
+- [x] `--show-sensitive` フラグが `runner -h` で表示される
+- [x] デフォルト（`--show-sensitive=false`）でセンシティブ環境変数が `[REDACTED]` と表示される
+- [x] `--show-sensitive=true` 指定時にセンシティブ環境変数が平文で表示される
+- [x] 既存のdry-run出力（ResourceAnalysis）のマスク処理と一貫性がある
+- [x] 全てのテストがパス
+- [x] lintチェックがパス
+
+**セキュリティ考慮事項**:
+- デフォルトで安全（Secure by Default）
+- 本番環境では `--show-sensitive` を使用しない
+- ログファイルやCI/CD環境での機密情報漏洩を防止
+- デバッグ時のみ明示的に `--show-sensitive` を指定
 
 ### Phase 5: ドキュメント更新 (2-3 hours)
 

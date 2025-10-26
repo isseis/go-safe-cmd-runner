@@ -36,6 +36,7 @@ type DefaultGroupExecutor struct {
 	notificationFunc    groupNotificationFunc
 	isDryRun            bool
 	dryRunDetailLevel   resource.DetailLevel
+	dryRunShowSensitive bool
 	keepTempDirs        bool
 }
 
@@ -53,6 +54,7 @@ func NewDefaultGroupExecutor(
 	notificationFunc groupNotificationFunc,
 	isDryRun bool,
 	dryRunDetailLevel resource.DetailLevel,
+	dryRunShowSensitive bool,
 	keepTempDirs bool,
 ) *DefaultGroupExecutor {
 	return &DefaultGroupExecutor{
@@ -65,6 +67,7 @@ func NewDefaultGroupExecutor(
 		notificationFunc:    notificationFunc,
 		isDryRun:            isDryRun,
 		dryRunDetailLevel:   dryRunDetailLevel,
+		dryRunShowSensitive: dryRunShowSensitive,
 		keepTempDirs:        keepTempDirs,
 	}
 }
@@ -237,7 +240,7 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 
 	// Print final environment in dry-run mode with full detail level
 	if ge.isDryRun && ge.dryRunDetailLevel == resource.DetailLevelFull {
-		debug.PrintFinalEnvironment(os.Stdout, envVars, origins)
+		debug.PrintFinalEnvironment(os.Stdout, envVars, origins, ge.dryRunShowSensitive)
 	}
 
 	// Resolve and validate command path if verification manager is available

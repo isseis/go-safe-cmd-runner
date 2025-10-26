@@ -4,15 +4,22 @@ import (
 	"fmt"
 	"io"
 	"sort"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 )
+
+// Global sensitive patterns instance for reuse
+var defaultSensitivePatterns = redaction.DefaultSensitivePatterns()
 
 // PrintFinalEnvironment prints the final environment variables that will be set for the process.
 // It shows the variable name, value, and origin (system/global/group/command).
 // The origins parameter should be obtained from executor.BuildProcessEnvironment.
+// If showSensitive is false, sensitive environment variables are masked with [REDACTED].
 func PrintFinalEnvironment(
 	w io.Writer,
 	envVars map[string]string,
 	origins map[string]string,
+	showSensitive bool,
 ) {
 	_, _ = fmt.Fprintf(w, "===== Final Process Environment =====\n\n")
 
@@ -33,9 +40,12 @@ func PrintFinalEnvironment(
 		value := envVars[k]
 		origin := origins[k]
 
-		// Truncate long values for readability
+		// Mask sensitive environment variables unless showSensitive is true
 		displayValue := value
-		if len(displayValue) > MaxDisplayLength {
+		if !showSensitive && defaultSensitivePatterns.IsSensitiveEnvVar(k) {
+			displayValue = "[REDACTED]"
+		} else if len(displayValue) > MaxDisplayLength {
+			// Truncate long values for readability (only if not masked)
 			displayValue = displayValue[:MaxDisplayLength-EllipsisLength] + "..."
 		}
 

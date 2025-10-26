@@ -310,8 +310,10 @@ func NewRunner(configSpec *runnertypes.ConfigSpec, options ...Option) (*Runner, 
 	// consumption by notification handlers (for example `SlackHandler`).
 	// The callback itself does not perform network calls.
 	var detailLevel resource.DetailLevel
+	var showSensitive bool
 	if opts.dryRunOptions != nil {
 		detailLevel = opts.dryRunOptions.DetailLevel
+		showSensitive = opts.dryRunOptions.ShowSensitive
 	}
 	runner.groupExecutor = NewDefaultGroupExecutor(
 		opts.executor,
@@ -323,6 +325,7 @@ func NewRunner(configSpec *runnertypes.ConfigSpec, options ...Option) (*Runner, 
 		runner.logGroupExecutionSummary,
 		opts.dryRun,
 		detailLevel,
+		showSensitive,
 		opts.keepTempDirs,
 	)
 

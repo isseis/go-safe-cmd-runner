@@ -27,7 +27,7 @@ func TestPrintFinalEnvironment_WithOrigins(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	PrintFinalEnvironment(&buf, envVars, origins)
+	PrintFinalEnvironment(&buf, envVars, origins, false)
 
 	output := buf.String()
 
@@ -70,7 +70,7 @@ func TestPrintFinalEnvironment_MultipleOrigins(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	PrintFinalEnvironment(&buf, envVars, origins)
+	PrintFinalEnvironment(&buf, envVars, origins, false)
 
 	output := buf.String()
 
@@ -95,7 +95,7 @@ func TestPrintFinalEnvironment_LongValue(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	PrintFinalEnvironment(&buf, envVars, origins)
+	PrintFinalEnvironment(&buf, envVars, origins, false)
 
 	output := buf.String()
 
@@ -114,7 +114,7 @@ func TestPrintFinalEnvironment_EmptyEnv(t *testing.T) {
 	origins := map[string]string{}
 
 	var buf bytes.Buffer
-	PrintFinalEnvironment(&buf, envVars, origins)
+	PrintFinalEnvironment(&buf, envVars, origins, false)
 
 	output := buf.String()
 
@@ -140,7 +140,7 @@ func TestPrintFinalEnvironment_SpecialCharacters(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	PrintFinalEnvironment(&buf, envVars, origins)
+	PrintFinalEnvironment(&buf, envVars, origins, false)
 
 	output := buf.String()
 
@@ -168,7 +168,7 @@ func TestPrintFinalEnvironment_SortedOutput(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	PrintFinalEnvironment(&buf, envVars, origins)
+	PrintFinalEnvironment(&buf, envVars, origins, false)
 
 	output := buf.String()
 
@@ -184,35 +184,89 @@ func TestPrintFinalEnvironment_SortedOutput(t *testing.T) {
 	assert.True(t, middlePos < zebraPos, "MIDDLE should come before ZEBRA")
 }
 
-// TestPrintFinalEnvironment_SensitiveData verifies that all environment variables
-// including sensitive information are displayed without masking in dry-run mode
-func TestPrintFinalEnvironment_SensitiveData(t *testing.T) {
+// TestPrintFinalEnvironment_MaskingSensitiveData_Default verifies that sensitive
+// environment variables are masked by default (showSensitive=false)
+func TestPrintFinalEnvironment_MaskingSensitiveData_Default(t *testing.T) {
 	// Create environment with sensitive data (passwords, tokens, keys)
 	envVars := map[string]string{
-		"DB_PASSWORD":    "super_secret_password_123",
-		"API_TOKEN":      "ghp_1234567890abcdefghijklmnopqrstuvwxyz",
-		"AWS_SECRET_KEY": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-		"SSH_PRIVATE":    "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA...",
-		"NORMAL_VAR":     "public_value",
+		"DB_PASSWORD":       "super_secret_password_123",
+		"API_TOKEN":         "ghp_1234567890abcdefghijklmnopqrstuvwxyz",
+		"AWS_SECRET_KEY":    "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+		"SSH_PRIVATE_KEY":   "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA...",
+		"GITHUB_AUTH_TOKEN": "ghp_another_token_12345",
+		"NORMAL_VAR":        "public_value",
 	}
 
 	origins := map[string]string{
-		"DB_PASSWORD":    "Command[db-setup]",
-		"API_TOKEN":      "Global",
-		"AWS_SECRET_KEY": "Group[aws-group]",
-		"SSH_PRIVATE":    "Command[ssh-deploy]",
-		"NORMAL_VAR":     "Global",
+		"DB_PASSWORD":       "Command[db-setup]",
+		"API_TOKEN":         "Global",
+		"AWS_SECRET_KEY":    "Group[aws-group]",
+		"SSH_PRIVATE_KEY":   "Command[ssh-deploy]",
+		"GITHUB_AUTH_TOKEN": "Global",
+		"NORMAL_VAR":        "Global",
 	}
 
 	var buf bytes.Buffer
-	PrintFinalEnvironment(&buf, envVars, origins)
+	PrintFinalEnvironment(&buf, envVars, origins, false) // showSensitive=false (default)
+	output := buf.String()
+
+	// Verify header is present
+	assert.Contains(t, output, "===== Final Process Environment =====")
+
+	// Verify sensitive values are MASKED
+	assert.Contains(t, output, "DB_PASSWORD=[REDACTED]", "Password should be masked")
+	assert.Contains(t, output, "API_TOKEN=[REDACTED]", "API token should be masked")
+	assert.Contains(t, output, "AWS_SECRET_KEY=[REDACTED]", "AWS secret key should be masked")
+	assert.Contains(t, output, "SSH_PRIVATE_KEY=[REDACTED]", "SSH private key should be masked")
+	assert.Contains(t, output, "GITHUB_AUTH_TOKEN=[REDACTED]", "GitHub auth token should be masked")
+
+	// Verify normal values are NOT masked
+	assert.Contains(t, output, "NORMAL_VAR=public_value", "Normal values should not be masked")
+
+	// Verify origins are shown
+	assert.Contains(t, output, "Command[db-setup]")
+	assert.Contains(t, output, "Global")
+	assert.Contains(t, output, "Group[aws-group]")
+	assert.Contains(t, output, "Command[ssh-deploy]")
+
+	// Verify sensitive values are NOT displayed in plain text
+	assert.NotContains(t, output, "super_secret_password_123", "Password should not be displayed in plain text")
+	assert.NotContains(t, output, "ghp_1234567890abcdefghijklmnopqrstuvwxyz", "API token should not be displayed in plain text")
+	assert.NotContains(t, output, "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "AWS secret key should not be displayed in plain text")
+	assert.NotContains(t, output, "-----BEGIN RSA PRIVATE KEY-----", "SSH private key should not be displayed in plain text")
+	assert.NotContains(t, output, "ghp_another_token_12345", "GitHub auth token should not be displayed in plain text")
+}
+
+// TestPrintFinalEnvironment_ShowSensitiveData_Explicit verifies that sensitive
+// environment variables are displayed when showSensitive=true
+func TestPrintFinalEnvironment_ShowSensitiveData_Explicit(t *testing.T) {
+	// Create environment with sensitive data (passwords, tokens, keys)
+	envVars := map[string]string{
+		"DB_PASSWORD":       "super_secret_password_123",
+		"API_TOKEN":         "ghp_1234567890abcdefghijklmnopqrstuvwxyz",
+		"AWS_SECRET_KEY":    "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+		"SSH_PRIVATE_KEY":   "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA...",
+		"GITHUB_AUTH_TOKEN": "ghp_another_token_12345",
+		"NORMAL_VAR":        "public_value",
+	}
+
+	origins := map[string]string{
+		"DB_PASSWORD":       "Command[db-setup]",
+		"API_TOKEN":         "Global",
+		"AWS_SECRET_KEY":    "Group[aws-group]",
+		"SSH_PRIVATE_KEY":   "Command[ssh-deploy]",
+		"GITHUB_AUTH_TOKEN": "Global",
+		"NORMAL_VAR":        "Global",
+	}
+
+	var buf bytes.Buffer
+	PrintFinalEnvironment(&buf, envVars, origins, true) // showSensitive=true (explicit)
 	output := buf.String()
 
 	// Verify header is present
 	assert.Contains(t, output, "===== Final Process Environment =====")
 
 	// Verify all sensitive values are displayed WITHOUT masking
-	// This is by design for dry-run mode audit purposes
 	assert.Contains(t, output, "super_secret_password_123", "Password should be displayed without masking")
 	assert.Contains(t, output, "ghp_1234567890abcdefghijklmnopqrstuvwxyz", "API token should be displayed without masking")
 	assert.Contains(t, output, "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "AWS secret key should be displayed without masking")
@@ -225,17 +279,6 @@ func TestPrintFinalEnvironment_SensitiveData(t *testing.T) {
 	assert.Contains(t, output, "Group[aws-group]")
 	assert.Contains(t, output, "Command[ssh-deploy]")
 
-	// Verify no masking characters (like asterisks) are present
-	lines := strings.Split(output, "\n")
-	for _, line := range lines {
-		if strings.Contains(line, "DB_PASSWORD") ||
-			strings.Contains(line, "API_TOKEN") ||
-			strings.Contains(line, "AWS_SECRET_KEY") ||
-			strings.Contains(line, "SSH_PRIVATE") {
-			// These lines should NOT contain masking patterns like "***" or "[REDACTED]"
-			assert.NotContains(t, line, "***", "Sensitive values should not be masked")
-			assert.NotContains(t, line, "[REDACTED]", "Sensitive values should not be redacted")
-			assert.NotContains(t, line, "[MASKED]", "Sensitive values should not be marked as masked")
-		}
-	}
+	// Verify no masking characters are present
+	assert.NotContains(t, output, "[REDACTED]", "Values should not be redacted when showSensitive=true")
 }

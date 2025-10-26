@@ -149,6 +149,7 @@ func TestExecuteGroup_WorkDirPriority(t *testing.T) {
 				nil,
 				false,                       // isDryRun
 				resource.DetailLevelSummary, // dryRunDetailLevel
+				false,                       // dryRunShowSensitive
 				false,                       // keepTempDirs
 			)
 
@@ -247,6 +248,7 @@ func TestExecuteGroup_TempDirCleanup(t *testing.T) {
 				nil,
 				false,                       // isDryRun
 				resource.DetailLevelSummary, // dryRunDetailLevel
+				false,                       // dryRunShowSensitive
 				false,                       // keepTempDirs
 			)
 
@@ -318,6 +320,7 @@ func TestExecuteGroup_CreateTempDirFailure(t *testing.T) {
 		nil,
 		false,                       // isDryRun
 		resource.DetailLevelSummary, // dryRunDetailLevel
+		false,                       // dryRunShowSensitive
 		false,                       // keepTempDirs
 	)
 
@@ -372,6 +375,7 @@ func TestExecuteGroup_CommandExecutionFailure(t *testing.T) {
 		notificationFunc,
 		false,                       // isDryRun
 		resource.DetailLevelSummary, // dryRunDetailLevel
+		false,                       // dryRunShowSensitive
 		false,                       // keepTempDirs
 	)
 
@@ -432,6 +436,7 @@ func TestExecuteGroup_CommandExecutionFailure_NonStandardExitCode(t *testing.T) 
 		notificationFunc,
 		false,                       // isDryRun
 		resource.DetailLevelSummary, // dryRunDetailLevel
+		false,                       // dryRunShowSensitive
 		false,                       // keepTempDirs
 	)
 
@@ -494,6 +499,7 @@ func TestExecuteGroup_SuccessNotification(t *testing.T) {
 		notificationFunc,
 		false,                       // isDryRun
 		resource.DetailLevelSummary, // dryRunDetailLevel
+		false,                       // dryRunShowSensitive
 		false,                       // keepTempDirs
 	)
 
@@ -555,6 +561,7 @@ func TestExecuteCommandInGroup_OutputPathValidationFailure(t *testing.T) {
 		nil,
 		false,                       // isDryRun
 		resource.DetailLevelSummary, // dryRunDetailLevel
+		false,                       // dryRunShowSensitive
 		false,                       // keepTempDirs
 	)
 
@@ -612,6 +619,7 @@ func TestExecuteGroup_MultipleCommands(t *testing.T) {
 		nil,
 		false,                       // isDryRun
 		resource.DetailLevelSummary, // dryRunDetailLevel
+		false,                       // dryRunShowSensitive
 		false,                       // keepTempDirs
 	)
 
@@ -671,6 +679,7 @@ func TestExecuteGroup_StopOnFirstFailure(t *testing.T) {
 		nil,
 		false,                       // isDryRun
 		resource.DetailLevelSummary, // dryRunDetailLevel
+		false,                       // dryRunShowSensitive
 		false,                       // keepTempDirs
 	)
 
@@ -981,6 +990,7 @@ func TestExecuteGroup_RunnerWorkdirExpansion(t *testing.T) {
 				mockNotificationFunc,
 				tt.isDryRun,
 				resource.DetailLevelSummary, // dryRunDetailLevel
+				false,                       // dryRunShowSensitive
 				false,                       // keepTempDirs
 			)
 

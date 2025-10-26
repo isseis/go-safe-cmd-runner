@@ -33,7 +33,7 @@ func BenchmarkPrintFinalEnvironment(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		buf.Reset()
-		PrintFinalEnvironment(&buf, envVars, origins)
+		PrintFinalEnvironment(&buf, envVars, origins, false)
 	}
 }
 
@@ -60,7 +60,7 @@ func BenchmarkPrintFinalEnvironment_Small(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		buf.Reset()
-		PrintFinalEnvironment(&buf, envVars, origins)
+		PrintFinalEnvironment(&buf, envVars, origins, false)
 	}
 }
 
@@ -85,6 +85,6 @@ func BenchmarkPrintEnvironment_LongValues(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		buf.Reset()
-		PrintFinalEnvironment(&buf, envVars, origins)
+		PrintFinalEnvironment(&buf, envVars, origins, false)
 	}
 }
