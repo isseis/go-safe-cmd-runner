@@ -83,6 +83,48 @@ func TestCreateCommandContext(t *testing.T) {
 	}
 }
 
+// TestCreateCommandContext_UnlimitedTimeout tests unlimited timeout handling (T1.1)
+func TestCreateCommandContext_UnlimitedTimeout(t *testing.T) {
+	tests := []struct {
+		name             string
+		effectiveTimeout int
+	}{
+		{
+			name:             "zero timeout means unlimited",
+			effectiveTimeout: 0,
+		},
+		{
+			name:             "negative timeout means unlimited",
+			effectiveTimeout: -1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ge := &DefaultGroupExecutor{}
+
+			cmd := &runnertypes.RuntimeCommand{
+				Spec: &runnertypes.CommandSpec{
+					Name: "unlimited-cmd",
+				},
+				EffectiveTimeout: tt.effectiveTimeout,
+			}
+
+			ctx := context.Background()
+			cmdCtx, cancel := ge.createCommandContext(ctx, cmd)
+			defer cancel()
+
+			// Verify no deadline is set (unlimited execution)
+			_, ok := cmdCtx.Deadline()
+			assert.False(t, ok, "context should not have a deadline for unlimited timeout")
+
+			// Verify context is cancellable (context.WithCancel was used)
+			assert.NotNil(t, cmdCtx, "context should not be nil")
+			assert.NotNil(t, cancel, "cancel function should not be nil")
+		})
+	}
+}
+
 // TestExecuteGroup_WorkDirPriority tests the working directory priority logic
 // Note: TempDir functionality is currently not implemented in GroupSpec, so these tests are skipped
 func TestExecuteGroup_WorkDirPriority(t *testing.T) {
@@ -1107,4 +1149,16 @@ func containsPattern(t *testing.T, s, pattern string) bool {
 
 	// Check if pattern is anywhere in the string (for substrings like "dryrun-")
 	return strings.Contains(s, pattern)
+}
+
+// TestExecuteCommandInGroup_ValidateEnvironmentVarsFailure tests environment variable validation error (T1.2)
+// Skipped: Requires mock validator implementation
+func TestExecuteCommandInGroup_ValidateEnvironmentVarsFailure(t *testing.T) {
+	t.Skip("T1.2: Requires mock validator - deferred until mock infrastructure is ready")
+}
+
+// TestExecuteCommandInGroup_ResolvePathFailure tests path resolution error (T1.3)
+// Skipped: Requires mock verification manager implementation
+func TestExecuteCommandInGroup_ResolvePathFailure(t *testing.T) {
+	t.Skip("T1.3: Requires mock verification manager - deferred until mock infrastructure is ready")
 }
