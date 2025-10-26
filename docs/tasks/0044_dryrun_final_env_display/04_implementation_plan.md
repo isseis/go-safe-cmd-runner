@@ -765,3 +765,253 @@ graph TD
 4. ⏭️ git commit 準備完了（ユーザー承認待ち）
 
 実装計画書の全フェーズが完了し、本番環境へのデプロイ準備が整いました。
+
+## 11. テストカバレッジ改善戦略
+
+### 11.1 現状分析
+
+**カバレッジ測定結果** (2025-10-26):
+
+```
+Package: internal/runner (全体カバレッジ: 76.5%)
+
+主要ファイル:
+- group_executor.go:
+  - NewDefaultGroupExecutor: 100.0%
+  - ExecuteGroup: 73.7%
+  - executeCommandInGroup: 71.4% ⚠️ 目標未達
+  - createCommandContext: 66.7% ⚠️ 目標未達
+  - executeSingleCommand: 100.0%
+  - resolveGroupWorkDir: 83.3%
+  - resolveCommandWorkDir: 100.0%
+```
+
+**目標カバレッジ**: 90%以上
+
+### 11.2 未カバーコードパスの特定
+
+#### 11.2.1 `createCommandContext` (66.7%)
+
+**未カバーパス**:
+- Line 291-296: Unlimited timeout (EffectiveTimeout <= 0) のケース
+
+**影響**:
+- タイムアウトなしでコマンドを実行する重要なパス
+- 長時間実行コマンドのサポートに必要
+
+#### 11.2.2 `executeCommandInGroup` (71.4%)
+
+**未カバーパス**:
+1. Line 243-245: `validator.ValidateAllEnvironmentVars` がエラーを返すケース
+2. Line 248-250: dry-run モードで `DetailLevelFull` のケース
+3. Line 253-261: `verificationManager` が nil のケース
+4. Line 254-257: `verificationManager.ResolvePath` がエラーを返すケース
+
+**影響**:
+- セキュリティ検証失敗時のエラーハンドリング
+- dry-run モードの全詳細レベルでの動作確認
+- オプショナルな機能（verificationManager）の動作検証
+
+#### 11.2.3 `ExecuteGroup` (73.7%)
+
+**未カバーパス**:
+1. Line 82-83: Description が空の場合のログ出力
+2. Line 93-98: dry-run モードでの変数展開デバッグ情報出力
+3. Line 103-105: `notificationFunc` が nil の場合
+4. Line 115-121: `keepTempDirs` が true の場合のクリーンアップスキップ
+5. Line 134-148: `verificationManager` が nil の場合
+6. Line 141-147: 検証するファイルが存在する場合のログ出力
+
+**影響**:
+- 様々な設定オプションの組み合わせでの動作確認
+- オプショナル機能の有無による分岐の検証
+
+#### 11.2.4 `resolveGroupWorkDir` (83.3%)
+
+**未カバーパス**:
+- 変数展開エラーのケース (line 363-365)
+
+### 11.3 テストカバレッジ改善計画
+
+#### 優先度1: クリティカルパス (目標完了: 即時)
+
+**T1.1 Unlimited Timeout テスト**
+- **ファイル**: `group_executor_test.go`
+- **テストケース**: `TestCreateCommandContext_UnlimitedTimeout`
+- **カバー対象**: `createCommandContext` line 291-296
+- **内容**:
+  ```go
+  - EffectiveTimeout = 0 のケース
+  - EffectiveTimeout < 0 のケース
+  - context.WithCancel が呼ばれることの確認
+  - タイムアウトなしで実行できることの確認
+  ```
+
+**T1.2 環境変数検証エラーテスト**
+- **ファイル**: `group_executor_test.go`
+- **テストケース**: `TestExecuteCommandInGroup_ValidateEnvironmentVarsFailure`
+- **カバー対象**: `executeCommandInGroup` line 243-245
+- **内容**:
+  ```go
+  - validator.ValidateAllEnvironmentVars がエラーを返すケース
+  - エラーメッセージが適切に伝播すること
+  - コマンドが実行されないこと
+  ```
+
+**T1.3 パス解決エラーテスト**
+- **ファイル**: `group_executor_test.go`
+- **テストケース**: `TestExecuteCommandInGroup_ResolvePathFailure`
+- **カバー対象**: `executeCommandInGroup` line 254-257
+- **内容**:
+  ```go
+  - verificationManager.ResolvePath がエラーを返すケース
+  - エラーメッセージが適切に伝播すること
+  - コマンドが実行されないこと
+  ```
+
+#### 優先度2: dry-run 機能 (目標完了: 第2週)
+
+**T2.1 dry-run DetailLevelFull テスト**
+- **ファイル**: `group_executor_test.go`
+- **テストケース**: `TestExecuteCommandInGroup_DryRunDetailLevelFull`
+- **カバー対象**: `executeCommandInGroup` line 248-250
+- **内容**:
+  ```go
+  - isDryRun = true, dryRunDetailLevel = DetailLevelFull のケース
+  - PrintFinalEnvironment が呼ばれること
+  - 環境変数が正しく表示されること
+  - センシティブデータのマスキング動作確認
+  ```
+
+**T2.2 dry-run 変数展開デバッグテスト**
+- **ファイル**: `group_executor_test.go`
+- **テストケース**: `TestExecuteGroup_DryRunVariableExpansion`
+- **カバー対象**: `ExecuteGroup` line 93-98
+- **内容**:
+  ```go
+  - isDryRun = true のケース
+  - PrintFromEnvInheritance が呼ばれること
+  - デバッグ情報が出力されること
+  ```
+
+#### 優先度3: オプショナル機能とエッジケース (目標完了: 第3週)
+
+**T3.1 VerificationManager nil テスト**
+- **ファイル**: `group_executor_test.go`
+- **テストケース**: `TestExecuteCommandInGroup_NoVerificationManager`
+- **カバー対象**: `executeCommandInGroup` line 253-261, `ExecuteGroup` line 134-148
+- **内容**:
+  ```go
+  - verificationManager = nil のケース
+  - パス解決がスキップされること
+  - ファイル検証がスキップされること
+  - コマンドが正常に実行されること
+  ```
+
+**T3.2 KeepTempDirs テスト**
+- **ファイル**: `group_executor_test.go`
+- **テストケース**: `TestExecuteGroup_KeepTempDirs`
+- **カバー対象**: `ExecuteGroup` line 115-121
+- **内容**:
+  ```go
+  - keepTempDirs = true のケース
+  - Cleanup が呼ばれないこと
+  - 一時ディレクトリが残ること
+  ```
+
+**T3.3 NotificationFunc nil テスト**
+- **ファイル**: `group_executor_test.go`
+- **テストケース**: `TestExecuteGroup_NoNotificationFunc`
+- **カバー対象**: `ExecuteGroup` line 103-105
+- **内容**:
+  ```go
+  - notificationFunc = nil のケース
+  - 通知がスキップされること
+  - 実行が正常に完了すること
+  ```
+
+**T3.4 空のDescription テスト**
+- **ファイル**: `group_executor_test.go`
+- **テストケース**: `TestExecuteGroup_EmptyDescription`
+- **カバー対象**: `ExecuteGroup` line 82-83
+- **内容**:
+  ```go
+  - groupSpec.Description = "" のケース
+  - ログ出力の違いを確認
+  ```
+
+**T3.5 変数展開エラーテスト**
+- **ファイル**: `group_executor_test.go`
+- **テストケース**: `TestResolveGroupWorkDir_VariableExpansionError`
+- **カバー対象**: `resolveGroupWorkDir` line 363-365
+- **内容**:
+  ```go
+  - 未定義変数を含むWorkDirパス
+  - エラーが適切に返されること
+  ```
+
+**T3.6 ファイル検証結果ログテスト**
+- **ファイル**: `group_executor_test.go`
+- **テストケース**: `TestExecuteGroup_FileVerificationWithResults`
+- **カバー対象**: `ExecuteGroup` line 141-147
+- **内容**:
+  ```go
+  - 検証するファイルが存在するケース
+  - 検証結果のログが出力されること
+  ```
+
+### 11.4 実装スケジュール
+
+| 優先度 | テストケース | 所要時間 | 期限 |
+|-------|------------|---------|------|
+| 1 | T1.1 Unlimited Timeout | 30分 | 即時 |
+| 1 | T1.2 環境変数検証エラー | 30分 | 即時 |
+| 1 | T1.3 パス解決エラー | 30分 | 即時 |
+| 2 | T2.1 DetailLevelFull | 1時間 | 第2週 |
+| 2 | T2.2 変数展開デバッグ | 45分 | 第2週 |
+| 3 | T3.1 VerificationManager nil | 1時間 | 第3週 |
+| 3 | T3.2 KeepTempDirs | 30分 | 第3週 |
+| 3 | T3.3 NotificationFunc nil | 30分 | 第3週 |
+| 3 | T3.4 空のDescription | 20分 | 第3週 |
+| 3 | T3.5 変数展開エラー | 30分 | 第3週 |
+| 3 | T3.6 ファイル検証結果ログ | 45分 | 第3週 |
+
+**合計所要時間**: 約7時間
+
+### 11.5 期待される改善結果
+
+**テスト追加後の予測カバレッジ**:
+
+```
+- createCommandContext: 66.7% → 100.0% (+33.3%)
+- executeCommandInGroup: 71.4% → 95.0%+ (+23.6%)
+- ExecuteGroup: 73.7% → 92.0%+ (+18.3%)
+- resolveGroupWorkDir: 83.3% → 100.0% (+16.7%)
+```
+
+**全体カバレッジ**: 76.5% → 90%+ (目標達成)
+
+### 11.6 成功基準
+
+1. ✅ **カバレッジ目標達成**: 全関数で90%以上のカバレッジ
+2. ✅ **エラーパス完全カバー**: 全てのエラーハンドリングパスがテスト済み
+3. ✅ **dry-run 機能検証**: 全DetailLevelでの動作確認
+4. ✅ **オプション機能検証**: nil チェック分岐の完全カバー
+5. ✅ **回帰防止**: 既存テストが全てパス
+
+### 11.7 リスクと対策
+
+| リスク | 影響 | 対策 |
+|-------|-----|-----|
+| モック設定の複雑化 | テストコードの保守性低下 | ヘルパー関数の作成、共通セットアップの抽出 |
+| テスト実行時間増加 | CI/CDパフォーマンス低下 | 並列実行の活用、不要なスリープの削除 |
+| 既存テストへの影響 | 回帰バグの発生 | テスト追加前に全テスト実行、段階的な追加 |
+
+### 11.8 次のアクション
+
+- [ ] 優先度1のテストケース実装 (T1.1 - T1.3)
+- [ ] カバレッジ再測定と検証
+- [ ] 優先度2のテストケース実装 (T2.1 - T2.2)
+- [ ] 優先度3のテストケース実装 (T3.1 - T3.6)
+- [ ] 最終カバレッジレポート作成
+- [ ] ドキュメント更新（本セクションの結果反映）
