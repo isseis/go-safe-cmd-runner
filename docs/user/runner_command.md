@@ -349,7 +349,51 @@ Group: backup (Priority: 1)
       PATH=/sbin:/usr/sbin:/bin:/usr/bin
       HOME=/root
       PGPASSWORD=[REDACTED]
+
+===== Final Process Environment =====
+
+Environment variables (5):
+  BACKUP_DIR=/var/backups
+    (from Global)
+  HOME=/root
+    (from System (filtered by allowlist))
+  PATH=/sbin:/usr/sbin:/bin:/usr/bin
+    (from System (filtered by allowlist))
+  PGPASSWORD=[REDACTED]
+    (from Command[db_backup])
+  TEMP_DIR=/tmp/runner-backup
+    (from Group[backup])
 ```
+
+**Displaying Sensitive Information**
+
+By default, sensitive information such as passwords and tokens are masked with `[REDACTED]`. If you need to display them in plain text for debugging purposes, use the `--show-sensitive` flag.
+
+```bash
+runner -config config.toml -dry-run -dry-run-detail full --show-sensitive
+```
+
+Output example (showing sensitive information):
+```
+===== Final Process Environment =====
+
+Environment variables (5):
+  BACKUP_DIR=/var/backups
+    (from Global)
+  HOME=/root
+    (from System (filtered by allowlist))
+  PATH=/sbin:/usr/sbin:/bin:/usr/bin
+    (from System (filtered by allowlist))
+  PGPASSWORD=super_secret_password_123
+    (from Command[db_backup])
+  TEMP_DIR=/tmp/runner-backup
+    (from Group[backup])
+```
+
+**Important Notes**:
+- Use `--show-sensitive` only for debugging purposes
+- Do not use it in production environments or when outputting to log files
+- In CI/CD environments, the default masking behavior is recommended to prevent credential leaks
 
 **Using Detail Levels**
 
@@ -415,6 +459,109 @@ jobs:
       - name: Validate configuration
         run: |
           runner -config config.toml -validate
+```
+
+#### `-show-sensitive`
+
+**Overview**
+
+When running in dry-run mode, displays sensitive environment variable values in plain text instead of masking them. By default, sensitive information such as passwords and tokens are displayed as `[REDACTED]`.
+
+**Security Warning**: This flag should only be used for debugging and troubleshooting. Do not use it in production or shared environments. There is a risk of leaking confidential information to log files or CI/CD environments.
+
+**Syntax**
+
+```bash
+runner -config <path> -dry-run -dry-run-detail full -show-sensitive
+```
+
+**Usage Examples**
+
+**Default Behavior (Sensitive Information Masked)**
+
+```bash
+runner -config config.toml -dry-run -dry-run-detail full
+```
+
+Output example:
+```
+===== Final Process Environment =====
+
+Environment variables (5):
+  DB_HOST=localhost
+    (from Global)
+  DB_USER=appuser
+    (from Global)
+  DB_PASSWORD=[REDACTED]
+    (from Global)
+  API_TOKEN=[REDACTED]
+    (from Command[deploy])
+  LOG_LEVEL=info
+    (from Command[deploy])
+```
+
+**Show Sensitive Information (with `-show-sensitive`)**
+
+```bash
+runner -config config.toml -dry-run -dry-run-detail full -show-sensitive
+```
+
+Output example:
+```
+===== Final Process Environment =====
+
+Environment variables (5):
+  DB_HOST=localhost
+    (from Global)
+  DB_USER=appuser
+    (from Global)
+  DB_PASSWORD=MySecretPassword123
+    (from Global)
+  API_TOKEN=sk-1234567890abcdef
+    (from Command[deploy])
+  LOG_LEVEL=info
+    (from Command[deploy])
+```
+
+**Sensitive Environment Variable Detection Criteria**
+
+Environment variable names matching the following patterns are treated as sensitive information:
+
+- `*PASSWORD*`
+- `*SECRET*`
+- `*TOKEN*`
+- `*KEY*` (including `*_KEY`)
+- `*CREDENTIAL*`
+- `*AUTH*`
+
+Examples: `DB_PASSWORD`, `API_SECRET_KEY`, `GITHUB_TOKEN`, `AWS_SECRET_ACCESS_KEY`, `OAUTH_CREDENTIAL`, `AUTH_TOKEN`
+
+**Use Cases**
+
+- **Local development environment debugging**: Verify that environment variables are expanded correctly
+- **Troubleshooting**: Verify that environment variable values are set as expected
+- **Initial configuration file validation**: Verify behavior when creating new configuration files
+
+**Important Precautions**
+
+1. **Do not use in production environments**: Confidential information may be logged
+2. **Do not use in CI/CD environments**: Confidential information may remain in build logs
+3. **Be especially careful when Slack notifications are enabled**: Sensitive information may be included in notification messages
+4. **Handle log files carefully**: Execution logs using `-show-sensitive` should be properly protected
+
+**Recommended Usage**
+
+```bash
+# Temporary debugging in local environment
+runner -config config.toml -dry-run -dry-run-detail full -show-sensitive
+
+# Clear terminal history after execution (bash)
+history -c
+
+# Or save output to file and delete after verification
+runner -config config.toml -dry-run -dry-run-detail full -show-sensitive > debug.txt
+# After verification
+shred -u debug.txt  # secure deletion
 ```
 
 ### 3.3 Log Configuration

@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+#### Final Environment Variable Display in Dry-Run Mode
+
+When using `--dry-run-detail=full`, the final environment variables for each command are now displayed with their origin information.
+
+**Features:**
+- Display final environment variables before each command execution in dry-run mode
+- Show the origin of each variable (System, Global, Group, Command)
+- Long values are truncated to 60 characters for readability
+- Sensitive information (passwords, tokens, secrets) is masked by default as `[REDACTED]`
+
+**New Flag:**
+- `--show-sensitive`: Explicitly show sensitive environment variable values in plain text (use with caution)
+  - Default: sensitive values are masked
+  - Security warning: do not use in production or CI/CD environments
+
+**Example Output:**
+```
+===== Final Process Environment =====
+
+Environment variables (5):
+  PATH=/usr/local/bin:/usr/bin:/bin
+    (from Global)
+  HOME=/home/testuser
+    (from System (filtered by allowlist))
+  APP_DIR=/opt/myapp
+    (from Group[build])
+  DB_PASSWORD=[REDACTED]
+    (from Global)
+  LOG_FILE=/opt/myapp/logs/app.log
+    (from Command[run_tests])
+```
+
+**Performance:**
+- BuildProcessEnvironment: <0.5ms for 100 variables (actual: ~0.011ms)
+- PrintFinalEnvironment: <1ms for 100 variables (actual: ~0.016ms)
+- Overall dry-run overhead: <10% (within 110% of previous performance)
+
 ### Breaking Changes
 
 #### Timeout Behavior Change
