@@ -1,3 +1,5 @@
+//go:build test
+
 //nolint:revive // common is an appropriate name for shared utilities package
 package common
 
@@ -8,6 +10,24 @@ import (
 
 	"github.com/stretchr/testify/assert"
 )
+
+func TestDefaultFileSystem_TempDir(t *testing.T) {
+	fs := NewDefaultFileSystem()
+
+	// Test getting the temporary directory
+	tempDir := fs.TempDir()
+	assert.NotEmpty(t, tempDir, "TempDir should return a non-empty path")
+
+	// Verify the temporary directory exists
+	exists, err := fs.FileExists(tempDir)
+	assert.NoError(t, err, "FileExists failed for temp directory")
+	assert.True(t, exists, "Temporary directory does not exist")
+
+	// Verify it's a directory
+	isDir, err := fs.IsDir(tempDir)
+	assert.NoError(t, err, "IsDir failed for temp directory")
+	assert.True(t, isDir, "Temporary directory path is not a directory")
+}
 
 func TestDefaultFileSystem_CreateTempDir(t *testing.T) {
 	fs := NewDefaultFileSystem()

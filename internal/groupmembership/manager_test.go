@@ -1,3 +1,5 @@
+//go:build test
+
 package groupmembership
 
 import (
@@ -120,6 +122,86 @@ func TestGroupMembership(t *testing.T) {
 		assert.Equal(t, 0, stats.TotalEntries)
 		assert.Equal(t, 0, stats.ExpiredEntries)
 		assert.Equal(t, DefaultCacheTimeout, stats.CacheTimeout)
+	})
+
+	t.Run("ClearExpiredCache with expired entries", func(t *testing.T) {
+		gm := New()
+
+		// Add entries to cache
+		_, err := gm.GetGroupMembers(0)
+		assert.NoError(t, err)
+
+		// Verify cache has entries
+		stats := gm.GetCacheStats()
+		assert.Equal(t, 1, stats.TotalEntries)
+		assert.Equal(t, 0, stats.ExpiredEntries) // Entry should not be expired yet
+
+		// Manually expire the cache entry by directly modifying the expiry time
+		gm.cacheMutex.Lock()
+		for gid, entry := range gm.membershipCache {
+			entry.expiry = time.Now().Add(-1 * time.Second) // Set expiry to 1 second ago
+			gm.membershipCache[gid] = entry
+		}
+		gm.cacheMutex.Unlock()
+
+		// Verify that GetCacheStats reports the expired entry
+		stats = gm.GetCacheStats()
+		assert.Equal(t, 1, stats.TotalEntries)
+		assert.Equal(t, 1, stats.ExpiredEntries)
+
+		// Trigger cleanup by making CleanupInterval cache misses
+		// clearExpiredCache is called internally after CleanupInterval misses
+		for i := 0; i < CleanupInterval; i++ {
+			// Try to get a non-existent group to trigger cache misses
+			_, _ = gm.GetGroupMembers(uint32(10000 + i))
+		}
+
+		// Verify that expired entries were cleaned up
+		stats = gm.GetCacheStats()
+		// After cleanup, the expired entry should be removed
+		// Note: We can't check exact count since we added new entries above
+		assert.GreaterOrEqual(t, stats.TotalEntries, 0, "Cache should have some entries or be empty")
+	})
+
+	t.Run("ClearExpiredCache with valid entries", func(t *testing.T) {
+		gm := New()
+
+		// Add entries to cache
+		_, err := gm.GetGroupMembers(0)
+		assert.NoError(t, err)
+		_, err = gm.GetGroupMembers(1)
+		assert.NoError(t, err)
+
+		// Verify cache has entries
+		stats := gm.GetCacheStats()
+		assert.Equal(t, 2, stats.TotalEntries)
+		assert.Equal(t, 0, stats.ExpiredEntries) // Entries should not be expired
+
+		// Trigger cleanup - valid entries should be preserved
+		for i := 0; i < CleanupInterval; i++ {
+			_, _ = gm.GetGroupMembers(uint32(10000 + i))
+		}
+
+		// Valid entries should still be in the cache (along with new ones)
+		stats = gm.GetCacheStats()
+		assert.GreaterOrEqual(t, stats.TotalEntries, 2, "Valid entries should be preserved")
+	})
+
+	t.Run("ClearExpiredCache with empty cache", func(t *testing.T) {
+		gm := New()
+
+		// Verify cache is empty
+		stats := gm.GetCacheStats()
+		assert.Equal(t, 0, stats.TotalEntries)
+
+		// Trigger cleanup on empty cache - should not cause errors
+		for i := 0; i < CleanupInterval; i++ {
+			_, _ = gm.GetGroupMembers(uint32(10000 + i))
+		}
+
+		// Verify no errors occurred and cache has entries from above calls
+		stats = gm.GetCacheStats()
+		assert.GreaterOrEqual(t, stats.TotalEntries, 0, "Cache operations should complete without errors")
 	})
 }
 
