@@ -781,19 +781,234 @@ func NewDefaultGroupExecutor(
 - **テスタビリティの向上**: テストに必要な設定だけを指定可能
 - **拡張性の向上**: 後方互換性を保ちながら機能追加が可能
 
-## 6. 結論
+## 6. テスト用ヘルパー関数
+
+### 6.1 必要性
+
+Options パターンを採用した場合でも、テストコードでは多くの場合、同じ引数パターンが繰り返されます：
+
+```go
+// 頻出パターン
+ge := NewDefaultGroupExecutor(
+    nil,           // executor
+    config,
+    nil,           // validator
+    nil,           // verificationManager
+    mockRM,
+    "test-run-123",
+    // オプションはテストケースにより異なる
+)
+```
+
+この繰り返しを削減し、テストの可読性を向上させるため、テスト用ヘルパー関数を提供します。
+
+### 6.2 実装案
+
+#### 6.2.1 基本ヘルパー関数
+
+```go
+// Package testing provides test utilities for group executor
+package testing
+
+import (
+    "github.com/yourusername/yourproject/internal/runner/executor/group"
+    "github.com/yourusername/yourproject/internal/runner/resource"
+    "github.com/yourusername/yourproject/internal/runner/runnertypes"
+)
+
+// NewTestGroupExecutor creates a DefaultGroupExecutor with common test defaults.
+// This is a convenience function for tests that don't need custom executors,
+// validators, or verification managers.
+//
+// Default values:
+//   - executor: nil
+//   - validator: nil
+//   - verificationManager: nil
+//   - runID: "test-run-123"
+//
+// Example:
+//
+//	ge := testing.NewTestGroupExecutor(config, mockRM)
+func NewTestGroupExecutor(
+    config *runnertypes.ConfigSpec,
+    resourceManager resource.ResourceManager,
+    options ...group.GroupExecutorOption,
+) *group.DefaultGroupExecutor {
+    return group.NewDefaultGroupExecutor(
+        nil,    // executor
+        config,
+        nil,    // validator
+        nil,    // verificationManager
+        resourceManager,
+        "test-run-123", // standard test runID
+        options...,
+    )
+}
+```
+
+#### 6.2.2 カスタマイズ可能なヘルパー関数
+
+特定の引数をカスタマイズしたい場合のためのヘルパー：
+
+```go
+// TestGroupExecutorConfig holds configuration for test group executor creation
+type TestGroupExecutorConfig struct {
+    Executor            executor.CommandExecutor
+    Config              *runnertypes.ConfigSpec
+    Validator           security.ValidatorInterface
+    VerificationManager verification.ManagerInterface
+    ResourceManager     resource.ResourceManager
+    RunID               string
+}
+
+// NewTestGroupExecutorWithConfig creates a DefaultGroupExecutor with custom configuration.
+// Use this when you need to customize specific dependencies that NewTestGroupExecutor doesn't expose.
+//
+// Unset fields will use test-appropriate defaults:
+//   - Executor: nil
+//   - Validator: nil
+//   - VerificationManager: nil
+//   - RunID: "test-run-123"
+//
+// Example:
+//
+//	ge := testing.NewTestGroupExecutorWithConfig(testing.TestGroupExecutorConfig{
+//	    Config:          config,
+//	    ResourceManager: mockRM,
+//	    Executor:        mockExecutor, // custom executor
+//	}, options...)
+func NewTestGroupExecutorWithConfig(
+    cfg TestGroupExecutorConfig,
+    options ...group.GroupExecutorOption,
+) *group.DefaultGroupExecutor {
+    // Apply defaults for unset fields
+    if cfg.RunID == "" {
+        cfg.RunID = "test-run-123"
+    }
+
+    return group.NewDefaultGroupExecutor(
+        cfg.Executor,
+        cfg.Config,
+        cfg.Validator,
+        cfg.VerificationManager,
+        cfg.ResourceManager,
+        cfg.RunID,
+        options...,
+    )
+}
+```
+
+### 6.3 使用例
+
+#### 6.3.1 シンプルなテストケース
+
+```go
+// Before: 冗長な引数指定
+ge := NewDefaultGroupExecutor(
+    nil,
+    config,
+    nil,
+    nil,
+    mockRM,
+    "test-run-123",
+)
+
+// After: 簡潔なヘルパー使用
+ge := testing.NewTestGroupExecutor(config, mockRM)
+```
+
+#### 6.3.2 オプションを指定するテストケース
+
+```go
+// Before: 冗長な引数指定 + オプション
+ge := NewDefaultGroupExecutor(
+    nil,
+    config,
+    nil,
+    nil,
+    mockRM,
+    "test-run-123",
+    WithNotificationFunc(notificationFunc),
+    WithDryRun(resource.DetailLevelFull, true),
+)
+
+// After: 簡潔なヘルパー使用 + オプション
+ge := testing.NewTestGroupExecutor(
+    config,
+    mockRM,
+    WithNotificationFunc(notificationFunc),
+    WithDryRun(resource.DetailLevelFull, true),
+)
+```
+
+#### 6.3.3 カスタムexecutorを使うテストケース
+
+```go
+// Before: すべての引数を指定
+ge := NewDefaultGroupExecutor(
+    mockExecutor, // カスタム
+    config,
+    nil,
+    nil,
+    mockRM,
+    "test-run-123",
+)
+
+// After: カスタマイズ可能なヘルパー使用
+ge := testing.NewTestGroupExecutorWithConfig(
+    testing.TestGroupExecutorConfig{
+        Config:          config,
+        ResourceManager: mockRM,
+        Executor:        mockExecutor,
+    },
+)
+```
+
+### 6.4 ヘルパー関数の配置
+
+テスト用ヘルパー関数は、以下のディレクトリ構造で提供します：
+
+```
+internal/runner/executor/group/
+├── group_executor.go              # 本体実装
+├── group_executor_test.go         # テスト
+├── options.go                     # Option 関数の定義
+└── testing/
+    ├── helpers.go                 # テスト用ヘルパー関数
+    └── helpers_test.go            # ヘルパー関数のテスト
+```
+
+**パッケージ名**: `testing` (import path: `.../group/testing`)
+
+### 6.5 利点
+
+1. **テストコードの簡潔化**: 繰り返しパターンの削減
+2. **可読性の向上**: 重要な部分（config, resourceManager, options）に焦点
+3. **保守性の向上**: デフォルト値の変更が1箇所で済む
+4. **学習曲線の緩和**: 新しい開発者がテストを書きやすくなる
+5. **一貫性の確保**: テスト間で共通のデフォルト値を使用
+
+### 6.6 ヘルパー関数の設計原則
+
+1. **テスト専用**: プロダクションコードでは使用しない
+2. **明確な命名**: `NewTest*` プレフィックスでテスト用であることを明示
+3. **適切なデフォルト値**: テストで最も頻繁に使用される値を選択
+4. **柔軟性の維持**: オプション引数でカスタマイズ可能
+5. **段階的な提供**: シンプルなヘルパーと詳細なヘルパーの両方を提供
+
+## 7. 結論
 
 `NewDefaultGroupExecutor` のリファクタリングは、コードベースの保守性と可読性を大幅に向上させる重要な改善です。
 
-**推奨**: **案1（Functional Options パターン）**を採用し、段階的な移行を実施する。
+**推奨**: **案1（Functional Options パターン）**を採用し、**テスト用ヘルパー関数**を追加し、段階的な移行を実施する。
 
 この提案により、以下を実現できます：
 - 引数の数を削減（11個 → 実質6個 + オプション）
 - デフォルト値の効果的な活用
-- テストコードの簡潔化
+- テストコードの簡潔化（ヘルパー関数により更に簡潔に）
 - 将来の拡張性の確保
 
 次のステップとして、この分析に基づき以下のドキュメントを作成することを推奨します：
-1. 詳細な設計仕様書（各 Option 関数のシグネチャと動作）
+1. 詳細な設計仕様書（各 Option 関数のシグネチャと動作、テスト用ヘルパー関数の仕様）
 2. 実装計画書（具体的な実装手順とスケジュール）
 3. テスト計画書（移行に伴うテストケースの更新計画）
