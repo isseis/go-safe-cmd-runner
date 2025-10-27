@@ -184,8 +184,7 @@ runner.groupExecutor = NewDefaultGroupExecutor(
 
 **変更後**:
 ```go
-var groupOptions []GroupExecutorOption
-groupOptions = append(groupOptions, WithNotificationFunc(runner.logGroupExecutionSummary))
+groupOptions := []GroupExecutorOption{WithNotificationFunc(runner.logGroupExecutionSummary)}
 
 if opts.dryRunOptions != nil {
     groupOptions = append(groupOptions, WithDryRun(opts.dryRunOptions))
@@ -319,7 +318,6 @@ package runner
 import (
     "github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
     "github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
-    "time"
 )
 
 // GroupExecutorOption configures a DefaultGroupExecutor during construction.
@@ -471,20 +469,17 @@ func NewTestGroupExecutorWithConfig(
     cfg TestGroupExecutorConfig,
     options ...GroupExecutorOption,
 ) *DefaultGroupExecutor {
-    // Apply defaults for unset fields
-    executor := cfg.Executor
-    validator := cfg.Validator
-    verificationManager := cfg.VerificationManager
+    // Apply default for RunID if not set
     runID := cfg.RunID
     if runID == "" {
         runID = "test-run-123"
     }
 
     return NewDefaultGroupExecutor(
-        executor,
+        cfg.Executor,
         cfg.Config,
-        validator,
-        verificationManager,
+        cfg.Validator,
+        cfg.VerificationManager,
         cfg.ResourceManager,
         runID,
         options...,
@@ -514,6 +509,11 @@ grep -n "NewDefaultGroupExecutor.*notificationFunc" group_executor_test.go
 #### 5.1.1 ユニットテスト
 
 ```go
+import (
+    "reflect"
+    "testing"
+)
+
 func TestGroupExecutorOptions(t *testing.T) {
     tests := []struct {
         name    string
@@ -562,6 +562,17 @@ func TestGroupExecutorOptions(t *testing.T) {
 #### 5.1.2 統合テスト
 
 ```go
+import (
+    "testing"
+
+    "github.com/stretchr/testify/assert"
+
+    "github.com/isseis/go-safe-cmd-runner/internal/common"
+    "github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
+    "github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+    runnertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/testing"
+)
+
 func TestNewDefaultGroupExecutor_Integration(t *testing.T) {
     config := &runnertypes.ConfigSpec{
         Global: runnertypes.GlobalSpec{
@@ -593,9 +604,17 @@ func TestNewDefaultGroupExecutor_Integration(t *testing.T) {
 #### 5.1.3 パフォーマンステスト
 
 ```go
+import (
+    "testing"
+
+    "github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
+    "github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+    runnertesting "github.com/isseis/go-safe-cmd-runner/internal/runner/testing"
+)
+
 func TestNewDefaultGroupExecutor_Performance(t *testing.T) {
     config := &runnertypes.ConfigSpec{/* test config */}
-    mockRM := &mockResourceManager{}
+    mockRM := new(runnertesting.MockResourceManager)
 
     // アロケーション回数のテスト
     allocs := testing.AllocsPerRun(100, func() {
@@ -614,7 +633,7 @@ func TestNewDefaultGroupExecutor_Performance(t *testing.T) {
 
 func BenchmarkNewDefaultGroupExecutor(b *testing.B) {
     config := &runnertypes.ConfigSpec{/* test config */}
-    mockRM := &mockResourceManager{}
+    mockRM := new(runnertesting.MockResourceManager)
 
     b.ResetTimer()
     for i := 0; i < b.N; i++ {
