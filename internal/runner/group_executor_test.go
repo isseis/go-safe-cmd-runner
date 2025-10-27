@@ -1880,3 +1880,119 @@ func TestExecuteGroup_FileVerificationResultLog(t *testing.T) {
 	mockValidator.AssertExpectations(t)
 	mockVM.AssertExpectations(t)
 }
+
+// TestExecuteGroup_ExpandCommandError tests ExpandCommand error in command loop (T4.1)
+func TestExecuteGroup_ExpandCommandError(t *testing.T) {
+	// Arrange
+	mockValidator, mockVM := setupMocksForTest(t)
+	mockRM := new(runnertesting.MockResourceManager)
+
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
+			Timeout: common.IntPtr(30),
+		},
+	}
+
+	ge := NewDefaultGroupExecutor(
+		nil,
+		config,
+		mockValidator,
+		mockVM,
+		mockRM,
+		"test-run-123",
+		nil,
+		false,
+		resource.DetailLevelSummary,
+		false,
+		false,
+	)
+
+	// Group with command containing undefined variable in Args
+	group := &runnertypes.GroupSpec{
+		Name: "test-group",
+		Commands: []runnertypes.CommandSpec{
+			{
+				Name: "test-cmd",
+				Cmd:  "/bin/echo",
+				Args: []string{"%{UNDEFINED_VAR}"}, // Undefined variable in Args
+			},
+		},
+	}
+
+	runtimeGlobal := &runnertypes.RuntimeGlobal{
+		Spec:         &runnertypes.GlobalSpec{Timeout: common.IntPtr(30)},
+		ExpandedVars: map[string]string{}, // No UNDEFINED_VAR defined
+	}
+
+	// Act
+	ctx := context.Background()
+	err := ge.ExecuteGroup(ctx, group, runtimeGlobal)
+
+	// Assert
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to expand command")
+	assert.Contains(t, err.Error(), "test-cmd")
+
+	// Verify that ExecuteCommand was not called due to early error
+	mockRM.AssertNotCalled(t, "ExecuteCommand")
+	mockValidator.AssertExpectations(t)
+	mockVM.AssertExpectations(t)
+}
+
+// TestExecuteGroup_ResolveCommandWorkDirError tests resolveCommandWorkDir error in command loop (T4.2)
+func TestExecuteGroup_ResolveCommandWorkDirError(t *testing.T) {
+	// Arrange
+	mockValidator, mockVM := setupMocksForTest(t)
+	mockRM := new(runnertesting.MockResourceManager)
+
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
+			Timeout: common.IntPtr(30),
+		},
+	}
+
+	ge := NewDefaultGroupExecutor(
+		nil,
+		config,
+		mockValidator,
+		mockVM,
+		mockRM,
+		"test-run-123",
+		nil,
+		false,
+		resource.DetailLevelSummary,
+		false,
+		false,
+	)
+
+	// Group with command-level WorkDir containing undefined variable
+	group := &runnertypes.GroupSpec{
+		Name: "test-group",
+		Commands: []runnertypes.CommandSpec{
+			{
+				Name:    "test-cmd",
+				Cmd:     "/bin/echo",
+				WorkDir: "/tmp/%{UNDEFINED_VAR}/path", // Undefined variable in command WorkDir
+			},
+		},
+	}
+
+	runtimeGlobal := &runnertypes.RuntimeGlobal{
+		Spec:         &runnertypes.GlobalSpec{Timeout: common.IntPtr(30)},
+		ExpandedVars: map[string]string{}, // No UNDEFINED_VAR defined
+	}
+
+	// Act
+	ctx := context.Background()
+	err := ge.ExecuteGroup(ctx, group, runtimeGlobal)
+
+	// Assert
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to resolve command workdir")
+	assert.Contains(t, err.Error(), "test-cmd")
+
+	// Verify that ExecuteCommand was not called due to early error
+	mockRM.AssertNotCalled(t, "ExecuteCommand")
+	mockValidator.AssertExpectations(t)
+	mockVM.AssertExpectations(t)
+}
