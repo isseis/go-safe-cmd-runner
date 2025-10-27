@@ -24,7 +24,6 @@ type ValidatorInterface interface {
     ValidateAllEnvironmentVars(envVars map[string]string) error
     ValidateEnvironmentValue(key, value string) error
     ValidateCommand(command string) error
-    ValidateWorkDir(workDir string) error
 }
 
 // Ensure Validator implements ValidatorInterface
@@ -67,12 +66,6 @@ func (m *MockValidator) ValidateEnvironmentValue(key, value string) error {
 // ValidateCommand mocks the ValidateCommand method
 func (m *MockValidator) ValidateCommand(command string) error {
     args := m.Called(command)
-    return args.Error(0)
-}
-
-// ValidateWorkDir mocks the ValidateWorkDir method
-func (m *MockValidator) ValidateWorkDir(workDir string) error {
-    args := m.Called(workDir)
     return args.Error(0)
 }
 ```
