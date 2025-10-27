@@ -245,3 +245,47 @@ func TestMultiHandler_ConcurrentAccess(t *testing.T) {
 		<-done
 	}
 }
+
+func TestMultiHandler_Handlers(t *testing.T) {
+	handler1 := newMockHandler(true)
+	handler2 := newMockHandler(false)
+	handler3 := newMockHandler(true)
+
+	tests := []struct {
+		name          string
+		handlers      []slog.Handler
+		expectedCount int
+	}{
+		{
+			name:          "single handler",
+			handlers:      []slog.Handler{handler1},
+			expectedCount: 1,
+		},
+		{
+			name:          "two handlers",
+			handlers:      []slog.Handler{handler1, handler2},
+			expectedCount: 2,
+		},
+		{
+			name:          "three handlers",
+			handlers:      []slog.Handler{handler1, handler2, handler3},
+			expectedCount: 3,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			multi, err := NewMultiHandler(tt.handlers...)
+			require.NoError(t, err)
+
+			handlers := multi.Handlers()
+
+			assert.Len(t, handlers, tt.expectedCount, "Handlers() should return correct number of handlers")
+
+			// Verify returned handlers match the original handlers
+			for i, h := range handlers {
+				assert.Same(t, tt.handlers[i], h, "Handler at index %d should match", i)
+			}
+		})
+	}
+}

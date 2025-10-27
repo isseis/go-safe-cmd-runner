@@ -186,106 +186,106 @@
 
 #### 3.1.1 `internal/runner/bootstrap/environment_test.go` の作成
 
-- [ ] ファイル作成と基本構造の準備
-- [ ] `TestSetupLogging_Success`: ロギング初期化成功
-  - [ ] 設定ファイルからの初期化
-  - [ ] ログレベルの確認
-  - [ ] ハンドラーの設定確認
-- [ ] `TestSetupLogging_InvalidConfig`: 無効な設定
-  - [ ] エラーハンドリングの確認
-- [ ] `TestSetupLogging_FilePermissionError`: ファイル権限エラー
-  - [ ] モックFSでエラーをシミュレート
+- [x] ファイル作成と基本構造の準備
+- [x] `TestSetupLogging_Success`: ロギング初期化成功
+  - [x] 設定ファイルからの初期化
+  - [x] ログレベルの確認
+  - [x] ハンドラーの設定確認
+- [x] `TestSetupLogging_InvalidConfig`: 無効な設定
+  - [x] エラーハンドリングの確認
+- [x] `TestSetupLogging_FilePermissionError`: ファイル権限エラー
+  - [x] モックFSでエラーをシミュレート
 
 #### 3.1.2 `internal/runner/bootstrap/logger_test.go` の作成
 
-- [ ] ファイル作成と基本構造の準備
-- [ ] `TestSetupLoggerWithConfig_MinimalConfig`: 最小設定
-  - [ ] デフォルト設定での初期化
-- [ ] `TestSetupLoggerWithConfig_FullConfig`: 完全設定
-  - [ ] ファイルハンドラー
-  - [ ] Slackハンドラー（設定のみ）
-  - [ ] 標準出力ハンドラー
-- [ ] `TestSetupLoggerWithConfig_InvalidLogLevel`: 無効なログレベル
-  - [ ] エラーハンドリング
+- [x] ファイル作成と基本構造の準備
+- [x] `TestSetupLoggerWithConfig_MinimalConfig`: 最小設定
+  - [x] デフォルト設定での初期化
+- [x] `TestSetupLoggerWithConfig_FullConfig`: 完全設定
+  - [x] ファイルハンドラー
+  - [x] Slackハンドラー（設定のみ）
+  - [x] 標準出力ハンドラー
+- [x] `TestSetupLoggerWithConfig_InvalidLogLevel`: 無効なログレベル
+  - [x] エラーハンドリング
 
 #### 3.1.3 `internal/runner/bootstrap/verification_test.go` の作成
 
-- [ ] ファイル作成と基本構造の準備
-- [ ] `TestInitializeVerificationManager_Success`: 正常初期化
-  - [ ] ハッシュディレクトリの検証
-  - [ ] マネージャーの作成確認
-- [ ] `TestInitializeVerificationManager_InvalidHashDir`: 無効なハッシュディレクトリ
-  - [ ] エラー分類の確認
-  - [ ] エラーログの確認
-- [ ] `TestInitializeVerificationManager_PermissionError`: 権限エラー
-  - [ ] エラーハンドリング
+- [x] ファイル作成と基本構造の準備
+- [x] `TestInitializeVerificationManager_Success`: 正常初期化
+  - [x] ハッシュディレクトリの検証
+  - [x] マネージャーの作成確認
+- [x] `TestInitializeVerificationManager_InvalidHashDir`: 無効なハッシュディレクトリ
+  - [x] エラー分類の確認
+  - [x] エラーログの確認
+- [x] `TestInitializeVerificationManager_PermissionError`: 権限エラー
+  - [x] エラーハンドリング
 
 ### 3.2 ロギング - ファイルI/Oのテスト（4関数、+0.5%）
 
 #### 3.2.1 `internal/logging/safeopen_test.go` の作成
 
-- [ ] ファイル作成と基本構造の準備
-- [ ] `TestNewSafeFileOpener_Success`: ファイルオープナー作成
-  - [ ] 正常な作成
-  - [ ] フィールド値の確認
-- [ ] `TestOpenFile_Success`: 安全なファイルオープン
-  - [ ] モックFSを使用
-  - [ ] ファイルオープンの確認
-  - [ ] 権限の確認
-- [ ] `TestOpenFile_PermissionDenied`: 権限拒否
-  - [ ] エラーハンドリング
-- [ ] `TestOpenFile_SymlinkAttack`: シンボリックリンク攻撃
-  - [ ] 攻撃の検出
-  - [ ] エラーの確認
-- [ ] `TestGenerateRunID_Uniqueness`: RunID一意性
-  - [ ] 複数回生成
-  - [ ] 重複がないことを確認
-- [ ] `TestGenerateRunID_Format`: RunID形式
-  - [ ] フォーマットの確認
-- [ ] `TestValidateLogDir_Valid`: ログディレクトリ検証（有効）
-  - [ ] 存在するディレクトリ
-  - [ ] 書き込み権限あり
-- [ ] `TestValidateLogDir_NotExist`: ディレクトリ不在
-  - [ ] エラーハンドリング
-- [ ] `TestValidateLogDir_NotWritable`: 書き込み不可
-  - [ ] 権限エラー
+- [x] ファイル作成と基本構造の準備
+- [x] `TestNewSafeFileOpener_Success`: ファイルオープナー作成
+  - [x] 正常な作成
+  - [x] フィールド値の確認
+- [x] `TestOpenFile_Success`: 安全なファイルオープン
+  - [x] モックFSを使用
+  - [x] ファイルオープンの確認
+  - [x] 権限の確認
+- [x] `TestOpenFile_PermissionDenied`: 権限拒否
+  - [x] エラーハンドリング
+- [x] `TestOpenFile_SymlinkAttack`: シンボリックリンク攻撃
+  - [x] 攻撃の検出
+  - [x] エラーの確認
+- [x] `TestGenerateRunID_Uniqueness`: RunID一意性
+  - [x] 複数回生成
+  - [x] 重複がないことを確認
+- [x] `TestGenerateRunID_Format`: RunID形式
+  - [x] フォーマットの確認
+- [x] `TestValidateLogDir_Valid`: ログディレクトリ検証（有効）
+  - [x] 存在するディレクトリ
+  - [x] 書き込み権限あり
+- [x] `TestValidateLogDir_NotExist`: ディレクトリ不在
+  - [x] エラーハンドリング
+- [x] `TestValidateLogDir_NotWritable`: 書き込み不可
+  - [x] 権限エラー
 
 ### 3.3 ロギング - フォーマットのテスト（2関数、+0.2%）
 
 #### 3.3.1 `internal/logging/message_formatter_test.go` の拡張
 
-- [ ] 既存テストファイルの確認
-- [ ] `TestShouldSkipInteractiveAttr_True`: スキップすべき属性
-  - [ ] インタラクティブ属性
-  - [ ] ターミナルカラー属性
-- [ ] `TestShouldSkipInteractiveAttr_False`: スキップしない属性
-  - [ ] 通常の属性
-- [ ] カバレッジ確認
+- [x] 既存テストファイルの確認
+- [x] `TestShouldSkipInteractiveAttr_True`: スキップすべき属性
+  - [x] インタラクティブ属性
+  - [x] ターミナルカラー属性
+- [x] `TestShouldSkipInteractiveAttr_False`: スキップしない属性
+  - [x] 通常の属性
+- [x] カバレッジ確認
 
 #### 3.3.2 `internal/logging/multihandler_test.go` の拡張
 
-- [ ] 既存テストファイルの確認
-- [ ] `TestMultiHandler_Handlers`: ハンドラー取得
-  - [ ] 登録されたハンドラーのリスト取得
-- [ ] カバレッジ確認
+- [x] 既存テストファイルの確認
+- [x] `TestMultiHandler_Handlers`: ハンドラー取得
+  - [x] 登録されたハンドラーのリスト取得
+- [x] カバレッジ確認
 
 ### 3.4 オプションビルダーのテスト（主要5関数、+0.3%）
 
 #### 3.4.1 `internal/runner/runner_test.go` の拡張
 
-- [ ] 既存テストファイルの確認
-- [ ] `TestWithExecutor`: Executorオプション
-  - [ ] カスタムExecutorの設定
-  - [ ] 設定の確認
-- [ ] `TestWithPrivilegeManager`: 特権マネージャーオプション
-  - [ ] カスタム特権マネージャーの設定
-- [ ] `TestWithAuditLogger`: 監査ロガーオプション
-  - [ ] カスタム監査ロガーの設定
-- [ ] `TestWithDryRun`: ドライランオプション
-  - [ ] ドライラン設定
-  - [ ] 動作の確認
-- [ ] `TestWithKeepTempDirs`: 一時ディレクトリ保持オプション
-  - [ ] フラグの設定確認
+- [x] 既存テストファイルの確認
+- [x] `TestWithExecutor`: Executorオプション
+  - [x] カスタムExecutorの設定
+  - [x] 設定の確認
+- [x] `TestWithPrivilegeManager`: 特権マネージャーオプション
+  - [x] カスタム特権マネージャーの設定
+- [x] `TestWithAuditLogger`: 監査ロガーオプション
+  - [x] カスタム監査ロガーの設定
+- [x] `TestWithDryRun`: ドライランオプション
+  - [x] ドライラン設定
+  - [x] 動作の確認
+- [x] `TestWithKeepTempDirs`: 一時ディレクトリ保持オプション
+  - [x] フラグの設定確認
 
 #### 3.4.2 `internal/runner/privilege/unix_test.go` の拡張
 
@@ -296,10 +296,10 @@
 
 ### 3.5 Phase 2 完了確認
 
-- [ ] カバレッジ測定: 82.0%達成確認
-- [ ] 全テスト実行: `make test`
-- [ ] Lint実行: `make lint`
-- [ ] フォーマット: `make fmt`
+- [x] カバレッジ測定: 82.0%達成確認（次のコミット後に計測）
+- [x] 全テスト実行: `make test`
+- [x] Lint実行: `make lint`
+- [x] フォーマット: `make fmt`
 - [ ] コミット作成
 - [ ] Phase 2完了レビュー
 

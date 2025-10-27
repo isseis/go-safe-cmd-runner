@@ -352,3 +352,57 @@ func TestDefaultMessageFormatter_CustomLevel(t *testing.T) {
 		t.Error("Should contain the message for custom levels")
 	}
 }
+
+func TestShouldSkipInteractiveAttr_True(t *testing.T) {
+	formatter := NewDefaultMessageFormatter()
+
+	// Attributes that should be skipped in interactive mode
+	skipAttrs := []string{
+		"time",
+		"level",
+		"msg",
+		"run_id",
+		"hostname",
+		"pid",
+		"schema_version",
+		"duration_ms",
+		"verified_files",
+		"skipped_files",
+		"total_files",
+		"interactive_mode",
+		"color_support",
+		"slack_enabled",
+	}
+
+	for _, attr := range skipAttrs {
+		t.Run(attr, func(t *testing.T) {
+			if !formatter.shouldSkipInteractiveAttr(attr) {
+				t.Errorf("shouldSkipInteractiveAttr(%q) = false, want true", attr)
+			}
+		})
+	}
+}
+
+func TestShouldSkipInteractiveAttr_False(t *testing.T) {
+	formatter := NewDefaultMessageFormatter()
+
+	// Attributes that should NOT be skipped in interactive mode
+	keepAttrs := []string{
+		"error",
+		"group",
+		"command",
+		"file",
+		"component",
+		"variable",
+		"user_defined_key",
+		"custom_attr",
+	}
+
+	for _, attr := range keepAttrs {
+		t.Run(attr, func(t *testing.T) {
+			if formatter.shouldSkipInteractiveAttr(attr) {
+				t.Errorf("shouldSkipInteractiveAttr(%q) = true, want false", attr)
+			}
+		})
+	}
+}
