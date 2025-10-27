@@ -43,19 +43,16 @@ func NewTestGroupExecutorWithConfig(
 	options ...GroupExecutorOption,
 ) *DefaultGroupExecutor {
 	// Apply defaults for unset fields
-	executor := cfg.Executor
-	validator := cfg.Validator
-	verificationManager := cfg.VerificationManager
 	runID := cfg.RunID
 	if runID == "" {
 		runID = "test-run-123"
 	}
 
 	return NewDefaultGroupExecutor(
-		executor,
+		cfg.Executor,
 		cfg.Config,
-		validator,
-		verificationManager,
+		cfg.Validator,
+		cfg.VerificationManager,
 		cfg.ResourceManager,
 		runID,
 		options...,

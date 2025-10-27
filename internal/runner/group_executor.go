@@ -75,14 +75,12 @@ func NewDefaultGroupExecutor(
 
 	// Extract dry-run settings
 	isDryRun := opts.dryRunOptions != nil
-	var detailLevel resource.DetailLevel
+	detailLevel := resource.DetailLevelSummary
 	var showSensitive bool
 
 	if isDryRun {
 		detailLevel = opts.dryRunOptions.DetailLevel
 		showSensitive = opts.dryRunOptions.ShowSensitive
-	} else {
-		detailLevel = resource.DetailLevelSummary
 	}
 
 	return &DefaultGroupExecutor{
