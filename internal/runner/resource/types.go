@@ -72,25 +72,25 @@ type ResourceImpact struct {
 
 // DryRunOptions holds options for dry-run execution
 type DryRunOptions struct {
-	DetailLevel      DetailLevel  `json:"detail_level"`
-	OutputFormat     OutputFormat `json:"output_format"`
-	ShowSensitive    bool         `json:"show_sensitive"`
-	VerifyFiles      bool         `json:"verify_files"`
-	ShowTimings      bool         `json:"show_timings"`
-	ShowDependencies bool         `json:"show_dependencies"`
-	MaxDepth         int          `json:"max_depth"` // Maximum depth for variable resolution
+	DetailLevel      DryRunDetailLevel `json:"detail_level"`
+	OutputFormat     OutputFormat      `json:"output_format"`
+	ShowSensitive    bool              `json:"show_sensitive"`
+	VerifyFiles      bool              `json:"verify_files"`
+	ShowTimings      bool              `json:"show_timings"`
+	ShowDependencies bool              `json:"show_dependencies"`
+	MaxDepth         int               `json:"max_depth"` // Maximum depth for variable resolution
 
 	// Security analysis configuration
 	VerifyStandardPaths bool   `json:"verify_standard_paths"` // Perform hash validation for standard system paths
 	HashDir             string `json:"hash_dir"`              // Directory containing hash files
 }
 
-// DetailLevel represents the level of detail in output
-type DetailLevel int
+// DryRunDetailLevel represents the level of detail in output
+type DryRunDetailLevel int
 
 const (
 	// DetailLevelSummary shows only summary information
-	DetailLevelSummary DetailLevel = iota
+	DetailLevelSummary DryRunDetailLevel = iota
 	// DetailLevelDetailed shows detailed information
 	DetailLevelDetailed
 	// DetailLevelFull shows full information including debug details
@@ -98,7 +98,7 @@ const (
 )
 
 // String returns the string representation of DetailLevel
-func (d DetailLevel) String() string {
+func (d DryRunDetailLevel) String() string {
 	switch d {
 	case DetailLevelSummary:
 		return "summary"

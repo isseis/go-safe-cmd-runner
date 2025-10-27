@@ -35,7 +35,7 @@ type DefaultGroupExecutor struct {
 	runID               string
 	notificationFunc    groupNotificationFunc
 	isDryRun            bool
-	dryRunDetailLevel   resource.DetailLevel
+	dryRunDetailLevel   resource.DryRunDetailLevel
 	dryRunShowSensitive bool
 	keepTempDirs        bool
 }
@@ -75,11 +75,11 @@ func NewDefaultGroupExecutor(
 
 	// Extract dry-run settings
 	isDryRun := opts.dryRunOptions != nil
-	detailLevel := resource.DetailLevelSummary
+	dryRunDetailLevel := resource.DetailLevelSummary
 	var showSensitive bool
 
 	if isDryRun {
-		detailLevel = opts.dryRunOptions.DetailLevel
+		dryRunDetailLevel = opts.dryRunOptions.DetailLevel
 		showSensitive = opts.dryRunOptions.ShowSensitive
 	}
 
@@ -92,7 +92,7 @@ func NewDefaultGroupExecutor(
 		runID:               runID,
 		notificationFunc:    opts.notificationFunc,
 		isDryRun:            isDryRun,
-		dryRunDetailLevel:   detailLevel,
+		dryRunDetailLevel:   dryRunDetailLevel,
 		dryRunShowSensitive: showSensitive,
 		keepTempDirs:        opts.keepTempDirs,
 	}

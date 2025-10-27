@@ -140,7 +140,7 @@ func (h *sensitiveTestHelper) createDryRunOptions(cfg *runnertypes.ConfigSpec, h
 }
 
 // createDryRunOptionsWithDetailLevel creates DryRunOptions with specific DetailLevel
-func (h *sensitiveTestHelper) createDryRunOptionsWithDetailLevel(cfg *runnertypes.ConfigSpec, hashDir string, detailLevel resource.DetailLevel) *resource.DryRunOptions {
+func (h *sensitiveTestHelper) createDryRunOptionsWithDetailLevel(cfg *runnertypes.ConfigSpec, hashDir string, detailLevel resource.DryRunDetailLevel) *resource.DryRunOptions {
 	h.t.Helper()
 
 	return &resource.DryRunOptions{
@@ -292,7 +292,7 @@ risk_level = "low"
 func TestIntegration_DryRunDetailLevelWithoutFull(t *testing.T) {
 	tests := []struct {
 		name        string
-		detailLevel resource.DetailLevel
+		detailLevel resource.DryRunDetailLevel
 	}{
 		{
 			name:        "DetailLevelSummary does not print final environment",

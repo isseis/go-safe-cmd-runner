@@ -15,7 +15,7 @@ var defaultSensitivePatterns = redaction.DefaultSensitivePatterns()
 
 // FormatterOptions contains options for formatting dry-run results
 type FormatterOptions struct {
-	DetailLevel   DetailLevel
+	DetailLevel   DryRunDetailLevel
 	OutputFormat  OutputFormat
 	ShowSensitive bool
 	MaxWidth      int // For text formatting

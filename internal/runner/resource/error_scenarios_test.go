@@ -387,7 +387,7 @@ func TestDryRunManagerErrorHandling(t *testing.T) {
 			name: "invalid dry-run options",
 			setup: func() (*DryRunResourceManager, error) {
 				// Test with invalid detail level
-				opts := &DryRunOptions{DetailLevel: DetailLevel(999)}
+				opts := &DryRunOptions{DetailLevel: DryRunDetailLevel(999)}
 				mockPathResolver := &MockPathResolver{}
 				setupStandardCommandPaths(mockPathResolver)
 				mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
@@ -522,7 +522,7 @@ func TestFormatterErrorScenarios(t *testing.T) {
 				Metadata: &ResultMetadata{},
 			},
 			options: FormatterOptions{
-				DetailLevel: DetailLevel(999),
+				DetailLevel: DryRunDetailLevel(999),
 			},
 			expectError: false, // Should fallback gracefully
 		},
