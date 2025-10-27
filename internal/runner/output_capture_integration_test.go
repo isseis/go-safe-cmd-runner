@@ -13,6 +13,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -83,8 +84,16 @@ func TestRunner_OutputCaptureIntegration(t *testing.T) {
 			mockRM := &MockResourceManager{}
 			tt.setupMock(mockRM)
 
+			// Create verification manager for dry-run (skips actual verification)
+			verificationManager, err := verification.NewManagerForDryRun()
+			require.NoError(t, err)
+
 			// Create runner with proper options (using existing pattern)
-			options := []Option{WithResourceManager(mockRM), WithRunID("test-run-output-capture")}
+			options := []Option{
+				WithResourceManager(mockRM),
+				WithVerificationManager(verificationManager),
+				WithRunID("test-run-output-capture"),
+			}
 
 			// Create runner
 			runner, err := NewRunner(cfg, options...)
@@ -193,9 +202,14 @@ func TestRunner_OutputCaptureSecurityValidation(t *testing.T) {
 				// The mock will panic if ExecuteCommand is unexpectedly invoked
 			}
 
+			// Create verification manager for dry-run (skips actual verification)
+			verificationManager, err := verification.NewManagerForDryRun()
+			require.NoError(t, err)
+
 			// Create runner with proper options
 			var options []Option
 			options = append(options, WithResourceManager(mockRM))
+			options = append(options, WithVerificationManager(verificationManager))
 			options = append(options, WithRunID("test-run-security"))
 
 			// Create runner

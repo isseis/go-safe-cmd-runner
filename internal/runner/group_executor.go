@@ -29,8 +29,8 @@ type GroupExecutor interface {
 type DefaultGroupExecutor struct {
 	executor            executor.CommandExecutor
 	config              *runnertypes.ConfigSpec
-	validator           *security.Validator
-	verificationManager *verification.Manager
+	validator           security.ValidatorInterface
+	verificationManager verification.ManagerInterface
 	resourceManager     resource.ResourceManager
 	runID               string
 	notificationFunc    groupNotificationFunc
@@ -47,8 +47,8 @@ type groupNotificationFunc func(group *runnertypes.GroupSpec, result *groupExecu
 func NewDefaultGroupExecutor(
 	executor executor.CommandExecutor,
 	config *runnertypes.ConfigSpec,
-	validator *security.Validator,
-	verificationManager *verification.Manager,
+	validator security.ValidatorInterface,
+	verificationManager verification.ManagerInterface,
 	resourceManager resource.ResourceManager,
 	runID string,
 	notificationFunc groupNotificationFunc,
@@ -288,6 +288,12 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 // If EffectiveTimeout is 0 or negative, returns a cancellable context without a deadline for unlimited execution.
 // Otherwise, creates a context with the specified timeout.
 func (ge *DefaultGroupExecutor) createCommandContext(ctx context.Context, cmd *runnertypes.RuntimeCommand) (context.Context, context.CancelFunc) {
+	// Defensive check: panic if EffectiveTimeout is negative (should never happen due to config validation)
+	if cmd.EffectiveTimeout < 0 {
+		panic(fmt.Sprintf("program error: negative timeout %d for command %s",
+			cmd.EffectiveTimeout, cmd.Name()))
+	}
+
 	if cmd.EffectiveTimeout <= 0 {
 		// Unlimited execution: return a cancellable context without a timeout
 		slog.Warn("Command configured with unlimited timeout",
