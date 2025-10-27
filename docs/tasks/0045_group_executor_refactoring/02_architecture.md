@@ -64,7 +64,7 @@ internal/runner/executor/group/
 ├── options.go                     # Option 関数の定義
 ├── group_executor_test.go         # メインテスト
 ├── options_test.go                # Option 関数のテスト
-├── testing_helpers.go.go          # テスト用ヘルパー関数 (//go:build test)
+├── testing_helpers.go          # テスト用ヘルパー関数 (//go:build test)
 └── test_helpers_test.go           # ヘルパー関数の使用例とドキュメント
 ```
 
@@ -89,8 +89,9 @@ flowchart TD
     ・NewTestGroupExecutorWithConfig"]
 
     AL --> IL
+    AL --> TL
     IL --> IML
-    IML --> TL
+    TL --> IL
 
     style AL fill:#e1f5ff,stroke:#333,stroke-width:2px
     style IL fill:#fff4e1,stroke:#333,stroke-width:2px
@@ -249,7 +250,7 @@ func NewDefaultGroupExecutor(/* params */, options ...GroupExecutorOption) *Defa
 
 ```
 internal/runner/executor/group/
-├── testing_helpers.go.go               # テスト用ヘルパー関数 (//go:build test)
+├── testing_helpers.go               # テスト用ヘルパー関数 (//go:build test)
 └── test_helpers_test.go       # ヘルパー関数の使用例とドキュメント
 ```
 
@@ -505,7 +506,7 @@ flowchart LR
 | メトリクス | 現在値 | 目標値 | 測定方法 |
 |------------|--------|--------|----------|
 | テストカバレッジ | 85% | ≥85% | go test -cover |
-| 圧環複雑度 | 12 | ≤15 | gocyclo |
+| 循環的複雑度 | 12 | ≤15 | gocyclo |
 | 関数あたりの引数数 | 11 | ≤6+options | 静的解析 |
 | テストコード行数 | 100% | 60-70% | 行数カウント |
 

@@ -1059,24 +1059,36 @@ func TestNewDefaultGroupExecutor_Performance(t *testing.T) {
     config := &runnertypes.ConfigSpec{/* test config */}
     mockRM := &mockResourceManager{}
 
-    // メモリ使用量テスト
-    var m1, m2 runtime.MemStats
-    runtime.GC()
-    runtime.ReadMemStats(&m1)
-
-    for i := 0; i < 1000; i++ {
+    // アロケーション回数のテスト
+    allocs := testing.AllocsPerRun(100, func() {
         _ = NewDefaultGroupExecutor(
             nil, config, nil, nil, mockRM, "perf-test",
             WithKeepTempDirs(false),
         )
+    })
+
+    // 期待値: 1回のアロケーション (groupExecutorOptions構造体)
+    // 許容範囲: 2回以下
+    if allocs > 2 {
+        t.Errorf("Too many allocations per call: got %.1f, want <= 2", allocs)
     }
+}
 
-    runtime.GC()
-    runtime.ReadMemStats(&m2)
+func BenchmarkNewDefaultGroupExecutor(b *testing.B) {
+    config := &runnertypes.ConfigSpec{/* test config */}
+    mockRM := &mockResourceManager{}
 
-    allocPerCall := (m2.TotalAlloc - m1.TotalAlloc) / 1000
-    if allocPerCall > 100 { // 100 bytes per call threshold
-        t.Errorf("Memory usage too high: %d bytes per call", allocPerCall)
+    b.ResetTimer()
+    for i := 0; i < b.N; i++ {
+        _ = NewDefaultGroupExecutor(
+            nil, config, nil, nil, mockRM, "bench-test",
+            WithNotificationFunc(nil),
+            WithDryRun(&resource.DryRunOptions{
+                DetailLevel:   resource.DetailLevelFull,
+                ShowSensitive: false,
+            }),
+            WithKeepTempDirs(false),
+        )
     }
 }
 ```
