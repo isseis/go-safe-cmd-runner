@@ -205,19 +205,7 @@ func TestExecuteGroup_WorkDirPriority(t *testing.T) {
 				},
 			}
 
-			ge := NewDefaultGroupExecutorLegacy(
-				nil,
-				config,
-				nil,
-				nil,
-				mockRM,
-				"test-run-123",
-				nil,
-				false,                       // isDryRun
-				resource.DetailLevelSummary, // dryRunDetailLevel
-				false,                       // dryRunShowSensitive
-				false,                       // keepTempDirs
-			)
+			ge := NewTestGroupExecutor(config, mockRM)
 
 			group := &runnertypes.GroupSpec{
 				Name:    "test-group",
@@ -304,19 +292,7 @@ func TestExecuteGroup_TempDirCleanup(t *testing.T) {
 				},
 			}
 
-			ge := NewDefaultGroupExecutorLegacy(
-				nil,
-				config,
-				nil,
-				nil,
-				mockRM,
-				"test-run-123",
-				nil,
-				false,                       // isDryRun
-				resource.DetailLevelSummary, // dryRunDetailLevel
-				false,                       // dryRunShowSensitive
-				false,                       // keepTempDirs
-			)
+			ge := NewTestGroupExecutor(config, mockRM)
 
 			group := &runnertypes.GroupSpec{
 				Name: "test-group",
@@ -376,19 +352,7 @@ func TestExecuteGroup_CreateTempDirFailure(t *testing.T) {
 		},
 	}
 
-	ge := NewDefaultGroupExecutorLegacy(
-		nil,
-		config,
-		nil,
-		nil,
-		mockRM,
-		"test-run-123",
-		nil,
-		false,                       // isDryRun
-		resource.DetailLevelSummary, // dryRunDetailLevel
-		false,                       // dryRunShowSensitive
-		false,                       // keepTempDirs
-	)
+	ge := NewTestGroupExecutor(config, mockRM)
 
 	group := &runnertypes.GroupSpec{
 		Name: "test-group",
@@ -433,18 +397,14 @@ func TestExecuteGroup_CommandExecutionFailure(t *testing.T) {
 		capturedNotification = result
 	}
 
-	ge := NewDefaultGroupExecutorLegacy(
-		nil, // executor
-		config,
-		mockValidator,
-		mockVerificationManager,
-		mockRM,
-		"test-run-123",
-		notificationFunc,
-		false,                       // isDryRun
-		resource.DetailLevelSummary, // dryRunDetailLevel
-		false,                       // dryRunShowSensitive
-		false,                       // keepTempDirs
+	ge := NewTestGroupExecutorWithConfig(
+		TestGroupExecutorConfig{
+			Config:              config,
+			Validator:           mockValidator,
+			VerificationManager: mockVerificationManager,
+			ResourceManager:     mockRM,
+		},
+		WithGroupNotificationFunc(notificationFunc),
 	)
 
 	group := &runnertypes.GroupSpec{
@@ -503,18 +463,14 @@ func TestExecuteGroup_CommandExecutionFailure_NonStandardExitCode(t *testing.T) 
 		capturedNotification = result
 	}
 
-	ge := NewDefaultGroupExecutorLegacy(
-		nil, // executor
-		config,
-		mockValidator,
-		mockVerificationManager,
-		mockRM,
-		"test-run-123",
-		notificationFunc,
-		false,                       // isDryRun
-		resource.DetailLevelSummary, // dryRunDetailLevel
-		false,                       // dryRunShowSensitive
-		false,                       // keepTempDirs
+	ge := NewTestGroupExecutorWithConfig(
+		TestGroupExecutorConfig{
+			Config:              config,
+			Validator:           mockValidator,
+			VerificationManager: mockVerificationManager,
+			ResourceManager:     mockRM,
+		},
+		WithGroupNotificationFunc(notificationFunc),
 	)
 
 	group := &runnertypes.GroupSpec{
@@ -574,18 +530,14 @@ func TestExecuteGroup_SuccessNotification(t *testing.T) {
 		capturedDuration = duration
 	}
 
-	ge := NewDefaultGroupExecutorLegacy(
-		nil, // executor
-		config,
-		mockValidator,
-		mockVerificationManager,
-		mockRM,
-		"test-run-123",
-		notificationFunc,
-		false,                       // isDryRun
-		resource.DetailLevelSummary, // dryRunDetailLevel
-		false,                       // dryRunShowSensitive
-		false,                       // keepTempDirs
+	ge := NewTestGroupExecutorWithConfig(
+		TestGroupExecutorConfig{
+			Config:              config,
+			Validator:           mockValidator,
+			VerificationManager: mockVerificationManager,
+			ResourceManager:     mockRM,
+		},
+		WithGroupNotificationFunc(notificationFunc),
 	)
 
 	group := &runnertypes.GroupSpec{
@@ -640,18 +592,13 @@ func TestExecuteCommandInGroup_OutputPathValidationFailure(t *testing.T) {
 		},
 	}
 
-	ge := NewDefaultGroupExecutorLegacy(
-		nil, // executor
-		config,
-		mockValidator,
-		mockVerificationManager,
-		mockRM,
-		"test-run-123",
-		nil,
-		false,                       // isDryRun
-		resource.DetailLevelSummary, // dryRunDetailLevel
-		false,                       // dryRunShowSensitive
-		false,                       // keepTempDirs
+	ge := NewTestGroupExecutorWithConfig(
+		TestGroupExecutorConfig{
+			Config:              config,
+			Validator:           mockValidator,
+			VerificationManager: mockVerificationManager,
+			ResourceManager:     mockRM,
+		},
 	)
 
 	cmd := &runnertypes.RuntimeCommand{
@@ -702,18 +649,13 @@ func TestExecuteGroup_MultipleCommands(t *testing.T) {
 		},
 	}
 
-	ge := NewDefaultGroupExecutorLegacy(
-		nil, // executor
-		config,
-		mockValidator,
-		mockVerificationManager,
-		mockRM,
-		"test-run-123",
-		nil,
-		false,                       // isDryRun
-		resource.DetailLevelSummary, // dryRunDetailLevel
-		false,                       // dryRunShowSensitive
-		false,                       // keepTempDirs
+	ge := NewTestGroupExecutorWithConfig(
+		TestGroupExecutorConfig{
+			Config:              config,
+			Validator:           mockValidator,
+			VerificationManager: mockVerificationManager,
+			ResourceManager:     mockRM,
+		},
 	)
 
 	group := &runnertypes.GroupSpec{
@@ -766,18 +708,13 @@ func TestExecuteGroup_StopOnFirstFailure(t *testing.T) {
 		},
 	}
 
-	ge := NewDefaultGroupExecutorLegacy(
-		nil, // executor
-		config,
-		mockValidator,
-		mockVerificationManager,
-		mockRM,
-		"test-run-123",
-		nil,
-		false,                       // isDryRun
-		resource.DetailLevelSummary, // dryRunDetailLevel
-		false,                       // dryRunShowSensitive
-		false,                       // keepTempDirs
+	ge := NewTestGroupExecutorWithConfig(
+		TestGroupExecutorConfig{
+			Config:              config,
+			Validator:           mockValidator,
+			VerificationManager: mockVerificationManager,
+			ResourceManager:     mockRM,
+		},
 	)
 
 	group := &runnertypes.GroupSpec{
@@ -1082,18 +1019,21 @@ func TestExecuteGroup_RunnerWorkdirExpansion(t *testing.T) {
 				},
 			}
 
-			ge := NewDefaultGroupExecutorLegacy(
-				nil, // command executor - we'll test without executing actual commands
-				configSpec,
-				nil,          // validator
-				nil,          // verificationManager
-				mockExecutor, // resourceManager
-				"test-run-123",
-				mockNotificationFunc,
-				tt.isDryRun,
-				resource.DetailLevelSummary, // dryRunDetailLevel
-				false,                       // dryRunShowSensitive
-				false,                       // keepTempDirs
+			var geOptions []GroupExecutorOption
+			geOptions = append(geOptions, WithGroupNotificationFunc(mockNotificationFunc))
+			if tt.isDryRun {
+				geOptions = append(geOptions, WithGroupDryRun(&resource.DryRunOptions{
+					DetailLevel:   resource.DetailLevelSummary,
+					ShowSensitive: false,
+				}))
+			}
+
+			ge := NewTestGroupExecutorWithConfig(
+				TestGroupExecutorConfig{
+					Config:          configSpec,
+					ResourceManager: mockExecutor,
+				},
+				geOptions...,
 			)
 
 			group := &runnertypes.GroupSpec{
@@ -1230,18 +1170,12 @@ func TestExecuteCommandInGroup_ValidateEnvironmentVarsFailure(t *testing.T) {
 			return exists && strings.Contains(val, "rm -rf")
 		})).Return(expectedErr)
 
-	ge := NewDefaultGroupExecutorLegacy(
-		nil,
-		config,
-		mockValidator,
-		nil,
-		mockRM,
-		"test-run-123",
-		nil,
-		false,
-		resource.DetailLevelSummary,
-		false,
-		false,
+	ge := NewTestGroupExecutorWithConfig(
+		TestGroupExecutorConfig{
+			Config:          config,
+			Validator:       mockValidator,
+			ResourceManager: mockRM,
+		},
 	)
 
 	cmd := &runnertypes.RuntimeCommand{
@@ -1302,18 +1236,13 @@ func TestExecuteCommandInGroup_ResolvePathFailure(t *testing.T) {
 	expectedErr := errors.New("command not found in PATH")
 	mockVM.On("ResolvePath", "/nonexistent/command").Return("", expectedErr)
 
-	ge := NewDefaultGroupExecutorLegacy(
-		nil,
-		config,
-		mockValidator,
-		mockVM,
-		mockRM,
-		"test-run-123",
-		nil,
-		false,
-		resource.DetailLevelSummary,
-		false,
-		false,
+	ge := NewTestGroupExecutorWithConfig(
+		TestGroupExecutorConfig{
+			Config:              config,
+			Validator:           mockValidator,
+			VerificationManager: mockVM,
+			ResourceManager:     mockRM,
+		},
 	)
 
 	cmd := &runnertypes.RuntimeCommand{
@@ -1394,18 +1323,17 @@ func TestExecuteCommandInGroup_DryRunDetailLevelFull(t *testing.T) {
 	// Setup: path resolution succeeds
 	mockVM.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil)
 
-	ge := NewDefaultGroupExecutorLegacy(
-		nil,
-		config,
-		mockValidator,
-		mockVM,
-		mockRM,
-		"test-run-123",
-		nil,
-		true,                     // isDryRun = true
-		resource.DetailLevelFull, // DetailLevelFull
-		false,                    // dryRunShowSensitive = false
-		false,
+	ge := NewTestGroupExecutorWithConfig(
+		TestGroupExecutorConfig{
+			Config:              config,
+			Validator:           mockValidator,
+			VerificationManager: mockVM,
+			ResourceManager:     mockRM,
+		},
+		WithGroupDryRun(&resource.DryRunOptions{
+			DetailLevel:   resource.DetailLevelFull,
+			ShowSensitive: false,
+		}),
 	)
 
 	cmd := &runnertypes.RuntimeCommand{
@@ -1483,18 +1411,17 @@ func TestExecuteGroup_DryRunVariableExpansion(t *testing.T) {
 	// Setup: path resolution succeeds
 	mockVM.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil)
 
-	ge := NewDefaultGroupExecutorLegacy(
-		nil,
-		config,
-		mockValidator,
-		mockVM,
-		mockRM,
-		"test-run-123",
-		nil,
-		true, // isDryRun = true
-		resource.DetailLevelSummary,
-		false,
-		false,
+	ge := NewTestGroupExecutorWithConfig(
+		TestGroupExecutorConfig{
+			Config:              config,
+			Validator:           mockValidator,
+			VerificationManager: mockVM,
+			ResourceManager:     mockRM,
+		},
+		WithGroupDryRun(&resource.DryRunOptions{
+			DetailLevel:   resource.DetailLevelSummary,
+			ShowSensitive: false,
+		}),
 	)
 
 	group := &runnertypes.GroupSpec{
@@ -1545,18 +1472,12 @@ func TestExecuteCommandInGroup_VerificationManagerNil(t *testing.T) {
 	}
 
 	// verificationManager = nil (no path resolution)
-	ge := NewDefaultGroupExecutorLegacy(
-		nil,
-		config,
-		mockValidator,
-		nil, // verificationManager = nil
-		mockRM,
-		"test-run-123",
-		nil,
-		false,
-		resource.DetailLevelSummary,
-		false,
-		false,
+	ge := NewTestGroupExecutorWithConfig(
+		TestGroupExecutorConfig{
+			Config:          config,
+			Validator:       mockValidator,
+			ResourceManager: mockRM,
+		},
 	)
 
 	cmd := &runnertypes.RuntimeCommand{
@@ -1614,18 +1535,14 @@ func TestExecuteGroup_KeepTempDirs(t *testing.T) {
 	mockVM.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil)
 
 	// keepTempDirs = true
-	ge := NewDefaultGroupExecutorLegacy(
-		nil,
-		config,
-		mockValidator,
-		mockVM,
-		mockRM,
-		"test-run-123",
-		nil,
-		false,
-		resource.DetailLevelSummary,
-		false,
-		true, // keepTempDirs = true
+	ge := NewTestGroupExecutorWithConfig(
+		TestGroupExecutorConfig{
+			Config:              config,
+			Validator:           mockValidator,
+			VerificationManager: mockVM,
+			ResourceManager:     mockRM,
+		},
+		WithGroupKeepTempDirs(true),
 	)
 
 	group := &runnertypes.GroupSpec{
@@ -1674,18 +1591,13 @@ func TestExecuteGroup_NoNotificationFunc(t *testing.T) {
 	mockVM.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil)
 
 	// notificationFunc = nil
-	ge := NewDefaultGroupExecutorLegacy(
-		nil,
-		config,
-		mockValidator,
-		mockVM,
-		mockRM,
-		"test-run-123",
-		nil, // notificationFunc = nil
-		false,
-		resource.DetailLevelSummary,
-		false,
-		false,
+	ge := NewTestGroupExecutorWithConfig(
+		TestGroupExecutorConfig{
+			Config:              config,
+			Validator:           mockValidator,
+			VerificationManager: mockVM,
+			ResourceManager:     mockRM,
+		},
 	)
 
 	group := &runnertypes.GroupSpec{
@@ -1732,18 +1644,13 @@ func TestExecuteGroup_EmptyDescription(t *testing.T) {
 	// Setup: path resolution succeeds
 	mockVM.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil)
 
-	ge := NewDefaultGroupExecutorLegacy(
-		nil,
-		config,
-		mockValidator,
-		mockVM,
-		mockRM,
-		"test-run-123",
-		nil,
-		false,
-		resource.DetailLevelSummary,
-		false,
-		false,
+	ge := NewTestGroupExecutorWithConfig(
+		TestGroupExecutorConfig{
+			Config:              config,
+			Validator:           mockValidator,
+			VerificationManager: mockVM,
+			ResourceManager:     mockRM,
+		},
 	)
 
 	// Group with empty description
@@ -1789,18 +1696,12 @@ func TestExecuteGroup_VariableExpansionError(t *testing.T) {
 		},
 	}
 
-	ge := NewDefaultGroupExecutorLegacy(
-		nil,
-		config,
-		mockValidator,
-		nil, // No verification manager for this test
-		mockRM,
-		"test-run-123",
-		nil,
-		false,
-		resource.DetailLevelSummary,
-		false,
-		false,
+	ge := NewTestGroupExecutorWithConfig(
+		TestGroupExecutorConfig{
+			Config:          config,
+			Validator:       mockValidator,
+			ResourceManager: mockRM,
+		},
 	)
 
 	// Group with WorkDir containing undefined variable
@@ -1855,18 +1756,13 @@ func TestExecuteGroup_FileVerificationResultLog(t *testing.T) {
 	}
 	mockVM.On("VerifyGroupFiles", mock.Anything).Return(verifyResult, nil)
 
-	ge := NewDefaultGroupExecutorLegacy(
-		nil,
-		config,
-		mockValidator,
-		mockVM,
-		mockRM,
-		"test-run-123",
-		nil,
-		false,
-		resource.DetailLevelSummary,
-		false,
-		false,
+	ge := NewTestGroupExecutorWithConfig(
+		TestGroupExecutorConfig{
+			Config:              config,
+			Validator:           mockValidator,
+			VerificationManager: mockVM,
+			ResourceManager:     mockRM,
+		},
 	)
 
 	group := &runnertypes.GroupSpec{
@@ -1911,18 +1807,13 @@ func TestExecuteGroup_ExpandCommandError(t *testing.T) {
 		},
 	}
 
-	ge := NewDefaultGroupExecutorLegacy(
-		nil,
-		config,
-		mockValidator,
-		mockVM,
-		mockRM,
-		"test-run-123",
-		nil,
-		false,
-		resource.DetailLevelSummary,
-		false,
-		false,
+	ge := NewTestGroupExecutorWithConfig(
+		TestGroupExecutorConfig{
+			Config:              config,
+			Validator:           mockValidator,
+			VerificationManager: mockVM,
+			ResourceManager:     mockRM,
+		},
 	)
 
 	// Group with command containing undefined variable in Args
@@ -1969,18 +1860,13 @@ func TestExecuteGroup_ResolveCommandWorkDirError(t *testing.T) {
 		},
 	}
 
-	ge := NewDefaultGroupExecutorLegacy(
-		nil,
-		config,
-		mockValidator,
-		mockVM,
-		mockRM,
-		"test-run-123",
-		nil,
-		false,
-		resource.DetailLevelSummary,
-		false,
-		false,
+	ge := NewTestGroupExecutorWithConfig(
+		TestGroupExecutorConfig{
+			Config:              config,
+			Validator:           mockValidator,
+			VerificationManager: mockVM,
+			ResourceManager:     mockRM,
+		},
 	)
 
 	// Group with command-level WorkDir containing undefined variable
