@@ -151,21 +151,17 @@ type GroupExecutorOption func(*groupExecutorOptions)
 
 // groupExecutorOptions は内部的な設定を保持する
 type groupExecutorOptions struct {
-    notificationFunc    groupNotificationFunc
-    isDryRun            bool
-    dryRunDetailLevel   resource.DetailLevel
-    dryRunShowSensitive bool
-    keepTempDirs        bool
+    notificationFunc groupNotificationFunc
+    dryRunOptions    *resource.DryRunOptions // nil の場合は dry-run 無効
+    keepTempDirs     bool
 }
 
 // デフォルト値を返す
 func defaultGroupExecutorOptions() *groupExecutorOptions {
     return &groupExecutorOptions{
-        notificationFunc:    nil, // デフォルトは通知なし
-        isDryRun:            false,
-        dryRunDetailLevel:   resource.DetailLevelSummary,
-        dryRunShowSensitive: false,
-        keepTempDirs:        false,
+        notificationFunc: nil,  // デフォルトは通知なし
+        dryRunOptions:    nil,  // デフォルトは dry-run 無効
+        keepTempDirs:     false,
     }
 }
 
@@ -177,11 +173,10 @@ func WithNotificationFunc(fn groupNotificationFunc) GroupExecutorOption {
 }
 
 // WithDryRun は dry-run モードを設定する
-func WithDryRun(detailLevel resource.DetailLevel, showSensitive bool) GroupExecutorOption {
+// dryRunOptions が nil の場合は dry-run を無効化する
+func WithDryRun(dryRunOptions *resource.DryRunOptions) GroupExecutorOption {
     return func(opts *groupExecutorOptions) {
-        opts.isDryRun = true
-        opts.dryRunDetailLevel = detailLevel
-        opts.dryRunShowSensitive = showSensitive
+        opts.dryRunOptions = dryRunOptions
     }
 }
 
@@ -207,6 +202,17 @@ func NewDefaultGroupExecutor(
         opt(opts)
     }
 
+    // Unpack dryRunOptions
+    isDryRun := opts.dryRunOptions != nil
+    var dryRunDetailLevel resource.DetailLevel
+    var dryRunShowSensitive bool
+    if isDryRun {
+        dryRunDetailLevel = opts.dryRunOptions.DetailLevel
+        dryRunShowSensitive = opts.dryRunOptions.ShowSensitive
+    } else {
+        dryRunDetailLevel = resource.DetailLevelSummary
+    }
+
     return &DefaultGroupExecutor{
         executor:            executor,
         config:              config,
@@ -215,9 +221,9 @@ func NewDefaultGroupExecutor(
         resourceManager:     resourceManager,
         runID:               runID,
         notificationFunc:    opts.notificationFunc,
-        isDryRun:            opts.isDryRun,
-        dryRunDetailLevel:   opts.dryRunDetailLevel,
-        dryRunShowSensitive: opts.dryRunShowSensitive,
+        isDryRun:            isDryRun,
+        dryRunDetailLevel:   dryRunDetailLevel,
+        dryRunShowSensitive: dryRunShowSensitive,
         keepTempDirs:        opts.keepTempDirs,
     }
 }
@@ -236,7 +242,7 @@ runner.groupExecutor = NewDefaultGroupExecutor(
     opts.resourceManager,
     opts.runID,
     WithNotificationFunc(runner.logGroupExecutionSummary),
-    WithDryRun(detailLevel, showSensitive),
+    WithDryRun(opts.dryRunOptions), // *resource.DryRunOptions を直接渡す
     WithKeepTempDirs(opts.keepTempDirs),
 )
 ```
@@ -279,7 +285,10 @@ ge := NewDefaultGroupExecutor(
     nil,
     mockRM,
     "test-run-123",
-    WithDryRun(resource.DetailLevelFull, true),
+    WithDryRun(&resource.DryRunOptions{
+        DetailLevel:   resource.DetailLevelFull,
+        ShowSensitive: true,
+    }),
 )
 ```
 
@@ -290,7 +299,8 @@ ge := NewDefaultGroupExecutor(
 - ✅ **拡張性が高い**: 新しいオプションの追加が容易で、既存コードへの影響が小さい
 - ✅ **デフォルト値が効果的に機能**: 必要な設定だけを指定
 - ✅ **テストコードが簡潔**: 多くのテストでオプション指定が不要
-- ✅ **関連オプションのグループ化**: `WithDryRun` で dry-run 関連の設定をまとめられる
+- ✅ **型の再利用**: `resource.DryRunOptions` を再利用し、コードベース全体で一貫性を確保
+- ✅ **シンプルなインターフェース**: `WithDryRun` は単一の引数のみを受け取る
 - ✅ **Go のベストプラクティス**: 標準ライブラリでも採用されているパターン
 
 **Cons**:
@@ -656,9 +666,10 @@ ge := NewDefaultGroupExecutor(
    - デフォルト値が効果的に機能し、テストが簡潔になる
    - 必要な設定だけを指定できる
 
-5. **関連オプションのグループ化**
-   - `WithDryRun()` で dry-run 関連の3つの設定をまとめられる
-   - 論理的に関連する設定を1つのオプションとして扱える
+5. **型の再利用による一貫性**
+   - `resource.DryRunOptions` を再利用し、コードベース全体で統一された表現を使用
+   - dry-run 関連の設定を単一の構造体として扱える
+   - プロダクションコードでは既に使用されている型なので、追加の学習コストがない
 
 #### 実装の優先順位
 
@@ -929,7 +940,10 @@ ge := NewDefaultGroupExecutor(
     mockRM,
     "test-run-123",
     WithNotificationFunc(notificationFunc),
-    WithDryRun(resource.DetailLevelFull, true),
+    WithDryRun(&resource.DryRunOptions{
+        DetailLevel:   resource.DetailLevelFull,
+        ShowSensitive: true,
+    }),
 )
 
 // After: 簡潔なヘルパー使用 + オプション
@@ -937,7 +951,10 @@ ge := testing.NewTestGroupExecutor(
     config,
     mockRM,
     WithNotificationFunc(notificationFunc),
-    WithDryRun(resource.DetailLevelFull, true),
+    WithDryRun(&resource.DryRunOptions{
+        DetailLevel:   resource.DetailLevelFull,
+        ShowSensitive: true,
+    }),
 )
 ```
 
