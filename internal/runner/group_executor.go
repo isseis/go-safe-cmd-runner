@@ -35,7 +35,7 @@ type DefaultGroupExecutor struct {
 	runID               string
 	notificationFunc    groupNotificationFunc
 	isDryRun            bool
-	dryRunDetailLevel   resource.DetailLevel
+	dryRunDetailLevel   resource.DryRunDetailLevel
 	dryRunShowSensitive bool
 	keepTempDirs        bool
 }
@@ -43,7 +43,8 @@ type DefaultGroupExecutor struct {
 // groupNotificationFunc is a function type for sending group notifications
 type groupNotificationFunc func(group *runnertypes.GroupSpec, result *groupExecutionResult, duration time.Duration)
 
-// NewDefaultGroupExecutor creates a new DefaultGroupExecutor
+// NewDefaultGroupExecutor creates a new DefaultGroupExecutor with the specified
+// configuration and optional settings.
 func NewDefaultGroupExecutor(
 	executor executor.CommandExecutor,
 	config *runnertypes.ConfigSpec,
@@ -51,12 +52,37 @@ func NewDefaultGroupExecutor(
 	verificationManager verification.ManagerInterface,
 	resourceManager resource.ResourceManager,
 	runID string,
-	notificationFunc groupNotificationFunc,
-	isDryRun bool,
-	dryRunDetailLevel resource.DetailLevel,
-	dryRunShowSensitive bool,
-	keepTempDirs bool,
+	options ...GroupExecutorOption,
 ) *DefaultGroupExecutor {
+	// Input validation
+	if config == nil {
+		panic("NewDefaultGroupExecutor: config cannot be nil")
+	}
+	if resourceManager == nil {
+		panic("NewDefaultGroupExecutor: resourceManager cannot be nil")
+	}
+	if runID == "" {
+		panic("NewDefaultGroupExecutor: runID cannot be empty")
+	}
+
+	// Apply options
+	opts := defaultGroupExecutorOptions()
+	for _, opt := range options {
+		if opt != nil {
+			opt(opts)
+		}
+	}
+
+	// Extract dry-run settings
+	isDryRun := opts.dryRunOptions != nil
+	dryRunDetailLevel := resource.DetailLevelSummary
+	var showSensitive bool
+
+	if isDryRun {
+		dryRunDetailLevel = opts.dryRunOptions.DetailLevel
+		showSensitive = opts.dryRunOptions.ShowSensitive
+	}
+
 	return &DefaultGroupExecutor{
 		executor:            executor,
 		config:              config,
@@ -64,11 +90,11 @@ func NewDefaultGroupExecutor(
 		verificationManager: verificationManager,
 		resourceManager:     resourceManager,
 		runID:               runID,
-		notificationFunc:    notificationFunc,
+		notificationFunc:    opts.notificationFunc,
 		isDryRun:            isDryRun,
 		dryRunDetailLevel:   dryRunDetailLevel,
-		dryRunShowSensitive: dryRunShowSensitive,
-		keepTempDirs:        keepTempDirs,
+		dryRunShowSensitive: showSensitive,
+		keepTempDirs:        opts.keepTempDirs,
 	}
 }
 

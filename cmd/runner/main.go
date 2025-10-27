@@ -207,7 +207,7 @@ func executeRunner(ctx context.Context, cfg *runnertypes.ConfigSpec, runtimeGlob
 	}
 
 	// Parse dry-run options once for the entire function
-	var detailLevel resource.DetailLevel
+	var detailLevel resource.DryRunDetailLevel
 	var outputFormat resource.OutputFormat
 
 	// Add dry-run mode if requested

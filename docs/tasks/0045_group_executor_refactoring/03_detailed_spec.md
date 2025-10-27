@@ -936,9 +936,13 @@ if !ge.keepTempDirs {
 
 ## 9. 互換性仕様
 
-### 9.1 移行期間の互換性
+### 9.1 移行完了状態
 
-#### 9.1.1 レガシーサポート
+#### 9.1.1 最終実装
+
+**ステータス**: ✅ 移行完了 (2025-10-27)
+
+レガシー関数は削除され、新しいFunctional Optionsパターンのみがサポートされています。
 
 ```go
 // 移行期間中のレガシー関数（一時的）
@@ -964,23 +968,11 @@ func NewDefaultGroupExecutorLegacy(
         }
     }
 
-    return NewDefaultGroupExecutor(
-        executor,
-        config,
-        validator,
-        verificationManager,
-        resourceManager,
-        runID,
-        WithNotificationFunc(notificationFunc),
-        WithDryRun(dryRunOptions),
-        WithKeepTempDirs(keepTempDirs),
-    )
-}
-```
+すべてのプロダクションおよびテストコードは新しいAPIに移行済みです。
 
 ### 9.2 動作互換性保証
 
-#### 9.2.1 デフォルト値の一致
+#### 9.2.1 デフォルト値の検証結果
 
 | 設定 | 旧実装デフォルト | 新実装デフォルト | 互換性 |
 |------|-----------------|-----------------|--------|
@@ -989,6 +981,8 @@ func NewDefaultGroupExecutorLegacy(
 | `dryRunDetailLevel` | `DetailLevelSummary` | `DetailLevelSummary` | ✅ 完全一致 |
 | `dryRunShowSensitive` | `false` | `false` | ✅ 完全一致 |
 | `keepTempDirs` | `false` | `false` | ✅ 完全一致 |
+
+**検証結果**: すべてのデフォルト値が完全に一致することを確認済み。
 
 ## 10. テスト仕様
 

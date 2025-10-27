@@ -5,7 +5,7 @@ import (
 )
 
 // ParseDryRunDetailLevel converts string to DetailLevel enum
-func ParseDryRunDetailLevel(level string) (resource.DetailLevel, error) {
+func ParseDryRunDetailLevel(level string) (resource.DryRunDetailLevel, error) {
 	switch level {
 	case "summary":
 		return resource.DetailLevelSummary, nil

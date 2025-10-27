@@ -47,13 +47,13 @@ func TestResourceOperationString(t *testing.T) {
 
 func TestDetailLevelString(t *testing.T) {
 	tests := []struct {
-		level    DetailLevel
+		level    DryRunDetailLevel
 		expected string
 	}{
 		{DetailLevelSummary, "summary"},
 		{DetailLevelDetailed, "detailed"},
 		{DetailLevelFull, "full"},
-		{DetailLevel(999), "unknown"},
+		{DryRunDetailLevel(999), "unknown"},
 	}
 
 	for _, test := range tests {
