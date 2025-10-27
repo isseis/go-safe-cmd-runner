@@ -2243,3 +2243,95 @@ func TestNewTestGroupExecutor(t *testing.T) {
 		assert.True(t, ge.keepTempDirs)
 	})
 }
+
+// TestNewDefaultGroupExecutor_Performance tests allocation behavior
+func TestNewDefaultGroupExecutor_Performance(t *testing.T) {
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
+			Timeout: common.IntPtr(30),
+		},
+	}
+	mockRM := new(runnertesting.MockResourceManager)
+
+	// Test allocation count
+	allocs := testing.AllocsPerRun(100, func() {
+		_ = NewDefaultGroupExecutor(
+			nil, config, nil, nil, mockRM, "perf-test",
+			WithGroupKeepTempDirs(false),
+		)
+	})
+
+	// Expected: ~1-2 allocations (groupExecutorOptions struct + DefaultGroupExecutor struct)
+	// Tolerance: <= 3 allocations to account for minor variations
+	if allocs > 3 {
+		t.Errorf("Too many allocations per call: got %.1f, want <= 3", allocs)
+	}
+}
+
+// BenchmarkNewDefaultGroupExecutor benchmarks constructor performance
+func BenchmarkNewDefaultGroupExecutor(b *testing.B) {
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
+			Timeout: common.IntPtr(30),
+		},
+	}
+	mockRM := new(runnertesting.MockResourceManager)
+
+	var ge *DefaultGroupExecutor
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ge = NewDefaultGroupExecutor(
+			nil, config, nil, nil, mockRM, "bench-test",
+			WithGroupNotificationFunc(nil),
+			WithGroupDryRun(&resource.DryRunOptions{
+				DetailLevel:   resource.DetailLevelFull,
+				ShowSensitive: false,
+			}),
+			WithGroupKeepTempDirs(false),
+		)
+	}
+	_ = ge // Prevent compiler optimization
+}
+
+// BenchmarkNewDefaultGroupExecutor_NoOptions benchmarks constructor with no options
+func BenchmarkNewDefaultGroupExecutor_NoOptions(b *testing.B) {
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
+			Timeout: common.IntPtr(30),
+		},
+	}
+	mockRM := new(runnertesting.MockResourceManager)
+
+	var ge *DefaultGroupExecutor
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ge = NewDefaultGroupExecutor(
+			nil, config, nil, nil, mockRM, "bench-test",
+		)
+	}
+	_ = ge // Prevent compiler optimization
+}
+
+// BenchmarkNewDefaultGroupExecutor_Legacy benchmarks legacy constructor for comparison
+func BenchmarkNewDefaultGroupExecutor_Legacy(b *testing.B) {
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
+			Timeout: common.IntPtr(30),
+		},
+	}
+	mockRM := new(runnertesting.MockResourceManager)
+
+	var ge *DefaultGroupExecutor
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ge = NewDefaultGroupExecutorLegacy(
+			nil, config, nil, nil, mockRM, "bench-test",
+			nil,
+			false,
+			resource.DetailLevelSummary,
+			false,
+			false,
+		)
+	}
+	_ = ge // Prevent compiler optimization
+}
