@@ -205,7 +205,7 @@ func TestExecuteGroup_WorkDirPriority(t *testing.T) {
 				},
 			}
 
-			ge := NewDefaultGroupExecutor(
+			ge := NewDefaultGroupExecutorLegacy(
 				nil,
 				config,
 				nil,
@@ -304,7 +304,7 @@ func TestExecuteGroup_TempDirCleanup(t *testing.T) {
 				},
 			}
 
-			ge := NewDefaultGroupExecutor(
+			ge := NewDefaultGroupExecutorLegacy(
 				nil,
 				config,
 				nil,
@@ -376,7 +376,7 @@ func TestExecuteGroup_CreateTempDirFailure(t *testing.T) {
 		},
 	}
 
-	ge := NewDefaultGroupExecutor(
+	ge := NewDefaultGroupExecutorLegacy(
 		nil,
 		config,
 		nil,
@@ -433,7 +433,7 @@ func TestExecuteGroup_CommandExecutionFailure(t *testing.T) {
 		capturedNotification = result
 	}
 
-	ge := NewDefaultGroupExecutor(
+	ge := NewDefaultGroupExecutorLegacy(
 		nil, // executor
 		config,
 		mockValidator,
@@ -503,7 +503,7 @@ func TestExecuteGroup_CommandExecutionFailure_NonStandardExitCode(t *testing.T) 
 		capturedNotification = result
 	}
 
-	ge := NewDefaultGroupExecutor(
+	ge := NewDefaultGroupExecutorLegacy(
 		nil, // executor
 		config,
 		mockValidator,
@@ -574,7 +574,7 @@ func TestExecuteGroup_SuccessNotification(t *testing.T) {
 		capturedDuration = duration
 	}
 
-	ge := NewDefaultGroupExecutor(
+	ge := NewDefaultGroupExecutorLegacy(
 		nil, // executor
 		config,
 		mockValidator,
@@ -640,7 +640,7 @@ func TestExecuteCommandInGroup_OutputPathValidationFailure(t *testing.T) {
 		},
 	}
 
-	ge := NewDefaultGroupExecutor(
+	ge := NewDefaultGroupExecutorLegacy(
 		nil, // executor
 		config,
 		mockValidator,
@@ -702,7 +702,7 @@ func TestExecuteGroup_MultipleCommands(t *testing.T) {
 		},
 	}
 
-	ge := NewDefaultGroupExecutor(
+	ge := NewDefaultGroupExecutorLegacy(
 		nil, // executor
 		config,
 		mockValidator,
@@ -766,7 +766,7 @@ func TestExecuteGroup_StopOnFirstFailure(t *testing.T) {
 		},
 	}
 
-	ge := NewDefaultGroupExecutor(
+	ge := NewDefaultGroupExecutorLegacy(
 		nil, // executor
 		config,
 		mockValidator,
@@ -1082,7 +1082,7 @@ func TestExecuteGroup_RunnerWorkdirExpansion(t *testing.T) {
 				},
 			}
 
-			ge := NewDefaultGroupExecutor(
+			ge := NewDefaultGroupExecutorLegacy(
 				nil, // command executor - we'll test without executing actual commands
 				configSpec,
 				nil,          // validator
@@ -1230,7 +1230,7 @@ func TestExecuteCommandInGroup_ValidateEnvironmentVarsFailure(t *testing.T) {
 			return exists && strings.Contains(val, "rm -rf")
 		})).Return(expectedErr)
 
-	ge := NewDefaultGroupExecutor(
+	ge := NewDefaultGroupExecutorLegacy(
 		nil,
 		config,
 		mockValidator,
@@ -1302,7 +1302,7 @@ func TestExecuteCommandInGroup_ResolvePathFailure(t *testing.T) {
 	expectedErr := errors.New("command not found in PATH")
 	mockVM.On("ResolvePath", "/nonexistent/command").Return("", expectedErr)
 
-	ge := NewDefaultGroupExecutor(
+	ge := NewDefaultGroupExecutorLegacy(
 		nil,
 		config,
 		mockValidator,
@@ -1394,7 +1394,7 @@ func TestExecuteCommandInGroup_DryRunDetailLevelFull(t *testing.T) {
 	// Setup: path resolution succeeds
 	mockVM.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil)
 
-	ge := NewDefaultGroupExecutor(
+	ge := NewDefaultGroupExecutorLegacy(
 		nil,
 		config,
 		mockValidator,
@@ -1483,7 +1483,7 @@ func TestExecuteGroup_DryRunVariableExpansion(t *testing.T) {
 	// Setup: path resolution succeeds
 	mockVM.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil)
 
-	ge := NewDefaultGroupExecutor(
+	ge := NewDefaultGroupExecutorLegacy(
 		nil,
 		config,
 		mockValidator,
@@ -1545,7 +1545,7 @@ func TestExecuteCommandInGroup_VerificationManagerNil(t *testing.T) {
 	}
 
 	// verificationManager = nil (no path resolution)
-	ge := NewDefaultGroupExecutor(
+	ge := NewDefaultGroupExecutorLegacy(
 		nil,
 		config,
 		mockValidator,
@@ -1614,7 +1614,7 @@ func TestExecuteGroup_KeepTempDirs(t *testing.T) {
 	mockVM.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil)
 
 	// keepTempDirs = true
-	ge := NewDefaultGroupExecutor(
+	ge := NewDefaultGroupExecutorLegacy(
 		nil,
 		config,
 		mockValidator,
@@ -1674,7 +1674,7 @@ func TestExecuteGroup_NoNotificationFunc(t *testing.T) {
 	mockVM.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil)
 
 	// notificationFunc = nil
-	ge := NewDefaultGroupExecutor(
+	ge := NewDefaultGroupExecutorLegacy(
 		nil,
 		config,
 		mockValidator,
@@ -1732,7 +1732,7 @@ func TestExecuteGroup_EmptyDescription(t *testing.T) {
 	// Setup: path resolution succeeds
 	mockVM.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil)
 
-	ge := NewDefaultGroupExecutor(
+	ge := NewDefaultGroupExecutorLegacy(
 		nil,
 		config,
 		mockValidator,
@@ -1789,7 +1789,7 @@ func TestExecuteGroup_VariableExpansionError(t *testing.T) {
 		},
 	}
 
-	ge := NewDefaultGroupExecutor(
+	ge := NewDefaultGroupExecutorLegacy(
 		nil,
 		config,
 		mockValidator,
@@ -1855,7 +1855,7 @@ func TestExecuteGroup_FileVerificationResultLog(t *testing.T) {
 	}
 	mockVM.On("VerifyGroupFiles", mock.Anything).Return(verifyResult, nil)
 
-	ge := NewDefaultGroupExecutor(
+	ge := NewDefaultGroupExecutorLegacy(
 		nil,
 		config,
 		mockValidator,
@@ -1911,7 +1911,7 @@ func TestExecuteGroup_ExpandCommandError(t *testing.T) {
 		},
 	}
 
-	ge := NewDefaultGroupExecutor(
+	ge := NewDefaultGroupExecutorLegacy(
 		nil,
 		config,
 		mockValidator,
@@ -1969,7 +1969,7 @@ func TestExecuteGroup_ResolveCommandWorkDirError(t *testing.T) {
 		},
 	}
 
-	ge := NewDefaultGroupExecutor(
+	ge := NewDefaultGroupExecutorLegacy(
 		nil,
 		config,
 		mockValidator,
@@ -2013,4 +2013,233 @@ func TestExecuteGroup_ResolveCommandWorkDirError(t *testing.T) {
 	mockRM.AssertNotCalled(t, "ExecuteCommand")
 	mockValidator.AssertExpectations(t)
 	mockVM.AssertExpectations(t)
+}
+
+// TestGroupExecutorOptions tests the option functions for DefaultGroupExecutor
+func TestGroupExecutorOptions(t *testing.T) {
+	testNotificationFunc := func(_ *runnertypes.GroupSpec, _ *groupExecutionResult, _ time.Duration) {}
+
+	tests := []struct {
+		name    string
+		options []GroupExecutorOption
+		want    groupExecutorOptions
+	}{
+		{
+			name:    "default options",
+			options: nil,
+			want: groupExecutorOptions{
+				notificationFunc: nil,
+				dryRunOptions:    nil,
+				keepTempDirs:     false,
+			},
+		},
+		{
+			name: "with notification func",
+			options: []GroupExecutorOption{
+				WithGroupNotificationFunc(testNotificationFunc),
+			},
+			want: groupExecutorOptions{
+				notificationFunc: testNotificationFunc,
+				dryRunOptions:    nil,
+				keepTempDirs:     false,
+			},
+		},
+		{
+			name: "with dry-run",
+			options: []GroupExecutorOption{
+				WithGroupDryRun(&resource.DryRunOptions{
+					DetailLevel:   resource.DetailLevelFull,
+					ShowSensitive: true,
+				}),
+			},
+			want: groupExecutorOptions{
+				notificationFunc: nil,
+				dryRunOptions: &resource.DryRunOptions{
+					DetailLevel:   resource.DetailLevelFull,
+					ShowSensitive: true,
+				},
+				keepTempDirs: false,
+			},
+		},
+		{
+			name: "with keep temp dirs",
+			options: []GroupExecutorOption{
+				WithGroupKeepTempDirs(true),
+			},
+			want: groupExecutorOptions{
+				notificationFunc: nil,
+				dryRunOptions:    nil,
+				keepTempDirs:     true,
+			},
+		},
+		{
+			name: "all options combined",
+			options: []GroupExecutorOption{
+				WithGroupNotificationFunc(testNotificationFunc),
+				WithGroupDryRun(&resource.DryRunOptions{
+					DetailLevel:   resource.DetailLevelSummary,
+					ShowSensitive: false,
+				}),
+				WithGroupKeepTempDirs(true),
+			},
+			want: groupExecutorOptions{
+				notificationFunc: testNotificationFunc,
+				dryRunOptions: &resource.DryRunOptions{
+					DetailLevel:   resource.DetailLevelSummary,
+					ShowSensitive: false,
+				},
+				keepTempDirs: true,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := defaultGroupExecutorOptions()
+			for _, opt := range tt.options {
+				opt(opts)
+			}
+
+			// Compare results (excluding function pointers)
+			if tt.want.notificationFunc != nil {
+				assert.NotNil(t, opts.notificationFunc)
+			} else {
+				assert.Nil(t, opts.notificationFunc)
+			}
+			assert.Equal(t, tt.want.dryRunOptions, opts.dryRunOptions)
+			assert.Equal(t, tt.want.keepTempDirs, opts.keepTempDirs)
+		})
+	}
+}
+
+// TestNewDefaultGroupExecutor_WithOptions tests the new option-based constructor
+func TestNewDefaultGroupExecutor_WithOptions(t *testing.T) {
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
+			Timeout: common.IntPtr(30),
+		},
+	}
+	mockRM := new(runnertesting.MockResourceManager)
+	testNotificationFunc := func(_ *runnertypes.GroupSpec, _ *groupExecutionResult, _ time.Duration) {}
+
+	t.Run("default options", func(t *testing.T) {
+		ge := NewDefaultGroupExecutor(
+			nil, config, nil, nil, mockRM, "test-run-123",
+		)
+
+		assert.NotNil(t, ge)
+		assert.Nil(t, ge.notificationFunc)
+		assert.False(t, ge.isDryRun)
+		assert.Equal(t, resource.DetailLevelSummary, ge.dryRunDetailLevel)
+		assert.False(t, ge.dryRunShowSensitive)
+		assert.False(t, ge.keepTempDirs)
+	})
+
+	t.Run("with notification func", func(t *testing.T) {
+		ge := NewDefaultGroupExecutor(
+			nil, config, nil, nil, mockRM, "test-run-123",
+			WithGroupNotificationFunc(testNotificationFunc),
+		)
+
+		assert.NotNil(t, ge)
+		assert.NotNil(t, ge.notificationFunc)
+		assert.False(t, ge.isDryRun)
+	})
+
+	t.Run("with dry-run full", func(t *testing.T) {
+		ge := NewDefaultGroupExecutor(
+			nil, config, nil, nil, mockRM, "test-run-123",
+			WithGroupDryRun(&resource.DryRunOptions{
+				DetailLevel:   resource.DetailLevelFull,
+				ShowSensitive: true,
+			}),
+		)
+
+		assert.NotNil(t, ge)
+		assert.True(t, ge.isDryRun)
+		assert.Equal(t, resource.DetailLevelFull, ge.dryRunDetailLevel)
+		assert.True(t, ge.dryRunShowSensitive)
+	})
+
+	t.Run("with all options", func(t *testing.T) {
+		ge := NewDefaultGroupExecutor(
+			nil, config, nil, nil, mockRM, "test-run-123",
+			WithGroupNotificationFunc(testNotificationFunc),
+			WithGroupDryRun(&resource.DryRunOptions{
+				DetailLevel:   resource.DetailLevelSummary,
+				ShowSensitive: false,
+			}),
+			WithGroupKeepTempDirs(true),
+		)
+
+		assert.NotNil(t, ge)
+		assert.NotNil(t, ge.notificationFunc)
+		assert.True(t, ge.isDryRun)
+		assert.Equal(t, resource.DetailLevelSummary, ge.dryRunDetailLevel)
+		assert.False(t, ge.dryRunShowSensitive)
+		assert.True(t, ge.keepTempDirs)
+	})
+}
+
+// TestNewDefaultGroupExecutor_Validation tests input validation
+func TestNewDefaultGroupExecutor_Validation(t *testing.T) {
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
+			Timeout: common.IntPtr(30),
+		},
+	}
+	mockRM := new(runnertesting.MockResourceManager)
+
+	t.Run("nil config panics", func(t *testing.T) {
+		assert.Panics(t, func() {
+			NewDefaultGroupExecutor(nil, nil, nil, nil, mockRM, "test-run-123")
+		})
+	})
+
+	t.Run("nil resourceManager panics", func(t *testing.T) {
+		assert.Panics(t, func() {
+			NewDefaultGroupExecutor(nil, config, nil, nil, nil, "test-run-123")
+		})
+	})
+
+	t.Run("empty runID panics", func(t *testing.T) {
+		assert.Panics(t, func() {
+			NewDefaultGroupExecutor(nil, config, nil, nil, mockRM, "")
+		})
+	})
+}
+
+// TestNewTestGroupExecutor tests the test helper function
+func TestNewTestGroupExecutor(t *testing.T) {
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
+			Timeout: common.IntPtr(30),
+		},
+	}
+	mockRM := new(runnertesting.MockResourceManager)
+
+	t.Run("basic helper", func(t *testing.T) {
+		ge := NewTestGroupExecutor(config, mockRM)
+
+		assert.NotNil(t, ge)
+		assert.Nil(t, ge.executor)
+		assert.Nil(t, ge.validator)
+		assert.Nil(t, ge.verificationManager)
+		assert.Equal(t, "test-run-123", ge.runID)
+		assert.False(t, ge.isDryRun)
+	})
+
+	t.Run("helper with options", func(t *testing.T) {
+		testNotificationFunc := func(_ *runnertypes.GroupSpec, _ *groupExecutionResult, _ time.Duration) {}
+
+		ge := NewTestGroupExecutor(
+			config, mockRM,
+			WithGroupNotificationFunc(testNotificationFunc),
+			WithGroupKeepTempDirs(true),
+		)
+
+		assert.NotNil(t, ge)
+		assert.NotNil(t, ge.notificationFunc)
+		assert.True(t, ge.keepTempDirs)
+	})
 }

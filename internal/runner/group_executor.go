@@ -43,8 +43,9 @@ type DefaultGroupExecutor struct {
 // groupNotificationFunc is a function type for sending group notifications
 type groupNotificationFunc func(group *runnertypes.GroupSpec, result *groupExecutionResult, duration time.Duration)
 
-// NewDefaultGroupExecutor creates a new DefaultGroupExecutor
-func NewDefaultGroupExecutor(
+// NewDefaultGroupExecutorLegacy creates a new DefaultGroupExecutor (legacy 11-argument version).
+// Deprecated: Use NewDefaultGroupExecutor with functional options instead.
+func NewDefaultGroupExecutorLegacy(
 	executor executor.CommandExecutor,
 	config *runnertypes.ConfigSpec,
 	validator security.ValidatorInterface,
@@ -69,6 +70,63 @@ func NewDefaultGroupExecutor(
 		dryRunDetailLevel:   dryRunDetailLevel,
 		dryRunShowSensitive: dryRunShowSensitive,
 		keepTempDirs:        keepTempDirs,
+	}
+}
+
+// NewDefaultGroupExecutor creates a new DefaultGroupExecutor with the specified
+// configuration and optional settings.
+func NewDefaultGroupExecutor(
+	executor executor.CommandExecutor,
+	config *runnertypes.ConfigSpec,
+	validator security.ValidatorInterface,
+	verificationManager verification.ManagerInterface,
+	resourceManager resource.ResourceManager,
+	runID string,
+	options ...GroupExecutorOption,
+) *DefaultGroupExecutor {
+	// Input validation
+	if config == nil {
+		panic("NewDefaultGroupExecutor: config cannot be nil")
+	}
+	if resourceManager == nil {
+		panic("NewDefaultGroupExecutor: resourceManager cannot be nil")
+	}
+	if runID == "" {
+		panic("NewDefaultGroupExecutor: runID cannot be empty")
+	}
+
+	// Apply options
+	opts := defaultGroupExecutorOptions()
+	for _, opt := range options {
+		if opt != nil {
+			opt(opts)
+		}
+	}
+
+	// Extract dry-run settings
+	isDryRun := opts.dryRunOptions != nil
+	var detailLevel resource.DetailLevel
+	var showSensitive bool
+
+	if isDryRun {
+		detailLevel = opts.dryRunOptions.DetailLevel
+		showSensitive = opts.dryRunOptions.ShowSensitive
+	} else {
+		detailLevel = resource.DetailLevelSummary
+	}
+
+	return &DefaultGroupExecutor{
+		executor:            executor,
+		config:              config,
+		validator:           validator,
+		verificationManager: verificationManager,
+		resourceManager:     resourceManager,
+		runID:               runID,
+		notificationFunc:    opts.notificationFunc,
+		isDryRun:            isDryRun,
+		dryRunDetailLevel:   detailLevel,
+		dryRunShowSensitive: showSensitive,
+		keepTempDirs:        opts.keepTempDirs,
 	}
 }
 
