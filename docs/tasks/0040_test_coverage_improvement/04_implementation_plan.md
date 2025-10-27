@@ -364,14 +364,16 @@
 
 ##### `internal/runner/security/file_validation_test.go` の拡張
 
-- [ ] 既存テストファイルの確認
-- [ ] `TestValidateGroupWritePermissions_AllScenarios`: 全シナリオ
-  - [ ] グループ書き込み権限あり（正常）
-  - [ ] グループ書き込み権限なし（エラー）
-  - [ ] 他者書き込み権限あり（エラー）
-  - [ ] 境界値: UID/GID 0
-  - [ ] 境界値: UID/GID 最大値
-- [ ] カバレッジ確認: 55.0% → 90%+
+- [x] 既存テストファイルの確認
+- [x] `TestValidateGroupWritePermissions_AllScenarios`: 全シナリオ
+  - [x] permissive_mode_allows_all: テストモードですべて許可
+  - [x] root_owned_directory_allowed: rootディレクトリは許可
+  - [x] nil_groupmembership_error: groupMembershipがnilの場合のエラー
+  - [x] group_write_safe_with_single_member: 単一メンバーのグループ書き込み
+  - [x] group_write_unsafe_with_multiple_members: 複数メンバーでの書き込み不可
+  - [x] uid_0_gid_0_boundary: UID/GID 0の境界値
+  - [x] uid_gid_boundary_with_existing_user: 既存ユーザーでの境界値
+- [x] カバレッジ確認: 55.0% → 85.0% (+30.0%)
 
 ##### `internal/runner/resource/normal_manager_test.go` の拡張
 
