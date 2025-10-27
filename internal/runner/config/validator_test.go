@@ -906,3 +906,217 @@ func TestConfigValidator_ValidateRootPrivilegedCommand(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateTimeouts(t *testing.T) {
+	tests := []struct {
+		name        string
+		config      *runnertypes.ConfigSpec
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name: "valid - no timeout specified",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{
+						Name: "test_group",
+						Commands: []runnertypes.CommandSpec{
+							{
+								Name: "test_cmd",
+								Cmd:  "/bin/echo",
+							},
+						},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "valid - positive global timeout",
+			config: &runnertypes.ConfigSpec{
+				Global: runnertypes.GlobalSpec{
+					Timeout: intPtr(30),
+				},
+				Groups: []runnertypes.GroupSpec{
+					{
+						Name: "test_group",
+						Commands: []runnertypes.CommandSpec{
+							{
+								Name: "test_cmd",
+								Cmd:  "/bin/echo",
+							},
+						},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "valid - zero global timeout",
+			config: &runnertypes.ConfigSpec{
+				Global: runnertypes.GlobalSpec{
+					Timeout: intPtr(0),
+				},
+				Groups: []runnertypes.GroupSpec{
+					{
+						Name: "test_group",
+						Commands: []runnertypes.CommandSpec{
+							{
+								Name: "test_cmd",
+								Cmd:  "/bin/echo",
+							},
+						},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "invalid - negative global timeout",
+			config: &runnertypes.ConfigSpec{
+				Global: runnertypes.GlobalSpec{
+					Timeout: intPtr(-10),
+				},
+				Groups: []runnertypes.GroupSpec{
+					{
+						Name: "test_group",
+						Commands: []runnertypes.CommandSpec{
+							{
+								Name: "test_cmd",
+								Cmd:  "/bin/echo",
+							},
+						},
+					},
+				},
+			},
+			expectError: true,
+			errorMsg:    "timeout must not be negative: global timeout got -10",
+		},
+		{
+			name: "valid - positive command timeout",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{
+						Name: "test_group",
+						Commands: []runnertypes.CommandSpec{
+							{
+								Name:    "test_cmd",
+								Cmd:     "/bin/echo",
+								Timeout: intPtr(60),
+							},
+						},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "valid - zero command timeout",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{
+						Name: "test_group",
+						Commands: []runnertypes.CommandSpec{
+							{
+								Name:    "test_cmd",
+								Cmd:     "/bin/echo",
+								Timeout: intPtr(0),
+							},
+						},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "invalid - negative command timeout",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{
+						Name: "test_group",
+						Commands: []runnertypes.CommandSpec{
+							{
+								Name:    "test_cmd",
+								Cmd:     "/bin/echo",
+								Timeout: intPtr(-5),
+							},
+						},
+					},
+				},
+			},
+			expectError: true,
+			errorMsg:    "timeout must not be negative: command 'test_cmd' in group 'test_group' (groups[0].commands[0]) got -5",
+		},
+		{
+			name: "invalid - multiple negative command timeouts",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{
+						Name: "test_group",
+						Commands: []runnertypes.CommandSpec{
+							{
+								Name:    "cmd1",
+								Cmd:     "/bin/echo",
+								Timeout: intPtr(-1),
+							},
+							{
+								Name:    "cmd2",
+								Cmd:     "/bin/echo",
+								Timeout: intPtr(-2),
+							},
+						},
+					},
+				},
+			},
+			expectError: true,
+			errorMsg:    "timeout must not be negative: command 'cmd1' in group 'test_group' (groups[0].commands[0]) got -1",
+		},
+		{
+			name: "invalid - negative timeout in second group",
+			config: &runnertypes.ConfigSpec{
+				Groups: []runnertypes.GroupSpec{
+					{
+						Name: "group1",
+						Commands: []runnertypes.CommandSpec{
+							{
+								Name:    "cmd1",
+								Cmd:     "/bin/echo",
+								Timeout: intPtr(30),
+							},
+						},
+					},
+					{
+						Name: "group2",
+						Commands: []runnertypes.CommandSpec{
+							{
+								Name:    "cmd2",
+								Cmd:     "/bin/echo",
+								Timeout: intPtr(-15),
+							},
+						},
+					},
+				},
+			},
+			expectError: true,
+			errorMsg:    "timeout must not be negative: command 'cmd2' in group 'group2' (groups[1].commands[0]) got -15",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateTimeouts(tt.config)
+
+			if tt.expectError {
+				require.Error(t, err, "expected error but got none")
+				assert.Contains(t, err.Error(), tt.errorMsg, "error message mismatch")
+			} else {
+				require.NoError(t, err, "expected no error but got: %v", err)
+			}
+		})
+	}
+}
+
+// intPtr is a helper function to create a pointer to an int
+func intPtr(i int) *int {
+	return &i
+}

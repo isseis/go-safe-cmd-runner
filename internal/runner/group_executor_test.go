@@ -99,10 +99,6 @@ func TestCreateCommandContext_UnlimitedTimeout(t *testing.T) {
 			name:             "zero timeout means unlimited",
 			effectiveTimeout: 0,
 		},
-		{
-			name:             "negative timeout means unlimited",
-			effectiveTimeout: -1,
-		},
 	}
 
 	for _, tt := range tests {
@@ -129,6 +125,28 @@ func TestCreateCommandContext_UnlimitedTimeout(t *testing.T) {
 			assert.NotNil(t, cancel, "cancel function should not be nil")
 		})
 	}
+}
+
+// TestCreateCommandContext_NegativeTimeoutPanic tests that negative timeout causes panic
+func TestCreateCommandContext_NegativeTimeoutPanic(t *testing.T) {
+	ge := &DefaultGroupExecutor{}
+
+	cmd := &runnertypes.RuntimeCommand{
+		Spec: &runnertypes.CommandSpec{
+			Name: "negative-timeout-cmd",
+		},
+		EffectiveTimeout: -1,
+	}
+
+	ctx := context.Background()
+
+	// Verify that createCommandContext panics with negative timeout
+	assert.PanicsWithValue(t,
+		"program error: negative timeout -1 for command negative-timeout-cmd",
+		func() {
+			_, _ = ge.createCommandContext(ctx, cmd)
+		},
+		"createCommandContext should panic with negative timeout")
 }
 
 // TestExecuteGroup_WorkDirPriority tests the working directory priority logic

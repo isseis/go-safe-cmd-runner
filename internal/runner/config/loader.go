@@ -53,5 +53,10 @@ func (l *Loader) LoadConfig(content []byte) (*runnertypes.ConfigSpec, error) {
 		}
 	}
 
+	// Validate timeout values are non-negative
+	if err := ValidateTimeouts(&cfg); err != nil {
+		return nil, err
+	}
+
 	return &cfg, nil
 }

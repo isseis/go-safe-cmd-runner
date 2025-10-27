@@ -264,3 +264,103 @@ func TestPhase9Integration(t *testing.T) {
 func TestFromEnvMergeIntegration(t *testing.T) {
 	t.Skip("Skipping until Phase 5/6 - expansion not yet implemented in loader")
 }
+
+// TestLoadConfig_NegativeTimeoutValidation tests that LoadConfig rejects negative timeouts
+func TestLoadConfig_NegativeTimeoutValidation(t *testing.T) {
+	tests := []struct {
+		name        string
+		configToml  string
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name: "negative global timeout",
+			configToml: `
+version = "1.0"
+
+[global]
+  timeout = -10
+
+[[groups]]
+  name = "test"
+
+  [[groups.commands]]
+    name = "test_cmd"
+    cmd = "echo"
+    args = ["hello"]
+`,
+			expectError: true,
+			errorMsg:    "timeout must not be negative: global timeout got -10",
+		},
+		{
+			name: "negative command timeout",
+			configToml: `
+version = "1.0"
+
+[[groups]]
+  name = "test"
+
+  [[groups.commands]]
+    name = "test_cmd"
+    cmd = "echo"
+    args = ["hello"]
+    timeout = -5
+`,
+			expectError: true,
+			errorMsg:    "timeout must not be negative: command 'test_cmd' in group 'test' (groups[0].commands[0]) got -5",
+		},
+		{
+			name: "valid zero timeout",
+			configToml: `
+version = "1.0"
+
+[global]
+  timeout = 0
+
+[[groups]]
+  name = "test"
+
+  [[groups.commands]]
+    name = "test_cmd"
+    cmd = "echo"
+    args = ["hello"]
+`,
+			expectError: false,
+		},
+		{
+			name: "valid positive timeout",
+			configToml: `
+version = "1.0"
+
+[global]
+  timeout = 30
+
+[[groups]]
+  name = "test"
+
+  [[groups.commands]]
+    name = "test_cmd"
+    cmd = "echo"
+    args = ["hello"]
+    timeout = 60
+`,
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			loader := NewLoader()
+			cfg, err := loader.LoadConfig([]byte(tt.configToml))
+
+			if tt.expectError {
+				require.Error(t, err, "expected error but got none")
+				assert.Contains(t, err.Error(), tt.errorMsg, "error message mismatch")
+				assert.Nil(t, cfg, "config should be nil when validation fails")
+			} else {
+				require.NoError(t, err, "expected no error but got: %v", err)
+				require.NotNil(t, cfg, "config should not be nil")
+			}
+		})
+	}
+}
