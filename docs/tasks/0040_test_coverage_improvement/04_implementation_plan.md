@@ -95,16 +95,16 @@
 
 #### 2.2.2 `internal/runner/errors/logging_test.go` の作成
 
-- [ ] ファイル作成と基本構造の準備
-- [ ] `TestLogCriticalToStderr_Output`: stderr出力確認
-  - [ ] `os.Stderr` のキャプチャ
-  - [ ] 出力内容の検証
-- [ ] `TestLogClassifiedError_AllSeverities`: 全重要度レベル
-  - [ ] Critical の出力確認
-  - [ ] Error の出力確認
-  - [ ] Warning の出力確認
-- [ ] `TestLogClassifiedError_WithStructuredFields`: 構造化フィールド
-  - [ ] JSON形式での出力確認
+- [x] ファイル作成と基本構造の準備
+- [x] `TestLogCriticalToStderr_Output`: stderr出力確認
+  - [x] `os.Stderr` のキャプチャ
+  - [x] 出力内容の検証
+- [x] `TestLogClassifiedError_AllSeverities`: 全重要度レベル
+  - [x] Critical の出力確認
+  - [x] Error の出力確認
+  - [x] Warning の出力確認
+- [x] `TestLogClassifiedError_WithStructuredFields`: 構造化フィールド
+  - [x] JSON形式での出力確認
 
 ### 2.3 エラー型メソッドのテスト（主要10関数、+0.3%）
 
