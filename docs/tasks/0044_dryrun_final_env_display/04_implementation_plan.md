@@ -389,7 +389,7 @@
 4. **テストカバレッジ**:
    - ✅ BuildProcessEnvironment: 100%
    - ✅ PrintFinalEnvironment: 100%
-   - ✅ GroupExecutor: 82.4%（executeCommandInGroup: 100%, ExecuteGroup: 86.0%）
+   - ✅ GroupExecutor: 83.8%（executeCommandInGroup: 100%, ExecuteGroup: 93.0%）
    - ✅ 統合テスト: 全てパス（3テストケース）
    - ✅ パフォーマンステスト: 全てパス
 
@@ -1179,9 +1179,9 @@ Phase 3は調整後の目標を達成し、特に`executeCommandInGroup`は100%�
 
 2. **Phase 4追加実装（2025-10-27）**:
    - 追加テスト: T4.1（コマンド展開エラー）、T4.2（コマンドWorkDirエラー）
-   - カバレッジ: 82.4% → **83.7%** (+1.3%)
+   - カバレッジ: 82.4% → **83.8%** (+1.4%)
    - ExecuteGroup: 86.0% → **93.0%** (+7.0%)
-   - **目標85%達成**（達成率98.5%）
+   - **目標85%にわずかに未達**（達成率98.6%）
 
 詳細は[カバレッジギャップ分析](08_coverage_gap_analysis.md)を参照してください。
 
@@ -1202,7 +1202,7 @@ Phase 3は調整後の目標を達成し、特に`executeCommandInGroup`は100%�
 **最終カバレッジ結果**:
 ```
 Package: internal/runner
-Phase 3後: 82.4% → Phase 4後: 83.7% (+1.3%)
+Phase 3後: 82.4% → Phase 4後: 83.8% (+1.4%)
 
 関数別カバレッジ（最終）:
 - createCommandContext: 100.0% ✅ (維持)
@@ -1220,10 +1220,10 @@ Phase 1完了: 77.1%
 Phase 2完了: 80.8%
   ↓ +1.6%
 Phase 3完了: 82.4%
-  ↓ +1.3%
-Phase 4完了: 83.7% ✅ 目標85%達成（98.5%）
+  ↓ +1.4%
+Phase 4完了: 83.8% ⚠️ 目標85%にわずかに未達（達成率98.6%）
 
-総改善: +7.2ポイント
+総改善: +7.3ポイント
 新規テスト: 累計13件（Phase 1: 1件、Phase 2: 4件、Phase 3: 6件、Phase 4: 2件）
 ```
 
