@@ -43,36 +43,6 @@ type DefaultGroupExecutor struct {
 // groupNotificationFunc is a function type for sending group notifications
 type groupNotificationFunc func(group *runnertypes.GroupSpec, result *groupExecutionResult, duration time.Duration)
 
-// NewDefaultGroupExecutorLegacy creates a new DefaultGroupExecutor (legacy 11-argument version).
-// Deprecated: Use NewDefaultGroupExecutor with functional options instead.
-func NewDefaultGroupExecutorLegacy(
-	executor executor.CommandExecutor,
-	config *runnertypes.ConfigSpec,
-	validator security.ValidatorInterface,
-	verificationManager verification.ManagerInterface,
-	resourceManager resource.ResourceManager,
-	runID string,
-	notificationFunc groupNotificationFunc,
-	isDryRun bool,
-	dryRunDetailLevel resource.DetailLevel,
-	dryRunShowSensitive bool,
-	keepTempDirs bool,
-) *DefaultGroupExecutor {
-	return &DefaultGroupExecutor{
-		executor:            executor,
-		config:              config,
-		validator:           validator,
-		verificationManager: verificationManager,
-		resourceManager:     resourceManager,
-		runID:               runID,
-		notificationFunc:    notificationFunc,
-		isDryRun:            isDryRun,
-		dryRunDetailLevel:   dryRunDetailLevel,
-		dryRunShowSensitive: dryRunShowSensitive,
-		keepTempDirs:        keepTempDirs,
-	}
-}
-
 // NewDefaultGroupExecutor creates a new DefaultGroupExecutor with the specified
 // configuration and optional settings.
 func NewDefaultGroupExecutor(

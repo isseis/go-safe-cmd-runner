@@ -2197,27 +2197,3 @@ func BenchmarkNewDefaultGroupExecutor_NoOptions(b *testing.B) {
 	}
 	_ = ge // Prevent compiler optimization
 }
-
-// BenchmarkNewDefaultGroupExecutor_Legacy benchmarks legacy constructor for comparison
-func BenchmarkNewDefaultGroupExecutor_Legacy(b *testing.B) {
-	config := &runnertypes.ConfigSpec{
-		Global: runnertypes.GlobalSpec{
-			Timeout: common.IntPtr(30),
-		},
-	}
-	mockRM := new(runnertesting.MockResourceManager)
-
-	var ge *DefaultGroupExecutor
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		ge = NewDefaultGroupExecutorLegacy(
-			nil, config, nil, nil, mockRM, "bench-test",
-			nil,
-			false,
-			resource.DetailLevelSummary,
-			false,
-			false,
-		)
-	}
-	_ = ge // Prevent compiler optimization
-}
