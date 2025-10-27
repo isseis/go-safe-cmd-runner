@@ -300,8 +300,8 @@
 - [x] 全テスト実行: `make test`
 - [x] Lint実行: `make lint`
 - [x] フォーマット: `make fmt`
-- [ ] コミット作成
-- [ ] Phase 2完了レビュー
+- [x] コミット作成
+- [x] Phase 2完了レビュー
 
 ---
 
@@ -310,6 +310,7 @@
 **目標**: カバレッジ 82.0% → 85.0% (+3.0ポイント)
 **推定工数**: 4-5日
 **担当者**: _未定_
+**進捗**: Phase 3.1 部分実装 (security +4.2%, executor +6.0%)
 
 ### 4.1 バリデーション関数の補強（15関数、+2.0%）
 
@@ -317,21 +318,49 @@
 
 ##### `internal/runner/environment/filter_test.go` の拡張
 
-- [ ] 既存テストファイルの確認
-- [ ] `TestValidateEnvironmentVariable_ValidChars`: 有効な文字
-  - [ ] 英数字とアンダースコア
-- [ ] `TestValidateEnvironmentVariable_InvalidChars`: 無効な文字
-  - [ ] NULL文字
-  - [ ] 改行文字
-  - [ ] 制御文字
-- [ ] `TestValidateEnvironmentVariable_MaxLength`: 長さ制限
-  - [ ] 最大長以内
-  - [ ] 最大長超過
-- [ ] `TestValidateEnvironmentVariable_ReservedNames`: 予約語
-  - [ ] システム予約語との衝突
-- [ ] カバレッジ確認
+- [x] 既存テストファイルの確認
+- [x] `TestValidateVariableName`: 環境変数名のバリデーション（既存）
+  - [x] 英数字とアンダースコア
+  - [x] 無効な文字の検出
+  - [x] 空文字列のエラー
+- [x] カバレッジ確認: environment_validation_test.go に包括的なテスト存在確認
 
-#### 4.1.2 ファイルパスバリデーション
+#### 4.1.2 セキュリティバリデーション - command_analysis
+
+##### `internal/runner/security/command_analysis_dangerous_test.go` の新規作成
+
+- [x] `TestValidator_IsDangerousRootCommand`: 危険なrootコマンドの検出
+  - [x] rm, rmdir, dd, mkfs, fdisk などの危険コマンド
+  - [x] 安全なコマンド (ls, cat, echo) との区別
+- [x] `TestValidator_HasDangerousRootArgs`: 危険な引数パターンの検出
+  - [x] 再帰フラグ (-rf, --recursive)
+  - [x] 強制フラグ (--force)
+  - [x] 複数の危険な引数の検出
+- [x] `TestValidator_HasWildcards`: ワイルドカードの検出
+  - [x] アスタリスク (*) の検出
+  - [x] クエスチョンマーク (?) の検出
+  - [x] 複数のワイルドカードパターン
+- [x] `TestValidator_HasSystemCriticalPaths`: システム重要パスの検出
+  - [x] /etc, /boot, /sys, /proc などの重要パス
+  - [x] サブディレクトリのマッチング
+  - [x] 偽陽性の回避
+- [x] カバレッジ確認: 48.8% → 53.0% (+4.2%)
+
+#### 4.1.3 Executor バリデーション
+
+##### `internal/runner/executor/executor_validation_test.go` の新規作成
+
+- [x] `TestDefaultExecutor_validatePrivilegedCommand`: 特権コマンドの検証
+  - [x] 絶対パス要求の検証
+  - [x] 相対パスの拒否
+  - [x] 作業ディレクトリの絶対パス検証
+- [x] `TestCreateCommandContextWithTimeout`: タイムアウトコンテキスト作成
+  - [x] 無制限実行 (timeout <= 0)
+  - [x] 制限付き実行 (timeout > 0)
+  - [x] キャンセル機能の検証
+- [x] カバレッジ確認: 17.0% → 23.0% (+6.0%)
+
+#### 4.1.4 残りのバリデーション (未実装)
 
 ##### `internal/runner/security/file_validation_test.go` の拡張
 
