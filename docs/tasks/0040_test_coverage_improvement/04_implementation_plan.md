@@ -34,22 +34,22 @@
 
 #### 2.1.1 `internal/cmdcommon/common_test.go` の作成
 
-- [ ] ファイル作成と基本構造の準備
-- [ ] `TestParseFlags_Success`: 正常系テスト
-  - [ ] 必須引数あり
-  - [ ] ハッシュディレクトリ指定あり
-  - [ ] デフォルト値の確認
-- [ ] `TestParseFlags_MissingRequiredArg`: 引数不足エラー
-  - [ ] `-file` 引数なし
-  - [ ] エラーメッセージの確認
-- [ ] `TestParseFlags_InvalidHashDir`: ハッシュディレクトリエラー
-  - [ ] 権限エラー
-  - [ ] 存在しないディレクトリ
-- [ ] `TestCreateValidator_Success`: バリデータ生成
-  - [ ] 正常なバリデータ作成
-  - [ ] エラーケース
-- [ ] `TestPrintUsage`: 使用方法表示
-  - [ ] 標準エラー出力の確認
+- [x] ファイル作成と基本構造の準備
+- [x] `TestParseFlags_Success`: 正常系テスト
+  - [x] 必須引数あり
+  - [x] ハッシュディレクトリ指定あり
+  - [x] デフォルト値の確認
+- [x] `TestParseFlags_MissingRequiredArg`: 引数不足エラー
+  - [x] `-file` 引数なし
+  - [x] エラーメッセージの確認
+- [x] `TestParseFlags_InvalidHashDir`: ハッシュディレクトリエラー
+  - [x] 権限エラー
+  - [x] 存在しないディレクトリ
+- [x] `TestCreateValidator_Success`: バリデータ生成
+  - [x] 正常なバリデータ作成
+  - [x] エラーケース
+- [x] `TestPrintUsage`: 使用方法表示
+  - [x] 標準エラー出力の確認
 
 **テスト実装のポイント**:
 - `flag.CommandLine` を各テストでリセット
@@ -58,40 +58,40 @@
 
 #### 2.1.2 `internal/runner/cli/output_test.go` の作成
 
-- [ ] ファイル作成と基本構造の準備
-- [ ] `TestParseDryRunDetailLevel_ValidLevels`: 有効なレベル
-  - [ ] "summary" のパース
-  - [ ] "detailed" のパース
-  - [ ] "full" のパース
-- [ ] `TestParseDryRunDetailLevel_InvalidLevel`: 無効なレベル
-  - [ ] エラー型の確認（`errors.Is`）
-- [ ] `TestParseDryRunOutputFormat_ValidFormats`: 有効なフォーマット
-  - [ ] "text" のパース
-  - [ ] "json" のパース
-- [ ] `TestParseDryRunOutputFormat_InvalidFormat`: 無効なフォーマット
-  - [ ] エラー型の確認
+- [x] ファイル作成と基本構造の準備
+- [x] `TestParseDryRunDetailLevel_ValidLevels`: 有効なレベル
+  - [x] "summary" のパース
+  - [x] "detailed" のパース
+  - [x] "full" のパース
+- [x] `TestParseDryRunDetailLevel_InvalidLevel`: 無効なレベル
+  - [x] エラー型の確認（`errors.Is`）
+- [x] `TestParseDryRunOutputFormat_ValidFormats`: 有効なフォーマット
+  - [x] "text" のパース
+  - [x] "json" のパース
+- [x] `TestParseDryRunOutputFormat_InvalidFormat`: 無効なフォーマット
+  - [x] エラー型の確認
 
 #### 2.1.3 `internal/runner/cli/validation_test.go` の作成
 
-- [ ] ファイル作成と基本構造の準備
-- [ ] `TestValidateConfigCommand_Valid`: 有効な設定コマンド
-- [ ] `TestValidateConfigCommand_Invalid`: 無効な設定コマンド
-- [ ] エラーケースの網羅
+- [x] ファイル作成と基本構造の準備
+- [x] `TestValidateConfigCommand_Valid`: 有効な設定コマンド
+- [x] `TestValidateConfigCommand_Invalid`: 無効な設定コマンド
+- [x] エラーケースの網羅
 
 ### 2.2 エラー分類・ロギングのテスト（3関数、+0.3%）
 
 #### 2.2.1 `internal/runner/errors/classification_test.go` の作成
 
-- [ ] ファイル作成と基本構造の準備
-- [ ] `TestClassifyVerificationError_AllFields`: 全フィールド設定
-  - [ ] エラータイプの確認
-  - [ ] 重要度の確認
-  - [ ] メッセージ内容の確認
-  - [ ] ファイルパスの確認
-  - [ ] タイムスタンプの確認
-- [ ] `TestClassifyVerificationError_WithCause`: 原因エラー付き
-  - [ ] `errors.Is` による検証
-  - [ ] エラーチェーンの確認
+- [x] ファイル作成と基本構造の準備
+- [x] `TestClassifyVerificationError_AllFields`: 全フィールド設定
+  - [x] エラータイプの確認
+  - [x] 重要度の確認
+  - [x] メッセージ内容の確認
+  - [x] ファイルパスの確認
+  - [x] タイムスタンプの確認
+- [x] `TestClassifyVerificationError_WithCause`: 原因エラー付き
+  - [x] `errors.Is` による検証
+  - [x] エラーチェーンの確認
 
 #### 2.2.2 `internal/runner/errors/logging_test.go` の作成
 

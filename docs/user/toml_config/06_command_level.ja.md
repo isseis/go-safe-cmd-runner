@@ -880,7 +880,7 @@ args = ["small_file.txt"]
    ```toml
    [global]
    # timeout は指定されていません
-   
+
    [[groups.commands]]
    name = "cmd"
    # timeout は指定されていません
