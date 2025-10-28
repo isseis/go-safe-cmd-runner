@@ -176,17 +176,13 @@ func (v *Validator) HasShellMetacharacters(args []string) bool {
 	return false
 }
 
-// IsDangerousRootCommand checks if a command contains dangerous patterns when running as root
+// IsDangerousRootCommand checks if a command matches dangerous patterns when running as root
+// Uses exact command name matching to avoid false positives from substring matches
 func (v *Validator) IsDangerousRootCommand(cmdPath string) bool {
 	cmdBase := filepath.Base(cmdPath)
 	cmdLower := strings.ToLower(cmdBase)
 
-	for _, dangerous := range v.config.DangerousRootPatterns {
-		if strings.Contains(cmdLower, dangerous) {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(v.config.DangerousRootPatterns, cmdLower)
 }
 
 // HasDangerousRootArgs checks if any argument contains dangerous patterns for root commands

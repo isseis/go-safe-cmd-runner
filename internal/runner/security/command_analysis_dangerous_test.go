@@ -68,8 +68,8 @@ func TestValidator_IsDangerousRootCommand(t *testing.T) {
 		},
 		{
 			name:       "command with similar name but safe",
-			cmdPath:    "/bin/lsrm", // Contains "rm" but not dangerous
-			wantResult: true,        // Will match because Contains is used
+			cmdPath:    "/bin/lsrm", // Contains "rm" but is different command
+			wantResult: false,       // Should not match with exact matching
 		},
 	}
 
