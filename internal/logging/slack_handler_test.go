@@ -1,10 +1,18 @@
 package logging
 
 import (
-	"errors"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSlackHandler_WithAttrs(t *testing.T) {
@@ -26,14 +34,10 @@ func TestSlackHandler_WithAttrs(t *testing.T) {
 	newHandler := handler.WithAttrs(attrs).(*SlackHandler)
 
 	// Verify the new handler has the attributes
-	if len(newHandler.attrs) != 2 {
-		t.Errorf("Expected 2 attributes, got %d", len(newHandler.attrs))
-	}
+	assert.Len(t, newHandler.attrs, 2, "New handler should have 2 attributes")
 
 	// Verify the original handler is unchanged
-	if len(handler.attrs) != 0 {
-		t.Errorf("Original handler should not be modified")
-	}
+	assert.Empty(t, handler.attrs, "Original handler should not be modified")
 
 	// Test chaining WithAttrs
 	moreAttrs := []slog.Attr{
@@ -42,9 +46,7 @@ func TestSlackHandler_WithAttrs(t *testing.T) {
 
 	chainedHandler := newHandler.WithAttrs(moreAttrs).(*SlackHandler)
 
-	if len(chainedHandler.attrs) != 3 {
-		t.Errorf("Expected 3 attributes after chaining, got %d", len(chainedHandler.attrs))
-	}
+	assert.Len(t, chainedHandler.attrs, 3, "Chained handler should have 3 attributes")
 }
 
 func TestSlackHandler_WithGroup(t *testing.T) {
@@ -61,29 +63,17 @@ func TestSlackHandler_WithGroup(t *testing.T) {
 	newHandler := handler.WithGroup("group1").(*SlackHandler)
 
 	// Verify the new handler has the group
-	if len(newHandler.groups) != 1 {
-		t.Errorf("Expected 1 group, got %d", len(newHandler.groups))
-	}
-
-	if newHandler.groups[0] != "group1" {
-		t.Errorf("Expected group name 'group1', got '%s'", newHandler.groups[0])
-	}
+	require.Len(t, newHandler.groups, 1, "New handler should have 1 group")
+	assert.Equal(t, "group1", newHandler.groups[0], "Group name should be 'group1'")
 
 	// Verify the original handler is unchanged
-	if len(handler.groups) != 0 {
-		t.Errorf("Original handler should not be modified")
-	}
+	assert.Empty(t, handler.groups, "Original handler should not be modified")
 
 	// Test chaining WithGroup
 	chainedHandler := newHandler.WithGroup("group2").(*SlackHandler)
 
-	if len(chainedHandler.groups) != 2 {
-		t.Errorf("Expected 2 groups after chaining, got %d", len(chainedHandler.groups))
-	}
-
-	if chainedHandler.groups[1] != "group2" {
-		t.Errorf("Expected second group name 'group2', got '%s'", chainedHandler.groups[1])
-	}
+	require.Len(t, chainedHandler.groups, 2, "Chained handler should have 2 groups")
+	assert.Equal(t, "group2", chainedHandler.groups[1], "Second group name should be 'group2'")
 }
 
 func TestSlackHandler_WithAttrsAndGroups(t *testing.T) {
@@ -103,17 +93,9 @@ func TestSlackHandler_WithAttrsAndGroups(t *testing.T) {
 
 	combined := handler.WithAttrs(attrs).WithGroup("testgroup").(*SlackHandler)
 
-	if len(combined.attrs) != 1 {
-		t.Errorf("Expected 1 attribute, got %d", len(combined.attrs))
-	}
-
-	if len(combined.groups) != 1 {
-		t.Errorf("Expected 1 group, got %d", len(combined.groups))
-	}
-
-	if combined.groups[0] != "testgroup" {
-		t.Errorf("Expected group name 'testgroup', got '%s'", combined.groups[0])
-	}
+	assert.Len(t, combined.attrs, 1, "Combined handler should have 1 attribute")
+	require.Len(t, combined.groups, 1, "Combined handler should have 1 group")
+	assert.Equal(t, "testgroup", combined.groups[0], "Group name should be 'testgroup'")
 }
 
 func TestSlackHandler_ApplyAccumulatedContext(t *testing.T) {
@@ -136,11 +118,9 @@ func TestSlackHandler_ApplyAccumulatedContext(t *testing.T) {
 	newRecord := handler.applyAccumulatedContext(originalRecord)
 
 	// Verify the new record has both accumulated and original attributes
-	attrCount := 0
 	var hasAccumulated, hasOriginal, hasGroup bool
 
 	newRecord.Attrs(func(attr slog.Attr) bool {
-		attrCount++
 		switch attr.Key {
 		case "original_key":
 			hasOriginal = true
@@ -159,17 +139,9 @@ func TestSlackHandler_ApplyAccumulatedContext(t *testing.T) {
 		return true
 	})
 
-	if !hasOriginal {
-		t.Error("Expected original attribute to be present")
-	}
-
-	if !hasGroup {
-		t.Error("Expected group to be present")
-	}
-
-	if !hasAccumulated {
-		t.Error("Expected accumulated attribute to be present in group")
-	}
+	assert.True(t, hasOriginal, "Original attribute should be present")
+	assert.True(t, hasGroup, "Group should be present")
+	assert.True(t, hasAccumulated, "Accumulated attribute should be present in group")
 }
 
 func TestSlackHandler_WithAttrsEmptySlice(t *testing.T) {
@@ -182,9 +154,7 @@ func TestSlackHandler_WithAttrsEmptySlice(t *testing.T) {
 	// WithAttrs with empty slice should return the same handler
 	newHandler := handler.WithAttrs([]slog.Attr{})
 
-	if newHandler != handler {
-		t.Error("WithAttrs with empty slice should return the same handler")
-	}
+	assert.Same(t, handler, newHandler, "WithAttrs with empty slice should return the same handler")
 }
 
 func TestSlackHandler_WithGroupEmptyString(t *testing.T) {
@@ -197,9 +167,7 @@ func TestSlackHandler_WithGroupEmptyString(t *testing.T) {
 	// WithGroup with empty string should return the same handler
 	newHandler := handler.WithGroup("")
 
-	if newHandler != handler {
-		t.Error("WithGroup with empty string should return the same handler")
-	}
+	assert.Same(t, handler, newHandler, "WithGroup with empty string should return the same handler")
 }
 
 func TestValidateWebhookURL(t *testing.T) {
@@ -273,16 +241,12 @@ func TestValidateWebhookURL(t *testing.T) {
 			err := validateWebhookURL(tt.url)
 
 			if tt.expectError {
-				if err == nil {
-					t.Errorf("Expected error for URL: %s", tt.url)
-					return
+				require.Error(t, err, "Expected error for URL: %s", tt.url)
+				if tt.errorType != nil {
+					assert.ErrorIs(t, err, tt.errorType, "Expected specific error type")
 				}
-
-				if tt.errorType != nil && !errors.Is(err, tt.errorType) {
-					t.Errorf("Expected error type %v, got %v", tt.errorType, err)
-				}
-			} else if err != nil {
-				t.Errorf("Unexpected error for valid URL %s: %v", tt.url, err)
+			} else {
+				assert.NoError(t, err, "Unexpected error for valid URL %s", tt.url)
 			}
 		})
 	}
@@ -326,28 +290,332 @@ func TestNewSlackHandler_URLValidation(t *testing.T) {
 			handler, err := NewSlackHandler(tt.url, tt.runID)
 
 			if tt.expectError {
-				if err == nil {
-					t.Errorf("Expected error for URL: %s", tt.url)
-				}
-				if handler != nil {
-					t.Errorf("Expected nil handler when error occurs")
-				}
+				require.Error(t, err, "Expected error for URL: %s", tt.url)
+				assert.Nil(t, handler, "Expected nil handler when error occurs")
 			} else {
-				if err != nil {
-					t.Errorf("Unexpected error for valid input: %v", err)
-				}
-				if handler == nil {
-					t.Errorf("Expected non-nil handler for valid input")
-				}
-				if handler != nil {
-					if handler.webhookURL != tt.url {
-						t.Errorf("Expected webhook URL %s, got %s", tt.url, handler.webhookURL)
-					}
-					if handler.runID != tt.runID {
-						t.Errorf("Expected run ID %s, got %s", tt.runID, handler.runID)
-					}
-				}
+				require.NoError(t, err, "Unexpected error for valid input")
+				require.NotNil(t, handler, "Expected non-nil handler for valid input")
+				assert.Equal(t, tt.url, handler.webhookURL, "Webhook URL should match")
+				assert.Equal(t, tt.runID, handler.runID, "Run ID should match")
 			}
 		})
+	}
+}
+
+func TestGetSlackWebhookURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		envValue string
+		expected string
+	}{
+		{
+			name:     "with environment variable",
+			envValue: "https://hooks.slack.com/services/TEST/WEBHOOK/URL",
+			expected: "https://hooks.slack.com/services/TEST/WEBHOOK/URL",
+		},
+		{
+			name:     "without environment variable",
+			envValue: "",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set test environment variable using t.Setenv
+			if tt.envValue != "" {
+				t.Setenv("GSCR_SLACK_WEBHOOK_URL", tt.envValue)
+			}
+			// Note: t.Setenv automatically restores the original value after the test
+
+			result := GetSlackWebhookURL()
+			assert.Equal(t, tt.expected, result, "GetSlackWebhookURL should return expected value")
+		})
+	}
+}
+
+func TestSlackHandler_Enabled(t *testing.T) {
+	tests := []struct {
+		name          string
+		handlerLevel  slog.Level
+		recordLevel   slog.Level
+		expectEnabled bool
+	}{
+		{
+			name:          "Info handler with Info record",
+			handlerLevel:  slog.LevelInfo,
+			recordLevel:   slog.LevelInfo,
+			expectEnabled: true,
+		},
+		{
+			name:          "Info handler with Warn record",
+			handlerLevel:  slog.LevelInfo,
+			recordLevel:   slog.LevelWarn,
+			expectEnabled: true,
+		},
+		{
+			name:          "Info handler with Debug record",
+			handlerLevel:  slog.LevelInfo,
+			recordLevel:   slog.LevelDebug,
+			expectEnabled: false,
+		},
+		{
+			name:          "Warn handler with Info record",
+			handlerLevel:  slog.LevelWarn,
+			recordLevel:   slog.LevelInfo,
+			expectEnabled: false,
+		},
+		{
+			name:          "Error handler with Error record",
+			handlerLevel:  slog.LevelError,
+			recordLevel:   slog.LevelError,
+			expectEnabled: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := &SlackHandler{
+				webhookURL: "https://hooks.slack.com/test",
+				runID:      "test-run",
+				level:      tt.handlerLevel,
+			}
+
+			ctx := context.Background()
+			enabled := handler.Enabled(ctx, tt.recordLevel)
+
+			assert.Equal(t, tt.expectEnabled, enabled, "Enabled should return expected value")
+		})
+	}
+}
+
+func TestSlackHandler_Handle_NoSlackNotify(t *testing.T) {
+	handler := &SlackHandler{
+		webhookURL: "https://hooks.slack.com/test",
+		runID:      "test-run",
+		level:      slog.LevelInfo,
+	}
+
+	ctx := context.Background()
+	record := slog.NewRecord(time.Now(), slog.LevelInfo, "test message", 0)
+	// No slack_notify attribute
+
+	err := handler.Handle(ctx, record)
+	assert.NoError(t, err, "Expected no error when slack_notify is missing")
+}
+
+func TestSlackHandler_Handle_SlackNotifyFalse(t *testing.T) {
+	handler := &SlackHandler{
+		webhookURL: "https://hooks.slack.com/test",
+		runID:      "test-run",
+		level:      slog.LevelInfo,
+	}
+
+	ctx := context.Background()
+	record := slog.NewRecord(time.Now(), slog.LevelInfo, "test message", 0)
+	record.AddAttrs(slog.Bool("slack_notify", false))
+
+	err := handler.Handle(ctx, record)
+	assert.NoError(t, err, "Expected no error when slack_notify is false")
+}
+
+func TestSlackHandler_Handle_WithMockServer(t *testing.T) {
+	tests := []struct {
+		name            string
+		messageType     string
+		recordAttrs     []slog.Attr
+		expectSuccess   bool
+		serverStatus    int
+		validateMessage func(t *testing.T, msg SlackMessage)
+	}{
+		{
+			name:        "generic message success",
+			messageType: "",
+			recordAttrs: []slog.Attr{
+				slog.Bool("slack_notify", true),
+			},
+			expectSuccess: true,
+			serverStatus:  http.StatusOK,
+			validateMessage: func(t *testing.T, msg SlackMessage) {
+				expectedText := fmt.Sprintf("%s: test message (Run ID: test-run)", slog.LevelInfo.String())
+				assert.Equal(t, expectedText, msg.Text, "Message text should match expected format")
+			},
+		},
+		{
+			name:        "command group summary",
+			messageType: "command_group_summary",
+			recordAttrs: []slog.Attr{
+				slog.Bool("slack_notify", true),
+				slog.String("message_type", "command_group_summary"),
+				slog.String("status", "success"),
+				slog.String("group", "test-group"),
+				slog.String("command", "echo test"),
+				slog.Int("exit_code", 0),
+				slog.Int64("duration_ms", 100),
+			},
+			expectSuccess: true,
+			serverStatus:  http.StatusOK,
+			validateMessage: func(t *testing.T, msg SlackMessage) {
+				assert.Contains(t, msg.Text, "test-group", "Message should contain group name")
+			},
+		},
+		{
+			name:        "pre execution error",
+			messageType: "pre_execution_error",
+			recordAttrs: []slog.Attr{
+				slog.Bool("slack_notify", true),
+				slog.String("message_type", "pre_execution_error"),
+				slog.String("error", "test error"),
+			},
+			expectSuccess: true,
+			serverStatus:  http.StatusOK,
+		},
+		{
+			name:        "security alert",
+			messageType: "security_alert",
+			recordAttrs: []slog.Attr{
+				slog.Bool("slack_notify", true),
+				slog.String("message_type", "security_alert"),
+				slog.String("alert_type", "test_alert"),
+			},
+			expectSuccess: true,
+			serverStatus:  http.StatusOK,
+		},
+		{
+			name:        "privileged command failure",
+			messageType: "privileged_command_failure",
+			recordAttrs: []slog.Attr{
+				slog.Bool("slack_notify", true),
+				slog.String("message_type", "privileged_command_failure"),
+			},
+			expectSuccess: true,
+			serverStatus:  http.StatusOK,
+		},
+		{
+			name:        "privilege escalation failure",
+			messageType: "privilege_escalation_failure",
+			recordAttrs: []slog.Attr{
+				slog.Bool("slack_notify", true),
+				slog.String("message_type", "privilege_escalation_failure"),
+			},
+			expectSuccess: true,
+			serverStatus:  http.StatusOK,
+		},
+		{
+			name:        "server error",
+			messageType: "",
+			recordAttrs: []slog.Attr{
+				slog.Bool("slack_notify", true),
+			},
+			expectSuccess: false,
+			serverStatus:  http.StatusInternalServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var receivedMessage SlackMessage
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, http.MethodPost, r.Method, "Request method should be POST")
+
+				body, err := io.ReadAll(r.Body)
+				require.NoError(t, err, "Failed to read request body")
+
+				err = json.Unmarshal(body, &receivedMessage)
+				require.NoError(t, err, "Failed to unmarshal JSON")
+
+				w.WriteHeader(tt.serverStatus)
+			}))
+			defer server.Close()
+
+			handler := &SlackHandler{
+				webhookURL: server.URL,
+				runID:      "test-run",
+				httpClient: &http.Client{Timeout: 5 * time.Second},
+				level:      slog.LevelInfo,
+			}
+
+			ctx := context.Background()
+			record := slog.NewRecord(time.Now(), slog.LevelInfo, "test message", 0)
+			for _, attr := range tt.recordAttrs {
+				record.AddAttrs(attr)
+			}
+
+			err := handler.Handle(ctx, record)
+
+			if tt.expectSuccess {
+				assert.NoError(t, err, "Expected success, got error")
+				if tt.validateMessage != nil {
+					tt.validateMessage(t, receivedMessage)
+				}
+			} else {
+				assert.Error(t, err, "Expected error for server failure")
+			}
+		})
+	}
+}
+
+func TestSlackHandler_SendToSlack_Retry(t *testing.T) {
+	t.Run("retry on temporary failure", func(t *testing.T) {
+		attemptCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			attemptCount++
+			if attemptCount < 2 {
+				w.WriteHeader(http.StatusServiceUnavailable)
+			} else {
+				w.WriteHeader(http.StatusOK)
+			}
+		}))
+		defer server.Close()
+
+		handler := &SlackHandler{
+			webhookURL: server.URL,
+			runID:      "test-run",
+			httpClient: &http.Client{Timeout: 5 * time.Second},
+			level:      slog.LevelInfo,
+		}
+
+		ctx := context.Background()
+		message := SlackMessage{Text: "test"}
+
+		err := handler.sendToSlack(ctx, message)
+		assert.NoError(t, err, "Expected success after retry")
+		assert.GreaterOrEqual(t, attemptCount, 2, "Expected at least 2 attempts")
+	})
+
+	t.Run("no retry on client error", func(t *testing.T) {
+		attemptCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			attemptCount++
+			w.WriteHeader(http.StatusBadRequest)
+		}))
+		defer server.Close()
+
+		handler := &SlackHandler{
+			webhookURL: server.URL,
+			runID:      "test-run",
+			httpClient: &http.Client{Timeout: 5 * time.Second},
+			level:      slog.LevelInfo,
+		}
+
+		ctx := context.Background()
+		message := SlackMessage{Text: "test"}
+
+		err := handler.sendToSlack(ctx, message)
+		assert.Error(t, err, "Expected error for client error status")
+		assert.Equal(t, 1, attemptCount, "Expected exactly 1 attempt for client error")
+	})
+}
+
+func TestSlackHandler_GenerateBackoffIntervals(t *testing.T) {
+	intervals := generateBackoffIntervals(backoffBase, retryCount)
+
+	assert.Len(t, intervals, retryCount, "Should generate correct number of intervals")
+
+	// Check exponential backoff formula: base * 2^i
+	for i := range len(intervals) {
+		expected := backoffBase * time.Duration(1<<i)
+		assert.Equal(t, expected, intervals[i],
+			"Interval[%d] should follow exponential backoff formula (base * 2^%d)", i, i)
 	}
 }

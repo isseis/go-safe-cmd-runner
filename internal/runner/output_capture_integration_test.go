@@ -1,5 +1,3 @@
-//go:build test
-
 // This file contains integration tests for output capture functionality
 
 package runner
@@ -106,9 +104,7 @@ func TestRunner_OutputCaptureIntegration(t *testing.T) {
 			if tt.expectError {
 				require.Error(t, err, "Should return error for %s", tt.description)
 			} else {
-				// Note: May still fail due to actual implementation details
-				// This test focuses on integration configuration
-				t.Logf("Test completed: %s", tt.description)
+				require.NoError(t, err, "Should not return error for %s", tt.description)
 			}
 
 			// Verify mock expectations
@@ -227,7 +223,6 @@ func TestRunner_OutputCaptureSecurityValidation(t *testing.T) {
 					"Error should indicate validation occurred before command execution")
 			} else {
 				require.NoError(t, err, "Valid paths should pass validation and execute successfully: %s", tt.description)
-				t.Logf("Test completed successfully: %s", tt.description)
 			}
 
 			// Critical verification: ensure the security boundary works as expected

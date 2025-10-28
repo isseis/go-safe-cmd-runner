@@ -2,6 +2,8 @@ package terminal
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestCapabilities_Integration(t *testing.T) {
@@ -74,17 +76,14 @@ func TestCapabilities_Integration(t *testing.T) {
 
 			capabilities := NewCapabilities(tt.options)
 
-			if got := capabilities.IsInteractive(); got != tt.wantInteractive {
-				t.Errorf("IsInteractive() = %v, want %v. %s", got, tt.wantInteractive, tt.description)
-			}
+			gotInteractive := capabilities.IsInteractive()
+			assert.Equal(t, tt.wantInteractive, gotInteractive, tt.description)
 
-			if got := capabilities.SupportsColor(); got != tt.wantColor {
-				t.Errorf("SupportsColor() = %v, want %v. %s", got, tt.wantColor, tt.description)
-			}
+			gotColor := capabilities.SupportsColor()
+			assert.Equal(t, tt.wantColor, gotColor, tt.description)
 
-			if got := capabilities.HasExplicitUserPreference(); got != tt.wantExplicitPref {
-				t.Errorf("HasExplicitUserPreference() = %v, want %v. %s", got, tt.wantExplicitPref, tt.description)
-			}
+			gotExplicitPref := capabilities.HasExplicitUserPreference()
+			assert.Equal(t, tt.wantExplicitPref, gotExplicitPref, tt.description)
 		})
 	}
 }
@@ -153,9 +152,8 @@ func TestCapabilities_ColorPriorityLogic(t *testing.T) {
 
 			capabilities := NewCapabilities(tt.options)
 
-			if got := capabilities.SupportsColor(); got != tt.wantColor {
-				t.Errorf("SupportsColor() = %v, want %v. %s", got, tt.wantColor, tt.description)
-			}
+			got := capabilities.SupportsColor()
+			assert.Equal(t, tt.wantColor, got, tt.description)
 		})
 	}
 }
@@ -179,19 +177,12 @@ func TestCapabilities_ComponentIntegration(t *testing.T) {
 		// - Interactive detection depends on actual terminal state
 		// - Color support depends on both interactive state and terminal capability
 
-		if hasExplicit {
-			t.Error("HasExplicitUserPreference() should return false with no options or env vars")
-		}
+		assert.False(t, hasExplicit, "HasExplicitUserPreference() should return false with no options or env vars")
 
 		// For consistent testing, we don't make assumptions about the actual terminal state
-		// Instead, test that the methods don't panic and return boolean values
-		if isInteractive != true && isInteractive != false {
-			t.Error("IsInteractive() should return a boolean value")
-		}
-
-		if supportsColor != true && supportsColor != false {
-			t.Error("SupportsColor() should return a boolean value")
-		}
+		// Test that the methods don't panic and return boolean values (type check is implicit)
+		_ = isInteractive
+		_ = supportsColor
 	})
 }
 
@@ -254,9 +245,8 @@ func TestCapabilities_ExplicitUserPreferenceLogic(t *testing.T) {
 
 			capabilities := NewCapabilities(tt.options)
 
-			if got := capabilities.HasExplicitUserPreference(); got != tt.wantExplicit {
-				t.Errorf("HasExplicitUserPreference() = %v, want %v. %s", got, tt.wantExplicit, tt.description)
-			}
+			got := capabilities.HasExplicitUserPreference()
+			assert.Equal(t, tt.wantExplicit, got, tt.description)
 		})
 	}
 }

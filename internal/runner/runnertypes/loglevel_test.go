@@ -3,6 +3,8 @@ package runnertypes
 import (
 	"log/slog"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // Test valid log levels
@@ -31,12 +33,8 @@ func TestLogLevel_UnmarshalText_ValidLevels(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var level LogLevel
 			err := level.UnmarshalText([]byte(tt.input))
-			if err != nil {
-				t.Errorf("UnmarshalText() error = %v, want nil", err)
-			}
-			if level != tt.expected {
-				t.Errorf("UnmarshalText() = %v, want %v", level, tt.expected)
-			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expected, level)
 		})
 	}
 }
@@ -56,9 +54,7 @@ func TestLogLevel_UnmarshalText_InvalidLevels(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var level LogLevel
 			err := level.UnmarshalText([]byte(tt.input))
-			if err == nil {
-				t.Errorf("UnmarshalText() error = nil, want error for input %q", tt.input)
-			}
+			assert.Error(t, err)
 		})
 	}
 }
@@ -102,12 +98,11 @@ func TestLogLevel_ToSlogLevel(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			slogLevel, err := tt.level.ToSlogLevel()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ToSlogLevel() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !tt.wantErr && slogLevel != tt.expected {
-				t.Errorf("ToSlogLevel() = %v, want %v", slogLevel, tt.expected)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expected, slogLevel)
 			}
 		})
 	}
@@ -128,9 +123,8 @@ func TestLogLevel_String(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.level.String(); got != tt.expected {
-				t.Errorf("String() = %v, want %v", got, tt.expected)
-			}
+			got := tt.level.String()
+			assert.Equal(t, tt.expected, got)
 		})
 	}
 }

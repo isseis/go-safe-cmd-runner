@@ -381,9 +381,7 @@ func TestRuntimeGlobal_HelperMethods(t *testing.T) {
 	}
 
 	runtime, err := NewRuntimeGlobal(spec)
-	if err != nil {
-		t.Fatalf("NewRuntimeGlobal() failed: %v", err)
-	}
+	require.NoError(t, err, "NewRuntimeGlobal() should succeed")
 
 	// Test Timeout()
 	timeout := runtime.Timeout()

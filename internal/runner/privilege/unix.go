@@ -31,6 +31,8 @@ type UnixPrivilegeManager struct {
 	privilegeSupported bool
 	metrics            Metrics
 	mu                 sync.Mutex
+	// osExit is a function for os.Exit to enable testing of emergencyShutdown
+	osExit func(code int)
 }
 
 func newPlatformManager(logger *slog.Logger) Manager {
@@ -38,6 +40,7 @@ func newPlatformManager(logger *slog.Logger) Manager {
 		logger:             logger,
 		originalUID:        syscall.Getuid(),
 		privilegeSupported: isPrivilegeExecutionSupported(logger),
+		osExit:             os.Exit,
 	}
 }
 
@@ -284,7 +287,7 @@ func (m *UnixPrivilegeManager) emergencyShutdown(restoreErr error, shutdownConte
 	fmt.Fprintf(os.Stderr, "FATAL: %s: %v\n", criticalMsg, restoreErr)
 
 	// Immediately terminate process (skip defer processing)
-	os.Exit(1)
+	m.osExit(1)
 }
 
 // IsPrivilegedExecutionSupported checks if privileged execution is available on this system

@@ -1140,9 +1140,7 @@ func TestExecuteGroup_RunnerWorkdirExpansion(t *testing.T) {
 // containsPattern checks if a string contains the expected pattern
 func containsPattern(t *testing.T, s, pattern string) bool {
 	t.Helper()
-	if len(pattern) == 0 {
-		t.Fatal("pattern must not be empty")
-	}
+	require.NotEmpty(t, pattern, "pattern must not be empty")
 	if len(s) == 0 {
 		return false
 	}

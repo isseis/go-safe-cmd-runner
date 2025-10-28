@@ -2,6 +2,8 @@ package terminal
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestUserPreference_CLICOLORForce(t *testing.T) {
@@ -71,13 +73,11 @@ func TestUserPreference_CLICOLORForce(t *testing.T) {
 
 			pref := NewUserPreference(tt.options)
 
-			if got := pref.SupportsColor(); got != tt.wantColor {
-				t.Errorf("SupportsColor() = %v, want %v", got, tt.wantColor)
-			}
+			got := pref.SupportsColor()
+			assert.Equal(t, tt.wantColor, got)
 
-			if got := pref.HasExplicitPreference(); got != tt.wantExplicit {
-				t.Errorf("HasExplicitPreference() = %v, want %v", got, tt.wantExplicit)
-			}
+			gotExplicit := pref.HasExplicitPreference()
+			assert.Equal(t, tt.wantExplicit, gotExplicit)
 		})
 	}
 }
@@ -131,9 +131,8 @@ func TestUserPreference_PriorityLogic(t *testing.T) {
 
 			pref := NewUserPreference(tt.options)
 
-			if got := pref.SupportsColor(); got != tt.wantColor {
-				t.Errorf("SupportsColor() = %v, want %v. %s", got, tt.wantColor, tt.description)
-			}
+			got := pref.SupportsColor()
+			assert.Equal(t, tt.wantColor, got, tt.description)
 		})
 	}
 }
@@ -214,13 +213,11 @@ func TestUserPreference_EnvVarParsing(t *testing.T) {
 
 			pref := NewUserPreference(PreferenceOptions{})
 
-			if got := pref.SupportsColor(); got != tt.wantColor {
-				t.Errorf("SupportsColor() = %v, want %v", got, tt.wantColor)
-			}
+			got := pref.SupportsColor()
+			assert.Equal(t, tt.wantColor, got)
 
-			if got := pref.HasExplicitPreference(); got != tt.wantExplicit {
-				t.Errorf("HasExplicitPreference() = %v, want %v", got, tt.wantExplicit)
-			}
+			gotExplicit := pref.HasExplicitPreference()
+			assert.Equal(t, tt.wantExplicit, gotExplicit)
 		})
 	}
 }

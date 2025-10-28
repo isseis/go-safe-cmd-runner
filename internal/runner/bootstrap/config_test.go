@@ -1,5 +1,3 @@
-//go:build test
-
 package bootstrap
 
 import (

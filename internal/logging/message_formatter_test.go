@@ -373,3 +373,170 @@ func TestShouldSkipInteractiveAttr_False(t *testing.T) {
 		})
 	}
 }
+
+func TestAppendInteractiveAttrs_EdgeCases(t *testing.T) {
+	formatter := NewDefaultMessageFormatter()
+
+	tests := []struct {
+		name         string
+		record       func() slog.Record
+		checkContent func(t *testing.T, result string)
+	}{
+		{
+			name: "empty attributes",
+			record: func() slog.Record {
+				return slog.NewRecord(time.Now(), slog.LevelInfo, "test", 0)
+			},
+			checkContent: func(t *testing.T, result string) {
+				assert.Contains(t, result, "test", "Should contain message text")
+			},
+		},
+		{
+			name: "many attributes",
+			record: func() slog.Record {
+				r := slog.NewRecord(time.Now(), slog.LevelInfo, "test", 0)
+				for i := 0; i < 20; i++ {
+					r.AddAttrs(slog.String("key"+string(rune('A'+i)), "value"))
+				}
+				return r
+			},
+			checkContent: func(t *testing.T, result string) {
+				assert.Contains(t, result, "keyA=value", "Should contain at least the first attribute")
+			},
+		},
+		{
+			name: "special characters in attribute values",
+			record: func() slog.Record {
+				r := slog.NewRecord(time.Now(), slog.LevelInfo, "test", 0)
+				r.AddAttrs(
+					slog.String("path", "/tmp/test file.txt"),
+					slog.String("command", "echo \"hello world\""),
+					slog.String("error", "failed: permission denied"),
+				)
+				return r
+			},
+			checkContent: func(t *testing.T, result string) {
+				// Should contain command and error attributes, and path should be skipped.
+				assert.Contains(t, result, "error=", "Result should contain the error attribute")
+				assert.Contains(t, result, "command=", "Result should contain the command attribute")
+				assert.NotContains(t, result, "path=", "Result should not contain the non-priority path attribute")
+			},
+		},
+		{
+			name: "mixed attribute types",
+			record: func() slog.Record {
+				r := slog.NewRecord(time.Now(), slog.LevelInfo, "test", 0)
+				r.AddAttrs(
+					slog.String("string_key", "string_value"),
+					slog.Int("int_key", 42),
+					slog.Bool("bool_key", true),
+					slog.Float64("float_key", 3.14),
+					slog.Duration("duration_key", 5*time.Second),
+				)
+				return r
+			},
+			checkContent: func(t *testing.T, result string) {
+				assert.Contains(t, result, "string_key=string_value", "Should contain string attribute")
+			},
+		},
+		{
+			name: "nested groups",
+			record: func() slog.Record {
+				r := slog.NewRecord(time.Now(), slog.LevelInfo, "test", 0)
+				r.AddAttrs(
+					slog.Group("outer",
+						slog.String("inner_key", "inner_value"),
+						slog.Int("count", 10),
+					),
+				)
+				return r
+			},
+			checkContent: func(t *testing.T, result string) {
+				// Should format the group as "outer={inner_key=inner_value,count=10}"
+				assert.Contains(t, result, "outer=", "Result should contain the group name 'outer='")
+				assert.Contains(t, result, "inner_key=inner_value", "Result should contain formatted inner attribute 'inner_key=inner_value'")
+				assert.Contains(t, result, "count=10", "Result should contain formatted inner attribute 'count=10'")
+			},
+		},
+		{
+			name: "skipped attributes mixed with kept attributes",
+			record: func() slog.Record {
+				r := slog.NewRecord(time.Now(), slog.LevelInfo, "test", 0)
+				r.AddAttrs(
+					slog.String("time", "2024-01-01"),
+					slog.String("error", "test error"),
+					slog.String("run_id", "test-run"),
+					slog.String("component", "test-component"),
+				)
+				return r
+			},
+			checkContent: func(t *testing.T, result string) {
+				assert.NotContains(t, result, "run_id=", "Should skip run_id attribute")
+				assert.Contains(t, result, "error=test error", "Should keep error attribute")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := formatter.FormatRecordInteractive(tt.record(), false)
+			tt.checkContent(t, result)
+		})
+	}
+}
+
+func TestAppendInteractiveAttrs_EmptyValues(t *testing.T) {
+	formatter := NewDefaultMessageFormatter()
+
+	tests := []struct {
+		name         string
+		record       func() slog.Record
+		checkContent func(t *testing.T, result string)
+	}{
+		{
+			name: "empty string value",
+			record: func() slog.Record {
+				r := slog.NewRecord(time.Now(), slog.LevelInfo, "test", 0)
+				r.AddAttrs(slog.String("key", ""))
+				return r
+			},
+			checkContent: func(t *testing.T, result string) {
+				// Should contain the key with empty value formatted as "key="
+				assert.Contains(t, result, "key=", "Should contain 'key=' for empty string value, got: %s", result)
+			},
+		},
+		{
+			name: "zero int value",
+			record: func() slog.Record {
+				r := slog.NewRecord(time.Now(), slog.LevelInfo, "test", 0)
+				r.AddAttrs(slog.Int("count", 0))
+				return r
+			},
+			checkContent: func(t *testing.T, result string) {
+				// Should contain the key with zero value formatted as "count=0"
+				assert.Contains(t, result, "count=0", "Should contain 'count=0' for zero int value, got: %s", result)
+			},
+		},
+		{
+			name: "false bool value",
+			record: func() slog.Record {
+				r := slog.NewRecord(time.Now(), slog.LevelInfo, "test", 0)
+				r.AddAttrs(slog.Bool("flag", false))
+				return r
+			},
+			checkContent: func(t *testing.T, result string) {
+				// Should contain the key with false value formatted as "flag=false"
+				assert.Contains(t, result, "flag=false", "Should contain 'flag=false' for false bool value, got: %s", result)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Should not panic with empty or zero values
+			result := formatter.FormatRecordInteractive(tt.record(), false)
+			assert.NotEmpty(t, result, "FormatRecordInteractive should return non-empty string")
+			tt.checkContent(t, result)
+		})
+	}
+}
