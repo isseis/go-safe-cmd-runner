@@ -4,6 +4,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestClassifyVerificationError_AllFields(t *testing.T) {
@@ -22,39 +24,25 @@ func TestClassifyVerificationError_AllFields(t *testing.T) {
 	afterTime := time.Now()
 
 	// Verify error type
-	if result.Type != ErrorTypeConfigVerification {
-		t.Errorf("Type = %v, want %v", result.Type, ErrorTypeConfigVerification)
-	}
+	assert.Equal(t, ErrorTypeConfigVerification, result.Type)
 
 	// Verify severity
-	if result.Severity != ErrorSeverityCritical {
-		t.Errorf("Severity = %v, want %v", result.Severity, ErrorSeverityCritical)
-	}
+	assert.Equal(t, ErrorSeverityCritical, result.Severity)
 
 	// Verify message
-	if result.Message != testMessage {
-		t.Errorf("Message = %q, want %q", result.Message, testMessage)
-	}
+	assert.Equal(t, testMessage, result.Message)
 
 	// Verify file path
-	if result.FilePath != testFilePath {
-		t.Errorf("FilePath = %q, want %q", result.FilePath, testFilePath)
-	}
+	assert.Equal(t, testFilePath, result.FilePath)
 
 	// Verify component is always "verification"
-	if result.Component != "verification" {
-		t.Errorf("Component = %q, want %q", result.Component, "verification")
-	}
+	assert.Equal(t, "verification", result.Component)
 
 	// Verify cause error
-	if result.Cause != testErr {
-		t.Errorf("Cause = %v, want %v", result.Cause, testErr)
-	}
+	assert.Equal(t, testErr, result.Cause)
 
 	// Verify timestamp is reasonable (between before and after)
-	if result.Timestamp.Before(beforeTime) || result.Timestamp.After(afterTime) {
-		t.Errorf("Timestamp = %v, want between %v and %v", result.Timestamp, beforeTime, afterTime)
-	}
+	assert.True(t, !result.Timestamp.Before(beforeTime) && !result.Timestamp.After(afterTime))
 }
 
 func TestClassifyVerificationError_WithCause(t *testing.T) {
@@ -68,18 +56,12 @@ func TestClassifyVerificationError_WithCause(t *testing.T) {
 	)
 
 	// Verify errors.Is works correctly
-	if !errors.Is(wrappedErr.Cause, originalErr) {
-		t.Errorf("errors.Is(wrappedErr.Cause, originalErr) = false, want true")
-	}
+	assert.True(t, errors.Is(wrappedErr.Cause, originalErr))
 
 	// Verify the error chain is maintained
-	if wrappedErr.Cause == nil {
-		t.Error("Cause is nil, want non-nil")
-	}
+	assert.NotNil(t, wrappedErr.Cause)
 
-	if wrappedErr.Cause.Error() != originalErr.Error() {
-		t.Errorf("Cause.Error() = %q, want %q", wrappedErr.Cause.Error(), originalErr.Error())
-	}
+	assert.Equal(t, originalErr.Error(), wrappedErr.Cause.Error())
 }
 
 func TestClassifyVerificationError_DifferentTypes(t *testing.T) {
@@ -120,13 +102,8 @@ func TestClassifyVerificationError_DifferentTypes(t *testing.T) {
 				nil,
 			)
 
-			if result.Type != tt.errorType {
-				t.Errorf("Type = %v, want %v", result.Type, tt.errorType)
-			}
-
-			if result.Severity != tt.severity {
-				t.Errorf("Severity = %v, want %v", result.Severity, tt.severity)
-			}
+			assert.Equal(t, tt.errorType, result.Type)
+			assert.Equal(t, tt.severity, result.Severity)
 		})
 	}
 }
@@ -141,12 +118,8 @@ func TestClassifyVerificationError_NilCause(t *testing.T) {
 		nil,
 	)
 
-	if result.Cause != nil {
-		t.Errorf("Cause = %v, want nil", result.Cause)
-	}
+	assert.Nil(t, result.Cause)
 
 	// Other fields should still be set correctly
-	if result.Message != "error without cause" {
-		t.Errorf("Message = %q, want %q", result.Message, "error without cause")
-	}
+	assert.Equal(t, "error without cause", result.Message)
 }

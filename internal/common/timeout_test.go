@@ -1,5 +1,3 @@
-//go:build test
-
 //nolint:revive // "common" is an appropriate name for shared utilities package
 package common
 

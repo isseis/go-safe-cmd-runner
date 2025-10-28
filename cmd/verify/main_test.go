@@ -2,12 +2,13 @@ package main
 
 import (
 	"bytes"
-	"errors"
 	"flag"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParseFlags_Success(t *testing.T) {
@@ -42,25 +43,17 @@ func TestParseFlags_Success(t *testing.T) {
 			defer func() { os.Args = oldArgs }()
 
 			cfg, err := parseFlags()
-			if err != nil {
-				t.Fatalf("parseFlags() error = %v, want nil", err)
-			}
+			require.NoError(t, err)
 
-			if cfg.File != tt.wantFile {
-				t.Errorf("parseFlags() File = %v, want %v", cfg.File, tt.wantFile)
-			}
+			assert.Equal(t, tt.wantFile, cfg.File)
 
 			if tt.checkHashDir {
 				// When hash-dir is not specified, it should default to current directory
 				cwd, err := os.Getwd()
-				if err != nil {
-					t.Fatalf("os.Getwd() error = %v", err)
-				}
-				if cfg.HashDir != cwd {
-					t.Errorf("parseFlags() HashDir = %v, want %v (current directory)", cfg.HashDir, cwd)
-				}
-			} else if cfg.HashDir != "/tmp/hashes" {
-				t.Errorf("parseFlags() HashDir = %v, want %v", cfg.HashDir, "/tmp/hashes")
+				require.NoError(t, err)
+				assert.Equal(t, cwd, cfg.HashDir)
+			} else {
+				assert.Equal(t, "/tmp/hashes", cfg.HashDir)
 			}
 		})
 	}
@@ -87,17 +80,9 @@ func TestParseFlags_MissingRequiredArg(t *testing.T) {
 	w.Close()
 	os.Stderr = oldStderr
 
-	if cfg != nil {
-		t.Errorf("parseFlags() config = %v, want nil", cfg)
-	}
-
-	if err == nil {
-		t.Fatal("parseFlags() error = nil, want error")
-	}
-
-	if !errors.Is(err, ErrFileArgumentRequired) {
-		t.Errorf("parseFlags() error = %v, want ErrFileArgumentRequired", err)
-	}
+	assert.Nil(t, cfg)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrFileArgumentRequired)
 
 	// Read captured output (just to consume it, we don't need to check it)
 	buf := new(bytes.Buffer)
@@ -110,9 +95,7 @@ func TestParseFlags_InvalidHashDir(t *testing.T) {
 	noWriteDir := filepath.Join(tempDir, "no_write")
 
 	// Create directory with read-only permissions
-	if err := os.Mkdir(noWriteDir, 0o444); err != nil {
-		t.Fatalf("Failed to create test directory: %v", err)
-	}
+	require.NoError(t, os.Mkdir(noWriteDir, 0o444))
 	defer os.Chmod(noWriteDir, 0o755) // Restore permissions for cleanup
 
 	// Try to create a subdirectory that will fail due to permissions
@@ -127,17 +110,9 @@ func TestParseFlags_InvalidHashDir(t *testing.T) {
 
 	cfg, err := parseFlags()
 
-	if cfg != nil {
-		t.Errorf("parseFlags() config = %v, want nil", cfg)
-	}
-
-	if err == nil {
-		t.Fatal("parseFlags() error = nil, want error")
-	}
-
-	if !errors.Is(err, ErrCreateHashDir) {
-		t.Errorf("parseFlags() error = %v, want ErrCreateHashDir", err)
-	}
+	assert.Nil(t, cfg)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrCreateHashDir)
 }
 
 func TestPrintUsage(t *testing.T) {
@@ -158,15 +133,7 @@ func TestPrintUsage(t *testing.T) {
 	output := buf.String()
 
 	// Verify that usage message contains expected elements
-	if !strings.Contains(output, "Usage:") {
-		t.Error("printUsage() output does not contain 'Usage:'")
-	}
-
-	if !strings.Contains(output, "-file") {
-		t.Error("printUsage() output does not contain '-file' flag")
-	}
-
-	if !strings.Contains(output, "-hash-dir") {
-		t.Error("printUsage() output does not contain '-hash-dir' flag")
-	}
+	assert.Contains(t, output, "Usage:")
+	assert.Contains(t, output, "-file")
+	assert.Contains(t, output, "-hash-dir")
 }
