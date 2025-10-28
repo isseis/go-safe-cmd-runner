@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -183,29 +184,29 @@ func TestTempDirectory_RaceDetection(t *testing.T) {
 
 // TestTempDirectory_CleanupOnPanic tests cleanup behavior on panic
 func TestTempDirectory_CleanupOnPanic(t *testing.T) {
-	tempDir := t.TempDir()
+	var tempFile *os.File
+	var err error
 
-	// Create a file
-	testFile := filepath.Join(tempDir, "panic_test.txt")
-	err := os.WriteFile(testFile, []byte("test"), 0o644)
-	require.NoError(t, err)
-
-	// Test cleanup even with panic
+	// This function simulates an operation that creates a resource and then panics.
+	// The deferred function should still execute to clean up the resource.
 	func() {
+		// Create a temporary file that we expect to be cleaned up.
+		tempFile, err = os.CreateTemp(t.TempDir(), "panic_cleanup_test_*.txt")
+		require.NoError(t, err)
+
+		// Defer the cleanup. This should run even if a panic occurs.
 		defer func() {
-			r := recover()
-			require.NotNil(t, r, "Should recover from panic")
+			// Recover from the panic to allow the test to continue and verify cleanup.
+			_ = recover()
+			// Attempt to clean up the file.
+			os.Remove(tempFile.Name())
 		}()
 
-		// Simulate operation that might panic
-		// In production, this would be cleaned up by deferred cleanup
-		_ = testFile
-
-		// Intentionally panic
-		panic("simulated panic")
+		// Intentionally panic to simulate a crash.
+		panic("simulated panic during operation")
 	}()
 
-	// File should still be accessible
-	_, err = os.Stat(testFile)
-	require.NoError(t, err, "File should still exist after panic recovery")
+	// After the function with the panic has returned, check if the file was cleaned up.
+	_, err = os.Stat(tempFile.Name())
+	assert.True(t, os.IsNotExist(err), "Temporary file should be cleaned up even after a panic")
 }
