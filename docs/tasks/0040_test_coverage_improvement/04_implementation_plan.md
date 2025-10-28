@@ -671,6 +671,8 @@
 - [x] コミット作成
 - [x] Phase 3完了レビュー
 
+**Phase 3 完了**: 2025-10-28 ✅
+
 ---
 
 ## 5. 全体の完了確認
@@ -1045,41 +1047,42 @@ go tool cover -func=coverage.out | grep -E "(package|0.0%|[1-6][0-9]\.)"
 
 ### 10.2 優先度A: 特権管理のテスト（2-3日、+0.8%）
 
-**対象**: `internal/runner/privilege` (62.0% → 75.0%)
-**カバレッジ増分**: +13.0% (パッケージ内) → +0.8% (全体)
-**工数**: 2-3日
+**対象**: `internal/runner/privilege` (62.0% → 75.1%)
+**カバレッジ増分**: +13.1% (パッケージ内) → +0.5% (全体、実測値)
+**工数**: 0.5日（実績）
+**ステータス**: ✅ 完了 (2025-10-28)
 
 #### 10.2.1 `internal/runner/privilege/unix_privilege_test.go` の拡張
 
 **実装内容**:
-- [ ] ファイル作成と基本構造の準備
-- [ ] `TestPrepareExecution_Success`: 実行準備の成功ケース
-  - [ ] モックを使用した正常フロー
-  - [ ] コンテキスト設定の確認
-- [ ] `TestPrepareExecution_NotSupported`: 特権実行非サポート
-  - [ ] エラーハンドリング
-  - [ ] エラー型の確認
-- [ ] `TestPerformElevation_Success`: 特権昇格成功
-  - [ ] モック特権マネージャーでの昇格
-  - [ ] メトリクス更新の確認
-- [ ] `TestPerformElevation_Failure`: 特権昇格失敗
-  - [ ] システムコールエラーのシミュレーション
-  - [ ] エラーメッセージの確認
-  - [ ] メトリクス更新（失敗カウント）
-- [ ] `TestHandleCleanupAndMetrics_Success`: クリーンアップ成功
-  - [ ] 正常なクリーンアップフロー
-  - [ ] メトリクス更新の確認
-- [ ] `TestHandleCleanupAndMetrics_WithError`: クリーンアップエラー
-  - [ ] エラーパスの実行
-  - [ ] メトリクスへのエラー記録
-- [ ] `TestRestorePrivilegesAndMetrics_Success`: 権限復元成功
-  - [ ] 正常な権限復元
-  - [ ] 成功メトリクスの更新
-- [ ] `TestRestorePrivilegesAndMetrics_Failure`: 権限復元失敗
-  - [ ] 復元エラーのシミュレーション
-  - [ ] 緊急シャットダウンの呼び出し確認（モック）
-  - [ ] 失敗メトリクスの記録
-- [ ] カバレッジ確認: 62.0% → 75.0%
+- [x] ファイル作成と基本構造の準備
+- [x] `TestPrepareExecution_Success`: 実行準備の成功ケース
+  - [x] モックを使用した正常フロー
+  - [x] コンテキスト設定の確認
+- [x] `TestPrepareExecution_NotSupported`: 特権実行非サポート
+  - [x] エラーハンドリング
+  - [x] エラー型の確認
+- [x] `TestPerformElevation_Success`: 特権昇格成功
+  - [x] モック特権マネージャーでの昇格
+  - [x] メトリクス更新の確認
+- [x] `TestPerformElevation_Failure`: 特権昇格失敗
+  - [x] システムコールエラーのシミュレーション
+  - [x] エラーメッセージの確認
+  - [x] メトリクス更新（失敗カウント）
+- [x] `TestHandleCleanupAndMetrics_Success`: クリーンアップ成功
+  - [x] 正常なクリーンアップフロー
+  - [x] メトリクス更新の確認
+- [x] `TestHandleCleanupAndMetrics_WithError`: クリーンアップエラー
+  - [x] エラーパスの実行
+  - [x] メトリクスへのエラー記録
+- [x] `TestRestorePrivilegesAndMetrics_Success`: 権限復元成功
+  - [x] 正常な権限復元
+  - [x] 成功メトリクスの更新
+- [x] `TestRestorePrivilegesAndMetrics_Failure`: 権限復元失敗
+  - [x] 復元エラーのシミュレーション
+  - [x] 緊急シャットダウンの呼び出し確認（モック）
+  - [x] 失敗メトリクスの記録
+- [x] カバレッジ確認: 62.0% → 75.1%
 
 **テスト戦略**:
 - システムコール（`Seteuid`）は直接テストせず、モックでの動作確認
@@ -1089,13 +1092,13 @@ go tool cover -func=coverage.out | grep -E "(package|0.0%|[1-6][0-9]\.)"
 #### 10.2.2 `internal/runner/privilege/metrics_test.go` の拡張
 
 **実装内容**:
-- [ ] 既存テストファイルの確認
-- [ ] `TestUpdateSuccessRate_AllCases`: 成功率更新の全ケース
-  - [ ] 初回実行時（分母0からの更新）
-  - [ ] 成功追加時の計算
-  - [ ] 失敗追加時の計算
-  - [ ] 境界値（100%、0%）
-- [ ] カバレッジ確認: 66.7% → 90.0%
+- [x] 既存テストファイルの確認
+- [x] `TestUpdateSuccessRate_AllCases`: 成功率更新の全ケース
+  - [x] 初回実行時（分母0からの更新）
+  - [x] 成功追加時の計算
+  - [x] 失敗追加時の計算
+  - [x] 境界値（100%、0%）
+- [x] カバレッジ確認: 66.7% → 90.0% (実際の関数は間接的に100%カバー済み)
 
 **テスト実装のポイント**:
 - 浮動小数点計算の精度に注意
