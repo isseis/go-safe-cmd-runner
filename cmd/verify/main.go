@@ -42,7 +42,6 @@ func parseFlags() (*config, error) {
 	flag.Parse()
 
 	if *file == "" {
-		flag.Usage()
 		return nil, ErrFileArgumentRequired
 	}
 
