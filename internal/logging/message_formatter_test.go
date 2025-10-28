@@ -2,7 +2,6 @@ package logging
 
 import (
 	"log/slog"
-	"strings"
 	"testing"
 	"time"
 
@@ -416,12 +415,12 @@ func TestAppendInteractiveAttrs_EdgeCases(t *testing.T) {
 				)
 				return r
 			},
-            checkContent: func(t *testing.T, result string) {
-                // Should contain command and error attributes, and path should be skipped.
-                assert.Contains(t, result, "error=", "Result should contain the error attribute")
-                assert.Contains(t, result, "command=", "Result should contain the command attribute")
-                assert.NotContains(t, result, "path=", "Result should not contain the non-priority path attribute")
-            },
+			checkContent: func(t *testing.T, result string) {
+				// Should contain command and error attributes, and path should be skipped.
+				assert.Contains(t, result, "error=", "Result should contain the error attribute")
+				assert.Contains(t, result, "command=", "Result should contain the command attribute")
+				assert.NotContains(t, result, "path=", "Result should not contain the non-priority path attribute")
+			},
 		},
 		{
 			name: "mixed attribute types",

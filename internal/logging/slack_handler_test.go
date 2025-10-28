@@ -3,6 +3,7 @@ package logging
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -436,8 +437,8 @@ func TestSlackHandler_Handle_WithMockServer(t *testing.T) {
 			expectSuccess: true,
 			serverStatus:  http.StatusOK,
 			validateMessage: func(t *testing.T, msg SlackMessage) {
-                expectedText := fmt.Sprintf("%s: test message (Run ID: test-run)", slog.LevelInfo.String())
-                assert.Equal(t, expectedText, msg.Text, "Message text should match expected format")
+				expectedText := fmt.Sprintf("%s: test message (Run ID: test-run)", slog.LevelInfo.String())
+				assert.Equal(t, expectedText, msg.Text, "Message text should match expected format")
 			},
 		},
 		{
