@@ -420,20 +420,29 @@ func TestRestorePrivileges(t *testing.T) {
 // TestEmergencyShutdown tests emergency shutdown handling
 func TestEmergencyShutdown(t *testing.T) {
 	logger := slog.Default()
+
+	// Set up a test exit function to capture exit behavior
+	var exitCode int
+	var exited bool
+	testOsExit := func(code int) {
+		exitCode = code
+		exited = true
+		// Use panic to stop execution flow within the function under test.
+		panic("os.Exit called")
+	}
+
 	manager := &UnixPrivilegeManager{
 		logger:             logger,
 		privilegeSupported: false,
+		osExit:             testOsExit,
 	}
 
-	// This test verifies the function exists and can be called
-	// The actual behavior (process termination) is not tested here
-	// as it would kill the test process
+	// We can now call emergencyShutdown and assert its behavior.
+	assert.PanicsWithValue(t, "os.Exit called", func() {
+		manager.emergencyShutdown(errors.New("test error"), "test_context")
+	}, "emergencyShutdown should call os.Exit")
 
-	// We can't actually call emergencyShutdown as it calls os.Exit
-	// Instead, we verify the function signature is correct
-	assert.NotNil(t, manager)
-
-	// Test that the function exists by checking it's not nil
-	// This is a compile-time check
-	_ = manager.emergencyShutdown
+	// Verify that os.Exit was called with the correct code.
+	assert.True(t, exited, "os.Exit should have been called")
+	assert.Equal(t, 1, exitCode, "Expected exit code 1")
 }
