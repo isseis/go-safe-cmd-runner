@@ -73,20 +73,8 @@ func TestSetupLogging_Success(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Save and restore Slack webhook URL environment variable
-			oldSlackURL := os.Getenv("SLACK_WEBHOOK_URL")
-			defer func() {
-				if oldSlackURL != "" {
-					os.Setenv("SLACK_WEBHOOK_URL", oldSlackURL)
-				} else {
-					os.Unsetenv("SLACK_WEBHOOK_URL")
-				}
-			}()
-
 			if tt.slackURL != "" {
-				os.Setenv("SLACK_WEBHOOK_URL", tt.slackURL)
-			} else {
-				os.Unsetenv("SLACK_WEBHOOK_URL")
+				t.Setenv("SLACK_WEBHOOK_URL", tt.slackURL)
 			}
 
 			err := SetupLogging(tt.logLevel, tt.logDir, tt.runID, tt.forceInteractive, tt.forceQuiet)
@@ -141,15 +129,7 @@ func TestSetupLogging_InvalidConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Unset Slack webhook URL
-			oldSlackURL := os.Getenv("SLACK_WEBHOOK_URL")
-			defer func() {
-				if oldSlackURL != "" {
-					os.Setenv("SLACK_WEBHOOK_URL", oldSlackURL)
-				} else {
-					os.Unsetenv("SLACK_WEBHOOK_URL")
-				}
-			}()
-			os.Unsetenv("SLACK_WEBHOOK_URL")
+			t.Setenv("SLACK_WEBHOOK_URL", "")
 
 			logDir := tt.logDir
 			if tt.setupFunc != nil {
