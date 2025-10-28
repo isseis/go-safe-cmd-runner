@@ -1,5 +1,3 @@
-//go:build test
-
 package security
 
 import (
@@ -1569,6 +1567,142 @@ func TestValidator_validateOutputDirectoryAccess_WithImprovedLogic(t *testing.T)
 
 			if tt.wantErr {
 				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestValidator_validateGroupWritePermissions_AllScenarios(t *testing.T) {
+	currentUser, err := user.Current()
+	require.NoError(t, err)
+
+	currentUID, err := strconv.Atoi(currentUser.Uid)
+	require.NoError(t, err)
+
+	currentGID, err := strconv.Atoi(currentUser.Gid)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name        string
+		setupFunc   func(mockFS *commontesting.MockFileSystem)
+		useNilGroup bool
+		realUID     int
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "permissive_mode_allows_all",
+			setupFunc: func(mockFS *commontesting.MockFileSystem) {
+				// Create directory with group write permission
+				err := mockFS.AddDirWithOwner("/test", 0o775, uint32(currentUID), uint32(currentGID))
+				require.NoError(t, err)
+			},
+			useNilGroup: false,
+			realUID:     currentUID,
+			wantErr:     false,
+		},
+		{
+			name: "root_owned_directory_allowed",
+			setupFunc: func(mockFS *commontesting.MockFileSystem) {
+				// Root-owned directory with group write
+				err := mockFS.AddDirWithOwner("/test", 0o775, UIDRoot, GIDRoot)
+				require.NoError(t, err)
+			},
+			useNilGroup: false,
+			realUID:     currentUID,
+			wantErr:     false,
+		},
+		{
+			name: "nil_groupmembership_error",
+			setupFunc: func(mockFS *commontesting.MockFileSystem) {
+				// Non-root directory with group write
+				err := mockFS.AddDirWithOwner("/test", 0o775, uint32(currentUID), uint32(currentGID))
+				require.NoError(t, err)
+			},
+			useNilGroup: true,
+			realUID:     currentUID,
+			wantErr:     true,
+			errContains: "group membership cannot be verified",
+		},
+		{
+			name: "group_write_safe_with_single_member",
+			setupFunc: func(mockFS *commontesting.MockFileSystem) {
+				// Directory with group write owned by current user
+				err := mockFS.AddDirWithOwner("/test", 0o775, uint32(currentUID), uint32(currentGID))
+				require.NoError(t, err)
+			},
+			useNilGroup: false,
+			realUID:     currentUID,
+			wantErr:     false,
+		},
+		{
+			name: "group_write_unsafe_with_multiple_members",
+			setupFunc: func(mockFS *commontesting.MockFileSystem) {
+				// Directory with group write owned by different user
+				err := mockFS.AddDirWithOwner("/test", 0o775, uint32(currentUID+1000), uint32(currentGID))
+				require.NoError(t, err)
+			},
+			useNilGroup: false,
+			realUID:     currentUID,
+			wantErr:     true,
+			errContains: "failed security validation",
+		},
+		{
+			name: "uid_0_gid_0_boundary",
+			setupFunc: func(mockFS *commontesting.MockFileSystem) {
+				// Root UID and GID (boundary value)
+				err := mockFS.AddDirWithOwner("/test", 0o775, 0, 0)
+				require.NoError(t, err)
+			},
+			useNilGroup: false,
+			realUID:     0,
+			wantErr:     false,
+		},
+		{
+			name: "uid_gid_boundary_with_existing_user",
+			setupFunc: func(mockFS *commontesting.MockFileSystem) {
+				// Use current user UID for boundary test (realistic boundary)
+				err := mockFS.AddDirWithOwner("/test", 0o775, uint32(currentUID), uint32(currentGID))
+				require.NoError(t, err)
+			},
+			useNilGroup: false,
+			realUID:     currentUID,
+			wantErr:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockFS := commontesting.NewMockFileSystem()
+			tt.setupFunc(mockFS)
+
+			var groupMembershipMgr *groupmembership.GroupMembership
+			if !tt.useNilGroup {
+				groupMembershipMgr = groupmembership.New()
+			}
+
+			var config *Config
+			if tt.name == "permissive_mode_allows_all" {
+				config = NewPermissiveTestConfig()
+			} else {
+				config = DefaultConfig()
+			}
+
+			validator, err := NewValidatorWithFSAndGroupMembership(config, mockFS, groupMembershipMgr)
+			require.NoError(t, err)
+
+			info, err := mockFS.Lstat("/test")
+			require.NoError(t, err)
+
+			err = validator.validateGroupWritePermissions("/test", info, tt.realUID)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
 			} else {
 				assert.NoError(t, err)
 			}

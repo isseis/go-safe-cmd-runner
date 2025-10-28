@@ -1,6 +1,3 @@
-//go:build test
-// +build test
-
 package executor_test
 
 import (
@@ -767,28 +764,20 @@ func TestCreateCommandContextWithTimeout(t *testing.T) {
 			cmdCtx, cancel := executor.CreateCommandContextWithTimeout(ctx, tt.timeout)
 			defer cancel()
 
-			if cmdCtx == nil {
-				t.Fatal("CreateCommandContextWithTimeout returned nil context")
-			}
+			require.NotNil(t, cmdCtx)
 
 			if tt.expectTimeout {
 				// For limited timeout, the context should have a deadline
 				deadline, ok := cmdCtx.Deadline()
-				if !ok {
-					t.Error("Expected context to have a deadline")
-				}
+				assert.True(t, ok, "Expected context to have a deadline")
 				// Check that the deadline is approximately correct
 				expectedDeadline := time.Now().Add(time.Duration(tt.timeout) * time.Second)
 				diff := deadline.Sub(expectedDeadline)
-				if diff < -100*time.Millisecond || diff > 100*time.Millisecond {
-					t.Errorf("Deadline differs from expected by %v", diff)
-				}
+				assert.True(t, diff >= -100*time.Millisecond && diff <= 100*time.Millisecond, "Deadline differs from expected by %v", diff)
 			} else {
 				// For unlimited timeout, context should not have a deadline
 				_, ok := cmdCtx.Deadline()
-				if ok {
-					t.Error("Expected context to not have a deadline for unlimited timeout")
-				}
+				assert.False(t, ok, "Expected context to not have a deadline for unlimited timeout")
 			}
 		})
 	}

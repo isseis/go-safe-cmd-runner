@@ -66,7 +66,7 @@ func TestDetermineInheritanceMode(t *testing.T) {
 				// Since determineInheritanceMode no longer returns errors,
 				// we need to handle nil group case differently
 				if tt.group == nil && tt.expectedMode != runnertypes.InheritanceModeInherit {
-					t.Errorf("Expected error for nil group, but got mode: %v", mode)
+					assert.Fail(t, "Expected error for nil group, but got mode: %v", mode)
 				}
 				return
 			}

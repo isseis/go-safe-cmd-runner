@@ -1,5 +1,3 @@
-//go:build test
-
 package runner
 
 import (
@@ -1925,4 +1923,109 @@ func TestRunner_OutputCaptureSecurityIntegration(t *testing.T) {
 			// Error cases use real resource manager, so no mock to verify
 		})
 	}
+}
+
+// TestWithExecutor tests the WithExecutor option
+func TestWithExecutor(t *testing.T) {
+	config := &runnertypes.ConfigSpec{
+		Version: "1.0",
+		Global: runnertypes.GlobalSpec{
+			LogLevel: "info",
+		},
+	}
+
+	// Create a simple test executor (we can't easily create a mock without defining it)
+	// Instead, we just verify that the option doesn't cause an error
+	runner, err := NewRunner(config,
+		WithExecutor(nil), // nil is handled
+		WithVerificationManager(setupDryRunVerification(t)),
+		WithRunID("test-with-executor"))
+	require.NoError(t, err)
+	assert.NotNil(t, runner)
+}
+
+// TestWithPrivilegeManager tests the WithPrivilegeManager option
+func TestWithPrivilegeManager(t *testing.T) {
+	config := &runnertypes.ConfigSpec{
+		Version: "1.0",
+		Global: runnertypes.GlobalSpec{
+			LogLevel: "info",
+		},
+	}
+
+	// Test with nil privilege manager (acceptable)
+	runner, err := NewRunner(config,
+		WithPrivilegeManager(nil),
+		WithVerificationManager(setupDryRunVerification(t)),
+		WithRunID("test-with-privmgr"))
+	require.NoError(t, err)
+	assert.NotNil(t, runner)
+}
+
+// TestWithAuditLogger tests the WithAuditLogger option
+func TestWithAuditLogger(t *testing.T) {
+	config := &runnertypes.ConfigSpec{
+		Version: "1.0",
+		Global: runnertypes.GlobalSpec{
+			LogLevel: "info",
+		},
+	}
+
+	// Note: audit.Logger doesn't have an easy mock, so we'll just test that it doesn't fail
+	runner, err := NewRunner(config,
+		WithAuditLogger(nil), // nil is acceptable
+		WithVerificationManager(setupDryRunVerification(t)),
+		WithRunID("test-with-audit"))
+	require.NoError(t, err)
+	assert.NotNil(t, runner)
+}
+
+// TestWithDryRun tests the WithDryRun option
+func TestWithDryRun(t *testing.T) {
+	config := &runnertypes.ConfigSpec{
+		Version: "1.0",
+		Global: runnertypes.GlobalSpec{
+			LogLevel: "info",
+		},
+	}
+
+	dryRunOpts := &resource.DryRunOptions{
+		// Use fields that actually exist in DryRunOptions
+	}
+
+	runner, err := NewRunner(config,
+		WithDryRun(dryRunOpts),
+		WithVerificationManager(setupDryRunVerification(t)),
+		WithRunID("test-with-dryrun"))
+	require.NoError(t, err)
+	assert.NotNil(t, runner)
+	// Verify dry-run resource manager is used
+	assert.NotNil(t, runner.resourceManager)
+}
+
+// TestWithKeepTempDirs tests the WithKeepTempDirs option
+func TestWithKeepTempDirs(t *testing.T) {
+	config := &runnertypes.ConfigSpec{
+		Version: "1.0",
+		Global: runnertypes.GlobalSpec{
+			LogLevel: "info",
+		},
+	}
+
+	// Test with true
+	runner, err := NewRunner(config,
+		WithKeepTempDirs(true),
+		WithVerificationManager(setupDryRunVerification(t)),
+		WithRunID("test-with-keeptmp"))
+	require.NoError(t, err)
+	assert.NotNil(t, runner)
+	// Note: keepTempDirs is not directly accessible from Runner, but we can verify the option doesn't error
+
+	// Test with false
+	runner2, err := NewRunner(config,
+		WithKeepTempDirs(false),
+		WithVerificationManager(setupDryRunVerification(t)),
+		WithRunID("test-with-keeptmp-false"))
+	require.NoError(t, err)
+	assert.NotNil(t, runner2)
 }

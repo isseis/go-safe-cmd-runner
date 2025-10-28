@@ -11,6 +11,7 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestUnixPrivilegeManager_ConcurrentAccess tests that the privilege manager
@@ -109,7 +110,7 @@ func TestUnixPrivilegeManager_NoDeadlock(t *testing.T) {
 	case <-done:
 		// Test passed - no deadlock
 	case <-time.After(5 * time.Second):
-		t.Fatal("Test timed out - possible deadlock detected")
+		require.Fail(t, "Test timed out - possible deadlock detected")
 	}
 }
 

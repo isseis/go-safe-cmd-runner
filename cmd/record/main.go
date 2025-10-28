@@ -43,24 +43,19 @@ func main() {
 		os.Exit(1)
 	}
 
-	config := &cmdcommon.Config{
-		File:    *file,
-		HashDir: dir,
-	}
-
 	// Create validator with SHA256 hasher
-	validator, err := cmdcommon.CreateValidator(config.HashDir)
+	validator, err := cmdcommon.CreateValidator(dir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating validator: %v\n", err)
 		os.Exit(1)
 	}
 
 	// Record file hash
-	hashFile, err := validator.Record(config.File, *force)
+	hashFile, err := validator.Record(*file, *force)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error recording file hash: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Recorded hash for %s in %s\n", config.File, hashFile)
+	fmt.Printf("Recorded hash for %s in %s\n", *file, hashFile)
 }

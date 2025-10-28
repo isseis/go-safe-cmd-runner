@@ -8,6 +8,38 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestErrInvalidTimeout_Error(t *testing.T) {
+	tests := []struct {
+		name    string
+		err     ErrInvalidTimeout
+		wantMsg string
+	}{
+		{
+			name: "negative timeout",
+			err: ErrInvalidTimeout{
+				Value:   -1,
+				Context: "timeout cannot be negative",
+			},
+			wantMsg: "invalid timeout value -1 in timeout cannot be negative",
+		},
+		{
+			name: "exceeds max",
+			err: ErrInvalidTimeout{
+				Value:   100000,
+				Context: "timeout exceeds maximum allowed value",
+			},
+			wantMsg: "invalid timeout value 100000 in timeout exceeds maximum allowed value",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.err.Error()
+			assert.Equal(t, tt.wantMsg, got, "ErrInvalidTimeout.Error() should match expected message")
+		})
+	}
+}
+
 func TestNewUnsetTimeout(t *testing.T) {
 	timeout := NewUnsetTimeout()
 

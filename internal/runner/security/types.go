@@ -132,7 +132,12 @@ type Config struct {
 	ShellCommands []string
 	// ShellMetacharacters is a list of shell metacharacters that require careful handling
 	ShellMetacharacters []string
-	// DangerousRootPatterns is a list of potentially destructive command patterns when running as root
+	// DangerousRootPatterns is a list of potentially destructive command names when running as root.
+	// These patterns are matched using EXACT command name matching (case-insensitive).
+	// Each entry should be a simple command name without paths, wildcards, or regex patterns.
+	// Valid examples: "rm", "dd", "mkfs"
+	// Invalid examples: "/bin/rm" (contains path), "rm*" (contains wildcard), ".*rm" (regex pattern)
+	// The validator will reject configurations with invalid patterns at initialization time.
 	DangerousRootPatterns []string
 	// DangerousRootArgPatterns is a list of potentially destructive argument patterns when running as root
 	DangerousRootArgPatterns []string

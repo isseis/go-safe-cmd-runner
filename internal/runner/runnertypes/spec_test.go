@@ -6,6 +6,8 @@ import (
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/pelletier/go-toml/v2"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGlobalSpec_UnmarshalTOML_NewFieldNames(t *testing.T) {
@@ -72,25 +74,19 @@ output_size_limit = 2097152
 			var spec GlobalSpec
 			err := toml.Unmarshal([]byte(tt.toml), &spec)
 
-			if (err != nil) != tt.wantErr {
-				t.Errorf("toml.Unmarshal() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-
-			if !reflect.DeepEqual(spec, tt.want) {
-				t.Errorf("GlobalSpec unmarshal result mismatch")
-				t.Logf("Got:  %+v", spec)
-				t.Logf("Want: %+v", tt.want)
+			assert.Equal(t, tt.wantErr, err != nil, "toml.Unmarshal() error = %v, wantErr %v", err, tt.wantErr)
+			if err == nil {
+				require.True(t, reflect.DeepEqual(spec, tt.want), "GlobalSpec unmarshal result mismatch")
 
 				// Detailed comparison for VerifyStandardPaths
 				switch {
 				case spec.VerifyStandardPaths == nil && tt.want.VerifyStandardPaths != nil:
-					t.Errorf("VerifyStandardPaths: got nil, want %v", *tt.want.VerifyStandardPaths)
+					assert.Fail(t, "VerifyStandardPaths: got nil, want %v", *tt.want.VerifyStandardPaths)
 				case spec.VerifyStandardPaths != nil && tt.want.VerifyStandardPaths == nil:
-					t.Errorf("VerifyStandardPaths: got %v, want nil", *spec.VerifyStandardPaths)
+					assert.Fail(t, "VerifyStandardPaths: got %v, want nil", *spec.VerifyStandardPaths)
 				case spec.VerifyStandardPaths != nil && tt.want.VerifyStandardPaths != nil:
 					if *spec.VerifyStandardPaths != *tt.want.VerifyStandardPaths {
-						t.Errorf("VerifyStandardPaths: got %v, want %v", *spec.VerifyStandardPaths, *tt.want.VerifyStandardPaths)
+						assert.Equal(t, *tt.want.VerifyStandardPaths, *spec.VerifyStandardPaths, "VerifyStandardPaths mismatch")
 					}
 				}
 			}
@@ -127,15 +123,9 @@ env_import = ["group_user=USER"]
 			var spec GroupSpec
 			err := toml.Unmarshal([]byte(tt.toml), &spec)
 
-			if (err != nil) != tt.wantErr {
-				t.Errorf("toml.Unmarshal() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-
-			if !reflect.DeepEqual(spec, tt.want) {
-				t.Errorf("GroupSpec unmarshal result mismatch")
-				t.Logf("Got:  %+v", spec)
-				t.Logf("Want: %+v", tt.want)
+			assert.Equal(t, tt.wantErr, err != nil, "toml.Unmarshal() error = %v, wantErr %v", err, tt.wantErr)
+			if err == nil {
+				require.True(t, reflect.DeepEqual(spec, tt.want), "GroupSpec unmarshal result mismatch")
 			}
 		})
 	}
@@ -174,15 +164,9 @@ output_file = "/tmp/output.log"
 			var spec CommandSpec
 			err := toml.Unmarshal([]byte(tt.toml), &spec)
 
-			if (err != nil) != tt.wantErr {
-				t.Errorf("toml.Unmarshal() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-
-			if !reflect.DeepEqual(spec, tt.want) {
-				t.Errorf("CommandSpec unmarshal result mismatch")
-				t.Logf("Got:  %+v", spec)
-				t.Logf("Want: %+v", tt.want)
+			assert.Equal(t, tt.wantErr, err != nil, "toml.Unmarshal() error = %v, wantErr %v", err, tt.wantErr)
+			if err == nil {
+				require.True(t, reflect.DeepEqual(spec, tt.want), "CommandSpec unmarshal result mismatch")
 			}
 		})
 	}
@@ -492,14 +476,9 @@ cmd = "/bin/date"
 		t.Run(tt.name, func(t *testing.T) {
 			var got ConfigSpec
 			err := toml.Unmarshal([]byte(tt.toml), &got)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Unmarshal() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
+			assert.Equal(t, tt.wantErr, err != nil, "Unmarshal() error = %v, wantErr %v", err, tt.wantErr)
 			if !tt.wantErr {
-				if !reflect.DeepEqual(&got, tt.want) {
-					t.Errorf("Unmarshal() got:\n%+v\nwant:\n%+v", &got, tt.want)
-				}
+				require.True(t, reflect.DeepEqual(&got, tt.want), "Unmarshal() got:\n%+v\nwant:\n%+v", &got, tt.want)
 			}
 		})
 	}
@@ -562,13 +541,8 @@ func TestCommandSpec_GetMaxRiskLevel(t *testing.T) {
 				RiskLevel: tt.maxRiskLevel,
 			}
 			got, err := spec.GetMaxRiskLevel()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("GetMaxRiskLevel() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if got != tt.want {
-				t.Errorf("GetMaxRiskLevel() = %v, want %v", got, tt.want)
-			}
+			assert.Equal(t, tt.wantErr, err != nil, "GetMaxRiskLevel() error = %v, wantErr %v", err, tt.wantErr)
+			assert.Equal(t, tt.want, got, "GetMaxRiskLevel() = %v, want %v", got, tt.want)
 		})
 	}
 }
@@ -613,9 +587,7 @@ func TestCommandSpec_HasUserGroupSpecification(t *testing.T) {
 				RunAsGroup: tt.runAsGroup,
 			}
 			got := spec.HasUserGroupSpecification()
-			if got != tt.want {
-				t.Errorf("HasUserGroupSpecification() = %v, want %v", got, tt.want)
-			}
+			assert.Equal(t, tt.want, got, "HasUserGroupSpecification() = %v, want %v", got, tt.want)
 		})
 	}
 }
