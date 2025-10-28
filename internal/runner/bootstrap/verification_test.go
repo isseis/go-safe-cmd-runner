@@ -3,6 +3,8 @@ package bootstrap
 import (
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestInitializeVerificationManager_Success(t *testing.T) {
@@ -43,20 +45,14 @@ func TestInitializeVerificationManager_Success(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup logger before testing (verification manager logs errors)
 			err := SetupLogging("info", "", tt.runID, false, false)
-			if err != nil {
-				t.Fatalf("Failed to setup logging: %v", err)
-			}
+			assert.NoError(t, err, "Failed to setup logging")
 
 			manager, err := InitializeVerificationManager(tt.validatedHashDir, tt.runID)
 
 			// Verify consistency between error and manager
-			if err != nil && manager != nil {
-				t.Error("InitializeVerificationManager() should return nil manager on error")
-			}
+			assert.False(t, err != nil && manager != nil, "InitializeVerificationManager() should return nil manager on error")
 
-			if err == nil && manager == nil {
-				t.Error("InitializeVerificationManager() should return a manager on success")
-			}
+			assert.False(t, err == nil && manager == nil, "InitializeVerificationManager() should return a manager on success")
 
 			// Log the result for debugging purposes
 			if err != nil {
@@ -103,7 +99,7 @@ func TestInitializeVerificationManager_InvalidHashDir(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.setupFunc != nil {
 				if err := tt.setupFunc(); err != nil {
-					t.Fatalf("Setup failed: %v", err)
+					assert.NoError(t, err, "Setup failed")
 				}
 			}
 
@@ -115,13 +111,9 @@ func TestInitializeVerificationManager_InvalidHashDir(t *testing.T) {
 
 			// If the default hash directory doesn't exist, we expect an error
 			// If it does exist, we expect a manager
-			if err != nil && manager != nil {
-				t.Error("InitializeVerificationManager() should return nil manager on error")
-			}
+			assert.False(t, err != nil && manager != nil, "InitializeVerificationManager() should return nil manager on error")
 
-			if err == nil && manager == nil {
-				t.Error("InitializeVerificationManager() should return a manager on success")
-			}
+			assert.False(t, err == nil && manager == nil, "InitializeVerificationManager() should return a manager on success")
 		})
 	}
 }
@@ -130,9 +122,7 @@ func TestInitializeVerificationManager_PermissionError(t *testing.T) {
 	// Setup logging first
 	runID := "test-perm-001"
 	err := SetupLogging("info", "", runID, false, false)
-	if err != nil {
-		t.Fatalf("Failed to setup logging: %v", err)
-	}
+	assert.NoError(t, err, "Failed to setup logging")
 
 	// Note: Permission errors are typically handled at hash directory validation stage
 	// The InitializeVerificationManager function expects a validated hash directory
@@ -149,11 +139,7 @@ func TestInitializeVerificationManager_PermissionError(t *testing.T) {
 		t.Logf("InitializeVerificationManager() returned error (may be expected): %v", err)
 	}
 
-	if err != nil && manager != nil {
-		t.Error("InitializeVerificationManager() should return nil manager on error")
-	}
+	assert.False(t, err != nil && manager != nil, "InitializeVerificationManager() should return nil manager on error")
 
-	if err == nil && manager == nil {
-		t.Error("InitializeVerificationManager() should return a manager on success")
-	}
+	assert.False(t, err == nil && manager == nil, "InitializeVerificationManager() should return a manager on success")
 }

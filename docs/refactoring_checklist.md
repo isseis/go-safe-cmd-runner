@@ -47,19 +47,19 @@
   - [x] TestSetupLogging_Success
     - [x] L83: `t.Errorf("SetupLogging() error = %v, wantErr %v", err, tt.wantErr)`
 
-- [ ] internal/runner/bootstrap/verification_test.go (9 calls)
-  - [ ] TestInitializeVerificationManager_InvalidHashDir
-    - [ ] L106: `t.Fatalf("Setup failed: %v", err)`
-    - [ ] L119: `t.Error("InitializeVerificationManager() should return nil manager on error")`
-    - [ ] L123: `t.Error("InitializeVerificationManager() should return a manager on success")`
-  - [ ] TestInitializeVerificationManager_PermissionError
-    - [ ] L134: `t.Fatalf("Failed to setup logging: %v", err)`
-    - [ ] L153: `t.Error("InitializeVerificationManager() should return nil manager on error")`
-    - [ ] L157: `t.Error("InitializeVerificationManager() should return a manager on success")`
-  - [ ] TestInitializeVerificationManager_Success
-    - [ ] L47: `t.Fatalf("Failed to setup logging: %v", err)`
-    - [ ] L54: `t.Error("InitializeVerificationManager() should return nil manager on error")`
-    - [ ] L58: `t.Error("InitializeVerificationManager() should return a manager on success")`
+- [x] internal/runner/bootstrap/verification_test.go (9 calls)
+  - [x] TestInitializeVerificationManager_InvalidHashDir
+    - [x] L106: `t.Fatalf("Setup failed: %v", err)`
+    - [x] L119: `t.Error("InitializeVerificationManager() should return nil manager on error")`
+    - [x] L123: `t.Error("InitializeVerificationManager() should return a manager on success")`
+  - [x] TestInitializeVerificationManager_PermissionError
+    - [x] L134: `t.Fatalf("Failed to setup logging: %v", err)`
+    - [x] L153: `t.Error("InitializeVerificationManager() should return nil manager on error")`
+    - [x] L157: `t.Error("InitializeVerificationManager() should return a manager on success")`
+  - [x] TestInitializeVerificationManager_Success
+    - [x] L47: `t.Fatalf("Failed to setup logging: %v", err)`
+    - [x] L54: `t.Error("InitializeVerificationManager() should return nil manager on error")`
+    - [x] L58: `t.Error("InitializeVerificationManager() should return a manager on success")`
 
 - [ ] internal/runner/cli/output_test.go (10 calls)
   - [ ] TestParseDryRunDetailLevel_InvalidLevel
