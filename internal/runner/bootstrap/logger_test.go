@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSetupLoggerWithConfig_MinimalConfig(t *testing.T) {
@@ -70,8 +72,10 @@ func TestSetupLoggerWithConfig_MinimalConfig(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := SetupLoggerWithConfig(tt.config, tt.forceInteractive, tt.forceQuiet)
 
-			if (err != nil) != tt.wantErr {
-				t.Errorf("SetupLoggerWithConfig() error = %v, wantErr %v", err, tt.wantErr)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
 			}
 		})
 	}
@@ -153,16 +157,16 @@ func TestSetupLoggerWithConfig_FullConfig(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := SetupLoggerWithConfig(tt.config, tt.forceInteractive, tt.forceQuiet)
 
-			if (err != nil) != tt.wantErr {
-				t.Errorf("SetupLoggerWithConfig() error = %v, wantErr %v", err, tt.wantErr)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
 			}
 
 			// If log directory was specified, verify log file was created
 			if tt.config.LogDir != "" && err == nil {
 				entries, err := os.ReadDir(tt.config.LogDir)
-				if err != nil {
-					t.Fatalf("Failed to read log directory: %v", err)
-				}
+				require.NoError(t, err, "Failed to read log directory")
 
 				// There should be at least one log file
 				found := false
@@ -173,9 +177,7 @@ func TestSetupLoggerWithConfig_FullConfig(t *testing.T) {
 					}
 				}
 
-				if !found {
-					t.Error("Expected log file to be created, but none found")
-				}
+				assert.True(t, found, "Expected log file to be created, but none found")
 			}
 		})
 	}
@@ -219,8 +221,10 @@ func TestSetupLoggerWithConfig_InvalidLogLevel(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := SetupLoggerWithConfig(tt.config, tt.forceInteractive, tt.forceQuiet)
 
-			if (err != nil) != tt.wantErr {
-				t.Errorf("SetupLoggerWithConfig() error = %v, wantErr %v", err, tt.wantErr)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
 			}
 		})
 	}
@@ -248,8 +252,10 @@ func TestSetupLoggerWithConfig_InvalidLogDirectory(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := SetupLoggerWithConfig(tt.config, false, false)
 
-			if (err != nil) != tt.wantErr {
-				t.Errorf("SetupLoggerWithConfig() error = %v, wantErr %v", err, tt.wantErr)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
 			}
 		})
 	}
@@ -264,9 +270,8 @@ func TestSetupLoggerWithConfig_LogDirectoryPermissionError(t *testing.T) {
 	// Create a directory with read-only permissions
 	tempDir := t.TempDir()
 	readOnlyDir := filepath.Join(tempDir, "readonly")
-	if err := os.Mkdir(readOnlyDir, 0o444); err != nil {
-		t.Fatalf("Failed to create read-only directory: %v", err)
-	}
+	err := os.Mkdir(readOnlyDir, 0o444)
+	require.NoError(t, err, "Failed to create read-only directory")
 
 	// Ensure cleanup restores permissions for temp dir cleanup
 	defer os.Chmod(readOnlyDir, 0o755)
@@ -278,9 +283,7 @@ func TestSetupLoggerWithConfig_LogDirectoryPermissionError(t *testing.T) {
 		SlackWebhookURL: "",
 	}
 
-	err := SetupLoggerWithConfig(config, false, false)
+	err = SetupLoggerWithConfig(config, false, false)
 
-	if err == nil {
-		t.Error("SetupLoggerWithConfig() expected error for read-only directory, got nil")
-	}
+	assert.Error(t, err, "SetupLoggerWithConfig() expected error for read-only directory, got nil")
 }
