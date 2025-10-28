@@ -668,8 +668,8 @@
 - [x] 全テスト実行: `make test`
 - [x] Lint実行: `make lint`
 - [x] フォーマット: `make fmt`
-- [ ] コミット作成
-- [ ] Phase 3完了レビュー
+- [x] コミット作成
+- [x] Phase 3完了レビュー
 
 ---
 
