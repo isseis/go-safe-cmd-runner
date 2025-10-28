@@ -2,6 +2,7 @@ package logging
 
 import (
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
