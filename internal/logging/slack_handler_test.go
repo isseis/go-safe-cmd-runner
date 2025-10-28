@@ -1,8 +1,15 @@
 package logging
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -349,5 +356,370 @@ func TestNewSlackHandler_URLValidation(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestGetSlackWebhookURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		envValue string
+		expected string
+	}{
+		{
+			name:     "with environment variable",
+			envValue: "https://hooks.slack.com/services/TEST/WEBHOOK/URL",
+			expected: "https://hooks.slack.com/services/TEST/WEBHOOK/URL",
+		},
+		{
+			name:     "without environment variable",
+			envValue: "",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Save original environment variable
+			originalValue := os.Getenv("GSCR_SLACK_WEBHOOK_URL")
+			defer func() {
+				if originalValue != "" {
+					_ = os.Setenv("GSCR_SLACK_WEBHOOK_URL", originalValue)
+				} else {
+					_ = os.Unsetenv("GSCR_SLACK_WEBHOOK_URL")
+				}
+			}()
+
+			// Set test environment variable
+			if tt.envValue != "" {
+				_ = os.Setenv("GSCR_SLACK_WEBHOOK_URL", tt.envValue)
+			} else {
+				_ = os.Unsetenv("GSCR_SLACK_WEBHOOK_URL")
+			}
+
+			result := GetSlackWebhookURL()
+			if result != tt.expected {
+				t.Errorf("Expected %q, got %q", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestSlackHandler_Enabled(t *testing.T) {
+	tests := []struct {
+		name          string
+		handlerLevel  slog.Level
+		recordLevel   slog.Level
+		expectEnabled bool
+	}{
+		{
+			name:          "Info handler with Info record",
+			handlerLevel:  slog.LevelInfo,
+			recordLevel:   slog.LevelInfo,
+			expectEnabled: true,
+		},
+		{
+			name:          "Info handler with Warn record",
+			handlerLevel:  slog.LevelInfo,
+			recordLevel:   slog.LevelWarn,
+			expectEnabled: true,
+		},
+		{
+			name:          "Info handler with Debug record",
+			handlerLevel:  slog.LevelInfo,
+			recordLevel:   slog.LevelDebug,
+			expectEnabled: false,
+		},
+		{
+			name:          "Warn handler with Info record",
+			handlerLevel:  slog.LevelWarn,
+			recordLevel:   slog.LevelInfo,
+			expectEnabled: false,
+		},
+		{
+			name:          "Error handler with Error record",
+			handlerLevel:  slog.LevelError,
+			recordLevel:   slog.LevelError,
+			expectEnabled: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := &SlackHandler{
+				webhookURL: "https://hooks.slack.com/test",
+				runID:      "test-run",
+				level:      tt.handlerLevel,
+			}
+
+			ctx := context.Background()
+			enabled := handler.Enabled(ctx, tt.recordLevel)
+
+			if enabled != tt.expectEnabled {
+				t.Errorf("Expected enabled=%v, got %v", tt.expectEnabled, enabled)
+			}
+		})
+	}
+}
+
+func TestSlackHandler_Handle_NoSlackNotify(t *testing.T) {
+	handler := &SlackHandler{
+		webhookURL: "https://hooks.slack.com/test",
+		runID:      "test-run",
+		level:      slog.LevelInfo,
+	}
+
+	ctx := context.Background()
+	record := slog.NewRecord(time.Now(), slog.LevelInfo, "test message", 0)
+	// No slack_notify attribute
+
+	err := handler.Handle(ctx, record)
+	if err != nil {
+		t.Errorf("Expected no error when slack_notify is missing, got %v", err)
+	}
+}
+
+func TestSlackHandler_Handle_SlackNotifyFalse(t *testing.T) {
+	handler := &SlackHandler{
+		webhookURL: "https://hooks.slack.com/test",
+		runID:      "test-run",
+		level:      slog.LevelInfo,
+	}
+
+	ctx := context.Background()
+	record := slog.NewRecord(time.Now(), slog.LevelInfo, "test message", 0)
+	record.AddAttrs(slog.Bool("slack_notify", false))
+
+	err := handler.Handle(ctx, record)
+	if err != nil {
+		t.Errorf("Expected no error when slack_notify is false, got %v", err)
+	}
+}
+
+func TestSlackHandler_Handle_WithMockServer(t *testing.T) {
+	tests := []struct {
+		name            string
+		messageType     string
+		recordAttrs     []slog.Attr
+		expectSuccess   bool
+		serverStatus    int
+		validateMessage func(t *testing.T, msg SlackMessage)
+	}{
+		{
+			name:        "generic message success",
+			messageType: "",
+			recordAttrs: []slog.Attr{
+				slog.Bool("slack_notify", true),
+			},
+			expectSuccess: true,
+			serverStatus:  http.StatusOK,
+			validateMessage: func(t *testing.T, msg SlackMessage) {
+				if msg.Text == "" {
+					t.Error("Expected non-empty text for generic message")
+				}
+			},
+		},
+		{
+			name:        "command group summary",
+			messageType: "command_group_summary",
+			recordAttrs: []slog.Attr{
+				slog.Bool("slack_notify", true),
+				slog.String("message_type", "command_group_summary"),
+				slog.String("status", "success"),
+				slog.String("group", "test-group"),
+				slog.String("command", "echo test"),
+				slog.Int("exit_code", 0),
+				slog.Int64("duration_ms", 100),
+			},
+			expectSuccess: true,
+			serverStatus:  http.StatusOK,
+			validateMessage: func(t *testing.T, msg SlackMessage) {
+				if !strings.Contains(msg.Text, "test-group") {
+					t.Error("Expected message to contain group name")
+				}
+			},
+		},
+		{
+			name:        "pre execution error",
+			messageType: "pre_execution_error",
+			recordAttrs: []slog.Attr{
+				slog.Bool("slack_notify", true),
+				slog.String("message_type", "pre_execution_error"),
+				slog.String("error", "test error"),
+			},
+			expectSuccess: true,
+			serverStatus:  http.StatusOK,
+		},
+		{
+			name:        "security alert",
+			messageType: "security_alert",
+			recordAttrs: []slog.Attr{
+				slog.Bool("slack_notify", true),
+				slog.String("message_type", "security_alert"),
+				slog.String("alert_type", "test_alert"),
+			},
+			expectSuccess: true,
+			serverStatus:  http.StatusOK,
+		},
+		{
+			name:        "privileged command failure",
+			messageType: "privileged_command_failure",
+			recordAttrs: []slog.Attr{
+				slog.Bool("slack_notify", true),
+				slog.String("message_type", "privileged_command_failure"),
+			},
+			expectSuccess: true,
+			serverStatus:  http.StatusOK,
+		},
+		{
+			name:        "privilege escalation failure",
+			messageType: "privilege_escalation_failure",
+			recordAttrs: []slog.Attr{
+				slog.Bool("slack_notify", true),
+				slog.String("message_type", "privilege_escalation_failure"),
+			},
+			expectSuccess: true,
+			serverStatus:  http.StatusOK,
+		},
+		{
+			name:        "server error",
+			messageType: "",
+			recordAttrs: []slog.Attr{
+				slog.Bool("slack_notify", true),
+			},
+			expectSuccess: false,
+			serverStatus:  http.StatusInternalServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var receivedMessage SlackMessage
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPost {
+					t.Errorf("Expected POST request, got %s", r.Method)
+				}
+
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Errorf("Failed to read request body: %v", err)
+				}
+
+				if err := json.Unmarshal(body, &receivedMessage); err != nil {
+					t.Errorf("Failed to unmarshal JSON: %v", err)
+				}
+
+				w.WriteHeader(tt.serverStatus)
+			}))
+			defer server.Close()
+
+			handler := &SlackHandler{
+				webhookURL: server.URL,
+				runID:      "test-run",
+				httpClient: &http.Client{Timeout: 5 * time.Second},
+				level:      slog.LevelInfo,
+			}
+
+			ctx := context.Background()
+			record := slog.NewRecord(time.Now(), slog.LevelInfo, "test message", 0)
+			for _, attr := range tt.recordAttrs {
+				record.AddAttrs(attr)
+			}
+
+			err := handler.Handle(ctx, record)
+
+			if tt.expectSuccess {
+				if err != nil {
+					t.Errorf("Expected success, got error: %v", err)
+				}
+				if tt.validateMessage != nil {
+					tt.validateMessage(t, receivedMessage)
+				}
+			} else if err == nil {
+				t.Error("Expected error for server failure, got nil")
+			}
+		})
+	}
+}
+
+func TestSlackHandler_SendToSlack_Retry(t *testing.T) {
+	t.Run("retry on temporary failure", func(t *testing.T) {
+		attemptCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			attemptCount++
+			if attemptCount < 2 {
+				w.WriteHeader(http.StatusServiceUnavailable)
+			} else {
+				w.WriteHeader(http.StatusOK)
+			}
+		}))
+		defer server.Close()
+
+		handler := &SlackHandler{
+			webhookURL: server.URL,
+			runID:      "test-run",
+			httpClient: &http.Client{Timeout: 5 * time.Second},
+			level:      slog.LevelInfo,
+		}
+
+		ctx := context.Background()
+		message := SlackMessage{Text: "test"}
+
+		err := handler.sendToSlack(ctx, message)
+		if err != nil {
+			t.Errorf("Expected success after retry, got error: %v", err)
+		}
+
+		if attemptCount < 2 {
+			t.Errorf("Expected at least 2 attempts, got %d", attemptCount)
+		}
+	})
+
+	t.Run("no retry on client error", func(t *testing.T) {
+		attemptCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			attemptCount++
+			w.WriteHeader(http.StatusBadRequest)
+		}))
+		defer server.Close()
+
+		handler := &SlackHandler{
+			webhookURL: server.URL,
+			runID:      "test-run",
+			httpClient: &http.Client{Timeout: 5 * time.Second},
+			level:      slog.LevelInfo,
+		}
+
+		ctx := context.Background()
+		message := SlackMessage{Text: "test"}
+
+		err := handler.sendToSlack(ctx, message)
+		if err == nil {
+			t.Error("Expected error for client error status")
+		}
+
+		if attemptCount != 1 {
+			t.Errorf("Expected exactly 1 attempt for client error, got %d", attemptCount)
+		}
+	})
+}
+
+func TestSlackHandler_GenerateBackoffIntervals(t *testing.T) {
+	intervals := generateBackoffIntervals(backoffBase, retryCount)
+
+	if len(intervals) != retryCount {
+		t.Errorf("Expected %d intervals, got %d", retryCount, len(intervals))
+	}
+
+	// Check that intervals are increasing
+	for i := 1; i < len(intervals); i++ {
+		if intervals[i] <= intervals[i-1] {
+			t.Errorf("Expected increasing intervals, but intervals[%d]=%v <= intervals[%d]=%v",
+				i, intervals[i], i-1, intervals[i-1])
+		}
+	}
+
+	// First interval should be at least the base backoff
+	if intervals[0] < backoffBase {
+		t.Errorf("Expected first interval >= %v, got %v", backoffBase, intervals[0])
 	}
 }

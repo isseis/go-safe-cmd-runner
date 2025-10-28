@@ -247,3 +247,99 @@ type customError struct {
 func (e *customError) Error() string {
 	return e.message
 }
+
+func TestHandlePreExecutionError_AllTypes(t *testing.T) {
+	tests := []struct {
+		name      string
+		errorType ErrorType
+		message   string
+		component string
+		runID     string
+	}{
+		{
+			name:      "config parsing error",
+			errorType: ErrorTypeConfigParsing,
+			message:   "failed to parse config",
+			component: "config",
+			runID:     "test-run-1",
+		},
+		{
+			name:      "log file open error",
+			errorType: ErrorTypeLogFileOpen,
+			message:   "cannot open log file",
+			component: "logging",
+			runID:     "test-run-2",
+		},
+		{
+			name:      "privilege drop error",
+			errorType: ErrorTypePrivilegeDrop,
+			message:   "failed to drop privileges",
+			component: "security",
+			runID:     "test-run-3",
+		},
+		{
+			name:      "file access error",
+			errorType: ErrorTypeFileAccess,
+			message:   "permission denied",
+			component: "filesystem",
+			runID:     "test-run-4",
+		},
+		{
+			name:      "system error",
+			errorType: ErrorTypeSystemError,
+			message:   "system call failed",
+			component: "system",
+			runID:     "test-run-5",
+		},
+		{
+			name:      "build config error",
+			errorType: ErrorTypeBuildConfig,
+			message:   "build configuration invalid",
+			component: "build",
+			runID:     "test-run-6",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// HandlePreExecutionError writes to stderr and stdout
+			// We can't easily capture these without complex setup,
+			// but we can at least verify it doesn't panic
+			assert.NotPanics(t, func() {
+				HandlePreExecutionError(tt.errorType, tt.message, tt.component, tt.runID)
+			}, "HandlePreExecutionError should not panic")
+		})
+	}
+}
+
+func TestPreExecutionError_Unwrap(t *testing.T) {
+	innerErr := errors.New("inner error")
+	err := &PreExecutionError{
+		Type:      ErrorTypeConfigParsing,
+		Message:   "test message",
+		Component: "test component",
+		RunID:     "test-run-id",
+		Err:       innerErr,
+	}
+
+	unwrapped := err.Unwrap()
+	assert.Equal(t, innerErr, unwrapped, "Unwrap should return the wrapped error")
+}
+
+func TestPreExecutionError_ErrorWithWrappedError(t *testing.T) {
+	innerErr := errors.New("inner error")
+	err := &PreExecutionError{
+		Type:      ErrorTypeConfigParsing,
+		Message:   "test message",
+		Component: "test component",
+		RunID:     "test-run-id",
+		Err:       innerErr,
+	}
+
+	errorString := err.Error()
+	assert.Contains(t, errorString, "config_parsing_failed")
+	assert.Contains(t, errorString, "test message")
+	assert.Contains(t, errorString, "inner error")
+	assert.Contains(t, errorString, "test component")
+	assert.Contains(t, errorString, "test-run-id")
+}
