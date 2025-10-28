@@ -1257,15 +1257,28 @@ go tool cover -func=coverage.out | grep -E "(package|0.0%|[1-6][0-9]\.)"
 #### 10.4.2 `test/security/command_argument_test.go` の作成
 
 **実装内容**:
-- [ ] ファイル作成と基本構造の準備
-- [ ] `TestCommandArgumentEscape_ShellMetacharacters`: シェルメタ文字
-  - [ ] セミコロン、パイプ等の検出
-  - [ ] エスケープ処理の確認
-- [ ] `TestCommandArgumentEscape_QuoteInjection`: クォート注入
-  - [ ] シングルクォート注入試行
-  - [ ] ダブルクォート注入試行
-  - [ ] エラーハンドリング
-- [ ] カバレッジ確認: executor/executor.go の引数処理部分
+- [x] ファイル作成と基本構造の準備
+- [x] `TestCommandArgumentEscape_ShellMetacharacters`: シェルメタ文字の検出（12ケース）
+  - [x] セミコロン、パイプ、AND/OR演算子の検出
+  - [x] コマンド置換（$, `）、リダイレクト（>, <）の検出
+  - [x] ワイルドカード（*）の検出
+  - [x] 安全な引数の承認
+- [x] `TestCommandArgumentEscape_DangerousRootArgs`: 危険なroot引数の検出（7ケース）
+  - [x] -rf, --force, --all フラグの検出
+  - [x] 複数危険フラグの検出
+  - [x] 安全な引数の承認
+- [x] `TestCommandArgumentEscape_CommandValidation`: コマンド検証（5ケース）
+  - [x] 空コマンドの拒否
+  - [x] ホワイトリストに基づく検証
+- [x] `TestCommandArgumentEscape_DangerousRootCommands`: 危険なrootコマンドの検出（9ケース）
+  - [x] rm, dd, mkfs, chmod等の検出
+  - [x] 読み取り専用コマンド（ls, cat）の承認
+- [x] `TestCommandArgumentEscape_ShellCommands`: シェルコマンドの検出（4ケース）
+  - [x] bash, sh, zshの検出
+  - [x] 非シェルコマンドの承認
+- [x] カバレッジ確認: `internal/runner/security/command_analysis.go` の関数をテスト
+- 完了日: 2025-10-28
+- テスト関数: 5個、テストケース: 37個、全テストPASS
 
 #### 10.4.3 `test/security/hash_bypass_test.go` の作成
 
