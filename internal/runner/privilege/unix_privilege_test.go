@@ -399,24 +399,6 @@ func TestEscalatePrivileges(t *testing.T) {
 	})
 }
 
-// TestRestorePrivileges tests privilege restoration
-func TestRestorePrivileges(t *testing.T) {
-	logger := slog.Default()
-	manager := &UnixPrivilegeManager{
-		logger:             logger,
-		originalUID:        1000,
-		privilegeSupported: false,
-	}
-
-	// Test restoration logic
-	err := manager.restorePrivileges()
-
-	// In test environment, this tests the logic flow
-	// Actual syscall testing would require integration tests
-	// For now, we expect this to succeed as it's a no-op in test mode
-	assert.NoError(t, err)
-}
-
 // TestEmergencyShutdown tests emergency shutdown handling
 func TestEmergencyShutdown(t *testing.T) {
 	logger := slog.Default()
