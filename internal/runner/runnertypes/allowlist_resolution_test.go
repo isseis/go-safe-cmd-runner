@@ -1,8 +1,7 @@
-//go:build test
-
 package runnertypes
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -393,15 +392,15 @@ func TestLazyEvaluationGetters(t *testing.T) {
 
 			// Test GetGroupAllowlist
 			groupResult := resolution.GetGroupAllowlist()
-			assert.True(t, slicesEqual(groupResult, tt.expectedGroup), "GetGroupAllowlist() should match expected")
+			assert.True(t, slices.Equal(groupResult, tt.expectedGroup), "GetGroupAllowlist() should match expected")
 
 			// Test GetGlobalAllowlist
 			globalResult := resolution.GetGlobalAllowlist()
-			assert.True(t, slicesEqual(globalResult, tt.expectedGlobal), "GetGlobalAllowlist() should match expected")
+			assert.True(t, slices.Equal(globalResult, tt.expectedGlobal), "GetGlobalAllowlist() should match expected")
 
 			// Test GetEffectiveList
 			effectiveResult := resolution.GetEffectiveList()
-			assert.True(t, slicesEqual(effectiveResult, tt.expectedEffective), "GetEffectiveList() should match expected")
+			assert.True(t, slices.Equal(effectiveResult, tt.expectedEffective), "GetEffectiveList() should match expected")
 
 			// Test GetEffectiveSize
 			effectiveSize := resolution.GetEffectiveSize()
@@ -409,13 +408,13 @@ func TestLazyEvaluationGetters(t *testing.T) {
 
 			// Test caching - call again and verify same result
 			groupResult2 := resolution.GetGroupAllowlist()
-			assert.True(t, slicesEqual(groupResult2, tt.expectedGroup), "GetGroupAllowlist() cached should match expected")
+			assert.True(t, slices.Equal(groupResult2, tt.expectedGroup), "GetGroupAllowlist() cached should match expected")
 
 			globalResult2 := resolution.GetGlobalAllowlist()
-			assert.True(t, slicesEqual(globalResult2, tt.expectedGlobal), "GetGlobalAllowlist() cached should match expected")
+			assert.True(t, slices.Equal(globalResult2, tt.expectedGlobal), "GetGlobalAllowlist() cached should match expected")
 
 			effectiveResult2 := resolution.GetEffectiveList()
-			assert.True(t, slicesEqual(effectiveResult2, tt.expectedEffective), "GetEffectiveList() cached should match expected")
+			assert.True(t, slices.Equal(effectiveResult2, tt.expectedEffective), "GetEffectiveList() cached should match expected")
 		})
 	}
 }
@@ -456,19 +455,6 @@ func TestEffectiveSetInvariants(t *testing.T) {
 		}()
 		_ = resolution.GetEffectiveSize()
 	})
-}
-
-// slicesEqual compares two string slices for equality
-func slicesEqual(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i, v := range a {
-		if v != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 // TestNewAllowlistResolutionBuilder tests the builder constructor

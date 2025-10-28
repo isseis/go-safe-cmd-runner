@@ -1,5 +1,3 @@
-//go:build test
-
 package executor_test
 
 import (

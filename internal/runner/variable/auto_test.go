@@ -1,5 +1,3 @@
-//go:build test
-
 // package variable provides automatic variable generation for TOML configuration files.
 package variable
 

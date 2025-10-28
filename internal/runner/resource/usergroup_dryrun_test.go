@@ -1,6 +1,3 @@
-//go:build test && !windows
-// +build test,!windows
-
 package resource
 
 import (
