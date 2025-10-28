@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/filevalidator"
 	"github.com/stretchr/testify/require"
 )
@@ -125,11 +126,9 @@ func TestHashValidation_ManifestTampering(t *testing.T) {
 	require.NoError(t, err)
 
 	tests := []struct {
-		name          string
-		setupFunc     func(t *testing.T) string
-		tamperFunc    func(t *testing.T)
-		shouldPass    bool
-		expectedError string
+		name       string
+		setupFunc  func(t *testing.T) string
+		tamperFunc func(t *testing.T, testFile string)
 	}{
 		{
 			name: "Tampered hash value in manifest",
@@ -143,13 +142,37 @@ func TestHashValidation_ManifestTampering(t *testing.T) {
 
 				return testFile
 			},
-			tamperFunc: func(t *testing.T) {
-				// Get hash file path (this is an internal implementation detail)
-				// For testing purposes, we attempt to modify it if accessible
-				t.Logf("Hash file tampering test - validation should detect any modifications")
+			tamperFunc: func(t *testing.T, testFile string) {
+				// Get the hash file path
+				absPath, err := filepath.Abs(testFile)
+				require.NoError(t, err)
+				resolvedPathStr, err := filepath.EvalSymlinks(absPath)
+				require.NoError(t, err)
+
+				resolvedPath, err := common.NewResolvedPath(resolvedPathStr)
+				require.NoError(t, err)
+
+				// Use internal method to get hash file path
+				hashFilePath, err := validator.GetHashFilePath(resolvedPath)
+				require.NoError(t, err)
+
+				// Tamper with the hash value by modifying the JSON content
+				// Replace the hash value with a fake one
+				tamperedContent := []byte(`{
+  "version": "1.0",
+  "file": {
+    "path": "` + resolvedPathStr + `",
+    "hash": {
+      "algorithm": "SHA-256",
+      "value": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  }
+}
+`)
+				err = os.WriteFile(hashFilePath, tamperedContent, 0o644)
+				require.NoError(t, err)
+				t.Logf("Tampered hash manifest file: %s", hashFilePath)
 			},
-			shouldPass:    true, // Original verification before tampering
-			expectedError: "",
 		},
 		{
 			name: "Deleted hash file",
@@ -163,13 +186,24 @@ func TestHashValidation_ManifestTampering(t *testing.T) {
 
 				return testFile
 			},
-			tamperFunc: func(t *testing.T) {
-				// In production, hash files are protected
-				// This test verifies that missing hash files are detected
-				t.Logf("Testing behavior when hash file is missing")
+			tamperFunc: func(t *testing.T, testFile string) {
+				// Get the hash file path
+				absPath, err := filepath.Abs(testFile)
+				require.NoError(t, err)
+				resolvedPathStr, err := filepath.EvalSymlinks(absPath)
+				require.NoError(t, err)
+
+				resolvedPath, err := common.NewResolvedPath(resolvedPathStr)
+				require.NoError(t, err)
+
+				hashFilePath, err := validator.GetHashFilePath(resolvedPath)
+				require.NoError(t, err)
+
+				// Delete the hash file
+				err = os.Remove(hashFilePath)
+				require.NoError(t, err)
+				t.Logf("Deleted hash file: %s", hashFilePath)
 			},
-			shouldPass:    true, // Initial verification passes
-			expectedError: "",
 		},
 	}
 
@@ -180,16 +214,16 @@ func TestHashValidation_ManifestTampering(t *testing.T) {
 
 			// First verification should pass (before tampering)
 			err := validator.Verify(testFile)
-			if tt.shouldPass {
-				require.NoError(t, err)
-				t.Logf("Initial verification passed")
-			}
+			require.NoError(t, err)
+			t.Logf("Initial verification passed")
 
 			// Apply tampering
-			tt.tamperFunc(t)
+			tt.tamperFunc(t, testFile)
 
-			// Document the security behavior
-			t.Logf("Hash validation system provides protection against tampering")
+			// Verification should fail after tampering
+			err = validator.Verify(testFile)
+			require.Error(t, err, "Verification should fail after tampering")
+			t.Logf("Verification correctly failed after tampering: %v", err)
 		})
 	}
 }
@@ -235,9 +269,13 @@ func TestHashValidation_SymbolicLinkAttack(t *testing.T) {
 	}
 	defer os.Remove(symlinkPath)
 
-	// Verify symlink - behavior depends on implementation
+	// Verify symlink - should fail because sensitive.txt has no recorded hash
+	// The validator should either:
+	// 1. Reject symlinks explicitly, or
+	// 2. Follow the symlink and fail because no hash exists for the target
 	err = validator.Verify(symlinkPath)
-	t.Logf("Symlink verification handled: %v", err)
+	require.Error(t, err, "Symlink verification should fail: target file has no recorded hash")
+	t.Logf("Symlink verification failed as expected: %v", err)
 }
 
 // TestHashValidation_RaceConditionProtection tests TOCTOU protection

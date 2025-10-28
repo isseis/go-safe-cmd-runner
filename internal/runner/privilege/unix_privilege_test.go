@@ -203,8 +203,8 @@ func TestHandleCleanupAndMetrics_Success(_ *testing.T) {
 	// This should not panic
 	manager.handleCleanupAndMetrics(execCtx)
 
-	// Verify metrics were recorded
-	// Note: We don't assert on snapshot as copying Metrics with lock is not allowed
+	// No metrics assertion needed since needsUserGroupChange is false
+	// (metrics are only recorded when user/group changes are needed)
 }
 
 // TestHandleCleanupAndMetrics_WithError tests cleanup with errors

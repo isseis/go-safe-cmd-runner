@@ -513,8 +513,9 @@ func TestSlackHandler_Handle_WithMockServer(t *testing.T) {
 			expectSuccess: true,
 			serverStatus:  http.StatusOK,
 			validateMessage: func(t *testing.T, msg SlackMessage) {
-				if msg.Text == "" {
-					t.Error("Expected non-empty text for generic message")
+				expectedText := "INFO: test message (Run ID: test-run)"
+				if msg.Text != expectedText {
+					t.Errorf("Expected text %q, got %q", expectedText, msg.Text)
 				}
 			},
 		},
@@ -710,16 +711,12 @@ func TestSlackHandler_GenerateBackoffIntervals(t *testing.T) {
 		t.Errorf("Expected %d intervals, got %d", retryCount, len(intervals))
 	}
 
-	// Check that intervals are increasing
-	for i := 1; i < len(intervals); i++ {
-		if intervals[i] <= intervals[i-1] {
-			t.Errorf("Expected increasing intervals, but intervals[%d]=%v <= intervals[%d]=%v",
-				i, intervals[i], i-1, intervals[i-1])
+	// Check exponential backoff formula: base * 2^i
+	for i := range len(intervals) {
+		expected := backoffBase * time.Duration(1<<i)
+		if intervals[i] != expected {
+			t.Errorf("Expected intervals[%d] == %v (base * 2^%d), got %v",
+				i, expected, i, intervals[i])
 		}
-	}
-
-	// First interval should be at least the base backoff
-	if intervals[0] < backoffBase {
-		t.Errorf("Expected first interval >= %v, got %v", backoffBase, intervals[0])
 	}
 }

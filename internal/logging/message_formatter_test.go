@@ -459,9 +459,15 @@ func TestAppendInteractiveAttrs_EdgeCases(t *testing.T) {
 				return r
 			},
 			checkContent: func(t *testing.T, result string) {
-				// Should format the group somehow
-				if result == "" {
-					t.Error("Result should not be empty")
+				// Should format the group as "outer={inner_key=inner_value,count=10}"
+				if !strings.Contains(result, "outer=") {
+					t.Error("Result should contain the group name 'outer='")
+				}
+				if !strings.Contains(result, "inner_key=inner_value") {
+					t.Error("Result should contain formatted inner attribute 'inner_key=inner_value'")
+				}
+				if !strings.Contains(result, "count=10") {
+					t.Error("Result should contain formatted inner attribute 'count=10'")
 				}
 			},
 		},
@@ -500,8 +506,9 @@ func TestAppendInteractiveAttrs_EmptyValues(t *testing.T) {
 	formatter := NewDefaultMessageFormatter()
 
 	tests := []struct {
-		name   string
-		record func() slog.Record
+		name         string
+		record       func() slog.Record
+		checkContent func(t *testing.T, result string)
 	}{
 		{
 			name: "empty string value",
@@ -509,6 +516,12 @@ func TestAppendInteractiveAttrs_EmptyValues(t *testing.T) {
 				r := slog.NewRecord(time.Now(), slog.LevelInfo, "test", 0)
 				r.AddAttrs(slog.String("key", ""))
 				return r
+			},
+			checkContent: func(t *testing.T, result string) {
+				// Should contain the key with empty value formatted as "key="
+				if !strings.Contains(result, "key=") {
+					t.Errorf("Should contain 'key=' for empty string value, got: %s", result)
+				}
 			},
 		},
 		{
@@ -518,6 +531,12 @@ func TestAppendInteractiveAttrs_EmptyValues(t *testing.T) {
 				r.AddAttrs(slog.Int("count", 0))
 				return r
 			},
+			checkContent: func(t *testing.T, result string) {
+				// Should contain the key with zero value formatted as "count=0"
+				if !strings.Contains(result, "count=0") {
+					t.Errorf("Should contain 'count=0' for zero int value, got: %s", result)
+				}
+			},
 		},
 		{
 			name: "false bool value",
@@ -525,6 +544,12 @@ func TestAppendInteractiveAttrs_EmptyValues(t *testing.T) {
 				r := slog.NewRecord(time.Now(), slog.LevelInfo, "test", 0)
 				r.AddAttrs(slog.Bool("flag", false))
 				return r
+			},
+			checkContent: func(t *testing.T, result string) {
+				// Should contain the key with false value formatted as "flag=false"
+				if !strings.Contains(result, "flag=false") {
+					t.Errorf("Should contain 'flag=false' for false bool value, got: %s", result)
+				}
 			},
 		},
 	}
@@ -536,6 +561,7 @@ func TestAppendInteractiveAttrs_EmptyValues(t *testing.T) {
 			if result == "" {
 				t.Error("FormatRecordInteractive should return non-empty string")
 			}
+			tt.checkContent(t, result)
 		})
 	}
 }

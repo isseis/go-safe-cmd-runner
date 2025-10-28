@@ -199,7 +199,7 @@ func TestTempDirectory_CleanupOnPanic(t *testing.T) {
 		_ = testFile
 
 		// Intentionally panic
-		// panic("simulated panic")
+		panic("simulated panic")
 	}()
 
 	// File should still be accessible
