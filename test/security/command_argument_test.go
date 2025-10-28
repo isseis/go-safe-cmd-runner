@@ -100,14 +100,8 @@ func TestCommandArgumentEscape_ShellMetacharacters(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			hasShellMeta := validator.HasShellMetacharacters(tt.args)
-
-			if tt.expectShell {
-				require.True(t, hasShellMeta, "Expected to detect shell metacharacters: %s", tt.reason)
-				t.Logf("Correctly detected shell metacharacters in: %v", tt.args)
-			} else {
-				require.False(t, hasShellMeta, "Expected no shell metacharacters: %s", tt.reason)
-				t.Logf("Correctly accepted safe arguments: %v", tt.args)
-			}
+			require.Equal(t, tt.expectShell, hasShellMeta,
+				"Shell metacharacters detection mismatch: %s (args: %v)", tt.reason, tt.args)
 		})
 	}
 }
@@ -171,16 +165,8 @@ func TestCommandArgumentEscape_DangerousRootArgs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dangerousIndices := validator.HasDangerousRootArgs(tt.args)
-
 			require.Equal(t, tt.expectIndices, dangerousIndices,
-				"Expected dangerous argument indices to match: %s", tt.reason)
-
-			if len(dangerousIndices) > 0 {
-				t.Logf("Correctly detected dangerous arguments at indices %v: %v",
-					dangerousIndices, tt.args)
-			} else {
-				t.Logf("Correctly accepted safe arguments: %v", tt.args)
-			}
+				"Dangerous argument indices mismatch: %s (args: %v)", tt.reason, tt.args)
 		})
 	}
 }
@@ -233,16 +219,12 @@ func TestCommandArgumentEscape_CommandValidation(t *testing.T) {
 			err := validator.ValidateCommand(tt.command)
 
 			if tt.wantErr {
-				require.Error(t, err, tt.reason)
-				t.Logf("Correctly rejected command %q: %v", tt.command, err)
-			} else {
+				require.Error(t, err, "Command %q should be rejected: %s", tt.command, tt.reason)
+			} else if err != nil {
 				// Note: May fail based on actual whitelist configuration
-				if err != nil {
-					t.Logf("Command %q rejected (may be intentional based on whitelist): %v",
-						tt.command, err)
-				} else {
-					t.Logf("Command %q accepted", tt.command)
-				}
+				// Not using require.NoError here since whitelist may vary
+				t.Skipf("Command %q rejected (may be intentional based on whitelist): %v",
+					tt.command, err)
 			}
 		})
 	}
@@ -319,16 +301,8 @@ func TestCommandArgumentEscape_DangerousRootCommands(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			isDangerous := validator.IsDangerousRootCommand(tt.cmdPath)
-
 			require.Equal(t, tt.expectDang, isDangerous,
-				"Expected dangerous status to be %v: %s", tt.expectDang, tt.reason)
-
-			if isDangerous {
-				t.Logf("Correctly identified %q as dangerous for root: %s",
-					tt.cmdPath, tt.reason)
-			} else {
-				t.Logf("Correctly identified %q as safe: %s", tt.cmdPath, tt.reason)
-			}
+				"Dangerous root command status mismatch for %q: %s", tt.cmdPath, tt.reason)
 		})
 	}
 }
@@ -373,15 +347,8 @@ func TestCommandArgumentEscape_ShellCommands(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			isShell := validator.IsShellCommand(tt.cmdPath)
-
 			require.Equal(t, tt.expectSh, isShell,
-				"Expected shell status to be %v: %s", tt.expectSh, tt.reason)
-
-			if isShell {
-				t.Logf("Correctly identified %q as shell command", tt.cmdPath)
-			} else {
-				t.Logf("Correctly identified %q as non-shell command", tt.cmdPath)
-			}
+				"Shell command status mismatch for %q: %s", tt.cmdPath, tt.reason)
 		})
 	}
 }

@@ -389,9 +389,7 @@ func TestAppendInteractiveAttrs_EdgeCases(t *testing.T) {
 				return slog.NewRecord(time.Now(), slog.LevelInfo, "test", 0)
 			},
 			checkContent: func(t *testing.T, result string) {
-				if !strings.Contains(result, "test") {
-					t.Error("Should contain message text")
-				}
+				assert.Contains(t, result, "test", "Should contain message text")
 			},
 		},
 		{
@@ -404,9 +402,7 @@ func TestAppendInteractiveAttrs_EdgeCases(t *testing.T) {
 				return r
 			},
 			checkContent: func(t *testing.T, result string) {
-				if !strings.Contains(result, "keyA=value") {
-					t.Error("Should contain at least the first attribute")
-				}
+				assert.Contains(t, result, "keyA=value", "Should contain at least the first attribute")
 			},
 		},
 		{
@@ -422,9 +418,9 @@ func TestAppendInteractiveAttrs_EdgeCases(t *testing.T) {
 			},
 			checkContent: func(t *testing.T, result string) {
 				// Should contain command and error attributes (path might be skipped)
-				if !strings.Contains(result, "error=") && !strings.Contains(result, "command=") {
-					t.Errorf("Should contain some attributes, got: %s", result)
-				}
+				hasError := strings.Contains(result, "error=")
+				hasCommand := strings.Contains(result, "command=")
+				assert.True(t, hasError || hasCommand, "Should contain some attributes, got: %s", result)
 			},
 		},
 		{
@@ -441,9 +437,7 @@ func TestAppendInteractiveAttrs_EdgeCases(t *testing.T) {
 				return r
 			},
 			checkContent: func(t *testing.T, result string) {
-				if !strings.Contains(result, "string_key=string_value") {
-					t.Error("Should contain string attribute")
-				}
+				assert.Contains(t, result, "string_key=string_value", "Should contain string attribute")
 			},
 		},
 		{
@@ -460,15 +454,9 @@ func TestAppendInteractiveAttrs_EdgeCases(t *testing.T) {
 			},
 			checkContent: func(t *testing.T, result string) {
 				// Should format the group as "outer={inner_key=inner_value,count=10}"
-				if !strings.Contains(result, "outer=") {
-					t.Error("Result should contain the group name 'outer='")
-				}
-				if !strings.Contains(result, "inner_key=inner_value") {
-					t.Error("Result should contain formatted inner attribute 'inner_key=inner_value'")
-				}
-				if !strings.Contains(result, "count=10") {
-					t.Error("Result should contain formatted inner attribute 'count=10'")
-				}
+				assert.Contains(t, result, "outer=", "Result should contain the group name 'outer='")
+				assert.Contains(t, result, "inner_key=inner_value", "Result should contain formatted inner attribute 'inner_key=inner_value'")
+				assert.Contains(t, result, "count=10", "Result should contain formatted inner attribute 'count=10'")
 			},
 		},
 		{
@@ -484,12 +472,8 @@ func TestAppendInteractiveAttrs_EdgeCases(t *testing.T) {
 				return r
 			},
 			checkContent: func(t *testing.T, result string) {
-				if strings.Contains(result, "run_id=") {
-					t.Error("Should skip run_id attribute")
-				}
-				if !strings.Contains(result, "error=test error") {
-					t.Error("Should keep error attribute")
-				}
+				assert.NotContains(t, result, "run_id=", "Should skip run_id attribute")
+				assert.Contains(t, result, "error=test error", "Should keep error attribute")
 			},
 		},
 	}
@@ -519,9 +503,7 @@ func TestAppendInteractiveAttrs_EmptyValues(t *testing.T) {
 			},
 			checkContent: func(t *testing.T, result string) {
 				// Should contain the key with empty value formatted as "key="
-				if !strings.Contains(result, "key=") {
-					t.Errorf("Should contain 'key=' for empty string value, got: %s", result)
-				}
+				assert.Contains(t, result, "key=", "Should contain 'key=' for empty string value, got: %s", result)
 			},
 		},
 		{
@@ -533,9 +515,7 @@ func TestAppendInteractiveAttrs_EmptyValues(t *testing.T) {
 			},
 			checkContent: func(t *testing.T, result string) {
 				// Should contain the key with zero value formatted as "count=0"
-				if !strings.Contains(result, "count=0") {
-					t.Errorf("Should contain 'count=0' for zero int value, got: %s", result)
-				}
+				assert.Contains(t, result, "count=0", "Should contain 'count=0' for zero int value, got: %s", result)
 			},
 		},
 		{
@@ -547,9 +527,7 @@ func TestAppendInteractiveAttrs_EmptyValues(t *testing.T) {
 			},
 			checkContent: func(t *testing.T, result string) {
 				// Should contain the key with false value formatted as "flag=false"
-				if !strings.Contains(result, "flag=false") {
-					t.Errorf("Should contain 'flag=false' for false bool value, got: %s", result)
-				}
+				assert.Contains(t, result, "flag=false", "Should contain 'flag=false' for false bool value, got: %s", result)
 			},
 		},
 	}
@@ -558,9 +536,7 @@ func TestAppendInteractiveAttrs_EmptyValues(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Should not panic with empty or zero values
 			result := formatter.FormatRecordInteractive(tt.record(), false)
-			if result == "" {
-				t.Error("FormatRecordInteractive should return non-empty string")
-			}
+			assert.NotEmpty(t, result, "FormatRecordInteractive should return non-empty string")
 			tt.checkContent(t, result)
 		})
 	}

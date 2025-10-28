@@ -110,13 +110,11 @@ func TestEnvironmentVariableInjection_CommandInjection(t *testing.T) {
 			err = validator.ValidateEnvironmentValue(tt.envKey, tt.envValue)
 
 			if tt.wantErr {
-				require.Error(t, err, "Expected validation to reject %s=%s: %s",
+				require.Error(t, err, "Validation should reject %s=%s: %s",
 					tt.envKey, tt.envValue, tt.reason)
-				t.Logf("Correctly rejected %s=%s: %v", tt.envKey, tt.envValue, err)
 			} else {
-				require.NoError(t, err, "Expected validation to accept %s=%s: %s",
+				require.NoError(t, err, "Validation should accept %s=%s: %s",
 					tt.envKey, tt.envValue, tt.reason)
-				t.Logf("Correctly accepted %s=%s", tt.envKey, tt.envValue)
 			}
 		})
 	}
@@ -145,8 +143,12 @@ func TestEnvironmentVariableInjection_SafeValues(t *testing.T) {
 		t.Run(key, func(t *testing.T) {
 			err := validator.ValidateEnvironmentValue(key, value)
 			// Note: Validation may still fail based on allowlist configuration
-			// This test documents current behavior
-			t.Logf("Validation result for %s=%s: %v", key, value, err)
+			// This test documents current behavior - not asserting success/failure
+			// as it depends on the validator configuration
+			if err != nil {
+				t.Skipf("Validation for %s=%s rejected (may be intentional based on allowlist): %v",
+					key, value, err)
+			}
 		})
 	}
 }
@@ -208,11 +210,9 @@ func TestEnvironmentVariableInjection_AllEnvironmentVars(t *testing.T) {
 			err := validator.ValidateAllEnvironmentVars(tt.envVars)
 
 			if tt.wantErr {
-				require.Error(t, err, tt.reason)
-				t.Logf("Correctly rejected environment: %v", err)
+				require.Error(t, err, "Validation should reject environment: %s", tt.reason)
 			} else {
-				require.NoError(t, err, tt.reason)
-				t.Logf("Correctly accepted environment")
+				require.NoError(t, err, "Validation should accept environment: %s", tt.reason)
 			}
 		})
 	}
