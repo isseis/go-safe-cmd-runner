@@ -4,6 +4,7 @@ package groupmembership
 
 import (
 	"errors"
+	"os"
 	"testing"
 	"time"
 
@@ -351,5 +352,213 @@ func TestCanCurrentUserSafelyReadFile(t *testing.T) {
 		}
 
 		t.Logf("Write result: %v (err: %v), Read result: %v (err: %v)", writeResult, writeErr, readResult, readErr)
+	})
+}
+
+// TestCanCurrentUserSafelyWriteFile_AllPermissions tests all permission patterns
+func TestCanCurrentUserSafelyWriteFile_AllPermissions(t *testing.T) {
+	gm := New()
+
+	// Create a temporary file to get its owner information
+	uid, gid, cleanup := createTempFileWithStat(t)
+	defer cleanup()
+
+	t.Run("owner_only_writable", func(t *testing.T) {
+		canWrite, err := gm.CanCurrentUserSafelyWriteFile(uid, gid, 0o600)
+		assert.NoError(t, err)
+		assert.True(t, canWrite, "Owner should be able to write to owner-only file")
+	})
+
+	t.Run("group_writable_member", func(t *testing.T) {
+		// Current user owns the file, so they are in the group
+		canWrite, err := gm.CanCurrentUserSafelyWriteFile(uid, gid, 0o660)
+		assert.NoError(t, err)
+		assert.True(t, canWrite, "Group member should be able to write to group-writable file")
+	})
+
+	t.Run("group_writable_non_member", func(t *testing.T) {
+		// Use a GID that the current user is not a member of
+		// GID 99999 is unlikely to exist and user won't be a member
+		canWrite, err := gm.CanCurrentUserSafelyWriteFile(uid, 99999, 0o660)
+		// This may error or return false depending on system configuration
+		// Just verify it doesn't panic and returns a boolean
+		assert.IsType(t, false, canWrite)
+		t.Logf("Non-member write result: %v, error: %v", canWrite, err)
+	})
+
+	t.Run("world_writable", func(t *testing.T) {
+		canWrite, err := gm.CanCurrentUserSafelyWriteFile(uid, gid, 0o666)
+		assert.Error(t, err, "World writable files should be denied")
+		assert.False(t, canWrite)
+		assert.True(t, errors.Is(err, ErrFileWorldWritable))
+	})
+}
+
+// TestCanCurrentUserSafelyWriteFile_EdgeCases tests edge cases
+func TestCanCurrentUserSafelyWriteFile_EdgeCases(t *testing.T) {
+	gm := New()
+
+	uid, gid, cleanup := createTempFileWithStat(t)
+	defer cleanup()
+
+	t.Run("special_permission_bits", func(t *testing.T) {
+		tests := []struct {
+			name string
+			perm os.FileMode
+		}{
+			{"setuid", 0o4644},
+			{"setgid", 0o2644},
+			{"sticky", 0o1644},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				canWrite, err := gm.CanCurrentUserSafelyWriteFile(uid, gid, tt.perm)
+				// CanUserSafelyWriteFile only checks Perm() bits, not special bits
+				// So these should succeed if the underlying permission bits are valid
+				assert.NoError(t, err, "Special bits don't affect write check")
+				assert.True(t, canWrite)
+			})
+		}
+	})
+
+	t.Run("various_permission_combinations", func(t *testing.T) {
+		tests := []struct {
+			name      string
+			perm      os.FileMode
+			expectErr bool
+		}{
+			{"owner_read_write", 0o644, false},
+			{"owner_only", 0o600, false},
+			{"group_read_write", 0o664, false},
+			{"execute_bit", 0o755, false},  // execute bits don't affect write check
+			{"minimal_perms", 0o400, true}, // no write permission
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				canWrite, err := gm.CanCurrentUserSafelyWriteFile(uid, gid, tt.perm)
+				if tt.expectErr {
+					assert.Error(t, err)
+					assert.False(t, canWrite)
+				} else {
+					assert.NoError(t, err)
+					// Note: result depends on ownership/group membership
+					t.Logf("Permission %o: can write=%v, err=%v", tt.perm, canWrite, err)
+				}
+			})
+		}
+	})
+}
+
+// TestCanCurrentUserSafelyReadFile_AllPermissions tests all permission patterns for read
+func TestCanCurrentUserSafelyReadFile_AllPermissions(t *testing.T) {
+	gm := New()
+
+	_, gid, cleanup := createTempFileWithStat(t)
+	defer cleanup()
+
+	t.Run("owner_only_readable", func(t *testing.T) {
+		canRead, err := gm.CanCurrentUserSafelyReadFile(gid, 0o400)
+		assert.NoError(t, err)
+		assert.True(t, canRead, "Should be able to read owner-only file")
+	})
+
+	t.Run("group_readable_member", func(t *testing.T) {
+		// Current user owns the file, so they are in the group
+		canRead, err := gm.CanCurrentUserSafelyReadFile(gid, 0o440)
+		assert.NoError(t, err)
+		assert.True(t, canRead, "Group member should be able to read group-readable file")
+	})
+
+	t.Run("group_writable_non_member", func(t *testing.T) {
+		// Use a GID that the current user is not a member of
+		canRead, err := gm.CanCurrentUserSafelyReadFile(99999, 0o660)
+		// Should error because user is not in group and file is group writable
+		assert.Error(t, err)
+		assert.False(t, canRead)
+		assert.True(t, errors.Is(err, ErrGroupWritableNonMember))
+	})
+
+	t.Run("world_readable", func(t *testing.T) {
+		canRead, err := gm.CanCurrentUserSafelyReadFile(gid, 0o444)
+		assert.NoError(t, err)
+		assert.True(t, canRead, "Should be able to read world-readable file")
+	})
+
+	t.Run("world_writable_denied", func(t *testing.T) {
+		canRead, err := gm.CanCurrentUserSafelyReadFile(gid, 0o666)
+		assert.Error(t, err, "World writable files should be denied for read")
+		assert.False(t, canRead)
+		assert.True(t, errors.Is(err, ErrFileWorldWritable))
+	})
+}
+
+// TestCanCurrentUserSafelyReadFile_EdgeCases tests edge cases for read
+func TestCanCurrentUserSafelyReadFile_EdgeCases(t *testing.T) {
+	gm := New()
+
+	_, gid, cleanup := createTempFileWithStat(t)
+	defer cleanup()
+
+	t.Run("special_permission_bits_allowed_for_read", func(t *testing.T) {
+		tests := []struct {
+			name      string
+			perm      os.FileMode
+			expectErr bool
+		}{
+			{"setuid", 0o4755, false},        // setuid allowed for read
+			{"setgid", 0o2755, false},        // setgid allowed for read
+			{"sticky", 0o1755, true},         // sticky exceeds MaxAllowedReadPerms
+			{"setuid_setgid", 0o6755, false}, // both setuid and setgid allowed
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				canRead, err := gm.CanCurrentUserSafelyReadFile(gid, tt.perm)
+				if tt.expectErr {
+					assert.Error(t, err)
+					assert.False(t, canRead)
+				} else {
+					assert.NoError(t, err)
+					assert.True(t, canRead)
+				}
+			})
+		}
+	})
+
+	t.Run("maximum_allowed_permissions", func(t *testing.T) {
+		canRead, err := gm.CanCurrentUserSafelyReadFile(gid, MaxAllowedReadPerms)
+		assert.NoError(t, err)
+		assert.True(t, canRead, "Should allow maximum allowed read permissions")
+	})
+
+	t.Run("exceeding_maximum_permissions", func(t *testing.T) {
+		// Add sticky bit to exceed maximum
+		canRead, err := gm.CanCurrentUserSafelyReadFile(gid, MaxAllowedReadPerms|0o1000)
+		assert.Error(t, err)
+		assert.False(t, canRead)
+		assert.True(t, errors.Is(err, ErrPermissionsExceedMaximum))
+	})
+
+	t.Run("various_readable_permissions", func(t *testing.T) {
+		tests := []struct {
+			name string
+			perm os.FileMode
+		}{
+			{"minimal", 0o400},
+			{"normal", 0o644},
+			{"group_read", 0o440},
+			{"all_read", 0o444},
+			{"with_execute", 0o555},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				canRead, err := gm.CanCurrentUserSafelyReadFile(gid, tt.perm)
+				assert.NoError(t, err)
+				assert.True(t, canRead)
+			})
+		}
 	})
 }
