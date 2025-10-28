@@ -4,6 +4,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
 
@@ -30,9 +32,7 @@ func TestValidateConfigCommand_Valid(t *testing.T) {
 	}
 
 	err := ValidateConfigCommand(cfg)
-	if err != nil {
-		t.Errorf("ValidateConfigCommand() with valid config error = %v, want nil", err)
-	}
+	assert.NoError(t, err, "ValidateConfigCommand() with valid config should not error")
 }
 
 func TestValidateConfigCommand_Invalid(t *testing.T) {
@@ -89,10 +89,7 @@ func TestValidateConfigCommand_Invalid(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := ValidateConfigCommand(tt.cfg)
-			if err == nil {
-				t.Error("ValidateConfigCommand() with invalid config error = nil, want error")
-				return
-			}
+			assert.Error(t, err, "ValidateConfigCommand() with invalid config should error")
 
 			// The function should return ErrConfigValidationFailed for invalid configs
 			if !errors.Is(err, ErrConfigValidationFailed) {

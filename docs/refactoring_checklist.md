@@ -77,73 +77,73 @@
     - [x] L104: `t.Errorf("ParseDryRunOutputFormat(%q) error = %v, want nil", tt.input, err)`
     - [x] L107: `t.Errorf("ParseDryRunOutputFormat(%q) = %v, want %v", tt.input, got, tt.want)`
 
-- [ ] internal/runner/cli/validation_test.go (2 calls)
-  - [ ] TestValidateConfigCommand_Invalid
-    - [ ] L93: `t.Error("ValidateConfigCommand() with invalid config error = nil, want error")`
-  - [ ] TestValidateConfigCommand_Valid
-    - [ ] L34: `t.Errorf("ValidateConfigCommand() with valid config error = %v, want nil", err)`
+- [x] internal/runner/cli/validation_test.go (2 calls)
+  - [x] TestValidateConfigCommand_Invalid
+    - [x] L93: `t.Error("ValidateConfigCommand() with invalid config error = nil, want error")`
+  - [x] TestValidateConfigCommand_Valid
+    - [x] L34: `t.Errorf("ValidateConfigCommand() with valid config error = %v, want nil", err)`
 
-- [ ] internal/runner/config/errors_test.go (28 calls)
-  - [ ] TestErrCircularReferenceDetail_Error
-    - [ ] L135: `t.Errorf("Error() = %q, want %q", err.Error(), expected)`
-  - [ ] TestErrCircularReferenceDetail_Unwrap
-    - [ ] L149: `t.Errorf("Unwrap() should return ErrCircularReference")`
-  - [ ] TestErrDuplicateVariableDefinitionDetail_Error
-    - [ ] L387: `t.Errorf("Error() = %q, want %q", err.Error(), expected)`
-  - [ ] TestErrDuplicateVariableDefinitionDetail_Unwrap
-    - [ ] L400: `t.Errorf("Unwrap() should return ErrDuplicateVariableDefinition")`
-  - [ ] TestErrInvalidEnvFormatDetail_Error
-    - [ ] L331: `t.Errorf("Error() = %q, want %q", err.Error(), expected)`
-  - [ ] TestErrInvalidEnvFormatDetail_Unwrap
-    - [ ] L344: `t.Errorf("Unwrap() should return ErrInvalidEnvFormat")`
-  - [ ] TestErrInvalidEnvKeyDetail_Error
-    - [ ] L359: `t.Errorf("Error() = %q, want %q", err.Error(), expected)`
-  - [ ] TestErrInvalidEnvKeyDetail_Unwrap
-    - [ ] L373: `t.Errorf("Unwrap() should return ErrInvalidEnvKey")`
-  - [ ] TestErrInvalidEscapeSequenceDetail_Error
-    - [ ] L193: `t.Errorf("Error() = %q, want %q", err.Error(), expected)`
-  - [ ] TestErrInvalidEscapeSequenceDetail_Unwrap
-    - [ ] L207: `t.Errorf("Unwrap() should return ErrInvalidEscapeSequence")`
-  - [ ] TestErrInvalidFromEnvFormatDetail_Error
-    - [ ] L277: `t.Errorf("Error() = %q, want %q", err.Error(), expected)`
-  - [ ] TestErrInvalidFromEnvFormatDetail_Unwrap
-    - [ ] L290: `t.Errorf("Unwrap() should return ErrInvalidFromEnvFormat")`
-  - [ ] TestErrInvalidSystemVariableNameDetail_Error
-    - [ ] L48: `t.Errorf("Error() = %q, want %q", err.Error(), expected)`
-  - [ ] TestErrInvalidSystemVariableNameDetail_Unwrap
-    - [ ] L62: `t.Errorf("Unwrap() should return ErrInvalidSystemVariableName")`
-  - [ ] TestErrInvalidVariableNameDetail_Error
-    - [ ] L19: `t.Errorf("Error() = %q, want %q", err.Error(), expected)`
-  - [ ] TestErrInvalidVariableNameDetail_Unwrap
-    - [ ] L33: `t.Errorf("Unwrap() should return ErrInvalidVariableName")`
-  - [ ] TestErrInvalidVarsFormatDetail_Error
-    - [ ] L304: `t.Errorf("Error() = %q, want %q", err.Error(), expected)`
-  - [ ] TestErrInvalidVarsFormatDetail_Unwrap
-    - [ ] L317: `t.Errorf("Unwrap() should return ErrInvalidVarsFormat")`
-  - [ ] TestErrMaxRecursionDepthExceededDetail_Error
-    - [ ] L249: `t.Errorf("Error() = %q, want %q", err.Error(), expected)`
-  - [ ] TestErrMaxRecursionDepthExceededDetail_Unwrap
-    - [ ] L263: `t.Errorf("Unwrap() should return ErrMaxRecursionDepthExceeded")`
-  - [ ] TestErrReservedVariablePrefixDetail_Error
-    - [ ] L77: `t.Errorf("Error() = %q, want %q", err.Error(), expected)`
-  - [ ] TestErrReservedVariablePrefixDetail_Unwrap
-    - [ ] L91: `t.Errorf("Unwrap() should return ErrReservedVariablePrefix")`
-  - [ ] TestErrUnclosedVariableReferenceDetail_Error
-    - [ ] L221: `t.Errorf("Error() = %q, want %q", err.Error(), expected)`
-  - [ ] TestErrUnclosedVariableReferenceDetail_Unwrap
-    - [ ] L234: `t.Errorf("Unwrap() should return ErrUnclosedVariableReference")`
-  - [ ] TestErrUndefinedVariableDetail_Error
-    - [ ] L164: `t.Errorf("Error() = %q, want %q", err.Error(), expected)`
-  - [ ] TestErrUndefinedVariableDetail_Unwrap
-    - [ ] L178: `t.Errorf("Unwrap() should return ErrUndefinedVariable")`
-  - [ ] TestErrVariableNotInAllowlistDetail_Error
-    - [ ] L106: `t.Errorf("Error() = %q, want %q", err.Error(), expected)`
-  - [ ] TestErrVariableNotInAllowlistDetail_Unwrap
-    - [ ] L120: `t.Errorf("Unwrap() should return ErrVariableNotInAllowlist")`
+- [x] internal/runner/config/errors_test.go (28 calls)
+  - [x] TestErrCircularReferenceDetail_Error
+    - [x] L135: `t.Errorf("Error() = %q, want %q", err.Error(), expected)`
+  - [x] TestErrCircularReferenceDetail_Unwrap
+    - [x] L149: `t.Errorf("Unwrap() should return ErrCircularReference")`
+  - [x] TestErrDuplicateVariableDefinitionDetail_Error
+    - [x] L387: `t.Errorf("Error() = %q, want %q", err.Error(), expected)`
+  - [x] TestErrDuplicateVariableDefinitionDetail_Unwrap
+    - [x] L400: `t.Errorf("Unwrap() should return ErrDuplicateVariableDefinition")`
+  - [x] TestErrInvalidEnvFormatDetail_Error
+    - [x] L331: `t.Errorf("Error() = %q, want %q", err.Error(), expected)`
+  - [x] TestErrInvalidEnvFormatDetail_Unwrap
+    - [x] L344: `t.Errorf("Unwrap() should return ErrInvalidEnvFormat")`
+  - [x] TestErrInvalidEnvKeyDetail_Error
+    - [x] L359: `t.Errorf("Error() = %q, want %q", err.Error(), expected)`
+  - [x] TestErrInvalidEnvKeyDetail_Unwrap
+    - [x] L373: `t.Errorf("Unwrap() should return ErrInvalidEnvKey")`
+  - [x] TestErrInvalidEscapeSequenceDetail_Error
+    - [x] L193: `t.Errorf("Error() = %q, want %q", err.Error(), expected)`
+  - [x] TestErrInvalidEscapeSequenceDetail_Unwrap
+    - [x] L207: `t.Errorf("Unwrap() should return ErrInvalidEscapeSequence")`
+  - [x] TestErrInvalidFromEnvFormatDetail_Error
+    - [x] L277: `t.Errorf("Error() = %q, want %q", err.Error(), expected)`
+  - [x] TestErrInvalidFromEnvFormatDetail_Unwrap
+    - [x] L290: `t.Errorf("Unwrap() should return ErrInvalidFromEnvFormat")`
+  - [x] TestErrInvalidSystemVariableNameDetail_Error
+    - [x] L48: `t.Errorf("Error() = %q, want %q", err.Error(), expected)`
+  - [x] TestErrInvalidSystemVariableNameDetail_Unwrap
+    - [x] L62: `t.Errorf("Unwrap() should return ErrInvalidSystemVariableName")`
+  - [x] TestErrInvalidVariableNameDetail_Error
+    - [x] L19: `t.Errorf("Error() = %q, want %q", err.Error(), expected)`
+  - [x] TestErrInvalidVariableNameDetail_Unwrap
+    - [x] L33: `t.Errorf("Unwrap() should return ErrInvalidVariableName")`
+  - [x] TestErrInvalidVarsFormatDetail_Error
+    - [x] L304: `t.Errorf("Error() = %q, want %q", err.Error(), expected)`
+  - [x] TestErrInvalidVarsFormatDetail_Unwrap
+    - [x] L317: `t.Errorf("Unwrap() should return ErrInvalidVarsFormat")`
+  - [x] TestErrMaxRecursionDepthExceededDetail_Error
+    - [x] L249: `t.Errorf("Error() = %q, want %q", err.Error(), expected)`
+  - [x] TestErrMaxRecursionDepthExceededDetail_Unwrap
+    - [x] L263: `t.Errorf("Unwrap() should return ErrMaxRecursionDepthExceeded")`
+  - [x] TestErrReservedVariablePrefixDetail_Error
+    - [x] L77: `t.Errorf("Error() = %q, want %q", err.Error(), expected)`
+  - [x] TestErrReservedVariablePrefixDetail_Unwrap
+    - [x] L91: `t.Errorf("Unwrap() should return ErrReservedVariablePrefix")`
+  - [x] TestErrUnclosedVariableReferenceDetail_Error
+    - [x] L221: `t.Errorf("Error() = %q, want %q", err.Error(), expected)`
+  - [x] TestErrUnclosedVariableReferenceDetail_Unwrap
+    - [x] L234: `t.Errorf("Unwrap() should return ErrUnclosedVariableReference")`
+  - [x] TestErrUndefinedVariableDetail_Error
+    - [x] L164: `t.Errorf("Error() = %q, want %q", err.Error(), expected)`
+  - [x] TestErrUndefinedVariableDetail_Unwrap
+    - [x] L178: `t.Errorf("Unwrap() should return ErrUndefinedVariable")`
+  - [x] TestErrVariableNotInAllowlistDetail_Error
+    - [x] L106: `t.Errorf("Error() = %q, want %q", err.Error(), expected)`
+  - [x] TestErrVariableNotInAllowlistDetail_Unwrap
+    - [x] L120: `t.Errorf("Unwrap() should return ErrVariableNotInAllowlist")`
 
-- [ ] internal/runner/runnertypes/errors_test.go (1 calls)
-  - [ ] TestSecurityViolationError_Is
-    - [ ] L93: `t.Errorf("Is() should return true for SecurityViolationError instances")`
+- [x] internal/runner/runnertypes/errors_test.go (1 calls)
+  - [x] TestSecurityViolationError_Is
+    - [x] L93: `t.Errorf("Is() should return true for SecurityViolationError instances")`
 
 
 ## 凡例

@@ -90,7 +90,7 @@ func TestSecurityViolationError_Is(t *testing.T) {
 	}
 
 	if !errors.Is(err1, err2) {
-		t.Errorf("Is() should return true for SecurityViolationError instances")
+		assert.Fail(t, "Is() should return true for SecurityViolationError instances")
 	}
 
 	otherErr := errors.New("different error")
