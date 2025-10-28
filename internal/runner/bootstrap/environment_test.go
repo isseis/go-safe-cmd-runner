@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestSetupLogging_Success(t *testing.T) {
@@ -80,7 +81,7 @@ func TestSetupLogging_Success(t *testing.T) {
 			err := SetupLogging(tt.logLevel, tt.logDir, tt.runID, tt.forceInteractive, tt.forceQuiet)
 
 			if (err != nil) != tt.wantErr {
-				t.Errorf("SetupLogging() error = %v, wantErr %v", err, tt.wantErr)
+				assert.NoError(t, err, "SetupLogging() should not error")
 			}
 		})
 	}
@@ -118,7 +119,7 @@ func TestSetupLogging_InvalidConfig(t *testing.T) {
 				// Create a directory with no write permissions
 				dir := filepath.Join(t.TempDir(), "readonly")
 				if err := os.Mkdir(dir, 0o444); err != nil {
-					t.Fatalf("Failed to create test directory: %v", err)
+					assert.NoError(t, err, "Failed to create test directory")
 				}
 				return dir
 			},
@@ -139,7 +140,7 @@ func TestSetupLogging_InvalidConfig(t *testing.T) {
 			err := SetupLogging(tt.logLevel, logDir, tt.runID, tt.forceInteractive, tt.forceQuiet)
 
 			if (err != nil) != tt.wantErr {
-				t.Errorf("SetupLogging() error = %v, wantErr %v", err, tt.wantErr)
+				assert.Equal(t, tt.wantErr, err != nil, "SetupLogging() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
@@ -155,7 +156,7 @@ func TestSetupLogging_FilePermissionError(t *testing.T) {
 	tempDir := t.TempDir()
 	readOnlyDir := filepath.Join(tempDir, "readonly")
 	if err := os.Mkdir(readOnlyDir, 0o444); err != nil {
-		t.Fatalf("Failed to create read-only directory: %v", err)
+		assert.NoError(t, err, "Failed to create read-only directory")
 	}
 
 	// Ensure cleanup restores permissions for temp dir cleanup
@@ -163,7 +164,5 @@ func TestSetupLogging_FilePermissionError(t *testing.T) {
 
 	err := SetupLogging(runnertypes.LogLevelInfo, readOnlyDir, "test-run-perm", false, false)
 
-	if err == nil {
-		t.Error("SetupLogging() expected error for read-only directory, got nil")
-	}
+	assert.Error(t, err, "SetupLogging() expected error for read-only directory")
 }

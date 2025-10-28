@@ -37,15 +37,15 @@
   - [x] TestShouldSkipInteractiveAttr_True
     - [x] L380: `t.Errorf("shouldSkipInteractiveAttr(%q) = false, want true", attr)`
 
-- [ ] internal/runner/bootstrap/environment_test.go (5 calls)
-  - [ ] TestSetupLogging_FilePermissionError
-    - [ ] L158: `t.Fatalf("Failed to create read-only directory: %v", err)`
-    - [ ] L167: `t.Error("SetupLogging() expected error for read-only directory, got nil")`
-  - [ ] TestSetupLogging_InvalidConfig
-    - [ ] L121: `t.Fatalf("Failed to create test directory: %v", err)`
-    - [ ] L142: `t.Errorf("SetupLogging() error = %v, wantErr %v", err, tt.wantErr)`
-  - [ ] TestSetupLogging_Success
-    - [ ] L83: `t.Errorf("SetupLogging() error = %v, wantErr %v", err, tt.wantErr)`
+- [x] internal/runner/bootstrap/environment_test.go (5 calls)
+  - [x] TestSetupLogging_FilePermissionError
+    - [x] L158: `t.Fatalf("Failed to create read-only directory: %v", err)`
+    - [x] L167: `t.Error("SetupLogging() expected error for read-only directory, got nil")`
+  - [x] TestSetupLogging_InvalidConfig
+    - [x] L121: `t.Fatalf("Failed to create test directory: %v", err)`
+    - [x] L142: `t.Errorf("SetupLogging() error = %v, wantErr %v", err, tt.wantErr)`
+  - [x] TestSetupLogging_Success
+    - [x] L83: `t.Errorf("SetupLogging() error = %v, wantErr %v", err, tt.wantErr)`
 
 - [ ] internal/runner/bootstrap/verification_test.go (9 calls)
   - [ ] TestInitializeVerificationManager_InvalidHashDir
