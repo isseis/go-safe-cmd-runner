@@ -169,7 +169,7 @@ func TestCreateCommandContextWithTimeout(t *testing.T) {
 			case <-resultCtx.Done():
 				// Context was properly cancelled
 			default:
-				t.Error("Context should be done after calling cancel")
+				assert.Fail(t, "Context should be done after calling cancel")
 			}
 		})
 	}

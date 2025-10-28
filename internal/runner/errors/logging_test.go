@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestLogCriticalToStderr_Output(t *testing.T) {
@@ -31,26 +33,13 @@ func TestLogCriticalToStderr_Output(t *testing.T) {
 	output := buf.String()
 
 	// Verify output contains expected elements
-	if !strings.Contains(output, "CRITICAL:") {
-		t.Error("Output does not contain 'CRITICAL:'")
-	}
-
-	if !strings.Contains(output, testMessage) {
-		t.Errorf("Output does not contain test message: %q", testMessage)
-	}
-
-	if !strings.Contains(output, testComponent) {
-		t.Errorf("Output does not contain component: %q", testComponent)
-	}
-
-	if !strings.Contains(output, testErr.Error()) {
-		t.Errorf("Output does not contain error: %v", testErr)
-	}
+	assert.Contains(t, output, "CRITICAL:", "Output should contain 'CRITICAL:'")
+	assert.Contains(t, output, testMessage, "Output should contain test message")
+	assert.Contains(t, output, testComponent, "Output should contain component")
+	assert.Contains(t, output, testErr.Error(), "Output should contain error")
 
 	// Verify timestamp format (ISO 8601 with timezone)
-	if !strings.Contains(output, "[20") {
-		t.Error("Output does not contain timestamp starting with '[20'")
-	}
+	assert.Contains(t, output, "[20", "Output should contain timestamp starting with '[20'")
 }
 
 func TestLogClassifiedError_AllSeverities(t *testing.T) {
@@ -103,15 +92,10 @@ func TestLogClassifiedError_AllSeverities(t *testing.T) {
 			output := buf.String()
 
 			if tt.shouldStderr {
-				if output == "" {
-					t.Error("Critical error should write to stderr, but got empty output")
-				}
-				if !strings.Contains(output, "CRITICAL:") {
-					t.Error("Critical error output should contain 'CRITICAL:'")
-				}
+				assert.NotEmpty(t, output, "Critical error should write to stderr")
+				assert.Contains(t, output, "CRITICAL:", "Critical error output should contain 'CRITICAL:'")
 			} else if strings.Contains(output, "CRITICAL:") {
-				// Warning and Info should not write to stderr (they use slog)
-				t.Errorf("%s should not write 'CRITICAL:' to stderr", tt.name)
+				assert.Fail(t, "should not write 'CRITICAL:' to stderr", tt.name)
 			}
 		})
 	}
@@ -131,39 +115,18 @@ func TestLogClassifiedError_WithStructuredFields(t *testing.T) {
 	)
 
 	// Verify structured fields are properly set
-	if classifiedErr.Message != testMessage {
-		t.Errorf("Message = %q, want %q", classifiedErr.Message, testMessage)
-	}
-
-	if classifiedErr.FilePath != testFilePath {
-		t.Errorf("FilePath = %q, want %q", classifiedErr.FilePath, testFilePath)
-	}
-
-	if classifiedErr.Cause != testErr {
-		t.Errorf("Cause = %v, want %v", classifiedErr.Cause, testErr)
-	}
-
-	if classifiedErr.Component != "verification" {
-		t.Errorf("Component = %q, want %q", classifiedErr.Component, "verification")
-	}
-
-	if classifiedErr.Type != ErrorTypeConfigVerification {
-		t.Errorf("Type = %v, want %v", classifiedErr.Type, ErrorTypeConfigVerification)
-	}
-
-	if classifiedErr.Severity != ErrorSeverityCritical {
-		t.Errorf("Severity = %v, want %v", classifiedErr.Severity, ErrorSeverityCritical)
-	}
+	assert.Equal(t, testMessage, classifiedErr.Message)
+	assert.Equal(t, testFilePath, classifiedErr.FilePath)
+	assert.Equal(t, testErr, classifiedErr.Cause)
+	assert.Equal(t, "verification", classifiedErr.Component)
+	assert.Equal(t, ErrorTypeConfigVerification, classifiedErr.Type)
+	assert.Equal(t, ErrorSeverityCritical, classifiedErr.Severity)
 
 	// Verify timestamp is reasonable
 	now := time.Now()
-	if classifiedErr.Timestamp.After(now) {
-		t.Errorf("Timestamp %v is after current time %v", classifiedErr.Timestamp, now)
-	}
+	assert.False(t, classifiedErr.Timestamp.After(now), "Timestamp should not be after current time")
 
 	// Timestamp should be very recent (within last second)
 	diff := now.Sub(classifiedErr.Timestamp)
-	if diff > time.Second {
-		t.Errorf("Timestamp is too old: %v ago", diff)
-	}
+	assert.LessOrEqual(t, diff, time.Second, "Timestamp should not be more than 1 second ago")
 }

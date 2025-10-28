@@ -5,18 +5,16 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewSafeFileOpener_Success(t *testing.T) {
 	opener := NewSafeFileOpener()
 
-	if opener == nil {
-		t.Fatal("NewSafeFileOpener() returned nil")
-	}
-
-	if opener.fs == nil {
-		t.Error("NewSafeFileOpener() created opener with nil filesystem")
-	}
+	require.NotNil(t, opener)
+	assert.NotNil(t, opener.fs)
 }
 
 func TestOpenFile_Success(t *testing.T) {
@@ -52,25 +50,18 @@ func TestOpenFile_Success(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			file, err := opener.OpenFile(tt.filepath, tt.flag, tt.perm)
-			if err != nil {
-				t.Fatalf("OpenFile() error = %v", err)
-			}
+			require.NoError(t, err)
 			defer file.Close()
 
-			if file == nil {
-				t.Error("OpenFile() returned nil file")
-			}
+			assert.NotNil(t, file)
 
 			// Verify file was created
-			if _, err := os.Stat(tt.filepath); os.IsNotExist(err) {
-				t.Errorf("OpenFile() did not create file at %s", tt.filepath)
-			}
+			_, err = os.Stat(tt.filepath)
+			assert.NoError(t, err)
 
 			// Write some data to verify the file is writable
 			_, err = file.Write([]byte("test data\n"))
-			if err != nil {
-				t.Errorf("Failed to write to file: %v", err)
-			}
+			assert.NoError(t, err)
 		})
 	}
 }
@@ -85,9 +76,8 @@ func TestOpenFile_PermissionDenied(t *testing.T) {
 	readOnlyDir := filepath.Join(tempDir, "readonly")
 
 	// Create a read-only directory
-	if err := os.Mkdir(readOnlyDir, 0o444); err != nil {
-		t.Fatalf("Failed to create read-only directory: %v", err)
-	}
+	err := os.Mkdir(readOnlyDir, 0o444)
+	require.NoError(t, err)
 	defer os.Chmod(readOnlyDir, 0o755) // Restore permissions for cleanup
 
 	opener := NewSafeFileOpener()
@@ -99,7 +89,7 @@ func TestOpenFile_PermissionDenied(t *testing.T) {
 		if file != nil {
 			file.Close()
 		}
-		t.Error("OpenFile() expected error for read-only directory, got nil")
+		assert.Error(t, err, "OpenFile() expected error for read-only directory")
 	}
 }
 
@@ -109,15 +99,13 @@ func TestOpenFile_SymlinkAttack(t *testing.T) {
 
 	// Create a target file
 	targetFile := filepath.Join(tempDir, "target.txt")
-	if err := os.WriteFile(targetFile, []byte("original"), 0o644); err != nil {
-		t.Fatalf("Failed to create target file: %v", err)
-	}
+	err := os.WriteFile(targetFile, []byte("original"), 0o644)
+	require.NoError(t, err)
 
 	// Create a symlink
 	symlinkPath := filepath.Join(tempDir, "symlink.log")
-	if err := os.Symlink(targetFile, symlinkPath); err != nil {
-		t.Fatalf("Failed to create symlink: %v", err)
-	}
+	err = os.Symlink(targetFile, symlinkPath)
+	require.NoError(t, err)
 
 	// Try to open the symlink - should be rejected by safefileio
 	file, err := opener.OpenFile(symlinkPath, os.O_WRONLY, 0o600)
@@ -126,7 +114,7 @@ func TestOpenFile_SymlinkAttack(t *testing.T) {
 		if file != nil {
 			file.Close()
 		}
-		t.Error("OpenFile() should reject symlinks, but succeeded")
+		assert.Error(t, err, "OpenFile() should reject symlinks")
 	}
 }
 
@@ -138,36 +126,25 @@ func TestGenerateRunID_Uniqueness(t *testing.T) {
 	for i := 0; i < iterations; i++ {
 		id := GenerateRunID()
 
-		if id == "" {
-			t.Error("GenerateRunID() returned empty string")
-		}
-
-		if ids[id] {
-			t.Errorf("GenerateRunID() generated duplicate ID: %s", id)
-		}
+		assert.NotEmpty(t, id, "GenerateRunID() returned empty string")
+		assert.False(t, ids[id], "GenerateRunID() generated duplicate ID: %s", id)
 
 		ids[id] = true
 	}
 
-	if len(ids) != iterations {
-		t.Errorf("Expected %d unique IDs, got %d", iterations, len(ids))
-	}
+	assert.Equal(t, iterations, len(ids))
 }
 
 func TestGenerateRunID_Format(t *testing.T) {
 	id := GenerateRunID()
 
 	// ULID should be 26 characters
-	if len(id) != 26 {
-		t.Errorf("GenerateRunID() returned ID with length %d, expected 26", len(id))
-	}
+	assert.Equal(t, 26, len(id))
 
 	// ULID should only contain specific characters (Crockford's Base32)
 	validChars := "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 	for _, c := range id {
-		if !strings.ContainsRune(validChars, c) {
-			t.Errorf("GenerateRunID() returned ID with invalid character: %c", c)
-		}
+		assert.True(t, strings.ContainsRune(validChars, c), "GenerateRunID() returned ID with invalid character: %c", c)
 	}
 }
 
@@ -205,15 +182,12 @@ func TestValidateLogDir_Valid(t *testing.T) {
 			dir := tt.setupFunc(t)
 			err := ValidateLogDir(dir)
 
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ValidateLogDir() error = %v, wantErr %v", err, tt.wantErr)
-			}
+			assert.Equal(t, tt.wantErr, err != nil)
 
 			// Verify directory was created
 			if err == nil {
-				if _, err := os.Stat(dir); os.IsNotExist(err) {
-					t.Errorf("ValidateLogDir() did not create directory at %s", dir)
-				}
+				_, err := os.Stat(dir)
+				assert.NoError(t, err)
 			}
 		})
 	}
@@ -240,9 +214,7 @@ func TestValidateLogDir_NotExist(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := ValidateLogDir(tt.dir)
 
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ValidateLogDir() error = %v, wantErr %v", err, tt.wantErr)
-			}
+			assert.Equal(t, tt.wantErr, err != nil)
 
 			if err != nil && err != ErrEmptyLogDirectory {
 				t.Logf("ValidateLogDir() error = %v", err)
@@ -261,14 +233,11 @@ func TestValidateLogDir_NotWritable(t *testing.T) {
 	readOnlyDir := filepath.Join(tempDir, "readonly")
 
 	// Create a read-only directory
-	if err := os.Mkdir(readOnlyDir, 0o444); err != nil {
-		t.Fatalf("Failed to create read-only directory: %v", err)
-	}
+	err := os.Mkdir(readOnlyDir, 0o444)
+	require.NoError(t, err)
 	defer os.Chmod(readOnlyDir, 0o755) // Restore permissions for cleanup
 
-	err := ValidateLogDir(readOnlyDir)
+	err = ValidateLogDir(readOnlyDir)
 
-	if err == nil {
-		t.Error("ValidateLogDir() expected error for read-only directory, got nil")
-	}
+	assert.Error(t, err, "ValidateLogDir() expected error for read-only directory")
 }

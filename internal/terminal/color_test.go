@@ -2,6 +2,8 @@ package terminal
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestColorDetector_SupportsColor(t *testing.T) {
@@ -80,9 +82,8 @@ func TestColorDetector_SupportsColor(t *testing.T) {
 
 			detector := NewColorDetector()
 
-			if got := detector.SupportsColor(); got != tt.wantColor {
-				t.Errorf("SupportsColor() = %v, want %v. %s", got, tt.wantColor, tt.description)
-			}
+			got := detector.SupportsColor()
+			assert.Equal(t, tt.wantColor, got, "SupportsColor() = %v, want %v. %s", got, tt.wantColor, tt.description)
 		})
 	}
 }
@@ -114,9 +115,7 @@ func TestColorDetector_CommonTerminals(t *testing.T) {
 
 			detector := NewColorDetector()
 
-			if !detector.SupportsColor() {
-				t.Errorf("Terminal %s should support color but doesn't", terminal)
-			}
+			assert.True(t, detector.SupportsColor(), "Terminal %s should support color", terminal)
 		})
 	}
 }
@@ -137,9 +136,7 @@ func TestColorDetector_NonColorTerminals(t *testing.T) {
 
 			detector := NewColorDetector()
 
-			if detector.SupportsColor() {
-				t.Errorf("Terminal '%s' should not support color but does", tt.terminal)
-			}
+			assert.False(t, detector.SupportsColor(), "Terminal '%s' should not support color", tt.terminal)
 		})
 	}
 }
@@ -164,9 +161,8 @@ func TestColorDetector_CaseInsensitive(t *testing.T) {
 
 			detector := NewColorDetector()
 
-			if got := detector.SupportsColor(); got != tt.wantColor {
-				t.Errorf("SupportsColor() with TERM=%s = %v, want %v", tt.termValue, got, tt.wantColor)
-			}
+			got := detector.SupportsColor()
+			assert.Equal(t, tt.wantColor, got, "SupportsColor() with TERM=%s = %v, want %v", tt.termValue, got, tt.wantColor)
 		})
 	}
 }

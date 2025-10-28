@@ -1,12 +1,12 @@
-//go:build test
-
 package runnertypes
 
 import (
 	"encoding/json"
 	"errors"
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestSecurityViolationError_Error tests the Error() method without privilege escalation
@@ -21,21 +21,11 @@ func TestSecurityViolationError_Error(t *testing.T) {
 	}
 
 	msg := err.Error()
-	if !strings.Contains(msg, "security violation") {
-		t.Errorf("Error message should contain 'security violation', got: %s", msg)
-	}
-	if !strings.Contains(msg, "rm -rf /") {
-		t.Errorf("Error message should contain command, got: %s", msg)
-	}
-	if !strings.Contains(msg, "high") {
-		t.Errorf("Error message should contain risk level, got: %s", msg)
-	}
-	if !strings.Contains(msg, "allow_high_risk=true") {
-		t.Errorf("Error message should contain required setting, got: %s", msg)
-	}
-	if !strings.Contains(msg, "/bin/rm") {
-		t.Errorf("Error message should contain command path, got: %s", msg)
-	}
+	assert.Contains(t, msg, "security violation")
+	assert.Contains(t, msg, "rm -rf /")
+	assert.Contains(t, msg, "high")
+	assert.Contains(t, msg, "allow_high_risk=true")
+	assert.Contains(t, msg, "/bin/rm")
 }
 
 // TestSecurityViolationError_Error_WithPrivilegeEscalation tests the Error() method with privilege escalation
@@ -56,18 +46,10 @@ func TestSecurityViolationError_Error_WithPrivilegeEscalation(t *testing.T) {
 	}
 
 	msg := err.Error()
-	if !strings.Contains(msg, "privilege escalation detected") {
-		t.Errorf("Error message should contain 'privilege escalation detected', got: %s", msg)
-	}
-	if !strings.Contains(msg, "type: sudo") {
-		t.Errorf("Error message should contain escalation type, got: %s", msg)
-	}
-	if !strings.Contains(msg, "requires: [root]") {
-		t.Errorf("Error message should contain required privileges, got: %s", msg)
-	}
-	if !strings.Contains(msg, "escalation pattern: sudo prefix") {
-		t.Errorf("Error message should contain escalation pattern, got: %s", msg)
-	}
+	assert.Contains(t, msg, "privilege escalation detected")
+	assert.Contains(t, msg, "type: sudo")
+	assert.Contains(t, msg, "requires: [root]")
+	assert.Contains(t, msg, "escalation pattern: sudo prefix")
 }
 
 // TestSecurityViolationError_Error_WithPrivilegeEscalation_SamePattern tests when patterns are the same
@@ -88,17 +70,11 @@ func TestSecurityViolationError_Error_WithPrivilegeEscalation_SamePattern(t *tes
 	}
 
 	msg := err.Error()
-	if !strings.Contains(msg, "privilege escalation detected") {
-		t.Errorf("Error message should contain 'privilege escalation detected', got: %s", msg)
-	}
+	assert.Contains(t, msg, "privilege escalation detected")
 	// When patterns are the same, should not add "escalation pattern:"
-	if strings.Contains(msg, "escalation pattern:") {
-		t.Errorf("Error message should not contain 'escalation pattern:' when patterns are the same, got: %s", msg)
-	}
+	assert.NotContains(t, msg, "escalation pattern:", "should not contain 'escalation pattern:' when patterns are the same")
 	// Should contain "Risk pattern: sudo"
-	if !strings.Contains(msg, "Risk pattern: sudo") {
-		t.Errorf("Error message should contain 'Risk pattern: sudo', got: %s", msg)
-	}
+	assert.Contains(t, msg, "Risk pattern: sudo")
 }
 
 // TestSecurityViolationError_Is tests the Is() method
@@ -119,7 +95,7 @@ func TestSecurityViolationError_Is(t *testing.T) {
 
 	otherErr := errors.New("different error")
 	if errors.Is(err1, otherErr) {
-		t.Errorf("Is() should return false for non-SecurityViolationError")
+		assert.Fail(t, "Is() should return false for non-SecurityViolationError")
 	}
 }
 
@@ -131,7 +107,7 @@ func TestSecurityViolationError_Unwrap(t *testing.T) {
 	}
 
 	if err.Unwrap() != nil {
-		t.Errorf("Unwrap() should return nil")
+		assert.Nil(t, err.Unwrap())
 	}
 }
 
@@ -153,31 +129,18 @@ func TestSecurityViolationError_MarshalJSON(t *testing.T) {
 	}
 
 	data, jsonErr := json.Marshal(err)
-	if jsonErr != nil {
-		t.Fatalf("MarshalJSON() failed: %v", jsonErr)
-	}
+	require.NoError(t, jsonErr)
 
 	// Unmarshal to verify structure
 	var decoded SecurityViolationError
-	if unmarshalErr := json.Unmarshal(data, &decoded); unmarshalErr != nil {
-		t.Fatalf("Unmarshal failed: %v", unmarshalErr)
-	}
+	unmarshalErr := json.Unmarshal(data, &decoded)
+	require.NoError(t, unmarshalErr)
 
-	if decoded.Command != "test command" {
-		t.Errorf("Command = %q, want %q", decoded.Command, "test command")
-	}
-	if decoded.DetectedRisk != "high" {
-		t.Errorf("DetectedRisk = %q, want %q", decoded.DetectedRisk, "high")
-	}
-	if decoded.RunID != "run-123" {
-		t.Errorf("RunID = %q, want %q", decoded.RunID, "run-123")
-	}
-	if decoded.PrivilegeInfo == nil {
-		t.Fatal("PrivilegeInfo should not be nil")
-	}
-	if !decoded.PrivilegeInfo.IsPrivilegeEscalation {
-		t.Error("IsPrivilegeEscalation should be true")
-	}
+	assert.Equal(t, "test command", decoded.Command)
+	assert.Equal(t, "high", decoded.DetectedRisk)
+	assert.Equal(t, "run-123", decoded.RunID)
+	require.NotNil(t, decoded.PrivilegeInfo)
+	assert.True(t, decoded.PrivilegeInfo.IsPrivilegeEscalation)
 }
 
 // TestNewSecurityViolationError tests the constructor
@@ -199,30 +162,14 @@ func TestNewSecurityViolationError(t *testing.T) {
 		privilegeInfo,
 	)
 
-	if err == nil {
-		t.Fatal("NewSecurityViolationError() returned nil")
-	}
-	if err.Command != "test command" {
-		t.Errorf("Command = %q, want %q", err.Command, "test command")
-	}
-	if err.DetectedRisk != "high" {
-		t.Errorf("DetectedRisk = %q, want %q", err.DetectedRisk, "high")
-	}
-	if err.DetectedPattern != "pattern" {
-		t.Errorf("DetectedPattern = %q, want %q", err.DetectedPattern, "pattern")
-	}
-	if err.RequiredSetting != "setting" {
-		t.Errorf("RequiredSetting = %q, want %q", err.RequiredSetting, "setting")
-	}
-	if err.CommandPath != "/path/to/cmd" {
-		t.Errorf("CommandPath = %q, want %q", err.CommandPath, "/path/to/cmd")
-	}
-	if err.RunID != "run-123" {
-		t.Errorf("RunID = %q, want %q", err.RunID, "run-123")
-	}
-	if err.PrivilegeInfo != privilegeInfo {
-		t.Error("PrivilegeInfo not set correctly")
-	}
+	require.NotNil(t, err)
+	assert.Equal(t, "test command", err.Command)
+	assert.Equal(t, "high", err.DetectedRisk)
+	assert.Equal(t, "pattern", err.DetectedPattern)
+	assert.Equal(t, "setting", err.RequiredSetting)
+	assert.Equal(t, "/path/to/cmd", err.CommandPath)
+	assert.Equal(t, "run-123", err.RunID)
+	assert.Equal(t, privilegeInfo, err.PrivilegeInfo)
 }
 
 // TestNewSecurityViolationError_WithoutPrivilegeInfo tests constructor without privilege info
@@ -237,12 +184,8 @@ func TestNewSecurityViolationError_WithoutPrivilegeInfo(t *testing.T) {
 		nil,
 	)
 
-	if err == nil {
-		t.Fatal("NewSecurityViolationError() returned nil")
-	}
-	if err.PrivilegeInfo != nil {
-		t.Error("PrivilegeInfo should be nil")
-	}
+	require.NotNil(t, err)
+	assert.Nil(t, err.PrivilegeInfo)
 }
 
 // TestIsSecurityViolationError tests the helper function
@@ -286,9 +229,7 @@ func TestIsSecurityViolationError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := IsSecurityViolationError(tt.err)
-			if got != tt.want {
-				t.Errorf("IsSecurityViolationError() = %v, want %v", got, tt.want)
-			}
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
@@ -329,19 +270,11 @@ func TestAsSecurityViolationError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sve, ok := AsSecurityViolationError(tt.err)
-			if ok != tt.wantOk {
-				t.Errorf("AsSecurityViolationError() ok = %v, want %v", ok, tt.wantOk)
-			}
-			if (sve == nil) != tt.wantNil {
-				t.Errorf("AsSecurityViolationError() sve is nil = %v, want %v", sve == nil, tt.wantNil)
-			}
+			assert.Equal(t, tt.wantOk, ok)
+			assert.Equal(t, tt.wantNil, sve == nil)
 			if tt.checkData && sve != nil {
-				if sve.Command != "test" {
-					t.Errorf("Command = %q, want %q", sve.Command, "test")
-				}
-				if sve.DetectedRisk != "high" {
-					t.Errorf("DetectedRisk = %q, want %q", sve.DetectedRisk, "high")
-				}
+				assert.Equal(t, "test", sve.Command)
+				assert.Equal(t, "high", sve.DetectedRisk)
 			}
 		})
 	}
