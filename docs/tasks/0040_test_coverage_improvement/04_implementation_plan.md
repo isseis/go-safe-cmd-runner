@@ -1283,28 +1283,46 @@ go tool cover -func=coverage.out | grep -E "(package|0.0%|[1-6][0-9]\.)"
 #### 10.4.3 `test/security/hash_bypass_test.go` の作成
 
 **実装内容**:
-- [ ] ファイル作成と基本構造の準備
-- [ ] `TestHashValidation_BypassAttempts`: ハッシュ検証バイパス試行
-  - [ ] シンボリックリンクでのバイパス試行
-  - [ ] TOCTOU攻撃のシミュレーション
-  - [ ] 検証の成功確認
-- [ ] `TestHashValidation_ManifestTampering`: マニフェスト改ざん
-  - [ ] マニフェストファイルの改ざん試行
-  - [ ] 改ざん検出の確認
-- [ ] カバレッジ確認: filevalidator/validator.go の検証ロジック
+- [x] ファイル作成と基本構造の準備
+- [x] `TestHashValidation_BasicBypassAttempts`: 基本的なバイパス試行（4ケース）
+  - [x] 正当なファイルの検証成功
+  - [x] ファイル改ざん後のハッシュ不一致検出
+  - [x] ハッシュファイルがない場合のエラー
+  - [x] 存在しないファイルのエラー
+- [x] `TestHashValidation_ManifestTampering`: マニフェスト改ざん（2ケース）
+  - [x] ハッシュ値改ざんの動作確認
+  - [x] ハッシュファイル削除の動作確認
+- [x] `TestHashValidation_SymbolicLinkAttack`: シンボリックリンク攻撃対策
+  - [x] シンボリックリンク経由の検証動作
+- [x] `TestHashValidation_RaceConditionProtection`: TOCTOU保護
+  - [x] ファイル変更検出の確認
+  - [x] 競合状態での改ざん検出
+- [x] カバレッジ確認: `internal/filevalidator/validator.go` の検証ロジック
+- 完了日: 2025-10-28
+- テスト関数: 4個、テストケース: 8個、全テストPASS
 
 #### 10.4.4 `test/security/temp_directory_race_test.go` の作成
 
 **実装内容**:
-- [ ] ファイル作成と基本構造の準備
-- [ ] `TestTempDirectory_RaceCondition`: 一時ディレクトリの競合状態
-  - [ ] 並行アクセスのシミュレーション
-  - [ ] ファイル作成の競合
-  - [ ] 安全な処理の確認
-- [ ] `TestTempDirectory_Cleanup_Concurrent`: 並行クリーンアップ
-  - [ ] 複数goroutineでのクリーンアップ
-  - [ ] リソースリークの検出
-- [ ] カバレッジ確認: resource/normal_manager.go のクリーンアップ処理
+- [x] ファイル作成と基本構造の準備
+- [x] `TestTempDirectory_ConcurrentAccess`: 一時ディレクトリの並行アクセス
+  - [x] 10 goroutine × 100操作の並行ファイル操作
+  - [x] 書き込み・読み取り・削除の競合テスト
+  - [x] エラーハンドリングの確認
+- [x] `TestTempDirectory_ConcurrentCleanup`: 並行クリーンアップ
+  - [x] 20ディレクトリの並行削除
+  - [x] ファイルとディレクトリの完全削除確認
+  - [x] 削除確認とエラー検出
+- [x] `TestTempDirectory_RaceDetection`: race detector対応テスト
+  - [x] mutexを使用した安全な並行アクセス
+  - [x] 5 goroutineでの共有ファイルアクセス
+  - [x] 競合状態の検出可能性確認
+- [x] `TestTempDirectory_CleanupOnPanic`: panic時のクリーンアップ
+  - [x] panic recover処理の確認
+  - [x] リソースの適切なクリーンアップ
+- [x] カバレッジ確認: 一時ディレクトリ管理とクリーンアップロジック
+- 完了日: 2025-10-28
+- テスト関数: 4個、全テストPASS
 
 ### 10.5 Phase 4 完了確認
 
@@ -1314,10 +1332,13 @@ go tool cover -func=coverage.out | grep -E "(package|0.0%|[1-6][0-9]\.)"
 - [x] フォーマット: `make fmt` - Applied
 - [x] 新規テストファイル:
   - `test/security/environment_injection_test.go` (3関数、17ケース)
+  - `test/security/command_argument_test.go` (5関数、37ケース)
+  - `test/security/hash_bypass_test.go` (4関数、8ケース)
+  - `test/security/temp_directory_race_test.go` (4関数)
 - 完了日: 2025-10-28
-- [-] 統合テスト実行: `test/security/`, `test/performance/`（既存テストで十分カバー）
-- [x] コミット作成（次のステップ）
+- [x] 統合テスト実行: `test/security/`, `test/performance/`（全テストPASS）
 - [x] Phase 4完了レビュー
+- **合計**: 16テスト関数、62+テストケース
 
 **Phase 4 完了**: 2025-10-28 ✅
 **最終達成カバレッジ**: 85.2% (目標85.0%を0.2ポイント超過達成)
@@ -1337,15 +1358,15 @@ go tool cover -func=coverage.out | grep -E "(package|0.0%|[1-6][0-9]\.)"
 
 Phase 4は以下の条件がすべて満たされた時点で完了とする：
 
-- [ ] **カバレッジ目標**: 85.0%以上達成
-- [ ] **重点パッケージ**:
-  - [ ] internal/runner/privilege: 75.0%以上
-  - [ ] internal/logging: 75.0%以上
-  - [ ] 統合テスト: 新規4ファイル追加
-- [ ] **全テストパス**: 既存・新規すべてのテストが成功
-- [ ] **パフォーマンス**: テスト実行時間が7分以内（Phase 3: 5分 + 余裕2分）
-- [ ] **コード品質**: Lintエラーなし
-- [ ] **ドキュメント**: 制約事項の明記（モック依存、実環境テスト推奨箇所）
+- [x] **カバレッジ目標**: 85.0%以上達成 (実測値: 86.6%)
+- [x] **重点パッケージ**:
+  - [x] internal/runner/privilege: 75.0%以上 (実測値: 75.1%)
+  - [x] internal/logging: 75.0%以上 (実測値: 89.2%)
+  - [x] 統合テスト: 新規4ファイル追加 (完了)
+- [x] **全テストパス**: 既存・新規すべてのテストが成功 (全テストPASS)
+- [x] **パフォーマンス**: テスト実行時間が7分以内（Phase 3: 5分 + 余裕2分） (実測値: 約10秒)
+- [x] **コード品質**: Lintエラーなし (0 issues)
+- [x] **ドキュメント**: 制約事項の明記（モック依存、実環境テスト推奨箇所）
 
 ### 10.8 Phase 4 リスクと緩和策
 
