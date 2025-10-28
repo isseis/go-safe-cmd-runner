@@ -2,16 +2,15 @@ package logging
 
 import (
 	"log/slog"
-	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestNewDefaultMessageFormatter(t *testing.T) {
 	formatter := NewDefaultMessageFormatter()
-	if formatter == nil {
-		t.Error("NewDefaultMessageFormatter should return a non-nil instance")
-	}
+	assert.NotNil(t, formatter, "NewDefaultMessageFormatter should return a non-nil instance")
 }
 
 func TestDefaultMessageFormatter_FormatRecordWithColor(t *testing.T) {
@@ -87,9 +86,7 @@ func TestDefaultMessageFormatter_FormatRecordWithColor(t *testing.T) {
 				}
 			}
 
-			if !found {
-				t.Errorf("FormatRecordWithColor() = %q, expected one of %v", result, tt.expecteds)
-			}
+			assert.True(t, found, "FormatRecordWithColor() = %q, expected one of %v", result, tt.expecteds)
 		})
 	}
 }
@@ -107,21 +104,11 @@ func TestDefaultMessageFormatter_FormatRecordWithAttributes(t *testing.T) {
 	result := formatter.FormatRecordWithColor(record, false)
 
 	// Check that the result contains the timestamp, level, message, and attributes
-	if !strings.Contains(result, "2024-01-01 12:00:00") {
-		t.Error("Result should contain timestamp")
-	}
-	if !strings.Contains(result, "[INFO ]") {
-		t.Error("Result should contain level")
-	}
-	if !strings.Contains(result, "test message") {
-		t.Error("Result should contain message")
-	}
-	if !strings.Contains(result, "key1=value1") {
-		t.Error("Result should contain first attribute")
-	}
-	if !strings.Contains(result, "key2=42") {
-		t.Error("Result should contain second attribute")
-	}
+	assert.Contains(t, result, "2024-01-01 12:00:00", "Result should contain timestamp")
+	assert.Contains(t, result, "[INFO ]", "Result should contain level")
+	assert.Contains(t, result, "test message", "Result should contain message")
+	assert.Contains(t, result, "key1=value1", "Result should contain first attribute")
+	assert.Contains(t, result, "key2=42", "Result should contain second attribute")
 }
 
 func TestDefaultMessageFormatter_FormatRecordInteractive(t *testing.T) {
@@ -178,9 +165,7 @@ func TestDefaultMessageFormatter_FormatRecordInteractive(t *testing.T) {
 					break
 				}
 			}
-			if !found {
-				t.Errorf("FormatRecordInteractive() = %q, expected one of %v", result, tt.expecteds)
-			}
+			assert.True(t, found, "FormatRecordInteractive() = %q, expected one of %v", result, tt.expecteds)
 		})
 	}
 }
@@ -223,9 +208,7 @@ func TestDefaultMessageFormatter_FormatLogFileHint(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := formatter.FormatLogFileHint(tt.lineNumber, tt.useColor)
-			if result != tt.expected {
-				t.Errorf("FormatLogFileHint() = %q, expected %q", result, tt.expected)
-			}
+			assert.Equal(t, tt.expected, result, "FormatLogFileHint() should match expected value")
 		})
 	}
 }
@@ -252,9 +235,7 @@ func TestDefaultMessageFormatter_FormatLevel(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := formatter.formatLevel(tt.level, tt.useColor)
-			if result != tt.expected {
-				t.Errorf("formatLevel() = %q, expected %q", result, tt.expected)
-			}
+			assert.Equal(t, tt.expected, result, "formatLevel() should match expected value")
 		})
 	}
 }
@@ -306,9 +287,7 @@ func TestDefaultMessageFormatter_FormatValue(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := formatter.formatValue(tt.value)
-			if result != tt.expected {
-				t.Errorf("formatValue() = %q, expected %q", result, tt.expected)
-			}
+			assert.Equal(t, tt.expected, result, "formatValue() should match expected value")
 		})
 	}
 }
@@ -322,15 +301,11 @@ func TestMessageFormatter_Interface(t *testing.T) {
 
 	// Test interface methods
 	result := formatter.FormatRecordWithColor(record, false)
-	if result == "" {
-		t.Error("FormatRecordWithColor should return non-empty string")
-	}
+	assert.NotEmpty(t, result, "FormatRecordWithColor should return non-empty string")
 
 	hint := formatter.FormatLogFileHint(10, false)
 	expected := "HINT: Check log file around line 10 for more details"
-	if hint != expected {
-		t.Errorf("FormatLogFileHint() = %q, expected %q", hint, expected)
-	}
+	assert.Equal(t, expected, hint, "FormatLogFileHint() should match expected value")
 }
 
 func TestDefaultMessageFormatter_CustomLevel(t *testing.T) {
@@ -345,12 +320,8 @@ func TestDefaultMessageFormatter_CustomLevel(t *testing.T) {
 	resultWithoutColor := formatter.FormatRecordWithColor(record, false)
 
 	// Should handle custom levels gracefully
-	if !strings.Contains(resultWithColor, "custom message") {
-		t.Error("Should contain the message for custom levels")
-	}
-	if !strings.Contains(resultWithoutColor, "custom message") {
-		t.Error("Should contain the message for custom levels")
-	}
+	assert.Contains(t, resultWithColor, "custom message", "Should contain the message for custom levels")
+	assert.Contains(t, resultWithoutColor, "custom message", "Should contain the message for custom levels")
 }
 
 func TestShouldSkipInteractiveAttr_True(t *testing.T) {
@@ -376,9 +347,7 @@ func TestShouldSkipInteractiveAttr_True(t *testing.T) {
 
 	for _, attr := range skipAttrs {
 		t.Run(attr, func(t *testing.T) {
-			if !formatter.shouldSkipInteractiveAttr(attr) {
-				t.Errorf("shouldSkipInteractiveAttr(%q) = false, want true", attr)
-			}
+			assert.True(t, formatter.shouldSkipInteractiveAttr(attr), "shouldSkipInteractiveAttr(%q) should return true", attr)
 		})
 	}
 }
@@ -400,9 +369,7 @@ func TestShouldSkipInteractiveAttr_False(t *testing.T) {
 
 	for _, attr := range keepAttrs {
 		t.Run(attr, func(t *testing.T) {
-			if formatter.shouldSkipInteractiveAttr(attr) {
-				t.Errorf("shouldSkipInteractiveAttr(%q) = true, want false", attr)
-			}
+			assert.False(t, formatter.shouldSkipInteractiveAttr(attr), "shouldSkipInteractiveAttr(%q) should return false", attr)
 		})
 	}
 }
