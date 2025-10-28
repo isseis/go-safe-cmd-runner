@@ -2,7 +2,9 @@ package security
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
@@ -130,5 +132,44 @@ func NewValidatorWithFSAndGroupMembership(config *Config, fs common.FileSystem, 
 		v.shellCommands[cmd] = struct{}{}
 	}
 
+	// Validate DangerousRootPatterns to ensure exact matching
+	if err := validateDangerousRootPatterns(config.DangerousRootPatterns); err != nil {
+		return nil, err
+	}
+
 	return v, nil
+}
+
+// validateDangerousRootPatterns validates that DangerousRootPatterns entries are suitable for exact matching.
+// It checks that patterns don't contain path separators or wildcards that would indicate they're meant
+// for substring or regex matching rather than exact command name matching.
+func validateDangerousRootPatterns(patterns []string) error {
+	for _, pattern := range patterns {
+		// Check for empty patterns
+		if pattern == "" {
+			return fmt.Errorf("%w: DangerousRootPatterns contains empty pattern", ErrInvalidRegexPattern)
+		}
+
+		// Check for path separators (patterns should be command names only, not paths)
+		if strings.Contains(pattern, "/") || strings.Contains(pattern, "\\") {
+			return fmt.Errorf("%w: DangerousRootPatterns pattern %q contains path separator (use command name only)", ErrInvalidRegexPattern, pattern)
+		}
+
+		// Check for wildcard characters that suggest regex/glob usage
+		// Note: dot (.) is allowed as it's valid in command names (e.g., update-rc.d)
+		if strings.ContainsAny(pattern, "*?[]{}()^$|+") {
+			return fmt.Errorf("%w: DangerousRootPatterns pattern %q contains wildcard/regex characters (exact matching only)", ErrInvalidRegexPattern, pattern)
+		}
+
+		// Warn about uppercase patterns (commands are normalized to lowercase)
+		if pattern != strings.ToLower(pattern) {
+			return fmt.Errorf("%w: DangerousRootPatterns pattern %q contains uppercase (patterns are matched case-insensitively, use lowercase)", ErrInvalidRegexPattern, pattern)
+		}
+
+		// Check that pattern is a valid filename (no control characters, etc.)
+		if filepath.Base(pattern) != pattern {
+			return fmt.Errorf("%w: DangerousRootPatterns pattern %q is not a valid command name", ErrInvalidRegexPattern, pattern)
+		}
+	}
+	return nil
 }

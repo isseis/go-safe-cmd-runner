@@ -176,8 +176,24 @@ func (v *Validator) HasShellMetacharacters(args []string) bool {
 	return false
 }
 
-// IsDangerousRootCommand checks if a command matches dangerous patterns when running as root
-// Uses exact command name matching to avoid false positives from substring matches
+// IsDangerousRootCommand checks if a command matches dangerous patterns when running as root.
+//
+// This function uses exact command name matching (after extracting the basename and converting
+// to lowercase) to determine if a command is in the dangerous patterns list. This ensures that
+// commands like "lsrm" are not incorrectly flagged just because they contain "rm" as a substring.
+//
+// Matching behavior:
+//   - Extracts the basename from the command path (e.g., "/bin/rm" -> "rm")
+//   - Converts to lowercase for case-insensitive comparison
+//   - Performs exact match against DangerousRootPatterns list
+//
+// Examples:
+//   - "/bin/rm" matches if DangerousRootPatterns contains "rm"
+//   - "/usr/bin/lsrm" does NOT match even if DangerousRootPatterns contains "rm"
+//   - "RM" matches if DangerousRootPatterns contains "rm" (case-insensitive)
+//
+// The DangerousRootPatterns list is validated at validator creation time to ensure
+// all entries are suitable for exact matching (no paths, wildcards, or regex patterns).
 func (v *Validator) IsDangerousRootCommand(cmdPath string) bool {
 	cmdBase := filepath.Base(cmdPath)
 	cmdLower := strings.ToLower(cmdBase)
