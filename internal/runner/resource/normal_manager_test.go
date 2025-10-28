@@ -142,7 +142,16 @@ var (
 
 // Test helper functions
 
-func createTestNormalResourceManager() (*NormalResourceManager, *executortesting.MockExecutor, *MockFileSystem, *MockPrivilegeManager, *MockCaptureManager) {
+// testResourceManagerFixture holds all mocks and the manager for testing
+type testResourceManagerFixture struct {
+	Manager       *NormalResourceManager
+	MockExec      *executortesting.MockExecutor
+	MockFS        *MockFileSystem
+	MockPriv      *MockPrivilegeManager
+	MockOutputMgr *MockCaptureManager
+}
+
+func createTestNormalResourceManager() *testResourceManagerFixture {
 	mockExec := executortesting.NewMockExecutor()
 	mockFS := &MockFileSystem{}
 	mockPriv := &MockPrivilegeManager{}
@@ -150,7 +159,13 @@ func createTestNormalResourceManager() (*NormalResourceManager, *executortesting
 
 	manager := NewNormalResourceManagerWithOutput(mockExec, mockFS, mockPriv, mockOutputMgr, 1024*1024, slog.Default())
 
-	return manager, mockExec, mockFS, mockPriv, mockOutputMgr
+	return &testResourceManagerFixture{
+		Manager:       manager,
+		MockExec:      mockExec,
+		MockFS:        mockFS,
+		MockPriv:      mockPriv,
+		MockOutputMgr: mockOutputMgr,
+	}
 }
 
 func createTestCommand() *runnertypes.RuntimeCommand {
@@ -204,7 +219,7 @@ func createRuntimeCommand(spec *runnertypes.CommandSpec) *runnertypes.RuntimeCom
 // Tests for Normal Resource Manager
 
 func TestNormalResourceManager_ExecuteCommand(t *testing.T) {
-	manager, mockExec, _, _, _ := createTestNormalResourceManager()
+	f := createTestNormalResourceManager()
 	cmd := createTestCommand()
 	group := createTestCommandGroup()
 	env := map[string]string{"TEST": "value"}
@@ -216,9 +231,9 @@ func TestNormalResourceManager_ExecuteCommand(t *testing.T) {
 		Stderr:   "",
 	}
 
-	mockExec.On("Execute", ctx, cmd, env, mock.Anything).Return(expectedResult, nil)
+	f.MockExec.On("Execute", ctx, cmd, env, mock.Anything).Return(expectedResult, nil)
 
-	result, err := manager.ExecuteCommand(ctx, cmd, group, env)
+	result, err := f.Manager.ExecuteCommand(ctx, cmd, group, env)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
@@ -228,11 +243,11 @@ func TestNormalResourceManager_ExecuteCommand(t *testing.T) {
 	assert.False(t, result.DryRun)
 	assert.Nil(t, result.Analysis)
 
-	mockExec.AssertExpectations(t)
+	f.MockExec.AssertExpectations(t)
 }
 
 func TestNormalResourceManager_ExecuteCommand_PrivilegeEscalationBlocked(t *testing.T) {
-	manager, _, _, _, _ := createTestNormalResourceManager()
+	f := createTestNormalResourceManager()
 
 	// Test various privilege escalation commands
 	testCases := []struct {
@@ -272,7 +287,7 @@ func TestNormalResourceManager_ExecuteCommand_PrivilegeEscalationBlocked(t *test
 			env := map[string]string{"TEST": "value"}
 			ctx := context.Background()
 
-			result, err := manager.ExecuteCommand(ctx, cmd, group, env)
+			result, err := f.Manager.ExecuteCommand(ctx, cmd, group, env)
 
 			assert.Error(t, err)
 			assert.Nil(t, result)
@@ -283,7 +298,7 @@ func TestNormalResourceManager_ExecuteCommand_PrivilegeEscalationBlocked(t *test
 }
 
 func TestNormalResourceManager_ExecuteCommand_MaxRiskLevelControl(t *testing.T) {
-	manager, mockExec, _, _, _ := createTestNormalResourceManager()
+	f := createTestNormalResourceManager()
 	group := createTestCommandGroup()
 	env := map[string]string{"TEST": "value"}
 	ctx := context.Background()
@@ -368,10 +383,10 @@ func TestNormalResourceManager_ExecuteCommand_MaxRiskLevelControl(t *testing.T) 
 					Stdout:   "success",
 					Stderr:   "",
 				}
-				mockExec.On("Execute", ctx, cmd, env, mock.Anything).Return(expectedResult, nil).Once()
+				f.MockExec.On("Execute", ctx, cmd, env, mock.Anything).Return(expectedResult, nil).Once()
 			}
 
-			result, err := manager.ExecuteCommand(ctx, cmd, group, env)
+			result, err := f.Manager.ExecuteCommand(ctx, cmd, group, env)
 
 			if tc.shouldExecute {
 				assert.NoError(t, err)
@@ -386,54 +401,54 @@ func TestNormalResourceManager_ExecuteCommand_MaxRiskLevelControl(t *testing.T) 
 		})
 	}
 
-	mockExec.AssertExpectations(t)
+	f.MockExec.AssertExpectations(t)
 }
 
 func TestNormalResourceManager_CreateTempDir(t *testing.T) {
-	manager, _, mockFS, _, _ := createTestNormalResourceManager()
+	f := createTestNormalResourceManager()
 	groupName := "test-group"
 	expectedPath := testTempPath
 
-	mockFS.On("CreateTempDir", "", fmt.Sprintf("scr-%s-", groupName)).Return(expectedPath, nil)
+	f.MockFS.On("CreateTempDir", "", fmt.Sprintf("scr-%s-", groupName)).Return(expectedPath, nil)
 
-	path, err := manager.CreateTempDir(groupName)
+	path, err := f.Manager.CreateTempDir(groupName)
 
 	assert.NoError(t, err)
 	assert.Equal(t, expectedPath, path)
 
 	// Check that path is tracked
-	manager.mu.RLock()
-	assert.Contains(t, manager.tempDirs, expectedPath)
-	manager.mu.RUnlock()
+	f.Manager.mu.RLock()
+	assert.Contains(t, f.Manager.tempDirs, expectedPath)
+	f.Manager.mu.RUnlock()
 
-	mockFS.AssertExpectations(t)
+	f.MockFS.AssertExpectations(t)
 }
 
 func TestNormalResourceManager_CleanupTempDir(t *testing.T) {
-	manager, _, mockFS, _, _ := createTestNormalResourceManager()
+	f := createTestNormalResourceManager()
 	tempPath := testTempPath
 
 	// Add path to tracking
-	manager.mu.Lock()
-	manager.tempDirs = append(manager.tempDirs, tempPath)
-	manager.mu.Unlock()
+	f.Manager.mu.Lock()
+	f.Manager.tempDirs = append(f.Manager.tempDirs, tempPath)
+	f.Manager.mu.Unlock()
 
-	mockFS.On("RemoveAll", tempPath).Return(nil)
+	f.MockFS.On("RemoveAll", tempPath).Return(nil)
 
-	err := manager.CleanupTempDir(tempPath)
+	err := f.Manager.CleanupTempDir(tempPath)
 
 	assert.NoError(t, err)
 
 	// Check that path is no longer tracked
-	manager.mu.RLock()
-	assert.NotContains(t, manager.tempDirs, tempPath)
-	manager.mu.RUnlock()
+	f.Manager.mu.RLock()
+	assert.NotContains(t, f.Manager.tempDirs, tempPath)
+	f.Manager.mu.RUnlock()
 
-	mockFS.AssertExpectations(t)
+	f.MockFS.AssertExpectations(t)
 }
 
 func TestNormalResourceManager_WithPrivileges(t *testing.T) {
-	manager, _, _, mockPriv, _ := createTestNormalResourceManager()
+	f := createTestNormalResourceManager()
 	ctx := context.Background()
 
 	called := false
@@ -442,32 +457,32 @@ func TestNormalResourceManager_WithPrivileges(t *testing.T) {
 		return nil
 	}
 
-	mockPriv.On("WithPrivileges", mock.AnythingOfType("runnertypes.ElevationContext"), mock.AnythingOfType("func() error")).Return(nil).Run(func(args mock.Arguments) {
+	f.MockPriv.On("WithPrivileges", mock.AnythingOfType("runnertypes.ElevationContext"), mock.AnythingOfType("func() error")).Return(nil).Run(func(args mock.Arguments) {
 		// Call the provided function
 		fnArg := args.Get(1).(func() error)
 		fnArg()
 	})
 
-	err := manager.WithPrivileges(ctx, fn)
+	err := f.Manager.WithPrivileges(ctx, fn)
 
 	assert.NoError(t, err)
 	assert.True(t, called)
 
-	mockPriv.AssertExpectations(t)
+	f.MockPriv.AssertExpectations(t)
 }
 
 func TestNormalResourceManager_SendNotification(t *testing.T) {
-	manager, _, _, _, _ := createTestNormalResourceManager()
+	f := createTestNormalResourceManager()
 	message := "Test notification"
 	details := map[string]any{"key": "value"}
 
-	err := manager.SendNotification(message, details)
+	err := f.Manager.SendNotification(message, details)
 
 	assert.NoError(t, err)
 }
 
 func TestNormalResourceManager_ValidateOutputPath_PathTraversal(t *testing.T) {
-	manager, _, _, _, mockOutputMgr := createTestNormalResourceManager()
+	f := createTestNormalResourceManager()
 	workDir := "/tmp/workdir"
 
 	tests := []struct {
@@ -503,12 +518,12 @@ func TestNormalResourceManager_ValidateOutputPath_PathTraversal(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup mock expectations based on test case
 			if tt.expectError && tt.errorType != nil {
-				mockOutputMgr.On("ValidateOutputPath", tt.outputPath, tt.workDir).Return(tt.errorType).Once()
+				f.MockOutputMgr.On("ValidateOutputPath", tt.outputPath, tt.workDir).Return(tt.errorType).Once()
 			} else if !tt.expectError {
-				mockOutputMgr.On("ValidateOutputPath", tt.outputPath, tt.workDir).Return(nil).Once()
+				f.MockOutputMgr.On("ValidateOutputPath", tt.outputPath, tt.workDir).Return(nil).Once()
 			}
 
-			err := manager.ValidateOutputPath(tt.outputPath, tt.workDir)
+			err := f.Manager.ValidateOutputPath(tt.outputPath, tt.workDir)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -519,7 +534,7 @@ func TestNormalResourceManager_ValidateOutputPath_PathTraversal(t *testing.T) {
 				assert.NoError(t, err)
 			}
 
-			mockOutputMgr.AssertExpectations(t)
+			f.MockOutputMgr.AssertExpectations(t)
 		})
 	}
 }
@@ -529,7 +544,7 @@ func TestNormalResourceManager_ValidateOutputPath_SymlinkAttack(t *testing.T) {
 }
 
 func TestNormalResourceManager_ValidateOutputPath_AbsolutePath(t *testing.T) {
-	manager, _, _, _, mockOutputMgr := createTestNormalResourceManager()
+	f := createTestNormalResourceManager()
 	workDir := "/tmp/workdir"
 
 	tests := []struct {
@@ -558,12 +573,12 @@ func TestNormalResourceManager_ValidateOutputPath_AbsolutePath(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup mock expectations based on test case
 			if tt.expectError {
-				mockOutputMgr.On("ValidateOutputPath", tt.outputPath, workDir).Return(output.ErrDangerousCharactersInPath).Once()
+				f.MockOutputMgr.On("ValidateOutputPath", tt.outputPath, workDir).Return(output.ErrDangerousCharactersInPath).Once()
 			} else {
-				mockOutputMgr.On("ValidateOutputPath", tt.outputPath, workDir).Return(nil).Once()
+				f.MockOutputMgr.On("ValidateOutputPath", tt.outputPath, workDir).Return(nil).Once()
 			}
 
-			err := manager.ValidateOutputPath(tt.outputPath, workDir)
+			err := f.Manager.ValidateOutputPath(tt.outputPath, workDir)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -571,13 +586,13 @@ func TestNormalResourceManager_ValidateOutputPath_AbsolutePath(t *testing.T) {
 				assert.NoError(t, err)
 			}
 
-			mockOutputMgr.AssertExpectations(t)
+			f.MockOutputMgr.AssertExpectations(t)
 		})
 	}
 }
 
 func TestNormalResourceManager_ValidateOutputPath_RelativePath(t *testing.T) {
-	manager, _, _, _, mockOutputMgr := createTestNormalResourceManager()
+	f := createTestNormalResourceManager()
 	workDir := "/tmp/workdir"
 
 	tests := []struct {
@@ -624,13 +639,13 @@ func TestNormalResourceManager_ValidateOutputPath_RelativePath(t *testing.T) {
 			// Empty path returns early without calling outputManager
 			if tt.outputPath != "" {
 				if tt.expectError {
-					mockOutputMgr.On("ValidateOutputPath", tt.outputPath, tt.workDir).Return(output.ErrWorkDirRequired).Once()
+					f.MockOutputMgr.On("ValidateOutputPath", tt.outputPath, tt.workDir).Return(output.ErrWorkDirRequired).Once()
 				} else {
-					mockOutputMgr.On("ValidateOutputPath", tt.outputPath, tt.workDir).Return(nil).Once()
+					f.MockOutputMgr.On("ValidateOutputPath", tt.outputPath, tt.workDir).Return(nil).Once()
 				}
 			}
 
-			err := manager.ValidateOutputPath(tt.outputPath, tt.workDir)
+			err := f.Manager.ValidateOutputPath(tt.outputPath, tt.workDir)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -638,7 +653,7 @@ func TestNormalResourceManager_ValidateOutputPath_RelativePath(t *testing.T) {
 				assert.NoError(t, err)
 			}
 
-			mockOutputMgr.AssertExpectations(t)
+			f.MockOutputMgr.AssertExpectations(t)
 		})
 	}
 }
