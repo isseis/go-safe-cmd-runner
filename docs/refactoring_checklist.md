@@ -61,21 +61,21 @@
     - [x] L54: `t.Error("InitializeVerificationManager() should return nil manager on error")`
     - [x] L58: `t.Error("InitializeVerificationManager() should return a manager on success")`
 
-- [ ] internal/runner/cli/output_test.go (10 calls)
-  - [ ] TestParseDryRunDetailLevel_InvalidLevel
-    - [ ] L69: `t.Errorf("ParseDryRunDetailLevel(%q) error = nil, want error", tt.input)`
-    - [ ] L72: `t.Errorf("ParseDryRunDetailLevel(%q) error = %v, want ErrInvalidDetailLevel", tt.input, err)`
-    - [ ] L76: `t.Errorf("ParseDryRunDetailLevel(%q) = %v, want %v (default)", tt.input, got, resource.DetailLevelSummary)`
-  - [ ] TestParseDryRunDetailLevel_ValidLevels
-    - [ ] L37: `t.Errorf("ParseDryRunDetailLevel(%q) error = %v, want nil", tt.input, err)`
-    - [ ] L40: `t.Errorf("ParseDryRunDetailLevel(%q) = %v, want %v", tt.input, got, tt.want)`
-  - [ ] TestParseDryRunOutputFormat_InvalidFormat
-    - [ ] L136: `t.Errorf("ParseDryRunOutputFormat(%q) error = nil, want error", tt.input)`
-    - [ ] L139: `t.Errorf("ParseDryRunOutputFormat(%q) error = %v, want ErrInvalidOutputFormat", tt.input, err)`
-    - [ ] L143: `t.Errorf("ParseDryRunOutputFormat(%q) = %v, want %v (default)", tt.input, got, resource.OutputFormatText)`
-  - [ ] TestParseDryRunOutputFormat_ValidFormats
-    - [ ] L104: `t.Errorf("ParseDryRunOutputFormat(%q) error = %v, want nil", tt.input, err)`
-    - [ ] L107: `t.Errorf("ParseDryRunOutputFormat(%q) = %v, want %v", tt.input, got, tt.want)`
+- [x] internal/runner/cli/output_test.go (10 calls)
+  - [x] TestParseDryRunDetailLevel_InvalidLevel
+    - [x] L69: `t.Errorf("ParseDryRunDetailLevel(%q) error = nil, want error", tt.input)`
+    - [x] L72: `t.Errorf("ParseDryRunDetailLevel(%q) error = %v, want ErrInvalidDetailLevel", tt.input, err)`
+    - [x] L76: `t.Errorf("ParseDryRunDetailLevel(%q) = %v, want %v (default)", tt.input, got, resource.DetailLevelSummary)`
+  - [x] TestParseDryRunDetailLevel_ValidLevels
+    - [x] L37: `t.Errorf("ParseDryRunDetailLevel(%q) error = %v, want nil", tt.input, err)`
+    - [x] L40: `t.Errorf("ParseDryRunDetailLevel(%q) = %v, want %v", tt.input, got, tt.want)`
+  - [x] TestParseDryRunOutputFormat_InvalidFormat
+    - [x] L136: `t.Errorf("ParseDryRunOutputFormat(%q) error = nil, want error", tt.input)`
+    - [x] L139: `t.Errorf("ParseDryRunOutputFormat(%q) error = %v, want ErrInvalidOutputFormat", tt.input, err)`
+    - [x] L143: `t.Errorf("ParseDryRunOutputFormat(%q) = %v, want %v (default)", tt.input, got, resource.OutputFormatText)`
+  - [x] TestParseDryRunOutputFormat_ValidFormats
+    - [x] L104: `t.Errorf("ParseDryRunOutputFormat(%q) error = %v, want nil", tt.input, err)`
+    - [x] L107: `t.Errorf("ParseDryRunOutputFormat(%q) = %v, want %v", tt.input, got, tt.want)`
 
 - [ ] internal/runner/cli/validation_test.go (2 calls)
   - [ ] TestValidateConfigCommand_Invalid
