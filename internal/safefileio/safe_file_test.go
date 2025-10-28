@@ -148,9 +148,8 @@ func TestSafeReadFile(t *testing.T) {
 				tempDir := safeTempDir(t)
 				filePath := filepath.Join(tempDir, "testfile.txt")
 				content := []byte("test content")
-				if err := os.WriteFile(filePath, content, 0o600); err != nil {
-					t.Fatalf("Failed to create test file: %v", err)
-				}
+				err := os.WriteFile(filePath, content, 0o600)
+				require.NoError(t, err, "Failed to create test file")
 				return filePath
 			},
 			want:    []byte("test content"),

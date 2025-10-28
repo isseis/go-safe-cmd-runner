@@ -2,6 +2,8 @@ package terminal
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestInteractiveDetector_IsInteractive(t *testing.T) {
@@ -77,9 +79,8 @@ func TestInteractiveDetector_IsInteractive(t *testing.T) {
 
 			detector := NewInteractiveDetector(tt.options)
 
-			if got := detector.IsInteractive(); got != tt.wantInteractive {
-				t.Errorf("IsInteractive() = %v, want %v", got, tt.wantInteractive)
-			}
+			got := detector.IsInteractive()
+			assert.Equal(t, tt.wantInteractive, got)
 		})
 	}
 }
@@ -164,9 +165,8 @@ func TestInteractiveDetector_IsCIEnvironment(t *testing.T) {
 
 			detector := NewInteractiveDetector(DetectorOptions{})
 
-			if got := detector.IsCIEnvironment(); got != tt.wantCI {
-				t.Errorf("IsCIEnvironment() = %v, want %v", got, tt.wantCI)
-			}
+			got := detector.IsCIEnvironment()
+			assert.Equal(t, tt.wantCI, got)
 		})
 	}
 }
@@ -182,18 +182,15 @@ func TestInteractiveDetector_IsTerminal(t *testing.T) {
 	result1 := detector.IsTerminal()
 	result2 := detector.IsTerminal()
 
-	if result1 != result2 {
-		t.Errorf("IsTerminal() should return consistent results, got %v then %v", result1, result2)
-	}
+	assert.Equal(t, result1, result2, "IsTerminal should return consistent results")
 
 	// In most test environments, stdout/stderr are not terminals
 	// This is expected behavior, but we test for consistency rather than specific value
 	t.Logf("IsTerminal() returned %v in test environment", result1)
 
 	// Test that the method exists and is callable (regression test)
-	if detector.IsTerminal() != result1 {
-		t.Errorf("IsTerminal() returned different value on subsequent call")
-	}
+	result3 := detector.IsTerminal()
+	assert.Equal(t, result1, result3, "IsTerminal should return same value on subsequent call")
 }
 
 func TestInteractiveDetector_PriorityLogic(t *testing.T) {
@@ -234,9 +231,8 @@ func TestInteractiveDetector_PriorityLogic(t *testing.T) {
 
 			detector := NewInteractiveDetector(tt.options)
 
-			if got := detector.IsInteractive(); got != tt.wantInteractive {
-				t.Errorf("IsInteractive() = %v, want %v. %s", got, tt.wantInteractive, tt.description)
-			}
+			got := detector.IsInteractive()
+			assert.Equal(t, tt.wantInteractive, got, tt.description)
 		})
 	}
 }

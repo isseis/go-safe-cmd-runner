@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -438,9 +437,7 @@ func TestSlackHandler_Handle_WithMockServer(t *testing.T) {
 			serverStatus:  http.StatusOK,
 			validateMessage: func(t *testing.T, msg SlackMessage) {
 				expectedText := "INFO: test message (Run ID: test-run)"
-				if msg.Text != expectedText {
-					t.Errorf("Expected text %q, got %q", expectedText, msg.Text)
-				}
+				assert.Equal(t, expectedText, msg.Text, "Message text should match expected format")
 			},
 		},
 		{
@@ -458,9 +455,7 @@ func TestSlackHandler_Handle_WithMockServer(t *testing.T) {
 			expectSuccess: true,
 			serverStatus:  http.StatusOK,
 			validateMessage: func(t *testing.T, msg SlackMessage) {
-				if !strings.Contains(msg.Text, "test-group") {
-					t.Error("Expected message to contain group name")
-				}
+				assert.Contains(t, msg.Text, "test-group", "Message should contain group name")
 			},
 		},
 		{

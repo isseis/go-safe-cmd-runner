@@ -1805,8 +1805,6 @@ func TestRunner_OutputAnalysisValidation(t *testing.T) {
 
 			// Run the expectation checks
 			tt.expectCheck(t, analysis)
-
-			t.Logf("Test %s: %s", tt.name, tt.description)
 		})
 	}
 }
@@ -1914,9 +1912,7 @@ func TestRunner_OutputCaptureSecurityIntegration(t *testing.T) {
 					assert.Contains(t, err.Error(), tt.errorMsg)
 				}
 			} else {
-				// Note: May still fail due to actual output capture implementation
-				// This test focuses on security validation configuration
-				t.Logf("Test completed: %s", tt.description)
+				require.NoError(t, err, "Should not return error for %s", tt.description)
 			}
 
 			// Verify mock expectations (only for success cases with mock)
