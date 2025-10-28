@@ -2,6 +2,9 @@ package runnertypes
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParseRiskLevel(t *testing.T) {
@@ -59,17 +62,13 @@ func TestParseRiskLevel(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := ParseRiskLevel(tt.input)
 
-			if tt.hasError && err == nil {
-				t.Errorf("expected error but got none")
+			if tt.hasError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
 			}
 
-			if !tt.hasError && err != nil {
-				t.Errorf("unexpected error: %v", err)
-			}
-
-			if result != tt.expected {
-				t.Errorf("expected %v, got %v", tt.expected, result)
-			}
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
@@ -89,9 +88,7 @@ func TestRiskLevelString(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.expected, func(t *testing.T) {
 			result := tt.level.String()
-			if result != tt.expected {
-				t.Errorf("expected %s, got %s", tt.expected, result)
-			}
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
@@ -149,17 +146,13 @@ func TestCommandGetMaxRiskLevel(t *testing.T) {
 
 			result, err := cmd.GetMaxRiskLevel()
 
-			if tt.expectError && err == nil {
-				t.Errorf("expected error but got none")
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
 			}
 
-			if !tt.expectError && err != nil {
-				t.Errorf("unexpected error: %v", err)
-			}
-
-			if result != tt.expected {
-				t.Errorf("expected %v, got %v", tt.expected, result)
-			}
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
@@ -206,9 +199,7 @@ func TestCommandHasUserGroupSpecification(t *testing.T) {
 
 			result := cmd.HasUserGroupSpecification()
 
-			if result != tt.expected {
-				t.Errorf("expected %v, got %v", tt.expected, result)
-			}
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
@@ -244,13 +235,9 @@ func TestAllowlistResolution_GetEffectiveList(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := tt.resolver.GetEffectiveList()
-			if len(result) != len(tt.expected) {
-				t.Fatalf("expected length %d, got %d. expected=%#v, got=%#v", len(tt.expected), len(result), tt.expected, result)
-			}
+			require.Equal(t, len(tt.expected), len(result), "length should match")
 			for i := range result {
-				if result[i] != tt.expected[i] {
-					t.Errorf("at index %d: expected %s, got %s", i, tt.expected[i], result[i])
-				}
+				assert.Equal(t, tt.expected[i], result[i], "element at index %d should match", i)
 			}
 		})
 	}
@@ -287,9 +274,7 @@ func TestAllowlistResolution_GetEffectiveSize(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := tt.resolver.GetEffectiveSize()
-			if result != tt.expected {
-				t.Errorf("expected %d, got %d", tt.expected, result)
-			}
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
@@ -316,13 +301,11 @@ func TestAllowlistResolution_GetGroupAllowlist(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := tt.resolver.GetGroupAllowlist()
 			if len(result) != len(tt.expected) {
-				// Using t.Fatalf prevents a potential panic in the loop below.
-				t.Fatalf("expected length %d, got %d. expected=%#v, got=%#v", len(tt.expected), len(result), tt.expected, result)
+				// Using require.Equal prevents a potential panic in the loop below.
+				require.Equal(t, len(tt.expected), len(result), "length should match")
 			}
 			for i := range result {
-				if result[i] != tt.expected[i] {
-					t.Errorf("at index %d: expected %s, got %s", i, tt.expected[i], result[i])
-				}
+				assert.Equal(t, tt.expected[i], result[i], "element at index %d should match", i)
 			}
 		})
 	}
@@ -350,13 +333,11 @@ func TestAllowlistResolution_GetGlobalAllowlist(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := tt.resolver.GetGlobalAllowlist()
 			if len(result) != len(tt.expected) {
-				// Using t.Fatalf prevents a potential panic in the loop below.
-				t.Fatalf("expected length %d, got %d. expected=%#v, got=%#v", len(tt.expected), len(result), tt.expected, result)
+				// Using require.Equal prevents a potential panic in the loop below.
+				require.Equal(t, len(tt.expected), len(result), "length should match")
 			}
 			for i := range result {
-				if result[i] != tt.expected[i] {
-					t.Errorf("at index %d: expected %s, got %s", i, tt.expected[i], result[i])
-				}
+				assert.Equal(t, tt.expected[i], result[i], "element at index %d should match", i)
 			}
 		})
 	}
@@ -403,9 +384,7 @@ func TestAllowlistResolution_GetMode(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := tt.resolver.GetMode()
-			if result != tt.expected {
-				t.Errorf("expected %v, got %v", tt.expected, result)
-			}
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
@@ -441,9 +420,7 @@ func TestAllowlistResolution_GetGroupName(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := tt.resolver.GetGroupName()
-			if result != tt.expected {
-				t.Errorf("expected %s, got %s", tt.expected, result)
-			}
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }

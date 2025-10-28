@@ -64,12 +64,11 @@ func TestTempDirectory_ConcurrentAccess(t *testing.T) {
 	close(errorChan)
 
 	// Check for any errors
+	var errors []error
 	for err := range errorChan {
-		t.Errorf("Concurrent operation failed: %v", err)
+		errors = append(errors, err)
 	}
-
-	t.Logf("Successfully completed %d concurrent goroutines with %d operations each",
-		numGoroutines, numOperations)
+	require.Empty(t, errors, "Concurrent operations should not fail: %v", errors)
 }
 
 // TestTempDirectory_ConcurrentCleanup tests concurrent cleanup operations
@@ -113,17 +112,17 @@ func TestTempDirectory_ConcurrentCleanup(t *testing.T) {
 	close(errorChan)
 
 	// Check for errors
+	var errors []error
 	for err := range errorChan {
-		t.Errorf("Cleanup failed: %v", err)
+		errors = append(errors, err)
 	}
+	require.Empty(t, errors, "Cleanup operations should not fail: %v", errors)
 
 	// Verify all directories are removed
 	for _, dirPath := range dirs {
 		_, err := os.Stat(dirPath)
 		require.True(t, os.IsNotExist(err), "Directory should be removed: %s", dirPath)
 	}
-
-	t.Logf("Successfully cleaned up %d directories concurrently", numDirs)
 }
 
 // TestTempDirectory_RaceDetection tests for race conditions using Go's race detector
@@ -144,6 +143,8 @@ func TestTempDirectory_RaceDetection(t *testing.T) {
 	var wg sync.WaitGroup
 
 	numGoroutines := 5
+	errorChan := make(chan error, numGoroutines*2) // Buffer for potential errors
+
 	for i := 0; i < numGoroutines; i++ {
 		wg.Add(1)
 		go func(_ int) {
@@ -153,7 +154,7 @@ func TestTempDirectory_RaceDetection(t *testing.T) {
 			mu.Lock()
 			content, err := os.ReadFile(sharedFile)
 			if err != nil {
-				t.Errorf("Read failed: %v", err)
+				errorChan <- fmt.Errorf("read failed: %w", err)
 				mu.Unlock()
 				return
 			}
@@ -162,19 +163,25 @@ func TestTempDirectory_RaceDetection(t *testing.T) {
 			content = append(content, []byte(" modified")...)
 			err = os.WriteFile(sharedFile, content, 0o644)
 			if err != nil {
-				t.Errorf("Write failed: %v", err)
+				errorChan <- fmt.Errorf("write failed: %w", err)
 			}
 			mu.Unlock()
 		}(i)
 	}
 
 	wg.Wait()
+	close(errorChan)
+
+	// Check for errors
+	var errors []error
+	for err := range errorChan {
+		errors = append(errors, err)
+	}
+	require.Empty(t, errors, "Concurrent file operations should not fail: %v", errors)
 
 	// Verify file still exists and has been modified
 	_, err = os.Stat(sharedFile)
 	require.NoError(t, err, "Shared file should still exist")
-
-	t.Logf("Race detection test completed with %d goroutines", numGoroutines)
 }
 
 // TestTempDirectory_CleanupOnPanic tests cleanup behavior on panic
@@ -189,9 +196,8 @@ func TestTempDirectory_CleanupOnPanic(t *testing.T) {
 	// Test cleanup even with panic
 	func() {
 		defer func() {
-			if r := recover(); r != nil {
-				t.Logf("Recovered from panic: %v", r)
-			}
+			r := recover()
+			require.NotNil(t, r, "Should recover from panic")
 		}()
 
 		// Simulate operation that might panic
@@ -205,6 +211,4 @@ func TestTempDirectory_CleanupOnPanic(t *testing.T) {
 	// File should still be accessible
 	_, err = os.Stat(testFile)
 	require.NoError(t, err, "File should still exist after panic recovery")
-
-	t.Logf("Cleanup on panic test completed")
 }

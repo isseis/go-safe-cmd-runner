@@ -104,10 +104,8 @@ func TestHashValidation_BasicBypassAttempts(t *testing.T) {
 			err := validator.Verify(testFile)
 			if tt.shouldPass {
 				require.NoError(t, err, tt.description)
-				t.Logf("Verification passed as expected: %s", tt.description)
 			} else {
 				require.Error(t, err, tt.description)
-				t.Logf("Verification failed as expected: %s (error: %v)", tt.description, err)
 			}
 		})
 	}
@@ -171,7 +169,6 @@ func TestHashValidation_ManifestTampering(t *testing.T) {
 `)
 				err = os.WriteFile(hashFilePath, tamperedContent, 0o644)
 				require.NoError(t, err)
-				t.Logf("Tampered hash manifest file: %s", hashFilePath)
 			},
 		},
 		{
@@ -202,7 +199,6 @@ func TestHashValidation_ManifestTampering(t *testing.T) {
 				// Delete the hash file
 				err = os.Remove(hashFilePath)
 				require.NoError(t, err)
-				t.Logf("Deleted hash file: %s", hashFilePath)
 			},
 		},
 	}
@@ -215,7 +211,6 @@ func TestHashValidation_ManifestTampering(t *testing.T) {
 			// First verification should pass (before tampering)
 			err := validator.Verify(testFile)
 			require.NoError(t, err)
-			t.Logf("Initial verification passed")
 
 			// Apply tampering
 			tt.tamperFunc(t, testFile)
@@ -223,7 +218,6 @@ func TestHashValidation_ManifestTampering(t *testing.T) {
 			// Verification should fail after tampering
 			err = validator.Verify(testFile)
 			require.Error(t, err, "Verification should fail after tampering")
-			t.Logf("Verification correctly failed after tampering: %v", err)
 		})
 	}
 }
@@ -253,7 +247,6 @@ func TestHashValidation_SymbolicLinkAttack(t *testing.T) {
 	// Verify legitimate file
 	err = validator.Verify(legitFile)
 	require.NoError(t, err)
-	t.Logf("Legitimate file verification passed")
 
 	// Create a sensitive file
 	sensitiveFile := filepath.Join(tempDir, "sensitive.txt")
@@ -275,7 +268,6 @@ func TestHashValidation_SymbolicLinkAttack(t *testing.T) {
 	// 2. Follow the symlink and fail because no hash exists for the target
 	err = validator.Verify(symlinkPath)
 	require.Error(t, err, "Symlink verification should fail: target file has no recorded hash")
-	t.Logf("Symlink verification failed as expected: %v", err)
 }
 
 // TestHashValidation_RaceConditionProtection tests TOCTOU protection
@@ -303,7 +295,6 @@ func TestHashValidation_RaceConditionProtection(t *testing.T) {
 	// Verify the file
 	err = validator.Verify(testFile)
 	require.NoError(t, err)
-	t.Logf("Initial verification passed")
 
 	// Simulate TOCTOU attack: modify file after verification but before use
 	modifiedContent := []byte("modified after verification")
@@ -313,5 +304,4 @@ func TestHashValidation_RaceConditionProtection(t *testing.T) {
 	// Verify again - should fail because content changed
 	err = validator.Verify(testFile)
 	require.Error(t, err, "TOCTOU protection: modified file should fail verification")
-	t.Logf("TOCTOU protection: modification detected (%v)", err)
 }
