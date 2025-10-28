@@ -2,5 +2,5 @@ build/
 .claude/settings.local.json
 .envrc
 .env
-coverage.out
-coverage.html
+coverage*.out
+coverage*.html
