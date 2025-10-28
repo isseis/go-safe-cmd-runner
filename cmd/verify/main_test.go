@@ -1,4 +1,4 @@
-package cmdcommon
+package main
 
 import (
 	"bytes"
@@ -41,13 +41,13 @@ func TestParseFlags_Success(t *testing.T) {
 			os.Args = append([]string{"cmd"}, tt.args...)
 			defer func() { os.Args = oldArgs }()
 
-			config, err := ParseFlags()
+			cfg, err := parseFlags()
 			if err != nil {
-				t.Fatalf("ParseFlags() error = %v, want nil", err)
+				t.Fatalf("parseFlags() error = %v, want nil", err)
 			}
 
-			if config.File != tt.wantFile {
-				t.Errorf("ParseFlags() File = %v, want %v", config.File, tt.wantFile)
+			if cfg.File != tt.wantFile {
+				t.Errorf("parseFlags() File = %v, want %v", cfg.File, tt.wantFile)
 			}
 
 			if tt.checkHashDir {
@@ -56,11 +56,11 @@ func TestParseFlags_Success(t *testing.T) {
 				if err != nil {
 					t.Fatalf("os.Getwd() error = %v", err)
 				}
-				if config.HashDir != cwd {
-					t.Errorf("ParseFlags() HashDir = %v, want %v (current directory)", config.HashDir, cwd)
+				if cfg.HashDir != cwd {
+					t.Errorf("parseFlags() HashDir = %v, want %v (current directory)", cfg.HashDir, cwd)
 				}
-			} else if config.HashDir != "/tmp/hashes" {
-				t.Errorf("ParseFlags() HashDir = %v, want %v", config.HashDir, "/tmp/hashes")
+			} else if cfg.HashDir != "/tmp/hashes" {
+				t.Errorf("parseFlags() HashDir = %v, want %v", cfg.HashDir, "/tmp/hashes")
 			}
 		})
 	}
@@ -81,22 +81,22 @@ func TestParseFlags_MissingRequiredArg(t *testing.T) {
 	os.Stderr = w
 	defer func() { os.Stderr = oldStderr }()
 
-	config, err := ParseFlags()
+	cfg, err := parseFlags()
 
 	// Close writer and restore stderr
 	w.Close()
 	os.Stderr = oldStderr
 
-	if config != nil {
-		t.Errorf("ParseFlags() config = %v, want nil", config)
+	if cfg != nil {
+		t.Errorf("parseFlags() config = %v, want nil", cfg)
 	}
 
 	if err == nil {
-		t.Fatal("ParseFlags() error = nil, want error")
+		t.Fatal("parseFlags() error = nil, want error")
 	}
 
 	if !errors.Is(err, ErrFileArgumentRequired) {
-		t.Errorf("ParseFlags() error = %v, want ErrFileArgumentRequired", err)
+		t.Errorf("parseFlags() error = %v, want ErrFileArgumentRequired", err)
 	}
 
 	// Read captured output (just to consume it, we don't need to check it)
@@ -125,41 +125,18 @@ func TestParseFlags_InvalidHashDir(t *testing.T) {
 	os.Args = []string{"cmd", "-file", "test.txt", "-hash-dir", invalidHashDir}
 	defer func() { os.Args = oldArgs }()
 
-	config, err := ParseFlags()
+	cfg, err := parseFlags()
 
-	if config != nil {
-		t.Errorf("ParseFlags() config = %v, want nil", config)
+	if cfg != nil {
+		t.Errorf("parseFlags() config = %v, want nil", cfg)
 	}
 
 	if err == nil {
-		t.Fatal("ParseFlags() error = nil, want error")
+		t.Fatal("parseFlags() error = nil, want error")
 	}
 
 	if !errors.Is(err, ErrCreateHashDir) {
-		t.Errorf("ParseFlags() error = %v, want ErrCreateHashDir", err)
-	}
-}
-
-func TestCreateValidator_Success(t *testing.T) {
-	tempDir := t.TempDir()
-
-	validator, err := CreateValidator(tempDir)
-	if err != nil {
-		t.Fatalf("CreateValidator() error = %v, want nil", err)
-	}
-
-	if validator == nil {
-		t.Error("CreateValidator() returned nil validator")
-	}
-}
-
-func TestCreateValidator_Error(t *testing.T) {
-	// Use an invalid path that should cause an error
-	invalidPath := "/proc/invalid_path_for_hashes_12345"
-
-	_, err := CreateValidator(invalidPath)
-	if err == nil {
-		t.Error("CreateValidator() error = nil, want error for invalid path")
+		t.Errorf("parseFlags() error = %v, want ErrCreateHashDir", err)
 	}
 }
 
@@ -169,7 +146,7 @@ func TestPrintUsage(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stderr = w
 
-	PrintUsage()
+	printUsage()
 
 	// Close writer and restore stderr
 	w.Close()
@@ -182,14 +159,14 @@ func TestPrintUsage(t *testing.T) {
 
 	// Verify that usage message contains expected elements
 	if !strings.Contains(output, "Usage:") {
-		t.Error("PrintUsage() output does not contain 'Usage:'")
+		t.Error("printUsage() output does not contain 'Usage:'")
 	}
 
 	if !strings.Contains(output, "-file") {
-		t.Error("PrintUsage() output does not contain '-file' flag")
+		t.Error("printUsage() output does not contain '-file' flag")
 	}
 
 	if !strings.Contains(output, "-hash-dir") {
-		t.Error("PrintUsage() output does not contain '-hash-dir' flag")
+		t.Error("printUsage() output does not contain '-hash-dir' flag")
 	}
 }
