@@ -34,7 +34,7 @@ func TestDefaultExecutor_validatePrivilegedCommand(t *testing.T) {
 				EffectiveWorkDir: "/tmp",
 			},
 			wantErr:     true,
-			errContains: "command cannot be empty", // Updated to match actual error message
+			errContains: "command cannot be empty",
 		},
 		{
 			name: "invalid - relative command path",
