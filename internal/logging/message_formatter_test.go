@@ -416,12 +416,12 @@ func TestAppendInteractiveAttrs_EdgeCases(t *testing.T) {
 				)
 				return r
 			},
-			checkContent: func(t *testing.T, result string) {
-				// Should contain command and error attributes (path might be skipped)
-				hasError := strings.Contains(result, "error=")
-				hasCommand := strings.Contains(result, "command=")
-				assert.True(t, hasError || hasCommand, "Should contain some attributes, got: %s", result)
-			},
+            checkContent: func(t *testing.T, result string) {
+                // Should contain command and error attributes, and path should be skipped.
+                assert.Contains(t, result, "error=", "Result should contain the error attribute")
+                assert.Contains(t, result, "command=", "Result should contain the command attribute")
+                assert.NotContains(t, result, "path=", "Result should not contain the non-priority path attribute")
+            },
 		},
 		{
 			name: "mixed attribute types",
