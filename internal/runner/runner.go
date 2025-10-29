@@ -395,20 +395,6 @@ func (r *Runner) ExecuteGroup(ctx context.Context, groupSpec *runnertypes.GroupS
 	return r.groupExecutor.ExecuteGroup(ctx, groupSpec, r.runtimeGlobal)
 }
 
-// ListCommands lists all available commands
-func (r *Runner) ListCommands() {
-	fmt.Println("Available commands:")
-	for _, group := range r.config.Groups {
-		fmt.Printf("  Group: %s (Priority: %d)\n", group.Name, group.Priority)
-		if group.Description != "" {
-			fmt.Printf("    Description: %s\n", group.Description)
-		}
-		for _, cmd := range group.Commands {
-			fmt.Printf("    - %s: %s\n", cmd.Name, cmd.Description)
-		}
-	}
-}
-
 // GetConfig returns the current configuration
 func (r *Runner) GetConfig() *runnertypes.ConfigSpec {
 	return r.config
