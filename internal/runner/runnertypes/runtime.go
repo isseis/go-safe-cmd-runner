@@ -138,6 +138,36 @@ func NewRuntimeGroup(spec *GroupSpec) (*RuntimeGroup, error) {
 	}, nil
 }
 
+// Convenience methods for RuntimeGroup
+
+// Name returns the group name from the spec.
+// Panics if r or r.Spec is nil (programming error - use NewRuntimeGroup).
+func (r *RuntimeGroup) Name() string {
+	if r == nil || r.Spec == nil {
+		panic("RuntimeGroup.Name: nil receiver or Spec (programming error - use NewRuntimeGroup)")
+	}
+	return r.Spec.Name
+}
+
+// WorkDir returns the group working directory from the spec (not yet expanded).
+// Panics if r or r.Spec is nil (programming error - use NewRuntimeGroup).
+func (r *RuntimeGroup) WorkDir() string {
+	if r == nil || r.Spec == nil {
+		panic("RuntimeGroup.WorkDir: nil receiver or Spec (programming error - use NewRuntimeGroup)")
+	}
+	return r.Spec.WorkDir
+}
+
+// ExtractGroupName safely extracts the group name from a RuntimeGroup.
+// Returns an empty string if the RuntimeGroup or its Spec is nil.
+// This helper is useful for timeout resolution context where group name is optional.
+func ExtractGroupName(runtimeGroup *RuntimeGroup) string {
+	if runtimeGroup != nil && runtimeGroup.Spec != nil {
+		return runtimeGroup.Spec.Name
+	}
+	return ""
+}
+
 // RuntimeCommand represents the runtime-expanded command configuration.
 // It contains references to the original CommandSpec along with expanded variables
 // and resources that are resolved at runtime.
