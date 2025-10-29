@@ -1,3 +1,4 @@
+// Package debug contains constants and utilities for debugging output formatting.
 package debug
 
 // Package-level constants for display formatting in debug output.

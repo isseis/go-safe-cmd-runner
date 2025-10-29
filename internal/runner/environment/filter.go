@@ -13,7 +13,7 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
-// Error definitions
+// Error jjjkkkfinitions
 var (
 	ErrGroupNotFound          = errors.New("group not found")
 	ErrVariableNameEmpty      = errors.New("variable name cannot be empty")
