@@ -9,7 +9,7 @@
 ### 2.1. 設計原則
 
 1. **コードの統一**: タイムアウト解決ロジックを`ResolveTimeout`に一元化
-2. **型安全性の維持**: `common.Timeout`型の活用を継続
+2. **型安全性の強化**: `common.Timeout`型を`ResolveTimeout`で直接受け取り、`*int`への変換を排除
 3. **重複の削除**: `ResolveEffectiveTimeout`を削除し、保守性を向上
 4. **将来拡張性**: グループレベルタイムアウトの追加を見据えた設計
 
@@ -27,19 +27,18 @@
 ```mermaid
 flowchart TB
     subgraph "Configuration Layer"
-        ConfigSpec[ConfigSpec<br/>TOML設定]
-        GlobalSpec[GlobalSpec<br/>timeout: *int]
-        CommandSpec[CommandSpec<br/>timeout: *int]
+        GlobalSpec[(GlobalSpec<br/>timeout: *int)]
+        CommandSpec[(CommandSpec<br/>timeout: *int)]
     end
 
     subgraph "Runtime Layer"
-        RuntimeGlobal[RuntimeGlobal<br/>timeout: Timeout]
-        RuntimeCommand[RuntimeCommand<br/>+ EffectiveTimeout: int<br/>+ TimeoutResolution: Context]
+        RuntimeGlobal[(RuntimeGlobal<br/>timeout: Timeout型)]
+        RuntimeCommand[(RuntimeCommand<br/>timeout: Timeout型)]
     end
 
     subgraph "Resolution Logic"
-        ResolveTimeout[ResolveTimeout<br/>args: *int, *int, *int<br/>returns: int, Context]
-        Timeout[(Timeout型<br/>+ IsSet<br/>+ Value<br/>+ ToIntPtr)]
+        ResolveTimeout[ResolveTimeoutWithContext<br/>引数: cmdTimeout, groupTimeout, globalTimeout<br/>型: Timeout, Timeout, Timeout<br/>戻り値: int, Context]
+        RuntimeCommand2[(RuntimeCommand<br/>EffectiveTimeout: int<br/>+ TimeoutResolution: Context)]
     end
 
     subgraph "Dry-Run Layer"
@@ -53,16 +52,15 @@ flowchart TB
         Output[/"出力<br/>timeout: 60<br/>timeout_level: default"/]
     end
 
-    ConfigSpec --> RuntimeGlobal
-    ConfigSpec --> RuntimeCommand
+    GlobalSpec --> RuntimeGlobal
+    CommandSpec --> RuntimeCommand
 
+    RuntimeCommand --> ResolveTimeout
     RuntimeGlobal --> ResolveTimeout
-    CommandSpec --> ResolveTimeout
-    Timeout --> ResolveTimeout
+    ResolveTimeout --> RuntimeCommand2
 
-    ResolveTimeout --> RuntimeCommand
 
-    RuntimeCommand --> DryRunManager
+    RuntimeCommand2 --> DryRunManager
     DryRunManager --> ResourceAnalysis
 
     ResourceAnalysis --> TextFormatter
@@ -74,8 +72,8 @@ flowchart TB
     classDef logicNode fill:#fff4e1,stroke:#f5a623
     classDef outputNode fill:#f0e1ff,stroke:#9b59b6
 
-    class ConfigSpec,GlobalSpec,CommandSpec,RuntimeGlobal,RuntimeCommand,ResourceAnalysis dataNode
-    class ResolveTimeout,Timeout,DryRunManager logicNode
+    class ConfigSpec,GlobalSpec,CommandSpec,RuntimeGlobal,RuntimeCommand,ResourceAnalysis dataNode,RuntimeCommand2
+    class ResolveTimeout,DryRunManager logicNode
     class TextFormatter,JSONFormatter,Output outputNode
 ```
 
@@ -92,7 +90,7 @@ sequenceDiagram
 
     Config->>New: CommandSpec + GlobalTimeout
     New->>New: Timeout型に変換
-    New->>Resolve: ToIntPtr()で*int化
+    New->>Resolve: Timeout型で渡す
     Resolve->>Resolve: 優先順位で解決
     Resolve-->>New: (値, Context)
     New->>Runtime: 設定
@@ -130,23 +128,53 @@ type RuntimeCommand struct {
 - `TimeoutResolution`を新規追加し、既存フィールドは変更しない
 - `EffectiveTimeout`は既存コードとの互換性のため維持
 
-#### 4.1.2. Timeout型の拡張
+#### 4.1.2. ResolveTimeoutのシグネチャ変更
 
-`common.Timeout`型に変換メソッドを追加：
+`common.ResolveTimeout`および`ResolveTimeoutWithContext`を`Timeout`型を直接受け取るように変更：
 
 ```go
-// ToIntPtr converts Timeout to *int for compatibility with ResolveTimeout
-func (t Timeout) ToIntPtr() *int {
-    if !t.IsSet() {
-        return nil
+// ResolveTimeout resolves the effective timeout value from the hierarchy.
+// It follows the precedence: command > group > global > default.
+func ResolveTimeout(cmdTimeout, groupTimeout, globalTimeout Timeout) int {
+    resolvedValue, _ := ResolveTimeoutWithContext(cmdTimeout, groupTimeout, globalTimeout, "", "")
+    return resolvedValue
+}
+
+// ResolveTimeoutWithContext resolves the effective timeout value and returns context information.
+func ResolveTimeoutWithContext(cmdTimeout, groupTimeout, globalTimeout Timeout, commandName, groupName string) (int, TimeoutResolutionContext) {
+    var resolvedValue int
+    var level string
+
+    switch {
+    case cmdTimeout.IsSet():
+        resolvedValue = cmdTimeout.Value()
+        level = "command"
+    case groupTimeout.IsSet():
+        resolvedValue = groupTimeout.Value()
+        level = "group"
+    case globalTimeout.IsSet():
+        resolvedValue = globalTimeout.Value()
+        level = "global"
+    default:
+        resolvedValue = DefaultTimeout
+        level = "default"
     }
-    return t.value
+
+    context := TimeoutResolutionContext{
+        CommandName: commandName,
+        GroupName:   groupName,
+        Level:       level,
+    }
+
+    return resolvedValue, context
 }
 ```
 
 **設計判断**:
-- `ResolveTimeout`が`*int`を期待するため、変換メソッドを提供
-- nil安全性を保ちつつ、既存関数との橋渡しを行う
+- `Timeout`型を直接受け取ることで型安全性を強化
+- `*int`への変換が不要になり、コードが簡潔になる
+- `Timeout.IsSet()`と`Timeout.Value()`メソッドを使用
+- nil安全性は`Timeout`型内で完結
 
 ### 4.2. タイムアウト解決の統合
 
@@ -176,11 +204,11 @@ func NewRuntimeCommand(
 ) (*RuntimeCommand, error) {
     commandTimeout := common.NewFromIntPtr(spec.Timeout)
 
-    // ResolveTimeoutを使用してコンテキスト情報も取得
-    effectiveTimeout, resolutionContext := common.ResolveTimeout(
-        commandTimeout.ToIntPtr(),
-        nil,  // グループタイムアウト（現在未サポート）
-        globalTimeout.ToIntPtr(),
+    // ResolveTimeoutWithContextを使用してコンテキスト情報も取得
+    effectiveTimeout, resolutionContext := common.ResolveTimeoutWithContext(
+        commandTimeout,
+        common.NewUnsetTimeout(),  // グループタイムアウト（現在未サポート）
+        globalTimeout,
         spec.Name,
         groupName,
     )
@@ -197,7 +225,9 @@ func NewRuntimeCommand(
 
 **設計判断**:
 - `groupName`パラメータを追加（コンテキスト情報の充実化）
-- `ResolveTimeout`と`ResolveEffectiveTimeout`を統一
+- `ResolveTimeoutWithContext`を使用してコンテキスト情報を取得
+- `Timeout`型を直接渡すことで型安全性を確保
+- `ToIntPtr()`変換が不要になり、コードが簡潔に
 - 後方互換性は呼び出し元の更新で対応
 
 ### 4.3. Dry-Run出力の更新
@@ -273,18 +303,19 @@ analysis := ResourceAnalysis{
 
 ### 5.1. 実装戦略
 
-#### フェーズ1: 基盤整備
-1. `Timeout.ToIntPtr()`メソッドの追加
-2. 既存の`ResolveTimeout`のテスト拡充
+#### フェーズ1: ResolveTimeoutの型安全化
+1. `ResolveTimeout`および`ResolveTimeoutWithContext`のシグネチャを変更（`*int` → `Timeout`）
+2. 内部実装を`Timeout.IsSet()`と`Timeout.Value()`を使うように更新
+3. `ResolveTimeout`のテスト更新
 
 #### フェーズ2: RuntimeCommandの拡張
 1. `TimeoutResolution`フィールドの追加
-2. `NewRuntimeCommand`の実装更新（`ResolveTimeout`使用）
+2. `NewRuntimeCommand`の実装更新（`ResolveTimeoutWithContext`使用）
 3. 呼び出し元（`ExpandCommand`など）の更新
 
 #### フェーズ3: ResolveEffectiveTimeoutの削除
 1. `ResolveEffectiveTimeout`を使用している箇所の特定
-2. すべての呼び出し箇所を`ResolveTimeout`に置き換え
+2. すべての呼び出し箇所を`ResolveTimeoutWithContext`に置き換え
 3. `ResolveEffectiveTimeout`関数とそのテストの削除
 
 #### フェーズ4: Dry-Run統合
@@ -307,8 +338,8 @@ grep -r "NewRuntimeCommand" internal/
 
 ### 5.3. エラーハンドリング
 
-- `ToIntPtr()`はエラーを返さない（構造的に安全）
-- `ResolveTimeout`はエラーを返さない（すべてのケースでデフォルト値にフォールバック）
+- `Timeout.IsSet()`と`Timeout.Value()`はパニックを発生させない（`Value()`は未設定時にパニック、`IsSet()`で事前チェック）
+- `ResolveTimeoutWithContext`はエラーを返さない（すべてのケースでデフォルト値にフォールバック）
 - 新規エラーケースなし
 
 ### 5.4. パフォーマンス考慮
@@ -321,10 +352,12 @@ grep -r "NewRuntimeCommand" internal/
 
 ### 6.1. 単体テスト
 
-#### Timeout.ToIntPtr()
-- 未設定時（nil）
-- 0（無制限）
-- 正の値
+#### ResolveTimeoutWithContext
+- コマンドレベル設定時（`Timeout.IsSet() == true`）
+- グループレベル設定時（`Timeout.IsSet() == true`）
+- グローバルレベル設定時（`Timeout.IsSet() == true`）
+- デフォルト使用時（すべて`IsSet() == false`）
+- 無制限タイムアウト（`Timeout.IsUnlimited() == true`）
 
 #### NewRuntimeCommand
 - コマンドレベルタイムアウト設定時
@@ -356,10 +389,10 @@ grep -r "NewRuntimeCommand" internal/
 現在の設計は、将来のグループレベルタイムアウト追加を考慮している：
 
 ```go
-effectiveTimeout, resolutionContext := common.ResolveTimeout(
-    commandTimeout.ToIntPtr(),
-    groupTimeout.ToIntPtr(),  // 将来実装時に追加
-    globalTimeout.ToIntPtr(),
+effectiveTimeout, resolutionContext := common.ResolveTimeoutWithContext(
+    commandTimeout,
+    groupTimeout,  // 将来実装時に追加（現在は common.NewUnsetTimeout()）
+    globalTimeout,
     spec.Name,
     groupName,
 )
@@ -420,8 +453,9 @@ effectiveTimeout, resolutionContext := common.ResolveTimeout(
 - ✅ 保守すべきコードパスを削減
 
 ### 9.2. 型安全性
-- ✅ `common.Timeout`型を継続使用
-- ✅ `ToIntPtr()`で安全に変換
+- ✅ `common.Timeout`型を`ResolveTimeoutWithContext`で直接使用
+- ✅ `*int`への変換が不要になり、型の意味を保持
+- ✅ `IsSet()`と`Value()`メソッドでnil安全性を確保
 - ✅ nilポインタリスクなし
 
 ### 9.3. テスト容易性
@@ -459,10 +493,11 @@ flowchart LR
 
 本設計は、以下の特徴を持つ：
 
-1. **コードの統一**: `ResolveTimeout`に一元化し、重複した`ResolveEffectiveTimeout`を削除
-2. **既存資産の活用**: `ResolveTimeout`と`TimeoutResolutionContext`を活用
-3. **保守性の向上**: タイムアウト解決ロジックを単一関数に集約
-4. **将来拡張性**: グループレベルタイムアウトの追加を見据えた設計
-5. **実用性**: dry-run出力でのデバッグ容易性を大幅に向上
+1. **型安全性の強化**: `ResolveTimeoutWithContext`が`Timeout`型を直接受け取り、`*int`への変換を排除
+2. **コードの統一**: `ResolveTimeoutWithContext`に一元化し、重複した`ResolveEffectiveTimeout`を削除
+3. **既存資産の活用**: `ResolveTimeout`と`TimeoutResolutionContext`を活用
+4. **保守性の向上**: タイムアウト解決ロジックを単一関数に集約
+5. **将来拡張性**: グループレベルタイムアウトの追加を見据えた設計
+6. **実用性**: dry-run出力でのデバッグ容易性を大幅に向上
 
-実装は4フェーズで段階的に進め、各フェーズで十分なテストを行うことで、リスクを最小化する。特にフェーズ3での`ResolveEffectiveTimeout`削除は、すべての呼び出し箇所を確実に更新する必要がある。
+実装は4フェーズで段階的に進め、各フェーズで十分なテストを行うことで、リスクを最小化する。特にフェーズ1での`ResolveTimeout`シグネチャ変更は、すべての呼び出し箇所をコンパイル時にチェックできるため安全である。
