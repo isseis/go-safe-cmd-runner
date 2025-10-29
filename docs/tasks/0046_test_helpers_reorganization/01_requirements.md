@@ -1,3 +1,4 @@
+
 # テストヘルパファイル統一化
 
 ## 背景
@@ -114,4 +115,4 @@
 - [ ] ファイル名が統一ルールに従っている(`helpers.go`, `mocks.go` など)
 - [ ] すべてのテストが成功する(`make test`)
 - [ ] リンターが成功する(`make lint`)
-- [ ] CLAUDE.md の Mock File Organization セクションとの一貫性が保たれている
+- [ ] CLAUDE.md の Test Helper File Organization セクションとの一貫性が保たれている
