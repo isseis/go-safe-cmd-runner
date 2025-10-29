@@ -183,7 +183,7 @@ func NewRuntimeCommand(spec *CommandSpec, globalTimeout common.Timeout, groupNam
 
 	// Resolve the effective timeout using the hierarchy with context
 	commandTimeout := common.NewFromIntPtr(spec.Timeout)
-	effectiveTimeout, resolutionContext := common.ResolveTimeoutWithContext(
+	effectiveTimeout, resolutionContext := common.ResolveTimeout(
 		commandTimeout,
 		common.NewUnsetTimeout(), // Group timeout not yet supported
 		globalTimeout,
