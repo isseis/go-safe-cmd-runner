@@ -60,9 +60,12 @@ func TestCreateCommandContext(t *testing.T) {
 				},
 			}
 
-			ge := &DefaultGroupExecutor{
-				config: config,
-			}
+			mockRM := new(runnertesting.MockResourceManager)
+			ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
+				Config:          config,
+				ResourceManager: mockRM,
+				RunID:           "test-run-timeout",
+			})
 
 			cmd := &runnertypes.RuntimeCommand{
 				Spec: &runnertypes.CommandSpec{
@@ -103,7 +106,12 @@ func TestCreateCommandContext_UnlimitedTimeout(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ge := &DefaultGroupExecutor{}
+			mockRM := new(runnertesting.MockResourceManager)
+			ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
+				Config:          &runnertypes.ConfigSpec{},
+				ResourceManager: mockRM,
+				RunID:           "test-run-unlimited",
+			})
 
 			cmd := &runnertypes.RuntimeCommand{
 				Spec: &runnertypes.CommandSpec{
@@ -129,7 +137,12 @@ func TestCreateCommandContext_UnlimitedTimeout(t *testing.T) {
 
 // TestCreateCommandContext_NegativeTimeoutPanic tests that negative timeout causes panic
 func TestCreateCommandContext_NegativeTimeoutPanic(t *testing.T) {
-	ge := &DefaultGroupExecutor{}
+	mockRM := new(runnertesting.MockResourceManager)
+	ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
+		Config:          &runnertypes.ConfigSpec{},
+		ResourceManager: mockRM,
+		RunID:           "test-run-negative",
+	})
 
 	cmd := &runnertypes.RuntimeCommand{
 		Spec: &runnertypes.CommandSpec{
@@ -825,9 +838,13 @@ func TestResolveGroupWorkDir(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ge := &DefaultGroupExecutor{
-				isDryRun: tt.isDryRun,
-			}
+			mockRM := new(runnertesting.MockResourceManager)
+			ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
+				Config:          &runnertypes.ConfigSpec{},
+				ResourceManager: mockRM,
+				RunID:           "test-run-workdir",
+			})
+			ge.isDryRun = tt.isDryRun
 
 			runtimeGroup := &runnertypes.RuntimeGroup{
 				Spec: &runnertypes.GroupSpec{
@@ -915,7 +932,12 @@ func TestResolveCommandWorkDir(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ge := &DefaultGroupExecutor{}
+			mockRM := new(runnertesting.MockResourceManager)
+			ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
+				Config:          &runnertypes.ConfigSpec{},
+				ResourceManager: mockRM,
+				RunID:           "test-run-cmdworkdir",
+			})
 
 			runtimeCmd := &runnertypes.RuntimeCommand{
 				Spec: &runnertypes.CommandSpec{
@@ -2194,4 +2216,58 @@ func BenchmarkNewDefaultGroupExecutor_NoOptions(b *testing.B) {
 		)
 	}
 	_ = ge // Prevent compiler optimization
+}
+
+// TestWithCurrentUser tests the WithCurrentUser option
+func TestWithCurrentUser(t *testing.T) {
+	tests := []struct {
+		name         string
+		username     string
+		expectedUser string
+	}{
+		{
+			name:         "valid username",
+			username:     "testuser",
+			expectedUser: "testuser",
+		},
+		{
+			name:         "empty username falls back to default",
+			username:     "",
+			expectedUser: "unknown",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &runnertypes.ConfigSpec{
+				Global: runnertypes.GlobalSpec{
+					Timeout: common.IntPtr(30),
+				},
+			}
+			mockRM := new(runnertesting.MockResourceManager)
+
+			ge := NewDefaultGroupExecutor(
+				nil, config, nil, nil, mockRM, "test-run",
+				WithCurrentUser(tt.username),
+			)
+
+			assert.Equal(t, tt.expectedUser, ge.currentUser)
+		})
+	}
+}
+
+// TestDefaultCurrentUser tests that the default current user is "unknown"
+func TestDefaultCurrentUser(t *testing.T) {
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
+			Timeout: common.IntPtr(30),
+		},
+	}
+	mockRM := new(runnertesting.MockResourceManager)
+
+	ge := NewDefaultGroupExecutor(
+		nil, config, nil, nil, mockRM, "test-run",
+	)
+
+	assert.Equal(t, "unknown", ge.currentUser)
 }

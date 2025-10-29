@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 )
 
@@ -12,6 +13,8 @@ type groupExecutorOptions struct {
 	notificationFunc groupNotificationFunc
 	dryRunOptions    *resource.DryRunOptions
 	keepTempDirs     bool
+	securityLogger   *logging.SecurityLogger
+	currentUser      string
 }
 
 // defaultGroupExecutorOptions returns a new groupExecutorOptions with default values.
@@ -20,6 +23,8 @@ func defaultGroupExecutorOptions() *groupExecutorOptions {
 		notificationFunc: nil,
 		dryRunOptions:    nil, // dry-run disabled
 		keepTempDirs:     false,
+		securityLogger:   nil,
+		currentUser:      "unknown",
 	}
 }
 
@@ -41,5 +46,23 @@ func WithGroupDryRun(options *resource.DryRunOptions) GroupExecutorOption {
 func WithGroupKeepTempDirs(keep bool) GroupExecutorOption {
 	return func(opts *groupExecutorOptions) {
 		opts.keepTempDirs = keep
+	}
+}
+
+// WithSecurityLogger sets the security logger for timeout-related security events.
+func WithSecurityLogger(logger *logging.SecurityLogger) GroupExecutorOption {
+	return func(opts *groupExecutorOptions) {
+		opts.securityLogger = logger
+	}
+}
+
+// WithCurrentUser sets the current user name for security logging.
+// This should be obtained from a trusted source (e.g., os/user.Current())
+// rather than environment variables which can be spoofed.
+func WithCurrentUser(username string) GroupExecutorOption {
+	return func(opts *groupExecutorOptions) {
+		if username != "" {
+			opts.currentUser = username
+		}
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os/user"
 	"sort"
 	"time"
 
@@ -320,6 +321,10 @@ func NewRunner(configSpec *runnertypes.ConfigSpec, options ...Option) (*Runner, 
 		groupOptions = append(groupOptions, WithGroupKeepTempDirs(true))
 	}
 
+	// Get current user for security logging
+	currentUser := getCurrentUser()
+	groupOptions = append(groupOptions, WithCurrentUser(currentUser))
+
 	runner.groupExecutor = NewDefaultGroupExecutor(
 		opts.executor,
 		configSpec,
@@ -464,4 +469,16 @@ func hasUserGroupCommands(configSpec *runnertypes.ConfigSpec) bool {
 		}
 	}
 	return false
+}
+
+// getCurrentUser returns the current system user name.
+// This uses os/user.Current() which is more secure than environment variables
+// that can be spoofed. Returns "unknown" if the user cannot be determined.
+func getCurrentUser() string {
+	currentUser, err := user.Current()
+	if err != nil {
+		slog.Warn("Failed to get current user", "error", err)
+		return "unknown"
+	}
+	return currentUser.Username
 }

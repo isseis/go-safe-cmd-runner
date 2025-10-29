@@ -4,11 +4,13 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"time"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/debug"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
@@ -38,6 +40,8 @@ type DefaultGroupExecutor struct {
 	dryRunDetailLevel   resource.DryRunDetailLevel
 	dryRunShowSensitive bool
 	keepTempDirs        bool
+	securityLogger      *logging.SecurityLogger
+	currentUser         string
 }
 
 // groupNotificationFunc is a function type for sending group notifications
@@ -83,6 +87,12 @@ func NewDefaultGroupExecutor(
 		showSensitive = opts.dryRunOptions.ShowSensitive
 	}
 
+	// Create a default security logger if none provided
+	secLogger := opts.securityLogger
+	if secLogger == nil {
+		secLogger = logging.NewSecurityLogger()
+	}
+
 	return &DefaultGroupExecutor{
 		executor:            executor,
 		config:              config,
@@ -95,6 +105,8 @@ func NewDefaultGroupExecutor(
 		dryRunDetailLevel:   dryRunDetailLevel,
 		dryRunShowSensitive: showSensitive,
 		keepTempDirs:        opts.keepTempDirs,
+		securityLogger:      secLogger,
+		currentUser:         opts.currentUser,
 	}
 }
 
@@ -322,9 +334,8 @@ func (ge *DefaultGroupExecutor) createCommandContext(ctx context.Context, cmd *r
 
 	if cmd.EffectiveTimeout <= 0 {
 		// Unlimited execution: return a cancellable context without a timeout
-		slog.Warn("Command configured with unlimited timeout",
-			"command", cmd.Name(),
-			"timeout", "unlimited")
+		// Log security event with current user
+		ge.securityLogger.LogUnlimitedExecution(cmd.Name(), ge.currentUser)
 		return context.WithCancel(ctx)
 	}
 
@@ -346,6 +357,11 @@ func (ge *DefaultGroupExecutor) executeSingleCommand(ctx context.Context, cmd *r
 	// Execute the command with group context
 	result, err := ge.executeCommandInGroup(cmdCtx, cmd, groupSpec, runtimeGroup, runtimeGlobal)
 	if err != nil {
+		// Check if the error is due to context deadline exceeded (timeout)
+		if errors.Is(err, context.DeadlineExceeded) {
+			// Log timeout exceeded event
+			ge.securityLogger.LogTimeoutExceeded(cmd.Name(), cmd.EffectiveTimeout, 0) // PID not available at this level
+		}
 		slog.Error("Command failed", "command", cmd.Name(), "exit_code", 1, "error", err)
 		return "", 1, fmt.Errorf("command %s failed: %w", cmd.Name(), err)
 	}
