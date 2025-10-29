@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestResolveTimeoutWithContext(t *testing.T) {
+func TestResolveTimeout(t *testing.T) {
 	tests := []struct {
 		name            string
 		cmdTimeout      Timeout
