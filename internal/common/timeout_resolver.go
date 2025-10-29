@@ -17,36 +17,11 @@ type TimeoutResolutionContext struct {
 	Level string
 }
 
-// ResolveTimeout resolves the effective timeout value from the hierarchy.
-// It follows the precedence: command > group > global > default.
-//
-// Parameters:
-// - cmdTimeout: Command-level timeout (highest priority)
-// - groupTimeout: Group-level timeout (medium priority) - currently not used but prepared for future implementation
-// - globalTimeout: Global-level timeout (lower priority)
-//
-// Returns:
-// - The resolved timeout value in seconds
-// - A value of 0 means unlimited execution
-// - A positive value means timeout after N seconds
-//
-// Resolution logic:
-// 1. If cmdTimeout is set (not nil), use its value (even if 0)
-// 2. Else if groupTimeout is set (not nil), use its value (even if 0)
-// 3. Else if globalTimeout is set (not nil), use its value (even if 0)
-// 4. Else use DefaultTimeout (60 seconds)
-func ResolveTimeout(cmdTimeout, groupTimeout, globalTimeout *int) int {
-	// Use ResolveTimeoutWithContext and discard the context information
-	// This ensures timeout resolution logic is defined in a single place
-	resolvedValue, _ := ResolveTimeoutWithContext(cmdTimeout, groupTimeout, globalTimeout, "", "")
-	return resolvedValue
-}
-
-// ResolveTimeoutWithContext resolves the effective timeout value and returns context information.
+// ResolveTimeout resolves the effective timeout value and returns context information.
 // This is useful for logging and debugging timeout resolution.
 //
 // Returns both the resolved timeout value and context information about which level provided it.
-func ResolveTimeoutWithContext(cmdTimeout, groupTimeout, globalTimeout *int, commandName, groupName string) (int, TimeoutResolutionContext) {
+func ResolveTimeout(cmdTimeout, groupTimeout, globalTimeout *int, commandName, groupName string) (int, TimeoutResolutionContext) {
 	var resolvedValue int
 	var level string
 
