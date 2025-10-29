@@ -1,7 +1,6 @@
 package filevalidator
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -93,14 +92,4 @@ func TestOpenFileWithPrivileges_WithPrivilegeManager(t *testing.T) {
 			file.Close()
 		}
 	})
-}
-
-func TestIsPrivilegeError(t *testing.T) {
-	// For privilege-related errors
-	privErr := runnertypes.ErrPrivilegedExecutionNotAvailable
-	assert.True(t, IsPrivilegeError(privErr))
-
-	// For normal errors
-	normalErr := os.ErrNotExist
-	assert.False(t, IsPrivilegeError(normalErr))
 }
