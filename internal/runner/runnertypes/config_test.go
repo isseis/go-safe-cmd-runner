@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestParseRiskLevel(t *testing.T) {
@@ -204,145 +203,6 @@ func TestCommandHasUserGroupSpecification(t *testing.T) {
 	}
 }
 
-func TestAllowlistResolution_GetEffectiveList(t *testing.T) {
-	tests := []struct {
-		name     string
-		resolver *AllowlistResolution
-		expected []string
-	}{
-		{
-			name: "returns EffectiveList",
-			resolver: newAllowlistResolution(
-				InheritanceModeInherit,
-				"test-group",
-				map[string]struct{}{},
-				map[string]struct{}{"VAR1": {}, "VAR2": {}},
-			),
-			expected: []string{"VAR1", "VAR2"},
-		},
-		{
-			name: "empty EffectiveList",
-			resolver: newAllowlistResolution(
-				InheritanceModeInherit,
-				"test-group",
-				map[string]struct{}{},
-				map[string]struct{}{},
-			),
-			expected: []string{},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := tt.resolver.GetEffectiveList()
-			require.Equal(t, len(tt.expected), len(result), "length should match")
-			for i := range result {
-				assert.Equal(t, tt.expected[i], result[i], "element at index %d should match", i)
-			}
-		})
-	}
-}
-
-func TestAllowlistResolution_GetEffectiveSize(t *testing.T) {
-	tests := []struct {
-		name     string
-		resolver *AllowlistResolution
-		expected int
-	}{
-		{
-			name: "returns correct size",
-			resolver: newAllowlistResolution(
-				InheritanceModeInherit,
-				"test-group",
-				map[string]struct{}{},
-				map[string]struct{}{"VAR1": {}, "VAR2": {}, "VAR3": {}},
-			),
-			expected: 3,
-		},
-		{
-			name: "empty list returns 0",
-			resolver: newAllowlistResolution(
-				InheritanceModeInherit,
-				"test-group",
-				map[string]struct{}{},
-				map[string]struct{}{},
-			),
-			expected: 0,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := tt.resolver.GetEffectiveSize()
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
-func TestAllowlistResolution_GetGroupAllowlist(t *testing.T) {
-	tests := []struct {
-		name     string
-		resolver *AllowlistResolution
-		expected []string
-	}{
-		{
-			name: "returns GroupAllowlist",
-			resolver: newAllowlistResolution(
-				InheritanceModeExplicit, // Use explicit mode so only group allowlist is used
-				"test-group",
-				map[string]struct{}{"GROUP_VAR1": {}, "GROUP_VAR2": {}},
-				map[string]struct{}{},
-			),
-			expected: []string{"GROUP_VAR1", "GROUP_VAR2"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := tt.resolver.GetGroupAllowlist()
-			if len(result) != len(tt.expected) {
-				// Using require.Equal prevents a potential panic in the loop below.
-				require.Equal(t, len(tt.expected), len(result), "length should match")
-			}
-			for i := range result {
-				assert.Equal(t, tt.expected[i], result[i], "element at index %d should match", i)
-			}
-		})
-	}
-}
-
-func TestAllowlistResolution_GetGlobalAllowlist(t *testing.T) {
-	tests := []struct {
-		name     string
-		resolver *AllowlistResolution
-		expected []string
-	}{
-		{
-			name: "returns GlobalAllowlist",
-			resolver: newAllowlistResolution(
-				InheritanceModeInherit,
-				"test-group",
-				map[string]struct{}{},
-				map[string]struct{}{"GLOBAL_VAR1": {}, "GLOBAL_VAR2": {}},
-			),
-			expected: []string{"GLOBAL_VAR1", "GLOBAL_VAR2"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := tt.resolver.GetGlobalAllowlist()
-			if len(result) != len(tt.expected) {
-				// Using require.Equal prevents a potential panic in the loop below.
-				require.Equal(t, len(tt.expected), len(result), "length should match")
-			}
-			for i := range result {
-				assert.Equal(t, tt.expected[i], result[i], "element at index %d should match", i)
-			}
-		})
-	}
-}
-
 func TestAllowlistResolution_GetMode(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -428,42 +288,6 @@ func TestAllowlistResolution_GetGroupName(t *testing.T) {
 // TestAllowlistResolution_NilReceiverPanics tests that all getter methods panic on nil receiver
 func TestAllowlistResolution_NilReceiverPanics(t *testing.T) {
 	var nilResolver *AllowlistResolution
-
-	t.Run("GetEffectiveList_panics_on_nil_receiver", func(t *testing.T) {
-		defer func() {
-			if r := recover(); r == nil {
-				t.Error("GetEffectiveList() did not panic with nil receiver")
-			}
-		}()
-		_ = nilResolver.GetEffectiveList()
-	})
-
-	t.Run("GetEffectiveSize_panics_on_nil_receiver", func(t *testing.T) {
-		defer func() {
-			if r := recover(); r == nil {
-				t.Error("GetEffectiveSize() did not panic with nil receiver")
-			}
-		}()
-		_ = nilResolver.GetEffectiveSize()
-	})
-
-	t.Run("GetGroupAllowlist_panics_on_nil_receiver", func(t *testing.T) {
-		defer func() {
-			if r := recover(); r == nil {
-				t.Error("GetGroupAllowlist() did not panic with nil receiver")
-			}
-		}()
-		_ = nilResolver.GetGroupAllowlist()
-	})
-
-	t.Run("GetGlobalAllowlist_panics_on_nil_receiver", func(t *testing.T) {
-		defer func() {
-			if r := recover(); r == nil {
-				t.Error("GetGlobalAllowlist() did not panic with nil receiver")
-			}
-		}()
-		_ = nilResolver.GetGlobalAllowlist()
-	})
 
 	t.Run("GetMode_panics_on_nil_receiver", func(t *testing.T) {
 		defer func() {

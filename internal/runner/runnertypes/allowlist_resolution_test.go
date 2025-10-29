@@ -1,7 +1,6 @@
 package runnertypes
 
 import (
-	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -390,31 +389,27 @@ func TestLazyEvaluationGetters(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			resolution := newAllowlistResolution(tt.mode, "test-group", groupSet, globalSet)
 
-			// Test GetGroupAllowlist
-			groupResult := resolution.GetGroupAllowlist()
-			assert.True(t, slices.Equal(groupResult, tt.expectedGroup), "GetGroupAllowlist() should match expected")
+			// Test that all expected variables are allowed
+			for _, variable := range tt.expectedEffective {
+				assert.True(t, resolution.IsAllowed(variable), "Variable '%s' should be allowed", variable)
+			}
 
-			// Test GetGlobalAllowlist
-			globalResult := resolution.GetGlobalAllowlist()
-			assert.True(t, slices.Equal(globalResult, tt.expectedGlobal), "GetGlobalAllowlist() should match expected")
-
-			// Test GetEffectiveList
-			effectiveResult := resolution.GetEffectiveList()
-			assert.True(t, slices.Equal(effectiveResult, tt.expectedEffective), "GetEffectiveList() should match expected")
-
-			// Test GetEffectiveSize
-			effectiveSize := resolution.GetEffectiveSize()
-			assert.Equal(t, len(tt.expectedEffective), effectiveSize)
-
-			// Test caching - call again and verify same result
-			groupResult2 := resolution.GetGroupAllowlist()
-			assert.True(t, slices.Equal(groupResult2, tt.expectedGroup), "GetGroupAllowlist() cached should match expected")
-
-			globalResult2 := resolution.GetGlobalAllowlist()
-			assert.True(t, slices.Equal(globalResult2, tt.expectedGlobal), "GetGlobalAllowlist() cached should match expected")
-
-			effectiveResult2 := resolution.GetEffectiveList()
-			assert.True(t, slices.Equal(effectiveResult2, tt.expectedEffective), "GetEffectiveList() cached should match expected")
+			// Test that variables not in expected list are not allowed
+			allVars := make([]string, 0, len(tt.expectedGroup)+len(tt.expectedGlobal))
+			allVars = append(allVars, tt.expectedGroup...)
+			allVars = append(allVars, tt.expectedGlobal...)
+			for _, variable := range allVars {
+				found := false
+				for _, expected := range tt.expectedEffective {
+					if variable == expected {
+						found = true
+						break
+					}
+				}
+				if !found {
+					assert.False(t, resolution.IsAllowed(variable), "Variable '%s' should not be allowed", variable)
+				}
+			}
 		})
 	}
 }
@@ -422,7 +417,7 @@ func TestLazyEvaluationGetters(t *testing.T) {
 // TestEffectiveSetInvariants tests that effectiveSet invariants are enforced.
 // effectiveSet must always be initialized via NewAllowlistResolution.
 func TestEffectiveSetInvariants(t *testing.T) {
-	t.Run("effectiveSet_nil_causes_panic_in_GetEffectiveList", func(t *testing.T) {
+	t.Run("effectiveSet_nil_causes_panic_in_IsAllowed", func(t *testing.T) {
 		// effectiveSet being nil is a bug and should panic
 		resolution := &AllowlistResolution{
 			Mode:         InheritanceModeInherit,
@@ -430,30 +425,13 @@ func TestEffectiveSetInvariants(t *testing.T) {
 			effectiveSet: nil, // BUG: should never be nil
 		}
 
-		// GetEffectiveList should panic when effectiveSet is nil
+		// IsAllowed should panic when effectiveSet is nil
 		defer func() {
 			if r := recover(); r == nil {
-				t.Error("GetEffectiveList() did not panic with nil effectiveSet")
+				t.Error("IsAllowed() did not panic with nil effectiveSet")
 			}
 		}()
-		_ = resolution.GetEffectiveList()
-	})
-
-	t.Run("effectiveSet_nil_causes_panic_in_GetEffectiveSize", func(t *testing.T) {
-		// effectiveSet being nil is a bug and should panic
-		resolution := &AllowlistResolution{
-			Mode:         InheritanceModeInherit,
-			GroupName:    "test-group",
-			effectiveSet: nil, // BUG: should never be nil
-		}
-
-		// GetEffectiveSize should panic when effectiveSet is nil
-		defer func() {
-			if r := recover(); r == nil {
-				t.Error("GetEffectiveSize() did not panic with nil effectiveSet")
-			}
-		}()
-		_ = resolution.GetEffectiveSize()
+		_ = resolution.IsAllowed("TEST_VAR")
 	})
 }
 
@@ -588,13 +566,6 @@ func TestAllowlistResolutionBuilder_Build(t *testing.T) {
 			assert.Equal(t, tt.expectedGroupSize, len(resolution.groupAllowlistSet))
 
 			assert.Equal(t, tt.expectedGlobalSize, len(resolution.globalAllowlistSet))
-
-			// Verify getters work correctly
-			groupList := resolution.GetGroupAllowlist()
-			assert.Equal(t, tt.expectedGroupSize, len(groupList))
-
-			globalList := resolution.GetGlobalAllowlist()
-			assert.Equal(t, tt.expectedGlobalSize, len(globalList))
 		})
 	}
 }
@@ -620,12 +591,6 @@ func TestAllowlistResolutionBuilder_FluentInterface(t *testing.T) {
 
 	if resolution.GroupName != "test-group" {
 		t.Errorf("GroupName = %q, want %q", resolution.GroupName, "test-group")
-	}
-
-	// In explicit mode, effective list should match group variables
-	effectiveList := resolution.GetEffectiveList()
-	if len(effectiveList) != 3 {
-		t.Errorf("GetEffectiveList() size = %d, want 3", len(effectiveList))
 	}
 
 	// Verify variables are accessible
@@ -727,10 +692,6 @@ func TestAllowlistResolutionBuilder_Integration(t *testing.T) {
 			// Test IsAllowed behavior
 			allowed := resolution.IsAllowed(tt.testVariable)
 			assert.Equal(t, tt.expectedAllowed, allowed)
-
-			// Test effective size
-			size := resolution.GetEffectiveSize()
-			assert.Equal(t, tt.expectedEffectiveSize, size)
 		})
 	}
 }
@@ -831,9 +792,6 @@ func TestNewTestAllowlistResolutionSimpleEmpty(t *testing.T) {
 	for _, variable := range testVars {
 		assert.False(t, resolution.IsAllowed(variable), "Variable '%s' should be disallowed with empty lists", variable)
 	}
-
-	// Effective size should be 0
-	assert.Equal(t, 0, resolution.GetEffectiveSize())
 }
 
 // TestNewTestAllowlistResolutionSimpleNil tests function with nil variable lists
@@ -846,9 +804,6 @@ func TestNewTestAllowlistResolutionSimpleNil(t *testing.T) {
 	for _, variable := range testVars {
 		assert.False(t, resolution.IsAllowed(variable), "Variable '%s' should be disallowed with nil lists", variable)
 	}
-
-	// Effective size should be 0
-	assert.Equal(t, 0, resolution.GetEffectiveSize())
 }
 
 // TestAllowlistResolutionBuilder_SetBasedAPI tests the set-based builder methods
@@ -914,10 +869,6 @@ func TestAllowlistResolutionBuilder_SetBasedAPI(t *testing.T) {
 			if allowed != tt.expectedAllowed {
 				t.Errorf("IsAllowed(%q) = %v, want %v", tt.testVariable, allowed, tt.expectedAllowed)
 			}
-
-			// Test effective size
-			size := resolution.GetEffectiveSize()
-			assert.Equal(t, tt.expectedEffectiveSize, size)
 		})
 	}
 }

@@ -42,44 +42,6 @@ func BenchmarkAllowlistResolutionIsAllowed(b *testing.B) {
 	}
 }
 
-// BenchmarkAllowlistResolutionGetters benchmarks the getter methods
-func BenchmarkAllowlistResolutionGetters(b *testing.B) {
-	size := 1000
-	globalVars := make([]string, size)
-	groupVars := make([]string, size)
-
-	for i := 0; i < size; i++ {
-		globalVars[i] = fmt.Sprintf("GLOBAL_VAR_%d", i)
-		groupVars[i] = fmt.Sprintf("GROUP_VAR_%d", i)
-	}
-
-	resolution := NewTestAllowlistResolutionWithMode(InheritanceModeInherit, globalVars, groupVars)
-
-	b.Run("GetEffectiveList", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			_ = resolution.GetEffectiveList()
-		}
-	})
-
-	b.Run("GetEffectiveSize", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			_ = resolution.GetEffectiveSize()
-		}
-	})
-
-	b.Run("GetGroupAllowlist", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			_ = resolution.GetGroupAllowlist()
-		}
-	})
-
-	b.Run("GetGlobalAllowlist", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			_ = resolution.GetGlobalAllowlist()
-		}
-	})
-}
-
 // BenchmarkAllowlistResolutionConstruction benchmarks object construction
 func BenchmarkAllowlistResolutionConstruction(b *testing.B) {
 	sizes := []int{10, 100, 1000}
@@ -138,6 +100,5 @@ func BenchmarkAllowlistResolutionMemory(b *testing.B) {
 
 		// Use the resolution to prevent optimization
 		_ = resolution.IsAllowed("GLOBAL_VAR_500")
-		_ = resolution.GetEffectiveSize()
 	}
 }

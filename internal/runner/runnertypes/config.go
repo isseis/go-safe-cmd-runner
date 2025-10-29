@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
-	"sync"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 )
@@ -188,16 +187,6 @@ type AllowlistResolution struct {
 
 	// Pre-computed effective set for optimization
 	effectiveSet map[string]struct{} // Pre-computed effective allowlist set
-
-	// Lazy evaluation caches for getter methods
-	groupAllowlistOnce  sync.Once // Ensures groupAllowlistCache is initialized only once
-	groupAllowlistCache []string  // Cache for GetGroupAllowlist()
-
-	globalAllowlistOnce  sync.Once // Ensures globalAllowlistCache is initialized only once
-	globalAllowlistCache []string  // Cache for GetGlobalAllowlist()
-
-	effectiveListOnce  sync.Once // Ensures effectiveListCache is initialized only once
-	effectiveListCache []string  // Cache for GetEffectiveList()
 }
 
 // IsAllowed checks if a variable is allowed in the effective allowlist.
@@ -229,67 +218,6 @@ func (r *AllowlistResolution) IsAllowed(variable string) bool {
 
 	_, allowed := r.effectiveSet[variable]
 	return allowed
-}
-
-// SetGroupAllowlistSet sets the internal group allowlist map for O(1) lookups.
-// This is called during allowlist resolution to populate the lookup map.
-func (r *AllowlistResolution) SetGroupAllowlistSet(allowlistSet map[string]struct{}) {
-	r.groupAllowlistSet = allowlistSet
-}
-
-// SetGlobalAllowlistSet sets the internal global allowlist map for O(1) lookups.
-// This is called during allowlist resolution to populate the lookup map.
-func (r *AllowlistResolution) SetGlobalAllowlistSet(allowlistSet map[string]struct{}) {
-	r.globalAllowlistSet = allowlistSet
-}
-
-// GetEffectiveList returns effective allowlist with lazy evaluation for performance.
-// Uses cached slice generated from effectiveSet on first access.
-// Thread-safe: Uses sync.Once to ensure cache is initialized only once.
-func (r *AllowlistResolution) GetEffectiveList() []string {
-	// INVARIANT: effectiveSet must be set during initialization
-	if r.effectiveSet == nil {
-		panic("AllowlistResolution.GetEffectiveList: effectiveSet is nil - object not properly initialized via NewAllowlistResolution")
-	}
-
-	r.effectiveListOnce.Do(func() {
-		r.effectiveListCache = r.setToSortedSlice(r.effectiveSet)
-	})
-
-	return r.effectiveListCache
-}
-
-// GetEffectiveSize returns the number of effective allowlist entries.
-// Uses effectiveSet directly for O(1) size query.
-func (r *AllowlistResolution) GetEffectiveSize() int {
-	// INVARIANT: effectiveSet must be set during initialization
-	if r.effectiveSet == nil {
-		panic("AllowlistResolution.GetEffectiveSize: effectiveSet is nil - object not properly initialized via NewAllowlistResolution")
-	}
-
-	return len(r.effectiveSet)
-}
-
-// GetGroupAllowlist returns group allowlist with lazy evaluation.
-// Uses cached slice generated from groupAllowlistSet on first access.
-func (r *AllowlistResolution) GetGroupAllowlist() []string {
-	// Thread-safe lazy evaluation and caching using sync.Once
-	r.groupAllowlistOnce.Do(func() {
-		r.groupAllowlistCache = r.setToSortedSlice(r.groupAllowlistSet)
-	})
-
-	return r.groupAllowlistCache
-}
-
-// GetGlobalAllowlist returns global allowlist with lazy evaluation.
-// Uses cached slice generated from globalAllowlistSet on first access.
-func (r *AllowlistResolution) GetGlobalAllowlist() []string {
-	// Thread-safe lazy evaluation and caching using sync.Once
-	r.globalAllowlistOnce.Do(func() {
-		r.globalAllowlistCache = r.setToSortedSlice(r.globalAllowlistSet)
-	})
-
-	return r.globalAllowlistCache
 }
 
 // GetMode returns the inheritance mode used for this resolution.
