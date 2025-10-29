@@ -393,11 +393,6 @@ func (m *UnixPrivilegeManager) GetMetrics() Metrics {
 	return m.metrics.GetSnapshot()
 }
 
-// changeUserGroupDryRun validates user/group configuration without making actual changes
-func (m *UnixPrivilegeManager) changeUserGroupDryRun(userName, groupName string) error {
-	return m.changeUserGroupInternal(userName, groupName, true)
-}
-
 // changeUserGroupInternal implements the core user/group change logic with optional dry-run mode
 // Note: This method assumes the caller has already acquired appropriate privileges
 func (m *UnixPrivilegeManager) changeUserGroupInternal(userName, groupName string, dryRun bool) error {
