@@ -9,7 +9,6 @@ import (
 	"os"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
@@ -102,66 +101,6 @@ func (f *Filter) FilterGlobalVariables(envFileVars map[string]string, src Source
 		"filtered_vars", len(result))
 
 	return result, nil
-}
-
-// determineInheritanceMode determines the inheritance mode based on allowlist configuration
-func (f *Filter) determineInheritanceMode(allowlist []string) runnertypes.InheritanceMode {
-	// nil slice = inherit, empty slice = reject, non-empty = explicit
-	if allowlist == nil {
-		return runnertypes.InheritanceModeInherit
-	}
-
-	if len(allowlist) == 0 {
-		return runnertypes.InheritanceModeReject
-	}
-
-	return runnertypes.InheritanceModeExplicit
-}
-
-// ResolveAllowlistConfiguration resolves the effective allowlist configuration for a group
-func (f *Filter) ResolveAllowlistConfiguration(allowlist []string, groupName string) *runnertypes.AllowlistResolution {
-	mode := f.determineInheritanceMode(allowlist)
-
-	// Use Builder pattern with set-based API for efficiency
-	// This avoids unnecessary map -> slice -> map conversions
-	resolution := runnertypes.NewAllowlistResolutionBuilder().
-		WithMode(mode).
-		WithGroupName(groupName).
-		WithGroupVariables(allowlist).
-		WithGlobalVariablesSet(f.globalAllowlist).
-		Build()
-
-	// Log the resolution for debugging
-	slog.Debug("Resolved allowlist configuration",
-		"group", groupName,
-		"mode", mode.String(),
-		"group_allowlist_size", len(allowlist),
-		"global_allowlist_size", len(f.globalAllowlist),
-		"effective_allowlist_size", resolution.GetEffectiveSize())
-
-	return resolution
-}
-
-// IsVariableAccessAllowed checks if a variable is allowed based on the inheritance configuration
-// This replaces the old isVariableAllowed function with clearer logic
-func (f *Filter) IsVariableAccessAllowed(variable string, allowlist []string, groupName string) bool {
-	resolution := f.ResolveAllowlistConfiguration(allowlist, groupName)
-	allowed := resolution.IsAllowed(variable)
-
-	if !allowed {
-		slog.Debug("Variable access denied",
-			"variable", variable,
-			"group", groupName,
-			"inheritance_mode", resolution.Mode.String(),
-			"effective_allowlist_size", resolution.GetEffectiveSize())
-	} else {
-		slog.Debug("Variable access granted",
-			"variable", variable,
-			"group", groupName,
-			"inheritance_mode", resolution.Mode.String())
-	}
-
-	return allowed
 }
 
 // ValidateEnvironmentVariable validates both name and value of an environment variable
