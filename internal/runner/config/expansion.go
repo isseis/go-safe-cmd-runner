@@ -357,7 +357,7 @@ func determineEffectiveEnvAllowlist(groupAllowlist []string, globalAllowlist []s
 //   - *RuntimeGlobal: The expanded runtime global configuration
 //   - error: An error if expansion fails (e.g., undefined variable reference)
 func ExpandGlobal(spec *runnertypes.GlobalSpec) (*runnertypes.RuntimeGlobal, error) {
-	// Use constructor to ensure proper initialization (including timeout field)
+	// Create RuntimeGlobal using NewRuntimeGlobal to properly initialize timeout field
 	runtime, err := runnertypes.NewRuntimeGlobal(spec)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create RuntimeGlobal: %w", err)

@@ -1,6 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"os"
+	"os/exec"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -300,5 +303,95 @@ timeout = 0
 		require.NoError(t, err, "Failed to create RuntimeCommand for %s", cmdSpec.Name)
 
 		assert.Equal(t, tc.expectedTimeout, finalRuntimeCmd.EffectiveTimeout, tc.description)
+	}
+}
+
+func TestDryRun_TimeoutResolutionContext(t *testing.T) {
+	tests := []struct {
+		name            string
+		configContent   string
+		expectedTimeout int
+		expectedLevel   string
+	}{
+		{
+			name: "command level timeout in dry-run",
+			configContent: `
+[global]
+timeout = 60
+
+[[groups]]
+name = "test-group"
+
+[[groups.commands]]
+name = "test-cmd"
+cmd = "/bin/sleep"
+args = ["1"]
+timeout = 30
+`,
+			expectedTimeout: 30,
+			expectedLevel:   "command",
+		},
+		{
+			name: "global level timeout in dry-run",
+			configContent: `
+[global]
+timeout = 45
+
+[[groups]]
+name = "test-group"
+
+[[groups.commands]]
+name = "test-cmd"
+cmd = "/bin/sleep"
+args = ["1"]
+`,
+			expectedTimeout: 45,
+			expectedLevel:   "global",
+		},
+		{
+			name: "default timeout in dry-run",
+			configContent: `
+[[groups]]
+name = "test-group"
+
+[[groups.commands]]
+name = "test-cmd"
+cmd = "/bin/sleep"
+args = ["1"]
+`,
+			expectedTimeout: 60,
+			expectedLevel:   "default",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			// Create temporary config file
+			tmpFile, err := os.CreateTemp("", "test-config-*.toml")
+			require.NoError(t, err)
+			defer os.Remove(tmpFile.Name())
+
+			_, err = tmpFile.WriteString(tt.configContent)
+			require.NoError(t, err)
+			tmpFile.Close()
+
+			// Run command in dry-run mode
+			cmd := exec.Command("go", "run", ".", "-config", tmpFile.Name(), "-dry-run", "-dry-run-detail", "full")
+			cmd.Dir = "."
+
+			output, err := cmd.CombinedOutput()
+			require.NoError(t, err, "dry-run should succeed: %s", string(output))
+
+			outputStr := string(output)
+
+			// Check for timeout value
+			assert.Contains(t, outputStr, fmt.Sprintf("timeout: %d", tt.expectedTimeout),
+				"output should contain timeout value")
+
+			// Check for timeout_level
+			assert.Contains(t, outputStr, fmt.Sprintf("timeout_level: %s", tt.expectedLevel),
+				"output should contain timeout_level")
+		})
 	}
 }

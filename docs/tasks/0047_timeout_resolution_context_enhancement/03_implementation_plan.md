@@ -1114,10 +1114,10 @@ This feature helps you understand the timeout resolution hierarchy:
 
 ### 7.2. 完了基準
 
-- [ ] すべてのテストが成功する（`go test ./... -v`）
-- [ ] ビルドが成功する（`go build ./...`）
-- [ ] `go vet`がエラーなく完了する
-- [ ] テストカバレッジが低下していない
+- [x] すべてのテストが成功する（`go test ./... -v`）
+- [x] ビルドが成功する（`go build ./...`）
+- [x] `go vet`がエラーなく完了する
+- [x] テストカバレッジが低下していない
 - [ ] サンプル設定ファイルが追加されている
 - [ ] READMEが更新されている
 - [ ] CHANGELOGが更新されている

@@ -168,7 +168,8 @@ func (d *DryRunResourceManager) analyzeCommand(_ context.Context, cmd *runnertyp
 		Parameters: map[string]any{
 			"command":           cmd.ExpandedCmd,
 			"working_directory": cmd.EffectiveWorkDir,
-			"timeout":           cmd.Timeout(),
+			"timeout":           cmd.EffectiveTimeout,
+			"timeout_level":     cmd.TimeoutResolution.Level,
 		},
 		Impact: ResourceImpact{
 			Reversible:  false, // Commands are generally not reversible
