@@ -306,13 +306,4 @@ func TestAllowlistResolution_NilReceiverPanics(t *testing.T) {
 		}()
 		_ = nilResolver.GetGroupName()
 	})
-
-	t.Run("IsAllowed_panics_on_nil_receiver", func(t *testing.T) {
-		defer func() {
-			if r := recover(); r == nil {
-				t.Error("IsAllowed() did not panic with nil receiver")
-			}
-		}()
-		_ = nilResolver.IsAllowed("TEST_VAR")
-	})
 }

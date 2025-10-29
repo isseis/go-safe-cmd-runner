@@ -189,37 +189,6 @@ type AllowlistResolution struct {
 	effectiveSet map[string]struct{} // Pre-computed effective allowlist set
 }
 
-// IsAllowed checks if a variable is allowed in the effective allowlist.
-// This is the most frequently called method and is optimized for O(1) performance.
-//
-// Uses pre-computed effectiveSet for optimal performance:
-// - computeEffectiveSet() pre-computes Mode-based effective allowlist
-// - IsAllowed() only needs to check effectiveSet (faster than mode switching)
-//
-// Parameters:
-//   - variable: environment variable name to check
-//
-// Returns: true if the variable is allowed, false otherwise
-//
-// Panics:
-//   - if receiver is nil (programming error - caller must check before calling)
-//   - if effectiveSet is nil (invariant violation - object not properly initialized)
-func (r *AllowlistResolution) IsAllowed(variable string) bool {
-	// empty variable name is input validation error - return false
-	if variable == "" {
-		return false
-	}
-
-	// INVARIANT: effectiveSet must be set during initialization
-	// If this is nil, it's an invariant violation, so panic
-	if r.effectiveSet == nil {
-		panic("AllowlistResolution: effectiveSet is nil - object not properly initialized")
-	}
-
-	_, allowed := r.effectiveSet[variable]
-	return allowed
-}
-
 // GetMode returns the inheritance mode used for this resolution.
 func (r *AllowlistResolution) GetMode() InheritanceMode {
 	return r.Mode
