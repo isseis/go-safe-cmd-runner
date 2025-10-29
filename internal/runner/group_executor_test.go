@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
+	"github.com/isseis/go-safe-cmd-runner/internal/logging"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/config"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
@@ -60,9 +62,12 @@ func TestCreateCommandContext(t *testing.T) {
 				},
 			}
 
-			ge := &DefaultGroupExecutor{
-				config: config,
-			}
+			mockRM := new(runnertesting.MockResourceManager)
+			ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
+				Config:          config,
+				ResourceManager: mockRM,
+				RunID:           "test-run-timeout",
+			})
 
 			cmd := &runnertypes.RuntimeCommand{
 				Spec: &runnertypes.CommandSpec{
@@ -103,7 +108,12 @@ func TestCreateCommandContext_UnlimitedTimeout(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ge := &DefaultGroupExecutor{}
+			mockRM := new(runnertesting.MockResourceManager)
+			ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
+				Config:          &runnertypes.ConfigSpec{},
+				ResourceManager: mockRM,
+				RunID:           "test-run-unlimited",
+			})
 
 			cmd := &runnertypes.RuntimeCommand{
 				Spec: &runnertypes.CommandSpec{
@@ -129,7 +139,12 @@ func TestCreateCommandContext_UnlimitedTimeout(t *testing.T) {
 
 // TestCreateCommandContext_NegativeTimeoutPanic tests that negative timeout causes panic
 func TestCreateCommandContext_NegativeTimeoutPanic(t *testing.T) {
-	ge := &DefaultGroupExecutor{}
+	mockRM := new(runnertesting.MockResourceManager)
+	ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
+		Config:          &runnertypes.ConfigSpec{},
+		ResourceManager: mockRM,
+		RunID:           "test-run-negative",
+	})
 
 	cmd := &runnertypes.RuntimeCommand{
 		Spec: &runnertypes.CommandSpec{
@@ -825,9 +840,13 @@ func TestResolveGroupWorkDir(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ge := &DefaultGroupExecutor{
-				isDryRun: tt.isDryRun,
-			}
+			mockRM := new(runnertesting.MockResourceManager)
+			ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
+				Config:          &runnertypes.ConfigSpec{},
+				ResourceManager: mockRM,
+				RunID:           "test-run-workdir",
+			})
+			ge.isDryRun = tt.isDryRun
 
 			runtimeGroup := &runnertypes.RuntimeGroup{
 				Spec: &runnertypes.GroupSpec{
@@ -915,7 +934,12 @@ func TestResolveCommandWorkDir(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ge := &DefaultGroupExecutor{}
+			mockRM := new(runnertesting.MockResourceManager)
+			ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
+				Config:          &runnertypes.ConfigSpec{},
+				ResourceManager: mockRM,
+				RunID:           "test-run-cmdworkdir",
+			})
 
 			runtimeCmd := &runnertypes.RuntimeCommand{
 				Spec: &runnertypes.CommandSpec{
@@ -2194,4 +2218,311 @@ func BenchmarkNewDefaultGroupExecutor_NoOptions(b *testing.B) {
 		)
 	}
 	_ = ge // Prevent compiler optimization
+}
+
+// TestWithCurrentUser tests the WithCurrentUser option
+func TestWithCurrentUser(t *testing.T) {
+	tests := []struct {
+		name         string
+		username     string
+		expectedUser string
+	}{
+		{
+			name:         "valid username",
+			username:     "testuser",
+			expectedUser: "testuser",
+		},
+		{
+			name:         "empty username falls back to default",
+			username:     "",
+			expectedUser: "unknown",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &runnertypes.ConfigSpec{
+				Global: runnertypes.GlobalSpec{
+					Timeout: common.IntPtr(30),
+				},
+			}
+			mockRM := new(runnertesting.MockResourceManager)
+
+			ge := NewDefaultGroupExecutor(
+				nil, config, nil, nil, mockRM, "test-run",
+				WithCurrentUser(tt.username),
+			)
+
+			assert.Equal(t, tt.expectedUser, ge.currentUser)
+		})
+	}
+}
+
+// TestDefaultCurrentUser tests that the default current user is "unknown"
+func TestDefaultCurrentUser(t *testing.T) {
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
+			Timeout: common.IntPtr(30),
+		},
+	}
+	mockRM := new(runnertesting.MockResourceManager)
+
+	ge := NewDefaultGroupExecutor(
+		nil, config, nil, nil, mockRM, "test-run",
+	)
+
+	assert.Equal(t, "unknown", ge.currentUser)
+}
+
+// TestCreateCommandContext_UnlimitedTimeout_SecurityLogging tests that unlimited timeout triggers security logging
+func TestCreateCommandContext_UnlimitedTimeout_SecurityLogging(t *testing.T) {
+	tests := []struct {
+		name             string
+		effectiveTimeout int
+		commandName      string
+		currentUser      string
+		expectLog        bool
+		expectedFields   map[string]interface{}
+	}{
+		{
+			name:             "zero timeout logs unlimited execution",
+			effectiveTimeout: 0,
+			commandName:      "unlimited-cmd",
+			currentUser:      "testuser",
+			expectLog:        true,
+			expectedFields: map[string]interface{}{
+				"command":        "unlimited-cmd",
+				"user":           "testuser",
+				"timeout":        "unlimited",
+				"security_event": "unlimited_execution_start",
+			},
+		},
+		{
+			name:             "unlimited execution with unknown user",
+			effectiveTimeout: 0,
+			commandName:      "test-cmd",
+			currentUser:      "unknown",
+			expectLog:        true,
+			expectedFields: map[string]interface{}{
+				"command":        "test-cmd",
+				"user":           "unknown",
+				"timeout":        "unlimited",
+				"security_event": "unlimited_execution_start",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a buffer to capture log output
+			var logBuffer bytes.Buffer
+			testLogger := slog.New(slog.NewJSONHandler(&logBuffer, &slog.HandlerOptions{
+				Level: slog.LevelDebug,
+			}))
+
+			// Create SecurityLogger with test logger
+			secLogger := logging.NewSecurityLoggerWithLogger(testLogger)
+
+			mockRM := new(runnertesting.MockResourceManager)
+			ge := NewTestGroupExecutorWithConfig(TestGroupExecutorConfig{
+				Config:          &runnertypes.ConfigSpec{},
+				ResourceManager: mockRM,
+				RunID:           "test-run-unlimited",
+			},
+				WithSecurityLogger(secLogger),
+				WithCurrentUser(tt.currentUser),
+			)
+
+			cmd := &runnertypes.RuntimeCommand{
+				Spec: &runnertypes.CommandSpec{
+					Name: tt.commandName,
+				},
+				EffectiveTimeout: tt.effectiveTimeout,
+			}
+
+			ctx := context.Background()
+			cmdCtx, cancel := ge.createCommandContext(ctx, cmd)
+			defer cancel()
+
+			// Verify no deadline is set (unlimited execution)
+			_, ok := cmdCtx.Deadline()
+			assert.False(t, ok, "context should not have a deadline for unlimited timeout")
+
+			if tt.expectLog {
+				// Verify log output contains expected fields
+				logOutput := logBuffer.String()
+				assert.NotEmpty(t, logOutput, "log output should not be empty")
+
+				// Verify all expected fields are present in the log
+				for key, expectedValue := range tt.expectedFields {
+					assert.Contains(t, logOutput, fmt.Sprintf(`"%s":"%s"`, key, expectedValue),
+						"log should contain %s=%s", key, expectedValue)
+				}
+
+				// Verify it's a WARN level log
+				assert.Contains(t, logOutput, `"level":"WARN"`)
+				assert.Contains(t, logOutput, "Command starting with unlimited timeout")
+			}
+		})
+	}
+}
+
+// TestExecuteGroup_TimeoutExceeded_SecurityLogging tests that timeout exceeded triggers security logging
+func TestExecuteGroup_TimeoutExceeded_SecurityLogging(t *testing.T) {
+	// Create a buffer to capture log output
+	var logBuffer bytes.Buffer
+	testLogger := slog.New(slog.NewJSONHandler(&logBuffer, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}))
+
+	// Create SecurityLogger with test logger
+	secLogger := logging.NewSecurityLoggerWithLogger(testLogger)
+
+	mockRM := new(runnertesting.MockResourceManager)
+	mockValidator, mockVerificationManager := setupMocksForTest(t)
+
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
+			Timeout: common.IntPtr(30),
+		},
+	}
+
+	ge := NewTestGroupExecutorWithConfig(
+		TestGroupExecutorConfig{
+			Config:              config,
+			Validator:           mockValidator,
+			VerificationManager: mockVerificationManager,
+			ResourceManager:     mockRM,
+		},
+		WithSecurityLogger(secLogger),
+		WithCurrentUser("testuser"),
+	)
+
+	group := &runnertypes.GroupSpec{
+		Name: "test-group",
+		Commands: []runnertypes.CommandSpec{
+			{
+				Name:    "timeout-cmd",
+				Cmd:     "/bin/sleep",
+				Args:    []string{"1000"},
+				Timeout: common.IntPtr(1), // 1 second timeout
+			},
+		},
+	}
+
+	runtimeGlobal := &runnertypes.RuntimeGlobal{
+		Spec: &runnertypes.GlobalSpec{Timeout: common.IntPtr(30)},
+	}
+
+	// Mock verification manager to resolve paths
+	mockVerificationManager.On("ResolvePath", "/bin/sleep").Return("/bin/sleep", nil)
+
+	// Mock execution to return context.DeadlineExceeded error
+	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+		nil, context.DeadlineExceeded)
+	mockRM.On("ValidateOutputPath", mock.Anything, mock.Anything).Return(nil).Maybe()
+
+	ctx := context.Background()
+	err := ge.ExecuteGroup(ctx, group, runtimeGlobal)
+
+	// Verify error is returned
+	require.Error(t, err)
+
+	// Verify security log contains timeout exceeded event
+	logOutput := logBuffer.String()
+	assert.NotEmpty(t, logOutput, "log output should not be empty")
+
+	// Verify expected fields in log
+	assert.Contains(t, logOutput, `"level":"ERROR"`, "should be ERROR level")
+	assert.Contains(t, logOutput, "Command exceeded timeout")
+	assert.Contains(t, logOutput, `"command":"timeout-cmd"`)
+	assert.Contains(t, logOutput, `"timeout_seconds":1`)
+	assert.Contains(t, logOutput, `"security_event":"timeout_exceeded"`)
+
+	mockRM.AssertExpectations(t)
+	mockValidator.AssertExpectations(t)
+	mockVerificationManager.AssertExpectations(t)
+}
+
+// TestExecuteGroup_MultipleCommands_TimeoutLogging tests timeout logging with multiple commands
+func TestExecuteGroup_MultipleCommands_TimeoutLogging(t *testing.T) {
+	// Create a buffer to capture log output
+	var logBuffer bytes.Buffer
+	testLogger := slog.New(slog.NewJSONHandler(&logBuffer, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}))
+
+	// Create SecurityLogger with test logger
+	secLogger := logging.NewSecurityLoggerWithLogger(testLogger)
+
+	mockRM := new(runnertesting.MockResourceManager)
+	mockValidator, mockVerificationManager := setupMocksForTest(t)
+
+	config := &runnertypes.ConfigSpec{
+		Global: runnertypes.GlobalSpec{
+			Timeout: common.IntPtr(30),
+		},
+	}
+
+	ge := NewTestGroupExecutorWithConfig(
+		TestGroupExecutorConfig{
+			Config:              config,
+			Validator:           mockValidator,
+			VerificationManager: mockVerificationManager,
+			ResourceManager:     mockRM,
+		},
+		WithSecurityLogger(secLogger),
+		WithCurrentUser("testuser"),
+	)
+
+	group := &runnertypes.GroupSpec{
+		Name: "test-group",
+		Commands: []runnertypes.CommandSpec{
+			{
+				Name:    "unlimited-cmd",
+				Cmd:     "/bin/echo",
+				Timeout: common.IntPtr(0), // Unlimited timeout
+			},
+			{
+				Name:    "normal-cmd",
+				Cmd:     "/bin/echo",
+				Timeout: common.IntPtr(10), // Normal timeout
+			},
+		},
+	}
+
+	runtimeGlobal := &runnertypes.RuntimeGlobal{
+		Spec: &runnertypes.GlobalSpec{Timeout: common.IntPtr(30)},
+	}
+
+	// Mock verification manager to resolve paths
+	mockVerificationManager.On("ResolvePath", "/bin/echo").Return("/bin/echo", nil)
+
+	// Mock successful execution for both commands
+	mockRM.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+		&resource.ExecutionResult{ExitCode: 0, Stdout: "ok"}, nil)
+	mockRM.On("ValidateOutputPath", mock.Anything, mock.Anything).Return(nil).Maybe()
+
+	ctx := context.Background()
+	err := ge.ExecuteGroup(ctx, group, runtimeGlobal)
+
+	require.NoError(t, err)
+
+	// Verify security log contains unlimited execution event for first command
+	logOutput := logBuffer.String()
+	assert.NotEmpty(t, logOutput, "log output should not be empty")
+
+	// Verify unlimited execution log for unlimited-cmd
+	assert.Contains(t, logOutput, `"command":"unlimited-cmd"`)
+	assert.Contains(t, logOutput, `"user":"testuser"`)
+	assert.Contains(t, logOutput, `"security_event":"unlimited_execution_start"`)
+
+	// Verify normal-cmd does NOT trigger unlimited execution log
+	// (by checking that there's only one occurrence of unlimited_execution_start)
+	unlimitedCount := strings.Count(logOutput, `"security_event":"unlimited_execution_start"`)
+	assert.Equal(t, 1, unlimitedCount, "should have exactly one unlimited execution log")
+
+	mockRM.AssertExpectations(t)
+	mockValidator.AssertExpectations(t)
+	mockVerificationManager.AssertExpectations(t)
 }
