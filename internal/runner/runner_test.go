@@ -1120,7 +1120,7 @@ func TestRunner_OutputCaptureEndToEnd(t *testing.T) {
 			require.NoError(t, err, "LoadSystemEnvironment should not return an error")
 
 			// Verify runner was created properly with output capture configuration
-			runnerConfig := runner.GetConfig()
+			runnerConfig := runner.config
 			assert.Equal(t, config, runnerConfig)
 			assert.Equal(t, int64(1024*1024), runnerConfig.Global.OutputSizeLimit)
 
@@ -1394,7 +1394,7 @@ args = ["No output capture"]
 		require.NoError(t, err, "LoadSystemEnvironment should not return an error")
 
 		// Verify runner configuration
-		runnerConfig := runner.GetConfig()
+		runnerConfig := runner.config
 		// Compare fields individually as ConfigSpec should have Version field
 		assert.Equal(t, config.Global, runnerConfig.Global)
 		assert.Equal(t, len(config.Groups), len(runnerConfig.Groups))

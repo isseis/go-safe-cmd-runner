@@ -395,11 +395,6 @@ func (r *Runner) ExecuteGroup(ctx context.Context, groupSpec *runnertypes.GroupS
 	return r.groupExecutor.ExecuteGroup(ctx, groupSpec, r.runtimeGlobal)
 }
 
-// GetConfig returns the current configuration
-func (r *Runner) GetConfig() *runnertypes.ConfigSpec {
-	return r.config
-}
-
 // CleanupAllResources cleans up all managed resources
 func (r *Runner) CleanupAllResources() error {
 	return r.resourceManager.CleanupAllTempDirs()
