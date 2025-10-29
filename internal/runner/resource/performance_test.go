@@ -175,7 +175,7 @@ func BenchmarkResourceManagerModeSwitch(b *testing.B) {
 		mockPathResolver := &MockPathResolver{}
 		setupStandardCommandPaths(mockPathResolver)
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-		manager, err := NewDefaultResourceManager(nil, nil, nil, mockPathResolver, slog.Default(), ExecutionModeDryRun, dryRunOpts)
+		manager, err := NewDefaultResourceManager(nil, nil, nil, mockPathResolver, slog.Default(), ExecutionModeDryRun, dryRunOpts, nil, 0)
 		require.NoError(b, err)
 
 		b.ResetTimer()

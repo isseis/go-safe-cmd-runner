@@ -224,7 +224,7 @@ func createNormalResourceManager(opts *runnerOptions, configSpec *runnertypes.Co
 		maxOutputSize = 0 // Will use default from output package
 	}
 
-	resourceManager, err := resource.NewDefaultResourceManagerWithOutput(
+	resourceManager, err := resource.NewDefaultResourceManager(
 		opts.executor,
 		fs,
 		opts.privilegeManager,
