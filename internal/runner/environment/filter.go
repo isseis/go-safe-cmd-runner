@@ -4,12 +4,10 @@ package environment
 
 import (
 	"errors"
-	"fmt"
 	"log/slog"
 	"os"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
 // Error jjjkkkfinitions
@@ -101,17 +99,4 @@ func (f *Filter) FilterGlobalVariables(envFileVars map[string]string, src Source
 		"filtered_vars", len(result))
 
 	return result, nil
-}
-
-// ValidateEnvironmentVariable validates both name and value of an environment variable
-func (f *Filter) ValidateEnvironmentVariable(name, value string) error {
-	if err := security.ValidateVariableName(name); err != nil {
-		return fmt.Errorf("invalid name for variable %q: %w", name, err)
-	}
-
-	if err := security.IsVariableValueSafe(name, value); err != nil {
-		return fmt.Errorf("unsafe value for variable %q: %w", name, err)
-	}
-
-	return nil
 }
