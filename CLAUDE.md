@@ -88,8 +88,11 @@ This is a Go-based secure command runner with the following core components:
 - Output capture and verification
 - **Error Testing**: Use `errors.Is()` to validate error types, not string matching on error messages
 
-### Mock File Organization
-All mock implementations should follow this standardized directory and file naming convention:
+### Test Helper File Organization
+Test helper files follow a two-tier classification system based on their scope and dependencies:
+
+#### Classification A: `testing/` Subdirectory (Cross-Package Helpers)
+**Use for**: Test helpers and mocks used across multiple packages or that only use public APIs
 
 ```
 <package>/
@@ -111,6 +114,46 @@ All mock implementations should follow this standardized directory and file nami
 **Package Naming:**
 - All testing utilities use `package testing` within the `testing/` subdirectory
 - Import as: `<module>/internal/<package>/testing`
+
+#### Classification B: Package-Level `test_helpers.go` (Internal Helpers)
+**Use for**: Test helpers that must remain in the same package due to:
+- Adding methods to package-internal types
+- Using non-exported (private) package APIs
+- Avoiding circular dependencies
+
+```
+<package>/
+├── <implementation>.go
+├── <implementation>_test.go
+└── test_helpers.go           # Package-internal test helpers
+```
+
+**File Naming Rules:**
+- **`test_helpers.go`**: Single file for package-internal test helpers
+- If multiple helper categories needed: `test_helpers_<category>.go` (e.g., `test_helpers_group.go`)
+
+**Package Naming:**
+- Use the same package name as the production code
+- Always include `//go:build test` build tag
+
+#### Guidelines for New Test Helpers
+When adding new test helper code, follow this decision tree:
+
+1. **Does the helper use only public APIs?**
+   - Yes → Place in `testing/helpers.go` (Classification A)
+   - No → Continue to step 2
+
+2. **Does the helper add methods to a type in this package?**
+   - Yes → Place in `test_helpers.go` (Classification B)
+   - No → Continue to step 3
+
+3. **Is the helper used by tests in other packages?**
+   - Yes → Consider refactoring to use public APIs, then place in `testing/helpers.go`
+   - No → Place in `test_helpers.go` (Classification B)
+
+**Build Tags:**
+- All test helper files must include `//go:build test` at the top
+- This ensures they are only compiled during test builds, not in production binaries
 
 ## Package Structure
 

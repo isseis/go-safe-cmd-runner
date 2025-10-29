@@ -1,4 +1,4 @@
-//go:build test || !prod
+//go:build test
 
 package testing
 
