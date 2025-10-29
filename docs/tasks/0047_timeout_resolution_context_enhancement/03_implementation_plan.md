@@ -399,14 +399,14 @@ go test ./internal/runner/runnertypes -run TestNewRuntimeCommand_TimeoutResoluti
 
 ### 4.2. 完了基準
 
-- [ ] `RuntimeCommand`に`TimeoutResolution`フィールドが追加されている
-- [ ] `NewRuntimeCommand`のシグネチャが更新されている
-- [ ] `NewRuntimeCommand`の実装が`ResolveTimeoutWithContext`を使用している
-- [ ] `ExpandCommand`での呼び出しが更新されている
-- [ ] すべてのテストコードが更新されている
-- [ ] 新しい単体テストが追加されている
-- [ ] すべてのテストが成功する
-- [ ] コンパイルエラーがない
+- [x] `RuntimeCommand`に`TimeoutResolution`フィールドが追加されている
+- [x] `NewRuntimeCommand`のシグネチャが更新されている
+- [x] `NewRuntimeCommand`の実装が`ResolveTimeoutWithContext`を使用している
+- [x] `ExpandCommand`での呼び出しが更新されている
+- [x] すべてのテストコードが更新されている
+- [x] 新しい単体テストが追加されている
+- [x] すべてのテストが成功する
+- [x] コンパイルエラーがない
 
 ### 4.3. 所要時間見積もり
 
@@ -1232,14 +1232,14 @@ git revert HEAD
 - [x] `go vet`クリア
 
 ### 10.2. フェーズ2チェックリスト
-- [ ] `RuntimeCommand.TimeoutResolution`フィールド追加
-- [ ] `NewRuntimeCommand`シグネチャ変更
-- [ ] `NewRuntimeCommand`実装更新
-- [ ] `ExpandCommand`更新
-- [ ] 全テストコード更新
-- [ ] 新規単体テスト追加
-- [ ] 全テスト成功
-- [ ] コンパイル成功
+- [x] `RuntimeCommand.TimeoutResolution`フィールド追加
+- [x] `NewRuntimeCommand`シグネチャ変更
+- [x] `NewRuntimeCommand`実装更新
+- [x] `ExpandCommand`更新
+- [x] 全テストコード更新
+- [x] 新規単体テスト追加
+- [x] 全テスト成功
+- [x] コンパイル成功
 
 ### 10.3. フェーズ3チェックリスト
 - [ ] `ResolveEffectiveTimeout`使用箇所特定

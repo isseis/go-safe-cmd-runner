@@ -167,27 +167,38 @@ type RuntimeCommand struct {
 
 	// EffectiveTimeout is the resolved timeout value (in seconds) for this command
 	EffectiveTimeout int
+
+	// TimeoutResolution contains context information about timeout resolution
+	TimeoutResolution common.TimeoutResolutionContext
 }
 
 // NewRuntimeCommand creates a new RuntimeCommand with the required spec.
 // The globalTimeout parameter is used for timeout resolution hierarchy.
+// The groupName parameter provides context for timeout resolution logging.
 // Returns ErrNilSpec if spec is nil.
-func NewRuntimeCommand(spec *CommandSpec, globalTimeout common.Timeout) (*RuntimeCommand, error) {
+func NewRuntimeCommand(spec *CommandSpec, globalTimeout common.Timeout, groupName string) (*RuntimeCommand, error) {
 	if spec == nil {
 		return nil, ErrNilSpec
 	}
 
-	// Resolve the effective timeout using the hierarchy
+	// Resolve the effective timeout using the hierarchy with context
 	commandTimeout := common.NewFromIntPtr(spec.Timeout)
-	effectiveTimeout := common.ResolveEffectiveTimeout(commandTimeout, globalTimeout)
+	effectiveTimeout, resolutionContext := common.ResolveTimeoutWithContext(
+		commandTimeout,
+		common.NewUnsetTimeout(), // Group timeout not yet supported
+		globalTimeout,
+		spec.Name,
+		groupName,
+	)
 
 	return &RuntimeCommand{
-		Spec:             spec,
-		timeout:          commandTimeout,
-		ExpandedArgs:     []string{},
-		ExpandedEnv:      make(map[string]string),
-		ExpandedVars:     make(map[string]string),
-		EffectiveTimeout: effectiveTimeout,
+		Spec:              spec,
+		timeout:           commandTimeout,
+		ExpandedArgs:      []string{},
+		ExpandedEnv:       make(map[string]string),
+		ExpandedVars:      make(map[string]string),
+		EffectiveTimeout:  effectiveTimeout,
+		TimeoutResolution: resolutionContext,
 	}, nil
 }
 

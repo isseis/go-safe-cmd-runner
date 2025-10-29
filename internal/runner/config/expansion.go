@@ -508,7 +508,11 @@ func ExpandGroup(spec *runnertypes.GroupSpec, globalRuntime *runnertypes.Runtime
 //   - EffectiveWorkDir is NOT set by this function; it is set by GroupExecutor after expansion.
 func ExpandCommand(spec *runnertypes.CommandSpec, runtimeGroup *runnertypes.RuntimeGroup, globalRuntime *runnertypes.RuntimeGlobal, globalTimeout common.Timeout) (*runnertypes.RuntimeCommand, error) {
 	// Create RuntimeCommand using NewRuntimeCommand to properly resolve timeout
-	runtime, err := runnertypes.NewRuntimeCommand(spec, globalTimeout)
+	groupName := ""
+	if runtimeGroup != nil && runtimeGroup.Spec != nil {
+		groupName = runtimeGroup.Spec.Name
+	}
+	runtime, err := runnertypes.NewRuntimeCommand(spec, globalTimeout, groupName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create RuntimeCommand for command[%s]: %w", spec.Name, err)
 	}

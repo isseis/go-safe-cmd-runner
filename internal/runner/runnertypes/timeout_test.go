@@ -55,7 +55,7 @@ func TestNewRuntimeCommand_TimeoutResolution(t *testing.T) {
 				Timeout: tt.commandTimeout,
 			}
 
-			runtime, err := NewRuntimeCommand(spec, common.NewFromIntPtr(tt.globalTimeout))
+			runtime, err := NewRuntimeCommand(spec, common.NewFromIntPtr(tt.globalTimeout), "test-group")
 			assert.NoError(t, err, "NewRuntimeCommand() should not fail")
 
 			assert.Equal(t, tt.expectedEffective, runtime.EffectiveTimeout,
@@ -84,7 +84,7 @@ func TestNewRuntimeCommand_CommandTimeoutZero(t *testing.T) {
 
 	globalTimeout := common.IntPtr(60) // 60 seconds global timeout
 
-	runtime, err := NewRuntimeCommand(spec, common.NewFromIntPtr(globalTimeout))
+	runtime, err := NewRuntimeCommand(spec, common.NewFromIntPtr(globalTimeout), "test-group")
 	assert.NoError(t, err, "NewRuntimeCommand() should not fail")
 
 	// Command timeout should take precedence, resulting in unlimited execution
@@ -108,7 +108,7 @@ func TestNewRuntimeCommand_GlobalTimeoutZero(t *testing.T) {
 
 	globalTimeout := common.IntPtr(0) // Unlimited global timeout
 
-	runtime, err := NewRuntimeCommand(spec, common.NewFromIntPtr(globalTimeout))
+	runtime, err := NewRuntimeCommand(spec, common.NewFromIntPtr(globalTimeout), "test-group")
 	assert.NoError(t, err, "NewRuntimeCommand() should not fail")
 
 	// Should inherit unlimited execution from global timeout
@@ -122,7 +122,69 @@ func TestNewRuntimeCommand_GlobalTimeoutZero(t *testing.T) {
 
 func TestNewRuntimeCommand_ErrorHandling(t *testing.T) {
 	// Test with nil spec
-	runtime, err := NewRuntimeCommand(nil, common.NewFromIntPtr(common.IntPtr(60)))
+	runtime, err := NewRuntimeCommand(nil, common.NewFromIntPtr(common.IntPtr(60)), "test-group")
 	assert.ErrorIs(t, err, ErrNilSpec, "NewRuntimeCommand(nil, ...) should return ErrNilSpec")
 	assert.Nil(t, runtime, "NewRuntimeCommand(nil, ...) should return nil runtime")
+}
+
+func TestNewRuntimeCommand_TimeoutResolutionContext(t *testing.T) {
+	tests := []struct {
+		name          string
+		cmdTimeout    *int
+		globalTimeout *int
+		commandName   string
+		groupName     string
+		wantValue     int
+		wantLevel     string
+	}{
+		{
+			name:          "command level resolution",
+			cmdTimeout:    common.IntPtr(30),
+			globalTimeout: common.IntPtr(60),
+			commandName:   "test-cmd",
+			groupName:     "test-group",
+			wantValue:     30,
+			wantLevel:     "command",
+		},
+		{
+			name:          "global level resolution",
+			cmdTimeout:    nil,
+			globalTimeout: common.IntPtr(60),
+			commandName:   "test-cmd",
+			groupName:     "test-group",
+			wantValue:     60,
+			wantLevel:     "global",
+		},
+		{
+			name:          "default level resolution",
+			cmdTimeout:    nil,
+			globalTimeout: nil,
+			commandName:   "test-cmd",
+			groupName:     "test-group",
+			wantValue:     common.DefaultTimeout,
+			wantLevel:     "default",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := &CommandSpec{
+				Name:    tt.commandName,
+				Cmd:     "/bin/echo",
+				Timeout: tt.cmdTimeout,
+			}
+
+			runtime, err := NewRuntimeCommand(
+				spec,
+				common.NewFromIntPtr(tt.globalTimeout),
+				tt.groupName,
+			)
+
+			assert.NoError(t, err, "NewRuntimeCommand should not fail")
+			assert.Equal(t, tt.wantValue, runtime.EffectiveTimeout, "effective timeout should match")
+			assert.Equal(t, tt.wantLevel, runtime.TimeoutResolution.Level, "resolution level should match")
+			assert.Equal(t, tt.commandName, runtime.TimeoutResolution.CommandName, "command name should match")
+			assert.Equal(t, tt.groupName, runtime.TimeoutResolution.GroupName, "group name should match")
+		})
+	}
 }
