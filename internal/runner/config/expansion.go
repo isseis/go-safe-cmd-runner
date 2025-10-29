@@ -357,10 +357,10 @@ func determineEffectiveEnvAllowlist(groupAllowlist []string, globalAllowlist []s
 //   - *RuntimeGlobal: The expanded runtime global configuration
 //   - error: An error if expansion fails (e.g., undefined variable reference)
 func ExpandGlobal(spec *runnertypes.GlobalSpec) (*runnertypes.RuntimeGlobal, error) {
-	runtime := &runnertypes.RuntimeGlobal{
-		Spec:         spec,
-		ExpandedVars: make(map[string]string),
-		ExpandedEnv:  make(map[string]string),
+	// Use constructor to ensure proper initialization (including timeout field)
+	runtime, err := runnertypes.NewRuntimeGlobal(spec)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create RuntimeGlobal: %w", err)
 	}
 
 	// 0. Parse system environment once and cache it
