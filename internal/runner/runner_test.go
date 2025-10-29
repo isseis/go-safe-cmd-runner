@@ -15,7 +15,6 @@ import (
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/output"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
-	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -73,84 +72,10 @@ func TestNewRunner(t *testing.T) {
 		assert.Contains(t, err.Error(), "runID is required")
 	})
 
-	t.Run("with custom security config", func(t *testing.T) {
-		securityConfig := security.DefaultConfig()
-		// Override for this specific test
-		securityConfig.AllowedCommands = []string{"^echo$", "^cat$"}
-		securityConfig.SensitiveEnvVars = []string{".*PASSWORD.*", ".*TOKEN.*"}
-
-		runner, err := NewRunner(config, WithSecurity(securityConfig), WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-run-123"))
-		assert.NoError(t, err)
-		assert.NotNil(t, runner)
-		assert.Equal(t, config, runner.config)
-		assert.NotNil(t, runner.validator)
-	})
-
 	t.Run("with multiple options", func(t *testing.T) {
-		securityConfig := security.DefaultConfig()
-		// Override for this specific test
-		securityConfig.AllowedCommands = []string{"^echo$"}
-		securityConfig.SensitiveEnvVars = []string{".*PASSWORD.*"}
-
 		runner, err := NewRunner(config,
-			WithSecurity(securityConfig),
 			WithVerificationManager(setupDryRunVerification(t)),
 			WithRunID("test-run-123"))
-		assert.NoError(t, err)
-		assert.NotNil(t, runner)
-	})
-
-	t.Run("with invalid security config", func(t *testing.T) {
-		invalidSecurityConfig := security.DefaultConfig()
-		// Set invalid pattern to test error handling
-		invalidSecurityConfig.AllowedCommands = []string{"[invalid regex"} // Invalid regex
-		invalidSecurityConfig.SensitiveEnvVars = []string{".*PASSWORD.*"}
-
-		runner, err := NewRunner(config, WithSecurity(invalidSecurityConfig), WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-run-123"))
-		assert.Error(t, err)
-		assert.Nil(t, runner)
-		assert.ErrorIs(t, err, security.ErrInvalidRegexPattern)
-	})
-}
-
-func TestNewRunnerWithSecurity(t *testing.T) {
-	config := &runnertypes.ConfigSpec{
-		Version: "1.0",
-		Global: runnertypes.GlobalSpec{
-			Timeout:  common.IntPtr(3600),
-			LogLevel: "info",
-		},
-	}
-
-	t.Run("with valid security config", func(t *testing.T) {
-		securityConfig := security.DefaultConfig()
-		// Override for this specific test
-		securityConfig.AllowedCommands = []string{"^echo$", "^cat$"}
-		securityConfig.SensitiveEnvVars = []string{".*PASSWORD.*", ".*TOKEN.*"}
-
-		runner, err := NewRunner(config, WithSecurity(securityConfig), WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-run-123"))
-		assert.NoError(t, err)
-		assert.NotNil(t, runner)
-		assert.Equal(t, config, runner.config)
-		assert.NotNil(t, runner.executor)
-		assert.NotNil(t, runner.envVars)
-		assert.NotNil(t, runner.validator)
-	})
-
-	t.Run("with invalid security config", func(t *testing.T) {
-		invalidSecurityConfig := security.DefaultConfig()
-		// Set invalid pattern to test error handling
-		invalidSecurityConfig.AllowedCommands = []string{"[invalid regex"} // Invalid regex
-		invalidSecurityConfig.SensitiveEnvVars = []string{".*PASSWORD.*"}
-
-		runner, err := NewRunner(config, WithSecurity(invalidSecurityConfig), WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-run-123"))
-		assert.Error(t, err)
-		assert.Nil(t, runner)
-		assert.ErrorIs(t, err, security.ErrInvalidRegexPattern)
-	})
-
-	t.Run("with nil security config", func(t *testing.T) {
-		runner, err := NewRunner(config, WithSecurity(nil), WithVerificationManager(setupDryRunVerification(t)), WithRunID("test-run-123"))
 		assert.NoError(t, err)
 		assert.NotNil(t, runner)
 	})

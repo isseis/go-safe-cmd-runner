@@ -73,7 +73,6 @@ type Option func(*runnerOptions)
 
 // runnerOptions holds all configuration options for creating a Runner
 type runnerOptions struct {
-	securityConfig      *security.Config
 	executor            executor.CommandExecutor
 	verificationManager *verification.Manager
 	privilegeManager    runnertypes.PrivilegeManager
@@ -84,13 +83,6 @@ type runnerOptions struct {
 	dryRunOptions       *resource.DryRunOptions
 	runtimeGlobal       *runnertypes.RuntimeGlobal
 	keepTempDirs        bool
-}
-
-// WithSecurity sets a custom security configuration
-func WithSecurity(securityConfig *security.Config) Option {
-	return func(opts *runnerOptions) {
-		opts.securityConfig = securityConfig
-	}
 }
 
 // WithVerificationManager sets a custom verification manager
@@ -270,8 +262,8 @@ func NewRunner(configSpec *runnertypes.ConfigSpec, options ...Option) (*Runner, 
 		return nil, ErrRunIDRequired
 	}
 
-	// Create validator with provided or default security config
-	validator, err := security.NewValidator(opts.securityConfig)
+	// Create validator with default security config
+	validator, err := security.NewValidator(nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create security validator: %w", err)
 	}
