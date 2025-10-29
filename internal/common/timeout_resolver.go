@@ -49,9 +49,3 @@ func ResolveTimeout(cmdTimeout, groupTimeout, globalTimeout *int, commandName, g
 
 	return resolvedValue, context
 }
-
-// IsUnlimitedTimeout returns true if the given timeout value represents unlimited execution.
-// A timeout value of 0 means unlimited execution.
-func IsUnlimitedTimeout(timeout int) bool {
-	return timeout == 0
-}

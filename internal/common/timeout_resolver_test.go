@@ -107,34 +107,3 @@ func TestResolveTimeoutWithContext(t *testing.T) {
 		})
 	}
 }
-
-func TestIsUnlimitedTimeout(t *testing.T) {
-	tests := []struct {
-		name     string
-		timeout  int
-		expected bool
-	}{
-		{
-			name:     "zero timeout is unlimited",
-			timeout:  0,
-			expected: true,
-		},
-		{
-			name:     "positive timeout is not unlimited",
-			timeout:  60,
-			expected: false,
-		},
-		{
-			name:     "large timeout is not unlimited",
-			timeout:  3600,
-			expected: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := IsUnlimitedTimeout(tt.timeout)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
