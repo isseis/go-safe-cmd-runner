@@ -106,13 +106,6 @@ func WithPrivilegeManager(privMgr runnertypes.PrivilegeManager) Option {
 	}
 }
 
-// WithAuditLogger sets a custom audit logger
-func WithAuditLogger(auditLogger *audit.Logger) Option {
-	return func(opts *runnerOptions) {
-		opts.auditLogger = auditLogger
-	}
-}
-
 // WithRunID sets a custom run ID for tracking execution
 func WithRunID(runID string) Option {
 	return func(opts *runnerOptions) {

@@ -1883,24 +1883,6 @@ func TestWithPrivilegeManager(t *testing.T) {
 	assert.NotNil(t, runner)
 }
 
-// TestWithAuditLogger tests the WithAuditLogger option
-func TestWithAuditLogger(t *testing.T) {
-	config := &runnertypes.ConfigSpec{
-		Version: "1.0",
-		Global: runnertypes.GlobalSpec{
-			LogLevel: "info",
-		},
-	}
-
-	// Note: audit.Logger doesn't have an easy mock, so we'll just test that it doesn't fail
-	runner, err := NewRunner(config,
-		WithAuditLogger(nil), // nil is acceptable
-		WithVerificationManager(setupDryRunVerification(t)),
-		WithRunID("test-with-audit"))
-	require.NoError(t, err)
-	assert.NotNil(t, runner)
-}
-
 // TestWithDryRun tests the WithDryRun option
 func TestWithDryRun(t *testing.T) {
 	config := &runnertypes.ConfigSpec{
