@@ -1,59 +1,13 @@
 package config
 
 import (
-	"fmt"
 	"strings"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/security"
 )
 
 // reservedVariablePrefix is the prefix reserved for internal variables
 const reservedVariablePrefix = "__runner_"
-
-// validateEnvList validates a list of environment variables in KEY=VALUE format.
-// The context parameter is used for error reporting (e.g., "global.env", "group.env:groupname").
-// Returns an error if:
-// - Any entry is not in KEY=VALUE format
-// - Duplicate keys are found (case-sensitive comparison)
-// - Variable names don't match the required pattern (via security.ValidateVariableName)
-func validateEnvList(envList []string, context string) error {
-	_, err := validateAndParseEnvList(envList, context)
-	return err
-}
-
-// validateAndParseEnvList validates environment variable list and returns parsed map on success.
-// This function parses KEY=VALUE format, checks for duplicates, and validates key names.
-func validateAndParseEnvList(envList []string, context string) (map[string]string, error) {
-	if len(envList) == 0 {
-		return nil, nil
-	}
-
-	envMap := make(map[string]string)
-
-	// Parse KEY=VALUE format, check for duplicates, and validate key names in a single loop
-	for _, envVar := range envList {
-		key, value, ok := common.ParseKeyValue(envVar)
-		if !ok {
-			return nil, fmt.Errorf("%w: %q in %s", ErrMalformedEnvVariable, envVar, context)
-		}
-
-		// Check for duplicate key
-		if firstValue, exists := envMap[key]; exists {
-			return nil, fmt.Errorf("%w: %q in %s\n  First definition: %s=%s\n  Duplicate definition: %s=%s",
-				ErrDuplicateEnvVariable, key, context, key, firstValue, key, value)
-		}
-
-		// Validate variable name using security.ValidateVariableName
-		if err := security.ValidateVariableName(key); err != nil {
-			return nil, fmt.Errorf("%w in %s: %w", ErrInvalidEnvKey, context, err)
-		}
-
-		envMap[key] = value
-	}
-
-	return envMap, nil
-}
 
 // validateVariableName validates a variable name and returns a detailed error
 // if validation fails. This helper function standardizes error handling across
