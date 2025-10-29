@@ -951,13 +951,13 @@ go run ./cmd/runner -config /tmp/test-command-timeout.toml -dry-run -format json
 
 ### 6.2. 完了基準
 
-- [ ] `analyzeCommand`の`Parameters`に`timeout_level`が追加されている
-- [ ] `timeout`フィールドが`EffectiveTimeout`を使用している（int値）
-- [ ] 統合テストが追加されている
-- [ ] JSON出力のテストが追加されている
-- [ ] すべての自動テストが成功する
-- [ ] 手動テストシナリオが全て期待通りに動作する
-- [ ] テキスト出力とJSON出力の両方で`timeout_level`が正しく表示される
+- [x] `analyzeCommand`の`Parameters`に`timeout_level`が追加されている
+- [x] `timeout`フィールドが`EffectiveTimeout`を使用している（int値）
+- [x] 統合テストが追加されている
+- [x] JSON出力のテストが追加されている
+- [x] すべての自動テストが成功する
+- [x] 手動テストシナリオが全て期待通りに動作する
+- [x] テキスト出力とJSON出力の両方で`timeout_level`が正しく表示される
 
 ### 6.3. 所要時間見積もり
 
