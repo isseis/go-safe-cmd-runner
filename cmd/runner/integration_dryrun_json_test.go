@@ -92,9 +92,9 @@ args = ["hello"]
 
 			// Find the start of JSON output (skip debug information)
 			outputStr := string(output)
-			jsonStart := strings.Index(outputStr, "{")
-			require.Greater(t, jsonStart, -1, "output should contain JSON")
-			jsonOutput := outputStr[jsonStart:]
+jsonOutput := strings.TrimSpace(outputStr)
+isJsonObject := strings.HasPrefix(jsonOutput, "{") && strings.HasSuffix(jsonOutput, "}")
+require.True(t, isJsonObject, "output should be a JSON object: %s", jsonOutput)
 
 			// Parse JSON output
 			var result struct {
