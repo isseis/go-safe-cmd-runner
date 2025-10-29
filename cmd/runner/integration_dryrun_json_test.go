@@ -92,11 +92,9 @@ args = ["hello"]
 
 			// Find the start of JSON output (skip debug information)
 			outputStr := string(output)
-jsonOutput := strings.TrimSpace(outputStr)
-isJsonObject := strings.HasPrefix(jsonOutput, "{") && strings.HasSuffix(jsonOutput, "}")
-require.True(t, isJsonObject, "output should be a JSON object: %s", jsonOutput)
-
-			// Parse JSON output
+			jsonStart := strings.Index(outputStr, "{")
+			require.NotEqual(t, -1, jsonStart, "should find JSON object start in output")
+			jsonOutput := strings.TrimSpace(outputStr[jsonStart:]) // Parse JSON output
 			var result struct {
 				ResourceAnalyses []struct {
 					Type       string         `json:"type"`
