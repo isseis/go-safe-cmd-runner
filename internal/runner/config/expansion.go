@@ -422,11 +422,9 @@ func ExpandGlobal(spec *runnertypes.GlobalSpec) (*runnertypes.RuntimeGlobal, err
 //   - Commands are NOT expanded by this function. They are expanded separately
 //     by GroupExecutor using ExpandCommand() for each command.
 func ExpandGroup(spec *runnertypes.GroupSpec, globalRuntime *runnertypes.RuntimeGlobal) (*runnertypes.RuntimeGroup, error) {
-	runtime := &runnertypes.RuntimeGroup{
-		Spec:         spec,
-		ExpandedVars: make(map[string]string),
-		ExpandedEnv:  make(map[string]string),
-		Commands:     make([]*runnertypes.RuntimeCommand, 0),
+	runtime, err := runnertypes.NewRuntimeGroup(spec)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create RuntimeGroup: %w", err)
 	}
 
 	// 1. Inherit global variables
