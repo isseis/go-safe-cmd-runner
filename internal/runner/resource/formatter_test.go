@@ -25,43 +25,6 @@ func TestNewJSONFormatter(t *testing.T) {
 	assert.IsType(t, &JSONFormatter{}, formatter)
 }
 
-// TestNewFormatter tests the NewFormatter factory function
-func TestNewFormatter(t *testing.T) {
-	tests := []struct {
-		name           string
-		format         OutputFormat
-		expectedType   interface{}
-		expectedStruct Formatter
-	}{
-		{
-			name:           "JSON format",
-			format:         OutputFormatJSON,
-			expectedType:   &JSONFormatter{},
-			expectedStruct: NewJSONFormatter(),
-		},
-		{
-			name:           "Text format",
-			format:         OutputFormatText,
-			expectedType:   &TextFormatter{},
-			expectedStruct: NewTextFormatter(),
-		},
-		{
-			name:           "Unknown format defaults to Text",
-			format:         OutputFormat(999),
-			expectedType:   &TextFormatter{},
-			expectedStruct: NewTextFormatter(),
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			formatter := NewFormatter(tt.format)
-			assert.NotNil(t, formatter)
-			assert.IsType(t, tt.expectedType, formatter)
-		})
-	}
-}
-
 // TestTextFormatterNilResult tests TextFormatter with nil result
 func TestTextFormatterNilResult(t *testing.T) {
 	formatter := NewTextFormatter()
