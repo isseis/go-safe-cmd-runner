@@ -63,7 +63,7 @@ endef
 ENVSET=$(ENVCMD) -i \
 	HOME=$(HOME) \
 	USER=$(USER) \
-	PATH=/bin:/sbin:/usr/bin:/usr/sbin \
+	PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/go/bin \
 	LANG=C \
 	TERM=$(TERM) \
 	TEST_GLOBAL_VAR=global_test_value \
