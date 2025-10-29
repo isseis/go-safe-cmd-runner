@@ -1,12 +1,17 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"os"
+	"os/signal"
+	"syscall"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/logging"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/bootstrap"
+	"github.com/isseis/go-safe-cmd-runner/internal/verification"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -39,6 +44,97 @@ func setupTestFlags() func() {
 	}
 }
 
+// createTempHashDir creates a temporary directory for hash storage during testing
+func createTempHashDir(t *testing.T) (string, func()) {
+	t.Helper()
+	tempDir, err := os.MkdirTemp("", "go-safe-cmd-runner-test-")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+
+	cleanup := func() {
+		_ = os.RemoveAll(tempDir) // Ignore cleanup errors in test helper
+	}
+
+	return tempDir, cleanup
+}
+
+// runForTestWithTempHashDir is a version that uses a temporary hash directory
+func runForTestWithTempHashDir(t *testing.T, runID string) error {
+	t.Helper()
+
+	// Create temporary hash directory
+	tempHashDir, cleanup := createTempHashDir(t)
+	defer cleanup()
+
+	// Set up context with cancellation
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	// Phase 1: Initialize verification manager with temporary hash directory
+	verificationManager, err := verification.NewManagerForTest(tempHashDir)
+	if err != nil {
+		return &logging.PreExecutionError{
+			Type:      logging.ErrorTypeFileAccess,
+			Message:   "Verification manager initialization failed",
+			Component: "verification",
+			RunID:     runID,
+		}
+	}
+
+	// Phase 2: Load and prepare configuration (verify, parse, and expand variables)
+	cfg, err := bootstrap.LoadAndPrepareConfig(verificationManager, *configPath, runID)
+	if err != nil {
+		return err
+	}
+
+	// The rest of the function follows the same logic as run()
+	// Handle validate command (after verification and loading)
+	if *validateConfig {
+		// Return silently for config validation in tests
+		return nil
+	}
+
+	// For testing, we skip the actual execution phases
+	_ = ctx
+	_ = cfg
+
+	return nil
+}
+
+// runForTestWithManagerUsingTempDir is a helper that uses temporary hash directory
+func runForTestWithManagerUsingTempDir(t *testing.T) (error, error) {
+	t.Helper()
+
+	// Create temporary hash directory
+	tempHashDir, cleanup := createTempHashDir(t)
+	defer cleanup()
+
+	// Test manager creation directly with temp directory
+	_, err := verification.NewManagerForTest(tempHashDir)
+	if err != nil {
+		return nil, err
+	}
+
+	// Test the full runForTestWithTempHashDir flow
+	return runForTestWithTempHashDir(t, "test-run-id"), nil
+}
+
+// runForTestWithCustomHashDir is a helper for testing custom hash directories
+func runForTestWithCustomHashDir(t *testing.T, hashDir string) (error, error) {
+	t.Helper()
+
+	// Test manager creation with custom hash directory
+	verificationManager, err := verification.NewManagerForTest(hashDir)
+	if err != nil {
+		return nil, err
+	}
+
+	// Try to load and prepare config (will fail without config file, but tests manager creation)
+	_, configErr := bootstrap.LoadAndPrepareConfig(verificationManager, *configPath, "test-run-id")
+	return configErr, nil
+}
+
 func TestConfigPathRequired(t *testing.T) {
 	// Setup test flags
 	cleanup := setupTestFlags()
@@ -52,7 +148,7 @@ func TestConfigPathRequired(t *testing.T) {
 
 	// Test runForTestWithTempHashDir() function to avoid CI hash directory issues
 	runID := "test-run-id"
-	err := runForTestWithTempHashDir(runID)
+	err := runForTestWithTempHashDir(t, runID)
 	if err == nil {
 		t.Error("expected error when --config is not provided")
 	}
@@ -72,7 +168,7 @@ func TestConfigPathRequired(t *testing.T) {
 func TestNewManagerProduction(t *testing.T) {
 	t.Run("creates manager with default hash directory", func(t *testing.T) {
 		// Use temporary hash directory to avoid CI environment issues
-		runErr, managerErr := runForTestWithManagerUsingTempDir()
+		runErr, managerErr := runForTestWithManagerUsingTempDir(t)
 		if managerErr != nil {
 			t.Fatalf("manager creation should not fail: %v", managerErr)
 		}
@@ -90,7 +186,7 @@ func TestNewManagerForTestValidation(t *testing.T) {
 		tempDir := t.TempDir()
 
 		// This should work since we're in a test file
-		configErr, managerErr := runForTestWithCustomHashDir(tempDir)
+		configErr, managerErr := runForTestWithCustomHashDir(t, tempDir)
 		if managerErr != nil {
 			t.Fatalf("manager creation should not fail: %v", managerErr)
 		}
@@ -102,7 +198,7 @@ func TestNewManagerForTestValidation(t *testing.T) {
 
 	t.Run("relative path allowed in testing", func(t *testing.T) {
 		// Custom hash directories (even relative ones) are allowed in testing mode
-		configErr, managerErr := runForTestWithCustomHashDir("relative/path")
+		configErr, managerErr := runForTestWithCustomHashDir(t, "relative/path")
 		// This will fail due to directory not existing, but not due to relative path restriction
 		// We expect either a config error or manager error (directory doesn't exist)
 		assert.True(t, configErr != nil || managerErr != nil, "expected an error for non-existent directory")
