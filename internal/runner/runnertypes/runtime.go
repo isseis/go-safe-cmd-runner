@@ -60,7 +60,7 @@ func NewRuntimeGlobal(spec *GlobalSpec) (*RuntimeGlobal, error) {
 
 // Timeout returns the global timeout from the spec.
 // Returns the configured Timeout value, which can be unset, unlimited, or a positive value.
-// Use common.ResolveTimeoutWithContext() to resolve the effective timeout with proper fallback logic.
+// Use common.ResolveTimeout() to resolve the effective timeout with proper fallback logic.
 // Panics if r or r.Spec is nil (programming error - use NewRuntimeGlobal).
 func (r *RuntimeGlobal) Timeout() common.Timeout {
 	if r == nil || r.Spec == nil {
