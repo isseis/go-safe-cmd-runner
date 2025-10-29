@@ -128,19 +128,16 @@ type RuntimeCommand struct {
 - `TimeoutResolution`を新規追加し、既存フィールドは変更しない
 - `EffectiveTimeout`は既存コードとの互換性のため維持
 
-#### 4.1.2. ResolveTimeoutのシグネチャ変更
+#### 4.1.2. ResolveTimeoutWithContextのシグネチャ変更
 
-`common.ResolveTimeout`および`ResolveTimeoutWithContext`を`Timeout`型を直接受け取るように変更：
+`common.ResolveTimeoutWithContext`を`Timeout`型を直接受け取るように変更（`ResolveTimeout`は削除）：
 
 ```go
-// ResolveTimeout resolves the effective timeout value from the hierarchy.
-// It follows the precedence: command > group > global > default.
-func ResolveTimeout(cmdTimeout, groupTimeout, globalTimeout Timeout) int {
-    resolvedValue, _ := ResolveTimeoutWithContext(cmdTimeout, groupTimeout, globalTimeout, "", "")
-    return resolvedValue
-}
-
 // ResolveTimeoutWithContext resolves the effective timeout value and returns context information.
+// It follows the precedence: command > group > global > default.
+//
+// This is the single function for timeout resolution. The simpler ResolveTimeout wrapper
+// has been removed to avoid redundancy, as callers should explicitly handle the context information.
 func ResolveTimeoutWithContext(cmdTimeout, groupTimeout, globalTimeout Timeout, commandName, groupName string) (int, TimeoutResolutionContext) {
     var resolvedValue int
     var level string
@@ -175,6 +172,8 @@ func ResolveTimeoutWithContext(cmdTimeout, groupTimeout, globalTimeout Timeout, 
 - `*int`への変換が不要になり、コードが簡潔になる
 - `Timeout.IsSet()`と`Timeout.Value()`メソッドを使用
 - nil安全性は`Timeout`型内で完結
+- `ResolveTimeout`ラッパーは削除（冗長なため）
+- すべての呼び出し元で明示的にコンテキスト情報を扱う
 
 ### 4.2. タイムアウト解決の統合
 
@@ -303,10 +302,11 @@ analysis := ResourceAnalysis{
 
 ### 5.1. 実装戦略
 
-#### フェーズ1: ResolveTimeoutの型安全化
-1. `ResolveTimeout`および`ResolveTimeoutWithContext`のシグネチャを変更（`*int` → `Timeout`）
+#### フェーズ1: ResolveTimeoutWithContextの型安全化
+1. `ResolveTimeoutWithContext`のシグネチャを変更（`*int` → `Timeout`）
 2. 内部実装を`Timeout.IsSet()`と`Timeout.Value()`を使うように更新
-3. `ResolveTimeout`のテスト更新
+3. `ResolveTimeout`関数を削除（冗長なため）
+4. テストを`ResolveTimeoutWithContext`のみ使用するように更新
 
 #### フェーズ2: RuntimeCommandの拡張
 1. `TimeoutResolution`フィールドの追加
@@ -438,18 +438,19 @@ effectiveTimeout, resolutionContext := common.ResolveTimeoutWithContext(
 
 ### 8.3. テストカバレッジ
 
-**リスク**: `ResolveTimeout`の既存テストが不十分
+**リスク**: `ResolveTimeoutWithContext`の既存テストが不十分
 
 **緩和策**:
 - フェーズ1でテストを拡充
 - 統合テストで実際の動作を確認
-- `ResolveEffectiveTimeout`のテストケースを`ResolveTimeout`に移植
+- `ResolveEffectiveTimeout`のテストケースを`ResolveTimeoutWithContext`に移植
+- `ResolveTimeout`のテストケースも`ResolveTimeoutWithContext`に統合
 
 ## 9. 非機能要件の達成
 
 ### 9.1. コードの簡潔性
-- ✅ `ResolveEffectiveTimeout`を削除し、`ResolveTimeout`に統一
-- ✅ タイムアウト解決ロジックを一元化
+- ✅ `ResolveEffectiveTimeout`と`ResolveTimeout`を削除し、`ResolveTimeoutWithContext`に統一
+- ✅ タイムアウト解決ロジックを単一関数に一元化
 - ✅ 保守すべきコードパスを削減
 
 ### 9.2. 型安全性
@@ -494,10 +495,10 @@ flowchart LR
 本設計は、以下の特徴を持つ：
 
 1. **型安全性の強化**: `ResolveTimeoutWithContext`が`Timeout`型を直接受け取り、`*int`への変換を排除
-2. **コードの統一**: `ResolveTimeoutWithContext`に一元化し、重複した`ResolveEffectiveTimeout`を削除
-3. **既存資産の活用**: `ResolveTimeout`と`TimeoutResolutionContext`を活用
+2. **コードの統一**: `ResolveTimeoutWithContext`に一元化し、`ResolveTimeout`と`ResolveEffectiveTimeout`の両方を削除
+3. **冗長性の排除**: ラッパー関数を削除し、すべての呼び出し元で明示的にコンテキスト情報を扱う
 4. **保守性の向上**: タイムアウト解決ロジックを単一関数に集約
 5. **将来拡張性**: グループレベルタイムアウトの追加を見据えた設計
 6. **実用性**: dry-run出力でのデバッグ容易性を大幅に向上
 
-実装は4フェーズで段階的に進め、各フェーズで十分なテストを行うことで、リスクを最小化する。特にフェーズ1での`ResolveTimeout`シグネチャ変更は、すべての呼び出し箇所をコンパイル時にチェックできるため安全である。
+実装は4フェーズで段階的に進め、各フェーズで十分なテストを行うことで、リスクを最小化する。特にフェーズ1での`ResolveTimeoutWithContext`シグネチャ変更は、すべての呼び出し箇所をコンパイル時にチェックできるため安全である。
