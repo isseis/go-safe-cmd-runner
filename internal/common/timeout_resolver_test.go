@@ -10,19 +10,20 @@ import (
 func TestResolveTimeoutWithContext(t *testing.T) {
 	tests := []struct {
 		name            string
-		cmdTimeout      *int
-		groupTimeout    *int
-		globalTimeout   *int
+		cmdTimeout      Timeout
+		groupTimeout    Timeout
+		globalTimeout   Timeout
 		commandName     string
 		groupName       string
 		expectedTimeout int
 		expectedLevel   string
 	}{
+		// Original TestResolveTimeout test cases merged here
 		{
-			name:            "all nil - use default",
-			cmdTimeout:      nil,
-			groupTimeout:    nil,
-			globalTimeout:   nil,
+			name:            "all unset - use default",
+			cmdTimeout:      NewUnsetTimeout(),
+			groupTimeout:    NewUnsetTimeout(),
+			globalTimeout:   NewUnsetTimeout(),
 			commandName:     "test-cmd",
 			groupName:       "test-group",
 			expectedTimeout: DefaultTimeout,
@@ -30,29 +31,29 @@ func TestResolveTimeoutWithContext(t *testing.T) {
 		},
 		{
 			name:            "command timeout takes precedence",
-			cmdTimeout:      IntPtr(120),
-			groupTimeout:    IntPtr(90),
-			globalTimeout:   IntPtr(60),
+			cmdTimeout:      NewFromIntPtr(IntPtr(120)),
+			groupTimeout:    NewFromIntPtr(IntPtr(90)),
+			globalTimeout:   NewFromIntPtr(IntPtr(60)),
 			commandName:     "test-cmd",
 			groupName:       "test-group",
 			expectedTimeout: 120,
 			expectedLevel:   "command",
 		},
 		{
-			name:            "group timeout when command is nil",
-			cmdTimeout:      nil,
-			groupTimeout:    IntPtr(90),
-			globalTimeout:   IntPtr(60),
+			name:            "group timeout when command is unset",
+			cmdTimeout:      NewUnsetTimeout(),
+			groupTimeout:    NewFromIntPtr(IntPtr(90)),
+			globalTimeout:   NewFromIntPtr(IntPtr(60)),
 			commandName:     "test-cmd",
 			groupName:       "test-group",
 			expectedTimeout: 90,
 			expectedLevel:   "group",
 		},
 		{
-			name:            "global timeout when cmd and group are nil",
-			cmdTimeout:      nil,
-			groupTimeout:    nil,
-			globalTimeout:   IntPtr(45),
+			name:            "global timeout when cmd and group are unset",
+			cmdTimeout:      NewUnsetTimeout(),
+			groupTimeout:    NewUnsetTimeout(),
+			globalTimeout:   NewFromIntPtr(IntPtr(45)),
 			commandName:     "test-cmd",
 			groupName:       "test-group",
 			expectedTimeout: 45,
@@ -60,19 +61,19 @@ func TestResolveTimeoutWithContext(t *testing.T) {
 		},
 		{
 			name:            "command timeout 0 (unlimited)",
-			cmdTimeout:      IntPtr(0),
-			groupTimeout:    IntPtr(90),
-			globalTimeout:   IntPtr(60),
-			commandName:     "test-cmd",
+			cmdTimeout:      NewFromIntPtr(IntPtr(0)),
+			groupTimeout:    NewFromIntPtr(IntPtr(90)),
+			globalTimeout:   NewFromIntPtr(IntPtr(60)),
+			commandName:     "unlimited-cmd",
 			groupName:       "test-group",
 			expectedTimeout: 0,
 			expectedLevel:   "command",
 		},
 		{
 			name:            "group timeout 0 (unlimited)",
-			cmdTimeout:      nil,
-			groupTimeout:    IntPtr(0),
-			globalTimeout:   IntPtr(60),
+			cmdTimeout:      NewUnsetTimeout(),
+			groupTimeout:    NewFromIntPtr(IntPtr(0)),
+			globalTimeout:   NewFromIntPtr(IntPtr(60)),
 			commandName:     "test-cmd",
 			groupName:       "test-group",
 			expectedTimeout: 0,
@@ -80,13 +81,44 @@ func TestResolveTimeoutWithContext(t *testing.T) {
 		},
 		{
 			name:            "global timeout 0 (unlimited)",
-			cmdTimeout:      nil,
-			groupTimeout:    nil,
-			globalTimeout:   IntPtr(0),
+			cmdTimeout:      NewUnsetTimeout(),
+			groupTimeout:    NewUnsetTimeout(),
+			globalTimeout:   NewFromIntPtr(IntPtr(0)),
 			commandName:     "test-cmd",
 			groupName:       "test-group",
 			expectedTimeout: 0,
 			expectedLevel:   "global",
+		},
+		// Original TestResolveTimeoutWithContext test cases
+		{
+			name:            "command level resolution with context",
+			cmdTimeout:      NewFromIntPtr(IntPtr(30)),
+			groupTimeout:    NewUnsetTimeout(),
+			globalTimeout:   NewFromIntPtr(IntPtr(60)),
+			commandName:     "test-command",
+			groupName:       "test-group",
+			expectedTimeout: 30,
+			expectedLevel:   "command",
+		},
+		{
+			name:            "global level resolution with context",
+			cmdTimeout:      NewUnsetTimeout(),
+			groupTimeout:    NewUnsetTimeout(),
+			globalTimeout:   NewFromIntPtr(IntPtr(60)),
+			commandName:     "test-command",
+			groupName:       "test-group",
+			expectedTimeout: 60,
+			expectedLevel:   "global",
+		},
+		{
+			name:            "default timeout with context",
+			cmdTimeout:      NewUnsetTimeout(),
+			groupTimeout:    NewUnsetTimeout(),
+			globalTimeout:   NewUnsetTimeout(),
+			commandName:     "test-command",
+			groupName:       "test-group",
+			expectedTimeout: DefaultTimeout,
+			expectedLevel:   "default",
 		},
 	}
 

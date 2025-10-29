@@ -161,12 +161,12 @@ go test ./internal/common -run TestResolveTimeoutWithContext -v
 
 ### 3.2. 完了基準
 
-- [ ] `ResolveTimeoutWithContext`のシグネチャが`Timeout`型に変更されている
-- [ ] `ResolveTimeout`関数が削除されている
-- [ ] 内部実装が`IsSet()`と`Value()`を使うように更新されている
-- [ ] `TestResolveTimeout`が削除され、テストケースが`TestResolveTimeoutWithContext`に統合されている
-- [ ] すべてのテストが成功する
-- [ ] `go vet ./...`がエラーなく完了する
+- [x] `ResolveTimeoutWithContext`のシグネチャが`Timeout`型に変更されている
+- [x] `ResolveTimeout`関数が削除されている
+- [x] 内部実装が`IsSet()`と`Value()`を使うように更新されている
+- [x] `TestResolveTimeout`が削除され、テストケースが`TestResolveTimeoutWithContext`に統合されている
+- [x] すべてのテストが成功する
+- [x] `go vet ./...`がエラーなく完了する
 
 ### 3.3. 所要時間見積もり
 
@@ -1224,12 +1224,12 @@ git revert HEAD
 ## 10. チェックリスト
 
 ### 10.1. フェーズ1チェックリスト
-- [ ] `ResolveTimeoutWithContext`シグネチャ変更
-- [ ] `ResolveTimeout`関数削除
-- [ ] 内部実装を`IsSet()`/`Value()`使用に更新
-- [ ] `TestResolveTimeout`削除とテストケース統合
-- [ ] 全テスト成功
-- [ ] `go vet`クリア
+- [x] `ResolveTimeoutWithContext`シグネチャ変更
+- [x] `ResolveTimeout`関数削除
+- [x] 内部実装を`IsSet()`/`Value()`使用に更新
+- [x] `TestResolveTimeout`削除とテストケース統合
+- [x] 全テスト成功
+- [x] `go vet`クリア
 
 ### 10.2. フェーズ2チェックリスト
 - [ ] `RuntimeCommand.TimeoutResolution`フィールド追加
