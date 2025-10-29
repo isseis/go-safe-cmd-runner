@@ -579,14 +579,14 @@ go test ./internal/common -v
 
 ### 5.3. 完了基準
 
-- [ ] `ResolveEffectiveTimeout`の全使用箇所が`ResolveTimeoutWithContext`に置き換えられている
-- [ ] 関連するコメントが更新されている
-- [ ] `ResolveEffectiveTimeout`のテストケースが`ResolveTimeoutWithContext`に統合されている
-- [ ] `ResolveEffectiveTimeout`関数が削除されている
-- [ ] `TestResolveEffectiveTimeout`が削除されている
-- [ ] すべてのテストが成功する
-- [ ] `go build ./...`がエラーなく完了する
-- [ ] `grep -r "ResolveEffectiveTimeout" .`で残存がないことを確認
+- [x] `ResolveEffectiveTimeout`の全使用箇所が`ResolveTimeoutWithContext`に置き換えられている
+- [x] 関連するコメントが更新されている
+- [x] `ResolveEffectiveTimeout`のテストケースが`ResolveTimeoutWithContext`に統合されている
+- [x] `ResolveEffectiveTimeout`関数が削除されている
+- [x] `TestResolveEffectiveTimeout`が削除されている
+- [x] すべてのテストが成功する
+- [x] `go build ./...`がエラーなく完了する
+- [x] `grep -r "ResolveEffectiveTimeout" .`で残存がないことを確認
 
 ### 5.4. 所要時間見積もり
 
@@ -1242,15 +1242,15 @@ git revert HEAD
 - [x] コンパイル成功
 
 ### 10.3. フェーズ3チェックリスト
-- [ ] `ResolveEffectiveTimeout`使用箇所特定
-- [ ] `normal_manager_test.go`更新
-- [ ] コメント更新
-- [ ] テストケース移植
-- [ ] `ResolveEffectiveTimeout`関数削除
-- [ ] `TestResolveEffectiveTimeout`削除
-- [ ] 全テスト成功
-- [ ] `go build`成功
-- [ ] 残存確認（grep）
+- [x] `ResolveEffectiveTimeout`使用箇所特定
+- [x] `normal_manager_test.go`更新
+- [x] コメント更新
+- [x] テストケース移植
+- [x] `ResolveEffectiveTimeout`関数削除
+- [x] `TestResolveEffectiveTimeout`削除
+- [x] 全テスト成功
+- [x] `go build`成功
+- [x] 残存確認（grep）
 
 ### 10.4. フェーズ4チェックリスト
 - [ ] `analyzeCommand`更新
