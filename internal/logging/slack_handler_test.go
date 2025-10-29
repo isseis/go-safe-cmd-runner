@@ -302,38 +302,6 @@ func TestNewSlackHandler_URLValidation(t *testing.T) {
 	}
 }
 
-func TestGetSlackWebhookURL(t *testing.T) {
-	tests := []struct {
-		name     string
-		envValue string
-		expected string
-	}{
-		{
-			name:     "with environment variable",
-			envValue: "https://hooks.slack.com/services/TEST/WEBHOOK/URL",
-			expected: "https://hooks.slack.com/services/TEST/WEBHOOK/URL",
-		},
-		{
-			name:     "without environment variable",
-			envValue: "",
-			expected: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Set test environment variable using t.Setenv
-			if tt.envValue != "" {
-				t.Setenv("GSCR_SLACK_WEBHOOK_URL", tt.envValue)
-			}
-			// Note: t.Setenv automatically restores the original value after the test
-
-			result := GetSlackWebhookURL()
-			assert.Equal(t, tt.expected, result, "GetSlackWebhookURL should return expected value")
-		})
-	}
-}
-
 func TestSlackHandler_Enabled(t *testing.T) {
 	tests := []struct {
 		name          string
