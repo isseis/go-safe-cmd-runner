@@ -57,11 +57,6 @@ var (
 	White = NewColor(whiteCode)
 )
 
-// NoColor returns the text without any color formatting.
-func NoColor(text string) string {
-	return text
-}
-
 // Sprintf applies color formatting to a formatted string.
 func (c Color) Sprintf(format string, args ...interface{}) string {
 	return c(fmt.Sprintf(format, args...))

@@ -42,14 +42,6 @@ func TestPredefinedColors(t *testing.T) {
 	}
 }
 
-func TestNoColor(t *testing.T) {
-	input := "TEST"
-	result := NoColor(input)
-	if result != input {
-		t.Errorf("NoColor() = %q, want %q", result, input)
-	}
-}
-
 func TestColorSprintf(t *testing.T) {
 	result := Red.Sprintf("Error: %s", "file not found")
 	expected := "\033[31mError: file not found\033[0m"
