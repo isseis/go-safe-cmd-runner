@@ -357,7 +357,7 @@ func determineEffectiveEnvAllowlist(groupAllowlist []string, globalAllowlist []s
 //   - *RuntimeGlobal: The expanded runtime global configuration
 //   - error: An error if expansion fails (e.g., undefined variable reference)
 func ExpandGlobal(spec *runnertypes.GlobalSpec) (*runnertypes.RuntimeGlobal, error) {
-	// Use constructor to ensure proper initialization (including timeout field)
+	// Create RuntimeGlobal using NewRuntimeGlobal to properly initialize timeout field
 	runtime, err := runnertypes.NewRuntimeGlobal(spec)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create RuntimeGlobal: %w", err)
@@ -508,7 +508,8 @@ func ExpandGroup(spec *runnertypes.GroupSpec, globalRuntime *runnertypes.Runtime
 //   - EffectiveWorkDir is NOT set by this function; it is set by GroupExecutor after expansion.
 func ExpandCommand(spec *runnertypes.CommandSpec, runtimeGroup *runnertypes.RuntimeGroup, globalRuntime *runnertypes.RuntimeGlobal, globalTimeout common.Timeout) (*runnertypes.RuntimeCommand, error) {
 	// Create RuntimeCommand using NewRuntimeCommand to properly resolve timeout
-	runtime, err := runnertypes.NewRuntimeCommand(spec, globalTimeout)
+	groupName := runnertypes.ExtractGroupName(runtimeGroup)
+	runtime, err := runnertypes.NewRuntimeCommand(spec, globalTimeout, groupName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create RuntimeCommand for command[%s]: %w", spec.Name, err)
 	}

@@ -93,27 +93,3 @@ func (t Timeout) Value() int {
 	}
 	return *t.value
 }
-
-// ResolveEffectiveTimeout determines the effective timeout value using the priority chain:
-// 1. Command-level timeout (if set)
-// 2. Global-level timeout (if set)
-// 3. DefaultTimeout constant (60 seconds)
-//
-// This function encapsulates the timeout resolution logic used throughout the command runner,
-// ensuring consistent behavior in both production code and tests.
-//
-// Parameters:
-//   - commandTimeout: The command-specific timeout (may be unset)
-//   - globalTimeout: The global timeout (may be unset)
-//
-// Returns:
-//   - The resolved timeout value in seconds
-func ResolveEffectiveTimeout(commandTimeout, globalTimeout Timeout) int {
-	if commandTimeout.IsSet() {
-		return commandTimeout.Value()
-	}
-	if globalTimeout.IsSet() {
-		return globalTimeout.Value()
-	}
-	return DefaultTimeout
-}

@@ -60,7 +60,7 @@ func NewRuntimeGlobal(spec *GlobalSpec) (*RuntimeGlobal, error) {
 
 // Timeout returns the global timeout from the spec.
 // Returns the configured Timeout value, which can be unset, unlimited, or a positive value.
-// Use common.ResolveEffectiveTimeout() to resolve the effective timeout with proper fallback logic.
+// Use common.ResolveTimeout() to resolve the effective timeout with proper fallback logic.
 // Panics if r or r.Spec is nil (programming error - use NewRuntimeGlobal).
 func (r *RuntimeGlobal) Timeout() common.Timeout {
 	if r == nil || r.Spec == nil {
@@ -138,6 +138,36 @@ func NewRuntimeGroup(spec *GroupSpec) (*RuntimeGroup, error) {
 	}, nil
 }
 
+// Convenience methods for RuntimeGroup
+
+// Name returns the group name from the spec.
+// Panics if r or r.Spec is nil (programming error - use NewRuntimeGroup).
+func (r *RuntimeGroup) Name() string {
+	if r == nil || r.Spec == nil {
+		panic("RuntimeGroup.Name: nil receiver or Spec (programming error - use NewRuntimeGroup)")
+	}
+	return r.Spec.Name
+}
+
+// WorkDir returns the group working directory from the spec (not yet expanded).
+// Panics if r or r.Spec is nil (programming error - use NewRuntimeGroup).
+func (r *RuntimeGroup) WorkDir() string {
+	if r == nil || r.Spec == nil {
+		panic("RuntimeGroup.WorkDir: nil receiver or Spec (programming error - use NewRuntimeGroup)")
+	}
+	return r.Spec.WorkDir
+}
+
+// ExtractGroupName safely extracts the group name from a RuntimeGroup.
+// Returns an empty string if the RuntimeGroup or its Spec is nil.
+// This helper is useful for timeout resolution context where group name is optional.
+func ExtractGroupName(runtimeGroup *RuntimeGroup) string {
+	if runtimeGroup != nil && runtimeGroup.Spec != nil {
+		return runtimeGroup.Spec.Name
+	}
+	return ""
+}
+
 // RuntimeCommand represents the runtime-expanded command configuration.
 // It contains references to the original CommandSpec along with expanded variables
 // and resources that are resolved at runtime.
@@ -167,27 +197,38 @@ type RuntimeCommand struct {
 
 	// EffectiveTimeout is the resolved timeout value (in seconds) for this command
 	EffectiveTimeout int
+
+	// TimeoutResolution contains context information about timeout resolution
+	TimeoutResolution common.TimeoutResolutionContext
 }
 
 // NewRuntimeCommand creates a new RuntimeCommand with the required spec.
 // The globalTimeout parameter is used for timeout resolution hierarchy.
+// The groupName parameter provides context for timeout resolution logging.
 // Returns ErrNilSpec if spec is nil.
-func NewRuntimeCommand(spec *CommandSpec, globalTimeout common.Timeout) (*RuntimeCommand, error) {
+func NewRuntimeCommand(spec *CommandSpec, globalTimeout common.Timeout, groupName string) (*RuntimeCommand, error) {
 	if spec == nil {
 		return nil, ErrNilSpec
 	}
 
-	// Resolve the effective timeout using the hierarchy
+	// Resolve the effective timeout using the hierarchy with context
 	commandTimeout := common.NewFromIntPtr(spec.Timeout)
-	effectiveTimeout := common.ResolveEffectiveTimeout(commandTimeout, globalTimeout)
+	effectiveTimeout, resolutionContext := common.ResolveTimeout(
+		commandTimeout,
+		common.NewUnsetTimeout(), // Group timeout not yet supported
+		globalTimeout,
+		spec.Name,
+		groupName,
+	)
 
 	return &RuntimeCommand{
-		Spec:             spec,
-		timeout:          commandTimeout,
-		ExpandedArgs:     []string{},
-		ExpandedEnv:      make(map[string]string),
-		ExpandedVars:     make(map[string]string),
-		EffectiveTimeout: effectiveTimeout,
+		Spec:              spec,
+		timeout:           commandTimeout,
+		ExpandedArgs:      []string{},
+		ExpandedEnv:       make(map[string]string),
+		ExpandedVars:      make(map[string]string),
+		EffectiveTimeout:  effectiveTimeout,
+		TimeoutResolution: resolutionContext,
 	}, nil
 }
 

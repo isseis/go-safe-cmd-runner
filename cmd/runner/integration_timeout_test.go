@@ -1,6 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"os"
+	"os/exec"
 	"testing"
 
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
@@ -24,7 +27,8 @@ func timeoutTestHelper(t *testing.T, configTOML string) int {
 
 	// Create RuntimeCommand with timeout resolution
 	// Note: Group-level timeout is not yet implemented (future enhancement)
-	finalRuntimeCmd, err := runnertypes.NewRuntimeCommand(cmdSpec, common.NewFromIntPtr(cfg.Global.Timeout))
+	groupName := cfg.Groups[0].Name
+	finalRuntimeCmd, err := runnertypes.NewRuntimeCommand(cmdSpec, common.NewFromIntPtr(cfg.Global.Timeout), groupName)
 	require.NoError(t, err, "Failed to create RuntimeCommand")
 
 	return finalRuntimeCmd.EffectiveTimeout
@@ -292,9 +296,99 @@ timeout = 0
 	for _, tc := range testCases {
 		cmdSpec := &groupSpec.Commands[tc.cmdIndex]
 
-		finalRuntimeCmd, err := runnertypes.NewRuntimeCommand(cmdSpec, common.NewFromIntPtr(cfg.Global.Timeout))
+		finalRuntimeCmd, err := runnertypes.NewRuntimeCommand(cmdSpec, common.NewFromIntPtr(cfg.Global.Timeout), groupSpec.Name)
 		require.NoError(t, err, "Failed to create RuntimeCommand for %s", cmdSpec.Name)
 
 		assert.Equal(t, tc.expectedTimeout, finalRuntimeCmd.EffectiveTimeout, tc.description)
+	}
+}
+
+func TestDryRun_TimeoutResolutionContext(t *testing.T) {
+	tests := []struct {
+		name            string
+		configContent   string
+		expectedTimeout int
+		expectedLevel   string
+	}{
+		{
+			name: "command level timeout in dry-run",
+			configContent: `
+[global]
+timeout = 60
+
+[[groups]]
+name = "test-group"
+
+[[groups.commands]]
+name = "test-cmd"
+cmd = "/bin/sleep"
+args = ["1"]
+timeout = 30
+`,
+			expectedTimeout: 30,
+			expectedLevel:   "command",
+		},
+		{
+			name: "global level timeout in dry-run",
+			configContent: `
+[global]
+timeout = 45
+
+[[groups]]
+name = "test-group"
+
+[[groups.commands]]
+name = "test-cmd"
+cmd = "/bin/sleep"
+args = ["1"]
+`,
+			expectedTimeout: 45,
+			expectedLevel:   "global",
+		},
+		{
+			name: "default timeout in dry-run",
+			configContent: `
+[[groups]]
+name = "test-group"
+
+[[groups.commands]]
+name = "test-cmd"
+cmd = "/bin/sleep"
+args = ["1"]
+`,
+			expectedTimeout: 60,
+			expectedLevel:   "default",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			// Create temporary config file
+			tmpFile, err := os.CreateTemp("", "test-config-*.toml")
+			require.NoError(t, err)
+			defer os.Remove(tmpFile.Name())
+
+			_, err = tmpFile.WriteString(tt.configContent)
+			require.NoError(t, err)
+			tmpFile.Close()
+
+			// Run command in dry-run mode
+			cmd := exec.Command("go", "run", ".", "-config", tmpFile.Name(), "-dry-run", "-dry-run-detail", "full")
+			cmd.Dir = "."
+
+			output, err := cmd.CombinedOutput()
+			require.NoError(t, err, "dry-run should succeed: %s", string(output))
+
+			outputStr := string(output)
+
+			// Check for timeout value
+			assert.Contains(t, outputStr, fmt.Sprintf("timeout: %d", tt.expectedTimeout),
+				"output should contain timeout value")
+
+			// Check for timeout_level
+			assert.Contains(t, outputStr, fmt.Sprintf("timeout_level: %s", tt.expectedLevel),
+				"output should contain timeout_level")
+		})
 	}
 }
