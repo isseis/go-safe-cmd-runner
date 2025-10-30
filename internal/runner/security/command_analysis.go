@@ -272,13 +272,6 @@ func checkCommandPatterns(cmdName string, cmdArgs []string, patterns []Dangerous
 	return runnertypes.RiskLevelUnknown, "", ""
 }
 
-// IsSudoCommand checks if the given command is sudo, considering symbolic links
-// Returns (isSudo, error) where error indicates if symlink depth was exceeded
-// Deprecated: Use IsPrivilegeEscalationCommand instead
-func IsSudoCommand(cmdName string) (bool, error) {
-	return IsPrivilegeEscalationCommand(cmdName)
-}
-
 // IsPrivilegeEscalationCommand checks if the given command is a privilege escalation command
 // (sudo, su, doas), considering symbolic links
 // Returns (isPrivilegeEscalation, error) where error indicates if symlink depth was exceeded
