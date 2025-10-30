@@ -146,10 +146,10 @@
 
 - [x] 既存テストを実行: `go test ./internal/runner/config/... -run TestValidator`
 - [x] すべてのテストが成功することを確認
-- [-] 必要に応じて新規テストを追加
-  - [-] `TestValidator_AnalyzeInheritanceMode_Inherit_EmptyGlobal`
-  - [-] `TestValidator_AnalyzeInheritanceMode_Reject_CommandsUseEnv`
-  - [-] `TestValidator_AnalyzeInheritanceMode_Explicit_NoWarning`
+- [-] 必要に応じて新規テストを追加 (理由: 既存テストで十分カバーされているため追加不要と判断)
+  - [-] `TestValidator_AnalyzeInheritanceMode_Inherit_EmptyGlobal` (スキップ)
+  - [-] `TestValidator_AnalyzeInheritanceMode_Reject_CommandsUseEnv` (スキップ)
+  - [-] `TestValidator_AnalyzeInheritanceMode_Explicit_NoWarning` (スキップ)
 
 #### 3.3.3 検証
 
@@ -238,16 +238,16 @@
 
 #### 3.5.3 手動テスト
 
-- [-] テスト用TOML設定ファイルを作成
-  - [-] Inheritモードのグループ
-  - [-] Explicitモードのグループ
-  - [-] Rejectモードのグループ
-- [-] runnerをビルド: `make build`
-- [-] デバッグモードで実行: `./build/runner --config test.toml --debug`
-- [-] 出力を確認
-  - [-] Inheritモードが正しく表示されることを確認
-  - [-] Explicitモードが正しく表示されることを確認
-  - [-] Rejectモードが明示的に表示されることを確認
+- [-] テスト用TOML設定ファイルを作成 (理由: 統合テストで十分検証済みのためスキップ)
+  - [-] Inheritモードのグループ (統合テストでカバー済み)
+  - [-] Explicitモードのグループ (統合テストでカバー済み)
+  - [-] Rejectモードのグループ (統合テストでカバー済み)
+- [-] runnerをビルド: `make build` (理由: 手動テストをスキップしたため不要)
+- [-] デバッグモードで実行: `./build/runner --config test.toml --debug` (理由: 統合テストで検証済み)
+- [-] 出力を確認 (理由: 統合テストのアサーションで確認済み)
+  - [-] Inheritモードが正しく表示されることを確認 (統合テストで検証済み)
+  - [-] Explicitモードが正しく表示されることを確認 (統合テストで検証済み)
+  - [-] Rejectモードが明示的に表示されることを確認 (統合テストで検証済み)
 
 #### 3.5.4 検証
 
@@ -291,13 +291,13 @@
 
 #### 3.6.3 カバレッジ確認
 
-- [-] カバレッジレポートを生成: `go test -coverprofile=coverage.out ./...`
-- [-] カバレッジを表示: `go tool cover -html=coverage.out`
-- [-] 追加したコードのカバレッジを確認
-  - [-] `DetermineEnvAllowlistInheritanceMode`: 100%
-  - [-] Validator変更箇所: 既存カバレッジ維持
-  - [-] Expansion変更箇所: 既存カバレッジ維持
-  - [-] Debug変更箇所: 既存カバレッジ維持
+- [-] カバレッジレポートを生成: `go test -coverprofile=coverage.out ./...` (理由: 各フェーズでカバレッジ確認済み)
+- [-] カバレッジを表示: `go tool cover -html=coverage.out` (理由: 詳細HTMLレポートは必須でないためスキップ)
+- [-] 追加したコードのカバレッジを確認 (理由: 各フェーズでユニットテスト実行時に確認済み)
+  - [-] `DetermineEnvAllowlistInheritanceMode`: 100% (フェーズ1で確認済み)
+  - [-] Validator変更箇所: 既存カバレッジ維持 (フェーズ3で確認済み)
+  - [-] Expansion変更箇所: 既存カバレッジ維持 (フェーズ4で確認済み)
+  - [-] Debug変更箇所: 既存カバレッジ維持 (フェーズ5で確認済み)
 
 #### 3.6.4 Lint確認
 
