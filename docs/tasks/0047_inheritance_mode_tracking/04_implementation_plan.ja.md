@@ -173,10 +173,10 @@
 
 #### 3.4.1 コード変更
 
-- [ ] `internal/runner/config/expansion.go` を開く
-- [ ] `ExpandGroup` 関数を特定
-- [ ] `RuntimeGroup` 作成箇所を特定
-- [ ] `RuntimeGroup` 作成直後に継承モード設定コードを追加
+- [x] `internal/runner/config/expansion.go` を開く
+- [x] `ExpandGroup` 関数を特定
+- [x] `RuntimeGroup` 作成箇所を特定
+- [x] `RuntimeGroup` 作成直後に継承モード設定コードを追加
   ```go
   runtimeGroup.EnvAllowlistInheritanceMode =
       runnertypes.DetermineEnvAllowlistInheritanceMode(group.EnvAllowed)
@@ -184,22 +184,22 @@
 
 #### 3.4.2 テスト実装
 
-- [ ] `internal/runner/config/expansion_test.go` にテストを追加
-  - [ ] `TestExpander_ExpandGroup_SetsEnvAllowlistInheritanceMode_Inherit`
-  - [ ] `TestExpander_ExpandGroup_SetsEnvAllowlistInheritanceMode_Reject`
-  - [ ] `TestExpander_ExpandGroup_SetsEnvAllowlistInheritanceMode_Explicit`
+- [x] `internal/runner/config/expansion_unit_test.go` にテストを追加
+  - [x] `TestExpandGroup_SetsEnvAllowlistInheritanceMode_Inherit`
+  - [x] `TestExpandGroup_SetsEnvAllowlistInheritanceMode_Reject`
+  - [x] `TestExpandGroup_SetsEnvAllowlistInheritanceMode_Explicit`
 
 #### 3.4.3 検証
 
-- [ ] テストを実行: `go test ./internal/runner/config/... -run TestExpander`
-- [ ] 新規テストが成功することを確認
-- [ ] 既存テストが成功することを確認
-- [ ] カバレッジを確認
+- [x] テストを実行: `go test ./internal/runner/config/... -run TestExpander`
+- [x] 新規テストが成功することを確認
+- [x] 既存テストが成功することを確認
+- [x] カバレッジを確認
 
 #### 3.4.4 コミット
 
-- [ ] 変更をステージング: `git add internal/runner/config/expansion*.go`
-- [ ] コミット: `git commit -m "feat: set EnvAllowlistInheritanceMode in Expander"`
+- [x] 変更をステージング: `git add internal/runner/config/expansion*.go`
+- [x] コミット: `git commit -m "feat: set EnvAllowlistInheritanceMode in Expander"`
 
 ---
 

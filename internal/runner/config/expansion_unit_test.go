@@ -616,3 +616,70 @@ func TestIntegration_FullExpansionChain(t *testing.T) {
 	assert.Equal(t, "/home/testuser/app", runtime.ExpandedEnv["APP_HOME"])
 	assert.Equal(t, "/home/testuser/app/bin:/usr/bin:/bin", runtime.ExpandedEnv["PATH"])
 }
+
+// TestExpandGroup_SetsEnvAllowlistInheritanceMode tests that ExpandGroup correctly sets
+// the EnvAllowlistInheritanceMode field based on the group's EnvAllowed configuration.
+func TestExpandGroup_SetsEnvAllowlistInheritanceMode(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		groupEnvAllowed []string
+		expectedMode    runnertypes.InheritanceMode
+		description     string
+	}{
+		{
+			name:            "Inherit mode - nil EnvAllowed",
+			groupEnvAllowed: nil,
+			expectedMode:    runnertypes.InheritanceModeInherit,
+			description:     "Group should inherit global allowlist when EnvAllowed is nil",
+		},
+		{
+			name:            "Reject mode - empty EnvAllowed",
+			groupEnvAllowed: []string{},
+			expectedMode:    runnertypes.InheritanceModeReject,
+			description:     "Group should reject all environment variables when EnvAllowed is empty",
+		},
+		{
+			name:            "Explicit mode - single element",
+			groupEnvAllowed: []string{"VAR1"},
+			expectedMode:    runnertypes.InheritanceModeExplicit,
+			description:     "Group should use explicit allowlist with one variable",
+		},
+		{
+			name:            "Explicit mode - multiple elements",
+			groupEnvAllowed: []string{"VAR1", "VAR2", "VAR3"},
+			expectedMode:    runnertypes.InheritanceModeExplicit,
+			description:     "Group should use explicit allowlist with multiple variables",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Create minimal group spec
+			groupSpec := &runnertypes.GroupSpec{
+				Name:       "test-group",
+				EnvAllowed: tt.groupEnvAllowed,
+				Commands:   []runnertypes.CommandSpec{},
+			}
+
+			// Create minimal global runtime
+			globalSpec := &runnertypes.GlobalSpec{
+				EnvAllowed: []string{"GLOBAL_VAR"},
+			}
+			globalRuntime, err := config.ExpandGlobal(globalSpec)
+			require.NoError(t, err)
+
+			// Expand group
+			runtimeGroup, err := config.ExpandGroup(groupSpec, globalRuntime)
+			require.NoError(t, err, "ExpandGroup should not return an error")
+			require.NotNil(t, runtimeGroup, "ExpandGroup should return a non-nil RuntimeGroup")
+
+			// Verify inheritance mode is set correctly
+			assert.Equal(t, tt.expectedMode, runtimeGroup.EnvAllowlistInheritanceMode,
+				"%s: expected mode %v, got %v", tt.description, tt.expectedMode, runtimeGroup.EnvAllowlistInheritanceMode)
+		})
+	}
+}
