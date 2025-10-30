@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	commontesting "github.com/isseis/go-safe-cmd-runner/internal/common/testing"
+	"github.com/isseis/go-safe-cmd-runner/internal/groupmembership"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -108,4 +109,100 @@ func TestValidator_CustomConfig(t *testing.T) {
 	assert.True(t, validator.HasShellMetacharacters([]string{"test@example"}))
 	assert.True(t, validator.HasShellMetacharacters([]string{"test#hash"}))
 	assert.False(t, validator.HasShellMetacharacters([]string{"test;semicolon"})) // Not in custom list
+}
+
+func TestNewValidator_WithOptions(t *testing.T) {
+	t.Run("with no options", func(t *testing.T) {
+		validator, err := NewValidator(nil)
+
+		assert.NoError(t, err)
+		assert.NotNil(t, validator)
+		assert.NotNil(t, validator.fs)
+		assert.Nil(t, validator.groupMembership)
+	})
+
+	t.Run("with WithFileSystem option", func(t *testing.T) {
+		mockFS := commontesting.NewMockFileSystem()
+		config := DefaultConfig()
+		validator, err := NewValidator(config, WithFileSystem(mockFS))
+
+		assert.NoError(t, err)
+		assert.NotNil(t, validator)
+		assert.Equal(t, mockFS, validator.fs)
+		assert.Nil(t, validator.groupMembership)
+	})
+
+	t.Run("with WithGroupMembership option", func(t *testing.T) {
+		config := DefaultConfig()
+		gm := groupmembership.New()
+		validator, err := NewValidator(config, WithGroupMembership(gm))
+
+		assert.NoError(t, err)
+		assert.NotNil(t, validator)
+		assert.NotNil(t, validator.fs)
+		assert.Equal(t, gm, validator.groupMembership)
+	})
+
+	t.Run("with both options", func(t *testing.T) {
+		mockFS := commontesting.NewMockFileSystem()
+		gm := groupmembership.New()
+		config := DefaultConfig()
+		validator, err := NewValidator(config, WithFileSystem(mockFS), WithGroupMembership(gm))
+
+		assert.NoError(t, err)
+		assert.NotNil(t, validator)
+		assert.Equal(t, mockFS, validator.fs)
+		assert.Equal(t, gm, validator.groupMembership)
+	})
+
+	t.Run("option application order independence", func(t *testing.T) {
+		mockFS := commontesting.NewMockFileSystem()
+		gm := groupmembership.New()
+		config := DefaultConfig()
+
+		// Test with options in different orders
+		validator1, err1 := NewValidator(config, WithFileSystem(mockFS), WithGroupMembership(gm))
+		validator2, err2 := NewValidator(config, WithGroupMembership(gm), WithFileSystem(mockFS))
+
+		assert.NoError(t, err1)
+		assert.NoError(t, err2)
+		assert.Equal(t, validator1.fs, validator2.fs)
+		assert.Equal(t, validator1.groupMembership, validator2.groupMembership)
+	})
+}
+
+func TestNewValidator_BackwardCompatibility(t *testing.T) {
+	t.Run("NewValidatorWithFS wrapper", func(t *testing.T) {
+		mockFS := commontesting.NewMockFileSystem()
+		config := DefaultConfig()
+		validator, err := NewValidatorWithFS(config, mockFS)
+
+		assert.NoError(t, err)
+		assert.NotNil(t, validator)
+		assert.Equal(t, mockFS, validator.fs)
+		assert.Nil(t, validator.groupMembership)
+	})
+
+	t.Run("NewValidatorWithGroupMembership wrapper", func(t *testing.T) {
+		config := DefaultConfig()
+		gm := groupmembership.New()
+		validator, err := NewValidatorWithGroupMembership(config, gm)
+
+		assert.NoError(t, err)
+		assert.NotNil(t, validator)
+		assert.NotNil(t, validator.fs)
+		assert.Equal(t, gm, validator.groupMembership)
+	})
+
+	t.Run("NewValidatorWithFSAndGroupMembership wrapper", func(t *testing.T) {
+		mockFS := commontesting.NewMockFileSystem()
+		gm := groupmembership.New()
+		config := DefaultConfig()
+		validator, err := NewValidatorWithFSAndGroupMembership(config, mockFS, gm)
+
+		assert.NoError(t, err)
+		assert.NotNil(t, validator)
+		assert.Equal(t, mockFS, validator.fs)
+		assert.Equal(t, gm, validator.groupMembership)
+	})
 }

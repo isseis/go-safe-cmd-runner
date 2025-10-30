@@ -8,20 +8,20 @@ This task migrates the `security.Validator` constructors from multiple specializ
 
 ### Phase 1: Add New API (Backward Compatible)
 
-- [ ] **Task 1.1**: Add Option type and options structure
+- [x] **Task 1.1**: Add Option type and options structure
   - File: `internal/runner/security/validator.go`
   - Add `Option` function type
   - Add private `validatorOptions` struct with fields for `fs` and `groupMembership`
   - Estimated: 15 minutes
 
-- [ ] **Task 1.2**: Implement option functions
+- [x] **Task 1.2**: Implement option functions
   - File: `internal/runner/security/validator.go`
   - Implement `WithFileSystem(fs common.FileSystem) Option`
   - Implement `WithGroupMembership(gm *groupmembership.GroupMembership) Option`
   - Add godoc comments for each option function
   - Estimated: 15 minutes
 
-- [ ] **Task 1.3**: Create new NewValidator constructor
+- [x] **Task 1.3**: Create new NewValidator constructor
   - File: `internal/runner/security/validator.go`
   - Rename current `NewValidator` to `newValidatorCore` (or similar internal name)
   - Implement new `NewValidator(config *Config, opts ...Option)` that:
@@ -30,7 +30,7 @@ This task migrates the `security.Validator` constructors from multiple specializ
     - Calls the core constructor with the configured options
   - Estimated: 20 minutes
 
-- [ ] **Task 1.4**: Update existing constructors to use new API
+- [x] **Task 1.4**: Update existing constructors to use new API
   - File: `internal/runner/security/validator.go`
   - Reimplement `NewValidator(config *Config)` as wrapper calling new API (removed from signature)
   - Reimplement `NewValidatorWithFS` as wrapper using `WithFileSystem` option
@@ -39,7 +39,7 @@ This task migrates the `security.Validator` constructors from multiple specializ
   - Add `// Deprecated:` godoc comments with migration instructions
   - Estimated: 20 minutes
 
-- [ ] **Task 1.5**: Add unit tests for new API
+- [x] **Task 1.5**: Add unit tests for new API
   - File: `internal/runner/security/validator_test.go`
   - Test new `NewValidator()` with no options
   - Test with `WithFileSystem` option
