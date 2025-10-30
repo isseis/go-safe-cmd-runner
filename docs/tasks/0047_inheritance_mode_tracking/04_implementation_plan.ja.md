@@ -46,51 +46,51 @@
 
 #### 3.1.1 ファイル作成
 
-- [ ] `internal/runner/runnertypes/env_inheritance.go` ファイルを作成
-- [ ] パッケージ宣言とインポートを追加
+- [x] `internal/runner/runnertypes/env_inheritance.go` ファイルを作成
+- [x] パッケージ宣言とインポートを追加
 
 #### 3.1.2 関数実装
 
-- [ ] `DetermineEnvAllowlistInheritanceMode(envAllowed []string) InheritanceMode` 関数を実装
-  - [ ] nilチェック処理を実装 → `InheritanceModeInherit`
-  - [ ] 空スライスチェック処理を実装 → `InheritanceModeReject`
-  - [ ] デフォルトケース（長さ>0）を実装 → `InheritanceModeExplicit`
-- [ ] 完全なgodocコメントを追加
-  - [ ] 関数の目的を記述
-  - [ ] 判定ルールを記述（3つのケース）
-  - [ ] Go言語のnil/空スライスの仕様を記述
-  - [ ] パラメータを記述
-  - [ ] 戻り値を記述
-  - [ ] 使用例を記述
+- [x] `DetermineEnvAllowlistInheritanceMode(envAllowed []string) InheritanceMode` 関数を実装
+  - [x] nilチェック処理を実装 → `InheritanceModeInherit`
+  - [x] 空スライスチェック処理を実装 → `InheritanceModeReject`
+  - [x] デフォルトケース（長さ>0）を実装 → `InheritanceModeExplicit`
+- [x] 完全なgodocコメントを追加
+  - [x] 関数の目的を記述
+  - [x] 判定ルールを記述（3つのケース）
+  - [x] Go言語のnil/空スライスの仕様を記述
+  - [x] パラメータを記述
+  - [x] 戻り値を記述
+  - [x] 使用例を記述
 
 #### 3.1.3 テスト実装
 
-- [ ] `internal/runner/runnertypes/env_inheritance_test.go` ファイルを作成
-- [ ] テーブル駆動テストを実装
-  - [ ] nilスライスのテストケース
-  - [ ] 空スライスのテストケース
-  - [ ] 1要素スライスのテストケース
-  - [ ] 複数要素スライスのテストケース
-  - [ ] 多数要素スライスのテストケース
-- [ ] 個別テスト関数を実装（オプション）
-  - [ ] `TestDetermineEnvAllowlistInheritanceMode_Inherit_NilSlice`
-  - [ ] `TestDetermineEnvAllowlistInheritanceMode_Reject_EmptySlice`
-  - [ ] `TestDetermineEnvAllowlistInheritanceMode_Explicit_SingleElement`
-  - [ ] `TestDetermineEnvAllowlistInheritanceMode_Explicit_MultipleElements`
+- [x] `internal/runner/runnertypes/env_inheritance_test.go` ファイルを作成
+- [x] テーブル駆動テストを実装
+  - [x] nilスライスのテストケース
+  - [x] 空スライスのテストケース
+  - [x] 1要素スライスのテストケース
+  - [x] 複数要素スライスのテストケース
+  - [x] 多数要素スライスのテストケース
+- [x] 個別テスト関数を実装（オプション）
+  - [x] `TestDetermineEnvAllowlistInheritanceMode_Inherit_NilSlice`
+  - [x] `TestDetermineEnvAllowlistInheritanceMode_Reject_EmptySlice`
+  - [x] `TestDetermineEnvAllowlistInheritanceMode_Explicit_SingleElement`
+  - [x] `TestDetermineEnvAllowlistInheritanceMode_Explicit_MultipleElements`
 
 #### 3.1.4 検証
 
-- [ ] テストを実行: `go test ./internal/runner/runnertypes/...`
-- [ ] すべてのテストが成功することを確認
-- [ ] カバレッジを確認: `go test -cover ./internal/runner/runnertypes/...`
-- [ ] カバレッジ100%を確認
-- [ ] lintを実行: `golangci-lint run ./internal/runner/runnertypes/...`
-- [ ] lint警告がないことを確認
+- [x] テストを実行: `go test ./internal/runner/runnertypes/...`
+- [x] すべてのテストが成功することを確認
+- [x] カバレッジを確認: `go test -cover ./internal/runner/runnertypes/...`
+- [x] カバレッジ100%を確認
+- [x] lintを実行: `golangci-lint run ./internal/runner/runnertypes/...`
+- [x] lint警告がないことを確認
 
 #### 3.1.5 コミット
 
-- [ ] 変更をステージング: `git add internal/runner/runnertypes/env_inheritance*.go`
-- [ ] コミット: `git commit -m "feat: add DetermineEnvAllowlistInheritanceMode helper"`
+- [x] 変更をステージング: `git add internal/runner/runnertypes/env_inheritance*.go`
+- [x] コミット: `git commit -m "feat: add DetermineEnvAllowlistInheritanceMode helper"`
 
 ---
 
