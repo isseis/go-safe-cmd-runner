@@ -1,3 +1,40 @@
+// Package security provides security validation functionality for the command runner.
+//
+// # Validator Construction
+//
+// The Validator uses the Functional Options Pattern for flexible configuration.
+// This pattern allows you to customize the validator by passing optional configuration
+// functions, making it easy to add new options without breaking existing code.
+//
+// Basic usage:
+//
+//	validator, err := security.NewValidator(nil)
+//	if err != nil {
+//	    return err
+//	}
+//
+// With custom file system (useful for testing):
+//
+//	validator, err := security.NewValidator(config,
+//	    security.WithFileSystem(mockFS))
+//
+// With group membership checker (for permission validation):
+//
+//	validator, err := security.NewValidator(config,
+//	    security.WithGroupMembership(gm))
+//
+// With multiple options:
+//
+//	validator, err := security.NewValidator(config,
+//	    security.WithFileSystem(mockFS),
+//	    security.WithGroupMembership(gm))
+//
+// # Available Options
+//
+// The following options are available for customizing the Validator:
+//
+//   - WithFileSystem(fs common.FileSystem): Use a custom file system implementation (useful for testing)
+//   - WithGroupMembership(gm *groupmembership.GroupMembership): Add group membership checking for permission validation
 package security
 
 import (
@@ -27,30 +64,53 @@ type Validator struct {
 	sensitivePatterns *redaction.SensitivePatterns
 }
 
-// NewValidator creates a new security validator with the given configuration.
-// If config is nil, DefaultConfig() will be used.
-// Returns an error if any regex patterns in the config are invalid.
-func NewValidator(config *Config) (*Validator, error) {
-	return NewValidatorWithFS(config, common.NewDefaultFileSystem())
+// Option is a function type for configuring Validator instances
+type Option func(*validatorOptions)
+
+// validatorOptions holds all configuration options for creating a Validator
+type validatorOptions struct {
+	fs              common.FileSystem
+	groupMembership *groupmembership.GroupMembership
 }
 
-// NewValidatorWithGroupMembership creates a new security validator with group membership support.
-// This constructor is specifically for output capture functionality that needs UID/GID permission checks.
-func NewValidatorWithGroupMembership(config *Config, groupMembership *groupmembership.GroupMembership) (*Validator, error) {
-	return NewValidatorWithFSAndGroupMembership(config, common.NewDefaultFileSystem(), groupMembership)
+// WithFileSystem sets a custom file system for the validator.
+// This is primarily used for testing with mock file systems.
+func WithFileSystem(fs common.FileSystem) Option {
+	return func(opts *validatorOptions) {
+		opts.fs = fs
+	}
 }
 
-// NewValidatorWithFS creates a new security validator with the given configuration and FileSystem.
-// If config is nil, DefaultConfig() will be used.
-// Returns an error if any regex patterns in the config are invalid.
-func NewValidatorWithFS(config *Config, fs common.FileSystem) (*Validator, error) {
-	return NewValidatorWithFSAndGroupMembership(config, fs, nil)
+// WithGroupMembership sets a group membership checker for permission validation.
+// This is used for output capture functionality that needs UID/GID permission checks.
+func WithGroupMembership(gm *groupmembership.GroupMembership) Option {
+	return func(opts *validatorOptions) {
+		opts.groupMembership = gm
+	}
 }
 
-// NewValidatorWithFSAndGroupMembership creates a new security validator with all options.
+// NewValidator creates a new security validator with the given configuration and options.
 // If config is nil, DefaultConfig() will be used.
 // Returns an error if any regex patterns in the config are invalid.
-func NewValidatorWithFSAndGroupMembership(config *Config, fs common.FileSystem, groupMembership *groupmembership.GroupMembership) (*Validator, error) {
+func NewValidator(config *Config, opts ...Option) (*Validator, error) {
+	// Apply default options
+	options := &validatorOptions{
+		fs:              common.NewDefaultFileSystem(),
+		groupMembership: nil,
+	}
+
+	// Apply provided options
+	for _, opt := range opts {
+		opt(options)
+	}
+
+	return newValidatorCore(config, options.fs, options.groupMembership)
+}
+
+// newValidatorCore creates a new security validator with all options.
+// If config is nil, DefaultConfig() will be used.
+// Returns an error if any regex patterns in the config are invalid.
+func newValidatorCore(config *Config, fs common.FileSystem, groupMembership *groupmembership.GroupMembership) (*Validator, error) {
 	if config == nil {
 		config = DefaultConfig()
 	}

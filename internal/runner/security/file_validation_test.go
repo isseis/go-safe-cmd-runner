@@ -105,7 +105,7 @@ func TestValidator_ValidateOutputWritePermission(t *testing.T) {
 			} else {
 				config = DefaultConfig()
 			}
-			validator, err := NewValidatorWithGroupMembership(config, nil)
+			validator, err := NewValidator(config)
 			require.NoError(t, err)
 
 			outputPath := tt.setupFunc(t)
@@ -216,7 +216,7 @@ func TestValidator_checkWritePermission(t *testing.T) {
 			}
 
 			groupMembership := groupmembership.New()
-			validator, err := NewValidatorWithGroupMembership(config, groupMembership)
+			validator, err := NewValidator(config, WithGroupMembership(groupMembership))
 			require.NoError(t, err)
 
 			path, fileInfo := tt.setupFunc(t)
@@ -292,7 +292,7 @@ func TestValidator_validateOutputDirectoryAccess(t *testing.T) {
 			// Use permissive config for all tests since this is testing the internal helper
 			// and we want to focus on write permission logic, not directory security
 			config := NewPermissiveTestConfig()
-			validator, err := NewValidatorWithGroupMembership(config, nil)
+			validator, err := NewValidator(config)
 			require.NoError(t, err)
 
 			dirPath := tt.setupFunc(t)
@@ -367,7 +367,7 @@ func TestValidator_validateOutputFileWritePermission(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			config := DefaultConfig()
-			validator, err := NewValidatorWithGroupMembership(config, nil)
+			validator, err := NewValidator(config)
 			require.NoError(t, err)
 
 			filePath, fileInfo := tt.setupFunc(t)
@@ -431,7 +431,7 @@ func TestValidator_isUserInGroup(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			config := DefaultConfig()
 			groupMembership := groupmembership.New()
-			validator, err := NewValidatorWithGroupMembership(config, groupMembership)
+			validator, err := NewValidator(config, WithGroupMembership(groupMembership))
 			require.NoError(t, err)
 
 			inGroup, err := validator.isUserInGroup(tt.uid, tt.gid)
@@ -469,7 +469,7 @@ func TestValidator_ValidateOutputWritePermission_Integration(t *testing.T) {
 
 		// Use permissive config for integration test that depends on real filesystem
 		config := NewPermissiveTestConfig()
-		validator, err := NewValidatorWithGroupMembership(config, nil)
+		validator, err := NewValidator(config)
 		require.NoError(t, err)
 
 		// This should work - leverages existing ValidateDirectoryPermissions
@@ -485,7 +485,7 @@ func TestValidator_EvaluateOutputSecurityRisk(t *testing.T) {
 	homeDir := currentUser.HomeDir
 
 	config := DefaultConfig()
-	validator, err := NewValidatorWithGroupMembership(config, nil)
+	validator, err := NewValidator(config)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -603,7 +603,7 @@ func TestValidator_EvaluateOutputSecurityRisk(t *testing.T) {
 
 func TestValidator_EvaluateOutputSecurityRisk_CaseInsensitive(t *testing.T) {
 	config := DefaultConfig()
-	validator, err := NewValidatorWithGroupMembership(config, nil)
+	validator, err := NewValidator(config)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -639,7 +639,7 @@ func TestValidator_EvaluateOutputSecurityRisk_CaseInsensitive(t *testing.T) {
 
 func TestValidator_EvaluateOutputSecurityRisk_EdgeCases(t *testing.T) {
 	config := DefaultConfig()
-	validator, err := NewValidatorWithGroupMembership(config, nil)
+	validator, err := NewValidator(config)
 	require.NoError(t, err)
 
 	t.Run("empty_path", func(t *testing.T) {
@@ -672,7 +672,7 @@ func TestValidator_EvaluateOutputSecurityRisk_EdgeCases(t *testing.T) {
 
 func TestValidator_EvaluateOutputSecurityRisk_SpecialPatterns(t *testing.T) {
 	config := DefaultConfig()
-	validator, err := NewValidatorWithGroupMembership(config, nil)
+	validator, err := NewValidator(config)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -719,7 +719,7 @@ func TestValidator_EvaluateOutputSecurityRisk_SpecialPatterns(t *testing.T) {
 // TestValidator_EvaluateOutputSecurityRisk_WorkDirRequirements tests the workDir validation requirements
 func TestValidator_EvaluateOutputSecurityRisk_WorkDirRequirements(t *testing.T) {
 	config := DefaultConfig()
-	validator, err := NewValidatorWithGroupMembership(config, nil)
+	validator, err := NewValidator(config)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -947,7 +947,7 @@ func TestValidator_ValidateDirectoryPermissions_CompletePath(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create fresh mock filesystem for each test
 			testMockFS := commontesting.NewMockFileSystem()
-			testValidator, err := NewValidatorWithFS(config, testMockFS)
+			testValidator, err := NewValidator(config, WithFileSystem(testMockFS))
 			require.NoError(t, err)
 
 			// Set up the test scenario
@@ -1051,7 +1051,7 @@ func TestValidator_ValidateCompletePath_SymlinkProtection(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create fresh mock filesystem for each test
 			testMockFS := commontesting.NewMockFileSystem()
-			testValidator, err := NewValidatorWithFS(config, testMockFS)
+			testValidator, err := NewValidator(config, WithFileSystem(testMockFS))
 			require.NoError(t, err)
 
 			// Set up the test scenario
@@ -1124,7 +1124,7 @@ func TestValidator_ValidatePathComponents_EdgeCases(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create fresh mock filesystem for each test
 			testMockFS := commontesting.NewMockFileSystem()
-			testValidator, err := NewValidatorWithFS(config, testMockFS)
+			testValidator, err := NewValidator(config, WithFileSystem(testMockFS))
 			require.NoError(t, err)
 
 			// Set up the test scenario
@@ -1151,7 +1151,7 @@ func TestValidator_ValidatePathComponents_EdgeCases(t *testing.T) {
 
 func TestValidator_ValidateFilePermissions(t *testing.T) {
 	mockFS := commontesting.NewMockFileSystem()
-	validator, err := NewValidatorWithFS(DefaultConfig(), mockFS)
+	validator, err := NewValidator(DefaultConfig(), WithFileSystem(mockFS))
 	require.NoError(t, err)
 
 	t.Run("empty path", func(t *testing.T) {
@@ -1233,7 +1233,7 @@ func TestValidator_ValidateFilePermissions(t *testing.T) {
 		config2.AllowedCommands = []string{".*"}
 		config2.SensitiveEnvVars = []string{}
 		config2.MaxPathLength = 10 // Very short for testing
-		validator2, err := NewValidatorWithFS(config2, mockFS2)
+		validator2, err := NewValidator(config2, WithFileSystem(mockFS2))
 		require.NoError(t, err)
 
 		longPath := "/very/long/path/that/exceeds/limit"
@@ -1245,7 +1245,7 @@ func TestValidator_ValidateFilePermissions(t *testing.T) {
 
 func TestValidator_ValidateDirectoryPermissions(t *testing.T) {
 	mockFS := commontesting.NewMockFileSystem()
-	validator, err := NewValidatorWithFS(DefaultConfig(), mockFS)
+	validator, err := NewValidator(DefaultConfig(), WithFileSystem(mockFS))
 	require.NoError(t, err)
 
 	t.Run("empty path", func(t *testing.T) {
@@ -1317,7 +1317,7 @@ func TestValidator_ValidateDirectoryPermissions(t *testing.T) {
 		config2.AllowedCommands = []string{".*"}
 		config2.SensitiveEnvVars = []string{}
 		config2.MaxPathLength = 10 // Very short for testing
-		validator2, err := NewValidatorWithFS(config2, mockFS2)
+		validator2, err := NewValidator(config2, WithFileSystem(mockFS2))
 		require.NoError(t, err)
 
 		longPath := "/very/long/path/that/exceeds/limit"
@@ -1423,7 +1423,7 @@ func TestValidator_validateDirectoryComponentPermissions_WithRealUID(t *testing.
 				config.testPermissiveMode = true
 			}
 
-			validator, err := NewValidatorWithFSAndGroupMembership(config, mockFS, groupMembership)
+			validator, err := NewValidator(config, WithFileSystem(mockFS), WithGroupMembership(groupMembership))
 			require.NoError(t, err) // Get directory info
 			info, err := mockFS.Lstat("/test-dir")
 			require.NoError(t, err)
@@ -1498,7 +1498,7 @@ func TestValidator_validateCompletePath(t *testing.T) {
 			groupMembership := groupmembership.New()
 
 			config := DefaultConfig()
-			validator, err := NewValidatorWithFSAndGroupMembership(config, mockFS, groupMembership)
+			validator, err := NewValidator(config, WithFileSystem(mockFS), WithGroupMembership(groupMembership))
 			require.NoError(t, err)
 
 			cleanPath := filepath.Clean(tt.path)
@@ -1559,7 +1559,7 @@ func TestValidator_validateOutputDirectoryAccess_WithImprovedLogic(t *testing.T)
 			config := DefaultConfig()
 			config.testPermissiveMode = true // Use permissive mode for real filesystem tests
 
-			validator, err := NewValidatorWithGroupMembership(config, nil)
+			validator, err := NewValidator(config)
 			require.NoError(t, err)
 
 			dirPath := tt.setupFunc(t)
@@ -1690,7 +1690,7 @@ func TestValidator_validateGroupWritePermissions_AllScenarios(t *testing.T) {
 				config = DefaultConfig()
 			}
 
-			validator, err := NewValidatorWithFSAndGroupMembership(config, mockFS, groupMembershipMgr)
+			validator, err := NewValidator(config, WithFileSystem(mockFS), WithGroupMembership(groupMembershipMgr))
 			require.NoError(t, err)
 
 			info, err := mockFS.Lstat("/test")

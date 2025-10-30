@@ -386,7 +386,7 @@ func newManagerInternal(hashDir string, options ...InternalOption) (*Manager, er
 
 	// Initialize security validator with default config
 	securityConfig := security.DefaultConfig()
-	securityValidator, err := security.NewValidatorWithFS(securityConfig, opts.fs)
+	securityValidator, err := security.NewValidator(securityConfig, security.WithFileSystem(opts.fs))
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize security validator: %w", err)
 	}
