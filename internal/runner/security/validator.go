@@ -1,3 +1,51 @@
+// Package security provides security validation functionality for the command runner.
+//
+// # Validator Construction
+//
+// The Validator uses the Functional Options Pattern for flexible configuration.
+// This pattern allows you to customize the validator by passing optional configuration
+// functions, making it easy to add new options without breaking existing code.
+//
+// Basic usage:
+//
+//	validator, err := security.NewValidator(nil)
+//	if err != nil {
+//	    return err
+//	}
+//
+// With custom file system (useful for testing):
+//
+//	validator, err := security.NewValidator(config,
+//	    security.WithFileSystem(mockFS))
+//
+// With group membership checker (for permission validation):
+//
+//	validator, err := security.NewValidator(config,
+//	    security.WithGroupMembership(gm))
+//
+// With multiple options:
+//
+//	validator, err := security.NewValidator(config,
+//	    security.WithFileSystem(mockFS),
+//	    security.WithGroupMembership(gm))
+//
+// # Migration from Old API
+//
+// The old constructor functions are deprecated but still available for backward compatibility:
+//
+//	// Old API (deprecated)
+//	validator, err := security.NewValidatorWithFS(config, mockFS)
+//	validator, err := security.NewValidatorWithGroupMembership(config, gm)
+//	validator, err := security.NewValidatorWithFSAndGroupMembership(config, mockFS, gm)
+//
+//	// New API (recommended)
+//	validator, err := security.NewValidator(config, security.WithFileSystem(mockFS))
+//	validator, err := security.NewValidator(config, security.WithGroupMembership(gm))
+//	validator, err := security.NewValidator(config,
+//	    security.WithFileSystem(mockFS),
+//	    security.WithGroupMembership(gm))
+//
+// For detailed migration instructions, see docs/tasks/0048_security_validator_options_pattern/03_migration_guide.md.
 package security
 
 import (
