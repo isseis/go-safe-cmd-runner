@@ -200,7 +200,7 @@ func createRuntimeCommand(spec *runnertypes.CommandSpec) *runnertypes.RuntimeCom
 	// Use the shared timeout resolution logic with context
 	commandTimeout := common.NewFromIntPtr(spec.Timeout)
 	globalTimeout := common.NewUnsetTimeout() // Tests typically don't need global timeout
-	effectiveTimeout, _ := common.ResolveTimeout(
+	effectiveTimeout, resolutionContext := common.ResolveTimeout(
 		commandTimeout,
 		common.NewUnsetTimeout(), // No group timeout in tests
 		globalTimeout,
@@ -209,13 +209,14 @@ func createRuntimeCommand(spec *runnertypes.CommandSpec) *runnertypes.RuntimeCom
 	)
 
 	return &runnertypes.RuntimeCommand{
-		Spec:             spec,
-		ExpandedCmd:      spec.Cmd,
-		ExpandedArgs:     spec.Args,
-		ExpandedEnv:      make(map[string]string),
-		ExpandedVars:     make(map[string]string),
-		EffectiveWorkDir: spec.WorkDir,
-		EffectiveTimeout: effectiveTimeout,
+		Spec:              spec,
+		ExpandedCmd:       spec.Cmd,
+		ExpandedArgs:      spec.Args,
+		ExpandedEnv:       make(map[string]string),
+		ExpandedVars:      make(map[string]string),
+		EffectiveWorkDir:  spec.WorkDir,
+		EffectiveTimeout:  effectiveTimeout,
+		TimeoutResolution: resolutionContext,
 	}
 }
 
