@@ -105,7 +105,7 @@ func TestValidator_ValidateOutputWritePermission(t *testing.T) {
 			} else {
 				config = DefaultConfig()
 			}
-			validator, err := NewValidator(config, WithGroupMembership(nil))
+			validator, err := NewValidator(config)
 			require.NoError(t, err)
 
 			outputPath := tt.setupFunc(t)
@@ -292,7 +292,7 @@ func TestValidator_validateOutputDirectoryAccess(t *testing.T) {
 			// Use permissive config for all tests since this is testing the internal helper
 			// and we want to focus on write permission logic, not directory security
 			config := NewPermissiveTestConfig()
-			validator, err := NewValidator(config, WithGroupMembership(nil))
+			validator, err := NewValidator(config)
 			require.NoError(t, err)
 
 			dirPath := tt.setupFunc(t)
@@ -367,7 +367,7 @@ func TestValidator_validateOutputFileWritePermission(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			config := DefaultConfig()
-			validator, err := NewValidator(config, WithGroupMembership(nil))
+			validator, err := NewValidator(config)
 			require.NoError(t, err)
 
 			filePath, fileInfo := tt.setupFunc(t)
@@ -469,7 +469,7 @@ func TestValidator_ValidateOutputWritePermission_Integration(t *testing.T) {
 
 		// Use permissive config for integration test that depends on real filesystem
 		config := NewPermissiveTestConfig()
-		validator, err := NewValidator(config, WithGroupMembership(nil))
+		validator, err := NewValidator(config)
 		require.NoError(t, err)
 
 		// This should work - leverages existing ValidateDirectoryPermissions
@@ -485,7 +485,7 @@ func TestValidator_EvaluateOutputSecurityRisk(t *testing.T) {
 	homeDir := currentUser.HomeDir
 
 	config := DefaultConfig()
-	validator, err := NewValidator(config, WithGroupMembership(nil))
+	validator, err := NewValidator(config)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -603,7 +603,7 @@ func TestValidator_EvaluateOutputSecurityRisk(t *testing.T) {
 
 func TestValidator_EvaluateOutputSecurityRisk_CaseInsensitive(t *testing.T) {
 	config := DefaultConfig()
-	validator, err := NewValidator(config, WithGroupMembership(nil))
+	validator, err := NewValidator(config)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -639,7 +639,7 @@ func TestValidator_EvaluateOutputSecurityRisk_CaseInsensitive(t *testing.T) {
 
 func TestValidator_EvaluateOutputSecurityRisk_EdgeCases(t *testing.T) {
 	config := DefaultConfig()
-	validator, err := NewValidator(config, WithGroupMembership(nil))
+	validator, err := NewValidator(config)
 	require.NoError(t, err)
 
 	t.Run("empty_path", func(t *testing.T) {
@@ -672,7 +672,7 @@ func TestValidator_EvaluateOutputSecurityRisk_EdgeCases(t *testing.T) {
 
 func TestValidator_EvaluateOutputSecurityRisk_SpecialPatterns(t *testing.T) {
 	config := DefaultConfig()
-	validator, err := NewValidator(config, WithGroupMembership(nil))
+	validator, err := NewValidator(config)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -719,7 +719,7 @@ func TestValidator_EvaluateOutputSecurityRisk_SpecialPatterns(t *testing.T) {
 // TestValidator_EvaluateOutputSecurityRisk_WorkDirRequirements tests the workDir validation requirements
 func TestValidator_EvaluateOutputSecurityRisk_WorkDirRequirements(t *testing.T) {
 	config := DefaultConfig()
-	validator, err := NewValidator(config, WithGroupMembership(nil))
+	validator, err := NewValidator(config)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -1559,7 +1559,7 @@ func TestValidator_validateOutputDirectoryAccess_WithImprovedLogic(t *testing.T)
 			config := DefaultConfig()
 			config.testPermissiveMode = true // Use permissive mode for real filesystem tests
 
-			validator, err := NewValidator(config, WithGroupMembership(nil))
+			validator, err := NewValidator(config)
 			require.NoError(t, err)
 
 			dirPath := tt.setupFunc(t)
