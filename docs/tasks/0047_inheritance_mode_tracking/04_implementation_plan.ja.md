@@ -272,38 +272,38 @@
 
 #### 3.6.1 統合テスト実装
 
-- [ ] 統合テストファイルを作成または更新
-  - [ ] `internal/runner/integration_inheritance_mode_test.go` (新規推奨)
-- [ ] Inheritモードの統合テストを実装
-  - [ ] TOML設定を準備
-  - [ ] Loader → Validator → Expander → Debug の流れをテスト
-  - [ ] 継承モードが正しく設定されることを確認
-  - [ ] デバッグ出力が正しいことを確認
-- [ ] Explicitモードの統合テストを実装
-- [ ] Rejectモードの統合テストを実装
+- [x] 統合テストファイルを作成または更新
+  - [x] `internal/runner/integration_inheritance_mode_test.go` (新規推奨)
+- [x] Inheritモードの統合テストを実装
+  - [x] TOML設定を準備
+  - [x] Loader → Validator → Expander → Debug の流れをテスト
+  - [x] 継承モードが正しく設定されることを確認
+  - [x] デバッグ出力が正しいことを確認
+- [x] Explicitモードの統合テストを実装
+- [x] Rejectモードの統合テストを実装
 
 #### 3.6.2 全体テスト
 
-- [ ] すべてのユニットテストを実行: `make test` または `go test ./...`
-- [ ] すべてのテストが成功することを確認
-- [ ] 統合テストを実行
-- [ ] すべての統合テストが成功することを確認
+- [x] すべてのユニットテストを実行: `make test` または `go test ./...`
+- [x] すべてのテストが成功することを確認
+- [x] 統合テストを実行
+- [x] すべての統合テストが成功することを確認
 
 #### 3.6.3 カバレッジ確認
 
-- [ ] カバレッジレポートを生成: `go test -coverprofile=coverage.out ./...`
-- [ ] カバレッジを表示: `go tool cover -html=coverage.out`
-- [ ] 追加したコードのカバレッジを確認
-  - [ ] `DetermineEnvAllowlistInheritanceMode`: 100%
-  - [ ] Validator変更箇所: 既存カバレッジ維持
-  - [ ] Expansion変更箇所: 既存カバレッジ維持
-  - [ ] Debug変更箇所: 既存カバレッジ維持
+- [-] カバレッジレポートを生成: `go test -coverprofile=coverage.out ./...`
+- [-] カバレッジを表示: `go tool cover -html=coverage.out`
+- [-] 追加したコードのカバレッジを確認
+  - [-] `DetermineEnvAllowlistInheritanceMode`: 100%
+  - [-] Validator変更箇所: 既存カバレッジ維持
+  - [-] Expansion変更箇所: 既存カバレッジ維持
+  - [-] Debug変更箇所: 既存カバレッジ維持
 
 #### 3.6.4 Lint確認
 
-- [ ] 全体のlintを実行: `make lint` または `golangci-lint run ./...`
-- [ ] lint警告がないことを確認
-- [ ] 必要に応じて警告を修正
+- [x] 全体のlintを実行: `make lint` または `golangci-lint run ./...`
+- [x] lint警告がないことを確認
+- [x] 必要に応じて警告を修正
 
 #### 3.6.5 コミット
 
