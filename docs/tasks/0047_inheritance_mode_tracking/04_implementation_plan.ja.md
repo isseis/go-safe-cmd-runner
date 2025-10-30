@@ -120,8 +120,8 @@
 
 #### 3.2.3 コミット
 
-- [ ] 変更をステージング: `git add internal/runner/runnertypes/runtime.go`
-- [ ] コミット: `git commit -m "feat: add EnvAllowlistInheritanceMode field to RuntimeGroup"`
+- [x] 変更をステージング: `git add internal/runner/runnertypes/runtime.go`
+- [x] コミット: `git commit -m "feat: add EnvAllowlistInheritanceMode field to RuntimeGroup"`
 
 ---
 
