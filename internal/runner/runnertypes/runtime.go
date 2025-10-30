@@ -121,6 +121,44 @@ type RuntimeGroup struct {
 
 	// Commands contains the expanded runtime commands for this group
 	Commands []*RuntimeCommand
+
+	// EnvAllowlistInheritanceMode holds the inheritance mode for the environment variable allowlist.
+	//
+	// This field is set during configuration expansion (in the Expander.ExpandGroup function)
+	// by calling DetermineEnvAllowlistInheritanceMode(), and is thereafter used read-only
+	// throughout the runtime.
+	//
+	// Values:
+	//   - InheritanceModeInherit (0):
+	//     The group inherits the global env_allowlist configuration.
+	//     This occurs when the env_allowlist field is undefined in the TOML configuration.
+	//
+	//   - InheritanceModeExplicit (1):
+	//     The group uses its own env_allowlist configuration.
+	//     This occurs when env_allowlist = ["VAR1", "VAR2"] is explicitly set
+	//     with a non-empty variable list in the TOML configuration.
+	//
+	//   - InheritanceModeReject (2):
+	//     The group rejects all environment variables.
+	//     This occurs when env_allowlist = [] is explicitly set as an empty array
+	//     in the TOML configuration.
+	//
+	// Lifecycle:
+	//   1. RuntimeGroup creation: Default value (InheritanceModeInherit = 0)
+	//   2. ExpandGroup execution: Set by DetermineEnvAllowlistInheritanceMode()
+	//   3. Subsequent usage: Read-only reference
+	//
+	// Usage locations:
+	//   - Debug output (debug.PrintFromEnvInheritance)
+	//   - Dry-run mode output (future feature)
+	//   - Other inheritance mode-dependent processing
+	//
+	// Invariants:
+	//   - After ExpandGroup execution, this field always holds a valid value
+	//   - Value must be one of: InheritanceModeInherit, InheritanceModeExplicit,
+	//     or InheritanceModeReject
+	//   - Once set, the value is not modified (immutable)
+	EnvAllowlistInheritanceMode InheritanceMode
 }
 
 // NewRuntimeGroup creates a new RuntimeGroup with the required spec.

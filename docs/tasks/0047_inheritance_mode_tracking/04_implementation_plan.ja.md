@@ -102,21 +102,21 @@
 
 #### 3.2.1 フィールド追加
 
-- [ ] `internal/runner/runnertypes/runtime.go` を開く
-- [ ] `RuntimeGroup` 構造体に `EnvAllowlistInheritanceMode InheritanceMode` フィールドを追加
-- [ ] 完全なgodocコメントを追加
-  - [ ] フィールドの目的を記述
-  - [ ] ライフサイクルを記述（作成時→設定時→使用時）
-  - [ ] 値の意味を記述（3つのモード）
-  - [ ] 使用箇所を記述
-  - [ ] 不変条件を記述
+- [x] `internal/runner/runnertypes/runtime.go` を開く
+- [x] `RuntimeGroup` 構造体に `EnvAllowlistInheritanceMode InheritanceMode` フィールドを追加
+- [x] 完全なgodocコメントを追加
+  - [x] フィールドの目的を記述
+  - [x] ライフサイクルを記述（作成時→設定時→使用時）
+  - [x] 値の意味を記述（3つのモード）
+  - [x] 使用箇所を記述
+  - [x] 不変条件を記述
 
 #### 3.2.2 検証
 
-- [ ] ビルドを実行: `go build ./...`
-- [ ] エラーがないことを確認
-- [ ] 既存テストを実行: `go test ./internal/runner/runnertypes/...`
-- [ ] すべてのテストが成功することを確認
+- [x] ビルドを実行: `go build ./...`
+- [x] エラーがないことを確認
+- [x] 既存テストを実行: `go test ./internal/runner/runnertypes/...`
+- [x] すべてのテストが成功することを確認
 
 #### 3.2.3 コミット
 
