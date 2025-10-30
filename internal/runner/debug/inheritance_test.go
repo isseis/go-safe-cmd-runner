@@ -21,11 +21,12 @@ func TestPrintFromEnvInheritance_Inherit_WithGlobalAllowlist(t *testing.T) {
 		Name: "test-group",
 	}
 	runtimeGroup := &runnertypes.RuntimeGroup{
+		Spec:                        group,
 		EnvAllowlistInheritanceMode: runnertypes.InheritanceModeInherit,
 	}
 
 	var buf bytes.Buffer
-	debug.PrintFromEnvInheritance(&buf, global, group, runtimeGroup)
+	debug.PrintFromEnvInheritance(&buf, global, runtimeGroup)
 
 	output := buf.String()
 	assert.Contains(t, output, "Inheriting Global env_allowlist")
@@ -40,11 +41,12 @@ func TestPrintFromEnvInheritance_Inherit_EmptyGlobalAllowlist(t *testing.T) {
 		Name: "test-group",
 	}
 	runtimeGroup := &runnertypes.RuntimeGroup{
+		Spec:                        group,
 		EnvAllowlistInheritanceMode: runnertypes.InheritanceModeInherit,
 	}
 
 	var buf bytes.Buffer
-	debug.PrintFromEnvInheritance(&buf, global, group, runtimeGroup)
+	debug.PrintFromEnvInheritance(&buf, global, runtimeGroup)
 
 	output := buf.String()
 	assert.Contains(t, output, "Inheriting Global env_allowlist")
@@ -62,11 +64,12 @@ func TestPrintFromEnvInheritance_Explicit(t *testing.T) {
 		EnvAllowed: []string{"VAR1"},
 	}
 	runtimeGroup := &runnertypes.RuntimeGroup{
+		Spec:                        group,
 		EnvAllowlistInheritanceMode: runnertypes.InheritanceModeExplicit,
 	}
 
 	var buf bytes.Buffer
-	debug.PrintFromEnvInheritance(&buf, global, group, runtimeGroup)
+	debug.PrintFromEnvInheritance(&buf, global, runtimeGroup)
 
 	output := buf.String()
 	assert.Contains(t, output, "Using group-specific env_allowlist")
@@ -85,11 +88,12 @@ func TestPrintFromEnvInheritance_Reject(t *testing.T) {
 		EnvAllowed: []string{},
 	}
 	runtimeGroup := &runnertypes.RuntimeGroup{
+		Spec:                        group,
 		EnvAllowlistInheritanceMode: runnertypes.InheritanceModeReject,
 	}
 
 	var buf bytes.Buffer
-	debug.PrintFromEnvInheritance(&buf, global, group, runtimeGroup)
+	debug.PrintFromEnvInheritance(&buf, global, runtimeGroup)
 
 	output := buf.String()
 	assert.Contains(t, output, "Rejecting all environment variables")

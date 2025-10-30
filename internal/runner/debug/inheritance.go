@@ -14,9 +14,10 @@ import (
 func PrintFromEnvInheritance(
 	w io.Writer,
 	global *runnertypes.GlobalSpec,
-	group *runnertypes.GroupSpec,
 	runtimeGroup *runnertypes.RuntimeGroup,
 ) {
+	group := runtimeGroup.Spec
+
 	_, _ = fmt.Fprintf(w, "===== from_env Inheritance Analysis =====\n\n")
 
 	// Print Global.env_import state

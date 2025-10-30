@@ -56,7 +56,7 @@ func TestInheritanceModeTracking_Inherit(t *testing.T) {
 
 	// Verify debug output
 	var buf bytes.Buffer
-	debug.PrintFromEnvInheritance(&buf, &configSpec.Global, groupSpec, runtimeGroup)
+	debug.PrintFromEnvInheritance(&buf, &configSpec.Global, runtimeGroup)
 	output := buf.String()
 
 	assert.Contains(t, output, "Inheriting Global env_allowlist",
@@ -107,7 +107,7 @@ func TestInheritanceModeTracking_Explicit(t *testing.T) {
 
 	// Verify debug output
 	var buf bytes.Buffer
-	debug.PrintFromEnvInheritance(&buf, &configSpec.Global, groupSpec, runtimeGroup)
+	debug.PrintFromEnvInheritance(&buf, &configSpec.Global, runtimeGroup)
 	output := buf.String()
 
 	assert.Contains(t, output, "Using group-specific env_allowlist",
@@ -160,7 +160,7 @@ func TestInheritanceModeTracking_Reject(t *testing.T) {
 
 	// Verify debug output
 	var buf bytes.Buffer
-	debug.PrintFromEnvInheritance(&buf, &configSpec.Global, groupSpec, runtimeGroup)
+	debug.PrintFromEnvInheritance(&buf, &configSpec.Global, runtimeGroup)
 	output := buf.String()
 
 	assert.Contains(t, output, "Rejecting all environment variables",
@@ -237,7 +237,7 @@ func TestInheritanceModeTracking_CompleteFlow(t *testing.T) {
 
 			// Verify debug output contains expected text
 			var buf bytes.Buffer
-			debug.PrintFromEnvInheritance(&buf, &configSpec.Global, groupSpec, runtimeGroup)
+			debug.PrintFromEnvInheritance(&buf, &configSpec.Global, runtimeGroup)
 			output := buf.String()
 
 			switch tc.expectedMode {
