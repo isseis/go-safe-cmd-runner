@@ -51,40 +51,45 @@ This task migrates the `security.Validator` constructors from multiple specializ
 
 ### Phase 2: Migrate Usage Sites
 
-- [ ] **Task 2.1**: Update implementation code usage
+- [x] **Task 2.1**: Update implementation code usage
   - Files to update:
     - `internal/runner/runner.go`: `NewValidator(nil)` → keep as-is (default usage)
     - `internal/runner/resource/default_manager.go`: `NewValidator(nil)` → keep as-is
     - `internal/runner/config/validator.go`: `NewValidator(secConfig)` → keep as-is
     - `internal/runner/security/environment_validation.go`: `NewValidator(nil)` → keep as-is
     - `internal/verification/manager.go`: `NewValidatorWithFS()` → use new API with `WithFileSystem`
+  - Completed: All production code already uses the new API or was updated in Phase 1
   - Estimated: 20 minutes
 
-- [ ] **Task 2.2**: Update test code usage - Mock FileSystem
+- [x] **Task 2.2**: Update test code usage - Mock FileSystem
   - Update approximately 13 test files using `NewValidatorWithFS()`
   - Replace with `NewValidator(config, security.WithFileSystem(mockFS))`
   - Files include:
     - `internal/runner/security/*_test.go`
     - `internal/verification/*_test.go`
     - Other test files as needed
+  - Completed: All test files updated, backward compatibility tests preserved
   - Estimated: 45 minutes
 
-- [ ] **Task 2.3**: Update test code usage - GroupMembership
+- [x] **Task 2.3**: Update test code usage - GroupMembership
   - Update approximately 13 test files using `NewValidatorWithGroupMembership()`
   - Replace with `NewValidator(config, security.WithGroupMembership(gm))`
   - Files primarily in:
     - `internal/runner/security/*_test.go`
     - File permission validation tests
+  - Completed: All test files updated using sed for bulk replacement
   - Estimated: 45 minutes
 
-- [ ] **Task 2.4**: Update test code usage - Both options
+- [x] **Task 2.4**: Update test code usage - Both options
   - Identify and update tests using `NewValidatorWithFSAndGroupMembership()`
   - Replace with `NewValidator(config, security.WithFileSystem(mockFS), security.WithGroupMembership(gm))`
+  - Completed: All occurrences updated using sed
   - Estimated: 15 minutes
 
-- [ ] **Task 2.5**: Verify all migrations
+- [x] **Task 2.5**: Verify all migrations
   - Run `grep -r "NewValidatorWith" internal/` to find any remaining usage
   - Confirm all occurrences have been updated
+  - Completed: Only definitions and backward compatibility tests remain
   - Estimated: 10 minutes
 
 ### Phase 3: Testing and Documentation
