@@ -186,14 +186,8 @@ func DefaultConfig() *Config {
 			".*KEY.*",
 			".*API.*",
 		},
-		MaxPathLength: DefaultMaxPathLength,
-		LoggingOptions: LoggingOptions{
-			IncludeErrorDetails:   false,                     // Secure default: don't include full error details
-			MaxErrorMessageLength: DefaultErrorMessageLength, // Reasonable limit for error messages
-			RedactSensitiveInfo:   true,                      // Enable automatic redaction
-			TruncateStdout:        true,                      // Truncate stdout for security
-			MaxStdoutLength:       DefaultStdoutLength,       // Very limited stdout in logs
-		},
+		MaxPathLength:  DefaultMaxPathLength,
+		LoggingOptions: DefaultLoggingOptions(),
 		DangerousPrivilegedCommands: []string{
 			// Shell executables
 			"/bin/sh", "/bin/bash", "/usr/bin/sh", "/usr/bin/bash",
