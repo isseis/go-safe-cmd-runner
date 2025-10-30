@@ -2041,13 +2041,12 @@ func TestGetCommandRiskOverride(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			risk, reason, found := getCommandRiskOverride(tc.cmdPath)
 			assert.Equal(t, tc.expectedFound, found, "found mismatch for %s", tc.cmdPath)
-			if found {
-				assert.Equal(t, tc.expectedRisk, risk, "risk level mismatch for %s", tc.cmdPath)
-				if tc.checkReason {
-					assert.NotEmpty(t, reason, "reason should not be empty for %s", tc.cmdPath)
-				}
+			assert.Equal(t, tc.expectedRisk, risk, "risk level mismatch for %s", tc.cmdPath)
+
+			if tc.checkReason {
+				assert.NotEmpty(t, reason, "reason should not be empty for %s", tc.cmdPath)
 			} else {
-				assert.Empty(t, reason, "reason should be empty when not found for %s", tc.cmdPath)
+				assert.Empty(t, reason, "reason should be empty for %s", tc.cmdPath)
 			}
 		})
 	}
