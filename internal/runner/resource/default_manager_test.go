@@ -25,7 +25,7 @@ func TestDefaultResourceManager_ModeDelegation(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("Normal Mode", func(t *testing.T) {
-		mgr, err := NewDefaultResourceManager(mockExec, mockFS, mockPriv, mockPathResolver, slog.Default(), ExecutionModeNormal, &DryRunOptions{})
+		mgr, err := NewDefaultResourceManager(mockExec, mockFS, mockPriv, mockPathResolver, slog.Default(), ExecutionModeNormal, &DryRunOptions{}, nil, 0)
 		require.NoError(t, err)
 
 		expected := &executor.Result{ExitCode: 0, Stdout: "ok"}
@@ -39,7 +39,7 @@ func TestDefaultResourceManager_ModeDelegation(t *testing.T) {
 	})
 
 	t.Run("Dry Run Mode", func(t *testing.T) {
-		mgr, err := NewDefaultResourceManager(mockExec, mockFS, mockPriv, mockPathResolver, slog.Default(), ExecutionModeDryRun, &DryRunOptions{DetailLevel: DetailLevelDetailed})
+		mgr, err := NewDefaultResourceManager(mockExec, mockFS, mockPriv, mockPathResolver, slog.Default(), ExecutionModeDryRun, &DryRunOptions{DetailLevel: DetailLevelDetailed}, nil, 0)
 		require.NoError(t, err)
 
 		res2, err := mgr.ExecuteCommand(ctx, cmd, createTestCommandGroup(), env)
@@ -59,7 +59,7 @@ func TestDefaultResourceManager_TempDirDelegation(t *testing.T) {
 	mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
 
 	t.Run("CreateTempDir Normal", func(t *testing.T) {
-		mgr, err := NewDefaultResourceManager(mockExec, mockFS, mockPriv, mockPathResolver, slog.Default(), ExecutionModeNormal, &DryRunOptions{})
+		mgr, err := NewDefaultResourceManager(mockExec, mockFS, mockPriv, mockPathResolver, slog.Default(), ExecutionModeNormal, &DryRunOptions{}, nil, 0)
 		require.NoError(t, err)
 		mockFS.On("CreateTempDir", "", "scr-group-").Return("/tmp/scr-group-123", nil)
 		path, err := mgr.CreateTempDir("group")
@@ -69,7 +69,7 @@ func TestDefaultResourceManager_TempDirDelegation(t *testing.T) {
 
 	t.Run("CreateTempDir Dry Run", func(t *testing.T) {
 		// Dry-run
-		mgr, err := NewDefaultResourceManager(mockExec, mockFS, mockPriv, mockPathResolver, slog.Default(), ExecutionModeDryRun, &DryRunOptions{})
+		mgr, err := NewDefaultResourceManager(mockExec, mockFS, mockPriv, mockPathResolver, slog.Default(), ExecutionModeDryRun, &DryRunOptions{}, nil, 0)
 		require.NoError(t, err)
 
 		path2, err := mgr.CreateTempDir("group")
@@ -86,7 +86,7 @@ func TestDefaultResourceManager_PrivilegesAndNotifications(t *testing.T) {
 	setupStandardCommandPaths(mockPathResolver)
 	mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
 
-	mgr, err := NewDefaultResourceManager(mockExec, mockFS, mockPriv, mockPathResolver, slog.Default(), ExecutionModeDryRun, &DryRunOptions{})
+	mgr, err := NewDefaultResourceManager(mockExec, mockFS, mockPriv, mockPathResolver, slog.Default(), ExecutionModeDryRun, &DryRunOptions{}, nil, 0)
 	require.NoError(t, err)
 
 	// WithPrivileges should call provided fn in dry-run

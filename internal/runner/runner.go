@@ -73,7 +73,6 @@ type Option func(*runnerOptions)
 
 // runnerOptions holds all configuration options for creating a Runner
 type runnerOptions struct {
-	securityConfig      *security.Config
 	executor            executor.CommandExecutor
 	verificationManager *verification.Manager
 	privilegeManager    runnertypes.PrivilegeManager
@@ -84,13 +83,6 @@ type runnerOptions struct {
 	dryRunOptions       *resource.DryRunOptions
 	runtimeGlobal       *runnertypes.RuntimeGlobal
 	keepTempDirs        bool
-}
-
-// WithSecurity sets a custom security configuration
-func WithSecurity(securityConfig *security.Config) Option {
-	return func(opts *runnerOptions) {
-		opts.securityConfig = securityConfig
-	}
 }
 
 // WithVerificationManager sets a custom verification manager
@@ -111,13 +103,6 @@ func WithExecutor(exec executor.CommandExecutor) Option {
 func WithPrivilegeManager(privMgr runnertypes.PrivilegeManager) Option {
 	return func(opts *runnerOptions) {
 		opts.privilegeManager = privMgr
-	}
-}
-
-// WithAuditLogger sets a custom audit logger
-func WithAuditLogger(auditLogger *audit.Logger) Option {
-	return func(opts *runnerOptions) {
-		opts.auditLogger = auditLogger
 	}
 }
 
@@ -239,7 +224,7 @@ func createNormalResourceManager(opts *runnerOptions, configSpec *runnertypes.Co
 		maxOutputSize = 0 // Will use default from output package
 	}
 
-	resourceManager, err := resource.NewDefaultResourceManagerWithOutput(
+	resourceManager, err := resource.NewDefaultResourceManager(
 		opts.executor,
 		fs,
 		opts.privilegeManager,
@@ -270,8 +255,8 @@ func NewRunner(configSpec *runnertypes.ConfigSpec, options ...Option) (*Runner, 
 		return nil, ErrRunIDRequired
 	}
 
-	// Create validator with provided or default security config
-	validator, err := security.NewValidator(opts.securityConfig)
+	// Create validator with default security config
+	validator, err := security.NewValidator(nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create security validator: %w", err)
 	}
@@ -408,25 +393,6 @@ func (r *Runner) ExecuteAll(ctx context.Context) error {
 // This method delegates to the GroupExecutor implementation
 func (r *Runner) ExecuteGroup(ctx context.Context, groupSpec *runnertypes.GroupSpec) error {
 	return r.groupExecutor.ExecuteGroup(ctx, groupSpec, r.runtimeGlobal)
-}
-
-// ListCommands lists all available commands
-func (r *Runner) ListCommands() {
-	fmt.Println("Available commands:")
-	for _, group := range r.config.Groups {
-		fmt.Printf("  Group: %s (Priority: %d)\n", group.Name, group.Priority)
-		if group.Description != "" {
-			fmt.Printf("    Description: %s\n", group.Description)
-		}
-		for _, cmd := range group.Commands {
-			fmt.Printf("    - %s: %s\n", cmd.Name, cmd.Description)
-		}
-	}
-}
-
-// GetConfig returns the current configuration
-func (r *Runner) GetConfig() *runnertypes.ConfigSpec {
-	return r.config
 }
 
 // CleanupAllResources cleans up all managed resources

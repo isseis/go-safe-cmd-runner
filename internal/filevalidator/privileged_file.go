@@ -1,7 +1,6 @@
 package filevalidator
 
 import (
-	"errors"
 	"fmt"
 	"os"
 
@@ -48,10 +47,4 @@ func OpenFileWithPrivileges(filepath string, privManager runnertypes.PrivilegeMa
 	}
 
 	return privilegedFile, nil
-}
-
-// IsPrivilegeError checks if error is a privilege-related error
-// This function now uses the existing privilege management error handling
-func IsPrivilegeError(err error) bool {
-	return errors.Is(err, runnertypes.ErrPrivilegedExecutionNotAvailable)
 }

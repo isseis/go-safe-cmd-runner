@@ -412,23 +412,6 @@ func TestRuntimeGlobal_TimeoutDefault(t *testing.T) {
 	assert.False(t, timeout.IsSet())
 }
 
-// TestRuntimeGroup_HelperMethods tests the helper methods for RuntimeGroup
-func TestRuntimeGroup_HelperMethods(t *testing.T) {
-	spec := &GroupSpec{
-		Name:    "test-group",
-		WorkDir: "/tmp/test",
-	}
-
-	runtime, err := NewRuntimeGroup(spec)
-	require.NoError(t, err)
-
-	// Test Name()
-	assert.Equal(t, "test-group", runtime.Name())
-
-	// Test WorkDir()
-	assert.Equal(t, "/tmp/test", runtime.WorkDir())
-}
-
 // TestRuntimeGlobal_SkipStandardPaths_WithNil tests SkipStandardPaths with nil value
 // This also indirectly tests the determineVerifyStandardPaths helper function
 func TestRuntimeGlobal_SkipStandardPaths_WithNil(t *testing.T) {

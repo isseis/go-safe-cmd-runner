@@ -677,7 +677,7 @@ func TestResourceManagerStateConsistency(t *testing.T) {
 	mockPathResolver := &MockPathResolver{}
 	setupStandardCommandPaths(mockPathResolver)
 	mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-	manager, err := NewDefaultResourceManager(nil, nil, nil, mockPathResolver, slog.Default(), ExecutionModeDryRun, dryRunOpts)
+	manager, err := NewDefaultResourceManager(nil, nil, nil, mockPathResolver, slog.Default(), ExecutionModeDryRun, dryRunOpts, nil, 0)
 	require.NoError(t, err)
 	require.NotNil(t, manager)
 
@@ -731,7 +731,7 @@ func TestResourceManagerStateConsistency(t *testing.T) {
 		mockPathResolver := &MockPathResolver{}
 		setupStandardCommandPaths(mockPathResolver)
 		mockPathResolver.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil) // fallback
-		dryRunManager, err := NewDefaultResourceManager(nil, nil, nil, mockPathResolver, slog.Default(), ExecutionModeDryRun, dryRunOpts)
+		dryRunManager, err := NewDefaultResourceManager(nil, nil, nil, mockPathResolver, slog.Default(), ExecutionModeDryRun, dryRunOpts, nil, 0)
 		require.NoError(t, err)
 		result, err := dryRunManager.ExecuteCommand(ctx, nullCmd, group, nullEnvVars)
 		assert.NoError(t, err, "dry-run mode should handle null bytes in environment")
@@ -741,7 +741,7 @@ func TestResourceManagerStateConsistency(t *testing.T) {
 		// Test with normal mode
 		mockPathResolver2 := &MockPathResolver{}
 		mockPathResolver2.On("ResolvePath", mock.Anything).Return("/usr/bin/unknown", nil)
-		normalManager, err := NewDefaultResourceManager(&mockCommandExecutor{}, &mockFileSystem{}, nil, mockPathResolver2, slog.Default(), ExecutionModeNormal, nil)
+		normalManager, err := NewDefaultResourceManager(&mockCommandExecutor{}, &mockFileSystem{}, nil, mockPathResolver2, slog.Default(), ExecutionModeNormal, nil, nil, 0)
 		require.NoError(t, err)
 		result, err = normalManager.ExecuteCommand(ctx, nullCmd, group, nullEnvVars)
 		assert.NoError(t, err, "normal mode should handle null bytes in environment")

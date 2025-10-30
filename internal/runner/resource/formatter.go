@@ -295,13 +295,3 @@ func (f *JSONFormatter) applySummaryFilter(result *DryRunResult) {
 		result.ResourceAnalyses[i].Parameters = nil
 	}
 }
-
-// NewFormatter creates a new formatter based on the output format
-func NewFormatter(format OutputFormat) Formatter {
-	switch format {
-	case OutputFormatJSON:
-		return NewJSONFormatter()
-	default:
-		return NewTextFormatter()
-	}
-}

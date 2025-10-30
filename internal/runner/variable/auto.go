@@ -1,8 +1,7 @@
+// Package variable provides definitions and utilities for automatically generate variables
 package variable
 
 import (
-	"os"
-	"strconv"
 	"time"
 )
 
@@ -25,37 +24,6 @@ const (
 	// AutoVarKeyWorkDir is the key for the workdir auto internal variable (without prefix)
 	AutoVarKeyWorkDir = "workdir"
 )
-
-// AutoVarProvider provides automatic internal variables
-type AutoVarProvider interface {
-	// Generate returns all auto internal variables as a map.
-	// All keys have the AutoVarPrefix (__runner_).
-	Generate() map[string]string
-}
-
-// autoVarProvider implements AutoVarProvider
-type autoVarProvider struct {
-	clock Clock
-}
-
-// NewAutoVarProvider creates a new AutoVarProvider with the default clock (time.Now).
-func NewAutoVarProvider() AutoVarProvider {
-	return &autoVarProvider{
-		clock: time.Now,
-	}
-}
-
-// Generate returns all auto internal variables as a map.
-// This includes:
-//   - Internal variables (lowercase): __runner_datetime, __runner_pid
-func (p *autoVarProvider) Generate() map[string]string {
-	now := p.clock()
-	return map[string]string{
-		// Internal variables (lowercase format)
-		AutoVarPrefix + AutoVarKeyDatetime: now.UTC().Format(DatetimeLayout),
-		AutoVarPrefix + AutoVarKeyPID:      strconv.Itoa(os.Getpid()),
-	}
-}
 
 // WorkDirKey returns the auto variable key used to store the runner
 // working directory for a group during execution.

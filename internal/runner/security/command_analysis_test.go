@@ -1277,7 +1277,7 @@ func TestIsPrivilegeEscalationCommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := IsSudoCommand(tt.cmdName)
+			result, err := IsPrivilegeEscalationCommand(tt.cmdName)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expected, result)
 		})
@@ -1298,7 +1298,7 @@ func TestIsPrivilegeEscalationCommand(t *testing.T) {
 			require.NoError(t, err)
 
 			// Test that the symbolic link is detected as sudo
-			result, err := IsSudoCommand(symlinkPath)
+			result, err := IsPrivilegeEscalationCommand(symlinkPath)
 			assert.NoError(t, err)
 			assert.True(t, result, "Symbolic link to sudo should be detected as sudo")
 		} else {
@@ -1329,7 +1329,7 @@ func TestIsPrivilegeEscalationCommand(t *testing.T) {
 		}
 
 		// Test that deep symlink returns error
-		result, err := IsSudoCommand(current)
+		result, err := IsPrivilegeEscalationCommand(current)
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, ErrSymlinkDepthExceeded)
 		assert.False(t, result, "Deep symlink should return false when depth exceeded")

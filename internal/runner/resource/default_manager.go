@@ -21,15 +21,9 @@ type DefaultResourceManager struct {
 	dryrun *DryRunResourceManager
 }
 
-// NewDefaultResourceManager creates a new DefaultResourceManager.
+// NewDefaultResourceManager creates a new DefaultResourceManager with output capture support.
 // If mode is ExecutionModeDryRun, opts may be used to configure the dry-run behavior.
-func NewDefaultResourceManager(exec executor.CommandExecutor, fs executor.FileSystem, privMgr runnertypes.PrivilegeManager, pathResolver PathResolver, logger *slog.Logger, mode ExecutionMode, dryRunOpts *DryRunOptions) (*DefaultResourceManager, error) {
-	return NewDefaultResourceManagerWithOutput(exec, fs, privMgr, pathResolver, logger, mode, dryRunOpts, nil, 0)
-}
-
-// NewDefaultResourceManagerWithOutput creates a new DefaultResourceManager with output capture support.
-// If mode is ExecutionModeDryRun, opts may be used to configure the dry-run behavior.
-func NewDefaultResourceManagerWithOutput(exec executor.CommandExecutor, fs executor.FileSystem, privMgr runnertypes.PrivilegeManager, pathResolver PathResolver, logger *slog.Logger, mode ExecutionMode, dryRunOpts *DryRunOptions, outputMgr output.CaptureManager, maxOutputSize int64) (*DefaultResourceManager, error) {
+func NewDefaultResourceManager(exec executor.CommandExecutor, fs executor.FileSystem, privMgr runnertypes.PrivilegeManager, pathResolver PathResolver, logger *slog.Logger, mode ExecutionMode, dryRunOpts *DryRunOptions, outputMgr output.CaptureManager, maxOutputSize int64) (*DefaultResourceManager, error) {
 	// Create output manager if not provided
 	if outputMgr == nil {
 		// Create a security validator for output validation

@@ -61,7 +61,7 @@ func BuildProcessEnvironment(
 	mergeEnvWithOrigin(result, runtimeGlobal.ExpandedEnv, "Global")
 
 	// Step 3: Merge Group.ExpandedEnv (overrides global env)
-	mergeEnvWithOrigin(result, runtimeGroup.ExpandedEnv, fmt.Sprintf("Group[%s]", runtimeGroup.Name()))
+	mergeEnvWithOrigin(result, runtimeGroup.ExpandedEnv, fmt.Sprintf("Group[%s]", runtimeGroup.Spec.Name))
 
 	// Step 4: Merge Command.ExpandedEnv (overrides group env)
 	mergeEnvWithOrigin(result, cmd.ExpandedEnv, fmt.Sprintf("Command[%s]", cmd.Name()))
