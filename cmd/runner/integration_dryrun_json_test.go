@@ -122,36 +122,39 @@ args = ["hello"]
 	}
 }
 
-// extractJSON attempts to extract valid JSON from output that may contain non-JSON prefix.
-// It tries three strategies in order:
-// 1. Parse the entire output as JSON (fast path for clean output)
-// 2. Find and parse from the first '{' (handles simple prefix like timestamps)
-// 3. Find and parse from the last '{' (handles error logs that might contain braces)
-//
-// Returns the extracted JSON string and an error if no valid JSON could be found.
+// extractJSON attempts to extract a JSON object from a string that may have a non-JSON prefix.
+// It's designed to be robust against noisy output that can occur, for example, with `go run`.
 func extractJSON(output string) (string, error) {
-	output = strings.TrimSpace(output)
-
-	// Strategy 1: Try parsing the entire output as-is
-	if json.Valid([]byte(output)) {
-		return output, nil
+	// The most likely case is that the output is a valid JSON object, possibly with whitespace.
+	trimmedOutput := strings.TrimSpace(output)
+	if json.Valid([]byte(trimmedOutput)) {
+		return trimmedOutput, nil
 	}
 
-	// Strategy 2: Try from first '{'
-	if firstBrace := strings.Index(output, "{"); firstBrace != -1 {
-		candidate := strings.TrimSpace(output[firstBrace:])
+	// If the full output is not valid JSON, it might have a prefix (e.g., build messages).
+	// We assume the JSON object starts with '{'.
+	firstBrace := strings.Index(trimmedOutput, "{")
+	if firstBrace == -1 {
+		return "", fmt.Errorf("no JSON object found in output: %s", output)
+	}
+
+	// The simplest case is that the JSON starts at the first brace.
+	candidate := trimmedOutput[firstBrace:]
+	if json.Valid([]byte(candidate)) {
+		return candidate, nil
+	}
+
+	// If that fails, the prefix itself might contain a '{'.
+	// We then try from the last '{', assuming it's the start of the main JSON object.
+	// This is a heuristic that works for outputs like "log: {invalid}. {valid_json}".
+	lastBrace := strings.LastIndex(trimmedOutput, "{")
+	// No need to check for -1, as we already found at least one '{' above.
+	if lastBrace > firstBrace {
+		candidate = trimmedOutput[lastBrace:]
 		if json.Valid([]byte(candidate)) {
 			return candidate, nil
 		}
 	}
 
-	// Strategy 3: Try from last '{' (handles error logs with braces in strings)
-	if lastBrace := strings.LastIndex(output, "{"); lastBrace != -1 {
-		candidate := strings.TrimSpace(output[lastBrace:])
-		if json.Valid([]byte(candidate)) {
-			return candidate, nil
-		}
-	}
-
-	return "", fmt.Errorf("no valid JSON found in output")
+	return "", fmt.Errorf("could not extract valid JSON from output: %s", output)
 }
