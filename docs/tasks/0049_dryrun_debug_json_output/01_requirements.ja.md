@@ -272,6 +272,7 @@ func FormatFinalEnvironmentText(
 
 **設計ポイント**:
 - `CollectInheritanceAnalysis()` 内でdetail levelに基づき、差分情報フィールド（`InheritedVariables`, `RemovedAllowlistVariables`, `UnavailableEnvImportVariables`）をnilにするか設定するかを制御
+- これらのフィールドは、JSON構造体定義において `omitempty` タグを付与すること。これにより、nilの場合はJSON出力からフィールドが省略され、クリーンな出力となる（例: 212-219行目の構造体定義参照）。
 - `CollectFinalEnvironment()` は`DetailLevelFull`以外ではnilを返す
 - フォーマット関数は構造化データを受け取るだけなので、detail level制御は不要
 
