@@ -41,19 +41,6 @@ func SetupFailedMockExecution(m *MockResourceManager, err error) {
 	m.On("ExecuteCommand", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, err)
 }
 
-// GroupExecutorFactory is an interface for creating group executors (to avoid import cycle)
-type GroupExecutorFactory interface {
-	NewDefaultGroupExecutor(
-		executor executor.CommandExecutor,
-		config *runnertypes.ConfigSpec,
-		validator security.ValidatorInterface,
-		verificationManager verification.ManagerInterface,
-		resourceManager resource.ResourceManager,
-		runID string,
-		options ...interface{},
-	) interface{}
-}
-
 // TestGroupExecutorConfig holds configuration for test group executor creation.
 type TestGroupExecutorConfig struct {
 	Executor            executor.CommandExecutor
