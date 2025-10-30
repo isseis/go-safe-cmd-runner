@@ -89,6 +89,10 @@ validator, err := security.NewValidator(nil)
 validator, err := security.NewValidator(nil,
     security.WithFileSystem(mockFS))
 
+// カスタムConfigとカスタムFileSystem
+validator, err := security.NewValidator(customConfig,
+    security.WithFileSystem(mockFS))
+
 // GroupMembership
 validator, err := security.NewValidator(nil,
     security.WithGroupMembership(gm))
