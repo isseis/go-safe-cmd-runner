@@ -326,8 +326,13 @@ func (v *Validator) validateVariableValue(name, value string) error {
 
 // analyzeInheritanceMode analyzes the inheritance mode and provides appropriate warnings
 func (v *Validator) analyzeInheritanceMode(group *runnertypes.GroupSpec, location string, global *runnertypes.GlobalSpec, result *ValidationResult) {
-	if group.EnvAllowed == nil {
-		// Inherit mode
+	// Determine inheritance mode using the centralized helper function
+	mode := runnertypes.DetermineEnvAllowlistInheritanceMode(group.EnvAllowed)
+
+	// Handle each mode with appropriate validation logic
+	switch mode {
+	case runnertypes.InheritanceModeInherit:
+		// Inherit mode: Check if global allowlist is empty
 		if len(global.EnvAllowed) == 0 {
 			result.Warnings = append(result.Warnings, ValidationWarning{
 				Type:       "inherit_from_empty_global",
@@ -336,8 +341,9 @@ func (v *Validator) analyzeInheritanceMode(group *runnertypes.GroupSpec, locatio
 				Suggestion: "Either add variables to global allowlist or define explicit group allowlist",
 			})
 		}
-	} else if len(group.EnvAllowed) == 0 {
-		// Reject mode
+
+	case runnertypes.InheritanceModeReject:
+		// Reject mode: Check if commands define environment variables
 		hasCommandsWithEnv := false
 		for _, cmd := range group.Commands {
 			if len(cmd.EnvVars) > 0 {
@@ -354,8 +360,11 @@ func (v *Validator) analyzeInheritanceMode(group *runnertypes.GroupSpec, locatio
 				Suggestion: "Command.EnvVars variables will still work, but cannot reference system variables",
 			})
 		}
+
+	case runnertypes.InheritanceModeExplicit:
+		// Explicit mode: No special warnings needed
+		// Group uses its own allowlist, which is the expected behavior
 	}
-	// Explicit mode doesn't need special warnings
 }
 
 // calculateSummary calculates validation summary statistics

@@ -133,35 +133,35 @@
 
 #### 3.3.1 コード変更
 
-- [ ] `internal/runner/config/validator.go` を開く
-- [ ] `analyzeInheritanceMode` 関数を特定
-- [ ] 既存の判定ロジック（if-else）を削除
-- [ ] `DetermineEnvAllowlistInheritanceMode` を呼び出すコードを追加
-- [ ] switch文を実装
-  - [ ] `InheritanceModeInherit` ケースを実装（既存ロジックを移行）
-  - [ ] `InheritanceModeReject` ケースを実装（既存ロジックを移行）
-  - [ ] `InheritanceModeExplicit` ケースを実装（コメントのみ）
+- [x] `internal/runner/config/validator.go` を開く
+- [x] `analyzeInheritanceMode` 関数を特定
+- [x] 既存の判定ロジック（if-else）を削除
+- [x] `DetermineEnvAllowlistInheritanceMode` を呼び出すコードを追加
+- [x] switch文を実装
+  - [x] `InheritanceModeInherit` ケースを実装（既存ロジックを移行）
+  - [x] `InheritanceModeReject` ケースを実装（既存ロジックを移行）
+  - [x] `InheritanceModeExplicit` ケースを実装（コメントのみ）
 
 #### 3.3.2 テスト確認
 
-- [ ] 既存テストを実行: `go test ./internal/runner/config/... -run TestValidator`
-- [ ] すべてのテストが成功することを確認
-- [ ] 必要に応じて新規テストを追加
-  - [ ] `TestValidator_AnalyzeInheritanceMode_Inherit_EmptyGlobal`
-  - [ ] `TestValidator_AnalyzeInheritanceMode_Reject_CommandsUseEnv`
-  - [ ] `TestValidator_AnalyzeInheritanceMode_Explicit_NoWarning`
+- [x] 既存テストを実行: `go test ./internal/runner/config/... -run TestValidator`
+- [x] すべてのテストが成功することを確認
+- [-] 必要に応じて新規テストを追加
+  - [-] `TestValidator_AnalyzeInheritanceMode_Inherit_EmptyGlobal`
+  - [-] `TestValidator_AnalyzeInheritanceMode_Reject_CommandsUseEnv`
+  - [-] `TestValidator_AnalyzeInheritanceMode_Explicit_NoWarning`
 
 #### 3.3.3 検証
 
-- [ ] テストを実行: `go test ./internal/runner/config/...`
-- [ ] すべてのテストが成功することを確認
-- [ ] lintを実行: `golangci-lint run ./internal/runner/config/...`
-- [ ] lint警告がないことを確認
+- [x] テストを実行: `go test ./internal/runner/config/...`
+- [x] すべてのテストが成功することを確認
+- [x] lintを実行: `golangci-lint run ./internal/runner/config/...`
+- [x] lint警告がないことを確認
 
 #### 3.3.4 コミット
 
-- [ ] 変更をステージング: `git add internal/runner/config/validator*.go`
-- [ ] コミット: `git commit -m "refactor: use DetermineEnvAllowlistInheritanceMode in Validator"`
+- [x] 変更をステージング: `git add internal/runner/config/validator*.go`
+- [x] コミット: `git commit -m "refactor: use DetermineEnvAllowlistInheritanceMode in Validator"`
 
 ---
 
