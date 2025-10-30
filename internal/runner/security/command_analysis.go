@@ -245,18 +245,20 @@ func (v *Validator) HasSystemCriticalPaths(args []string) []int {
 	return criticalIndices
 }
 
-// getCommandRiskOverride retrieves the risk override for a specific command
+// getCommandRiskOverride retrieves the risk override and reasons for a specific command
 // It now uses command name (basename) instead of full path
-func getCommandRiskOverride(cmdPath string) (runnertypes.RiskLevel, bool) {
+func getCommandRiskOverride(cmdPath string) (runnertypes.RiskLevel, string, bool) {
 	// Extract command name from path
 	cmdName := filepath.Base(cmdPath)
 
 	// Look up in unified profiles
 	if profile, exists := commandRiskProfiles[cmdName]; exists {
-		return profile.BaseRiskLevel(), true
+		reasons := profile.GetRiskReasons()
+		reason := strings.Join(reasons, "; ")
+		return profile.BaseRiskLevel(), reason, true
 	}
 
-	return runnertypes.RiskLevelUnknown, false
+	return runnertypes.RiskLevelUnknown, "", false
 }
 
 // checkCommandPatterns checks if a command matches any patterns in the given list
@@ -619,8 +621,8 @@ func AnalyzeCommandSecurity(resolvedPath string, args []string, opts *AnalysisOp
 	}
 
 	// Step 8: Individual command override application
-	if overrideRisk, found := getCommandRiskOverride(resolvedPath); found {
-		return overrideRisk, resolvedPath, "Explicit risk level override", nil
+	if overrideRisk, reason, found := getCommandRiskOverride(resolvedPath); found {
+		return overrideRisk, resolvedPath, reason, nil
 	}
 
 	// Step 9: Apply default risk level

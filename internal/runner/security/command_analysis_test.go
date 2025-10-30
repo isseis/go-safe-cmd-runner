@@ -1928,105 +1928,126 @@ func TestGetCommandRiskOverride(t *testing.T) {
 		cmdPath       string
 		expectedRisk  runnertypes.RiskLevel
 		expectedFound bool
+		checkReason   bool // Whether to verify reason is non-empty
 	}{
 		{
 			name:          "sudo command with full path should have critical risk",
 			cmdPath:       "/usr/bin/sudo",
 			expectedRisk:  runnertypes.RiskLevelCritical,
 			expectedFound: true,
+			checkReason:   true,
 		},
 		{
 			name:          "sudo command with just name should have critical risk",
 			cmdPath:       "sudo",
 			expectedRisk:  runnertypes.RiskLevelCritical,
 			expectedFound: true,
+			checkReason:   true,
 		},
 		{
 			name:          "su command should have critical risk",
 			cmdPath:       "/bin/su",
 			expectedRisk:  runnertypes.RiskLevelCritical,
 			expectedFound: true,
+			checkReason:   true,
 		},
 		{
 			name:          "doas command should have critical risk",
 			cmdPath:       "doas",
 			expectedRisk:  runnertypes.RiskLevelCritical,
 			expectedFound: true,
+			checkReason:   true,
 		},
 		{
 			name:          "systemctl command should have high risk",
 			cmdPath:       "/usr/sbin/systemctl",
 			expectedRisk:  runnertypes.RiskLevelHigh,
 			expectedFound: true,
+			checkReason:   true,
 		},
 		{
 			name:          "service command should have high risk",
 			cmdPath:       "/usr/sbin/service",
 			expectedRisk:  runnertypes.RiskLevelHigh,
 			expectedFound: true,
+			checkReason:   true,
 		},
 		{
 			name:          "rm command should have high risk",
 			cmdPath:       "/bin/rm",
 			expectedRisk:  runnertypes.RiskLevelHigh,
 			expectedFound: true,
+			checkReason:   true,
 		},
 		{
 			name:          "dd command should have high risk",
 			cmdPath:       "/usr/bin/dd",
 			expectedRisk:  runnertypes.RiskLevelHigh,
 			expectedFound: true,
+			checkReason:   true,
 		},
 		{
 			name:          "curl command should have medium risk",
 			cmdPath:       "/usr/bin/curl",
 			expectedRisk:  runnertypes.RiskLevelMedium,
 			expectedFound: true,
+			checkReason:   true,
 		},
 		{
 			name:          "wget command should have medium risk",
 			cmdPath:       "wget",
 			expectedRisk:  runnertypes.RiskLevelMedium,
 			expectedFound: true,
+			checkReason:   true,
 		},
 		{
 			name:          "ssh command should have medium risk",
 			cmdPath:       "/usr/bin/ssh",
 			expectedRisk:  runnertypes.RiskLevelMedium,
 			expectedFound: true,
+			checkReason:   true,
 		},
 		{
 			name:          "rsync command should have medium risk",
 			cmdPath:       "rsync",
 			expectedRisk:  runnertypes.RiskLevelMedium,
 			expectedFound: true,
+			checkReason:   true,
 		},
 		{
 			name:          "git command should have medium risk",
 			cmdPath:       "/usr/bin/git",
 			expectedRisk:  runnertypes.RiskLevelMedium,
 			expectedFound: true,
+			checkReason:   true,
 		},
 		{
 			name:          "ls command should not have override",
 			cmdPath:       "/bin/ls",
 			expectedRisk:  runnertypes.RiskLevelUnknown,
 			expectedFound: false,
+			checkReason:   false,
 		},
 		{
 			name:          "non-existent command should not have override",
 			cmdPath:       "/usr/bin/unknown",
 			expectedRisk:  runnertypes.RiskLevelUnknown,
 			expectedFound: false,
+			checkReason:   false,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			risk, found := getCommandRiskOverride(tc.cmdPath)
+			risk, reason, found := getCommandRiskOverride(tc.cmdPath)
 			assert.Equal(t, tc.expectedFound, found, "found mismatch for %s", tc.cmdPath)
 			if found {
 				assert.Equal(t, tc.expectedRisk, risk, "risk level mismatch for %s", tc.cmdPath)
+				if tc.checkReason {
+					assert.NotEmpty(t, reason, "reason should not be empty for %s", tc.cmdPath)
+				}
+			} else {
+				assert.Empty(t, reason, "reason should be empty when not found for %s", tc.cmdPath)
 			}
 		})
 	}
