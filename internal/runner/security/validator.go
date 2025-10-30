@@ -29,23 +29,12 @@
 //	    security.WithFileSystem(mockFS),
 //	    security.WithGroupMembership(gm))
 //
-// # Migration from Old API
+// # Available Options
 //
-// The old constructor functions are deprecated but still available for backward compatibility:
+// The following options are available for customizing the Validator:
 //
-//	// Old API (deprecated)
-//	validator, err := security.NewValidatorWithFS(config, mockFS)
-//	validator, err := security.NewValidatorWithGroupMembership(config, gm)
-//	validator, err := security.NewValidatorWithFSAndGroupMembership(config, mockFS, gm)
-//
-//	// New API (recommended)
-//	validator, err := security.NewValidator(config, security.WithFileSystem(mockFS))
-//	validator, err := security.NewValidator(config, security.WithGroupMembership(gm))
-//	validator, err := security.NewValidator(config,
-//	    security.WithFileSystem(mockFS),
-//	    security.WithGroupMembership(gm))
-//
-// For detailed migration instructions, see docs/tasks/0048_security_validator_options_pattern/03_migration_guide.md.
+//   - WithFileSystem(fs common.FileSystem): Use a custom file system implementation (useful for testing)
+//   - WithGroupMembership(gm *groupmembership.GroupMembership): Add group membership checking for permission validation
 package security
 
 import (
@@ -116,42 +105,6 @@ func NewValidator(config *Config, opts ...Option) (*Validator, error) {
 	}
 
 	return newValidatorCore(config, options.fs, options.groupMembership)
-}
-
-// NewValidatorWithFS creates a new security validator with the given configuration and FileSystem.
-//
-// Deprecated: NewValidatorWithFS is deprecated. Use NewValidator with WithFileSystem option instead.
-//
-//	// Old:
-//	validator, err := security.NewValidatorWithFS(config, mockFS)
-//	// New:
-//	validator, err := security.NewValidator(config, security.WithFileSystem(mockFS))
-func NewValidatorWithFS(config *Config, fs common.FileSystem) (*Validator, error) {
-	return NewValidator(config, WithFileSystem(fs))
-}
-
-// NewValidatorWithGroupMembership creates a new security validator with group membership support.
-//
-// Deprecated: NewValidatorWithGroupMembership is deprecated. Use NewValidator with WithGroupMembership option instead.
-//
-//	// Old:
-//	validator, err := security.NewValidatorWithGroupMembership(config, gm)
-//	// New:
-//	validator, err := security.NewValidator(config, security.WithGroupMembership(gm))
-func NewValidatorWithGroupMembership(config *Config, groupMembership *groupmembership.GroupMembership) (*Validator, error) {
-	return NewValidator(config, WithGroupMembership(groupMembership))
-}
-
-// NewValidatorWithFSAndGroupMembership creates a new security validator with all options.
-//
-// Deprecated: NewValidatorWithFSAndGroupMembership is deprecated. Use NewValidator with both options instead.
-//
-//	// Old:
-//	validator, err := security.NewValidatorWithFSAndGroupMembership(config, mockFS, gm)
-//	// New:
-//	validator, err := security.NewValidator(config, security.WithFileSystem(mockFS), security.WithGroupMembership(gm))
-func NewValidatorWithFSAndGroupMembership(config *Config, fs common.FileSystem, groupMembership *groupmembership.GroupMembership) (*Validator, error) {
-	return NewValidator(config, WithFileSystem(fs), WithGroupMembership(groupMembership))
 }
 
 // newValidatorCore creates a new security validator with all options.

@@ -73,20 +73,6 @@ func TestNewValidator(t *testing.T) {
 	})
 }
 
-func TestNewValidatorWithFS(t *testing.T) {
-	mockFS := commontesting.NewMockFileSystem()
-	config := DefaultConfig()
-	// Override for this specific test
-	config.AllowedCommands = []string{"^echo$"}
-	config.SensitiveEnvVars = []string{".*PASSWORD.*"}
-	validator, err := NewValidatorWithFS(config, mockFS)
-
-	assert.NoError(t, err)
-	assert.NotNil(t, validator)
-	assert.Equal(t, config, validator.config)
-	assert.Equal(t, mockFS, validator.fs)
-}
-
 func TestValidator_CustomConfig(t *testing.T) {
 	config := DefaultConfig()
 	// Override with custom values for testing
@@ -168,41 +154,5 @@ func TestNewValidator_WithOptions(t *testing.T) {
 		assert.NoError(t, err2)
 		assert.Equal(t, validator1.fs, validator2.fs)
 		assert.Equal(t, validator1.groupMembership, validator2.groupMembership)
-	})
-}
-
-func TestNewValidator_BackwardCompatibility(t *testing.T) {
-	t.Run("NewValidatorWithFS wrapper", func(t *testing.T) {
-		mockFS := commontesting.NewMockFileSystem()
-		config := DefaultConfig()
-		validator, err := NewValidatorWithFS(config, mockFS)
-
-		assert.NoError(t, err)
-		assert.NotNil(t, validator)
-		assert.Equal(t, mockFS, validator.fs)
-		assert.Nil(t, validator.groupMembership)
-	})
-
-	t.Run("NewValidatorWithGroupMembership wrapper", func(t *testing.T) {
-		config := DefaultConfig()
-		gm := groupmembership.New()
-		validator, err := NewValidatorWithGroupMembership(config, gm)
-
-		assert.NoError(t, err)
-		assert.NotNil(t, validator)
-		assert.NotNil(t, validator.fs)
-		assert.Equal(t, gm, validator.groupMembership)
-	})
-
-	t.Run("NewValidatorWithFSAndGroupMembership wrapper", func(t *testing.T) {
-		mockFS := commontesting.NewMockFileSystem()
-		gm := groupmembership.New()
-		config := DefaultConfig()
-		validator, err := NewValidatorWithFSAndGroupMembership(config, mockFS, gm)
-
-		assert.NoError(t, err)
-		assert.NotNil(t, validator)
-		assert.Equal(t, mockFS, validator.fs)
-		assert.Equal(t, gm, validator.groupMembership)
 	})
 }

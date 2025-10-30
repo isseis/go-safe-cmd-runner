@@ -117,19 +117,18 @@ This task migrates the `security.Validator` constructors from multiple specializ
   - Document deprecation timeline
   - Estimated: 20 minutes
 
-### Phase 4: Cleanup (Future Milestone)
+### Phase 4: Cleanup
 
-Note: These tasks should be completed in a future release after sufficient deprecation period.
-
-- [ ] **Task 4.1**: Remove deprecated constructors
+- [x] **Task 4.1**: Remove deprecated constructors
   - Remove `NewValidatorWithFS`
   - Remove `NewValidatorWithGroupMembership`
   - Remove `NewValidatorWithFSAndGroupMembership`
   - Keep only the new `NewValidator(config *Config, opts ...Option)`
+  - Remove backward compatibility tests
 
-- [ ] **Task 4.2**: Final verification
+- [x] **Task 4.2**: Final verification
   - Ensure no external packages depend on deprecated constructors
-  - Run full test suite
+  - Run full test suite (all 1,289 tests passed)
   - Update changelog
 
 ## Total Estimated Time
@@ -137,9 +136,8 @@ Note: These tasks should be completed in a future release after sufficient depre
 - Phase 1: 1 hour 40 minutes
 - Phase 2: 2 hours 15 minutes
 - Phase 3: 1 hour
-- **Total for Phases 1-3: ~5 hours**
-
-(Phase 4 will be scheduled for a future release)
+- Phase 4: 30 minutes
+- **Total for Phases 1-4: ~5.5 hours**
 
 ## Implementation Notes
 
