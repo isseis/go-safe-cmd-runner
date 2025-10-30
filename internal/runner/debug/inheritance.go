@@ -14,8 +14,10 @@ import (
 func PrintFromEnvInheritance(
 	w io.Writer,
 	global *runnertypes.GlobalSpec,
-	group *runnertypes.GroupSpec,
+	runtimeGroup *runnertypes.RuntimeGroup,
 ) {
+	group := runtimeGroup.Spec
+
 	_, _ = fmt.Fprintf(w, "===== from_env Inheritance Analysis =====\n\n")
 
 	// Print Global.env_import state
@@ -77,8 +79,17 @@ func PrintFromEnvInheritance(
 
 	// Print allowlist inheritance state
 	_, _ = fmt.Fprintf(w, "[Allowlist Inheritance]\n")
-	if len(group.EnvAllowed) > 0 {
-		_, _ = fmt.Fprintf(w, "  Group overrides Global allowlist\n")
+	switch runtimeGroup.EnvAllowlistInheritanceMode {
+	case runnertypes.InheritanceModeInherit:
+		_, _ = fmt.Fprintf(w, "  Inheriting Global env_allowlist\n")
+		if len(global.EnvAllowed) > 0 {
+			_, _ = fmt.Fprintf(w, "  Allowlist (%d): %s\n",
+				len(global.EnvAllowed), strings.Join(global.EnvAllowed, ", "))
+		} else {
+			_, _ = fmt.Fprintf(w, "  (Global has no env_allowlist defined, so all variables allowed)\n")
+		}
+	case runnertypes.InheritanceModeExplicit:
+		_, _ = fmt.Fprintf(w, "  Using group-specific env_allowlist\n")
 		_, _ = fmt.Fprintf(w, "  Group allowlist (%d): %s\n",
 			len(group.EnvAllowed), strings.Join(group.EnvAllowed, ", "))
 		if len(global.EnvAllowed) > 0 {
@@ -87,12 +98,11 @@ func PrintFromEnvInheritance(
 				_, _ = fmt.Fprintf(w, "  Removed from Global allowlist: %s\n", strings.Join(removedVars, ", "))
 			}
 		}
-	} else {
-		_, _ = fmt.Fprintf(w, "  Inheriting Global allowlist\n")
-		if len(global.EnvAllowed) > 0 {
-			_, _ = fmt.Fprintf(w, "  Allowlist (%d): %s\n",
-				len(global.EnvAllowed), strings.Join(global.EnvAllowed, ", "))
-		}
+	case runnertypes.InheritanceModeReject:
+		_, _ = fmt.Fprintf(w, "  Rejecting all environment variables\n")
+		_, _ = fmt.Fprintf(w, "  (Group has empty env_allowlist defined, blocking all env inheritance)\n")
+	default:
+		_, _ = fmt.Fprintf(w, "  ERROR: Unknown inheritance mode: %v\n", runtimeGroup.EnvAllowlistInheritanceMode)
 	}
 	_, _ = fmt.Fprintln(w)
 }

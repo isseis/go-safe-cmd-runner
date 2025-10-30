@@ -427,6 +427,9 @@ func ExpandGroup(spec *runnertypes.GroupSpec, globalRuntime *runnertypes.Runtime
 		return nil, fmt.Errorf("failed to create RuntimeGroup: %w", err)
 	}
 
+	// Set the inheritance mode immediately after RuntimeGroup creation
+	runtime.EnvAllowlistInheritanceMode = runnertypes.DetermineEnvAllowlistInheritanceMode(spec.EnvAllowed)
+
 	// 1. Inherit global variables
 	if globalRuntime != nil {
 		maps.Copy(runtime.ExpandedVars, globalRuntime.ExpandedVars)
