@@ -122,12 +122,44 @@ type RuntimeGroup struct {
 ```
 
 #### 3.2.2 継承モード判定ロジックの集約
-TOML解析時（`config`パッケージ）に継承モードを判定し、`RuntimeGroup`に設定:
+
+##### 3.2.2.1 実行順序の課題
+現在の実装では、設定検証（`config/validator.go`）が設定展開（`config/expansion.go`）より先に実行される。この実行順序により、検証フェーズで`RuntimeGroup`の新フィールドを使用することができない。
+
+##### 3.2.2.2 解決策：共有ヘルパー関数
+継承モード判定ロジックを共有パッケージ（例: `runnertypes`）に独立したヘルパー関数として実装:
+
+```go
+// internal/runner/runnertypes/inheritance.go (新規ファイル)
+package runnertypes
+
+// DetermineInheritanceMode は GroupSpec から継承モードを判定する
+func DetermineInheritanceMode(envAllowed []string) InheritanceMode {
+    if envAllowed == nil {
+        return InheritanceModeInherit
+    }
+    if len(envAllowed) == 0 {
+        return InheritanceModeReject
+    }
+    return InheritanceModeExplicit
+}
+```
+
+この関数を以下の2箇所で使用:
+
+1. **`config/validator.go`**: `analyzeInheritanceMode`関数で検証に使用
+2. **`config/expansion.go`**: `ExpandGroup`関数で`RuntimeGroup`フィールドに設定
 
 判定ロジック:
-1. `group.EnvAllowed == nil` → `InheritanceModeInherit`
-2. `len(group.EnvAllowed) == 0` → `InheritanceModeReject`
-3. `len(group.EnvAllowed) > 0` → `InheritanceModeExplicit`
+1. `envAllowed == nil` → `InheritanceModeInherit`
+2. `len(envAllowed) == 0` → `InheritanceModeReject`
+3. `len(envAllowed) > 0` → `InheritanceModeExplicit`
+
+##### 3.2.2.3 実装メリット
+- ロジック集約: 継承モード判定が単一箇所に集約
+- 既存フロー維持: 検証→展開の実行順序を変更不要
+- テスタビリティ: 判定ロジックを独立してテスト可能
+- 再利用性: 検証と展開の両方で同じロジックを使用
 
 #### 3.2.3 PrintFromEnvInheritance関数の簡素化
 `RuntimeGroup.EnvAllowlistInheritanceMode`を参照することで、継承モード判定ロジックを削除し、表示ロジックを簡素化:
@@ -181,19 +213,22 @@ case InheritanceModeReject:
 
 ### 4.1 変更が必要なファイル
 
-#### 4.1.1 型定義
+#### 4.1.1 型定義とヘルパー関数
 - `internal/runner/runnertypes/runtime.go` - `RuntimeGroup`構造体にフィールド追加
+- `internal/runner/runnertypes/inheritance.go` - 継承モード判定ヘルパー関数（新規ファイル）
 
-#### 4.1.2 継承モード判定
-- `internal/runner/config/expansion.go` - TOML解析時の継承モード判定・設定
+#### 4.1.2 継承モード判定・設定
+- `internal/runner/config/validator.go` - `analyzeInheritanceMode`でヘルパー関数を使用
+- `internal/runner/config/expansion.go` - `ExpandGroup`でヘルパー関数を使用し`RuntimeGroup`に設定
 
 #### 4.1.3 継承モード使用
 - `internal/runner/debug/inheritance.go` - `PrintFromEnvInheritance`関数の簡素化
-- `internal/runner/config/validator.go` - `analyzeInheritanceMode`関数での使用（オプション）
 
 #### 4.1.4 テストコード
 - `internal/runner/runnertypes/runtime_test.go` - 新フィールドのテスト
-- `internal/runner/config/expansion_test.go` - 継承モード判定のテスト
+- `internal/runner/runnertypes/inheritance_test.go` - ヘルパー関数のテスト（新規ファイル）
+- `internal/runner/config/expansion_test.go` - 継承モード設定のテスト
+- `internal/runner/config/validator_test.go` - 継承モード検証のテスト
 - `internal/runner/debug/inheritance_test.go` - 簡素化された表示ロジックのテスト（存在する場合）
 
 ### 4.2 影響を受けるが変更不要なファイル
@@ -230,19 +265,25 @@ case InheritanceModeReject:
 ## 7. 実装計画
 
 ### 7.1 実装順序
-1. **フェーズ1**: `RuntimeGroup`構造体の拡張
-   - フィールド追加
-   - アクセサメソッド追加（必要に応じて）
-
-2. **フェーズ2**: 継承モード判定ロジックの実装
-   - `config`パッケージでの判定ロジック追加
+1. **フェーズ1**: ヘルパー関数の実装
+   - `internal/runner/runnertypes/inheritance.go`の作成
+   - `DetermineInheritanceMode`関数の実装
    - ユニットテスト作成
 
-3. **フェーズ3**: 既存コードの書き換え
-   - `PrintFromEnvInheritance`の簡素化
-   - `analyzeInheritanceMode`での使用（オプション）
+2. **フェーズ2**: `RuntimeGroup`構造体の拡張
+   - `EnvAllowlistInheritanceMode`フィールド追加
+   - アクセサメソッド追加（必要に応じて）
 
-4. **フェーズ4**: テストと検証
+3. **フェーズ3**: 検証・展開での使用
+   - `config/validator.go`でヘルパー関数を使用
+   - `config/expansion.go`でヘルパー関数を使用し`RuntimeGroup`に設定
+   - ユニットテスト作成・更新
+
+4. **フェーズ4**: 既存コードの書き換え
+   - `debug/inheritance.go`の`PrintFromEnvInheritance`の簡素化
+   - 関連テストの更新
+
+5. **フェーズ5**: テストと検証
    - 全テストの実行と修正
    - Lint/フォーマットチェック
    - 動作確認
@@ -264,8 +305,46 @@ case InheritanceModeReject:
 - `VerifyFiles`の継承モード追跡
 
 ### 8.2 dry-runモードでの表示
-- `resource/formatter.go`での継承モード表示
-- より詳細なdry-run情報の提供
+本タスクで実装する`EnvAllowlistInheritanceMode`フィールドを活用し、dry-runモードの出力を改善可能:
+
+#### 8.2.1 表示要件
+各グループについて以下の情報を明示的に表示:
+
+1. **継承モードの表示**
+   - `inherit`: "Inheriting Global allowlist"
+   - `explicit`: "Using group-specific allowlist"
+   - `reject`: "Rejecting all environment variables"
+
+2. **詳細情報の表示**
+   - **inheritモード**:
+     ```
+     Group: example-group
+       Environment Variable Allowlist: Inheriting Global allowlist
+       Global allowlist: [VAR1, VAR2, VAR3]
+     ```
+
+   - **explicitモード**:
+     ```
+     Group: example-group
+       Environment Variable Allowlist: Using group-specific allowlist
+       Group allowlist: [VAR4, VAR5]
+     ```
+
+   - **rejectモード**:
+     ```
+     Group: example-group
+       Environment Variable Allowlist: Rejecting all environment variables
+       (No environment variables will be inherited)
+     ```
+
+#### 8.2.2 実装候補箇所
+- `internal/runner/resource/formatter.go` - フォーマット関数に継承モード表示を追加
+- `internal/runner/resource/dryrun_manager.go` - dry-run実行時の情報収集
+
+#### 8.2.3 期待される効果
+- ユーザーが各グループの環境変数継承動作を理解しやすくなる
+- 設定ファイルのデバッグが容易になる
+- 明示的な空allowlist（`env_allowlist = []`）とallowlist未定義の違いが明確になる
 
 ### 8.3 バリデーション強化
 - 継承モードに基づく警告・エラーメッセージの改善
