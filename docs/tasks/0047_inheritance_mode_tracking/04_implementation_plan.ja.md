@@ -211,50 +211,50 @@
 
 #### 3.5.1 コード変更
 
-- [ ] `internal/runner/debug/inheritance.go` を開く
-- [ ] `PrintFromEnvInheritance` 関数を特定
-- [ ] 既存の判定ロジック（if-else）を削除
-- [ ] `runtimeGroup.EnvAllowlistInheritanceMode` を取得
-- [ ] switch文を実装
-  - [ ] `InheritanceModeInherit` ケースを実装
-    - [ ] "Inheriting Global env_allowlist" メッセージ
-    - [ ] Global allowlistが空の場合の処理
-    - [ ] Global allowlistがある場合の処理（変数数を表示）
-  - [ ] `InheritanceModeExplicit` ケースを実装
-    - [ ] "Using group-specific env_allowlist" メッセージ
-    - [ ] Group allowlistを表示（変数数を表示）
-  - [ ] `InheritanceModeReject` ケースを実装（新規）
-    - [ ] "Rejecting all environment variables" メッセージ
-    - [ ] 説明メッセージ
-  - [ ] defaultケースを実装（エラーハンドリング）
+- [x] `internal/runner/debug/inheritance.go` を開く
+- [x] `PrintFromEnvInheritance` 関数を特定
+- [x] 既存の判定ロジック（if-else）を削除
+- [x] `runtimeGroup.EnvAllowlistInheritanceMode` を取得
+- [x] switch文を実装
+  - [x] `InheritanceModeInherit` ケースを実装
+    - [x] "Inheriting Global env_allowlist" メッセージ
+    - [x] Global allowlistが空の場合の処理
+    - [x] Global allowlistがある場合の処理（変数数を表示）
+  - [x] `InheritanceModeExplicit` ケースを実装
+    - [x] "Using group-specific env_allowlist" メッセージ
+    - [x] Group allowlistを表示（変数数を表示）
+  - [x] `InheritanceModeReject` ケースを実装（新規）
+    - [x] "Rejecting all environment variables" メッセージ
+    - [x] 説明メッセージ
+  - [x] defaultケースを実装（エラーハンドリング）
 
 #### 3.5.2 テスト実装
 
-- [ ] `internal/runner/debug/inheritance_test.go` にテストを追加/更新
-  - [ ] `TestPrintFromEnvInheritance_Inherit_WithGlobalAllowlist`
-  - [ ] `TestPrintFromEnvInheritance_Inherit_EmptyGlobalAllowlist`
-  - [ ] `TestPrintFromEnvInheritance_Explicit`
-  - [ ] `TestPrintFromEnvInheritance_Reject` (新規)
+- [x] `internal/runner/debug/inheritance_test.go` にテストを追加/更新
+  - [x] `TestPrintFromEnvInheritance_Inherit_WithGlobalAllowlist`
+  - [x] `TestPrintFromEnvInheritance_Inherit_EmptyGlobalAllowlist`
+  - [x] `TestPrintFromEnvInheritance_Explicit`
+  - [x] `TestPrintFromEnvInheritance_Reject` (新規)
 
 #### 3.5.3 手動テスト
 
-- [ ] テスト用TOML設定ファイルを作成
-  - [ ] Inheritモードのグループ
-  - [ ] Explicitモードのグループ
-  - [ ] Rejectモードのグループ
-- [ ] runnerをビルド: `make build`
-- [ ] デバッグモードで実行: `./build/runner --config test.toml --debug`
-- [ ] 出力を確認
-  - [ ] Inheritモードが正しく表示されることを確認
-  - [ ] Explicitモードが正しく表示されることを確認
-  - [ ] Rejectモードが明示的に表示されることを確認
+- [-] テスト用TOML設定ファイルを作成
+  - [-] Inheritモードのグループ
+  - [-] Explicitモードのグループ
+  - [-] Rejectモードのグループ
+- [-] runnerをビルド: `make build`
+- [-] デバッグモードで実行: `./build/runner --config test.toml --debug`
+- [-] 出力を確認
+  - [-] Inheritモードが正しく表示されることを確認
+  - [-] Explicitモードが正しく表示されることを確認
+  - [-] Rejectモードが明示的に表示されることを確認
 
 #### 3.5.4 検証
 
-- [ ] テストを実行: `go test ./internal/runner/debug/...`
-- [ ] すべてのテストが成功することを確認
-- [ ] lintを実行: `golangci-lint run ./internal/runner/debug/...`
-- [ ] lint警告がないことを確認
+- [x] テストを実行: `go test ./internal/runner/debug/...`
+- [x] すべてのテストが成功することを確認
+- [x] lintを実行: `golangci-lint run ./internal/runner/debug/...`
+- [x] lint警告がないことを確認
 
 #### 3.5.5 コミット
 

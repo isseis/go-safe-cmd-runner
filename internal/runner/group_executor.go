@@ -132,7 +132,7 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 		_, _ = fmt.Fprintf(os.Stdout, "\n===== Variable Expansion Debug Information =====\n\n")
 
 		// Print from_env inheritance analysis
-		debug.PrintFromEnvInheritance(os.Stdout, &ge.config.Global, groupSpec)
+		debug.PrintFromEnvInheritance(os.Stdout, &ge.config.Global, groupSpec, runtimeGroup)
 	}
 
 	// Defer notification to ensure it's sent regardless of success or failure
