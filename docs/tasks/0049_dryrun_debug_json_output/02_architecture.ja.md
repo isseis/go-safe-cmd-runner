@@ -20,7 +20,7 @@
 
 ### 2.1 Single Source of Truth（信頼できる唯一の情報源）
 デバッグ情報の収集と生成は一箇所で行い、テキスト形式とJSON形式の出力が同じデータソースから派生することを保証する。これにより：
-- **一貫性**: 同じdetail levelで両形式の出力内容が一致
+- **一貫性**: 同じDetail Levelで両形式の出力内容が一致
 - **保守性**: データ収集ロジックの変更が1箇所で完結
 - **テスト容易性**: データ収集とフォーマットを独立してテスト可能
 
@@ -58,7 +58,7 @@ Detail Levelに基づいて情報量を制御し、ユーザーが必要な詳�
   - すべての処理完了後、構造化されたデータを一括でJSON化
   - 機械可読な完全な構造化データを提供
 
-この設計により、インタラクティブなデバッグ（TEXT形式）とプログラマティックな処理（JSON形式）の両方のユースケースに最適化されている。
+この設計により、インタラクティブなデバッグ（TEXT形式）とプログラムによる処理（JSON形式）の両方のユースケースに最適化されている。
 
 ```mermaid
 graph TB
@@ -77,7 +77,7 @@ graph TB
     end
 
     subgraph DSL["Data Structure Layer (Extended)"]
-        DS[("DryRunResult<br/>\(ResourceAnalysis<br/>DebugInfo\)")]
+        DS[("DryRunResult<br/>+ResourceAnalysis<br/>+DebugInfo")]
     end
 
     subgraph FL["Format Layer"]
@@ -124,7 +124,7 @@ graph TB
 5. **コマンドレベルのResourceAnalysis更新**: コマンドの`ResourceAnalysis`の`DebugInfo`に最終環境変数情報を追加
 6. **結果の集約**: `ResourceManager`がすべての`ResourceAnalysis`を`DryRunResult`に集約
 7. **フォーマットと出力**:
-   - JSON形式: `JSONFormatter`が`DryRunResult`をJSON化
+   - JSON形式: 全実行終了後 `JSONFormatter`が`DryRunResult`をJSON化
    - Text形式: グループ実行中に`FormatInheritanceAnalysisText()`/`FormatFinalEnvironmentText()`で段階的に出力
 
 ## 4. コンポーネント設計
@@ -142,7 +142,7 @@ graph TB
 classDiagram
     class DataCollector {
         <<functions>>
-        +CollectInheritanceAnalysis(global, group, detailLevel) InheritanceAnalysis
+        +CollectInheritanceAnalysis(runtimeGlobal, runtimeGroup, detailLevel) InheritanceAnalysis
         +CollectFinalEnvironment(envMap, detailLevel, showSensitive) FinalEnvironment
     }
 
@@ -167,10 +167,9 @@ classDiagram
 
 **CollectInheritanceAnalysis:**
 - **入力**:
-  - `global *runnertypes.GlobalSpec`: グローバル設定
-  - `group *runnertypes.GroupSpec`: グループ設定
-  - `runtimeGroup *runnertypes.RuntimeGroup`: ランタイム情報（継承モード含む）
-  - `detailLevel resource.DryRunDetailLevel`: 詳細度レベル
+  - `runtimeGlobal *runnertypes.RuntimeGlobal`: ランタイムグローバル情報（`GlobalSpec`を包含）
+  - `runtimeGroup *runnertypes.RuntimeGroup`: ランタイムグループ情報（`GroupSpec`と継承モードを包含）
+  - `detailLevel resource.DryRunDetailLevel`: Detail Level
 - **出力**: `*InheritanceAnalysis`: 継承分析情報
 - **動作**:
   - 設定値フィールド（`GlobalEnvImport`, `GlobalAllowlist`, `GroupEnvImport`, `GroupAllowlist`）は常に設定
@@ -180,7 +179,7 @@ classDiagram
 **CollectFinalEnvironment:**
 - **入力**:
   - `envMap map[string]executor.EnvVar`: 最終環境変数マップ
-  - `detailLevel resource.DryRunDetailLevel`: 詳細度レベル
+  - `detailLevel resource.DryRunDetailLevel`: Detail Level
   - `showSensitive bool`: センシティブ情報表示フラグ
 - **出力**: `*FinalEnvironment`: 最終環境変数情報（`DetailLevelFull`以外ではnil）
 - **動作**:
@@ -432,7 +431,7 @@ sequenceDiagram
     participant RM as ResourceManager (JSON)
 
     Note over GE: 同じタイミング、同じ入力で呼び出し
-    GE->>DC: CollectInheritanceAnalysis(global, group, detailLevel)
+    GE->>DC: CollectInheritanceAnalysis(runtimeGlobal, runtimeGroup, detailLevel)
     DC->>Data: 構造化データを生成
 
     alt テキスト形式
@@ -455,7 +454,7 @@ sequenceDiagram
 両形式で**同じデータ収集関数**を使用：
 ```go
 // テキスト形式もJSON形式も同じ関数を呼び出す
-analysis := CollectInheritanceAnalysis(global, group, runtimeGroup, detailLevel)
+analysis := CollectInheritanceAnalysis(runtimeGlobal, runtimeGroup, detailLevel)
 
 // テキスト形式: 即座にフォーマット
 if outputFormat == "text" {
@@ -482,10 +481,10 @@ if outputFormat == "json" {
 
 データ収集時に`detailLevel`パラメータで出力内容を制御：
 ```go
-func CollectInheritanceAnalysis(..., detailLevel DryRunDetailLevel) *InheritanceAnalysis {
+func CollectInheritanceAnalysis(runtimeGlobal *runnertypes.RuntimeGlobal, runtimeGroup *runnertypes.RuntimeGroup, detailLevel DryRunDetailLevel) *InheritanceAnalysis {
     analysis := &InheritanceAnalysis{
-        GlobalEnvImport: global.EnvImport,  // 常に設定
-        InheritanceMode: mode,               // 常に設定
+        GlobalEnvImport: runtimeGlobal.GlobalSpec.EnvImport,  // 常に設定
+        InheritanceMode: runtimeGroup.InheritanceMode,        // 常に設定
     }
 
     // DetailLevelFullの場合のみ差分情報を追加
@@ -729,7 +728,7 @@ flowchart TD
 ### 8.2 スケーラビリティ
 
 **大規模設定への対応:**
-- 数百のグループ: 各グループごとに`ResourceAnalysis`を作成するが、detail levelで制御可能
+- 数百のグループ: 各グループごとに`ResourceAnalysis`を作成するが、Detail Levelで制御可能
 - 大量の環境変数: `DetailLevelSummary`を使用することで出力をスキップ可能
 - 長時間実行: dry-runモードでは実際のコマンド実行がないため、メモリ使用量は限定的
 
