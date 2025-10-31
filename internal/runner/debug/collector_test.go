@@ -245,7 +245,7 @@ func TestCollectFinalEnvironment(t *testing.T) {
 			name: "DetailLevelFull with showSensitive=true",
 			envMap: map[string]executor.EnvVar{
 				"PATH":    {Value: "/usr/bin", Origin: "system"},
-				"API_KEY": {Value: "secret123", Origin: "env_import"},
+				"API_KEY": {Value: "secret123", Origin: "vars"},
 			},
 			detailLevel:   resource.DetailLevelFull,
 			showSensitive: true,
@@ -258,7 +258,7 @@ func TestCollectFinalEnvironment(t *testing.T) {
 					},
 					"API_KEY": {
 						Value:  "secret123",
-						Source: "env_import",
+						Source: "vars",
 						Masked: false,
 					},
 				},
@@ -268,7 +268,7 @@ func TestCollectFinalEnvironment(t *testing.T) {
 			name: "DetailLevelFull with showSensitive=false masks sensitive vars",
 			envMap: map[string]executor.EnvVar{
 				"PATH":    {Value: "/usr/bin", Origin: "system"},
-				"API_KEY": {Value: "secret123", Origin: "env_import"},
+				"API_KEY": {Value: "secret123", Origin: "vars"},
 			},
 			detailLevel:   resource.DetailLevelFull,
 			showSensitive: false,
@@ -281,7 +281,7 @@ func TestCollectFinalEnvironment(t *testing.T) {
 					},
 					"API_KEY": {
 						Value:  "",
-						Source: "env_import",
+						Source: "vars",
 						Masked: true,
 					},
 				},
@@ -291,7 +291,7 @@ func TestCollectFinalEnvironment(t *testing.T) {
 			name: "Various source types are mapped correctly",
 			envMap: map[string]executor.EnvVar{
 				"VAR1": {Value: "value1", Origin: "system"},
-				"VAR2": {Value: "value2", Origin: "env_import"},
+				"VAR2": {Value: "value2", Origin: "vars"},
 				"VAR3": {Value: "value3", Origin: "vars"},
 				"VAR4": {Value: "value4", Origin: "command"},
 			},
@@ -300,7 +300,7 @@ func TestCollectFinalEnvironment(t *testing.T) {
 			expectedEnv: &resource.FinalEnvironment{
 				Variables: map[string]resource.EnvironmentVariable{
 					"VAR1": {Value: "value1", Source: "system", Masked: false},
-					"VAR2": {Value: "value2", Source: "env_import", Masked: false},
+					"VAR2": {Value: "value2", Source: "vars", Masked: false},
 					"VAR3": {Value: "value3", Source: "vars", Masked: false},
 					"VAR4": {Value: "value4", Source: "command", Masked: false},
 				},

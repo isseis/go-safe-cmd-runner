@@ -351,10 +351,14 @@ type EnvironmentVariable struct {
 	Value string `json:"value,omitempty"`
 
 	// Source indicates where this variable comes from:
-	//   "system"     - from env_allowlist (system environment variable)
-	//   "env_import" - from env_import mapping (originally system variable)
-	//   "vars"       - from vars section
-	//   "command"    - from command-level env_vars
+	//   "system"  - from env_allowlist (system environment variable passed through)
+	//   "vars"    - from global or group level vars/env_import/env_vars sections
+	//   "command" - from command-level env_vars section
+	//
+	// Note: Currently, "env_import" is not distinguished from "vars" because variables
+	// from env_import are merged with vars during configuration expansion. Both are
+	// reported as "vars". This is a known limitation that maintains simplicity in the
+	// current architecture.
 	Source string `json:"source"`
 
 	// Masked indicates whether the value was redacted for security
