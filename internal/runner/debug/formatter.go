@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
 )
@@ -153,16 +152,13 @@ func FormatFinalEnvironmentText(env *resource.FinalEnvironment) string {
 	}
 	sort.Strings(keys)
 
-	// Use same sensitive patterns as existing function
-	sensitivePatterns := redaction.DefaultSensitivePatterns()
-
 	buf.WriteString(fmt.Sprintf("Environment variables (%d):\n", len(env.Variables)))
 	for _, k := range keys {
 		envVar := env.Variables[k]
 
 		// Determine display value - match existing PrintFinalEnvironment logic
 		displayValue := envVar.Value
-		if envVar.Masked || sensitivePatterns.IsSensitiveEnvVar(k) {
+		if envVar.Masked || defaultSensitivePatterns.IsSensitiveEnvVar(k) {
 			displayValue = "[REDACTED]"
 		} else if len(displayValue) > MaxDisplayLength {
 			// Truncate long values for readability (only if not masked)
