@@ -2,9 +2,9 @@
 package debug
 
 import (
-	"sort"
 	"strings"
 
+	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
@@ -33,12 +33,12 @@ func CollectInheritanceAnalysis(
 	// Build base analysis with configuration and computed fields
 	analysis := &resource.InheritanceAnalysis{
 		// Configuration fields from global
-		GlobalEnvImport: safeStringSlice(runtimeGlobal.Spec.EnvImport),
-		GlobalAllowlist: safeStringSlice(runtimeGlobal.Spec.EnvAllowed),
+		GlobalEnvImport: common.CloneOrEmpty(runtimeGlobal.Spec.EnvImport),
+		GlobalAllowlist: common.CloneOrEmpty(runtimeGlobal.Spec.EnvAllowed),
 
 		// Configuration fields from group
-		GroupEnvImport: safeStringSlice(groupSpec.EnvImport),
-		GroupAllowlist: safeStringSlice(groupSpec.EnvAllowed),
+		GroupEnvImport: common.CloneOrEmpty(groupSpec.EnvImport),
+		GroupAllowlist: common.CloneOrEmpty(groupSpec.EnvAllowed),
 
 		// Computed field
 		InheritanceMode: runtimeGroup.EnvAllowlistInheritanceMode,
@@ -48,7 +48,7 @@ func CollectInheritanceAnalysis(
 	if detailLevel == resource.DetailLevelFull {
 		// Calculate inherited variables
 		if runtimeGroup.EnvAllowlistInheritanceMode == runnertypes.InheritanceModeInherit {
-			analysis.InheritedVariables = safeStringSlice(runtimeGlobal.Spec.EnvAllowed)
+			analysis.InheritedVariables = common.CloneOrEmpty(runtimeGlobal.Spec.EnvAllowed)
 		} else {
 			analysis.InheritedVariables = []string{}
 		}
@@ -56,9 +56,9 @@ func CollectInheritanceAnalysis(
 		// Calculate removed allowlist variables
 		if runtimeGroup.EnvAllowlistInheritanceMode == runnertypes.InheritanceModeExplicit ||
 			runtimeGroup.EnvAllowlistInheritanceMode == runnertypes.InheritanceModeReject {
-			globalSet := stringSliceToSet(runtimeGlobal.Spec.EnvAllowed)
-			groupSet := stringSliceToSet(groupSpec.EnvAllowed)
-			analysis.RemovedAllowlistVariables = setDifference(globalSet, groupSet)
+			globalSet := common.SliceToSet(runtimeGlobal.Spec.EnvAllowed)
+			groupSet := common.SliceToSet(groupSpec.EnvAllowed)
+			analysis.RemovedAllowlistVariables = common.SetDifferenceToSlice(globalSet, groupSet)
 		} else {
 			analysis.RemovedAllowlistVariables = []string{}
 		}
@@ -67,9 +67,9 @@ func CollectInheritanceAnalysis(
 		if len(groupSpec.EnvImport) > 0 && len(runtimeGlobal.Spec.EnvImport) > 0 {
 			globalVars := extractInternalVarNames(runtimeGlobal.Spec.EnvImport)
 			groupVars := extractInternalVarNames(groupSpec.EnvImport)
-			globalSet := stringSliceToSet(globalVars)
-			groupSet := stringSliceToSet(groupVars)
-			analysis.UnavailableEnvImportVariables = setDifference(globalSet, groupSet)
+			globalSet := common.SliceToSet(globalVars)
+			groupSet := common.SliceToSet(groupVars)
+			analysis.UnavailableEnvImportVariables = common.SetDifferenceToSlice(globalSet, groupSet)
 		} else {
 			analysis.UnavailableEnvImportVariables = []string{}
 		}
@@ -122,37 +122,6 @@ func CollectFinalEnvironment(
 }
 
 // Helper functions
-
-// safeStringSlice returns a copy of the slice or an empty slice if nil
-func safeStringSlice(slice []string) []string {
-	if slice == nil {
-		return []string{}
-	}
-	result := make([]string, len(slice))
-	copy(result, slice)
-	return result
-}
-
-// stringSliceToSet converts a string slice to a set (map[string]struct{})
-func stringSliceToSet(slice []string) map[string]struct{} {
-	set := make(map[string]struct{}, len(slice))
-	for _, s := range slice {
-		set[s] = struct{}{}
-	}
-	return set
-}
-
-// setDifference returns elements in setA that are not in setB
-func setDifference(setA, setB map[string]struct{}) []string {
-	var result []string
-	for key := range setA {
-		if _, exists := setB[key]; !exists {
-			result = append(result, key)
-		}
-	}
-	sort.Strings(result) // Ensure deterministic output
-	return result
-}
 
 // extractInternalVarNames extracts internal variable names from env_import mappings
 // Example: "db_host=DB_HOST" -> "db_host"
