@@ -1,6 +1,7 @@
 package resource
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -167,4 +168,48 @@ func TestDryRunResult(t *testing.T) {
 	assert.NotNil(t, result.SecurityAnalysis)
 	assert.NotNil(t, result.EnvironmentInfo)
 	assert.Equal(t, "test-run-1", result.Metadata.RunID)
+}
+
+func TestEnvironmentVariable_JSONMarshal(t *testing.T) {
+	tests := []struct {
+		name     string
+		envVar   EnvironmentVariable
+		expected string
+	}{
+		{
+			name: "masked variable with empty value",
+			envVar: EnvironmentVariable{
+				Value:  "",
+				Source: "vars",
+				Masked: true,
+			},
+			expected: `{"value":"","source":"vars","masked":true}`,
+		},
+		{
+			name: "non-masked variable with value",
+			envVar: EnvironmentVariable{
+				Value:  "some_value",
+				Source: "system",
+				Masked: false,
+			},
+			expected: `{"value":"some_value","source":"system"}`,
+		},
+		{
+			name: "empty value not masked",
+			envVar: EnvironmentVariable{
+				Value:  "",
+				Source: "command",
+				Masked: false,
+			},
+			expected: `{"value":"","source":"command"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			jsonBytes, err := json.Marshal(tt.envVar)
+			assert.NoError(t, err)
+			assert.JSONEq(t, tt.expected, string(jsonBytes))
+		})
+	}
 }

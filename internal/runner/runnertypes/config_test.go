@@ -1,6 +1,7 @@
 package runnertypes
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -199,6 +200,87 @@ func TestCommandHasUserGroupSpecification(t *testing.T) {
 			result := cmd.HasUserGroupSpecification()
 
 			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestInheritanceMode_MarshalJSON(t *testing.T) {
+	tests := []struct {
+		name     string
+		mode     InheritanceMode
+		expected string
+	}{
+		{
+			name:     "InheritanceModeInherit",
+			mode:     InheritanceModeInherit,
+			expected: `"inherit"`,
+		},
+		{
+			name:     "InheritanceModeExplicit",
+			mode:     InheritanceModeExplicit,
+			expected: `"explicit"`,
+		},
+		{
+			name:     "InheritanceModeReject",
+			mode:     InheritanceModeReject,
+			expected: `"reject"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := json.Marshal(tt.mode)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expected, string(data))
+		})
+	}
+}
+
+func TestInheritanceMode_UnmarshalJSON(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected InheritanceMode
+		wantErr  bool
+	}{
+		{
+			name:     "inherit",
+			input:    `"inherit"`,
+			expected: InheritanceModeInherit,
+			wantErr:  false,
+		},
+		{
+			name:     "explicit",
+			input:    `"explicit"`,
+			expected: InheritanceModeExplicit,
+			wantErr:  false,
+		},
+		{
+			name:     "reject",
+			input:    `"reject"`,
+			expected: InheritanceModeReject,
+			wantErr:  false,
+		},
+		{
+			name:     "invalid value",
+			input:    `"invalid"`,
+			expected: InheritanceModeInherit,
+			wantErr:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var mode InheritanceMode
+			err := json.Unmarshal([]byte(tt.input), &mode)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.ErrorIs(t, err, ErrInvalidInheritanceMode)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expected, mode)
+			}
 		})
 	}
 }

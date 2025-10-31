@@ -46,9 +46,9 @@
 
 **ファイル**: `internal/runner/resource/types.go`
 
-- [ ] `ResourceTypeGroup` 定数を追加
-- [ ] `OperationAnalyze` 定数を追加
-- [ ] 既存の定数リストのコメントを更新
+- [x] `ResourceTypeGroup` 定数を追加
+- [x] `OperationAnalyze` 定数を追加
+- [x] 既存の定数リストのコメントを更新
 
 **完了基準**:
 - 新しい定数が正しく定義されている
@@ -60,9 +60,9 @@
 
 **ファイル**: `internal/runner/resource/types.go`
 
-- [ ] `DebugInfo` 構造体を定義
-- [ ] JSONタグ (`omitempty`) を適切に設定
-- [ ] ドキュメントコメントを追加
+- [x] `DebugInfo` 構造体を定義
+- [x] JSONタグ (`omitempty`) を適切に設定
+- [x] ドキュメントコメントを追加
 
 **完了基準**:
 - 構造体が定義されている
@@ -75,12 +75,12 @@
 
 **ファイル**: `internal/runner/resource/types.go`
 
-- [ ] `InheritanceAnalysis` 構造体を定義
-- [ ] 設定値フィールドを定義 (GlobalEnvImport, GlobalAllowlist, GroupEnvImport, GroupAllowlist)
-- [ ] 計算値フィールドを定義 (InheritanceMode)
-- [ ] 差分情報フィールドを定義 (InheritedVariables, RemovedAllowlistVariables, UnavailableEnvImportVariables)
-- [ ] 各フィールドに適切なJSONタグを設定 (`omitempty` を差分情報フィールドに付与)
-- [ ] ドキュメントコメントを追加
+- [x] `InheritanceAnalysis` 構造体を定義
+- [x] 設定値フィールドを定義 (GlobalEnvImport, GlobalAllowlist, GroupEnvImport, GroupAllowlist)
+- [x] 計算値フィールドを定義 (InheritanceMode)
+- [x] 差分情報フィールドを定義 (InheritedVariables, RemovedAllowlistVariables, UnavailableEnvImportVariables)
+- [x] 各フィールドに適切なJSONタグを設定 (`omitempty` を差分情報フィールドに付与)
+- [x] ドキュメントコメントを追加
 
 **完了基準**:
 - すべてのフィールドが正しく定義されている
@@ -93,10 +93,10 @@
 
 **ファイル**: `internal/runner/resource/types.go`
 
-- [ ] `FinalEnvironment` 構造体を定義
-- [ ] `EnvironmentVariable` 構造体を定義
-- [ ] JSONタグを適切に設定
-- [ ] ドキュメントコメントを追加 (特にSource フィールドの値の説明)
+- [x] `FinalEnvironment` 構造体を定義
+- [x] `EnvironmentVariable` 構造体を定義
+- [x] JSONタグを適切に設定
+- [x] ドキュメントコメントを追加 (特にSource フィールドの値の説明)
 
 **完了基準**:
 - 両方の構造体が定義されている
@@ -109,9 +109,9 @@
 
 **ファイル**: `internal/runner/resource/types.go`
 
-- [ ] `ResourceAnalysis` に `DebugInfo *DebugInfo` フィールドを追加
-- [ ] JSONタグに `omitempty` を設定
-- [ ] ドキュメントコメントを追加
+- [x] `ResourceAnalysis` に `DebugInfo *DebugInfo` フィールドを追加
+- [x] JSONタグに `omitempty` を設定
+- [x] ドキュメントコメントを追加
 
 **完了基準**:
 - フィールドが追加されている
@@ -121,11 +121,11 @@
 
 #### 3.2.6 InheritanceMode の JSON 変換メソッド実装
 
-**ファイル**: `internal/runner/runnertypes/inheritance_mode.go`
+**ファイル**: `internal/runner/runnertypes/config.go`
 
-- [ ] `MarshalJSON()` メソッドを実装
-- [ ] `UnmarshalJSON()` メソッドを実装
-- [ ] エラーハンドリングを追加
+- [x] `MarshalJSON()` メソッドを実装
+- [x] `UnmarshalJSON()` メソッドを実装
+- [x] エラーハンドリングを追加 (ErrInvalidInheritanceMode)
 
 **完了基準**:
 - 両方のメソッドが実装されている
@@ -135,17 +135,17 @@
 
 #### 3.2.7 InheritanceMode JSON 変換のユニットテスト
 
-**ファイル**: `internal/runner/runnertypes/inheritance_mode_test.go`
+**ファイル**: `internal/runner/runnertypes/config_test.go`
 
-- [ ] `TestInheritanceMode_MarshalJSON` を実装
-  - [ ] InheritanceModeInherit -> "inherit"
-  - [ ] InheritanceModeExplicit -> "explicit"
-  - [ ] InheritanceModeReject -> "reject"
-- [ ] `TestInheritanceMode_UnmarshalJSON` を実装
-  - [ ] "inherit" -> InheritanceModeInherit
-  - [ ] "explicit" -> InheritanceModeExplicit
-  - [ ] "reject" -> InheritanceModeReject
-  - [ ] 不正な値でエラーが返される
+- [x] `TestInheritanceMode_MarshalJSON` を実装
+  - [x] InheritanceModeInherit -> "inherit"
+  - [x] InheritanceModeExplicit -> "explicit"
+  - [x] InheritanceModeReject -> "reject"
+- [x] `TestInheritanceMode_UnmarshalJSON` を実装
+  - [x] "inherit" -> InheritanceModeInherit
+  - [x] "explicit" -> InheritanceModeExplicit
+  - [x] "reject" -> InheritanceModeReject
+  - [x] 不正な値でエラーが返される
 
 **完了基準**:
 - すべてのテストケースが実装されている
@@ -156,10 +156,10 @@
 
 #### 3.2.8 Phase 1 の統合確認
 
-- [ ] `make test` が成功する
-- [ ] `make lint` が成功する
-- [ ] すべての新規構造体が正しくJSON変換される
-- [ ] 既存のテストに影響がない (回帰テスト)
+- [x] `make test` が成功する
+- [x] `make lint` が成功する
+- [x] すべての新規構造体が正しくJSON変換される
+- [x] 既存のテストに影響がない (回帰テスト)
 
 **完了基準**:
 - すべてのチェックがパスする
@@ -177,9 +177,9 @@
 
 ### 3.5 Phase 1 のマイルストーン
 
-- [ ] Phase 1 完了
+- [x] Phase 1 完了
 - [ ] コードレビュー完了
-- [ ] Phase 1 のコミット作成
+- [x] Phase 1 のコミット作成
 
 ## 4. Phase 2: データ収集層
 
@@ -192,9 +192,9 @@
 
 **ファイル**: `internal/runner/debug/collector.go` (新規作成)
 
-- [ ] ファイルを作成
-- [ ] パッケージコメントを追加
-- [ ] 必要なインポートを追加
+- [x] ファイルを作成
+- [x] パッケージコメントを追加
+- [x] 必要なインポートを追加
 
 **完了基準**:
 - ファイルが作成されている
@@ -206,10 +206,10 @@
 
 **ファイル**: `internal/runner/debug/collector.go`
 
-- [ ] `safeStringSlice()` を実装
-- [ ] `stringSliceToSet()` を実装
-- [ ] `setDifference()` を実装
-- [ ] `extractInternalVarNames()` を実装
+- [x] `safeStringSlice()` を実装
+- [x] `stringSliceToSet()` を実装
+- [x] `setDifference()` を実装
+- [x] `extractInternalVarNames()` を実装
 
 **完了基準**:
 - すべてのヘルパー関数が実装されている
@@ -222,15 +222,15 @@
 
 **ファイル**: `internal/runner/debug/collector.go`
 
-- [ ] 関数シグネチャを定義
-- [ ] DetailLevelSummary の場合に nil を返す処理を実装
-- [ ] 設定値フィールドの収集を実装
-- [ ] 計算値フィールド (InheritanceMode) の設定を実装
-- [ ] DetailLevelFull の場合の差分情報計算を実装
-  - [ ] InheritedVariables の計算
-  - [ ] RemovedAllowlistVariables の計算
-  - [ ] UnavailableEnvImportVariables の計算
-- [ ] ドキュメントコメントを追加
+- [x] 関数シグネチャを定義
+- [x] DetailLevelSummary の場合に nil を返す処理を実装
+- [x] 設定値フィールドの収集を実装
+- [x] 計算値フィールド (InheritanceMode) の設定を実装
+- [x] DetailLevelFull の場合の差分情報計算を実装
+  - [x] InheritedVariables の計算
+  - [x] RemovedAllowlistVariables の計算
+  - [x] UnavailableEnvImportVariables の計算
+- [x] ドキュメントコメントを追加
 
 **完了基準**:
 - 関数が完全に実装されている
@@ -243,16 +243,16 @@
 
 **ファイル**: `internal/runner/debug/collector_test.go` (新規作成)
 
-- [ ] `TestCollectInheritanceAnalysis` を実装
-  - [ ] DetailLevelSummary: nil を返す
-  - [ ] DetailLevelDetailed: 基本フィールドのみ
-  - [ ] DetailLevelFull: すべてのフィールド
-  - [ ] InheritanceModeInherit の場合
-  - [ ] InheritanceModeExplicit の場合
-  - [ ] InheritanceModeReject の場合
-  - [ ] nil / 空スライスのエッジケース
-- [ ] テストヘルパー関数を実装
-- [ ] テストフィクスチャを作成
+- [x] `TestCollectInheritanceAnalysis` を実装
+  - [x] DetailLevelSummary: nil を返す
+  - [x] DetailLevelDetailed: 基本フィールドのみ
+  - [x] DetailLevelFull: すべてのフィールド
+  - [x] InheritanceModeInherit の場合
+  - [x] InheritanceModeExplicit の場合
+  - [x] InheritanceModeReject の場合
+  - [x] nil / 空スライスのエッジケース
+- [x] テストヘルパー関数を実装
+- [x] テストフィクスチャを作成
 
 **完了基準**:
 - すべてのテストケースが実装されている
@@ -265,12 +265,12 @@
 
 **ファイル**: `internal/runner/debug/collector.go`
 
-- [ ] 関数シグネチャを定義
-- [ ] DetailLevelFull 以外で nil を返す処理を実装
-- [ ] 環境変数マップをループ処理
-- [ ] センシティブ情報のマスキング処理を実装
-- [ ] `mapEnvVarSource()` ヘルパー関数を実装
-- [ ] ドキュメントコメントを追加
+- [x] 関数シグネチャを定義
+- [x] DetailLevelFull 以外で nil を返す処理を実装
+- [x] 環境変数マップをループ処理
+- [x] センシティブ情報のマスキング処理を実装
+- [x] `mapEnvVarSource()` ヘルパー関数を実装
+- [x] ドキュメントコメントを追加
 
 **完了基準**:
 - 関数が完全に実装されている
@@ -283,13 +283,13 @@
 
 **ファイル**: `internal/runner/debug/collector_test.go`
 
-- [ ] `TestCollectFinalEnvironment` を実装
-  - [ ] DetailLevelSummary: nil を返す
-  - [ ] DetailLevelDetailed: nil を返す
-  - [ ] DetailLevelFull + showSensitive=true: すべての値を含む
-  - [ ] DetailLevelFull + showSensitive=false: センシティブ値をマスク
-  - [ ] 各 Source タイプのテスト
-  - [ ] 空の環境変数マップのテスト
+- [x] `TestCollectFinalEnvironment` を実装
+  - [x] DetailLevelSummary: nil を返す
+  - [x] DetailLevelDetailed: nil を返す
+  - [x] DetailLevelFull + showSensitive=true: すべての値を含む
+  - [x] DetailLevelFull + showSensitive=false: センシティブ値をマスク
+  - [x] 各 Source タイプのテスト
+  - [x] 空の環境変数マップのテスト
 
 **完了基準**:
 - すべてのテストケースが実装されている
@@ -300,10 +300,10 @@
 
 #### 4.2.7 Phase 2 の統合確認
 
-- [ ] `make test` が成功する
-- [ ] `make lint` が成功する
-- [ ] データ収集関数が各Detail Levelで正しく動作する
-- [ ] 既存のテストに影響がない
+- [x] `make test` が成功する
+- [x] `make lint` が成功する
+- [x] データ収集関数が各Detail Levelで正しく動作する
+- [x] 既存のテストに影響がない
 
 **完了基準**:
 - すべてのチェックがパスする
@@ -321,9 +321,9 @@
 
 ### 4.5 Phase 2 のマイルストーン
 
-- [ ] Phase 2 完了
+- [x] Phase 2 完了
 - [ ] コードレビュー完了
-- [ ] Phase 2 のコミット作成
+- [x] Phase 2 のコミット作成
 
 ## 5. Phase 3: フォーマット層
 
@@ -454,8 +454,8 @@
 
 #### 5.2.8 Phase 3 の統合確認
 
-- [ ] `make test` が成功する
-- [ ] `make lint` が成功する
+- [x] `make test` が成功する
+- [x] `make lint` が成功する
 - [ ] フォーマット関数が正しく動作する
 - [ ] 既存のテストに影響がない
 
@@ -658,8 +658,8 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 #### 6.2.11 Phase 4 の統合確認
 
-- [ ] `make test` が成功する
-- [ ] `make lint` が成功する
+- [x] `make test` が成功する
+- [x] `make lint` が成功する
 - [ ] `make build` が成功する
 - [ ] すべての統合テストがパスする
 - [ ] 既存のテストに影響がない（回帰なし）

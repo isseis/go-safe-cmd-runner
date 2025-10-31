@@ -337,11 +337,11 @@ func TestBuildProcessEnvironment_OriginTracking(t *testing.T) {
 	assert.Equal(t, "cmd_value", envMap["CMD_VAR"].Value)
 
 	// Verify origin tracking
-	assert.Equal(t, "System (filtered by allowlist)", envMap["HOME"].Origin)
-	assert.Equal(t, "System (filtered by allowlist)", envMap["PATH"].Origin)
-	assert.Equal(t, "Global", envMap["GLOBAL_VAR"].Origin)
-	assert.Equal(t, "Group[test-group]", envMap["GROUP_VAR"].Origin)
-	assert.Equal(t, "Command[test-command]", envMap["CMD_VAR"].Origin)
+	assert.Equal(t, "system", envMap["HOME"].Origin)
+	assert.Equal(t, "system", envMap["PATH"].Origin)
+	assert.Equal(t, "vars", envMap["GLOBAL_VAR"].Origin)
+	assert.Equal(t, "vars", envMap["GROUP_VAR"].Origin)
+	assert.Equal(t, "command", envMap["CMD_VAR"].Origin)
 
 	// Verify all environment variables have origin information
 	assert.Equal(t, 5, len(envMap))
@@ -376,8 +376,8 @@ func TestBuildProcessEnvironment_OriginOverride(t *testing.T) {
 	// Verify the final value is from command (highest priority)
 	assert.Equal(t, "from_command", envMap["COMMON"].Value)
 
-	// Verify origin reflects the actual source (Command, not System)
-	assert.Equal(t, "Command[test-command]", envMap["COMMON"].Origin)
+	// Verify origin reflects the actual source (command, not system)
+	assert.Equal(t, "command", envMap["COMMON"].Origin)
 }
 
 // TestBuildProcessEnvironment_SystemEnvFiltering tests that system environment variable filtering is tracked correctly
@@ -411,12 +411,12 @@ func TestBuildProcessEnvironment_SystemEnvFiltering(t *testing.T) {
 	assert.NotContains(t, envMap, "SECRET")
 
 	// Verify origins for allowlisted system vars
-	assert.Equal(t, "System (filtered by allowlist)", envMap["HOME"].Origin)
-	assert.Equal(t, "System (filtered by allowlist)", envMap["USER"].Origin)
+	assert.Equal(t, "system", envMap["HOME"].Origin)
+	assert.Equal(t, "system", envMap["USER"].Origin)
 
 	// Verify global var and its origin
 	assert.Equal(t, "global_value", envMap["GLOBAL_VAR"].Value)
-	assert.Equal(t, "Global", envMap["GLOBAL_VAR"].Origin)
+	assert.Equal(t, "vars", envMap["GLOBAL_VAR"].Origin)
 
 	// Verify PATH and SECRET are not in envMap
 	assert.NotContains(t, envMap, "PATH")

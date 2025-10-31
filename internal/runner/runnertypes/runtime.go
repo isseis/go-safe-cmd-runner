@@ -28,6 +28,7 @@ type RuntimeGlobal struct {
 	ExpandedVerifyFiles []string
 
 	// ExpandedEnv contains environment variables with all variable references expanded
+	// This includes variables from both env_import and vars sections
 	ExpandedEnv map[string]string
 
 	// ExpandedVars contains internal variables with all variable references expanded
@@ -111,6 +112,7 @@ type RuntimeGroup struct {
 	ExpandedVerifyFiles []string
 
 	// ExpandedEnv contains environment variables with all variable references expanded
+	// This includes variables from both env_import and vars sections
 	ExpandedEnv map[string]string
 
 	// ExpandedVars contains internal variables with all variable references expanded
@@ -225,6 +227,7 @@ type RuntimeCommand struct {
 	ExpandedArgs []string
 
 	// ExpandedEnv contains environment variables with all variable references expanded
+	// This includes variables from both env_import and vars sections
 	ExpandedEnv map[string]string
 
 	// ExpandedVars contains internal variables with all variable references expanded
