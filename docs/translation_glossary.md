@@ -228,6 +228,7 @@
 | プロセス | process | |
 | プロセス環境変数 | process environment variable | |
 | プロジェクト | project | |
+| プログラムによる処理 | programmatic processing | |
 
 ### R
 
