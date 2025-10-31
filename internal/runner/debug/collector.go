@@ -1,5 +1,3 @@
-//go:build test
-
 // Package debug provides debug information collection and formatting for dry-run mode.
 package debug
 
