@@ -78,6 +78,8 @@ type DryRunResourceManagerInterface interface {
 
 	// Dry-run specific
 	RecordAnalysis(analysis *ResourceAnalysis)
+	RecordGroupAnalysis(groupName string, debugInfo *DebugInfo) error
+	UpdateLastCommandDebugInfo(debugInfo *DebugInfo) error
 }
 
 // ExecutionResult unified result for both normal and dry-run

@@ -445,3 +445,220 @@ func TestDryRunResourceManager_ValidateOutputPath(t *testing.T) {
 		})
 	}
 }
+
+func TestDryRunResourceManager_RecordGroupAnalysis(t *testing.T) {
+	tests := []struct {
+		name        string
+		groupName   string
+		debugInfo   *DebugInfo
+		expectError bool
+	}{
+		{
+			name:      "Record group analysis with debug info",
+			groupName: "test-group",
+			debugInfo: &DebugInfo{
+				InheritanceAnalysis: &InheritanceAnalysis{
+					GlobalEnvImport: []string{"DB_HOST=db_host"},
+					GlobalAllowlist: []string{"PATH"},
+					InheritanceMode: runnertypes.InheritanceModeInherit,
+				},
+			},
+			expectError: false,
+		},
+		{
+			name:        "Record group analysis with nil debug info",
+			groupName:   "test-group-2",
+			debugInfo:   nil,
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manager := createTestDryRunResourceManager()
+
+			err := manager.RecordGroupAnalysis(tt.groupName, tt.debugInfo)
+
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+
+				// Verify the analysis was recorded
+				result := manager.GetDryRunResults()
+				require.NotNil(t, result)
+				require.Greater(t, len(result.ResourceAnalyses), 0)
+
+				// Find the group analysis
+				var foundAnalysis *ResourceAnalysis
+				for i := range result.ResourceAnalyses {
+					if result.ResourceAnalyses[i].Type == ResourceTypeGroup {
+						foundAnalysis = &result.ResourceAnalyses[i]
+						break
+					}
+				}
+
+				require.NotNil(t, foundAnalysis, "Group analysis should be recorded")
+				assert.Equal(t, ResourceTypeGroup, foundAnalysis.Type)
+				assert.Equal(t, OperationAnalyze, foundAnalysis.Operation)
+				assert.Equal(t, tt.groupName, foundAnalysis.Target)
+				assert.Equal(t, tt.debugInfo, foundAnalysis.DebugInfo)
+			}
+		})
+	}
+}
+
+func TestDryRunResourceManager_RecordGroupAnalysis_NilManager(t *testing.T) {
+	var manager *DryRunResourceManager
+	err := manager.RecordGroupAnalysis("test-group", nil)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "resource manager is nil")
+}
+
+func TestDryRunResourceManager_UpdateLastCommandDebugInfo(t *testing.T) {
+	tests := []struct {
+		name           string
+		setupFunc      func(*DryRunResourceManager)
+		debugInfo      *DebugInfo
+		expectError    bool
+		errorContains  string
+		validateResult func(*testing.T, *DryRunResourceManager)
+	}{
+		{
+			name: "Update last command with final environment",
+			setupFunc: func(m *DryRunResourceManager) {
+				// Record a command analysis first
+				cmd := createTestCommand()
+				group := createTestCommandGroup()
+				env := map[string]string{"TEST": "value"}
+				ctx := context.Background()
+				_, _ = m.ExecuteCommand(ctx, cmd, group, env)
+			},
+			debugInfo: &DebugInfo{
+				FinalEnvironment: &FinalEnvironment{
+					Variables: map[string]EnvironmentVariable{
+						"TEST": {
+							Value:  "value",
+							Source: "vars",
+							Masked: false,
+						},
+					},
+				},
+			},
+			expectError: false,
+			validateResult: func(t *testing.T, m *DryRunResourceManager) {
+				result := m.GetDryRunResults()
+				require.NotNil(t, result)
+				require.Greater(t, len(result.ResourceAnalyses), 0)
+
+				// Find the command analysis
+				var cmdAnalysis *ResourceAnalysis
+				for i := range result.ResourceAnalyses {
+					if result.ResourceAnalyses[i].Type == ResourceTypeCommand {
+						cmdAnalysis = &result.ResourceAnalyses[i]
+						break
+					}
+				}
+
+				require.NotNil(t, cmdAnalysis, "Command analysis should exist")
+				require.NotNil(t, cmdAnalysis.DebugInfo, "DebugInfo should be set")
+				require.NotNil(t, cmdAnalysis.DebugInfo.FinalEnvironment, "FinalEnvironment should be set")
+				assert.Len(t, cmdAnalysis.DebugInfo.FinalEnvironment.Variables, 1)
+			},
+		},
+		{
+			name: "Update last command when no command exists",
+			setupFunc: func(_ *DryRunResourceManager) {
+				// Don't execute any command
+			},
+			debugInfo: &DebugInfo{
+				FinalEnvironment: &FinalEnvironment{
+					Variables: map[string]EnvironmentVariable{},
+				},
+			},
+			expectError:   true,
+			errorContains: "no command resource analysis found",
+		},
+		{
+			name: "Merge with existing debug info",
+			setupFunc: func(m *DryRunResourceManager) {
+				// Record a command with existing debug info
+				cmd := createTestCommand()
+				group := createTestCommandGroup()
+				env := map[string]string{"TEST": "value"}
+				ctx := context.Background()
+				_, _ = m.ExecuteCommand(ctx, cmd, group, env)
+
+				// Update with inheritance analysis first
+				_ = m.UpdateLastCommandDebugInfo(&DebugInfo{
+					InheritanceAnalysis: &InheritanceAnalysis{
+						GlobalEnvImport: []string{"TEST=test"},
+						InheritanceMode: runnertypes.InheritanceModeInherit,
+					},
+				})
+			},
+			debugInfo: &DebugInfo{
+				FinalEnvironment: &FinalEnvironment{
+					Variables: map[string]EnvironmentVariable{
+						"TEST": {
+							Value:  "value",
+							Source: "vars",
+							Masked: false,
+						},
+					},
+				},
+			},
+			expectError: false,
+			validateResult: func(t *testing.T, m *DryRunResourceManager) {
+				result := m.GetDryRunResults()
+				require.NotNil(t, result)
+
+				// Find the command analysis
+				var cmdAnalysis *ResourceAnalysis
+				for i := range result.ResourceAnalyses {
+					if result.ResourceAnalyses[i].Type == ResourceTypeCommand {
+						cmdAnalysis = &result.ResourceAnalyses[i]
+						break
+					}
+				}
+
+				require.NotNil(t, cmdAnalysis)
+				require.NotNil(t, cmdAnalysis.DebugInfo)
+				assert.NotNil(t, cmdAnalysis.DebugInfo.InheritanceAnalysis, "InheritanceAnalysis should be preserved")
+				assert.NotNil(t, cmdAnalysis.DebugInfo.FinalEnvironment, "FinalEnvironment should be added")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manager := createTestDryRunResourceManager()
+
+			// Setup test state
+			if tt.setupFunc != nil {
+				tt.setupFunc(manager)
+			}
+
+			err := manager.UpdateLastCommandDebugInfo(tt.debugInfo)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains)
+				}
+			} else {
+				assert.NoError(t, err)
+				if tt.validateResult != nil {
+					tt.validateResult(t, manager)
+				}
+			}
+		})
+	}
+}
+
+func TestDryRunResourceManager_UpdateLastCommandDebugInfo_NilManager(t *testing.T) {
+	var manager *DryRunResourceManager
+	err := manager.UpdateLastCommandDebugInfo(nil)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "resource manager is nil")
+}

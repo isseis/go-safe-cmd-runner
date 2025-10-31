@@ -16,8 +16,10 @@ import (
 
 // Static errors
 var (
-	ErrPathResolverRequired  = errors.New("PathResolver is required for DryRunResourceManager")
-	ErrPathTraversalDetected = errors.New("path validation failed: path traversal detected")
+	ErrPathResolverRequired      = errors.New("PathResolver is required for DryRunResourceManager")
+	ErrPathTraversalDetected     = errors.New("path validation failed: path traversal detected")
+	ErrResourceManagerNil        = errors.New("resource manager is nil")
+	ErrNoCommandResourceAnalysis = errors.New("no command resource analysis found to update")
 )
 
 // PathResolver interface for resolving command paths
@@ -432,4 +434,65 @@ func (d *DryRunResourceManager) RecordAnalysis(analysis *ResourceAnalysis) {
 	defer d.mu.Unlock()
 
 	d.resourceAnalyses = append(d.resourceAnalyses, *analysis)
+}
+
+// RecordGroupAnalysis records a group-level resource analysis with debug info
+func (d *DryRunResourceManager) RecordGroupAnalysis(groupName string, debugInfo *DebugInfo) error {
+	if d == nil {
+		return ErrResourceManagerNil
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	analysis := ResourceAnalysis{
+		Type:      ResourceTypeGroup,
+		Operation: OperationAnalyze,
+		Target:    groupName,
+		Impact: ResourceImpact{
+			Description: "Group configuration analysis",
+			Reversible:  true,
+			Persistent:  false,
+		},
+		Timestamp: time.Now(),
+		Parameters: map[string]any{
+			"group_name": groupName,
+		},
+		DebugInfo: debugInfo,
+	}
+
+	d.resourceAnalyses = append(d.resourceAnalyses, analysis)
+	return nil
+}
+
+// UpdateLastCommandDebugInfo updates the most recent command ResourceAnalysis with debug info
+// This should be called after ExecuteCommand to add final environment information
+func (d *DryRunResourceManager) UpdateLastCommandDebugInfo(debugInfo *DebugInfo) error {
+	if d == nil {
+		return ErrResourceManagerNil
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	// Find the last command resource analysis
+	for i := len(d.resourceAnalyses) - 1; i >= 0; i-- {
+		if d.resourceAnalyses[i].Type == ResourceTypeCommand {
+			// Merge with existing debug info if present
+			if d.resourceAnalyses[i].DebugInfo == nil {
+				d.resourceAnalyses[i].DebugInfo = debugInfo
+			} else {
+				// Merge fields
+				if debugInfo.FinalEnvironment != nil {
+					d.resourceAnalyses[i].DebugInfo.FinalEnvironment = debugInfo.FinalEnvironment
+				}
+				if debugInfo.InheritanceAnalysis != nil {
+					d.resourceAnalyses[i].DebugInfo.InheritanceAnalysis = debugInfo.InheritanceAnalysis
+				}
+			}
+			return nil
+		}
+	}
+
+	return ErrNoCommandResourceAnalysis
 }

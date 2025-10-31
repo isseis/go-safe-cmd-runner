@@ -38,6 +38,7 @@ type DefaultGroupExecutor struct {
 	notificationFunc    groupNotificationFunc
 	isDryRun            bool
 	dryRunDetailLevel   resource.DryRunDetailLevel
+	dryRunFormat        resource.OutputFormat
 	dryRunShowSensitive bool
 	keepTempDirs        bool
 	securityLogger      *logging.SecurityLogger
@@ -80,10 +81,12 @@ func NewDefaultGroupExecutor(
 	// Extract dry-run settings
 	isDryRun := opts.dryRunOptions != nil
 	dryRunDetailLevel := resource.DetailLevelSummary
+	dryRunFormat := resource.OutputFormatText
 	var showSensitive bool
 
 	if isDryRun {
 		dryRunDetailLevel = opts.dryRunOptions.DetailLevel
+		dryRunFormat = opts.dryRunOptions.OutputFormat
 		showSensitive = opts.dryRunOptions.ShowSensitive
 	}
 
@@ -103,6 +106,7 @@ func NewDefaultGroupExecutor(
 		notificationFunc:    opts.notificationFunc,
 		isDryRun:            isDryRun,
 		dryRunDetailLevel:   dryRunDetailLevel,
+		dryRunFormat:        dryRunFormat,
 		dryRunShowSensitive: showSensitive,
 		keepTempDirs:        opts.keepTempDirs,
 		securityLogger:      secLogger,
@@ -129,10 +133,7 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 
 	// Print debug information in dry-run mode
 	if ge.isDryRun {
-		_, _ = fmt.Fprintf(os.Stdout, "\n===== Variable Expansion Debug Information =====\n\n")
-
-		// Print from_env inheritance analysis
-		debug.PrintFromEnvInheritance(os.Stdout, &ge.config.Global, runtimeGroup)
+		ge.outputDryRunDebugInfo(groupSpec, runtimeGroup, runtimeGlobal)
 	}
 
 	// Defer notification to ensure it's sent regardless of success or failure
@@ -169,83 +170,14 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 	runtimeGroup.ExpandedVars[variable.WorkDirKey()] = workDir
 
 	// 6. Verify group files before execution
-	if ge.verificationManager != nil {
-		result, err := ge.verificationManager.VerifyGroupFiles(groupSpec)
-		if err != nil {
-			// Return the error directly (it already contains all necessary information)
-			return err
-		}
-
-		if result.TotalFiles > 0 {
-			slog.Info("Group file verification completed",
-				"group", groupSpec.Name,
-				"verified_files", result.VerifiedFiles,
-				"skipped_files", len(result.SkippedFiles),
-				"duration_ms", result.Duration.Milliseconds())
-		}
+	if err := ge.verifyGroupFiles(groupSpec); err != nil {
+		return err
 	}
 
 	// 7. Execute commands in the group sequentially
-	var lastCommand string
-	var lastOutput string
-	var lastExitCode int
-	for i := range groupSpec.Commands {
-		cmdSpec := &groupSpec.Commands[i]
-		slog.Info("Executing command", "command", cmdSpec.Name, "index", i+1, "total", len(groupSpec.Commands))
-
-		// 7.1 Expand command configuration
-		// Pass global timeout for timeout resolution hierarchy
-		runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup, runtimeGlobal, runtimeGlobal.Timeout())
-		if err != nil {
-			// Set failure result for notification
-			executionResult = &groupExecutionResult{
-				status:      GroupExecutionStatusError,
-				exitCode:    1,
-				lastCommand: cmdSpec.Name,
-				output:      lastOutput,
-				errorMsg:    fmt.Sprintf("failed to expand command[%s]: %v", cmdSpec.Name, err),
-			}
-			return fmt.Errorf("failed to expand command[%s]: %w", cmdSpec.Name, err)
-		}
-
-		// 7.2 Determine effective working directory for the command
-		workDir, err := ge.resolveCommandWorkDir(runtimeCmd, runtimeGroup)
-		if err != nil {
-			// Set failure result for notification
-			executionResult = &groupExecutionResult{
-				status:      GroupExecutionStatusError,
-				exitCode:    1,
-				lastCommand: cmdSpec.Name,
-				output:      lastOutput,
-				errorMsg:    fmt.Sprintf("failed to resolve command workdir[%s]: %v", cmdSpec.Name, err),
-			}
-			return fmt.Errorf("failed to resolve command workdir[%s]: %w", cmdSpec.Name, err)
-		}
-		runtimeCmd.EffectiveWorkDir = workDir
-
-		// Note: EffectiveTimeout is already set by NewRuntimeCommand in ExpandCommand
-
-		lastCommand = cmdSpec.Name
-
-		// 7.4 Execute the command
-		newOutput, exitCode, err := ge.executeSingleCommand(ctx, runtimeCmd, groupSpec, runtimeGroup, runtimeGlobal)
-		if err != nil {
-			// Set failure result for notification
-			executionResult = &groupExecutionResult{
-				status:      GroupExecutionStatusError,
-				exitCode:    exitCode,
-				lastCommand: lastCommand,
-				output:      lastOutput,
-				errorMsg:    err.Error(),
-			}
-			return err
-		}
-
-		// Update last output if command produced output
-		if newOutput != "" {
-			lastOutput = newOutput
-		}
-		lastExitCode = exitCode
+	lastCommand, lastOutput, lastExitCode, err := ge.executeAllCommands(ctx, groupSpec, runtimeGroup, runtimeGlobal, &executionResult)
+	if err != nil {
+		return err
 	}
 
 	// Set success result for notification
@@ -259,6 +191,134 @@ func (ge *DefaultGroupExecutor) ExecuteGroup(ctx context.Context, groupSpec *run
 
 	slog.Info("Group completed successfully", "name", groupSpec.Name)
 	return nil
+}
+
+// executeAllCommands executes all commands in a group sequentially
+// Returns: (lastCommand, lastOutput, lastExitCode, error)
+func (ge *DefaultGroupExecutor) executeAllCommands(
+	ctx context.Context,
+	groupSpec *runnertypes.GroupSpec,
+	runtimeGroup *runnertypes.RuntimeGroup,
+	runtimeGlobal *runnertypes.RuntimeGlobal,
+	executionResult **groupExecutionResult,
+) (string, string, int, error) {
+	var lastCommand string
+	var lastOutput string
+	var lastExitCode int
+
+	for i := range groupSpec.Commands {
+		cmdSpec := &groupSpec.Commands[i]
+		slog.Info("Executing command", "command", cmdSpec.Name, "index", i+1, "total", len(groupSpec.Commands))
+
+		// Expand command configuration
+		runtimeCmd, err := config.ExpandCommand(cmdSpec, runtimeGroup, runtimeGlobal, runtimeGlobal.Timeout())
+		if err != nil {
+			// Set failure result for notification
+			*executionResult = &groupExecutionResult{
+				status:      GroupExecutionStatusError,
+				exitCode:    1,
+				lastCommand: cmdSpec.Name,
+				output:      lastOutput,
+				errorMsg:    fmt.Sprintf("failed to expand command[%s]: %v", cmdSpec.Name, err),
+			}
+			return lastCommand, lastOutput, 1, fmt.Errorf("failed to expand command[%s]: %w", cmdSpec.Name, err)
+		}
+
+		// Determine effective working directory for the command
+		workDir, err := ge.resolveCommandWorkDir(runtimeCmd, runtimeGroup)
+		if err != nil {
+			// Set failure result for notification
+			*executionResult = &groupExecutionResult{
+				status:      GroupExecutionStatusError,
+				exitCode:    1,
+				lastCommand: cmdSpec.Name,
+				output:      lastOutput,
+				errorMsg:    fmt.Sprintf("failed to resolve command workdir[%s]: %v", cmdSpec.Name, err),
+			}
+			return lastCommand, lastOutput, 1, fmt.Errorf("failed to resolve command workdir[%s]: %w", cmdSpec.Name, err)
+		}
+		runtimeCmd.EffectiveWorkDir = workDir
+
+		lastCommand = cmdSpec.Name
+
+		// Execute the command
+		newOutput, exitCode, err := ge.executeSingleCommand(ctx, runtimeCmd, groupSpec, runtimeGroup, runtimeGlobal)
+		if err != nil {
+			// Set failure result for notification
+			*executionResult = &groupExecutionResult{
+				status:      GroupExecutionStatusError,
+				exitCode:    exitCode,
+				lastCommand: lastCommand,
+				output:      lastOutput,
+				errorMsg:    err.Error(),
+			}
+			return lastCommand, lastOutput, exitCode, err
+		}
+
+		// Update last output if command produced output
+		if newOutput != "" {
+			lastOutput = newOutput
+		}
+		lastExitCode = exitCode
+	}
+
+	return lastCommand, lastOutput, lastExitCode, nil
+}
+
+// verifyGroupFiles verifies files specified in the group before execution
+func (ge *DefaultGroupExecutor) verifyGroupFiles(groupSpec *runnertypes.GroupSpec) error {
+	if ge.verificationManager == nil {
+		return nil
+	}
+
+	result, err := ge.verificationManager.VerifyGroupFiles(groupSpec)
+	if err != nil {
+		// Return the error directly (it already contains all necessary information)
+		return err
+	}
+
+	if result.TotalFiles > 0 {
+		slog.Info("Group file verification completed",
+			"group", groupSpec.Name,
+			"verified_files", result.VerifiedFiles,
+			"skipped_files", len(result.SkippedFiles),
+			"duration_ms", result.Duration.Milliseconds())
+	}
+
+	return nil
+}
+
+// outputDryRunDebugInfo outputs debug information in dry-run mode
+func (ge *DefaultGroupExecutor) outputDryRunDebugInfo(groupSpec *runnertypes.GroupSpec, runtimeGroup *runnertypes.RuntimeGroup, runtimeGlobal *runnertypes.RuntimeGlobal) {
+	// Collect inheritance analysis data
+	analysis := debug.CollectInheritanceAnalysis(
+		runtimeGlobal,
+		runtimeGroup,
+		ge.dryRunDetailLevel,
+	)
+
+	// Format based on output format
+	if ge.dryRunFormat == resource.OutputFormatJSON {
+		// Record to ResourceManager for JSON output
+		debugInfo := &resource.DebugInfo{
+			InheritanceAnalysis: analysis,
+		}
+		// Cast resourceManager to DryRunResourceManagerInterface
+		if dryRunManager, ok := ge.resourceManager.(resource.DryRunResourceManagerInterface); ok {
+			err := dryRunManager.RecordGroupAnalysis(groupSpec.Name, debugInfo)
+			if err != nil {
+				// Log error but continue execution
+				slog.Warn("Failed to record group analysis", "error", err, "group", groupSpec.Name)
+			}
+		}
+	} else {
+		// Text format: output immediately
+		_, _ = fmt.Fprintf(os.Stdout, "\n===== Variable Expansion Debug Information =====\n\n")
+		output := debug.FormatInheritanceAnalysisText(analysis, groupSpec.Name)
+		if output != "" {
+			_, _ = fmt.Fprint(os.Stdout, output)
+		}
+	}
 }
 
 // executeCommandInGroup executes a command within a specific group context
@@ -282,9 +342,36 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 		return nil, fmt.Errorf("resolved environment variables security validation failed: %w", err)
 	}
 
-	// Print final environment in dry-run mode with full detail level
-	if ge.isDryRun && ge.dryRunDetailLevel == resource.DetailLevelFull {
-		debug.PrintFinalEnvironment(os.Stdout, envMap, ge.dryRunShowSensitive)
+	// Print final environment in dry-run mode
+	if ge.isDryRun {
+		// Collect final environment data
+		finalEnv := debug.CollectFinalEnvironment(
+			envMap,
+			ge.dryRunDetailLevel,
+			ge.dryRunShowSensitive,
+		)
+
+		if finalEnv != nil {
+			if ge.dryRunFormat == resource.OutputFormatJSON {
+				// Update the command's ResourceAnalysis with debug info
+				debugInfo := &resource.DebugInfo{
+					FinalEnvironment: finalEnv,
+				}
+				// Cast resourceManager to DryRunResourceManagerInterface
+				if dryRunManager, ok := ge.resourceManager.(resource.DryRunResourceManagerInterface); ok {
+					err := dryRunManager.UpdateLastCommandDebugInfo(debugInfo)
+					if err != nil {
+						slog.Warn("Failed to update command debug info", "error", err, "command", cmd.Name())
+					}
+				}
+			} else {
+				// Text format: output immediately
+				output := debug.FormatFinalEnvironmentText(finalEnv)
+				if output != "" {
+					_, _ = fmt.Fprint(os.Stdout, output)
+				}
+			}
+		}
 	}
 
 	// Resolve and validate command path if verification manager is available
