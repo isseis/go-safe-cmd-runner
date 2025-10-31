@@ -2,6 +2,8 @@
 package debug
 
 import (
+	"sort"
+
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
