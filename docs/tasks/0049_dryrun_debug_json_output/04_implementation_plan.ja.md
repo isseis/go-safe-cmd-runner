@@ -46,9 +46,9 @@
 
 **ファイル**: `internal/runner/resource/types.go`
 
-- [ ] `ResourceTypeGroup` 定数を追加
-- [ ] `OperationAnalyze` 定数を追加
-- [ ] 既存の定数リストのコメントを更新
+- [x] `ResourceTypeGroup` 定数を追加
+- [x] `OperationAnalyze` 定数を追加
+- [x] 既存の定数リストのコメントを更新
 
 **完了基準**:
 - 新しい定数が正しく定義されている
@@ -60,9 +60,9 @@
 
 **ファイル**: `internal/runner/resource/types.go`
 
-- [ ] `DebugInfo` 構造体を定義
-- [ ] JSONタグ (`omitempty`) を適切に設定
-- [ ] ドキュメントコメントを追加
+- [x] `DebugInfo` 構造体を定義
+- [x] JSONタグ (`omitempty`) を適切に設定
+- [x] ドキュメントコメントを追加
 
 **完了基準**:
 - 構造体が定義されている
@@ -75,12 +75,12 @@
 
 **ファイル**: `internal/runner/resource/types.go`
 
-- [ ] `InheritanceAnalysis` 構造体を定義
-- [ ] 設定値フィールドを定義 (GlobalEnvImport, GlobalAllowlist, GroupEnvImport, GroupAllowlist)
-- [ ] 計算値フィールドを定義 (InheritanceMode)
-- [ ] 差分情報フィールドを定義 (InheritedVariables, RemovedAllowlistVariables, UnavailableEnvImportVariables)
-- [ ] 各フィールドに適切なJSONタグを設定 (`omitempty` を差分情報フィールドに付与)
-- [ ] ドキュメントコメントを追加
+- [x] `InheritanceAnalysis` 構造体を定義
+- [x] 設定値フィールドを定義 (GlobalEnvImport, GlobalAllowlist, GroupEnvImport, GroupAllowlist)
+- [x] 計算値フィールドを定義 (InheritanceMode)
+- [x] 差分情報フィールドを定義 (InheritedVariables, RemovedAllowlistVariables, UnavailableEnvImportVariables)
+- [x] 各フィールドに適切なJSONタグを設定 (`omitempty` を差分情報フィールドに付与)
+- [x] ドキュメントコメントを追加
 
 **完了基準**:
 - すべてのフィールドが正しく定義されている
@@ -93,10 +93,10 @@
 
 **ファイル**: `internal/runner/resource/types.go`
 
-- [ ] `FinalEnvironment` 構造体を定義
-- [ ] `EnvironmentVariable` 構造体を定義
-- [ ] JSONタグを適切に設定
-- [ ] ドキュメントコメントを追加 (特にSource フィールドの値の説明)
+- [x] `FinalEnvironment` 構造体を定義
+- [x] `EnvironmentVariable` 構造体を定義
+- [x] JSONタグを適切に設定
+- [x] ドキュメントコメントを追加 (特にSource フィールドの値の説明)
 
 **完了基準**:
 - 両方の構造体が定義されている
@@ -109,9 +109,9 @@
 
 **ファイル**: `internal/runner/resource/types.go`
 
-- [ ] `ResourceAnalysis` に `DebugInfo *DebugInfo` フィールドを追加
-- [ ] JSONタグに `omitempty` を設定
-- [ ] ドキュメントコメントを追加
+- [x] `ResourceAnalysis` に `DebugInfo *DebugInfo` フィールドを追加
+- [x] JSONタグに `omitempty` を設定
+- [x] ドキュメントコメントを追加
 
 **完了基準**:
 - フィールドが追加されている
@@ -121,11 +121,11 @@
 
 #### 3.2.6 InheritanceMode の JSON 変換メソッド実装
 
-**ファイル**: `internal/runner/runnertypes/inheritance_mode.go`
+**ファイル**: `internal/runner/runnertypes/config.go`
 
-- [ ] `MarshalJSON()` メソッドを実装
-- [ ] `UnmarshalJSON()` メソッドを実装
-- [ ] エラーハンドリングを追加
+- [x] `MarshalJSON()` メソッドを実装
+- [x] `UnmarshalJSON()` メソッドを実装
+- [x] エラーハンドリングを追加 (ErrInvalidInheritanceMode)
 
 **完了基準**:
 - 両方のメソッドが実装されている
@@ -135,17 +135,17 @@
 
 #### 3.2.7 InheritanceMode JSON 変換のユニットテスト
 
-**ファイル**: `internal/runner/runnertypes/inheritance_mode_test.go`
+**ファイル**: `internal/runner/runnertypes/config_test.go`
 
-- [ ] `TestInheritanceMode_MarshalJSON` を実装
-  - [ ] InheritanceModeInherit -> "inherit"
-  - [ ] InheritanceModeExplicit -> "explicit"
-  - [ ] InheritanceModeReject -> "reject"
-- [ ] `TestInheritanceMode_UnmarshalJSON` を実装
-  - [ ] "inherit" -> InheritanceModeInherit
-  - [ ] "explicit" -> InheritanceModeExplicit
-  - [ ] "reject" -> InheritanceModeReject
-  - [ ] 不正な値でエラーが返される
+- [x] `TestInheritanceMode_MarshalJSON` を実装
+  - [x] InheritanceModeInherit -> "inherit"
+  - [x] InheritanceModeExplicit -> "explicit"
+  - [x] InheritanceModeReject -> "reject"
+- [x] `TestInheritanceMode_UnmarshalJSON` を実装
+  - [x] "inherit" -> InheritanceModeInherit
+  - [x] "explicit" -> InheritanceModeExplicit
+  - [x] "reject" -> InheritanceModeReject
+  - [x] 不正な値でエラーが返される
 
 **完了基準**:
 - すべてのテストケースが実装されている
@@ -156,10 +156,10 @@
 
 #### 3.2.8 Phase 1 の統合確認
 
-- [ ] `make test` が成功する
-- [ ] `make lint` が成功する
-- [ ] すべての新規構造体が正しくJSON変換される
-- [ ] 既存のテストに影響がない (回帰テスト)
+- [x] `make test` が成功する
+- [x] `make lint` が成功する
+- [x] すべての新規構造体が正しくJSON変換される
+- [x] 既存のテストに影響がない (回帰テスト)
 
 **完了基準**:
 - すべてのチェックがパスする
@@ -177,7 +177,7 @@
 
 ### 3.5 Phase 1 のマイルストーン
 
-- [ ] Phase 1 完了
+- [x] Phase 1 完了
 - [ ] コードレビュー完了
 - [ ] Phase 1 のコミット作成
 

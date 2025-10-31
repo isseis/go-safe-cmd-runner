@@ -3,6 +3,7 @@
 package runnertypes
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -172,6 +173,34 @@ func (m InheritanceMode) String() string {
 	}
 }
 
+// MarshalJSON implements json.Marshaler interface
+// Returns the string representation of InheritanceMode for JSON output
+func (m InheritanceMode) MarshalJSON() ([]byte, error) {
+	return json.Marshal(m.String())
+}
+
+// UnmarshalJSON implements json.Unmarshaler interface
+// Parses string representation of InheritanceMode from JSON
+func (m *InheritanceMode) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+
+	switch s {
+	case "inherit":
+		*m = InheritanceModeInherit
+	case "explicit":
+		*m = InheritanceModeExplicit
+	case "reject":
+		*m = InheritanceModeReject
+	default:
+		return fmt.Errorf("%w: %s", ErrInvalidInheritanceMode, s)
+	}
+
+	return nil
+}
+
 // Operation represents different types of privileged operations
 type Operation string
 
@@ -207,6 +236,7 @@ var (
 	ErrCommandSecurityViolation         = errors.New("command security violation: risk level too high")
 	ErrInvalidEnvironmentVariableFormat = errors.New("invalid environment variable format")
 	ErrDuplicateEnvironmentVariable     = errors.New("duplicate environment variable")
+	ErrInvalidInheritanceMode           = errors.New("invalid inheritance mode")
 )
 
 // PrivilegeManager interface defines methods for privilege management
