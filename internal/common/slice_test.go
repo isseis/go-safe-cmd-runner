@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestSafeStringSlice(t *testing.T) {
+func TestCloneOrEmpty(t *testing.T) {
 	t.Run("returns copy of non-nil slice", func(t *testing.T) {
 		input := []string{"a", "b", "c"}
 		result := CloneOrEmpty(input)
@@ -71,7 +71,7 @@ func TestSafeStringSlice(t *testing.T) {
 	})
 }
 
-func TestSetDifference(t *testing.T) {
+func TestSetDifferenceToSlice(t *testing.T) {
 	t.Run("returns elements in setA not in setB", func(t *testing.T) {
 		setA := map[string]struct{}{
 			"a": {},

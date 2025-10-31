@@ -31,11 +31,6 @@ type RuntimeGlobal struct {
 	// This includes variables from both env_import and vars sections
 	ExpandedEnv map[string]string
 
-	// ExpandedEnvFromImport contains environment variables that originated from env_import
-	// This allows tracking which variables came from env_import vs vars section
-	// Key: variable name, Value: expanded value
-	ExpandedEnvFromImport map[string]string
-
 	// ExpandedVars contains internal variables with all variable references expanded
 	ExpandedVars map[string]string
 
@@ -53,13 +48,12 @@ func NewRuntimeGlobal(spec *GlobalSpec) (*RuntimeGlobal, error) {
 	}
 
 	return &RuntimeGlobal{
-		Spec:                  spec,
-		timeout:               common.NewFromIntPtr(spec.Timeout),
-		ExpandedVerifyFiles:   []string{},
-		ExpandedEnv:           make(map[string]string),
-		ExpandedEnvFromImport: make(map[string]string),
-		ExpandedVars:          make(map[string]string),
-		SystemEnv:             make(map[string]string),
+		Spec:                spec,
+		timeout:             common.NewFromIntPtr(spec.Timeout),
+		ExpandedVerifyFiles: []string{},
+		ExpandedEnv:         make(map[string]string),
+		ExpandedVars:        make(map[string]string),
+		SystemEnv:           make(map[string]string),
 	}, nil
 }
 
@@ -121,11 +115,6 @@ type RuntimeGroup struct {
 	// This includes variables from both env_import and vars sections
 	ExpandedEnv map[string]string
 
-	// ExpandedEnvFromImport contains environment variables that originated from env_import
-	// This allows tracking which variables came from env_import vs vars section
-	// Key: variable name, Value: expanded value
-	ExpandedEnvFromImport map[string]string
-
 	// ExpandedVars contains internal variables with all variable references expanded
 	ExpandedVars map[string]string
 
@@ -181,12 +170,11 @@ func NewRuntimeGroup(spec *GroupSpec) (*RuntimeGroup, error) {
 		return nil, ErrNilSpec
 	}
 	return &RuntimeGroup{
-		Spec:                  spec,
-		ExpandedVerifyFiles:   []string{},
-		ExpandedEnv:           make(map[string]string),
-		ExpandedEnvFromImport: make(map[string]string),
-		ExpandedVars:          make(map[string]string),
-		Commands:              []*RuntimeCommand{},
+		Spec:                spec,
+		ExpandedVerifyFiles: []string{},
+		ExpandedEnv:         make(map[string]string),
+		ExpandedVars:        make(map[string]string),
+		Commands:            []*RuntimeCommand{},
 	}, nil
 }
 
@@ -242,11 +230,6 @@ type RuntimeCommand struct {
 	// This includes variables from both env_import and vars sections
 	ExpandedEnv map[string]string
 
-	// ExpandedEnvFromImport contains environment variables that originated from env_import
-	// This allows tracking which variables came from env_import vs vars section
-	// Key: variable name, Value: expanded value
-	ExpandedEnvFromImport map[string]string
-
 	// ExpandedVars contains internal variables with all variable references expanded
 	ExpandedVars map[string]string
 
@@ -280,14 +263,13 @@ func NewRuntimeCommand(spec *CommandSpec, globalTimeout common.Timeout, groupNam
 	)
 
 	return &RuntimeCommand{
-		Spec:                  spec,
-		timeout:               commandTimeout,
-		ExpandedArgs:          []string{},
-		ExpandedEnv:           make(map[string]string),
-		ExpandedEnvFromImport: make(map[string]string),
-		ExpandedVars:          make(map[string]string),
-		EffectiveTimeout:      effectiveTimeout,
-		TimeoutResolution:     resolutionContext,
+		Spec:              spec,
+		timeout:           commandTimeout,
+		ExpandedArgs:      []string{},
+		ExpandedEnv:       make(map[string]string),
+		ExpandedVars:      make(map[string]string),
+		EffectiveTimeout:  effectiveTimeout,
+		TimeoutResolution: resolutionContext,
 	}, nil
 }
 
