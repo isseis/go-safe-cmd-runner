@@ -257,7 +257,7 @@ func TestFormatFinalEnvironmentText_WithVariables(t *testing.T) {
 			"API_KEY": {
 				Value:  "secret123",
 				Source: "env_import",
-				Masked: false,
+				Masked: true, // Masked because it's a sensitive variable
 			},
 			"DB_HOST": {
 				Value:  "localhost",
@@ -281,7 +281,7 @@ func TestFormatFinalEnvironmentText_WithVariables(t *testing.T) {
 	}
 
 	// Check variables are sorted and formatted correctly
-	// API_KEY is automatically masked because it's a sensitive variable name
+	// API_KEY is masked because Masked field is set to true
 	if !strings.Contains(result, "API_KEY=[REDACTED]") {
 		t.Error("Expected API_KEY variable not found")
 	}
@@ -428,6 +428,7 @@ func TestFormatConsistency_FinalEnvironment(t *testing.T) {
 	existingOutput := existingBuf.String()
 
 	// Create corresponding FinalEnvironment
+	// API_KEY should be masked to match PrintFinalEnvironment behavior with showSensitive=false
 	finalEnv := &resource.FinalEnvironment{
 		Variables: map[string]resource.EnvironmentVariable{
 			"PATH": {
@@ -438,7 +439,7 @@ func TestFormatConsistency_FinalEnvironment(t *testing.T) {
 			"API_KEY": {
 				Value:  "secret123",
 				Source: "env_import",
-				Masked: false,
+				Masked: true, // Masked to match showSensitive=false behavior
 			},
 		},
 	}

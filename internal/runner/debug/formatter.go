@@ -155,9 +155,10 @@ func FormatFinalEnvironmentText(env *resource.FinalEnvironment) string {
 	for _, k := range keys {
 		envVar := env.Variables[k]
 
-		// Determine display value - match existing PrintFinalEnvironment logic
+		// Determine display value - use Masked field only
+		// Masking decision should have been made when FinalEnvironment was created
 		displayValue := envVar.Value
-		if envVar.Masked || defaultSensitivePatterns.IsSensitiveEnvVar(k) {
+		if envVar.Masked {
 			displayValue = "[REDACTED]"
 		} else if len(displayValue) > MaxDisplayLength {
 			// Truncate long values for readability (only if not masked)
