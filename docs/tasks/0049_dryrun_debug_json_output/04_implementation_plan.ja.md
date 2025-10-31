@@ -179,7 +179,7 @@
 
 - [x] Phase 1 完了
 - [ ] コードレビュー完了
-- [ ] Phase 1 のコミット作成
+- [x] Phase 1 のコミット作成
 
 ## 4. Phase 2: データ収集層
 
@@ -192,9 +192,9 @@
 
 **ファイル**: `internal/runner/debug/collector.go` (新規作成)
 
-- [ ] ファイルを作成
-- [ ] パッケージコメントを追加
-- [ ] 必要なインポートを追加
+- [x] ファイルを作成
+- [x] パッケージコメントを追加
+- [x] 必要なインポートを追加
 
 **完了基準**:
 - ファイルが作成されている
@@ -206,10 +206,10 @@
 
 **ファイル**: `internal/runner/debug/collector.go`
 
-- [ ] `safeStringSlice()` を実装
-- [ ] `stringSliceToSet()` を実装
-- [ ] `setDifference()` を実装
-- [ ] `extractInternalVarNames()` を実装
+- [x] `safeStringSlice()` を実装
+- [x] `stringSliceToSet()` を実装
+- [x] `setDifference()` を実装
+- [x] `extractInternalVarNames()` を実装
 
 **完了基準**:
 - すべてのヘルパー関数が実装されている
@@ -222,15 +222,15 @@
 
 **ファイル**: `internal/runner/debug/collector.go`
 
-- [ ] 関数シグネチャを定義
-- [ ] DetailLevelSummary の場合に nil を返す処理を実装
-- [ ] 設定値フィールドの収集を実装
-- [ ] 計算値フィールド (InheritanceMode) の設定を実装
-- [ ] DetailLevelFull の場合の差分情報計算を実装
-  - [ ] InheritedVariables の計算
-  - [ ] RemovedAllowlistVariables の計算
-  - [ ] UnavailableEnvImportVariables の計算
-- [ ] ドキュメントコメントを追加
+- [x] 関数シグネチャを定義
+- [x] DetailLevelSummary の場合に nil を返す処理を実装
+- [x] 設定値フィールドの収集を実装
+- [x] 計算値フィールド (InheritanceMode) の設定を実装
+- [x] DetailLevelFull の場合の差分情報計算を実装
+  - [x] InheritedVariables の計算
+  - [x] RemovedAllowlistVariables の計算
+  - [x] UnavailableEnvImportVariables の計算
+- [x] ドキュメントコメントを追加
 
 **完了基準**:
 - 関数が完全に実装されている
@@ -243,16 +243,16 @@
 
 **ファイル**: `internal/runner/debug/collector_test.go` (新規作成)
 
-- [ ] `TestCollectInheritanceAnalysis` を実装
-  - [ ] DetailLevelSummary: nil を返す
-  - [ ] DetailLevelDetailed: 基本フィールドのみ
-  - [ ] DetailLevelFull: すべてのフィールド
-  - [ ] InheritanceModeInherit の場合
-  - [ ] InheritanceModeExplicit の場合
-  - [ ] InheritanceModeReject の場合
-  - [ ] nil / 空スライスのエッジケース
-- [ ] テストヘルパー関数を実装
-- [ ] テストフィクスチャを作成
+- [x] `TestCollectInheritanceAnalysis` を実装
+  - [x] DetailLevelSummary: nil を返す
+  - [x] DetailLevelDetailed: 基本フィールドのみ
+  - [x] DetailLevelFull: すべてのフィールド
+  - [x] InheritanceModeInherit の場合
+  - [x] InheritanceModeExplicit の場合
+  - [x] InheritanceModeReject の場合
+  - [x] nil / 空スライスのエッジケース
+- [x] テストヘルパー関数を実装
+- [x] テストフィクスチャを作成
 
 **完了基準**:
 - すべてのテストケースが実装されている
@@ -265,12 +265,12 @@
 
 **ファイル**: `internal/runner/debug/collector.go`
 
-- [ ] 関数シグネチャを定義
-- [ ] DetailLevelFull 以外で nil を返す処理を実装
-- [ ] 環境変数マップをループ処理
-- [ ] センシティブ情報のマスキング処理を実装
-- [ ] `mapEnvVarSource()` ヘルパー関数を実装
-- [ ] ドキュメントコメントを追加
+- [x] 関数シグネチャを定義
+- [x] DetailLevelFull 以外で nil を返す処理を実装
+- [x] 環境変数マップをループ処理
+- [x] センシティブ情報のマスキング処理を実装
+- [x] `mapEnvVarSource()` ヘルパー関数を実装
+- [x] ドキュメントコメントを追加
 
 **完了基準**:
 - 関数が完全に実装されている
@@ -283,13 +283,13 @@
 
 **ファイル**: `internal/runner/debug/collector_test.go`
 
-- [ ] `TestCollectFinalEnvironment` を実装
-  - [ ] DetailLevelSummary: nil を返す
-  - [ ] DetailLevelDetailed: nil を返す
-  - [ ] DetailLevelFull + showSensitive=true: すべての値を含む
-  - [ ] DetailLevelFull + showSensitive=false: センシティブ値をマスク
-  - [ ] 各 Source タイプのテスト
-  - [ ] 空の環境変数マップのテスト
+- [x] `TestCollectFinalEnvironment` を実装
+  - [x] DetailLevelSummary: nil を返す
+  - [x] DetailLevelDetailed: nil を返す
+  - [x] DetailLevelFull + showSensitive=true: すべての値を含む
+  - [x] DetailLevelFull + showSensitive=false: センシティブ値をマスク
+  - [x] 各 Source タイプのテスト
+  - [x] 空の環境変数マップのテスト
 
 **完了基準**:
 - すべてのテストケースが実装されている
@@ -300,10 +300,10 @@
 
 #### 4.2.7 Phase 2 の統合確認
 
-- [ ] `make test` が成功する
-- [ ] `make lint` が成功する
-- [ ] データ収集関数が各Detail Levelで正しく動作する
-- [ ] 既存のテストに影響がない
+- [x] `make test` が成功する
+- [x] `make lint` が成功する
+- [x] データ収集関数が各Detail Levelで正しく動作する
+- [x] 既存のテストに影響がない
 
 **完了基準**:
 - すべてのチェックがパスする
@@ -321,9 +321,9 @@
 
 ### 4.5 Phase 2 のマイルストーン
 
-- [ ] Phase 2 完了
+- [x] Phase 2 完了
 - [ ] コードレビュー完了
-- [ ] Phase 2 のコミット作成
+- [x] Phase 2 のコミット作成
 
 ## 5. Phase 3: フォーマット層
 
@@ -454,8 +454,8 @@
 
 #### 5.2.8 Phase 3 の統合確認
 
-- [ ] `make test` が成功する
-- [ ] `make lint` が成功する
+- [x] `make test` が成功する
+- [x] `make lint` が成功する
 - [ ] フォーマット関数が正しく動作する
 - [ ] 既存のテストに影響がない
 
@@ -658,8 +658,8 @@ GroupExecutor と ResourceManager を修正し、データ収集関数とフォ�
 
 #### 6.2.11 Phase 4 の統合確認
 
-- [ ] `make test` が成功する
-- [ ] `make lint` が成功する
+- [x] `make test` が成功する
+- [x] `make lint` が成功する
 - [ ] `make build` が成功する
 - [ ] すべての統合テストがパスする
 - [ ] 既存のテストに影響がない（回帰なし）

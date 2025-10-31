@@ -1,0 +1,171 @@
+//go:build test
+
+// Package debug provides debug information collection and formatting for dry-run mode.
+package debug
+
+import (
+	"sort"
+	"strings"
+
+	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/resource"
+	"github.com/isseis/go-safe-cmd-runner/internal/runner/runnertypes"
+)
+
+// CollectInheritanceAnalysis collects environment variable inheritance analysis information
+// This function is the single source of truth for inheritance analysis data
+// Returns nil for DetailLevelSummary
+func CollectInheritanceAnalysis(
+	runtimeGlobal *runnertypes.RuntimeGlobal,
+	runtimeGroup *runnertypes.RuntimeGroup,
+	detailLevel resource.DryRunDetailLevel,
+) *resource.InheritanceAnalysis {
+	// Return nil for summary level
+	if detailLevel == resource.DetailLevelSummary {
+		return nil
+	}
+
+	// Extract group spec safely
+	groupSpec := runtimeGroup.Spec
+	if groupSpec == nil {
+		groupSpec = &runnertypes.GroupSpec{}
+	}
+
+	// Build base analysis with configuration and computed fields
+	analysis := &resource.InheritanceAnalysis{
+		// Configuration fields from global
+		GlobalEnvImport: safeStringSlice(runtimeGlobal.Spec.EnvImport),
+		GlobalAllowlist: safeStringSlice(runtimeGlobal.Spec.EnvAllowed),
+
+		// Configuration fields from group
+		GroupEnvImport: safeStringSlice(groupSpec.EnvImport),
+		GroupAllowlist: safeStringSlice(groupSpec.EnvAllowed),
+
+		// Computed field
+		InheritanceMode: runtimeGroup.EnvAllowlistInheritanceMode,
+	}
+
+	// Add difference fields only for DetailLevelFull
+	if detailLevel == resource.DetailLevelFull {
+		// Calculate inherited variables
+		if runtimeGroup.EnvAllowlistInheritanceMode == runnertypes.InheritanceModeInherit {
+			analysis.InheritedVariables = safeStringSlice(runtimeGlobal.Spec.EnvAllowed)
+		} else {
+			analysis.InheritedVariables = []string{}
+		}
+
+		// Calculate removed allowlist variables
+		if runtimeGroup.EnvAllowlistInheritanceMode == runnertypes.InheritanceModeExplicit ||
+			runtimeGroup.EnvAllowlistInheritanceMode == runnertypes.InheritanceModeReject {
+			globalSet := stringSliceToSet(runtimeGlobal.Spec.EnvAllowed)
+			groupSet := stringSliceToSet(groupSpec.EnvAllowed)
+			analysis.RemovedAllowlistVariables = setDifference(globalSet, groupSet)
+		} else {
+			analysis.RemovedAllowlistVariables = []string{}
+		}
+
+		// Calculate unavailable env_import variables
+		if len(groupSpec.EnvImport) > 0 && len(runtimeGlobal.Spec.EnvImport) > 0 {
+			globalVars := extractInternalVarNames(runtimeGlobal.Spec.EnvImport)
+			groupVars := extractInternalVarNames(groupSpec.EnvImport)
+			globalSet := stringSliceToSet(globalVars)
+			groupSet := stringSliceToSet(groupVars)
+			analysis.UnavailableEnvImportVariables = setDifference(globalSet, groupSet)
+		} else {
+			analysis.UnavailableEnvImportVariables = []string{}
+		}
+	}
+
+	return analysis
+}
+
+// CollectFinalEnvironment collects final resolved environment variables
+// Returns nil for DetailLevelSummary and DetailLevelDetailed
+func CollectFinalEnvironment(
+	envMap map[string]executor.EnvVar,
+	detailLevel resource.DryRunDetailLevel,
+	showSensitive bool,
+) *resource.FinalEnvironment {
+	// Only collect for DetailLevelFull
+	if detailLevel != resource.DetailLevelFull {
+		return nil
+	}
+
+	finalEnv := &resource.FinalEnvironment{
+		Variables: make(map[string]resource.EnvironmentVariable, len(envMap)),
+	}
+
+	// Create patterns for sensitive information detection
+	patterns := redaction.DefaultSensitivePatterns()
+
+	for name, envVar := range envMap {
+		variable := resource.EnvironmentVariable{
+			Source: envVar.Origin,
+		}
+
+		// Include value only if showSensitive is true
+		if showSensitive {
+			variable.Value = envVar.Value
+		} else {
+			// Check if variable is sensitive
+			if patterns.IsSensitiveEnvVar(name) {
+				variable.Value = "" // Omit value
+				variable.Masked = true
+			} else {
+				variable.Value = envVar.Value
+			}
+		}
+
+		finalEnv.Variables[name] = variable
+	}
+
+	return finalEnv
+}
+
+// Helper functions
+
+// safeStringSlice returns a copy of the slice or an empty slice if nil
+func safeStringSlice(slice []string) []string {
+	if slice == nil {
+		return []string{}
+	}
+	result := make([]string, len(slice))
+	copy(result, slice)
+	return result
+}
+
+// stringSliceToSet converts a string slice to a set (map[string]struct{})
+func stringSliceToSet(slice []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(slice))
+	for _, s := range slice {
+		set[s] = struct{}{}
+	}
+	return set
+}
+
+// setDifference returns elements in setA that are not in setB
+func setDifference(setA, setB map[string]struct{}) []string {
+	var result []string
+	for key := range setA {
+		if _, exists := setB[key]; !exists {
+			result = append(result, key)
+		}
+	}
+	sort.Strings(result) // Ensure deterministic output
+	return result
+}
+
+// extractInternalVarNames extracts internal variable names from env_import mappings
+// Example: "db_host=DB_HOST" -> "db_host"
+func extractInternalVarNames(envImport []string) []string {
+	const expectedParts = 2 // Expected number of parts in "key=value" format
+	var result []string
+	for _, mapping := range envImport {
+		parts := strings.SplitN(mapping, "=", expectedParts)
+		if len(parts) == expectedParts {
+			result = append(result, parts[0])
+		}
+	}
+	return result
+}
