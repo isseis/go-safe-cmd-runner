@@ -2,6 +2,8 @@
 package debug
 
 import (
+	"sort"
+
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
@@ -138,5 +140,6 @@ func extractInternalVarNames(envImport []string) []string {
 		}
 		result = append(result, key)
 	}
+	sort.Strings(result) // Sort for consistent output
 	return result
 }
