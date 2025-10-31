@@ -2,8 +2,6 @@
 package debug
 
 import (
-	"strings"
-
 	"github.com/isseis/go-safe-cmd-runner/internal/common"
 	"github.com/isseis/go-safe-cmd-runner/internal/redaction"
 	"github.com/isseis/go-safe-cmd-runner/internal/runner/executor"
@@ -125,14 +123,20 @@ func CollectFinalEnvironment(
 
 // extractInternalVarNames extracts internal variable names from env_import mappings
 // Example: "db_host=DB_HOST" -> "db_host"
+//
+// Precondition: envImport must contain only validated "key=value" format strings.
+// This is guaranteed by ProcessFromEnv() validation during RuntimeGlobal/RuntimeGroup creation.
+// If parsing fails, it indicates a program invariant violation and will panic.
 func extractInternalVarNames(envImport []string) []string {
-	const expectedParts = 2 // Expected number of parts in "key=value" format
 	var result []string
 	for _, mapping := range envImport {
-		parts := strings.SplitN(mapping, "=", expectedParts)
-		if len(parts) == expectedParts {
-			result = append(result, parts[0])
+		key, _, ok := common.ParseKeyValue(mapping)
+		if !ok {
+			// This should never happen as envImport is validated during expansion.
+			// If it does, it indicates a serious programming error.
+			panic("invalid env_import format: " + mapping + " (should be validated by ProcessFromEnv)")
 		}
+		result = append(result, key)
 	}
 	return result
 }
