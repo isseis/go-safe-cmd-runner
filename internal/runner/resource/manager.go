@@ -70,14 +70,8 @@ type ResourceManager interface {
 
 	// Dry-run results (returns nil for normal execution mode)
 	GetDryRunResults() *DryRunResult
-}
 
-// DryRunResourceManagerInterface extends ResourceManager with dry-run specific functionality
-type DryRunResourceManagerInterface interface {
-	ResourceManager
-
-	// Dry-run specific
-	RecordAnalysis(analysis *ResourceAnalysis)
+	// Dry-run analysis recording (no-op for normal execution mode)
 	RecordGroupAnalysis(groupName string, debugInfo *DebugInfo) error
 	UpdateLastCommandDebugInfo(debugInfo *DebugInfo) error
 }

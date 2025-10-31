@@ -303,13 +303,10 @@ func (ge *DefaultGroupExecutor) outputDryRunDebugInfo(groupSpec *runnertypes.Gro
 		debugInfo := &resource.DebugInfo{
 			InheritanceAnalysis: analysis,
 		}
-		// Cast resourceManager to DryRunResourceManagerInterface
-		if dryRunManager, ok := ge.resourceManager.(resource.DryRunResourceManagerInterface); ok {
-			err := dryRunManager.RecordGroupAnalysis(groupSpec.Name, debugInfo)
-			if err != nil {
-				// Log error but continue execution
-				slog.Warn("Failed to record group analysis", "error", err, "group", groupSpec.Name)
-			}
+		err := ge.resourceManager.RecordGroupAnalysis(groupSpec.Name, debugInfo)
+		if err != nil {
+			// Log error but continue execution
+			slog.Warn("Failed to record group analysis", "error", err, "group", groupSpec.Name)
 		}
 	} else {
 		// Text format: output immediately
@@ -357,12 +354,9 @@ func (ge *DefaultGroupExecutor) executeCommandInGroup(ctx context.Context, cmd *
 				debugInfo := &resource.DebugInfo{
 					FinalEnvironment: finalEnv,
 				}
-				// Cast resourceManager to DryRunResourceManagerInterface
-				if dryRunManager, ok := ge.resourceManager.(resource.DryRunResourceManagerInterface); ok {
-					err := dryRunManager.UpdateLastCommandDebugInfo(debugInfo)
-					if err != nil {
-						slog.Warn("Failed to update command debug info", "error", err, "command", cmd.Name())
-					}
+				err := ge.resourceManager.UpdateLastCommandDebugInfo(debugInfo)
+				if err != nil {
+					slog.Warn("Failed to update command debug info", "error", err, "command", cmd.Name())
 				}
 			} else {
 				// Text format: output immediately

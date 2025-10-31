@@ -281,3 +281,13 @@ func (n *NormalResourceManager) SendNotification(_ string, _ map[string]any) err
 func (n *NormalResourceManager) GetDryRunResults() *DryRunResult {
 	return nil
 }
+
+// RecordGroupAnalysis is a no-op in normal mode
+func (n *NormalResourceManager) RecordGroupAnalysis(_ string, _ *DebugInfo) error {
+	return nil
+}
+
+// UpdateLastCommandDebugInfo is a no-op in normal mode
+func (n *NormalResourceManager) UpdateLastCommandDebugInfo(_ *DebugInfo) error {
+	return nil
+}

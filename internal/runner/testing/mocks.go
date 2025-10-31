@@ -79,3 +79,15 @@ func (m *MockResourceManager) GetDryRunResults() *resource.DryRunResult {
 	}
 	return args.Get(0).(*resource.DryRunResult)
 }
+
+// RecordGroupAnalysis records group analysis in dry-run mode
+func (m *MockResourceManager) RecordGroupAnalysis(groupName string, debugInfo *resource.DebugInfo) error {
+	args := m.Called(groupName, debugInfo)
+	return args.Error(0)
+}
+
+// UpdateLastCommandDebugInfo updates the last command's debug info in dry-run mode
+func (m *MockResourceManager) UpdateLastCommandDebugInfo(debugInfo *resource.DebugInfo) error {
+	args := m.Called(debugInfo)
+	return args.Error(0)
+}

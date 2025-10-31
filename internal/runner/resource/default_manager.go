@@ -13,7 +13,7 @@ import (
 
 // DefaultResourceManager provides a mode-aware facade that delegates to
 // NormalResourceManager or DryRunResourceManager depending on ExecutionMode.
-// It implements DryRunResourceManagerInterface so callers can always query dry-run results
+// It implements ResourceManager so callers can always query dry-run results
 // (returns nil in normal mode) and record analyses (no-op in normal mode).
 type DefaultResourceManager struct {
 	mode   ExecutionMode
@@ -107,4 +107,14 @@ func (d *DefaultResourceManager) RecordAnalysis(analysis *ResourceAnalysis) {
 	if d.mode == ExecutionModeDryRun {
 		d.dryrun.RecordAnalysis(analysis)
 	}
+}
+
+// RecordGroupAnalysis records group analysis in dry-run mode; no-op in normal mode.
+func (d *DefaultResourceManager) RecordGroupAnalysis(groupName string, debugInfo *DebugInfo) error {
+	return d.activeManager().RecordGroupAnalysis(groupName, debugInfo)
+}
+
+// UpdateLastCommandDebugInfo updates the last command's debug info in dry-run mode; no-op in normal mode.
+func (d *DefaultResourceManager) UpdateLastCommandDebugInfo(debugInfo *DebugInfo) error {
+	return d.activeManager().UpdateLastCommandDebugInfo(debugInfo)
 }

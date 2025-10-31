@@ -31,7 +31,7 @@ const (
 	riskLevelHigh = "high"
 )
 
-// DryRunResourceManager implements DryRunResourceManagerInterface for dry-run mode
+// DryRunResourceManager implements ResourceManager for dry-run mode
 type DryRunResourceManager struct {
 	// Core dependencies
 	executor         executor.CommandExecutor
