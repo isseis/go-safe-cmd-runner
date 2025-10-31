@@ -14,7 +14,8 @@ import (
 
 // formatStringSlice formats a slice of strings for display, similar to the existing functions.
 // Returns "not defined" for empty slices and joins non-empty slices with ", ".
-// The input slice order is preserved (not sorted) to match existing behavior.
+// The function does not sort its input; it preserves the input slice order.
+// For consistent output, callers are expected to provide pre-sorted slices.
 func formatStringSlice(items []string, emptyMessage string) string {
 	if len(items) == 0 {
 		return emptyMessage
