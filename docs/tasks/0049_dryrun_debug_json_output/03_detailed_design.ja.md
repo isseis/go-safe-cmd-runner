@@ -13,7 +13,7 @@
 ### 1.3 関連ドキュメント
 - [要件定義書](./01_requirements.ja.md)
 - [アーキテクチャ設計書](./02_architecture.ja.md)
-- [実装計画書](./04_implementation_plan.ja.md) - 今後作成予定
+- [実装計画書](./04_implementation_plan.ja.md)
 
 ## 2. データ構造の詳細定義
 
