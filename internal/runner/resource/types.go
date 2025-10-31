@@ -346,9 +346,9 @@ type FinalEnvironment struct {
 
 // EnvironmentVariable represents a single environment variable with metadata
 type EnvironmentVariable struct {
-	// Value of the environment variable. Omitted if empty. For sensitive variables,
-	// the value is cleared and the Masked field is set to true when ShowSensitive is false.
-	Value string `json:"value,omitempty"`
+	// Value of the environment variable. For sensitive variables,
+	// the value is cleared (empty string) and the Masked field is set to true when ShowSensitive is false.
+	Value string `json:"value"`
 
 	// Source indicates where this variable comes from:
 	//   "system"  - from env_allowlist (system environment variable passed through)
