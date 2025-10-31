@@ -336,9 +336,9 @@
 
 **ファイル**: `internal/runner/debug/formatter.go` (新規作成)
 
-- [ ] ファイルを作成
-- [ ] パッケージコメントを追加
-- [ ] 必要なインポートを追加
+- [x] ファイルを作成
+- [x] パッケージコメントを追加
+- [x] 必要なインポートを追加
 
 **完了基準**:
 - ファイルが作成されている
@@ -350,8 +350,8 @@
 
 **ファイル**: `internal/runner/debug/formatter.go`
 
-- [ ] `formatStringSlice()` を実装
-- [ ] `formatGroupField()` を実装
+- [x] `formatStringSlice()` を実装
+- [x] `formatGroupField()` を実装
 
 **完了基準**:
 - ヘルパー関数が実装されている
@@ -363,17 +363,17 @@
 
 **ファイル**: `internal/runner/debug/formatter.go`
 
-- [ ] 関数シグネチャを定義
-- [ ] nil チェックを実装
-- [ ] ヘッダーセクションの出力
-- [ ] Global Level セクションの出力
-- [ ] Group Level セクションの出力
-- [ ] Inheritance Mode セクションの出力
-- [ ] 差分情報セクションの出力（存在する場合のみ）
-  - [ ] Inherited Variables
-  - [ ] Removed Allowlist Variables
-  - [ ] Unavailable Env Import Variables
-- [ ] ドキュメントコメントを追加
+- [x] 関数シグネチャを定義
+- [x] nil チェックを実装
+- [x] ヘッダーセクションの出力
+- [x] Global Level セクションの出力
+- [x] Group Level セクションの出力
+- [x] Inheritance Mode セクションの出力
+- [x] 差分情報セクションの出力（存在する場合のみ）
+  - [x] Inherited Variables
+  - [x] Removed Allowlist Variables
+  - [x] Unavailable Env Import Variables
+- [x] ドキュメントコメントを追加
 
 **完了基準**:
 - 関数が完全に実装されている
@@ -386,12 +386,12 @@
 
 **ファイル**: `internal/runner/debug/formatter_test.go` (新規作成)
 
-- [ ] `TestFormatInheritanceAnalysisText` を実装
-  - [ ] nil の場合: 何も出力しない
-  - [ ] 基本フィールドのみの場合
-  - [ ] すべてのフィールドがある場合
-  - [ ] 各継承モードでの出力
-  - [ ] 出力内容を既存の `PrintFromEnvInheritance` と比較
+- [x] `TestFormatInheritanceAnalysisText` を実装
+  - [x] nil の場合: 何も出力しない
+  - [x] 基本フィールドのみの場合
+  - [x] すべてのフィールドがある場合
+  - [x] 各継承モードでの出力
+  - [x] 出力内容を既存の `PrintFromEnvInheritance` と比較
 
 **完了基準**:
 - すべてのテストケースが実装されている
@@ -404,13 +404,13 @@
 
 **ファイル**: `internal/runner/debug/formatter.go`
 
-- [ ] 関数シグネチャを定義
-- [ ] nil チェックを実装
-- [ ] ヘッダーの出力
-- [ ] 変数名のソート
-- [ ] 各環境変数の出力
-- [ ] マスクされた値の処理
-- [ ] ドキュメントコメントを追加
+- [x] 関数シグネチャを定義
+- [x] nil チェックを実装
+- [x] ヘッダーの出力
+- [x] 変数名のソート
+- [x] 各環境変数の出力
+- [x] マスクされた値の処理
+- [x] ドキュメントコメントを追加
 
 **完了基準**:
 - 関数が完全に実装されている
@@ -423,13 +423,13 @@
 
 **ファイル**: `internal/runner/debug/formatter_test.go`
 
-- [ ] `TestFormatFinalEnvironmentText` を実装
-  - [ ] nil の場合: 何も出力しない
-  - [ ] 空の環境変数の場合
-  - [ ] 複数の環境変数がある場合
-  - [ ] マスクされた変数がある場合
-  - [ ] 各 Source タイプでの出力
-  - [ ] 出力内容を既存の `PrintFinalEnvironment` と比較
+- [x] `TestFormatFinalEnvironmentText` を実装
+  - [x] nil の場合: 何も出力しない
+  - [x] 空の環境変数の場合
+  - [x] 複数の環境変数がある場合
+  - [x] マスクされた変数がある場合
+  - [x] 各 Source タイプでの出力
+  - [x] 出力内容を既存の `PrintFinalEnvironment` と比較
 
 **完了基準**:
 - すべてのテストケースが実装されている
@@ -442,9 +442,9 @@
 
 **ファイル**: `internal/runner/debug/formatter_test.go`
 
-- [ ] `TestFormatConsistency` を実装
-  - [ ] 同じ入力で既存関数と新関数の出力を比較
-  - [ ] 各Detail Levelでの一貫性を検証
+- [x] `TestFormatConsistency` を実装
+  - [x] 同じ入力で既存関数と新関数の出力を比較
+  - [x] 各Detail Levelでの一貫性を検証
 
 **完了基準**:
 - 既存関数と新関数の出力が一致する
@@ -456,8 +456,8 @@
 
 - [x] `make test` が成功する
 - [x] `make lint` が成功する
-- [ ] フォーマット関数が正しく動作する
-- [ ] 既存のテストに影響がない
+- [x] フォーマット関数が正しく動作する
+- [x] 既存のテストに影響がない
 
 **完了基準**:
 - すべてのチェックがパスする
@@ -475,9 +475,9 @@
 
 ### 5.5 Phase 3 のマイルストーン
 
-- [ ] Phase 3 完了
+- [x] Phase 3 完了
 - [ ] コードレビュー完了
-- [ ] Phase 3 のコミット作成
+- [x] Phase 3 のコミット作成
 
 ## 6. Phase 4: 実行層の統合
 

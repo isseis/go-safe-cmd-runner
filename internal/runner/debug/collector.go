@@ -138,5 +138,6 @@ func extractInternalVarNames(envImport []string) []string {
 		}
 		result = append(result, key)
 	}
+	sort.Strings(result) // Sort for consistent output
 	return result
 }
