@@ -85,14 +85,13 @@ func FormatInheritanceAnalysisText(analysis *resource.InheritanceAnalysis, group
 		if len(analysis.UnavailableEnvImportVariables) > 0 {
 			buf.WriteString(fmt.Sprintf("  Warning: Global variables (%s) are NOT available in this group\n",
 				formatStringSlice(analysis.UnavailableEnvImportVariables, "")))
-			buf.WriteString("  These variables will be undefined: ")
+
+			// Format undefined variables with %{} syntax
+			undefinedVars := make([]string, len(analysis.UnavailableEnvImportVariables))
 			for i, v := range analysis.UnavailableEnvImportVariables {
-				if i > 0 {
-					buf.WriteString(", ")
-				}
-				buf.WriteString(fmt.Sprintf("%%{%s}", v))
+				undefinedVars[i] = fmt.Sprintf("%%{%s}", v)
 			}
-			buf.WriteString("\n")
+			buf.WriteString(fmt.Sprintf("  These variables will be undefined: %s\n", strings.Join(undefinedVars, ", ")))
 		}
 	}
 	buf.WriteString("\n")
