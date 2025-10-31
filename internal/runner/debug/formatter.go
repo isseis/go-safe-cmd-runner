@@ -32,7 +32,8 @@ func formatGroupField(fieldName string, count int) string {
 // FormatInheritanceAnalysisText formats InheritanceAnalysis as text output matching
 // the format of the existing PrintFromEnvInheritance function.
 // Returns an empty string if analysis is nil.
-func FormatInheritanceAnalysisText(analysis *resource.InheritanceAnalysis) string {
+// The groupName parameter specifies the name of the group to display in the output.
+func FormatInheritanceAnalysisText(analysis *resource.InheritanceAnalysis, groupName string) string {
 	if analysis == nil {
 		return ""
 	}
@@ -57,9 +58,8 @@ func FormatInheritanceAnalysisText(analysis *resource.InheritanceAnalysis) strin
 	}
 	buf.WriteString("\n")
 
-	// Group Level section - we need group name, but analysis doesn't contain it
-	// For now, use a generic name. In actual usage, this will be called with group context
-	buf.WriteString("[Group: <group_name>]\n")
+	// Group Level section
+	buf.WriteString(fmt.Sprintf("[Group: %s]\n", groupName))
 
 	if len(analysis.GroupEnvImport) == 0 {
 		// Inheritance case

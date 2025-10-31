@@ -11,7 +11,7 @@ import (
 )
 
 func TestFormatInheritanceAnalysisText_Nil(t *testing.T) {
-	result := FormatInheritanceAnalysisText(nil)
+	result := FormatInheritanceAnalysisText(nil, "test_group")
 	if result != "" {
 		t.Errorf("Expected empty string for nil analysis, got %q", result)
 	}
@@ -26,7 +26,7 @@ func TestFormatInheritanceAnalysisText_InheritMode(t *testing.T) {
 		InheritanceMode: runnertypes.InheritanceModeInherit,
 	}
 
-	result := FormatInheritanceAnalysisText(analysis)
+	result := FormatInheritanceAnalysisText(analysis, "test_group")
 
 	// Print actual output for debugging
 	t.Logf("Actual output:\n%s", result)
@@ -56,7 +56,7 @@ func TestFormatInheritanceAnalysisText_InheritMode(t *testing.T) {
 		t.Error("Expected internal variables not found")
 	}
 
-	if !strings.Contains(result, "[Group: <group_name>]") {
+	if !strings.Contains(result, "[Group: test_group]") {
 		t.Error("Expected Group section not found")
 	}
 
@@ -92,7 +92,7 @@ func TestFormatInheritanceAnalysisText_ExplicitMode(t *testing.T) {
 		UnavailableEnvImportVariables: []string{"api_key", "db_host"},
 	}
 
-	result := FormatInheritanceAnalysisText(analysis)
+	result := FormatInheritanceAnalysisText(analysis, "explicit_group")
 
 	// Check for override behavior
 	if !strings.Contains(result, "env_import: Overriding Global configuration") {
@@ -143,7 +143,7 @@ func TestFormatInheritanceAnalysisText_RejectMode(t *testing.T) {
 		InheritanceMode: runnertypes.InheritanceModeReject,
 	}
 
-	result := FormatInheritanceAnalysisText(analysis)
+	result := FormatInheritanceAnalysisText(analysis, "reject_group")
 
 	if !strings.Contains(result, "Rejecting all environment variables") {
 		t.Error("Expected reject message not found")
@@ -163,7 +163,7 @@ func TestFormatInheritanceAnalysisText_EmptyGlobal(t *testing.T) {
 		InheritanceMode: runnertypes.InheritanceModeInherit,
 	}
 
-	result := FormatInheritanceAnalysisText(analysis)
+	result := FormatInheritanceAnalysisText(analysis, "empty_group")
 
 	if !strings.Contains(result, "env_import: not defined") {
 		t.Error("Expected empty global env_import message not found")
@@ -398,10 +398,8 @@ func TestFormatConsistency_InheritanceAnalysis(t *testing.T) {
 		InheritanceMode: runtimeGroup.EnvAllowlistInheritanceMode,
 	}
 
-	// Get output from new function - but need to replace the generic group name
-	newOutput := FormatInheritanceAnalysisText(analysis)
-	// Replace generic group name with actual group name
-	newOutput = strings.ReplaceAll(newOutput, "[Group: <group_name>]", "[Group: "+runtimeGroup.Spec.Name+"]")
+	// Get output from new function with the actual group name
+	newOutput := FormatInheritanceAnalysisText(analysis, runtimeGroup.Spec.Name)
 
 	// Compare outputs - they should be identical
 	if existingOutput != newOutput {
